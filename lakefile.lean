@@ -11,7 +11,7 @@ lean_exe ix where
   root := `Main
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "40eac2fffea1eb00cb80a0a084798807f7cf59c5"
+  "https://github.com/argumentcomputer/LSpec" @ "ca8e2803f89f0c12bf9743ae7abbfb2ea6b0eeec"
 
 section Tests
 
