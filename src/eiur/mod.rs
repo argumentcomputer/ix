@@ -4,3 +4,4 @@ pub mod gadgets;
 pub mod ir;
 pub mod layout;
 pub mod trace;
+pub mod transparent;
