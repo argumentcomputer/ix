@@ -20,7 +20,7 @@ pub struct Function {
 
 /// `Prim` defines primitive data types currently supported by Eiur-rs language
 pub enum Prim {
-    U32(u32),
+    U64(u64),
     Bool(bool),
 }
 

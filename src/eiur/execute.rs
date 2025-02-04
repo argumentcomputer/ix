@@ -5,7 +5,7 @@ use super::ir::{Ctrl, FuncIdx, Op, Prim, Toplevel, ValIdx};
 /// `Value` defines actual primitive types supported by Eiur-rs
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum Value {
-    U32(u32),
+    U64(u64),
     Bool(bool),
 }
 
@@ -61,35 +61,35 @@ impl Toplevel {
         while let Some(exec_entry) = exec_entries_stack.pop() {
             match exec_entry {
                 ExecEntry::Op(Op::Prim(Prim::Bool(x))) => map.push(Value::Bool(*x)),
-                ExecEntry::Op(Op::Prim(Prim::U32(x))) => map.push(Value::U32(*x)),
+                ExecEntry::Op(Op::Prim(Prim::U64(x))) => map.push(Value::U64(*x)),
                 ExecEntry::Op(Op::Add(ValIdx(a), ValIdx(b))) => {
                     match (&map[*a as usize], &map[*b as usize]) {
-                        (Value::U32(a), Value::U32(b)) => map.push(Value::U32(*a + *b)),
+                        (Value::U64(a), Value::U64(b)) => map.push(Value::U64(*a + *b)),
                         _ => panic!(),
                     }
                 }
                 ExecEntry::Op(Op::Sub(ValIdx(a), ValIdx(b))) => {
                     match (&map[*a as usize], &map[*b as usize]) {
-                        (Value::U32(a), Value::U32(b)) => map.push(Value::U32(*a - *b)),
+                        (Value::U64(a), Value::U64(b)) => map.push(Value::U64(*a - *b)),
                         _ => panic!(),
                     }
                 }
                 ExecEntry::Op(Op::Mul(ValIdx(a), ValIdx(b))) => {
                     match (&map[*a as usize], &map[*b as usize]) {
-                        (Value::U32(a), Value::U32(b)) => map.push(Value::U32(*a * *b)),
+                        (Value::U64(a), Value::U64(b)) => map.push(Value::U64(*a * *b)),
                         _ => panic!(),
                     }
                 }
                 ExecEntry::Op(Op::And(ValIdx(a), ValIdx(b))) => {
                     match (&map[*a as usize], &map[*b as usize]) {
-                        (Value::U32(a), Value::U32(b)) => map.push(Value::U32(*a & *b)),
+                        (Value::U64(a), Value::U64(b)) => map.push(Value::U64(*a & *b)),
                         (Value::Bool(a), Value::Bool(b)) => map.push(Value::Bool(*a & *b)),
                         _ => panic!(),
                     }
                 }
                 ExecEntry::Op(Op::Xor(ValIdx(a), ValIdx(b))) => {
                     match (&map[*a as usize], &map[*b as usize]) {
-                        (Value::U32(a), Value::U32(b)) => map.push(Value::U32(*a ^ *b)),
+                        (Value::U64(a), Value::U64(b)) => map.push(Value::U64(*a ^ *b)),
                         (Value::Bool(a), Value::Bool(b)) => map.push(Value::Bool(*a ^ *b)),
                         _ => panic!(),
                     }
@@ -149,7 +149,7 @@ impl Toplevel {
                 ExecEntry::Ctrl(Ctrl::If(ValIdx(v), tt, ff)) => {
                     let cond = match &map[*v as usize] {
                         Value::Bool(b) => *b,
-                        Value::U32(u) => u != &0,
+                        Value::U64(u) => u != &0,
                     };
                     if cond {
                         stack_block_exec_entries!(tt);
@@ -165,7 +165,7 @@ impl Toplevel {
 
 #[cfg(test)]
 mod tests {
-    use crate::eiur::execute::Value::U32;
+    use crate::eiur::execute::Value::U64;
     use crate::eiur::{
         execute::{QueryResult, Value},
         ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, Toplevel, ValIdx},
@@ -193,7 +193,7 @@ mod tests {
         };
 
         let main_block = Block {
-            ops: vec![Op::Prim(Prim::U32(1))],
+            ops: vec![Op::Prim(Prim::U64(1))],
             ctrl: Box::new(Ctrl::If(inp_val_idx, true_block, false_block)),
         };
 
@@ -243,7 +243,7 @@ mod tests {
         let output = ValIdx(2);
 
         let main_block = Block {
-            ops: vec![Op::Prim(Prim::U32(2)), Op::Mul(input, two)],
+            ops: vec![Op::Prim(Prim::U64(2)), Op::Mul(input, two)],
             ctrl: Box::new(Ctrl::Return(SelIdx(0), vec![output])),
         };
 
@@ -273,11 +273,11 @@ mod tests {
     #[test]
     fn test_addition() {
         // Regular computation
-        let val_in = 100u32;
+        let val_in = 100u64;
         let val_out = val_in + val_in;
 
         // Euir-rs program
-        let input = (FuncIdx(0), vec![U32(val_in)]);
+        let input = (FuncIdx(0), vec![U64(val_in)]);
         let toplevel = Toplevel {
             functions: vec![addition_function()],
         };
@@ -285,13 +285,13 @@ mod tests {
         let result = toplevel.execute(input.clone());
         let out = result.queries.get(&input).unwrap();
         assert_eq!(out.values.len(), 1);
-        assert_eq!(out.values[0], U32(val_out));
+        assert_eq!(out.values[0], U64(val_out));
     }
 
     #[test]
     fn test_double() {
         // Regular computation
-        let val_in = 50u32;
+        let val_in = 50u64;
         let val_out = val_in * 2;
 
         // Euir-rs program
@@ -299,20 +299,20 @@ mod tests {
             functions: vec![double_function()],
         };
 
-        let input = (FuncIdx(0), vec![U32(val_in)]);
+        let input = (FuncIdx(0), vec![U64(val_in)]);
         let result = toplevel.execute(input.clone());
         let out = result
             .queries
             .get(&input)
             .expect("requested item is unavailable");
         assert_eq!(out.values.len(), 1);
-        assert_eq!(out.values[0], U32(val_out));
+        assert_eq!(out.values[0], U64(val_out));
     }
 
     #[test]
     fn test_cube() {
         // Regular program
-        let val_in = 3u32;
+        let val_in = 3u64;
         let val_out = val_in * val_in * val_in;
 
         // Eiur-rs program
@@ -320,7 +320,7 @@ mod tests {
             functions: vec![cube_function()],
         };
 
-        let input = (FuncIdx(0), vec![U32(val_in)]);
+        let input = (FuncIdx(0), vec![U64(val_in)]);
         let record = top_level.execute(input.clone());
         let out = record
             .queries
@@ -328,13 +328,13 @@ mod tests {
             .expect("output of Lair / Eiur program is unavailable");
 
         assert_eq!(out.values.len(), 1);
-        assert_eq!(out.values[0], U32(val_out));
+        assert_eq!(out.values[0], U64(val_out));
     }
 
     #[test]
     fn test_square() {
         // Regular computation
-        let value_in = 6u32;
+        let value_in = 6u64;
         let value_out = value_in * value_in;
 
         // Eiur-rs program
@@ -342,13 +342,13 @@ mod tests {
             functions: vec![square_function()],
         };
 
-        let input = (FuncIdx(0), vec![Value::U32(value_in)]);
+        let input = (FuncIdx(0), vec![Value::U64(value_in)]);
         let record = top_level.execute(input.clone());
 
         let out = record.queries.get(&input).expect("no out available");
 
         assert_eq!(out.values.len(), 1);
-        assert_eq!(out.values[0], Value::U32(value_out));
+        assert_eq!(out.values[0], Value::U64(value_out));
     }
 
     #[test]
@@ -357,15 +357,15 @@ mod tests {
             functions: vec![factorial_function()],
         };
 
-        let record = toplevel.execute((FuncIdx(0), vec![U32(5)]));
+        let record = toplevel.execute((FuncIdx(0), vec![U64(5)]));
         let pairs = [(0, 1), (1, 1), (2, 2), (3, 6), (4, 24), (5, 120)];
         for (i, o) in pairs {
             let query_result = QueryResult {
-                values: vec![U32(o)],
+                values: vec![U64(o)],
                 multiplicity: 1,
             };
             assert_eq!(
-                record.queries.get(&(FuncIdx(0), vec![U32(i)])),
+                record.queries.get(&(FuncIdx(0), vec![U64(i)])),
                 Some(&query_result)
             );
         }
