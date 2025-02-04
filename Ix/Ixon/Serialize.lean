@@ -1,4 +1,3 @@
-
 namespace Ixon
 
 class Serialize (A: Type) where
@@ -13,7 +12,7 @@ structure GetState where
 
 abbrev GetM A := EStateM String GetState A
 
-def runGet (getm: GetM A) (bytes: ByteArray) : Except String A := 
+def runGet (getm: GetM A) (bytes: ByteArray) : Except String A :=
   match EStateM.run getm { index := 0, bytes } with
   | .ok a _ => .ok a
   | .error e _ => .error e
