@@ -3,15 +3,19 @@ name = "ix"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["staticlib"]
+
 [dependencies]
 anyhow = "1"
-rustc-hash = "2"
 binius_core = { git = "https://gitlab.com/IrreducibleOSS/binius.git", rev = "0e5ec53f260f40fe6afcc741d4ff8f021a66dc1a" }
 binius_circuits = { git = "https://gitlab.com/IrreducibleOSS/binius.git", rev = "0e5ec53f260f40fe6afcc741d4ff8f021a66dc1a" }
 binius_field = { git = "https://gitlab.com/IrreducibleOSS/binius.git", rev = "0e5ec53f260f40fe6afcc741d4ff8f021a66dc1a" }
 binius_macros = { git = "https://gitlab.com/IrreducibleOSS/binius.git", rev = "0e5ec53f260f40fe6afcc741d4ff8f021a66dc1a" }
 binius_math = { git = "https://gitlab.com/IrreducibleOSS/binius.git", rev = "0e5ec53f260f40fe6afcc741d4ff8f021a66dc1a" }
+blake3 = "1"
 bytemuck = "1"
 bumpalo = "3"
 proptest = "1"
 rayon = "1"
+rustc-hash = "2"

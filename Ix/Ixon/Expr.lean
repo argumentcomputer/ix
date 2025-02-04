@@ -1,4 +1,3 @@
-
 import Ix.Address
 import Lean.Declaration
 import Ix.Ixon.Serialize
@@ -9,7 +8,7 @@ namespace Ixon
 -- 0xTTTT_LXXX
 inductive Expr where
   -- 0x0, ^1
-  | vari (idx: UInt64) : Expr 
+  | vari (idx: UInt64) : Expr
   -- 0x1, {max (add 1 2) (var 1)}
   | sort (univ: Univ) : Expr
   -- 0x2 #dead_beef_cafe_babe {u1, u2, ... }
@@ -24,7 +23,7 @@ inductive Expr where
   | alls (types: List Expr) (body: Expr) : Expr
   -- 0x7 (let d : A in b)
   | let_ (type: Expr) (defn: Expr) (body: Expr) : Expr
-  -- 0x8 .1 
+  -- 0x8 .1
   | proj : UInt64 -> Expr -> Expr
   -- 0x9 "foobar"
   | strl (lit: String) : Expr
@@ -33,7 +32,7 @@ inductive Expr where
 -- array: 0xB
 -- const: 0xC
 
-def putExprTag (tag: UInt8) (val: UInt64) : PutM Unit := 
+def putExprTag (tag: UInt8) (val: UInt64) : PutM Unit :=
   let t := UInt8.shiftLeft tag 4
   if val < 8
   then putUInt8 (UInt8.lor t (Nat.toUInt8 (UInt64.toNat val))) *> pure ()

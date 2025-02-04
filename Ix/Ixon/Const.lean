@@ -1,4 +1,3 @@
-
 import Ix.Address
 import Lean.Declaration
 import Ix.Ixon.Serialize
