@@ -1,3 +1,5 @@
+pub mod eiur;
+
 #[cfg(test)]
 mod tests {
     #[test]
