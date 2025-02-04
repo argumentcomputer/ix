@@ -20,10 +20,34 @@ pub struct QueryResult {
 
 /// `QueryRecord` is a collection of `QueryResult` objects that can be referenced by the input tuple
 /// used while invoking `TopLevel` execution algorithm
-#[derive(Default)]
 pub struct QueryRecord {
-    pub queries: FxHashMap<(FuncIdx, Vec<Value>), QueryResult>,
+    pub queries: Vec<FxHashMap<Vec<Value>, QueryResult>>,
     // pub queries_inv: FxHashMap<(FuncIdx, Vec<Value>), Vec<Value>>,
+}
+
+impl QueryRecord {
+    pub fn new(toplevel: &Toplevel) -> Self {
+        let len = toplevel.functions.len();
+        let queries = (0..len).map(|_| Default::default()).collect();
+        QueryRecord { queries }
+    }
+
+    pub fn get(&self, func_idx: FuncIdx, input: &Vec<Value>) -> Option<&QueryResult> {
+        self.queries[func_idx.to_usize()].get(input)
+    }
+
+    pub fn get_mut(&mut self, func_idx: FuncIdx, input: &Vec<Value>) -> Option<&mut QueryResult> {
+        self.queries[func_idx.to_usize()].get_mut(input)
+    }
+
+    pub fn insert(
+        &mut self,
+        func_idx: FuncIdx,
+        input: Vec<Value>,
+        output: QueryResult,
+    ) -> Option<QueryResult> {
+        self.queries[func_idx.to_usize()].insert(input, output)
+    }
 }
 
 enum ExecEntry<'a> {
@@ -43,11 +67,11 @@ impl Toplevel {
     ///     algorithm
     /// 2) You can write additional input values (for example if you need some constants) into the
     ///     stack while implementing particular block of the program
-    pub fn execute(&self, input: (FuncIdx, Vec<Value>)) -> QueryRecord {
-        let mut record = QueryRecord::default();
+    pub fn execute(&self, mut func_idx: FuncIdx, input: Vec<Value>) -> QueryRecord {
+        let mut record = QueryRecord::new(self);
         let mut exec_entries_stack = vec![];
         let mut callers_states_stack = vec![];
-        let (mut func_idx, mut map) = input;
+        let mut map = input;
 
         macro_rules! stack_block_exec_entries {
             ($block:expr) => {
@@ -102,13 +126,13 @@ impl Toplevel {
                 }
                 ExecEntry::Op(Op::Call(called_func_idx, args)) => {
                     let args = args.iter().map(|ValIdx(v)| map[*v as usize]).collect();
-                    let query_input = (*called_func_idx, args);
-                    if let Some(query_result) = record.queries.get_mut(&query_input) {
+                    // let query_input = (*called_func_idx, args);
+                    if let Some(query_result) = record.get_mut(*called_func_idx, &args) {
                         query_result.multiplicity += 1;
                         map.extend(query_result.values.clone());
                     } else {
                         // `map_buffer` will become the map for the called function
-                        let (called_func_idx, mut map_buffer) = query_input;
+                        let mut map_buffer = args;
                         // Swap so we can save the old map in `map_buffer` and move on
                         // with `map` already set.
                         std::mem::swap(&mut map_buffer, &mut map);
@@ -117,7 +141,7 @@ impl Toplevel {
                             map: map_buffer,
                         });
                         // Prepare outer variables to go into the new func scope.
-                        func_idx = called_func_idx;
+                        func_idx = *called_func_idx;
                         stack_block_exec_entries!(&self.functions[func_idx.to_usize()].body);
                     }
                 }
@@ -134,7 +158,7 @@ impl Toplevel {
                     };
                     let num_inp = self.functions[func_idx.to_usize()].input_size as usize;
                     let args = map[..num_inp].to_vec();
-                    record.queries.insert((func_idx, args), query_result);
+                    record.insert(func_idx, args, query_result);
 
                     // Recover the state of the caller
                     if let Some(CallerState {
@@ -283,13 +307,14 @@ mod tests {
         let val_out = val_in + val_in;
 
         // Euir-rs program
-        let input = (FuncIdx(0), vec![U64(val_in)]);
+        let func_idx = FuncIdx(0);
+        let input = vec![U64(val_in)];
         let toplevel = Toplevel {
             functions: vec![addition_function()],
         };
 
-        let result = toplevel.execute(input.clone());
-        let out = result.queries.get(&input).unwrap();
+        let result = toplevel.execute(func_idx, input.clone());
+        let out = result.get(func_idx, &input).unwrap();
         assert_eq!(out.values.len(), 1);
         assert_eq!(out.values[0], U64(val_out));
     }
@@ -305,11 +330,11 @@ mod tests {
             functions: vec![double_function()],
         };
 
-        let input = (FuncIdx(0), vec![U64(val_in)]);
-        let result = toplevel.execute(input.clone());
+        let func_idx = FuncIdx(0);
+        let input = vec![U64(val_in)];
+        let result = toplevel.execute(func_idx, input.clone());
         let out = result
-            .queries
-            .get(&input)
+            .get(func_idx, &input)
             .expect("requested item is unavailable");
         assert_eq!(out.values.len(), 1);
         assert_eq!(out.values[0], U64(val_out));
@@ -326,11 +351,11 @@ mod tests {
             functions: vec![cube_function()],
         };
 
-        let input = (FuncIdx(0), vec![U64(val_in)]);
-        let record = top_level.execute(input.clone());
+        let func_idx = FuncIdx(0);
+        let input = vec![U64(val_in)];
+        let record = top_level.execute(func_idx, input.clone());
         let out = record
-            .queries
-            .get(&input)
+            .get(func_idx, &input)
             .expect("output of Lair / Eiur program is unavailable");
 
         assert_eq!(out.values.len(), 1);
@@ -348,10 +373,11 @@ mod tests {
             functions: vec![square_function()],
         };
 
-        let input = (FuncIdx(0), vec![Value::U64(value_in)]);
-        let record = top_level.execute(input.clone());
+        let func_idx = FuncIdx(0);
+        let input = vec![Value::U64(value_in)];
+        let record = top_level.execute(func_idx, input.clone());
 
-        let out = record.queries.get(&input).expect("no out available");
+        let out = record.get(func_idx, &input).expect("no out available");
 
         assert_eq!(out.values.len(), 1);
         assert_eq!(out.values[0], Value::U64(value_out));
@@ -363,17 +389,14 @@ mod tests {
             functions: vec![factorial_function()],
         };
 
-        let record = toplevel.execute((FuncIdx(0), vec![U64(5)]));
+        let record = toplevel.execute(FuncIdx(0), vec![U64(5)]);
         let pairs = [(0, 1), (1, 1), (2, 2), (3, 6), (4, 24), (5, 120)];
         for (i, o) in pairs {
             let query_result = QueryResult {
                 values: vec![U64(o)],
                 multiplicity: 1,
             };
-            assert_eq!(
-                record.queries.get(&(FuncIdx(0), vec![U64(i)])),
-                Some(&query_result)
-            );
+            assert_eq!(record.get(FuncIdx(0), &vec![U64(i)]), Some(&query_result));
         }
     }
 }
