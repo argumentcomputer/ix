@@ -31,15 +31,6 @@ pub enum Prim {
     Bool(bool),
 }
 
-impl Prim {
-    pub fn to_u64(self) -> u64 {
-        match self {
-            Prim::U64(a) => a,
-            Prim::Bool(a) => a as u64,
-        }
-    }
-}
-
 /// `ValIdx` is a pointer to a particular value stored in the inner stack of the
 /// `TopLevel` execution algorithm
 #[derive(Clone, Copy)]
