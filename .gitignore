@@ -1,1 +1,5 @@
+# Lean
 /.lake
+
+# Rust
+/target
