@@ -47,6 +47,7 @@ pub enum Op {
     Sub(ValIdx, ValIdx),
     Mul(ValIdx, ValIdx),
     And(ValIdx, ValIdx),
+    Lt(ValIdx, ValIdx),
     Xor(ValIdx, ValIdx),
     Call(FuncIdx, Vec<ValIdx>),
 }

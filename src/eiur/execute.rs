@@ -87,6 +87,12 @@ impl Toplevel {
                         _ => panic!(),
                     }
                 }
+                ExecEntry::Op(Op::Lt(ValIdx(a), ValIdx(b))) => {
+                    match (&map[*a as usize], &map[*b as usize]) {
+                        (Value::U64(a), Value::U64(b)) => map.push(Value::Bool(*a < *b)),
+                        _ => panic!(),
+                    }
+                }
                 ExecEntry::Op(Op::Xor(ValIdx(a), ValIdx(b))) => {
                     match (&map[*a as usize], &map[*b as usize]) {
                         (Value::U64(a), Value::U64(b)) => map.push(Value::U64(*a ^ *b)),
