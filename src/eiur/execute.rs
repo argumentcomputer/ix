@@ -9,6 +9,15 @@ pub enum Value {
     Bool(bool),
 }
 
+impl Value {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Value::U64(x) => x.to_le_bytes().to_vec(),
+            Value::Bool(b) => vec![(*b) as u8],
+        }
+    }
+}
+
 /// `QueryResult` is an output of the particular function. The `TopLevel` may contain multiply
 /// functions, and for each one executed, it generates one `QueryResult` objects that contains
 /// output for a given function
@@ -21,7 +30,7 @@ pub struct QueryResult {
 /// `QueryRecord` is a collection of `QueryResult` objects that can be referenced by the input tuple
 /// used while invoking `TopLevel` execution algorithm
 pub struct QueryRecord {
-    pub queries: Vec<FxHashMap<Vec<Value>, QueryResult>>,
+    pub queries: Vec<FxHashMap<Vec<u8>, QueryResult>>,
     // pub queries_inv: FxHashMap<(FuncIdx, Vec<Value>), Vec<Value>>,
 }
 
@@ -32,12 +41,22 @@ impl QueryRecord {
         QueryRecord { queries }
     }
 
-    pub fn get(&self, func_idx: FuncIdx, input: &Vec<Value>) -> Option<&QueryResult> {
+    pub fn get_func_map(&self, func_idx: FuncIdx) -> &FxHashMap<Vec<u8>, QueryResult> {
+        &self.queries[func_idx.to_usize()]
+    }
+
+    pub fn get_from_u8(&self, func_idx: FuncIdx, input: &[u8]) -> Option<&QueryResult> {
         self.queries[func_idx.to_usize()].get(input)
     }
 
-    pub fn get_mut(&mut self, func_idx: FuncIdx, input: &Vec<Value>) -> Option<&mut QueryResult> {
-        self.queries[func_idx.to_usize()].get_mut(input)
+    pub fn get(&self, func_idx: FuncIdx, input: &[Value]) -> Option<&QueryResult> {
+        let bytes = input.iter().flat_map(|x| x.to_bytes()).collect::<Vec<_>>();
+        self.queries[func_idx.to_usize()].get(&bytes)
+    }
+
+    pub fn get_mut(&mut self, func_idx: FuncIdx, input: &[Value]) -> Option<&mut QueryResult> {
+        let bytes = input.iter().flat_map(|x| x.to_bytes()).collect::<Vec<_>>();
+        self.queries[func_idx.to_usize()].get_mut(&bytes)
     }
 
     pub fn insert(
@@ -46,7 +65,8 @@ impl QueryRecord {
         input: Vec<Value>,
         output: QueryResult,
     ) -> Option<QueryResult> {
-        self.queries[func_idx.to_usize()].insert(input, output)
+        let bytes = input.iter().flat_map(|x| x.to_bytes()).collect::<Vec<_>>();
+        self.queries[func_idx.to_usize()].insert(bytes, output)
     }
 }
 
@@ -125,7 +145,10 @@ impl Toplevel {
                     }
                 }
                 ExecEntry::Op(Op::Call(called_func_idx, args, _)) => {
-                    let args = args.iter().map(|ValIdx(v)| map[*v as usize]).collect();
+                    let args = args
+                        .iter()
+                        .map(|ValIdx(v)| map[*v as usize])
+                        .collect::<Vec<_>>();
                     // let query_input = (*called_func_idx, args);
                     if let Some(query_result) = record.get_mut(*called_func_idx, &args) {
                         query_result.multiplicity += 1;
@@ -403,7 +426,7 @@ mod tests {
                 values: vec![U64(o)],
                 multiplicity: 1,
             };
-            assert_eq!(record.get(FuncIdx(0), &vec![U64(i)]), Some(&query_result));
+            assert_eq!(record.get(FuncIdx(0), &[U64(i)]), Some(&query_result));
         }
     }
 }
