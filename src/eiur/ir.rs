@@ -11,10 +11,16 @@ pub struct Toplevel {
     pub functions: Vec<Function>,
 }
 
+impl Toplevel {
+    pub fn get_function(&self, f: FuncIdx) -> &Function {
+        &self.functions[f.to_usize()]
+    }
+}
+
 /// `Function` is an abstraction that expresses some finite computation
 pub struct Function {
-    pub num_inp: u32,
-    pub num_out: u32,
+    pub input_size: u32,
+    pub output_size: u32,
     pub body: Block,
 }
 
@@ -28,6 +34,12 @@ pub enum Prim {
 /// `TopLevel` execution algorithm
 #[derive(Clone, Copy)]
 pub struct ValIdx(pub u32);
+
+impl ValIdx {
+    pub fn to_usize(self) -> usize {
+        self.0 as usize
+    }
+}
 
 /// `FuncIdx` is a pointer to a function that needs to be executed by a `TopLevel` execution
 /// algorithm
@@ -54,7 +66,14 @@ pub enum Op {
 
 /// `SelIdx` serves as a selector of the particular code branch that is executed and
 /// requires constraining for the proving system
+#[derive(Clone, Copy)]
 pub struct SelIdx(pub u32);
+
+impl SelIdx {
+    pub fn to_usize(self) -> usize {
+        self.0 as usize
+    }
+}
 
 /// `Ctrl` expresses the control flows of the program
 pub enum Ctrl {

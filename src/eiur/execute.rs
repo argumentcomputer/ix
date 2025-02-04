@@ -132,7 +132,7 @@ impl Toplevel {
                         values: out.clone(),
                         multiplicity: 1,
                     };
-                    let num_inp = self.functions[func_idx.to_usize()].num_inp as usize;
+                    let num_inp = self.functions[func_idx.to_usize()].input_size as usize;
                     let args = map[..num_inp].to_vec();
                     record.queries.insert((func_idx, args), query_result);
 
@@ -204,8 +204,8 @@ mod tests {
         };
 
         Function {
-            num_inp: 1,
-            num_out: 1,
+            input_size: 1,
+            output_size: 1,
             body: main_block,
         }
     }
@@ -220,8 +220,8 @@ mod tests {
         };
 
         Function {
-            num_inp: 1,
-            num_out: 1,
+            input_size: 1,
+            output_size: 1,
             body: main_block,
         }
     }
@@ -237,8 +237,8 @@ mod tests {
         };
 
         Function {
-            num_inp: 1,
-            num_out: 1,
+            input_size: 1,
+            output_size: 1,
             body: main_block,
         }
     }
@@ -254,8 +254,8 @@ mod tests {
         };
 
         Function {
-            num_inp: 1,
-            num_out: 1,
+            input_size: 1,
+            output_size: 1,
             body: main_block,
         }
     }
@@ -270,8 +270,8 @@ mod tests {
         };
 
         Function {
-            num_inp: 1,
-            num_out: 1,
+            input_size: 1,
+            output_size: 1,
             body: main_block,
         }
     }
