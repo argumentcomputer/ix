@@ -1,4 +1,21 @@
 import Ix
+--import Ix.Cli.ProveCmd
+--import Ix.Cli.HashCmd
 
-def main (args : List String) : IO Unit :=
-  IO.println s!"Hello, {args}!"
+def VERSION : String :=
+  s!"{Lean.versionString}|0.0.1"
+
+def ixCmd : Cli.Cmd := `[Cli|
+  ix NOOP; [VERSION]
+  "A tool for generating content-addressed ZK proofs of Lean 4 code"
+
+  SUBCOMMANDS:
+    proveCmd;
+    hashCmd
+]
+
+def main (args : List String) : IO UInt32 :=
+  --if args.isEmpty then
+  --  ixCmd.printHelp
+  --else
+  ixCmd.validate args
