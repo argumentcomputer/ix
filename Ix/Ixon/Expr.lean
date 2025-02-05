@@ -16,7 +16,7 @@ inductive Expr where
   -- 0x3 #1.{u1, u2, u3}
   | rec_ (idx: UInt64) (lvls: List Univ) : Expr
   -- 0x4 (f x y z)
-  | apps (func: Expr) (args: List Expr) : Expr
+  | apps (func: Expr) (arg: Expr) (args: List Expr) : Expr
   -- 0x5 (λ A B C => body)
   | lams (types: List Expr) (body: Expr) : Expr
   -- 0x6 (∀ A B C -> body)
@@ -32,19 +32,48 @@ inductive Expr where
 -- array: 0xB
 -- const: 0xC
 
-def putExprTag (tag: UInt8) (val: UInt64) : PutM Unit :=
+def putExprTag (tag: UInt8) (val: UInt64) : PutM :=
   let t := UInt8.shiftLeft tag 4
   if val < 8
-  then putUInt8 (UInt8.lor t (Nat.toUInt8 (UInt64.toNat val))) *> pure ()
+  then putUInt8 (UInt8.lor t (UInt64.toUInt8 val)) *> pure ()
   else do
-    let _ ← putUInt8 (UInt8.lor (UInt8.lor t 0b1000) (byteCount val - 1))
-    let _ ← putTrimmedLE val
-    pure ()
+    putUInt8 (UInt8.lor (UInt8.lor t 0b1000) (byteCount val - 1))
+    putTrimmedLE val
 
-/- def putExpr : Expr -> PutM Unit -/
-/- | .vari i => putExprTag 0x0 i -/
-/- | .sort u => putExprTag 0x1 0 *> putUniv u -/
-/- | .cnst a lvls => putExprTag 0x2 (Nat.toUInt64 <| lvls.length) -/
-/- | _ => sorry -/
+partial def putExpr : Expr -> PutM
+| .vari i => putExprTag 0x0 i
+| .sort u => putExprTag 0x1 0 *> putUniv u
+| .cnst a lvls => do
+  putExprTag 0x2 (Nat.toUInt64 lvls.length)
+  putBytes a.adr *> List.forM lvls putUniv
+| .rec_ i lvls => do
+  putExprTag 0x3 (Nat.toUInt64 lvls.length)
+  putUInt64LE i *> List.forM lvls putUniv
+| .apps f a as => do
+  putExprTag 0x4 (Nat.toUInt64 as.length)
+  putExpr f *> putExpr a *> List.forM as putExpr
+| .lams ts b => do
+  putExprTag 0x5 (Nat.toUInt64 ts.length)
+  List.forM ts putExpr *> putExpr b
+| .alls ts b => do
+  putExprTag 0x6 (Nat.toUInt64 ts.length) *>
+  List.forM ts putExpr *> putExpr b
+| .let_ t d b => do
+  putExprTag 0x7 0
+  putExpr t *> putExpr d *> putExpr b
+| .proj n x => do
+  putExprTag 0x8 n
+  putExpr x
+| .strl l => do
+  let bytes := l.toUTF8
+  putExprTag 0x9 (UInt64.ofNat bytes.size)
+  putBytes bytes
+| .natl l => do
+  let bytes := natToBytesLE l
+  putExprTag 0xA (UInt64.ofNat bytes.size)
+  putBytes { data := bytes }
+
+
+
 
 end Ixon

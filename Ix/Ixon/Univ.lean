@@ -17,16 +17,15 @@ inductive Univ where
   | imax : Univ -> Univ -> Univ
   deriving Repr
 
-def putUnivTag (tag: UInt8) (val: UInt64) : PutM Unit :=
+def putUnivTag (tag: UInt8) (val: UInt64) : PutM :=
   let t := UInt8.shiftLeft tag 5
   if val < 16
   then putUInt8 (UInt8.lor t (Nat.toUInt8 (UInt64.toNat val))) *> pure ()
   else do
-    let _ ← putUInt8 (UInt8.lor (UInt8.lor t 0b10000) (byteCount val - 1))
-    let _ ← putTrimmedLE val
-    pure ()
+    putUInt8 (UInt8.lor (UInt8.lor t 0b10000) (byteCount val - 1))
+    putTrimmedLE val
 
-def putUniv : Univ -> PutM Unit
+def putUniv : Univ -> PutM
   | .const i => putUnivTag 0x0 i
   | .var i => putUnivTag 0x1 i
   | .add i x => putUnivTag 0x2 i *> putUniv x
