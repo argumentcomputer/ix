@@ -22,6 +22,14 @@ end Tests
 
 section FFI
 
+/- Build the static lib for the Rust crate -/
+extern_lib ix_rust pkg := do
+  proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
+  let name := nameToStaticLib "ix"
+  let srcPath := pkg.dir / "target" / "release" / name
+  return pure srcPath
+
+/- Build `ffi.o` -/
 target ffi.o pkg : FilePath := do
   let oFile := pkg.buildDir / "ffi.o"
   let srcJob ← inputTextFile "ffi.c"
@@ -29,15 +37,47 @@ target ffi.o pkg : FilePath := do
   let weakArgs := #["-I", includeDir.toString]
   buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
 
-extern_lib liblean_ffi pkg := do
+/- Build the static lib from `ffi.o` -/
+extern_lib ffi pkg := do
   let name := nameToStaticLib "ffi"
   let ffiO ← ffi.o.fetch
   buildStaticLib (pkg.nativeLibDir / name) #[ffiO]
 
-extern_lib rust_ffi pkg := do
-  proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
-  let name := nameToStaticLib "ix"
-  let srcPath := pkg.dir / "target" / "release" / name
-  return pure srcPath
-
 end FFI
+
+section Scripts
+
+open IO in
+script install := do
+  println! "Building ix"
+  let out ← Process.output { cmd := "lake", args := #["build", "ix"]}
+  if out.exitCode ≠ 0 then
+    eprintln out.stderr; return out.exitCode
+
+  -- Get the target directory for the ix binary
+  let binDir ← match ← getEnv "HOME" with
+    | some homeDir =>
+      let binDir : FilePath := homeDir / ".local" / "bin"
+      print s!"Target directory for the ix binary? (default={binDir}) "
+      let input := (← (← getStdin).getLine).trim
+      pure $ if input.isEmpty then binDir else ⟨input⟩
+    | none =>
+      print s!"Target directory for the ix binary? "
+      let input := (← (← getStdin).getLine).trim
+      if input.isEmpty then
+        eprintln "Target directory can't be empty."; return 1
+      pure ⟨input⟩
+
+  -- Copy the ix binary into the target directory
+  let tgtPath := binDir / "ix"
+  let srcBytes ← FS.readBinFile $ ".lake" / "build" / "bin" / "ix"
+  FS.writeBinFile tgtPath srcBytes
+
+  -- Set access rights for the newly created file
+  let fullAccess := { read := true, write := true, execution := true }
+  let noWriteAccess := { fullAccess with write := false }
+  let fileRight := { user := fullAccess, group := fullAccess, other := noWriteAccess }
+  setAccessRights tgtPath fileRight
+  return 0
+
+end Scripts
