@@ -14,8 +14,8 @@ def ixCmd : Cli.Cmd := `[Cli|
     hashCmd
 ]
 
-def main (args : List String) : IO UInt32 :=
-  --if args.isEmpty then
-  --  ixCmd.printHelp
-  --else
+def main (args : List String) : IO UInt32 := do
+  if args.isEmpty then
+    ixCmd.printHelp
+    return 0
   ixCmd.validate args
