@@ -13,6 +13,9 @@ lean_exe ix where
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "ca8e2803f89f0c12bf9743ae7abbfb2ea6b0eeec"
 
+require Cli from git
+  "https://github.com/leanprover/lean4-cli" @ "efa5aa20504b88e2826032ddaa606c7965ec9467"
+
 section Tests
 
 lean_exe Tests.Blake3
