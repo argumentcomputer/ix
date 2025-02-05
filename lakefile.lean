@@ -14,7 +14,7 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "ca8e2803f89f0c12bf9743ae7abbfb2ea6b0eeec"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "27f69ad2b2b88fb0844b1c17624576a3654a335e"
+  "https://github.com/leanprover/lean4-cli" @ "efa5aa20504b88e2826032ddaa606c7965ec9467"
 
 section Tests
 
