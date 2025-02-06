@@ -1,5 +1,6 @@
 import Ix.Cli.ProveCmd
 import Ix.Cli.HashCmd
+import Ix
 
 def VERSION : String :=
   s!"{Lean.versionString}|0.0.1"

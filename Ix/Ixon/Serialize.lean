@@ -24,7 +24,7 @@ def putUInt8 (x: UInt8) : PutM := StateT.modifyGet (fun s => ((), s.push x))
 
 def putUInt64LE (x: UInt64) : PutM := do
   List.forM (List.range 8) fun i =>
-    let b := UInt64.toUInt8 (UInt64.shiftRight x ((UInt64.ofNat i) * 8)) % 256
+    let b := UInt64.toUInt8 (UInt64.shiftRight x (i.toUInt64 * 8))
     putUInt8 b
   pure ()
 
