@@ -1,4 +1,3 @@
-import Lean.Declaration
 import Ix.Ixon.Serialize
 
 namespace Ixon
@@ -42,7 +41,7 @@ def getUniv : GetM Univ := do
   go (st.bytes.size - st.index)
   where
     go : Nat → GetM Univ
-    | 0 => throw "Out of fuel" 
+    | 0 => throw "Out of fuel"
     | Nat.succ f => do
       let tagByte ← getUInt8
       let tag := UInt8.shiftRight tagByte 5
