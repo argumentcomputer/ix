@@ -91,4 +91,9 @@ def fromTrimmedLE (xs: Array UInt8) : UInt64 := List.foldr step 0 xs.toList
 
 def putTrimmedLE (x: UInt64) : PutM := List.forM (trimmedLE x).toList putUInt8
 
+def putList {A: Type} (put : A -> PutM) (xs: List A) : PutM := List.forM xs put
+
+def getList {A: Type} (x: UInt64) (getm : GetM A) : GetM (List A) :=
+  (List.range x.toNat).mapM (fun _ => getm)
+
 end Ixon

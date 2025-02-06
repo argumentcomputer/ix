@@ -32,9 +32,9 @@ def putUniv : Univ -> PutM
   | .max x y => putUnivTag 0x3 0 *> putUniv x *> putUniv y
   | .imax x y => putUnivTag 0x4 0 *> putUniv x *> putUniv y
 
-def getUnivSize (isLarge: Bool) (smallSize: UInt8) : GetM UInt64 := do
-  if isLarge then (fromTrimmedLE ·.data) <$> getBytes (UInt8.toNat smallSize + 1)
-  else return Nat.toUInt64 (UInt8.toNat smallSize)
+def getUnivTag (isLarge: Bool) (small: UInt8) : GetM UInt64 := do
+  if isLarge then (fromTrimmedLE ·.data) <$> getBytes (UInt8.toNat small + 1)
+  else return Nat.toUInt64 (UInt8.toNat small)
 
 def getUniv : GetM Univ := do
   let st ← get
@@ -48,9 +48,9 @@ def getUniv : GetM Univ := do
       let smallSize := UInt8.land tagByte 0b1111
       let isLarge := UInt8.land tagByte 0b10000 != 0
       match tag with
-      | 0x0 => .const <$> getUnivSize isLarge smallSize
-      | 0x1 => .var <$> getUnivSize isLarge smallSize
-      | 0x2 => .add <$> getUnivSize isLarge smallSize <*> go f
+      | 0x0 => .const <$> getUnivTag isLarge smallSize
+      | 0x1 => .var <$> getUnivTag isLarge smallSize
+      | 0x2 => .add <$> getUnivTag isLarge smallSize <*> go f
       | 0x3 => .max <$> go f <*> go f
       | 0x4 => .imax <$> go f <*> go f
       | x => throw s!"Unknown Ixon Universe tag {x}"

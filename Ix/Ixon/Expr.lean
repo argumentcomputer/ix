@@ -45,19 +45,19 @@ partial def putExpr : Expr -> PutM
 | .sort u => putExprTag 0x1 0 *> putUniv u
 | .cnst a lvls => do
   putExprTag 0x2 (Nat.toUInt64 lvls.length)
-  putBytes a.adr *> List.forM lvls putUniv
+  putBytes a.adr *> putList putUniv lvls
 | .rec_ i lvls => do
   putExprTag 0x3 (Nat.toUInt64 lvls.length)
-  putUInt64LE i *> List.forM lvls putUniv
+  putUInt64LE i *> putList putUniv lvls
 | .apps f a as => do
   putExprTag 0x4 (Nat.toUInt64 as.length)
-  putExpr f *> putExpr a *> List.forM as putExpr
+  putExpr f *> putExpr a *> putList putExpr as
 | .lams ts b => do
   putExprTag 0x5 (Nat.toUInt64 ts.length)
-  List.forM ts putExpr *> putExpr b
+  putList putExpr ts *> putExpr b
 | .alls ts b => do
   putExprTag 0x6 (Nat.toUInt64 ts.length) *>
-  List.forM ts putExpr *> putExpr b
+  putList putExpr ts *> putExpr b
 | .let_ t d b => do
   putExprTag 0x7 0
   putExpr t *> putExpr d *> putExpr b
@@ -73,7 +73,53 @@ partial def putExpr : Expr -> PutM
   putExprTag 0xA (UInt64.ofNat bytes.size)
   putBytes { data := bytes }
 
+def getExprTag (isLarge: Bool) (small: UInt8) : GetM UInt64 := do
+  if isLarge then (fromTrimmedLE ·.data) <$> getBytes (UInt8.toNat small + 1)
+  else return Nat.toUInt64 (UInt8.toNat small)
 
-
+def getExpr : GetM Expr := do
+  let st ← get
+  go (st.bytes.size - st.index)
+  where
+    go : Nat → GetM Expr
+    | 0 => throw "Out of fuel"
+    | Nat.succ f => do
+      let tagByte ← getUInt8
+      let tag := UInt8.shiftRight tagByte 4
+      let small := UInt8.land tagByte 0b111
+      let isLarge := UInt8.land tagByte 0b1000 != 0
+      match tag with
+      | 0x0 => .vari <$> getExprTag isLarge small
+      | 0x1 => .sort <$> getUniv
+      | 0x2 => do
+        let n ← getExprTag isLarge small
+        .cnst <$> (Address.mk <$> getBytes 32) <*> getList n getUniv
+      | 0x3 => do
+        let n ← getExprTag isLarge small
+        .rec_ <$> getUInt64LE <*> getList n getUniv
+      | 0x4 => do
+        let n ← getExprTag isLarge small
+        .apps <$> go f <*> go f <*> getList n (go f)
+      | 0x5 => do
+        let n ← getExprTag isLarge small
+        .lams <$> getList n (go f) <*> go f
+      | 0x6 => do
+        let n ← getExprTag isLarge small
+        .alls <$> getList n (go f) <*> go f
+      | 0x7 => .let_ <$> go f <*> go f <*> go f
+      | 0x8 => do
+        let n ← getExprTag isLarge small
+        .proj n <$> go f
+      | 0x9 => do
+        let n ← getExprTag isLarge small
+        let bs ← getBytes n.toNat
+        match String.fromUTF8? bs with
+        | .some s => return .strl s
+        | .none => throw s!"invalid UTF8 bytes {bs}"
+      | 0xA => do
+        let n ← getExprTag isLarge small
+        let bs ← getBytes n.toNat
+        return .natl (natFromBytesLE bs.data)
+      | x => throw s!"Unknown Ixon Expr tag {x}"
 
 end Ixon
