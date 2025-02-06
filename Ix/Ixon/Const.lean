@@ -121,5 +121,4 @@ inductive Const where
   -- 0xCE
   | meta   : Metadata -> Const
 
-
 end Ixon
