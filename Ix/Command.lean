@@ -1,18 +1,16 @@
 import Lean
 import Ix.Address
 
-def computeIxAddress (_expr : Lean.Expr) (_constMap: Lean.ConstMap) : Address :=
-  default -- TODO
+open Lean Elab Command
 
-open Lean Elab Term Command Meta
+def computeIxAddress (_constName : Name) (_constMap: ConstMap) : Address :=
+  default
 
-/-- Compute the Ix `Address` of an expression and bind it to a name -/
-elab "#ix" "hash" stx:term "as" name:ident : command => do
-  let constMap := (← getEnv).constants
-  let expr ← liftTermElabM $ elabTerm stx none >>= instantiateExprMVars
-  let adr := computeIxAddress expr constMap
+/-- Compute the Ix `Address` of a Lean constant and bind it to a name -/
+elab "#ix" "hash" constName:ident "as" adrName:ident : command => do
+  let adr := computeIxAddress constName.getId (← getEnv).constants
   let decl := Declaration.defnDecl {
-    name        := name.getId
+    name        := adrName.getId
     levelParams := []
     type        := mkConst ``Address
     value       := toExpr adr
