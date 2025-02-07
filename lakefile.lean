@@ -9,6 +9,7 @@ lean_lib Ix
 @[default_target]
 lean_exe ix where
   root := `Main
+  extraDepTargets := #[`ffi, `ix_rust]
   moreLinkArgs := #[
       "-Wl,--start-group",
       FilePath.toString (".lake" / "build" / "lib" / nameToStaticLib "ffi"),
