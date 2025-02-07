@@ -9,6 +9,12 @@ lean_lib Ix
 @[default_target]
 lean_exe ix where
   root := `Main
+  moreLinkArgs := #[
+      "-Wl,--start-group",
+      FilePath.toString (".lake" / "build" / "lib" / nameToStaticLib "ffi"),
+      FilePath.toString ("target" / "release" / nameToStaticLib "ix"),
+      "-Wl,--end-group"
+    ]
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "ca8e2803f89f0c12bf9743ae7abbfb2ea6b0eeec"
@@ -25,13 +31,6 @@ end Tests
 
 section FFI
 
-/- Build the static lib for the Rust crate -/
-extern_lib ix_rust pkg := do
-  proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
-  let name := nameToStaticLib "ix"
-  let srcPath := pkg.dir / "target" / "release" / name
-  return pure srcPath
-
 /- Build `ffi.o` -/
 target ffi.o pkg : FilePath := do
   let oFile := pkg.buildDir / "ffi.o"
@@ -40,11 +39,19 @@ target ffi.o pkg : FilePath := do
   let weakArgs := #["-I", includeDir.toString]
   buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
 
+
 /- Build the static lib from `ffi.o` -/
-extern_lib ffi pkg := do
+target ffi pkg : FilePath := do
   let name := nameToStaticLib "ffi"
   let ffiO ← ffi.o.fetch
   buildStaticLib (pkg.nativeLibDir / name) #[ffiO]
+
+/- Build the static lib for the Rust crate -/
+target ix_rust pkg : FilePath := do
+  proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
+  let name := nameToStaticLib "ix"
+  let srcPath := pkg.dir / "target" / "release" / name
+  return pure srcPath
 
 end FFI
 
