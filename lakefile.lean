@@ -23,31 +23,18 @@ section Tests
 
 lean_exe Tests.Blake3
 lean_exe Tests.ByteArray
+lean_exe Tests.Rust
 
 end Tests
 
 section FFI
 
--- /- Build the static lib for the Rust crate -/
--- extern_lib ix_rust pkg := do
---   proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
---   let name := nameToStaticLib "ix"
---   let srcPath := pkg.dir / "target" / "release" / name
---   return pure srcPath
-
-/- Build `ffi.o` -/
-target ffi.o pkg : FilePath := do
-  let oFile := pkg.buildDir / "ffi.o"
-  let srcJob ← inputTextFile "ffi.c"
-  let includeDir ← getLeanIncludeDir
-  let weakArgs := #["-I", includeDir.toString]
-  buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
-
-/- Build the static lib from `ffi.o` -/
-extern_lib ffi pkg := do
-  let name := nameToStaticLib "ffi"
-  let ffiO ← ffi.o.fetch
-  buildStaticLib (pkg.nativeLibDir / name) #[ffiO]
+/- Build the static lib for the Rust crate -/
+extern_lib ix_rs pkg := do
+  proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
+  let name := nameToStaticLib "ix_rs"
+  let srcPath := pkg.dir / "target" / "release" / name
+  return pure srcPath
 
 end FFI
 
