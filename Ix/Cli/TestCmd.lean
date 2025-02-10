@@ -1,5 +1,5 @@
 import Cli
-import Ix.Blake3
+import Blake3
 
 /-- Convert a byte (UInt8) to a two‐digit hex string. -/
 def byteToHex (b : UInt8) : String :=
@@ -18,7 +18,7 @@ def runTest (p : Cli.Parsed) : IO UInt32 := do
   IO.println s!"Input: {input}"
   let inputBA : ByteArray := input.toUTF8
   IO.println s!"Input UTF8: {byteArrayToHex inputBA}"
-  let hashBA : ByteArray := ByteArray.blake3 inputBA
+  let hashBA : ByteArray := (Blake3.hash inputBA).val
   let hashHex : String := byteArrayToHex hashBA
   IO.println s!"Hash (hex): {hashHex}"
   return 0
