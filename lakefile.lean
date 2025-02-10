@@ -23,17 +23,18 @@ section Tests
 
 lean_exe Tests.Blake3
 lean_exe Tests.ByteArray
+lean_exe Tests.Rust
 
 end Tests
 
 section FFI
 
--- /- Build the static lib for the Rust crate -/
--- extern_lib ix_rust pkg := do
---   proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
---   let name := nameToStaticLib "ix"
---   let srcPath := pkg.dir / "target" / "release" / name
---   return pure srcPath
+/- Build the static lib for the Rust crate -/
+extern_lib ix_rs pkg := do
+  proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
+  let name := nameToStaticLib "ix_rs"
+  let srcPath := pkg.dir / "target" / "release" / name
+  return pure srcPath
 
 /- Build `ffi.o` -/
 target ffi.o pkg : FilePath := do
