@@ -24,5 +24,5 @@ extern "C" fn byte_array_zeros(len: usize) -> *const LeanSArrayObject {
 /// `@& ByteArray → @& ByteArray → Bool`
 #[no_mangle]
 extern "C" fn byte_array_beq(a: &LeanSArrayObject, b: &LeanSArrayObject) -> bool {
-    a.m_data.slice(a.m_size) == b.m_data.slice(b.m_size)
+    a.slice() == b.slice()
 }

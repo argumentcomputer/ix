@@ -24,6 +24,10 @@ pub struct LeanSArrayObject {
 }
 
 impl LeanSArrayObject {
+    pub fn slice(&self) -> &[u8] {
+        self.m_data.slice(self.m_size)
+    }
+
     pub fn from_slice(slice: &[u8]) -> *const Self {
         let len = slice.len();
         let layout = Layout::from_size_align(
