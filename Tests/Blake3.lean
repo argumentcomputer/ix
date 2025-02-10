@@ -1,5 +1,6 @@
 import LSpec
-import Ix.Blake3
+import Blake3
+import Ix.ByteArray
 
 def pairs : List $ (List UInt8 × List UInt8) := [
   ([0], [ 45,  58, 222, 223, 241,  27,  97, 241,
@@ -13,4 +14,4 @@ def main := lspecIO $
   pairs.foldl (init := .done) fun tSeq (i, o) =>
     let input := ByteArray.mk ⟨i⟩
     let output := ByteArray.mk ⟨o⟩
-    tSeq ++ (test s!"blake3 on {input}" $ input.blake3.data = output.data)
+    tSeq ++ (test s!"blake3 on {input}" $ (Blake3.hash input).val == output)

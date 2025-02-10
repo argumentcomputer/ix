@@ -13,6 +13,9 @@ lean_exe ix where
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "ca8e2803f89f0c12bf9743ae7abbfb2ea6b0eeec"
 
+require Blake3 from git
+  "https://github.com/argumentcomputer/Blake3.lean" @ "3eed804578f8b8a8cab122971d5b3bf04e729307"
+
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "efa5aa20504b88e2826032ddaa606c7965ec9467"
 
@@ -25,12 +28,12 @@ end Tests
 
 section FFI
 
-/- Build the static lib for the Rust crate -/
-extern_lib ix_rust pkg := do
-  proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
-  let name := nameToStaticLib "ix"
-  let srcPath := pkg.dir / "target" / "release" / name
-  return pure srcPath
+-- /- Build the static lib for the Rust crate -/
+-- extern_lib ix_rust pkg := do
+--   proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
+--   let name := nameToStaticLib "ix"
+--   let srcPath := pkg.dir / "target" / "release" / name
+--   return pure srcPath
 
 /- Build `ffi.o` -/
 target ffi.o pkg : FilePath := do
