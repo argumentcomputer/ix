@@ -36,20 +36,6 @@ extern_lib ix_rs pkg := do
   let srcPath := pkg.dir / "target" / "release" / name
   return pure srcPath
 
-/- Build `ffi.o` -/
-target ffi.o pkg : FilePath := do
-  let oFile := pkg.buildDir / "ffi.o"
-  let srcJob ← inputTextFile "ffi.c"
-  let includeDir ← getLeanIncludeDir
-  let weakArgs := #["-I", includeDir.toString]
-  buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
-
-/- Build the static lib from `ffi.o` -/
-extern_lib ffi pkg := do
-  let name := nameToStaticLib "ffi"
-  let ffiO ← ffi.o.fetch
-  buildStaticLib (pkg.nativeLibDir / name) #[ffiO]
-
 end FFI
 
 section Scripts

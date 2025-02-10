@@ -20,3 +20,9 @@ extern "C" fn byte_array_sum(o: &LeanSArrayObject) -> u8 {
 extern "C" fn byte_array_zeros(len: usize) -> *const LeanSArrayObject {
     LeanSArrayObject::from_slice(&vec![0; len])
 }
+
+/// `@& ByteArray → @& ByteArray → Bool`
+#[no_mangle]
+extern "C" fn byte_array_beq(a: &LeanSArrayObject, b: &LeanSArrayObject) -> bool {
+    a.m_data.slice(a.m_size) == b.m_data.slice(b.m_size)
+}
