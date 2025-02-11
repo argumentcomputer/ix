@@ -9,10 +9,7 @@ extern "C" fn add_u32s(a: u32, b: u32) -> u32 {
 /// `@& ByteArray → UInt8`
 #[no_mangle]
 extern "C" fn byte_array_sum(o: &LeanSArrayObject) -> u8 {
-    o.m_data
-        .slice(o.m_size)
-        .iter()
-        .fold(0, |acc, x| x.overflowing_add(acc).0)
+    o.data().iter().fold(0, |acc, x| x.overflowing_add(acc).0)
 }
 
 /// `USize → ByteArray`
@@ -24,5 +21,5 @@ extern "C" fn byte_array_zeros(len: usize) -> *const LeanSArrayObject {
 /// `@& ByteArray → @& ByteArray → Bool`
 #[no_mangle]
 extern "C" fn byte_array_beq(a: &LeanSArrayObject, b: &LeanSArrayObject) -> bool {
-    a.slice() == b.slice()
+    a.data() == b.data()
 }
