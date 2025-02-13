@@ -5,8 +5,8 @@ on:
     branches:
       - main
 jobs:
-  build:
-    name: Build
+  lspec:
+    name: LSpec Tests
     runs-on: ubuntu-latest
     steps:
       - name: install elan
@@ -18,3 +18,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: run LSpec binary
         run: lake exe lspec
+
+  lspec-nix:
+    name: LSpec Tests with Nix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      # Installs elan via Nix, then uses it to download Lean binary
+      - run: nix develop .#ci --command lake exe lspec
