@@ -27,6 +27,12 @@ lean_exe Tests.Rust
 
 end Tests
 
+section Apps
+
+lean_exe Apps.ZKVoting
+
+end Apps
+
 section FFI
 
 /-- Build the static lib for the Rust crate -/
