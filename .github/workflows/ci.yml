@@ -1,4 +1,4 @@
-name: CI Tests
+name: Tests
 
 on:
   push:
@@ -11,13 +11,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lean-build:
+  lean:
+    name: Lean Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: leanprover/lean-action@v1
+      - name: run LSpec binary
+        run: lake exe lspec
+
+  # Test Nix devShell support on Ubuntu
+  # TODO: Add a proper Nix build and test, e.g. with https://github.com/lenianiva/lean4-nix
+  nix:
+    name: Lean Tests with Nix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      # Installs `elan` and `lake` via Nix, which then downloads the Lean toolchain binary
+      # from https://github.com/leanprover/lean4/releases
+      - run: nix develop .#ci --command bash -c "lake build && lake exe lspec"
+
 
   rust-test:
+    name: Rust Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +49,7 @@ jobs:
         run: cargo nextest run --release --profile ci --workspace --run-ignored all
 
   rust-lint:
+    name: Rust Lints
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
