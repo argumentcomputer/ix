@@ -36,12 +36,27 @@ end Tests
 
 section FFI
 
-/- Build the static lib for the Rust crate -/
+/-- Build the static lib for the Rust crate -/
 extern_lib ix_rs pkg := do
   proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
-  let name := nameToStaticLib "ix_rs"
-  let srcPath := pkg.dir / "target" / "release" / name
-  return pure srcPath
+  let libName := nameToStaticLib "ix_rs"
+  let libPath := pkg.dir / "target" / "release" / libName
+
+  -- If the static lib has changed, remove cached binaries for recompilation
+  let libBytes ← IO.FS.readBinFile libPath
+  let libHash := toString $ hash libBytes
+  let libHashPath := pkg.nativeLibDir / (libName ++ ".hash")
+  let shouldCleanBinaries ←
+    if ← pkg.binDir.pathExists then
+      if ← libHashPath.pathExists then
+        let cachedHash ← IO.FS.readFile libHashPath
+        pure $ libHash != cachedHash -- Clean up in case of hash mismatch
+      else pure true -- No hash file
+    else pure false -- No files to remove
+  if shouldCleanBinaries then IO.FS.removeDirAll pkg.binDir
+  IO.FS.writeFile libHashPath libHash
+
+  return pure libPath
 
 end FFI
 

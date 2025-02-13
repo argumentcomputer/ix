@@ -24,7 +24,8 @@ pub struct LeanSArrayObject {
 }
 
 impl LeanSArrayObject {
-    pub fn slice(&self) -> &[u8] {
+    #[inline]
+    pub fn data(&self) -> &[u8] {
         self.m_data.slice(self.m_size)
     }
 
@@ -34,7 +35,7 @@ impl LeanSArrayObject {
             size_of::<LeanSArrayObject>() + len,
             align_of::<LeanSArrayObject>(),
         )
-        .unwrap();
+        .expect("Couldn't compute the memory layout");
 
         let ptr = unsafe { alloc(layout) as *mut LeanSArrayObject };
         if ptr.is_null() {
