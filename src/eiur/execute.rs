@@ -124,7 +124,7 @@ impl Toplevel {
                         _ => panic!(),
                     }
                 }
-                ExecEntry::Op(Op::Call(called_func_idx, args)) => {
+                ExecEntry::Op(Op::Call(called_func_idx, args, _)) => {
                     let args = args.iter().map(|ValIdx(v)| map[*v as usize]).collect();
                     // let query_input = (*called_func_idx, args);
                     if let Some(query_result) = record.get_mut(*called_func_idx, &args) {
@@ -211,20 +211,23 @@ mod tests {
         let true_block = Block {
             ops: vec![
                 Op::Sub(inp_val_idx, one_val_idx),
-                Op::Call(FuncIdx(0), vec![pre_val_idx]),
+                Op::Call(FuncIdx(0), vec![pre_val_idx], 1),
                 Op::Mul(inp_val_idx, rec_val_idx),
             ],
             ctrl: Box::new(Ctrl::Return(SelIdx(0), vec![res_val_idx])), // Recursive return
+            return_idents: vec![SelIdx(0)],
         };
 
         let false_block = Block {
             ops: vec![],
             ctrl: Box::new(Ctrl::Return(SelIdx(1), vec![one_val_idx])),
+            return_idents: vec![SelIdx(1)],
         };
 
         let main_block = Block {
             ops: vec![Op::Prim(Prim::U64(1))],
             ctrl: Box::new(Ctrl::If(inp_val_idx, true_block, false_block)),
+            return_idents: vec![SelIdx(0), SelIdx(1)],
         };
 
         Function {
@@ -241,6 +244,7 @@ mod tests {
         let main_block = Block {
             ops: vec![Op::Mul(input, input)],
             ctrl: Box::new(Ctrl::Return(SelIdx(0), vec![output])),
+            return_idents: vec![SelIdx(0)],
         };
 
         Function {
@@ -258,6 +262,7 @@ mod tests {
         let main_block = Block {
             ops: vec![Op::Mul(input, input), Op::Mul(tmp, input)],
             ctrl: Box::new(Ctrl::Return(SelIdx(0), vec![output])),
+            return_idents: vec![SelIdx(0)],
         };
 
         Function {
@@ -275,6 +280,7 @@ mod tests {
         let main_block = Block {
             ops: vec![Op::Prim(Prim::U64(2)), Op::Mul(input, two)],
             ctrl: Box::new(Ctrl::Return(SelIdx(0), vec![output])),
+            return_idents: vec![SelIdx(0)],
         };
 
         Function {
@@ -291,6 +297,7 @@ mod tests {
         let main_block = Block {
             ops: vec![Op::Add(input, input)],
             ctrl: Box::new(Ctrl::Return(SelIdx(0), vec![output])),
+            return_idents: vec![SelIdx(0)],
         };
 
         Function {

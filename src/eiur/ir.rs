@@ -25,9 +25,19 @@ pub struct Function {
 }
 
 /// `Prim` defines primitive data types currently supported by Eiur-rs language
+#[derive(Clone, Copy)]
 pub enum Prim {
     U64(u64),
     Bool(bool),
+}
+
+impl Prim {
+    pub fn to_u64(self) -> u64 {
+        match self {
+            Prim::U64(a) => a,
+            Prim::Bool(a) => a as u64,
+        }
+    }
 }
 
 /// `ValIdx` is a pointer to a particular value stored in the inner stack of the
@@ -61,7 +71,8 @@ pub enum Op {
     And(ValIdx, ValIdx),
     Lt(ValIdx, ValIdx),
     Xor(ValIdx, ValIdx),
-    Call(FuncIdx, Vec<ValIdx>),
+    /// A call operation takes 3 elements, function index, arguments, and output size
+    Call(FuncIdx, Vec<ValIdx>, u32),
 }
 
 /// `SelIdx` serves as a selector of the particular code branch that is executed and
@@ -86,4 +97,5 @@ pub enum Ctrl {
 pub struct Block {
     pub ops: Vec<Op>,
     pub ctrl: Box<Ctrl>,
+    pub return_idents: Vec<SelIdx>,
 }
