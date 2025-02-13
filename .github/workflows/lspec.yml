@@ -19,11 +19,13 @@ jobs:
       - name: run LSpec binary
         run: lake exe lspec
 
+  # Test Nix devShell support on Ubuntu. Long-term we intend to add a proper Nix build and test
   lspec-nix:
     name: LSpec Tests with Nix
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
-      # Installs elan via Nix, then uses it to download Lean binary
-      - run: nix develop .#ci --command lake exe lspec
+      # Installs `elan` and `lake` via Nix, which then downloads the Lean toolchain binary
+      # from https://github.com/leanprover/lean4/releases
+      - run: nix develop .#ci --command bash -c "lake build && lake exe lspec"
