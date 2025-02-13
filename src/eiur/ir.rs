@@ -11,16 +11,23 @@ pub struct Toplevel {
     pub functions: Vec<Function>,
 }
 
+impl Toplevel {
+    pub fn get_function(&self, f: FuncIdx) -> &Function {
+        &self.functions[f.to_usize()]
+    }
+}
+
 /// `Function` is an abstraction that expresses some finite computation
 pub struct Function {
-    pub num_inp: u32,
-    pub num_out: u32,
+    pub input_size: u32,
+    pub output_size: u32,
     pub body: Block,
 }
 
 /// `Prim` defines primitive data types currently supported by Eiur-rs language
+#[derive(Clone, Copy)]
 pub enum Prim {
-    U32(u32),
+    U64(u64),
     Bool(bool),
 }
 
@@ -28,6 +35,12 @@ pub enum Prim {
 /// `TopLevel` execution algorithm
 #[derive(Clone, Copy)]
 pub struct ValIdx(pub u32);
+
+impl ValIdx {
+    pub fn to_usize(self) -> usize {
+        self.0 as usize
+    }
+}
 
 /// `FuncIdx` is a pointer to a function that needs to be executed by a `TopLevel` execution
 /// algorithm
@@ -47,13 +60,22 @@ pub enum Op {
     Sub(ValIdx, ValIdx),
     Mul(ValIdx, ValIdx),
     And(ValIdx, ValIdx),
+    Lt(ValIdx, ValIdx),
     Xor(ValIdx, ValIdx),
-    Call(FuncIdx, Vec<ValIdx>),
+    /// A call operation takes 3 elements, function index, arguments, and output size
+    Call(FuncIdx, Vec<ValIdx>, u32),
 }
 
 /// `SelIdx` serves as a selector of the particular code branch that is executed and
 /// requires constraining for the proving system
+#[derive(Clone, Copy)]
 pub struct SelIdx(pub u32);
+
+impl SelIdx {
+    pub fn to_usize(self) -> usize {
+        self.0 as usize
+    }
+}
 
 /// `Ctrl` expresses the control flows of the program
 pub enum Ctrl {
@@ -66,4 +88,5 @@ pub enum Ctrl {
 pub struct Block {
     pub ops: Vec<Op>,
     pub ctrl: Box<Ctrl>,
+    pub return_idents: Vec<SelIdx>,
 }
