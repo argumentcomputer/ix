@@ -55,6 +55,16 @@
           ];
         };
 
+        commonPkgs = with pkgs; [
+          ocl-icd
+          libblake3
+          pkg-config
+          openssl
+          overlayedPkgs.gcc
+          overlayedPkgs.clang
+          rustToolchain
+        ];
+
         #ffiLib = pkgs.stdenv.mkDerivation {
         #  name = "ffi-lib";
         #  src = ./ffi.c;
@@ -83,29 +93,15 @@
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
-          packages = [
+          packages = commonPkgs ++ [
             overlayedPkgs.lean.lean         # Lean compiler
             overlayedPkgs.lean.lean-all     # Includes Lake, stdlib, etc.
-            pkgs.libblake3
-            pkgs.pkg-config
-            pkgs.openssl
-            overlayedPkgs.gcc
-            pkgs.ocl-icd
-            overlayedPkgs.clang
-
-            rustToolchain
             pkgs.rust-analyzer
           ];
         };
         devShells.ci = pkgs.mkShell {
-          packages = with pkgs; [
+          packages = with pkgs; commonPkgs ++ [
             elan
-            libblake3
-            pkg-config
-            overlayedPkgs.gcc
-            ocl-icd
-            clang
-            rustToolchain
           ];
         };
       };
