@@ -156,6 +156,12 @@ license-files = [
   { path = "../../LICENSE.txt", hash = 0 }
 ]
 [[licenses.clarify]]
+crate = "binius_maybe_rayon"
+expression = "Apache-2.0"
+license-files = [
+  { path = "../../LICENSE.txt", hash = 0 }
+]
+[[licenses.clarify]]
 crate = "binius_ntt"
 expression = "Apache-2.0"
 license-files = [
