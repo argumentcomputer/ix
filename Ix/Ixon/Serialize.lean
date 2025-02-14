@@ -1,8 +1,9 @@
 namespace Ixon
 
-class Serialize (A: Type) where
-  put : A -> ByteArray
-  get : ByteArray -> Except String A
+-- TODO: move to `Ix`
+class Serialize (α : Type) where
+  put : α → ByteArray
+  get : ByteArray → Except String α
 
 abbrev PutM A := StateM ByteArray A
 
@@ -53,7 +54,7 @@ def byteCount (x: UInt64) : UInt8 :=
 def trimmedLE (x: UInt64) : Array UInt8 :=
   if x == 0 then Array.mkArray1 0 else List.toArray (go 8 x)
   where
-    go : Nat -> UInt64 -> List UInt8
+    go : Nat → UInt64 → List UInt8
     | _, 0 => []
     | 0, _ => []
     | Nat.succ f, x =>
@@ -64,7 +65,7 @@ def fromTrimmedLE (xs: Array UInt8) : UInt64 := List.foldr step 0 xs.toList
     step byte acc := UInt64.shiftLeft acc 8 + Nat.toUInt64 (UInt8.toNat byte)
 
 def putTrimmedLE (x: UInt64) : PutM UInt64 := do
-  let _ <- List.mapM putUInt8 (trimmedLE x).toList
+  let _ ← List.mapM putUInt8 (trimmedLE x).toList
   pure x
 
 end Ixon
