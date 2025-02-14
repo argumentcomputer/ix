@@ -27,11 +27,14 @@ lean_exe Tests.Rust
 
 end Tests
 
-section Apps
+section IxApplications
 
-lean_exe Apps.ZKVoting
+lean_lib Apps
 
-end Apps
+lean_exe Apps.ZKVoting.Prover
+lean_exe Apps.ZKVoting.Verifier
+
+end IxApplications
 
 section FFI
 
