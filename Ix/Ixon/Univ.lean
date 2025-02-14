@@ -14,7 +14,7 @@ inductive Univ where
   | max : Univ -> Univ -> Univ
   -- 0x4 (imax x y)
   | imax : Univ -> Univ -> Univ
-  deriving Repr
+  deriving Repr, Inhabited, BEq
 
 def putUnivTag (tag: UInt8) (val: UInt64) : PutM :=
   let t := UInt8.shiftLeft tag 5
@@ -53,5 +53,9 @@ def getUniv : GetM Univ := do
       | 0x3 => .max <$> go f <*> go f
       | 0x4 => .imax <$> go f <*> go f
       | x => throw s!"Unknown Ixon Universe tag {x}"
+
+instance : Serialize Univ where
+  put := runPut ∘ putUniv
+  get := runGet getUniv
 
 end Ixon

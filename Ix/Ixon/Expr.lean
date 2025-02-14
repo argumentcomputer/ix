@@ -28,6 +28,7 @@ inductive Expr where
   | strl (lit: String) : Expr
   -- 0xA 0xdead_beef
   | natl (lit: Nat): Expr
+  deriving Inhabited, Repr, BEq
 -- array: 0xB
 -- const: 0xC
 
@@ -120,5 +121,9 @@ def getExpr : GetM Expr := do
         let bs ← getBytes n.toNat
         return .natl (natFromBytesLE bs.data)
       | x => throw s!"Unknown Ixon Expr tag {x}"
+
+instance : Serialize Expr where
+  put := runPut ∘ putExpr
+  get := runGet getExpr
 
 end Ixon

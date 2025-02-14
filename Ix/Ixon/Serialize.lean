@@ -24,7 +24,7 @@ def putUInt8 (x: UInt8) : PutM := StateT.modifyGet (fun s => ((), s.push x))
 
 def putUInt64LE (x: UInt64) : PutM := do
   List.forM (List.range 8) fun i =>
-    let b := UInt64.toUInt8 (UInt64.shiftRight x (i.toUInt64 * 8))
+    let b := UInt64.toUInt8 (x >>> (i.toUInt64 * 8))
     putUInt8 b
   pure ()
 
@@ -44,7 +44,7 @@ def getUInt64LE : GetM UInt64 := do
   let mut x : UInt64 := 0
   for i in List.range 8 do
     let b ← getUInt8
-    x := x + UInt64.shiftLeft (UInt8.toUInt64 b) ((UInt64.ofNat i) * 8)
+    x := x + (UInt8.toUInt64 b) <<< ((UInt64.ofNat i) * 8)
   pure x
 
 def getBytes (len: Nat) : GetM ByteArray := do
@@ -87,7 +87,7 @@ def natFromBytesLE (xs: Array UInt8) : Nat :=
 
 def fromTrimmedLE (xs: Array UInt8) : UInt64 := List.foldr step 0 xs.toList
   where
-    step byte acc := UInt64.shiftLeft acc 8 + Nat.toUInt64 (UInt8.toNat byte)
+    step byte acc := UInt64.shiftLeft acc 8 + (UInt8.toUInt64 byte)
 
 def putTrimmedLE (x: UInt64) : PutM := List.forM (trimmedLE x).toList putUInt8
 
@@ -95,5 +95,27 @@ def putList {A: Type} (put : A -> PutM) (xs: List A) : PutM := List.forM xs put
 
 def getList {A: Type} (x: UInt64) (getm : GetM A) : GetM (List A) :=
   (List.range x.toNat).mapM (fun _ => getm)
+
+def putBool : Bool → PutM
+| .false => putUInt8 0
+| .true => putUInt8 1
+
+def getBool : GetM Bool := do
+  match (← getUInt8) with
+  | 0 => return .false
+  | 1 => return .true
+  | e => throw s!"expected Bool encoding between 0 and 1, got {e}"
+
+def packBools (bools : List Bool) : UInt8 :=
+  List.foldl (λ acc (i, b) => 
+    acc ||| (if b then 1 <<< UInt8.ofNat i else 0)) 0 (bools.take 8).enum
+
+def unpackBools (n: Nat) (b: UInt8) : List Bool :=
+  ((List.range 8).map (λ i => (b &&& (1 <<< UInt8.ofNat i)) != 0)).take n
+
+def putBools: List Bool → PutM := putUInt8 ∘ packBools
+def getBools (n: Nat): GetM (List Bool) := unpackBools n <$> getUInt8
+
+
 
 end Ixon
