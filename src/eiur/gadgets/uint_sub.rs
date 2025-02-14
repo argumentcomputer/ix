@@ -1,10 +1,7 @@
 use anyhow::Result;
 use binius_circuits::builder::{witness::Builder, ConstraintSystemBuilder};
 use binius_core::oracle::OracleId;
-use binius_field::{
-    as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b as B1, TowerField,
-};
-use bytemuck::Pod;
+use binius_field::BinaryField1b as B1;
 use rayon::prelude::*;
 
 use super::{
@@ -32,8 +29,8 @@ impl Gadget for UIntSub {
     type VirtualOracles = UIntSubVirtual;
     type Config = UIntType;
 
-    fn constrain<F: TowerField, U: UnderlierType + PackScalar<F>>(
-        builder: &mut ConstraintSystemBuilder<U, F>,
+    fn constrain(
+        builder: &mut ConstraintSystemBuilder,
         name: impl ToString,
         input: UIntSubInput,
         enabled: OracleId,
@@ -60,8 +57,8 @@ impl Gadget for UIntSub {
 
     /// Populates new columns for `xout`, `cout` and `cin` based on the values
     /// from `zin` and `yin`.
-    fn generate_witness<F: TowerField, U: PackScalar<F> + PackScalar<B1> + Pod>(
-        builder: &mut Builder<U, F>,
+    fn generate_witness(
+        builder: &mut Builder,
         input: UIntSubInput,
         vrtual: UIntSubVirtual,
         config: UIntType,
@@ -105,9 +102,7 @@ impl Gadget for UIntSub {
 mod tests {
     use binius_circuits::builder::{witness::Builder, ConstraintSystemBuilder};
     use binius_core::constraint_system::validate::validate_witness;
-    use binius_field::{
-        arch::OptimalUnderlier, underlier::SmallU, BinaryField128b, BinaryField1b as B1, TowerField,
-    };
+    use binius_field::{underlier::SmallU, BinaryField1b as B1, TowerField};
     use bumpalo::Bump;
     use proptest::{collection::vec, prelude::*};
 
@@ -130,7 +125,7 @@ mod tests {
                     vec1 in vec(any::<$t>(), LEN),
                     vec2 in vec(any::<$t>(), LEN),
                 )| {
-                    let mut csb = ConstraintSystemBuilder::<OptimalUnderlier, BinaryField128b>::new();
+                    let mut csb = ConstraintSystemBuilder::new();
                     let zin = csb.add_committed("zin", N_VARS, B1::TOWER_LEVEL);
                     let yin = csb.add_committed("yin", N_VARS, B1::TOWER_LEVEL);
                     let cout = csb.add_committed("cout", N_VARS, B1::TOWER_LEVEL);
@@ -143,7 +138,7 @@ mod tests {
                     let cs = csb.build().unwrap();
 
                     let allocator = Bump::new();
-                    let mut wb: Builder<OptimalUnderlier, _> = witness_builder(&allocator, &cs);
+                    let mut wb: Builder = witness_builder(&allocator, &cs);
 
                     wb.new_column::<B1>(zin).as_mut_slice().copy_from_slice(&vec1);
                     wb.new_column::<B1>(yin).as_mut_slice().copy_from_slice(&vec2);
