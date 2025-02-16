@@ -3,9 +3,9 @@ import Apps.ZKVoting.ProverInit
 import Apps.ZKVoting.Common
 
 partial def collectVotes : IO $ List Vote :=
-  gatherVotesLoop [] initSecret (0 : UInt64)
+  collectVotesLoop [] initSecret (0 : UInt64)
 where
-  gatherVotesLoop votes secret count := do
+  collectVotesLoop votes secret count := do
     let input := (← (← IO.getStdin).getLine).trim
     let voteAbe ← commitIO secret Candidate.abe
     let voteBam ← commitIO secret Candidate.bam
@@ -19,18 +19,17 @@ where
       | _ => return votes
     let secret' := (← commitIO secret count).adr
     IO.println vote
-    gatherVotesLoop (vote :: votes) secret' (count + 1)
+    collectVotesLoop (vote :: votes) secret' (count + 1)
 
 structure VoteCounts where
   abe : UInt64
   bam : UInt64
   cot : UInt64
 
-def VoteCounts.new : VoteCounts :=
-  ⟨0, 0, 0⟩
-
-def countVotes (votes : List Vote) : VoteCounts :=
-  votes.foldl (init := .new) fun counts vote =>
+def countVotes : List Vote → VoteCounts
+  | [] => ⟨0, 0, 0⟩
+  | vote :: votes =>
+    let counts := countVotes votes
     match (reveal vote : Candidate) with
     | .abe => { counts with abe := counts.abe + 1 }
     | .bam => { counts with bam := counts.bam + 1 }
