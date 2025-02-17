@@ -1,8 +1,9 @@
 namespace Ixon
 
-class Serialize (A: Type) where
-  put : A -> ByteArray
-  get : ByteArray -> Except String A
+-- TODO: move to `Ix`
+class Serialize (α : Type) where
+  put : α → ByteArray
+  get : ByteArray → Except String α
 
 abbrev PutM := StateM ByteArray Unit
 
@@ -68,7 +69,7 @@ def byteCount (x: UInt64) : UInt8 :=
 def trimmedLE (x: UInt64) : Array UInt8 :=
   if x == 0 then Array.mkArray1 0 else List.toArray (go 8 x)
   where
-    go : Nat -> UInt64 -> List UInt8
+    go : Nat → UInt64 → List UInt8
     | _, 0 => []
     | 0, _ => []
     | Nat.succ f, x =>
@@ -115,7 +116,5 @@ def unpackBools (n: Nat) (b: UInt8) : List Bool :=
 
 def putBools: List Bool → PutM := putUInt8 ∘ packBools
 def getBools (n: Nat): GetM (List Bool) := unpackBools n <$> getUInt8
-
-
 
 end Ixon

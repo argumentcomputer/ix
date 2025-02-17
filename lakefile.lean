@@ -34,6 +34,15 @@ lean_exe Tests.Rust
 
 end Tests
 
+section IxApplications
+
+lean_lib Apps
+
+lean_exe Apps.ZKVoting.Prover
+lean_exe Apps.ZKVoting.Verifier
+
+end IxApplications
+
 section FFI
 
 /-- Build the static lib for the Rust crate -/
@@ -93,6 +102,21 @@ script install := do
   let noWriteAccess := { fullAccess with write := false }
   let fileRight := { user := fullAccess, group := fullAccess, other := noWriteAccess }
   setAccessRights tgtPath fileRight
+  return 0
+
+script check_lean_h_hash := do
+  let cachedLeanHHash ← IO.FS.readFile $ ".github" / "lean.h.hash"
+
+  let leanIncludeDir ← getLeanIncludeDir
+  let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"
+  let includedLeanHBytes ← IO.FS.readBinFile includedLeanHPath
+  let includedLeanHHash := toString includedLeanHBytes.hash
+
+  if cachedLeanHHash ≠ includedLeanHHash then
+    IO.eprintln   "Mismatching lean/lean.h hash"
+    IO.eprintln   "  1. Double-check changes made to lean/lean.h"
+    IO.eprintln s!"  2. Cache {includedLeanHHash} instead"
+    return 1
   return 0
 
 end Scripts

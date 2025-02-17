@@ -2,8 +2,17 @@ import Lean
 import Ix.ByteArray
 
 structure Address where
-  adr : ByteArray
-  deriving Inhabited, BEq
+  hash : ByteArray
+  deriving Inhabited
+
+instance : ToString Address where
+  toString adr := toString adr.hash -- TODO
+
+def Address.ofChars (_adrChars : List Char) : Option Address :=
+  some default -- TODO
+
+def Address.ofString (adrStr: String) : Option Address :=
+  Address.ofChars adrStr.data
 
 open Lean
 
@@ -12,7 +21,7 @@ instance : ToExpr ByteArray where
   toTypeExpr := mkConst ``ByteArray
 
 instance : ToExpr Address where
-  toExpr x   := mkApp (mkConst ``Address.mk) (toExpr x.adr)
+  toExpr x   := mkApp (mkConst ``Address.mk) (toExpr x.hash)
   toTypeExpr := mkConst ``Address
 
 /-- Convert a byte (UInt8) to a two‐digit hex string. -/
@@ -28,5 +37,5 @@ def byteArrayToHex (ba : ByteArray) : String :=
   (ba.toList.map byteToHex).foldl (· ++ ·) ""
 
 instance : Repr Address where
-  reprPrec a _ := "#" ++ String.toFormat (byteArrayToHex a.adr)
+  reprPrec a _ := "#" ++ String.toFormat (byteArrayToHex a.hash)
 
