@@ -1,4 +1,8 @@
+//! Front-facing API consumed by Lean.
+
 use super::sarray::LeanSArrayObject;
+
+// START Tests.Rust
 
 /// `UInt32 → UInt32 → UInt32`
 #[no_mangle]
@@ -18,8 +22,14 @@ extern "C" fn byte_array_zeros(len: usize) -> *const LeanSArrayObject {
     LeanSArrayObject::from_slice(&vec![0; len])
 }
 
+// END Tests.Rust
+
+// START Ix.ByteArray
+
 /// `@& ByteArray → @& ByteArray → Bool`
 #[no_mangle]
 extern "C" fn byte_array_beq(a: &LeanSArrayObject, b: &LeanSArrayObject) -> bool {
     a.data() == b.data()
 }
+
+// END Ix.ByteArray
