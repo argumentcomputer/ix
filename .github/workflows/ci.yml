@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: leanprover/lean-action@v1
+      - name: Check lean.h.hash
+        run: lake run check_lean_h_hash
 
   rust-test:
     runs-on: ubuntu-latest
