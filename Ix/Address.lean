@@ -1,5 +1,6 @@
 import Lean
 import Ix.ByteArray
+import Blake3
 
 structure Address where
   hash : ByteArray
@@ -13,6 +14,8 @@ def Address.ofChars (_adrChars : List Char) : Option Address :=
 
 def Address.ofString (adrStr: String) : Option Address :=
   Address.ofChars adrStr.data
+
+def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.hash x).val⟩
 
 open Lean
 

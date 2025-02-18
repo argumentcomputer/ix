@@ -5,30 +5,51 @@ import Ix.Ixon.Expr
 
 namespace Ixon
 
+instance : BEq Lean.QuotKind where
+  beq a b := match (a, b) with
+  | (.type,.type) => .true
+  | (.ctor,.ctor) => .true
+  | (.lift,.lift) => .true
+  | (.ind,.ind) => .true
+  | _ => .false
+
+instance : Repr Lean.QuotKind where
+  reprPrec a _ := match a with
+  | .type => String.toFormat "QuotKind.type"
+  | .ctor => String.toFormat "QuotKind.ctor"
+  | .lift => String.toFormat "QuotKind.lift"
+  | .ind => String.toFormat "QuotKind.ind"
+
 structure Quotient where
   lvls : Nat
   type : Expr
   kind : Lean.QuotKind
+  deriving BEq, Repr
+
 
 structure Axiom where
   lvls  : Nat
   type  : Expr
+  deriving BEq, Repr
 
 structure Theorem where
   lvls  : Nat
   type  : Expr
   value : Expr
+  deriving BEq, Repr
 
 structure Opaque where
   lvls  : Nat
   type  : Expr
   value : Expr
+  deriving BEq, Repr
 
 structure Definition where
   lvls  : Nat
   type  : Expr
   value : Expr
   part  : Bool
+  deriving BEq, Repr
 
 structure Constructor where
   lvls   : Nat
@@ -36,10 +57,12 @@ structure Constructor where
   idx    : Nat
   params : Nat
   fields : Nat
+  deriving BEq, Repr
 
 structure RecursorRule where
   fields : Nat
   rhs    : Expr
+  deriving BEq, Repr
 
 structure Recursor where
   lvls     : Nat
@@ -51,6 +74,7 @@ structure Recursor where
   rules    : List RecursorRule
   isK      : Bool
   internal : Bool
+  deriving BEq, Repr
 
 structure Inductive where
   lvls    : Nat
@@ -63,31 +87,38 @@ structure Inductive where
   refl    : Bool
   struct  : Bool
   unit    : Bool
+  deriving BEq, Repr
 
 structure InductiveProj where
   block : Address
   idx   : Nat
+  deriving BEq, Repr
 
 structure ConstructorProj where
   block : Address
   idx   : Nat
   cidx  : Nat
+  deriving BEq, Repr
 
 structure RecursorProj where
   block : Address
   idx   : Nat
   ridx  : Nat
+  deriving BEq, Repr
 
 structure DefinitionProj where
   block : Address
   idx   : Nat
+  deriving BEq, Repr
 
 structure MetaNode where
   name : Option Lean.Name
   link : Option Address
+  deriving BEq, Repr
 
 structure Metadata where
   meta: List MetaNode
+  deriving BEq, Repr
 
 inductive Const where
   -- 0xC0
@@ -120,6 +151,7 @@ inductive Const where
   | mutInd : List Inductive -> Const
   -- 0xCE
   | meta   : Metadata -> Const
+  deriving BEq, Repr
 
 def putNatl (x: Nat) : PutM := putExpr (.natl x)
 def getNatl : GetM Nat := do
@@ -282,5 +314,8 @@ def getConst : GetM Const := do
       | [w, x, y, z] => return f w x y z
       | _ => throw s!"unreachable"
 
+instance : Serialize Const where
+  put := runPut ∘ putConst
+  get := runGet getConst
 
 end Ixon
