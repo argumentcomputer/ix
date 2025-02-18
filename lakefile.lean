@@ -60,6 +60,26 @@ extern_lib ix_rs pkg := do
 
   return pure libPath
 
+target ffi.o pkg : FilePath := do
+  let oFile := pkg.buildDir / "c" / "ffi.o"
+  let cDir := pkg.dir / "c"
+  let srcJob ← inputTextFile <| cDir / "ffi.c"
+  let weakArgs := #["-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
+  buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
+
+def ffi.o' (pkg : Package) : SpawnM $ Job FilePath := do
+  let oFile := pkg.buildDir / "c" / "ffi.o"
+  let cDir := pkg.dir / "c"
+  let srcJob ← inputTextFile <| cDir / "ffi.c"
+  let weakArgs := #["-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
+  buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
+
+extern_lib ix_c pkg := do
+  let ffiO ← ffi.o.fetch
+  -- let ffiO ← ffi.o' pkg -- TODO: test this
+  let name := nameToStaticLib "ix_c"
+  buildStaticLib (pkg.nativeLibDir / name) #[ffiO]
+
 end FFI
 
 section Scripts
