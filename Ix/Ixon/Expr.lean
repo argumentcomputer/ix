@@ -45,7 +45,7 @@ partial def putExpr : Expr -> PutM
 | .sort u => putExprTag 0x1 0 *> putUniv u
 | .cnst a lvls => do
   putExprTag 0x2 (Nat.toUInt64 lvls.length)
-  putBytes a.adr *> putList putUniv lvls
+  putBytes a.hash *> putList putUniv lvls
 | .rec_ i lvls => do
   putExprTag 0x3 (Nat.toUInt64 lvls.length)
   putUInt64LE i *> putList putUniv lvls

@@ -3,7 +3,7 @@ import Ix.ByteArray
 
 structure Address where
   hash : ByteArray
-  deriving Inhabited
+  deriving Inhabited, BEq
 
 instance : ToString Address where
   toString adr := toString adr.hash -- TODO

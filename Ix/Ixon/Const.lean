@@ -194,7 +194,7 @@ def getOption [Repr A] (getM: GetM A): GetM (Option A) := do
   | e => throw s!"Expected Option, got {repr e}"
 
 def putMetaNode: MetaNode → PutM
-| ⟨n, a⟩ => putArray [putOption putName n, putOption (putBytes ·.adr) a]
+| ⟨n, a⟩ => putArray [putOption putName n, putOption (putBytes ·.hash) a]
 
 def getMetaNode: GetM MetaNode := do
   let tagByte ← getUInt8
@@ -228,7 +228,7 @@ def putConst : Const → PutM
   where
     putTag (tag: UInt8) (lvls : Nat) (type: Expr) : PutM :=
       putUInt8 tag *> putNatl lvls *> putExpr type
-    putProj (tag: UInt8) (a: Address) : PutM := putUInt8 tag *> putBytes a.adr
+    putProj (tag: UInt8) (a: Address) : PutM := putUInt8 tag *> putBytes a.hash
     putRecrRule (x: RecursorRule) : PutM := putNatl x.fields *> putExpr x.rhs
     putDefn (x: Definition) : PutM := 
       putTag 0xC3 x.lvls x.type *> putExpr x.value *> putBool x.part
