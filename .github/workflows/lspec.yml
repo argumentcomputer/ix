@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - sb/rust-and-c
 jobs:
   build:
     name: Build
@@ -18,3 +19,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: run LSpec binary
         run: lake exe lspec
+  nix:
+    name: Lean Tests with Nix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      # Installs `elan` and `lake` via Nix, which then downloads the Lean toolchain binary
+      # from https://github.com/leanprover/lean4/releases
+      - run: nix develop .#ci --command bash -c "lake build && lake exe lspec"
