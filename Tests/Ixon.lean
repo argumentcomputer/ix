@@ -40,6 +40,10 @@ def genUniv : SlimCheck.Gen Ixon.Univ := getSize >>= go
         (50, .imax <$> go f <*> go f)
       ]
 
+--instance Shrinkable Univ 
+--
+--instance : SampleableExt Univ := SampleableExt.mkSelfContained genUniv
+
 def genAdr : SlimCheck.Gen Address := 
   pure (Address.mk (Blake3.hash "foobar".toUTF8).val)
 
@@ -70,10 +74,13 @@ def genExpr : SlimCheck.Gen Ixon.Expr := getSize >>= go
         (100, .natl <$> chooseAny Nat)
       ]
 
+
 def serde [Serialize A] [BEq A] (x: A) : Bool :=
   match Serialize.get (Serialize.put x) with
   | .ok y => x == y
   | _ => false
 
 
---def main := lspecIO serde
+def main : IO UInt32 := 
+  -- lspecIO check "universe serde" $ ∀ x : Univ, serde x = .true
+  return 0
