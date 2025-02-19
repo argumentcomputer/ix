@@ -5,27 +5,15 @@ import Ix.Ixon.Expr
 
 namespace Ixon
 
-instance : BEq Lean.QuotKind where
-  beq a b := match (a, b) with
-  | (.type,.type) => .true
-  | (.ctor,.ctor) => .true
-  | (.lift,.lift) => .true
-  | (.ind,.ind) => .true
-  | _ => .false
+deriving instance BEq for Lean.QuotKind
 
-instance : Repr Lean.QuotKind where
-  reprPrec a _ := match a with
-  | .type => String.toFormat "QuotKind.type"
-  | .ctor => String.toFormat "QuotKind.ctor"
-  | .lift => String.toFormat "QuotKind.lift"
-  | .ind => String.toFormat "QuotKind.ind"
+deriving instance Repr for Lean.QuotKind
 
 structure Quotient where
   lvls : Nat
   type : Expr
   kind : Lean.QuotKind
   deriving BEq, Repr
-
 
 structure Axiom where
   lvls  : Nat

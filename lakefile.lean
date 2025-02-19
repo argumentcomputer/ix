@@ -26,6 +26,9 @@ require Blake3 from git
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "efa5aa20504b88e2826032ddaa606c7965ec9467"
 
+require batteries from git
+  "https://github.com/leanprover-community/batteries" @ "01006c9e86bf9e397c026fef4190478dd1fd897e"
+
 section Tests
 
 lean_exe Tests.Blake3

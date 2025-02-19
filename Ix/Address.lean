@@ -4,7 +4,7 @@ import Blake3
 
 structure Address where
   hash : ByteArray
-  deriving Inhabited, BEq
+  deriving Inhabited, BEq, Hashable
 
 instance : ToString Address where
   toString adr := toString adr.hash -- TODO
@@ -41,4 +41,19 @@ def byteArrayToHex (ba : ByteArray) : String :=
 
 instance : Repr Address where
   reprPrec a _ := "#" ++ String.toFormat (byteArrayToHex a.hash)
+
+-- TODO: move to a utils namespace
+def compareList [Ord α] : List α -> List α -> Ordering
+| a::as, b::bs => match compare a b with
+  | .eq => compareList as bs
+  | x => x
+| _::_, [] => .gt
+| [], _::_ => .lt
+| [], [] => .eq
+
+instance [Ord α] : Ord (List α) where 
+  compare := compareList
+
+instance : Ord Address where
+  compare a b := compare a.hash.data.toList b.hash.data.toList
 
