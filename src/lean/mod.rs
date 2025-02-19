@@ -1,55 +1,26 @@
+//! Rust bindings for Lean, implemented by mimicking the memory layout of Lean's
+//! low-level C objects.
+//!
+//! This crate must be kept in sync with `lean/lean.h`. Pay close attention to
+//! definitions containing C code in their docstrings.
+
 pub mod ffi;
+pub mod object;
 pub mod sarray;
 
-use std::ptr;
-
-/// ```c
-/// typedef struct {
-/// int      m_rc;
-/// unsigned m_cs_sz:16;
-/// unsigned m_other:8;
-/// unsigned m_tag:8;
-/// } lean_object;
-/// ```
-#[repr(C)]
-pub struct LeanObject {
-    pub m_rc: i32,
-    packed_bits: u32,
-}
-
-impl LeanObject {
-    #[inline]
-    pub fn new(m_rc: i32, m_cs_sz: u16, m_other: u8, m_tag: u8) -> Self {
-        let packed_bits = ((m_cs_sz as u32) & 0xFFFF)
-            | (((m_other as u32) & 0xFF) << 16)
-            | (((m_tag as u32) & 0xFF) << 24);
-        Self { m_rc, packed_bits }
-    }
-
-    #[inline]
-    pub fn m_cs_sz(&self) -> u16 {
-        (self.packed_bits & 0xFFFF) as u16
-    }
-
-    #[inline]
-    pub fn m_other(&self) -> u8 {
-        ((self.packed_bits >> 16) & 0xFF) as u8
-    }
-
-    #[inline]
-    pub fn m_tag(&self) -> u8 {
-        ((self.packed_bits >> 24) & 0xFF) as u8
-    }
-}
+use std::{
+    alloc::{alloc, handle_alloc_error, Layout},
+    ptr, slice,
+};
 
 /// Emulates arrays of flexible size from C.
 #[repr(C)]
-pub struct Array<T>([T; 0]);
+pub struct CArray<T>([T; 0]);
 
-impl<T> Array<T> {
+impl<T> CArray<T> {
     #[inline]
     pub fn slice(&self, len: usize) -> &[T] {
-        unsafe { std::slice::from_raw_parts(self.0.as_ptr(), len) }
+        unsafe { slice::from_raw_parts(self.0.as_ptr(), len) }
     }
 
     #[inline]
@@ -58,4 +29,13 @@ impl<T> Array<T> {
             ptr::copy_nonoverlapping(slice.as_ptr(), self.0.as_ptr() as *mut _, slice.len());
         }
     }
+}
+
+#[inline]
+pub fn alloc_layout<T>(layout: Layout) -> *mut T {
+    let ptr = unsafe { alloc(layout) } as *mut T;
+    if ptr.is_null() {
+        handle_alloc_error(layout);
+    }
+    ptr
 }

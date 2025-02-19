@@ -47,14 +47,14 @@ section FFI
 
 /-- Build the static lib for the Rust crate -/
 extern_lib ix_rs pkg := do
-  proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir }
+  proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir } (quiet := true)
   let libName := nameToStaticLib "ix_rs"
   let libPath := pkg.dir / "target" / "release" / libName
 
   -- If the static lib has changed, remove cached binaries for recompilation
   let libBytes ← IO.FS.readBinFile libPath
   let libHash := toString $ hash libBytes
-  let libHashPath := pkg.nativeLibDir / (libName ++ ".hash")
+  let libHashPath := pkg.nativeLibDir / libName |>.addExtension "hash"
   let shouldCleanBinaries ←
     if ← pkg.binDir.pathExists then
       if ← libHashPath.pathExists then
@@ -66,6 +66,26 @@ extern_lib ix_rs pkg := do
   IO.FS.writeFile libHashPath libHash
 
   return pure libPath
+
+/-- Build the static lib for the C files -/
+extern_lib ix_c pkg := do
+  let compiler := "cc"
+  let cDir := pkg.dir / "c"
+  let buildCDir := pkg.buildDir / "c"
+  let weakArgs := #["-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
+
+  -- Collect a build job for every C file in `cDir`
+  let mut buildJobs := #[]
+  for dirEntry in ← cDir.readDir do
+    let filePath := dirEntry.path
+    if filePath.extension == some "c" then
+      let oFile := buildCDir / dirEntry.fileName |>.withExtension "o"
+      let srcJob ← inputTextFile filePath
+      let buildJob ← buildO oFile srcJob weakArgs #[] compiler getLeanTrace
+      buildJobs := buildJobs.push buildJob
+
+  let libName := nameToStaticLib "ix_c"
+  buildStaticLib (pkg.nativeLibDir / libName) buildJobs
 
 end FFI
 

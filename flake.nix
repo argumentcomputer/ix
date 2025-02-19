@@ -3,8 +3,8 @@
 
   inputs = {
     # Lean + System packages
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
-    lean4-nix.url = "github:lenianiva/lean4-nix?ref=manifests/v4.16.0";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    lean4-nix.url = "github:lenianiva/lean4-nix";
 
     # Helper: flake-parts for easier outputs
     flake-parts.url = "github:hercules-ci/flake-parts";
