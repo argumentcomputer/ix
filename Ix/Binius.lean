@@ -4,6 +4,10 @@ namespace Binius
 
 private opaque GenericNonempty : NonemptyType
 
+/--
+Corresponds to Binius' type, which works via mutation, and must be treated as a
+linear type. Otherwise, it will panic at runtime.
+-/
 def ConstraintSystemBuilder : Type := GenericNonempty.type
 
 instance : Nonempty ConstraintSystemBuilder := GenericNonempty.property
