@@ -1,65 +1,22 @@
 #include "lean/lean.h"
 
 /*
-This file provides a framework for asserting the use of mutating objects as linear ones.
-The main goal is to enable the use of Rust objects that don't implement Clone an work on
-the basis of mutation by Lean.
-
-The key idea is to keep track of a `linear_idx` and a `mut_counter`, which, when equal,
-signal that the object at hand is the most updated one in the chain of linear operations.
-
-Here's an illustration of a valid snapshot for some linear object:
-
-            ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-            │linear_object│ │linear_object│ │linear_object│ │linear_object│
-            │linear_idx=0 │ │linear_idx=1 │ │linear_idx=2 │ │linear_idx=3 │
-            └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘
-                   │               │               │               │
-┌─────────────┐<───┘               │               │               │
-│ mut_object  │<───────────────────┘               │               │
-│mut_counter=3│<───────────────────────────────────┘               │
-└──────┬──────┘<───────────────────────────────────────────────────┘
-       │
-       v
- ┌───────────┐
- │  Mutable  │
- │Rust object│
- └───────────┘
-
-`mut_counter` must be bumped everytime the underlying Rust object mutates.
-A bump on `linear_idx` must follow everytime an updated reference to `mut_object` is needed.
-
-So a "linear bump" increments the `mut_counter` of the `mut_object` and copies the
-`linear_object` with an incremented `linear_idx`.
-
-Every `linear_object` needs to be kept in memory and served to Lean as a valid reference.
-Though, upon usage, we can "assert linearity" to make sure that `liner_idx == mut_counter`
-and assure that only the most updated linear object can be used.
-
-Lastly, to free a linear object, we cannot free the `mut_object` unless `liner_idx == mut_counter`
-otherwise that would potentially result on double-free attempts.
+This file provides a framework for enforcing linear usage of mutating objects by
+Lean's runtime. It's particularly useful when making use of Rust objects that
+don't implement `Clone` and work on the basis of mutation.
 */
 
 typedef struct {
-    size_t mut_counter;
-    void   *object_ref;
-    void   (*finalizer)(void *);
-} mut_object;
-
-typedef struct {
-    size_t     linear_idx;
-    mut_object *mut_object_ref;
+    /* A reference to the underlying mutable object */
+    void *object_ref;
+    /* A pointer to a function that can free `object_ref` */
+    void (*finalizer)(void *);
 } linear_object;
 
-static linear_object *linear_object_init(void *object_ref, void (*finalizer)(void *)) {
-    mut_object *mut_object_ref = malloc(sizeof(mut_object));
-    mut_object_ref->mut_counter = 0;
-    mut_object_ref->object_ref = object_ref;
-    mut_object_ref->finalizer = finalizer;
-
+static inline linear_object *linear_object_init(void *object_ref, void (*finalizer)(void *)) {
     linear_object *linear = malloc(sizeof(linear_object));
-    linear->linear_idx = 0;
-    linear->mut_object_ref = mut_object_ref;
+    linear->object_ref = object_ref;
+    linear->finalizer = finalizer;
     return linear;
 }
 
@@ -68,49 +25,32 @@ static inline linear_object *to_linear_object(void *ptr) {
 }
 
 static inline void *get_object_ref(linear_object *linear) {
-    return linear->mut_object_ref->object_ref;
+    return linear->object_ref;
 }
 
-static inline void assert_non_zero(size_t val, char const *msg) {
-    if (LEAN_UNLIKELY(val == 0)) {
-        lean_internal_panic(msg);
-    }
+static inline void mark_outdated(linear_object *linear) {
+    linear->object_ref = NULL;
 }
 
-static inline void mutation_bump(linear_object *linear) {
-    linear->mut_object_ref->mut_counter++;
-    assert_non_zero(
-        linear->mut_object_ref->mut_counter,
-        "Linear object mutation counter overflow"
-    );
-}
-
-static linear_object *linear_bump(linear_object *linear) {
-    mutation_bump(linear);
-
-    linear_object *new_linear = malloc(sizeof(linear_object));
-    new_linear->linear_idx = linear->linear_idx + 1;
-    assert_non_zero(
-        new_linear->linear_idx,
-        "Linear object index overflow"
-    );
-    new_linear->mut_object_ref = linear->mut_object_ref;
-    return new_linear;
+static inline linear_object *linear_bump(linear_object *linear) {
+    linear_object *copy = malloc(sizeof(linear_object));
+    *copy = *linear;
+    mark_outdated(linear);
+    return copy;
 }
 
 static inline void assert_linearity(linear_object *linear) {
-    if (LEAN_UNLIKELY(linear->linear_idx != linear->mut_object_ref->mut_counter)) {
+    if (LEAN_UNLIKELY(linear->object_ref == NULL)) {
         lean_internal_panic("Non-linear usage of linear object");
     }
 }
 
 static inline void free_linear_object(linear_object *linear) {
-    // Only free `mut_object_ref` if `linear` is the latest linear object reference
-    if (LEAN_UNLIKELY(linear->linear_idx == linear->mut_object_ref->mut_counter)) {
-        linear->mut_object_ref->finalizer(linear->mut_object_ref->object_ref);
-        free(linear->mut_object_ref);
+    // Only finalize `object_ref` if `linear` is the latest linear object reference.
+    // By doing this, we avoid double-free attempts.
+    if (LEAN_UNLIKELY(linear->object_ref != NULL)) {
+        linear->finalizer(linear->object_ref);
     }
-
     free(linear);
 }
 

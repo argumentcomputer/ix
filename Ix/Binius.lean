@@ -31,11 +31,14 @@ macro "let" ch:ident "≪" "add_channel" csb:ident ";"? rst:term : term =>
   `(let ($ch, $csb) := addChannel $csb; $rst)
 
 /--
-Simulates inplace mutation with a syntactical overwrite and then makes a dummy
-usage of the constraint system builder to satisfy the unused variable linter.
+Simulates inplace mutation with a syntactical overwrite and then clears the
+constraint system builder from context to satisfy the unused variable linter.
 -/
 macro "let" ch:ident "≪" "add_channel" csb:ident "." ";"? rst:term : term =>
-  `(let ($ch, $csb) := addChannel $csb; let _ := $csb; $rst)
+  `(let ($ch, $csb) := addChannel $csb;
+    by
+      repeat clear $csb;
+      exact $rst)
 
 end ConstraintSystemBuilder
 
