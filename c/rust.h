@@ -1,1 +1,3 @@
-uint32_t add_u32s(uint32_t, uint32_t);
+void *rs_constraint_system_builder_init();
+void  rs_constraint_system_builder_free(void*);
+size_t rs_constraint_system_builder_add_channel(void*);

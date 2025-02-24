@@ -21,7 +21,7 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "ca8e2803f89f0c12bf9743ae7abbfb2ea6b0eeec"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "3eed804578f8b8a8cab122971d5b3bf04e729307"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "86da26bb8385ed308fbe7a486956cd07151783e5"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "efa5aa20504b88e2826032ddaa606c7965ec9467"
@@ -31,9 +31,8 @@ require batteries from git
 
 section Tests
 
-lean_exe Tests.Blake3
+lean_exe Tests.Binius
 lean_exe Tests.ByteArray
-lean_exe Tests.Rust
 
 end Tests
 
