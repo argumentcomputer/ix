@@ -1,3 +1,5 @@
+import Lean.Declaration
+
 namespace Ixon
 
 -- TODO: move to `Ix`
@@ -116,5 +118,33 @@ def unpackBools (n: Nat) (b: UInt8) : List Bool :=
 
 def putBools: List Bool → PutM := putUInt8 ∘ packBools
 def getBools (n: Nat): GetM (List Bool) := unpackBools n <$> getUInt8
+
+def putQuotKind : Lean.QuotKind → PutM
+| .type => putUInt8 0
+| .ctor => putUInt8 1
+| .lift => putUInt8 2
+| .ind => putUInt8 3
+
+def getQuotKind : GetM Lean.QuotKind := do
+  match (← getUInt8) with
+  | 0 => return .type
+  | 1 => return .ctor
+  | 2 => return .lift
+  | 3 => return .ind
+  | e => throw s!"expected QuotKind encoding between 0 and 3, got {e}"
+
+def putBinderInfo : Lean.BinderInfo → PutM
+| .default => putUInt8 0
+| .implicit => putUInt8 1
+| .strictImplicit => putUInt8 2
+| .instImplicit => putUInt8 3
+
+def getBinderInfo : GetM Lean.BinderInfo := do
+  match (← getUInt8) with
+  | 0 => return .default
+  | 1 => return .implicit
+  | 2 => return .strictImplicit
+  | 3 => return .instImplicit
+  | e => throw s!"expected BinderInfo encoding between 0 and 3, got {e}"
 
 end Ixon

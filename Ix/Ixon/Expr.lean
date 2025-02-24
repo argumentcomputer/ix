@@ -126,4 +126,34 @@ instance : Serialize Expr where
   put := runPut ∘ putExpr
   get := runGet getExpr
 
+def putArray (xs : List PutM) := do
+  putExprTag 0xB (UInt64.ofNat xs.length)
+  List.forM xs id
+
+def getArray (getM: GetM A) : GetM (List A) := do
+  let tagByte ← getUInt8
+  let tag := UInt8.shiftRight tagByte 4
+  let small := UInt8.land tagByte 0b111
+  let isLarge := (UInt8.land tagByte 0b1000 != 0)
+  match tag with
+  | 0xB => do
+    let len <- UInt64.toNat <$> getExprTag isLarge small
+    List.mapM (λ _ => getM) (List.range len) 
+  | e => throw s!"expected Array with tag 0xB, got {e}"
+
+def putOption (putM: A -> PutM): Option A → PutM
+| .none => putArray []
+| .some x => putArray [putM x]
+
+def getOption [Repr A] (getM: GetM A): GetM (Option A) := do
+  match ← getArray getM with
+  | [] => return .none
+  | [x] => return .some x
+  | e => throw s!"Expected Option, got {repr e}"
+
+def putNatl (x: Nat) : PutM := putExpr (.natl x)
+def getNatl : GetM Nat := do
+  match (← getExpr) with
+  | .natl n => return n
+  | x => throw s!"expected Expr.Nat, got {repr x}"
 end Ixon

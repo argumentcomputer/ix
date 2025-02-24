@@ -1,3 +1,5 @@
+import Ix.Common
+
 namespace Ix
 
 inductive Univ
@@ -5,7 +7,7 @@ inductive Univ
   | succ : Univ → Univ
   | max  : Univ → Univ → Univ
   | imax : Univ → Univ → Univ
-  | var  : Nat → Univ
+  | var  : Lean.Name → Nat → Univ
   deriving Inhabited, Ord, BEq, Hashable, Repr
 
 namespace Univ
@@ -20,7 +22,7 @@ def reduceMax (a b : Univ) : Univ :=
   | .zero, _ => b
   | _, .zero => a
   | .succ a, .succ b => .succ (reduceMax a b)
-  | .var idx, .var idx' => if idx == idx' then a else .max a b
+  | .var _ idx, .var _ idx' => if idx == idx' then a else .max a b
   | _, _ => .max a b
 
 /--
@@ -33,8 +35,8 @@ def reduceIMax (a b : Univ) : Univ :=
   | .zero => .zero
   -- IMax(a, b) will reduce as Max(a, b) if b == Succ(..) (impossible case)
   | .succ _ => reduceMax a b
-  | .var idx => match a with
-    | .var idx' => if idx == idx' then a else .imax a b
+  | .var _ idx => match a with
+    | .var _ idx' => if idx == idx' then a else .imax a b
     | _ => .imax a b
   -- Otherwise, IMax(a, b) is stuck, with a and b reduced
   | _ => .imax a b
@@ -73,7 +75,7 @@ def instReduce (u : Univ) (idx : Nat) (subst : Univ) : Univ :=
     | .zero => .zero
     | .succ _ => reduceMax a' b'
     | _ => .imax a' b'
-  | .var idx' => if idx' == idx then subst else u
+  | .var _ idx' => if idx' == idx then subst else u
   | .zero => u
 
 /--
@@ -90,11 +92,11 @@ def instBulkReduce (substs : List Univ) : Univ → Univ
     | .zero => .zero
     | .succ _ => reduceMax (instBulkReduce substs a) b'
     | _ => .imax (instBulkReduce substs a) b'
-  | .var idx => match substs.get? idx with
+  | .var n idx => match substs.get? idx with
     | some u => u
     -- This case should never happen if we're correctly enclosing every
     -- expression with a big enough universe environment
-    | none => .var (idx - substs.length)
+    | none => .var n (idx - substs.length)
 
 /--
 We say that two universe levels `a` and `b` are (semantically) equal, if they
@@ -112,20 +114,20 @@ partial def leq (a b : Univ) (diff : Int) : Bool :=
   | _, .succ b => leq a b (diff + 1)
   | .var .., .zero => false
   | .zero, .var .. => diff >= 0
-  | .var x, .var y => x == y && diff >= 0
+  | .var _ x, .var _ y => x == y && diff >= 0
   --! IMax cases
   -- The case `a = imax c d` has only three possibilities:
   -- 1) d = var ..
   -- 2) d = max ..
   -- 3) d = imax ..
   -- It can't be any otherway since we are assuming `a` is reduced, and thus `d` is reduced as well
-  | .imax _ (.var idx), _ =>
+  | .imax _ (.var n idx), _ =>
     -- In the case for `var idx`, we need to compare two substitutions:
     -- 1) idx <- zero
     -- 2) idx <- succ (var idx)
     -- In the first substitution, we know `a` becomes `zero`
     leq .zero (instReduce b idx .zero) diff &&
-    let succ := .succ (.var idx)
+    let succ := .succ (.var n idx)
     leq (instReduce a idx succ) (instReduce b idx succ) diff
 
   | .imax c (.max e f), _ =>
@@ -139,9 +141,9 @@ partial def leq (a b : Univ) (diff : Int) : Bool :=
     let new_max := reduceMax (reduceIMax c e) (.imax e f)
     leq new_max b diff
   -- Analogous to previous case
-  | _, .imax _ (.var idx) =>
+  | _, .imax _ (.var n idx) =>
     leq (instReduce a idx .zero) .zero diff &&
-    let succ := .succ (.var idx)
+    let succ := .succ (.var n idx)
     leq (instReduce a idx succ) (instReduce b idx succ) diff
   | _, .imax c (.max e f) =>
     let new_max := reduceMax (reduceIMax c e) (reduceIMax c f)

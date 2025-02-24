@@ -33,6 +33,7 @@ section Tests
 
 lean_exe Tests.Binius
 lean_exe Tests.ByteArray
+lean_exe Tests.Ixon
 
 end Tests
 

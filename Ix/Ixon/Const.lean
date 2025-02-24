@@ -1,6 +1,7 @@
 import Ix.Address
 import Lean.Declaration
 import Ix.Ixon.Serialize
+import Ix.Ixon.Metadata
 import Ix.Ixon.Expr
 
 namespace Ixon
@@ -99,15 +100,6 @@ structure DefinitionProj where
   idx   : Nat
   deriving BEq, Repr
 
-structure MetaNode where
-  name : Option Lean.Name
-  link : Option Address
-  deriving BEq, Repr
-
-structure Metadata where
-  meta: List MetaNode
-  deriving BEq, Repr
-
 inductive Const where
   -- 0xC0
   | axio : Axiom -> Const
@@ -141,94 +133,6 @@ inductive Const where
   | meta   : Metadata -> Const
   deriving BEq, Repr
 
-def putNatl (x: Nat) : PutM := putExpr (.natl x)
-def getNatl : GetM Nat := do
-  match (← getExpr) with
-  | .natl n => return n
-  | x => throw s!"expected Expr.Nat, got {repr x}"
-
-def putArray (xs : List PutM) := do
-  putExprTag 0xB (UInt64.ofNat xs.length)
-  List.forM xs id
-
-def getArray (getM: GetM A) : GetM (List A) := do
-  let tagByte ← getUInt8
-  let tag := UInt8.shiftRight tagByte 4
-  let small := UInt8.land tagByte 0b111
-  let isLarge := (UInt8.land tagByte 0b1000 != 0)
-  match tag with
-  | 0xB => do
-    let len <- UInt64.toNat <$> getExprTag isLarge small
-    List.mapM (λ _ => getM) (List.range len) 
-  | e => throw s!"expected Array with tag 0xB, got {e}"
-
-def putQuotKind : Lean.QuotKind → PutM
-| .type => putUInt8 0
-| .ctor => putUInt8 1
-| .lift => putUInt8 2
-| .ind => putUInt8 3
-
-def getQuotKind : GetM Lean.QuotKind := do
-  match (← getUInt8) with
-  | 0 => return .type
-  | 1 => return .ctor
-  | 2 => return .lift
-  | 3 => return .ind
-  | e => throw s!"expected QuotKind encoding between 0 and 3, got {e}"
-
-inductive NamePart where
-| str (s: String)
-| num (n: Nat)
-
-def nameToParts: Lean.Name → List NamePart
-| .anonymous => []
-| .str n s => NamePart.str s :: nameToParts n
-| .num n i => NamePart.num i :: nameToParts n
-
-def nameFromParts: List NamePart → Lean.Name
-| [] => .anonymous
-| (.str n)::ns => .str (nameFromParts ns) n
-| (.num i)::ns => .num (nameFromParts ns) i
-
-def putNamePart : NamePart → PutM
-| .str s => putExpr (.strl s)
-| .num i => putExpr (.natl i)
-
-def getNamePart : GetM NamePart := do
-  match (← getExpr) with
-  | .strl s => return (.str s)
-  | .natl s => return (.num s)
-  | e => throw s!"expected NamePart from .strl or .natl, got {repr e}"
-
-def putName (n: Lean.Name): PutM := putArray (putNamePart <$> (nameToParts n))
-def getName: GetM Lean.Name := nameFromParts <$> getArray getNamePart
-
-def putOption (putM: A -> PutM): Option A → PutM
-| .none => putArray []
-| .some x => putArray [putM x]
-
-def getOption [Repr A] (getM: GetM A): GetM (Option A) := do
-  match ← getArray getM with
-  | [] => return .none
-  | [x] => return .some x
-  | e => throw s!"Expected Option, got {repr e}"
-
-def putMetaNode: MetaNode → PutM
-| ⟨n, a⟩ => putArray [putOption putName n, putOption (putBytes ·.hash) a]
-
-def getMetaNode: GetM MetaNode := do
-  let tagByte ← getUInt8
-  let tag := UInt8.shiftRight tagByte 4
-  let small := UInt8.land tagByte 0b111
-  let isLarge := (UInt8.land tagByte 0b1000 != 0)
-  match tag with
-  | 0xB => do
-    let _ ← UInt64.toNat <$> getExprTag isLarge small
-    let n ← getOption getName
-    let a ← getOption (Address.mk <$> getBytes 32)
-    return MetaNode.mk n a
-  | e => throw s!"expected metanode Array with tag 0xB, got {e}"
-
 def putConst : Const → PutM
 | .axio x => putTag 0xC0 x.lvls x.type
 | .theo x => putTag 0xC1 x.lvls x.type *> putExpr x.value
@@ -244,7 +148,7 @@ def putConst : Const → PutM
 | .defnProj x => putProj 0xCB x.block *> putNatl x.idx
 | .mutDef xs => putUInt8 0xCC *> putArray (putDefn <$> xs)
 | .mutInd xs => putUInt8 0xCD *> putArray (putIndc <$> xs)
-| .meta m => putUInt8 0xCE *> putArray (putMetaNode <$> m.meta)
+| .meta m => putUInt8 0xCE *> putMetadata m
   where
     putTag (tag: UInt8) (lvls : Nat) (type: Expr) : PutM :=
       putUInt8 tag *> putNatl lvls *> putExpr type
@@ -283,7 +187,7 @@ def getConst : GetM Const := do
   | 0xCB => .defnProj <$> (.mk <$> (.mk <$> getBytes 32) <*> getNatl)
   | 0xCC => .mutDef <$> getArray getDefn
   | 0xCD => .mutInd <$> getArray getIndc
-  | 0xCE => .meta <$> (.mk <$> getArray getMetaNode)
+  | 0xCE => .meta <$> getMetadata
   | e => throw s!"expected Const tag, got {e}"
   where
     getDefn := .mk <$> getNatl <*> getExpr <*> getExpr <*> getBool

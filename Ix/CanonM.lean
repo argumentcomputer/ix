@@ -122,7 +122,7 @@ def canonUniv : Lean.Level → CanonM Ix.Univ
   | .param name => do
     let lvls := (← read).univCtx
     match lvls.indexOf? name with
-    | some n => pure $ .var n
+    | some n => pure $ .var name n
     | none   => throw $ .levelNotFound name lvls
   | l@(.mvar ..) => throw $ .unfilledLevelMetavariable l
 
