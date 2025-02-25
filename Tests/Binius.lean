@@ -1,17 +1,14 @@
 import LSpec
-import Ix.Binius
+import Ix.Binius.ConstraintSystemBuilder
 
 open Binius
-
-def add3Channels : CSBuildM (ChannelId × ChannelId × ChannelId) := do
-  let a ← addChannel
-  let b ← addChannel
-  let c ← addChannel
-  pure (a, b, c)
 
 open LSpec in
 def main :=
   let builder := ConstraintSystemBuilder.init ()
-  let ((a, b, c), _builder) := CSBuildM.run add3Channels builder
+  let (a, builder) := builder.addChannel
+  let (b, builder) := builder.addChannel
+  let (c, builder) := builder.addChannel
+  let _cs := builder.build
   lspecIO $
     test "Binius channels grow by increments of 1" (a = 0 ∧ b = 1 ∧ c = 2)
