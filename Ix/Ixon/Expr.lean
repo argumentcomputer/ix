@@ -141,6 +141,7 @@ def getArray (getM: GetM A) : GetM (List A) := do
     List.mapM (λ _ => getM) (List.range len) 
   | e => throw s!"expected Array with tag 0xB, got {e}"
 
+
 def putOption (putM: A -> PutM): Option A → PutM
 | .none => putArray []
 | .some x => putArray [putM x]
@@ -156,4 +157,5 @@ def getNatl : GetM Nat := do
   match (← getExpr) with
   | .natl n => return n
   | x => throw s!"expected Expr.Nat, got {repr x}"
+
 end Ixon

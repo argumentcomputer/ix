@@ -19,6 +19,7 @@ structure Metadata where
 inductive NamePart where
 | str (s: String)
 | num (n: Nat)
+deriving Inhabited
 
 def nameToParts: Lean.Name → List NamePart
 | .anonymous => []

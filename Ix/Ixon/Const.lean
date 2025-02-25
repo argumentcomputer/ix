@@ -131,44 +131,48 @@ inductive Const where
   | mutInd : List Inductive -> Const
   -- 0xCE
   | meta   : Metadata -> Const
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited
+
+def putDefn (x: Definition) : PutM :=
+  putUInt8 0xC3 *>
+
+  putNatl x.lvls *> putExpr x.type *> putExpr x.value *> putBool x.part
 
 def putConst : Const → PutM
-| .axio x => putTag 0xC0 x.lvls x.type
-| .theo x => putTag 0xC1 x.lvls x.type *> putExpr x.value
-| .opaq x => putTag 0xC2 x.lvls x.type *> putExpr x.value
-| .defn x => putDefn x
-| .quot x => putTag 0xC4 x.lvls x.type *> putQuotKind x.kind
-| .ctor x => putCtor x
-| .recr x => putRecr x
-| .indc x => putIndc x
-| .ctorProj x => putProj 0xC8 x.block *> putNatl x.idx *> putNatl x.cidx
-| .recrProj x => putProj 0xC9 x.block *> putNatl x.idx *> putNatl x.ridx
-| .indcProj x => putProj 0xCA x.block *> putNatl x.idx
-| .defnProj x => putProj 0xCB x.block *> putNatl x.idx
+| .axio x => putUInt8 0xC0 *> putNatl x.lvls *> putExpr x.type
+| .theo x => putUInt8 0xC1 *> putNatl x.lvls *> putExpr x.type *> putExpr x.value
+| .opaq x => putUInt8 0xC2 *> putNatl x.lvls *> putExpr x.type *> putExpr x.value
+| .defn x => putUInt8 0xC3 *> putDefn x
+| .quot x => putUInt8 0xC4 *> putNatl x.lvls *> putExpr x.type *> putQuotKind x.kind
+| .ctor x => putUInt8 0xC5 *> putCtor x
+| .recr x => putUInt8 0xC6 *> putRecr x
+| .indc x => putUInt8 0xC7 *> putIndc x
+| .ctorProj x => putUInt8 0xC8 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.cidx
+| .recrProj x => putUInt8 0xC9 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.ridx
+| .indcProj x => putUInt8 0xCA *> putBytes x.block.hash *> putNatl x.idx
+| .defnProj x => putUInt8 0xCB *> putBytes x.block.hash *> putNatl x.idx
 | .mutDef xs => putUInt8 0xCC *> putArray (putDefn <$> xs)
 | .mutInd xs => putUInt8 0xCD *> putArray (putIndc <$> xs)
 | .meta m => putUInt8 0xCE *> putMetadata m
   where
-    putTag (tag: UInt8) (lvls : Nat) (type: Expr) : PutM :=
-      putUInt8 tag *> putNatl lvls *> putExpr type
-    putProj (tag: UInt8) (a: Address) : PutM := putUInt8 tag *> putBytes a.hash
+    putDefn (x: Definition) :=
+      putNatl x.lvls *> putExpr x.type *> putExpr x.value *> putBool x.part
     putRecrRule (x: RecursorRule) : PutM := putNatl x.fields *> putExpr x.rhs
-    putDefn (x: Definition) : PutM := 
-      putTag 0xC3 x.lvls x.type *> putExpr x.value *> putBool x.part
     putCtor (x: Constructor) : PutM :=
-      putTag 0xC5 x.lvls x.type
+      putNatl x.lvls *> putExpr x.type
         *> putNatl x.idx *> putNatl x.params *> putNatl x.fields
     putRecr (x: Recursor) : PutM :=
-      putTag 0xC6 x.lvls x.type
+      putNatl x.lvls *> putExpr x.type
         *> putNatl x.params *> putNatl x.indices *> putNatl x.motives
         *> putNatl x.minors *> putArray (putRecrRule <$> x.rules)
         *> putBools [x.isK, x.internal]
     putIndc (x: Inductive) : PutM :=
-      putTag 0xC7 x.lvls x.type
+      putNatl x.lvls *> putExpr x.type
         *> putNatl x.params *> putNatl x.indices
         *> putArray (putCtor <$> x.ctors) *> putArray (putRecr <$> x.recrs)
         *> putBools [x.recr, x.refl, x.struct, x.unit]
+
+def getDefn : GetM Definition := .mk <$> getNatl <*> getExpr <*> getExpr <*> getBool
 
 def getConst : GetM Const := do
   let tag ← getUInt8
@@ -190,7 +194,6 @@ def getConst : GetM Const := do
   | 0xCE => .meta <$> getMetadata
   | e => throw s!"expected Const tag, got {e}"
   where
-    getDefn := .mk <$> getNatl <*> getExpr <*> getExpr <*> getBool
     getCtor := .mk <$> getNatl <*> getExpr <*> getNatl <*> getNatl <*> getNatl
     getRecrRule := RecursorRule.mk <$> getNatl <*> getExpr
     getRecr : GetM Recursor := do

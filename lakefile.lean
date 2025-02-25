@@ -29,11 +29,15 @@ require Cli from git
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "01006c9e86bf9e397c026fef4190478dd1fd897e"
 
+
 section Tests
 
 lean_exe Tests.Binius
 lean_exe Tests.ByteArray
-lean_exe Tests.Ixon
+
+-- TODO(jcb): better test-lib organization
+lean_lib Tests.Ixon.Gen
+lean_exe Tests.Ixon where
 
 end Tests
 

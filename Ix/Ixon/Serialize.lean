@@ -145,6 +145,6 @@ def getBinderInfo : GetM Lean.BinderInfo := do
   | 1 => return .implicit
   | 2 => return .strictImplicit
   | 3 => return .instImplicit
-  | e => throw s!"expected BinderInfo encoding between 0 and 3, got {e}"
+  | e => throw s!"expected QuotKind encoding between 0 and 3, got {e}"
 
 end Ixon
