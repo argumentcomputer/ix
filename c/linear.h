@@ -1,4 +1,8 @@
+#ifndef LINEAR_H
+#define LINEAR_H
+
 #include "lean/lean.h"
+#include "common.h"
 
 /*
 This file provides a framework for enforcing linear usage of mutating objects by
@@ -56,7 +60,6 @@ static inline void free_linear_object(linear_object *linear) {
 
 /* --- API to implement Lean objects --- */
 
-static void noop_foreach(void *mod, b_lean_obj_arg fn) {}
 static void linear_object_finalizer(void *ptr) {
     free_linear_object(to_linear_object(ptr));
 }
@@ -76,3 +79,5 @@ static lean_external_class *get_linear_object_class() {
 static inline lean_object *alloc_lean_linear_object(linear_object *linear) {
     return lean_alloc_external(get_linear_object_class(), linear);
 }
+
+#endif
