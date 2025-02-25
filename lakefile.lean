@@ -81,9 +81,33 @@ extern_lib ix_c pkg := do
   let buildCDir := pkg.buildDir / "c"
   let weakArgs := #["-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
 
+  let cDirEntries ← cDir.readDir
+
+  -- Changes on `.h` files aren't tracked by Lake, so we keep track of their changes
+  -- by caching their hashes. If there's a hash mismatch, the C build directory
+  -- needs to be deleted to trigger recompilations
+  let mut foundHashMismatch := false
+  let mut collectedHashes := #[]
+  for dirEntry in cDirEntries do
+    let filePath := dirEntry.path
+    if filePath.extension == some "h" then
+      let hBytes ← IO.FS.readBinFile filePath
+      let hHash := toString $ hash hBytes
+      let hHashPath := buildCDir / dirEntry.fileName |>.addExtension "hash"
+      collectedHashes := collectedHashes.push (hHashPath, hHash)
+      if ← hHashPath.pathExists then
+        let cachedHash ← IO.FS.readFile hHashPath
+        if hHash != cachedHash then
+          foundHashMismatch := true -- Hash mismatch
+      else foundHashMismatch := true -- Missing a hash file
+  if (← buildCDir.pathExists) && foundHashMismatch then IO.FS.removeDirAll buildCDir
+  IO.FS.createDirAll buildCDir
+  for (hHashPath, hHash) in collectedHashes do
+    IO.FS.writeFile hHashPath hHash
+
   -- Collect a build job for every C file in `cDir`
   let mut buildJobs := #[]
-  for dirEntry in ← cDir.readDir do
+  for dirEntry in cDirEntries do
     let filePath := dirEntry.path
     if filePath.extension == some "c" then
       let oFile := buildCDir / dirEntry.fileName |>.withExtension "o"
