@@ -22,7 +22,7 @@ pub type Underlier = OptimalUnderlier;
 /// took. Exactly one selector must be set.
 /// The `shared_constraints` are constraint slots that can be shared in
 /// different paths of the circuit.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct Layout {
     pub inputs: u32,
     pub outputs: u32,
@@ -85,8 +85,17 @@ pub fn block_layout(block: &Block, layout: &mut Layout) {
     match block.ctrl.as_ref() {
         Ctrl::If(_, t, f) => {
             let mut state = layout.save();
-            // This auxiliary is for proving computing the inverse
+            // This auxiliary is for proving inequality
             layout.auxiliaries += 1;
+            block_layout(t, layout);
+            layout.restore(&mut state);
+            block_layout(f, layout);
+            layout.finish(&state);
+        }
+        Ctrl::If64(_, t, f) => {
+            let mut state = layout.save();
+            // These auxiliaries are for proving inequality
+            layout.auxiliaries += 8;
             block_layout(t, layout);
             layout.restore(&mut state);
             block_layout(f, layout);
