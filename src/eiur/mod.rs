@@ -1,7 +1,10 @@
 pub mod binius;
+pub mod constraints;
 pub mod execute;
 pub mod gadgets;
 pub mod ir;
 pub mod layout;
+pub mod memory;
+pub mod synthesis;
 pub mod trace;
 pub mod transparent;

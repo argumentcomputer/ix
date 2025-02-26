@@ -1,4 +1,6 @@
-use binius_field::{BinaryField8b, BinaryField64b, BinaryField128b, arch::OptimalUnderlier};
+use binius_field::{
+    BinaryField8b, BinaryField32b, BinaryField64b, BinaryField128b, arch::OptimalUnderlier,
+};
 
 use super::ir::{Block, Ctrl, Function, Op};
 
@@ -9,6 +11,8 @@ pub type EiurByteField = BinaryField8b;
 /// The field of multiplicities. Its multiplicative group is used to express
 /// the multiplicity of lookups
 pub type MultiplicityField = BinaryField64b;
+/// The field of function indices
+pub type FunctionIndexField = BinaryField32b;
 pub type Underlier = OptimalUnderlier;
 
 /// The circuit layout of a function.

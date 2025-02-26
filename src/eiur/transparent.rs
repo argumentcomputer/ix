@@ -1,24 +1,55 @@
 use std::marker::PhantomData;
 
-use binius_core::polynomial::{Error, MultivariatePoly};
+use binius_core::{
+    oracle::OracleId,
+    polynomial::{Error, MultivariatePoly},
+};
 use binius_field::{TowerField, underlier::WithUnderlier};
 use binius_utils::bail;
 
+use super::layout::{EiurField, FunctionIndexField, MultiplicityField};
+
+#[derive(PartialEq, Eq, Hash)]
+pub enum Virtual {
+    Constant {
+        constant: Fields,
+        log_n: usize,
+    },
+    Address {
+        log_n: usize,
+    },
+    StepDown {
+        index: usize,
+        log_n: usize,
+    },
+    Sum {
+        oracles: Vec<OracleId>,
+        offset: EiurField,
+        log_n: usize,
+    },
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub enum Fields {
+    FunctionIndex(FunctionIndexField),
+    Multiplicity(MultiplicityField),
+}
+
 #[derive(Debug, Clone)]
-pub struct Index<F> {
+pub struct Address<F> {
     n_vars: usize,
     phantom: PhantomData<F>,
 }
 
-impl<F> Index<F> {
+impl<F> Address<F> {
     pub fn new(n_vars: usize) -> Self {
         assert!(n_vars <= 64);
         let phantom = PhantomData;
-        Index { n_vars, phantom }
+        Address { n_vars, phantom }
     }
 }
 
-impl<F: TowerField + WithUnderlier<Underlier = u128>> MultivariatePoly<F> for Index<F> {
+impl<F: TowerField + WithUnderlier<Underlier = u128>> MultivariatePoly<F> for Address<F> {
     fn degree(&self) -> usize {
         1
     }

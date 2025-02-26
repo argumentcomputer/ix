@@ -16,6 +16,7 @@ pub struct QueryResult {
 
 /// `QueryRecord` is a collection of `QueryResult` objects that can be referenced by the input tuple
 /// used while invoking `TopLevel` execution algorithm
+#[derive(Debug)]
 pub struct QueryRecord {
     pub queries: Vec<FxIndexMap<Vec<u8>, QueryResult>>,
 }
