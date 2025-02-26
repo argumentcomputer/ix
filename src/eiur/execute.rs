@@ -1,4 +1,7 @@
-use rustc_hash::FxHashMap;
+use indexmap::IndexMap;
+use rustc_hash::FxBuildHasher;
+
+pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 use super::ir::{Ctrl, FuncIdx, Op, Prim, Toplevel, ValIdx};
 
@@ -14,7 +17,7 @@ pub struct QueryResult {
 /// `QueryRecord` is a collection of `QueryResult` objects that can be referenced by the input tuple
 /// used while invoking `TopLevel` execution algorithm
 pub struct QueryRecord {
-    pub queries: Vec<FxHashMap<Vec<u8>, QueryResult>>,
+    pub queries: Vec<FxIndexMap<Vec<u8>, QueryResult>>,
 }
 
 impl QueryRecord {
@@ -24,7 +27,7 @@ impl QueryRecord {
         QueryRecord { queries }
     }
 
-    pub fn get_func_map(&self, func_idx: FuncIdx) -> &FxHashMap<Vec<u8>, QueryResult> {
+    pub fn get_func_map(&self, func_idx: FuncIdx) -> &FxIndexMap<Vec<u8>, QueryResult> {
         &self.queries[func_idx.to_usize()]
     }
 
