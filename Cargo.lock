@@ -984,6 +984,7 @@ dependencies = [
  "binius_math",
  "blake3",
  "bumpalo",
+ "indexmap",
  "proptest",
  "rayon",
  "rustc-hash",
