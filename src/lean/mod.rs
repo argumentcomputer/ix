@@ -5,15 +5,14 @@
 //! definitions containing C code in their docstrings.
 
 pub mod array;
-pub mod boxed_usize;
+pub mod boxed;
+pub mod ctor;
+pub mod external;
 pub mod ffi;
 pub mod object;
 pub mod sarray;
 
-use std::{
-    alloc::{alloc, handle_alloc_error, Layout},
-    ptr, slice,
-};
+use std::{ptr, slice};
 
 /// Emulates arrays of flexible size from C.
 #[repr(C)]
@@ -31,13 +30,4 @@ impl<T> CArray<T> {
             ptr::copy_nonoverlapping(slice.as_ptr(), self.0.as_ptr() as *mut _, slice.len());
         }
     }
-}
-
-#[inline]
-pub fn alloc_layout<T>(layout: Layout) -> *mut T {
-    let ptr = unsafe { alloc(layout) } as *mut T;
-    if ptr.is_null() {
-        handle_alloc_error(layout);
-    }
-    ptr
 }

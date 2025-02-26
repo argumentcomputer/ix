@@ -1,4 +1,4 @@
-use super::{boxed_usize::BoxedUSize, object::LeanObject, CArray};
+use super::{boxed::BoxedUSize, object::LeanObject, CArray};
 
 /// ```c
 /// typedef struct {

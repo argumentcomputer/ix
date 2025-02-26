@@ -59,6 +59,26 @@ extern lean_obj_res c_constraint_system_builder_flush_custom(
     return alloc_lean_linear_object(new_linear);
 }
 
+extern lean_obj_res c_constraint_system_builder_assert_zero(
+    lean_obj_arg l_csb,
+    b_lean_obj_arg name,
+    b_lean_obj_arg oracle_ids,
+    b_lean_obj_arg composition
+) {
+    linear_object *linear = validated_linear(l_csb);
+    char const *chars = lean_string_cstr(name);
+
+    rs_constraint_system_builder_assert_zero(
+        get_object_ref(linear),
+        chars,
+        oracle_ids,
+        composition
+    );
+    linear_object *new_linear = linear_bump(linear);
+
+    return alloc_lean_linear_object(new_linear);
+}
+
 extern lean_obj_res c_constraint_system_builder_assert_not_zero(
     lean_obj_arg l_csb,
     size_t oracle_id

@@ -1,4 +1,5 @@
 import Ix.Rust
+import Ix.Binius.ArithExpr
 import Ix.Binius.ConstraintSystem
 
 /-!
@@ -16,8 +17,13 @@ def ConstraintSystemBuilder : Type := GenericNonempty.type
 
 instance : Nonempty ConstraintSystemBuilder := GenericNonempty.property
 
-abbrev ChannelId := USize
-abbrev OracleId := USize
+structure ChannelId where
+  toUSize : USize
+  deriving Inhabited
+
+structure OracleId where
+  toUSize : USize
+  deriving Inhabited
 
 inductive FlushDirection
   | push | pull
@@ -38,6 +44,11 @@ opaque flushCustom :
     @& Array OracleId → (multiplicity : UInt64) → ConstraintSystemBuilder
 
 /-- **Mutates** the input `ConstraintSystemBuilder` -/
+@[extern "c_constraint_system_builder_assert_zero"]
+opaque assertZero : ConstraintSystemBuilder → @& String → @& Array OracleId →
+  @& ArithExpr → ConstraintSystemBuilder
+
+/-- **Mutates** the input `ConstraintSystemBuilder` -/
 @[extern "c_constraint_system_builder_assert_not_zero"]
 opaque assertNotZero : ConstraintSystemBuilder → OracleId → ConstraintSystemBuilder
 
@@ -45,13 +56,14 @@ opaque assertNotZero : ConstraintSystemBuilder → OracleId → ConstraintSystem
 @[extern "c_constraint_system_builder_add_channel"]
 opaque addChannel : ConstraintSystemBuilder → ChannelId × ConstraintSystemBuilder
 
+/-- **Mutates** the input `ConstraintSystemBuilder` -/
 @[extern "c_constraint_system_builder_add_committed"]
-opaque addCommitted : ConstraintSystemBuilder → String →
+opaque addCommitted : ConstraintSystemBuilder → @& String →
   (nVars towerLevel : USize) → OracleId × ConstraintSystemBuilder
 
 /-- **Mutates** the input `ConstraintSystemBuilder` -/
 @[extern "c_constraint_system_builder_push_namespace"]
-opaque pushNamespace : ConstraintSystemBuilder → String → ConstraintSystemBuilder
+opaque pushNamespace : ConstraintSystemBuilder → @& String → ConstraintSystemBuilder
 
 /-- **Mutates** the input `ConstraintSystemBuilder` -/
 @[extern "c_constraint_system_builder_pop_namespace"]
