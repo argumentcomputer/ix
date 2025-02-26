@@ -4,6 +4,8 @@
 //! This crate must be kept in sync with `lean/lean.h`. Pay close attention to
 //! definitions containing C code in their docstrings.
 
+pub mod array;
+pub mod boxed_usize;
 pub mod ffi;
 pub mod object;
 pub mod sarray;
