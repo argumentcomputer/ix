@@ -90,7 +90,7 @@ fn arith_expr_from_bytes(bytes: &[u8]) -> ArithExpr<BinaryField128b> {
 }
 
 #[no_mangle]
-extern "C" fn rs_binius_arith_expr_is_equivalent(
+extern "C" fn rs_binius_arith_expr_is_equivalent_to_bytes(
     arith_expr: &LeanCtorObject<c_void>,
     bytes: &LeanSArrayObject,
 ) -> bool {

@@ -14,6 +14,6 @@ static lean_external_class *get_u128_class() {
     return g_u128_class;
 }
 
-extern lean_obj_res c_u128_of_hi_lo(uint64_t hi, uint64_t lo) {
+extern lean_obj_res c_rs_u128_of_hi_lo(uint64_t hi, uint64_t lo) {
     return lean_alloc_external(get_u128_class(), rs_u128_of_hi_lo(hi, lo));
 }

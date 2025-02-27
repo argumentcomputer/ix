@@ -19,7 +19,7 @@ static lean_external_class *get_constraint_system_class() {
 
 /* --- ConstraintSystemBuilder --- */
 
-extern lean_obj_res c_constraint_system_builder_init() {
+extern lean_obj_res c_rs_constraint_system_builder_init() {
     linear_object *linear = linear_object_init(
         rs_constraint_system_builder_init(),
         &rs_constraint_system_builder_free
@@ -27,7 +27,7 @@ extern lean_obj_res c_constraint_system_builder_init() {
     return alloc_lean_linear_object(linear);
 }
 
-extern lean_obj_res c_constraint_system_builder_build(lean_obj_arg l_csb) {
+extern lean_obj_res c_rs_constraint_system_builder_build(lean_obj_arg l_csb) {
     linear_object *linear = validated_linear(l_csb);
 
     void *constraint_system = rs_constraint_system_builder_build(get_object_ref(linear));
@@ -36,7 +36,7 @@ extern lean_obj_res c_constraint_system_builder_build(lean_obj_arg l_csb) {
     return lean_alloc_external(get_constraint_system_class(), constraint_system);
 }
 
-extern lean_obj_res c_constraint_system_builder_flush_custom(
+extern lean_obj_res c_rs_constraint_system_builder_flush_custom(
     lean_obj_arg l_csb,
     bool direction_pull,
     size_t channel_id,
@@ -59,7 +59,7 @@ extern lean_obj_res c_constraint_system_builder_flush_custom(
     return alloc_lean_linear_object(new_linear);
 }
 
-extern lean_obj_res c_constraint_system_builder_assert_zero(
+extern lean_obj_res c_rs_constraint_system_builder_assert_zero(
     lean_obj_arg l_csb,
     b_lean_obj_arg name,
     b_lean_obj_arg oracle_ids,
@@ -79,7 +79,7 @@ extern lean_obj_res c_constraint_system_builder_assert_zero(
     return alloc_lean_linear_object(new_linear);
 }
 
-extern lean_obj_res c_constraint_system_builder_assert_not_zero(
+extern lean_obj_res c_rs_constraint_system_builder_assert_not_zero(
     lean_obj_arg l_csb,
     size_t oracle_id
 ) {
@@ -91,7 +91,7 @@ extern lean_obj_res c_constraint_system_builder_assert_not_zero(
     return alloc_lean_linear_object(new_linear);
 }
 
-extern lean_obj_res c_constraint_system_builder_add_channel(lean_obj_arg l_csb) {
+extern lean_obj_res c_rs_constraint_system_builder_add_channel(lean_obj_arg l_csb) {
     linear_object *linear = validated_linear(l_csb);
 
     size_t channel_id = rs_constraint_system_builder_add_channel(get_object_ref(linear));
@@ -103,7 +103,7 @@ extern lean_obj_res c_constraint_system_builder_add_channel(lean_obj_arg l_csb) 
     return tuple;
 }
 
-extern lean_obj_res c_constraint_system_builder_add_committed(
+extern lean_obj_res c_rs_constraint_system_builder_add_committed(
     lean_obj_arg l_csb,
     b_lean_obj_arg name,
     size_t n_vars,
@@ -126,7 +126,7 @@ extern lean_obj_res c_constraint_system_builder_add_committed(
     return tuple;
 }
 
-extern lean_obj_res c_constraint_system_builder_push_namespace(
+extern lean_obj_res c_rs_constraint_system_builder_push_namespace(
     lean_obj_arg l_csb,
     b_lean_obj_arg name
 ) {
@@ -139,7 +139,7 @@ extern lean_obj_res c_constraint_system_builder_push_namespace(
     return alloc_lean_linear_object(new_linear);
 }
 
-extern lean_obj_res c_constraint_system_builder_pop_namespace(lean_obj_arg l_csb) {
+extern lean_obj_res c_rs_constraint_system_builder_pop_namespace(lean_obj_arg l_csb) {
     linear_object *linear = validated_linear(l_csb);
 
     rs_constraint_system_builder_pop_namespace(get_object_ref(linear));
@@ -148,7 +148,7 @@ extern lean_obj_res c_constraint_system_builder_pop_namespace(lean_obj_arg l_csb
     return alloc_lean_linear_object(new_linear);
 }
 
-extern size_t c_constraint_system_builder_log_rows(
+extern size_t c_rs_constraint_system_builder_log_rows(
     b_lean_obj_arg l_csb,
     b_lean_obj_arg oracle_ids
 ) {

@@ -36,7 +36,7 @@ def toBytes : @& ArithExpr → ByteArray
 Function meant for testing that tells whether the Lean→Rust mapping of ArithExpr
 results on the same expression as deserializing the provided bytes.
 -/
-@[extern "rs_binius_arith_expr_is_equivalent"]
+@[extern "rs_binius_arith_expr_is_equivalent_to_bytes"]
 opaque isEquivalentToBytes : @& ArithExpr → @& ByteArray → Bool
 
 end ArithExpr

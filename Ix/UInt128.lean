@@ -6,7 +6,7 @@ instance : Nonempty UInt128 := GenericNonempty.property
 
 namespace UInt128
 
-@[extern "c_u128_of_hi_lo"]
+@[extern "c_rs_u128_of_hi_lo"]
 opaque ofHiLo : (hi : UInt64) → (lo : UInt64) → UInt128
 
 def ofNat (n : Nat) (_ : n < 2^128 := by norm_cast) : UInt128 :=
