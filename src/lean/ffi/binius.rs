@@ -7,17 +7,16 @@ use binius_core::{
     oracle::OracleId,
 };
 use binius_field::BinaryField128b;
-use binius_math::ArithExpr;
 use std::ffi::c_char;
 
 use crate::lean::{
     array::LeanArrayUSize,
-    boxed::BoxedUSize,
     ctor::LeanCtorObject,
-    external::LeanExternalObject,
     ffi::{drop_raw, raw_to_str, to_raw},
     object::LeanObject,
 };
+
+use super::binius_arith_expr::lean_ctor_to_arith_expr;
 
 /* --- ConstraintSystem --- */
 
@@ -65,48 +64,6 @@ extern "C" fn rs_constraint_system_builder_flush_custom(
     builder
         .flush_custom(direction, channel_id, selector, oracle_ids, multiplicity)
         .expect("ConstraintSystemBuilder::flush_custom failure");
-}
-
-fn lean_ctor_to_arith_expr<T>(ctor_ptr: *const LeanCtorObject<T>) -> ArithExpr<BinaryField128b> {
-    let ctor = unsafe { &*ctor_ptr };
-    match ctor.m_header.m_tag() {
-        0 => {
-            // Const
-            let external_object = ctor.m_objs.slice(1)[0] as *const LeanExternalObject;
-            let u128_ptr = unsafe { (*external_object).m_data } as *const u128;
-            ArithExpr::Const(BinaryField128b::new(unsafe { *u128_ptr }))
-        }
-        1 => {
-            // Var
-            let boxed_usize_ptr = ctor_ptr as *const BoxedUSize; // Lean optimizes to boxed usize
-            let boxed_usize = unsafe { &*boxed_usize_ptr };
-            ArithExpr::Var(boxed_usize.value)
-        }
-        2 => {
-            // Add
-            let ctors = ctor.m_objs.slice(2);
-            let (x, y) = (ctors[0], ctors[1]);
-            let x = lean_ctor_to_arith_expr(x as *const LeanCtorObject<T>);
-            let y = lean_ctor_to_arith_expr(y as *const LeanCtorObject<T>);
-            ArithExpr::Add(Box::new(x), Box::new(y))
-        }
-        3 => {
-            // Mul
-            let ctors = ctor.m_objs.slice(2);
-            let (x, y) = (ctors[0], ctors[1]);
-            let x = lean_ctor_to_arith_expr(x as *const LeanCtorObject<T>);
-            let y = lean_ctor_to_arith_expr(y as *const LeanCtorObject<T>);
-            ArithExpr::Mul(Box::new(x), Box::new(y))
-        }
-        4 => {
-            // Pow
-            let objs = ctor.m_objs.slice(2);
-            let (x, e) = (objs[0], objs[1] as u64);
-            let x = lean_ctor_to_arith_expr(x as *const LeanCtorObject<T>);
-            ArithExpr::Pow(Box::new(x), e)
-        }
-        _ => panic!("Invalid ctor tag"),
-    }
 }
 
 #[no_mangle]

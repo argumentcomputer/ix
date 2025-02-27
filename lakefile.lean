@@ -23,6 +23,7 @@ section Tests
 
 lean_exe Tests.Binius
 lean_exe Tests.ByteArray
+lean_exe Tests.ArithExpr
 
 end Tests
 
@@ -68,6 +69,7 @@ extern_lib ix_c pkg := do
 
   let cDirEntries ← cDir.readDir
 
+  -- Include every C header file in the trace mix
   let extraDepTrace := cDirEntries.foldl (init := getLeanTrace) fun acc dirEntry =>
     let filePath := dirEntry.path
     if filePath.extension == some "h" then do

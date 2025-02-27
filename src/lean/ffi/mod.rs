@@ -1,6 +1,9 @@
 pub mod binius;
+pub mod binius_arith_expr;
 pub mod byte_array;
 pub mod u128;
+pub mod u64;
+pub mod usize;
 
 use std::ffi::{c_char, CStr};
 
