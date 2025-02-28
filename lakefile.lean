@@ -23,6 +23,7 @@ section Tests
 
 lean_exe Tests.Binius
 lean_exe Tests.ByteArray
+lean_exe Tests.ArithExpr
 
 end Tests
 
@@ -68,27 +69,14 @@ extern_lib ix_c pkg := do
 
   let cDirEntries ← cDir.readDir
 
-  -- Changes on `.h` files aren't tracked by Lake, so we keep track of their changes
-  -- by caching their hashes. If there's a hash mismatch, the C build directory
-  -- needs to be deleted to trigger recompilations
-  let mut foundHashMismatch := false
-  let mut collectedHashes := #[]
-  for dirEntry in cDirEntries do
+  -- Include every C header file in the trace mix
+  let extraDepTrace := cDirEntries.foldl (init := getLeanTrace) fun acc dirEntry =>
     let filePath := dirEntry.path
-    if filePath.extension == some "h" then
-      let hBytes ← IO.FS.readBinFile filePath
-      let hHash := toString $ hash hBytes
-      let hHashPath := buildCDir / dirEntry.fileName |>.addExtension "hash"
-      collectedHashes := collectedHashes.push (hHashPath, hHash)
-      if ← hHashPath.pathExists then
-        let cachedHash ← IO.FS.readFile hHashPath
-        if hHash != cachedHash then
-          foundHashMismatch := true -- Hash mismatch
-      else foundHashMismatch := true -- Missing a hash file
-  if (← buildCDir.pathExists) && foundHashMismatch then IO.FS.removeDirAll buildCDir
-  IO.FS.createDirAll buildCDir
-  for (hHashPath, hHash) in collectedHashes do
-    IO.FS.writeFile hHashPath hHash
+    if filePath.extension == some "h" then do
+      let x ← acc
+      let y ← computeTrace $ TextFilePath.mk filePath
+      pure $ x.mix y
+    else acc
 
   -- Collect a build job for every C file in `cDir`
   let mut buildJobs := #[]
@@ -97,7 +85,7 @@ extern_lib ix_c pkg := do
     if filePath.extension == some "c" then
       let oFile := buildCDir / dirEntry.fileName |>.withExtension "o"
       let srcJob ← inputTextFile filePath
-      let buildJob ← buildO oFile srcJob weakArgs #[] compiler getLeanTrace
+      let buildJob ← buildO oFile srcJob weakArgs #[] compiler extraDepTrace
       buildJobs := buildJobs.push buildJob
 
   let libName := nameToStaticLib "ix_c"
