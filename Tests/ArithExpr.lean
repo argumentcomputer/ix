@@ -48,6 +48,7 @@ instance : Repr ArithExpr where
 
 instance : SampleableExt ArithExpr := SampleableExt.mkSelfContained genArithExpr
 
-def main := lspecIO $
-  check "ArithExpr Lean->Rust mapping matches the deserialized bytes"
-    (∀ expr : ArithExpr, expr.isEquivalentToBytes expr.toBytes)
+def Tests.ArithExpr.suite := [
+    check "ArithExpr Lean->Rust mapping matches the deserialized bytes"
+      (∀ expr : ArithExpr, expr.isEquivalentToBytes expr.toBytes),
+  ]

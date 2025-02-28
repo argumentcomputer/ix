@@ -4,6 +4,7 @@ open System Lake DSL
 package ix where
   version := v!"0.1.0"
 
+-- TODO: make this the default target
 lean_lib Ix
 
 @[default_target]
@@ -21,9 +22,10 @@ require Cli from git
 
 section Tests
 
-lean_exe Tests.Binius
-lean_exe Tests.ByteArray
-lean_exe Tests.ArithExpr
+lean_lib Tests
+
+@[test_driver]
+lean_exe Tests.Main
 
 end Tests
 
@@ -128,7 +130,7 @@ script install := do
   setAccessRights tgtPath fileRight
   return 0
 
-script check_lean_h_hash := do
+script "check-lean-h-hash" := do
   let cachedLeanHHash ← IO.FS.readFile $ ".github" / "lean.h.hash"
 
   let leanIncludeDir ← getLeanIncludeDir
