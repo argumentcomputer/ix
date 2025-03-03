@@ -1,4 +1,4 @@
-name: CI Tests
+name: CI Jobs
 
 on:
   push:
@@ -11,13 +11,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lean-build:
+  lean-jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@v1 # https://github.com/leanprover/lean-action
+        with:
+          build-args: "--wfail"
+          test: true
       - name: Check lean.h.hash
-        run: lake run check_lean_h_hash
+        run: lake run check-lean-h-hash
 
   rust-test:
     runs-on: ubuntu-latest
