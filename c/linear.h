@@ -1,6 +1,4 @@
-#ifndef LINEAR_H
-#define LINEAR_H
-
+#pragma once
 #include "lean/lean.h"
 #include "common.h"
 
@@ -80,4 +78,8 @@ static inline lean_object *alloc_lean_linear_object(linear_object *linear) {
     return lean_alloc_external(get_linear_object_class(), linear);
 }
 
-#endif
+static inline linear_object *validated_linear(lean_object *obj) {
+    linear_object *linear = to_linear_object(lean_get_external_data(obj));
+    assert_linearity(linear);
+    return linear;
+}

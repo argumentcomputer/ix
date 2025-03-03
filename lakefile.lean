@@ -4,6 +4,7 @@ open System Lake DSL
 package ix where
   version := v!"0.1.0"
 
+-- TODO: make this the default target
 lean_lib Ix
 
 @[default_target]
@@ -21,7 +22,7 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "ca8e2803f89f0c12bf9743ae7abbfb2ea6b0eeec"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "86da26bb8385ed308fbe7a486956cd07151783e5"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "3eea8a5a6cb1c3dd80ddb1d00f467a1ff78ba8a2"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "efa5aa20504b88e2826032ddaa606c7965ec9467"
@@ -32,8 +33,10 @@ require batteries from git
 
 section Tests
 
-lean_exe Tests.Binius
-lean_exe Tests.ByteArray
+lean_lib Tests
+
+@[test_driver]
+lean_exe Tests.Main
 
 -- TODO(jcb): better test-lib organization
 lean_lib Tests.Ixon.Gen
@@ -83,27 +86,14 @@ extern_lib ix_c pkg := do
 
   let cDirEntries ← cDir.readDir
 
-  -- Changes on `.h` files aren't tracked by Lake, so we keep track of their changes
-  -- by caching their hashes. If there's a hash mismatch, the C build directory
-  -- needs to be deleted to trigger recompilations
-  let mut foundHashMismatch := false
-  let mut collectedHashes := #[]
-  for dirEntry in cDirEntries do
+  -- Include every C header file in the trace mix
+  let extraDepTrace := cDirEntries.foldl (init := getLeanTrace) fun acc dirEntry =>
     let filePath := dirEntry.path
-    if filePath.extension == some "h" then
-      let hBytes ← IO.FS.readBinFile filePath
-      let hHash := toString $ hash hBytes
-      let hHashPath := buildCDir / dirEntry.fileName |>.addExtension "hash"
-      collectedHashes := collectedHashes.push (hHashPath, hHash)
-      if ← hHashPath.pathExists then
-        let cachedHash ← IO.FS.readFile hHashPath
-        if hHash != cachedHash then
-          foundHashMismatch := true -- Hash mismatch
-      else foundHashMismatch := true -- Missing a hash file
-  if (← buildCDir.pathExists) && foundHashMismatch then IO.FS.removeDirAll buildCDir
-  IO.FS.createDirAll buildCDir
-  for (hHashPath, hHash) in collectedHashes do
-    IO.FS.writeFile hHashPath hHash
+    if filePath.extension == some "h" then do
+      let x ← acc
+      let y ← computeTrace $ TextFilePath.mk filePath
+      pure $ x.mix y
+    else acc
 
   -- Collect a build job for every C file in `cDir`
   let mut buildJobs := #[]
@@ -112,7 +102,7 @@ extern_lib ix_c pkg := do
     if filePath.extension == some "c" then
       let oFile := buildCDir / dirEntry.fileName |>.withExtension "o"
       let srcJob ← inputTextFile filePath
-      let buildJob ← buildO oFile srcJob weakArgs #[] compiler getLeanTrace
+      let buildJob ← buildO oFile srcJob weakArgs #[] compiler extraDepTrace
       buildJobs := buildJobs.push buildJob
 
   let libName := nameToStaticLib "ix_c"
@@ -155,7 +145,7 @@ script install := do
   setAccessRights tgtPath fileRight
   return 0
 
-script check_lean_h_hash := do
+script "check-lean-h-hash" := do
   let cachedLeanHHash ← IO.FS.readFile $ ".github" / "lean.h.hash"
 
   let leanIncludeDir ← getLeanIncludeDir

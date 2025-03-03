@@ -1,6 +1,6 @@
-use std::alloc::Layout;
+use std::alloc::{alloc, handle_alloc_error, Layout};
 
-use super::{alloc_layout, object::LeanObject, CArray};
+use super::{object::LeanObject, CArray};
 
 /// ```c
 /// #define LeanScalarArray 248
@@ -37,7 +37,10 @@ impl LeanSArrayObject {
         )
         .expect("Couldn't compute the memory layout");
 
-        let ptr = alloc_layout::<LeanSArrayObject>(layout);
+        let ptr = unsafe { alloc(layout) } as *mut LeanSArrayObject;
+        if ptr.is_null() {
+            handle_alloc_error(layout);
+        }
 
         let size_of_u8 = size_of::<u8>() as u8;
         let header = LeanObject::new(1, 0, size_of_u8, LEAN_SCALAR_ARRAY);
