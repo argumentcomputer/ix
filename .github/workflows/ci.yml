@@ -49,7 +49,11 @@ jobs:
       # TODO: Add '.cargo/config' for list of enabled/disabled `xclippy`lints
       - name: Check clippy warnings
         run: cargo clippy -- -D warnings
+      - name: Get Rust version
+        run: |
+          RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)
+          echo "RUST_VERSION=$RUST_VERSION" | tee -a $GITHUB_ENV
       - name: Cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          rust-version: nightly-2025-01-08
+          rust-version: ${{ env.RUST_VERSION }}
