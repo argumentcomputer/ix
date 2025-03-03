@@ -13,7 +13,7 @@ binius_circuits = { git = "https://github.com/IrreducibleOSS/binius.git", rev = 
 binius_field = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a451f4cf277938ee968c34c2daf5945465a72d7c" }
 binius_macros = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a451f4cf277938ee968c34c2daf5945465a72d7c" }
 binius_math = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a451f4cf277938ee968c34c2daf5945465a72d7c" }
-blake3 = "1"
+blake3 = "1.6.1"
 bumpalo = "3"
 proptest = "1"
 rayon = "1"
