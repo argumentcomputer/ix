@@ -1,9 +1,9 @@
-use binius_field::underlier::{WithUnderlier, U1};
+use binius_field::underlier::{U1, WithUnderlier};
 use binius_field::{BinaryField, Field};
 
-use super::execute::{load_u64, FxIndexMap, QueryRecord, QueryResult};
+use super::execute::{FxIndexMap, QueryRecord, QueryResult, load_u64};
 use super::ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, Toplevel};
-use super::layout::{func_layout, EiurByteField, Layout, MultiplicityField};
+use super::layout::{EiurByteField, Layout, MultiplicityField, func_layout};
 
 pub const MULT_GEN: MultiplicityField = MultiplicityField::MULTIPLICATIVE_GENERATOR;
 
@@ -12,9 +12,16 @@ pub struct Trace {
     pub num_queries: u64,
     pub inputs: Vec<Vec<u8>>,
     pub outputs: Vec<Vec<u8>>,
-    pub multiplicity: Vec<MultiplicityField>,
     pub auxiliaries: Vec<Vec<u8>>,
+    pub multiplicity: Vec<MultiplicityField>,
+    pub require_hints: Vec<Vec<MultiplicityField>>,
     pub selectors: Vec<Vec<U1>>,
+}
+
+#[derive(Clone, Copy, Default, Debug)]
+struct ColumnIndex {
+    auxiliary: usize,
+    require_hint: usize,
 }
 
 impl Trace {
@@ -30,19 +37,27 @@ impl Trace {
         let auxiliaries = vec![blank_column; shape.auxiliaries as usize];
         let blank_column = vec![U1::new(0); height];
         let selectors = vec![blank_column; shape.selectors as usize];
+        let blank_column = vec![MultiplicityField::ZERO; height];
+        let require_hints = vec![blank_column; shape.require_hints as usize];
         Self {
             inputs,
             outputs,
-            multiplicity,
             auxiliaries,
+            multiplicity,
+            require_hints,
             selectors,
             num_queries: num_queries as u64,
         }
     }
 
-    fn push(&mut self, row: usize, col: &mut usize, val: u8) {
-        self.auxiliaries[*col][row] = val;
-        *col += 1;
+    fn push(&mut self, row: usize, col: &mut ColumnIndex, val: u8) {
+        self.auxiliaries[col.auxiliary][row] = val;
+        col.auxiliary += 1;
+    }
+
+    fn require(&mut self, row: usize, col: &mut ColumnIndex, val: MultiplicityField) {
+        self.require_hints[col.require_hint][row] = val;
+        col.require_hint += 1;
     }
 
     fn set_selector(&mut self, row: usize, sel: SelIdx) {
@@ -74,7 +89,7 @@ fn generate_func_trace(
     let (multiplicity, inputs, outputs) = extract_io(func_map, shape);
     let mut trace = Trace::blank_trace_with_io(shape, num_queries, multiplicity, inputs, outputs);
     for row in 0..num_queries {
-        let mut col = 0;
+        let mut col = ColumnIndex::default();
         let mut map = trace.inputs.iter().map(|col| col[row]).collect::<Vec<_>>();
         populate_block_trace(
             &func.body,
@@ -94,7 +109,7 @@ fn populate_block_trace(
     trace: &mut Trace,
     map: &mut Vec<u8>,
     row: usize,
-    col: &mut usize,
+    col: &mut ColumnIndex,
     record: &QueryRecord,
     prev_counts: &mut FxIndexMap<(FuncIdx, Vec<u8>), MultiplicityField>,
 ) {
@@ -139,7 +154,7 @@ fn populate_op_trace(
     trace: &mut Trace,
     map: &mut Vec<u8>,
     row: usize,
-    col: &mut usize,
+    col: &mut ColumnIndex,
     record: &QueryRecord,
     prev_counts: &mut FxIndexMap<(FuncIdx, Vec<u8>), MultiplicityField>,
 ) {
@@ -212,9 +227,7 @@ fn populate_op_trace(
             let count = prev_counts
                 .entry((*func_idx, args))
                 .or_insert(MultiplicityField::ONE);
-            for byte in count.to_underlier().to_le_bytes() {
-                trace.push(row, col, byte);
-            }
+            trace.require(row, col, *count);
             *count *= MULT_GEN;
         }
     }
@@ -229,12 +242,11 @@ fn extract_io(
     let mut inputs = vec![blank_column.clone(); shape.inputs as usize];
     let mut outputs = vec![blank_column; shape.outputs as usize];
     let mut multiplicity = vec![MultiplicityField::ONE; height];
-    let gen = MULT_GEN;
     func_map
         .iter()
         .enumerate()
         .for_each(|(i, (input_bytes, result))| {
-            multiplicity[i] = gen.pow([result.multiplicity as u64]);
+            multiplicity[i] = MULT_GEN.pow([result.multiplicity as u64]);
             assert_eq!(input_bytes.len(), inputs.len());
             input_bytes
                 .iter()
