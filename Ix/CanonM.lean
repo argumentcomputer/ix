@@ -74,8 +74,9 @@ def withLevels (lvls : List Lean.Name) : CanonM α → CanonM α :=
 --    })
 
 @[inline] def addConstToEnv (name : Lean.Name) (hash : Address) : CanonM Unit :=
-  modify fun stt => { stt with env := { stt.env with
-    consts := stt.env.consts.insert name hash } }
+  modify fun stt => 
+    { stt with env :=
+      { stt.env with consts := stt.env.consts.insert name hash } }
 
 @[inline] def addBlockToEnv (hash : Address) : CanonM Unit :=
   modify fun stt => { stt with env := { stt.env with

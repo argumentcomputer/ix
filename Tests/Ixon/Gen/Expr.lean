@@ -25,7 +25,8 @@ def genExpr : SlimCheck.Gen Ixon.Expr := getSize >>= go
         (30, .apps <$> go f <*> go f <*> resizeListOf (go f)),
         (30, .lams <$> resizeListOf (go f) <*> go f),
         (30, .alls <$> resizeListOf (go f) <*> go f),
-        (30, .let_ <$> go f <*> go f <*> go f),
+        (15, .let_ .true <$> go f <*> go f <*> go f),
+        (15, .let_ .false <$> go f <*> go f <*> go f),
         (50, .proj <$> genUInt64 <*> go f),
         (100, .strl <$> genString),
         (100, .natl <$> chooseAny Nat)

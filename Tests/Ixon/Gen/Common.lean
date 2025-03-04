@@ -6,26 +6,12 @@ import Ix.Ixon.Univ
 import LSpec.SlimCheck.Gen
 import LSpec
 import Blake3
+import Tests.Common
 
 open LSpec
 open SlimCheck
 open SlimCheck.Gen
 open Ixon
-
-def genUInt64 : Gen UInt64 :=
-  UInt64.ofNat <$> choose Nat 0 0xFFFFFFFFFFFFFFFF
-
-def frequency' (default: Gen A) (xs: List (Nat × Gen A)) : Gen A := do
-  let n ← choose Nat 0 total
-  pick n xs
-  where
-    total := List.sum (Prod.fst <$> xs)
-    pick n xs := match xs with
-    | [] => default
-    | (k,x)::xs => if n <= k then x else pick (n - k) xs
-
-def frequency [Inhabited A] (xs: List (Nat × Gen A)) : Gen A := do
-  frequency' (Prod.snd <| xs.get! 0) xs
 
 def genAddress : SlimCheck.Gen Address := 
   pure (Address.mk (Blake3.hash "foobar".toUTF8).val)

@@ -146,7 +146,7 @@ inductive Expr where
   -- tag: 0x6, syntax: (∀ A B C -> body)
   | alls (types: List Expr) (body: Expr) : Expr
   -- tag: 0x7, syntax: (let d : A in b)
-  | let_ (type: Expr) (defn: Expr) (body: Expr) : Expr
+  | let_ (nonDep: Bool) (type: Expr) (defn: Expr) (body: Expr) : Expr
   -- tag: 0x8, syntax: x.1
   | proj : UInt64 -> Expr -> Expr
   -- tag: 0x9, syntax: "foobar"
@@ -170,7 +170,7 @@ namespace Ix.IR
     | app   : Expr → Expr → Expr
     | lam   : Expr → Expr → Expr
     | pi    : Expr → Expr → Expr
-    | letE  : Expr → Expr → Expr → Expr
+    | letE  : Bool -> Expr → Expr → Expr → Expr
     | lit   : Lean.Literal → Expr
     | proj  : Nat → Expr → Expr
 end Ix.IR

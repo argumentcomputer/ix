@@ -8,12 +8,12 @@ namespace Ixon
 
 structure MetaNode where
   name : Option Lean.Name
-  bind : Option Lean.BinderInfo
+  info : Option Lean.BinderInfo
   link : Option Address
   deriving BEq, Repr, Ord
 
 structure Metadata where
-  meta: Batteries.RBMap Nat MetaNode compare
+  map: Batteries.RBMap Nat MetaNode compare
   deriving BEq, Repr
 
 inductive NamePart where
@@ -65,7 +65,7 @@ def getMetaNode: GetM MetaNode := do
     return MetaNode.mk n b l
   | e => throw s!"expected metanode Array with tag 0xB, got {e}"
 
-def putMetadata (m: Metadata) : PutM := putArray (putEntry <$> m.meta.toList)
+def putMetadata (m: Metadata) : PutM := putArray (putEntry <$> m.map.toList)
   where
     putEntry e := putNatl e.fst *> putMetaNode e.snd
 

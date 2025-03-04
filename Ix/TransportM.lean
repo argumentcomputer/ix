@@ -1,35 +1,38 @@
 import Ix.IR.Univ
 import Ix.Ixon.Univ
+import Ix.IR.Expr
+import Ix.Ixon.Expr
 import Ix.Common
+import Ix.Address
+import Ix.Ixon.Metadata
+import Batteries.Data.RBMap
 
 namespace Ix.TransportM
 
-structure MetaNode where
-  name: Option Lean.Name
-  bind: Option Lean.BinderInfo
-
-structure Metadata where
-  metadata : Array MetaNode
-
 structure DematState where
-  metadata: Metadata
+  idx: Nat
+  meta: Ixon.Metadata
 
-inductive DematError
-  | natTooBig (x: Nat)
+def emptyDematState : DematState := 
+  { idx := 0, meta := { map := Batteries.RBMap.empty }}
 
-abbrev DematM := EStateM DematError DematState
+inductive TransportError
+  | natTooBig (idx: Nat) (x: Nat)
+  | unknownIndex (idx: Nat) (m: Ixon.Metadata)
+  | unexpectedNode (idx: Nat) (m: Ixon.Metadata)
+  deriving Repr
 
-inductive RematError
-  | rematBadMetadata (idx: UInt64) (m: Metadata)
-  | rematBadMetaNode (x: String)
+abbrev DematM := EStateM TransportError DematState
 
 structure RematState where
   idx: Nat
 
-structure RematCtx where
-  metadata: Metadata
+def emptyRematState : RematState := { idx := 0 }
 
-abbrev RematM := ReaderT RematCtx (EStateM RematError RematState)
+structure RematCtx where
+  meta: Ixon.Metadata
+
+abbrev RematM := ReaderT RematCtx (EStateM TransportError RematState)
 
 def countSucc : Ix.Univ -> Nat -> (Nat × Ix.Univ)
 | .succ x, i => countSucc x (.succ i)
@@ -40,24 +43,106 @@ def unrollSucc : Nat -> Ix.Univ -> Ix.Univ
 | .succ i, x => unrollSucc i (.succ x)
 
 def dematNat (x: Nat): DematM UInt64 :=
-  if x > UInt64.MAX.toNat then throw (.natTooBig x) else return x.toUInt64
+  if x > UInt64.MAX.toNat then
+    get >>= fun stt => throw (.natTooBig stt.idx x)
+    else return x.toUInt64
 
---partial def dematUniv : Ix.Univ -> DematM Ixon.Univ
---| .zero => return .const 0
---| .succ x => match countSucc x 1 with
---  | (i, .zero) => .const <$> dematNat i
---  | (i, x) => .add <$> dematNat i <*> dematUniv x
---| .max x y => .max <$> dematUniv x <*> dematUniv y
---| .imax x y => .imax <$> dematUniv x <*> dematUniv y
---| .var n => .var <$> dematNat n
---
---def rematUniv : Ixon.Univ -> RematM Ix.Univ
---| .var x => return .var (UInt64.toNat x)
---| .const i => return unrollSucc (UInt64.toNat i) .zero
---| .add i x => unrollSucc (UInt64.toNat i) <$> rematUniv x
---| .max x y => .max <$> rematUniv x <*> rematUniv y
---| .imax x y => .imax <$> rematUniv x <*> rematUniv y
+def dematIncrN (x: Nat) : DematM Nat := do
+  let n <- (·.idx) <$> get
+  modify fun stt => { stt with idx := n + x }
+  return n + x
 
+def dematIncr : DematM Nat := dematIncrN 1
 
+def dematMeta (node: Ixon.MetaNode): DematM Unit := do
+  let n <- (·.idx) <$> get
+  modify fun stt =>
+    { stt with meta :=
+      { stt.meta with map := stt.meta.map.insert n node } }
+
+partial def dematUniv : Ix.Univ -> DematM Ixon.Univ
+| .zero => dematIncr *> return .const 0
+| .succ x => match countSucc x 1 with
+  | (i, .zero) => dematIncrN (i + 1) *> .const <$> dematNat i
+  | (i, x) => dematIncrN (i + 1) *> .add <$> dematNat i <*> dematUniv x
+| .max x y => dematIncr *> .max <$> dematUniv x <*> dematUniv y
+| .imax x y => dematIncr *> .imax <$> dematUniv x <*> dematUniv y
+| .var n i => do
+  let _ <- dematIncr
+  dematMeta { name := .some n, info := .none, link := .none }
+  .var <$> dematNat i
+
+def rematIncrN (x: Nat) : RematM Nat := do
+  let n <- (·.idx) <$> get
+  modify fun stt => { stt with idx := n + x }
+  return n + x
+
+def rematIncr : RematM Nat := rematIncrN 1
+
+def rematMeta : RematM Ixon.MetaNode := do
+  let n <- (·.idx) <$> get
+  let m <- (·.meta) <$> read
+  match m.map.find? n with
+  | .some n => return n
+  | .none => throw (.unknownIndex n m)
+
+def rematUniv : Ixon.Univ -> RematM Ix.Univ
+| .const i => do
+  let i' := UInt64.toNat i
+  rematIncrN (i' + 1) *> return (unrollSucc i') .zero
+| .add i x => do
+  let i' := UInt64.toNat i
+  rematIncrN (i' + 1) *> (unrollSucc i') <$> rematUniv x
+| .max x y => rematIncr *> .max <$> rematUniv x <*> rematUniv y
+| .imax x y => rematIncr *> .imax <$> rematUniv x <*> rematUniv y
+| .var x => do
+  let k <- rematIncr
+  let mn <- rematMeta
+  match mn.name with
+  | .some name => return .var name (UInt64.toNat x)
+  | .none => read >>= fun ctx => throw (.unexpectedNode k ctx.meta)
+
+partial def dematExpr : Ix.Expr -> DematM Ixon.Expr
+| .var i => dematIncr *> .vari <$> dematNat i
+| .sort u => dematIncr *> .sort <$> dematUniv u
+| .const n r m us => do
+  let _ <- dematIncr
+  dematMeta { name := .some n, info := .none, link := .some m }
+  .cnst r <$> (us.mapM dematUniv)
+| .rec_ i us => dematIncr *> .rec_ <$> dematNat i <*> (us.mapM dematUniv)
+| .app f a => dematIncr *> apps f a []
+| .lam n i t b => lams (.lam n i t b) []
+| .pi n i t b => alls (.pi n i t b) []
+| .letE n t v b nD => do
+  let _ <- dematIncr
+  dematMeta { name := .some n, info := .none, link := none }
+  .let_ nD <$> dematExpr t <*> dematExpr v <*> dematExpr b
+| .lit l => dematIncr *> match l with
+  | .strVal s => return .strl s
+  | .natVal n => return .natl n
+| .proj n t i s => do
+  let _ <- dematIncr
+  dematMeta { .name := .some n, info := .none, link := .some t }
+  .proj <$> dematNat i <*> dematExpr s
+  where
+    apps : Ix.Expr -> Ix.Expr -> List Ix.Expr -> DematM Ixon.Expr
+    | .app ff fa, a, as => apps ff fa (a::as)
+    | f, a, as => do
+      let as' <- as.reverse.mapM (fun a => dematIncr *> dematExpr a)
+      .apps <$> dematExpr f <*> dematExpr a <*> pure (as'.reverse)
+    lams : Ix.Expr -> List Ixon.Expr -> DematM Ixon.Expr
+    | .lam n i t b, ts => do
+      let _ <- dematIncr
+      dematMeta { name := .some n, info := .some i, link := .none}
+      let t' <- dematExpr t
+      lams b (t'::ts)
+    | x, ts => .lams ts <$> dematExpr x
+    alls : Ix.Expr -> List Ixon.Expr -> DematM Ixon.Expr
+    | .pi n i t b, ts => do
+      let _ <- dematIncr
+      dematMeta { name := .some n, info := .some i, link := .none}
+      let t' <- dematExpr t
+      alls b (t'::ts)
+    | x, ts => .alls ts <$> dematExpr x
 
 end Ix.TransportM

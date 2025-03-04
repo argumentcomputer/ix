@@ -21,7 +21,7 @@ inductive Expr where
   -- 0x6 (∀ A B C -> body)
   | alls (types: List Expr) (body: Expr) : Expr
   -- 0x7 (let d : A in b)
-  | let_ (type: Expr) (defn: Expr) (body: Expr) : Expr
+  | let_ (nonDep: Bool) (type: Expr) (defn: Expr) (body: Expr) : Expr
   -- 0x8 .1
   | proj : UInt64 -> Expr -> Expr
   -- 0x9 "foobar"
@@ -58,8 +58,8 @@ partial def putExpr : Expr -> PutM
 | .alls ts b => do
   putExprTag 0x6 (Nat.toUInt64 ts.length) *>
   putList putExpr ts *> putExpr b
-| .let_ t d b => do
-  putExprTag 0x7 0
+| .let_ nD t d b => do
+  if nD then putExprTag 0x7 1 else putExprTag 0x7 0
   putExpr t *> putExpr d *> putExpr b
 | .proj n x => do
   putExprTag 0x8 n
@@ -106,7 +106,12 @@ def getExpr : GetM Expr := do
       | 0x6 => do
         let n ← getExprTag isLarge small
         .alls <$> getList n (go f) <*> go f
-      | 0x7 => .let_ <$> go f <*> go f <*> go f
+      | 0x7 => do
+        let n ← getExprTag isLarge small
+        if n == 0 then
+          .let_ .false <$> go f <*> go f <*> go f
+        else 
+          .let_ .true <$> go f <*> go f <*> go f
       | 0x8 => do
         let n ← getExprTag isLarge small
         .proj n <$> go f

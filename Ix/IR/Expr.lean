@@ -7,17 +7,16 @@ namespace Ix
 
 
 inductive Expr
-  /-- Variables are also used to represent recursive calls. When referencing
-    constants, the second argument keeps track of the universe levels -/
-  | var   : Nat → List Univ → Expr
-  | sort  : Univ → Expr
-  | const : Lean.Name → Address → Address → List Univ → Expr
-  | app   : Expr → Expr → Expr
-  | lam   : Expr → Expr → Expr
-  | pi    : Expr → Expr → Expr
-  | letE  : Expr → Expr → Expr → Expr
-  | lit   : Lean.Literal → Expr
-  | proj  : Nat → Expr → Expr
+  | var   (idx: Nat)
+  | sort  (univ: Univ)
+  | const (name: Lean.Name) (ref: Address) (meta: Address) (univs: List Univ)
+  | rec_  (idx: Nat) (univs: List Univ)
+  | app   (func: Expr) (argm: Expr)
+  | lam   (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
+  | pi    (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
+  | letE  (name: Lean.Name) (type: Expr) (value: Expr) (body: Expr) (nonDep: Bool)
+  | lit   (lit: Lean.Literal)
+  | proj  (typeName: Lean.Name) (type: Address) (idx: Nat) (struct: Expr)
   deriving Inhabited, Ord, BEq, Repr, Hashable
 
 end Ix
