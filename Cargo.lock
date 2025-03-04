@@ -219,7 +219,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 [[package]]
 name = "binius_circuits"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=a451f4cf277938ee968c34c2daf5945465a72d7c#a451f4cf277938ee968c34c2daf5945465a72d7c"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "alloy-primitives",
  "anyhow",
@@ -241,7 +241,7 @@ dependencies = [
 [[package]]
 name = "binius_core"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=a451f4cf277938ee968c34c2daf5945465a72d7c#a451f4cf277938ee968c34c2daf5945465a72d7c"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "assert_matches",
  "auto_impl",
@@ -259,6 +259,7 @@ dependencies = [
  "digest 0.10.7",
  "either",
  "getset",
+ "inventory",
  "itertools 0.13.0",
  "rand",
  "stackalloc",
@@ -271,15 +272,13 @@ dependencies = [
 [[package]]
 name = "binius_field"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=a451f4cf277938ee968c34c2daf5945465a72d7c#a451f4cf277938ee968c34c2daf5945465a72d7c"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "binius_maybe_rayon",
  "binius_utils",
  "bytemuck",
- "bytes",
  "cfg-if",
  "derive_more 0.99.19",
- "generic-array",
  "rand",
  "seq-macro",
  "subtle",
@@ -291,7 +290,7 @@ dependencies = [
 [[package]]
 name = "binius_hal"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=a451f4cf277938ee968c34c2daf5945465a72d7c#a451f4cf277938ee968c34c2daf5945465a72d7c"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "auto_impl",
  "binius_field",
@@ -309,7 +308,7 @@ dependencies = [
 [[package]]
 name = "binius_hash"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=a451f4cf277938ee968c34c2daf5945465a72d7c#a451f4cf277938ee968c34c2daf5945465a72d7c"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "binius_field",
  "binius_ntt",
@@ -327,7 +326,7 @@ dependencies = [
 [[package]]
 name = "binius_macros"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=a451f4cf277938ee968c34c2daf5945465a72d7c#a451f4cf277938ee968c34c2daf5945465a72d7c"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -337,10 +336,11 @@ dependencies = [
 [[package]]
 name = "binius_math"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=a451f4cf277938ee968c34c2daf5945465a72d7c#a451f4cf277938ee968c34c2daf5945465a72d7c"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "auto_impl",
  "binius_field",
+ "binius_macros",
  "binius_maybe_rayon",
  "binius_utils",
  "bytemuck",
@@ -357,7 +357,7 @@ dependencies = [
 [[package]]
 name = "binius_maybe_rayon"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=a451f4cf277938ee968c34c2daf5945465a72d7c#a451f4cf277938ee968c34c2daf5945465a72d7c"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "cfg-if",
  "either",
@@ -367,7 +367,7 @@ dependencies = [
 [[package]]
 name = "binius_ntt"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=a451f4cf277938ee968c34c2daf5945465a72d7c#a451f4cf277938ee968c34c2daf5945465a72d7c"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "binius_field",
  "binius_math",
@@ -380,10 +380,12 @@ dependencies = [
 [[package]]
 name = "binius_utils"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=a451f4cf277938ee968c34c2daf5945465a72d7c#a451f4cf277938ee968c34c2daf5945465a72d7c"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
+ "auto_impl",
  "binius_maybe_rayon",
  "bytemuck",
+ "bytes",
  "cfg-if",
  "generic-array",
  "itertools 0.13.0",
@@ -938,6 +940,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inventory"
+version = "0.3.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab08d7cd2c5897f2c949e5383ea7c7db03fb19130ffcfbf7eda795137ae3cb83"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -957,9 +968,9 @@ dependencies = [
 
 [[package]]
 name = "itoa"
-version = "1.0.14"
+version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d75a2a4b1b190afb6f5425f10f6a8f959d2ea0b9c2b1d79553551850539e4674"
+checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
 name = "ix_rs"
@@ -1390,7 +1401,7 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
- "semver 1.0.25",
+ "semver 1.0.26",
 ]
 
 [[package]]
@@ -1408,9 +1419,9 @@ dependencies = [
 
 [[package]]
 name = "rustversion"
-version = "1.0.19"
+version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7c45b9784283f1b2e7fb61b42047c2fd678ef0960d4f6f1eba131594cc369d4"
+checksum = "eded382c5f5f786b989652c49544c4877d9f015cc22e145a5ea8ea66c2921cd2"
 
 [[package]]
 name = "rusty-fork"
@@ -1458,9 +1469,9 @@ dependencies = [
 
 [[package]]
 name = "semver"
-version = "1.0.25"
+version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f79dfe2d285b0488816f30e700a7438c5a73d816b5b7d3ac72fbc48b0d185e03"
+checksum = "56e6fa9c48d24d85fb3de5ad847117517440f6beceb7798af16b4a87d616b8d0"
 
 [[package]]
 name = "semver-parser"
@@ -1479,9 +1490,9 @@ dependencies = [
 
 [[package]]
 name = "seq-macro"
-version = "0.3.5"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3f0bf26fd526d2a95683cd0f87bf103b8539e2ca1ef48ce002d67aad59aa0b4"
+checksum = "1bc711410fbe7399f390ca1c3b60ad0f53f80e95c5eb935e52268a0e2cd49acc"
 
 [[package]]
 name = "serde"
@@ -1770,9 +1781,9 @@ checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.17"
+version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00e2473a93778eb0bad35909dff6a10d28e63f792f16ed15e404fca9d5eeedbe"
+checksum = "5a5f39404a5da50712a4c1eecf25e90dd62b613502b7e925fd4e4d19b5c96512"
 
 [[package]]
 name = "unicode-xid"

@@ -7,9 +7,12 @@ void *rs_u128_of_hi_lo(uint64_t, uint64_t);
 
 void  rs_constraint_system_free(void*);
 
-void *rs_constraint_system_builder_init();
+void *rs_constraint_system_builder_new();
 void *rs_constraint_system_builder_build(void*);
 void  rs_constraint_system_builder_free(void*);
+void rs_constraint_system_builder_flush_with_multiplicity(
+    void*, bool, size_t, size_t, b_lean_obj_arg, uint64_t
+);
 void rs_constraint_system_builder_flush_custom(
     void*, bool, size_t, size_t, b_lean_obj_arg, uint64_t
 );
