@@ -4,21 +4,20 @@ open System Lake DSL
 package ix where
   version := v!"0.1.0"
 
--- TODO: make this the default target
+@[default_target]
 lean_lib Ix
 
-@[default_target]
 lean_exe ix where
   root := `Main
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "fc8f902d166e4f3284d1b03a98a6237095623046"
+  "https://github.com/argumentcomputer/LSpec" @ "8ff598482515a698c88f2e65f7f529a04cf636f1"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "3eea8a5a6cb1c3dd80ddb1d00f467a1ff78ba8a2"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "bc498146f630fc66d02c4412f073ef5bf8c608c4"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "efa5aa20504b88e2826032ddaa606c7965ec9467"
+  "https://github.com/leanprover/lean4-cli" @ "e7fd1a415c80985ade02a021172834ca2139b0ca"
 
 section Tests
 
@@ -131,12 +130,12 @@ script install := do
   return 0
 
 script "check-lean-h-hash" := do
-  let cachedLeanHHash ← IO.FS.readFile $ ".github" / "lean.h.hash"
+  let cachedLeanHHash := 2268578318159647227
 
   let leanIncludeDir ← getLeanIncludeDir
   let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"
   let includedLeanHBytes ← IO.FS.readBinFile includedLeanHPath
-  let includedLeanHHash := toString includedLeanHBytes.hash
+  let includedLeanHHash := includedLeanHBytes.hash
 
   if cachedLeanHHash ≠ includedLeanHHash then
     IO.eprintln   "Mismatching lean/lean.h hash"
