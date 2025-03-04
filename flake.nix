@@ -3,7 +3,7 @@
 
   inputs = {
     # Lean + System packages
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     lean4-nix.url = "github:argumentcomputer/lean4-nix";
 
     # Helper: flake-parts for easier outputs
