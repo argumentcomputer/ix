@@ -5,7 +5,7 @@ open LSpec Binius in
 
 def Tests.Binius.suite :=
   let nVars := 3
-  let builder := ConstraintSystemBuilder.init ()
+  let builder := ConstraintSystemBuilder.new ()
   let (oracleId, builder) := builder.addCommitted "foo" nVars 5
   let (oracleId', builder) := builder.addCommitted "bar" nVars 4
   let builder := builder.pushNamespace "hi"
@@ -16,6 +16,8 @@ def Tests.Binius.suite :=
   let logRows := builder.logRows #[oracleId, oracleId']
   let (channelId, builder) := builder.addChannel
   let (channelId', builder) := builder.addChannel
+  let builder := builder.flushWithMultiplicity .push channelId 6 #[oracleId, oracleId'] 1
+  let builder := builder.flushWithMultiplicity .pull channelId 7 #[oracleId, oracleId'] 1
   let builder := builder.flushCustom .push channelId oracleId #[oracleId, oracleId'] 1
   let builder := builder.flushCustom .pull channelId oracleId #[oracleId, oracleId'] 1
   let _cs := builder.build

@@ -28,7 +28,7 @@ extern "C" fn rs_constraint_system_free(ptr: *mut ConstraintSystem<BinaryField12
 /* --- ConstraintSystemBuilder --- */
 
 #[no_mangle]
-extern "C" fn rs_constraint_system_builder_init<'a>() -> *const ConstraintSystemBuilder<'a> {
+extern "C" fn rs_constraint_system_builder_new<'a>() -> *const ConstraintSystemBuilder<'a> {
     to_raw(ConstraintSystemBuilder::new())
 }
 
@@ -47,6 +47,23 @@ extern "C" fn rs_constraint_system_builder_build(
             .build()
             .expect("ConstraintSystemBuilder::build failure"),
     )
+}
+
+#[no_mangle]
+extern "C" fn rs_constraint_system_builder_flush_with_multiplicity(
+    builder: &mut ConstraintSystemBuilder,
+    direction_pull: bool,
+    channel_id: ChannelId,
+    count: usize,
+    oracle_ids: &LeanArrayUSize,
+    multiplicity: u64,
+) {
+    let oracle_ids = oracle_ids.to_vec();
+    use FlushDirection::*;
+    let direction = if direction_pull { Pull } else { Push };
+    builder
+        .flush_with_multiplicity(direction, channel_id, count, oracle_ids, multiplicity)
+        .expect("ConstraintSystemBuilder::flush_with_multiplicity failure");
 }
 
 #[no_mangle]
