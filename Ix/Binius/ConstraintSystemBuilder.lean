@@ -30,18 +30,42 @@ inductive FlushDirection
 
 namespace ConstraintSystemBuilder
 
-@[extern "c_rs_constraint_system_builder_init"]
-opaque init : Unit → ConstraintSystemBuilder
+@[extern "c_rs_constraint_system_builder_new"]
+opaque new : Unit → ConstraintSystemBuilder
 
 /-- **Mutates** the input `ConstraintSystemBuilder` -/
 @[extern "c_rs_constraint_system_builder_build"]
 opaque build : ConstraintSystemBuilder → ConstraintSystem
 
 /-- **Mutates** the input `ConstraintSystemBuilder` -/
+@[extern "c_rs_constraint_system_builder_flush_with_multiplicity"]
+opaque flushWithMultiplicity :
+  ConstraintSystemBuilder → FlushDirection → ChannelId → (count : USize) →
+    @& Array OracleId → (multiplicity : UInt64) → ConstraintSystemBuilder
+
+/-- **Mutates** the input `ConstraintSystemBuilder` -/
+def flush (builder : ConstraintSystemBuilder) (direction : FlushDirection)
+    (channelId : ChannelId) (count : USize) (oracleIds : @& Array OracleId) :
+      ConstraintSystemBuilder :=
+  builder.flushWithMultiplicity direction channelId count oracleIds 1
+
+/-- **Mutates** the input `ConstraintSystemBuilder` -/
 @[extern "c_rs_constraint_system_builder_flush_custom"]
 opaque flushCustom :
   ConstraintSystemBuilder → FlushDirection → ChannelId → (selector : OracleId) →
     @& Array OracleId → (multiplicity : UInt64) → ConstraintSystemBuilder
+
+/-- **Mutates** the input `ConstraintSystemBuilder` -/
+def send (builder : ConstraintSystemBuilder)
+    (channelId : ChannelId) (count : USize) (oracleIds : @& Array OracleId) :
+      ConstraintSystemBuilder :=
+  builder.flush .push channelId count oracleIds
+
+/-- **Mutates** the input `ConstraintSystemBuilder` -/
+def receive (builder : ConstraintSystemBuilder)
+    (channelId : ChannelId) (count : USize) (oracleIds : @& Array OracleId) :
+      ConstraintSystemBuilder :=
+  builder.flush .pull channelId count oracleIds
 
 /-- **Mutates** the input `ConstraintSystemBuilder` -/
 @[extern "c_rs_constraint_system_builder_assert_zero"]

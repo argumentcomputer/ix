@@ -8,11 +8,11 @@ crate-type = ["staticlib"]
 
 [dependencies]
 anyhow = "1"
-binius_core = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a451f4cf277938ee968c34c2daf5945465a72d7c" }
-binius_circuits = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a451f4cf277938ee968c34c2daf5945465a72d7c" }
-binius_field = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a451f4cf277938ee968c34c2daf5945465a72d7c" }
-binius_macros = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a451f4cf277938ee968c34c2daf5945465a72d7c" }
-binius_math = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a451f4cf277938ee968c34c2daf5945465a72d7c" }
+binius_core = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "53c9ebfd3c3c461fae96f56587ba589d3bba1a4a" }
+binius_circuits = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "53c9ebfd3c3c461fae96f56587ba589d3bba1a4a" }
+binius_field = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "53c9ebfd3c3c461fae96f56587ba589d3bba1a4a" }
+binius_macros = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "53c9ebfd3c3c461fae96f56587ba589d3bba1a4a" }
+binius_math = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "53c9ebfd3c3c461fae96f56587ba589d3bba1a4a" }
 blake3 = "=1.6.1"
 bumpalo = "3"
 proptest = "1"

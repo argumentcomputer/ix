@@ -19,9 +19,9 @@ static lean_external_class *get_constraint_system_class() {
 
 /* --- ConstraintSystemBuilder --- */
 
-extern lean_obj_res c_rs_constraint_system_builder_init() {
+extern lean_obj_res c_rs_constraint_system_builder_new() {
     linear_object *linear = linear_object_init(
-        rs_constraint_system_builder_init(),
+        rs_constraint_system_builder_new(),
         &rs_constraint_system_builder_free
     );
     return alloc_lean_linear_object(linear);
@@ -34,6 +34,29 @@ extern lean_obj_res c_rs_constraint_system_builder_build(lean_obj_arg l_csb) {
     mark_outdated(linear);
 
     return lean_alloc_external(get_constraint_system_class(), constraint_system);
+}
+
+extern lean_obj_res c_rs_constraint_system_builder_flush_with_multiplicity(
+    lean_obj_arg l_csb,
+    bool direction_pull,
+    size_t channel_id,
+    size_t count,
+    b_lean_obj_arg oracle_ids,
+    uint64_t multiplicity
+) {
+    linear_object *linear = validated_linear(l_csb);
+
+    rs_constraint_system_builder_flush_with_multiplicity(
+        get_object_ref(linear),
+        direction_pull,
+        channel_id,
+        count,
+        oracle_ids,
+        multiplicity
+    );
+    linear_object *new_linear = linear_bump(linear);
+
+    return alloc_lean_linear_object(new_linear);
 }
 
 extern lean_obj_res c_rs_constraint_system_builder_flush_custom(
