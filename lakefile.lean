@@ -27,7 +27,7 @@ require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "e7fd1a415c80985ade02a021172834ca2139b0ca"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "01006c9e86bf9e397c026fef4190478dd1fd897e"
+  "https://github.com/leanprover-community/batteries" @ "efcc7d9bd9936ecdc625baf0d033b60866565cd5"
 
 
 section Tests
