@@ -3,9 +3,11 @@ import Ix.ByteArray
 import Ix.Common
 import Blake3
 
+deriving instance Lean.ToExpr for ByteArray
+
 structure Address where
   hash : ByteArray
-  deriving Inhabited, BEq, Hashable
+  deriving Inhabited, Lean.ToExpr, BEq, Hashable
 
 instance : ToString Address where
   toString adr := toString adr.hash -- TODO
