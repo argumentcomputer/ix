@@ -17,7 +17,7 @@ use crate::lean::{
     ffi::{binius_arith_expr::lean_ctor_to_arith_expr, drop_raw, raw_to_str, to_raw},
 };
 
-fn boxed_uzise_ptr_to_usize(ptr: *const c_void) -> usize {
+fn boxed_usize_ptr_to_usize(ptr: *const c_void) -> usize {
     let boxed_usize_ptr = ptr.cast::<BoxedUSize>();
     let boxed_usize = unsafe { boxed_usize_ptr.as_ref().expect("null ptr") };
     boxed_usize.value
@@ -28,7 +28,7 @@ fn ctor_ptr_to_lc_factor(ptr: *const c_void) -> (OracleId, BinaryField128b) {
     let ctor = unsafe { &*ctor_ptr };
     let objs = ctor.m_objs.slice(2);
     let (oracle_id_ptr, u128_external_ptr) = (objs[0], objs[1]);
-    let oracle_id = boxed_uzise_ptr_to_usize(oracle_id_ptr);
+    let oracle_id = boxed_usize_ptr_to_usize(oracle_id_ptr);
     let u128_external = unsafe { &*(u128_external_ptr as *const LeanExternalObject) };
     let u128_ptr = u128_external.m_data as *const u128;
     let u128 = unsafe { *u128_ptr };
@@ -75,7 +75,7 @@ extern "C" fn rs_constraint_system_builder_flush_with_multiplicity(
     oracle_ids: &LeanArrayObject,
     multiplicity: u64,
 ) {
-    let oracle_ids = oracle_ids.to_vec(boxed_uzise_ptr_to_usize);
+    let oracle_ids = oracle_ids.to_vec(boxed_usize_ptr_to_usize);
     use FlushDirection::*;
     let direction = if direction_pull { Pull } else { Push };
     builder
@@ -92,7 +92,7 @@ extern "C" fn rs_constraint_system_builder_flush_custom(
     oracle_ids: &LeanArrayObject,
     multiplicity: u64,
 ) {
-    let oracle_ids = oracle_ids.to_vec(boxed_uzise_ptr_to_usize);
+    let oracle_ids = oracle_ids.to_vec(boxed_usize_ptr_to_usize);
     use FlushDirection::*;
     let direction = if direction_pull { Pull } else { Push };
     builder
@@ -107,7 +107,7 @@ extern "C" fn rs_constraint_system_builder_assert_zero(
     oracle_ids: &LeanArrayObject,
     composition: &LeanCtorObject,
 ) {
-    let oracle_ids = oracle_ids.to_vec(boxed_uzise_ptr_to_usize);
+    let oracle_ids = oracle_ids.to_vec(boxed_usize_ptr_to_usize);
     let composition = lean_ctor_to_arith_expr(composition);
     builder.assert_zero(raw_to_str(name), oracle_ids, composition);
 }
@@ -196,6 +196,6 @@ extern "C" fn rs_constraint_system_builder_log_rows(
     oracle_ids: &LeanArrayObject,
 ) -> usize {
     builder
-        .log_rows(oracle_ids.to_vec(boxed_uzise_ptr_to_usize))
+        .log_rows(oracle_ids.to_vec(boxed_usize_ptr_to_usize))
         .expect("ConstraintSystemBuilder::log_rows failure")
 }
