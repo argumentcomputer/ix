@@ -1,4 +1,6 @@
-use super::{boxed::BoxedUSize, object::LeanObject, CArray};
+use std::ffi::c_void;
+
+use super::{object::LeanObject, CArray};
 
 /// ```c
 /// typedef struct {
@@ -9,29 +11,21 @@ use super::{boxed::BoxedUSize, object::LeanObject, CArray};
 /// } lean_array_object;
 /// ```
 #[repr(C)]
-pub struct LeanArrayObject<T> {
-    pub m_header: LeanObject,
-    pub m_size: usize,
-    pub m_capacity: usize,
-    pub m_data: CArray<*const T>,
+pub struct LeanArrayObject {
+    m_header: LeanObject,
+    m_size: usize,
+    m_capacity: usize,
+    m_data: CArray<*const c_void>,
 }
 
-impl<T> LeanArrayObject<T> {
+impl LeanArrayObject {
     #[inline]
-    pub fn data(&self) -> &[*const T] {
+    pub fn data(&self) -> &[*const c_void] {
         self.m_data.slice(self.m_size)
     }
-}
 
-pub type LeanArrayUSize = LeanArrayObject<BoxedUSize>;
-
-impl LeanArrayUSize {
-    pub fn to_vec(&self) -> Vec<usize> {
-        let mut vec = Vec::with_capacity(self.m_size);
-        for &boxed_usize_ptr in self.data() {
-            let boxed_usize = unsafe { &*boxed_usize_ptr };
-            vec.push(boxed_usize.value);
-        }
-        vec
+    #[inline]
+    pub fn to_vec<T>(&self, map_fn: fn(*const c_void) -> T) -> Vec<T> {
+        self.data().iter().map(|ptr| map_fn(*ptr)).collect()
     }
 }
