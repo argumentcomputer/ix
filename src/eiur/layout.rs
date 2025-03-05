@@ -1,5 +1,5 @@
 use binius_field::{
-    arch::OptimalUnderlier, BinaryField, BinaryField128b, BinaryField64b, BinaryField8b,
+    BinaryField, BinaryField8b, BinaryField64b, BinaryField128b, arch::OptimalUnderlier,
 };
 
 use super::ir::{Block, Ctrl, Function, Op};

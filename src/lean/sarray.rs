@@ -1,6 +1,6 @@
-use std::alloc::{alloc, handle_alloc_error, Layout};
+use std::alloc::{Layout, alloc, handle_alloc_error};
 
-use super::{object::LeanObject, CArray};
+use super::{CArray, object::LeanObject};
 
 /// ```c
 /// #define LeanScalarArray 248
