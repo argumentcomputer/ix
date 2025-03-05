@@ -5,9 +5,9 @@ pub mod u128;
 pub mod u64;
 pub mod usize;
 
-use std::ffi::{c_char, CStr};
+use std::ffi::{CStr, c_char};
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn rs_noop() {}
 
 #[inline]
@@ -17,9 +17,7 @@ pub fn to_raw<T>(t: T) -> *const T {
 
 #[inline]
 pub(super) fn drop_raw<T>(ptr: *mut T) {
-    if ptr.is_null() {
-        panic!("Double-free attempt");
-    }
+    assert!(!ptr.is_null(), "Double-free attempt");
     let t = unsafe { Box::from_raw(ptr) };
     drop(t);
 }

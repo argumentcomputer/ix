@@ -2,7 +2,7 @@ pub mod uint_add;
 pub mod uint_sub;
 
 use anyhow::Result;
-use binius_circuits::builder::{witness::Builder, ConstraintSystemBuilder};
+use binius_circuits::builder::{ConstraintSystemBuilder, witness::Builder};
 use binius_core::oracle::OracleId;
 
 /// Trait for Eiur-compatible gadgets
@@ -17,7 +17,7 @@ pub trait Gadget {
     /// transparent and returned. The constraints should be relaxed where `enabled`
     /// is zero.
     fn constrain(
-        builder: &mut ConstraintSystemBuilder,
+        builder: &mut ConstraintSystemBuilder<'_>,
         name: impl ToString,
         input: Self::InputOracles,
         enabled: OracleId,
@@ -25,7 +25,7 @@ pub trait Gadget {
     ) -> Result<Self::VirtualOracles>;
     /// Populates the columns with witness data that satisfy the constraints.
     fn generate_witness(
-        builder: &mut Builder,
+        builder: &mut Builder<'_>,
         input: Self::InputOracles,
         vrtual: Self::VirtualOracles,
         config: Self::Config,

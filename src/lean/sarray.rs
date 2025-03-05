@@ -37,12 +37,12 @@ impl LeanSArrayObject {
         )
         .expect("Couldn't compute the memory layout");
 
-        let ptr = unsafe { alloc(layout) } as *mut LeanSArrayObject;
+        let ptr = unsafe { alloc(layout) }.cast::<LeanSArrayObject>();
         if ptr.is_null() {
             handle_alloc_error(layout);
         }
 
-        let size_of_u8 = size_of::<u8>() as u8;
+        let size_of_u8 = u8::try_from(size_of::<u8>()).expect("Failed to convert usize to u8");
         let header = LeanObject::new(1, 0, size_of_u8, LEAN_SCALAR_ARRAY);
 
         unsafe {
