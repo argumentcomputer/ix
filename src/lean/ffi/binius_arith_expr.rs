@@ -2,13 +2,14 @@ use binius_field::BinaryField128b;
 use binius_math::ArithExpr;
 
 use crate::lean::{
-    boxed::BoxedUSize, ctor::LeanCtorObject, external::LeanExternalObject, sarray::LeanSArrayObject,
+    boxed::BoxedUSize, ctor::LeanCtorObject, external::LeanExternalObject, ffi::as_ref_unsafe,
+    sarray::LeanSArrayObject,
 };
 
 pub(super) fn lean_ctor_to_arith_expr(
     ctor_ptr: *const LeanCtorObject,
 ) -> ArithExpr<BinaryField128b> {
-    let ctor = unsafe { ctor_ptr.as_ref().expect("null ptr") };
+    let ctor = as_ref_unsafe(ctor_ptr);
     match ctor.m_header.m_tag() {
         0 => {
             // Const
@@ -19,7 +20,7 @@ pub(super) fn lean_ctor_to_arith_expr(
         1 => {
             // Var
             let boxed_usize_ptr = ctor_ptr.cast::<BoxedUSize>(); // Lean optimizes to boxed usize
-            let boxed_usize = unsafe { boxed_usize_ptr.as_ref().expect("null ptr") };
+            let boxed_usize = as_ref_unsafe(boxed_usize_ptr);
             ArithExpr::Var(boxed_usize.value)
         }
         2 => {

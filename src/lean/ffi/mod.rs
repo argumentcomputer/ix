@@ -27,3 +27,8 @@ pub(super) fn raw_to_str<'a>(ptr: *const c_char) -> &'a str {
     let c_str = unsafe { CStr::from_ptr(ptr) };
     c_str.to_str().expect("Invalid UTF-8 string")
 }
+
+#[inline]
+pub(super) fn as_ref_unsafe<'a, T>(input: *const T) -> &'a T {
+    unsafe { input.as_ref().expect("Null pointer dereference") }
+}
