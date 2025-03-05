@@ -27,26 +27,28 @@ def transportUniv (univ: Ix.Univ): Bool :=
   | .ok ixon stt =>
     let remat := (ReaderT.run (rematUniv ixon) { meta := stt.meta})
     match EStateM.run remat emptyRematState with
-    | .ok ix stt => univ == ix
-    | .error e stt => .false
-  | .error e stt => .false
+    | .ok ix _ => univ == ix
+    | .error _ _ => .false
+  | .error _ _ => .false
 
 def transportExpr (x: Ix.Expr): Bool :=
   match EStateM.run (dematExpr x) emptyDematState with
   | .ok ixon stt =>
     let remat := (ReaderT.run (rematExpr ixon) { meta := stt.meta})
     match EStateM.run remat emptyRematState with
-    | .ok ix stt => x == ix
-    | .error e stt => .false
-  | .error e stt => .false
+    | .ok ix _ => x == ix
+    | .error _ _ => .false
+  | .error _ _ => .false
 
---def myConfig : SlimCheck.Configuration where
---  maxSize := 100
---  traceDiscarded := true
---  traceSuccesses := true
---  traceShrink := true
---  traceShrinkCandidates := true
---  SlimCheck.Checkable.check (∀ x: Expr, serde x) myConfig
+def myConfig : SlimCheck.Configuration where
+  maxSize := 100
+  traceDiscarded := true
+  traceSuccesses := true
+  traceShrink := true
+  traceShrinkCandidates := true
+
+def dbg := do
+  SlimCheck.Checkable.check (∀ x: Ix.Univ, transportUniv x) myConfig
 
 def Tests.Ix.suite : List LSpec.TestSeq :=
   [

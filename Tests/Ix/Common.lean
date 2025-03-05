@@ -8,6 +8,7 @@ import LSpec.SlimCheck.Gen
 import LSpec
 import Blake3
 import Tests.Common
+import Lean
 
 open LSpec
 open SlimCheck
@@ -41,16 +42,27 @@ def genOption (gen: Gen α) : Gen (Option α) :=
   oneOf #[ pure .none, .some <$> gen]
 
 def genAlphaNum : Gen Char := do
-  let n <- oneOf #[choose Nat 48 57, choose Nat 65 90, choose Nat 97 122]
+  let n <- frequency [
+    (100, choose Nat 48 57),
+    (100, choose Nat 65 90),
+    (100, choose Nat 97 122),
+    ]
   return Char.ofNat n
 
+def genAlphaNumBad : Gen Char := do
+  let n <- oneOf #[ choose Nat 48 57, choose Nat 65 90, choose Nat 97 122 ]
+  return Char.ofNat n
+
+
 def genAlphaNumStr : Gen String := do
-  String.mk <$> genList' genAlphaNum
+  String.mk <$> genList' genAlphaNumBad
 
 def genNamePart : Gen Ixon.NamePart := 
-  oneOf #[ .str <$> genAlphaNumStr, .num <$> genNat']
+  frequency [ (100, .str <$> genAlphaNumStr), (50, .num <$> genNatUSize)]
 
-def genName : Gen Lean.Name := Ixon.nameFromParts <$> genList' genNamePart
+def genName : Gen Lean.Name := do
+  --Ixon.nameFromParts <$> genList' genNamePart
+  Lean.Name.mkSimple <$> genAlphaNumStr
 
 def genBinderInfo : Gen Lean.BinderInfo := oneOf
   #[ pure .default

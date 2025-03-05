@@ -1,4 +1,5 @@
 import Ix.IR
+import Lean
 
 import LSpec.SlimCheck.Gen
 import LSpec
