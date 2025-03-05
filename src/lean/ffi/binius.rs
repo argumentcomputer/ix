@@ -18,9 +18,9 @@ use crate::lean::{
 };
 
 fn boxed_uzise_ptr_to_usize(ptr: *const c_void) -> usize {
-    let boxed_usize_ptr = ptr as *const BoxedUSize;
-    let boxed_uzise = unsafe { &*boxed_usize_ptr };
-    boxed_uzise.value
+    let boxed_usize_ptr = ptr.cast::<BoxedUSize>();
+    let boxed_usize = unsafe { boxed_usize_ptr.as_ref().expect("null ptr") };
+    boxed_usize.value
 }
 
 fn ctor_ptr_to_lc_factor(ptr: *const c_void) -> (OracleId, BinaryField128b) {
