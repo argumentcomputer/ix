@@ -4,10 +4,14 @@
   inputs = {
     # Lean + System packages
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    lean4-nix.url = "github:argumentcomputer/lean4-nix";
 
     # Helper: flake-parts for easier outputs
     flake-parts.url = "github:hercules-ci/flake-parts";
+
+    lean4-nix = {
+      url = "github:argumentcomputer/lean4-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     # Rust-related inputs
     fenix = {
