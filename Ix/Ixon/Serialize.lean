@@ -86,7 +86,7 @@ def natToBytesLE (x: Nat) : Array UInt8 :=
     | Nat.succ f, x => Nat.toUInt8 x:: go f (x / 256)
 
 def natFromBytesLE (xs: Array UInt8) : Nat :=
-  xs.toList.enum.foldl (fun acc (i, b) => acc + (UInt8.toNat b) * 256 ^ i) 0
+  (xs.toList.zipIdx 0).foldl (fun acc (b, i) => acc + (UInt8.toNat b) * 256 ^ i) 0
 
 def fromTrimmedLE (xs: Array UInt8) : UInt64 := List.foldr step 0 xs.toList
   where
@@ -110,8 +110,10 @@ def getBool : GetM Bool := do
   | e => throw s!"expected Bool encoding between 0 and 1, got {e}"
 
 def packBools (bools : List Bool) : UInt8 :=
-  List.foldl (λ acc (i, b) => 
-    acc ||| (if b then 1 <<< UInt8.ofNat i else 0)) 0 (bools.take 8).enum
+  List.foldl
+    (λ acc (b, i) => acc ||| (if b then 1 <<< UInt8.ofNat i else 0))
+    0
+    ((bools.take 8).zipIdx 0)
 
 def unpackBools (n: Nat) (b: UInt8) : List Bool :=
   ((List.range 8).map (λ i => (b &&& (1 <<< UInt8.ofNat i)) != 0)).take n

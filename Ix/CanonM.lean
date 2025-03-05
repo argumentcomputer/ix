@@ -109,7 +109,7 @@ def cmpLevel (x : Lean.Level) (y : Lean.Level) : CanonM Ordering :=
   | _, .imax .. => return .gt
   | .param x, .param y => do
     let lvls := (← read).univCtx
-    match (lvls.indexOf? x), (lvls.indexOf? y) with
+    match (lvls.idxOf? x), (lvls.idxOf? y) with
     | some xi, some yi => return (compare xi yi)
     | none,    _       => throw $ .levelNotFound x lvls
     | _,       none    => throw $ .levelNotFound y lvls
@@ -122,7 +122,7 @@ def canonUniv : Lean.Level → CanonM Ix.Univ
   | .imax a b => return .imax (← canonUniv a) (← canonUniv b)
   | .param name => do
     let lvls := (← read).univCtx
-    match lvls.indexOf? name with
+    match lvls.idxOf? name with
     | some n => pure $ .var name n
     | none   => throw $ .levelNotFound name lvls
   | l@(.mvar ..) => throw $ .unfilledLevelMetavariable l

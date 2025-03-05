@@ -1,17 +1,77 @@
-import LSpec
 import Ix.Ixon
+import Ix.Ixon.Serialize
+import Ix.Ixon.Univ
 import LSpec.SlimCheck.Gen
 import LSpec
 
-import Tests.Ixon.Gen.Common
-import Tests.Ixon.Gen.Univ
-import Tests.Ixon.Gen.Expr
-import Tests.Ixon.Gen.Metadata
+import Tests.Common
+import Tests.Ix.Common
 
 open LSpec
 open SlimCheck
 open SlimCheck.Gen
 open Ixon
+
+-- Univ
+
+namespace Ixon
+
+def genUniv : SlimCheck.Gen Ixon.Univ := getSize >>= go
+  where
+    go : Nat -> SlimCheck.Gen Ixon.Univ
+    | 0 => return .const 0
+    | Nat.succ f =>
+      frequency [
+        (100, .const <$> genUInt64),
+        (100, .var <$> genUInt64),
+        (50, .add <$> genUInt64 <*> go f),
+        (25, .max <$> go f <*> go f),
+        (25, .imax <$> go f <*> go f)
+      ]
+
+instance : Shrinkable Univ where
+  shrink _ := []
+
+instance : SampleableExt Univ := SampleableExt.mkSelfContained genUniv
+
+-- Expr
+
+def genExpr : SlimCheck.Gen Ixon.Expr := getSize >>= go
+  where
+    go : Nat -> SlimCheck.Gen Ixon.Expr
+    | 0 => return .vari 0
+    | Nat.succ f =>
+      frequency [
+        (100, .vari <$> genUInt64),
+        (100, .sort <$> genUniv),
+        (100, .cnst <$> genAddress <*> resizeListOf genUniv),
+        (100, .rec_ <$> genUInt64 <*> resizeListOf genUniv),
+        (30, .apps <$> go f <*> go f <*> resizeListOf (go f)),
+        (30, .lams <$> resizeListOf (go f) <*> go f),
+        (30, .alls <$> resizeListOf (go f) <*> go f),
+        (15, .let_ .true <$> go f <*> go f <*> go f),
+        (15, .let_ .false <$> go f <*> go f <*> go f),
+        (50, .proj <$> genUInt64 <*> go f),
+        (100, .strl <$> genString),
+        (100, .natl <$> chooseAny Nat)
+      ]
+
+-- TODO: useful shrinking
+instance : Shrinkable Expr where
+  shrink _ := []
+
+instance : SampleableExt Expr := SampleableExt.mkSelfContained genExpr
+
+-- Metadata
+
+def genMetaNode : Gen MetaNode := 
+  .mk <$> genOption genName <*> genOption genBinderInfo <*> genOption genAddress
+
+def genMetadata : Gen Metadata := do
+  let xs ← genList' genMetaNode
+  return .mk (Batteries.RBMap.ofList ((List.range xs.length).zip xs) compare)
+
+-- Const
 
 def genAxiom : Gen Axiom := .mk <$> genNat' <*> genExpr
 def genTheorem : Gen Theorem := .mk <$> genNat' <*> genExpr <*> genExpr
@@ -73,3 +133,4 @@ instance : Shrinkable Const where
   shrink _ := []
 
 instance : SampleableExt Const := SampleableExt.mkSelfContained genConst
+end Ixon

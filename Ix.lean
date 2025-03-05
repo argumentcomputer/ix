@@ -3,6 +3,7 @@
 import Ix.BuiltIn
 import Ix.Ixon
 import Ix.CanonM
+import Ix.TransportM
 import Ix.IR
 import Ix.Meta
 import Ix.Prove

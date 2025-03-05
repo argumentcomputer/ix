@@ -5,7 +5,6 @@ import Lean.Expr
 
 namespace Ix
 
-
 inductive Expr
   | var   (idx: Nat)
   | sort  (univ: Univ)

@@ -86,6 +86,17 @@ def rematMeta : RematM Ixon.MetaNode := do
   | .some n => return n
   | .none => throw (.unknownIndex n m)
 
+def rematThrowUnexpectedNode : RematM α := do
+  let n <- (·.idx) <$> get
+  let m <- (·.meta) <$> read
+  throw (.unexpectedNode n m)
+
+def rematBindMeta : RematM (Lean.Name × Lean.BinderInfo) := do
+  let n <- rematMeta
+  match n.name, n.info with
+  | .some n, some i => return (n, i)
+  | _, _ => rematThrowUnexpectedNode
+
 def rematUniv : Ixon.Univ -> RematM Ix.Univ
 | .const i => do
   let i' := UInt64.toNat i
@@ -122,7 +133,7 @@ partial def dematExpr : Ix.Expr -> DematM Ixon.Expr
   | .natVal n => return .natl n
 | .proj n t i s => do
   let _ <- dematIncr
-  dematMeta { .name := .some n, info := .none, link := .some t }
+  dematMeta { name := .some n, info := .none, link := .some t }
   .proj <$> dematNat i <*> dematExpr s
   where
     apps : Ix.Expr -> Ix.Expr -> List Ix.Expr -> DematM Ixon.Expr
@@ -136,13 +147,59 @@ partial def dematExpr : Ix.Expr -> DematM Ixon.Expr
       dematMeta { name := .some n, info := .some i, link := .none}
       let t' <- dematExpr t
       lams b (t'::ts)
-    | x, ts => .lams ts <$> dematExpr x
+    | x, ts => .lams ts.reverse <$> dematExpr x
     alls : Ix.Expr -> List Ixon.Expr -> DematM Ixon.Expr
     | .pi n i t b, ts => do
       let _ <- dematIncr
       dematMeta { name := .some n, info := .some i, link := .none}
       let t' <- dematExpr t
       alls b (t'::ts)
-    | x, ts => .alls ts <$> dematExpr x
+    | x, ts => .alls ts.reverse <$> dematExpr x
+
+partial def rematExpr : Ixon.Expr -> RematM Ix.Expr
+| .vari i => rematIncr *> pure (.var i.toNat)
+| .sort u => rematIncr *> .sort <$> rematUniv u
+| .cnst adr us => do
+  let _ <- rematIncr
+  let node <- rematMeta
+  let us' <- us.mapM rematUniv
+  match node.name, node.link with
+  | .some name, .some link => return (.const name adr link us')
+  | _, _ => rematThrowUnexpectedNode
+| .rec_ i us => rematIncr *> .rec_ i.toNat <$> us.mapM rematUniv
+| .apps f a as => do
+  let _ <- rematIncr
+  let as' <- as.reverse.mapM (fun e => rematIncr *> rematExpr e)
+  let f' <- rematExpr f
+  let a' <- rematExpr a
+  return as'.reverse.foldl .app (.app f' a')
+| .lams ts b => do
+  let _ <- rematIncr
+  let ts' <- ts.mapM 
+    (fun e => rematIncr *> Prod.mk <$> rematBindMeta <*> rematExpr e)
+  let b' <- rematExpr b
+  return ts'.foldr (fun (m, t) b => Expr.lam m.fst m.snd t b) b'
+| .alls ts b => do
+  let _ <- rematIncr
+  let ts' <- ts.mapM
+    (fun e => rematIncr *> Prod.mk <$> rematBindMeta <*> rematExpr e)
+  let b' <- rematExpr b
+  return ts'.foldr (fun (m, t) b => Expr.pi m.fst m.snd t b) b'
+| .let_ nD t d b => do
+  let _ <- rematIncr
+  let m <- (·.name) <$> rematMeta
+  let name <- match m with
+    | .some m => pure m
+    | _ => rematThrowUnexpectedNode
+  .letE name <$> rematExpr t <*> rematExpr d <*> rematExpr b <*> pure nD
+| .proj i s => do
+  let _ <- rematIncr
+  let m <- rematMeta
+  let (name, link) <- match m.name, m.link with
+    | .some n, .some l => pure (n, l)
+    | _, _ => rematThrowUnexpectedNode
+  .proj name link i.toNat <$> rematExpr s
+| .strl s => return .lit (.strVal s)
+| .natl n => return .lit (.natVal n)
 
 end Ix.TransportM
