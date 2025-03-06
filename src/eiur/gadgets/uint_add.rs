@@ -1,5 +1,5 @@
 use anyhow::Result;
-use binius_circuits::builder::{witness::Builder, ConstraintSystemBuilder};
+use binius_circuits::builder::{ConstraintSystemBuilder, witness::Builder};
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::BinaryField1b as B1;
 use binius_macros::arith_expr;
@@ -28,7 +28,7 @@ impl Gadget for UIntAdd {
     type Config = UIntType;
 
     fn constrain(
-        builder: &mut ConstraintSystemBuilder,
+        builder: &mut ConstraintSystemBuilder<'_>,
         name: impl ToString,
         input: UIntAddInput,
         enabled: OracleId,
@@ -67,7 +67,7 @@ impl Gadget for UIntAdd {
     /// Populates new columns for `zout`, `cout` and `cin` based on the values
     /// from `xin` and `yin`.
     fn generate_witness(
-        builder: &mut Builder,
+        builder: &mut Builder<'_>,
         input: UIntAddInput,
         vrtual: UIntAddVirtual,
         config: UIntType,
@@ -109,17 +109,17 @@ impl Gadget for UIntAdd {
 
 #[cfg(test)]
 mod tests {
-    use binius_circuits::builder::{witness::Builder, ConstraintSystemBuilder};
+    use binius_circuits::builder::{ConstraintSystemBuilder, witness::Builder};
     use binius_core::constraint_system::validate::validate_witness;
-    use binius_field::{underlier::SmallU, BinaryField1b as B1, TowerField};
+    use binius_field::{BinaryField1b as B1, TowerField, underlier::SmallU};
     use bumpalo::Bump;
     use proptest::{collection::vec, prelude::*};
 
     use crate::eiur::{
         binius::witness_builder,
         gadgets::{
-            uint_add::{UIntAdd, UIntAddInput, UIntType},
             Gadget,
+            uint_add::{UIntAdd, UIntAddInput, UIntType},
         },
     };
     const LEN: usize = 16;
@@ -147,7 +147,7 @@ mod tests {
                     let cs = csb.build().unwrap();
 
                     let allocator = Bump::new();
-                    let mut wb: Builder = witness_builder(&allocator, &cs);
+                    let mut wb: Builder<'_> = witness_builder(&allocator, &cs);
 
                     wb.new_column::<B1>(xin).as_mut_slice().copy_from_slice(&vec1);
                     wb.new_column::<B1>(yin).as_mut_slice().copy_from_slice(&vec2);

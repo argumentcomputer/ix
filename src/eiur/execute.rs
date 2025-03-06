@@ -12,7 +12,7 @@ pub enum Value {
 /// `QueryResult` is an output of the particular function. The `TopLevel` may contain multiply
 /// functions, and for each one executed, it generates one `QueryResult` objects that contains
 /// output for a given function
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct QueryResult {
     pub values: Vec<Value>,
     pub multiplicity: u32,
@@ -197,7 +197,7 @@ impl Toplevel {
 mod tests {
     use crate::eiur::execute::Value::U64;
     use crate::eiur::{
-        execute::{QueryResult, Value},
+        execute::QueryResult,
         ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, Toplevel, ValIdx},
     };
 
@@ -381,13 +381,13 @@ mod tests {
         };
 
         let func_idx = FuncIdx(0);
-        let input = vec![Value::U64(value_in)];
+        let input = vec![U64(value_in)];
         let record = top_level.execute(func_idx, input.clone());
 
         let out = record.get(func_idx, &input).expect("no out available");
 
         assert_eq!(out.values.len(), 1);
-        assert_eq!(out.values[0], Value::U64(value_out));
+        assert_eq!(out.values[0], U64(value_out));
     }
 
     #[test]

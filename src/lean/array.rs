@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use super::{object::LeanObject, CArray};
+use super::{CArray, object::LeanObject};
 
 /// ```c
 /// typedef struct {

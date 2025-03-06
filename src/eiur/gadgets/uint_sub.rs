@@ -1,12 +1,12 @@
 use anyhow::Result;
-use binius_circuits::builder::{witness::Builder, ConstraintSystemBuilder};
+use binius_circuits::builder::{ConstraintSystemBuilder, witness::Builder};
 use binius_core::oracle::OracleId;
 use binius_field::BinaryField1b as B1;
 use rayon::prelude::*;
 
 use super::{
-    uint_add::{UIntAdd, UIntAddInput, UIntAddVirtual},
     Gadget, UIntType,
+    uint_add::{UIntAdd, UIntAddInput, UIntAddVirtual},
 };
 
 /// Gadget for underflowing subtraction over unsigned integers
@@ -30,7 +30,7 @@ impl Gadget for UIntSub {
     type Config = UIntType;
 
     fn constrain(
-        builder: &mut ConstraintSystemBuilder,
+        builder: &mut ConstraintSystemBuilder<'_>,
         name: impl ToString,
         input: UIntSubInput,
         enabled: OracleId,
@@ -58,7 +58,7 @@ impl Gadget for UIntSub {
     /// Populates new columns for `xout`, `cout` and `cin` based on the values
     /// from `zin` and `yin`.
     fn generate_witness(
-        builder: &mut Builder,
+        builder: &mut Builder<'_>,
         input: UIntSubInput,
         vrtual: UIntSubVirtual,
         config: UIntType,
@@ -100,17 +100,17 @@ impl Gadget for UIntSub {
 
 #[cfg(test)]
 mod tests {
-    use binius_circuits::builder::{witness::Builder, ConstraintSystemBuilder};
+    use binius_circuits::builder::{ConstraintSystemBuilder, witness::Builder};
     use binius_core::constraint_system::validate::validate_witness;
-    use binius_field::{underlier::SmallU, BinaryField1b as B1, TowerField};
+    use binius_field::{BinaryField1b as B1, TowerField, underlier::SmallU};
     use bumpalo::Bump;
     use proptest::{collection::vec, prelude::*};
 
     use crate::eiur::{
         binius::witness_builder,
         gadgets::{
-            uint_sub::{UIntSub, UIntSubInput},
             Gadget, UIntType,
+            uint_sub::{UIntSub, UIntSubInput},
         },
     };
     const LEN: usize = 16;
@@ -138,7 +138,7 @@ mod tests {
                     let cs = csb.build().unwrap();
 
                     let allocator = Bump::new();
-                    let mut wb: Builder = witness_builder(&allocator, &cs);
+                    let mut wb: Builder<'_> = witness_builder(&allocator, &cs);
 
                     wb.new_column::<B1>(zin).as_mut_slice().copy_from_slice(&vec1);
                     wb.new_column::<B1>(yin).as_mut_slice().copy_from_slice(&vec2);

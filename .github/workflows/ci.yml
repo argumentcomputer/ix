@@ -45,17 +45,15 @@ jobs:
       - uses: ./.github/actions/ci-env
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Check Rustfmt Code Style
+      - name: Check Rustfmt code style
         run: cargo fmt --all --check
-      - name: check *everything* compiles
+      - name: Check *everything* compiles
         run: cargo check --all-targets --all-features --workspace
-      # TODO: Add '.cargo/config' for list of enabled/disabled `xclippy`lints
       - name: Check clippy warnings
-        run: cargo clippy -- -D warnings
+        run: cargo xclippy -D warnings
       - name: Get Rust version
         run: |
-          RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)
-          echo "RUST_VERSION=$RUST_VERSION" | tee -a $GITHUB_ENV
+          echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a $GITHUB_ENV
       - name: Cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
