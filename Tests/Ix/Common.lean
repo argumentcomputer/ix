@@ -38,22 +38,28 @@ def genList' (gen: Gen α) : Gen (List α) := do
   List.mapM (fun _ => gen) (List.range n)
 
 def genOption (gen: Gen α) : Gen (Option α) :=
-  oneOf #[ pure .none, .some <$> gen]
+  oneOf' [ pure .none, .some <$> gen]
 
 def genAlphaNum : Gen Char := do
-  let n <- oneOf #[choose Nat 48 57, choose Nat 65 90, choose Nat 97 122]
+  let n <- frequency 
+    [ (50, choose Nat 48 57),
+      (50, choose Nat 65 90),
+      (100, choose Nat 97 122),
+    ]
   return Char.ofNat n
 
 def genAlphaNumStr : Gen String := do
   String.mk <$> genList' genAlphaNum
 
 def genNamePart : Gen Ixon.NamePart := 
-  oneOf #[ .str <$> genAlphaNumStr, .num <$> genNat']
+  frequency [ (100, .str <$> genAlphaNumStr)
+    --, (50, .num <$> genNat')
+  ]
 
-def genName : Gen Lean.Name := Ixon.nameFromParts <$> genList' genNamePart
+def genName : Gen Lean.Name := Ixon.nameFromParts <$> (fun x => [x]) <$> genNamePart
 
-def genBinderInfo : Gen Lean.BinderInfo := oneOf
-  #[ pure .default
+def genBinderInfo : Gen Lean.BinderInfo := oneOf'
+   [ pure .default
    , pure .instImplicit
    , pure .strictImplicit
    , pure .instImplicit

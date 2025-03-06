@@ -12,6 +12,7 @@ namespace Ix.TransportM
 structure DematState where
   idx: Nat
   meta: Ixon.Metadata
+  deriving Repr
 
 def emptyDematState : DematState := 
   { idx := 0, meta := { map := Batteries.RBMap.empty }}
@@ -121,7 +122,7 @@ partial def dematExpr : Ix.Expr -> DematM Ixon.Expr
   dematMeta { name := .some n, info := .none, link := .some m }
   .cnst r <$> (us.mapM dematUniv)
 | .rec_ i us => dematIncr *> .rec_ <$> dematNat i <*> (us.mapM dematUniv)
-| .app f a => dematIncr *> apps f a []
+| .app f a => apps f a []
 | .lam n i t b => lams (.lam n i t b) []
 | .pi n i t b => alls (.pi n i t b) []
 | .letE n t v b nD => do
@@ -168,19 +169,16 @@ partial def rematExpr : Ixon.Expr -> RematM Ix.Expr
   | _, _ => rematThrowUnexpectedNode
 | .rec_ i us => rematIncr *> .rec_ i.toNat <$> us.mapM rematUniv
 | .apps f a as => do
-  let _ <- rematIncr
   let as' <- as.reverse.mapM (fun e => rematIncr *> rematExpr e)
   let f' <- rematExpr f
   let a' <- rematExpr a
   return as'.reverse.foldl .app (.app f' a')
 | .lams ts b => do
-  let _ <- rematIncr
   let ts' <- ts.mapM 
     (fun e => rematIncr *> Prod.mk <$> rematBindMeta <*> rematExpr e)
   let b' <- rematExpr b
   return ts'.foldr (fun (m, t) b => Expr.lam m.fst m.snd t b) b'
 | .alls ts b => do
-  let _ <- rematIncr
   let ts' <- ts.mapM
     (fun e => rematIncr *> Prod.mk <$> rematBindMeta <*> rematExpr e)
   let b' <- rematExpr b
@@ -199,7 +197,7 @@ partial def rematExpr : Ixon.Expr -> RematM Ix.Expr
     | .some n, .some l => pure (n, l)
     | _, _ => rematThrowUnexpectedNode
   .proj name link i.toNat <$> rematExpr s
-| .strl s => return .lit (.strVal s)
-| .natl n => return .lit (.natVal n)
+| .strl s => rematIncr *> return .lit (.strVal s)
+| .natl n => rematIncr *> return .lit (.natVal n)
 
 end Ix.TransportM

@@ -24,3 +24,6 @@ def frequency' (default: Gen α) (xs: List (Nat × Gen α)) : Gen α := do
 
 def frequency [Inhabited α] (xs: List (Nat × Gen α)) : Gen α :=
   frequency' xs.head!.snd xs
+
+def oneOf' [Inhabited α] (xs: List (Gen α)) : Gen α :=
+  frequency (xs.map (fun x => (100, x)))

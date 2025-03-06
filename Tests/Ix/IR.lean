@@ -45,8 +45,8 @@ def genExpr : Gen Ix.Expr := getSize >>= go
         (50, .pi <$> genName <*> genBinderInfo <*> go f <*> go f),
         (25, .letE <$> genName <*> go f <*> go f <*> go f <*> pure .true),
         (25, .letE <$> genName <*> go f <*> go f <*> go f <*> pure .false),
-        (25, .lit <$> .strVal <$> genString),
-        (25, .lit <$> .natVal <$> chooseAny Nat),
+        (100, .lit <$> .strVal <$> genString),
+        (100, .lit <$> .natVal <$> chooseAny Nat),
         (25, .proj <$> genName <*> genAddress <*> genNat' <*> go f),
       ]
 
