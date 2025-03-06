@@ -36,8 +36,8 @@ let
     # Builds the C file
     buildPhase = ''
       gcc -Wall -Werror -Wextra -c binius.c -o binius.o
-      gcc -Wall -Werror -Wextra -c u128.c -o u128.o
-      ar rcs libix_c.a binius.o u128.o
+      gcc -Wall -Werror -Wextra -c unsigned.c -o unsigned.o
+      ar rcs libix_c.a binius.o unsigned.o
     '';
     # Installs the library files
     installPhase = ''

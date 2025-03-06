@@ -12,8 +12,6 @@ pub mod ffi;
 pub mod object;
 pub mod sarray;
 
-use std::{ptr, slice};
-
 /// Emulates arrays of flexible size from C.
 #[repr(C)]
 pub struct CArray<T>([T; 0]);
@@ -21,13 +19,6 @@ pub struct CArray<T>([T; 0]);
 impl<T> CArray<T> {
     #[inline]
     pub fn slice(&self, len: usize) -> &[T] {
-        unsafe { slice::from_raw_parts(self.0.as_ptr(), len) }
-    }
-
-    #[inline]
-    pub fn copy_from_slice(&self, slice: &[T]) {
-        unsafe {
-            ptr::copy_nonoverlapping(slice.as_ptr(), self.0.as_ptr() as *mut _, slice.len());
-        }
+        unsafe { std::slice::from_raw_parts(self.0.as_ptr(), len) }
     }
 }

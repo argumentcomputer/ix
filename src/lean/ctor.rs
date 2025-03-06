@@ -1,4 +1,4 @@
-use std::ffi::c_void;
+use std::{ffi::c_void, ptr};
 
 use super::{CArray, object::LeanObject};
 
@@ -10,6 +10,22 @@ use super::{CArray, object::LeanObject};
 /// ```
 #[repr(C)]
 pub struct LeanCtorObject {
-    pub m_header: LeanObject,
-    pub m_objs: CArray<*const c_void>,
+    m_header: LeanObject,
+    m_objs: CArray<*const c_void>,
+}
+
+impl LeanCtorObject {
+    #[inline]
+    pub fn tag(&self) -> u8 {
+        self.m_header.m_tag()
+    }
+
+    /// The number of objects must be known at compile time, given the context
+    /// in which the data is being read.
+    #[inline]
+    pub fn objs<const N: usize>(&self) -> [*const c_void; N] {
+        let mut ptrs = [ptr::null(); N];
+        ptrs.copy_from_slice(self.m_objs.slice(N));
+        ptrs
+    }
 }

@@ -3,6 +3,57 @@
 #include "linear.h"
 #include "rust.h"
 
+/* --- Witness --- */
+
+static lean_external_class *g_witness_class = NULL;
+
+static lean_external_class *get_witness_class() {
+    if (g_witness_class == NULL) {
+        g_witness_class = lean_register_external_class(
+            &rs_witness_free,
+            &noop_foreach
+        );
+    }
+    return g_witness_class;
+}
+
+/* --- WitnessBuilder --- */
+
+extern lean_obj_res c_rs_witness_builder_new(b_lean_obj_arg l_cs) {
+    linear_object *linear = linear_object_init(
+        rs_witness_builder_new(lean_get_external_data(l_cs)),
+        &rs_witness_builder_free
+    );
+    return alloc_lean_linear_object(linear);
+}
+
+extern lean_obj_res c_rs_witness_builder_with_column(
+    lean_obj_arg l_wb,
+    size_t oracle_id,
+    b_lean_obj_arg data
+) {
+    linear_object *linear = validated_linear(l_wb);
+
+    rs_witness_builder_with_column(
+        get_object_ref(linear),
+        oracle_id,
+        data
+    );
+    linear_object *new_linear = linear_bump(linear);
+
+    return alloc_lean_linear_object(new_linear);
+}
+
+extern lean_obj_res c_rs_witness_builder_build(lean_obj_arg l_wb) {
+    linear_object *linear = validated_linear(l_wb);
+
+    void *witness = rs_witness_builder_build(get_object_ref(linear));
+    mark_outdated(linear);
+    allow_finalizer(linear);
+
+    return lean_alloc_external(get_witness_class(), witness);
+}
+
 /* --- ConstraintSystem --- */
 
 static lean_external_class *g_constraint_system_class = NULL;
@@ -14,7 +65,19 @@ static lean_external_class *get_constraint_system_class() {
             &noop_foreach
         );
     }
-    return g_linear_object_class;
+    return g_constraint_system_class;
+}
+
+extern bool c_rs_constraint_system_validate_witness(
+    b_lean_obj_arg l_cs,
+    b_lean_obj_arg boundaries,
+    b_lean_obj_arg witness
+) {
+    return rs_constraint_system_validate_witness(
+        lean_get_external_data(l_cs),
+        boundaries,
+        lean_get_external_data(witness)
+    );
 }
 
 /* --- ConstraintSystemBuilder --- */
@@ -32,6 +95,7 @@ extern lean_obj_res c_rs_constraint_system_builder_build(lean_obj_arg l_csb) {
 
     void *constraint_system = rs_constraint_system_builder_build(get_object_ref(linear));
     mark_outdated(linear);
+    allow_finalizer(linear);
 
     return lean_alloc_external(get_constraint_system_class(), constraint_system);
 }

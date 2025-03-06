@@ -1,9 +1,7 @@
 pub mod binius;
 pub mod binius_arith_expr;
+pub mod binius_boundary;
 pub mod byte_array;
-pub mod u128;
-pub mod u64;
-pub mod usize;
 
 use std::ffi::{CStr, c_char};
 
@@ -11,13 +9,13 @@ use std::ffi::{CStr, c_char};
 extern "C" fn rs_noop() {}
 
 #[inline]
-pub fn to_raw<T>(t: T) -> *const T {
+pub(super) fn to_raw<T>(t: T) -> *const T {
     Box::into_raw(Box::new(t))
 }
 
 #[inline]
 pub(super) fn drop_raw<T>(ptr: *mut T) {
-    assert!(!ptr.is_null(), "Double-free attempt");
+    assert!(!ptr.is_null(), "Null pointer free attempt");
     let t = unsafe { Box::from_raw(ptr) };
     drop(t);
 }
@@ -29,6 +27,7 @@ pub(super) fn raw_to_str<'a>(ptr: *const c_char) -> &'a str {
 }
 
 #[inline]
-pub(super) fn as_ref_unsafe<'a, T>(input: *const T) -> &'a T {
-    unsafe { input.as_ref().expect("Null pointer dereference") }
+pub(super) fn as_ref_unsafe<'a, T>(ptr: *const T) -> &'a T {
+    let t_ref = unsafe { ptr.as_ref() };
+    t_ref.expect("Null pointer dereference")
 }
