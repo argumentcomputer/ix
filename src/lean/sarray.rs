@@ -17,10 +17,10 @@ const LEAN_SCALAR_ARRAY: u8 = 248;
 /// ```
 #[repr(C)]
 pub struct LeanSArrayObject {
-    pub m_header: LeanObject,
-    pub m_size: usize,
-    pub m_capacity: usize,
-    pub m_data: CArray<u8>,
+    m_header: LeanObject,
+    m_size: usize,
+    m_capacity: usize,
+    m_data: CArray<u8>,
 }
 
 impl LeanSArrayObject {

@@ -86,6 +86,22 @@ opaque addCommitted : ConstraintSystemBuilder → @& String →
   (nVars towerLevel : USize) → OracleId × ConstraintSystemBuilder
 
 /-- **Mutates** the input `ConstraintSystemBuilder` -/
+@[extern "c_rs_constraint_system_builder_add_linear_combination"]
+opaque addLinearCombination : ConstraintSystemBuilder → @& String →
+  (nVars : USize) → (inner : @& Array (OracleId × UInt128)) → OracleId × ConstraintSystemBuilder
+
+/-- **Mutates** the input `ConstraintSystemBuilder` -/
+@[extern "c_rs_constraint_system_builder_add_linear_combination_with_offset"]
+opaque addLinearCombinationWithOffset : ConstraintSystemBuilder → @& String →
+  (nVars : USize) → (offset : @& UInt128) → (inner : @& Array (OracleId × UInt128)) →
+    OracleId × ConstraintSystemBuilder
+
+/-- **Mutates** the input `ConstraintSystemBuilder` -/
+@[extern "c_rs_constraint_system_builder_add_packed"]
+opaque addPacked : ConstraintSystemBuilder → @& String → OracleId →
+  (logDegree : USize) → OracleId × ConstraintSystemBuilder
+
+/-- **Mutates** the input `ConstraintSystemBuilder` -/
 @[extern "c_rs_constraint_system_builder_push_namespace"]
 opaque pushNamespace : ConstraintSystemBuilder → @& String → ConstraintSystemBuilder
 
