@@ -1,5 +1,5 @@
 {
-  description = "Ix Nix flake (Lean4 + Rust)";
+  description = "Ix Nix flake (Lean4 + C + Rust)";
 
   inputs = {
     # Lean + System packages
@@ -15,14 +15,19 @@
       # Follow top-level nixpkgs so we stay in sync
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    naersk = {
-      url = "github:nix-community/naersk";
-      # Follow top-level nixpkgs so we stay in sync
+
+    crane = {
+      url = "github:ipetkov/crane";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    blake3-lean = {
+      url = "github:argumentcomputer/Blake3.lean?rev=29018d578b043f6638907f3425af839eec345361";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = inputs @ { nixpkgs, flake-parts, lean4-nix, fenix, naersk, ... }:
+  outputs = inputs @ { nixpkgs, flake-parts, lean4-nix, fenix, crane, blake3-lean, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       # Systems we want to build for
       systems = [
@@ -39,62 +44,111 @@
           sha256 = "sha256-hpWM7NzUvjHg0xtIgm7ftjKCc1qcAeev45XqD3KMeQo=";
         };
 
-        rustPkg = (naersk.lib.${system}
-          .override {
-            cargo = rustToolchain;
-            rustc = rustToolchain;
-          })
-          .buildPackage {
-            src = pkgs.lib.cleanSource ./.;
-          };
+        # Rust package
+        craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+        src = craneLib.cleanCargoSource ./.;
+        commonArgs = {
+          inherit src;
+          strictDeps = true;
 
-        overlayedPkgs = import nixpkgs {
-          inherit system;
-          overlays = [
-            (lean4-nix.readToolchainFile ./lean-toolchain)
+          buildInputs = [
+            # Add additional build inputs here
+          ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+            # Additional darwin specific inputs can be set here
+            pkgs.libiconv
           ];
         };
+        craneLibLLvmTools = craneLib.overrideToolchain rustToolchain;
+        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
-        #ffiLib = pkgs.stdenv.mkDerivation {
-        #  name = "ffi-lib";
-        #  src = ./ffi.c;
-        #  buildInputs = [ overlayedPkgs.clang overlayedPkgs.gcc overlayedPkgs.lean.lean-all ];
-        #  phases = [ "buildPhase" "installPhase" ];
-        #  buildPhase = ''
-        #    clang -c $src -o ffi.o
-        #    ar rcs libffi.a ffi.o
-        #  '';
-        #  installPhase = ''
-        #    mkdir -p $out/lib
-        #    cp libffi.a $out/lib/
-        #  '';
-        #};
-        leanPkg = (lean4-nix.lake { pkgs = overlayedPkgs; }).mkPackage {
-            src = ./.;
-            roots = ["Main" "Ix"];
+        rustPkg = craneLib.buildPackage (commonArgs // {
+          inherit cargoArtifacts;
+          # Debug info for Rust version used, viewable by getting the package dir from `nix derivation show`
+          postInstall = ''
+            rustc --version
+            echo $(rustc --version) > $out/version.txt
+          '';
+        });
+
+        # C Package
+        cPkg = pkgs.stdenv.mkDerivation {
+          pname = "ix_c";
+          version = "0.1.0";
+          src = ./c;
+          buildInputs = [ pkgs.gcc pkgs.lean.lean-all rustPkg ];
+          # Build the C file
+          buildPhase = ''
+            gcc --version
+            gcc -Wall -Werror -Wextra -c binius.c -o binius.o
+            gcc -Wall -Werror -Wextra -c u128.c -o u128.o
+            ar rcs libix_c.a binius.o u128.o
+            nm libix_c.a
+          '';
+          # Install the library
+          installPhase = ''
+            mkdir -p $out/lib $out/include
+            cp libix_c.a $out/lib/
+            cp rust.h linear.h common.h $out/include/
+          '';
         };
+
+        # Blake3.lean C FFI dependency
+        blake3 = blake3-lean.inputs.blake3;
+        blake3Mod = (blake3-lean.lib { inherit pkgs lean4-nix blake3; }).lib;
+        blake3Lib = blake3Mod.blake3-lib;
+        blake3C = blake3Mod.blake3-c;
+
+        ## Lean package
+        # Fetches external dependencies
+        leanPkg = (lean4-nix.lake { inherit pkgs; }).mkPackage {
+            src = ./.;
+            roots = ["Ix" "Main"];
+        };
+        # Builds FFI static libraries
+        leanPkg' = (pkgs.lean.buildLeanPackage {
+          name = "ix";
+          src = ./.;
+          deps = [ leanPkg ];
+          roots = ["Ix" "Main"];
+          linkFlags = [ "-L${rustPkg}/lib" "-lix_rs" "-L${cPkg}/lib" "-lix_c" "-L${blake3C}/lib" "-lblake3"];
+          groupStaticLibs = true;
+        });
+        leanTest = (pkgs.lean.buildLeanPackage {
+          name = "ix_test";
+          src = ./.;
+          deps = [ leanPkg' ];
+          roots = ["Tests.Main" "Ix"];
+          linkFlags = [ "-L${rustPkg}/lib" "-lix_rs" "-L${cPkg}/lib" "-lix_c" "-L${blake3C}/lib" "-lblake3"];
+          groupStaticLibs = true;
+        });
+
       in {
+        # Lean overlay
+        _module.args.pkgs = import nixpkgs {
+          inherit system;
+          overlays = [(lean4-nix.readToolchainFile ./lean-toolchain)];
+        };
+
         packages = {
-          # `nix build .` or `nix build .#default` => Lean4 exe
-          # TODO: This doesn't work
-          default = leanPkg.executable;
           rust = rustPkg;
+          c = cPkg;
+          default = leanPkg'.executable;
+          test = leanTest.executable;
         };
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
-          packages = [
-            overlayedPkgs.lean.lean         # Lean compiler
-            overlayedPkgs.lean.lean-all     # Includes Lake, stdlib, etc.
-            pkgs.libblake3
-            pkgs.pkg-config
-            pkgs.openssl
-            overlayedPkgs.gcc
-            pkgs.ocl-icd
-            overlayedPkgs.clang
+          packages = with pkgs; [
+            lean.lean         # Lean compiler
+            lean.lean-all     # Includes Lake, stdlib, etc.
+            pkg-config
+            openssl
+            gcc
+            ocl-icd
+            clang
 
             rustToolchain
-            pkgs.rust-analyzer
+            rust-analyzer
           ];
         };
       };
