@@ -2,6 +2,8 @@ import Ix.IR.Univ
 import Ix.Ixon.Univ
 import Ix.IR.Expr
 import Ix.Ixon.Expr
+import Ix.IR.Const
+import Ix.Ixon.Const
 import Ix.Common
 import Ix.Address
 import Ix.Ixon.Metadata
@@ -21,6 +23,7 @@ inductive TransportError
   | natTooBig (idx: Nat) (x: Nat)
   | unknownIndex (idx: Nat) (m: Ixon.Metadata)
   | unexpectedNode (idx: Nat) (m: Ixon.Metadata)
+  | rawMetadata (m: Ixon.Metadata)
   deriving Repr
 
 abbrev DematM := EStateM TransportError DematState
@@ -199,5 +202,70 @@ partial def rematExpr : Ixon.Expr -> RematM Ix.Expr
   .proj name link i.toNat <$> rematExpr s
 | .strl s => rematIncr *> return .lit (.strVal s)
 | .natl n => rematIncr *> return .lit (.natVal n)
+
+partial def dematConst : Ix.Const -> DematM Ixon.Const
+| .«axiom» x => .axio <$> (.mk x.lvls <$> dematExpr x.type)
+| .«theorem» x => .theo <$> (.mk x.lvls <$> dematExpr x.type <*> dematExpr x.value)
+| .«opaque» x => 
+  .opaq <$> (.mk x.lvls <$> dematExpr x.type <*> dematExpr x.value)
+| .«definition» x => .defn <$> dematDefn x
+| .quotient x => .quot <$> 
+  (.mk x.lvls <$> dematExpr x.type <*> pure x.kind)
+| .inductiveProj x => return .indcProj (.mk x.block x.idx)
+| .constructorProj x => return .ctorProj (.mk x.block x.idx x.cidx)
+| .recursorProj x => return .recrProj (.mk x.block x.idx x.ridx)
+| .definitionProj x => return .defnProj (.mk x.block x.idx)
+| .mutDefBlock xs => .mutDef <$> (xs.mapM dematDefn)
+| .mutIndBlock xs => .mutInd <$> (xs.mapM dematInd)
+  where
+    dematDefn : Ix.Definition -> DematM Ixon.Definition
+    | x => .mk x.lvls <$> dematExpr x.type <*> dematExpr x.value <*> pure x.part
+    dematCtor : Ix.Constructor -> DematM Ixon.Constructor
+    | x => do
+      let t <- dematExpr x.type
+      return .mk x.lvls t x.idx x.params x.fields
+    dematRecr : Ix.Recursor -> DematM Ixon.Recursor
+    | x => do
+      let t <- dematExpr x.type
+      let rrs <- x.rules.mapM (fun rr => .mk rr.fields <$> dematExpr rr.rhs)
+      return .mk x.lvls t x.params x.indices x.motives x.minors rrs x.isK x.internal
+    dematInd : Ix.Inductive -> DematM Ixon.Inductive
+    | x => do
+      let t <- dematExpr x.type
+      let cs <- x.ctors.mapM dematCtor
+      let rs <- x.recrs.mapM dematRecr
+      return .mk x.lvls t x.params x.indices cs rs x.recr x.refl x.struct x.unit
+
+partial def rematConst : Ixon.Const -> RematM Ix.Const
+| .axio x => .«axiom» <$> (.mk x.lvls <$> rematExpr x.type)
+| .theo x => .«theorem» <$> (.mk x.lvls <$> rematExpr x.type <*> rematExpr x.value)
+| .opaq x => .«opaque» <$> (.mk x.lvls <$> rematExpr x.type <*> rematExpr x.value)
+| .defn x => .«definition» <$> rematDefn x
+| .quot x => .quotient <$> (.mk x.lvls <$> rematExpr x.type <*> pure x.kind)
+| .indcProj x => return .inductiveProj (.mk x.block x.idx)
+| .ctorProj x => return .constructorProj (.mk x.block x.idx x.cidx)
+| .recrProj x => return .recursorProj (.mk x.block x.idx x.ridx)
+| .defnProj x => return .definitionProj (.mk x.block x.idx)
+| .mutDef xs => .mutDefBlock <$> (xs.mapM rematDefn)
+| .mutInd xs => .mutIndBlock <$> (xs.mapM rematInd)
+| .meta m => throw (.rawMetadata m)
+  where
+    rematDefn : Ixon.Definition -> RematM Ix.Definition
+    | x => .mk x.lvls <$> rematExpr x.type <*> rematExpr x.value <*> pure x.part
+    rematCtor : Ixon.Constructor -> RematM Ix.Constructor
+    | x => do
+      let t <- rematExpr x.type
+      return .mk x.lvls t x.idx x.params x.fields
+    rematRecr : Ixon.Recursor -> RematM Ix.Recursor
+    | x => do
+      let t <- rematExpr x.type
+      let rrs <- x.rules.mapM (fun rr => .mk rr.fields <$> rematExpr rr.rhs)
+      return .mk x.lvls t x.params x.indices x.motives x.minors rrs x.isK x.internal
+    rematInd : Ixon.Inductive -> RematM Ix.Inductive
+    | x => do
+      let t <- rematExpr x.type
+      let cs <- x.ctors.mapM rematCtor
+      let rs <- x.recrs.mapM rematRecr
+      return .mk x.lvls t x.params x.indices cs rs x.recr x.refl x.struct x.unit
 
 end Ix.TransportM

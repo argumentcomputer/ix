@@ -55,4 +55,39 @@ instance : Shrinkable Ix.Expr where
 
 instance : SampleableExt Ix.Expr := SampleableExt.mkSelfContained genExpr
 
+def genConst : Gen Ix.Const := getSize >>= go
+  where
+    genDef : Gen Ix.Definition := .mk <$> genNat' <*> genExpr <*> genExpr <*> genBool
+    genCtor : Gen Ix.Constructor := 
+      .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat' <*> genNat'
+    genRecr : Gen Ix.Recursor := 
+      .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat' <*> genNat' <*> genNat'
+        <*> resizeListOf (.mk <$> genNat' <*> genExpr)
+        <*> genBool <*> genBool
+    genInd : Gen Ix.Inductive := 
+      .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat'
+        <*> resizeListOf genCtor <*> resizeListOf genRecr
+        <*> genBool <*> genBool <*> genBool <*> genBool
+    go : Nat -> Gen Ix.Const
+    | 0 => return .«axiom» (.mk 0 (Ix.Expr.sort (Ix.Univ.zero)))
+    | Nat.succ f =>
+      frequency [
+        (100, .«axiom» <$> (.mk <$> genNat' <*> genExpr)),
+        (100, .«theorem» <$> (.mk <$> genNat' <*> genExpr <*> genExpr)),
+        (100, .«opaque» <$> (.mk <$> genNat' <*> genExpr <*> genExpr)),
+        (100, .«definition» <$> genDef),
+        (100, .quotient <$> (.mk <$> genNat' <*> genExpr <*> genQuotKind)),
+        (100, .inductiveProj <$> (.mk <$> genAddress <*> genNat')),
+        (100, .constructorProj <$> (.mk <$> genAddress <*> genNat' <*> genNat')),
+        (100, .recursorProj <$> (.mk <$> genAddress <*> genNat' <*> genNat')),
+        (100, .definitionProj <$> (.mk <$> genAddress <*> genNat')),
+        (100, .mutDefBlock <$> resizeListOf genDef),
+        (100, .mutIndBlock <$> resizeListOf genInd),
+      ]
+
+instance : Shrinkable Ix.Const where
+  shrink _ := []
+
+instance : SampleableExt Ix.Const := SampleableExt.mkSelfContained genConst
+
 end Ix

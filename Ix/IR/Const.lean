@@ -100,7 +100,7 @@ inductive Const where
   | «axiom»     : Axiom      → Const
   | «theorem»   : Theorem    → Const
   | «opaque»    : Opaque     → Const
-  | definition  : Definition → Const
+  | «definition»: Definition → Const
   | quotient    : Quotient   → Const
   -- projections of mutual blocks
   | inductiveProj   : InductiveProj   → Const

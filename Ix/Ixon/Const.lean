@@ -112,11 +112,11 @@ inductive Const where
   -- 0xC4
   | quot : Quotient -> Const
   -- 0xC5
-  | ctor : Constructor -> Const
-  -- 0xC6
-  | recr : Recursor -> Const
-  -- 0xC7
-  | indc : Inductive -> Const
+  --| ctor : Constructor -> Const
+  ---- 0xC6
+  --| recr : Recursor -> Const
+  ---- 0xC7
+  --| indc : Inductive -> Const
   -- 0xC8
   | ctorProj : ConstructorProj -> Const
   -- 0xC9
@@ -144,9 +144,9 @@ def putConst : Const → PutM
 | .opaq x => putUInt8 0xC2 *> putNatl x.lvls *> putExpr x.type *> putExpr x.value
 | .defn x => putUInt8 0xC3 *> putDefn x
 | .quot x => putUInt8 0xC4 *> putNatl x.lvls *> putExpr x.type *> putQuotKind x.kind
-| .ctor x => putUInt8 0xC5 *> putCtor x
-| .recr x => putUInt8 0xC6 *> putRecr x
-| .indc x => putUInt8 0xC7 *> putIndc x
+--| .ctor x => putUInt8 0xC5 *> putCtor x
+--| .recr x => putUInt8 0xC6 *> putRecr x
+--| .indc x => putUInt8 0xC7 *> putIndc x
 | .ctorProj x => putUInt8 0xC8 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.cidx
 | .recrProj x => putUInt8 0xC9 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.ridx
 | .indcProj x => putUInt8 0xCA *> putBytes x.block.hash *> putNatl x.idx
@@ -182,9 +182,9 @@ def getConst : GetM Const := do
   | 0xC2 => .opaq <$> (.mk <$> getNatl <*> getExpr <*> getExpr)
   | 0xC3 => .defn <$> getDefn
   | 0xC4 => .quot <$> (.mk <$> getNatl <*> getExpr <*> getQuotKind)
-  | 0xC5 => .ctor <$> getCtor
-  | 0xC6 => .recr <$> getRecr
-  | 0xC7 => .indc <$> getIndc
+ -- | 0xC5 => .ctor <$> getCtor
+ -- | 0xC6 => .recr <$> getRecr
+ -- | 0xC7 => .indc <$> getIndc
   | 0xC8 => .ctorProj <$> (.mk <$> (.mk <$> getBytes 32) <*> getNatl <*> getNatl)
   | 0xC9 => .recrProj <$> (.mk <$> (.mk <$> getBytes 32) <*> getNatl <*> getNatl)
   | 0xCA => .indcProj <$> (.mk <$> (.mk <$> getBytes 32) <*> getNatl)

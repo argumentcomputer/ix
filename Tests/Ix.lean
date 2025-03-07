@@ -40,6 +40,15 @@ def transportExpr (x: Ix.Expr): Bool :=
     | .error _ _ => .false
   | .error _ _ => .false
 
+def transportConst (x: Ix.Const): Bool :=
+  match EStateM.run (dematConst x) emptyDematState with
+  | .ok ixon stt =>
+    let remat := (ReaderT.run (rematConst ixon) { meta := stt.meta})
+    match EStateM.run remat emptyRematState with
+    | .ok ix _ => x == ix
+    | .error _ _ => .false
+  | .error _ _ => .false
+
 --def transportExpr' (x: Ix.Expr): Except TransportError Bool :=
 --  match EStateM.run (dematExpr x) emptyDematState with
 --  | .ok ixon stt =>
@@ -73,4 +82,5 @@ def Tests.Ix.suite : List LSpec.TestSeq :=
     check "expr serde" (∀ x : Ixon.Expr, serde x),
     check "expr transport" (∀ x : Ix.Expr, transportExpr x),
     check "const serde" (∀ x : Ixon.Const, serde x),
+    check "const transport" (∀ x : Ix.Const, transportConst x),
   ]

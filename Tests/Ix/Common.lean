@@ -64,3 +64,10 @@ def genBinderInfo : Gen Lean.BinderInfo := oneOf'
    , pure .strictImplicit
    , pure .instImplicit
    ]
+
+def genQuotKind : Gen Lean.QuotKind := oneOf'
+   [ pure .type
+   , pure .ctor
+   , pure .lift
+   , pure .ind
+   ]
