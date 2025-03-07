@@ -25,29 +25,29 @@ def storeErrorToIOError : StoreError -> IO.Error
 | .noHome => IO.Error.userError s!"no HOME environment variable"
 
 
-abbrev StoreM := EIO StoreError
+abbrev StoreIO := EIO StoreError
 
-def getHomeDir : StoreM FilePath := do
+def getHomeDir : StoreIO FilePath := do
   match ← IO.getEnv "HOME" with
   | .some path => return ⟨path⟩
   | .none => throw .noHome
 
-def storeDir : StoreM FilePath := do
+def storeDir : StoreIO FilePath := do
   let home ← getHomeDir
   return home / ".ix" / "store"
 
-def ensureStoreDir : StoreM Unit := do
+def ensureStoreDir : StoreIO Unit := do
   let store ← storeDir
   IO.toEIO .ioError (IO.FS.createDirAll store)
 
-def writeConst (x: Ixon.Const) : StoreM Unit := do
+def writeConst (x: Ixon.Const) : StoreIO Unit := do
   let bytes := Ixon.Serialize.put x
   let addr  := Address.blake3 bytes
   let store ← storeDir
   let path := store / byteArrayToHex addr.hash
   IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
 
-def readConst (a: Address) : StoreM Ixon.Const := do
+def readConst (a: Address) : StoreIO Ixon.Const := do
   let store ← storeDir
   let path := store / byteArrayToHex a.hash
   let bytes ← IO.toEIO .ioError (IO.FS.readBinFile path)

@@ -7,6 +7,7 @@ import Ix.Ixon.Const
 import Ix.Common
 import Ix.Address
 import Ix.Ixon.Metadata
+import Ix.Ixon.Serialize
 import Batteries.Data.RBMap
 
 namespace Ix.TransportM
@@ -235,6 +236,19 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
       let cs <- x.ctors.mapM dematCtor
       let rs <- x.recrs.mapM dematRecr
       return .mk x.lvls t x.params x.indices cs rs x.recr x.refl x.struct x.unit
+
+def constToIxon (x: Ix.Const) : Except TransportError (Ixon.Const × Ixon.Const) := 
+  match EStateM.run (dematConst x) emptyDematState with
+  | .ok ix stt => .ok (ix, Ixon.Const.meta stt.meta)
+  | .error e _ => .error e
+
+def constToBytes (x: Ix.Const) : Except TransportError ByteArray := do
+  let (ix, _) <- constToIxon x
+  return Ixon.Serialize.put ix
+
+def constAddress (x: Ix.Const) : Except TransportError Address := do
+  let bs <- constToBytes x
+  return Address.blake3 bs
 
 partial def rematConst : Ixon.Const -> RematM Ix.Const
 | .axio x => .«axiom» <$> (.mk x.lvls <$> rematExpr x.type)
