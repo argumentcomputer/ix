@@ -18,11 +18,14 @@
 
     crane = {
       url = "github:ipetkov/crane";
+      # Follow top-level nixpkgs so we stay in sync
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     blake3-lean = {
+      # TODO: Update once https://github.com/argumentcomputer/Blake3.lean/pull/11 merges
       url = "github:argumentcomputer/Blake3.lean?rev=29018d578b043f6638907f3425af839eec345361";
+      # Follow top-level nixpkgs so we stay in sync
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -63,11 +66,6 @@
 
         rustPkg = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
-          # Debug info for Rust version used, viewable by getting the package dir from `nix derivation show`
-          postInstall = ''
-            rustc --version
-            echo $(rustc --version) > $out/version.txt
-          '';
         });
 
         # C Package
@@ -78,11 +76,9 @@
           buildInputs = [ pkgs.gcc pkgs.lean.lean-all rustPkg ];
           # Build the C file
           buildPhase = ''
-            gcc --version
             gcc -Wall -Werror -Wextra -c binius.c -o binius.o
             gcc -Wall -Werror -Wextra -c u128.c -o u128.o
             ar rcs libix_c.a binius.o u128.o
-            nm libix_c.a
           '';
           # Install the library
           installPhase = ''
@@ -98,7 +94,7 @@
         blake3Lib = blake3Mod.blake3-lib;
         blake3C = blake3Mod.blake3-c;
 
-        ## Lean package
+        # Lean package
         # Fetches external dependencies
         leanPkg = (lean4-nix.lake { inherit pkgs; }).mkPackage {
             src = ./.;
