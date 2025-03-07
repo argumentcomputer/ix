@@ -122,6 +122,14 @@
           groupStaticLibs = true;
         });
 
+        devShellPkgs = with pkgs; [
+          pkg-config
+          openssl
+          ocl-icd
+          gcc
+          clang
+          rustToolchain
+        ];
       in {
         # Lean overlay
         _module.args.pkgs = import nixpkgs {
@@ -138,17 +146,15 @@
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
+          packages = with pkgs; devShellPkgs ++ [
             lean.lean         # Lean compiler
             lean.lean-all     # Includes Lake, stdlib, etc.
-            pkg-config
-            openssl
-            gcc
-            ocl-icd
-            clang
-
-            rustToolchain
-            rust-analyzer
+            pkgs.rust-analyzer
+          ];
+        };
+        devShells.ci = pkgs.mkShell {
+          packages = with pkgs; devShellPkgs ++ [
+            elan
           ];
         };
       };

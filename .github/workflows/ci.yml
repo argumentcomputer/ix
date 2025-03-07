@@ -22,7 +22,9 @@ jobs:
       - name: Check lean.h.hash
         run: lake run check-lean-h-hash
 
+
   rust-test:
+    name: Rust Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +39,7 @@ jobs:
         run: cargo nextest run --release --profile ci --workspace --run-ignored all
 
   rust-lint:
+    name: Rust Lints
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
