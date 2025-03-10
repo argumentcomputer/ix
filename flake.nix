@@ -20,7 +20,7 @@
 
     blake3-lean = {
       # TODO: Update once https://github.com/argumentcomputer/Blake3.lean/pull/11 merges
-      url = "github:argumentcomputer/Blake3.lean?rev=29018d578b043f6638907f3425af839eec345361";
+      url = "github:argumentcomputer/Blake3.lean?rev=f3f5140fdd97776ec885e81e0b0a8f2f13a820a8";
       # Follow top-level nixpkgs so we stay in sync
       inputs.nixpkgs.follows = "nixpkgs";
     };

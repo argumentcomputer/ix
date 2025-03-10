@@ -1,5 +1,6 @@
 {system, pkgs, fenix, crane, lean4-nix, blake3-lean}:
-let 
+let
+  # Pins the Rust toolchain
   rustToolchain = fenix.packages.${system}.fromToolchainFile {
     file = ./rust-toolchain.toml;
     sha256 = "sha256-hpWM7NzUvjHg0xtIgm7ftjKCc1qcAeev45XqD3KMeQo=";
@@ -32,13 +33,13 @@ let
     version = "0.1.0";
     src = ./c;
     buildInputs = [ pkgs.gcc pkgs.lean.lean-all rustPkg ];
-    # Build the C file
+    # Builds the C file
     buildPhase = ''
       gcc -Wall -Werror -Wextra -c binius.c -o binius.o
       gcc -Wall -Werror -Wextra -c u128.c -o u128.o
       ar rcs libix_c.a binius.o u128.o
     '';
-    # Install the library
+    # Installs the library files
     installPhase = ''
       mkdir -p $out/lib $out/include
       cp libix_c.a $out/lib/
@@ -47,7 +48,7 @@ let
   };
 
   # Blake3.lean C FFI dependency, needed for explicit static lib linking
-  # See issue TODO
+  # See issue https://github.com/argumentcomputer/lean4-nix/issues/8
   blake3 = blake3-lean.inputs.blake3;
   blake3Lib = (blake3-lean.lib { inherit pkgs lean4-nix blake3; }).lib;
   blake3C = blake3Lib.blake3-c;
@@ -58,22 +59,21 @@ let
       src = ./.;
       roots = ["Ix" "Main"];
   };
-  # Builds FFI static libraries
+  # Builds final library and links to FFI static libs
   leanPkg = (pkgs.lean.buildLeanPackage {
     name = "ix";
     src = ./.;
     deps = [ leanPkgBase ];
     roots = ["Ix" "Main"];
     linkFlags = [ "-L${rustPkg}/lib" "-lix_rs" "-L${cPkg}/lib" "-lix_c" "-L${blake3C}/lib" "-lblake3"];
-    groupStaticLibs = true;
   });
+  # Builds test package
   leanTest = (pkgs.lean.buildLeanPackage {
     name = "ix_test";
     src = ./.;
     deps = [ leanPkg ];
     roots = ["Tests.Main" "Ix"];
     linkFlags = [ "-L${rustPkg}/lib" "-lix_rs" "-L${cPkg}/lib" "-lix_c" "-L${blake3C}/lib" "-lblake3"];
-    groupStaticLibs = true;
   });
   lib = {
     inherit
