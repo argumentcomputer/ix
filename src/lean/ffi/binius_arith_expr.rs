@@ -2,47 +2,48 @@ use binius_field::BinaryField128b;
 use binius_math::ArithExpr;
 
 use crate::lean::{
-    boxed::BoxedUSize, ctor::LeanCtorObject, external::LeanExternalObject, sarray::LeanSArrayObject,
+    boxed::BoxedUSize, ctor::LeanCtorObject, external::LeanExternalObject, ffi::as_ref_unsafe,
+    sarray::LeanSArrayObject,
 };
 
 pub(super) fn lean_ctor_to_arith_expr(
     ctor_ptr: *const LeanCtorObject,
 ) -> ArithExpr<BinaryField128b> {
-    let ctor = unsafe { &*ctor_ptr };
+    let ctor = as_ref_unsafe(ctor_ptr);
     match ctor.m_header.m_tag() {
         0 => {
             // Const
-            let external_object = ctor.m_objs.slice(1)[0] as *const LeanExternalObject;
-            let u128_ptr = unsafe { (*external_object).m_data } as *const u128;
+            let external_object = ctor.m_objs.slice(1)[0].cast::<LeanExternalObject>();
+            let u128_ptr = unsafe { (*external_object).m_data }.cast::<u128>();
             ArithExpr::Const(BinaryField128b::new(unsafe { *u128_ptr }))
         }
         1 => {
             // Var
-            let boxed_usize_ptr = ctor_ptr as *const BoxedUSize; // Lean optimizes to boxed usize
-            let boxed_usize = unsafe { &*boxed_usize_ptr };
+            let boxed_usize_ptr = ctor_ptr.cast::<BoxedUSize>(); // Lean optimizes to boxed usize
+            let boxed_usize = as_ref_unsafe(boxed_usize_ptr);
             ArithExpr::Var(boxed_usize.value)
         }
         2 => {
             // Add
             let objs = ctor.m_objs.slice(2);
             let (x, y) = (objs[0], objs[1]);
-            let x = lean_ctor_to_arith_expr(x as *const LeanCtorObject);
-            let y = lean_ctor_to_arith_expr(y as *const LeanCtorObject);
+            let x = lean_ctor_to_arith_expr(x.cast::<LeanCtorObject>());
+            let y = lean_ctor_to_arith_expr(y.cast::<LeanCtorObject>());
             ArithExpr::Add(Box::new(x), Box::new(y))
         }
         3 => {
             // Mul
             let objs = ctor.m_objs.slice(2);
             let (x, y) = (objs[0], objs[1]);
-            let x = lean_ctor_to_arith_expr(x as *const LeanCtorObject);
-            let y = lean_ctor_to_arith_expr(y as *const LeanCtorObject);
+            let x = lean_ctor_to_arith_expr(x.cast::<LeanCtorObject>());
+            let y = lean_ctor_to_arith_expr(y.cast::<LeanCtorObject>());
             ArithExpr::Mul(Box::new(x), Box::new(y))
         }
         4 => {
             // Pow
             let objs = ctor.m_objs.slice(2);
             let (x, e) = (objs[0], objs[1]);
-            let x = lean_ctor_to_arith_expr(x as *const LeanCtorObject);
+            let x = lean_ctor_to_arith_expr(x.cast::<LeanCtorObject>());
             ArithExpr::Pow(Box::new(x), e as u64)
         }
         _ => panic!("Invalid ctor tag"),
@@ -87,7 +88,7 @@ fn arith_expr_from_bytes(bytes: &[u8]) -> ArithExpr<BinaryField128b> {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn rs_binius_arith_expr_is_equivalent_to_bytes(
     arith_expr: &LeanCtorObject,
     bytes: &LeanSArrayObject,

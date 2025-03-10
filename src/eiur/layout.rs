@@ -1,5 +1,5 @@
 use binius_field::{
-    arch::OptimalUnderlier, BinaryField, BinaryField128b, BinaryField64b, BinaryField8b,
+    BinaryField, BinaryField8b, BinaryField64b, BinaryField128b, arch::OptimalUnderlier,
 };
 
 use super::ir::{Block, Ctrl, Function, Op};
@@ -63,7 +63,7 @@ impl Layout {
     }
 
     // `finish` at the end
-    fn finish(&mut self, state: LayoutBranchState) {
+    fn finish(&mut self, state: &LayoutBranchState) {
         self.auxiliaries = state.auxiliary_max;
         self.shared_constraints = state.shared_constraint_max;
     }
@@ -90,14 +90,15 @@ pub fn block_layout(block: &Block, layout: &mut Layout) {
             block_layout(t, layout);
             layout.restore(&mut state);
             block_layout(f, layout);
-            layout.finish(state);
+            layout.finish(&state);
         }
         Ctrl::Return(_, rs) => {
             // One selector per return
             layout.selectors += 1;
             // Each output must equal its respective return variable,
             // thus one constraint per return variable
-            layout.shared_constraints += rs.len() as u32;
+            layout.shared_constraints +=
+                u32::try_from(rs.len()).expect("Failed to convert usize to u32");
         }
     }
 }
@@ -122,7 +123,8 @@ pub fn op_layout(op: &Op, layout: &mut Layout) {
             layout.auxiliaries += 8;
         }
         Op::Call(_, _, out_size) => {
-            layout.auxiliaries += out_size + MULT_N_BYTES as u32;
+            layout.auxiliaries +=
+                out_size + u32::try_from(MULT_N_BYTES).expect("Failed to convert usize to u32");
         }
     }
 }
