@@ -9,9 +9,6 @@ structure Address where
   hash : ByteArray
   deriving Inhabited, Lean.ToExpr, BEq, Hashable
 
-instance : ToString Address where
-  toString adr := toString adr.hash -- TODO
-
 def Address.ofChars (_adrChars : List Char) : Option Address :=
   some default -- TODO
 
@@ -21,14 +18,6 @@ def Address.ofString (adrStr: String) : Option Address :=
 def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.hash x).val⟩
 
 open Lean
-
-instance : ToExpr ByteArray where
-  toExpr x   := mkApp (mkConst ``ByteArray.mk) (toExpr x.data)
-  toTypeExpr := mkConst ``ByteArray
-
-instance : ToExpr Address where
-  toExpr x   := mkApp (mkConst ``Address.mk) (toExpr x.hash)
-  toTypeExpr := mkConst ``Address
 
 /-- Convert a byte (UInt8) to a two‐digit hex string. -/
 def byteToHex (b : UInt8) : String :=
@@ -42,9 +31,11 @@ def byteToHex (b : UInt8) : String :=
 def byteArrayToHex (ba : ByteArray) : String :=
   (ba.toList.map byteToHex).foldl (· ++ ·) ""
 
-instance : Repr Address where
-  reprPrec a _ := "#" ++ String.toFormat (byteArrayToHex a.hash)
+instance : ToString Address where
+  toString adr := byteArrayToHex adr.hash
 
+instance : Repr Address where
+  reprPrec a _ := "#" ++ (toString a).toFormat
 
 instance : Ord Address where
   compare a b := compare a.hash.data.toList b.hash.data.toList

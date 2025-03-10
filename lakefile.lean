@@ -9,13 +9,6 @@ lean_lib Ix
 
 lean_exe ix where
   root := `Main
-  --extraDepTargets := #[`ix_rs]
-  --moreLinkArgs := #[
-  --    "-Wl,--start-group",
-  --    FilePath.toString (".lake" / "build" / "lib" / nameToStaticLib "ffi"),
-  --    FilePath.toString ("target" / "release" / nameToStaticLib "ix"),
-  --    "-Wl,--end-group"
-  --  ]
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "8ff598482515a698c88f2e65f7f529a04cf636f1"
@@ -36,10 +29,6 @@ lean_lib Tests
 
 @[test_driver]
 lean_exe Tests.Main
-
--- TODO(jcb): better test-lib organization
-lean_lib Tests.Ixon.Gen
-lean_exe Tests.Ixon where
 
 end Tests
 
