@@ -15,7 +15,7 @@ inductive Expr
   | pi    (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
   | letE  (name: Lean.Name) (type: Expr) (value: Expr) (body: Expr) (nonDep: Bool)
   | lit   (lit: Lean.Literal)
-  | proj  (typeName: Lean.Name) (type: Address) (idx: Nat) (struct: Expr)
+  | proj  (typeName: Lean.Name) (typeCont: Address) (typeMeta: Address) (idx: Nat) (struct: Expr)
   deriving Inhabited, Ord, BEq, Repr, Hashable
 
 end Ix

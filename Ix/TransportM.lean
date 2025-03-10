@@ -136,10 +136,10 @@ partial def dematExpr : Ix.Expr -> DematM Ixon.Expr
 | .lit l => dematIncr *> match l with
   | .strVal s => return .strl s
   | .natVal n => return .natl n
-| .proj n t i s => do
+| .proj n t tM i s => do
   let _ <- dematIncr
-  dematMeta { name := .some n, info := .none, link := .some t }
-  .proj <$> dematNat i <*> dematExpr s
+  dematMeta { name := .some n, info := .none, link := .some tM }
+  .proj t <$> dematNat i <*> dematExpr s
   where
     apps : Ix.Expr -> Ix.Expr -> List Ix.Expr -> DematM Ixon.Expr
     | .app ff fa, a, as => apps ff fa (a::as)
@@ -194,13 +194,13 @@ partial def rematExpr : Ixon.Expr -> RematM Ix.Expr
     | .some m => pure m
     | _ => rematThrowUnexpectedNode
   .letE name <$> rematExpr t <*> rematExpr d <*> rematExpr b <*> pure nD
-| .proj i s => do
+| .proj t i s => do
   let _ <- rematIncr
   let m <- rematMeta
   let (name, link) <- match m.name, m.link with
     | .some n, .some l => pure (n, l)
     | _, _ => rematThrowUnexpectedNode
-  .proj name link i.toNat <$> rematExpr s
+  .proj name t link i.toNat <$> rematExpr s
 | .strl s => rematIncr *> return .lit (.strVal s)
 | .natl n => rematIncr *> return .lit (.natVal n)
 
@@ -212,10 +212,18 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
 | .«definition» x => .defn <$> dematDefn x
 | .quotient x => .quot <$> 
   (.mk x.lvls <$> dematExpr x.type <*> pure x.kind)
-| .inductiveProj x => return .indcProj (.mk x.block x.idx)
-| .constructorProj x => return .ctorProj (.mk x.block x.idx x.cidx)
-| .recursorProj x => return .recrProj (.mk x.block x.idx x.ridx)
-| .definitionProj x => return .defnProj (.mk x.block x.idx)
+| .inductiveProj x => do
+  dematMeta { name := .none, info := .none, link := .some x.blockMeta}
+  return .indcProj (.mk x.blockCont x.idx)
+| .constructorProj x => do
+  dematMeta { name := .none, info := .none, link := .some x.blockMeta}
+  return .ctorProj (.mk x.blockCont x.idx x.cidx)
+| .recursorProj x => do
+  dematMeta { name := .none, info := .none, link := .some x.blockMeta}
+  return .recrProj (.mk x.blockCont x.idx x.ridx)
+| .definitionProj x => do
+  dematMeta { name := .none, info := .none, link := .some x.blockMeta}
+  return .defnProj (.mk x.blockCont x.idx)
 | .mutDefBlock xs => .mutDef <$> (xs.mapM dematDefn)
 | .mutIndBlock xs => .mutInd <$> (xs.mapM dematInd)
   where
@@ -256,10 +264,18 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
 | .opaq x => .«opaque» <$> (.mk x.lvls <$> rematExpr x.type <*> rematExpr x.value)
 | .defn x => .«definition» <$> rematDefn x
 | .quot x => .quotient <$> (.mk x.lvls <$> rematExpr x.type <*> pure x.kind)
-| .indcProj x => return .inductiveProj (.mk x.block x.idx)
-| .ctorProj x => return .constructorProj (.mk x.block x.idx x.cidx)
-| .recrProj x => return .recursorProj (.mk x.block x.idx x.ridx)
-| .defnProj x => return .definitionProj (.mk x.block x.idx)
+| .indcProj x => do
+  let link <- rematMeta >>= fun m => m.link.elim rematThrowUnexpectedNode pure
+  return .inductiveProj (.mk x.block link x.idx)
+| .ctorProj x => do
+  let link <- rematMeta >>= fun m => m.link.elim rematThrowUnexpectedNode pure
+  return .constructorProj (.mk x.block link x.idx x.cidx)
+| .recrProj x => do
+  let link <- rematMeta >>= fun m => m.link.elim rematThrowUnexpectedNode pure
+  return .recursorProj (.mk x.block link x.idx x.ridx)
+| .defnProj x => do
+  let link <- rematMeta >>= fun m => m.link.elim rematThrowUnexpectedNode pure
+  return .definitionProj (.mk x.block link x.idx)
 | .mutDef xs => .mutDefBlock <$> (xs.mapM rematDefn)
 | .mutInd xs => .mutIndBlock <$> (xs.mapM rematInd)
 | .meta m => throw (.rawMetadata m)

@@ -77,17 +77,17 @@ def withLevels (lvls : List Lean.Name) : CanonM α → CanonM α :=
 
 def commit (const : Ix.Const) : CanonM (Address × Address) := do
   match (← get).commits.find? const with
-  | some (constAddr, metaAddr) => pure (constAddr, metaAddr)
+  | some (contAddr, metaAddr) => pure (contAddr, metaAddr)
   | none => do
     let (ixon, meta) <- match constToIxon const with
       | .ok (i, m) => pure (i, m)
       | .error e => throw (.transportError e)
-    let constAddr := Address.blake3 (Ixon.Serialize.put ixon)
+    let contAddr := Address.blake3 (Ixon.Serialize.put ixon)
     let metaAddr := Address.blake3 (Ixon.Serialize.put meta)
-    modifyGet fun stt => ((constAddr, metaAddr), { stt with
-      commits := stt.commits.insert const (constAddr, metaAddr)
-      store := (stt.store.insert constAddr ixon).insert metaAddr meta
-      consts := stt.consts.modify constAddr (fun m => m.insert metaAddr const)
+    modifyGet fun stt => ((contAddr, metaAddr), { stt with
+      commits := stt.commits.insert const (contAddr, metaAddr)
+      store := (stt.store.insert contAddr ixon).insert metaAddr meta
+      consts := stt.consts.modify contAddr (fun m => m.insert metaAddr const)
     })
 
 @[inline] def addConstToStt (name : Lean.Name) (constAddr metaAddr: Address) : CanonM Unit :=
@@ -222,8 +222,8 @@ partial def canonDefinition (struct : Lean.DefinitionVal) : CanonM (Address × A
   -- Building and storing the block
   let definitionsIr := (definitions.map (match ·.head? with
     | some d => [d] | none => [])).flatten
-  let (blockConstAddr, blockMetaAddr) ← commit $ .mutDefBlock definitionsIr
-  addBlockToStt blockConstAddr blockMetaAddr
+  let (blockContAddr, blockMetaAddr) ← commit $ .mutDefBlock definitionsIr
+  addBlockToStt blockContAddr blockMetaAddr
 
   -- While iterating on the definitions from the mutual block, we need to track
   -- the correct objects to return
@@ -233,7 +233,8 @@ partial def canonDefinition (struct : Lean.DefinitionVal) : CanonM (Address × A
     -- Storing and caching the definition projection
     -- Also adds the constant to the array of constants
     let some idx := recrCtx.find? name | throw $ .cantFindMutDefIndex name
-    let (constAddr, metaAddr) ← commit $ .definitionProj ⟨blockConstAddr, idx⟩
+    let (constAddr, metaAddr) ←
+      commit $ .definitionProj ⟨blockContAddr, blockMetaAddr, idx⟩
     addConstToStt name constAddr metaAddr
     if struct.name == name then ret? := some (constAddr, metaAddr)
 
@@ -283,8 +284,8 @@ partial def canonInductive (initInd : Lean.InductiveVal) : CanonM (Address × Ad
   let irInds ← initInd.all.mapM fun name => do match ← getLeanConstant name with
     | .inductInfo ind => withRecrs recrCtx do pure $ (← inductiveToIR ind)
     | const => throw $ .invalidConstantKind const.name "inductive" const.ctorName
-  let (blockConstAddr, blockMetaAddr) ← commit $ .mutIndBlock irInds
-  addBlockToStt blockConstAddr blockMetaAddr
+  let (blockContAddr, blockMetaAddr) ← commit $ .mutIndBlock irInds
+  addBlockToStt blockContAddr blockMetaAddr
 
   -- While iterating on the inductives from the mutual block, we need to track
   -- the correct objects to return
@@ -292,7 +293,8 @@ partial def canonInductive (initInd : Lean.InductiveVal) : CanonM (Address × Ad
   for (indName, indIdx) in initInd.all.zipIdx do
     -- Store and cache inductive projections
     let name := indName
-    let (constAddr, metaAddr) ← commit $ .inductiveProj ⟨blockConstAddr, indIdx⟩
+    let (constAddr, metaAddr) ← 
+      commit $ .inductiveProj ⟨blockContAddr, blockMetaAddr, indIdx⟩
     addConstToStt name constAddr metaAddr
     if name == initInd.name then ret? := some (constAddr, metaAddr)
 
@@ -301,12 +303,14 @@ partial def canonInductive (initInd : Lean.InductiveVal) : CanonM (Address × Ad
 
     for (ctorName, ctorIdx) in ctors.zipIdx do
       -- Store and cache constructor projections
-      let (constAddr, metaAddr) ← commit $ .constructorProj ⟨blockConstAddr, indIdx, ctorIdx⟩
+      let (constAddr, metaAddr) ← 
+        commit $ .constructorProj ⟨blockContAddr, blockMetaAddr, indIdx, ctorIdx⟩
       addConstToStt ctorName constAddr metaAddr
 
     for (recrName, recrIdx) in recrs.zipIdx do
       -- Store and cache recursor projections
-      let (constAddr, metaAddr) ← commit $ .recursorProj ⟨blockConstAddr, indIdx, recrIdx⟩
+      let (constAddr, metaAddr) ← 
+        commit $ .recursorProj ⟨blockContAddr, blockMetaAddr, indIdx, recrIdx⟩
       addConstToStt recrName constAddr metaAddr
 
   match ret? with
@@ -395,8 +399,8 @@ partial def canonExpr : Lean.Expr → CanonM Expr
       | some i => -- recursing!
         return .rec_ i univs
       | none => do
-        let (constAddr, metaAddr) ← canonConst (← getLeanConstant name)
-        return .const name constAddr metaAddr univs
+        let (contAddr, metaAddr) ← canonConst (← getLeanConstant name)
+        return .const name contAddr metaAddr univs
     | .app fnc arg => return .app (← canonExpr fnc) (← canonExpr arg)
     | .lam name typ bod info =>
       return .lam name info (← canonExpr typ) (← withBinder name $ canonExpr bod)
@@ -407,8 +411,8 @@ partial def canonExpr : Lean.Expr → CanonM Expr
         (← withBinder name $ canonExpr bod) nD
     | .lit lit => return .lit lit
     | .proj name idx exp => do
-      let (constAddr, metaAddr) ← canonConst (← getLeanConstant name)
-      return .proj name constAddr idx (← canonExpr exp)
+      let (contAddr, metaAddr) ← canonConst (← getLeanConstant name)
+      return .proj name contAddr metaAddr idx (← canonExpr exp)
     | .fvar ..  => throw $ .freeVariableExpr expr
     | .mvar ..  => throw $ .metaVariableExpr expr
     | .mdata .. => throw $ .metaDataExpr expr

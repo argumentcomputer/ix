@@ -23,7 +23,7 @@ inductive Expr where
   -- 0x7 (let d : A in b)
   | let_ (nonDep: Bool) (type: Expr) (defn: Expr) (body: Expr) : Expr
   -- 0x8 .1
-  | proj : UInt64 -> Expr -> Expr
+  | proj (type: Address) (idx: UInt64) (struct: Expr): Expr
   -- 0x9 "foobar"
   | strl (lit: String) : Expr
   -- 0xA 0xdead_beef
@@ -61,8 +61,9 @@ partial def putExpr : Expr -> PutM
 | .let_ nD t d b => do
   if nD then putExprTag 0x7 1 else putExprTag 0x7 0
   putExpr t *> putExpr d *> putExpr b
-| .proj n x => do
+| .proj t n x => do
   putExprTag 0x8 n
+  putBytes t.hash
   putExpr x
 | .strl l => do
   let bytes := l.toUTF8
@@ -114,7 +115,7 @@ def getExpr : GetM Expr := do
           .let_ .true <$> go f <*> go f <*> go f
       | 0x8 => do
         let n ← getExprTag isLarge small
-        .proj n <$> go f
+        .proj <$> (Address.mk <$> getBytes 32) <*> pure n <*> go f
       | 0x9 => do
         let n ← getExprTag isLarge small
         let bs ← getBytes n.toNat

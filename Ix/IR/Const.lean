@@ -75,24 +75,28 @@ structure Inductive where
   deriving BEq, Ord, Hashable, Repr
 
 structure InductiveProj where
-  block : Address
+  blockCont : Address
+  blockMeta : Address
   idx   : Nat
   deriving BEq, Ord, Hashable, Repr
 
 structure ConstructorProj where
-  block : Address
+  blockCont : Address
+  blockMeta : Address
   idx   : Nat
   cidx  : Nat
   deriving BEq, Ord, Hashable, Repr
 
 structure RecursorProj where
-  block : Address
+  blockCont : Address
+  blockMeta : Address
   idx   : Nat
   ridx  : Nat
   deriving BEq, Ord, Hashable, Repr
 
 structure DefinitionProj where
-  block : Address
+  blockCont : Address
+  blockMeta : Address
   idx   : Nat
   deriving BEq, Ord, Hashable, Repr
 

@@ -47,7 +47,7 @@ def genExpr : Gen Ix.Expr := getSize >>= go
         (25, .letE <$> genName <*> go f <*> go f <*> go f <*> pure .false),
         (100, .lit <$> .strVal <$> genString),
         (100, .lit <$> .natVal <$> chooseAny Nat),
-        (25, .proj <$> genName <*> genAddress <*> genNat' <*> go f),
+        (25, .proj <$> genName <*> genAddress <*> genAddress <*> genNat' <*> go f),
       ]
 
 instance : Shrinkable Ix.Expr where
@@ -70,17 +70,17 @@ def genConst : Gen Ix.Const := getSize >>= go
         <*> genBool <*> genBool <*> genBool <*> genBool
     go : Nat -> Gen Ix.Const
     | 0 => return .«axiom» (.mk 0 (Ix.Expr.sort (Ix.Univ.zero)))
-    | Nat.succ f =>
+    | Nat.succ _ =>
       frequency [
         (100, .«axiom» <$> (.mk <$> genNat' <*> genExpr)),
         (100, .«theorem» <$> (.mk <$> genNat' <*> genExpr <*> genExpr)),
         (100, .«opaque» <$> (.mk <$> genNat' <*> genExpr <*> genExpr)),
         (100, .«definition» <$> genDef),
         (100, .quotient <$> (.mk <$> genNat' <*> genExpr <*> genQuotKind)),
-        (100, .inductiveProj <$> (.mk <$> genAddress <*> genNat')),
-        (100, .constructorProj <$> (.mk <$> genAddress <*> genNat' <*> genNat')),
-        (100, .recursorProj <$> (.mk <$> genAddress <*> genNat' <*> genNat')),
-        (100, .definitionProj <$> (.mk <$> genAddress <*> genNat')),
+        (100, .inductiveProj <$> (.mk <$> genAddress <*> genAddress <*> genNat')),
+        (100, .constructorProj <$> (.mk <$> genAddress <*> genAddress <*> genNat' <*> genNat')),
+        (100, .recursorProj <$> (.mk <$> genAddress <*> genAddress <*> genNat' <*> genNat')),
+        (100, .definitionProj <$> (.mk <$> genAddress <*> genAddress <*> genNat')),
         (100, .mutDefBlock <$> resizeListOf genDef),
         (100, .mutIndBlock <$> resizeListOf genInd),
       ]
