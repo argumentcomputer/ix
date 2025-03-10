@@ -11,7 +11,7 @@ lean_exe ix where
   root := `Main
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "8ff598482515a698c88f2e65f7f529a04cf636f1"
+  "https://github.com/argumentcomputer/LSpec" @ "0f9008e70927c4afac8ad2bc32f2f4fbda044096"
 
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @ "bc498146f630fc66d02c4412f073ef5bf8c608c4"
