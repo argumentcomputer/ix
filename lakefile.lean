@@ -11,13 +11,17 @@ lean_exe ix where
   root := `Main
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "8ff598482515a698c88f2e65f7f529a04cf636f1"
+  "https://github.com/argumentcomputer/LSpec" @ "0f9008e70927c4afac8ad2bc32f2f4fbda044096"
 
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @ "b996cd9f48f44a1522530859d84622bb69df79df"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "e7fd1a415c80985ade02a021172834ca2139b0ca"
+
+require batteries from git
+  "https://github.com/leanprover-community/batteries" @ "efcc7d9bd9936ecdc625baf0d033b60866565cd5"
+
 
 section Tests
 

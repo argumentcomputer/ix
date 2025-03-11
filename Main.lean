@@ -1,5 +1,7 @@
 import Ix.Cli.ProveCmd
 import Ix.Cli.HashCmd
+import Ix.Cli.TestCmd
+import Ix
 
 def VERSION : String :=
   s!"{Lean.versionString}|0.0.1"
@@ -10,7 +12,8 @@ def ixCmd : Cli.Cmd := `[Cli|
 
   SUBCOMMANDS:
     proveCmd;
-    hashCmd
+    hashCmd;
+    testCmd
 ]
 
 def main (args : List String) : IO UInt32 := do

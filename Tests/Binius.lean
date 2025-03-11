@@ -2,6 +2,7 @@ import LSpec
 import Ix.Binius.ConstraintSystemBuilder
 
 open LSpec Binius in
+
 def Tests.Binius.suite :=
   let nVars := 3
   let builder := ConstraintSystemBuilder.new ()
