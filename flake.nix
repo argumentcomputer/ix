@@ -19,8 +19,7 @@
     crane.url = "github:ipetkov/crane";
 
     blake3-lean = {
-      # TODO: Update once https://github.com/argumentcomputer/Blake3.lean/pull/11 merges
-      url = "github:argumentcomputer/Blake3.lean?rev=f3f5140fdd97776ec885e81e0b0a8f2f13a820a8";
+      url = "github:argumentcomputer/Blake3.lean";
       # Follow top-level nixpkgs so we stay in sync
       inputs.nixpkgs.follows = "nixpkgs";
     };
