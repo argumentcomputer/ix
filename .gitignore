@@ -3,3 +3,6 @@
 
 # Rust
 /target
+
+# Nix
+result*
