@@ -1,5 +1,5 @@
 {
-  description = "Ix Nix flake (Lean4 + Rust)";
+  description = "Ix Nix flake (Lean4 + C + Rust)";
 
   inputs = {
     # Lean + System packages
@@ -15,14 +15,17 @@
       # Follow top-level nixpkgs so we stay in sync
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    naersk = {
-      url = "github:nix-community/naersk";
+
+    crane.url = "github:ipetkov/crane";
+
+    blake3-lean = {
+      url = "github:argumentcomputer/Blake3.lean";
       # Follow top-level nixpkgs so we stay in sync
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = inputs @ { nixpkgs, flake-parts, lean4-nix, fenix, naersk, ... }:
+  outputs = inputs @ { nixpkgs, flake-parts, lean4-nix, fenix, crane, blake3-lean, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       # Systems we want to build for
       systems = [
@@ -31,70 +34,49 @@
         "x86_64-darwin"
         "x86_64-linux"
       ];
+      
+      flake = {
+        lib = import ./ix.nix;
+        inputs.fenix = fenix;
+        inputs.crane = crane;
+        inputs.blake3-lean = blake3-lean;
+      };
 
       perSystem = { system, pkgs, ... }:
       let
-        rustToolchain = fenix.packages.${system}.fromToolchainFile {
-          file = ./rust-toolchain.toml;
-          sha256 = "sha256-hpWM7NzUvjHg0xtIgm7ftjKCc1qcAeev45XqD3KMeQo=";
-        };
+        lib = (import ./ix.nix { inherit system pkgs fenix crane lean4-nix blake3-lean; }).lib;
 
-        rustPkg = (naersk.lib.${system}
-          .override {
-            cargo = rustToolchain;
-            rustc = rustToolchain;
-          })
-          .buildPackage {
-            src = pkgs.lib.cleanSource ./.;
-          };
-
-        overlayedPkgs = import nixpkgs {
-          inherit system;
-          overlays = [
-            (lean4-nix.readToolchainFile ./lean-toolchain)
-          ];
-        };
-
-        #ffiLib = pkgs.stdenv.mkDerivation {
-        #  name = "ffi-lib";
-        #  src = ./ffi.c;
-        #  buildInputs = [ overlayedPkgs.clang overlayedPkgs.gcc overlayedPkgs.lean.lean-all ];
-        #  phases = [ "buildPhase" "installPhase" ];
-        #  buildPhase = ''
-        #    clang -c $src -o ffi.o
-        #    ar rcs libffi.a ffi.o
-        #  '';
-        #  installPhase = ''
-        #    mkdir -p $out/lib
-        #    cp libffi.a $out/lib/
-        #  '';
-        #};
-        leanPkg = (lean4-nix.lake { pkgs = overlayedPkgs; }).mkPackage {
-            src = ./.;
-            roots = ["Main" "Ix"];
-        };
+        devShellPkgs = with pkgs; [
+          pkg-config
+          openssl
+          ocl-icd
+          gcc
+          clang
+          lib.rustToolchain
+        ];
       in {
+        # Lean overlay
+        _module.args.pkgs = import nixpkgs {
+          inherit system;
+          overlays = [(lean4-nix.readToolchainFile ./lean-toolchain)];
+        };
+
         packages = {
-          # `nix build .` or `nix build .#default` => Lean4 exe
-          # TODO: This doesn't work
-          default = leanPkg.executable;
-          rust = rustPkg;
+          default = lib.leanPkg.executable;
+          test = lib.leanTest.executable;
         };
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
-          packages = [
-            overlayedPkgs.lean.lean         # Lean compiler
-            overlayedPkgs.lean.lean-all     # Includes Lake, stdlib, etc.
-            pkgs.libblake3
-            pkgs.pkg-config
-            pkgs.openssl
-            overlayedPkgs.gcc
-            pkgs.ocl-icd
-            overlayedPkgs.clang
-
-            rustToolchain
+          packages = with pkgs; devShellPkgs ++ [
+            lean.lean         # Lean compiler
+            lean.lean-all     # Includes Lake, stdlib, etc.
             pkgs.rust-analyzer
+          ];
+        };
+        devShells.ci = pkgs.mkShell {
+          packages = with pkgs; devShellPkgs ++ [
+            elan
           ];
         };
       };
