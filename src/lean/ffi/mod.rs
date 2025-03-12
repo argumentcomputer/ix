@@ -5,9 +5,6 @@ pub mod byte_array;
 
 use std::ffi::{CStr, c_char};
 
-#[unsafe(no_mangle)]
-extern "C" fn rs_noop() {}
-
 #[inline]
 pub(super) fn to_raw<T>(t: T) -> *const T {
     Box::into_raw(Box::new(t))
