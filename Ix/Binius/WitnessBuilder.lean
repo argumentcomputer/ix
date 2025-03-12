@@ -1,4 +1,4 @@
-import Ix.Rust
+-- import Ix.Rust
 import Ix.Binius.ConstraintSystem
 
 namespace Binius

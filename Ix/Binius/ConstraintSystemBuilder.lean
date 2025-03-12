@@ -1,4 +1,4 @@
-import Ix.Rust
+-- import Ix.Rust
 import Ix.Binius.ArithExpr
 import Ix.Binius.Common
 import Ix.Binius.ConstraintSystem
