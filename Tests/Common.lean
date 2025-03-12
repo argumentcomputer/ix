@@ -1,6 +1,5 @@
 import LSpec
-import Ix.Binius.ArithExpr
-import Ix.UInt128
+import Ix.Unsigned
 
 open LSpec SlimCheck Gen
 
@@ -11,7 +10,7 @@ def genUSize : Gen USize :=
   .ofNat <$> choose Nat 0 (2^System.Platform.numBits - 1)
 
 def genUInt128 : Gen UInt128 :=
-  .ofHiLo <$> genUInt64 <*> genUInt64
+  .ofLoHi <$> genUInt64 <*> genUInt64
 
 def frequency' (default: Gen α) (xs: List (Nat × Gen α)) : Gen α := do
   let n ← choose Nat 0 total

@@ -13,12 +13,15 @@ typedef struct {
     void *object_ref;
     /* A pointer to a function that can free `object_ref` */
     void (*finalizer)(void *);
+    /* If set to `true`, allow the finalizer to be called on outdated objects */
+    bool allow_finalizer;
 } linear_object;
 
 static inline linear_object *linear_object_init(void *object_ref, void (*finalizer)(void *)) {
     linear_object *linear = malloc(sizeof(linear_object));
     linear->object_ref = object_ref;
     linear->finalizer = finalizer;
+    linear->allow_finalizer = false;
     return linear;
 }
 
@@ -32,6 +35,10 @@ static inline void *get_object_ref(linear_object *linear) {
 
 static inline void mark_outdated(linear_object *linear) {
     linear->object_ref = NULL;
+}
+
+static inline void allow_finalizer(linear_object *linear) {
+    linear->allow_finalizer = true;
 }
 
 static inline linear_object *linear_bump(linear_object *linear) {
@@ -48,9 +55,10 @@ static inline void assert_linearity(linear_object *linear) {
 }
 
 static inline void free_linear_object(linear_object *linear) {
-    // Only finalize `object_ref` if `linear` is the latest linear object reference.
-    // By doing this, we avoid double-free attempts.
-    if (LEAN_UNLIKELY(linear->object_ref != NULL)) {
+    // Only finalize `object_ref` if `linear` is the latest linear object reference
+    // or if the finalizer was forcibly set as allowed. By doing this, we avoid
+    // double-free attempts.
+    if (LEAN_UNLIKELY(linear->object_ref != NULL || linear->allow_finalizer)) {
         linear->finalizer(linear->object_ref);
     }
     free(linear);

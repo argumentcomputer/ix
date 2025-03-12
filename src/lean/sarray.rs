@@ -1,11 +1,4 @@
-use std::alloc::{Layout, alloc, handle_alloc_error};
-
 use super::{CArray, object::LeanObject};
-
-/// ```c
-/// #define LeanScalarArray 248
-/// ```
-const LEAN_SCALAR_ARRAY: u8 = 248;
 
 /// ```c
 /// typedef struct {
@@ -27,31 +20,5 @@ impl LeanSArrayObject {
     #[inline]
     pub fn data(&self) -> &[u8] {
         self.m_data.slice(self.m_size)
-    }
-
-    pub fn from_slice(slice: &[u8]) -> *const Self {
-        let len = slice.len();
-        let layout = Layout::from_size_align(
-            size_of::<LeanSArrayObject>() + len,
-            align_of::<LeanSArrayObject>(),
-        )
-        .expect("Couldn't compute the memory layout");
-
-        let ptr = unsafe { alloc(layout) }.cast::<LeanSArrayObject>();
-        if ptr.is_null() {
-            handle_alloc_error(layout);
-        }
-
-        let size_of_u8 = u8::try_from(size_of::<u8>()).expect("Failed to convert usize to u8");
-        let header = LeanObject::new(1, 0, size_of_u8, LEAN_SCALAR_ARRAY);
-
-        unsafe {
-            (*ptr).m_header = header;
-            (*ptr).m_size = len;
-            (*ptr).m_capacity = len;
-            (*ptr).m_data.copy_from_slice(slice);
-        }
-
-        ptr
     }
 }

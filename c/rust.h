@@ -2,14 +2,27 @@
 
 #include "lean/lean.h"
 
-void rs_u128_free(void*);
-void *rs_u128_of_hi_lo(uint64_t, uint64_t);
+/* --- Witness --- */
 
-void  rs_constraint_system_free(void*);
+void rs_witness_free(void*);
+
+/* --- WitnessBuilder --- */
+
+void *rs_witness_builder_new(void*);
+void rs_witness_builder_free(void*);
+void rs_witness_builder_with_column(void*, size_t, b_lean_obj_arg);
+void *rs_witness_builder_build(void*);
+
+/* --- ConstraintSystem --- */
+
+void rs_constraint_system_free(void*);
+bool rs_constraint_system_validate_witness(void*, b_lean_obj_arg, void*);
+
+/* --- ConstraintSystemBuilder --- */
 
 void *rs_constraint_system_builder_new();
 void *rs_constraint_system_builder_build(void*);
-void  rs_constraint_system_builder_free(void*);
+void rs_constraint_system_builder_free(void*);
 void rs_constraint_system_builder_flush_with_multiplicity(
     void*, bool, size_t, size_t, b_lean_obj_arg, uint64_t
 );

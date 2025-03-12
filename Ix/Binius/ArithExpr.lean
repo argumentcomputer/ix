@@ -1,12 +1,11 @@
-import Ix.UInt128
-import Ix.UInt64
-import Ix.USize
+import Ix.Unsigned
+import Ix.Binius.Common
 
 namespace Binius
 
 inductive ArithExpr
   | const : UInt128 → ArithExpr
-  | var : USize → ArithExpr
+  | var : OracleId → ArithExpr
   | add : ArithExpr → ArithExpr → ArithExpr
   | mul : ArithExpr → ArithExpr → ArithExpr
   | pow : ArithExpr → UInt64 → ArithExpr
@@ -16,14 +15,14 @@ namespace ArithExpr
 
 def toString : ArithExpr → String
   | const _ => "Const"
-  | var v => s!"Var({v})"
+  | var v => s!"Var({v.toUSize})"
   | add x y => s!"Add({x.toString}, {y.toString})"
   | mul x y => s!"Mul({x.toString}, {y.toString})"
   | pow x e => s!"Pow({x.toString}, {e})"
 
 def toBytes : @& ArithExpr → ByteArray
   | const u128 => ⟨#[0]⟩ ++ u128.toLEBytes
-  | var usize => ⟨#[1]⟩ ++ usize.toLEBytes
+  | var oracleId => ⟨#[1]⟩ ++ oracleId.toUSize.toLEBytes
   | add x y =>
     let xBytes := x.toBytes
     ⟨#[2, xBytes.size.toUInt8]⟩ ++ xBytes ++ y.toBytes

@@ -19,8 +19,4 @@ def neq : TestSeq :=
   arrays.zip arrays' |>.foldl (init := .done) fun tSeq (x, y) =>
     tSeq ++ (test s!"{x} != {y}" $ !x.beq y && !x.beqNoFFI y && !y.beq x && !y.beqNoFFI x)
 
-def Tests.ByteArray.suite := [
-    beq,
-    neq,
-    test "ByteArray.zeros works" (ByteArray.zeros 5 == .mk #[0, 0, 0, 0, 0]),
-  ]
+def Tests.ByteArray.suite := [beq, neq]

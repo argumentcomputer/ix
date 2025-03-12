@@ -9,7 +9,4 @@ def beq : @& ByteArray → @& ByteArray → Bool :=
 
 instance : BEq ByteArray := ⟨ByteArray.beq⟩
 
-@[extern "rs_byte_array_zeros"]
-opaque zeros : USize → ByteArray
-
 end ByteArray

@@ -8,18 +8,11 @@
 /// ```
 #[repr(C)]
 pub struct LeanObject {
-    pub m_rc: i32,
+    m_rc: i32,
     packed_bits: u32,
 }
 
 impl LeanObject {
-    #[inline]
-    pub fn new(m_rc: i32, m_cs_sz: u16, m_other: u8, m_tag: u8) -> Self {
-        let packed_bits =
-            u32::from(m_cs_sz) | (u32::from(m_other) << 16) | (u32::from(m_tag) << 24);
-        Self { m_rc, packed_bits }
-    }
-
     #[inline]
     pub fn m_cs_sz(&self) -> u16 {
         (self.packed_bits & 0xFFFF) as u16
