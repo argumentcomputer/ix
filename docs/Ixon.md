@@ -64,11 +64,11 @@ left-shift the Universe tag into the upper 3 bits of a tag-byte:
 where the `T` bits hold the tag value.
 
 The `L` bit is called the `large-flag` and the `SSSS` bits are called the
-"small-size" field, and can store various information dependening on the
-Universe variant defined by the tag value.
+"small-size" field, and can store various information depending on the Universe
+variant defined by the tag value.
 
 For the `Univ.const` constructor, the large-flag and the small-size field are
-used to hold in a single byte small values, For example, the following tag-byte
+used to hold in a single byte small values. For example, the following tag-byte
 
 ```
 0bTTTL_SSSS
@@ -94,7 +94,7 @@ If the large-flag is set, the small-size field is used to store the number of
 bytes of an variable length large-size field (with an off-by-one optimization).
 
 This approach is used for `Univ.const` and `Univ.var`. For `Univ.max` and
-`Univ.imax`, the large-flage and small size field are unused, and the
+`Univ.imax`, the large-flag and small size field are unused, and the
 serialization of the parameters are directly concatenated. These sub-objects are
 called the *body* fields. For example, the
 serialization of `Univ.max (Univ.const 0) (Univ.const 15)` is:
@@ -158,7 +158,7 @@ inductive Expr where
 ```
 
 This is largely similar to the Ix.Expr definition, which can be seen as a
-content-addressible variation of Lean4 expressions once all metavariables have
+content-addressable variation of Lean4 expressions once all metavariables have
 been elaborated.
 
 ```lean4
@@ -348,7 +348,7 @@ String literals store the length of the utf8 text in bytes in the size fields:
 
 #### Expr.natl
 
-Number literals store the length of the natural number's byte represetation according to
+Number literals store the length of the natural number's byte representation according to
 the following algorithm:
 
 ```lean4

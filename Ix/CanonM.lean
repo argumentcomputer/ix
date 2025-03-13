@@ -91,7 +91,7 @@ def commit (const : Ix.Const) : CanonM (Address × Address) := do
     })
 
 @[inline] def addConstToStt (name : Lean.Name) (constAddr metaAddr: Address) : CanonM Unit :=
-  modify fun stt => 
+  modify fun stt =>
     { stt with names := stt.names.insert name (constAddr, metaAddr) }
 
 @[inline] def addBlockToStt (blockAddr blockMeta : Address) : CanonM Unit :=
@@ -251,7 +251,7 @@ Content-addresses an inductive and all inductives in the mutual block as a
 mutual block, even if the inductive itself is not in a mutual block.
 
 Content-addressing an inductive involves content-addressing its associated
-constructors and recursors, hence the lenght of this function.
+constructors and recursors, hence the length of this function.
 -/
 partial def canonInductive (initInd : Lean.InductiveVal) : CanonM (Address × Address):= do
   -- `mutualConsts` is the list of the names of all constants associated with an inductive block
@@ -293,23 +293,23 @@ partial def canonInductive (initInd : Lean.InductiveVal) : CanonM (Address × Ad
   for (indName, indIdx) in initInd.all.zipIdx do
     -- Store and cache inductive projections
     let name := indName
-    let (constAddr, metaAddr) ← 
+    let (constAddr, metaAddr) ←
       commit $ .inductiveProj ⟨blockContAddr, blockMetaAddr, indIdx⟩
     addConstToStt name constAddr metaAddr
     if name == initInd.name then ret? := some (constAddr, metaAddr)
 
-    let some (ctors, recrs) := nameData.find? indName 
+    let some (ctors, recrs) := nameData.find? indName
       | throw $ .cantFindMutDefIndex indName
 
     for (ctorName, ctorIdx) in ctors.zipIdx do
       -- Store and cache constructor projections
-      let (constAddr, metaAddr) ← 
+      let (constAddr, metaAddr) ←
         commit $ .constructorProj ⟨blockContAddr, blockMetaAddr, indIdx, ctorIdx⟩
       addConstToStt ctorName constAddr metaAddr
 
     for (recrName, recrIdx) in recrs.zipIdx do
       -- Store and cache recursor projections
-      let (constAddr, metaAddr) ← 
+      let (constAddr, metaAddr) ←
         commit $ .recursorProj ⟨blockContAddr, blockMetaAddr, indIdx, recrIdx⟩
       addConstToStt recrName constAddr metaAddr
 
@@ -340,7 +340,7 @@ partial def inductiveToIR (ind : Lean.InductiveVal) : CanonM Ix.Inductive := do
     -- match the order used in `recrCtx`
     ctors, recs, ind.isRec, ind.isReflexive, struct, unit⟩
 
-partial def internalRecToIR (ctors : List Lean.Name) 
+partial def internalRecToIR (ctors : List Lean.Name)
   : Lean.ConstantInfo → CanonM (Ix.Recursor × List Ix.Constructor)
   | .recInfo rec => withLevels rec.levelParams do
     let typ ← canonExpr rec.type
