@@ -48,8 +48,7 @@ extern lean_obj_res c_rs_witness_builder_build(lean_obj_arg l_wb) {
     linear_object *linear = validated_linear(l_wb);
 
     void *witness = rs_witness_builder_build(get_object_ref(linear));
-    mark_outdated(linear);
-    allow_finalizer(linear);
+    ditch_linear(linear);
 
     return lean_alloc_external(get_witness_class(), witness);
 }
@@ -94,8 +93,7 @@ extern lean_obj_res c_rs_constraint_system_builder_build(lean_obj_arg l_csb) {
     linear_object *linear = validated_linear(l_csb);
 
     void *constraint_system = rs_constraint_system_builder_build(get_object_ref(linear));
-    mark_outdated(linear);
-    allow_finalizer(linear);
+    ditch_linear(linear);
 
     return lean_alloc_external(get_constraint_system_class(), constraint_system);
 }

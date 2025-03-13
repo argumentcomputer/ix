@@ -13,15 +13,18 @@ typedef struct {
     void *object_ref;
     /* A pointer to a function that can free `object_ref` */
     void (*finalizer)(void *);
+    /* If set to `true`, the resource pointed by `object_ref` cannot be used */
+    bool outdated;
     /* If set to `true`, allow the finalizer to be called on outdated objects */
-    bool allow_finalizer;
+    bool finalize_even_if_outdated;
 } linear_object;
 
 static inline linear_object *linear_object_init(void *object_ref, void (*finalizer)(void *)) {
     linear_object *linear = malloc(sizeof(linear_object));
     linear->object_ref = object_ref;
     linear->finalizer = finalizer;
-    linear->allow_finalizer = false;
+    linear->outdated = false;
+    linear->finalize_even_if_outdated = false;
     return linear;
 }
 
@@ -33,23 +36,20 @@ static inline void *get_object_ref(linear_object *linear) {
     return linear->object_ref;
 }
 
-static inline void mark_outdated(linear_object *linear) {
-    linear->object_ref = NULL;
-}
-
-static inline void allow_finalizer(linear_object *linear) {
-    linear->allow_finalizer = true;
-}
-
 static inline linear_object *linear_bump(linear_object *linear) {
     linear_object *copy = malloc(sizeof(linear_object));
     *copy = *linear;
-    mark_outdated(linear);
+    linear->outdated = true;
     return copy;
 }
 
+static inline void ditch_linear(linear_object *linear) {
+    linear->outdated = true;
+    linear->finalize_even_if_outdated = true;
+}
+
 static inline void assert_linearity(linear_object *linear) {
-    if (LEAN_UNLIKELY(linear->object_ref == NULL)) {
+    if (LEAN_UNLIKELY(linear->outdated)) {
         lean_internal_panic("Non-linear usage of linear object");
     }
 }
@@ -58,7 +58,7 @@ static inline void free_linear_object(linear_object *linear) {
     // Only finalize `object_ref` if `linear` is the latest linear object reference
     // or if the finalizer was forcibly set as allowed. By doing this, we avoid
     // double-free attempts.
-    if (LEAN_UNLIKELY(linear->object_ref != NULL || linear->allow_finalizer)) {
+    if (LEAN_UNLIKELY(!linear->outdated || linear->finalize_even_if_outdated)) {
         linear->finalizer(linear->object_ref);
     }
     free(linear);
