@@ -228,8 +228,8 @@ dependencies = [
  "binius_hash",
  "binius_macros",
  "binius_math",
- "binius_maybe_rayon",
- "binius_utils",
+ "binius_maybe_rayon 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
+ "binius_utils 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
  "bumpalo",
  "bytemuck",
  "itertools 0.13.0",
@@ -250,9 +250,9 @@ dependencies = [
  "binius_hash",
  "binius_macros",
  "binius_math",
- "binius_maybe_rayon",
+ "binius_maybe_rayon 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
  "binius_ntt",
- "binius_utils",
+ "binius_utils 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
  "bytemuck",
  "bytes",
  "derive_more 0.99.19",
@@ -274,8 +274,8 @@ name = "binius_field"
 version = "0.2.0"
 source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
- "binius_maybe_rayon",
- "binius_utils",
+ "binius_maybe_rayon 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
+ "binius_utils 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
  "bytemuck",
  "cfg-if",
  "derive_more 0.99.19",
@@ -295,8 +295,8 @@ dependencies = [
  "auto_impl",
  "binius_field",
  "binius_math",
- "binius_maybe_rayon",
- "binius_utils",
+ "binius_maybe_rayon 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
+ "binius_utils 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
  "bytemuck",
  "itertools 0.13.0",
  "rand",
@@ -312,7 +312,7 @@ source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fa
 dependencies = [
  "binius_field",
  "binius_ntt",
- "binius_utils",
+ "binius_utils 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
  "bytemuck",
  "bytes",
  "cfg-if",
@@ -341,8 +341,8 @@ dependencies = [
  "auto_impl",
  "binius_field",
  "binius_macros",
- "binius_maybe_rayon",
- "binius_utils",
+ "binius_maybe_rayon 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
+ "binius_utils 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
  "bytemuck",
  "either",
  "getset",
@@ -365,14 +365,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "binius_maybe_rayon"
+version = "0.2.0"
+source = "git+https://gitlab.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
+dependencies = [
+ "cfg-if",
+ "either",
+ "itertools 0.13.0",
+ "rayon",
+]
+
+[[package]]
 name = "binius_ntt"
 version = "0.2.0"
 source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "binius_field",
  "binius_math",
- "binius_maybe_rayon",
- "binius_utils",
+ "binius_maybe_rayon 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
+ "binius_utils 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
  "rand",
  "thiserror",
 ]
@@ -383,7 +394,23 @@ version = "0.2.0"
 source = "git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
 dependencies = [
  "auto_impl",
- "binius_maybe_rayon",
+ "binius_maybe_rayon 0.2.0 (git+https://github.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
+ "bytemuck",
+ "bytes",
+ "cfg-if",
+ "generic-array",
+ "itertools 0.13.0",
+ "thiserror",
+ "thread_local",
+]
+
+[[package]]
+name = "binius_utils"
+version = "0.2.0"
+source = "git+https://gitlab.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a#53c9ebfd3c3c461fae96f56587ba589d3bba1a4a"
+dependencies = [
+ "auto_impl",
+ "binius_maybe_rayon 0.2.0 (git+https://gitlab.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
  "bytemuck",
  "bytes",
  "cfg-if",
@@ -980,10 +1007,16 @@ dependencies = [
  "binius_circuits",
  "binius_core",
  "binius_field",
+ "binius_hal",
+ "binius_hash",
  "binius_macros",
  "binius_math",
+ "binius_maybe_rayon 0.2.0 (git+https://gitlab.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
+ "binius_utils 0.2.0 (git+https://gitlab.com/IrreducibleOSS/binius.git?rev=53c9ebfd3c3c461fae96f56587ba589d3bba1a4a)",
  "blake3",
  "bumpalo",
+ "groestl",
+ "indexmap",
  "proptest",
  "rayon",
  "rustc-hash",

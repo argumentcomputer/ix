@@ -1,5 +1,5 @@
 use binius_field::{
-    BinaryField, BinaryField8b, BinaryField64b, BinaryField128b, arch::OptimalUnderlier,
+    BinaryField8b, BinaryField32b, BinaryField64b, BinaryField128b, arch::OptimalUnderlier,
 };
 
 use super::ir::{Block, Ctrl, Function, Op};
@@ -11,7 +11,8 @@ pub type EiurByteField = BinaryField8b;
 /// The field of multiplicities. Its multiplicative group is used to express
 /// the multiplicity of lookups
 pub type MultiplicityField = BinaryField64b;
-pub const MULT_N_BYTES: usize = MultiplicityField::N_BITS / 8;
+/// The field of function indices
+pub type FunctionIndexField = BinaryField32b;
 pub type Underlier = OptimalUnderlier;
 
 /// The circuit layout of a function.
@@ -22,11 +23,12 @@ pub type Underlier = OptimalUnderlier;
 /// took. Exactly one selector must be set.
 /// The `shared_constraints` are constraint slots that can be shared in
 /// different paths of the circuit.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct Layout {
     pub inputs: u32,
     pub outputs: u32,
     pub auxiliaries: u32,
+    pub require_hints: u32,
     pub selectors: u32,
     pub shared_constraints: u32,
 }
@@ -35,6 +37,8 @@ pub struct Layout {
 struct LayoutBranchState {
     auxiliary_init: u32,
     auxiliary_max: u32,
+    require_hints_init: u32,
+    require_hints_max: u32,
     shared_constraint_init: u32,
     shared_constraint_max: u32,
 }
@@ -42,13 +46,20 @@ struct LayoutBranchState {
 impl Layout {
     // `save` before the first branch
     fn save(&self) -> LayoutBranchState {
+        // auxiliary
         let auxiliary_init = self.auxiliaries;
         let auxiliary_max = auxiliary_init;
+        // require hints
+        let require_hints_init = self.require_hints;
+        let require_hints_max = require_hints_init;
+        // shared constraints
         let shared_constraint_init = self.shared_constraints;
         let shared_constraint_max = shared_constraint_init;
         LayoutBranchState {
             auxiliary_init,
             auxiliary_max,
+            require_hints_init,
+            require_hints_max,
             shared_constraint_init,
             shared_constraint_max,
         }
@@ -56,8 +67,13 @@ impl Layout {
 
     // `restore` before new branches
     fn restore(&mut self, state: &mut LayoutBranchState) {
+        // auxiliary
         state.auxiliary_max = state.auxiliary_max.max(self.auxiliaries);
         self.auxiliaries = state.auxiliary_init;
+        // require hints
+        state.require_hints_max = state.require_hints_max.max(self.require_hints);
+        self.require_hints = state.require_hints_init;
+        // shared constraints
         state.shared_constraint_max = state.shared_constraint_max.max(self.shared_constraints);
         self.shared_constraints = state.shared_constraint_init;
     }
@@ -65,6 +81,7 @@ impl Layout {
     // `finish` at the end
     fn finish(&mut self, state: &LayoutBranchState) {
         self.auxiliaries = state.auxiliary_max;
+        self.require_hints = state.require_hints_max;
         self.shared_constraints = state.shared_constraint_max;
     }
 }
@@ -85,8 +102,17 @@ pub fn block_layout(block: &Block, layout: &mut Layout) {
     match block.ctrl.as_ref() {
         Ctrl::If(_, t, f) => {
             let mut state = layout.save();
-            // This auxiliary is for proving computing the inverse
+            // This auxiliary is for proving inequality
             layout.auxiliaries += 1;
+            block_layout(t, layout);
+            layout.restore(&mut state);
+            block_layout(f, layout);
+            layout.finish(&state);
+        }
+        Ctrl::If64(_, t, f) => {
+            let mut state = layout.save();
+            // These auxiliaries are for proving inequality
+            layout.auxiliaries += 8;
             block_layout(t, layout);
             layout.restore(&mut state);
             block_layout(f, layout);
@@ -123,8 +149,8 @@ pub fn op_layout(op: &Op, layout: &mut Layout) {
             layout.auxiliaries += 8;
         }
         Op::Call(_, _, out_size) => {
-            layout.auxiliaries +=
-                out_size + u32::try_from(MULT_N_BYTES).expect("Failed to convert usize to u32");
+            layout.auxiliaries += out_size;
+            layout.require_hints += 1;
         }
     }
 }

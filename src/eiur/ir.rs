@@ -25,7 +25,7 @@ pub struct Function {
 }
 
 /// `Prim` defines primitive data types currently supported by Eiur-rs language
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Prim {
     U64(u64),
     Bool(bool),
@@ -33,7 +33,7 @@ pub enum Prim {
 
 /// `ValIdx` is a pointer to a particular value stored in the inner stack of the
 /// `TopLevel` execution algorithm
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ValIdx(pub u32);
 
 impl ValIdx {
@@ -44,7 +44,7 @@ impl ValIdx {
 
 /// `FuncIdx` is a pointer to a function that needs to be executed by a `TopLevel` execution
 /// algorithm
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub struct FuncIdx(pub u32);
 
 impl FuncIdx {
@@ -68,7 +68,7 @@ pub enum Op {
 
 /// `SelIdx` serves as a selector of the particular code branch that is executed and
 /// requires constraining for the proving system
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct SelIdx(pub u32);
 
 impl SelIdx {
@@ -80,6 +80,7 @@ impl SelIdx {
 /// `Ctrl` expresses the control flows of the program
 pub enum Ctrl {
     If(ValIdx, Block, Block),
+    If64(ValIdx, Block, Block),
     Return(SelIdx, Vec<ValIdx>),
 }
 
