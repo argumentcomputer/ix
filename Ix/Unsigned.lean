@@ -1,16 +1,14 @@
-namespace UInt64
+@[extern "c_u16_to_le_bytes"]
+opaque UInt16.toLEBytes : UInt16 → ByteArray
+
+@[extern "c_u32_to_le_bytes"]
+opaque UInt32.toLEBytes : UInt32 → ByteArray
 
 @[extern "c_u64_to_le_bytes"]
-opaque toLEBytes : UInt64 → ByteArray
-
-end UInt64
-
-namespace USize
+opaque UInt64.toLEBytes : UInt64 → ByteArray
 
 @[extern "c_usize_to_le_bytes"]
-opaque toLEBytes : USize → ByteArray
-
-end USize
+opaque USize.toLEBytes : USize → ByteArray
 
 private opaque GenericNonempty : NonemptyType
 
