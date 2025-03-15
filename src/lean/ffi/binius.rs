@@ -8,7 +8,10 @@ use binius_core::{
     oracle::OracleId,
     witness::MultilinearExtensionIndex,
 };
-use binius_field::{BinaryField8b, BinaryField128b, arch::OptimalUnderlier};
+use binius_field::{
+    BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b,
+    arch::OptimalUnderlier,
+};
 use bumpalo::Bump;
 use std::{
     cell::RefCell,
@@ -17,17 +20,22 @@ use std::{
     rc::Rc,
 };
 
-use crate::lean::{
-    array::LeanArrayObject,
-    boxed::BoxedUSize,
-    ctor::LeanCtorObject,
-    external::LeanExternalObject,
-    ffi::{
-        CResult, as_ref_unsafe, binius_arith_expr::lean_ctor_to_arith_expr,
-        binius_boundary::ctor_ptr_to_boundary, drop_raw, raw_to_str, to_raw,
+use crate::{
+    lean::{
+        array::LeanArrayObject,
+        boxed::BoxedUSize,
+        ctor::LeanCtorObject,
+        external::LeanExternalObject,
+        ffi::{
+            CResult, as_ref_unsafe, binius_arith_expr::lean_ctor_to_arith_expr,
+            binius_boundary::ctor_ptr_to_boundary, drop_raw, raw_to_str, to_raw,
+        },
+        sarray::LeanSArrayObject,
     },
-    sarray::LeanSArrayObject,
+    lean_unbox,
 };
+
+use super::{lean_unbox_u32, lean_unbox_u64};
 
 pub(super) fn boxed_usize_ptr_to_usize(ptr: *const c_void) -> usize {
     let boxed_usize_ptr = ptr.cast::<BoxedUSize>();
@@ -90,13 +98,81 @@ extern "C" fn rs_witness_builder_free(ptr: *mut WitnessBuilder<'_>) {
 extern "C" fn rs_witness_builder_with_column(
     witness_builder: &WitnessBuilder<'_>,
     oracle_id: OracleId,
-    bytes: &LeanSArrayObject,
+    column_data: &LeanCtorObject,
 ) {
-    witness_builder
-        .builder
-        .new_column::<BinaryField8b>(oracle_id)
-        .as_mut_slice()
-        .copy_from_slice(bytes.data());
+    match column_data.tag() {
+        0 => {
+            // raw
+            let [bytes_ptr] = column_data.objs();
+            let bytes: &LeanSArrayObject = as_ref_unsafe(bytes_ptr.cast());
+            witness_builder
+                .builder
+                .new_column::<BinaryField8b>(oracle_id)
+                .as_mut_slice()
+                .copy_from_slice(bytes.data());
+        }
+        1 => {
+            // u8
+            let [u8s_ptr] = column_data.objs();
+            let u8s: &LeanArrayObject = as_ref_unsafe(u8s_ptr.cast());
+            witness_builder
+                .builder
+                .new_column::<BinaryField8b>(oracle_id)
+                .as_mut_slice::<u8>()
+                .iter_mut()
+                .zip(u8s.data())
+                .for_each(|(u, &boxed_u8)| *u = lean_unbox!(u8, boxed_u8));
+        }
+        2 => {
+            // u16
+            let [u16s_ptr] = column_data.objs();
+            let u16s: &LeanArrayObject = as_ref_unsafe(u16s_ptr.cast());
+            witness_builder
+                .builder
+                .new_column::<BinaryField16b>(oracle_id)
+                .as_mut_slice::<u16>()
+                .iter_mut()
+                .zip(u16s.data())
+                .for_each(|(u, &boxed_u16)| *u = lean_unbox!(u16, boxed_u16));
+        }
+        3 => {
+            // u32
+            let [u32s_ptr] = column_data.objs();
+            let u32s: &LeanArrayObject = as_ref_unsafe(u32s_ptr.cast());
+            witness_builder
+                .builder
+                .new_column::<BinaryField32b>(oracle_id)
+                .as_mut_slice::<u32>()
+                .iter_mut()
+                .zip(u32s.data())
+                .for_each(|(u, &boxed_u32)| *u = lean_unbox_u32(boxed_u32));
+        }
+        4 => {
+            // u64
+            let [u64s_ptr] = column_data.objs();
+            let u64s: &LeanArrayObject = as_ref_unsafe(u64s_ptr.cast());
+            witness_builder
+                .builder
+                .new_column::<BinaryField64b>(oracle_id)
+                .as_mut_slice::<u64>()
+                .iter_mut()
+                .zip(u64s.data())
+                .for_each(|(u, &boxed_u64)| *u = lean_unbox_u64(boxed_u64));
+        }
+        5 => {
+            // u128
+            let [u128s_ptr] = column_data.objs();
+            let u128s: &LeanArrayObject = as_ref_unsafe(u128s_ptr.cast());
+            witness_builder
+                .builder
+                .new_column::<BinaryField128b>(oracle_id)
+                .as_mut_slice::<u128>()
+                .iter_mut()
+                .zip(u128s.data())
+                .for_each(|(u, &external_u128)| *u = external_ptr_to_u128(external_u128));
+        }
+        _ => panic!("Invalid tag for ColumnData"),
+    }
 }
 
 #[unsafe(no_mangle)]

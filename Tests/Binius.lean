@@ -42,23 +42,52 @@ def Tests.Binius.witnessSuite :=
   let builder := builder.assertZero "a + b" #[a, b] (.add (.var a) (.var b))
   let cs := builder.build
 
-  let bytes : ByteArray := ⟨#[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]⟩
+  let mkWitness := fun aData bData =>
+    let builder := WitnessBuilder.new cs
+    let builder := builder.withColumn a aData
+    let builder := builder.withColumn b bData
+    builder.build
+
+  let raw : ByteArray := ⟨#[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]⟩
 
   -- Building a valid witness
-  let builder := WitnessBuilder.new cs
-  let builder := builder.withColumn a bytes
-  let builder := builder.withColumn b bytes
-  let witness := builder.build
+  let witnessFromRaw := mkWitness raw raw
 
   -- Building an invalid witness
-  let builder := WitnessBuilder.new cs
-  let builder := builder.withColumn a bytes
-  let builder := builder.withColumn b (bytes.set 0 1)
-  let witness' := builder.build
+  let invalidWitnessFromRaw := mkWitness raw (raw.set 0 1)
+
+  -- Building witness from UInt8s
+  let u8s : Array UInt8 := #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+  let witnessFromUInt8s := mkWitness u8s u8s
+
+  -- Building witness from UInt16s
+  let u16s : Array UInt16 := #[0, 1, 2, 3, 4, 5, 6, 7]
+  let witnessFromUInt16s := mkWitness u16s u16s
+
+  -- Building witness from UInt32s
+  let u32s : Array UInt32 := #[0, 1, 2, 3]
+  let witnessFromUInt32s := mkWitness u32s u32s
+
+  -- Building witness from UInt64s
+  let u64s : Array UInt64 := #[0, 1]
+  let witnessFromUInt64s := mkWitness u64s u64s
+
+  -- Building witness from UInt128s
+  let u128s : Array UInt128 := #[.ofNat 0]
+  let witnessFromUInt128s := mkWitness u128s u128s
+
+  let mkExpectOkTest := fun innerTypes witness =>
+    withExceptOk s!"Constraint system accepts a valid witness from {innerTypes}"
+      (cs.validateWitness #[] witness) fun _ => .done
 
   [
     withExceptOk "Constraint system accepts a valid witness"
-      (cs.validateWitness #[] witness) fun _ => .done,
+      (cs.validateWitness #[] witnessFromRaw) fun _ => .done,
     withExceptError "Constraint system doesn't accept an invalid witness"
-      (cs.validateWitness #[] witness') fun _ => .done,
+      (cs.validateWitness #[] invalidWitnessFromRaw) fun _ => .done,
+    mkExpectOkTest "UInt8s" witnessFromUInt8s,
+    mkExpectOkTest "UInt16s" witnessFromUInt16s,
+    mkExpectOkTest "UInt32s" witnessFromUInt32s,
+    mkExpectOkTest "UInt64s" witnessFromUInt64s,
+    mkExpectOkTest "UInt128s" witnessFromUInt128s,
   ]

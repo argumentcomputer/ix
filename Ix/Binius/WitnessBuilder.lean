@@ -13,10 +13,6 @@ namespace WitnessBuilder
 @[never_extract, extern "c_rs_witness_builder_new"]
 opaque new : @& ConstraintSystem → WitnessBuilder
 
-/-- **Invalidates** the input `WitnessBuilder` -/
-@[never_extract, extern "c_rs_witness_builder_with_column"]
-private opaque withColumn' : WitnessBuilder → OracleId → @& ByteArray → WitnessBuilder
-
 inductive ColumnData
   | raw : ByteArray → ColumnData
   | u8 : Array UInt8 → ColumnData
@@ -33,17 +29,8 @@ instance : Coe (Array UInt64) ColumnData := ⟨.u64⟩
 instance : Coe (Array UInt128) ColumnData := ⟨.u128⟩
 
 /-- **Invalidates** the input `WitnessBuilder` -/
-@[never_extract]
-def withColumn [Coe α ColumnData] (builder : WitnessBuilder) (oracleId : OracleId)
-    (data : α) : WitnessBuilder :=
-  let bytes := match (data : ColumnData) with
-    | .raw bs => bs
-    | .u8 xs => xs.foldl (init := .mkEmpty xs.size) fun acc x => acc.push x
-    | .u16 xs => xs.foldl (init := .mkEmpty (2 * xs.size)) fun acc x => acc ++ x.toLEBytes
-    | .u32 xs => xs.foldl (init := .mkEmpty (4 * xs.size)) fun acc x => acc ++ x.toLEBytes
-    | .u64 xs => xs.foldl (init := .mkEmpty (8 * xs.size)) fun acc x => acc ++ x.toLEBytes
-    | .u128 xs => xs.foldl (init := .mkEmpty (16 * xs.size)) fun acc x => acc ++ x.toLEBytes
-  builder.withColumn' oracleId bytes
+@[never_extract, extern "c_rs_witness_builder_with_column"]
+opaque withColumn : WitnessBuilder → OracleId → @& ColumnData → WitnessBuilder
 
 /-- **Invalidates** the input `WitnessBuilder` -/
 @[never_extract, extern "c_rs_witness_builder_build"]

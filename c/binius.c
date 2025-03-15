@@ -30,14 +30,14 @@ extern lean_obj_res c_rs_witness_builder_new(b_lean_obj_arg l_cs) {
 extern lean_obj_res c_rs_witness_builder_with_column(
     lean_obj_arg l_wb,
     size_t oracle_id,
-    b_lean_obj_arg data
+    b_lean_obj_arg column_data
 ) {
     linear_object *linear = validated_linear(l_wb);
 
     rs_witness_builder_with_column(
         get_object_ref(linear),
         oracle_id,
-        data
+        column_data
     );
     linear_object *new_linear = linear_bump(linear);
 
