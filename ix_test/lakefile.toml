@@ -1,0 +1,10 @@
+name = "ix_test"
+version = "0.1.0"
+defaultTargets = ["ix_test"]
+
+[[lean_lib]]
+name = "IxTest"
+
+[[lean_exe]]
+name = "ix_test"
+root = "Main"

@@ -51,6 +51,9 @@ structure CanonMState where
   commits: RBMap Ix.Const (Address × Address) compare
   blocks : RBSet (Address × Address) compare
 
+def CanonMState.init : CanonMState :=
+  ⟨default, default, default, default, default⟩
+
 structure CanonMCtx where
   constMap: Lean.ConstMap
   univCtx : List Lean.Name
@@ -58,6 +61,9 @@ structure CanonMCtx where
   recrCtx : RBMap Lean.Name Nat compare
   --quick : Bool
   --persist : Bool
+
+def CanonMCtx.init (constMap : Lean.ConstMap) : CanonMCtx :=
+  ⟨constMap, default, default, default⟩
 
 abbrev CanonM := ReaderT CanonMCtx $ ExceptT CanonMError $ StateT CanonMState IO
 
@@ -381,7 +387,7 @@ Content-addresses a Lean expression and adds it to the store.
 
 Constants are the tricky case, for which there are two possibilities:
 * The constant belongs to `recrCtx`, representing a recursive call. Those are
-encoded as variables with indexes that go beyond the bind indexes
+encoded as `.rec_` with indexes based on order in the mutual definition
 * The constant doesn't belong to `recrCtx`, meaning that it's not a recursion
 and thus we can canon the actual constant right away
 -/
@@ -543,5 +549,23 @@ partial def sortDefs (dss : List (List Lean.DefinitionVal)) :
   else sortDefs newDss
 
 end
+
+/-- Iterates over a list of `Lean.ConstantInfo`, triggering their content-addressing -/
+def canonDelta (delta : List Lean.ConstantInfo) : CanonM Unit := do
+  delta.forM fun c => if !c.isUnsafe then discard $ canonConst c else pure ()
+
+/--
+Content-addresses the "delta" of an environment, that is, the content that is
+added on top of the imports.
+
+Important: constants with open references in their expressions are filtered out.
+Open references are variables that point to names which aren't present in the
+`Lean.ConstMap`.
+-/
+def canon (constMap : Lean.ConstMap) (delta : List Lean.ConstantInfo)
+  : IO $ Except CanonMError CanonMState := do
+  match ← StateT.run (ReaderT.run (canonDelta delta) (.init constMap)) CanonMState.init with
+  | (.ok _, stt) => return .ok stt
+  | (.error e, _) => return .error e
 
 end Ix.CanonM
