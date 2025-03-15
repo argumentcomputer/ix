@@ -57,6 +57,8 @@ def Tests.Binius.witnessSuite :=
   let witness' := builder.build
 
   [
-    test "Constraint system accepts a valid witness" (cs.validateWitness #[] witness),
-    test "Constraint system doesn't accept an invalid witness" (!cs.validateWitness #[] witness'),
+    withExceptOk "Constraint system accepts a valid witness"
+      (cs.validateWitness #[] witness) fun _ => .done,
+    withExceptError "Constraint system doesn't accept an invalid witness"
+      (cs.validateWitness #[] witness') fun _ => .done,
   ]

@@ -67,16 +67,28 @@ static lean_external_class *get_constraint_system_class() {
     return g_constraint_system_class;
 }
 
-extern bool c_rs_constraint_system_validate_witness(
+extern lean_obj_res c_rs_constraint_system_validate_witness(
     b_lean_obj_arg l_cs,
     b_lean_obj_arg boundaries,
     b_lean_obj_arg witness
 ) {
-    return rs_constraint_system_validate_witness(
+    c_result *result = rs_constraint_system_validate_witness(
         lean_get_external_data(l_cs),
         boundaries,
         lean_get_external_data(witness)
     );
+
+    lean_object *except;
+    if (result->is_ok) {
+        except = lean_alloc_ctor(1, 1, 0);
+        lean_ctor_set(except, 0, lean_box(0));
+    } else {
+        except = lean_alloc_ctor(0, 1, 0);
+        lean_ctor_set(except, 0, lean_mk_string(result->data));
+    }
+    rs_constraint_system_validate_witness_result_free(result);
+
+    return except;
 }
 
 /* --- ConstraintSystemBuilder --- */

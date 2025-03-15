@@ -2,6 +2,11 @@
 
 #include "lean/lean.h"
 
+typedef struct {
+    bool is_ok;
+    void *data;
+} c_result;
+
 /* --- Witness --- */
 
 void rs_witness_free(void*);
@@ -16,7 +21,8 @@ void *rs_witness_builder_build(void*);
 /* --- ConstraintSystem --- */
 
 void rs_constraint_system_free(void*);
-bool rs_constraint_system_validate_witness(void*, b_lean_obj_arg, void*);
+c_result *rs_constraint_system_validate_witness(void*, b_lean_obj_arg, void*);
+void rs_constraint_system_validate_witness_result_free(c_result*);
 
 /* --- ConstraintSystemBuilder --- */
 

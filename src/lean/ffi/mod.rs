@@ -3,7 +3,19 @@ pub mod binius_arith_expr;
 pub mod binius_boundary;
 pub mod byte_array;
 
-use std::ffi::{CStr, c_char};
+use std::ffi::{CStr, c_char, c_void};
+
+/// ```c
+/// typedef struct {
+///     bool is_ok;
+///     void *data;
+/// } c_result;
+/// ```
+#[repr(C)]
+pub struct CResult {
+    pub is_ok: bool,
+    pub data: *const c_void,
+}
 
 #[inline]
 pub(super) fn to_raw<T>(t: T) -> *const T {

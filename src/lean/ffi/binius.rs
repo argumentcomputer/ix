@@ -12,7 +12,8 @@ use binius_field::{BinaryField8b, BinaryField128b, arch::OptimalUnderlier};
 use bumpalo::Bump;
 use std::{
     cell::RefCell,
-    ffi::{c_char, c_void},
+    ffi::{CString, c_char, c_void},
+    ptr,
     rc::Rc,
 };
 
@@ -22,7 +23,7 @@ use crate::lean::{
     ctor::LeanCtorObject,
     external::LeanExternalObject,
     ffi::{
-        as_ref_unsafe, binius_arith_expr::lean_ctor_to_arith_expr,
+        CResult, as_ref_unsafe, binius_arith_expr::lean_ctor_to_arith_expr,
         binius_boundary::ctor_ptr_to_boundary, drop_raw, raw_to_str, to_raw,
     },
     sarray::LeanSArrayObject,
@@ -125,9 +126,33 @@ extern "C" fn rs_constraint_system_validate_witness(
     constraint_system: &ConstraintSystem<BinaryField128b>,
     boundaries: &LeanArrayObject,
     witness: &Witness<'_>,
-) -> bool {
+) -> *const CResult {
     let boundaries = boundaries.to_vec(ctor_ptr_to_boundary);
-    validate_witness(constraint_system, &boundaries, witness).is_ok()
+    let c_result = match validate_witness(constraint_system, &boundaries, witness) {
+        Ok(_) => CResult {
+            is_ok: true,
+            data: ptr::null(),
+        },
+        Err(err) => {
+            let msg = CString::new(err.to_string()).expect("CString::new failure");
+            CResult {
+                is_ok: false,
+                data: msg.into_raw().cast(),
+            }
+        }
+    };
+    to_raw(c_result)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_constraint_system_validate_witness_result_free(ptr: *mut CResult) {
+    let c_result = as_ref_unsafe(ptr);
+    if !c_result.is_ok {
+        let char_ptr = c_result.data as *mut c_char;
+        let c_string = unsafe { CString::from_raw(char_ptr) };
+        drop(c_string);
+    }
+    drop_raw(ptr);
 }
 
 /* --- ConstraintSystemBuilder --- */
