@@ -12,7 +12,8 @@ instance : Nonempty ConstraintSystem := GenericNonempty.property
 namespace ConstraintSystem
 
 @[extern "c_rs_constraint_system_validate_witness"]
-opaque validateWitness : @& ConstraintSystem → @& Array Boundary → @& Witness → Bool
+opaque validateWitness : @& ConstraintSystem → @& Array Boundary → @& Witness →
+  Except String Unit
 
 end ConstraintSystem
 

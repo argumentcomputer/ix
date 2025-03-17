@@ -10,6 +10,14 @@ static inline lean_obj_res mk_byte_array(size_t size, uint8_t *bytes) {
     return o;
 }
 
+extern lean_obj_res c_u16_to_le_bytes(uint16_t u16) {
+    return mk_byte_array(sizeof(uint16_t), (uint8_t*)&u16);
+}
+
+extern lean_obj_res c_u32_to_le_bytes(uint32_t u32) {
+    return mk_byte_array(sizeof(uint32_t), (uint8_t*)&u32);
+}
+
 extern lean_obj_res c_u64_to_le_bytes(uint64_t u64) {
     return mk_byte_array(sizeof(uint64_t), (uint8_t*)&u64);
 }

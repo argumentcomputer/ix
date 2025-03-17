@@ -1,6 +1,7 @@
 import Ix.Binius.ArithExpr
 import Ix.Binius.Common
 import Ix.Binius.ConstraintSystem
+import Ix.Binius.Transparent
 
 namespace Binius
 
@@ -65,7 +66,7 @@ opaque addChannel : ConstraintSystemBuilder → ChannelId × ConstraintSystemBui
 /-- **Invalidates** the input `ConstraintSystemBuilder` -/
 @[never_extract, extern "c_rs_constraint_system_builder_add_committed"]
 opaque addCommitted : ConstraintSystemBuilder → @& String →
-  (nVars towerLevel : USize) → OracleId × ConstraintSystemBuilder
+  (nVars : USize) → (towerLevel : UInt8) → OracleId × ConstraintSystemBuilder
 
 /-- **Invalidates** the input `ConstraintSystemBuilder` -/
 @[never_extract, extern "c_rs_constraint_system_builder_add_linear_combination"]
@@ -82,6 +83,11 @@ opaque addLinearCombinationWithOffset : ConstraintSystemBuilder → @& String �
 @[never_extract, extern "c_rs_constraint_system_builder_add_packed"]
 opaque addPacked : ConstraintSystemBuilder → @& String → OracleId →
   (logDegree : USize) → OracleId × ConstraintSystemBuilder
+
+/-- **Invalidates** the input `ConstraintSystemBuilder` -/
+@[never_extract, extern "c_rs_constraint_system_builder_add_transparent"]
+opaque addTransparent : ConstraintSystemBuilder → @& String → @& Transparent →
+  OracleId × ConstraintSystemBuilder
 
 /-- **Invalidates** the input `ConstraintSystemBuilder` -/
 @[never_extract, extern "c_rs_constraint_system_builder_push_namespace"]

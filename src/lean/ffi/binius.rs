@@ -6,27 +6,37 @@ use binius_core::{
         validate::validate_witness,
     },
     oracle::OracleId,
+    transparent::constant::Constant,
     witness::MultilinearExtensionIndex,
 };
-use binius_field::{BinaryField8b, BinaryField128b, arch::OptimalUnderlier};
+use binius_field::{
+    BinaryField8b, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField128b,
+    arch::OptimalUnderlier,
+};
 use bumpalo::Bump;
 use std::{
     cell::RefCell,
-    ffi::{c_char, c_void},
+    ffi::{CString, c_char, c_void},
+    ptr,
     rc::Rc,
 };
 
-use crate::lean::{
-    array::LeanArrayObject,
-    boxed::BoxedUSize,
-    ctor::LeanCtorObject,
-    external::LeanExternalObject,
-    ffi::{
-        as_ref_unsafe, binius_arith_expr::lean_ctor_to_arith_expr,
-        binius_boundary::ctor_ptr_to_boundary, drop_raw, raw_to_str, to_raw,
+use crate::{
+    lean::{
+        array::LeanArrayObject,
+        boxed::BoxedUSize,
+        ctor::LeanCtorObject,
+        external::LeanExternalObject,
+        ffi::{
+            CResult, as_ref_unsafe, binius_arith_expr::lean_ctor_to_arith_expr,
+            binius_boundary::ctor_ptr_to_boundary, drop_raw, raw_to_str, to_raw,
+        },
+        sarray::LeanSArrayObject,
     },
-    sarray::LeanSArrayObject,
+    lean_unbox,
 };
+
+use super::{lean_unbox_u32, lean_unbox_u64};
 
 pub(super) fn boxed_usize_ptr_to_usize(ptr: *const c_void) -> usize {
     let boxed_usize_ptr = ptr.cast::<BoxedUSize>();
@@ -89,13 +99,63 @@ extern "C" fn rs_witness_builder_free(ptr: *mut WitnessBuilder<'_>) {
 extern "C" fn rs_witness_builder_with_column(
     witness_builder: &WitnessBuilder<'_>,
     oracle_id: OracleId,
-    bytes: &LeanSArrayObject,
+    column_data: &LeanCtorObject,
 ) {
-    witness_builder
-        .builder
-        .new_column::<BinaryField8b>(oracle_id)
-        .as_mut_slice()
-        .copy_from_slice(bytes.data());
+    macro_rules! populate {
+        ($bf:ident, $t:ident, $f:expr) => {{
+            let [array_ptr] = column_data.objs();
+            let inner: &LeanArrayObject = as_ref_unsafe(array_ptr.cast());
+            witness_builder
+                .builder
+                .new_column::<$bf>(oracle_id)
+                .as_mut_slice::<$t>()
+                .iter_mut()
+                .zip(inner.data())
+                .for_each(|(u, &boxed)| *u = $f(boxed));
+        }};
+    }
+    match column_data.tag() {
+        0 => {
+            // raw
+            let [bytes_ptr] = column_data.objs();
+            let bytes: &LeanSArrayObject = as_ref_unsafe(bytes_ptr.cast());
+            witness_builder
+                .builder
+                .new_column::<BinaryField8b>(oracle_id)
+                .as_mut_slice()
+                .copy_from_slice(bytes.data());
+        }
+        1 => populate!(BinaryField8b, u8, |boxed| lean_unbox!(u8, boxed)),
+        2 => populate!(BinaryField16b, u16, |boxed| lean_unbox!(u16, boxed)),
+        3 => populate!(BinaryField32b, u32, lean_unbox_u32),
+        4 => populate!(BinaryField64b, u64, lean_unbox_u64),
+        5 => populate!(BinaryField128b, u128, external_ptr_to_u128),
+        _ => panic!("Invalid tag for ColumnData"),
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_builder_with_column_default(
+    witness_builder: &WitnessBuilder<'_>,
+    oracle_id: OracleId,
+    value: &LeanCtorObject,
+) {
+    macro_rules! populate {
+        ($t:ident, $f:expr) => {{
+            let [ptr] = value.objs();
+            witness_builder
+                .builder
+                .new_column_with_default::<$t>(oracle_id, $t::new($f(ptr)));
+        }};
+    }
+    match value.tag() {
+        0 => populate!(BinaryField8b, |ptr| ptr as u8),
+        1 => populate!(BinaryField16b, |ptr| ptr as u16),
+        2 => populate!(BinaryField32b, |ptr| ptr as u32),
+        3 => populate!(BinaryField64b, |ptr| ptr as u64),
+        4 => populate!(BinaryField128b, external_ptr_to_u128),
+        _ => panic!("Invalid tag for BinaryFieldValue"),
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -125,9 +185,33 @@ extern "C" fn rs_constraint_system_validate_witness(
     constraint_system: &ConstraintSystem<BinaryField128b>,
     boundaries: &LeanArrayObject,
     witness: &Witness<'_>,
-) -> bool {
+) -> *const CResult {
     let boundaries = boundaries.to_vec(ctor_ptr_to_boundary);
-    validate_witness(constraint_system, &boundaries, witness).is_ok()
+    let c_result = match validate_witness(constraint_system, &boundaries, witness) {
+        Ok(_) => CResult {
+            is_ok: true,
+            data: ptr::null(),
+        },
+        Err(err) => {
+            let msg = CString::new(err.to_string()).expect("CString::new failure");
+            CResult {
+                is_ok: false,
+                data: msg.into_raw().cast(),
+            }
+        }
+    };
+    to_raw(c_result)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_constraint_system_validate_witness_result_free(ptr: *mut CResult) {
+    let c_result = as_ref_unsafe(ptr);
+    if !c_result.is_ok {
+        let char_ptr = c_result.data as *mut c_char;
+        let c_string = unsafe { CString::from_raw(char_ptr) };
+        drop(c_string);
+    }
+    drop_raw(ptr);
 }
 
 /* --- ConstraintSystemBuilder --- */
@@ -220,9 +304,9 @@ extern "C" fn rs_constraint_system_builder_add_committed(
     builder: &mut ConstraintSystemBuilder<'_>,
     name: *const c_char,
     n_vars: usize,
-    tower_level: usize,
+    tower_level: u8,
 ) -> OracleId {
-    builder.add_committed(raw_to_str(name), n_vars, tower_level)
+    builder.add_committed(raw_to_str(name), n_vars, tower_level as usize)
 }
 
 #[unsafe(no_mangle)]
@@ -263,6 +347,36 @@ extern "C" fn rs_constraint_system_builder_add_packed(
     builder
         .add_packed(raw_to_str(name), oracle_id, log_degree)
         .expect("ConstraintSystemBuilder::add_packed failure")
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_constraint_system_builder_add_transparent(
+    builder: &mut ConstraintSystemBuilder<'_>,
+    name: *const c_char,
+    transparent: &LeanCtorObject,
+) -> OracleId {
+    match transparent.tag() {
+        0 => {
+            // constant
+            let [value_ptr, n_vars_ptr] = transparent.objs();
+            let n_vars = n_vars_ptr as usize;
+            let value: &LeanCtorObject = as_ref_unsafe(value_ptr.cast());
+            let [value_ptr] = value.objs();
+            let constant = match value.tag() {
+                0 => Constant::new(n_vars, BinaryField8b::new(value_ptr as u8)),
+                1 => Constant::new(n_vars, BinaryField16b::new(value_ptr as u16)),
+                2 => Constant::new(n_vars, BinaryField32b::new(value_ptr as u32)),
+                3 => Constant::new(n_vars, BinaryField64b::new(value_ptr as u64)),
+                4 => Constant::new(
+                    n_vars,
+                    BinaryField128b::new(external_ptr_to_u128(value_ptr)),
+                ),
+                _ => panic!("Invalid tag for BinaryFieldValue"),
+            };
+            builder.add_transparent(raw_to_str(name), constant).unwrap()
+        }
+        _ => panic!("Invalid tag for Transparent"),
+    }
 }
 
 #[unsafe(no_mangle)]

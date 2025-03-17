@@ -13,7 +13,7 @@ def genOracleId : Gen OracleId :=
 def genArithExpr : Gen ArithExpr := getSize >>= go
   where
     go : Nat → Gen ArithExpr
-    | 0 => return .const (.ofNat 0)
+    | 0 => return .const 0
     | Nat.succ n =>
       frequency [
         (40, .const <$> genUInt128),
