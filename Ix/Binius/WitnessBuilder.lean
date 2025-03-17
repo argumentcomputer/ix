@@ -1,4 +1,5 @@
 import Ix.Binius.ConstraintSystem
+import Ix.Binius.BinaryField
 
 namespace Binius
 
@@ -31,6 +32,10 @@ instance : Coe (Array UInt128) ColumnData := ⟨.u128⟩
 /-- **Invalidates** the input `WitnessBuilder` -/
 @[never_extract, extern "c_rs_witness_builder_with_column"]
 opaque withColumn : WitnessBuilder → OracleId → @& ColumnData → WitnessBuilder
+
+/-- **Invalidates** the input `WitnessBuilder` -/
+@[never_extract, extern "c_rs_witness_builder_with_column_default"]
+opaque withColumnDefault : WitnessBuilder → OracleId → @& BinaryFieldValue → WitnessBuilder
 
 /-- **Invalidates** the input `WitnessBuilder` -/
 @[never_extract, extern "c_rs_witness_builder_build"]

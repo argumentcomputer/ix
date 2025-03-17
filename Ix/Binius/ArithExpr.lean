@@ -3,6 +3,7 @@ import Ix.Binius.Common
 
 namespace Binius
 
+/-- Arithmetic expression type for BinaryField128b -/
 inductive ArithExpr
   | const : UInt128 → ArithExpr
   | var : OracleId → ArithExpr

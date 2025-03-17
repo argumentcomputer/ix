@@ -6,6 +6,7 @@ use binius_core::{
         validate::validate_witness,
     },
     oracle::OracleId,
+    transparent::constant::Constant,
     witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -176,6 +177,30 @@ extern "C" fn rs_witness_builder_with_column(
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn rs_witness_builder_with_column_default(
+    witness_builder: &WitnessBuilder<'_>,
+    oracle_id: OracleId,
+    value: &LeanCtorObject,
+) {
+    macro_rules! populate {
+        ($t:ident, $f:expr) => {{
+            let [ptr] = value.objs();
+            witness_builder
+                .builder
+                .new_column_with_default::<$t>(oracle_id, $t::new($f(ptr)));
+        }};
+    }
+    match value.tag() {
+        0 => populate!(BinaryField8b, |ptr| ptr as u8),
+        1 => populate!(BinaryField16b, |ptr| ptr as u16),
+        2 => populate!(BinaryField32b, |ptr| ptr as u32),
+        3 => populate!(BinaryField64b, |ptr| ptr as u64),
+        4 => populate!(BinaryField128b, external_ptr_to_u128),
+        _ => panic!("Invalid tag for BinaryFieldValue"),
+    }
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rs_witness_builder_build<'a>(
     witness_builder: &'a mut WitnessBuilder<'_>,
 ) -> *const Witness<'a> {
@@ -321,9 +346,9 @@ extern "C" fn rs_constraint_system_builder_add_committed(
     builder: &mut ConstraintSystemBuilder<'_>,
     name: *const c_char,
     n_vars: usize,
-    tower_level: usize,
+    tower_level: u8,
 ) -> OracleId {
-    builder.add_committed(raw_to_str(name), n_vars, tower_level)
+    builder.add_committed(raw_to_str(name), n_vars, tower_level as usize)
 }
 
 #[unsafe(no_mangle)]
@@ -364,6 +389,36 @@ extern "C" fn rs_constraint_system_builder_add_packed(
     builder
         .add_packed(raw_to_str(name), oracle_id, log_degree)
         .expect("ConstraintSystemBuilder::add_packed failure")
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_constraint_system_builder_add_transparent(
+    builder: &mut ConstraintSystemBuilder<'_>,
+    name: *const c_char,
+    transparent: &LeanCtorObject,
+) -> OracleId {
+    match transparent.tag() {
+        0 => {
+            // constant
+            let [value_ptr, n_vars_ptr] = transparent.objs();
+            let n_vars = n_vars_ptr as usize;
+            let value: &LeanCtorObject = as_ref_unsafe(value_ptr.cast());
+            let [value_ptr] = value.objs();
+            let constant = match value.tag() {
+                0 => Constant::new(n_vars, BinaryField8b::new(value_ptr as u8)),
+                1 => Constant::new(n_vars, BinaryField16b::new(value_ptr as u16)),
+                2 => Constant::new(n_vars, BinaryField32b::new(value_ptr as u32)),
+                3 => Constant::new(n_vars, BinaryField64b::new(value_ptr as u64)),
+                4 => Constant::new(
+                    n_vars,
+                    BinaryField128b::new(external_ptr_to_u128(value_ptr)),
+                ),
+                _ => panic!("Invalid tag for BinaryFieldValue"),
+            };
+            builder.add_transparent(raw_to_str(name), constant).unwrap()
+        }
+        _ => panic!("Invalid tag for Transparent"),
+    }
 }
 
 #[unsafe(no_mangle)]

@@ -9,6 +9,7 @@ def main := LSpec.lspecIO (.ofList [
     ("boundary", Tests.Boundary.suite),
     ("binius-bindings", Tests.Binius.bindingsSuite),
     ("binius-witness", Tests.Binius.witnessSuite),
+    ("binius-transparent", Tests.Binius.transparentSuite),
     ("byte-array", Tests.ByteArray.suite),
     ("ix", Tests.Ix.suite),
   ])

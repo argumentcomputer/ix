@@ -50,7 +50,7 @@ pub(super) fn as_ref_unsafe<'a, T>(ptr: *const T) -> &'a T {
 macro_rules! lean_unbox {
     // For some reason it doesn't work as a type-parametric function.
     ($t:ident, $e:expr) => {
-        $t::try_from($e as usize >> 1).expect("Cannot convert from usize")
+        $e as $t >> 1
     };
 }
 

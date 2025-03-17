@@ -26,6 +26,12 @@ def ofNat (n : Nat) (_ : n < 2^128 := by decide) : UInt128 :=
   let hi := n / UInt64.size |>.toUInt64
   ofLoHi lo hi
 
+instance : OfNat UInt128 n where
+  ofNat :=
+    let pow := 2^128
+    if h : n < pow then ofNat n h
+    else ofNat (n % pow) (Nat.mod_lt n (by decide))
+
 @[extern "c_u128_to_le_bytes"]
 opaque toLEBytes : @& UInt128 → ByteArray
 
