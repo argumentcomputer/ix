@@ -33,7 +33,7 @@ instance : ToString CanonMError where toString
   | .unfilledExprMetavariable e => s!"Unfilled level metavariable on expression '{e}'"
   | .invalidBVarIndex idx => s!"Invalid index {idx} for bound variable context"
   | .freeVariableExpr e => s!"Free variable in expression '{e}'"
-  | .metaVariableExpr e => s!"Meta variable in expression '{e}'"
+  | .metaVariableExpr e => s!"Metavariable in expression '{e}'"
   | .metaDataExpr e => s!"Meta data in expression '{e}'"
   | .levelNotFound n ns => s!"'{n}' not found in '{ns}'"
   | .invalidConstantKind n ex gt =>
@@ -81,7 +81,7 @@ def withRecrs (recrCtx : RBMap Lean.Name Nat compare) :
 def withLevels (lvls : List Lean.Name) : CanonM α → CanonM α :=
   withReader $ fun c => { c with univCtx := lvls }
 
-def commit (const : Ix.Const) : CanonM (Address × Address) := do
+def commitConst (const : Ix.Const) : CanonM (Address × Address) := do
   match (← get).commits.find? const with
   | some (contAddr, metaAddr) => pure (contAddr, metaAddr)
   | none => do
@@ -198,14 +198,14 @@ partial def canonConst (const : Lean.ConstantInfo) : CanonM (Address × Address)
             ← withRecrs recrs $ canonExpr val.value⟩
         | .quotInfo val =>
           pure $ .quotient ⟨val.levelParams.length, ← canonExpr val.type, val.kind⟩
-      let (constAddr, metaAddr) ← commit obj
+      let (constAddr, metaAddr) ← commitConst obj
       addConstToStt const.name constAddr metaAddr
       return (constAddr, metaAddr)
 
 partial def canonDefinition (struct : Lean.DefinitionVal) : CanonM (Address × Address):= do
   -- If the mutual size is one, simply content address the single definition
   if struct.all matches [_] then
-    let (constAddr, metaAddr) ← commit $ .definition
+    let (constAddr, metaAddr) ← commitConst $ .definition
       (← withRecrs (.single struct.name 0) $ definitionToIR struct)
     addConstToStt struct.name constAddr metaAddr
     return (constAddr, metaAddr)
@@ -228,7 +228,7 @@ partial def canonDefinition (struct : Lean.DefinitionVal) : CanonM (Address × A
   -- Building and storing the block
   let definitionsIr := (definitions.map (match ·.head? with
     | some d => [d] | none => [])).flatten
-  let (blockContAddr, blockMetaAddr) ← commit $ .mutDefBlock definitionsIr
+  let (blockContAddr, blockMetaAddr) ← commitConst $ .mutDefBlock definitionsIr
   addBlockToStt blockContAddr blockMetaAddr
 
   -- While iterating on the definitions from the mutual block, we need to track
@@ -240,7 +240,7 @@ partial def canonDefinition (struct : Lean.DefinitionVal) : CanonM (Address × A
     -- Also adds the constant to the array of constants
     let some idx := recrCtx.find? name | throw $ .cantFindMutDefIndex name
     let (constAddr, metaAddr) ←
-      commit $ .definitionProj ⟨blockContAddr, blockMetaAddr, idx⟩
+      commitConst $ .definitionProj ⟨blockContAddr, blockMetaAddr, idx⟩
     addConstToStt name constAddr metaAddr
     if struct.name == name then ret? := some (constAddr, metaAddr)
 
@@ -290,7 +290,7 @@ partial def canonInductive (initInd : Lean.InductiveVal) : CanonM (Address × Ad
   let irInds ← initInd.all.mapM fun name => do match ← getLeanConstant name with
     | .inductInfo ind => withRecrs recrCtx do pure $ (← inductiveToIR ind)
     | const => throw $ .invalidConstantKind const.name "inductive" const.ctorName
-  let (blockContAddr, blockMetaAddr) ← commit $ .mutIndBlock irInds
+  let (blockContAddr, blockMetaAddr) ← commitConst $ .mutIndBlock irInds
   addBlockToStt blockContAddr blockMetaAddr
 
   -- While iterating on the inductives from the mutual block, we need to track
@@ -300,7 +300,7 @@ partial def canonInductive (initInd : Lean.InductiveVal) : CanonM (Address × Ad
     -- Store and cache inductive projections
     let name := indName
     let (constAddr, metaAddr) ←
-      commit $ .inductiveProj ⟨blockContAddr, blockMetaAddr, indIdx⟩
+      commitConst $ .inductiveProj ⟨blockContAddr, blockMetaAddr, indIdx⟩
     addConstToStt name constAddr metaAddr
     if name == initInd.name then ret? := some (constAddr, metaAddr)
 
@@ -310,13 +310,13 @@ partial def canonInductive (initInd : Lean.InductiveVal) : CanonM (Address × Ad
     for (ctorName, ctorIdx) in ctors.zipIdx do
       -- Store and cache constructor projections
       let (constAddr, metaAddr) ←
-        commit $ .constructorProj ⟨blockContAddr, blockMetaAddr, indIdx, ctorIdx⟩
+        commitConst $ .constructorProj ⟨blockContAddr, blockMetaAddr, indIdx, ctorIdx⟩
       addConstToStt ctorName constAddr metaAddr
 
     for (recrName, recrIdx) in recrs.zipIdx do
       -- Store and cache recursor projections
       let (constAddr, metaAddr) ←
-        commit $ .recursorProj ⟨blockContAddr, blockMetaAddr, indIdx, recrIdx⟩
+        commitConst $ .recursorProj ⟨blockContAddr, blockMetaAddr, indIdx, recrIdx⟩
       addConstToStt recrName constAddr metaAddr
 
   match ret? with
@@ -336,7 +336,9 @@ partial def inductiveToIR (ind : Lean.InductiveVal) : CanonM Ix.Inductive := do
           let thisRec ← externalRecToIR r
           pure (thisRec :: recs, ctors)
       | _ => throw $ .nonRecursorExtractedFromChildren r.name
-  let (struct, unit) ← if ind.isRec || ind.numIndices != 0 then pure (false, false) else
+  let (struct, unit) ← if ind.isRec || ind.numIndices != 0 
+  then pure (false, false)
+  else
     match ctors with
     -- Structures can only have one constructor
     | [ctor] => pure (true, ctor.fields == 0)
@@ -550,22 +552,30 @@ partial def sortDefs (dss : List (List Lean.DefinitionVal)) :
 
 end
 
-/-- Iterates over a list of `Lean.ConstantInfo`, triggering their content-addressing -/
-def canonDelta (delta : List Lean.ConstantInfo) : CanonM Unit := do
-  delta.forM fun c => if !c.isUnsafe then discard $ canonConst c else pure ()
+--/-- Iterates over a list of `Lean.ConstantInfo`, triggering their content-addressing -/
+--def canonDelta (delta : List Lean.ConstantInfo) : CanonM Unit := do
+--  delta.forM fun c => if !c.isUnsafe then discard $ canonConst c else pure ()
 
-/--
-Content-addresses the "delta" of an environment, that is, the content that is
-added on top of the imports.
+--/--
+--Content-addresses the "delta" of an environment, that is, the content that is
+--added on top of the imports.
+--
+--Important: constants with open references in their expressions are filtered out.
+--Open references are variables that point to names which aren't present in the
+--`Lean.ConstMap`.
+---/
+--def canon (constMap : Lean.ConstMap) (delta : List Lean.ConstantInfo)
+--  : IO $ Except CanonMError CanonMState := do
+--  match ← StateT.run (ReaderT.run (canonDelta delta) (.init constMap)) CanonMState.init with
+--  | (.ok _, stt) => return .ok stt
+--  | (.error e, _) => return .error e
 
-Important: constants with open references in their expressions are filtered out.
-Open references are variables that point to names which aren't present in the
-`Lean.ConstMap`.
--/
-def canon (constMap : Lean.ConstMap) (delta : List Lean.ConstantInfo)
-  : IO $ Except CanonMError CanonMState := do
-  match ← StateT.run (ReaderT.run (canonDelta delta) (.init constMap)) CanonMState.init with
-  | (.ok _, stt) => return .ok stt
+def canonicalize (constMap : Lean.ConstMap) (const: Lean.ConstantInfo)
+  : IO $ Except CanonMError Address := do
+  let canon <-
+    StateT.run (ReaderT.run (canonConst const) (.init constMap)) CanonMState.init
+  match canon with
+  | (.ok (a, _), _) => return .ok a
   | (.error e, _) => return .error e
 
 end Ix.CanonM

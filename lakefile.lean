@@ -9,6 +9,7 @@ lean_lib Ix
 
 lean_exe ix where
   root := `Main
+  supportInterpreter := true
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "0f9008e70927c4afac8ad2bc32f2f4fbda044096"

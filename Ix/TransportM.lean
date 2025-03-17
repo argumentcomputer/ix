@@ -281,6 +281,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
 | .mutDef xs => .mutDefBlock <$> (xs.mapM rematDefn)
 | .mutInd xs => .mutIndBlock <$> (xs.mapM rematInd)
 | .meta m => throw (.rawMetadata m)
+-- TODO: This could return a Proof inductive, since proofs have no metadata
 | .proof p => throw (.rawProof p)
   where
     rematDefn : Ixon.Definition -> RematM Ix.Definition
