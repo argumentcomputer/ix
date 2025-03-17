@@ -8,6 +8,7 @@ import Ix.Common
 import Ix.Address
 import Ix.Ixon.Metadata
 import Ix.Ixon.Serialize
+import Ix.Prove
 import Batteries.Data.RBMap
 
 namespace Ix.TransportM
@@ -25,6 +26,7 @@ inductive TransportError
   | unknownIndex (idx: Nat) (m: Ixon.Metadata)
   | unexpectedNode (idx: Nat) (m: Ixon.Metadata)
   | rawMetadata (m: Ixon.Metadata)
+  | rawProof (m: Proof)
   deriving Repr
 
 abbrev DematM := EStateM TransportError DematState
@@ -279,6 +281,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
 | .mutDef xs => .mutDefBlock <$> (xs.mapM rematDefn)
 | .mutInd xs => .mutIndBlock <$> (xs.mapM rematInd)
 | .meta m => throw (.rawMetadata m)
+| .proof p => throw (.rawProof p)
   where
     rematDefn : Ixon.Definition -> RematM Ix.Definition
     | x => .mk x.lvls <$> rematExpr x.type <*> rematExpr x.value <*> pure x.part

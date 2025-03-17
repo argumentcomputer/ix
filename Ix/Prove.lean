@@ -1,5 +1,6 @@
 import Ix.Address
 import Ix.Ixon.Serialize
+import Ix.Common
 
 inductive ProveError
   | todo
@@ -14,16 +15,13 @@ structure Proof where
   typ : Address
   /-- Bytes of the Binius proof -/
   bin : ByteArray
-  deriving Inhabited
+  deriving Inhabited, BEq
 
-instance : Ixon.Serialize Proof where
-  put proof := proof.inp.hash ++ proof.out.hash ++ proof.typ.hash ++ proof.bin
-  get bytes :=
-    let inpBytes := bytes.extract 0 32
-    let outBytes := bytes.extract 32 64
-    let typBytes := bytes.extract 64 96
-    let binBytes := bytes.extract 96 bytes.size
-    .ok ⟨⟨inpBytes⟩, ⟨outBytes⟩, ⟨typBytes⟩, binBytes⟩
+instance : ToString Proof where
+  toString p := s!"<#{p.inp} ~> #{p.out} : #{p.typ}>"
+
+instance : Repr Proof where
+  reprPrec p _ := toString p
 
 def prove (_hash : Address) : ProveM Proof :=
   default -- TODO

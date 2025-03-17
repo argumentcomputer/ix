@@ -136,6 +136,10 @@ def putArray (xs : List PutM) := do
   putExprTag 0xB (UInt64.ofNat xs.length)
   List.forM xs id
 
+def putByteArray (x: ByteArray) := do
+  putExprTag 0xB (UInt64.ofNat x.size)
+  x.toList.forM putUInt8
+
 def getArray (getM: GetM A) : GetM (List A) := do
   let tagByte ← getUInt8
   let tag := UInt8.shiftRight tagByte 4
@@ -146,6 +150,10 @@ def getArray (getM: GetM A) : GetM (List A) := do
     let len <- UInt64.toNat <$> getExprTag isLarge small
     List.mapM (λ _ => getM) (List.range len) 
   | e => throw s!"expected Array with tag 0xB, got {e}"
+
+def getByteArray : GetM ByteArray := do
+  let xs <- getArray getUInt8
+  return ⟨xs.toArray⟩
 
 
 def putOption (putM: A -> PutM): Option A → PutM
