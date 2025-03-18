@@ -23,17 +23,17 @@ def runHash (p : Cli.Parsed) : IO UInt32 := do
      IO.println <| s!"constant'' {x.name}"
   --cronos ← cronos.clock "Run Lean frontend"
 
-  IO.println <| "content-address"
-  -- Start content-addressing
-  cronos ← cronos.clock "Content-address"
-  let stt ← match ← Ix.CanonM.canon constMap delta with
-    | .error err => IO.eprintln err; return 1
-    | .ok stt => pure stt
-  cronos ← cronos.clock "Content-address"
-  stt.store.forM fun adr _ => do
-     IO.println <| s!"{adr}"
+ -- IO.println <| "content-address"
+ -- -- Start content-addressing
+ -- cronos ← cronos.clock "Content-address"
+ -- let stt ← match ← Ix.CanonM.canon constMap delta with
+ --   | .error err => IO.eprintln err; return 1
+ --   | .ok stt => pure stt
+ -- cronos ← cronos.clock "Content-address"
+ -- stt.store.forM fun adr _ => do
+ --    IO.println <| s!"{adr}"
 
-  IO.println cronos.summary
+ -- IO.println cronos.summary
   return 0
 
 def hashCmd : Cli.Cmd := `[Cli|
