@@ -47,23 +47,7 @@ section FFI
 extern_lib ix_rs pkg := do
   proc { cmd := "cargo", args := #["build", "--release"], cwd := pkg.dir } (quiet := true)
   let libName := nameToStaticLib "ix_rs"
-  let libPath := pkg.dir / "target" / "release" / libName
-
-  -- If the static lib has changed, remove cached binaries for recompilation
-  let libBytes ← IO.FS.readBinFile libPath
-  let libHash := toString $ hash libBytes
-  let libHashPath := pkg.nativeLibDir / libName |>.addExtension "hash"
-  let shouldCleanBinaries ←
-    if ← pkg.binDir.pathExists then
-      if ← libHashPath.pathExists then
-        let cachedHash ← IO.FS.readFile libHashPath
-        pure $ libHash != cachedHash -- Clean up in case of hash mismatch
-      else pure true -- No hash file
-    else pure false -- No files to remove
-  if shouldCleanBinaries then IO.FS.removeDirAll pkg.binDir
-  IO.FS.writeFile libHashPath libHash
-
-  return pure libPath
+  inputBinFile $ pkg.dir / "target" / "release" / libName
 
 /-- Build the static lib for the C files -/
 extern_lib ix_c pkg := do
