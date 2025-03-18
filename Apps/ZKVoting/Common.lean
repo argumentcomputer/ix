@@ -2,7 +2,7 @@ import Ix.BuiltIn
 
 inductive Candidate
   | abe | bam | cot
-  deriving Inhabited
+  deriving Inhabited, Lean.ToExpr
 
 abbrev Vote := Commitment Candidate
 
