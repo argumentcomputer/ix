@@ -7,6 +7,4 @@ import Std
 def id' (A: Type) (x: A) := x
 --def ref (A: Type) (x y: A) := hello
 
---def one : Nat := 1
-
-
+def one : Nat := 1
