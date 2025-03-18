@@ -36,7 +36,8 @@ section IxApplications
 
 lean_lib Apps
 
-lean_exe Apps.ZKVoting.Prover
+lean_exe Apps.ZKVoting.Prover where
+  supportInterpreter := true
 lean_exe Apps.ZKVoting.Verifier
 
 end IxApplications
