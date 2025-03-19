@@ -6,12 +6,12 @@ use binius_field::{BinaryField1b, BinaryField8b, Field, TowerField, underlier::W
 
 use super::{
     ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, ValIdx},
-    layout::{EiurByteField, Layout, MultiplicityField},
+    layout::{AiurByteField, Layout, MultiplicityField},
 };
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Const(EiurByteField),
+    Const(AiurByteField),
     Var(OracleId),
     Add(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
@@ -23,8 +23,8 @@ impl Mul for Expr {
 
     fn mul(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Expr::Const(EiurByteField::ONE), b) => b,
-            (a, Expr::Const(EiurByteField::ONE)) => a,
+            (Expr::Const(AiurByteField::ONE), b) => b,
+            (a, Expr::Const(AiurByteField::ONE)) => a,
             (Expr::Const(a), Expr::Const(b)) => Expr::Const(a * b),
             (a, b) => Self::Mul(a.into(), b.into()),
         }
@@ -42,8 +42,8 @@ impl Add for Expr {
 
     fn add(self, rhs: Expr) -> Self {
         match (self, rhs) {
-            (Expr::Const(EiurByteField::ZERO), b) => b,
-            (a, Expr::Const(EiurByteField::ZERO)) => a,
+            (Expr::Const(AiurByteField::ZERO), b) => b,
+            (a, Expr::Const(AiurByteField::ZERO)) => a,
             (Expr::Const(a), Expr::Const(b)) => Expr::Const(a + b),
             (a, b) => Self::Add(a.into(), b.into()),
         }
@@ -62,11 +62,11 @@ impl Sub for Expr {
 
 impl Expr {
     fn zero() -> Self {
-        Self::Const(EiurByteField::ZERO)
+        Self::Const(AiurByteField::ZERO)
     }
 
     fn one() -> Self {
-        Self::Const(EiurByteField::ONE)
+        Self::Const(AiurByteField::ONE)
     }
 }
 
@@ -304,12 +304,12 @@ fn collect_op_constraints(
 ) {
     match op {
         Op::Prim(Prim::Bool(a)) => {
-            let a = EiurByteField::from_underlier(*a as u8);
+            let a = AiurByteField::from_underlier(*a as u8);
             state.push_var(Expr::Const(a));
         }
         Op::Prim(Prim::U64(a)) => {
             a.to_le_bytes().into_iter().for_each(|a| {
-                let a = EiurByteField::from_underlier(a);
+                let a = AiurByteField::from_underlier(a);
                 state.push_var(Expr::Const(a));
             });
         }

@@ -6,7 +6,7 @@
 xclippy = [
   "clippy", "--workspace", "--all-targets", "--",
   "-Wclippy::all",
-  #"-Wclippy::cast_lossless", # TODO: Fix or remove. Causes issues with Eiur macros
+  #"-Wclippy::cast_lossless", # TODO: Fix or remove. Causes issues with Aiur macros
   "-Wclippy::cast_possible_truncation",
   "-Wclippy::cast_precision_loss",
   "-Wclippy::cast_sign_loss",

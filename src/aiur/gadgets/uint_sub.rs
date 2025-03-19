@@ -106,7 +106,7 @@ mod tests {
     use bumpalo::Bump;
     use proptest::{collection::vec, prelude::*};
 
-    use crate::eiur::{
+    use crate::aiur::{
         binius::witness_builder,
         gadgets::{
             Gadget, UIntType,

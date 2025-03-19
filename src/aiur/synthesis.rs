@@ -14,20 +14,20 @@ use binius_field::{
 use binius_math::ArithExpr;
 use binius_maybe_rayon::prelude::*;
 
-use crate::eiur::layout::EiurByteField;
+use crate::aiur::layout::AiurByteField;
 
 use super::{
     constraints::{Channel, Columns, Constraints, Expr, build_func_constraints},
     execute::{FxIndexMap, QueryRecord},
     ir::Toplevel,
-    layout::{EiurField, FunctionIndexField, MultiplicityField, func_layout},
+    layout::{AiurField, FunctionIndexField, MultiplicityField, func_layout},
     memory::{NUM_MEM_TABLES, mem_index_from_size},
     trace::{MULT_GEN, Trace},
     transparent::{Fields, Virtual},
 };
 
 #[derive(Clone)]
-pub struct EiurChannelIds {
+pub struct AiurChannelIds {
     pub fun: ChannelId,
     pub add: ChannelId,
     pub mul: ChannelId,
@@ -44,7 +44,7 @@ impl VirtualMap {
         &mut self,
         builder: &mut ConstraintSystemBuilder<'_>,
         oracles: Vec<OracleId>,
-        offset: EiurField,
+        offset: AiurField,
         log_n: usize,
     ) -> OracleId {
         let virt = Virtual::Sum {
@@ -56,7 +56,7 @@ impl VirtualMap {
             let Virtual::Sum { oracles, .. } = virt else {
                 unreachable!()
             };
-            let lc = oracles.iter().map(|oracle| (*oracle, EiurField::ONE));
+            let lc = oracles.iter().map(|oracle| (*oracle, AiurField::ONE));
             let id = builder
                 .add_linear_combination_with_offset("linear combination", log_n, offset, lc)
                 .unwrap();
@@ -84,7 +84,7 @@ impl VirtualMap {
         &mut self,
         builder: &mut ConstraintSystemBuilder<'_>,
         oracles: Vec<OracleId>,
-        offset: EiurField,
+        offset: AiurField,
         log_n: usize,
     ) -> OracleId {
         let virt = Virtual::Sum {
@@ -96,7 +96,7 @@ impl VirtualMap {
             let Virtual::Sum { oracles, .. } = virt else {
                 unreachable!()
             };
-            let lc = oracles.iter().map(|oracle| (*oracle, EiurField::ONE));
+            let lc = oracles.iter().map(|oracle| (*oracle, AiurField::ONE));
             let id = builder
                 .add_linear_combination_with_offset("linear combination", log_n, offset, lc)
                 .unwrap();
@@ -105,18 +105,18 @@ impl VirtualMap {
                     .iter()
                     .map(|oracle| {
                         witness
-                            .get::<EiurByteField>(*oracle)
+                            .get::<AiurByteField>(*oracle)
                             .unwrap()
-                            .as_slice::<EiurByteField>()
+                            .as_slice::<AiurByteField>()
                     })
                     .collect::<Vec<_>>();
                 witness
-                    .new_column::<EiurByteField>(id)
-                    .as_mut_slice::<EiurByteField>()
+                    .new_column::<AiurByteField>(id)
+                    .as_mut_slice::<AiurByteField>()
                     .into_par_iter()
                     .enumerate()
                     .for_each(|(i, w)| {
-                        let mut res = EiurByteField::ZERO;
+                        let mut res = AiurByteField::ZERO;
                         for slice in slices.iter() {
                             res += slice[i];
                         }
@@ -180,13 +180,13 @@ impl VirtualMap {
     }
 }
 
-impl EiurChannelIds {
+impl AiurChannelIds {
     pub fn initialize_channels(builder: &mut ConstraintSystemBuilder<'_>) -> Self {
         let fun = builder.add_channel();
         let add = builder.add_channel();
         let mul = builder.add_channel();
         let mem = (0..NUM_MEM_TABLES).map(|_| builder.add_channel()).collect();
-        EiurChannelIds { fun, add, mul, mem }
+        AiurChannelIds { fun, add, mul, mem }
     }
 }
 
@@ -198,7 +198,7 @@ impl Expr {
         log_n: u8,
     ) -> Option<OracleId> {
         let mut sum = vec![];
-        let mut offset = EiurField::ZERO;
+        let mut offset = AiurField::ZERO;
         self.accumulate_sum(&mut sum, &mut offset)?;
         Some(virt_map.sum_bit(builder, sum, offset, log_n as usize))
     }
@@ -210,12 +210,12 @@ impl Expr {
         log_n: u8,
     ) -> Option<OracleId> {
         let mut sum = vec![];
-        let mut offset = EiurField::ZERO;
+        let mut offset = AiurField::ZERO;
         self.accumulate_sum(&mut sum, &mut offset)?;
         Some(virt_map.sum_byte(builder, sum, offset, log_n as usize))
     }
 
-    fn accumulate_sum(&self, sum: &mut Vec<OracleId>, offset: &mut EiurField) -> Option<()> {
+    fn accumulate_sum(&self, sum: &mut Vec<OracleId>, offset: &mut AiurField) -> Option<()> {
         match self {
             Self::Const(k) => *offset += *k,
             Self::Var(x) => sum.push(*x),
@@ -228,14 +228,14 @@ impl Expr {
         Some(())
     }
 
-    fn to_arith_expr(&self) -> (Vec<OracleId>, ArithExpr<EiurField>) {
+    fn to_arith_expr(&self) -> (Vec<OracleId>, ArithExpr<AiurField>) {
         let mut map = FxIndexMap::default();
         let arith = self.to_arith_expr_aux(&mut map);
         let oracles = map.keys().copied().collect();
         (oracles, arith)
     }
 
-    fn to_arith_expr_aux(&self, map: &mut FxIndexMap<OracleId, usize>) -> ArithExpr<EiurField> {
+    fn to_arith_expr_aux(&self, map: &mut FxIndexMap<OracleId, usize>) -> ArithExpr<AiurField> {
         match self {
             Expr::Const(f) => ArithExpr::Const((*f).into()),
             Expr::Var(id) => {
@@ -314,10 +314,10 @@ impl Toplevel {
         &self,
         builder: &mut ConstraintSystemBuilder<'_>,
         record: &QueryRecord,
-    ) -> (Vec<u64>, EiurChannelIds) {
+    ) -> (Vec<u64>, AiurChannelIds) {
         let traces = self.generate_trace(record);
         let mut counts = Vec::with_capacity(self.functions.len());
-        let channel_ids = EiurChannelIds::initialize_channels(builder);
+        let channel_ids = AiurChannelIds::initialize_channels(builder);
         for (func_idx, (function, (trace, layout))) in
             self.functions.iter().zip(traces.into_iter()).enumerate()
         {
@@ -344,8 +344,8 @@ impl Toplevel {
         &self,
         builder: &mut ConstraintSystemBuilder<'_>,
         counts: &[u64],
-    ) -> EiurChannelIds {
-        let channel_ids = EiurChannelIds::initialize_channels(builder);
+    ) -> AiurChannelIds {
+        let channel_ids = AiurChannelIds::initialize_channels(builder);
         for (func_idx, (function, count)) in self.functions.iter().zip(counts).enumerate() {
             let mut virt_map = VirtualMap::default();
             let layout = func_layout(function);
@@ -368,7 +368,7 @@ impl Toplevel {
 fn synthesize_constraints(
     builder: &mut ConstraintSystemBuilder<'_>,
     func_idx: u32,
-    channel_ids: &EiurChannelIds,
+    channel_ids: &AiurChannelIds,
     count: u64,
     mut constraints: Constraints,
     virt_map: &mut VirtualMap,
@@ -533,10 +533,10 @@ mod tests {
     use binius_math::DefaultEvaluationDomainFactory;
     use groestl_crypto::Groestl256;
 
-    use crate::eiur::{
+    use crate::aiur::{
         execute::tests::factorial_function,
         ir::{FuncIdx, Toplevel},
-        layout::EiurField,
+        layout::AiurField,
         trace::MULT_GEN,
     };
 
@@ -562,7 +562,7 @@ mod tests {
         const LOG_INV_RATE: usize = 1;
         const SECURITY_BITS: usize = 100;
 
-        let f = EiurField::from_underlier;
+        let f = AiurField::from_underlier;
         let io = vec![
             // input
             f(100),
@@ -595,7 +595,7 @@ mod tests {
         };
 
         let mut pull_io = io;
-        pull_io.push(EiurField::ONE);
+        pull_io.push(AiurField::ONE);
         let pull_boundaries = Boundary {
             values: pull_io,
             channel_id: channel_ids.fun,
