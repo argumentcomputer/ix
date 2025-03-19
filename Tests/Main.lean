@@ -2,6 +2,7 @@ import Tests.ArithExpr
 import Tests.Binius
 import Tests.Boundary
 import Tests.ByteArray
+import Tests.Unsigned
 import Tests.Ix
 
 def main := LSpec.lspecIO (.ofList [
@@ -11,5 +12,6 @@ def main := LSpec.lspecIO (.ofList [
     ("binius-witness", Tests.Binius.witnessSuite),
     ("binius-transparent", Tests.Binius.transparentSuite),
     ("byte-array", Tests.ByteArray.suite),
+    ("unsigned", Tests.Unsigned.suite),
     ("ix", Tests.Ix.suite),
   ])
