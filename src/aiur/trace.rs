@@ -3,7 +3,7 @@ use binius_field::{BinaryField, Field};
 
 use super::execute::{FxIndexMap, QueryRecord, QueryResult, load_u64};
 use super::ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, Toplevel};
-use super::layout::{EiurByteField, Layout, MultiplicityField, func_layout};
+use super::layout::{AiurByteField, Layout, MultiplicityField, func_layout};
 
 pub const MULT_GEN: MultiplicityField = MultiplicityField::MULTIPLICATIVE_GENERATOR;
 
@@ -121,7 +121,7 @@ fn populate_block_trace(
         Ctrl::If(b, t, f) => {
             let val = map[b.to_usize()];
             if val != 0 {
-                let inv = EiurByteField::new(val).invert().unwrap().to_underlier();
+                let inv = AiurByteField::new(val).invert().unwrap().to_underlier();
                 trace.push(row, col, inv);
                 populate_block_trace(t, trace, map, row, col, record, prev_counts);
             } else {
@@ -131,7 +131,7 @@ fn populate_block_trace(
         Ctrl::If64(b, t, f) => {
             let val = &map[b.to_usize()..b.to_usize() + 8];
             if let Some(pos) = val.iter().position(|&byte| byte != 0) {
-                let inv = EiurByteField::new(val[pos])
+                let inv = AiurByteField::new(val[pos])
                     .invert()
                     .unwrap()
                     .to_underlier();

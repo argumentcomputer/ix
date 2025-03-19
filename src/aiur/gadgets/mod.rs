@@ -5,7 +5,7 @@ use anyhow::Result;
 use binius_circuits::builder::{ConstraintSystemBuilder, witness::Builder};
 use binius_core::oracle::OracleId;
 
-/// Trait for Eiur-compatible gadgets
+/// Trait for Aiur-compatible gadgets
 pub trait Gadget {
     /// Type for the set of input oracles, usually associated with committed columns
     type InputOracles;

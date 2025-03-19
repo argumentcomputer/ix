@@ -4,10 +4,10 @@ use binius_field::{
 
 use super::ir::{Block, Ctrl, Function, Op};
 
-/// The Eiur circuit field
-pub type EiurField = BinaryField128b;
-/// The field of bytes, which constitute Eiur data
-pub type EiurByteField = BinaryField8b;
+/// The Aiur circuit field
+pub type AiurField = BinaryField128b;
+/// The field of bytes, which constitute Aiur data
+pub type AiurByteField = BinaryField8b;
 /// The field of multiplicities. Its multiplicative group is used to express
 /// the multiplicity of lookups
 pub type MultiplicityField = BinaryField64b;

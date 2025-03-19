@@ -1,2 +1,2 @@
-pub mod eiur;
+pub mod aiur;
 pub mod lean;

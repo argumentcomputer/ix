@@ -1,4 +1,4 @@
-/// The `TopLevel` is an abstraction that allows executing arbitrary Eiur-rs program.
+/// The `TopLevel` is an abstraction that allows executing arbitrary Aiur-rs program.
 /// Roughly it works as following: user instantiates the `TopLevel` object using one or
 /// more functions (of type `Function`) that express one or more finite computations.
 /// The `TopLevel` implementation defines an execution algorithm which takes a tuple
@@ -24,7 +24,7 @@ pub struct Function {
     pub body: Block,
 }
 
-/// `Prim` defines primitive data types currently supported by Eiur-rs language
+/// `Prim` defines primitive data types currently supported by Aiur-rs language
 #[derive(Clone, Copy, Debug)]
 pub enum Prim {
     U64(u64),
@@ -53,7 +53,7 @@ impl FuncIdx {
     }
 }
 
-/// `Op` enumerates operations currently supported by Eiur-rs
+/// `Op` enumerates operations currently supported by Aiur-rs
 pub enum Op {
     Prim(Prim),
     Add(ValIdx, ValIdx),
@@ -84,7 +84,7 @@ pub enum Ctrl {
     Return(SelIdx, Vec<ValIdx>),
 }
 
-/// `Block` serves as a body of the user-defined Eiur program / computation. May reference inner
+/// `Block` serves as a body of the user-defined Aiur program / computation. May reference inner
 /// blocks via `Ctrl`
 pub struct Block {
     pub ops: Vec<Op>,
