@@ -8,6 +8,7 @@ pub(crate) fn mem_index_to_size(idx: usize) -> usize {
 }
 
 #[inline]
+#[allow(dead_code)]
 pub(crate) fn mem_index_from_size(size: usize) -> usize {
     MEM_TABLE_SIZES
         .iter()

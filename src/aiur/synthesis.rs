@@ -21,7 +21,7 @@ use super::{
     execute::{FxIndexMap, QueryRecord},
     ir::Toplevel,
     layout::{AiurField, FunctionIndexField, MultiplicityField, func_layout},
-    memory::{NUM_MEM_TABLES, mem_index_from_size},
+    memory::NUM_MEM_TABLES,
     trace::{MULT_GEN, Trace},
     transparent::{Fields, Virtual},
 };
@@ -400,7 +400,7 @@ fn synthesize_constraints(
         let (expr, oracles) = expr.to_arith_expr();
         builder.assert_zero(ns, expr, oracles);
     }
-    // TODO: Add, Mul gadgets
+    // TODO: Add, Mul chips
     // for (channel, sel, args) in constraints.sends {
     //     let sel = sel.to_sum_bit(builder, virt_map, log_n).unwrap();
     //     let oracles = args
@@ -418,13 +418,13 @@ fn synthesize_constraints(
     //     };
     // }
     for (channel, sel, prev_index, args) in constraints.requires {
-        let sel = sel.to_sum_bit(builder, virt_map, log_n).unwrap();
-        let mut oracles = args
-            .iter()
-            .map(|arg| arg.to_sum_byte(builder, virt_map, log_n).unwrap())
-            .collect::<Vec<_>>();
         match channel {
             Channel::Fun(func_idx) => {
+                let sel = sel.to_sum_bit(builder, virt_map, log_n).unwrap();
+                let mut oracles = args
+                    .iter()
+                    .map(|arg| arg.to_sum_byte(builder, virt_map, log_n).unwrap())
+                    .collect::<Vec<_>>();
                 let idx = virt_map.constant(
                     builder,
                     Fields::FunctionIndex(FunctionIndexField::from_underlier(func_idx.0)),
@@ -440,16 +440,22 @@ fn synthesize_constraints(
                     log_n.into(),
                 );
             }
-            Channel::Mem(size) => {
-                let index = mem_index_from_size(size as usize);
-                require(
-                    builder,
-                    channel_ids.mem[index],
-                    prev_index,
-                    oracles,
-                    sel,
-                    log_n.into(),
-                );
+            Channel::Mem(_size) => {
+                // TODO: Mem chips
+                // let sel = sel.to_sum_bit(builder, virt_map, log_n).unwrap();
+                // let mut oracles = args
+                //     .iter()
+                //     .map(|arg| arg.to_sum_byte(builder, virt_map, log_n).unwrap())
+                //     .collect::<Vec<_>>();
+                // let index = mem_index_from_size(size as usize);
+                // require(
+                //     builder,
+                //     channel_ids.mem[index],
+                //     prev_index,
+                //     oracles,
+                //     sel,
+                //     log_n.into(),
+                // );
             }
             _ => unreachable!(),
         };

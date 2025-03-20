@@ -86,7 +86,7 @@ pub enum Channel {
     Add,
     Mul,
     Fun(FuncIdx),
-    Mem(u8),
+    Mem(u32),
 }
 
 impl Constraints {
@@ -385,6 +385,25 @@ fn collect_op_constraints(
             let c = state.bind_var(columns).clone();
             state.push_var(c.clone());
             state.add_shared_constraint(constraints, sel.clone() * (c - a * b));
+        }
+        Op::Store(values) => {
+            let len = values
+                .len()
+                .try_into()
+                .expect("Error: too many arguments to store");
+            let mut args = (0..8)
+                .map(|_| state.bind_var(columns).clone())
+                .collect::<Vec<_>>();
+            args.extend(values.iter().map(|value| state.get_var(*value).clone()));
+            let require = state.next_require(columns);
+            constraints.require(Channel::Mem(len), sel.clone(), require, args);
+        }
+        Op::Load(len, ptr) => {
+            let mut args = state.get_vars(*ptr, 8).to_vec();
+            let values = (0..*len).map(|_| state.bind_var(columns).clone());
+            args.extend(values);
+            let require = state.next_require(columns);
+            constraints.require(Channel::Mem(*len), sel.clone(), require, args);
         }
         Op::Call(f, args, out_size) => {
             let mut args = args

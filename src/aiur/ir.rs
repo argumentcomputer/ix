@@ -62,6 +62,8 @@ pub enum Op {
     And(ValIdx, ValIdx),
     Lt(ValIdx, ValIdx),
     Xor(ValIdx, ValIdx),
+    Store(Vec<ValIdx>),
+    Load(u32, ValIdx),
     /// A call operation takes 3 elements, function index, arguments, and output size
     Call(FuncIdx, Vec<ValIdx>, u32),
 }

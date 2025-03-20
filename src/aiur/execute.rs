@@ -10,7 +10,7 @@ use super::ir::{Ctrl, FuncIdx, Op, Prim, Toplevel, ValIdx};
 /// output for a given function
 #[derive(PartialEq, Eq, Debug)]
 pub struct QueryResult {
-    pub values: Vec<u8>,
+    pub result: Vec<u8>,
     pub multiplicity: u32,
 }
 
@@ -18,30 +18,35 @@ pub struct QueryResult {
 /// used while invoking `TopLevel` execution algorithm
 #[derive(Debug)]
 pub struct QueryRecord {
-    pub queries: Vec<FxIndexMap<Vec<u8>, QueryResult>>,
+    pub func_queries: Vec<FxIndexMap<Vec<u8>, QueryResult>>,
+    pub mem_queries: Vec<(u32, FxIndexMap<Vec<u8>, QueryResult>)>,
 }
 
 impl QueryRecord {
     pub fn new(toplevel: &Toplevel) -> Self {
         let len = toplevel.functions.len();
-        let queries = (0..len).map(|_| Default::default()).collect();
-        QueryRecord { queries }
+        let func_queries = (0..len).map(|_| Default::default()).collect();
+        let mem_queries = Vec::new();
+        QueryRecord {
+            func_queries,
+            mem_queries,
+        }
     }
 
     pub fn get_func_map(&self, func_idx: FuncIdx) -> &FxIndexMap<Vec<u8>, QueryResult> {
-        &self.queries[func_idx.to_usize()]
+        &self.func_queries[func_idx.to_usize()]
     }
 
     pub fn get_from_u8(&self, func_idx: FuncIdx, input: &[u8]) -> Option<&QueryResult> {
-        self.queries[func_idx.to_usize()].get(input)
+        self.func_queries[func_idx.to_usize()].get(input)
     }
 
     pub fn get(&self, func_idx: FuncIdx, input: &[u8]) -> Option<&QueryResult> {
-        self.queries[func_idx.to_usize()].get(input)
+        self.func_queries[func_idx.to_usize()].get(input)
     }
 
     pub fn get_mut(&mut self, func_idx: FuncIdx, input: &[u8]) -> Option<&mut QueryResult> {
-        self.queries[func_idx.to_usize()].get_mut(input)
+        self.func_queries[func_idx.to_usize()].get_mut(input)
     }
 
     pub fn insert(
@@ -50,7 +55,7 @@ impl QueryRecord {
         input: Vec<u8>,
         output: QueryResult,
     ) -> Option<QueryResult> {
-        self.queries[func_idx.to_usize()].insert(input, output)
+        self.func_queries[func_idx.to_usize()].insert(input, output)
     }
 }
 
@@ -137,6 +142,40 @@ impl Toplevel {
                     let c = a ^ b;
                     map.push(c);
                 }
+                ExecEntry::Op(Op::Store(values)) => {
+                    let len = values
+                        .len()
+                        .try_into()
+                        .expect("Error: too many arguments to store");
+                    let mem_map = load_mem_map_mut(&mut record.mem_queries, len);
+                    let values = values
+                        .iter()
+                        .map(|value| map[value.to_usize()])
+                        .collect::<Vec<_>>();
+                    if let Some(query_result) = mem_map.get_mut(&values) {
+                        query_result.multiplicity += 1;
+                        map.extend(&query_result.result);
+                    } else {
+                        let ptr = (mem_map.len() as u64).to_le_bytes().to_vec();
+                        let query_result = QueryResult {
+                            result: ptr,
+                            multiplicity: 1,
+                        };
+                        map.extend(&query_result.result);
+                        mem_map.insert(values, query_result);
+                    }
+                }
+                ExecEntry::Op(Op::Load(len, ptr)) => {
+                    let ptr = load_u64(ptr, &map)
+                        .try_into()
+                        .expect("Pointer too large for current architecture");
+                    let mem_map = load_mem_map_mut(&mut record.mem_queries, *len);
+                    let (values, query_result) = mem_map
+                        .get_index_mut(ptr)
+                        .unwrap_or_else(|| panic!("Unbound {len}-wide pointer {ptr}"));
+                    query_result.multiplicity += 1;
+                    map.extend(values);
+                }
                 ExecEntry::Op(Op::Call(called_func_idx, args, _)) => {
                     let args = args
                         .iter()
@@ -144,7 +183,7 @@ impl Toplevel {
                         .collect::<Vec<_>>();
                     if let Some(query_result) = record.get_mut(*called_func_idx, &args) {
                         query_result.multiplicity += 1;
-                        map.extend(query_result.values.clone());
+                        map.extend(query_result.result.clone());
                     } else {
                         let input_len = args.len();
                         // `map_buffer` will become the map for the called function
@@ -171,7 +210,7 @@ impl Toplevel {
 
                     // Register the result for the current function index.
                     let query_result = QueryResult {
-                        values: out.clone(),
+                        result: out.clone(),
                         multiplicity: 1,
                     };
                     let num_inp = self.functions[func_idx.to_usize()].input_size as usize;
@@ -213,6 +252,19 @@ impl Toplevel {
             }
         }
         record
+    }
+}
+
+fn load_mem_map_mut(
+    mem_queries: &mut Vec<(u32, FxIndexMap<Vec<u8>, QueryResult>)>,
+    len: u32,
+) -> &mut FxIndexMap<Vec<u8>, QueryResult> {
+    if let Some(pos) = mem_queries.iter_mut().position(|(k, _)| *k == len) {
+        &mut mem_queries[pos].1
+    } else {
+        mem_queries.push((len, FxIndexMap::default()));
+        let last = mem_queries.last_mut().unwrap();
+        &mut last.1
     }
 }
 
@@ -359,8 +411,8 @@ pub(crate) mod tests {
 
         let result = toplevel.execute(func_idx, input.to_vec());
         let out = result.get(func_idx, &input).unwrap();
-        assert_eq!(out.values.len(), 8);
-        assert_eq!(&out.values, &val_out.to_le_bytes());
+        assert_eq!(out.result.len(), 8);
+        assert_eq!(&out.result, &val_out.to_le_bytes());
     }
 
     #[test]
@@ -380,8 +432,8 @@ pub(crate) mod tests {
         let out = result
             .get(func_idx, &input)
             .expect("requested item is unavailable");
-        assert_eq!(out.values.len(), 8);
-        assert_eq!(&out.values, &val_out.to_le_bytes());
+        assert_eq!(out.result.len(), 8);
+        assert_eq!(&out.result, &val_out.to_le_bytes());
     }
 
     #[test]
@@ -402,8 +454,8 @@ pub(crate) mod tests {
             .get(func_idx, &input)
             .expect("output of Lair / Aiur program is unavailable");
 
-        assert_eq!(out.values.len(), 8);
-        assert_eq!(&out.values, &val_out.to_le_bytes());
+        assert_eq!(out.result.len(), 8);
+        assert_eq!(&out.result, &val_out.to_le_bytes());
     }
 
     #[test]
@@ -423,8 +475,8 @@ pub(crate) mod tests {
 
         let out = record.get(func_idx, &input).expect("no out available");
 
-        assert_eq!(out.values.len(), 8);
-        assert_eq!(&out.values, &value_out.to_le_bytes());
+        assert_eq!(out.result.len(), 8);
+        assert_eq!(&out.result, &value_out.to_le_bytes());
     }
 
     #[test]
@@ -437,7 +489,7 @@ pub(crate) mod tests {
         let pairs: [(u64, u64); 6] = [(0, 1), (1, 1), (2, 2), (3, 6), (4, 24), (5, 120)];
         for (i, o) in pairs {
             let query_result = QueryResult {
-                values: o.to_le_bytes().to_vec(),
+                result: o.to_le_bytes().to_vec(),
                 multiplicity: 1,
             };
             assert_eq!(

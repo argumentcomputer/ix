@@ -65,11 +65,17 @@ impl Trace {
     }
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+enum Query {
+    Func(FuncIdx, Vec<u8>),
+    Mem(u32, Vec<u8>),
+}
+
 impl Toplevel {
     pub fn generate_trace(&self, record: &QueryRecord) -> Vec<(Trace, Layout)> {
         let mut traces = Vec::with_capacity(self.functions.len());
         let prev_counts = &mut FxIndexMap::default();
-        for (func, func_map) in self.functions.iter().zip(record.queries.iter()) {
+        for (func, func_map) in self.functions.iter().zip(record.func_queries.iter()) {
             let shape = func_layout(func);
             let trace = generate_func_trace(func, func_map, &shape, record, prev_counts);
             traces.push((trace, shape));
@@ -83,7 +89,7 @@ fn generate_func_trace(
     func_map: &FxIndexMap<Vec<u8>, QueryResult>,
     shape: &Layout,
     record: &QueryRecord,
-    prev_counts: &mut FxIndexMap<(FuncIdx, Vec<u8>), MultiplicityField>,
+    prev_counts: &mut FxIndexMap<Query, MultiplicityField>,
 ) -> Trace {
     let num_queries = func_map.len();
     let (multiplicity, inputs, outputs) = extract_io(func_map, shape);
@@ -111,7 +117,7 @@ fn populate_block_trace(
     row: usize,
     col: &mut ColumnIndex,
     record: &QueryRecord,
-    prev_counts: &mut FxIndexMap<(FuncIdx, Vec<u8>), MultiplicityField>,
+    prev_counts: &mut FxIndexMap<Query, MultiplicityField>,
 ) {
     block
         .ops
@@ -156,7 +162,7 @@ fn populate_op_trace(
     row: usize,
     col: &mut ColumnIndex,
     record: &QueryRecord,
-    prev_counts: &mut FxIndexMap<(FuncIdx, Vec<u8>), MultiplicityField>,
+    prev_counts: &mut FxIndexMap<Query, MultiplicityField>,
 ) {
     match op {
         Op::Prim(Prim::U64(a)) => {
@@ -217,15 +223,56 @@ fn populate_op_trace(
                 map.push(byte);
             }
         }
+        Op::Store(values) => {
+            let len = values
+                .len()
+                .try_into()
+                .expect("Error: too many arguments to store");
+            let mem_map = load_mem_map(&record.mem_queries, len);
+            let values = values
+                .iter()
+                .map(|value| map[value.to_usize()])
+                .collect::<Vec<_>>();
+            let query_result = mem_map
+                .get(&values)
+                .unwrap_or_else(|| panic!("Value {values:?} not in memory"));
+            for value in query_result.result.iter() {
+                trace.push(row, col, *value);
+                map.push(*value);
+            }
+            let count = prev_counts
+                .entry(Query::Mem(len, values.clone()))
+                .or_insert(MultiplicityField::ONE);
+            trace.require(row, col, *count);
+            *count *= MULT_GEN;
+        }
+        Op::Load(len, ptr) => {
+            let ptr: usize = load_u64(ptr, map)
+                .try_into()
+                .expect("Pointer too large for current architecture");
+            let mem_map = load_mem_map(&record.mem_queries, *len);
+            let (values, _) = mem_map
+                .get_index(ptr)
+                .unwrap_or_else(|| panic!("Unbound {len}-wide pointer {ptr}"));
+            for value in values.iter() {
+                trace.push(row, col, *value);
+                map.push(*value);
+            }
+            let count = prev_counts
+                .entry(Query::Mem(*len, values.clone()))
+                .or_insert(MultiplicityField::ONE);
+            trace.require(row, col, *count);
+            *count *= MULT_GEN;
+        }
         Op::Call(func_idx, args, _) => {
             let args = args.iter().map(|a| map[a.to_usize()]).collect::<Vec<_>>();
-            let output = &record.get_from_u8(*func_idx, &args).unwrap().values;
+            let output = &record.get_from_u8(*func_idx, &args).unwrap().result;
             for byte in output {
                 trace.push(row, col, *byte);
                 map.push(*byte);
             }
             let count = prev_counts
-                .entry((*func_idx, args))
+                .entry(Query::Func(*func_idx, args))
                 .or_insert(MultiplicityField::ONE);
             trace.require(row, col, *count);
             *count *= MULT_GEN;
@@ -252,7 +299,7 @@ fn extract_io(
                 .iter()
                 .zip(inputs.iter_mut())
                 .for_each(|(byte, inp)| inp[i] = *byte);
-            let output_bytes = &result.values;
+            let output_bytes = &result.result;
             assert_eq!(output_bytes.len(), outputs.len());
             output_bytes
                 .iter()
@@ -260,4 +307,14 @@ fn extract_io(
                 .for_each(|(byte, out)| out[i] = *byte);
         });
     (multiplicity, inputs, outputs)
+}
+
+fn load_mem_map(
+    mem_queries: &[(u32, FxIndexMap<Vec<u8>, QueryResult>)],
+    len: u32,
+) -> &FxIndexMap<Vec<u8>, QueryResult> {
+    mem_queries.iter().find(|(k, _)| *k == len).map_or_else(
+        || panic!("Internal error: no memory map of size {len}"),
+        |(_, v)| v,
+    )
 }

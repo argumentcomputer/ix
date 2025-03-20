@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use binius_field::{
     BinaryField8b, BinaryField32b, BinaryField64b, BinaryField128b, arch::OptimalUnderlier,
 };
@@ -31,6 +33,7 @@ pub struct Layout {
     pub require_hints: u32,
     pub selectors: u32,
     pub shared_constraints: u32,
+    pub mem_sizes: BTreeSet<u32>,
 }
 
 #[derive(Clone, Default)]
@@ -147,6 +150,21 @@ pub fn op_layout(op: &Op, layout: &mut Layout) {
         Op::Mul(..) => {
             // uses the multiplication gadget which outputs 8 bytes
             layout.auxiliaries += 8;
+        }
+        Op::Store(values) => {
+            let len = values
+                .len()
+                .try_into()
+                .expect("Number of arguments exceeds 256.");
+            layout.mem_sizes.insert(len);
+            // size of a pointer
+            layout.auxiliaries += 8;
+            layout.require_hints += 1;
+        }
+        Op::Load(len, _) => {
+            layout.mem_sizes.insert(*len);
+            layout.auxiliaries += *len;
+            layout.require_hints += 1;
         }
         Op::Call(_, _, out_size) => {
             layout.auxiliaries += out_size;
