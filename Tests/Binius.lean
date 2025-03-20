@@ -18,7 +18,7 @@ def Tests.Binius.bindingsSuite :=
   let builder := builder.pushNamespace "x"
   let builder := builder.popNamespace
   let builder := builder.assertZero "y" #[oracleId0, oracleId1] $
-    .add (.pow (.var oracleId1) 2) (.mul (.var oracleId2) (.const 10))
+    .add (.pow (.var 0) 2) (.mul (.var 1) (.const 10))
   let builder := builder.assertNotZero oracleId0
   let logRows := builder.logRows #[oracleId0, oracleId1]
   let (channelId0, builder) := builder.addChannel
@@ -41,7 +41,7 @@ def Tests.Binius.witnessSuite :=
   let builder := ConstraintSystemBuilder.new ()
   let (a, builder) := builder.addCommitted "a" 4 BinaryField1b.towerLevel
   let (b, builder) := builder.addCommitted "b" 4 BinaryField1b.towerLevel
-  let builder := builder.assertZero "a + b" #[a, b] (.add (.var a) (.var b))
+  let builder := builder.assertZero "a + b" #[a, b] (.add (.var 0) (.var 1))
   let cs := builder.build
 
   let mkWitness := fun aData bData =>

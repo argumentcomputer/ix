@@ -6,7 +6,7 @@ namespace Binius
 /-- Arithmetic expression type for BinaryField128b -/
 inductive ArithExpr
   | const : UInt128 → ArithExpr
-  | var : OracleId → ArithExpr
+  | var : USize → ArithExpr
   | add : ArithExpr → ArithExpr → ArithExpr
   | mul : ArithExpr → ArithExpr → ArithExpr
   | pow : ArithExpr → UInt64 → ArithExpr
@@ -16,14 +16,14 @@ namespace ArithExpr
 
 def toString : ArithExpr → String
   | const _ => "Const"
-  | var v => s!"Var({v.toUSize})"
+  | var v => s!"Var({v})"
   | add x y => s!"Add({x.toString}, {y.toString})"
   | mul x y => s!"Mul({x.toString}, {y.toString})"
   | pow x e => s!"Pow({x.toString}, {e})"
 
 def toBytes : @& ArithExpr → ByteArray
   | const u128 => ⟨#[0]⟩ ++ u128.toLEBytes
-  | var oracleId => ⟨#[1]⟩ ++ oracleId.toUSize.toLEBytes
+  | var oracleId => ⟨#[1]⟩ ++ oracleId.toLEBytes
   | add x y =>
     let xBytes := x.toBytes
     ⟨#[2, xBytes.size.toUInt8]⟩ ++ xBytes ++ y.toBytes
