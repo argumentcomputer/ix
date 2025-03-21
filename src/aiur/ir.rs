@@ -11,6 +11,8 @@ pub struct Toplevel {
     pub functions: Vec<Function>,
 }
 
+pub type Name = &'static str;
+
 impl Toplevel {
     pub fn get_function(&self, f: FuncIdx) -> &Function {
         &self.functions[f.to_usize()]
@@ -19,6 +21,7 @@ impl Toplevel {
 
 /// `Function` is an abstraction that expresses some finite computation
 pub struct Function {
+    pub name: Name,
     pub input_size: u32,
     pub output_size: u32,
     pub body: Block,

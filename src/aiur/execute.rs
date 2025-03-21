@@ -316,6 +316,7 @@ pub(crate) mod tests {
         };
 
         Function {
+            name: "factorial",
             input_size: 8,
             output_size: 8,
             body: main_block,
@@ -334,6 +335,7 @@ pub(crate) mod tests {
         };
 
         Function {
+            name: "square",
             input_size: 8,
             output_size: 8,
             body: main_block,
@@ -353,6 +355,7 @@ pub(crate) mod tests {
         };
 
         Function {
+            name: "cube",
             input_size: 8,
             output_size: 8,
             body: main_block,
@@ -372,6 +375,7 @@ pub(crate) mod tests {
         };
 
         Function {
+            name: "double",
             input_size: 8,
             output_size: 8,
             body: main_block,
@@ -390,6 +394,7 @@ pub(crate) mod tests {
         };
 
         Function {
+            name: "addition",
             input_size: 8,
             output_size: 8,
             body: main_block,
