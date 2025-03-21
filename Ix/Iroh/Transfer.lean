@@ -2,11 +2,11 @@ namespace Iroh
 
 namespace Transfer
 
-@[extern "c_rs_iroh_send"]
-opaque sendFile : @& String → USize
+@[never_extract, extern "c_rs_iroh_send"]
+opaque sendBytes : @& ByteArray → Except String Unit
 
-@[extern "c_rs_iroh_recv"]
-opaque recvFile : @& String → @& String → USize
+@[never_extract, extern "c_rs_iroh_recv"]
+opaque recvBytes : (ticket : @& String) → (bufferCapacity : USize) → Except String ByteArray
 
 end Transfer
 end Iroh

@@ -1,32 +1,38 @@
 use anyhow::Result;
+use bytes::Bytes;
 use iroh::{Endpoint, protocol::Router};
-use iroh_blobs::{
-    net_protocol::Blobs,
-    rpc::client::blobs::WrapOption,
-    store::{ExportFormat, ExportMode},
-    ticket::BlobTicket,
-    util::SetTagOption,
-};
-use std::error::Error;
-use std::path::PathBuf;
+use iroh_blobs::{net_protocol::Blobs, ticket::BlobTicket};
+use std::{error::Error, ffi::CString};
 
-use crate::lean::ffi::{c_char, raw_to_str};
+use crate::lean::{
+    ffi::{CResult, c_char, raw_to_str, to_raw},
+    sarray::LeanSArrayObject,
+};
 
 #[unsafe(no_mangle)]
-extern "C" fn rs_iroh_send(filename: *const c_char) -> usize {
+extern "C" fn rs_iroh_send(bytes: &LeanSArrayObject) -> *const CResult {
     // Create a Tokio runtime to block on the async function
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
-    let path = raw_to_str(filename);
-    println!("File path to send: {}", path);
+    // Run the async function and block until we get the result
+    let c_result = match rt.block_on(iroh_send(bytes.data())) {
+        Ok(_) => CResult {
+            is_ok: true,
+            data: std::ptr::null(),
+        },
+        Err(err) => {
+            let msg = CString::new(err.to_string()).expect("CString::new failure");
+            CResult {
+                is_ok: false,
+                data: msg.into_raw().cast(),
+            }
+        }
+    };
 
-    // Run the async function and get the result
-    rt.block_on(iroh_send(path)).expect("Failed to send file");
-
-    0
+    to_raw(c_result)
 }
 
-async fn iroh_send(filename: &str) -> Result<(), Box<dyn Error>> {
+async fn iroh_send(bytes: &[u8]) -> Result<(), Box<dyn Error>> {
     // Create an endpoint, it allows creating and accepting
     // connections in the iroh p2p world
     let endpoint = Endpoint::builder().discovery_n0().bind().await?;
@@ -42,27 +48,21 @@ async fn iroh_send(filename: &str) -> Result<(), Box<dyn Error>> {
 
     // We use a blobs client to interact with the blobs protocol we're running locally:
     let blobs_client = blobs.client();
-    let filename: PathBuf = filename.parse()?;
-    let abs_path = std::path::absolute(&filename)?;
 
-    println!("Hashing file.");
+    println!("Hashing bytes.");
 
-    // keep the file in place and link it, instead of copying it into the in-memory blobs database
-    let in_place = true;
     let blob = blobs_client
-        .add_from_path(abs_path, in_place, SetTagOption::Auto, WrapOption::NoWrap)
-        .await?
-        .finish()
+        .add_bytes(Bytes::copy_from_slice(bytes))
         .await?;
 
     let node_id = router.endpoint().node_id();
     let ticket = BlobTicket::new(node_id.into(), blob.hash, blob.format)?;
 
     println!(
-        "File hashed. Fetch the {} file by running the `iroh_recv` function with\nTicket: {ticket}",
-        filename.display()
+        "Bytes hashed. Fetch them by by running the `iroh_recv` function with\nTicket: {ticket}",
     );
 
+    // TODO: Shut down automatically after the file has been sent at least once
     tokio::signal::ctrl_c().await?;
     router.shutdown().await?;
 
@@ -70,21 +70,41 @@ async fn iroh_send(filename: &str) -> Result<(), Box<dyn Error>> {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn rs_iroh_recv(filename: *const c_char, ticket: *const c_char) -> usize {
+extern "C" fn rs_iroh_recv(
+    ticket: *const c_char,
+    buffer: &mut LeanSArrayObject,
+    buffer_capacity: usize,
+) -> *const CResult {
     // Create a Tokio runtime to block on the async function
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
-    let filename = raw_to_str(filename);
     let ticket = raw_to_str(ticket);
 
-    // Run the async function and get the result
-    rt.block_on(iroh_recv(filename, ticket))
-        .expect("Failed to receive file");
+    // Run the async function and block until we get the result
+    let c_result = match rt.block_on(iroh_recv(ticket, buffer_capacity)) {
+        Ok(bytes) => {
+            let data = bytes.as_ref();
+            buffer.set_data(data);
+            CResult {
+                is_ok: true,
+                data: std::ptr::null(),
+            }
+        }
+        Err(err) => {
+            let msg = CString::new(err.to_string()).expect("CString::new failure");
+            CResult {
+                is_ok: false,
+                data: msg.into_raw().cast(),
+            }
+        }
+    };
 
-    0
+    to_raw(c_result)
 }
 
-async fn iroh_recv(filename: &str, ticket: &str) -> Result<(), Box<dyn Error>> {
+async fn iroh_recv(ticket: &str, buffer_capacity: usize) -> Result<Bytes, Box<dyn Error>> {
+    // Create an endpoint, it allows creating and accepting
+    // connections in the iroh p2p world
     let endpoint = Endpoint::builder().discovery_n0().bind().await?;
     // We initialize the Blobs protocol in-memory
     let blobs = Blobs::memory().build(&endpoint);
@@ -99,39 +119,27 @@ async fn iroh_recv(filename: &str, ticket: &str) -> Result<(), Box<dyn Error>> {
     // We use a blobs client to interact with the blobs protocol we're running locally:
     let blobs_client = blobs.client();
 
-    println!("File path to receive: {filename}");
-    println!("Ticket: {ticket}");
+    println!("Ticket to download: {ticket}");
 
-    let filename: PathBuf = filename.parse()?;
-    let abs_path = std::path::absolute(&filename)?;
-
-    println!("Abs path to receive: {}", abs_path.display());
     let ticket: BlobTicket = ticket.parse()?;
+    let hash = ticket.hash();
 
     println!("Starting download.");
 
     blobs_client
-        .download(ticket.hash(), ticket.node_addr().clone())
+        .download(hash, ticket.node_addr().clone())
         .await?
         .finish()
         .await?;
 
     println!("Finished download.");
-    println!("Copying to destination.");
 
-    blobs_client
-        .export(
-            ticket.hash(),
-            abs_path,
-            ExportFormat::Blob,
-            ExportMode::Copy,
-        )
-        .await?
-        .finish()
-        .await?;
+    let mut reader = blobs_client.read(hash).await?;
+    assert!(buffer_capacity >= reader.size() as usize);
+    let bytes = reader.read_to_bytes().await?;
 
     println!("Finished copying.");
     router.shutdown().await?;
 
-    Ok(())
+    Ok(bytes)
 }

@@ -2668,6 +2668,7 @@ dependencies = [
  "binius_utils 0.2.0 (git+https://gitlab.com/IrreducibleOSS/binius.git?rev=b880f00f32353160b4931aaee6a6815e5715502d)",
  "blake3",
  "bumpalo",
+ "bytes",
  "groestl",
  "indexmap",
  "iroh",

@@ -24,7 +24,6 @@ void *rs_witness_builder_build(void *);
 
 void rs_constraint_system_free(void *);
 c_result *rs_constraint_system_validate_witness(void *, b_lean_obj_arg, void *);
-void rs_constraint_system_validate_witness_result_free(c_result *);
 
 /* --- ConstraintSystemBuilder --- */
 
@@ -53,5 +52,7 @@ void rs_constraint_system_builder_push_namespace(void *, char const *);
 void rs_constraint_system_builder_pop_namespace(void *);
 size_t rs_constraint_system_builder_log_rows(void *, b_lean_obj_arg);
 
-size_t rs_iroh_send(char const *);
-size_t rs_iroh_recv(char const *, char const *);
+c_result *rs_iroh_send(b_lean_obj_arg);
+c_result *rs_iroh_recv(char const *, b_lean_obj_arg, size_t);
+
+void rs__c_result_unit_string_free(c_result *);
