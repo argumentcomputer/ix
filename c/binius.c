@@ -7,38 +7,38 @@
 
 static lean_external_class *g_witness_class = NULL;
 
-static lean_external_class *get_witness_class() {
-    if (g_witness_class == NULL) {
+static lean_external_class *get_witness_class()
+{
+    if (g_witness_class == NULL)
+    {
         g_witness_class = lean_register_external_class(
             &rs_witness_free,
-            &noop_foreach
-        );
+            &noop_foreach);
     }
     return g_witness_class;
 }
 
 /* --- WitnessBuilder --- */
 
-extern lean_obj_res c_rs_witness_builder_new(b_lean_obj_arg l_cs) {
+extern lean_obj_res c_rs_witness_builder_new(b_lean_obj_arg l_cs)
+{
     linear_object *linear = linear_object_init(
         rs_witness_builder_new(lean_get_external_data(l_cs)),
-        &rs_witness_builder_free
-    );
+        &rs_witness_builder_free);
     return alloc_lean_linear_object(linear);
 }
 
 extern lean_obj_res c_rs_witness_builder_with_column(
     lean_obj_arg l_wb,
     size_t oracle_id,
-    b_lean_obj_arg column_data
-) {
+    b_lean_obj_arg column_data)
+{
     linear_object *linear = validated_linear(l_wb);
 
     rs_witness_builder_with_column(
         get_object_ref(linear),
         oracle_id,
-        column_data
-    );
+        column_data);
     linear_object *new_linear = linear_bump(linear);
 
     return alloc_lean_linear_object(new_linear);
@@ -47,21 +47,21 @@ extern lean_obj_res c_rs_witness_builder_with_column(
 extern lean_obj_res c_rs_witness_builder_with_column_default(
     lean_obj_arg l_wb,
     size_t oracle_id,
-    b_lean_obj_arg value
-) {
+    b_lean_obj_arg value)
+{
     linear_object *linear = validated_linear(l_wb);
 
     rs_witness_builder_with_column_default(
         get_object_ref(linear),
         oracle_id,
-        value
-    );
+        value);
     linear_object *new_linear = linear_bump(linear);
 
     return alloc_lean_linear_object(new_linear);
 }
 
-extern lean_obj_res c_rs_witness_builder_build(lean_obj_arg l_wb) {
+extern lean_obj_res c_rs_witness_builder_build(lean_obj_arg l_wb)
+{
     linear_object *linear = validated_linear(l_wb);
 
     void *witness = rs_witness_builder_build(get_object_ref(linear));
@@ -74,12 +74,13 @@ extern lean_obj_res c_rs_witness_builder_build(lean_obj_arg l_wb) {
 
 static lean_external_class *g_constraint_system_class = NULL;
 
-static lean_external_class *get_constraint_system_class() {
-    if (g_constraint_system_class == NULL) {
+static lean_external_class *get_constraint_system_class()
+{
+    if (g_constraint_system_class == NULL)
+    {
         g_constraint_system_class = lean_register_external_class(
             &rs_constraint_system_free,
-            &noop_foreach
-        );
+            &noop_foreach);
     }
     return g_constraint_system_class;
 }
@@ -87,19 +88,21 @@ static lean_external_class *get_constraint_system_class() {
 extern lean_obj_res c_rs_constraint_system_validate_witness(
     b_lean_obj_arg l_cs,
     b_lean_obj_arg boundaries,
-    b_lean_obj_arg witness
-) {
+    b_lean_obj_arg witness)
+{
     c_result *result = rs_constraint_system_validate_witness(
         lean_get_external_data(l_cs),
         boundaries,
-        lean_get_external_data(witness)
-    );
+        lean_get_external_data(witness));
 
     lean_object *except;
-    if (result->is_ok) {
+    if (result->is_ok)
+    {
         except = lean_alloc_ctor(1, 1, 0);
         lean_ctor_set(except, 0, lean_box(0));
-    } else {
+    }
+    else
+    {
         except = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(except, 0, lean_mk_string(result->data));
     }
@@ -110,15 +113,16 @@ extern lean_obj_res c_rs_constraint_system_validate_witness(
 
 /* --- ConstraintSystemBuilder --- */
 
-extern lean_obj_res c_rs_constraint_system_builder_new() {
+extern lean_obj_res c_rs_constraint_system_builder_new()
+{
     linear_object *linear = linear_object_init(
         rs_constraint_system_builder_new(),
-        &rs_constraint_system_builder_free
-    );
+        &rs_constraint_system_builder_free);
     return alloc_lean_linear_object(linear);
 }
 
-extern lean_obj_res c_rs_constraint_system_builder_build(lean_obj_arg l_csb) {
+extern lean_obj_res c_rs_constraint_system_builder_build(lean_obj_arg l_csb)
+{
     linear_object *linear = validated_linear(l_csb);
 
     void *constraint_system = rs_constraint_system_builder_build(get_object_ref(linear));
@@ -133,8 +137,8 @@ extern lean_obj_res c_rs_constraint_system_builder_flush_with_multiplicity(
     size_t channel_id,
     size_t count,
     b_lean_obj_arg oracle_ids,
-    uint64_t multiplicity
-) {
+    uint64_t multiplicity)
+{
     linear_object *linear = validated_linear(l_csb);
 
     rs_constraint_system_builder_flush_with_multiplicity(
@@ -143,8 +147,7 @@ extern lean_obj_res c_rs_constraint_system_builder_flush_with_multiplicity(
         channel_id,
         count,
         oracle_ids,
-        multiplicity
-    );
+        multiplicity);
     linear_object *new_linear = linear_bump(linear);
 
     return alloc_lean_linear_object(new_linear);
@@ -156,8 +159,8 @@ extern lean_obj_res c_rs_constraint_system_builder_flush_custom(
     size_t channel_id,
     size_t selector,
     b_lean_obj_arg oracle_ids,
-    uint64_t multiplicity
-) {
+    uint64_t multiplicity)
+{
     linear_object *linear = validated_linear(l_csb);
 
     rs_constraint_system_builder_flush_custom(
@@ -166,8 +169,7 @@ extern lean_obj_res c_rs_constraint_system_builder_flush_custom(
         channel_id,
         selector,
         oracle_ids,
-        multiplicity
-    );
+        multiplicity);
     linear_object *new_linear = linear_bump(linear);
 
     return alloc_lean_linear_object(new_linear);
@@ -177,8 +179,8 @@ extern lean_obj_res c_rs_constraint_system_builder_assert_zero(
     lean_obj_arg l_csb,
     b_lean_obj_arg name,
     b_lean_obj_arg oracle_ids,
-    b_lean_obj_arg composition
-) {
+    b_lean_obj_arg composition)
+{
     linear_object *linear = validated_linear(l_csb);
     char const *chars = lean_string_cstr(name);
 
@@ -186,8 +188,7 @@ extern lean_obj_res c_rs_constraint_system_builder_assert_zero(
         get_object_ref(linear),
         chars,
         oracle_ids,
-        composition
-    );
+        composition);
     linear_object *new_linear = linear_bump(linear);
 
     return alloc_lean_linear_object(new_linear);
@@ -195,8 +196,8 @@ extern lean_obj_res c_rs_constraint_system_builder_assert_zero(
 
 extern lean_obj_res c_rs_constraint_system_builder_assert_not_zero(
     lean_obj_arg l_csb,
-    size_t oracle_id
-) {
+    size_t oracle_id)
+{
     linear_object *linear = validated_linear(l_csb);
 
     rs_constraint_system_builder_assert_not_zero(get_object_ref(linear), oracle_id);
@@ -205,7 +206,8 @@ extern lean_obj_res c_rs_constraint_system_builder_assert_not_zero(
     return alloc_lean_linear_object(new_linear);
 }
 
-extern lean_obj_res c_rs_constraint_system_builder_add_channel(lean_obj_arg l_csb) {
+extern lean_obj_res c_rs_constraint_system_builder_add_channel(lean_obj_arg l_csb)
+{
     linear_object *linear = validated_linear(l_csb);
 
     size_t channel_id = rs_constraint_system_builder_add_channel(get_object_ref(linear));
@@ -221,8 +223,8 @@ extern lean_obj_res c_rs_constraint_system_builder_add_committed(
     lean_obj_arg l_csb,
     b_lean_obj_arg name,
     size_t n_vars,
-    uint8_t tower_level
-) {
+    uint8_t tower_level)
+{
     linear_object *linear = validated_linear(l_csb);
     char const *chars = lean_string_cstr(name);
 
@@ -230,8 +232,7 @@ extern lean_obj_res c_rs_constraint_system_builder_add_committed(
         get_object_ref(linear),
         chars,
         n_vars,
-        tower_level
-    );
+        tower_level);
     linear_object *new_linear = linear_bump(linear);
 
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
@@ -244,8 +245,8 @@ extern lean_obj_res c_rs_constraint_system_builder_add_linear_combination(
     lean_obj_arg l_csb,
     b_lean_obj_arg name,
     size_t n_vars,
-    b_lean_obj_arg inner
-) {
+    b_lean_obj_arg inner)
+{
     linear_object *linear = validated_linear(l_csb);
     char const *chars = lean_string_cstr(name);
 
@@ -253,8 +254,7 @@ extern lean_obj_res c_rs_constraint_system_builder_add_linear_combination(
         get_object_ref(linear),
         chars,
         n_vars,
-        inner
-    );
+        inner);
     linear_object *new_linear = linear_bump(linear);
 
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
@@ -268,8 +268,8 @@ extern lean_obj_res c_rs_constraint_system_builder_add_linear_combination_with_o
     b_lean_obj_arg name,
     size_t n_vars,
     b_lean_obj_arg offset,
-    b_lean_obj_arg inner
-) {
+    b_lean_obj_arg inner)
+{
     linear_object *linear = validated_linear(l_csb);
     char const *chars = lean_string_cstr(name);
 
@@ -278,8 +278,7 @@ extern lean_obj_res c_rs_constraint_system_builder_add_linear_combination_with_o
         chars,
         n_vars,
         lean_get_external_data(offset),
-        inner
-    );
+        inner);
     linear_object *new_linear = linear_bump(linear);
 
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
@@ -292,8 +291,8 @@ extern lean_obj_res c_rs_constraint_system_builder_add_packed(
     lean_obj_arg l_csb,
     b_lean_obj_arg name,
     size_t oracle_id,
-    size_t log_degree
-) {
+    size_t log_degree)
+{
     linear_object *linear = validated_linear(l_csb);
     char const *chars = lean_string_cstr(name);
 
@@ -301,8 +300,7 @@ extern lean_obj_res c_rs_constraint_system_builder_add_packed(
         get_object_ref(linear),
         chars,
         oracle_id,
-        log_degree
-    );
+        log_degree);
     linear_object *new_linear = linear_bump(linear);
 
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
@@ -314,16 +312,15 @@ extern lean_obj_res c_rs_constraint_system_builder_add_packed(
 extern lean_obj_res c_rs_constraint_system_builder_add_transparent(
     lean_obj_arg l_csb,
     b_lean_obj_arg name,
-    b_lean_obj_arg transparent
-) {
+    b_lean_obj_arg transparent)
+{
     linear_object *linear = validated_linear(l_csb);
     char const *chars = lean_string_cstr(name);
 
     size_t oracle_id = rs_constraint_system_builder_add_transparent(
         get_object_ref(linear),
         chars,
-        transparent
-    );
+        transparent);
     linear_object *new_linear = linear_bump(linear);
 
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
@@ -334,8 +331,8 @@ extern lean_obj_res c_rs_constraint_system_builder_add_transparent(
 
 extern lean_obj_res c_rs_constraint_system_builder_push_namespace(
     lean_obj_arg l_csb,
-    b_lean_obj_arg name
-) {
+    b_lean_obj_arg name)
+{
     linear_object *linear = validated_linear(l_csb);
     char const *chars = lean_string_cstr(name);
 
@@ -345,7 +342,8 @@ extern lean_obj_res c_rs_constraint_system_builder_push_namespace(
     return alloc_lean_linear_object(new_linear);
 }
 
-extern lean_obj_res c_rs_constraint_system_builder_pop_namespace(lean_obj_arg l_csb) {
+extern lean_obj_res c_rs_constraint_system_builder_pop_namespace(lean_obj_arg l_csb)
+{
     linear_object *linear = validated_linear(l_csb);
 
     rs_constraint_system_builder_pop_namespace(get_object_ref(linear));
@@ -356,12 +354,11 @@ extern lean_obj_res c_rs_constraint_system_builder_pop_namespace(lean_obj_arg l_
 
 extern size_t c_rs_constraint_system_builder_log_rows(
     b_lean_obj_arg l_csb,
-    b_lean_obj_arg oracle_ids
-) {
+    b_lean_obj_arg oracle_ids)
+{
     linear_object *linear = validated_linear(l_csb);
     size_t log_rows = rs_constraint_system_builder_log_rows(
         get_object_ref(linear),
-        oracle_ids
-    );
+        oracle_ids);
     return log_rows;
 }
