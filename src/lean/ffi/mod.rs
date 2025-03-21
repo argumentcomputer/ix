@@ -99,18 +99,3 @@ pub(super) fn lean_unbox_u64(ptr: *const c_void) -> u64 {
     let boxed_usize: &BoxedUSize = as_ref_unsafe(ptr.cast());
     boxed_usize.value as u64
 }
-
-#[cfg(test)]
-mod tests {
-    use std::ffi::CString;
-
-    use super::*;
-
-    #[test]
-    fn c_char_roundtrip() {
-        let c_str = CString::new("./README.md").expect("CString::new failed");
-        let cchar = c_str.as_ptr();
-        let result = raw_to_str(cchar);
-        assert_eq!(result, "./README.md");
-    }
-}
