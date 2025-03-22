@@ -28,7 +28,7 @@ pub struct Function {
 }
 
 /// `Prim` defines primitive data types currently supported by Aiur-rs language
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Prim {
     U64(u64),
     Bool(bool),
@@ -62,9 +62,9 @@ pub enum Op {
     Add(ValIdx, ValIdx),
     Sub(ValIdx, ValIdx),
     Mul(ValIdx, ValIdx),
+    Xor(ValIdx, ValIdx),
     And(ValIdx, ValIdx),
     Lt(ValIdx, ValIdx),
-    Xor(ValIdx, ValIdx),
     Store(Vec<ValIdx>),
     Load(u32, ValIdx),
     /// A call operation takes 3 elements, function index, arguments, and output size

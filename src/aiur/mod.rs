@@ -1,5 +1,6 @@
 pub mod constraints;
 pub mod execute;
+pub mod frontend;
 pub mod gadgets;
 pub mod ir;
 pub mod layout;
