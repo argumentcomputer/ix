@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use binius_field::{
     BinaryField8b, BinaryField32b, BinaryField64b, BinaryField128b, arch::OptimalUnderlier,
 };
@@ -33,7 +31,6 @@ pub struct Layout {
     pub require_hints: u32,
     pub selectors: u32,
     pub shared_constraints: u32,
-    pub mem_sizes: BTreeSet<u32>,
 }
 
 #[derive(Clone, Default)]
@@ -89,36 +86,36 @@ impl Layout {
     }
 }
 
-pub fn func_layout(func: &Function) -> Layout {
+pub fn func_layout(func: &Function, mem_sizes: &mut Vec<u32>) -> Layout {
     let mut layout = Layout {
         inputs: func.input_size,
         outputs: func.output_size,
         ..Default::default()
     };
-    block_layout(&func.body, &mut layout);
+    block_layout(&func.body, &mut layout, mem_sizes);
     layout
 }
 
-pub fn block_layout(block: &Block, layout: &mut Layout) {
-    let op_layout = |op| op_layout(op, layout);
+pub fn block_layout(block: &Block, layout: &mut Layout, mem_sizes: &mut Vec<u32>) {
+    let op_layout = |op| op_layout(op, layout, mem_sizes);
     block.ops.iter().for_each(op_layout);
     match block.ctrl.as_ref() {
         Ctrl::If(_, t, f) => {
             let mut state = layout.save();
             // This auxiliary is for proving inequality
             layout.auxiliaries += 1;
-            block_layout(t, layout);
+            block_layout(t, layout, mem_sizes);
             layout.restore(&mut state);
-            block_layout(f, layout);
+            block_layout(f, layout, mem_sizes);
             layout.finish(&state);
         }
         Ctrl::If64(_, t, f) => {
             let mut state = layout.save();
             // These auxiliaries are for proving inequality
             layout.auxiliaries += 8;
-            block_layout(t, layout);
+            block_layout(t, layout, mem_sizes);
             layout.restore(&mut state);
-            block_layout(f, layout);
+            block_layout(f, layout, mem_sizes);
             layout.finish(&state);
         }
         Ctrl::Return(_, rs) => {
@@ -132,7 +129,7 @@ pub fn block_layout(block: &Block, layout: &mut Layout) {
     }
 }
 
-pub fn op_layout(op: &Op, layout: &mut Layout) {
+pub fn op_layout(op: &Op, layout: &mut Layout, mem_sizes: &mut Vec<u32>) {
     match op {
         Op::Prim(..) | Op::Xor(..) => {}
         Op::And(..) => {
@@ -156,13 +153,17 @@ pub fn op_layout(op: &Op, layout: &mut Layout) {
                 .len()
                 .try_into()
                 .expect("Number of arguments exceeds 256.");
-            layout.mem_sizes.insert(len);
+            if !mem_sizes.contains(&len) {
+                mem_sizes.push(len)
+            }
             // size of a pointer
             layout.auxiliaries += 8;
             layout.require_hints += 1;
         }
         Op::Load(len, _) => {
-            layout.mem_sizes.insert(*len);
+            if !mem_sizes.contains(len) {
+                mem_sizes.push(*len)
+            }
             layout.auxiliaries += *len;
             layout.require_hints += 1;
         }

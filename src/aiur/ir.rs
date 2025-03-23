@@ -1,3 +1,5 @@
+use super::layout::Layout;
+
 /// The `TopLevel` is an abstraction that allows executing arbitrary Aiur-rs program.
 /// Roughly it works as following: user instantiates the `TopLevel` object using one or
 /// more functions (of type `Function`) that express one or more finite computations.
@@ -9,6 +11,8 @@
 ///
 pub struct Toplevel {
     pub functions: Vec<Function>,
+    pub layouts: Vec<Layout>,
+    pub mem_sizes: Vec<u32>,
 }
 
 pub type Name = &'static str;

@@ -7,6 +7,7 @@ use rustc_hash::FxHashMap;
 use crate::aiur::{
     execute::FxIndexMap,
     ir::{Block, Ctrl, FuncIdx, Function, Name, Op, Prim, SelIdx, Toplevel, ValIdx},
+    layout::func_layout,
 };
 
 const U64_SIZE: u32 = 8;
@@ -230,14 +231,23 @@ pub fn toplevel_from_funcs(func_exprs: &[FunctionE]) -> Toplevel {
             (func.name, func_info)
         })
         .collect();
-    let functions = func_exprs
+    let functions: Vec<_> = func_exprs
         .iter()
         .map(|func| {
             func.check(&info_map);
             func.compile(&info_map)
         })
         .collect();
-    Toplevel { functions }
+    let mut mem_sizes = Vec::new();
+    let layouts = functions
+        .iter()
+        .map(|f| func_layout(f, &mut mem_sizes))
+        .collect();
+    Toplevel {
+        functions,
+        layouts,
+        mem_sizes,
+    }
 }
 
 /// A map from `Var` its block identifier. Variables in this map are always bound

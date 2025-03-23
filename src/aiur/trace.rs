@@ -3,7 +3,7 @@ use binius_field::{BinaryField, Field};
 
 use super::execute::{FxIndexMap, QueryRecord, QueryResult, load_u64};
 use super::ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, Toplevel};
-use super::layout::{AiurByteField, Layout, MultiplicityField, func_layout};
+use super::layout::{AiurByteField, Layout, MultiplicityField};
 
 pub const MULT_GEN: MultiplicityField = MultiplicityField::MULTIPLICATIVE_GENERATOR;
 
@@ -72,13 +72,14 @@ enum Query {
 }
 
 impl Toplevel {
-    pub fn generate_trace(&self, record: &QueryRecord) -> Vec<(Trace, Layout)> {
+    pub fn generate_trace(&self, record: &QueryRecord) -> Vec<Trace> {
         let mut traces = Vec::with_capacity(self.functions.len());
         let prev_counts = &mut FxIndexMap::default();
-        for (func, func_map) in self.functions.iter().zip(record.func_queries.iter()) {
-            let shape = func_layout(func);
-            let trace = generate_func_trace(func, func_map, &shape, record, prev_counts);
-            traces.push((trace, shape));
+        for (func_idx, func) in self.functions.iter().enumerate() {
+            let func_map = &record.func_queries[func_idx];
+            let layout = &self.layouts[func_idx];
+            let trace = generate_func_trace(func, func_map, layout, record, prev_counts);
+            traces.push(trace);
         }
         traces
     }

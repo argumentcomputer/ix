@@ -20,8 +20,7 @@ use super::{
     constraints::{Channel, Columns, Constraints, Expr, build_func_constraints},
     execute::{FxIndexMap, QueryRecord},
     ir::Toplevel,
-    layout::{AiurField, FunctionIndexField, MultiplicityField, func_layout},
-    memory::NUM_MEM_TABLES,
+    layout::{AiurField, FunctionIndexField, MultiplicityField},
     trace::{MULT_GEN, Trace},
     transparent::{Fields, Virtual},
 };
@@ -31,7 +30,7 @@ pub struct AiurChannelIds {
     pub fun: ChannelId,
     pub add: ChannelId,
     pub mul: ChannelId,
-    pub mem: Vec<ChannelId>,
+    pub mem: Vec<(u32, ChannelId)>,
 }
 
 #[derive(Default)]
@@ -187,7 +186,8 @@ impl AiurChannelIds {
         let fun = builder.add_channel();
         let add = builder.add_channel();
         let mul = builder.add_channel();
-        let mem = (0..NUM_MEM_TABLES).map(|_| builder.add_channel()).collect();
+        // let mem = (0..NUM_MEM_TABLES).map(|_| builder.add_channel()).collect();
+        let mem = Vec::new();
         AiurChannelIds { fun, add, mul, mem }
     }
 }
@@ -320,16 +320,16 @@ impl Toplevel {
         let traces = self.generate_trace(record);
         let mut counts = Vec::with_capacity(self.functions.len());
         let channel_ids = AiurChannelIds::initialize_channels(builder);
-        for (func_idx, (function, (trace, layout))) in
-            self.functions.iter().zip(traces.into_iter()).enumerate()
-        {
+        for (func_idx, function) in self.functions.iter().enumerate() {
+            let trace = &traces[func_idx];
+            let layout = &self.layouts[func_idx];
             let mut virt_map = VirtualMap::default();
             let count = trace.num_queries;
             counts.push(count);
             let log_n = count.next_power_of_two().ilog2() as u8;
-            let mut columns = Columns::from_layout(builder, &layout, log_n);
-            columns.populate(builder, &trace);
-            let constraints = build_func_constraints(function, &layout, &columns);
+            let mut columns = Columns::from_layout(builder, layout, log_n);
+            columns.populate(builder, trace);
+            let constraints = build_func_constraints(function, layout, &columns);
             synthesize_constraints(
                 builder,
                 func_idx as u32,
@@ -348,17 +348,18 @@ impl Toplevel {
         counts: &[u64],
     ) -> AiurChannelIds {
         let channel_ids = AiurChannelIds::initialize_channels(builder);
-        for (func_idx, (function, count)) in self.functions.iter().zip(counts).enumerate() {
+        for (func_idx, function) in self.functions.iter().enumerate() {
+            let count = counts[func_idx];
+            let layout = &self.layouts[func_idx];
             let mut virt_map = VirtualMap::default();
-            let layout = func_layout(function);
             let log_n = count.next_power_of_two().ilog2() as u8;
-            let columns = Columns::from_layout(builder, &layout, log_n);
-            let constraints = build_func_constraints(function, &layout, &columns);
+            let columns = Columns::from_layout(builder, layout, log_n);
+            let constraints = build_func_constraints(function, layout, &columns);
             synthesize_constraints(
                 builder,
                 func_idx as u32,
                 &channel_ids,
-                *count,
+                count,
                 constraints,
                 &mut virt_map,
             );
