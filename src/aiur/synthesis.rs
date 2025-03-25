@@ -21,6 +21,7 @@ use super::{
     execute::{FxIndexMap, QueryRecord},
     ir::Toplevel,
     layout::{AiurField, FunctionIndexField, MultiplicityField},
+    memory::{MemTrace, prover_synthesize_mem, verifier_synthesize_mem},
     trace::{MULT_GEN, Trace},
     transparent::{Fields, Virtual},
 };
@@ -33,9 +34,30 @@ pub struct AiurChannelIds {
     pub mem: Vec<(u32, ChannelId)>,
 }
 
+impl AiurChannelIds {
+    pub fn get_mem_channel(&self, size: u32) -> ChannelId {
+        *self.mem.iter().find(|(k, _)| *k == size).map_or_else(
+            || panic!("Internal error: no memory map of size {size}"),
+            |(_, v)| v,
+        )
+    }
+
+    pub fn get_mem_pos(&self, size: u32) -> usize {
+        self.mem
+            .iter()
+            .position(|(k, _)| *k == size)
+            .unwrap_or_else(|| panic!("Internal error: no memory map of size {size}"))
+    }
+}
+
+pub struct AiurCount {
+    pub fun: Vec<u64>,
+    pub mem: Vec<u64>,
+}
+
 #[derive(Default)]
-struct VirtualMap {
-    map: FxIndexMap<Virtual, OracleId>,
+pub struct VirtualMap {
+    pub map: FxIndexMap<Virtual, OracleId>,
 }
 
 impl VirtualMap {
@@ -182,12 +204,17 @@ impl VirtualMap {
 }
 
 impl AiurChannelIds {
-    pub fn initialize_channels(builder: &mut ConstraintSystemBuilder<'_>) -> Self {
+    pub fn initialize_channels(
+        builder: &mut ConstraintSystemBuilder<'_>,
+        mem_sizes: &[u32],
+    ) -> Self {
         let fun = builder.add_channel();
         let add = builder.add_channel();
         let mul = builder.add_channel();
-        // let mem = (0..NUM_MEM_TABLES).map(|_| builder.add_channel()).collect();
-        let mem = Vec::new();
+        let mem = mem_sizes
+            .iter()
+            .map(|size| (*size, builder.add_channel()))
+            .collect();
         AiurChannelIds { fun, add, mul, mem }
     }
 }
@@ -316,16 +343,19 @@ impl Toplevel {
         &self,
         builder: &mut ConstraintSystemBuilder<'_>,
         record: &QueryRecord,
-    ) -> (Vec<u64>, AiurChannelIds) {
+    ) -> (AiurCount, AiurChannelIds) {
         let traces = self.generate_trace(record);
-        let mut counts = Vec::with_capacity(self.functions.len());
-        let channel_ids = AiurChannelIds::initialize_channels(builder);
+        let mut aiur_count = AiurCount {
+            fun: Vec::with_capacity(self.functions.len()),
+            mem: Vec::with_capacity(self.mem_sizes.len()),
+        };
+        let channel_ids = AiurChannelIds::initialize_channels(builder, &self.mem_sizes);
         for (func_idx, function) in self.functions.iter().enumerate() {
             let trace = &traces[func_idx];
             let layout = &self.layouts[func_idx];
             let mut virt_map = VirtualMap::default();
             let count = trace.num_queries;
-            counts.push(count);
+            aiur_count.fun.push(count);
             let log_n = count.next_power_of_two().ilog2() as u8;
             let mut columns = Columns::from_layout(builder, layout, log_n);
             columns.populate(builder, trace);
@@ -339,17 +369,24 @@ impl Toplevel {
                 &mut virt_map,
             );
         }
-        (counts, channel_ids)
+        for &size in self.mem_sizes.iter() {
+            let mem_channel = channel_ids.get_mem_channel(size);
+            let trace = MemTrace::generate_trace(size, record);
+            let count = trace.height;
+            aiur_count.mem.push(count.try_into().unwrap());
+            prover_synthesize_mem(builder, mem_channel, &trace);
+        }
+        (aiur_count, channel_ids)
     }
 
     pub fn verifier_synthesize(
         &self,
         builder: &mut ConstraintSystemBuilder<'_>,
-        counts: &[u64],
+        count: &AiurCount,
     ) -> AiurChannelIds {
-        let channel_ids = AiurChannelIds::initialize_channels(builder);
+        let channel_ids = AiurChannelIds::initialize_channels(builder, &self.mem_sizes);
         for (func_idx, function) in self.functions.iter().enumerate() {
-            let count = counts[func_idx];
+            let count = count.fun[func_idx];
             let layout = &self.layouts[func_idx];
             let mut virt_map = VirtualMap::default();
             let log_n = count.next_power_of_two().ilog2() as u8;
@@ -363,6 +400,12 @@ impl Toplevel {
                 constraints,
                 &mut virt_map,
             );
+        }
+        for &size in self.mem_sizes.iter() {
+            let mem_channel = channel_ids.get_mem_channel(size);
+            let idx = channel_ids.get_mem_pos(size);
+            let mem_counts = count.mem[idx];
+            verifier_synthesize_mem(builder, mem_channel, size, mem_counts);
         }
         channel_ids
     }
@@ -441,29 +484,21 @@ fn synthesize_constraints(
                     log_n.into(),
                 );
             }
-            Channel::Mem(_size) => {
-                // TODO: Mem chips
-                // let sel = sel.to_sum_bit(builder, virt_map, log_n).unwrap();
-                // let mut oracles = args
-                //     .iter()
-                //     .map(|arg| arg.to_sum_byte(builder, virt_map, log_n).unwrap())
-                //     .collect::<Vec<_>>();
-                // let index = mem_index_from_size(size as usize);
-                // require(
-                //     builder,
-                //     channel_ids.mem[index],
-                //     prev_index,
-                //     oracles,
-                //     sel,
-                //     log_n.into(),
-                // );
+            Channel::Mem(size) => {
+                let sel = sel.to_sum_bit(builder, virt_map, log_n).unwrap();
+                let oracles = args
+                    .iter()
+                    .map(|arg| arg.to_sum_byte(builder, virt_map, log_n).unwrap())
+                    .collect::<Vec<_>>();
+                let channel_id = channel_ids.get_mem_channel(size);
+                require(builder, channel_id, prev_index, oracles, sel, log_n.into());
             }
             _ => unreachable!(),
         };
     }
 }
 
-fn provide(
+pub fn provide(
     builder: &mut ConstraintSystemBuilder<'_>,
     channel_id: ChannelId,
     multiplicity: OracleId,

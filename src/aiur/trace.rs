@@ -310,7 +310,7 @@ fn extract_io(
     (multiplicity, inputs, outputs)
 }
 
-fn load_mem_map(
+pub(crate) fn load_mem_map(
     mem_queries: &[(u32, FxIndexMap<Vec<u8>, QueryResult>)],
     len: u32,
 ) -> &FxIndexMap<Vec<u8>, QueryResult> {
