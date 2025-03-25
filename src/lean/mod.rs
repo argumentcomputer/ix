@@ -19,7 +19,6 @@ pub struct CArray<T>([T; 0]);
 impl<T: Copy> CArray<T> {
     #[inline]
     pub fn copy_from_slice(&mut self, src: &[T]) {
-        assert_eq!(self.0.len(), src.len());
         self.0.copy_from_slice(src);
     }
 }
@@ -27,13 +26,11 @@ impl<T: Copy> CArray<T> {
 impl<T> CArray<T> {
     #[inline]
     pub fn slice(&self, len: usize) -> &[T] {
-        assert!(len <= self.0.len());
-        &self.0[..len]
+        unsafe { std::slice::from_raw_parts(self.0.as_ptr(), len) }
     }
 
     #[inline]
     pub fn copy_from_slice_unsafe(&mut self, src: &[T]) {
-        assert_eq!(self.0.len(), src.len());
         unsafe {
             std::ptr::copy_nonoverlapping(src.as_ptr(), self.0.as_mut_ptr(), src.len());
         }
