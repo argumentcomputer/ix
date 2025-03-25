@@ -44,6 +44,11 @@ of the fact that Lean strings are `\0`-terminated and only pass a `char const *`
 from C to Rust, which receives it as a `*const c_char` and then (unsafely) turns
 it into a `&str`.
 
+Extra care must be taken when dealing with
+[inductive types](https://github.com/leanprover/lean4/blob/master/doc/dev/ffi.md#inductive-types),
+as the order of arguments in the Lean objects may not match the same order from
+the higher level type definition in Lean.
+
 ## Producing data for Lean
 
 Since we can mimic the memory layout of Lean objects in Rust, we should allocate

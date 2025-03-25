@@ -1,89 +1,98 @@
 use anyhow::Result;
 use binius_circuits::builder::{ConstraintSystemBuilder, witness::Builder};
-use binius_core::oracle::OracleId;
+use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::BinaryField1b as B1;
+use binius_macros::arith_expr;
 use rayon::prelude::*;
 
-use super::{
-    Gadget, UIntType,
-    uint_add::{UIntAdd, UIntAddInput, UIntAddVirtual},
-};
+use super::{Gadget, UIntType};
 
-/// Gadget for underflowing subtraction over unsigned integers
-pub struct UIntSub;
+/// Gadget for overflowing addition over unsigned integers
+pub struct UIntAdd;
 
 #[derive(Clone, Copy)]
-pub struct UIntSubInput {
-    zin: OracleId,
-    yin: OracleId,
-    cout: OracleId,
-    xout: OracleId,
+pub struct UIntAddInput {
+    pub xin: OracleId,
+    pub yin: OracleId,
+    pub zout: OracleId,
+    pub cout: OracleId,
 }
 
-pub struct UIntSubVirtual {
-    cin: OracleId,
+pub struct UIntAddVirtual {
+    pub cin: OracleId,
 }
 
-impl Gadget for UIntSub {
-    type InputOracles = UIntSubInput;
-    type VirtualOracles = UIntSubVirtual;
+impl Gadget for UIntAdd {
+    type InputOracles = UIntAddInput;
+    type VirtualOracles = UIntAddVirtual;
     type Config = UIntType;
 
     fn constrain(
         builder: &mut ConstraintSystemBuilder<'_>,
         name: impl ToString,
-        input: UIntSubInput,
+        input: UIntAddInput,
         enabled: OracleId,
         config: UIntType,
-    ) -> Result<UIntSubVirtual> {
+    ) -> Result<UIntAddVirtual> {
         builder.push_namespace(name);
-        let UIntSubInput {
-            zin,
+        let UIntAddInput {
+            xin,
             yin,
+            zout,
             cout,
-            xout,
         } = input;
-        let add_input = UIntAddInput {
-            xin: xout,
-            yin,
-            cout,
-            zout: zin,
-        };
-        let UIntAddVirtual { cin } =
-            UIntAdd::constrain(builder, "add", add_input, enabled, config)?;
+        let n_vars = config.n_vars();
+        let cin = builder.add_shifted("cin", cout, 1, n_vars, ShiftVariant::LogicalLeft)?;
+
+        builder.assert_zero(
+            "sum",
+            [xin, yin, cin, zout, enabled],
+            arith_expr!([xin, yin, cin, zout, enabled] = enabled * (xin + yin + cin - zout))
+                .convert_field(),
+        );
+
+        builder.assert_zero(
+            "carry",
+            [xin, yin, cin, cout, enabled],
+            arith_expr!(
+                [xin, yin, cin, cout, enabled] = enabled * ((xin + cin) * (yin + cin) + cin - cout)
+            )
+            .convert_field(),
+        );
+
         builder.pop_namespace();
-        Ok(UIntSubVirtual { cin })
+        Ok(UIntAddVirtual { cin })
     }
 
-    /// Populates new columns for `xout`, `cout` and `cin` based on the values
-    /// from `zin` and `yin`.
+    /// Populates new columns for `zout`, `cout` and `cin` based on the values
+    /// from `xin` and `yin`.
     fn generate_witness(
         builder: &mut Builder<'_>,
-        input: UIntSubInput,
-        vrtual: UIntSubVirtual,
+        input: UIntAddInput,
+        vrtual: UIntAddVirtual,
         config: UIntType,
     ) -> Result<()> {
-        let UIntSubInput {
-            zin,
+        let UIntAddInput {
+            xin,
             yin,
+            zout,
             cout,
-            xout,
         } = input;
-        let UIntSubVirtual { cin } = vrtual;
+        let UIntAddVirtual { cin } = vrtual;
         macro_rules! witgen {
             ($t:ty, $lsbits:expr) => {
                 (
-                    builder.get::<B1>(zin)?.as_slice::<$t>(),
+                    builder.get::<B1>(xin)?.as_slice::<$t>(),
                     builder.get::<B1>(yin)?.as_slice::<$t>(),
-                    builder.new_column::<B1>(xout).as_mut_slice::<$t>(),
+                    builder.new_column::<B1>(zout).as_mut_slice::<$t>(),
                     builder.new_column::<B1>(cout).as_mut_slice::<$t>(),
                     builder.new_column::<B1>(cin).as_mut_slice::<$t>(),
                 )
                     .into_par_iter()
-                    .for_each(|(zout, yin, xin, cout, cin)| {
+                    .for_each(|(xin, yin, zout, cout, cin)| {
                         let carry;
-                        (*xin, carry) = (*zout).overflowing_sub(*yin);
-                        *cin = (*xin) ^ (*yin) ^ (*zout);
+                        (*zout, carry) = xin.overflowing_add(*yin);
+                        *cin = xin ^ yin ^ *zout;
                         *cout = ((carry as $t) << $lsbits) | (*cin >> 1);
                     })
             };
@@ -106,11 +115,11 @@ mod tests {
     use bumpalo::Bump;
     use proptest::{collection::vec, prelude::*};
 
-    use crate::eiur::{
+    use crate::aiur::{
         binius::witness_builder,
         gadgets::{
-            Gadget, UIntType,
-            uint_sub::{UIntSub, UIntSubInput},
+            Gadget,
+            uint_add::{UIntAdd, UIntAddInput, UIntType},
         },
     };
     const LEN: usize = 16;
@@ -126,28 +135,28 @@ mod tests {
                     vec2 in vec(any::<$t>(), LEN),
                 )| {
                     let mut csb = ConstraintSystemBuilder::new();
-                    let zin = csb.add_committed("zin", N_VARS, B1::TOWER_LEVEL);
+                    let xin = csb.add_committed("xin", N_VARS, B1::TOWER_LEVEL);
                     let yin = csb.add_committed("yin", N_VARS, B1::TOWER_LEVEL);
                     let cout = csb.add_committed("cout", N_VARS, B1::TOWER_LEVEL);
-                    let xout = csb.add_committed("xout", N_VARS, B1::TOWER_LEVEL);
+                    let zout = csb.add_committed("zout", N_VARS, B1::TOWER_LEVEL);
                     let enabled = csb.add_committed("enabled", N_VARS, B1::TOWER_LEVEL);
 
-                    let input = UIntSubInput {zin, yin, cout, xout};
-                    let transparent = UIntSub::constrain(&mut csb, "sub", input, enabled, $cfg).unwrap();
+                    let input = UIntAddInput {xin, yin, zout, cout};
+                    let transparent = UIntAdd::constrain(&mut csb, "add", input, enabled, $cfg).unwrap();
 
                     let cs = csb.build().unwrap();
 
                     let allocator = Bump::new();
                     let mut wb: Builder<'_> = witness_builder(&allocator, &cs);
 
-                    wb.new_column::<B1>(zin).as_mut_slice().copy_from_slice(&vec1);
+                    wb.new_column::<B1>(xin).as_mut_slice().copy_from_slice(&vec1);
                     wb.new_column::<B1>(yin).as_mut_slice().copy_from_slice(&vec2);
                     wb.new_column_with_default(enabled, B1::new(SmallU::new(1)));
 
-                    UIntSub::generate_witness(&mut wb, input, transparent, $cfg).unwrap();
+                    UIntAdd::generate_witness(&mut wb, input, transparent, $cfg).unwrap();
 
-                    let res = vec1.into_iter().zip(vec2).map(|(a, b)| a.overflowing_sub(b).0).collect::<Vec<_>>();
-                    prop_assert_eq!(wb.get::<B1>(xout).unwrap().as_slice::<$t>(), &res);
+                    let res = vec1.into_iter().zip(vec2).map(|(a, b)| a.overflowing_add(b).0).collect::<Vec<_>>();
+                    prop_assert_eq!(wb.get::<B1>(zout).unwrap().as_slice::<$t>(), &res);
 
                     let w = wb.build().unwrap();
 
@@ -157,8 +166,8 @@ mod tests {
         };
     }
 
-    auto_test!(test_sub_u8, UIntType::U8, u8);
-    auto_test!(test_sub_u16, UIntType::U16, u16);
-    auto_test!(test_sub_u32, UIntType::U32, u32);
-    auto_test!(test_sub_u64, UIntType::U64, u64);
+    auto_test!(test_add_u8, UIntType::U8, u8);
+    auto_test!(test_add_u16, UIntType::U16, u16);
+    auto_test!(test_add_u32, UIntType::U32, u32);
+    auto_test!(test_add_u64, UIntType::U64, u64);
 }

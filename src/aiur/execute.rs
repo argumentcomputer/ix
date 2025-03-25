@@ -226,7 +226,7 @@ pub(crate) fn load_u64(a: &ValIdx, map: &[u8]) -> u64 {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::eiur::{
+    use crate::aiur::{
         execute::QueryResult,
         ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, Toplevel, ValIdx},
     };
@@ -390,7 +390,7 @@ pub(crate) mod tests {
         let val_in = 3u64;
         let val_out = val_in * val_in * val_in;
 
-        // Eiur-rs program
+        // Aiur-rs program
         let top_level = Toplevel {
             functions: vec![cube_function()],
         };
@@ -400,7 +400,7 @@ pub(crate) mod tests {
         let record = top_level.execute(func_idx, input.to_vec());
         let out = record
             .get(func_idx, &input)
-            .expect("output of Lair / Eiur program is unavailable");
+            .expect("output of Lair / Aiur program is unavailable");
 
         assert_eq!(out.values.len(), 8);
         assert_eq!(&out.values, &val_out.to_le_bytes());
@@ -412,7 +412,7 @@ pub(crate) mod tests {
         let value_in = 6u64;
         let value_out = value_in * value_in;
 
-        // Eiur-rs program
+        // Aiur-rs program
         let top_level = Toplevel {
             functions: vec![square_function()],
         };

@@ -13,10 +13,16 @@ updates:
         update-types:
           - "minor"
           - "patch"
-
+    allow:
+      # Update both direct and indirect dependencies
+      - dependency-type: "all"
     open-pull-requests-limit: 5
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions-dependencies:
+        patterns:
+          - "*"

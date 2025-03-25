@@ -4,7 +4,7 @@ import Ix.Meta
 
 structure Commitment (α : Type _) where
   adr : Address
-  deriving Inhabited
+  deriving Inhabited, Lean.ToExpr
 
 instance : ToString (Commitment α) where
   toString comm := "c" ++ toString comm.adr
@@ -20,9 +20,19 @@ opaque secret (comm : Commitment α) : Address
 opaque reveal [Inhabited α] (comm : Commitment α) : α
 opaque revealThen [Inhabited β] (comm : Commitment α) (f : β) : β
 
---def commitIO (secret : Address) (payload : α) : IO $ Commitment α :=
---  let payloadAdr := ix_adr payload
---  let bytes := secret.hash ++ payloadAdr.hash
---  let commAdr := Blake3.hash bytes
---  -- TODO: persist commitment preimages as private data
---  return ⟨⟨commAdr.val⟩⟩
+def persistCommit (secret : Address) (payload : Address) : IO $ Commitment α :=
+  let commAdr := Blake3.hash $ secret.hash ++ payload.hash
+  -- TODO: persist commitment preimages as private data
+  return ⟨⟨commAdr.val⟩⟩
+
+def mkCommitRaw 
+  (secret : Address) (type : Lean.Expr) (value : Lean.Expr)
+  (consts : Lean.ConstMap)
+  : IO (Commitment α) := do
+  let adr <- computeIxAddress (mkAnonDefInfoRaw type value) consts
+  persistCommit secret adr
+
+def mkCommit [Lean.ToExpr α] (secret : Address) (a : α) (consts : Lean.ConstMap) 
+  : IO (Commitment α) := do
+  let adr <- (computeIxAddress (mkAnonDefInfo a) consts)
+  persistCommit secret adr
