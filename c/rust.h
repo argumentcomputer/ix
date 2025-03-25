@@ -23,7 +23,6 @@ void *rs_witness_builder_build(void*);
 
 void rs_constraint_system_free(void*);
 c_result *rs_constraint_system_validate_witness(void*, b_lean_obj_arg, void*);
-void rs_constraint_system_validate_witness_result_free(c_result*);
 
 /* --- ConstraintSystemBuilder --- */
 

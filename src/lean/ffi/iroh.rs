@@ -135,7 +135,9 @@ async fn iroh_recv(ticket: &str, buffer_capacity: usize) -> Result<Bytes, Box<dy
     println!("Finished download.");
 
     let mut reader = blobs_client.read(hash).await?;
-    assert!(buffer_capacity >= reader.size() as usize);
+    assert!(
+        buffer_capacity >= usize::try_from(reader.size()).expect("Failed to convert u64 to usize")
+    );
     let bytes = reader.read_to_bytes().await?;
 
     println!("Finished copying.");
