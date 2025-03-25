@@ -172,7 +172,7 @@ impl CircuitModule {
 
 pub fn compile_circuit_modules(
     modules: &[CircuitModule],
-    modules_n_vars: &[Option<Vec<usize>>],
+    modules_n_vars: &[u8],
 ) -> Result<ConstraintSystem<F>> {
     ensure!(
         modules.len() == modules_n_vars.len(),
@@ -180,36 +180,29 @@ pub fn compile_circuit_modules(
     );
     let mut oracle_offset = 0;
     let mut builder = ConstraintSystemBuilder::new();
-    for (module_idx, (module, module_n_vars)) in modules.iter().zip(modules_n_vars).enumerate() {
-        let Some(module_n_vars) = module_n_vars else {
+    for (module_idx, (module, &module_n_vars)) in modules.iter().zip(modules_n_vars).enumerate() {
+        if module_n_vars == 0 {
             // Deactivated module. Skip.
             continue;
-        };
+        }
+        let n_vars = module_n_vars as usize;
         ensure!(
             module_idx == module.module_id,
             "Wrong compilation order. Expected module {module_idx}, but got {}.",
             module.module_id
         );
-        ensure!(
-            module.oracles.get_ref().len() == module_n_vars.len(),
-            "n_vars data length is incompatible with the number of oracles for module {module_idx}."
-        );
 
-        for (
-            oracle_id,
-            OracleInfo {
-                name,
-                tower_level,
-                kind,
-            },
-        ) in module.oracles.get_ref().iter().enumerate()
+        for OracleInfo {
+            name,
+            tower_level,
+            kind,
+        } in module.oracles.get_ref()
         {
             macro_rules! add_transparent {
                 ($t:expr) => {
                     builder.add_transparent(name, $t)?
                 };
             }
-            let n_vars = module_n_vars[oracle_id];
             match kind {
                 OracleKind::Committed => builder.add_committed(name, n_vars, *tower_level),
                 OracleKind::LinearCombination { offset, inner } => {

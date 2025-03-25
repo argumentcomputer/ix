@@ -26,9 +26,9 @@ pub struct WitnessModule {
 
 pub struct Witness<'a> {
     pub(crate) mlei: MultilinearExtensionIndex<'a, OptimalUnderlier, B128>,
-    /// The sets of `n_vars` for each module. `None` means that the circuit
-    /// module needs to be deactivated/skipped at compilation time.
-    pub(crate) modules_n_vars: Vec<Option<Vec<usize>>>,
+    /// The `n_vars` for each module. `0` means that the circuit module is
+    /// deactivated and must be skipped at compilation time.
+    pub(crate) modules_n_vars: Vec<u8>,
 }
 
 impl Witness<'_> {
@@ -51,10 +51,11 @@ pub fn compile_witness_modules(modules: &[WitnessModule]) -> Result<Witness<'_>>
             module.module_id
         );
         if module.entry_map.is_empty() {
-            witness.modules_n_vars.push(None);
+            // Deactivate module.
+            witness.modules_n_vars.push(0);
             continue;
         }
-        let oracles_data = module
+        let oracles_data_results = module
             .oracles
             .par_iter()
             .enumerate()
@@ -68,7 +69,10 @@ pub fn compile_witness_modules(modules: &[WitnessModule]) -> Result<Witness<'_>>
                     entry.len().is_power_of_two(),
                     "Length of entry {entry_id}, bound to oracle {oracle_id}, module {module_idx}, is not a power of two."
                 );
-                let n_vars = log2_strict_usize(entry.len()) + OptimalUnderlier::LOG_BITS - tower_level;
+                let n_vars_usize = log2_strict_usize(entry.len()) + OptimalUnderlier::LOG_BITS - tower_level;
+                let n_vars: u8 = n_vars_usize
+                    .try_into()
+                    .context("Representing n_vars as an u8, which should be more than enough")?;
                 macro_rules! oracle_poly {
                     ($bf:ident) => {{
                         let values =
@@ -96,15 +100,22 @@ pub fn compile_witness_modules(modules: &[WitnessModule]) -> Result<Witness<'_>>
                 }
             })
             .collect::<Vec<_>>();
-        let mut oracle_poly_vec = Vec::with_capacity(oracles_data.len());
-        let mut n_vars_vec = Vec::with_capacity(oracles_data.len());
-        for oracle_data_result in oracles_data {
-            let (oracle_poly, n_vars) = oracle_data_result?;
+        let mut oracle_poly_vec = Vec::with_capacity(oracles_data_results.len());
+        let mut n_vars_opt = None;
+        for oracle_data_result in oracles_data_results {
+            let (oracle_poly, oracle_n_vars) = oracle_data_result?;
+            match n_vars_opt {
+                Some(known_n_vars) => ensure!(
+                    oracle_n_vars == known_n_vars,
+                    "Witness for module {module_idx} has incompatible columns sizes: {oracle_n_vars} != {known_n_vars}"
+                ),
+                None => n_vars_opt = Some(oracle_n_vars),
+            }
             oracle_poly_vec.push(oracle_poly);
-            n_vars_vec.push(n_vars);
         }
+        let n_vars = n_vars_opt.unwrap_or(0); // Deactivate module without oracles
         witness.mlei.update_multilin_poly(oracle_poly_vec)?;
-        witness.modules_n_vars.push(Some(n_vars_vec));
+        witness.modules_n_vars.push(n_vars);
         oracle_offset += module.oracles.len();
     }
     Ok(witness)

@@ -22,7 +22,7 @@ use super::{
 
 pub struct Proof {
     proof_core: ProofCore,
-    modules_n_vars: Vec<Option<Vec<usize>>>,
+    modules_n_vars: Vec<u8>,
 }
 
 pub fn validate_witness(
