@@ -1,9 +1,7 @@
 use binius_field::BinaryField128b;
 use binius_math::ArithExpr;
 
-use crate::lean::{
-    boxed::BoxedUSize, ctor::LeanCtorObject, ffi::as_ref_unsafe, sarray::LeanSArrayObject,
-};
+use crate::lean::{ctor::LeanCtorObject, ffi::as_ref_unsafe, sarray::LeanSArrayObject};
 
 use super::binius::external_ptr_to_u128;
 
@@ -17,9 +15,8 @@ pub(super) fn lean_ctor_to_arith_expr(ctor: &LeanCtorObject) -> ArithExpr<Binary
         }
         1 => {
             // Var
-            let [boxed_usize_ptr] = ctor.objs();
-            let boxed_usize = as_ref_unsafe(boxed_usize_ptr.cast::<BoxedUSize>());
-            ArithExpr::Var(boxed_usize.value)
+            let [ptr_as_usize] = ctor.objs();
+            ArithExpr::Var(ptr_as_usize as usize)
         }
         2 => {
             // Add

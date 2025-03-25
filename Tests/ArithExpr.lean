@@ -7,9 +7,6 @@ open LSpec SlimCheck Gen
 
 open Binius
 
-def genOracleId : Gen OracleId :=
-  OracleId.mk <$> genUSize
-
 def genArithExpr : Gen ArithExpr := getSize >>= go
   where
     go : Nat → Gen ArithExpr
@@ -17,7 +14,7 @@ def genArithExpr : Gen ArithExpr := getSize >>= go
     | Nat.succ n =>
       frequency [
         (40, .const <$> genUInt128),
-        (40, .var <$> genOracleId),
+        (40, .var <$> genUSize),
         (25, .add <$> go n <*> go n),
         (25, .mul <$> go n <*> go n),
         (50, .pow <$> go n <*> genUInt64)
