@@ -24,7 +24,6 @@ impl LeanSArrayObject {
 
     pub fn set_data(&mut self, data: &[u8]) {
         assert!(self.m_capacity >= data.len());
-        //self.m_data.0[..data.len()].copy_from_slice(data);
         self.m_data.copy_from_slice(data);
         self.m_size = data.len();
     }

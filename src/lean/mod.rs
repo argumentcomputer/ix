@@ -16,13 +16,6 @@ pub mod sarray;
 #[repr(C)]
 pub struct CArray<T>([T; 0]);
 
-impl<T: Copy> CArray<T> {
-    #[inline]
-    pub fn copy_from_slice(&mut self, src: &[T]) {
-        self.0.copy_from_slice(src);
-    }
-}
-
 impl<T> CArray<T> {
     #[inline]
     pub fn slice(&self, len: usize) -> &[T] {
@@ -30,9 +23,9 @@ impl<T> CArray<T> {
     }
 
     #[inline]
-    pub fn copy_from_slice_unsafe(&mut self, src: &[T]) {
+    pub fn copy_from_slice(&self, src: &[T]) {
         unsafe {
-            std::ptr::copy_nonoverlapping(src.as_ptr(), self.0.as_mut_ptr(), src.len());
+            std::ptr::copy_nonoverlapping(src.as_ptr(), self.0.as_ptr() as *mut _, src.len());
         }
     }
 }
