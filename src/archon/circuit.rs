@@ -142,9 +142,14 @@ impl CircuitModule {
         let inner = inner.into_iter().collect::<Vec<_>>();
         let tower_level = inner
             .iter()
-            .map(|(oracle_id, _)| self.oracles.get_ref()[*oracle_id].tower_level)
+            .map(|(oracle_id, coeff)| {
+                self.oracles.get_ref()[*oracle_id]
+                    .tower_level
+                    .max(coeff.min_tower_level())
+            })
             .max()
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .max(offset.min_tower_level());
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level,
