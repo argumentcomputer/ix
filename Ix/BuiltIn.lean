@@ -11,7 +11,7 @@ instance : ToString (Commitment α) where
 
 def Commitment.ofString (s : String) : Option $ Commitment α :=
   match s.data with
-  | 'c' :: adrChars => .mk <$> Address.ofChars adrChars
+  | 'c' :: adrChars => .mk <$> Address.fromString ⟨adrChars⟩
   | _ => none
 
 -- TODO: secrets should be 32-bytes long

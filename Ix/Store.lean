@@ -1,7 +1,3 @@
-
---
--- ix/store/f942e5170f2493c9bd65471871d0d0ce89097c08c42b73a108515eab1ff4dc48
-
 import Ix.Address
 import Ix.Ixon
 import Ix.Ixon.Serialize
@@ -44,12 +40,12 @@ def writeConst (x: Ixon.Const) : StoreIO Unit := do
   let bytes := Ixon.Serialize.put x
   let addr  := Address.blake3 bytes
   let store ← storeDir
-  let path := store / byteArrayToHex addr.hash
+  let path := store / hexOfBytes addr.hash
   IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
 
 def readConst (a: Address) : StoreIO Ixon.Const := do
   let store ← storeDir
-  let path := store / byteArrayToHex a.hash
+  let path := store / hexOfBytes a.hash
   let bytes ← IO.toEIO .ioError (IO.FS.readBinFile path)
   match Ixon.Serialize.get bytes with
   | .ok c => return c
