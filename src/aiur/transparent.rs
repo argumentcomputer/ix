@@ -7,7 +7,7 @@ use binius_core::{
 use binius_field::{TowerField, underlier::WithUnderlier};
 use binius_utils::bail;
 
-use super::layout::{AiurField, FunctionIndexField, MultiplicityField};
+use super::layout::{AiurByteField, AiurField, FunctionIndexField, MultiplicityField};
 
 #[derive(PartialEq, Eq, Hash)]
 pub enum Virtual {
@@ -24,7 +24,7 @@ pub enum Virtual {
     },
     Sum {
         oracles: Vec<OracleId>,
-        offset: AiurField,
+        offset: AiurByteField,
         log_n: usize,
     },
 }

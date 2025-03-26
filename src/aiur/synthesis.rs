@@ -44,7 +44,7 @@ impl VirtualMap {
         &mut self,
         builder: &mut ConstraintSystemBuilder<'_>,
         oracles: Vec<OracleId>,
-        offset: AiurField,
+        offset: AiurByteField,
         log_n: usize,
     ) -> OracleId {
         let virt = Virtual::Sum {
@@ -58,7 +58,7 @@ impl VirtualMap {
             };
             let lc = oracles.iter().map(|oracle| (*oracle, AiurField::ONE));
             let id = builder
-                .add_linear_combination_with_offset("linear combination", log_n, offset, lc)
+                .add_linear_combination_with_offset("linear combination", log_n, offset.into(), lc)
                 .unwrap();
             if let Some(witness) = builder.witness() {
                 let slices = oracles
@@ -68,11 +68,13 @@ impl VirtualMap {
                 let mut bits = witness.new_column::<BinaryField1b>(id);
                 let bits = bits.packed();
                 (0..(1 << log_n)).for_each(|i| {
-                    slices.iter().for_each(|slice| {
-                        let acc = get_packed_slice(bits, i);
-                        let a = get_packed_slice(slice, i);
-                        set_packed_slice(bits, i, acc + a);
-                    })
+                    let mut res = offset
+                        .try_into()
+                        .expect("Internal error: The offset is not a bit");
+                    for slice in slices.iter() {
+                        res += get_packed_slice(slice, i);
+                    }
+                    set_packed_slice(bits, i, res);
                 });
             }
             id
@@ -84,7 +86,7 @@ impl VirtualMap {
         &mut self,
         builder: &mut ConstraintSystemBuilder<'_>,
         oracles: Vec<OracleId>,
-        offset: AiurField,
+        offset: AiurByteField,
         log_n: usize,
     ) -> OracleId {
         let virt = Virtual::Sum {
@@ -98,7 +100,7 @@ impl VirtualMap {
             };
             let lc = oracles.iter().map(|oracle| (*oracle, AiurField::ONE));
             let id = builder
-                .add_linear_combination_with_offset("linear combination", log_n, offset, lc)
+                .add_linear_combination_with_offset("linear combination", log_n, offset.into(), lc)
                 .unwrap();
             if let Some(witness) = builder.witness() {
                 let slices = oracles
@@ -116,7 +118,7 @@ impl VirtualMap {
                     .into_par_iter()
                     .enumerate()
                     .for_each(|(i, w)| {
-                        let mut res = AiurByteField::ZERO;
+                        let mut res = offset;
                         for slice in slices.iter() {
                             res += slice[i];
                         }
@@ -198,7 +200,7 @@ impl Expr {
         log_n: u8,
     ) -> Option<OracleId> {
         let mut sum = vec![];
-        let mut offset = AiurField::ZERO;
+        let mut offset = AiurByteField::ZERO;
         self.accumulate_sum(&mut sum, &mut offset)?;
         Some(virt_map.sum_bit(builder, sum, offset, log_n as usize))
     }
@@ -210,12 +212,12 @@ impl Expr {
         log_n: u8,
     ) -> Option<OracleId> {
         let mut sum = vec![];
-        let mut offset = AiurField::ZERO;
+        let mut offset = AiurByteField::ZERO;
         self.accumulate_sum(&mut sum, &mut offset)?;
         Some(virt_map.sum_byte(builder, sum, offset, log_n as usize))
     }
 
-    fn accumulate_sum(&self, sum: &mut Vec<OracleId>, offset: &mut AiurField) -> Option<()> {
+    fn accumulate_sum(&self, sum: &mut Vec<OracleId>, offset: &mut AiurByteField) -> Option<()> {
         match self {
             Self::Const(k) => *offset += *k,
             Self::Var(x) => sum.push(*x),
