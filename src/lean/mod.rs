@@ -21,4 +21,11 @@ impl<T> CArray<T> {
     pub fn slice(&self, len: usize) -> &[T] {
         unsafe { std::slice::from_raw_parts(self.0.as_ptr(), len) }
     }
+
+    #[inline]
+    pub fn copy_from_slice(&self, src: &[T]) {
+        unsafe {
+            std::ptr::copy_nonoverlapping(src.as_ptr(), self.0.as_ptr() as *mut _, src.len());
+        }
+    }
 }

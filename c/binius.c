@@ -103,7 +103,7 @@ extern lean_obj_res c_rs_constraint_system_validate_witness(
         except = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(except, 0, lean_mk_string(result->data));
     }
-    rs_constraint_system_validate_witness_result_free(result);
+    rs__c_result_unit_string_free(result);
 
     return except;
 }

@@ -37,7 +37,8 @@ let
     buildPhase = ''
       gcc -Wall -Werror -Wextra -c binius.c -o binius.o
       gcc -Wall -Werror -Wextra -c unsigned.c -o unsigned.o
-      ar rcs libix_c.a binius.o unsigned.o
+      gcc -Wall -Werror -Wextra -c iroh.c -o iroh.o
+      ar rcs libix_c.a binius.o unsigned.o iroh.o
     '';
     # Installs the library files
     installPhase = ''
