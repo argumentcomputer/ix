@@ -134,3 +134,5 @@ script "check-lean-h-hash" := do
   return 0
 
 end Scripts
+
+lean_exe Ix.Iroh.Transfer

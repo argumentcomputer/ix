@@ -5,18 +5,16 @@
 
 extern lean_obj_res c_rs_iroh_send(b_lean_obj_arg bytes) {
     c_result *result = rs_iroh_send(bytes);
-    lean_object *except;
+    lean_object *io_result;
     if (result->is_ok) {
-        except = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(except, 0, lean_box(0));
+        io_result = lean_io_result_mk_ok(lean_box(0));
     }
     else {
-        except = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(except, 0, lean_mk_string(result->data));
+        io_result = lean_mk_io_user_error(lean_mk_string(result->data));
     }
     rs__c_result_unit_string_free(result);
 
-    return except;
+    return io_result;
 }
 
 extern lean_obj_res c_rs_iroh_recv(b_lean_obj_arg ticket, size_t buffer_capacity) {
@@ -25,17 +23,15 @@ extern lean_obj_res c_rs_iroh_recv(b_lean_obj_arg ticket, size_t buffer_capacity
     lean_object *buffer = lean_alloc_sarray(1, 0, buffer_capacity);
     c_result *result = rs_iroh_recv(ticket_str, buffer, buffer_capacity);
 
-    lean_object *except;
+    lean_object *io_result;
     if (result->is_ok) {
-        except = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(except, 0, lean_byte_array_mk(result->data));
+        io_result = lean_io_result_mk_ok(buffer);
     }
     else {
-        except = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(except, 0, lean_mk_string(result->data));
+        io_result = lean_mk_io_user_error(lean_mk_string(result->data));
         free(buffer);
     }
     rs__c_result_unit_string_free(result);
 
-    return except;
+    return io_result;
 }
