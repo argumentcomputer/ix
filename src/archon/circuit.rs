@@ -8,6 +8,7 @@ use binius_core::{
     oracle::OracleId,
     transparent::constant::Constant,
 };
+use binius_field::TowerField;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
 
@@ -87,9 +88,9 @@ impl CircuitModule {
     }
 
     #[inline]
-    pub fn assert_zero<S: ToString + ?Sized>(
+    pub fn assert_zero(
         &mut self,
-        name: &S,
+        name: &(impl ToString + ?Sized),
         oracle_ids: impl IntoIterator<Item = OracleId>,
         composition: ArithExpr,
     ) {
@@ -106,23 +107,22 @@ impl CircuitModule {
     }
 
     #[inline]
-    pub fn add_committed<S: ToString + ?Sized>(
+    pub fn add_committed<FS: TowerField>(
         &mut self,
-        name: &S,
-        tower_level: usize,
+        name: &(impl ToString + ?Sized),
     ) -> Result<OracleId> {
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
-            tower_level,
+            tower_level: FS::TOWER_LEVEL,
             kind: OracleKind::Committed,
         };
         self.add_oracle_info(oracle_info)
     }
 
     #[inline]
-    pub fn add_transparent<S: ToString + ?Sized>(
+    pub fn add_transparent(
         &mut self,
-        name: &S,
+        name: &(impl ToString + ?Sized),
         transparent: Transparent,
     ) -> Result<OracleId> {
         let oracle_info = OracleInfo {
@@ -133,9 +133,9 @@ impl CircuitModule {
         self.add_oracle_info(oracle_info)
     }
 
-    pub fn add_linear_combination<S: ToString + ?Sized>(
+    pub fn add_linear_combination(
         &mut self,
-        name: &S,
+        name: &(impl ToString + ?Sized),
         offset: F,
         inner: impl Iterator<Item = (OracleId, F)>,
     ) -> Result<OracleId> {

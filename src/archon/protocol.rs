@@ -112,7 +112,7 @@ pub fn verify(
 mod tests {
     use anyhow::Result;
     use binius_core::oracle::OracleId;
-    use binius_field::{BinaryField1b, TowerField};
+    use binius_field::BinaryField1b as B1;
 
     use crate::archon::{
         ModuleId,
@@ -129,8 +129,8 @@ mod tests {
 
     fn a_xor_b_circuit_module(module_id: ModuleId) -> Result<(CircuitModule, Oracles)> {
         let mut circuit_module = CircuitModule::new(module_id);
-        let a = circuit_module.add_committed("a", BinaryField1b::TOWER_LEVEL)?;
-        let b = circuit_module.add_committed("b", BinaryField1b::TOWER_LEVEL)?;
+        let a = circuit_module.add_committed::<B1>("a")?;
+        let b = circuit_module.add_committed::<B1>("b")?;
         circuit_module.assert_zero("a xor b", [], ArithExpr::Oracle(a) + ArithExpr::Oracle(b));
         circuit_module.freeze_oracles();
         Ok((circuit_module, Oracles { a, b }))
@@ -139,8 +139,8 @@ mod tests {
     fn populate_a_xor_b_witness_with_zeros(witness_module: &mut WitnessModule, oracles: &Oracles) {
         let zeros = witness_module.new_entry_with_capacity(7);
         witness_module.push_u128_to(0, zeros);
-        witness_module.bind_oracle_to(oracles.a, zeros);
-        witness_module.bind_oracle_to(oracles.b, zeros);
+        witness_module.bind_oracle_to::<B1>(oracles.a, zeros);
+        witness_module.bind_oracle_to::<B1>(oracles.b, zeros);
     }
 
     #[test]
@@ -151,8 +151,8 @@ mod tests {
         let b = witness_module.new_entry_with_capacity(7);
         witness_module.push_u128_to(0, a);
         witness_module.push_u128_to(1, b);
-        witness_module.bind_oracle_to(oracles.a, a);
-        witness_module.bind_oracle_to(oracles.b, b);
+        witness_module.bind_oracle_to::<B1>(oracles.a, a);
+        witness_module.bind_oracle_to::<B1>(oracles.b, b);
         let witness_modules = [witness_module];
         let witness = compile_witness_modules(&witness_modules).unwrap();
         assert!(validate_witness(&[circuit_module], &witness, &[]).is_err());
