@@ -3,13 +3,14 @@ use binius_core::{oracle::OracleId, witness::MultilinearExtensionIndex};
 use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
     BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64, BinaryField128b as B128,
+    TowerField,
     arch::OptimalUnderlier,
     as_packed_field::PackedType,
     underlier::{UnderlierType, WithUnderlier},
 };
 use binius_math::MultilinearExtension;
 use binius_utils::checked_arithmetics::log2_strict_usize;
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::{collections::HashMap, sync::Arc};
 
@@ -21,7 +22,8 @@ pub struct WitnessModule {
     module_id: ModuleId,
     oracles: Arc<Vec<OracleInfo>>,
     entries: Vec<Vec<OptimalUnderlier>>,
-    entry_map: FxHashMap<OracleId, EntryId>,
+    /// Maps oracles to their entries and tower levels
+    entry_map: FxHashMap<OracleId, (EntryId, usize)>,
 }
 
 pub struct Witness<'a> {
@@ -55,13 +57,10 @@ pub fn compile_witness_modules(modules: &[WitnessModule]) -> Result<Witness<'_>>
             witness.modules_n_vars.push(0);
             continue;
         }
-        let oracles_data_results = module
-            .oracles
-            .par_iter()
-            .enumerate()
-            .map(|(oracle_id, oracle_info)| {
-                let OracleInfo { tower_level, .. } = oracle_info;
-                let Some(entry_id) = module.entry_map.get(&oracle_id) else {
+        let oracles_data_results = (0..module.num_oracles())
+            .into_par_iter()
+            .map(|oracle_id| {
+                let Some((entry_id, tower_level)) = module.entry_map.get(&oracle_id) else {
                     bail!("Entry not found for oracle {oracle_id}, module {module_idx}.");
                 };
                 let entry = &module.entries[*entry_id];
@@ -116,7 +115,7 @@ pub fn compile_witness_modules(modules: &[WitnessModule]) -> Result<Witness<'_>>
         let n_vars = n_vars_opt.unwrap_or(0); // Deactivate module without oracles
         witness.mlei.update_multilin_poly(oracle_poly_vec)?;
         witness.modules_n_vars.push(n_vars);
-        oracle_offset += module.oracles.len();
+        oracle_offset += module.num_oracles();
     }
     Ok(witness)
 }
@@ -136,8 +135,9 @@ impl WitnessModule {
     }
 
     #[inline]
-    pub fn bind_oracle_to(&mut self, oracle_id: OracleId, entry_id: EntryId) {
-        self.entry_map.insert(oracle_id, entry_id);
+    pub fn bind_oracle_to<FS: TowerField>(&mut self, oracle_id: OracleId, entry_id: EntryId) {
+        self.entry_map
+            .insert(oracle_id, (entry_id, FS::TOWER_LEVEL));
     }
 
     #[inline]
@@ -177,5 +177,9 @@ impl WitnessModule {
             entries: vec![],
             entry_map: HashMap::with_capacity_and_hasher(num_oracles, FxBuildHasher),
         }
+    }
+
+    fn num_oracles(&self) -> usize {
+        self.oracles.len()
     }
 }
