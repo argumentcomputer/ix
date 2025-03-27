@@ -3,7 +3,7 @@ use binius_core::{oracle::OracleId, witness::MultilinearExtensionIndex};
 use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
     BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64, BinaryField128b as B128,
-    Field, TowerField,
+    TowerField,
     arch::OptimalUnderlier,
     as_packed_field::PackedType,
     underlier::{UnderlierType, WithUnderlier},
@@ -15,10 +15,9 @@ use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIter
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::{collections::HashMap, sync::Arc};
 
-use super::{
-    ModuleId, OracleInfo, OracleKind,
-    transparent::{ConstVal, Transparent},
-};
+use crate::archon::transparent::replicate_within_u128;
+
+use super::{ModuleId, OracleInfo, OracleKind, transparent::Transparent};
 
 pub type EntryId = usize;
 
@@ -278,43 +277,19 @@ impl WitnessModule {
             );
             let underliers = match &oracle_info.kind {
                 OracleKind::Committed => unreachable!("Committed oracles shouldn't be computed"),
-                OracleKind::LinearCombination { .. } => vec![], // TODO
+                OracleKind::LinearCombination { .. } => None, // TODO
                 OracleKind::Transparent(transparent) => match transparent {
-                    Transparent::Constant(c) => {
-                        let u128 = match c {
-                            ConstVal::B1(B1::ZERO)
-                            | ConstVal::B2(B2::ZERO)
-                            | ConstVal::B4(B4::ZERO)
-                            | ConstVal::B8(B8::ZERO)
-                            | ConstVal::B16(B16::ZERO)
-                            | ConstVal::B32(B32::ZERO)
-                            | ConstVal::B64(B64::ZERO)
-                            | ConstVal::B128(B128::ZERO) => 0,
-                            ConstVal::B1(_) => u128::MAX,
-                            ConstVal::B2(b) => replicate_2_bits(b.to_underlier().val()),
-                            ConstVal::B4(b) => replicate_4_bits(b.to_underlier().val()),
-                            ConstVal::B8(b) => u128::from_le_bytes([b.to_underlier(); 16]),
-                            ConstVal::B16(b) => {
-                                let u16s = [b.to_underlier(); 8];
-                                unsafe { std::mem::transmute::<[u16; 8], u128>(u16s) }
-                            }
-                            ConstVal::B32(b) => {
-                                let u32s = [b.to_underlier(); 4];
-                                unsafe { std::mem::transmute::<[u32; 4], u128>(u32s) }
-                            }
-                            ConstVal::B64(b) => {
-                                let u64s = [b.to_underlier(); 2];
-                                unsafe { std::mem::transmute::<[u64; 2], u128>(u64s) }
-                            }
-                            ConstVal::B128(b) => b.to_underlier(),
-                        };
-                        vec![OptimalUnderlier::from_u128(u128); num_underliers(tower_level)]
+                    Transparent::Constant(b) => {
+                        let u = OptimalUnderlier::from_u128(replicate_within_u128(*b));
+                        Some(vec![u; num_underliers(tower_level)])
                     }
                 },
             };
-            let entry_id = self.new_entry();
-            self.entries[entry_id] = underliers;
-            self.entry_map.insert(oracle_id, (entry_id, tower_level));
+            if let Some(underliers) = underliers {
+                let entry_id = self.new_entry();
+                self.entries[entry_id] = underliers;
+                self.entry_map.insert(oracle_id, (entry_id, tower_level));
+            }
         }
 
         Ok(())
@@ -333,9 +308,6 @@ impl WitnessModule {
 
     /// Computes the number of variables given the number of `OptimalUnderlier`s
     /// used and the tower level of the oracle.
-    ///
-    /// # Panics
-    /// This function panics if `num_underliers` isn't a power of two.
     fn n_vars(num_underliers: usize, tower_level: usize) -> Result<usize> {
         ensure!(
             num_underliers.is_power_of_two(),
@@ -359,30 +331,14 @@ impl Witness<'_> {
     }
 }
 
-#[inline(always)]
-fn replicate_2_bits(byte: u8) -> u128 {
-    let bits = (byte & 0b11) as u128; // Extract the first 2 bits
-    bits * 0x55555555555555555555555555555555u128 // Repeat pattern 64 times
-}
-
-#[inline(always)]
-fn replicate_4_bits(byte: u8) -> u128 {
-    let bits = (byte & 0b1111) as u128; // Extract first 4 bits
-    bits * 0x11111111111111111111111111111111u128 // Repeat pattern 16 times
-}
-
 #[cfg(test)]
 mod tests {
-    use binius_field::{
-        BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
-        BinaryField32b as B32, BinaryField128b as B128, underlier::SmallU,
-    };
+    use binius_field::BinaryField128b as B128;
 
     use crate::archon::{
         circuit::{CircuitModule, init_witness_modules},
         protocol::validate_witness,
-        transparent::{ConstVal, Transparent},
-        witness::{replicate_2_bits, replicate_4_bits},
+        transparent::Transparent,
     };
 
     use super::compile_witness_modules;
@@ -390,32 +346,38 @@ mod tests {
     #[test]
     fn test_populate() {
         let mut circuit_module = CircuitModule::new(0);
+        macro_rules! constant_for {
+            ($t:ident) => {
+                Transparent::Constant(B128::new(($t::MAX - $t::MAX / 3) as u128))
+            };
+        }
         circuit_module
-            .add_transparent(
-                "b1",
-                Transparent::Constant(ConstVal::B1(B1::new(SmallU::new(1)))),
-            )
+            .add_transparent("b1_0", Transparent::Constant(B128::new(0)))
             .unwrap();
         circuit_module
-            .add_transparent(
-                "b2",
-                Transparent::Constant(ConstVal::B2(B2::new(SmallU::new(1)))),
-            )
+            .add_transparent("b1_1", Transparent::Constant(B128::new(1)))
             .unwrap();
         circuit_module
-            .add_transparent(
-                "b4",
-                Transparent::Constant(ConstVal::B4(B4::new(SmallU::new(3)))),
-            )
+            .add_transparent("b2", Transparent::Constant(B128::new(2)))
             .unwrap();
         circuit_module
-            .add_transparent("b8", Transparent::Constant(ConstVal::B8(B8::new(42))))
+            .add_transparent("b4", Transparent::Constant(B128::new(9)))
             .unwrap();
         circuit_module
-            .add_transparent("b32", Transparent::Constant(ConstVal::B32(B32::new(42))))
+            .add_transparent("b8", constant_for!(u8))
             .unwrap();
         circuit_module
-            .add_transparent("b128", Transparent::Constant(ConstVal::B128(B128::new(42))))
+            .add_transparent("b16", constant_for!(u16))
+            .unwrap();
+        circuit_module
+            .add_transparent("b32", constant_for!(u32))
+            .unwrap();
+        circuit_module
+            .add_transparent("b64", constant_for!(u64))
+            .unwrap();
+        #[allow(trivial_numeric_casts)]
+        circuit_module
+            .add_transparent("b128", constant_for!(u128))
             .unwrap();
 
         circuit_module.freeze_oracles();
@@ -434,93 +396,5 @@ mod tests {
         test_n_vars(7);
         test_n_vars(8);
         test_n_vars(9);
-    }
-
-    #[test]
-    fn test_replicate_2_bits() {
-        assert_eq!(
-            replicate_2_bits(0b00000000),
-            0x00000000000000000000000000000000u128
-        );
-        assert_eq!(
-            replicate_2_bits(0b00000001),
-            0x55555555555555555555555555555555u128
-        );
-        assert_eq!(
-            replicate_2_bits(0b00000010),
-            0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAu128
-        );
-        assert_eq!(
-            replicate_2_bits(0b00000011),
-            0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFu128
-        );
-    }
-
-    #[test]
-    fn test_replicate_4_bits() {
-        assert_eq!(
-            replicate_4_bits(0b00000000),
-            0x00000000000000000000000000000000u128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00000001),
-            0x11111111111111111111111111111111u128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00000010),
-            0x22222222222222222222222222222222u128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00000011),
-            0x33333333333333333333333333333333u128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00000100),
-            0x44444444444444444444444444444444u128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00000101),
-            0x55555555555555555555555555555555u128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00000110),
-            0x66666666666666666666666666666666u128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00000111),
-            0x77777777777777777777777777777777u128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00001000),
-            0x88888888888888888888888888888888u128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00001001),
-            0x99999999999999999999999999999999u128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00001010),
-            0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAu128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00001011),
-            0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBu128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00001100),
-            0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCu128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00001101),
-            0xDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDu128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00001110),
-            0xEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEu128
-        );
-        assert_eq!(
-            replicate_4_bits(0b00001111),
-            0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFu128
-        );
     }
 }
