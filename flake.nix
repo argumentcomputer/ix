@@ -45,15 +45,6 @@
       perSystem = { system, pkgs, ... }:
       let
         lib = (import ./ix.nix { inherit system pkgs fenix crane lean4-nix blake3-lean; }).lib;
-
-        devShellPkgs = with pkgs; [
-          pkg-config
-          openssl
-          ocl-icd
-          gcc
-          clang
-          lib.rustToolchain
-        ];
       in {
         # Lean overlay
         _module.args.pkgs = import nixpkgs {
@@ -68,15 +59,17 @@
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; devShellPkgs ++ [
+          LEAN_SYSROOT="${pkgs.lean.lean-all}";
+          packages = with pkgs; [
+            pkg-config
+            openssl
+            ocl-icd
+            gcc
+            clang
+            lib.rustToolchain
+            rust-analyzer
             lean.lean         # Lean compiler
             lean.lean-all     # Includes Lake, stdlib, etc.
-            pkgs.rust-analyzer
-          ];
-        };
-        devShells.ci = pkgs.mkShell {
-          packages = with pkgs; devShellPkgs ++ [
-            elan
           ];
         };
       };

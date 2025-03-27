@@ -28,24 +28,37 @@ let
   });
 
   # C Package
-  cPkg = pkgs.stdenv.mkDerivation {
+  cPkg = let
+    # Function to get all files in `./c` ending with given extension
+    getFiles = ext: builtins.filter (file: builtins.match (".*" + ext) file != null) (builtins.attrNames (builtins.readDir "${toString ./c}"));
+    # Gets all C files in `./c`, without the extension
+    cFiles = let ext = ".c"; in builtins.map (file: builtins.replaceStrings [ext] [""] file) (getFiles ext);
+    # Creates `gcc -c` command for each C file
+    buildCmd = builtins.map (file: "gcc -Wall -Werror -Wextra -c ${file}.c -o ${file}.o") cFiles;
+    # Final `buildPhase` instructions
+    buildSteps = buildCmd ++
+    [
+      "ar rcs libix_c.a ${builtins.concatStringsSep " " (builtins.map (file: "-o ${file}.o") cFiles)}"
+    ];
+    # Gets all header files in `./c`
+    hFiles = getFiles ".h";
+    # Final `installPhase` instructions
+    installSteps =
+    [
+      "mkdir -p $out/lib $out/include"
+      "cp libix_c.a $out/lib/"
+      "cp ${builtins.concatStringsSep " " hFiles} $out/include/"
+    ];
+  in
+  pkgs.stdenv.mkDerivation {
     pname = "ix_c";
     version = "0.1.0";
     src = ./c;
     buildInputs = [ pkgs.gcc pkgs.lean.lean-all rustPkg ];
-    # Builds the C file
-    buildPhase = ''
-      gcc -Wall -Werror -Wextra -c binius.c -o binius.o
-      gcc -Wall -Werror -Wextra -c unsigned.c -o unsigned.o
-      gcc -Wall -Werror -Wextra -c iroh.c -o iroh.o
-      ar rcs libix_c.a binius.o unsigned.o iroh.o
-    '';
+    # Builds the C files
+    buildPhase = builtins.concatStringsSep "\n" buildSteps;
     # Installs the library files
-    installPhase = ''
-      mkdir -p $out/lib $out/include
-      cp libix_c.a $out/lib/
-      cp rust.h linear.h common.h $out/include/
-    '';
+    installPhase = builtins.concatStringsSep "\n" installSteps;
   };
 
   # Blake3.lean C FFI dependency, needed for explicit static lib linking

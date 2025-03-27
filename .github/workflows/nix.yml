@@ -38,6 +38,9 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      # Installs `elan` and `lake` via Nix, which then downloads the Lean toolchain binary
-      # from https://github.com/leanprover/lean4/releases
-      - run: nix develop .#ci --command bash -c "lake build && lake test"
+      - uses: cachix/cachix-action@v15
+        with:
+          name: argumentcomputer
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      # Builds and runs tests using Lake as a Nix package
+      - run: nix develop --command bash -c "lake build && lake test"
