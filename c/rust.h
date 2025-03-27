@@ -63,3 +63,5 @@ c_result *rs_iroh_send(b_lean_obj_arg);
 c_result *rs_iroh_recv(char const *, b_lean_obj_arg, size_t);
 
 void rs__c_result_unit_string_free(c_result *);
+
+void rs_keccak256_hash(void*, void*);

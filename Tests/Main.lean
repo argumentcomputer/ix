@@ -4,6 +4,7 @@ import Tests.Boundary
 import Tests.ByteArray
 import Tests.Unsigned
 import Tests.Ix
+import Tests.Keccak
 
 def main := LSpec.lspecIO (.ofList [
     ("arith-expr", Tests.ArithExpr.suite),
@@ -14,4 +15,5 @@ def main := LSpec.lspecIO (.ofList [
     ("byte-array", Tests.ByteArray.suite),
     ("unsigned", Tests.Unsigned.suite),
     ("ix", Tests.Ix.suite),
+    ("keccak", Tests.Keccak.suite),
   ])

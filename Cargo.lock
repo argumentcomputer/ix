@@ -2677,6 +2677,7 @@ dependencies = [
  "proptest",
  "rayon",
  "rustc-hash",
+ "tiny-keccak",
  "tokio",
 ]
 
