@@ -7,3 +7,4 @@ import Ix.TransportM
 import Ix.IR
 import Ix.Meta
 import Ix.Prove
+import Ix.IxM

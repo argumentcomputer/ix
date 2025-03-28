@@ -101,6 +101,11 @@ structure DefinitionProj where
   idx   : Nat
   deriving BEq, Repr
 
+structure Comm where
+  secret: Address
+  payload: Address
+  deriving BEq, Repr
+
 inductive Const where
   -- 0xC0
   | axio : Axiom -> Const
@@ -128,6 +133,7 @@ inductive Const where
   | meta   : Metadata -> Const
   -- 0xCC
   | proof : Proof -> Const
+  | comm: Comm -> Const
   deriving BEq, Repr, Inhabited
 
 def putConst : Const → PutM
@@ -144,6 +150,7 @@ def putConst : Const → PutM
 | .mutInd xs => putUInt8 0xCA *> putArray (putIndc <$> xs)
 | .meta m => putUInt8 0xCB *> putMetadata m
 | .proof p => putUInt8 0xCC *> putProof p
+| .comm c => putUInt8 0xCD *> putComm c
   where
     putDefn (x: Definition) :=
       putNatl x.lvls *> putExpr x.type *> putExpr x.value *> putBool x.part
@@ -162,8 +169,12 @@ def putConst : Const → PutM
         *> putArray (putCtor <$> x.ctors) *> putArray (putRecr <$> x.recrs)
         *> putBools [x.recr, x.refl, x.struct, x.unit]
     putProof (p: Proof) : PutM :=
-      putBytes p.inp.hash *> putBytes p.out.hash *> putBytes p.typ.hash
+      putBytes p.claim.inp.hash
+      *> putBytes p.claim.out.hash
+      *> putBytes p.claim.typ.hash
       *> putByteArray p.bin
+    putComm (c: Comm) : PutM :=
+      putBytes c.secret.hash *> putBytes c.payload.hash
 
 def getConst : GetM Const := do
   let tag ← getUInt8
@@ -181,6 +192,7 @@ def getConst : GetM Const := do
   | 0xCA => .mutInd <$> getArray getIndc
   | 0xCB => .meta <$> getMetadata
   | 0xCC => .proof <$> getProof
+  | 0xCD => .comm <$> getComm
   | e => throw s!"expected Const tag, got {e}"
   where
     getDefn : GetM Definition :=
@@ -203,7 +215,9 @@ def getConst : GetM Const := do
       | _ => throw s!"unreachable"
     getAddr : GetM Address := .mk <$> getBytes 32
     getProof : GetM Proof :=
-      .mk <$> getAddr <*> getAddr <*> getAddr <*> getByteArray
+      .mk <$> (.mk <$> getAddr <*> getAddr <*> getAddr) <*> getByteArray
+    getComm : GetM Comm :=
+      .mk <$> getAddr <*> getAddr
 
 instance : Serialize Const where
   put := runPut ∘ putConst

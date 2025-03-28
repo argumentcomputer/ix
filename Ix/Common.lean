@@ -155,11 +155,13 @@ def PersistentHashMap.filter [BEq α] [Hashable α]
     | true => acc.insert x y
     | false => acc
 
--- TODO: figure out why map₁ vs map₂ matters here
-def Environment.getConstsAndDelta (env : Environment) : ConstMap × List ConstantInfo :=
-  let constants := env.constants
-  let delta := constants.map₁.filter (fun n _ => !n.isInternal)
-  (constants, delta.toList.map (·.2))
+def Environment.getDelta (env : Environment)
+  : PersistentHashMap Name ConstantInfo :=
+  env.constants.map₂.filter (fun n _ => !n.isInternal)
+
+def Environment.getConstMap (env : Environment)
+  : Std.HashMap Name ConstantInfo :=
+  env.constants.map₁.filter (fun n _ => !n.isInternal)
 
 /--
 Sets the directories where `olean` files can be found.

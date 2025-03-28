@@ -1,5 +1,4 @@
 import Ix.Cli.ProveCmd
-import Ix.Cli.HashCmd
 import Ix.Cli.TestCmd
 import Ix.Cli.StoreCmd
 import Ix
@@ -13,7 +12,6 @@ def ixCmd : Cli.Cmd := `[Cli|
 
   SUBCOMMANDS:
     proveCmd;
-    hashCmd;
     testCmd;
     storeCmd
 ]

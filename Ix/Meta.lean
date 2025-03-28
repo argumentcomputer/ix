@@ -5,7 +5,7 @@ import Ix.CanonM
 open Lean
 
 def computeIxAddress (const : ConstantInfo) (constMap: ConstMap) : IO Address := do
-  IO.ofExcept (<- Ix.CanonM.canonicalize constMap const)
+  IO.ofExcept (<- Ix.CanonM.canonicalizeConst constMap const)
 
 open System (FilePath)
 

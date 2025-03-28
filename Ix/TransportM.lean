@@ -27,6 +27,7 @@ inductive TransportError
   | unexpectedNode (idx: Nat) (m: Ixon.Metadata)
   | rawMetadata (m: Ixon.Metadata)
   | rawProof (m: Proof)
+  | rawComm (m: Ixon.Comm)
   deriving Repr
 
 abbrev DematM := EStateM TransportError DematState
@@ -283,6 +284,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
 | .meta m => throw (.rawMetadata m)
 -- TODO: This could return a Proof inductive, since proofs have no metadata
 | .proof p => throw (.rawProof p)
+| .comm p => throw (.rawComm p)
   where
     rematDefn : Ixon.Definition -> RematM Ix.Definition
     | x => .mk x.lvls <$> rematExpr x.type <*> rematExpr x.value <*> pure x.part

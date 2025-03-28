@@ -23,6 +23,9 @@ def storeErrorToIOError : StoreError -> IO.Error
 
 abbrev StoreIO := EIO StoreError
 
+def StoreIO.toIO (sio: StoreIO α) : IO α :=
+  EIO.toIO storeErrorToIOError sio
+
 def getHomeDir : StoreIO FilePath := do
   match ← IO.getEnv "HOME" with
   | .some path => return ⟨path⟩
@@ -36,12 +39,13 @@ def ensureStoreDir : StoreIO Unit := do
   let store ← storeDir
   IO.toEIO .ioError (IO.FS.createDirAll store)
 
-def writeConst (x: Ixon.Const) : StoreIO Unit := do
+def writeConst (x: Ixon.Const) : StoreIO Address := do
   let bytes := Ixon.Serialize.put x
   let addr  := Address.blake3 bytes
   let store ← storeDir
   let path := store / hexOfBytes addr.hash
-  IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
+  let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
+  return addr
 
 def readConst (a: Address) : StoreIO Ixon.Const := do
   let store ← storeDir

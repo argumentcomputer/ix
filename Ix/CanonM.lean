@@ -552,30 +552,37 @@ partial def sortDefs (dss : List (List Lean.DefinitionVal)) :
 
 end
 
---/-- Iterates over a list of `Lean.ConstantInfo`, triggering their content-addressing -/
---def canonDelta (delta : List Lean.ConstantInfo) : CanonM Unit := do
---  delta.forM fun c => if !c.isUnsafe then discard $ canonConst c else pure ()
 
---/--
---Content-addresses the "delta" of an environment, that is, the content that is
---added on top of the imports.
---
---Important: constants with open references in their expressions are filtered out.
---Open references are variables that point to names which aren't present in the
---`Lean.ConstMap`.
----/
---def canon (constMap : Lean.ConstMap) (delta : List Lean.ConstantInfo)
---  : IO $ Except CanonMError CanonMState := do
---  match ← StateT.run (ReaderT.run (canonDelta delta) (.init constMap)) CanonMState.init with
---  | (.ok _, stt) => return .ok stt
---  | (.error e, _) => return .error e
 
-def canonicalize (constMap : Lean.ConstMap) (const: Lean.ConstantInfo)
+def canonicalizeConst (constMap : Lean.ConstMap) (const: Lean.ConstantInfo)
   : IO $ Except CanonMError Address := do
   let canon <-
     StateT.run (ReaderT.run (canonConst const) (.init constMap)) CanonMState.init
   match canon with
   | (.ok (a, _), _) => return .ok a
   | (.error e, _) => return .error e
+
+/-- Iterates over a list of `Lean.ConstantInfo`, triggering their content-addressing -/
+def canonDelta (delta : Lean.PersistentHashMap Lean.Name Lean.ConstantInfo)
+  : CanonM Unit := do
+  delta.forM fun _ c => if !c.isUnsafe then discard $ canonConst c else pure ()
+
+/--
+Content-addresses the "delta" of an environment, that is, the content that is
+added on top of the imports.
+
+Important: constants with open references in their expressions are filtered out.
+Open references are variables that point to names which aren't present in the
+`Lean.ConstMap`.
+-/
+def canonicalizeDelta
+  (constMap : Lean.ConstMap) (delta : Lean.PersistentHashMap Lean.Name Lean.ConstantInfo)
+  : IO $ Except CanonMError CanonMState := do
+  match ← StateT.run (ReaderT.run (canonDelta delta) (.init constMap)) CanonMState.init with
+  | (.ok _, stt) => return .ok stt
+  | (.error e, _) => return .error e
+
+def canonicalizeEnv (env : Lean.Environment) : IO $ Except CanonMError CanonMState :=
+  canonicalizeDelta env.constants env.getDelta
 
 end Ix.CanonM

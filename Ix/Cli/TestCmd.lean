@@ -21,15 +21,15 @@ def runTest (p : Cli.Parsed) : IO UInt32 := do
   IO.println s!"Bytes: {hexOfBytes bytes}"
   let addr := Address.blake3 bytes
   IO.println s!"Address: {hexOfBytes addr.hash}"
-  let home ← EIO.toIO storeErrorToIOError getHomeDir
+  let home ← StoreIO.toIO getHomeDir
   IO.println s!"HOME at {home}"
-  let store ← EIO.toIO storeErrorToIOError storeDir
+  let store ← StoreIO.toIO storeDir
   IO.println s!"Store at {store}"
-  EIO.toIO storeErrorToIOError ensureStoreDir
+  StoreIO.toIO ensureStoreDir
   IO.println s!"write entry at {store / (hexOfBytes addr.hash)}"
-  EIO.toIO storeErrorToIOError (writeConst const)
+  let _ <- StoreIO.toIO (writeConst const)
   IO.println s!"read entry at {store / (hexOfBytes addr.hash)}"
-  let const' ← EIO.toIO storeErrorToIOError (readConst addr)
+  let const' ← StoreIO.toIO (readConst addr)
   IO.println s!"Const': {repr const'}"
   IO.println s!"matching {const == const'}"
   return 0
