@@ -65,3 +65,7 @@ c_result *rs_iroh_recv(char const *, b_lean_obj_arg, size_t);
 void rs__c_result_unit_string_free(c_result *);
 
 void rs_keccak256_hash(void*, void*);
+void *rs_keccak256_hasher_init(void);
+void rs_keccak256_hasher_free(void*);
+void *rs_keccak256_hasher_update(void*, void*);
+void *rs_keccak256_hasher_finalize(void*, void*);
