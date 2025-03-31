@@ -4,6 +4,7 @@ pub mod binius_boundary;
 pub mod byte_array;
 #[cfg(feature = "net")]
 pub mod iroh;
+pub mod keccak;
 
 use std::ffi::{CStr, CString, c_char, c_void};
 

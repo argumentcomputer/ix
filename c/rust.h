@@ -59,7 +59,16 @@ void rs_constraint_system_builder_push_namespace(void*, char const *);
 void rs_constraint_system_builder_pop_namespace(void*);
 size_t rs_constraint_system_builder_log_rows(void*, b_lean_obj_arg);
 
+/* --- Iroh --- */
+
 c_result *rs_iroh_send(b_lean_obj_arg);
 c_result *rs_iroh_recv(char const *, b_lean_obj_arg, size_t);
 
 void rs__c_result_unit_string_free(c_result *);
+
+/* --- Keccak Hasher --- */
+
+void *rs_keccak256_hasher_init(void);
+void rs_keccak256_hasher_free(void*);
+void *rs_keccak256_hasher_update(void*, void*);
+void *rs_keccak256_hasher_finalize(void*, void*);
