@@ -10,5 +10,5 @@ abbrev expectedOutput : ByteArray := ⟨#[
 
 def Tests.Keccak.suite : List LSpec.TestSeq :=
 [
-  test "Keccak256 hash" (expectedOutput.data = (Keccak.Hasher.hash input).data)
+  test "Keccak256 hash" (expectedOutput.data = (Keccak.hash input).data)
 ]
