@@ -6,8 +6,10 @@ use binius_core::{
         channel::{ChannelId, Flush, FlushDirection},
     },
     oracle::OracleId,
+    transparent::step_down::StepDown,
 };
 use binius_field::TowerField;
+use binius_utils::checked_arithmetics::log2_ceil_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
 
@@ -45,14 +47,25 @@ pub struct CircuitModule {
 impl CircuitModule {
     #[inline]
     pub fn new(module_id: ModuleId) -> Self {
+        let step_down = OracleInfo {
+            name: format!("step_down-module-{module_id}"),
+            tower_level: 0,
+            kind: OracleKind::StepDown,
+        };
+        let oracles = Freezable::Raw(vec![step_down]);
         Self {
             module_id,
-            oracles: Freezable::default(),
+            oracles,
             flushes: vec![],
             constraints: vec![],
             non_zero_oracle_ids: vec![],
             namespacer: Namespacer::default(),
         }
+    }
+
+    #[inline]
+    pub const fn selector(&self) -> OracleId {
+        0
     }
 
     #[inline]
@@ -176,20 +189,21 @@ impl CircuitModule {
 
 pub fn compile_circuit_modules(
     modules: &[CircuitModule],
-    modules_n_vars: &[u8],
+    modules_heights: &[u64],
 ) -> Result<ConstraintSystem<F>> {
     ensure!(
-        modules.len() == modules_n_vars.len(),
-        "Number of oracles is incompatible with the number of n_vars data"
+        modules.len() == modules_heights.len(),
+        "Number of modules is incompatible with the number of heights"
     );
     let mut oracle_offset = 0;
     let mut builder = ConstraintSystemBuilder::new();
-    for (module_idx, (module, &module_n_vars)) in modules.iter().zip(modules_n_vars).enumerate() {
-        if module_n_vars == 0 {
+    for (module_idx, (module, &height)) in modules.iter().zip(modules_heights).enumerate() {
+        if height == 0 {
             // Deactivated module. Skip.
             continue;
         }
-        let n_vars = module_n_vars as usize;
+        let height_usize: usize = height.try_into()?;
+        let n_vars = log2_ceil_usize(height_usize);
         ensure!(
             module_idx == module.module_id,
             "Wrong compilation order. Expected module {module_idx}, but got {}.",
@@ -212,6 +226,9 @@ pub fn compile_circuit_modules(
                 }
                 OracleKind::Transparent(Transparent::Constant(b128)) => {
                     builder.add_transparent(name, constant_from_b128(*b128, n_vars))?
+                }
+                OracleKind::StepDown => {
+                    builder.add_transparent(name, StepDown::new(n_vars, height_usize)?)?
                 }
             };
         }
@@ -265,12 +282,6 @@ struct Constraint {
 enum Freezable<T> {
     Raw(T),
     Frozen(Arc<T>),
-}
-
-impl<T: Default> Default for Freezable<T> {
-    fn default() -> Self {
-        Self::Raw(T::default())
-    }
 }
 
 impl<T> Freezable<T> {

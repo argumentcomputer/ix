@@ -18,6 +18,7 @@ pub enum OracleKind {
         inner: Vec<(OracleId, F)>,
     },
     Transparent(Transparent),
+    StepDown,
 }
 
 pub type ModuleId = usize;

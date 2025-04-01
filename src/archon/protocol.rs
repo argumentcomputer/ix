@@ -22,7 +22,7 @@ use super::{
 
 pub struct Proof {
     proof_core: ProofCore,
-    modules_n_vars: Vec<u8>,
+    modules_heights: Vec<u64>,
 }
 
 pub fn validate_witness(
@@ -32,9 +32,9 @@ pub fn validate_witness(
 ) -> Result<()> {
     let Witness {
         mlei,
-        modules_n_vars,
+        modules_heights,
     } = witness;
-    let constraint_system = compile_circuit_modules(circuit_modules, modules_n_vars)?;
+    let constraint_system = compile_circuit_modules(circuit_modules, modules_heights)?;
     validate_witness_core(&constraint_system, boundaries, mlei)?;
     Ok(())
 }
@@ -53,9 +53,9 @@ where
 {
     let Witness {
         mlei,
-        modules_n_vars,
+        modules_heights,
     } = witness;
-    let constraint_system = compile_circuit_modules(circuit_modules, &modules_n_vars)?;
+    let constraint_system = compile_circuit_modules(circuit_modules, &modules_heights)?;
     let proof_core = prove_core::<
         U,
         CanonicalTowerFamily,
@@ -73,7 +73,7 @@ where
     )?;
     Ok(Proof {
         proof_core,
-        modules_n_vars,
+        modules_heights,
     })
 }
 
@@ -86,9 +86,9 @@ pub fn verify(
 ) -> Result<()> {
     let Proof {
         proof_core,
-        modules_n_vars,
+        modules_heights,
     } = proof;
-    let constraint_system = compile_circuit_modules(circuit_modules, &modules_n_vars)?;
+    let constraint_system = compile_circuit_modules(circuit_modules, &modules_heights)?;
     verify_core::<
         U,
         CanonicalTowerFamily,
@@ -120,38 +120,42 @@ mod tests {
     };
 
     struct Oracles {
+        s: OracleId,
         a: OracleId,
         b: OracleId,
     }
 
     fn a_xor_b_circuit_module(module_id: ModuleId) -> Result<(CircuitModule, Oracles)> {
         let mut circuit_module = CircuitModule::new(module_id);
+        let s = circuit_module.selector();
         let a = circuit_module.add_committed::<B1>("a")?;
         let b = circuit_module.add_committed::<B1>("b")?;
         circuit_module.assert_zero("a xor b", [], ArithExpr::Oracle(a) + ArithExpr::Oracle(b));
         circuit_module.freeze_oracles();
-        Ok((circuit_module, Oracles { a, b }))
+        Ok((circuit_module, Oracles { s, a, b }))
     }
 
     fn populate_a_xor_b_witness_with_zeros(witness_module: &mut WitnessModule, oracles: &Oracles) {
-        let zeros = witness_module.new_entry_with_capacity(7);
-        witness_module.push_u128_to(0, zeros);
-        witness_module.bind_oracle_to::<B1>(oracles.a, zeros);
-        witness_module.bind_oracle_to::<B1>(oracles.b, zeros);
+        let ones = witness_module.new_entry_with_capacity(7);
+        witness_module.push_u128_to(u128::MAX, ones);
+        witness_module.bind_oracle_to::<B1>(oracles.s, ones);
+        witness_module.bind_oracle_to::<B1>(oracles.a, ones);
+        witness_module.bind_oracle_to::<B1>(oracles.b, ones);
     }
 
     #[test]
     fn test_invalid_witness() {
         let (circuit_module, oracles) = a_xor_b_circuit_module(0).unwrap();
         let mut witness_module = circuit_module.init_witness_module().unwrap();
-        let a = witness_module.new_entry_with_capacity(7);
-        let b = witness_module.new_entry_with_capacity(7);
-        witness_module.push_u128_to(0, a);
-        witness_module.push_u128_to(1, b);
-        witness_module.bind_oracle_to::<B1>(oracles.a, a);
-        witness_module.bind_oracle_to::<B1>(oracles.b, b);
+        let zeros = witness_module.new_entry_with_capacity(7);
+        let ones = witness_module.new_entry_with_capacity(7);
+        witness_module.push_u128_to(0, zeros);
+        witness_module.push_u128_to(u128::MAX, ones);
+        witness_module.bind_oracle_to::<B1>(oracles.s, ones);
+        witness_module.bind_oracle_to::<B1>(oracles.a, ones);
+        witness_module.bind_oracle_to::<B1>(oracles.b, zeros);
         let witness_modules = [witness_module];
-        let witness = compile_witness_modules(&witness_modules).unwrap();
+        let witness = compile_witness_modules(&witness_modules, vec![128]).unwrap();
         assert!(validate_witness(&[circuit_module], &witness, &[]).is_err());
     }
 
@@ -161,7 +165,7 @@ mod tests {
         let mut witness_module = circuit_module.init_witness_module().unwrap();
         populate_a_xor_b_witness_with_zeros(&mut witness_module, &oracles);
         let witness_modules = [witness_module];
-        let witness = compile_witness_modules(&witness_modules).unwrap();
+        let witness = compile_witness_modules(&witness_modules, vec![128]).unwrap();
         assert!(validate_witness(&[circuit_module], &witness, &[]).is_ok());
     }
 
@@ -173,7 +177,7 @@ mod tests {
         let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
         populate_a_xor_b_witness_with_zeros(&mut witness_modules[0], &oracles0);
         populate_a_xor_b_witness_with_zeros(&mut witness_modules[1], &oracles1);
-        let witness = compile_witness_modules(&witness_modules).unwrap();
+        let witness = compile_witness_modules(&witness_modules, vec![128, 128]).unwrap();
         assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
     }
 
@@ -185,7 +189,7 @@ mod tests {
         let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
         populate_a_xor_b_witness_with_zeros(&mut witness_modules[0], &oracles0);
         // Witness module 1 isn't populated
-        let witness = compile_witness_modules(&witness_modules).unwrap();
+        let witness = compile_witness_modules(&witness_modules, vec![128, 0]).unwrap();
         assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
     }
 }

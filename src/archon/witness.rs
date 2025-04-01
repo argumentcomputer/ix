@@ -9,7 +9,6 @@ use binius_field::{
     underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
 };
 use binius_math::MultilinearExtension;
-use binius_utils::checked_arithmetics::log2_strict_usize;
 use indexmap::IndexSet;
 use rayon::{
     iter::{
@@ -40,28 +39,42 @@ pub struct WitnessModule {
 
 pub struct Witness<'a> {
     pub(crate) mlei: MultilinearExtensionIndex<'a, OptimalUnderlier, B128>,
-    /// The `n_vars` for each module. `0` means that the circuit module is
-    /// deactivated and must be skipped at compilation time.
-    pub(crate) modules_n_vars: Vec<u8>,
+    /// The heights for each module. `0` means that the circuit module is
+    /// deactivated and must be skipped during compilation.
+    pub(crate) modules_heights: Vec<u64>,
 }
 
 #[inline]
-pub fn populate_witness_modules(modules: &mut [WitnessModule]) -> Result<()> {
-    modules.par_iter_mut().try_for_each(WitnessModule::populate)
+pub fn populate_witness_modules(
+    modules: &mut [WitnessModule],
+    modules_heights: Vec<u64>,
+) -> Result<()> {
+    ensure!(
+        modules.len() == modules_heights.len(),
+        "Incompatible numbers of modules and heights"
+    );
+    modules
+        .par_iter_mut()
+        .zip(modules_heights)
+        .try_for_each(|(module, height)| module.populate(height))
 }
 
-pub fn compile_witness_modules(modules: &[WitnessModule]) -> Result<Witness<'_>> {
+pub fn compile_witness_modules(
+    modules: &[WitnessModule],
+    heights: Vec<u64>,
+) -> Result<Witness<'_>> {
+    ensure!(modules.len() == heights.len());
     let mut witness = Witness::with_capacity(modules.len());
     let mut oracle_offset = 0;
-    for (module_idx, module) in modules.iter().enumerate() {
+    for (module_idx, (module, height)) in modules.iter().zip(heights).enumerate() {
         ensure!(
             module_idx == module.module_id,
             "Wrong compilation order. Expected module {module_idx}, but got {}.",
             module.module_id
         );
-        if module.entry_map.is_empty() {
+        if height == 0 {
             // Deactivate module.
-            witness.modules_n_vars.push(0);
+            witness.modules_heights.push(0);
             continue;
         }
         let oracles_data_results = (0..module.num_oracles())
@@ -71,12 +84,19 @@ pub fn compile_witness_modules(modules: &[WitnessModule]) -> Result<Witness<'_>>
                     bail!("Entry not found for oracle {oracle_id}, module {module_idx}.");
                 };
                 let entry = &module.entries[entry_id];
-                let n_vars_usize = WitnessModule::n_vars(entry.len(), tower_level).context(
-                    format!("Computing n_vars for entry {entry_id}, bound to oracle {oracle_id}, module {module_idx}")
-                )?;
-                let n_vars: u8 = n_vars_usize
-                    .try_into()
-                    .context(format!("Representing n_vars={n_vars_usize} as an u8"))?;
+                let expected_num_underliers = WitnessModule::num_underliers_for_height(height, tower_level)?;
+                let got_num_underliers = entry.len();
+                ensure!(
+                    got_num_underliers == expected_num_underliers,
+                    [
+                        format!(
+                            "Wrong number of underliers for entry {entry_id}, bound to oracle {oracle_id}, module {module_idx}.\n"
+                        ),
+                        format!(
+                            "Expected {expected_num_underliers} but got {got_num_underliers}."
+                        )
+                    ].concat()
+                );
                 macro_rules! oracle_poly {
                     ($bf:ident) => {{
                         let values =
@@ -86,7 +106,7 @@ pub fn compile_witness_modules(modules: &[WitnessModule]) -> Result<Witness<'_>>
                                 "MLE instantiation for entry {entry_id}, oracle {oracle_id}, module {module_idx}"
                             ))?
                             .specialize_arc_dyn();
-                        Ok(((oracle_offset + oracle_id, mle), n_vars))
+                        Ok(((oracle_offset + oracle_id, mle), height))
                     }};
                 }
                 match tower_level {
@@ -105,21 +125,21 @@ pub fn compile_witness_modules(modules: &[WitnessModule]) -> Result<Witness<'_>>
             })
             .collect::<Vec<_>>();
         let mut oracle_poly_vec = Vec::with_capacity(oracles_data_results.len());
-        let mut n_vars_opt = None;
+        let mut height_opt = None;
         for oracle_data_result in oracles_data_results {
-            let (oracle_poly, oracle_n_vars) = oracle_data_result?;
-            match n_vars_opt {
-                Some(known_n_vars) => ensure!(
-                    oracle_n_vars == known_n_vars,
-                    "Witness for module {module_idx} has incompatible n_vars: {oracle_n_vars} != {known_n_vars}"
+            let (oracle_poly, oracle_height) = oracle_data_result?;
+            match height_opt {
+                Some(known_height) => ensure!(
+                    oracle_height == known_height,
+                    "Witness for module {module_idx} has incompatible heights: {oracle_height} != {known_height}"
                 ),
-                None => n_vars_opt = Some(oracle_n_vars),
+                None => height_opt = Some(oracle_height),
             }
             oracle_poly_vec.push(oracle_poly);
         }
-        let n_vars = n_vars_opt.unwrap_or(0); // Deactivate module without oracles
+        let height = height_opt.unwrap_or(0); // Deactivate module without oracles
         witness.mlei.update_multilin_poly(oracle_poly_vec)?;
-        witness.modules_n_vars.push(n_vars);
+        witness.modules_heights.push(height);
         oracle_offset += module.num_oracles();
     }
     Ok(witness)
@@ -173,27 +193,20 @@ impl WitnessModule {
         self.entries[entry_id].push(OptimalUnderlier::from_u128(u128))
     }
 
-    /// Populates the witness module with `n_vars` inferred from the length of
-    /// the data bound to the committed oracles.
-    #[inline]
-    pub fn populate(&mut self) -> Result<()> {
-        self.populate_with_n_vars(None)
-    }
-
-    fn populate_with_n_vars(&mut self, mut n_vars_opt: Option<usize>) -> Result<()> {
-        let mut set_n_vars_opt = |entry_id: usize, tower_level| -> Result<()> {
-            let num_underliers = self.entries[entry_id].len();
-            let n_vars = WitnessModule::n_vars(num_underliers, tower_level).context(format!(
-                "Computing n_vars for entry {entry_id} of witness module {}",
-                self.module_id
-            ))?;
-            match n_vars_opt {
-                Some(known_n_vars) => ensure!(
-                    n_vars == known_n_vars,
-                    "Found prepopulated oracles with incompatible lengths"
+    /// Populates a witness module with data to reach a given height.
+    /// # Errors
+    /// This function errors if a prepopulated oracle doesn't have this same height.
+    pub fn populate(&mut self, height: u64) -> Result<()> {
+        let ensure_height = |entry_id: usize, tower_level| -> Result<()> {
+            let expected_num_underliers = Self::num_underliers_for_height(height, tower_level)?;
+            let got_num_underliers = self.entries[entry_id].len();
+            ensure!(
+                expected_num_underliers == got_num_underliers,
+                format!(
+                    "Expected length {expected_num_underliers} for entry {entry_id} on module {}. Got {got_num_underliers}.",
+                    self.module_id,
                 ),
-                None => n_vars_opt = Some(n_vars),
-            }
+            );
             Ok(())
         };
 
@@ -201,8 +214,8 @@ impl WitnessModule {
         // of any other oracle. `root_oracles` starts with all oracles, which are
         // removed as the following loop finds out they break such condition.
         //
-        // The loop also uses `set_n_vars_opt` to make sure that `n_vars_opt` ends
-        // up with an unified target length for all oracles.
+        // The loop also uses `ensure_height` to make sure that prepopulated
+        // oracles have the right amount of data.
         let mut root_oracles: FxHashSet<_> = (0..self.num_oracles()).collect();
         for (oracle_id, oracle_info) in self.oracles.iter().enumerate() {
             let mut is_committed = false;
@@ -216,7 +229,7 @@ impl WitnessModule {
                         root_oracles.remove(inner_oracle_id);
                     }
                 }
-                OracleKind::Transparent(_) => (),
+                OracleKind::Transparent(_) | OracleKind::StepDown => (),
             }
 
             if is_committed {
@@ -227,16 +240,11 @@ impl WitnessModule {
                         &self.module_id,
                     );
                 };
-                set_n_vars_opt(entry_id, tower_level)?;
+                ensure_height(entry_id, tower_level)?;
             } else if let Some(&(entry_id, tower_level)) = self.entry_map.get(&oracle_id) {
-                set_n_vars_opt(entry_id, tower_level)?;
+                ensure_height(entry_id, tower_level)?;
             }
         }
-
-        // Extract the target n_vars for a potential early error return.
-        let Some(n_vars) = n_vars_opt else {
-            bail!("Couldn't infer n_vars for module {}", &self.module_id);
-        };
 
         // The incoming code block aims to calculate a compute order for the
         // oracles, in which the root oracles will be last and the leaf oracles
@@ -255,12 +263,12 @@ impl WitnessModule {
             let mut is_committed = false;
             match &self.oracles[oracle_id].kind {
                 OracleKind::Committed => is_committed = true,
-                OracleKind::Transparent(_) => (),
                 OracleKind::LinearCombination { inner, .. } => {
                     for (inner_oracle_id, _) in inner {
                         stack_to_visit!(inner_oracle_id);
                     }
                 }
+                OracleKind::Transparent(_) | OracleKind::StepDown => (),
             }
             if !is_committed {
                 compute_order.insert(oracle_id);
@@ -270,8 +278,6 @@ impl WitnessModule {
         // And now we're finally able to populate the witness, following the
         // correct compute order and making the assumption that dependency oracles
         // were already populated.
-        let num_underliers =
-            |tower_level| 1usize << (n_vars + tower_level - OptimalUnderlier::LOG_BITS);
         while let Some(oracle_id) = compute_order.pop() {
             if self.entry_map.contains_key(&oracle_id) {
                 // Already populated. Skip.
@@ -303,7 +309,7 @@ impl WitnessModule {
                     }
 
                     // The number of underliers for the target oracle and also for the dependencies
-                    let entry_len = num_underliers(tower_level);
+                    let entry_len = Self::num_underliers_for_height(height, tower_level)?;
 
                     // Expand an underlier into multiple underliers, extracting binary field elements
                     // data for upcasts into the tower level of the target oracle
@@ -455,15 +461,35 @@ impl WitnessModule {
                 OracleKind::Transparent(transparent) => match transparent {
                     Transparent::Constant(b) => {
                         let tower_level = oracle_info.tower_level;
-                        ensure!(
-                            n_vars + tower_level >= OptimalUnderlier::LOG_BITS,
-                            "n_vars + tower_level needs to be at least {}",
-                            OptimalUnderlier::LOG_BITS
-                        );
                         let u = OptimalUnderlier::from_u128(replicate_within_u128(*b));
-                        (vec![u; num_underliers(tower_level)], tower_level)
+                        let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
+                        (vec![u; num_underliers], tower_level)
                     }
                 },
+                OracleKind::StepDown => {
+                    let tower_level = oracle_info.tower_level;
+                    assert_eq!(tower_level, 0);
+                    let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
+                    // Start the underliers with a bunch of B1(1)s and then set the padding
+                    // bits to zero if necessary.
+                    let mut underliers =
+                        vec![OptimalUnderlier::from_u128(u128::MAX); num_underliers];
+                    let height_usize: usize = height.try_into()?;
+                    let step_down_changes_at = height_usize / OptimalUnderlier::BITS;
+                    if step_down_changes_at < num_underliers {
+                        // Produce an `u128` with the `height_usize % OptimalUnderlier::BITS`
+                        // least significant bits set to one and the rest set to zero.
+                        let u128 = (1 << (height_usize % OptimalUnderlier::BITS)) - 1;
+                        underliers[step_down_changes_at] = OptimalUnderlier::from_u128(u128);
+
+                        // The next underliers must all be zeros.
+                        underliers
+                            .par_iter_mut()
+                            .skip(step_down_changes_at + 1)
+                            .for_each(|u| *u = OptimalUnderlier::from_u128(0));
+                    }
+                    (underliers, tower_level)
+                }
             };
 
             let (underliers, tower_level) = oracle_witness_data;
@@ -486,14 +512,15 @@ impl WitnessModule {
         }
     }
 
-    /// Computes the number of variables given the number of `OptimalUnderlier`s
-    /// used and the tower level of the oracle.
-    fn n_vars(num_underliers: usize, tower_level: usize) -> Result<usize> {
-        ensure!(
-            num_underliers.is_power_of_two(),
-            "Data size is not a power of two."
-        );
-        Ok(log2_strict_usize(num_underliers) + OptimalUnderlier::LOG_BITS - tower_level)
+    /// Computes the number of `OptimalUnderlier`s needed to reach a certain
+    /// height at a given tower level.
+    fn num_underliers_for_height(height: u64, tower_level: usize) -> Result<usize> {
+        let height_pow2 = height.next_power_of_two();
+        ensure!(height_pow2 != 0, "Height's next power of two overflow");
+        let height_pow2_usize: usize = height_pow2
+            .try_into()
+            .context("Representing height's next power of two as an usize")?;
+        Ok(height_pow2_usize * (1 << tower_level) / OptimalUnderlier::BITS)
     }
 
     fn num_oracles(&self) -> usize {
@@ -506,7 +533,7 @@ impl Witness<'_> {
     fn with_capacity(num_modules: usize) -> Self {
         Self {
             mlei: MultilinearExtensionIndex::new(),
-            modules_n_vars: Vec::with_capacity(num_modules),
+            modules_heights: Vec::with_capacity(num_modules),
         }
     }
 }
@@ -518,6 +545,7 @@ mod tests {
         BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64,
         BinaryField128b as B128,
     };
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     use crate::archon::{
         circuit::{CircuitModule, init_witness_modules},
@@ -571,19 +599,17 @@ mod tests {
         circuit_module.freeze_oracles();
         let circuit_modules = [circuit_module];
 
-        let test_n_vars = |n_vars| {
+        let test_with_height = |height| {
             let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
-            witness_modules[0]
-                .populate_with_n_vars(Some(n_vars))
-                .unwrap();
+            witness_modules[0].populate(height).unwrap();
             assert!(!witness_modules[0].entry_map.is_empty());
-            let witness = compile_witness_modules(&witness_modules).unwrap();
-            assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
+            let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+            validate_witness(&circuit_modules, &witness, &[]).unwrap();
         };
 
-        test_n_vars(7);
-        test_n_vars(8);
-        test_n_vars(9);
+        [128, 200, 256, 400, 512, 600]
+            .into_par_iter()
+            .for_each(test_with_height);
     }
 
     #[test]
@@ -647,9 +673,10 @@ mod tests {
                 _ => unreachable!(),
             }
         }
-        witness_modules[0].populate().unwrap();
+        let height = 128;
+        witness_modules[0].populate(height).unwrap();
         assert!(!witness_modules[0].entry_map.is_empty());
-        let witness = compile_witness_modules(&witness_modules).unwrap();
+        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
         assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok())
     }
 }
