@@ -6,16 +6,15 @@ use binius_core::{
         channel::{ChannelId, Flush, FlushDirection},
     },
     oracle::OracleId,
-    transparent::constant::Constant,
 };
 use binius_field::TowerField;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
 
+use crate::archon::transparent::constant_from_b128;
+
 use super::{
-    F, ModuleId, OracleInfo, OracleKind,
-    arith_expr::ArithExpr,
-    transparent::{ConstVal, Transparent},
+    F, ModuleId, OracleInfo, OracleKind, arith_expr::ArithExpr, transparent::Transparent,
     witness::WitnessModule,
 };
 
@@ -142,9 +141,14 @@ impl CircuitModule {
         let inner = inner.into_iter().collect::<Vec<_>>();
         let tower_level = inner
             .iter()
-            .map(|(oracle_id, _)| self.oracles.get_ref()[*oracle_id].tower_level)
+            .map(|(oracle_id, coeff)| {
+                self.oracles.get_ref()[*oracle_id]
+                    .tower_level
+                    .max(coeff.min_tower_level())
+            })
             .max()
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .max(offset.min_tower_level());
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level,
@@ -198,11 +202,6 @@ pub fn compile_circuit_modules(
             kind,
         } in module.oracles.get_ref()
         {
-            macro_rules! add_transparent {
-                ($t:expr) => {
-                    builder.add_transparent(name, $t)?
-                };
-            }
             match kind {
                 OracleKind::Committed => builder.add_committed(name, n_vars, *tower_level),
                 OracleKind::LinearCombination { offset, inner } => {
@@ -211,16 +210,9 @@ pub fn compile_circuit_modules(
                         .map(|(oracle_id, f)| (oracle_id + oracle_offset, *f));
                     builder.add_linear_combination_with_offset(name, n_vars, *offset, inner)?
                 }
-                OracleKind::Transparent(Transparent::Constant(c)) => match c {
-                    ConstVal::B1(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B2(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B4(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B8(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B16(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B32(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B64(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B128(b) => add_transparent!(Constant::new(n_vars, *b)),
-                },
+                OracleKind::Transparent(Transparent::Constant(b128)) => {
+                    builder.add_transparent(name, constant_from_b128(*b128, n_vars))?
+                }
             };
         }
 
