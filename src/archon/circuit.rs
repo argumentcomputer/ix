@@ -136,7 +136,7 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         offset: F,
-        inner: impl Iterator<Item = (OracleId, F)>,
+        inner: impl IntoIterator<Item = (OracleId, F)>,
     ) -> Result<OracleId> {
         let inner = inner.into_iter().collect::<Vec<_>>();
         let tower_level = inner

@@ -10,7 +10,7 @@ use binius_core::{
 };
 use binius_field::BinaryField8b as B8;
 use binius_hal::ComputationBackend;
-use binius_hash::compress::Groestl256ByteCompression;
+use binius_hash::groestl::Groestl256ByteCompression;
 use binius_math::EvaluationDomainFactory;
 use groestl_crypto::Groestl256;
 
@@ -45,7 +45,6 @@ pub fn prove<DomainFactory, Backend>(
     boundaries: &[Boundary<F>],
     log_inv_rate: usize,
     security_bits: usize,
-    domain_factory: &DomainFactory,
     backend: &Backend,
 ) -> Result<Proof>
 where
@@ -60,7 +59,6 @@ where
     let proof_core = prove_core::<
         U,
         CanonicalTowerFamily,
-        _,
         Groestl256,
         Groestl256ByteCompression,
         HasherChallenger<Groestl256>,
@@ -71,7 +69,6 @@ where
         security_bits,
         boundaries,
         mlei,
-        domain_factory,
         backend,
     )?;
     Ok(Proof {

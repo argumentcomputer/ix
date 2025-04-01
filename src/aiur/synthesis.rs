@@ -529,8 +529,7 @@ mod tests {
     };
     use binius_field::{Field, underlier::WithUnderlier};
     use binius_hal::make_portable_backend;
-    use binius_hash::compress::Groestl256ByteCompression;
-    use binius_math::DefaultEvaluationDomainFactory;
+    use binius_hash::groestl::Groestl256ByteCompression;
     use groestl_crypto::Groestl256;
 
     use crate::aiur::{
@@ -557,7 +556,6 @@ mod tests {
             .expect("builder created with witness");
         let constraint_system = builder.build().unwrap();
 
-        let domain_factory = DefaultEvaluationDomainFactory::default();
         let backend = make_portable_backend();
         const LOG_INV_RATE: usize = 1;
         const SECURITY_BITS: usize = 100;
@@ -609,7 +607,6 @@ mod tests {
         let proof = constraint_system::prove::<
             U,
             CanonicalTowerFamily,
-            _,
             Groestl256,
             Groestl256ByteCompression,
             HasherChallenger<Groestl256>,
@@ -620,7 +617,6 @@ mod tests {
             SECURITY_BITS,
             &boundaries,
             witness,
-            &domain_factory,
             &backend,
         )
         .unwrap();
