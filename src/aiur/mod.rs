@@ -1,4 +1,3 @@
-pub mod binius;
 pub mod constraints;
 pub mod execute;
 pub mod gadgets;
