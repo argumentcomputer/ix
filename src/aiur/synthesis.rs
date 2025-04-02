@@ -158,25 +158,22 @@ impl VirtualMap {
         log_n: usize,
     ) -> OracleId {
         let virt = Virtual::Constant { constant, log_n };
+        macro_rules! constant {
+            ($f:ident) => {{
+                let id = builder
+                    .add_transparent("constant", Constant::new(log_n, $f))
+                    .unwrap();
+                if let Some(witness) = builder.witness() {
+                    witness.new_column_with_default(id, $f);
+                }
+                id
+            }};
+        }
         let id = self.map.entry(virt).or_insert_with(|| match constant {
-            Fields::FunctionIndex(f) => {
-                let id = builder
-                    .add_transparent("constant", Constant::new(log_n, f))
-                    .unwrap();
-                if let Some(witness) = builder.witness() {
-                    witness.new_column_with_default(id, f);
-                }
-                id
-            }
-            Fields::Multiplicity(f) => {
-                let id = builder
-                    .add_transparent("constant", Constant::new(log_n, f))
-                    .unwrap();
-                if let Some(witness) = builder.witness() {
-                    witness.new_column_with_default(id, f);
-                }
-                id
-            }
+            Fields::Bit(f) => constant!(f),
+            Fields::Byte(f) => constant!(f),
+            Fields::Multiplicity(f) => constant!(f),
+            Fields::FunctionIndex(f) => constant!(f),
         });
         *id
     }
@@ -225,11 +222,18 @@ impl Expr {
         builder: &mut ConstraintSystemBuilder<'_>,
         virt_map: &mut VirtualMap,
         log_n: u8,
-    ) -> Option<OracleId> {
+    ) -> OracleId {
+        if let Expr::Const(x) = self {
+            let bit = (*x).try_into().expect("Constant not a bit");
+            return virt_map.constant(builder, Fields::Bit(bit), log_n as usize);
+        }
         let mut sum = vec![];
         let mut offset = AiurByteField::ZERO;
-        self.accumulate_sum(&mut sum, &mut offset)?;
-        Some(virt_map.sum_bit(builder, sum, offset, log_n as usize))
+        self.accumulate_sum(&mut sum, &mut offset).unwrap();
+        if sum.len() == 1 && offset == AiurByteField::ZERO {
+            return sum[0];
+        }
+        virt_map.sum_bit(builder, sum, offset, log_n as usize)
     }
 
     fn to_sum_byte(
@@ -237,11 +241,17 @@ impl Expr {
         builder: &mut ConstraintSystemBuilder<'_>,
         virt_map: &mut VirtualMap,
         log_n: u8,
-    ) -> Option<OracleId> {
+    ) -> OracleId {
+        if let Expr::Const(x) = self {
+            return virt_map.constant(builder, Fields::Byte(*x), log_n as usize);
+        }
         let mut sum = vec![];
         let mut offset = AiurByteField::ZERO;
-        self.accumulate_sum(&mut sum, &mut offset)?;
-        Some(virt_map.sum_byte(builder, sum, offset, log_n as usize))
+        self.accumulate_sum(&mut sum, &mut offset).unwrap();
+        if sum.len() == 1 && offset == AiurByteField::ZERO {
+            return sum[0];
+        }
+        virt_map.sum_byte(builder, sum, offset, log_n as usize)
     }
 
     fn accumulate_sum(&self, sum: &mut Vec<OracleId>, offset: &mut AiurByteField) -> Option<()> {
@@ -420,6 +430,12 @@ fn synthesize_constraints(
     virt_map: &mut VirtualMap,
 ) {
     let log_n = count.next_power_of_two().ilog2() as u8;
+    {
+        // Topmost selector must be equal to the count step down
+        let step_down = virt_map.step_down(builder, log_n as usize, count as usize);
+        let (expr, oracles) = (constraints.topmost_selector - Expr::Var(step_down)).to_arith_expr();
+        builder.assert_zero("topmost", expr, oracles);
+    }
     let constant = virt_map.constant(
         builder,
         Fields::FunctionIndex(FunctionIndexField::from_underlier(func_idx)),
@@ -446,7 +462,7 @@ fn synthesize_constraints(
     }
     // TODO: Add, Mul chips
     // for (channel, sel, args) in constraints.sends {
-    //     let sel = sel.to_sum_bit(builder, virt_map, log_n).unwrap();
+    //     let sel = sel.to_sum_bit(builder, virt_map, log_n);
     //     let oracles = args
     //         .iter()
     //         .map(|arg| arg.to_sum_byte(builder, virt_map, log_n).unwrap())
@@ -464,10 +480,10 @@ fn synthesize_constraints(
     for (channel, sel, prev_index, args) in constraints.requires {
         match channel {
             Channel::Fun(func_idx) => {
-                let sel = sel.to_sum_bit(builder, virt_map, log_n).unwrap();
+                let sel = sel.to_sum_bit(builder, virt_map, log_n);
                 let mut oracles = args
                     .iter()
-                    .map(|arg| arg.to_sum_byte(builder, virt_map, log_n).unwrap())
+                    .map(|arg| arg.to_sum_byte(builder, virt_map, log_n))
                     .collect::<Vec<_>>();
                 let idx = virt_map.constant(
                     builder,
@@ -485,10 +501,10 @@ fn synthesize_constraints(
                 );
             }
             Channel::Mem(size) => {
-                let sel = sel.to_sum_bit(builder, virt_map, log_n).unwrap();
+                let sel = sel.to_sum_bit(builder, virt_map, log_n);
                 let oracles = args
                     .iter()
-                    .map(|arg| arg.to_sum_byte(builder, virt_map, log_n).unwrap())
+                    .map(|arg| arg.to_sum_byte(builder, virt_map, log_n))
                     .collect::<Vec<_>>();
                 let channel_id = channel_ids.get_mem_channel(size);
                 require(builder, channel_id, prev_index, oracles, sel, log_n.into());

@@ -3,12 +3,12 @@ use binius_core::{
     oracle::OracleId,
     polynomial::{Error, MultivariatePoly},
 };
-use binius_field::{Field, TowerField, underlier::WithUnderlier};
+use binius_field::{BinaryField1b, Field, TowerField, underlier::WithUnderlier};
 use binius_utils::bail;
 
 use super::layout::{AiurByteField, AiurField, FunctionIndexField, MultiplicityField};
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Debug, Eq, Hash)]
 pub enum Virtual {
     Constant {
         constant: Fields,
@@ -28,10 +28,12 @@ pub enum Virtual {
     },
 }
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(PartialEq, Debug, Eq, Hash, Clone, Copy)]
 pub enum Fields {
-    FunctionIndex(FunctionIndexField),
+    Bit(BinaryField1b),
+    Byte(AiurByteField),
     Multiplicity(MultiplicityField),
+    FunctionIndex(FunctionIndexField),
 }
 
 #[derive(Debug, Clone)]
