@@ -540,23 +540,22 @@ mod tests {
     use binius_hash::groestl::Groestl256ByteCompression;
     use groestl_crypto::Groestl256;
 
-    use crate::aiur::{
-        execute::tests::factorial_function,
-        ir::{FuncIdx, Toplevel},
-        layout::AiurField,
-        trace::MULT_GEN,
+    use crate::{
+        aiur::{
+            execute::tests::factorial_toplevel,
+            frontend::expr::toplevel_from_funcs,
+            ir::{FuncIdx, Toplevel},
+            layout::AiurField,
+            trace::MULT_GEN,
+        },
+        func,
     };
 
-    #[test]
-    fn test_factorial() {
-        let toplevel = Toplevel {
-            functions: vec![factorial_function()],
-        };
-
+    fn prove_verify(toplevel: &Toplevel, index: u8, input: &[u8], output: &[u8]) {
         let allocator = bumpalo::Bump::new();
         let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
-        let record = toplevel.execute(FuncIdx(0), 100u64.to_le_bytes().to_vec());
+        let record = toplevel.execute(FuncIdx(index as u32), input.to_vec());
         let (_counts, channel_ids) = toplevel.prover_synthesize(&mut builder, &record);
 
         let witness = builder
@@ -568,29 +567,10 @@ mod tests {
         const LOG_INV_RATE: usize = 1;
         const SECURITY_BITS: usize = 100;
 
-        let f = AiurField::from_underlier;
-        let io = vec![
-            // input
-            f(100),
-            f(0),
-            f(0),
-            f(0),
-            f(0),
-            f(0),
-            f(0),
-            f(0),
-            // output
-            f(0),
-            f(0),
-            f(0),
-            f(0),
-            f(0),
-            f(0),
-            f(0),
-            f(0),
-            // function index
-            f(0),
-        ];
+        let f = |x: u8| AiurField::from_underlier(x.into());
+        let mut io = input.iter().copied().map(f).collect::<Vec<_>>();
+        io.extend(output.iter().copied().map(f));
+        io.push(f(index));
         let mut push_io = io.clone();
         push_io.push(MULT_GEN.into());
         let push_boundaries = Boundary {
@@ -609,7 +589,7 @@ mod tests {
             multiplicity: 1,
         };
 
-        let boundaries = vec![pull_boundaries, push_boundaries];
+        let boundaries = [pull_boundaries, push_boundaries];
         validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 
         let proof = constraint_system::prove::<
@@ -643,5 +623,36 @@ mod tests {
             proof,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_factorial() {
+        let toplevel = factorial_toplevel();
+        let func_idx = 0;
+        let input = &[100, 0, 0, 0, 0, 0, 0, 0];
+        let output = &[0, 0, 0, 0, 0, 0, 0, 0];
+        prove_verify(&toplevel, func_idx, input, output);
+    }
+
+    #[test]
+    fn test_load_store() {
+        let func = func!(
+        fn load_store(n): [8] {
+            let one = 1;
+            if !n {
+                let ptr = 50;
+                let x = load(ptr);
+                return x
+            }
+            let _ptr = store(n);
+            let pred = sub(n, one);
+            let m = call(load_store, pred);
+            return m
+        });
+        let toplevel = toplevel_from_funcs(&[func]);
+        let func_idx = 0;
+        let input = &[100, 0, 0, 0, 0, 0, 0, 0];
+        let output = &[50, 0, 0, 0, 0, 0, 0, 0];
+        prove_verify(&toplevel, func_idx, input, output);
     }
 }

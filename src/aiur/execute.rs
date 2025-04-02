@@ -278,127 +278,66 @@ pub(crate) fn load_u64(a: &ValIdx, map: &[u8]) -> u64 {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::aiur::{
-        execute::QueryResult,
-        ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, Toplevel, ValIdx},
+    use crate::{
+        aiur::{
+            execute::QueryResult,
+            frontend::expr::toplevel_from_funcs,
+            ir::{FuncIdx, Toplevel},
+        },
+        func,
     };
 
-    pub(crate) fn factorial_function() -> Function {
-        let inp_val_idx = ValIdx(0); // the input is at index 0
-        let one_val_idx = ValIdx(8); // a constant `1` value
-        let pre_val_idx = ValIdx(16); // inp - one
-        let rec_val_idx = ValIdx(24); // factorial(pre)
-        let res_val_idx = ValIdx(32); // inp * rec
-        let call_args = (0..8).map(|i| ValIdx(pre_val_idx.0 + i)).collect();
-        let true_return_vars = (0..8).map(|i| ValIdx(res_val_idx.0 + i)).collect();
-        let false_return_vars = (0..8).map(|i| ValIdx(one_val_idx.0 + i)).collect();
-
-        let true_block = Block {
-            ops: vec![
-                Op::Sub(inp_val_idx, one_val_idx),
-                Op::Call(FuncIdx(0), call_args, 8),
-                Op::Mul(inp_val_idx, rec_val_idx),
-            ],
-            ctrl: Box::new(Ctrl::Return(SelIdx(0), true_return_vars)), // Recursive return
-            return_idents: vec![SelIdx(0)],
-        };
-
-        let false_block = Block {
-            ops: vec![],
-            ctrl: Box::new(Ctrl::Return(SelIdx(1), false_return_vars)),
-            return_idents: vec![SelIdx(1)],
-        };
-
-        let main_block = Block {
-            ops: vec![Op::Prim(Prim::U64(1))],
-            ctrl: Box::new(Ctrl::If64(inp_val_idx, true_block, false_block)),
-            return_idents: vec![SelIdx(0), SelIdx(1)],
-        };
-
-        Function {
-            name: "factorial",
-            input_size: 8,
-            output_size: 8,
-            body: main_block,
-        }
+    pub(crate) fn factorial_toplevel() -> Toplevel {
+        let func = func!(
+        fn factorial(n): [8] {
+            let one = 1;
+            if n {
+                let pred = sub(n, one);
+                let m = call(factorial, pred);
+                let res = mul(n, m);
+                return res
+            }
+            return one
+        });
+        toplevel_from_funcs(&[func])
     }
 
-    fn square_function() -> Function {
-        let input = ValIdx(0);
-        let output = ValIdx(8);
-        let return_vars = (0..8).map(|i| ValIdx(output.0 + i)).collect();
-
-        let main_block = Block {
-            ops: vec![Op::Mul(input, input)],
-            ctrl: Box::new(Ctrl::Return(SelIdx(0), return_vars)),
-            return_idents: vec![SelIdx(0)],
-        };
-
-        Function {
-            name: "square",
-            input_size: 8,
-            output_size: 8,
-            body: main_block,
-        }
+    fn square_toplevel() -> Toplevel {
+        let func = func!(
+        fn square(n): [8] {
+            let m = mul(n, n);
+            return m
+        });
+        toplevel_from_funcs(&[func])
     }
 
-    fn cube_function() -> Function {
-        let input = ValIdx(0);
-        let tmp = ValIdx(8);
-        let output = ValIdx(16);
-        let return_vars = (0..8).map(|i| ValIdx(output.0 + i)).collect();
-
-        let main_block = Block {
-            ops: vec![Op::Mul(input, input), Op::Mul(tmp, input)],
-            ctrl: Box::new(Ctrl::Return(SelIdx(0), return_vars)),
-            return_idents: vec![SelIdx(0)],
-        };
-
-        Function {
-            name: "cube",
-            input_size: 8,
-            output_size: 8,
-            body: main_block,
-        }
+    fn cube_toplevel() -> Toplevel {
+        let func = func!(
+        fn cube(n): [8] {
+            let tmp = mul(n, n);
+            let m = mul(tmp, n);
+            return m
+        });
+        toplevel_from_funcs(&[func])
     }
 
-    fn double_function() -> Function {
-        let input = ValIdx(0);
-        let two = ValIdx(8); // constant = 2
-        let output = ValIdx(16);
-        let return_vars = (0..8).map(|i| ValIdx(output.0 + i)).collect();
-
-        let main_block = Block {
-            ops: vec![Op::Prim(Prim::U64(2)), Op::Mul(input, two)],
-            ctrl: Box::new(Ctrl::Return(SelIdx(0), return_vars)),
-            return_idents: vec![SelIdx(0)],
-        };
-
-        Function {
-            name: "double",
-            input_size: 8,
-            output_size: 8,
-            body: main_block,
-        }
+    fn double_toplevel() -> Toplevel {
+        let func = func!(
+        fn double(n): [8] {
+            let two = 2;
+            let m = mul(two, n);
+            return m
+        });
+        toplevel_from_funcs(&[func])
     }
 
-    fn addition_function() -> Function {
-        let input = ValIdx(0);
-        let output = ValIdx(8);
-        let return_vars = (0..8).map(|i| ValIdx(output.0 + i)).collect();
-
-        let main_block = Block {
-            ops: vec![Op::Add(input, input)],
-            ctrl: Box::new(Ctrl::Return(SelIdx(0), return_vars)),
-            return_idents: vec![SelIdx(0)],
-        };
-
-        Function {
-            name: "addition",
-            input_size: 8,
-            output_size: 8,
-            body: main_block,
-        }
+    fn addition_toplevel() -> Toplevel {
+        let func = func!(
+        fn addition(n): [8] {
+            let m = add(n, n);
+            return m
+        });
+        toplevel_from_funcs(&[func])
     }
 
     #[test]
@@ -410,9 +349,7 @@ pub(crate) mod tests {
         // Euir-rs program
         let func_idx = FuncIdx(0);
         let input = val_in.to_le_bytes();
-        let toplevel = Toplevel {
-            functions: vec![addition_function()],
-        };
+        let toplevel = addition_toplevel();
 
         let result = toplevel.execute(func_idx, input.to_vec());
         let out = result.get(func_idx, &input).unwrap();
@@ -427,9 +364,7 @@ pub(crate) mod tests {
         let val_out = val_in * 2;
 
         // Euir-rs program
-        let toplevel = Toplevel {
-            functions: vec![double_function()],
-        };
+        let toplevel = double_toplevel();
 
         let func_idx = FuncIdx(0);
         let input = val_in.to_le_bytes();
@@ -448,9 +383,7 @@ pub(crate) mod tests {
         let val_out = val_in * val_in * val_in;
 
         // Aiur-rs program
-        let top_level = Toplevel {
-            functions: vec![cube_function()],
-        };
+        let top_level = cube_toplevel();
 
         let func_idx = FuncIdx(0);
         let input = val_in.to_le_bytes();
@@ -470,9 +403,7 @@ pub(crate) mod tests {
         let value_out = value_in * value_in;
 
         // Aiur-rs program
-        let top_level = Toplevel {
-            functions: vec![square_function()],
-        };
+        let top_level = square_toplevel();
 
         let func_idx = FuncIdx(0);
         let input = value_in.to_le_bytes();
@@ -486,9 +417,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_factorial() {
-        let toplevel = Toplevel {
-            functions: vec![factorial_function()],
-        };
+        let toplevel = factorial_toplevel();
 
         let record = toplevel.execute(FuncIdx(0), 5u64.to_le_bytes().to_vec());
         let pairs: [(u64, u64); 6] = [(0, 1), (1, 1), (2, 2), (3, 6), (4, 24), (5, 120)];
