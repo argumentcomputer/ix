@@ -20,7 +20,7 @@ impl Transparent {
     pub(crate) fn tower_level(&self) -> usize {
         match self {
             Self::Constant(b) => b.min_tower_level(),
-            Self::Incremental => F::TOWER_LEVEL,
+            Self::Incremental => B64::TOWER_LEVEL,
         }
     }
 }
@@ -28,6 +28,16 @@ impl Transparent {
 #[derive(Debug)]
 pub struct Incremental {
     pub(crate) n_vars: usize,
+    pub(crate) tower_level: usize,
+}
+
+impl Incremental {
+    #[inline]
+    pub(crate) fn min_tower_level(height: u64) -> usize {
+        // It's impossible to satisfy the evaluation within an underlier for
+        // tower levels below 3.
+        B64::new(height).min_tower_level().max(3)
+    }
 }
 
 impl MultivariatePoly<F> for Incremental {
@@ -46,8 +56,8 @@ impl MultivariatePoly<F> for Incremental {
         }
         let mut result = F::ZERO;
         let mut coeff = 1;
-        for arg in query {
-            result += *arg * F::from_underlier(coeff);
+        for &arg in query {
+            result += arg * F::from_underlier(coeff);
             coeff <<= 1;
         }
 
@@ -55,7 +65,7 @@ impl MultivariatePoly<F> for Incremental {
     }
 
     fn binary_tower_level(&self) -> usize {
-        F::TOWER_LEVEL
+        self.tower_level
     }
 }
 

@@ -23,9 +23,10 @@ use std::{
     sync::Arc,
 };
 
-use crate::archon::transparent::replicate_within_u128;
-
-use super::{ModuleId, OracleInfo, OracleKind, transparent::Transparent};
+use super::{
+    ModuleId, OracleInfo, OracleKind,
+    transparent::{Incremental, Transparent, replicate_within_u128},
+};
 
 pub type EntryId = usize;
 
@@ -466,7 +467,7 @@ impl WitnessModule {
                         (vec![u; num_underliers], tower_level)
                     }
                     Transparent::Incremental => {
-                        let tower_level = B64::new(height).min_tower_level();
+                        let tower_level = Incremental::min_tower_level(height);
                         let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
                         let mut underliers = vec![OptimalUnderlier::ZERO; num_underliers];
                         match tower_level {
@@ -511,8 +512,8 @@ impl WitnessModule {
                                     *u = unsafe { transmute::<[u64; 2], OptimalUnderlier>(data) };
                                 });
                             }
-                            _ => bail!("Unsupported tower level: {tower_level}"),
-                        }
+                            _ => unreachable!(),
+                        };
                         (underliers, tower_level)
                     }
                 },
@@ -565,12 +566,14 @@ impl WitnessModule {
     /// Computes the number of `OptimalUnderlier`s needed to reach a certain
     /// height at a given tower level.
     fn num_underliers_for_height(height: u64, tower_level: usize) -> Result<usize> {
-        let height_pow2 = height.next_power_of_two();
-        ensure!(height_pow2 != 0, "Height's next power of two overflow");
-        let height_pow2_usize: usize = height_pow2
+        let num_bits = height * (1 << tower_level);
+        let num_underliers = num_bits.div_ceil(OptimalUnderlier::BITS as u64);
+        let num_underliers_rounded = num_underliers.next_power_of_two();
+        ensure!(num_underliers_rounded != 0, "Height overflow");
+        let num_underliers_rounded_usize: usize = num_underliers_rounded
             .try_into()
-            .context("Representing height's next power of two as an usize")?;
-        Ok(height_pow2_usize * (1 << tower_level) / OptimalUnderlier::BITS)
+            .context("Representing the number of underliers as an usize")?;
+        Ok(num_underliers_rounded_usize)
     }
 
     fn num_oracles(&self) -> usize {
@@ -601,13 +604,14 @@ mod tests {
         circuit::{CircuitModule, init_witness_modules},
         protocol::validate_witness,
         transparent::Transparent,
+        witness::compile_witness_modules,
     };
-
-    use super::compile_witness_modules;
 
     fn f(u128: u128) -> B128 {
         B128::new(u128)
     }
+
+    const HEIGHTS: [u64; 13] = [1, 2, 3, 4, 5, 65, 66, 128, 200, 256, 400, 512, 600];
 
     #[test]
     fn test_populate_constant() {
@@ -657,9 +661,7 @@ mod tests {
             assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
         };
 
-        [65, 66, 128, 200, 256, 400, 512, 600]
-            .into_par_iter()
-            .for_each(test_with_height);
+        HEIGHTS.into_par_iter().for_each(test_with_height);
     }
 
     #[test]
@@ -679,9 +681,7 @@ mod tests {
             assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
         };
 
-        [65, 66, 128, 200, 256, 400, 512, 600]
-            .into_iter()
-            .for_each(test_with_height);
+        HEIGHTS.into_par_iter().for_each(test_with_height);
     }
 
     #[test]

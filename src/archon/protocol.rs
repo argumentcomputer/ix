@@ -135,7 +135,7 @@ mod tests {
         Ok((circuit_module, Oracles { s, a, b }))
     }
 
-    fn populate_a_xor_b_witness_with_zeros(witness_module: &mut WitnessModule, oracles: &Oracles) {
+    fn populate_a_xor_b_witness_with_ones(witness_module: &mut WitnessModule, oracles: &Oracles) {
         let ones = witness_module.new_entry_with_capacity(7);
         witness_module.push_u128_to(u128::MAX, ones);
         witness_module.bind_oracle_to::<B1>(oracles.s, ones);
@@ -163,7 +163,7 @@ mod tests {
     fn test_single_module() {
         let (circuit_module, oracles) = a_xor_b_circuit_module(0).unwrap();
         let mut witness_module = circuit_module.init_witness_module().unwrap();
-        populate_a_xor_b_witness_with_zeros(&mut witness_module, &oracles);
+        populate_a_xor_b_witness_with_ones(&mut witness_module, &oracles);
         let witness_modules = [witness_module];
         let witness = compile_witness_modules(&witness_modules, vec![128]).unwrap();
         assert!(validate_witness(&[circuit_module], &witness, &[]).is_ok());
@@ -175,8 +175,8 @@ mod tests {
         let (circuit_module1, oracles1) = a_xor_b_circuit_module(1).unwrap();
         let circuit_modules = [circuit_module0, circuit_module1];
         let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
-        populate_a_xor_b_witness_with_zeros(&mut witness_modules[0], &oracles0);
-        populate_a_xor_b_witness_with_zeros(&mut witness_modules[1], &oracles1);
+        populate_a_xor_b_witness_with_ones(&mut witness_modules[0], &oracles0);
+        populate_a_xor_b_witness_with_ones(&mut witness_modules[1], &oracles1);
         let witness = compile_witness_modules(&witness_modules, vec![128, 128]).unwrap();
         assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
     }
@@ -187,7 +187,7 @@ mod tests {
         let (circuit_module1, _) = a_xor_b_circuit_module(1).unwrap();
         let circuit_modules = [circuit_module0, circuit_module1];
         let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
-        populate_a_xor_b_witness_with_zeros(&mut witness_modules[0], &oracles0);
+        populate_a_xor_b_witness_with_ones(&mut witness_modules[0], &oracles0);
         // Witness module 1 isn't populated
         let witness = compile_witness_modules(&witness_modules, vec![128, 0]).unwrap();
         assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());

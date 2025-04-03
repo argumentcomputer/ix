@@ -8,7 +8,7 @@ use binius_core::{
     oracle::OracleId,
     transparent::step_down::StepDown,
 };
-use binius_field::TowerField;
+use binius_field::{TowerField, arch::OptimalUnderlier, underlier::UnderlierType};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
@@ -203,12 +203,18 @@ pub fn compile_circuit_modules(
             continue;
         }
         let height_usize: usize = height.try_into()?;
-        let n_vars = log2_ceil_usize(height_usize);
+        let log_height = log2_ceil_usize(height_usize);
         ensure!(
             module_idx == module.module_id,
             "Wrong compilation order. Expected module {module_idx}, but got {}.",
             module.module_id
         );
+
+        // `n_vars` must be at least the number of variables in an underlier
+        let n_vars_fn = |tower_level| {
+            let underlier_n_vars = OptimalUnderlier::LOG_BITS - tower_level;
+            log_height.max(underlier_n_vars)
+        };
 
         for OracleInfo {
             name,
@@ -217,20 +223,31 @@ pub fn compile_circuit_modules(
         } in module.oracles.get_ref()
         {
             match kind {
-                OracleKind::Committed => builder.add_committed(name, n_vars, *tower_level),
+                OracleKind::Committed => {
+                    let n_vars = n_vars_fn(*tower_level);
+                    builder.add_committed(name, n_vars, *tower_level)
+                }
                 OracleKind::LinearCombination { offset, inner } => {
+                    let n_vars = n_vars_fn(*tower_level);
                     let inner = inner
                         .iter()
                         .map(|(oracle_id, f)| (oracle_id + oracle_offset, *f));
                     builder.add_linear_combination_with_offset(name, n_vars, *offset, inner)?
                 }
                 OracleKind::Transparent(Transparent::Constant(b128)) => {
+                    let n_vars = n_vars_fn(*tower_level);
                     builder.add_transparent(name, constant_from_b128(*b128, n_vars))?
                 }
                 OracleKind::Transparent(Transparent::Incremental) => {
-                    builder.add_transparent(name, Incremental { n_vars })?
+                    let tower_level = Incremental::min_tower_level(height);
+                    let n_vars = n_vars_fn(tower_level);
+                    builder.add_transparent(name, Incremental {
+                        n_vars,
+                        tower_level,
+                    })?
                 }
                 OracleKind::StepDown => {
+                    let n_vars = n_vars_fn(*tower_level);
                     builder.add_transparent(name, StepDown::new(n_vars, height_usize)?)?
                 }
             };
