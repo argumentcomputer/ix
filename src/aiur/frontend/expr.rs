@@ -108,6 +108,7 @@ pub enum OpE {
     Prim(Var, u64),
     Add(Var, Var, Var),
     Sub(Var, Var, Var),
+    Lt(Var, Var, Var),
     Mul(Var, Var, Var),
     Store(Var, VarVec),
     Load(VarVec, Var),
@@ -194,6 +195,9 @@ impl OpE {
             }
             OpE::Sub(x, y, z) => {
                 format!("let {x} = sub({y}, {z});")
+            }
+            OpE::Lt(x, y, z) => {
+                format!("let {x} = lt({y}, {z});")
             }
             OpE::Mul(x, y, z) => {
                 format!("let {x} = mul({y}, {z});")
@@ -493,7 +497,10 @@ impl OpE {
                 assert_eq!(tgt.size, 1, "Var mismatch on `{}`", self.pretty());
                 bind_var(tgt, ctx);
             }
-            OpE::Add(tgt, a, b) | OpE::Mul(tgt, a, b) | OpE::Sub(tgt, a, b) => {
+            OpE::Add(tgt, a, b)
+            | OpE::Sub(tgt, a, b)
+            | OpE::Lt(tgt, a, b)
+            | OpE::Mul(tgt, a, b) => {
                 assert_eq!(a.size, 1, "Var mismatch on `{}`", self.pretty());
                 assert_eq!(b.size, 1, "Var mismatch on `{}`", self.pretty());
                 assert_eq!(tgt.size, 1, "Var mismatch on `{}`", self.pretty());
@@ -554,16 +561,22 @@ impl OpE {
                 ops.push(Op::Add(a, b));
                 link_new(tgt, ctx);
             }
-            OpE::Mul(tgt, a, b) => {
-                let a = get_var(a, ctx)[0];
-                let b = get_var(b, ctx)[0];
-                ops.push(Op::Mul(a, b));
-                link_new(tgt, ctx);
-            }
             OpE::Sub(tgt, a, b) => {
                 let a = get_var(a, ctx)[0];
                 let b = get_var(b, ctx)[0];
                 ops.push(Op::Sub(a, b));
+                link_new(tgt, ctx);
+            }
+            OpE::Lt(tgt, a, b) => {
+                let a = get_var(a, ctx)[0];
+                let b = get_var(b, ctx)[0];
+                ops.push(Op::Lt(a, b));
+                link_new(tgt, ctx);
+            }
+            OpE::Mul(tgt, a, b) => {
+                let a = get_var(a, ctx)[0];
+                let b = get_var(b, ctx)[0];
+                ops.push(Op::Mul(a, b));
                 link_new(tgt, ctx);
             }
             OpE::Call(out, name, inp) => {

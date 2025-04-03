@@ -92,6 +92,12 @@ macro_rules! block {
         let $tgt = $crate::var!($tgt, tgt_size);
         $crate::block!({ $($tail)* }, $ops)
     }};
+    ({ let $tgt:ident = lt($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
+        let tgt_size = $a.size;
+        $ops.push($crate::aiur::frontend::expr::OpE::Lt($crate::var!($tgt, tgt_size), $a, $b));
+        let $tgt = $crate::var!($tgt, tgt_size);
+        $crate::block!({ $($tail)* }, $ops)
+    }};
     ({ let $tgt:ident = mul($a:ident, $b:ident); $($tail:tt)+ }, $ops:expr) => {{
         let tgt_size = $a.size;
         $ops.push($crate::aiur::frontend::expr::OpE::Mul($crate::var!($tgt, tgt_size), $a, $b));

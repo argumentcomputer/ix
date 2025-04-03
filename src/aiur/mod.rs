@@ -1,3 +1,4 @@
+pub mod arithmetic;
 pub mod constraints;
 pub mod execute;
 pub mod frontend;

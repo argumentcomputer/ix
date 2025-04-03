@@ -15,6 +15,7 @@ use binius_math::ArithExpr;
 use binius_maybe_rayon::prelude::*;
 
 use super::{
+    arithmetic::{AddTrace, prover_synthesize_add, verifier_synthesize_add},
     constraints::{Channel, Columns, Constraints, Expr, build_func_constraints},
     execute::{FxIndexMap, QueryRecord},
     ir::Toplevel,
@@ -51,6 +52,7 @@ impl AiurChannelIds {
 pub struct AiurCount {
     pub fun: Vec<u64>,
     pub mem: Vec<u64>,
+    pub add: u64,
 }
 
 #[derive(Default)]
@@ -350,6 +352,7 @@ impl Toplevel {
         let mut aiur_count = AiurCount {
             fun: Vec::with_capacity(self.functions.len()),
             mem: Vec::with_capacity(self.mem_sizes.len()),
+            add: record.add_queries.len() as u64,
         };
         let channel_ids = AiurChannelIds::initialize_channels(builder, &self.mem_sizes);
         for (func_idx, function) in self.functions.iter().enumerate() {
@@ -377,6 +380,11 @@ impl Toplevel {
             let count = trace.height;
             aiur_count.mem.push(count.try_into().unwrap());
             prover_synthesize_mem(builder, mem_channel, &trace);
+        }
+        {
+            let add_channel = channel_ids.add;
+            let trace = AddTrace::generate_trace(record);
+            prover_synthesize_add(builder, add_channel, &trace);
         }
         (aiur_count, channel_ids)
     }
@@ -408,6 +416,11 @@ impl Toplevel {
             let idx = channel_ids.get_mem_pos(size);
             let mem_counts = count.mem[idx];
             verifier_synthesize_mem(builder, mem_channel, size, mem_counts);
+        }
+        {
+            let add_channel = channel_ids.add;
+            let add_counts = count.add;
+            verifier_synthesize_add(builder, add_channel, add_counts);
         }
         channel_ids
     }
@@ -452,23 +465,22 @@ fn synthesize_constraints(
         let (expr, oracles) = expr.to_arith_expr();
         builder.assert_zero(ns, expr, oracles);
     }
-    // TODO: Add, Mul chips
-    // for (channel, sel, args) in constraints.sends {
-    //     let sel = sel.to_sum_b1(builder, virt_map, log_n);
-    //     let oracles = args
-    //         .iter()
-    //         .map(|arg| arg.to_sum_b64(builder, virt_map, log_n).unwrap())
-    //         .collect::<Vec<_>>();
-    //     match channel {
-    //         Channel::Add => builder
-    //             .flush_custom(FlushDirection::Push, channel_ids.add, sel, oracles, 1)
-    //             .unwrap(),
-    //         Channel::Mul => builder
-    //             .flush_custom(FlushDirection::Push, channel_ids.mul, sel, oracles, 1)
-    //             .unwrap(),
-    //         _ => (),
-    //     };
-    // }
+    for (channel, sel, args) in constraints.sends {
+        let sel = sel.to_sum_b1(builder, virt_map, log_n);
+        let oracles = args
+            .iter()
+            .map(|arg| arg.to_sum_b64(builder, virt_map, log_n))
+            .collect::<Vec<_>>();
+        match channel {
+            Channel::Add => builder
+                .flush_custom(FlushDirection::Push, channel_ids.add, sel, oracles, 1)
+                .unwrap(),
+            Channel::Mul => builder
+                .flush_custom(FlushDirection::Push, channel_ids.mul, sel, oracles, 1)
+                .unwrap(),
+            _ => (),
+        };
+    }
     for (channel, sel, prev_index, args) in constraints.requires {
         match channel {
             Channel::Fun(func_idx) => {
@@ -581,7 +593,6 @@ mod tests {
 
     use crate::{
         aiur::{
-            execute::tests::factorial_toplevel,
             frontend::expr::toplevel_from_funcs,
             ir::{FuncIdx, Toplevel},
             layout::B128,
@@ -665,11 +676,46 @@ mod tests {
     }
 
     #[test]
-    fn test_factorial() {
-        let toplevel = factorial_toplevel();
+    fn test_fib() {
+        let func = func!(
+        fn fib(a): [1] {
+            let one = 1;
+            let gt2 = lt(one, a);
+            if gt2 {
+                let pred = sub(a, one);
+                let pred_pred = sub(pred, one);
+                let m = call(fib, pred);
+                let n = call(fib, pred_pred);
+                let res = add(m, n);
+                return res
+            }
+            return one
+        });
+        let toplevel = toplevel_from_funcs(&[func]);
+        let func_idx = 0;
+        let input = &[65];
+        let output = &[27777890035288];
+        prove_verify(&toplevel, func_idx, input, output);
+    }
+
+    #[test]
+    fn test_sum() {
+        let func = func!(
+        fn sum(n): [1] {
+            let one = 1;
+            if n {
+                let pred = sub(n, one);
+                let m = call(sum, pred);
+                let res = add(n, m);
+                return res
+            }
+            let zero = 0;
+            return zero
+        });
+        let toplevel = toplevel_from_funcs(&[func]);
         let func_idx = 0;
         let input = &[100];
-        let output = &[0];
+        let output = &[5050];
         prove_verify(&toplevel, func_idx, input, output);
     }
 

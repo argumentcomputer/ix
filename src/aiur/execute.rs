@@ -20,6 +20,7 @@ pub struct QueryResult {
 pub struct QueryRecord {
     pub func_queries: Vec<FxIndexMap<Vec<u64>, QueryResult>>,
     pub mem_queries: Vec<(u32, FxIndexMap<Vec<u64>, QueryResult>)>,
+    pub add_queries: Vec<(u64, u64)>,
 }
 
 impl QueryRecord {
@@ -27,9 +28,11 @@ impl QueryRecord {
         let len = toplevel.functions.len();
         let func_queries = (0..len).map(|_| Default::default()).collect();
         let mem_queries = Vec::new();
+        let add_queries = Vec::new();
         QueryRecord {
             func_queries,
             mem_queries,
+            add_queries,
         }
     }
 
@@ -103,18 +106,21 @@ impl Toplevel {
                     let b = map[b.to_usize()];
                     let c = a.wrapping_add(b);
                     map.push(c);
+                    record.add_queries.push((a, b));
                 }
                 ExecEntry::Op(Op::Sub(c, b)) => {
                     let c = map[c.to_usize()];
                     let b = map[b.to_usize()];
                     let a = c.wrapping_sub(b);
                     map.push(a);
+                    record.add_queries.push((a, b));
                 }
                 ExecEntry::Op(Op::Lt(c, b)) => {
                     let c = map[c.to_usize()];
                     let b = map[b.to_usize()];
-                    let a = (c < b) as u64;
-                    map.push(a);
+                    let (a, underflow) = c.overflowing_sub(b);
+                    map.push(underflow as u64);
+                    record.add_queries.push((a, b));
                 }
                 ExecEntry::Op(Op::Mul(a, b)) => {
                     let a = map[a.to_usize()];
