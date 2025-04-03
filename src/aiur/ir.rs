@@ -89,7 +89,6 @@ impl SelIdx {
 /// `Ctrl` expresses the control flows of the program
 pub enum Ctrl {
     If(ValIdx, Block, Block),
-    If64(ValIdx, Block, Block),
     Return(SelIdx, Vec<ValIdx>),
 }
 

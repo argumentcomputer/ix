@@ -10,16 +10,16 @@ use super::ir::{Ctrl, FuncIdx, Op, Prim, Toplevel, ValIdx};
 /// output for a given function
 #[derive(PartialEq, Eq, Debug)]
 pub struct QueryResult {
-    pub result: Vec<u8>,
-    pub multiplicity: u32,
+    pub result: Vec<u64>,
+    pub multiplicity: u64,
 }
 
 /// `QueryRecord` is a collection of `QueryResult` objects that can be referenced by the input tuple
 /// used while invoking `TopLevel` execution algorithm
 #[derive(Debug)]
 pub struct QueryRecord {
-    pub func_queries: Vec<FxIndexMap<Vec<u8>, QueryResult>>,
-    pub mem_queries: Vec<(u32, FxIndexMap<Vec<u8>, QueryResult>)>,
+    pub func_queries: Vec<FxIndexMap<Vec<u64>, QueryResult>>,
+    pub mem_queries: Vec<(u32, FxIndexMap<Vec<u64>, QueryResult>)>,
 }
 
 impl QueryRecord {
@@ -33,26 +33,26 @@ impl QueryRecord {
         }
     }
 
-    pub fn get_func_map(&self, func_idx: FuncIdx) -> &FxIndexMap<Vec<u8>, QueryResult> {
+    pub fn get_func_map(&self, func_idx: FuncIdx) -> &FxIndexMap<Vec<u64>, QueryResult> {
         &self.func_queries[func_idx.to_usize()]
     }
 
-    pub fn get_from_u8(&self, func_idx: FuncIdx, input: &[u8]) -> Option<&QueryResult> {
+    pub fn get_from_u64(&self, func_idx: FuncIdx, input: &[u64]) -> Option<&QueryResult> {
         self.func_queries[func_idx.to_usize()].get(input)
     }
 
-    pub fn get(&self, func_idx: FuncIdx, input: &[u8]) -> Option<&QueryResult> {
+    pub fn get(&self, func_idx: FuncIdx, input: &[u64]) -> Option<&QueryResult> {
         self.func_queries[func_idx.to_usize()].get(input)
     }
 
-    pub fn get_mut(&mut self, func_idx: FuncIdx, input: &[u8]) -> Option<&mut QueryResult> {
+    pub fn get_mut(&mut self, func_idx: FuncIdx, input: &[u64]) -> Option<&mut QueryResult> {
         self.func_queries[func_idx.to_usize()].get_mut(input)
     }
 
     pub fn insert(
         &mut self,
         func_idx: FuncIdx,
-        input: Vec<u8>,
+        input: Vec<u64>,
         output: QueryResult,
     ) -> Option<QueryResult> {
         self.func_queries[func_idx.to_usize()].insert(input, output)
@@ -66,7 +66,7 @@ enum ExecEntry<'a> {
 
 struct CallerState {
     func_idx: FuncIdx,
-    map: Vec<u8>,
+    map: Vec<u64>,
 }
 
 impl Toplevel {
@@ -76,7 +76,7 @@ impl Toplevel {
     ///     algorithm
     /// 2) You can write additional input values (for example if you need some constants) into the
     ///     stack while implementing particular block of the program
-    pub fn execute(&self, mut func_idx: FuncIdx, input: Vec<u8>) -> QueryRecord {
+    pub fn execute(&self, mut func_idx: FuncIdx, input: Vec<u64>) -> QueryRecord {
         let func = &self.functions[func_idx.to_usize()];
         assert_eq!(input.len(), func.input_size as usize);
 
@@ -96,39 +96,31 @@ impl Toplevel {
 
         while let Some(exec_entry) = exec_entries_stack.pop() {
             match exec_entry {
-                ExecEntry::Op(Op::Prim(Prim::Bool(x))) => map.push(*x as u8),
-                ExecEntry::Op(Op::Prim(Prim::U64(x))) => {
-                    x.to_le_bytes().into_iter().for_each(|b| map.push(b))
-                }
+                ExecEntry::Op(Op::Prim(Prim::Bool(x))) => map.push(*x as u64),
+                ExecEntry::Op(Op::Prim(Prim::U64(x))) => map.push(*x),
                 ExecEntry::Op(Op::Add(a, b)) => {
-                    let a = load_u64(a, &map);
-                    let b = load_u64(b, &map);
+                    let a = map[a.to_usize()];
+                    let b = map[b.to_usize()];
                     let c = a.wrapping_add(b);
-                    for byte in c.to_le_bytes() {
-                        map.push(byte);
-                    }
+                    map.push(c);
                 }
-                ExecEntry::Op(Op::Sub(a, b)) => {
-                    let a = load_u64(a, &map);
-                    let b = load_u64(b, &map);
-                    let c = a.wrapping_sub(b);
-                    for byte in c.to_le_bytes() {
-                        map.push(byte);
-                    }
+                ExecEntry::Op(Op::Sub(c, b)) => {
+                    let c = map[c.to_usize()];
+                    let b = map[b.to_usize()];
+                    let a = c.wrapping_sub(b);
+                    map.push(a);
+                }
+                ExecEntry::Op(Op::Lt(c, b)) => {
+                    let c = map[c.to_usize()];
+                    let b = map[b.to_usize()];
+                    let a = (c < b) as u64;
+                    map.push(a);
                 }
                 ExecEntry::Op(Op::Mul(a, b)) => {
-                    let a = load_u64(a, &map);
-                    let b = load_u64(b, &map);
+                    let a = map[a.to_usize()];
+                    let b = map[b.to_usize()];
                     let c = a.wrapping_mul(b);
-                    for byte in c.to_le_bytes() {
-                        map.push(byte);
-                    }
-                }
-                ExecEntry::Op(Op::Lt(a, b)) => {
-                    let a = load_u64(a, &map);
-                    let b = load_u64(b, &map);
-                    let c = a < b;
-                    map.push(c as u8);
+                    map.push(c);
                 }
                 ExecEntry::Op(Op::And(a, b)) => {
                     let a = map[a.to_usize()];
@@ -156,9 +148,9 @@ impl Toplevel {
                         query_result.multiplicity += 1;
                         map.extend(&query_result.result);
                     } else {
-                        let ptr = (mem_map.len() as u64).to_le_bytes().to_vec();
+                        let ptr = mem_map.len() as u64;
                         let query_result = QueryResult {
-                            result: ptr,
+                            result: vec![ptr],
                             multiplicity: 1,
                         };
                         map.extend(&query_result.result);
@@ -166,9 +158,9 @@ impl Toplevel {
                     }
                 }
                 ExecEntry::Op(Op::Load(len, ptr)) => {
-                    let ptr = load_u64(ptr, &map)
+                    let ptr = map[ptr.to_usize()]
                         .try_into()
-                        .expect("Pointer too large for current architecture");
+                        .expect("Value too big for current architecture");
                     let mem_map = load_mem_map_mut(&mut record.mem_queries, *len);
                     let (values, query_result) = mem_map
                         .get_index_mut(ptr)
@@ -241,14 +233,6 @@ impl Toplevel {
                         stack_block_exec_entries!(ff);
                     }
                 }
-                ExecEntry::Ctrl(Ctrl::If64(v, tt, ff)) => {
-                    let cond = load_u64(v, &map);
-                    if cond != 0 {
-                        stack_block_exec_entries!(tt);
-                    } else {
-                        stack_block_exec_entries!(ff);
-                    }
-                }
             }
         }
         record
@@ -256,9 +240,9 @@ impl Toplevel {
 }
 
 fn load_mem_map_mut(
-    mem_queries: &mut Vec<(u32, FxIndexMap<Vec<u8>, QueryResult>)>,
+    mem_queries: &mut Vec<(u32, FxIndexMap<Vec<u64>, QueryResult>)>,
     len: u32,
-) -> &mut FxIndexMap<Vec<u8>, QueryResult> {
+) -> &mut FxIndexMap<Vec<u64>, QueryResult> {
     if let Some(pos) = mem_queries.iter_mut().position(|(k, _)| *k == len) {
         &mut mem_queries[pos].1
     } else {
@@ -266,14 +250,6 @@ fn load_mem_map_mut(
         let last = mem_queries.last_mut().unwrap();
         &mut last.1
     }
-}
-
-pub(crate) fn load_u64(a: &ValIdx, map: &[u8]) -> u64 {
-    let mut a_buffer = [0; 8];
-    for i in 0..8 {
-        a_buffer[i] = map[a.to_usize() + i];
-    }
-    u64::from_le_bytes(a_buffer)
 }
 
 #[cfg(test)]
@@ -289,7 +265,7 @@ pub(crate) mod tests {
 
     pub(crate) fn factorial_toplevel() -> Toplevel {
         let func = func!(
-        fn factorial(n): [8] {
+        fn factorial(n): [1] {
             let one = 1;
             if n {
                 let pred = sub(n, one);
@@ -304,7 +280,7 @@ pub(crate) mod tests {
 
     fn square_toplevel() -> Toplevel {
         let func = func!(
-        fn square(n): [8] {
+        fn square(n): [1] {
             let m = mul(n, n);
             return m
         });
@@ -313,7 +289,7 @@ pub(crate) mod tests {
 
     fn cube_toplevel() -> Toplevel {
         let func = func!(
-        fn cube(n): [8] {
+        fn cube(n): [1] {
             let tmp = mul(n, n);
             let m = mul(tmp, n);
             return m
@@ -323,7 +299,7 @@ pub(crate) mod tests {
 
     fn double_toplevel() -> Toplevel {
         let func = func!(
-        fn double(n): [8] {
+        fn double(n): [1] {
             let two = 2;
             let m = mul(two, n);
             return m
@@ -333,7 +309,7 @@ pub(crate) mod tests {
 
     fn addition_toplevel() -> Toplevel {
         let func = func!(
-        fn addition(n): [8] {
+        fn addition(n): [1] {
             let m = add(n, n);
             return m
         });
@@ -348,13 +324,13 @@ pub(crate) mod tests {
 
         // Euir-rs program
         let func_idx = FuncIdx(0);
-        let input = val_in.to_le_bytes();
+        let input = [val_in];
         let toplevel = addition_toplevel();
 
         let result = toplevel.execute(func_idx, input.to_vec());
         let out = result.get(func_idx, &input).unwrap();
-        assert_eq!(out.result.len(), 8);
-        assert_eq!(&out.result, &val_out.to_le_bytes());
+        assert_eq!(out.result.len(), 1);
+        assert_eq!(&out.result, &[val_out]);
     }
 
     #[test]
@@ -367,13 +343,13 @@ pub(crate) mod tests {
         let toplevel = double_toplevel();
 
         let func_idx = FuncIdx(0);
-        let input = val_in.to_le_bytes();
+        let input = [val_in];
         let result = toplevel.execute(func_idx, input.to_vec());
         let out = result
             .get(func_idx, &input)
             .expect("requested item is unavailable");
-        assert_eq!(out.result.len(), 8);
-        assert_eq!(&out.result, &val_out.to_le_bytes());
+        assert_eq!(out.result.len(), 1);
+        assert_eq!(&out.result, &[val_out]);
     }
 
     #[test]
@@ -386,50 +362,47 @@ pub(crate) mod tests {
         let top_level = cube_toplevel();
 
         let func_idx = FuncIdx(0);
-        let input = val_in.to_le_bytes();
+        let input = [val_in];
         let record = top_level.execute(func_idx, input.to_vec());
         let out = record
             .get(func_idx, &input)
             .expect("output of Lair / Aiur program is unavailable");
 
-        assert_eq!(out.result.len(), 8);
-        assert_eq!(&out.result, &val_out.to_le_bytes());
+        assert_eq!(out.result.len(), 1);
+        assert_eq!(&out.result, &[val_out]);
     }
 
     #[test]
     fn test_square() {
         // Regular computation
-        let value_in = 6u64;
-        let value_out = value_in * value_in;
+        let val_in = 6u64;
+        let val_out = val_in * val_in;
 
         // Aiur-rs program
         let top_level = square_toplevel();
 
         let func_idx = FuncIdx(0);
-        let input = value_in.to_le_bytes();
+        let input = [val_in];
         let record = top_level.execute(func_idx, input.to_vec());
 
         let out = record.get(func_idx, &input).expect("no out available");
 
-        assert_eq!(out.result.len(), 8);
-        assert_eq!(&out.result, &value_out.to_le_bytes());
+        assert_eq!(out.result.len(), 1);
+        assert_eq!(&out.result, &[val_out]);
     }
 
     #[test]
     fn test_factorial() {
         let toplevel = factorial_toplevel();
 
-        let record = toplevel.execute(FuncIdx(0), 5u64.to_le_bytes().to_vec());
+        let record = toplevel.execute(FuncIdx(0), vec![5u64]);
         let pairs: [(u64, u64); 6] = [(0, 1), (1, 1), (2, 2), (3, 6), (4, 24), (5, 120)];
         for (i, o) in pairs {
             let query_result = QueryResult {
-                result: o.to_le_bytes().to_vec(),
+                result: vec![o],
                 multiplicity: 1,
             };
-            assert_eq!(
-                record.get(FuncIdx(0), &i.to_le_bytes()),
-                Some(&query_result)
-            );
+            assert_eq!(record.get(FuncIdx(0), &[i]), Some(&query_result));
         }
     }
 }

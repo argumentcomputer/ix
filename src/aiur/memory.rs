@@ -1,8 +1,8 @@
 use binius_circuits::builder::{ConstraintSystemBuilder, witness};
 use binius_core::{constraint_system::channel::ChannelId, oracle::OracleId};
-use binius_field::{BinaryField8b, Field, TowerField};
+use binius_field::{Field, TowerField};
 
-use crate::aiur::{layout::MultiplicityField, trace::load_mem_map, transparent::Address};
+use crate::aiur::{layout::B64, trace::load_mem_map, transparent::Address};
 
 use super::{
     execute::QueryRecord,
@@ -17,8 +17,8 @@ struct MemCols {
 }
 
 pub struct MemTrace {
-    pub values: Vec<Vec<u8>>,
-    pub multiplicity: Vec<MultiplicityField>,
+    pub values: Vec<Vec<u64>>,
+    pub multiplicity: Vec<B64>,
     pub height: usize,
 }
 
@@ -35,9 +35,7 @@ impl MemTrace {
             for (i, arg) in args.iter().enumerate() {
                 trace.values[i].push(*arg);
             }
-            trace
-                .multiplicity
-                .push(MULT_GEN.pow([result.multiplicity as u64]));
+            trace.multiplicity.push(MULT_GEN.pow([result.multiplicity]));
         }
         trace
     }
@@ -45,13 +43,12 @@ impl MemTrace {
 
 impl MemCols {
     fn new(builder: &mut ConstraintSystemBuilder<'_>, log_n: usize, width: usize) -> Self {
-        let byte_level = BinaryField8b::TOWER_LEVEL;
+        let b64_level = B64::TOWER_LEVEL;
         let address = builder.add_transparent("", Address::new(log_n)).unwrap();
         let values: Vec<_> = (0..width)
-            .map(|i| builder.add_committed(format!("value-{i}"), log_n, byte_level))
+            .map(|i| builder.add_committed(format!("value-{i}"), log_n, b64_level))
             .collect();
-        let multiplicity_level = MultiplicityField::TOWER_LEVEL;
-        let multiplicity = builder.add_committed("multiplicity", log_n, multiplicity_level);
+        let multiplicity = builder.add_committed("multiplicity", log_n, b64_level);
         MemCols {
             address,
             values,
@@ -63,15 +60,12 @@ impl MemCols {
         let count = trace.height;
         Address::populate(self.address, witness);
         for (id, values) in self.values.iter().zip(trace.values.iter()) {
-            witness
-                .new_column::<BinaryField8b>(*id)
-                .as_mut_slice::<u8>()[..count]
-                .copy_from_slice(values);
+            witness.new_column::<B64>(*id).as_mut_slice::<u64>()[..count].copy_from_slice(values);
         }
         {
             witness
-                .new_column::<MultiplicityField>(self.multiplicity)
-                .as_mut_slice::<MultiplicityField>()[..count]
+                .new_column::<B64>(self.multiplicity)
+                .as_mut_slice::<B64>()[..count]
                 .copy_from_slice(&trace.multiplicity);
         }
     }
@@ -88,8 +82,8 @@ pub fn prover_synthesize_mem(
     let cols = MemCols::new(builder, log_n, width);
     cols.populate(builder.witness().unwrap(), trace);
     let mut virt_map = VirtualMap::default();
-    let mut args = cols.values;
-    args.push(cols.address);
+    let mut args = [cols.address].to_vec();
+    args.extend(cols.values);
     provide(
         builder,
         mem_channel_id,

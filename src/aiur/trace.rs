@@ -1,63 +1,73 @@
 use binius_field::underlier::{U1, WithUnderlier};
 use binius_field::{BinaryField, Field};
 
-use super::execute::{FxIndexMap, QueryRecord, QueryResult, load_u64};
+use super::execute::{FxIndexMap, QueryRecord, QueryResult};
 use super::ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, Toplevel};
-use super::layout::{AiurByteField, Layout, MultiplicityField};
+use super::layout::{B64, Layout};
 
-pub const MULT_GEN: MultiplicityField = MultiplicityField::MULTIPLICATIVE_GENERATOR;
+pub const MULT_GEN: B64 = B64::MULTIPLICATIVE_GENERATOR;
 
 #[derive(Clone, Default, Debug)]
 pub struct Trace {
     pub num_queries: u64,
-    pub inputs: Vec<Vec<u8>>,
-    pub outputs: Vec<Vec<u8>>,
-    pub auxiliaries: Vec<Vec<u8>>,
-    pub multiplicity: Vec<MultiplicityField>,
-    pub require_hints: Vec<Vec<MultiplicityField>>,
+    pub inputs: Vec<Vec<u64>>,
+    pub outputs: Vec<Vec<u64>>,
+    pub u1_auxiliaries: Vec<Vec<U1>>,
+    pub u8_auxiliaries: Vec<Vec<u8>>,
+    pub u64_auxiliaries: Vec<Vec<u64>>,
+    pub multiplicity: Vec<u64>,
     pub selectors: Vec<Vec<U1>>,
 }
 
 #[derive(Clone, Copy, Default, Debug)]
 struct ColumnIndex {
-    auxiliary: usize,
-    require_hint: usize,
+    u1_auxiliary: usize,
+    u8_auxiliary: usize,
+    u64_auxiliary: usize,
 }
 
 impl Trace {
     fn blank_trace_with_io(
         shape: &Layout,
         num_queries: usize,
-        multiplicity: Vec<MultiplicityField>,
-        inputs: Vec<Vec<u8>>,
-        outputs: Vec<Vec<u8>>,
+        multiplicity: Vec<u64>,
+        inputs: Vec<Vec<u64>>,
+        outputs: Vec<Vec<u64>>,
     ) -> Self {
         let height = num_queries.next_power_of_two();
-        let blank_column = vec![0; height];
-        let auxiliaries = vec![blank_column; shape.auxiliaries as usize];
         let blank_column = vec![U1::new(0); height];
+        let u1_auxiliaries = vec![blank_column.clone(); shape.u1_auxiliaries as usize];
         let selectors = vec![blank_column; shape.selectors as usize];
-        let blank_column = vec![MultiplicityField::ZERO; height];
-        let require_hints = vec![blank_column; shape.require_hints as usize];
+        let blank_column = vec![0; height];
+        let u8_auxiliaries = vec![blank_column; shape.u8_auxiliaries as usize];
+        let blank_column = vec![0; height];
+        let u64_auxiliaries = vec![blank_column; shape.u64_auxiliaries as usize];
         Self {
             inputs,
             outputs,
-            auxiliaries,
+            u1_auxiliaries,
+            u8_auxiliaries,
+            u64_auxiliaries,
             multiplicity,
-            require_hints,
             selectors,
             num_queries: num_queries as u64,
         }
     }
 
-    fn push(&mut self, row: usize, col: &mut ColumnIndex, val: u8) {
-        self.auxiliaries[col.auxiliary][row] = val;
-        col.auxiliary += 1;
+    fn push_u1(&mut self, row: usize, col: &mut ColumnIndex, val: U1) {
+        self.u1_auxiliaries[col.u1_auxiliary][row] = val;
+        col.u1_auxiliary += 1;
     }
 
-    fn require(&mut self, row: usize, col: &mut ColumnIndex, val: MultiplicityField) {
-        self.require_hints[col.require_hint][row] = val;
-        col.require_hint += 1;
+    #[allow(dead_code)]
+    fn push_u8(&mut self, row: usize, col: &mut ColumnIndex, val: u8) {
+        self.u8_auxiliaries[col.u8_auxiliary][row] = val;
+        col.u8_auxiliary += 1;
+    }
+
+    fn push_u64(&mut self, row: usize, col: &mut ColumnIndex, val: u64) {
+        self.u64_auxiliaries[col.u64_auxiliary][row] = val;
+        col.u64_auxiliary += 1;
     }
 
     fn set_selector(&mut self, row: usize, sel: SelIdx) {
@@ -67,8 +77,8 @@ impl Trace {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 enum Query {
-    Func(FuncIdx, Vec<u8>),
-    Mem(u32, Vec<u8>),
+    Func(FuncIdx, Vec<u64>),
+    Mem(u32, Vec<u64>),
 }
 
 impl Toplevel {
@@ -87,10 +97,10 @@ impl Toplevel {
 
 fn generate_func_trace(
     func: &Function,
-    func_map: &FxIndexMap<Vec<u8>, QueryResult>,
+    func_map: &FxIndexMap<Vec<u64>, QueryResult>,
     shape: &Layout,
     record: &QueryRecord,
-    prev_counts: &mut FxIndexMap<Query, MultiplicityField>,
+    prev_counts: &mut FxIndexMap<Query, B64>,
 ) -> Trace {
     let num_queries = func_map.len();
     let (multiplicity, inputs, outputs) = extract_io(func_map, shape);
@@ -114,11 +124,11 @@ fn generate_func_trace(
 fn populate_block_trace(
     block: &Block,
     trace: &mut Trace,
-    map: &mut Vec<u8>,
+    map: &mut Vec<u64>,
     row: usize,
     col: &mut ColumnIndex,
     record: &QueryRecord,
-    prev_counts: &mut FxIndexMap<Query, MultiplicityField>,
+    prev_counts: &mut FxIndexMap<Query, B64>,
 ) {
     block
         .ops
@@ -128,25 +138,8 @@ fn populate_block_trace(
         Ctrl::If(b, t, f) => {
             let val = map[b.to_usize()];
             if val != 0 {
-                let inv = AiurByteField::new(val).invert().unwrap().to_underlier();
-                trace.push(row, col, inv);
-                populate_block_trace(t, trace, map, row, col, record, prev_counts);
-            } else {
-                populate_block_trace(f, trace, map, row, col, record, prev_counts);
-            }
-        }
-        Ctrl::If64(b, t, f) => {
-            let val = &map[b.to_usize()..b.to_usize() + 8];
-            if let Some(pos) = val.iter().position(|&byte| byte != 0) {
-                let inv = AiurByteField::new(val[pos])
-                    .invert()
-                    .unwrap()
-                    .to_underlier();
-                let mut coeffs = vec![0; 8];
-                coeffs[pos] = inv;
-                coeffs
-                    .into_iter()
-                    .for_each(|coeff| trace.push(row, col, coeff));
+                let inv = B64::new(val).invert().unwrap().to_underlier();
+                trace.push_u64(row, col, inv);
                 populate_block_trace(t, trace, map, row, col, record, prev_counts);
             } else {
                 populate_block_trace(f, trace, map, row, col, record, prev_counts);
@@ -159,18 +152,18 @@ fn populate_block_trace(
 fn populate_op_trace(
     op: &Op,
     trace: &mut Trace,
-    map: &mut Vec<u8>,
+    map: &mut Vec<u64>,
     row: usize,
     col: &mut ColumnIndex,
     record: &QueryRecord,
-    prev_counts: &mut FxIndexMap<Query, MultiplicityField>,
+    prev_counts: &mut FxIndexMap<Query, B64>,
 ) {
     match op {
         Op::Prim(Prim::U64(a)) => {
-            map.extend(a.to_le_bytes());
+            map.push(*a);
         }
         Op::Prim(Prim::Bool(a)) => {
-            map.push(*a as u8);
+            map.push(*a as u64);
         }
         Op::Xor(a, b) => {
             let a = map[a.to_usize()];
@@ -182,47 +175,43 @@ fn populate_op_trace(
             let b = map[b.to_usize()];
             // NOTE: this operation only works when `a` and `b` are both bits
             let c = a & b;
-            trace.push(row, col, c);
+            trace.push_u1(
+                row,
+                col,
+                U1::new(c.try_into().expect("Result exceed 1 bit")),
+            );
             map.push(c);
         }
         Op::Add(a, b) => {
-            let a = load_u64(a, map);
-            let b = load_u64(b, map);
+            let a = map[a.to_usize()];
+            let b = map[b.to_usize()];
             let (c, overflow) = a.overflowing_add(b);
-            for byte in c.to_le_bytes() {
-                trace.push(row, col, byte);
-                map.push(byte);
-            }
-            trace.push(row, col, overflow as u8);
+            trace.push_u64(row, col, c);
+            map.push(c);
+            trace.push_u1(row, col, U1::new(overflow as u8));
         }
-        Op::Sub(a, b) => {
-            let a = load_u64(a, map);
-            let b = load_u64(b, map);
-            let (c, overflow) = a.overflowing_sub(b);
-            for byte in c.to_le_bytes() {
-                trace.push(row, col, byte);
-                map.push(byte);
-            }
-            trace.push(row, col, overflow as u8);
+        Op::Sub(c, b) => {
+            let c = map[c.to_usize()];
+            let b = map[b.to_usize()];
+            let (a, overflow) = c.overflowing_sub(b);
+            trace.push_u64(row, col, a);
+            map.push(a);
+            trace.push_u1(row, col, U1::new(overflow as u8));
         }
-        Op::Lt(a, b) => {
-            let a = load_u64(a, map);
-            let b = load_u64(b, map);
-            let (c, overflow) = a.overflowing_sub(b);
-            for byte in c.to_le_bytes() {
-                trace.push(row, col, byte);
-            }
-            trace.push(row, col, overflow as u8);
-            map.push(overflow as u8);
+        Op::Lt(c, b) => {
+            let c = map[c.to_usize()];
+            let b = map[b.to_usize()];
+            let (a, overflow) = c.overflowing_sub(b);
+            trace.push_u64(row, col, a);
+            trace.push_u1(row, col, U1::new(overflow as u8));
+            map.push(overflow as u64);
         }
         Op::Mul(a, b) => {
-            let a = load_u64(a, map);
-            let b = load_u64(b, map);
+            let a = map[a.to_usize()];
+            let b = map[b.to_usize()];
             let c = a.wrapping_mul(b);
-            for byte in c.to_le_bytes() {
-                trace.push(row, col, byte);
-                map.push(byte);
-            }
+            trace.push_u64(row, col, c);
+            map.push(c);
         }
         Op::Store(values) => {
             let len = values
@@ -238,63 +227,63 @@ fn populate_op_trace(
                 .get(&values)
                 .unwrap_or_else(|| panic!("Value {values:?} not in memory"));
             for value in query_result.result.iter() {
-                trace.push(row, col, *value);
+                trace.push_u64(row, col, *value);
                 map.push(*value);
             }
             let count = prev_counts
                 .entry(Query::Mem(len, values.clone()))
-                .or_insert(MultiplicityField::ONE);
-            trace.require(row, col, *count);
+                .or_insert(B64::ONE);
+            trace.push_u64(row, col, count.to_underlier());
             *count *= MULT_GEN;
         }
         Op::Load(len, ptr) => {
-            let ptr: usize = load_u64(ptr, map)
+            let ptr = map[ptr.to_usize()]
                 .try_into()
-                .expect("Pointer too large for current architecture");
+                .expect("Value too big for current architecture");
             let mem_map = load_mem_map(&record.mem_queries, *len);
             let (values, _) = mem_map
                 .get_index(ptr)
                 .unwrap_or_else(|| panic!("Unbound {len}-wide pointer {ptr}"));
             for value in values.iter() {
-                trace.push(row, col, *value);
+                trace.push_u64(row, col, *value);
                 map.push(*value);
             }
             let count = prev_counts
                 .entry(Query::Mem(*len, values.clone()))
-                .or_insert(MultiplicityField::ONE);
-            trace.require(row, col, *count);
+                .or_insert(B64::ONE);
+            trace.push_u64(row, col, count.to_underlier());
             *count *= MULT_GEN;
         }
         Op::Call(func_idx, args, _) => {
             let args = args.iter().map(|a| map[a.to_usize()]).collect::<Vec<_>>();
-            let output = &record.get_from_u8(*func_idx, &args).unwrap().result;
+            let output = &record.get_from_u64(*func_idx, &args).unwrap().result;
             for byte in output {
-                trace.push(row, col, *byte);
+                trace.push_u64(row, col, *byte);
                 map.push(*byte);
             }
             let count = prev_counts
                 .entry(Query::Func(*func_idx, args))
-                .or_insert(MultiplicityField::ONE);
-            trace.require(row, col, *count);
+                .or_insert(B64::ONE);
+            trace.push_u64(row, col, count.to_underlier());
             *count *= MULT_GEN;
         }
     }
 }
 
 fn extract_io(
-    func_map: &FxIndexMap<Vec<u8>, QueryResult>,
+    func_map: &FxIndexMap<Vec<u64>, QueryResult>,
     shape: &Layout,
-) -> (Vec<MultiplicityField>, Vec<Vec<u8>>, Vec<Vec<u8>>) {
+) -> (Vec<u64>, Vec<Vec<u64>>, Vec<Vec<u64>>) {
     let height = func_map.len().next_power_of_two();
     let blank_column = vec![0; height];
     let mut inputs = vec![blank_column.clone(); shape.inputs as usize];
     let mut outputs = vec![blank_column; shape.outputs as usize];
-    let mut multiplicity = vec![MultiplicityField::ONE; height];
+    let mut multiplicity = vec![1; height];
     func_map
         .iter()
         .enumerate()
         .for_each(|(i, (input_bytes, result))| {
-            multiplicity[i] = MULT_GEN.pow([result.multiplicity as u64]);
+            multiplicity[i] = MULT_GEN.pow([result.multiplicity]).to_underlier();
             assert_eq!(input_bytes.len(), inputs.len());
             input_bytes
                 .iter()
@@ -311,9 +300,9 @@ fn extract_io(
 }
 
 pub(crate) fn load_mem_map(
-    mem_queries: &[(u32, FxIndexMap<Vec<u8>, QueryResult>)],
+    mem_queries: &[(u32, FxIndexMap<Vec<u64>, QueryResult>)],
     len: u32,
-) -> &FxIndexMap<Vec<u8>, QueryResult> {
+) -> &FxIndexMap<Vec<u64>, QueryResult> {
     mem_queries.iter().find(|(k, _)| *k == len).map_or_else(
         || panic!("Internal error: no memory map of size {len}"),
         |(_, v)| v,

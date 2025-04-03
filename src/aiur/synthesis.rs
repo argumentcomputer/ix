@@ -7,20 +7,18 @@ use binius_core::{
     transparent::{constant::Constant, step_down::StepDown},
 };
 use binius_field::{
-    BinaryField1b, BinaryField8b, Field,
+    Field,
     packed::{get_packed_slice, set_packed_slice},
     underlier::WithUnderlier,
 };
 use binius_math::ArithExpr;
 use binius_maybe_rayon::prelude::*;
 
-use crate::aiur::layout::AiurByteField;
-
 use super::{
     constraints::{Channel, Columns, Constraints, Expr, build_func_constraints},
     execute::{FxIndexMap, QueryRecord},
     ir::Toplevel,
-    layout::{AiurField, FunctionIndexField, MultiplicityField},
+    layout::{B1, B8, B32, B64, B128},
     memory::{MemTrace, prover_synthesize_mem, verifier_synthesize_mem},
     trace::{MULT_GEN, Trace},
     transparent::{Fields, Virtual},
@@ -61,11 +59,11 @@ pub struct VirtualMap {
 }
 
 impl VirtualMap {
-    fn sum_bit(
+    fn sum_b1(
         &mut self,
         builder: &mut ConstraintSystemBuilder<'_>,
         oracles: Vec<OracleId>,
-        offset: AiurByteField,
+        offset: B64,
         log_n: usize,
     ) -> OracleId {
         let virt = Virtual::Sum {
@@ -77,16 +75,16 @@ impl VirtualMap {
             let Virtual::Sum { oracles, .. } = virt else {
                 unreachable!()
             };
-            let lc = oracles.iter().map(|oracle| (*oracle, AiurField::ONE));
+            let lc = oracles.iter().map(|oracle| (*oracle, B128::ONE));
             let id = builder
                 .add_linear_combination_with_offset("linear combination", log_n, offset.into(), lc)
                 .unwrap();
             if let Some(witness) = builder.witness() {
                 let slices = oracles
                     .iter()
-                    .map(|oracle| witness.get::<BinaryField1b>(*oracle).unwrap().packed())
+                    .map(|oracle| witness.get::<B1>(*oracle).unwrap().packed())
                     .collect::<Vec<_>>();
-                let mut bits = witness.new_column::<BinaryField1b>(id);
+                let mut bits = witness.new_column::<B1>(id);
                 let bits = bits.packed();
                 (0..(1 << log_n)).for_each(|i| {
                     let mut res = offset
@@ -103,11 +101,11 @@ impl VirtualMap {
         *id
     }
 
-    fn sum_byte(
+    fn sum_b64(
         &mut self,
         builder: &mut ConstraintSystemBuilder<'_>,
         oracles: Vec<OracleId>,
-        offset: AiurByteField,
+        offset: B64,
         log_n: usize,
     ) -> OracleId {
         let virt = Virtual::Sum {
@@ -119,23 +117,18 @@ impl VirtualMap {
             let Virtual::Sum { oracles, .. } = virt else {
                 unreachable!()
             };
-            let lc = oracles.iter().map(|oracle| (*oracle, AiurField::ONE));
+            let lc = oracles.iter().map(|oracle| (*oracle, B128::ONE));
             let id = builder
                 .add_linear_combination_with_offset("linear combination", log_n, offset.into(), lc)
                 .unwrap();
             if let Some(witness) = builder.witness() {
                 let slices = oracles
                     .iter()
-                    .map(|oracle| {
-                        witness
-                            .get::<AiurByteField>(*oracle)
-                            .unwrap()
-                            .as_slice::<AiurByteField>()
-                    })
+                    .map(|oracle| witness.get::<B64>(*oracle).unwrap().as_slice::<B64>())
                     .collect::<Vec<_>>();
                 witness
-                    .new_column::<AiurByteField>(id)
-                    .as_mut_slice::<AiurByteField>()
+                    .new_column::<B64>(id)
+                    .as_mut_slice::<B64>()
                     .into_par_iter()
                     .enumerate()
                     .for_each(|(i, w)| {
@@ -170,10 +163,10 @@ impl VirtualMap {
             }};
         }
         let id = self.map.entry(virt).or_insert_with(|| match constant {
-            Fields::Bit(f) => constant!(f),
-            Fields::Byte(f) => constant!(f),
-            Fields::Multiplicity(f) => constant!(f),
-            Fields::FunctionIndex(f) => constant!(f),
+            Fields::B1(f) => constant!(f),
+            Fields::B8(f) => constant!(f),
+            Fields::B32(f) => constant!(f),
+            Fields::B64(f) => constant!(f),
         });
         *id
     }
@@ -192,7 +185,7 @@ impl VirtualMap {
                 .add_transparent("step_down", step_down.clone())
                 .unwrap();
             if let Some(witness) = builder.witness() {
-                step_down.populate(witness.new_column::<BinaryField1b>(id).packed());
+                step_down.populate(witness.new_column::<B1>(id).packed());
             }
             id
         });
@@ -217,7 +210,7 @@ impl AiurChannelIds {
 }
 
 impl Expr {
-    fn to_sum_bit(
+    fn to_sum_b1(
         &self,
         builder: &mut ConstraintSystemBuilder<'_>,
         virt_map: &mut VirtualMap,
@@ -225,36 +218,36 @@ impl Expr {
     ) -> OracleId {
         if let Expr::Const(x) = self {
             let bit = (*x).try_into().expect("Constant not a bit");
-            return virt_map.constant(builder, Fields::Bit(bit), log_n as usize);
+            return virt_map.constant(builder, Fields::B1(bit), log_n as usize);
         }
         let mut sum = vec![];
-        let mut offset = AiurByteField::ZERO;
+        let mut offset = B64::ZERO;
         self.accumulate_sum(&mut sum, &mut offset).unwrap();
-        if sum.len() == 1 && offset == AiurByteField::ZERO {
+        if sum.len() == 1 && offset == B64::ZERO {
             return sum[0];
         }
-        virt_map.sum_bit(builder, sum, offset, log_n as usize)
+        virt_map.sum_b1(builder, sum, offset, log_n as usize)
     }
 
-    fn to_sum_byte(
+    fn to_sum_b64(
         &self,
         builder: &mut ConstraintSystemBuilder<'_>,
         virt_map: &mut VirtualMap,
         log_n: u8,
     ) -> OracleId {
         if let Expr::Const(x) = self {
-            return virt_map.constant(builder, Fields::Byte(*x), log_n as usize);
+            return virt_map.constant(builder, Fields::B64(*x), log_n as usize);
         }
         let mut sum = vec![];
-        let mut offset = AiurByteField::ZERO;
+        let mut offset = B64::ZERO;
         self.accumulate_sum(&mut sum, &mut offset).unwrap();
-        if sum.len() == 1 && offset == AiurByteField::ZERO {
+        if sum.len() == 1 && offset == B64::ZERO {
             return sum[0];
         }
-        virt_map.sum_byte(builder, sum, offset, log_n as usize)
+        virt_map.sum_b64(builder, sum, offset, log_n as usize)
     }
 
-    fn accumulate_sum(&self, sum: &mut Vec<OracleId>, offset: &mut AiurByteField) -> Option<()> {
+    fn accumulate_sum(&self, sum: &mut Vec<OracleId>, offset: &mut B64) -> Option<()> {
         match self {
             Self::Const(k) => *offset += *k,
             Self::Var(x) => sum.push(*x),
@@ -267,14 +260,14 @@ impl Expr {
         Some(())
     }
 
-    fn to_arith_expr(&self) -> (Vec<OracleId>, ArithExpr<AiurField>) {
+    fn to_arith_expr(&self) -> (Vec<OracleId>, ArithExpr<B128>) {
         let mut map = FxIndexMap::default();
         let arith = self.to_arith_expr_aux(&mut map);
         let oracles = map.keys().copied().collect();
         (oracles, arith)
     }
 
-    fn to_arith_expr_aux(&self, map: &mut FxIndexMap<OracleId, usize>) -> ArithExpr<AiurField> {
+    fn to_arith_expr_aux(&self, map: &mut FxIndexMap<OracleId, usize>) -> ArithExpr<B128> {
         match self {
             Expr::Const(f) => ArithExpr::Const((*f).into()),
             Expr::Var(id) => {
@@ -305,44 +298,43 @@ impl Columns {
         let witness = builder.witness().unwrap();
         for (id, values) in self.inputs.iter().zip(trace.inputs.iter()) {
             let count = values.len();
-            witness
-                .new_column::<BinaryField8b>(*id)
-                .as_mut_slice::<u8>()[..count]
-                .copy_from_slice(values);
+            witness.new_column::<B64>(*id).as_mut_slice::<u64>()[..count].copy_from_slice(values);
         }
         for (id, values) in self.outputs.iter().zip(trace.outputs.iter()) {
             let count = values.len();
-            witness
-                .new_column::<BinaryField8b>(*id)
-                .as_mut_slice::<u8>()[..count]
-                .copy_from_slice(values);
+            witness.new_column::<B64>(*id).as_mut_slice::<u64>()[..count].copy_from_slice(values);
         }
-        for (id, values) in self.auxiliaries.iter().zip(trace.auxiliaries.iter()) {
+        for (id, values) in self.u1_auxiliaries.iter().zip(trace.u1_auxiliaries.iter()) {
+            let mut bits = witness.new_column::<B1>(*id);
+            let bits = bits.packed();
+            values.iter().enumerate().for_each(|(i, value)| {
+                set_packed_slice(bits, i, B1::from_underlier(*value));
+            });
+        }
+        for (id, values) in self.u8_auxiliaries.iter().zip(trace.u8_auxiliaries.iter()) {
             let count = values.len();
-            witness
-                .new_column::<BinaryField8b>(*id)
-                .as_mut_slice::<u8>()[..count]
-                .copy_from_slice(values);
+            witness.new_column::<B8>(*id).as_mut_slice::<u8>()[..count].copy_from_slice(values);
+        }
+        for (id, values) in self
+            .u64_auxiliaries
+            .iter()
+            .zip(trace.u64_auxiliaries.iter())
+        {
+            let count = values.len();
+            witness.new_column::<B64>(*id).as_mut_slice::<u64>()[..count].copy_from_slice(values);
         }
         {
             let count = trace.multiplicity.len();
             witness
-                .new_column::<MultiplicityField>(self.multiplicity)
-                .as_mut_slice::<MultiplicityField>()[..count]
+                .new_column::<B64>(self.multiplicity)
+                .as_mut_slice::<u64>()[..count]
                 .copy_from_slice(&trace.multiplicity);
         }
-        for (id, values) in self.require_hints.iter().zip(trace.require_hints.iter()) {
-            let count = values.len();
-            witness
-                .new_column::<MultiplicityField>(*id)
-                .as_mut_slice::<MultiplicityField>()[..count]
-                .copy_from_slice(values);
-        }
         for (id, values) in self.selectors.iter().zip(trace.selectors.iter()) {
-            let mut bits = witness.new_column::<BinaryField1b>(*id);
+            let mut bits = witness.new_column::<B1>(*id);
             let bits = bits.packed();
             values.iter().enumerate().for_each(|(i, value)| {
-                set_packed_slice(bits, i, BinaryField1b::from_underlier(*value));
+                set_packed_slice(bits, i, B1::from_underlier(*value));
             });
         }
     }
@@ -438,7 +430,7 @@ fn synthesize_constraints(
     }
     let constant = virt_map.constant(
         builder,
-        Fields::FunctionIndex(FunctionIndexField::from_underlier(func_idx)),
+        Fields::B32(B32::from_underlier(func_idx)),
         log_n as usize,
     );
     constraints.io.push(constant);
@@ -462,10 +454,10 @@ fn synthesize_constraints(
     }
     // TODO: Add, Mul chips
     // for (channel, sel, args) in constraints.sends {
-    //     let sel = sel.to_sum_bit(builder, virt_map, log_n);
+    //     let sel = sel.to_sum_b1(builder, virt_map, log_n);
     //     let oracles = args
     //         .iter()
-    //         .map(|arg| arg.to_sum_byte(builder, virt_map, log_n).unwrap())
+    //         .map(|arg| arg.to_sum_b64(builder, virt_map, log_n).unwrap())
     //         .collect::<Vec<_>>();
     //     match channel {
     //         Channel::Add => builder
@@ -480,14 +472,14 @@ fn synthesize_constraints(
     for (channel, sel, prev_index, args) in constraints.requires {
         match channel {
             Channel::Fun(func_idx) => {
-                let sel = sel.to_sum_bit(builder, virt_map, log_n);
+                let sel = sel.to_sum_b1(builder, virt_map, log_n);
                 let mut oracles = args
                     .iter()
-                    .map(|arg| arg.to_sum_byte(builder, virt_map, log_n))
+                    .map(|arg| arg.to_sum_b64(builder, virt_map, log_n))
                     .collect::<Vec<_>>();
                 let idx = virt_map.constant(
                     builder,
-                    Fields::FunctionIndex(FunctionIndexField::from_underlier(func_idx.0)),
+                    Fields::B32(B32::from_underlier(func_idx.0)),
                     log_n as usize,
                 );
                 oracles.push(idx);
@@ -501,10 +493,10 @@ fn synthesize_constraints(
                 );
             }
             Channel::Mem(size) => {
-                let sel = sel.to_sum_bit(builder, virt_map, log_n);
+                let sel = sel.to_sum_b1(builder, virt_map, log_n);
                 let oracles = args
                     .iter()
-                    .map(|arg| arg.to_sum_byte(builder, virt_map, log_n))
+                    .map(|arg| arg.to_sum_b64(builder, virt_map, log_n))
                     .collect::<Vec<_>>();
                 let channel_id = channel_ids.get_mem_channel(size);
                 require(builder, channel_id, prev_index, oracles, sel, log_n.into());
@@ -525,9 +517,9 @@ pub fn provide(
     let mut send_args = receive_args.clone();
     let count = count as usize;
     let log_n = count.next_power_of_two().ilog2() as usize;
-    let ones = virt_map.constant(builder, Fields::Multiplicity(MultiplicityField::ONE), log_n);
+    let ones = virt_map.constant(builder, Fields::B64(B64::ONE), log_n);
     if let Some(witness) = builder.witness() {
-        witness.new_column_with_default(ones, MultiplicityField::ONE);
+        witness.new_column_with_default(ones, B64::ONE);
     }
     send_args.push(ones);
     receive_args.push(multiplicity);
@@ -552,17 +544,12 @@ fn require(
         .unwrap();
     if let Some(witness) = builder.witness() {
         (
-            witness
-                .get::<MultiplicityField>(prev_index)
-                .unwrap()
-                .as_slice::<u64>(),
-            witness
-                .new_column::<MultiplicityField>(index)
-                .as_mut_slice::<u64>(),
+            witness.get::<B64>(prev_index).unwrap().as_slice::<u64>(),
+            witness.new_column::<B64>(index).as_mut_slice::<u64>(),
         )
             .into_par_iter()
             .for_each(|(prev, index)| {
-                *index = (MultiplicityField::from_underlier(*prev) * MULT_GEN).to_underlier()
+                *index = (B64::from_underlier(*prev) * MULT_GEN).to_underlier()
             });
     }
     receive_args.push(prev_index);
@@ -597,13 +584,13 @@ mod tests {
             execute::tests::factorial_toplevel,
             frontend::expr::toplevel_from_funcs,
             ir::{FuncIdx, Toplevel},
-            layout::AiurField,
+            layout::B128,
             trace::MULT_GEN,
         },
         func,
     };
 
-    fn prove_verify(toplevel: &Toplevel, index: u8, input: &[u8], output: &[u8]) {
+    fn prove_verify(toplevel: &Toplevel, index: u8, input: &[u64], output: &[u64]) {
         let allocator = bumpalo::Bump::new();
         let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
@@ -619,10 +606,10 @@ mod tests {
         const LOG_INV_RATE: usize = 1;
         const SECURITY_BITS: usize = 100;
 
-        let f = |x: u8| AiurField::from_underlier(x.into());
+        let f = |x: u64| B128::from_underlier(x.into());
         let mut io = input.iter().copied().map(f).collect::<Vec<_>>();
         io.extend(output.iter().copied().map(f));
-        io.push(f(index));
+        io.push(f(index as u64));
         let mut push_io = io.clone();
         push_io.push(MULT_GEN.into());
         let push_boundaries = Boundary {
@@ -633,7 +620,7 @@ mod tests {
         };
 
         let mut pull_io = io;
-        pull_io.push(AiurField::ONE);
+        pull_io.push(B128::ONE);
         let pull_boundaries = Boundary {
             values: pull_io,
             channel_id: channel_ids.fun,
@@ -681,15 +668,15 @@ mod tests {
     fn test_factorial() {
         let toplevel = factorial_toplevel();
         let func_idx = 0;
-        let input = &[100, 0, 0, 0, 0, 0, 0, 0];
-        let output = &[0, 0, 0, 0, 0, 0, 0, 0];
+        let input = &[100];
+        let output = &[0];
         prove_verify(&toplevel, func_idx, input, output);
     }
 
     #[test]
     fn test_load_store() {
         let func = func!(
-        fn load_store(n): [8] {
+        fn load_store(n): [1] {
             let one = 1;
             if !n {
                 let ptr = 50;
@@ -703,8 +690,8 @@ mod tests {
         });
         let toplevel = toplevel_from_funcs(&[func]);
         let func_idx = 0;
-        let input = &[100, 0, 0, 0, 0, 0, 0, 0];
-        let output = &[50, 0, 0, 0, 0, 0, 0, 0];
+        let input = &[100];
+        let output = &[50];
         prove_verify(&toplevel, func_idx, input, output);
     }
 }

@@ -3,10 +3,10 @@ use binius_core::{
     oracle::OracleId,
     polynomial::{Error, MultivariatePoly},
 };
-use binius_field::{BinaryField1b, Field, TowerField, underlier::WithUnderlier};
+use binius_field::{Field, TowerField, underlier::WithUnderlier};
 use binius_utils::bail;
 
-use super::layout::{AiurByteField, AiurField, FunctionIndexField, MultiplicityField};
+use super::layout::{B1, B8, B32, B64, B128};
 
 #[derive(PartialEq, Debug, Eq, Hash)]
 pub enum Virtual {
@@ -23,17 +23,17 @@ pub enum Virtual {
     },
     Sum {
         oracles: Vec<OracleId>,
-        offset: AiurByteField,
+        offset: B64,
         log_n: usize,
     },
 }
 
 #[derive(PartialEq, Debug, Eq, Hash, Clone, Copy)]
 pub enum Fields {
-    Bit(BinaryField1b),
-    Byte(AiurByteField),
-    Multiplicity(MultiplicityField),
-    FunctionIndex(FunctionIndexField),
+    B1(B1),
+    B8(B8),
+    B32(B32),
+    B64(B64),
 }
 
 #[derive(Debug, Clone)]
@@ -48,14 +48,14 @@ impl Address {
     }
 
     pub fn populate(address: OracleId, witness: &mut witness::Builder<'_>) {
-        let mut slice = witness.new_column::<AiurField>(address);
-        for (i, val) in slice.as_mut_slice::<AiurField>().iter_mut().enumerate() {
-            *val = AiurField::from_underlier(i as u128);
+        let mut slice = witness.new_column::<B128>(address);
+        for (i, val) in slice.as_mut_slice::<B128>().iter_mut().enumerate() {
+            *val = B128::from_underlier(i as u128);
         }
     }
 }
 
-impl MultivariatePoly<AiurField> for Address {
+impl MultivariatePoly<B128> for Address {
     fn degree(&self) -> usize {
         1
     }
@@ -64,15 +64,15 @@ impl MultivariatePoly<AiurField> for Address {
         self.n_vars
     }
 
-    fn evaluate(&self, query: &[AiurField]) -> Result<AiurField, Error> {
+    fn evaluate(&self, query: &[B128]) -> Result<B128, Error> {
         let n_vars = MultivariatePoly::n_vars(self);
         if query.len() != n_vars {
             bail!(Error::IncorrectQuerySize { expected: n_vars });
         }
-        let mut result = AiurField::ZERO;
+        let mut result = B128::ZERO;
         let mut coeff = 1;
         for arg in query.iter() {
-            result += *arg * AiurField::from_underlier(coeff);
+            result += *arg * B128::from_underlier(coeff);
             coeff <<= 1;
         }
 
@@ -80,6 +80,6 @@ impl MultivariatePoly<AiurField> for Address {
     }
 
     fn binary_tower_level(&self) -> usize {
-        AiurField::TOWER_LEVEL
+        B64::TOWER_LEVEL
     }
 }

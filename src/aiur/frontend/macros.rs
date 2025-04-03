@@ -50,7 +50,7 @@ macro_rules! func {
 macro_rules! var {
     ($variable:ident) => {{
         let name = $crate::aiur::frontend::expr::Ident::User(stringify!($variable));
-        $crate::aiur::frontend::expr::Var { name, size: 8 }
+        $crate::aiur::frontend::expr::Var { name, size: 1 }
     }};
     ($variable:ident, $size:expr) => {{
         let name = $crate::aiur::frontend::expr::Ident::User(stringify!($variable));

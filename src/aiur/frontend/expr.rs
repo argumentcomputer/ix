@@ -10,8 +10,6 @@ use crate::aiur::{
     layout::func_layout,
 };
 
-const U64_SIZE: u32 = 8;
-
 /// The type for variable references
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct Var {
@@ -482,7 +480,7 @@ impl CtrlE {
                 let state = ctx.save_state();
                 let f = f.compile(ctx);
                 ctx.restore_state(state);
-                Ctrl::If64(b, t, f)
+                Ctrl::If(b, t, f)
             }
         }
     }
@@ -492,13 +490,13 @@ impl OpE {
     fn check(&self, ctx: &mut CheckCtx<'_>) {
         match self {
             OpE::Prim(tgt, _) => {
-                assert_eq!(tgt.size, U64_SIZE, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(tgt.size, 1, "Var mismatch on `{}`", self.pretty());
                 bind_var(tgt, ctx);
             }
             OpE::Add(tgt, a, b) | OpE::Mul(tgt, a, b) | OpE::Sub(tgt, a, b) => {
-                assert_eq!(a.size, U64_SIZE, "Var mismatch on `{}`", self.pretty());
-                assert_eq!(b.size, U64_SIZE, "Var mismatch on `{}`", self.pretty());
-                assert_eq!(tgt.size, U64_SIZE, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(a.size, 1, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(b.size, 1, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(tgt.size, 1, "Var mismatch on `{}`", self.pretty());
                 use_var(a, ctx);
                 use_var(b, ctx);
                 bind_var(tgt, ctx);
@@ -532,12 +530,12 @@ impl OpE {
                 out.iter().for_each(|t| bind_var(t, ctx));
             }
             OpE::Store(ptr, vals) => {
-                assert_eq!(ptr.size, U64_SIZE, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(ptr.size, 1, "Var mismatch on `{}`", self.pretty());
                 vals.iter().for_each(|a| use_var(a, ctx));
                 bind_var(ptr, ctx);
             }
             OpE::Load(vals, ptr) => {
-                assert_eq!(ptr.size, U64_SIZE, "Var mismatch on `{}`", self.pretty());
+                assert_eq!(ptr.size, 1, "Var mismatch on `{}`", self.pretty());
                 use_var(ptr, ctx);
                 vals.iter().for_each(|val| bind_var(val, ctx));
             }
