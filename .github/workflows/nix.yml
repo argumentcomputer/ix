@@ -25,6 +25,10 @@ jobs:
         with:
           name: argumentcomputer
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      # Ix CLI
+      - run: nix build
+      - run: nix run .#default -- --help
+      # Ix tests
       - run: nix build .#test
       - run: nix run .#test
 

@@ -62,40 +62,24 @@ let
   };
 
   # Blake3.lean C FFI dependency, needed for explicit static lib linking
-  # See issue https://github.com/argumentcomputer/lean4-nix/issues/8
-  blake3 = blake3-lean.inputs.blake3;
-  blake3Lib = (blake3-lean.lib { inherit pkgs lean4-nix blake3; }).lib;
-  blake3C = blake3Lib.blake3-c;
+  blake3C = blake3-lean.packages.${system}.staticLib;
 
-  # Lean package
-  # Fetches external dependencies
-  leanPkgBase = (lean4-nix.lake { inherit pkgs; }).mkPackage {
-      src = ./.;
-      roots = ["Ix" "Main"];
-  };
-  # Builds final library and links to FFI static libs
-  leanPkg = (pkgs.lean.buildLeanPackage {
-    name = "ix";
+  # Lean package, builds the Ix binary and links to FFI static libs
+  # Note: downstream users of Ix as a library should import it in the lakefile,
+  # only need to include the static libs as below in the final `mkPackage`
+  leanPkg = (lean4-nix.lake { inherit pkgs; }).mkPackage {
     src = ./.;
-    deps = [ leanPkgBase ];
     roots = ["Ix" "Main"];
-    linkFlags = [ "-L${rustPkg}/lib" "-lix_rs" "-L${cPkg}/lib" "-lix_c" "-L${blake3C}/lib" "-lblake3"];
-  });
-  # Builds test package
-  leanTest = (pkgs.lean.buildLeanPackage {
-    name = "ix_test";
-    src = ./.;
-    deps = [ leanPkg ];
-    roots = ["Tests.Main" "Ix"];
-    linkFlags = [ "-L${rustPkg}/lib" "-lix_rs" "-L${cPkg}/lib" "-lix_c" "-L${blake3C}/lib" "-lblake3"];
-  });
+    staticLibDeps = [ "${rustPkg}/lib" "${cPkg}/lib" "${blake3C}/lib" ];
+  };
+
   lib = {
     inherit
       rustToolchain
-      leanPkg
-      leanTest
+      blake3C
+      rustPkg
       cPkg
-      blake3C;
+      leanPkg;
   };
 in
 {
