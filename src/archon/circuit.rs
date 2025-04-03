@@ -13,7 +13,7 @@ use binius_utils::checked_arithmetics::log2_ceil_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
 
-use crate::archon::transparent::constant_from_b128;
+use crate::archon::transparent::{Incremental, constant_from_b128};
 
 use super::{
     F, ModuleId, OracleInfo, OracleKind, arith_expr::ArithExpr, transparent::Transparent,
@@ -226,6 +226,9 @@ pub fn compile_circuit_modules(
                 }
                 OracleKind::Transparent(Transparent::Constant(b128)) => {
                     builder.add_transparent(name, constant_from_b128(*b128, n_vars))?
+                }
+                OracleKind::Transparent(Transparent::Incremental) => {
+                    builder.add_transparent(name, Incremental { n_vars })?
                 }
                 OracleKind::StepDown => {
                     builder.add_transparent(name, StepDown::new(n_vars, height_usize)?)?

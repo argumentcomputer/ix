@@ -465,6 +465,56 @@ impl WitnessModule {
                         let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
                         (vec![u; num_underliers], tower_level)
                     }
+                    Transparent::Incremental => {
+                        let tower_level = B64::new(height).min_tower_level();
+                        let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
+                        let mut underliers = vec![OptimalUnderlier::ZERO; num_underliers];
+                        match tower_level {
+                            3 => {
+                                underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                                    let i = (i % (u8::MAX as usize)).try_into().unwrap();
+                                    let (start, _) = 16u8.overflowing_mul(i);
+                                    #[rustfmt::skip]
+                                    let data = [
+                                        start,      start +  1, start +  2, start +  3,
+                                        start +  4, start +  5, start +  6, start +  7,
+                                        start +  8, start +  9, start + 10, start + 11,
+                                        start + 12, start + 13, start + 14, start + 15,
+                                    ];
+                                    *u = unsafe { transmute::<[u8; 16], OptimalUnderlier>(data) };
+                                });
+                            }
+                            4 => {
+                                underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                                    let i = (i % (u16::MAX as usize)).try_into().unwrap();
+                                    let (start, _) = 8u16.overflowing_mul(i);
+                                    #[rustfmt::skip]
+                                    let data = [
+                                        start,     start + 1, start + 2, start + 3,
+                                        start + 4, start + 5, start + 6, start + 7,
+                                    ];
+                                    *u = unsafe { transmute::<[u16; 8], OptimalUnderlier>(data) };
+                                });
+                            }
+                            5 => {
+                                underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                                    let i = (i % (u32::MAX as usize)).try_into().unwrap();
+                                    let (start, _) = 4u32.overflowing_mul(i);
+                                    let data = [start, start + 1, start + 2, start + 3];
+                                    *u = unsafe { transmute::<[u32; 4], OptimalUnderlier>(data) };
+                                });
+                            }
+                            6 => {
+                                underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                                    let (start, _) = 2u64.overflowing_mul(i as u64);
+                                    let data = [start, start + 1];
+                                    *u = unsafe { transmute::<[u64; 2], OptimalUnderlier>(data) };
+                                });
+                            }
+                            _ => bail!("Unsupported tower level: {tower_level}"),
+                        }
+                        (underliers, tower_level)
+                    }
                 },
                 OracleKind::StepDown => {
                     let tower_level = oracle_info.tower_level;
@@ -604,11 +654,33 @@ mod tests {
             witness_modules[0].populate(height).unwrap();
             assert!(!witness_modules[0].entry_map.is_empty());
             let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
-            validate_witness(&circuit_modules, &witness, &[]).unwrap();
+            assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
         };
 
-        [128, 200, 256, 400, 512, 600]
+        [65, 66, 128, 200, 256, 400, 512, 600]
             .into_par_iter()
+            .for_each(test_with_height);
+    }
+
+    #[test]
+    fn test_populate_incremental() {
+        let mut circuit_module = CircuitModule::new(0);
+        circuit_module
+            .add_transparent("incr", Transparent::Incremental)
+            .unwrap();
+        circuit_module.freeze_oracles();
+        let circuit_modules = [circuit_module];
+
+        let test_with_height = |height| {
+            let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
+            witness_modules[0].populate(height).unwrap();
+            assert!(!witness_modules[0].entry_map.is_empty());
+            let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+            assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
+        };
+
+        [65, 66, 128, 200, 256, 400, 512, 600]
+            .into_iter()
             .for_each(test_with_height);
     }
 
