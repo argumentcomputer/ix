@@ -248,7 +248,7 @@ pub fn toplevel_from_funcs(func_exprs: &[FunctionE]) -> Toplevel {
     Toplevel {
         functions,
         layouts,
-        mem_sizes,
+        mem_widths: mem_sizes,
     }
 }
 

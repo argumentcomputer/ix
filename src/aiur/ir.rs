@@ -12,7 +12,7 @@ use super::layout::Layout;
 pub struct Toplevel {
     pub functions: Vec<Function>,
     pub layouts: Vec<Layout>,
-    pub mem_sizes: Vec<u32>,
+    pub mem_widths: Vec<u32>,
 }
 
 pub type Name = &'static str;

@@ -34,18 +34,18 @@ pub struct AiurChannelIds {
 }
 
 impl AiurChannelIds {
-    pub fn get_mem_channel(&self, size: u32) -> ChannelId {
-        *self.mem.iter().find(|(k, _)| *k == size).map_or_else(
-            || panic!("Internal error: no memory map of size {size}"),
+    pub fn get_mem_channel(&self, width: u32) -> ChannelId {
+        *self.mem.iter().find(|(k, _)| *k == width).map_or_else(
+            || panic!("Internal error: no memory map of width {width}"),
             |(_, v)| v,
         )
     }
 
-    pub fn get_mem_pos(&self, size: u32) -> usize {
+    pub fn get_mem_pos(&self, width: u32) -> usize {
         self.mem
             .iter()
-            .position(|(k, _)| *k == size)
-            .unwrap_or_else(|| panic!("Internal error: no memory map of size {size}"))
+            .position(|(k, _)| *k == width)
+            .unwrap_or_else(|| panic!("Internal error: no memory map of width {width}"))
     }
 }
 
@@ -198,14 +198,14 @@ impl VirtualMap {
 impl AiurChannelIds {
     pub fn initialize_channels(
         builder: &mut ConstraintSystemBuilder<'_>,
-        mem_sizes: &[u32],
+        mem_widths: &[u32],
     ) -> Self {
         let fun = builder.add_channel();
         let add = builder.add_channel();
         let mul = builder.add_channel();
-        let mem = mem_sizes
+        let mem = mem_widths
             .iter()
-            .map(|size| (*size, builder.add_channel()))
+            .map(|width| (*width, builder.add_channel()))
             .collect();
         AiurChannelIds { fun, add, mul, mem }
     }
@@ -351,10 +351,10 @@ impl Toplevel {
         let traces = self.generate_trace(record);
         let mut aiur_count = AiurCount {
             fun: Vec::with_capacity(self.functions.len()),
-            mem: Vec::with_capacity(self.mem_sizes.len()),
+            mem: Vec::with_capacity(self.mem_widths.len()),
             add: record.add_queries.len() as u64,
         };
-        let channel_ids = AiurChannelIds::initialize_channels(builder, &self.mem_sizes);
+        let channel_ids = AiurChannelIds::initialize_channels(builder, &self.mem_widths);
         for (func_idx, function) in self.functions.iter().enumerate() {
             let trace = &traces[func_idx];
             let layout = &self.layouts[func_idx];
@@ -374,9 +374,9 @@ impl Toplevel {
                 &mut virt_map,
             );
         }
-        for &size in self.mem_sizes.iter() {
-            let mem_channel = channel_ids.get_mem_channel(size);
-            let trace = MemTrace::generate_trace(size, record);
+        for &width in self.mem_widths.iter() {
+            let mem_channel = channel_ids.get_mem_channel(width);
+            let trace = MemTrace::generate_trace(width, record);
             let count = trace.height;
             aiur_count.mem.push(count.try_into().unwrap());
             prover_synthesize_mem(builder, mem_channel, &trace);
@@ -394,7 +394,7 @@ impl Toplevel {
         builder: &mut ConstraintSystemBuilder<'_>,
         count: &AiurCount,
     ) -> AiurChannelIds {
-        let channel_ids = AiurChannelIds::initialize_channels(builder, &self.mem_sizes);
+        let channel_ids = AiurChannelIds::initialize_channels(builder, &self.mem_widths);
         for (func_idx, function) in self.functions.iter().enumerate() {
             let count = count.fun[func_idx];
             let layout = &self.layouts[func_idx];
@@ -411,11 +411,11 @@ impl Toplevel {
                 &mut virt_map,
             );
         }
-        for &size in self.mem_sizes.iter() {
-            let mem_channel = channel_ids.get_mem_channel(size);
-            let idx = channel_ids.get_mem_pos(size);
+        for &width in self.mem_widths.iter() {
+            let mem_channel = channel_ids.get_mem_channel(width);
+            let idx = channel_ids.get_mem_pos(width);
             let mem_counts = count.mem[idx];
-            verifier_synthesize_mem(builder, mem_channel, size, mem_counts);
+            verifier_synthesize_mem(builder, mem_channel, width, mem_counts);
         }
         {
             let add_channel = channel_ids.add;
@@ -504,13 +504,13 @@ fn synthesize_constraints(
                     log_n.into(),
                 );
             }
-            Channel::Mem(size) => {
+            Channel::Mem(width) => {
                 let sel = sel.to_sum_b1(builder, virt_map, log_n);
                 let oracles = args
                     .iter()
                     .map(|arg| arg.to_sum_b64(builder, virt_map, log_n))
                     .collect::<Vec<_>>();
-                let channel_id = channel_ids.get_mem_channel(size);
+                let channel_id = channel_ids.get_mem_channel(width);
                 require(builder, channel_id, prev_index, oracles, sel, log_n.into());
             }
             _ => unreachable!(),

@@ -2,11 +2,11 @@ use std::ops::{Add, AddAssign, Mul, Sub};
 
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::oracle::OracleId;
-use binius_field::{Field, TowerField, underlier::WithUnderlier};
+use binius_field::{Field, underlier::WithUnderlier};
 
 use super::{
     ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, ValIdx},
-    layout::{B1, B8, B64, Layout},
+    layout::{B1_LEVEL, B8_LEVEL, B64, B64_LEVEL, Layout},
 };
 
 #[derive(Clone, Debug)]
@@ -220,28 +220,25 @@ impl Columns {
         layout: &Layout,
         log_n: u8,
     ) -> Self {
-        let u1_level = B1::TOWER_LEVEL;
-        let u8_level = B8::TOWER_LEVEL;
-        let u64_level = B64::TOWER_LEVEL;
         let log_n = log_n as usize;
         let inputs = (0..layout.inputs)
-            .map(|i| builder.add_committed(format!("input{i}"), log_n, u64_level))
+            .map(|i| builder.add_committed(format!("input{i}"), log_n, B64_LEVEL))
             .collect();
         let outputs = (0..layout.outputs)
-            .map(|i| builder.add_committed(format!("outputs{i}"), log_n, u64_level))
+            .map(|i| builder.add_committed(format!("outputs{i}"), log_n, B64_LEVEL))
             .collect();
         let u1_auxiliaries = (0..layout.u1_auxiliaries)
-            .map(|i| builder.add_committed(format!("u1_auxiliaries{i}"), log_n, u1_level))
+            .map(|i| builder.add_committed(format!("u1_auxiliaries{i}"), log_n, B1_LEVEL))
             .collect();
         let u8_auxiliaries = (0..layout.u8_auxiliaries)
-            .map(|i| builder.add_committed(format!("u8_auxiliaries{i}"), log_n, u8_level))
+            .map(|i| builder.add_committed(format!("u8_auxiliaries{i}"), log_n, B8_LEVEL))
             .collect();
         let u64_auxiliaries = (0..layout.u64_auxiliaries)
-            .map(|i| builder.add_committed(format!("u64_auxiliary{i}"), log_n, u64_level))
+            .map(|i| builder.add_committed(format!("u64_auxiliary{i}"), log_n, B64_LEVEL))
             .collect();
-        let multiplicity = builder.add_committed("multiplicity", log_n, u64_level);
+        let multiplicity = builder.add_committed("multiplicity", log_n, B64_LEVEL);
         let selectors = (0..layout.selectors)
-            .map(|i| builder.add_committed(format!("selectors{i}"), log_n, u1_level))
+            .map(|i| builder.add_committed(format!("selectors{i}"), log_n, B1_LEVEL))
             .collect();
         Self {
             inputs,

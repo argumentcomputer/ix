@@ -25,9 +25,13 @@ pub struct QueryRecord {
 
 impl QueryRecord {
     pub fn new(toplevel: &Toplevel) -> Self {
-        let len = toplevel.functions.len();
-        let func_queries = (0..len).map(|_| Default::default()).collect();
-        let mem_queries = Vec::new();
+        let func_len = toplevel.functions.len();
+        let func_queries = (0..func_len).map(|_| Default::default()).collect();
+        let mem_queries = toplevel
+            .mem_widths
+            .iter()
+            .map(|width| (*width, Default::default()))
+            .collect();
         let add_queries = Vec::new();
         QueryRecord {
             func_queries,
@@ -246,16 +250,14 @@ impl Toplevel {
 }
 
 fn load_mem_map_mut(
-    mem_queries: &mut Vec<(u32, FxIndexMap<Vec<u64>, QueryResult>)>,
+    mem_queries: &mut [(u32, FxIndexMap<Vec<u64>, QueryResult>)],
     len: u32,
 ) -> &mut FxIndexMap<Vec<u64>, QueryResult> {
-    if let Some(pos) = mem_queries.iter_mut().position(|(k, _)| *k == len) {
-        &mut mem_queries[pos].1
-    } else {
-        mem_queries.push((len, FxIndexMap::default()));
-        let last = mem_queries.last_mut().unwrap();
-        &mut last.1
-    }
+    mem_queries
+        .iter_mut()
+        .find(|(k, _)| *k == len)
+        .map(|(_, v)| v)
+        .unwrap()
 }
 
 #[cfg(test)]

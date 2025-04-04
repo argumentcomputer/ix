@@ -4,7 +4,7 @@ use binius_core::{
     oracle::{OracleId, ProjectionVariant, ShiftVariant},
 };
 use binius_field::{
-    Field, TowerField,
+    Field,
     packed::set_packed_slice,
     underlier::{U1, WithUnderlier},
 };
@@ -13,7 +13,10 @@ use binius_maybe_rayon::prelude::*;
 
 use crate::aiur::layout::{B1, B64};
 
-use super::{execute::QueryRecord, layout::B128};
+use super::{
+    execute::QueryRecord,
+    layout::{B1_LEVEL, B64_LEVEL, B128},
+};
 
 struct AddCols {
     xin: OracleId,
@@ -21,6 +24,10 @@ struct AddCols {
     cin: OracleId,
     zout: OracleId,
     cout: OracleId,
+    packed_xin: OracleId,
+    packed_yin: OracleId,
+    packed_zout: OracleId,
+    projected_cout: OracleId,
 }
 
 pub struct AddTrace {
@@ -47,14 +54,19 @@ impl AddTrace {
 
 impl AddCols {
     fn new(builder: &mut ConstraintSystemBuilder<'_>, log_n: usize) -> Self {
-        let b1_level = B1::TOWER_LEVEL;
-        let u64_level = B64::TOWER_LEVEL;
-        let xin = builder.add_committed("xin", log_n + u64_level, b1_level);
-        let yin = builder.add_committed("yin", log_n + u64_level, b1_level);
-        let zout = builder.add_committed("zout", log_n + u64_level, b1_level);
-        let cout = builder.add_committed("cout", log_n + u64_level, b1_level);
+        let xin = builder.add_committed("xin", log_n + B64_LEVEL, B1_LEVEL);
+        let yin = builder.add_committed("yin", log_n + B64_LEVEL, B1_LEVEL);
+        let zout = builder.add_committed("zout", log_n + B64_LEVEL, B1_LEVEL);
+        let cout = builder.add_committed("cout", log_n + B64_LEVEL, B1_LEVEL);
         let cin = builder
-            .add_shifted("cin", cout, 1, u64_level, ShiftVariant::LogicalLeft)
+            .add_shifted("cin", cout, 1, B64_LEVEL, ShiftVariant::LogicalLeft)
+            .unwrap();
+        let packed_xin = builder.add_packed("packed_xin", xin, B64_LEVEL).unwrap();
+        let packed_yin = builder.add_packed("packed_yin", yin, B64_LEVEL).unwrap();
+        let packed_zout = builder.add_packed("packed_zout", zout, B64_LEVEL).unwrap();
+        let args = [B128::ONE; B64_LEVEL].to_vec();
+        let projected_cout = builder
+            .add_projected("projected_cout", cout, args, ProjectionVariant::FirstVars)
             .unwrap();
         AddCols {
             xin,
@@ -62,6 +74,10 @@ impl AddCols {
             cin,
             zout,
             cout,
+            packed_xin,
+            packed_yin,
+            packed_zout,
+            projected_cout,
         }
     }
 
@@ -85,6 +101,25 @@ impl AddCols {
                 *cin = (*xin) ^ (*yin) ^ (*zout);
                 *cout = ((carry as u64) << 63) | (*cin >> 1);
             });
+        let packed_xin_witness = witness.get::<B1>(self.xin).unwrap();
+        let packed_yin_witness = witness.get::<B1>(self.yin).unwrap();
+        let packed_zout_witness = witness.get::<B1>(self.zout).unwrap();
+        witness
+            .set(self.packed_xin, packed_xin_witness.repacked::<B64>())
+            .unwrap();
+        witness
+            .set(self.packed_yin, packed_yin_witness.repacked::<B64>())
+            .unwrap();
+        witness
+            .set(self.packed_zout, packed_zout_witness.repacked::<B64>())
+            .unwrap();
+        let cout_witness = witness.get::<B1>(self.cout).unwrap().as_slice::<u64>();
+        let mut projected_cout_witness = witness.new_column::<B1>(self.projected_cout);
+        let projected_cout_witness = projected_cout_witness.packed();
+        for (i, word) in cout_witness.iter().enumerate() {
+            let bit = (word >> 63) as u8;
+            set_packed_slice(projected_cout_witness, i, B1::from_underlier(U1::new(bit)));
+        }
     }
 }
 
@@ -105,46 +140,12 @@ fn constrain_add(
         [cols.xin, cols.yin, cols.cin, cols.cout],
         arith_expr!([xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout).convert_field(),
     );
-    const U64_LEVEL: usize = B64::TOWER_LEVEL;
-    let packed_xin = builder
-        .add_packed("packed_xin", cols.xin, U64_LEVEL)
-        .unwrap();
-    let packed_yin = builder
-        .add_packed("packed_yin", cols.yin, U64_LEVEL)
-        .unwrap();
-    let packed_zout = builder
-        .add_packed("packed_zout", cols.zout, U64_LEVEL)
-        .unwrap();
-    let projected_cout = builder
-        .add_projected(
-            "projected_cout",
-            cols.cout,
-            [B128::ONE; U64_LEVEL].to_vec(),
-            ProjectionVariant::FirstVars,
-        )
-        .unwrap();
-    if let Some(witness) = builder.witness() {
-        let packed_xin_witness = witness.get::<B1>(cols.xin).unwrap();
-        let packed_yin_witness = witness.get::<B1>(cols.yin).unwrap();
-        let packed_zout_witness = witness.get::<B1>(cols.zout).unwrap();
-        witness
-            .set(packed_xin, packed_xin_witness.repacked::<B64>())
-            .unwrap();
-        witness
-            .set(packed_yin, packed_yin_witness.repacked::<B64>())
-            .unwrap();
-        witness
-            .set(packed_zout, packed_zout_witness.repacked::<B64>())
-            .unwrap();
-        let cout_witness = witness.get::<B1>(cols.cout).unwrap().as_slice::<u64>();
-        let mut projected_cout_witness = witness.new_column::<B1>(projected_cout);
-        let projected_cout_witness = projected_cout_witness.packed();
-        for (i, word) in cout_witness.iter().enumerate() {
-            let bit = (word >> 63) as u8;
-            set_packed_slice(projected_cout_witness, i, B1::from_underlier(U1::new(bit)));
-        }
-    }
-    let args = [packed_xin, packed_yin, packed_zout, projected_cout];
+    let args = [
+        cols.packed_xin,
+        cols.packed_yin,
+        cols.packed_zout,
+        cols.projected_cout,
+    ];
     let count = count
         .try_into()
         .expect("Value too big for current architecture");

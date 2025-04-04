@@ -1,11 +1,12 @@
 use binius_circuits::builder::{ConstraintSystemBuilder, witness};
 use binius_core::{constraint_system::channel::ChannelId, oracle::OracleId};
-use binius_field::{Field, TowerField};
+use binius_field::Field;
 
 use crate::aiur::{layout::B64, trace::load_mem_map, transparent::Address};
 
 use super::{
     execute::QueryRecord,
+    layout::B64_LEVEL,
     synthesis::{VirtualMap, provide},
     trace::MULT_GEN,
 };
@@ -23,11 +24,11 @@ pub struct MemTrace {
 }
 
 impl MemTrace {
-    pub fn generate_trace(size: u32, record: &QueryRecord) -> Self {
-        let mem_map = load_mem_map(&record.mem_queries, size);
+    pub fn generate_trace(width: u32, record: &QueryRecord) -> Self {
+        let mem_map = load_mem_map(&record.mem_queries, width);
         let height = mem_map.len();
         let mut trace = MemTrace {
-            values: vec![Vec::with_capacity(height); size as usize],
+            values: vec![Vec::with_capacity(height); width as usize],
             multiplicity: Vec::with_capacity(height),
             height,
         };
@@ -43,12 +44,11 @@ impl MemTrace {
 
 impl MemCols {
     fn new(builder: &mut ConstraintSystemBuilder<'_>, log_n: usize, width: usize) -> Self {
-        let b64_level = B64::TOWER_LEVEL;
         let address = builder.add_transparent("", Address::new(log_n)).unwrap();
         let values: Vec<_> = (0..width)
-            .map(|i| builder.add_committed(format!("value-{i}"), log_n, b64_level))
+            .map(|i| builder.add_committed(format!("value-{i}"), log_n, B64_LEVEL))
             .collect();
-        let multiplicity = builder.add_committed("multiplicity", log_n, b64_level);
+        let multiplicity = builder.add_committed("multiplicity", log_n, B64_LEVEL);
         MemCols {
             address,
             values,
