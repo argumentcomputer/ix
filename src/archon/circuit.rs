@@ -6,12 +6,14 @@ use binius_core::{
         channel::{ChannelId, Flush, FlushDirection},
     },
     oracle::OracleId,
+    transparent::step_down::StepDown,
 };
-use binius_field::TowerField;
+use binius_field::{TowerField, arch::OptimalUnderlier, underlier::UnderlierType};
+use binius_utils::checked_arithmetics::log2_ceil_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
 
-use crate::archon::transparent::constant_from_b128;
+use crate::archon::transparent::{Incremental, constant_from_b128};
 
 use super::{
     F, ModuleId, OracleInfo, OracleKind, arith_expr::ArithExpr, transparent::Transparent,
@@ -45,14 +47,25 @@ pub struct CircuitModule {
 impl CircuitModule {
     #[inline]
     pub fn new(module_id: ModuleId) -> Self {
+        let step_down = OracleInfo {
+            name: format!("step_down-module-{module_id}"),
+            tower_level: 0,
+            kind: OracleKind::StepDown,
+        };
+        let oracles = Freezable::Raw(vec![step_down]);
         Self {
             module_id,
-            oracles: Freezable::default(),
+            oracles,
             flushes: vec![],
             constraints: vec![],
             non_zero_oracle_ids: vec![],
             namespacer: Namespacer::default(),
         }
+    }
+
+    #[inline]
+    pub const fn selector(&self) -> OracleId {
+        0
     }
 
     #[inline]
@@ -136,7 +149,7 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         offset: F,
-        inner: impl Iterator<Item = (OracleId, F)>,
+        inner: impl IntoIterator<Item = (OracleId, F)>,
     ) -> Result<OracleId> {
         let inner = inner.into_iter().collect::<Vec<_>>();
         let tower_level = inner
@@ -176,25 +189,32 @@ impl CircuitModule {
 
 pub fn compile_circuit_modules(
     modules: &[CircuitModule],
-    modules_n_vars: &[u8],
+    modules_heights: &[u64],
 ) -> Result<ConstraintSystem<F>> {
     ensure!(
-        modules.len() == modules_n_vars.len(),
-        "Number of oracles is incompatible with the number of n_vars data"
+        modules.len() == modules_heights.len(),
+        "Number of modules is incompatible with the number of heights"
     );
     let mut oracle_offset = 0;
     let mut builder = ConstraintSystemBuilder::new();
-    for (module_idx, (module, &module_n_vars)) in modules.iter().zip(modules_n_vars).enumerate() {
-        if module_n_vars == 0 {
+    for (module_idx, (module, &height)) in modules.iter().zip(modules_heights).enumerate() {
+        if height == 0 {
             // Deactivated module. Skip.
             continue;
         }
-        let n_vars = module_n_vars as usize;
+        let height_usize: usize = height.try_into()?;
+        let log_height = log2_ceil_usize(height_usize);
         ensure!(
             module_idx == module.module_id,
             "Wrong compilation order. Expected module {module_idx}, but got {}.",
             module.module_id
         );
+
+        // `n_vars` must be at least the number of variables in an underlier
+        let n_vars_fn = |tower_level| {
+            let underlier_n_vars = OptimalUnderlier::LOG_BITS - tower_level;
+            log_height.max(underlier_n_vars)
+        };
 
         for OracleInfo {
             name,
@@ -203,15 +223,32 @@ pub fn compile_circuit_modules(
         } in module.oracles.get_ref()
         {
             match kind {
-                OracleKind::Committed => builder.add_committed(name, n_vars, *tower_level),
+                OracleKind::Committed => {
+                    let n_vars = n_vars_fn(*tower_level);
+                    builder.add_committed(name, n_vars, *tower_level)
+                }
                 OracleKind::LinearCombination { offset, inner } => {
+                    let n_vars = n_vars_fn(*tower_level);
                     let inner = inner
                         .iter()
                         .map(|(oracle_id, f)| (oracle_id + oracle_offset, *f));
                     builder.add_linear_combination_with_offset(name, n_vars, *offset, inner)?
                 }
                 OracleKind::Transparent(Transparent::Constant(b128)) => {
+                    let n_vars = n_vars_fn(*tower_level);
                     builder.add_transparent(name, constant_from_b128(*b128, n_vars))?
+                }
+                OracleKind::Transparent(Transparent::Incremental) => {
+                    let tower_level = Incremental::min_tower_level(height);
+                    let n_vars = n_vars_fn(tower_level);
+                    builder.add_transparent(name, Incremental {
+                        n_vars,
+                        tower_level,
+                    })?
+                }
+                OracleKind::StepDown => {
+                    let n_vars = n_vars_fn(*tower_level);
+                    builder.add_transparent(name, StepDown::new(n_vars, height_usize)?)?
                 }
             };
         }
@@ -265,12 +302,6 @@ struct Constraint {
 enum Freezable<T> {
     Raw(T),
     Frozen(Arc<T>),
-}
-
-impl<T: Default> Default for Freezable<T> {
-    fn default() -> Self {
-        Self::Raw(T::default())
-    }
 }
 
 impl<T> Freezable<T> {

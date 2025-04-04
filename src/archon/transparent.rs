@@ -1,4 +1,7 @@
-use binius_core::transparent::constant::Constant;
+use binius_core::{
+    polynomial::{Error, MultivariatePoly},
+    transparent::constant::Constant,
+};
 use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
     BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64, BinaryField128b as B128,
@@ -9,6 +12,7 @@ use super::F;
 
 pub enum Transparent {
     Constant(B128),
+    Incremental,
 }
 
 impl Transparent {
@@ -16,7 +20,52 @@ impl Transparent {
     pub(crate) fn tower_level(&self) -> usize {
         match self {
             Self::Constant(b) => b.min_tower_level(),
+            Self::Incremental => B64::TOWER_LEVEL,
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct Incremental {
+    pub(crate) n_vars: usize,
+    pub(crate) tower_level: usize,
+}
+
+impl Incremental {
+    #[inline]
+    pub(crate) fn min_tower_level(height: u64) -> usize {
+        // It's impossible to satisfy the evaluation within an underlier for
+        // tower levels below 3.
+        B64::new(height).min_tower_level().max(3)
+    }
+}
+
+impl MultivariatePoly<F> for Incremental {
+    fn degree(&self) -> usize {
+        1
+    }
+
+    fn n_vars(&self) -> usize {
+        self.n_vars
+    }
+
+    fn evaluate(&self, query: &[F]) -> Result<F, Error> {
+        let n_vars = self.n_vars;
+        if query.len() != n_vars {
+            binius_utils::bail!(Error::IncorrectQuerySize { expected: n_vars });
+        }
+        let mut result = F::ZERO;
+        let mut coeff = 1;
+        for &arg in query {
+            result += arg * F::from_underlier(coeff);
+            coeff <<= 1;
+        }
+
+        Ok(result)
+    }
+
+    fn binary_tower_level(&self) -> usize {
+        self.tower_level
     }
 }
 
