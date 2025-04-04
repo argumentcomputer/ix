@@ -85,19 +85,6 @@ pub fn compile_witness_modules(
                     bail!("Entry not found for oracle {oracle_id}, module {module_idx}.");
                 };
                 let entry = &module.entries[entry_id];
-                let expected_num_underliers = WitnessModule::num_underliers_for_height(height, tower_level)?;
-                let got_num_underliers = entry.len();
-                ensure!(
-                    got_num_underliers == expected_num_underliers,
-                    [
-                        format!(
-                            "Wrong number of underliers for entry {entry_id}, bound to oracle {oracle_id}, module {module_idx}.\n"
-                        ),
-                        format!(
-                            "Expected {expected_num_underliers} but got {got_num_underliers}."
-                        )
-                    ].concat()
-                );
                 macro_rules! oracle_poly {
                     ($bf:ident) => {{
                         let values =
@@ -195,55 +182,33 @@ impl WitnessModule {
     }
 
     /// Populates a witness module with data to reach a given height.
-    /// # Errors
-    /// This function errors if a prepopulated oracle doesn't have this same height.
     pub fn populate(&mut self, height: u64) -> Result<()> {
-        let ensure_height = |entry_id: usize, tower_level| -> Result<()> {
-            let expected_num_underliers = Self::num_underliers_for_height(height, tower_level)?;
-            let got_num_underliers = self.entries[entry_id].len();
-            ensure!(
-                expected_num_underliers == got_num_underliers,
-                format!(
-                    "Expected length {expected_num_underliers} for entry {entry_id} on module {}. Got {got_num_underliers}.",
-                    self.module_id,
-                ),
-            );
-            Ok(())
-        };
-
         // "Root oracles" are those which aren't committed and aren't dependencies
         // of any other oracle. `root_oracles` starts with all oracles, which are
         // removed as the following loop finds out they break such condition.
         //
-        // The loop also uses `ensure_height` to make sure that prepopulated
-        // oracles have the right amount of data.
+        // The loop also uses ensures that committed oracles are prepopulated.
         let mut root_oracles: FxHashSet<_> = (0..self.num_oracles()).collect();
         for (oracle_id, oracle_info) in self.oracles.iter().enumerate() {
-            let mut is_committed = false;
             match &oracle_info.kind {
                 OracleKind::Committed => {
-                    root_oracles.remove(&oracle_id);
-                    is_committed = true;
-                }
-                OracleKind::LinearCombination { offset: _, inner } => {
-                    for (inner_oracle_id, _) in inner {
-                        root_oracles.remove(inner_oracle_id);
-                    }
-                }
-                OracleKind::Transparent(_) | OracleKind::StepDown => (),
-            }
-
-            if is_committed {
-                let Some(&(entry_id, tower_level)) = self.entry_map.get(&oracle_id) else {
-                    bail!(
+                    ensure!(
+                        self.entry_map.contains_key(&oracle_id),
                         "Committed oracle {} (id={oracle_id}) for witness module {} is not populated",
                         &oracle_info.name,
                         &self.module_id,
                     );
-                };
-                ensure_height(entry_id, tower_level)?;
-            } else if let Some(&(entry_id, tower_level)) = self.entry_map.get(&oracle_id) {
-                ensure_height(entry_id, tower_level)?;
+                    root_oracles.remove(&oracle_id);
+                }
+                OracleKind::LinearCombination { inner, .. } => {
+                    for (inner_oracle_id, _) in inner {
+                        root_oracles.remove(inner_oracle_id);
+                    }
+                }
+                OracleKind::Packed { inner, .. } => {
+                    root_oracles.remove(inner);
+                }
+                OracleKind::Transparent(_) | OracleKind::StepDown => (),
             }
         }
 
@@ -269,6 +234,7 @@ impl WitnessModule {
                         stack_to_visit!(inner_oracle_id);
                     }
                 }
+                OracleKind::Packed { inner, .. } => stack_to_visit!(inner),
                 OracleKind::Transparent(_) | OracleKind::StepDown => (),
             }
             if !is_committed {
@@ -285,7 +251,7 @@ impl WitnessModule {
                 continue;
             }
             let oracle_info = &self.oracles[oracle_id];
-            let oracle_witness_data = match &oracle_info.kind {
+            let oracle_entry = match &oracle_info.kind {
                 OracleKind::Committed => unreachable!("Committed oracles shouldn't be computed"),
                 OracleKind::LinearCombination { offset, inner } => {
                     // The strategy to compute linear combinations is to pack the same number
@@ -456,15 +422,23 @@ impl WitnessModule {
                         }),
                         _ => bail!("Unsupported tower level: {tower_level}"),
                     }
-
-                    (underliers, tower_level)
+                    let entry_id = self.new_entry();
+                    self.entries[entry_id] = underliers;
+                    (entry_id, tower_level)
+                }
+                OracleKind::Packed { inner, log_degree } => {
+                    let &(inner_entry_id, inner_tower_level) =
+                        self.entry_map.get(inner).expect("Data should be available");
+                    (inner_entry_id, inner_tower_level + log_degree)
                 }
                 OracleKind::Transparent(transparent) => match transparent {
                     Transparent::Constant(b) => {
                         let tower_level = oracle_info.tower_level;
                         let u = OptimalUnderlier::from_u128(replicate_within_u128(*b));
                         let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
-                        (vec![u; num_underliers], tower_level)
+                        let entry_id = self.new_entry();
+                        self.entries[entry_id] = vec![u; num_underliers];
+                        (entry_id, tower_level)
                     }
                     Transparent::Incremental => {
                         let tower_level = Incremental::min_tower_level(height);
@@ -514,7 +488,9 @@ impl WitnessModule {
                             }
                             _ => unreachable!(),
                         };
-                        (underliers, tower_level)
+                        let entry_id = self.new_entry();
+                        self.entries[entry_id] = underliers;
+                        (entry_id, tower_level)
                     }
                 },
                 OracleKind::StepDown => {
@@ -539,14 +515,13 @@ impl WitnessModule {
                             .skip(step_down_changes_at + 1)
                             .for_each(|u| *u = OptimalUnderlier::from_u128(0));
                     }
-                    (underliers, tower_level)
+                    let entry_id = self.new_entry();
+                    self.entries[entry_id] = underliers;
+                    (entry_id, tower_level)
                 }
             };
 
-            let (underliers, tower_level) = oracle_witness_data;
-            let entry_id = self.new_entry();
-            self.entries[entry_id] = underliers;
-            self.entry_map.insert(oracle_id, (entry_id, tower_level));
+            self.entry_map.insert(oracle_id, oracle_entry);
         }
 
         Ok(())
@@ -749,6 +724,31 @@ mod tests {
         witness_modules[0].populate(height).unwrap();
         assert!(!witness_modules[0].entry_map.is_empty());
         let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok())
+    }
+
+    #[test]
+    fn test_packed() {
+        let mut circuit_module = CircuitModule::new(0);
+        let input = circuit_module.add_committed::<B1>("input").unwrap();
+        for log_degree in 0..=7 {
+            circuit_module
+                .add_packed(&format!("packed-{input}-{log_degree}"), input, log_degree)
+                .unwrap();
+        }
+        circuit_module.freeze_oracles();
+
+        let mut witness_module = circuit_module.init_witness_module().unwrap();
+        let entry_id = witness_module.new_entry_with_capacity(7);
+        witness_module.push_u128_to(u128::MAX - u128::MAX / 2 + u128::MAX / 4, entry_id);
+        witness_module.bind_oracle_to::<B1>(input, entry_id);
+        let height = 128;
+        witness_module.populate(height).unwrap();
+
+        let witness_modules = [witness_module];
+        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+
+        let circuit_modules = [circuit_module];
         assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok())
     }
 }
