@@ -1,3 +1,5 @@
+use super::layout::Layout;
+
 /// The `TopLevel` is an abstraction that allows executing arbitrary Aiur-rs program.
 /// Roughly it works as following: user instantiates the `TopLevel` object using one or
 /// more functions (of type `Function`) that express one or more finite computations.
@@ -9,7 +11,11 @@
 ///
 pub struct Toplevel {
     pub functions: Vec<Function>,
+    pub layouts: Vec<Layout>,
+    pub mem_widths: Vec<u32>,
 }
+
+pub type Name = &'static str;
 
 impl Toplevel {
     pub fn get_function(&self, f: FuncIdx) -> &Function {
@@ -19,13 +25,14 @@ impl Toplevel {
 
 /// `Function` is an abstraction that expresses some finite computation
 pub struct Function {
+    pub name: Name,
     pub input_size: u32,
     pub output_size: u32,
     pub body: Block,
 }
 
 /// `Prim` defines primitive data types currently supported by Aiur-rs language
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Prim {
     U64(u64),
     Bool(bool),
@@ -59,9 +66,11 @@ pub enum Op {
     Add(ValIdx, ValIdx),
     Sub(ValIdx, ValIdx),
     Mul(ValIdx, ValIdx),
+    Xor(ValIdx, ValIdx),
     And(ValIdx, ValIdx),
     Lt(ValIdx, ValIdx),
-    Xor(ValIdx, ValIdx),
+    Store(Vec<ValIdx>),
+    Load(u32, ValIdx),
     /// A call operation takes 3 elements, function index, arguments, and output size
     Call(FuncIdx, Vec<ValIdx>, u32),
 }
@@ -80,7 +89,6 @@ impl SelIdx {
 /// `Ctrl` expresses the control flows of the program
 pub enum Ctrl {
     If(ValIdx, Block, Block),
-    If64(ValIdx, Block, Block),
     Return(SelIdx, Vec<ValIdx>),
 }
 

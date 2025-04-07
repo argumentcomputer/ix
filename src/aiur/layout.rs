@@ -1,19 +1,21 @@
 use binius_field::{
-    BinaryField8b, BinaryField32b, BinaryField64b, BinaryField128b, arch::OptimalUnderlier,
+    BinaryField1b, BinaryField8b, BinaryField32b, BinaryField64b, BinaryField128b, TowerField,
+    arch::OptimalUnderlier,
 };
 
 use super::ir::{Block, Ctrl, Function, Op};
 
-/// The Aiur circuit field
-pub type AiurField = BinaryField128b;
-/// The field of bytes, which constitute Aiur data
-pub type AiurByteField = BinaryField8b;
-/// The field of multiplicities. Its multiplicative group is used to express
-/// the multiplicity of lookups
-pub type MultiplicityField = BinaryField64b;
-/// The field of function indices
-pub type FunctionIndexField = BinaryField32b;
-pub type Underlier = OptimalUnderlier;
+pub type B1 = BinaryField1b;
+pub type B8 = BinaryField8b;
+pub type B32 = BinaryField32b;
+pub type B64 = BinaryField64b;
+pub type B128 = BinaryField128b;
+pub type U = OptimalUnderlier;
+
+pub const B1_LEVEL: usize = B1::TOWER_LEVEL;
+pub const B8_LEVEL: usize = B8::TOWER_LEVEL;
+pub const B32_LEVEL: usize = B32::TOWER_LEVEL;
+pub const B64_LEVEL: usize = B64::TOWER_LEVEL;
 
 /// The circuit layout of a function.
 /// The `auxiliaries` represent registers that hold temporary values
@@ -27,18 +29,21 @@ pub type Underlier = OptimalUnderlier;
 pub struct Layout {
     pub inputs: u32,
     pub outputs: u32,
-    pub auxiliaries: u32,
-    pub require_hints: u32,
+    pub u1_auxiliaries: u32,
+    pub u8_auxiliaries: u32,
+    pub u64_auxiliaries: u32,
     pub selectors: u32,
     pub shared_constraints: u32,
 }
 
 #[derive(Clone, Default)]
 struct LayoutBranchState {
-    auxiliary_init: u32,
-    auxiliary_max: u32,
-    require_hints_init: u32,
-    require_hints_max: u32,
+    u1_auxiliary_init: u32,
+    u1_auxiliary_max: u32,
+    u8_auxiliary_init: u32,
+    u8_auxiliary_max: u32,
+    u64_auxiliary_init: u32,
+    u64_auxiliary_max: u32,
     shared_constraint_init: u32,
     shared_constraint_max: u32,
 }
@@ -46,20 +51,23 @@ struct LayoutBranchState {
 impl Layout {
     // `save` before the first branch
     fn save(&self) -> LayoutBranchState {
-        // auxiliary
-        let auxiliary_init = self.auxiliaries;
-        let auxiliary_max = auxiliary_init;
-        // require hints
-        let require_hints_init = self.require_hints;
-        let require_hints_max = require_hints_init;
+        // auxiliaries
+        let u1_auxiliary_init = self.u1_auxiliaries;
+        let u1_auxiliary_max = u1_auxiliary_init;
+        let u8_auxiliary_init = self.u8_auxiliaries;
+        let u8_auxiliary_max = u8_auxiliary_init;
+        let u64_auxiliary_init = self.u64_auxiliaries;
+        let u64_auxiliary_max = u64_auxiliary_init;
         // shared constraints
         let shared_constraint_init = self.shared_constraints;
         let shared_constraint_max = shared_constraint_init;
         LayoutBranchState {
-            auxiliary_init,
-            auxiliary_max,
-            require_hints_init,
-            require_hints_max,
+            u1_auxiliary_init,
+            u1_auxiliary_max,
+            u8_auxiliary_init,
+            u8_auxiliary_max,
+            u64_auxiliary_init,
+            u64_auxiliary_max,
             shared_constraint_init,
             shared_constraint_max,
         }
@@ -67,12 +75,13 @@ impl Layout {
 
     // `restore` before new branches
     fn restore(&mut self, state: &mut LayoutBranchState) {
-        // auxiliary
-        state.auxiliary_max = state.auxiliary_max.max(self.auxiliaries);
-        self.auxiliaries = state.auxiliary_init;
-        // require hints
-        state.require_hints_max = state.require_hints_max.max(self.require_hints);
-        self.require_hints = state.require_hints_init;
+        // auxiliaries
+        state.u1_auxiliary_max = state.u1_auxiliary_max.max(self.u1_auxiliaries);
+        self.u1_auxiliaries = state.u1_auxiliary_init;
+        state.u8_auxiliary_max = state.u8_auxiliary_max.max(self.u8_auxiliaries);
+        self.u8_auxiliaries = state.u8_auxiliary_init;
+        state.u64_auxiliary_max = state.u64_auxiliary_max.max(self.u64_auxiliaries);
+        self.u64_auxiliaries = state.u64_auxiliary_init;
         // shared constraints
         state.shared_constraint_max = state.shared_constraint_max.max(self.shared_constraints);
         self.shared_constraints = state.shared_constraint_init;
@@ -80,42 +89,34 @@ impl Layout {
 
     // `finish` at the end
     fn finish(&mut self, state: &LayoutBranchState) {
-        self.auxiliaries = state.auxiliary_max;
-        self.require_hints = state.require_hints_max;
+        self.u1_auxiliaries = state.u1_auxiliary_max;
+        self.u8_auxiliaries = state.u8_auxiliary_max;
+        self.u64_auxiliaries = state.u64_auxiliary_max;
         self.shared_constraints = state.shared_constraint_max;
     }
 }
 
-pub fn func_layout(func: &Function) -> Layout {
+pub fn func_layout(func: &Function, mem_widths: &mut Vec<u32>) -> Layout {
     let mut layout = Layout {
         inputs: func.input_size,
         outputs: func.output_size,
         ..Default::default()
     };
-    block_layout(&func.body, &mut layout);
+    block_layout(&func.body, &mut layout, mem_widths);
     layout
 }
 
-pub fn block_layout(block: &Block, layout: &mut Layout) {
-    let op_layout = |op| op_layout(op, layout);
+pub fn block_layout(block: &Block, layout: &mut Layout, mem_widths: &mut Vec<u32>) {
+    let op_layout = |op| op_layout(op, layout, mem_widths);
     block.ops.iter().for_each(op_layout);
     match block.ctrl.as_ref() {
         Ctrl::If(_, t, f) => {
             let mut state = layout.save();
             // This auxiliary is for proving inequality
-            layout.auxiliaries += 1;
-            block_layout(t, layout);
+            layout.u64_auxiliaries += 1;
+            block_layout(t, layout, mem_widths);
             layout.restore(&mut state);
-            block_layout(f, layout);
-            layout.finish(&state);
-        }
-        Ctrl::If64(_, t, f) => {
-            let mut state = layout.save();
-            // These auxiliaries are for proving inequality
-            layout.auxiliaries += 8;
-            block_layout(t, layout);
-            layout.restore(&mut state);
-            block_layout(f, layout);
+            block_layout(f, layout, mem_widths);
             layout.finish(&state);
         }
         Ctrl::Return(_, rs) => {
@@ -129,7 +130,7 @@ pub fn block_layout(block: &Block, layout: &mut Layout) {
     }
 }
 
-pub fn op_layout(op: &Op, layout: &mut Layout) {
+pub fn op_layout(op: &Op, layout: &mut Layout, mem_widths: &mut Vec<u32>) {
     match op {
         Op::Prim(..) | Op::Xor(..) => {}
         Op::And(..) => {
@@ -137,20 +138,38 @@ pub fn op_layout(op: &Op, layout: &mut Layout) {
             // expressions of order greater than 1, we create a new auxiliary
             // and constrain it to be equal to the product of the two expressions
             layout.shared_constraints += 1;
-            layout.auxiliaries += 1;
+            layout.u1_auxiliaries += 1;
         }
         Op::Add(..) | Op::Lt(..) | Op::Sub(..) => {
             // uses the addition gadget which outputs 8 bytes of sum
             // plus 1 byte of carry
-            layout.auxiliaries += 9;
+            layout.u64_auxiliaries += 1;
+            layout.u1_auxiliaries += 1;
         }
         Op::Mul(..) => {
             // uses the multiplication gadget which outputs 8 bytes
-            layout.auxiliaries += 8;
+            layout.u64_auxiliaries += 1;
+        }
+        Op::Store(values) => {
+            let len = values
+                .len()
+                .try_into()
+                .expect("Number of arguments exceeds 256.");
+            if !mem_widths.contains(&len) {
+                mem_widths.push(len)
+            }
+            // outputs a pointer and a require hint
+            layout.u64_auxiliaries += 2;
+        }
+        Op::Load(len, _) => {
+            if !mem_widths.contains(len) {
+                mem_widths.push(*len)
+            }
+            // outputs the loaded values and a require hint
+            layout.u64_auxiliaries += *len + 1;
         }
         Op::Call(_, _, out_size) => {
-            layout.auxiliaries += out_size;
-            layout.require_hints += 1;
+            layout.u64_auxiliaries += out_size + 1;
         }
     }
 }

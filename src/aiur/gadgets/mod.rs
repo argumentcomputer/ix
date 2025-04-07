@@ -1,3 +1,4 @@
+pub mod binius;
 pub mod uint_add;
 pub mod uint_sub;
 
