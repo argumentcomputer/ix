@@ -2502,9 +2502,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-net-report"
-version = "0.34.0"
+version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63407d73331e8e38980be7e39b1db8e173fc28545b3ea0c48c9a718f95877b8e"
+checksum = "a6a8487336e7d1fca0998d452ae4716e61994a9aa8847f8721399c873f2bedad"
 dependencies = [
  "anyhow",
  "bytes",
