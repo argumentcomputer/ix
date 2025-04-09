@@ -92,7 +92,7 @@ def instBulkReduce (substs : List Univ) : Univ → Univ
     | .zero => .zero
     | .succ _ => reduceMax (instBulkReduce substs a) b'
     | _ => .imax (instBulkReduce substs a) b'
-  | .var n idx => match substs.get? idx with
+  | .var n idx => match substs[idx]? with
     | some u => u
     -- This case should never happen if we're correctly enclosing every
     -- expression with a big enough universe environment

@@ -388,7 +388,7 @@ and thus we can canon the actual constant right away
 partial def canonExpr : Lean.Expr → CanonM Expr
   | .mdata _ e => canonExpr e
   | expr => match expr with
-    | .bvar idx => do match (← read).bindCtx.get? idx with
+    | .bvar idx => do match (← read).bindCtx[idx]? with
       -- Bound variables must be in the bind context
       | some _ => return .var idx
       | none => throw $ .invalidBVarIndex idx
