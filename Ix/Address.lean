@@ -21,10 +21,10 @@ open Lean
 
 /-- Convert a byte (UInt8) to a two‐digit hex string. -/
 def byteToHex (b : UInt8) : String :=
-  let hexDigits := 
+  let hexDigits :=
     #['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
-  let hi := hexDigits.get! (UInt8.toNat (b >>> 4))
-  let lo := hexDigits.get! (UInt8.toNat (b &&& 0xF))
+  let hi := hexDigits[(UInt8.toNat (b >>> 4))]!
+  let lo := hexDigits[(UInt8.toNat (b &&& 0xF))]!
   String.mk [hi, lo]
 
 /-- Convert a ByteArray to a hexadecimal string. -/
@@ -39,4 +39,3 @@ instance : Repr Address where
 
 instance : Ord Address where
   compare a b := compare a.hash.data.toList b.hash.data.toList
-
