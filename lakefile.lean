@@ -11,10 +11,10 @@ lean_exe ix where
   root := `Main
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "c249281907f875cb041a0b32a3058a98b1286cc6"
+  "https://github.com/argumentcomputer/LSpec" @ "24cceb69c20fadca0fd3acabe39fa9270dfb47e6"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "cfcd160586051b5b69b0c556387d252bb837b709"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "7ebac27adfddd242e2ca73493a4ab7abce1e06e8"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "7cde559c7e6541d964984bff81caca3fe4e763a6"
@@ -119,7 +119,7 @@ script install := do
   return 0
 
 script "check-lean-h-hash" := do
-  let cachedLeanHHash := 2268578318159647227
+  let cachedLeanHHash := 2852512314838227027
 
   let leanIncludeDir ← getLeanIncludeDir
   let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"

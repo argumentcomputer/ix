@@ -5,7 +5,7 @@
     # Lean + System packages
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     lean4-nix = {
-      url = "github:argumentcomputer/lean4-nix?ref=lean-4.18.0";
+      url = "github:argumentcomputer/lean4-nix";
       # Follow top-level nixpkgs so we stay in sync
       inputs.nixpkgs.follows = "nixpkgs";
     };
@@ -23,7 +23,7 @@
     crane.url = "github:ipetkov/crane";
 
     blake3-lean = {
-      url = "github:argumentcomputer/Blake3.lean?ref=lean-4.18.0";
+      url = "github:argumentcomputer/Blake3.lean";
       # Follow top-level nixpkgs so we stay in sync
       inputs.nixpkgs.follows = "nixpkgs";
     };
