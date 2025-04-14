@@ -15,7 +15,7 @@ def ixCmd : Cli.Cmd := `[Cli|
   SUBCOMMANDS:
     proveCmd;
     testCmd;
-    storeCmd
+    storeCmd;
     sendCmd;
     recvCmd
 ]

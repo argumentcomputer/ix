@@ -194,7 +194,7 @@ def checkToolchain : IO Unit := do
   match ← runCmd' "lake" #["--version"] with
   | .error e => throw $ IO.userError e
   | .ok out =>
-    let version := out.splitOn "(Lean version " |>.get! 1
+    let version := (out.splitOn "(Lean version ")[1]!
     let version := version.splitOn ")" |>.head!
     let expectedVersion := Lean.versionString
     if version != expectedVersion then
