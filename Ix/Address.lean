@@ -104,5 +104,3 @@ def Address.fromUniqueName (name: Lean.Name) : Option Address :=
   | .str (.str (.str .anonymous "Ix") "_#") s => Address.fromString s
   | _ => .none
 
-
-

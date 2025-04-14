@@ -1,6 +1,8 @@
 import Ix.Cli.ProveCmd
 import Ix.Cli.TestCmd
 import Ix.Cli.StoreCmd
+import Ix.Cli.SendCmd
+import Ix.Cli.RecvCmd
 import Ix
 
 def VERSION : String :=
@@ -14,6 +16,8 @@ def ixCmd : Cli.Cmd := `[Cli|
     proveCmd;
     testCmd;
     storeCmd
+    sendCmd;
+    recvCmd
 ]
 
 def main (args : List String) : IO UInt32 := do

@@ -203,17 +203,6 @@ extern "C" fn rs_constraint_system_validate_witness(
     to_raw(c_result)
 }
 
-#[unsafe(no_mangle)]
-extern "C" fn rs_constraint_system_validate_witness_result_free(ptr: *mut CResult) {
-    let c_result = as_ref_unsafe(ptr);
-    if !c_result.is_ok {
-        let char_ptr = c_result.data as *mut c_char;
-        let c_string = unsafe { CString::from_raw(char_ptr) };
-        drop(c_string);
-    }
-    drop_raw(ptr);
-}
-
 /* --- ConstraintSystemBuilder --- */
 
 #[unsafe(no_mangle)]

@@ -4,7 +4,11 @@
   inputs = {
     # Lean + System packages
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    lean4-nix.url = "github:argumentcomputer/lean4-nix";
+    lean4-nix = {
+      url = "github:argumentcomputer/lean4-nix";
+      # Follow top-level nixpkgs so we stay in sync
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     # Helper: flake-parts for easier outputs
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -35,13 +39,6 @@
         "x86_64-linux"
       ];
       
-      flake = {
-        lib = import ./ix.nix;
-        inputs.fenix = fenix;
-        inputs.crane = crane;
-        inputs.blake3-lean = blake3-lean;
-      };
-
       perSystem = { system, pkgs, ... }:
       let
         lib = (import ./ix.nix { inherit system pkgs fenix crane lean4-nix blake3-lean; }).lib;
@@ -53,8 +50,19 @@
         };
 
         packages = {
+          # Ix CLI
           default = lib.leanPkg.executable;
-          test = lib.leanTest.executable;
+          # Ix tests
+          test = ((lean4-nix.lake { inherit pkgs; }).mkPackage {
+            src = ./.;
+            roots = ["Tests.Main" "Ix"];
+            deps = [ lib.leanPkg ];
+            staticLibDeps = [ "${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib" ];
+          }).executable;
+          # Rust static lib, needed for static linking downstream
+          rustStaticLib = lib.rustPkg;
+          # C static lib, needed for static linking downstream
+          cStaticLib = lib.cPkg;
         };
 
         # Provide a unified dev shell with Lean + Rust

@@ -12,16 +12,16 @@ lean_exe ix where
   supportInterpreter := true
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "0f9008e70927c4afac8ad2bc32f2f4fbda044096"
+  "https://github.com/argumentcomputer/LSpec" @ "24cceb69c20fadca0fd3acabe39fa9270dfb47e6"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "a5478a88f4e67c87904faa99882c5d2cec86cf8e"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "7ebac27adfddd242e2ca73493a4ab7abce1e06e8"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "e7fd1a415c80985ade02a021172834ca2139b0ca"
+  "https://github.com/leanprover/lean4-cli" @ "7cde559c7e6541d964984bff81caca3fe4e763a6"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "efcc7d9bd9936ecdc625baf0d033b60866565cd5"
+  "https://github.com/leanprover-community/batteries" @ "613510345e4d4b3ce3d8c129595e7241990d5b39"
 
 
 section Tests
@@ -121,7 +121,7 @@ script install := do
   return 0
 
 script "check-lean-h-hash" := do
-  let cachedLeanHHash := 2268578318159647227
+  let cachedLeanHHash := 2852512314838227027
 
   let leanIncludeDir ← getLeanIncludeDir
   let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"

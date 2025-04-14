@@ -115,12 +115,10 @@ mod tests {
     use bumpalo::Bump;
     use proptest::{collection::vec, prelude::*};
 
-    use crate::aiur::{
+    use crate::aiur::gadgets::{
+        Gadget,
         binius::witness_builder,
-        gadgets::{
-            Gadget,
-            uint_add::{UIntAdd, UIntAddInput, UIntType},
-        },
+        uint_add::{UIntAdd, UIntAddInput, UIntType},
     };
     const LEN: usize = 16;
 

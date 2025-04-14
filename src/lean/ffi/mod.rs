@@ -2,8 +2,11 @@ pub mod binius;
 pub mod binius_arith_expr;
 pub mod binius_boundary;
 pub mod byte_array;
+#[cfg(feature = "net")]
+pub mod iroh;
+pub mod keccak;
 
-use std::ffi::{CStr, c_char, c_void};
+use std::ffi::{CStr, CString, c_char, c_void};
 
 use crate::lean::boxed::BoxedUSize;
 
@@ -17,6 +20,19 @@ use crate::lean::boxed::BoxedUSize;
 pub struct CResult {
     pub is_ok: bool,
     pub data: *const c_void,
+}
+
+// Free a `CResult` object that corresponds to the Rust type `Result<(), String>`
+#[unsafe(no_mangle)]
+extern "C" fn rs__c_result_unit_string_free(ptr: *mut CResult) {
+    let c_result = as_ref_unsafe(ptr);
+    // Free the string error message
+    if !c_result.is_ok {
+        let char_ptr = c_result.data as *mut c_char;
+        let c_string = unsafe { CString::from_raw(char_ptr) };
+        drop(c_string);
+    }
+    drop_raw(ptr);
 }
 
 #[inline]

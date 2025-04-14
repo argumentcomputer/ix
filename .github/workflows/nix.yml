@@ -25,6 +25,10 @@ jobs:
         with:
           name: argumentcomputer
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      # Ix CLI
+      - run: nix build
+      - run: nix run .#default -- --help
+      # Ix tests
       - run: nix build .#test
       - run: nix run .#test
 
@@ -38,7 +42,7 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: argumentcomputer
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'

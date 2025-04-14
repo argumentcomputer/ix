@@ -6,15 +6,17 @@ use binius_core::{
         channel::{ChannelId, Flush, FlushDirection},
     },
     oracle::OracleId,
-    transparent::constant::Constant,
+    transparent::step_down::StepDown,
 };
+use binius_field::{TowerField, arch::OptimalUnderlier, underlier::UnderlierType};
+use binius_utils::checked_arithmetics::log2_ceil_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
 
+use crate::archon::transparent::{Incremental, constant_from_b128};
+
 use super::{
-    F, ModuleId, OracleInfo, OracleKind,
-    arith_expr::ArithExpr,
-    transparent::{ConstVal, Transparent},
+    F, ModuleId, OracleInfo, OracleKind, arith_expr::ArithExpr, transparent::Transparent,
     witness::WitnessModule,
 };
 
@@ -45,14 +47,25 @@ pub struct CircuitModule {
 impl CircuitModule {
     #[inline]
     pub fn new(module_id: ModuleId) -> Self {
+        let step_down = OracleInfo {
+            name: format!("step_down-module-{module_id}"),
+            tower_level: 0,
+            kind: OracleKind::StepDown,
+        };
+        let oracles = Freezable::Raw(vec![step_down]);
         Self {
             module_id,
-            oracles: Freezable::default(),
+            oracles,
             flushes: vec![],
             constraints: vec![],
             non_zero_oracle_ids: vec![],
             namespacer: Namespacer::default(),
         }
+    }
+
+    #[inline]
+    pub const fn selector(&self) -> OracleId {
+        0
     }
 
     #[inline]
@@ -87,9 +100,9 @@ impl CircuitModule {
     }
 
     #[inline]
-    pub fn assert_zero<S: ToString + ?Sized>(
+    pub fn assert_zero(
         &mut self,
-        name: &S,
+        name: &(impl ToString + ?Sized),
         oracle_ids: impl IntoIterator<Item = OracleId>,
         composition: ArithExpr,
     ) {
@@ -106,23 +119,22 @@ impl CircuitModule {
     }
 
     #[inline]
-    pub fn add_committed<S: ToString + ?Sized>(
+    pub fn add_committed<FS: TowerField>(
         &mut self,
-        name: &S,
-        tower_level: usize,
+        name: &(impl ToString + ?Sized),
     ) -> Result<OracleId> {
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
-            tower_level,
+            tower_level: FS::TOWER_LEVEL,
             kind: OracleKind::Committed,
         };
         self.add_oracle_info(oracle_info)
     }
 
     #[inline]
-    pub fn add_transparent<S: ToString + ?Sized>(
+    pub fn add_transparent(
         &mut self,
-        name: &S,
+        name: &(impl ToString + ?Sized),
         transparent: Transparent,
     ) -> Result<OracleId> {
         let oracle_info = OracleInfo {
@@ -133,18 +145,23 @@ impl CircuitModule {
         self.add_oracle_info(oracle_info)
     }
 
-    pub fn add_linear_combination<S: ToString + ?Sized>(
+    pub fn add_linear_combination(
         &mut self,
-        name: &S,
+        name: &(impl ToString + ?Sized),
         offset: F,
-        inner: impl Iterator<Item = (OracleId, F)>,
+        inner: impl IntoIterator<Item = (OracleId, F)>,
     ) -> Result<OracleId> {
         let inner = inner.into_iter().collect::<Vec<_>>();
         let tower_level = inner
             .iter()
-            .map(|(oracle_id, _)| self.oracles.get_ref()[*oracle_id].tower_level)
+            .map(|(oracle_id, coeff)| {
+                self.oracles.get_ref()[*oracle_id]
+                    .tower_level
+                    .max(coeff.min_tower_level())
+            })
             .max()
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .max(offset.min_tower_level());
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level,
@@ -172,62 +189,67 @@ impl CircuitModule {
 
 pub fn compile_circuit_modules(
     modules: &[CircuitModule],
-    modules_n_vars: &[Option<Vec<usize>>],
+    modules_heights: &[u64],
 ) -> Result<ConstraintSystem<F>> {
     ensure!(
-        modules.len() == modules_n_vars.len(),
-        "Number of oracles is incompatible with the number of n_vars data"
+        modules.len() == modules_heights.len(),
+        "Number of modules is incompatible with the number of heights"
     );
     let mut oracle_offset = 0;
     let mut builder = ConstraintSystemBuilder::new();
-    for (module_idx, (module, module_n_vars)) in modules.iter().zip(modules_n_vars).enumerate() {
-        let Some(module_n_vars) = module_n_vars else {
+    for (module_idx, (module, &height)) in modules.iter().zip(modules_heights).enumerate() {
+        if height == 0 {
             // Deactivated module. Skip.
             continue;
-        };
+        }
+        let height_usize: usize = height.try_into()?;
+        let log_height = log2_ceil_usize(height_usize);
         ensure!(
             module_idx == module.module_id,
             "Wrong compilation order. Expected module {module_idx}, but got {}.",
             module.module_id
         );
-        ensure!(
-            module.oracles.get_ref().len() == module_n_vars.len(),
-            "n_vars data length is incompatible with the number of oracles for module {module_idx}."
-        );
 
-        for (
-            oracle_id,
-            OracleInfo {
-                name,
-                tower_level,
-                kind,
-            },
-        ) in module.oracles.get_ref().iter().enumerate()
+        // `n_vars` must be at least the number of variables in an underlier
+        let n_vars_fn = |tower_level| {
+            let underlier_n_vars = OptimalUnderlier::LOG_BITS - tower_level;
+            log_height.max(underlier_n_vars)
+        };
+
+        for OracleInfo {
+            name,
+            tower_level,
+            kind,
+        } in module.oracles.get_ref()
         {
-            macro_rules! add_transparent {
-                ($t:expr) => {
-                    builder.add_transparent(name, $t)?
-                };
-            }
-            let n_vars = module_n_vars[oracle_id];
             match kind {
-                OracleKind::Committed => builder.add_committed(name, n_vars, *tower_level),
+                OracleKind::Committed => {
+                    let n_vars = n_vars_fn(*tower_level);
+                    builder.add_committed(name, n_vars, *tower_level)
+                }
                 OracleKind::LinearCombination { offset, inner } => {
+                    let n_vars = n_vars_fn(*tower_level);
                     let inner = inner
                         .iter()
                         .map(|(oracle_id, f)| (oracle_id + oracle_offset, *f));
                     builder.add_linear_combination_with_offset(name, n_vars, *offset, inner)?
                 }
-                OracleKind::Transparent(Transparent::Constant(c)) => match c {
-                    ConstVal::B1(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B2(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B4(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B8(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B16(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B32(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B64(b) => add_transparent!(Constant::new(n_vars, *b)),
-                    ConstVal::B128(b) => add_transparent!(Constant::new(n_vars, *b)),
-                },
+                OracleKind::Transparent(Transparent::Constant(b128)) => {
+                    let n_vars = n_vars_fn(*tower_level);
+                    builder.add_transparent(name, constant_from_b128(*b128, n_vars))?
+                }
+                OracleKind::Transparent(Transparent::Incremental) => {
+                    let tower_level = Incremental::min_tower_level(height);
+                    let n_vars = n_vars_fn(tower_level);
+                    builder.add_transparent(name, Incremental {
+                        n_vars,
+                        tower_level,
+                    })?
+                }
+                OracleKind::StepDown => {
+                    let n_vars = n_vars_fn(*tower_level);
+                    builder.add_transparent(name, StepDown::new(n_vars, height_usize)?)?
+                }
             };
         }
 
@@ -280,12 +302,6 @@ struct Constraint {
 enum Freezable<T> {
     Raw(T),
     Frozen(Arc<T>),
-}
-
-impl<T: Default> Default for Freezable<T> {
-    fn default() -> Self {
-        Self::Raw(T::default())
-    }
 }
 
 impl<T> Freezable<T> {

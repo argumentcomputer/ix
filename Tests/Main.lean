@@ -5,6 +5,7 @@ import Tests.ByteArray
 import Tests.Unsigned
 import Tests.Ix
 import Tests.Ix.Compile
+import Tests.Keccak
 
 def main (args: List String) : IO UInt32 := do
   if args.contains "compile"
@@ -19,4 +20,5 @@ def main (args: List String) : IO UInt32 := do
       ("byte-array", Tests.ByteArray.suite),
       ("unsigned", Tests.Unsigned.suite),
       ("ix", Tests.Ix.suite),
+      ("keccak", Tests.Keccak.suite),
     ]) args
