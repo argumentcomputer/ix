@@ -747,7 +747,7 @@ partial def evalClaimWithArgs
     addDef lvls argType arg >>= comm
   let (inputAnon, inputMeta) <-
     makeEvalInput lvls typeAnon typeMeta funcAnon funcMeta args
-  let lvlsAddr <- packLevel lvls.length false
+  let lvlsAddr <- packLevel lvls.length commit
   return (Claim.evals lvlsAddr inputAnon outputAnon typeAnon, inputMeta, outputMeta, typeMeta)
   where
     comm a := if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a

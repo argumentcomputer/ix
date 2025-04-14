@@ -8,7 +8,7 @@ deriving Inhabited, BEq
 
 instance : ToString Claim where
   toString
-  | .checks lvls type value => s!"#{value} : {type} @ {lvls}"
-  | .evals lvls inp out type => s!"#{inp} ~> #{out} : {type} @ {lvls}"
+  | .checks lvls type value => s!"#{value} : #{type} @ #{lvls}"
+  | .evals lvls inp out type => s!"#{inp} ~> #{out} : #{type} @ #{lvls}"
 
 

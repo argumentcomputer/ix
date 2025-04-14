@@ -40,7 +40,7 @@ def runElection (votes: List Candidate) : Result :=
 def main : IO UInt32 := do
   let mut stt : Ix.Compile.CompileState := .init (<- get_env!)
   -- simulate getting the votes from somewhere
-  let votes : List Candidate <- pure [.alice, .alice, .bob]
+  let votes : List Candidate <- pure [.alice, .alice, .bob, .bob]
   let mut as : List Lean.Name := []
   -- default maxHeartBeats
   let ticks : USize := 200000
@@ -55,7 +55,8 @@ def main : IO UInt32 := do
     stt := stt'
     -- collect each commitment addresses as names
     as := (Address.toUniqueName addr)::as
-  IO.println s!"{repr as}"
+    IO.println s!"vote: {repr v}, commitment: {addr}"
+  IO.println s!"{repr as.reverse}"
   -- identify our function
   let func := ``runElection
   -- build a Lean list of our commitments as the argument to runElection
@@ -66,9 +67,13 @@ def main : IO UInt32 := do
   let sort <- runMeta (Lean.Meta.inferType type) stt.env
   -- evaluate the output (both methods should be the same)
   let output := Lean.toExpr (runElection votes)
-  IO.println s!"output1 {repr output}"
-  let output' <- runMeta (Lean.Meta.reduce (.app (Lean.mkConst func) arg)) stt.env
-  IO.println s!"output2 {repr output'}"
+  let outputPretty <- runMeta (Lean.Meta.ppExpr output) stt.env
+  IO.println s!"output1 {outputPretty}"
+  --IO.println s!"output1 {repr output}"
+  let output2 <- runMeta (Lean.Meta.reduce (.app (Lean.mkConst func) arg)) stt.env
+  let output2Pretty <- runMeta (Lean.Meta.ppExpr output2) stt.env
+  IO.println s!"output1 {output2Pretty}"
+  --IO.println s!"output2 {repr output2}"
   -- build the evaluation claim
   let ((claim,_,_,_), _stt') <-
      (Ix.Compile.evalClaimWithArgs func [(arg, argType)] output type sort [] true).runIO' ticks stt
