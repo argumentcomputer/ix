@@ -177,12 +177,12 @@ def setLibsPaths (s: String) : IO Unit := do
     cmd := "lake"
     args := #["setup-file", s]
   }
-  IO.println s!"setup-file {out.stdout}"
-  IO.println s!"setup-file {out.stderr}"
+  --IO.println s!"setup-file {out.stdout}"
+  --IO.println s!"setup-file {out.stderr}"
   let split := out.stdout.splitOn "\"oleanPath\":[" |>.getD 1 ""
   let split := split.splitOn "],\"loadDynlibPaths\":[" |>.getD 0 ""
   let paths := split.replace "\"" "" |>.splitOn ","|>.map System.FilePath.mk
-  IO.println s!"paths {paths}"
+  --IO.println s!"paths {paths}"
   Lean.initSearchPath (← Lean.findSysroot) paths
 
 def runCmd' (cmd : String) (args : Array String) : IO $ Except String String := do

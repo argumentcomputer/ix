@@ -96,4 +96,13 @@ def Address.fromString (s: String) : Option Address := do
   let ba <- bytesOfHex s
   if ba.size == 32 then .some ⟨ba⟩ else .none
 
+def Address.toUniqueName (addr: Address): Lean.Name :=
+  .str (.str (.str .anonymous "Ix") "_#") (hexOfBytes addr.hash)
+
+def Address.fromUniqueName (name: Lean.Name) : Option Address :=
+  match name with
+  | .str (.str (.str .anonymous "Ix") "_#") s => Address.fromString s
+  | _ => .none
+
+
 

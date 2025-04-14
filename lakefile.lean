@@ -29,7 +29,8 @@ section Tests
 lean_lib Tests
 
 @[test_driver]
-lean_exe Tests.Main
+lean_exe Tests.Main where
+  supportInterpreter := true
 
 end Tests
 

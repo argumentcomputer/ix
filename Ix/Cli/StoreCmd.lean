@@ -1,14 +1,13 @@
 import Cli
 import Ix.Cronos
 import Ix.Common
-import Ix.CanonM
+import Ix.CompileM
 import Ix.Store
 import Ix.Address
 import Lean
 
 -- ix store <lean file>
 -- ix store get <address>
-
 def runStore (p : Cli.Parsed) : IO UInt32 := do
   let source : String       := p.positionalArg! "source" |>.as! String
   let mut cronos ← Cronos.new.clock "Lean-frontend"
@@ -20,17 +19,15 @@ def runStore (p : Cli.Parsed) : IO UInt32 := do
   cronos ← cronos.clock "Lean-frontend"
   -- Start content-addressing
   cronos ← cronos.clock "content-address"
-  let stt ← match ← Ix.CanonM.canonicalizeDelta leanEnv.constants delta with
-    | .error err => IO.eprintln err; return 1
-    | .ok stt => pure stt
+  let stt ← Ix.Compile.compileDeltaIO leanEnv delta
   stt.names.forM fun name (const, meta) => do
      IO.println <| s!"{name}:"
      IO.println <| s!"  #{const}"
-     IO.println <| s!"  {repr <| stt.store.find! const}"
-     IO.println <| s!"  {hexOfBytes (Ixon.Serialize.put (stt.store.find! const))}"
+     --IO.println <| s!"  {repr <| stt.store.find! const}"
+     --IO.println <| s!"  {hexOfBytes (Ixon.Serialize.put (stt.store.find! const))}"
      IO.println <| s!"  #{meta}"
-     IO.println <| s!"  {repr <| stt.store.find! meta}"
-     IO.println <| s!"  {hexOfBytes (Ixon.Serialize.put (stt.store.find! meta))}"
+     --IO.println <| s!"  {repr <| stt.store.find! meta}"
+     --IO.println <| s!"  {hexOfBytes (Ixon.Serialize.put (stt.store.find! meta))}"
   --stt.store.forM fun adr const => do
   --   IO.println <| s!"adr' {adr}"
   --   IO.println <| s!"const {repr const}"

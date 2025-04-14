@@ -1,11 +1,8 @@
 import Lean
 import Ix.Address
-import Ix.CanonM
+import Ix.CompileM
 
 open Lean
-
-def computeIxAddress (const : ConstantInfo) (constMap: ConstMap) : IO Address := do
-  IO.ofExcept (<- Ix.CanonM.canonicalizeConst constMap const)
 
 open System (FilePath)
 
@@ -41,6 +38,10 @@ elab "this_file!" : term => do
 macro "get_env!" : term =>
   `(getFileEnv this_file!)
 
+def computeIxAddress (env: Lean.Environment) (const : ConstantInfo) : IO Address := do
+  let ((a, _), _) <- Ix.Compile.compileConstIO env const
+  return a
+
 def mkAnonDefInfoRaw (type : Expr) (value : Expr) : ConstantInfo :=
   .defnInfo {
     name        := .anonymous
@@ -59,3 +60,7 @@ def runCore (f : CoreM α) (env : Environment) : IO α :=
 
 def runMeta (f : MetaM α) (env : Environment) : IO α :=
   Prod.fst <$> f.toIO { fileName := default, fileMap := default } { env }
+
+def metaMkList (α: Lean.Expr) (names: List Lean.Name) : MetaM Expr := do
+  let nil <- Meta.mkAppOptM ``List.nil #[.some α]
+  names.foldrM (fun n t => Meta.mkAppOptM ``List.cons #[.some α, mkConst n, t]) nil

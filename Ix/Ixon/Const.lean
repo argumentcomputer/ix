@@ -133,6 +133,7 @@ inductive Const where
   | meta   : Metadata -> Const
   -- 0xCC
   | proof : Proof -> Const
+  -- 0xCD
   | comm: Comm -> Const
   deriving BEq, Repr, Inhabited
 
@@ -169,10 +170,20 @@ def putConst : Const → PutM
         *> putArray (putCtor <$> x.ctors) *> putArray (putRecr <$> x.recrs)
         *> putBools [x.recr, x.refl, x.struct, x.unit]
     putProof (p: Proof) : PutM :=
-      putBytes p.claim.inp.hash
-      *> putBytes p.claim.out.hash
-      *> putBytes p.claim.typ.hash
-      *> putByteArray p.bin
+      match p.claim with
+      | .checks lvls type value => 
+          putUInt8 0
+          *> putBytes lvls.hash
+          *> putBytes type.hash 
+          *> putBytes value.hash
+          *> putByteArray p.bin
+      | .evals lvls inp out type =>
+          putUInt8 1
+          *> putBytes lvls.hash
+          *> putBytes inp.hash
+          *> putBytes out.hash
+          *> putBytes type.hash 
+          *> putByteArray p.bin
     putComm (c: Comm) : PutM :=
       putBytes c.secret.hash *> putBytes c.payload.hash
 
@@ -214,8 +225,11 @@ def getConst : GetM Const := do
       | [w, x, y, z] => return f w x y z
       | _ => throw s!"unreachable"
     getAddr : GetM Address := .mk <$> getBytes 32
-    getProof : GetM Proof :=
-      .mk <$> (.mk <$> getAddr <*> getAddr <*> getAddr) <*> getByteArray
+    getProof : GetM Proof := do
+      match (<- getUInt8) with
+      | 0 => .mk <$> (.checks <$> getAddr <*> getAddr <*> getAddr) <*> getByteArray
+      | 1 => .mk <$> (.evals <$> getAddr <*> getAddr <*> getAddr <*> getAddr) <*> getByteArray
+      | e => throw s!"expect proof variant tag, got {e}"
     getComm : GetM Comm :=
       .mk <$> getAddr <*> getAddr
 

@@ -28,7 +28,15 @@ inductive TransportError
   | rawMetadata (m: Ixon.Metadata)
   | rawProof (m: Proof)
   | rawComm (m: Ixon.Comm)
-  deriving Repr
+  deriving BEq, Repr
+
+instance : ToString TransportError where toString
+| .natTooBig idx x => s!"At index {idx}, natural number {x} too big to fit in UInt64"
+| .unknownIndex idx x => s!"Unknown index {idx} with metadata {repr x}"
+| .unexpectedNode idx x => s!"Unexpected node at {idx} with metadata {repr x}"
+| .rawMetadata x => s!"Can't rematerialize raw metadata {repr x}"
+| .rawProof x => s!"Can't rematerialize raw proof {repr x}"
+| .rawComm x => s!"Can't rematerialize raw commitment {repr x}"
 
 abbrev DematM := EStateM TransportError DematState
 

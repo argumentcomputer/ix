@@ -32,6 +32,7 @@ inductive Expr where
 -- array: 0xB
 -- const: 0xC
 
+
 def putExprTag (tag: UInt8) (val: UInt64) : PutM :=
   let t := UInt8.shiftLeft tag 4
   if val < 8

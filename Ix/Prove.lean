@@ -1,22 +1,15 @@
 import Ix.Address
 import Ix.Ixon.Serialize
+import Ix.Claim
 import Ix.Common
 
-inductive ProveError
-  | todo
+--inductive ProveError
+--  | todo
+--
+--instance : ToString ProveError := ⟨fun _ => "TODO"⟩
+--
+--abbrev ProveM := ExceptT ProveError IO
 
-instance : ToString ProveError := ⟨fun _ => "TODO"⟩
-
-abbrev ProveM := ExceptT ProveError IO
-
-structure Claim where
-  inp : Address
-  out : Address
-  typ : Address
-  deriving Inhabited, BEq
-
-instance : ToString Claim where
-  toString c := s!"#{c.inp} ~> #{c.out} : #{c.typ}"
 
 structure Proof where
   claim: Claim
@@ -29,6 +22,6 @@ instance : ToString Proof where
 
 instance : Repr Proof where
   reprPrec p _ := toString p
-
-def prove (claim : Claim) : ProveM Proof :=
-  default -- TODO
+--
+--def prove (claim : Claim) : ProveM Proof :=
+--  default -- TODO
