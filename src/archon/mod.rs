@@ -17,6 +17,10 @@ pub enum OracleKind {
         offset: F,
         inner: Vec<(OracleId, F)>,
     },
+    Packed {
+        inner: OracleId,
+        log_degree: usize,
+    },
     Transparent(Transparent),
     StepDown,
 }
