@@ -735,6 +735,26 @@ mod tests {
     }
 
     #[test]
+    fn test_factorial() {
+        let func = func!(
+        fn factorial(n): [1] {
+            let one = 1;
+            if n {
+                let pred = sub(n, one);
+                let m = call(factorial, pred);
+                let res = mul(n, m);
+                return res
+            }
+            return one
+        });
+        let toplevel = toplevel_from_funcs(&[func]);
+        let func_idx = 0;
+        let input = &[100];
+        let output = &[0];
+        prove_verify(&toplevel, func_idx, input, output);
+    }
+
+    #[test]
     fn test_load_store() {
         let func = func!(
         fn load_store(n): [1] {
