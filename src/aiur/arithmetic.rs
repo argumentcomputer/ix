@@ -1,13 +1,8 @@
 use std::array::from_fn;
 
 use binius_circuits::{
+    arithmetic::mul::mul,
     builder::{ConstraintSystemBuilder, witness},
-    lasso::{
-        batch::LookupBatch,
-        big_integer_ops::byte_sliced_mul,
-        lookups::u8_arithmetic::{add_lookup, dci_lookup, mul_lookup},
-    },
-    transparent,
 };
 use binius_core::{
     constraint_system::channel::ChannelId,
@@ -16,18 +11,17 @@ use binius_core::{
 use binius_field::{
     Field,
     packed::set_packed_slice,
-    tower_levels::{TowerLevel8, TowerLevel16},
     underlier::{U1, WithUnderlier},
 };
 use binius_macros::arith_expr;
 use binius_maybe_rayon::prelude::*;
 
-use crate::aiur::layout::{B1, B8, B64};
+use crate::aiur::layout::{B1, B64};
 
 use super::{
     constraints::Expr,
     execute::QueryRecord,
-    layout::{B1_LEVEL, B8_LEVEL, B64_LEVEL, B128},
+    layout::{B1_LEVEL, B64_LEVEL, B128},
 };
 
 struct AddCols {
@@ -45,7 +39,7 @@ struct AddCols {
 pub struct AddTrace {
     xin: Vec<u64>,
     yin: Vec<u64>,
-    height: usize,
+    pub height: usize,
 }
 
 impl AddTrace {
@@ -185,13 +179,9 @@ pub fn verifier_synthesize_add(
 struct MulCols {
     xin: OracleId,
     yin: OracleId,
-    xin_bytes: [OracleId; 8],
-    yin_bytes: [OracleId; 8],
+    xin_bits: [OracleId; 64],
+    yin_bits: [OracleId; 64],
     zout: OracleId,
-    zero_carry: OracleId,
-    lookup_t_mul: OracleId,
-    lookup_t_add: OracleId,
-    lookup_t_dci: OracleId,
 }
 
 impl MulCols {
@@ -199,24 +189,14 @@ impl MulCols {
         let xin = builder.add_committed("xin", log_n, B64_LEVEL);
         let yin = builder.add_committed("yin", log_n, B64_LEVEL);
         let zout = builder.add_committed("zout", log_n, B64_LEVEL);
-        let xin_bytes =
-            from_fn(|i| builder.add_committed(format!("xin_bytes{i}"), log_n, B8_LEVEL));
-        let yin_bytes =
-            from_fn(|i| builder.add_committed(format!("yin_bytes{i}"), log_n, B8_LEVEL));
-        let zero_carry = transparent::constant(builder, "zero carry", log_n, B1::ZERO).unwrap();
-        let lookup_t_mul = mul_lookup(builder, "mul lookup").unwrap();
-        let lookup_t_add = add_lookup(builder, "add lookup").unwrap();
-        let lookup_t_dci = dci_lookup(builder, "dci lookup").unwrap();
+        let xin_bits = from_fn(|i| builder.add_committed(format!("xin_bits{i}"), log_n, B1_LEVEL));
+        let yin_bits = from_fn(|i| builder.add_committed(format!("yin_bits{i}"), log_n, B1_LEVEL));
         Self {
             xin,
             yin,
             zout,
-            xin_bytes,
-            yin_bytes,
-            zero_carry,
-            lookup_t_mul,
-            lookup_t_add,
-            lookup_t_dci,
+            xin_bits,
+            yin_bits,
         }
     }
 
@@ -225,36 +205,27 @@ impl MulCols {
             .copy_from_slice(&trace.xin);
         witness.new_column::<B64>(self.yin).as_mut_slice::<u64>()[..count]
             .copy_from_slice(&trace.yin);
-        (
-            witness.get::<B64>(self.xin).unwrap().as_slice::<u64>(),
-            witness.get::<B64>(self.yin).unwrap().as_slice::<u64>(),
-            witness.new_column::<B64>(self.zout).as_mut_slice::<u64>(),
-        )
+        let xin_slice = witness.get::<B64>(self.xin).unwrap().as_slice::<u64>();
+        let yin_slice = witness.get::<B64>(self.yin).unwrap().as_slice::<u64>();
+        let mut zout_witness = witness.new_column::<B64>(self.zout);
+        (xin_slice, yin_slice, zout_witness.as_mut_slice::<u64>())
             .into_par_iter()
             .for_each(|(xin, yin, zout)| {
                 *zout = xin.wrapping_mul(*yin);
             });
-        for (i, xin_byte) in self.xin_bytes.iter().enumerate() {
-            (
-                witness.get::<B64>(self.xin).unwrap().as_slice::<u64>(),
-                witness.new_column::<B8>(*xin_byte).as_mut_slice::<u8>(),
-            )
-                .into_par_iter()
-                .for_each(|(xin, xin_byte)| {
-                    let byte = xin.to_le_bytes()[i];
-                    *xin_byte = byte;
-                });
-        }
-        for (i, yin_byte) in self.yin_bytes.iter().enumerate() {
-            (
-                witness.get::<B64>(self.yin).unwrap().as_slice::<u64>(),
-                witness.new_column::<B8>(*yin_byte).as_mut_slice::<u8>(),
-            )
-                .into_par_iter()
-                .for_each(|(yin, yin_byte)| {
-                    let byte = yin.to_le_bytes()[i];
-                    *yin_byte = byte;
-                });
+        for i in 0..64 {
+            let mut xin_bit = witness.new_column::<B1>(self.xin_bits[i]);
+            let xin_bit = xin_bit.packed();
+            for (j, xin) in xin_slice.iter().enumerate() {
+                let bit = ((xin >> i) & 1) as u8;
+                set_packed_slice(xin_bit, j, U1::new(bit).into())
+            }
+            let mut yin_bit = witness.new_column::<B1>(self.yin_bits[i]);
+            let yin_bit = yin_bit.packed();
+            for (j, yin) in yin_slice.iter().enumerate() {
+                let bit = ((yin >> i) & 1) as u8;
+                set_packed_slice(yin_bit, j, U1::new(bit).into())
+            }
         }
     }
 }
@@ -262,7 +233,7 @@ impl MulCols {
 pub struct MulTrace {
     xin: Vec<u64>,
     yin: Vec<u64>,
-    height: usize,
+    pub height: usize,
 }
 
 impl MulTrace {
@@ -290,7 +261,7 @@ pub fn prover_synthesize_mul(
     let cols = MulCols::new(builder, log_n);
     let count = trace.height;
     cols.populate(builder.witness().unwrap(), trace, count);
-    constrain_mul(builder, mul_channel_id, &cols, log_n, count);
+    constrain_mul(builder, mul_channel_id, &cols, count);
 }
 
 pub fn verifier_synthesize_mul(
@@ -301,53 +272,41 @@ pub fn verifier_synthesize_mul(
     let log_n = count.next_power_of_two().ilog2() as usize;
     let cols = MulCols::new(builder, log_n);
     let count = count.try_into().expect("");
-    constrain_mul(builder, mul_channel_id, &cols, log_n, count);
+    constrain_mul(builder, mul_channel_id, &cols, count);
 }
 
 fn constrain_mul(
     builder: &mut ConstraintSystemBuilder<'_>,
     mul_channel_id: ChannelId,
     cols: &MulCols,
-    log_n: usize,
     count: usize,
 ) {
-    byte_decomposition(builder, &cols.xin_bytes, cols.xin);
-    byte_decomposition(builder, &cols.yin_bytes, cols.yin);
-    let mut lookup_batch_mul = LookupBatch::new([cols.lookup_t_mul]);
-    let mut lookup_batch_add = LookupBatch::new([cols.lookup_t_add]);
-    let mut lookup_batch_dci = LookupBatch::new([cols.lookup_t_dci]);
-    let zout_bytes_and_cout = byte_sliced_mul::<TowerLevel8, TowerLevel16>(
+    bit_decomposition(builder, &cols.xin_bits, cols.xin);
+    bit_decomposition(builder, &cols.yin_bits, cols.yin);
+    let zout_bits = mul::<B128>(
         builder,
-        "lasso_bytesliced_mul",
-        &cols.xin_bytes,
-        &cols.yin_bytes,
-        log_n,
-        cols.zero_carry,
-        &mut lookup_batch_mul,
-        &mut lookup_batch_add,
-        &mut lookup_batch_dci,
+        "u64_mul",
+        cols.xin_bits.to_vec(),
+        cols.yin_bits.to_vec(),
     )
     .unwrap();
-    lookup_batch_mul.execute::<B64>(builder).unwrap();
-    lookup_batch_add.execute::<B64>(builder).unwrap();
-    lookup_batch_dci.execute::<B64>(builder).unwrap();
-    let zout_bytes = (&zout_bytes_and_cout[0..8]).try_into().unwrap();
-    byte_decomposition(builder, zout_bytes, cols.zout);
+    let zout_bits = (&zout_bits[0..64]).try_into().unwrap();
+    bit_decomposition(builder, zout_bits, cols.zout);
     let args = [cols.xin, cols.yin, cols.zout];
     builder.receive(mul_channel_id, count, args).unwrap();
 }
 
-fn byte_decomposition(
+fn bit_decomposition(
     builder: &mut ConstraintSystemBuilder<'_>,
-    bytes: &[OracleId; 8],
+    bits: &[OracleId; 64],
     word: OracleId,
 ) {
     let mut expr: Expr = Expr::Var(word);
-    let mut coeff = 1u64;
-    for byte in bytes {
-        expr = expr - Expr::Const(coeff.into()) * Expr::Var(*byte);
-        coeff = coeff.wrapping_add(256);
+    let mut coeff = 1;
+    for bit in bits.iter() {
+        expr = expr - Expr::Const(coeff.into()) * Expr::Var(*bit);
+        coeff = coeff.wrapping_shl(1);
     }
     let (oracles, arith) = expr.to_arith_expr();
-    builder.assert_zero("byte decomposition", oracles, arith);
+    builder.assert_zero("bit decomposition", oracles, arith);
 }
