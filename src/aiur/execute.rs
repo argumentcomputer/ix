@@ -21,6 +21,7 @@ pub struct QueryRecord {
     pub func_queries: Vec<FxIndexMap<Vec<u64>, QueryResult>>,
     pub mem_queries: Vec<(u32, FxIndexMap<Vec<u64>, QueryResult>)>,
     pub add_queries: Vec<(u64, u64)>,
+    pub mul_queries: Vec<(u64, u64)>,
 }
 
 impl QueryRecord {
@@ -33,10 +34,12 @@ impl QueryRecord {
             .map(|width| (*width, Default::default()))
             .collect();
         let add_queries = Vec::new();
+        let mul_queries = Vec::new();
         QueryRecord {
             func_queries,
             mem_queries,
             add_queries,
+            mul_queries,
         }
     }
 
@@ -131,6 +134,7 @@ impl Toplevel {
                     let b = map[b.to_usize()];
                     let c = a.wrapping_mul(b);
                     map.push(c);
+                    record.mul_queries.push((a, b));
                 }
                 ExecEntry::Op(Op::And(a, b)) => {
                     let a = map[a.to_usize()];

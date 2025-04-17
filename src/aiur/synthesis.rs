@@ -15,7 +15,10 @@ use binius_math::ArithExpr;
 use binius_maybe_rayon::prelude::*;
 
 use super::{
-    arithmetic::{AddTrace, prover_synthesize_add, verifier_synthesize_add},
+    arithmetic::{
+        AddTrace, MulTrace, prover_synthesize_add, prover_synthesize_mul, verifier_synthesize_add,
+        verifier_synthesize_mul,
+    },
     constraints::{Channel, Columns, Constraints, Expr, build_func_constraints},
     execute::{FxIndexMap, QueryRecord},
     ir::Toplevel,
@@ -53,6 +56,7 @@ pub struct AiurCount {
     pub fun: Vec<u64>,
     pub mem: Vec<u64>,
     pub add: u64,
+    pub mul: u64,
 }
 
 #[derive(Default)]
@@ -262,7 +266,7 @@ impl Expr {
         Some(())
     }
 
-    fn to_arith_expr(&self) -> (Vec<OracleId>, ArithExpr<B128>) {
+    pub fn to_arith_expr(&self) -> (Vec<OracleId>, ArithExpr<B128>) {
         let mut map = FxIndexMap::default();
         let arith = self.to_arith_expr_aux(&mut map);
         let oracles = map.keys().copied().collect();
@@ -353,6 +357,7 @@ impl Toplevel {
             fun: Vec::with_capacity(self.functions.len()),
             mem: Vec::with_capacity(self.mem_widths.len()),
             add: record.add_queries.len() as u64,
+            mul: record.mul_queries.len() as u64,
         };
         let channel_ids = AiurChannelIds::initialize_channels(builder, &self.mem_widths);
         for (func_idx, function) in self.functions.iter().enumerate() {
@@ -385,6 +390,11 @@ impl Toplevel {
             let add_channel = channel_ids.add;
             let trace = AddTrace::generate_trace(record);
             prover_synthesize_add(builder, add_channel, &trace);
+        }
+        {
+            let mul_channel = channel_ids.mul;
+            let trace = MulTrace::generate_trace(record);
+            prover_synthesize_mul(builder, mul_channel, &trace);
         }
         (aiur_count, channel_ids)
     }
@@ -421,6 +431,11 @@ impl Toplevel {
             let add_channel = channel_ids.add;
             let add_counts = count.add;
             verifier_synthesize_add(builder, add_channel, add_counts);
+        }
+        {
+            let mul_channel = channel_ids.mul;
+            let mul_counts = count.mul;
+            verifier_synthesize_mul(builder, mul_channel, mul_counts);
         }
         channel_ids
     }
