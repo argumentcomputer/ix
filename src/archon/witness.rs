@@ -155,30 +155,30 @@ impl WitnessModule {
 
     #[inline]
     pub fn push_u8s_to(&mut self, u8s: [u8; 16], entry_id: EntryId) {
-        self.entries[entry_id].push(OptimalUnderlier::from_u128(u128::from_le_bytes(u8s)))
+        self.entries[entry_id].push(OptimalUnderlier::from(u128::from_le_bytes(u8s)))
     }
 
     #[inline]
     pub fn push_u16s_to(&mut self, u16s: [u16; 8], entry_id: EntryId) {
         let u128 = unsafe { transmute::<[u16; 8], u128>(u16s) };
-        self.entries[entry_id].push(OptimalUnderlier::from_u128(u128))
+        self.entries[entry_id].push(OptimalUnderlier::from(u128))
     }
 
     #[inline]
     pub fn push_u32s_to(&mut self, u32s: [u32; 4], entry_id: EntryId) {
         let u128 = unsafe { transmute::<[u32; 4], u128>(u32s) };
-        self.entries[entry_id].push(OptimalUnderlier::from_u128(u128))
+        self.entries[entry_id].push(OptimalUnderlier::from(u128))
     }
 
     #[inline]
     pub fn push_u64s_to(&mut self, u64s: [u64; 2], entry_id: EntryId) {
         let u128 = unsafe { transmute::<[u64; 2], u128>(u64s) };
-        self.entries[entry_id].push(OptimalUnderlier::from_u128(u128))
+        self.entries[entry_id].push(OptimalUnderlier::from(u128))
     }
 
     #[inline]
     pub fn push_u128_to(&mut self, u128: u128, entry_id: EntryId) {
-        self.entries[entry_id].push(OptimalUnderlier::from_u128(u128))
+        self.entries[entry_id].push(OptimalUnderlier::from(u128))
     }
 
     /// Populates a witness module with data to reach a given height.
@@ -287,7 +287,7 @@ impl WitnessModule {
                         let step = 128 / tower_diff_pow;
                         let mask = (1u128 << step) - 1;
                         (0..tower_diff_pow)
-                            .map(|i| OptimalUnderlier::from_u128((u128 >> (i * step)) & mask))
+                            .map(|i| OptimalUnderlier::from((u128 >> (i * step)) & mask))
                             .collect::<Vec<_>>()
                     };
                     // For every inner oracle dependency, cache the underliers needed to compute
@@ -434,7 +434,7 @@ impl WitnessModule {
                 OracleKind::Transparent(transparent) => match transparent {
                     Transparent::Constant(b) => {
                         let tower_level = oracle_info.tower_level;
-                        let u = OptimalUnderlier::from_u128(replicate_within_u128(*b));
+                        let u = OptimalUnderlier::from(replicate_within_u128(*b));
                         let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
                         let entry_id = self.new_entry();
                         self.entries[entry_id] = vec![u; num_underliers];
@@ -499,21 +499,20 @@ impl WitnessModule {
                     let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
                     // Start the underliers with a bunch of B1(1)s and then set the padding
                     // bits to zero if necessary.
-                    let mut underliers =
-                        vec![OptimalUnderlier::from_u128(u128::MAX); num_underliers];
+                    let mut underliers = vec![OptimalUnderlier::from(u128::MAX); num_underliers];
                     let height_usize: usize = height.try_into()?;
                     let step_down_changes_at = height_usize / OptimalUnderlier::BITS;
                     if step_down_changes_at < num_underliers {
                         // Produce an `u128` with the `height_usize % OptimalUnderlier::BITS`
                         // least significant bits set to one and the rest set to zero.
-                        let u128 = (1 << (height_usize % OptimalUnderlier::BITS)) - 1;
-                        underliers[step_down_changes_at] = OptimalUnderlier::from_u128(u128);
+                        let u128: u128 = (1 << (height_usize % OptimalUnderlier::BITS)) - 1;
+                        underliers[step_down_changes_at] = OptimalUnderlier::from(u128);
 
                         // The next underliers must all be zeros.
                         underliers
                             .par_iter_mut()
                             .skip(step_down_changes_at + 1)
-                            .for_each(|u| *u = OptimalUnderlier::from_u128(0));
+                            .for_each(|u| *u = OptimalUnderlier::from(0u128));
                     }
                     let entry_id = self.new_entry();
                     self.entries[entry_id] = underliers;
