@@ -7,14 +7,10 @@ import Ix.Address
 import Ix.Meta
 import Lean
 
--- ix prove eval AcmeInput
--- ix prove eval --address deadbeef
--- ix prove eval AcmeFun AcmeArg1 AcmeArg2
--- ix prove eval --address abcde 1234 5678
--- ix prove check --name AcmeTheo
--- ix prove check --address deadbeef
-
-
+--❯ ix prove IxTest.lean "id'"
+--typechecking:
+--id' (A : Type) (x : A) : A
+--claim: #bbd740022aa44acd553c52e156807a5571428220a926377fe3c57d63b06a99f4 : #ba33b735b743386477f7a0e6802c67d388c165cab0e34b04880b50270205f265 @ #0000000000000000000000000000000000000000000000000000000000000000
 def runProveCheck 
   (env: Lean.Environment)
   (constInfo: Lean.ConstantInfo)
@@ -35,6 +31,14 @@ def runProveCheck
 def mkConst' (constName : Lean.Name) : Lean.MetaM Lean.Expr := do
   return Lean.mkConst constName (← (← Lean.getConstInfo constName).levelParams.mapM fun _ => Lean.Meta.mkFreshLevelMVar)
 
+--ix prove IxTest.lean "id'" --eval=Nat,one
+--evaluating:
+--id' (A : Type) (x : A) : A
+--id' Nat one
+--  ~> 1
+--  : Nat
+--  @ []
+--claim: #88ba2a7b099ce94a030eef202dc26ee3d9eb088057830049b926c7e88044bba1 ~> #d5ea7e6e7a3ee02780ba254a0becfe1fe712436a5a30832095ab71f7c64e25cd : #41ba41a9691e8167a387046f736a82ce0ec1601e7fb996c58d5930887c4b7764 @ #0000000000000000000000000000000000000000000000000000000000000000
 def runProveEval
   (env: Lean.Environment)
   (constInfo: Lean.ConstantInfo)
