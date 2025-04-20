@@ -45,7 +45,7 @@ def runGet (p : Cli.Parsed) : IO UInt32 := do
     match Address.fromString input with
     | .some a => .ok a
     | .none => .error "bad address"
-  let const <- StoreIO.toIO (readConst address)
+  let const <- StoreIO.toIO (Store.readConst address)
   IO.println <| s!"{repr const}"
   return 0
 

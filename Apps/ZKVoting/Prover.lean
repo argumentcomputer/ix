@@ -37,10 +37,12 @@ def runElection (votes: List Candidate) : Result :=
       | .bob, (a, b, c) => (a, b+1, c)
       | .charlie, (a, b, c) => (a, b, c+1)
 
+open Ix.Compile
+
 def main : IO UInt32 := do
-  let mut stt : Ix.Compile.CompileState := .init (<- get_env!)
+  let mut stt : CompileState := .init (<- get_env!)
   -- simulate getting the votes from somewhere
-  let votes : List Candidate <- pure [.alice, .alice, .bob, .bob]
+  let votes : List Candidate <- pure [.alice, .alice, .bob]
   let mut as : List Lean.Name := []
   -- default maxHeartBeats
   let ticks : USize := 200000
@@ -48,35 +50,25 @@ def main : IO UInt32 := do
   let voteType := Lean.toTypeExpr Candidate
   -- loop over the votes
   for v in votes do
-    let voteExpr := Lean.toExpr v
     -- add each vote to our environment as a commitment
-    let ((addr, _), stt') <-
-      (Ix.Compile.addCommitment [] voteType voteExpr).runIO' ticks stt
+    let (lvls, typ, val) <- runMeta (metaMakeDef v) stt.env
+    let ((addr, _), stt') <- (commitDef lvls typ val).runIO' ticks stt
     stt := stt'
-    -- collect each commitment addresses as names
     as := (Address.toUniqueName addr)::as
     IO.println s!"vote: {repr v}, commitment: {addr}"
-  IO.println s!"{repr as.reverse}"
-  -- identify our function
-  let func := ``runElection
   -- build a Lean list of our commitments as the argument to runElection
-  let arg : Lean.Expr <- runMeta (metaMkList voteType as) stt.env
-  let argType <- runMeta (Lean.Meta.inferType arg) stt.env
-  -- inputs to commit to the type of the output
-  let type := Lean.toTypeExpr Result
-  let sort <- runMeta (Lean.Meta.inferType type) stt.env
-  -- evaluate the output (both methods should be the same)
-  let output := Lean.toExpr (runElection votes)
+  let arg : Lean.Expr <- runMeta (metaMakeList voteType as) stt.env
+  let (lvls, input, output, type, sort) <-
+    runMeta (metaMakeEvalClaim ``runElection [arg]) stt.env
+  let inputPretty <- runMeta (Lean.Meta.ppExpr input) stt.env
   let outputPretty <- runMeta (Lean.Meta.ppExpr output) stt.env
-  IO.println s!"output1 {outputPretty}"
-  --IO.println s!"output1 {repr output}"
-  let output2 <- runMeta (Lean.Meta.reduce (.app (Lean.mkConst func) arg)) stt.env
-  let output2Pretty <- runMeta (Lean.Meta.ppExpr output2) stt.env
-  IO.println s!"output1 {output2Pretty}"
-  --IO.println s!"output2 {repr output2}"
-  -- build the evaluation claim
+  let typePretty <- runMeta (Lean.Meta.ppExpr type) stt.env
+  IO.println s!"claim: {inputPretty}"
+  IO.println s!"  ~> {outputPretty}"
+  IO.println s!"  : {typePretty}"
+  IO.println s!"  @ {repr lvls}"
   let ((claim,_,_,_), _stt') <-
-     (Ix.Compile.evalClaimWithArgs func [(arg, argType)] output type sort [] true).runIO' ticks stt
+     (evalClaim lvls input output type sort true).runIO' ticks stt
   IO.println s!"{claim}"
   -- Ix.prove claim stt
   return 0

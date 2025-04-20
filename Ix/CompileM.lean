@@ -4,6 +4,7 @@ import Ix.Ixon.Metadata
 import Ix.Ixon.Const
 import Ix.Ixon.Serialize
 import Ix.Common
+import Ix.Store
 
 open Batteries (RBMap)
 open Batteries (RBSet)
@@ -26,6 +27,7 @@ inductive CompileError
 | cantFindMutDefIndex : Lean.Name → CompileError
 | transportError : TransportError → CompileError
 | kernelException : String → CompileError
+| storeError : StoreError → CompileError
 | todo
 
 instance : ToString CompileError where toString
@@ -52,9 +54,10 @@ structure CompileEnv where
   bindCtx : List Lean.Name
   mutCtx  : RBMap Lean.Name Nat compare
   maxHeartBeats: USize
+  persist : Bool
 
 def CompileEnv.init (maxHeartBeats: USize): CompileEnv :=
-  ⟨default, default, default, maxHeartBeats⟩
+  ⟨default, default, default, maxHeartBeats, true⟩
 
 structure CompileState where
   env: Lean.Environment
@@ -83,6 +86,19 @@ def CompileM.runIO' (maxHeartBeats: USize) (stt: CompileState) (c : CompileM α)
 
 def CompileM.liftIO (io: IO α): CompileM α :=
   monadLift io
+
+def liftStoreIO (io: StoreIO α): CompileM α := do
+  match <- CompileM.liftIO (EIO.toIO' io) with
+  | .ok a => return a
+  | .error e => throw (.storeError e)
+
+def writeToStore (const: Ixon.Const): CompileM Address := do
+  let addr <- if (<- read).persist 
+    then liftStoreIO (Store.writeConst const)
+    else pure (Address.blake3 (Ixon.Serialize.put const))
+  modifyGet fun stt => (addr, { stt with
+    store := stt.store.insert addr const
+  })
 
 def IO.freshSecret : IO Address := do
   IO.setRandSeed (← IO.monoNanosNow)
@@ -120,13 +136,12 @@ def hashConst (const: Ix.Const) : CompileM (Address × Address) := do
   | some (anonAddr, metaAddr) => pure (anonAddr, metaAddr)
   | none => do
     let (anonIxon, metaIxon) <- match constToIxon const with
-    | .ok (a, m) => pure (a, m)
-    | .error e => throw (.transportError e)
-    let anonAddr := Address.blake3 (Ixon.Serialize.put anonIxon)
-    let metaAddr := Address.blake3 (Ixon.Serialize.put metaIxon)
+      | .ok (a, m) => pure (a, m)
+      | .error e => throw (.transportError e)
+    let anonAddr <- writeToStore anonIxon
+    let metaAddr <- writeToStore metaIxon
     modifyGet fun stt => ((anonAddr, metaAddr), { stt with
       cache := stt.cache.insert const (anonAddr, metaAddr)
-      store := (stt.store.insert anonAddr anonIxon).insert metaAddr metaIxon
     })
 
 scoped instance : HMul Ordering Ordering Ordering where hMul
@@ -522,20 +537,20 @@ partial def commitConst (anon meta: Address)
   : CompileM (Address × Address) := do
   let secret <- freshSecret
   let comm := .comm ⟨secret, anon⟩
-  let commAddr := Address.blake3 (Ixon.Serialize.put comm)
+  let commAddr <- writeToStore comm
   let commMeta := .comm ⟨secret, meta⟩
-  let commMetaAddr := Address.blake3 (Ixon.Serialize.put commMeta)
+  let commMetaAddr <- writeToStore commMeta
   modify fun stt => { stt with
-    store := (stt.store.insert commAddr comm).insert commMetaAddr commMeta
     comms := stt.comms.insert commAddr.toUniqueName (commAddr, commMetaAddr)
   }
   return (commAddr, commMetaAddr)
 
-partial def addCommitment (lvls: List Lean.Name) (typ val: Lean.Expr)
+partial def commitDef (lvls: List Lean.Name) (typ val: Lean.Expr)
   : CompileM (Address × Address) := do
   let (a, m) <- addDef lvls typ val
   let (ca, cm) <- commitConst a m
   tryAddLeanDecl (makeLeanDef ca.toUniqueName lvls typ val)
+  --tryAddLeanDecl (makeLeanDef ca.toUniqueName lvls typ (mkConst a.toUniqueName []))
   return (ca, cm)
 
 /--
@@ -675,10 +690,9 @@ partial def packLevel (lvls: Nat) (commit: Bool): CompileM Address :=
   | some lvlsAddr => do
     if commit then
       let secret <- freshSecret
-      let comm := Ixon.Comm.mk secret lvlsAddr
-      let commAddr := Address.blake3 (Ixon.Serialize.put (Ixon.Const.comm comm))
+      let comm := .comm (Ixon.Comm.mk secret lvlsAddr)
+      let commAddr <- writeToStore comm
       modify fun stt => { stt with
-        store := stt.store.insert commAddr (Ixon.Const.comm comm)
         comms := stt.comms.insert commAddr.toUniqueName (commAddr, commAddr)
       }
       return commAddr
@@ -700,55 +714,19 @@ partial def checkClaim
   where
     comm a := if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
 
-partial def evalClaimByName
-  (input: Lean.Name)
+partial def evalClaim
+  (lvls: List Lean.Name)
+  (input: Lean.Expr)
   (output: Lean.Expr)
   (type: Lean.Expr)
   (sort: Lean.Expr)
-  (lvls: List Lean.Name)
   (commit: Bool)
   : CompileM (Claim × Address × Address × Address) := do
-  let leanConst <- findLeanConst input
-  let (input, inputMeta) <- compileConst leanConst >>= comm
+  let (input, inputMeta) <- addDef lvls type input >>= comm
   let (output, outputMeta) <- addDef lvls type output >>= comm
   let (type, typeMeta) <- addDef lvls sort type >>= comm
   let lvlsAddr <- packLevel lvls.length commit
   return (Claim.evals lvlsAddr input output type, inputMeta, outputMeta, typeMeta)
-  where
-    comm a := if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
-
-partial def makeEvalInput
-  (lvls: List Lean.Name)
-  (typeAnon typeMeta funcAnon funcMeta: Address) 
-  (args : List (Address × Address))
-  : CompileM (Address × Address) := do
-  let univs := lvls.zipIdx.map (fun (n, i) => Ix.Univ.var n i)
-  let type := Ix.Expr.const typeAnon.toUniqueName typeAnon typeMeta univs
-  let func := Ix.Expr.const funcAnon.toUniqueName funcAnon funcMeta univs
-  let argConsts := args.map $ fun (a,m) => Ix.Expr.const a.toUniqueName a m univs
-  let val := argConsts.foldl Expr.app func
-  hashConst $ Ix.Const.definition ⟨lvls.length, type, val, true⟩
-
-
-partial def evalClaimWithArgs
-  (func: Lean.Name)
-  (args: List (Lean.Expr × Lean.Expr))
-  (output: Lean.Expr)
-  (type: Lean.Expr)
-  (sort: Lean.Expr)
-  (lvls: List Lean.Name)
-  (commit: Bool)
-  : CompileM (Claim × Address × Address × Address) := do
-  let leanConst <- findLeanConst func
-  let (funcAnon, funcMeta) <- compileConst leanConst >>= comm
-  let (typeAnon, typeMeta) <- addDef lvls sort type >>= comm
-  let (outputAnon, outputMeta) <- addDef lvls type output >>= comm
-  let args <- args.mapM $ fun (arg, argType) => 
-    addDef lvls argType arg >>= comm
-  let (inputAnon, inputMeta) <-
-    makeEvalInput lvls typeAnon typeMeta funcAnon funcMeta args
-  let lvlsAddr <- packLevel lvls.length commit
-  return (Claim.evals lvlsAddr inputAnon outputAnon typeAnon, inputMeta, outputMeta, typeMeta)
   where
     comm a := if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
 

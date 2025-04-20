@@ -20,11 +20,12 @@ def storeErrorToIOError : StoreError -> IO.Error
 | .ixonError e => IO.Error.userError s!"ixon error {e}"
 | .noHome => IO.Error.userError s!"no HOME environment variable"
 
-
 abbrev StoreIO := EIO StoreError
 
 def StoreIO.toIO (sio: StoreIO α) : IO α :=
   EIO.toIO storeErrorToIOError sio
+
+namespace Store
 
 def getHomeDir : StoreIO FilePath := do
   match ← IO.getEnv "HOME" with
@@ -55,4 +56,4 @@ def readConst (a: Address) : StoreIO Ixon.Const := do
   | .ok c => return c
   | .error e => throw (.ixonError e)
 
-
+end Store
