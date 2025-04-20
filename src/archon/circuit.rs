@@ -171,6 +171,22 @@ impl CircuitModule {
     }
 
     #[inline]
+    pub fn add_packed(
+        &mut self,
+        name: &(impl ToString + ?Sized),
+        inner: OracleId,
+        log_degree: usize,
+    ) -> Result<OracleId> {
+        let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
+        let oracle_info = OracleInfo {
+            name: self.namespacer.scoped_name(name),
+            tower_level: inner_tower_level + log_degree,
+            kind: OracleKind::Packed { inner, log_degree },
+        };
+        self.add_oracle_info(oracle_info)
+    }
+
+    #[inline]
     pub fn push_namespace<S: ToString + ?Sized>(&mut self, name: &S) {
         self.namespacer.push(name);
     }
@@ -233,6 +249,9 @@ pub fn compile_circuit_modules(
                         .iter()
                         .map(|(oracle_id, f)| (oracle_id + oracle_offset, *f));
                     builder.add_linear_combination_with_offset(name, n_vars, *offset, inner)?
+                }
+                OracleKind::Packed { inner, log_degree } => {
+                    builder.add_packed(name, inner + oracle_offset, *log_degree)?
                 }
                 OracleKind::Transparent(Transparent::Constant(b128)) => {
                     let n_vars = n_vars_fn(*tower_level);
