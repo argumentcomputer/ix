@@ -2,47 +2,36 @@ import Ix.Claim
 import Ix.Address
 import Ix.Meta
 import Ix.CompileM
+import Batteries
 
 inductive Candidate
    | alice | bob | charlie
-   deriving Inhabited, Lean.ToExpr, Repr
+   deriving Inhabited, Lean.ToExpr, Repr, BEq, Ord
 
-inductive Result
-| winner : Candidate -> Result
-| tie : List Candidate -> Result
+structure Result where
+  aliceVotes: Nat
+  bobVotes: Nat
+  charlieVotes: Nat
 deriving Repr, Lean.ToExpr
 
 def privateVotes : List Candidate := 
   [.alice, .alice, .bob]
 
 def runElection (votes: List Candidate) : Result :=
-  let (a, b, c) := votes.foldr tally (0,0,0)
-  if a > b && a > c
-  then .winner .alice
-  else if b > a && b > c
-  then .winner .bob
-  else if c > a && c > b
-  then .winner .charlie
-  else if a == b && b == c
-  then .tie [.alice, .bob, .charlie]
-  else if a == b
-  then .tie [.alice, .bob]
-  else if a == c
-  then .tie [.alice, .charlie]
-  else .tie [.bob, .charlie]
+  votes.foldr tally ⟨0,0,0⟩
     where
-      tally (comm: Candidate) (acc: (Nat × Nat × Nat)): (Nat × Nat × Nat) :=
-      match comm, acc with
-      | .alice, (a, b, c) => (a+1, b, c)
-      | .bob, (a, b, c) => (a, b+1, c)
-      | .charlie, (a, b, c) => (a, b, c+1)
+      tally (comm: Candidate) (res: Result): Result :=
+      match comm, res with
+      | .alice, ⟨a, b, c⟩ => ⟨a+1, b, c⟩
+      | .bob, ⟨a, b, c⟩ => ⟨a, b+1, c⟩
+      | .charlie, ⟨a, b, c⟩ => ⟨a, b, c+1⟩
 
 open Ix.Compile
 
 def main : IO UInt32 := do
   let mut stt : CompileState := .init (<- get_env!)
   -- simulate getting the votes from somewhere
-  let votes : List Candidate <- pure [.alice, .alice, .bob]
+  let votes : List Candidate <- pure privateVotes
   let mut as : List Lean.Name := []
   -- default maxHeartBeats
   let ticks : USize := 200000
