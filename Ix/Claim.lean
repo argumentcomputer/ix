@@ -1,5 +1,4 @@
 import Ix.Address
-import Ix.Commitment
 
 inductive Claim where
 | checks (lvls type value: Address) : Claim
