@@ -1,4 +1,5 @@
 import Lean.Declaration
+import Ix.Address
 
 namespace Ixon
 
@@ -87,6 +88,14 @@ def natToBytesLE (x: Nat) : Array UInt8 :=
 
 def natFromBytesLE (xs: Array UInt8) : Nat :=
   (xs.toList.zipIdx 0).foldl (fun acc (b, i) => acc + (UInt8.toNat b) * 256 ^ i) 0
+
+def natPackAsAddress (x: Nat) : Option Address := 
+  let bytes := natToBytesLE x
+  if bytes.size > 32 then .none
+  else .some (Address.mk ⟨bytes.append (mkArray (32 - bytes.size) 0)⟩)
+
+def natUnpackFromAddress (x: Address) : Nat := 
+  natFromBytesLE x.hash.data
 
 def fromTrimmedLE (xs: Array UInt8) : UInt64 := List.foldr step 0 xs.toList
   where

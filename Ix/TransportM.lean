@@ -8,6 +8,7 @@ import Ix.Common
 import Ix.Address
 import Ix.Ixon.Metadata
 import Ix.Ixon.Serialize
+import Ix.Prove
 import Batteries.Data.RBMap
 
 namespace Ix.TransportM
@@ -25,7 +26,17 @@ inductive TransportError
   | unknownIndex (idx: Nat) (m: Ixon.Metadata)
   | unexpectedNode (idx: Nat) (m: Ixon.Metadata)
   | rawMetadata (m: Ixon.Metadata)
-  deriving Repr
+  | rawProof (m: Proof)
+  | rawComm (m: Ixon.Comm)
+  deriving BEq, Repr
+
+instance : ToString TransportError where toString
+| .natTooBig idx x => s!"At index {idx}, natural number {x} too big to fit in UInt64"
+| .unknownIndex idx x => s!"Unknown index {idx} with metadata {repr x}"
+| .unexpectedNode idx x => s!"Unexpected node at {idx} with metadata {repr x}"
+| .rawMetadata x => s!"Can't rematerialize raw metadata {repr x}"
+| .rawProof x => s!"Can't rematerialize raw proof {repr x}"
+| .rawComm x => s!"Can't rematerialize raw commitment {repr x}"
 
 abbrev DematM := EStateM TransportError DematState
 
@@ -279,6 +290,9 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
 | .mutDef xs => .mutDefBlock <$> (xs.mapM rematDefn)
 | .mutInd xs => .mutIndBlock <$> (xs.mapM rematInd)
 | .meta m => throw (.rawMetadata m)
+-- TODO: This could return a Proof inductive, since proofs have no metadata
+| .proof p => throw (.rawProof p)
+| .comm p => throw (.rawComm p)
   where
     rematDefn : Ixon.Definition -> RematM Ix.Definition
     | x => .mk x.lvls <$> rematExpr x.type <*> rematExpr x.value <*> pure x.part

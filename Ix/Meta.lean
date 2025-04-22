@@ -1,10 +1,8 @@
 import Lean
 import Ix.Address
+import Ix.CompileM
 
 open Lean
-
-def computeIxAddress (_const : ConstantInfo) (_constMap: ConstMap) : Address :=
-  default -- TODO
 
 open System (FilePath)
 
@@ -40,21 +38,33 @@ elab "this_file!" : term => do
 macro "get_env!" : term =>
   `(getFileEnv this_file!)
 
-def mkAnonDefInfoRaw (type : Expr) (value : Expr) : ConstantInfo :=
-  .defnInfo {
-    name        := .anonymous
-    levelParams := []
-    type
-    value
-    hints       := .opaque
-    safety      := .safe
-  }
-
-def mkAnonDefInfo [inst : ToExpr α] (a : α) : ConstantInfo :=
-  mkAnonDefInfoRaw inst.toTypeExpr (toExpr a)
+def computeIxAddress (env: Lean.Environment) (const : ConstantInfo) : IO Address := do
+  let ((a, _), _) <- Ix.Compile.compileConstIO env const
+  return a
 
 def runCore (f : CoreM α) (env : Environment) : IO α :=
   Prod.fst <$> f.toIO { fileName := default, fileMap := default } { env }
 
 def runMeta (f : MetaM α) (env : Environment) : IO α :=
   Prod.fst <$> f.toIO { fileName := default, fileMap := default } { env }
+
+def metaMakeList (α: Lean.Expr) (names: List Lean.Name) : MetaM Expr := do
+  let nil <- Meta.mkAppOptM ``List.nil #[.some α]
+  names.foldrM (fun n t => Meta.mkAppOptM ``List.cons #[.some α, mkConst n, t]) nil
+
+def metaMakeDef [Lean.ToExpr α] (a: α) : MetaM (List Lean.Name × Lean.Expr × Lean.Expr) := do
+  let val := Lean.toExpr a
+  let typ <- Meta.inferType val
+  let lvls := (Lean.collectLevelParams default typ).params.toList
+  return (lvls, typ, val)
+
+def metaMakeEvalClaim (func: Lean.Name) (args : List Lean.Expr)
+  : MetaM (List Lean.Name × Lean.Expr × Lean.Expr × Lean.Expr × Lean.Expr) := do
+  let input <- Meta.mkAppM func args.toArray
+  let output <- Meta.reduce input
+  let type <- Meta.inferType output
+  let sort <- Meta.inferType type
+  let lvls := (Lean.collectLevelParams default input).params.toList
+  return (lvls, input, output, type, sort)
+
+

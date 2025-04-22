@@ -1,52 +1,64 @@
-import Ix
-import Apps.ZKVoting.ProverInit
-import Apps.ZKVoting.Common
+import Ix.Claim
+import Ix.Address
+import Ix.Meta
+import Ix.CompileM
+import Batteries
 
-open Lean
+inductive Candidate
+   | alice | bob | charlie
+   deriving Inhabited, Lean.ToExpr, Repr, BEq, Ord
 
-partial def collectVotes (env : Environment) : IO $ List Vote :=
-  collectVotesLoop [] initSecret (0 : UInt64)
-where
-  collectVotesLoop votes secret count := do
-    let input := (← (← IO.getStdin).getLine).trim
-    let consts := env.constants
-    let voteAbe ← mkCommit secret Candidate.abe consts
-    let voteBam ← mkCommit secret Candidate.bam consts
-    let voteCot ← mkCommit secret Candidate.cot consts
-    IO.println s!"a: Abe | {voteAbe}"
-    IO.println s!"b: Bam | {voteBam}"
-    IO.println s!"b: Cot | {voteCot}"
-    IO.println "_: End voting"
-    let vote ← match input with
-      | "a" => pure voteAbe | "b" => pure voteBam | "c" => pure voteCot
-      | _ => return votes
-    let secret' := (← mkCommit secret count consts).adr
-    IO.println vote
-    collectVotesLoop (vote :: votes) secret' (count + 1)
+structure Result where
+  aliceVotes: Nat
+  bobVotes: Nat
+  charlieVotes: Nat
+deriving Repr, Lean.ToExpr
 
-structure VoteCounts where
-  abe : UInt64
-  bam : UInt64
-  cot : UInt64
-  deriving ToExpr
+def privateVotes : List Candidate := 
+  [.alice, .alice, .bob]
 
-def countVotes : List Vote → VoteCounts
-  | [] => ⟨0, 0, 0⟩
-  | vote :: votes =>
-    let counts := countVotes votes
-    match (reveal vote : Candidate) with
-    | .abe => { counts with abe := counts.abe + 1 }
-    | .bam => { counts with bam := counts.bam + 1 }
-    | .cot => { counts with cot := counts.cot + 1 }
+def runElection (votes: List Candidate) : Result :=
+  votes.foldr tally ⟨0,0,0⟩
+    where
+      tally (comm: Candidate) (res: Result): Result :=
+      match comm, res with
+      | .alice, ⟨a, b, c⟩ => ⟨a+1, b, c⟩
+      | .bob, ⟨a, b, c⟩ => ⟨a, b+1, c⟩
+      | .charlie, ⟨a, b, c⟩ => ⟨a, b, c+1⟩
+
+open Ix.Compile
 
 def main : IO UInt32 := do
-  let env ← get_env!
-  let votes ← collectVotes env
-  let .defnInfo countVotesDefn ← runCore (getConstInfo ``countVotes) env
-    | unreachable!
-  let claimValue := .app countVotesDefn.value (toExpr votes)
-  let claimType ← runMeta (Meta.inferType claimValue) env
-  let claimAdr := computeIxAddress (mkAnonDefInfoRaw claimType claimValue) env.constants
-  match ← prove claimAdr with
-  | .ok proof => IO.FS.writeBinFile proofPath $ Ixon.Serialize.put proof; return 0
-  | .error err => IO.eprintln $ toString err; return 1
+  let mut stt : CompileState := .init (<- get_env!)
+  -- simulate getting the votes from somewhere
+  let votes : List Candidate <- pure privateVotes
+  let mut as : List Lean.Name := []
+  -- default maxHeartBeats
+  let ticks : USize := 200000
+  -- the type of each vote to commit
+  let voteType := Lean.toTypeExpr Candidate
+  -- loop over the votes
+  for v in votes do
+    -- add each vote to our environment as a commitment
+    let (lvls, typ, val) <- runMeta (metaMakeDef v) stt.env
+    let ((addr, _), stt') <- (commitDef lvls typ val).runIO' ticks stt
+    stt := stt'
+    as := (Address.toUniqueName addr)::as
+    IO.println s!"vote: {repr v}, commitment: {addr}"
+  -- build a Lean list of our commitments as the argument to runElection
+  let arg : Lean.Expr <- runMeta (metaMakeList voteType as) stt.env
+  let (lvls, input, output, type, sort) <-
+    runMeta (metaMakeEvalClaim ``runElection [arg]) stt.env
+  let inputPretty <- runMeta (Lean.Meta.ppExpr input) stt.env
+  let outputPretty <- runMeta (Lean.Meta.ppExpr output) stt.env
+  let typePretty <- runMeta (Lean.Meta.ppExpr type) stt.env
+  IO.println s!"claim: {inputPretty}"
+  IO.println s!"  ~> {outputPretty}"
+  IO.println s!"  : {typePretty}"
+  IO.println s!"  @ {repr lvls}"
+  let ((claim,_,_,_), _stt') <-
+     (evalClaim lvls input output type sort true).runIO' ticks stt
+  IO.println s!"{claim}"
+  -- Ix.prove claim stt
+  return 0
+

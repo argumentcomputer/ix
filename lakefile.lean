@@ -9,6 +9,7 @@ lean_lib Ix
 
 lean_exe ix where
   root := `Main
+  supportInterpreter := true
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "24cceb69c20fadca0fd3acabe39fa9270dfb47e6"
@@ -28,7 +29,8 @@ section Tests
 lean_lib Tests
 
 @[test_driver]
-lean_exe Tests.Main
+lean_exe Tests.Main where
+  supportInterpreter := true
 
 end Tests
 
