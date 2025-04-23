@@ -10,31 +10,31 @@ structure Quotient where
   lvls : Nat
   type : Expr
   kind : Lean.QuotKind
-  deriving Ord, BEq, Hashable, Repr
+  deriving Ord, BEq, Hashable, Repr, Nonempty
 
 structure Axiom where
   lvls  : Nat
   type  : Expr
-  deriving Ord, BEq, Hashable, Repr
+  deriving Ord, BEq, Hashable, Repr, Nonempty
 
 structure Theorem where
   lvls  : Nat
   type  : Expr
   value : Expr
-  deriving Ord, BEq, Hashable, Repr
+  deriving Ord, BEq, Hashable, Repr, Nonempty
 
 structure Opaque where
   lvls  : Nat
   type  : Expr
   value : Expr
-  deriving BEq, Ord, Hashable, Repr
+  deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure Definition where
   lvls  : Nat
   type  : Expr
   value : Expr
   part  : Bool
-  deriving BEq, Ord, Hashable, Repr
+  deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure Constructor where
   lvls   : Nat
@@ -42,12 +42,12 @@ structure Constructor where
   idx    : Nat
   params : Nat
   fields : Nat
-  deriving BEq, Ord, Hashable, Repr
+  deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure RecursorRule where
   fields : Nat
   rhs    : Expr
-  deriving BEq, Ord, Hashable, Repr
+  deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure Recursor where
   lvls     : Nat
@@ -59,7 +59,7 @@ structure Recursor where
   rules    : List RecursorRule
   isK      : Bool
   internal : Bool
-  deriving BEq, Ord, Hashable, Repr
+  deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure Inductive where
   lvls    : Nat
@@ -72,33 +72,33 @@ structure Inductive where
   refl    : Bool
   struct  : Bool
   unit    : Bool
-  deriving BEq, Ord, Hashable, Repr
+  deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure InductiveProj where
   blockCont : Address
   blockMeta : Address
   idx   : Nat
-  deriving BEq, Ord, Hashable, Repr
+  deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure ConstructorProj where
   blockCont : Address
   blockMeta : Address
   idx   : Nat
   cidx  : Nat
-  deriving BEq, Ord, Hashable, Repr
+  deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure RecursorProj where
   blockCont : Address
   blockMeta : Address
   idx   : Nat
   ridx  : Nat
-  deriving BEq, Ord, Hashable, Repr
+  deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure DefinitionProj where
   blockCont : Address
   blockMeta : Address
   idx   : Nat
-  deriving BEq, Ord, Hashable, Repr
+  deriving BEq, Ord, Hashable, Repr, Nonempty
 
 inductive Const where
   | «axiom»     : Axiom      → Const
@@ -114,7 +114,7 @@ inductive Const where
   -- constants to represent mutual blocks
   | mutDefBlock : List Definition → Const
   | mutIndBlock : List Inductive  → Const
-  deriving Ord, BEq, Inhabited, Repr
+  deriving Ord, BEq, Inhabited, Repr, Nonempty
 
 def Const.isMutType : Const → Bool
   | .mutDefBlock _ | .mutIndBlock _ => true

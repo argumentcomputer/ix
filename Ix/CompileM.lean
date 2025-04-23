@@ -12,6 +12,7 @@ open Ix.TransportM
 
 namespace Ix.Compile
 
+
 inductive CompileError
 | unknownConstant : Lean.Name → CompileError
 | unfilledLevelMetavariable : Lean.Level → CompileError
@@ -26,41 +27,41 @@ inductive CompileError
 | nonRecursorExtractedFromChildren : Lean.Name → CompileError
 | cantFindMutDefIndex : Lean.Name → CompileError
 | transportError : TransportError → CompileError
-| kernelException : String → CompileError
-| storeError : StoreError → CompileError
+| kernelException : Lean.Kernel.Exception → CompileError
+--| storeError : StoreError → CompileError
 | todo
 
-instance : ToString CompileError where toString
-| .unknownConstant n => s!"Unknown constant '{n}'"
-| .unfilledLevelMetavariable l => s!"Unfilled level metavariable on universe '{l}'"
-| .unfilledExprMetavariable e => s!"Unfilled level metavariable on expression '{e}'"
-| .invalidBVarIndex idx => s!"Invalid index {idx} for bound variable context"
-| .freeVariableExpr e => s!"Free variable in expression '{e}'"
-| .metaVariableExpr e => s!"Metavariable in expression '{e}'"
-| .metaDataExpr e => s!"Meta data in expression '{e}'"
-| .levelNotFound n ns => s!"'Level {n}' not found in '{ns}'"
-| .invalidConstantKind n ex gt =>
-  s!"Invalid constant kind for '{n}'. Expected '{ex}' but got '{gt}'"
-| .constantNotContentAddressed n => s!"Constant '{n}' wasn't content-addressed"
-| .nonRecursorExtractedFromChildren n =>
-  s!"Non-recursor '{n}' extracted from children"
-| .cantFindMutDefIndex n => s!"Can't find index for mutual definition '{n}'"
-| .transportError n => s!"Transport error '{repr n}'"
-| .kernelException e => e
-| _ => s!"todo"
+--instance : ToString CompileError where toString
+--| .unknownConstant n => s!"Unknown constant '{n}'"
+--| .unfilledLevelMetavariable l => s!"Unfilled level metavariable on universe '{l}'"
+--| .unfilledExprMetavariable e => s!"Unfilled level metavariable on expression '{e}'"
+--| .invalidBVarIndex idx => s!"Invalid index {idx} for bound variable context"
+--| .freeVariableExpr e => s!"Free variable in expression '{e}'"
+--| .metaVariableExpr e => s!"Metavariable in expression '{e}'"
+--| .metaDataExpr e => s!"Meta data in expression '{e}'"
+--| .levelNotFound n ns => s!"'Level {n}' not found in '{ns}'"
+--| .invalidConstantKind n ex gt =>
+--  s!"Invalid constant kind for '{n}'. Expected '{ex}' but got '{gt}'"
+--| .constantNotContentAddressed n => s!"Constant '{n}' wasn't content-addressed"
+--| .nonRecursorExtractedFromChildren n =>
+--  s!"Non-recursor '{n}' extracted from children"
+--| .cantFindMutDefIndex n => s!"Can't find index for mutual definition '{n}'"
+--| .transportError n => s!"Transport error '{repr n}'"
+--| .kernelException e => e
+--| _ => s!"todo"
 
 structure CompileEnv where
   univCtx : List Lean.Name
   bindCtx : List Lean.Name
   mutCtx  : RBMap Lean.Name Nat compare
   maxHeartBeats: USize
-  persist : Bool
 
 def CompileEnv.init (maxHeartBeats: USize): CompileEnv :=
-  ⟨default, default, default, maxHeartBeats, true⟩
+  ⟨default, default, default, maxHeartBeats⟩
 
 structure CompileState where
   env: Lean.Environment
+  prng: StdGen
   names: RBMap Lean.Name (Address × Address) compare
   store: RBMap Address Ixon.Const compare
   cache: RBMap Ix.Const (Address × Address) compare
@@ -68,48 +69,33 @@ structure CompileState where
   axioms: RBMap Lean.Name (Address × Address) compare
   blocks: RBSet (Address × Address) compare
 
-def CompileState.init (env: Lean.Environment): CompileState :=
-  ⟨env, default, default, default, default, default, default⟩
+def CompileState.init (env: Lean.Environment) (seed: Nat): CompileState :=
+  ⟨env, mkStdGen seed, default, default, default, default, default, default⟩
 
-abbrev CompileM :=
-  ReaderT CompileEnv <| ExceptT CompileError <| StateT CompileState IO
+abbrev CompileM := ReaderT CompileEnv <| EStateM CompileError CompileState
 
-def CompileM.runIO (maxHeartBeats: USize) (stt: CompileState) (c : CompileM α)
-  : IO (Except CompileError α × CompileState) := do
-  StateT.run (ReaderT.run c (.init maxHeartBeats)) stt
+def CompileM.run (env: CompileEnv) (stt: CompileState) (c : CompileM α)
+  : EStateM.Result CompileError CompileState α
+  := EStateM.run (ReaderT.run c env) stt
 
-def CompileM.runIO' (maxHeartBeats: USize) (stt: CompileState) (c : CompileM α)
-  : IO (α × CompileState) := do
-  let (res, stt) <- c.runIO maxHeartBeats stt
-  let res <- IO.ofExcept res
-  return (res, stt)
 
-def CompileM.liftIO (io: IO α): CompileM α :=
-  monadLift io
-
-def liftStoreIO (io: StoreIO α): CompileM α := do
-  match <- CompileM.liftIO (EIO.toIO' io) with
-  | .ok a => return a
-  | .error e => throw (.storeError e)
-
-def writeToStore (const: Ixon.Const): CompileM Address := do
-  let addr <- if (<- read).persist 
-    then liftStoreIO (Store.writeConst const)
-    else pure (Address.blake3 (Ixon.Serialize.put const))
+def storeConst (const: Ixon.Const): CompileM Address := do
+  let addr := Address.blake3 (Ixon.Serialize.put const)
   modifyGet fun stt => (addr, { stt with
     store := stt.store.insert addr const
   })
 
-def IO.freshSecret : IO Address := do
-  IO.setRandSeed (← IO.monoNanosNow)
-  let mut secret : ByteArray := default
-  for _ in [:32] do
-    let rand ← IO.rand 0 (UInt8.size - 1)
-    secret := secret.push rand.toUInt8
-  return ⟨secret⟩
+def randByte (lo hi: Nat): CompileM Nat := do
+  modifyGet fun s => 
+  let (res, g') := randNat s.prng lo hi
+  (res, {s with prng := g'})
 
 def freshSecret : CompileM Address := do
-  CompileM.liftIO IO.freshSecret
+  let mut secret: ByteArray := default
+  for _ in [:32] do
+    let rand <- randByte 0 255
+    secret := secret.push rand.toUInt8
+  return ⟨secret⟩
 
 -- add binding name to local context
 def withBinder (name: Lean.Name) : CompileM α -> CompileM α :=
@@ -138,8 +124,8 @@ def hashConst (const: Ix.Const) : CompileM (Address × Address) := do
     let (anonIxon, metaIxon) <- match constToIxon const with
       | .ok (a, m) => pure (a, m)
       | .error e => throw (.transportError e)
-    let anonAddr <- writeToStore anonIxon
-    let metaAddr <- writeToStore metaIxon
+    let anonAddr <- storeConst anonIxon
+    let metaAddr <- storeConst metaIxon
     modifyGet fun stt => ((anonAddr, metaAddr), { stt with
       cache := stt.cache.insert const (anonAddr, metaAddr)
     })
@@ -241,7 +227,7 @@ partial def compileConst (const : Lean.ConstantInfo)
         axioms := stt.axioms.insert const.name (anonAddr, metaAddr)
         names := stt.names.insert const.name (anonAddr, metaAddr)
       }
-      return (metaAddr, metaAddr)
+      return (anonAddr, metaAddr)
     | .thmInfo val => resetCtxWithLevels const.levelParams do
       let type <- compileExpr val.type
       let value <- compileExpr val.value
@@ -250,7 +236,7 @@ partial def compileConst (const : Lean.ConstantInfo)
       modify fun stt => { stt with
         names := stt.names.insert const.name (anonAddr, metaAddr)
       }
-      return (metaAddr, metaAddr)
+      return (anonAddr, metaAddr)
     | .opaqueInfo val => resetCtxWithLevels const.levelParams do
       let mutCtx := .single val.name 0
       let type <- compileExpr val.type
@@ -260,7 +246,7 @@ partial def compileConst (const : Lean.ConstantInfo)
       modify fun stt => { stt with
         names := stt.names.insert const.name (anonAddr, metaAddr)
       }
-      return (metaAddr, metaAddr)
+      return (anonAddr, metaAddr)
     | .quotInfo val => resetCtxWithLevels const.levelParams do
       let type <- compileExpr val.type
       let c := .quotient ⟨val.levelParams.length, type, val.kind⟩
@@ -269,7 +255,7 @@ partial def compileConst (const : Lean.ConstantInfo)
         axioms := (stt.axioms.insert const.name (anonAddr, metaAddr))
         names := stt.names.insert const.name (anonAddr, metaAddr)
       }
-      return (metaAddr, metaAddr)
+      return (anonAddr, metaAddr)
 
 /-- compile possibly mutual Lean definition --/
 partial def compileDefinition (struct: Lean.DefinitionVal)
@@ -505,54 +491,6 @@ partial def compileExpr : Lean.Expr → CompileM Expr
   | .mvar ..  => throw $ .metaVariableExpr expr
   | .mdata .. => throw $ .metaDataExpr expr
 
-partial def makeLeanDef
-  (name: Lean.Name) (levelParams: List Lean.Name) (type value: Lean.Expr) 
-  : Lean.DefinitionVal :=
-  { name, levelParams, type, value, hints := .opaque, safety := .safe }
-
-partial def tryAddLeanDecl (defn: Lean.DefinitionVal) : CompileM Unit := do
-  match (<- get).env.constants.find? defn.name with
-  | some _ => pure ()
-  | none => do
-    let env <- (·.env) <$> get
-    let maxHeartBeats <- (·.maxHeartBeats) <$> read
-    let decl := Lean.Declaration.defnDecl defn
-    match Lean.Environment.addDeclCore env maxHeartBeats decl .none with
-    | .ok e => do
-      modify fun stt => { stt with env := e }
-      return ()
-    | .error e => do
-      let x <- (e.toMessageData .empty).format
-      throw $ .kernelException (x.pretty 80)
-
-partial def addDef (lvls: List Lean.Name) (typ val: Lean.Expr)
-  : CompileM (Address × Address) := do
-  let typ' <- compileExpr typ
-  let val' <- compileExpr val
-  let (a, m) <- hashConst $ Ix.Const.definition ⟨lvls.length, typ', val', true⟩
-  tryAddLeanDecl (makeLeanDef a.toUniqueName lvls typ val)
-  return (a, m)
-
-partial def commitConst (anon meta: Address)
-  : CompileM (Address × Address) := do
-  let secret <- freshSecret
-  let comm := .comm ⟨secret, anon⟩
-  let commAddr <- writeToStore comm
-  let commMeta := .comm ⟨secret, meta⟩
-  let commMetaAddr <- writeToStore commMeta
-  modify fun stt => { stt with
-    comms := stt.comms.insert commAddr.toUniqueName (commAddr, commMetaAddr)
-  }
-  return (commAddr, commMetaAddr)
-
-partial def commitDef (lvls: List Lean.Name) (typ val: Lean.Expr)
-  : CompileM (Address × Address) := do
-  let (a, m) <- addDef lvls typ val
-  let (ca, cm) <- commitConst a m
-  tryAddLeanDecl (makeLeanDef ca.toUniqueName lvls typ val)
-  --tryAddLeanDecl (makeLeanDef ca.toUniqueName lvls typ (mkConst a.toUniqueName []))
-  return (ca, cm)
-
 /--
 A name-irrelevant ordering of Lean expressions.
 `weakOrd` contains the best known current mutual ordering
@@ -685,13 +623,60 @@ partial def sortDefs (dss : List (List Lean.DefinitionVal)) :
 
 end
 
+partial def makeLeanDef
+  (name: Lean.Name) (levelParams: List Lean.Name) (type value: Lean.Expr) 
+  : Lean.DefinitionVal :=
+  { name, levelParams, type, value, hints := .opaque, safety := .safe }
+
+partial def tryAddLeanDecl (defn: Lean.DefinitionVal) : CompileM Unit := do
+  match (<- get).env.constants.find? defn.name with
+  | some _ => pure ()
+  | none => do
+    let env <- (·.env) <$> get
+    let maxHeartBeats <- (·.maxHeartBeats) <$> read
+    let decl := Lean.Declaration.defnDecl defn
+    match Lean.Environment.addDeclCore env maxHeartBeats decl .none with
+    | .ok e => do
+      modify fun stt => { stt with env := e }
+      return ()
+    | .error e => throw $ .kernelException e
+
+partial def addDef (lvls: List Lean.Name) (typ val: Lean.Expr)
+  : CompileM (Address × Address) := do
+  let typ' <- compileExpr typ
+  let val' <- compileExpr val
+  let (a, m) <- hashConst $ Ix.Const.definition ⟨lvls.length, typ', val', true⟩
+  tryAddLeanDecl (makeLeanDef a.toUniqueName lvls typ val)
+  return (a, m)
+
+partial def commitConst (anon meta: Address)
+  : CompileM (Address × Address) := do
+  let secret <- freshSecret
+  let comm := .comm ⟨secret, anon⟩
+  let commAddr <- storeConst comm
+  let commMeta := .comm ⟨secret, meta⟩
+  let commMetaAddr <- storeConst commMeta
+  modify fun stt => { stt with
+    comms := stt.comms.insert commAddr.toUniqueName (commAddr, commMetaAddr)
+  }
+  return (commAddr, commMetaAddr)
+
+partial def commitDef (lvls: List Lean.Name) (typ val: Lean.Expr)
+  : CompileM (Address × Address) := do
+  let (a, m) <- addDef lvls typ val
+  let (ca, cm) <- commitConst a m
+  tryAddLeanDecl (makeLeanDef ca.toUniqueName lvls typ val)
+  --tryAddLeanDecl (makeLeanDef ca.toUniqueName lvls typ (mkConst a.toUniqueName []))
+  return (ca, cm)
+
+
 partial def packLevel (lvls: Nat) (commit: Bool): CompileM Address :=
   match Ixon.natPackAsAddress lvls with
   | some lvlsAddr => do
     if commit then
       let secret <- freshSecret
       let comm := .comm (Ixon.Comm.mk secret lvlsAddr)
-      let commAddr <- writeToStore comm
+      let commAddr <- storeConst comm
       modify fun stt => { stt with
         comms := stt.comms.insert commAddr.toUniqueName (commAddr, commAddr)
       }
@@ -730,16 +715,6 @@ partial def evalClaim
   where
     comm a := if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
 
-def compileConstIO (env : Lean.Environment ) (const: Lean.ConstantInfo)
-  : IO $ (Address × Address) × CompileState := do
-  let (a, s) <- (compileConst const).runIO 200000 (.init env)
-  let a <- IO.ofExcept a
-  return (a, s)
-
-def compileDelta (delta : Lean.PersistentHashMap Lean.Name Lean.ConstantInfo)
-  : CompileM Unit := do
-  delta.forM fun _ c => if !c.isUnsafe then discard $ compileConst c else pure ()
-
 /--
 Content-addresses the "delta" of an environment, that is, the content that is
 added on top of the imports.
@@ -748,14 +723,37 @@ Important: constants with open references in their expressions are filtered out.
 Open references are variables that point to names which aren't present in the
 `Lean.ConstMap`.
 -/
-def compileDeltaIO
-  (env: Lean.Environment)
-  (delta : Lean.PersistentHashMap Lean.Name Lean.ConstantInfo)
-  : IO CompileState := do
-  let (res, stt) <- (compileDelta delta).runIO 200000 (.init env)
-  IO.ofExcept res
-  return stt
+def compileDelta (delta : Lean.PersistentHashMap Lean.Name Lean.ConstantInfo)
+  : CompileM Unit := do
+  delta.forM fun _ c => if !c.isUnsafe then discard $ compileConst c else pure ()
+
+
+def CompileError.pretty : CompileError -> IO String
+| .unknownConstant n => pure s!"Unknown constant '{n}'"
+| .unfilledLevelMetavariable l => pure s!"Unfilled level metavariable on universe '{l}'"
+| .unfilledExprMetavariable e => pure s!"Unfilled level metavariable on expression '{e}'"
+| .invalidBVarIndex idx => pure s!"Invalid index {idx} for bound variable context"
+| .freeVariableExpr e => pure s!"Free variable in expression '{e}'"
+| .metaVariableExpr e => pure s!"Metavariable in expression '{e}'"
+| .metaDataExpr e => pure s!"Meta data in expression '{e}'"
+| .levelNotFound n ns => pure s!"'Level {n}' not found in '{ns}'"
+| .invalidConstantKind n ex gt => pure s!"Invalid constant kind for '{n}'. Expected '{ex}' but got '{gt}'"
+| .constantNotContentAddressed n => pure s!"Constant '{n}' wasn't content-addressed"
+| .nonRecursorExtractedFromChildren n => pure
+  s!"Non-recursor '{n}' extracted from children"
+| .cantFindMutDefIndex n => pure s!"Can't find index for mutual definition '{n}'"
+| .transportError n => pure s!"Transport error '{repr n}'"
+| .kernelException e => (·.pretty 80) <$> (e.toMessageData .empty).format
+| _ => pure s!"todo"
+
+def CompileM.runIO (env: Lean.Environment) (c : CompileM α) (maxHeartBeats: USize := 200000)
+  : IO (α × CompileState) := do
+  match c.run (.init maxHeartBeats) (.init env (<- IO.monoNanosNow)) with
+  | .ok a stt => do
+    stt.store.forM fun a c => discard $ (Store.forceWriteConst a c).toIO
+    return (a, stt)
+  | .error e _ => throw (IO.userError (<- e.pretty))
 
 def compileEnvIO (env: Lean.Environment) : IO CompileState := do
-  compileDeltaIO env env.getDelta
+  Prod.snd <$> CompileM.runIO env (compileDelta env.getDelta)
 

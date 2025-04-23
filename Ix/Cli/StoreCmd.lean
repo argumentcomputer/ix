@@ -15,11 +15,10 @@ def runStore (p : Cli.Parsed) : IO UInt32 := do
   --StoreIO.toIO ensureStoreDir
   let path := ⟨source⟩
   let leanEnv ← Lean.runFrontend (← IO.FS.readFile path) path
-  let delta := leanEnv.getDelta
   cronos ← cronos.clock "Lean-frontend"
   -- Start content-addressing
   cronos ← cronos.clock "content-address"
-  let stt ← Ix.Compile.compileDeltaIO leanEnv delta
+  let stt ← Ix.Compile.compileEnvIO leanEnv
   stt.names.forM fun name (const, meta) => do
      IO.println <| s!"{name}:"
      IO.println <| s!"  #{const}"
