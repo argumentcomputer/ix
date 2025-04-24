@@ -567,10 +567,14 @@ impl Witness<'_> {
 
 #[cfg(test)]
 mod tests {
+    use binius_circuits::builder::ConstraintSystemBuilder;
+    use binius_core::transparent::step_down::StepDown;
+    use binius_field::arch::OptimalUnderlier;
+    use binius_field::underlier::UnderlierType;
     use binius_field::{
         BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
         BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64,
-        BinaryField128b as B128,
+        BinaryField128b as B128, Field, TowerField,
     };
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -749,5 +753,141 @@ mod tests {
 
         let circuit_modules = [circuit_module];
         assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok())
+    }
+
+    #[test]
+    fn test_xor_via_linear_combination() {
+        // Binius style
+        let allocator = bumpalo::Bump::new();
+        let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+
+        let n_vars = 3;
+
+        let a = builder.add_committed("a", n_vars, B32::TOWER_LEVEL);
+        let b = builder.add_committed("b", n_vars, B32::TOWER_LEVEL);
+        let lc = builder
+            .add_linear_combination("a ^ b", n_vars, [(a, B128::ONE), (b, B128::ONE)])
+            .unwrap();
+
+        if let Some(witness) = builder.witness() {
+            let mut a_col = witness.new_column::<B32>(a);
+            let mut b_col = witness.new_column::<B32>(b);
+            let mut lc_col = witness.new_column::<B32>(lc);
+
+            let a_vals = a_col.as_mut_slice::<u32>();
+            a_vals.fill(0x0000bbbb);
+
+            let b_vals = b_col.as_mut_slice::<u32>();
+            b_vals.fill(0xaaaa0000);
+
+            let lc_vals = lc_col.as_mut_slice::<u32>();
+            lc_vals.fill(0xaaaabbbb);
+        }
+
+        let witness_binius = builder.take_witness().unwrap();
+        let cs = builder.build().unwrap();
+        binius_core::constraint_system::validate::validate_witness(&cs, &[], &witness_binius)
+            .unwrap();
+
+        // Archon style
+        let mut circuit_module = CircuitModule::new(0);
+        let a = circuit_module.add_committed::<B32>("a").unwrap();
+        let b = circuit_module.add_committed::<B32>("b").unwrap();
+        circuit_module
+            .add_linear_combination("lc", f(0), [(a, B128::ONE), (b, B128::ONE)])
+            .unwrap();
+        circuit_module.freeze_oracles();
+
+        let mut witness_module = circuit_module.init_witness_module().unwrap();
+        let a_id = witness_module.new_entry();
+        let b_id = witness_module.new_entry();
+
+        let height = 2u64.pow(n_vars as u32);
+        // we use U32 field for 'a' and 'b' columns, so divide height by 4 (4 u32 in 1 u128)
+        for _ in 0..height / 4 {
+            witness_module.push_u32s_to([0x0000bbbb, 0x0000bbbb, 0x0000bbbb, 0x0000bbbb], a_id);
+            witness_module.push_u32s_to([0xaaaa0000, 0xaaaa0000, 0xaaaa0000, 0xaaaa0000], b_id);
+        }
+
+        witness_module.bind_oracle_to::<B32>(a, a_id);
+        witness_module.bind_oracle_to::<B32>(b, b_id);
+        witness_module.populate(height).unwrap();
+
+        let witness_modules = [witness_module];
+        let circuit_modules = [circuit_module];
+        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        assert!(validate_witness(&circuit_modules, &witness_archon, &vec![]).is_ok());
+
+        // FIXME: implement comparison between two witnesses constructed via different APIs (archon / m3 / pure binius)
+        // assert_eq!(witness_archon, witness_binius)
+    }
+
+    #[test]
+    fn test_packed_b8_b32() {
+        let n_vars = 4usize;
+        let packed_log_degree = 2usize;
+        let height = 2u64.pow(n_vars as u32);
+
+        // Archon-style
+        let mut circuit_module = CircuitModule::new(0);
+        let input = circuit_module.add_committed::<B8>("input").unwrap();
+        circuit_module
+            .add_packed(
+                &format!("packed-{input}-{packed_log_degree}"),
+                input,
+                packed_log_degree,
+            )
+            .unwrap();
+        circuit_module.freeze_oracles();
+        let mut witness_module = circuit_module.init_witness_module().unwrap();
+        let entry_id = witness_module.new_entry();
+        witness_module.push_u8s_to(
+            [
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff,
+            ],
+            entry_id,
+        );
+        witness_module.bind_oracle_to::<B8>(input, entry_id);
+
+        witness_module.populate(height).unwrap();
+        let witness_modules = [witness_module];
+        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let circuit_modules = [circuit_module];
+
+        assert!(validate_witness(&circuit_modules, &witness_archon, &[]).is_ok());
+
+        // Binius-style
+        let allocator = bumpalo::Bump::new();
+        let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+        let step_down = StepDown::new(OptimalUnderlier::LOG_BITS, height as usize).unwrap();
+        let transparent = builder.add_transparent("step_down", step_down).unwrap();
+        let bytes = builder.add_committed("bytes", n_vars, B8::TOWER_LEVEL);
+        let packed = builder
+            .add_packed("packed", bytes, packed_log_degree)
+            .unwrap();
+        if let Some(witness) = builder.witness() {
+            let mut step_down_col = witness.new_column::<B1>(transparent);
+            let mut bytes_col = witness.new_column::<B8>(bytes);
+            let mut packed_col = witness.new_column::<B32>(packed);
+
+            let bytes_vals = bytes_col.as_mut_slice::<u8>();
+            bytes_vals.fill(0xff);
+
+            let packed_vals = packed_col.as_mut_slice::<u32>();
+            packed_vals.fill(0xffffffff);
+
+            // set our selector bits to 1 up to the 'height' position
+            let step_down_vals = step_down_col.as_mut_slice::<u8>();
+            step_down_vals[0..(height / 8) as usize].fill(0xff);
+        }
+        let witness_binius = builder.take_witness().unwrap();
+
+        let cs = builder.build().unwrap();
+        binius_core::constraint_system::validate::validate_witness(&cs, &[], &witness_binius)
+            .unwrap();
+
+        // FIXME: implement comparison between two witnesses constructed via different APIs (archon / m3 / pure binius)
+        // assert_eq!(witness_archon, witness_binius)
     }
 }
