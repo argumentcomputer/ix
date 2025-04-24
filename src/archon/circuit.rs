@@ -1,6 +1,6 @@
 use anyhow::{Result, bail, ensure};
 use binius_circuits::builder::ConstraintSystemBuilder;
-use binius_core::oracle::ShiftVariant;
+use binius_core::oracle::{ProjectionVariant, ShiftVariant};
 use binius_core::{
     constraint_system::{
         ConstraintSystem,
@@ -209,6 +209,30 @@ impl CircuitModule {
         self.add_oracle_info(oracle_info)
     }
 
+    pub fn add_projected(
+        &mut self,
+        name: &(impl ToString + ?Sized),
+        inner: OracleId,
+        selector: usize,
+        selector_binary: Vec<F>,
+    ) -> Result<OracleId> {
+        let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
+
+        // TODO: check that 'selector' and 'selector_binary' are consisted
+
+        let oracle_info = OracleInfo {
+            name: self.namespacer.scoped_name(name),
+            tower_level: inner_tower_level,
+            kind: OracleKind::Projected {
+                inner,
+                selector,
+                selector_binary,
+            },
+        };
+
+        self.add_oracle_info(oracle_info)
+    }
+
     #[inline]
     pub fn push_namespace<S: ToString + ?Sized>(&mut self, name: &S) {
         self.namespacer.push(name);
@@ -304,6 +328,18 @@ pub fn compile_circuit_modules(
                     *shift_offset,
                     *block_bits,
                     *variant,
+                )?,
+
+                OracleKind::Projected {
+                    inner,
+                    selector: _,
+                    selector_binary,
+                } => builder.add_projected(
+                    name,
+                    inner + oracle_offset,
+                    selector_binary.clone(),
+                    // TODO: this is hardcoded to FirstVars for now, since in newer Binius API there is a separate 'add_projected_last_vars' function
+                    ProjectionVariant::FirstVars,
                 )?,
             };
         }

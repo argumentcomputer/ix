@@ -29,6 +29,11 @@ pub enum OracleKind {
         block_bits: usize,
         variant: ShiftVariant,
     },
+    Projected {
+        inner: OracleId,
+        selector_binary: Vec<F>,
+        selector: usize,
+    },
 }
 
 pub type ModuleId = usize;

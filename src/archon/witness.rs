@@ -206,7 +206,9 @@ impl WitnessModule {
                         root_oracles.remove(inner_oracle_id);
                     }
                 }
-                OracleKind::Packed { inner, .. } | OracleKind::Shifted { inner, .. } => {
+                OracleKind::Packed { inner, .. }
+                | OracleKind::Shifted { inner, .. }
+                | OracleKind::Projected { inner, .. } => {
                     root_oracles.remove(inner);
                 }
                 OracleKind::Transparent(_) | OracleKind::StepDown => (),
@@ -235,7 +237,9 @@ impl WitnessModule {
                         stack_to_visit!(inner_oracle_id);
                     }
                 }
-                OracleKind::Packed { inner, .. } | OracleKind::Shifted { inner, .. } => {
+                OracleKind::Packed { inner, .. }
+                | OracleKind::Shifted { inner, .. }
+                | OracleKind::Projected { inner, .. } => {
                     stack_to_visit!(inner)
                 }
                 OracleKind::Transparent(_) | OracleKind::StepDown => (),
@@ -625,6 +629,52 @@ impl WitnessModule {
                     self.entries[entry_id] = underliers;
                     (entry_id, tower_level)
                 }
+
+                OracleKind::Projected {
+                    inner,
+                    selector,
+                    selector_binary,
+                } => {
+                    let tower_level = oracle_info.tower_level;
+                    let &(inner_entry_id, _) =
+                        self.entry_map.get(inner).expect("Data should be available");
+
+                    let chunk_size = 2usize.pow(u32::try_from(selector_binary.len())?);
+                    let underliers = self.entries[inner_entry_id].clone();
+                    let mut projected_field_elements = vec![];
+                    let mut projected_underliers =
+                        Vec::<OptimalUnderlier>::with_capacity(chunk_size);
+
+                    match tower_level {
+                        5 => {
+                            // tower_level = 5, means that we deal with u32, and we have 4 u32 in a single 'OptimalUnderlier' value
+                            let divisor = 4;
+                            let actual_chunk_size = chunk_size / divisor;
+
+                            // order of projected elements is important, so we can't use parallelism here
+                            underliers.chunks(actual_chunk_size).for_each(|chunk| {
+                                let chunk_idx = selector / divisor;
+                                let inner_underlier_idx = selector % divisor;
+                                let inner_underlier = unsafe {
+                                    transmute::<OptimalUnderlier, [B32; 4]>(chunk[chunk_idx])
+                                };
+                                projected_field_elements.push(inner_underlier[inner_underlier_idx]);
+                            });
+
+                            projected_field_elements.chunks(divisor).for_each(|chunk| {
+                                let array: [B32; 4] = chunk.try_into().unwrap();
+                                let projected_item =
+                                    unsafe { transmute::<[B32; 4], OptimalUnderlier>(array) };
+                                projected_underliers.push(projected_item);
+                            });
+                        }
+                        _ => unimplemented!(),
+                    }
+
+                    let entry_id = self.new_entry();
+                    self.entries[entry_id] = projected_underliers;
+                    (entry_id, tower_level)
+                }
             };
 
             self.entry_map.insert(oracle_id, oracle_entry);
@@ -864,7 +914,6 @@ mod tests {
     #[test]
     fn test_xor_via_linear_combination() {
         let n_vars = 3usize;
-
         let mut circuit_module = CircuitModule::new(0);
         let a = circuit_module.add_committed::<B32>("a").unwrap();
         let b = circuit_module.add_committed::<B32>("b").unwrap();
@@ -1033,5 +1082,50 @@ mod tests {
             optimal_underliers_num_powered,
             ShiftVariant::CircularLeft,
         );
+    }
+
+    #[test]
+    fn test_projected() {
+        let n_vars = 9usize;
+        let selector = 56; // we have long input and every "selected" item is taken into projection
+        let selector_binary = vec![
+            Field::ZERO,
+            Field::ZERO,
+            Field::ZERO,
+            Field::ONE,
+            Field::ONE,
+            Field::ONE,
+        ]; // 56 -> 0b00111000
+        let height = 2u64.pow(u32::try_from(n_vars).unwrap());
+
+        let mut circuit_module = CircuitModule::new(0);
+        let input = circuit_module.add_committed::<B32>("input").unwrap();
+        circuit_module
+            .add_projected(
+                &format!("projected-{input}"),
+                input,
+                selector,
+                selector_binary,
+            )
+            .unwrap();
+        circuit_module.freeze_oracles();
+
+        let mut witness_module = circuit_module.init_witness_module().unwrap();
+        let entry_id = witness_module.new_entry();
+
+        // let's use 'push_u32s_to' for populating
+        for _ in 0..height / 4 {
+            let push: [u32; 4] = rand::random();
+            witness_module.push_u32s_to(push, entry_id);
+        }
+
+        witness_module.bind_oracle_to::<B32>(input, entry_id);
+        witness_module.populate(height).unwrap();
+
+        let witness_modules = [witness_module];
+        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let circuit_modules = [circuit_module];
+
+        assert!(validate_witness(&circuit_modules, &witness_archon, &[]).is_ok());
     }
 }
