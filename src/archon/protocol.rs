@@ -2,8 +2,8 @@ use anyhow::Result;
 use binius_circuits::builder::types::U;
 use binius_core::{
     constraint_system::{
-        Proof as ProofCore, channel::Boundary, prove as prove_core,
-        validate::validate_witness as validate_witness_core, verify as verify_core,
+        Proof as ProofCore, channel::Boundary, prove as prove_binius,
+        validate::validate_witness as validate_witness_binius, verify as verify_binius,
     },
     fiat_shamir::HasherChallenger,
     tower::CanonicalTowerFamily,
@@ -25,8 +25,8 @@ pub struct Proof {
     modules_heights: Vec<u64>,
 }
 
-pub fn validate_witness(
-    circuit_modules: &[CircuitModule],
+pub fn validate_witness_core(
+    circuit_modules: &[&CircuitModule],
     witness: &Witness<'_>,
     boundaries: &[Boundary<F>],
 ) -> Result<()> {
@@ -35,12 +35,25 @@ pub fn validate_witness(
         modules_heights,
     } = witness;
     let constraint_system = compile_circuit_modules(circuit_modules, modules_heights)?;
-    validate_witness_core(&constraint_system, boundaries, mlei)?;
+    validate_witness_binius(&constraint_system, boundaries, mlei)?;
     Ok(())
 }
 
-pub fn prove<DomainFactory, Backend>(
+#[inline]
+pub fn validate_witness(
     circuit_modules: &[CircuitModule],
+    witness: &Witness<'_>,
+    boundaries: &[Boundary<F>],
+) -> Result<()> {
+    validate_witness_core(
+        &circuit_modules.iter().collect::<Vec<_>>(),
+        witness,
+        boundaries,
+    )
+}
+
+pub fn prove_core<DomainFactory, Backend>(
+    circuit_modules: &[&CircuitModule],
     witness: Witness<'_>,
     boundaries: &[Boundary<F>],
     log_inv_rate: usize,
@@ -56,7 +69,7 @@ where
         modules_heights,
     } = witness;
     let constraint_system = compile_circuit_modules(circuit_modules, &modules_heights)?;
-    let proof_core = prove_core::<
+    let proof_core = prove_binius::<
         U,
         CanonicalTowerFamily,
         Groestl256,
@@ -77,8 +90,31 @@ where
     })
 }
 
-pub fn verify(
+#[inline]
+pub fn prove<DomainFactory, Backend>(
     circuit_modules: &[CircuitModule],
+    witness: Witness<'_>,
+    boundaries: &[Boundary<F>],
+    log_inv_rate: usize,
+    security_bits: usize,
+    backend: &Backend,
+) -> Result<Proof>
+where
+    Backend: ComputationBackend,
+    DomainFactory: EvaluationDomainFactory<B8>,
+{
+    prove_core::<DomainFactory, Backend>(
+        &circuit_modules.iter().collect::<Vec<_>>(),
+        witness,
+        boundaries,
+        log_inv_rate,
+        security_bits,
+        backend,
+    )
+}
+
+pub fn verify_core(
+    circuit_modules: &[&CircuitModule],
     boundaries: &[Boundary<F>],
     proof: Proof,
     log_inv_rate: usize,
@@ -89,7 +125,7 @@ pub fn verify(
         modules_heights,
     } = proof;
     let constraint_system = compile_circuit_modules(circuit_modules, &modules_heights)?;
-    verify_core::<
+    verify_binius::<
         U,
         CanonicalTowerFamily,
         Groestl256,
@@ -103,6 +139,23 @@ pub fn verify(
         proof_core,
     )?;
     Ok(())
+}
+
+#[inline]
+pub fn verify(
+    circuit_modules: &[CircuitModule],
+    boundaries: &[Boundary<F>],
+    proof: Proof,
+    log_inv_rate: usize,
+    security_bits: usize,
+) -> Result<()> {
+    verify_core(
+        &circuit_modules.iter().collect::<Vec<_>>(),
+        boundaries,
+        proof,
+        log_inv_rate,
+        security_bits,
+    )
 }
 
 #[cfg(test)]

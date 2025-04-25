@@ -1,11 +1,18 @@
+use binius_core::oracle::OracleId;
 use binius_field::BinaryField128b;
-use binius_math::ArithExpr;
 
-use crate::lean::{ctor::LeanCtorObject, ffi::as_ref_unsafe, sarray::LeanSArrayObject};
+use crate::{
+    archon::arith_expr::ArithExpr,
+    lean::{
+        ctor::LeanCtorObject,
+        ffi::{as_ref_unsafe, boxed_usize_ptr_to_usize},
+        sarray::LeanSArrayObject,
+    },
+};
 
-use super::binius::external_ptr_to_u128;
+use super::external_ptr_to_u128;
 
-pub(super) fn lean_ctor_to_arith_expr(ctor: &LeanCtorObject) -> ArithExpr<BinaryField128b> {
+pub(super) fn lean_ctor_to_arith_expr(ctor: &LeanCtorObject) -> ArithExpr {
     match ctor.tag() {
         0 => {
             // Const
@@ -19,20 +26,25 @@ pub(super) fn lean_ctor_to_arith_expr(ctor: &LeanCtorObject) -> ArithExpr<Binary
             ArithExpr::Var(ptr_as_usize as usize)
         }
         2 => {
+            // Oracle
+            let [ptr] = ctor.objs();
+            ArithExpr::Oracle(boxed_usize_ptr_to_usize(ptr))
+        }
+        3 => {
             // Add
             let [x, y] = ctor.objs();
             let x = lean_ctor_to_arith_expr(as_ref_unsafe(x.cast()));
             let y = lean_ctor_to_arith_expr(as_ref_unsafe(y.cast()));
             ArithExpr::Add(Box::new(x), Box::new(y))
         }
-        3 => {
+        4 => {
             // Mul
             let [x, y] = ctor.objs();
             let x = lean_ctor_to_arith_expr(as_ref_unsafe(x.cast()));
             let y = lean_ctor_to_arith_expr(as_ref_unsafe(y.cast()));
             ArithExpr::Mul(Box::new(x), Box::new(y))
         }
-        4 => {
+        5 => {
             // Pow
             let [x, e] = ctor.objs();
             let x = lean_ctor_to_arith_expr(as_ref_unsafe(x.cast()));
@@ -42,7 +54,7 @@ pub(super) fn lean_ctor_to_arith_expr(ctor: &LeanCtorObject) -> ArithExpr<Binary
     }
 }
 
-fn arith_expr_from_bytes(bytes: &[u8]) -> ArithExpr<BinaryField128b> {
+fn arith_expr_from_bytes(bytes: &[u8]) -> ArithExpr {
     match bytes[0] {
         0 => {
             let mut slice = [0; size_of::<u128>()];
@@ -57,18 +69,24 @@ fn arith_expr_from_bytes(bytes: &[u8]) -> ArithExpr<BinaryField128b> {
             ArithExpr::Var(u)
         }
         2 => {
-            let x_size = bytes[1] as usize;
-            let x = arith_expr_from_bytes(&bytes[2..x_size + 2]);
-            let y = arith_expr_from_bytes(&bytes[x_size + 2..]);
-            ArithExpr::Add(Box::new(x), Box::new(y))
+            let mut slice = [0; size_of::<usize>()];
+            slice.copy_from_slice(&bytes[1..size_of::<usize>() + 1]);
+            let u = OracleId::from_le_bytes(slice);
+            ArithExpr::Oracle(u)
         }
         3 => {
             let x_size = bytes[1] as usize;
             let x = arith_expr_from_bytes(&bytes[2..x_size + 2]);
             let y = arith_expr_from_bytes(&bytes[x_size + 2..]);
-            ArithExpr::Mul(Box::new(x), Box::new(y))
+            ArithExpr::Add(Box::new(x), Box::new(y))
         }
         4 => {
+            let x_size = bytes[1] as usize;
+            let x = arith_expr_from_bytes(&bytes[2..x_size + 2]);
+            let y = arith_expr_from_bytes(&bytes[x_size + 2..]);
+            ArithExpr::Mul(Box::new(x), Box::new(y))
+        }
+        5 => {
             let u64_start = bytes.len() - size_of::<u64>();
             let mut u64_bytes = [0; size_of::<u64>()];
             u64_bytes.copy_from_slice(&bytes[u64_start..]);
@@ -81,7 +99,7 @@ fn arith_expr_from_bytes(bytes: &[u8]) -> ArithExpr<BinaryField128b> {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn rs_binius_arith_expr_is_equivalent_to_bytes(
+extern "C" fn rs_arith_expr_is_equivalent_to_bytes(
     arith_expr: &LeanCtorObject,
     bytes: &LeanSArrayObject,
 ) -> bool {

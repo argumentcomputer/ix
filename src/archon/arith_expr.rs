@@ -3,7 +3,7 @@ use binius_math::ArithExpr as ArithExprCore;
 
 use super::F;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum ArithExpr {
     Const(F),
     Var(usize),

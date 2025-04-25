@@ -1,11 +1,11 @@
 import LSpec
 import Tests.Common
 import Ix.Unsigned
-import Ix.Binius.ArithExpr
+import Ix.Archon.ArithExpr
 
 open LSpec SlimCheck Gen
 
-open Binius
+open Archon Binius
 
 def genArithExpr : Gen ArithExpr := getSize >>= go
   where
@@ -13,11 +13,12 @@ def genArithExpr : Gen ArithExpr := getSize >>= go
     | 0 => return .const 0
     | Nat.succ n =>
       frequency [
-        (40, .const <$> genUInt128),
-        (40, .var <$> genUSize),
+        (30, .const <$> genUInt128),
+        (30, .var <$> genUSize),
+        (30, .oracle <$> OracleId.mk <$> genUSize),
         (25, .add <$> go n <*> go n),
         (25, .mul <$> go n <*> go n),
-        (50, .pow <$> go n <*> genUInt64)
+        (40, .pow <$> go n <*> genUInt64)
       ]
 
 instance : Shrinkable ArithExpr where
