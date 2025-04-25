@@ -1,5 +1,7 @@
+use crate::archon::transparent::{Incremental, constant_from_b128};
 use anyhow::{Result, bail, ensure};
 use binius_circuits::builder::ConstraintSystemBuilder;
+use binius_core::oracle::ShiftVariant;
 use binius_core::{
     constraint_system::{
         ConstraintSystem,
@@ -12,8 +14,6 @@ use binius_field::{TowerField, arch::OptimalUnderlier, underlier::UnderlierType}
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
-
-use crate::archon::transparent::{Incremental, constant_from_b128};
 
 use super::{
     F, ModuleId, OracleInfo, OracleKind, arith_expr::ArithExpr, transparent::Transparent,
@@ -186,6 +186,32 @@ impl CircuitModule {
         self.add_oracle_info(oracle_info)
     }
 
+    pub fn add_shifted(
+        &mut self,
+        name: &(impl ToString + ?Sized),
+        inner: OracleId,
+        shift_offset: usize,
+        block_bits: usize,
+        variant: ShiftVariant,
+    ) -> Result<OracleId> {
+        let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
+
+        // Shifted columns only make sense when instantiated from BinaryField1b committed columns
+        assert_eq!(inner_tower_level, 0usize);
+
+        let oracle_info = OracleInfo {
+            name: self.namespacer.scoped_name(name),
+            tower_level: inner_tower_level,
+            kind: OracleKind::Shifted {
+                inner,
+                shift_offset,
+                block_bits,
+                variant,
+            },
+        };
+        self.add_oracle_info(oracle_info)
+    }
+
     #[inline]
     pub fn push_namespace<S: ToString + ?Sized>(&mut self, name: &S) {
         self.namespacer.push(name);
@@ -269,6 +295,19 @@ pub fn compile_circuit_modules(
                     let n_vars = n_vars_fn(*tower_level);
                     builder.add_transparent(name, StepDown::new(n_vars, height_usize)?)?
                 }
+
+                OracleKind::Shifted {
+                    inner,
+                    shift_offset,
+                    block_bits,
+                    variant,
+                } => builder.add_shifted(
+                    name,
+                    inner + oracle_offset,
+                    *shift_offset,
+                    *block_bits,
+                    *variant,
+                )?,
             };
         }
 
