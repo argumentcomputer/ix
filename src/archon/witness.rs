@@ -561,6 +561,24 @@ impl WitnessModule {
                                         unsafe { transmute::<[B8; 16], OptimalUnderlier>(tmp) }
                                 });
                         }
+                        (5, ShiftVariant::LogicalRight) => {
+                            (
+                                input_underliers.as_slice(),
+                                shifted_underliers.as_mut_slice(),
+                            )
+                                .into_par_iter()
+                                .for_each(|(underlier, shifted)| {
+                                    let out = unsafe {
+                                        transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
+                                    };
+                                    let mut tmp = out;
+                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
+                                        *tmp_i = (out_i.val() >> *shift_offset).into();
+                                    }
+                                    *shifted =
+                                        unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
+                                });
+                        }
 
                         // Logical Left
                         (3, ShiftVariant::LogicalLeft) => {
@@ -579,6 +597,24 @@ impl WitnessModule {
                                     }
                                     *shifted =
                                         unsafe { transmute::<[B8; 16], OptimalUnderlier>(tmp) }
+                                });
+                        }
+                        (5, ShiftVariant::LogicalLeft) => {
+                            (
+                                input_underliers.as_slice(),
+                                shifted_underliers.as_mut_slice(),
+                            )
+                                .into_par_iter()
+                                .for_each(|(underlier, shifted)| {
+                                    let out = unsafe {
+                                        transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
+                                    };
+                                    let mut tmp = out;
+                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
+                                        *tmp_i = (out_i.val() << *shift_offset).into();
+                                    }
+                                    *shifted =
+                                        unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
                                 });
                         }
 
@@ -966,10 +1002,37 @@ mod tests {
             ShiftVariant::LogicalRight,
         );
 
+        let input_value = 0b11100011u8;
+        let shift_offset = 1usize;
+        let block_bits = 5usize; // we consider input column storing data as u32s
+        let optimal_underliers_num_powered = 7u32;
+
+        test_inner(
+            input_value,
+            shift_offset,
+            block_bits,
+            optimal_underliers_num_powered,
+            ShiftVariant::LogicalRight,
+        );
+
         let input_value = 0b10000000u8;
         let shift_offset = 5usize;
         let block_bits = 3usize; // we consider input column storing data as bytes
         let optimal_underliers_num_powered = 8u32;
+
+        test_inner(
+            input_value,
+            shift_offset,
+            block_bits,
+            optimal_underliers_num_powered,
+            ShiftVariant::LogicalLeft,
+        );
+
+        // this test case is important for Blake3 compression
+        let input_value = 0b10100111u8;
+        let shift_offset = 1usize;
+        let block_bits = 5usize; // we consider input column storing data as u32s
+        let optimal_underliers_num_powered = 12u32;
 
         test_inner(
             input_value,
