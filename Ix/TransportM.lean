@@ -88,6 +88,16 @@ partial def dematUniv : Ix.Univ -> DematM Ixon.Univ
   dematMeta { name := .some n, info := .none, link := .none }
   .var <$> dematNat i
 
+partial def dematLevels (lvls: List Lean.Name): DematM Nat :=
+  go 0 lvls
+  where
+    go (acc: Nat) : List Lean.Name -> DematM Nat
+    | n::ns => do
+      let _ <- dematIncr
+      dematMeta { name := .some n, info := .none, link := .none}
+      go (acc+1) ns
+    | [] => pure acc
+
 def rematIncrN (x: Nat) : RematM Nat := do
   let n <- (·.idx) <$> get
   modify fun stt => { stt with idx := n + x }
@@ -106,6 +116,18 @@ def rematThrowUnexpectedNode : RematM α := do
   let n <- (·.idx) <$> get
   let m <- (·.meta) <$> read
   throw (.unexpectedNode n m)
+
+partial def rematLevels (lvls: Nat): RematM (List Lean.Name) := do
+  go [] lvls
+  where
+    go (acc: List Lean.Name): Nat -> RematM (List Lean.Name)
+    | 0 => pure acc.reverse
+    | i => do
+      let _ <- rematIncr
+      let node <- rematMeta
+      match node.name, node.info, node.link with
+      | .some n, .none, .none => go (n::acc) (i - 1)
+      | _, _, _ => rematThrowUnexpectedNode
 
 def rematBindMeta : RematM (Lean.Name × Lean.BinderInfo) := do
   let n <- rematMeta
@@ -136,7 +158,10 @@ partial def dematExpr : Ix.Expr -> DematM Ixon.Expr
   let _ <- dematIncr
   dematMeta { name := .some n, info := .none, link := .some m }
   .cnst r <$> (us.mapM dematUniv)
-| .rec_ i us => dematIncr *> .rec_ <$> dematNat i <*> (us.mapM dematUniv)
+| .rec_ n i us => do
+  let _ <- dematIncr
+  dematMeta { name := .some n, info := .none, link := .none}
+  .rec_ <$> dematNat i <*> (us.mapM dematUniv)
 | .app f a => apps f a []
 | .lam n i t b => lams (.lam n i t b) []
 | .pi n i t b => alls (.pi n i t b) []
@@ -182,7 +207,13 @@ partial def rematExpr : Ixon.Expr -> RematM Ix.Expr
   match node.name, node.link with
   | .some name, .some link => return (.const name adr link us')
   | _, _ => rematThrowUnexpectedNode
-| .rec_ i us => rematIncr *> .rec_ i.toNat <$> us.mapM rematUniv
+| .rec_ i us => do 
+  let _ <- rematIncr
+  let node <- rematMeta
+  let us' <- us.mapM rematUniv
+  match node.name with
+  | .some name => return (.rec_ name i.toNat us')
+  | _ => rematThrowUnexpectedNode
 | .apps f a as => do
   let as' <- as.reverse.mapM (fun e => rematIncr *> rematExpr e)
   let f' <- rematExpr f
@@ -216,13 +247,25 @@ partial def rematExpr : Ixon.Expr -> RematM Ix.Expr
 | .natl n => rematIncr *> return .lit (.natVal n)
 
 partial def dematConst : Ix.Const -> DematM Ixon.Const
-| .«axiom» x => .axio <$> (.mk x.lvls <$> dematExpr x.type)
-| .«theorem» x => .theo <$> (.mk x.lvls <$> dematExpr x.type <*> dematExpr x.value)
-| .«opaque» x => 
-  .opaq <$> (.mk x.lvls <$> dematExpr x.type <*> dematExpr x.value)
+| .«axiom» x => do
+  let lvls <- dematLevels x.lvls
+  let type <- dematExpr x.type
+  return .axio (.mk lvls type)
+| .«theorem» x => do
+  let lvls <- dematLevels x.lvls
+  let type <- dematExpr x.type
+  let value <- dematExpr x.value
+  return .theo (.mk lvls type value)
+| .«opaque» x => do
+  let lvls <- dematLevels x.lvls
+  let type <- dematExpr x.type
+  let value <- dematExpr x.value
+  return .opaq (.mk lvls type value)
 | .«definition» x => .defn <$> dematDefn x
-| .quotient x => .quot <$> 
-  (.mk x.lvls <$> dematExpr x.type <*> pure x.kind)
+| .quotient x => do
+  let lvls <- dematLevels x.lvls
+  let type <- dematExpr x.type
+  return .quot (.mk lvls type x.kind)
 | .inductiveProj x => do
   dematMeta { name := .none, info := .none, link := .some x.blockMeta}
   return .indcProj (.mk x.blockCont x.idx)
@@ -239,22 +282,29 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
 | .mutIndBlock xs => .mutInd <$> (xs.mapM dematInd)
   where
     dematDefn : Ix.Definition -> DematM Ixon.Definition
-    | x => .mk x.lvls <$> dematExpr x.type <*> dematExpr x.value <*> pure x.part
+    | x => do
+      let lvls <- dematLevels x.lvls 
+      let type <- dematExpr x.type
+      let value <- dematExpr x.value
+      return .mk lvls type value x.part
     dematCtor : Ix.Constructor -> DematM Ixon.Constructor
     | x => do
+      let lvls <- dematLevels x.lvls
       let t <- dematExpr x.type
-      return .mk x.lvls t x.idx x.params x.fields
+      return .mk lvls t x.idx x.params x.fields
     dematRecr : Ix.Recursor -> DematM Ixon.Recursor
     | x => do
+      let lvls <- dematLevels x.lvls
       let t <- dematExpr x.type
       let rrs <- x.rules.mapM (fun rr => .mk rr.fields <$> dematExpr rr.rhs)
-      return .mk x.lvls t x.params x.indices x.motives x.minors rrs x.isK x.internal
+      return .mk lvls t x.params x.indices x.motives x.minors rrs x.isK x.internal
     dematInd : Ix.Inductive -> DematM Ixon.Inductive
     | x => do
+      let lvls <- dematLevels x.lvls
       let t <- dematExpr x.type
       let cs <- x.ctors.mapM dematCtor
       let rs <- x.recrs.mapM dematRecr
-      return .mk x.lvls t x.params x.indices cs rs x.recr x.refl x.struct x.unit
+      return .mk lvls t x.params x.indices cs rs x.recr x.refl x.struct x.unit
 
 def constToIxon (x: Ix.Const) : Except TransportError (Ixon.Const × Ixon.Const) := 
   match EStateM.run (dematConst x) emptyDematState with
@@ -270,11 +320,25 @@ def constAddress (x: Ix.Const) : Except TransportError Address := do
   return Address.blake3 bs
 
 partial def rematConst : Ixon.Const -> RematM Ix.Const
-| .axio x => .«axiom» <$> (.mk x.lvls <$> rematExpr x.type)
-| .theo x => .«theorem» <$> (.mk x.lvls <$> rematExpr x.type <*> rematExpr x.value)
-| .opaq x => .«opaque» <$> (.mk x.lvls <$> rematExpr x.type <*> rematExpr x.value)
+| .axio x => do
+  let lvls <- rematLevels x.lvls
+  let type <- rematExpr x.type
+  return .«axiom» (.mk lvls type)
+| .theo x => do
+  let lvls <- rematLevels x.lvls
+  let type <- rematExpr x.type
+  let value <- rematExpr x.value
+  return .«theorem» (.mk lvls type value)
+| .opaq x => do
+  let lvls <- rematLevels x.lvls
+  let type <- rematExpr x.type
+  let value <- rematExpr x.value
+  return .«opaque» (.mk lvls type value)
 | .defn x => .«definition» <$> rematDefn x
-| .quot x => .quotient <$> (.mk x.lvls <$> rematExpr x.type <*> pure x.kind)
+| .quot x => do
+  let lvls <- rematLevels x.lvls
+  let type <- rematExpr x.type
+  return .quotient (.mk lvls type x.kind)
 | .indcProj x => do
   let link <- rematMeta >>= fun m => m.link.elim rematThrowUnexpectedNode pure
   return .inductiveProj (.mk x.block link x.idx)
@@ -295,21 +359,28 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
 | .comm p => throw (.rawComm p)
   where
     rematDefn : Ixon.Definition -> RematM Ix.Definition
-    | x => .mk x.lvls <$> rematExpr x.type <*> rematExpr x.value <*> pure x.part
+    | x => do
+      let lvls <- rematLevels x.lvls
+      let type <- rematExpr x.type
+      let value <- rematExpr x.value
+      return .mk lvls type value x.part
     rematCtor : Ixon.Constructor -> RematM Ix.Constructor
     | x => do
+      let lvls <- rematLevels x.lvls
       let t <- rematExpr x.type
-      return .mk x.lvls t x.idx x.params x.fields
+      return .mk lvls t x.idx x.params x.fields
     rematRecr : Ixon.Recursor -> RematM Ix.Recursor
     | x => do
+      let lvls <- rematLevels x.lvls
       let t <- rematExpr x.type
       let rrs <- x.rules.mapM (fun rr => .mk rr.fields <$> rematExpr rr.rhs)
-      return .mk x.lvls t x.params x.indices x.motives x.minors rrs x.isK x.internal
+      return .mk lvls t x.params x.indices x.motives x.minors rrs x.isK x.internal
     rematInd : Ixon.Inductive -> RematM Ix.Inductive
     | x => do
+      let lvls <- rematLevels x.lvls
       let t <- rematExpr x.type
       let cs <- x.ctors.mapM rematCtor
       let rs <- x.recrs.mapM rematRecr
-      return .mk x.lvls t x.params x.indices cs rs x.recr x.refl x.struct x.unit
+      return .mk lvls t x.params x.indices cs rs x.recr x.refl x.struct x.unit
 
 end Ix.TransportM

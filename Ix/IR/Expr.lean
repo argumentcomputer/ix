@@ -9,7 +9,7 @@ inductive Expr
   | var   (idx: Nat)
   | sort  (univ: Univ)
   | const (name: Lean.Name) (ref: Address) (meta: Address) (univs: List Univ)
-  | rec_  (idx: Nat) (univs: List Univ)
+  | rec_  (name: Lean.Name) (idx: Nat) (univs: List Univ)
   | app   (func: Expr) (argm: Expr)
   | lam   (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
   | pi    (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)

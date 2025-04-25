@@ -7,37 +7,37 @@ deriving instance BEq, Repr, Hashable, Ord for Lean.QuotKind
 namespace Ix
 
 structure Quotient where
-  lvls : Nat
+  lvls : List Lean.Name
   type : Expr
   kind : Lean.QuotKind
   deriving Ord, BEq, Hashable, Repr, Nonempty
 
 structure Axiom where
-  lvls  : Nat
+  lvls  : List Lean.Name
   type  : Expr
   deriving Ord, BEq, Hashable, Repr, Nonempty
 
 structure Theorem where
-  lvls  : Nat
+  lvls  : List Lean.Name
   type  : Expr
   value : Expr
   deriving Ord, BEq, Hashable, Repr, Nonempty
 
 structure Opaque where
-  lvls  : Nat
+  lvls  : List Lean.Name
   type  : Expr
   value : Expr
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure Definition where
-  lvls  : Nat
+  lvls  : List Lean.Name
   type  : Expr
   value : Expr
   part  : Bool
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure Constructor where
-  lvls   : Nat
+  lvls   : List Lean.Name
   type   : Expr
   idx    : Nat
   params : Nat
@@ -50,7 +50,7 @@ structure RecursorRule where
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure Recursor where
-  lvls     : Nat
+  lvls     : List Lean.Name
   type     : Expr
   params   : Nat
   indices  : Nat
@@ -62,7 +62,7 @@ structure Recursor where
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure Inductive where
-  lvls    : Nat
+  lvls    : List Lean.Name
   type    : Expr
   params  : Nat
   indices : Nat

@@ -12,7 +12,6 @@ open Ix.TransportM
 
 namespace Ix.Compile
 
-
 inductive CompileError
 | unknownConstant : Lean.Name → CompileError
 | unfilledLevelMetavariable : Lean.Level → CompileError
@@ -28,27 +27,25 @@ inductive CompileError
 | cantFindMutDefIndex : Lean.Name → CompileError
 | transportError : TransportError → CompileError
 | kernelException : Lean.Kernel.Exception → CompileError
---| storeError : StoreError → CompileError
-| todo
+| cantPackLevel : Nat → CompileError
 
---instance : ToString CompileError where toString
---| .unknownConstant n => s!"Unknown constant '{n}'"
---| .unfilledLevelMetavariable l => s!"Unfilled level metavariable on universe '{l}'"
---| .unfilledExprMetavariable e => s!"Unfilled level metavariable on expression '{e}'"
---| .invalidBVarIndex idx => s!"Invalid index {idx} for bound variable context"
---| .freeVariableExpr e => s!"Free variable in expression '{e}'"
---| .metaVariableExpr e => s!"Metavariable in expression '{e}'"
---| .metaDataExpr e => s!"Meta data in expression '{e}'"
---| .levelNotFound n ns => s!"'Level {n}' not found in '{ns}'"
---| .invalidConstantKind n ex gt =>
---  s!"Invalid constant kind for '{n}'. Expected '{ex}' but got '{gt}'"
---| .constantNotContentAddressed n => s!"Constant '{n}' wasn't content-addressed"
---| .nonRecursorExtractedFromChildren n =>
---  s!"Non-recursor '{n}' extracted from children"
---| .cantFindMutDefIndex n => s!"Can't find index for mutual definition '{n}'"
---| .transportError n => s!"Transport error '{repr n}'"
---| .kernelException e => e
---| _ => s!"todo"
+def CompileError.pretty : CompileError -> IO String
+| .unknownConstant n => pure s!"Unknown constant '{n}'"
+| .unfilledLevelMetavariable l => pure s!"Unfilled level metavariable on universe '{l}'"
+| .unfilledExprMetavariable e => pure s!"Unfilled level metavariable on expression '{e}'"
+| .invalidBVarIndex idx => pure s!"Invalid index {idx} for bound variable context"
+| .freeVariableExpr e => pure s!"Free variable in expression '{e}'"
+| .metaVariableExpr e => pure s!"Metavariable in expression '{e}'"
+| .metaDataExpr e => pure s!"Meta data in expression '{e}'"
+| .levelNotFound n ns => pure s!"'Level {n}' not found in '{ns}'"
+| .invalidConstantKind n ex gt => pure s!"Invalid constant kind for '{n}'. Expected '{ex}' but got '{gt}'"
+| .constantNotContentAddressed n => pure s!"Constant '{n}' wasn't content-addressed"
+| .nonRecursorExtractedFromChildren n => pure
+  s!"Non-recursor '{n}' extracted from children"
+| .cantFindMutDefIndex n => pure s!"Can't find index for mutual definition '{n}'"
+| .transportError n => pure s!"Transport error '{repr n}'"
+| .kernelException e => (·.pretty 80) <$> (e.toMessageData .empty).format
+| .cantPackLevel n => pure s!"Can't pack level {n} greater than 2^256'"
 
 structure CompileEnv where
   univCtx : List Lean.Name
@@ -78,7 +75,6 @@ def CompileM.run (env: CompileEnv) (stt: CompileState) (c : CompileM α)
   : EStateM.Result CompileError CompileState α
   := EStateM.run (ReaderT.run c env) stt
 
-
 def storeConst (const: Ixon.Const): CompileM Address := do
   let addr := Address.blake3 (Ixon.Serialize.put const)
   modifyGet fun stt => (addr, { stt with
@@ -98,15 +94,27 @@ def freshSecret : CompileM Address := do
   return ⟨secret⟩
 
 -- add binding name to local context
-def withBinder (name: Lean.Name) : CompileM α -> CompileM α :=
+def withBinder
+  {m : Type -> Type} {α : Type}
+  [Monad m] [MonadWithReader CompileEnv m]
+  (name: Lean.Name) 
+  : m α -> m α :=
   withReader $ fun c => { c with bindCtx := name :: c.bindCtx }
 
 -- add levels to local context
-def withLevels (lvls : List Lean.Name) : CompileM α -> CompileM α :=
+def withLevels
+  {m : Type -> Type} {α : Type}
+  [Monad m] [MonadWithReader CompileEnv m]
+  (lvls : List Lean.Name) 
+  : m α -> m α :=
   withReader $ fun c => { c with univCtx := lvls }
 
 -- add mutual recursion info to local context
-def withMutCtx (mutCtx : RBMap Lean.Name Nat compare) : CompileM α -> CompileM α :=
+def withMutCtx
+  {m : Type -> Type} {α : Type}
+  [Monad m] [MonadWithReader CompileEnv m]
+  (mutCtx : RBMap Lean.Name Nat compare) 
+  : m α -> m α :=
   withReader $ fun c => { c with mutCtx := mutCtx }
 
 -- reset local context
@@ -221,7 +229,7 @@ partial def compileConst (const : Lean.ConstantInfo)
       compileConst const
     -- The rest adds the constants to the cache one by one
     | .axiomInfo val => resetCtxWithLevels const.levelParams do
-      let c := .axiom ⟨val.levelParams.length, ← compileExpr val.type⟩
+      let c := .axiom ⟨val.levelParams, ← compileExpr val.type⟩
       let (anonAddr, metaAddr) ← hashConst c
       modify fun stt => { stt with
         axioms := stt.axioms.insert const.name (anonAddr, metaAddr)
@@ -231,7 +239,7 @@ partial def compileConst (const : Lean.ConstantInfo)
     | .thmInfo val => resetCtxWithLevels const.levelParams do
       let type <- compileExpr val.type
       let value <- compileExpr val.value
-      let c := .theorem ⟨val.levelParams.length, type, value⟩
+      let c := .theorem ⟨val.levelParams, type, value⟩
       let (anonAddr, metaAddr) ← hashConst c
       modify fun stt => { stt with
         names := stt.names.insert const.name (anonAddr, metaAddr)
@@ -241,7 +249,7 @@ partial def compileConst (const : Lean.ConstantInfo)
       let mutCtx := .single val.name 0
       let type <- compileExpr val.type
       let value <- withMutCtx mutCtx $ compileExpr val.value
-      let c := .opaque ⟨val.levelParams.length, type, value⟩
+      let c := .opaque ⟨val.levelParams, type, value⟩
       let (anonAddr, metaAddr) ← hashConst c
       modify fun stt => { stt with
         names := stt.names.insert const.name (anonAddr, metaAddr)
@@ -249,7 +257,7 @@ partial def compileConst (const : Lean.ConstantInfo)
       return (anonAddr, metaAddr)
     | .quotInfo val => resetCtxWithLevels const.levelParams do
       let type <- compileExpr val.type
-      let c := .quotient ⟨val.levelParams.length, type, val.kind⟩
+      let c := .quotient ⟨val.levelParams, type, val.kind⟩
       let (anonAddr, metaAddr) ← hashConst c
       modify fun stt => { stt with
         axioms := (stt.axioms.insert const.name (anonAddr, metaAddr))
@@ -310,7 +318,7 @@ partial def definitionToIR (defn: Lean.DefinitionVal)
   : CompileM Ix.Definition := do
   let type <- compileExpr defn.type
   let value <- compileExpr defn.value
-  return ⟨defn.levelParams.length, type, value, defn.safety == .partial⟩
+  return ⟨defn.levelParams, type, value, defn.safety == .partial⟩
 
 /--
 Content-addresses an inductive and all inductives in the mutual block as a
@@ -403,7 +411,7 @@ partial def inductiveToIR (ind : Lean.InductiveVal) : CompileM Ix.Inductive := d
     -- Structures can only have one constructor
     | [ctor] => pure (true, ctor.fields == 0)
     | _ => pure (false, false)
-  return ⟨ind.levelParams.length, ← compileExpr ind.type, ind.numParams, ind.numIndices,
+  return ⟨ind.levelParams, ← compileExpr ind.type, ind.numParams, ind.numIndices,
     -- NOTE: for the purpose of extraction, the order of `ctors` and `recs` MUST
     -- match the order used in `recrCtx`
     ctors, recs, ind.isRec, ind.isReflexive, struct, unit⟩
@@ -418,7 +426,7 @@ partial def internalRecToIR (ctors : List Lean.Name)
           let (ctor, rule) ← recRuleToIR r
           pure $ (ctor :: retCtors, rule :: retRules)
         else pure (retCtors, retRules) -- this is an external recursor rule
-    let recr := ⟨rec.levelParams.length, typ, rec.numParams, rec.numIndices,
+    let recr := ⟨rec.levelParams, typ, rec.numParams, rec.numIndices,
       rec.numMotives, rec.numMinors, retRules, rec.k, true⟩
     return (recr, retCtors)
   | const => throw $ .invalidConstantKind const.name "recursor" const.ctorName
@@ -430,7 +438,7 @@ partial def recRuleToIR (rule : Lean.RecursorRule)
   | .ctorInfo ctor => withLevels ctor.levelParams do
     let typ ← compileExpr ctor.type
     let ctor :=
-      ⟨ctor.levelParams.length, typ, ctor.cidx, ctor.numParams, ctor.numFields⟩
+      ⟨ctor.levelParams, typ, ctor.cidx, ctor.numParams, ctor.numFields⟩
     pure (ctor, ⟨rule.nfields, rhs⟩)
   | const =>
     throw $ .invalidConstantKind const.name "constructor" const.ctorName
@@ -439,7 +447,7 @@ partial def externalRecToIR : Lean.ConstantInfo → CompileM Recursor
   | .recInfo rec => withLevels rec.levelParams do
     let typ ← compileExpr rec.type
     let rules ← rec.rules.mapM externalRecRuleToIR
-    return ⟨rec.levelParams.length, typ, rec.numParams, rec.numIndices,
+    return ⟨rec.levelParams, typ, rec.numParams, rec.numIndices,
       rec.numMotives, rec.numMinors, rules, rec.k, false⟩
   | const => throw $ .invalidConstantKind const.name "recursor" const.ctorName
 
@@ -468,7 +476,7 @@ partial def compileExpr : Lean.Expr → CompileM Expr
     let univs ← lvls.mapM compileLevel
     match (← read).mutCtx.find? name with
     -- recursing!
-    | some i => return .rec_ i univs
+    | some i => return .rec_ name i univs
     | none => match (<- get).comms.find? name with
       | some (commAddr, metaAddr) => do
         return .const name commAddr metaAddr univs
@@ -645,7 +653,7 @@ partial def addDef (lvls: List Lean.Name) (typ val: Lean.Expr)
   : CompileM (Address × Address) := do
   let typ' <- compileExpr typ
   let val' <- compileExpr val
-  let (a, m) <- hashConst $ Ix.Const.definition ⟨lvls.length, typ', val', true⟩
+  let (a, m) <- hashConst $ Ix.Const.definition ⟨lvls, typ', val', true⟩
   tryAddLeanDecl (makeLeanDef a.toUniqueName lvls typ val)
   return (a, m)
 
@@ -682,7 +690,7 @@ partial def packLevel (lvls: Nat) (commit: Bool): CompileM Address :=
       }
       return commAddr
     else return lvlsAddr
-  | .none => throw .todo
+  | .none => throw $ .cantPackLevel lvls
 
 partial def checkClaim
   (const: Lean.Name)
@@ -726,25 +734,6 @@ Open references are variables that point to names which aren't present in the
 def compileDelta (delta : Lean.PersistentHashMap Lean.Name Lean.ConstantInfo)
   : CompileM Unit := do
   delta.forM fun _ c => if !c.isUnsafe then discard $ compileConst c else pure ()
-
-
-def CompileError.pretty : CompileError -> IO String
-| .unknownConstant n => pure s!"Unknown constant '{n}'"
-| .unfilledLevelMetavariable l => pure s!"Unfilled level metavariable on universe '{l}'"
-| .unfilledExprMetavariable e => pure s!"Unfilled level metavariable on expression '{e}'"
-| .invalidBVarIndex idx => pure s!"Invalid index {idx} for bound variable context"
-| .freeVariableExpr e => pure s!"Free variable in expression '{e}'"
-| .metaVariableExpr e => pure s!"Metavariable in expression '{e}'"
-| .metaDataExpr e => pure s!"Meta data in expression '{e}'"
-| .levelNotFound n ns => pure s!"'Level {n}' not found in '{ns}'"
-| .invalidConstantKind n ex gt => pure s!"Invalid constant kind for '{n}'. Expected '{ex}' but got '{gt}'"
-| .constantNotContentAddressed n => pure s!"Constant '{n}' wasn't content-addressed"
-| .nonRecursorExtractedFromChildren n => pure
-  s!"Non-recursor '{n}' extracted from children"
-| .cantFindMutDefIndex n => pure s!"Can't find index for mutual definition '{n}'"
-| .transportError n => pure s!"Transport error '{repr n}'"
-| .kernelException e => (·.pretty 80) <$> (e.toMessageData .empty).format
-| _ => pure s!"todo"
 
 def CompileM.runIO (env: Lean.Environment) (c : CompileM α) (maxHeartBeats: USize := 200000)
   : IO (α × CompileState) := do
