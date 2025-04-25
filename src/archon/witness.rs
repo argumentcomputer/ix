@@ -205,13 +205,10 @@ impl WitnessModule {
                         root_oracles.remove(inner_oracle_id);
                     }
                 }
-                OracleKind::Packed { inner, .. } => {
+                OracleKind::Packed { inner, .. } | OracleKind::Shifted { inner, .. } => {
                     root_oracles.remove(inner);
                 }
                 OracleKind::Transparent(_) | OracleKind::StepDown => (),
-                OracleKind::Shifted { inner, .. } => {
-                    root_oracles.remove(inner);
-                }
             }
         }
 
@@ -237,9 +234,10 @@ impl WitnessModule {
                         stack_to_visit!(inner_oracle_id);
                     }
                 }
-                OracleKind::Packed { inner, .. } => stack_to_visit!(inner),
+                OracleKind::Packed { inner, .. } | OracleKind::Shifted { inner, .. } => {
+                    stack_to_visit!(inner)
+                }
                 OracleKind::Transparent(_) | OracleKind::StepDown => (),
-                OracleKind::Shifted { inner, .. } => stack_to_visit!(inner),
             }
             if !is_committed {
                 compute_order.insert(oracle_id);
@@ -620,6 +618,7 @@ impl WitnessModule {
 
                         // ShiftVariant::CircularLeft (needed for Blake3 compression)
                         (5, ShiftVariant::CircularLeft) => {
+                            let shift_offset = u32::try_from(*shift_offset)?;
                             (
                                 input_underliers.as_slice(),
                                 shifted_underliers.as_mut_slice(),
@@ -631,8 +630,7 @@ impl WitnessModule {
                                     };
                                     let mut tmp = out;
                                     for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
-                                        *tmp_i =
-                                            out_i.val().rotate_left(*shift_offset as u32).into();
+                                        *tmp_i = out_i.val().rotate_left(shift_offset).into();
                                     }
                                     *shifted =
                                         unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
@@ -899,7 +897,7 @@ mod tests {
         let a_id = witness_module.new_entry();
         let b_id = witness_module.new_entry();
 
-        let height = 2u64.pow(n_vars as u32);
+        let height = 2u64.pow(u32::try_from(n_vars).unwrap());
         // we use U32 field for 'a' and 'b' columns, so divide height by 4 (4 u32 in 1 u128)
         for _ in 0..height / 4 {
             witness_module.push_u32s_to([0x0000bbbb, 0x0000bbbb, 0x0000bbbb, 0x0000bbbb], a_id);
@@ -913,14 +911,14 @@ mod tests {
         let witness_modules = [witness_module];
         let circuit_modules = [circuit_module];
         let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
-        assert!(validate_witness(&circuit_modules, &witness_archon, &vec![]).is_ok());
+        assert!(validate_witness(&circuit_modules, &witness_archon, &[]).is_ok());
     }
 
     #[test]
     fn test_packed_b8_b32() {
         let n_vars = 4usize;
         let packed_log_degree = 2usize;
-        let height = 2u64.pow(n_vars as u32);
+        let height = 2u64.pow(u32::try_from(n_vars).unwrap());
 
         let mut circuit_module = CircuitModule::new(0);
         let input = circuit_module.add_committed::<B8>("input").unwrap();
