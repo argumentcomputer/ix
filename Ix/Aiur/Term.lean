@@ -9,7 +9,7 @@ inductive Local
 
 structure Global where
   toName : Lean.Name
-  deriving BEq, Hashable
+  deriving BEq, Hashable, Inhabited
 
 def Global.init (limb : String) : Global :=
   ⟨.mkSimple limb⟩
@@ -37,7 +37,7 @@ inductive Pattern
   | primitive : Primitive → Pattern
   | tuple : List Pattern → Pattern
   | or : Pattern → Pattern → Pattern
-  deriving BEq, Hashable
+  deriving BEq, Hashable, Inhabited
 
 inductive PrimitiveType
   | u1 | u8 | u16 | u32 | u64
@@ -58,9 +58,9 @@ inductive Term
   | ref : Global → Term
   | data : Data → Term
   | ret : Term → Term
-  | «let» : Pattern → Term → Term → Term
-  | «match» : Term → List (Pattern × Term) → Term
-  | «if» : Term → Term → Term → Term
+  | let : Pattern → Term → Term → Term
+  | match : Term → List (Pattern × Term) → Term
+  | if : Term → Term → Term → Term
   | app : Global → List Term → Term
   | preimg : Global → Term → Term
   | xor : Term → Term → Term
@@ -72,7 +72,7 @@ inductive Term
   | load : Term → Term
   | pointerAsU64 : Term → Term
   | ann : Typ → Term → Term
-  deriving BEq, Hashable
+  deriving BEq, Hashable, Inhabited
 
 inductive Data
   | primitive : Primitive → Data
@@ -83,12 +83,12 @@ end
 structure Constructor where
   nameHead : String
   argTypes : List Typ
-  deriving BEq
+  deriving BEq, Inhabited
 
 structure DataType where
   name : Global
   constructors : List Constructor
-  deriving BEq
+  deriving BEq, Inhabited
 
 structure Function where
   name : Global
