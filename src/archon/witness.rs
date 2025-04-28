@@ -1,7 +1,3 @@
-use super::{
-    ModuleId, OracleInfo, OracleKind,
-    transparent::{Incremental, Transparent, replicate_within_u128},
-};
 use anyhow::{Context, Result, bail, ensure};
 use binius_core::oracle::ShiftVariant;
 use binius_core::{oracle::OracleId, witness::MultilinearExtensionIndex};
@@ -26,6 +22,11 @@ use std::{
     collections::{HashMap, hash_map::Entry},
     mem::transmute,
     sync::Arc,
+};
+
+use super::{
+    ModuleId, OracleInfo, OracleKind,
+    transparent::{Incremental, Transparent, replicate_within_u128},
 };
 
 pub type EntryId = usize;
@@ -531,23 +532,14 @@ impl WitnessModule {
                     let &(inner_entry_id, _) =
                         self.entry_map.get(inner).expect("Data should be available");
 
-                    // input
-                    let input_underliers = self.entries[inner_entry_id].clone();
-                    let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
-                    assert_eq!(num_underliers, input_underliers.len());
-
-                    // output (shifted)
-                    let mut shifted_underliers = vec![OptimalUnderlier::ZERO; num_underliers];
+                    let mut underliers = self.entries[inner_entry_id].clone();
 
                     match (block_bits, variant) {
-                        // Logical Right
                         (3, ShiftVariant::LogicalRight) => {
-                            (
-                                input_underliers.as_slice(),
-                                shifted_underliers.as_mut_slice(),
-                            )
+                            underliers
+                                .as_mut_slice()
                                 .into_par_iter()
-                                .for_each(|(underlier, shifted)| {
+                                .for_each(|underlier| {
                                     let out = unsafe {
                                         transmute::<OptimalUnderlier, [B8; 16]>(*underlier)
                                     };
@@ -555,17 +547,15 @@ impl WitnessModule {
                                     for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
                                         *tmp_i = (out_i.val() >> *shift_offset).into();
                                     }
-                                    *shifted =
+                                    *underlier =
                                         unsafe { transmute::<[B8; 16], OptimalUnderlier>(tmp) }
                                 });
                         }
                         (5, ShiftVariant::LogicalRight) => {
-                            (
-                                input_underliers.as_slice(),
-                                shifted_underliers.as_mut_slice(),
-                            )
+                            underliers
+                                .as_mut_slice()
                                 .into_par_iter()
-                                .for_each(|(underlier, shifted)| {
+                                .for_each(|underlier| {
                                     let out = unsafe {
                                         transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
                                     };
@@ -573,19 +563,15 @@ impl WitnessModule {
                                     for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
                                         *tmp_i = (out_i.val() >> *shift_offset).into();
                                     }
-                                    *shifted =
+                                    *underlier =
                                         unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
                                 });
                         }
-
-                        // Logical Left
                         (3, ShiftVariant::LogicalLeft) => {
-                            (
-                                input_underliers.as_slice(),
-                                shifted_underliers.as_mut_slice(),
-                            )
+                            underliers
+                                .as_mut_slice()
                                 .into_par_iter()
-                                .for_each(|(underlier, shifted)| {
+                                .for_each(|underlier| {
                                     let out = unsafe {
                                         transmute::<OptimalUnderlier, [B8; 16]>(*underlier)
                                     };
@@ -593,17 +579,15 @@ impl WitnessModule {
                                     for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
                                         *tmp_i = (out_i.val() << *shift_offset).into();
                                     }
-                                    *shifted =
+                                    *underlier =
                                         unsafe { transmute::<[B8; 16], OptimalUnderlier>(tmp) }
                                 });
                         }
                         (5, ShiftVariant::LogicalLeft) => {
-                            (
-                                input_underliers.as_slice(),
-                                shifted_underliers.as_mut_slice(),
-                            )
+                            underliers
+                                .as_mut_slice()
                                 .into_par_iter()
-                                .for_each(|(underlier, shifted)| {
+                                .for_each(|underlier| {
                                     let out = unsafe {
                                         transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
                                     };
@@ -611,20 +595,16 @@ impl WitnessModule {
                                     for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
                                         *tmp_i = (out_i.val() << *shift_offset).into();
                                     }
-                                    *shifted =
+                                    *underlier =
                                         unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
                                 });
                         }
-
-                        // ShiftVariant::CircularLeft (needed for Blake3 compression)
                         (5, ShiftVariant::CircularLeft) => {
                             let shift_offset = u32::try_from(*shift_offset)?;
-                            (
-                                input_underliers.as_slice(),
-                                shifted_underliers.as_mut_slice(),
-                            )
+                            underliers
+                                .as_mut_slice()
                                 .into_par_iter()
-                                .for_each(|(underlier, shifted)| {
+                                .for_each(|underlier| {
                                     let out = unsafe {
                                         transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
                                     };
@@ -632,7 +612,7 @@ impl WitnessModule {
                                     for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
                                         *tmp_i = out_i.val().rotate_left(shift_offset).into();
                                     }
-                                    *shifted =
+                                    *underlier =
                                         unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
                                 });
                         }
@@ -642,7 +622,7 @@ impl WitnessModule {
                     };
 
                     let entry_id = self.new_entry();
-                    self.entries[entry_id] = shifted_underliers;
+                    self.entries[entry_id] = underliers;
                     (entry_id, tower_level)
                 }
             };

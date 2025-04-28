@@ -1,4 +1,3 @@
-use crate::archon::transparent::{Incremental, constant_from_b128};
 use anyhow::{Result, bail, ensure};
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::oracle::ShiftVariant;
@@ -14,6 +13,8 @@ use binius_field::{TowerField, arch::OptimalUnderlier, underlier::UnderlierType}
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
+
+use crate::archon::transparent::{Incremental, constant_from_b128};
 
 use super::{
     F, ModuleId, OracleInfo, OracleKind, arith_expr::ArithExpr, transparent::Transparent,
@@ -195,10 +196,6 @@ impl CircuitModule {
         variant: ShiftVariant,
     ) -> Result<OracleId> {
         let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
-
-        // Shifted columns only make sense when instantiated from BinaryField1b committed columns
-        assert_eq!(inner_tower_level, 0usize);
-
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level: inner_tower_level,
