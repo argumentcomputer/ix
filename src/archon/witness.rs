@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail, ensure};
+use binius_core::oracle::ShiftVariant;
 use binius_core::{oracle::OracleId, witness::MultilinearExtensionIndex};
 use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
@@ -205,7 +206,7 @@ impl WitnessModule {
                         root_oracles.remove(inner_oracle_id);
                     }
                 }
-                OracleKind::Packed { inner, .. } => {
+                OracleKind::Packed { inner, .. } | OracleKind::Shifted { inner, .. } => {
                     root_oracles.remove(inner);
                 }
                 OracleKind::Transparent(_) | OracleKind::StepDown => (),
@@ -234,7 +235,9 @@ impl WitnessModule {
                         stack_to_visit!(inner_oracle_id);
                     }
                 }
-                OracleKind::Packed { inner, .. } => stack_to_visit!(inner),
+                OracleKind::Packed { inner, .. } | OracleKind::Shifted { inner, .. } => {
+                    stack_to_visit!(inner)
+                }
                 OracleKind::Transparent(_) | OracleKind::StepDown => (),
             }
             if !is_committed {
@@ -518,6 +521,110 @@ impl WitnessModule {
                     self.entries[entry_id] = underliers;
                     (entry_id, tower_level)
                 }
+                OracleKind::Shifted {
+                    inner,
+                    shift_offset,
+                    block_bits,
+                    variant,
+                } => {
+                    let tower_level = oracle_info.tower_level;
+
+                    let &(inner_entry_id, _) =
+                        self.entry_map.get(inner).expect("Data should be available");
+
+                    let mut underliers = self.entries[inner_entry_id].clone();
+
+                    match (block_bits, variant) {
+                        (3, ShiftVariant::LogicalRight) => {
+                            underliers
+                                .as_mut_slice()
+                                .into_par_iter()
+                                .for_each(|underlier| {
+                                    let out = unsafe {
+                                        transmute::<OptimalUnderlier, [B8; 16]>(*underlier)
+                                    };
+                                    let mut tmp = out;
+                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
+                                        *tmp_i = (out_i.val() >> *shift_offset).into();
+                                    }
+                                    *underlier =
+                                        unsafe { transmute::<[B8; 16], OptimalUnderlier>(tmp) }
+                                });
+                        }
+                        (5, ShiftVariant::LogicalRight) => {
+                            underliers
+                                .as_mut_slice()
+                                .into_par_iter()
+                                .for_each(|underlier| {
+                                    let out = unsafe {
+                                        transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
+                                    };
+                                    let mut tmp = out;
+                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
+                                        *tmp_i = (out_i.val() >> *shift_offset).into();
+                                    }
+                                    *underlier =
+                                        unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
+                                });
+                        }
+                        (3, ShiftVariant::LogicalLeft) => {
+                            underliers
+                                .as_mut_slice()
+                                .into_par_iter()
+                                .for_each(|underlier| {
+                                    let out = unsafe {
+                                        transmute::<OptimalUnderlier, [B8; 16]>(*underlier)
+                                    };
+                                    let mut tmp = out;
+                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
+                                        *tmp_i = (out_i.val() << *shift_offset).into();
+                                    }
+                                    *underlier =
+                                        unsafe { transmute::<[B8; 16], OptimalUnderlier>(tmp) }
+                                });
+                        }
+                        (5, ShiftVariant::LogicalLeft) => {
+                            underliers
+                                .as_mut_slice()
+                                .into_par_iter()
+                                .for_each(|underlier| {
+                                    let out = unsafe {
+                                        transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
+                                    };
+                                    let mut tmp = out;
+                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
+                                        *tmp_i = (out_i.val() << *shift_offset).into();
+                                    }
+                                    *underlier =
+                                        unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
+                                });
+                        }
+                        (5, ShiftVariant::CircularLeft) => {
+                            let shift_offset = u32::try_from(*shift_offset)?;
+                            underliers
+                                .as_mut_slice()
+                                .into_par_iter()
+                                .for_each(|underlier| {
+                                    let out = unsafe {
+                                        transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
+                                    };
+                                    let mut tmp = out;
+                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
+                                        *tmp_i = out_i.val().rotate_left(shift_offset).into();
+                                    }
+                                    *underlier =
+                                        unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
+                                });
+                        }
+                        _ => {
+                            unimplemented!();
+                        }
+                    };
+
+                    let entry_id = self.new_entry();
+                    self.entries[entry_id] = underliers;
+                    (entry_id, tower_level)
+                }
             };
 
             self.entry_map.insert(oracle_id, oracle_entry);
@@ -567,10 +674,13 @@ impl Witness<'_> {
 
 #[cfg(test)]
 mod tests {
+    use binius_core::oracle::ShiftVariant;
+    use binius_field::arch::OptimalUnderlier;
+    use binius_field::underlier::UnderlierType;
     use binius_field::{
         BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
         BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64,
-        BinaryField128b as B128,
+        BinaryField128b as B128, Field,
     };
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -749,5 +859,179 @@ mod tests {
 
         let circuit_modules = [circuit_module];
         assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok())
+    }
+
+    #[test]
+    fn test_xor_via_linear_combination() {
+        let n_vars = 3usize;
+
+        let mut circuit_module = CircuitModule::new(0);
+        let a = circuit_module.add_committed::<B32>("a").unwrap();
+        let b = circuit_module.add_committed::<B32>("b").unwrap();
+        circuit_module
+            .add_linear_combination("lc", f(0), [(a, B128::ONE), (b, B128::ONE)])
+            .unwrap();
+        circuit_module.freeze_oracles();
+
+        let mut witness_module = circuit_module.init_witness_module().unwrap();
+        let a_id = witness_module.new_entry();
+        let b_id = witness_module.new_entry();
+
+        let height = 2u64.pow(u32::try_from(n_vars).unwrap());
+        // we use U32 field for 'a' and 'b' columns, so divide height by 4 (4 u32 in 1 u128)
+        for _ in 0..height / 4 {
+            witness_module.push_u32s_to([0x0000bbbb, 0x0000bbbb, 0x0000bbbb, 0x0000bbbb], a_id);
+            witness_module.push_u32s_to([0xaaaa0000, 0xaaaa0000, 0xaaaa0000, 0xaaaa0000], b_id);
+        }
+
+        witness_module.bind_oracle_to::<B32>(a, a_id);
+        witness_module.bind_oracle_to::<B32>(b, b_id);
+        witness_module.populate(height).unwrap();
+
+        let witness_modules = [witness_module];
+        let circuit_modules = [circuit_module];
+        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        assert!(validate_witness(&circuit_modules, &witness_archon, &[]).is_ok());
+    }
+
+    #[test]
+    fn test_packed_b8_b32() {
+        let n_vars = 4usize;
+        let packed_log_degree = 2usize;
+        let height = 2u64.pow(u32::try_from(n_vars).unwrap());
+
+        let mut circuit_module = CircuitModule::new(0);
+        let input = circuit_module.add_committed::<B8>("input").unwrap();
+        circuit_module
+            .add_packed(
+                &format!("packed-{input}-{packed_log_degree}"),
+                input,
+                packed_log_degree,
+            )
+            .unwrap();
+        circuit_module.freeze_oracles();
+        let mut witness_module = circuit_module.init_witness_module().unwrap();
+        let entry_id = witness_module.new_entry();
+        witness_module.push_u8s_to(
+            [
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff,
+            ],
+            entry_id,
+        );
+        witness_module.bind_oracle_to::<B8>(input, entry_id);
+
+        witness_module.populate(height).unwrap();
+        let witness_modules = [witness_module];
+        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let circuit_modules = [circuit_module];
+
+        assert!(validate_witness(&circuit_modules, &witness_archon, &[]).is_ok());
+    }
+
+    #[test]
+    fn test_shifted() {
+        fn test_inner(
+            input_value: u8,
+            shift_offset: usize,
+            block_bits: usize,
+            optimal_underliers_num: u32,
+            variant: ShiftVariant,
+        ) {
+            let height = OptimalUnderlier::BITS * 2usize.pow(optimal_underliers_num);
+            let mut circuit_module = CircuitModule::new(0);
+            let input = circuit_module.add_committed::<B1>("input").unwrap();
+            circuit_module
+                .add_shifted("shifted", input, shift_offset, block_bits, variant)
+                .unwrap();
+
+            circuit_module.freeze_oracles();
+
+            let mut witness_module = circuit_module.init_witness_module().unwrap();
+            let entry_id = witness_module.new_entry();
+            let input_values = [input_value; 16];
+
+            for _ in 0..height / OptimalUnderlier::BITS {
+                witness_module.push_u8s_to(input_values, entry_id);
+            }
+
+            witness_module.bind_oracle_to::<B1>(input, entry_id);
+
+            witness_module.populate(height as u64).unwrap();
+
+            let witness_modules = [witness_module];
+            let circuit_modules = [circuit_module];
+            let witness_archon =
+                compile_witness_modules(&witness_modules, vec![height as u64]).unwrap();
+
+            validate_witness(&circuit_modules, &witness_archon, &[]).unwrap()
+        }
+
+        let input_value = 0b10000000u8;
+        let shift_offset = 7usize;
+        let block_bits = 3usize; // we consider input column storing data as bytes
+        let optimal_underliers_num_powered = 3u32;
+
+        test_inner(
+            input_value,
+            shift_offset,
+            block_bits,
+            optimal_underliers_num_powered,
+            ShiftVariant::LogicalRight,
+        );
+
+        let input_value = 0b11100011u8;
+        let shift_offset = 1usize;
+        let block_bits = 5usize; // we consider input column storing data as u32s
+        let optimal_underliers_num_powered = 7u32;
+
+        test_inner(
+            input_value,
+            shift_offset,
+            block_bits,
+            optimal_underliers_num_powered,
+            ShiftVariant::LogicalRight,
+        );
+
+        let input_value = 0b10000000u8;
+        let shift_offset = 5usize;
+        let block_bits = 3usize; // we consider input column storing data as bytes
+        let optimal_underliers_num_powered = 8u32;
+
+        test_inner(
+            input_value,
+            shift_offset,
+            block_bits,
+            optimal_underliers_num_powered,
+            ShiftVariant::LogicalLeft,
+        );
+
+        // this test case is important for Blake3 compression
+        let input_value = 0b10100111u8;
+        let shift_offset = 1usize;
+        let block_bits = 5usize; // we consider input column storing data as u32s
+        let optimal_underliers_num_powered = 12u32;
+
+        test_inner(
+            input_value,
+            shift_offset,
+            block_bits,
+            optimal_underliers_num_powered,
+            ShiftVariant::LogicalLeft,
+        );
+
+        // this test case is important for Blake3 compression
+        let input_value = 0b11011010u8;
+        let shift_offset = 16usize;
+        let block_bits = 5usize; // we consider input column storing data as u32s
+        let optimal_underliers_num_powered = 10u32;
+
+        test_inner(
+            input_value,
+            shift_offset,
+            block_bits,
+            optimal_underliers_num_powered,
+            ShiftVariant::CircularLeft,
+        );
     }
 }

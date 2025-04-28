@@ -1,5 +1,6 @@
 use anyhow::{Result, bail, ensure};
 use binius_circuits::builder::ConstraintSystemBuilder;
+use binius_core::oracle::ShiftVariant;
 use binius_core::{
     constraint_system::{
         ConstraintSystem,
@@ -186,6 +187,28 @@ impl CircuitModule {
         self.add_oracle_info(oracle_info)
     }
 
+    pub fn add_shifted(
+        &mut self,
+        name: &(impl ToString + ?Sized),
+        inner: OracleId,
+        shift_offset: usize,
+        block_bits: usize,
+        variant: ShiftVariant,
+    ) -> Result<OracleId> {
+        let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
+        let oracle_info = OracleInfo {
+            name: self.namespacer.scoped_name(name),
+            tower_level: inner_tower_level,
+            kind: OracleKind::Shifted {
+                inner,
+                shift_offset,
+                block_bits,
+                variant,
+            },
+        };
+        self.add_oracle_info(oracle_info)
+    }
+
     #[inline]
     pub fn push_namespace<S: ToString + ?Sized>(&mut self, name: &S) {
         self.namespacer.push(name);
@@ -269,6 +292,19 @@ pub fn compile_circuit_modules(
                     let n_vars = n_vars_fn(*tower_level);
                     builder.add_transparent(name, StepDown::new(n_vars, height_usize)?)?
                 }
+
+                OracleKind::Shifted {
+                    inner,
+                    shift_offset,
+                    block_bits,
+                    variant,
+                } => builder.add_shifted(
+                    name,
+                    inner + oracle_offset,
+                    *shift_offset,
+                    *block_bits,
+                    *variant,
+                )?,
             };
         }
 
