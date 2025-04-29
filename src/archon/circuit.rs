@@ -1,6 +1,6 @@
 use anyhow::{Result, bail, ensure};
 use binius_circuits::builder::ConstraintSystemBuilder;
-use binius_core::oracle::ShiftVariant;
+use binius_core::oracle::{ProjectionVariant, ShiftVariant};
 use binius_core::{
     constraint_system::{
         ConstraintSystem,
@@ -209,6 +209,37 @@ impl CircuitModule {
         self.add_oracle_info(oracle_info)
     }
 
+    pub fn add_projected(
+        &mut self,
+        name: &(impl ToString + ?Sized),
+        inner: OracleId,
+        selector: u64,
+    ) -> Result<OracleId> {
+        let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
+
+        let mut log2 = log2_ceil_usize(usize::try_from(selector)?);
+        if 2u64.pow(u32::try_from(log2)?) == selector {
+            log2 += 1;
+        }
+
+        let mut selector_binary: Vec<binius_circuits::builder::types::F> = (0..64)
+            .map(|n| binius_circuits::builder::types::F::from(((selector >> n) & 1) as u128))
+            .collect();
+        selector_binary.truncate(log2);
+
+        let oracle_info = OracleInfo {
+            name: self.namespacer.scoped_name(name),
+            tower_level: inner_tower_level,
+            kind: OracleKind::Projected {
+                inner,
+                selector,
+                selector_binary,
+            },
+        };
+
+        self.add_oracle_info(oracle_info)
+    }
+
     #[inline]
     pub fn push_namespace<S: ToString + ?Sized>(&mut self, name: &S) {
         self.namespacer.push(name);
@@ -305,6 +336,20 @@ pub fn compile_circuit_modules(
                     *block_bits,
                     *variant,
                 )?,
+
+                OracleKind::Projected {
+                    inner,
+                    selector: _,
+                    selector_binary,
+                } => {
+                    // TODO: handle 'add_projected' / 'add_projected_last_vars' options when switching to latest Binius
+                    builder.add_projected(
+                        name,
+                        inner + oracle_offset,
+                        selector_binary.clone(),
+                        ProjectionVariant::FirstVars,
+                    )?
+                }
             };
         }
 
