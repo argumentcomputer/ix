@@ -213,12 +213,19 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         inner: OracleId,
-        selector: usize,
-        selector_binary: Vec<F>,
+        selector: u64,
     ) -> Result<OracleId> {
         let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
 
-        // TODO: check that 'selector' and 'selector_binary' are consisted
+        let mut log2 = log2_ceil_usize(usize::try_from(selector)?);
+        if 2u64.pow(u32::try_from(log2)?) == selector {
+            log2 += 1;
+        }
+
+        let mut selector_binary: Vec<binius_circuits::builder::types::F> = (0..64)
+            .map(|n| binius_circuits::builder::types::F::from(((selector >> n) & 1) as u128))
+            .collect();
+        selector_binary.truncate(log2);
 
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
@@ -334,13 +341,15 @@ pub fn compile_circuit_modules(
                     inner,
                     selector: _,
                     selector_binary,
-                } => builder.add_projected(
-                    name,
-                    inner + oracle_offset,
-                    selector_binary.clone(),
-                    // TODO: this is hardcoded to FirstVars for now, since in newer Binius API there is a separate 'add_projected_last_vars' function
-                    ProjectionVariant::FirstVars,
-                )?,
+                } => {
+                    // TODO: handle 'add_projected' / 'add_projected_last_vars' options when switching to latest Binius
+                    builder.add_projected(
+                        name,
+                        inner + oracle_offset,
+                        selector_binary.clone(),
+                        ProjectionVariant::FirstVars,
+                    )?
+                }
             };
         }
 

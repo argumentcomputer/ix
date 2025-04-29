@@ -31,8 +31,8 @@ pub enum OracleKind {
     },
     Projected {
         inner: OracleId,
+        selector: u64,
         selector_binary: Vec<F>,
-        selector: usize,
     },
 }
 

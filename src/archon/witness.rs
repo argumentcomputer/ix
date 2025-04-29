@@ -648,13 +648,14 @@ impl WitnessModule {
                     match tower_level {
                         5 => {
                             // tower_level = 5, means that we deal with u32, and we have 4 u32 in a single 'OptimalUnderlier' value
-                            let divisor = 4;
+                            let selector = usize::try_from(*selector)?;
+                            let divisor = 4usize;
                             let actual_chunk_size = chunk_size / divisor;
+                            let chunk_idx = selector / divisor;
+                            let inner_underlier_idx = selector % divisor;
 
                             // order of projected elements is important, so we can't use parallelism here
                             underliers.chunks(actual_chunk_size).for_each(|chunk| {
-                                let chunk_idx = selector / divisor;
-                                let inner_underlier_idx = selector % divisor;
                                 let inner_underlier = unsafe {
                                     transmute::<OptimalUnderlier, [B32; 4]>(chunk[chunk_idx])
                                 };
@@ -1087,26 +1088,14 @@ mod tests {
     #[test]
     fn test_projected() {
         let n_vars = 9usize;
-        let selector = 56; // we have long input and every "selected" item is taken into projection
-        let selector_binary = vec![
-            Field::ZERO,
-            Field::ZERO,
-            Field::ZERO,
-            Field::ONE,
-            Field::ONE,
-            Field::ONE,
-        ]; // 56 -> 0b00111000
+        let selector = 56u64; // we have long input and every "selected" item is taken into projection
+
         let height = 2u64.pow(u32::try_from(n_vars).unwrap());
 
         let mut circuit_module = CircuitModule::new(0);
         let input = circuit_module.add_committed::<B32>("input").unwrap();
         circuit_module
-            .add_projected(
-                &format!("projected-{input}"),
-                input,
-                selector,
-                selector_binary,
-            )
+            .add_projected(&format!("projected-{input}"), input, selector)
             .unwrap();
         circuit_module.freeze_oracles();
 
