@@ -65,7 +65,6 @@ inductive Term
   | preimg : Global → Term → Term
   | xor : Term → Term → Term
   | and : Term → Term → Term
-  | inv : Term → Term
   | get : Term → Nat → Term
   | slice : Term → Nat → Nat → Term
   | store : Term → Term

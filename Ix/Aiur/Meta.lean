@@ -143,7 +143,6 @@ syntax ("." noWs)? ident "(" trm (", " trm)* ")"          : trm
 syntax "preimg" "(" ("." noWs)? ident ", " trm ")"        : trm
 syntax "xor" "(" trm ", " trm ")"                         : trm
 syntax "and" "(" trm ", " trm ")"                         : trm
-syntax "inv" "(" trm ")"                                  : trm
 syntax "get" "(" trm ", " num ")"                         : trm
 syntax "slice" "(" trm ", " num ", " num ")"              : trm
 syntax "store" "(" trm ")"                                : trm
@@ -191,8 +190,6 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.xor #[← elabTrm a, ← elabTrm b]
   | `(trm| and($a:trm, $b:trm)) => do
     mkAppM ``Term.and #[← elabTrm a, ← elabTrm b]
-  | `(trm| inv($a:trm)) => do
-    mkAppM ``Term.inv #[← elabTrm a]
   | `(trm| get($a:trm, $i:num)) => do
     mkAppM ``Term.get #[← elabTrm a, toExpr i.getNat]
   | `(trm| slice($a:trm, $i:num, $j:num)) => do

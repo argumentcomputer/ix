@@ -168,7 +168,6 @@ partial def inferTerm : Term → CheckM InferredType
     | _ => throw $ .unboundVariable func
   | .xor a b => checkNumBinOp a b
   | .and a b => checkNumBinOp a b
-  | .inv a => .evaluates <$> inferNumber a
   | .get tup i => do
     -- Retrieves the type of an element in a tuple by its index. Errors if the index is out of bounds.
     let typs ← inferTuple tup
