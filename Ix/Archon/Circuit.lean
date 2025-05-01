@@ -1,4 +1,5 @@
 import Ix.Archon.ArithExpr
+import Ix.Archon.Transparent
 import Ix.Archon.Witness
 
 namespace Archon
@@ -40,6 +41,10 @@ opaque assertNotZero : CircuitModule → OracleId → CircuitModule
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_committed"]
 opaque addCommitted : CircuitModule → @& String → TowerField → OracleId × CircuitModule
+
+/-- **Invalidates** the input `CircuitModule` -/
+@[never_extract, extern "c_rs_circuit_module_add_transparent"]
+opaque addTransparent : CircuitModule → @& String → @& Transparent → OracleId × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_linear_combination"]

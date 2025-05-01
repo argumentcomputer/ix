@@ -182,6 +182,25 @@ extern lean_obj_res c_rs_circuit_module_add_committed(
     return tuple;
 }
 
+extern lean_obj_res c_rs_circuit_module_add_transparent(
+    lean_obj_arg l_circuit,
+    b_lean_obj_arg name,
+    b_lean_obj_arg transparent
+) {
+    linear_object *linear = validated_linear(l_circuit);
+    char const *chars = lean_string_cstr(name);
+    size_t oracle_id = rs_circuit_module_add_transparent(
+        get_object_ref(linear),
+        chars,
+        transparent
+    );
+    linear_object *new_linear = linear_bump(linear);
+    lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(tuple, 0, lean_box_usize(oracle_id));
+    lean_ctor_set(tuple, 1, alloc_lean_linear_object(new_linear));
+    return tuple;
+}
+
 extern lean_obj_res c_rs_circuit_module_add_linear_combination(
     lean_obj_arg l_circuit,
     b_lean_obj_arg name,
@@ -242,7 +261,7 @@ extern lean_obj_res c_rs_circuit_module_pop_namespace(lean_obj_arg l_circuit) {
     return alloc_lean_linear_object(new_linear);
 }
 
-/* --- protocol --- */
+/* --- Protocol --- */
 
 extern lean_obj_res c_rs_validate_witness(
     b_lean_obj_arg l_circuit_modules,

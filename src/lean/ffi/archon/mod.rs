@@ -1,6 +1,7 @@
 pub mod arith_expr;
 pub mod circuit;
 pub mod protocol;
+pub mod transparent;
 pub mod witness;
 
 use binius_core::oracle::OracleId;

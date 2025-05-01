@@ -16,7 +16,7 @@ use crate::{
         ffi::{
             archon::{
                 arith_expr::lean_ctor_to_arith_expr, boxed_usize_ptr_to_usize,
-                ctor_ptr_to_lc_factor,
+                ctor_ptr_to_lc_factor, transparent::lean_ctor_ptr_to_transparent,
             },
             drop_raw, raw_to_str, to_raw,
         },
@@ -103,6 +103,19 @@ extern "C" fn rs_circuit_module_add_committed(
         _ => unreachable!(),
     }
     .expect("CircuitModule::add_committed failure")
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_circuit_module_add_transparent(
+    circuit_module: &mut CircuitModule,
+    name: *const c_char,
+    transparent_ptr: *const LeanCtorObject,
+) -> OracleId {
+    let name = raw_to_str(name);
+    let transparent = lean_ctor_ptr_to_transparent(transparent_ptr);
+    circuit_module
+        .add_transparent(name, transparent)
+        .expect("CircuitModule::add_transparent failure")
 }
 
 #[unsafe(no_mangle)]

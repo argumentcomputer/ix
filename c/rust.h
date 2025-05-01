@@ -29,6 +29,7 @@ void rs_circuit_module_flush(void*, bool, size_t, b_lean_obj_arg, uint64_t);
 void rs_circuit_module_assert_zero(void*, char const*, b_lean_obj_arg, b_lean_obj_arg);
 void rs_circuit_module_assert_not_zero(void*, size_t);
 size_t rs_circuit_module_add_committed(void*, char const *, uint8_t);
+size_t rs_circuit_module_add_transparent(void*, char const *, b_lean_obj_arg);
 size_t rs_circuit_module_add_linear_combination(
     void*, char const *, b_lean_obj_arg, b_lean_obj_arg
 );

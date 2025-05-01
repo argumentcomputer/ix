@@ -59,6 +59,14 @@ pub(super) fn as_ref_unsafe<'a, T>(ptr: *const T) -> &'a T {
 }
 
 /// ```c
+/// bool lean_is_scalar(lean_object * o) { return ((size_t)(o) & 1) == 1; }
+/// ```
+#[inline]
+pub(super) fn lean_is_scalar<T>(ptr: *const T) -> bool {
+    ptr as usize & 1 == 1
+}
+
+/// ```c
 /// size_t lean_unbox(lean_object * o) { return (size_t)(o) >> 1; }
 /// ```
 #[macro_export]
