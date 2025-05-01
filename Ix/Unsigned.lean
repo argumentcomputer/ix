@@ -44,6 +44,9 @@ def toNat (u128 : @& UInt128) : Nat :=
 instance : Repr UInt128 where
   reprPrec x prec := reprPrec x.toNat prec
 
+instance : ToString UInt128 where
+  toString x := toString x.toNat
+
 @[extern "c_u128_cmp"]
 def cmpCore (a : @& UInt128) (b : @& UInt128) : Ordering :=
   compare a.toNat b.toNat

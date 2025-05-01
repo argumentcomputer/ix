@@ -258,7 +258,7 @@ impl CircuitModule {
 }
 
 pub fn compile_circuit_modules(
-    modules: &[CircuitModule],
+    modules: &[&CircuitModule],
     modules_heights: &[u64],
 ) -> Result<ConstraintSystem<F>> {
     ensure!(

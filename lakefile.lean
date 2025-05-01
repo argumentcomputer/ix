@@ -57,7 +57,7 @@ extern_lib ix_c pkg := do
   let compiler := "cc"
   let cDir := pkg.dir / "c"
   let buildCDir := pkg.buildDir / "c"
-  let weakArgs := #["-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
+  let weakArgs := #["-fPIC", "-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
 
   let cDirEntries ← cDir.readDir
 

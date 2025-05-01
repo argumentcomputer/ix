@@ -31,6 +31,7 @@ use super::{
 
 pub type EntryId = usize;
 
+#[derive(Default)]
 pub struct WitnessModule {
     module_id: ModuleId,
     oracles: Arc<Vec<OracleInfo>>,
