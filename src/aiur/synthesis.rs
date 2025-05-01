@@ -2,7 +2,7 @@
 
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::{
-    constraint_system::channel::{ChannelId, FlushDirection},
+    constraint_system::channel::{ChannelId, FlushDirection, OracleOrConst},
     oracle::OracleId,
     transparent::{constant::Constant, step_down::StepDown},
 };
@@ -496,7 +496,7 @@ fn synthesize_constraints(
         let sel = sel.to_sum_b1(builder, virt_map, log_n);
         let oracles = args
             .iter()
-            .map(|arg| arg.to_sum_b64(builder, virt_map, log_n))
+            .map(|arg| OracleOrConst::Oracle(arg.to_sum_b64(builder, virt_map, log_n)))
             .collect::<Vec<_>>();
         match channel {
             Channel::Add => builder
@@ -562,6 +562,8 @@ pub fn provide(
     }
     send_args.push(ones);
     receive_args.push(multiplicity);
+    let send_args = send_args.into_iter().map(OracleOrConst::Oracle);
+    let receive_args = receive_args.into_iter().map(OracleOrConst::Oracle);
     builder.send(channel_id, count, send_args).unwrap();
     builder.receive(channel_id, count, receive_args).unwrap();
 }
@@ -593,6 +595,8 @@ fn require(
     }
     receive_args.push(prev_index);
     send_args.push(index);
+    let send_args = send_args.into_iter().map(OracleOrConst::Oracle);
+    let receive_args = receive_args.into_iter().map(OracleOrConst::Oracle);
     builder
         .flush_custom(FlushDirection::Pull, channel_id, sel, receive_args, 1)
         .unwrap();
@@ -611,9 +615,8 @@ mod tests {
             // validate::validate_witness,
         },
         fiat_shamir::HasherChallenger,
-        tower::CanonicalTowerFamily,
     };
-    use binius_field::{Field, underlier::WithUnderlier};
+    use binius_field::{Field, tower::CanonicalTowerFamily, underlier::WithUnderlier};
     use binius_hal::make_portable_backend;
     use binius_hash::groestl::Groestl256ByteCompression;
     use groestl_crypto::Groestl256;

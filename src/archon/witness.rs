@@ -41,7 +41,7 @@ pub struct WitnessModule {
 }
 
 pub struct Witness<'a> {
-    pub(crate) mlei: MultilinearExtensionIndex<'a, OptimalUnderlier, B128>,
+    pub(crate) mlei: MultilinearExtensionIndex<'a, PackedType<OptimalUnderlier, B128>>,
     /// The heights for each module. `0` means that the circuit module is
     /// deactivated and must be skipped during compilation.
     pub(crate) modules_heights: Vec<u64>,

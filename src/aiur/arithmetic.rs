@@ -5,8 +5,8 @@ use binius_circuits::{
     builder::{ConstraintSystemBuilder, witness},
 };
 use binius_core::{
-    constraint_system::channel::ChannelId,
-    oracle::{OracleId, ProjectionVariant, ShiftVariant},
+    constraint_system::channel::{ChannelId, OracleOrConst},
+    oracle::{OracleId, ShiftVariant},
 };
 use binius_field::{
     Field,
@@ -72,7 +72,7 @@ impl AddCols {
         let packed_zout = builder.add_packed("packed_zout", zout, B64_LEVEL).unwrap();
         let args = [B128::ONE; B64_LEVEL].to_vec();
         let projected_cout = builder
-            .add_projected("projected_cout", cout, args, ProjectionVariant::FirstVars)
+            .add_projected("projected_cout", cout, args, 0)
             .unwrap();
         AddCols {
             xin,
@@ -150,7 +150,8 @@ fn constrain_add(
         cols.packed_yin,
         cols.packed_zout,
         cols.projected_cout,
-    ];
+    ]
+    .map(OracleOrConst::Oracle);
     builder.receive(add_channel_id, count, args).unwrap();
 }
 
@@ -292,7 +293,7 @@ fn constrain_mul(
     .unwrap();
     let zout_bits = (&zout_bits[0..64]).try_into().unwrap();
     bit_decomposition(builder, zout_bits, cols.zout);
-    let args = [cols.xin, cols.yin, cols.zout];
+    let args = [cols.xin, cols.yin, cols.zout].map(OracleOrConst::Oracle);
     builder.receive(mul_channel_id, count, args).unwrap();
 }
 
