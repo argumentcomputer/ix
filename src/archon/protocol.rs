@@ -6,9 +6,8 @@ use binius_core::{
         validate::validate_witness as validate_witness_binius, verify as verify_binius,
     },
     fiat_shamir::HasherChallenger,
-    tower::CanonicalTowerFamily,
 };
-use binius_field::BinaryField8b as B8;
+use binius_field::{BinaryField8b as B8, tower::CanonicalTowerFamily};
 use binius_hal::ComputationBackend;
 use binius_hash::groestl::Groestl256ByteCompression;
 use binius_math::EvaluationDomainFactory;

@@ -1,6 +1,7 @@
 use anyhow::{Result, bail, ensure};
 use binius_circuits::builder::ConstraintSystemBuilder;
-use binius_core::oracle::{ProjectionVariant, ShiftVariant};
+use binius_core::constraint_system::channel::OracleOrConst;
+use binius_core::oracle::ShiftVariant;
 use binius_core::{
     constraint_system::{
         ConstraintSystem,
@@ -39,7 +40,7 @@ pub fn init_witness_modules(circuit_modules: &[CircuitModule]) -> Result<Vec<Wit
 pub struct CircuitModule {
     module_id: ModuleId,
     oracles: Freezable<Vec<OracleInfo>>,
-    flushes: Vec<Flush>,
+    flushes: Vec<Flush<F>>,
     constraints: Vec<Constraint>,
     non_zero_oracle_ids: Vec<OracleId>,
     namespacer: Namespacer,
@@ -92,10 +93,10 @@ impl CircuitModule {
         multiplicity: u64,
     ) {
         self.flushes.push(Flush {
-            oracles: oracle_ids.into_iter().collect(),
+            oracles: oracle_ids.into_iter().map(OracleOrConst::Oracle).collect(),
             channel_id,
             direction,
-            selector,
+            selector: Some(selector),
             multiplicity,
         });
     }
@@ -222,8 +223,8 @@ impl CircuitModule {
             log2 += 1;
         }
 
-        let mut selector_binary: Vec<binius_circuits::builder::types::F> = (0..64)
-            .map(|n| binius_circuits::builder::types::F::from(((selector >> n) & 1) as u128))
+        let mut selector_binary: Vec<F> = (0..64)
+            .map(|n| F::from(((selector >> n) & 1) as u128))
             .collect();
         selector_binary.truncate(log2);
 
@@ -341,15 +342,12 @@ pub fn compile_circuit_modules(
                     inner,
                     selector: _,
                     selector_binary,
-                } => {
-                    // TODO: handle 'add_projected' / 'add_projected_last_vars' options when switching to latest Binius
-                    builder.add_projected(
-                        name,
-                        inner + oracle_offset,
-                        selector_binary.clone(),
-                        ProjectionVariant::FirstVars,
-                    )?
-                }
+                } => builder.add_projected(
+                    name,
+                    inner + oracle_offset,
+                    selector_binary.clone(),
+                    0,
+                )?,
             };
         }
 
@@ -378,11 +376,16 @@ pub fn compile_circuit_modules(
             multiplicity,
         } in &module.flushes
         {
+            let selector = selector.expect("Archon flushes require oracle selectors");
+            let oracles = oracles.iter().map(|o| match o {
+                OracleOrConst::Const { .. } => *o,
+                OracleOrConst::Oracle(o) => OracleOrConst::Oracle(o + oracle_offset),
+            });
             builder.flush_custom(
                 *direction,
                 *channel_id,
                 selector + oracle_offset,
-                oracles.iter().map(|o| o + oracle_offset),
+                oracles,
                 *multiplicity,
             )?;
         }
