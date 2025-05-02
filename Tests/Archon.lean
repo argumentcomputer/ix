@@ -4,7 +4,19 @@ import Ix.Archon.Protocol
 
 open LSpec Archon
 
-def Tests.Archon.linearCombinationSuite : List TestSeq := Id.run do
+def transparent : TestSeq :=
+  let circuitModule := CircuitModule.new 0
+  let (_, circuitModule) := circuitModule.addTransparent "constant" (.constant 300)
+  let (_, circuitModule) := circuitModule.addTransparent "incremental" .incremental
+  let circuitModule := circuitModule.freezeOracles
+  let witnessModule := circuitModule.initWitnessModule
+  let height := 91
+  let witnessModule := witnessModule.populate height
+  let witness := compileWitnessModules #[witnessModule] #[height]
+  withExceptOk "Archon transparents work"
+    (validateWitness #[circuitModule] witness #[]) fun _ => .done
+
+def linearCombination : TestSeq := Id.run do
   let circuitModule := CircuitModule.new 0
   let (b1, circuitModule) := circuitModule.addCommitted "b1" .b1
   let (b2, circuitModule) := circuitModule.addCommitted "b2" .b2
@@ -45,7 +57,10 @@ def Tests.Archon.linearCombinationSuite : List TestSeq := Id.run do
   let height := 128
   witnessModule := witnessModule.populate height
   let witness := compileWitnessModules #[witnessModule] #[height]
-  [
-    withExceptOk "Archon works with linear combinations"
-      (validateWitness #[circuitModule] witness #[]) fun _ => .done
+  withExceptOk "Archon linear combination works"
+    (validateWitness #[circuitModule] witness #[]) fun _ => .done
+
+def Tests.Archon.suite := [
+    transparent,
+    linearCombination,
   ]
