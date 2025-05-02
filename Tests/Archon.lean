@@ -4,17 +4,19 @@ import Ix.Archon.Protocol
 
 open LSpec Archon
 
+def populateAndValidate (circuitModule : CircuitModule)
+    (witnessModule : WitnessModule) height msg :=
+  let witnessModule := witnessModule.populate height
+  let witness := compileWitnessModules #[witnessModule] #[height]
+  withExceptOk msg (validateWitness #[circuitModule] witness #[]) fun _ => .done
+
 def transparent : TestSeq :=
   let circuitModule := CircuitModule.new 0
   let (_, circuitModule) := circuitModule.addTransparent "constant" (.constant 300)
   let (_, circuitModule) := circuitModule.addTransparent "incremental" .incremental
   let circuitModule := circuitModule.freezeOracles
   let witnessModule := circuitModule.initWitnessModule
-  let height := 91
-  let witnessModule := witnessModule.populate height
-  let witness := compileWitnessModules #[witnessModule] #[height]
-  withExceptOk "Archon transparents work"
-    (validateWitness #[circuitModule] witness #[]) fun _ => .done
+  populateAndValidate circuitModule witnessModule 91 "Archon transparents work"
 
 def linearCombination : TestSeq := Id.run do
   let circuitModule := CircuitModule.new 0
@@ -54,13 +56,33 @@ def linearCombination : TestSeq := Id.run do
     | 7 => witnessModule := witnessModule.bindOracleTo oracleId entryId .b128
     | _ => unreachable!
 
-  let height := 128
-  witnessModule := witnessModule.populate height
-  let witness := compileWitnessModules #[witnessModule] #[height]
-  withExceptOk "Archon linear combination works"
-    (validateWitness #[circuitModule] witness #[]) fun _ => .done
+  populateAndValidate circuitModule witnessModule 128 "Archon linear combination works"
+
+def packed : TestSeq :=
+  let circuitModule := CircuitModule.new 0
+  let (x, circuitModule) := circuitModule.addCommitted "x" .b1
+  let (_, circuitModule) := circuitModule.addPacked "packed" x 2
+  let circuitModule := circuitModule.freezeOracles
+  let witnessModule := circuitModule.initWitnessModule
+  let (entryId, witnessModule) := witnessModule.addEntryWithCapacity 7
+  let witnessModule := witnessModule.pushUInt128To 2347928368726 entryId
+  let witnessModule := witnessModule.bindOracleTo x entryId .b1
+  populateAndValidate circuitModule witnessModule 128 "Archon packed works"
+
+def shifted : TestSeq :=
+  let circuitModule := CircuitModule.new 0
+  let (x, circuitModule) := circuitModule.addCommitted "x" .b1
+  let (_, circuitModule) := circuitModule.addShifted "shifted" x 2 4 .logicalLeft
+  let circuitModule := circuitModule.freezeOracles
+  let witnessModule := circuitModule.initWitnessModule
+  let (entryId, witnessModule) := witnessModule.addEntryWithCapacity 7
+  let witnessModule := witnessModule.pushUInt128To 2347928368726 entryId
+  let witnessModule := witnessModule.bindOracleTo x entryId .b1
+  populateAndValidate circuitModule witnessModule 128 "Archon shifted works"
 
 def Tests.Archon.suite := [
     transparent,
     linearCombination,
+    packed,
+    shifted,
   ]

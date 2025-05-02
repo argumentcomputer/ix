@@ -25,14 +25,14 @@ pub enum OracleKind {
     StepDown,
     Shifted {
         inner: OracleId,
-        shift_offset: usize,
+        shift_offset: u32,
         block_bits: usize,
         variant: ShiftVariant,
     },
     Projected {
         inner: OracleId,
-        selector: u64,
-        selector_binary: Vec<F>,
+        mask: u64,
+        mask_bits: Vec<F>,
     },
 }
 

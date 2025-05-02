@@ -539,91 +539,78 @@ impl WitnessModule {
 
                     let mut underliers = self.entries[inner_entry_id].clone();
 
+                    macro_rules! shift_underliers {
+                        ($parts_typ:ty, $f:expr) => {
+                            underliers.par_iter_mut().for_each(|underlier| {
+                                let mut out = unsafe {
+                                    transmute::<OptimalUnderlier, $parts_typ>(*underlier)
+                                };
+                                for out_i in out.iter_mut() {
+                                    *out_i = $f(out_i).into();
+                                }
+                                *underlier =
+                                    unsafe { transmute::<$parts_typ, OptimalUnderlier>(out) };
+                            });
+                        };
+                    }
+
                     match (block_bits, variant) {
                         (3, ShiftVariant::LogicalRight) => {
-                            underliers
-                                .as_mut_slice()
-                                .into_par_iter()
-                                .for_each(|underlier| {
-                                    let out = unsafe {
-                                        transmute::<OptimalUnderlier, [B8; 16]>(*underlier)
-                                    };
-                                    let mut tmp = out;
-                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
-                                        *tmp_i = (out_i.val() >> *shift_offset).into();
-                                    }
-                                    *underlier =
-                                        unsafe { transmute::<[B8; 16], OptimalUnderlier>(tmp) }
-                                });
-                        }
-                        (5, ShiftVariant::LogicalRight) => {
-                            underliers
-                                .as_mut_slice()
-                                .into_par_iter()
-                                .for_each(|underlier| {
-                                    let out = unsafe {
-                                        transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
-                                    };
-                                    let mut tmp = out;
-                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
-                                        *tmp_i = (out_i.val() >> *shift_offset).into();
-                                    }
-                                    *underlier =
-                                        unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
-                                });
+                            shift_underliers!([B8; 16], |x: &B8| x.val() >> shift_offset);
                         }
                         (3, ShiftVariant::LogicalLeft) => {
-                            underliers
-                                .as_mut_slice()
-                                .into_par_iter()
-                                .for_each(|underlier| {
-                                    let out = unsafe {
-                                        transmute::<OptimalUnderlier, [B8; 16]>(*underlier)
-                                    };
-                                    let mut tmp = out;
-                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
-                                        *tmp_i = (out_i.val() << *shift_offset).into();
-                                    }
-                                    *underlier =
-                                        unsafe { transmute::<[B8; 16], OptimalUnderlier>(tmp) }
-                                });
+                            shift_underliers!([B8; 16], |x: &B8| x.val() << shift_offset);
+                        }
+                        (3, ShiftVariant::CircularLeft) => {
+                            shift_underliers!([B8; 16], |x: &B8| x
+                                .val()
+                                .rotate_left(*shift_offset));
+                        }
+                        (4, ShiftVariant::LogicalRight) => {
+                            shift_underliers!([B16; 8], |x: &B16| x.val() >> shift_offset);
+                        }
+                        (4, ShiftVariant::LogicalLeft) => {
+                            shift_underliers!([B16; 8], |x: &B16| x.val() << shift_offset);
+                        }
+                        (4, ShiftVariant::CircularLeft) => {
+                            shift_underliers!([B16; 8], |x: &B16| x
+                                .val()
+                                .rotate_left(*shift_offset));
+                        }
+                        (5, ShiftVariant::LogicalRight) => {
+                            shift_underliers!([B32; 4], |x: &B32| x.val() >> shift_offset);
                         }
                         (5, ShiftVariant::LogicalLeft) => {
-                            underliers
-                                .as_mut_slice()
-                                .into_par_iter()
-                                .for_each(|underlier| {
-                                    let out = unsafe {
-                                        transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
-                                    };
-                                    let mut tmp = out;
-                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
-                                        *tmp_i = (out_i.val() << *shift_offset).into();
-                                    }
-                                    *underlier =
-                                        unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
-                                });
+                            shift_underliers!([B32; 4], |x: &B32| x.val() << shift_offset);
                         }
                         (5, ShiftVariant::CircularLeft) => {
-                            let shift_offset = u32::try_from(*shift_offset)?;
-                            underliers
-                                .as_mut_slice()
-                                .into_par_iter()
-                                .for_each(|underlier| {
-                                    let out = unsafe {
-                                        transmute::<OptimalUnderlier, [B32; 4]>(*underlier)
-                                    };
-                                    let mut tmp = out;
-                                    for (out_i, tmp_i) in out.into_iter().zip(tmp.iter_mut()) {
-                                        *tmp_i = out_i.val().rotate_left(shift_offset).into();
-                                    }
-                                    *underlier =
-                                        unsafe { transmute::<[B32; 4], OptimalUnderlier>(tmp) }
-                                });
+                            shift_underliers!([B32; 4], |x: &B32| x
+                                .val()
+                                .rotate_left(*shift_offset));
                         }
-                        _ => {
-                            unimplemented!();
+                        (6, ShiftVariant::LogicalRight) => {
+                            shift_underliers!([B64; 2], |x: &B64| x.val() >> shift_offset);
                         }
+                        (6, ShiftVariant::LogicalLeft) => {
+                            shift_underliers!([B64; 2], |x: &B64| x.val() << shift_offset);
+                        }
+                        (6, ShiftVariant::CircularLeft) => {
+                            shift_underliers!([B64; 2], |x: &B64| x
+                                .val()
+                                .rotate_left(*shift_offset));
+                        }
+                        (7, ShiftVariant::LogicalRight) => {
+                            shift_underliers!([B128; 1], |x: &B128| x.val() >> shift_offset);
+                        }
+                        (7, ShiftVariant::LogicalLeft) => {
+                            shift_underliers!([B128; 1], |x: &B128| x.val() << shift_offset);
+                        }
+                        (7, ShiftVariant::CircularLeft) => {
+                            shift_underliers!([B128; 1], |x: &B128| x
+                                .val()
+                                .rotate_left(*shift_offset));
+                        }
+                        _ => unimplemented!(),
                     };
 
                     let entry_id = self.new_entry();
@@ -633,14 +620,14 @@ impl WitnessModule {
 
                 OracleKind::Projected {
                     inner,
-                    selector,
-                    selector_binary,
+                    mask,
+                    mask_bits,
                 } => {
                     let tower_level = oracle_info.tower_level;
                     let &(inner_entry_id, _) =
                         self.entry_map.get(inner).expect("Data should be available");
 
-                    let chunk_size = 2usize.pow(u32::try_from(selector_binary.len())?);
+                    let chunk_size = 2usize.pow(u32::try_from(mask_bits.len())?);
                     let underliers = self.entries[inner_entry_id].clone();
                     let mut projected_field_elements = vec![];
                     let mut projected_underliers =
@@ -648,12 +635,13 @@ impl WitnessModule {
 
                     match tower_level {
                         5 => {
-                            // tower_level = 5, means that we deal with u32, and we have 4 u32 in a single 'OptimalUnderlier' value
-                            let selector = usize::try_from(*selector)?;
+                            // tower_level = 5, means that we deal with u32, and we have 4 u32 in a single
+                            // 'OptimalUnderlier' value
+                            let mask = usize::try_from(*mask)?;
                             let divisor = 4usize;
                             let actual_chunk_size = chunk_size / divisor;
-                            let chunk_idx = selector / divisor;
-                            let inner_underlier_idx = selector % divisor;
+                            let chunk_idx = mask / divisor;
+                            let inner_underlier_idx = mask % divisor;
 
                             // order of projected elements is important, so we can't use parallelism here
                             underliers.chunks(actual_chunk_size).for_each(|chunk| {
@@ -984,7 +972,7 @@ mod tests {
     fn test_shifted() {
         fn test_inner(
             input_value: u8,
-            shift_offset: usize,
+            shift_offset: u32,
             block_bits: usize,
             optimal_underliers_num: u32,
             variant: ShiftVariant,
@@ -1019,7 +1007,7 @@ mod tests {
         }
 
         let input_value = 0b10000000u8;
-        let shift_offset = 7usize;
+        let shift_offset = 7;
         let block_bits = 3usize; // we consider input column storing data as bytes
         let optimal_underliers_num_powered = 3u32;
 
@@ -1032,7 +1020,7 @@ mod tests {
         );
 
         let input_value = 0b11100011u8;
-        let shift_offset = 1usize;
+        let shift_offset = 1;
         let block_bits = 5usize; // we consider input column storing data as u32s
         let optimal_underliers_num_powered = 7u32;
 
@@ -1045,7 +1033,7 @@ mod tests {
         );
 
         let input_value = 0b10000000u8;
-        let shift_offset = 5usize;
+        let shift_offset = 5;
         let block_bits = 3usize; // we consider input column storing data as bytes
         let optimal_underliers_num_powered = 8u32;
 
@@ -1059,7 +1047,7 @@ mod tests {
 
         // this test case is important for Blake3 compression
         let input_value = 0b10100111u8;
-        let shift_offset = 1usize;
+        let shift_offset = 1;
         let block_bits = 5usize; // we consider input column storing data as u32s
         let optimal_underliers_num_powered = 12u32;
 
@@ -1073,7 +1061,7 @@ mod tests {
 
         // this test case is important for Blake3 compression
         let input_value = 0b11011010u8;
-        let shift_offset = 16usize;
+        let shift_offset = 16;
         let block_bits = 5usize; // we consider input column storing data as u32s
         let optimal_underliers_num_powered = 10u32;
 

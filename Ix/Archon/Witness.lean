@@ -44,7 +44,7 @@ opaque populate : WitnessModule → (height : UInt64) → WitnessModule
 
 end WitnessModule
 
-/-- **Invalidates** the input `Array WitnessModule` -/
+/-- **Invalidates** the elements of the input `Array WitnessModule` -/
 @[never_extract, extern "c_rs_compile_witness_modules"]
 opaque compileWitnessModules : Array WitnessModule → (heights : @& Array UInt64) → Witness
 
