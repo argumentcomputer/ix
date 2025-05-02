@@ -1,5 +1,6 @@
 pub mod arith_expr;
 pub mod circuit;
+pub mod precompiles;
 pub mod protocol;
 pub mod transparent;
 pub mod witness;
@@ -31,7 +32,7 @@ pub enum OracleKind {
     },
     Projected {
         inner: OracleId,
-        selector: u64,
+        selector: ProjectedSelectorInfo,
         selector_binary: Vec<F>,
     },
 }
@@ -42,4 +43,9 @@ pub struct OracleInfo {
     pub name: String,
     pub tower_level: usize,
     pub kind: OracleKind,
+}
+
+pub struct ProjectedSelectorInfo {
+    pub selector_value: u64,
+    pub single_unprojected_len: u64,
 }

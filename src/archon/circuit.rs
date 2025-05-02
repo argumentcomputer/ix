@@ -17,8 +17,8 @@ use std::sync::Arc;
 use crate::archon::transparent::{Incremental, constant_from_b128};
 
 use super::{
-    F, ModuleId, OracleInfo, OracleKind, arith_expr::ArithExpr, transparent::Transparent,
-    witness::WitnessModule,
+    F, ModuleId, OracleInfo, OracleKind, ProjectedSelectorInfo, arith_expr::ArithExpr,
+    transparent::Transparent, witness::WitnessModule,
 };
 
 #[inline]
@@ -213,19 +213,48 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         inner: OracleId,
-        selector: u64,
+        selector: ProjectedSelectorInfo,
     ) -> Result<OracleId> {
         let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
 
-        let mut log2 = log2_ceil_usize(usize::try_from(selector)?);
-        if 2u64.pow(u32::try_from(log2)?) == selector {
-            log2 += 1;
-        }
-
         let mut selector_binary: Vec<binius_circuits::builder::types::F> = (0..64)
-            .map(|n| binius_circuits::builder::types::F::from(((selector >> n) & 1) as u128))
+            .map(|n| {
+                binius_circuits::builder::types::F::from(
+                    ((selector.selector_value >> n) & 1) as u128,
+                )
+            })
             .collect();
-        selector_binary.truncate(log2);
+
+        selector_binary.truncate(log2_ceil_usize(selector.single_unprojected_len as usize));
+
+        /*
+        let selector_binary = if selector.selector_value == 0 {
+            let mut selector_binary: Vec<binius_circuits::builder::types::F> = (0..64)
+                .map(|n| {
+                    binius_circuits::builder::types::F::from(
+                        ((selector.selector_value >> n) & 1) as u128,
+                    )
+                })
+                .collect();
+
+            selector_binary.truncate(log2_ceil_usize(selector.single_unprojected_len as usize));
+            selector_binary
+        } else {
+            let mut log2 = log2_ceil_usize(usize::try_from(selector.selector_value)?);
+            if 2u64.pow(u32::try_from(log2)?) == selector.selector_value {
+                log2 += 1;
+            }
+
+            let mut selector_binary: Vec<binius_circuits::builder::types::F> = (0..64)
+                .map(|n| {
+                    binius_circuits::builder::types::F::from(
+                        ((selector.selector_value >> n) & 1) as u128,
+                    )
+                })
+                .collect();
+            selector_binary.truncate(log2);
+            selector_binary
+        };*/
 
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),

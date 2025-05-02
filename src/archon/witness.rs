@@ -633,35 +633,53 @@ impl WitnessModule {
                 OracleKind::Projected {
                     inner,
                     selector,
-                    selector_binary,
+                    selector_binary: _,
                 } => {
                     let tower_level = oracle_info.tower_level;
                     let &(inner_entry_id, _) =
                         self.entry_map.get(inner).expect("Data should be available");
 
-                    let chunk_size = 2usize.pow(u32::try_from(selector_binary.len())?);
                     let underliers = self.entries[inner_entry_id].clone();
-                    let mut projected_field_elements = vec![];
-                    let mut projected_underliers =
-                        Vec::<OptimalUnderlier>::with_capacity(chunk_size);
 
+                    let mut projected_underliers = vec![];
                     match tower_level {
                         5 => {
+                            // TODO: check if parallelism can be applied
+
                             // tower_level = 5, means that we deal with u32, and we have 4 u32 in a single 'OptimalUnderlier' value
-                            let selector = usize::try_from(*selector)?;
-                            let divisor = 4usize;
-                            let actual_chunk_size = chunk_size / divisor;
-                            let chunk_idx = selector / divisor;
-                            let inner_underlier_idx = selector % divisor;
+                            let divisor = 4;
 
-                            // order of projected elements is important, so we can't use parallelism here
-                            underliers.chunks(actual_chunk_size).for_each(|chunk| {
-                                let inner_underlier = unsafe {
-                                    transmute::<OptimalUnderlier, [B32; 4]>(chunk[chunk_idx])
-                                };
-                                projected_field_elements.push(inner_underlier[inner_underlier_idx]);
-                            });
+                            // grab all underliers and get field elements from them
+                            let field_elements: Vec<B32> = underliers
+                                .into_iter()
+                                .enumerate()
+                                .flat_map(|(idx, underlier)| {
+                                    let inner_underlier = unsafe {
+                                        transmute::<OptimalUnderlier, [B32; 4]>(underlier)
+                                    };
+                                    inner_underlier
+                                })
+                                .collect();
 
+                            let chunk_size = usize::try_from(selector.single_unprojected_len)?;
+                            let selector_value = usize::try_from(selector.selector_value)?;
+
+                            // select necessary field elements (projection)
+                            let mut projected_field_elements: Vec<B32> = field_elements
+                                .chunks(chunk_size)
+                                .map(|chunk| chunk[selector_value])
+                                .collect();
+
+                            // pad with zeroes
+                            let pad_len = projected_field_elements.len() % divisor;
+                            if pad_len != 0 {
+                                projected_field_elements.resize(
+                                    projected_field_elements.len() + (divisor - pad_len),
+                                    B32::from(0u32),
+                                );
+                            }
+
+                            // compose new underliers layer
                             projected_field_elements.chunks(divisor).for_each(|chunk| {
                                 let array: [B32; 4] = chunk.try_into().unwrap();
                                 let projected_item =
@@ -736,6 +754,7 @@ mod tests {
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     use crate::archon::{
+        ProjectedSelectorInfo,
         circuit::{CircuitModule, init_witness_modules},
         protocol::validate_witness,
         transparent::Transparent,
@@ -1091,11 +1110,19 @@ mod tests {
         let selector = 56u64; // we have long input and every "selected" item is taken into projection
 
         let height = 2u64.pow(u32::try_from(n_vars).unwrap());
+        let single_unprojected_len = height / 4;
 
         let mut circuit_module = CircuitModule::new(0);
         let input = circuit_module.add_committed::<B32>("input").unwrap();
         circuit_module
-            .add_projected(&format!("projected-{input}"), input, selector)
+            .add_projected(
+                &format!("projected-{input}"),
+                input,
+                ProjectedSelectorInfo {
+                    selector_value: selector,
+                    single_unprojected_len: height / 4,
+                },
+            )
             .unwrap();
         circuit_module.freeze_oracles();
 
@@ -1103,7 +1130,7 @@ mod tests {
         let entry_id = witness_module.new_entry();
 
         // let's use 'push_u32s_to' for populating
-        for _ in 0..height / 4 {
+        for _ in 0..single_unprojected_len {
             let push: [u32; 4] = rand::random();
             witness_module.push_u32s_to(push, entry_id);
         }
