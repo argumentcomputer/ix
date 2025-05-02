@@ -74,12 +74,26 @@ partial def ensureConst (name: Lean.Name) (cont meta: Address) : DecompileM Unit
   --match (<- get).names.find? n 
   sorry
 
+-- TODO: mutual block all needs better logic
 partial def decompileConst (name: Lean.Name): Ix.Const -> DecompileM Lean.ConstantInfo
-| .axiom x => sorry
-  --return .axiomInfo ⟨name, levels, type⟩
-| .theorem x => sorry
-| .opaque x => sorry
-| .definition x => sorry
+| .axiom x => do
+  let type <- decompileExpr x.type
+  return .axiomInfo (Lean.mkAxiomValEx name x.lvls type false)
+| .theorem x => do
+  let all := (<- read).mutCtx.keysList
+  let type <- decompileExpr x.type
+  let value <- decompileExpr x.type
+  return .thmInfo (Lean.mkTheoremValEx name x.lvls type value all)
+| .opaque x => do
+  let all := (<- read).mutCtx.keysList
+  let type <- decompileExpr x.type
+  let value <- decompileExpr x.type
+  return .opaqueInfo (Lean.mkOpaqueValEx name x.lvls type value false all)
+| .definition x => do
+  let all := (<- read).mutCtx.keysList
+  let type <- decompileExpr x.type
+  let value <- decompileExpr x.type
+  return .defnInfo (Lean.mkDefinitionValEx name x.lvls type value false all)
 | .quotient x => sorry
 | .inductiveProj x => sorry
 | .constructorProj x => sorry

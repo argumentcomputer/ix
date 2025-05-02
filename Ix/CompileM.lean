@@ -173,7 +173,7 @@ def compareLevel (x : Lean.Level) (y : Lean.Level) : CompileM Ordering :=
     | _,       none    => throw $ .levelNotFound y lvls
 
 /-- Canonicalizes a Lean universe level and adds it to the store -/
-def compileLevel : Lean.Level → CompileM Ix.Univ
+def compileLevel : Lean.Level → CompileM Ix.Level
 | .zero => pure .zero
 | .succ u => return .succ (← compileLevel u)
 | .max a b  => return .max (← compileLevel a) (← compileLevel b)
@@ -181,7 +181,7 @@ def compileLevel : Lean.Level → CompileM Ix.Univ
 | .param name => do
   let lvls := (← read).univCtx
   match lvls.idxOf? name with
-  | some n => pure $ .var name n
+  | some n => pure $ .param name n
   | none   => throw $ .levelNotFound name lvls
 | l@(.mvar ..) => throw $ .unfilledLevelMetavariable l
 
@@ -239,7 +239,7 @@ partial def compileConst (const : Lean.ConstantInfo)
     | .thmInfo val => resetCtxWithLevels const.levelParams do
       let type <- compileExpr val.type
       let value <- compileExpr val.value
-      let c := .theorem ⟨val.levelParams, type, value⟩
+      let c := .definition <| mkTheorem val.levelParams type value val.all
       let (anonAddr, metaAddr) ← hashConst c
       modify fun stt => { stt with
         names := stt.names.insert const.name (anonAddr, metaAddr)
@@ -249,7 +249,7 @@ partial def compileConst (const : Lean.ConstantInfo)
       let mutCtx := .single val.name 0
       let type <- compileExpr val.type
       let value <- withMutCtx mutCtx $ compileExpr val.value
-      let c := .opaque ⟨val.levelParams, type, value⟩
+      let c := .definition <| mkOpaque val.levelParams type value val.all
       let (anonAddr, metaAddr) ← hashConst c
       modify fun stt => { stt with
         names := stt.names.insert const.name (anonAddr, metaAddr)
@@ -277,6 +277,7 @@ partial def compileDefinition (struct: Lean.DefinitionVal)
     }
     return (anonAddr, metaAddr)
   -- Collecting and sorting all definitions in the mutual block
+  -- TODO: This needs to support mutual blocks that include theorems and opaques
   let mutualDefs <- struct.all.mapM fun name => do
     match <- findLeanConst name with
       | .defnInfo defn => pure defn
@@ -313,12 +314,13 @@ partial def compileDefinition (struct: Lean.DefinitionVal)
   | some ret => return ret
   | none => throw $ .constantNotContentAddressed struct.name
 
-
 partial def definitionToIR (defn: Lean.DefinitionVal)
   : CompileM Ix.Definition := do
   let type <- compileExpr defn.type
   let value <- compileExpr defn.value
-  return ⟨defn.levelParams, type, value, defn.safety == .partial⟩
+  let isPartial := defn.safety == .partial
+  let mode := .definition
+  return ⟨defn.levelParams, type, mode, value, defn.hints, isPartial, defn.all⟩
 
 /--
 Content-addresses an inductive and all inductives in the mutual block as a
@@ -394,27 +396,25 @@ partial def compileInductive (initInd: Lean.InductiveVal)
 partial def inductiveToIR (ind : Lean.InductiveVal) : CompileM Ix.Inductive := do
   let leanRecs := (← get).env.constants.childrenOfWith ind.name
     fun c => match c with | .recInfo _ => true | _ => false
-  let (recs, ctors) ← leanRecs.foldrM (init := ([], []))
-    fun r (recs, ctors) => match r with
-      | .recInfo rv =>
+  let (recs, ctors) := <- leanRecs.foldrM (init := ([], [])) collectRecsCtors
+  let type <- compileExpr ind.type
+    -- NOTE: for the purpose of extraction, the order of `ctors` and `recs` MUST
+    -- match the order used in `recrCtx`
+  return ⟨ind.levelParams, type, ind.numParams, ind.numIndices,
+    ind.all, ctors, recs, ind.isRec, ind.isReflexive⟩
+  where
+    collectRecsCtors
+      : Lean.ConstantInfo
+      -> List Recursor × List Constructor 
+      -> CompileM (List Recursor × List Constructor)
+      | r@(.recInfo rv), (recs, ctors) =>
         if isInternalRec rv.type ind.name then do
-          let (thisRec, thisCtors) := ← internalRecToIR ind.ctors r
+          let (thisRec, thisCtors) <- internalRecToIR ind.ctors r
           pure (thisRec :: recs, thisCtors)
         else do
           let thisRec ← externalRecToIR r
           pure (thisRec :: recs, ctors)
-      | _ => throw $ .nonRecursorExtractedFromChildren r.name
-  let (struct, unit) ← if ind.isRec || ind.numIndices != 0 
-  then pure (false, false)
-  else
-    match ctors with
-    -- Structures can only have one constructor
-    | [ctor] => pure (true, ctor.fields == 0)
-    | _ => pure (false, false)
-  return ⟨ind.levelParams, ← compileExpr ind.type, ind.numParams, ind.numIndices,
-    -- NOTE: for the purpose of extraction, the order of `ctors` and `recs` MUST
-    -- match the order used in `recrCtx`
-    ctors, recs, ind.isRec, ind.isReflexive, struct, unit⟩
+      | r, _ => throw $ .nonRecursorExtractedFromChildren r.name
 
 partial def internalRecToIR (ctors : List Lean.Name)
   : Lean.ConstantInfo → CompileM (Ix.Recursor × List Ix.Constructor)
@@ -426,8 +426,8 @@ partial def internalRecToIR (ctors : List Lean.Name)
           let (ctor, rule) ← recRuleToIR r
           pure $ (ctor :: retCtors, rule :: retRules)
         else pure (retCtors, retRules) -- this is an external recursor rule
-    let recr := ⟨rec.levelParams, typ, rec.numParams, rec.numIndices,
-      rec.numMotives, rec.numMinors, retRules, rec.k, true⟩
+    let recr := ⟨rec.name, rec.levelParams, typ, rec.numParams, rec.numIndices,
+      rec.numMotives, rec.numMinors, retRules, rec.k⟩
     return (recr, retCtors)
   | const => throw $ .invalidConstantKind const.name "recursor" const.ctorName
 
@@ -438,8 +438,8 @@ partial def recRuleToIR (rule : Lean.RecursorRule)
   | .ctorInfo ctor => withLevels ctor.levelParams do
     let typ ← compileExpr ctor.type
     let ctor :=
-      ⟨ctor.levelParams, typ, ctor.cidx, ctor.numParams, ctor.numFields⟩
-    pure (ctor, ⟨rule.nfields, rhs⟩)
+      ⟨ctor.name, ctor.levelParams, typ, ctor.cidx, ctor.numParams, ctor.numFields⟩
+    pure (ctor, ⟨rule.ctor, rule.nfields, rhs⟩)
   | const =>
     throw $ .invalidConstantKind const.name "constructor" const.ctorName
 
@@ -447,13 +447,13 @@ partial def externalRecToIR : Lean.ConstantInfo → CompileM Recursor
   | .recInfo rec => withLevels rec.levelParams do
     let typ ← compileExpr rec.type
     let rules ← rec.rules.mapM externalRecRuleToIR
-    return ⟨rec.levelParams, typ, rec.numParams, rec.numIndices,
-      rec.numMotives, rec.numMinors, rules, rec.k, false⟩
+    return ⟨rec.name, rec.levelParams, typ, rec.numParams, rec.numIndices,
+      rec.numMotives, rec.numMinors, rules, rec.k⟩
   | const => throw $ .invalidConstantKind const.name "recursor" const.ctorName
 
 partial def externalRecRuleToIR (rule : Lean.RecursorRule) 
   : CompileM RecursorRule :=
-  return ⟨rule.nfields, ← compileExpr rule.rhs⟩
+  return ⟨rule.ctor, rule.nfields, ← compileExpr rule.rhs⟩
 
 /--
 Content-addresses a Lean expression and adds it to the store.
@@ -649,11 +649,14 @@ partial def tryAddLeanDecl (defn: Lean.DefinitionVal) : CompileM Unit := do
       return ()
     | .error e => throw $ .kernelException e
 
-partial def addDef (lvls: List Lean.Name) (typ val: Lean.Expr)
+partial def addDef 
+  (lvls: List Lean.Name)
+  (typ val: Lean.Expr)
   : CompileM (Address × Address) := do
   let typ' <- compileExpr typ
   let val' <- compileExpr val
-  let (a, m) <- hashConst $ Ix.Const.definition ⟨lvls, typ', val', true⟩
+  let (a, m) <- hashConst $ 
+    Ix.Const.definition ⟨lvls, typ', .definition, val', .opaque, false, []⟩
   tryAddLeanDecl (makeLeanDef a.toUniqueName lvls typ val)
   return (a, m)
 
@@ -669,7 +672,9 @@ partial def commitConst (anon meta: Address)
   }
   return (commAddr, commMetaAddr)
 
-partial def commitDef (lvls: List Lean.Name) (typ val: Lean.Expr)
+partial def commitDef 
+  (lvls: List Lean.Name) 
+  (typ val: Lean.Expr)
   : CompileM (Address × Address) := do
   let (a, m) <- addDef lvls typ val
   let (ca, cm) <- commitConst a m

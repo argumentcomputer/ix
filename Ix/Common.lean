@@ -23,12 +23,20 @@ instance : Ord Lean.Name where
 
 deriving instance Ord for Lean.Literal
 deriving instance Ord for Lean.BinderInfo
-deriving instance Ord for Lean.QuotKind
+deriving instance BEq, Repr, Hashable, Ord for Lean.QuotKind
+deriving instance Hashable, Repr for Lean.ReducibilityHints
 
 def UInt8.MAX : UInt64 := 0xFF
 def UInt16.MAX : UInt64 := 0xFFFF
 def UInt32.MAX : UInt64 := 0xFFFFFFFF
 def UInt64.MAX : UInt64 := 0xFFFFFFFFFFFFFFFF
+
+/-- Distinguish different kinds of Ix definitions --/
+inductive Ix.DefMode where
+| «definition»
+| «opaque»
+| «theorem»
+deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited
 
 namespace List
 

@@ -1,5 +1,6 @@
 import LSpec
 import Ix.Ixon
+import Ix.Ixon.Metadata
 import Ix.Address
 import Ix.Ixon.Serialize
 import Ix.Ixon.Univ
@@ -8,6 +9,8 @@ import LSpec.SlimCheck.Gen
 import LSpec
 import Blake3
 
+import Tests.Common
+import Tests.Ix.Common
 import Tests.Ix.Ixon
 import Tests.Ix.IR
 
@@ -22,7 +25,7 @@ def serde [Ixon.Serialize A] [BEq A] (x: A) : Bool :=
 
 open Ix.TransportM
 
-def transportUniv (univ: Ix.Univ): Bool :=
+def transportUniv (univ: Ix.Level): Bool :=
   match EStateM.run (dematUniv univ) emptyDematState with
   | .ok ixon stt =>
     let remat := (ReaderT.run (rematUniv ixon) { meta := stt.meta})
@@ -75,10 +78,12 @@ def transportConst (x: Ix.Const): Bool :=
 --  testExprs.foldl (init := .done) fun tSeq x =>
 --    tSeq ++ (test s!"transport {repr x}" $ Except.isOk (transportExpr' x))
 
+
 def Tests.Ix.suite : List LSpec.TestSeq :=
   [
+    check "metadatum serde" (∀ x : Ixon.Metadatum, serde x),
     check "universe serde" (∀ x : Ixon.Univ, serde x),
-    check "universe transport" (∀ x : Ix.Univ, transportUniv x),
+    check "universe transport" (∀ x : Ix.Level, transportUniv x),
     check "expr serde" (∀ x : Ixon.Expr, serde x),
     check "expr transport" (∀ x : Ix.Expr, transportExpr x),
     check "const serde" (∀ x : Ixon.Const, serde x),

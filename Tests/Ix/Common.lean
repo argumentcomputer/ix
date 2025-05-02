@@ -1,4 +1,5 @@
 import LSpec
+import Ix.Common
 import Ix.Ixon
 import Ix.Address
 import Ix.Ixon.Serialize
@@ -63,6 +64,18 @@ def genBinderInfo : Gen Lean.BinderInfo := oneOf'
    , pure .instImplicit
    , pure .strictImplicit
    , pure .instImplicit
+   ]
+
+def genDefMode : Gen Ix.DefMode := oneOf'
+   [ pure .opaque
+   , pure .theorem
+   , pure .definition
+   ]
+
+def genReducibilityHints : Gen Lean.ReducibilityHints := oneOf'
+   [ pure .opaque
+   , pure .abbrev
+   , (.regular ·.toUInt32) <$> genUSize
    ]
 
 def genQuotKind : Gen Lean.QuotKind := oneOf'

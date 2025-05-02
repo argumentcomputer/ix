@@ -6,14 +6,16 @@ import Batteries.Data.RBMap
 
 namespace Ixon
 
-structure MetaNode where
-  name : Option Lean.Name
-  info : Option Lean.BinderInfo
-  link : Option Address
-  deriving BEq, Repr, Ord
+inductive Metadatum where
+| name : Lean.Name -> Metadatum
+| info : Lean.BinderInfo -> Metadatum
+| link : Address -> Metadatum
+| hints : Lean.ReducibilityHints -> Metadatum
+| all : List Lean.Name -> Metadatum
+deriving BEq, Repr, Ord, Inhabited
 
 structure Metadata where
-  map: Batteries.RBMap Nat MetaNode compare
+  map: Batteries.RBMap Nat (List Metadatum) compare
   deriving BEq, Repr
 
 inductive NamePart where
@@ -44,33 +46,32 @@ def getNamePart : GetM NamePart := do
 def putName (n: Lean.Name): PutM := putArray (putNamePart <$> (nameToParts n))
 def getName: GetM Lean.Name := nameFromParts <$> getArray getNamePart
 
-def putMetaNode: MetaNode → PutM
-| ⟨n, b, l⟩ => putArray 
-  [ putOption putName n,
-    putOption putBinderInfo b,
-    putOption (putBytes ·.hash) l
-  ]
+def putMetadatum : Metadatum → PutM
+| .name n => putUInt8 0 *> putName n
+| .info i => putUInt8 1 *> putBinderInfo i
+| .link l => putUInt8 2 *> putBytes l.hash
+| .hints h => putUInt8 3 *> putReducibilityHints h
+| .all ns => putUInt8 4 *> putArray (putName <$> ns)
 
-def getMetaNode: GetM MetaNode := do
-  let tagByte ← getUInt8
-  let tag := UInt8.shiftRight tagByte 4
-  let small := UInt8.land tagByte 0b111
-  let isLarge := (UInt8.land tagByte 0b1000 != 0)
-  match tag with
-  | 0xB => do
-    let _ ← UInt64.toNat <$> getExprTag isLarge small
-    let n ← getOption getName
-    let b ← getOption getBinderInfo
-    let l ← getOption (Address.mk <$> getBytes 32)
-    return MetaNode.mk n b l
-  | e => throw s!"expected metanode Array with tag 0xB, got {e}"
+def getMetadatum : GetM Metadatum := do
+  match (<- getUInt8) with
+  | 0 => .name <$> getName
+  | 1 => .info <$> getBinderInfo
+  | 2 => .link <$> (.mk <$> getBytes 32)
+  | 3 => .hints <$> getReducibilityHints
+  | 4 => .all <$> getArray getName
+  | e => throw s!"expected Metadatum encoding between 0 and 4, got {e}"
 
 def putMetadata (m: Metadata) : PutM := putArray (putEntry <$> m.map.toList)
   where
-    putEntry e := putNatl e.fst *> putMetaNode e.snd
+    putEntry e := putNatl e.fst *> putArray (putMetadatum <$> e.snd)
 
 def getMetadata : GetM Metadata := do
-  let xs <- getArray (Prod.mk <$> getNatl <*> getMetaNode)
+  let xs <- getArray (Prod.mk <$> getNatl <*> getArray getMetadatum)
   return Metadata.mk (Batteries.RBMap.ofList xs compare)
+
+instance : Serialize Metadatum where
+  put := runPut ∘ putMetadatum
+  get := runGet getMetadatum
 
 end Ixon

@@ -1,3 +1,4 @@
+import Ix.Common
 import Lean.Declaration
 import Ix.Address
 
@@ -26,6 +27,12 @@ def runPut (putm: PutM) : ByteArray :=
 
 def putUInt8 (x: UInt8) : PutM := StateT.modifyGet (fun s => ((), s.push x))
 
+def putUInt32LE (x: UInt32) : PutM := do
+  List.forM (List.range 4) fun i =>
+    let b := UInt32.toUInt8 (x >>> (i.toUInt32 * 8))
+    putUInt8 b
+  pure ()
+
 def putUInt64LE (x: UInt64) : PutM := do
   List.forM (List.range 8) fun i =>
     let b := UInt64.toUInt8 (x >>> (i.toUInt64 * 8))
@@ -43,6 +50,13 @@ def getUInt8 : GetM UInt8 := do
     return b
   else
     throw "EOF"
+
+def getUInt32LE : GetM UInt32 := do
+  let mut x : UInt32 := 0
+  for i in List.range 4 do
+    let b ← getUInt8
+    x := x + (UInt8.toUInt32 b) <<< ((UInt32.ofNat i) * 8)
+  pure x
 
 def getUInt64LE : GetM UInt64 := do
   let mut x : UInt64 := 0
@@ -144,6 +158,18 @@ def getQuotKind : GetM Lean.QuotKind := do
   | 3 => return .ind
   | e => throw s!"expected QuotKind encoding between 0 and 3, got {e}"
 
+def putDefMode : Ix.DefMode → PutM
+| .«definition» => putUInt8 0
+| .«opaque» => putUInt8 1
+| .«theorem» => putUInt8 2
+
+def getDefMode : GetM Ix.DefMode := do
+  match (← getUInt8) with
+  | 0 => return .definition
+  | 1 => return .opaque
+  | 2 => return .theorem
+  | e => throw s!"expected DefMode encoding between 0 and 3, got {e}"
+
 def putBinderInfo : Lean.BinderInfo → PutM
 | .default => putUInt8 0
 | .implicit => putUInt8 1
@@ -156,6 +182,18 @@ def getBinderInfo : GetM Lean.BinderInfo := do
   | 1 => return .implicit
   | 2 => return .strictImplicit
   | 3 => return .instImplicit
-  | e => throw s!"expected QuotKind encoding between 0 and 3, got {e}"
+  | e => throw s!"expected BinderInfo encoding between 0 and 3, got {e}"
+
+def putReducibilityHints : Lean.ReducibilityHints → PutM
+| .«opaque» => putUInt8 0
+| .«abbrev» => putUInt8 1
+| .regular x => putUInt8 2 *> putUInt32LE x
+
+def getReducibilityHints : GetM Lean.ReducibilityHints := do
+  match (← getUInt8) with
+  | 0 => return .«opaque»
+  | 1 => return .«abbrev» 
+  | 2 => .regular <$> getUInt32LE
+  | e => throw s!"expected ReducibilityHints encoding between 0 and 2, got {e}"
 
 end Ixon

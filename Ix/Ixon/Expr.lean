@@ -133,11 +133,11 @@ instance : Serialize Expr where
   put := runPut ∘ putExpr
   get := runGet getExpr
 
-def putArray (xs : List PutM) := do
+def putArray (xs : List PutM) : PutM := do
   putExprTag 0xB (UInt64.ofNat xs.length)
   List.forM xs id
 
-def putByteArray (x: ByteArray) := do
+def putByteArray (x: ByteArray) : PutM := do
   putExprTag 0xB (UInt64.ofNat x.size)
   x.toList.forM putUInt8
 
