@@ -12,6 +12,7 @@ inductive Metadatum where
 | link : Address -> Metadatum
 | hints : Lean.ReducibilityHints -> Metadatum
 | all : List Lean.Name -> Metadatum
+| mutCtx : List (List Lean.Name) -> Metadatum
 deriving BEq, Repr, Ord, Inhabited
 
 structure Metadata where
@@ -43,7 +44,7 @@ def getNamePart : GetM NamePart := do
   | .natl s => return (.num s)
   | e => throw s!"expected NamePart from .strl or .natl, got {repr e}"
 
-def putName (n: Lean.Name): PutM := putArray (putNamePart <$> (nameToParts n))
+def putName (n: Lean.Name): PutM := putArray putNamePart (nameToParts n)
 def getName: GetM Lean.Name := nameFromParts <$> getArray getNamePart
 
 def putMetadatum : Metadatum → PutM
@@ -51,7 +52,8 @@ def putMetadatum : Metadatum → PutM
 | .info i => putUInt8 1 *> putBinderInfo i
 | .link l => putUInt8 2 *> putBytes l.hash
 | .hints h => putUInt8 3 *> putReducibilityHints h
-| .all ns => putUInt8 4 *> putArray (putName <$> ns)
+| .all ns => putUInt8 4 *> putArray putName ns
+| .mutCtx ctx => putUInt8 5 *> (putArray (putArray putName) ctx)
 
 def getMetadatum : GetM Metadatum := do
   match (<- getUInt8) with
@@ -60,11 +62,12 @@ def getMetadatum : GetM Metadatum := do
   | 2 => .link <$> (.mk <$> getBytes 32)
   | 3 => .hints <$> getReducibilityHints
   | 4 => .all <$> getArray getName
+  | 5 => .mutCtx <$> getArray (getArray getName)
   | e => throw s!"expected Metadatum encoding between 0 and 4, got {e}"
 
-def putMetadata (m: Metadata) : PutM := putArray (putEntry <$> m.map.toList)
+def putMetadata (m: Metadata) : PutM := putArray putEntry m.map.toList
   where
-    putEntry e := putNatl e.fst *> putArray (putMetadatum <$> e.snd)
+    putEntry e := putNatl e.fst *> putArray putMetadatum e.snd
 
 def getMetadata : GetM Metadata := do
   let xs <- getArray (Prod.mk <$> getNatl <*> getArray getMetadatum)

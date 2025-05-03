@@ -26,12 +26,12 @@ def DecompileM.run (env: CompileEnv) (stt: CompileState) (c : DecompileM α)
   : EStateM.Result DecompileError CompileState α
   := EStateM.run (ReaderT.run c env) stt
 
-def decompileLevel : Ix.Univ → DecompileM Lean.Level
+def decompileLevel : Ix.Level → DecompileM Lean.Level
 | .zero => pure .zero
 | .succ u => .succ <$> decompileLevel u
 | .max a b => Lean.Level.max  <$> decompileLevel a <*> decompileLevel b
 | .imax a b => Lean.Level.imax <$> decompileLevel a <*> decompileLevel b
-| .var n i => do
+| .param n i => do
   match (<- read).univCtx[i]? with
   | some n' => 
     if n == n' then pure (Lean.Level.param n)
@@ -74,32 +74,74 @@ partial def ensureConst (name: Lean.Name) (cont meta: Address) : DecompileM Unit
   --match (<- get).names.find? n 
   sorry
 
--- TODO: mutual block all needs better logic
-partial def decompileConst (name: Lean.Name): Ix.Const -> DecompileM Lean.ConstantInfo
-| .axiom x => do
+partial def decompileMutCtx (ctx: List (List Lean.Name)) 
+  : DecompileM (RBMap Lean.Name Nat compare) := do
+  let mut mutCtx : RBMap Lean.Name Nat compare := RBMap.empty
+  for (ns, i) in List.zipIdx ctx do
+    for n in ns do
+      mutCtx := mutCtx.insert n i
+  return mutCtx
+
+partial def decompileConst (name: Lean.Name): Ix.Const -> DecompileM (List Lean.ConstantInfo)
+| .axiom x => withLevels x.levelParams do
   let type <- decompileExpr x.type
-  return .axiomInfo (Lean.mkAxiomValEx name x.lvls type false)
-| .theorem x => do
-  let all := (<- read).mutCtx.keysList
+  return [.axiomInfo (Lean.mkAxiomValEx name x.levelParams type false)]
+| .definition x => List.singleton <$> decompileDefn name x
+| .inductive x => decompileIndc x
+| .quotient x => withLevels x.levelParams do
   let type <- decompileExpr x.type
-  let value <- decompileExpr x.type
-  return .thmInfo (Lean.mkTheoremValEx name x.lvls type value all)
-| .opaque x => do
-  let all := (<- read).mutCtx.keysList
-  let type <- decompileExpr x.type
-  let value <- decompileExpr x.type
-  return .opaqueInfo (Lean.mkOpaqueValEx name x.lvls type value false all)
-| .definition x => do
-  let all := (<- read).mutCtx.keysList
-  let type <- decompileExpr x.type
-  let value <- decompileExpr x.type
-  return .defnInfo (Lean.mkDefinitionValEx name x.lvls type value false all)
-| .quotient x => sorry
+  return [.quotInfo <| Lean.mkQuotValEx name x.levelParams type x.kind]
 | .inductiveProj x => sorry
 | .constructorProj x => sorry
 | .recursorProj x => sorry
 | .definitionProj x => sorry
-| .mutDefBlock x => sorry
+| .mutDefBlock x => do
+  let mutCtx <- decompileMutCtx x.ctx
+  withMutCtx mutCtx do
+    let mut vals := #[]
+    for (defns, names) in List.zip x.defs x.ctx do
+      for (defn, name) in List.zip defns names do
+        let d <- decompileDefn name defn
+        vals := vals.push d
+    return vals.toList
 | .mutIndBlock x => sorry
+where
+  decompileDefn (name: Lean.Name) (x: Ix.Definition) : DecompileM Lean.ConstantInfo := 
+    withLevels x.levelParams do
+      let type <- decompileExpr x.type
+      let val <- decompileExpr x.type
+      let safety := if x.isPartial then .«partial» else .safe
+      match x.mode with
+      | .definition => return .defnInfo <|
+        Lean.mkDefinitionValEx name x.levelParams type val x.hints safety x.all
+      | .opaque => return .opaqueInfo <|
+        Lean.mkOpaqueValEx name x.levelParams type val true x.all
+      | .theorem => return .thmInfo <|
+        Lean.mkTheoremValEx name x.levelParams type val x.all
+  decompileCtor (indcName: Lean.Name) (x: Ix.Constructor)
+    : DecompileM Lean.ConstantInfo := do
+    let type <- decompileExpr x.type
+    return .ctorInfo <|
+      Lean.mkConstructorValEx x.name x.levelParams type indcName 
+        x.cidx x.numParams x.numFields false
+  decompileRecrRule (x: Ix.RecursorRule) : DecompileM Lean.RecursorRule := do
+    let rhs <- decompileExpr x.rhs
+    return ⟨x.ctor, x.nfields, rhs⟩
+  decompileRecr (indcAll: List Lean.Name) (x: Ix.Recursor)
+    : DecompileM Lean.ConstantInfo := do
+    let type <- decompileExpr x.type
+    let rules <- x.rules.mapM decompileRecrRule
+    return .recInfo <|
+      Lean.mkRecursorValEx x.name x.levelParams type indcAll
+        x.numParams x.numIndices x.numMotives x.numMinors rules x.k false
+  decompileIndc (x: Ix.Inductive) : DecompileM (List Lean.ConstantInfo) := 
+    withLevels x.levelParams do
+      let type <- decompileExpr x.type
+      let indc :=
+        Lean.mkInductiveValEx name x.levelParams type x.numParams x.numIndices
+          x.all (x.ctors.map (·.name)) x.numNested x.isRec false x.isReflexive
+      let ctors <- x.ctors.mapM (decompileCtor name)
+      let recrs <- x.recrs.mapM (decompileRecr x.all)
+      return .inductInfo indc :: ctors ++ recrs
 
 end

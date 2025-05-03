@@ -133,7 +133,14 @@ instance : Serialize Expr where
   put := runPut ∘ putExpr
   get := runGet getExpr
 
-def putArray (xs : List PutM) : PutM := do
+
+def putArray {A: Type} (putM : A -> PutM) (xs : List A) : PutM := do
+  putExprTag 0xB (UInt64.ofNat xs.length)
+  List.forM xs putM
+
+-- useful for arrays of non-uniform type, such as encoding tuples, although that
+-- requires a custom getArray equivalent
+def putArray' (xs : List PutM) : PutM := do
   putExprTag 0xB (UInt64.ofNat xs.length)
   List.forM xs id
 
@@ -158,8 +165,8 @@ def getByteArray : GetM ByteArray := do
 
 
 def putOption (putM: A -> PutM): Option A → PutM
-| .none => putArray []
-| .some x => putArray [putM x]
+| .none => putArray putM []
+| .some x => putArray putM [x]
 
 def getOption [Repr A] (getM: GetM A): GetM (Option A) := do
   match ← getArray getM with

@@ -58,6 +58,7 @@ structure Inductive where
   indices : Nat
   ctors : List Constructor
   recrs : List Recursor
+  nested : Nat
   recr : Bool
   refl : Bool
   deriving BEq, Repr
@@ -127,8 +128,8 @@ def putConst : Const → PutM
 | .recrProj x => putUInt8 0xC5 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.ridx
 | .indcProj x => putUInt8 0xC6 *> putBytes x.block.hash *> putNatl x.idx
 | .defnProj x => putUInt8 0xC7 *> putBytes x.block.hash *> putNatl x.idx
-| .mutDef xs => putUInt8 0xC8 *> putArray (putDefn <$> xs)
-| .mutInd xs => putUInt8 0xC9 *> putArray (putIndc <$> xs)
+| .mutDef xs => putUInt8 0xC8 *> putArray putDefn xs
+| .mutInd xs => putUInt8 0xC9 *> putArray putIndc xs
 | .meta m => putUInt8 0xCA *> putMetadata m
 | .proof p => putUInt8 0xCB *> putProof p
 | .comm c => putUInt8 0xCC *> putComm c
@@ -153,15 +154,16 @@ def putConst : Const → PutM
       putNatl x.indices
       putNatl x.motives
       putNatl x.minors
-      putArray (putRecrRule <$> x.rules)
+      putArray putRecrRule x.rules
       putBool x.k
     putIndc (x: Inductive) : PutM := do
       putNatl x.lvls
       putExpr x.type
       putNatl x.params
       putNatl x.indices
-      putArray (putCtor <$> x.ctors)
-      putArray (putRecr <$> x.recrs)
+      putArray putCtor x.ctors
+      putArray putRecr x.recrs
+      putNatl x.nested
       putBools [x.recr, x.refl]
     putProof (p: Proof) : PutM :=
       match p.claim with
@@ -231,10 +233,11 @@ def getConst : GetM Const := do
       let indices <- getNatl
       let ctors <- getArray getCtor
       let recrs <- getArray getRecr
+      let nested <- getNatl
       let (recr, refl) <- match ← getBools 2 with
         | [x, y] => pure (x, y)
         | _ => throw s!"unreachable"
-      return ⟨lvls, type, params, indices, ctors, recrs, recr, refl⟩
+      return ⟨lvls, type, params, indices, ctors, recrs, nested, recr, refl⟩
     getAddr : GetM Address := .mk <$> getBytes 32
     getProof : GetM Proof := do
       match (<- getUInt8) with

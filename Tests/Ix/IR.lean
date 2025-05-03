@@ -82,8 +82,15 @@ def genConst : Gen Ix.Const := getSize >>= go
       let all <- genNames
       let ctors <- resizeListOf genCtor
       let recrs <- resizeListOf genRecr
+      let nested <- genNat'
       let (isRec, isRefl) <- Prod.mk <$> genBool <*> genBool
-      return ⟨lvls, type, params, indices, all, ctors, recrs, isRec, isRefl⟩
+      return ⟨lvls, type, params, indices, all, ctors, recrs, nested, isRec, isRefl⟩
+    genMutDef : Gen Ix.MutualDefinitionBlock := do
+      let nns <- resizeListOf (genListSize genName 1 5)
+      let ds <- nns.mapM fun ns => do
+        let x <- genDef
+        ns.mapM (fun _ => pure x)
+      return .mk ds nns
     go : Nat -> Gen Ix.Const
     | 0 => return .«axiom» (.mk [] (Ix.Expr.sort (Ix.Level.zero)))
     | Nat.succ _ =>
@@ -95,7 +102,7 @@ def genConst : Gen Ix.Const := getSize >>= go
         (100, .constructorProj <$> (.mk <$> genAddress <*> genAddress <*> genNat' <*> genNat')),
         (100, .recursorProj <$> (.mk <$> genAddress <*> genAddress <*> genNat' <*> genNat')),
         (100, .definitionProj <$> (.mk <$> genAddress <*> genAddress <*> genNat')),
-        (100, .mutDefBlock <$> resizeListOf genDef),
+        (100, .mutDefBlock <$> genMutDef),
         (100, .mutIndBlock <$> resizeListOf genInd),
       ]
 

@@ -278,23 +278,51 @@ partial def compileDefinition (struct: Lean.DefinitionVal)
     return (anonAddr, metaAddr)
   -- Collecting and sorting all definitions in the mutual block
   -- TODO: This needs to support mutual blocks that include theorems and opaques
-  let mutualDefs <- struct.all.mapM fun name => do
-    match <- findLeanConst name with
-      | .defnInfo defn => pure defn
-      | const => 
-        throw $ .invalidConstantKind const.name "definition" const.ctorName
-  let mutualDefs <- sortDefs [mutualDefs]
+  let mut mutDefs : Array Lean.DefinitionVal := #[]
+  let mut mutOpaqs : Array Lean.OpaqueVal := #[]
+  let mut mutTheos : Array Lean.TheoremVal := #[]
+  for n in struct.all do
+    match <- findLeanConst n with
+      | .defnInfo x => mutDefs := mutDefs.push x
+      | .opaqueInfo x => mutOpaqs := mutOpaqs.push x
+      | .thmInfo x => mutTheos := mutTheos.push x
+      | x => throw $ .invalidConstantKind x.name "mutdef" x.ctorName
+  let mutualDefs <- sortDefs [mutDefs.toList]
+  let mutualOpaqs <- sortOpaqs [mutOpaqs.toList]
+  let mutualTheos <- sortTheos [mutTheos.toList]
   -- Building the `mutCtx`
   let mut mutCtx := default
-  for (ds, i) in List.zipIdx mutualDefs do
+  let mut names := #[]
+  let mut i := 0
+  for ds in mutualDefs do
+    let mut x := #[]
     for d in ds do
+      x := x.push d.name
       mutCtx := mutCtx.insert d.name i
-  let definitions ← withMutCtx mutCtx $ mutualDefs.mapM (·.mapM definitionToIR)
+    names := names.push x.toList
+    i := i + 1
+  for ds in mutualOpaqs do
+    let mut x := #[]
+    for d in ds do
+      x := x.push d.name
+      mutCtx := mutCtx.insert d.name i
+    names := names.push x.toList
+    i := i + 1
+  for ds in mutualTheos do
+    let mut x := #[]
+    for d in ds do
+      x := x.push d.name
+      mutCtx := mutCtx.insert d.name i
+    names := names.push x.toList
+    i := i + 1
+  let defnDefs ← withMutCtx mutCtx $ mutualDefs.mapM (·.mapM definitionToIR)
+  let opaqDefs ← withMutCtx mutCtx $ mutualOpaqs.mapM (·.mapM opaqueToIR)
+  let theoDefs ← withMutCtx mutCtx $ mutualTheos.mapM (·.mapM theoremToIR)
   -- Building and storing the block
   -- TODO: check if this flatten call actually makes sense
-  let definitionsIR := (definitions.map (match ·.head? with
-    | some d => [d] | none => [])).flatten
-  let (blockAnonAddr, blockMetaAddr) ← hashConst $ .mutDefBlock definitionsIR
+  let definitions := defnDefs ++ opaqDefs ++ theoDefs
+  let (blockAnonAddr, blockMetaAddr) ← 
+    hashConst $ .mutDefBlock ⟨definitions, names.toList⟩
   modify fun stt =>
     { stt with blocks := stt.blocks.insert (blockAnonAddr, blockMetaAddr) }
   -- While iterating on the definitions from the mutual block, we need to track
@@ -321,6 +349,18 @@ partial def definitionToIR (defn: Lean.DefinitionVal)
   let isPartial := defn.safety == .partial
   let mode := .definition
   return ⟨defn.levelParams, type, mode, value, defn.hints, isPartial, defn.all⟩
+
+partial def opaqueToIR (opaq: Lean.OpaqueVal)
+  : CompileM Ix.Definition := do
+  let type <- compileExpr opaq.type
+  let value <- compileExpr opaq.value
+  return mkOpaque opaq.levelParams type value opaq.all
+
+partial def theoremToIR (theo: Lean.TheoremVal)
+  : CompileM Ix.Definition := do
+  let type <- compileExpr theo.type
+  let value <- compileExpr theo.value
+  return mkOpaque theo.levelParams type value theo.all
 
 /--
 Content-addresses an inductive and all inductives in the mutual block as a
@@ -401,7 +441,7 @@ partial def inductiveToIR (ind : Lean.InductiveVal) : CompileM Ix.Inductive := d
     -- NOTE: for the purpose of extraction, the order of `ctors` and `recs` MUST
     -- match the order used in `recrCtx`
   return ⟨ind.levelParams, type, ind.numParams, ind.numIndices,
-    ind.all, ctors, recs, ind.isRec, ind.isReflexive⟩
+    ind.all, ctors, recs, ind.numNested, ind.isRec, ind.isReflexive⟩
   where
     collectRecsCtors
       : Lean.ConstantInfo
@@ -622,12 +662,85 @@ partial def sortDefs (dss : List (List Lean.DefinitionVal)) :
     | [d] => pure [[d]]
     | ds  => do pure $ (← List.groupByM (eqDef weakOrd) $
       ← ds.sortByM (compareDef weakOrd))).joinM
-
   -- must normalize, see comments
   let normDss    := dss.map    fun ds => ds.map (·.name) |>.sort
   let normNewDss := newDss.map fun ds => ds.map (·.name) |>.sort
   if normDss == normNewDss then return newDss
   else sortDefs newDss
+
+-- boilerplate repetition for opaque and theorem
+
+/-- AST comparison of two Lean opaque definitions.
+  `weakOrd` contains the best known current mutual ordering -/
+partial def compareOpaq
+  (weakOrd : RBMap Lean.Name Nat compare)
+  (x : Lean.OpaqueVal) 
+  (y : Lean.OpaqueVal) 
+  : CompileM Ordering := do
+  let ls := compare x.levelParams.length y.levelParams.length
+  let ts ← compareExpr weakOrd x.type y.type
+  let vs ← compareExpr weakOrd x.value y.value
+  return concatOrds [ls, ts, vs]
+
+/-- AST equality between two Lean opaque definitions.
+  `weakOrd` contains the best known current mutual ordering -/
+@[inline] partial def eqOpaq
+  (weakOrd : RBMap Lean.Name Nat compare)
+  (x y : Lean.OpaqueVal) 
+  : CompileM Bool :=
+  return (← compareOpaq weakOrd x y) == .eq
+
+partial def sortOpaqs (dss : List (List Lean.OpaqueVal)) :
+    CompileM (List (List Lean.OpaqueVal)) := do
+  let enum (ll : List (List Lean.OpaqueVal)) :=
+    RBMap.ofList (ll.zipIdx.map fun (xs, n) => xs.map (·.name, n)).flatten
+  let weakOrd := enum dss _
+  let newDss ← (← dss.mapM fun ds =>
+    match ds with
+    | []  => unreachable!
+    | [d] => pure [[d]]
+    | ds  => do pure $ (← List.groupByM (eqOpaq weakOrd) $
+      ← ds.sortByM (compareOpaq weakOrd))).joinM
+  let normDss    := dss.map    fun ds => ds.map (·.name) |>.sort
+  let normNewDss := newDss.map fun ds => ds.map (·.name) |>.sort
+  if normDss == normNewDss then return newDss
+  else sortOpaqs newDss
+
+/-- AST comparison of two Lean opaque definitions.
+  `weakOrd` contains the best known current mutual ordering -/
+partial def compareTheo
+  (weakOrd : RBMap Lean.Name Nat compare)
+  (x : Lean.TheoremVal) 
+  (y : Lean.TheoremVal) 
+  : CompileM Ordering := do
+  let ls := compare x.levelParams.length y.levelParams.length
+  let ts ← compareExpr weakOrd x.type y.type
+  let vs ← compareExpr weakOrd x.value y.value
+  return concatOrds [ls, ts, vs]
+
+/-- AST equality between two Lean opaque definitions.
+  `weakOrd` contains the best known current mutual ordering -/
+@[inline] partial def eqTheo
+  (weakOrd : RBMap Lean.Name Nat compare)
+  (x y : Lean.TheoremVal) 
+  : CompileM Bool :=
+  return (← compareTheo weakOrd x y) == .eq
+
+partial def sortTheos (dss : List (List Lean.TheoremVal)) :
+    CompileM (List (List Lean.TheoremVal)) := do
+  let enum (ll : List (List Lean.TheoremVal)) :=
+    RBMap.ofList (ll.zipIdx.map fun (xs, n) => xs.map (·.name, n)).flatten
+  let weakOrd := enum dss _
+  let newDss ← (← dss.mapM fun ds =>
+    match ds with
+    | []  => unreachable!
+    | [d] => pure [[d]]
+    | ds  => do pure $ (← List.groupByM (eqTheo weakOrd) $
+      ← ds.sortByM (compareTheo weakOrd))).joinM
+  let normDss    := dss.map    fun ds => ds.map (·.name) |>.sort
+  let normNewDss := newDss.map fun ds => ds.map (·.name) |>.sort
+  if normDss == normNewDss then return newDss
+  else sortTheos newDss
 
 end
 

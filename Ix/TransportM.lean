@@ -26,6 +26,7 @@ inductive TransportError
   | rawMetadata (m: Ixon.Metadata)
   | rawProof (m: Proof)
   | rawComm (m: Ixon.Comm)
+  | emptyEquivalenceClass
   deriving BEq, Repr
 
 instance : ToString TransportError where toString
@@ -35,6 +36,7 @@ instance : ToString TransportError where toString
 | .rawMetadata x => s!"Can't rematerialize raw metadata {repr x}"
 | .rawProof x => s!"Can't rematerialize raw proof {repr x}"
 | .rawComm x => s!"Can't rematerialize raw commitment {repr x}"
+| .emptyEquivalenceClass => s!"empty equivalence class, should be unreachable"
 
 abbrev DematM := EStateM TransportError DematState
 
@@ -264,7 +266,13 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
 | .definitionProj x => do
   dematMeta [.link x.blockMeta]
   return .defnProj (.mk x.blockCont x.idx)
-| .mutDefBlock xs => .mutDef <$> (xs.mapM dematDefn)
+| .mutDefBlock x => do
+  dematMeta [.mutCtx x.ctx]
+  let defs <- x.defs.mapM fun ds => ds.mapM dematDefn
+  let ds <- defs.mapM fun d => match d.head? with
+    | .some a => pure a
+    | .none => throw .emptyEquivalenceClass
+  return .mutDef ds
 | .mutIndBlock xs => .mutInd <$> (xs.mapM dematIndc)
   where
     dematDefn (x: Ix.Definition): DematM Ixon.Definition := do
@@ -291,15 +299,17 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
       let lvls <- dematLevels x.levelParams
       let t <- dematExpr x.type
       let rrs <- x.rules.mapM dematRecrRule
-      return .mk lvls t x.numParams x.numIndices x.numMotives x.numMinors rrs x.k
+      return ⟨lvls, t, x.numParams, x.numIndices, x.numMotives, x.numMinors, 
+        rrs, x.k⟩
     dematIndc (x: Ix.Inductive): DematM Ixon.Inductive := do
       let _ <- dematIncr
       dematMeta [.all x.all]
-      let lvls <- dematLevels x.lvls
-      let t <- dematExpr x.type
-      let cs <- x.ctors.mapM dematCtor
-      let rs <- x.recrs.mapM dematRecr
-      return .mk lvls t x.numParams x.numIndices cs rs x.isRec x.isReflexive
+      let lvls <- dematLevels x.levelParams
+      let type <- dematExpr x.type
+      let ctors <- x.ctors.mapM dematCtor
+      let recrs <- x.recrs.mapM dematRecr
+      return ⟨lvls, type, x.numParams, x.numIndices, ctors, recrs, x.numNested,
+        x.isRec, x.isReflexive⟩
 
 def constToIxon (x: Ix.Const) : Except TransportError (Ixon.Const × Ixon.Const) := 
   match EStateM.run (dematConst x) emptyDematState with
@@ -345,7 +355,18 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
     | [.link x] => pure x
     | _ => rematThrowUnexpected
   return .definitionProj (.mk x.block link x.idx)
-| .mutDef xs => .mutDefBlock <$> (xs.mapM rematDefn)
+| .mutDef xs => do
+  let ctx <- match (<- rematMeta) with
+    | [.mutCtx x] => pure x
+    | _ => rematThrowUnexpected
+  let mut defs := #[]
+  for (x, ns) in List.zip xs ctx do
+    let mut ds := #[]
+    for _ in ns do
+      let d <- rematDefn x
+      ds := ds.push d
+    defs := defs.push ds.toList
+  return .mutDefBlock ⟨defs.toList, ctx⟩
 | .mutInd xs => .mutIndBlock <$> (xs.mapM rematIndc)
 | .meta m => throw (.rawMetadata m)
 -- TODO: This could return a Proof inductive, since proofs have no metadata
@@ -394,6 +415,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
       let t <- rematExpr x.type
       let cs <- x.ctors.mapM rematCtor
       let rs <- x.recrs.mapM rematRecr
-      return ⟨lvls, t, x.params, x.indices, all, cs, rs, x.recr, x.refl⟩
+      return ⟨lvls, t, x.params, x.indices, all, cs, rs, x.nested, x.recr,
+        x.refl⟩
 
 end Ix.TransportM

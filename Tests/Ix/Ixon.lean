@@ -111,7 +111,7 @@ def genRecursor : Gen Recursor :=
 
 def genInductive : Gen Inductive :=
   .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat'
-    <*> genList' genConstructor <*> genList' genRecursor
+    <*> genList' genConstructor <*> genList' genRecursor <*> genNat'
     <*> genBool <*> genBool
 
 def genConstructorProj : Gen ConstructorProj :=

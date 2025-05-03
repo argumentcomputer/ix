@@ -38,6 +38,10 @@ def genList' (gen: Gen α) : Gen (List α) := do
   let n ← genNat'
   List.mapM (fun _ => gen) (List.range n)
 
+def genListSize (gen: Gen α) (lo hi: Nat): Gen (List α) := do
+  let n ← choose Nat lo hi
+  List.mapM (fun _ => gen) (List.range n)
+
 def genOption (gen: Gen α) : Gen (Option α) :=
   oneOf' [ pure .none, .some <$> gen]
 

@@ -213,13 +213,14 @@ Lean.InductiveVal. However, unlike in Lean, Ix.Inductive directly contains its
 corresponding Constructors and Recursors in order to enable content-addressing.
 --/
 structure Inductive where
-  lvls : List Lean.Name
+  levelParams : List Lean.Name
   type : Expr
   numParams : Nat
   numIndices : Nat
   all : List Lean.Name
   ctors : List Constructor
   recrs : List Recursor
+  numNested: Nat
   isRec : Bool
   isReflexive : Bool
   deriving BEq, Ord, Hashable, Repr, Nonempty
@@ -264,6 +265,11 @@ structure DefinitionProj where
   idx : Nat
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
+structure MutualDefinitionBlock where
+  defs : List (List Definition)
+  ctx  : List (List Lean.Name)
+  deriving BEq, Ord, Hashable, Repr, Nonempty
+
 inductive Const where
   | «axiom» : Axiom → Const
   | quotient : Quotient → Const
@@ -275,7 +281,7 @@ inductive Const where
   | recursorProj : RecursorProj → Const
   | definitionProj : DefinitionProj → Const
   -- constants to represent mutual blocks
-  | mutDefBlock : List Definition → Const
+  | mutDefBlock : MutualDefinitionBlock → Const
   | mutIndBlock : List Inductive → Const
   deriving Ord, BEq, Inhabited, Repr, Nonempty
 
