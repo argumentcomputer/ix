@@ -8,7 +8,7 @@ def populateAndValidate (circuitModule : CircuitModule)
     (witnessModule : WitnessModule) height msg :=
   let witnessModule := witnessModule.populate height
   let witness := compileWitnessModules #[witnessModule] #[height]
-  withExceptOk msg (validateWitness #[circuitModule] witness #[]) fun _ => .done
+  withExceptOk msg (validateWitness #[circuitModule] #[] witness) fun _ => .done
 
 def transparent : TestSeq :=
   let circuitModule := CircuitModule.new 0
@@ -80,9 +80,28 @@ def shifted : TestSeq :=
   let witnessModule := witnessModule.bindOracleTo x entryId .b1
   populateAndValidate circuitModule witnessModule 128 "Archon shifted works"
 
+def proveAndVerify : TestSeq :=
+  let circuitModule := CircuitModule.new 0
+  let (x, circuitModule) := circuitModule.addCommitted "x" .b1
+  let (y, circuitModule) := circuitModule.addCommitted "y" .b1
+  let circuitModule := circuitModule.assertZero "x xor y" #[] $ .add (.oracle x) (.oracle y)
+  let circuitModule := circuitModule.freezeOracles
+  let witnessModule := circuitModule.initWitnessModule
+  let (entryId, witnessModule) := witnessModule.addEntryWithCapacity 7
+  let witnessModule := witnessModule.pushUInt128To (.ofNatCore $ UInt128.size - 1) entryId
+  let witnessModule := witnessModule.bindOracleTo x entryId .b1
+  let witnessModule := witnessModule.bindOracleTo y entryId .b1
+  let height := 128
+  let witnessModule := witnessModule.populate height
+  let witness := compileWitnessModules #[witnessModule] #[height]
+  let proof := prove #[circuitModule] #[] 1 100 witness
+  withExceptOk "Archon prove and verify work"
+    (verify #[circuitModule] #[] 1 100 proof) fun _ => .done
+
 def Tests.Archon.suite := [
     transparent,
     linearCombination,
     packed,
     shifted,
+    proveAndVerify,
   ]

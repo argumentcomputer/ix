@@ -45,7 +45,10 @@ void rs_circuit_module_pop_namespace(void*);
 
 /* --- Archon protocol --- */
 
-c_result *rs_validate_witness(void**, size_t, void*, b_lean_obj_arg);
+c_result *rs_validate_witness(size_t, void**, b_lean_obj_arg, void*);
+void rs_proof_free(void*);
+void *rs_prove(size_t, void**, b_lean_obj_arg, size_t, size_t, void*);
+c_result *rs_verify(size_t, void**, b_lean_obj_arg, size_t, size_t, void*);
 
 /* --- Iroh --- */
 

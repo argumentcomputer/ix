@@ -7,10 +7,9 @@ use binius_core::{
     },
     fiat_shamir::HasherChallenger,
 };
-use binius_field::{BinaryField8b as B8, tower::CanonicalTowerFamily};
+use binius_field::tower::CanonicalTowerFamily;
 use binius_hal::ComputationBackend;
 use binius_hash::groestl::Groestl256ByteCompression;
-use binius_math::EvaluationDomainFactory;
 use groestl_crypto::Groestl256;
 
 use super::{
@@ -24,10 +23,19 @@ pub struct Proof {
     modules_heights: Vec<u64>,
 }
 
+impl Default for Proof {
+    fn default() -> Self {
+        Proof {
+            proof_core: ProofCore { transcript: vec![] },
+            modules_heights: vec![],
+        }
+    }
+}
+
 pub fn validate_witness_core(
     circuit_modules: &[&CircuitModule],
-    witness: &Witness<'_>,
     boundaries: &[Boundary<F>],
+    witness: &Witness<'_>,
 ) -> Result<()> {
     let Witness {
         mlei,
@@ -41,28 +49,24 @@ pub fn validate_witness_core(
 #[inline]
 pub fn validate_witness(
     circuit_modules: &[CircuitModule],
-    witness: &Witness<'_>,
     boundaries: &[Boundary<F>],
+    witness: &Witness<'_>,
 ) -> Result<()> {
     validate_witness_core(
         &circuit_modules.iter().collect::<Vec<_>>(),
-        witness,
         boundaries,
+        witness,
     )
 }
 
-pub fn prove_core<DomainFactory, Backend>(
+pub fn prove_core<Backend: ComputationBackend>(
     circuit_modules: &[&CircuitModule],
-    witness: Witness<'_>,
     boundaries: &[Boundary<F>],
     log_inv_rate: usize,
     security_bits: usize,
+    witness: Witness<'_>,
     backend: &Backend,
-) -> Result<Proof>
-where
-    Backend: ComputationBackend,
-    DomainFactory: EvaluationDomainFactory<B8>,
-{
+) -> Result<Proof> {
     let Witness {
         mlei,
         modules_heights,
@@ -90,24 +94,20 @@ where
 }
 
 #[inline]
-pub fn prove<DomainFactory, Backend>(
+pub fn prove<Backend: ComputationBackend>(
     circuit_modules: &[CircuitModule],
-    witness: Witness<'_>,
     boundaries: &[Boundary<F>],
     log_inv_rate: usize,
     security_bits: usize,
+    witness: Witness<'_>,
     backend: &Backend,
-) -> Result<Proof>
-where
-    Backend: ComputationBackend,
-    DomainFactory: EvaluationDomainFactory<B8>,
-{
-    prove_core::<DomainFactory, Backend>(
+) -> Result<Proof> {
+    prove_core::<Backend>(
         &circuit_modules.iter().collect::<Vec<_>>(),
-        witness,
         boundaries,
         log_inv_rate,
         security_bits,
+        witness,
         backend,
     )
 }
@@ -208,7 +208,7 @@ mod tests {
         witness_module.bind_oracle_to::<B1>(oracles.b, zeros);
         let witness_modules = [witness_module];
         let witness = compile_witness_modules(&witness_modules, vec![128]).unwrap();
-        assert!(validate_witness(&[circuit_module], &witness, &[]).is_err());
+        assert!(validate_witness(&[circuit_module], &[], &witness).is_err());
     }
 
     #[test]
@@ -218,7 +218,7 @@ mod tests {
         populate_a_xor_b_witness_with_ones(&mut witness_module, &oracles);
         let witness_modules = [witness_module];
         let witness = compile_witness_modules(&witness_modules, vec![128]).unwrap();
-        assert!(validate_witness(&[circuit_module], &witness, &[]).is_ok());
+        assert!(validate_witness(&[circuit_module], &[], &witness).is_ok());
     }
 
     #[test]
@@ -230,7 +230,7 @@ mod tests {
         populate_a_xor_b_witness_with_ones(&mut witness_modules[0], &oracles0);
         populate_a_xor_b_witness_with_ones(&mut witness_modules[1], &oracles1);
         let witness = compile_witness_modules(&witness_modules, vec![128, 128]).unwrap();
-        assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 
     #[test]
@@ -242,6 +242,6 @@ mod tests {
         populate_a_xor_b_witness_with_ones(&mut witness_modules[0], &oracles0);
         // Witness module 1 isn't populated
         let witness = compile_witness_modules(&witness_modules, vec![128, 0]).unwrap();
-        assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 }

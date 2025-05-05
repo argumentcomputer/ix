@@ -309,5 +309,5 @@ fn bit_decomposition(
         coeff = coeff.wrapping_shl(1);
     }
     let (oracles, arith) = expr.to_arith_expr();
-    builder.assert_zero("bit decomposition", oracles, arith);
+    builder.assert_zero("bit decomposition", oracles, arith.into());
 }

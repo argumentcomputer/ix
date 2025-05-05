@@ -8,15 +8,15 @@ crate-type = ["staticlib"]
 
 [dependencies]
 anyhow = "1"
-binius_core = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "d91fe22b0c40884dad031296c58c9830bd3a26d1" }
-binius_circuits = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "d91fe22b0c40884dad031296c58c9830bd3a26d1" }
-binius_field = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "d91fe22b0c40884dad031296c58c9830bd3a26d1" }
-binius_macros = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "d91fe22b0c40884dad031296c58c9830bd3a26d1" }
-binius_maybe_rayon = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "d91fe22b0c40884dad031296c58c9830bd3a26d1" }
-binius_math = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "d91fe22b0c40884dad031296c58c9830bd3a26d1" }
-binius_hal = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "d91fe22b0c40884dad031296c58c9830bd3a26d1" }
-binius_hash = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "d91fe22b0c40884dad031296c58c9830bd3a26d1" }
-binius_utils = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "d91fe22b0c40884dad031296c58c9830bd3a26d1" }
+binius_core = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
+binius_circuits = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
+binius_field = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
+binius_macros = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
+binius_maybe_rayon = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
+binius_math = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
+binius_hal = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
+binius_hash = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
+binius_utils = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
 blake3 = "=1.6.1"
 bumpalo = "3"
 groestl_crypto = { package = "groestl", version = "0.10.1" }

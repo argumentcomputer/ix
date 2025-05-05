@@ -40,6 +40,7 @@ pub struct WitnessModule {
     entry_map: FxHashMap<OracleId, (EntryId, usize)>,
 }
 
+#[derive(Default)]
 pub struct Witness<'a> {
     pub(crate) mlei: MultilinearExtensionIndex<'a, PackedType<OptimalUnderlier, B128>>,
     /// The heights for each module. `0` means that the circuit module is
@@ -782,7 +783,7 @@ mod tests {
             witness_modules[0].populate(height).unwrap();
             assert!(!witness_modules[0].entry_map.is_empty());
             let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
-            assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
+            assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
         };
 
         HEIGHTS.into_par_iter().for_each(test_with_height);
@@ -802,7 +803,7 @@ mod tests {
             witness_modules[0].populate(height).unwrap();
             assert!(!witness_modules[0].entry_map.is_empty());
             let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
-            assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
+            assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
         };
 
         HEIGHTS.into_par_iter().for_each(test_with_height);
@@ -873,7 +874,7 @@ mod tests {
         witness_modules[0].populate(height).unwrap();
         assert!(!witness_modules[0].entry_map.is_empty());
         let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
-        assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok())
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok())
     }
 
     #[test]
@@ -898,7 +899,7 @@ mod tests {
         let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
 
         let circuit_modules = [circuit_module];
-        assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok())
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok())
     }
 
     #[test]
@@ -930,7 +931,7 @@ mod tests {
         let witness_modules = [witness_module];
         let circuit_modules = [circuit_module];
         let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
-        assert!(validate_witness(&circuit_modules, &witness_archon, &[]).is_ok());
+        assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
     }
 
     #[test]
@@ -965,7 +966,7 @@ mod tests {
         let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
         let circuit_modules = [circuit_module];
 
-        assert!(validate_witness(&circuit_modules, &witness_archon, &[]).is_ok());
+        assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
     }
 
     #[test]
@@ -1003,7 +1004,7 @@ mod tests {
             let witness_archon =
                 compile_witness_modules(&witness_modules, vec![height as u64]).unwrap();
 
-            validate_witness(&circuit_modules, &witness_archon, &[]).unwrap()
+            validate_witness(&circuit_modules, &[], &witness_archon).unwrap()
         }
 
         let input_value = 0b10000000u8;
@@ -1104,6 +1105,6 @@ mod tests {
         let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
         let circuit_modules = [circuit_module];
 
-        assert!(validate_witness(&circuit_modules, &witness_archon, &[]).is_ok());
+        assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
     }
 }

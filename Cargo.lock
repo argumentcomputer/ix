@@ -316,17 +316,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-recursion"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b43422f69d8ff38f95f1b2bb76517c91589a924d1559a0e935d7c8ce0274c11"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.101",
-]
-
-[[package]]
 name = "async-trait"
 version = "0.1.88"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -441,7 +430,7 @@ checksum = "597bb81c80a54b6a4381b23faba8d7774b144c94cbd1d6fe3f1329bd776554ab"
 [[package]]
 name = "binius_circuits"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=d91fe22b0c40884dad031296c58c9830bd3a26d1#d91fe22b0c40884dad031296c58c9830bd3a26d1"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
 dependencies = [
  "alloy-primitives",
  "anyhow",
@@ -464,7 +453,7 @@ dependencies = [
 [[package]]
 name = "binius_core"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=d91fe22b0c40884dad031296c58c9830bd3a26d1#d91fe22b0c40884dad031296c58c9830bd3a26d1"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
 dependencies = [
  "assert_matches",
  "auto_impl",
@@ -493,7 +482,7 @@ dependencies = [
 [[package]]
 name = "binius_field"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=d91fe22b0c40884dad031296c58c9830bd3a26d1#d91fe22b0c40884dad031296c58c9830bd3a26d1"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
 dependencies = [
  "binius_maybe_rayon",
  "binius_utils",
@@ -512,7 +501,7 @@ dependencies = [
 [[package]]
 name = "binius_hal"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=d91fe22b0c40884dad031296c58c9830bd3a26d1#d91fe22b0c40884dad031296c58c9830bd3a26d1"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
 dependencies = [
  "auto_impl",
  "binius_field",
@@ -530,7 +519,7 @@ dependencies = [
 [[package]]
 name = "binius_hash"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=d91fe22b0c40884dad031296c58c9830bd3a26d1#d91fe22b0c40884dad031296c58c9830bd3a26d1"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
 dependencies = [
  "binius_field",
  "binius_maybe_rayon",
@@ -550,7 +539,7 @@ dependencies = [
 [[package]]
 name = "binius_macros"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=d91fe22b0c40884dad031296c58c9830bd3a26d1#d91fe22b0c40884dad031296c58c9830bd3a26d1"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -560,7 +549,7 @@ dependencies = [
 [[package]]
 name = "binius_math"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=d91fe22b0c40884dad031296c58c9830bd3a26d1#d91fe22b0c40884dad031296c58c9830bd3a26d1"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
 dependencies = [
  "auto_impl",
  "binius_field",
@@ -582,7 +571,7 @@ dependencies = [
 [[package]]
 name = "binius_maybe_rayon"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=d91fe22b0c40884dad031296c58c9830bd3a26d1#d91fe22b0c40884dad031296c58c9830bd3a26d1"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
 dependencies = [
  "cfg-if",
  "either",
@@ -593,7 +582,7 @@ dependencies = [
 [[package]]
 name = "binius_ntt"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=d91fe22b0c40884dad031296c58c9830bd3a26d1#d91fe22b0c40884dad031296c58c9830bd3a26d1"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
 dependencies = [
  "binius_field",
  "binius_math",
@@ -606,7 +595,7 @@ dependencies = [
 [[package]]
 name = "binius_utils"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=d91fe22b0c40884dad031296c58c9830bd3a26d1#d91fe22b0c40884dad031296c58c9830bd3a26d1"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
 dependencies = [
  "auto_impl",
  "binius_maybe_rayon",
@@ -735,9 +724,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.20"
+version = "1.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04da6a0d40b948dfc4fa8f5bbf402b0fc1a64a28dbf7d12ffd683550f2c1b63a"
+checksum = "8691782945451c1c383942c4874dbe63814f61cb57ef773cda2972682b7bb3c0"
 dependencies = [
  "shlex",
 ]
@@ -1736,9 +1725,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75249d144030531f8dee69fe9cea04d3edf809a017ae445e2abdff6629e86633"
+checksum = "a9421a676d1b147b16b82c9225157dc629087ef8ec4d5e2960f9437a90dac0a5"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1802,14 +1791,12 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hickory-proto"
-version = "0.25.1"
+version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d844af74f7b799e41c78221be863bade11c430d46042c3b49ca8ae0c6d27287"
+checksum = "f8a6fe56c0038198998a6f217ca4e7ef3a5e51f46163bd6dd60b5c71ca6c6502"
 dependencies = [
- "async-recursion",
  "async-trait",
  "cfg-if",
- "critical-section",
  "data-encoding",
  "enum-as-inner",
  "futures-channel",
@@ -1829,9 +1816,9 @@ dependencies = [
 
 [[package]]
 name = "hickory-resolver"
-version = "0.25.1"
+version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a128410b38d6f931fcc6ca5c107a3b02cabd6c05967841269a4ad65d23c44331"
+checksum = "dc62a9a99b0bfb44d2ab95a7208ac952d31060efc16241c87eaf36406fecf87a"
 dependencies = [
  "cfg-if",
  "futures-util",
@@ -1972,7 +1959,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -2320,7 +2307,7 @@ dependencies = [
  "tracing",
  "url",
  "wasm-bindgen-futures",
- "webpki-roots",
+ "webpki-roots 0.26.11",
  "x509-parser",
  "z32",
 ]
@@ -2528,7 +2515,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
- "webpki-roots",
+ "webpki-roots 0.26.11",
  "z32",
 ]
 
@@ -2645,9 +2632,9 @@ checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
 
 [[package]]
 name = "libm"
-version = "0.2.13"
+version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9627da5196e5d8ed0b0495e61e518847578da83483c37288316d9b2e03a7f72"
+checksum = "a25169bd5913a4b437588a7e3d127cd6e90127b60e0ffbd834a38f1599e016b8"
 
 [[package]]
 name = "linux-raw-sys"
@@ -3937,9 +3924,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.5.11"
+version = "0.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2f103c6d277498fbceb16e84d317e2a400f160f46904d5f5410848c829511a3"
+checksum = "928fca9cf2aa042393a8325b9ead81d2f0df4cb12e1e24cef072922ccd99c5af"
 dependencies = [
  "bitflags 2.9.0",
 ]
@@ -4067,7 +4054,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
- "webpki-roots",
+ "webpki-roots 0.26.11",
  "windows-registry",
 ]
 
@@ -4270,15 +4257,15 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.26"
+version = "0.23.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df51b5869f3a441595eac5e8ff14d486ff285f7b8c0df8770e49c3b56351f0f0"
+checksum = "730944ca083c1c233a75c09f199e973ca499344a2b7ba9e755c457e86fb4a321"
 dependencies = [
  "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.1",
+ "rustls-webpki 0.103.2",
  "subtle",
  "zeroize",
 ]
@@ -4314,9 +4301,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.1"
+version = "0.103.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fef8b8769aaccf73098557a87cd1816b4f9c7c16811c9c77142aa695c16f2c03"
+checksum = "7149975849f1abb3832b246010ef62ccc80d3a76169517ada7188252b9cfb437"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -5027,9 +5014,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.44.2"
+version = "1.45.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6b88822cbe49de4185e3a4cbf8321dd487cf5fe0c5c65695fef6346371e9c48"
+checksum = "2513ca694ef9ede0fb23fe71a4ee4107cb102b9dc1930f6d0fd77aae068ae165"
 dependencies = [
  "backtrace",
  "bytes",
@@ -5391,7 +5378,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "url",
- "webpki-roots",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -5594,9 +5581,18 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "0.26.10"
+version = "0.26.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37493cadf42a2a939ed404698ded7fb378bf301b5011f973361779a3a74f8c93"
+checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
+dependencies = [
+ "webpki-roots 1.0.0",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2853738d1cc4f2da3a225c18ec6c3721abb31961096e9dbf5ab35fa88b19cfdb"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -6071,9 +6067,9 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 
 [[package]]
 name = "winnow"
-version = "0.7.7"
+version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb8234a863ea0e8cd7284fcdd4f145233eb00fee02bbdd9861aec44e6477bc5"
+checksum = "d9fb597c990f03753e08d3c29efbfcf2019a003b4bf4ba19225c158e1549f0f3"
 dependencies = [
  "memchr",
 ]

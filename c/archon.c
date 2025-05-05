@@ -311,8 +311,8 @@ extern lean_obj_res c_rs_circuit_module_pop_namespace(lean_obj_arg l_circuit) {
 
 extern lean_obj_res c_rs_validate_witness(
     b_lean_obj_arg l_circuit_modules,
-    b_lean_obj_arg l_witness,
-    b_lean_obj_arg boundaries
+    b_lean_obj_arg boundaries,
+    b_lean_obj_arg l_witness
 ) {
     linear_object *witness_linear = validated_linear(l_witness);
 
@@ -325,11 +325,86 @@ extern lean_obj_res c_rs_validate_witness(
     }
 
     c_result *result = rs_validate_witness(
-        modules_ptrs,
         num_modules,
-        get_object_ref(witness_linear),
-        boundaries
+        modules_ptrs,
+        boundaries,
+        get_object_ref(witness_linear)
     );
+
+    lean_object *except;
+    if (result->is_ok) {
+        except = lean_alloc_ctor(1, 1, 0);
+        lean_ctor_set(except, 0, lean_box(0));
+    } else {
+        except = lean_alloc_ctor(0, 1, 0);
+        lean_ctor_set(except, 0, lean_mk_string(result->data));
+    }
+    rs__c_result_unit_string_free(result);
+
+    return except;
+}
+
+extern lean_obj_res c_rs_prove(
+    b_lean_obj_arg l_circuit_modules,
+    b_lean_obj_arg boundaries,
+    size_t log_inv_rate,
+    size_t security_bits,
+    lean_obj_arg l_witness
+) {
+    linear_object *witness_linear = validated_linear(l_witness);
+
+    size_t num_modules = lean_array_size(l_circuit_modules);
+    lean_object **modules_cptrs = lean_array_cptr(l_circuit_modules);
+    void *modules_ptrs[num_modules];
+    for (size_t i = 0; i < num_modules; i++) {
+        linear_object *linear = validated_linear(modules_cptrs[i]);
+        modules_ptrs[i] = get_object_ref(linear);
+    }
+
+    void *proof = rs_prove(
+        num_modules,
+        modules_ptrs,
+        boundaries,
+        log_inv_rate,
+        security_bits,
+        get_object_ref(witness_linear)
+    );
+    ditch_linear(witness_linear);
+
+    linear_object *proof_linear = linear_object_init(
+        proof,
+        &rs_proof_free
+    );
+    return alloc_lean_linear_object(proof_linear);
+}
+
+extern lean_obj_res c_rs_verify(
+    b_lean_obj_arg l_circuit_modules,
+    b_lean_obj_arg boundaries,
+    size_t log_inv_rate,
+    size_t security_bits,
+    lean_obj_arg l_proof
+) {
+    linear_object *proof_linear = validated_linear(l_proof);
+
+    size_t num_modules = lean_array_size(l_circuit_modules);
+    lean_object **modules_cptrs = lean_array_cptr(l_circuit_modules);
+    void *modules_ptrs[num_modules];
+    for (size_t i = 0; i < num_modules; i++) {
+        linear_object *linear = validated_linear(modules_cptrs[i]);
+        modules_ptrs[i] = get_object_ref(linear);
+    }
+
+    c_result *result = rs_verify(
+        num_modules,
+        modules_ptrs,
+        boundaries,
+        log_inv_rate,
+        security_bits,
+        get_object_ref(proof_linear)
+    );
+
+    ditch_linear(proof_linear);
 
     lean_object *except;
     if (result->is_ok) {

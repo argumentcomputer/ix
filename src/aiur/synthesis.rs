@@ -466,7 +466,7 @@ fn synthesize_constraints(
         // Topmost selector must be equal to the count step down
         let step_down = virt_map.step_down(builder, log_n as usize, count as usize);
         let (expr, oracles) = (constraints.topmost_selector - Expr::Var(step_down)).to_arith_expr();
-        builder.assert_zero("topmost", expr, oracles);
+        builder.assert_zero("topmost", expr, oracles.into());
     }
     let constant = virt_map.constant(
         builder,
@@ -485,12 +485,12 @@ fn synthesize_constraints(
     for (i, expr) in constraints.unique_constraints.into_iter().enumerate() {
         let ns = format!("unique constraint {i}");
         let (expr, oracles) = expr.to_arith_expr();
-        builder.assert_zero(ns, expr, oracles);
+        builder.assert_zero(ns, expr, oracles.into());
     }
     for (i, expr) in constraints.shared_constraints.into_iter().enumerate() {
         let ns = format!("shared constraint {i}");
         let (expr, oracles) = expr.to_arith_expr();
-        builder.assert_zero(ns, expr, oracles);
+        builder.assert_zero(ns, expr, oracles.into());
     }
     for (channel, sel, args) in constraints.sends {
         let sel = sel.to_sum_b1(builder, virt_map, log_n);
@@ -500,10 +500,10 @@ fn synthesize_constraints(
             .collect::<Vec<_>>();
         match channel {
             Channel::Add => builder
-                .flush_custom(FlushDirection::Push, channel_ids.add, sel, oracles, 1)
+                .flush_custom(FlushDirection::Push, channel_ids.add, vec![sel], oracles, 1)
                 .unwrap(),
             Channel::Mul => builder
-                .flush_custom(FlushDirection::Push, channel_ids.mul, sel, oracles, 1)
+                .flush_custom(FlushDirection::Push, channel_ids.mul, vec![sel], oracles, 1)
                 .unwrap(),
             _ => (),
         };
@@ -598,10 +598,10 @@ fn require(
     let send_args = send_args.into_iter().map(OracleOrConst::Oracle);
     let receive_args = receive_args.into_iter().map(OracleOrConst::Oracle);
     builder
-        .flush_custom(FlushDirection::Pull, channel_id, sel, receive_args, 1)
+        .flush_custom(FlushDirection::Pull, channel_id, vec![sel], receive_args, 1)
         .unwrap();
     builder
-        .flush_custom(FlushDirection::Push, channel_id, sel, send_args, 1)
+        .flush_custom(FlushDirection::Push, channel_id, vec![sel], send_args, 1)
         .unwrap();
 }
 
