@@ -26,16 +26,20 @@ void rs_circuit_module_free(void*);
 void rs_circuit_module_freeze_oracles(void*);
 void *rs_circuit_module_init_witness_module(void*);
 void rs_circuit_module_flush(void*, bool, size_t, b_lean_obj_arg, uint64_t);
-void rs_circuit_module_assert_zero(void*, char const*, b_lean_obj_arg, b_lean_obj_arg);
+void rs_circuit_module_assert_zero(
+    void*, char const*, b_lean_obj_arg, b_lean_obj_arg
+);
 void rs_circuit_module_assert_not_zero(void*, size_t);
 size_t rs_circuit_module_add_committed(void*, char const *, uint8_t);
 size_t rs_circuit_module_add_transparent(void*, char const *, b_lean_obj_arg);
 size_t rs_circuit_module_add_linear_combination(
     void*, char const *, b_lean_obj_arg, b_lean_obj_arg
 );
-size_t rs_circuit_module_add_packed(
-    void*, char const *, size_t, size_t
+size_t rs_circuit_module_add_packed(void*, char const *, size_t, size_t);
+size_t rs_circuit_module_add_shifted(
+    void*, char const *, size_t, uint32_t, size_t, uint8_t
 );
+size_t rs_circuit_module_add_projected(void*, char const *, size_t, uint64_t);
 void rs_circuit_module_push_namespace(void*, char const *);
 void rs_circuit_module_pop_namespace(void*);
 

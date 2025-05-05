@@ -1,6 +1,6 @@
 use binius_core::{
     constraint_system::channel::{ChannelId, FlushDirection},
-    oracle::OracleId,
+    oracle::{OracleId, ShiftVariant},
 };
 use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
@@ -136,12 +136,50 @@ extern "C" fn rs_circuit_module_add_linear_combination(
 extern "C" fn rs_circuit_module_add_packed(
     circuit_module: &mut CircuitModule,
     name: *const c_char,
-    oracle_id: OracleId,
+    inner: OracleId,
     log_degree: usize,
 ) -> OracleId {
     circuit_module
-        .add_packed(raw_to_str(name), oracle_id, log_degree)
+        .add_packed(raw_to_str(name), inner, log_degree)
         .expect("CircuitModule::add_packed failure")
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_circuit_module_add_shifted(
+    circuit_module: &mut CircuitModule,
+    name: *const c_char,
+    inner: OracleId,
+    shift_offset: u32,
+    block_bits: usize,
+    shift_variant: u8,
+) -> OracleId {
+    let shift_variant = match shift_variant {
+        0 => ShiftVariant::CircularLeft,
+        1 => ShiftVariant::LogicalLeft,
+        2 => ShiftVariant::LogicalRight,
+        _ => unreachable!(),
+    };
+    circuit_module
+        .add_shifted(
+            raw_to_str(name),
+            inner,
+            shift_offset,
+            block_bits,
+            shift_variant,
+        )
+        .expect("CircuitModule::add_shifted failure")
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_circuit_module_add_projected(
+    circuit_module: &mut CircuitModule,
+    name: *const c_char,
+    inner: OracleId,
+    mask: u64,
+) -> OracleId {
+    circuit_module
+        .add_projected(raw_to_str(name), inner, mask)
+        .expect("CircuitModule::add_projected failure")
 }
 
 #[unsafe(no_mangle)]

@@ -10,6 +10,9 @@ private opaque GenericNonempty : NonemptyType
 def CircuitModule : Type := GenericNonempty.type
 instance : Nonempty CircuitModule := GenericNonempty.property
 
+inductive ShiftVariant
+  | circularLeft | logicalLeft | logicalRight
+
 namespace CircuitModule
 
 @[never_extract, extern "c_rs_circuit_module_new"]
@@ -55,6 +58,16 @@ opaque addLinearCombination : CircuitModule → @& String → (offset : @& UInt1
 @[never_extract, extern "c_rs_circuit_module_add_packed"]
 opaque addPacked : CircuitModule → @& String → OracleId →
   (logDegree : USize) → OracleId × CircuitModule
+
+/-- **Invalidates** the input `CircuitModule` -/
+@[never_extract, extern "c_rs_circuit_module_add_shifted"]
+opaque addShifted : CircuitModule → @& String → OracleId → (shiftOffset : UInt32) →
+  (blockBits : USize) → @& ShiftVariant → OracleId × CircuitModule
+
+/-- **Invalidates** the input `CircuitModule` -/
+@[never_extract, extern "c_rs_circuit_module_add_projected"]
+opaque addProjected : CircuitModule → @& String → OracleId → (mask : UInt64) →
+  OracleId × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_push_namespace"]

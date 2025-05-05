@@ -192,7 +192,7 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         inner: OracleId,
-        shift_offset: usize,
+        shift_offset: u32,
         block_bits: usize,
         variant: ShiftVariant,
     ) -> Result<OracleId> {
@@ -214,17 +214,17 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         inner: OracleId,
-        selector: u64,
+        mask: u64,
     ) -> Result<OracleId> {
         let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
 
-        let mut log2 = log2_ceil_usize(usize::try_from(selector)?);
-        if 2u64.pow(u32::try_from(log2)?) == selector {
+        let mut log2 = log2_ceil_usize(usize::try_from(mask)?);
+        if 2u64.pow(u32::try_from(log2)?) == mask {
             log2 += 1;
         }
 
         let mut selector_binary: Vec<F> = (0..64)
-            .map(|n| F::from(((selector >> n) & 1) as u128))
+            .map(|n| F::from(((mask >> n) & 1) as u128))
             .collect();
         selector_binary.truncate(log2);
 
@@ -233,8 +233,8 @@ impl CircuitModule {
             tower_level: inner_tower_level,
             kind: OracleKind::Projected {
                 inner,
-                selector,
-                selector_binary,
+                mask,
+                mask_bits: selector_binary,
             },
         };
 
@@ -333,15 +333,15 @@ pub fn compile_circuit_modules(
                 } => builder.add_shifted(
                     name,
                     inner + oracle_offset,
-                    *shift_offset,
+                    *shift_offset as usize,
                     *block_bits,
                     *variant,
                 )?,
 
                 OracleKind::Projected {
                     inner,
-                    selector: _,
-                    selector_binary,
+                    mask: _,
+                    mask_bits: selector_binary,
                 } => builder.add_projected(
                     name,
                     inner + oracle_offset,
