@@ -392,7 +392,7 @@ pub fn compile_circuit_modules(
             let mut composition = composition.clone();
             composition.offset_oracles(oracle_offset);
             let composition = composition.into_arith_expr_core(&mut oracle_ids);
-            builder.assert_zero(name, oracle_ids, composition);
+            builder.assert_zero(name, oracle_ids, composition.convert_field());
         }
 
         for non_zero_oracle_id in &module.non_zero_oracle_ids {
