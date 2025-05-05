@@ -79,6 +79,41 @@ inductive Data
 
 end
 
+inductive ContextualType
+  | evaluates : Typ → ContextualType
+  | escapes : ContextualType
+  deriving Inhabited
+
+mutual
+inductive TypedTermInner
+  | var : Local → TypedTermInner
+  | ref : Global → TypedTermInner
+  | data : TypedData → TypedTermInner
+  | ret : TypedTerm → TypedTermInner
+  | let : Pattern → TypedTerm → TypedTerm → TypedTermInner
+  | match : TypedTerm → List (Pattern × TypedTerm) → TypedTermInner
+  | if : TypedTerm → TypedTerm → TypedTerm → TypedTermInner
+  | app : Global → List TypedTerm → TypedTermInner
+  | preimg : Global → TypedTerm → TypedTermInner
+  | xor : TypedTerm → TypedTerm → TypedTermInner
+  | and : TypedTerm → TypedTerm → TypedTermInner
+  | get : TypedTerm → Nat → TypedTermInner
+  | slice : TypedTerm → Nat → Nat → TypedTermInner
+  | store : TypedTerm → TypedTermInner
+  | load : TypedTerm → TypedTermInner
+  | pointerAsU64 : TypedTerm → TypedTermInner
+  deriving Inhabited
+
+structure TypedTerm where
+  typ : ContextualType
+  inner : TypedTermInner
+  deriving Inhabited
+
+inductive TypedData
+  | primitive : Primitive → TypedData
+  | tuple : List TypedTerm → TypedData
+end
+
 structure Constructor where
   nameHead : String
   argTypes : List Typ
