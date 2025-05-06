@@ -2582,6 +2582,7 @@ dependencies = [
  "binius_utils",
  "blake3",
  "bumpalo",
+ "bytemuck",
  "bytes",
  "groestl",
  "indexmap",

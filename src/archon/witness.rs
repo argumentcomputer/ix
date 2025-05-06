@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail, ensure};
+use bytemuck::{ must_cast_slice, Pod };
 use binius_core::oracle::ShiftVariant;
 use binius_core::{oracle::OracleId, witness::MultilinearExtensionIndex};
 use binius_field::{
@@ -180,6 +181,21 @@ impl WitnessModule {
     #[inline]
     pub fn push_u128_to(&mut self, u128: u128, entry_id: EntryId) {
         self.entries[entry_id].push(OptimalUnderlier::from(u128))
+    }
+
+    pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_id: OracleId) -> Vec<T>{
+        let id = if let Some(v) = self.entry_map.get(&oracle_id) {
+            let tower_level: usize = v.1;
+            if tower_level != FS::TOWER_LEVEL {
+                panic!("provided tower level doesn't match stored one");
+            }
+            v.0
+        } else {
+            panic!("couldn't find oracle_id in entry_map");
+        };
+
+        let underliers = self.entries[id].clone();
+        must_cast_slice(&underliers).to_vec()
     }
 
     /// Populates a witness module with data to reach a given height.
