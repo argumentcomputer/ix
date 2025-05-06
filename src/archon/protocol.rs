@@ -34,8 +34,8 @@ pub fn validate_witness(
         mlei,
         modules_heights,
     } = witness;
-    let constraint_system = compile_circuit_modules(circuit_modules, modules_heights)?;
-    validate_witness_core(&constraint_system, boundaries, mlei)?;
+    let constraint_system = compile_circuit_modules(circuit_modules, modules_heights);
+    validate_witness_core(&constraint_system.unwrap(), boundaries, mlei)?;
     Ok(())
 }
 

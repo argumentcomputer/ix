@@ -418,6 +418,7 @@ pub fn compile_circuit_modules(
 
         oracle_offset += module.oracles.get_ref().len();
     }
+
     builder.build()
 }
 

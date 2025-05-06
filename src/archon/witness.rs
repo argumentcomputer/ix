@@ -668,12 +668,8 @@ impl WitnessModule {
                             // grab all underliers and get field elements from them
                             let field_elements: Vec<B32> = underliers
                                 .into_iter()
-                                .enumerate()
-                                .flat_map(|(idx, underlier)| {
-                                    let inner_underlier = unsafe {
-                                        transmute::<OptimalUnderlier, [B32; 4]>(underlier)
-                                    };
-                                    inner_underlier
+                                .flat_map(|underlier| unsafe {
+                                    transmute::<OptimalUnderlier, [B32; 4]>(underlier)
                                 })
                                 .collect();
 

@@ -1,242 +1,119 @@
-// TODO: remove this
-#![allow(clippy::all)]
+#[cfg(test)]
+mod tests {
+    use crate::archon::ProjectedSelectorInfo;
+    use crate::archon::arith_expr::ArithExpr;
+    use crate::archon::circuit::{CircuitModule, init_witness_modules};
+    use crate::archon::protocol::validate_witness;
+    use crate::archon::witness::compile_witness_modules;
+    use binius_circuits::arithmetic::u32::LOG_U32_BITS;
+    use binius_circuits::builder::ConstraintSystemBuilder;
+    use binius_core::oracle::{OracleId, ShiftVariant};
+    use binius_field::{BinaryField1b, BinaryField32b, TowerField};
+    use binius_utils::checked_arithmetics::log2_ceil_usize;
+    use rand::prelude::StdRng;
+    use rand::{Rng, SeedableRng};
+    use std::array;
 
-use binius_field::{BinaryField1b, BinaryField32b};
-use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
-use std::array;
+    const IV: [u32; 8] = [
+        0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB,
+        0x5BE0CD19,
+    ];
+    const MSG_PERMUTATION: [usize; 16] = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
 
-const IV: [u32; 8] = [
-    0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
-];
-const MSG_PERMUTATION: [usize; 16] = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
+    #[derive(Debug, Default, Copy, Clone)]
+    pub struct Blake3CompressState {
+        pub cv: [u32; 8],
+        pub block: [u32; 16],
+        pub counter_low: u32,
+        pub counter_high: u32,
+        pub block_len: u32,
+        pub flags: u32,
+    }
 
-#[derive(Debug, Default, Copy, Clone)]
-pub struct Blake3CompressState {
-    pub cv: [u32; 8],
-    pub block: [u32; 16],
-    pub counter_low: u32,
-    pub counter_high: u32,
-    pub block_len: u32,
-    pub flags: u32,
-}
+    const STATE_SIZE: usize = 32;
+    const SINGLE_COMPRESSION_N_VARS: usize = 6;
+    const SINGLE_COMPRESSION_HEIGHT: usize = 2usize.pow(SINGLE_COMPRESSION_N_VARS as u32);
+    const ADDITION_OPERATIONS_NUMBER: usize = 6;
+    const PROJECTED_SELECTOR_INPUT: u64 = 0;
+    const PROJECTED_SELECTOR_OUTPUT: u64 = 56;
 
-const STATE_SIZE: usize = 32;
-const SINGLE_COMPRESSION_N_VARS: usize = 6;
-const SINGLE_COMPRESSION_HEIGHT: usize = 2usize.pow(SINGLE_COMPRESSION_N_VARS as u32);
-const ADDITION_OPERATIONS_NUMBER: usize = 6;
-const PROJECTED_SELECTOR_INPUT: u64 = 0;
-const PROJECTED_SELECTOR_OUTPUT: u64 = 56;
+    type B32 = BinaryField32b;
+    type B1 = BinaryField1b;
 
-type B32 = BinaryField32b;
-type B1 = BinaryField1b;
+    struct Trace {
+        state_trace: [Vec<u32>; STATE_SIZE],
+        a_in_trace: Vec<u32>,
+        b_in_trace: Vec<u32>,
+        c_in_trace: Vec<u32>,
+        d_in_trace: Vec<u32>,
+        mx_in_trace: Vec<u32>,
+        my_in_trace: Vec<u32>,
 
-struct Trace {
-    state_trace: [Vec<u32>; STATE_SIZE],
-    a_in_trace: Vec<u32>,
-    b_in_trace: Vec<u32>,
-    c_in_trace: Vec<u32>,
-    d_in_trace: Vec<u32>,
-    mx_in_trace: Vec<u32>,
-    my_in_trace: Vec<u32>,
+        a_0_tmp_trace: Vec<u32>,
+        a_0_trace: Vec<u32>,
+        d_in_xor_a_0_trace: Vec<u32>,
+        d_0_trace: Vec<u32>,
+        c_0_trace: Vec<u32>,
+        b_in_xor_c_0_trace: Vec<u32>,
+        b_0_trace: Vec<u32>,
+        a_1_tmp_trace: Vec<u32>,
+        a_1_trace: Vec<u32>,
+        d_0_xor_a_1_trace: Vec<u32>,
+        d_1_trace: Vec<u32>,
+        c_1_trace: Vec<u32>,
+        b_0_xor_c_1_trace: Vec<u32>,
+        _b_1_trace: Vec<u32>,
 
-    a_0_tmp_trace: Vec<u32>,
-    a_0_trace: Vec<u32>,
-    d_in_xor_a_0_trace: Vec<u32>,
-    d_0_trace: Vec<u32>,
-    c_0_trace: Vec<u32>,
-    b_in_xor_c_0_trace: Vec<u32>,
-    b_0_trace: Vec<u32>,
-    a_1_tmp_trace: Vec<u32>,
-    a_1_trace: Vec<u32>,
-    d_0_xor_a_1_trace: Vec<u32>,
-    d_1_trace: Vec<u32>,
-    c_1_trace: Vec<u32>,
-    b_0_xor_c_1_trace: Vec<u32>,
-    b_1_trace: Vec<u32>,
+        cin_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER],
+        cout_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER],
+    }
 
-    cin_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER],
-    cout_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER],
-}
+    // taken (and slightly refactored) from reference Blake3 implementation:
+    // https://github.com/BLAKE3-team/BLAKE3/blob/master/reference_impl/reference_impl.rs
+    fn compress(
+        chaining_value: &[u32; 8],
+        block_words: &[u32; 16],
+        counter: u64,
+        block_len: u32,
+        flags: u32,
+    ) -> [u32; 16] {
+        let counter_low = counter as u32;
+        let counter_high = (counter >> 32) as u32;
 
-// taken (and slightly refactored) from reference Blake3 implementation:
-// https://github.com/BLAKE3-team/BLAKE3/blob/master/reference_impl/reference_impl.rs
-fn compress(
-    chaining_value: &[u32; 8],
-    block_words: &[u32; 16],
-    counter: u64,
-    block_len: u32,
-    flags: u32,
-) -> [u32; 16] {
-    let counter_low = counter as u32;
-    let counter_high = (counter >> 32) as u32;
-
-    #[rustfmt::skip]
         let mut state = [
-            chaining_value[0], chaining_value[1], chaining_value[2], chaining_value[3],
-            chaining_value[4], chaining_value[5], chaining_value[6], chaining_value[7],
-            IV[0],             IV[1],             IV[2],             IV[3],
-            counter_low,       counter_high,      block_len,         flags,
-            block_words[0], block_words[1], block_words[2], block_words[3],
-            block_words[4], block_words[5], block_words[6], block_words[7],
-            block_words[8], block_words[9], block_words[10], block_words[11],
-            block_words[12], block_words[13], block_words[14], block_words[15],
+            chaining_value[0],
+            chaining_value[1],
+            chaining_value[2],
+            chaining_value[3],
+            chaining_value[4],
+            chaining_value[5],
+            chaining_value[6],
+            chaining_value[7],
+            IV[0],
+            IV[1],
+            IV[2],
+            IV[3],
+            counter_low,
+            counter_high,
+            block_len,
+            flags,
+            block_words[0],
+            block_words[1],
+            block_words[2],
+            block_words[3],
+            block_words[4],
+            block_words[5],
+            block_words[6],
+            block_words[7],
+            block_words[8],
+            block_words[9],
+            block_words[10],
+            block_words[11],
+            block_words[12],
+            block_words[13],
+            block_words[14],
+            block_words[15],
         ];
-
-    let a = [0, 1, 2, 3, 0, 1, 2, 3];
-    let b = [4, 5, 6, 7, 5, 6, 7, 4];
-    let c = [8, 9, 10, 11, 10, 11, 8, 9];
-    let d = [12, 13, 14, 15, 15, 12, 13, 14];
-    let mx = [16, 18, 20, 22, 24, 26, 28, 30];
-    let my = [17, 19, 21, 23, 25, 27, 29, 31];
-
-    // we have 7 rounds in total
-    for round_idx in 0..7 {
-        for j in 0..8 {
-            let a_in = state[a[j]];
-            let b_in = state[b[j]];
-            let c_in = state[c[j]];
-            let d_in = state[d[j]];
-            let mx_in = state[mx[j]];
-            let my_in = state[my[j]];
-
-            let a_0 = a_in.wrapping_add(b_in).wrapping_add(mx_in);
-            let d_0 = (d_in ^ a_0).rotate_right(16);
-            let c_0 = c_in.wrapping_add(d_0);
-            let b_0 = (b_in ^ c_0).rotate_right(12);
-
-            let a_1 = a_0.wrapping_add(b_0).wrapping_add(my_in);
-            let d_1 = (d_0 ^ a_1).rotate_right(8);
-            let c_1 = c_0.wrapping_add(d_1);
-            let b_1 = (b_0 ^ c_1).rotate_right(7);
-
-            state[a[j]] = a_1;
-            state[b[j]] = b_1;
-            state[c[j]] = c_1;
-            state[d[j]] = d_1;
-        }
-
-        // execute permutation for the 6 first rounds
-        if round_idx < 6 {
-            let mut permuted = [0; 16];
-            for i in 0..16 {
-                permuted[i] = state[16 + MSG_PERMUTATION[i]];
-            }
-            state[16..32].copy_from_slice(&permuted);
-        }
-    }
-
-    for i in 0..8 {
-        state[i] ^= state[i + 8];
-        state[i + 8] ^= chaining_value[i];
-    }
-
-    let state_out: [u32; 16] = array::from_fn(|i| state[i]);
-    state_out
-}
-
-fn generate_trace(size: usize) -> Trace {
-    let compressions = size;
-
-    let mut rng = StdRng::seed_from_u64(0);
-    let mut expected = vec![];
-    let inputs = (0..compressions)
-        .map(|_| {
-            let cv: [u32; 8] = array::from_fn(|_| rng.random::<u32>());
-            let block: [u32; 16] = array::from_fn(|_| rng.random::<u32>());
-            let counter = rng.random::<u64>();
-            let counter_low = counter as u32;
-            let counter_high = (counter >> 32) as u32;
-            let block_len = rng.random::<u32>();
-            let flags = rng.random::<u32>();
-
-            // save expected value to use later in test
-            expected.push(compress(&cv, &block, counter, block_len, flags).to_vec());
-
-            Blake3CompressState {
-                cv,
-                block,
-                counter_low,
-                counter_high,
-                block_len,
-                flags,
-            }
-        })
-        .collect::<Vec<Blake3CompressState>>();
-
-    // <trace>
-    let mut state_trace: [Vec<u32>; STATE_SIZE] =
-        array::from_fn(|_xy| vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT]);
-    fn write_state_trace(
-        state_trace: &mut [Vec<u32>; STATE_SIZE],
-        index: usize,
-        state: [u32; STATE_SIZE],
-    ) {
-        for xy in 0..STATE_SIZE {
-            state_trace[xy][index] = state[xy];
-        }
-    }
-
-    let mut a_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut b_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut c_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut d_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut mx_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut my_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-
-    let mut a_0_tmp_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut a_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut d_in_xor_a_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut d_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut c_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut b_in_xor_c_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut b_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut a_1_tmp_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut a_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut d_0_xor_a_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut d_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut c_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut b_0_xor_c_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    let mut b_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
-    fn write_var_trace(var_trace: &mut Vec<u32>, index: usize, value: u32) {
-        var_trace[index] = value;
-    }
-
-    let mut cin_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER] =
-        array::from_fn(|_xy| vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT]);
-    let mut cout_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER] =
-        array::from_fn(|_xy| vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT]);
-    fn write_addition_trace(
-        addition_trace: &mut [Vec<u32>; ADDITION_OPERATIONS_NUMBER],
-        add_offset: usize,
-        var_offset: usize,
-        addition: u32,
-    ) {
-        addition_trace[add_offset][var_offset] = addition;
-    }
-    //
-
-    // execute Blake3 compression and save execution trace
-    let mut compression_offset = 0;
-    for input in inputs.clone() {
-        let counter_low = input.counter_low;
-        let counter_high = input.counter_high;
-
-        #[rustfmt::skip]
-            let mut state = [
-                input.cv[0], input.cv[1], input.cv[2], input.cv[3],
-                input.cv[4], input.cv[5], input.cv[6], input.cv[7],
-                IV[0],             IV[1],             IV[2],             IV[3],
-                counter_low,       counter_high,      input.block_len,   input.flags,
-                input.block[0], input.block[1], input.block[2], input.block[3],
-                input.block[4], input.block[5], input.block[6], input.block[7],
-                input.block[8], input.block[9], input.block[10], input.block[11],
-                input.block[12], input.block[13], input.block[14], input.block[15],
-            ];
-
-        // <trace>
-        write_state_trace(&mut state_trace, compression_offset, state);
-        //
 
         let a = [0, 1, 2, 3, 0, 1, 2, 3];
         let b = [4, 5, 6, 7, 5, 6, 7, 4];
@@ -245,28 +122,9 @@ fn generate_trace(size: usize) -> Trace {
         let mx = [16, 18, 20, 22, 24, 26, 28, 30];
         let my = [17, 19, 21, 23, 25, 27, 29, 31];
 
-        let mut state_offset = 1usize;
-        let mut temp_vars_offset = 0usize;
-
-        fn add(a: u32, b: u32) -> (u32, u32, u32) {
-            let zout;
-            let carry;
-
-            (zout, carry) = a.overflowing_add(b);
-            let cin = a ^ b ^ zout;
-            let cout = ((carry as u32) << 31) | (cin >> 1);
-
-            (cin, cout, zout)
-        }
-
+        // we have 7 rounds in total
         for round_idx in 0..7 {
             for j in 0..8 {
-                // <trace>
-                let state_transition_idx = state_offset + compression_offset;
-                let var_offset = temp_vars_offset + compression_offset;
-                let mut add_offset = 0usize;
-                //
-
                 let a_in = state[a[j]];
                 let b_in = state[b[j]];
                 let c_in = state[c[j]];
@@ -274,96 +132,20 @@ fn generate_trace(size: usize) -> Trace {
                 let mx_in = state[mx[j]];
                 let my_in = state[my[j]];
 
-                // <trace>
-                write_var_trace(&mut a_in_trace, var_offset, a_in);
-                write_var_trace(&mut b_in_trace, var_offset, b_in);
-                write_var_trace(&mut c_in_trace, var_offset, c_in);
-                write_var_trace(&mut d_in_trace, var_offset, d_in);
-                write_var_trace(&mut mx_in_trace, var_offset, mx_in);
-                write_var_trace(&mut my_in_trace, var_offset, my_in);
-                //
+                let a_0 = a_in.wrapping_add(b_in).wrapping_add(mx_in);
+                let d_0 = (d_in ^ a_0).rotate_right(16);
+                let c_0 = c_in.wrapping_add(d_0);
+                let b_0 = (b_in ^ c_0).rotate_right(12);
 
-                let (cin, cout, a_0_tmp) = add(a_in, b_in);
-                // <trace>
-                write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
-                write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
-                add_offset += 1;
-                //
-
-                let (cin, cout, a_0) = add(a_0_tmp, mx_in);
-                // <trace>
-                write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
-                write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
-                add_offset += 1;
-                //
-
-                let d_in_xor_a_0 = d_in ^ a_0;
-                let d_0 = d_in_xor_a_0.rotate_right(16);
-
-                let (cin, cout, c_0) = add(c_in, d_0);
-                // <trace>
-                write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
-                write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
-                add_offset += 1;
-                //
-
-                let b_in_xor_c_0 = b_in ^ c_0;
-                let b_0 = b_in_xor_c_0.rotate_right(12);
-
-                let (cin, cout, a_1_tmp) = add(a_0, b_0);
-                // <trace>
-                write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
-                write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
-                add_offset += 1;
-                //
-
-                let (cin, cout, a_1) = add(a_1_tmp, my_in);
-                // <trace>
-                write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
-                write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
-                add_offset += 1;
-                //
-
-                let d_0_xor_a_1 = d_0 ^ a_1;
-                let d_1 = d_0_xor_a_1.rotate_right(8);
-
-                let (cin, cout, c_1) = add(c_0, d_1);
-                // <trace>
-                write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
-                write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
-                //
-
-                let b_0_xor_c_1 = b_0 ^ c_1;
-                let b_1 = b_0_xor_c_1.rotate_right(7);
-
-                // <trace>
-                write_var_trace(&mut a_0_tmp_trace, var_offset, a_0_tmp);
-                write_var_trace(&mut a_0_trace, var_offset, a_0);
-                write_var_trace(&mut d_in_xor_a_0_trace, var_offset, d_in_xor_a_0);
-                write_var_trace(&mut d_0_trace, var_offset, d_0);
-                write_var_trace(&mut c_0_trace, var_offset, c_0);
-                write_var_trace(&mut b_in_xor_c_0_trace, var_offset, b_in_xor_c_0);
-                write_var_trace(&mut b_0_trace, var_offset, b_0);
-                write_var_trace(&mut a_1_tmp_trace, var_offset, a_1_tmp);
-                write_var_trace(&mut a_1_trace, var_offset, a_1);
-                write_var_trace(&mut d_0_xor_a_1_trace, var_offset, d_0_xor_a_1);
-                write_var_trace(&mut d_1_trace, var_offset, d_1);
-                write_var_trace(&mut c_1_trace, var_offset, c_1);
-                write_var_trace(&mut b_0_xor_c_1_trace, var_offset, b_0_xor_c_1);
-                write_var_trace(&mut b_1_trace, var_offset, b_1);
-                //
+                let a_1 = a_0.wrapping_add(b_0).wrapping_add(my_in);
+                let d_1 = (d_0 ^ a_1).rotate_right(8);
+                let c_1 = c_0.wrapping_add(d_1);
+                let b_1 = (b_0 ^ c_1).rotate_right(7);
 
                 state[a[j]] = a_1;
                 state[b[j]] = b_1;
                 state[c[j]] = c_1;
                 state[d[j]] = d_1;
-
-                // <trace>
-                write_state_trace(&mut state_trace, state_transition_idx, state);
-                //
-
-                state_offset += 1;
-                temp_vars_offset += 1;
             }
 
             // execute permutation for the 6 first rounds
@@ -378,67 +160,323 @@ fn generate_trace(size: usize) -> Trace {
 
         for i in 0..8 {
             state[i] ^= state[i + 8];
-            state[i + 8] ^= input.cv[i];
+            state[i + 8] ^= chaining_value[i];
         }
 
-        compression_offset += SINGLE_COMPRESSION_HEIGHT;
-
-        //let state_out: [u32; 16] = array::from_fn(|i| state[i]);
+        let state_out: [u32; 16] = array::from_fn(|i| state[i]);
+        state_out
     }
 
-    Trace {
-        state_trace,
-        a_in_trace,
-        b_in_trace,
-        c_in_trace,
-        d_in_trace,
-        mx_in_trace,
-        my_in_trace,
-        a_0_tmp_trace,
-        a_0_trace,
-        d_in_xor_a_0_trace,
-        d_0_trace,
-        c_0_trace,
-        b_in_xor_c_0_trace,
-        b_0_trace,
-        a_1_tmp_trace,
-        a_1_trace,
-        d_0_xor_a_1_trace,
-        d_1_trace,
-        c_1_trace,
-        b_0_xor_c_1_trace,
-        b_1_trace,
-        cin_trace,
-        cout_trace,
-    }
-}
+    fn generate_trace(size: usize) -> Trace {
+        let compressions = size;
 
-#[cfg(test)]
-mod tests {
-    use crate::archon::ProjectedSelectorInfo;
-    use crate::archon::arith_expr::ArithExpr;
-    use crate::archon::circuit::{CircuitModule, init_witness_modules};
-    use crate::archon::precompiles::blake3::{
-        ADDITION_OPERATIONS_NUMBER, B1, B32, PROJECTED_SELECTOR_INPUT, PROJECTED_SELECTOR_OUTPUT,
-        SINGLE_COMPRESSION_HEIGHT, STATE_SIZE, generate_trace,
-    };
-    use crate::archon::protocol::validate_witness;
-    use crate::archon::witness::compile_witness_modules;
-    use binius_circuits::arithmetic::u32::LOG_U32_BITS;
-    use binius_circuits::builder::ConstraintSystemBuilder;
-    use binius_core::oracle::{OracleId, ShiftVariant};
-    use binius_field::TowerField;
-    use binius_utils::checked_arithmetics::log2_ceil_usize;
-    use std::array;
+        let mut rng = StdRng::seed_from_u64(0);
+        let mut expected = vec![];
+        let inputs = (0..compressions)
+            .map(|_| {
+                let cv: [u32; 8] = array::from_fn(|_| rng.random::<u32>());
+                let block: [u32; 16] = array::from_fn(|_| rng.random::<u32>());
+                let counter = rng.random::<u64>();
+                let counter_low = counter as u32;
+                let counter_high = (counter >> 32) as u32;
+                let block_len = rng.random::<u32>();
+                let flags = rng.random::<u32>();
+
+                // save expected value to use later in test
+                expected.push(compress(&cv, &block, counter, block_len, flags).to_vec());
+
+                Blake3CompressState {
+                    cv,
+                    block,
+                    counter_low,
+                    counter_high,
+                    block_len,
+                    flags,
+                }
+            })
+            .collect::<Vec<Blake3CompressState>>();
+
+        // <trace>
+        let mut state_trace: [Vec<u32>; STATE_SIZE] =
+            array::from_fn(|_xy| vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT]);
+        fn write_state_trace(
+            state_trace: &mut [Vec<u32>; STATE_SIZE],
+            index: usize,
+            state: [u32; STATE_SIZE],
+        ) {
+            for xy in 0..STATE_SIZE {
+                state_trace[xy][index] = state[xy];
+            }
+        }
+
+        let mut a_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut b_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut c_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut d_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut mx_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut my_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+
+        let mut a_0_tmp_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut a_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut d_in_xor_a_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut d_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut c_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut b_in_xor_c_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut b_0_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut a_1_tmp_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut a_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut d_0_xor_a_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut d_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut c_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut b_0_xor_c_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        let mut b_1_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
+        fn write_var_trace(var_trace: &mut [u32], index: usize, value: u32) {
+            var_trace[index] = value;
+        }
+
+        let mut cin_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER] =
+            array::from_fn(|_xy| vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT]);
+        let mut cout_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER] =
+            array::from_fn(|_xy| vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT]);
+        fn write_addition_trace(
+            addition_trace: &mut [Vec<u32>; ADDITION_OPERATIONS_NUMBER],
+            add_offset: usize,
+            var_offset: usize,
+            addition: u32,
+        ) {
+            addition_trace[add_offset][var_offset] = addition;
+        }
+        //
+
+        // execute Blake3 compression and save execution trace
+        let mut compression_offset = 0;
+        for input in inputs.clone() {
+            let counter_low = input.counter_low;
+            let counter_high = input.counter_high;
+
+            let mut state = [
+                input.cv[0],
+                input.cv[1],
+                input.cv[2],
+                input.cv[3],
+                input.cv[4],
+                input.cv[5],
+                input.cv[6],
+                input.cv[7],
+                IV[0],
+                IV[1],
+                IV[2],
+                IV[3],
+                counter_low,
+                counter_high,
+                input.block_len,
+                input.flags,
+                input.block[0],
+                input.block[1],
+                input.block[2],
+                input.block[3],
+                input.block[4],
+                input.block[5],
+                input.block[6],
+                input.block[7],
+                input.block[8],
+                input.block[9],
+                input.block[10],
+                input.block[11],
+                input.block[12],
+                input.block[13],
+                input.block[14],
+                input.block[15],
+            ];
+
+            // <trace>
+            write_state_trace(&mut state_trace, compression_offset, state);
+            //
+
+            let a = [0, 1, 2, 3, 0, 1, 2, 3];
+            let b = [4, 5, 6, 7, 5, 6, 7, 4];
+            let c = [8, 9, 10, 11, 10, 11, 8, 9];
+            let d = [12, 13, 14, 15, 15, 12, 13, 14];
+            let mx = [16, 18, 20, 22, 24, 26, 28, 30];
+            let my = [17, 19, 21, 23, 25, 27, 29, 31];
+
+            let mut state_offset = 1usize;
+            let mut temp_vars_offset = 0usize;
+
+            fn add(a: u32, b: u32) -> (u32, u32, u32) {
+                let zout;
+                let carry;
+
+                (zout, carry) = a.overflowing_add(b);
+                let cin = a ^ b ^ zout;
+                let cout = ((carry as u32) << 31) | (cin >> 1);
+
+                (cin, cout, zout)
+            }
+
+            for round_idx in 0..7 {
+                for j in 0..8 {
+                    // <trace>
+                    let state_transition_idx = state_offset + compression_offset;
+                    let var_offset = temp_vars_offset + compression_offset;
+                    let mut add_offset = 0usize;
+                    //
+
+                    let a_in = state[a[j]];
+                    let b_in = state[b[j]];
+                    let c_in = state[c[j]];
+                    let d_in = state[d[j]];
+                    let mx_in = state[mx[j]];
+                    let my_in = state[my[j]];
+
+                    // <trace>
+                    write_var_trace(&mut a_in_trace, var_offset, a_in);
+                    write_var_trace(&mut b_in_trace, var_offset, b_in);
+                    write_var_trace(&mut c_in_trace, var_offset, c_in);
+                    write_var_trace(&mut d_in_trace, var_offset, d_in);
+                    write_var_trace(&mut mx_in_trace, var_offset, mx_in);
+                    write_var_trace(&mut my_in_trace, var_offset, my_in);
+                    //
+
+                    let (cin, cout, a_0_tmp) = add(a_in, b_in);
+                    // <trace>
+                    write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
+                    write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
+                    add_offset += 1;
+                    //
+
+                    let (cin, cout, a_0) = add(a_0_tmp, mx_in);
+                    // <trace>
+                    write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
+                    write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
+                    add_offset += 1;
+                    //
+
+                    let d_in_xor_a_0 = d_in ^ a_0;
+                    let d_0 = d_in_xor_a_0.rotate_right(16);
+
+                    let (cin, cout, c_0) = add(c_in, d_0);
+                    // <trace>
+                    write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
+                    write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
+                    add_offset += 1;
+                    //
+
+                    let b_in_xor_c_0 = b_in ^ c_0;
+                    let b_0 = b_in_xor_c_0.rotate_right(12);
+
+                    let (cin, cout, a_1_tmp) = add(a_0, b_0);
+                    // <trace>
+                    write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
+                    write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
+                    add_offset += 1;
+                    //
+
+                    let (cin, cout, a_1) = add(a_1_tmp, my_in);
+                    // <trace>
+                    write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
+                    write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
+                    add_offset += 1;
+                    //
+
+                    let d_0_xor_a_1 = d_0 ^ a_1;
+                    let d_1 = d_0_xor_a_1.rotate_right(8);
+
+                    let (cin, cout, c_1) = add(c_0, d_1);
+                    // <trace>
+                    write_addition_trace(&mut cin_trace, add_offset, var_offset, cin);
+                    write_addition_trace(&mut cout_trace, add_offset, var_offset, cout);
+                    //
+
+                    let b_0_xor_c_1 = b_0 ^ c_1;
+                    let b_1 = b_0_xor_c_1.rotate_right(7);
+
+                    // <trace>
+                    write_var_trace(&mut a_0_tmp_trace, var_offset, a_0_tmp);
+                    write_var_trace(&mut a_0_trace, var_offset, a_0);
+                    write_var_trace(&mut d_in_xor_a_0_trace, var_offset, d_in_xor_a_0);
+                    write_var_trace(&mut d_0_trace, var_offset, d_0);
+                    write_var_trace(&mut c_0_trace, var_offset, c_0);
+                    write_var_trace(&mut b_in_xor_c_0_trace, var_offset, b_in_xor_c_0);
+                    write_var_trace(&mut b_0_trace, var_offset, b_0);
+                    write_var_trace(&mut a_1_tmp_trace, var_offset, a_1_tmp);
+                    write_var_trace(&mut a_1_trace, var_offset, a_1);
+                    write_var_trace(&mut d_0_xor_a_1_trace, var_offset, d_0_xor_a_1);
+                    write_var_trace(&mut d_1_trace, var_offset, d_1);
+                    write_var_trace(&mut c_1_trace, var_offset, c_1);
+                    write_var_trace(&mut b_0_xor_c_1_trace, var_offset, b_0_xor_c_1);
+                    write_var_trace(&mut b_1_trace, var_offset, b_1);
+                    //
+
+                    state[a[j]] = a_1;
+                    state[b[j]] = b_1;
+                    state[c[j]] = c_1;
+                    state[d[j]] = d_1;
+
+                    // <trace>
+                    write_state_trace(&mut state_trace, state_transition_idx, state);
+                    //
+
+                    state_offset += 1;
+                    temp_vars_offset += 1;
+                }
+
+                // execute permutation for the 6 first rounds
+                if round_idx < 6 {
+                    let mut permuted = [0; 16];
+                    for i in 0..16 {
+                        permuted[i] = state[16 + MSG_PERMUTATION[i]];
+                    }
+                    state[16..32].copy_from_slice(&permuted);
+                }
+            }
+
+            for i in 0..8 {
+                state[i] ^= state[i + 8];
+                state[i + 8] ^= input.cv[i];
+            }
+
+            compression_offset += SINGLE_COMPRESSION_HEIGHT;
+
+            //let state_out: [u32; 16] = array::from_fn(|i| state[i]);
+        }
+
+        Trace {
+            state_trace,
+            a_in_trace,
+            b_in_trace,
+            c_in_trace,
+            d_in_trace,
+            mx_in_trace,
+            my_in_trace,
+            a_0_tmp_trace,
+            a_0_trace,
+            d_in_xor_a_0_trace,
+            d_0_trace,
+            c_0_trace,
+            b_in_xor_c_0_trace,
+            b_0_trace,
+            a_1_tmp_trace,
+            a_1_trace,
+            d_0_xor_a_1_trace,
+            d_1_trace,
+            c_1_trace,
+            b_0_xor_c_1_trace,
+            _b_1_trace: b_1_trace,
+            cin_trace,
+            cout_trace,
+        }
+    }
 
     const COMPRESSIONS_TEST: usize = 2;
 
     #[test]
-    fn test_whole_blake3_compression_in_archon_draft() {
-        let trace_len = COMPRESSIONS_TEST * 4; // must divide 4
+    fn test_whole_blake3_compression_in_archon() {
+        let trace_len = COMPRESSIONS_TEST * 4; // must divide 4. TODO: figure out if we can tackle this limitation
         let traces = generate_trace(trace_len);
 
         let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
+
         let height = 2u64.pow(u32::try_from(state_n_vars).unwrap());
         let height_1 = 2u64.pow((state_n_vars + 5) as u32);
 
@@ -450,7 +488,7 @@ mod tests {
                 .unwrap()
         });
 
-        let input: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
+        let _input: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
             circuit_module
                 .add_projected(
                     &format!("input-{:?}", xy),
@@ -463,7 +501,7 @@ mod tests {
                 .unwrap()
         });
 
-        let output: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
+        let _output: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
             circuit_module
                 .add_projected(
                     &format!("output-{:?}", xy),
@@ -531,7 +569,7 @@ mod tests {
                 ShiftVariant::CircularLeft,
             )
             .unwrap();
-        let b_1 = circuit_module_1
+        let _b_1 = circuit_module_1
             .add_shifted(
                 "b_1",
                 b_0_xor_c_1,
@@ -569,16 +607,15 @@ mod tests {
                 ArithExpr::Oracle(xins[xy])
                     + ArithExpr::Oracle(yins[xy])
                     + ArithExpr::Oracle(cins[xy])
-                    - ArithExpr::Oracle(zouts[xy]),
+                    + ArithExpr::Oracle(zouts[xy]),
             );
-
             circuit_module_1.assert_zero(
                 "carry",
                 [xins[xy], yins[xy], cins[xy], couts[xy]],
                 (ArithExpr::Oracle(xins[xy]) + ArithExpr::Oracle(cins[xy]))
-                    * (ArithExpr::Oracle(yins[xy]) - ArithExpr::Oracle(cins[xy]))
+                    * (ArithExpr::Oracle(yins[xy]) + ArithExpr::Oracle(cins[xy]))
                     + ArithExpr::Oracle(cins[xy])
-                    - ArithExpr::Oracle(couts[xy]),
+                    + ArithExpr::Oracle(couts[xy]),
             );
         }
 
@@ -853,16 +890,16 @@ mod tests {
                 ArithExpr::Oracle(xin[xy])
                     + ArithExpr::Oracle(yin[xy])
                     + ArithExpr::Oracle(cin[xy])
-                    - ArithExpr::Oracle(zout[xy]),
+                    + ArithExpr::Oracle(zout[xy]),
             );
 
             circuit_module.assert_zero(
                 "carry",
                 [xin[xy], yin[xy], cin[xy], cout[xy]],
                 (ArithExpr::Oracle(xin[xy]) + ArithExpr::Oracle(cin[xy]))
-                    * (ArithExpr::Oracle(yin[xy]) - ArithExpr::Oracle(cin[xy]))
+                    * (ArithExpr::Oracle(yin[xy]) + ArithExpr::Oracle(cin[xy]))
                     + ArithExpr::Oracle(cin[xy])
-                    - ArithExpr::Oracle(cout[xy]),
+                    + ArithExpr::Oracle(cout[xy]),
             );
         }
 
@@ -946,7 +983,7 @@ mod tests {
                 .unwrap()
         });
 
-        let input: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
+        let _input: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
             circuit_module
                 .add_projected(
                     &format!("input-{:?}", xy),
@@ -959,7 +996,7 @@ mod tests {
                 .unwrap()
         });
 
-        let output: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
+        let _output: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
             circuit_module
                 .add_projected(
                     &format!("output-{:?}", xy),
@@ -1000,11 +1037,6 @@ mod tests {
                     .bind_oracle_to::<B32>(state_transitions[xy], entry_id_xy);
             });
         witness_modules[witness_module_id].populate(height).unwrap();
-
-        let state_0_vals =
-            witness_modules[witness_module_id].get_data::<B32, u32>(state_transitions[0]);
-        let input_0_vals = witness_modules[witness_module_id].get_data::<B32, u32>(input[0]);
-        let output_0_vals = witness_modules[witness_module_id].get_data::<B32, u32>(output[0]);
 
         let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
         assert!(validate_witness(&circuit_modules, &witness_archon, &[]).is_ok());
@@ -1072,7 +1104,7 @@ mod tests {
                 ShiftVariant::CircularLeft,
             )
             .unwrap();
-        let b_1 = circuit_module_1
+        let _b_1 = circuit_module_1
             .add_shifted(
                 "b_1",
                 b_0_xor_c_1,
@@ -1110,16 +1142,16 @@ mod tests {
                 ArithExpr::Oracle(xins[xy])
                     + ArithExpr::Oracle(yins[xy])
                     + ArithExpr::Oracle(cins[xy])
-                    - ArithExpr::Oracle(zouts[xy]),
+                    + ArithExpr::Oracle(zouts[xy]),
             );
 
             circuit_module_1.assert_zero(
                 "carry",
                 [xins[xy], yins[xy], cins[xy], couts[xy]],
                 (ArithExpr::Oracle(xins[xy]) + ArithExpr::Oracle(cins[xy]))
-                    * (ArithExpr::Oracle(yins[xy]) - ArithExpr::Oracle(cins[xy]))
+                    * (ArithExpr::Oracle(yins[xy]) + ArithExpr::Oracle(cins[xy]))
                     + ArithExpr::Oracle(cins[xy])
-                    - ArithExpr::Oracle(couts[xy]),
+                    + ArithExpr::Oracle(couts[xy]),
             );
         }
 

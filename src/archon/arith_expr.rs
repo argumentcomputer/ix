@@ -9,7 +9,6 @@ pub enum ArithExpr {
     Var(usize),
     Oracle(OracleId),
     Add(Box<ArithExpr>, Box<ArithExpr>),
-    Sub(Box<ArithExpr>, Box<ArithExpr>),
     Mul(Box<ArithExpr>, Box<ArithExpr>),
     Pow(Box<ArithExpr>, u64),
 }
@@ -18,13 +17,6 @@ impl std::ops::Add for ArithExpr {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         Self::Add(Box::new(self), Box::new(rhs))
-    }
-}
-
-impl std::ops::Sub for ArithExpr {
-    type Output = Self;
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self::Sub(Box::new(self), Box::new(rhs))
     }
 }
 
@@ -68,12 +60,6 @@ impl ArithExpr {
                 let a = a.into_arith_expr_core(binds);
                 let b = b.into_arith_expr_core(binds);
                 a + b
-            }
-
-            Self::Sub(a, b) => {
-                let a = a.into_arith_expr_core(binds);
-                let b = b.into_arith_expr_core(binds);
-                a - b
             }
 
             Self::Mul(a, b) => {
