@@ -96,7 +96,7 @@ impl CircuitModule {
             oracles: oracle_ids.into_iter().map(OracleOrConst::Oracle).collect(),
             channel_id,
             direction,
-            selector: Some(selector),
+            selectors: vec![selector],
             multiplicity,
         });
     }
@@ -361,7 +361,7 @@ pub fn compile_circuit_modules(
             let mut composition = composition.clone();
             composition.offset_oracles(oracle_offset);
             let composition = composition.into_arith_expr_core(&mut oracle_ids);
-            builder.assert_zero(name, oracle_ids, composition);
+            builder.assert_zero(name, oracle_ids, composition.into());
         }
 
         for non_zero_oracle_id in &module.non_zero_oracle_ids {
@@ -372,11 +372,10 @@ pub fn compile_circuit_modules(
             oracles,
             channel_id,
             direction,
-            selector,
+            selectors,
             multiplicity,
         } in &module.flushes
         {
-            let selector = selector.expect("Archon flushes require oracle selectors");
             let oracles = oracles.iter().map(|o| match o {
                 OracleOrConst::Const { .. } => *o,
                 OracleOrConst::Oracle(o) => OracleOrConst::Oracle(o + oracle_offset),
@@ -384,7 +383,7 @@ pub fn compile_circuit_modules(
             builder.flush_custom(
                 *direction,
                 *channel_id,
-                selector + oracle_offset,
+                selectors.iter().map(|s| s + oracle_offset).collect(),
                 oracles,
                 *multiplicity,
             )?;
