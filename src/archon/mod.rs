@@ -1,5 +1,6 @@
 pub mod arith_expr;
 pub mod circuit;
+pub mod precompiles;
 pub mod protocol;
 pub mod transparent;
 pub mod witness;

@@ -3,7 +3,6 @@ use binius_core::{
     oracle::{OracleId, ShiftVariant},
     witness::MultilinearExtensionIndex,
 };
-use bytemuck::{ must_cast_slice, Pod };
 use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
     BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64, BinaryField128b as B128,
@@ -13,6 +12,7 @@ use binius_field::{
     underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
 };
 use binius_math::MultilinearExtension;
+use bytemuck::{Pod, must_cast_slice};
 use indexmap::IndexSet;
 use rayon::{
     iter::{
@@ -190,6 +190,7 @@ impl WitnessModule {
     pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_id: OracleId) -> Vec<T> {
         let id = if let Some(v) = self.entry_map.get(&oracle_id) {
             let tower_level: usize = v.1;
+            #[allow(clippy::manual_assert)]
             if tower_level != FS::TOWER_LEVEL {
                 panic!("provided tower level doesn't match stored one");
             }
