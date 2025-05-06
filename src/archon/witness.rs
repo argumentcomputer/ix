@@ -1,5 +1,4 @@
 use anyhow::{Context, Result, bail, ensure};
-use bytemuck::{ must_cast_slice, Pod };
 use binius_core::oracle::ShiftVariant;
 use binius_core::{oracle::OracleId, witness::MultilinearExtensionIndex};
 use binius_field::{
@@ -11,6 +10,7 @@ use binius_field::{
     underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
 };
 use binius_math::MultilinearExtension;
+use bytemuck::{Pod, must_cast_slice};
 use indexmap::IndexSet;
 use rayon::{
     iter::{
@@ -183,7 +183,7 @@ impl WitnessModule {
         self.entries[entry_id].push(OptimalUnderlier::from(u128))
     }
 
-    pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_id: OracleId) -> Vec<T>{
+    pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_id: OracleId) -> Vec<T> {
         let id = if let Some(v) = self.entry_map.get(&oracle_id) {
             let tower_level: usize = v.1;
             if tower_level != FS::TOWER_LEVEL {
