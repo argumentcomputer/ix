@@ -1,10 +1,12 @@
 use anyhow::{Context, Result, bail, ensure};
-use binius_core::oracle::ShiftVariant;
-use binius_core::{oracle::OracleId, witness::MultilinearExtensionIndex};
+use binius_core::{
+    oracle::{OracleId, ShiftVariant},
+    witness::MultilinearExtensionIndex,
+};
 use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
     BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64, BinaryField128b as B128,
-    TowerField,
+    Field, TowerField,
     arch::OptimalUnderlier,
     as_packed_field::PackedType,
     underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
@@ -338,85 +340,118 @@ impl WitnessModule {
                     // extra speed.
                     let mut underliers = vec![OptimalUnderlier::ZERO; entry_len];
                     match tower_level {
-                        0..=2 => todo!(),
-                        3 => underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                        0 => {
+                            let span = |b| if b == &B128::ZERO { 0 } else { u128::MAX };
+                            let offset = span(offset);
+                            underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                                let res = inner_data.iter().fold(
+                                    offset,
+                                    |acc, (inner_oracle_id, coeff, ..)| {
+                                        let underlier = get_dep_underlier(inner_oracle_id, i);
+                                        let u128 = unsafe {
+                                            transmute::<OptimalUnderlier, u128>(underlier)
+                                        };
+                                        let coeff = span(*coeff);
+                                        // In `B1`, addition is bitwise XOR and multiplication
+                                        // is bitwise AND
+                                        acc ^ (coeff & u128)
+                                    },
+                                );
+                                *u = unsafe { transmute::<u128, OptimalUnderlier>(res) };
+                            });
+                        }
+                        1 | 2 => todo!(),
+                        3 => {
                             let offset: B8 =
                                 (*offset).try_into().expect("Wrong minimal tower level");
-                            #[rustfmt::skip]
-                            let res = inner_data.iter().fold(
-                                [offset; 16],
-                                |[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15],
-                                 (inner_oracle_id, coeff, _, _)| {
-                                    let underlier = get_dep_underlier(inner_oracle_id, i);
-                                    let [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15] = unsafe {
-                                        transmute::<OptimalUnderlier, [B8; 16]>(underlier)
-                                    };
-                                    let coeff: B8 =
-                                        (**coeff).try_into().expect("Wrong minimal tower");
-                                    [
-                                        a0 + coeff * b0, a1 + coeff * b1, a2 + coeff * b2, a3 + coeff * b3,
-                                        a4 + coeff * b4, a5 + coeff * b5, a6 + coeff * b6, a7 + coeff * b7,
-                                        a8 + coeff * b8, a9 + coeff * b9, a10 + coeff * b10, a11 + coeff * b11,
-                                        a12 + coeff * b12, a13 + coeff * b13, a14 + coeff * b14, a15 + coeff * b15
-                                    ]
-                                },
-                            );
-                            *u = unsafe { transmute::<[B8; 16], OptimalUnderlier>(res) };
-                        }),
-                        4 => underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                            underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                                #[rustfmt::skip]
+                                let res = inner_data.iter().fold(
+                                    [offset; 16],
+                                    |[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15],
+                                    (inner_oracle_id, coeff, ..)| {
+                                        let underlier = get_dep_underlier(inner_oracle_id, i);
+                                        let [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15] = unsafe {
+                                            transmute::<OptimalUnderlier, [B8; 16]>(underlier)
+                                        };
+                                        let coeff: B8 =
+                                            (**coeff).try_into().expect("Wrong minimal tower");
+                                        [
+                                            a0 + coeff * b0, a1 + coeff * b1, a2 + coeff * b2, a3 + coeff * b3,
+                                            a4 + coeff * b4, a5 + coeff * b5, a6 + coeff * b6, a7 + coeff * b7,
+                                            a8 + coeff * b8, a9 + coeff * b9, a10 + coeff * b10, a11 + coeff * b11,
+                                            a12 + coeff * b12, a13 + coeff * b13, a14 + coeff * b14, a15 + coeff * b15
+                                        ]
+                                    },
+                                );
+                                *u = unsafe { transmute::<[B8; 16], OptimalUnderlier>(res) };
+                            })
+                        }
+                        4 => {
                             let offset: B16 =
                                 (*offset).try_into().expect("Wrong minimal tower level");
-                            let res = inner_data.iter().fold(
-                                [offset; 8],
-                                |[a0, a1, a2, a3, a4, a5, a6, a7], (inner_oracle_id, coeff, ..)| {
-                                    let underlier = get_dep_underlier(inner_oracle_id, i);
-                                    let [b0, b1, b2, b3, b4, b5, b6, b7] = unsafe {
-                                        transmute::<OptimalUnderlier, [B16; 8]>(underlier)
-                                    };
-                                    let coeff: B16 =
-                                        (**coeff).try_into().expect("Wrong minimal tower");
-                                    [
-                                        a0 + coeff * b0, a1 + coeff * b1, a2 + coeff * b2, a3 + coeff * b3,
-                                        a4 + coeff * b4, a5 + coeff * b5, a6 + coeff * b6, a7 + coeff * b7,
-                                    ]
-                                },
-                            );
-                            *u = unsafe { transmute::<[B16; 8], OptimalUnderlier>(res) };
-                        }),
-                        5 => underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                            underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                                let res = inner_data.iter().fold(
+                                    [offset; 8],
+                                    |[a0, a1, a2, a3, a4, a5, a6, a7], (inner_oracle_id, coeff, ..)| {
+                                        let underlier = get_dep_underlier(inner_oracle_id, i);
+                                        let [b0, b1, b2, b3, b4, b5, b6, b7] = unsafe {
+                                            transmute::<OptimalUnderlier, [B16; 8]>(underlier)
+                                        };
+                                        let coeff: B16 =
+                                            (**coeff).try_into().expect("Wrong minimal tower");
+                                        [
+                                            a0 + coeff * b0, a1 + coeff * b1, a2 + coeff * b2, a3 + coeff * b3,
+                                            a4 + coeff * b4, a5 + coeff * b5, a6 + coeff * b6, a7 + coeff * b7,
+                                        ]
+                                    },
+                                );
+                                *u = unsafe { transmute::<[B16; 8], OptimalUnderlier>(res) };
+                            })
+                        }
+                        5 => {
                             let offset: B32 =
                                 (*offset).try_into().expect("Wrong minimal tower level");
-                            let res = inner_data.iter().fold(
-                                [offset; 4],
-                                |[a0, a1, a2, a3], (inner_oracle_id, coeff, ..)| {
-                                    let underlier = get_dep_underlier(inner_oracle_id, i);
-                                    let [b0, b1, b2, b3] = unsafe {
-                                        transmute::<OptimalUnderlier, [B32; 4]>(underlier)
-                                    };
-                                    let coeff: B32 =
-                                        (**coeff).try_into().expect("Wrong minimal tower");
-                                    [a0 + coeff * b0, a1 + coeff * b1, a2 + coeff * b2, a3 + coeff * b3]
-                                },
-                            );
-                            *u = unsafe { transmute::<[B32; 4], OptimalUnderlier>(res) };
-                        }),
-                        6 => underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                            underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                                let res = inner_data.iter().fold(
+                                    [offset; 4],
+                                    |[a0, a1, a2, a3], (inner_oracle_id, coeff, ..)| {
+                                        let underlier = get_dep_underlier(inner_oracle_id, i);
+                                        let [b0, b1, b2, b3] = unsafe {
+                                            transmute::<OptimalUnderlier, [B32; 4]>(underlier)
+                                        };
+                                        let coeff: B32 =
+                                            (**coeff).try_into().expect("Wrong minimal tower");
+                                        [
+                                            a0 + coeff * b0,
+                                            a1 + coeff * b1,
+                                            a2 + coeff * b2,
+                                            a3 + coeff * b3,
+                                        ]
+                                    },
+                                );
+                                *u = unsafe { transmute::<[B32; 4], OptimalUnderlier>(res) };
+                            })
+                        }
+                        6 => {
                             let offset: B64 =
                                 (*offset).try_into().expect("Wrong minimal tower level");
-                            let res = inner_data.iter().fold(
-                                [offset; 2],
-                                |[a0, a1], (inner_oracle_id, coeff, ..)| {
-                                    let underlier = get_dep_underlier(inner_oracle_id, i);
-                                    let [b0, b1] = unsafe {
-                                        transmute::<OptimalUnderlier, [B64; 2]>(underlier)
-                                    };
-                                    let coeff: B64 =
-                                        (**coeff).try_into().expect("Wrong minimal tower");
-                                    [a0 + coeff * b0, a1 + coeff * b1]
-                                },
-                            );
-                            *u = unsafe { transmute::<[B64; 2], OptimalUnderlier>(res) };
-                        }),
+                            underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
+                                let res = inner_data.iter().fold(
+                                    [offset; 2],
+                                    |[a0, a1], (inner_oracle_id, coeff, ..)| {
+                                        let underlier = get_dep_underlier(inner_oracle_id, i);
+                                        let [b0, b1] = unsafe {
+                                            transmute::<OptimalUnderlier, [B64; 2]>(underlier)
+                                        };
+                                        let coeff: B64 =
+                                            (**coeff).try_into().expect("Wrong minimal tower");
+                                        [a0 + coeff * b0, a1 + coeff * b1]
+                                    },
+                                );
+                                *u = unsafe { transmute::<[B64; 2], OptimalUnderlier>(res) };
+                            })
+                        }
                         7 => underliers.par_iter_mut().enumerate().for_each(|(i, u)| {
                             let res = inner_data.iter().fold(
                                 *offset,
@@ -874,6 +909,71 @@ mod tests {
         witness_modules[0].populate(height).unwrap();
         assert!(!witness_modules[0].entry_map.is_empty());
         let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok())
+    }
+
+    #[test]
+    fn test_populate_linear_combination_b1() {
+        let mut circuit_module = CircuitModule::new(0);
+        let a = circuit_module.add_committed::<B1>("a").unwrap();
+        let b = circuit_module.add_committed::<B1>("b").unwrap();
+        let c = circuit_module.add_committed::<B1>("c").unwrap();
+
+        circuit_module
+            .add_linear_combination("lc1", B128::ZERO, [])
+            .unwrap();
+        circuit_module
+            .add_linear_combination("lc2", B128::ONE, [])
+            .unwrap();
+        circuit_module
+            .add_linear_combination("lc3", B128::ZERO, [(a, B128::ONE)])
+            .unwrap();
+        circuit_module
+            .add_linear_combination("lc4", B128::ONE, [(b, B128::ONE)])
+            .unwrap();
+        circuit_module
+            .add_linear_combination("lc5", B128::ZERO, [(a, B128::ONE), (b, B128::ONE)])
+            .unwrap();
+        circuit_module
+            .add_linear_combination("lc6", B128::ONE, [(a, B128::ONE), (b, B128::ONE)])
+            .unwrap();
+        circuit_module
+            .add_linear_combination("lc7", B128::ZERO, [
+                (a, B128::ONE),
+                (b, B128::ONE),
+                (c, B128::ONE),
+            ])
+            .unwrap();
+        circuit_module
+            .add_linear_combination("lc8", B128::ONE, [
+                (a, B128::ONE),
+                (b, B128::ONE),
+                (c, B128::ONE),
+            ])
+            .unwrap();
+
+        circuit_module.freeze_oracles();
+        let mut witness_module = circuit_module.init_witness_module().unwrap();
+
+        let entry_a = witness_module.new_entry_with_capacity(7);
+        witness_module.push_u128_to(u128::MAX - u128::MAX / 2 + u128::MAX / 4, entry_a);
+        witness_module.bind_oracle_to::<B1>(a, entry_a);
+
+        let entry_b = witness_module.new_entry_with_capacity(7);
+        witness_module.push_u128_to(u128::MAX - u128::MAX / 3 + u128::MAX / 7, entry_b);
+        witness_module.bind_oracle_to::<B1>(b, entry_b);
+
+        let entry_c = witness_module.new_entry_with_capacity(7);
+        witness_module.push_u128_to(u128::MAX - u128::MAX / 5 + u128::MAX / 11, entry_c);
+        witness_module.bind_oracle_to::<B1>(c, entry_c);
+
+        let height = 128;
+        witness_module.populate(height).unwrap();
+
+        let witness_modules = [witness_module];
+        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+
+        let circuit_modules = [circuit_module];
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok())
     }
 
