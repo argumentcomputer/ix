@@ -187,20 +187,20 @@ impl WitnessModule {
         self.entries[entry_id].push(OptimalUnderlier::from(u128))
     }
 
-    pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_id: OracleId) -> Vec<T> {
+    pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_id: OracleId) -> Option<Vec<T>> {
         let id = if let Some(v) = self.entry_map.get(&oracle_id) {
             let tower_level: usize = v.1;
             #[allow(clippy::manual_assert)]
             if tower_level != FS::TOWER_LEVEL {
-                panic!("provided tower level doesn't match stored one");
+                return None;
             }
             v.0
         } else {
-            panic!("couldn't find oracle_id in entry_map");
+            return None;
         };
 
         let underliers = self.entries[id].clone();
-        must_cast_slice(&underliers).to_vec()
+        Some(must_cast_slice(&underliers).to_vec())
     }
 
     /// Populates a witness module with data to reach a given height.
@@ -701,7 +701,7 @@ impl WitnessModule {
                                 })
                                 .collect();
 
-                            let chunk_size = usize::try_from(*unprojected_size)?;
+                            let chunk_size = *unprojected_size;
                             let mask_value = usize::try_from(*mask)?;
 
                             // select necessary field elements (projection)
@@ -1223,7 +1223,7 @@ mod tests {
                 &format!("projected-{input}"),
                 input,
                 mask,
-                unprojected_size,
+                usize::try_from(unprojected_size).unwrap(),
                 0,
             )
             .unwrap();

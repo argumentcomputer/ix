@@ -176,8 +176,8 @@ extern "C" fn rs_circuit_module_add_projected(
     name: *const c_char,
     inner: OracleId,
     mask: u64,
-    unprojected_size: u64,
-    start_index: u64,
+    unprojected_size: usize,
+    start_index: usize,
 ) -> OracleId {
     circuit_module
         .add_projected(raw_to_str(name), inner, mask, unprojected_size, start_index)

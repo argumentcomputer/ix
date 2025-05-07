@@ -34,8 +34,8 @@ pub enum OracleKind {
         inner: OracleId,
         mask: u64,
         mask_bits: Vec<F>,
-        unprojected_size: u64,
-        start_index: u64,
+        unprojected_size: usize,
+        start_index: usize,
     },
 }
 

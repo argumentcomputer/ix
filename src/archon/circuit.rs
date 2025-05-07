@@ -215,16 +215,16 @@ impl CircuitModule {
         name: &(impl ToString + ?Sized),
         inner: OracleId,
         mask: u64,
-        unprojected_size: u64,
-        start_index: u64,
+        unprojected_size: usize,
+        start_index: usize,
     ) -> Result<OracleId> {
         let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
 
-        let mut selector_binary: Vec<binius_circuits::builder::types::F> = (0..64)
-            .map(|n| binius_circuits::builder::types::F::from(((mask >> n) & 1) as u128))
+        let mut selector_binary: Vec<F> = (0..64)
+            .map(|n| F::from(((mask >> n) & 1) as u128))
             .collect();
 
-        selector_binary.truncate(log2_ceil_usize(usize::try_from(unprojected_size)?));
+        selector_binary.truncate(log2_ceil_usize(unprojected_size));
 
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
@@ -348,7 +348,7 @@ pub fn compile_circuit_modules(
                     name,
                     inner + oracle_offset,
                     selector_binary.clone(),
-                    usize::try_from(*start_index)?,
+                    *start_index,
                 )?,
             };
         }

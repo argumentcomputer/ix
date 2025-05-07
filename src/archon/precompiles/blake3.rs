@@ -498,7 +498,7 @@ mod tests {
                     &format!("input-{:?}", xy),
                     state_transitions[xy],
                     PROJECTED_SELECTOR_INPUT,
-                    SINGLE_COMPRESSION_HEIGHT as u64,
+                    SINGLE_COMPRESSION_HEIGHT,
                     0,
                 )
                 .unwrap()
@@ -510,7 +510,7 @@ mod tests {
                     &format!("output-{:?}", xy),
                     state_transitions[xy],
                     PROJECTED_SELECTOR_OUTPUT,
-                    SINGLE_COMPRESSION_HEIGHT as u64,
+                    SINGLE_COMPRESSION_HEIGHT,
                     0,
                 )
                 .unwrap()
@@ -991,7 +991,7 @@ mod tests {
                     &format!("input-{:?}", xy),
                     state_transitions[xy],
                     PROJECTED_SELECTOR_INPUT,
-                    SINGLE_COMPRESSION_HEIGHT as u64,
+                    SINGLE_COMPRESSION_HEIGHT,
                     0,
                 )
                 .unwrap()
@@ -1003,7 +1003,7 @@ mod tests {
                     &format!("output-{:?}", xy),
                     state_transitions[xy],
                     PROJECTED_SELECTOR_OUTPUT,
-                    SINGLE_COMPRESSION_HEIGHT as u64,
+                    SINGLE_COMPRESSION_HEIGHT,
                     0,
                 )
                 .unwrap()
