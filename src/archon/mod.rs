@@ -1,5 +1,6 @@
 pub mod arith_expr;
 pub mod circuit;
+pub mod precompiles;
 pub mod protocol;
 pub mod transparent;
 pub mod witness;
@@ -33,6 +34,8 @@ pub enum OracleKind {
         inner: OracleId,
         mask: u64,
         mask_bits: Vec<F>,
+        unprojected_size: usize,
+        start_index: usize,
     },
 }
 

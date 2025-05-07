@@ -12,6 +12,7 @@ use binius_field::{
     underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
 };
 use binius_math::MultilinearExtension;
+use bytemuck::{Pod, must_cast_slice};
 use indexmap::IndexSet;
 use rayon::{
     iter::{
@@ -184,6 +185,22 @@ impl WitnessModule {
     #[inline]
     pub fn push_u128_to(&mut self, u128: u128, entry_id: EntryId) {
         self.entries[entry_id].push(OptimalUnderlier::from(u128))
+    }
+
+    pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_id: OracleId) -> Option<Vec<T>> {
+        let id = if let Some(v) = self.entry_map.get(&oracle_id) {
+            let tower_level: usize = v.1;
+            #[allow(clippy::manual_assert)]
+            if tower_level != FS::TOWER_LEVEL {
+                return None;
+            }
+            v.0
+        } else {
+            return None;
+        };
+
+        let underliers = self.entries[id].clone();
+        Some(must_cast_slice(&underliers).to_vec())
     }
 
     /// Populates a witness module with data to reach a given height.
@@ -657,36 +674,52 @@ impl WitnessModule {
                 OracleKind::Projected {
                     inner,
                     mask,
-                    mask_bits,
+                    mask_bits: _,
+                    unprojected_size,
+                    start_index: _,
                 } => {
                     let tower_level = oracle_info.tower_level;
                     let &(inner_entry_id, _) =
                         self.entry_map.get(inner).expect("Data should be available");
 
-                    let chunk_size = 2usize.pow(u32::try_from(mask_bits.len())?);
                     let underliers = self.entries[inner_entry_id].clone();
-                    let mut projected_field_elements = vec![];
-                    let mut projected_underliers =
-                        Vec::<OptimalUnderlier>::with_capacity(chunk_size);
+
+                    let mut projected_underliers = vec![];
 
                     match tower_level {
                         5 => {
-                            // tower_level = 5, means that we deal with u32, and we have 4 u32 in a single
-                            // 'OptimalUnderlier' value
-                            let mask = usize::try_from(*mask)?;
-                            let divisor = 4usize;
-                            let actual_chunk_size = chunk_size / divisor;
-                            let chunk_idx = mask / divisor;
-                            let inner_underlier_idx = mask % divisor;
+                            // TODO: check if parallelism can be applied
 
-                            // order of projected elements is important, so we can't use parallelism here
-                            underliers.chunks(actual_chunk_size).for_each(|chunk| {
-                                let inner_underlier = unsafe {
-                                    transmute::<OptimalUnderlier, [B32; 4]>(chunk[chunk_idx])
-                                };
-                                projected_field_elements.push(inner_underlier[inner_underlier_idx]);
-                            });
+                            // tower_level = 5, means that we deal with u32, and we have 4 u32 in a single 'OptimalUnderlier' value
+                            let divisor = 4;
 
+                            // grab all underliers and get field elements from them
+                            let field_elements: Vec<B32> = underliers
+                                .into_iter()
+                                .flat_map(|underlier| unsafe {
+                                    transmute::<OptimalUnderlier, [B32; 4]>(underlier)
+                                })
+                                .collect();
+
+                            let chunk_size = *unprojected_size;
+                            let mask_value = usize::try_from(*mask)?;
+
+                            // select necessary field elements (projection)
+                            let mut projected_field_elements: Vec<B32> = field_elements
+                                .chunks(chunk_size)
+                                .map(|chunk| chunk[mask_value])
+                                .collect();
+
+                            // pad with zeroes
+                            let pad_len = projected_field_elements.len() % divisor;
+                            if pad_len != 0 {
+                                projected_field_elements.resize(
+                                    projected_field_elements.len() + (divisor - pad_len),
+                                    B32::from(0u32),
+                                );
+                            }
+
+                            // compose new underliers layer
                             projected_field_elements.chunks(divisor).for_each(|chunk| {
                                 let array: [B32; 4] = chunk.try_into().unwrap();
                                 let projected_item =
@@ -1176,16 +1209,23 @@ mod tests {
     }
 
     #[test]
-    fn test_projected() {
-        let n_vars = 9usize;
-        let selector = 56u64; // we have long input and every "selected" item is taken into projection
+    fn test_projected_u32() {
+        let n_vars = 6usize;
+        let mask = 0u64; // we have long input and every "selected" item is taken into projection
 
         let height = 2u64.pow(u32::try_from(n_vars).unwrap());
+        let unprojected_size = height / 4;
 
         let mut circuit_module = CircuitModule::new(0);
         let input = circuit_module.add_committed::<B32>("input").unwrap();
         circuit_module
-            .add_projected(&format!("projected-{input}"), input, selector)
+            .add_projected(
+                &format!("projected-{input}"),
+                input,
+                mask,
+                usize::try_from(unprojected_size).unwrap(),
+                0,
+            )
             .unwrap();
         circuit_module.freeze_oracles();
 
@@ -1193,7 +1233,7 @@ mod tests {
         let entry_id = witness_module.new_entry();
 
         // let's use 'push_u32s_to' for populating
-        for _ in 0..height / 4 {
+        for _ in 0..unprojected_size {
             let push: [u32; 4] = rand::random();
             witness_module.push_u32s_to(push, entry_id);
         }

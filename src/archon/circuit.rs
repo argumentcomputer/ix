@@ -215,18 +215,16 @@ impl CircuitModule {
         name: &(impl ToString + ?Sized),
         inner: OracleId,
         mask: u64,
+        unprojected_size: usize,
+        start_index: usize,
     ) -> Result<OracleId> {
         let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
-
-        let mut log2 = log2_ceil_usize(usize::try_from(mask)?);
-        if 2u64.pow(u32::try_from(log2)?) == mask {
-            log2 += 1;
-        }
 
         let mut selector_binary: Vec<F> = (0..64)
             .map(|n| F::from(((mask >> n) & 1) as u128))
             .collect();
-        selector_binary.truncate(log2);
+
+        selector_binary.truncate(log2_ceil_usize(unprojected_size));
 
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
@@ -235,6 +233,8 @@ impl CircuitModule {
                 inner,
                 mask,
                 mask_bits: selector_binary,
+                unprojected_size,
+                start_index,
             },
         };
 
@@ -342,11 +342,13 @@ pub fn compile_circuit_modules(
                     inner,
                     mask: _,
                     mask_bits: selector_binary,
+                    unprojected_size: _,
+                    start_index,
                 } => builder.add_projected(
                     name,
                     inner + oracle_offset,
                     selector_binary.clone(),
-                    0,
+                    *start_index,
                 )?,
             };
         }
