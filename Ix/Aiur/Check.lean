@@ -163,7 +163,7 @@ partial def inferTerm : Term → CheckM InferredType
     | some (.function function) => do
       checkNoEscape arg function.output
       let inpTyp := function.inputs.map Prod.snd
-      pure $ .evaluates $ .tuple inpTyp
+      pure $ .evaluates $ .tuple inpTyp.toArray
     | some _ => throw $ .notAFunction func
     | _ => throw $ .unboundVariable func
   | .xor a b => checkNumBinOp a b
@@ -171,8 +171,8 @@ partial def inferTerm : Term → CheckM InferredType
   | .get tup i => do
     -- Retrieves the type of an element in a tuple by its index. Errors if the index is out of bounds.
     let typs ← inferTuple tup
-    if h : i < typs.length then
-      let typ := typs[i]
+    if i < typs.size then
+      let typ := typs[i]!
       pure $ .evaluates typ
     else
       throw $ .indexOoB i
@@ -181,7 +181,7 @@ partial def inferTerm : Term → CheckM InferredType
     -- returns them encoded in a `Typ.tuple`. Errors if the index is out of bounds.
     if j < i then throw $ .negativeRange i j else do
     let typs ← inferTuple tup
-    if i < typs.length then
+    if i < typs.size then
       let slice := typs.drop i |>.take (j - i)
       pure $ .evaluates $ .tuple slice
     else
@@ -253,7 +253,7 @@ where
     | (.primitive (.u32 _), .primitive .u32)
     | (.primitive (.u64 _), .primitive .u64) => pure []
     | (.tuple pats, .tuple typs) => do
-      unless pats.length != typs.length do throw $ .incompatiblePattern pat typ
+      unless pats.size != typs.size do throw $ .incompatiblePattern pat typ
       pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
     | (.ref funcName [], typ@(.function ..)) => do
       let ctx ← read
@@ -308,7 +308,7 @@ partial def inferNumber (term : Term) : CheckM Typ := do
   | .primitive .u64 => pure typ
   | _ => throw $ .nonNumeric typ
 
-partial def inferTuple (term : Term) : CheckM (List Typ) := do
+partial def inferTuple (term : Term) : CheckM (Array Typ) := do
   let typ ← inferNoEscape term
   match typ with
   | .tuple typs => pure typs
@@ -458,14 +458,14 @@ partial def inferTerm' : Term → CheckM TypedTerm
     | some (.function inputs output) => do
       let argInner ← checkNoEscape' arg output
       let arg' := .mk (.evaluates output) argInner
-      pure $ .mk (.evaluates (.tuple inputs)) (.preimg func arg')
+      pure $ .mk (.evaluates (.tuple inputs.toArray)) (.preimg func arg')
     | some _ => throw $ .notAFunction func
     | none => match ctx.decls[func]? with
       | some (.function function) => do
         let argInner ← checkNoEscape' arg function.output
         let arg' := .mk (.evaluates function.output) argInner
         let inpTyp := function.inputs.map Prod.snd
-        pure $ .mk (.evaluates (.tuple inpTyp)) (.preimg func arg')
+        pure $ .mk (.evaluates (.tuple inpTyp.toArray)) (.preimg func arg')
       | some _ => throw $ .notAFunction func
       | _ => throw $ .unboundVariable func
   | .preimg func arg => do
@@ -476,7 +476,7 @@ partial def inferTerm' : Term → CheckM TypedTerm
       let argInner ← checkNoEscape' arg function.output
       let arg' := .mk (.evaluates function.output) argInner
       let inpTyp := function.inputs.map Prod.snd
-      pure $ .mk (.evaluates (.tuple inpTyp)) (.preimg func arg')
+      pure $ .mk (.evaluates (.tuple inpTyp.toArray)) (.preimg func arg')
     | some _ => throw $ .notAFunction func
     | _ => throw $ .unboundVariable func
   | .xor a b => do
@@ -495,8 +495,8 @@ partial def inferTerm' : Term → CheckM TypedTerm
     pure $ .mk ctxTyp (.and a b)
   | .get tup i => do
     let (typs, tupInner) ← inferTuple' tup
-    if h : i < typs.length then
-      let typ := typs[i]
+    if i < typs.size then
+      let typ := typs[i]!
       let tup := .mk (.evaluates (.tuple typs)) tupInner
       pure $ .mk (.evaluates typ) (.get tup i)
     else
@@ -506,7 +506,7 @@ partial def inferTerm' : Term → CheckM TypedTerm
     -- returns them encoded in a `Typ.tuple`. Errors if the index is out of bounds.
     if j < i then throw $ .negativeRange i j else do
     let (typs, tupInner) ← inferTuple' tup
-    if i < typs.length then
+    if i < typs.size then
       let slice := typs.drop i |>.take (j - i)
       let tup := .mk (.evaluates (.tuple typs)) tupInner
       pure $ .mk (.evaluates (.tuple slice)) (.slice tup i j)
@@ -617,7 +617,7 @@ where
     | (.primitive (.u32 _), .primitive .u32)
     | (.primitive (.u64 _), .primitive .u64) => pure []
     | (.tuple pats, .tuple typs) => do
-      unless pats.length != typs.length do throw $ .incompatiblePattern pat typ
+      unless pats.size != typs.size do throw $ .incompatiblePattern pat typ
       pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
     | (.ref funcName [], typ@(.function ..)) => do
       let ctx ← read
@@ -651,7 +651,7 @@ partial def inferNumber' (term : Term) : CheckM (Typ × TypedTermInner) := do
   | .primitive .u64 => pure (typ, inner)
   | _ => throw $ .nonNumeric typ
 
-partial def inferTuple' (term : Term) : CheckM (List Typ × TypedTermInner) := do
+partial def inferTuple' (term : Term) : CheckM (Array Typ × TypedTermInner) := do
   let (typ, inner) ← inferNoEscape' term
   match typ with
   | .tuple typs => pure (typs, inner)

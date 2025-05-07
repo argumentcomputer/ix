@@ -66,7 +66,7 @@ def dnfProd (branches: List $ Pattern × UniqTerm) (body : ExtTerm) : CompilerM 
     | (.var var, (_, term)) :: rest => aux (renames.push (var, term)) clauses rest body
     | (.primitive prim, term) :: rest => aux renames (clauses.push ⟨.primitive prim, [], term⟩) rest body
     | (.tuple args, term) :: rest => do
-      let (vars, guards) ← flattenArgs args
+      let (vars, guards) ← flattenArgs args.toList
       let clause := ⟨.tuple vars, guards, term⟩
       aux renames (clauses.push clause) rest body
     | (.ref global args, term) :: rest => do
@@ -202,7 +202,7 @@ def runMatchCompiler (typs : Decls) (term : Term) (rules : List (Pattern × Term
 def spatternToPattern : SPattern → Pattern
   | .primitive prim => .primitive prim
   | .ref global vars => .ref global (vars.map .var)
-  | .tuple vars => .tuple (vars.map .var)
+  | .tuple vars => .tuple (vars.map .var).toArray
 
 mutual
 

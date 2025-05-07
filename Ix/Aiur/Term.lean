@@ -39,7 +39,7 @@ inductive Pattern
   | wildcard : Pattern
   | ref : Global → List Pattern → Pattern
   | primitive : Primitive → Pattern
-  | tuple : List Pattern → Pattern
+  | tuple : Array Pattern → Pattern
   | or : Pattern → Pattern → Pattern
   deriving BEq, Hashable, Inhabited
 
@@ -49,7 +49,7 @@ inductive PrimitiveType
 
 inductive Typ where
   | primitive : PrimitiveType → Typ
-  | tuple : List Typ → Typ
+  | tuple : Array Typ → Typ
   | pointer : Typ → Typ
   | dataType : Global → Typ
   | function : List Typ → Typ → Typ
@@ -79,7 +79,7 @@ inductive Term
 
 inductive Data
   | primitive : Primitive → Data
-  | tuple : List Term → Data
+  | tuple : Array Term → Data
 
 end
 
@@ -115,7 +115,7 @@ structure TypedTerm where
 
 inductive TypedData
   | primitive : Primitive → TypedData
-  | tuple : List TypedTerm → TypedData
+  | tuple : Array TypedTerm → TypedData
 end
 
 structure Constructor where
