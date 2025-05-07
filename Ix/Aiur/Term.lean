@@ -33,6 +33,13 @@ inductive Primitive
   | u32 : UInt32 → Primitive
   | u64 : UInt64 → Primitive
   deriving BEq, Hashable
+  
+def Primitive.toU64 : Primitive → UInt64
+| .u1 n => n.toUInt64
+| .u8 n => n.toUInt64
+| .u16 n => n.toUInt64
+| .u32 n => n.toUInt64
+| .u64 n => n
 
 inductive Pattern
   | var : Local → Pattern
@@ -87,6 +94,14 @@ inductive ContextualType
   | evaluates : Typ → ContextualType
   | escapes : ContextualType
   deriving BEq, Inhabited
+
+def ContextualType.unwrap : ContextualType → Typ
+| .escapes => panic! "term should not escape"
+| .evaluates typ => typ
+
+def ContextualType.unwrapOr : ContextualType → Typ → Typ
+| .escapes => fun typ => typ
+| .evaluates typ => fun _ => typ
 
 mutual
 inductive TypedTermInner
@@ -145,6 +160,16 @@ inductive Declaration
   deriving Inhabited
 
 abbrev Decls := HashMap Global Declaration
+
+structure TypedFunction where
+  name : Global
+  inputs : List (Local × Typ)
+  output : Typ
+  body : TypedTerm
+
+structure TypedToplevel where
+  dataTypes : List DataType
+  functions : List TypedFunction
 
 mutual
 
