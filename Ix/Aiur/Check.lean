@@ -449,10 +449,27 @@ partial def inferTerm' : Term → CheckM TypedTerm
       let args ← checkArgsAndInputs func args constr.argTypes
       pure $ .mk (.evaluates (.dataType dataType.name)) (.app func args)
     | _ => throw $ .cannotApply func
-  | .preimg func arg => do
+  | .preimg func@(⟨.str .anonymous unqualifiedFunc⟩) arg => do
     -- Checks if the type of the argument, which isn't allowed to escape, matches the
     -- output type of the function, and infers the type of the function's inputs as a tuple.
     -- Errors if the function isn't found in the context.
+    let ctx ← read
+    match ctx.varTypes[Local.str unqualifiedFunc]? with
+    | some (.function inputs output) => do
+      let argInner ← checkNoEscape' arg output
+      let arg' := .mk (.evaluates output) argInner
+      pure $ .mk (.evaluates (.tuple inputs)) (.preimg func arg')
+    | some _ => throw $ .notAFunction func
+    | none => match ctx.decls[func]? with
+      | some (.function function) => do
+        let argInner ← checkNoEscape' arg function.output
+        let arg' := .mk (.evaluates function.output) argInner
+        let inpTyp := function.inputs.map Prod.snd
+        pure $ .mk (.evaluates (.tuple inpTyp)) (.preimg func arg')
+      | some _ => throw $ .notAFunction func
+      | _ => throw $ .unboundVariable func
+  | .preimg func arg => do
+    -- Only checks global map if it is not unqualified
     let ctx ← read
     match ctx.decls[func]? with
     | some (.function function) => do

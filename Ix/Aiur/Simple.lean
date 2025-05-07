@@ -7,6 +7,7 @@ private abbrev tmpVar := Local.idx 0
 
 partial def simplifyTerm (decls: Decls) : Term → Term
   | .let var@(.var _) val body => .let var (recr val) (recr body)
+  | .let .wildcard _ body => recr body
   | .let pat val body =>
     let mtch := .match (.var tmpVar) [(pat, body)]
     .let (.var tmpVar) (recr val) (recr mtch)

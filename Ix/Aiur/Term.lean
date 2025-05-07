@@ -1,4 +1,5 @@
 import Std.Data.HashMap
+open Std
 
 namespace Aiur
 
@@ -10,6 +11,9 @@ inductive Local
 structure Global where
   toName : Lean.Name
   deriving BEq, Hashable, Inhabited
+
+instance : ToString Global where
+  toString g := g.toName.toString
 
 def Global.init (limb : String) : Global :=
   ⟨.mkSimple limb⟩
@@ -82,7 +86,7 @@ end
 inductive ContextualType
   | evaluates : Typ → ContextualType
   | escapes : ContextualType
-  deriving Inhabited
+  deriving BEq, Inhabited
 
 mutual
 inductive TypedTermInner
@@ -138,7 +142,32 @@ inductive Declaration
   | function : Function → Declaration
   | dataType : DataType → Declaration
   | constructor : DataType → Constructor → Declaration
+  deriving Inhabited
 
-abbrev Decls := Std.HashMap Global Declaration
+abbrev Decls := HashMap Global Declaration
+
+mutual
+
+partial def Typ.size (decls : Decls) (visited : HashMap Global Unit := {}) : Typ → Nat
+  | Typ.primitive .. => 1
+  | Typ.pointer .. => 1
+  | Typ.function .. => 1
+  | Typ.tuple ts => ts.foldl (init := 0) (fun acc t => acc + t.size decls visited)
+  | Typ.dataType g => match decls.get! g with
+    | .dataType data => data.size decls visited
+    | _ => panic! "impossible case"
+
+partial def Constructor.size (decls : Decls) (visited : HashMap Global Unit := {}) (c : Constructor) : Nat :=
+  c.argTypes.foldl (λ acc t => acc + t.size decls visited) 0
+
+partial def DataType.size (dt : DataType) (decls : Decls) (visited : HashMap Global Unit := {}) : Nat :=
+  if visited.contains dt.name then
+    panic! s!"cycle detected at datatype `{dt.name}`"
+  else
+    let visited := visited.insert dt.name ()
+    let ctorSizes := dt.constructors.map (Constructor.size decls visited)
+    let maxFields := ctorSizes.foldl max 0
+    maxFields + 1
+end
 
 end Aiur
