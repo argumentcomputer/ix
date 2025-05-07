@@ -7,7 +7,7 @@ mod tests {
     use binius_circuits::arithmetic::u32::LOG_U32_BITS;
     use binius_circuits::builder::ConstraintSystemBuilder;
     use binius_core::oracle::{OracleId, ShiftVariant};
-    use binius_field::{BinaryField1b, BinaryField32b, TowerField};
+    use binius_field::{BinaryField1b, BinaryField32b, BinaryField128b, Field, TowerField};
     use binius_utils::checked_arithmetics::log2_ceil_usize;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
@@ -37,9 +37,12 @@ mod tests {
     const PROJECTED_SELECTOR_INPUT: u64 = 0;
     const PROJECTED_SELECTOR_OUTPUT: u64 = 56;
 
+    type B128 = BinaryField128b;
     type B32 = BinaryField32b;
     type B1 = BinaryField1b;
 
+    #[allow(dead_code)]
+    #[derive(Debug)]
     struct Trace {
         state_trace: [Vec<u32>; STATE_SIZE],
         a_in_trace: Vec<u32>,
@@ -476,7 +479,7 @@ mod tests {
 
     #[test]
     fn test_whole_blake3_compression_in_archon() {
-        let trace_len = COMPRESSIONS_TEST * 4; // must divide 4. TODO: figure out if we can tackle this limitation
+        let trace_len = COMPRESSIONS_TEST * 4; // must divide 4 because of module_0. TODO: figure out if we can tackle this limitation
         let traces = generate_trace(trace_len);
 
         let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
@@ -520,7 +523,6 @@ mod tests {
         circuit_module_id += 1;
         let mut circuit_module_1 = CircuitModule::new(circuit_module_id);
 
-        // TODO: Implement linear_combination processing for bits and use it for 'b_in_xor_c_0', 'd_in_xor_a_0', 'd_0_xor_a_1', 'b_0_xor_c_1'
         let a_in = circuit_module_1.add_committed::<B1>("a_in").unwrap();
         let b_in = circuit_module_1.add_committed::<B1>("b_in").unwrap();
         let c_in = circuit_module_1.add_committed::<B1>("c_in").unwrap();
@@ -536,13 +538,18 @@ mod tests {
         let c_1 = circuit_module_1.add_committed::<B1>("c_1").unwrap();
 
         let b_in_xor_c_0 = circuit_module_1
-            .add_committed::<B1>("b_in_xor_c_0")
+            .add_linear_combination("b_in_xor_c_0", B128::ZERO, [
+                (b_in, B128::ONE),
+                (c_0, B128::ONE),
+            ])
             .unwrap();
+
         let d_in_xor_a_0 = circuit_module_1
-            .add_committed::<B1>("d_in_xor_a_0")
+            .add_linear_combination("d_in_xor_a_0", B128::ZERO, [
+                (d_in, B128::ONE),
+                (a_0, B128::ONE),
+            ])
             .unwrap();
-        let d_0_xor_a_1 = circuit_module_1.add_committed::<B1>("d_0_xor_a_1").unwrap();
-        let b_0_xor_c_1 = circuit_module_1.add_committed::<B1>("b_0_xor_c_1").unwrap();
 
         let b_0 = circuit_module_1
             .add_shifted(
@@ -562,6 +569,21 @@ mod tests {
                 ShiftVariant::CircularLeft,
             )
             .unwrap();
+
+        let d_0_xor_a_1 = circuit_module_1
+            .add_linear_combination("d_0_xor_a_1", B128::ZERO, [
+                (d_0, B128::ONE),
+                (a_1, B128::ONE),
+            ])
+            .unwrap();
+
+        let b_0_xor_c_1 = circuit_module_1
+            .add_linear_combination("b_0_xor_c_1", B128::ZERO, [
+                (b_0, B128::ONE),
+                (c_1, B128::ONE),
+            ])
+            .unwrap();
+
         let d_1 = circuit_module_1
             .add_shifted(
                 "d_1",
@@ -707,40 +729,12 @@ mod tests {
             witness_modules[witness_module_id].bind_oracle_to::<B1>(zouts[xy], zout_entry);
         }
 
-        // TODO: remove this extra-population, once implement processing the LC over bits
+        // not to forget about d_in
         let d_in_entry = witness_modules[witness_module_id].new_entry();
         for chunk in traces.d_in_trace.chunks(4) {
             witness_modules[witness_module_id].push_u32s_to(chunk.try_into().unwrap(), d_in_entry)
         }
         witness_modules[witness_module_id].bind_oracle_to::<B1>(d_in, d_in_entry);
-
-        let b_in_xor_c_0_entry = witness_modules[witness_module_id].new_entry();
-        for chunk in traces.b_in_xor_c_0_trace.chunks(4) {
-            witness_modules[witness_module_id]
-                .push_u32s_to(chunk.try_into().unwrap(), b_in_xor_c_0_entry)
-        }
-        witness_modules[witness_module_id].bind_oracle_to::<B1>(b_in_xor_c_0, b_in_xor_c_0_entry);
-
-        let d_in_xor_a_0_entry = witness_modules[witness_module_id].new_entry();
-        for chunk in traces.d_in_xor_a_0_trace.chunks(4) {
-            witness_modules[witness_module_id]
-                .push_u32s_to(chunk.try_into().unwrap(), d_in_xor_a_0_entry)
-        }
-        witness_modules[witness_module_id].bind_oracle_to::<B1>(d_in_xor_a_0, d_in_xor_a_0_entry);
-
-        let d_0_xor_a_1_entry = witness_modules[witness_module_id].new_entry();
-        for chunk in traces.d_0_xor_a_1_trace.chunks(4) {
-            witness_modules[witness_module_id]
-                .push_u32s_to(chunk.try_into().unwrap(), d_0_xor_a_1_entry)
-        }
-        witness_modules[witness_module_id].bind_oracle_to::<B1>(d_0_xor_a_1, d_0_xor_a_1_entry);
-
-        let b_0_xor_c_1_entry = witness_modules[witness_module_id].new_entry();
-        for chunk in traces.b_0_xor_c_1_trace.chunks(4) {
-            witness_modules[witness_module_id]
-                .push_u32s_to(chunk.try_into().unwrap(), b_0_xor_c_1_entry)
-        }
-        witness_modules[witness_module_id].bind_oracle_to::<B1>(b_0_xor_c_1, b_0_xor_c_1_entry);
 
         witness_modules[witness_module_id]
             .populate(height_1)
@@ -1053,7 +1047,6 @@ mod tests {
         let circuit_module_id = 0;
         let mut circuit_module_1 = CircuitModule::new(circuit_module_id);
 
-        // TODO: Implement linear_combination processing for bits and use it for 'b_in_xor_c_0', 'd_in_xor_a_0', 'd_0_xor_a_1', 'b_0_xor_c_1'
         let a_in = circuit_module_1.add_committed::<B1>("a_in").unwrap();
         let b_in = circuit_module_1.add_committed::<B1>("b_in").unwrap();
         let c_in = circuit_module_1.add_committed::<B1>("c_in").unwrap();
@@ -1069,13 +1062,18 @@ mod tests {
         let c_1 = circuit_module_1.add_committed::<B1>("c_1").unwrap();
 
         let b_in_xor_c_0 = circuit_module_1
-            .add_committed::<B1>("b_in_xor_c_0")
+            .add_linear_combination("b_in_xor_c_0", B128::ZERO, [
+                (b_in, B128::ONE),
+                (c_0, B128::ONE),
+            ])
             .unwrap();
+
         let d_in_xor_a_0 = circuit_module_1
-            .add_committed::<B1>("d_in_xor_a_0")
+            .add_linear_combination("d_in_xor_a_0", B128::ZERO, [
+                (d_in, B128::ONE),
+                (a_0, B128::ONE),
+            ])
             .unwrap();
-        let d_0_xor_a_1 = circuit_module_1.add_committed::<B1>("d_0_xor_a_1").unwrap();
-        let b_0_xor_c_1 = circuit_module_1.add_committed::<B1>("b_0_xor_c_1").unwrap();
 
         let b_0 = circuit_module_1
             .add_shifted(
@@ -1095,6 +1093,21 @@ mod tests {
                 ShiftVariant::CircularLeft,
             )
             .unwrap();
+
+        let d_0_xor_a_1 = circuit_module_1
+            .add_linear_combination("d_0_xor_a_1", B128::ZERO, [
+                (d_0, B128::ONE),
+                (a_1, B128::ONE),
+            ])
+            .unwrap();
+
+        let b_0_xor_c_1 = circuit_module_1
+            .add_linear_combination("b_0_xor_c_1", B128::ZERO, [
+                (b_0, B128::ONE),
+                (c_1, B128::ONE),
+            ])
+            .unwrap();
+
         let d_1 = circuit_module_1
             .add_shifted(
                 "d_1",
@@ -1104,7 +1117,7 @@ mod tests {
                 ShiftVariant::CircularLeft,
             )
             .unwrap();
-        let _b_1 = circuit_module_1
+        circuit_module_1
             .add_shifted(
                 "b_1",
                 b_0_xor_c_1,
@@ -1216,42 +1229,66 @@ mod tests {
             witness_modules[witness_module_id].bind_oracle_to::<B1>(zouts[xy], zout_entry);
         }
 
-        // TODO: remove this extra-population, once implement processing the LC over bits
+        // not to forget about d_in
         let d_in_entry = witness_modules[witness_module_id].new_entry();
         for chunk in traces.d_in_trace.chunks(4) {
             witness_modules[witness_module_id].push_u32s_to(chunk.try_into().unwrap(), d_in_entry)
         }
         witness_modules[witness_module_id].bind_oracle_to::<B1>(d_in, d_in_entry);
 
-        let b_in_xor_c_0_entry = witness_modules[witness_module_id].new_entry();
-        for chunk in traces.b_in_xor_c_0_trace.chunks(4) {
-            witness_modules[witness_module_id]
-                .push_u32s_to(chunk.try_into().unwrap(), b_in_xor_c_0_entry)
-        }
-        witness_modules[witness_module_id].bind_oracle_to::<B1>(b_in_xor_c_0, b_in_xor_c_0_entry);
+        witness_modules[witness_module_id].populate(height).unwrap();
 
-        let d_in_xor_a_0_entry = witness_modules[witness_module_id].new_entry();
-        for chunk in traces.d_in_xor_a_0_trace.chunks(4) {
-            witness_modules[witness_module_id]
-                .push_u32s_to(chunk.try_into().unwrap(), d_in_xor_a_0_entry)
-        }
-        witness_modules[witness_module_id].bind_oracle_to::<B1>(d_in_xor_a_0, d_in_xor_a_0_entry);
+        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
+    }
 
-        let d_0_xor_a_1_entry = witness_modules[witness_module_id].new_entry();
-        for chunk in traces.d_0_xor_a_1_trace.chunks(4) {
-            witness_modules[witness_module_id]
-                .push_u32s_to(chunk.try_into().unwrap(), d_0_xor_a_1_entry)
-        }
-        witness_modules[witness_module_id].bind_oracle_to::<B1>(d_0_xor_a_1, d_0_xor_a_1_entry);
+    #[test]
+    fn test_lc_over_bits() {
+        let trace_len = COMPRESSIONS_TEST;
+        let traces = generate_trace(trace_len);
 
-        let b_0_xor_c_1_entry = witness_modules[witness_module_id].new_entry();
-        for chunk in traces.b_0_xor_c_1_trace.chunks(4) {
-            witness_modules[witness_module_id]
-                .push_u32s_to(chunk.try_into().unwrap(), b_0_xor_c_1_entry)
+        let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
+        let height = 2u64.pow(u32::try_from(state_n_vars + 5).unwrap());
+
+        let circuit_module_id = 0;
+        let mut circuit_module_1 = CircuitModule::new(circuit_module_id);
+
+        let a_0 = circuit_module_1.add_committed::<B1>("a_0").unwrap();
+        let d_in = circuit_module_1.add_committed::<B1>("d_in").unwrap();
+
+        let d_in_xor_a_0 = circuit_module_1
+            .add_linear_combination("d_in_xor_a_0", B128::ZERO, [
+                (a_0, B128::ONE),
+                (d_in, B128::ONE),
+            ])
+            .unwrap();
+
+        circuit_module_1.freeze_oracles();
+
+        let circuit_modules = [circuit_module_1];
+        let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
+
+        let witness_module_id = 0;
+
+        let a_0_entry = witness_modules[witness_module_id].new_entry();
+        let d_in_entry = witness_modules[witness_module_id].new_entry();
+
+        for chunk in traces.a_0_trace.chunks(4) {
+            witness_modules[witness_module_id].push_u32s_to(chunk.try_into().unwrap(), a_0_entry)
         }
-        witness_modules[witness_module_id].bind_oracle_to::<B1>(b_0_xor_c_1, b_0_xor_c_1_entry);
+
+        for chunk in traces.d_in_trace.chunks(4) {
+            witness_modules[witness_module_id].push_u32s_to(chunk.try_into().unwrap(), d_in_entry)
+        }
+
+        witness_modules[witness_module_id].bind_oracle_to::<B1>(a_0, a_0_entry);
+        witness_modules[witness_module_id].bind_oracle_to::<B1>(d_in, d_in_entry);
 
         witness_modules[witness_module_id].populate(height).unwrap();
+
+        let lc_data = witness_modules[witness_module_id].get_data::<B1, u32>(d_in_xor_a_0);
+        assert!(lc_data.is_some());
+        assert_eq!(lc_data.unwrap(), traces.d_in_xor_a_0_trace);
 
         let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());

@@ -274,7 +274,7 @@ extern lean_obj_res c_rs_circuit_module_add_projected(
     size_t inner,
     uint64_t mask,
     size_t unprojected_size,
-    size_t start_index,
+    size_t start_index
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
