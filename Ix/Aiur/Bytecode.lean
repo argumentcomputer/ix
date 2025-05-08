@@ -21,7 +21,7 @@ inductive Op where
   | lt: ValIdx → ValIdx → Op
   | store : Array ValIdx → Op
   | load : MemIdx → ValIdx → Op
-  | call : FuncIdx → Array ValIdx → ValIdx → Op
+  | call : FuncIdx → Array ValIdx → Nat → Op
   | dynCall : ValIdx → Array ValIdx → ValIdx → Op
   | preimg : FuncIdx → Array ValIdx → ValIdx → Op
   | dynPreimg : ValIdx → Array ValIdx → ValIdx → Op
@@ -72,6 +72,10 @@ inductive Layout
   deriving Inhabited
 
 abbrev LayoutMap := HashMap Global Layout
+
+structure Toplevel where
+  functions : Array Function
+  memWidths : Array Nat
 
 end Aiur.Bytecode
 
