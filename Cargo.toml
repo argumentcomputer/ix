@@ -8,6 +8,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 anyhow = "1"
+array-util = "1.0.2"
 binius_core = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
 binius_circuits = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
 binius_field = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
