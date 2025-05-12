@@ -2548,6 +2548,7 @@ name = "ix_rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "array-util",
  "binius_circuits",
  "binius_core",
  "binius_field",

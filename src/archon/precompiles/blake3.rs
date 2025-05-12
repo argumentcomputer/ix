@@ -1,23 +1,373 @@
+#![allow(dead_code)]
+
+use crate::archon::ModuleId;
+use crate::archon::arith_expr::ArithExpr;
+use crate::archon::circuit::CircuitModule;
+use crate::archon::witness::WitnessModule;
+use binius_circuits::arithmetic::u32::LOG_U32_BITS;
+use binius_core::oracle::{OracleId, ShiftVariant};
+use binius_field::{BinaryField1b, BinaryField32b, BinaryField128b, Field};
+use binius_utils::checked_arithmetics::log2_ceil_usize;
+
+const STATE_SIZE: usize = 32;
+const SINGLE_COMPRESSION_N_VARS: usize = 6;
+#[allow(clippy::cast_possible_truncation)]
+const SINGLE_COMPRESSION_HEIGHT: usize = 2usize.pow(SINGLE_COMPRESSION_N_VARS as u32);
+const ADDITION_OPERATIONS_NUMBER: usize = 6;
+const PROJECTED_SELECTOR_INPUT: u64 = 0;
+const PROJECTED_SELECTOR_OUTPUT: u64 = 56;
+const OUT_HEIGHT: usize = 8;
+
+const IV: [u32; 8] = [
+    0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
+];
+const MSG_PERMUTATION: [usize; 16] = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
+
+type B128 = BinaryField128b;
+type B32 = BinaryField32b;
+type B1 = BinaryField1b;
+
+#[derive(Debug, Clone)]
+struct Trace {
+    state_trace: [Vec<u32>; STATE_SIZE],
+    a_in_trace: Vec<u32>,
+    b_in_trace: Vec<u32>,
+    c_in_trace: Vec<u32>,
+    d_in_trace: Vec<u32>,
+    mx_in_trace: Vec<u32>,
+    my_in_trace: Vec<u32>,
+
+    a_0_tmp_trace: Vec<u32>,
+    a_0_trace: Vec<u32>,
+    d_in_xor_a_0_trace: Vec<u32>,
+    d_0_trace: Vec<u32>,
+    c_0_trace: Vec<u32>,
+    _b_in_xor_c_0_trace: Vec<u32>,
+    b_0_trace: Vec<u32>,
+    a_1_tmp_trace: Vec<u32>,
+    a_1_trace: Vec<u32>,
+    _d_0_xor_a_1_trace: Vec<u32>,
+    d_1_trace: Vec<u32>,
+    c_1_trace: Vec<u32>,
+    _b_0_xor_c_1_trace: Vec<u32>,
+    _b_1_trace: Vec<u32>,
+
+    _cin_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER],
+    cout_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER],
+
+    cv_trace: Vec<u32>,
+    state_i_trace: Vec<u32>,
+    state_i_8_trace: Vec<u32>,
+    _state_i_xor_state_i_8_trace: Vec<u32>,
+    _state_i_8_xor_cv_trace: Vec<u32>,
+}
+
+pub struct Blake3CompressionOracles {
+    pub input: [OracleId; STATE_SIZE],
+    pub output: [OracleId; STATE_SIZE],
+}
+
+fn state_transition_module(
+    id: ModuleId,
+    traces: &Trace,
+    traces_len: usize,
+) -> Result<(Blake3CompressionOracles, CircuitModule, WitnessModule, u64), anyhow::Error> {
+    let state_n_vars = log2_ceil_usize(traces_len * SINGLE_COMPRESSION_HEIGHT);
+    let height = 2u64.pow(u32::try_from(state_n_vars)?);
+
+    let mut circuit_module = CircuitModule::new(id);
+    let state_transitions: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
+        circuit_module.add_committed::<B32>(&format!("state-transition-{:?}", xy))
+    })?;
+
+    let input: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
+        circuit_module.add_projected(
+            &format!("input-{:?}", xy),
+            state_transitions[xy],
+            PROJECTED_SELECTOR_INPUT,
+            SINGLE_COMPRESSION_HEIGHT,
+            0,
+        )
+    })?;
+
+    let output: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
+        circuit_module.add_projected(
+            &format!("output-{:?}", xy),
+            state_transitions[xy],
+            PROJECTED_SELECTOR_OUTPUT,
+            SINGLE_COMPRESSION_HEIGHT,
+            0,
+        )
+    })?;
+    circuit_module.freeze_oracles();
+
+    let mut witness_module = circuit_module.init_witness_module()?;
+
+    for (xy, trace) in traces.clone().state_trace.into_iter().enumerate() {
+        let entry_id_xy = witness_module.new_entry();
+
+        for chunk in trace.chunks(4) {
+            witness_module.push_u32s_to(chunk.try_into()?, entry_id_xy);
+        }
+        witness_module.bind_oracle_to::<B32>(state_transitions[xy], entry_id_xy);
+    }
+
+    witness_module.populate(height)?;
+
+    Ok((
+        Blake3CompressionOracles { input, output },
+        circuit_module,
+        witness_module,
+        height,
+    ))
+}
+
+fn additions_xor_rotates_module(
+    id: ModuleId,
+    traces: &Trace,
+    traces_len: usize,
+) -> Result<(CircuitModule, WitnessModule, u64), anyhow::Error> {
+    let state_n_vars = log2_ceil_usize(traces_len * SINGLE_COMPRESSION_HEIGHT);
+
+    let height = 2u64.pow(u32::try_from(state_n_vars + 5)?);
+    let mut circuit_module = CircuitModule::new(id);
+
+    let a_in = circuit_module.add_committed::<B1>("a_in")?;
+    let b_in = circuit_module.add_committed::<B1>("b_in")?;
+    let c_in = circuit_module.add_committed::<B1>("c_in")?;
+    let d_in = circuit_module.add_committed::<B1>("d_in")?;
+    let mx_in = circuit_module.add_committed::<B1>("mx_in")?;
+    let my_in = circuit_module.add_committed::<B1>("my_in")?;
+
+    let a_0 = circuit_module.add_committed::<B1>("a_0")?;
+    let a_0_tmp = circuit_module.add_committed::<B1>("a_0_tmp")?;
+    let c_0 = circuit_module.add_committed::<B1>("c_0")?;
+    let a_1 = circuit_module.add_committed::<B1>("a_1")?;
+    let a_1_tmp = circuit_module.add_committed::<B1>("a_1_tmp")?;
+    let c_1 = circuit_module.add_committed::<B1>("c_1")?;
+
+    let b_in_xor_c_0 = circuit_module.add_linear_combination("b_in_xor_c_0", B128::ZERO, [
+        (b_in, B128::ONE),
+        (c_0, B128::ONE),
+    ])?;
+
+    let d_in_xor_a_0 = circuit_module.add_linear_combination("d_in_xor_a_0", B128::ZERO, [
+        (d_in, B128::ONE),
+        (a_0, B128::ONE),
+    ])?;
+
+    let b_0 = circuit_module.add_shifted(
+        "b_0",
+        b_in_xor_c_0,
+        32 - 12,
+        LOG_U32_BITS,
+        ShiftVariant::CircularLeft,
+    )?;
+    let d_0 = circuit_module.add_shifted(
+        "d_0",
+        d_in_xor_a_0,
+        32 - 16,
+        LOG_U32_BITS,
+        ShiftVariant::CircularLeft,
+    )?;
+
+    let d_0_xor_a_1 = circuit_module.add_linear_combination("d_0_xor_a_1", B128::ZERO, [
+        (d_0, B128::ONE),
+        (a_1, B128::ONE),
+    ])?;
+
+    let b_0_xor_c_1 = circuit_module.add_linear_combination("b_0_xor_c_1", B128::ZERO, [
+        (b_0, B128::ONE),
+        (c_1, B128::ONE),
+    ])?;
+
+    let d_1 = circuit_module.add_shifted(
+        "d_1",
+        d_0_xor_a_1,
+        32 - 8,
+        LOG_U32_BITS,
+        ShiftVariant::CircularLeft,
+    )?;
+    let _b_1 = circuit_module.add_shifted(
+        "b_1",
+        b_0_xor_c_1,
+        32 - 7,
+        LOG_U32_BITS,
+        ShiftVariant::CircularLeft,
+    )?;
+
+    let couts: [OracleId; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
+        circuit_module.add_committed::<B1>(&format!("cout-{:?}", xy))
+    })?;
+    let cins: [OracleId; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
+        circuit_module.add_shifted(
+            &format!("cin-{:?}", xy),
+            couts[xy],
+            1,
+            5,
+            ShiftVariant::LogicalLeft,
+        )
+    })?;
+
+    let xins = [a_in, a_0_tmp, c_in, a_0, a_1_tmp, c_0];
+    let yins = [b_in, mx_in, d_0, b_0, my_in, d_1];
+    let zouts = [a_0_tmp, a_0, c_0, a_1_tmp, a_1, c_1];
+
+    for xy in 0..ADDITION_OPERATIONS_NUMBER {
+        circuit_module.assert_zero(
+            "sum",
+            [xins[xy], yins[xy], cins[xy], zouts[xy]],
+            ArithExpr::Oracle(xins[xy])
+                + ArithExpr::Oracle(yins[xy])
+                + ArithExpr::Oracle(cins[xy])
+                + ArithExpr::Oracle(zouts[xy]),
+        );
+        circuit_module.assert_zero(
+            "carry",
+            [xins[xy], yins[xy], cins[xy], couts[xy]],
+            (ArithExpr::Oracle(xins[xy]) + ArithExpr::Oracle(cins[xy]))
+                * (ArithExpr::Oracle(yins[xy]) + ArithExpr::Oracle(cins[xy]))
+                + ArithExpr::Oracle(cins[xy])
+                + ArithExpr::Oracle(couts[xy]),
+        );
+    }
+
+    circuit_module.freeze_oracles();
+
+    let mut witness_module = circuit_module.init_witness_module()?;
+
+    let xin_traces = [
+        traces.a_in_trace.clone(),
+        traces.a_0_tmp_trace.clone(),
+        traces.c_in_trace.clone(),
+        traces.a_0_trace.clone(),
+        traces.a_1_tmp_trace.clone(),
+        traces.c_0_trace.clone(),
+    ];
+    let yin_traces = [
+        traces.b_in_trace.clone(),
+        traces.mx_in_trace.clone(),
+        traces.d_0_trace.clone(),
+        traces.b_0_trace.clone(),
+        traces.my_in_trace.clone(),
+        traces.d_1_trace.clone(),
+    ];
+    let zout_traces = [
+        traces.a_0_tmp_trace.clone(),
+        traces.a_0_trace.clone(),
+        traces.c_0_trace.clone(),
+        traces.a_1_tmp_trace.clone(),
+        traces.a_1_trace.clone(),
+        traces.c_1_trace.clone(),
+    ];
+
+    for xy in 0..ADDITION_OPERATIONS_NUMBER {
+        let cout_entry = witness_module.new_entry();
+        let xin_entry = witness_module.new_entry();
+        let yin_entry = witness_module.new_entry();
+        let zout_entry = witness_module.new_entry();
+
+        for chunk in xin_traces[xy].chunks(4) {
+            witness_module.push_u32s_to(chunk.try_into()?, xin_entry)
+        }
+        for chunk in yin_traces[xy].chunks(4) {
+            witness_module.push_u32s_to(chunk.try_into()?, yin_entry)
+        }
+        for chunk in traces.cout_trace[xy].chunks(4) {
+            witness_module.push_u32s_to(chunk.try_into()?, cout_entry)
+        }
+        for chunk in zout_traces[xy].chunks(4) {
+            witness_module.push_u32s_to(chunk.try_into()?, zout_entry)
+        }
+
+        witness_module.bind_oracle_to::<B1>(xins[xy], xin_entry);
+        witness_module.bind_oracle_to::<B1>(yins[xy], yin_entry);
+        witness_module.bind_oracle_to::<B1>(couts[xy], cout_entry);
+        witness_module.bind_oracle_to::<B1>(zouts[xy], zout_entry);
+    }
+
+    // not to forget about d_in
+    let d_in_entry = witness_module.new_entry();
+    for chunk in traces.d_in_trace.chunks(4) {
+        witness_module.push_u32s_to(chunk.try_into()?, d_in_entry)
+    }
+    witness_module.bind_oracle_to::<B1>(d_in, d_in_entry);
+
+    witness_module.populate(height)?;
+
+    Ok((circuit_module, witness_module, height))
+}
+
+fn cv_output_module(
+    id: ModuleId,
+    traces: &Trace,
+    traces_len: usize,
+) -> Result<(CircuitModule, WitnessModule, u64), anyhow::Error> {
+    let out_n_vars = log2_ceil_usize(traces_len * OUT_HEIGHT);
+
+    let height = 2u64.pow(u32::try_from(out_n_vars)?);
+    let mut circuit_module = CircuitModule::new(id);
+
+    let cv = circuit_module.add_committed::<B32>("cv")?;
+    let state_i = circuit_module.add_committed::<B32>("state_i")?;
+    let state_i_8 = circuit_module.add_committed::<B32>("state_i_8")?;
+
+    let _state_i_xor_state_i_8 =
+        circuit_module.add_linear_combination("state_i_xor_state_i_8", B128::ZERO, [
+            (state_i, B128::ONE),
+            (state_i_8, B128::ONE),
+        ])?;
+
+    let _cv_oracle_xor_state_i_8 =
+        circuit_module.add_linear_combination("cv_oracle_xor_state_i_8", B128::ZERO, [
+            (cv, B128::ONE),
+            (state_i_8, B128::ONE),
+        ])?;
+
+    circuit_module.freeze_oracles();
+
+    let mut witness_module = circuit_module.init_witness_module()?;
+
+    let cv_entry = witness_module.new_entry();
+    let state_i_entry = witness_module.new_entry();
+    let state_i_8_entry = witness_module.new_entry();
+
+    for cv_vals in traces.cv_trace.chunks(4) {
+        witness_module.push_u32s_to(cv_vals.try_into().unwrap(), cv_entry);
+    }
+
+    for state_i_vals in traces.state_i_trace.chunks(4) {
+        witness_module.push_u32s_to(state_i_vals.try_into().unwrap(), state_i_entry);
+    }
+
+    for state_i_8_vals in traces.state_i_8_trace.chunks(4) {
+        witness_module.push_u32s_to(state_i_8_vals.try_into().unwrap(), state_i_8_entry);
+    }
+
+    witness_module.bind_oracle_to::<B32>(cv, cv_entry);
+    witness_module.bind_oracle_to::<B32>(state_i, state_i_entry);
+    witness_module.bind_oracle_to::<B32>(state_i_8, state_i_8_entry);
+
+    witness_module.populate(height)?;
+
+    Ok((circuit_module, witness_module, height))
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::archon::arith_expr::ArithExpr;
     use crate::archon::circuit::{CircuitModule, init_witness_modules};
+    use crate::archon::precompiles::blake3::{
+        ADDITION_OPERATIONS_NUMBER, B1, B128, IV, MSG_PERMUTATION, OUT_HEIGHT,
+        SINGLE_COMPRESSION_HEIGHT, STATE_SIZE, Trace, additions_xor_rotates_module,
+        cv_output_module, state_transition_module,
+    };
     use crate::archon::protocol::validate_witness;
     use crate::archon::witness::compile_witness_modules;
-    use binius_circuits::arithmetic::u32::LOG_U32_BITS;
-    use binius_circuits::builder::ConstraintSystemBuilder;
-    use binius_core::oracle::{OracleId, ShiftVariant};
-    use binius_field::{BinaryField1b, BinaryField32b, BinaryField128b, Field, TowerField};
+    use binius_field::Field;
     use binius_utils::checked_arithmetics::log2_ceil_usize;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use std::array;
-
-    const IV: [u32; 8] = [
-        0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB,
-        0x5BE0CD19,
-    ];
-    const MSG_PERMUTATION: [usize; 16] = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
 
     #[derive(Debug, Default, Copy, Clone)]
     pub(super) struct Blake3CompressState {
@@ -27,48 +377,6 @@ mod tests {
         pub counter_high: u32,
         pub block_len: u32,
         pub flags: u32,
-    }
-
-    const STATE_SIZE: usize = 32;
-    const SINGLE_COMPRESSION_N_VARS: usize = 6;
-    #[allow(clippy::cast_possible_truncation)]
-    const SINGLE_COMPRESSION_HEIGHT: usize = 2usize.pow(SINGLE_COMPRESSION_N_VARS as u32);
-    const ADDITION_OPERATIONS_NUMBER: usize = 6;
-    const PROJECTED_SELECTOR_INPUT: u64 = 0;
-    const PROJECTED_SELECTOR_OUTPUT: u64 = 56;
-
-    type B128 = BinaryField128b;
-    type B32 = BinaryField32b;
-    type B1 = BinaryField1b;
-
-    #[allow(dead_code)]
-    #[derive(Debug)]
-    struct Trace {
-        state_trace: [Vec<u32>; STATE_SIZE],
-        a_in_trace: Vec<u32>,
-        b_in_trace: Vec<u32>,
-        c_in_trace: Vec<u32>,
-        d_in_trace: Vec<u32>,
-        mx_in_trace: Vec<u32>,
-        my_in_trace: Vec<u32>,
-
-        a_0_tmp_trace: Vec<u32>,
-        a_0_trace: Vec<u32>,
-        d_in_xor_a_0_trace: Vec<u32>,
-        d_0_trace: Vec<u32>,
-        c_0_trace: Vec<u32>,
-        b_in_xor_c_0_trace: Vec<u32>,
-        b_0_trace: Vec<u32>,
-        a_1_tmp_trace: Vec<u32>,
-        a_1_trace: Vec<u32>,
-        d_0_xor_a_1_trace: Vec<u32>,
-        d_1_trace: Vec<u32>,
-        c_1_trace: Vec<u32>,
-        b_0_xor_c_1_trace: Vec<u32>,
-        _b_1_trace: Vec<u32>,
-
-        cin_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER],
-        cout_trace: [Vec<u32>; ADDITION_OPERATIONS_NUMBER],
     }
 
     // taken (and slightly refactored) from reference Blake3 implementation:
@@ -216,6 +524,12 @@ mod tests {
             }
         }
 
+        let mut cv_trace = vec![0u32; compressions * OUT_HEIGHT];
+        let mut state_i_trace = vec![0u32; compressions * OUT_HEIGHT];
+        let mut state_i_8_trace = vec![0u32; compressions * OUT_HEIGHT];
+        let mut state_i_xor_state_i_8_trace = vec![0u32; compressions * OUT_HEIGHT];
+        let mut state_i_8_xor_cv_trace = vec![0u32; compressions * OUT_HEIGHT];
+
         let mut a_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
         let mut b_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
         let mut c_in_trace = vec![0u32; compressions * SINGLE_COMPRESSION_HEIGHT];
@@ -257,7 +571,7 @@ mod tests {
 
         // execute Blake3 compression and save execution trace
         let mut compression_offset = 0;
-        for input in inputs.clone() {
+        for (input_idx, input) in inputs.into_iter().enumerate() {
             let counter_low = input.counter_low;
             let counter_high = input.counter_high;
 
@@ -439,13 +753,28 @@ mod tests {
             }
 
             for i in 0..8 {
+                // <trace>
+                write_var_trace(&mut cv_trace, input_idx * 8 + i, input.cv[i]);
+                write_var_trace(&mut state_i_trace, input_idx * 8 + i, state[i]);
+                write_var_trace(&mut state_i_8_trace, input_idx * 8 + i, state[i + 8]);
+                //
+
                 state[i] ^= state[i + 8];
+                // <trace>
+                write_var_trace(
+                    &mut state_i_xor_state_i_8_trace,
+                    input_idx * 8 + i,
+                    state[i],
+                );
+                //
+
                 state[i + 8] ^= input.cv[i];
+                // <trace>
+                write_var_trace(&mut state_i_8_xor_cv_trace, input_idx * 8 + i, state[i + 8]);
+                //
             }
 
             compression_offset += SINGLE_COMPRESSION_HEIGHT;
-
-            //let state_out: [u32; 16] = array::from_fn(|i| state[i]);
         }
 
         Trace {
@@ -461,785 +790,90 @@ mod tests {
             d_in_xor_a_0_trace,
             d_0_trace,
             c_0_trace,
-            b_in_xor_c_0_trace,
+            _b_in_xor_c_0_trace: b_in_xor_c_0_trace,
             b_0_trace,
             a_1_tmp_trace,
             a_1_trace,
-            d_0_xor_a_1_trace,
+            _d_0_xor_a_1_trace: d_0_xor_a_1_trace,
             d_1_trace,
             c_1_trace,
-            b_0_xor_c_1_trace,
+            _b_0_xor_c_1_trace: b_0_xor_c_1_trace,
             _b_1_trace: b_1_trace,
-            cin_trace,
+            _cin_trace: cin_trace,
             cout_trace,
+            cv_trace,
+            state_i_trace,
+            state_i_8_trace,
+            _state_i_xor_state_i_8_trace: state_i_xor_state_i_8_trace,
+            _state_i_8_xor_cv_trace: state_i_8_xor_cv_trace,
         }
     }
 
     const COMPRESSIONS_TEST: usize = 2;
 
     #[test]
-    fn test_whole_blake3_compression_in_archon() {
+    fn test_state_transition_module() {
         let trace_len = COMPRESSIONS_TEST * 4; // must divide 4 because of module_0. TODO: figure out if we can tackle this limitation
         let traces = generate_trace(trace_len);
 
-        let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
+        let (_, circuit_module, witness_module, height) =
+            state_transition_module(0, &traces, trace_len).unwrap();
 
-        let height = 2u64.pow(u32::try_from(state_n_vars).unwrap());
-        let height_1 = 2u64.pow(u32::try_from(state_n_vars + 5).unwrap());
-
-        let mut circuit_module_id = 0;
-        let mut circuit_module = CircuitModule::new(circuit_module_id);
-        let state_transitions: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
-            circuit_module
-                .add_committed::<B32>(&format!("state-transition-{:?}", xy))
-                .unwrap()
-        });
-
-        let _input: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
-            circuit_module
-                .add_projected(
-                    &format!("input-{:?}", xy),
-                    state_transitions[xy],
-                    PROJECTED_SELECTOR_INPUT,
-                    SINGLE_COMPRESSION_HEIGHT,
-                    0,
-                )
-                .unwrap()
-        });
-
-        let _output: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
-            circuit_module
-                .add_projected(
-                    &format!("output-{:?}", xy),
-                    state_transitions[xy],
-                    PROJECTED_SELECTOR_OUTPUT,
-                    SINGLE_COMPRESSION_HEIGHT,
-                    0,
-                )
-                .unwrap()
-        });
-        circuit_module.freeze_oracles();
-
-        circuit_module_id += 1;
-        let mut circuit_module_1 = CircuitModule::new(circuit_module_id);
-
-        let a_in = circuit_module_1.add_committed::<B1>("a_in").unwrap();
-        let b_in = circuit_module_1.add_committed::<B1>("b_in").unwrap();
-        let c_in = circuit_module_1.add_committed::<B1>("c_in").unwrap();
-        let d_in = circuit_module_1.add_committed::<B1>("d_in").unwrap();
-        let mx_in = circuit_module_1.add_committed::<B1>("mx_in").unwrap();
-        let my_in = circuit_module_1.add_committed::<B1>("my_in").unwrap();
-
-        let a_0 = circuit_module_1.add_committed::<B1>("a_0").unwrap();
-        let a_0_tmp = circuit_module_1.add_committed::<B1>("a_0_tmp").unwrap();
-        let c_0 = circuit_module_1.add_committed::<B1>("c_0").unwrap();
-        let a_1 = circuit_module_1.add_committed::<B1>("a_1").unwrap();
-        let a_1_tmp = circuit_module_1.add_committed::<B1>("a_1_tmp").unwrap();
-        let c_1 = circuit_module_1.add_committed::<B1>("c_1").unwrap();
-
-        let b_in_xor_c_0 = circuit_module_1
-            .add_linear_combination("b_in_xor_c_0", B128::ZERO, [
-                (b_in, B128::ONE),
-                (c_0, B128::ONE),
-            ])
-            .unwrap();
-
-        let d_in_xor_a_0 = circuit_module_1
-            .add_linear_combination("d_in_xor_a_0", B128::ZERO, [
-                (d_in, B128::ONE),
-                (a_0, B128::ONE),
-            ])
-            .unwrap();
-
-        let b_0 = circuit_module_1
-            .add_shifted(
-                "b_0",
-                b_in_xor_c_0,
-                32 - 12,
-                LOG_U32_BITS,
-                ShiftVariant::CircularLeft,
-            )
-            .unwrap();
-        let d_0 = circuit_module_1
-            .add_shifted(
-                "d_0",
-                d_in_xor_a_0,
-                32 - 16,
-                LOG_U32_BITS,
-                ShiftVariant::CircularLeft,
-            )
-            .unwrap();
-
-        let d_0_xor_a_1 = circuit_module_1
-            .add_linear_combination("d_0_xor_a_1", B128::ZERO, [
-                (d_0, B128::ONE),
-                (a_1, B128::ONE),
-            ])
-            .unwrap();
-
-        let b_0_xor_c_1 = circuit_module_1
-            .add_linear_combination("b_0_xor_c_1", B128::ZERO, [
-                (b_0, B128::ONE),
-                (c_1, B128::ONE),
-            ])
-            .unwrap();
-
-        let d_1 = circuit_module_1
-            .add_shifted(
-                "d_1",
-                d_0_xor_a_1,
-                32 - 8,
-                LOG_U32_BITS,
-                ShiftVariant::CircularLeft,
-            )
-            .unwrap();
-        let _b_1 = circuit_module_1
-            .add_shifted(
-                "b_1",
-                b_0_xor_c_1,
-                32 - 7,
-                LOG_U32_BITS,
-                ShiftVariant::CircularLeft,
-            )
-            .unwrap();
-
-        let couts: [OracleId; ADDITION_OPERATIONS_NUMBER] = array::from_fn(|xy| {
-            circuit_module_1
-                .add_committed::<B1>(&format!("cout-{:?}", xy))
-                .unwrap()
-        });
-        let cins: [OracleId; ADDITION_OPERATIONS_NUMBER] = array::from_fn(|xy| {
-            circuit_module_1
-                .add_shifted(
-                    &format!("cin-{:?}", xy),
-                    couts[xy],
-                    1,
-                    5,
-                    ShiftVariant::LogicalLeft,
-                )
-                .unwrap()
-        });
-
-        let xins = [a_in, a_0_tmp, c_in, a_0, a_1_tmp, c_0];
-        let yins = [b_in, mx_in, d_0, b_0, my_in, d_1];
-        let zouts = [a_0_tmp, a_0, c_0, a_1_tmp, a_1, c_1];
-
-        for xy in 0..ADDITION_OPERATIONS_NUMBER {
-            circuit_module_1.assert_zero(
-                "sum",
-                [xins[xy], yins[xy], cins[xy], zouts[xy]],
-                ArithExpr::Oracle(xins[xy])
-                    + ArithExpr::Oracle(yins[xy])
-                    + ArithExpr::Oracle(cins[xy])
-                    + ArithExpr::Oracle(zouts[xy]),
-            );
-            circuit_module_1.assert_zero(
-                "carry",
-                [xins[xy], yins[xy], cins[xy], couts[xy]],
-                (ArithExpr::Oracle(xins[xy]) + ArithExpr::Oracle(cins[xy]))
-                    * (ArithExpr::Oracle(yins[xy]) + ArithExpr::Oracle(cins[xy]))
-                    + ArithExpr::Oracle(cins[xy])
-                    + ArithExpr::Oracle(couts[xy]),
-            );
-        }
-
-        circuit_module_1.freeze_oracles();
-
-        let circuit_modules = [circuit_module, circuit_module_1];
-        let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
-
-        // populate committed columns of circuit_module_0 (state_transition)
-        let mut witness_module_id = 0;
-        traces
-            .state_trace
-            .into_iter()
-            .enumerate()
-            .for_each(|(xy, trace)| {
-                let entry_id_xy = witness_modules[witness_module_id].new_entry();
-
-                trace.chunks(4).for_each(|chunk| {
-                    assert_eq!(chunk.len(), 4);
-                    let mut array = [0u32; 4];
-                    array[0] = chunk[0];
-                    array[1] = chunk[1];
-                    array[2] = chunk[2];
-                    array[3] = chunk[3];
-
-                    witness_modules[witness_module_id].push_u32s_to(array, entry_id_xy);
-                });
-
-                witness_modules[witness_module_id]
-                    .bind_oracle_to::<B32>(state_transitions[xy], entry_id_xy);
-            });
-        witness_modules[witness_module_id].populate(height).unwrap();
-
-        // populate committed columns of circuit_module_1
-        witness_module_id += 1;
-        let xin_traces = [
-            traces.a_in_trace,
-            traces.a_0_tmp_trace.clone(),
-            traces.c_in_trace,
-            traces.a_0_trace.clone(),
-            traces.a_1_tmp_trace.clone(),
-            traces.c_0_trace.clone(),
-        ];
-        let yin_traces = [
-            traces.b_in_trace,
-            traces.mx_in_trace,
-            traces.d_0_trace,
-            traces.b_0_trace,
-            traces.my_in_trace,
-            traces.d_1_trace,
-        ];
-        let zout_traces = [
-            traces.a_0_tmp_trace,
-            traces.a_0_trace,
-            traces.c_0_trace,
-            traces.a_1_tmp_trace,
-            traces.a_1_trace,
-            traces.c_1_trace,
-        ];
-
-        for xy in 0..ADDITION_OPERATIONS_NUMBER {
-            let cout_entry = witness_modules[witness_module_id].new_entry();
-            let xin_entry = witness_modules[witness_module_id].new_entry();
-            let yin_entry = witness_modules[witness_module_id].new_entry();
-            let zout_entry = witness_modules[witness_module_id].new_entry();
-
-            for chunk in xin_traces[xy].chunks(4) {
-                witness_modules[witness_module_id]
-                    .push_u32s_to(chunk.try_into().unwrap(), xin_entry)
-            }
-            for chunk in yin_traces[xy].chunks(4) {
-                witness_modules[witness_module_id]
-                    .push_u32s_to(chunk.try_into().unwrap(), yin_entry)
-            }
-            for chunk in traces.cout_trace[xy].chunks(4) {
-                witness_modules[witness_module_id]
-                    .push_u32s_to(chunk.try_into().unwrap(), cout_entry)
-            }
-            for chunk in zout_traces[xy].chunks(4) {
-                witness_modules[witness_module_id]
-                    .push_u32s_to(chunk.try_into().unwrap(), zout_entry)
-            }
-
-            witness_modules[witness_module_id].bind_oracle_to::<B1>(xins[xy], xin_entry);
-            witness_modules[witness_module_id].bind_oracle_to::<B1>(yins[xy], yin_entry);
-            witness_modules[witness_module_id].bind_oracle_to::<B1>(couts[xy], cout_entry);
-            witness_modules[witness_module_id].bind_oracle_to::<B1>(zouts[xy], zout_entry);
-        }
-
-        // not to forget about d_in
-        let d_in_entry = witness_modules[witness_module_id].new_entry();
-        for chunk in traces.d_in_trace.chunks(4) {
-            witness_modules[witness_module_id].push_u32s_to(chunk.try_into().unwrap(), d_in_entry)
-        }
-        witness_modules[witness_module_id].bind_oracle_to::<B1>(d_in, d_in_entry);
-
-        witness_modules[witness_module_id]
-            .populate(height_1)
-            .unwrap();
-
-        let witness_archon =
-            compile_witness_modules(&witness_modules, vec![height, height_1]).unwrap();
-        assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
-    }
-
-    #[test]
-    fn test_u32_addition_constrain_in_blake3_context_binius() {
-        // This is the test for producing Binius proof (using builders API) using isolated
-        // additional constrain which is a core part of overall Blake3 compression circuit.
-
-        // It more or less guarantees that generated traces are correct
-
-        let trace_len = 1usize; // has to be power of 2
-        let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
-
-        let allocator = bumpalo::Bump::new();
-        let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-
-        let xin: [OracleId; ADDITION_OPERATIONS_NUMBER] =
-            builder.add_committed_multiple("xin", state_n_vars + 5, B1::TOWER_LEVEL);
-        let yin: [OracleId; ADDITION_OPERATIONS_NUMBER] =
-            builder.add_committed_multiple("yin", state_n_vars + 5, B1::TOWER_LEVEL);
-        let zout: [OracleId; ADDITION_OPERATIONS_NUMBER] =
-            builder.add_committed_multiple("zout", state_n_vars + 5, B1::TOWER_LEVEL);
-        let cout: [OracleId; ADDITION_OPERATIONS_NUMBER] =
-            builder.add_committed_multiple("cout", state_n_vars + 5, B1::TOWER_LEVEL);
-        let cin: [OracleId; ADDITION_OPERATIONS_NUMBER] = array::from_fn(|xy| {
-            builder
-                .add_shifted("cin", cout[xy], 1, 5, ShiftVariant::LogicalLeft)
-                .unwrap()
-        });
-
-        if let Some(witness) = builder.witness() {
-            let mut xin_col = xin.map(|id| witness.new_column::<B1>(id));
-            let mut yin_col = yin.map(|id| witness.new_column::<B1>(id));
-
-            let mut zout_col = zout.map(|id| witness.new_column::<B1>(id));
-            let mut cout_col = cout.map(|id| witness.new_column::<B1>(id));
-            let mut cin_col = cin.map(|id| witness.new_column::<B1>(id));
-
-            let xin_vals = xin_col.each_mut().map(|col| col.as_mut_slice::<u32>());
-            let yin_vals = yin_col.each_mut().map(|col| col.as_mut_slice::<u32>());
-            let zout_vals = zout_col.each_mut().map(|col| col.as_mut_slice::<u32>());
-            let cout_vals = cout_col.each_mut().map(|col| col.as_mut_slice::<u32>());
-            let cin_vals = cin_col.each_mut().map(|col| col.as_mut_slice::<u32>());
-
-            let trace = generate_trace(trace_len);
-
-            let mut addition_offset = 0;
-            xin_vals[addition_offset].copy_from_slice(&trace.a_in_trace.clone());
-            yin_vals[addition_offset].copy_from_slice(&trace.b_in_trace.clone());
-            zout_vals[addition_offset].copy_from_slice(&trace.a_0_tmp_trace.clone());
-            addition_offset += 1;
-
-            xin_vals[addition_offset].copy_from_slice(&trace.a_0_tmp_trace.clone());
-            yin_vals[addition_offset].copy_from_slice(&trace.mx_in_trace.clone());
-            zout_vals[addition_offset].copy_from_slice(&trace.a_0_trace.clone());
-            addition_offset += 1;
-
-            xin_vals[addition_offset].copy_from_slice(&trace.c_in_trace.clone());
-            yin_vals[addition_offset].copy_from_slice(&trace.d_0_trace.clone());
-            zout_vals[addition_offset].copy_from_slice(&trace.c_0_trace.clone());
-            addition_offset += 1;
-
-            xin_vals[addition_offset].copy_from_slice(&trace.a_0_trace.clone());
-            yin_vals[addition_offset].copy_from_slice(&trace.b_0_trace.clone());
-            zout_vals[addition_offset].copy_from_slice(&trace.a_1_tmp_trace.clone());
-            addition_offset += 1;
-
-            xin_vals[addition_offset].copy_from_slice(&trace.a_1_tmp_trace.clone());
-            yin_vals[addition_offset].copy_from_slice(&trace.my_in_trace.clone());
-            zout_vals[addition_offset].copy_from_slice(&trace.a_1_trace.clone());
-            addition_offset += 1;
-
-            xin_vals[addition_offset].copy_from_slice(&trace.c_0_trace.clone());
-            yin_vals[addition_offset].copy_from_slice(&trace.d_1_trace.clone());
-            zout_vals[addition_offset].copy_from_slice(&trace.c_1_trace.clone());
-
-            for i in 0..ADDITION_OPERATIONS_NUMBER {
-                cout_vals[i].copy_from_slice(&trace.cout_trace[i].clone());
-                cin_vals[i].copy_from_slice(&trace.cin_trace[i].clone());
-            }
-        }
-
-        for (idx, (xin, (yin, zout))) in xin
-            .into_iter()
-            .zip(yin.into_iter().zip(zout.into_iter()))
-            .enumerate()
-        {
-            builder.assert_zero(
-                format!("sum{}", idx),
-                [xin, yin, cin[idx], zout],
-                binius_macros::arith_expr!([xin, yin, cin, zout] = xin + yin + cin - zout)
-                    .convert_field(),
-            );
-
-            builder.assert_zero(
-                format!("carry{}", idx),
-                [xin, yin, cin[idx], cout[idx]],
-                binius_macros::arith_expr!(
-                    [xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout
-                )
-                .convert_field(),
-            );
-        }
-
-        let witness = builder.take_witness().unwrap();
-        let cs = builder.build().unwrap();
-        binius_core::constraint_system::validate::validate_witness(&cs, &[], &witness).unwrap();
-    }
-
-    #[test]
-    fn test_u32_addition_constrain_in_blake3_context_archon() {
-        let trace_len = 1usize;
-        let trace = generate_trace(trace_len);
-
-        let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
-        let height_1 = 2u64.pow(u32::try_from(state_n_vars + 5).unwrap());
-
-        let mut circuit_module = CircuitModule::new(0);
-
-        let xin: [OracleId; ADDITION_OPERATIONS_NUMBER] =
-            array::from_fn(|_| circuit_module.add_committed::<B1>("xin").unwrap());
-
-        let yin: [OracleId; ADDITION_OPERATIONS_NUMBER] =
-            array::from_fn(|_| circuit_module.add_committed::<B1>("yin").unwrap());
-
-        let zout: [OracleId; ADDITION_OPERATIONS_NUMBER] =
-            array::from_fn(|_| circuit_module.add_committed::<B1>("zout").unwrap());
-
-        let cout: [OracleId; ADDITION_OPERATIONS_NUMBER] =
-            array::from_fn(|_| circuit_module.add_committed::<B1>("cout").unwrap());
-
-        let cin: [OracleId; ADDITION_OPERATIONS_NUMBER] = array::from_fn(|xy| {
-            circuit_module
-                .add_shifted("cin", cout[xy], 1, 5, ShiftVariant::LogicalLeft)
-                .unwrap()
-        });
-
-        for xy in 0..ADDITION_OPERATIONS_NUMBER {
-            circuit_module.assert_zero(
-                "sum",
-                [xin[xy], yin[xy], cin[xy], zout[xy]],
-                ArithExpr::Oracle(xin[xy])
-                    + ArithExpr::Oracle(yin[xy])
-                    + ArithExpr::Oracle(cin[xy])
-                    + ArithExpr::Oracle(zout[xy]),
-            );
-
-            circuit_module.assert_zero(
-                "carry",
-                [xin[xy], yin[xy], cin[xy], cout[xy]],
-                (ArithExpr::Oracle(xin[xy]) + ArithExpr::Oracle(cin[xy]))
-                    * (ArithExpr::Oracle(yin[xy]) + ArithExpr::Oracle(cin[xy]))
-                    + ArithExpr::Oracle(cin[xy])
-                    + ArithExpr::Oracle(cout[xy]),
-            );
-        }
-
-        circuit_module.freeze_oracles();
-
-        let mut witness_module = circuit_module.init_witness_module().unwrap();
-
-        let xins = [
-            trace.a_in_trace,
-            trace.a_0_tmp_trace.clone(),
-            trace.c_in_trace,
-            trace.a_0_trace.clone(),
-            trace.a_1_tmp_trace.clone(),
-            trace.c_0_trace.clone(),
-        ];
-        let yins = [
-            trace.b_in_trace,
-            trace.mx_in_trace,
-            trace.d_0_trace,
-            trace.b_0_trace,
-            trace.my_in_trace,
-            trace.d_1_trace,
-        ];
-        let zouts = [
-            trace.a_0_tmp_trace,
-            trace.a_0_trace,
-            trace.c_0_trace,
-            trace.a_1_tmp_trace,
-            trace.a_1_trace,
-            trace.c_1_trace,
-        ];
-
-        for xy in 0..ADDITION_OPERATIONS_NUMBER {
-            let cout_entry = witness_module.new_entry();
-            let xin_entry = witness_module.new_entry();
-            let yin_entry = witness_module.new_entry();
-            let zout_entry = witness_module.new_entry();
-
-            for chunk in xins[xy].chunks(4) {
-                witness_module.push_u32s_to(chunk.try_into().unwrap(), xin_entry)
-            }
-            for chunk in yins[xy].chunks(4) {
-                witness_module.push_u32s_to(chunk.try_into().unwrap(), yin_entry)
-            }
-            for chunk in trace.cout_trace[xy].chunks(4) {
-                witness_module.push_u32s_to(chunk.try_into().unwrap(), cout_entry)
-            }
-            for chunk in zouts[xy].chunks(4) {
-                witness_module.push_u32s_to(chunk.try_into().unwrap(), zout_entry)
-            }
-
-            witness_module.bind_oracle_to::<B1>(xin[xy], xin_entry);
-            witness_module.bind_oracle_to::<B1>(yin[xy], yin_entry);
-            witness_module.bind_oracle_to::<B1>(cout[xy], cout_entry);
-            witness_module.bind_oracle_to::<B1>(zout[xy], zout_entry);
-        }
-
-        witness_module.populate(height_1).unwrap();
-
-        let circuit_modules = [circuit_module];
         let witness_modules = [witness_module];
-
-        let witness_archon = compile_witness_modules(&witness_modules, vec![height_1]).unwrap();
-
-        assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
-    }
-
-    #[test]
-    fn test_circuit_module_0() {
-        let trace_len = COMPRESSIONS_TEST * 4; // must divide 4
-        let traces = generate_trace(trace_len);
-
-        let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
-        let height = 2u64.pow(u32::try_from(state_n_vars).unwrap());
-
-        let circuit_module_id = 0;
-        let mut circuit_module = CircuitModule::new(circuit_module_id);
-        let state_transitions: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
-            circuit_module
-                .add_committed::<B32>(&format!("state-transition-{:?}", xy))
-                .unwrap()
-        });
-
-        let _input: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
-            circuit_module
-                .add_projected(
-                    &format!("input-{:?}", xy),
-                    state_transitions[xy],
-                    PROJECTED_SELECTOR_INPUT,
-                    SINGLE_COMPRESSION_HEIGHT,
-                    0,
-                )
-                .unwrap()
-        });
-
-        let _output: [OracleId; STATE_SIZE] = array::from_fn(|xy| {
-            circuit_module
-                .add_projected(
-                    &format!("output-{:?}", xy),
-                    state_transitions[xy],
-                    PROJECTED_SELECTOR_OUTPUT,
-                    SINGLE_COMPRESSION_HEIGHT,
-                    0,
-                )
-                .unwrap()
-        });
-        circuit_module.freeze_oracles();
-
         let circuit_modules = [circuit_module];
-        let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
 
-        // populate committed columns of circuit_module_0 (state_transition)
-        let witness_module_id = 0;
-        traces
-            .state_trace
-            .into_iter()
-            .enumerate()
-            .for_each(|(xy, trace)| {
-                let entry_id_xy = witness_modules[witness_module_id].new_entry();
-
-                trace.chunks(4).for_each(|chunk| {
-                    assert_eq!(chunk.len(), 4);
-                    let mut array = [0u32; 4];
-                    array[0] = chunk[0];
-                    array[1] = chunk[1];
-                    array[2] = chunk[2];
-                    array[3] = chunk[3];
-
-                    witness_modules[witness_module_id].push_u32s_to(array, entry_id_xy);
-                });
-
-                witness_modules[witness_module_id]
-                    .bind_oracle_to::<B32>(state_transitions[xy], entry_id_xy);
-            });
-        witness_modules[witness_module_id].populate(height).unwrap();
-
-        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
-        assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
+        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 
     #[test]
-    fn test_circuit_module_1() {
+    fn test_additions_xor_rotates_module() {
         let trace_len = COMPRESSIONS_TEST;
         let traces = generate_trace(trace_len);
 
-        let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
-        let height = 2u64.pow(u32::try_from(state_n_vars + 5).unwrap());
+        let (circuit_module, witness_module, height) =
+            additions_xor_rotates_module(0, &traces, trace_len).unwrap();
 
-        let circuit_module_id = 0;
-        let mut circuit_module_1 = CircuitModule::new(circuit_module_id);
+        let witness_modules = [witness_module];
+        let circuit_modules = [circuit_module];
 
-        let a_in = circuit_module_1.add_committed::<B1>("a_in").unwrap();
-        let b_in = circuit_module_1.add_committed::<B1>("b_in").unwrap();
-        let c_in = circuit_module_1.add_committed::<B1>("c_in").unwrap();
-        let d_in = circuit_module_1.add_committed::<B1>("d_in").unwrap();
-        let mx_in = circuit_module_1.add_committed::<B1>("mx_in").unwrap();
-        let my_in = circuit_module_1.add_committed::<B1>("my_in").unwrap();
+        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
+    }
 
-        let a_0 = circuit_module_1.add_committed::<B1>("a_0").unwrap();
-        let a_0_tmp = circuit_module_1.add_committed::<B1>("a_0_tmp").unwrap();
-        let c_0 = circuit_module_1.add_committed::<B1>("c_0").unwrap();
-        let a_1 = circuit_module_1.add_committed::<B1>("a_1").unwrap();
-        let a_1_tmp = circuit_module_1.add_committed::<B1>("a_1_tmp").unwrap();
-        let c_1 = circuit_module_1.add_committed::<B1>("c_1").unwrap();
+    #[test]
+    fn test_cv_output_module() {
+        let trace_len = COMPRESSIONS_TEST;
+        let traces = generate_trace(trace_len);
 
-        let b_in_xor_c_0 = circuit_module_1
-            .add_linear_combination("b_in_xor_c_0", B128::ZERO, [
-                (b_in, B128::ONE),
-                (c_0, B128::ONE),
-            ])
-            .unwrap();
+        let (circuit_module, witness_module, height) =
+            cv_output_module(0, &traces, trace_len).unwrap();
 
-        let d_in_xor_a_0 = circuit_module_1
-            .add_linear_combination("d_in_xor_a_0", B128::ZERO, [
-                (d_in, B128::ONE),
-                (a_0, B128::ONE),
-            ])
-            .unwrap();
+        let witness_modules = [witness_module];
+        let circuit_modules = [circuit_module];
 
-        let b_0 = circuit_module_1
-            .add_shifted(
-                "b_0",
-                b_in_xor_c_0,
-                32 - 12,
-                LOG_U32_BITS,
-                ShiftVariant::CircularLeft,
-            )
-            .unwrap();
-        let d_0 = circuit_module_1
-            .add_shifted(
-                "d_0",
-                d_in_xor_a_0,
-                32 - 16,
-                LOG_U32_BITS,
-                ShiftVariant::CircularLeft,
-            )
-            .unwrap();
+        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
+    }
 
-        let d_0_xor_a_1 = circuit_module_1
-            .add_linear_combination("d_0_xor_a_1", B128::ZERO, [
-                (d_0, B128::ONE),
-                (a_1, B128::ONE),
-            ])
-            .unwrap();
+    #[test]
+    fn test_whole_blake3_compression() {
+        let trace_len = COMPRESSIONS_TEST * 4; // must divide 4 because of module_0. TODO: figure out if we can tackle this limitation
+        let traces = generate_trace(trace_len);
 
-        let b_0_xor_c_1 = circuit_module_1
-            .add_linear_combination("b_0_xor_c_1", B128::ZERO, [
-                (b_0, B128::ONE),
-                (c_1, B128::ONE),
-            ])
-            .unwrap();
+        let (_, circuit_module_0, witness_module_0, height_0) =
+            state_transition_module(0, &traces, trace_len).unwrap();
+        let (circuit_module_1, witness_module_1, height_1) =
+            additions_xor_rotates_module(1, &traces, trace_len).unwrap();
+        let (circuit_module_2, witness_module_2, height_2) =
+            cv_output_module(2, &traces, trace_len).unwrap();
 
-        let d_1 = circuit_module_1
-            .add_shifted(
-                "d_1",
-                d_0_xor_a_1,
-                32 - 8,
-                LOG_U32_BITS,
-                ShiftVariant::CircularLeft,
-            )
-            .unwrap();
-        circuit_module_1
-            .add_shifted(
-                "b_1",
-                b_0_xor_c_1,
-                32 - 7,
-                LOG_U32_BITS,
-                ShiftVariant::CircularLeft,
-            )
-            .unwrap();
+        let witness_modules = [witness_module_0, witness_module_1, witness_module_2];
+        let circuit_modules = [circuit_module_0, circuit_module_1, circuit_module_2];
 
-        let couts: [OracleId; ADDITION_OPERATIONS_NUMBER] = array::from_fn(|xy| {
-            circuit_module_1
-                .add_committed::<B1>(&format!("cout-{:?}", xy))
-                .unwrap()
-        });
-        let cins: [OracleId; ADDITION_OPERATIONS_NUMBER] = array::from_fn(|xy| {
-            circuit_module_1
-                .add_shifted(
-                    &format!("cin-{:?}", xy),
-                    couts[xy],
-                    1,
-                    5,
-                    ShiftVariant::LogicalLeft,
-                )
-                .unwrap()
-        });
-
-        let xins = [a_in, a_0_tmp, c_in, a_0, a_1_tmp, c_0];
-        let yins = [b_in, mx_in, d_0, b_0, my_in, d_1];
-        let zouts = [a_0_tmp, a_0, c_0, a_1_tmp, a_1, c_1];
-
-        for xy in 0..ADDITION_OPERATIONS_NUMBER {
-            circuit_module_1.assert_zero(
-                "sum",
-                [xins[xy], yins[xy], cins[xy], zouts[xy]],
-                ArithExpr::Oracle(xins[xy])
-                    + ArithExpr::Oracle(yins[xy])
-                    + ArithExpr::Oracle(cins[xy])
-                    + ArithExpr::Oracle(zouts[xy]),
-            );
-
-            circuit_module_1.assert_zero(
-                "carry",
-                [xins[xy], yins[xy], cins[xy], couts[xy]],
-                (ArithExpr::Oracle(xins[xy]) + ArithExpr::Oracle(cins[xy]))
-                    * (ArithExpr::Oracle(yins[xy]) + ArithExpr::Oracle(cins[xy]))
-                    + ArithExpr::Oracle(cins[xy])
-                    + ArithExpr::Oracle(couts[xy]),
-            );
-        }
-
-        circuit_module_1.freeze_oracles();
-
-        let circuit_modules = [circuit_module_1];
-        let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
-
-        // populate committed columns of circuit_module_1
-        let witness_module_id = 0;
-        let xin_traces = [
-            traces.a_in_trace,
-            traces.a_0_tmp_trace.clone(),
-            traces.c_in_trace,
-            traces.a_0_trace.clone(),
-            traces.a_1_tmp_trace.clone(),
-            traces.c_0_trace.clone(),
-        ];
-        let yin_traces = [
-            traces.b_in_trace,
-            traces.mx_in_trace,
-            traces.d_0_trace,
-            traces.b_0_trace,
-            traces.my_in_trace,
-            traces.d_1_trace,
-        ];
-        let zout_traces = [
-            traces.a_0_tmp_trace,
-            traces.a_0_trace,
-            traces.c_0_trace,
-            traces.a_1_tmp_trace,
-            traces.a_1_trace,
-            traces.c_1_trace,
-        ];
-
-        for xy in 0..ADDITION_OPERATIONS_NUMBER {
-            let cout_entry = witness_modules[witness_module_id].new_entry();
-            let xin_entry = witness_modules[witness_module_id].new_entry();
-            let yin_entry = witness_modules[witness_module_id].new_entry();
-            let zout_entry = witness_modules[witness_module_id].new_entry();
-
-            for chunk in xin_traces[xy].chunks(4) {
-                witness_modules[witness_module_id]
-                    .push_u32s_to(chunk.try_into().unwrap(), xin_entry)
-            }
-            for chunk in yin_traces[xy].chunks(4) {
-                witness_modules[witness_module_id]
-                    .push_u32s_to(chunk.try_into().unwrap(), yin_entry)
-            }
-            for chunk in traces.cout_trace[xy].chunks(4) {
-                witness_modules[witness_module_id]
-                    .push_u32s_to(chunk.try_into().unwrap(), cout_entry)
-            }
-            for chunk in zout_traces[xy].chunks(4) {
-                witness_modules[witness_module_id]
-                    .push_u32s_to(chunk.try_into().unwrap(), zout_entry)
-            }
-
-            witness_modules[witness_module_id].bind_oracle_to::<B1>(xins[xy], xin_entry);
-            witness_modules[witness_module_id].bind_oracle_to::<B1>(yins[xy], yin_entry);
-            witness_modules[witness_module_id].bind_oracle_to::<B1>(couts[xy], cout_entry);
-            witness_modules[witness_module_id].bind_oracle_to::<B1>(zouts[xy], zout_entry);
-        }
-
-        // not to forget about d_in
-        let d_in_entry = witness_modules[witness_module_id].new_entry();
-        for chunk in traces.d_in_trace.chunks(4) {
-            witness_modules[witness_module_id].push_u32s_to(chunk.try_into().unwrap(), d_in_entry)
-        }
-        witness_modules[witness_module_id].bind_oracle_to::<B1>(d_in, d_in_entry);
-
-        witness_modules[witness_module_id].populate(height).unwrap();
-
-        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
-        assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
+        let witness =
+            compile_witness_modules(&witness_modules, vec![height_0, height_1, height_2]).unwrap();
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 
     #[test]
