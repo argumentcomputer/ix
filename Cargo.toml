@@ -18,7 +18,7 @@ binius_math = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60e
 binius_hal = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
 binius_hash = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
 binius_utils = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "60ec55578c6c1bb4a624e129a7074ec807d8b8cd" }
-blake3 = "=1.6.1"
+blake3 = "=1.8.2"
 bumpalo = "3"
 groestl_crypto = { package = "groestl", version = "0.10.1" }
 proptest = "1"
@@ -26,10 +26,10 @@ rayon = "1"
 rand = "0.9.1"
 rustc-hash = "2"
 indexmap = "2"
-iroh = { version = "0.34.0", optional = true }
+iroh = { version = "0.35.0", optional = true }
 tokio = { version = "1.44.1", optional = true }
-iroh-base = { version = "0.34.0", optional = true }
-iroh-blobs = { version = "0.34.0", features = ["rpc"], optional = true }
+iroh-base = { version = "0.35.0", optional = true }
+iroh-blobs = { version = "0.35.0", features = ["rpc"], optional = true }
 bytes = "1.10.1"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 bytemuck = "1.23.0"
