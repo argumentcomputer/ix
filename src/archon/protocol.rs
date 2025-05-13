@@ -159,10 +159,9 @@ pub fn verify(
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-    use binius_core::oracle::OracleId;
-    use binius_field::BinaryField1b as B1;
-
+    use crate::archon::precompiles::blake3::blake3_compress;
+    use crate::archon::precompiles::blake3::tests::generate_trace;
+    use crate::archon::protocol::{prove, verify};
     use crate::archon::{
         ModuleId,
         arith_expr::ArithExpr,
@@ -170,6 +169,10 @@ mod tests {
         protocol::validate_witness,
         witness::{WitnessModule, compile_witness_modules},
     };
+    use anyhow::Result;
+    use binius_core::oracle::OracleId;
+    use binius_field::BinaryField1b as B1;
+    use binius_hal::make_portable_backend;
 
     struct Oracles {
         s: OracleId,
@@ -243,5 +246,21 @@ mod tests {
         // Witness module 1 isn't populated
         let witness = compile_witness_modules(&witness_modules, vec![128, 0]).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
+    }
+
+    #[test]
+    fn test_blake3_compression_end_to_end() {
+        // FIXME: length of traces must be power of 2. Investigate later if we can tackle this limitation
+        let trace_len = 2usize.pow(5u32);
+        let (_, traces) = generate_trace(trace_len);
+
+        let (circuit_modules, witness_modules, heights, _) =
+            blake3_compress(&traces, trace_len).unwrap();
+
+        let witness = compile_witness_modules(&witness_modules, heights).unwrap();
+
+        let backend = make_portable_backend();
+        let proof = prove(&circuit_modules, &[], 1usize, 100usize, witness, &backend).unwrap();
+        assert!(verify(&circuit_modules, &[], proof, 1usize, 100usize).is_ok());
     }
 }
