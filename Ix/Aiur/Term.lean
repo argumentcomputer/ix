@@ -33,7 +33,7 @@ inductive Primitive
   | u32 : UInt32 → Primitive
   | u64 : UInt64 → Primitive
   deriving BEq, Hashable
-  
+
 def Primitive.toU64 : Primitive → UInt64
 | .u1 n => n.toUInt64
 | .u8 n => n.toUInt64
@@ -167,13 +167,17 @@ structure TypedFunction where
   output : Typ
   body : TypedTerm
 
-structure TypedToplevel where
-  dataTypes : List DataType
-  functions : List TypedFunction
+inductive TypedDeclaration
+  | function : TypedFunction → TypedDeclaration
+  | dataType : DataType → TypedDeclaration
+  | constructor : DataType → Constructor → TypedDeclaration
+  deriving Inhabited
+
+abbrev TypedDecls := HashMap Global TypedDeclaration
 
 mutual
 
-partial def Typ.size (decls : Decls) (visited : HashMap Global Unit := {}) : Typ → Nat
+partial def Typ.size (decls : TypedDecls) (visited : HashMap Global Unit := {}) : Typ → Nat
   | Typ.primitive .. => 1
   | Typ.pointer .. => 1
   | Typ.function .. => 1
@@ -182,10 +186,10 @@ partial def Typ.size (decls : Decls) (visited : HashMap Global Unit := {}) : Typ
     | .dataType data => data.size decls visited
     | _ => panic! "impossible case"
 
-partial def Constructor.size (decls : Decls) (visited : HashMap Global Unit := {}) (c : Constructor) : Nat :=
+partial def Constructor.size (decls : TypedDecls) (visited : HashMap Global Unit := {}) (c : Constructor) : Nat :=
   c.argTypes.foldl (λ acc t => acc + t.size decls visited) 0
 
-partial def DataType.size (dt : DataType) (decls : Decls) (visited : HashMap Global Unit := {}) : Nat :=
+partial def DataType.size (dt : DataType) (decls : TypedDecls) (visited : HashMap Global Unit := {}) : Nat :=
   if visited.contains dt.name then
     panic! s!"cycle detected at datatype `{dt.name}`"
   else

@@ -338,10 +338,7 @@ def TypedFunction.compile (layoutMap : Bytecode.LayoutMap) (f : TypedFunction) :
   let body :=  (f.body.compile f.output layoutMap).run' default
   { name := f.name, inputSize, outputSize, body }
 
-def TypedToplevel.compile (layoutMap : Bytecode.LayoutMap) (toplevel : TypedToplevel) : List Bytecode.Function :=
-  toplevel.functions.map (TypedFunction.compile layoutMap)
-
-def Decls.dataTypeLayouts (decls : Decls) : Bytecode.LayoutMap :=
+def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
   let pass acc _ v := match v with
   | .dataType dataType =>
     let dataTypeSize := dataType.size decls
@@ -371,5 +368,14 @@ def Decls.dataTypeLayouts (decls : Decls) : Bytecode.LayoutMap :=
     acc.insert function.name (.function { index := 0, inputSize, outputSize, offsets })
   | .constructor .. => acc
   decls.fold (init := {}) pass
+
+def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
+  let layout := decls.dataTypeLayouts
+  let functions := decls.fold (init := #[]) fun functions _ decl => match decl with
+    | .function function => functions.push (function.compile layout)
+    | _ => functions
+  -- TODO
+  let memWidths := #[]
+  { functions, memWidths }
 
 end Aiur
