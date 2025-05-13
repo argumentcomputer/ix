@@ -38,12 +38,12 @@ pub fn init_witness_modules(circuit_modules: &[CircuitModule]) -> Result<Vec<Wit
 }
 
 pub struct CircuitModule {
-    module_id: ModuleId,
-    oracles: Freezable<Vec<OracleInfo>>,
-    flushes: Vec<Flush<F>>,
-    constraints: Vec<Constraint>,
-    non_zero_oracle_ids: Vec<OracleId>,
-    namespacer: Namespacer,
+    pub(super) module_id: ModuleId,
+    pub(super) oracles: Freezable<Vec<OracleInfo>>,
+    pub(super) flushes: Vec<Flush<F>>,
+    pub(super) constraints: Vec<Constraint>,
+    pub(super) non_zero_oracle_ids: Vec<OracleId>,
+    pub(super) namespacer: Namespacer,
 }
 
 impl CircuitModule {
@@ -396,14 +396,14 @@ pub fn compile_circuit_modules(
     builder.build()
 }
 
-struct Constraint {
-    name: String,
-    oracle_ids: Vec<OracleId>,
-    composition: ArithExpr,
+pub(super) struct Constraint {
+    pub(super) name: String,
+    pub(super) oracle_ids: Vec<OracleId>,
+    pub(super) composition: ArithExpr,
 }
 
 #[derive(Clone)]
-enum Freezable<T> {
+pub(super) enum Freezable<T> {
     Raw(T),
     Frozen(Arc<T>),
 }
@@ -418,7 +418,7 @@ impl<T> Freezable<T> {
         }
     }
 
-    fn get_ref(&self) -> &T {
+    pub(super) fn get_ref(&self) -> &T {
         match self {
             Self::Raw(data) => data,
             Self::Frozen(data) => data,
@@ -442,7 +442,7 @@ impl<T> Freezable<T> {
 
 /// A namespacing struct that caches joined paths.
 #[derive(Default)]
-struct Namespacer {
+pub(super) struct Namespacer {
     path: Vec<String>,
     joined_path: Option<String>,
 }

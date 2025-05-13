@@ -1,6 +1,7 @@
 import LSpec
 import Ix.Archon.Circuit
 import Ix.Archon.Protocol
+import Ix.ByteArray
 
 open LSpec Archon
 
@@ -98,10 +99,20 @@ def proveAndVerify : TestSeq :=
   withExceptOk "Archon prove and verify work"
     (verify #[circuitModule] #[] 1 100 proof) fun _ => .done
 
+def versionCircuitModules : TestSeq :=
+  let c₁ := CircuitModule.new 0
+  let (_, c₁) := c₁.addCommitted "a" .b1
+  let c₂ := CircuitModule.new 0
+  let (_, c₂) := c₂.addCommitted "b" .b1
+  let v₁ := version #[c₁]
+  let v₂ := version #[c₂]
+  test "Circuit module versioning is name-irrelevant" (v₁.val == v₂.val)
+
 def Tests.Archon.suite := [
     transparent,
     linearCombination,
     packed,
     shifted,
     proveAndVerify,
+    versionCircuitModules,
   ]

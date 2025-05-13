@@ -9,8 +9,9 @@ use binius_field::{
 use std::ffi::c_char;
 
 use crate::{
-    archon::{ModuleId, circuit::CircuitModule, witness::WitnessModule},
+    archon::{ModuleId, canonical::version, circuit::CircuitModule, witness::WitnessModule},
     lean::{
+        CArray,
         array::LeanArrayObject,
         ctor::LeanCtorObject,
         ffi::{
@@ -195,4 +196,14 @@ extern "C" fn rs_circuit_module_push_namespace(
 #[unsafe(no_mangle)]
 extern "C" fn rs_circuit_module_pop_namespace(circuit_module: &mut CircuitModule) {
     circuit_module.pop_namespace();
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_circuit_module_version(
+    num_modules: usize,
+    circuit_modules: &CArray<&CircuitModule>,
+    buffer: &mut [u8; 32],
+) {
+    let circuit_modules = circuit_modules.slice(num_modules);
+    buffer.copy_from_slice(version(circuit_modules).as_bytes());
 }

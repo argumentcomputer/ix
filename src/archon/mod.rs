@@ -1,4 +1,5 @@
 pub mod arith_expr;
+pub mod canonical;
 pub mod circuit;
 pub mod precompiles;
 pub mod protocol;
