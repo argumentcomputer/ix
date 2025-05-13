@@ -28,7 +28,7 @@ type B32 = BinaryField32b;
 type B1 = BinaryField1b;
 
 #[derive(Debug, Clone)]
-struct Trace {
+pub struct Trace {
     state_trace: [Vec<u32>; STATE_SIZE],
     a_in_trace: Vec<u32>,
     b_in_trace: Vec<u32>,
@@ -65,6 +65,38 @@ struct Trace {
 pub struct Blake3CompressionOracles {
     pub input: [OracleId; STATE_SIZE],
     pub output: [OracleId; STATE_SIZE],
+}
+
+#[allow(clippy::type_complexity)]
+pub fn blake3_compress(
+    traces: &Trace,
+    traces_len: usize,
+) -> Result<
+    (
+        Vec<CircuitModule>,
+        Vec<WitnessModule>,
+        Vec<u64>,
+        Blake3CompressionOracles,
+    ),
+    anyhow::Error,
+> {
+    // FIXME: Implement modules' gluing
+
+    let (compression_oracles, circuit_module_0, witness_module_0, height_0) =
+        state_transition_module(0, traces, traces_len)?;
+    let (circuit_module_1, witness_module_1, height_1) =
+        additions_xor_rotates_module(1, traces, traces_len)?;
+    let (circuit_module_2, witness_module_2, height_2) = cv_output_module(2, traces, traces_len)?;
+
+    let witness_modules = vec![witness_module_0, witness_module_1, witness_module_2];
+    let circuit_modules = vec![circuit_module_0, circuit_module_1, circuit_module_2];
+
+    Ok((
+        circuit_modules,
+        witness_modules,
+        vec![height_0, height_1, height_2],
+        compression_oracles,
+    ))
 }
 
 fn state_transition_module(
@@ -354,7 +386,7 @@ fn cv_output_module(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use crate::archon::circuit::{CircuitModule, init_witness_modules};
     use crate::archon::precompiles::blake3::{
         ADDITION_OPERATIONS_NUMBER, B1, B32, B128, Blake3CompressionOracles, IV, MSG_PERMUTATION,
@@ -480,7 +512,7 @@ mod tests {
         state_out
     }
 
-    fn generate_trace(size: usize) -> (Vec<Vec<u32>>, Trace) {
+    pub fn generate_trace(size: usize) -> (Vec<Vec<u32>>, Trace) {
         let compressions = size;
 
         let mut rng = StdRng::seed_from_u64(0);
@@ -777,7 +809,7 @@ mod tests {
             // <trace>
             write_state_trace(
                 &mut state_trace,
-                compression_offset + PROJECTED_SELECTOR_OUTPUT as usize,
+                compression_offset + usize::try_from(PROJECTED_SELECTOR_OUTPUT).unwrap(),
                 state,
             );
             //
@@ -817,17 +849,17 @@ mod tests {
         })
     }
 
-    const COMPRESSIONS_TEST: usize = 2;
+    const COMPRESSIONS_LOG_TEST: u32 = 5;
 
     #[test]
     fn test_state_transition_module() {
-        let trace_len = COMPRESSIONS_TEST * 4; // must divide 4 because of module_0. TODO: figure out if we can tackle this limitation
+        let trace_len = 2usize.pow(COMPRESSIONS_LOG_TEST);
         let (expected, traces) = generate_trace(trace_len);
 
         let (compression_oracles, circuit_module, witness_module, height) =
             state_transition_module(0, &traces, trace_len).unwrap();
 
-        assert_expected_output(compression_oracles, expected, &witness_module);
+        assert_expected_output(&compression_oracles, &expected, &witness_module);
 
         // check that Binius proof can be constructed and verified
         let witness_modules = [witness_module];
@@ -838,7 +870,7 @@ mod tests {
 
     #[test]
     fn test_additions_xor_rotates_module() {
-        let trace_len = COMPRESSIONS_TEST;
+        let trace_len = 2usize.pow(COMPRESSIONS_LOG_TEST);
         let (_, traces) = generate_trace(trace_len);
 
         let (circuit_module, witness_module, height) =
@@ -853,7 +885,7 @@ mod tests {
 
     #[test]
     fn test_cv_output_module() {
-        let trace_len = COMPRESSIONS_TEST;
+        let trace_len = 2usize.pow(COMPRESSIONS_LOG_TEST);
         let (_, traces) = generate_trace(trace_len);
 
         let (circuit_module, witness_module, height) =
@@ -868,7 +900,7 @@ mod tests {
 
     #[test]
     fn test_whole_blake3_compression() {
-        let trace_len = COMPRESSIONS_TEST * 4; // must divide 4 because of module_0. TODO: figure out if we can tackle this limitation
+        let trace_len = 2usize.pow(COMPRESSIONS_LOG_TEST);
         let (expected, traces) = generate_trace(trace_len);
 
         let (compression_oracles, circuit_module_0, witness_module_0, height_0) =
@@ -878,7 +910,7 @@ mod tests {
         let (circuit_module_2, witness_module_2, height_2) =
             cv_output_module(2, &traces, trace_len).unwrap();
 
-        assert_expected_output(compression_oracles, expected, &witness_module_0);
+        assert_expected_output(&compression_oracles, &expected, &witness_module_0);
 
         let witness_modules = [witness_module_0, witness_module_1, witness_module_2];
         let circuit_modules = [circuit_module_0, circuit_module_1, circuit_module_2];
@@ -890,7 +922,7 @@ mod tests {
 
     #[test]
     fn test_lc_over_bits() {
-        let trace_len = COMPRESSIONS_TEST;
+        let trace_len = 2usize.pow(COMPRESSIONS_LOG_TEST);
         let (_, traces) = generate_trace(trace_len);
 
         let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
@@ -940,7 +972,7 @@ mod tests {
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
     }
 
-    fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>>
+    fn transpose<T>(v: &[Vec<T>]) -> Vec<Vec<T>>
     where
         T: Clone,
     {
@@ -951,9 +983,9 @@ mod tests {
     }
 
     // checks that output of the circuit contains expected values
-    fn assert_expected_output(
-        oracles: Blake3CompressionOracles,
-        expected: Vec<Vec<u32>>,
+    pub fn assert_expected_output(
+        oracles: &Blake3CompressionOracles,
+        expected: &[Vec<u32>],
         witness_module: &WitnessModule,
     ) {
         let expected = transpose(expected);
