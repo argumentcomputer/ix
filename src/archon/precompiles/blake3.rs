@@ -15,7 +15,7 @@ const SINGLE_COMPRESSION_N_VARS: usize = 6;
 const SINGLE_COMPRESSION_HEIGHT: usize = 2usize.pow(SINGLE_COMPRESSION_N_VARS as u32);
 const ADDITION_OPERATIONS_NUMBER: usize = 6;
 const PROJECTED_SELECTOR_INPUT: u64 = 0;
-const PROJECTED_SELECTOR_OUTPUT: u64 = 56;
+const PROJECTED_SELECTOR_OUTPUT: u64 = 57;
 const OUT_HEIGHT: usize = 8;
 
 const IV: [u32; 8] = [
@@ -357,12 +357,12 @@ fn cv_output_module(
 mod tests {
     use crate::archon::circuit::{CircuitModule, init_witness_modules};
     use crate::archon::precompiles::blake3::{
-        ADDITION_OPERATIONS_NUMBER, B1, B128, IV, MSG_PERMUTATION, OUT_HEIGHT,
-        SINGLE_COMPRESSION_HEIGHT, STATE_SIZE, Trace, additions_xor_rotates_module,
-        cv_output_module, state_transition_module,
+        ADDITION_OPERATIONS_NUMBER, B1, B32, B128, Blake3CompressionOracles, IV, MSG_PERMUTATION,
+        OUT_HEIGHT, PROJECTED_SELECTOR_OUTPUT, SINGLE_COMPRESSION_HEIGHT, STATE_SIZE, Trace,
+        additions_xor_rotates_module, cv_output_module, state_transition_module,
     };
     use crate::archon::protocol::validate_witness;
-    use crate::archon::witness::compile_witness_modules;
+    use crate::archon::witness::{WitnessModule, compile_witness_modules};
     use binius_field::Field;
     use binius_utils::checked_arithmetics::log2_ceil_usize;
     use rand::prelude::StdRng;
@@ -480,7 +480,7 @@ mod tests {
         state_out
     }
 
-    fn generate_trace(size: usize) -> Trace {
+    fn generate_trace(size: usize) -> (Vec<Vec<u32>>, Trace) {
         let compressions = size;
 
         let mut rng = StdRng::seed_from_u64(0);
@@ -774,10 +774,18 @@ mod tests {
                 //
             }
 
+            // <trace>
+            write_state_trace(
+                &mut state_trace,
+                compression_offset + PROJECTED_SELECTOR_OUTPUT as usize,
+                state,
+            );
+            //
+
             compression_offset += SINGLE_COMPRESSION_HEIGHT;
         }
 
-        Trace {
+        (expected, Trace {
             state_trace,
             a_in_trace,
             b_in_trace,
@@ -806,7 +814,7 @@ mod tests {
             state_i_8_trace,
             _state_i_xor_state_i_8_trace: state_i_xor_state_i_8_trace,
             _state_i_8_xor_cv_trace: state_i_8_xor_cv_trace,
-        }
+        })
     }
 
     const COMPRESSIONS_TEST: usize = 2;
@@ -814,14 +822,16 @@ mod tests {
     #[test]
     fn test_state_transition_module() {
         let trace_len = COMPRESSIONS_TEST * 4; // must divide 4 because of module_0. TODO: figure out if we can tackle this limitation
-        let traces = generate_trace(trace_len);
+        let (expected, traces) = generate_trace(trace_len);
 
-        let (_, circuit_module, witness_module, height) =
+        let (compression_oracles, circuit_module, witness_module, height) =
             state_transition_module(0, &traces, trace_len).unwrap();
 
+        assert_expected_output(compression_oracles, expected, &witness_module);
+
+        // check that Binius proof can be constructed and verified
         let witness_modules = [witness_module];
         let circuit_modules = [circuit_module];
-
         let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
@@ -829,7 +839,7 @@ mod tests {
     #[test]
     fn test_additions_xor_rotates_module() {
         let trace_len = COMPRESSIONS_TEST;
-        let traces = generate_trace(trace_len);
+        let (_, traces) = generate_trace(trace_len);
 
         let (circuit_module, witness_module, height) =
             additions_xor_rotates_module(0, &traces, trace_len).unwrap();
@@ -844,7 +854,7 @@ mod tests {
     #[test]
     fn test_cv_output_module() {
         let trace_len = COMPRESSIONS_TEST;
-        let traces = generate_trace(trace_len);
+        let (_, traces) = generate_trace(trace_len);
 
         let (circuit_module, witness_module, height) =
             cv_output_module(0, &traces, trace_len).unwrap();
@@ -859,14 +869,16 @@ mod tests {
     #[test]
     fn test_whole_blake3_compression() {
         let trace_len = COMPRESSIONS_TEST * 4; // must divide 4 because of module_0. TODO: figure out if we can tackle this limitation
-        let traces = generate_trace(trace_len);
+        let (expected, traces) = generate_trace(trace_len);
 
-        let (_, circuit_module_0, witness_module_0, height_0) =
+        let (compression_oracles, circuit_module_0, witness_module_0, height_0) =
             state_transition_module(0, &traces, trace_len).unwrap();
         let (circuit_module_1, witness_module_1, height_1) =
             additions_xor_rotates_module(1, &traces, trace_len).unwrap();
         let (circuit_module_2, witness_module_2, height_2) =
             cv_output_module(2, &traces, trace_len).unwrap();
+
+        assert_expected_output(compression_oracles, expected, &witness_module_0);
 
         let witness_modules = [witness_module_0, witness_module_1, witness_module_2];
         let circuit_modules = [circuit_module_0, circuit_module_1, circuit_module_2];
@@ -879,7 +891,7 @@ mod tests {
     #[test]
     fn test_lc_over_bits() {
         let trace_len = COMPRESSIONS_TEST;
-        let traces = generate_trace(trace_len);
+        let (_, traces) = generate_trace(trace_len);
 
         let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
         let height = 2u64.pow(u32::try_from(state_n_vars + 5).unwrap());
@@ -926,5 +938,30 @@ mod tests {
 
         let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
+    }
+
+    fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>>
+    where
+        T: Clone,
+    {
+        assert!(!v.is_empty());
+        (0..v[0].len())
+            .map(|i| v.iter().map(|inner| inner[i].clone()).collect::<Vec<T>>())
+            .collect()
+    }
+
+    // checks that output of the circuit contains expected values
+    fn assert_expected_output(
+        oracles: Blake3CompressionOracles,
+        expected: Vec<Vec<u32>>,
+        witness_module: &WitnessModule,
+    ) {
+        let expected = transpose(expected);
+        for (i, expected_i) in expected.into_iter().enumerate() {
+            let actual = witness_module
+                .get_data::<B32, u32>(oracles.output[i])
+                .unwrap();
+            assert_eq!(actual, expected_i);
+        }
     }
 }
