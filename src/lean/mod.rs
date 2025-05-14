@@ -23,7 +23,7 @@ impl<T> CArray<T> {
     }
 
     #[inline]
-    pub fn copy_from_slice(&self, src: &[T]) {
+    pub fn copy_from_slice(&mut self, src: &[T]) {
         unsafe {
             std::ptr::copy_nonoverlapping(src.as_ptr(), self.0.as_ptr() as *mut _, src.len());
         }
