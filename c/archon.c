@@ -388,10 +388,7 @@ extern lean_obj_res c_rs_prove(
     );
     ditch_linear(witness_linear);
 
-    linear_object *proof_linear = linear_object_init(
-        proof,
-        &rs_proof_free
-    );
+    linear_object *proof_linear = linear_object_init(proof, &rs_proof_free);
     return alloc_lean_linear_object(proof_linear);
 }
 
@@ -434,4 +431,19 @@ extern lean_obj_res c_rs_verify(
     rs__c_result_unit_string_free(result);
 
     return except;
+}
+
+extern lean_obj_res c_rs_proof_to_bytes(b_lean_obj_arg l_proof) {
+    linear_object *proof_linear = validated_linear(l_proof);
+    void *proof = get_object_ref(proof_linear);
+    size_t proof_size = rs_proof_size(proof);
+    lean_object *byte_array = lean_alloc_sarray(1, proof_size, proof_size);
+    rs_proof_to_bytes(proof, proof_size, lean_sarray_cptr(byte_array));
+    return byte_array;
+}
+
+extern lean_obj_res c_rs_proof_of_bytes(b_lean_obj_arg byte_array) {
+    void *proof = rs_proof_of_bytes(byte_array);
+    linear_object *proof_linear = linear_object_init(proof, &rs_proof_free);
+    return alloc_lean_linear_object(proof_linear);
 }

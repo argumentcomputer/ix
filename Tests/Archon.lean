@@ -96,8 +96,10 @@ def proveAndVerify : TestSeq :=
   let witnessModule := witnessModule.populate height
   let witness := compileWitnessModules #[witnessModule] #[height]
   let proof := prove #[circuitModule] #[] 1 100 witness
-  withExceptOk "Archon prove and verify work"
-    (verify #[circuitModule] #[] 1 100 proof) fun _ => .done
+  let proofBytes := proof.toBytes
+  withExceptOk "Archon proof serde works" (Proof.ofBytes proofBytes) fun proof =>
+    withExceptOk "Archon prove and verify work"
+      (verify #[circuitModule] #[] 1 100 proof) fun _ => .done
 
 def versionCircuitModules : TestSeq :=
   let c₁ := CircuitModule.new 0

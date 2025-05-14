@@ -50,6 +50,9 @@ c_result *rs_validate_witness(size_t, void**, b_lean_obj_arg, void*);
 void rs_proof_free(void*);
 void *rs_prove(size_t, void**, b_lean_obj_arg, size_t, size_t, void*);
 c_result *rs_verify(size_t, void**, b_lean_obj_arg, size_t, size_t, void*);
+size_t rs_proof_size(void*);
+void rs_proof_to_bytes(void*, size_t, uint8_t*);
+void *rs_proof_of_bytes(b_lean_obj_arg);
 
 /* --- Iroh --- */
 

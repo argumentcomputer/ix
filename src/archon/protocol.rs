@@ -19,15 +19,15 @@ use super::{
 };
 
 pub struct Proof {
-    proof_core: ProofCore,
-    modules_heights: Vec<u64>,
+    pub(crate) modules_heights: Vec<u64>,
+    pub(crate) proof_core: ProofCore,
 }
 
 impl Default for Proof {
     fn default() -> Self {
         Proof {
-            proof_core: ProofCore { transcript: vec![] },
             modules_heights: vec![],
+            proof_core: ProofCore { transcript: vec![] },
         }
     }
 }
@@ -88,8 +88,8 @@ pub fn prove_core<Backend: ComputationBackend>(
         backend,
     )?;
     Ok(Proof {
-        proof_core,
         modules_heights,
+        proof_core,
     })
 }
 
@@ -120,8 +120,8 @@ pub fn verify_core(
     security_bits: usize,
 ) -> Result<()> {
     let Proof {
-        proof_core,
         modules_heights,
+        proof_core,
     } = proof;
     let constraint_system = compile_circuit_modules(circuit_modules, &modules_heights)?;
     verify_binius::<
