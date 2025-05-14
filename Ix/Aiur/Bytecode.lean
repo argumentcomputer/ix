@@ -9,6 +9,21 @@ abbrev SelIdx := Nat
 abbrev FuncIdx := UInt64
 abbrev MemIdx := Nat
 
+def Std.HashMap.get' [Inhabited β] [BEq α] [Hashable α] [Repr α] (m : HashMap α β) (a : α) : β :=
+  match m.get? a with
+  | .some b => b
+  | .none => panic! s!"could not find key `{(repr a).pretty}`"
+
+def List.get' [Inhabited A] (as : List A) (n : Nat) : A :=
+  match as[n]? with
+  | .some a => a
+  | .none => panic! s!"index {n} out of bounds {as.length}"
+
+def Array.get' [Inhabited A] (as : Array A) (n : Nat) : A :=
+  match as[n]? with
+  | .some a => a
+  | .none => panic! s!"index {n} out of bounds {as.size}"
+
 namespace Aiur.Bytecode
 
 inductive Op where
@@ -56,13 +71,13 @@ structure FunctionLayout where
   index: UInt64
   inputSize : Nat
   outputSize : Nat
-  offsets: List Nat
+  offsets: Array Nat
   deriving Repr, Inhabited
 
 structure ConstructorLayout where
   index: UInt64
   size: Nat
-  offsets: List Nat
+  offsets: Array Nat
   deriving Repr, Inhabited
 
 inductive Layout
@@ -96,6 +111,15 @@ def pushOp (op : Bytecode.Op) : StateM CompilerState ValIdx :=
 def extractOps : StateM CompilerState (Array Bytecode.Op) :=
   modifyGet (fun s => (s.ops, {s with ops := #[]}))
 
+def typSize (layoutMap : Bytecode.LayoutMap) : Typ → Nat
+| Typ.primitive .. => 1
+| Typ.pointer .. => 1
+| Typ.function .. => 1
+| Typ.tuple ts => ts.foldl (init := 0) (fun acc t => acc + typSize layoutMap t)
+| Typ.dataType g => match layoutMap.get' g with
+  | .dataType layout => layout.size
+  | _ => unreachable!
+
 partial def toIndex
  (layoutMap : Bytecode.LayoutMap)
  (bindings : HashMap Local (Array ValIdx))
@@ -106,8 +130,8 @@ partial def toIndex
   | .match .. => panic! "non-tail `match` not yet implemented"
   | .if .. => panic! "non-tail `if` not yet implemented"
   | .var name => do
-    pure (bindings.get! name)
-  | .ref name => match layoutMap.get! name with
+    pure (bindings.get' name)
+  | .ref name => match layoutMap.get' name with
     | .function layout => do
       let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
       pure #[index]
@@ -132,19 +156,19 @@ partial def toIndex
     assert! (a.size == 1)
     let b ← toIndex layoutMap bindings b
     assert! (b.size == 1)
-    let index ← pushOp (.xor a[0]! b[0]!)
+    let index ← pushOp (.xor (a.get' 0) (b.get' 0))
     pure #[index]
   | .and a b => do
     let a ← toIndex layoutMap bindings a
     assert! (a.size == 1)
     let b ← toIndex layoutMap bindings b
     assert! (b.size == 1)
-    let index ← pushOp (.and a[0]! b[0]!)
+    let index ← pushOp (.and (a.get' 0) (b.get' 0))
     pure #[index]
   | .app name@(⟨.str .anonymous unqualifiedName⟩) args =>
     match bindings.get? (.str unqualifiedName) with
     | some _ => panic! "dynamic calls not yet implemented"
-    | none => match layoutMap.get! name with
+    | none => match layoutMap.get' name with
       | .function layout => do
         let args ← buildArgs args
         let index ← pushOp (Bytecode.Op.call layout.index args layout.outputSize)
@@ -153,7 +177,7 @@ partial def toIndex
         let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
         buildArgs args #[index]
       | _ => panic! "should not happen after typechecking"
-  | .app name args => match layoutMap.get! name with
+  | .app name args => match layoutMap.get' name with
     | .function layout => do
       let args ← buildArgs args
       let index ← pushOp (Bytecode.Op.call layout.index args layout.outputSize)
@@ -165,13 +189,13 @@ partial def toIndex
   | .preimg name@(⟨.str .anonymous unqualifiedName⟩) out =>
     match bindings.get? (.str unqualifiedName) with
     | some _ => panic! "dynamic preimage not yet implemented"
-    | none => match layoutMap.get! name with
+    | none => match layoutMap.get' name with
       | .function layout => do
         let out ← toIndex layoutMap bindings out
         let index ← pushOp (Bytecode.Op.preimg layout.index out layout.inputSize)
         pure $ Array.range' index layout.inputSize
       | _ => panic! "should not happen after typechecking"
-  | .preimg name out => match layoutMap.get! name with
+  | .preimg name out => match layoutMap.get' name with
     | .function layout => do
       let out ← toIndex layoutMap bindings out
       let index ← pushOp (Bytecode.Op.preimg layout.index out layout.inputSize)
@@ -181,35 +205,27 @@ partial def toIndex
     let typs := (match arg.typ with
       | .evaluates (.tuple typs) => typs
       | _ => panic! "should not happen after typechecking")
-    let offset := (typs.extract 0 i).foldl (init := 0) (fun acc typ => typSize typ + acc)
-    pure $ Array.range' offset (offset + typSize typ)
+    let offset := (typs.extract 0 i).foldl (init := 0) (fun acc typ => typSize layoutMap typ + acc)
+    pure $ Array.range' offset (offset + typSize layoutMap typ)
   | .slice arg i j => do
     let typs := (match arg.typ with
       | .evaluates (.tuple typs) => typs
       | _ => panic! "should not happen after typechecking")
-    let offset := (typs.extract 0 i).foldl (init := 0) (fun acc typ => typSize typ + acc)
-    let length := (typs.extract i j).foldl (init := 0) (fun acc typ => typSize typ + acc)
+    let offset := (typs.extract 0 i).foldl (init := 0) (fun acc typ => typSize layoutMap typ + acc)
+    let length := (typs.extract i j).foldl (init := 0) (fun acc typ => typSize layoutMap typ + acc)
     pure $ Array.range' offset (offset + length)
   | .store arg => do
     let arg ← toIndex layoutMap bindings arg
     let index ← pushOp (Bytecode.Op.store arg)
     pure #[index]
   | .load ptr => do
-    let size := typSize ptr.typ.unwrap
+    let size := typSize layoutMap ptr.typ.unwrap
     let ptr ← toIndex layoutMap bindings ptr
     assert! (ptr.size == 1)
-    let index ← pushOp (Bytecode.Op.load size ptr[0]!)
+    let index ← pushOp (Bytecode.Op.load size (ptr.get' 0))
     pure #[index]
   | .pointerAsU64 ptr => toIndex layoutMap bindings ptr
   where
-    typSize : Typ → Nat
-    | Typ.primitive .. => 1
-    | Typ.pointer .. => 1
-    | Typ.function .. => 1
-    | Typ.tuple ts => ts.foldl (init := 0) (fun acc t => acc + typSize t)
-    | Typ.dataType g => match layoutMap.get! g with
-      | .dataType layout => layout.size
-      | _ => unreachable!
     buildArgs (args : List TypedTerm) (init : Array ValIdx := #[]) : StateM CompilerState (Array ValIdx) :=
       let append arg acc := do
         pure (acc.append (← toIndex layoutMap bindings arg))
@@ -221,7 +237,7 @@ partial def TypedTerm.compile
  (term : TypedTerm)
  (returnTyp : Typ)
  (layoutMap : Bytecode.LayoutMap)
- (bindings : HashMap Local (Array ValIdx) := {})
+ (bindings : HashMap Local (Array ValIdx))
 : StateM CompilerState Bytecode.Block := match term.inner with
   | .match term cases =>
     match term.typ.unwrapOr returnTyp with
@@ -232,11 +248,11 @@ partial def TypedTerm.compile
           let n := pats.size
           let init := (bindings, 0)
           let (bindings, _) := (List.range n).foldl (init := init) fun (bindings, offset) i =>
-            let pat := pats[i]!
-            let typ := typs[i]!
+            let pat := (pats.get' i)
+            let typ := (typs.get' i)
             match pat with
             | .var var =>
-              let len := typSize typ
+              let len := typSize layoutMap typ
               let new_offset := offset + len
               (bindings.insert var (idxs.extract offset new_offset), new_offset)
             | _ => panic! "should not happen after simplification"
@@ -249,7 +265,7 @@ partial def TypedTerm.compile
       let idxs ← toIndex layoutMap bindings term
       let ops ← extractOps
       let (cases, default) ← cases.foldlM (init := ([], .none)) (addCase layoutMap bindings returnTyp idxs)
-      let ctrl := .match idxs[0]! cases default
+      let ctrl := .match (idxs.get' 0) cases default
       -- TODO Fix the selector indices
       pure { ops, ctrl, returnIdents := [] }
   | .if b t f => do
@@ -261,7 +277,7 @@ partial def TypedTerm.compile
     set initState
     let f ← f.compile returnTyp layoutMap bindings
     -- TODO Fix the selector indices
-    pure { ops, ctrl := .if b[0]! t f, returnIdents := [] }
+    pure { ops, ctrl := .if (b.get' 0) t f, returnIdents := [] }
   | .ret term => do
     let idxs ← toIndex layoutMap bindings term
     let state ← get
@@ -272,15 +288,6 @@ partial def TypedTerm.compile
     let state ← get
     -- TODO Fix the selector indices
     pure { ops := state.ops, ctrl := .ret 0 idxs, returnIdents := [] }
-  where
-    typSize : Typ → Nat
-    | Typ.primitive .. => 1
-    | Typ.pointer .. => 1
-    | Typ.function .. => 1
-    | Typ.tuple ts => ts.foldl (init := 0) (fun acc t => acc + typSize t)
-    | Typ.dataType g => match layoutMap.get! g with
-      | .dataType layout => layout.size
-      | _ => unreachable!
 
 partial def addCase
   (layoutMap : Bytecode.LayoutMap)
@@ -300,21 +307,20 @@ partial def addCase
     let cases' := cases.cons (prim.toU64, term)
     pure (cases', default)
   | .ref global pats => do
-    let layout := layoutMap.get! global
+    let layout := layoutMap.get' global
     let (index, offsets) := match layout with
     | .function layout => (layout.index, layout.offsets)
     | .constructor layout => (layout.index, layout.offsets)
     | .dataType _ => panic! "impossible after typechecking"
     let bindArgs bindings pats offsets idxs :=
       let n := pats.length
-      let init := (bindings, 0)
-      let (bindings, _) := (List.range n).foldl (init := init) fun (bindings, offset) i =>
-        let pat := pats[i]!
-        let len := offsets[i]!
+      let bindings := (List.range n).foldl (init := bindings) fun bindings i =>
+        let pat := (pats.get' i)
+        let offset := (offsets.get' i)
+        let next_offset := (offsets.get' (i + 1))
         match pat with
         | .var var =>
-          let new_offset := offset + len
-          (bindings.insert var (idxs.extract offset new_offset), new_offset)
+          bindings.insert var (idxs.extract offset next_offset)
         | _ => panic! "should not happen after simplification"
       bindings
     let bindings := bindArgs bindings pats offsets idxs
@@ -333,10 +339,16 @@ partial def addCase
 end
 
 def TypedFunction.compile (layoutMap : Bytecode.LayoutMap) (f : TypedFunction) : Bytecode.Function :=
-  let (inputSize, outputSize) := match layoutMap.get! f.name with
+  let (inputSize, outputSize) := match layoutMap.get' f.name with
   | .function layout => (layout.inputSize, layout.outputSize)
   | _ => panic! s!"`{f.name}` should be a function"
-  let body :=  (f.body.compile f.output layoutMap).run' default
+  let (index, bindings) := f.inputs.foldl (init := (0, default))
+    (fun (index, bindings) (arg, typ) =>
+      let len := typSize layoutMap typ
+      let indices := Array.range' index (index + len)
+      (index + len, bindings.insert arg indices))
+  let state := { index, ops := #[] }
+  let body :=  (f.body.compile f.output layoutMap bindings).run' state
   { name := f.name, inputSize, outputSize, body }
 
 def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
@@ -345,11 +357,9 @@ def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
     let dataTypeSize := dataType.size decls
     let acc := acc.insert dataType.name (.dataType { size := dataTypeSize })
     let pass := fun (acc, index) constructor =>
-      let (_, offsets) :=
-        constructor.argTypes.foldr (init := (none, []))
-         (fun typ (prev_offset, offsets) => match prev_offset with
-          | .none => (some (typ.size decls), offsets)
-          | .some prev_offset => (some (typ.size decls), offsets.cons prev_offset))
+      let offsets :=
+        constructor.argTypes.foldl (init := #[0])
+          (fun offsets typ => offsets.push (typ.size decls))
       let decl := .constructor {
         size := dataTypeSize,
         offsets,
@@ -361,11 +371,9 @@ def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
   | .function function =>
     let inputSize := function.inputs.foldl (init := 0) (fun acc (_, typ) => acc + typ.size decls)
     let outputSize := function.output.size decls
-    let (_, offsets) :=
-      function.inputs.foldr (init := (none, []))
-       (fun (_, typ) (prev_offset, offsets) => match prev_offset with
-        | .none => (some (typ.size decls), offsets)
-        | .some prev_offset => (some (typ.size decls), offsets.cons prev_offset))
+    let offsets :=
+      function.inputs.foldl (init := #[0])
+        (fun offsets (_, typ) => offsets.push (typ.size decls))
     acc.insert function.name (.function { index := 0, inputSize, outputSize, offsets })
   | .constructor .. => acc
   decls.fold (init := {}) pass
