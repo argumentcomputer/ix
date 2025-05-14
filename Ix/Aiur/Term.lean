@@ -6,11 +6,11 @@ namespace Aiur
 inductive Local
   | str : String → Local
   | idx : Nat → Local
-  deriving BEq, Hashable
+  deriving Repr, BEq, Hashable
 
 structure Global where
   toName : Lean.Name
-  deriving BEq, Hashable, Inhabited
+  deriving Repr, BEq, Hashable, Inhabited
 
 instance : ToString Global where
   toString g := g.toName.toString
@@ -32,7 +32,7 @@ inductive Primitive
   | u16 : UInt16 → Primitive
   | u32 : UInt32 → Primitive
   | u64 : UInt64 → Primitive
-  deriving BEq, Hashable
+  deriving Repr, BEq, Hashable
 
 def Primitive.toU64 : Primitive → UInt64
 | .u1 n => n.toUInt64
@@ -48,11 +48,11 @@ inductive Pattern
   | primitive : Primitive → Pattern
   | tuple : Array Pattern → Pattern
   | or : Pattern → Pattern → Pattern
-  deriving BEq, Hashable, Inhabited
+  deriving Repr, BEq, Hashable, Inhabited
 
 inductive PrimitiveType
   | u1 | u8 | u16 | u32 | u64
-  deriving BEq, Hashable
+  deriving Repr, BEq, Hashable
 
 inductive Typ where
   | primitive : PrimitiveType → Typ
@@ -60,7 +60,7 @@ inductive Typ where
   | pointer : Typ → Typ
   | dataType : Global → Typ
   | function : List Typ → Typ → Typ
-  deriving BEq, Hashable, Inhabited
+  deriving Repr, BEq, Hashable, Inhabited
 
 mutual
 
@@ -82,18 +82,19 @@ inductive Term
   | load : Term → Term
   | pointerAsU64 : Term → Term
   | ann : Typ → Term → Term
-  deriving BEq, Hashable, Inhabited
+  deriving Repr, BEq, Hashable, Inhabited
 
 inductive Data
   | primitive : Primitive → Data
   | tuple : Array Term → Data
+  deriving Repr
 
 end
 
 inductive ContextualType
   | evaluates : Typ → ContextualType
   | escapes : ContextualType
-  deriving BEq, Inhabited
+  deriving Repr, BEq, Inhabited
 
 def ContextualType.unwrap : ContextualType → Typ
 | .escapes => panic! "term should not escape"
@@ -121,43 +122,47 @@ inductive TypedTermInner
   | store : TypedTerm → TypedTermInner
   | load : TypedTerm → TypedTermInner
   | pointerAsU64 : TypedTerm → TypedTermInner
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 structure TypedTerm where
   typ : ContextualType
   inner : TypedTermInner
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 inductive TypedData
   | primitive : Primitive → TypedData
   | tuple : Array TypedTerm → TypedData
+  deriving Repr
+
 end
 
 structure Constructor where
   nameHead : String
   argTypes : List Typ
-  deriving BEq, Inhabited
+  deriving Repr, BEq, Inhabited
 
 structure DataType where
   name : Global
   constructors : List Constructor
-  deriving BEq, Inhabited
+  deriving Repr, BEq, Inhabited
 
 structure Function where
   name : Global
   inputs : List (Local × Typ)
   output : Typ
   body : Term
+  deriving Repr
 
 structure Toplevel where
   dataTypes : List DataType
   functions : List Function
+  deriving Repr
 
 inductive Declaration
   | function : Function → Declaration
   | dataType : DataType → Declaration
   | constructor : DataType → Constructor → Declaration
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 abbrev Decls := HashMap Global Declaration
 
@@ -166,12 +171,13 @@ structure TypedFunction where
   inputs : List (Local × Typ)
   output : Typ
   body : TypedTerm
+  deriving Repr
 
 inductive TypedDeclaration
   | function : TypedFunction → TypedDeclaration
   | dataType : DataType → TypedDeclaration
   | constructor : DataType → Constructor → TypedDeclaration
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 abbrev TypedDecls := HashMap Global TypedDeclaration
 

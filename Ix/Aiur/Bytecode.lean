@@ -25,20 +25,20 @@ inductive Op where
   | dynCall : ValIdx → Array ValIdx → ValIdx → Op
   | preimg : FuncIdx → Array ValIdx → ValIdx → Op
   | dynPreimg : ValIdx → Array ValIdx → ValIdx → Op
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 mutual
   inductive Ctrl where
     | if : ValIdx → Block → Block → Ctrl
     | match : ValIdx → List (UInt64 × Block) -> Option Block → Ctrl
     | ret : SelIdx → Array ValIdx → Ctrl
-    deriving Inhabited
+    deriving Repr, Inhabited
 
   structure Block where
     ops : Array Op
     ctrl : Ctrl
     returnIdents : List SelIdx
-    deriving Inhabited
+    deriving Repr, Inhabited
 end
 
 structure Function where
@@ -46,36 +46,37 @@ structure Function where
   inputSize : Nat
   outputSize : Nat
   body : Block
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 structure DataTypeLayout where
   size: Nat
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 structure FunctionLayout where
   index: UInt64
   inputSize : Nat
   outputSize : Nat
   offsets: List Nat
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 structure ConstructorLayout where
   index: UInt64
   size: Nat
   offsets: List Nat
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 inductive Layout
   | dataType : DataTypeLayout → Layout
   | function : FunctionLayout → Layout
   | constructor : ConstructorLayout → Layout
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 abbrev LayoutMap := HashMap Global Layout
 
 structure Toplevel where
   functions : Array Function
   memWidths : Array Nat
+  deriving Repr, Inhabited
 
 end Aiur.Bytecode
 
@@ -84,7 +85,7 @@ namespace Aiur
 structure CompilerState where
   index : ValIdx
   ops : Array Bytecode.Op
-  deriving Inhabited
+  deriving Repr, Inhabited
 
 def pushOp (op : Bytecode.Op) : StateM CompilerState ValIdx :=
   modifyGet (fun s =>

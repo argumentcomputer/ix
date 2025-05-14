@@ -26,6 +26,7 @@ inductive CheckError
   | branchMismatch : Typ → Typ → CheckError
   | notAPointer : Typ → CheckError
   | duplicatedBind : Pattern → CheckError
+  deriving Repr
 
 /--
 Constructs a map of declarations from a toplevel, ensuring that there are no duplicate names
@@ -253,7 +254,7 @@ where
   checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
     let lenArgs := args.length
     let lenInputs := inputs.length
-    unless lenArgs != lenInputs do throw $ .wrongNumArgs func lenArgs lenInputs
+    unless lenArgs == lenInputs do throw $ .wrongNumArgs func lenArgs lenInputs
     let pass := fun (arg, input) => do
       let inner ← checkNoEscape arg input
       pure $ .mk (.evaluates input) inner
@@ -261,7 +262,7 @@ where
 
 partial def checkNoEscape (term : Term) (typ : Typ) : CheckM TypedTermInner := do
   let (typ', inner) ← inferNoEscape term
-  unless typ != typ' do throw $ .typeMismatch typ typ'
+  unless typ == typ' do throw $ .typeMismatch typ typ'
   pure inner
 
 partial def inferNoEscape (term : Term) : CheckM (Typ × TypedTermInner) := do
