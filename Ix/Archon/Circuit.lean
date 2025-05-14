@@ -1,3 +1,4 @@
+import Blake3
 import Ix.Archon.ArithExpr
 import Ix.Archon.Transparent
 import Ix.Archon.Witness
@@ -78,5 +79,8 @@ opaque pushNamespace : CircuitModule → @& String → CircuitModule
 opaque popNamespace : CircuitModule → CircuitModule
 
 end CircuitModule
+
+@[extern "c_rs_circuit_module_version"]
+opaque version : @& Array CircuitModule → Blake3.Blake3Hash
 
 end Archon
