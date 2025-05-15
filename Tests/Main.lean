@@ -5,10 +5,14 @@ import Tests.Unsigned
 import Tests.Ix
 import Tests.Ix.Compile
 import Tests.Keccak
+import Tests.Cli
 
 def main (args: List String) : IO UInt32 := do
   if args.contains "compile"
   then LSpec.lspecEachIO Tests.Ix.Compile.suiteIO id
+  else if args.contains "cli"
+  -- TODO: Combine this with the other tests
+  then LSpec.lspecEachIO Tests.Cli.suiteIO id
   else
     LSpec.lspecIO (.ofList [
       ("archon", Tests.Archon.suite),

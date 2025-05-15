@@ -22,6 +22,8 @@ jobs:
         with:
           build-args: "--wfail"
           test: true
+      - name: Test Ix CLI
+        run: lake test -- cli
       - name: Check lean.h.hash
         run: lake run check-lean-h-hash
 
@@ -61,11 +63,11 @@ jobs:
       - name: Check clippy warnings
         run: cargo xclippy -D warnings
       - name: Get Rust version
-        if: contains(matrix.os, 'macos')
+        if: contains(matrix.os, 'ubuntu')
         run: |
           echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a $GITHUB_ENV
       - name: Cargo-deny
-        if: contains(matrix.os, 'macos')
+        if: contains(matrix.os, 'ubuntu')
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           rust-version: ${{ env.RUST_VERSION }}
