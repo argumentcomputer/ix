@@ -1,14 +1,8 @@
--- Integration tests for the Ix CLI
-import LSpec
-open LSpec IO
+/-! Integration tests for the Ix CLI -/
 
-def ixBuild : IO TestSeq := do
-  let out ← Process.output { cmd := "lake", args := #["build", "ix"]}
+def Tests.ixCli : IO UInt32 := do
+  let out ← IO.Process.output { cmd := "lake", args := #["build", "ix"]}
   if out.exitCode ≠ 0 then
-    eprintln s!"{out.stderr}exit {out.exitCode}"
-  return test "Ix CLI build" (out.exitCode == 0)
-
-def Tests.Cli.suiteIO : List (IO TestSeq) :=
-[
-  ixBuild
-]
+    IO.eprintln s!"Build failure exit code: {out.exitCode}\n{out.stderr}"
+    return out.exitCode
+  return 0
