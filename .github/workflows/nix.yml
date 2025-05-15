@@ -16,7 +16,7 @@ jobs:
     name: Nix Tests
     strategy:
       matrix:
-        os: [warp-ubuntu-latest-x64-8x, warp-macos-latest-arm64-6x]
+        os: [ubuntu-latest, warp-macos-latest-arm64-6x]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
     name: Nix devShell Tests
     strategy:
       matrix:
-        os: [warp-ubuntu-latest-x64-8x, warp-macos-latest-arm64-6x]
+        os: [ubuntu-latest, warp-macos-latest-arm64-6x]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
