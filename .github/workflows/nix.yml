@@ -14,7 +14,10 @@ jobs:
   # Runs Lean tests via Nix
   nix-test:
     name: Nix Tests
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [warp-ubuntu-latest-x64-8x, warp-macos-latest-arm64-6x]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
@@ -32,10 +35,13 @@ jobs:
       - run: nix build .#test
       - run: nix run .#test
 
-  # Test Nix devShell support on Ubuntu
+  # Test Nix devShell support
   nix-devshell:
     name: Nix devShell Tests
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [warp-ubuntu-latest-x64-8x, warp-macos-latest-arm64-6x]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31

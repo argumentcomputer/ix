@@ -35,5 +35,5 @@ bytemuck = "1.23.0"
 
 
 [features]
-default = ["net"]
+default = []
 net = ["dep:iroh", "dep:tokio", "dep:iroh-base", "dep:iroh-blobs"]
