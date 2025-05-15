@@ -311,16 +311,12 @@ extern lean_obj_res c_rs_circuit_module_pop_namespace(lean_obj_arg l_circuit) {
     return alloc_lean_linear_object(new_linear);
 }
 
-extern lean_obj_res c_rs_circuit_module_version(b_lean_obj_arg l_circuit_modules) {
-    size_t num_modules = lean_array_size(l_circuit_modules);
-    lean_object **modules_cptrs = lean_array_cptr(l_circuit_modules);
-    void *modules_ptrs[num_modules];
-    for (size_t i = 0; i < num_modules; i++) {
-        linear_object *linear = validated_linear(modules_cptrs[i]);
-        modules_ptrs[i] = get_object_ref(linear);
-    }
-    lean_object *byte_array = lean_alloc_sarray(1, 32, 32);
-    rs_circuit_module_version(num_modules, modules_ptrs, lean_sarray_cptr(byte_array));
+extern lean_obj_res c_rs_circuit_module_canonical_bytes(b_lean_obj_arg l_circuit) {
+    linear_object *linear = validated_linear(l_circuit);
+    void *circuit = get_object_ref(linear);
+    size_t size = rs_circuit_module_canonical_bytes_size(circuit);
+    lean_object *byte_array = lean_alloc_sarray(1, size, size);
+    rs_circuit_module_canonical_bytes(circuit, size, lean_sarray_cptr(byte_array));
     return byte_array;
 }
 

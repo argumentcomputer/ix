@@ -78,9 +78,13 @@ opaque pushNamespace : CircuitModule → @& String → CircuitModule
 @[never_extract, extern "c_rs_circuit_module_pop_namespace"]
 opaque popNamespace : CircuitModule → CircuitModule
 
+@[extern "c_rs_circuit_module_canonical_bytes"]
+opaque canonicalBytes : @& CircuitModule → ByteArray
+
 end CircuitModule
 
-@[extern "c_rs_circuit_module_version"]
-opaque version : @& Array CircuitModule → Blake3.Blake3Hash
+def version (modules : Array CircuitModule) : Blake3.Blake3Hash :=
+  let bytes := modules.foldl (fun acc mod => acc ++ mod.canonicalBytes) default
+  Blake3.hash bytes
 
 end Archon
