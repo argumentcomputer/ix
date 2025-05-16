@@ -61,18 +61,17 @@ def transportConst (x: Ix.Const): Bool :=
 --    | .error e _ => .error e
 --  | .error e _ => .error e
 --
---def myConfig : SlimCheck.Configuration where
---  numInst := 100000
---  maxSize := 100
---  traceDiscarded := true
---  traceSuccesses := true
---  traceShrink := true
---  traceShrinkCandidates := true
+def myConfig : SlimCheck.Configuration where
+  numInst := 10000
+  maxSize := 100
+  traceDiscarded := true
+  traceSuccesses := true
+  traceShrink := true
+  traceShrinkCandidates := true
 
---def dbg : IO UInt32 := do
---   --SlimCheck.Checkable.check (∀ x: Ix.Univ, transportUniv x) myConfig
---   SlimCheck.Checkable.check (∀ x: Ix.Expr, transportExpr x) myConfig
---   return 0
+def dbg : IO UInt32 := do
+   SlimCheck.Checkable.check (∀ x: Ix.Const, transportConst x) myConfig
+   return 0
 
 --def Test.Ix.unitTransport : TestSeq :=
 --  testExprs.foldl (init := .done) fun tSeq x =>

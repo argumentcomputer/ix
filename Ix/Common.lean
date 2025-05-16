@@ -10,6 +10,16 @@ def compareList [Ord α] : List α -> List α -> Ordering
 | [], _::_ => .lt
 | [], [] => .eq
 
+def compareListM 
+  [Monad μ] (cmp: α -> α -> μ Ordering) : List α -> List α -> μ Ordering
+| a::as, b::bs => do
+  match (<- cmp a b) with
+  | .eq => compareListM cmp as bs
+  | x => pure x
+| _::_, [] => pure .gt
+| [], _::_ => pure .lt
+| [], [] => pure .eq
+
 instance [Ord α] : Ord (List α) where 
   compare := compareList
 
@@ -25,6 +35,17 @@ deriving instance Ord for Lean.Literal
 deriving instance Ord for Lean.BinderInfo
 deriving instance BEq, Repr, Hashable, Ord for Lean.QuotKind
 deriving instance Hashable, Repr for Lean.ReducibilityHints
+deriving instance BEq, Repr for Lean.ConstantVal
+deriving instance BEq, Repr for Lean.QuotVal
+deriving instance BEq, Repr for Lean.AxiomVal
+deriving instance BEq, Repr for Lean.TheoremVal
+deriving instance BEq, Repr for Lean.DefinitionVal
+deriving instance BEq, Repr for Lean.OpaqueVal
+deriving instance BEq, Repr for Lean.RecursorRule
+deriving instance BEq, Repr for Lean.RecursorVal
+deriving instance BEq, Repr for Lean.ConstructorVal
+deriving instance BEq, Repr for Lean.InductiveVal
+deriving instance BEq, Repr for Lean.ConstantInfo
 
 def UInt8.MAX : UInt64 := 0xFF
 def UInt16.MAX : UInt64 := 0xFFFF
@@ -141,6 +162,12 @@ def ConstMap.childrenOfWith (map : ConstMap) (name : Name)
   | .str n ..
   | .num n .. => if n == name && p c then c :: acc else acc
   | _ => acc
+
+def Name.parent : Name -> Name
+| .str n ..
+| .num n .. => n
+| .anonymous => .anonymous
+
 
 --def ConstMap.patchUnsafeRec (cs : ConstMap) : ConstMap :=
 --  let unsafes : Batteries.RBSet Name compare := cs.fold (init := .empty)

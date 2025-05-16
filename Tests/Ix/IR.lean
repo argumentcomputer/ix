@@ -60,6 +60,7 @@ def genConst : Gen Ix.Const := getSize >>= go
   where
     genNames : Gen (List Lean.Name) := resizeListOf genName
     genDef : Gen Ix.Definition := do
+      let n <- genName
       let lvls <- genNames
       let type <- genExpr
       let mode <- genDefMode
@@ -67,7 +68,7 @@ def genConst : Gen Ix.Const := getSize >>= go
       let hints <- genReducibilityHints
       let isPartial <- genBool
       let all <- genNames
-      return ⟨lvls, type, mode, value, hints, isPartial, all⟩
+      return ⟨n, lvls, type, mode, value, hints, isPartial, all⟩
     genCtor : Gen Ix.Constructor := 
       .mk <$> genName <*> genNames <*> genExpr <*> genNat' <*> genNat' <*> genNat'
     genRecr : Gen Ix.Recursor := 
@@ -75,6 +76,7 @@ def genConst : Gen Ix.Const := getSize >>= go
         <*> resizeListOf (.mk <$> genName <*> genNat' <*> genExpr)
         <*> genBool
     genInd : Gen Ix.Inductive := do
+      let n <- genName
       let lvls <- genNames
       let type <- genExpr
       let params <- genNat'
@@ -84,26 +86,32 @@ def genConst : Gen Ix.Const := getSize >>= go
       let recrs <- resizeListOf genRecr
       let nested <- genNat'
       let (isRec, isRefl) <- Prod.mk <$> genBool <*> genBool
-      return ⟨lvls, type, params, indices, all, ctors, recrs, nested, isRec, isRefl⟩
+      return ⟨n, lvls, type, params, indices, all, ctors, recrs, nested, isRec, isRefl⟩
     genMutDef : Gen Ix.MutualDefinitionBlock := do
       let nns <- resizeListOf (genListSize genName 1 5)
       let ds <- nns.mapM fun ns => do
         let x <- genDef
         ns.mapM (fun _ => pure x)
       return .mk ds nns
+    genMutInd : Gen Ix.MutualInductiveBlock := do
+      let nns <- resizeListOf (genListSize genName 1 5)
+      let ds <- nns.mapM fun ns => do
+        let x <- genInd
+        ns.mapM (fun _ => pure x)
+      return .mk ds nns
     go : Nat -> Gen Ix.Const
-    | 0 => return .«axiom» (.mk [] (Ix.Expr.sort (Ix.Level.zero)))
+    | 0 => return .«axiom» (.mk .anonymous [] (Ix.Expr.sort (Ix.Level.zero)))
     | Nat.succ _ =>
       frequency [
-        (100, .«axiom» <$> (.mk <$> genNames <*> genExpr)),
+        (100, .«axiom» <$> (.mk <$> genName <*> genNames <*> genExpr)),
         (100, .«definition» <$> genDef),
-        (100, .quotient <$> (.mk <$> genNames <*> genExpr <*> genQuotKind)),
-        (100, .inductiveProj <$> (.mk <$> genAddress <*> genAddress <*> genNat')),
-        (100, .constructorProj <$> (.mk <$> genAddress <*> genAddress <*> genNat' <*> genNat')),
-        (100, .recursorProj <$> (.mk <$> genAddress <*> genAddress <*> genNat' <*> genNat')),
-        (100, .definitionProj <$> (.mk <$> genAddress <*> genAddress <*> genNat')),
+        (100, .quotient <$> (.mk <$> genName <*> genNames <*> genExpr <*> genQuotKind)),
+        (100, .inductiveProj <$> (.mk <$> genName <*> genAddress <*> genAddress <*> genNat')),
+        (100, .constructorProj <$> (.mk <$> genName <*> genAddress <*> genAddress <*> genNat' <*> genName <*> genNat')),
+        (100, .recursorProj <$> (.mk <$> genName <*> genAddress <*> genAddress <*> genNat' <*> genName <*> genNat')),
+        (100, .definitionProj <$> (.mk <$> genName <*> genAddress <*> genAddress <*> genNat')),
         (100, .mutDefBlock <$> genMutDef),
-        (100, .mutIndBlock <$> resizeListOf genInd),
+        (100, .mutIndBlock <$> genMutInd),
       ]
 
 instance : Shrinkable Ix.Const where

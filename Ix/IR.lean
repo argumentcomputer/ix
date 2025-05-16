@@ -70,7 +70,7 @@ are closed.
     Boolean.and Loobean.false.toBoolean Loobean.false.toBoolean
    ```
 
-   However, we have not rigourously demonstrated this yet, and therefore best
+   However, we have not rigorously demonstrated this yet, and therefore best
    practice is to only pass environments to Ix which have passed Lean
    typechecking to sanitize this case.
 -/
@@ -110,6 +110,7 @@ inductive Expr
 Ix.Quotient quotients are analogous to Lean.QuotVal
 --/
 structure Quotient where
+  name: Lean.Name
   levelParams : List Lean.Name
   type : Expr
   kind : Lean.QuotKind
@@ -120,10 +121,10 @@ Ix.Axiom axioms are analogous to Lean.AxiomVal, differing only in not including
 the `isUnsafe` parameter, as Ix constants are never unsafe
 --/
 structure Axiom where
+  name: Lean.Name
   levelParams : List Lean.Name
   type : Expr
   deriving Ord, BEq, Hashable, Repr, Nonempty
-
 
 /--
 Ix.Definition definitions combine Lean.DefinitionVal, Lean.OpaqueVal and
@@ -136,6 +137,7 @@ replaced with a boolean for partial definitions, as Ix definitions are
 restricted to exclude unsafe constants.
 --/
 structure Definition where
+  name: Lean.Name
   levelParams : List Lean.Name
   type : Expr
   mode: DefMode
@@ -146,20 +148,22 @@ structure Definition where
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 def mkTheorem
+  (name: Lean.Name)
   (levelParams: List Lean.Name)
   (type: Expr)
   (value: Expr)
   (all: List Lean.Name)
   : Definition
-  := ⟨levelParams, type, .theorem, value, .opaque, false, all⟩
+  := ⟨name, levelParams, type, .theorem, value, .opaque, false, all⟩
 
 def mkOpaque
+  (name: Lean.Name)
   (levelParams: List Lean.Name)
   (type: Expr)
   (value: Expr)
   (all: List Lean.Name)
   : Definition
-  := ⟨levelParams, type, .opaque, value, .opaque, false, all⟩
+  := ⟨name, levelParams, type, .opaque, value, .opaque, false, all⟩
 
 /--
 Ix.Constructor inductive datatype constructors are analogous to
@@ -208,11 +212,30 @@ structure Recursor where
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 /--
+Ix.PreInductive is used to capture a Lean.InductiveVal along with their
+constructors and recursors, in order to perform structural sorting
+--/
+structure PreInductive where
+  name: Lean.Name
+  levelParams : List Lean.Name
+  type : Lean.Expr
+  numParams : Nat
+  numIndices : Nat
+  all : List Lean.Name
+  ctors : List Lean.ConstructorVal
+  recrs : List Lean.RecursorVal
+  numNested: Nat
+  isRec : Bool
+  isReflexive : Bool
+  deriving BEq, Repr, Nonempty
+
+/--
 Ix.Inductive represents inductive datatypes and is analogous to
 Lean.InductiveVal. However, unlike in Lean, Ix.Inductive directly contains its
 corresponding Constructors and Recursors in order to enable content-addressing.
 --/
 structure Inductive where
+  name: Lean.Name
   levelParams : List Lean.Name
   type : Expr
   numParams : Nat
@@ -225,7 +248,10 @@ structure Inductive where
   isReflexive : Bool
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
+
 structure InductiveProj where
+  /-- name of an inductive within a mutual inductive block --/
+  name: Lean.Name
   /-- content-address of a mutual inductive block --/
   blockCont : Address
   /-- metadata content-address a mutual inductive block --/
@@ -235,28 +261,37 @@ structure InductiveProj where
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure ConstructorProj where
+  /-- name of a specific constructor within an inductive --/
+  name: Lean.Name
   /-- content-address of a mutual inductive block --/
   blockCont : Address
   /-- metadata content-address a mutual inductive block --/
   blockMeta : Address
   /-- index of a specific inductive datatype within the block --/
   idx   : Nat
+  /-- name of a specific inductive datatype within the block --/
+  induct: Lean.Name
   /-- index of a specific constructor within the inductive --/
   cidx  : Nat
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure RecursorProj where
+  /-- name of a specific recursor within the inductive --/
+  name: Lean.Name
   /-- content-address of a mutual inductive block --/
   blockCont : Address
   /-- metadata content-address of a mutual inductive block --/
   blockMeta : Address
   /-- index of a specific inductive datatype within the block --/
   idx : Nat
+  /-- name of a specific inductive datatype within the block --/
+  induct: Lean.Name
   /-- index of a specific recursor within the inductive --/
   ridx : Nat
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 structure DefinitionProj where
+  name: Lean.Name
   /-- content-address of a mutual definition block --/
   blockCont : Address
   /-- metadata content-address of a mutual definition block --/
@@ -270,6 +305,11 @@ structure MutualDefinitionBlock where
   ctx  : List (List Lean.Name)
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
+structure MutualInductiveBlock where
+  inds : List (List Inductive)
+  ctx  : List (List Lean.Name)
+  deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited
+
 inductive Const where
   | «axiom» : Axiom → Const
   | quotient : Quotient → Const
@@ -282,7 +322,7 @@ inductive Const where
   | definitionProj : DefinitionProj → Const
   -- constants to represent mutual blocks
   | mutDefBlock : MutualDefinitionBlock → Const
-  | mutIndBlock : List Inductive → Const
+  | mutIndBlock : MutualInductiveBlock → Const
   deriving Ord, BEq, Inhabited, Repr, Nonempty
 
 def Const.isMutBlock : Const → Bool
