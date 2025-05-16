@@ -282,9 +282,12 @@ partial def compileDefinition (struct: Lean.DefinitionVal)
       | .opaqueInfo x => mutOpaqs := mutOpaqs.push x
       | .thmInfo x => mutTheos := mutTheos.push x
       | x => throw $ .invalidConstantKind x.name "mutdef" x.ctorName
-  let mutualDefs <- sortDefs [mutDefs.toList]
-  let mutualOpaqs <- sortOpaqs [mutOpaqs.toList]
-  let mutualTheos <- sortTheos [mutTheos.toList]
+  let mutualDefs <- if mutDefs.isEmpty then pure []
+    else sortDefs [mutDefs.toList]
+  let mutualOpaqs <- if mutOpaqs.isEmpty then pure []
+    else sortOpaqs [mutOpaqs.toList]
+  let mutualTheos <- if mutTheos.isEmpty then pure []
+    else sortTheos [mutTheos.toList]
   -- Building the `mutCtx`
   let mut mutCtx := default
   let mut names := #[]
@@ -316,7 +319,7 @@ partial def compileDefinition (struct: Lean.DefinitionVal)
   -- Building and storing the block
   let definitions := defnDefs ++ opaqDefs ++ theoDefs
   let (blockAnonAddr, blockMetaAddr) ←
-    hashConst $ .mutDefBlock ⟨definitions, names.toList⟩
+    hashConst $ .mutual ⟨definitions, names.toList⟩
   modify fun stt =>
     { stt with blocks := stt.blocks.insert (blockAnonAddr, blockMetaAddr) }
   -- While iterating on the definitions from the mutual block, we need to track
@@ -405,20 +408,6 @@ partial def compileInductive (initInd: Lean.InductiveVal)
   let mut preInds := #[]
   let mut nameData : RBMap Lean.Name (List Lean.Name × List Lean.Name) compare
     := .empty
-  if initInd.all matches [_] then
-    let ind <- makePreInductive initInd
-    let numCtors := ind.ctors.length
-    let mut mutCtx := (.single ind.name 0)
-    for (c, cidx) in List.zipIdx ind.ctors do
-      mutCtx := mutCtx.insert c.name cidx
-    for (r, ridx) in List.zipIdx ind.recrs do
-      mutCtx := mutCtx.insert r.name (numCtors + ridx)
-    let indc <- withMutCtx mutCtx $ preInductiveToIR ind
-    let (anonAddr, metaAddr) <- hashConst $ .inductive indc
-    modify fun stt => { stt with
-      names := stt.names.insert ind.name (anonAddr, metaAddr)
-    }
-    return (anonAddr, metaAddr)
   -- collect all mutual inductives as Ix.PreInductives
   for indName in initInd.all do
     match ← findLeanConst indName with
@@ -449,8 +438,7 @@ partial def compileInductive (initInd: Lean.InductiveVal)
     i := i + 1 + numCtors + numRecrs
   -- compile each preinductive with the mutCtx
   let irInds ← withMutCtx mutCtx $ mutualInds.mapM (·.mapM preInductiveToIR)
-  let (blockAnonAddr, blockMetaAddr) ←
-    hashConst $ .mutIndBlock ⟨irInds, names.toList⟩
+  let (blockAnonAddr, blockMetaAddr) ← hashConst $ .inductive ⟨irInds, names.toList⟩
   modify fun stt =>
     { stt with blocks := stt.blocks.insert (blockAnonAddr, blockMetaAddr) }
   -- While iterating on the inductives from the mutual block, we need to track

@@ -87,13 +87,13 @@ def genConst : Gen Ix.Const := getSize >>= go
       let nested <- genNat'
       let (isRec, isRefl) <- Prod.mk <$> genBool <*> genBool
       return ⟨n, lvls, type, params, indices, all, ctors, recrs, nested, isRec, isRefl⟩
-    genMutDef : Gen Ix.MutualDefinitionBlock := do
+    genMutDef : Gen Ix.MutualBlock := do
       let nns <- resizeListOf (genListSize genName 1 5)
       let ds <- nns.mapM fun ns => do
         let x <- genDef
         ns.mapM (fun _ => pure x)
       return .mk ds nns
-    genMutInd : Gen Ix.MutualInductiveBlock := do
+    genMutInd : Gen Ix.InductiveBlock := do
       let nns <- resizeListOf (genListSize genName 1 5)
       let ds <- nns.mapM fun ns => do
         let x <- genInd
@@ -110,8 +110,8 @@ def genConst : Gen Ix.Const := getSize >>= go
         (100, .constructorProj <$> (.mk <$> genName <*> genAddress <*> genAddress <*> genNat' <*> genName <*> genNat')),
         (100, .recursorProj <$> (.mk <$> genName <*> genAddress <*> genAddress <*> genNat' <*> genName <*> genNat')),
         (100, .definitionProj <$> (.mk <$> genName <*> genAddress <*> genAddress <*> genNat')),
-        (100, .mutDefBlock <$> genMutDef),
-        (100, .mutIndBlock <$> genMutInd),
+        (100, .mutual <$> genMutDef),
+        (100, .inductive <$> genMutInd),
       ]
 
 instance : Shrinkable Ix.Const where

@@ -300,12 +300,12 @@ structure DefinitionProj where
   idx : Nat
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
-structure MutualDefinitionBlock where
+structure MutualBlock where
   defs : List (List Definition)
   ctx  : List (List Lean.Name)
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
-structure MutualInductiveBlock where
+structure InductiveBlock where
   inds : List (List Inductive)
   ctx  : List (List Lean.Name)
   deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited
@@ -314,19 +314,18 @@ inductive Const where
   | «axiom» : Axiom → Const
   | quotient : Quotient → Const
   | «definition»: Definition → Const
-  | «inductive» : Inductive → Const
   -- projections of mutual blocks
   | inductiveProj : InductiveProj → Const
   | constructorProj : ConstructorProj → Const
   | recursorProj : RecursorProj → Const
   | definitionProj : DefinitionProj → Const
   -- constants to represent mutual blocks
-  | mutDefBlock : MutualDefinitionBlock → Const
-  | mutIndBlock : MutualInductiveBlock → Const
+  | «mutual» : MutualBlock → Const
+  | «inductive» : InductiveBlock → Const
   deriving Ord, BEq, Inhabited, Repr, Nonempty
 
 def Const.isMutBlock : Const → Bool
-  | .mutDefBlock _ | .mutIndBlock _ => true
+  | .mutual _ | .inductive _ => true
   | _ => false
 
 namespace Level

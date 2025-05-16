@@ -94,26 +94,24 @@ inductive Const where
   -- 0xC0
   | defn : Definition -> Const
   -- 0xC1
-  | indc : Inductive -> Const
-  -- 0xC2
   | axio : Axiom -> Const
-  -- 0xC3
+  -- 0xC2
   | quot : Quotient -> Const
-  -- 0xC4
+  -- 0xC3
   | ctorProj : ConstructorProj -> Const
-  -- 0xC5
+  -- 0xC4
   | recrProj : RecursorProj -> Const
-  -- 0xC6
+  -- 0xC5
   | indcProj : InductiveProj -> Const
-  -- 0xC7
+  -- 0xC6
   | defnProj : DefinitionProj -> Const
-  -- 0xC8
+  -- 0xC7
   | mutDef : List Definition -> Const
-  -- 0xC9
+  -- 0xC8
   | mutInd : List Inductive -> Const
-  -- 0xCA
+  -- 0xC9
   | meta   : Metadata -> Const
-  -- 0xCB
+  -- 0xCA
   | proof : Proof -> Const
   -- 0xCC
   | comm: Comm -> Const
@@ -121,17 +119,16 @@ inductive Const where
 
 def putConst : Const → PutM
 | .defn x => putUInt8 0xC0 *> putDefn x
-| .indc x => putUInt8 0xC1 *> putIndc x
-| .axio x => putUInt8 0xC2 *> putNatl x.lvls *> putExpr x.type
-| .quot x => putUInt8 0xC3 *> putNatl x.lvls *> putExpr x.type *> putQuotKind x.kind
-| .ctorProj x => putUInt8 0xC4 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.cidx
-| .recrProj x => putUInt8 0xC5 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.ridx
-| .indcProj x => putUInt8 0xC6 *> putBytes x.block.hash *> putNatl x.idx
-| .defnProj x => putUInt8 0xC7 *> putBytes x.block.hash *> putNatl x.idx
-| .mutDef xs => putUInt8 0xC8 *> putArray putDefn xs
-| .mutInd xs => putUInt8 0xC9 *> putArray putIndc xs
-| .meta m => putUInt8 0xCA *> putMetadata m
-| .proof p => putUInt8 0xCB *> putProof p
+| .axio x => putUInt8 0xC1 *> putNatl x.lvls *> putExpr x.type
+| .quot x => putUInt8 0xC2 *> putNatl x.lvls *> putExpr x.type *> putQuotKind x.kind
+| .ctorProj x => putUInt8 0xC3 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.cidx
+| .recrProj x => putUInt8 0xC4 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.ridx
+| .indcProj x => putUInt8 0xC5 *> putBytes x.block.hash *> putNatl x.idx
+| .defnProj x => putUInt8 0xC6 *> putBytes x.block.hash *> putNatl x.idx
+| .mutDef xs => putUInt8 0xC7 *> putArray putDefn xs
+| .mutInd xs => putUInt8 0xC8 *> putArray putIndc xs
+| .meta m => putUInt8 0xC9 *> putMetadata m
+| .proof p => putUInt8 0xCA *> putProof p
 | .comm c => putUInt8 0xCC *> putComm c
   where
     putDefn (x: Definition) := do
@@ -187,17 +184,16 @@ def getConst : GetM Const := do
   let tag ← getUInt8
   match tag with
   | 0xC0 => .defn <$> getDefn
-  | 0xC1 => .indc <$> getIndc
-  | 0xC2 => .axio <$> (.mk <$> getNatl <*> getExpr)
-  | 0xC3 => .quot <$> (.mk <$> getNatl <*> getExpr <*> getQuotKind)
-  | 0xC4 => .ctorProj <$> (.mk <$> getAddr <*> getNatl <*> getNatl)
-  | 0xC5 => .recrProj <$> (.mk <$> getAddr <*> getNatl <*> getNatl)
-  | 0xC6 => .indcProj <$> (.mk <$> getAddr <*> getNatl)
-  | 0xC7 => .defnProj <$> (.mk <$> getAddr <*> getNatl)
-  | 0xC8 => .mutDef <$> getArray getDefn
-  | 0xC9 => .mutInd <$> getArray getIndc
-  | 0xCA => .meta <$> getMetadata
-  | 0xCB => .proof <$> getProof
+  | 0xC1 => .axio <$> (.mk <$> getNatl <*> getExpr)
+  | 0xC2 => .quot <$> (.mk <$> getNatl <*> getExpr <*> getQuotKind)
+  | 0xC3 => .ctorProj <$> (.mk <$> getAddr <*> getNatl <*> getNatl)
+  | 0xC4 => .recrProj <$> (.mk <$> getAddr <*> getNatl <*> getNatl)
+  | 0xC5 => .indcProj <$> (.mk <$> getAddr <*> getNatl)
+  | 0xC6 => .defnProj <$> (.mk <$> getAddr <*> getNatl)
+  | 0xC7 => .mutDef <$> getArray getDefn
+  | 0xC8 => .mutInd <$> getArray getIndc
+  | 0xC9 => .meta <$> getMetadata
+  | 0xCA => .proof <$> getProof
   | 0xCC => .comm <$> getComm
   | e => throw s!"expected Const tag, got {e}"
   where

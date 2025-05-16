@@ -251,7 +251,6 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
   let type <- dematExpr x.type
   return .axio (.mk lvls type)
 | .«definition» x => .defn <$> dematDefn x
-| .«inductive» x => .indc <$> dematIndc x
 | .quotient x => do
   dematMeta [.name x.name]
   let lvls <- dematLevels x.levelParams
@@ -269,14 +268,14 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
 | .definitionProj x => do
   dematMeta [.name x.name, .link x.blockMeta]
   return .defnProj (.mk x.blockCont x.idx)
-| .mutDefBlock x => do
+| .mutual x => do
   dematMeta [.mutCtx x.ctx]
   let defs <- x.defs.mapM fun ds => ds.mapM dematDefn
   let ds <- defs.mapM fun d => match d.head? with
     | .some a => pure a
     | .none => throw .emptyEquivalenceClass
   return .mutDef ds
-| .mutIndBlock x => do
+| .inductive x => do
   dematMeta [.mutCtx x.ctx]
   let inds <- x.inds.mapM fun is => is.mapM dematIndc
   let is <- inds.mapM fun i => match i.head? with
@@ -335,7 +334,6 @@ def constAddress (x: Ix.Const) : Except TransportError Address := do
 
 partial def rematConst : Ixon.Const -> RematM Ix.Const
 | .defn x => .«definition» <$> rematDefn x
-| .indc x => .«inductive» <$> rematIndc x
 | .axio x => do
   let name <- match (<- rematMeta) with
     | [.name x] => pure x
@@ -381,7 +379,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
       let d <- rematDefn x
       ds := ds.push d
     defs := defs.push ds.toList
-  return .mutDefBlock ⟨defs.toList, ctx⟩
+  return .mutual ⟨defs.toList, ctx⟩
 | .mutInd xs => do
   let ctx <- match (<- rematMeta) with
     | [.mutCtx x] => pure x
@@ -393,7 +391,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
       let i <- rematIndc x
       is := is.push i
     inds := inds.push is.toList
-  return .mutIndBlock ⟨inds.toList, ctx⟩
+  return .inductive ⟨inds.toList, ctx⟩
 | .meta m => throw (.rawMetadata m)
 -- TODO: This could return a Proof inductive, since proofs have no metadata
 | .proof p => throw (.rawProof p)
