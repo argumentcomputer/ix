@@ -13,26 +13,53 @@ use transparent::Transparent;
 
 pub(crate) type F = BinaryField128b;
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct OracleIdx(pub(crate) usize);
+
+impl OracleIdx {
+    #[inline]
+    pub(crate) fn oracle_id(&self, offset: usize) -> OracleId {
+        OracleId::from_index(self.0 + offset)
+    }
+
+    #[inline]
+    pub(crate) fn val(&self) -> usize {
+        self.0
+    }
+
+    #[inline]
+    pub(crate) fn offset(&mut self, by: usize) {
+        self.0 += by
+    }
+}
+
+impl std::fmt::Display for OracleIdx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.val(), f)
+    }
+}
+
 pub enum OracleKind {
     Committed,
     LinearCombination {
         offset: F,
-        inner: Vec<(OracleId, F)>,
+        inner: Vec<(OracleIdx, F)>,
     },
     Packed {
-        inner: OracleId,
+        inner: OracleIdx,
         log_degree: usize,
     },
     Transparent(Transparent),
     StepDown,
     Shifted {
-        inner: OracleId,
+        inner: OracleIdx,
         shift_offset: u32,
         block_bits: usize,
         variant: ShiftVariant,
     },
     Projected {
-        inner: OracleId,
+        inner: OracleIdx,
         mask: u64,
         mask_bits: Vec<F>,
         unprojected_size: usize,

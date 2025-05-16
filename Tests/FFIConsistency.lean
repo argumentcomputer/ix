@@ -36,7 +36,7 @@ def genArithExpr : Gen ArithExpr := getSize >>= go
       frequency [
         (30, .const <$> genUInt128),
         (30, .var <$> genUSize),
-        (30, .oracle <$> OracleId.mk <$> genUSize),
+        (30, .oracle <$> OracleIdx.mk <$> genUSize),
         (25, .add <$> go n <*> go n),
         (25, .mul <$> go n <*> go n),
         (40, .pow <$> go n <*> genUInt64)

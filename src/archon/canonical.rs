@@ -1,13 +1,10 @@
-use binius_core::{
-    constraint_system::channel::{Flush, FlushDirection, OracleOrConst},
-    oracle::ShiftVariant,
-};
+use binius_core::{constraint_system::channel::FlushDirection, oracle::ShiftVariant};
 use binius_field::BinaryField128b;
 
 use super::{
-    F, OracleInfo, OracleKind,
+    OracleIdx, OracleInfo, OracleKind,
     arith_expr::ArithExpr,
-    circuit::{CircuitModule, Constraint},
+    circuit::{ArchonFlush, CircuitModule, Constraint},
     transparent::Transparent,
 };
 
@@ -103,6 +100,15 @@ impl<T: Canonical> Canonical for Vec<T> {
         for t in self {
             Canonical::write(t, buffer);
         }
+    }
+}
+
+impl Canonical for OracleIdx {
+    fn size(&self) -> usize {
+        Canonical::size(&self.val())
+    }
+    fn write(&self, buffer: &mut Vec<u8>) {
+        Canonical::write(&self.val(), buffer);
     }
 }
 
@@ -211,30 +217,6 @@ impl Canonical for OracleInfo {
     }
 }
 
-impl Canonical for OracleOrConst<F> {
-    fn size(&self) -> usize {
-        match self {
-            Self::Oracle(o) => 1 + Canonical::size(o),
-            Self::Const { base, tower_level } => {
-                1 + Canonical::size(base) + Canonical::size(tower_level)
-            }
-        }
-    }
-    fn write(&self, buffer: &mut Vec<u8>) {
-        match self {
-            Self::Oracle(o) => {
-                buffer.push(0);
-                Canonical::write(o, buffer);
-            }
-            Self::Const { base, tower_level } => {
-                buffer.push(1);
-                Canonical::write(base, buffer);
-                Canonical::write(tower_level, buffer);
-            }
-        }
-    }
-}
-
 impl Canonical for FlushDirection {
     fn size(&self) -> usize {
         1
@@ -247,19 +229,19 @@ impl Canonical for FlushDirection {
     }
 }
 
-impl Canonical for Flush<F> {
+impl Canonical for ArchonFlush {
     fn size(&self) -> usize {
         let Self {
             oracles,
             channel_id,
             direction,
-            selectors,
+            selector,
             multiplicity,
         } = self;
         Canonical::size(oracles)
             + Canonical::size(channel_id)
             + Canonical::size(direction)
-            + Canonical::size(selectors)
+            + Canonical::size(selector)
             + Canonical::size(multiplicity)
     }
     fn write(&self, buffer: &mut Vec<u8>) {
@@ -267,13 +249,13 @@ impl Canonical for Flush<F> {
             oracles,
             channel_id,
             direction,
-            selectors,
+            selector,
             multiplicity,
         } = self;
         Canonical::write(oracles, buffer);
         Canonical::write(channel_id, buffer);
         Canonical::write(direction, buffer);
-        Canonical::write(selectors, buffer);
+        Canonical::write(selector, buffer);
         Canonical::write(multiplicity, buffer);
     }
 }
@@ -327,7 +309,7 @@ impl Canonical for Constraint {
     fn size(&self) -> usize {
         let Self {
             name: _,
-            oracle_ids,
+            oracle_idxs: oracle_ids,
             composition,
         } = self;
         Canonical::size(oracle_ids) + Canonical::size(composition)
@@ -335,7 +317,7 @@ impl Canonical for Constraint {
     fn write(&self, buffer: &mut Vec<u8>) {
         let Self {
             name: _,
-            oracle_ids,
+            oracle_idxs: oracle_ids,
             composition,
         } = self;
         Canonical::write(oracle_ids, buffer);
@@ -350,7 +332,7 @@ impl Canonical for CircuitModule {
             oracles,
             flushes,
             constraints,
-            non_zero_oracle_ids,
+            non_zero_oracle_idxs: non_zero_oracle_ids,
             namespacer: _,
         } = self;
         Canonical::size(module_id)
@@ -365,7 +347,7 @@ impl Canonical for CircuitModule {
             oracles,
             flushes,
             constraints,
-            non_zero_oracle_ids,
+            non_zero_oracle_idxs: non_zero_oracle_ids,
             namespacer: _,
         } = self;
         Canonical::write(module_id, buffer);

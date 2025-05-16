@@ -1,16 +1,11 @@
-use binius_core::oracle::OracleId;
 use binius_field::BinaryField128b;
 
 use crate::{
-    archon::arith_expr::ArithExpr,
-    lean::{
-        ctor::LeanCtorObject,
-        ffi::{as_ref_unsafe, boxed_usize_ptr_to_usize},
-        sarray::LeanSArrayObject,
-    },
+    archon::{OracleIdx, arith_expr::ArithExpr},
+    lean::{ctor::LeanCtorObject, ffi::as_ref_unsafe, sarray::LeanSArrayObject},
 };
 
-use super::external_ptr_to_u128;
+use super::{boxed_usize_ptr_to_oracle_idx, external_ptr_to_u128};
 
 pub(super) fn lean_ctor_to_arith_expr(ctor: &LeanCtorObject) -> ArithExpr {
     match ctor.tag() {
@@ -28,7 +23,7 @@ pub(super) fn lean_ctor_to_arith_expr(ctor: &LeanCtorObject) -> ArithExpr {
         2 => {
             // Oracle
             let [ptr] = ctor.objs();
-            ArithExpr::Oracle(boxed_usize_ptr_to_usize(ptr))
+            ArithExpr::Oracle(boxed_usize_ptr_to_oracle_idx(ptr))
         }
         3 => {
             // Add
@@ -71,8 +66,8 @@ fn arith_expr_from_bytes(bytes: &[u8]) -> ArithExpr {
         2 => {
             let mut slice = [0; size_of::<usize>()];
             slice.copy_from_slice(&bytes[1..size_of::<usize>() + 1]);
-            let u = OracleId::from_le_bytes(slice);
-            ArithExpr::Oracle(u)
+            let idx = usize::from_le_bytes(slice);
+            ArithExpr::Oracle(OracleIdx(idx))
         }
         3 => {
             let x_size = bytes[1] as usize;
