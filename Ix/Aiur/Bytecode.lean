@@ -378,13 +378,31 @@ def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
   | .constructor .. => acc
   decls.fold (init := {}) pass
 
+partial def accMemWidths (block : Bytecode.Block) (memWidths : Array Nat) : Array Nat :=
+  let memWidths := block.ops.foldl (init := memWidths) fun acc op =>
+    match op with
+    | .store values =>
+      let width := values.size
+      if acc.contains width then acc else acc.push width
+    | _ => acc
+  match block.ctrl with
+  | .match _ branches defaultBranch =>
+    let memWidths := branches.foldl (init := memWidths) fun acc (_, block) =>
+      accMemWidths block acc
+    match defaultBranch with
+    | some block => accMemWidths block memWidths
+    | none => memWidths
+  | .if _ tt ff => accMemWidths tt (accMemWidths ff memWidths)
+  | .ret .. => memWidths
+
 def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
   let layout := decls.dataTypeLayouts
-  let functions := decls.fold (init := #[]) fun functions _ decl => match decl with
-    | .function function => functions.push (function.compile layout)
-    | _ => functions
-  -- TODO
-  let memWidths := #[]
-  { functions, memWidths }
+  let (functions, memWidths) := decls.fold (init := (#[], #[]))
+    fun acc@(functions, memWidths) _ decl => match decl with
+      | .function function =>
+        let compiledFunction := function.compile layout
+        (functions.push compiledFunction, accMemWidths compiledFunction.body memWidths)
+      | _ => acc
+  ⟨functions, memWidths.qsort⟩
 
 end Aiur

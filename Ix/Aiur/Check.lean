@@ -28,6 +28,9 @@ inductive CheckError
   | duplicatedBind : Pattern → CheckError
   deriving Repr
 
+instance : ToString CheckError where
+  toString e := repr e |>.pretty
+
 /--
 Constructs a map of declarations from a toplevel, ensuring that there are no duplicate names
 for functions and datatypes.

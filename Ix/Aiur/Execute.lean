@@ -4,9 +4,12 @@ import Ix.Aiur.Bytecode
 namespace Aiur.Bytecode
 
 structure QueryResult where
-  result : Array UInt64
+  values : Array UInt64
   multiplicity : UInt64
   deriving Inhabited
+
+instance : ToString QueryResult where
+  toString x := s!"{x.multiplicity}×{x.values}"
 
 @[inline] def QueryResult.bumpMultiplicity (res : QueryResult) : QueryResult :=
   { res with multiplicity := res.multiplicity + 1 }
@@ -25,6 +28,12 @@ def new (toplevel : Toplevel) : QueryRecord :=
   let funcQueries := toplevel.functions.map fun _ => default
   let memQueries := toplevel.memWidths.map fun width => (width, default)
   ⟨funcQueries, memQueries, #[], #[]⟩
+
+def getFuncResult (record : QueryRecord) (funcIdx : FuncIdx) (input : Array UInt64) :
+    Option (Array UInt64) := do
+  let queryMap ← record.funcQueries[funcIdx.toNat]?
+  let queryResult ← queryMap.getByKey input
+  some queryResult.values
 
 end QueryRecord
 
@@ -121,7 +130,7 @@ partial def Op.execute : Op → ExecuteM Unit
     | some res =>
       let newRes := res.bumpMultiplicity
       let newMemMap := memMap.insert values newRes
-      modify (·.updateForMem memMapIdx len newMemMap (·.append newRes.result))
+      modify (·.updateForMem memMapIdx len newMemMap (·.append newRes.values))
     | none =>
       let ptr := memMap.size.toUInt64
       let newRes := QueryResult.mk #[ptr] 1
@@ -144,9 +153,8 @@ partial def Op.execute : Op → ExecuteM Unit
     | some res =>
       let newRes := res.bumpMultiplicity
       let newFuncQueryMap := funcQueryMap.insert args newRes
-      modify (·.updateForFunc funcIdx newFuncQueryMap (·.append res.result))
+      modify (·.updateForFunc funcIdx newFuncQueryMap (·.append res.values))
     | none => do
-      let stt ← get
       let map := stt.map
       set { stt with map := args }
       let ctx ← read

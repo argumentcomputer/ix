@@ -24,16 +24,14 @@ def insert : IndexMap α β := by
   refine
     match h : m.indices[a]? with
     | none => ⟨m.pairs.push (a, b), m.indices.insert a m.pairs.size, ?_⟩
-    | some idx =>
-      have := m.validIndices a h
-      ⟨m.pairs.set idx (a, b), m.indices.insert a idx, ?_⟩
+    | some idx => ⟨m.pairs.set idx (a, b) (m.validIndices a h), m.indices, ?_⟩
   all_goals
     intro i a' ha'
     simp [Std.HashMap.getElem?_insert] at *
-    split at ha' <;> simp_all
-    have := m.validIndices a' ha'
-  · exact Nat.lt_succ_of_lt this
-  · exact this
+  · split at ha'
+    simp_all
+    exact Nat.lt_succ_of_lt (m.validIndices a' ha')
+  · exact m.validIndices a' ha'
 
 @[inline] def size : Nat :=
   m.pairs.size

@@ -44,13 +44,13 @@ where
   throwOutOfRange stx n ty :=
     throw $ .error stx s!"{n} is out of range for {ty}"
 
-declare_syntax_cat                       pattern
-syntax ("." noWs)? ident               : pattern
-syntax "_"                             : pattern
-syntax ident pattern+                  : pattern
-syntax primitive                       : pattern
-syntax "(" pattern (", " pattern)* ")" : pattern
-syntax pattern "|" pattern             : pattern
+declare_syntax_cat                             pattern
+syntax ("." noWs)? ident                     : pattern
+syntax "_"                                   : pattern
+syntax ident "(" pattern (", " pattern)* ")" : pattern
+syntax primitive                             : pattern
+syntax "(" pattern (", " pattern)* ")"       : pattern
+syntax pattern "|" pattern                   : pattern
 
 def elabListCore (head : α) (tail : Array α) (elabFn : α → TermElabM Expr)
     (listEltType : Expr) : TermElabM Expr := do
@@ -68,10 +68,9 @@ def elabEmptyList (listEltTypeName : Name) : TermElabM Expr :=
   mkListLit (mkConst listEltTypeName) []
 
 partial def elabPattern : ElabStxCat `pattern
-  | `(pattern| $v:ident $[$ps:pattern]*) => do
-    let ps ← ps.mapM elabPattern
+  | `(pattern| $v:ident($p:pattern $[, $ps:pattern]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr v.getId]
-    mkAppM ``Pattern.ref #[g, ← mkListLit (mkConst ``Pattern) ps.toList]
+    mkAppM ``Pattern.ref #[g, ← elabList p ps elabPattern ``Pattern]
   | `(pattern| .$i:ident) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     mkAppM ``Pattern.ref #[g, ← elabEmptyList ``Pattern]

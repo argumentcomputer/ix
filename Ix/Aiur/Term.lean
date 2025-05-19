@@ -158,6 +158,9 @@ structure Toplevel where
   functions : List Function
   deriving Repr
 
+def Toplevel.getFuncIdx (toplevel : Toplevel) (funcName : Lean.Name) : Option Nat := do
+  toplevel.functions.findIdx? fun function => function.name.toName == funcName
+
 inductive Declaration
   | function : Function → Declaration
   | dataType : DataType → Declaration
