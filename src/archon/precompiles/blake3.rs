@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use crate::archon::ModuleId;
 use crate::archon::arith_expr::ArithExpr;
 use crate::archon::circuit::CircuitModule;
 use crate::archon::witness::WitnessModule;
+use crate::archon::{ModuleId, OracleIdx};
 use binius_circuits::arithmetic::u32::LOG_U32_BITS;
-use binius_core::oracle::{OracleId, ShiftVariant};
+use binius_core::oracle::ShiftVariant;
 use binius_field::{BinaryField1b, BinaryField32b, BinaryField128b, Field};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 
@@ -63,8 +63,8 @@ pub struct Trace {
 }
 
 pub struct Blake3CompressionOracles {
-    pub input: [OracleId; STATE_SIZE],
-    pub output: [OracleId; STATE_SIZE],
+    pub input: [OracleIdx; STATE_SIZE],
+    pub output: [OracleIdx; STATE_SIZE],
 }
 
 #[allow(clippy::type_complexity)]
@@ -108,11 +108,11 @@ fn state_transition_module(
     let height = 2u64.pow(u32::try_from(state_n_vars)?);
 
     let mut circuit_module = CircuitModule::new(id);
-    let state_transitions: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
+    let state_transitions: [OracleIdx; STATE_SIZE] = array_util::try_from_fn(|xy| {
         circuit_module.add_committed::<B32>(&format!("state-transition-{:?}", xy))
     })?;
 
-    let input: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
+    let input: [OracleIdx; STATE_SIZE] = array_util::try_from_fn(|xy| {
         circuit_module.add_projected(
             &format!("input-{:?}", xy),
             state_transitions[xy],
@@ -122,7 +122,7 @@ fn state_transition_module(
         )
     })?;
 
-    let output: [OracleId; STATE_SIZE] = array_util::try_from_fn(|xy| {
+    let output: [OracleIdx; STATE_SIZE] = array_util::try_from_fn(|xy| {
         circuit_module.add_projected(
             &format!("output-{:?}", xy),
             state_transitions[xy],
@@ -228,10 +228,10 @@ fn additions_xor_rotates_module(
         ShiftVariant::CircularLeft,
     )?;
 
-    let couts: [OracleId; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
+    let couts: [OracleIdx; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
         circuit_module.add_committed::<B1>(&format!("cout-{:?}", xy))
     })?;
-    let cins: [OracleId; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
+    let cins: [OracleIdx; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
         circuit_module.add_shifted(
             &format!("cin-{:?}", xy),
             couts[xy],

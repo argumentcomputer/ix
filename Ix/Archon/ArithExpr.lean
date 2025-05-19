@@ -1,15 +1,13 @@
+import Ix.Archon.OracleIdx
 import Ix.Unsigned
-import Ix.Binius.Common
 
 namespace Archon
-
-open Binius
 
 /-- Arithmetic expression type for BinaryField128b -/
 inductive ArithExpr
   | const : UInt128 → ArithExpr
   | var : USize → ArithExpr
-  | oracle : OracleId → ArithExpr
+  | oracle : OracleIdx → ArithExpr
   | add : ArithExpr → ArithExpr → ArithExpr
   | mul : ArithExpr → ArithExpr → ArithExpr
   | pow : ArithExpr → UInt64 → ArithExpr

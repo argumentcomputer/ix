@@ -1,9 +1,5 @@
 namespace Binius
 
-structure OracleId where
-  toUSize : USize
-  deriving Inhabited
-
 structure ChannelId where
   toUSize : USize
   deriving Inhabited

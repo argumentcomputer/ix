@@ -159,6 +159,7 @@ pub fn verify(
 
 #[cfg(test)]
 mod tests {
+    use crate::archon::OracleIdx;
     use crate::archon::precompiles::blake3::blake3_compress;
     use crate::archon::precompiles::blake3::tests::generate_trace;
     use crate::archon::protocol::{prove, verify};
@@ -170,14 +171,13 @@ mod tests {
         witness::{WitnessModule, compile_witness_modules},
     };
     use anyhow::Result;
-    use binius_core::oracle::OracleId;
     use binius_field::BinaryField1b as B1;
     use binius_hal::make_portable_backend;
 
     struct Oracles {
-        s: OracleId,
-        a: OracleId,
-        b: OracleId,
+        s: OracleIdx,
+        a: OracleIdx,
+        b: OracleIdx,
     }
 
     fn a_xor_b_circuit_module(module_id: ModuleId) -> Result<(CircuitModule, Oracles)> {

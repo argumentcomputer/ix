@@ -5,9 +5,8 @@ use binius_core::oracle::ShiftVariant;
 use binius_core::{
     constraint_system::{
         ConstraintSystem,
-        channel::{ChannelId, Flush, FlushDirection},
+        channel::{ChannelId, FlushDirection},
     },
-    oracle::OracleId,
     transparent::step_down::StepDown,
 };
 use binius_field::{TowerField, arch::OptimalUnderlier, underlier::UnderlierType};
@@ -17,6 +16,7 @@ use std::sync::Arc;
 
 use crate::archon::transparent::{Incremental, constant_from_b128};
 
+use super::OracleIdx;
 use super::{
     F, ModuleId, OracleInfo, OracleKind, arith_expr::ArithExpr, transparent::Transparent,
     witness::WitnessModule,
@@ -37,12 +37,20 @@ pub fn init_witness_modules(circuit_modules: &[CircuitModule]) -> Result<Vec<Wit
         .collect()
 }
 
+pub(super) struct ArchonFlush {
+    pub(super) oracles: Vec<OracleIdx>,
+    pub(super) channel_id: ChannelId,
+    pub(super) direction: FlushDirection,
+    pub(super) selector: OracleIdx,
+    pub(super) multiplicity: u64,
+}
+
 pub struct CircuitModule {
     pub(super) module_id: ModuleId,
     pub(super) oracles: Freezable<Vec<OracleInfo>>,
-    pub(super) flushes: Vec<Flush<F>>,
+    pub(super) flushes: Vec<ArchonFlush>,
     pub(super) constraints: Vec<Constraint>,
-    pub(super) non_zero_oracle_ids: Vec<OracleId>,
+    pub(super) non_zero_oracle_idxs: Vec<OracleIdx>,
     pub(super) namespacer: Namespacer,
 }
 
@@ -60,14 +68,14 @@ impl CircuitModule {
             oracles,
             flushes: vec![],
             constraints: vec![],
-            non_zero_oracle_ids: vec![],
+            non_zero_oracle_idxs: vec![],
             namespacer: Namespacer::default(),
         }
     }
 
     #[inline]
-    pub const fn selector(&self) -> OracleId {
-        0
+    pub const fn selector(&self) -> OracleIdx {
+        OracleIdx(0)
     }
 
     #[inline]
@@ -88,15 +96,15 @@ impl CircuitModule {
         &mut self,
         direction: FlushDirection,
         channel_id: ChannelId,
-        selector: OracleId,
-        oracle_ids: impl IntoIterator<Item = OracleId>,
+        selector: OracleIdx,
+        oracle_idxs: impl IntoIterator<Item = OracleIdx>,
         multiplicity: u64,
     ) {
-        self.flushes.push(Flush {
-            oracles: oracle_ids.into_iter().map(OracleOrConst::Oracle).collect(),
+        self.flushes.push(ArchonFlush {
+            oracles: oracle_idxs.into_iter().collect(),
             channel_id,
             direction,
-            selectors: vec![selector],
+            selector,
             multiplicity,
         });
     }
@@ -105,26 +113,26 @@ impl CircuitModule {
     pub fn assert_zero(
         &mut self,
         name: &(impl ToString + ?Sized),
-        oracle_ids: impl IntoIterator<Item = OracleId>,
+        oracle_idxs: impl IntoIterator<Item = OracleIdx>,
         composition: ArithExpr,
     ) {
         self.constraints.push(Constraint {
             name: name.to_string(),
-            oracle_ids: oracle_ids.into_iter().collect(),
+            oracle_idxs: oracle_idxs.into_iter().collect(),
             composition,
         });
     }
 
     #[inline]
-    pub fn assert_not_zero(&mut self, oracle_id: OracleId) {
-        self.non_zero_oracle_ids.push(oracle_id);
+    pub fn assert_not_zero(&mut self, oracle_idx: OracleIdx) {
+        self.non_zero_oracle_idxs.push(oracle_idx);
     }
 
     #[inline]
     pub fn add_committed<FS: TowerField>(
         &mut self,
         name: &(impl ToString + ?Sized),
-    ) -> Result<OracleId> {
+    ) -> Result<OracleIdx> {
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level: FS::TOWER_LEVEL,
@@ -138,7 +146,7 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         transparent: Transparent,
-    ) -> Result<OracleId> {
+    ) -> Result<OracleIdx> {
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level: transparent.tower_level(),
@@ -151,13 +159,13 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         offset: F,
-        inner: impl IntoIterator<Item = (OracleId, F)>,
-    ) -> Result<OracleId> {
+        inner: impl IntoIterator<Item = (OracleIdx, F)>,
+    ) -> Result<OracleIdx> {
         let inner = inner.into_iter().collect::<Vec<_>>();
         let tower_level = inner
             .iter()
-            .map(|(oracle_id, coeff)| {
-                self.oracles.get_ref()[*oracle_id]
+            .map(|(oracle_idx, coeff)| {
+                self.oracles.get_ref()[oracle_idx.val()]
                     .tower_level
                     .max(coeff.min_tower_level())
             })
@@ -176,10 +184,10 @@ impl CircuitModule {
     pub fn add_packed(
         &mut self,
         name: &(impl ToString + ?Sized),
-        inner: OracleId,
+        inner: OracleIdx,
         log_degree: usize,
-    ) -> Result<OracleId> {
-        let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
+    ) -> Result<OracleIdx> {
+        let inner_tower_level = self.oracles.get_ref()[inner.val()].tower_level;
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level: inner_tower_level + log_degree,
@@ -191,12 +199,12 @@ impl CircuitModule {
     pub fn add_shifted(
         &mut self,
         name: &(impl ToString + ?Sized),
-        inner: OracleId,
+        inner: OracleIdx,
         shift_offset: u32,
         block_bits: usize,
         variant: ShiftVariant,
-    ) -> Result<OracleId> {
-        let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
+    ) -> Result<OracleIdx> {
+        let inner_tower_level = self.oracles.get_ref()[inner.val()].tower_level;
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level: inner_tower_level,
@@ -213,12 +221,12 @@ impl CircuitModule {
     pub fn add_projected(
         &mut self,
         name: &(impl ToString + ?Sized),
-        inner: OracleId,
+        inner: OracleIdx,
         mask: u64,
         unprojected_size: usize,
         start_index: usize,
-    ) -> Result<OracleId> {
-        let inner_tower_level = self.oracles.get_ref()[inner].tower_level;
+    ) -> Result<OracleIdx> {
+        let inner_tower_level = self.oracles.get_ref()[inner.val()].tower_level;
 
         let mut selector_binary: Vec<F> = (0..64)
             .map(|n| F::from(((mask >> n) & 1) as u128))
@@ -252,9 +260,9 @@ impl CircuitModule {
     }
 
     #[inline]
-    fn add_oracle_info(&mut self, oracle_info: OracleInfo) -> Result<OracleId> {
+    fn add_oracle_info(&mut self, oracle_info: OracleInfo) -> Result<OracleIdx> {
         self.oracles.get_mut()?.push(oracle_info);
-        Ok(self.oracles.get_ref().len() - 1)
+        Ok(OracleIdx(self.oracles.get_ref().len() - 1))
     }
 }
 
@@ -302,11 +310,11 @@ pub fn compile_circuit_modules(
                     let n_vars = n_vars_fn(*tower_level);
                     let inner = inner
                         .iter()
-                        .map(|(oracle_id, f)| (oracle_id + oracle_offset, *f));
+                        .map(|(oracle_idx, f)| (oracle_idx.oracle_id(oracle_offset), *f));
                     builder.add_linear_combination_with_offset(name, n_vars, *offset, inner)?
                 }
                 OracleKind::Packed { inner, log_degree } => {
-                    builder.add_packed(name, inner + oracle_offset, *log_degree)?
+                    builder.add_packed(name, inner.oracle_id(oracle_offset), *log_degree)?
                 }
                 OracleKind::Transparent(Transparent::Constant(b128)) => {
                     let n_vars = n_vars_fn(*tower_level);
@@ -332,7 +340,7 @@ pub fn compile_circuit_modules(
                     variant,
                 } => builder.add_shifted(
                     name,
-                    inner + oracle_offset,
+                    inner.oracle_id(oracle_offset),
                     *shift_offset as usize,
                     *block_bits,
                     *variant,
@@ -346,7 +354,7 @@ pub fn compile_circuit_modules(
                     start_index,
                 } => builder.add_projected(
                     name,
-                    inner + oracle_offset,
+                    inner.oracle_id(oracle_offset),
                     selector_binary.clone(),
                     *start_index,
                 )?,
@@ -355,38 +363,43 @@ pub fn compile_circuit_modules(
 
         for Constraint {
             name,
-            oracle_ids,
+            oracle_idxs,
             composition,
         } in &module.constraints
         {
-            let mut oracle_ids = oracle_ids.iter().map(|o| o + oracle_offset).collect();
+            let mut oracle_ids = oracle_idxs
+                .iter()
+                .map(|o| o.oracle_id(oracle_offset))
+                .collect();
             let mut composition = composition.clone();
             composition.offset_oracles(oracle_offset);
             let composition = composition.into_arith_expr_core(&mut oracle_ids);
             builder.assert_zero(name, oracle_ids, composition.into());
         }
 
-        for non_zero_oracle_id in &module.non_zero_oracle_ids {
-            builder.assert_not_zero(non_zero_oracle_id + oracle_offset);
+        for non_zero_oracle_idx in &module.non_zero_oracle_idxs {
+            builder.assert_not_zero(non_zero_oracle_idx.oracle_id(oracle_offset));
         }
 
-        for Flush {
+        for ArchonFlush {
             oracles,
             channel_id,
             direction,
-            selectors,
+            selector,
             multiplicity,
         } in &module.flushes
         {
-            let oracles = oracles.iter().map(|o| match o {
-                OracleOrConst::Const { .. } => *o,
-                OracleOrConst::Oracle(o) => OracleOrConst::Oracle(o + oracle_offset),
-            });
+            // let oracles = oracles.iter().map(|o| match o {
+            //     OracleOrConst::Const { .. } => *o,
+            //     OracleOrConst::Oracle(o) => OracleOrConst::Oracle(o + oracle_offset),
+            // });
             builder.flush_custom(
                 *direction,
                 *channel_id,
-                selectors.iter().map(|s| s + oracle_offset).collect(),
-                oracles,
+                vec![selector.oracle_id(oracle_offset)],
+                oracles
+                    .iter()
+                    .map(|o| OracleOrConst::Oracle(o.oracle_id(oracle_offset))),
                 *multiplicity,
             )?;
         }
@@ -398,7 +411,7 @@ pub fn compile_circuit_modules(
 
 pub(super) struct Constraint {
     pub(super) name: String,
-    pub(super) oracle_ids: Vec<OracleId>,
+    pub(super) oracle_idxs: Vec<OracleIdx>,
     pub(super) composition: ArithExpr,
 }
 

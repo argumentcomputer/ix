@@ -1,7 +1,4 @@
-use binius_core::{
-    constraint_system::channel::{ChannelId, FlushDirection},
-    oracle::{OracleId, ShiftVariant},
-};
+use binius_core::{constraint_system::channel::FlushDirection, oracle::ShiftVariant};
 use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
     BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64, BinaryField128b as B128,
@@ -9,14 +6,16 @@ use binius_field::{
 use std::ffi::c_char;
 
 use crate::{
-    archon::{ModuleId, canonical::Canonical, circuit::CircuitModule, witness::WitnessModule},
+    archon::{
+        ModuleId, OracleIdx, canonical::Canonical, circuit::CircuitModule, witness::WitnessModule,
+    },
     lean::{
         CArray,
         array::LeanArrayObject,
         ctor::LeanCtorObject,
         ffi::{
             archon::{
-                arith_expr::lean_ctor_to_arith_expr, boxed_usize_ptr_to_usize,
+                arith_expr::lean_ctor_to_arith_expr, boxed_usize_ptr_to_oracle_idx,
                 ctor_ptr_to_lc_factor, transparent::lean_ctor_ptr_to_transparent,
             },
             drop_raw, raw_to_str, to_raw,
@@ -54,35 +53,36 @@ extern "C" fn rs_circuit_module_init_witness_module(
 extern "C" fn rs_circuit_module_flush(
     circuit_module: &mut CircuitModule,
     direction_pull: bool,
-    channel_id: ChannelId,
-    oracle_id: OracleId,
-    oracle_ids: &LeanArrayObject,
+    channel_idx: usize,
+    oracle_id: OracleIdx,
+    oracle_idxs: &LeanArrayObject,
     multiplicity: u64,
 ) {
-    let oracle_ids = oracle_ids.to_vec(boxed_usize_ptr_to_usize);
+    let oracle_idxs = oracle_idxs.to_vec(boxed_usize_ptr_to_oracle_idx);
     use FlushDirection::{Pull, Push};
     let direction = if direction_pull { Pull } else { Push };
-    circuit_module.flush(direction, channel_id, oracle_id, oracle_ids, multiplicity);
+    let channel_id = channel_idx;
+    circuit_module.flush(direction, channel_id, oracle_id, oracle_idxs, multiplicity);
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_circuit_module_assert_zero(
     circuit_module: &mut CircuitModule,
     name: *const c_char,
-    oracle_ids: &LeanArrayObject,
+    oracle_idxs: &LeanArrayObject,
     composition: &LeanCtorObject,
 ) {
-    let oracle_ids = oracle_ids.to_vec(boxed_usize_ptr_to_usize);
+    let oracle_idxs = oracle_idxs.to_vec(boxed_usize_ptr_to_oracle_idx);
     let composition = lean_ctor_to_arith_expr(composition);
-    circuit_module.assert_zero(raw_to_str(name), oracle_ids, composition);
+    circuit_module.assert_zero(raw_to_str(name), oracle_idxs, composition);
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_circuit_module_assert_not_zero(
     circuit_module: &mut CircuitModule,
-    oracle_id: OracleId,
+    oracle_idx: OracleIdx,
 ) {
-    circuit_module.assert_not_zero(oracle_id);
+    circuit_module.assert_not_zero(oracle_idx);
 }
 
 #[unsafe(no_mangle)]
@@ -90,7 +90,7 @@ extern "C" fn rs_circuit_module_add_committed(
     circuit_module: &mut CircuitModule,
     name: *const c_char,
     tower_level: u8,
-) -> OracleId {
+) -> OracleIdx {
     let name = raw_to_str(name);
     match tower_level {
         0 => circuit_module.add_committed::<B1>(name),
@@ -111,7 +111,7 @@ extern "C" fn rs_circuit_module_add_transparent(
     circuit_module: &mut CircuitModule,
     name: *const c_char,
     transparent_ptr: *const LeanCtorObject,
-) -> OracleId {
+) -> OracleIdx {
     let name = raw_to_str(name);
     let transparent = lean_ctor_ptr_to_transparent(transparent_ptr);
     circuit_module
@@ -125,7 +125,7 @@ extern "C" fn rs_circuit_module_add_linear_combination(
     name: *const c_char,
     offset: &u128,
     inner: &LeanArrayObject,
-) -> OracleId {
+) -> OracleIdx {
     let inner = inner.to_vec(ctor_ptr_to_lc_factor);
     let offset = B128::new(*offset);
     circuit_module
@@ -137,9 +137,9 @@ extern "C" fn rs_circuit_module_add_linear_combination(
 extern "C" fn rs_circuit_module_add_packed(
     circuit_module: &mut CircuitModule,
     name: *const c_char,
-    inner: OracleId,
+    inner: OracleIdx,
     log_degree: usize,
-) -> OracleId {
+) -> OracleIdx {
     circuit_module
         .add_packed(raw_to_str(name), inner, log_degree)
         .expect("CircuitModule::add_packed failure")
@@ -149,11 +149,11 @@ extern "C" fn rs_circuit_module_add_packed(
 extern "C" fn rs_circuit_module_add_shifted(
     circuit_module: &mut CircuitModule,
     name: *const c_char,
-    inner: OracleId,
+    inner: OracleIdx,
     shift_offset: u32,
     block_bits: usize,
     shift_variant: u8,
-) -> OracleId {
+) -> OracleIdx {
     let shift_variant = match shift_variant {
         0 => ShiftVariant::CircularLeft,
         1 => ShiftVariant::LogicalLeft,
@@ -175,11 +175,11 @@ extern "C" fn rs_circuit_module_add_shifted(
 extern "C" fn rs_circuit_module_add_projected(
     circuit_module: &mut CircuitModule,
     name: *const c_char,
-    inner: OracleId,
+    inner: OracleIdx,
     mask: u64,
     unprojected_size: usize,
     start_index: usize,
-) -> OracleId {
+) -> OracleIdx {
     circuit_module
         .add_projected(raw_to_str(name), inner, mask, unprojected_size, start_index)
         .expect("CircuitModule::add_projected failure")

@@ -1,8 +1,5 @@
 use anyhow::{Context, Result, bail, ensure};
-use binius_core::{
-    oracle::{OracleId, ShiftVariant},
-    witness::MultilinearExtensionIndex,
-};
+use binius_core::{oracle::ShiftVariant, witness::MultilinearExtensionIndex};
 use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
     BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64, BinaryField128b as B128,
@@ -28,7 +25,7 @@ use std::{
 };
 
 use super::{
-    ModuleId, OracleInfo, OracleKind,
+    ModuleId, OracleIdx, OracleInfo, OracleKind,
     transparent::{Incremental, Transparent, replicate_within_u128},
 };
 
@@ -40,7 +37,7 @@ pub struct WitnessModule {
     oracles: Arc<Vec<OracleInfo>>,
     entries: Vec<Vec<OptimalUnderlier>>,
     /// Maps oracles to their entries and tower levels
-    entry_map: FxHashMap<OracleId, (EntryId, usize)>,
+    entry_map: FxHashMap<OracleIdx, (EntryId, usize)>,
 }
 
 #[derive(Default)]
@@ -86,9 +83,10 @@ pub fn compile_witness_modules(
         }
         let oracles_data_results = (0..module.num_oracles())
             .into_par_iter()
-            .map(|oracle_id| {
-                let Some(&(entry_id, tower_level)) = module.entry_map.get(&oracle_id) else {
-                    bail!("Entry not found for oracle {oracle_id}, module {module_idx}.");
+            .map(|oracle_idx| {
+                let oracle_idx = OracleIdx(oracle_idx);
+                let Some(&(entry_id, tower_level)) = module.entry_map.get(&oracle_idx) else {
+                    bail!("Entry not found for oracle {oracle_idx}, module {module_idx}.");
                 };
                 let entry = &module.entries[entry_id];
                 macro_rules! oracle_poly {
@@ -97,10 +95,10 @@ pub fn compile_witness_modules(
                             PackedType::<OptimalUnderlier, $bf>::from_underliers_ref(entry);
                         let mle = MultilinearExtension::from_values_generic(values)
                             .context(format!(
-                                "MLE instantiation for entry {entry_id}, oracle {oracle_id}, module {module_idx}"
+                                "MLE instantiation for entry {entry_id}, oracle {oracle_idx}, module {module_idx}"
                             ))?
                             .specialize_arc_dyn();
-                        Ok(((oracle_offset + oracle_id, mle), height))
+                        Ok(((oracle_idx.oracle_id(oracle_offset), mle), height))
                     }};
                 }
                 match tower_level {
@@ -113,7 +111,7 @@ pub fn compile_witness_modules(
                     6 => oracle_poly!(B64),
                     7 => oracle_poly!(B128),
                     _ => bail!(
-                        "Unsupported tower level {tower_level} for oracle {oracle_id}, module {module_idx}"
+                        "Unsupported tower level {tower_level} for oracle {oracle_idx}, module {module_idx}"
                     ),
                 }
             })
@@ -154,9 +152,9 @@ impl WitnessModule {
     }
 
     #[inline]
-    pub fn bind_oracle_to<FS: TowerField>(&mut self, oracle_id: OracleId, entry_id: EntryId) {
+    pub fn bind_oracle_to<FS: TowerField>(&mut self, oracle_idx: OracleIdx, entry_id: EntryId) {
         self.entry_map
-            .insert(oracle_id, (entry_id, FS::TOWER_LEVEL));
+            .insert(oracle_idx, (entry_id, FS::TOWER_LEVEL));
     }
 
     #[inline]
@@ -187,8 +185,8 @@ impl WitnessModule {
         self.entries[entry_id].push(OptimalUnderlier::from(u128))
     }
 
-    pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_id: OracleId) -> Option<Vec<T>> {
-        let id = if let Some(v) = self.entry_map.get(&oracle_id) {
+    pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_idx: OracleIdx) -> Option<Vec<T>> {
+        let id = if let Some(v) = self.entry_map.get(&oracle_idx) {
             let tower_level: usize = v.1;
             #[allow(clippy::manual_assert)]
             if tower_level != FS::TOWER_LEVEL {
@@ -210,17 +208,18 @@ impl WitnessModule {
         // removed as the following loop finds out they break such condition.
         //
         // The loop also uses ensures that committed oracles are prepopulated.
-        let mut root_oracles: FxHashSet<_> = (0..self.num_oracles()).collect();
-        for (oracle_id, oracle_info) in self.oracles.iter().enumerate() {
+        let mut root_oracles: FxHashSet<_> = (0..self.num_oracles()).map(OracleIdx).collect();
+        for (oracle_idx, oracle_info) in self.oracles.iter().enumerate() {
+            let oracle_idx = OracleIdx(oracle_idx);
             match &oracle_info.kind {
                 OracleKind::Committed => {
                     ensure!(
-                        self.entry_map.contains_key(&oracle_id),
-                        "Committed oracle {} (id={oracle_id}) for witness module {} is not populated",
+                        self.entry_map.contains_key(&oracle_idx),
+                        "Committed oracle {} (id={oracle_idx}) for witness module {} is not populated",
                         &oracle_info.name,
                         &self.module_id,
                     );
-                    root_oracles.remove(&oracle_id);
+                    root_oracles.remove(&oracle_idx);
                 }
                 OracleKind::LinearCombination { inner, .. } => {
                     for (inner_oracle_id, _) in inner {
@@ -249,9 +248,9 @@ impl WitnessModule {
                 }
             };
         }
-        while let Some(oracle_id) = to_visit_stack.pop() {
+        while let Some(oracle_idx) = to_visit_stack.pop() {
             let mut is_committed = false;
-            match &self.oracles[oracle_id].kind {
+            match &self.oracles[oracle_idx.val()].kind {
                 OracleKind::Committed => is_committed = true,
                 OracleKind::LinearCombination { inner, .. } => {
                     for (inner_oracle_id, _) in inner {
@@ -266,19 +265,19 @@ impl WitnessModule {
                 OracleKind::Transparent(_) | OracleKind::StepDown => (),
             }
             if !is_committed {
-                compute_order.insert(oracle_id);
+                compute_order.insert(oracle_idx);
             }
         }
 
         // And now we're finally able to populate the witness, following the
         // correct compute order and making the assumption that dependency oracles
         // were already populated.
-        while let Some(oracle_id) = compute_order.pop() {
-            if self.entry_map.contains_key(&oracle_id) {
+        while let Some(oracle_idx) = compute_order.pop() {
+            if self.entry_map.contains_key(&oracle_idx) {
                 // Already populated. Skip.
                 continue;
             }
-            let oracle_info = &self.oracles[oracle_id];
+            let oracle_info = &self.oracles[oracle_idx.val()];
             let oracle_entry = match &oracle_info.kind {
                 OracleKind::Committed => unreachable!("Committed oracles shouldn't be computed"),
                 OracleKind::LinearCombination { offset, inner } => {
@@ -736,7 +735,7 @@ impl WitnessModule {
                 }
             };
 
-            self.entry_map.insert(oracle_id, oracle_entry);
+            self.entry_map.insert(oracle_idx, oracle_entry);
         }
 
         Ok(())
@@ -920,7 +919,7 @@ mod tests {
         let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
 
         let mut oracles = [b1, b2, b4, b8, b16, b32, b64, b128];
-        oracles.sort_by_key(|x| ((x + 3) * (x + 5)) % 7);
+        oracles.sort_by_key(|x| ((x.val() + 3) * (x.val() + 5)) % 7);
         for (i, oracle_id) in oracles.into_iter().enumerate() {
             let entry_id = witness_modules[0].new_entry();
             for j in 0..1u128 << i {

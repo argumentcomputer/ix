@@ -1,11 +1,13 @@
-use binius_core::oracle::OracleId;
 use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
     BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64, BinaryField128b as B128,
 };
 
 use crate::{
-    archon::witness::{EntryId, Witness, WitnessModule, compile_witness_modules},
+    archon::{
+        OracleIdx,
+        witness::{EntryId, Witness, WitnessModule, compile_witness_modules},
+    },
     lean::{
         CArray,
         array::LeanArrayObject,
@@ -50,19 +52,19 @@ extern "C" fn rs_witness_module_add_entry_with_capacity(
 #[unsafe(no_mangle)]
 extern "C" fn rs_witness_module_bind_oracle_to(
     witness_module: &mut WitnessModule,
-    oracle_id: OracleId,
+    oracle_idx: OracleIdx,
     entry_id: EntryId,
     tower_level: u8,
 ) {
     match tower_level {
-        0 => witness_module.bind_oracle_to::<B1>(oracle_id, entry_id),
-        1 => witness_module.bind_oracle_to::<B2>(oracle_id, entry_id),
-        2 => witness_module.bind_oracle_to::<B4>(oracle_id, entry_id),
-        3 => witness_module.bind_oracle_to::<B8>(oracle_id, entry_id),
-        4 => witness_module.bind_oracle_to::<B16>(oracle_id, entry_id),
-        5 => witness_module.bind_oracle_to::<B32>(oracle_id, entry_id),
-        6 => witness_module.bind_oracle_to::<B64>(oracle_id, entry_id),
-        7 => witness_module.bind_oracle_to::<B128>(oracle_id, entry_id),
+        0 => witness_module.bind_oracle_to::<B1>(oracle_idx, entry_id),
+        1 => witness_module.bind_oracle_to::<B2>(oracle_idx, entry_id),
+        2 => witness_module.bind_oracle_to::<B4>(oracle_idx, entry_id),
+        3 => witness_module.bind_oracle_to::<B8>(oracle_idx, entry_id),
+        4 => witness_module.bind_oracle_to::<B16>(oracle_idx, entry_id),
+        5 => witness_module.bind_oracle_to::<B32>(oracle_idx, entry_id),
+        6 => witness_module.bind_oracle_to::<B64>(oracle_idx, entry_id),
+        7 => witness_module.bind_oracle_to::<B128>(oracle_idx, entry_id),
         _ => unreachable!(),
     }
 }

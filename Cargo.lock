@@ -430,7 +430,7 @@ checksum = "597bb81c80a54b6a4381b23faba8d7774b144c94cbd1d6fe3f1329bd776554ab"
 [[package]]
 name = "binius_circuits"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=2326ae9b78a9679eeed86d30188a9bcc5eea55e0#2326ae9b78a9679eeed86d30188a9bcc5eea55e0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
@@ -453,7 +453,7 @@ dependencies = [
 [[package]]
 name = "binius_core"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=2326ae9b78a9679eeed86d30188a9bcc5eea55e0#2326ae9b78a9679eeed86d30188a9bcc5eea55e0"
 dependencies = [
  "assert_matches",
  "auto_impl",
@@ -473,6 +473,9 @@ dependencies = [
  "inventory",
  "itertools 0.14.0",
  "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "serde_json_any_key",
  "stackalloc",
  "thiserror 2.0.12",
  "tracing",
@@ -482,7 +485,7 @@ dependencies = [
 [[package]]
 name = "binius_field"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=2326ae9b78a9679eeed86d30188a9bcc5eea55e0#2326ae9b78a9679eeed86d30188a9bcc5eea55e0"
 dependencies = [
  "binius_maybe_rayon",
  "binius_utils",
@@ -501,7 +504,7 @@ dependencies = [
 [[package]]
 name = "binius_hal"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=2326ae9b78a9679eeed86d30188a9bcc5eea55e0#2326ae9b78a9679eeed86d30188a9bcc5eea55e0"
 dependencies = [
  "auto_impl",
  "binius_field",
@@ -519,7 +522,7 @@ dependencies = [
 [[package]]
 name = "binius_hash"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=2326ae9b78a9679eeed86d30188a9bcc5eea55e0#2326ae9b78a9679eeed86d30188a9bcc5eea55e0"
 dependencies = [
  "binius_field",
  "binius_maybe_rayon",
@@ -539,7 +542,7 @@ dependencies = [
 [[package]]
 name = "binius_macros"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=2326ae9b78a9679eeed86d30188a9bcc5eea55e0#2326ae9b78a9679eeed86d30188a9bcc5eea55e0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -549,7 +552,7 @@ dependencies = [
 [[package]]
 name = "binius_math"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=2326ae9b78a9679eeed86d30188a9bcc5eea55e0#2326ae9b78a9679eeed86d30188a9bcc5eea55e0"
 dependencies = [
  "auto_impl",
  "binius_field",
@@ -571,7 +574,7 @@ dependencies = [
 [[package]]
 name = "binius_maybe_rayon"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=2326ae9b78a9679eeed86d30188a9bcc5eea55e0#2326ae9b78a9679eeed86d30188a9bcc5eea55e0"
 dependencies = [
  "cfg-if",
  "either",
@@ -582,7 +585,7 @@ dependencies = [
 [[package]]
 name = "binius_ntt"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=2326ae9b78a9679eeed86d30188a9bcc5eea55e0#2326ae9b78a9679eeed86d30188a9bcc5eea55e0"
 dependencies = [
  "binius_field",
  "binius_math",
@@ -595,7 +598,7 @@ dependencies = [
 [[package]]
 name = "binius_utils"
 version = "0.2.0"
-source = "git+https://github.com/IrreducibleOSS/binius.git?rev=60ec55578c6c1bb4a624e129a7074ec807d8b8cd#60ec55578c6c1bb4a624e129a7074ec807d8b8cd"
+source = "git+https://github.com/IrreducibleOSS/binius.git?rev=2326ae9b78a9679eeed86d30188a9bcc5eea55e0#2326ae9b78a9679eeed86d30188a9bcc5eea55e0"
 dependencies = [
  "auto_impl",
  "binius_maybe_rayon",
@@ -4448,6 +4451,16 @@ dependencies = [
  "memchr",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_json_any_key"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2c409ca1209f6c4741028b9e1e56d973c868ffaef25ffbaf2471e486c2a74b3"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

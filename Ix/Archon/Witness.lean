@@ -1,9 +1,7 @@
-import Ix.Binius.Common
+import Ix.Archon.OracleIdx
 import Ix.Unsigned
 
 namespace Archon
-
-open Binius
 
 inductive TowerField
   | b1 | b2 | b4 | b8 | b16 | b32 | b64 | b128
@@ -32,7 +30,7 @@ opaque addEntryWithCapacity : WitnessModule → (logBits : UInt8) → EntryId ×
 
 /-- **Invalidates** the input `WitnessModule` -/
 @[never_extract, extern "c_rs_witness_module_bind_oracle_to"]
-opaque bindOracleTo : WitnessModule → OracleId → EntryId → TowerField → WitnessModule
+opaque bindOracleTo : WitnessModule → OracleIdx → EntryId → TowerField → WitnessModule
 
 /-- **Invalidates** the input `WitnessModule` -/
 @[never_extract, extern "c_rs_witness_module_push_u128_to"]
