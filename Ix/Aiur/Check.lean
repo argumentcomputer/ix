@@ -424,7 +424,7 @@ of declarations.
 def checkToplevel (toplevel : Toplevel) : Except CheckError TypedDecls := do
   let decls ← toplevel.mkDecls
   wellFormedDecls decls
-  decls.pairs.foldlM (init := default) fun typedDecls (name, decl) => match decl with
+  decls.foldlM (init := default) fun typedDecls (name, decl) => match decl with
     | .constructor d c => pure $ typedDecls.insert name (.constructor d c)
     | .dataType d => pure $ typedDecls.insert name (.dataType d)
     | .function f => do

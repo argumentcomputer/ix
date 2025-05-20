@@ -11,15 +11,18 @@ inductive Local
 
 structure Global where
   toName : Lean.Name
-  deriving Repr, BEq, Hashable, Inhabited
+  deriving Repr, BEq, Inhabited
 
 instance : EquivBEq Global where
-  symm := sorry
-  trans := sorry
-  refl := sorry
+  symm {_ _} h := by rw [BEq.beq] at h ⊢; exact BEq.symm h
+  trans {_ _ _} h₁ h₂ := by rw [BEq.beq] at h₁ h₂ ⊢; exact BEq.trans h₁ h₂
+  refl {_} := by rw [BEq.beq]; apply BEq.refl
+
+instance : Hashable Global where
+  hash a := hash a.toName
 
 instance : LawfulHashable Global where
-  hash_eq := sorry
+  hash_eq a b h := LawfulHashable.hash_eq a.toName b.toName h
 
 instance : ToString Global where
   toString g := g.toName.toString

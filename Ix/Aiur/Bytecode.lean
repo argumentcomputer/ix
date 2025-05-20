@@ -378,7 +378,7 @@ def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
     let layout := acc.insert function.name (.function { index := funcIndex, inputSize, outputSize, offsets })
     (layout, funcIndex + 1)
   | .constructor .. => (acc, funcIndex)
-  let (layout, _) := decls.pairs.foldl (init := ({}, 0)) pass
+  let (layout, _) := decls.foldl (init := ({}, 0)) pass
   layout
 
 partial def accMemWidths (block : Bytecode.Block) (memWidths : Array Nat) : Array Nat :=
@@ -400,7 +400,7 @@ partial def accMemWidths (block : Bytecode.Block) (memWidths : Array Nat) : Arra
 
 def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
   let layout := decls.dataTypeLayouts
-  let (functions, memWidths) := decls.pairs.foldl (init := (#[], #[]))
+  let (functions, memWidths) := decls.foldl (init := (#[], #[]))
     fun acc@(functions, memWidths) (_, decl) => match decl with
       | .function function =>
         let compiledFunction := function.compile layout

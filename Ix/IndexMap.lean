@@ -33,6 +33,12 @@ def insert : IndexMap α β := by
     exact Nat.lt_succ_of_lt (m.validIndices a' ha')
   · exact m.validIndices a' ha'
 
+def map (f : β → β) : IndexMap α β := by
+  refine ⟨m.pairs.map (fun (a, b) => (a, f b)), m.indices, ?_⟩
+  intro i a' ha'
+  rw [Array.size_map]
+  exact m.validIndices a' ha'
+
 @[inline] def size : Nat :=
   m.pairs.size
 
@@ -47,5 +53,17 @@ def insert : IndexMap α β := by
 
 @[inline] def containsKey : Bool :=
   m.indices.contains a
+
+@[inline] def foldl (f : γ → α × β → γ) (init : γ) : γ :=
+  m.pairs.foldl f init
+
+@[inline] def foldr (f : α × β → γ → γ) (init : γ) : γ :=
+  m.pairs.foldr f init
+
+@[inline] def foldlM [Monad μ] (f : γ → α × β → μ γ) (init : γ) : μ γ :=
+  m.pairs.foldlM f init
+
+@[inline] def foldrM [Monad μ] (f : α × β → γ → μ γ) (init : γ) : μ γ :=
+  m.pairs.foldrM f init
 
 end IndexMap
