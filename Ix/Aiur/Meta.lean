@@ -212,7 +212,7 @@ partial def elabTrm : ElabStxCat `trm
   | `(trm| $v:trm : $t:typ) => do
     mkAppM ``Term.ann #[← elabTyp t, ← elabTrm v]
   | `(trm| trace($s:str, $e:trm)) => do
-    mkAppM ``Term.trace #[← Term.elabTerm s none, ← elabTrm e]
+    mkAppM ``Term.trace #[mkStrLit s.getString, ← elabTrm e]
   | stx => throw $ .error stx "Invalid syntax for term"
 
 declare_syntax_cat                     constructor
