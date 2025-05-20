@@ -15,6 +15,7 @@ inductive CheckError
   | typeMismatch : Typ → Typ → CheckError
   | illegalReturn : CheckError
   | nonNumeric : Typ → CheckError
+  | notU64 : Typ → CheckError
   | wrongNumArgs : Global → Nat → Nat → CheckError
   | notATuple : Typ → CheckError
   | indexOoB : Nat → CheckError
@@ -203,6 +204,30 @@ partial def inferTerm : Term → CheckM TypedTerm
     let a := .mk ctxTyp aInner
     let b := .mk ctxTyp bInner
     pure $ .mk ctxTyp (.and a b)
+  | .addU64 a b => do
+    let (typ, aInner) ← inferNoEscape a
+    unless (typ == .primitive .u64) do throw $ .notU64 typ
+    let bInner ← checkNoEscape b typ
+    let ctxTyp := .evaluates typ
+    let a := .mk ctxTyp aInner
+    let b := .mk ctxTyp bInner
+    pure $ .mk ctxTyp (.addU64 a b)
+  | .subU64 a b => do
+    let (typ, aInner) ← inferNoEscape a
+    unless (typ == .primitive .u64) do throw $ .notU64 typ
+    let bInner ← checkNoEscape b typ
+    let ctxTyp := .evaluates typ
+    let a := .mk ctxTyp aInner
+    let b := .mk ctxTyp bInner
+    pure $ .mk ctxTyp (.subU64 a b)
+  | .mulU64 a b => do
+    let (typ, aInner) ← inferNoEscape a
+    unless (typ == .primitive .u64) do throw $ .notU64 typ
+    let bInner ← checkNoEscape b typ
+    let ctxTyp := .evaluates typ
+    let a := .mk ctxTyp aInner
+    let b := .mk ctxTyp bInner
+    pure $ .mk ctxTyp (.mulU64 a b)
   | .get tup i => do
     let (typs, tupInner) ← inferTuple tup
     if i < typs.size then
@@ -249,6 +274,9 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .ann typ term => do
     let inner ← checkNoEscape term typ
     pure $ .mk (.evaluates typ) inner
+  | .trace str term => do
+    let (typ, inner) ← inferNoEscape term
+    pure $ .mk (.evaluates typ) (.trace str (.mk (.evaluates typ) inner))
 where
   /--
   Ensures that there are as many arguments and as expected types and that

@@ -162,6 +162,10 @@ partial def Op.execute : Op → ExecuteM Unit
       withReader (fun ctx => { ctx with funcIdx }) func.body.execute
       let out := (← get).map.extract args.size
       modify fun stt => { stt with map := map.append out }
+  | .trace str args => do
+    let stt ← get
+    let args := args.map (stt.map[·]!)
+    dbg_trace s!"{str}{args}"
   | _ => panic! "TODO"
 
 partial def Ctrl.execute : Ctrl → ExecuteM Unit

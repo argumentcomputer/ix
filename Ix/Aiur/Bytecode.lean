@@ -40,6 +40,7 @@ inductive Op where
   | dynCall : ValIdx → Array ValIdx → ValIdx → Op
   | preimg : FuncIdx → Array ValIdx → ValIdx → Op
   | dynPreimg : ValIdx → Array ValIdx → ValIdx → Op
+  | trace : String → Array ValIdx → Op
   deriving Repr, Inhabited
 
 mutual
@@ -158,6 +159,27 @@ partial def toIndex
     assert! (b.size == 1)
     let index ← pushOp (.xor (a.get' 0) (b.get' 0))
     pure #[index]
+  | .addU64 a b => do
+    let a ← toIndex layoutMap bindings a
+    assert! (a.size == 1)
+    let b ← toIndex layoutMap bindings b
+    assert! (b.size == 1)
+    let index ← pushOp (.add (a.get' 0) (b.get' 0))
+    pure #[index]
+  | .subU64 a b => do
+    let a ← toIndex layoutMap bindings a
+    assert! (a.size == 1)
+    let b ← toIndex layoutMap bindings b
+    assert! (b.size == 1)
+    let index ← pushOp (.sub (a.get' 0) (b.get' 0))
+    pure #[index]
+  | .mulU64 a b => do
+    let a ← toIndex layoutMap bindings a
+    assert! (a.size == 1)
+    let b ← toIndex layoutMap bindings b
+    assert! (b.size == 1)
+    let index ← pushOp (.mul (a.get' 0) (b.get' 0))
+    pure #[index]
   | .and a b => do
     let a ← toIndex layoutMap bindings a
     assert! (a.size == 1)
@@ -225,6 +247,11 @@ partial def toIndex
     let index ← pushOp (Bytecode.Op.load size (ptr.get' 0))
     pure #[index]
   | .pointerAsU64 ptr => toIndex layoutMap bindings ptr
+  | .trace str expr => do
+    let arr ← toIndex layoutMap bindings expr
+    let op := .trace str arr
+    modify (fun state => { state with ops := state.ops.push op})
+    pure arr
   where
     buildArgs (args : List TypedTerm) (init : Array ValIdx := #[]) : StateM CompilerState (Array ValIdx) :=
       let append arg acc := do

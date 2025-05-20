@@ -88,12 +88,16 @@ inductive Term
   | preimg : Global → Term → Term
   | xor : Term → Term → Term
   | and : Term → Term → Term
+  | addU64 : Term → Term → Term
+  | subU64 : Term → Term → Term
+  | mulU64 : Term → Term → Term
   | get : Term → Nat → Term
   | slice : Term → Nat → Nat → Term
   | store : Term → Term
   | load : Term → Term
   | pointerAsU64 : Term → Term
   | ann : Typ → Term → Term
+  | trace : String → Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Data
@@ -129,11 +133,15 @@ inductive TypedTermInner
   | preimg : Global → TypedTerm → TypedTermInner
   | xor : TypedTerm → TypedTerm → TypedTermInner
   | and : TypedTerm → TypedTerm → TypedTermInner
+  | addU64 : TypedTerm → TypedTerm → TypedTermInner
+  | subU64 : TypedTerm → TypedTerm → TypedTermInner
+  | mulU64 : TypedTerm → TypedTerm → TypedTermInner
   | get : TypedTerm → Nat → TypedTermInner
   | slice : TypedTerm → Nat → Nat → TypedTermInner
   | store : TypedTerm → TypedTermInner
   | load : TypedTerm → TypedTermInner
   | pointerAsU64 : TypedTerm → TypedTermInner
+  | trace : String → TypedTerm → TypedTermInner
   deriving Repr, Inhabited
 
 structure TypedTerm where

@@ -142,11 +142,15 @@ syntax ("." noWs)? ident "(" trm (", " trm)* ")"          : trm
 syntax "preimg" "(" ("." noWs)? ident ", " trm ")"        : trm
 syntax "xor" "(" trm ", " trm ")"                         : trm
 syntax "and" "(" trm ", " trm ")"                         : trm
+syntax "add" "(" trm ", " trm ")"                         : trm
+syntax "sub" "(" trm ", " trm ")"                         : trm
+syntax "mul" "(" trm ", " trm ")"                         : trm
 syntax "get" "(" trm ", " num ")"                         : trm
 syntax "slice" "(" trm ", " num ", " num ")"              : trm
 syntax "store" "(" trm ")"                                : trm
 syntax "load" "(" trm ")"                                 : trm
 syntax "pointer_as_u64" "(" trm ")"                       : trm
+syntax "trace" "(" str ", " trm ")"                       : trm
 syntax trm ": " typ                                       : trm
 
 partial def elabTrm : ElabStxCat `trm
@@ -185,6 +189,12 @@ partial def elabTrm : ElabStxCat `trm
   | `(trm| preimg($[.]?$f:ident, $t:trm)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
     mkAppM ``Term.preimg #[g, ← elabTrm t]
+  | `(trm| add($a:trm, $b:trm)) => do
+    mkAppM ``Term.addU64 #[← elabTrm a, ← elabTrm b]
+  | `(trm| sub($a:trm, $b:trm)) => do
+    mkAppM ``Term.subU64 #[← elabTrm a, ← elabTrm b]
+  | `(trm| mul($a:trm, $b:trm)) => do
+    mkAppM ``Term.mulU64 #[← elabTrm a, ← elabTrm b]
   | `(trm| xor($a:trm, $b:trm)) => do
     mkAppM ``Term.xor #[← elabTrm a, ← elabTrm b]
   | `(trm| and($a:trm, $b:trm)) => do
@@ -201,6 +211,8 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.pointerAsU64 #[← elabTrm a]
   | `(trm| $v:trm : $t:typ) => do
     mkAppM ``Term.ann #[← elabTyp t, ← elabTrm v]
+  | `(trm| trace($s:str, $e:trm)) => do
+    mkAppM ``Term.trace #[← Term.elabTerm s none, ← elabTrm e]
   | stx => throw $ .error stx "Invalid syntax for term"
 
 declare_syntax_cat                     constructor
