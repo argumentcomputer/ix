@@ -34,7 +34,7 @@ def insert : IndexMap α β := by
   · exact m.validIndices a' ha'
 
 def map (f : β → β) : IndexMap α β := by
-  refine ⟨m.pairs.map (fun (a, b) => (a, f b)), m.indices, ?_⟩
+  refine ⟨m.pairs.map fun (a, b) => (a, f b), m.indices, ?_⟩
   intro i a' ha'
   rw [Array.size_map]
   exact m.validIndices a' ha'

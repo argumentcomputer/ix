@@ -64,6 +64,176 @@ structure Function where
   body : Block
   deriving Repr, Inhabited
 
+end Bytecode
+
+namespace Circuit
+
+/--
+The circuit layout of a function.
+
+`selectors` are bit values that identify which path the computation
+took. Exactly one selector must be set.
+
+`u*Auxiliaries` represent registers that hold temporary values
+and can be shared by different circuit paths, since they never
+overlap.
+
+`sharedConstraints` are constraint slots that can be shared in
+different paths of the circuit.
+-/
+structure Layout where
+  inputs : Nat
+  outputs : Nat
+  selectors : Nat
+  u1Auxiliaries : Nat
+  u8Auxiliaries : Nat
+  u64Auxiliaries : Nat
+  sharedConstraints : Nat
+  deriving Repr
+
+structure LayoutBranchState where
+  u1AuxiliariesInit : Nat
+  u1AuxiliariesMax  : Nat
+  u8AuxiliariesInit : Nat
+  u8AuxiliariesMax  : Nat
+  u64AuxiliariesInit : Nat
+  u64AuxiliariesMax  : Nat
+  sharedConstraintsInit : Nat
+  sharedConstraintsMax  : Nat
+
+@[inline] def Layout.init (inputs outputs : Nat) : Layout :=
+  ⟨inputs, outputs, 0, 0, 0, 0, 0⟩
+
+structure LayoutMState where
+  layout : Layout
+  memWidths : Array Nat
+
+abbrev LayoutM := StateM LayoutMState
+
+@[inline] def bumpSelectors : LayoutM Unit :=
+  modify fun stt => { stt with
+    layout := { stt.layout with selectors := stt.layout.selectors + 1 } }
+
+@[inline] def bumpSharedConstraints (n : Nat) : LayoutM Unit :=
+  modify fun stt => { stt with
+    layout := { stt.layout with sharedConstraints := stt.layout.sharedConstraints + n } }
+
+@[inline] def bumpU1Auxiliaries : LayoutM Unit :=
+  modify fun stt => { stt with
+    layout := { stt.layout with u1Auxiliaries := stt.layout.u1Auxiliaries + 1 } }
+
+@[inline] def bumpU64Auxiliaries (n : Nat) : LayoutM Unit :=
+  modify fun stt => { stt with
+    layout := { stt.layout with u64Auxiliaries := stt.layout.u64Auxiliaries + n } }
+
+@[inline] def addMemWidth (memWidth : Nat) : LayoutM Unit :=
+  modify fun stt =>
+    let memWidths := if stt.memWidths.contains memWidth
+      then stt.memWidths
+      else stt.memWidths.push memWidth
+    { stt with memWidths }
+
+namespace LayoutBranchState
+
+def save : LayoutM LayoutBranchState := do
+  let stt ← get
+  pure {
+    u1AuxiliariesInit := stt.layout.u1Auxiliaries
+    u1AuxiliariesMax := stt.layout.u1Auxiliaries
+    u8AuxiliariesInit := stt.layout.u8Auxiliaries
+    u8AuxiliariesMax := stt.layout.u8Auxiliaries
+    u64AuxiliariesInit := stt.layout.u64Auxiliaries
+    u64AuxiliariesMax := stt.layout.u64Auxiliaries
+    sharedConstraintsInit := stt.layout.sharedConstraints
+    sharedConstraintsMax := stt.layout.sharedConstraints }
+
+def merge (lbs : LayoutBranchState) : LayoutM LayoutBranchState := do
+  let stt ← get
+  let lbs' := { lbs with
+    u1AuxiliariesMax := lbs.u1AuxiliariesMax.max stt.layout.u1Auxiliaries
+    u8AuxiliariesMax := lbs.u8AuxiliariesMax.max stt.layout.u8Auxiliaries
+    u64AuxiliariesMax := lbs.u64AuxiliariesMax.max stt.layout.u64Auxiliaries
+    sharedConstraintsMax := lbs.sharedConstraintsMax.max stt.layout.sharedConstraints }
+  let layout := { stt.layout with
+    u1Auxiliaries := lbs.u1AuxiliariesInit
+    u8Auxiliaries := lbs.u8AuxiliariesInit
+    u64Auxiliaries := lbs.u64AuxiliariesInit
+    sharedConstraints := lbs.sharedConstraintsInit }
+  set { stt with layout }
+  pure lbs'
+
+def finish (lbs : LayoutBranchState) : LayoutM Unit := do
+  modify fun stt => { stt with layout := { stt.layout with
+    u1Auxiliaries := lbs.u1AuxiliariesMax.max stt.layout.u1Auxiliaries
+    u8Auxiliaries := lbs.u8AuxiliariesMax.max stt.layout.u8Auxiliaries
+    u64Auxiliaries := lbs.u64AuxiliariesMax.max stt.layout.u64Auxiliaries
+    sharedConstraints := lbs.sharedConstraintsMax.max stt.layout.sharedConstraints } }
+
+end LayoutBranchState
+
+def opLayout : Bytecode.Op → LayoutM Unit
+  | .prim _ | .xor .. => pure ()
+  | .and .. => do
+    -- `and` is achieved by multiplication. Since we do not want
+    -- expressions of order greater than 1, we create a new auxiliary
+    -- and constrain it to be equal to the product of the two expressions
+    bumpSharedConstraints 1
+    bumpU1Auxiliaries
+  | .add .. | .lt .. | .sub .. => do
+    -- Uses the addition gadget which outputs 8 bytes of sum
+    -- plus 1 byte of carry
+    bumpU64Auxiliaries 1
+    bumpU1Auxiliaries
+  | .mul .. => do
+    -- Uses the multiplication gadget which outputs 8 bytes
+    bumpU64Auxiliaries 1
+  | .store values => do
+    addMemWidth values.size
+    -- Outputs a pointer and a require hint
+    bumpU64Auxiliaries 2
+  | .load len _ => do
+    addMemWidth len
+    -- Outputs the loaded values and a require hint
+    bumpU64Auxiliaries (len + 1)
+  | .call _ _ outSize =>
+    -- Outputs the call values and a require hint
+    bumpU64Auxiliaries (outSize + 1)
+  | _ => panic! "TODO"
+
+partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
+  block.ops.forM opLayout
+  match block.ctrl with
+  | .if _ tt ff =>
+    let lbs ← LayoutBranchState.save
+    -- This auxiliary is for proving inequality
+    bumpU64Auxiliaries 1
+    blockLayout tt
+    let lbs ← lbs.merge
+    blockLayout ff
+    lbs.finish
+  | .match _ branches defaultBranch =>
+    let lbs ← branches.foldlM (init := ← LayoutBranchState.save) fun lbs (_, block) => do
+      blockLayout block
+      lbs.merge
+    if let some defaultBlock := defaultBranch then
+      blockLayout defaultBlock
+    lbs.finish
+  | .ret _ out =>
+    -- One selector per return
+    bumpSelectors
+    -- Each output must equal its respective return variable,
+    -- thus one constraint per return variable
+    bumpSharedConstraints out.size
+
+def functionLayout (function : Bytecode.Function) : LayoutMState :=
+  let initLayout :=  (Layout.init function.inputSize function.outputSize)
+  let (_, stt) := blockLayout function.body |>.run ⟨initLayout, #[]⟩
+  stt
+
+end Circuit
+
+namespace Bytecode
+
 structure DataTypeLayout where
   size: Nat
   deriving Repr, Inhabited
@@ -92,6 +262,7 @@ abbrev LayoutMap := HashMap Global Layout
 structure Toplevel where
   functions : Array Function
   memWidths : Array Nat
+  layouts : Array Circuit.Layout
   deriving Repr, Inhabited
 
 end Aiur.Bytecode
@@ -402,31 +573,17 @@ def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
   let (layout, _) := decls.foldl (init := ({}, 0)) pass
   layout
 
-partial def accMemWidths (block : Bytecode.Block) (memWidths : Array Nat) : Array Nat :=
-  let memWidths := block.ops.foldl (init := memWidths) fun acc op =>
-    match op with
-    | .store values =>
-      let width := values.size
-      if acc.contains width then acc else acc.push width
-    | _ => acc
-  match block.ctrl with
-  | .match _ branches defaultBranch =>
-    let memWidths := branches.foldl (init := memWidths) fun acc (_, block) =>
-      accMemWidths block acc
-    match defaultBranch with
-    | some block => accMemWidths block memWidths
-    | none => memWidths
-  | .if _ tt ff => accMemWidths tt (accMemWidths ff memWidths)
-  | .ret .. => memWidths
-
 def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
   let layout := decls.dataTypeLayouts
-  let (functions, memWidths) := decls.foldl (init := (#[], #[]))
-    fun acc@(functions, memWidths) (_, decl) => match decl with
+  let (functions, memWidths, layouts) := decls.foldl (init := (#[], #[], #[]))
+    fun acc@(functions, memWidths, layouts) (_, decl) => match decl with
       | .function function =>
         let compiledFunction := function.compile layout
-        (functions.push compiledFunction, accMemWidths compiledFunction.body memWidths)
+        let layoutMState := Circuit.functionLayout compiledFunction
+        let memWidths := layoutMState.memWidths.foldl (init := memWidths) fun memWidths memWidth =>
+          if memWidths.contains memWidth then memWidths else memWidths.push memWidth
+        (functions.push compiledFunction, memWidths, layouts.push layoutMState.layout)
       | _ => acc
-  ⟨functions, memWidths.qsort⟩
+  ⟨functions, memWidths.qsort, layouts⟩
 
 end Aiur
