@@ -12,8 +12,8 @@ def toplevel := ⟦
   }
 
   enum Nat {
-    Succ(&Nat),
-    Zero
+    Zero,
+    Succ(&Nat)
   }
 
   fn even(m: Nat) -> u1 {
@@ -30,21 +30,45 @@ def toplevel := ⟦
     }
   }
 
-  -- fn is_0_even() -> u1 {
-  --   even(Nat.Zero)
-  -- }
+  fn is_0_even() -> u1 {
+    even(Nat.Zero)
+  }
 
-  -- fn is_1_even() -> u1 {
-  --   even(Nat.Succ(store(Nat.Zero)))
-  -- }
+  fn is_1_even() -> u1 {
+    even(Nat.Succ(store(Nat.Zero)))
+  }
 
-  -- fn is_3_even() -> u1 {
-  --   even(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))
-  -- }
+  fn is_2_even() -> u1 {
+    even(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))
+  }
 
-  -- fn is_4_even() -> u1 {
-  --   even(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))))
-  -- }
+  fn is_3_even() -> u1 {
+    even(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))
+  }
+
+  fn is_4_even() -> u1 {
+    even(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))))
+  }
+
+  fn is_0_odd() -> u1 {
+    odd(Nat.Zero)
+  }
+
+  fn is_1_odd() -> u1 {
+    odd(Nat.Succ(store(Nat.Zero)))
+  }
+
+  fn is_2_odd() -> u1 {
+    odd(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))
+  }
+
+  fn is_3_odd() -> u1 {
+    odd(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))
+  }
+
+  fn is_4_odd() -> u1 {
+    odd(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))))
+  }
 ⟧
 
 structure ExecutionTestCase where
@@ -54,15 +78,22 @@ structure ExecutionTestCase where
 
 def executionTestCases : List ExecutionTestCase := [
     ⟨`store_and_load, #[42], #[42]⟩,
-    -- ⟨`is_0_even, #[], #[1]⟩,
-    -- ⟨`is_1_even, #[], #[0]⟩,
-    -- ⟨`is_3_even, #[], #[0]⟩,
-    -- ⟨`is_4_even, #[], #[1]⟩,
+    ⟨`is_0_even, #[], #[1]⟩,
+    ⟨`is_1_even, #[], #[0]⟩,
+    ⟨`is_2_even, #[], #[1]⟩,
+    ⟨`is_3_even, #[], #[0]⟩,
+    ⟨`is_4_even, #[], #[1]⟩,
+    ⟨`is_0_odd, #[], #[0]⟩,
+    ⟨`is_1_odd, #[], #[1]⟩,
+    ⟨`is_2_odd, #[], #[0]⟩,
+    ⟨`is_3_odd, #[], #[1]⟩,
+    ⟨`is_4_odd, #[], #[0]⟩,
   ]
 
 def testExecute : TestSeq :=
   withExceptOk "Check and simplification works" (checkAndSimplifyToplevel toplevel) fun decls =>
     let bytecodeToplevel := decls.compile
+    dbg_trace (repr bytecodeToplevel)
     let runExecutionTestCase := fun (testCase : ExecutionTestCase) =>
       let functionName := testCase.functionName
       let funcIdx := toplevel.getFuncIdx functionName |>.get!.toUInt64

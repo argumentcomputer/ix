@@ -45,4 +45,7 @@ def insert : IndexMap α β := by
 @[inline] def getIdxOf : Option Nat :=
   m.indices[a]?
 
+@[inline] def containsKey : Bool :=
+  m.indices.contains a
+
 end IndexMap

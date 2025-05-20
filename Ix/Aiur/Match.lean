@@ -104,7 +104,7 @@ def patTypeLength (decls : Decls) : SPattern → Nat
 where
   typeLookup (global : Global) :=
     match global.popNamespace with
-    | some (_, enum) => match decls[enum]? with
+    | some (_, enum) => match decls.getByKey enum with
       | some (.dataType typ) => typ
       | _ => unreachable!
     | none => unreachable!

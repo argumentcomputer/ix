@@ -40,8 +40,8 @@ def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
     fun acc function => addDecl acc Function.name .function function
   toplevel.dataTypes.foldlM (init := map) addDataType
 where
-  ensureUnique name (map : Std.HashMap Global _) := do
-    if map.contains name then throw $ .duplicatedDefinition name
+  ensureUnique name (map : IndexMap Global _) := do
+    if map.containsKey name then throw $ .duplicatedDefinition name
   addDecl {α : Type} map (nameFn : α → Global) (wrapper : α → Declaration) (inner : α) := do
     ensureUnique (nameFn inner) map
     pure $ map.insert (nameFn inner) (wrapper inner)
@@ -62,7 +62,7 @@ abbrev CheckM := ReaderT CheckContext (Except CheckError)
 /-- Retrieves the type of a global reference. -/
 def refLookup (global : Global) : CheckM Typ := do
   let ctx ← read
-  match ctx.decls[global]? with
+  match ctx.decls.getByKey global with
   | some (.function function) =>
     pure $ .function (function.inputs.map Prod.snd) function.output
   | some (.constructor dataType constructor) =>
@@ -140,7 +140,7 @@ partial def inferTerm : Term → CheckM TypedTerm
       let args ← checkArgsAndInputs func args inputs
       pure $ .mk (.evaluates output) (.app func args)
     | some _ => throw $ .notAFunction func
-    | none => match ctx.decls[func]? with
+    | none => match ctx.decls.getByKey func with
       | some (.function function) => do
         let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
         pure $ .mk (.evaluates function.output) (.app func args)
@@ -151,7 +151,7 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .app func args => do
     -- Only checks global map if it is not unqualified
     let ctx ← read
-    match ctx.decls[func]? with
+    match ctx.decls.getByKey func with
     | some (.function function) =>
       let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
       pure $ .mk (.evaluates function.output) (.app func args)
@@ -170,7 +170,7 @@ partial def inferTerm : Term → CheckM TypedTerm
       let arg' := .mk (.evaluates output) argInner
       pure $ .mk (.evaluates (.tuple inputs.toArray)) (.preimg func arg')
     | some _ => throw $ .notAFunction func
-    | none => match ctx.decls[func]? with
+    | none => match ctx.decls.getByKey func with
       | some (.function function) => do
         let argInner ← checkNoEscape arg function.output
         let arg' := .mk (.evaluates function.output) argInner
@@ -181,7 +181,7 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .preimg func arg => do
     -- Only checks global map if it is not unqualified
     let ctx ← read
-    match ctx.decls[func]? with
+    match ctx.decls.getByKey func with
     | some (.function function) => do
       let argInner ← checkNoEscape arg function.output
       let arg' := .mk (.evaluates function.output) argInner
@@ -331,14 +331,14 @@ where
       pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
     | (.ref funcName [], typ@(.function ..)) => do
       let ctx ← read
-      let some (.function function) := ctx.decls[funcName]? | throw $ .incompatiblePattern pat typ
+      let some (.function function) := ctx.decls.getByKey funcName | throw $ .incompatiblePattern pat typ
       let typ' := .function (function.inputs.map Prod.snd) function.output
       unless typ == typ' do throw $ .typeMismatch typ typ'
       pure []
     | (.ref constrRef pats, .dataType dataTypeRef) => do
       let ctx ← read
-      let some (.dataType dataType) := ctx.decls[dataTypeRef]? | unreachable!
-      let some (.constructor dataType' constr) := ctx.decls[constrRef]? | throw $ .notAConstructor constrRef
+      let some (.dataType dataType) := ctx.decls.getByKey dataTypeRef | unreachable!
+      let some (.constructor dataType' constr) := ctx.decls.getByKey constrRef | throw $ .notAConstructor constrRef
       unless dataType == dataType' do throw $ .incompatiblePattern pat typ
       let typs := constr.argTypes
       let lenPats := pats.length
@@ -384,7 +384,7 @@ original datatypes.
 -/
 partial def wellFormedDecls (decls : Decls) : Except CheckError Unit := do
   let mut visited := default
-  for (_, decl) in decls do
+  for (_, decl) in decls.pairs do
     match EStateM.run (wellFormedDecl decl) visited with
     | .error e _ => throw e
     | .ok () visited' => visited := visited'
@@ -403,7 +403,7 @@ where
   wellFormedType : Typ → EStateM CheckError (Std.HashSet Global) Unit
     | .tuple typs => typs.forM wellFormedType
     | .pointer pointerTyp => wellFormedType pointerTyp
-    | .dataType dataTypeRef => match decls[dataTypeRef]? with
+    | .dataType dataTypeRef => match decls.getByKey dataTypeRef with
       | some (.dataType _) => pure ()
       | some _ => throw $ .notADataType dataTypeRef
       | none => throw $ .undefinedGlobal dataTypeRef
@@ -424,7 +424,7 @@ of declarations.
 def checkToplevel (toplevel : Toplevel) : Except CheckError TypedDecls := do
   let decls ← toplevel.mkDecls
   wellFormedDecls decls
-  decls.foldM (init := {}) fun typedDecls name decl => match decl with
+  decls.pairs.foldlM (init := default) fun typedDecls (name, decl) => match decl with
     | .constructor d c => pure $ typedDecls.insert name (.constructor d c)
     | .dataType d => pure $ typedDecls.insert name (.dataType d)
     | .function f => do

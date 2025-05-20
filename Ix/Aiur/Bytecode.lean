@@ -352,7 +352,7 @@ def TypedFunction.compile (layoutMap : Bytecode.LayoutMap) (f : TypedFunction) :
   { name := f.name, inputSize, outputSize, body }
 
 def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
-  let pass acc _ v := match v with
+  let pass := fun (acc, funcIndex) (_, v) => match v with
   | .dataType dataType =>
     let dataTypeSize := dataType.size decls
     let acc := acc.insert dataType.name (.dataType { size := dataTypeSize })
@@ -367,16 +367,19 @@ def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
       }
       let name := dataType.name.pushNamespace constructor.nameHead
       (acc.insert name decl, index + 1)
-    (dataType.constructors.foldl (init := (acc, 0)) pass).fst
+    let (layout, _) := dataType.constructors.foldl (init := (acc, 0)) pass
+    (layout, funcIndex)
   | .function function =>
     let inputSize := function.inputs.foldl (init := 0) (fun acc (_, typ) => acc + typ.size decls)
     let outputSize := function.output.size decls
     let offsets :=
       function.inputs.foldl (init := #[0])
         (fun offsets (_, typ) => offsets.push (typ.size decls))
-    acc.insert function.name (.function { index := 0, inputSize, outputSize, offsets })
-  | .constructor .. => acc
-  decls.fold (init := {}) pass
+    let layout := acc.insert function.name (.function { index := funcIndex, inputSize, outputSize, offsets })
+    (layout, funcIndex + 1)
+  | .constructor .. => (acc, funcIndex)
+  let (layout, _) := decls.pairs.foldl (init := ({}, 0)) pass
+  layout
 
 partial def accMemWidths (block : Bytecode.Block) (memWidths : Array Nat) : Array Nat :=
   let memWidths := block.ops.foldl (init := memWidths) fun acc op =>
@@ -397,8 +400,8 @@ partial def accMemWidths (block : Bytecode.Block) (memWidths : Array Nat) : Arra
 
 def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
   let layout := decls.dataTypeLayouts
-  let (functions, memWidths) := decls.fold (init := (#[], #[]))
-    fun acc@(functions, memWidths) _ decl => match decl with
+  let (functions, memWidths) := decls.pairs.foldl (init := (#[], #[]))
+    fun acc@(functions, memWidths) (_, decl) => match decl with
       | .function function =>
         let compiledFunction := function.compile layout
         (functions.push compiledFunction, accMemWidths compiledFunction.body memWidths)

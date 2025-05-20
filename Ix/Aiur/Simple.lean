@@ -28,9 +28,9 @@ where
   recr := simplifyTerm decls
 
 def simplify (decls : Decls) : Decls :=
-  decls.map fun _ decl => match decl with
-    | (.function function) => .function { function with body := simplifyTerm decls function.body }
-    | _ => decl
+  decls.pairs.foldl (init := default) fun acc (global, decl) => match decl with
+    | (.function function) => acc.insert global $ .function { function with body := simplifyTerm decls function.body }
+    | _ => acc.insert global decl
 
 def checkAndSimplifyToplevel (toplevel : Toplevel) : Except CheckError TypedDecls := do
   let decls ← toplevel.mkDecls
@@ -39,7 +39,7 @@ def checkAndSimplifyToplevel (toplevel : Toplevel) : Except CheckError TypedDecl
   toplevel.functions.forM fun function => do
     let _ ← (checkFunction function) (getFunctionContext function decls)
   let decls := simplify decls
-  decls.foldM (init := {}) fun typedDecls name decl => match decl with
+  decls.pairs.foldlM (init := default) fun typedDecls (name, decl) => match decl with
     | .constructor d c => pure $ typedDecls.insert name (.constructor d c)
     | .dataType d => pure $ typedDecls.insert name (.dataType d)
     | .function f => do

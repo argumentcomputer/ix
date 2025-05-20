@@ -1,4 +1,5 @@
 import Std.Data.HashMap
+import Ix.IndexMap
 open Std
 
 namespace Aiur
@@ -11,6 +12,14 @@ inductive Local
 structure Global where
   toName : Lean.Name
   deriving Repr, BEq, Hashable, Inhabited
+
+instance : EquivBEq Global where
+  symm := sorry
+  trans := sorry
+  refl := sorry
+
+instance : LawfulHashable Global where
+  hash_eq := sorry
 
 instance : ToString Global where
   toString g := g.toName.toString
@@ -167,7 +176,7 @@ inductive Declaration
   | constructor : DataType → Constructor → Declaration
   deriving Repr, Inhabited
 
-abbrev Decls := HashMap Global Declaration
+abbrev Decls := IndexMap Global Declaration
 
 structure TypedFunction where
   name : Global
@@ -182,7 +191,7 @@ inductive TypedDeclaration
   | constructor : DataType → Constructor → TypedDeclaration
   deriving Repr, Inhabited
 
-abbrev TypedDecls := HashMap Global TypedDeclaration
+abbrev TypedDecls := IndexMap Global TypedDeclaration
 
 mutual
 
@@ -191,8 +200,8 @@ partial def Typ.size (decls : TypedDecls) (visited : HashMap Global Unit := {}) 
   | Typ.pointer .. => 1
   | Typ.function .. => 1
   | Typ.tuple ts => ts.foldl (init := 0) (fun acc t => acc + t.size decls visited)
-  | Typ.dataType g => match decls.get! g with
-    | .dataType data => data.size decls visited
+  | Typ.dataType g => match decls.getByKey g with
+    | some (.dataType data) => data.size decls visited
     | _ => panic! "impossible case"
 
 partial def Constructor.size (decls : TypedDecls) (visited : HashMap Global Unit := {}) (c : Constructor) : Nat :=
