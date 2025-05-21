@@ -67,3 +67,32 @@ def map (f : β → β) : IndexMap α β := by
   m.pairs.foldrM f init
 
 end IndexMap
+
+structure IndexSet (α : Type u) [BEq α] [Hashable α] where
+  map : IndexMap α Unit
+  deriving Inhabited
+
+namespace IndexSet
+
+variable [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
+  (s : IndexSet α) (a : α)
+
+@[inline] def insert : IndexSet α := ⟨s.map.insert a ()⟩
+@[inline] def size : Nat := s.map.size
+@[inline] def getByIdx (i : Nat) : Option α := Prod.fst <$> s.map.getByIdx i
+@[inline] def getIdxOf : Option Nat := s.map.getIdxOf a
+@[inline] def contains : Bool := s.map.containsKey a
+
+@[inline] def foldl (f : γ → α → γ) (init : γ) : γ :=
+  s.map.foldl (fun acc (a, _) => f acc a) init
+
+@[inline] def foldr (f : α → γ → γ) (init : γ) : γ :=
+  s.map.foldr (fun (a, _) acc => f a acc) init
+
+@[inline] def foldlM [Monad μ] (f : γ → α → μ γ) (init : γ) : μ γ :=
+  s.map.foldlM (fun acc (a, _) => f acc a) init
+
+@[inline] def foldrM [Monad μ] (f : α → γ → μ γ) (init : γ) : μ γ :=
+  s.map.foldrM (fun (a, _) acc => f a acc) init
+
+end IndexSet

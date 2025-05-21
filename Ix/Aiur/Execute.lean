@@ -1,4 +1,5 @@
 import Ix.IndexMap
+import Std.Data.HashSet.Basic
 import Ix.Aiur.Bytecode
 
 namespace Aiur.Bytecode
@@ -7,9 +8,6 @@ structure QueryResult where
   values : Array UInt64
   multiplicity : UInt64
   deriving Inhabited
-
-instance : ToString QueryResult where
-  toString x := s!"{x.multiplicity}×{x.values}"
 
 @[inline] def QueryResult.bumpMultiplicity (res : QueryResult) : QueryResult :=
   { res with multiplicity := res.multiplicity + 1 }
@@ -41,6 +39,10 @@ structure ExecuteCtx where
   toplevel : Toplevel
   funcIdx : Nat
   args : Array UInt64
+  called : Std.HashSet (Nat × Array UInt64)
+
+def ExecuteCtx.init (toplevel : Toplevel) (funcIdx : Nat) (args : Array UInt64) : ExecuteCtx :=
+  ⟨toplevel, funcIdx, args, .ofList [(funcIdx, args)]⟩
 
 structure ExecuteState where
   record : QueryRecord
@@ -64,7 +66,17 @@ def updateForMem (stt : ExecuteState) (memMapIdx : MemIdx) (len : Nat) (newQuery
 
 end ExecuteState
 
-abbrev ExecuteM := ReaderT ExecuteCtx $ StateM ExecuteState
+inductive ExecutionError
+  | loop : FuncIdx → Array UInt64 → ExecutionError
+  | unprovableMatch : FuncIdx → ExecutionError
+  deriving BEq
+
+instance : ToString ExecutionError where
+  toString
+    | .loop funcIdx args => s!"Loop on function {funcIdx} with args {args}"
+    | .unprovableMatch funcIdx => s!"Unprovable match on function {funcIdx}"
+
+abbrev ExecuteM := ReaderT ExecuteCtx $ EStateM ExecutionError ExecuteState
 
 @[inline] def pushVal (x : UInt64) : ExecuteM Unit :=
   modify fun stt => { stt with map := stt.map.push x }
@@ -155,11 +167,14 @@ partial def Op.execute : Op → ExecuteM Unit
       let newFuncQueryMap := funcQueryMap.insert args newRes
       modify (·.updateForFunc funcIdx newFuncQueryMap (·.append res.values))
     | none => do
+      let ctx ← read
+      if ctx.called.contains (funcIdx, args) then
+        throw $ .loop funcIdx.toUInt64 args
       let savedMap := stt.map
       set { stt with map := args }
-      let ctx ← read
       let func := ctx.toplevel.functions[funcIdx]!
-      withReader (fun ctx => { ctx with funcIdx, args }) func.body.execute
+      let called := ctx.called.insert (funcIdx, args)
+      withReader (fun ctx => { ctx with funcIdx, args, called }) func.body.execute
       let stt ← get
       let out := stt.map.extract (start := stt.map.size - func.outputSize)
       set { stt with map := savedMap.append out }
@@ -184,14 +199,18 @@ partial def Ctrl.execute : Ctrl → ExecuteM Unit
     let v ← getVal v
     match branches.find? fun branch => branch.fst == v with
     | some branch => branch.snd.execute
-    | none => defaultBranch.get!.execute
+    | none => match defaultBranch with
+      | some defaultBranch => defaultBranch.execute
+      | none => let ctx ← read; throw $ .unprovableMatch ctx.funcIdx.toUInt64
 
 end
 
-def Toplevel.execute (toplevel : Toplevel) (funcIdx : FuncIdx) (input : Array UInt64) : QueryRecord :=
+def Toplevel.execute (toplevel : Toplevel) (funcIdx : FuncIdx) (input : Array UInt64) :
+    Except ExecutionError QueryRecord :=
   let funcIdx := funcIdx.toNat
   let block := toplevel.functions[funcIdx]!.body
-  let (_, stt) := block.execute.run ⟨toplevel, funcIdx, input⟩ |>.run ⟨.new toplevel, input⟩
-  stt.record
+  match block.execute.run (.init toplevel funcIdx input) |>.run ⟨.new toplevel, input⟩ with
+  | .ok _ stt => .ok stt.record
+  | .error e _ => .error e
 
 end Aiur.Bytecode

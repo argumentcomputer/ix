@@ -419,7 +419,7 @@ partial def toIndex
   | .load ptr => do
     let size := match ptr.typ.unwrap with
     | .pointer typ => typSize layoutMap typ
-    | _ => panic! "unreachable"
+    | _ => unreachable!
     let ptr ← toIndex layoutMap bindings ptr
     assert! (ptr.size == 1)
     pushOp (Bytecode.Op.load size (ptr.get' 0)) size

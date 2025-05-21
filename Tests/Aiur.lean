@@ -77,6 +77,14 @@ def toplevel := ⟦
       1u64
     }
   }
+
+  fn loop() -> u1 {
+    loop()
+  }
+
+  fn call_loop() -> u1 {
+    loop()
+  }
 ⟧
 
 structure ExecutionTestCase where
@@ -102,14 +110,25 @@ def executionTestCases : List ExecutionTestCase := [
 def testExecute : TestSeq :=
   withExceptOk "Check and simplification works" (checkAndSimplifyToplevel toplevel) fun decls =>
     let bytecodeToplevel := decls.compile
-    let runExecutionTestCase := fun (testCase : ExecutionTestCase) =>
+    let executeTestCase := fun (testCase : ExecutionTestCase) =>
       let functionName := testCase.functionName
       let funcIdx := toplevel.getFuncIdx functionName |>.get!.toUInt64
-      let record := bytecodeToplevel.execute funcIdx testCase.input
-      let values := record.getFuncResult funcIdx testCase.input |>.get!
-      test s!"Result of {functionName} is correct" (values == testCase.expectedOutput)
-    executionTestCases.foldl (init := .done) fun tSeq testCase =>
-      tSeq ++ runExecutionTestCase testCase
+      let execute := bytecodeToplevel.execute funcIdx testCase.input
+      withExceptOk "Execution succeeds" execute fun record =>
+        let values := record.getFuncResult funcIdx testCase.input |>.get!
+        test s!"Result of {functionName} is correct" (values == testCase.expectedOutput)
+    let successfullExecutions := executionTestCases.foldl (init := .done) fun tSeq testCase =>
+      tSeq ++ executeTestCase testCase
+
+    let loopFuncIdx := toplevel.getFuncIdx `loop |>.get!.toUInt64
+    let loopingExecutions := [`loop, `call_loop].foldl (init := .done) fun tSeq name =>
+      let funcIdx := toplevel.getFuncIdx name |>.get!.toUInt64
+      let descr := s!"Loop is caught for {name}"
+      match bytecodeToplevel.execute funcIdx #[] with
+      | .ok _ => tSeq ++ test descr (ExpectationFailure "Error found" "No error found")
+      | .error e => tSeq ++ test descr (e == .loop loopFuncIdx #[])
+
+    successfullExecutions ++ loopingExecutions
 
 def Tests.Aiur.suite := [
     testExecute,
