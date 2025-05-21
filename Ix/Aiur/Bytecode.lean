@@ -53,7 +53,7 @@ mutual
   structure Block where
     ops : Array Op
     ctrl : Ctrl
-    returnIdents : List SelIdx
+    returnIdents : SelIdx × SelIdx
     deriving Repr, Inhabited
 end
 
@@ -272,6 +272,7 @@ namespace Aiur
 structure CompilerState where
   index : ValIdx
   ops : Array Bytecode.Op
+  returnIdent : SelIdx
   deriving Repr, Inhabited
 
 def pushOp (op : Bytecode.Op) (size : Nat := 1) : StateM CompilerState (Array ValIdx) :=
@@ -472,30 +473,36 @@ partial def TypedTerm.compile
     | _ => do
       let idxs ← toIndex layoutMap bindings term
       let ops ← extractOps
+      let initIdent := (← get).returnIdent
       let (cases, default) ← cases.foldlM (init := ([], .none)) (addCase layoutMap bindings returnTyp idxs)
-      let ctrl := .match (idxs.get' 0) cases default
-      -- TODO Fix the selector indices
-      pure { ops, ctrl, returnIdents := [] }
+      let lastIdent := (← get).returnIdent
+      let ctrl := .match (idxs.get' 0) cases.reverse default
+      pure { ops, ctrl, returnIdents := (initIdent, lastIdent) }
   | .if b t f => do
     let b ← toIndex layoutMap bindings b
     assert! (b.size == 1)
     let ops ← extractOps
     let initState ← get
+    let initIdent := initState.returnIdent
     let t ← t.compile returnTyp layoutMap bindings
-    set initState
+    set { initState with returnIdent := (← get).returnIdent }
     let f ← f.compile returnTyp layoutMap bindings
-    -- TODO Fix the selector indices
-    pure { ops, ctrl := .if (b.get' 0) t f, returnIdents := [] }
+    let lastIdent := (← get).returnIdent
+    pure { ops, ctrl := .if (b.get' 0) t f, returnIdents := (initIdent, lastIdent) }
   | .ret term => do
     let idxs ← toIndex layoutMap bindings term
+    modify (fun state => { state with returnIdent := state.returnIdent + 1 })
     let state ← get
-    -- TODO Fix the selector indices
-    pure { ops := state.ops, ctrl := .ret 0 idxs, returnIdents := [] }
+    let ops := state.ops
+    let id := state.returnIdent
+    pure { ops, ctrl := .ret (id - 1) idxs, returnIdents := (id - 1, id) }
   | _ => do
     let idxs ← toIndex layoutMap bindings term
+    modify (fun state => { state with returnIdent := state.returnIdent + 1 })
     let state ← get
-    -- TODO Fix the selector indices
-    pure { ops := state.ops, ctrl := .ret 0 idxs, returnIdents := [] }
+    let ops := state.ops
+    let id := state.returnIdent
+    pure { ops, ctrl := .ret (id - 1) idxs, returnIdents := (id - 1, id) }
 
 partial def addCase
   (layoutMap : Bytecode.LayoutMap)
@@ -511,7 +518,7 @@ partial def addCase
   | .primitive prim => do
     let initState ← get
     let term ← term.compile returnTyp layoutMap bindings
-    set initState
+    set { initState with returnIdent := (← get).returnIdent }
     let cases' := cases.cons (prim.toU64, term)
     pure (cases', default)
   | .ref global pats => do
@@ -535,13 +542,13 @@ partial def addCase
     let bindings := bindArgs bindings pats offsets idxs
     let initState ← get
     let term ← term.compile returnTyp layoutMap bindings
-    set initState
+    set { initState with returnIdent := (← get).returnIdent }
     let cases' := cases.cons (index, term)
     pure (cases', default)
   | .wildcard => do
     let initState ← get
     let term ← term.compile returnTyp layoutMap bindings
-    set initState
+    set { initState with returnIdent := (← get).returnIdent }
     pure (cases, .some term)
   | _ => unreachable!
 
@@ -556,7 +563,7 @@ def TypedFunction.compile (layoutMap : Bytecode.LayoutMap) (f : TypedFunction) :
       let len := typSize layoutMap typ
       let indices := Array.range' index len
       (index + len, bindings.insert arg indices))
-  let state := { index, ops := #[] }
+  let state := { index, returnIdent := 0, ops := #[] }
   let body :=  (f.body.compile f.output layoutMap bindings).run' state
   { name := f.name, inputSize, outputSize, body }
 
