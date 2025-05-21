@@ -69,6 +69,14 @@ def toplevel := ⟦
   fn is_4_odd() -> u1 {
     odd(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))))
   }
+
+  fn factorial(n: u64) -> u64 {
+    if n {
+      mul(n, factorial(sub(n, 1u64)))
+    } else {
+      1u64
+    }
+  }
 ⟧
 
 structure ExecutionTestCase where
@@ -88,6 +96,7 @@ def executionTestCases : List ExecutionTestCase := [
     ⟨`is_2_odd, #[], #[0]⟩,
     ⟨`is_3_odd, #[], #[1]⟩,
     ⟨`is_4_odd, #[], #[0]⟩,
+    ⟨`factorial, #[5], #[120]⟩,
   ]
 
 def testExecute : TestSeq :=
