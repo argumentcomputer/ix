@@ -102,7 +102,6 @@ def executionTestCases : List ExecutionTestCase := [
 def testExecute : TestSeq :=
   withExceptOk "Check and simplification works" (checkAndSimplifyToplevel toplevel) fun decls =>
     let bytecodeToplevel := decls.compile
-    dbg_trace (repr bytecodeToplevel)
     let runExecutionTestCase := fun (testCase : ExecutionTestCase) =>
       let functionName := testCase.functionName
       let funcIdx := toplevel.getFuncIdx functionName |>.get!.toUInt64

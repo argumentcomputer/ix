@@ -320,24 +320,24 @@ partial def inferMatch (term : Term) (branches : List (Pattern × Term)) : Check
   pure $ .mk typ (.match term branches)
 where
   checkBranch patTyp branchData acc := do
-  let (pat, branch) := branchData
-  let (typedBranches, currentTyp) := acc
-  let bindings ← checkPattern pat patTyp
-  withReader (bindIdents bindings) (match currentTyp with
-    | .escapes => do
-      let typedBranch ← inferTerm branch
-      pure (typedBranches.cons (pat, typedBranch), typedBranch.typ)
-    | .evaluates matchTyp => do
-      -- Some branch didn't escape, so if this branch doesn't escape it must have the same type
-      -- as the previous non-escaping branch.
-      let typedBranch ← inferTerm branch
-      let typedBranches := typedBranches.cons (pat, typedBranch)
-      match typedBranch.typ with
-      | .escapes => pure (typedBranches, currentTyp)
-      | .evaluates branchTyp =>
-        -- This branch doesn't escape so its type must match the type of the previous non-escaping branch.
-        unless (matchTyp == branchTyp) do throw $ .branchMismatch matchTyp branchTyp
-        pure (typedBranches, currentTyp))
+    let (pat, branch) := branchData
+    let (typedBranches, currentTyp) := acc
+    let bindings ← checkPattern pat patTyp
+    withReader (bindIdents bindings) (match currentTyp with
+      | .escapes => do
+        let typedBranch ← inferTerm branch
+        pure (typedBranches.cons (pat, typedBranch), typedBranch.typ)
+      | .evaluates matchTyp => do
+        -- Some branch didn't escape, so if this branch doesn't escape it must have the same type
+        -- as the previous non-escaping branch.
+        let typedBranch ← inferTerm branch
+        let typedBranches := typedBranches.cons (pat, typedBranch)
+        match typedBranch.typ with
+        | .escapes => pure (typedBranches, currentTyp)
+        | .evaluates branchTyp =>
+          -- This branch doesn't escape so its type must match the type of the previous non-escaping branch.
+          unless (matchTyp == branchTyp) do throw $ .branchMismatch matchTyp branchTyp
+          pure (typedBranches, currentTyp))
 
 /-- Checks that a pattern matches a given type and collects its bindings. -/
 partial def checkPattern (pat : Pattern) (typ : Typ) : CheckM $ List (Local × Typ) := do

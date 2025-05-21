@@ -420,7 +420,6 @@ partial def toIndex
     let size := match ptr.typ.unwrap with
     | .pointer typ => typSize layoutMap typ
     | _ => panic! "unreachable"
-    dbg_trace s!"size {size}"
     let ptr ← toIndex layoutMap bindings ptr
     assert! (ptr.size == 1)
     pushOp (Bytecode.Op.load size (ptr.get' 0)) size
