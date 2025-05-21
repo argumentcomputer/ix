@@ -1,6 +1,5 @@
-import Std.Data.HashMap
+import Std.Data.HashSet.Basic
 import Ix.IndexMap
-open Std
 
 namespace Aiur
 
@@ -206,7 +205,9 @@ abbrev TypedDecls := IndexMap Global TypedDeclaration
 
 mutual
 
-partial def Typ.size (decls : TypedDecls) (visited : HashMap Global Unit := {}) : Typ → Nat
+open Std (HashSet)
+
+partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) : Typ → Nat
   | Typ.primitive .. => 1
   | Typ.pointer .. => 1
   | Typ.function .. => 1
@@ -215,14 +216,14 @@ partial def Typ.size (decls : TypedDecls) (visited : HashMap Global Unit := {}) 
     | some (.dataType data) => data.size decls visited
     | _ => panic! "impossible case"
 
-partial def Constructor.size (decls : TypedDecls) (visited : HashMap Global Unit := {}) (c : Constructor) : Nat :=
+partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {}) (c : Constructor) : Nat :=
   c.argTypes.foldl (λ acc t => acc + t.size decls visited) 0
 
-partial def DataType.size (dt : DataType) (decls : TypedDecls) (visited : HashMap Global Unit := {}) : Nat :=
+partial def DataType.size (dt : DataType) (decls : TypedDecls) (visited : HashSet Global := {}) : Nat :=
   if visited.contains dt.name then
     panic! s!"cycle detected at datatype `{dt.name}`"
   else
-    let visited := visited.insert dt.name ()
+    let visited := visited.insert dt.name
     let ctorSizes := dt.constructors.map (Constructor.size decls visited)
     let maxFields := ctorSizes.foldl max 0
     maxFields + 1

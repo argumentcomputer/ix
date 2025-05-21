@@ -420,7 +420,7 @@ partial def toIndex
   | .load ptr => do
     let size := match ptr.typ.unwrap with
     | .pointer typ => typSize layoutMap typ
-    | _ => panic! "unreachable"
+    | _ => unreachable!
     let ptr ← toIndex layoutMap bindings ptr
     assert! (ptr.size == 1)
     pushOp (Bytecode.Op.load size (ptr.get' 0)) size
@@ -491,15 +491,17 @@ partial def TypedTerm.compile
     pure { ops, ctrl := .if (b.get' 0) t f, returnIdents := (initIdent, lastIdent) }
   | .ret term => do
     let idxs ← toIndex layoutMap bindings term
-    modify (fun state => { state with returnIdent := state.returnIdent + 1 })
     let state ← get
+    let state := { state with returnIdent := state.returnIdent + 1 }
+    set state
     let ops := state.ops
     let id := state.returnIdent
     pure { ops, ctrl := .ret (id - 1) idxs, returnIdents := (id - 1, id) }
   | _ => do
     let idxs ← toIndex layoutMap bindings term
-    modify (fun state => { state with returnIdent := state.returnIdent + 1 })
     let state ← get
+    let state := { state with returnIdent := state.returnIdent + 1 }
+    set state
     let ops := state.ops
     let id := state.returnIdent
     pure { ops, ctrl := .ret (id - 1) idxs, returnIdents := (id - 1, id) }

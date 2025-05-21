@@ -8,9 +8,6 @@ structure QueryResult where
   multiplicity : UInt64
   deriving Inhabited
 
-instance : ToString QueryResult where
-  toString x := s!"{x.multiplicity}×{x.values}"
-
 @[inline] def QueryResult.bumpMultiplicity (res : QueryResult) : QueryResult :=
   { res with multiplicity := res.multiplicity + 1 }
 
