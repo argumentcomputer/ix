@@ -1,3 +1,4 @@
+import Tests.Aiur
 import Tests.Archon
 import Tests.FFIConsistency
 import Tests.ByteArray
@@ -11,6 +12,7 @@ def main (args: List String) : IO UInt32 := do
   then LSpec.lspecEachIO Tests.Ix.Compile.suiteIO id
   else
     LSpec.lspecIO (.ofList [
+      ("aiur", Tests.Aiur.suite),
       ("archon", Tests.Archon.suite),
       ("ffi-consistency", Tests.FFIConsistency.suite),
       ("byte-array", Tests.ByteArray.suite),

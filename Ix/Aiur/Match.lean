@@ -7,13 +7,13 @@ abbrev UniqTerm := TermId × Term
 
 inductive SPattern
   | primitive : Primitive → SPattern
-  | ref : Global → List Local → SPattern
-  | tuple : List Local → SPattern
+  | ref : Global → Array Local → SPattern
+  | tuple : Array Local → SPattern
   deriving BEq, Hashable, Inhabited
 
 structure Clause where
   pat : SPattern
-  guards : List (Pattern × UniqTerm)
+  guards : Array (Pattern × UniqTerm)
   body : UniqTerm
   deriving Inhabited
 
@@ -64,13 +64,13 @@ def dnfProd (branches: List $ Pattern × UniqTerm) (body : ExtTerm) : CompilerM 
       pure $ rowsL ++ rowsR
     | (.wildcard, _) :: rest => aux renames clauses rest body
     | (.var var, (_, term)) :: rest => aux (renames.push (var, term)) clauses rest body
-    | (.primitive prim, term) :: rest => aux renames (clauses.push ⟨.primitive prim, [], term⟩) rest body
+    | (.primitive prim, term) :: rest => aux renames (clauses.push ⟨.primitive prim, #[], term⟩) rest body
     | (.tuple args, term) :: rest => do
       let (vars, guards) ← flattenArgs args
       let clause := ⟨.tuple vars, guards, term⟩
       aux renames (clauses.push clause) rest body
     | (.ref global args, term) :: rest => do
-      let (vars, guards) ← flattenArgs args
+      let (vars, guards) ← flattenArgs args.toArray
       let clause := ⟨.ref global vars, guards, term⟩
       aux renames (clauses.push clause) rest body
   aux Array.empty Array.empty branches body
@@ -104,7 +104,7 @@ def patTypeLength (decls : Decls) : SPattern → Nat
 where
   typeLookup (global : Global) :=
     match global.popNamespace with
-    | some (_, enum) => match decls[enum]? with
+    | some (_, enum) => match decls.getByKey enum with
       | some (.dataType typ) => typ
       | _ => unreachable!
     | none => unreachable!
@@ -159,7 +159,7 @@ where
     match rowRemoveClause row term with
     | some (clause, row') => do
       setId row.uniqId
-      let newRows ← dnfProd clause.guards row'.body
+      let newRows ← dnfProd clause.guards.toList row'.body
       let newRows := newRows.map (fun r => { r with clauses := r.clauses ++ row'.clauses })
       let updatedMap := rowMap.alter clause.pat fun rows =>
         if let some rows := rows then some (rows ++ newRows) else none
@@ -201,7 +201,7 @@ def runMatchCompiler (typs : Decls) (term : Term) (rules : List (Pattern × Term
 
 def spatternToPattern : SPattern → Pattern
   | .primitive prim => .primitive prim
-  | .ref global vars => .ref global (vars.map .var)
+  | .ref global vars => .ref global (vars.map .var).toList
   | .tuple vars => .tuple (vars.map .var)
 
 mutual

@@ -44,13 +44,13 @@ where
   throwOutOfRange stx n ty :=
     throw $ .error stx s!"{n} is out of range for {ty}"
 
-declare_syntax_cat                       pattern
-syntax ("." noWs)? ident               : pattern
-syntax "_"                             : pattern
-syntax ident pattern+                  : pattern
-syntax primitive                       : pattern
-syntax "(" pattern (", " pattern)* ")" : pattern
-syntax pattern "|" pattern             : pattern
+declare_syntax_cat                             pattern
+syntax ("." noWs)? ident                     : pattern
+syntax "_"                                   : pattern
+syntax ident "(" pattern (", " pattern)* ")" : pattern
+syntax primitive                             : pattern
+syntax "(" pattern (", " pattern)* ")"       : pattern
+syntax pattern "|" pattern                   : pattern
 
 def elabListCore (head : α) (tail : Array α) (elabFn : α → TermElabM Expr)
     (listEltType : Expr) : TermElabM Expr := do
@@ -68,10 +68,9 @@ def elabEmptyList (listEltTypeName : Name) : TermElabM Expr :=
   mkListLit (mkConst listEltTypeName) []
 
 partial def elabPattern : ElabStxCat `pattern
-  | `(pattern| $v:ident $[$ps:pattern]*) => do
-    let ps ← ps.mapM elabPattern
+  | `(pattern| $v:ident($p:pattern $[, $ps:pattern]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr v.getId]
-    mkAppM ``Pattern.ref #[g, ← mkListLit (mkConst ``Pattern) ps.toList]
+    mkAppM ``Pattern.ref #[g, ← elabList p ps elabPattern ``Pattern]
   | `(pattern| .$i:ident) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     mkAppM ``Pattern.ref #[g, ← elabEmptyList ``Pattern]
@@ -143,12 +142,15 @@ syntax ("." noWs)? ident "(" trm (", " trm)* ")"          : trm
 syntax "preimg" "(" ("." noWs)? ident ", " trm ")"        : trm
 syntax "xor" "(" trm ", " trm ")"                         : trm
 syntax "and" "(" trm ", " trm ")"                         : trm
-syntax "inv" "(" trm ")"                                  : trm
+syntax "add" "(" trm ", " trm ")"                         : trm
+syntax "sub" "(" trm ", " trm ")"                         : trm
+syntax "mul" "(" trm ", " trm ")"                         : trm
 syntax "get" "(" trm ", " num ")"                         : trm
 syntax "slice" "(" trm ", " num ", " num ")"              : trm
 syntax "store" "(" trm ")"                                : trm
 syntax "load" "(" trm ")"                                 : trm
 syntax "pointer_as_u64" "(" trm ")"                       : trm
+syntax "trace" "(" str ", " trm ")"                       : trm
 syntax trm ": " typ                                       : trm
 
 partial def elabTrm : ElabStxCat `trm
@@ -187,12 +189,16 @@ partial def elabTrm : ElabStxCat `trm
   | `(trm| preimg($[.]?$f:ident, $t:trm)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
     mkAppM ``Term.preimg #[g, ← elabTrm t]
+  | `(trm| add($a:trm, $b:trm)) => do
+    mkAppM ``Term.addU64 #[← elabTrm a, ← elabTrm b]
+  | `(trm| sub($a:trm, $b:trm)) => do
+    mkAppM ``Term.subU64 #[← elabTrm a, ← elabTrm b]
+  | `(trm| mul($a:trm, $b:trm)) => do
+    mkAppM ``Term.mulU64 #[← elabTrm a, ← elabTrm b]
   | `(trm| xor($a:trm, $b:trm)) => do
     mkAppM ``Term.xor #[← elabTrm a, ← elabTrm b]
   | `(trm| and($a:trm, $b:trm)) => do
     mkAppM ``Term.and #[← elabTrm a, ← elabTrm b]
-  | `(trm| inv($a:trm)) => do
-    mkAppM ``Term.inv #[← elabTrm a]
   | `(trm| get($a:trm, $i:num)) => do
     mkAppM ``Term.get #[← elabTrm a, toExpr i.getNat]
   | `(trm| slice($a:trm, $i:num, $j:num)) => do
@@ -205,6 +211,8 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.pointerAsU64 #[← elabTrm a]
   | `(trm| $v:trm : $t:typ) => do
     mkAppM ``Term.ann #[← elabTyp t, ← elabTrm v]
+  | `(trm| trace($s:str, $e:trm)) => do
+    mkAppM ``Term.trace #[mkStrLit s.getString, ← elabTrm e]
   | stx => throw $ .error stx "Invalid syntax for term"
 
 declare_syntax_cat                     constructor
