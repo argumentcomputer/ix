@@ -155,14 +155,14 @@ partial def Op.execute : Op → ExecuteM Unit
       let newFuncQueryMap := funcQueryMap.insert args newRes
       modify (·.updateForFunc funcIdx newFuncQueryMap (·.append res.values))
     | none => do
-      let map := stt.map
+      let savedMap := stt.map
       set { stt with map := args }
       let ctx ← read
       let func := ctx.toplevel.functions[funcIdx]!
       withReader (fun ctx => { ctx with funcIdx, args }) func.body.execute
-      let out := (← get).map
-      let out := out.extract (start := out.size - func.outputSize)
-      modify fun stt => { stt with map := map.append out }
+      let stt ← get
+      let out := stt.map.extract (start := stt.map.size - func.outputSize)
+      set { stt with map := savedMap.append out }
   | .trace str args => do
     let stt ← get
     let args := args.map (stt.map[·]!)
