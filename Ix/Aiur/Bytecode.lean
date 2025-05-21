@@ -307,7 +307,13 @@ partial def toIndex
     | .function layout => do
       pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
     | .constructor layout => do
-      pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
+      let size := layout.size
+      let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
+      if index.size < size then
+        let padding := (← pushOp (Bytecode.Op.prim (Primitive.u64 0)))[0]!
+        pure $ index ++ Array.mkArray (size - index.size) padding
+      else
+        pure index
     | _ => panic! "should not happen after typechecking"
   | .data (.primitive p) => do
     pushOp (Bytecode.Op.prim p)
@@ -358,16 +364,28 @@ partial def toIndex
         let args ← buildArgs args
         pushOp (Bytecode.Op.call layout.index args layout.outputSize) layout.outputSize
       | .constructor layout => do
+        let size := layout.size
         let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
-        buildArgs args index
+        let index ← buildArgs args index
+        if index.size < size then
+          let padding := (← pushOp (Bytecode.Op.prim (Primitive.u64 0)))[0]!
+          pure $ index ++ Array.mkArray (size - index.size) padding
+        else
+          pure index
       | _ => panic! "should not happen after typechecking"
   | .app name args => match layoutMap.get' name with
     | .function layout => do
       let args ← buildArgs args
       pushOp (Bytecode.Op.call layout.index args layout.outputSize) layout.outputSize
     | .constructor layout => do
+      let size := layout.size
       let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
-      buildArgs args index
+      let index ← buildArgs args index
+      if index.size < size then
+        let padding := (← pushOp (Bytecode.Op.prim (Primitive.u64 0)))[0]!
+        pure $ index ++ Array.mkArray (size - index.size) padding
+      else
+        pure index
     | _ => panic! "should not happen after typechecking"
   | .preimg name@(⟨.str .anonymous unqualifiedName⟩) out =>
     match bindings.get? (.str unqualifiedName) with
