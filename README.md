@@ -150,10 +150,7 @@ of Binius proofs, i.e. a Groth16 final SNARK for Binius, the construction is
 complete and we can embed a proof of Fermat's Last Theorem in Fermat's Margin
 Note.
 
-
-![Fits in the Margin](docs/fitsinthemargin.png "QR Code in the Margin")
-
-(Alternatively, we could use a QR code)
+![Fits in the Margin](docs/fitsinthemargin.png "alternatively, we could use a QR code")
 
 -----------
 
