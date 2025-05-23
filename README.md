@@ -4,7 +4,7 @@
 
 ![Planet IX](https://upload.wikimedia.org/wikipedia/commons/5/5a/Planet_nine_artistic_plain.png)
 
-------
+-----------
 
 The ix platform enables the compilation of [Lean
 4](https://github.com/leanprover/lean4) programs into zero-knowledge succinct
@@ -74,7 +74,7 @@ security guarantees to their users. Some possible use cases could be:
   model](https://github.com/risc0/risc0-lean4) alongside (or aggregated within)
   every proof produced by their zkVM.
 
----------
+-----------
 
 ### Example: Disproving Fermat's Last Theorem (the Margin Note)
 
@@ -152,6 +152,8 @@ complete and we can embed a proof of Fermat's Last Theorem in Fermat's margin.
 
 
 ![Fits in the Margin](docs/fitsinthemargin.png "QR Code in the Margin")
+
+-----------
 
 ## Architecture
 
