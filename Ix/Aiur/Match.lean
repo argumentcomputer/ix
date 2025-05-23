@@ -1,4 +1,5 @@
 import Ix.Aiur.Term
+import Ix.SmallMap
 
 namespace Aiur
 
@@ -109,8 +110,8 @@ where
       | _ => unreachable!
     | none => unreachable!
 
-def extractSPatterns (rows : Array Row) (term : UniqTerm) : Std.HashMap SPattern (Array Row) :=
-  rows.foldl (init := Std.HashMap.empty) processRow
+def extractSPatterns (rows : Array Row) (term : UniqTerm) : SmallMap SPattern (Array Row) :=
+  rows.foldl (init := default) processRow
 where
   processRow map row := row.clauses.foldl (init := map) processClause
   processClause map clause :=
@@ -161,10 +162,9 @@ where
       setId row.uniqId
       let newRows ← dnfProd clause.guards.toList row'.body
       let newRows := newRows.map (fun r => { r with clauses := r.clauses ++ row'.clauses })
-      let updatedMap := rowMap.alter clause.pat fun rows =>
-        if let some rows := rows then some (rows ++ newRows) else none
+      let updatedMap := rowMap.update clause.pat (· ++ newRows)
       pure (updatedMap, fallbackRows)
-    | none => pure (rowMap.map fun _ y => y.push row, fallbackRows.push row)
+    | none => pure (rowMap.map (·.push row), fallbackRows.push row)
 
 partial def compileRows (rows : Array Row) : CompilerM Decision :=
   match rows[0]? with
