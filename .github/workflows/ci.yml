@@ -2,7 +2,7 @@ name: CI Jobs
 
 on:
   push:
-    branches: main
+    branches: [main, revert-114]
   pull_request:
   workflow_dispatch:
 
