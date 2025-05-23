@@ -16,7 +16,7 @@ instance : Inhabited (IndexMap α β) where
     let pairs := #[]
     have {i} : ∀ (a : α), indices[a]? = some i → i < pairs.size := by
       intro a ha
-      have : indices[a]? = none := Std.HashMap.getElem?_emptyc
+      have : indices[a]? = none := Std.HashMap.getElem?_empty
       simp [this] at ha
     ⟨pairs, indices, this⟩
 
