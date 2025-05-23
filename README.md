@@ -155,7 +155,7 @@ complete and we can embed a proof of Fermat's Last Theorem in Fermat's margin.
 Ix consists of the following core components:
 
 - [the Ix compiler](https://github.com/argumentcomputer/ix/blob/main/Ix/CompileM.lean),
-  which transforms Lean 4 programs into a format called `ixon`, the ix object
+  which transforms Lean 4 programs into a format called `ixon`, [the ix object
   notation](https://github.com/argumentcomputer/ix/blob/main/docs/Ixon.md),
   which is an alpha-invariant content-addressible serialization or wire format.
   The compiler also includes a decompiler to convert `ixon` objects back into
