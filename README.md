@@ -1,4 +1,4 @@
-# ix: a zero-knowledge proof carrying code (zkPCC) platform for Lean 4
+# Ix: a zero-knowledge platform for Lean 4
 
 > We have just folded space from Ix...Many machines on Ix. New machines.
 
@@ -15,6 +15,7 @@ regardless of the size of the original Lean program. In fact, the correctness of
 the entire [mathlib](https://github.com/leanprover-community/mathlib4) library
 of formal mathematics, containing around 2 million lines of code, may be
 compiled in this way into a single kilobyte sized cryptographic certificate.
+
 We call this technique zero-knowledge proof-carrying code or *zkPCC*, as an
 extension of the well-known [proof-carrying
 code](https://en.wikipedia.org/wiki/Proof-carrying_code) paradigm. Instead
@@ -24,6 +25,7 @@ generated from the typechecking of that formal proof. This greatly improves the
 runtime cost of this verification operation (potentially even up to O(1)
 depending on the specific zkSNARK protocol used) and minimizes the complexity of
 local dependencies tooling (e.g. build systems for the formal proof language).
+
 Additionally, while in *PCC* an application must reveal the proof artifact that
 demonstrates some formal property to the user, in *zkPCC* this proof artifact
 may be kept private, which opens up new possiblities for economic transactions
@@ -93,8 +95,7 @@ particular proposition.
 
 The specific margin in question is [page 85 in the 1621 edition of Diophantus'
 Arithmetica](https://en.wikipedia.org/wiki/Fermat's_Last_Theorem#/media/File:Diophantus-II-8.jpg),
-which is a folio volume with dimensions 353mm tall by 225mm wide by 40mm deep
-(https://www.sophiararebooks.com/pages/books/6237/diophantus-of-alexandria/arithmeticorum-libri-sex-et-de-numeris-multangulis-liber-unus-nunc-primum-graece-latine-editi). Leaving the precise dimensions of the margins as an exercise to the reader,
+which is a folio volume with dimensions [353mm tall by 225mm wide by 40mm deep](https://www.sophiararebooks.com/pages/books/6237/diophantus-of-alexandria/arithmeticorum-libri-sex-et-de-numeris-multangulis-liber-unus-nunc-primum-graece-latine-editi). Leaving the precise dimensions of the margins as an exercise to the reader,
 it is trivial, to show the proposition is false regardless of margin size, or
 the size of the proof (up to very large bounds), if
 one permits the proof to printed in the margin using arbitrarily small text,
@@ -106,7 +107,7 @@ the text itself.
 Happily, we have an example of such a text we know the margin *can* contain,
 Fermat's note itself, which reads in Latin:
 
-"Cubum autem in duos cubos, aut quadratoquadratum in duos quadratoquadratos & generaliter nullam in infinitum ultra quadratum potestatem in duos eiusdem nominis fas est dividere cuius rei demonstrationem mirabilem sane detexi. Hanc marginis exiguitas non caperet."
+> Cubum autem in duos cubos, aut quadratoquadratum in duos quadratoquadratos & generaliter nullam in infinitum ultra quadratum potestatem in duos eiusdem nominis fas est dividere cuius rei demonstrationem mirabilem sane detexi. Hanc marginis exiguitas non caperet.
 
 At 262 characters, and 8-bits per character, this is 2096 bits, or 262 bytes.
 This is quite small, but fortunately not quite as small as a [Groth16 proof over
@@ -145,6 +146,9 @@ to generate a [Binius](https://www.irreducible.com/binius) proof that the
 theorem typechecks. With a Groth16 circuit that recursively proves verification
 of Binius proofs, i.e. a Groth16 final SNARK for Binius, the construction is
 complete and we can embed a proof of Fermat's Last Theorem in Fermat's margin.
+
+
+![Fits in the Margin](docs/fitsinthemargin.png "QR Code in the Margin")
 
 ## Architecture
 
