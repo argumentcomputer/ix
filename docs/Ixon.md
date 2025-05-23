@@ -9,8 +9,7 @@ The format has three primary components:
 2. **Expressions** which are anonymized dependently-typed lambda calculus terms,
    corresponding to expressions in the Lean Frontend. Ixon expressions are
    alpha-invariant, meaning `fun (x : A, y: B) => x` and `fun (a : A, b : B) => a` map 
-   to the same ````λ :`3 :`4 =>`0``` Ixon expression (where `A` and
-   `B` in this example are referenced using local ````n``` DeBruijn indexes)
+   to the same ``λ :`3 :`4 =>`0`` Ixon expression (where `A` and `B` in this example are referenced using local DeBruijn indexes)
 3. **Constants** are top-level content-addressed global declarations such as
    typed definitions or inductive datatypes
 
