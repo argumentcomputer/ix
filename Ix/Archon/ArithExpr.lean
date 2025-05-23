@@ -13,7 +13,18 @@ inductive ArithExpr
   | pow : ArithExpr → UInt64 → ArithExpr
   deriving Inhabited
 
+instance : Add ArithExpr := ⟨.add⟩
+instance : Sub ArithExpr := ⟨.add⟩
+instance : Mul ArithExpr := ⟨.mul⟩
+instance : HPow ArithExpr UInt64 ArithExpr where
+  hPow x e := .pow x e
+
+instance : Zero ArithExpr := ⟨.const 0⟩
+
 namespace ArithExpr
+
+@[inline] def zero : ArithExpr := Zero.zero
+@[inline] def one : ArithExpr := .const 1
 
 def toString : ArithExpr → String
   | const c => s!"Const({c})"
