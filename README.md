@@ -23,13 +23,13 @@ of a host system verifying formal proofs carried by an application as in
 proof-carrying code, in **zkPCC** the host or user verifies a cryptographic
 zero-knowledge proof generated from the typechecking of that formal proof. This
 greatly improves the runtime cost of this verification operation (potentially
-even up to O(1) depending on the specific zkSNARK protocol used) and minimizes
+even up to O(1) depending on the specific zk-SNARK protocol used) and minimizes
 the complexity of local dependencies tooling (e.g. build systems for the formal
 proof language).
 
 Additionally, while in proof-carrying code an application must reveal the proof
 artifact that demonstrates some formal property to the user, in **zkPCC** this
-proof artifact may be kept private, which opens up new possiblities for economic
+proof artifact may be kept private, which opens up new possibilities for economic
 transactions over proofs.
 
 > :warning: **This repository is a pre-alpha work in progress and should not be used for any purpose.**
@@ -65,7 +65,7 @@ security guarantees to their users. Some possible use cases could be:
   that their current specific version satisfies such specifications. Such proofs
   could be verified on-chain, and even programmatically gate certain protocol updates
   (e.g. version X validates that version X+1 is a correct update).
-- Individual smart contracts can publish on-chain proofs of ther [formal
+- Individual smart contracts can publish on-chain proofs of their [formal
   models](https://ethereum.org/en/developers/docs/smart-contracts/formal-verification/)
   or proofs showing that their bytecode was generated from particular sources
   (currently a trusted block explorer feature)
@@ -90,7 +90,7 @@ The first part of this statement famously evaded proof for over 350 years before
 finally being demonstrated by Andrew Wiles in 1994. Mathematicians and
 historians of mathematics have also long debated the second part, whether
 Fermat's claim that he possessed a proof of the first part is credible, which
-seems unlikely given the complexisty and modern mathematical infrastructure used
+seems unlikely given the complexity and modern mathematical infrastructure used
 by the Wiles proof of the first part. Rarely discussed, however, is the third
 part, which is in fact a statement of proof theory, specifically one which
 proposes a information theoretic lower bound to the size of the proof of a
@@ -133,7 +133,7 @@ theorem PNat.pow_add_pow_ne_pow
   PNat.pow_add_pow_ne_pow_of_FermatLastTheorem FLT.Wiles_Taylor_Wiles x y z n hn
 ```
 
-Currently, as this dependencies of this theorem contain `sorry` holes, we cannot
+Currently, as the dependencies of this theorem contain `sorry` holes, we cannot
 feed it through `ix` (which only works over complete program graphs). Once the
 formalization is complete, however, you will be able to do
 
@@ -147,7 +147,7 @@ b44236ba17ad7445ae3eac48a8ba86ba00f08c069237b08451e311b688146e7e
 to generate a [Binius](https://www.irreducible.com/binius) proof that the
 theorem typechecks. With a Groth16 circuit that recursively proves verification
 of Binius proofs, i.e. a Groth16 final SNARK for Binius, the construction is
-complete and we can embed a proof of Fermat's Last Theorem in Fermat's Margin
+complete, and we can embed a proof of Fermat's Last Theorem in Fermat's Margin
 Note.
 
 ![Fits in the Margin](docs/fitsinthemargin.png "alternatively, we could use a QR code")
@@ -161,7 +161,7 @@ Ix consists of the following core components:
 - [the Ix compiler](https://github.com/argumentcomputer/ix/blob/main/Ix/CompileM.lean),
   which transforms Lean 4 programs into a format called `ixon`, [the ix object
   notation](https://github.com/argumentcomputer/ix/blob/main/docs/Ixon.md),
-  which is an alpha-invariant content-addressible serialization or wire format.
+  which is an alpha-invariant content-addressable serialization or wire format.
   The compiler also includes a decompiler to convert `ixon` objects back into
   Lean programs (by preserving the alpha-relevant metadata in a separate ixon
   object and re-merging the computationally relevant and irrelevant parts).
@@ -175,8 +175,7 @@ Ix consists of the following core components:
 - the IxVM (not yet released), which implements reduction and typechecking
   of ixon (including ingress and egress from and to binary data).
 - Binius precompiles for the IxVM, including the Blake3 hash function and Lean4
-  primitives. This work will be upstreamed to Binius where possible, e.g.
-  https://github.com/IrreducibleOSS/binius/pull/56.
+  primitives. This work has been [upstreamed](https://github.com/IrreducibleOSS/binius/pulls?q=is%3Apr+Blake3+is%3Aclosed) to Binius where possible.
 - integration with the [iroh p2p network](https://www.iroh.computer/) so that
   different ix users can easily share ixon data between themselves
 
