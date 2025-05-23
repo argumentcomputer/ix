@@ -38,7 +38,7 @@
         "x86_64-darwin"
         "x86_64-linux"
       ];
-      
+
       perSystem = { system, pkgs, ... }:
       let
         lib = (import ./ix.nix { inherit system pkgs fenix crane lean4-nix blake3-lean; }).lib;

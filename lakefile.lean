@@ -54,7 +54,7 @@ extern_lib ix_rs pkg := do
 
 /-- Build the static lib for the C files -/
 extern_lib ix_c pkg := do
-  let compiler := "cc"
+  let compiler := "gcc"
   let cDir := pkg.dir / "c"
   let buildCDir := pkg.buildDir / "c"
   let weakArgs := #["-fPIC", "-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
