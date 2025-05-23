@@ -13,7 +13,11 @@ void rs_witness_module_free(void*);
 size_t rs_witness_module_add_entry(void*);
 size_t rs_witness_module_add_entry_with_capacity(void*, uint8_t);
 void rs_witness_module_bind_oracle_to(void*, size_t, size_t, uint8_t);
-void rs_witness_module_push_u128_to(void*, void*, size_t);
+void rs_witness_module_push_u8s_to(void*, b_lean_obj_arg, size_t);
+void rs_witness_module_push_u16s_to(void*, b_lean_obj_arg, size_t);
+void rs_witness_module_push_u32s_to(void*, b_lean_obj_arg, size_t);
+void rs_witness_module_push_u64s_to(void*, b_lean_obj_arg, size_t);
+void rs_witness_module_push_u128s_to(void*, b_lean_obj_arg, size_t);
 void rs_witness_module_populate(void*, uint64_t);
 void *rs_compile_witness_modules(void**, b_lean_obj_arg);
 

@@ -192,7 +192,7 @@ mod tests {
 
     fn populate_a_xor_b_witness_with_ones(witness_module: &mut WitnessModule, oracles: &Oracles) {
         let ones = witness_module.new_entry_with_capacity(7);
-        witness_module.push_u128_to(u128::MAX, ones);
+        witness_module.push_u128s_to([u128::MAX], ones);
         witness_module.bind_oracle_to::<B1>(oracles.s, ones);
         witness_module.bind_oracle_to::<B1>(oracles.a, ones);
         witness_module.bind_oracle_to::<B1>(oracles.b, ones);
@@ -204,8 +204,8 @@ mod tests {
         let mut witness_module = circuit_module.init_witness_module().unwrap();
         let zeros = witness_module.new_entry_with_capacity(7);
         let ones = witness_module.new_entry_with_capacity(7);
-        witness_module.push_u128_to(0, zeros);
-        witness_module.push_u128_to(u128::MAX, ones);
+        witness_module.push_u128s_to([0], zeros);
+        witness_module.push_u128s_to([u128::MAX], ones);
         witness_module.bind_oracle_to::<B1>(oracles.s, ones);
         witness_module.bind_oracle_to::<B1>(oracles.a, ones);
         witness_module.bind_oracle_to::<B1>(oracles.b, zeros);
