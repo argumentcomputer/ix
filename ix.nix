@@ -34,11 +34,11 @@ let
     # Gets all C files in `./c`, without the extension
     cFiles = let ext = ".c"; in builtins.map (file: builtins.replaceStrings [ext] [""] file) (getFiles ext);
     # Creates `gcc -c` command for each C file
-    buildCmd = builtins.map (file: "gcc -Wall -Werror -Wextra -c ${file}.c -o ${file}.o") cFiles;
+    buildCmd = builtins.map (file: "${pkgs.gcc}/bin/gcc -Wall -Werror -Wextra -c ${file}.c -o ${file}.o") cFiles;
     # Final `buildPhase` instructions
     buildSteps = buildCmd ++
     [
-      "ar rcs libix_c.a ${builtins.concatStringsSep " " (builtins.map (file: "-o ${file}.o") cFiles)}"
+      "ar rcs libix_c.a ${builtins.concatStringsSep " " (builtins.map (file: "${file}.o") cFiles)}"
     ];
     # Gets all header files in `./c`
     hFiles = getFiles ".h";

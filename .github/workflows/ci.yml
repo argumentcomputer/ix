@@ -12,18 +12,34 @@ concurrency:
 
 jobs:
   lean-jobs:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, warp-macos-latest-arm64-6x]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install GCC on MacOS
+        if: contains(matrix.os, 'macos')
+        run: |
+          /opt/homebrew/bin/gcc-14 --version
+          mkdir -p ~/local/bin
+          ln -sf /opt/homebrew/bin/gcc-14 ~/local/bin/gcc
+          export PATH=~/local/bin:$PATH
+          which gcc
       - uses: leanprover/lean-action@v1 # https://github.com/leanprover/lean-action
         with:
-          build-args: "--wfail"
+          build-args: "--wfail -v"
           test: true
+      - name: Test Ix CLI
+        run: lake test -v -- cli
       - name: Check lean.h.hash
         run: lake run check-lean-h-hash
 
   rust-test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, warp-macos-latest-arm64-6x]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +53,10 @@ jobs:
         run: cargo nextest run --release --profile ci --workspace --run-ignored all
 
   rust-lint:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, warp-macos-latest-arm64-6x]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,9 +71,11 @@ jobs:
       - name: Check clippy warnings
         run: cargo xclippy -D warnings
       - name: Get Rust version
+        if: contains(matrix.os, 'ubuntu')
         run: |
           echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a $GITHUB_ENV
       - name: Cargo-deny
+        if: contains(matrix.os, 'ubuntu')
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           rust-version: ${{ env.RUST_VERSION }}

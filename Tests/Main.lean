@@ -6,10 +6,13 @@ import Tests.Unsigned
 import Tests.Ix
 import Tests.Ix.Compile
 import Tests.Keccak
+import Tests.Cli
 
 def main (args: List String) : IO UInt32 := do
-  if args.contains "compile"
-  then LSpec.lspecEachIO Tests.Ix.Compile.suiteIO id
+  if args.contains "compile" then
+    LSpec.lspecEachIO Tests.Ix.Compile.suiteIO id
+   else if args.contains "cli" then
+     Tests.ixCli
   else
     LSpec.lspecIO (.ofList [
       ("aiur", Tests.Aiur.suite),

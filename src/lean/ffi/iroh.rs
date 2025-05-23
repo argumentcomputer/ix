@@ -1,14 +1,23 @@
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 use anyhow::Result;
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 use bytes::Bytes;
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 use iroh::{Endpoint, protocol::Router};
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 use iroh_blobs::{net_protocol::Blobs, ticket::BlobTicket};
-use std::{error::Error, ffi::CString};
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+use std::error::Error;
+use std::ffi::CString;
 
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+use crate::lean::ffi::raw_to_str;
 use crate::lean::{
-    ffi::{CResult, c_char, raw_to_str, to_raw},
+    ffi::{CResult, c_char, to_raw},
     sarray::LeanSArrayObject,
 };
 
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_send(bytes: &LeanSArrayObject) -> *const CResult {
     // Create a Tokio runtime to block on the async function
@@ -32,6 +41,19 @@ extern "C" fn rs_iroh_send(bytes: &LeanSArrayObject) -> *const CResult {
     to_raw(c_result)
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[unsafe(no_mangle)]
+extern "C" fn rs_iroh_send(_bytes: &LeanSArrayObject) -> *const CResult {
+    let msg = CString::new("Iroh functions not supported on MacOS aarch64-darwin")
+        .expect("CString::new failure");
+    let c_result = CResult {
+        is_ok: false,
+        data: msg.into_raw().cast(),
+    };
+    to_raw(c_result)
+}
+
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 async fn iroh_send(bytes: &[u8]) -> Result<(), Box<dyn Error>> {
     // Create an endpoint, it allows creating and accepting
     // connections in the iroh p2p world
@@ -69,6 +91,7 @@ async fn iroh_send(bytes: &[u8]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_recv(
     ticket: *const c_char,
@@ -102,6 +125,23 @@ extern "C" fn rs_iroh_recv(
     to_raw(c_result)
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[unsafe(no_mangle)]
+extern "C" fn rs_iroh_recv(
+    _ticket: *const c_char,
+    _buffer: &mut LeanSArrayObject,
+    _buffer_capacity: usize,
+) -> *const CResult {
+    let msg = CString::new("Iroh functions not supported on MacOS aarch64-darwin")
+        .expect("CString::new failure");
+    let c_result = CResult {
+        is_ok: false,
+        data: msg.into_raw().cast(),
+    };
+    to_raw(c_result)
+}
+
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 async fn iroh_recv(ticket: &str, buffer_capacity: usize) -> Result<Bytes, Box<dyn Error>> {
     // Create an endpoint, it allows creating and accepting
     // connections in the iroh p2p world
