@@ -42,8 +42,7 @@ size_t rs_circuit_module_add_shifted(
 size_t rs_circuit_module_add_projected(void*, char const *, size_t, uint64_t, size_t, size_t);
 void rs_circuit_module_push_namespace(void*, char const *);
 void rs_circuit_module_pop_namespace(void*);
-size_t rs_circuit_module_canonical_bytes_size(void*);
-void rs_circuit_module_canonical_bytes(void*, size_t, uint8_t*);
+void rs_circuit_module_version(size_t, void**, uint8_t*);
 
 /* --- Archon protocol --- */
 

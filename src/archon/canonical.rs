@@ -8,7 +8,14 @@ use super::{
     transparent::Transparent,
 };
 
-pub(crate) trait Canonical {
+pub fn version(modules: &[&CircuitModule]) -> blake3::Hash {
+    let size = Canonical::size(modules);
+    let mut buffer = Vec::with_capacity(size);
+    Canonical::write(modules, &mut buffer);
+    blake3::hash(&buffer)
+}
+
+trait Canonical {
     fn size(&self) -> usize;
     fn write(&self, buffer: &mut Vec<u8>);
 }
@@ -355,5 +362,16 @@ impl Canonical for CircuitModule {
         Canonical::write(flushes, buffer);
         Canonical::write(constraints, buffer);
         Canonical::write(non_zero_oracle_ids, buffer);
+    }
+}
+
+impl Canonical for [&CircuitModule] {
+    fn size(&self) -> usize {
+        self.iter().map(|&m| Canonical::size(m)).sum()
+    }
+    fn write(&self, buffer: &mut Vec<u8>) {
+        for &module in self.iter() {
+            Canonical::write(module, buffer);
+        }
     }
 }

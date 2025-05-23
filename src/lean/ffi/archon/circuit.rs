@@ -7,7 +7,7 @@ use std::ffi::c_char;
 
 use crate::{
     archon::{
-        ModuleId, OracleIdx, canonical::Canonical, circuit::CircuitModule, witness::WitnessModule,
+        ModuleId, OracleIdx, canonical::version, circuit::CircuitModule, witness::WitnessModule,
     },
     lean::{
         CArray,
@@ -199,17 +199,11 @@ extern "C" fn rs_circuit_module_pop_namespace(circuit_module: &mut CircuitModule
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn rs_circuit_module_canonical_bytes_size(circuit_module: &CircuitModule) -> usize {
-    Canonical::size(circuit_module)
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn rs_circuit_module_canonical_bytes(
-    circuit_module: &CircuitModule,
-    size: usize,
-    bytes: &mut CArray<u8>,
+extern "C" fn rs_circuit_module_version(
+    num_modules: usize,
+    circuit_modules: &CArray<&CircuitModule>,
+    buffer: &mut [u8; 32],
 ) {
-    let mut buffer = Vec::with_capacity(size);
-    Canonical::write(circuit_module, &mut buffer);
-    bytes.copy_from_slice(&buffer);
+    let circuit_modules = circuit_modules.slice(num_modules);
+    buffer.copy_from_slice(version(circuit_modules).as_bytes());
 }
