@@ -16,26 +16,27 @@ the entire [mathlib](https://github.com/leanprover-community/mathlib4) library
 of formal mathematics, containing around 2 million lines of code, may be
 compiled in this way into a single kilobyte sized cryptographic certificate.
 
-We call this technique zero-knowledge proof-carrying code or *zkPCC*, as an
+We call this technique zero-knowledge proof-carrying code or **zkPCC**, as an
 extension of the well-known [proof-carrying
 code](https://en.wikipedia.org/wiki/Proof-carrying_code) paradigm. Instead
-of a host system verifying formal proofs carried by an application as in *PCC*,
-in *zkPCC* the host or user verifies a cryptographic zero-knowledge proof
-generated from the typechecking of that formal proof. This greatly improves the
-runtime cost of this verification operation (potentially even up to O(1)
-depending on the specific zkSNARK protocol used) and minimizes the complexity of
-local dependencies tooling (e.g. build systems for the formal proof language).
+of a host system verifying formal proofs carried by an application as in
+proof-carrying code, in **zkPCC** the host or user verifies a cryptographic
+zero-knowledge proof generated from the typechecking of that formal proof. This
+greatly improves the runtime cost of this verification operation (potentially
+even up to O(1) depending on the specific zkSNARK protocol used) and minimizes
+the complexity of local dependencies tooling (e.g. build systems for the formal
+proof language).
 
-Additionally, while in *PCC* an application must reveal the proof artifact that
-demonstrates some formal property to the user, in *zkPCC* this proof artifact
-may be kept private, which opens up new possiblities for economic transactions
-over proofs.
+Additionally, while in proof-carrying code an application must reveal the proof
+artifact that demonstrates some formal property to the user, in **zkPCC** this
+proof artifact may be kept private, which opens up new possiblities for economic
+transactions over proofs.
 
 > :warning: **This repository is a pre-alpha work in progress and should not be used for any purpose.**
 
 ## Use Cases
 
-Our expectation is that *zkPCC* will allow applications frictionlessly ship
+Our expectation is that Ix, and **zkPCC** in general, will allow applications frictionlessly ship
 security guarantees to their users. Some possible use cases could be:
 
 - Software written in compiled languages like Rust can attach to their binaries
@@ -56,11 +57,11 @@ security guarantees to their users. Some possible use cases could be:
   This means everytime you buy a laptop, cell phone, web server, you have to pay
   for a third more computing power, because we don't know how to safely run
   applications in protection ring 0. By reducing verification overhead and
-  improving portability over *PCC*, *zkPCC* potentially enables more
+  improving portability over proof-carrying code, **zkPCC** potentially enables more
   sophisticated software-based process isolation.
 - Decentralized platforms like [Ethereum blockchain](https://ethereum.org/)
   could publish [formal specifications of their protocol](https://github.com/ConsenSys/eth2.0-dafny)
-  and then require clients, layer-2s, zkVMs, etc to publish *zkPCC* proofs
+  and then require clients, layer-2s, zkVMs, etc to publish **zkPCC** proofs
   that their current specific version satisfies such specifications. Such proofs
   could be verified on-chain, and even programmatically gate certain protocol updates
   (e.g. version X validates that version X+1 is a correct update).
