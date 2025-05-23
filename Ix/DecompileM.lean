@@ -334,7 +334,7 @@ partial def decompileDefn (x: Ix.Definition)
     | .definition => return .defnInfo <|
       Lean.mkDefinitionValEx x.name x.levelParams type val x.hints x.safety x.all
     | .opaque => return .opaqueInfo <|
-      Lean.mkOpaqueValEx x.name x.levelParams type val true x.all
+      Lean.mkOpaqueValEx x.name x.levelParams type val (x.safety == .unsafe) x.all
     | .theorem => return .thmInfo <|
       Lean.mkTheoremValEx x.name x.levelParams type val x.all
 

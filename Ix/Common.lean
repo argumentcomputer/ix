@@ -244,4 +244,26 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
       (← msgs.toList.mapM (·.toString)).map String.trim
   else return s.commandState.env
 
+def Expr.stripMData : Expr -> Expr
+| .mdata _ x => x.stripMData
+| .app f a => .app f.stripMData a.stripMData
+| .lam bn bt b bi => .lam bn bt.stripMData b.stripMData bi
+| .forallE bn bt b bi => .forallE bn bt.stripMData b.stripMData bi
+| .letE ln t v b nd => .letE ln t.stripMData v.stripMData b.stripMData nd
+| .proj tn i s => .proj tn i s.stripMData
+| x => x
+
+def RecursorRule.stripMData : RecursorRule -> RecursorRule
+| ⟨c, nf, rhs⟩ => ⟨c, nf, rhs.stripMData⟩
+
+def ConstantInfo.stripMData : Lean.ConstantInfo -> Lean.ConstantInfo
+| .axiomInfo x => .axiomInfo { x with type := x.type.stripMData }
+| .defnInfo x => .defnInfo { x with type := x.type.stripMData, value := x.value.stripMData }
+| .thmInfo x => .thmInfo { x with type := x.type.stripMData, value := x.value.stripMData }
+| .quotInfo x => .quotInfo { x with type := x.type.stripMData }
+| .opaqueInfo x => .opaqueInfo { x with type := x.type.stripMData, value := x.value.stripMData }
+| .inductInfo x => .inductInfo { x with type := x.type.stripMData }
+| .ctorInfo x => .ctorInfo { x with type := x.type.stripMData }
+| .recInfo x => .recInfo { x with type := x.type.stripMData, rules := x.rules.map (·.stripMData) }
 end Lean
+

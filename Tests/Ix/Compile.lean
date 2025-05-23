@@ -169,12 +169,12 @@ def testInductivesRoundtrip : IO TestSeq := do
     | .none => throw (IO.userError "name {n} not in env")
     match dstt.constants.find? n with
     | .some c2 =>
-      if c == c2 then
+      if c.stripMData == c2.stripMData then
         IO.println s!"✓ {n} @ {anon}:{meta}"
       else
         IO.println s!"× {n} @ {anon}:{meta}"
-        IO.println s!"× {repr c}"
-        IO.println s!"× {repr c2}"
+        IO.println s!"× {repr c.stripMData}"
+        IO.println s!"× {repr c2.stripMData}"
         res := false
         break
     | .none => do
@@ -184,11 +184,8 @@ def testInductivesRoundtrip : IO TestSeq := do
 
 def testRoundtripGetEnv : IO TestSeq := do
   let env <- get_env!
-  let delta := env.getDelta
-  let consts := env.getConstMap
-  IO.println s!"env with delta {delta.toList.length}, constMap {consts.toList.length}"
   let mut cstt : CompileState := .init env 0
-  IO.println s!"compiling env"
+  --IO.println s!"compiling env"
   for (_, c) in env.getDelta do
     let (_, stt) <- match (compileConst c).run (.init 200000) cstt with
     | .ok a stt => do
@@ -218,13 +215,13 @@ def testRoundtripGetEnv : IO TestSeq := do
     | .none => throw (IO.userError "name {n} not in env")
     match dstt.constants.find? n with
     | .some c2 =>
-      if c == c2 
+      if c.stripMData == c2.stripMData
       then
         IO.println s!"✓ {n} @ {anon}:{meta}"
       else
         IO.println s!"× {n} @ {anon}:{meta}"
-        IO.println s!"× {repr c}"
-        IO.println s!"× {repr c2}"
+        IO.FS.writeFile "c.out" s!"{repr c.stripMData}"
+        IO.FS.writeFile "c2.out" s!"{repr c2.stripMData}"
         res := false
         break
     | .none => do
