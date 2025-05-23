@@ -651,19 +651,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "blake3"
-version = "1.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "675f87afced0413c9bb02843499dbbd3882a237645883f71a2b59644a6d2f753"
-dependencies = [
- "arrayref",
- "arrayvec",
- "cc",
- "cfg-if",
- "constant_time_eq",
-]
-
-[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2530,7 +2517,6 @@ dependencies = [
  "binius_math",
  "binius_maybe_rayon",
  "binius_utils",
- "blake3",
  "bumpalo",
  "bytemuck",
  "bytes",
