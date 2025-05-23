@@ -1,4 +1,4 @@
-# Ix: a zero-knowledge platform for Lean 4
+# Ix: a zero-knowledge proof-carrying code platform
 
 > We have just folded space from Ix. Many machines on Ix. New machines.
 
