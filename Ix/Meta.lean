@@ -39,7 +39,7 @@ macro "get_env!" : term =>
   `(getFileEnv this_file!)
 
 def computeIxAddress (env: Lean.Environment) (const : ConstantInfo) : IO Address := do
-  let ((a, _), _) <- Ix.Compile.compileConstIO env const
+  let ((a, _), _) <- (Ix.Compile.compileConst const).runIO env
   return a
 
 def runCore (f : CoreM α) (env : Environment) : IO α :=
