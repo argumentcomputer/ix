@@ -1,6 +1,6 @@
 # Ix: a zero-knowledge platform for Lean 4
 
-> We have just folded space from Ix...Many machines on Ix. New machines.
+> We have just folded space from Ix. Many machines on Ix. New machines.
 
 ![Planet IX](https://upload.wikimedia.org/wikipedia/commons/5/5a/Planet_nine_artistic_plain.png)
 
@@ -74,7 +74,7 @@ security guarantees to their users. Some possible use cases could be:
   model](https://github.com/risc0/risc0-lean4) alongside (or aggregated within)
   every proof produced by their zkVM.
 
-## Example: "But it does fit in the margin!" or, disproving Fermat's Last Theorem (the Margin Note)
+### Example: Disproving Fermat's Last Theorem (the Margin Note)
 
 In or around 1637, the mathematician Pierre Fermat conjectured the following:
 
