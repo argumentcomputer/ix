@@ -45,7 +45,7 @@ def linearCombination : TestSeq := Id.run do
     witnessModule := newWitnessModule
     for j in [0 : 1 <<< i ] do
       let u128 := UInt128.ofNatWrap (j * j + 17)
-      witnessModule := witnessModule.pushUInt128To u128 entryId
+      witnessModule := witnessModule.pushUInt128sTo #[u128] entryId
     match i with
     | 0 => witnessModule := witnessModule.bindOracleTo oracleId entryId .b1
     | 1 => witnessModule := witnessModule.bindOracleTo oracleId entryId .b2
@@ -66,7 +66,7 @@ def packed : TestSeq :=
   let circuitModule := circuitModule.freezeOracles
   let witnessModule := circuitModule.initWitnessModule
   let (entryId, witnessModule) := witnessModule.addEntryWithCapacity 7
-  let witnessModule := witnessModule.pushUInt128To 2347928368726 entryId
+  let witnessModule := witnessModule.pushUInt128sTo #[2347928368726] entryId
   let witnessModule := witnessModule.bindOracleTo x entryId .b1
   populateAndValidate circuitModule witnessModule 128 "Archon packed works"
 
@@ -77,9 +77,39 @@ def shifted : TestSeq :=
   let circuitModule := circuitModule.freezeOracles
   let witnessModule := circuitModule.initWitnessModule
   let (entryId, witnessModule) := witnessModule.addEntryWithCapacity 7
-  let witnessModule := witnessModule.pushUInt128To 2347928368726 entryId
+  let witnessModule := witnessModule.pushUInt128sTo #[2347928368726] entryId
   let witnessModule := witnessModule.bindOracleTo x entryId .b1
   populateAndValidate circuitModule witnessModule 128 "Archon shifted works"
+
+def pushData : TestSeq :=
+  let circuitModule := CircuitModule.new 0
+  let (u8s, circuitModule) := circuitModule.addCommitted "u8s" .b1
+  let (u16s, circuitModule) := circuitModule.addCommitted "u16s" .b1
+  let (u32s, circuitModule) := circuitModule.addCommitted "u32s" .b1
+  let (u64s, circuitModule) := circuitModule.addCommitted "u64s" .b1
+  let (u128s, circuitModule) := circuitModule.addCommitted "u128s" .b1
+  let circuitModule := circuitModule.assertZero "u8s xor u16s" #[] $ .add (.oracle u8s) (.oracle u16s)
+  let circuitModule := circuitModule.assertZero "u16s xor u32s" #[] $ .add (.oracle u16s) (.oracle u32s)
+  let circuitModule := circuitModule.assertZero "u32s xor u64s" #[] $ .add (.oracle u32s) (.oracle u64s)
+  let circuitModule := circuitModule.assertZero "u64s xor u128s" #[] $ .add (.oracle u64s) (.oracle u128s)
+  let circuitModule := circuitModule.freezeOracles
+  let witnessModule := circuitModule.initWitnessModule
+  let (u8sEntry, witnessModule) := witnessModule.addEntryWithCapacity 7
+  let (u16sEntry, witnessModule) := witnessModule.addEntryWithCapacity 7
+  let (u32sEntry, witnessModule) := witnessModule.addEntryWithCapacity 7
+  let (u64sEntry, witnessModule) := witnessModule.addEntryWithCapacity 7
+  let (u128sEntry, witnessModule) := witnessModule.addEntryWithCapacity 7
+  let witnessModule := witnessModule.pushUInt8sTo ⟨(List.replicate 16 0)⟩ u8sEntry
+  let witnessModule := witnessModule.pushUInt16sTo ⟨(List.replicate 8 0)⟩ u16sEntry
+  let witnessModule := witnessModule.pushUInt32sTo #[0, 0, 0, 0] u32sEntry
+  let witnessModule := witnessModule.pushUInt64sTo #[0, 0] u64sEntry
+  let witnessModule := witnessModule.pushUInt128sTo #[0] u128sEntry
+  let witnessModule := witnessModule.bindOracleTo u8s u8sEntry .b1
+  let witnessModule := witnessModule.bindOracleTo u16s u16sEntry .b1
+  let witnessModule := witnessModule.bindOracleTo u32s u32sEntry .b1
+  let witnessModule := witnessModule.bindOracleTo u64s u64sEntry .b1
+  let witnessModule := witnessModule.bindOracleTo u128s u128sEntry .b1
+  populateAndValidate circuitModule witnessModule 128 "Archon witness data pushes work"
 
 def proveAndVerify : TestSeq :=
   let circuitModule := CircuitModule.new 0
@@ -89,7 +119,7 @@ def proveAndVerify : TestSeq :=
   let circuitModule := circuitModule.freezeOracles
   let witnessModule := circuitModule.initWitnessModule
   let (entryId, witnessModule) := witnessModule.addEntryWithCapacity 7
-  let witnessModule := witnessModule.pushUInt128To (.ofNatCore $ UInt128.size - 1) entryId
+  let witnessModule := witnessModule.pushUInt128sTo #[(.ofNatCore $ UInt128.size - 1)] entryId
   let witnessModule := witnessModule.bindOracleTo x entryId .b1
   let witnessModule := witnessModule.bindOracleTo y entryId .b1
   let height := 128
@@ -115,6 +145,7 @@ def Tests.Archon.suite := [
     linearCombination,
     packed,
     shifted,
+    pushData,
     proveAndVerify,
     versionCircuitModules,
   ]

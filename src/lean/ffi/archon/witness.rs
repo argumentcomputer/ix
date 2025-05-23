@@ -11,8 +11,9 @@ use crate::{
     lean::{
         CArray,
         array::LeanArrayObject,
-        ffi::{drop_raw, lean_unbox_u64, to_raw},
+        ffi::{drop_raw, external_ptr_to_u128, lean_unbox_u32, lean_unbox_u64, to_raw},
     },
+    lean_unbox,
 };
 
 /// Also holds a reference to the witness modules vector, which lives in the heap
@@ -70,12 +71,53 @@ extern "C" fn rs_witness_module_bind_oracle_to(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn rs_witness_module_push_u128_to(
+extern "C" fn rs_witness_module_push_u8s_to(
     witness_module: &mut WitnessModule,
-    u128: &u128,
+    u8s: &LeanArrayObject,
     entry_id: EntryId,
 ) {
-    witness_module.push_u128_to(*u128, entry_id);
+    let u8s = u8s.to_vec(|ptr| lean_unbox!(u8, ptr));
+    witness_module.push_u8s_to(u8s, entry_id);
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_module_push_u16s_to(
+    witness_module: &mut WitnessModule,
+    u16s: &LeanArrayObject,
+    entry_id: EntryId,
+) {
+    let u16s = u16s.to_vec(|ptr| lean_unbox!(u16, ptr));
+    witness_module.push_u16s_to(u16s, entry_id);
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_module_push_u32s_to(
+    witness_module: &mut WitnessModule,
+    u32s: &LeanArrayObject,
+    entry_id: EntryId,
+) {
+    let u32s = u32s.to_vec(lean_unbox_u32);
+    witness_module.push_u32s_to(u32s, entry_id);
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_module_push_u64s_to(
+    witness_module: &mut WitnessModule,
+    u64s: &LeanArrayObject,
+    entry_id: EntryId,
+) {
+    let u64s = u64s.to_vec(lean_unbox_u64);
+    witness_module.push_u64s_to(u64s, entry_id);
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_module_push_u128s_to(
+    witness_module: &mut WitnessModule,
+    u128s: &LeanArrayObject,
+    entry_id: EntryId,
+) {
+    let u128s = u128s.to_vec(external_ptr_to_u128);
+    witness_module.push_u128s_to(u128s, entry_id);
 }
 
 #[unsafe(no_mangle)]
