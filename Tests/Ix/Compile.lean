@@ -132,56 +132,6 @@ def testInductives : IO TestSeq := do
   let nss := dss.map fun ds => ds.map (·.name)
   return test "test inductives" (res == nss)
 
-
-def testInductivesRoundtrip : IO TestSeq := do
-  let namesp := `Test.Ix.Inductives
-  let env <- get_env!
-  let delta := env.getDelta.filter fun n _ => namesp.isPrefixOf n
-  --IO.println s!"env with delta {delta.toList.map fun (n, _) => n}"
-  let mut cstt : CompileState := .init env 0
-  for (_, c) in delta do
-    let (_, stt) <- match (compileConst c).run (.init 200000) cstt with
-    | .ok a stt => do
-      stt.store.forM fun a c => discard $ (Store.forceWriteConst a c).toIO
-      pure (a, stt)
-    | .error e _ => do
-      IO.println s!"failed {c.name}"
-      throw (IO.userError (<- e.pretty))
-    let (anon, meta) <- match stt.names.find? c.name with
-    | .some (a, m) => pure (a, m)
-    | .none => throw (IO.userError "name {n} not in env")
-    IO.println s!"✓ {c.name} -> {anon}:{meta}"
-    cstt := stt
-  let denv := DecompileEnv.init cstt.names cstt.store
-  let mut dstt := default
-  for (n, (a, m)) in denv.names do
-    let (_, stt) <- match (ensureBlock n a m).run denv dstt with
-    | .ok a stt => pure (a, stt)
-    | .error e _ => do
-      IO.println s!"decompilation failed {n}->{a}:{m}"
-      throw (IO.userError e.pretty)
-    IO.println ""
-    dstt := stt
-  let mut res := true
-  for (n, (anon, meta)) in denv.names do
-    let c <- match env.constants.find? n with
-    | .some c => pure c
-    | .none => throw (IO.userError "name {n} not in env")
-    match dstt.constants.find? n with
-    | .some c2 =>
-      if c.stripMData == c2.stripMData then
-        IO.println s!"✓ {n} @ {anon}:{meta}"
-      else
-        IO.println s!"× {n} @ {anon}:{meta}"
-        IO.println s!"× {repr c.stripMData}"
-        IO.println s!"× {repr c2.stripMData}"
-        res := false
-        break
-    | .none => do
-      let e' := (DecompileError.unknownName default n).pretty
-      throw (IO.userError e')
-  return test "env compile roundtrip" (res == true)
-
 def testRoundtripGetEnv : IO TestSeq := do
   let env <- get_env!
   let mut cstt : CompileState := .init env 0
@@ -227,11 +177,13 @@ def testRoundtripGetEnv : IO TestSeq := do
     | .none => do
       let e' := (DecompileError.unknownName default n).pretty
       throw (IO.userError e')
+  IO.println s!"input delta: {env.getDelta.toList.length}"
+  IO.println s!"input env: {env.constants.toList.length}"
+  IO.println s!"output env: {dstt.constants.toList.length}"
   return test "env compile roundtrip" (res == true)
 
 def Tests.Ix.Compile.suiteIO: List (IO TestSeq) := [
-   --testMutual,
-   --testInductives,
-   --testInductivesRoundtrip,
+   testMutual,
+   testInductives,
    testRoundtripGetEnv
 ]
