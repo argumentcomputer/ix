@@ -1,13 +1,13 @@
 use binius_core::oracle::OracleId;
 use binius_math::ArithExpr as ArithExprCore;
 
-use super::F;
+use super::{F, OracleIdx};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum ArithExpr {
     Const(F),
     Var(usize),
-    Oracle(OracleId),
+    Oracle(OracleIdx),
     Add(Box<ArithExpr>, Box<ArithExpr>),
     Mul(Box<ArithExpr>, Box<ArithExpr>),
     Pow(Box<ArithExpr>, u64),
@@ -35,7 +35,7 @@ impl ArithExpr {
 
     pub(crate) fn offset_oracles(&mut self, by: usize) {
         match self {
-            Self::Oracle(o) => *o += by,
+            Self::Oracle(o) => o.offset(by),
             Self::Add(a, b) | Self::Mul(a, b) => {
                 a.offset_oracles(by);
                 b.offset_oracles(by);
@@ -50,10 +50,13 @@ impl ArithExpr {
             Self::Const(c) => ArithExprCore::Const(c),
             Self::Var(i) => ArithExprCore::Var(i),
             Self::Oracle(o) => {
-                let i = binds.iter().position(|&id| o == id).unwrap_or_else(|| {
-                    binds.push(o);
-                    binds.len() - 1
-                });
+                let i = binds
+                    .iter()
+                    .position(|id| o.val() == id.index())
+                    .unwrap_or_else(|| {
+                        binds.push(o.oracle_id(0));
+                        binds.len() - 1
+                    });
                 ArithExprCore::Var(i)
             }
             Self::Add(a, b) => {

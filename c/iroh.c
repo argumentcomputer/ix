@@ -1,5 +1,4 @@
 #include "lean/lean.h"
-#include "common.h"
 #include "linear.h"
 #include "rust.h"
 

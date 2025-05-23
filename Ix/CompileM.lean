@@ -937,7 +937,7 @@ Open references are variables that point to names which aren't present in the
 -/
 def compileDelta (delta : Lean.PersistentHashMap Lean.Name Lean.ConstantInfo)
   : CompileM Unit := do
-  delta.forM fun _ c => if !c.isUnsafe then discard $ compileConst c else pure ()
+  delta.forM fun _ c => discard $ compileConst c else pure ()
 
 def compileEnv (env: Lean.Environment)
   : CompileM Unit := do

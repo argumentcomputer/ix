@@ -2,16 +2,14 @@ use anyhow::Result;
 use binius_circuits::builder::types::U;
 use binius_core::{
     constraint_system::{
-        Proof as ProofCore, channel::Boundary, prove as prove_core,
-        validate::validate_witness as validate_witness_core, verify as verify_core,
+        Proof as ProofCore, channel::Boundary, prove as prove_binius,
+        validate::validate_witness as validate_witness_binius, verify as verify_binius,
     },
     fiat_shamir::HasherChallenger,
-    tower::CanonicalTowerFamily,
 };
-use binius_field::BinaryField8b as B8;
+use binius_field::tower::CanonicalTowerFamily;
 use binius_hal::ComputationBackend;
 use binius_hash::groestl::Groestl256ByteCompression;
-use binius_math::EvaluationDomainFactory;
 use groestl_crypto::Groestl256;
 
 use super::{
@@ -21,42 +19,60 @@ use super::{
 };
 
 pub struct Proof {
-    proof_core: ProofCore,
-    modules_heights: Vec<u64>,
+    pub(crate) modules_heights: Vec<u64>,
+    pub(crate) proof_core: ProofCore,
 }
 
-pub fn validate_witness(
-    circuit_modules: &[CircuitModule],
-    witness: &Witness<'_>,
+impl Default for Proof {
+    fn default() -> Self {
+        Proof {
+            modules_heights: vec![],
+            proof_core: ProofCore { transcript: vec![] },
+        }
+    }
+}
+
+pub fn validate_witness_core(
+    circuit_modules: &[&CircuitModule],
     boundaries: &[Boundary<F>],
+    witness: &Witness<'_>,
 ) -> Result<()> {
     let Witness {
         mlei,
         modules_heights,
     } = witness;
     let constraint_system = compile_circuit_modules(circuit_modules, modules_heights)?;
-    validate_witness_core(&constraint_system, boundaries, mlei)?;
+    validate_witness_binius(&constraint_system, boundaries, mlei)?;
     Ok(())
 }
 
-pub fn prove<DomainFactory, Backend>(
+#[inline]
+pub fn validate_witness(
     circuit_modules: &[CircuitModule],
-    witness: Witness<'_>,
+    boundaries: &[Boundary<F>],
+    witness: &Witness<'_>,
+) -> Result<()> {
+    validate_witness_core(
+        &circuit_modules.iter().collect::<Vec<_>>(),
+        boundaries,
+        witness,
+    )
+}
+
+pub fn prove_core<Backend: ComputationBackend>(
+    circuit_modules: &[&CircuitModule],
     boundaries: &[Boundary<F>],
     log_inv_rate: usize,
     security_bits: usize,
+    witness: Witness<'_>,
     backend: &Backend,
-) -> Result<Proof>
-where
-    Backend: ComputationBackend,
-    DomainFactory: EvaluationDomainFactory<B8>,
-{
+) -> Result<Proof> {
     let Witness {
         mlei,
         modules_heights,
     } = witness;
     let constraint_system = compile_circuit_modules(circuit_modules, &modules_heights)?;
-    let proof_core = prove_core::<
+    let proof_core = prove_binius::<
         U,
         CanonicalTowerFamily,
         Groestl256,
@@ -72,24 +88,43 @@ where
         backend,
     )?;
     Ok(Proof {
-        proof_core,
         modules_heights,
+        proof_core,
     })
 }
 
-pub fn verify(
+#[inline]
+pub fn prove<Backend: ComputationBackend>(
     circuit_modules: &[CircuitModule],
+    boundaries: &[Boundary<F>],
+    log_inv_rate: usize,
+    security_bits: usize,
+    witness: Witness<'_>,
+    backend: &Backend,
+) -> Result<Proof> {
+    prove_core::<Backend>(
+        &circuit_modules.iter().collect::<Vec<_>>(),
+        boundaries,
+        log_inv_rate,
+        security_bits,
+        witness,
+        backend,
+    )
+}
+
+pub fn verify_core(
+    circuit_modules: &[&CircuitModule],
     boundaries: &[Boundary<F>],
     proof: Proof,
     log_inv_rate: usize,
     security_bits: usize,
 ) -> Result<()> {
     let Proof {
-        proof_core,
         modules_heights,
+        proof_core,
     } = proof;
     let constraint_system = compile_circuit_modules(circuit_modules, &modules_heights)?;
-    verify_core::<
+    verify_binius::<
         U,
         CanonicalTowerFamily,
         Groestl256,
@@ -105,12 +140,29 @@ pub fn verify(
     Ok(())
 }
 
+#[inline]
+pub fn verify(
+    circuit_modules: &[CircuitModule],
+    boundaries: &[Boundary<F>],
+    proof: Proof,
+    log_inv_rate: usize,
+    security_bits: usize,
+) -> Result<()> {
+    verify_core(
+        &circuit_modules.iter().collect::<Vec<_>>(),
+        boundaries,
+        proof,
+        log_inv_rate,
+        security_bits,
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-    use binius_core::oracle::OracleId;
-    use binius_field::BinaryField1b as B1;
-
+    use crate::archon::OracleIdx;
+    use crate::archon::precompiles::blake3::blake3_compress;
+    use crate::archon::precompiles::blake3::tests::generate_trace;
+    use crate::archon::protocol::{prove, verify};
     use crate::archon::{
         ModuleId,
         arith_expr::ArithExpr,
@@ -118,11 +170,14 @@ mod tests {
         protocol::validate_witness,
         witness::{WitnessModule, compile_witness_modules},
     };
+    use anyhow::Result;
+    use binius_field::BinaryField1b as B1;
+    use binius_hal::make_portable_backend;
 
     struct Oracles {
-        s: OracleId,
-        a: OracleId,
-        b: OracleId,
+        s: OracleIdx,
+        a: OracleIdx,
+        b: OracleIdx,
     }
 
     fn a_xor_b_circuit_module(module_id: ModuleId) -> Result<(CircuitModule, Oracles)> {
@@ -156,7 +211,7 @@ mod tests {
         witness_module.bind_oracle_to::<B1>(oracles.b, zeros);
         let witness_modules = [witness_module];
         let witness = compile_witness_modules(&witness_modules, vec![128]).unwrap();
-        assert!(validate_witness(&[circuit_module], &witness, &[]).is_err());
+        assert!(validate_witness(&[circuit_module], &[], &witness).is_err());
     }
 
     #[test]
@@ -166,7 +221,7 @@ mod tests {
         populate_a_xor_b_witness_with_ones(&mut witness_module, &oracles);
         let witness_modules = [witness_module];
         let witness = compile_witness_modules(&witness_modules, vec![128]).unwrap();
-        assert!(validate_witness(&[circuit_module], &witness, &[]).is_ok());
+        assert!(validate_witness(&[circuit_module], &[], &witness).is_ok());
     }
 
     #[test]
@@ -178,7 +233,7 @@ mod tests {
         populate_a_xor_b_witness_with_ones(&mut witness_modules[0], &oracles0);
         populate_a_xor_b_witness_with_ones(&mut witness_modules[1], &oracles1);
         let witness = compile_witness_modules(&witness_modules, vec![128, 128]).unwrap();
-        assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 
     #[test]
@@ -190,6 +245,22 @@ mod tests {
         populate_a_xor_b_witness_with_ones(&mut witness_modules[0], &oracles0);
         // Witness module 1 isn't populated
         let witness = compile_witness_modules(&witness_modules, vec![128, 0]).unwrap();
-        assert!(validate_witness(&circuit_modules, &witness, &[]).is_ok());
+        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
+    }
+
+    #[test]
+    fn test_blake3_compression_end_to_end() {
+        // FIXME: length of traces must be power of 2. Investigate later if we can tackle this limitation
+        let trace_len = 2usize.pow(5u32);
+        let (_, traces) = generate_trace(trace_len);
+
+        let (circuit_modules, witness_modules, heights, _) =
+            blake3_compress(&traces, trace_len).unwrap();
+
+        let witness = compile_witness_modules(&witness_modules, heights).unwrap();
+
+        let backend = make_portable_backend();
+        let proof = prove(&circuit_modules, &[], 1usize, 100usize, witness, &backend).unwrap();
+        assert!(verify(&circuit_modules, &[], proof, 1usize, 100usize).is_ok());
     }
 }

@@ -10,6 +10,7 @@ use binius_field::{
 
 use super::F;
 
+#[derive(PartialEq, Eq)]
 pub enum Transparent {
     Constant(B128),
     Incremental,

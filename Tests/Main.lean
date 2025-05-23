@@ -1,11 +1,12 @@
-import Tests.ArithExpr
-import Tests.Binius
-import Tests.Boundary
+import Tests.Aiur
+import Tests.Archon
+import Tests.FFIConsistency
 import Tests.ByteArray
 import Tests.Unsigned
 import Tests.Ix
 import Tests.Ix.Compile
 import Tests.Keccak
+import Tests.Cli
 
 def main (args: List String) : IO UInt32 := do
   if args.contains "compile"
@@ -17,6 +18,9 @@ def main (args: List String) : IO UInt32 := do
       ("binius-bindings", Tests.Binius.bindingsSuite),
       ("binius-witness", Tests.Binius.witnessSuite),
       ("binius-transparent", Tests.Binius.transparentSuite),
+      ("aiur", Tests.Aiur.suite),
+      ("archon", Tests.Archon.suite),
+      ("ffi-consistency", Tests.FFIConsistency.suite),
       ("byte-array", Tests.ByteArray.suite),
       ("unsigned", Tests.Unsigned.suite),
       ("ix", Tests.Ix.suite),

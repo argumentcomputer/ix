@@ -1,0 +1,78 @@
+import LSpec
+import Tests.Common
+import Ix.Binius.Boundary
+import Ix.Archon.ArithExpr
+import Ix.Archon.Transparent
+
+open LSpec SlimCheck Gen
+
+open Archon Binius
+
+/- Boundary -/
+
+def genBoundary : Gen Boundary := do
+  let numValues ← choose Nat 0 128
+  let mut values := Array.mkEmpty numValues
+  for _ in [:numValues] do
+    values := values.push $ ← genUInt128
+  let direction := if ← chooseAny Bool then .pull else .push
+  pure ⟨values, ⟨← genUSize⟩, direction, ← genUInt64⟩
+
+instance : Shrinkable Boundary where
+  shrink _ := []
+
+instance : Repr Boundary where
+  reprPrec boundary _ := boundary.toString
+
+instance : SampleableExt Boundary := SampleableExt.mkSelfContained genBoundary
+
+/- ArithExpr -/
+
+def genArithExpr : Gen ArithExpr := getSize >>= go
+  where
+    go : Nat → Gen ArithExpr
+    | 0 => return .const 0
+    | Nat.succ n =>
+      frequency [
+        (30, .const <$> genUInt128),
+        (30, .var <$> genUSize),
+        (30, .oracle <$> OracleIdx.mk <$> genUSize),
+        (25, .add <$> go n <*> go n),
+        (25, .mul <$> go n <*> go n),
+        (40, .pow <$> go n <*> genUInt64)
+      ]
+
+instance : Shrinkable ArithExpr where
+  shrink _ := []
+
+instance : Repr ArithExpr where
+  reprPrec expr _ := expr.toString
+
+instance : SampleableExt ArithExpr := SampleableExt.mkSelfContained genArithExpr
+
+/- Transparent -/
+
+def genTransparent : Gen Transparent :=
+  frequency [
+      (10, .constant <$> genUInt128),
+      (10, pure .incremental),
+    ]
+
+instance : Shrinkable Transparent where
+  shrink _ := []
+
+instance : Repr Transparent where
+  reprPrec transparent _ := transparent.toString
+
+instance : SampleableExt Transparent := SampleableExt.mkSelfContained genTransparent
+
+/- Suite -/
+
+def Tests.FFIConsistency.suite := [
+    check "ArithExpr Lean->Rust mapping matches the deserialized bytes"
+      (∀ expr : ArithExpr, expr.isEquivalentToBytes expr.toBytes),
+    check "Boundary Lean->Rust mapping matches the deserialized bytes"
+      (∀ boundary : Boundary, boundary.isEquivalentToBytes boundary.toBytes),
+    check "Transparent Lean->Rust mapping matches the deserialized bytes"
+      (∀ transparent : Transparent, transparent.isEquivalentToBytes transparent.toBytes),
+  ]

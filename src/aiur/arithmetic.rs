@@ -1,7 +1,12 @@
-use binius_circuits::builder::{ConstraintSystemBuilder, witness};
+use std::array::from_fn;
+
+use binius_circuits::{
+    arithmetic::mul::mul,
+    builder::{ConstraintSystemBuilder, witness},
+};
 use binius_core::{
-    constraint_system::channel::ChannelId,
-    oracle::{OracleId, ProjectionVariant, ShiftVariant},
+    constraint_system::channel::{ChannelId, OracleOrConst},
+    oracle::{OracleId, ShiftVariant},
 };
 use binius_field::{
     Field,
@@ -14,6 +19,7 @@ use binius_maybe_rayon::prelude::*;
 use crate::aiur::layout::{B1, B64};
 
 use super::{
+    constraints::Expr,
     execute::QueryRecord,
     layout::{B1_LEVEL, B64_LEVEL, B128},
 };
@@ -33,7 +39,7 @@ struct AddCols {
 pub struct AddTrace {
     xin: Vec<u64>,
     yin: Vec<u64>,
-    height: usize,
+    pub height: usize,
 }
 
 impl AddTrace {
@@ -66,7 +72,7 @@ impl AddCols {
         let packed_zout = builder.add_packed("packed_zout", zout, B64_LEVEL).unwrap();
         let args = [B128::ONE; B64_LEVEL].to_vec();
         let projected_cout = builder
-            .add_projected("projected_cout", cout, args, ProjectionVariant::FirstVars)
+            .add_projected("projected_cout", cout, args, 0)
             .unwrap();
         AddCols {
             xin,
@@ -81,8 +87,7 @@ impl AddCols {
         }
     }
 
-    fn populate(&self, witness: &mut witness::Builder<'_>, trace: &AddTrace) {
-        let count = trace.xin.len();
+    fn populate(&self, witness: &mut witness::Builder<'_>, trace: &AddTrace, count: usize) {
         witness.new_column::<B1>(self.xin).as_mut_slice::<u64>()[..count]
             .copy_from_slice(&trace.xin);
         witness.new_column::<B1>(self.yin).as_mut_slice::<u64>()[..count]
@@ -127,7 +132,7 @@ fn constrain_add(
     builder: &mut ConstraintSystemBuilder<'_>,
     add_channel_id: ChannelId,
     cols: &AddCols,
-    count: u64,
+    count: usize,
 ) {
     builder.assert_zero(
         "sum",
@@ -145,10 +150,8 @@ fn constrain_add(
         cols.packed_yin,
         cols.packed_zout,
         cols.projected_cout,
-    ];
-    let count = count
-        .try_into()
-        .expect("Value too big for current architecture");
+    ]
+    .map(OracleOrConst::Oracle);
     builder.receive(add_channel_id, count, args).unwrap();
 }
 
@@ -156,13 +159,12 @@ pub fn prover_synthesize_add(
     builder: &mut ConstraintSystemBuilder<'_>,
     add_channel_id: ChannelId,
     trace: &AddTrace,
-) -> u8 {
+) {
     let log_n = trace.height.next_power_of_two().ilog2() as usize;
-    let count = trace.height.try_into().expect("");
+    let count = trace.height;
     let cols = AddCols::new(builder, log_n);
-    cols.populate(builder.witness().unwrap(), trace);
+    cols.populate(builder.witness().unwrap(), trace, count);
     constrain_add(builder, add_channel_id, &cols, count);
-    log_n.try_into().expect("Trace too large")
 }
 
 pub fn verifier_synthesize_add(
@@ -172,5 +174,140 @@ pub fn verifier_synthesize_add(
 ) {
     let log_n = count.next_power_of_two().ilog2() as usize;
     let cols = AddCols::new(builder, log_n);
-    constrain_add(builder, add_channel_id, &cols, count);
+    constrain_add(builder, add_channel_id, &cols, count.try_into().expect(""));
+}
+
+struct MulCols {
+    xin: OracleId,
+    yin: OracleId,
+    xin_bits: [OracleId; 64],
+    yin_bits: [OracleId; 64],
+    zout: OracleId,
+}
+
+impl MulCols {
+    fn new(builder: &mut ConstraintSystemBuilder<'_>, log_n: usize) -> Self {
+        let xin = builder.add_committed("xin", log_n, B64_LEVEL);
+        let yin = builder.add_committed("yin", log_n, B64_LEVEL);
+        let zout = builder.add_committed("zout", log_n, B64_LEVEL);
+        let xin_bits = from_fn(|i| builder.add_committed(format!("xin_bits{i}"), log_n, B1_LEVEL));
+        let yin_bits = from_fn(|i| builder.add_committed(format!("yin_bits{i}"), log_n, B1_LEVEL));
+        Self {
+            xin,
+            yin,
+            zout,
+            xin_bits,
+            yin_bits,
+        }
+    }
+
+    fn populate(&self, witness: &mut witness::Builder<'_>, trace: &MulTrace, count: usize) {
+        witness.new_column::<B64>(self.xin).as_mut_slice::<u64>()[..count]
+            .copy_from_slice(&trace.xin);
+        witness.new_column::<B64>(self.yin).as_mut_slice::<u64>()[..count]
+            .copy_from_slice(&trace.yin);
+        let xin_slice = witness.get::<B64>(self.xin).unwrap().as_slice::<u64>();
+        let yin_slice = witness.get::<B64>(self.yin).unwrap().as_slice::<u64>();
+        let mut zout_witness = witness.new_column::<B64>(self.zout);
+        (xin_slice, yin_slice, zout_witness.as_mut_slice::<u64>())
+            .into_par_iter()
+            .for_each(|(xin, yin, zout)| {
+                *zout = xin.wrapping_mul(*yin);
+            });
+        for i in 0..64 {
+            let mut xin_bit = witness.new_column::<B1>(self.xin_bits[i]);
+            let xin_bit = xin_bit.packed();
+            for (j, xin) in xin_slice.iter().enumerate() {
+                let bit = ((xin >> i) & 1) as u8;
+                set_packed_slice(xin_bit, j, U1::new(bit).into())
+            }
+            let mut yin_bit = witness.new_column::<B1>(self.yin_bits[i]);
+            let yin_bit = yin_bit.packed();
+            for (j, yin) in yin_slice.iter().enumerate() {
+                let bit = ((yin >> i) & 1) as u8;
+                set_packed_slice(yin_bit, j, U1::new(bit).into())
+            }
+        }
+    }
+}
+
+pub struct MulTrace {
+    xin: Vec<u64>,
+    yin: Vec<u64>,
+    pub height: usize,
+}
+
+impl MulTrace {
+    pub fn generate_trace(record: &QueryRecord) -> Self {
+        let height = record.mul_queries.len();
+        let mut trace = MulTrace {
+            xin: Vec::with_capacity(height),
+            yin: Vec::with_capacity(height),
+            height,
+        };
+        for (xin, yin) in record.mul_queries.iter() {
+            trace.xin.push(*xin);
+            trace.yin.push(*yin);
+        }
+        trace
+    }
+}
+
+pub fn prover_synthesize_mul(
+    builder: &mut ConstraintSystemBuilder<'_>,
+    mul_channel_id: ChannelId,
+    trace: &MulTrace,
+) {
+    let log_n = trace.height.next_power_of_two().ilog2() as usize;
+    let cols = MulCols::new(builder, log_n);
+    let count = trace.height;
+    cols.populate(builder.witness().unwrap(), trace, count);
+    constrain_mul(builder, mul_channel_id, &cols, count);
+}
+
+pub fn verifier_synthesize_mul(
+    builder: &mut ConstraintSystemBuilder<'_>,
+    mul_channel_id: ChannelId,
+    count: u64,
+) {
+    let log_n = count.next_power_of_two().ilog2() as usize;
+    let cols = MulCols::new(builder, log_n);
+    let count = count.try_into().expect("");
+    constrain_mul(builder, mul_channel_id, &cols, count);
+}
+
+fn constrain_mul(
+    builder: &mut ConstraintSystemBuilder<'_>,
+    mul_channel_id: ChannelId,
+    cols: &MulCols,
+    count: usize,
+) {
+    bit_decomposition(builder, &cols.xin_bits, cols.xin);
+    bit_decomposition(builder, &cols.yin_bits, cols.yin);
+    let zout_bits = mul::<B128>(
+        builder,
+        "u64_mul",
+        cols.xin_bits.to_vec(),
+        cols.yin_bits.to_vec(),
+    )
+    .unwrap();
+    let zout_bits = (&zout_bits[0..64]).try_into().unwrap();
+    bit_decomposition(builder, zout_bits, cols.zout);
+    let args = [cols.xin, cols.yin, cols.zout].map(OracleOrConst::Oracle);
+    builder.receive(mul_channel_id, count, args).unwrap();
+}
+
+fn bit_decomposition(
+    builder: &mut ConstraintSystemBuilder<'_>,
+    bits: &[OracleId; 64],
+    word: OracleId,
+) {
+    let mut expr: Expr = Expr::Var(word);
+    let mut coeff = 1;
+    for bit in bits.iter() {
+        expr = expr - Expr::Const(coeff.into()) * Expr::Var(*bit);
+        coeff = coeff.wrapping_shl(1);
+    }
+    let (oracles, arith) = expr.to_arith_expr();
+    builder.assert_zero("bit decomposition", oracles, arith.into());
 }

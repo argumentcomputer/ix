@@ -156,12 +156,6 @@ def ConstMap.childrenOfWith (map : ConstMap) (name : Name)
   | .num n .. => if n == name && p c then c :: acc else acc
   | _ => acc
 
-def Name.parent : Name -> Name
-| .str n ..
-| .num n .. => n
-| .anonymous => .anonymous
-
-
 --def ConstMap.patchUnsafeRec (cs : ConstMap) : ConstMap :=
 --  let unsafes : Batteries.RBSet Name compare := cs.fold (init := .empty)
 --    fun acc n _ => match n with

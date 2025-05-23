@@ -2,7 +2,10 @@ import Cli
 import Ix.Cronos
 import Ix.Common
 import Ix.CompileM
+<<<<<<< HEAD
 import Ix.TransportM
+=======
+>>>>>>> 67a1eaccb887ff00d2d4434c86582045667f076d
 import Ix.Store
 import Ix.Address
 import Lean
