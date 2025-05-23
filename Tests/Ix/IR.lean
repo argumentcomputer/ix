@@ -66,15 +66,15 @@ def genConst : Gen Ix.Const := getSize >>= go
       let mode <- genDefMode
       let value <- genExpr
       let hints <- genReducibilityHints
-      let isPartial <- genBool
+      let safety <- oneOf #[pure .safe, pure .partial, pure .unsafe]
       let all <- genNames
-      return ⟨n, lvls, type, mode, value, hints, isPartial, all⟩
+      return ⟨n, lvls, type, mode, value, hints, safety, all⟩
     genCtor : Gen Ix.Constructor := 
-      .mk <$> genName <*> genNames <*> genExpr <*> genNat' <*> genNat' <*> genNat'
+      .mk <$> genName <*> genNames <*> genExpr <*> genNat' <*> genNat' <*> genNat' <*> genBool
     genRecr : Gen Ix.Recursor := 
       .mk <$> genName <*> genNames <*> genExpr <*> genNat' <*> genNat' <*> genNat' <*> genNat'
         <*> resizeListOf (.mk <$> genName <*> genNat' <*> genExpr)
-        <*> genBool
+        <*> genBool <*> genBool
     genInd : Gen Ix.Inductive := do
       let n <- genName
       let lvls <- genNames
@@ -85,25 +85,25 @@ def genConst : Gen Ix.Const := getSize >>= go
       let ctors <- resizeListOf genCtor
       let recrs <- resizeListOf genRecr
       let nested <- genNat'
-      let (isRec, isRefl) <- Prod.mk <$> genBool <*> genBool
-      return ⟨n, lvls, type, params, indices, all, ctors, recrs, nested, isRec, isRefl⟩
+      let (isRec, isRefl, isUnsafe) <- (·,·,·) <$> genBool <*> genBool <*> genBool
+      return ⟨n, lvls, type, params, indices, all, ctors, recrs, nested, isRec, isRefl, isUnsafe⟩
     genMutDef : Gen Ix.MutualBlock := do
       let nns <- resizeListOf (genListSize genName 1 5)
       let ds <- nns.mapM fun ns => do
         let x <- genDef
         ns.mapM (fun _ => pure x)
-      return .mk ds nns
+      return .mk ds
     genMutInd : Gen Ix.InductiveBlock := do
       let nns <- resizeListOf (genListSize genName 1 5)
       let ds <- nns.mapM fun ns => do
         let x <- genInd
         ns.mapM (fun _ => pure x)
-      return .mk ds nns
+      return .mk ds
     go : Nat -> Gen Ix.Const
-    | 0 => return .«axiom» (.mk .anonymous [] (Ix.Expr.sort (Ix.Level.zero)))
+    | 0 => return .«axiom» (.mk .anonymous [] (Ix.Expr.sort (Ix.Level.zero)) false)
     | Nat.succ _ =>
       frequency [
-        (100, .«axiom» <$> (.mk <$> genName <*> genNames <*> genExpr)),
+        (100, .«axiom» <$> (.mk <$> genName <*> genNames <*> genExpr <*> genBool)),
         (100, .«definition» <$> genDef),
         (100, .quotient <$> (.mk <$> genName <*> genNames <*> genExpr <*> genQuotKind)),
         (100, .inductiveProj <$> (.mk <$> genName <*> genAddress <*> genAddress <*> genNat')),

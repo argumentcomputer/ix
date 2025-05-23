@@ -17,6 +17,7 @@ structure Quotient where
 structure Axiom where
   lvls : Nat
   type : Expr
+  isUnsafe: Bool
   deriving BEq, Repr
 
 structure Definition where
@@ -24,7 +25,7 @@ structure Definition where
   type : Expr
   mode : Ix.DefMode
   value : Expr
-  part : Bool
+  safety : Lean.DefinitionSafety
   deriving BEq, Repr
 
 structure Constructor where
@@ -33,6 +34,7 @@ structure Constructor where
   cidx : Nat
   params : Nat
   fields : Nat
+  isUnsafe: Bool
   deriving BEq, Repr
 
 structure RecursorRule where
@@ -49,6 +51,7 @@ structure Recursor where
   minors : Nat
   rules : List RecursorRule
   k : Bool
+  isUnsafe: Bool
   deriving BEq, Repr
 
 structure Inductive where
@@ -61,6 +64,7 @@ structure Inductive where
   nested : Nat
   recr : Bool
   refl : Bool
+  isUnsafe: Bool
   deriving BEq, Repr
 
 structure InductiveProj where
@@ -119,7 +123,7 @@ inductive Const where
 
 def putConst : Const → PutM
 | .defn x => putUInt8 0xC0 *> putDefn x
-| .axio x => putUInt8 0xC1 *> putNatl x.lvls *> putExpr x.type
+| .axio x => putUInt8 0xC1 *> putNatl x.lvls *> putExpr x.type *> putBool x.isUnsafe
 | .quot x => putUInt8 0xC2 *> putNatl x.lvls *> putExpr x.type *> putQuotKind x.kind
 | .ctorProj x => putUInt8 0xC3 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.cidx
 | .recrProj x => putUInt8 0xC4 *> putBytes x.block.hash *> putNatl x.idx *> putNatl x.ridx
@@ -136,7 +140,7 @@ def putConst : Const → PutM
       putExpr x.type
       putDefMode x.mode
       putExpr x.value
-      putBool x.part
+      putDefinitionSafety x.safety
     putRecrRule (x: RecursorRule) : PutM := putNatl x.fields *> putExpr x.rhs
     putCtor (x: Constructor) : PutM := do
       putNatl x.lvls
@@ -144,6 +148,7 @@ def putConst : Const → PutM
       putNatl x.cidx
       putNatl x.params
       putNatl x.fields
+      putBool x.isUnsafe
     putRecr (x: Recursor) : PutM := do
       putNatl x.lvls
       putExpr x.type
@@ -153,6 +158,7 @@ def putConst : Const → PutM
       putNatl x.minors
       putArray putRecrRule x.rules
       putBool x.k
+      putBool x.isUnsafe
     putIndc (x: Inductive) : PutM := do
       putNatl x.lvls
       putExpr x.type
@@ -161,7 +167,7 @@ def putConst : Const → PutM
       putArray putCtor x.ctors
       putArray putRecr x.recrs
       putNatl x.nested
-      putBools [x.recr, x.refl]
+      putBools [x.recr, x.refl, x.isUnsafe]
     putProof (p: Proof) : PutM :=
       match p.claim with
       | .checks lvls type value => do
@@ -184,7 +190,7 @@ def getConst : GetM Const := do
   let tag ← getUInt8
   match tag with
   | 0xC0 => .defn <$> getDefn
-  | 0xC1 => .axio <$> (.mk <$> getNatl <*> getExpr)
+  | 0xC1 => .axio <$> (.mk <$> getNatl <*> getExpr <*> getBool)
   | 0xC2 => .quot <$> (.mk <$> getNatl <*> getExpr <*> getQuotKind)
   | 0xC3 => .ctorProj <$> (.mk <$> getAddr <*> getNatl <*> getNatl)
   | 0xC4 => .recrProj <$> (.mk <$> getAddr <*> getNatl <*> getNatl)
@@ -202,15 +208,16 @@ def getConst : GetM Const := do
       let type <- getExpr
       let mode <- getDefMode
       let value <- getExpr
-      let part <- getBool
-      return ⟨lvls, type, mode, value, part⟩
+      let safety <- getDefinitionSafety
+      return ⟨lvls, type, mode, value, safety⟩
     getCtor : GetM Constructor := do
       let lvls <- getNatl
       let type <- getExpr
       let cidx <- getNatl
       let params <- getNatl
       let fields <- getNatl
-      return ⟨lvls, type, cidx, params, fields⟩
+      let safety <- getBool
+      return ⟨lvls, type, cidx, params, fields, safety⟩
     getRecrRule : GetM RecursorRule := RecursorRule.mk <$> getNatl <*> getExpr
     getRecr : GetM Recursor := do
       let lvls <- getNatl
@@ -221,7 +228,8 @@ def getConst : GetM Const := do
       let minors <- getNatl
       let rules <- getArray getRecrRule
       let k <- getBool
-      return ⟨lvls, type, params, indices, motives, minors, rules, k⟩
+      let safety <- getBool
+      return ⟨lvls, type, params, indices, motives, minors, rules, k, safety⟩
     getIndc : GetM Inductive := do
       let lvls <- getNatl
       let type <- getExpr
@@ -230,10 +238,10 @@ def getConst : GetM Const := do
       let ctors <- getArray getCtor
       let recrs <- getArray getRecr
       let nested <- getNatl
-      let (recr, refl) <- match ← getBools 2 with
-        | [x, y] => pure (x, y)
+      let (recr, refl, safety) <- match ← getBools 3 with
+        | [x, y, z] => pure (x, y, z)
         | _ => throw s!"unreachable"
-      return ⟨lvls, type, params, indices, ctors, recrs, nested, recr, refl⟩
+      return ⟨lvls, type, params, indices, ctors, recrs, nested, recr, refl, safety⟩
     getAddr : GetM Address := .mk <$> getBytes 32
     getProof : GetM Proof := do
       match (<- getUInt8) with

@@ -20,20 +20,22 @@ def emptyDematState : DematState :=
   { idx := 0, meta := { map := Batteries.RBMap.empty }}
 
 inductive TransportError
-  | natTooBig (idx: Nat) (x: Nat)
-  | unknownIndex (idx: Nat) (m: Ixon.Metadata)
-  | unexpectedNode (idx: Nat) (m: Ixon.Metadata)
-  | rawMetadata (m: Ixon.Metadata)
-  | rawProof (m: Proof)
-  | rawComm (m: Ixon.Comm)
-  | emptyEquivalenceClass
-  deriving BEq, Repr
+| natTooBig (idx: Nat) (x: Nat)
+| unknownIndex (idx: Nat) (m: Ixon.Metadata)
+| unexpectedNode (idx: Nat) (m: Ixon.Metadata)
+| rawMetadata (m: Ixon.Metadata)
+| expectedMetadata (m: Ixon.Const)
+| rawProof (m: Proof)
+| rawComm (m: Ixon.Comm)
+| emptyEquivalenceClass
+deriving BEq, Repr
 
 instance : ToString TransportError where toString
 | .natTooBig idx x => s!"At index {idx}, natural number {x} too big to fit in UInt64"
 | .unknownIndex idx x => s!"Unknown index {idx} with metadata {repr x}"
 | .unexpectedNode idx x => s!"Unexpected node at {idx} with metadata {repr x}"
 | .rawMetadata x => s!"Can't rematerialize raw metadata {repr x}"
+| .expectedMetadata x => s!"Expected metadata, got {repr x}"
 | .rawProof x => s!"Can't rematerialize raw proof {repr x}"
 | .rawComm x => s!"Can't rematerialize raw commitment {repr x}"
 | .emptyEquivalenceClass => s!"empty equivalence class, should be unreachable"
@@ -249,7 +251,7 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
   dematMeta [.name x.name]
   let lvls <- dematLevels x.levelParams
   let type <- dematExpr x.type
-  return .axio (.mk lvls type)
+  return .axio (.mk lvls type x.isUnsafe)
 | .«definition» x => .defn <$> dematDefn x
 | .quotient x => do
   dematMeta [.name x.name]
@@ -289,13 +291,13 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
       let lvls <- dematLevels x.levelParams
       let type <- dematExpr x.type
       let value <- dematExpr x.value
-      return .mk lvls type x.mode value x.isPartial
+      return .mk lvls type x.mode value x.safety
     dematCtor (x: Ix.Constructor): DematM Ixon.Constructor := do
       let _ <- dematIncr
       dematMeta [.name x.name]
       let lvls <- dematLevels x.levelParams
       let t <- dematExpr x.type
-      return .mk lvls t x.cidx x.numParams x.numFields
+      return .mk lvls t x.cidx x.numParams x.numFields x.isUnsafe
     dematRecrRule (x: Ix.RecursorRule): DematM Ixon.RecursorRule := do
       let _ <- dematIncr
       dematMeta [.name x.ctor]
@@ -308,7 +310,7 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
       let t <- dematExpr x.type
       let rrs <- x.rules.mapM dematRecrRule
       return ⟨lvls, t, x.numParams, x.numIndices, x.numMotives, x.numMinors, 
-        rrs, x.k⟩
+        rrs, x.k, x.isUnsafe⟩
     dematIndc (x: Ix.Inductive): DematM Ixon.Inductive := do
       let _ <- dematIncr
       dematMeta [.name x.name, .all x.all]
@@ -317,7 +319,7 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
       let ctors <- x.ctors.mapM dematCtor
       let recrs <- x.recrs.mapM dematRecr
       return ⟨lvls, type, x.numParams, x.numIndices, ctors, recrs, x.numNested,
-        x.isRec, x.isReflexive⟩
+        x.isRec, x.isReflexive, x.isUnsafe⟩
 
 def constToIxon (x: Ix.Const) : Except TransportError (Ixon.Const × Ixon.Const) := 
   match EStateM.run (dematConst x) emptyDematState with
@@ -340,7 +342,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
     | _ => rematThrowUnexpected
   let lvls <- rematLevels x.lvls
   let type <- rematExpr x.type
-  return .«axiom» ⟨name, lvls, type⟩
+  return .«axiom» ⟨name, lvls, type, x.isUnsafe⟩
 | .quot x => do
   let name <- match (<- rematMeta) with
     | [.name x] => pure x
@@ -379,7 +381,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
       let d <- rematDefn x
       ds := ds.push d
     defs := defs.push ds.toList
-  return .mutual ⟨defs.toList, ctx⟩
+  return .mutual ⟨defs.toList⟩
 | .mutInd xs => do
   let ctx <- match (<- rematMeta) with
     | [.mutCtx x] => pure x
@@ -391,7 +393,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
       let i <- rematIndc x
       is := is.push i
     inds := inds.push is.toList
-  return .inductive ⟨inds.toList, ctx⟩
+  return .inductive ⟨inds.toList⟩
 | .meta m => throw (.rawMetadata m)
 -- TODO: This could return a Proof inductive, since proofs have no metadata
 | .proof p => throw (.rawProof p)
@@ -405,7 +407,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
       let lvls <- rematLevels x.lvls
       let type <- rematExpr x.type
       let value <- rematExpr x.value
-      return .mk name lvls type x.mode value hints x.part all
+      return .mk name lvls type x.mode value hints x.safety all
     rematCtor (x: Ixon.Constructor) : RematM Ix.Constructor := do
       let _ <- rematIncr
       let name <- match (<- rematMeta) with
@@ -413,7 +415,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
         | _ => rematThrowUnexpected
       let lvls <- rematLevels x.lvls
       let t <- rematExpr x.type
-      return .mk name lvls t x.cidx x.params x.fields
+      return .mk name lvls t x.cidx x.params x.fields x.isUnsafe
     rematRecrRule (x: Ixon.RecursorRule) : RematM Ix.RecursorRule := do
       let _ <- rematIncr
       let ctor <- match (<- rematMeta) with
@@ -429,7 +431,7 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
       let lvls <- rematLevels x.lvls
       let t <- rematExpr x.type
       let rs <- x.rules.mapM rematRecrRule
-      return ⟨name, lvls, t, x.params, x.indices, x.motives, x.minors, rs, x.k⟩
+      return ⟨name, lvls, t, x.params, x.indices, x.motives, x.minors, rs, x.k, x.isUnsafe⟩
     rematIndc (x: Ixon.Inductive) : RematM Ix.Inductive := do
       let _ <- rematIncr
       let (name, all) <- match (<- rematMeta) with
@@ -440,11 +442,13 @@ partial def rematConst : Ixon.Const -> RematM Ix.Const
       let cs <- x.ctors.mapM rematCtor
       let rs <- x.recrs.mapM rematRecr
       return ⟨name, lvls, t, x.params, x.indices, all, cs, rs, x.nested, x.recr,
-        x.refl⟩
+        x.refl, x.isUnsafe⟩
 
-def rematerialize (c : Ixon.Const) (m: Ixon.Metadata) 
-  : Except TransportError Ix.Const
-  := match ((rematConst c).run { meta := m }).run emptyRematState with
+def rematerialize (c m: Ixon.Const) : Except TransportError Ix.Const := do
+  let m <- match m with
+  | .meta m => pure m
+  | x => throw <| .expectedMetadata x
+  match ((rematConst c).run { meta := m }).run emptyRematState with
     | .ok a _ => return a
     | .error e _ => throw e
 

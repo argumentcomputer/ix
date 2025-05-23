@@ -2,12 +2,14 @@ import Cli
 import Ix.Cronos
 import Ix.Common
 import Ix.CompileM
+import Ix.TransportM
 import Ix.Store
 import Ix.Address
 import Lean
 
 -- ix store <lean file>
 -- ix store get <address>
+-- ix store remat <address> <address>
 def runStore (p : Cli.Parsed) : IO UInt32 := do
   let source : String       := p.positionalArg! "source" |>.as! String
   let mut cronos ← Cronos.new.clock "Lean-frontend"
@@ -48,11 +50,33 @@ def runGet (p : Cli.Parsed) : IO UInt32 := do
   IO.println <| s!"{repr const}"
   return 0
 
+def runRemat (p : Cli.Parsed) : IO UInt32 := do
+  let cont : String       := p.positionalArg! "constantAddress" |>.as! String
+  let meta : String       := p.positionalArg! "metadataAddress" |>.as! String
+  let (c, m) <- IO.ofExcept $
+    match Address.fromString cont, Address.fromString meta with
+    | .some c, .some m => .ok (c, m)
+    | .none, _ => .error "bad address {cont}"
+    | _, .none => .error "bad address {meta}"
+  let cont <- StoreIO.toIO (Store.readConst c)
+  let meta <- StoreIO.toIO (Store.readConst m)
+  let ix := Ix.TransportM.rematerialize cont meta
+  IO.println <| s!"{repr ix}"
+  return 0
+
 def storeGetCmd : Cli.Cmd := `[Cli|
   get VIA runGet;
   "print a store entry"
   ARGS:
     address  : String; "Ix address"
+]
+
+def storeRematCmd : Cli.Cmd := `[Cli|
+  remat VIA runRemat;
+  "print a store entry"
+  ARGS:
+    constantAddress  : String; "Ix constant address"
+    metadataAddress  : String; "Ix metadata address"
 ]
 
 def storeCmd : Cli.Cmd := `[Cli|
@@ -66,6 +90,7 @@ def storeCmd : Cli.Cmd := `[Cli|
     source : String; "Source file input"
 
   SUBCOMMANDS:
-    storeGetCmd
+    storeGetCmd;
+    storeRematCmd
 ]
 

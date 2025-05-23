@@ -90,29 +90,29 @@ def genMetadata : Gen Metadata := do
 
 -- Const
 
-def genAxiom : Gen Axiom := .mk <$> genNat' <*> genExpr
+def genAxiom : Gen Axiom := .mk <$> genNat' <*> genExpr <*> genBool
 
 def genDefinition : Gen Definition := do
   let lvls <- genNat'
   let type <- genExpr
   let mode <- genDefMode
   let value <- genExpr
-  let isPartial <- genBool
-  return .mk lvls type mode value isPartial
+  let safety <- oneOf #[pure .safe, pure .unsafe, pure .partial]
+  return .mk lvls type mode value safety
 
 def genConstructor : Gen Constructor :=
-  .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat' <*> genNat'
+  .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat' <*> genNat' <*> genBool
 
 def genRecursorRule : Gen RecursorRule := .mk <$> genNat' <*> genExpr
 
 def genRecursor : Gen Recursor :=
   .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat' <*> genNat'
-    <*> genNat' <*> genList' genRecursorRule <*> genBool
+    <*> genNat' <*> genList' genRecursorRule <*> genBool <*> genBool
 
 def genInductive : Gen Inductive :=
   .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat'
     <*> genList' genConstructor <*> genList' genRecursor <*> genNat'
-    <*> genBool <*> genBool
+    <*> genBool <*> genBool <*> genBool
 
 def genConstructorProj : Gen ConstructorProj :=
   .mk <$> genAddress <*> genNat' <*> genNat'
@@ -130,7 +130,7 @@ def genInductiveProj : Gen InductiveProj :=
 def genConst : Gen Ixon.Const := getSize >>= go
   where
     go : Nat -> Gen Ixon.Const
-    | 0 => return .axio ⟨0, .vari 0⟩
+    | 0 => return .axio ⟨0, .vari 0, false⟩
     | Nat.succ _ =>
       frequency [
         (100, .axio <$> genAxiom),

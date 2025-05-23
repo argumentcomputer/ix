@@ -264,10 +264,10 @@ partial def decompileMutIndCtx (block: Ix.InductiveBlock)
   : DecompileM (RBMap Lean.Name Nat compare) := do
   let mut mutCtx : RBMap Lean.Name Nat compare := RBMap.empty
   let mut i := 0
-  for (inds, names) in List.zip block.inds block.ctx do
+  for inds in block.inds do
     let (numCtors, numRecrs) <- checkCtorRecrLengths inds
-    for (ind, name) in List.zip inds names do
-      mutCtx := mutCtx.insert name i
+    for ind in inds do
+      mutCtx := mutCtx.insert ind.name i
       for (c, cidx) in List.zipIdx ind.ctors do
         mutCtx := mutCtx.insert c.name (i + cidx)
       for (r, ridx) in List.zipIdx ind.recrs do
@@ -315,9 +315,8 @@ partial def ensureBlock (name: Lean.Name) (c m: Address) : DecompileM BlockNames
     let cont : Ixon.Const <- match (<- read).store.find? c with
       | .some ixon => pure ixon
       | .none => throw <| .unknownStoreAddress (<- read).current c
-    let meta : Ixon.Metadata <- match (<- read).store.find? m with
-      | .some (.meta meta) => pure meta
-      | .some x => throw <| .expectedIxonMetadata (<- read).current m x
+    let meta : Ixon.Const <- match (<- read).store.find? m with
+      | .some ixon => pure ixon
       | .none => throw <| .unknownStoreAddress (<- read).current m
     match rematerialize cont meta with
     | .ok const  => do
@@ -331,10 +330,9 @@ partial def decompileDefn (x: Ix.Definition)
   : DecompileM Lean.ConstantInfo := withLevels x.levelParams do
     let type <- decompileExpr x.type
     let val <- decompileExpr x.value
-    let safety := if x.isPartial then .«partial» else .safe
     match x.mode with
     | .definition => return .defnInfo <|
-      Lean.mkDefinitionValEx x.name x.levelParams type val x.hints safety x.all
+      Lean.mkDefinitionValEx x.name x.levelParams type val x.hints x.safety x.all
     | .opaque => return .opaqueInfo <|
       Lean.mkOpaqueValEx x.name x.levelParams type val true x.all
     | .theorem => return .thmInfo <|
@@ -347,7 +345,7 @@ partial def decompileIndc (x: Ix.Inductive)
       let type <- decompileExpr x.type
       let indc :=
         Lean.mkInductiveValEx x.name x.levelParams type x.numParams x.numIndices
-          x.all (x.ctors.map (·.name)) x.numNested x.isRec false x.isReflexive
+          x.all (x.ctors.map (·.name)) x.numNested x.isRec x.isUnsafe x.isReflexive
       let ctors <- x.ctors.mapM (decompileCtor x.name)
       let recrs <- x.recrs.mapM (decompileRecr x.all)
       return (.inductInfo indc, ctors, recrs)
@@ -357,7 +355,7 @@ partial def decompileIndc (x: Ix.Inductive)
       let type <- decompileExpr x.type
       return .ctorInfo <|
         Lean.mkConstructorValEx x.name x.levelParams type indcName
-          x.cidx x.numParams x.numFields false
+          x.cidx x.numParams x.numFields x.isUnsafe
     decompileRecrRule (x: Ix.RecursorRule) : DecompileM Lean.RecursorRule := do
       let rhs <- decompileExpr x.rhs
       return ⟨x.ctor, x.nfields, rhs⟩
@@ -367,400 +365,53 @@ partial def decompileIndc (x: Ix.Inductive)
       let rules <- x.rules.mapM decompileRecrRule
       return .recInfo <|
         Lean.mkRecursorValEx x.name x.levelParams type indcAll
-          x.numParams x.numIndices x.numMotives x.numMinors rules x.k false
+          x.numParams x.numIndices x.numMotives x.numMinors rules x.k x.isUnsafe
 
 -- TODO: name integrity
 partial def decompileConst : Ix.Const -> DecompileM BlockNames
 | .axiom x => withLevels x.levelParams do
-  let ⟨name, c, m⟩ := (<- read).current
+  let ⟨_, c, m⟩ := (<- read).current
   let type <- decompileExpr x.type
-  let const := (.axiomInfo <| Lean.mkAxiomValEx x.name x.levelParams type false)
+  let const := (.axiomInfo <| Lean.mkAxiomValEx x.name x.levelParams type x.isUnsafe)
   insertBlock c m (.single const)
 | .definition x => do
-  let ⟨name, c, m⟩ := (<- read).current
+  let ⟨_, c, m⟩ := (<- read).current
   let const <- decompileDefn x
   insertBlock c m (.single const)
 | .quotient x => withLevels x.levelParams do
-  let ⟨name, c, m⟩ := (<- read).current
+  let ⟨_, c, m⟩ := (<- read).current
   let type <- decompileExpr x.type
   let const := (.quotInfo <| Lean.mkQuotValEx x.name x.levelParams type x.kind)
   insertBlock c m (.single const)
-| .inductiveProj x => do
-  let curr@⟨name, c, m⟩ := (<- read).current
-  let bs <- ensureBlock name x.blockCont x.blockMeta
-  match bs with
-  | .inductive is => match is[x.idx]? with
-    | .some ⟨i, _, _⟩ =>
-       if i == name then return bs
-       else throw (.badProjection curr i x.blockCont x.blockMeta "mutual ind")
-    | .none => throw (.badProjection curr name x.blockCont x.blockMeta "mutual ind no idx")
-  | _ => throw (.badProjection curr name x.blockCont x.blockMeta "not inductive")
-| .constructorProj x => do
-  let curr@⟨name, c, m⟩ := (<- read).current
-  let bs <- ensureBlock x.induct x.blockCont x.blockMeta
-  let cs <- match bs with
-    | .inductive is => match is[x.idx]? with
-      | .some ⟨i, cs, _⟩ =>
-         if i == x.induct then pure cs
-         else throw (.badProjection curr i x.blockCont x.blockMeta "ctor, inductive name {i} != {x.induct}")
-      | .none => throw (.badProjection curr x.induct x.blockCont x.blockMeta "ctor mutual ind no idx {x.idx}")
-    | _ => throw (.badProjection curr x.induct x.blockCont x.blockMeta "ctor not inductive")
-  let n <- match cs[x.cidx]? with
-  | .some n => pure n
-  | .none => throw (.badProjection curr name x.blockCont x.blockMeta s!"bad ctor idx {x.cidx} {cs}")
-  if name == n then return bs
-  else
-    throw (.badProjection curr name x.blockCont x.blockMeta "ctor name mismatch")
-| .recursorProj x => do
-  let curr@⟨name, c, m⟩ := (<- read).current
-  let bs <- ensureBlock x.induct x.blockCont x.blockMeta
-  let rs <- match bs with
-    | .inductive is => match is[x.idx]? with
-      | .some ⟨i, _, rs⟩ =>
-         if i == x.induct then pure rs
-         else throw (.badProjection curr i x.blockCont x.blockMeta "recursor, inductive name {i} != {x.induct}")
-      | .none => throw (.badProjection curr name x.blockCont x.blockMeta "recursor, no idx {x.idx}")
-    | _ => throw (.badProjection curr name x.blockCont x.blockMeta "recr not inductive")
-  let n <- match rs[x.ridx]? with
-  | .some n => pure n
-  | .none => throw (.badProjection curr name x.blockCont x.blockMeta s!"bad recr idx {x.ridx} {rs}")
-  if name == n then return bs
-  else
-    throw (.badProjection curr name x.blockCont x.blockMeta "recr name mismatch")
-| .definitionProj x => do
-  let curr@⟨name, c, m⟩ := (<- read).current
-  let bs <- ensureBlock name x.blockCont x.blockMeta
-  match bs with
-  | .mutual is => match is[x.idx]? with
-    | .some d =>
-       if d == x.name then return bs
-       else throw (.badProjection curr d x.blockCont x.blockMeta "def mutual")
-    | .none => throw (.badProjection curr name x.blockCont x.blockMeta "def mutual no idx")
-  | .single d =>
-    if x.idx == 0 && d == x.name then pure bs
-    else throw (.badProjection curr d x.blockCont x.blockMeta "def single")
-  | _ => throw (.badProjection curr name x.blockCont x.blockMeta "def not mutual")
+| .inductiveProj x => ensureBlock x.name x.blockCont x.blockMeta
+| .constructorProj x => ensureBlock x.induct x.blockCont x.blockMeta
+| .recursorProj x => ensureBlock x.induct x.blockCont x.blockMeta
+| .definitionProj x => ensureBlock x.name x.blockCont x.blockMeta
 | .mutual x => do
-  let curr@⟨name, c, m⟩ := (<- read).current
+  let ⟨_, c, m⟩ := (<- read).current
   let mutCtx <- decompileMutualCtx x.ctx
   withMutCtx mutCtx do
     let mut block := #[]
-    for (defns, names) in List.zip x.defs x.ctx do
-      for (defn, name) in List.zip defns names do
+    for defns in x.defs do
+      for defn in defns do
         let const <- decompileDefn defn
         block := block.push const
     insertBlock c m (.mutual block.toList)
 | .inductive x => do
-  let curr@⟨name, c, m⟩ := (<- read).current
+  let ⟨_, c, m⟩ := (<- read).current
   let mutCtx <- decompileMutIndCtx x
   withMutCtx mutCtx do
     let mut block := #[]
-    for (inds, names) in List.zip x.inds x.ctx do
-      for (ind, name) in List.zip inds names do
+    for inds in x.inds do
+      for ind in inds do
         let (i, cs, rs) <- decompileIndc ind
         block := block.push ⟨i, cs, rs⟩
     insertBlock c m (Block.inductive block.toList)
 
 end
---
-----partial def ensureConst'
-----  (c m: Address) (n: Option Lean.Name) : DecompileM Unit := do
-----  match n, (<- get).blocks.find? (c, m) with
-----  | .some name, .some b =>
-----    if b.contains name then return ()
-----    else throw <| .expectedNameInBlock name b c m
-----  | .none, .some b => return ()
-----  | n, .none => do
-----    let cont : Ixon.Const <- match (<- get).store.find? c with
-----      | .some ixon => pure ixon
-----      | .none => throw <| .unknownStoreAddress c
-----    let meta : Ixon.Metadata <- match (<- get).store.find? m with
-----      | .some (.meta meta) => pure meta
-----      | .some x => throw <| .expectedIxonMetadata m x
-----      | .none => throw <| .unknownStoreAddress m
-----    match rematerialize cont meta with
-----    | .ok const  => do
-----      let consts <- decompileConst' c m n const
-----
-----    | .error e => throw (.transport e c m)
---
-----partial def ensureConst (name: Lean.Name) (cont meta: Address) : DecompileM Unit := do
-----  match (<- get).blocks.find? (cont, meta) with
-----  | .some (.defn n) => 
-----    if n == name then return () else throw <| .mismatchedName name n cont meta
-----  | .some x => throw <| .expectedDefnBlock name x cont meta
-----  | .none => do
-----    let c : Ixon.Const <- match (<- get).store.find? cont with
-----      | .some ixon => pure ixon
-----      | .none => throw <| .unknownStoreAddress cont
-----    let m : Ixon.Metadata <- match (<- get).store.find? meta with
-----      | .some (.meta meta) => pure meta
-----      | .some x => throw <| .expectedIxonMetadata meta x
-----      | .none => throw <| .unknownStoreAddress meta
-----    match rematerialize c m with
-----    | .ok a  => decompileConst name cont meta a
-----    | .error e => throw (.transport e cont meta)
-----
-----partial def ensureIndBlock (n: Lean.Name) (cont meta: Address) : DecompileM Unit := do
-----  match (<- get).blocks.find? (cont, meta) with
-----  | .some (.indcs _) => return ()
-----  | .some x => throw <| .expectedMutIndBlock x cont meta
-----  | .none => do
-----    let c : Ixon.Const <- match (<- get).store.find? cont with
-----      | .some ixon => pure ixon
-----      | .none => throw <| .unknownStoreAddress cont
-----    let m : Ixon.Metadata <- match (<- get).store.find? meta with
-----      | .some (.meta meta) => pure meta
-----      | .some x => throw <| .expectedIxonMetadata meta x
-----      | .none => throw <| .unknownStoreAddress meta
-----    match rematerialize c m with
-----    | .ok (.mutIndBlock x)  => decompileMutIndBlock x cont meta
-----    | .ok c@(.«inductive» x) => decompileConst n cont meta c
-----    | .ok x => throw <| .expectedMutIndConst x cont meta
-----    | .error e => throw (.transport e cont meta)
-----
-----partial def ensureMutDefBlock (cont meta: Address) : DecompileM Unit := do
-----  match (<- get).blocks.find? (cont, meta) with
-----  | .some (.defns _) => return ()
-----  | .some x => throw <| .expectedMutDefBlock x cont meta
-----  | .none => do
-----    let c : Ixon.Const <- match (<- get).store.find? cont with
-----      | .some ixon => pure ixon
-----      | .none => throw <| .unknownStoreAddress cont
-----    let m : Ixon.Metadata <- match (<- get).store.find? meta with
-----      | .some (.meta meta) => pure meta
-----      | .some x => throw <| .expectedIxonMetadata meta x
-----      | .none => throw <| .unknownStoreAddress meta
-----    match rematerialize c m with
-----    | .ok (.mutDefBlock x)  => decompileMutDefBlock x cont meta
-----    | .ok x  => throw <| .expectedMutDefConst x cont meta
-----    | .error e => throw (.transport e cont meta)
-----
-----
-----
-----
-----partial def tryInsertConst
-----  (const: Lean.ConstantInfo)
-----  : DecompileM Unit := do
-----  match (<- get).env.find? const.name with
-----  | .some const' =>
-----      if const == const'
-----      then return ()
-----      else throw <| .inconsistentConsts const const'
-----  | .none => modify fun stt => { stt with env := stt.env.insert const.name const }
-----
-----partial def decompileDefn (name: Lean.Name) (c m : Address) (x: Ix.Definition)
-----  : DecompileM Lean.ConstantInfo := withLevels x.levelParams do
-----    let type <- decompileExpr c m x.type
-----    let val <- decompileExpr c m x.value
-----    let safety := if x.isPartial then .«partial» else .safe
-----    match x.mode with
-----    | .definition => return .defnInfo <|
-----      Lean.mkDefinitionValEx name x.levelParams type val x.hints safety x.all
-----    | .opaque => return .opaqueInfo <|
-----      Lean.mkOpaqueValEx name x.levelParams type val true x.all
-----    | .theorem => return .thmInfo <|
-----      Lean.mkTheoremValEx name x.levelParams type val x.all
-----
-----partial def decompileIndc 
-----  (name: Lean.Name)
-----  (c m : Address)
-----  (x: Ix.Inductive) :
-----  DecompileM 
-----    (Lean.ConstantInfo × List Lean.ConstantInfo × List Lean.ConstantInfo)
-----    := withLevels x.levelParams do
-----      let type <- decompileExpr c m x.type
-----      let indc :=
-----        Lean.mkInductiveValEx name x.levelParams type x.numParams x.numIndices
-----          x.all (x.ctors.map (·.name)) x.numNested x.isRec false x.isReflexive
-----      let ctors <- x.ctors.mapM (decompileCtor name)
-----      let recrs <- x.recrs.mapM (decompileRecr x.all)
-----      return (.inductInfo indc, ctors, recrs)
-----  where
-----    decompileCtor (indcName: Lean.Name) (x: Ix.Constructor)
-----      : DecompileM Lean.ConstantInfo := withLevels x.levelParams do
-----      let type <- decompileExpr c m x.type
-----      return .ctorInfo <|
-----        Lean.mkConstructorValEx x.name x.levelParams type indcName 
-----          x.cidx x.numParams x.numFields false
-----    decompileRecrRule (x: Ix.RecursorRule) : DecompileM Lean.RecursorRule := do
-----      let rhs <- decompileExpr c m x.rhs
-----      return ⟨x.ctor, x.nfields, rhs⟩
-----    decompileRecr (indcAll: List Lean.Name) (x: Ix.Recursor)
-----      : DecompileM Lean.ConstantInfo := withLevels x.levelParams do
-----      let type <- decompileExpr c m x.type
-----      let rules <- x.rules.mapM decompileRecrRule
-----      return .recInfo <|
-----        Lean.mkRecursorValEx x.name x.levelParams type indcAll
-----          x.numParams x.numIndices x.numMotives x.numMinors rules x.k false
-----
-----partial def ensureConst'
-----  (c m: Address) (n: Option Lean.Name) : DecompileM Unit := do
-----  match n, (<- get).blocks.find? (c, m) with
-----  | .some name, .some b =>
-----    if b.contains name then return ()
-----    else throw <| .expectedNameInBlock name b c m
-----  | .none, .some b => return ()
-----  | n, .none => do
-----    let cont : Ixon.Const <- match (<- get).store.find? c with
-----      | .some ixon => pure ixon
-----      | .none => throw <| .unknownStoreAddress c
-----    let meta : Ixon.Metadata <- match (<- get).store.find? m with
-----      | .some (.meta meta) => pure meta
-----      | .some x => throw <| .expectedIxonMetadata m x
-----      | .none => throw <| .unknownStoreAddress m
-----    match rematerialize cont meta with
-----    | .ok const  => do
-----      let consts <- decompileConst' c m n const
-----
-----    | .error e => throw (.transport e c m)
-----
-----
-----partial def decompileConst' (c m: Address)
-----  : Option Lean.Name -> Ix.Const -> DecompileM (List Lean.ConstantInfo)
-----| .some n, .«axiom» x => withLevels x.levelParams do
-----  let type <- decompileExpr c m x.type
-----  return [.axiomInfo <| Lean.mkAxiomValEx n x.levelParams type false]
-----| .some n, .«definition» x => do
-----  let d <- decompileDefn n c m x
-----  return [d]
-----| .some n, .«inductive» x => do
-----  let (i, _, _) <- decompileIndc n c m x
-----  return [i]
-----| .some n, .quotient x => withLevels x.levelParams do
-----  let type <- decompileExpr c m x.type
-----  return [.quotInfo <| Lean.mkQuotValEx n x.levelParams type x.kind]
-----| .some n, .inductiveProj x => do
-----  ensureConst (.some n) x.blockCont x.blockMeta
-----  let ns <- match (<- get).blocks.find? (x.blockCont, x.blockMeta) with
-----    | .some (.indcs ns) => pure ns
-----    | .some (.indc n) => pure [n]
-----    | .some _ => throw <| .badProjection n x.blockCont x.blockMeta "not indcs or indc block"
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "no block"
-----  let (i, _, _) <- match ns[x.idx]? with
-----    | .some ns => pure ns
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "bad ind idx"
-----    if i == n then return () else throw <| .badProjection n x.blockCont x.blockMeta "indc name mismatch"
-----| .constructorProj x => do
-----  ensureIndBlock n x.blockCont x.blockMeta
-----  let ns <- match (<- get).blocks.find? (x.blockCont, x.blockMeta) with
-----    | .some (.indcs ns) => pure ns
-----    | .some _ => throw <| .badProjection n x.blockCont x.blockMeta "not indc"
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "no block"
-----  let (_, cs, _) <- match ns[x.idx]? with
-----    | .some ns => pure ns
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "bad ind idx"
-----  let n <- match cs[x.cidx]? with
-----    | .some ns => pure ns
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta s!"bad ctor idx {x.cidx} {cs}"
-----    if n == n then return () else 
-----      throw <| .badProjection n x.blockCont x.blockMeta "ctor name mismatch"
-----| .recursorProj x => do
-----  ensureIndBlock n x.blockCont x.blockMeta
-----  let ns <- match (<- get).blocks.find? (x.blockCont, x.blockMeta) with
-----    | .some (.indcs ns) => pure ns
-----    | .some _ => throw <| .badProjection n x.blockCont x.blockMeta "not indc"
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "no block"
-----  let (_, _, rs) <- match ns[x.idx]? with
-----    | .some ns => pure ns
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "bad ind idx"
-----  let n <- match rs[x.ridx]? with
-----    | .some ns => pure ns
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "bad recr idx"
-----    if n == n then return () else
-----      throw <| .badProjection n x.blockCont x.blockMeta "recr name mismatch"
-----| .definitionProj x => do
-----  ensureMutDefBlock x.blockCont x.blockMeta
-----  let ns <- match (<- get).blocks.find? (x.blockCont, x.blockMeta) with
-----    | .some (.defns ns) => pure ns
-----    | .some _ => throw <| .badProjection n x.blockCont x.blockMeta "not defns block"
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "no block"
-----  let n <- match ns[x.idx]? with
-----    | .some n => pure n 
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "bad defn idx"
-----    if n == n then return () else throw <| .badProjection n x.blockCont x.blockMeta "defn name mismatch"
-----| .none, .mutDefBlock x => sorry
-----| .none, .mutIndBlock x => sorry
-----
-----
-----partial def decompileConst
-----  (n: Lean.Name) (c m: Address): Ix.Const -> DecompileM Unit
-----| .axiom x => withLevels x.levelParams do
-----  let type <- decompileExpr c m x.type
-----  let val := Lean.mkAxiomValEx n x.levelParams type false
-----  tryInsertConst (.axiomInfo val)
-----| .definition x => do
-----  decompileDefn n c m x >>= tryInsertConst
-----  modify fun stt => 
-----    { stt with blocks := stt.blocks.insert (c, m) (.defn i) }
-----| .inductive x => do
-----  let (i, cs, rs) <- decompileIndc n c m x
-----  tryInsertConst i
-----  let cns <- cs.mapM <| fun c => tryInsertConst c *> pure c.name
-----  let rns <- rs.mapM <| fun r => tryInsertConst r *> pure r.name
-----  modify fun stt => 
-----    { stt with blocks := stt.blocks.insert (c, m) (.indcs [(i.name, cns, rns)]) }
-----| .quotient x => withLevels x.levelParams do
-----  let type <- decompileExpr c m x.type
-----  let val :=  Lean.mkQuotValEx n x.levelParams type x.kind
-----  tryInsertConst (.quotInfo val)
-----| .inductiveProj x => do
-----  ensureIndBlock n x.blockCont x.blockMeta
-----  let ns <- match (<- get).blocks.find? (x.blockCont, x.blockMeta) with
-----    | .some (.indcs ns) => pure ns
-----    | .some _ => throw <| .badProjection n x.blockCont x.blockMeta "not indcs block"
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "no block"
-----  let (i, _, _) <- match ns[x.idx]? with
-----    | .some ns => pure ns
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "bad ind idx"
-----    if i == n then return () else throw <| .badProjection n x.blockCont x.blockMeta "indc name mismatch"
-----| .constructorProj x => do
-----  ensureIndBlock n x.blockCont x.blockMeta
-----  let ns <- match (<- get).blocks.find? (x.blockCont, x.blockMeta) with
-----    | .some (.indcs ns) => pure ns
-----    | .some _ => throw <| .badProjection n x.blockCont x.blockMeta "not indc"
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "no block"
-----  let (_, cs, _) <- match ns[x.idx]? with
-----    | .some ns => pure ns
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "bad ind idx"
-----  let n <- match cs[x.cidx]? with
-----    | .some ns => pure ns
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta s!"bad ctor idx {x.cidx} {cs}"
-----    if n == n then return () else 
-----      throw <| .badProjection n x.blockCont x.blockMeta "ctor name mismatch"
-----| .recursorProj x => do
-----  ensureIndBlock n x.blockCont x.blockMeta
-----  let ns <- match (<- get).blocks.find? (x.blockCont, x.blockMeta) with
-----    | .some (.indcs ns) => pure ns
-----    | .some _ => throw <| .badProjection n x.blockCont x.blockMeta "not indc"
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "no block"
-----  let (_, _, rs) <- match ns[x.idx]? with
-----    | .some ns => pure ns
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "bad ind idx"
-----  let n <- match rs[x.ridx]? with
-----    | .some ns => pure ns
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "bad recr idx"
-----    if n == n then return () else
-----      throw <| .badProjection n x.blockCont x.blockMeta "recr name mismatch"
-----| .definitionProj x => do
-----  ensureMutDefBlock x.blockCont x.blockMeta
-----  let ns <- match (<- get).blocks.find? (x.blockCont, x.blockMeta) with
-----    | .some (.defns ns) => pure ns
-----    | .some _ => throw <| .badProjection n x.blockCont x.blockMeta "not defns block"
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "no block"
-----  let n <- match ns[x.idx]? with
-----    | .some n => pure n 
-----    | .none => throw <| .badProjection n x.blockCont x.blockMeta "bad defn idx"
-----    if n == n then return () else throw <| .badProjection n x.blockCont x.blockMeta "defn name mismatch"
------- these should be unreachable here
-----| .mutDefBlock x => throw <| .namedMutDefBlock n x
-----| .mutIndBlock x => throw <| .namedMutIndBlock n x
-----
-----
-----end
-----
-----def decompileEnv : DecompileM Unit := do
-----  for (n, (anon, meta)) in (<- get).names do
-----    ensureConst n anon meta
---
---end Decompile
+
+def decompileEnv : DecompileM Unit := do
+  for (n, (anon, meta)) in (<- read).names do
+    let _ <- ensureBlock n anon meta
+
+end Decompile

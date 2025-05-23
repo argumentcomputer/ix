@@ -196,4 +196,16 @@ def getReducibilityHints : GetM Lean.ReducibilityHints := do
   | 2 => .regular <$> getUInt32LE
   | e => throw s!"expected ReducibilityHints encoding between 0 and 2, got {e}"
 
+def putDefinitionSafety : Lean.DefinitionSafety → PutM
+| .«unsafe» => putUInt8 0
+| .«safe» => putUInt8 1
+| .«partial» => putUInt8 2
+
+def getDefinitionSafety : GetM Lean.DefinitionSafety := do
+  match (← getUInt8) with
+  | 0 => return .«unsafe»
+  | 1 => return .«safe»
+  | 2 => return .«partial» 
+  | e => throw s!"expected DefinitionSafety encoding between 0 and 2, got {e}"
+
 end Ixon

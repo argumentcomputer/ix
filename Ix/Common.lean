@@ -32,9 +32,11 @@ instance : Ord Lean.Name where
   compare := Lean.Name.quickCmp
 
 deriving instance Ord for Lean.Literal
+--deriving instance Ord for Lean.Expr
 deriving instance Ord for Lean.BinderInfo
 deriving instance BEq, Repr, Hashable, Ord for Lean.QuotKind
 deriving instance Hashable, Repr for Lean.ReducibilityHints
+deriving instance BEq, Ord, Hashable, Repr for Lean.DefinitionSafety
 deriving instance BEq, Repr for Lean.ConstantVal
 deriving instance BEq, Repr for Lean.QuotVal
 deriving instance BEq, Repr for Lean.AxiomVal
@@ -46,6 +48,7 @@ deriving instance BEq, Repr for Lean.RecursorVal
 deriving instance BEq, Repr for Lean.ConstructorVal
 deriving instance BEq, Repr for Lean.InductiveVal
 deriving instance BEq, Repr for Lean.ConstantInfo
+deriving instance BEq, Repr for Ordering
 
 def UInt8.MAX : UInt64 := 0xFF
 def UInt16.MAX : UInt64 := 0xFFFF
@@ -101,26 +104,16 @@ mutual
 
 end
 
-def sortByM [Monad μ] (xs: List α) (cmp: α -> α -> μ Ordering) (rev := false) :
-    μ (List α) := do
-  if rev then
-    let revCmp : _ → _ → μ Ordering := fun x y => do
-      match (← cmp x y) with
-      | .gt => return Ordering.lt
-      | .eq => return Ordering.eq
-      | .lt => return Ordering.gt
-    sequencesM revCmp xs >>= mergeAllM revCmp
-  else
-    sequencesM cmp xs >>= mergeAllM cmp
+def sortByM [Monad μ] (xs: List α) (cmp: α -> α -> μ Ordering) : μ (List α) :=
+  sequencesM cmp xs >>= mergeAllM cmp
 
 /--
-Mergesort from least to greatest. To sort from greatest to
+Mergesort from least to greatest. To sort from greatest to least set `rev`
 -/
-def sortBy (cmp : α -> α -> Ordering) (xs: List α) (rev := false) : List α :=
-  Id.run do xs.sortByM (cmp <$> · <*> ·) rev
+def sortBy (cmp : α -> α -> Ordering) (xs: List α) : List α :=
+  Id.run <| xs.sortByM (fun x y => pure <| cmp x y)
 
-def sort [Ord α] (xs: List α) (rev := false) : List α :=
-  sortBy compare xs rev
+def sort [Ord α] (xs: List α) : List α := sortBy compare xs
 
 def groupByMAux [Monad μ] (eq : α → α → μ Bool) : List α → List (List α) → μ (List (List α))
   | a::as, (ag::g)::gs => do match (← eq a ag) with

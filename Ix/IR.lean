@@ -124,7 +124,30 @@ structure Axiom where
   name: Lean.Name
   levelParams : List Lean.Name
   type : Expr
+  isUnsafe: Bool
   deriving Ord, BEq, Hashable, Repr, Nonempty
+
+structure PreDefinition where
+  name: Lean.Name
+  levelParams : List Lean.Name
+  type : Lean.Expr
+  mode : DefMode
+  value : Lean.Expr
+  hints : Lean.ReducibilityHints
+  safety : Lean.DefinitionSafety
+  all : List Lean.Name
+  deriving BEq, Repr, Nonempty
+
+def mkPreDefinition (x: Lean.DefinitionVal) : PreDefinition := 
+  ⟨x.name, x.levelParams, x.type, .definition, x.value, x.hints, x.safety, x.all⟩
+
+def mkPreTheorem (x: Lean.TheoremVal) : PreDefinition := 
+  ⟨x.name, x.levelParams, x.type, .theorem, x.value, .opaque, .safe, x.all⟩
+
+def mkPreOpaque (x: Lean.OpaqueVal) : PreDefinition := 
+  ⟨x.name, x.levelParams, x.type, .opaque, x.value, .opaque,
+    if x.isUnsafe then .unsafe else .safe, x.all⟩
+
 
 /--
 Ix.Definition definitions combine Lean.DefinitionVal, Lean.OpaqueVal and
@@ -143,7 +166,7 @@ structure Definition where
   mode: DefMode
   value : Expr
   hints : Lean.ReducibilityHints
-  isPartial : Bool
+  safety: Lean.DefinitionSafety
   all : List Lean.Name
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
@@ -154,7 +177,7 @@ def mkTheorem
   (value: Expr)
   (all: List Lean.Name)
   : Definition
-  := ⟨name, levelParams, type, .theorem, value, .opaque, false, all⟩
+  := ⟨name, levelParams, type, .theorem, value, .opaque, .safe, all⟩
 
 def mkOpaque
   (name: Lean.Name)
@@ -162,8 +185,9 @@ def mkOpaque
   (type: Expr)
   (value: Expr)
   (all: List Lean.Name)
+  (isUnsafe: Bool)
   : Definition
-  := ⟨name, levelParams, type, .opaque, value, .opaque, false, all⟩
+  := ⟨name, levelParams, type, .opaque, value, .opaque, if isUnsafe then .unsafe else .safe, all⟩
 
 /--
 Ix.Constructor inductive datatype constructors are analogous to
@@ -181,6 +205,7 @@ structure Constructor where
   cidx : Nat
   numParams : Nat
   numFields : Nat
+  isUnsafe: Bool
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 /--
@@ -209,6 +234,7 @@ structure Recursor where
   numMinors  : Nat
   rules : List RecursorRule
   k : Bool
+  isUnsafe: Bool
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 /--
@@ -227,6 +253,7 @@ structure PreInductive where
   numNested: Nat
   isRec : Bool
   isReflexive : Bool
+  isUnsafe: Bool
   deriving BEq, Repr, Nonempty
 
 /--
@@ -246,6 +273,7 @@ structure Inductive where
   numNested: Nat
   isRec : Bool
   isReflexive : Bool
+  isUnsafe: Bool
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 
@@ -302,13 +330,19 @@ structure DefinitionProj where
 
 structure MutualBlock where
   defs : List (List Definition)
-  ctx  : List (List Lean.Name)
+  --all: List Lean.Name
   deriving BEq, Ord, Hashable, Repr, Nonempty
+
+def MutualBlock.ctx (x: MutualBlock) : List (List Lean.Name) :=
+  x.defs.map fun xs => xs.map fun x => x.name
 
 structure InductiveBlock where
   inds : List (List Inductive)
-  ctx  : List (List Lean.Name)
+  --all: List Lean.Name
   deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited
+
+def InductiveBlock.ctx (x: InductiveBlock) : List (List Lean.Name) :=
+  x.inds.map fun xs => xs.map fun x => x.name
 
 inductive Const where
   | «axiom» : Axiom → Const
