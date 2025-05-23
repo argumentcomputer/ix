@@ -388,14 +388,14 @@ dependencies = [
 
 [[package]]
 name = "bao-tree"
-version = "0.15.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff16d65e48353db458be63ee395c03028f24564fd48668389bd65fd945f5ac36"
+checksum = "f1f7a89a8ee5889d2593ae422ce6e1bb03e48a0e8a16e4fa0882dfcbe7e182ef"
 dependencies = [
- "blake3",
  "bytes",
  "futures-lite",
  "genawaiter",
+ "iroh-blake3",
  "iroh-io",
  "positioned-io",
  "range-collections",
@@ -652,9 +652,9 @@ dependencies = [
 
 [[package]]
 name = "blake3"
-version = "1.8.2"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3888aaa89e4b2a40fca9848e400f6a658a5a3978de7be858e209cafa8be9a4a0"
+checksum = "675f87afced0413c9bb02843499dbbd3882a237645883f71a2b59644a6d2f753"
 dependencies = [
  "arrayref",
  "arrayvec",
@@ -2302,15 +2302,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "iroh-blobs"
-version = "0.34.1"
+name = "iroh-blake3"
+version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fa596a999c2df0269942918ec51abc64766433872f3c64ba9e9be8d9d2c7200"
+checksum = "efbba31f40a650f58fa28dd585a8ca76d8ae3ba63aacab4c8269004a0c803930"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "cc",
+ "cfg-if",
+ "constant_time_eq",
+]
+
+[[package]]
+name = "iroh-blobs"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8d7a6872c7ec4a2613d0386b4dc19b5f3cf4822d81361c5136a63fd56ba2372"
 dependencies = [
  "anyhow",
  "async-channel",
  "bao-tree",
- "blake3",
  "bytes",
  "chrono",
  "data-encoding",
@@ -2323,6 +2335,7 @@ dependencies = [
  "hex",
  "iroh",
  "iroh-base",
+ "iroh-blake3",
  "iroh-io",
  "iroh-metrics",
  "nested_enum_utils",
@@ -2517,6 +2530,7 @@ dependencies = [
  "binius_math",
  "binius_maybe_rayon",
  "binius_utils",
+ "blake3",
  "bumpalo",
  "bytemuck",
  "bytes",

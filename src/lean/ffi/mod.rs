@@ -1,7 +1,6 @@
 pub mod archon;
 pub mod binius;
 pub mod byte_array;
-#[cfg(feature = "net")]
 pub mod iroh;
 pub mod keccak;
 
