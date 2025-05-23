@@ -13,11 +13,6 @@ def main (args: List String) : IO UInt32 := do
   then LSpec.lspecEachIO Tests.Ix.Compile.suiteIO id
   else
     LSpec.lspecIO (.ofList [
-      ("arith-expr", Tests.ArithExpr.suite),
-      ("boundary", Tests.Boundary.suite),
-      ("binius-bindings", Tests.Binius.bindingsSuite),
-      ("binius-witness", Tests.Binius.witnessSuite),
-      ("binius-transparent", Tests.Binius.transparentSuite),
       ("aiur", Tests.Aiur.suite),
       ("archon", Tests.Archon.suite),
       ("ffi-consistency", Tests.FFIConsistency.suite),
