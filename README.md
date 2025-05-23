@@ -6,7 +6,7 @@
 
 -----------
 
-The ix platform enables the compilation of [Lean
+The Ix platform enables the compilation of [Lean
 4](https://github.com/leanprover/lean4) programs into zero-knowledge succinct
 non-interactive arguments of knowledge (zk-SNARKs). This allows the execution
 and typechecking of any Lean program to be verified by performing a
@@ -24,7 +24,7 @@ proof-carrying code, in **zkPCC** the host or user verifies a cryptographic
 zero-knowledge proof generated from the typechecking of that formal proof. This
 greatly improves the runtime cost of this verification operation (potentially
 even up to O(1) depending on the specific zk-SNARK protocol used) and minimizes
-the complexity of local dependencies tooling (e.g. build systems for the formal
+the complexity of locally dependent tooling (e.g. build systems for the formal
 proof language).
 
 Additionally, while in proof-carrying code an application must reveal the proof
@@ -36,7 +36,7 @@ transactions over proofs.
 
 ## Use Cases
 
-Our expectation is that Ix, and **zkPCC** in general, will allow applications frictionlessly ship
+Our expectation is that Ix, and **zkPCC** in general, will allow applications to frictionlessly ship
 security guarantees to their users. Some possible use cases could be:
 
 - Software written in compiled languages like Rust can attach to their binaries
@@ -45,7 +45,7 @@ security guarantees to their users. Some possible use cases could be:
   certified compilation infrastructure (e.g. a future
   [CompCert](https://en.wikipedia.org/wiki/CompCert) equivalent in Lean4),
   proofs that the compilation occurred correctly can also be attached, which
-  would mitigate supply-chain attacks, such as that famously by Ken
+  would mitigate supply-chain attacks, such as those famously described by Ken
   Thompson in [Reflections on Trusting
   Trust](https://www.cs.cmu.edu/~rdriley/487/papers/Thompson_1984_ReflectionsonTrustingTrust.pdf).
   This would also enable secure decentralized binary caching, saving on the need
@@ -59,17 +59,17 @@ security guarantees to their users. Some possible use cases could be:
   applications in protection ring 0. By reducing verification overhead and
   improving portability over proof-carrying code, **zkPCC** potentially enables more
   sophisticated software-based process isolation.
-- Decentralized platforms like [Ethereum blockchain](https://ethereum.org/)
+- Decentralized platforms like the [Ethereum blockchain](https://ethereum.org/)
   could publish [formal specifications of their protocol](https://github.com/ConsenSys/eth2.0-dafny)
-  and then require clients, layer-2s, zkVMs, etc to publish **zkPCC** proofs
+  and then require clients, layer-2s, zkVMs, etc. to publish **zkPCC** proofs
   that their current specific version satisfies such specifications. Such proofs
   could be verified on-chain, and even programmatically gate certain protocol updates
   (e.g. version X validates that version X+1 is a correct update).
 - Individual smart contracts can publish on-chain proofs of their [formal
   models](https://ethereum.org/en/developers/docs/smart-contracts/formal-verification/)
   or proofs showing that their bytecode was generated from particular sources
-  (currently a trusted block explorer feature)
-- Cryptographic projects [risc0 zkVM](https://risczero.com/)
+  (currently a trusted block explorer feature).
+- Cryptographic projects like the [risc0 zkVM](https://risczero.com/)
   could include a proof of the correctness of their [Lean 4 formal
   model](https://github.com/risc0/risc0-lean4) alongside (or aggregated within)
   every proof produced by their zkVM.
@@ -158,26 +158,26 @@ Note.
 
 Ix consists of the following core components:
 
-- [the Ix compiler](https://github.com/argumentcomputer/ix/blob/main/Ix/CompileM.lean),
+- [The Ix compiler](https://github.com/argumentcomputer/ix/blob/main/Ix/CompileM.lean),
   which transforms Lean 4 programs into a format called `ixon`, [the ix object
   notation](https://github.com/argumentcomputer/ix/blob/main/docs/Ixon.md),
   which is an alpha-invariant content-addressable serialization or wire format.
   The compiler also includes a decompiler to convert `ixon` objects back into
   Lean programs (by preserving the alpha-relevant metadata in a separate ixon
   object and re-merging the computationally relevant and irrelevant parts).
-- the [Aiur zkDSL](https://github.com/argumentcomputer/ix/tree/main/Ix/Aiur)
+- The [Aiur zkDSL](https://github.com/argumentcomputer/ix/tree/main/Ix/Aiur)
   which is a first-order functional programming language that generates Binius
   circuits.
-- the [Archon
+- The [Archon
   library](https://github.com/argumentcomputer/ix/tree/main/Ix/Archon), which
   provides high-level abstractions and FFI bindings in Lean for the Binius
-  libraries in Rust, as well as other rust dependencies
-- the IxVM (not yet released), which implements reduction and typechecking
-  of ixon (including ingress and egress from and to binary data).
+  libraries in Rust, as well as other Rust dependencies.
+- The IxVM (not yet released), which implements reduction and typechecking
+  of `ixon` (including ingress and egress from and to binary data).
 - Binius precompiles for the IxVM, including the Blake3 hash function and Lean4
   primitives. This work has been [upstreamed](https://github.com/IrreducibleOSS/binius/pulls?q=is%3Apr+Blake3+is%3Aclosed) to Binius where possible.
-- integration with the [iroh p2p network](https://www.iroh.computer/) so that
-  different ix users can easily share ixon data between themselves
+- Integration with the [iroh p2p network](https://www.iroh.computer/) so that
+  different ix users can easily share `ixon` data between themselves.
 
 
 ## Build & Install
@@ -212,9 +212,9 @@ Ix consists of the following core components:
 
 #### Build
 
-Build and run the Ix CLI with `nix build` and `nix run`
+Build and run the Ix CLI with `nix build` and `nix run`.
 
-To build and run the test suite, run `nix build .#test` and `nix run .#test`
+To build and run the test suite, run `nix build .#test` and `nix run .#test`.
 
 #### Cache Troubleshooting
 
