@@ -47,19 +47,81 @@ extern lean_obj_res c_rs_witness_module_bind_oracle_to(
     return alloc_lean_linear_object(new_linear);
 }
 
-extern lean_obj_res c_rs_witness_module_push_u128_to(
+static inline lean_obj_res c_rs_witness_module_push_data_to(
     lean_obj_arg l_witness,
-    b_lean_obj_arg u128,
-    size_t entry_id
+    b_lean_obj_arg data,
+    size_t entry_id,
+    void (*rs_fn)(void*, b_lean_obj_arg, size_t)
 ) {
     linear_object *linear = validated_linear(l_witness);
-    rs_witness_module_push_u128_to(
-        get_object_ref(linear),
-        lean_get_external_data(u128),
-        entry_id
-    );
+    rs_fn(get_object_ref(linear), data, entry_id);
     linear_object *new_linear = linear_bump(linear);
     return alloc_lean_linear_object(new_linear);
+}
+
+extern lean_obj_res c_rs_witness_module_push_u8s_to(
+    lean_obj_arg l_witness,
+    b_lean_obj_arg u8s,
+    size_t entry_id
+) {
+    return c_rs_witness_module_push_data_to(
+        l_witness,
+        u8s,
+        entry_id,
+        rs_witness_module_push_u8s_to
+    );
+}
+
+extern lean_obj_res c_rs_witness_module_push_u16s_to(
+    lean_obj_arg l_witness,
+    b_lean_obj_arg u16s,
+    size_t entry_id
+) {
+    return c_rs_witness_module_push_data_to(
+        l_witness,
+        u16s,
+        entry_id,
+        rs_witness_module_push_u16s_to
+    );
+}
+
+extern lean_obj_res c_rs_witness_module_push_u32s_to(
+    lean_obj_arg l_witness,
+    b_lean_obj_arg u32s,
+    size_t entry_id
+) {
+    return c_rs_witness_module_push_data_to(
+        l_witness,
+        u32s,
+        entry_id,
+        rs_witness_module_push_u32s_to
+    );
+}
+
+extern lean_obj_res c_rs_witness_module_push_u64s_to(
+    lean_obj_arg l_witness,
+    b_lean_obj_arg u64s,
+    size_t entry_id
+) {
+    return c_rs_witness_module_push_data_to(
+        l_witness,
+        u64s,
+        entry_id,
+        rs_witness_module_push_u64s_to
+    );
+}
+
+extern lean_obj_res c_rs_witness_module_push_u128s_to(
+    lean_obj_arg l_witness,
+    b_lean_obj_arg u128s,
+    size_t entry_id
+) {
+    return c_rs_witness_module_push_data_to(
+        l_witness,
+        u128s,
+        entry_id,
+        rs_witness_module_push_u128s_to
+    );
 }
 
 extern lean_obj_res c_rs_witness_module_populate(lean_obj_arg l_witness, uint64_t height) {

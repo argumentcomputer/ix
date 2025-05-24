@@ -33,8 +33,24 @@ opaque addEntryWithCapacity : WitnessModule → (logBits : UInt8) → EntryId ×
 opaque bindOracleTo : WitnessModule → OracleIdx → EntryId → TowerField → WitnessModule
 
 /-- **Invalidates** the input `WitnessModule` -/
-@[never_extract, extern "c_rs_witness_module_push_u128_to"]
-opaque pushUInt128To : WitnessModule → @& UInt128 → EntryId → WitnessModule
+@[never_extract, extern "c_rs_witness_module_push_u8s_to"]
+opaque pushUInt8sTo : WitnessModule → @& Array UInt8 → EntryId → WitnessModule
+
+/-- **Invalidates** the input `WitnessModule` -/
+@[never_extract, extern "c_rs_witness_module_push_u16s_to"]
+opaque pushUInt16sTo : WitnessModule → @& Array UInt16 → EntryId → WitnessModule
+
+/-- **Invalidates** the input `WitnessModule` -/
+@[never_extract, extern "c_rs_witness_module_push_u32s_to"]
+opaque pushUInt32sTo : WitnessModule → @& Array UInt32 → EntryId → WitnessModule
+
+/-- **Invalidates** the input `WitnessModule` -/
+@[never_extract, extern "c_rs_witness_module_push_u64s_to"]
+opaque pushUInt64sTo : WitnessModule → @& Array UInt64 → EntryId → WitnessModule
+
+/-- **Invalidates** the input `WitnessModule` -/
+@[never_extract, extern "c_rs_witness_module_push_u128s_to"]
+opaque pushUInt128sTo : WitnessModule → @& Array UInt128 → EntryId → WitnessModule
 
 /-- **Invalidates** the input `WitnessModule` -/
 @[never_extract, extern "c_rs_witness_module_populate"]

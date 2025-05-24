@@ -36,6 +36,7 @@ pub struct WitnessModule {
     module_id: ModuleId,
     oracles: Arc<Vec<OracleInfo>>,
     entries: Vec<Vec<OptimalUnderlier>>,
+    buffers: Vec<Vec<u8>>,
     /// Maps oracles to their entries and tower levels
     entry_map: FxHashMap<OracleIdx, (EntryId, usize)>,
 }
@@ -141,13 +142,17 @@ impl WitnessModule {
     #[inline]
     pub fn new_entry(&mut self) -> EntryId {
         self.entries.push(vec![]);
+        self.buffers.push(vec![]);
         self.entries.len() - 1
     }
 
     #[inline]
     pub fn new_entry_with_capacity(&mut self, log_bits: u8) -> EntryId {
-        let num_underliers = (1 << log_bits) / OptimalUnderlier::BITS;
+        let bits = 1 << log_bits;
+        let num_underliers = bits / OptimalUnderlier::BITS;
+        let num_bytes = bits / 8;
         self.entries.push(Vec::with_capacity(num_underliers));
+        self.buffers.push(Vec::with_capacity(num_bytes));
         self.entries.len() - 1
     }
 
@@ -158,31 +163,46 @@ impl WitnessModule {
     }
 
     #[inline]
-    pub fn push_u8s_to(&mut self, u8s: [u8; 16], entry_id: EntryId) {
-        self.entries[entry_id].push(OptimalUnderlier::from(u128::from_le_bytes(u8s)))
+    pub fn push_u8s_to(&mut self, u8s: impl IntoIterator<Item = u8>, entry_id: EntryId) {
+        self.buffers[entry_id].extend(u8s);
+        self.drain_buffer(entry_id);
     }
 
     #[inline]
-    pub fn push_u16s_to(&mut self, u16s: [u16; 8], entry_id: EntryId) {
-        let u128 = unsafe { transmute::<[u16; 8], u128>(u16s) };
-        self.entries[entry_id].push(OptimalUnderlier::from(u128))
+    pub fn push_u16s_to(&mut self, u16s: impl IntoIterator<Item = u16>, entry_id: EntryId) {
+        let u8s = u16s.into_iter().flat_map(u16::to_le_bytes);
+        self.push_u8s_to(u8s, entry_id);
     }
 
     #[inline]
-    pub fn push_u32s_to(&mut self, u32s: [u32; 4], entry_id: EntryId) {
-        let u128 = unsafe { transmute::<[u32; 4], u128>(u32s) };
-        self.entries[entry_id].push(OptimalUnderlier::from(u128))
+    pub fn push_u32s_to(&mut self, u32s: impl IntoIterator<Item = u32>, entry_id: EntryId) {
+        let u8s = u32s.into_iter().flat_map(u32::to_le_bytes);
+        self.push_u8s_to(u8s, entry_id);
     }
 
     #[inline]
-    pub fn push_u64s_to(&mut self, u64s: [u64; 2], entry_id: EntryId) {
-        let u128 = unsafe { transmute::<[u64; 2], u128>(u64s) };
-        self.entries[entry_id].push(OptimalUnderlier::from(u128))
+    pub fn push_u64s_to(&mut self, u64s: impl IntoIterator<Item = u64>, entry_id: EntryId) {
+        let u8s = u64s.into_iter().flat_map(u64::to_le_bytes);
+        self.push_u8s_to(u8s, entry_id);
     }
 
     #[inline]
-    pub fn push_u128_to(&mut self, u128: u128, entry_id: EntryId) {
-        self.entries[entry_id].push(OptimalUnderlier::from(u128))
+    pub fn push_u128s_to(&mut self, u128s: impl IntoIterator<Item = u128>, entry_id: EntryId) {
+        let u8s = u128s.into_iter().flat_map(u128::to_le_bytes);
+        self.push_u8s_to(u8s, entry_id);
+    }
+
+    fn drain_buffer(&mut self, entry_id: EntryId) {
+        const CHUNK_SIZE: usize = size_of::<u128>() / size_of::<u8>();
+        let num_chunks = self.buffers[entry_id].len() / CHUNK_SIZE;
+        for chunk_idx in 0..num_chunks {
+            let start = chunk_idx * CHUNK_SIZE;
+            let end = start + CHUNK_SIZE;
+            let mut bytes = [0; CHUNK_SIZE];
+            bytes.copy_from_slice(&self.buffers[entry_id][start..end]);
+            self.entries[entry_id].push(OptimalUnderlier::from(u128::from_le_bytes(bytes)));
+        }
+        self.buffers[entry_id].drain(..num_chunks * CHUNK_SIZE);
     }
 
     pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_idx: OracleIdx) -> Option<Vec<T>> {
@@ -748,6 +768,7 @@ impl WitnessModule {
             module_id,
             oracles,
             entries: vec![],
+            buffers: vec![],
             entry_map: HashMap::with_capacity_and_hasher(num_oracles, FxBuildHasher),
         }
     }
@@ -923,7 +944,7 @@ mod tests {
         for (i, oracle_id) in oracles.into_iter().enumerate() {
             let entry_id = witness_modules[0].new_entry();
             for j in 0..1u128 << i {
-                witness_modules[0].push_u128_to(j * j + 17, entry_id);
+                witness_modules[0].push_u128s_to([j * j + 17], entry_id);
             }
             match i {
                 0 => witness_modules[0].bind_oracle_to::<B1>(oracle_id, entry_id),
@@ -988,15 +1009,15 @@ mod tests {
         let mut witness_module = circuit_module.init_witness_module().unwrap();
 
         let entry_a = witness_module.new_entry_with_capacity(7);
-        witness_module.push_u128_to(u128::MAX - u128::MAX / 2 + u128::MAX / 4, entry_a);
+        witness_module.push_u128s_to([u128::MAX - u128::MAX / 2 + u128::MAX / 4], entry_a);
         witness_module.bind_oracle_to::<B1>(a, entry_a);
 
         let entry_b = witness_module.new_entry_with_capacity(7);
-        witness_module.push_u128_to(u128::MAX - u128::MAX / 3 + u128::MAX / 7, entry_b);
+        witness_module.push_u128s_to([u128::MAX - u128::MAX / 3 + u128::MAX / 7], entry_b);
         witness_module.bind_oracle_to::<B1>(b, entry_b);
 
         let entry_c = witness_module.new_entry_with_capacity(7);
-        witness_module.push_u128_to(u128::MAX - u128::MAX / 5 + u128::MAX / 11, entry_c);
+        witness_module.push_u128s_to([u128::MAX - u128::MAX / 5 + u128::MAX / 11], entry_c);
         witness_module.bind_oracle_to::<B1>(c, entry_c);
 
         let height = 128;
@@ -1022,7 +1043,7 @@ mod tests {
 
         let mut witness_module = circuit_module.init_witness_module().unwrap();
         let entry_id = witness_module.new_entry_with_capacity(7);
-        witness_module.push_u128_to(u128::MAX - u128::MAX / 2 + u128::MAX / 4, entry_id);
+        witness_module.push_u128s_to([u128::MAX - u128::MAX / 2 + u128::MAX / 4], entry_id);
         witness_module.bind_oracle_to::<B1>(input, entry_id);
         let height = 128;
         witness_module.populate(height).unwrap();

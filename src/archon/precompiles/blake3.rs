@@ -137,10 +137,7 @@ fn state_transition_module(
 
     for (xy, trace) in traces.clone().state_trace.into_iter().enumerate() {
         let entry_id_xy = witness_module.new_entry();
-
-        for chunk in trace.chunks(4) {
-            witness_module.push_u32s_to(chunk.try_into()?, entry_id_xy);
-        }
+        witness_module.push_u32s_to(trace, entry_id_xy);
         witness_module.bind_oracle_to::<B32>(state_transitions[xy], entry_id_xy);
     }
 
@@ -299,18 +296,10 @@ fn additions_xor_rotates_module(
         let yin_entry = witness_module.new_entry();
         let zout_entry = witness_module.new_entry();
 
-        for chunk in xin_traces[xy].chunks(4) {
-            witness_module.push_u32s_to(chunk.try_into()?, xin_entry)
-        }
-        for chunk in yin_traces[xy].chunks(4) {
-            witness_module.push_u32s_to(chunk.try_into()?, yin_entry)
-        }
-        for chunk in traces.cout_trace[xy].chunks(4) {
-            witness_module.push_u32s_to(chunk.try_into()?, cout_entry)
-        }
-        for chunk in zout_traces[xy].chunks(4) {
-            witness_module.push_u32s_to(chunk.try_into()?, zout_entry)
-        }
+        witness_module.push_u32s_to(xin_traces[xy].clone(), xin_entry);
+        witness_module.push_u32s_to(yin_traces[xy].clone(), yin_entry);
+        witness_module.push_u32s_to(traces.cout_trace[xy].clone(), cout_entry);
+        witness_module.push_u32s_to(zout_traces[xy].clone(), zout_entry);
 
         witness_module.bind_oracle_to::<B1>(xins[xy], xin_entry);
         witness_module.bind_oracle_to::<B1>(yins[xy], yin_entry);
@@ -320,9 +309,7 @@ fn additions_xor_rotates_module(
 
     // not to forget about d_in
     let d_in_entry = witness_module.new_entry();
-    for chunk in traces.d_in_trace.chunks(4) {
-        witness_module.push_u32s_to(chunk.try_into()?, d_in_entry)
-    }
+    witness_module.push_u32s_to(traces.d_in_trace.clone(), d_in_entry);
     witness_module.bind_oracle_to::<B1>(d_in, d_in_entry);
 
     witness_module.populate(height)?;
@@ -364,17 +351,9 @@ fn cv_output_module(
     let state_i_entry = witness_module.new_entry();
     let state_i_8_entry = witness_module.new_entry();
 
-    for cv_vals in traces.cv_trace.chunks(4) {
-        witness_module.push_u32s_to(cv_vals.try_into().unwrap(), cv_entry);
-    }
-
-    for state_i_vals in traces.state_i_trace.chunks(4) {
-        witness_module.push_u32s_to(state_i_vals.try_into().unwrap(), state_i_entry);
-    }
-
-    for state_i_8_vals in traces.state_i_8_trace.chunks(4) {
-        witness_module.push_u32s_to(state_i_8_vals.try_into().unwrap(), state_i_8_entry);
-    }
+    witness_module.push_u32s_to(traces.cv_trace.clone(), cv_entry);
+    witness_module.push_u32s_to(traces.state_i_trace.clone(), state_i_entry);
+    witness_module.push_u32s_to(traces.state_i_8_trace.clone(), state_i_8_entry);
 
     witness_module.bind_oracle_to::<B32>(cv, cv_entry);
     witness_module.bind_oracle_to::<B32>(state_i, state_i_entry);
@@ -951,13 +930,13 @@ pub mod tests {
         let a_0_entry = witness_modules[witness_module_id].new_entry();
         let d_in_entry = witness_modules[witness_module_id].new_entry();
 
-        for chunk in traces.a_0_trace.chunks(4) {
-            witness_modules[witness_module_id].push_u32s_to(chunk.try_into().unwrap(), a_0_entry)
-        }
-
-        for chunk in traces.d_in_trace.chunks(4) {
-            witness_modules[witness_module_id].push_u32s_to(chunk.try_into().unwrap(), d_in_entry)
-        }
+        let Trace {
+            a_0_trace,
+            d_in_trace,
+            ..
+        } = traces;
+        witness_modules[witness_module_id].push_u32s_to(a_0_trace, a_0_entry);
+        witness_modules[witness_module_id].push_u32s_to(d_in_trace, d_in_entry);
 
         witness_modules[witness_module_id].bind_oracle_to::<B1>(a_0, a_0_entry);
         witness_modules[witness_module_id].bind_oracle_to::<B1>(d_in, d_in_entry);
