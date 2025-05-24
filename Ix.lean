@@ -5,5 +5,6 @@ import Ix.TransportM
 import Ix.IR
 import Ix.Meta
 import Ix.CompileM
+import Ix.DecompileM
 import Ix.Claim
 import Ix.Prove

@@ -7,6 +7,8 @@ import Ix.Address
 import Ix.Meta
 import Lean
 
+open Ix.Compile
+
 --❯ ix prove IxTest.lean "id'"
 --typechecking:
 --id' (A : Type) (x : A) : A
@@ -22,8 +24,7 @@ def runProveCheck
   IO.println "typechecking:"
   IO.println signature.fmt.pretty
   let ((claim, _, _), _stt) <- 
-    (Ix.Compile.checkClaim constInfo.name constInfo.type constSort
-    constInfo.levelParams commit).runIO' 200000 (.init env)
+    (checkClaim constInfo.name constInfo.type constSort constInfo.levelParams commit).runIO env
   IO.println $ s!"claim: {claim}"
   -- TODO: prove
   return 0
@@ -62,8 +63,7 @@ def runProveEval
   IO.println s!"  ~> {outputPretty}"
   IO.println s!"  : {typePretty}"
   IO.println s!"  @ {repr lvls}"
-  let ((claim, _, _), _stt) <- 
-    (Ix.Compile.evalClaim lvls input output type sort commit).runIO' 200000 (.init env)
+  let ((claim, _, _), _stt) <- (evalClaim lvls input output type sort commit).runIO env
   IO.println $ s!"claim: {claim}"
   -- TODO: prove
   return 0

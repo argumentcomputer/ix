@@ -1,6 +1,7 @@
 import Tests.Ix.Fixtures.Export
 
-set_option linter.all false -- prevent error messages from runFrontend
+namespace Test.Ix.Fixtures
+
 namespace WellFounded
 
 mutual
@@ -165,7 +166,6 @@ end Inductives
 
 namespace Import
 
-
 def Foo := MyNat -- triggering the compilation of `MyNat`
 def Bar := Nat   -- triggering the compilation of `Nat`
 
@@ -174,3 +174,6 @@ inductive MyOtherNat
   | mais : MyOtherNat → MyOtherNat
 
 end Import
+
+end Test.Ix.Fixtures
+

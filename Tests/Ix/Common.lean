@@ -1,4 +1,5 @@
 import LSpec
+import Ix.Common
 import Ix.Ixon
 import Ix.Address
 import Ix.Ixon.Serialize
@@ -37,6 +38,10 @@ def genList' (gen: Gen α) : Gen (List α) := do
   let n ← genNat'
   List.mapM (fun _ => gen) (List.range n)
 
+def genListSize (gen: Gen α) (lo hi: Nat): Gen (List α) := do
+  let n ← choose Nat lo hi
+  List.mapM (fun _ => gen) (List.range n)
+
 def genOption (gen: Gen α) : Gen (Option α) :=
   oneOf' [ pure .none, .some <$> gen]
 
@@ -63,6 +68,18 @@ def genBinderInfo : Gen Lean.BinderInfo := oneOf'
    , pure .instImplicit
    , pure .strictImplicit
    , pure .instImplicit
+   ]
+
+def genDefMode : Gen Ix.DefMode := oneOf'
+   [ pure .opaque
+   , pure .theorem
+   , pure .definition
+   ]
+
+def genReducibilityHints : Gen Lean.ReducibilityHints := oneOf'
+   [ pure .opaque
+   , pure .abbrev
+   , (.regular ·.toUInt32) <$> genUSize
    ]
 
 def genQuotKind : Gen Lean.QuotKind := oneOf'

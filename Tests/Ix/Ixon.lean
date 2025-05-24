@@ -16,9 +16,9 @@ open Ixon
 
 namespace Ixon
 
-def genUniv : SlimCheck.Gen Ixon.Univ := getSize >>= go
+def genUniv : Gen Ixon.Univ := getSize >>= go
   where
-    go : Nat -> SlimCheck.Gen Ixon.Univ
+    go : Nat -> Gen Ixon.Univ
     | 0 => return .const 0
     | Nat.succ f =>
       frequency [
@@ -64,23 +64,44 @@ instance : SampleableExt Expr := SampleableExt.mkSelfContained genExpr
 
 -- Metadata
 
-def genMetaNode : Gen MetaNode := 
-  .mk <$> genOption genName <*> genOption genBinderInfo <*> genOption genAddress
+
+def genMetadatum : Gen Ixon.Metadatum := 
+  frequency [
+    (100, .name <$> genName),
+    (100, .info <$> genBinderInfo),
+    (100, .link <$> genAddress),
+    (100, .hints <$> genReducibilityHints),
+    (25, .all <$> genList' genName),
+  ]
+
+instance : Shrinkable Metadatum where
+  shrink _ := []
+
+instance : SampleableExt Metadatum :=
+  SampleableExt.mkSelfContained genMetadatum
+
+def genMetaNode : Gen (List Metadatum) := 
+  genList' genMetadatum
 
 def genMetadata : Gen Metadata := do
   let xs ← genList' genMetaNode
   return .mk (Batteries.RBMap.ofList ((List.range xs.length).zip xs) compare)
 
+
 -- Const
 
-def genAxiom : Gen Axiom := .mk <$> genNat' <*> genExpr
-def genTheorem : Gen Theorem := .mk <$> genNat' <*> genExpr <*> genExpr
-def genOpaque : Gen Opaque := .mk <$> genNat' <*> genExpr <*> genExpr
-def genDefinition : Gen Definition := 
-  .mk <$> genNat' <*> genExpr <*> genExpr <*> genBool
+def genAxiom : Gen Axiom := .mk <$> genNat' <*> genExpr <*> genBool
+
+def genDefinition : Gen Definition := do
+  let lvls <- genNat'
+  let type <- genExpr
+  let mode <- genDefMode
+  let value <- genExpr
+  let safety <- oneOf #[pure .safe, pure .unsafe, pure .partial]
+  return .mk lvls type mode value safety
 
 def genConstructor : Gen Constructor :=
-  .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat' <*> genNat'
+  .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat' <*> genNat' <*> genBool
 
 def genRecursorRule : Gen RecursorRule := .mk <$> genNat' <*> genExpr
 
@@ -90,8 +111,8 @@ def genRecursor : Gen Recursor :=
 
 def genInductive : Gen Inductive :=
   .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat'
-    <*> genList' genConstructor <*> genList' genRecursor
-    <*> genBool <*> genBool <*> genBool <*> genBool 
+    <*> genList' genConstructor <*> genList' genRecursor <*> genNat'
+    <*> genBool <*> genBool <*> genBool
 
 def genConstructorProj : Gen ConstructorProj :=
   .mk <$> genAddress <*> genNat' <*> genNat'
@@ -109,12 +130,10 @@ def genInductiveProj : Gen InductiveProj :=
 def genConst : Gen Ixon.Const := getSize >>= go
   where
     go : Nat -> Gen Ixon.Const
-    | 0 => return .axio ⟨0, .vari 0⟩
+    | 0 => return .axio ⟨0, .vari 0, false⟩
     | Nat.succ _ =>
       frequency [
         (100, .axio <$> genAxiom),
-        (100, .theo <$> genTheorem),
-        (100, .opaq <$> genOpaque),
         (100, .defn <$> genDefinition),
         --(100, .ctor <$> genConstructor),
         --(100, .recr <$> genRecursor),

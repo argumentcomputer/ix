@@ -48,6 +48,14 @@ def writeConst (x: Ixon.Const) : StoreIO Address := do
   let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
   return addr
 
+-- unsafe, can corrupt store if called with bad address
+def forceWriteConst (addr: Address) (x: Ixon.Const) : StoreIO Address := do
+  let bytes := Ixon.Serialize.put x
+  let store ← storeDir
+  let path := store / hexOfBytes addr.hash
+  let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
+  return addr
+
 def readConst (a: Address) : StoreIO Ixon.Const := do
   let store ← storeDir
   let path := store / hexOfBytes a.hash
