@@ -3,7 +3,7 @@ use binius_core::constraint_system::channel::{Flush, OracleOrConst};
 use binius_core::oracle::{ConstraintSetBuilder, MultilinearOracleSet, ShiftVariant};
 use binius_core::{
     constraint_system::{
-        ConstraintSystem as CompiledConstraintSystem,
+        ConstraintSystem,
         channel::{ChannelId, FlushDirection},
     },
     transparent::step_down::StepDown,
@@ -268,7 +268,7 @@ impl CircuitModule {
 pub fn compile_circuit_modules(
     modules: &[&CircuitModule],
     modules_heights: &[u64],
-) -> Result<CompiledConstraintSystem<F>> {
+) -> Result<ConstraintSystem<F>> {
     ensure!(
         modules.len() == modules_heights.len(),
         "Number of modules is incompatible with the number of heights"
@@ -402,10 +402,6 @@ pub fn compile_circuit_modules(
             multiplicity,
         } in &module.flushes
         {
-            // let oracles = oracles.iter().map(|o| match o {
-            //     OracleOrConst::Const { .. } => *o,
-            //     OracleOrConst::Oracle(o) => OracleOrConst::Oracle(o + oracle_offset),
-            // });
             max_channel_id = max_channel_id.max(*channel_id);
             flushes.push(Flush {
                 channel_id: *channel_id,
@@ -422,7 +418,7 @@ pub fn compile_circuit_modules(
         oracle_offset += module.oracles.get_ref().len();
     }
     let table_constraints = constraint_builder.build(&oracles)?;
-    Ok(CompiledConstraintSystem {
+    Ok(ConstraintSystem {
         oracles,
         table_constraints,
         flushes,
