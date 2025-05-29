@@ -3,6 +3,7 @@ pub mod binius;
 pub mod byte_array;
 pub mod iroh;
 pub mod keccak;
+pub mod u128;
 
 use std::ffi::{CStr, CString, c_char, c_void};
 

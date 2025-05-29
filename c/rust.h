@@ -29,7 +29,7 @@ void *rs_circuit_module_new(size_t);
 void rs_circuit_module_free(void*);
 void rs_circuit_module_freeze_oracles(void*);
 void *rs_circuit_module_init_witness_module(void*);
-void rs_circuit_module_flush(void*, bool, size_t, b_lean_obj_arg, uint64_t);
+void rs_circuit_module_flush(void*, bool, size_t, size_t, b_lean_obj_arg, uint64_t);
 void rs_circuit_module_assert_zero(
     void*, char const*, b_lean_obj_arg, b_lean_obj_arg
 );
@@ -72,3 +72,7 @@ void *rs_keccak256_hasher_init(void);
 void rs_keccak256_hasher_free(void*);
 void *rs_keccak256_hasher_update(void*, void*);
 void *rs_keccak256_hasher_finalize(void*, void*);
+
+/* --- u128 --- */
+
+uint8_t *rs_add_u128_in_binary_field(uint8_t*, uint8_t*, uint8_t);

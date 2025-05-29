@@ -13,7 +13,7 @@ def populateAndValidate (circuitModule : CircuitModule)
 
 def transparent : TestSeq :=
   let circuitModule := CircuitModule.new 0
-  let (_, circuitModule) := circuitModule.addTransparent "constant" (.constant 300)
+  let (_, circuitModule) := circuitModule.addTransparent "constant" (.const 300)
   let (_, circuitModule) := circuitModule.addTransparent "incremental" .incremental
   let circuitModule := circuitModule.freezeOracles
   let witnessModule := circuitModule.initWitnessModule
