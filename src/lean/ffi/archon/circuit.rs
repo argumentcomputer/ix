@@ -54,7 +54,7 @@ extern "C" fn rs_circuit_module_flush(
     circuit_module: &mut CircuitModule,
     direction_pull: bool,
     channel_idx: usize,
-    oracle_id: OracleIdx,
+    selector: OracleIdx,
     oracle_idxs: &LeanArrayObject,
     multiplicity: u64,
 ) {
@@ -62,7 +62,7 @@ extern "C" fn rs_circuit_module_flush(
     use FlushDirection::{Pull, Push};
     let direction = if direction_pull { Pull } else { Push };
     let channel_id = channel_idx;
-    circuit_module.flush(direction, channel_id, oracle_id, oracle_idxs, multiplicity);
+    circuit_module.flush(direction, channel_id, selector, oracle_idxs, multiplicity);
 }
 
 #[unsafe(no_mangle)]

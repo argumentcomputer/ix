@@ -3,18 +3,18 @@ import Ix.Unsigned
 namespace Archon
 
 inductive Transparent
-  | constant : UInt128 → Transparent
+  | const : UInt128 → Transparent
   | incremental
   deriving Inhabited
 
 namespace Transparent
 
 def toString : Transparent → String
-  | constant u128 => s!"Constant{u128}"
+  | const u128 => s!"Constant{u128}"
   | incremental => "Incremental"
 
 def toBytes : @& Transparent → ByteArray
-  | constant u128 => ⟨#[0]⟩ ++ u128.toLEBytes
+  | const u128 => ⟨#[0]⟩ ++ u128.toLEBytes
   | incremental => ⟨#[1]⟩
 
 /--

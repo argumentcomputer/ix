@@ -1,10 +1,8 @@
 import Ix.Archon.OracleIdx
+import Ix.Archon.TowerField
 import Ix.Unsigned
 
 namespace Archon
-
-inductive TowerField
-  | b1 | b2 | b4 | b8 | b16 | b32 | b64 | b128
 
 private opaque GenericNonempty : NonemptyType
 def WitnessModule : Type := GenericNonempty.type

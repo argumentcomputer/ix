@@ -54,7 +54,7 @@ instance : SampleableExt ArithExpr := SampleableExt.mkSelfContained genArithExpr
 
 def genTransparent : Gen Transparent :=
   frequency [
-      (10, .constant <$> genUInt128),
+      (10, .const <$> genUInt128),
       (10, pure .incremental),
     ]
 
