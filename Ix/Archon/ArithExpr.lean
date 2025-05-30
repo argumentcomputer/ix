@@ -21,6 +21,8 @@ instance : HPow ArithExpr UInt64 ArithExpr where
 
 instance : Zero ArithExpr := ⟨.const 0⟩
 
+instance : Coe OracleIdx ArithExpr := ⟨.oracle⟩
+
 namespace ArithExpr
 
 @[inline] def zero : ArithExpr := Zero.zero

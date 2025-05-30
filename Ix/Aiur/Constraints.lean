@@ -36,7 +36,7 @@ where
 inductive Channel
   | add
   | mul
-  | fun : FuncIdx → Channel
+  | func : FuncIdx → Channel
   | mem : Nat → Channel
 
 structure Constraints where
@@ -51,7 +51,7 @@ structure Constraints where
 def blockSelector (block : Bytecode.Block) (columns : Columns) : ArithExpr :=
   let (min, max) := block.returnIdents
   List.range (max + 1 - min) |>.foldl (init := 0) -- inclusive range interval
-    fun acc i => acc + (.oracle $ columns.getSelector (i + min))
+    fun acc i => acc + columns.getSelector (i + min)
 
 namespace Constraints
 
@@ -107,12 +107,12 @@ def nextU64Column (constraintState : ConstraintState) (columns : Columns) : Orac
 
 def bindU1Column (constraintState : ConstraintState) (columns : Columns) : OracleIdx × ConstraintState :=
   let (col, constraintState') := constraintState.nextU1Column columns
-  let constraintState'' := { constraintState' with varMap := constraintState'.varMap.push (.oracle col) }
+  let constraintState'' := { constraintState' with varMap := constraintState'.varMap.push col }
   (col, constraintState'')
 
 def bindU64Column (constraintState : ConstraintState) (columns : Columns) : OracleIdx × ConstraintState :=
   let (col, constraintState') := constraintState.nextU64Column columns
-  let constraintState'' := { constraintState' with varMap := constraintState'.varMap.push (.oracle col) }
+  let constraintState'' := { constraintState' with varMap := constraintState'.varMap.push col }
   (col, constraintState'')
 
 end ConstraintState
@@ -151,7 +151,7 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     let (c, constraintState) := stt.constraintState.bindU64Column columns
     -- 1 byte of carry, which is not bound
     let (carry, constraintState) := constraintState.nextU1Column columns
-    let args := #[a, b, .oracle c, .oracle carry]
+    let args := #[a, b, c, carry]
     let constraints := stt.constraints.send .add sel args
     ⟨constraints, constraintState⟩
   | .sub c b => modify fun stt =>
@@ -160,7 +160,7 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     let b := stt.constraintState.getVar b
     let (a, constraintState) := stt.constraintState.bindU64Column columns
     let (carry, constraintState) := constraintState.nextU1Column columns
-    let args := #[.oracle a, b, c, .oracle carry]
+    let args := #[.oracle a, b, c, carry]
     let constraints := stt.constraints.send .add sel args
     ⟨constraints, constraintState⟩
   | .lt c b => modify fun stt =>
@@ -172,7 +172,7 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     let (a, constraintState) := stt.constraintState.bindU64Column columns
     -- The carry is bound
     let (carry, constraintState) := constraintState.bindU1Column columns
-    let args := #[.oracle a, b, c, .oracle carry]
+    let args := #[.oracle a, b, c, carry]
     let constraints := stt.constraints.send .add sel args
     ⟨constraints, constraintState⟩
   | .mul a b => modify fun stt =>
@@ -180,7 +180,7 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     let b := stt.constraintState.getVar b
     -- 8 bytes of result
     let (c, constraintState) := stt.constraintState.bindU64Column columns
-    let args := #[a, b, .oracle c]
+    let args := #[a, b, c]
     let constraints := stt.constraints.send .mul sel args
     ⟨constraints, constraintState⟩
   | .xor a b => modify fun stt =>
@@ -191,7 +191,6 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     let a := stt.constraintState.getVar a
     let b := stt.constraintState.getVar b
     let (c, constraintState) := stt.constraintState.bindU1Column columns
-    let c := .oracle c
     let constraintState := constraintState.pushVar c
     let stt' := { stt with constraintState }
     stt'.addSharedConstraint $ sel * (c - a * b)
@@ -206,7 +205,7 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     let (args, constraintState) := len.fold (init := (args, stt.constraintState))
       fun _ _ (args, constraintState) =>
         let (x, constraintState) := constraintState.bindU64Column columns
-        (args.push (.oracle x), constraintState)
+        (args.push x, constraintState)
     let (req, constraintState) := constraintState.nextU64Column columns
     let constraints := stt.constraints.require (.mem len) sel req args
     ⟨constraints, constraintState⟩
@@ -215,9 +214,9 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     let (args, constraintState) := outSize.fold (init := (args, stt.constraintState))
       fun _ _ (args, constraintState) =>
         let (x, constraintState) := constraintState.bindU64Column columns
-        (args.push (.oracle x), constraintState)
+        (args.push x, constraintState)
     let (req, constraintState) := constraintState.nextU64Column columns
-    let constraints := stt.constraints.require (.fun f) sel req args
+    let constraints := stt.constraints.require (.func f) sel req args
     ⟨constraints, constraintState⟩
   | _ => panic! "TODO"
 
@@ -231,7 +230,7 @@ partial def collectBlockConstraints (block : Bytecode.Block) (columns : Columns)
     let saved := stt.constraintState
     let tSel := blockSelector t columns
     let (d, constraintState) := stt.constraintState.nextU64Column columns
-    let constraints := stt.constraints.pushUnique (tSel * (b * (.oracle d) - .one))
+    let constraints := stt.constraints.pushUnique (tSel * (b * d - .one))
     set (CollectMState.mk constraints constraintState)
     collectBlockConstraints t columns
     let fSel := blockSelector f columns
@@ -257,21 +256,20 @@ partial def collectBlockConstraints (block : Bytecode.Block) (columns : Columns)
         let value := ArithExpr.const (UInt128.ofLoHi value 0)
         modify fun stt =>
           let (d, constraintState) := stt.constraintState.nextU64Column columns
-          let constraints := stt.constraints.pushUnique (sel * ((v - value) * (.oracle d) - .one))
+          let constraints := stt.constraints.pushUnique (sel * ((v - value) * d - .one))
           { stt with constraintState, constraints }
       collectBlockConstraints defaultBranch columns
   | .ret id rs =>
     let selCol := columns.getSelector id
-    let sel := .oracle selCol
     modify fun stt =>
       rs.zip columns.outputs |>.foldl (init := stt) fun acc (r, o) =>
         let r := stt.constraintState.getVar r
-        acc.addSharedConstraint $ sel * (r - (.oracle o))
+        acc.addSharedConstraint $ selCol * (r - o)
 
 def buildFuncionConstraints (function : Bytecode.Function) (layout : Layout)
     (columns : Columns) : Constraints :=
   let constraintState := columns.inputs.foldl (init := default)
-    fun acc input => acc.pushVar (.oracle input)
+    fun acc input => acc.pushVar input
   let (_, constraintState) := collectBlockConstraints function.body columns
     |>.run ⟨.new function layout columns, constraintState⟩
   constraintState.constraints
