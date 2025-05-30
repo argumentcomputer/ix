@@ -239,6 +239,27 @@ partial def collectBlockConstraints (block : Bytecode.Block) (columns : Columns)
       constraints := stt.constraints.pushUnique (fSel * b)
       constraintState := saved }
     collectBlockConstraints f columns
+  | .match v branches defaultBranch =>
+    let stt ← get
+    let v := stt.constraintState.getVar v
+    let saved := stt.constraintState
+    branches.forM fun (value, branch) => do
+      let value := ArithExpr.const (UInt128.ofLoHi value 0)
+      let sel := blockSelector branch columns
+      modify fun stt => { stt with constraints := stt.constraints.pushUnique (sel * (v - value)) }
+      collectBlockConstraints branch columns
+      modify fun stt => { stt with constraintState := saved }
+    match defaultBranch with
+    | none => pure ()
+    | some defaultBranch =>
+      let sel := blockSelector defaultBranch columns
+      branches.forM fun (value, _) => do
+        let value := ArithExpr.const (UInt128.ofLoHi value 0)
+        modify fun stt =>
+          let (d, constraintState) := stt.constraintState.nextU64Column columns
+          let constraints := stt.constraints.pushUnique (sel * ((v - value) * (.oracle d) - .one))
+          { stt with constraintState, constraints }
+      collectBlockConstraints defaultBranch columns
   | .ret id rs =>
     let selCol := columns.getSelector id
     let sel := .oracle selCol
@@ -246,7 +267,6 @@ partial def collectBlockConstraints (block : Bytecode.Block) (columns : Columns)
       rs.zip columns.outputs |>.foldl (init := stt) fun acc (r, o) =>
         let r := stt.constraintState.getVar r
         acc.addSharedConstraint $ sel * (r - (.oracle o))
-  | .match v branches defaultBranch => sorry
 
 def buildFuncionConstraints (function : Bytecode.Function) (layout : Layout)
     (columns : Columns) : Constraints :=
