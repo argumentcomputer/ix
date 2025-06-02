@@ -1,1 +1,1 @@
-def hello (A: Type) (x y : A) : A := x
+def hello (A: Type) (x : A) : A := x

@@ -5,6 +5,6 @@ import Init
 import Std
 
 def id' (A: Type) (x: A) := x
---def ref (A: Type) (x y: A) := hello
+def ref (A: Type) (_x : A) := hello
 
 def one : Nat := 1

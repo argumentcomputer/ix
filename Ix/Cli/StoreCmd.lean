@@ -14,7 +14,7 @@ def runStore (p : Cli.Parsed) : IO UInt32 := do
   let source : String       := p.positionalArg! "source" |>.as! String
   let mut cronos ← Cronos.new.clock "Lean-frontend"
   Lean.setLibsPaths source
-  --StoreIO.toIO ensureStoreDir
+  StoreIO.toIO Store.ensureStoreDir
   let path := ⟨source⟩
   let leanEnv ← Lean.runFrontend (← IO.FS.readFile path) path
   cronos ← cronos.clock "Lean-frontend"
@@ -93,4 +93,3 @@ def storeCmd : Cli.Cmd := `[Cli|
     storeGetCmd;
     storeRematCmd
 ]
-

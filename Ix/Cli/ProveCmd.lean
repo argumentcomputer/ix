@@ -13,7 +13,7 @@ open Ix.Compile
 --typechecking:
 --id' (A : Type) (x : A) : A
 --claim: #bbd740022aa44acd553c52e156807a5571428220a926377fe3c57d63b06a99f4 : #ba33b735b743386477f7a0e6802c67d388c165cab0e34b04880b50270205f265 @ #0000000000000000000000000000000000000000000000000000000000000000
-def runProveCheck 
+def runProveCheck
   (env: Lean.Environment)
   (constInfo: Lean.ConstantInfo)
   (commit: Bool)
@@ -23,7 +23,7 @@ def runProveCheck
   let signature <- runMeta (Lean.PrettyPrinter.ppSignature constInfo.name) env
   IO.println "typechecking:"
   IO.println signature.fmt.pretty
-  let ((claim, _, _), _stt) <- 
+  let ((claim, _, _), _stt) <-
     (checkClaim constInfo.name constInfo.type constSort constInfo.levelParams commit).runIO env
   IO.println $ s!"claim: {claim}"
   -- TODO: prove
@@ -52,7 +52,7 @@ def runProveEval
     let argInfo <- match env.constants.find? a.toName with
       | some c => runMeta (mkConst' c.name) env
       | none => throw $ IO.userError s!"unknown constant {a.toName}"
-  let (lvls, input, output, type, sort) <- 
+  let (lvls, input, output, type, sort) <-
     runMeta (metaMakeEvalClaim constInfo.name (args.toList)) env
   IO.println "evaluating:"
   IO.println signature.fmt.pretty
@@ -73,6 +73,7 @@ def runProveEval
 def runProve (p: Cli.Parsed): IO UInt32 := do
   let input : String       := p.positionalArg! "input" |>.as! String
   let const : String       := p.positionalArg! "const" |>.as! String
+  StoreIO.toIO Store.ensureStoreDir
   let path := ⟨input⟩
   Lean.setLibsPaths input
   let env ← Lean.runFrontend (← IO.FS.readFile path) path
