@@ -36,6 +36,14 @@ end Tests
 
 section IxApplications
 
+section Benchmarks
+
+lean_exe Benchmarks.Main where
+  --root := `Benchmarks.Main
+  supportInterpreter := true
+
+end Benchmarks
+
 lean_lib Apps
 
 lean_exe Apps.ZKVoting.Prover where
