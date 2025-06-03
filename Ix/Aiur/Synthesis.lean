@@ -5,6 +5,7 @@ import Ix.SmallMap
 namespace Aiur.Circuit
 
 abbrev B64_MULT_GEN : UInt128 := 508773776270040456
+abbrev B128_MULT_GEN : UInt128 := 61857528091874184034011775247790689018
 
 open Archon Binius
 
@@ -16,7 +17,7 @@ structure AiurChannels where
 
 inductive CachedOracleKey
   | const : UInt128 → CachedOracleKey
-  | lc : ArithExpr → TowerField → CachedOracleKey
+  | lc : ArithExpr → CachedOracleKey
   deriving Ord
 
 structure SynthState where
@@ -48,6 +49,16 @@ abbrev SynthM := StateM SynthState
 @[inline] def assertZero (name : @& String) (expr : @& ArithExpr) : SynthM Unit :=
   modify fun stt =>
     { stt with circuitModule := stt.circuitModule.assertZero name #[] expr }
+
+@[inline] def assertDynamicExp (expBits : @& Array OracleIdx) (result base : OracleIdx) :
+    SynthM Unit :=
+  modify fun stt =>
+    { stt with circuitModule := stt.circuitModule.assertDynamicExp expBits result base }
+
+@[inline] def assertStaticExp (expBits : @& Array OracleIdx) (result : OracleIdx)
+    (base : @& UInt128) (baseTF : TowerField): SynthM Unit :=
+  modify fun stt =>
+    { stt with circuitModule := stt.circuitModule.assertStaticExp expBits result base baseTF }
 
 def addCommitted (name : @& String) (tf : TowerField) : SynthM OracleIdx :=
   modifyGet fun stt =>
@@ -95,20 +106,20 @@ def cacheConst (value : UInt128) : SynthM OracleIdx :=
   | some o => (o, stt)
   | none => cacheConstAux value stt
 
-def cacheLc (expr : ArithExpr) (tf : TowerField) : SynthM OracleIdx :=
-  let key := .lc expr tf
+def cacheLc (expr : ArithExpr) : SynthM OracleIdx :=
+  let key := .lc expr
   modifyGet fun stt => match stt.cachedOracles.find? key with
   | some o => (o, stt)
   | none => if let .const value := expr then cacheConstAux value stt else
     let (summands, offset) := accSummandsAndOffset expr #[] 0
     let inner := summands.map (·, 1)
     let (o, circuitModule) := stt.circuitModule.addLinearCombination
-      s!"cached-lc-{expr}-{tf}" offset inner
+      s!"cached-lc-{expr}" offset inner
     let cachedOracles := stt.cachedOracles.insert key o
     (o, ⟨circuitModule, cachedOracles⟩)
 where
   accSummandsAndOffset expr summands (offset : UInt128) := match expr with
-    | .const c => (summands, addUInt128InBinaryField offset c tf)
+    | .const c => (summands, addUInt128InBinaryField offset c)
     | .oracle o => (summands.push o, offset)
     | .add a b =>
       let (summands', offset') := accSummandsAndOffset a summands offset
@@ -141,15 +152,15 @@ def synthesizeFunction (funcIdx : Nat) (function : Bytecode.Function)
   constraints.sharedConstraints.zipIdx.forM fun (expr, i) =>
     assertZero s!"shared constraint {i}" expr
   constraints.sends.forM fun (channel, sel, args) => do
-    let sel ← cacheLc sel .b1
-    let args ← args.mapM (cacheLc · .b64)
+    let sel ← cacheLc sel
+    let args ← args.mapM cacheLc
     match channel with
     | .add => flush .push aiurChannels.add sel args 1
     | .mul => flush .push aiurChannels.mul sel args 1
     | _ => unreachable!
   constraints.requires.forM fun (channel, sel, prevIdx, args) => do
-    let sel ← cacheLc sel .b1
-    let args ← args.mapM (cacheLc · .b64)
+    let sel ← cacheLc sel
+    let args ← args.mapM cacheLc
     match channel with
     | .func funcIdx =>
       let idx ← cacheConst (.ofNatWrap funcIdx.toNat)
@@ -174,8 +185,50 @@ def synthesizeAdd (channelId : ChannelId) : SynthM Unit := do
   assertZero "add-carry" $ (xin + cin) * (yin + cin) + cin - cout
   recv channelId #[xinPacked, yinPacked, zoutPacked, coutProjected]
 
-def synthesizeMul (channelId : ChannelId) : SynthM Unit :=
-  sorry
+def synthesizeMul (channelId : ChannelId) : SynthM Unit := do
+  let xin ← addCommitted "mul-xin" .b64
+  let yin ← addCommitted "mul-yin" .b64
+  let zout ← addCommitted "mul-zout" .b64
+  let xinBits ← Array.range 64 |>.mapM (addCommitted s!"mul-xin-bit-{·}" .b1)
+  let yinBits ← Array.range 64 |>.mapM (addCommitted s!"mul-yin-bit-{·}" .b1)
+  bitDecomposition "mul-bit-decomposition-xin" xinBits xin
+  bitDecomposition "mul-bit-decomposition-yin" yinBits yin
+  let zoutBits ← mul "mul-u64" xinBits yinBits
+  bitDecomposition "mul-bit-decomposition-zout" zoutBits zout
+  recv channelId #[xin, yin, zout]
+where
+  bitDecomposition name bits word :=
+    let (expr, _) := bits.foldl (init := (.oracle word, (1 : UInt64)))
+      fun (expr, coeff) bit => (expr - (.const (.ofLoHi coeff 0)) * bit, coeff <<< 1)
+    assertZero name expr
+  mul name xinBits yinBits := do
+    let xinExpResult ← addCommitted s!"{name}-xin-exp-result" .b128
+    let yinExpResult ← addCommitted s!"{name}-yin-exp-result" .b128
+    let zoutLowExpResult ← addCommitted s!"{name}-zout-low-exp-result" .b128
+    let zoutHighExpResult ← addCommitted s!"{name}-zout-high-exp-result" .b128
+    let zoutBits ← Array.range 64 |>.mapM (addCommitted s!"{name}-zout-bit-{·}" .b1)
+
+    let xin0 := xinBits[0]!
+    let yin0 := yinBits[0]!
+    let zout0 := zoutBits[0]!
+    assertZero s!"{name}-bit0" $ xin0 * yin0 - zout0
+
+    let yin := yinExpResult
+    let low := zoutLowExpResult
+    let high := zoutHighExpResult
+    assertZero s!"{name}-yin-zout-low-high" $ low * high - yin
+
+    let zoutLow := zoutBits.extract (stop := 32)
+    let zoutHigh := zoutBits.extract (start := 32)
+
+    assertStaticExp xinBits xinExpResult B128_MULT_GEN .b128
+    assertDynamicExp yinBits yinExpResult xinExpResult
+    assertStaticExp zoutLow zoutLowExpResult B128_MULT_GEN .b128
+    let base := zoutLow.size.fold (init := B128_MULT_GEN)
+      fun _ _ g => mulUInt128InBinaryField g g
+    assertStaticExp zoutHigh zoutHighExpResult base .b128
+
+    pure zoutBits
 
 def synthesizeMemory (channelId : ChannelId) (width : Nat) : SynthM Unit := do
   let address ← addTransparent s!"mem-{width}-address" .incremental

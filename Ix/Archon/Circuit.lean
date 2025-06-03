@@ -43,6 +43,16 @@ opaque assertZero : CircuitModule → @& String → @& Array OracleIdx →
 opaque assertNotZero : CircuitModule → OracleIdx → CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
+@[never_extract, extern "c_rs_circuit_module_assert_dynamic_exp"]
+opaque assertDynamicExp : CircuitModule → (expBits : @& Array OracleIdx) →
+  (result : OracleIdx) → (base : OracleIdx) → CircuitModule
+
+/-- **Invalidates** the input `CircuitModule` -/
+@[never_extract, extern "c_rs_circuit_module_assert_static_exp"]
+opaque assertStaticExp : CircuitModule → (expBits : @& Array OracleIdx) →
+  (result : OracleIdx) → (base : @& UInt128) → (baseTF : TowerField) → CircuitModule
+
+/-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_committed"]
 opaque addCommitted : CircuitModule → @& String → TowerField → OracleIdx × CircuitModule
 

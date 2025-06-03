@@ -86,6 +86,31 @@ extern "C" fn rs_circuit_module_assert_not_zero(
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn rs_circuit_module_assert_dynamic_exp(
+    circuit_module: &mut CircuitModule,
+    exp_bits: &LeanArrayObject,
+    result: OracleIdx,
+    base: OracleIdx,
+) {
+    let exp_bits = exp_bits.to_vec(boxed_usize_ptr_to_oracle_idx);
+    circuit_module.assert_dynamic_exp(exp_bits, result, base);
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_circuit_module_assert_static_exp(
+    circuit_module: &mut CircuitModule,
+    exp_bits: &LeanArrayObject,
+    result: OracleIdx,
+    base: &u128,
+    base_tower_level: u8,
+) {
+    let exp_bits = exp_bits.to_vec(boxed_usize_ptr_to_oracle_idx);
+    let base = B128::new(*base);
+    let base_tower_level = base_tower_level as usize;
+    circuit_module.assert_static_exp(exp_bits, result, base, base_tower_level);
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rs_circuit_module_add_committed(
     circuit_module: &mut CircuitModule,
     name: *const c_char,

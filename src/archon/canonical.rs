@@ -4,7 +4,7 @@ use binius_field::BinaryField128b;
 use super::{
     OracleIdx, OracleInfo, OracleKind,
     arith_expr::ArithExpr,
-    circuit::{ArchonFlush, CircuitModule, Constraint},
+    circuit::{ArchonExp, ArchonFlush, ArchonOracleOrConst, CircuitModule, Constraint},
     transparent::Transparent,
 };
 
@@ -325,6 +325,51 @@ impl Canonical for Constraint {
     }
 }
 
+impl Canonical for ArchonOracleOrConst {
+    fn size(&self) -> usize {
+        match self {
+            Self::Oracle(o) => 1 + Canonical::size(o),
+            Self::Const { base, tower_level } => {
+                1 + Canonical::size(base) + Canonical::size(tower_level)
+            }
+        }
+    }
+    fn write(&self, buffer: &mut Vec<u8>) {
+        match self {
+            Self::Oracle(o) => {
+                buffer.push(0);
+                Canonical::write(o, buffer);
+            }
+            Self::Const { base, tower_level } => {
+                buffer.push(1);
+                Canonical::write(base, buffer);
+                Canonical::write(tower_level, buffer);
+            }
+        }
+    }
+}
+
+impl Canonical for ArchonExp {
+    fn size(&self) -> usize {
+        let Self {
+            exp_bits,
+            base,
+            result,
+        } = self;
+        Canonical::size(exp_bits) + Canonical::size(base) + Canonical::size(result)
+    }
+    fn write(&self, buffer: &mut Vec<u8>) {
+        let Self {
+            exp_bits,
+            base,
+            result,
+        } = self;
+        Canonical::write(exp_bits, buffer);
+        Canonical::write(base, buffer);
+        Canonical::write(result, buffer);
+    }
+}
+
 impl Canonical for CircuitModule {
     fn size(&self) -> usize {
         let Self {
@@ -332,14 +377,16 @@ impl Canonical for CircuitModule {
             oracles,
             flushes,
             constraints,
-            non_zero_oracle_idxs: non_zero_oracle_ids,
+            non_zero_oracle_idxs,
+            exponents,
             namespacer: _,
         } = self;
         Canonical::size(module_id)
             + Canonical::size(oracles.get_ref())
             + Canonical::size(flushes)
             + Canonical::size(constraints)
-            + Canonical::size(non_zero_oracle_ids)
+            + Canonical::size(non_zero_oracle_idxs)
+            + Canonical::size(exponents)
     }
     fn write(&self, buffer: &mut Vec<u8>) {
         let Self {
@@ -347,13 +394,15 @@ impl Canonical for CircuitModule {
             oracles,
             flushes,
             constraints,
-            non_zero_oracle_idxs: non_zero_oracle_ids,
+            non_zero_oracle_idxs,
+            exponents,
             namespacer: _,
         } = self;
         Canonical::write(module_id, buffer);
         Canonical::write(oracles.get_ref(), buffer);
         Canonical::write(flushes, buffer);
         Canonical::write(constraints, buffer);
-        Canonical::write(non_zero_oracle_ids, buffer);
+        Canonical::write(non_zero_oracle_idxs, buffer);
+        Canonical::write(exponents, buffer);
     }
 }
