@@ -11,7 +11,7 @@ inductive ArithExpr
   | add : ArithExpr → ArithExpr → ArithExpr
   | mul : ArithExpr → ArithExpr → ArithExpr
   | pow : ArithExpr → UInt64 → ArithExpr
-  deriving Inhabited
+  deriving Inhabited, Ord
 
 instance : Add ArithExpr := ⟨.add⟩
 instance : Sub ArithExpr := ⟨.add⟩
@@ -35,6 +35,8 @@ def toString : ArithExpr → String
   | add x y => s!"Add({x.toString}, {y.toString})"
   | mul x y => s!"Mul({x.toString}, {y.toString})"
   | pow x e => s!"Pow({x.toString}, {e})"
+
+instance : ToString ArithExpr := ⟨toString⟩
 
 def toBytes : @& ArithExpr → ByteArray
   | const u128 => ⟨#[0]⟩ ++ u128.toLEBytes

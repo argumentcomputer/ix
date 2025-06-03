@@ -19,7 +19,7 @@ namespace CircuitModule
 @[never_extract, extern "c_rs_circuit_module_new"]
 opaque new : USize → CircuitModule
 
-abbrev selector : CircuitModule → OracleIdx := fun _ => ⟨0⟩
+abbrev selector : OracleIdx := ⟨0⟩
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_freeze_oracles"]
@@ -30,8 +30,8 @@ opaque initWitnessModule : @& CircuitModule → WitnessModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_flush"]
-opaque flush : CircuitModule → Binius.FlushDirection → Binius.ChannelId → @& Array OracleIdx →
-  (multiplicity : UInt64) → CircuitModule
+opaque flush : CircuitModule → Binius.FlushDirection → Binius.ChannelId →
+  (selector : OracleIdx) → @& Array OracleIdx → (multiplicity : UInt64) → CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_assert_zero"]

@@ -2,6 +2,6 @@ namespace Archon
 
 structure OracleIdx where
   toUSize : USize
-  deriving Inhabited
+  deriving Inhabited, Ord
 
 end Archon

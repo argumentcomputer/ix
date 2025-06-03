@@ -182,6 +182,7 @@ extern lean_obj_res c_rs_circuit_module_flush(
     lean_obj_arg l_circuit,
     bool direction_pull,
     size_t channel_id,
+    size_t selector,
     b_lean_obj_arg oracle_ids,
     uint64_t multiplicity
 ) {
@@ -190,6 +191,7 @@ extern lean_obj_res c_rs_circuit_module_flush(
         get_object_ref(linear),
         direction_pull,
         channel_id,
+        selector,
         oracle_ids,
         multiplicity
     );
