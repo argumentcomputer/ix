@@ -1,12 +1,16 @@
+import Ix.Archon.TowerField
 import Ix.Aiur.Term
 import Ix.Aiur.Execute
 import Ix.Aiur.Bytecode
 
 namespace Aiur
+
+-- TODO: generic definition
+def MultiplicativeGenerator : UInt64 := 0x070f870dcd9c1d88
+
 namespace Circuit
 
 structure Row where
-  numQueries : Nat
   inputs: Array UInt64
   outputs: Array UInt64
   u1Auxiliaries: Array Bool
@@ -14,15 +18,40 @@ structure Row where
   u64Auxiliaries: Array UInt64
   selectors: Array Bool
   multiplicity: UInt64
+  deriving Inhabited
+
+
+def Row.blank
+  (layout : Layout)
+  (inputs : Array UInt64)
+  (outputs : Array UInt64)
+  (mult : UInt64)
+: Row :=
+  let u1Auxiliaries := Array.mkArray layout.u1Auxiliaries false
+  let u8Auxiliaries := Array.mkArray layout.u8Auxiliaries 0
+  let u64Auxiliaries := Array.mkArray layout.u64Auxiliaries 0
+  let selectors := Array.mkArray layout.selectors false
+  let multiplicity := Archon.powUInt64InBinaryField MultiplicativeGenerator mult
+  {
+    inputs,
+    outputs,
+    u1Auxiliaries,
+    u8Auxiliaries,
+    u64Auxiliaries,
+    selectors,
+    multiplicity
+  }
 
 structure Trace where
   numQueries : Nat
   rows : Array Row
+  deriving Inhabited
 
 structure ColumnIndex where
   u1Auxiliary : Nat
   u8Auxiliary : Nat
   u64Auxiliary : Nat
+  deriving Inhabited
 
 inductive Query where
 | Func : FuncIdx → Array UInt64 → Query
@@ -41,29 +70,38 @@ structure TraceState where
 
 abbrev TraceM := ReaderT QueryRecord (StateM TraceState)
 
+def TraceM.run (query : QueryRecord) (initialState : TraceState) (action : TraceM A) : A × TraceState :=
+  StateT.run (ReaderT.run action query) initialState
+
 def TraceM.pushVar (c : UInt64) : TraceM Unit :=
   modify fun s => { s with map := s.map.push c }
+
 def TraceM.pushU1 (b : Bool) : TraceM Unit :=
   modify fun s =>
     let row := { s.row with u1Auxiliaries := s.row.u1Auxiliaries.set! s.col.u1Auxiliary b }
     let col := { s.col with u1Auxiliary := s.col.u1Auxiliary + 1 }
     { s with row, col }
+
 def TraceM.pushU64 (b : UInt64) : TraceM Unit :=
   modify fun s =>
     let row := { s.row with u64Auxiliaries := s.row.u64Auxiliaries.set! s.col.u64Auxiliary b }
     let col := { s.col with u64Auxiliary := s.col.u64Auxiliary + 1 }
     { s with row, col }
+
 def TraceM.pushCount (query : Circuit.Query) : TraceM Unit := do
   modify fun s =>
     let update maybe := match maybe with
       | .none => .some 1
-      | .some prev => panic! "TODO"
+      | .some prev =>
+        .some $ Archon.mulUInt64InBinaryField prev MultiplicativeGenerator
     let prevCounts := s.prevCounts.alter query update
     { s with prevCounts }
+
 def TraceM.loadMemMap (len : Nat) : TraceM QueryMap := do
   let queries := (← read).memQueries
   let idx := (queries.findIdx? (·.fst == len)).get!
   pure queries[idx]!.snd
+
 def TraceM.setSelector (sel : SelIdx) : TraceM Unit :=
   modify fun s =>
     let row := { s.row with selectors := s.row.selectors.set! sel true }
@@ -80,8 +118,7 @@ partial def Ctrl.populateRow : Ctrl → TraceM Unit
   let val := (← get).map[b]!
   if val != 0
   then
-    let inv := panic! "TODO"
-    TraceM.pushU64 inv
+    TraceM.pushU64 $ Archon.invUInt64InBinaryField val
     t.populateRow
   else f.populateRow
 | .match v branches defaultBranch => do
@@ -90,8 +127,7 @@ partial def Ctrl.populateRow : Ctrl → TraceM Unit
   | some branch => branch.snd.populateRow
   | none =>
     branches.forM fun (case, _) =>
-      let inv := panic! "TODO"
-      TraceM.pushU64 inv
+      TraceM.pushU64 $ Archon.invUInt64InBinaryField (val.xor case)
     defaultBranch.get!.populateRow
 
 partial def Op.populateRow : Op → TraceM Unit
@@ -163,8 +199,23 @@ partial def Op.populateRow : Op → TraceM Unit
   TraceM.pushCount (.Func fIdx args)
 | .trace _ _ => pure ()
 | _ => panic! "TODO"
-
 end
 
+def Function.generateRow
+  (function : Function)
+  (layout : Circuit.Layout)
+  (queries : QueryRecord)
+  (prevCounts : Std.HashMap Circuit.Query UInt64)
+  (inputs : Array UInt64)
+  (result : QueryResult)
+: Circuit.Row :=
+  let row := .blank layout inputs result.values result.multiplicity
+  let map := inputs
+  let col := { u1Auxiliary := 0, u8Auxiliary := 0, u64Auxiliary := 0 }
+  let state : TraceState := { map, row, col, prevCounts }
+  let (_, state) := function.body.populateRow.run queries state
+  state.row
+
 end Bytecode
+
 end Aiur
