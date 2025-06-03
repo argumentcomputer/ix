@@ -46,18 +46,34 @@ def TraceM.pushU1 (b : Bool) : TraceM Unit := panic! "TODO"
 def TraceM.pushU64 (b : UInt64) : TraceM Unit := panic! "TODO"
 def TraceM.pushCount (query : Circuit.Query) : TraceM Unit := panic! "TODO"
 def TraceM.loadMemMap (len : Nat) : TraceM QueryMap := panic "TODO"
+def TraceM.setSelector (sel : SelIdx) : TraceM Unit := panic "TODO"
 
 mutual
-def Block.populateRow (block : Block) : TraceM Unit := do
+partial def Block.populateRow (block : Block) : TraceM Unit := do
   block.ops.forM fun op => op.populateRow
   block.ctrl.populateRow
 
-def Ctrl.populateRow : Ctrl → TraceM Unit
-| .ret _ _ => pure ()
-| .match _ _ _ => pure ()
-| .if _ _ _ => pure ()
+partial def Ctrl.populateRow : Ctrl → TraceM Unit
+| .ret sel _ => TraceM.setSelector sel
+| .if b t f => do
+  let val := (← get).map[b]!
+  if val != 0
+  then
+    let inv := panic! "TODO"
+    TraceM.pushU64 inv
+    t.populateRow
+  else f.populateRow
+| .match v branches defaultBranch => do
+  let val := (← get).map[v]!
+  match branches.find? fun branch => branch.fst == val with
+  | some branch => branch.snd.populateRow
+  | none =>
+    branches.forM fun (case, _) =>
+      let inv := panic! "TODO"
+      TraceM.pushU64 inv
+    defaultBranch.get!.populateRow
 
-def Op.populateRow : Op → TraceM Unit
+partial def Op.populateRow : Op → TraceM Unit
 | .prim a => TraceM.pushVar a.toU64
 | .xor a b => do
   let map := (← get).map
