@@ -41,12 +41,33 @@ structure TraceState where
 
 abbrev TraceM := ReaderT QueryRecord (StateM TraceState)
 
-def TraceM.pushVar (c : UInt64) : TraceM Unit := panic! "TODO"
-def TraceM.pushU1 (b : Bool) : TraceM Unit := panic! "TODO"
-def TraceM.pushU64 (b : UInt64) : TraceM Unit := panic! "TODO"
-def TraceM.pushCount (query : Circuit.Query) : TraceM Unit := panic! "TODO"
-def TraceM.loadMemMap (len : Nat) : TraceM QueryMap := panic "TODO"
-def TraceM.setSelector (sel : SelIdx) : TraceM Unit := panic "TODO"
+def TraceM.pushVar (c : UInt64) : TraceM Unit :=
+  modify fun s => { s with map := s.map.push c }
+def TraceM.pushU1 (b : Bool) : TraceM Unit :=
+  modify fun s =>
+    let row := { s.row with u1Auxiliaries := s.row.u1Auxiliaries.set! s.col.u1Auxiliary b }
+    let col := { s.col with u1Auxiliary := s.col.u1Auxiliary + 1 }
+    { s with row, col }
+def TraceM.pushU64 (b : UInt64) : TraceM Unit :=
+  modify fun s =>
+    let row := { s.row with u64Auxiliaries := s.row.u64Auxiliaries.set! s.col.u64Auxiliary b }
+    let col := { s.col with u64Auxiliary := s.col.u64Auxiliary + 1 }
+    { s with row, col }
+def TraceM.pushCount (query : Circuit.Query) : TraceM Unit := do
+  modify fun s =>
+    let update maybe := match maybe with
+      | .none => .some 1
+      | .some prev => panic! "TODO"
+    let prevCounts := s.prevCounts.alter query update
+    { s with prevCounts }
+def TraceM.loadMemMap (len : Nat) : TraceM QueryMap := do
+  let queries := (← read).memQueries
+  let idx := (queries.findIdx? (·.fst == len)).get!
+  pure queries[idx]!.snd
+def TraceM.setSelector (sel : SelIdx) : TraceM Unit :=
+  modify fun s =>
+    let row := { s.row with selectors := s.row.selectors.set! sel true }
+    { s with row }
 
 mutual
 partial def Block.populateRow (block : Block) : TraceM Unit := do
