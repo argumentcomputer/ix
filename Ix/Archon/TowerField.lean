@@ -32,4 +32,13 @@ opaque addUInt128InBinaryField : @& UInt128 → @& UInt128 → UInt128
 @[extern "c_rs_mul_u128_in_binary_field"]
 opaque mulUInt128InBinaryField : @& UInt128 → @& UInt128 → UInt128
 
+@[extern "rs_mul_u64_in_binary_field"]
+opaque mulUInt64InBinaryField : @& UInt64 → @& UInt64 → UInt64
+
+@[extern "rs_pow_u64_in_binary_field"]
+opaque powUInt64InBinaryField : @& UInt64 → @& UInt64 → UInt64
+
+@[extern "rs_inv_u64_in_binary_field"]
+opaque invUInt64InBinaryField : @& UInt64 → UInt64
+
 end Archon
