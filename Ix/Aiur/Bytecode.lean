@@ -89,7 +89,7 @@ structure Layout where
   u8Auxiliaries : Nat
   u64Auxiliaries : Nat
   sharedConstraints : Nat
-  deriving Repr
+  deriving Repr, Inhabited
 
 structure LayoutBranchState where
   u1AuxiliariesInit : Nat

@@ -67,6 +67,7 @@ structure TraceState where
   map : Array UInt64
   col : Circuit.ColumnIndex
   prevCounts : Std.HashMap Circuit.Query UInt64
+  deriving Inhabited
 
 abbrev TraceM := ReaderT QueryRecord (StateM TraceState)
 
@@ -201,7 +202,7 @@ partial def Op.populateRow : Op → TraceM Unit
 | _ => panic! "TODO"
 end
 
-def Function.generateTrace
+def Function.populateTrace
   (function : Function)
   (funcMap : QueryMap)
   (layout : Circuit.Layout)
@@ -215,6 +216,21 @@ def Function.generateTrace
     function.body.populateRow
     pure $ acc.push (← get).row
   pure { rows, numQueries }
+
+def Toplevel.generateTraces
+  (toplevel : Toplevel)
+  (queries : QueryRecord)
+: Array Circuit.Trace :=
+  let action := (do
+  let mut traces := #[]
+  for i in [0:toplevel.functions.size] do
+    let function := toplevel.functions[i]!
+    let functionMap := queries.funcQueries[i]!
+    let layout := toplevel.layouts[i]!
+    let trace ← function.populateTrace functionMap layout
+    traces := traces.push trace
+  pure traces)
+  (action.run queries default).fst
 
 end Bytecode
 
