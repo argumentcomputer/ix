@@ -227,6 +227,42 @@ extern lean_obj_res c_rs_circuit_module_assert_not_zero(
     return alloc_lean_linear_object(new_linear);
 }
 
+extern lean_obj_res c_rs_circuit_module_assert_dynamic_exp(
+    lean_obj_arg l_circuit,
+    b_lean_obj_arg exp_bits,
+    size_t result,
+    size_t base
+) {
+    linear_object *linear = validated_linear(l_circuit);
+    rs_circuit_module_assert_dynamic_exp(
+        get_object_ref(linear),
+        exp_bits,
+        result,
+        base
+    );
+    linear_object *new_linear = linear_bump(linear);
+    return alloc_lean_linear_object(new_linear);
+}
+
+extern lean_obj_res c_rs_circuit_module_assert_static_exp(
+    lean_obj_arg l_circuit,
+    b_lean_obj_arg exp_bits,
+    size_t result,
+    b_lean_obj_arg base,
+    uint8_t base_tower_level
+) {
+    linear_object *linear = validated_linear(l_circuit);
+    rs_circuit_module_assert_static_exp(
+        get_object_ref(linear),
+        exp_bits,
+        result,
+        lean_get_external_data(base),
+        base_tower_level
+    );
+    linear_object *new_linear = linear_bump(linear);
+    return alloc_lean_linear_object(new_linear);
+}
+
 extern lean_obj_res c_rs_circuit_module_add_committed(
     lean_obj_arg l_circuit,
     b_lean_obj_arg name,

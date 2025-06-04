@@ -1,5 +1,6 @@
 use anyhow::{Result, bail, ensure};
 use binius_core::constraint_system::channel::{Flush, OracleOrConst};
+use binius_core::constraint_system::exp::Exp;
 use binius_core::oracle::{ConstraintSetBuilder, MultilinearOracleSet, ShiftVariant};
 use binius_core::{
     constraint_system::{
@@ -44,12 +45,24 @@ pub(super) struct ArchonFlush {
     pub(super) multiplicity: u64,
 }
 
+pub(super) enum ArchonOracleOrConst {
+    Oracle(OracleIdx),
+    Const { base: F, tower_level: usize },
+}
+
+pub(super) struct ArchonExp {
+    pub(super) exp_bits: Vec<OracleIdx>,
+    pub(super) base: ArchonOracleOrConst,
+    pub(super) result: OracleIdx,
+}
+
 pub struct CircuitModule {
     pub(super) module_id: ModuleId,
     pub(super) oracles: Freezable<Vec<OracleInfo>>,
     pub(super) flushes: Vec<ArchonFlush>,
     pub(super) constraints: Vec<Constraint>,
     pub(super) non_zero_oracle_idxs: Vec<OracleIdx>,
+    pub(super) exponents: Vec<ArchonExp>,
     pub(super) namespacer: Namespacer,
 }
 
@@ -68,6 +81,7 @@ impl CircuitModule {
             flushes: vec![],
             constraints: vec![],
             non_zero_oracle_idxs: vec![],
+            exponents: vec![],
             namespacer: Namespacer::default(),
         }
     }
@@ -125,6 +139,38 @@ impl CircuitModule {
     #[inline]
     pub fn assert_not_zero(&mut self, oracle_idx: OracleIdx) {
         self.non_zero_oracle_idxs.push(oracle_idx);
+    }
+
+    #[inline]
+    pub fn assert_dynamic_exp(
+        &mut self,
+        exp_bits: Vec<OracleIdx>,
+        result: OracleIdx,
+        base: OracleIdx,
+    ) {
+        self.exponents.push(ArchonExp {
+            exp_bits,
+            base: ArchonOracleOrConst::Oracle(base),
+            result,
+        })
+    }
+
+    #[inline]
+    pub fn assert_static_exp(
+        &mut self,
+        exp_bits: Vec<OracleIdx>,
+        result: OracleIdx,
+        base: F,
+        base_tower_level: usize,
+    ) {
+        self.exponents.push(ArchonExp {
+            exp_bits,
+            base: ArchonOracleOrConst::Const {
+                base,
+                tower_level: base_tower_level,
+            },
+            result,
+        })
     }
 
     #[inline]
@@ -278,7 +324,7 @@ pub fn compile_circuit_modules(
     let mut constraint_builder = ConstraintSetBuilder::new();
     let mut flushes = Vec::new();
     let mut non_zero_oracle_ids = Vec::new();
-    let exponents = Vec::new();
+    let mut exponents = Vec::new();
     let mut max_channel_id = 0;
     for (module_idx, (module, &height)) in modules.iter().zip(modules_heights).enumerate() {
         if height == 0 {
@@ -392,6 +438,31 @@ pub fn compile_circuit_modules(
 
         for non_zero_oracle_idx in &module.non_zero_oracle_idxs {
             non_zero_oracle_ids.push(non_zero_oracle_idx.oracle_id(oracle_offset));
+        }
+
+        for ArchonExp {
+            exp_bits,
+            base,
+            result,
+        } in &module.exponents
+        {
+            let bits_ids = exp_bits
+                .iter()
+                .map(|o| o.oracle_id(oracle_offset))
+                .collect();
+            let base = match base {
+                ArchonOracleOrConst::Oracle(o) => OracleOrConst::Oracle(o.oracle_id(oracle_offset)),
+                ArchonOracleOrConst::Const { base, tower_level } => OracleOrConst::Const {
+                    base: *base,
+                    tower_level: *tower_level,
+                },
+            };
+            let exp_result_id = result.oracle_id(oracle_offset);
+            exponents.push(Exp {
+                bits_ids,
+                base,
+                exp_result_id,
+            });
         }
 
         for ArchonFlush {

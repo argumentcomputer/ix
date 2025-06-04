@@ -89,13 +89,22 @@ extern lean_obj_res c_u128_to_le_bytes(b_lean_obj_arg u128) {
 
 extern lean_obj_res c_rs_add_u128_in_binary_field(
     b_lean_obj_arg a,
-    b_lean_obj_arg b,
-    uint8_t tower_level
+    b_lean_obj_arg b
 ) {
     uint8_t *bytes = rs_add_u128_in_binary_field(
         lean_get_external_data(a),
-        lean_get_external_data(b),
-        tower_level
+        lean_get_external_data(b)
+    );
+    return lean_alloc_external(get_u128_class(), bytes);
+}
+
+extern lean_obj_res c_rs_mul_u128_in_binary_field(
+    b_lean_obj_arg a,
+    b_lean_obj_arg b
+) {
+    uint8_t *bytes = rs_mul_u128_in_binary_field(
+        lean_get_external_data(a),
+        lean_get_external_data(b)
     );
     return lean_alloc_external(get_u128_class(), bytes);
 }
