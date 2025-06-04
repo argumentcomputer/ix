@@ -201,20 +201,20 @@ partial def Op.populateRow : Op → TraceM Unit
 | _ => panic! "TODO"
 end
 
-def Function.generateRow
+def Function.generateTrace
   (function : Function)
+  (funcMap : QueryMap)
   (layout : Circuit.Layout)
-  (queries : QueryRecord)
-  (prevCounts : Std.HashMap Circuit.Query UInt64)
-  (inputs : Array UInt64)
-  (result : QueryResult)
-: Circuit.Row :=
-  let row := .blank layout inputs result.values result.multiplicity
-  let map := inputs
-  let col := { u1Auxiliary := 0, u8Auxiliary := 0, u64Auxiliary := 0 }
-  let state : TraceState := { map, row, col, prevCounts }
-  let (_, state) := function.body.populateRow.run queries state
-  state.row
+: TraceM Circuit.Trace := do
+  let numQueries := funcMap.size;
+  let rows: Array Circuit.Row ← funcMap.foldlM (init := #[]) fun acc (inputs, result) => do
+    modify fun s =>
+      let map := inputs
+      let row := .blank layout inputs result.values result.multiplicity
+      { s with map, row }
+    function.body.populateRow
+    pure $ acc.push (← get).row
+  pure { rows, numQueries }
 
 end Bytecode
 
