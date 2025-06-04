@@ -13,9 +13,10 @@ use bytemuck::{Pod, must_cast_slice};
 use indexmap::IndexSet;
 use rayon::{
     iter::{
-        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
+        IntoParallelRefMutIterator, ParallelIterator,
     },
-    slice::ParallelSliceMut,
+    slice::{ParallelSlice, ParallelSliceMut},
 };
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::{
@@ -693,61 +694,64 @@ impl WitnessModule {
                 OracleKind::Projected {
                     inner,
                     mask,
-                    mask_bits: _,
                     unprojected_size,
-                    start_index: _,
+                    ..
                 } => {
                     let tower_level = oracle_info.tower_level;
                     let &(inner_entry_id, _) =
                         self.entry_map.get(inner).expect("Data should be available");
 
-                    let underliers = self.entries[inner_entry_id].clone();
-
-                    let mut projected_underliers = vec![];
-
-                    match tower_level {
-                        5 => {
-                            // TODO: check if parallelism can be applied
-
-                            // tower_level = 5, means that we deal with u32, and we have 4 u32 in a single 'OptimalUnderlier' value
-                            let divisor = 4;
-
-                            // grab all underliers and get field elements from them
-                            let field_elements: Vec<B32> = underliers
-                                .into_iter()
-                                .flat_map(|underlier| unsafe {
-                                    transmute::<OptimalUnderlier, [B32; 4]>(underlier)
-                                })
-                                .collect();
+                    macro_rules! project_underliers {
+                        ($d:literal, $ty:ident) => {{
+                            const DIVISOR: usize = $d;
 
                             let chunk_size = *unprojected_size;
                             let mask_value = usize::try_from(*mask)?;
 
-                            // select necessary field elements (projection)
-                            let mut projected_field_elements: Vec<B32> = field_elements
-                                .chunks(chunk_size)
-                                .map(|chunk| chunk[mask_value])
-                                .collect();
+                            // Compute total number of elements
+                            let num_elts = self.entries[inner_entry_id].len() * DIVISOR;
+                            let num_chunks = num_elts.div_ceil(chunk_size);
 
-                            // pad with zeroes
-                            let pad_len = projected_field_elements.len() % divisor;
+                            // Pre-allocate the projected field elements
+                            let mut projected_field_elements = Vec::with_capacity(num_chunks);
+
+                            self.entries[inner_entry_id]
+                                .par_iter()
+                                .flat_map(|&underlier| unsafe {
+                                    transmute::<OptimalUnderlier, [$ty; DIVISOR]>(underlier)
+                                })
+                                .collect::<Vec<_>>()
+                                .par_chunks(chunk_size)
+                                .map(|chunk| chunk[mask_value])
+                                .collect_into_vec(&mut projected_field_elements);
+
+                            // Pad to multiple of DIVISOR
+                            #[allow(clippy::modulo_one)]
+                            let pad_len = projected_field_elements.len() % DIVISOR;
                             if pad_len != 0 {
-                                projected_field_elements.resize(
-                                    projected_field_elements.len() + (divisor - pad_len),
-                                    B32::from(0u32),
-                                );
+                                projected_field_elements
+                                    .extend(std::iter::repeat($ty::ZERO).take(DIVISOR - pad_len));
                             }
 
-                            // compose new underliers layer
-                            projected_field_elements.chunks(divisor).for_each(|chunk| {
-                                let array: [B32; 4] = chunk.try_into().unwrap();
-                                let projected_item =
-                                    unsafe { transmute::<[B32; 4], OptimalUnderlier>(array) };
-                                projected_underliers.push(projected_item);
-                            });
-                        }
-                        _ => unimplemented!(),
+                            // Compose underliers in parallel
+                            projected_field_elements
+                                .par_chunks_exact(DIVISOR)
+                                .map(|chunk| {
+                                    let array: [$ty; DIVISOR] = chunk.try_into().unwrap();
+                                    unsafe { transmute::<[$ty; DIVISOR], OptimalUnderlier>(array) }
+                                })
+                                .collect()
+                        }};
                     }
+
+                    let projected_underliers = match tower_level {
+                        3 => project_underliers!(16, B8),
+                        4 => project_underliers!(8, B16),
+                        5 => project_underliers!(4, B32),
+                        6 => project_underliers!(2, B64),
+                        7 => project_underliers!(1, B128),
+                        _ => unimplemented!(),
+                    };
 
                     let entry_id = self.new_entry();
                     self.entries[entry_id] = projected_underliers;
@@ -1229,6 +1233,59 @@ mod tests {
     }
 
     #[test]
+    fn test_projected() {
+        let mut circuit_module = CircuitModule::new(0);
+        let b8 = circuit_module.add_committed::<B8>("b8").unwrap();
+        let b16 = circuit_module.add_committed::<B16>("b16").unwrap();
+        let b32 = circuit_module.add_committed::<B32>("b32").unwrap();
+        let b64 = circuit_module.add_committed::<B64>("b64").unwrap();
+        let b128 = circuit_module.add_committed::<B128>("b128").unwrap();
+
+        circuit_module.add_projected("p8", b8, 3, 8).unwrap();
+        circuit_module.add_projected("p16", b16, 5, 16).unwrap();
+        circuit_module.add_projected("p32", b32, 7, 8).unwrap();
+        circuit_module.add_projected("p64", b64, 3, 4).unwrap();
+        circuit_module.add_projected("p128", b128, 11, 16).unwrap();
+        circuit_module.freeze_oracles();
+
+        let mut witness_module = circuit_module.init_witness_module().unwrap();
+
+        let b8_entry = witness_module.new_entry();
+        let b8_data: [u8; 256] = rand::random();
+        witness_module.push_u8s_to(b8_data, b8_entry);
+        witness_module.bind_oracle_to::<B8>(b8, b8_entry);
+
+        let b16_entry = witness_module.new_entry();
+        let b16_data: [u16; 256] = rand::random();
+        witness_module.push_u16s_to(b16_data, b16_entry);
+        witness_module.bind_oracle_to::<B16>(b16, b16_entry);
+
+        let b32_entry = witness_module.new_entry();
+        let b32_data: [u32; 256] = rand::random();
+        witness_module.push_u32s_to(b32_data, b32_entry);
+        witness_module.bind_oracle_to::<B32>(b32, b32_entry);
+
+        let b64_entry = witness_module.new_entry();
+        let b64_data: [u64; 256] = rand::random();
+        witness_module.push_u64s_to(b64_data, b64_entry);
+        witness_module.bind_oracle_to::<B64>(b64, b64_entry);
+
+        let b128_entry = witness_module.new_entry();
+        let b128_data: [u128; 256] = rand::random();
+        witness_module.push_u128s_to(b128_data, b128_entry);
+        witness_module.bind_oracle_to::<B128>(b128, b128_entry);
+
+        let height = 256;
+        witness_module.populate(height).unwrap();
+
+        let witness_modules = [witness_module];
+        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let circuit_modules = [circuit_module];
+
+        assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
+    }
+
+    #[test]
     fn test_projected_u32() {
         let n_vars = 6usize;
         let mask = 0u64; // we have long input and every "selected" item is taken into projection
@@ -1244,7 +1301,6 @@ mod tests {
                 input,
                 mask,
                 usize::try_from(unprojected_size).unwrap(),
-                0,
             )
             .unwrap();
         circuit_module.freeze_oracles();

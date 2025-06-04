@@ -373,8 +373,7 @@ extern lean_obj_res c_rs_circuit_module_add_projected(
     b_lean_obj_arg name,
     size_t inner,
     uint64_t mask,
-    size_t unprojected_size,
-    size_t start_index
+    size_t unprojected_size
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
@@ -383,8 +382,7 @@ extern lean_obj_res c_rs_circuit_module_add_projected(
         chars,
         inner,
         mask,
-        unprojected_size,
-        start_index
+        unprojected_size
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);

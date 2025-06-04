@@ -203,10 +203,9 @@ extern "C" fn rs_circuit_module_add_projected(
     inner: OracleIdx,
     mask: u64,
     unprojected_size: usize,
-    start_index: usize,
 ) -> OracleIdx {
     circuit_module
-        .add_projected(raw_to_str(name), inner, mask, unprojected_size, start_index)
+        .add_projected(raw_to_str(name), inner, mask, unprojected_size)
         .expect("CircuitModule::add_projected failure")
 }
 

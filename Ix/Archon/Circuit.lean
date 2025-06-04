@@ -78,7 +78,7 @@ opaque addShifted : CircuitModule → @& String → OracleIdx → (shiftOffset :
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_projected"]
 opaque addProjected : CircuitModule → @& String → OracleIdx → (mask : UInt64) →
-  (unprojectedSize startIndex : USize) → OracleIdx × CircuitModule
+  (unprojectedSize : USize) → OracleIdx × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_push_namespace"]

@@ -45,7 +45,7 @@ size_t rs_circuit_module_add_packed(void*, char const *, size_t, size_t);
 size_t rs_circuit_module_add_shifted(
     void*, char const *, size_t, uint32_t, size_t, uint8_t
 );
-size_t rs_circuit_module_add_projected(void*, char const *, size_t, uint64_t, size_t, size_t);
+size_t rs_circuit_module_add_projected(void*, char const *, size_t, uint64_t, size_t);
 void rs_circuit_module_push_namespace(void*, char const *);
 void rs_circuit_module_pop_namespace(void*);
 size_t rs_circuit_module_canonical_bytes_size(void*);
