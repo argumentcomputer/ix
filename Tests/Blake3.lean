@@ -1,5 +1,47 @@
 import LSpec
 
+namespace Utilities
+
+partial def inner (rng : StdGen) (length : Nat) (array: Array UInt32) : Array UInt32 :=
+  match length with
+  | 0 => array
+  | _ =>
+    let (g₁, g₂) := RandomGen.split rng
+    let (next, _) := RandomGen.next g₁
+    inner g₂ (length - 1) (array.push next.toUInt32)
+
+--#eval inner (mkStdGen 0) 5 Array.empty
+--#eval inner (mkStdGen 0) 10 Array.empty
+
+-- TODO: ask Arthur, whether it is possible to easily convert Array to Vector
+def rand8 (rng : StdGen) : Vector UInt32 8 :=
+  let array := inner rng 8 Array.empty
+  #v[array[0]!, array[1]!, array[2]!, array[3]!, array[4]!, array[5]!, array[6]!, array[7]!]
+
+--#eval rand8 (mkStdGen 0)
+
+def rand16 (rng : StdGen) : Vector UInt32 16 :=
+  let array := inner rng 16 Array.empty
+  #v[
+    array[0]!, array[1]!, array[2]!, array[3]!, array[4]!, array[5]!, array[6]!, array[7]!,
+    array[8]!, array[9]!, array[10]!, array[11]!, array[12]!, array[13]!, array[14]!, array[15]!
+  ]
+
+--#eval rand16 (mkStdGen 0)
+
+partial def transpose (initial : Array (Array UInt32)) (tmp : Array (Array UInt32)) (rowLen: Nat): Array (Array UInt32) :=
+  match rowLen with
+  | 0 => tmp.reverse
+  | idx =>
+    let col := Array.ofFn (n := initial.size) fun i => initial[i]![idx - 1]!
+    transpose initial (tmp.push col ) (idx - 1)
+
+--#eval let orig := #[#[1, 2, 3], #[4, 5, 6], #[7, 8, 9]]; transpose orig Array.empty 3
+--#eval let orig := #[#[1, 2, 3, 0], #[4, 5, 6, 0], #[7, 8, 9, 0]]; transpose orig Array.empty 4
+--#eval let orig := #[#[1, 2, 3], #[4, 5, 6], #[7, 8, 9], #[0, 0, 0]]; transpose orig Array.empty 3
+
+end Utilities
+
 namespace Blake3
 
 def IV : Vector UInt32 8 := #v[0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19]
