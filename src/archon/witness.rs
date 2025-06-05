@@ -21,6 +21,7 @@ use rayon::{
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::{
     collections::{HashMap, hash_map::Entry},
+    iter::repeat,
     mem::transmute,
     sync::Arc,
 };
@@ -228,18 +229,40 @@ impl WitnessModule {
         // of any other oracle. `root_oracles` starts with all oracles, which are
         // removed as the following loop finds out they break such condition.
         //
-        // The loop also uses ensures that committed oracles are prepopulated.
+        // The loop also uses ensures that committed oracles are bound to entries,
+        // accumulating the amount of missing bytes for each entry to be padded
+        // with zero afterwards.
         let mut root_oracles: FxHashSet<_> = (0..self.num_oracles()).map(OracleIdx).collect();
+        let mut missing_bytes_map = FxHashMap::default();
         for (oracle_idx, oracle_info) in self.oracles.iter().enumerate() {
             let oracle_idx = OracleIdx(oracle_idx);
             match &oracle_info.kind {
                 OracleKind::Committed => {
-                    ensure!(
-                        self.entry_map.contains_key(&oracle_idx),
-                        "Committed oracle {} (id={oracle_idx}) for witness module {} is not populated",
-                        &oracle_info.name,
-                        &self.module_id,
-                    );
+                    let Some(&(entry_id, tower_level)) = self.entry_map.get(&oracle_idx) else {
+                        bail!(
+                            "Committed oracle {} (id={oracle_idx}) for witness module {} is not populated",
+                            &oracle_info.name,
+                            &self.module_id,
+                        );
+                    };
+
+                    // Compute and accumulate the amount of missing bytes.
+                    const UNDERLIER_SIZE: usize = size_of::<OptimalUnderlier>();
+                    let num_bytes = UNDERLIER_SIZE * self.entries[entry_id].len()
+                        + self.buffers[entry_id].len();
+                    let target_num_bytes =
+                        UNDERLIER_SIZE * Self::num_underliers_for_height(height, tower_level)?;
+                    let num_missing_bytes = target_num_bytes - num_bytes;
+                    if let Some(existing_num_missing_bytes) =
+                        missing_bytes_map.insert(entry_id, num_missing_bytes)
+                    {
+                        ensure!(
+                            num_missing_bytes == existing_num_missing_bytes,
+                            "Incompatible amount of missing data for entry {entry_id}"
+                        );
+                    }
+
+                    // A committed oracle is not a root oracle.
                     root_oracles.remove(&oracle_idx);
                 }
                 OracleKind::LinearCombination { inner, .. } => {
@@ -254,6 +277,11 @@ impl WitnessModule {
                 }
                 OracleKind::Transparent(_) | OracleKind::StepDown => (),
             }
+        }
+
+        // Pad missing bytes with zeros.
+        for (entry_id, num_missing_bytes) in missing_bytes_map {
+            self.push_u8s_to(repeat(0).take(num_missing_bytes), entry_id);
         }
 
         // The incoming code block aims to calculate a compute order for the
@@ -730,7 +758,7 @@ impl WitnessModule {
                             let pad_len = projected_field_elements.len() % DIVISOR;
                             if pad_len != 0 {
                                 projected_field_elements
-                                    .extend(std::iter::repeat($ty::ZERO).take(DIVISOR - pad_len));
+                                    .extend(repeat($ty::ZERO).take(DIVISOR - pad_len));
                             }
 
                             // Compose underliers in parallel
@@ -818,6 +846,7 @@ mod tests {
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     use crate::archon::{
+        arith_expr::ArithExpr,
         circuit::{CircuitModule, init_witness_modules},
         protocol::validate_witness,
         transparent::Transparent,
@@ -1315,6 +1344,31 @@ mod tests {
         }
 
         witness_module.bind_oracle_to::<B32>(input, entry_id);
+        witness_module.populate(height).unwrap();
+
+        let witness_modules = [witness_module];
+        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let circuit_modules = [circuit_module];
+
+        assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
+    }
+
+    #[test]
+    fn test_autocomplete() {
+        let mut circuit_module = CircuitModule::new(0);
+        let x = circuit_module.add_committed::<B8>("b8").unwrap();
+        let y = circuit_module.add_committed::<B8>("b8").unwrap();
+        use ArithExpr::*;
+        circuit_module.assert_zero("x = y", [], Oracle(x) + Oracle(y));
+        circuit_module.freeze_oracles();
+
+        let mut witness_module = circuit_module.init_witness_module().unwrap();
+        let entry_id = witness_module.new_entry();
+        witness_module.push_u8s_to([42], entry_id); // This wouldn't be enough
+        witness_module.bind_oracle_to::<B8>(x, entry_id);
+        witness_module.bind_oracle_to::<B8>(y, entry_id);
+
+        let height = 16;
         witness_module.populate(height).unwrap();
 
         let witness_modules = [witness_module];
