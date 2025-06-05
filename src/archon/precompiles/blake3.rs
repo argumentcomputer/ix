@@ -118,7 +118,6 @@ fn state_transition_module(
             state_transitions[xy],
             PROJECTED_SELECTOR_INPUT,
             SINGLE_COMPRESSION_HEIGHT,
-            0,
         )
     })?;
 
@@ -128,7 +127,6 @@ fn state_transition_module(
             state_transitions[xy],
             PROJECTED_SELECTOR_OUTPUT,
             SINGLE_COMPRESSION_HEIGHT,
-            0,
         )
     })?;
     circuit_module.freeze_oracles();

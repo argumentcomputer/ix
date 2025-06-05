@@ -139,13 +139,11 @@ impl Canonical for OracleKind {
                 mask,
                 mask_bits,
                 unprojected_size,
-                start_index,
             } => {
                 1 + Canonical::size(inner)
                     + Canonical::size(mask)
                     + Canonical::size(mask_bits)
                     + Canonical::size(unprojected_size)
-                    + Canonical::size(start_index)
             }
         }
     }
@@ -184,14 +182,12 @@ impl Canonical for OracleKind {
                 mask,
                 mask_bits,
                 unprojected_size,
-                start_index,
             } => {
                 buffer.push(6);
                 Canonical::write(inner, buffer);
                 Canonical::write(mask, buffer);
                 Canonical::write(mask_bits, buffer);
                 Canonical::write(unprojected_size, buffer);
-                Canonical::write(start_index, buffer);
             }
         }
     }

@@ -89,10 +89,9 @@ def addShifted (name : @& String) (inner : OracleIdx) (shiftOffset : UInt32)
     (o, { stt with circuitModule })
 
 def addProjected (name : @& String) (inner : OracleIdx) (mask : UInt64)
-    (unprojectedSize startIndex : USize) : SynthM OracleIdx :=
+    (unprojectedSize : USize) : SynthM OracleIdx :=
   modifyGet fun stt =>
-    let (o, circuitModule) := stt.circuitModule.addProjected name inner mask
-      unprojectedSize startIndex
+    let (o, circuitModule) := stt.circuitModule.addProjected name inner mask unprojectedSize
     (o, { stt with circuitModule })
 
 @[inline] def cacheConstAux (value : UInt128) (stt : SynthState) : OracleIdx × SynthState :=
@@ -180,7 +179,7 @@ def synthesizeAdd (channelId : ChannelId) : SynthM Unit := do
   let yinPacked ← addPacked "add-yin-packed" yin TowerField.b64.logDegree
   let zoutPacked ← addPacked "add-zout-packed" zout TowerField.b64.logDegree
   let mask := 0b111111
-  let coutProjected ← addProjected "add-cout-projected" cout mask 64 0
+  let coutProjected ← addProjected "add-cout-projected" cout mask 64
   assertZero "add-sum" $ xin + yin + cin - zout
   assertZero "add-carry" $ (xin + cin) * (yin + cin) + cin - cout
   recv channelId #[xinPacked, yinPacked, zoutPacked, coutProjected]
