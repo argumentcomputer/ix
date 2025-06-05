@@ -29,9 +29,9 @@ structure SynthState where
 
 abbrev SynthM := StateM SynthState
 
-@[inline] def synthesizeM (circuitModuleId : USize) (f : SynthM α) : CircuitModule :=
-  let (_, stt) := f.run $ .init (CircuitModule.new circuitModuleId)
-  stt.circuitModule
+@[inline] def synthesizeM (circuitModuleId : USize) (f : SynthM α) : (CircuitModule × α) :=
+  let (a, stt) := f.run $ .init (CircuitModule.new circuitModuleId)
+  (stt.circuitModule.freezeOracles, a)
 
 @[inline] def flush (direction : FlushDirection) (channelId : ChannelId)
     (selector : OracleIdx) (args : @& Array OracleIdx) (multiplicity : UInt64) : SynthM Unit :=
@@ -138,18 +138,18 @@ def require (channelId : ChannelId) (prevIdx : OracleIdx) (args : Array OracleId
   flush .push channelId sel (args.push idx) 1
 
 def synthesizeFunction (funcIdx : Nat) (function : Bytecode.Function)
-    (layout : Layout) (aiurChannels : AiurChannels) : SynthM Unit := do
+    (layout : Layout) (aiurChannels : AiurChannels) : SynthM Columns := do
   let columns ← modifyGet fun stt =>
     let (cs, circuitModule) := Columns.ofLayout stt.circuitModule layout
     (cs, { stt with circuitModule })
   let constraints := buildFuncionConstraints function layout columns
-  assertZero "topmost" (constraints.topmostSelector - CircuitModule.selector)
+  assertZero "func-topmost" (constraints.topmostSelector - CircuitModule.selector)
   let funcIdxOracle ← cacheConst (.ofNatWrap funcIdx)
   provide aiurChannels.func constraints.multiplicity (constraints.io.push funcIdxOracle)
   constraints.uniqueConstraints.zipIdx.forM fun (expr, i) =>
-    assertZero s!"unique constraint {i}" expr
+    assertZero s!"func-unique-constraint-{i}" expr
   constraints.sharedConstraints.zipIdx.forM fun (expr, i) =>
-    assertZero s!"shared constraint {i}" expr
+    assertZero s!"func-shared-constraint-{i}" expr
   constraints.sends.forM fun (channel, sel, args) => do
     let sel ← cacheLc sel
     let args ← args.mapM cacheLc
@@ -168,8 +168,15 @@ def synthesizeFunction (funcIdx : Nat) (function : Bytecode.Function)
       let channelId := aiurChannels.mem.get width |>.get!
       require channelId prevIdx args sel
     | _ => unreachable!
+  pure columns
 
-def synthesizeAdd (channelId : ChannelId) : SynthM Unit := do
+structure AddColumns where
+  xin : OracleIdx
+  yin : OracleIdx
+  zout : OracleIdx
+  cout : OracleIdx
+
+def synthesizeAdd (channelId : ChannelId) : SynthM AddColumns := do
   let xin ← addCommitted "add-xin" .b1
   let yin ← addCommitted "add-yin" .b1
   let zout ← addCommitted "add-zout" .b1
@@ -183,8 +190,21 @@ def synthesizeAdd (channelId : ChannelId) : SynthM Unit := do
   assertZero "add-sum" $ xin + yin + cin - zout
   assertZero "add-carry" $ (xin + cin) * (yin + cin) + cin - cout
   recv channelId #[xinPacked, yinPacked, zoutPacked, coutProjected]
+  pure { xin, yin, zout, cout }
 
-def synthesizeMul (channelId : ChannelId) : SynthM Unit := do
+structure MulColumns where
+  xin : OracleIdx
+  yin : OracleIdx
+  zout : OracleIdx
+  xinBits : Array OracleIdx
+  yinBits : Array OracleIdx
+  zoutBits : Array OracleIdx
+  xinExpResult : OracleIdx
+  yinExpResult : OracleIdx
+  zoutLowExpResult : OracleIdx
+  zoutHighExpResult : OracleIdx
+
+def synthesizeMul (channelId : ChannelId) : SynthM MulColumns := do
   let xin ← addCommitted "mul-xin" .b64
   let yin ← addCommitted "mul-yin" .b64
   let zout ← addCommitted "mul-zout" .b64
@@ -192,30 +212,42 @@ def synthesizeMul (channelId : ChannelId) : SynthM Unit := do
   let yinBits ← Array.range 64 |>.mapM (addCommitted s!"mul-yin-bit-{·}" .b1)
   bitDecomposition "mul-bit-decomposition-xin" xinBits xin
   bitDecomposition "mul-bit-decomposition-yin" yinBits yin
-  let zoutBits ← mul "mul-u64" xinBits yinBits
+  let (xinExpResult, yinExpResult, zoutLowExpResult, zoutHighExpResult, zoutBits)
+    ← mul xinBits yinBits
   bitDecomposition "mul-bit-decomposition-zout" zoutBits zout
   recv channelId #[xin, yin, zout]
+  pure {
+    xin,
+    yin,
+    zout,
+    xinBits,
+    yinBits,
+    zoutBits,
+    xinExpResult,
+    yinExpResult,
+    zoutLowExpResult,
+    zoutHighExpResult, }
 where
   bitDecomposition name bits word :=
     let (expr, _) := bits.foldl (init := (.oracle word, (1 : UInt64)))
       fun (expr, coeff) bit => (expr - (.const (.ofLoHi coeff 0)) * bit, coeff <<< 1)
     assertZero name expr
-  mul name xinBits yinBits := do
-    let xinExpResult ← addCommitted s!"{name}-xin-exp-result" .b128
-    let yinExpResult ← addCommitted s!"{name}-yin-exp-result" .b128
-    let zoutLowExpResult ← addCommitted s!"{name}-zout-low-exp-result" .b128
-    let zoutHighExpResult ← addCommitted s!"{name}-zout-high-exp-result" .b128
-    let zoutBits ← Array.range 64 |>.mapM (addCommitted s!"{name}-zout-bit-{·}" .b1)
+  mul xinBits yinBits := do
+    let xinExpResult ← addCommitted "mul-xin-exp-result" .b128
+    let yinExpResult ← addCommitted "mul-yin-exp-result" .b128
+    let zoutLowExpResult ← addCommitted "mul-zout-low-exp-result" .b128
+    let zoutHighExpResult ← addCommitted "mul-zout-high-exp-result" .b128
+    let zoutBits ← Array.range 64 |>.mapM (addCommitted s!"mul-zout-bit-{·}" .b1)
 
     let xin0 := xinBits[0]!
     let yin0 := yinBits[0]!
     let zout0 := zoutBits[0]!
-    assertZero s!"{name}-bit0" $ xin0 * yin0 - zout0
+    assertZero "mul-bit0" $ xin0 * yin0 - zout0
 
     let yin := yinExpResult
     let low := zoutLowExpResult
     let high := zoutHighExpResult
-    assertZero s!"{name}-yin-zout-low-high" $ low * high - yin
+    assertZero "mul-yin-zout-low-high" $ low * high - yin
 
     let zoutLow := zoutBits.extract (stop := 32)
     let zoutHigh := zoutBits.extract (start := 32)
@@ -227,23 +259,27 @@ where
       fun _ _ g => mulUInt128InBinaryField g g
     assertStaticExp zoutHigh zoutHighExpResult base .b128
 
-    pure zoutBits
+    pure (xinExpResult, yinExpResult, zoutLowExpResult, zoutHighExpResult, zoutBits)
 
-def synthesizeMemory (channelId : ChannelId) (width : Nat) : SynthM Unit := do
+structure MemoryColumns where
+  values : Array OracleIdx
+  multiplicity : OracleIdx
+
+def synthesizeMemory (channelId : ChannelId) (width : Nat) : SynthM MemoryColumns := do
   let address ← addTransparent s!"mem-{width}-address" .incremental
   let values ← Array.range width |>.mapM (addCommitted s!"mem-{width}-value-{·}" .b64)
-  let multiplicipy ← addCommitted s!"mem-{width}-multiplicity" .b64
+  let multiplicity ← addCommitted s!"mem-{width}-multiplicity" .b64
   let args := values.push address
-  provide channelId multiplicipy args
+  provide channelId multiplicity args
+  pure { values, multiplicity }
 
-structure AiurCircuitModules where
-  funcs : Array CircuitModule
-  add : CircuitModule
-  mul : CircuitModule
-  -- If we don't need these widths, we can change to `Array CircuitModule` later
-  mem : SmallMap Nat CircuitModule
+structure AiurCircuits where
+  funcs : Array (CircuitModule × Columns)
+  add : CircuitModule × AddColumns
+  mul : CircuitModule × MulColumns
+  mem : SmallMap Nat (CircuitModule × MemoryColumns)
 
-def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuitModules :=
+def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits :=
   let channelAllocator := ChannelAllocator.init
   let (funcChannel, channelAllocator) := channelAllocator.next
   let (addChannel, channelAllocator) := channelAllocator.next
