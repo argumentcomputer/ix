@@ -89,48 +89,114 @@ def transition (state: Array UInt32) (j : Fin 8) : Array UInt32 :=
   state
 
 
-def roundNoPermute(state: Array UInt32) : Array UInt32 :=
+def roundNoPermute(state: Array UInt32) : Array (Array UInt32) × Array UInt32 :=
+  let transitions := Array.empty
+
+  -- TODO: Ask Arthur about idiomatic looping instead of sequential 'transition' invocation one by one
   let state := transition state 0
+  let transitions := transitions.push state
   let state := transition state 1
+  let transitions := transitions.push state
   let state := transition state 2
+  let transitions := transitions.push state
   let state := transition state 3
+  let transitions := transitions.push state
   let state := transition state 4
+  let transitions := transitions.push state
   let state := transition state 5
+  let transitions := transitions.push state
   let state := transition state 6
+  let transitions := transitions.push state
   let state := transition state 7
-  state
+  let transitions := transitions.push state
 
-def round (state: Array UInt32) : Array UInt32 :=
-  let state := roundNoPermute state
-  permute state
+  Prod.mk transitions state
 
 
-def compress (cv : Vector UInt32 8) (blockWords : Vector UInt32 16) (counter : UInt64) (blockLen flags : UInt32) : Array UInt32 :=
+def round (state: Array UInt32) : Array (Array UInt32) × Array UInt32 :=
+  let (transition, state) := roundNoPermute state
+  Prod.mk transition (permute state)
+
+
+def compress (cv : Vector UInt32 8) (blockWords : Vector UInt32 16) (counter : UInt64) (blockLen flags : UInt32) : Array (Array UInt32) × Array UInt32 :=
   let counterLow := UInt32.ofBitVec (counter.toBitVec.truncate 32)
   let counterHigh := UInt32.ofBitVec ((counter.shiftRight 32).toBitVec.truncate 32)
 
+
   let state := cv.toArray ++ (IV.extract 0 4).toArray ++ #[counterLow, counterHigh, blockLen, flags] ++ blockWords.toArray
 
-  let state := round state
-  let state := round state
-  let state := round state
-  let state := round state
-  let state := round state
-  let state := round state
-  let state := roundNoPermute state
+  let transitions := #[state]
+
+  -- TODO: Ask Arthur about idiomatic looping instead of sequential 'round' invocation one by one
+  let (tmp, state) := round state
+  let transitions := transitions.append tmp
+  let (tmp, state) := round state
+  let transitions := transitions.append tmp
+  let (tmp, state) := round state
+  let transitions := transitions.append tmp
+  let (tmp, state) := round state
+  let transitions := transitions.append tmp
+  let (tmp, state) := round state
+  let transitions := transitions.append tmp
+  let (tmp, state) := round state
+  let transitions := transitions.append tmp
+  let (tmp, state) := roundNoPermute state
+  let transitions := transitions.append tmp
 
   let temp := ((state.extract 0 8).zipWith (Xor.xor) (state.extract 8 16))
   let state := temp.append (state.extract 8 32)
   let temp := (state.extract 8 16).zipWith (Xor.xor) cv.toArray
   let state := state.extract 0 8 ++ temp ++ state.extract 16 32
 
-  state.extract 0 16
+  -- pad state transitions with 6 zero-arrays for correct transposing
+  let zeroes := Array.ofFn (n := 32) (fun _ => (0 : UInt32))
+  let transitions := transitions.append (Array.ofFn (n := 6) (fun _ => zeroes))
+
+  Prod.mk (Utilities.transpose transitions Array.empty 32) (state.extract 0 16)
 
 end Blake3
 
+namespace TraceGeneration
+-- TODO: Ask Arthur about more elegant usage of RNG
+partial def generateTraces
+(rng : StdGen)
+(length : Nat)
+(transitions : Array (Array (Array UInt32)))
+(array : Array (Array UInt32))
+: Array (Array (Array UInt32)) × Array (Array UInt32) :=
+  match length with
+  | 0 => Prod.mk transitions array
+  | _ =>
+    -- to ensure that we will have independent RNGs for every piece of data,
+    -- we prepare multiple RNG instances
+    let (g₁, g₂) := RandomGen.split rng
+    let (g₃, g₄) := RandomGen.split g₁
+    let (g₅, g₆) := RandomGen.split g₂
+    let (g₇, g₈) := RandomGen.split g₃
+    let (g₉, g₁₀) := RandomGen.split g₄
 
+    let cv := Utilities.rand8 g₅
+    let block := Utilities.rand16 g₆
+    let counter := (RandomGen.next g₇).fst.toUInt64
+    let blockLen := (RandomGen.next g₈).fst.toUInt32
+    let flags := (RandomGen.next g₉).fst.toUInt32
+
+    let (transition, expected) := Blake3.compress cv block counter blockLen flags
+    generateTraces g₁₀ (length - 1) (transitions.push transition) (array.push expected)
+
+
+--#eval (generateTraces (mkStdGen 50) 10 Array.empty Array.empty).snd
+--#eval (generateTraces (mkStdGen 50) 10 Array.empty Array.empty).fst
+
+end TraceGeneration
+
+open TraceGeneration
 open Blake3
 open LSpec
+
+set_option maxRecDepth 10000
+set_option maxHeartbeats 1000000
+set_option synthInstance.maxHeartbeats 1000000
 
 def Tests.Blake3.suite : List LSpec.TestSeq :=
 [
@@ -142,7 +208,13 @@ def Tests.Blake3.suite : List LSpec.TestSeq :=
     let flags : UInt32 := 0xdddddddd
     let expected : Array UInt32 := #[0x8980fe15, 0x55898ce0, 0x8cf4fbde, 0x5e8537e9, 0x3d2e54f, 0x7e46753f, 0x5d151bb8, 0x2559b733, 0x24560929, 0x6625b1bf, 0xaaccc80e, 0xc5d4287a, 0x2848c46b, 0x94f666c, 0x3adaaeb3, 0x12011250]
 
-    let actual := compress cv blockWords counter blockLen flags
+    let (_, actual) := compress cv blockWords counter blockLen flags
     expected == actual
   ),
+
+  test "Traces generating" (
+    -- here we just check that it is feasible to generate some big amount of traces
+    let (_traces, _expected) := generateTraces (mkStdGen 50) 100000 Array.empty Array.empty
+    true
+  )
 ]
