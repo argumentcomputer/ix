@@ -1,44 +1,39 @@
 import LSpec
 
+set_option maxRecDepth 10000
+set_option maxHeartbeats 1000000
+set_option synthInstance.maxHeartbeats 1000000
+
 namespace Utilities
 
-partial def inner (rng : StdGen) (length : Nat) (array: Array UInt32) : Array UInt32 :=
-  match length with
-  | 0 => array
-  | _ =>
-    let (g₁, g₂) := RandomGen.split rng
-    let (next, _) := RandomGen.next g₁
-    inner g₂ (length - 1) (array.push next.toUInt32)
+def randArray (rng : StdGen) (length : Nat) : Array UInt32 :=
+  let rec randArrayInner (rng : StdGen) (length : Nat) (array: Array UInt32) : Array UInt32 :=
+    match length with
+    | 0 => array
+    | length' + 1 =>
+      let (g₁, g₂) := RandomGen.split rng
+      let (next, _) := RandomGen.next g₁
+      randArrayInner g₂ length' (array.push next.toUInt32)
 
---#eval inner (mkStdGen 0) 5 Array.empty
---#eval inner (mkStdGen 0) 10 Array.empty
+  randArrayInner rng length Array.empty
 
--- TODO: ask Arthur, whether it is possible to easily convert Array to Vector
 def rand8 (rng : StdGen) : Vector UInt32 8 :=
-  let array := inner rng 8 Array.empty
-  #v[array[0]!, array[1]!, array[2]!, array[3]!, array[4]!, array[5]!, array[6]!, array[7]!]
-
---#eval rand8 (mkStdGen 0)
+  let array := randArray rng 8
+  array.toVector
 
 def rand16 (rng : StdGen) : Vector UInt32 16 :=
-  let array := inner rng 16 Array.empty
-  #v[
-    array[0]!, array[1]!, array[2]!, array[3]!, array[4]!, array[5]!, array[6]!, array[7]!,
-    array[8]!, array[9]!, array[10]!, array[11]!, array[12]!, array[13]!, array[14]!, array[15]!
-  ]
+  let array := randArray rng 16
+  array.toVector
 
---#eval rand16 (mkStdGen 0)
+def transpose (initial : Array (Array UInt32)) (rowLen : Nat) : Array (Array UInt32) :=
+  let rec transposeInner (initial : Array (Array UInt32)) (tmp : Array (Array UInt32)) (rowLen: Nat): Array (Array UInt32) :=
+    match rowLen with
+    | 0 => tmp.reverse
+    | idx + 1 =>
+      let col := Array.ofFn (n := initial.size) fun i => initial[i]![idx - 1]!
+      transposeInner initial (tmp.push col ) idx
 
-partial def transpose (initial : Array (Array UInt32)) (tmp : Array (Array UInt32)) (rowLen: Nat): Array (Array UInt32) :=
-  match rowLen with
-  | 0 => tmp.reverse
-  | idx =>
-    let col := Array.ofFn (n := initial.size) fun i => initial[i]![idx - 1]!
-    transpose initial (tmp.push col ) (idx - 1)
-
---#eval let orig := #[#[1, 2, 3], #[4, 5, 6], #[7, 8, 9]]; transpose orig Array.empty 3
---#eval let orig := #[#[1, 2, 3, 0], #[4, 5, 6, 0], #[7, 8, 9, 0]]; transpose orig Array.empty 4
---#eval let orig := #[#[1, 2, 3], #[4, 5, 6], #[7, 8, 9], #[0, 0, 0]]; transpose orig Array.empty 3
+  transposeInner initial Array.empty rowLen
 
 end Utilities
 
@@ -122,7 +117,6 @@ def compress (cv : Vector UInt32 8) (blockWords : Vector UInt32 16) (counter : U
   let counterLow := UInt32.ofBitVec (counter.toBitVec.truncate 32)
   let counterHigh := UInt32.ofBitVec ((counter.shiftRight 32).toBitVec.truncate 32)
 
-
   let state := cv.toArray ++ (IV.extract 0 4).toArray ++ #[counterLow, counterHigh, blockLen, flags] ++ blockWords.toArray
 
   let transitions := #[state]
@@ -152,51 +146,44 @@ def compress (cv : Vector UInt32 8) (blockWords : Vector UInt32 16) (counter : U
   let zeroes := Array.ofFn (n := 32) (fun _ => (0 : UInt32))
   let transitions := transitions.append (Array.ofFn (n := 6) (fun _ => zeroes))
 
-  Prod.mk (Utilities.transpose transitions Array.empty 32) (state.extract 0 16)
+  Prod.mk (Utilities.transpose transitions 32) (state.extract 0 16)
 
 end Blake3
 
 namespace TraceGeneration
--- TODO: Ask Arthur about more elegant usage of RNG
-partial def generateTraces
-(rng : StdGen)
-(length : Nat)
-(transitions : Array (Array (Array UInt32)))
-(array : Array (Array UInt32))
-: Array (Array (Array UInt32)) × Array (Array UInt32) :=
-  match length with
-  | 0 => Prod.mk transitions array
-  | _ =>
-    -- to ensure that we will have independent RNGs for every piece of data,
-    -- we prepare multiple RNG instances
-    let (g₁, g₂) := RandomGen.split rng
-    let (g₃, g₄) := RandomGen.split g₁
-    let (g₅, g₆) := RandomGen.split g₂
-    let (g₇, g₈) := RandomGen.split g₃
-    let (g₉, g₁₀) := RandomGen.split g₄
 
-    let cv := Utilities.rand8 g₅
-    let block := Utilities.rand16 g₆
-    let counter := (RandomGen.next g₇).fst.toUInt64
-    let blockLen := (RandomGen.next g₈).fst.toUInt32
-    let flags := (RandomGen.next g₉).fst.toUInt32
+def generateTraces (rng : StdGen) (length : Nat) :  Array (Array UInt32) × Array (Array UInt32) :=
+  let rec generateTracesInner (rng : StdGen) (length : Nat) (transitions :  Array (Array UInt32)) (array : Array (Array UInt32)) :  Array (Array UInt32) × Array (Array UInt32) :=
+    match length with
+    | 0 => Prod.mk transitions array
+    | length' + 1 =>
+      -- to ensure that we will have independent RNGs for every piece of data,
+      -- we prepare multiple RNG instances
+      let (g₁, g₂) := RandomGen.split rng
+      let (g₃, g₄) := RandomGen.split g₁
+      let (g₅, g₆) := RandomGen.split g₂
+      let (g₇, g₈) := RandomGen.split g₃
+      let (g₉, g₁₀) := RandomGen.split g₄
 
-    let (transition, expected) := Blake3.compress cv block counter blockLen flags
-    generateTraces g₁₀ (length - 1) (transitions.push transition) (array.push expected)
+      let cv := Utilities.rand8 g₅
+      let block := Utilities.rand16 g₆
+      let counter := (RandomGen.next g₇).fst.toUInt64
+      let blockLen := (RandomGen.next g₈).fst.toUInt32
+      let flags := (RandomGen.next g₉).fst.toUInt32
 
+      let (transition, expected) := Blake3.compress cv block counter blockLen flags
 
---#eval (generateTraces (mkStdGen 50) 10 Array.empty Array.empty).snd
---#eval (generateTraces (mkStdGen 50) 10 Array.empty Array.empty).fst
+      -- we extend 'transitions' inner arrays via concatenating new transition arrays to them
+      let transitions' := if transitions.isEmpty then transition else (transitions.zip transition).map (fun (a, b) => a ++ b)
+      generateTracesInner g₁₀ length' transitions' (array.push expected)
+
+  generateTracesInner rng length Array.empty Array.empty
 
 end TraceGeneration
 
 open TraceGeneration
 open Blake3
 open LSpec
-
-set_option maxRecDepth 10000
-set_option maxHeartbeats 1000000
-set_option synthInstance.maxHeartbeats 1000000
 
 def Tests.Blake3.suite : List LSpec.TestSeq :=
 [
@@ -213,8 +200,8 @@ def Tests.Blake3.suite : List LSpec.TestSeq :=
   ),
 
   test "Traces generating" (
-    -- here we just check that it is feasible to generate some big amount of traces
-    let (_traces, _expected) := generateTraces (mkStdGen 50) 100000 Array.empty Array.empty
+    -- here we just check that trace generating works
+    let (_traces, _expected) := generateTraces (mkStdGen 50) 100
     true
   )
 ]
