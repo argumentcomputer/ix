@@ -58,6 +58,16 @@ inductive Query where
 | Mem : Nat → Array UInt64 → Query
 deriving BEq, Hashable
 
+structure AddTrace where
+
+structure MulTrace where
+
+structure MemTrace where
+
+structure AiurTrace where
+  functions : Array Trace
+
+
 end Circuit
 
 namespace Bytecode
@@ -221,15 +231,15 @@ def Toplevel.generateTraces
   (toplevel : Toplevel)
   (queries : QueryRecord)
 : Array Circuit.Trace :=
-  let action := (do
-  let mut traces := #[]
-  for i in [0:toplevel.functions.size] do
-    let function := toplevel.functions[i]!
-    let functionMap := queries.funcQueries[i]!
-    let layout := toplevel.layouts[i]!
-    let trace ← function.populateTrace functionMap layout
-    traces := traces.push trace
-  pure traces)
+  let action := do
+    let mut traces := #[]
+    for i in [0:toplevel.functions.size] do
+      let function := toplevel.functions[i]!
+      let functionMap := queries.funcQueries[i]!
+      let layout := toplevel.layouts[i]!
+      let trace ← function.populateTrace functionMap layout
+      traces := traces.push trace
+    pure traces
   (action.run queries default).fst
 
 end Bytecode
