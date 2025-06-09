@@ -277,7 +277,7 @@ structure AiurCircuits where
   funcs : Array (CircuitModule × Columns)
   add : CircuitModule × AddColumns
   mul : CircuitModule × MulColumns
-  mem : SmallMap Nat (CircuitModule × MemoryColumns)
+  mem : Array (CircuitModule × MemoryColumns)
 
 def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits :=
   let channelAllocator := ChannelAllocator.init
@@ -298,9 +298,7 @@ def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits :=
   let memIdStart := numFunctions + 3
   let memModules := memChannels.pairs.zipIdx.map
     fun ((width, channelId), memIdx) =>
-      let circuitModule := synthesizeM (memIdStart + memIdx.toUSize)
-        (synthesizeMemory channelId width)
-      (width, circuitModule)
-  ⟨funcsModules, addModule, mulModule, ⟨memModules⟩⟩
+      synthesizeM (memIdStart + memIdx.toUSize) (synthesizeMemory channelId width)
+  ⟨funcsModules, addModule, mulModule, memModules⟩
 
 end Aiur.Circuit
