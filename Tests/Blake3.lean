@@ -83,30 +83,16 @@ def transition (state: Array UInt32) (j : Fin 8) : Array UInt32 :=
 
   state
 
+def roundNoPermute (state : Array UInt32) : Array (Array UInt32) × Array UInt32 :=
+  let monadic : StateM (Array (Array UInt32) × Array UInt32) (Array (Array UInt32) × Array UInt32) := do
+    for i in [0:8] do
+      modify fun (transitions, state) =>
+        let newState := transition state (Fin.ofNat' 8 i)
+        (transitions.push newState, newState)
+    get
 
-def roundNoPermute(state: Array UInt32) : Array (Array UInt32) × Array UInt32 :=
   let transitions := Array.empty
-
-  -- TODO: Ask Arthur about idiomatic looping instead of sequential 'transition' invocation one by one
-  let state := transition state 0
-  let transitions := transitions.push state
-  let state := transition state 1
-  let transitions := transitions.push state
-  let state := transition state 2
-  let transitions := transitions.push state
-  let state := transition state 3
-  let transitions := transitions.push state
-  let state := transition state 4
-  let transitions := transitions.push state
-  let state := transition state 5
-  let transitions := transitions.push state
-  let state := transition state 6
-  let transitions := transitions.push state
-  let state := transition state 7
-  let transitions := transitions.push state
-
-  Prod.mk transitions state
-
+  monadic (transitions, state) |>.1
 
 def round (state: Array UInt32) : Array (Array UInt32) × Array UInt32 :=
   let (transition, state) := roundNoPermute state
