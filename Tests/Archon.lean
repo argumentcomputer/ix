@@ -131,6 +131,26 @@ def proveAndVerify : TestSeq :=
     withExceptOk "Archon prove and verify work"
       (verify #[circuitModule] #[] 1 100 proof) fun _ => .done
 
+def parPopulate : TestSeq :=
+  let c₁ := CircuitModule.new 0
+  let c₂ := CircuitModule.new 1
+  let (o₁, c₁) := c₁.addCommitted "x" .b128
+  let (o₂, c₂) := c₂.addCommitted "x" .b128
+  let c₁ := c₁.freezeOracles
+  let c₂ := c₂.freezeOracles
+  let w₁ := c₁.initWitnessModule
+  let w₂ := c₂.initWitnessModule
+  let (e₁, w₁) := w₁.addEntry
+  let (e₂, w₂) := w₂.addEntry
+  let w₁ := w₁.pushUInt8sTo #[0] e₁
+  let w₂ := w₂.pushUInt8sTo #[0] e₂
+  let w₁ := w₁.bindOracleTo o₁ e₁ .b128
+  let w₂ := w₂.bindOracleTo o₂ e₂ .b128
+  let heights := #[1, 1]
+  let ws := WitnessModule.parPopulate #[w₁, w₂] heights
+  let w := compileWitnessModules ws heights
+  withExceptOk "Parallel population works" (validateWitness #[c₁, c₂] #[] w) fun _ => .done
+
 def versionCircuitModules : TestSeq :=
   let c₁ := CircuitModule.new 0
   let (_, c₁) := c₁.addCommitted "a" .b1
@@ -147,5 +167,6 @@ def Tests.Archon.suite := [
     shifted,
     pushData,
     proveAndVerify,
+    parPopulate,
     versionCircuitModules,
   ]

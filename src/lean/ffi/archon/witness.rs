@@ -2,6 +2,7 @@ use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
     BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64, BinaryField128b as B128,
 };
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::{
     archon::{
@@ -125,6 +126,27 @@ extern "C" fn rs_witness_module_populate(witness_module: &mut WitnessModule, hei
     witness_module
         .populate(height)
         .expect("WitnessModule::populate failure");
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_module_par_populate(
+    witness_modules: &CArray<*mut WitnessModule>,
+    heights: &LeanArrayObject,
+) {
+    let heights = heights.to_vec(lean_unbox_u64);
+    let mut witness_modules = witness_modules
+        .slice(heights.len())
+        .iter()
+        .map(|&ptr| unsafe { &mut *ptr })
+        .collect::<Vec<_>>();
+    witness_modules
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(i, w)| {
+            if let Err(e) = w.populate(heights[i]) {
+                panic!("rs_witness_module_par_populate failure at index {i}: {e}");
+            }
+        });
 }
 
 #[unsafe(no_mangle)]
