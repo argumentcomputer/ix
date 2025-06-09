@@ -23,7 +23,7 @@ def update (f : β → β) : SmallMap α β :=
 @[inline] def size : Nat :=
   m.pairs.size
 
-@[inline] def map (f : β → β) : SmallMap α β :=
+@[inline] def map (f : β → γ) : SmallMap α γ :=
   ⟨m.pairs.map fun (a, b) => (a, f b)⟩
 
 @[inline] def toList : List (α × β) :=
