@@ -1,0 +1,9 @@
+[book]
+authors = ["Argument Engineering <engineering@argument.xyz>"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Ix Architecture"
+
+[output.html]
+mathjax-support = true
