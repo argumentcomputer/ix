@@ -42,11 +42,6 @@ def Row.blank
     multiplicity
   }
 
-structure Trace where
-  numQueries : Nat
-  rows : Array Row
-  deriving Inhabited
-
 structure ColumnIndex where
   u1Auxiliary : Nat
   u8Auxiliary : Nat
@@ -57,6 +52,12 @@ inductive Query where
 | Func : FuncIdx → Array UInt64 → Query
 | Mem : Nat → Array UInt64 → Query
 deriving BEq, Hashable
+
+structure AiurTrace where
+  functions : Array (Array Row)
+  add : Array (UInt64 × UInt64)
+  mul : Array (UInt64 × UInt64)
+  mem : Array (Nat × (Array (UInt64 × Array UInt64)))
 
 end Circuit
 
@@ -206,8 +207,7 @@ def Function.populateTrace
   (function : Function)
   (funcMap : QueryMap)
   (layout : Circuit.Layout)
-: TraceM Circuit.Trace := do
-  let numQueries := funcMap.size;
+: TraceM (Array Circuit.Row) := do
   let rows: Array Circuit.Row ← funcMap.foldlM (init := #[]) fun acc (inputs, result) => do
     modify fun s =>
       let map := inputs
@@ -215,22 +215,28 @@ def Function.populateTrace
       { s with map, row }
     function.body.populateRow
     pure $ acc.push (← get).row
-  pure { rows, numQueries }
+  pure rows
 
 def Toplevel.generateTraces
   (toplevel : Toplevel)
   (queries : QueryRecord)
-: Array Circuit.Trace :=
-  let action := (do
-  let mut traces := #[]
-  for i in [0:toplevel.functions.size] do
-    let function := toplevel.functions[i]!
-    let functionMap := queries.funcQueries[i]!
-    let layout := toplevel.layouts[i]!
-    let trace ← function.populateTrace functionMap layout
-    traces := traces.push trace
-  pure traces)
-  (action.run queries default).fst
+: Circuit.AiurTrace :=
+  let action := do
+    let mut traces := #[]
+    for i in [0:toplevel.functions.size] do
+      let function := toplevel.functions[i]!
+      let functionMap := queries.funcQueries[i]!
+      let layout := toplevel.layouts[i]!
+      let trace ← function.populateTrace functionMap layout
+      traces := traces.push trace
+    pure traces
+  let functions := (action.run queries default).fst
+  let add := queries.addQueries
+  let mul := queries.mulQueries
+  let mem := queries.memQueries.map fun (size, map) =>
+    let memTrace := map.foldl (init := #[]) fun acc (_, result) => acc.push (result.multiplicity, result.values)
+    (size, memTrace)
+  { functions, add, mul, mem }
 
 end Bytecode
 
