@@ -54,6 +54,10 @@ opaque pushUInt128sTo : WitnessModule → @& Array UInt128 → EntryId → Witne
 @[never_extract, extern "c_rs_witness_module_populate"]
 opaque populate : WitnessModule → (height : UInt64) → WitnessModule
 
+/-- **Invalidates** the elements of the input `Array WitnessModule` -/
+@[never_extract, extern "c_rs_witness_module_par_populate"]
+opaque parPopulate : @& Array WitnessModule → (heights : @& Array UInt64) → Array WitnessModule
+
 end WitnessModule
 
 /-- **Invalidates** the elements of the input `Array WitnessModule` -/

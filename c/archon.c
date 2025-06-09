@@ -131,6 +131,24 @@ extern lean_obj_res c_rs_witness_module_populate(lean_obj_arg l_witness, uint64_
     return alloc_lean_linear_object(new_linear);
 }
 
+extern lean_obj_res c_rs_witness_module_par_populate(
+    lean_obj_arg l_witnesses,
+    b_lean_obj_arg heights
+) {
+    size_t size = lean_array_size(l_witnesses);
+    lean_object **witnesses_cptrs = lean_array_cptr(l_witnesses);
+    void *witnesses_ptrs[size];
+    lean_object *new_l_witnesses = lean_alloc_array(size, size);
+    lean_object **new_witnesses_cptrs = lean_array_cptr(new_l_witnesses);
+    for (size_t i = 0; i < size; i++) {
+        linear_object *linear = validated_linear(witnesses_cptrs[i]);
+        witnesses_ptrs[i] = get_object_ref(linear);
+        new_witnesses_cptrs[i] = alloc_lean_linear_object(linear_bump(linear));
+    }
+    rs_witness_module_par_populate(witnesses_ptrs, heights);
+    return new_l_witnesses;
+}
+
 extern lean_obj_res c_rs_compile_witness_modules(
     lean_obj_arg l_witnesses,
     b_lean_obj_arg heights
