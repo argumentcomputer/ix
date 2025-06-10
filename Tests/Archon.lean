@@ -151,6 +151,16 @@ def parPopulate : TestSeq :=
   let w := compileWitnessModules ws heights
   withExceptOk "Parallel population works" (validateWitness #[c₁, c₂] #[] w) fun _ => .done
 
+def getData : TestSeq :=
+  let c := CircuitModule.new 0
+  let (o, c) := c.addCommitted "o" .b8
+  let w := c.freezeOracles.initWitnessModule
+  let (e, w) := w.addEntry
+  let w := w.pushUInt128sTo #[0] e
+    |>.pushUInt8sTo #[0] e
+    |>.bindOracleTo o e .b8
+  test "getData works" (w.getData o == ⟨⟨List.replicate 17 0⟩⟩)
+
 def versionCircuitModules : TestSeq :=
   let c₁ := CircuitModule.new 0
   let (_, c₁) := c₁.addCommitted "a" .b1
@@ -168,5 +178,6 @@ def Tests.Archon.suite := [
     pushData,
     proveAndVerify,
     parPopulate,
+    getData,
     versionCircuitModules,
   ]

@@ -58,6 +58,10 @@ opaque populate : WitnessModule → (height : UInt64) → WitnessModule
 @[never_extract, extern "c_rs_witness_module_par_populate"]
 opaque parPopulate : @& Array WitnessModule → (heights : @& Array UInt64) → Array WitnessModule
 
+/-- **Panics** if there's no entry bound to the oracle -/
+@[extern "c_rs_witness_module_get_data"]
+opaque getData : @& WitnessModule → OracleIdx → ByteArray
+
 end WitnessModule
 
 /-- **Invalidates** the elements of the input `Array WitnessModule` -/

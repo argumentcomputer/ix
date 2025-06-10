@@ -13,6 +13,7 @@ use crate::{
         CArray,
         array::LeanArrayObject,
         ffi::{drop_raw, external_ptr_to_u128, lean_unbox_u32, lean_unbox_u64, to_raw},
+        sarray::LeanSArrayObject,
     },
     lean_unbox,
 };
@@ -147,6 +148,23 @@ extern "C" fn rs_witness_module_par_populate(
                 panic!("rs_witness_module_par_populate failure at index {i}: {e}");
             }
         });
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_module_get_data_num_bytes(
+    witness_module: &WitnessModule,
+    oracle_idx: OracleIdx,
+) -> usize {
+    witness_module.get_data_num_bytes(&oracle_idx)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_module_get_data(
+    witness_module: &WitnessModule,
+    oracle_idx: OracleIdx,
+    bytes: &mut LeanSArrayObject,
+) {
+    bytes.set_data(&witness_module.get_data(&oracle_idx));
 }
 
 #[unsafe(no_mangle)]

@@ -9,7 +9,6 @@ use binius_field::{
     underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
 };
 use binius_math::MultilinearExtension;
-use bytemuck::{Pod, must_cast_slice};
 use indexmap::IndexSet;
 use rayon::{
     iter::{
@@ -32,6 +31,8 @@ use super::{
 };
 
 pub type EntryId = usize;
+
+const UNDERLIER_SIZE: usize = size_of::<OptimalUnderlier>();
 
 #[derive(Default)]
 pub struct WitnessModule {
@@ -207,20 +208,18 @@ impl WitnessModule {
         self.buffers[entry_id].drain(..num_chunks * CHUNK_SIZE);
     }
 
-    pub fn get_data<FS: TowerField, T: Pod>(&self, oracle_idx: OracleIdx) -> Option<Vec<T>> {
-        let id = if let Some(v) = self.entry_map.get(&oracle_idx) {
-            let tower_level: usize = v.1;
-            #[allow(clippy::manual_assert)]
-            if tower_level != FS::TOWER_LEVEL {
-                return None;
-            }
-            v.0
-        } else {
-            return None;
-        };
+    pub fn get_data_num_bytes(&self, oracle_idx: &OracleIdx) -> usize {
+        let (entry_id, _) = self.entry_map.get(oracle_idx).expect("No entry found");
+        UNDERLIER_SIZE * self.entries[*entry_id].len() + self.buffers[*entry_id].len()
+    }
 
-        let underliers = self.entries[id].clone();
-        Some(must_cast_slice(&underliers).to_vec())
+    pub fn get_data(&self, oracle_idx: &OracleIdx) -> Vec<u8> {
+        let (entry_id, _) = self.entry_map.get(oracle_idx).expect("No entry found");
+        self.entries[*entry_id]
+            .par_iter()
+            .flat_map(|&u| unsafe { transmute::<OptimalUnderlier, [u8; 16]>(u) })
+            .chain(self.buffers[*entry_id].clone())
+            .collect::<Vec<_>>()
     }
 
     /// Populates a witness module with data to reach a given height.
@@ -247,7 +246,6 @@ impl WitnessModule {
                     };
 
                     // Compute and accumulate the amount of missing bytes.
-                    const UNDERLIER_SIZE: usize = size_of::<OptimalUnderlier>();
                     let num_bytes = UNDERLIER_SIZE * self.entries[entry_id].len()
                         + self.buffers[entry_id].len();
                     let target_num_bytes =

@@ -32,14 +32,14 @@ extern lean_obj_res c_rs_witness_module_add_entry_with_capacity(
 
 extern lean_obj_res c_rs_witness_module_bind_oracle_to(
     lean_obj_arg l_witness,
-    size_t oracle_id,
+    size_t oracle_idx,
     size_t entry_id,
     uint8_t tower_level
 ) {
     linear_object *linear = validated_linear(l_witness);
     rs_witness_module_bind_oracle_to(
         get_object_ref(linear),
-        oracle_id,
+        oracle_idx,
         entry_id,
         tower_level
     );
@@ -149,6 +149,18 @@ extern lean_obj_res c_rs_witness_module_par_populate(
     return new_l_witnesses;
 }
 
+extern lean_obj_res c_rs_witness_module_get_data(
+    b_lean_obj_arg l_witness,
+    size_t oracle_idx
+) {
+    linear_object *linear = validated_linear(l_witness);
+    lean_object *witness_module = get_object_ref(linear);
+    size_t size = rs_witness_module_get_data_num_bytes(witness_module, oracle_idx);
+    lean_object *byte_array = lean_alloc_sarray(1, size, size);
+    rs_witness_module_get_data(witness_module, oracle_idx, byte_array);
+    return byte_array;
+}
+
 extern lean_obj_res c_rs_compile_witness_modules(
     lean_obj_arg l_witnesses,
     b_lean_obj_arg heights
@@ -201,7 +213,7 @@ extern lean_obj_res c_rs_circuit_module_flush(
     bool direction_pull,
     size_t channel_id,
     size_t selector,
-    b_lean_obj_arg oracle_ids,
+    b_lean_obj_arg oracle_idxs,
     uint64_t multiplicity
 ) {
     linear_object *linear = validated_linear(l_circuit);
@@ -210,7 +222,7 @@ extern lean_obj_res c_rs_circuit_module_flush(
         direction_pull,
         channel_id,
         selector,
-        oracle_ids,
+        oracle_idxs,
         multiplicity
     );
     linear_object *new_linear = linear_bump(linear);
@@ -220,7 +232,7 @@ extern lean_obj_res c_rs_circuit_module_flush(
 extern lean_obj_res c_rs_circuit_module_assert_zero(
     lean_obj_arg l_circuit,
     b_lean_obj_arg name,
-    b_lean_obj_arg oracle_ids,
+    b_lean_obj_arg oracle_idxs,
     b_lean_obj_arg composition
 ) {
     linear_object *linear = validated_linear(l_circuit);
@@ -228,7 +240,7 @@ extern lean_obj_res c_rs_circuit_module_assert_zero(
     rs_circuit_module_assert_zero(
         get_object_ref(linear),
         chars,
-        oracle_ids,
+        oracle_idxs,
         composition
     );
     linear_object *new_linear = linear_bump(linear);
@@ -237,10 +249,10 @@ extern lean_obj_res c_rs_circuit_module_assert_zero(
 
 extern lean_obj_res c_rs_circuit_module_assert_not_zero(
     lean_obj_arg l_circuit,
-    size_t oracle_id
+    size_t oracle_idx
 ) {
     linear_object *linear = validated_linear(l_circuit);
-    rs_circuit_module_assert_not_zero(get_object_ref(linear), oracle_id);
+    rs_circuit_module_assert_not_zero(get_object_ref(linear), oracle_idx);
     linear_object *new_linear = linear_bump(linear);
     return alloc_lean_linear_object(new_linear);
 }
@@ -288,14 +300,14 @@ extern lean_obj_res c_rs_circuit_module_add_committed(
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
-    size_t oracle_id = rs_circuit_module_add_committed(
+    size_t oracle_idx = rs_circuit_module_add_committed(
         get_object_ref(linear),
         chars,
         tower_level
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(tuple, 0, lean_box_usize(oracle_id));
+    lean_ctor_set(tuple, 0, lean_box_usize(oracle_idx));
     lean_ctor_set(tuple, 1, alloc_lean_linear_object(new_linear));
     return tuple;
 }
@@ -307,14 +319,14 @@ extern lean_obj_res c_rs_circuit_module_add_transparent(
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
-    size_t oracle_id = rs_circuit_module_add_transparent(
+    size_t oracle_idx = rs_circuit_module_add_transparent(
         get_object_ref(linear),
         chars,
         transparent
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(tuple, 0, lean_box_usize(oracle_id));
+    lean_ctor_set(tuple, 0, lean_box_usize(oracle_idx));
     lean_ctor_set(tuple, 1, alloc_lean_linear_object(new_linear));
     return tuple;
 }
@@ -327,7 +339,7 @@ extern lean_obj_res c_rs_circuit_module_add_linear_combination(
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
-    size_t oracle_id = rs_circuit_module_add_linear_combination(
+    size_t oracle_idx = rs_circuit_module_add_linear_combination(
         get_object_ref(linear),
         chars,
         lean_get_external_data(offset),
@@ -335,7 +347,7 @@ extern lean_obj_res c_rs_circuit_module_add_linear_combination(
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(tuple, 0, lean_box_usize(oracle_id));
+    lean_ctor_set(tuple, 0, lean_box_usize(oracle_idx));
     lean_ctor_set(tuple, 1, alloc_lean_linear_object(new_linear));
     return tuple;
 }
@@ -348,7 +360,7 @@ extern lean_obj_res c_rs_circuit_module_add_packed(
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
-    size_t oracle_id = rs_circuit_module_add_packed(
+    size_t oracle_idx = rs_circuit_module_add_packed(
         get_object_ref(linear),
         chars,
         inner,
@@ -356,7 +368,7 @@ extern lean_obj_res c_rs_circuit_module_add_packed(
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(tuple, 0, lean_box_usize(oracle_id));
+    lean_ctor_set(tuple, 0, lean_box_usize(oracle_idx));
     lean_ctor_set(tuple, 1, alloc_lean_linear_object(new_linear));
     return tuple;
 }
@@ -371,7 +383,7 @@ extern lean_obj_res c_rs_circuit_module_add_shifted(
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
-    size_t oracle_id = rs_circuit_module_add_shifted(
+    size_t oracle_idx = rs_circuit_module_add_shifted(
         get_object_ref(linear),
         chars,
         inner,
@@ -381,7 +393,7 @@ extern lean_obj_res c_rs_circuit_module_add_shifted(
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(tuple, 0, lean_box_usize(oracle_id));
+    lean_ctor_set(tuple, 0, lean_box_usize(oracle_idx));
     lean_ctor_set(tuple, 1, alloc_lean_linear_object(new_linear));
     return tuple;
 }
@@ -395,7 +407,7 @@ extern lean_obj_res c_rs_circuit_module_add_projected(
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
-    size_t oracle_id = rs_circuit_module_add_projected(
+    size_t oracle_idx = rs_circuit_module_add_projected(
         get_object_ref(linear),
         chars,
         inner,
@@ -404,7 +416,7 @@ extern lean_obj_res c_rs_circuit_module_add_projected(
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(tuple, 0, lean_box_usize(oracle_id));
+    lean_ctor_set(tuple, 0, lean_box_usize(oracle_idx));
     lean_ctor_set(tuple, 1, alloc_lean_linear_object(new_linear));
     return tuple;
 }

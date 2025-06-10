@@ -366,7 +366,7 @@ fn cv_output_module(
 pub mod tests {
     use crate::archon::circuit::{CircuitModule, init_witness_modules};
     use crate::archon::precompiles::blake3::{
-        ADDITION_OPERATIONS_NUMBER, B1, B32, B128, Blake3CompressionOracles, IV, MSG_PERMUTATION,
+        ADDITION_OPERATIONS_NUMBER, B1, B128, Blake3CompressionOracles, IV, MSG_PERMUTATION,
         OUT_HEIGHT, PROJECTED_SELECTOR_OUTPUT, SINGLE_COMPRESSION_HEIGHT, STATE_SIZE, Trace,
         additions_xor_rotates_module, cv_output_module, state_transition_module,
     };
@@ -941,9 +941,13 @@ pub mod tests {
 
         witness_modules[witness_module_id].populate(height).unwrap();
 
-        let lc_data = witness_modules[witness_module_id].get_data::<B1, u32>(d_in_xor_a_0);
-        assert!(lc_data.is_some());
-        assert_eq!(lc_data.unwrap(), traces.d_in_xor_a_0_trace);
+        let lc_data = witness_modules[witness_module_id].get_data(&d_in_xor_a_0);
+        let expected = traces
+            .d_in_xor_a_0_trace
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(lc_data, expected);
 
         let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
@@ -967,9 +971,11 @@ pub mod tests {
     ) {
         let expected = transpose(expected);
         for (i, expected_i) in expected.into_iter().enumerate() {
-            let actual = witness_module
-                .get_data::<B32, u32>(oracles.output[i])
-                .unwrap();
+            let actual = witness_module.get_data(&oracles.output[i]);
+            let expected_i = expected_i
+                .into_iter()
+                .flat_map(u32::to_le_bytes)
+                .collect::<Vec<_>>();
             assert_eq!(actual, expected_i);
         }
     }
