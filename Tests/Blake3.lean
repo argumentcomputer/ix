@@ -1,4 +1,6 @@
 import LSpec
+import Ix.Archon.Circuit
+import Ix.Archon.Protocol
 
 set_option maxRecDepth 10000
 set_option maxHeartbeats 1000000
@@ -182,24 +184,78 @@ end TraceGeneration
 open TraceGeneration
 open Blake3
 open LSpec
+open Archon
+
+def success : Except String Nat := Except.ok 0
+def failure : Except String Nat := Except.error "Test failed"
+
+def testCompression : TestSeq :=
+  let cv : Vector UInt32 8 := #v[0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]
+  let blockWords : Vector UInt32 16 := #v[0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000]
+  let counter : UInt64 := 0xbbbbbbbbcccccccc
+  let blockLen : UInt32 := 0xeeeeeeee
+  let flags : UInt32 := 0xdddddddd
+  let expected : Array UInt32 := #[0x8980fe15, 0x55898ce0, 0x8cf4fbde, 0x5e8537e9, 0x3d2e54f, 0x7e46753f, 0x5d151bb8, 0x2559b733, 0x24560929, 0x6625b1bf, 0xaaccc80e, 0xc5d4287a, 0x2848c46b, 0x94f666c, 0x3adaaeb3, 0x12011250]
+
+  let (_, actual) := compress cv blockWords counter blockLen flags
+
+  let testResult := if expected == actual then success else failure
+  withExceptOk "Blake3 compression is OK" testResult fun _ => .done
+
+def testTraceGenerating : TestSeq :=
+    -- here we just check that trace generating works
+    let (_traces, _expected) := generateTraces (mkStdGen 50) 100
+    withExceptOk "Trace generating is OK" success fun _ => .done
+
+def testArchonStateTransitionModule : TestSeq :=
+    let mkCommitted (circuitModule: CircuitModule) (length : Nat) (f : TowerField) (name: String) : CircuitModule × Array OracleIdx :=
+      let rec mkCommittedInner (circuitModule: CircuitModule) (length : Nat) (f : TowerField) (name: String) (columns : Array OracleIdx) : CircuitModule × Array OracleIdx :=
+        match length with
+        | 0 => Prod.mk circuitModule columns
+        | length' + 1 =>
+          let (column, circuitModule):= circuitModule.addCommitted (String.append name (toString length)) f
+          let (_, circuitModule) := circuitModule.addProjected (String.append (String.append name (toString length)) "input") column 0 64
+          let (_, circuitModule) := circuitModule.addProjected (String.append (String.append name (toString length)) "output") column 57 64
+
+          mkCommittedInner circuitModule length' f (String.append name (toString length')) (columns.push column)
+
+      mkCommittedInner circuitModule length f name Array.empty
+
+    -- TODO: Assert that traces and states should have same size
+    let writeTraces (witnessModule : WitnessModule) (traces : Array (Array UInt32)) (states : Array OracleIdx) (f: TowerField) : WitnessModule :=
+      let rec writeTracesInner (witnessModule : WitnessModule) (traces : List (Array UInt32)) (states : List OracleIdx) (f: TowerField) : WitnessModule :=
+        match traces, states with
+        | [], _ => witnessModule
+        | _, [] => witnessModule
+        | t :: traces', s :: states' =>
+          let (entryId, witnessModule) := witnessModule.addEntry
+          let witnessModule := witnessModule.pushUInt32sTo t entryId
+          let witnessModule := witnessModule.bindOracleTo s entryId f
+          writeTracesInner witnessModule traces' states' f
+
+      writeTracesInner witnessModule traces.toList states.toList f
+
+
+    let compressionsLogTest := 5
+    let tracesNum := Nat.pow 2 compressionsLogTest
+    let (traces, _expected) := TraceGeneration.generateTraces (mkStdGen 50) tracesNum
+    let nVars := Nat.log2 (tracesNum * (Nat.pow 2 6))
+    let height := Nat.pow 2 nVars
+
+    let circuitModule := CircuitModule.new 0
+    let (circuitModule, state) := mkCommitted circuitModule 32 .b32 "stateTransition"
+    let circuitModule := circuitModule.freezeOracles
+    let witnessModule := circuitModule.initWitnessModule
+    let witnessModule := writeTraces witnessModule traces state .b32
+
+    let witnessModule := witnessModule.populate height.toUInt64
+    let witness := compileWitnessModules #[witnessModule] #[height.toUInt64]
+    withExceptOk "[Archon] state transition module testing is OK" (validateWitness #[circuitModule] #[] witness) fun _ => .done
+
 
 def Tests.Blake3.suite : List LSpec.TestSeq :=
 [
-  test "Blake3 compression" (
-    let cv : Vector UInt32 8 := #v[0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]
-    let blockWords : Vector UInt32 16 := #v[0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000]
-    let counter : UInt64 := 0xbbbbbbbbcccccccc
-    let blockLen : UInt32 := 0xeeeeeeee
-    let flags : UInt32 := 0xdddddddd
-    let expected : Array UInt32 := #[0x8980fe15, 0x55898ce0, 0x8cf4fbde, 0x5e8537e9, 0x3d2e54f, 0x7e46753f, 0x5d151bb8, 0x2559b733, 0x24560929, 0x6625b1bf, 0xaaccc80e, 0xc5d4287a, 0x2848c46b, 0x94f666c, 0x3adaaeb3, 0x12011250]
-
-    let (_, actual) := compress cv blockWords counter blockLen flags
-    expected == actual
-  ),
-
-  test "Traces generating" (
-    -- here we just check that trace generating works
-    let (_traces, _expected) := generateTraces (mkStdGen 50) 100
-    true
-  )
+  testCompression,
+  testTraceGenerating,
+  testArchonStateTransitionModule,
 ]
