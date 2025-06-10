@@ -84,6 +84,7 @@ def transition (state: Array UInt32) (j : Fin 8) : Array UInt32 :=
   state
 
 def roundNoPermute (state : Array UInt32) : Array (Array UInt32) × Array UInt32 :=
+  -- every round includes 8 transitions
   let monadic : StateM (Array (Array UInt32) × Array UInt32) (Array (Array UInt32) × Array UInt32) := do
     for i in [0:8] do
       modify fun (transitions, state) =>
@@ -105,23 +106,20 @@ def compress (cv : Vector UInt32 8) (blockWords : Vector UInt32 16) (counter : U
 
   let state := cv.toArray ++ (IV.extract 0 4).toArray ++ #[counterLow, counterHigh, blockLen, flags] ++ blockWords.toArray
 
-  let transitions := #[state]
+  -- every compression includes 7 rounds (where last round doesn't include permutation)
+  let monadic : StateM (Array (Array UInt32) × Array UInt32) (Array (Array UInt32) × Array UInt32) := do
+    for _ in [0:6] do
+      modify fun (transitions, state) =>
+        let (tmp, state') := round state
+        (transitions.append tmp, state')
 
-  -- TODO: Ask Arthur about idiomatic looping instead of sequential 'round' invocation one by one
-  let (tmp, state) := round state
-  let transitions := transitions.append tmp
-  let (tmp, state) := round state
-  let transitions := transitions.append tmp
-  let (tmp, state) := round state
-  let transitions := transitions.append tmp
-  let (tmp, state) := round state
-  let transitions := transitions.append tmp
-  let (tmp, state) := round state
-  let transitions := transitions.append tmp
-  let (tmp, state) := round state
-  let transitions := transitions.append tmp
-  let (tmp, state) := roundNoPermute state
-  let transitions := transitions.append tmp
+    modify fun (transitions, state) =>
+      let (tmp, state') := roundNoPermute state
+      (transitions.append tmp, state')
+    get
+
+
+  let (transitions, state) := monadic (#[state], state) |>.1
 
   let temp := ((state.extract 0 8).zipWith (Xor.xor) (state.extract 8 16))
   let state := temp.append (state.extract 8 32)
@@ -143,25 +141,39 @@ def generateTraces (rng : StdGen) (length : Nat) :  Array (Array UInt32) × Arra
     match length with
     | 0 => Prod.mk transitions array
     | length' + 1 =>
-      -- to ensure that we will have independent RNGs for every piece of data,
-      -- we prepare multiple RNG instances
-      let (g₁, g₂) := RandomGen.split rng
-      let (g₃, g₄) := RandomGen.split g₁
-      let (g₅, g₆) := RandomGen.split g₂
-      let (g₇, g₈) := RandomGen.split g₃
-      let (g₉, g₁₀) := RandomGen.split g₄
 
-      let cv := Utilities.rand8 g₅
-      let block := Utilities.rand16 g₆
-      let counter := (RandomGen.next g₇).fst.toUInt64
-      let blockLen := (RandomGen.next g₈).fst.toUInt32
-      let flags := (RandomGen.next g₉).fst.toUInt32
+      let cvGen : StateM StdGen (Vector UInt32 8) := do
+        let (g₁, g₂) := RandomGen.split (← get)
+        set g₂
+        pure (Utilities.rand8 g₁)
+
+      let blockGen : StateM StdGen (Vector UInt32 16) := do
+        let (g₁, g₂) := RandomGen.split (← get)
+        set g₂
+        pure (Utilities.rand16 g₁)
+
+      let uint32Gen : StateM StdGen UInt32 := do
+        let (val, rng) := RandomGen.next (← get)
+        set rng
+        pure val.toUInt32
+
+      let uint64Gen : StateM StdGen UInt64 := do
+        let (val, rng) := RandomGen.next (← get)
+        set rng
+        pure val.toUInt64
+
+      let (g₁, g₂) := RandomGen.split rng
+      let cv := cvGen g₁ |>.1
+      let block := blockGen g₁ |>.1
+      let counter := uint64Gen g₁ |>.1
+      let blockLen := uint32Gen g₁ |>.1
+      let flags := uint32Gen g₁ |>.1
 
       let (transition, expected) := Blake3.compress cv block counter blockLen flags
 
       -- we extend 'transitions' inner arrays via concatenating new transition arrays to them
       let transitions' := if transitions.isEmpty then transition else (transitions.zip transition).map (fun (a, b) => a ++ b)
-      generateTracesInner g₁₀ length' transitions' (array.push expected)
+      generateTracesInner g₂ length' transitions' (array.push expected)
 
   generateTracesInner rng length Array.empty Array.empty
 
