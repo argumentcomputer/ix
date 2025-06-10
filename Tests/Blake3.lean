@@ -2,10 +2,6 @@ import LSpec
 import Ix.Archon.Circuit
 import Ix.Archon.Protocol
 
-set_option maxRecDepth 10000
-set_option maxHeartbeats 1000000
-set_option synthInstance.maxHeartbeats 1000000
-
 namespace Utilities
 
 def randArray (rng : StdGen) (length : Nat) : Array UInt32 :=
@@ -16,16 +12,7 @@ def randArray (rng : StdGen) (length : Nat) : Array UInt32 :=
       let (g₁, g₂) := RandomGen.split rng
       let (next, _) := RandomGen.next g₁
       randArrayInner g₂ length' (array.push next.toUInt32)
-
   randArrayInner rng length Array.empty
-
-def rand8 (rng : StdGen) : Vector UInt32 8 :=
-  let array := randArray rng 8
-  array.toVector
-
-def rand16 (rng : StdGen) : Vector UInt32 16 :=
-  let array := randArray rng 16
-  array.toVector
 
 def transpose (initial : Array (Array UInt32)) (rowLen : Nat) : Array (Array UInt32) :=
   let rec transposeInner (initial : Array (Array UInt32)) (tmp : Array (Array UInt32)) (rowLen: Nat): Array (Array UInt32) :=
@@ -34,7 +21,6 @@ def transpose (initial : Array (Array UInt32)) (rowLen : Nat) : Array (Array UIn
     | idx + 1 =>
       let col := Array.ofFn (n := initial.size) fun i => initial[i]![idx - 1]!
       transposeInner initial (tmp.push col ) idx
-
   transposeInner initial Array.empty rowLen
 
 end Utilities
@@ -105,11 +91,11 @@ def round (state: Array UInt32) : Array (Array UInt32) × Array UInt32 :=
   Prod.mk transition (permute state)
 
 
-def compress (cv : Vector UInt32 8) (blockWords : Vector UInt32 16) (counter : UInt64) (blockLen flags : UInt32) : Array (Array UInt32) × Array UInt32 :=
+def compress (cv : Array UInt32) (blockWords : Array UInt32) (counter : UInt64) (blockLen flags : UInt32) : Array (Array UInt32) × Array UInt32 :=
   let counterLow := UInt32.ofBitVec (counter.toBitVec.truncate 32)
   let counterHigh := UInt32.ofBitVec ((counter.shiftRight 32).toBitVec.truncate 32)
 
-  let state := cv.toArray ++ (IV.extract 0 4).toArray ++ #[counterLow, counterHigh, blockLen, flags] ++ blockWords.toArray
+  let state := cv ++ (IV.extract 0 4).toArray ++ #[counterLow, counterHigh, blockLen, flags] ++ blockWords
 
    -- every compression includes 7 rounds (where last round doesn't include permutation)
   let monadic : StateM (Array (Array UInt32) × Array UInt32) (Array (Array UInt32) × Array UInt32) :=
@@ -127,7 +113,7 @@ def compress (cv : Vector UInt32 8) (blockWords : Vector UInt32 16) (counter : U
 
   let temp := ((state.extract 0 8).zipWith (Xor.xor) (state.extract 8 16))
   let state := temp.append (state.extract 8 32)
-  let temp := (state.extract 8 16).zipWith (Xor.xor) cv.toArray
+  let temp := (state.extract 8 16).zipWith (Xor.xor) cv
   let state := state.extract 0 8 ++ temp ++ state.extract 16 32
 
   -- pad state transitions with 6 zero-arrays for correct transposing
@@ -148,15 +134,15 @@ def generateTraces (rng : StdGen) (length : Nat) :  Array (Array UInt32) × Expe
     | 0 => Prod.mk transitions array
     | length' + 1 =>
 
-      let cvGen : StateM StdGen (Vector UInt32 8) := do
+      let cvGen : StateM StdGen (Array UInt32) := do
         let (g₁, g₂) := RandomGen.split (← get)
         set g₂
-        pure (Utilities.rand8 g₁)
+        pure (Utilities.randArray g₁ 8)
 
-      let blockGen : StateM StdGen (Vector UInt32 16) := do
+      let blockGen : StateM StdGen (Array UInt32) := do
         let (g₁, g₂) := RandomGen.split (← get)
         set g₂
-        pure (Utilities.rand16 g₁)
+        pure (Utilities.randArray g₁ 16)
 
       let uint32Gen : StateM StdGen UInt32 := do
         let (val, rng) := RandomGen.next (← get)
@@ -194,8 +180,8 @@ def success : Except String Nat := Except.ok 0
 def failure : Except String Nat := Except.error "Test failed"
 
 def testCompression : TestSeq :=
-  let cv : Vector UInt32 8 := #v[0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]
-  let blockWords : Vector UInt32 16 := #v[0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000]
+  let cv : Array UInt32 := #[0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]
+  let blockWords : Array UInt32 := #[0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000]
   let counter : UInt64 := 0xbbbbbbbbcccccccc
   let blockLen : UInt32 := 0xeeeeeeee
   let flags : UInt32 := 0xdddddddd
