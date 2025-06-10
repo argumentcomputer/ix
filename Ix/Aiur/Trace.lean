@@ -3,44 +3,28 @@ import Ix.Aiur.Term
 import Ix.Aiur.Execute
 import Ix.Aiur.Bytecode
 
-namespace Aiur
-
 -- TODO: generic definition
-def MultiplicativeGenerator : UInt64 := 0x070f870dcd9c1d88
+def Aiur.MultiplicativeGenerator : UInt64 := 0x070f870dcd9c1d88
 
-namespace Circuit
+namespace Aiur.Circuit
 
-structure Row where
-  inputs: Array UInt64
-  outputs: Array UInt64
-  u1Auxiliaries: Array Bool
-  u8Auxiliaries: Array UInt8
-  u64Auxiliaries: Array UInt64
-  selectors: Array Bool
-  multiplicity: UInt64
+
+structure FunctionTrace where
+  numQueries : Nat
+  inputs: Array (Array UInt64)
+  outputs: Array (Array UInt64)
+  u1Auxiliaries: Array (Array Bool)
+  u8Auxiliaries: Array (Array UInt8)
+  u64Auxiliaries: Array (Array UInt64)
+  selectors: Array (Array Bool)
+  multiplicity: Array UInt64
   deriving Inhabited
 
-
-def Row.blank
-  (layout : Layout)
-  (inputs : Array UInt64)
-  (outputs : Array UInt64)
-  (mult : UInt64)
-: Row :=
-  let u1Auxiliaries := Array.mkArray layout.u1Auxiliaries false
-  let u8Auxiliaries := Array.mkArray layout.u8Auxiliaries 0
-  let u64Auxiliaries := Array.mkArray layout.u64Auxiliaries 0
-  let selectors := Array.mkArray layout.selectors false
-  let multiplicity := Archon.powUInt64InBinaryField MultiplicativeGenerator mult
-  {
-    inputs,
-    outputs,
-    u1Auxiliaries,
-    u8Auxiliaries,
-    u64Auxiliaries,
-    selectors,
-    multiplicity
-  }
+structure MemoryTrace where
+  numQueries : Nat
+  multiplicity: Array UInt64
+  values: Array (Array UInt64)
+  deriving Inhabited
 
 structure ColumnIndex where
   u1Auxiliary : Nat
@@ -54,17 +38,29 @@ inductive Query where
 deriving BEq, Hashable
 
 structure AiurTrace where
-  functions : Array (Array Row)
-  add : Array (UInt64 × UInt64)
-  mul : Array (UInt64 × UInt64)
-  mem : Array (Nat × (Array (UInt64 × Array UInt64)))
+  functions : Array FunctionTrace
+  add : Array UInt64 × Array UInt64
+  mul : Array UInt64 × Array UInt64
+  mem : Array MemoryTrace
 
-end Circuit
+def FunctionTrace.blank (layout : Layout) : FunctionTrace :=
+  let inputs := Array.mkArray layout.inputs #[]
+  let outputs := Array.mkArray layout.outputs #[]
+  let u1Auxiliaries := Array.mkArray layout.u1Auxiliaries #[]
+  let u8Auxiliaries := Array.mkArray layout.u8Auxiliaries #[]
+  let u64Auxiliaries := Array.mkArray layout.u64Auxiliaries #[]
+  let selectors := Array.mkArray layout.selectors #[]
+  let multiplicity := #[]
+  let numQueries := 0
+  { numQueries, inputs, outputs, u1Auxiliaries, u8Auxiliaries, u64Auxiliaries, selectors, multiplicity }
 
-namespace Bytecode
+end Aiur.Circuit
+
+namespace Aiur.Bytecode
 
 structure TraceState where
-  row : Circuit.Row
+  row : Nat
+  trace : Circuit.FunctionTrace
   map : Array UInt64
   col : Circuit.ColumnIndex
   prevCounts : Std.HashMap Circuit.Query UInt64
@@ -80,15 +76,15 @@ def TraceM.pushVar (c : UInt64) : TraceM Unit :=
 
 def TraceM.pushU1 (b : Bool) : TraceM Unit :=
   modify fun s =>
-    let row := { s.row with u1Auxiliaries := s.row.u1Auxiliaries.set! s.col.u1Auxiliary b }
+    let trace := { s.trace with u1Auxiliaries := s.trace.u1Auxiliaries.modify s.col.u1Auxiliary fun col => col.set! s.row b }
     let col := { s.col with u1Auxiliary := s.col.u1Auxiliary + 1 }
-    { s with row, col }
+    { s with trace, col }
 
 def TraceM.pushU64 (b : UInt64) : TraceM Unit :=
   modify fun s =>
-    let row := { s.row with u64Auxiliaries := s.row.u64Auxiliaries.set! s.col.u64Auxiliary b }
+    let trace := { s.trace with u64Auxiliaries := s.trace.u64Auxiliaries.modify s.col.u64Auxiliary fun col => col.set! s.row b }
     let col := { s.col with u64Auxiliary := s.col.u64Auxiliary + 1 }
-    { s with row, col }
+    { s with trace, col }
 
 def TraceM.pushCount (query : Circuit.Query) : TraceM Unit := do
   modify fun s =>
@@ -106,8 +102,26 @@ def TraceM.loadMemMap (len : Nat) : TraceM QueryMap := do
 
 def TraceM.setSelector (sel : SelIdx) : TraceM Unit :=
   modify fun s =>
-    let row := { s.row with selectors := s.row.selectors.set! sel true }
-    { s with row }
+    let trace := { s.trace with selectors := s.trace.selectors.modify sel fun col => col.set! s.row true }
+    { s with trace }
+
+def TraceM.addBlankRow
+  (inputValues : Array UInt64)
+  (result : QueryResult)
+: TraceM Unit := do
+  modify fun s =>
+    let { numQueries, inputs, outputs, u1Auxiliaries,
+          u8Auxiliaries, u64Auxiliaries, selectors, multiplicity } := s.trace
+    let inputs := (inputs.zip inputValues).map fun (col, val) => col.push val
+    let outputs := (outputs.zip result.values).map fun (col, val) => col.push val
+    let u1Auxiliaries := u1Auxiliaries.map fun col => col.push false
+    let u8Auxiliaries := u8Auxiliaries.map fun col => col.push 0
+    let u64Auxiliaries := u64Auxiliaries.map fun col => col.push 0
+    let selectors := selectors.map fun col => col.push false
+    let multiplicity := multiplicity.push $ Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
+    let numQueries := numQueries + 1
+    let trace := { numQueries, inputs, outputs, u1Auxiliaries, u8Auxiliaries, u64Auxiliaries, selectors, multiplicity }
+    { s with trace}
 
 mutual
 partial def Block.populateRow (block : Block) : TraceM Unit := do
@@ -207,15 +221,20 @@ def Function.populateTrace
   (function : Function)
   (funcMap : QueryMap)
   (layout : Circuit.Layout)
-: TraceM (Array Circuit.Row) := do
-  let rows: Array Circuit.Row ← funcMap.foldlM (init := #[]) fun acc (inputs, result) => do
-    modify fun s =>
-      let map := inputs
-      let row := .blank layout inputs result.values result.multiplicity
-      { s with map, row }
+: TraceM Unit := do
+  modify fun s => { s with trace := Circuit.FunctionTrace.blank layout }
+  funcMap.foldlM (init := ()) fun _ (inputs, result) => do
+    modify fun s => { s with map := inputs }
+    TraceM.addBlankRow inputs result
     function.body.populateRow
-    pure $ acc.push (← get).row
-  pure rows
+
+def QueryMap.generateTrace (map : QueryMap) : Circuit.MemoryTrace :=
+  let trace := map.foldl (init := default) fun acc (_, result) =>
+    let multiplicity := acc.multiplicity.push (Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity)
+    let values := acc.values.push result.values
+    let numQueries := acc.numQueries + 1
+    { multiplicity, values, numQueries }
+  trace
 
 def Toplevel.generateTraces
   (toplevel : Toplevel)
@@ -227,17 +246,14 @@ def Toplevel.generateTraces
       let function := toplevel.functions[i]!
       let functionMap := queries.funcQueries[i]!
       let layout := toplevel.layouts[i]!
-      let trace ← function.populateTrace functionMap layout
+      function.populateTrace functionMap layout
+      let trace := (← get).trace
       traces := traces.push trace
     pure traces
   let functions := (action.run queries default).fst
-  let add := queries.addQueries
-  let mul := queries.mulQueries
-  let mem := queries.memQueries.map fun (size, map) =>
-    let memTrace := map.foldl (init := #[]) fun acc (_, result) => acc.push (result.multiplicity, result.values)
-    (size, memTrace)
+  let add := queries.addQueries.unzip
+  let mul := queries.mulQueries.unzip
+  let mem := queries.memQueries.map fun (_, map) => map.generateTrace
   { functions, add, mul, mem }
 
-end Bytecode
-
-end Aiur
+end Aiur.Bytecode
