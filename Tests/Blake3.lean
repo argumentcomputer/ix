@@ -72,24 +72,17 @@ def transition (state: Array UInt32) (j : Fin 8) : Array UInt32 :=
   state
 
 def roundNoPermute (state : Array UInt32) : Array (Array UInt32) × Array UInt32 :=
-  let monadic : StateM (Array (Array UInt32) × Array UInt32) (Array (Array UInt32) × Array UInt32) :=
-    let indices := List.range 8
-    let step (acc : StateM (Array (Array UInt32) × Array UInt32) Unit) (i : Nat) :=
-      acc >>= fun _ =>
-        modify fun (transitions, state) =>
-          let newState := transition state (Fin.ofNat' 8 i)
-          (transitions.push newState, newState)
-
-    let loop := List.foldl step (pure ()) indices
-    loop >>= fun _ => get
-
-  let transitions := Array.empty
-  monadic (transitions, state) |>.1
+  let indices := List.range 8
+  aux #[] state indices
+where aux transitions state indices := match indices with
+  | [] => (transitions, state)
+  | i :: is =>
+    let newState := transition state (Fin.ofNat' 8 i)
+    aux (transitions.push newState) newState is
 
 def round (state: Array UInt32) : Array (Array UInt32) × Array UInt32 :=
   let (transition, state) := roundNoPermute state
   Prod.mk transition (permute state)
-
 
 def compress (cv : Array UInt32) (blockWords : Array UInt32) (counter : UInt64) (blockLen flags : UInt32) : Array (Array UInt32) × Array UInt32 :=
   let counterLow := UInt32.ofBitVec (counter.toBitVec.truncate 32)
@@ -97,19 +90,17 @@ def compress (cv : Array UInt32) (blockWords : Array UInt32) (counter : UInt64) 
 
   let state := cv ++ (IV.extract 0 4).toArray ++ #[counterLow, counterHigh, blockLen, flags] ++ blockWords
 
-   -- every compression includes 7 rounds (where last round doesn't include permutation)
-  let monadic : StateM (Array (Array UInt32) × Array UInt32) (Array (Array UInt32) × Array UInt32) :=
-    let indices := List.range 7
-    let step (acc : StateM (Array (Array UInt32) × Array UInt32) Unit) (i : Nat) :=
-      acc >>= fun _ =>
-        modify fun (transitions, state) =>
-          let (tmp, state') := if i == 6 then roundNoPermute state else round state
-          (transitions.append tmp, state')
+  -- every compression includes 7 rounds (where last round doesn't include permutation)
+  let rec runRounds (transitions : Array (Array UInt32)) (state : Array UInt32) (indices : List Nat) :
+      Array (Array UInt32) × Array UInt32 :=
+    match indices with
+    | [] => (transitions, state)
+    | i :: is =>
+      let (roundTransitions, newState) :=
+        if i == 6 then roundNoPermute state else round state
+      runRounds (transitions.append roundTransitions) newState is
 
-    let loop := List.foldl step (pure ()) indices
-    loop >>= fun _ => get
-
-  let (transitions, state) := monadic (#[state], state) |>.1
+  let (transitions, state) := runRounds #[state] state (List.range 7)
 
   let temp := ((state.extract 0 8).zipWith (Xor.xor) (state.extract 8 16))
   let state := temp.append (state.extract 8 32)
