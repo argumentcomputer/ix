@@ -38,8 +38,8 @@ section IxApplications
 
 section Benchmarks
 
-lean_exe Benchmarks.Main where
-  --root := `Benchmarks.Main
+lean_exe bench where
+  root := `Benchmarks.Main
   supportInterpreter := true
 
 end Benchmarks
