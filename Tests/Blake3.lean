@@ -86,13 +86,16 @@ def transition (state: Array UInt32) (j : Fin 8) : Array UInt32 :=
   state
 
 def roundNoPermute (state : Array UInt32) : Array (Array UInt32) × Array UInt32 :=
-  -- every round includes 8 transitions
-  let monadic : StateM (Array (Array UInt32) × Array UInt32) (Array (Array UInt32) × Array UInt32) := do
-    for i in [0:8] do
-      modify fun (transitions, state) =>
-        let newState := transition state (Fin.ofNat' 8 i)
-        (transitions.push newState, newState)
-    get
+  let monadic : StateM (Array (Array UInt32) × Array UInt32) (Array (Array UInt32) × Array UInt32) :=
+    let indices := List.range 8
+    let step (acc : StateM (Array (Array UInt32) × Array UInt32) Unit) (i : Nat) :=
+      acc >>= fun _ =>
+        modify fun (transitions, state) =>
+          let newState := transition state (Fin.ofNat' 8 i)
+          (transitions.push newState, newState)
+
+    let loop := List.foldl step (pure ()) indices
+    loop >>= fun _ => get
 
   let transitions := Array.empty
   monadic (transitions, state) |>.1
@@ -108,18 +111,17 @@ def compress (cv : Vector UInt32 8) (blockWords : Vector UInt32 16) (counter : U
 
   let state := cv.toArray ++ (IV.extract 0 4).toArray ++ #[counterLow, counterHigh, blockLen, flags] ++ blockWords.toArray
 
-  -- every compression includes 7 rounds (where last round doesn't include permutation)
-  let monadic : StateM (Array (Array UInt32) × Array UInt32) (Array (Array UInt32) × Array UInt32) := do
-    for _ in [0:6] do
-      modify fun (transitions, state) =>
-        let (tmp, state') := round state
-        (transitions.append tmp, state')
+   -- every compression includes 7 rounds (where last round doesn't include permutation)
+  let monadic : StateM (Array (Array UInt32) × Array UInt32) (Array (Array UInt32) × Array UInt32) :=
+    let indices := List.range 7
+    let step (acc : StateM (Array (Array UInt32) × Array UInt32) Unit) (i : Nat) :=
+      acc >>= fun _ =>
+        modify fun (transitions, state) =>
+          let (tmp, state') := if i == 6 then roundNoPermute state else round state
+          (transitions.append tmp, state')
 
-    modify fun (transitions, state) =>
-      let (tmp, state') := roundNoPermute state
-      (transitions.append tmp, state')
-    get
-
+    let loop := List.foldl step (pure ()) indices
+    loop >>= fun _ => get
 
   let (transitions, state) := monadic (#[state], state) |>.1
 
@@ -138,8 +140,10 @@ end Blake3
 
 namespace TraceGeneration
 
-def generateTraces (rng : StdGen) (length : Nat) :  Array (Array UInt32) × Array (Array UInt32) :=
-  let rec generateTracesInner (rng : StdGen) (length : Nat) (transitions :  Array (Array UInt32)) (array : Array (Array UInt32)) :  Array (Array UInt32) × Array (Array UInt32) :=
+abbrev ExpectedStates := Array (Array UInt32)
+
+def generateTraces (rng : StdGen) (length : Nat) :  Array (Array UInt32) × ExpectedStates :=
+  let rec generateTracesInner (rng : StdGen) (length : Nat) (transitions :  Array (Array UInt32)) (array : ExpectedStates) :  Array (Array UInt32) × ExpectedStates :=
     match length with
     | 0 => Prod.mk transitions array
     | length' + 1 =>
