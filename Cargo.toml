@@ -27,7 +27,6 @@ rustc-hash = "2"
 indexmap = "2"
 bytes = "1.10.1"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
-bytemuck = "1.23.0"
 
 [target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
 iroh = "0.34.0"
