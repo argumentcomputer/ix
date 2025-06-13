@@ -23,10 +23,17 @@ def clock (c : Cronos) (tag : String) : IO Cronos := do
 def nanoToSec (nanos : Nat) : Float :=
   Float.ofNat nanos / 1000000000
 
+def secToNano (s : Float) : Nat :=
+  s.toUInt64.toNat * 1000000000
+
 def summary (c : Cronos) : String :=
   let timings := c.data.foldl (init := "")
     fun acc tag time => s!"{acc}\n  {tag} | {nanoToSec time}s"
   s!"Timings:{timings}"
 
+-- Get the average time in nanoseconds, returns NaN if no `data` entries
+def mean (c : Cronos) : Float :=
+  let timings := c.data.valuesList
+  Float.ofNat timings.sum / Float.ofNat timings.length
 
 end Cronos

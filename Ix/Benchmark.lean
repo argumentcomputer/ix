@@ -9,10 +9,12 @@ import Batteries
 
 open Batteries (RBMap)
 
--- Get the average Cronos time in nanoseconds
-def avgTime (c : Cronos) : Float :=
-  let timings := c.data.valuesList
-  Float.ofNat timings.sum / Float.ofNat timings.length
+/--
+Benchmarking library modeled after Criterion in Haskell and Rust
+
+Limitations:
+- Measures time in nanoseconds using `IO.monoNanosNow`, which is less precise than the picoseconds used in Criterion.rs
+-/
 
 -- This prevents inline optimization for benchmarking, but doesn't work if the result is never used
 --@[never_extract, noinline]
@@ -22,6 +24,23 @@ def avgTime (c : Cronos) : Float :=
 @[never_extract, noinline]
 def blackBoxIO (f : α → β) (a : α) : IO β := do
   pure $ f a
+
+def Float.toNanos (f : Float) : Float := f * 10 ^ 9
+
+def Float.toSeconds (f : Float) : Float := f / 10 ^ 9
+
+def Nat.toSeconds (n : Nat) : Float := Float.ofNat n / 10 ^ 9
+
+-- TODO: Maybe add tenths place before M and B
+def Nat.natPretty (n : Nat) : String :=
+  if n ≥ 10 ^ 9
+  then
+    toString (n / 10 ^ 9) ++ "B"
+  else if n ≥ 10 ^ 6
+  then
+    toString (n / 10 ^ 6 ) ++ "M"
+  else
+    toString n
 
 def putStrNat (tup : String × Nat) : Ixon.PutM := do
   Ixon.putExpr $ .strl tup.fst
@@ -96,8 +115,17 @@ instance : Ixon.Serialize BenchData where
 --def myBD : BenchData := { mean := 100, stdDev := 1.0 }
 --#eval (Ixon.Serialize.get (Ixon.Serialize.put myBD) : Except String BenchData)
 
+inductive SamplingMode where
+  | flat : SamplingMode
+  | linear : SamplingMode
+deriving Repr
+
 structure Config where
-  numRuns : Nat := 1000
+  warmupTime : Float := 3.0
+  sampleTime : Float := 5.0
+  numSamples : Nat := 100
+  samplingMode : SamplingMode := .flat
+  bootstrapSamples : Nat := 100000
   noiseThreshold : Float := 0.02
 deriving Repr
 
@@ -113,20 +141,40 @@ def Float.variablePrecision (float : Float) (precision : Nat) : Float :=
   -- Move the decimal right to the desired precision, round to the nearest integer, then move the decimal back
   (float * moveDecimal).round / moveDecimal
 
---#eval Float.variablePrecision 10.12345 4
-
+-- Panics if float is a NaN
 def Float.floatPretty (float : Float) (precision : Nat): String :=
   let precise := float.variablePrecision precision
-  precise.toString.dropRightWhile (· == '0')
+  let parts := precise.toString.splitOn "."
+  let integer := parts[0]!
+  let fractional := parts[1]!.take precision
+  if !fractional.isEmpty
+  then integer ++ "." ++ fractional
+  else integer
 
---#eval Float.floatPretty 10.12345 4
-
--- TODO: Pretty-print units based on nearest precision (nano, micro, etc)
---def convertUnits
+-- Formats a time in ns as an xx.yy string with correct units
+def Float.formatNanos (f : Float) : String :=
+  if f ≥ 10 ^ 9
+  then
+    (f / 10 ^ 9).floatPretty 2 ++ "s"
+  else if f ≥ 10 ^ 6
+  then
+    (f / 10 ^ 6).floatPretty 2 ++ "ms"
+  else if f ≥ 10 ^ 3
+  then
+    (f / 10 ^ 3).floatPretty 2 ++ "µs"
+  else
+    f.floatPretty 2  ++ "ns"
 
 def BenchGroup.analyzeStats (bg : BenchGroup) (baseData : BenchData) (newData : BenchData) : IO BenchData := do
-  let change := percentChange baseData.mean newData.mean
-  IO.println s!"Percent change: {change.floatPretty 2}%"
+  --IO.println s!"Data to compare: {baseData.mean} {newData.mean}"
+  let change ← if baseData.mean == 0
+  then
+    IO.println s!"Percent change is infinite, `baseData` mean is 0"
+    pure 0.0
+  else
+    let change := percentChange baseData.mean newData.mean
+    IO.println s!"Percent change: {change.floatPretty 2}%"
+    pure change
   let nT := bg.config.noiseThreshold * 100
   --IO.println s!"Noise threshold: {nT}%"
   if change.abs > nT
@@ -181,27 +229,215 @@ structure Benchmarkable (α β : Type) where
 
 def bench (name : String) (func : α → β) (arg : α) : Benchmarkable α β := ⟨ name, func, arg ⟩
 
-def BenchGroup.runBench (bg : BenchGroup) (bench : Benchmarkable α β) : IO Unit := do
-  let mut cron := Cronos.new
-  for run in List.range bg.config.numRuns do
-    let benchName := s!"{bench.name} run {run}"
-    --IO.println benchName
-    cron ← cron.clock benchName
+def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable α β) : IO Float := do
+  IO.println s!"Warming up for {bg.config.warmupTime.floatPretty 2}s"
+  let mut count := 0
+  let warmupNanos := Cronos.secToNano bg.config.warmupTime
+  let mut elapsed := 0
+  let startTime ← IO.monoNanosNow
+  while elapsed < warmupNanos do
     let _res ← blackBoxIO bench.func bench.arg
-    cron ← cron.clock benchName
-  let results : BenchData := { mean := avgTime cron, stdDev := Float.ofNat 1 }
-  IO.println s!"{bench.name} avg: {results.mean}ns"
-  bg.storeBench bench.name results
+    count := count + 1
+    let now ← IO.monoNanosNow
+    elapsed := now - startTime
+  let mean := Float.ofNat elapsed / Float.ofNat count
+  --IO.println s!"{bench.name} warmup avg: {mean}ns"
+  --IO.println s!"Ran {count} iterations in {bg.config.warmupTime.floatPretty 2}s\n"
+  return mean
 
--- TODO: Add warm-up time to prevent slow first runs
+-- TODO: Combine with other sampling functions, DRY
+-- TODO: Recommend sample count if expectedTime >>> bg.config.sampleTime (i.e. itersPerSample == 1)
+def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
+(warmupMean : Float) : IO (List Float) := do
+  let targetTime := bg.config.sampleTime.toNanos
+  let timePerSample := targetTime / (Float.ofNat bg.config.numSamples)
+  let itersPerSample := (timePerSample / warmupMean).ceil.toUInt64.toNat.max 1
+  let totalIters := itersPerSample * bg.config.numSamples
+  let expectedTime := warmupMean * Float.ofNat itersPerSample * bg.config.numSamples.toSeconds
+  if itersPerSample == 1
+  then
+    IO.eprintln s!"Warning: Unable to complete {bg.config.numSamples} samples in {bg.config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
+  IO.println s!"Running {bg.config.numSamples} samples in {expectedTime.floatPretty 2}s ({totalIters} iterations)"
+  --IO.println s!"Flat sample. Iters per sample: {itersPerSample}"
+  let mut timings : List Float := []
+  for _s in List.range bg.config.numSamples do
+    --IO.println s!"Running sample {s}"
+    let mut sum := 0
+    for _ in List.range itersPerSample do
+      let start ← IO.monoNanosNow
+      let _res ← blackBoxIO bench.func bench.arg
+      let finish ← IO.monoNanosNow
+      sum := sum + (finish - start)
+    let mean := Float.ofNat sum / Float.ofNat itersPerSample
+    --IO.println s!"{bench.name} run {s} avg: {mean}ns"
+    timings := mean :: timings
+  return timings.reverse
+
+-- Runs the samples as a sequence of linearly increasing iterations [d, 2d, 3d, ..., Nd]
+-- where `N` is the total number of samples and `d` is a factor derived from the warmup iteration time. The sum of this series should be roughly equivalent to the total `sampleTime`
+def BenchGroup.sampleLinear (bg : BenchGroup) (bench : Benchmarkable α β) (warmupMean : Float) : IO (List Float) := do
+  -- `d` has a minimum value of 1 if the `warmupMean` is sufficiently large
+  -- In this case,
+  let totalRuns := bg.config.numSamples * (bg.config.numSamples + 1) / 2
+  let targetTime := bg.config.sampleTime.toNanos
+  let d := (targetTime / warmupMean / (Float.ofNat totalRuns)).ceil.toUInt64.toNat.max 1
+  let expectedTime := (Float.ofNat totalRuns) * (Float.ofNat d) * warmupMean.toSeconds
+  let totalIters := (List.range bg.config.numSamples).map (fun x => (x + 1) * d)
+  if d == 1
+  then
+    IO.eprintln s!"Warning: Unable to complete {bg.config.numSamples} samples in {bg.config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
+  IO.println s!"Running {bg.config.numSamples} samples in {expectedTime.floatPretty 2}s ({totalIters.sum.natPretty} iterations)"
+  --IO.println s!"Linear sample. Iters increase by a factor of {d} per sample"
+  let mut timings : List Float := []
+  for iters in totalIters do
+    --IO.println s!"Sample {s} with {iters} iterations"
+    let mut sum := 0
+    for _i in List.range iters do
+      let start ← IO.monoNanosNow
+      let _res ← blackBoxIO bench.func bench.arg
+      let finish ← IO.monoNanosNow
+      sum := sum + (finish - start)
+    let mean := Float.ofNat sum / Float.ofNat iters
+    --IO.println s!"Avg: {mean}ns"
+    timings := mean :: timings
+  return timings.reverse
+
+def BenchGroup.sample (bg : BenchGroup) (bench : Benchmarkable α β) (warmupMean : Float) : IO (List Float) := do
+  match bg.config.samplingMode with
+  | .flat => bg.sampleFlat bench warmupMean
+  | .linear => bg.sampleLinear bench warmupMean
+
+def percentile? (data : List Float) (p : Float): Option Float :=
+  if data.isEmpty || p > 100
+  then .none
+  else
+    let data := data.sortBy (fun x y => compareOfLessAndBEq x y)
+    let r := (p / 100) * (Float.ofNat data.length - 1) + 1
+    let rf := r - r.floor
+    if rf == 0
+    then
+      data[r.toUInt64.toNat - 1]?
+    else
+      let ri := r.floor.toUInt64.toNat
+      -- TODO: use fallible ? indices and monadically chain state
+      .some $ data[ri-1]! + (rf) * (data[ri]! - data[ri-1]!)
+
+-- Outliers are classified following https://bheisler.github.io/criterion.rs/book/analysis.html#outlier-classification
+structure Outliers where
+  outliers : List Float
+  highSevere : Nat
+  highMild : Nat
+  lowMild : Nat
+  lowSevere : Nat
+deriving Repr
+
+def Outliers.getTotal (o : Outliers) : Nat :=
+  o.highSevere + o.highMild + o.lowMild + o.lowSevere
+
+-- TODO: Clean up and return the list for plotting
+def tukey (data : List Float) : IO Unit := do
+  let upper := (percentile? data 75).get!
+  let lower := (percentile? data 25).get!
+  let iqr := upper - lower
+  let fences := [lower - 3 * iqr, lower - 1.5 * iqr, upper + 1.5 * iqr, upper + 3 * iqr]
+  let mut out : Outliers := ⟨ [], 0, 0, 0, 0 ⟩
+  for elem in data do
+    if elem < fences[1]!
+    then
+      if elem < fences[0]! then
+        out := { out with outliers := elem :: out.outliers, lowSevere := out.lowSevere + 1 }
+      else
+        out := { out with outliers := elem :: out.outliers, lowMild := out.lowMild + 1 }
+    else if elem > fences[2]! then
+      if elem > fences[3]! then
+        out := { out with outliers := elem :: out.outliers, highSevere := out.highSevere + 1 }
+      else
+        out := { out with outliers := elem :: out.outliers, highMild := out.highMild + 1 }
+  let outLength := out.outliers.length
+  if outLength > 0 then
+    let samples := data.length
+    IO.println s!"Found {outLength} outliers among {samples} measurements"
+    if out.lowMild > 0 then
+      let pct := Float.ofNat out.lowMild / (Float.ofNat samples) * 100
+      IO.println s!"  {out.lowMild} ({pct.floatPretty 2}%) low mild"
+    if out.lowSevere > 0 then
+      let pct := Float.ofNat out.lowSevere / (Float.ofNat samples) * 100
+      IO.println s!"  {out.lowSevere} ({pct.floatPretty 2}%) low severe"
+    if out.highMild > 0 then
+      let pct := Float.ofNat out.highMild / (Float.ofNat samples) * 100
+      IO.println s!"  {out.highMild} ({pct.floatPretty 2}%) high mild"
+    if out.highSevere > 0 then
+      let pct := Float.ofNat out.highSevere / (Float.ofNat samples) * 100
+      IO.println s!"  {out.highSevere} ({pct.floatPretty 2}%) high severe"
+
+--#eval tukey [1,2,3,4,9999999999]
+
+structure RunningStats where
+  count : Nat
+  mean : Float
+  m2 : Float
+
+-- Reference impl https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+def RunningStats.update (stt: RunningStats) (newValue : Float) : RunningStats :=
+  let count := stt.count + 1
+  let delta := newValue - stt.mean
+  let mean := stt.mean + delta / Float.ofNat count
+  let delta' := newValue - mean
+  let m2 := stt.m2 + delta * delta'
+  { count, mean, m2 }
+
+def RunningStats.finalize (stt: RunningStats) : BenchData :=
+  if stt.count < 2
+  then { mean := 0, stdDev := 0 }
+  else
+    { mean := stt.mean, stdDev := (stt.m2 / (Float.ofNat stt.count - 1)).sqrt }
+
+-- TODO: Rewrite with monads as an exercise
+def pickRandom (xs : List Float) (gen : StdGen) : (Float × StdGen) :=
+  let (res, gen') := randNat gen 0 (xs.length - 1)
+  (xs[res]!, gen')
+
+def resample (xs : List Float) (gen : StdGen) (sampleSize : Nat) : (List Float × StdGen) :=
+  go xs gen sampleSize []
+  where
+    go xs gen n ys :=
+      match n with
+      | 0 => (ys.reverse, gen)
+      | n + 1 =>
+          let (res, gen') := pickRandom xs gen
+          go xs gen' n (res :: ys)
+
+-- TODO: Rewrite as pure function with state monad
+def bootstrap (xs : List Float) (gen : StdGen) (numSamples : Nat) : IO BenchData := do
+  if numSamples < 2
+  then
+    IO.eprintln "Error: need at least 2 samples to perform analysis"
+  let mut gen' := gen
+  let mut stt : RunningStats := { count := 0, mean := 0, m2 := 0 }
+  for _s in List.range numSamples do
+    let (res, gen'') := resample xs gen' xs.length
+    --IO.println res
+    let mean := res.sum / Float.ofNat res.length
+    stt := stt.update mean
+    gen' := gen''
+  return stt.finalize
+
+--#eval bootstrap ((List.range 100).map (Float.ofNat)) mkStdGen 10000
+
 -- TODO: Make sure compiler isn't caching partial evaluation result for future runs of the same function (measure first vs subsequent runs)
 -- A benchmark group defines a collection of related benchmarks that share a configuration, such as number of runs and noise threshold
 def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) (config : Config := {}) : IO Unit := do
-  let benchGroup : BenchGroup := { name, config }
+  let bg : BenchGroup := { name, config }
   --IO.println s!"My config: {repr config}"
   IO.println s!"Running bench group {name}\n"
   for b in benches do
-    let _results ← benchGroup.runBench b
+    let warmupMean ← bg.warmup b
+    IO.println s!"Running {b.name}"
+    let timings ← bg.sample b warmupMean
+    tukey timings
+    -- TODO: Add proper randomness with OsRng
+    let bd ← bootstrap timings mkStdGen bg.config.bootstrapSamples
+    IO.println s!"Mean: {bd.mean.formatNanos}"
+    IO.println s!"Standard deviation: {bd.stdDev}"
+    bg.storeBench b.name bd
     IO.println ""
-
---#eval Float.ofBits (Float.ofNat 1000).toBits
