@@ -506,15 +506,6 @@ pub mod tests {
                 let block_len = rng.random::<u32>();
                 let flags = rng.random::<u32>();
 
-                // use hardcoded input for all compressions
-                let cv = [275572166, 292200888, 1183842623, 120169543, 505623394, 2052449568, 1066103812, 1103285917];
-                let block = [275572166, 292200888, 1183842623, 120169543, 505623394, 2052449568, 1066103812, 1103285917, 1925268102, 938066110, 1073557756, 1470148381, 1967268450, 665323659, 1673553114, 1423131560];
-                let counter = 491724726;
-                let counter_low = counter as u32;
-                let counter_high = (counter >> 32) as u32;
-                let block_len = 491724726;
-                let flags = 491724726;
-
                 // save expected value to use later in test
                 expected.push(compress(&cv, &block, counter, block_len, flags).to_vec());
 
@@ -836,31 +827,6 @@ pub mod tests {
     }
 
     const COMPRESSIONS_LOG_TEST: u32 = 5;
-
-    #[test]
-    fn test_get_data_issue_reproducible_example() {
-        let trace_len = 2usize.pow(COMPRESSIONS_LOG_TEST);
-        let (expected, traces) = generate_trace(trace_len);
-
-        let (compression_oracles, circuit_module, witness_module, height) =
-            state_transition_module(0, &traces, trace_len).unwrap();
-
-        let mut outs = vec![];
-        for xy in 0..16 {
-            let out = witness_module.get_data(&compression_oracles.output[xy]);
-            outs.push(u32::from_le_bytes(out[0..4].try_into().unwrap()));
-        }
-        println!("outs: {:?}", outs);
-
-        assert_expected_output(&compression_oracles, &expected, &witness_module);
-
-        // check that Binius proof can be constructed and verified
-        let witness_modules = [witness_module];
-        let circuit_modules = [circuit_module];
-        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
-        assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
-    }
-
 
     #[test]
     fn test_state_transition_module() {

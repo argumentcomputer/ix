@@ -126,39 +126,26 @@ def generateTraces (rng : StdGen) (length : Nat) :  Array (Array UInt32) × Expe
     | 0 => Prod.mk transitions array
     | length' + 1 =>
 
-      let cvGen : StateM StdGen (Array UInt32) := do
+      let compressionInputGen : StateM StdGen (Array UInt32 × Array UInt32 × UInt64 × UInt32 × UInt32) := do
         let (g₁, g₂) := RandomGen.split (← get)
+        let cv := Utilities.randArray g₁ 8
         set g₂
-        pure (Utilities.randArray g₁ 8)
 
-      let blockGen : StateM StdGen (Array UInt32) := do
         let (g₁, g₂) := RandomGen.split (← get)
+        let block := Utilities.randArray g₁ 16
         set g₂
-        pure (Utilities.randArray g₁ 16)
 
-      let uint32Gen : StateM StdGen UInt32 := do
-        let (val, rng) := RandomGen.next (← get)
-        set rng
-        pure val.toUInt32
+        let (counter, g₂) := RandomGen.next (← get)
+        set g₂
 
-      let uint64Gen : StateM StdGen UInt64 := do
-        let (val, rng) := RandomGen.next (← get)
-        set rng
-        pure val.toUInt64
+        let (blockLen, g₂) := RandomGen.next (← get)
+        set g₂
+
+        let (flags, _) := RandomGen.next (← get)
+        pure (cv, block, counter.toUInt64, blockLen.toUInt32, flags.toUInt32)
 
       let (g₁, g₂) := RandomGen.split rng
-      let cv := cvGen g₁ |>.1
-      let block := blockGen g₁ |>.1
-      let counter := uint64Gen g₁ |>.1
-      let blockLen := uint32Gen g₁ |>.1
-      let flags := uint32Gen g₁ |>.1
-
-      -- hardcoded input
-      let cv := #[275572166, 292200888, 1183842623, 120169543, 505623394, 2052449568, 1066103812, 1103285917];
-      let block := #[275572166, 292200888, 1183842623, 120169543, 505623394, 2052449568, 1066103812, 1103285917, 1925268102, 938066110, 1073557756, 1470148381, 1967268450, 665323659, 1673553114, 1423131560];
-      let counter := 491724726;
-      let blockLen := 491724726;
-      let flags := 491724726;
+      let (cv, block, counter, blockLen, flags) := compressionInputGen g₁ |>.1
 
       let (transition, expected) := Blake3.compress cv block counter blockLen flags
 
@@ -207,18 +194,6 @@ def testTraceGenerating : TestSeq :=
 
     withExceptOk "Trace generating is OK" testResult fun _ => .done
 
-def byteArrayEq (a b : ByteArray) : Bool :=
-  if a.size != b.size then
-    false
-  else
-    let rec loop (i : Nat) : Bool :=
-      if i < a.size then
-        if a.get! i != b.get! i then false else loop (i + 1)
-      else
-        true
-    loop 0
-
-
 def testArchonStateTransitionModule : TestSeq := Id.run do
     let mkColumns (circuitModule: CircuitModule) (length : Nat) (f : TowerField) (name: String) : CircuitModule × Array OracleIdx × Array OracleIdx × Array OracleIdx :=
       let rec mkColumnsInner
@@ -254,7 +229,16 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
 
       writeTracesInner witnessModule traces.toList states.toList f
 
-
+    let arrayEq (a b : Array UInt32) : Bool :=
+      if a.size != b.size then
+        false
+      else
+        let rec loop (i : Nat) : Bool :=
+          if i < a.size then
+            if a[i]! != b[i]! then false else loop (i + 1)
+          else
+            true
+        loop 0
 
     let byteArrayToUInt32Array (b : ByteArray) : Array UInt32 :=
       let len := b.size / 4
@@ -267,18 +251,9 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
         UInt32.ofNat (b0.toNat ||| (b1.toNat <<< 8) ||| (b2.toNat <<< 16) ||| (b3.toNat <<< 24))
       )
 
-    /-
-    let u32ToLeBytes (n : UInt32) : ByteArray :=
-      let b0 := (n &&& 0xff).toUInt8
-      let b1 := ((n >>> 8) &&& 0xFF).toUInt8
-      let b2 := ((n >>> 16) &&& 0xFF).toUInt8
-      let b3 := ((n >>> 24) &&& 0xFF).toUInt8
-      ByteArray.mk #[b0, b1, b2, b3]
-    -/
-
     let compressionsLogTest := 5
     let tracesNum := Nat.pow 2 compressionsLogTest
-    let (traces, _expected) := TraceGeneration.generateTraces (mkStdGen 0) tracesNum
+    let (traces, expected) := TraceGeneration.generateTraces (mkStdGen 0) tracesNum
 
     let nVars := Nat.log2 (tracesNum * (Nat.pow 2 6))
 
@@ -290,37 +265,15 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
     let witnessModule := writeTraces witnessModule traces state .b32
     let witnessModule := witnessModule.populate height.toUInt64
 
-    let out := #[
-      (byteArrayToUInt32Array (witnessModule.getData output[0]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[1]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[2]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[3]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[4]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[5]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[6]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[7]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[8]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[9]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[10]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[11]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[12]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[13]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[14]!)).extract 0 1,
-      (byteArrayToUInt32Array (witnessModule.getData output[15]!)).extract 0 1,
-    ]
+    -- get data as ByteArray of every actually computed cv and convert it to Array UInt32 for comparison
+    let actual := (Array.ofFn (n := 16) fun i => witnessModule.getData output[i]!).map (fun bytes => byteArrayToUInt32Array bytes)
+    let expected := Utilities.transpose expected 16
 
-    dbg_trace s!""
-    dbg_trace s!"out = {out}"
-    dbg_trace s!""
-
-    let expected := ByteArray.empty
-    let outputIsExpected := if byteArrayEq ByteArray.empty expected then success else failure
+    let outputIsExpected := if (actual.zip expected).all (fun (a, b) => arrayEq a b) then success else failure
 
     let witness := compileWitnessModules #[witnessModule] #[height.toUInt64]
     withExceptOk "[Archon] state transition module testing is OK" (validateWitness #[circuitModule] #[] witness) fun _ =>
       withExceptOk "output is expected" outputIsExpected fun _ => .done
-
-
 
 def Tests.Blake3.suite : List LSpec.TestSeq :=
 [
