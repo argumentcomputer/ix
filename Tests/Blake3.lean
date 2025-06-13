@@ -162,9 +162,6 @@ open Blake3
 open LSpec
 open Archon
 
-def success : Except String Nat := Except.ok 0
-def failure : Except String Nat := Except.error "Test failed"
-
 def testCompression : TestSeq :=
   let cv : Array UInt32 := #[0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]
   let blockWords : Array UInt32 := #[0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000, 0xaa000000]
@@ -175,12 +172,12 @@ def testCompression : TestSeq :=
 
   let (_, actual) := compress cv blockWords counter blockLen flags
 
-  let testResult := if expected == actual then success else failure
-  withExceptOk "Blake3 compression is OK" testResult fun _ => .done
+  test "Blake3 compression is OK" (expected == actual)
 
--- this test is intended to check that state transition is correctly mapped into traces:
--- -- every state transition takes 64 elements
--- -- every state transition ends with 6 zeroes
+/-- this test is intended to check that state transition is correctly mapped into traces:
+* every state transition takes 64 elements
+* every state transition ends with 6 zeroes
+-/
 def testTraceGenerating : TestSeq :=
     let (traces, _expected) := generateTraces (mkStdGen 0) 1
 
@@ -190,9 +187,7 @@ def testTraceGenerating : TestSeq :=
       tail.all (fun x => x == 0)
     )
 
-    let testResult := if lenExpected && endExpected then success else failure
-
-    withExceptOk "Trace generating is OK" testResult fun _ => .done
+    test "Trace generating is OK" (lenExpected && endExpected)
 
 def testArchonStateTransitionModule : TestSeq := Id.run do
     let mkColumns (circuitModule: CircuitModule) (length : Nat) (f : TowerField) (name: String) : CircuitModule × Array OracleIdx × Array OracleIdx × Array OracleIdx :=
@@ -205,7 +200,7 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
         (input : Array OracleIdx)
         (output : Array OracleIdx) : CircuitModule × Array OracleIdx × Array OracleIdx × Array OracleIdx :=
           match length with
-          | 0 => Prod.mk circuitModule (Prod.mk committed (Prod.mk input output))
+          | 0 => (circuitModule, committed, input, output)
           | length' + 1 =>
             let (committed', circuitModule):= circuitModule.addCommitted (String.append name (toString length)) f
             let (input', circuitModule) := circuitModule.addProjected (String.append (String.append name (toString length)) "input") committed' 0 64
@@ -252,12 +247,12 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
       )
 
     let compressionsLogTest := 5
-    let tracesNum := Nat.pow 2 compressionsLogTest
+    let tracesNum := 2 ^ compressionsLogTest
     let (traces, expected) := TraceGeneration.generateTraces (mkStdGen 0) tracesNum
 
     let nVars := Nat.log2 (tracesNum * (Nat.pow 2 6))
 
-    let height := Nat.pow 2 nVars
+    let height := 2 ^ nVars
     let circuitModule := CircuitModule.new 0
     let (circuitModule, state, _, output) := mkColumns circuitModule 32 .b32 "stateTransition"
     let circuitModule := circuitModule.freezeOracles
@@ -269,11 +264,9 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
     let actual := (Array.ofFn (n := 16) fun i => witnessModule.getData output[i]!).map (fun bytes => byteArrayToUInt32Array bytes)
     let expected := Utilities.transpose expected 16
 
-    let outputIsExpected := if (actual.zip expected).all (fun (a, b) => arrayEq a b) then success else failure
-
     let witness := compileWitnessModules #[witnessModule] #[height.toUInt64]
     withExceptOk "[Archon] state transition module testing is OK" (validateWitness #[circuitModule] #[] witness) fun _ =>
-      withExceptOk "output is expected" outputIsExpected fun _ => .done
+      test "output is expected" ((actual.zip expected).all (fun (a, b) => arrayEq a b))
 
 def Tests.Blake3.suite : List LSpec.TestSeq :=
 [
