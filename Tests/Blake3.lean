@@ -25,7 +25,19 @@ def transpose (initial : Array (Array UInt32)) (rowLen : Nat) : Array (Array UIn
 
 end Utilities
 
-namespace Blake3
+namespace TraceGenerator
+
+structure Traces where
+  transitionTraces : Array (Array UInt32)
+  cvTraces : Array UInt32
+  state08Traces : Array UInt32
+  state816Traces : Array UInt32
+
+structure CompressionOutput where
+  transition : Array (Array UInt32)
+  state08 : Array UInt32
+  state816 : Array UInt32
+
 
 def IV : Vector UInt32 8 := #v[0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19]
 def MSG_PERMUTATION : Vector (Fin 16) 16  := #v[2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8]
@@ -84,7 +96,7 @@ def round (state: Array UInt32) : Array (Array UInt32) × Array UInt32 :=
   let (transition, state) := roundNoPermute state
   Prod.mk transition (permute state)
 
-def compress (cv : Array UInt32) (blockWords : Array UInt32) (counter : UInt64) (blockLen flags : UInt32) : Array (Array UInt32) × Array UInt32 :=
+def compress (cv : Array UInt32) (blockWords : Array UInt32) (counter : UInt64) (blockLen flags : UInt32) : CompressionOutput × Array UInt32 :=
   let counterLow := UInt32.ofBitVec (counter.toBitVec.truncate 32)
   let counterHigh := UInt32.ofBitVec ((counter.shiftRight 32).toBitVec.truncate 32)
 
@@ -102,28 +114,32 @@ def compress (cv : Array UInt32) (blockWords : Array UInt32) (counter : UInt64) 
 
   let (transitions, state) := runRounds #[state] state (List.range 7)
 
-  let temp := ((state.extract 0 8).zipWith (Xor.xor) (state.extract 8 16))
-  let state := temp.append (state.extract 8 32)
-  let temp := (state.extract 8 16).zipWith (Xor.xor) cv
-  let state := state.extract 0 8 ++ temp ++ state.extract 16 32
+  let state08 := ((state.extract 0 8).zipWith (Xor.xor) (state.extract 8 16))
+  --let state08 := temp -- trace
+  let state := state08.append (state.extract 8 32)
+  let state816 := (state.extract 8 16).zipWith (Xor.xor) cv
+  --let state816 := temp -- trace
+  let state := state.extract 0 8 ++ state816 ++ state.extract 16 32
   let transitions := transitions.push state
 
   -- pad state transitions with 6 zero-arrays for correct transposing
   let zeroes := Array.ofFn (n := 32) (fun _ => (0 : UInt32))
   let transitions := transitions.append (Array.ofFn (n := 6) (fun _ => zeroes))
 
-  Prod.mk (Utilities.transpose transitions 32) (state.extract 0 16)
+  let out : CompressionOutput := {
+    transition := (Utilities.transpose transitions 32),
+    state08,
+    state816,
+  }
 
-end Blake3
-
-namespace TraceGeneration
+  ( out, (state.extract 0 16))
 
 abbrev ExpectedStates := Array (Array UInt32)
 
-def generateTraces (rng : StdGen) (length : Nat) :  Array (Array UInt32) × ExpectedStates :=
-  let rec generateTracesInner (rng : StdGen) (length : Nat) (transitions :  Array (Array UInt32)) (array : ExpectedStates) :  Array (Array UInt32) × ExpectedStates :=
+def mkTraces (rng : StdGen) (length : Nat) : Traces × ExpectedStates :=
+  let rec generateTracesInner (rng : StdGen) (length : Nat) (traces :  Traces) (array : ExpectedStates) : Traces × ExpectedStates :=
     match length with
-    | 0 => Prod.mk transitions array
+    | 0 => (traces, array)
     | length' + 1 =>
 
       let compressionInputGen : StateM StdGen (Array UInt32 × Array UInt32 × UInt64 × UInt32 × UInt32) := do
@@ -147,18 +163,45 @@ def generateTraces (rng : StdGen) (length : Nat) :  Array (Array UInt32) × Expe
       let (g₁, g₂) := RandomGen.split rng
       let (cv, block, counter, blockLen, flags) := compressionInputGen g₁ |>.1
 
-      let (transition, expected) := Blake3.compress cv block counter blockLen flags
 
-      -- we extend 'transitions' inner arrays via concatenating new transition arrays to them
+      let (compressionOut, expected) := compress cv block counter blockLen flags
+
+      -- we extend 'Traces' inner arrays via concatenating new trace to them
+      let transitions := traces.transitionTraces
+      let transition := compressionOut.transition
       let transitions' := if transitions.isEmpty then transition else (transitions.zip transition).map (fun (a, b) => a ++ b)
-      generateTracesInner g₂ length' transitions' (array.push expected)
 
-  generateTracesInner rng length Array.empty Array.empty
+      let cvTraces := traces.cvTraces
+      let cvTraces' := if cvTraces.isEmpty then cv else cvTraces ++ cv
 
-end TraceGeneration
+      let state08Traces := traces.state08Traces
+      let state08Trace := compressionOut.state08
+      let state08Traces' := if state08Traces.isEmpty then state08Trace else state08Traces ++ state08Trace
 
-open TraceGeneration
-open Blake3
+      let state816Traces := traces.state816Traces
+      let state816Trace := compressionOut.state816
+      let state816Traces' := if state816Traces.isEmpty then state816Trace else state816Traces ++ state816Trace
+
+      let traces' := { traces with
+        transitionTraces := transitions',
+        cvTraces := cvTraces',
+        state08Traces := state08Traces',
+        state816Traces := state816Traces'
+      }
+
+      generateTracesInner g₂ length' traces' (array.push expected)
+
+  let emptyTraces : Traces := {
+    transitionTraces := Array.empty,
+    cvTraces := Array.empty,
+    state08Traces := Array.empty,
+    state816Traces := Array.empty,
+  }
+  generateTracesInner rng length emptyTraces Array.empty
+
+end TraceGenerator
+
+open TraceGenerator
 open LSpec
 open Archon
 
@@ -174,15 +217,16 @@ def testCompression : TestSeq :=
 
   test "Blake3 compression is OK" (expected == actual)
 
+
 /-- this test is intended to check that state transition is correctly mapped into traces:
 * every state transition takes 64 elements
 * every state transition ends with 6 zeroes
 -/
 def testTraceGenerating : TestSeq :=
-    let (traces, _expected) := generateTraces (mkStdGen 0) 1
+    let (traces, _expected) := mkTraces (mkStdGen 0) 1
 
-    let lenExpected := traces.all (fun a => a.size == 64)
-    let endExpected := traces.all (fun a => if a.size < 6 then false else
+    let lenExpected := traces.transitionTraces.all (fun a => a.size == 64)
+    let endExpected := traces.transitionTraces.all (fun a => if a.size < 6 then false else
       let tail := a.extract (a.size - 6) a.size
       tail.all (fun x => x == 0)
     )
@@ -248,7 +292,7 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
 
     let compressionsLogTest := 5
     let tracesNum := 2 ^ compressionsLogTest
-    let (traces, expected) := TraceGeneration.generateTraces (mkStdGen 0) tracesNum
+    let (traces, expected) := mkTraces (mkStdGen 0) tracesNum
 
     let logHeight := Nat.log2 (tracesNum * (Nat.pow 2 6)) |>.toUInt8
     let mode := .active logHeight 0
@@ -257,7 +301,7 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
     let (circuitModule, state, _, output) := mkColumns circuitModule 32 .b32 "stateTransition"
     let circuitModule := circuitModule.freezeOracles
     let witnessModule := circuitModule.initWitnessModule
-    let witnessModule := writeTraces witnessModule traces state .b32
+    let witnessModule := writeTraces witnessModule traces.transitionTraces state .b32
     let witnessModule := witnessModule.populate mode
 
     -- get data as ByteArray of every actually computed cv and convert it to Array UInt32 for comparison
@@ -268,9 +312,45 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
     withExceptOk "[Archon] state transition module testing is OK" (validateWitness #[circuitModule] #[] witness) fun _ =>
       test "output is expected" ((actual.zip expected).all (fun (a, b) => arrayEq a b))
 
+def testArchonCVOutputModule : TestSeq :=
+  let compressionsLogTest := 5
+  let tracesNum := 2 ^ compressionsLogTest
+  let (traces, _expected) := mkTraces (mkStdGen 0) tracesNum
+
+  let nVars := Nat.log2 (tracesNum * (Nat.pow 2 6))
+
+  let height := 2 ^ nVars
+  let circuitModule := CircuitModule.new 0
+
+  let (cv, circuitModule):= circuitModule.addCommitted "cv" .b32
+  let (state08, circuitModule):= circuitModule.addCommitted "state08" .b32
+  let (state816, circuitModule):= circuitModule.addCommitted "state816" .b32
+  let (_, circuitModule) := circuitModule.addLinearCombination "state08 xor state816" 0 #[(state08, 1), (state816, 1)]
+  let (_, circuitModule) := circuitModule.addLinearCombination "state816 xor cv" 0 #[(cv, 1), (state816, 1)]
+
+  let circuitModule := circuitModule.freezeOracles
+  let witnessModule := circuitModule.initWitnessModule
+  let (cvEntry, witnessModule) := witnessModule.addEntry
+  let (state08Entry, witnessModule) := witnessModule.addEntry
+  let (state816Entry, witnessModule) := witnessModule.addEntry
+
+  let witnessModule := witnessModule.pushUInt32sTo traces.cvTraces cvEntry
+  let witnessModule := witnessModule.pushUInt32sTo traces.state08Traces state08Entry
+  let witnessModule := witnessModule.pushUInt32sTo traces.state816Traces state816Entry
+
+  let witnessModule := witnessModule.bindOracleTo cv cvEntry .b32
+  let witnessModule := witnessModule.bindOracleTo state08 state08Entry .b32
+  let witnessModule := witnessModule.bindOracleTo state816 state816Entry .b32
+
+  let witnessModule := witnessModule.populate height.toUInt64
+  let witness := compileWitnessModules #[witnessModule] #[height.toUInt64]
+  withExceptOk "[Archon] cv output module testing is OK" (validateWitness #[circuitModule] #[] witness) fun _ => .done
+
+
 def Tests.Blake3.suite : List LSpec.TestSeq :=
 [
   testCompression,
   testTraceGenerating,
   testArchonStateTransitionModule,
+  testArchonCVOutputModule,
 ]
