@@ -137,7 +137,7 @@ open Binius in
 def mkBoundaries (input output : Array UInt64) (funcIdx : FuncIdx)
     (funcChannel : ChannelId) : Array Boundary :=
   let io := input ++ output ++ #[funcIdx] |>.map (.ofLoHi · 0)
-  let pushBoundary := ⟨io.push B128_MULT_GEN, funcChannel, .push, 1⟩
+  let pushBoundary := ⟨io.push B64_MULT_GEN, funcChannel, .push, 1⟩
   let pullBoundary := ⟨io.push 1, funcChannel, .pull, 1⟩
   #[pushBoundary, pullBoundary]
 

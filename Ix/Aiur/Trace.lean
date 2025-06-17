@@ -8,7 +8,6 @@ def Aiur.MultiplicativeGenerator : UInt64 := 0x070f870dcd9c1d88
 
 namespace Aiur.Circuit
 
-
 structure FunctionTrace where
   numQueries : Nat
   inputs: Array (Array UInt64)
@@ -45,7 +44,7 @@ structure AiurTrace where
   mul : Array UInt64 × Array UInt64
   mem : Array MemoryTrace
 
-def FunctionTrace.blank (layout : Layout) (height : Nat := 0) : FunctionTrace :=
+def FunctionTrace.blank (layout : Layout) (height : Nat) : FunctionTrace :=
   let arr1 := Array.mkArray height false
   let arr8 := Array.mkArray height 0
   let arr64 := Array.mkArray height 0
@@ -56,7 +55,7 @@ def FunctionTrace.blank (layout : Layout) (height : Nat := 0) : FunctionTrace :=
   let u64Auxiliaries := Array.mkArray layout.u64Auxiliaries arr64
   let selectors := Array.mkArray layout.selectors arr1
   let multiplicity := arr64
-  let numQueries := 0
+  let numQueries := height
   { numQueries, inputs, outputs, u1Auxiliaries, u8Auxiliaries, u64Auxiliaries, selectors, multiplicity }
 
 end Aiur.Circuit
