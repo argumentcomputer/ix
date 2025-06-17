@@ -80,12 +80,14 @@ pub fn compile_witness_modules(
             "Wrong compilation order. Expected module {module_idx}, but got {}.",
             module.module_id
         );
+        let num_oracles = module.num_oracles();
         if height == 0 {
             // Deactivate module.
             witness.modules_heights.push(0);
+            oracle_offset += num_oracles;
             continue;
         }
-        let oracles_data_results = (0..module.num_oracles())
+        let oracles_data_results = (0..num_oracles)
             .into_par_iter()
             .map(|oracle_idx| {
                 let oracle_idx = OracleIdx(oracle_idx);
@@ -136,7 +138,7 @@ pub fn compile_witness_modules(
         let height = height_opt.unwrap_or(0); // Deactivate module without oracles
         witness.mlei.update_multilin_poly(oracle_poly_vec)?;
         witness.modules_heights.push(height);
-        oracle_offset += module.num_oracles();
+        oracle_offset += num_oracles;
     }
     Ok(witness)
 }
@@ -239,7 +241,7 @@ impl WitnessModule {
                 OracleKind::Committed => {
                     let Some(&(entry_id, tower_level)) = self.entry_map.get(&oracle_idx) else {
                         bail!(
-                            "Committed oracle {} (id={oracle_idx}) for witness module {} is not populated",
+                            "Committed oracle {} (id={oracle_idx}) for witness module {} is unbound",
                             &oracle_info.name,
                             &self.module_id,
                         );

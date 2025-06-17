@@ -279,7 +279,10 @@ structure AiurCircuits where
   mul : CircuitModule × MulColumns
   mem : Array (CircuitModule × MemoryColumns)
 
-def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits :=
+def AiurCircuits.circuitModules (self : AiurCircuits) : Array CircuitModule :=
+  self.funcs.map (·.fst) ++ #[self.add.fst, self.mul.fst] ++ self.mem.map (·.fst)
+
+def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits × ChannelId :=
   let channelAllocator := ChannelAllocator.init
   let (funcChannel, channelAllocator) := channelAllocator.next
   let (addChannel, channelAllocator) := channelAllocator.next
@@ -293,12 +296,12 @@ def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits :=
     fun ((function, layout), functionIdx) => synthesizeM functionIdx.toUSize
       (synthesizeFunction functionIdx function layout aiurChannels)
   let numFunctions := toplevel.functions.size.toUSize
-  let addModule := synthesizeM (numFunctions + 1) (synthesizeAdd addChannel)
-  let mulModule := synthesizeM (numFunctions + 2) (synthesizeMul mulChannel)
-  let memIdStart := numFunctions + 3
+  let addModule := synthesizeM numFunctions (synthesizeAdd addChannel)
+  let mulModule := synthesizeM (numFunctions + 1) (synthesizeMul mulChannel)
+  let memIdStart := numFunctions + 2
   let memModules := memChannels.pairs.zipIdx.map
     fun ((width, channelId), memIdx) =>
       synthesizeM (memIdStart + memIdx.toUSize) (synthesizeMemory channelId width)
-  ⟨funcsModules, addModule, mulModule, memModules⟩
+  (⟨funcsModules, addModule, mulModule, memModules⟩, aiurChannels.func)
 
 end Aiur.Circuit
