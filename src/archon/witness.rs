@@ -226,20 +226,25 @@ impl WitnessModule {
 
     /// Populates a witness module with data to reach a given height.
     pub fn populate(&mut self, height: u64) -> Result<()> {
+        if height == 0 {
+            // Deactivated module.
+            return Ok(());
+        }
+
         // "Root oracles" are those which aren't committed and aren't dependencies
         // of any other oracle. `root_oracles` starts with all oracles, which are
         // removed as the following loop finds out they break such condition.
         //
         // The loop also uses ensures that committed oracles are bound to entries,
         // accumulating the amount of missing bytes for each entry to be padded
-        // with zero afterwards.
+        // with zero afterwards in order to empty out their buffers.
         let mut root_oracles: FxHashSet<_> = (0..self.num_oracles()).map(OracleIdx).collect();
         let mut missing_bytes_map = FxHashMap::default();
         for (oracle_idx, oracle_info) in self.oracles.iter().enumerate() {
             let oracle_idx = OracleIdx(oracle_idx);
             match &oracle_info.kind {
                 OracleKind::Committed => {
-                    let Some(&(entry_id, tower_level)) = self.entry_map.get(&oracle_idx) else {
+                    let Some((entry_id, _)) = self.entry_map.get(&oracle_idx) else {
                         bail!(
                             "Committed oracle {} (id={oracle_idx}) for witness module {} is unbound",
                             &oracle_info.name,
@@ -248,18 +253,17 @@ impl WitnessModule {
                     };
 
                     // Compute and accumulate the amount of missing bytes.
-                    let num_bytes = UNDERLIER_SIZE * self.entries[entry_id].len()
-                        + self.buffers[entry_id].len();
-                    let target_num_bytes =
-                        UNDERLIER_SIZE * Self::num_underliers_for_height(height, tower_level)?;
-                    let num_missing_bytes = target_num_bytes - num_bytes;
-                    if let Some(existing_num_missing_bytes) =
-                        missing_bytes_map.insert(entry_id, num_missing_bytes)
-                    {
-                        ensure!(
-                            num_missing_bytes == existing_num_missing_bytes,
-                            "Incompatible amount of missing data for entry {entry_id}"
-                        );
+                    let buffer_size = self.buffers[*entry_id].len();
+                    if buffer_size != 0 {
+                        let num_missing_bytes = UNDERLIER_SIZE - buffer_size;
+                        if let Some(existing_num_missing_bytes) =
+                            missing_bytes_map.insert(*entry_id, num_missing_bytes)
+                        {
+                            ensure!(
+                                num_missing_bytes == existing_num_missing_bytes,
+                                "Incompatible amount of missing data for entry {entry_id}"
+                            );
+                        }
                     }
 
                     // A committed oracle is not a root oracle.

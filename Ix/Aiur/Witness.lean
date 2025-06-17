@@ -71,13 +71,13 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
   let (circuitModule, cols) := circuits.add
   let mut addWitnessModule := circuitModule.initWitnessModule
   -- xin
-  addWitnessModule := pushData addWitnessModule .pushUInt64sTo xins cols.xin .b64
+  addWitnessModule := pushData addWitnessModule .pushUInt64sTo xins cols.xin .b1
   -- yin
-  addWitnessModule := pushData addWitnessModule .pushUInt64sTo yins cols.yin .b64
+  addWitnessModule := pushData addWitnessModule .pushUInt64sTo yins cols.yin .b1
   -- zout
-  addWitnessModule := pushData addWitnessModule .pushUInt64sTo addZout cols.zout .b64
+  addWitnessModule := pushData addWitnessModule .pushUInt64sTo addZout cols.zout .b1
   -- cout
-  addWitnessModule := pushData addWitnessModule .pushUInt64sTo addCout cols.cout .b64
+  addWitnessModule := pushData addWitnessModule .pushUInt64sTo addCout cols.cout .b1
   -- Collect addWitnessModule
   witnessModules := witnessModules.push addWitnessModule
 
