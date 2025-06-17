@@ -144,8 +144,11 @@ extern "C" fn rs_witness_module_par_populate(
         .par_iter_mut()
         .enumerate()
         .for_each(|(i, w)| {
-            if let Err(e) = w.populate(heights[i]) {
-                panic!("rs_witness_module_par_populate failure at index {i}: {e}");
+            let height = heights[i];
+            if height != 0 {
+                if let Err(e) = w.populate(height) {
+                    panic!("rs_witness_module_par_populate failure at index {i}: {e}");
+                }
             }
         });
 }

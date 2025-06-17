@@ -1,6 +1,7 @@
 import Ix.Aiur.Trace
 import Ix.Aiur.Synthesis
 import Ix.Archon.Circuit
+import Ix.Binius.Boundary
 
 namespace Aiur.Circuit
 
@@ -17,6 +18,13 @@ def packBools (bits : Array Bool) : Array UInt8 :=
           byte := byte ||| (1 <<< j).toUInt8
     byte
 
+def pushData (witnessModule : WitnessModule)
+    (pushFn : WitnessModule → Array α → EntryId → WitnessModule)
+    (data : Array α) (oracle : OracleIdx) (tf : TowerField) : WitnessModule :=
+  let (entry, witnessModule) := witnessModule.addEntry
+  let witnessModule := witnessModule.bindOracleTo oracle entry tf
+  pushFn witnessModule data entry
+
 def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness := do
   let mut witnessModules := #[]
   let mut heights := #[]
@@ -27,116 +35,110 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
     let mut witnessModule := mod.initWitnessModule
     -- Inputs
     for (data, oracle) in funcTrace.inputs.zip cols.inputs do
-      let (entry, witnessModule') := witnessModule.addEntry
-      witnessModule := witnessModule'
-      witnessModule := witnessModule.bindOracleTo oracle entry .b64
-      witnessModule := witnessModule.pushUInt64sTo data entry
-
+      witnessModule := pushData witnessModule .pushUInt64sTo data oracle .b64
     -- Outputs
     for (data, oracle) in funcTrace.outputs.zip cols.outputs do
-      let (entry, witnessModule') := witnessModule.addEntry
-      witnessModule := witnessModule'
-      witnessModule := witnessModule.bindOracleTo oracle entry .b64
-      witnessModule := witnessModule.pushUInt64sTo data entry
-
+      witnessModule := pushData witnessModule .pushUInt64sTo data oracle .b64
     -- u1Auxiliaries
     for (data, oracle) in funcTrace.u1Auxiliaries.zip cols.u1Auxiliaries do
-      let (entry, witnessModule') := witnessModule.addEntry
-      witnessModule := witnessModule'
-      witnessModule := witnessModule.bindOracleTo oracle entry .b1
-      witnessModule := witnessModule.pushUInt8sTo (packBools data) entry
-
+      witnessModule := pushData witnessModule .pushUInt8sTo (packBools data) oracle .b1
     -- u8Auxiliaries
     for (data, oracle) in funcTrace.u8Auxiliaries.zip cols.u8Auxiliaries do
-      let (entry, witnessModule') := witnessModule.addEntry
-      witnessModule := witnessModule'
-      witnessModule := witnessModule.bindOracleTo oracle entry .b8
-      witnessModule := witnessModule.pushUInt8sTo data entry
-
+      witnessModule := pushData witnessModule .pushUInt8sTo data oracle .b8
     -- u64Auxiliaries
     for (data, oracle) in funcTrace.u64Auxiliaries.zip cols.u64Auxiliaries do
-      let (entry, witnessModule') := witnessModule.addEntry
-      witnessModule := witnessModule'
-      witnessModule := witnessModule.bindOracleTo oracle entry .b64
-      witnessModule := witnessModule.pushUInt64sTo data entry
-
-    -- u1Auxiliaries
+      witnessModule := pushData witnessModule .pushUInt64sTo data oracle .b64
+    -- selectors
     for (data, oracle) in funcTrace.selectors.zip cols.selectors do
-      let (entry, witnessModule') := witnessModule.addEntry
-      witnessModule := witnessModule'
-      witnessModule := witnessModule.bindOracleTo oracle entry .b1
-      witnessModule := witnessModule.pushUInt8sTo (packBools data) entry
-
+      witnessModule := pushData witnessModule .pushUInt8sTo (packBools data) oracle .b1
     -- multiplicity
-    let (entry, witnessModule') := witnessModule.addEntry
-    witnessModule := witnessModule'
-    witnessModule := witnessModule.bindOracleTo cols.multiplicity entry .b64
-    witnessModule := witnessModule.pushUInt64sTo funcTrace.multiplicity entry
-
-    -- collect the witness module
+    witnessModule := pushData witnessModule .pushUInt64sTo funcTrace.multiplicity
+      cols.multiplicity .b64
+    -- Collect the witness module
     witnessModules := witnessModules.push witnessModule
 
   -- Add
   let (xins, yins) := trace.add
   heights := heights.push xins.size.toUInt64
-  let mut zouts := Array.mkEmpty xins.size
-  let mut couts := Array.mkEmpty xins.size
+  let mut addZout := Array.mkEmpty xins.size
+  let mut addCout := Array.mkEmpty xins.size
   for (xin, yin) in xins.zip yins do
     let zout := xin + yin
     let carry := (decide (zout < xin)).toUInt64
     let cin := xin ^^^ yin ^^^ zout
-    zouts := zouts.push zout
-    couts := couts.push $ (carry <<< 63) ||| (cin >>> 1)
+    addZout := addZout.push zout
+    addCout := addCout.push $ (carry <<< 63) ||| (cin >>> 1)
   let (circuitModule, cols) := circuits.add
-  let mut witnessModule := circuitModule.initWitnessModule
+  let mut addWitnessModule := circuitModule.initWitnessModule
   -- xin
-  let (entry, witnessModule') := witnessModule.addEntry
-  witnessModule := witnessModule'
-  witnessModule := witnessModule.bindOracleTo cols.xin entry .b64
-  witnessModule := witnessModule.pushUInt64sTo xins entry
+  addWitnessModule := pushData addWitnessModule .pushUInt64sTo xins cols.xin .b64
   -- yin
-  let (entry, witnessModule') := witnessModule.addEntry
-  witnessModule := witnessModule'
-  witnessModule := witnessModule.bindOracleTo cols.yin entry .b64
-  witnessModule := witnessModule.pushUInt64sTo yins entry
+  addWitnessModule := pushData addWitnessModule .pushUInt64sTo yins cols.yin .b64
   -- zout
-  let (entry, witnessModule') := witnessModule.addEntry
-  witnessModule := witnessModule'
-  witnessModule := witnessModule.bindOracleTo cols.zout entry .b64
-  witnessModule := witnessModule.pushUInt64sTo zouts entry
+  addWitnessModule := pushData addWitnessModule .pushUInt64sTo addZout cols.zout .b64
   -- cout
-  let (entry, witnessModule') := witnessModule.addEntry
-  witnessModule := witnessModule'
-  witnessModule := witnessModule.bindOracleTo cols.cout entry .b64
-  witnessModule := witnessModule.pushUInt64sTo couts entry
-  -- Collect witnessModule
-  witnessModules := witnessModules.push witnessModule
+  addWitnessModule := pushData addWitnessModule .pushUInt64sTo addCout cols.cout .b64
+  -- Collect addWitnessModule
+  witnessModules := witnessModules.push addWitnessModule
 
   -- Mul
-  -- TODO
+  let (xins, yins) := trace.mul
+  heights := heights.push xins.size.toUInt64
+  let mut mulZout := Array.mkEmpty xins.size
+  for (xin, yin) in xins.zip yins do
+    let zout := xin * yin
+    mulZout := mulZout.push zout
+  let (circuitModule, cols) := circuits.mul
+  let mut mulWitnessModule := circuitModule.initWitnessModule
+  -- xin
+  mulWitnessModule := pushData mulWitnessModule .pushUInt64sTo xins cols.xin .b64
+  -- yin
+  mulWitnessModule := pushData mulWitnessModule .pushUInt64sTo yins cols.yin .b64
+  -- zout
+  mulWitnessModule := pushData mulWitnessModule .pushUInt64sTo mulZout cols.zout .b64
+  -- xinBits
+  for oracle in cols.xinBits do
+    mulWitnessModule := pushData mulWitnessModule .pushUInt8sTo (packBools #[]) oracle .b1
+  -- yinBits
+  for oracle in cols.yinBits do
+    mulWitnessModule := pushData mulWitnessModule .pushUInt8sTo (packBools #[]) oracle .b1
+  -- zoutBits
+  for oracle in cols.zoutBits do
+    mulWitnessModule := pushData mulWitnessModule .pushUInt8sTo (packBools #[]) oracle .b1
+  -- xinExpResult
+  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo #[] cols.xinExpResult .b128
+  -- yinExpResult
+  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo #[] cols.yinExpResult .b128
+  -- zoutLowExpResult
+  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo #[] cols.zoutLowExpResult .b128
+  -- zoutHighExpResult
+  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo #[] cols.zoutHighExpResult .b128
+  -- Collect mulWitnessModule
+  witnessModules := witnessModules.push mulWitnessModule
 
-  -- Mem
+  -- Memory
   for ((mod, cols), memTrace) in circuits.mem.zip trace.mem do
     heights := heights.push memTrace.numQueries.toUInt64
-    let mut memWitnessModule := mod.initWitnessModule
+    let mut witnessModule := mod.initWitnessModule
     for (oracle, data) in cols.values.zip memTrace.values do
-      let (entry, witnessModule') := witnessModule.addEntry
-      memWitnessModule := witnessModule'
-      memWitnessModule := memWitnessModule.bindOracleTo oracle entry .b64
-      memWitnessModule := memWitnessModule.pushUInt64sTo data entry
-
+      witnessModule := pushData witnessModule .pushUInt64sTo data oracle .b64
     -- multiplicity
-    let (entry, witnessModule') := witnessModule.addEntry
-    memWitnessModule := witnessModule'
-    memWitnessModule := memWitnessModule.bindOracleTo cols.multiplicity entry .b64
-    memWitnessModule := memWitnessModule.pushUInt64sTo memTrace.multiplicity entry
-
+    witnessModule := pushData witnessModule .pushUInt64sTo memTrace.multiplicity
+      cols.multiplicity .b64
     -- Collect the witness module
-    witnessModules := witnessModules.push memWitnessModule
+    witnessModules := witnessModules.push witnessModule
 
   -- Populate in parallel
   witnessModules := WitnessModule.parPopulate witnessModules heights
 
   pure $ Archon.compileWitnessModules witnessModules heights
+
+open Binius in
+def mkBoundaries (input output : Array UInt64) (funcIdx : FuncIdx)
+    (funcChannel : ChannelId) : Array Boundary :=
+  let io := input ++ output ++ #[funcIdx] |>.map (.ofLoHi · 0)
+  let pushBoundary := ⟨io.push B128_MULT_GEN, funcChannel, .push, 1⟩
+  let pullBoundary := ⟨io.push 1, funcChannel, .pull, 1⟩
+  #[pushBoundary, pullBoundary]
 
 end Aiur.Circuit
