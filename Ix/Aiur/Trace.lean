@@ -30,6 +30,8 @@ structure ColumnIndex where
   u1Auxiliary : Nat
   u8Auxiliary : Nat
   u64Auxiliary : Nat
+  input : Nat
+  output : Nat
   deriving Inhabited
 
 inductive Query where
@@ -43,14 +45,17 @@ structure AiurTrace where
   mul : Array UInt64 × Array UInt64
   mem : Array MemoryTrace
 
-def FunctionTrace.blank (layout : Layout) : FunctionTrace :=
-  let inputs := Array.mkArray layout.inputs #[]
-  let outputs := Array.mkArray layout.outputs #[]
-  let u1Auxiliaries := Array.mkArray layout.u1Auxiliaries #[]
-  let u8Auxiliaries := Array.mkArray layout.u8Auxiliaries #[]
-  let u64Auxiliaries := Array.mkArray layout.u64Auxiliaries #[]
-  let selectors := Array.mkArray layout.selectors #[]
-  let multiplicity := #[]
+def FunctionTrace.blank (layout : Layout) (height : Nat := 0) : FunctionTrace :=
+  let arr1 := Array.mkArray height false
+  let arr8 := Array.mkArray height 0
+  let arr64 := Array.mkArray height 0
+  let inputs := Array.mkArray layout.inputs arr64
+  let outputs := Array.mkArray layout.outputs arr64
+  let u1Auxiliaries := Array.mkArray layout.u1Auxiliaries arr1
+  let u8Auxiliaries := Array.mkArray layout.u8Auxiliaries arr8
+  let u64Auxiliaries := Array.mkArray layout.u64Auxiliaries arr64
+  let selectors := Array.mkArray layout.selectors arr1
+  let multiplicity := arr64
   let numQueries := 0
   { numQueries, inputs, outputs, u1Auxiliaries, u8Auxiliaries, u64Auxiliaries, selectors, multiplicity }
 
@@ -86,6 +91,18 @@ def TraceM.pushU64 (b : UInt64) : TraceM Unit :=
     let col := { s.col with u64Auxiliary := s.col.u64Auxiliary + 1 }
     { s with trace, col }
 
+def TraceM.pushInput (b : UInt64) : TraceM Unit :=
+  modify fun s =>
+    let trace := { s.trace with inputs := s.trace.inputs.modify s.col.input fun col => col.set! s.row b }
+    let col := { s.col with u64Auxiliary := s.col.input + 1 }
+    { s with trace, col }
+
+def TraceM.pushOutput (b : UInt64) : TraceM Unit :=
+  modify fun s =>
+    let trace := { s.trace with outputs := s.trace.outputs.modify s.col.output fun col => col.set! s.row b }
+    let col := { s.col with u64Auxiliary := s.col.output + 1 }
+    { s with trace, col }
+
 def TraceM.pushCount (query : Circuit.Query) : TraceM Unit := do
   modify fun s =>
     let update maybe := match maybe with
@@ -105,23 +122,16 @@ def TraceM.setSelector (sel : SelIdx) : TraceM Unit :=
     let trace := { s.trace with selectors := s.trace.selectors.modify sel fun col => col.set! s.row true }
     { s with trace }
 
-def TraceM.addBlankRow
+def TraceM.populateIO
   (inputValues : Array UInt64)
   (result : QueryResult)
 : TraceM Unit := do
+  inputValues.forM pushInput
+  result.values.forM pushOutput
   modify fun s =>
-    let { numQueries, inputs, outputs, u1Auxiliaries,
-          u8Auxiliaries, u64Auxiliaries, selectors, multiplicity } := s.trace
-    let inputs := (inputs.zip inputValues).map fun (col, val) => col.push val
-    let outputs := (outputs.zip result.values).map fun (col, val) => col.push val
-    let u1Auxiliaries := u1Auxiliaries.map fun col => col.push false
-    let u8Auxiliaries := u8Auxiliaries.map fun col => col.push 0
-    let u64Auxiliaries := u64Auxiliaries.map fun col => col.push 0
-    let selectors := selectors.map fun col => col.push false
-    let multiplicity := multiplicity.push $ Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
-    let numQueries := numQueries + 1
-    let trace := { numQueries, inputs, outputs, u1Auxiliaries, u8Auxiliaries, u64Auxiliaries, selectors, multiplicity }
-    { s with trace}
+    let m := Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
+    let trace := { s.trace with multiplicity := s.trace.multiplicity.set! s.row m }
+    { s with trace }
 
 mutual
 partial def Block.populateRow (block : Block) : TraceM Unit := do
@@ -222,10 +232,11 @@ def Function.populateTrace
   (funcMap : QueryMap)
   (layout : Circuit.Layout)
 : TraceM Unit := do
-  modify fun s => { s with trace := Circuit.FunctionTrace.blank layout }
+  let height := if funcMap.size == 0 then 0 else funcMap.size.nextPowerOfTwo.max 128
+  modify fun s => { s with trace := Circuit.FunctionTrace.blank layout height }
   funcMap.foldlM (init := ()) fun _ (inputs, result) => do
     modify fun s => { s with map := inputs }
-    TraceM.addBlankRow inputs result
+    TraceM.populateIO inputs result
     function.body.populateRow
 
 def QueryMap.generateTrace (map : QueryMap) : Circuit.MemoryTrace :=
