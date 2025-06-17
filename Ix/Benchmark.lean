@@ -60,21 +60,9 @@ def getStrNat : Ixon.GetM (String × Nat) := do
     | x => throw s!"expected Expr.Nat, got {repr x}"
   | x => throw s!"expected Expr.String, got {repr x}"
 
-def getCron : Ixon.GetM Cronos := do
-  let c ← (Ixon.getArray getStrNat).run
-  return { refs := RBMap.empty, data := RBMap.ofList c compare}
-
-def fromIxon (ixon: ByteArray) : Except String Cronos := Ixon.runGet getCron ixon
-
-def cron : Cronos :=
-  let cron' := Cronos.new
-  { cron' with data := cron'.data.insert "hey" 1}
-
 instance : Ixon.Serialize (RBMap String Nat compare) where
   put xs := (Ixon.runPut ∘ (Ixon.putArray (fun x => putStrNat x))) xs.toList
   get xs := (Ixon.runGet (Ixon.getArray getStrNat) xs).map (fun x => RBMap.ofList x compare)
-
---#eval (Ixon.Serialize.get (Ixon.Serialize.put cron.data) : Except String (RBMap String Nat compare))
 
 def getStr : Ixon.GetM String := do
   match (← Ixon.getExpr) with
@@ -92,10 +80,6 @@ instance : Ixon.Serialize Float where
   put := Ixon.runPut ∘ putFloat
   get := Ixon.runGet getFloat
 
---#eval (Ixon.Serialize.get (Ixon.Serialize.put 100.58) : Except String Float)
-
--- TODO: Add proper stat analysis
--- Upper bound, lower bound, stdDev, mean, median
 structure BenchData where
   mean : Float
   stdDev : Float
@@ -112,21 +96,24 @@ instance : Ixon.Serialize BenchData where
   put := Ixon.runPut ∘ putBenchData
   get := Ixon.runGet getBenchData
 
---def myBD : BenchData := { mean := 100, stdDev := 1.0 }
---#eval (Ixon.Serialize.get (Ixon.Serialize.put myBD) : Except String BenchData)
-
 inductive SamplingMode where
   | flat : SamplingMode
   | linear : SamplingMode
 deriving Repr
 
 structure Config where
+  -- Warmup time in seconds
   warmupTime : Float := 3.0
+  -- Target sample time in seconds. If the time per iteration is too long then the actual sample time will run longer and print a warning
   sampleTime : Float := 5.0
+  -- Number of samples run
   numSamples : Nat := 100
+  -- Sample in flat or linear mode
   samplingMode : SamplingMode := .flat
+  -- Number of bootstrap samples (with replacement) to ru
   bootstrapSamples : Nat := 100000
-  noiseThreshold : Float := 0.02
+  -- Noise threshold when comparing two benchmark means, if percent change is within this threshold then it's considered noise
+  noiseThreshold : Float := 0.02 -- 2%
 deriving Repr
 
 structure BenchGroup where
@@ -166,7 +153,6 @@ def Float.formatNanos (f : Float) : String :=
     f.floatPretty 2  ++ "ns"
 
 def BenchGroup.analyzeStats (bg : BenchGroup) (baseData : BenchData) (newData : BenchData) : IO BenchData := do
-  --IO.println s!"Data to compare: {baseData.mean} {newData.mean}"
   let change ← if baseData.mean == 0
   then
     IO.println s!"Percent change is infinite, `baseData` mean is 0"
@@ -188,8 +174,8 @@ def BenchGroup.analyzeStats (bg : BenchGroup) (baseData : BenchData) (newData : 
 
 -- Store `BenchData` values as ixon on disk
 -- Compare performance against prior run
--- TODO: Rename this function and factor out into helpers
-def BenchGroup.storeBench (bg : BenchGroup) (name : String) (benchData : BenchData) : IO Unit := do
+-- TODO: Factor out into helper functions
+def BenchGroup.comparePrev (bg : BenchGroup) (name : String) (benchData : BenchData) : IO Unit := do
   let ixon := Ixon.Serialize.put benchData -- TODO: move this later, after File IO
   let benchPath := System.mkFilePath [".", ".lake", "benches", name]
   let benchDir := benchPath.toString
@@ -334,7 +320,7 @@ deriving Repr
 def Outliers.getTotal (o : Outliers) : Nat :=
   o.highSevere + o.highMild + o.lowMild + o.lowSevere
 
--- TODO: Clean up and return the list for plotting
+-- TODO: Refactor to cut down verbosity, and return the list for plotting
 def tukey (data : List Float) : IO Unit := do
   let upper := (percentile? data 75).get!
   let lower := (percentile? data 25).get!
@@ -370,14 +356,12 @@ def tukey (data : List Float) : IO Unit := do
       let pct := Float.ofNat out.highSevere / (Float.ofNat samples) * 100
       IO.println s!"  {out.highSevere} ({pct.floatPretty 2}%) high severe"
 
---#eval tukey [1,2,3,4,9999999999]
-
 structure RunningStats where
   count : Nat
   mean : Float
   m2 : Float
 
--- Reference impl https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+-- Reference implementation: https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
 def RunningStats.update (stt: RunningStats) (newValue : Float) : RunningStats :=
   let count := stt.count + 1
   let delta := newValue - stt.mean
@@ -392,11 +376,11 @@ def RunningStats.finalize (stt: RunningStats) : BenchData :=
   else
     { mean := stt.mean, stdDev := (stt.m2 / (Float.ofNat stt.count - 1)).sqrt }
 
--- TODO: Rewrite with monads as an exercise
 def pickRandom (xs : List Float) (gen : StdGen) : (Float × StdGen) :=
   let (res, gen') := randNat gen 0 (xs.length - 1)
   (xs[res]!, gen')
 
+-- TODO: Rewrite with state monad
 def resample (xs : List Float) (gen : StdGen) (sampleSize : Nat) : (List Float × StdGen) :=
   go xs gen sampleSize []
   where
@@ -422,13 +406,10 @@ def bootstrap (xs : List Float) (gen : StdGen) (numSamples : Nat) : IO BenchData
     gen' := gen''
   return stt.finalize
 
---#eval bootstrap ((List.range 100).map (Float.ofNat)) mkStdGen 10000
-
 -- TODO: Make sure compiler isn't caching partial evaluation result for future runs of the same function (measure first vs subsequent runs)
 -- A benchmark group defines a collection of related benchmarks that share a configuration, such as number of runs and noise threshold
 def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) (config : Config := {}) : IO Unit := do
   let bg : BenchGroup := { name, config }
-  --IO.println s!"My config: {repr config}"
   IO.println s!"Running bench group {name}\n"
   for b in benches do
     let warmupMean ← bg.warmup b
@@ -439,5 +420,5 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
     let bd ← bootstrap timings mkStdGen bg.config.bootstrapSamples
     IO.println s!"Mean: {bd.mean.formatNanos}"
     IO.println s!"Standard deviation: {bd.stdDev}"
-    bg.storeBench b.name bd
+    bg.comparePrev b.name bd
     IO.println ""
