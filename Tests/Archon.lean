@@ -6,9 +6,11 @@ import Ix.ByteArray
 open LSpec Archon
 
 def populateAndValidate (circuitModule : CircuitModule)
-    (witnessModule : WitnessModule) height msg :=
-  let witnessModule := witnessModule.populate height
-  let witness := compileWitnessModules #[witnessModule] #[height]
+    (witnessModule : WitnessModule) (depth : UInt64) msg :=
+  let log_height := depth.toNat.nextPowerOfTwo.log2.toUInt8
+  let mode := .active log_height depth
+  let witnessModule := witnessModule.populate mode
+  let witness := compileWitnessModules #[witnessModule] #[mode]
   withExceptOk msg (validateWitness #[circuitModule] #[] witness) fun _ => .done
 
 def transparent : TestSeq :=
@@ -122,9 +124,9 @@ def proveAndVerify : TestSeq :=
   let witnessModule := witnessModule.pushUInt128sTo #[(.ofNatCore $ UInt128.size - 1)] entryId
   let witnessModule := witnessModule.bindOracleTo x entryId .b1
   let witnessModule := witnessModule.bindOracleTo y entryId .b1
-  let height := 128
-  let witnessModule := witnessModule.populate height
-  let witness := compileWitnessModules #[witnessModule] #[height]
+  let mode := .active 7 128
+  let witnessModule := witnessModule.populate mode
+  let witness := compileWitnessModules #[witnessModule] #[mode]
   let proof := prove #[circuitModule] #[] 1 100 witness
   let proofBytes := proof.toBytes
   withExceptOk "Archon proof serde works" (Proof.ofBytes proofBytes) fun proof =>
@@ -135,7 +137,7 @@ def parPopulate : TestSeq :=
   let c₁ := CircuitModule.new 0
   let c₂ := CircuitModule.new 1
   let (o₁, c₁) := c₁.addCommitted "x" .b128
-  let (o₂, c₂) := c₂.addCommitted "x" .b128
+  let (o₂, c₂) := c₂.addCommitted "y" .b128
   let c₁ := c₁.freezeOracles
   let c₂ := c₂.freezeOracles
   let w₁ := c₁.initWitnessModule
@@ -146,9 +148,10 @@ def parPopulate : TestSeq :=
   let w₂ := w₂.pushUInt8sTo #[0] e₂
   let w₁ := w₁.bindOracleTo o₁ e₁ .b128
   let w₂ := w₂.bindOracleTo o₂ e₂ .b128
-  let heights := #[1, 1]
-  let ws := WitnessModule.parPopulate #[w₁, w₂] heights
-  let w := compileWitnessModules ws heights
+  let mode := .active 0 1
+  let modes := #[mode, mode]
+  let ws := WitnessModule.parPopulate #[w₁, w₂] modes
+  let w := compileWitnessModules ws modes
   withExceptOk "Parallel population works" (validateWitness #[c₁, c₂] #[] w) fun _ => .done
 
 def getData : TestSeq :=

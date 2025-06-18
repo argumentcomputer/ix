@@ -28,6 +28,7 @@ def pushData (witnessModule : WitnessModule)
 def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness := do
   let mut witnessModules := #[]
   let mut heights := #[]
+  let mut modes := #[]
 
   -- Functions
   for ((mod, cols), funcTrace) in circuits.funcs.zip trace.functions do
@@ -129,9 +130,9 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
     witnessModules := witnessModules.push witnessModule
 
   -- Populate in parallel
-  witnessModules := WitnessModule.parPopulate witnessModules heights
+  witnessModules := WitnessModule.parPopulate witnessModules modes
 
-  pure $ Archon.compileWitnessModules witnessModules heights
+  pure $ Archon.compileWitnessModules witnessModules modes
 
 open Binius in
 def mkBoundaries (input output : Array UInt64) (funcIdx : FuncIdx)

@@ -2,6 +2,7 @@ import LSpec
 import Tests.Common
 import Ix.Binius.Boundary
 import Ix.Archon.ArithExpr
+import Ix.Archon.ModuleMode
 import Ix.Archon.Transparent
 
 open LSpec SlimCheck Gen
@@ -72,6 +73,22 @@ instance : SampleableExt ArithExpr := SampleableExt.mkSelfContained genArithExpr
 
 /- Transparent -/
 
+def genModuleMode : Gen ModuleMode :=
+  frequency [
+      (5, pure .inactive),
+      (15, .active <$> genUInt8 <*> genUInt64),
+    ]
+
+instance : Shrinkable ModuleMode where
+  shrink _ := []
+
+instance : Repr ModuleMode where
+  reprPrec mode _ := mode.toString
+
+instance : SampleableExt ModuleMode := SampleableExt.mkSelfContained genModuleMode
+
+/- Transparent -/
+
 def genTransparent : Gen Transparent :=
   frequency [
       (10, .const <$> genUInt128),
@@ -95,6 +112,8 @@ def Tests.FFIConsistency.suite := [
       (∀ expr : ArithExpr, expr.isEquivalentToBytes expr.toBytes),
     check "Boundary Lean->Rust mapping matches the deserialized bytes"
       (∀ boundary : Boundary, boundary.isEquivalentToBytes boundary.toBytes),
+    check "ModuleMode Lean->Rust mapping matches the deserialized bytes"
+      (∀ moduleMode : ModuleMode, moduleMode.isEquivalentToBytes moduleMode.toBytes),
     check "Transparent Lean->Rust mapping matches the deserialized bytes"
       (∀ transparent : Transparent, transparent.isEquivalentToBytes transparent.toBytes),
   ]

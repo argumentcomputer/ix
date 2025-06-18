@@ -18,7 +18,7 @@ void rs_witness_module_push_u16s_to(void*, b_lean_obj_arg, size_t);
 void rs_witness_module_push_u32s_to(void*, b_lean_obj_arg, size_t);
 void rs_witness_module_push_u64s_to(void*, b_lean_obj_arg, size_t);
 void rs_witness_module_push_u128s_to(void*, b_lean_obj_arg, size_t);
-void rs_witness_module_populate(void*, uint64_t);
+void rs_witness_module_populate(void*, b_lean_obj_arg);
 void rs_witness_module_par_populate(void**, b_lean_obj_arg);
 size_t rs_witness_module_get_data_num_bytes(void*, size_t);
 void rs_witness_module_get_data(void*, size_t, lean_obj_arg);

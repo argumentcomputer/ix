@@ -74,3 +74,19 @@ pub struct OracleInfo {
     pub tower_level: usize,
     pub kind: OracleKind,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ModuleMode {
+    /// An inactive module must be skipped during compilation.
+    Inactive,
+    /// An active module has a selector column with `height = 1 << log_height`
+    /// rows. This column is a `StepDown` oracle with `index = depth <= height`.
+    Active { log_height: u8, depth: u64 },
+}
+
+impl ModuleMode {
+    #[inline]
+    pub const fn active(log_height: u8, depth: u64) -> Self {
+        Self::Active { log_height, depth }
+    }
+}
