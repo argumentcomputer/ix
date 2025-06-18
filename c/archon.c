@@ -124,16 +124,19 @@ extern lean_obj_res c_rs_witness_module_push_u128s_to(
     );
 }
 
-extern lean_obj_res c_rs_witness_module_populate(lean_obj_arg l_witness, uint64_t height) {
+extern lean_obj_res c_rs_witness_module_populate(
+    lean_obj_arg l_witness,
+    b_lean_obj_arg mode
+) {
     linear_object *linear = validated_linear(l_witness);
-    rs_witness_module_populate(get_object_ref(linear), height);
+    rs_witness_module_populate(get_object_ref(linear), mode);
     linear_object *new_linear = linear_bump(linear);
     return alloc_lean_linear_object(new_linear);
 }
 
 extern lean_obj_res c_rs_witness_module_par_populate(
     lean_obj_arg l_witnesses,
-    b_lean_obj_arg heights
+    b_lean_obj_arg modes
 ) {
     size_t size = lean_array_size(l_witnesses);
     lean_object **witnesses_cptrs = lean_array_cptr(l_witnesses);
@@ -145,7 +148,7 @@ extern lean_obj_res c_rs_witness_module_par_populate(
         witnesses_ptrs[i] = get_object_ref(linear);
         new_witnesses_cptrs[i] = alloc_lean_linear_object(linear_bump(linear));
     }
-    rs_witness_module_par_populate(witnesses_ptrs, heights);
+    rs_witness_module_par_populate(witnesses_ptrs, modes);
     return new_l_witnesses;
 }
 
@@ -163,7 +166,7 @@ extern lean_obj_res c_rs_witness_module_get_data(
 
 extern lean_obj_res c_rs_compile_witness_modules(
     lean_obj_arg l_witnesses,
-    b_lean_obj_arg heights
+    b_lean_obj_arg modes
 ) {
     size_t size = lean_array_size(l_witnesses);
     lean_object **witnesses_cptrs = lean_array_cptr(l_witnesses);
@@ -173,7 +176,7 @@ extern lean_obj_res c_rs_compile_witness_modules(
         witnesses_ptrs[i] = get_object_ref(linear);
         ditch_linear(linear);
     }
-    void *witness = rs_compile_witness_modules(witnesses_ptrs, heights);
+    void *witness = rs_compile_witness_modules(witnesses_ptrs, modes);
     linear_object *new_linear = linear_object_init(
         witness,
         &rs_witness_free

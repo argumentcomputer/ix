@@ -14,11 +14,10 @@ use binius_utils::checked_arithmetics::log2_ceil_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
 
-use crate::archon::transparent::{Incremental, constant_from_b128};
-
-use super::OracleIdx;
 use super::{
-    F, ModuleId, OracleInfo, OracleKind, arith_expr::ArithExpr, transparent::Transparent,
+    F, ModuleId, ModuleMode, OracleIdx, OracleInfo, OracleKind,
+    arith_expr::ArithExpr,
+    transparent::{Incremental, Transparent, constant_from_b128},
     witness::WitnessModule,
 };
 
@@ -311,11 +310,11 @@ impl CircuitModule {
 
 pub fn compile_circuit_modules(
     modules: &[&CircuitModule],
-    modules_heights: &[u64],
+    modes: &[ModuleMode],
 ) -> Result<ConstraintSystem<F>> {
     ensure!(
-        modules.len() == modules_heights.len(),
-        "Number of modules is incompatible with the number of heights"
+        modules.len() == modes.len(),
+        "Number of modules is incompatible with the number of modes"
     );
     let mut oracle_offset = 0;
     let mut oracles = MultilinearOracleSet::new();
@@ -324,23 +323,25 @@ pub fn compile_circuit_modules(
     let mut non_zero_oracle_ids = Vec::new();
     let mut exponents = Vec::new();
     let mut max_channel_id = 0;
-    for (module_idx, (module, &height)) in modules.iter().zip(modules_heights).enumerate() {
-        if height == 0 {
+    for (module_idx, (module, mode)) in modules.iter().zip(modes).enumerate() {
+        let ModuleMode::Active { log_height, depth } = *mode else {
             // Deactivated module. Skip.
             continue;
-        }
-        let height_usize: usize = height.try_into()?;
-        let log_height = log2_ceil_usize(height_usize);
+        };
         ensure!(
             module_idx == module.module_id,
             "Wrong compilation order. Expected module {module_idx}, but got {}.",
             module.module_id
         );
 
+        let log_height_usize = log_height as usize;
+        let depth_usize: usize = depth.try_into()?;
+        let height = 1 << log_height;
+
         // `n_vars` must be at least the number of variables in an underlier
         let n_vars_fn = |tower_level| {
             let underlier_n_vars = OptimalUnderlier::LOG_BITS - tower_level;
-            log_height.max(underlier_n_vars)
+            log_height_usize.max(underlier_n_vars)
         };
 
         for OracleInfo {
@@ -386,7 +387,7 @@ pub fn compile_circuit_modules(
                     let n_vars = n_vars_fn(*tower_level);
                     oracles
                         .add_named(name)
-                        .transparent(StepDown::new(n_vars, height_usize)?)?;
+                        .transparent(StepDown::new(n_vars, depth_usize)?)?;
                 }
 
                 OracleKind::Shifted {

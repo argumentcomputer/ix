@@ -26,7 +26,7 @@ use std::{
 };
 
 use super::{
-    ModuleId, OracleIdx, OracleInfo, OracleKind,
+    ModuleId, ModuleMode, OracleIdx, OracleInfo, OracleKind,
     transparent::{Incremental, Transparent, replicate_within_u128},
 };
 
@@ -47,47 +47,44 @@ pub struct WitnessModule {
 #[derive(Default)]
 pub struct Witness<'a> {
     pub(crate) mlei: MultilinearExtensionIndex<'a, PackedType<OptimalUnderlier, B128>>,
-    /// The heights for each module. `0` means that the circuit module is
-    /// deactivated and must be skipped during compilation.
-    pub(crate) modules_heights: Vec<u64>,
+    pub(crate) modes: Vec<ModuleMode>,
 }
 
 #[inline]
 pub fn populate_witness_modules(
-    modules: &mut [WitnessModule],
-    modules_heights: Vec<u64>,
+    witness_modules: &mut [WitnessModule],
+    modes: Vec<ModuleMode>,
 ) -> Result<()> {
     ensure!(
-        modules.len() == modules_heights.len(),
-        "Incompatible numbers of modules and heights"
+        witness_modules.len() == modes.len(),
+        "Incompatible numbers of modules and modes"
     );
-    modules
+    witness_modules
         .par_iter_mut()
-        .zip(modules_heights)
-        .try_for_each(|(module, height)| module.populate(height))
+        .zip(modes)
+        .try_for_each(|(module, mode)| module.populate(mode))
 }
 
 pub fn compile_witness_modules(
     modules: &[WitnessModule],
-    heights: Vec<u64>,
+    modes: Vec<ModuleMode>,
 ) -> Result<Witness<'_>> {
-    ensure!(modules.len() == heights.len());
+    ensure!(modules.len() == modes.len());
     let mut witness = Witness::with_capacity(modules.len());
     let mut oracle_offset = 0;
-    for (module_idx, (module, height)) in modules.iter().zip(heights).enumerate() {
+    for (module_idx, (module, mode)) in modules.iter().zip(modes).enumerate() {
         ensure!(
             module_idx == module.module_id,
             "Wrong compilation order. Expected module {module_idx}, but got {}.",
             module.module_id
         );
-        let num_oracles = module.num_oracles();
-        if height == 0 {
+        let ModuleMode::Active { log_height, depth } = mode else {
             // Deactivate module.
-            witness.modules_heights.push(0);
-            oracle_offset += num_oracles;
+            witness.modes.push(ModuleMode::Inactive);
             continue;
-        }
-        let oracles_data_results = (0..num_oracles)
+        };
+        let num_oracles = module.num_oracles();
+        let oracles_poly_results = (0..num_oracles)
             .into_par_iter()
             .map(|oracle_idx| {
                 let oracle_idx = OracleIdx(oracle_idx);
@@ -104,7 +101,7 @@ pub fn compile_witness_modules(
                                 "MLE instantiation for entry {entry_id}, oracle {oracle_idx}, module {module_idx}"
                             ))?
                             .specialize_arc_dyn();
-                        Ok(((oracle_idx.oracle_id(oracle_offset), mle), height))
+                        Ok((oracle_idx.oracle_id(oracle_offset), mle))
                     }};
                 }
                 match tower_level {
@@ -122,22 +119,12 @@ pub fn compile_witness_modules(
                 }
             })
             .collect::<Vec<_>>();
-        let mut oracle_poly_vec = Vec::with_capacity(oracles_data_results.len());
-        let mut height_opt = None;
-        for oracle_data_result in oracles_data_results {
-            let (oracle_poly, oracle_height) = oracle_data_result?;
-            match height_opt {
-                Some(known_height) => ensure!(
-                    oracle_height == known_height,
-                    "Witness for module {module_idx} has incompatible heights: {oracle_height} != {known_height}"
-                ),
-                None => height_opt = Some(oracle_height),
-            }
-            oracle_poly_vec.push(oracle_poly);
+        let mut oracle_poly_vec = Vec::with_capacity(oracles_poly_results.len());
+        for oracle_data_result in oracles_poly_results {
+            oracle_poly_vec.push(oracle_data_result?);
         }
-        let height = height_opt.unwrap_or(0); // Deactivate module without oracles
         witness.mlei.update_multilin_poly(oracle_poly_vec)?;
-        witness.modules_heights.push(height);
+        witness.modes.push(ModuleMode::Active { log_height, depth });
         oracle_offset += num_oracles;
     }
     Ok(witness)
@@ -225,11 +212,14 @@ impl WitnessModule {
     }
 
     /// Populates a witness module with data to reach a given height.
-    pub fn populate(&mut self, height: u64) -> Result<()> {
-        if height == 0 {
+    pub fn populate(&mut self, mode: ModuleMode) -> Result<()> {
+        let ModuleMode::Active { log_height, depth } = mode else {
             // Deactivated module.
             return Ok(());
-        }
+        };
+
+        let log_height_usize = log_height as usize;
+        let height = 1 << log_height;
 
         // "Root oracles" are those which aren't committed and aren't dependencies
         // of any other oracle. `root_oracles` starts with all oracles, which are
@@ -356,7 +346,8 @@ impl WitnessModule {
                     }
 
                     // The number of underliers for the target oracle and also for the dependencies
-                    let entry_len = Self::num_underliers_for_height(height, tower_level)?;
+                    let entry_len =
+                        Self::num_underliers_for_log_height(log_height_usize, tower_level);
 
                     // Expand an underlier into multiple underliers, extracting binary field elements
                     // data for upcasts into the tower level of the target oracle
@@ -548,14 +539,16 @@ impl WitnessModule {
                     Transparent::Constant(b) => {
                         let tower_level = oracle_info.tower_level;
                         let u = OptimalUnderlier::from(replicate_within_u128(*b));
-                        let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
+                        let num_underliers =
+                            Self::num_underliers_for_log_height(log_height_usize, tower_level);
                         let entry_id = self.new_entry();
                         self.entries[entry_id] = vec![u; num_underliers];
                         (entry_id, tower_level)
                     }
                     Transparent::Incremental => {
                         let tower_level = Incremental::min_tower_level(height);
-                        let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
+                        let num_underliers =
+                            Self::num_underliers_for_log_height(log_height_usize, tower_level);
                         let mut underliers = vec![OptimalUnderlier::ZERO; num_underliers];
                         match tower_level {
                             3 => {
@@ -609,24 +602,24 @@ impl WitnessModule {
                 OracleKind::StepDown => {
                     let tower_level = oracle_info.tower_level;
                     assert_eq!(tower_level, 0);
-                    let num_underliers = Self::num_underliers_for_height(height, tower_level)?;
-                    // Start the underliers with a bunch of B1(1)s and then set the padding
-                    // bits to zero if necessary.
-                    let mut underliers = vec![OptimalUnderlier::from(u128::MAX); num_underliers];
-                    let height_usize: usize = height.try_into()?;
-                    let step_down_changes_at = height_usize / OptimalUnderlier::BITS;
-                    if step_down_changes_at < num_underliers {
-                        // Produce an `u128` with the `height_usize % OptimalUnderlier::BITS`
-                        // least significant bits set to one and the rest set to zero.
-                        let u128: u128 = (1 << (height_usize % OptimalUnderlier::BITS)) - 1;
-                        underliers[step_down_changes_at] = OptimalUnderlier::from(u128);
+                    let num_underliers =
+                        Self::num_underliers_for_log_height(log_height_usize, tower_level);
+                    let mut underliers = vec![OptimalUnderlier::from(0u128); num_underliers];
+                    let depth_usize: usize = depth.try_into()?;
+                    let step_down_changes_at = depth_usize / OptimalUnderlier::BITS;
 
-                        // The next underliers must all be zeros.
-                        underliers
-                            .par_iter_mut()
-                            .skip(step_down_changes_at + 1)
-                            .for_each(|u| *u = OptimalUnderlier::from(0u128));
+                    // Set the first bits to 1.
+                    underliers[..step_down_changes_at]
+                        .par_iter_mut()
+                        .for_each(|u| *u = OptimalUnderlier::from(u128::MAX));
+
+                    if step_down_changes_at < num_underliers {
+                        // Produce an `u128` with the `depth_usize % OptimalUnderlier::BITS`
+                        // least significant bits set to one and the rest set to zero.
+                        let u128: u128 = (1 << (depth_usize % OptimalUnderlier::BITS)) - 1;
+                        underliers[step_down_changes_at] = OptimalUnderlier::from(u128);
                     }
+
                     let entry_id = self.new_entry();
                     self.entries[entry_id] = underliers;
                     (entry_id, tower_level)
@@ -811,15 +804,9 @@ impl WitnessModule {
 
     /// Computes the number of `OptimalUnderlier`s needed to reach a certain
     /// height at a given tower level.
-    fn num_underliers_for_height(height: u64, tower_level: usize) -> Result<usize> {
-        let num_bits = height * (1 << tower_level);
-        let num_underliers = num_bits.div_ceil(OptimalUnderlier::BITS as u64);
-        let num_underliers_rounded = num_underliers.next_power_of_two();
-        ensure!(num_underliers_rounded != 0, "Height overflow");
-        let num_underliers_rounded_usize: usize = num_underliers_rounded
-            .try_into()
-            .context("Representing the number of underliers as an usize")?;
-        Ok(num_underliers_rounded_usize)
+    fn num_underliers_for_log_height(log_height: usize, tower_level: usize) -> usize {
+        let num_bits = 1usize << (log_height + tower_level);
+        num_bits.div_ceil(OptimalUnderlier::BITS)
     }
 
     fn num_oracles(&self) -> usize {
@@ -832,7 +819,7 @@ impl Witness<'_> {
     fn with_capacity(num_modules: usize) -> Self {
         Self {
             mlei: MultilinearExtensionIndex::new(),
-            modules_heights: Vec::with_capacity(num_modules),
+            modes: Vec::with_capacity(num_modules),
         }
     }
 }
@@ -840,16 +827,16 @@ impl Witness<'_> {
 #[cfg(test)]
 mod tests {
     use binius_core::oracle::ShiftVariant;
-    use binius_field::arch::OptimalUnderlier;
-    use binius_field::underlier::UnderlierType;
     use binius_field::{
         BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
         BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64,
-        BinaryField128b as B128, Field,
+        BinaryField128b as B128, Field, arch::OptimalUnderlier, underlier::UnderlierType,
     };
+    use binius_utils::checked_arithmetics::log2_ceil_usize;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     use crate::archon::{
+        ModuleMode,
         arith_expr::ArithExpr,
         circuit::{CircuitModule, init_witness_modules},
         protocol::validate_witness,
@@ -861,7 +848,7 @@ mod tests {
         B128::new(u128)
     }
 
-    const HEIGHTS: [u64; 13] = [1, 2, 3, 4, 5, 65, 66, 128, 200, 256, 400, 512, 600];
+    const DEPTHS: [usize; 13] = [1, 2, 3, 4, 5, 65, 66, 128, 200, 256, 400, 512, 600];
 
     #[test]
     fn test_populate_constant() {
@@ -903,15 +890,19 @@ mod tests {
         circuit_module.freeze_oracles();
         let circuit_modules = [circuit_module];
 
-        let test_with_height = |height| {
+        let test_with_depth = |depth| {
             let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
-            witness_modules[0].populate(height).unwrap();
+            let log_height = log2_ceil_usize(depth).try_into().unwrap();
+            let depth = depth as u64;
+            let mode = ModuleMode::active(log_height, depth);
+            witness_modules[0].populate(mode).unwrap();
             assert!(!witness_modules[0].entry_map.is_empty());
-            let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+            let witness = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
+            validate_witness(&circuit_modules, &[], &witness).unwrap();
             assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
         };
 
-        HEIGHTS.into_par_iter().for_each(test_with_height);
+        DEPTHS.into_iter().for_each(test_with_depth);
     }
 
     #[test]
@@ -923,15 +914,18 @@ mod tests {
         circuit_module.freeze_oracles();
         let circuit_modules = [circuit_module];
 
-        let test_with_height = |height| {
+        let test_with_depth = |depth| {
             let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
-            witness_modules[0].populate(height).unwrap();
+            let log_height = log2_ceil_usize(depth).try_into().unwrap();
+            let depth = depth as u64;
+            let mode = ModuleMode::active(log_height, depth);
+            witness_modules[0].populate(mode).unwrap();
             assert!(!witness_modules[0].entry_map.is_empty());
-            let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+            let witness = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
             assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
         };
 
-        HEIGHTS.into_par_iter().for_each(test_with_height);
+        DEPTHS.into_par_iter().for_each(test_with_depth);
     }
 
     #[test]
@@ -995,10 +989,10 @@ mod tests {
                 _ => unreachable!(),
             }
         }
-        let height = 128;
-        witness_modules[0].populate(height).unwrap();
+        let mode = ModuleMode::active(7, 0);
+        witness_modules[0].populate(mode).unwrap();
         assert!(!witness_modules[0].entry_map.is_empty());
-        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok())
     }
 
@@ -1057,11 +1051,11 @@ mod tests {
         witness_module.push_u128s_to([u128::MAX - u128::MAX / 5 + u128::MAX / 11], entry_c);
         witness_module.bind_oracle_to::<B1>(c, entry_c);
 
-        let height = 128;
-        witness_module.populate(height).unwrap();
+        let mode = ModuleMode::active(7, 0);
+        witness_module.populate(mode).unwrap();
 
         let witness_modules = [witness_module];
-        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
 
         let circuit_modules = [circuit_module];
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok())
@@ -1082,11 +1076,11 @@ mod tests {
         let entry_id = witness_module.new_entry_with_capacity(7);
         witness_module.push_u128s_to([u128::MAX - u128::MAX / 2 + u128::MAX / 4], entry_id);
         witness_module.bind_oracle_to::<B1>(input, entry_id);
-        let height = 128;
-        witness_module.populate(height).unwrap();
+        let mode = ModuleMode::active(7, 0);
+        witness_module.populate(mode).unwrap();
 
         let witness_modules = [witness_module];
-        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
 
         let circuit_modules = [circuit_module];
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok())
@@ -1094,7 +1088,8 @@ mod tests {
 
     #[test]
     fn test_xor_via_linear_combination() {
-        let n_vars = 3usize;
+        let log_height = 3;
+        let mode = ModuleMode::active(log_height, 0);
         let mut circuit_module = CircuitModule::new(0);
         let a = circuit_module.add_committed::<B32>("a").unwrap();
         let b = circuit_module.add_committed::<B32>("b").unwrap();
@@ -1107,7 +1102,7 @@ mod tests {
         let a_id = witness_module.new_entry();
         let b_id = witness_module.new_entry();
 
-        let height = 2u64.pow(u32::try_from(n_vars).unwrap());
+        let height = 1 << log_height;
         // we use U32 field for 'a' and 'b' columns, so divide height by 4 (4 u32 in 1 u128)
         for _ in 0..height / 4 {
             witness_module.push_u32s_to([0x0000bbbb, 0x0000bbbb, 0x0000bbbb, 0x0000bbbb], a_id);
@@ -1116,19 +1111,18 @@ mod tests {
 
         witness_module.bind_oracle_to::<B32>(a, a_id);
         witness_module.bind_oracle_to::<B32>(b, b_id);
-        witness_module.populate(height).unwrap();
+        witness_module.populate(mode).unwrap();
 
         let witness_modules = [witness_module];
         let circuit_modules = [circuit_module];
-        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness_archon = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
     }
 
     #[test]
     fn test_packed_b8_b32() {
-        let n_vars = 4usize;
+        let mode = ModuleMode::active(4, 0);
         let packed_log_degree = 2usize;
-        let height = 2u64.pow(u32::try_from(n_vars).unwrap());
 
         let mut circuit_module = CircuitModule::new(0);
         let input = circuit_module.add_committed::<B8>("input").unwrap();
@@ -1151,9 +1145,9 @@ mod tests {
         );
         witness_module.bind_oracle_to::<B8>(input, entry_id);
 
-        witness_module.populate(height).unwrap();
+        witness_module.populate(mode).unwrap();
         let witness_modules = [witness_module];
-        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness_archon = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
         let circuit_modules = [circuit_module];
 
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
@@ -1165,10 +1159,14 @@ mod tests {
             input_value: u8,
             shift_offset: u32,
             block_bits: usize,
-            optimal_underliers_num: u32,
+            optimal_underliers_num: usize,
             variant: ShiftVariant,
         ) {
-            let height = OptimalUnderlier::BITS * 2usize.pow(optimal_underliers_num);
+            let log_height = (OptimalUnderlier::LOG_BITS + optimal_underliers_num)
+                .try_into()
+                .unwrap();
+            let mode = ModuleMode::active(log_height, 0);
+            let height = 1usize << log_height;
             let mut circuit_module = CircuitModule::new(0);
             let input = circuit_module.add_committed::<B1>("input").unwrap();
             circuit_module
@@ -1187,12 +1185,11 @@ mod tests {
 
             witness_module.bind_oracle_to::<B1>(input, entry_id);
 
-            witness_module.populate(height as u64).unwrap();
+            witness_module.populate(mode).unwrap();
 
             let witness_modules = [witness_module];
             let circuit_modules = [circuit_module];
-            let witness_archon =
-                compile_witness_modules(&witness_modules, vec![height as u64]).unwrap();
+            let witness_archon = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
 
             validate_witness(&circuit_modules, &[], &witness_archon).unwrap()
         }
@@ -1200,7 +1197,7 @@ mod tests {
         let input_value = 0b10000000u8;
         let shift_offset = 7;
         let block_bits = 3usize; // we consider input column storing data as bytes
-        let optimal_underliers_num_powered = 3u32;
+        let optimal_underliers_num_powered = 3;
 
         test_inner(
             input_value,
@@ -1213,7 +1210,7 @@ mod tests {
         let input_value = 0b11100011u8;
         let shift_offset = 1;
         let block_bits = 5usize; // we consider input column storing data as u32s
-        let optimal_underliers_num_powered = 7u32;
+        let optimal_underliers_num_powered = 7;
 
         test_inner(
             input_value,
@@ -1226,7 +1223,7 @@ mod tests {
         let input_value = 0b10000000u8;
         let shift_offset = 5;
         let block_bits = 3usize; // we consider input column storing data as bytes
-        let optimal_underliers_num_powered = 8u32;
+        let optimal_underliers_num_powered = 8;
 
         test_inner(
             input_value,
@@ -1240,7 +1237,7 @@ mod tests {
         let input_value = 0b10100111u8;
         let shift_offset = 1;
         let block_bits = 5usize; // we consider input column storing data as u32s
-        let optimal_underliers_num_powered = 12u32;
+        let optimal_underliers_num_powered = 12;
 
         test_inner(
             input_value,
@@ -1254,7 +1251,7 @@ mod tests {
         let input_value = 0b11011010u8;
         let shift_offset = 16;
         let block_bits = 5usize; // we consider input column storing data as u32s
-        let optimal_underliers_num_powered = 10u32;
+        let optimal_underliers_num_powered = 10;
 
         test_inner(
             input_value,
@@ -1308,11 +1305,11 @@ mod tests {
         witness_module.push_u128s_to(b128_data, b128_entry);
         witness_module.bind_oracle_to::<B128>(b128, b128_entry);
 
-        let height = 256;
-        witness_module.populate(height).unwrap();
+        let mode = ModuleMode::active(8, 0);
+        witness_module.populate(mode).unwrap();
 
         let witness_modules = [witness_module];
-        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness_archon = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
         let circuit_modules = [circuit_module];
 
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
@@ -1320,10 +1317,11 @@ mod tests {
 
     #[test]
     fn test_projected_u32() {
-        let n_vars = 6usize;
+        let log_height = 6;
+        let mode = ModuleMode::active(log_height, 0);
         let mask = 0u64; // we have long input and every "selected" item is taken into projection
 
-        let height = 2u64.pow(u32::try_from(n_vars).unwrap());
+        let height = 1 << log_height;
         let unprojected_size = height / 4;
 
         let mut circuit_module = CircuitModule::new(0);
@@ -1348,10 +1346,10 @@ mod tests {
         }
 
         witness_module.bind_oracle_to::<B32>(input, entry_id);
-        witness_module.populate(height).unwrap();
+        witness_module.populate(mode).unwrap();
 
         let witness_modules = [witness_module];
-        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness_archon = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
         let circuit_modules = [circuit_module];
 
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
@@ -1372,13 +1370,14 @@ mod tests {
         witness_module.bind_oracle_to::<B8>(x, entry_id);
         witness_module.bind_oracle_to::<B8>(y, entry_id);
 
-        let height = 16;
-        witness_module.populate(height).unwrap();
+        let mode = ModuleMode::active(4, 0);
+        witness_module.populate(mode).unwrap();
 
         let witness_modules = [witness_module];
-        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness_archon = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
         let circuit_modules = [circuit_module];
 
+        validate_witness(&circuit_modules, &[], &witness_archon).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
     }
 }

@@ -4,6 +4,7 @@ use std::{ffi::CString, ptr};
 
 use crate::{
     archon::{
+        ModuleMode,
         circuit::CircuitModule,
         protocol::{Proof, prove_core, validate_witness_core, verify_core},
     },
@@ -106,24 +107,41 @@ extern "C" fn rs_verify(
     to_raw(c_result)
 }
 
+/// Just a byte flag with value 0.
+const INACTIVE_MODE_SIZE: usize = 1;
+
+/// Byte flag with value 0, the `log_height: u8` and the `depth: u64`.
+const ACTIVE_MODE_SIZE: usize = 1 + size_of::<u8>() + size_of::<u64>();
+
 #[unsafe(no_mangle)]
 extern "C" fn rs_proof_size(proof: &Proof) -> usize {
+    let modes_size: usize = proof
+        .modes
+        .iter()
+        .map(|mode| match mode {
+            ModuleMode::Inactive => INACTIVE_MODE_SIZE,
+            ModuleMode::Active { .. } => ACTIVE_MODE_SIZE,
+        })
+        .sum();
     size_of::<u16>() // An `u16` is enough to indicate the number of modules
-        + proof.modules_heights.len() * size_of::<u64>()
+        + modes_size
         + proof.proof_core.get_proof_size()
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_proof_to_bytes(proof: &Proof, proof_size: usize, bytes: &mut CArray<u8>) {
     let mut buffer = Vec::with_capacity(proof_size);
-    let num_modules: u16 = proof
-        .modules_heights
-        .len()
-        .try_into()
-        .expect("Too many modules");
+    let num_modules: u16 = proof.modes.len().try_into().expect("Too many modules");
     buffer.extend(num_modules.to_le_bytes());
-    for module_height in &proof.modules_heights {
-        buffer.extend(module_height.to_le_bytes());
+    for mode in &proof.modes {
+        match mode {
+            ModuleMode::Inactive => buffer.push(0),
+            ModuleMode::Active { log_height, depth } => {
+                buffer.push(1);
+                buffer.extend(log_height.to_le_bytes());
+                buffer.extend(depth.to_le_bytes());
+            }
+        }
     }
     buffer.extend(&proof.proof_core.transcript);
     bytes.copy_from_slice(&buffer);
@@ -132,22 +150,37 @@ extern "C" fn rs_proof_to_bytes(proof: &Proof, proof_size: usize, bytes: &mut CA
 #[unsafe(no_mangle)]
 extern "C" fn rs_proof_of_bytes(bytes: &LeanSArrayObject) -> *const Proof {
     let bytes = bytes.data();
-    let mut num_modules_bytes = [0; 2];
-    num_modules_bytes.copy_from_slice(&bytes[..2]);
-    let num_modules = u16::from_le_bytes(num_modules_bytes) as usize;
-    let mut modules_heights = Vec::with_capacity(num_modules);
-    for i in 0..num_modules {
-        let mut module_height_bytes = [0; size_of::<u64>()];
-        let u64_start = 2 + i * size_of::<u64>();
-        module_height_bytes.copy_from_slice(&bytes[u64_start..u64_start + size_of::<u64>()]);
-        modules_heights.push(u64::from_le_bytes(module_height_bytes));
+
+    // Deserialize the number of modules
+    let num_modules = bytes[0] as usize + 256 * (bytes[1] as usize);
+
+    // Deserialize `modes`
+    let mut modes = Vec::with_capacity(num_modules);
+    let mut modes_size = 0;
+    let modes_start = 2; // Skip the 2 bytes for `num_modules`
+    for _ in 0..num_modules {
+        match bytes[modes_start + modes_size] {
+            0 => {
+                modes.push(ModuleMode::Inactive);
+                modes_size += INACTIVE_MODE_SIZE;
+            }
+            1 => {
+                let log_height_idx = modes_start + modes_size + 1;
+                let log_height = bytes[log_height_idx];
+                let mut depth_bytes = [0; size_of::<u64>()];
+                let depth_start = log_height_idx + 1;
+                depth_bytes.copy_from_slice(&bytes[depth_start..depth_start + size_of::<u64>()]);
+                let depth = u64::from_le_bytes(depth_bytes);
+                modes.push(ModuleMode::active(log_height, depth));
+                modes_size += ACTIVE_MODE_SIZE;
+            }
+            _ => panic!("Invalid ModuleMode flag"),
+        }
     }
-    let transcript_start = 2 + num_modules * size_of::<u64>();
+
+    // Deserialize `transcript`
+    let transcript_start = modes_start + modes_size;
     let transcript = bytes[transcript_start..].to_vec();
     let proof_core = ProofCore { transcript };
-    let proof = Proof {
-        modules_heights,
-        proof_core,
-    };
-    to_raw(proof)
+    to_raw(Proof { modes, proof_core })
 }
