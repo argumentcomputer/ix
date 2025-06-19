@@ -727,7 +727,7 @@ impl WitnessModule {
                         self.entry_map.get(inner).expect("Data should be available");
 
                     macro_rules! project_underliers {
-                        ($d:literal, $ty:ident) => {{
+                        ($d:literal, $ty:ident, $unpack:expr, $pack:expr) => {{
                             const DIVISOR: usize = $d;
 
                             let chunk_size = *unprojected_size;
@@ -742,9 +742,7 @@ impl WitnessModule {
 
                             self.entries[inner_entry_id]
                                 .par_iter()
-                                .flat_map(|&underlier| unsafe {
-                                    transmute::<OptimalUnderlier, [$ty; DIVISOR]>(underlier)
-                                })
+                                .flat_map($unpack)
                                 .collect::<Vec<_>>()
                                 .par_chunks(chunk_size)
                                 .map(|chunk| chunk[mask_value])
@@ -761,20 +759,65 @@ impl WitnessModule {
                             // Compose underliers in parallel
                             projected_field_elements
                                 .par_chunks_exact(DIVISOR)
-                                .map(|chunk| {
-                                    let array: [$ty; DIVISOR] = chunk.try_into().unwrap();
-                                    unsafe { transmute::<[$ty; DIVISOR], OptimalUnderlier>(array) }
-                                })
+                                .map(|chunk| $pack(chunk.try_into().unwrap()))
                                 .collect()
                         }};
                     }
 
                     let projected_underliers = match tower_level {
-                        3 => project_underliers!(16, B8),
-                        4 => project_underliers!(8, B16),
-                        5 => project_underliers!(4, B32),
-                        6 => project_underliers!(2, B64),
-                        7 => project_underliers!(1, B128),
+                        0 => project_underliers!(
+                            128,
+                            B1,
+                            |u| {
+                                let u = unsafe { transmute::<OptimalUnderlier, u128>(*u) };
+                                let mut arr = [B1::ZERO; 128];
+                                for (i, b) in arr.iter_mut().enumerate() {
+                                    if (u >> i) & 1 == 1 {
+                                        *b = B1::ONE;
+                                    }
+                                }
+                                arr
+                            },
+                            |a: [B1; 128]| {
+                                let mut u = 0;
+                                for (i, b) in a.into_iter().enumerate() {
+                                    if b == B1::ONE {
+                                        u |= 1 << i;
+                                    }
+                                }
+                                unsafe { transmute::<u128, OptimalUnderlier>(u) }
+                            }
+                        ),
+                        3 => project_underliers!(
+                            16,
+                            B8,
+                            |u| unsafe { transmute::<OptimalUnderlier, [B8; 16]>(*u) },
+                            |a| unsafe { transmute::<[B8; 16], OptimalUnderlier>(a) }
+                        ),
+                        4 => project_underliers!(
+                            8,
+                            B16,
+                            |u| unsafe { transmute::<OptimalUnderlier, [B16; 8]>(*u) },
+                            |a| unsafe { transmute::<[B16; 8], OptimalUnderlier>(a) }
+                        ),
+                        5 => project_underliers!(
+                            4,
+                            B32,
+                            |u| unsafe { transmute::<OptimalUnderlier, [B32; 4]>(*u) },
+                            |a| unsafe { transmute::<[B32; 4], OptimalUnderlier>(a) }
+                        ),
+                        6 => project_underliers!(
+                            2,
+                            B64,
+                            |u| unsafe { transmute::<OptimalUnderlier, [B64; 2]>(*u) },
+                            |a| unsafe { transmute::<[B64; 2], OptimalUnderlier>(a) }
+                        ),
+                        7 => project_underliers!(
+                            1,
+                            B128,
+                            |u| unsafe { transmute::<OptimalUnderlier, [B128; 1]>(*u) },
+                            |a| unsafe { transmute::<[B128; 1], OptimalUnderlier>(a) }
+                        ),
                         _ => unimplemented!(),
                     };
 
@@ -1265,12 +1308,14 @@ mod tests {
     #[test]
     fn test_projected() {
         let mut circuit_module = CircuitModule::new(0);
+        let b1 = circuit_module.add_committed::<B1>("b1").unwrap();
         let b8 = circuit_module.add_committed::<B8>("b8").unwrap();
         let b16 = circuit_module.add_committed::<B16>("b16").unwrap();
         let b32 = circuit_module.add_committed::<B32>("b32").unwrap();
         let b64 = circuit_module.add_committed::<B64>("b64").unwrap();
         let b128 = circuit_module.add_committed::<B128>("b128").unwrap();
 
+        circuit_module.add_projected("p1", b1, 1, 2).unwrap();
         circuit_module.add_projected("p8", b8, 3, 8).unwrap();
         circuit_module.add_projected("p16", b16, 5, 16).unwrap();
         circuit_module.add_projected("p32", b32, 7, 8).unwrap();
@@ -1279,6 +1324,11 @@ mod tests {
         circuit_module.freeze_oracles();
 
         let mut witness_module = circuit_module.init_witness_module().unwrap();
+
+        let b1_entry = witness_module.new_entry();
+        let b1_data: [u8; 32] = rand::random(); // 256 bits
+        witness_module.push_u8s_to(b1_data, b1_entry);
+        witness_module.bind_oracle_to::<B1>(b1, b1_entry);
 
         let b8_entry = witness_module.new_entry();
         let b8_data: [u8; 256] = rand::random();
@@ -1312,6 +1362,7 @@ mod tests {
         let witness_archon = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
         let circuit_modules = [circuit_module];
 
+        validate_witness(&circuit_modules, &[], &witness_archon).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
     }
 
