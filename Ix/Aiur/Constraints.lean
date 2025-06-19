@@ -50,8 +50,9 @@ structure Constraints where
 
 def blockSelector (block : Bytecode.Block) (columns : Columns) : ArithExpr :=
   let (min, max) := block.returnIdents
-  List.range (max + 1 - min) |>.foldl (init := 0) -- inclusive range interval
-    fun acc i => acc + columns.getSelector (i + min)
+  match List.range' min (max - min) |>.map columns.getSelector with
+  | [] => panic! s!"Invalid block identifiers: ({min}, {max})"
+  | o :: os => os.foldl (init := o) fun acc o => acc + (.oracle o)
 
 namespace Constraints
 
