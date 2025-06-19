@@ -727,47 +727,143 @@ impl WitnessModule {
                         self.entry_map.get(inner).expect("Data should be available");
 
                     macro_rules! project_underliers {
-                        ($d:literal, $ty:ident, $unpack:expr, $pack:expr) => {{
+                        ($d:literal, $ty:ident, $uty:ident, $unpack:expr, $pack:expr) => {{
                             const DIVISOR: usize = $d;
 
                             let chunk_size = *unprojected_size;
-                            let mask_value = usize::try_from(*mask)?;
+                            let mask_usize = usize::try_from(*mask)?;
 
                             // Compute total number of elements
                             let num_elts = self.entries[inner_entry_id].len() * DIVISOR;
                             let num_chunks = num_elts.div_ceil(chunk_size);
 
-                            // Pre-allocate the projected field elements
-                            let mut projected_field_elements = Vec::with_capacity(num_chunks);
-
-                            self.entries[inner_entry_id]
+                            let unpacked_data = self.entries[inner_entry_id]
                                 .par_iter()
                                 .flat_map($unpack)
-                                .collect::<Vec<_>>()
-                                .par_chunks(chunk_size)
-                                .map(|chunk| chunk[mask_value])
-                                .collect_into_vec(&mut projected_field_elements);
+                                .collect::<Vec<_>>();
 
-                            // Pad to multiple of DIVISOR
-                            #[allow(clippy::modulo_one)]
-                            let pad_len = projected_field_elements.len() % DIVISOR;
-                            if pad_len != 0 {
-                                projected_field_elements
-                                    .extend(repeat($ty::ZERO).take(DIVISOR - pad_len));
+                            let total_num_bits = (1 << tower_level) * num_chunks;
+                            if total_num_bits >= 128 {
+                                // Pre-allocate the projected field elements
+                                let mut projected_field_elements = Vec::with_capacity(num_chunks);
+
+                                unpacked_data
+                                    .par_chunks(chunk_size)
+                                    .map(|chunk| chunk[mask_usize])
+                                    .collect_into_vec(&mut projected_field_elements);
+
+                                // Pad to multiple of DIVISOR
+                                #[allow(clippy::modulo_one)]
+                                let pad_len = projected_field_elements.len() % DIVISOR;
+                                if pad_len != 0 {
+                                    projected_field_elements
+                                        .extend(repeat($ty::ZERO).take(DIVISOR - pad_len));
+                                }
+
+                                // Compose underliers in parallel
+                                let underliers = projected_field_elements
+                                    .par_chunks_exact(DIVISOR)
+                                    .map(|chunk| $pack(chunk.try_into().unwrap()))
+                                    .collect();
+                                (underliers, tower_level)
+                            } else {
+                                match total_num_bits {
+                                    1 => {
+                                        let mut u = 0u128;
+                                        for (chunk_idx, chunk) in
+                                            unpacked_data.chunks(chunk_size).enumerate()
+                                        {
+                                            let uty = unsafe {
+                                                transmute::<$ty, $uty>(chunk[mask_usize])
+                                            } as u128;
+                                            u |= (uty << (chunk_idx * 128)) as u128;
+                                        }
+                                        (vec![OptimalUnderlier::from(u)], 7)
+                                    }
+                                    2 => {
+                                        let mut u = 0u128;
+                                        for (chunk_idx, chunk) in
+                                            unpacked_data.chunks(chunk_size).enumerate()
+                                        {
+                                            let uty = unsafe {
+                                                transmute::<$ty, $uty>(chunk[mask_usize])
+                                            } as u128;
+                                            u |= (uty << (chunk_idx * 64)) as u128;
+                                        }
+                                        (vec![OptimalUnderlier::from(u)], 6)
+                                    }
+                                    4 => {
+                                        let mut u = 0u128;
+                                        for (chunk_idx, chunk) in
+                                            unpacked_data.chunks(chunk_size).enumerate()
+                                        {
+                                            let uty = unsafe {
+                                                transmute::<$ty, $uty>(chunk[mask_usize])
+                                            } as u128;
+                                            u |= (uty << (chunk_idx * 32)) as u128;
+                                        }
+                                        (vec![OptimalUnderlier::from(u)], 5)
+                                    }
+                                    8 => {
+                                        let mut u = 0u128;
+                                        for (chunk_idx, chunk) in
+                                            unpacked_data.chunks(chunk_size).enumerate()
+                                        {
+                                            let uty = unsafe {
+                                                transmute::<$ty, $uty>(chunk[mask_usize])
+                                            } as u128;
+                                            u |= (uty << (chunk_idx * 16)) as u128;
+                                        }
+                                        (vec![OptimalUnderlier::from(u)], 4)
+                                    }
+                                    16 => {
+                                        let mut u = 0u128;
+                                        for (chunk_idx, chunk) in
+                                            unpacked_data.chunks(chunk_size).enumerate()
+                                        {
+                                            let uty = unsafe {
+                                                transmute::<$ty, $uty>(chunk[mask_usize])
+                                            } as u128;
+                                            u |= (uty << (chunk_idx * 8)) as u128;
+                                        }
+                                        (vec![OptimalUnderlier::from(u)], 3)
+                                    }
+                                    32 => {
+                                        let mut u = 0u128;
+                                        for (chunk_idx, chunk) in
+                                            unpacked_data.chunks(chunk_size).enumerate()
+                                        {
+                                            let uty = unsafe {
+                                                transmute::<$ty, $uty>(chunk[mask_usize])
+                                            } as u128;
+                                            u |= (uty << (chunk_idx * 4)) as u128;
+                                        }
+                                        (vec![OptimalUnderlier::from(u)], 2)
+                                    }
+                                    64 => {
+                                        let mut u = 0u128;
+                                        for (chunk_idx, chunk) in
+                                            unpacked_data.chunks(chunk_size).enumerate()
+                                        {
+                                            let uty = unsafe {
+                                                transmute::<$ty, $uty>(chunk[mask_usize])
+                                            } as u128;
+                                            u |= (uty << (chunk_idx * 2)) as u128;
+                                        }
+                                        (vec![OptimalUnderlier::from(u)], 1)
+                                    }
+                                    _ => unreachable!(),
+                                }
                             }
-
-                            // Compose underliers in parallel
-                            projected_field_elements
-                                .par_chunks_exact(DIVISOR)
-                                .map(|chunk| $pack(chunk.try_into().unwrap()))
-                                .collect()
                         }};
                     }
 
-                    let projected_underliers = match tower_level {
+                    #[allow(trivial_numeric_casts)]
+                    let (projected_underliers, new_tower_level) = match tower_level {
                         0 => project_underliers!(
                             128,
                             B1,
+                            u8,
                             |u| {
                                 let u = unsafe { transmute::<OptimalUnderlier, u128>(*u) };
                                 let mut arr = [B1::ZERO; 128];
@@ -791,30 +887,35 @@ impl WitnessModule {
                         3 => project_underliers!(
                             16,
                             B8,
+                            u8,
                             |u| unsafe { transmute::<OptimalUnderlier, [B8; 16]>(*u) },
                             |a| unsafe { transmute::<[B8; 16], OptimalUnderlier>(a) }
                         ),
                         4 => project_underliers!(
                             8,
                             B16,
+                            u16,
                             |u| unsafe { transmute::<OptimalUnderlier, [B16; 8]>(*u) },
                             |a| unsafe { transmute::<[B16; 8], OptimalUnderlier>(a) }
                         ),
                         5 => project_underliers!(
                             4,
                             B32,
+                            u32,
                             |u| unsafe { transmute::<OptimalUnderlier, [B32; 4]>(*u) },
                             |a| unsafe { transmute::<[B32; 4], OptimalUnderlier>(a) }
                         ),
                         6 => project_underliers!(
                             2,
                             B64,
+                            u64,
                             |u| unsafe { transmute::<OptimalUnderlier, [B64; 2]>(*u) },
                             |a| unsafe { transmute::<[B64; 2], OptimalUnderlier>(a) }
                         ),
                         7 => project_underliers!(
                             1,
                             B128,
+                            u128,
                             |u| unsafe { transmute::<OptimalUnderlier, [B128; 1]>(*u) },
                             |a| unsafe { transmute::<[B128; 1], OptimalUnderlier>(a) }
                         ),
@@ -823,7 +924,7 @@ impl WitnessModule {
 
                     let entry_id = self.new_entry();
                     self.entries[entry_id] = projected_underliers;
-                    (entry_id, tower_level)
+                    (entry_id, new_tower_level)
                 }
             };
 
@@ -1315,11 +1416,18 @@ mod tests {
         let b64 = circuit_module.add_committed::<B64>("b64").unwrap();
         let b128 = circuit_module.add_committed::<B128>("b128").unwrap();
 
-        circuit_module.add_projected("p1", b1, 1, 2).unwrap();
-        circuit_module.add_projected("p8", b8, 3, 8).unwrap();
+        circuit_module.add_projected("p1_1", b1, 27, 32).unwrap();
+        circuit_module.add_projected("p1_2", b1, 63, 64).unwrap();
+        circuit_module.add_projected("p1_3", b1, 87, 128).unwrap();
+        circuit_module.add_projected("p8_1", b8, 3, 4).unwrap();
+        circuit_module.add_projected("p8_2", b8, 3, 8).unwrap();
+        circuit_module.add_projected("p8_2", b8, 15, 16).unwrap();
         circuit_module.add_projected("p16", b16, 5, 16).unwrap();
         circuit_module.add_projected("p32", b32, 7, 8).unwrap();
-        circuit_module.add_projected("p64", b64, 3, 4).unwrap();
+        circuit_module.add_projected("p64_1", b64, 3, 4).unwrap();
+        circuit_module
+            .add_projected("p64_2", b64, 101, 128)
+            .unwrap();
         circuit_module.add_projected("p128", b128, 11, 16).unwrap();
         circuit_module.freeze_oracles();
 

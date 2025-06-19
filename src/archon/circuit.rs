@@ -1,12 +1,11 @@
 use anyhow::{Result, bail, ensure};
-use binius_core::constraint_system::channel::{Flush, OracleOrConst};
-use binius_core::constraint_system::exp::Exp;
-use binius_core::oracle::{ConstraintSetBuilder, MultilinearOracleSet, ShiftVariant};
 use binius_core::{
     constraint_system::{
         ConstraintSystem,
-        channel::{ChannelId, FlushDirection},
+        channel::{ChannelId, Flush, FlushDirection, OracleOrConst},
+        exp::Exp,
     },
+    oracle::{ConstraintSetBuilder, MultilinearOracleSet, ShiftVariant},
     transparent::step_down::StepDown,
 };
 use binius_field::{TowerField, arch::OptimalUnderlier, underlier::UnderlierType};
@@ -269,13 +268,14 @@ impl CircuitModule {
         mask: u64,
         unprojected_size: usize,
     ) -> Result<OracleIdx> {
+        ensure!(unprojected_size.is_power_of_two());
+        ensure!(mask < unprojected_size as u64);
+
         let inner_tower_level = self.oracles.get_ref()[inner.val()].tower_level;
 
-        let mut mask_bits: Vec<F> = (0..64)
+        let mask_bits = (0..log2_ceil_usize(unprojected_size))
             .map(|n| F::from(((mask >> n) & 1) as u128))
             .collect();
-
-        mask_bits.truncate(log2_ceil_usize(unprojected_size));
 
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
