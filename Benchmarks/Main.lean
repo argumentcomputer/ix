@@ -10,16 +10,13 @@ def fibBench := (bgroup "fib" [
   bench "fib 1" fib 1,
   --bench "fib 2" fib 2,
   --bench "fib 30" fib 30
-] { numSamples := 100, samplingMode := .linear } )
+] { samplingMode := .linear } )
 
 def addBench := (bgroup "add" [
   bench "add 1 2" (Nat.add 1) 2
 ])
---def storeBench :=
---  benchmark []
---
---def proveBench :=
---  benchmark []
+
+-- TODO: Add Ix benchmarks
 
 def main : IO Unit := do
   let _result ← fibBench

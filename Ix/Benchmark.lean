@@ -16,10 +16,6 @@ Limitations:
 - Measures time in nanoseconds using `IO.monoNanosNow`, which is less precise than the picoseconds used in Criterion.rs
 -/
 
--- This prevents inline optimization for benchmarking, but doesn't work if the result is never used
---@[never_extract, noinline]
---def blackBox : α → α := id
-
 -- Compute the result and then discard the result
 @[never_extract, noinline]
 def blackBoxIO (f : α → β) (a : α) : IO β := do
@@ -31,7 +27,6 @@ def Float.toSeconds (f : Float) : Float := f / 10 ^ 9
 
 def Nat.toSeconds (n : Nat) : Float := Float.ofNat n / 10 ^ 9
 
--- TODO: Maybe add tenths place before M and B
 def Nat.natPretty (n : Nat) : String :=
   if n ≥ 10 ^ 9
   then
@@ -41,37 +36,6 @@ def Nat.natPretty (n : Nat) : String :=
     toString (n / 10 ^ 6 ) ++ "M"
   else
     toString n
-
-def putStrNat (tup : String × Nat) : Ixon.PutM := do
-  Ixon.putExpr $ .strl tup.fst
-  Ixon.putExpr $ .natl tup.snd
-
-def putCron (cron: Cronos) : Ixon.PutM := do
-  Ixon.putArray (fun x => putStrNat x) cron.data.toList
-
-def toIxon (c : Cronos) : ByteArray := Ixon.runPut (putCron c)
-
--- TODO: Not self-describing, add a 4-bit prefix for tuples generally
-def getStrNat : Ixon.GetM (String × Nat) := do
-  match (← Ixon.getExpr) with
-  | .strl s =>
-    match (← Ixon.getExpr) with
-    | .natl n => return (s, n)
-    | x => throw s!"expected Expr.Nat, got {repr x}"
-  | x => throw s!"expected Expr.String, got {repr x}"
-
-instance : Ixon.Serialize (RBMap String Nat compare) where
-  put xs := (Ixon.runPut ∘ (Ixon.putArray (fun x => putStrNat x))) xs.toList
-  get xs := (Ixon.runGet (Ixon.getArray getStrNat) xs).map (fun x => RBMap.ofList x compare)
-
-def getStr : Ixon.GetM String := do
-  match (← Ixon.getExpr) with
-  | .strl s => return s
-  | x => throw s!"expected Expr.String, got {repr x}"
-
-instance : Ixon.Serialize (List String) where
-  put := (Ixon.runPut ∘ (Ixon.putArray (fun x => Ixon.putExpr (.strl x))))
-  get := Ixon.runGet (Ixon.getArray getStr)
 
 def putFloat (x : Float): Ixon.PutM := Ixon.putUInt64LE x.toBits
 def getFloat : Ixon.GetM Float := Ixon.getUInt64LE.map Float.ofBits
@@ -98,8 +62,10 @@ structure Config where
   bootstrapSamples : Nat := 100000
   -- Confidence level for estimates
   confidenceLevel : Float := 0.95
+  -- Significance level for hypothesis testing when comparing two benchmark runs for significant difference
+  significanceLevel : Float := 0.05
   -- Noise threshold when comparing two benchmark means, if percent change is within this threshold then it's considered noise
-  noiseThreshold : Float := 0.02 -- 2%
+  noiseThreshold : Float := 0.01 -- 1%
 deriving Repr
 
 -- A benchmark group defines a collection of related benchmarks that share a configuration, such as number of samples and noise threshold
@@ -147,6 +113,7 @@ structure Benchmarkable (α β : Type) where
 
 def bench (name : String) (func : α → β) (arg : α) : Benchmarkable α β := ⟨ name, func, arg ⟩
 
+-- TODO: According to Criterion.rs docs the warmup iterations should increase linearly until the warmup time is reached, rather than one iteration per time check
 def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable α β) : IO Float := do
   IO.println s!"Warming up for {bg.config.warmupTime.floatPretty 2}s"
   let mut count := 0
@@ -155,12 +122,11 @@ def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable α β) : IO Float
   let startTime ← IO.monoNanosNow
   while elapsed < warmupNanos do
     let _res ← blackBoxIO bench.func bench.arg
-    count := count + 1
     let now ← IO.monoNanosNow
+    count := count + 1
     elapsed := now - startTime
   let mean := Float.ofNat elapsed / Float.ofNat count
   --IO.println s!"{bench.name} warmup avg: {mean}ns"
-  --IO.println s!"Ran {count} iterations in {bg.config.warmupTime.floatPretty 2}s\n"
   return mean
 
 -- TODO: Combine with other sampling functions, DRY
@@ -177,14 +143,12 @@ def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
   if itersPerSample == 1
   then
     IO.eprintln s!"Warning: Unable to complete {bg.config.numSamples} samples in {bg.config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
-  IO.println s!"Running {bg.config.numSamples} samples in {expectedTime.floatPretty 2}s ({totalIters.natPretty} iterations)"
+  IO.println s!"Running {bg.config.numSamples} samples in {expectedTime.floatPretty 2}s ({totalIters.natPretty} iterations)\n"
   --IO.println s!"Flat sample. Iters per sample: {itersPerSample}"
   let mut timings : Array Nat := #[]
   -- TODO: `mkArray` deprecated in favor of `replicate` in Lean v4.19
   let sampleIters := Array.mkArray bg.config.numSamples itersPerSample
   for iters in sampleIters do
-    --IO.println s!"Data with {itersPerSample} iterations"
-    --IO.println s!"Running sample {s}"
     let start ← IO.monoNanosNow
     for _i in Array.range iters do
       let _res ← blackBoxIO bench.func bench.arg
@@ -196,21 +160,20 @@ def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
 -- where `N` is the total number of samples and `d` is a factor derived from the warmup iteration time. The sum of this series should be roughly equivalent to the total `sampleTime`
 -- Returns the iteration counts and elapsed time per sample
 def BenchGroup.sampleLinear (bg : BenchGroup) (bench : Benchmarkable α β) (warmupMean : Float) : IO (Array Nat × Array Nat) := do
-  -- `d` has a minimum value of 1 if the `warmupMean` is sufficiently large
-  -- In this case,
   let totalRuns := bg.config.numSamples * (bg.config.numSamples + 1) / 2
   let targetTime := bg.config.sampleTime.toNanos
   let d := (targetTime / warmupMean / (Float.ofNat totalRuns)).ceil.toUInt64.toNat.max 1
   let expectedTime := (Float.ofNat totalRuns) * (Float.ofNat d) * warmupMean.toSeconds
   let sampleIters := (Array.range bg.config.numSamples).map (fun x => (x + 1) * d)
+  -- `d` has a minimum value of 1 if the `warmupMean` is sufficiently large
+  -- If so, that likely means the benchmark takes too long and target time should be increased, as well as other config options like flat sampling mode
   if d == 1
   then
     IO.eprintln s!"Warning: Unable to complete {bg.config.numSamples} samples in {bg.config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
-  IO.println s!"Running {bg.config.numSamples} samples in {expectedTime.floatPretty 2}s ({sampleIters.sum.natPretty} iterations)"
-  IO.println s!"Linear sample. Iters increase by a factor of {d} per sample"
+  IO.println s!"Running {bg.config.numSamples} samples in {expectedTime.floatPretty 2}s ({sampleIters.sum.natPretty} iterations)\n"
+  --IO.println s!"Linear sample. Iters increase by a factor of {d} per sample"
   let mut timings : Array Nat := #[]
   for iters in sampleIters do
-    --IO.println s!"Data with {iters} iterations"
     let start ← IO.monoNanosNow
     for _i in Array.range iters do
       let _res ← blackBoxIO bench.func bench.arg
@@ -223,19 +186,25 @@ def BenchGroup.sample (bg : BenchGroup) (bench : Benchmarkable α β) (warmupMea
   | .flat => bg.sampleFlat bench warmupMean
   | .linear => bg.sampleLinear bench warmupMean
 
--- TODO: Implement Coe with ↑ to coerce to the underlying list
 -- TODO: Ensure all array instances are used linearly for optimal performance
 structure Distribution where
   d : Array Float := #[]
+deriving Repr
 
+-- TODO: ↑ coercion doesn't seem to work
 instance : Coe Distribution (Array Float) where
   coe x := x.d
+
+-- Gets the p value of the distribution, which is the likelihood of seeing the `t` value or a more extreme value in the distribution. Smaller p value => less likely
+def Distribution.pValue (dist : Distribution) (t : Float) : Float :=
+  let len := Float.ofNat dist.d.size
+  let hits := Float.ofNat (dist.d.filter (· < t)).size
+  (min len (len - hits)) / len * 2
 
 def Distribution.percentile? (data : Distribution) (p : Float): Option Float :=
   if data.d.isEmpty || p > 100
   then .none
   else
-    --let data := data.d.sortBy (fun x y => compareOfLessAndBEq x y)
     let data := data.d.qsort
     let r := (p / 100) * (Float.ofNat data.size - 1) + 1
     let rf := r - r.floor
@@ -407,9 +376,9 @@ def Distribution.resampleM (dist : Distribution) (numSamples : Nat) : StateM Std
     rands := rands.push res
   return { d := rands }
 
+-- Performs a one-sample bootstrap
 -- Assumes `numSamples ≥ 2`
--- Gets `numSamples` resamples of the distribution and computes statistics for each
--- Returns
+-- Gets `bootstrapSamples` resamples of the distribution and computes statistics for each
 def Distribution.bootstrap (dist : Distribution) (numSamples bootstrapSamples : Nat) : StateM StdGen Distributions := do
   let mut means : Distribution := {}
   let mut stdDevs : Distribution := {}
@@ -449,6 +418,29 @@ def Distribution.estimates (avgTimes : Distribution) (config : Config) (gen : St
 
 structure Data where
   d : Array (Nat × Nat) := #[]
+deriving Repr
+
+def putNat (x : Nat) : Ixon.PutM := do
+  let bytes := Ixon.natToBytesLE x
+  Ixon.putBytes { data := bytes }
+
+def putData' (xy : Nat × Nat) : Ixon.PutM := do
+  Ixon.putNatl xy.fst
+  Ixon.putNatl xy.snd
+
+def putData (data : Data) : Ixon.PutM := do
+  Ixon.putArray putData' data.d.toList
+
+def getTupleNat : Ixon.GetM (Nat × Nat) := do
+  return (← Ixon.getNatl, ← Ixon.getNatl)
+
+def getData : Ixon.GetM Data := do
+  let data ← Ixon.getArray getTupleNat
+  return { d := data.toArray }
+
+instance : Ixon.Serialize Data where
+  put := Ixon.runPut ∘ putData
+  get := Ixon.runGet getData
 
 def dots (acc xys : Nat × Nat) : (Nat × Nat) :=
   let xy := acc.fst + xys.fst * xys.snd
@@ -474,6 +466,7 @@ def Data.resampleM (data : Data) (numSamples : Nat) : StateM StdGen Data := do
     rands := rands.push res
   return { d := rands }
 
+-- Performs a one-sample bootstrap of bivariate data
 def Data.bootstrap (data : Data) (numSamples bootstrapSamples : Nat): StateM StdGen Distribution := do
   let mut slopes : Array Float := #[]
   for _ in Array.range bootstrapSamples do
@@ -493,62 +486,249 @@ def Data.regression (data : Data) (config : Config) (gen : StdGen) : (Distributi
   let estimate : Estimate := { confidenceInterval, pointEstimate, stdErr }
   (distribution, estimate)
 
-def BenchGroup.getChange (bg : BenchGroup) (baseData : Estimates) (newData : Estimates) : IO Estimates := do
-  let change ← if baseData.mean.pointEstimate == 0
-  then
-    IO.println s!"Percent change is infinite, `baseData` mean is 0"
-    pure 0.0
-  else
-    let change := percentChange baseData.mean.pointEstimate newData.mean.pointEstimate
-    IO.println s!"Percent change: {change.floatPretty 2}%"
-    pure change
-  let nT := bg.config.noiseThreshold * 100
-  --IO.println s!"Noise threshold: {nT}%"
-  if change.abs > nT
-  then
-    if change > 0
-    then IO.println "Performance has regressed"
-    else IO.println "Performance has improved"
-  else IO.println "Change within noise threshold"
-  return baseData -- TODO: Get actual change
-  --let changeData : Estimates := { mean := change , stdDev := 1.0 }
-  --return changeData
+-- TODO: Use in `MeasurementData` and save outliers in `tukey.json`
+structure LabeledSample where
+  data : Array Float
 
--- Store `Estimates` values as ixon on disk
+structure ChangeEstimates where
+  mean : Estimate
+  median : Estimate
+
+def putChangeEstimates (changeEst : ChangeEstimates) : Ixon.PutM := do
+  putEstimate changeEst.mean
+  putEstimate changeEst.median
+
+def getChangeEstimates : Ixon.GetM ChangeEstimates := do
+  let mean ← getEstimate
+  let median ← getEstimate
+  return { mean, median }
+
+instance : Ixon.Serialize ChangeEstimates where
+  put := Ixon.runPut ∘ putChangeEstimates
+  get := Ixon.runGet getChangeEstimates
+
+structure ChangeDistributions where
+  mean : Distribution
+  median : Distribution
+
+structure ComparisonData where
+  pValue : Float
+  tDistribution : Distribution
+  tValue : Float
+  relativeEstimates : ChangeEstimates
+  relativeDistributions : ChangeDistributions
+  significanceThreshold : Float
+  noiseThreshold : Float
+  baseSample : Data
+  baseAvgTimes : Array Float
+  baseEstimates : Estimates
+
+-- TODO
+inductive Throughput where
+| Bytes (n : UInt64)
+| BytesDecimal (n : UInt64)
+| Elements (n : UInt64)
+| Bits (n : UInt64)
+
+structure MeasurementData where
+  data : Data
+  avgTimes : Distribution
+  absoluteEstimates : Estimates
+  distributions : Distributions
+  comparison : Option ComparisonData
+  throughput : Option Throughput
+
+def tScore (xs ys : Distribution) : Float :=
+  let (xBar, yBar) := (xs.mean, ys.mean)
+  let (s2X, s2Y) := (xs.variance xBar, ys.variance yBar)
+  let (nX, nY) := (Float.ofNat xs.d.size, Float.ofNat ys.d.size)
+  let num := xBar - yBar
+  let den := (s2X / nX + s2Y / nY).sqrt
+  num / den
+
+def Array.splitAt {α} (a : Array α) (n : Nat) : Array α × Array α :=
+  (a.extract 0 n, a.extract n a.size)
+
+-- Performs a mixed two-sample bootstrap
+def tBootstrap (newAvgTimes baseAvgTimes : Distribution) (bootstrapSamples : Nat) : StateM StdGen Distribution := do
+  let allTimes : Distribution := { d := newAvgTimes.d ++ baseAvgTimes.d }
+  let newLen := newAvgTimes.d.size
+  let mut tDistribution := #[]
+  for _ in Array.range bootstrapSamples do
+    let resample ← allTimes.resampleM allTimes.d.size
+    let (xs, ys) := resample.d.splitAt newLen
+    let t := tScore { d := xs } { d := ys }
+    tDistribution := tDistribution.push t
+  return { d := tDistribution }
+
+def tTest (newAvgTimes baseAvgTimes : Distribution) (config : Config) (gen : StdGen) :(Float × Distribution) :=
+  let tStatistic := tScore newAvgTimes baseAvgTimes
+  let tDistribution := (tBootstrap newAvgTimes baseAvgTimes config.numSamples gen).run.fst
+  -- Hack to filter out non-finite numbers from https://github.com/bheisler/criterion.rs/blob/ccccbcc15237233af22af4c76751a7aa184609b3/src/analysis/compare.rs#L86
+  let tDistribution : Distribution := { d := tDistribution.d.filter (fun x => x.isFinite && !x.isNaN ) }
+  (tStatistic, tDistribution)
+
+def changeStats (xs ys : Distribution) : (Float × Float) :=
+  (xs.mean / ys.mean - 1, xs.median / ys.median - 1)
+
+-- TODO: Genericize bootstrap functions
+-- Performs a two-sample bootstrap
+def changeBootstrap (xs ys : Distribution) (numSamples bootstrapSamples : Nat) : StateM StdGen ChangeDistributions := do
+  let mut means := #[]
+  let mut medians := #[]
+  for _ in Array.range bootstrapSamples do
+    let resampleX ← xs.resampleM numSamples
+    let resampleY ← ys.resampleM numSamples
+    let (mean, median) := changeStats resampleX resampleY
+    means := means.push mean
+    medians := medians.push median
+  return ⟨ { d := means }, { d := medians } ⟩
+
+def buildChangeEstimates (changeDist : ChangeDistributions) (mean median confidenceLevel : Float) : ChangeEstimates :=
+  let mean := changeDist.mean.toEstimate mean confidenceLevel
+  let median := changeDist.median.toEstimate median confidenceLevel
+  { mean, median }
+
+def changeEstimates (newAvgTimes baseAvgTimes : Distribution) (config : Config) (gen : StdGen) : (ChangeEstimates × ChangeDistributions) :=
+  let changeDistributions := (changeBootstrap newAvgTimes baseAvgTimes config.numSamples config.bootstrapSamples gen).run.fst
+  let (mean, median) := changeStats newAvgTimes baseAvgTimes
+  let changeEstimates := buildChangeEstimates changeDistributions mean median config.confidenceLevel
+  (changeEstimates, changeDistributions)
+
+-- Store `Estimates` and `Data` sample as Ixon on disk
 -- Compare performance against prior run
--- TODO: Factor out into helper functions
-def BenchGroup.comparePrev (bg : BenchGroup) (name : String) (benchData : Estimates) : IO Unit := do
-  let ixon := Ixon.Serialize.put benchData
-  let benchPath := System.mkFilePath [".", ".lake", "benches", name]
-  let benchDir := benchPath.toString
-  let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", benchDir] }
+def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Estimates) (avgTimes : Distribution) (gen : StdGen) : ComparisonData :=
+  -- Get `base` data for comparison
+  let baseAvgTimes : Distribution := { d := baseSample.d.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
+  -- Then perform statistical analysis
+  let (tValue, tDistribution) := tTest avgTimes baseAvgTimes bg.config gen
+  let (relativeEstimates, relativeDistributions) := changeEstimates avgTimes baseAvgTimes bg.config gen
+  let pValue := tDistribution.pValue tValue
+  {
+    pValue,
+    tDistribution,
+    tValue,
+    relativeEstimates,
+    relativeDistributions,
+    significanceThreshold := bg.config.significanceLevel,
+    noiseThreshold := bg.config.noiseThreshold,
+    baseSample,
+    baseAvgTimes,
+    baseEstimates
+  }
+
+-- TODO: Don't compare if different sampling modes were used
+def BenchGroup.getComparison (bg : BenchGroup) (benchName : String) (avgTimes : Distribution) : IO (Option ComparisonData) := do
+  let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
   let basePath := benchPath / "base"
-  let baseDir := basePath.toString
-  -- If the user has already run the benchmark at least once, then write the new data to disk
   if (← System.FilePath.pathExists basePath)
-  then
+  then do
     let newPath := benchPath / "new"
-    let newDir := newPath.toString
-    -- If there have been 2 or more prior runs, overwrite old `base` with old `new`, then write latest data to `new`
-    if (← System.FilePath.pathExists newPath) then
-      let _out ← IO.Process.run {cmd := "rm", args := #["-r", baseDir] }
-      let _out ← IO.Process.run {cmd := "mv", args := #[newDir, baseDir] }
-    let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", newDir] }
-    IO.FS.writeBinFile (newPath / "estimates") ixon
-    -- Get `base` data for comparison
-    let baseBytes ← IO.FS.readBinFile (basePath / "estimates")
-    let baseData ← match (Ixon.Serialize.get baseBytes : Except String Estimates) with
+    -- If 2 or more prior runs, then the base data was stored in `new`
+    let basePath' := if (← System.FilePath.pathExists newPath)
+    then
+      newPath
+    else
+      basePath
+    let baseEstimateBytes ← IO.FS.readBinFile (basePath' / "estimates.ixon")
+    let baseEstimates ← match (Ixon.Serialize.get baseEstimateBytes : Except String Estimates) with
     | .ok bd' => pure bd'
     | e => throw $ IO.userError s!"expected `Estimates`, got {repr e}"
-    -- Then do statistical analysis and write changes to disk
-    let changeData ← bg.getChange baseData benchData
-    let changeIxon := Ixon.Serialize.put changeData
+    let baseSampleBytes ← IO.FS.readBinFile (basePath' / "sample.ixon")
+    let baseSample ← match (Ixon.Serialize.get baseSampleBytes : Except String Data) with
+    | .ok bd' => pure bd'
+    | e => throw $ IO.userError s!"expected `Data`, got {repr e}"
+    let gen ← IO.stdGenRef.get
+    return some $ bg.compare baseSample baseEstimates avgTimes gen
+  else
+    return none
+
+inductive ComparisonResult where
+| Improved
+| Regressed
+| NonSignificant
+
+def compareToThreshold (estimate : Estimate) (noiseThreshold : Float) : ComparisonResult :=
+  let ci := estimate.confidenceInterval
+  let (lb, ub) := (ci.lowerBound, ci.upperBound)
+  let noiseNeg := noiseThreshold.neg
+
+  if lb < noiseNeg && ub < noiseNeg
+  then
+    ComparisonResult.Improved
+  else if lb > noiseThreshold && ub > noiseThreshold
+  then
+    ComparisonResult.Regressed
+  else
+    ComparisonResult.NonSignificant
+
+-- TODO: Print ~24 whitespace characters before time, change, regression
+def BenchGroup.printResults (bg : BenchGroup) (benchName : String) (m : MeasurementData) : IO Unit := do
+  let estimates := m.absoluteEstimates
+  let typicalEstimate := estimates.slope.getD estimates.mean
+  IO.println s!"{bg.name}/{benchName}"
+  let lb := typicalEstimate.confidenceInterval.lowerBound.formatNanos
+  let pointEst := typicalEstimate.pointEstimate.formatNanos
+  let ub := typicalEstimate.confidenceInterval.upperBound.formatNanos
+  IO.println s!"time:   [{lb} {pointEst} {ub}]"
+  if let some comp := m.comparison
+  then
+    let diffMean := comp.pValue < comp.significanceThreshold
+    let meanEst := comp.relativeEstimates.mean
+    let pointEst := (meanEst.pointEstimate * 100).floatPretty 4
+    let lb := (meanEst.confidenceInterval.lowerBound * 100).floatPretty 4
+    let ub := (meanEst.confidenceInterval.upperBound * 100).floatPretty 4
+    let symbol := if diffMean then "<" else ">"
+    IO.println s!"change: [{lb}% {pointEst}% {ub}%] (p = {comp.pValue.floatPretty 2} {symbol} {comp.significanceThreshold.floatPretty 2})"
+    let explanation := if diffMean
+    then
+      "No change in performance detected"
+    else
+      match compareToThreshold meanEst comp.noiseThreshold with
+      | ComparisonResult.Improved => "Performance has improved"
+      | ComparisonResult.Regressed => "Performance has regressed"
+      | ComparisonResult.NonSignificant => "Change within noise threshold"
+    IO.println explanation
+  IO.println ""
+  m.avgTimes.tukey
+
+def saveComparison! (benchName : String) (comparison : Option ComparisonData) : IO Unit := do
+  match comparison with
+  | some comp => do
+    let changeIxon := Ixon.Serialize.put comp.relativeEstimates
+    let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
     let changePath := benchPath / "change"
     let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", changePath.toString ] }
-    IO.FS.writeBinFile (changePath / "estimates") changeIxon
-  else
+    IO.FS.writeBinFile (changePath / "estimates.ixon") changeIxon
+  | none => IO.eprintln s!"Error: expected `comparisonData` to write but found none"
+
+-- TODO: Write sampling mode in `sample.json` for comparison
+def saveResults (benchName : String) (m : MeasurementData) : IO Unit := do
+  let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
+  let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", benchPath.toString] }
+  let basePath := benchPath / "base"
+  let baseDir := basePath.toString
+  -- If prior results were saved to disk, don't overwrite them
+  let newPath ← if (← System.FilePath.pathExists basePath)
+    then do
+      let newPath := benchPath / "new"
+      let newDir := newPath.toString
+      -- If 2 or more prior runs, then the base data was stored in `new`
+      -- Move the base data to `base`
+      if (← System.FilePath.pathExists newPath)
+      then do
+        let _out ← IO.Process.run {cmd := "rm", args := #["-r", baseDir] }
+        let _out ← IO.Process.run {cmd := "mv", args := #[newDir, baseDir] }
+      let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", newPath.toString] }
+      saveComparison! benchName m.comparison
+      pure newPath
+  else do
     let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", baseDir] }
-    IO.FS.writeBinFile (basePath / "estimates") ixon
+    pure basePath
+  let sampleIxon := Ixon.Serialize.put m.data
+  IO.FS.writeBinFile (newPath / "sample.ixon") sampleIxon
+  let estimateIxon := Ixon.Serialize.put m.absoluteEstimates
+  IO.FS.writeBinFile (newPath / "estimates.ixon") estimateIxon
 
 -- TODO: Make sure compiler isn't caching partial evaluation result for future runs of the same function (measure first vs subsequent runs)
 -- Runs each benchmark in a `BenchGroup` and analyzes the results
@@ -561,17 +741,23 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
     let (iters, times) ← bg.sample b warmupMean
     let data := iters.zip times
     let avgTimes : Distribution := { d := data.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
-    avgTimes.tukey
     let gen ← IO.stdGenRef.get
     let mut (distributions, estimates) := avgTimes.estimates bg.config gen
-    IO.println estimates.mean.pointEstimate
     if bg.config.samplingMode == .linear
     then
       let data' : Data := { d := data }
       let (distribution, slope) := data'.regression bg.config gen
       estimates := { estimates with slope := .some slope }
       distributions := { distributions with slope := .some distribution }
-    IO.println s!"Mean: {estimates.mean.pointEstimate.formatNanos}"
-    --IO.println s!"Results: {repr estimates}"
-    --bg.comparePrev b.name bd
-    --IO.println ""
+    let comparisonData : Option ComparisonData ← bg.getComparison b.name avgTimes
+    let m :=  {
+      data := { d := data },
+      avgTimes,
+      absoluteEstimates := estimates,
+      distributions,
+      comparison := comparisonData
+      throughput := none
+    }
+    bg.printResults b.name m
+    IO.println ""
+    saveResults b.name m
