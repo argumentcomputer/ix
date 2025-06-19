@@ -9,7 +9,7 @@ use binius_core::{
     transparent::step_down::StepDown,
 };
 use binius_field::{TowerField, arch::OptimalUnderlier, underlier::UnderlierType};
-use binius_utils::checked_arithmetics::log2_ceil_usize;
+use binius_utils::checked_arithmetics::log2_strict_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
 
@@ -273,7 +273,7 @@ impl CircuitModule {
 
         let inner_tower_level = self.oracles.get_ref()[inner.val()].tower_level;
 
-        let mask_bits = (0..log2_ceil_usize(unprojected_size))
+        let mask_bits = (0..log2_strict_usize(unprojected_size))
             .map(|n| F::from(((mask >> n) & 1) as u128))
             .collect();
 
@@ -283,8 +283,8 @@ impl CircuitModule {
             kind: OracleKind::Projected {
                 inner,
                 mask,
-                mask_bits,
                 unprojected_size,
+                mask_bits,
             },
         };
 

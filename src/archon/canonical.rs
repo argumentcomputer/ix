@@ -1,5 +1,6 @@
 use binius_core::{constraint_system::channel::FlushDirection, oracle::ShiftVariant};
 use binius_field::BinaryField128b;
+use binius_utils::checked_arithmetics::log2_strict_usize;
 
 use super::{
     OracleIdx, OracleInfo, OracleKind,
@@ -134,16 +135,8 @@ impl Canonical for OracleKind {
                     + Canonical::size(block_bits)
                     + Canonical::size(variant)
             }
-            Self::Projected {
-                inner,
-                mask,
-                mask_bits,
-                unprojected_size,
-            } => {
-                1 + Canonical::size(inner)
-                    + Canonical::size(mask)
-                    + Canonical::size(mask_bits)
-                    + Canonical::size(unprojected_size)
+            Self::Projected { inner, mask, .. } => {
+                1 + Canonical::size(inner) + Canonical::size(mask) + size_of::<u8>()
             }
         }
     }
@@ -180,14 +173,13 @@ impl Canonical for OracleKind {
             Self::Projected {
                 inner,
                 mask,
-                mask_bits,
                 unprojected_size,
+                ..
             } => {
                 buffer.push(6);
                 Canonical::write(inner, buffer);
                 Canonical::write(mask, buffer);
-                Canonical::write(mask_bits, buffer);
-                Canonical::write(unprojected_size, buffer);
+                buffer.push(log2_strict_usize(*unprojected_size).to_le_bytes()[0]);
             }
         }
     }
