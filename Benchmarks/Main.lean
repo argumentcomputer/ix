@@ -1,4 +1,4 @@
-import Ix.Benchmark
+import Ix.Benchmark.Bench
 
 def fib (n : Nat) : Nat :=
   match n with
