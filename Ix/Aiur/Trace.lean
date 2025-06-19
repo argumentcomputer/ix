@@ -1,3 +1,4 @@
+import Ix.Archon.ModuleMode
 import Ix.Archon.TowerField
 import Ix.Aiur.Term
 import Ix.Aiur.Execute
@@ -10,6 +11,7 @@ namespace Aiur.Circuit
 
 structure FunctionTrace where
   numQueries : Nat
+  height : Nat
   inputs: Array (Array UInt64)
   outputs: Array (Array UInt64)
   u1Auxiliaries: Array (Array Bool)
@@ -18,6 +20,11 @@ structure FunctionTrace where
   selectors: Array (Array Bool)
   multiplicity: Array UInt64
   deriving Inhabited
+
+def FunctionTrace.mode (trace : FunctionTrace) : Archon.ModuleMode :=
+  if trace.height == 0
+  then .inactive
+  else .active trace.height.log2.toUInt8 trace.numQueries.toUInt64
 
 structure MemoryTrace where
   numQueries : Nat
@@ -44,7 +51,8 @@ structure AiurTrace where
   mul : Array UInt64 × Array UInt64
   mem : Array MemoryTrace
 
-def FunctionTrace.blank (layout : Layout) (height : Nat) : FunctionTrace :=
+def FunctionTrace.blank (layout : Layout) (numQueries : Nat) : FunctionTrace :=
+  let height := if numQueries == 0 then 0 else numQueries.nextPowerOfTwo.max 128
   let arr1 := Array.mkArray height false
   let arr8 := Array.mkArray height 0
   let arr64 := Array.mkArray height 0
@@ -55,8 +63,7 @@ def FunctionTrace.blank (layout : Layout) (height : Nat) : FunctionTrace :=
   let u64Auxiliaries := Array.mkArray layout.u64Auxiliaries arr64
   let selectors := Array.mkArray layout.selectors arr1
   let multiplicity := arr64
-  let numQueries := height
-  { numQueries, inputs, outputs, u1Auxiliaries, u8Auxiliaries, u64Auxiliaries, selectors, multiplicity }
+  { height, numQueries, inputs, outputs, u1Auxiliaries, u8Auxiliaries, u64Auxiliaries, selectors, multiplicity }
 
 end Aiur.Circuit
 
@@ -231,8 +238,8 @@ def Function.populateTrace
   (funcMap : QueryMap)
   (layout : Circuit.Layout)
 : TraceM Unit := do
-  let height := if funcMap.size == 0 then 0 else funcMap.size.nextPowerOfTwo.max 128
-  modify fun s => { s with trace := Circuit.FunctionTrace.blank layout height }
+  let numQueries := funcMap.size
+  modify fun s => { s with trace := Circuit.FunctionTrace.blank layout numQueries }
   funcMap.foldlM (init := ()) fun _ (inputs, result) => do
     modify fun s => { s with map := inputs }
     TraceM.populateIO inputs result
