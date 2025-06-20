@@ -1,8 +1,8 @@
 import Ix.Ixon.Expr
 import Ix.Benchmark.Change
 
-def putFloat (x : Float): Ixon.PutM := Ixon.putUInt64LE x.toBits
-def getFloat : Ixon.GetM Float := Ixon.getUInt64LE.map Float.ofBits
+@[inline] def putFloat (x : Float): Ixon.PutM := Ixon.putUInt64LE x.toBits
+@[inline] def getFloat : Ixon.GetM Float := Ixon.getUInt64LE.map Float.ofBits
 
 instance : Ixon.Serialize Float where
   put := Ixon.runPut ∘ putFloat

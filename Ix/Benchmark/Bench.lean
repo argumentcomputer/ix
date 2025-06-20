@@ -12,19 +12,19 @@ import Ix.Benchmark.Tukey
 
 open Batteries (RBMap)
 
-/--
-Benchmarking library modeled after Criterion in Haskell and Rust
+/-!
+# Benchmarking library modeled after Criterion in Haskell and Rust
 
-Limitations:
+## Limitations
 - Measures time in nanoseconds using `IO.monoNanosNow`, which is less precise than the picoseconds used in Criterion.rs
 -/
 
--- Compute the result and then discard the result
+/-- Compute the result and then discard the result -/
 @[never_extract, noinline]
 def blackBoxIO (f : α → β) (a : α) : IO β := do
   pure $ f a
 
--- A benchmark group defines a collection of related benchmarks that share a configuration, such as number of samples and noise threshold
+/-- A benchmark group defines a collection of related benchmarks that share a configuration, such as number of samples and noise threshold -/
 structure BenchGroup where
   name : String
   config : Config
@@ -54,8 +54,11 @@ def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable α β) : IO Float
 
 -- TODO: Combine with other sampling functions, DRY
 -- TODO: Recommend sample count if expectedTime >>> bg.config.sampleTime (i.e. itersPerSample == 1)
--- Runs the sample as a sequence of constant iterations per data point, where the iteration count attempts to fit into the configurable `sampleTime` but cannot be less than 1
--- Returns the iteration counts and elapsed time per data point
+/--
+Runs the sample as a sequence of constant iterations per data point, where the iteration count attempts to fit into the configurable `sampleTime` but cannot be less than 1.
+
+Returns the iteration counts and elapsed time per data point.
+-/
 def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
 (warmupMean : Float) : IO (Array Nat × Array Nat) := do
   let targetTime := bg.config.sampleTime.toNanos
@@ -79,9 +82,13 @@ def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
     timings := timings.push (finish - start)
   return (sampleIters, timings)
 
--- Runs the sample as a sequence of linearly increasing iterations [d, 2d, 3d, ..., Nd]
--- where `N` is the total number of samples and `d` is a factor derived from the warmup iteration time. The sum of this series should be roughly equivalent to the total `sampleTime`
--- Returns the iteration counts and elapsed time per sample
+/--
+Runs the sample as a sequence of linearly increasing iterations [d, 2d, 3d, ..., Nd] where `N` is the total number of samples and `d` is a factor derived from the warmup iteration time.
+
+The sum of this series should be roughly equivalent to the total `sampleTime`.
+
+Returns the iteration counts and elapsed time per sample.
+-/
 def BenchGroup.sampleLinear (bg : BenchGroup) (bench : Benchmarkable α β) (warmupMean : Float) : IO (Array Nat × Array Nat) := do
   let totalRuns := bg.config.numSamples * (bg.config.numSamples + 1) / 2
   let targetTime := bg.config.sampleTime.toNanos
@@ -124,8 +131,7 @@ structure MeasurementData where
   comparison : Option ComparisonData
   throughput : Option Throughput
 
--- Store `Estimates` and `Data` sample as Ixon on disk
--- Compare performance against prior run
+/-- Compare performance against prior run -/
 def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Estimates) (avgTimes : Distribution) (gen : StdGen) : ComparisonData :=
   -- Get `base` data for comparison
   let baseAvgTimes : Distribution := { d := baseSample.d.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
@@ -260,7 +266,7 @@ def saveResults (benchName : String) (m : MeasurementData) : IO Unit := do
   IO.FS.writeBinFile (newPath / "estimates.ixon") estimateIxon
 
 -- TODO: Make sure compiler isn't caching partial evaluation result for future runs of the same function (measure first vs subsequent runs)
--- Runs each benchmark in a `BenchGroup` and analyzes the results
+/-- Runs each benchmark in a `BenchGroup` and analyzes the results -/
 def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) (config : Config := {}) : IO Unit := do
   let bg : BenchGroup := { name, config }
   IO.println s!"Running bench group {name}\n"

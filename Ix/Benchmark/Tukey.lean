@@ -1,6 +1,6 @@
 import Ix.Benchmark.Distribution
 
--- Outliers are classified following https://bheisler.github.io/criterion.rs/book/analysis.html#outlier-classification
+/-- Outliers are classified per https://bheisler.github.io/criterion.rs/book/analysis.html#outlier-classification -/
 structure Outliers where
   outliers : List Float
   highSevere : Nat

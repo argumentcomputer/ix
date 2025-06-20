@@ -35,7 +35,7 @@ def tScore (xs ys : Distribution) : Float :=
 def Array.splitAt {α} (a : Array α) (n : Nat) : Array α × Array α :=
   (a.extract 0 n, a.extract n a.size)
 
--- Performs a mixed two-sample bootstrap
+/-- Performs a mixed two-sample bootstrap -/
 def tBootstrap (newAvgTimes baseAvgTimes : Distribution) (bootstrapSamples : Nat) : StateM StdGen Distribution := do
   let allTimes : Distribution := { d := newAvgTimes.d ++ baseAvgTimes.d }
   let newLen := newAvgTimes.d.size
@@ -58,7 +58,7 @@ def changeStats (xs ys : Distribution) : (Float × Float) :=
   (xs.mean / ys.mean - 1, xs.median / ys.median - 1)
 
 -- TODO: Genericize bootstrap functions
--- Performs a two-sample bootstrap
+/-- Performs a two-sample bootstrap -/
 def changeBootstrap (xs ys : Distribution) (numSamples bootstrapSamples : Nat) : StateM StdGen ChangeDistributions := do
   let mut means := #[]
   let mut medians := #[]

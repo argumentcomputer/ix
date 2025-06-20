@@ -3,14 +3,14 @@ import Ix.Benchmark.Estimate
 
 -- TODO: Ensure all array instances are used linearly for optimal performance
 structure Distribution where
-  d : Array Float := #[]
-deriving Repr
+  d : Array Float
+deriving Repr, Inhabited
 
 -- TODO: ↑ coercion doesn't seem to work
 instance : Coe Distribution (Array Float) where
   coe x := x.d
 
--- Gets the p value of the distribution, which is the likelihood of seeing the `t` value or a more extreme value in the distribution. Smaller p value => less likely
+/-- Gets the p value of the distribution, which is the likelihood of seeing the `t` value or a more extreme value in the distribution. Smaller p value => less likely -/
 def Distribution.pValue (dist : Distribution) (t : Float) : Float :=
   let len := Float.ofNat dist.d.size
   let hits := Float.ofNat (dist.d.filter (· < t)).size
@@ -32,11 +32,12 @@ def Distribution.percentile? (data : Distribution) (p : Float): Option Float :=
       .some $ data[ri-1]! + (rf) * (data[ri]! - data[ri-1]!)
 
 structure Distributions where
-  means: Distribution := { d := #[] }
-  medians: Distribution := { d := #[] }
-  medianAbsDevs : Distribution := { d := #[] }
-  slope : Option (Distribution) := none
-  stdDevs : Distribution := { d := #[] }
+  means: Distribution
+  medians: Distribution
+  medianAbsDevs : Distribution
+  slope : Option (Distribution)
+  stdDevs : Distribution
+deriving Inhabited
 
 def Distribution.confidenceInterval (dist : Distribution) (confidenceLevel : Float) : ConfidenceInterval :=
   let lowerBound := (dist.percentile? (50 * (1 - confidenceLevel))).get!
@@ -60,14 +61,14 @@ def Distribution.medianAbsDev (dist : Distribution) (median : Float) : Float :=
   let absDevs : Distribution := { d := dist.d.map (fun x => (x - median).abs) }
   (absDevs.percentile? 50).get! * 1.4826
 
--- Returns the data point in the distribution at a random index
+/-- Returns the data point in the distribution at a random index -/
 def Distribution.randDistM (dist : Distribution) : StateM StdGen Float := do
   let gen ← get
   let (n, gen') := randNat gen 0 (dist.d.size - 1)
   set gen'
   return dist.d[n]!
 
--- Creates a random permutation of the distribution with replacement (i.e. duplicates are permitted)
+/-- Creates a random permutation of the distribution with replacement (i.e. duplicates are permitted) -/
 def Distribution.resampleM (dist : Distribution) (numSamples : Nat) : StateM StdGen Distribution := do
   let mut rands := #[]
   for _ in Array.range numSamples do
@@ -75,14 +76,16 @@ def Distribution.resampleM (dist : Distribution) (numSamples : Nat) : StateM Std
     rands := rands.push res
   return { d := rands }
 
--- Performs a one-sample bootstrap
--- Assumes `numSamples ≥ 2`
--- Gets `bootstrapSamples` resamples of the distribution and computes statistics for each
+/--
+Performs a one-sample bootstrap, gets `bootstrapSamples` resamples of the distribution and computes statistics for each.
+
+Assumes `numSamples ≥ 2`
+-/
 def Distribution.bootstrap (dist : Distribution) (numSamples bootstrapSamples : Nat) : StateM StdGen Distributions := do
-  let mut means : Distribution := {}
-  let mut stdDevs : Distribution := {}
-  let mut medians : Distribution := {}
-  let mut medianAbsDevs : Distribution := {}
+  let mut means : Distribution := default
+  let mut stdDevs : Distribution := default
+  let mut medians : Distribution := default
+  let mut medianAbsDevs : Distribution := default
   for _ in Array.range bootstrapSamples do
     let resample ← Distribution.resampleM dist numSamples
     means := { means with d := means.d.push resample.mean }
