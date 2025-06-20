@@ -26,6 +26,22 @@ def FunctionTrace.mode (trace : FunctionTrace) : Archon.ModuleMode :=
   then .inactive
   else .active trace.height.log2.toUInt8 trace.numQueries.toUInt64
 
+structure ArithmeticTrace where
+  xs : Array UInt64
+  ys : Array UInt64
+  mode : Archon.ModuleMode
+
+def ArithmeticTrace.ofPairs (pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
+  let depth := pairs.size
+  if depth == 0 then
+    ⟨#[], #[], .inactive⟩
+  else
+    let height := depth.nextPowerOfTwo.max 128
+    let paddedPairs := pairs.rightpad height (0, 0)
+    let logHeight := paddedPairs.size.log2.toUInt8
+    let (xs, ys) := paddedPairs.unzip
+    ⟨xs, ys, .active logHeight depth.toUInt64⟩
+
 structure MemoryTrace where
   numQueries : Nat
   multiplicity: Array UInt64
@@ -47,8 +63,8 @@ deriving BEq, Hashable
 
 structure AiurTrace where
   functions : Array FunctionTrace
-  add : Array UInt64 × Array UInt64
-  mul : Array UInt64 × Array UInt64
+  add : ArithmeticTrace
+  mul : ArithmeticTrace
   mem : Array MemoryTrace
 
 def FunctionTrace.blank (layout : Layout) (numQueries : Nat) : FunctionTrace :=
@@ -247,7 +263,8 @@ def Function.populateTrace
 
 def QueryMap.generateTrace (map : QueryMap) : Circuit.MemoryTrace :=
   let trace := map.foldl (init := default) fun acc (_, result) =>
-    let multiplicity := acc.multiplicity.push (Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity)
+    let multiplicity := acc.multiplicity.push $
+      Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
     let values := acc.values.push result.values
     let numQueries := acc.numQueries + 1
     { multiplicity, values, numQueries }
@@ -268,8 +285,8 @@ def Toplevel.generateTraces
       traces := traces.push trace
     pure traces
   let functions := (action.run queries default).fst
-  let add := queries.addQueries.unzip
-  let mul := queries.mulQueries.unzip
+  let add := .ofPairs queries.addQueries
+  let mul := .ofPairs queries.mulQueries
   let mem := queries.memQueries.map fun (_, map) => map.generateTrace
   { functions, add, mul, mem }
 

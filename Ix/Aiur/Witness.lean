@@ -58,9 +58,9 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
     witnessModules := witnessModules.push witnessModule
 
   -- Add
-  let (xins, yins) := trace.add
-  -- TODO
-  modes := modes.push .inactive
+  let xins := trace.add.xs
+  let yins := trace.add.ys
+  modes := modes.push trace.add.mode
   let mut addZout := Array.mkEmpty xins.size
   let mut addCout := Array.mkEmpty xins.size
   for (xin, yin) in xins.zip yins do
@@ -83,9 +83,9 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
   witnessModules := witnessModules.push addWitnessModule
 
   -- Mul
-  let (xins, yins) := trace.mul
-  -- TODO
-  modes := modes.push .inactive
+  let xins := trace.mul.xs
+  let yins := trace.mul.ys
+  modes := modes.push .inactive -- TODO
   let mut mulZout := Array.mkEmpty xins.size
   for (xin, yin) in xins.zip yins do
     let zout := xin * yin
@@ -120,8 +120,7 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
 
   -- Memory
   for ((mod, cols), memTrace) in circuits.mem.zip trace.mem do
-        -- TODO
-    modes := modes.push .inactive
+    modes := modes.push .inactive -- TODO
     let mut witnessModule := mod.initWitnessModule
     for (oracle, data) in cols.values.zip memTrace.values do
       witnessModule := pushData witnessModule .pushUInt64sTo data oracle .b64
