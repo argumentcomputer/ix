@@ -719,8 +719,8 @@ impl WitnessModule {
 
                 OracleKind::Projected {
                     inner,
-                    mask,
-                    unprojected_size,
+                    selection,
+                    chunk_size,
                     ..
                 } => {
                     let tower_level = oracle_info.tower_level;
@@ -731,8 +731,8 @@ impl WitnessModule {
                         ($d:literal, $ty:ident, $uty:ident, $unpack:expr, $pack:expr) => {{
                             const DIVISOR: usize = $d;
 
-                            let chunk_size = *unprojected_size;
-                            let mask_usize = usize::try_from(*mask)?;
+                            let chunk_size = *chunk_size;
+                            let selection_usize = usize::try_from(*selection)?;
 
                             // Compute total number of elements
                             let num_elts = self.entries[inner_entry_id].len() * DIVISOR;
@@ -743,8 +743,8 @@ impl WitnessModule {
                                 .flat_map($unpack)
                                 .collect::<Vec<_>>();
 
-                            let total_num_bits = (1 << tower_level) * num_chunks;
-                            if total_num_bits >= 128 {
+                            let num_projections = (1 << tower_level) * num_chunks;
+                            if num_projections >= 128 {
                                 // An `OptimalUnderlier` won't exceed the expected amount of data
 
                                 // Pre-allocate the projected field elements
@@ -752,7 +752,7 @@ impl WitnessModule {
 
                                 unpacked_data
                                     .par_chunks_exact(chunk_size)
-                                    .map(|chunk| chunk[mask_usize])
+                                    .map(|chunk| chunk[selection_usize])
                                     .collect_into_vec(&mut projected_field_elements);
 
                                 // Pad to multiple of DIVISOR
@@ -771,7 +771,7 @@ impl WitnessModule {
                                 (underliers, tower_level)
                             } else {
                                 // We need to fill an `OptimalUnderlier` with sparse data
-                                let shift_size = 128 / total_num_bits;
+                                let shift_size = 128 / num_projections;
                                 let new_tower_level = log2_strict_usize(shift_size);
                                 let mut u = 0u128;
 
@@ -779,7 +779,8 @@ impl WitnessModule {
                                 for (chunk_idx, chunk) in
                                     unpacked_data.chunks_exact(chunk_size).enumerate()
                                 {
-                                    let uty = unsafe { transmute::<$ty, $uty>(chunk[mask_usize]) };
+                                    let uty =
+                                        unsafe { transmute::<$ty, $uty>(chunk[selection_usize]) };
                                     u |= (uty as u128) << (chunk_idx * shift_size);
                                 }
                                 (vec![OptimalUnderlier::from(u)], new_tower_level)
@@ -1406,10 +1407,10 @@ mod tests {
     fn test_projected_u32() {
         let log_height = 6;
         let mode = ModuleMode::active(log_height, 0);
-        let mask = 0u64; // we have long input and every "selected" item is taken into projection
+        let selection = 0u64; // we have long input and every "selected" item is taken into projection
 
         let height = 1 << log_height;
-        let unprojected_size = height / 4;
+        let chunk_size = height / 4;
 
         let mut circuit_module = CircuitModule::new(0);
         let input = circuit_module.add_committed::<B32>("input").unwrap();
@@ -1417,8 +1418,8 @@ mod tests {
             .add_projected(
                 &format!("projected-{input}"),
                 input,
-                mask,
-                usize::try_from(unprojected_size).unwrap(),
+                selection,
+                chunk_size.try_into().unwrap(),
             )
             .unwrap();
         circuit_module.freeze_oracles();
@@ -1427,7 +1428,7 @@ mod tests {
         let entry_id = witness_module.new_entry();
 
         // let's use 'push_u32s_to' for populating
-        for _ in 0..unprojected_size {
+        for _ in 0..chunk_size {
             let push: [u32; 4] = rand::random();
             witness_module.push_u32s_to(push, entry_id);
         }

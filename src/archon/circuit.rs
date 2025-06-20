@@ -265,16 +265,16 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         inner: OracleIdx,
-        mask: u64,
-        unprojected_size: usize,
+        selection: u64,
+        chunk_size: usize,
     ) -> Result<OracleIdx> {
-        ensure!(unprojected_size.is_power_of_two());
-        ensure!(mask < unprojected_size as u64);
+        ensure!(chunk_size.is_power_of_two());
+        ensure!(selection < chunk_size as u64);
 
         let inner_tower_level = self.oracles.get_ref()[inner.val()].tower_level;
 
-        let mask_bits = (0..log2_strict_usize(unprojected_size))
-            .map(|n| F::from(((mask >> n) & 1) as u128))
+        let selection_bits = (0..log2_strict_usize(chunk_size))
+            .map(|n| F::from(((selection >> n) & 1) as u128))
             .collect();
 
         let oracle_info = OracleInfo {
@@ -282,9 +282,9 @@ impl CircuitModule {
             tower_level: inner_tower_level,
             kind: OracleKind::Projected {
                 inner,
-                mask,
-                unprojected_size,
-                mask_bits,
+                selection,
+                chunk_size,
+                selection_bits,
             },
         };
 
@@ -404,11 +404,13 @@ pub fn compile_circuit_modules(
                     )?;
                 }
                 OracleKind::Projected {
-                    inner, mask_bits, ..
+                    inner,
+                    selection_bits,
+                    ..
                 } => {
                     oracles.add_named(name).projected(
                         inner.oracle_id(oracle_offset),
-                        mask_bits.clone(),
+                        selection_bits.clone(),
                         0,
                     )?;
                 }
