@@ -60,10 +60,10 @@ pub enum OracleKind {
     },
     Projected {
         inner: OracleIdx,
-        mask: u64,
-        unprojected_size: usize,
+        selection: u64,
+        chunk_size: usize,
         /// Cached bits for slightly faster circuit compilation
-        mask_bits: Vec<F>,
+        selection_bits: Vec<F>,
     },
 }
 

@@ -135,9 +135,9 @@ impl Canonical for OracleKind {
                     + Canonical::size(block_bits)
                     + Canonical::size(variant)
             }
-            Self::Projected { inner, mask, .. } => {
-                1 + Canonical::size(inner) + Canonical::size(mask) + size_of::<u8>()
-            }
+            Self::Projected {
+                inner, selection, ..
+            } => 1 + Canonical::size(inner) + Canonical::size(selection) + size_of::<u8>(),
         }
     }
     fn write(&self, buffer: &mut Vec<u8>) {
@@ -172,14 +172,14 @@ impl Canonical for OracleKind {
             }
             Self::Projected {
                 inner,
-                mask,
-                unprojected_size,
+                selection,
+                chunk_size,
                 ..
             } => {
                 buffer.push(6);
                 Canonical::write(inner, buffer);
-                Canonical::write(mask, buffer);
-                buffer.push(log2_strict_usize(*unprojected_size).to_le_bytes()[0]);
+                Canonical::write(selection, buffer);
+                buffer.push(log2_strict_usize(*chunk_size).to_le_bytes()[0]);
             }
         }
     }
