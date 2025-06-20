@@ -85,7 +85,7 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
   -- Mul
   let xins := trace.mul.xs
   let yins := trace.mul.ys
-  modes := modes.push .inactive -- TODO
+  modes := modes.push trace.mul.mode
   let mut mulZout := Array.mkEmpty xins.size
   for (xin, yin) in xins.zip yins do
     let zout := xin * yin
