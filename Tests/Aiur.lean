@@ -13,6 +13,10 @@ def toplevel := ⟦
     n
   }
 
+  fn sum(x: u64, y: u64) -> u64 {
+    add(x, y)
+  }
+
   fn store_and_load(x: u64) -> u64 {
     load(store(x))
   }
@@ -106,6 +110,7 @@ structure TestCase where
 
 def testCases : List TestCase := [
     ⟨`id, #[42], #[42]⟩,
+    ⟨`sum, #[3, 5], #[8]⟩,
     ⟨`store_and_load, #[42], #[42]⟩,
     ⟨`is_0_even, #[], #[1]⟩,
     ⟨`is_1_even, #[], #[0]⟩,
