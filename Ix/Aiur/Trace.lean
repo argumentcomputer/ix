@@ -31,16 +31,19 @@ structure ArithmeticTrace where
   ys : Array UInt64
   mode : Archon.ModuleMode
 
-def ArithmeticTrace.ofPairs (pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
-  let depth := pairs.size
-  if depth == 0 then
+def ArithmeticTrace.add (pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
+  if pairs.size == 0 then
     ⟨#[], #[], .inactive⟩
   else
-    let height := depth.nextPowerOfTwo.max 128
-    let paddedPairs := pairs.rightpad height (0, 0)
-    let logHeight := paddedPairs.size.log2.toUInt8
+    let depth := pairs.size
+    let targetNumPairs := pairs.size.nextPowerOfTwo.max 2 -- to fill 128 bits
+    let paddedPairs := pairs.rightpad targetNumPairs (0, 0)
+    let logHeight := paddedPairs.size |>.log2.toUInt8
     let (xs, ys) := paddedPairs.unzip
     ⟨xs, ys, .active logHeight depth.toUInt64⟩
+
+def ArithmeticTrace.mul (_pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
+  ⟨#[], #[], .inactive⟩ -- TODO
 
 structure MemoryTrace where
   numQueries : Nat
@@ -285,8 +288,8 @@ def Toplevel.generateTraces
       traces := traces.push trace
     pure traces
   let functions := (action.run queries default).fst
-  let add := .ofPairs queries.addQueries
-  let mul := .ofPairs queries.mulQueries
+  let add := .add queries.addQueries
+  let mul := .mul queries.mulQueries
   let mem := queries.memQueries.map fun (_, map) => map.generateTrace
   { functions, add, mul, mem }
 
