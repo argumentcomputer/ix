@@ -116,13 +116,13 @@ def TraceM.pushU64 (b : UInt64) : TraceM Unit :=
 def TraceM.pushInput (b : UInt64) : TraceM Unit :=
   modify fun s =>
     let trace := { s.trace with inputs := s.trace.inputs.modify s.col.input fun col => col.set! s.row b }
-    let col := { s.col with u64Auxiliary := s.col.input + 1 }
+    let col := { s.col with input := s.col.input + 1 }
     { s with trace, col }
 
 def TraceM.pushOutput (b : UInt64) : TraceM Unit :=
   modify fun s =>
     let trace := { s.trace with outputs := s.trace.outputs.modify s.col.output fun col => col.set! s.row b }
-    let col := { s.col with u64Auxiliary := s.col.output + 1 }
+    let col := { s.col with output := s.col.output + 1 }
     { s with trace, col }
 
 def TraceM.pushCount (query : Circuit.Query) : TraceM Unit := do
@@ -193,7 +193,7 @@ partial def Op.populateRow : Op → TraceM Unit
   let map := (← get).map
   let a := map[a]!
   let c := a + map[b]!
-  let overflow := c < a
+  let overflow := decide (c < a)
   TraceM.pushU64 c
   TraceM.pushU1 overflow
   TraceM.pushVar c
@@ -201,7 +201,7 @@ partial def Op.populateRow : Op → TraceM Unit
   let map := (← get).map
   let c := map[c]!
   let a := c - map[b]!
-  let overflow := c < a
+  let overflow := decide (c < a)
   TraceM.pushU64 c
   TraceM.pushU1 overflow
   TraceM.pushVar c
@@ -214,10 +214,10 @@ partial def Op.populateRow : Op → TraceM Unit
   let map := (← get).map
   let c := map[c]!
   let a := c.sub map[b]!
-  let overflow := c < a
+  let overflow := decide (c < a)
   TraceM.pushU64 c
   TraceM.pushU1 overflow
-  TraceM.pushVar (if overflow then 1 else 0)
+  TraceM.pushVar overflow.toUInt64
 | .store values => do
   let len := values.size
   let mem ← TraceM.loadMemMap len
