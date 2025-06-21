@@ -125,7 +125,7 @@ def testCases : List TestCase := [
     ⟨`factorial, #[5], #[120]⟩,
     ⟨`fibonacci, #[0], #[1]⟩,
     ⟨`fibonacci, #[1], #[1]⟩,
-    ⟨`fibonacci, #[5], #[8]⟩,
+    ⟨`fibonacci, #[6], #[13]⟩,
   ]
 
 def aiurTest : TestSeq :=
@@ -139,7 +139,8 @@ def aiurTest : TestSeq :=
       let record := bytecodeToplevel.execute funcIdx testCase.input
       let output := record.getFuncResult funcIdx testCase.input |>.get!
       let executionTest :=
-        test s!"Result of {functionName} is correct" (output == testCase.expectedOutput)
+        test s!"Result of {functionName} with arguments {testCase.input} is correct"
+          (output == testCase.expectedOutput)
       let traces := bytecodeToplevel.generateTraces record
       let witness := Circuit.populateWitness aiurCircuits traces
       let boundaries := Circuit.mkBoundaries testCase.input output funcIdx funcChannel
