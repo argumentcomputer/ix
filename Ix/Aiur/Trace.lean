@@ -19,7 +19,7 @@ structure FunctionTrace where
   u64Auxiliaries: Array (Array UInt64)
   selectors: Array (Array Bool)
   multiplicity: Array UInt64
-  deriving Inhabited
+  deriving Inhabited, Repr
 
 def FunctionTrace.mode (trace : FunctionTrace) : Archon.ModuleMode :=
   if trace.height == 0
@@ -262,7 +262,7 @@ def Function.populateTrace
   let numQueries := funcMap.size
   modify fun s => { s with trace := Circuit.FunctionTrace.blank layout numQueries }
   for ((inputs, result), row) in funcMap.pairs.zipIdx do
-    modify fun s => { s with map := inputs, row }
+    modify fun s => { s with map := inputs, row, col := default }
     TraceM.populateIO inputs result
     function.body.populateRow
 
