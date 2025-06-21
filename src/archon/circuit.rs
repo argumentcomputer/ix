@@ -384,10 +384,9 @@ pub fn compile_circuit_modules(
                     })?;
                 }
                 OracleKind::StepDown => {
-                    let n_vars = n_vars_fn(*tower_level);
                     oracles
                         .add_named(name)
-                        .transparent(StepDown::new(n_vars, depth_usize)?)?;
+                        .transparent(StepDown::new(log_height_usize, depth_usize)?)?;
                 }
 
                 OracleKind::Shifted {

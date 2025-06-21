@@ -603,27 +603,40 @@ impl WitnessModule {
                 OracleKind::StepDown => {
                     let tower_level = oracle_info.tower_level;
                     assert_eq!(tower_level, 0);
-                    let num_underliers =
-                        Self::num_underliers_for_log_height(log_height_usize, tower_level);
-                    let mut underliers = vec![OptimalUnderlier::from(0u128); num_underliers];
                     let depth_usize: usize = depth.try_into()?;
-                    let step_down_changes_at = depth_usize / OptimalUnderlier::BITS;
+                    if log_height_usize >= OptimalUnderlier::LOG_BITS {
+                        let num_underliers =
+                            Self::num_underliers_for_log_height(log_height_usize, tower_level);
+                        let mut underliers = vec![OptimalUnderlier::from(0u128); num_underliers];
+                        let step_down_changes_at = depth_usize / OptimalUnderlier::BITS;
 
-                    // Set the first bits to 1.
-                    underliers[..step_down_changes_at]
-                        .par_iter_mut()
-                        .for_each(|u| *u = OptimalUnderlier::from(u128::MAX));
+                        // Set the first bits to 1.
+                        underliers[..step_down_changes_at]
+                            .par_iter_mut()
+                            .for_each(|u| *u = OptimalUnderlier::from(u128::MAX));
 
-                    if step_down_changes_at < num_underliers {
-                        // Produce an `u128` with the `depth_usize % OptimalUnderlier::BITS`
-                        // least significant bits set to one and the rest set to zero.
-                        let u128: u128 = (1 << (depth_usize % OptimalUnderlier::BITS)) - 1;
-                        underliers[step_down_changes_at] = OptimalUnderlier::from(u128);
+                        if step_down_changes_at < num_underliers {
+                            // Produce an `u128` with the `depth_usize % OptimalUnderlier::BITS`
+                            // least significant bits set to one and the rest set to zero.
+                            let u128: u128 = (1 << (depth_usize % OptimalUnderlier::BITS)) - 1;
+                            underliers[step_down_changes_at] = OptimalUnderlier::from(u128);
+                        }
+
+                        let entry_id = self.new_entry();
+                        self.entries[entry_id] = underliers;
+                        (entry_id, tower_level)
+                    } else {
+                        // Fill an `OptimalUnderlier` with sparse data
+                        let shift_size = OptimalUnderlier::BITS / (1 << log_height);
+                        let mut u = 0u128;
+                        for i in 0..depth_usize {
+                            u |= 1 << (i * shift_size)
+                        }
+
+                        let entry_id = self.new_entry();
+                        self.entries[entry_id] = vec![OptimalUnderlier::from(u)];
+                        (entry_id, OptimalUnderlier::LOG_BITS - log_height_usize)
                     }
-
-                    let entry_id = self.new_entry();
-                    self.entries[entry_id] = underliers;
-                    (entry_id, tower_level)
                 }
                 OracleKind::Shifted {
                     inner,

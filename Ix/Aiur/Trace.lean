@@ -203,22 +203,24 @@ partial def Op.populateRow : Op → TraceM Unit
 | .sub c b => do
   let map := (← get).map
   let c := map[c]!
-  let a := c - map[b]!
-  let overflow := decide (c < a)
-  TraceM.pushU64 c
+  let b := map[b]!
+  let a := c - b
+  let overflow := decide (c < b)
+  TraceM.pushU64 a
+  TraceM.pushVar a
   TraceM.pushU1 overflow
-  TraceM.pushVar c
 | .mul a b => do
   let map := (← get).map
   let c := map[a]! * map[b]!
   TraceM.pushU64 c
   TraceM.pushVar c
-| .lt  c b => do
+| .lt c b => do
   let map := (← get).map
   let c := map[c]!
-  let a := c.sub map[b]!
-  let overflow := decide (c < a)
-  TraceM.pushU64 c
+  let b := map[b]!
+  let a := c.sub b
+  let overflow := decide (c < b)
+  TraceM.pushU64 a
   TraceM.pushU1 overflow
   TraceM.pushVar overflow.toUInt64
 | .store values => do
@@ -259,8 +261,8 @@ def Function.populateTrace
 : TraceM Unit := do
   let numQueries := funcMap.size
   modify fun s => { s with trace := Circuit.FunctionTrace.blank layout numQueries }
-  funcMap.foldlM (init := ()) fun _ (inputs, result) => do
-    modify fun s => { s with map := inputs }
+  for ((inputs, result), row) in funcMap.pairs.zipIdx do
+    modify fun s => { s with map := inputs, row }
     TraceM.populateIO inputs result
     function.body.populateRow
 
