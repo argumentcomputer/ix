@@ -130,12 +130,11 @@ def TraceM.pushOutput (b : UInt64) : TraceM Unit :=
 
 def TraceM.pushCount (query : Circuit.Query) : TraceM Unit := do
   modify fun s =>
-    let update maybe := match maybe with
-      | .none => .some 1
-      | .some prev =>
-        .some $ Archon.mulUInt64InBinaryField prev MultiplicativeGenerator
-    let prevCounts := s.prevCounts.alter query update
-    { s with prevCounts }
+    let prevCount := (s.prevCounts.get? query).getD 1
+    let trace := { s.trace with u64Auxiliaries := s.trace.u64Auxiliaries.modify s.col.u64Auxiliary fun col => col.set! s.row prevCount }
+    let col := { s.col with u64Auxiliary := s.col.u64Auxiliary + 1 }
+    let prevCounts := s.prevCounts.insert query $ Archon.mulUInt64InBinaryField prevCount MultiplicativeGenerator
+    { s with prevCounts, trace, col }
 
 def TraceM.loadMemMap (len : Nat) : TraceM QueryMap := do
   let queries := (← read).memQueries
