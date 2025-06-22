@@ -91,15 +91,18 @@ structure Layout where
   sharedConstraints : Nat
   deriving Repr, Inhabited
 
-structure LayoutBranchState where
-  u1AuxiliariesInit : Nat
-  u1AuxiliariesMax  : Nat
-  u8AuxiliariesInit : Nat
-  u8AuxiliariesMax  : Nat
-  u64AuxiliariesInit : Nat
-  u64AuxiliariesMax  : Nat
-  sharedConstraintsInit : Nat
-  sharedConstraintsMax  : Nat
+structure SharedData where
+  u1Auxiliaries : Nat
+  u8Auxiliaries : Nat
+  u64Auxiliaries : Nat
+  constraints : Nat
+
+def SharedData.maximals (a b : SharedData) : SharedData := {
+  u1Auxiliaries := a.u1Auxiliaries.max b.u1Auxiliaries
+  u8Auxiliaries := a.u8Auxiliaries.max b.u8Auxiliaries
+  u64Auxiliaries := a.u64Auxiliaries.max b.u64Auxiliaries
+  constraints := a.constraints.max b.constraints
+}
 
 @[inline] def Layout.init (inputs outputs : Nat) : Layout :=
   ⟨inputs, outputs, 0, 0, 0, 0, 0⟩
@@ -133,43 +136,21 @@ abbrev LayoutM := StateM LayoutMState
       else stt.memWidths.push memWidth
     { stt with memWidths }
 
-namespace LayoutBranchState
-
-def save : LayoutM LayoutBranchState := do
+def getSharedData : LayoutM SharedData := do
   let stt ← get
   pure {
-    u1AuxiliariesInit := stt.layout.u1Auxiliaries
-    u1AuxiliariesMax := stt.layout.u1Auxiliaries
-    u8AuxiliariesInit := stt.layout.u8Auxiliaries
-    u8AuxiliariesMax := stt.layout.u8Auxiliaries
-    u64AuxiliariesInit := stt.layout.u64Auxiliaries
-    u64AuxiliariesMax := stt.layout.u64Auxiliaries
-    sharedConstraintsInit := stt.layout.sharedConstraints
-    sharedConstraintsMax := stt.layout.sharedConstraints }
+    u1Auxiliaries := stt.layout.u1Auxiliaries
+    u8Auxiliaries := stt.layout.u8Auxiliaries
+    u64Auxiliaries := stt.layout.u64Auxiliaries
+    constraints := stt.layout.sharedConstraints
+  }
 
-def merge (lbs : LayoutBranchState) : LayoutM LayoutBranchState := do
-  let stt ← get
-  let lbs' := { lbs with
-    u1AuxiliariesMax := lbs.u1AuxiliariesMax.max stt.layout.u1Auxiliaries
-    u8AuxiliariesMax := lbs.u8AuxiliariesMax.max stt.layout.u8Auxiliaries
-    u64AuxiliariesMax := lbs.u64AuxiliariesMax.max stt.layout.u64Auxiliaries
-    sharedConstraintsMax := lbs.sharedConstraintsMax.max stt.layout.sharedConstraints }
-  let layout := { stt.layout with
-    u1Auxiliaries := lbs.u1AuxiliariesInit
-    u8Auxiliaries := lbs.u8AuxiliariesInit
-    u64Auxiliaries := lbs.u64AuxiliariesInit
-    sharedConstraints := lbs.sharedConstraintsInit }
-  set { stt with layout }
-  pure lbs'
-
-def finish (lbs : LayoutBranchState) : LayoutM Unit := do
+def setSharedData (sharedData : SharedData) : LayoutM Unit :=
   modify fun stt => { stt with layout := { stt.layout with
-    u1Auxiliaries := lbs.u1AuxiliariesMax.max stt.layout.u1Auxiliaries
-    u8Auxiliaries := lbs.u8AuxiliariesMax.max stt.layout.u8Auxiliaries
-    u64Auxiliaries := lbs.u64AuxiliariesMax.max stt.layout.u64Auxiliaries
-    sharedConstraints := lbs.sharedConstraintsMax.max stt.layout.sharedConstraints } }
-
-end LayoutBranchState
+    u1Auxiliaries := sharedData.u1Auxiliaries
+    u8Auxiliaries := sharedData.u8Auxiliaries
+    u64Auxiliaries := sharedData.u64Auxiliaries
+    sharedConstraints := sharedData.constraints } }
 
 def opLayout : Bytecode.Op → LayoutM Unit
   | .prim _ | .xor .. => pure ()
@@ -204,20 +185,31 @@ partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   block.ops.forM opLayout
   match block.ctrl with
   | .if _ tt ff =>
-    let lbs ← LayoutBranchState.save
+    let initSharedData ← getSharedData
     -- This auxiliary is for proving inequality
     bumpU64Auxiliaries 1
     blockLayout tt
-    let lbs ← lbs.merge
+    let ttSharedData ← getSharedData
+    setSharedData initSharedData
     blockLayout ff
-    lbs.finish
+    let ffSharedData ← getSharedData
+    setSharedData $ ttSharedData.maximals ffSharedData
   | .match _ branches defaultBranch =>
-    let lbs ← branches.foldlM (init := ← LayoutBranchState.save) fun lbs (_, block) => do
+    let initSharedData ← getSharedData
+    let mut maximalSharedData := initSharedData
+    for (_, block) in branches do
+      setSharedData initSharedData
+      -- This auxiliary is for proving inequality
+      bumpU64Auxiliaries 1
       blockLayout block
-      lbs.merge
+      let blockSharedData ← getSharedData
+      maximalSharedData := maximalSharedData.maximals blockSharedData
     if let some defaultBlock := defaultBranch then
+      setSharedData initSharedData
       blockLayout defaultBlock
-    lbs.finish
+      let defaultBlockSharedData ← getSharedData
+      maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
+    setSharedData maximalSharedData
   | .ret _ out =>
     -- One selector per return
     bumpSelectors
