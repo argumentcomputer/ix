@@ -202,7 +202,7 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
           match length with
           | 0 => (circuitModule, committed, input, output)
           | length' + 1 =>
-            let (committed', circuitModule):= circuitModule.addCommitted (String.append name (toString length)) f
+            let (committed', circuitModule):= circuitModule.addCommitted (String.append name (toString length)) f .base
             let (input', circuitModule) := circuitModule.addProjected (String.append (String.append name (toString length)) "input") committed' 0 64
             let (output', circuitModule) := circuitModule.addProjected (String.append (String.append name (toString length)) "output") committed' 57 64
 
@@ -250,21 +250,21 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
     let tracesNum := 2 ^ compressionsLogTest
     let (traces, expected) := TraceGeneration.generateTraces (mkStdGen 0) tracesNum
 
-    let nVars := Nat.log2 (tracesNum * (Nat.pow 2 6))
+    let logHeight := Nat.log2 (tracesNum * (Nat.pow 2 6)) |>.toUInt8
+    let mode := .active logHeight 0
 
-    let height := 2 ^ nVars
     let circuitModule := CircuitModule.new 0
     let (circuitModule, state, _, output) := mkColumns circuitModule 32 .b32 "stateTransition"
     let circuitModule := circuitModule.freezeOracles
     let witnessModule := circuitModule.initWitnessModule
     let witnessModule := writeTraces witnessModule traces state .b32
-    let witnessModule := witnessModule.populate height.toUInt64
+    let witnessModule := witnessModule.populate mode
 
     -- get data as ByteArray of every actually computed cv and convert it to Array UInt32 for comparison
     let actual := (Array.ofFn (n := 16) fun i => witnessModule.getData output[i]!).map (fun bytes => byteArrayToUInt32Array bytes)
     let expected := Utilities.transpose expected 16
 
-    let witness := compileWitnessModules #[witnessModule] #[height.toUInt64]
+    let witness := compileWitnessModules #[witnessModule] #[mode]
     withExceptOk "[Archon] state transition module testing is OK" (validateWitness #[circuitModule] #[] witness) fun _ =>
       test "output is expected" ((actual.zip expected).all (fun (a, b) => arrayEq a b))
 

@@ -3,7 +3,7 @@
 use crate::archon::arith_expr::ArithExpr;
 use crate::archon::circuit::CircuitModule;
 use crate::archon::witness::WitnessModule;
-use crate::archon::{ModuleId, OracleIdx};
+use crate::archon::{ModuleId, ModuleMode, OracleIdx, RelativeHeight};
 use binius_circuits::arithmetic::u32::LOG_U32_BITS;
 use binius_core::oracle::ShiftVariant;
 use binius_field::{BinaryField1b, BinaryField32b, BinaryField128b, Field};
@@ -75,41 +75,46 @@ pub fn blake3_compress(
     (
         Vec<CircuitModule>,
         Vec<WitnessModule>,
-        Vec<u64>,
+        Vec<ModuleMode>,
         Blake3CompressionOracles,
     ),
     anyhow::Error,
 > {
     // FIXME: Implement modules' gluing
 
-    let (compression_oracles, circuit_module_0, witness_module_0, height_0) =
+    let (compression_oracles, circuit_module_0, witness_module_0, mode_0) =
         state_transition_module(0, traces, traces_len)?;
-    let (circuit_module_1, witness_module_1, height_1) =
+    let (circuit_module_1, witness_module_1, mode_1) =
         additions_xor_rotates_module(1, traces, traces_len)?;
-    let (circuit_module_2, witness_module_2, height_2) = cv_output_module(2, traces, traces_len)?;
+    let (circuit_module_2, witness_module_2, mode_2) = cv_output_module(2, traces, traces_len)?;
 
     let witness_modules = vec![witness_module_0, witness_module_1, witness_module_2];
     let circuit_modules = vec![circuit_module_0, circuit_module_1, circuit_module_2];
+    let modes = vec![mode_0, mode_1, mode_2];
 
-    Ok((
-        circuit_modules,
-        witness_modules,
-        vec![height_0, height_1, height_2],
-        compression_oracles,
-    ))
+    Ok((circuit_modules, witness_modules, modes, compression_oracles))
 }
 
 fn state_transition_module(
     id: ModuleId,
     traces: &Trace,
     traces_len: usize,
-) -> Result<(Blake3CompressionOracles, CircuitModule, WitnessModule, u64), anyhow::Error> {
+) -> Result<
+    (
+        Blake3CompressionOracles,
+        CircuitModule,
+        WitnessModule,
+        ModuleMode,
+    ),
+    anyhow::Error,
+> {
     let state_n_vars = log2_ceil_usize(traces_len * SINGLE_COMPRESSION_HEIGHT);
-    let height = 2u64.pow(u32::try_from(state_n_vars)?);
+    let log_height = state_n_vars.try_into()?;
 
     let mut circuit_module = CircuitModule::new(id);
     let state_transitions: [OracleIdx; STATE_SIZE] = array_util::try_from_fn(|xy| {
-        circuit_module.add_committed::<B32>(&format!("state-transition-{:?}", xy))
+        circuit_module
+            .add_committed::<B32>(&format!("state-transition-{:?}", xy), RelativeHeight::Base)
     })?;
 
     let input: [OracleIdx; STATE_SIZE] = array_util::try_from_fn(|xy| {
@@ -139,13 +144,14 @@ fn state_transition_module(
         witness_module.bind_oracle_to::<B32>(state_transitions[xy], entry_id_xy);
     }
 
-    witness_module.populate(height)?;
+    let mode = ModuleMode::active(log_height, 0);
+    witness_module.populate(mode)?;
 
     Ok((
         Blake3CompressionOracles { input, output },
         circuit_module,
         witness_module,
-        height,
+        mode,
     ))
 }
 
@@ -153,35 +159,39 @@ fn additions_xor_rotates_module(
     id: ModuleId,
     traces: &Trace,
     traces_len: usize,
-) -> Result<(CircuitModule, WitnessModule, u64), anyhow::Error> {
+) -> Result<(CircuitModule, WitnessModule, ModuleMode), anyhow::Error> {
     let state_n_vars = log2_ceil_usize(traces_len * SINGLE_COMPRESSION_HEIGHT);
+    let log_height = (state_n_vars + 5).try_into()?;
 
-    let height = 2u64.pow(u32::try_from(state_n_vars + 5)?);
     let mut circuit_module = CircuitModule::new(id);
 
-    let a_in = circuit_module.add_committed::<B1>("a_in")?;
-    let b_in = circuit_module.add_committed::<B1>("b_in")?;
-    let c_in = circuit_module.add_committed::<B1>("c_in")?;
-    let d_in = circuit_module.add_committed::<B1>("d_in")?;
-    let mx_in = circuit_module.add_committed::<B1>("mx_in")?;
-    let my_in = circuit_module.add_committed::<B1>("my_in")?;
+    let a_in = circuit_module.add_committed::<B1>("a_in", RelativeHeight::Base)?;
+    let b_in = circuit_module.add_committed::<B1>("b_in", RelativeHeight::Base)?;
+    let c_in = circuit_module.add_committed::<B1>("c_in", RelativeHeight::Base)?;
+    let d_in = circuit_module.add_committed::<B1>("d_in", RelativeHeight::Base)?;
+    let mx_in = circuit_module.add_committed::<B1>("mx_in", RelativeHeight::Base)?;
+    let my_in = circuit_module.add_committed::<B1>("my_in", RelativeHeight::Base)?;
 
-    let a_0 = circuit_module.add_committed::<B1>("a_0")?;
-    let a_0_tmp = circuit_module.add_committed::<B1>("a_0_tmp")?;
-    let c_0 = circuit_module.add_committed::<B1>("c_0")?;
-    let a_1 = circuit_module.add_committed::<B1>("a_1")?;
-    let a_1_tmp = circuit_module.add_committed::<B1>("a_1_tmp")?;
-    let c_1 = circuit_module.add_committed::<B1>("c_1")?;
+    let a_0 = circuit_module.add_committed::<B1>("a_0", RelativeHeight::Base)?;
+    let a_0_tmp = circuit_module.add_committed::<B1>("a_0_tmp", RelativeHeight::Base)?;
+    let c_0 = circuit_module.add_committed::<B1>("c_0", RelativeHeight::Base)?;
+    let a_1 = circuit_module.add_committed::<B1>("a_1", RelativeHeight::Base)?;
+    let a_1_tmp = circuit_module.add_committed::<B1>("a_1_tmp", RelativeHeight::Base)?;
+    let c_1 = circuit_module.add_committed::<B1>("c_1", RelativeHeight::Base)?;
 
-    let b_in_xor_c_0 = circuit_module.add_linear_combination("b_in_xor_c_0", B128::ZERO, [
-        (b_in, B128::ONE),
-        (c_0, B128::ONE),
-    ])?;
+    let b_in_xor_c_0 = circuit_module.add_linear_combination(
+        "b_in_xor_c_0",
+        B128::ZERO,
+        [(b_in, B128::ONE), (c_0, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
-    let d_in_xor_a_0 = circuit_module.add_linear_combination("d_in_xor_a_0", B128::ZERO, [
-        (d_in, B128::ONE),
-        (a_0, B128::ONE),
-    ])?;
+    let d_in_xor_a_0 = circuit_module.add_linear_combination(
+        "d_in_xor_a_0",
+        B128::ZERO,
+        [(d_in, B128::ONE), (a_0, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
     let b_0 = circuit_module.add_shifted(
         "b_0",
@@ -198,15 +208,19 @@ fn additions_xor_rotates_module(
         ShiftVariant::CircularLeft,
     )?;
 
-    let d_0_xor_a_1 = circuit_module.add_linear_combination("d_0_xor_a_1", B128::ZERO, [
-        (d_0, B128::ONE),
-        (a_1, B128::ONE),
-    ])?;
+    let d_0_xor_a_1 = circuit_module.add_linear_combination(
+        "d_0_xor_a_1",
+        B128::ZERO,
+        [(d_0, B128::ONE), (a_1, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
-    let b_0_xor_c_1 = circuit_module.add_linear_combination("b_0_xor_c_1", B128::ZERO, [
-        (b_0, B128::ONE),
-        (c_1, B128::ONE),
-    ])?;
+    let b_0_xor_c_1 = circuit_module.add_linear_combination(
+        "b_0_xor_c_1",
+        B128::ZERO,
+        [(b_0, B128::ONE), (c_1, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
     let d_1 = circuit_module.add_shifted(
         "d_1",
@@ -224,7 +238,7 @@ fn additions_xor_rotates_module(
     )?;
 
     let couts: [OracleIdx; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
-        circuit_module.add_committed::<B1>(&format!("cout-{:?}", xy))
+        circuit_module.add_committed::<B1>(&format!("cout-{:?}", xy), RelativeHeight::Base)
     })?;
     let cins: [OracleIdx; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
         circuit_module.add_shifted(
@@ -310,36 +324,39 @@ fn additions_xor_rotates_module(
     witness_module.push_u32s_to(traces.d_in_trace.clone(), d_in_entry);
     witness_module.bind_oracle_to::<B1>(d_in, d_in_entry);
 
-    witness_module.populate(height)?;
+    let mode = ModuleMode::active(log_height, 0);
+    witness_module.populate(mode)?;
 
-    Ok((circuit_module, witness_module, height))
+    Ok((circuit_module, witness_module, mode))
 }
 
 fn cv_output_module(
     id: ModuleId,
     traces: &Trace,
     traces_len: usize,
-) -> Result<(CircuitModule, WitnessModule, u64), anyhow::Error> {
+) -> Result<(CircuitModule, WitnessModule, ModuleMode), anyhow::Error> {
     let out_n_vars = log2_ceil_usize(traces_len * OUT_HEIGHT);
+    let log_height = out_n_vars.try_into()?;
 
-    let height = 2u64.pow(u32::try_from(out_n_vars)?);
     let mut circuit_module = CircuitModule::new(id);
 
-    let cv = circuit_module.add_committed::<B32>("cv")?;
-    let state_i = circuit_module.add_committed::<B32>("state_i")?;
-    let state_i_8 = circuit_module.add_committed::<B32>("state_i_8")?;
+    let cv = circuit_module.add_committed::<B32>("cv", RelativeHeight::Base)?;
+    let state_i = circuit_module.add_committed::<B32>("state_i", RelativeHeight::Base)?;
+    let state_i_8 = circuit_module.add_committed::<B32>("state_i_8", RelativeHeight::Base)?;
 
-    let _state_i_xor_state_i_8 =
-        circuit_module.add_linear_combination("state_i_xor_state_i_8", B128::ZERO, [
-            (state_i, B128::ONE),
-            (state_i_8, B128::ONE),
-        ])?;
+    let _state_i_xor_state_i_8 = circuit_module.add_linear_combination(
+        "state_i_xor_state_i_8",
+        B128::ZERO,
+        [(state_i, B128::ONE), (state_i_8, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
-    let _cv_oracle_xor_state_i_8 =
-        circuit_module.add_linear_combination("cv_oracle_xor_state_i_8", B128::ZERO, [
-            (cv, B128::ONE),
-            (state_i_8, B128::ONE),
-        ])?;
+    let _cv_oracle_xor_state_i_8 = circuit_module.add_linear_combination(
+        "cv_oracle_xor_state_i_8",
+        B128::ZERO,
+        [(cv, B128::ONE), (state_i_8, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
     circuit_module.freeze_oracles();
 
@@ -357,9 +374,10 @@ fn cv_output_module(
     witness_module.bind_oracle_to::<B32>(state_i, state_i_entry);
     witness_module.bind_oracle_to::<B32>(state_i_8, state_i_8_entry);
 
-    witness_module.populate(height)?;
+    let mode = ModuleMode::active(log_height, 0);
+    witness_module.populate(mode)?;
 
-    Ok((circuit_module, witness_module, height))
+    Ok((circuit_module, witness_module, mode))
 }
 
 #[cfg(test)]
@@ -372,6 +390,7 @@ pub mod tests {
     };
     use crate::archon::protocol::validate_witness;
     use crate::archon::witness::{WitnessModule, compile_witness_modules};
+    use crate::archon::{ModuleMode, RelativeHeight};
     use binius_field::Field;
     use binius_utils::checked_arithmetics::log2_ceil_usize;
     use rand::prelude::StdRng;
@@ -833,7 +852,7 @@ pub mod tests {
         let trace_len = 2usize.pow(COMPRESSIONS_LOG_TEST);
         let (expected, traces) = generate_trace(trace_len);
 
-        let (compression_oracles, circuit_module, witness_module, height) =
+        let (compression_oracles, circuit_module, witness_module, mode) =
             state_transition_module(0, &traces, trace_len).unwrap();
 
         assert_expected_output(&compression_oracles, &expected, &witness_module);
@@ -841,7 +860,9 @@ pub mod tests {
         // check that Binius proof can be constructed and verified
         let witness_modules = [witness_module];
         let circuit_modules = [circuit_module];
-        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let modes = vec![mode];
+
+        let witness = compile_witness_modules(&witness_modules, modes).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 
@@ -850,13 +871,14 @@ pub mod tests {
         let trace_len = 2usize.pow(COMPRESSIONS_LOG_TEST);
         let (_, traces) = generate_trace(trace_len);
 
-        let (circuit_module, witness_module, height) =
+        let (circuit_module, witness_module, mode) =
             additions_xor_rotates_module(0, &traces, trace_len).unwrap();
 
         let witness_modules = [witness_module];
         let circuit_modules = [circuit_module];
+        let modes = vec![mode];
 
-        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness = compile_witness_modules(&witness_modules, modes).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 
@@ -865,13 +887,14 @@ pub mod tests {
         let trace_len = 2usize.pow(COMPRESSIONS_LOG_TEST);
         let (_, traces) = generate_trace(trace_len);
 
-        let (circuit_module, witness_module, height) =
+        let (circuit_module, witness_module, mode) =
             cv_output_module(0, &traces, trace_len).unwrap();
 
         let witness_modules = [witness_module];
         let circuit_modules = [circuit_module];
+        let modes = vec![mode];
 
-        let witness = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness = compile_witness_modules(&witness_modules, modes).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 
@@ -880,20 +903,20 @@ pub mod tests {
         let trace_len = 2usize.pow(COMPRESSIONS_LOG_TEST);
         let (expected, traces) = generate_trace(trace_len);
 
-        let (compression_oracles, circuit_module_0, witness_module_0, height_0) =
+        let (compression_oracles, circuit_module_0, witness_module_0, mode_0) =
             state_transition_module(0, &traces, trace_len).unwrap();
-        let (circuit_module_1, witness_module_1, height_1) =
+        let (circuit_module_1, witness_module_1, mode_1) =
             additions_xor_rotates_module(1, &traces, trace_len).unwrap();
-        let (circuit_module_2, witness_module_2, height_2) =
+        let (circuit_module_2, witness_module_2, mode_2) =
             cv_output_module(2, &traces, trace_len).unwrap();
 
         assert_expected_output(&compression_oracles, &expected, &witness_module_0);
 
         let witness_modules = [witness_module_0, witness_module_1, witness_module_2];
         let circuit_modules = [circuit_module_0, circuit_module_1, circuit_module_2];
+        let modes = vec![mode_0, mode_1, mode_2];
 
-        let witness =
-            compile_witness_modules(&witness_modules, vec![height_0, height_1, height_2]).unwrap();
+        let witness = compile_witness_modules(&witness_modules, modes).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 
@@ -903,19 +926,26 @@ pub mod tests {
         let (_, traces) = generate_trace(trace_len);
 
         let state_n_vars = log2_ceil_usize(trace_len * SINGLE_COMPRESSION_HEIGHT);
-        let height = 2u64.pow(u32::try_from(state_n_vars + 5).unwrap());
+        let log_height = (state_n_vars + 5).try_into().unwrap();
+        let mode = ModuleMode::active(log_height, 0);
 
         let circuit_module_id = 0;
         let mut circuit_module_1 = CircuitModule::new(circuit_module_id);
 
-        let a_0 = circuit_module_1.add_committed::<B1>("a_0").unwrap();
-        let d_in = circuit_module_1.add_committed::<B1>("d_in").unwrap();
+        let a_0 = circuit_module_1
+            .add_committed::<B1>("a_0", RelativeHeight::Base)
+            .unwrap();
+        let d_in = circuit_module_1
+            .add_committed::<B1>("d_in", RelativeHeight::Base)
+            .unwrap();
 
         let d_in_xor_a_0 = circuit_module_1
-            .add_linear_combination("d_in_xor_a_0", B128::ZERO, [
-                (a_0, B128::ONE),
-                (d_in, B128::ONE),
-            ])
+            .add_linear_combination(
+                "d_in_xor_a_0",
+                B128::ZERO,
+                [(a_0, B128::ONE), (d_in, B128::ONE)],
+                RelativeHeight::Base,
+            )
             .unwrap();
 
         circuit_module_1.freeze_oracles();
@@ -939,7 +969,7 @@ pub mod tests {
         witness_modules[witness_module_id].bind_oracle_to::<B1>(a_0, a_0_entry);
         witness_modules[witness_module_id].bind_oracle_to::<B1>(d_in, d_in_entry);
 
-        witness_modules[witness_module_id].populate(height).unwrap();
+        witness_modules[witness_module_id].populate(mode).unwrap();
 
         let lc_data = witness_modules[witness_module_id].get_data(&d_in_xor_a_0);
         let expected = traces
@@ -949,7 +979,7 @@ pub mod tests {
             .collect::<Vec<_>>();
         assert_eq!(lc_data, expected);
 
-        let witness_archon = compile_witness_modules(&witness_modules, vec![height]).unwrap();
+        let witness_archon = compile_witness_modules(&witness_modules, vec![mode]).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness_archon).is_ok());
     }
 

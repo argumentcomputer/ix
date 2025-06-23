@@ -23,14 +23,14 @@ def Columns.ofLayout (circuitModule : CircuitModule) (layout : Layout) : Columns
   let (u1Auxiliaries, circuitModule) := foldCommit layout.u1Auxiliaries circuitModule (s!"u1-auxiliary-{·}") .b1
   let (u8Auxiliaries, circuitModule) := foldCommit layout.u8Auxiliaries circuitModule (s!"u8-auxiliary-{·}") .b8
   let (u64Auxiliaries, circuitModule) := foldCommit layout.u64Auxiliaries circuitModule (s!"u64-auxiliary-{·}") .b64
-  let (multiplicity, circuitModule) := circuitModule.addCommitted "multiplicity" .b64
+  let (multiplicity, circuitModule) := circuitModule.addCommitted "multiplicity" .b64 .base
   let (selectors, circuitModule) := foldCommit layout.selectors circuitModule (s!"selector-{·}") .b1
   let columns := { inputs, outputs, u1Auxiliaries, u8Auxiliaries, u64Auxiliaries, multiplicity, selectors }
   (columns, circuitModule)
 where
   foldCommit n circuitModule nameFn tf :=
     n.fold (init := (#[], circuitModule)) fun i _ (oracles, circuitModule) =>
-      let (oracleIdx, circuitModule) := circuitModule.addCommitted (nameFn i) tf
+      let (oracleIdx, circuitModule) := circuitModule.addCommitted (nameFn i) tf .base
       (oracles.push oracleIdx, circuitModule)
 
 inductive Channel
@@ -50,8 +50,9 @@ structure Constraints where
 
 def blockSelector (block : Bytecode.Block) (columns : Columns) : ArithExpr :=
   let (min, max) := block.returnIdents
-  List.range (max + 1 - min) |>.foldl (init := 0) -- inclusive range interval
-    fun acc i => acc + columns.getSelector (i + min)
+  match List.range' min (max - min) |>.map columns.getSelector with
+  | [] => panic! s!"Invalid block identifiers: ({min}, {max})"
+  | o :: os => os.foldl (init := o) fun acc o => acc + (.oracle o)
 
 namespace Constraints
 

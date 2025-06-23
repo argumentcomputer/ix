@@ -13,20 +13,20 @@ use binius_hash::groestl::Groestl256ByteCompression;
 use groestl_crypto::Groestl256;
 
 use super::{
-    F,
+    F, ModuleMode,
     circuit::{CircuitModule, compile_circuit_modules},
     witness::Witness,
 };
 
 pub struct Proof {
-    pub(crate) modules_heights: Vec<u64>,
+    pub(crate) modes: Vec<ModuleMode>,
     pub(crate) proof_core: ProofCore,
 }
 
 impl Default for Proof {
     fn default() -> Self {
         Proof {
-            modules_heights: vec![],
+            modes: vec![],
             proof_core: ProofCore { transcript: vec![] },
         }
     }
@@ -37,11 +37,8 @@ pub fn validate_witness_core(
     boundaries: &[Boundary<F>],
     witness: &Witness<'_>,
 ) -> Result<()> {
-    let Witness {
-        mlei,
-        modules_heights,
-    } = witness;
-    let constraint_system = compile_circuit_modules(circuit_modules, modules_heights)?;
+    let Witness { mlei, modes } = witness;
+    let constraint_system = compile_circuit_modules(circuit_modules, modes)?;
     validate_witness_binius(&constraint_system, boundaries, mlei)?;
     Ok(())
 }
@@ -67,11 +64,8 @@ pub fn prove_core<Backend: ComputationBackend>(
     witness: Witness<'_>,
     backend: &Backend,
 ) -> Result<Proof> {
-    let Witness {
-        mlei,
-        modules_heights,
-    } = witness;
-    let constraint_system = compile_circuit_modules(circuit_modules, &modules_heights)?;
+    let Witness { mlei, modes } = witness;
+    let constraint_system = compile_circuit_modules(circuit_modules, &modes)?;
     let proof_core = prove_binius::<
         U,
         CanonicalTowerFamily,
@@ -87,10 +81,7 @@ pub fn prove_core<Backend: ComputationBackend>(
         mlei,
         backend,
     )?;
-    Ok(Proof {
-        modules_heights,
-        proof_core,
-    })
+    Ok(Proof { modes, proof_core })
 }
 
 #[inline]
@@ -119,11 +110,8 @@ pub fn verify_core(
     log_inv_rate: usize,
     security_bits: usize,
 ) -> Result<()> {
-    let Proof {
-        modules_heights,
-        proof_core,
-    } = proof;
-    let constraint_system = compile_circuit_modules(circuit_modules, &modules_heights)?;
+    let Proof { modes, proof_core } = proof;
+    let constraint_system = compile_circuit_modules(circuit_modules, &modes)?;
     verify_binius::<
         U,
         CanonicalTowerFamily,
@@ -159,15 +147,12 @@ pub fn verify(
 
 #[cfg(test)]
 mod tests {
-    use crate::archon::OracleIdx;
-    use crate::archon::precompiles::blake3::blake3_compress;
-    use crate::archon::precompiles::blake3::tests::generate_trace;
-    use crate::archon::protocol::{prove, verify};
     use crate::archon::{
-        ModuleId,
+        ModuleId, ModuleMode, OracleIdx, RelativeHeight,
         arith_expr::ArithExpr,
         circuit::{CircuitModule, init_witness_modules},
-        protocol::validate_witness,
+        precompiles::blake3::{blake3_compress, tests::generate_trace},
+        protocol::{prove, validate_witness, verify},
         witness::{WitnessModule, compile_witness_modules},
     };
     use anyhow::Result;
@@ -182,9 +167,9 @@ mod tests {
 
     fn a_xor_b_circuit_module(module_id: ModuleId) -> Result<(CircuitModule, Oracles)> {
         let mut circuit_module = CircuitModule::new(module_id);
-        let s = circuit_module.selector();
-        let a = circuit_module.add_committed::<B1>("a")?;
-        let b = circuit_module.add_committed::<B1>("b")?;
+        let s = CircuitModule::selector();
+        let a = circuit_module.add_committed::<B1>("a", RelativeHeight::Base)?;
+        let b = circuit_module.add_committed::<B1>("b", RelativeHeight::Base)?;
         circuit_module.assert_zero("a xor b", [], ArithExpr::Oracle(a) + ArithExpr::Oracle(b));
         circuit_module.freeze_oracles();
         Ok((circuit_module, Oracles { s, a, b }))
@@ -210,7 +195,8 @@ mod tests {
         witness_module.bind_oracle_to::<B1>(oracles.a, ones);
         witness_module.bind_oracle_to::<B1>(oracles.b, zeros);
         let witness_modules = [witness_module];
-        let witness = compile_witness_modules(&witness_modules, vec![128]).unwrap();
+        let modes = vec![ModuleMode::active(7, 128)];
+        let witness = compile_witness_modules(&witness_modules, modes).unwrap();
         assert!(validate_witness(&[circuit_module], &[], &witness).is_err());
     }
 
@@ -220,7 +206,8 @@ mod tests {
         let mut witness_module = circuit_module.init_witness_module().unwrap();
         populate_a_xor_b_witness_with_ones(&mut witness_module, &oracles);
         let witness_modules = [witness_module];
-        let witness = compile_witness_modules(&witness_modules, vec![128]).unwrap();
+        let modes = vec![ModuleMode::active(7, 128)];
+        let witness = compile_witness_modules(&witness_modules, modes).unwrap();
         assert!(validate_witness(&[circuit_module], &[], &witness).is_ok());
     }
 
@@ -232,7 +219,8 @@ mod tests {
         let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
         populate_a_xor_b_witness_with_ones(&mut witness_modules[0], &oracles0);
         populate_a_xor_b_witness_with_ones(&mut witness_modules[1], &oracles1);
-        let witness = compile_witness_modules(&witness_modules, vec![128, 128]).unwrap();
+        let modes = vec![ModuleMode::active(7, 128); 2];
+        let witness = compile_witness_modules(&witness_modules, modes).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 
@@ -244,7 +232,8 @@ mod tests {
         let mut witness_modules = init_witness_modules(&circuit_modules).unwrap();
         populate_a_xor_b_witness_with_ones(&mut witness_modules[0], &oracles0);
         // Witness module 1 isn't populated
-        let witness = compile_witness_modules(&witness_modules, vec![128, 0]).unwrap();
+        let modes = vec![ModuleMode::active(7, 128), ModuleMode::Inactive];
+        let witness = compile_witness_modules(&witness_modules, modes).unwrap();
         assert!(validate_witness(&circuit_modules, &[], &witness).is_ok());
     }
 
@@ -254,10 +243,10 @@ mod tests {
         let trace_len = 2usize.pow(5u32);
         let (_, traces) = generate_trace(trace_len);
 
-        let (circuit_modules, witness_modules, heights, _) =
+        let (circuit_modules, witness_modules, modes, _) =
             blake3_compress(&traces, trace_len).unwrap();
 
-        let witness = compile_witness_modules(&witness_modules, heights).unwrap();
+        let witness = compile_witness_modules(&witness_modules, modes).unwrap();
 
         let backend = make_portable_backend();
         let proof = prove(&circuit_modules, &[], 1usize, 100usize, witness, &backend).unwrap();

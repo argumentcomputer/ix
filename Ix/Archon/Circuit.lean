@@ -1,6 +1,7 @@
 import Blake3
 import Ix.Archon.ArithExpr
 import Ix.Archon.OracleIdx
+import Ix.Archon.RelativeHeight
 import Ix.Archon.Transparent
 import Ix.Archon.Witness
 import Ix.Binius.Common
@@ -54,16 +55,18 @@ opaque assertStaticExp : CircuitModule → (expBits : @& Array OracleIdx) →
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_committed"]
-opaque addCommitted : CircuitModule → @& String → TowerField → OracleIdx × CircuitModule
+opaque addCommitted : CircuitModule → @& String → TowerField → @& RelativeHeight →
+  OracleIdx × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_transparent"]
-opaque addTransparent : CircuitModule → @& String → @& Transparent → OracleIdx × CircuitModule
+opaque addTransparent : CircuitModule → @& String → @& Transparent → @& RelativeHeight →
+  OracleIdx × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_linear_combination"]
 opaque addLinearCombination : CircuitModule → @& String → (offset : @& UInt128) →
-  (inner : @& Array (OracleIdx × UInt128)) → OracleIdx × CircuitModule
+  (inner : @& Array (OracleIdx × UInt128)) → @& RelativeHeight → OracleIdx × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_packed"]
@@ -77,8 +80,8 @@ opaque addShifted : CircuitModule → @& String → OracleIdx → (shiftOffset :
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_projected"]
-opaque addProjected : CircuitModule → @& String → OracleIdx → (mask : UInt64) →
-  (unprojectedSize : USize) → OracleIdx × CircuitModule
+opaque addProjected : CircuitModule → @& String → OracleIdx → (selection : UInt64) →
+  (chunkSize : USize) → OracleIdx × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_push_namespace"]

@@ -18,7 +18,7 @@ void rs_witness_module_push_u16s_to(void*, b_lean_obj_arg, size_t);
 void rs_witness_module_push_u32s_to(void*, b_lean_obj_arg, size_t);
 void rs_witness_module_push_u64s_to(void*, b_lean_obj_arg, size_t);
 void rs_witness_module_push_u128s_to(void*, b_lean_obj_arg, size_t);
-void rs_witness_module_populate(void*, uint64_t);
+void rs_witness_module_populate(void*, b_lean_obj_arg);
 void rs_witness_module_par_populate(void**, b_lean_obj_arg);
 size_t rs_witness_module_get_data_num_bytes(void*, size_t);
 void rs_witness_module_get_data(void*, size_t, lean_obj_arg);
@@ -39,10 +39,10 @@ void rs_circuit_module_assert_zero(
 void rs_circuit_module_assert_not_zero(void*, size_t);
 void rs_circuit_module_assert_dynamic_exp(void*, b_lean_obj_arg, size_t, size_t);
 void rs_circuit_module_assert_static_exp(void*, b_lean_obj_arg, size_t, uint8_t*, uint8_t);
-size_t rs_circuit_module_add_committed(void*, char const *, uint8_t);
-size_t rs_circuit_module_add_transparent(void*, char const *, b_lean_obj_arg);
+size_t rs_circuit_module_add_committed(void*, char const *, uint8_t, b_lean_obj_arg);
+size_t rs_circuit_module_add_transparent(void*, char const *, b_lean_obj_arg, b_lean_obj_arg);
 size_t rs_circuit_module_add_linear_combination(
-    void*, char const *, b_lean_obj_arg, b_lean_obj_arg
+    void*, char const *, b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg
 );
 size_t rs_circuit_module_add_packed(void*, char const *, size_t, size_t);
 size_t rs_circuit_module_add_shifted(

@@ -1,6 +1,8 @@
 pub mod arith_expr;
 pub mod circuit;
+pub mod module_mode;
 pub mod protocol;
+pub mod relative_height;
 pub mod transparent;
 pub mod witness;
 

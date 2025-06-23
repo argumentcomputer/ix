@@ -1,24 +1,22 @@
 use anyhow::{Result, bail, ensure};
-use binius_core::constraint_system::channel::{Flush, OracleOrConst};
-use binius_core::constraint_system::exp::Exp;
-use binius_core::oracle::{ConstraintSetBuilder, MultilinearOracleSet, ShiftVariant};
 use binius_core::{
     constraint_system::{
         ConstraintSystem,
-        channel::{ChannelId, FlushDirection},
+        channel::{ChannelId, Flush, FlushDirection, OracleOrConst},
+        exp::Exp,
     },
+    oracle::{ConstraintSetBuilder, MultilinearOracleSet, ShiftVariant},
     transparent::step_down::StepDown,
 };
-use binius_field::{TowerField, arch::OptimalUnderlier, underlier::UnderlierType};
-use binius_utils::checked_arithmetics::log2_ceil_usize;
+use binius_field::TowerField;
+use binius_utils::checked_arithmetics::log2_strict_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::sync::Arc;
 
-use crate::archon::transparent::{Incremental, constant_from_b128};
-
-use super::OracleIdx;
 use super::{
-    F, ModuleId, OracleInfo, OracleKind, arith_expr::ArithExpr, transparent::Transparent,
+    F, ModuleId, ModuleMode, OracleIdx, OracleInfo, OracleKind, RelativeHeight,
+    arith_expr::ArithExpr,
+    transparent::{Incremental, Transparent, constant_from_b128},
     witness::WitnessModule,
 };
 
@@ -73,6 +71,7 @@ impl CircuitModule {
             name: format!("step_down-module-{module_id}"),
             tower_level: 0,
             kind: OracleKind::StepDown,
+            relative_height: RelativeHeight::Base,
         };
         let oracles = Freezable::Raw(vec![step_down]);
         Self {
@@ -87,7 +86,7 @@ impl CircuitModule {
     }
 
     #[inline]
-    pub const fn selector(&self) -> OracleIdx {
+    pub const fn selector() -> OracleIdx {
         OracleIdx(0)
     }
 
@@ -177,11 +176,13 @@ impl CircuitModule {
     pub fn add_committed<FS: TowerField>(
         &mut self,
         name: &(impl ToString + ?Sized),
+        relative_height: RelativeHeight,
     ) -> Result<OracleIdx> {
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level: FS::TOWER_LEVEL,
             kind: OracleKind::Committed,
+            relative_height,
         };
         self.add_oracle_info(oracle_info)
     }
@@ -191,11 +192,13 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         transparent: Transparent,
+        relative_height: RelativeHeight,
     ) -> Result<OracleIdx> {
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level: transparent.tower_level(),
             kind: OracleKind::Transparent(transparent),
+            relative_height,
         };
         self.add_oracle_info(oracle_info)
     }
@@ -205,24 +208,28 @@ impl CircuitModule {
         name: &(impl ToString + ?Sized),
         offset: F,
         inner: impl IntoIterator<Item = (OracleIdx, F)>,
+        relative_height: RelativeHeight,
     ) -> Result<OracleIdx> {
         let inner = inner.into_iter().collect::<Vec<_>>();
-        let tower_level = inner
-            .iter()
-            .map(|(oracle_idx, coeff)| {
-                self.oracles.get_ref()[oracle_idx.val()]
-                    .tower_level
-                    .max(coeff.min_tower_level())
-            })
-            .max()
-            .unwrap_or(0)
-            .max(offset.min_tower_level());
-        let oracle_info = OracleInfo {
-            name: self.namespacer.scoped_name(name),
-            tower_level,
-            kind: OracleKind::LinearCombination { offset, inner },
-        };
-        self.add_oracle_info(oracle_info)
+        if inner.is_empty() {
+            self.add_transparent(name, Transparent::Constant(offset), relative_height)
+        } else {
+            let mut tower_level = offset.min_tower_level();
+            for (oracle_idx, coeff) in &inner {
+                let inner_ref = &self.oracles.get_ref()[oracle_idx.val()];
+                ensure!(relative_height == inner_ref.relative_height);
+                tower_level = tower_level
+                    .max(inner_ref.tower_level)
+                    .max(coeff.min_tower_level());
+            }
+            let oracle_info = OracleInfo {
+                name: self.namespacer.scoped_name(name),
+                tower_level,
+                kind: OracleKind::LinearCombination { offset, inner },
+                relative_height,
+            };
+            self.add_oracle_info(oracle_info)
+        }
     }
 
     #[inline]
@@ -237,6 +244,7 @@ impl CircuitModule {
             name: self.namespacer.scoped_name(name),
             tower_level: inner_tower_level + log_degree,
             kind: OracleKind::Packed { inner, log_degree },
+            relative_height: RelativeHeight::Div2(log_degree.try_into()?),
         };
         self.add_oracle_info(oracle_info)
     }
@@ -249,7 +257,9 @@ impl CircuitModule {
         block_bits: usize,
         variant: ShiftVariant,
     ) -> Result<OracleIdx> {
-        let inner_tower_level = self.oracles.get_ref()[inner.val()].tower_level;
+        let inner_ref = &self.oracles.get_ref()[inner.val()];
+        let inner_tower_level = inner_ref.tower_level;
+        let relative_height = inner_ref.relative_height;
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level: inner_tower_level,
@@ -259,6 +269,7 @@ impl CircuitModule {
                 block_bits,
                 variant,
             },
+            relative_height,
         };
         self.add_oracle_info(oracle_info)
     }
@@ -267,26 +278,29 @@ impl CircuitModule {
         &mut self,
         name: &(impl ToString + ?Sized),
         inner: OracleIdx,
-        mask: u64,
-        unprojected_size: usize,
+        selection: u64,
+        chunk_size: usize,
     ) -> Result<OracleIdx> {
+        ensure!(chunk_size.is_power_of_two());
+        ensure!(selection < chunk_size as u64);
+
         let inner_tower_level = self.oracles.get_ref()[inner.val()].tower_level;
 
-        let mut mask_bits: Vec<F> = (0..64)
-            .map(|n| F::from(((mask >> n) & 1) as u128))
+        let log_chunk_size: u8 = log2_strict_usize(chunk_size).try_into()?;
+        let selection_bits = (0..log_chunk_size)
+            .map(|n| F::from(((selection >> n) & 1) as u128))
             .collect();
-
-        mask_bits.truncate(log2_ceil_usize(unprojected_size));
 
         let oracle_info = OracleInfo {
             name: self.namespacer.scoped_name(name),
             tower_level: inner_tower_level,
             kind: OracleKind::Projected {
                 inner,
-                mask,
-                mask_bits,
-                unprojected_size,
+                selection,
+                chunk_size,
+                selection_bits,
             },
+            relative_height: RelativeHeight::Div2(log_chunk_size),
         };
 
         self.add_oracle_info(oracle_info)
@@ -311,11 +325,11 @@ impl CircuitModule {
 
 pub fn compile_circuit_modules(
     modules: &[&CircuitModule],
-    modules_heights: &[u64],
+    modes: &[ModuleMode],
 ) -> Result<ConstraintSystem<F>> {
     ensure!(
-        modules.len() == modules_heights.len(),
-        "Number of modules is incompatible with the number of heights"
+        modules.len() == modes.len(),
+        "Number of modules is incompatible with the number of modes"
     );
     let mut oracle_offset = 0;
     let mut oracles = MultilinearOracleSet::new();
@@ -324,38 +338,34 @@ pub fn compile_circuit_modules(
     let mut non_zero_oracle_ids = Vec::new();
     let mut exponents = Vec::new();
     let mut max_channel_id = 0;
-    for (module_idx, (module, &height)) in modules.iter().zip(modules_heights).enumerate() {
-        if height == 0 {
+    for (module_idx, (module, mode)) in modules.iter().zip(modes).enumerate() {
+        let ModuleMode::Active { log_height, depth } = *mode else {
             // Deactivated module. Skip.
             continue;
-        }
-        let height_usize: usize = height.try_into()?;
-        let log_height = log2_ceil_usize(height_usize);
+        };
         ensure!(
             module_idx == module.module_id,
             "Wrong compilation order. Expected module {module_idx}, but got {}.",
             module.module_id
         );
 
-        // `n_vars` must be at least the number of variables in an underlier
-        let n_vars_fn = |tower_level| {
-            let underlier_n_vars = OptimalUnderlier::LOG_BITS - tower_level;
-            log_height.max(underlier_n_vars)
-        };
+        let log_height_usize = log_height as usize;
+        let depth_usize: usize = depth.try_into()?;
 
         for OracleInfo {
             name,
             tower_level,
             kind,
+            relative_height,
         } in module.oracles.get_ref()
         {
             match kind {
                 OracleKind::Committed => {
-                    let n_vars = n_vars_fn(*tower_level);
+                    let n_vars = relative_height.transform(log_height) as usize;
                     oracles.add_named(name).committed(n_vars, *tower_level);
                 }
                 OracleKind::LinearCombination { offset, inner } => {
-                    let n_vars = n_vars_fn(*tower_level);
+                    let n_vars = relative_height.transform(log_height) as usize;
                     let inner = inner
                         .iter()
                         .map(|(oracle_idx, f)| (oracle_idx.oracle_id(oracle_offset), *f));
@@ -369,24 +379,22 @@ pub fn compile_circuit_modules(
                         .packed(inner.oracle_id(oracle_offset), *log_degree)?;
                 }
                 OracleKind::Transparent(Transparent::Constant(b128)) => {
-                    let n_vars = n_vars_fn(*tower_level);
+                    let n_vars = relative_height.transform(log_height) as usize;
                     oracles
                         .add_named(name)
                         .transparent(constant_from_b128(*b128, n_vars))?;
                 }
                 OracleKind::Transparent(Transparent::Incremental) => {
-                    let tower_level = Incremental::min_tower_level(height);
-                    let n_vars = n_vars_fn(tower_level);
+                    let log_height = relative_height.transform(log_height);
                     oracles.add_named(name).transparent(Incremental {
-                        n_vars,
-                        tower_level,
+                        n_vars: log_height as usize,
+                        tower_level: Incremental::min_tower_level(log_height),
                     })?;
                 }
                 OracleKind::StepDown => {
-                    let n_vars = n_vars_fn(*tower_level);
                     oracles
                         .add_named(name)
-                        .transparent(StepDown::new(n_vars, height_usize)?)?;
+                        .transparent(StepDown::new(log_height_usize, depth_usize)?)?;
                 }
 
                 OracleKind::Shifted {
@@ -403,11 +411,13 @@ pub fn compile_circuit_modules(
                     )?;
                 }
                 OracleKind::Projected {
-                    inner, mask_bits, ..
+                    inner,
+                    selection_bits,
+                    ..
                 } => {
                     oracles.add_named(name).projected(
                         inner.oracle_id(oracle_offset),
-                        mask_bits.clone(),
+                        selection_bits.clone(),
                         0,
                     )?;
                 }

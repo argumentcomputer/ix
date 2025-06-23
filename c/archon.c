@@ -124,16 +124,19 @@ extern lean_obj_res c_rs_witness_module_push_u128s_to(
     );
 }
 
-extern lean_obj_res c_rs_witness_module_populate(lean_obj_arg l_witness, uint64_t height) {
+extern lean_obj_res c_rs_witness_module_populate(
+    lean_obj_arg l_witness,
+    b_lean_obj_arg mode
+) {
     linear_object *linear = validated_linear(l_witness);
-    rs_witness_module_populate(get_object_ref(linear), height);
+    rs_witness_module_populate(get_object_ref(linear), mode);
     linear_object *new_linear = linear_bump(linear);
     return alloc_lean_linear_object(new_linear);
 }
 
 extern lean_obj_res c_rs_witness_module_par_populate(
     lean_obj_arg l_witnesses,
-    b_lean_obj_arg heights
+    b_lean_obj_arg modes
 ) {
     size_t size = lean_array_size(l_witnesses);
     lean_object **witnesses_cptrs = lean_array_cptr(l_witnesses);
@@ -145,7 +148,7 @@ extern lean_obj_res c_rs_witness_module_par_populate(
         witnesses_ptrs[i] = get_object_ref(linear);
         new_witnesses_cptrs[i] = alloc_lean_linear_object(linear_bump(linear));
     }
-    rs_witness_module_par_populate(witnesses_ptrs, heights);
+    rs_witness_module_par_populate(witnesses_ptrs, modes);
     return new_l_witnesses;
 }
 
@@ -163,7 +166,7 @@ extern lean_obj_res c_rs_witness_module_get_data(
 
 extern lean_obj_res c_rs_compile_witness_modules(
     lean_obj_arg l_witnesses,
-    b_lean_obj_arg heights
+    b_lean_obj_arg modes
 ) {
     size_t size = lean_array_size(l_witnesses);
     lean_object **witnesses_cptrs = lean_array_cptr(l_witnesses);
@@ -173,7 +176,7 @@ extern lean_obj_res c_rs_compile_witness_modules(
         witnesses_ptrs[i] = get_object_ref(linear);
         ditch_linear(linear);
     }
-    void *witness = rs_compile_witness_modules(witnesses_ptrs, heights);
+    void *witness = rs_compile_witness_modules(witnesses_ptrs, modes);
     linear_object *new_linear = linear_object_init(
         witness,
         &rs_witness_free
@@ -296,14 +299,16 @@ extern lean_obj_res c_rs_circuit_module_assert_static_exp(
 extern lean_obj_res c_rs_circuit_module_add_committed(
     lean_obj_arg l_circuit,
     b_lean_obj_arg name,
-    uint8_t tower_level
+    uint8_t tower_level,
+    b_lean_obj_arg relative_height
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
     size_t oracle_idx = rs_circuit_module_add_committed(
         get_object_ref(linear),
         chars,
-        tower_level
+        tower_level,
+        relative_height
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
@@ -315,14 +320,16 @@ extern lean_obj_res c_rs_circuit_module_add_committed(
 extern lean_obj_res c_rs_circuit_module_add_transparent(
     lean_obj_arg l_circuit,
     b_lean_obj_arg name,
-    b_lean_obj_arg transparent
+    b_lean_obj_arg transparent,
+    b_lean_obj_arg relative_height
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
     size_t oracle_idx = rs_circuit_module_add_transparent(
         get_object_ref(linear),
         chars,
-        transparent
+        transparent,
+        relative_height
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
@@ -335,7 +342,8 @@ extern lean_obj_res c_rs_circuit_module_add_linear_combination(
     lean_obj_arg l_circuit,
     b_lean_obj_arg name,
     b_lean_obj_arg offset,
-    b_lean_obj_arg inner
+    b_lean_obj_arg inner,
+    b_lean_obj_arg relative_height
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
@@ -343,7 +351,8 @@ extern lean_obj_res c_rs_circuit_module_add_linear_combination(
         get_object_ref(linear),
         chars,
         lean_get_external_data(offset),
-        inner
+        inner,
+        relative_height
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
@@ -402,8 +411,8 @@ extern lean_obj_res c_rs_circuit_module_add_projected(
     lean_obj_arg l_circuit,
     b_lean_obj_arg name,
     size_t inner,
-    uint64_t mask,
-    size_t unprojected_size
+    uint64_t selection,
+    size_t chunk_size
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
@@ -411,8 +420,8 @@ extern lean_obj_res c_rs_circuit_module_add_projected(
         get_object_ref(linear),
         chars,
         inner,
-        mask,
-        unprojected_size
+        selection,
+        chunk_size
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);

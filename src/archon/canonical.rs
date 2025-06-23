@@ -1,8 +1,9 @@
 use binius_core::{constraint_system::channel::FlushDirection, oracle::ShiftVariant};
 use binius_field::BinaryField128b;
+use binius_utils::checked_arithmetics::log2_strict_usize;
 
 use super::{
-    OracleIdx, OracleInfo, OracleKind,
+    OracleIdx, OracleInfo, OracleKind, RelativeHeight,
     arith_expr::ArithExpr,
     circuit::{ArchonExp, ArchonFlush, ArchonOracleOrConst, CircuitModule, Constraint},
     transparent::Transparent,
@@ -135,16 +136,8 @@ impl Canonical for OracleKind {
                     + Canonical::size(variant)
             }
             Self::Projected {
-                inner,
-                mask,
-                mask_bits,
-                unprojected_size,
-            } => {
-                1 + Canonical::size(inner)
-                    + Canonical::size(mask)
-                    + Canonical::size(mask_bits)
-                    + Canonical::size(unprojected_size)
-            }
+                inner, selection, ..
+            } => 1 + Canonical::size(inner) + Canonical::size(selection) + size_of::<u8>(),
         }
     }
     fn write(&self, buffer: &mut Vec<u8>) {
@@ -179,15 +172,36 @@ impl Canonical for OracleKind {
             }
             Self::Projected {
                 inner,
-                mask,
-                mask_bits,
-                unprojected_size,
+                selection,
+                chunk_size,
+                ..
             } => {
                 buffer.push(6);
                 Canonical::write(inner, buffer);
-                Canonical::write(mask, buffer);
-                Canonical::write(mask_bits, buffer);
-                Canonical::write(unprojected_size, buffer);
+                Canonical::write(selection, buffer);
+                buffer.push(log2_strict_usize(*chunk_size).to_le_bytes()[0]);
+            }
+        }
+    }
+}
+
+impl Canonical for RelativeHeight {
+    fn size(&self) -> usize {
+        match self {
+            Self::Base => 1,
+            Self::Div2(_) | Self::Mul2(_) => 2,
+        }
+    }
+    fn write(&self, buffer: &mut Vec<u8>) {
+        match self {
+            Self::Base => buffer.push(0),
+            Self::Div2(x) => {
+                buffer.push(1);
+                buffer.push(*x);
+            }
+            Self::Mul2(x) => {
+                buffer.push(2);
+                buffer.push(*x);
             }
         }
     }
@@ -199,17 +213,20 @@ impl Canonical for OracleInfo {
             name: _,
             tower_level,
             kind,
+            relative_height,
         } = self;
-        Canonical::size(tower_level) + Canonical::size(kind)
+        Canonical::size(tower_level) + Canonical::size(kind) + Canonical::size(relative_height)
     }
     fn write(&self, buffer: &mut Vec<u8>) {
         let Self {
             name: _,
             tower_level,
             kind,
+            relative_height,
         } = self;
         Canonical::write(tower_level, buffer);
         Canonical::write(kind, buffer);
+        Canonical::write(relative_height, buffer);
     }
 }
 
