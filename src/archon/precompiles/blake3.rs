@@ -3,7 +3,7 @@
 use crate::archon::arith_expr::ArithExpr;
 use crate::archon::circuit::CircuitModule;
 use crate::archon::witness::WitnessModule;
-use crate::archon::{ModuleId, ModuleMode, OracleIdx};
+use crate::archon::{ModuleId, ModuleMode, OracleIdx, RelativeHeight};
 use binius_circuits::arithmetic::u32::LOG_U32_BITS;
 use binius_core::oracle::ShiftVariant;
 use binius_field::{BinaryField1b, BinaryField32b, BinaryField128b, Field};
@@ -113,7 +113,8 @@ fn state_transition_module(
 
     let mut circuit_module = CircuitModule::new(id);
     let state_transitions: [OracleIdx; STATE_SIZE] = array_util::try_from_fn(|xy| {
-        circuit_module.add_committed::<B32>(&format!("state-transition-{:?}", xy))
+        circuit_module
+            .add_committed::<B32>(&format!("state-transition-{:?}", xy), RelativeHeight::Base)
     })?;
 
     let input: [OracleIdx; STATE_SIZE] = array_util::try_from_fn(|xy| {
@@ -164,29 +165,33 @@ fn additions_xor_rotates_module(
 
     let mut circuit_module = CircuitModule::new(id);
 
-    let a_in = circuit_module.add_committed::<B1>("a_in")?;
-    let b_in = circuit_module.add_committed::<B1>("b_in")?;
-    let c_in = circuit_module.add_committed::<B1>("c_in")?;
-    let d_in = circuit_module.add_committed::<B1>("d_in")?;
-    let mx_in = circuit_module.add_committed::<B1>("mx_in")?;
-    let my_in = circuit_module.add_committed::<B1>("my_in")?;
+    let a_in = circuit_module.add_committed::<B1>("a_in", RelativeHeight::Base)?;
+    let b_in = circuit_module.add_committed::<B1>("b_in", RelativeHeight::Base)?;
+    let c_in = circuit_module.add_committed::<B1>("c_in", RelativeHeight::Base)?;
+    let d_in = circuit_module.add_committed::<B1>("d_in", RelativeHeight::Base)?;
+    let mx_in = circuit_module.add_committed::<B1>("mx_in", RelativeHeight::Base)?;
+    let my_in = circuit_module.add_committed::<B1>("my_in", RelativeHeight::Base)?;
 
-    let a_0 = circuit_module.add_committed::<B1>("a_0")?;
-    let a_0_tmp = circuit_module.add_committed::<B1>("a_0_tmp")?;
-    let c_0 = circuit_module.add_committed::<B1>("c_0")?;
-    let a_1 = circuit_module.add_committed::<B1>("a_1")?;
-    let a_1_tmp = circuit_module.add_committed::<B1>("a_1_tmp")?;
-    let c_1 = circuit_module.add_committed::<B1>("c_1")?;
+    let a_0 = circuit_module.add_committed::<B1>("a_0", RelativeHeight::Base)?;
+    let a_0_tmp = circuit_module.add_committed::<B1>("a_0_tmp", RelativeHeight::Base)?;
+    let c_0 = circuit_module.add_committed::<B1>("c_0", RelativeHeight::Base)?;
+    let a_1 = circuit_module.add_committed::<B1>("a_1", RelativeHeight::Base)?;
+    let a_1_tmp = circuit_module.add_committed::<B1>("a_1_tmp", RelativeHeight::Base)?;
+    let c_1 = circuit_module.add_committed::<B1>("c_1", RelativeHeight::Base)?;
 
-    let b_in_xor_c_0 = circuit_module.add_linear_combination("b_in_xor_c_0", B128::ZERO, [
-        (b_in, B128::ONE),
-        (c_0, B128::ONE),
-    ])?;
+    let b_in_xor_c_0 = circuit_module.add_linear_combination(
+        "b_in_xor_c_0",
+        B128::ZERO,
+        [(b_in, B128::ONE), (c_0, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
-    let d_in_xor_a_0 = circuit_module.add_linear_combination("d_in_xor_a_0", B128::ZERO, [
-        (d_in, B128::ONE),
-        (a_0, B128::ONE),
-    ])?;
+    let d_in_xor_a_0 = circuit_module.add_linear_combination(
+        "d_in_xor_a_0",
+        B128::ZERO,
+        [(d_in, B128::ONE), (a_0, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
     let b_0 = circuit_module.add_shifted(
         "b_0",
@@ -203,15 +208,19 @@ fn additions_xor_rotates_module(
         ShiftVariant::CircularLeft,
     )?;
 
-    let d_0_xor_a_1 = circuit_module.add_linear_combination("d_0_xor_a_1", B128::ZERO, [
-        (d_0, B128::ONE),
-        (a_1, B128::ONE),
-    ])?;
+    let d_0_xor_a_1 = circuit_module.add_linear_combination(
+        "d_0_xor_a_1",
+        B128::ZERO,
+        [(d_0, B128::ONE), (a_1, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
-    let b_0_xor_c_1 = circuit_module.add_linear_combination("b_0_xor_c_1", B128::ZERO, [
-        (b_0, B128::ONE),
-        (c_1, B128::ONE),
-    ])?;
+    let b_0_xor_c_1 = circuit_module.add_linear_combination(
+        "b_0_xor_c_1",
+        B128::ZERO,
+        [(b_0, B128::ONE), (c_1, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
     let d_1 = circuit_module.add_shifted(
         "d_1",
@@ -229,7 +238,7 @@ fn additions_xor_rotates_module(
     )?;
 
     let couts: [OracleIdx; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
-        circuit_module.add_committed::<B1>(&format!("cout-{:?}", xy))
+        circuit_module.add_committed::<B1>(&format!("cout-{:?}", xy), RelativeHeight::Base)
     })?;
     let cins: [OracleIdx; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
         circuit_module.add_shifted(
@@ -331,21 +340,23 @@ fn cv_output_module(
 
     let mut circuit_module = CircuitModule::new(id);
 
-    let cv = circuit_module.add_committed::<B32>("cv")?;
-    let state_i = circuit_module.add_committed::<B32>("state_i")?;
-    let state_i_8 = circuit_module.add_committed::<B32>("state_i_8")?;
+    let cv = circuit_module.add_committed::<B32>("cv", RelativeHeight::Base)?;
+    let state_i = circuit_module.add_committed::<B32>("state_i", RelativeHeight::Base)?;
+    let state_i_8 = circuit_module.add_committed::<B32>("state_i_8", RelativeHeight::Base)?;
 
-    let _state_i_xor_state_i_8 =
-        circuit_module.add_linear_combination("state_i_xor_state_i_8", B128::ZERO, [
-            (state_i, B128::ONE),
-            (state_i_8, B128::ONE),
-        ])?;
+    let _state_i_xor_state_i_8 = circuit_module.add_linear_combination(
+        "state_i_xor_state_i_8",
+        B128::ZERO,
+        [(state_i, B128::ONE), (state_i_8, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
-    let _cv_oracle_xor_state_i_8 =
-        circuit_module.add_linear_combination("cv_oracle_xor_state_i_8", B128::ZERO, [
-            (cv, B128::ONE),
-            (state_i_8, B128::ONE),
-        ])?;
+    let _cv_oracle_xor_state_i_8 = circuit_module.add_linear_combination(
+        "cv_oracle_xor_state_i_8",
+        B128::ZERO,
+        [(cv, B128::ONE), (state_i_8, B128::ONE)],
+        RelativeHeight::Base,
+    )?;
 
     circuit_module.freeze_oracles();
 
@@ -371,7 +382,6 @@ fn cv_output_module(
 
 #[cfg(test)]
 pub mod tests {
-    use crate::archon::ModuleMode;
     use crate::archon::circuit::{CircuitModule, init_witness_modules};
     use crate::archon::precompiles::blake3::{
         ADDITION_OPERATIONS_NUMBER, B1, B128, Blake3CompressionOracles, IV, MSG_PERMUTATION,
@@ -380,6 +390,7 @@ pub mod tests {
     };
     use crate::archon::protocol::validate_witness;
     use crate::archon::witness::{WitnessModule, compile_witness_modules};
+    use crate::archon::{ModuleMode, RelativeHeight};
     use binius_field::Field;
     use binius_utils::checked_arithmetics::log2_ceil_usize;
     use rand::prelude::StdRng;
@@ -921,14 +932,20 @@ pub mod tests {
         let circuit_module_id = 0;
         let mut circuit_module_1 = CircuitModule::new(circuit_module_id);
 
-        let a_0 = circuit_module_1.add_committed::<B1>("a_0").unwrap();
-        let d_in = circuit_module_1.add_committed::<B1>("d_in").unwrap();
+        let a_0 = circuit_module_1
+            .add_committed::<B1>("a_0", RelativeHeight::Base)
+            .unwrap();
+        let d_in = circuit_module_1
+            .add_committed::<B1>("d_in", RelativeHeight::Base)
+            .unwrap();
 
         let d_in_xor_a_0 = circuit_module_1
-            .add_linear_combination("d_in_xor_a_0", B128::ZERO, [
-                (a_0, B128::ONE),
-                (d_in, B128::ONE),
-            ])
+            .add_linear_combination(
+                "d_in_xor_a_0",
+                B128::ZERO,
+                [(a_0, B128::ONE), (d_in, B128::ONE)],
+                RelativeHeight::Base,
+            )
             .unwrap();
 
         circuit_module_1.freeze_oracles();

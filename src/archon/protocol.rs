@@ -148,7 +148,7 @@ pub fn verify(
 #[cfg(test)]
 mod tests {
     use crate::archon::{
-        ModuleId, ModuleMode, OracleIdx,
+        ModuleId, ModuleMode, OracleIdx, RelativeHeight,
         arith_expr::ArithExpr,
         circuit::{CircuitModule, init_witness_modules},
         precompiles::blake3::{blake3_compress, tests::generate_trace},
@@ -167,9 +167,9 @@ mod tests {
 
     fn a_xor_b_circuit_module(module_id: ModuleId) -> Result<(CircuitModule, Oracles)> {
         let mut circuit_module = CircuitModule::new(module_id);
-        let s = circuit_module.selector();
-        let a = circuit_module.add_committed::<B1>("a")?;
-        let b = circuit_module.add_committed::<B1>("b")?;
+        let s = CircuitModule::selector();
+        let a = circuit_module.add_committed::<B1>("a", RelativeHeight::Base)?;
+        let b = circuit_module.add_committed::<B1>("b", RelativeHeight::Base)?;
         circuit_module.assert_zero("a xor b", [], ArithExpr::Oracle(a) + ArithExpr::Oracle(b));
         circuit_module.freeze_oracles();
         Ok((circuit_module, Oracles { s, a, b }))

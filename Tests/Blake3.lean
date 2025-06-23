@@ -202,7 +202,7 @@ def testArchonStateTransitionModule : TestSeq := Id.run do
           match length with
           | 0 => (circuitModule, committed, input, output)
           | length' + 1 =>
-            let (committed', circuitModule):= circuitModule.addCommitted (String.append name (toString length)) f
+            let (committed', circuitModule):= circuitModule.addCommitted (String.append name (toString length)) f .base
             let (input', circuitModule) := circuitModule.addProjected (String.append (String.append name (toString length)) "input") committed' 0 64
             let (output', circuitModule) := circuitModule.addProjected (String.append (String.append name (toString length)) "output") committed' 57 64
 

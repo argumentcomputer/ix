@@ -299,14 +299,16 @@ extern lean_obj_res c_rs_circuit_module_assert_static_exp(
 extern lean_obj_res c_rs_circuit_module_add_committed(
     lean_obj_arg l_circuit,
     b_lean_obj_arg name,
-    uint8_t tower_level
+    uint8_t tower_level,
+    b_lean_obj_arg relative_height
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
     size_t oracle_idx = rs_circuit_module_add_committed(
         get_object_ref(linear),
         chars,
-        tower_level
+        tower_level,
+        relative_height
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
@@ -318,14 +320,16 @@ extern lean_obj_res c_rs_circuit_module_add_committed(
 extern lean_obj_res c_rs_circuit_module_add_transparent(
     lean_obj_arg l_circuit,
     b_lean_obj_arg name,
-    b_lean_obj_arg transparent
+    b_lean_obj_arg transparent,
+    b_lean_obj_arg relative_height
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
     size_t oracle_idx = rs_circuit_module_add_transparent(
         get_object_ref(linear),
         chars,
-        transparent
+        transparent,
+        relative_height
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);
@@ -338,7 +342,8 @@ extern lean_obj_res c_rs_circuit_module_add_linear_combination(
     lean_obj_arg l_circuit,
     b_lean_obj_arg name,
     b_lean_obj_arg offset,
-    b_lean_obj_arg inner
+    b_lean_obj_arg inner,
+    b_lean_obj_arg relative_height
 ) {
     linear_object *linear = validated_linear(l_circuit);
     char const *chars = lean_string_cstr(name);
@@ -346,7 +351,8 @@ extern lean_obj_res c_rs_circuit_module_add_linear_combination(
         get_object_ref(linear),
         chars,
         lean_get_external_data(offset),
-        inner
+        inner,
+        relative_height
     );
     linear_object *new_linear = linear_bump(linear);
     lean_obj_res tuple = lean_alloc_ctor(0, 2, 0);

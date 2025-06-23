@@ -3,6 +3,7 @@ import Tests.Common
 import Ix.Binius.Boundary
 import Ix.Archon.ArithExpr
 import Ix.Archon.ModuleMode
+import Ix.Archon.RelativeHeight
 import Ix.Archon.Transparent
 
 open LSpec SlimCheck Gen
@@ -71,7 +72,7 @@ instance : Repr ArithExpr where
 
 instance : SampleableExt ArithExpr := SampleableExt.mkSelfContained genArithExpr
 
-/- Transparent -/
+/- ModuleMode -/
 
 def genModuleMode : Gen ModuleMode :=
   frequency [
@@ -86,6 +87,23 @@ instance : Repr ModuleMode where
   reprPrec mode _ := mode.toString
 
 instance : SampleableExt ModuleMode := SampleableExt.mkSelfContained genModuleMode
+
+/- RelativeHeight -/
+
+def genRelativeHeight : Gen RelativeHeight :=
+  frequency [
+      (5, pure .base),
+      (15, .div2 <$> genUInt8),
+      (15, .mul2 <$> genUInt8),
+    ]
+
+instance : Shrinkable RelativeHeight where
+  shrink _ := []
+
+instance : Repr RelativeHeight where
+  reprPrec relativeHeight _ := relativeHeight.toString
+
+instance : SampleableExt RelativeHeight := SampleableExt.mkSelfContained genRelativeHeight
 
 /- Transparent -/
 
@@ -114,6 +132,8 @@ def Tests.FFIConsistency.suite := [
       (∀ boundary : Boundary, boundary.isEquivalentToBytes boundary.toBytes),
     check "ModuleMode Lean->Rust mapping matches the deserialized bytes"
       (∀ moduleMode : ModuleMode, moduleMode.isEquivalentToBytes moduleMode.toBytes),
+    check "RelativeHeight Lean->Rust mapping matches the deserialized bytes"
+      (∀ relativeHeight : RelativeHeight, relativeHeight.isEquivalentToBytes relativeHeight.toBytes),
     check "Transparent Lean->Rust mapping matches the deserialized bytes"
       (∀ transparent : Transparent, transparent.isEquivalentToBytes transparent.toBytes),
   ]

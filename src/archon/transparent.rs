@@ -33,11 +33,16 @@ pub struct Incremental {
 }
 
 impl Incremental {
+    // #[inline]
+    // pub(crate) fn min_tower_level(height: u64) -> usize {
+    //     // It's impossible to satisfy the evaluation within an underlier for
+    //     // tower levels below 3.
+    //     B64::new(height).min_tower_level().max(3)
+    // }
+
     #[inline]
-    pub(crate) fn min_tower_level(height: u64) -> usize {
-        // It's impossible to satisfy the evaluation within an underlier for
-        // tower levels below 3.
-        B64::new(height).min_tower_level().max(3)
+    pub(crate) fn min_tower_level(log_height: u8) -> usize {
+        B64::new((1 << log_height) - 1).min_tower_level()
     }
 }
 

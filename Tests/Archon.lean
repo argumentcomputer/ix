@@ -15,27 +15,29 @@ def populateAndValidate (circuitModule : CircuitModule)
 
 def transparent : TestSeq :=
   let circuitModule := CircuitModule.new 0
-  let (_, circuitModule) := circuitModule.addTransparent "constant" (.const 300)
-  let (_, circuitModule) := circuitModule.addTransparent "incremental" .incremental
+  let (_, circuitModule) := circuitModule.addTransparent "constant" (.const 300) .base
+  let (_, circuitModule) := circuitModule.addTransparent "incremental" .incremental .base
   let circuitModule := circuitModule.freezeOracles
   let witnessModule := circuitModule.initWitnessModule
   populateAndValidate circuitModule witnessModule 91 "Archon transparents work"
 
 def linearCombination : TestSeq := Id.run do
   let circuitModule := CircuitModule.new 0
-  let (b1, circuitModule) := circuitModule.addCommitted "b1" .b1
-  let (b2, circuitModule) := circuitModule.addCommitted "b2" .b2
-  let (b4, circuitModule) := circuitModule.addCommitted "b4" .b4
-  let (b8, circuitModule) := circuitModule.addCommitted "b8" .b8
-  let (b16, circuitModule) := circuitModule.addCommitted "b16" .b16
-  let (b32, circuitModule) := circuitModule.addCommitted "b32" .b32
-  let (b64, circuitModule) := circuitModule.addCommitted "b64" .b64
-  let (b128, circuitModule) := circuitModule.addCommitted "b128" .b128
+  let (b1, circuitModule) := circuitModule.addCommitted "b1" .b1 .base
+  let (b2, circuitModule) := circuitModule.addCommitted "b2" .b2 .base
+  let (b4, circuitModule) := circuitModule.addCommitted "b4" .b4 .base
+  let (b8, circuitModule) := circuitModule.addCommitted "b8" .b8 .base
+  let (b16, circuitModule) := circuitModule.addCommitted "b16" .b16 .base
+  let (b32, circuitModule) := circuitModule.addCommitted "b32" .b32 .base
+  let (b64, circuitModule) := circuitModule.addCommitted "b64" .b64 .base
+  let (b128, circuitModule) := circuitModule.addCommitted "b128" .b128 .base
 
   let (_, circuitModule) := circuitModule.addLinearCombination "lcb128" 3
     #[(b1, 3), (b2, 4), (b4, 5), (b8, 6), (b16, 7), (b32, 8), (b64, 9), (b128, 10)]
+    .base
   let (_, circuitModule) := circuitModule.addLinearCombination "lcb64" 907898
     #[(b1, 500), (b2, 2000), (b4, 5), (b8, 4), (b16, 7), (b32, 8), (b64, 9879)]
+    .base
 
   let circuitModule := circuitModule.freezeOracles
   let mut witnessModule := circuitModule.initWitnessModule
@@ -63,7 +65,7 @@ def linearCombination : TestSeq := Id.run do
 
 def packed : TestSeq :=
   let circuitModule := CircuitModule.new 0
-  let (x, circuitModule) := circuitModule.addCommitted "x" .b1
+  let (x, circuitModule) := circuitModule.addCommitted "x" .b1 .base
   let (_, circuitModule) := circuitModule.addPacked "packed" x 2
   let circuitModule := circuitModule.freezeOracles
   let witnessModule := circuitModule.initWitnessModule
@@ -74,7 +76,7 @@ def packed : TestSeq :=
 
 def shifted : TestSeq :=
   let circuitModule := CircuitModule.new 0
-  let (x, circuitModule) := circuitModule.addCommitted "x" .b1
+  let (x, circuitModule) := circuitModule.addCommitted "x" .b1 .base
   let (_, circuitModule) := circuitModule.addShifted "shifted" x 2 4 .logicalLeft
   let circuitModule := circuitModule.freezeOracles
   let witnessModule := circuitModule.initWitnessModule
@@ -85,11 +87,11 @@ def shifted : TestSeq :=
 
 def pushData : TestSeq :=
   let circuitModule := CircuitModule.new 0
-  let (u8s, circuitModule) := circuitModule.addCommitted "u8s" .b1
-  let (u16s, circuitModule) := circuitModule.addCommitted "u16s" .b1
-  let (u32s, circuitModule) := circuitModule.addCommitted "u32s" .b1
-  let (u64s, circuitModule) := circuitModule.addCommitted "u64s" .b1
-  let (u128s, circuitModule) := circuitModule.addCommitted "u128s" .b1
+  let (u8s, circuitModule) := circuitModule.addCommitted "u8s" .b1 .base
+  let (u16s, circuitModule) := circuitModule.addCommitted "u16s" .b1 .base
+  let (u32s, circuitModule) := circuitModule.addCommitted "u32s" .b1 .base
+  let (u64s, circuitModule) := circuitModule.addCommitted "u64s" .b1 .base
+  let (u128s, circuitModule) := circuitModule.addCommitted "u128s" .b1 .base
   let circuitModule := circuitModule.assertZero "u8s xor u16s" #[] $ .add (.oracle u8s) (.oracle u16s)
   let circuitModule := circuitModule.assertZero "u16s xor u32s" #[] $ .add (.oracle u16s) (.oracle u32s)
   let circuitModule := circuitModule.assertZero "u32s xor u64s" #[] $ .add (.oracle u32s) (.oracle u64s)
@@ -115,8 +117,8 @@ def pushData : TestSeq :=
 
 def proveAndVerify : TestSeq :=
   let circuitModule := CircuitModule.new 0
-  let (x, circuitModule) := circuitModule.addCommitted "x" .b1
-  let (y, circuitModule) := circuitModule.addCommitted "y" .b1
+  let (x, circuitModule) := circuitModule.addCommitted "x" .b1 .base
+  let (y, circuitModule) := circuitModule.addCommitted "y" .b1 .base
   let circuitModule := circuitModule.assertZero "x xor y" #[] $ .add (.oracle x) (.oracle y)
   let circuitModule := circuitModule.freezeOracles
   let witnessModule := circuitModule.initWitnessModule
@@ -136,8 +138,8 @@ def proveAndVerify : TestSeq :=
 def parPopulate : TestSeq :=
   let c₁ := CircuitModule.new 0
   let c₂ := CircuitModule.new 1
-  let (o₁, c₁) := c₁.addCommitted "x" .b128
-  let (o₂, c₂) := c₂.addCommitted "y" .b128
+  let (o₁, c₁) := c₁.addCommitted "x" .b128 .base
+  let (o₂, c₂) := c₂.addCommitted "y" .b128 .base
   let c₁ := c₁.freezeOracles
   let c₂ := c₂.freezeOracles
   let w₁ := c₁.initWitnessModule
@@ -156,7 +158,7 @@ def parPopulate : TestSeq :=
 
 def getData : TestSeq :=
   let c := CircuitModule.new 0
-  let (o, c) := c.addCommitted "o" .b8
+  let (o, c) := c.addCommitted "o" .b8 .base
   let w := c.freezeOracles.initWitnessModule
   let (e, w) := w.addEntry
   let w := w.pushUInt128sTo #[0] e
@@ -166,9 +168,9 @@ def getData : TestSeq :=
 
 def versionCircuitModules : TestSeq :=
   let c₁ := CircuitModule.new 0
-  let (_, c₁) := c₁.addCommitted "a" .b1
+  let (_, c₁) := c₁.addCommitted "a" .b1 .base
   let c₂ := CircuitModule.new 0
-  let (_, c₂) := c₂.addCommitted "b" .b1
+  let (_, c₂) := c₂.addCommitted "b" .b1 .base
   let v₁ := version #[c₁]
   let v₂ := version #[c₂]
   test "Circuit module versioning is name-irrelevant" (v₁.val == v₂.val)

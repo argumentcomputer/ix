@@ -69,10 +69,28 @@ pub enum OracleKind {
 
 pub type ModuleId = usize;
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RelativeHeight {
+    Base,
+    Div2(u8),
+    Mul2(u8),
+}
+
+impl RelativeHeight {
+    pub fn transform(&self, log_height: u8) -> u8 {
+        match self {
+            Self::Base => log_height,
+            Self::Div2(x) => log_height - x,
+            Self::Mul2(x) => log_height + x,
+        }
+    }
+}
+
 pub struct OracleInfo {
     pub name: String,
     pub tower_level: usize,
     pub kind: OracleKind,
+    pub relative_height: RelativeHeight,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

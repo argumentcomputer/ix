@@ -23,14 +23,14 @@ def Columns.ofLayout (circuitModule : CircuitModule) (layout : Layout) : Columns
   let (u1Auxiliaries, circuitModule) := foldCommit layout.u1Auxiliaries circuitModule (s!"u1-auxiliary-{·}") .b1
   let (u8Auxiliaries, circuitModule) := foldCommit layout.u8Auxiliaries circuitModule (s!"u8-auxiliary-{·}") .b8
   let (u64Auxiliaries, circuitModule) := foldCommit layout.u64Auxiliaries circuitModule (s!"u64-auxiliary-{·}") .b64
-  let (multiplicity, circuitModule) := circuitModule.addCommitted "multiplicity" .b64
+  let (multiplicity, circuitModule) := circuitModule.addCommitted "multiplicity" .b64 .base
   let (selectors, circuitModule) := foldCommit layout.selectors circuitModule (s!"selector-{·}") .b1
   let columns := { inputs, outputs, u1Auxiliaries, u8Auxiliaries, u64Auxiliaries, multiplicity, selectors }
   (columns, circuitModule)
 where
   foldCommit n circuitModule nameFn tf :=
     n.fold (init := (#[], circuitModule)) fun i _ (oracles, circuitModule) =>
-      let (oracleIdx, circuitModule) := circuitModule.addCommitted (nameFn i) tf
+      let (oracleIdx, circuitModule) := circuitModule.addCommitted (nameFn i) tf .base
       (oracles.push oracleIdx, circuitModule)
 
 inductive Channel
