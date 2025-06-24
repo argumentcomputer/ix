@@ -37,9 +37,8 @@ def ArithmeticTrace.add (pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
   else
     let depth := pairs.size
     let targetNumPairs := pairs.size.nextPowerOfTwo.max 2 -- to fill 128 bits
-    let paddedPairs := pairs.rightpad targetNumPairs (0, 0)
-    let logHeight := paddedPairs.size |>.log2.toUInt8
-    let (xs, ys) := paddedPairs.unzip
+    let logHeight := targetNumPairs.log2.toUInt8
+    let (xs, ys) := pairs.unzip
     ⟨xs, ys, .active logHeight depth.toUInt64⟩
 
 def ArithmeticTrace.mul (_pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
