@@ -579,16 +579,16 @@ def testArchonCVOutputModule : TestSeq := Id.run do
   let tracesNum := 2 ^ TestLogCompressionsNum
   let (traces, expected) := mkTraces (mkStdGen 0) tracesNum
 
-  let nVars := Nat.log2 (tracesNum * OutHeight)
+  let logHeight := Nat.log2 (tracesNum * OutHeight) |>.toUInt8
+  let mode := .active logHeight 0
 
-  let height := 2 ^ nVars
   let circuitModule := CircuitModule.new 0
 
-  let (cv, circuitModule):= circuitModule.addCommitted "cv" .b32
-  let (state08, circuitModule):= circuitModule.addCommitted "state08" .b32
-  let (state816, circuitModule):= circuitModule.addCommitted "state816" .b32
-  let (state08xor816, circuitModule) := circuitModule.addLinearCombination "state08 xor state816" 0 #[(state08, 1), (state816, 1)]
-  let (state816xorCv, circuitModule) := circuitModule.addLinearCombination "state816 xor cv" 0 #[(cv, 1), (state816, 1)]
+  let (cv, circuitModule):= circuitModule.addCommitted "cv" .b32 .base
+  let (state08, circuitModule):= circuitModule.addCommitted "state08" .b32 .base
+  let (state816, circuitModule):= circuitModule.addCommitted "state816" .b32 .base
+  let (state08xor816, circuitModule) := circuitModule.addLinearCombination "state08 xor state816" 0 #[(state08, 1), (state816, 1)] .base
+  let (state816xorCv, circuitModule) := circuitModule.addLinearCombination "state816 xor cv" 0 #[(cv, 1), (state816, 1)] .base
 
   let circuitModule := circuitModule.freezeOracles
   let witnessModule := circuitModule.initWitnessModule
@@ -604,7 +604,7 @@ def testArchonCVOutputModule : TestSeq := Id.run do
   let witnessModule := witnessModule.bindOracleTo state08 state08Entry .b32
   let witnessModule := witnessModule.bindOracleTo state816 state816Entry .b32
 
-  let witnessModule := witnessModule.populate height.toUInt64
+  let witnessModule := witnessModule.populate mode
 
   let a := Utilities.byteArrayToUInt32Array (witnessModule.getData state08xor816)
   let b := Utilities.byteArrayToUInt32Array (witnessModule.getData state816xorCv)
@@ -613,7 +613,7 @@ def testArchonCVOutputModule : TestSeq := Id.run do
   let b := Array.ofFn (n := 16) (fun i => b.extract (8 * i) (8 * i + 8))
   let actual := (a.zip b).map (fun (a, b) => a ++ b)
 
-  let witness := compileWitnessModules #[witnessModule] #[height.toUInt64]
+  let witness := compileWitnessModules #[witnessModule] #[mode]
   withExceptOk "[Archon] cv output module testing is OK" (validateWitness #[circuitModule] #[] witness) fun _ =>
     test "output is expected" ((actual.zip expected).all (fun (a, b) => Utilities.arrayEq a b))
 
@@ -649,7 +649,7 @@ def testArchonAdditionXorRotateModule : TestSeq := Id.run do
             match length with
             | 0 => (circuitModule, couts, cins)
             | length' + 1 =>
-              let (cout, circuitModule):= circuitModule.addCommitted (String.append (String.append name (toString length)) "cin") f
+              let (cout, circuitModule):= circuitModule.addCommitted (String.append (String.append name (toString length)) "cin") f .base
               let (cin, circuitModule) := circuitModule.addShifted (String.append (String.append name (toString length)) "cin") cout 1 5 ShiftVariant.logicalLeft
 
               mkColumnsInner circuitModule length' f (String.append name (toString length')) (couts.push cout) (cins.push cin)
@@ -658,32 +658,33 @@ def testArchonAdditionXorRotateModule : TestSeq := Id.run do
 
   let tracesNum := 2 ^ TestLogCompressionsNum
   let (traces, _expected) := mkTraces (mkStdGen 0) tracesNum
-  let nVars := Nat.log2 (tracesNum * SingleCompressionHeight)
-  let height := 2 ^ (nVars + 5)
+
+  let logHeight := Nat.log2 (tracesNum * SingleCompressionHeight) |>.toUInt8
+  let mode := .active (logHeight + 5) 0
 
   let circuitModule := CircuitModule.new 0
-  let (aIn, circuitModule) := circuitModule.addCommitted "aIn" .b1
-  let (bIn, circuitModule) := circuitModule.addCommitted "bIn" .b1
-  let (cIn, circuitModule) := circuitModule.addCommitted "cIn" .b1
-  let (dIn, circuitModule) := circuitModule.addCommitted "dIn" .b1
-  let (mxIn, circuitModule) := circuitModule.addCommitted "mxIn" .b1
-  let (myIn, circuitModule) := circuitModule.addCommitted "myIn" .b1
+  let (aIn, circuitModule) := circuitModule.addCommitted "aIn" .b1 .base
+  let (bIn, circuitModule) := circuitModule.addCommitted "bIn" .b1 .base
+  let (cIn, circuitModule) := circuitModule.addCommitted "cIn" .b1 .base
+  let (dIn, circuitModule) := circuitModule.addCommitted "dIn" .b1 .base
+  let (mxIn, circuitModule) := circuitModule.addCommitted "mxIn" .b1 .base
+  let (myIn, circuitModule) := circuitModule.addCommitted "myIn" .b1 .base
 
-  let (a0, circuitModule) := circuitModule.addCommitted "a0" .b1
-  let (a0Tmp, circuitModule) := circuitModule.addCommitted "a0Tmp" .b1
-  let (c0, circuitModule) := circuitModule.addCommitted "c0" .b1
-  let (a1, circuitModule) := circuitModule.addCommitted "a1" .b1
-  let (a1Tmp, circuitModule) := circuitModule.addCommitted "a1Tmp" .b1
-  let (c1, circuitModule) := circuitModule.addCommitted "c1" .b1
+  let (a0, circuitModule) := circuitModule.addCommitted "a0" .b1 .base
+  let (a0Tmp, circuitModule) := circuitModule.addCommitted "a0Tmp" .b1 .base
+  let (c0, circuitModule) := circuitModule.addCommitted "c0" .b1 .base
+  let (a1, circuitModule) := circuitModule.addCommitted "a1" .b1 .base
+  let (a1Tmp, circuitModule) := circuitModule.addCommitted "a1Tmp" .b1 .base
+  let (c1, circuitModule) := circuitModule.addCommitted "c1" .b1 .base
 
-  let (bInXorC0, circuitModule) := circuitModule.addLinearCombination "bInXorC0" 0 #[(bIn, 1), (c0, 1)]
-  let (dInXorA0, circuitModule) := circuitModule.addLinearCombination "dInXorA0" 0 #[(dIn, 1), (a0, 1)]
+  let (bInXorC0, circuitModule) := circuitModule.addLinearCombination "bInXorC0" 0 #[(bIn, 1), (c0, 1)] .base
+  let (dInXorA0, circuitModule) := circuitModule.addLinearCombination "dInXorA0" 0 #[(dIn, 1), (a0, 1)] .base
 
   let (b0, circuitModule) := circuitModule.addShifted "b0" bInXorC0 (32 - 12) LogU32Bits ShiftVariant.circularLeft
   let (d0, circuitModule) := circuitModule.addShifted "d0" dInXorA0 (32 - 16) LogU32Bits ShiftVariant.circularLeft
 
-  let (d0XorA1, circuitModule) := circuitModule.addLinearCombination "d0XorA1" 0 #[(d0, 1), (a1, 1)]
-  let (b0XorC1, circuitModule) := circuitModule.addLinearCombination "b0XorC1" 0 #[(b0, 1), (c1, 1)]
+  let (d0XorA1, circuitModule) := circuitModule.addLinearCombination "d0XorA1" 0 #[(d0, 1), (a1, 1)] .base
+  let (b0XorC1, circuitModule) := circuitModule.addLinearCombination "b0XorC1" 0 #[(b0, 1), (c1, 1)] .base
 
   let (d1, circuitModule) := circuitModule.addShifted "d1" d0XorA1 (32 - 8) LogU32Bits ShiftVariant.circularLeft
   let (_, circuitModule) := circuitModule.addShifted "b1" b0XorC1 (32 - 7) LogU32Bits ShiftVariant.circularLeft
@@ -731,9 +732,9 @@ def testArchonAdditionXorRotateModule : TestSeq := Id.run do
   witnessModule := witnessModule.pushUInt32sTo traces.dInTraces dInEntry
   witnessModule := witnessModule.bindOracleTo dIn dInEntry .b1
 
-  witnessModule := witnessModule.populate height.toUInt64
+  witnessModule := witnessModule.populate mode
 
-  let witness := compileWitnessModules #[witnessModule] #[height.toUInt64]
+  let witness := compileWitnessModules #[witnessModule] #[mode]
   withExceptOk "[Archon] addition/xor/rotate module testing is OK" (validateWitness #[circuitModule] #[] witness) fun _ => .done
 
 def Tests.Blake3.suite : List LSpec.TestSeq :=
