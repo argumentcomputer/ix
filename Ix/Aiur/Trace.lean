@@ -47,9 +47,15 @@ def ArithmeticTrace.mul (_pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
 
 structure MemoryTrace where
   numQueries : Nat
+  height : Nat
   multiplicity: Array UInt64
   values: Array (Array UInt64)
   deriving Inhabited, Repr
+
+def MemoryTrace.mode (trace : MemoryTrace) : Archon.ModuleMode :=
+  if trace.height == 0
+  then .inactive
+  else .active trace.height.log2.toUInt8 trace.numQueries.toUInt64
 
 structure ColumnIndex where
   u1Auxiliary : Nat
@@ -274,7 +280,7 @@ def QueryMap.generateTrace (map : QueryMap) (width : Nat) : Id Circuit.MemoryTra
   for ((input, result), i) in map.pairs.zipIdx do
     multiplicity := multiplicity.set! i $ Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
     values := (values.zip input).map fun (value, res) => value.set! i res
-  pure { multiplicity, values, numQueries }
+  pure { height, multiplicity, values, numQueries }
 
 def Toplevel.generateTraces
   (toplevel : Toplevel)

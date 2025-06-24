@@ -268,7 +268,7 @@ def synthesizeMemory (channelId : ChannelId) (width : Nat) : SynthM MemoryColumn
   let address ← addTransparent s!"mem-{width}-address" .incremental .base
   let values ← Array.range width |>.mapM (addCommitted s!"mem-{width}-value-{·}" .b64 .base)
   let multiplicity ← addCommitted s!"mem-{width}-multiplicity" .b64 .base
-  let args := values.push address
+  let args := #[address] ++ values
   provide channelId multiplicity args
   pure { values, multiplicity }
 
