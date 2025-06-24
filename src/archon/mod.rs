@@ -1,6 +1,7 @@
 pub mod arith_expr;
 pub mod canonical;
 pub mod circuit;
+pub mod populate;
 pub mod precompiles;
 pub mod protocol;
 pub mod transparent;
@@ -77,11 +78,11 @@ pub enum RelativeHeight {
 }
 
 impl RelativeHeight {
-    pub fn transform(&self, log_height: u8) -> u8 {
+    pub fn transform(&self, base_log_height: u8) -> u8 {
         match self {
-            Self::Base => log_height,
-            Self::Div2(x) => log_height - x,
-            Self::Mul2(x) => log_height + x,
+            Self::Base => base_log_height,
+            Self::Div2(x) => base_log_height - x,
+            Self::Mul2(x) => base_log_height + x,
         }
     }
 }
