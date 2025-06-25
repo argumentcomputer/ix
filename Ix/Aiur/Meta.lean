@@ -87,7 +87,7 @@ partial def elabPattern : ElabStxCat `pattern
   | `(pattern| $prim:primitive) => do
     mkAppM ``Pattern.primitive #[← elabPrimitive prim]
   | `(pattern| ($p:pattern $[, $ps:pattern]*)) => do
-    mkAppM ``Pattern.tuple #[← elabList p ps elabPattern ``Pattern]
+    mkAppM ``Pattern.tuple #[← elabList p ps elabPattern ``Pattern true]
   | `(pattern| $p₁:pattern | $p₂:pattern) => do
     mkAppM ``Pattern.or #[← elabPattern p₁, ← elabPattern p₂]
   | stx => throw $ .error stx "Invalid syntax for pattern"
