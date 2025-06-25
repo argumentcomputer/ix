@@ -3,7 +3,6 @@ pub mod binius;
 pub mod byte_array;
 pub mod iroh;
 pub mod keccak;
-pub mod u128;
 
 use std::ffi::{CStr, CString, c_char, c_void};
 
@@ -133,4 +132,10 @@ pub(super) fn boxed_usize_ptr_to_usize(ptr: *const c_void) -> usize {
 pub(super) fn external_ptr_to_u128(ptr: *const c_void) -> u128 {
     let u128_external = as_ref_unsafe(ptr.cast::<LeanExternalObject>());
     *as_ref_unsafe(u128_external.cast_data())
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_exterior_mul_u64(a: u64, b: u64) -> *const u128 {
+    let c = a as u128 * b as u128;
+    to_raw(c)
 }

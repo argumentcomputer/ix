@@ -18,25 +18,38 @@ structure QueryRecord where
   memQueries : Array $ Nat × QueryMap
   addQueries : Array $ UInt64 × UInt64
   mulQueries : Array $ UInt64 × UInt64
+  gadgetQueries : Array QueryMap
 
 namespace QueryRecord
 
 def new (toplevel : Toplevel) : QueryRecord :=
   let funcQueries := toplevel.functions.map fun _ => default
   let memQueries := toplevel.memWidths.map fun width => (width, default)
-  ⟨funcQueries, memQueries, #[], #[]⟩
+  let gadgetQueries := toplevel.gadgets.map fun _ => default
+  ⟨funcQueries, memQueries, #[], #[], gadgetQueries⟩
 
 def getFuncResult (record : QueryRecord) (funcIdx : FuncIdx) (input : Array UInt64) :
     Option (Array UInt64) := do
-  let queryMap ← record.funcQueries[funcIdx.toNat]?
+  let queryMap ← record.funcQueries[funcIdx]?
   let queryResult ← queryMap.getByKey input
   some queryResult.values
+
+def getGadgetResult (record : QueryRecord) (gadgetIdx : GadgetIdx) (input : Array UInt64) :
+    Option (Array UInt64) := do
+  let queryMap ← record.gadgetQueries[gadgetIdx]?
+  let queryResult ← queryMap.getByKey input
+  some queryResult.values
+
+def getGadgetEntries (record : QueryRecord) : Array $ Array GadgetEntry :=
+  record.gadgetQueries.map
+    fun queryMap => queryMap.pairs.map
+      fun (input, ⟨output, multiplicity⟩) => ⟨input, output, multiplicity⟩
 
 end QueryRecord
 
 structure ExecuteCtx where
   toplevel : Toplevel
-  funcIdx : Nat
+  funcIdx : FuncIdx
   args : Array UInt64
 
 structure ExecuteState where
@@ -45,11 +58,18 @@ structure ExecuteState where
 
 namespace ExecuteState
 
-def updateForFunc (stt : ExecuteState) (funcIdx : Nat) (newQueryMap : QueryMap)
+def updateForFunc (stt : ExecuteState) (funcIdx : FuncIdx) (newQueryMap : QueryMap)
     (mapFn : Array UInt64 → Array UInt64) : ExecuteState :=
   let newFuncQueries := stt.record.funcQueries.set! funcIdx newQueryMap
   { stt with
       record := { stt.record with funcQueries := newFuncQueries }
+      map := mapFn stt.map }
+
+def updateForGadget (stt : ExecuteState) (gadgetIdx : GadgetIdx) (newQueryMap : QueryMap)
+    (mapFn : Array UInt64 → Array UInt64) : ExecuteState :=
+  let newGadgetQueries := stt.record.gadgetQueries.set! gadgetIdx newQueryMap
+  { stt with
+      record := { stt.record with gadgetQueries := newGadgetQueries }
       map := mapFn stt.map }
 
 def updateForMem (stt : ExecuteState) (memMapIdx : MemIdx) (len : Nat) (newQueryMap : QueryMap)
@@ -144,7 +164,6 @@ partial def Op.execute : Op → ExecuteM Unit
   | .call funcIdx args _ => do
     let stt ← get
     let args := args.map (stt.map[·]!)
-    let funcIdx := funcIdx.toNat
     let funcQueryMap := stt.record.funcQueries[funcIdx]!
     match funcQueryMap.getByKey args with
     | some res =>
@@ -160,6 +179,19 @@ partial def Op.execute : Op → ExecuteM Unit
       let stt ← get
       let out := stt.map.extract (start := stt.map.size - func.outputSize)
       set { stt with map := savedMap.append out }
+  | .ffi gadgetIdx args _ => do
+    let stt ← get
+    let args := args.map (stt.map[·]!)
+    let gadgetQueryMap := stt.record.gadgetQueries[gadgetIdx]!
+    let res ← match gadgetQueryMap.getByKey args with
+      | some res => pure res.bumpMultiplicity
+      | none =>
+        let ctx ← read
+        let gadget := ctx.toplevel.gadgets[gadgetIdx]!
+        let out := gadget.execute args
+        pure ⟨out, 1⟩
+    let newGadgetQueryMap := gadgetQueryMap.insert args res
+    modify (·.updateForGadget gadgetIdx newGadgetQueryMap (·.append res.values))
   | .trace str args => do
     let stt ← get
     let args := args.map (stt.map[·]!)
@@ -186,7 +218,6 @@ partial def Ctrl.execute : Ctrl → ExecuteM Unit
 end
 
 def Toplevel.execute (toplevel : Toplevel) (funcIdx : FuncIdx) (input : Array UInt64) : QueryRecord :=
-  let funcIdx := funcIdx.toNat
   let block := toplevel.functions[funcIdx]!.body
   let (_, stt) := block.execute.run ⟨toplevel, funcIdx, input⟩ |>.run ⟨.new toplevel, input⟩
   stt.record

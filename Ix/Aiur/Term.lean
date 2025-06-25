@@ -1,4 +1,5 @@
 import Std.Data.HashSet.Basic
+import Ix.Aiur.Gadget
 import Ix.IndexMap
 
 namespace Aiur
@@ -85,6 +86,7 @@ inductive Term
   | if : Term → Term → Term → Term
   | app : Global → List Term → Term
   | preimg : Global → Term → Term
+  | ffi : Global → List Term → Term
   | xor : Term → Term → Term
   | and : Term → Term → Term
   | addU64 : Term → Term → Term
@@ -130,6 +132,7 @@ inductive TypedTermInner
   | if : TypedTerm → TypedTerm → TypedTerm → TypedTermInner
   | app : Global → List TypedTerm → TypedTermInner
   | preimg : Global → TypedTerm → TypedTermInner
+  | ffi : Global → List TypedTerm → TypedTermInner
   | xor : TypedTerm → TypedTerm → TypedTermInner
   | and : TypedTerm → TypedTerm → TypedTermInner
   | addU64 : TypedTerm → TypedTerm → TypedTermInner
@@ -175,15 +178,20 @@ structure Function where
 structure Toplevel where
   dataTypes : List DataType
   functions : List Function
+  gadgets : Array Gadget
   deriving Repr
 
 def Toplevel.getFuncIdx (toplevel : Toplevel) (funcName : Lean.Name) : Option Nat := do
   toplevel.functions.findIdx? fun function => function.name.toName == funcName
 
+@[inline] def Toplevel.addGadget (toplevel : Toplevel) (gadget : Gadget) : Toplevel :=
+  { toplevel with gadgets := toplevel.gadgets.push gadget }
+
 inductive Declaration
   | function : Function → Declaration
   | dataType : DataType → Declaration
   | constructor : DataType → Constructor → Declaration
+  | gadget : Gadget → Declaration
   deriving Repr, Inhabited
 
 abbrev Decls := IndexMap Global Declaration
@@ -199,6 +207,7 @@ inductive TypedDeclaration
   | function : TypedFunction → TypedDeclaration
   | dataType : DataType → TypedDeclaration
   | constructor : DataType → Constructor → TypedDeclaration
+  | gadget : Gadget → TypedDeclaration
   deriving Repr, Inhabited
 
 abbrev TypedDecls := IndexMap Global TypedDeclaration

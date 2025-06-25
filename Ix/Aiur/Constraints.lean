@@ -38,6 +38,7 @@ inductive Channel
   | mul
   | func : FuncIdx → Channel
   | mem : Nat → Channel
+  | gadget : GadgetIdx → Channel
 
 structure Constraints where
   sharedConstraints : Array ArithExpr
@@ -202,24 +203,21 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     let constraints := stt.constraints.require (.mem values.size) sel req args
     ⟨constraints, constraintState⟩
   | .load len ptr => modify fun stt =>
-    let args := #[stt.constraintState.getVar ptr]
-    let (args, constraintState) := len.fold (init := (args, stt.constraintState))
-      fun _ _ (args, constraintState) =>
-        let (x, constraintState) := constraintState.bindU64Column columns
-        (args.push x, constraintState)
-    let (req, constraintState) := constraintState.nextU64Column columns
-    let constraints := stt.constraints.require (.mem len) sel req args
-    ⟨constraints, constraintState⟩
+    pushAndRequireArgs #[stt.constraintState.getVar ptr] stt len (.mem len)
   | .call f args outSize => modify fun stt =>
-    let args := args.map stt.constraintState.getVar
-    let (args, constraintState) := outSize.fold (init := (args, stt.constraintState))
+    pushAndRequireArgs (args.map stt.constraintState.getVar) stt outSize (.func f)
+  | .ffi g args outSize => modify fun stt =>
+    pushAndRequireArgs (args.map stt.constraintState.getVar) stt outSize (.gadget g)
+  | _ => panic! "TODO"
+where
+  pushAndRequireArgs args stt n channel :=
+    let (args, constraintState) := n.fold (init := (args, stt.constraintState))
       fun _ _ (args, constraintState) =>
         let (x, constraintState) := constraintState.bindU64Column columns
         (args.push x, constraintState)
     let (req, constraintState) := constraintState.nextU64Column columns
-    let constraints := stt.constraints.require (.func f) sel req args
+    let constraints := stt.constraints.require channel sel req args
     ⟨constraints, constraintState⟩
-  | _ => panic! "TODO"
 
 partial def collectBlockConstraints (block : Bytecode.Block) (columns : Columns) : CollectM Unit := do
   let sel := blockSelector block columns

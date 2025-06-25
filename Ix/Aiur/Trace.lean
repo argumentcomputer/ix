@@ -1,5 +1,6 @@
 import Ix.Archon.ModuleMode
 import Ix.Archon.TowerField
+import Ix.Binius.Common
 import Ix.Aiur.Term
 import Ix.Aiur.Execute
 import Ix.Aiur.Bytecode
@@ -75,6 +76,7 @@ structure ColumnIndex where
 inductive Query where
 | Func : FuncIdx → Array UInt64 → Query
 | Mem : Nat → Array UInt64 → Query
+| Gadget : GadgetIdx → Array UInt64 → Query
 deriving BEq, Hashable
 
 structure AiurTrace where
@@ -82,6 +84,7 @@ structure AiurTrace where
   add : ArithmeticTrace
   mul : ArithmeticTrace
   mem : Array MemoryTrace
+  gadgets : Array $ Array GadgetEntry
 
 def FunctionTrace.blank (layout : Layout) (numQueries : Nat) : FunctionTrace :=
   let height := if numQueries == 0 then 0 else numQueries.nextPowerOfTwo.max 128
@@ -100,6 +103,8 @@ def FunctionTrace.blank (layout : Layout) (numQueries : Nat) : FunctionTrace :=
 end Aiur.Circuit
 
 namespace Aiur.Bytecode
+
+open Binius
 
 structure TraceState where
   row : Nat
@@ -146,7 +151,7 @@ def TraceM.pushCount (query : Circuit.Query) : TraceM Unit := do
     let prevCount := (s.prevCounts.get? query).getD 1
     let trace := { s.trace with u64Auxiliaries := s.trace.u64Auxiliaries.modify s.col.u64Auxiliary fun col => col.set! s.row prevCount }
     let col := { s.col with u64Auxiliary := s.col.u64Auxiliary + 1 }
-    let prevCounts := s.prevCounts.insert query $ Archon.mulUInt64InBinaryField prevCount MultiplicativeGenerator
+    let prevCounts := s.prevCounts.insert query $ mulUInt64InBinaryField prevCount MultiplicativeGenerator
     { s with prevCounts, trace, col }
 
 def TraceM.loadMemMap (len : Nat) : TraceM QueryMap := do
@@ -166,7 +171,7 @@ def TraceM.populateIO
   inputValues.forM pushInput
   result.values.forM pushOutput
   modify fun s =>
-    let m := Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
+    let m := powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
     let trace := { s.trace with multiplicity := s.trace.multiplicity.set! s.row m }
     { s with trace }
 
@@ -181,7 +186,7 @@ partial def Ctrl.populateRow : Ctrl → TraceM Unit
   let val := (← get).map[b]!
   if val != 0
   then
-    TraceM.pushU64 $ Archon.invUInt64InBinaryField val
+    TraceM.pushU64 $ invUInt64InBinaryField val
     t.populateRow
   else f.populateRow
 | .match v branches defaultBranch => do
@@ -190,7 +195,7 @@ partial def Ctrl.populateRow : Ctrl → TraceM Unit
   | some branch => branch.snd.populateRow
   | none =>
     branches.forM fun (case, _) =>
-      TraceM.pushU64 $ Archon.invUInt64InBinaryField (val.xor case)
+      TraceM.pushU64 $ invUInt64InBinaryField (val.xor case)
     defaultBranch.get!.populateRow
 
 partial def Op.populateRow : Op → TraceM Unit
@@ -262,6 +267,14 @@ partial def Op.populateRow : Op → TraceM Unit
     TraceM.pushU64 value
     TraceM.pushVar value
   TraceM.pushCount (.Func fIdx args)
+| .ffi gIdx args _ => do
+  let map := (← get).map
+  let args := args.map fun arg => map[arg]!
+  let output := ((← read).getGadgetResult gIdx args).get!
+  output.forM fun value => do
+    TraceM.pushU64 value
+    TraceM.pushVar value
+  TraceM.pushCount (.Gadget gIdx args)
 | .trace _ _ => pure ()
 | _ => panic! "TODO"
 end
@@ -285,7 +298,7 @@ def QueryMap.generateTrace (map : QueryMap) (width : Nat) : Id Circuit.MemoryTra
   let mut values := Array.mkArray width blankColumn
   let numQueries := map.size
   for ((input, result), i) in map.pairs.zipIdx do
-    multiplicity := multiplicity.set! i $ Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
+    multiplicity := multiplicity.set! i $ powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
     values := (values.zip input).map fun (value, res) => value.set! i res
   pure { height, multiplicity, values, numQueries }
 
@@ -307,6 +320,7 @@ def Toplevel.generateTraces
   let add := .add queries.addQueries
   let mul := .mul queries.mulQueries
   let mem := queries.memQueries.map fun (width, map) => map.generateTrace width
-  { functions, add, mul, mem }
+  let gadgets := queries.getGadgetEntries
+  { functions, add, mul, mem, gadgets }
 
 end Aiur.Bytecode
