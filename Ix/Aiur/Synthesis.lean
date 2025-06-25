@@ -10,7 +10,7 @@ abbrev B128_MULT_GEN : UInt128 := 61857528091874184034011775247790689018
 open Archon Binius
 
 structure AiurChannels where
-  func : ChannelId
+  func : Array ChannelId
   add : ChannelId
   mul : ChannelId
   mem : SmallMap Nat ChannelId
@@ -145,7 +145,8 @@ def synthesizeFunction (funcIdx : Nat) (function : Bytecode.Function)
   let constraints := buildFuncionConstraints function layout columns
   assertZero "func-topmost" (constraints.topmostSelector - CircuitModule.selector)
   let funcIdxOracle ← cacheConst (.ofNatWrap funcIdx)
-  provide aiurChannels.func constraints.multiplicity (constraints.io.push funcIdxOracle)
+  let funcChannel := aiurChannels.func[funcIdx]!
+  provide funcChannel constraints.multiplicity (constraints.io.push funcIdxOracle)
   constraints.uniqueConstraints.zipIdx.forM fun (expr, i) =>
     assertZero s!"func-unique-constraint-{i}" expr
   constraints.sharedConstraints.zipIdx.forM fun (expr, i) =>
@@ -162,8 +163,9 @@ def synthesizeFunction (funcIdx : Nat) (function : Bytecode.Function)
     let args ← args.mapM cacheLc
     match channel with
     | .func funcIdx =>
-      let idx ← cacheConst (.ofNatWrap funcIdx.toNat)
-      require aiurChannels.func prevIdx (args.push idx) sel
+      let idx ← cacheConst (.ofLoHi funcIdx 0)
+      let funcChannel := aiurChannels.func[funcIdx.toNat]!
+      require funcChannel prevIdx (args.push idx) sel
     | .mem width =>
       let channelId := aiurChannels.mem.get width |>.get!
       require channelId prevIdx args sel
@@ -281,16 +283,13 @@ structure AiurCircuits where
 def AiurCircuits.circuitModules (self : AiurCircuits) : Array CircuitModule :=
   self.funcs.map (·.fst) ++ #[self.add.fst, self.mul.fst] ++ self.mem.map (·.fst)
 
-def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits × ChannelId :=
-  let channelAllocator := ChannelAllocator.init
-  let (funcChannel, channelAllocator) := channelAllocator.next
+def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits × Array ChannelId :=
+  let (funcChannels, channelAllocator) := ChannelAllocator.init.nextN toplevel.functions.size
   let (addChannel, channelAllocator) := channelAllocator.next
   let (mulChannel, channelAllocator) := channelAllocator.next
-  let (memChannels, _) := toplevel.memWidths.foldl (init := (default, channelAllocator))
-    fun (map, channelAllocator) width =>
-      let (channelId, channelAllocator) := channelAllocator.next
-      (map.insert width channelId, channelAllocator)
-  let aiurChannels := AiurChannels.mk funcChannel addChannel mulChannel memChannels
+  let (memChannels, _) := channelAllocator.nextN toplevel.memWidths.size
+  let memChannelsMap := ⟨toplevel.memWidths.zip memChannels⟩
+  let aiurChannels := AiurChannels.mk funcChannels addChannel mulChannel memChannelsMap
   let funcsModules := toplevel.functions.zip toplevel.layouts |>.zipIdx.map
     fun ((function, layout), functionIdx) => synthesizeM functionIdx.toUSize
       (synthesizeFunction functionIdx function layout aiurChannels)
@@ -298,7 +297,7 @@ def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits × ChannelId :=
   let addModule := synthesizeM numFunctions (synthesizeAdd addChannel)
   let mulModule := synthesizeM (numFunctions + 1) (synthesizeMul mulChannel)
   let memIdStart := numFunctions + 2
-  let memModules := memChannels.pairs.zipIdx.map
+  let memModules := memChannelsMap.pairs.zipIdx.map
     fun ((width, channelId), memIdx) =>
       synthesizeM (memIdStart + memIdx.toUSize) (synthesizeMemory channelId width)
   (⟨funcsModules, addModule, mulModule, memModules⟩, aiurChannels.func)

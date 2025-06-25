@@ -12,9 +12,9 @@ structure Boundary where
 namespace Boundary
 
 def toString (boundary : @& Boundary) : String :=
-  let numValues := boundary.values.size
+  let values := boundary.values
   let channelId := boundary.channelId.toUSize
-  s!"⟨{numValues}, {channelId}, {boundary.direction}, {boundary.multiplicity}⟩"
+  s!"⟨{values}, {channelId}, {boundary.direction}, {boundary.multiplicity}⟩"
 
 def toBytes (boundary : @& Boundary) : ByteArray :=
   let numValues := boundary.values.size

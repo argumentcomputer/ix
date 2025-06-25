@@ -131,11 +131,12 @@ def testCases : List TestCase := [
 def aiurTest : TestSeq :=
   withExceptOk "Check and simplification works" (checkAndSimplifyToplevel toplevel) fun decls =>
     let bytecodeToplevel := decls.compile
-    let (aiurCircuits, funcChannel) := Circuit.synthesize bytecodeToplevel
+    let (aiurCircuits, funcChannels) := Circuit.synthesize bytecodeToplevel
     let circuitModules := aiurCircuits.circuitModules
     let runTestCase := fun (testCase : TestCase) =>
       let functionName := testCase.functionName
-      let funcIdx := toplevel.getFuncIdx functionName |>.get!.toUInt64
+      let funcIdxNat := toplevel.getFuncIdx functionName |>.get!
+      let funcIdx := funcIdxNat.toUInt64
       let record := bytecodeToplevel.execute funcIdx testCase.input
       let output := record.getFuncResult funcIdx testCase.input |>.get!
       let executionTest :=
@@ -143,6 +144,7 @@ def aiurTest : TestSeq :=
           (output == testCase.expectedOutput)
       let traces := bytecodeToplevel.generateTraces record
       let witness := Circuit.populateWitness aiurCircuits traces
+      let funcChannel := funcChannels[funcIdxNat]!
       let boundaries := Circuit.mkBoundaries testCase.input output funcIdx funcChannel
       let witnessTest :=
         withExceptOk s!"Witness for {functionName} with arguments {testCase.input} is accepted"
