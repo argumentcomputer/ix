@@ -53,16 +53,18 @@ syntax "(" pattern (", " pattern)* ")"       : pattern
 syntax pattern "|" pattern                   : pattern
 
 def elabListCore (head : α) (tail : Array α) (elabFn : α → TermElabM Expr)
-    (listEltType : Expr) : TermElabM Expr := do
+    (listEltType : Expr) (isArray := false) : TermElabM Expr := do
   let mut elaborated := Array.mkEmpty (tail.size + 1)
   elaborated := elaborated.push $ ← elabFn head
   for elt in tail do
     elaborated := elaborated.push $ ← elabFn elt
-  mkListLit listEltType elaborated.toList
+  if isArray
+  then mkArrayLit listEltType elaborated.toList
+  else mkListLit listEltType elaborated.toList
 
 def elabList (head : α) (tail : Array α) (elabFn : α → TermElabM Expr)
-    (listEltTypeName : Name) : TermElabM Expr :=
-  elabListCore head tail elabFn (mkConst listEltTypeName)
+    (listEltTypeName : Name) (isArray := false) : TermElabM Expr :=
+  elabListCore head tail elabFn (mkConst listEltTypeName) isArray
 
 def elabEmptyList (listEltTypeName : Name) : TermElabM Expr :=
   mkListLit (mkConst listEltTypeName) []
@@ -117,7 +119,7 @@ partial def elabTyp : ElabStxCat `typ
   | `(typ| $p:primitive_type) => do
     mkAppM ``Typ.primitive #[← elabPrimitiveType p]
   | `(typ| ($t:typ $[, $ts:typ]*)) => do
-    mkAppM ``Typ.tuple #[← elabList t ts elabTyp ``Typ]
+    mkAppM ``Typ.tuple #[← elabList t ts elabTyp ``Typ true]
   | `(typ| &$t:typ) => do
     mkAppM ``Typ.pointer #[← elabTyp t]
   | `(typ| $[.]?$i:ident) => do
@@ -166,7 +168,7 @@ partial def elabTrm : ElabStxCat `trm
     let data ← mkAppM ``Data.primitive #[← elabPrimitive p]
     mkAppM ``Term.data #[data]
   | `(trm| ($t:trm $[, $ts:trm]*)) => do
-    let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term]
+    let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term true]
     mkAppM ``Term.data #[data]
   | `(trm| return $t:trm) => do
     mkAppM ``Term.ret #[← elabTrm t]

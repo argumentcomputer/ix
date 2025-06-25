@@ -120,7 +120,7 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
 
   -- Memory
   for ((mod, cols), memTrace) in circuits.mem.zip trace.mem do
-    modes := modes.push .inactive -- TODO
+    modes := modes.push memTrace.mode
     let mut witnessModule := mod.initWitnessModule
     for (oracle, data) in cols.values.zip memTrace.values do
       witnessModule := pushData witnessModule .pushUInt64sTo data oracle .b64

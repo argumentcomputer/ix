@@ -111,17 +111,17 @@ structure TestCase where
 def testCases : List TestCase := [
     ⟨`id, #[42], #[42]⟩,
     ⟨`sum, #[3, 5], #[8]⟩,
-    -- ⟨`store_and_load, #[42], #[42]⟩,
-    -- ⟨`is_0_even, #[], #[1]⟩,
-    -- ⟨`is_1_even, #[], #[0]⟩,
-    -- ⟨`is_2_even, #[], #[1]⟩,
-    -- ⟨`is_3_even, #[], #[0]⟩,
-    -- ⟨`is_4_even, #[], #[1]⟩,
-    -- ⟨`is_0_odd, #[], #[0]⟩,
-    -- ⟨`is_1_odd, #[], #[1]⟩,
-    -- ⟨`is_2_odd, #[], #[0]⟩,
-    -- ⟨`is_3_odd, #[], #[1]⟩,
-    -- ⟨`is_4_odd, #[], #[0]⟩,
+    ⟨`store_and_load, #[42], #[42]⟩,
+    ⟨`is_0_even, #[], #[1]⟩,
+    ⟨`is_1_even, #[], #[0]⟩,
+    ⟨`is_2_even, #[], #[1]⟩,
+    ⟨`is_3_even, #[], #[0]⟩,
+    ⟨`is_4_even, #[], #[1]⟩,
+    ⟨`is_0_odd, #[], #[0]⟩,
+    ⟨`is_1_odd, #[], #[1]⟩,
+    ⟨`is_2_odd, #[], #[0]⟩,
+    ⟨`is_3_odd, #[], #[1]⟩,
+    ⟨`is_4_odd, #[], #[0]⟩,
     -- ⟨`factorial, #[5], #[120]⟩,
     ⟨`fibonacci, #[0], #[1]⟩,
     ⟨`fibonacci, #[1], #[1]⟩,
@@ -131,11 +131,12 @@ def testCases : List TestCase := [
 def aiurTest : TestSeq :=
   withExceptOk "Check and simplification works" (checkAndSimplifyToplevel toplevel) fun decls =>
     let bytecodeToplevel := decls.compile
-    let (aiurCircuits, funcChannel) := Circuit.synthesize bytecodeToplevel
+    let (aiurCircuits, funcChannels) := Circuit.synthesize bytecodeToplevel
     let circuitModules := aiurCircuits.circuitModules
     let runTestCase := fun (testCase : TestCase) =>
       let functionName := testCase.functionName
-      let funcIdx := toplevel.getFuncIdx functionName |>.get!.toUInt64
+      let funcIdxNat := toplevel.getFuncIdx functionName |>.get!
+      let funcIdx := funcIdxNat.toUInt64
       let record := bytecodeToplevel.execute funcIdx testCase.input
       let output := record.getFuncResult funcIdx testCase.input |>.get!
       let executionTest :=
@@ -143,6 +144,7 @@ def aiurTest : TestSeq :=
           (output == testCase.expectedOutput)
       let traces := bytecodeToplevel.generateTraces record
       let witness := Circuit.populateWitness aiurCircuits traces
+      let funcChannel := funcChannels[funcIdxNat]!
       let boundaries := Circuit.mkBoundaries testCase.input output funcIdx funcChannel
       let witnessTest :=
         withExceptOk s!"Witness for {functionName} with arguments {testCase.input} is accepted"

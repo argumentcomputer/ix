@@ -30,6 +30,7 @@ structure ArithmeticTrace where
   xs : Array UInt64
   ys : Array UInt64
   mode : Archon.ModuleMode
+  deriving Repr
 
 def ArithmeticTrace.add (pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
   if pairs.size == 0 then
@@ -46,9 +47,15 @@ def ArithmeticTrace.mul (_pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
 
 structure MemoryTrace where
   numQueries : Nat
+  height : Nat
   multiplicity: Array UInt64
   values: Array (Array UInt64)
-  deriving Inhabited
+  deriving Inhabited, Repr
+
+def MemoryTrace.mode (trace : MemoryTrace) : Archon.ModuleMode :=
+  if trace.height == 0
+  then .inactive
+  else .active trace.height.log2.toUInt8 trace.numQueries.toUInt64
 
 structure ColumnIndex where
   u1Auxiliary : Nat
@@ -264,14 +271,16 @@ def Function.populateTrace
     TraceM.populateIO inputs result
     function.body.populateRow
 
-def QueryMap.generateTrace (map : QueryMap) : Circuit.MemoryTrace :=
-  let trace := map.foldl (init := default) fun acc (_, result) =>
-    let multiplicity := acc.multiplicity.push $
-      Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
-    let values := acc.values.push result.values
-    let numQueries := acc.numQueries + 1
-    { multiplicity, values, numQueries }
-  trace
+def QueryMap.generateTrace (map : QueryMap) (width : Nat) : Id Circuit.MemoryTrace := do
+  let height := map.size.nextPowerOfTwo.max 128
+  let blankColumn : Array UInt64 := Array.mkArray height 0
+  let mut multiplicity := blankColumn
+  let mut values := Array.mkArray width blankColumn
+  let numQueries := map.size
+  for ((input, result), i) in map.pairs.zipIdx do
+    multiplicity := multiplicity.set! i $ Archon.powUInt64InBinaryField MultiplicativeGenerator result.multiplicity
+    values := (values.zip input).map fun (value, res) => value.set! i res
+  pure { height, multiplicity, values, numQueries }
 
 def Toplevel.generateTraces
   (toplevel : Toplevel)
@@ -290,7 +299,7 @@ def Toplevel.generateTraces
   let functions := (action.run queries default).fst
   let add := .add queries.addQueries
   let mul := .mul queries.mulQueries
-  let mem := queries.memQueries.map fun (_, map) => map.generateTrace
+  let mem := queries.memQueries.map fun (width, map) => map.generateTrace width
   { functions, add, mul, mem }
 
 end Aiur.Bytecode

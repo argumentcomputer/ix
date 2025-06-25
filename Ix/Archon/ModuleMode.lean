@@ -5,7 +5,7 @@ namespace Archon
 inductive ModuleMode
   | inactive
   | active (logHeight : UInt8) (depth : UInt64)
-  deriving Inhabited
+  deriving Inhabited, Repr
 
 namespace ModuleMode
 
