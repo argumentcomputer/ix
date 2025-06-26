@@ -17,12 +17,12 @@ opaque validateWitness : @& Array CircuitModule → @& Array Boundary → @& Wit
 /-- **Invalidates** the input `Witness` -/
 @[never_extract, extern "c_rs_prove"]
 opaque prove : @& Array CircuitModule → @& Array Boundary →
-  (logInvRate securitiByts : USize) → Witness → Proof
+  (logInvRate securityBits : USize) → Witness → Proof
 
 /-- **Invalidates** the input `Proof` -/
 @[never_extract, extern "c_rs_verify"]
 opaque verify : @& Array CircuitModule → @& Array Boundary →
-  (logInvRate securitiByts : USize) → Proof → Except String Unit
+  (logInvRate securityBits : USize) → Proof → Except String Unit
 
 /--
 Serialize an Archon proof as a `ByteArray`.

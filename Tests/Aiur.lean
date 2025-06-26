@@ -149,7 +149,12 @@ def aiurTest : TestSeq :=
       let witnessTest :=
         withExceptOk s!"Witness for {functionName} with arguments {testCase.input} is accepted"
           (Archon.validateWitness circuitModules boundaries witness) fun _ => .done
-      executionTest ++ witnessTest
+      let (logInvRate, securityBits) := (1, 100)
+      let proof := Archon.prove circuitModules boundaries logInvRate securityBits witness
+      let proofTest :=
+        withExceptOk s!"Proof for {functionName} with arguments {testCase.input} verifies"
+          (Archon.verify circuitModules boundaries logInvRate securityBits proof) fun _ => .done
+      executionTest ++ witnessTest ++ proofTest
     testCases.foldl (init := .done) fun tSeq testCase =>
       tSeq ++ runTestCase testCase
 
