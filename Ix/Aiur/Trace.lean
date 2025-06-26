@@ -47,7 +47,7 @@ def ArithmeticTrace.mul (pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
     ⟨#[], #[], .inactive⟩
   else
     let depth := pairs.size
-    let targetNumPairs := pairs.size.nextPowerOfTwo.max 2 -- to fill 128 bits
+    let targetNumPairs := pairs.size.nextPowerOfTwo.max 128 -- xin-bits require a minimum of 128 elements
     let logHeight := targetNumPairs.log2.toUInt8
     let (xs, ys) := pairs.unzip
     ⟨xs, ys, .active logHeight depth.toUInt64⟩
