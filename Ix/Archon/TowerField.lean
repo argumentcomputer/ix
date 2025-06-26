@@ -38,6 +38,9 @@ opaque mulUInt64InBinaryField : @& UInt64 → @& UInt64 → UInt64
 @[extern "rs_pow_u64_in_binary_field"]
 opaque powUInt64InBinaryField : @& UInt64 → @& UInt64 → UInt64
 
+@[extern "c_rs_pow_u128_in_binary_field"]
+opaque powUInt128InBinaryField : @& UInt128 → @& UInt64 → UInt128
+
 @[extern "rs_inv_u64_in_binary_field"]
 opaque invUInt64InBinaryField : @& UInt64 → UInt64
 

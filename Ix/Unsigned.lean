@@ -40,6 +40,9 @@ instance : OfNat UInt128 n := ⟨ofNatWrap n⟩
 @[extern "c_u128_to_lo_hi"]
 opaque toLoHi : @& UInt128 → UInt64 × UInt64
 
+@[extern "c_rs_exterior_mul_u64"]
+opaque exteriorMul : @& UInt64 → @& UInt64 → UInt128
+
 def toNat (u128 : @& UInt128) : Nat :=
   let (lo, hi) := u128.toLoHi
   lo.toNat + (hi.toNat * UInt64.size)

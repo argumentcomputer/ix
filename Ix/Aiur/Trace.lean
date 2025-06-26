@@ -42,8 +42,15 @@ def ArithmeticTrace.add (pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
     let (xs, ys) := pairs.unzip
     ⟨xs, ys, .active logHeight depth.toUInt64⟩
 
-def ArithmeticTrace.mul (_pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
-  ⟨#[], #[], .inactive⟩ -- TODO
+def ArithmeticTrace.mul (pairs : Array $ UInt64 × UInt64) : ArithmeticTrace :=
+  if pairs.size == 0 then
+    ⟨#[], #[], .inactive⟩
+  else
+    let depth := pairs.size
+    let targetNumPairs := pairs.size.nextPowerOfTwo.max 2 -- to fill 128 bits
+    let logHeight := targetNumPairs.log2.toUInt8
+    let (xs, ys) := pairs.unzip
+    ⟨xs, ys, .active logHeight depth.toUInt64⟩
 
 structure MemoryTrace where
   numQueries : Nat

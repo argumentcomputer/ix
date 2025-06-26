@@ -122,7 +122,7 @@ def testCases : List TestCase := [
     ⟨`is_2_odd, #[], #[0]⟩,
     ⟨`is_3_odd, #[], #[1]⟩,
     ⟨`is_4_odd, #[], #[0]⟩,
-    -- ⟨`factorial, #[5], #[120]⟩,
+    ⟨`factorial, #[5], #[120]⟩,
     ⟨`fibonacci, #[0], #[1]⟩,
     ⟨`fibonacci, #[1], #[1]⟩,
     ⟨`fibonacci, #[6], #[13]⟩,

@@ -34,6 +34,19 @@ extern "C" fn rs_pow_u64_in_binary_field(a: u64, b: u64) -> u64 {
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn rs_pow_u128_in_binary_field(a: &u128, b: u64) -> *const u128 {
+    let a = B128::new(*a);
+    let c = a.pow([b]);
+    to_raw(c.val())
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_exterior_mul_u64(a: u64, b: u64) -> *const u128 {
+    let c = a as u128 * b as u128;
+    to_raw(c)
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rs_inv_u64_in_binary_field(a: u64) -> u64 {
     let a = B64::new(a);
     let c = a.invert().unwrap_or(B64::new(0));
