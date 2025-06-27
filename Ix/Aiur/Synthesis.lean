@@ -151,12 +151,12 @@ def synthesizeFunction (funcIdx : FuncIdx) (function : Bytecode.Function)
     assertZero s!"func-unique-constraint-{i}" expr
   constraints.sharedConstraints.zipIdx.forM fun (expr, i) =>
     assertZero s!"func-shared-constraint-{i}" expr
-  constraints.sends.forM fun (channel, sel, args) => do
+  constraints.recvs.forM fun (channel, sel, args) => do
     let sel ← cacheLc sel
     let args ← args.mapM cacheLc
     match channel with
-    | .add => flush .push aiurChannels.add sel args 1
-    | .mul => flush .push aiurChannels.mul sel args 1
+    | .add => flush .pull aiurChannels.add sel args 1
+    | .mul => flush .pull aiurChannels.mul sel args 1
     | _ => unreachable!
   constraints.requires.forM fun (channel, sel, prevIdx, values) => do
     let sel ← cacheLc sel
@@ -192,7 +192,7 @@ def synthesizeAdd (channelId : ChannelId) : SynthM AddColumns := do
   let coutProjected ← addProjected "add-cout-projected" cout 63 64
   assertZero "add-sum" $ xin + yin + cin - zout
   assertZero "add-carry" $ (xin + cin) * (yin + cin) + cin - cout
-  recv channelId #[xinPacked, yinPacked, zoutPacked, coutProjected]
+  send channelId #[xinPacked, yinPacked, zoutPacked, coutProjected]
   pure { xin, yin, zout, cout }
 
 structure MulColumns where
@@ -224,7 +224,7 @@ def synthesizeMul (channelId : ChannelId) : SynthM MulColumns := do
     ← mul xinBits yinBits
   let zoutLow := zoutBits.extract (stop := 64)
   bitDecomposition "mul-bit-decomposition-zout" zoutLow zout
-  recv channelId #[xin, yin, zout]
+  send channelId #[xin, yin, zout]
   pure {
     xin,
     yin,

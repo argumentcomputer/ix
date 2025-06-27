@@ -43,7 +43,7 @@ inductive Channel
 structure Constraints where
   sharedConstraints : Array ArithExpr
   uniqueConstraints : Array ArithExpr
-  sends : Array (Channel × ArithExpr × Array ArithExpr)
+  recvs : Array (Channel × ArithExpr × Array ArithExpr)
   requires : Array (Channel × ArithExpr × OracleIdx × Array ArithExpr)
   topmostSelector : ArithExpr
   io : Array OracleIdx
@@ -60,7 +60,7 @@ namespace Constraints
 def new (function : Bytecode.Function) (layout : Layout) (columns : Columns) : Constraints :=
   { sharedConstraints := .mkArray layout.sharedConstraints 0
     uniqueConstraints := #[]
-    sends := #[]
+    recvs := #[]
     requires := #[]
     topmostSelector := blockSelector function.body columns
     io := columns.inputs ++ columns.outputs
@@ -69,9 +69,9 @@ def new (function : Bytecode.Function) (layout : Layout) (columns : Columns) : C
 @[inline] def pushUnique (constraints : Constraints) (expr : ArithExpr) : Constraints :=
   { constraints with uniqueConstraints := constraints.uniqueConstraints.push expr }
 
-@[inline] def send (constraints : Constraints) (channel : Channel)
+@[inline] def recv (constraints : Constraints) (channel : Channel)
     (sel : ArithExpr) (args : Array ArithExpr) : Constraints :=
-  { constraints with sends := constraints.sends.push (channel, sel, args) }
+  { constraints with recvs := constraints.recvs.push (channel, sel, args) }
 
 @[inline] def require (constraints : Constraints) (channel : Channel)
     (sel : ArithExpr) (prevIdx : OracleIdx) (args : Array ArithExpr) : Constraints :=
@@ -154,7 +154,7 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     -- 1 byte of carry, which is not bound
     let (carry, constraintState) := constraintState.nextU1Column columns
     let args := #[a, b, c, carry]
-    let constraints := stt.constraints.send .add sel args
+    let constraints := stt.constraints.recv .add sel args
     ⟨constraints, constraintState⟩
   | .sub c b => modify fun stt =>
     -- `c - b = a` is equivalent to `a + b = c`.
@@ -163,7 +163,7 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     let (a, constraintState) := stt.constraintState.bindU64Column columns
     let (carry, constraintState) := constraintState.nextU1Column columns
     let args := #[.oracle a, b, c, carry]
-    let constraints := stt.constraints.send .add sel args
+    let constraints := stt.constraints.recv .add sel args
     ⟨constraints, constraintState⟩
   | .lt c b => modify fun stt =>
     -- `c < b` is equivalent to `c - b` underflowing, which is
@@ -175,7 +175,7 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     -- The carry is bound
     let (carry, constraintState) := constraintState.bindU1Column columns
     let args := #[.oracle a, b, c, carry]
-    let constraints := stt.constraints.send .add sel args
+    let constraints := stt.constraints.recv .add sel args
     ⟨constraints, constraintState⟩
   | .mul a b => modify fun stt =>
     let a := stt.constraintState.getVar a
@@ -183,7 +183,7 @@ def collectOpConstraints (columns : Columns) (sel : ArithExpr) : Bytecode.Op →
     -- 8 bytes of result
     let (c, constraintState) := stt.constraintState.bindU64Column columns
     let args := #[a, b, c]
-    let constraints := stt.constraints.send .mul sel args
+    let constraints := stt.constraints.recv .mul sel args
     ⟨constraints, constraintState⟩
   | .xor a b => modify fun stt =>
     let a := stt.constraintState.getVar a
