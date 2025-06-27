@@ -1,13 +1,15 @@
 import Std.Data.HashMap
 import Ix.Aiur.Term
+import Ix.Aiur.Gadget
 
 open Std
 
 abbrev Name := Aiur.Global
 abbrev ValIdx := Nat
 abbrev SelIdx := Nat
-abbrev FuncIdx := UInt64
+abbrev FuncIdx := Nat
 abbrev MemIdx := Nat
+abbrev GadgetIdx := Nat
 
 def Std.HashMap.get' [Inhabited β] [BEq α] [Hashable α] [Repr α] (m : HashMap α β) (a : α) : β :=
   match m.get? a with
@@ -40,6 +42,7 @@ inductive Op where
   | dynCall : ValIdx → Array ValIdx → ValIdx → Op
   | preimg : FuncIdx → Array ValIdx → ValIdx → Op
   | dynPreimg : ValIdx → Array ValIdx → ValIdx → Op
+  | ffi : GadgetIdx → Array ValIdx → Nat → Op
   | trace : String → Array ValIdx → Op
   deriving Repr, Inhabited
 
@@ -179,6 +182,9 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .call _ _ outSize =>
     -- Outputs the call values and a require hint
     bumpU64Auxiliaries (outSize + 1)
+  | .ffi _ _ outSize =>
+    -- Outputs the ffi values and a require hint
+    bumpU64Auxiliaries (outSize + 1)
   | _ => panic! "TODO"
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
@@ -231,22 +237,28 @@ structure DataTypeLayout where
   deriving Repr, Inhabited
 
 structure FunctionLayout where
-  index: UInt64
+  index: Nat
   inputSize : Nat
   outputSize : Nat
   offsets: Array Nat
   deriving Repr, Inhabited
 
 structure ConstructorLayout where
-  index: UInt64
+  index: Nat
   size: Nat
   offsets: Array Nat
+  deriving Repr, Inhabited
+
+structure GadgetLayout where
+  index : Nat
+  outputSize : Nat
   deriving Repr, Inhabited
 
 inductive Layout
   | dataType : DataTypeLayout → Layout
   | function : FunctionLayout → Layout
   | constructor : ConstructorLayout → Layout
+  | gadget : GadgetLayout → Layout
   deriving Repr, Inhabited
 
 abbrev LayoutMap := HashMap Global Layout
@@ -255,6 +267,7 @@ structure Toplevel where
   functions : Array Function
   memWidths : Array Nat
   layouts : Array Circuit.Layout
+  gadgets : Array Gadget
   deriving Repr, Inhabited
 
 end Aiur.Bytecode
@@ -298,10 +311,10 @@ partial def toIndex
     pure (bindings.get' name)
   | .ref name => match layoutMap.get' name with
     | .function layout => do
-      pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
+      pushOp (Bytecode.Op.prim (Primitive.u64 layout.index.toUInt64))
     | .constructor layout => do
       let size := layout.size
-      let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
+      let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index.toUInt64))
       if index.size < size then
         let padding := (← pushOp (Bytecode.Op.prim (Primitive.u64 0)))[0]!
         pure $ index ++ Array.mkArray (size - index.size) padding
@@ -358,7 +371,7 @@ partial def toIndex
         pushOp (Bytecode.Op.call layout.index args layout.outputSize) layout.outputSize
       | .constructor layout => do
         let size := layout.size
-        let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
+        let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index.toUInt64))
         let index ← buildArgs args index
         if index.size < size then
           let padding := (← pushOp (Bytecode.Op.prim (Primitive.u64 0)))[0]!
@@ -372,7 +385,7 @@ partial def toIndex
       pushOp (Bytecode.Op.call layout.index args layout.outputSize) layout.outputSize
     | .constructor layout => do
       let size := layout.size
-      let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
+      let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index.toUInt64))
       let index ← buildArgs args index
       if index.size < size then
         let padding := (← pushOp (Bytecode.Op.prim (Primitive.u64 0)))[0]!
@@ -393,18 +406,26 @@ partial def toIndex
       let out ← toIndex layoutMap bindings out
       pushOp (Bytecode.Op.preimg layout.index out layout.inputSize) layout.inputSize
     | _ => panic! "should not happen after typechecking"
-  | .get arg i => do
+  | .ffi name args => match layoutMap.get' name with
+    | .gadget layout => do
+      let args ← buildArgs args
+      pushOp (Bytecode.Op.ffi layout.index args layout.outputSize) layout.outputSize
+    | _ => panic! "should not happen after typechecking"
+  | .get arg i =>
     let typs := (match arg.typ with
       | .evaluates (.tuple typs) => typs
       | _ => panic! "should not happen after typechecking")
-    let offset := (typs.extract 0 i).foldl (init := 0) (fun acc typ => typSize layoutMap typ + acc)
+    let offset := (typs.extract 0 i).foldl (init := 0)
+      fun acc typ => typSize layoutMap typ + acc
     pure $ Array.range' offset (typSize layoutMap typ)
-  | .slice arg i j => do
+  | .slice arg i j =>
     let typs := (match arg.typ with
       | .evaluates (.tuple typs) => typs
       | _ => panic! "should not happen after typechecking")
-    let offset := (typs.extract 0 i).foldl (init := 0) (fun acc typ => typSize layoutMap typ + acc)
-    let length := (typs.extract i j).foldl (init := 0) (fun acc typ => typSize layoutMap typ + acc)
+    let offset := (typs.extract 0 i).foldl (init := 0)
+      fun acc typ => typSize layoutMap typ + acc
+    let length := (typs.extract i j).foldl (init := 0)
+      fun acc typ => typSize layoutMap typ + acc
     pure $ Array.range' offset length
   | .store arg => do
     let arg ← toIndex layoutMap bindings arg
@@ -520,7 +541,8 @@ partial def addCase
     let (index, offsets) := match layout with
     | .function layout => (layout.index, layout.offsets)
     | .constructor layout => (layout.index, layout.offsets)
-    | .dataType _ => panic! "impossible after typechecking"
+    | .dataType _
+    | .gadget _ => panic! "impossible after typechecking"
     let bindArgs bindings pats offsets idxs :=
       let n := pats.length
       let bindings := (List.range n).foldl (init := bindings) fun bindings i =>
@@ -537,7 +559,7 @@ partial def addCase
     let initState ← get
     let term ← term.compile returnTyp layoutMap bindings
     set { initState with returnIdent := (← get).returnIdent }
-    let cases' := cases.cons (index, term)
+    let cases' := cases.cons (index.toUInt64, term)
     pure (cases', default)
   | .wildcard => do
     let initState ← get
@@ -562,46 +584,50 @@ def TypedFunction.compile (layoutMap : Bytecode.LayoutMap) (f : TypedFunction) :
   { name := f.name, inputSize, outputSize, body }
 
 def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
-  let pass := fun (acc, funcIndex) (_, v) => match v with
-  | .dataType dataType =>
-    let dataTypeSize := dataType.size decls
-    let acc := acc.insert dataType.name (.dataType { size := dataTypeSize })
-    let pass := fun (acc, index) constructor =>
+  let pass := fun (layoutMap, funcIdx, gadgetIdx) (_, v) => match v with
+    | .dataType dataType =>
+      let dataTypeSize := dataType.size decls
+      let layoutMap := layoutMap.insert dataType.name (.dataType { size := dataTypeSize })
+      let pass := fun (acc, index) constructor =>
+        let offsets :=
+          constructor.argTypes.foldl (init := #[0])
+            (fun offsets typ => offsets.push (offsets[offsets.size - 1]! + typ.size decls))
+        let decl := .constructor {
+          size := dataTypeSize,
+          offsets,
+          index,
+        }
+        let name := dataType.name.pushNamespace constructor.nameHead
+        (acc.insert name decl, index + 1)
+      let (layoutMap, _) := dataType.constructors.foldl (init := (layoutMap, 0)) pass
+      (layoutMap, funcIdx, gadgetIdx)
+    | .function function =>
+      let inputSize := function.inputs.foldl (init := 0) (fun acc (_, typ) => acc + typ.size decls)
+      let outputSize := function.output.size decls
       let offsets :=
-        constructor.argTypes.foldl (init := #[0])
-          (fun offsets typ => offsets.push (offsets[offsets.size - 1]! + typ.size decls))
-      let decl := .constructor {
-        size := dataTypeSize,
-        offsets,
-        index,
-      }
-      let name := dataType.name.pushNamespace constructor.nameHead
-      (acc.insert name decl, index + 1)
-    let (layout, _) := dataType.constructors.foldl (init := (acc, 0)) pass
-    (layout, funcIndex)
-  | .function function =>
-    let inputSize := function.inputs.foldl (init := 0) (fun acc (_, typ) => acc + typ.size decls)
-    let outputSize := function.output.size decls
-    let offsets :=
-      function.inputs.foldl (init := #[0])
-        (fun offsets (_, typ) => offsets.push (offsets[offsets.size - 1]! + typ.size decls))
-    let layout := acc.insert function.name (.function { index := funcIndex, inputSize, outputSize, offsets })
-    (layout, funcIndex + 1)
-  | .constructor .. => (acc, funcIndex)
-  let (layout, _) := decls.foldl (init := ({}, 0)) pass
-  layout
+        function.inputs.foldl (init := #[0])
+          (fun offsets (_, typ) => offsets.push (offsets[offsets.size - 1]! + typ.size decls))
+      let layoutMap := layoutMap.insert function.name (.function { index := funcIdx, inputSize, outputSize, offsets })
+      (layoutMap, funcIdx + 1, gadgetIdx)
+    | .constructor .. => (layoutMap, funcIdx, gadgetIdx)
+    | .gadget g =>
+      let layoutMap := layoutMap.insert ⟨g.name⟩ (.gadget ⟨gadgetIdx, g.outputSize⟩)
+      (layoutMap, funcIdx, gadgetIdx + 1)
+  let (layoutMap, _) := decls.foldl pass ({}, 0, 0)
+  layoutMap
 
 def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
   let layout := decls.dataTypeLayouts
-  let (functions, memWidths, layouts) := decls.foldl (init := (#[], #[], #[]))
-    fun acc@(functions, memWidths, layouts) (_, decl) => match decl with
+  let (functions, memWidths, layouts, gadgets) := decls.foldl (init := (#[], #[], #[], #[]))
+    fun acc@(functions, memWidths, layouts, gadgets) (_, decl) => match decl with
       | .function function =>
         let compiledFunction := function.compile layout
         let layoutMState := Circuit.functionLayout compiledFunction
         let memWidths := layoutMState.memWidths.foldl (init := memWidths) fun memWidths memWidth =>
           if memWidths.contains memWidth then memWidths else memWidths.push memWidth
-        (functions.push compiledFunction, memWidths, layouts.push layoutMState.layout)
+        (functions.push compiledFunction, memWidths, layouts.push layoutMState.layout, gadgets)
+      | .gadget gadget => (functions, memWidths, layouts, gadgets.push gadget)
       | _ => acc
-  ⟨functions, memWidths.qsort, layouts⟩
+  ⟨functions, memWidths.qsort, layouts, gadgets⟩
 
 end Aiur

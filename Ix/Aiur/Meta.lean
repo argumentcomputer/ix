@@ -142,6 +142,7 @@ syntax "if " trm " { " trm " } " " else " " { " trm " } " : trm
 syntax ("." noWs)? ident "(" ")"                          : trm
 syntax ("." noWs)? ident "(" trm (", " trm)* ")"          : trm
 syntax "preimg" "(" ("." noWs)? ident ", " trm ")"        : trm
+syntax "ffi" "(" ident (", " trm)* ")"                    : trm
 syntax "xor" "(" trm ", " trm ")"                         : trm
 syntax "and" "(" trm ", " trm ")"                         : trm
 syntax "add" "(" trm ", " trm ")"                         : trm
@@ -191,6 +192,9 @@ partial def elabTrm : ElabStxCat `trm
   | `(trm| preimg($[.]?$f:ident, $t:trm)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
     mkAppM ``Term.preimg #[g, ← elabTrm t]
+  | `(trm| ffi($g:ident $[, $as:trm]*)) => do
+    let g ← mkAppM ``Global.mk #[toExpr g.getId]
+    mkAppM ``Term.ffi #[g, ← mkListLit (mkConst ``Term) (← as.toList.mapM elabTrm)]
   | `(trm| add($a:trm, $b:trm)) => do
     mkAppM ``Term.addU64 #[← elabTrm a, ← elabTrm b]
   | `(trm| sub($a:trm, $b:trm)) => do
@@ -294,6 +298,7 @@ def elabToplevel : ElabStxCat `toplevel
     mkAppM ``Toplevel.mk #[
       ← mkListLit (mkConst ``DataType) dataTypes.toList,
       ← mkListLit (mkConst ``Function) functions.toList,
+      ← mkArrayLit (mkConst ``Gadget) [],
     ]
   | stx => throw $ .error stx "Invalid syntax for toplevel"
 

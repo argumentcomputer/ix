@@ -14,6 +14,7 @@ structure AiurChannels where
   add : ChannelId
   mul : ChannelId
   mem : SmallMap Nat ChannelId
+  gad : Array ChannelId
 
 inductive CachedOracleKey
   | const : UInt128 → CachedOracleKey
@@ -137,38 +138,39 @@ def require (channelId : ChannelId) (prevIdx : OracleIdx) (args : Array OracleId
   flush .pull channelId sel (args.push prevIdx) 1
   flush .push channelId sel (args.push idx) 1
 
-def synthesizeFunction (funcIdx : Nat) (function : Bytecode.Function)
+def synthesizeFunction (funcIdx : FuncIdx) (function : Bytecode.Function)
     (layout : Layout) (aiurChannels : AiurChannels) : SynthM Columns := do
   let columns ← modifyGet fun stt =>
     let (cs, circuitModule) := Columns.ofLayout stt.circuitModule layout
     (cs, { stt with circuitModule })
   let constraints := buildFuncionConstraints function layout columns
   assertZero "func-topmost" (constraints.topmostSelector - CircuitModule.selector)
-  let funcIdxOracle ← cacheConst (.ofNatWrap funcIdx)
   let funcChannel := aiurChannels.func[funcIdx]!
-  provide funcChannel constraints.multiplicity (constraints.io.push funcIdxOracle)
+  provide funcChannel constraints.multiplicity constraints.io
   constraints.uniqueConstraints.zipIdx.forM fun (expr, i) =>
     assertZero s!"func-unique-constraint-{i}" expr
   constraints.sharedConstraints.zipIdx.forM fun (expr, i) =>
     assertZero s!"func-shared-constraint-{i}" expr
-  constraints.sends.forM fun (channel, sel, args) => do
+  constraints.recvs.forM fun (channel, sel, args) => do
     let sel ← cacheLc sel
     let args ← args.mapM cacheLc
     match channel with
-    | .add => flush .push aiurChannels.add sel args 1
-    | .mul => flush .push aiurChannels.mul sel args 1
+    | .add => flush .pull aiurChannels.add sel args 1
+    | .mul => flush .pull aiurChannels.mul sel args 1
     | _ => unreachable!
-  constraints.requires.forM fun (channel, sel, prevIdx, args) => do
+  constraints.requires.forM fun (channel, sel, prevIdx, values) => do
     let sel ← cacheLc sel
-    let args ← args.mapM cacheLc
+    let values ← values.mapM cacheLc
     match channel with
     | .func funcIdx =>
-      let idx ← cacheConst (.ofLoHi funcIdx 0)
-      let funcChannel := aiurChannels.func[funcIdx.toNat]!
-      require funcChannel prevIdx (args.push idx) sel
+      let funcChannel := aiurChannels.func[funcIdx]!
+      require funcChannel prevIdx values sel
     | .mem width =>
       let channelId := aiurChannels.mem.get width |>.get!
-      require channelId prevIdx args sel
+      require channelId prevIdx values sel
+    | .gadget gadgetIdx =>
+      let gadgetChannel := aiurChannels.gad[gadgetIdx]!
+      require gadgetChannel prevIdx values sel
     | _ => unreachable!
   pure columns
 
@@ -190,7 +192,7 @@ def synthesizeAdd (channelId : ChannelId) : SynthM AddColumns := do
   let coutProjected ← addProjected "add-cout-projected" cout 63 64
   assertZero "add-sum" $ xin + yin + cin - zout
   assertZero "add-carry" $ (xin + cin) * (yin + cin) + cin - cout
-  recv channelId #[xinPacked, yinPacked, zoutPacked, coutProjected]
+  send channelId #[xinPacked, yinPacked, zoutPacked, coutProjected]
   pure { xin, yin, zout, cout }
 
 structure MulColumns where
@@ -222,7 +224,7 @@ def synthesizeMul (channelId : ChannelId) : SynthM MulColumns := do
     ← mul xinBits yinBits
   let zoutLow := zoutBits.extract (stop := 64)
   bitDecomposition "mul-bit-decomposition-zout" zoutLow zout
-  recv channelId #[xin, yin, zout]
+  send channelId #[xin, yin, zout]
   pure {
     xin,
     yin,
@@ -284,17 +286,22 @@ structure AiurCircuits where
   add : CircuitModule × AddColumns
   mul : CircuitModule × MulColumns
   mem : Array (CircuitModule × MemoryColumns)
+  gad : Array (CircuitModule × Array OracleIdx)
 
 def AiurCircuits.circuitModules (self : AiurCircuits) : Array CircuitModule :=
-  self.funcs.map (·.fst) ++ #[self.add.fst, self.mul.fst] ++ self.mem.map (·.fst)
+  self.funcs.map (·.fst)
+    ++ #[self.add.fst, self.mul.fst]
+    ++ self.mem.map (·.fst)
+    ++ self.gad.map (·.fst)
 
 def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits × Array ChannelId :=
   let (funcChannels, channelAllocator) := ChannelAllocator.init.nextN toplevel.functions.size
   let (addChannel, channelAllocator) := channelAllocator.next
   let (mulChannel, channelAllocator) := channelAllocator.next
-  let (memChannels, _) := channelAllocator.nextN toplevel.memWidths.size
+  let (memChannels, channelAllocator) := channelAllocator.nextN toplevel.memWidths.size
+  let (gadgetChannels, _) := channelAllocator.nextN toplevel.gadgets.size
   let memChannelsMap := ⟨toplevel.memWidths.zip memChannels⟩
-  let aiurChannels := AiurChannels.mk funcChannels addChannel mulChannel memChannelsMap
+  let aiurChannels := ⟨funcChannels, addChannel, mulChannel, memChannelsMap, gadgetChannels⟩
   let funcsModules := toplevel.functions.zip toplevel.layouts |>.zipIdx.map
     fun ((function, layout), functionIdx) => synthesizeM functionIdx.toUSize
       (synthesizeFunction functionIdx function layout aiurChannels)
@@ -305,6 +312,12 @@ def synthesize (toplevel : Bytecode.Toplevel) : AiurCircuits × Array ChannelId 
   let memModules := memChannelsMap.pairs.zipIdx.map
     fun ((width, channelId), memIdx) =>
       synthesizeM (memIdStart + memIdx.toUSize) (synthesizeMemory channelId width)
-  (⟨funcsModules, addModule, mulModule, memModules⟩, aiurChannels.func)
+  let gadgetIdStart := memIdStart + memModules.size.toUSize
+  let gadgetsModules := toplevel.gadgets.zip gadgetChannels |>.zipIdx.map
+    fun ((gadget, channelId), gadgetIdx) =>
+      let circuitModule := CircuitModule.new $ gadgetIdStart + gadgetIdx.toUSize
+      let (circuitModule, oracles) := gadget.synthesize channelId circuitModule
+      (circuitModule.freezeOracles, oracles)
+  (⟨funcsModules, addModule, mulModule, memModules, gadgetsModules⟩, aiurChannels.func)
 
 end Aiur.Circuit

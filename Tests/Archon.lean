@@ -7,8 +7,8 @@ open LSpec Archon
 
 def populateAndValidate (circuitModule : CircuitModule)
     (witnessModule : WitnessModule) (depth : UInt64) msg :=
-  let log_height := depth.toNat.nextPowerOfTwo.log2.toUInt8
-  let mode := .active log_height depth
+  let logHeight := depth.toNat.nextPowerOfTwo.log2.toUInt8
+  let mode := .active logHeight depth
   let witnessModule := witnessModule.populate mode
   let witness := compileWitnessModules #[witnessModule] #[mode]
   withExceptOk msg (validateWitness #[circuitModule] #[] witness) fun _ => .done
