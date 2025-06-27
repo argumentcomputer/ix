@@ -82,3 +82,5 @@ void *rs_keccak256_hasher_finalize(void*, void*);
 
 uint8_t *rs_add_u128_in_binary_field(uint8_t*, uint8_t*);
 uint8_t *rs_mul_u128_in_binary_field(uint8_t*, uint8_t*);
+uint8_t *rs_pow_u128_in_binary_field(uint8_t*, uint64_t);
+uint8_t *rs_exterior_mul_u64(uint64_t, uint64_t);

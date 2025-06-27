@@ -17,6 +17,10 @@ def toplevel := ⟦
     add(x, y)
   }
 
+  fn prod(x: u64, y: u64) -> u64 {
+    mul(x, y)
+  }
+
   fn store_and_load(x: u64) -> u64 {
     load(store(x))
   }
@@ -111,6 +115,7 @@ structure TestCase where
 def testCases : List TestCase := [
     ⟨`id, #[42], #[42]⟩,
     ⟨`sum, #[3, 5], #[8]⟩,
+    ⟨`prod, #[3, 5], #[15]⟩,
     ⟨`store_and_load, #[42], #[42]⟩,
     ⟨`is_0_even, #[], #[1]⟩,
     ⟨`is_1_even, #[], #[0]⟩,
@@ -122,7 +127,7 @@ def testCases : List TestCase := [
     ⟨`is_2_odd, #[], #[0]⟩,
     ⟨`is_3_odd, #[], #[1]⟩,
     ⟨`is_4_odd, #[], #[0]⟩,
-    -- ⟨`factorial, #[5], #[120]⟩,
+    ⟨`factorial, #[5], #[120]⟩,
     ⟨`fibonacci, #[0], #[1]⟩,
     ⟨`fibonacci, #[1], #[1]⟩,
     ⟨`fibonacci, #[6], #[13]⟩,
@@ -149,7 +154,12 @@ def aiurTest : TestSeq :=
       let witnessTest :=
         withExceptOk s!"Witness for {functionName} with arguments {testCase.input} is accepted"
           (Archon.validateWitness circuitModules boundaries witness) fun _ => .done
-      executionTest ++ witnessTest
+      let (logInvRate, securityBits) := (1, 100)
+      let proof := Archon.prove circuitModules boundaries logInvRate securityBits witness
+      let proofTest :=
+        withExceptOk s!"Proof for {functionName} with arguments {testCase.input} verifies"
+          (Archon.verify circuitModules boundaries logInvRate securityBits proof) fun _ => .done
+      executionTest ++ witnessTest ++ proofTest
     testCases.foldl (init := .done) fun tSeq testCase =>
       tSeq ++ runTestCase testCase
 

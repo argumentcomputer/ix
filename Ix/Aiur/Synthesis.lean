@@ -205,6 +205,11 @@ structure MulColumns where
   zoutLowExpResult : OracleIdx
   zoutHighExpResult : OracleIdx
 
+def B128GenPow2To64 : UInt128 :=
+  let outSize := 64
+  outSize.fold (init := B128_MULT_GEN)
+    fun _ _ g => mulUInt128InBinaryField g g
+
 def synthesizeMul (channelId : ChannelId) : SynthM MulColumns := do
   let xin ← addCommitted "mul-xin" .b64 .base
   let yin ← addCommitted "mul-yin" .b64 .base
@@ -215,7 +220,8 @@ def synthesizeMul (channelId : ChannelId) : SynthM MulColumns := do
   bitDecomposition "mul-bit-decomposition-yin" yinBits yin
   let (xinExpResult, yinExpResult, zoutLowExpResult, zoutHighExpResult, zoutBits)
     ← mul xinBits yinBits
-  bitDecomposition "mul-bit-decomposition-zout" zoutBits zout
+  let zoutLow := zoutBits.extract (stop := 64)
+  bitDecomposition "mul-bit-decomposition-zout" zoutLow zout
   recv channelId #[xin, yin, zout]
   pure {
     xin,
@@ -234,11 +240,12 @@ where
       fun (expr, coeff) bit => (expr - (.const (.ofLoHi coeff 0)) * bit, coeff <<< 1)
     assertZero name expr
   mul xinBits yinBits := do
+    let outSize : Nat := 64
     let xinExpResult ← addCommitted "mul-xin-exp-result" .b128 .base
     let yinExpResult ← addCommitted "mul-yin-exp-result" .b128 .base
     let zoutLowExpResult ← addCommitted "mul-zout-low-exp-result" .b128 .base
     let zoutHighExpResult ← addCommitted "mul-zout-high-exp-result" .b128 .base
-    let zoutBits ← Array.range 64 |>.mapM (addCommitted s!"mul-zout-bit-{·}" .b1 .base)
+    let zoutBits ← Array.range (2 * outSize) |>.mapM (addCommitted s!"mul-zout-bit-{·}" .b1 .base)
 
     let xin0 := xinBits[0]!
     let yin0 := yinBits[0]!
@@ -250,15 +257,13 @@ where
     let high := zoutHighExpResult
     assertZero "mul-yin-zout-low-high" $ low * high - yin
 
-    let zoutLow := zoutBits.extract (stop := 32)
-    let zoutHigh := zoutBits.extract (start := 32)
+    let zoutLow := zoutBits.extract (stop := outSize)
+    let zoutHigh := zoutBits.extract (start := outSize)
 
     assertStaticExp xinBits xinExpResult B128_MULT_GEN .b128
     assertDynamicExp yinBits yinExpResult xinExpResult
     assertStaticExp zoutLow zoutLowExpResult B128_MULT_GEN .b128
-    let base := zoutLow.size.fold (init := B128_MULT_GEN)
-      fun _ _ g => mulUInt128InBinaryField g g
-    assertStaticExp zoutHigh zoutHighExpResult base .b128
+    assertStaticExp zoutHigh zoutHighExpResult B128GenPow2To64 .b128
 
     pure (xinExpResult, yinExpResult, zoutLowExpResult, zoutHighExpResult, zoutBits)
 

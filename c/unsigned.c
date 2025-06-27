@@ -108,3 +108,22 @@ extern lean_obj_res c_rs_mul_u128_in_binary_field(
     );
     return lean_alloc_external(get_u128_class(), bytes);
 }
+
+extern lean_obj_res c_rs_exterior_mul_u64(
+    uint64_t a,
+    uint64_t b
+) {
+    uint8_t *bytes = rs_exterior_mul_u64(a, b);
+    return lean_alloc_external(get_u128_class(), bytes);
+}
+
+extern lean_obj_res c_rs_pow_u128_in_binary_field(
+    b_lean_obj_arg a,
+    uint64_t b
+) {
+    uint8_t *bytes = rs_pow_u128_in_binary_field(
+        lean_get_external_data(a),
+        b
+    );
+    return lean_alloc_external(get_u128_class(), bytes);
+}

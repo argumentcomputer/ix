@@ -1,6 +1,7 @@
 import Ix.Aiur.Trace
 import Ix.Aiur.Synthesis
 import Ix.Archon.Circuit
+import Ix.Archon.TowerField
 import Ix.Binius.Boundary
 
 namespace Aiur.Circuit
@@ -17,6 +18,24 @@ def packBools (bits : Array Bool) : Array UInt8 :=
         if bits[idx] then
           byte := byte ||| (1 <<< j).toUInt8
     byte
+
+def extractBits (nums : Array UInt64) : Id (Array (Array Bool)) := do
+  let numBits := 64
+  let mut bitVectors := Array.mkArray numBits #[]
+  for num in nums do
+    for i in [0:numBits] do
+      let bit := num.toNat.testBit i
+      bitVectors := bitVectors.modify i (fun lst => lst.push bit)
+  bitVectors
+
+def extractBits128 (nums : Array UInt128) : Id (Array (Array Bool)) := do
+  let numBits := 128
+  let mut bitVectors := Array.mkArray numBits #[]
+  for num in nums do
+    for i in [0:numBits] do
+      let bit := num.toNat.testBit i
+      bitVectors := bitVectors.modify i (fun lst => lst.push bit)
+  bitVectors
 
 def pushData (witnessModule : WitnessModule)
     (pushFn : WitnessModule → Array α → EntryId → WitnessModule)
@@ -86,10 +105,15 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
   let xins := trace.mul.xs
   let yins := trace.mul.ys
   modes := modes.push trace.mul.mode
-  let mut mulZout := Array.mkEmpty xins.size
+  let mut zouts := Array.mkEmpty xins.size
+  let mut zoutsLow := Array.mkEmpty xins.size
+  let mut zoutsHigh := Array.mkEmpty xins.size
   for (xin, yin) in xins.zip yins do
-    let zout := xin * yin
-    mulZout := mulZout.push zout
+    let zout := UInt128.exteriorMul xin yin
+    zouts := zouts.push zout
+    let (zoutLow, zoutHigh) := UInt128.toLoHi zout
+    zoutsLow := zoutsLow.push zoutLow
+    zoutsHigh := zoutsHigh.push zoutHigh
   let (circuitModule, cols) := circuits.mul
   let mut mulWitnessModule := circuitModule.initWitnessModule
   -- xin
@@ -97,24 +121,29 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
   -- yin
   mulWitnessModule := pushData mulWitnessModule .pushUInt64sTo yins cols.yin .b64
   -- zout
-  mulWitnessModule := pushData mulWitnessModule .pushUInt64sTo mulZout cols.zout .b64
+  mulWitnessModule := pushData mulWitnessModule .pushUInt64sTo zoutsLow cols.zout .b64
   -- xinBits
-  for oracle in cols.xinBits do
-    mulWitnessModule := pushData mulWitnessModule .pushUInt8sTo (packBools #[]) oracle .b1
+  for (oracle, xinBits) in cols.xinBits.zip (extractBits xins) do
+    mulWitnessModule := pushData mulWitnessModule .pushUInt8sTo (packBools xinBits) oracle .b1
   -- yinBits
-  for oracle in cols.yinBits do
-    mulWitnessModule := pushData mulWitnessModule .pushUInt8sTo (packBools #[]) oracle .b1
+  for (oracle, yinBits) in cols.yinBits.zip (extractBits yins) do
+    mulWitnessModule := pushData mulWitnessModule .pushUInt8sTo (packBools yinBits) oracle .b1
   -- zoutBits
-  for oracle in cols.zoutBits do
-    mulWitnessModule := pushData mulWitnessModule .pushUInt8sTo (packBools #[]) oracle .b1
+  for (oracle, zoutBits) in cols.zoutBits.zip (extractBits128 zouts) do
+    mulWitnessModule := pushData mulWitnessModule .pushUInt8sTo (packBools zoutBits) oracle .b1
+  -- TODO: exponentials require manual padding. For some reason, Binius' exponential constraints are not working properly
   -- xinExpResult
-  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo #[] cols.xinExpResult .b128
+  let xinExpResult := xins.map fun xin => Archon.powUInt128InBinaryField B128_MULT_GEN xin
+  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo xinExpResult cols.xinExpResult .b128
   -- yinExpResult
-  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo #[] cols.yinExpResult .b128
+  let yinExpResult := (yins.zip xinExpResult).map fun (yin, xinExp) => Archon.powUInt128InBinaryField xinExp yin
+  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo yinExpResult cols.yinExpResult .b128
   -- zoutLowExpResult
-  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo #[] cols.zoutLowExpResult .b128
+  let zoutLowExpResult := zoutsLow.map fun zoutLow => Archon.powUInt128InBinaryField B128_MULT_GEN zoutLow
+  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo zoutLowExpResult cols.zoutLowExpResult .b128
   -- zoutHighExpResult
-  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo #[] cols.zoutHighExpResult .b128
+  let zoutHighExpResult := zoutsHigh.map fun zoutHigh => Archon.powUInt128InBinaryField B128GenPow2To64 zoutHigh
+  mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo zoutHighExpResult cols.zoutHighExpResult .b128
   -- Collect mulWitnessModule
   witnessModules := witnessModules.push mulWitnessModule
 

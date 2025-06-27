@@ -424,9 +424,9 @@ partial def toIndex
     pure arr
   where
     buildArgs (args : List TypedTerm) (init : Array ValIdx := #[]) : StateM CompilerState (Array ValIdx) :=
-      let append arg acc := do
+      let append acc arg := do
         pure (acc.append (← toIndex layoutMap bindings arg))
-      args.foldrM (init := init) append
+      args.foldlM (init := init) append
 
 mutual
 
