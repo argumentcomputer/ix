@@ -119,6 +119,10 @@ def toplevel := ⟦
     let (c) = ffi(bit_xor, a, b);
     c
   }
+
+  fn slice_and_get(as: (u64, u64, u64, u64)) -> u64 {
+    get(slice(as, 1, 4), 2)
+  }
 ⟧
 
 open Archon Binius
@@ -196,8 +200,9 @@ def testCases : List TestCase := [
     ⟨`fibonacci, #[0], #[1]⟩,
     ⟨`fibonacci, #[1], #[1]⟩,
     ⟨`fibonacci, #[6], #[13]⟩,
-    -- ⟨`call_bit_xor, #[13, 7], #[10]⟩,
+    ⟨`call_bit_xor, #[13, 7], #[10]⟩,
     ⟨`call_bit_xor2, #[13, 7], #[10]⟩,
+    ⟨`slice_and_get, #[1, 2, 3, 4], #[4]⟩,
   ]
 
 def aiurTest : TestSeq :=

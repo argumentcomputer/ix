@@ -411,14 +411,16 @@ partial def toIndex
       let args ← buildArgs args
       pushOp (Bytecode.Op.ffi layout.index args layout.outputSize) layout.outputSize
     | _ => panic! "should not happen after typechecking"
-  | .get arg i =>
+  | .get arg i => do
     let typs := (match arg.typ with
       | .evaluates (.tuple typs) => typs
       | _ => panic! "should not happen after typechecking")
     let offset := (typs.extract 0 i).foldl (init := 0)
       fun acc typ => typSize layoutMap typ + acc
-    pure $ Array.range' offset (typSize layoutMap typ)
-  | .slice arg i j =>
+    let arg ← toIndex layoutMap bindings arg
+    let length := typSize layoutMap typ
+    pure $ arg.extract offset (offset + length)
+  | .slice arg i j => do
     let typs := (match arg.typ with
       | .evaluates (.tuple typs) => typs
       | _ => panic! "should not happen after typechecking")
@@ -426,7 +428,8 @@ partial def toIndex
       fun acc typ => typSize layoutMap typ + acc
     let length := (typs.extract i j).foldl (init := 0)
       fun acc typ => typSize layoutMap typ + acc
-    pure $ Array.range' offset length
+    let arg ← toIndex layoutMap bindings arg
+    pure $ arg.extract offset (offset + length)
   | .store arg => do
     let arg ← toIndex layoutMap bindings arg
     pushOp (Bytecode.Op.store arg)
