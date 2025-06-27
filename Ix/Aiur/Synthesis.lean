@@ -205,6 +205,11 @@ structure MulColumns where
   zoutLowExpResult : OracleIdx
   zoutHighExpResult : OracleIdx
 
+def B128GenPow2To64 : UInt128 :=
+  let outSize := 64
+  outSize.fold (init := B128_MULT_GEN)
+    fun _ _ g => mulUInt128InBinaryField g g
+
 def synthesizeMul (channelId : ChannelId) : SynthM MulColumns := do
   let xin ← addCommitted "mul-xin" .b64 .base
   let yin ← addCommitted "mul-yin" .b64 .base
@@ -258,9 +263,7 @@ where
     assertStaticExp xinBits xinExpResult B128_MULT_GEN .b128
     assertDynamicExp yinBits yinExpResult xinExpResult
     assertStaticExp zoutLow zoutLowExpResult B128_MULT_GEN .b128
-    let base := outSize.fold (init := B128_MULT_GEN)
-      fun _ _ g => mulUInt128InBinaryField g g
-    assertStaticExp zoutHigh zoutHighExpResult base .b128
+    assertStaticExp zoutHigh zoutHighExpResult B128GenPow2To64 .b128
 
     pure (xinExpResult, yinExpResult, zoutLowExpResult, zoutHighExpResult, zoutBits)
 

@@ -113,7 +113,7 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
     zouts := zouts.push zout
     let (zoutLow, zoutHigh) := UInt128.toLoHi zout
     zoutsLow := zoutsLow.push zoutLow
-    zoutsHigh := zoutsLow.push zoutHigh
+    zoutsHigh := zoutsHigh.push zoutHigh
   let (circuitModule, cols) := circuits.mul
   let mut mulWitnessModule := circuitModule.initWitnessModule
   -- xin
@@ -131,6 +131,7 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
   -- zoutBits
   for (oracle, zoutBits) in cols.zoutBits.zip (extractBits128 zouts) do
     mulWitnessModule := pushData mulWitnessModule .pushUInt8sTo (packBools zoutBits) oracle .b1
+  -- TODO: exponentials require manual padding. For some reason, Binius' exponential constraints are not working properly
   -- xinExpResult
   let xinExpResult := xins.map fun xin => Archon.powUInt128InBinaryField B128_MULT_GEN xin
   mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo xinExpResult cols.xinExpResult .b128
@@ -141,9 +142,7 @@ def populateWitness (circuits : AiurCircuits) (trace : AiurTrace) : Id Witness :
   let zoutLowExpResult := zoutsLow.map fun zoutLow => Archon.powUInt128InBinaryField B128_MULT_GEN zoutLow
   mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo zoutLowExpResult cols.zoutLowExpResult .b128
   -- zoutHighExpResult
-  let base := (64 : Nat).fold (init := B128_MULT_GEN)
-    fun _ _ g => mulUInt128InBinaryField g g
-  let zoutHighExpResult := zoutsHigh.map fun zoutHigh => Archon.powUInt128InBinaryField base zoutHigh
+  let zoutHighExpResult := zoutsHigh.map fun zoutHigh => Archon.powUInt128InBinaryField B128GenPow2To64 zoutHigh
   mulWitnessModule := pushData mulWitnessModule .pushUInt128sTo zoutHighExpResult cols.zoutHighExpResult .b128
   -- Collect mulWitnessModule
   witnessModules := witnessModules.push mulWitnessModule
