@@ -30,22 +30,16 @@ def prove (bytecodeTopLevel : Aiur.Bytecode.Toplevel) : Archon.Proof :=
   let funcIdx := topLevel.getFuncIdx functionName |>.get!
   let record := bytecodeTopLevel.execute funcIdx input
   let output := record.getFuncResult funcIdx input |>.get!
-  -- if output != testCase.expectedOutput
-  -- then
-    -- IO.eprintln s!"Result of {functionName} with arguments {input} is INCORRECT"
+  assert! output == testCase.expectedOutput
   let traces := bytecodeTopLevel.generateTraces record
   let witness := Aiur.Circuit.populateWitness aiurCircuits traces bytecodeTopLevel.gadgets
   let funcChannel := funcChannels[funcIdx]!
   let boundaries := Aiur.Circuit.mkBoundaries testCase.input output funcChannel
-  -- if !(Archon.validateWitness circuitModules boundaries witness |>.isOk)
-  -- then
-  --   IO.eprintln s!"Witness for {functionName} with arguments {input} is NOT accepted"
+  assert! Archon.validateWitness circuitModules boundaries witness |>.isOk
   let (logInvRate, securityBits) := (1, 100)
-  Archon.prove circuitModules boundaries logInvRate securityBits witness
-  -- if !(Archon.verify circuitModules boundaries logInvRate securityBits proof |>.isOk)
-  -- then
-  --   IO.eprintln s!"Proof for {functionName} with arguments {testCase.input} does NOT verify"
-  -- return proof
+  let proof := Archon.prove circuitModules boundaries logInvRate securityBits witness
+  assert! Archon.verify circuitModules boundaries logInvRate securityBits proof |>.isOk
+  proof
 
 def proveBench :=
   let bytecode := compile topLevel
