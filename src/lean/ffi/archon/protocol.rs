@@ -19,6 +19,11 @@ use crate::{
 };
 
 #[unsafe(no_mangle)]
+extern "C" fn rs_proof_empty() -> *const Proof {
+    to_raw(Proof::default())
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rs_validate_witness(
     num_modules: usize,
     circuit_modules: &CArray<&CircuitModule>,

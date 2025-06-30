@@ -56,6 +56,7 @@ void rs_circuit_module_canonical_bytes(void*, size_t, uint8_t*);
 
 /* --- Archon protocol --- */
 
+void *rs_proof_empty();
 c_result *rs_validate_witness(size_t, void**, b_lean_obj_arg, void*);
 void rs_proof_free(void*);
 void *rs_prove(size_t, void**, b_lean_obj_arg, size_t, size_t, void*);

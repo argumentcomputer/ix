@@ -459,6 +459,12 @@ extern lean_obj_res c_rs_circuit_module_canonical_bytes(b_lean_obj_arg l_circuit
 
 /* --- Protocol --- */
 
+extern lean_obj_res c_rs_proof_empty() {
+    void *proof = rs_proof_empty();
+    linear_object *proof_linear = linear_object_init(proof, &rs_proof_free);
+    return alloc_lean_linear_object(proof_linear);
+}
+
 extern lean_obj_res c_rs_validate_witness(
     b_lean_obj_arg l_circuit_modules,
     b_lean_obj_arg boundaries,
