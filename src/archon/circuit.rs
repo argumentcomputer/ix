@@ -2,8 +2,10 @@ use anyhow::{Result, bail, ensure};
 use binius_core::{
     constraint_system::{
         ConstraintSystem,
-        channel::{ChannelId, Flush, FlushDirection, OracleOrConst},
-        exp::Exp,
+        channel::{
+            ChannelId, Flush as BiniusFlush, FlushDirection, OracleOrConst as BiniusOracleOrConst,
+        },
+        exp::Exp as BiniusExp,
     },
     oracle::{ConstraintSetBuilder, MultilinearOracleSet, ShiftVariant},
     transparent::step_down::StepDown,
@@ -35,32 +37,33 @@ pub fn init_witness_modules(circuit_modules: &[CircuitModule]) -> Result<Vec<Wit
         .collect()
 }
 
-pub(super) struct ArchonFlush {
-    pub(super) oracles: Vec<OracleIdx>,
+#[derive(PartialEq, Eq)]
+pub enum OracleOrConst {
+    Oracle(OracleIdx),
+    Const { base: F, tower_level: usize },
+}
+
+pub(super) struct Flush {
+    pub(super) values: Vec<OracleOrConst>,
     pub(super) channel_id: ChannelId,
     pub(super) direction: FlushDirection,
     pub(super) selector: OracleIdx,
     pub(super) multiplicity: u64,
 }
 
-pub(super) enum ArchonOracleOrConst {
-    Oracle(OracleIdx),
-    Const { base: F, tower_level: usize },
-}
-
-pub(super) struct ArchonExp {
+pub(super) struct Exp {
     pub(super) exp_bits: Vec<OracleIdx>,
-    pub(super) base: ArchonOracleOrConst,
+    pub(super) base: OracleOrConst,
     pub(super) result: OracleIdx,
 }
 
 pub struct CircuitModule {
     pub(super) module_id: ModuleId,
     pub(super) oracles: Freezable<Vec<OracleInfo>>,
-    pub(super) flushes: Vec<ArchonFlush>,
+    pub(super) flushes: Vec<Flush>,
     pub(super) constraints: Vec<Constraint>,
     pub(super) non_zero_oracle_idxs: Vec<OracleIdx>,
-    pub(super) exponents: Vec<ArchonExp>,
+    pub(super) exponents: Vec<Exp>,
     pub(super) namespacer: Namespacer,
 }
 
@@ -109,11 +112,11 @@ impl CircuitModule {
         direction: FlushDirection,
         channel_id: ChannelId,
         selector: OracleIdx,
-        oracle_idxs: impl IntoIterator<Item = OracleIdx>,
+        values: impl IntoIterator<Item = OracleOrConst>,
         multiplicity: u64,
     ) {
-        self.flushes.push(ArchonFlush {
-            oracles: oracle_idxs.into_iter().collect(),
+        self.flushes.push(Flush {
+            values: values.into_iter().collect(),
             channel_id,
             direction,
             selector,
@@ -141,33 +144,10 @@ impl CircuitModule {
     }
 
     #[inline]
-    pub fn assert_dynamic_exp(
-        &mut self,
-        exp_bits: Vec<OracleIdx>,
-        result: OracleIdx,
-        base: OracleIdx,
-    ) {
-        self.exponents.push(ArchonExp {
+    pub fn assert_exp(&mut self, exp_bits: Vec<OracleIdx>, result: OracleIdx, base: OracleOrConst) {
+        self.exponents.push(Exp {
             exp_bits,
-            base: ArchonOracleOrConst::Oracle(base),
-            result,
-        })
-    }
-
-    #[inline]
-    pub fn assert_static_exp(
-        &mut self,
-        exp_bits: Vec<OracleIdx>,
-        result: OracleIdx,
-        base: F,
-        base_tower_level: usize,
-    ) {
-        self.exponents.push(ArchonExp {
-            exp_bits,
-            base: ArchonOracleOrConst::Const {
-                base,
-                tower_level: base_tower_level,
-            },
+            base,
             result,
         })
     }
@@ -444,7 +424,15 @@ pub fn compile_circuit_modules(
             non_zero_oracle_ids.push(non_zero_oracle_idx.oracle_id(oracle_offset));
         }
 
-        for ArchonExp {
+        let mk_binius_oracle_or_const = |oracle_or_const: &OracleOrConst| match oracle_or_const {
+            OracleOrConst::Oracle(o) => BiniusOracleOrConst::Oracle(o.oracle_id(oracle_offset)),
+            OracleOrConst::Const { base, tower_level } => BiniusOracleOrConst::Const {
+                base: *base,
+                tower_level: *tower_level,
+            },
+        };
+
+        for Exp {
             exp_bits,
             base,
             result,
@@ -454,23 +442,16 @@ pub fn compile_circuit_modules(
                 .iter()
                 .map(|o| o.oracle_id(oracle_offset))
                 .collect();
-            let base = match base {
-                ArchonOracleOrConst::Oracle(o) => OracleOrConst::Oracle(o.oracle_id(oracle_offset)),
-                ArchonOracleOrConst::Const { base, tower_level } => OracleOrConst::Const {
-                    base: *base,
-                    tower_level: *tower_level,
-                },
-            };
             let exp_result_id = result.oracle_id(oracle_offset);
-            exponents.push(Exp {
+            exponents.push(BiniusExp {
                 bits_ids,
-                base,
+                base: mk_binius_oracle_or_const(base),
                 exp_result_id,
             });
         }
 
-        for ArchonFlush {
-            oracles,
+        for Flush {
+            values,
             channel_id,
             direction,
             selector,
@@ -478,14 +459,11 @@ pub fn compile_circuit_modules(
         } in &module.flushes
         {
             max_channel_id = max_channel_id.max(*channel_id);
-            flushes.push(Flush {
+            flushes.push(BiniusFlush {
                 channel_id: *channel_id,
                 direction: *direction,
                 selectors: vec![selector.oracle_id(oracle_offset)],
-                oracles: oracles
-                    .iter()
-                    .map(|o| OracleOrConst::Oracle(o.oracle_id(oracle_offset)))
-                    .collect(),
+                oracles: values.iter().map(mk_binius_oracle_or_const).collect(),
                 multiplicity: *multiplicity,
             });
         }

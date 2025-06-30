@@ -46,7 +46,7 @@ structure Constraints where
   recvs : Array (Channel × ArithExpr × Array ArithExpr)
   requires : Array (Channel × ArithExpr × OracleIdx × Array ArithExpr)
   topmostSelector : ArithExpr
-  io : Array OracleIdx
+  io : Array OracleOrConst
   multiplicity : OracleIdx
 
 def blockSelector (block : Bytecode.Block) (columns : Columns) : ArithExpr :=
@@ -63,7 +63,7 @@ def new (function : Bytecode.Function) (layout : Layout) (columns : Columns) : C
     recvs := #[]
     requires := #[]
     topmostSelector := blockSelector function.body columns
-    io := columns.inputs ++ columns.outputs
+    io := columns.inputs ++ columns.outputs |>.map .oracle
     multiplicity := columns.multiplicity }
 
 @[inline] def pushUnique (constraints : Constraints) (expr : ArithExpr) : Constraints :=

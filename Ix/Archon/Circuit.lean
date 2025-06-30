@@ -2,6 +2,7 @@ import Blake3
 import Ix.Archon.ArithExpr
 import Ix.Archon.OracleIdx
 import Ix.Archon.RelativeHeight
+import Ix.Archon.OracleOrConst
 import Ix.Archon.Transparent
 import Ix.Archon.Witness
 import Ix.Binius.Common
@@ -32,7 +33,7 @@ opaque initWitnessModule : @& CircuitModule → WitnessModule
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_flush"]
 opaque flush : CircuitModule → Binius.FlushDirection → Binius.ChannelId →
-  (selector : OracleIdx) → @& Array OracleIdx → (multiplicity : UInt64) → CircuitModule
+  (selector : OracleIdx) → @& Array OracleOrConst → (multiplicity : UInt64) → CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_assert_zero"]
@@ -44,14 +45,9 @@ opaque assertZero : CircuitModule → @& String → @& Array OracleIdx →
 opaque assertNotZero : CircuitModule → OracleIdx → CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
-@[never_extract, extern "c_rs_circuit_module_assert_dynamic_exp"]
-opaque assertDynamicExp : CircuitModule → (expBits : @& Array OracleIdx) →
-  (result : OracleIdx) → (base : OracleIdx) → CircuitModule
-
-/-- **Invalidates** the input `CircuitModule` -/
-@[never_extract, extern "c_rs_circuit_module_assert_static_exp"]
-opaque assertStaticExp : CircuitModule → (expBits : @& Array OracleIdx) →
-  (result : OracleIdx) → (base : @& UInt128) → (baseTF : TowerField) → CircuitModule
+@[never_extract, extern "c_rs_circuit_module_assert_exp"]
+opaque assertExp : CircuitModule → (expBits : @& Array OracleIdx) →
+  (result : OracleIdx) → (base : @& OracleOrConst) → CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_committed"]

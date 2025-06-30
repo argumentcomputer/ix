@@ -35,31 +35,26 @@ abbrev SynthM := StateM SynthState
   (stt.circuitModule.freezeOracles, a)
 
 @[inline] def flush (direction : FlushDirection) (channelId : ChannelId)
-    (selector : OracleIdx) (args : @& Array OracleIdx) (multiplicity : UInt64) : SynthM Unit :=
+    (selector : OracleIdx) (args : @& Array OracleOrConst) (multiplicity : UInt64) : SynthM Unit :=
   modify fun stt =>
     let circuitModule := stt.circuitModule.flush direction channelId selector
       args multiplicity
     { stt with circuitModule }
 
-@[inline] def send (channelId : ChannelId) (args : @& Array OracleIdx) : SynthM Unit :=
+@[inline] def send (channelId : ChannelId) (args : @& Array OracleOrConst) : SynthM Unit :=
   flush .push channelId CircuitModule.selector args 1
 
-@[inline] def recv (channelId : ChannelId) (args : @& Array OracleIdx) : SynthM Unit :=
+@[inline] def recv (channelId : ChannelId) (args : @& Array OracleOrConst) : SynthM Unit :=
   flush .pull channelId CircuitModule.selector args 1
 
 @[inline] def assertZero (name : @& String) (expr : @& ArithExpr) : SynthM Unit :=
   modify fun stt =>
     { stt with circuitModule := stt.circuitModule.assertZero name #[] expr }
 
-@[inline] def assertDynamicExp (expBits : @& Array OracleIdx) (result base : OracleIdx) :
+@[inline] def assertExp (expBits : @& Array OracleIdx) (result : OracleIdx) (base : @& OracleOrConst) :
     SynthM Unit :=
   modify fun stt =>
-    { stt with circuitModule := stt.circuitModule.assertDynamicExp expBits result base }
-
-@[inline] def assertStaticExp (expBits : @& Array OracleIdx) (result : OracleIdx)
-    (base : @& UInt128) (baseTF : TowerField): SynthM Unit :=
-  modify fun stt =>
-    { stt with circuitModule := stt.circuitModule.assertStaticExp expBits result base baseTF }
+    { stt with circuitModule := stt.circuitModule.assertExp expBits result base }
 
 def addCommitted (name : @& String) (tf : TowerField) (relativeHeight : RelativeHeight) :
     SynthM OracleIdx :=
@@ -97,15 +92,6 @@ def addProjected (name : @& String) (inner : OracleIdx) (selection : UInt64)
     let (o, circuitModule) := stt.circuitModule.addProjected name inner selection chunkSize
     (o, { stt with circuitModule })
 
-def cacheConst (value : UInt128) : SynthM OracleIdx :=
-  modifyGet fun stt => match stt.cachedOracles.find? (.const value) with
-  | some o => (o, stt)
-  | none =>
-    let (o, circuitModule) := stt.circuitModule.addTransparent
-      s!"cached-const-{value}" (.const value) .base
-    let cachedOracles := stt.cachedOracles.insert (.const value) o
-    (o, ⟨circuitModule, cachedOracles⟩)
-
 def cacheLc (expr : ArithExpr) : SynthM OracleIdx :=
   let key := .lc expr
   modifyGet fun stt => match stt.cachedOracles.find? key with
@@ -127,16 +113,15 @@ where
     | _ => unreachable!
 
 def provide (channelId : ChannelId) (multiplicity : OracleIdx)
-    (args : Array OracleIdx) : SynthM Unit := do
-  let ones ← cacheConst 1
-  send channelId (args.push ones)
-  recv channelId (args.push multiplicity)
+    (args : Array OracleOrConst) : SynthM Unit := do
+  send channelId (args.push (.const 1 .b1))
+  recv channelId (args.push (.oracle multiplicity))
 
-def require (channelId : ChannelId) (prevIdx : OracleIdx) (args : Array OracleIdx)
+def require (channelId : ChannelId) (prevIdx : OracleIdx) (args : Array OracleOrConst)
     (sel : OracleIdx) : SynthM Unit := do
   let idx ← addLinearCombination s!"index-{channelId.toUSize}" 0 #[(prevIdx, B64_MULT_GEN)] .base
-  flush .pull channelId sel (args.push prevIdx) 1
-  flush .push channelId sel (args.push idx) 1
+  flush .pull channelId sel (args.push (.oracle prevIdx)) 1
+  flush .push channelId sel (args.push (.oracle idx)) 1
 
 def synthesizeFunction (funcIdx : FuncIdx) (function : Bytecode.Function)
     (layout : Layout) (aiurChannels : AiurChannels) : SynthM Columns := do
@@ -154,6 +139,7 @@ def synthesizeFunction (funcIdx : FuncIdx) (function : Bytecode.Function)
   constraints.recvs.forM fun (channel, sel, args) => do
     let sel ← cacheLc sel
     let args ← args.mapM cacheLc
+    let args := args.map .oracle
     match channel with
     | .add => flush .pull aiurChannels.add sel args 1
     | .mul => flush .pull aiurChannels.mul sel args 1
@@ -161,6 +147,7 @@ def synthesizeFunction (funcIdx : FuncIdx) (function : Bytecode.Function)
   constraints.requires.forM fun (channel, sel, prevIdx, values) => do
     let sel ← cacheLc sel
     let values ← values.mapM cacheLc
+    let values := values.map .oracle
     match channel with
     | .func funcIdx =>
       let funcChannel := aiurChannels.func[funcIdx]!
@@ -192,7 +179,7 @@ def synthesizeAdd (channelId : ChannelId) : SynthM AddColumns := do
   let coutProjected ← addProjected "add-cout-projected" cout 63 64
   assertZero "add-sum" $ xin + yin + cin - zout
   assertZero "add-carry" $ (xin + cin) * (yin + cin) + cin - cout
-  send channelId #[xinPacked, yinPacked, zoutPacked, coutProjected]
+  send channelId $ #[xinPacked, yinPacked, zoutPacked, coutProjected].map .oracle
   pure { xin, yin, zout, cout }
 
 structure MulColumns where
@@ -224,7 +211,7 @@ def synthesizeMul (channelId : ChannelId) : SynthM MulColumns := do
     ← mul xinBits yinBits
   let zoutLow := zoutBits.extract (stop := 64)
   bitDecomposition "mul-bit-decomposition-zout" zoutLow zout
-  send channelId #[xin, yin, zout]
+  send channelId $ #[xin, yin, zout].map .oracle
   pure {
     xin,
     yin,
@@ -262,10 +249,10 @@ where
     let zoutLow := zoutBits.extract (stop := outSize)
     let zoutHigh := zoutBits.extract (start := outSize)
 
-    assertStaticExp xinBits xinExpResult B128_MULT_GEN .b128
-    assertDynamicExp yinBits yinExpResult xinExpResult
-    assertStaticExp zoutLow zoutLowExpResult B128_MULT_GEN .b128
-    assertStaticExp zoutHigh zoutHighExpResult B128GenPow2To64 .b128
+    assertExp xinBits xinExpResult (.const B128_MULT_GEN .b128)
+    assertExp yinBits yinExpResult (.oracle xinExpResult)
+    assertExp zoutLow zoutLowExpResult (.const B128_MULT_GEN .b128)
+    assertExp zoutHigh zoutHighExpResult (.const B128GenPow2To64 .b128)
 
     pure (xinExpResult, yinExpResult, zoutLowExpResult, zoutHighExpResult, zoutBits)
 
@@ -277,7 +264,7 @@ def synthesizeMemory (channelId : ChannelId) (width : Nat) : SynthM MemoryColumn
   let address ← addTransparent s!"mem-{width}-address" .incremental .base
   let values ← Array.range width |>.mapM (addCommitted s!"mem-{width}-value-{·}" .b64 .base)
   let multiplicity ← addCommitted s!"mem-{width}-multiplicity" .b64 .base
-  let args := #[address] ++ values
+  let args := #[address] ++ values |>.map .oracle
   provide channelId multiplicity args
   pure { values, multiplicity }
 

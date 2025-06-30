@@ -5,7 +5,7 @@ use binius_utils::checked_arithmetics::log2_strict_usize;
 use super::{
     OracleIdx, OracleInfo, OracleKind, RelativeHeight,
     arith_expr::ArithExpr,
-    circuit::{ArchonExp, ArchonFlush, ArchonOracleOrConst, CircuitModule, Constraint},
+    circuit::{CircuitModule, Constraint, Exp, Flush, OracleOrConst},
     transparent::Transparent,
 };
 
@@ -242,16 +242,16 @@ impl Canonical for FlushDirection {
     }
 }
 
-impl Canonical for ArchonFlush {
+impl Canonical for Flush {
     fn size(&self) -> usize {
         let Self {
-            oracles,
+            values,
             channel_id,
             direction,
             selector,
             multiplicity,
         } = self;
-        Canonical::size(oracles)
+        Canonical::size(values)
             + Canonical::size(channel_id)
             + Canonical::size(direction)
             + Canonical::size(selector)
@@ -259,13 +259,13 @@ impl Canonical for ArchonFlush {
     }
     fn write(&self, buffer: &mut Vec<u8>) {
         let Self {
-            oracles,
+            values,
             channel_id,
             direction,
             selector,
             multiplicity,
         } = self;
-        Canonical::write(oracles, buffer);
+        Canonical::write(values, buffer);
         Canonical::write(channel_id, buffer);
         Canonical::write(direction, buffer);
         Canonical::write(selector, buffer);
@@ -338,7 +338,7 @@ impl Canonical for Constraint {
     }
 }
 
-impl Canonical for ArchonOracleOrConst {
+impl Canonical for OracleOrConst {
     fn size(&self) -> usize {
         match self {
             Self::Oracle(o) => 1 + Canonical::size(o),
@@ -362,7 +362,7 @@ impl Canonical for ArchonOracleOrConst {
     }
 }
 
-impl Canonical for ArchonExp {
+impl Canonical for Exp {
     fn size(&self) -> usize {
         let Self {
             exp_bits,
