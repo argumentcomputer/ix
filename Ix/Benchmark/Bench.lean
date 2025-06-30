@@ -31,10 +31,12 @@ structure BenchGroup where
 
 structure Benchmarkable (α β : Type) where
   name : String
-  func : α → β
+  func : α → IO β
+  --func : α → β
   arg : α
 
-def bench (name : String) (func : α → β) (arg : α) : Benchmarkable α β := ⟨ name, func, arg ⟩
+def bench (name : String) (func : α → IO β) (arg : α) : Benchmarkable α β := ⟨ name, func, arg ⟩
+--def bench (name : String) (func : α →  β) (arg : α) : Benchmarkable α β := ⟨ name, func, arg ⟩
 
 -- TODO: According to Criterion.rs docs the warmup iterations should increase linearly until the warmup time is reached, rather than one iteration per time check
 def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable α β) : IO Float := do
@@ -44,7 +46,8 @@ def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable α β) : IO Float
   let mut elapsed := 0
   let startTime ← IO.monoNanosNow
   while elapsed < warmupNanos do
-    let _res ← blackBoxIO bench.func bench.arg
+    --let _res ← blackBoxIO bench.func bench.arg
+    let _res ← bench.func bench.arg
     let now ← IO.monoNanosNow
     count := count + 1
     elapsed := now - startTime
@@ -77,7 +80,8 @@ def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
   for iters in sampleIters do
     let start ← IO.monoNanosNow
     for _i in Array.range iters do
-      let _res ← blackBoxIO bench.func bench.arg
+      --let _res ← blackBoxIO bench.func bench.arg
+      let _res ← bench.func bench.arg
     let finish ← IO.monoNanosNow
     timings := timings.push (finish - start)
   return (sampleIters, timings)
@@ -106,7 +110,8 @@ def BenchGroup.sampleLinear (bg : BenchGroup) (bench : Benchmarkable α β) (war
   for iters in sampleIters do
     let start ← IO.monoNanosNow
     for _i in Array.range iters do
-      let _res ← blackBoxIO bench.func bench.arg
+      --let _res ← blackBoxIO bench.func bench.arg
+      let _res ← bench.func bench.arg
     let finish ← IO.monoNanosNow
     timings := timings.push (finish - start)
   return (sampleIters, timings)
