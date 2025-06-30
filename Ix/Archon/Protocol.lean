@@ -11,9 +11,9 @@ def Proof : Type := GenericNonempty.type
 instance : Nonempty Proof := GenericNonempty.property
 
 @[never_extract, extern "c_rs_proof_empty"]
-opaque Proof.empty : Proof
+opaque Proof.empty : Unit →  Proof
 
-instance : Inhabited Proof := ⟨.empty⟩
+instance : Inhabited Proof := ⟨.empty ()⟩
 
 @[never_extract, extern "c_rs_validate_witness"]
 opaque validateWitness : @& Array CircuitModule → @& Array Boundary → @& Witness →
