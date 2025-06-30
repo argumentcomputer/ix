@@ -29,14 +29,24 @@ structure BenchGroup where
   name : String
   config : Config
 
+-- If the function is pure, we need to wrap it in `blackBoxIO` so that Lean doesn't optimize away the result
+inductive BenchFn ( α β : Type) where
+| pure (fn : α → β)
+| io (fn : α → IO β)
+
 structure Benchmarkable (α β : Type) where
   name : String
-  func : α → IO β
-  --func : α → β
+  func : BenchFn α β
   arg : α
 
-def bench (name : String) (func : α → IO β) (arg : α) : Benchmarkable α β := ⟨ name, func, arg ⟩
---def bench (name : String) (func : α →  β) (arg : α) : Benchmarkable α β := ⟨ name, func, arg ⟩
+def bench (name : String) (fn : α → β) (arg : α) : Benchmarkable α β := { name, func := BenchFn.pure fn, arg }
+
+def benchIO (name : String) (fn : α → IO β) (arg : α) : Benchmarkable α β :=  { name, func := BenchFn.io fn, arg }
+
+def Benchmarkable.getFn ( bench: Benchmarkable α β) : α → IO β :=
+  match bench.func with
+  | .pure f => blackBoxIO f
+  | .io f => f
 
 -- TODO: According to Criterion.rs docs the warmup iterations should increase linearly until the warmup time is reached, rather than one iteration per time check
 def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable α β) : IO Float := do
@@ -44,10 +54,10 @@ def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable α β) : IO Float
   let mut count := 0
   let warmupNanos := Cronos.secToNano bg.config.warmupTime
   let mut elapsed := 0
+  let func := bench.getFn
   let startTime ← IO.monoNanosNow
   while elapsed < warmupNanos do
-    --let _res ← blackBoxIO bench.func bench.arg
-    let _res ← bench.func bench.arg
+    let _res ← func bench.arg
     let now ← IO.monoNanosNow
     count := count + 1
     elapsed := now - startTime
@@ -74,14 +84,14 @@ def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
     IO.eprintln s!"Warning: Unable to complete {bg.config.numSamples} samples in {bg.config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
   IO.println s!"Running {bg.config.numSamples} samples in {expectedTime.floatPretty 2}s ({totalIters.natPretty} iterations)\n"
   --IO.println s!"Flat sample. Iters per sample: {itersPerSample}"
+  let func := bench.getFn
   let mut timings : Array Nat := #[]
   -- TODO: `mkArray` deprecated in favor of `replicate` in Lean v4.19
   let sampleIters := Array.mkArray bg.config.numSamples itersPerSample
   for iters in sampleIters do
     let start ← IO.monoNanosNow
     for _i in Array.range iters do
-      --let _res ← blackBoxIO bench.func bench.arg
-      let _res ← bench.func bench.arg
+      let _res ← func bench.arg
     let finish ← IO.monoNanosNow
     timings := timings.push (finish - start)
   return (sampleIters, timings)
@@ -106,12 +116,12 @@ def BenchGroup.sampleLinear (bg : BenchGroup) (bench : Benchmarkable α β) (war
     IO.eprintln s!"Warning: Unable to complete {bg.config.numSamples} samples in {bg.config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
   IO.println s!"Running {bg.config.numSamples} samples in {expectedTime.floatPretty 2}s ({sampleIters.sum.natPretty} iterations)\n"
   --IO.println s!"Linear sample. Iters increase by a factor of {d} per sample"
+  let func := bench.getFn
   let mut timings : Array Nat := #[]
   for iters in sampleIters do
     let start ← IO.monoNanosNow
     for _i in Array.range iters do
-      --let _res ← blackBoxIO bench.func bench.arg
-      let _res ← bench.func bench.arg
+      let _res ← func bench.arg
     let finish ← IO.monoNanosNow
     timings := timings.push (finish - start)
   return (sampleIters, timings)

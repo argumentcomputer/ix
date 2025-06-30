@@ -22,7 +22,7 @@ def compile (top : Aiur.Toplevel) : Aiur.Bytecode.Toplevel :=
   | .ok a => a.compile
   | .error e => panic! s!"Failed to unwrap Aiur typedDecls: {e}"
 
-def prove (bytecodeTopLevel : Aiur.Bytecode.Toplevel) : IO Archon.Proof :=
+def prove (bytecodeTopLevel : Aiur.Bytecode.Toplevel) : Archon.Proof :=
   let (aiurCircuits, funcChannels) := Aiur.Circuit.synthesize bytecodeTopLevel
   let circuitModules := aiurCircuits.circuitModules
   let functionName := testCase.functionName
@@ -41,7 +41,7 @@ def prove (bytecodeTopLevel : Aiur.Bytecode.Toplevel) : IO Archon.Proof :=
   -- then
   --   IO.eprintln s!"Witness for {functionName} with arguments {input} is NOT accepted"
   let (logInvRate, securityBits) := (1, 100)
-  return Archon.prove circuitModules boundaries logInvRate securityBits witness
+  Archon.prove circuitModules boundaries logInvRate securityBits witness
   -- if !(Archon.verify circuitModules boundaries logInvRate securityBits proof |>.isOk)
   -- then
   --   IO.eprintln s!"Proof for {functionName} with arguments {testCase.input} does NOT verify"
