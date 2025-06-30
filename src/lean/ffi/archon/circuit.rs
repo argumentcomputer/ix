@@ -16,7 +16,8 @@ use crate::{
         ffi::{
             archon::{
                 arith_expr::lean_ctor_to_arith_expr, boxed_usize_ptr_to_oracle_idx,
-                ctor_ptr_to_lc_factor, relative_height::lean_ctor_ptr_to_relative_height,
+                ctor_ptr_to_lc_factor, oracle_or_const::lean_ctor_ptr_to_oracle_or_const,
+                relative_height::lean_ctor_ptr_to_relative_height,
                 transparent::lean_ctor_ptr_to_transparent,
             },
             drop_raw, raw_to_str, to_raw,
@@ -56,14 +57,14 @@ extern "C" fn rs_circuit_module_flush(
     direction_pull: bool,
     channel_idx: usize,
     selector: OracleIdx,
-    oracle_idxs: &LeanArrayObject,
+    values: &LeanArrayObject,
     multiplicity: u64,
 ) {
-    let oracle_idxs = oracle_idxs.to_vec(boxed_usize_ptr_to_oracle_idx);
+    let values = values.to_vec(|ptr| lean_ctor_ptr_to_oracle_or_const(ptr.cast()));
     use FlushDirection::{Pull, Push};
     let direction = if direction_pull { Pull } else { Push };
     let channel_id = channel_idx;
-    circuit_module.flush(direction, channel_id, selector, oracle_idxs, multiplicity);
+    circuit_module.flush(direction, channel_id, selector, values, multiplicity);
 }
 
 #[unsafe(no_mangle)]
@@ -87,28 +88,15 @@ extern "C" fn rs_circuit_module_assert_not_zero(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn rs_circuit_module_assert_dynamic_exp(
+extern "C" fn rs_circuit_module_assert_exp(
     circuit_module: &mut CircuitModule,
     exp_bits: &LeanArrayObject,
     result: OracleIdx,
-    base: OracleIdx,
+    base: &LeanCtorObject,
 ) {
     let exp_bits = exp_bits.to_vec(boxed_usize_ptr_to_oracle_idx);
-    circuit_module.assert_dynamic_exp(exp_bits, result, base);
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn rs_circuit_module_assert_static_exp(
-    circuit_module: &mut CircuitModule,
-    exp_bits: &LeanArrayObject,
-    result: OracleIdx,
-    base: &u128,
-    base_tower_level: u8,
-) {
-    let exp_bits = exp_bits.to_vec(boxed_usize_ptr_to_oracle_idx);
-    let base = B128::new(*base);
-    let base_tower_level = base_tower_level as usize;
-    circuit_module.assert_static_exp(exp_bits, result, base, base_tower_level);
+    let base = lean_ctor_ptr_to_oracle_or_const(base);
+    circuit_module.assert_exp(exp_bits, result, base);
 }
 
 #[unsafe(no_mangle)]

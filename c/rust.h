@@ -37,8 +37,7 @@ void rs_circuit_module_assert_zero(
     void*, char const*, b_lean_obj_arg, b_lean_obj_arg
 );
 void rs_circuit_module_assert_not_zero(void*, size_t);
-void rs_circuit_module_assert_dynamic_exp(void*, b_lean_obj_arg, size_t, size_t);
-void rs_circuit_module_assert_static_exp(void*, b_lean_obj_arg, size_t, uint8_t*, uint8_t);
+void rs_circuit_module_assert_exp(void*, b_lean_obj_arg, size_t, b_lean_obj_arg);
 size_t rs_circuit_module_add_committed(void*, char const *, uint8_t, b_lean_obj_arg);
 size_t rs_circuit_module_add_transparent(void*, char const *, b_lean_obj_arg, b_lean_obj_arg);
 size_t rs_circuit_module_add_linear_combination(

@@ -216,7 +216,7 @@ extern lean_obj_res c_rs_circuit_module_flush(
     bool direction_pull,
     size_t channel_id,
     size_t selector,
-    b_lean_obj_arg oracle_idxs,
+    b_lean_obj_arg values,
     uint64_t multiplicity
 ) {
     linear_object *linear = validated_linear(l_circuit);
@@ -225,7 +225,7 @@ extern lean_obj_res c_rs_circuit_module_flush(
         direction_pull,
         channel_id,
         selector,
-        oracle_idxs,
+        values,
         multiplicity
     );
     linear_object *new_linear = linear_bump(linear);
@@ -260,37 +260,18 @@ extern lean_obj_res c_rs_circuit_module_assert_not_zero(
     return alloc_lean_linear_object(new_linear);
 }
 
-extern lean_obj_res c_rs_circuit_module_assert_dynamic_exp(
+extern lean_obj_res c_rs_circuit_module_assert_exp(
     lean_obj_arg l_circuit,
     b_lean_obj_arg exp_bits,
     size_t result,
-    size_t base
+    b_lean_obj_arg base
 ) {
     linear_object *linear = validated_linear(l_circuit);
-    rs_circuit_module_assert_dynamic_exp(
+    rs_circuit_module_assert_exp(
         get_object_ref(linear),
         exp_bits,
         result,
         base
-    );
-    linear_object *new_linear = linear_bump(linear);
-    return alloc_lean_linear_object(new_linear);
-}
-
-extern lean_obj_res c_rs_circuit_module_assert_static_exp(
-    lean_obj_arg l_circuit,
-    b_lean_obj_arg exp_bits,
-    size_t result,
-    b_lean_obj_arg base,
-    uint8_t base_tower_level
-) {
-    linear_object *linear = validated_linear(l_circuit);
-    rs_circuit_module_assert_static_exp(
-        get_object_ref(linear),
-        exp_bits,
-        result,
-        lean_get_external_data(base),
-        base_tower_level
     );
     linear_object *new_linear = linear_bump(linear);
     return alloc_lean_linear_object(new_linear);

@@ -2,6 +2,7 @@ import LSpec
 import Tests.Common
 import Ix.Binius.Boundary
 import Ix.Archon.ArithExpr
+import Ix.Archon.OracleOrConst
 import Ix.Archon.ModuleMode
 import Ix.Archon.RelativeHeight
 import Ix.Archon.Transparent
@@ -88,6 +89,28 @@ instance : Repr ModuleMode where
 
 instance : SampleableExt ModuleMode := SampleableExt.mkSelfContained genModuleMode
 
+/- OracleOrConst -/
+
+def genOracleIdx : Gen OracleIdx :=
+  OracleIdx.mk <$> genUSize
+
+def genTowerField : Gen TowerField :=
+  elements #[.b1, .b2, .b4, .b8, .b16, .b32, .b64, .b128]
+
+def genOracleOrConst : Gen OracleOrConst :=
+  frequency [
+      (5, .oracle <$> genOracleIdx),
+      (10, .const <$> genUInt128 <*> genTowerField),
+    ]
+
+instance : Shrinkable OracleOrConst where
+  shrink _ := []
+
+instance : Repr OracleOrConst where
+  reprPrec oc _ := oc.toString
+
+instance : SampleableExt OracleOrConst := SampleableExt.mkSelfContained genOracleOrConst
+
 /- RelativeHeight -/
 
 def genRelativeHeight : Gen RelativeHeight :=
@@ -132,6 +155,8 @@ def Tests.FFIConsistency.suite := [
       (∀ boundary : Boundary, boundary.isEquivalentToBytes boundary.toBytes),
     check "ModuleMode Lean->Rust mapping matches the deserialized bytes"
       (∀ moduleMode : ModuleMode, moduleMode.isEquivalentToBytes moduleMode.toBytes),
+    check "OracleOrConst Lean->Rust mapping matches the deserialized bytes"
+      (∀ oc : OracleOrConst, oc.isEquivalentToBytes oc.toBytes),
     check "RelativeHeight Lean->Rust mapping matches the deserialized bytes"
       (∀ relativeHeight : RelativeHeight, relativeHeight.isEquivalentToBytes relativeHeight.toBytes),
     check "Transparent Lean->Rust mapping matches the deserialized bytes"

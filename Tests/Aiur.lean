@@ -145,12 +145,11 @@ where
     let (x, circuitModule) := circuitModule.addPacked "x-bits-packed" xBits 6
     let (y, circuitModule) := circuitModule.addPacked "y-bits-packed" yBits 6
     let (z, circuitModule) := circuitModule.addPacked "z-bits-packed" zBits 6
-    let args := #[x, y, z]
-    let (ones, circuitModule) := circuitModule.addTransparent "ones" (.const 1) .base
+    let args := #[x, y, z].map .oracle
     let circuitModule := circuitModule.flush .push channelId CircuitModule.selector
-      (args.push ones) 1
+      (args.push (.const 1 .b1)) 1
     let circuitModule := circuitModule.flush .pull channelId CircuitModule.selector
-      (args.push multiplicity) 1
+      (args.push (.oracle multiplicity)) 1
     (circuitModule.popNamespace, #[xBits, yBits, multiplicity])
   populate entries oracles witnessModule :=
     if entries.isEmpty then (witnessModule, .inactive) else

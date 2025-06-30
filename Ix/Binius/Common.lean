@@ -6,7 +6,6 @@ structure ChannelId where
   toUSize : USize
   deriving Inhabited
 
--- We can delete this later if we don't need it
 structure ChannelAllocator where
   nextId : USize
 

@@ -4,6 +4,7 @@ namespace Archon
 
 inductive TowerField
   | b1 | b2 | b4 | b8 | b16 | b32 | b64 | b128
+  deriving Inhabited
 
 def TowerField.logDegree : TowerField → USize
   | .b1 => 0
