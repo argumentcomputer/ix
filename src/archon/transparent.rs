@@ -57,8 +57,12 @@ impl MultivariatePoly<F> for Incremental {
 
     fn evaluate(&self, query: &[F]) -> Result<F, Error> {
         let n_vars = self.n_vars;
+        let actual = query.len();
         if query.len() != n_vars {
-            binius_utils::bail!(Error::IncorrectQuerySize { expected: n_vars });
+            binius_utils::bail!(Error::IncorrectQuerySize {
+                expected: n_vars,
+                actual
+            });
         }
         let mut result = F::ZERO;
         let mut coeff = 1;

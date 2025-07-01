@@ -2235,6 +2235,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "array-util",
+ "binius_compute",
  "binius_core",
  "binius_field",
  "binius_hal",

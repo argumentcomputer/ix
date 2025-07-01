@@ -405,7 +405,7 @@ pub fn compile_circuit_modules(
             };
         }
 
-	// TODO
+        // TODO
         // for Constraint {
         //     name,
         //     oracle_idxs,
@@ -462,10 +462,10 @@ pub fn compile_circuit_modules(
         {
             channel_count = channel_count.max(*channel_id);
             flushes.push(BiniusFlush {
-		// TODO
-		table_id: 0,
-		log_values_per_row: 0,
-		// TODO
+                // TODO
+                table_id: 0,
+                log_values_per_row: 0,
+                // TODO
                 channel_id: *channel_id,
                 direction: *direction,
                 selectors: vec![selector.oracle_id(oracle_offset)],
@@ -486,8 +486,8 @@ pub fn compile_circuit_modules(
         non_zero_oracle_ids,
         channel_count: channel_count + 1,
         exponents,
-	// TODO
-	table_size_specs: vec![],
+        // TODO
+        table_size_specs: vec![],
     })
 }
 

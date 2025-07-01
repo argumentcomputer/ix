@@ -1,4 +1,5 @@
 use anyhow::Result;
+use binius_compute::{ComputeHolder, cpu::layer::CpuLayerHolder};
 use binius_core::{
     constraint_system::{
         Proof as ProofCore, channel::Boundary, prove as prove_binius,
@@ -33,6 +34,16 @@ impl Default for Proof {
     }
 }
 
+fn table_sizes(modes: &[ModuleMode]) -> Vec<usize> {
+    modes
+        .iter()
+        .map(|mode| match mode {
+            ModuleMode::Inactive => 0,
+            ModuleMode::Active { log_height, .. } => 1 << log_height,
+        })
+        .collect()
+}
+
 pub fn validate_witness_core(
     circuit_modules: &[&CircuitModule],
     boundaries: &[Boundary<F>],
@@ -40,7 +51,8 @@ pub fn validate_witness_core(
 ) -> Result<()> {
     let Witness { mlei, modes } = witness;
     let constraint_system = compile_circuit_modules(circuit_modules, modes)?;
-    validate_witness_binius(&constraint_system, boundaries, mlei)?;
+    let table_sizes = table_sizes(modes);
+    validate_witness_binius(&constraint_system, boundaries, &table_sizes, mlei)?;
     Ok(())
 }
 
@@ -67,18 +79,28 @@ pub fn prove_core<Backend: ComputationBackend>(
 ) -> Result<Proof> {
     let Witness { mlei, modes } = witness;
     let constraint_system = compile_circuit_modules(circuit_modules, &modes)?;
+    let constraint_system_digest = Default::default();
+    let table_sizes = table_sizes(&modes);
+    let mem_size = table_sizes.clone().into_iter().max().unwrap_or(0);
+    let mut cpu_layer_holder = CpuLayerHolder::<F>::new(mem_size, mem_size / 2);
     let proof_core = prove_binius::<
+        _,
         U,
         CanonicalTowerFamily,
         Groestl256,
         Groestl256ByteCompression,
         HasherChallenger<Groestl256>,
         _,
+        _,
+        _,
     >(
+        &mut cpu_layer_holder.to_data(),
         &constraint_system,
         log_inv_rate,
         security_bits,
+        &constraint_system_digest,
         boundaries,
+        &table_sizes,
         mlei,
         backend,
     )?;
@@ -113,6 +135,7 @@ pub fn verify_core(
 ) -> Result<()> {
     let Proof { modes, proof_core } = proof;
     let constraint_system = compile_circuit_modules(circuit_modules, &modes)?;
+    let constraint_system_digest = Default::default();
     verify_binius::<
         U,
         CanonicalTowerFamily,
@@ -123,6 +146,7 @@ pub fn verify_core(
         &constraint_system,
         log_inv_rate,
         security_bits,
+        &constraint_system_digest,
         boundaries,
         proof_core,
     )?;

@@ -10,6 +10,7 @@ crate-type = ["staticlib"]
 anyhow = "1"
 array-util = "1.0.2"
 binius_core = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a3305288a576af6a5fa94529d4b107bc026be54e" }
+binius_compute = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a3305288a576af6a5fa94529d4b107bc026be54e" }
 binius_field = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a3305288a576af6a5fa94529d4b107bc026be54e" }
 binius_macros = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a3305288a576af6a5fa94529d4b107bc026be54e" }
 binius_maybe_rayon = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "a3305288a576af6a5fa94529d4b107bc026be54e" }
