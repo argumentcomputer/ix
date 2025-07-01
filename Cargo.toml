@@ -29,10 +29,10 @@ bytes = "1.10.1"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 
 [target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
-iroh = "0.34.0"
+iroh = "0.90.0"
 tokio = "1.44.1"
-iroh-base = "0.34.0"
-iroh-blobs = { version = "0.34.0", features = ["rpc"] }
+iroh-base = "0.90.0"
+iroh-blobs = { version = "0.35.0", features = ["rpc"] }
 
 [features]
 default = []
