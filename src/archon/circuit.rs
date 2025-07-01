@@ -313,11 +313,12 @@ pub fn compile_circuit_modules(
     );
     let mut oracle_offset = 0;
     let mut oracles = MultilinearOracleSet::new();
-    let mut constraint_builder = ConstraintSetBuilder::new();
+    // TODO
+    // let mut constraint_builder = ConstraintSetBuilder::new();
     let mut flushes = Vec::new();
     let mut non_zero_oracle_ids = Vec::new();
     let mut exponents = Vec::new();
-    let mut max_channel_id = 0;
+    let mut channel_count = 0;
     for (module_idx, (module, mode)) in modules.iter().zip(modes).enumerate() {
         let ModuleMode::Active { log_height, depth } = *mode else {
             // Deactivated module. Skip.
@@ -404,21 +405,22 @@ pub fn compile_circuit_modules(
             };
         }
 
-        for Constraint {
-            name,
-            oracle_idxs,
-            composition,
-        } in &module.constraints
-        {
-            let mut oracle_idxs = oracle_idxs
-                .iter()
-                .map(|o| o.oracle_id(oracle_offset))
-                .collect();
-            let mut composition = composition.clone();
-            composition.offset_oracles(oracle_offset);
-            let composition = composition.into_arith_expr_core(&mut oracle_idxs);
-            constraint_builder.add_zerocheck(name, oracle_idxs, composition.into());
-        }
+	// TODO
+        // for Constraint {
+        //     name,
+        //     oracle_idxs,
+        //     composition,
+        // } in &module.constraints
+        // {
+        //     let mut oracle_idxs = oracle_idxs
+        //         .iter()
+        //         .map(|o| o.oracle_id(oracle_offset))
+        //         .collect();
+        //     let mut composition = composition.clone();
+        //     composition.offset_oracles(oracle_offset);
+        //     let composition = composition.into_arith_expr_core(&mut oracle_idxs);
+        //     constraint_builder.add_zerocheck(name, oracle_idxs, composition.into());
+        // }
 
         for non_zero_oracle_idx in &module.non_zero_oracle_idxs {
             non_zero_oracle_ids.push(non_zero_oracle_idx.oracle_id(oracle_offset));
@@ -458,8 +460,12 @@ pub fn compile_circuit_modules(
             multiplicity,
         } in &module.flushes
         {
-            max_channel_id = max_channel_id.max(*channel_id);
+            channel_count = channel_count.max(*channel_id);
             flushes.push(BiniusFlush {
+		// TODO
+		table_id: 0,
+		log_values_per_row: 0,
+		// TODO
                 channel_id: *channel_id,
                 direction: *direction,
                 selectors: vec![selector.oracle_id(oracle_offset)],
@@ -470,14 +476,18 @@ pub fn compile_circuit_modules(
 
         oracle_offset += module.oracles.get_ref().len();
     }
-    let table_constraints = constraint_builder.build(&oracles)?;
+    // TODO
+    // let table_constraints = constraint_builder.build(&oracles)?;
+    let table_constraints = vec![];
     Ok(ConstraintSystem {
         oracles,
         table_constraints,
         flushes,
         non_zero_oracle_ids,
-        max_channel_id,
+        channel_count: channel_count + 1,
         exponents,
+	// TODO
+	table_size_specs: vec![],
     })
 }
 

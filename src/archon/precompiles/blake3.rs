@@ -4,11 +4,11 @@ use crate::archon::arith_expr::ArithExpr;
 use crate::archon::circuit::CircuitModule;
 use crate::archon::witness::WitnessModule;
 use crate::archon::{ModuleId, ModuleMode, OracleIdx, RelativeHeight};
-use binius_circuits::arithmetic::u32::LOG_U32_BITS;
 use binius_core::oracle::ShiftVariant;
 use binius_field::{BinaryField1b, BinaryField32b, BinaryField128b, Field};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 
+const LOG_U32_BITS: usize = 5;
 const STATE_SIZE: usize = 32;
 const SINGLE_COMPRESSION_N_VARS: usize = 6;
 #[allow(clippy::cast_possible_truncation)]

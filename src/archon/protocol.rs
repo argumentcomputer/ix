@@ -1,5 +1,4 @@
 use anyhow::Result;
-use binius_circuits::builder::types::U;
 use binius_core::{
     constraint_system::{
         Proof as ProofCore, channel::Boundary, prove as prove_binius,
@@ -7,7 +6,7 @@ use binius_core::{
     },
     fiat_shamir::HasherChallenger,
 };
-use binius_field::tower::CanonicalTowerFamily;
+use binius_field::{arch::OptimalUnderlier, tower::CanonicalTowerFamily};
 use binius_hal::ComputationBackend;
 use binius_hash::groestl::Groestl256ByteCompression;
 use groestl_crypto::Groestl256;
@@ -17,6 +16,8 @@ use super::{
     circuit::{CircuitModule, compile_circuit_modules},
     witness::Witness,
 };
+
+pub type U = OptimalUnderlier;
 
 pub struct Proof {
     pub(crate) modes: Vec<ModuleMode>,
