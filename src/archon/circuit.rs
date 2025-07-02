@@ -496,6 +496,7 @@ pub fn compile_circuit_modules(
     // TODO
     // let table_constraints = constraint_builder.build(&oracles)?;
     let table_constraints = vec![];
+    let oracles = Default::default();
     Ok(ConstraintSystem {
         oracles,
         table_constraints,
@@ -508,6 +509,7 @@ pub fn compile_circuit_modules(
     })
 }
 
+#[derive(PartialEq, Clone, Debug)]
 pub(super) struct Constraint {
     pub(super) name: String,
     pub(super) oracle_idxs: Vec<OracleIdx>,
@@ -646,7 +648,11 @@ impl Namespacer {
 
 #[cfg(test)]
 mod tests {
-    use super::Namespacer;
+    use crate::archon::{
+        OracleIdx,
+        arith_expr::ArithExpr,
+        circuit::{Constraint, DisjointConstraints, Namespacer},
+    };
 
     #[test]
     fn test_namespace() {
@@ -684,5 +690,41 @@ mod tests {
 
         namespacer.pop();
         test_when_empty(namespacer);
+    }
+
+    #[test]
+    fn test_disjoint_constraints() {
+        let mut disjoint_constraints = DisjointConstraints::default();
+        let dummy = |composition| Constraint {
+            name: String::new(),
+            oracle_idxs: vec![],
+            composition,
+        };
+
+        let partitions = vec![
+            vec![
+                dummy(ArithExpr::Oracle(OracleIdx(0))),
+                dummy(ArithExpr::Oracle(OracleIdx(1)) + ArithExpr::Oracle(OracleIdx(0))),
+            ],
+            vec![
+                dummy(ArithExpr::Oracle(OracleIdx(2))),
+                dummy(ArithExpr::Oracle(OracleIdx(2)) + ArithExpr::Oracle(OracleIdx(3))),
+                dummy(ArithExpr::Oracle(OracleIdx(3)) + ArithExpr::Oracle(OracleIdx(4))),
+                dummy(ArithExpr::Oracle(OracleIdx(5)) + ArithExpr::Oracle(OracleIdx(2))),
+            ],
+        ];
+
+        for partition in &partitions {
+            for constraint in partition {
+                disjoint_constraints.add_constraint(constraint.clone());
+            }
+        }
+
+        let partitions_got = disjoint_constraints.partitions();
+        assert_eq!(partitions.len(), partitions_got.len());
+
+        for (partition_expected, partition_got) in partitions.into_iter().zip(partitions_got) {
+            assert_eq!(&partition_expected, partition_got);
+        }
     }
 }

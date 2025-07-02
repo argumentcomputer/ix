@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use super::{F, OracleIdx};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum ArithExpr {
     Const(F),
     Var(usize),
