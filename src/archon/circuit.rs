@@ -13,7 +13,7 @@ use binius_core::{
 use binius_field::TowerField;
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::{collections::BTreeSet, sync::Arc};
 
 use super::{
@@ -319,7 +319,7 @@ pub fn compile_circuit_modules(
     let mut flushes = Vec::new();
     let mut non_zero_oracle_ids = Vec::new();
     let mut exponents = Vec::new();
-    let mut channel_count = 0;
+    let mut channels = FxHashSet::default();
     for (module_idx, (module, mode)) in modules.iter().zip(modes).enumerate() {
         let ModuleMode::Active { log_height, depth } = *mode else {
             // Deactivated module. Skip.
@@ -477,7 +477,7 @@ pub fn compile_circuit_modules(
             multiplicity,
         } in &module.flushes
         {
-            channel_count = channel_count.max(*channel_id);
+            channels.insert(channel_id);
             flushes.push(BiniusFlush {
                 // TODO
                 table_id: 0,
@@ -501,7 +501,7 @@ pub fn compile_circuit_modules(
         table_constraints,
         flushes,
         non_zero_oracle_ids,
-        channel_count: channel_count + 1,
+        channel_count: channels.len(),
         exponents,
         // TODO
         table_size_specs: vec![],
