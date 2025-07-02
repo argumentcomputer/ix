@@ -1,5 +1,6 @@
 use binius_core::oracle::OracleId;
 use binius_math::ArithExpr as ArithExprCore;
+use std::collections::BTreeSet;
 
 use super::{F, OracleIdx};
 
@@ -43,6 +44,28 @@ impl ArithExpr {
             Self::Pow(a, _) => a.offset_oracles(by),
             _ => (),
         }
+    }
+
+    pub(crate) fn get_oracles(&self, vars: &[OracleIdx]) -> BTreeSet<OracleIdx> {
+        fn aux(expr: &ArithExpr, vars: &[OracleIdx], acc: &mut BTreeSet<OracleIdx>) {
+            match expr {
+                ArithExpr::Const(_) => (),
+                ArithExpr::Var(v) => {
+                    acc.insert(vars[*v]);
+                }
+                ArithExpr::Oracle(o) => {
+                    acc.insert(*o);
+                }
+                ArithExpr::Add(a, b) | ArithExpr::Mul(a, b) => {
+                    aux(a, vars, acc);
+                    aux(b, vars, acc);
+                }
+                ArithExpr::Pow(a, _) => aux(a, vars, acc),
+            }
+        }
+        let mut acc = BTreeSet::default();
+        aux(self, vars, &mut acc);
+        acc
     }
 
     pub(crate) fn into_arith_expr_core(self, binds: &mut Vec<OracleId>) -> ArithExprCore<F> {

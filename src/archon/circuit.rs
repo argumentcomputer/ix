@@ -7,13 +7,14 @@ use binius_core::{
         },
         exp::Exp as BiniusExp,
     },
-    oracle::{ConstraintSetBuilder, MultilinearOracleSet, ShiftVariant},
+    oracle::{MultilinearOracleSet, ShiftVariant},
     transparent::step_down::StepDown,
 };
 use binius_field::TowerField;
 use binius_utils::checked_arithmetics::log2_strict_usize;
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::sync::Arc;
+use rustc_hash::FxHashMap;
+use std::{collections::BTreeSet, sync::Arc};
 
 use super::{
     F, ModuleId, ModuleMode, OracleIdx, OracleInfo, OracleKind, RelativeHeight,
@@ -61,7 +62,7 @@ pub struct CircuitModule {
     pub(super) module_id: ModuleId,
     pub(super) oracles: Freezable<Vec<OracleInfo>>,
     pub(super) flushes: Vec<Flush>,
-    pub(super) constraints: Vec<Constraint>,
+    pub(super) constraints: DisjointConstraints,
     pub(super) non_zero_oracle_idxs: Vec<OracleIdx>,
     pub(super) exponents: Vec<Exp>,
     pub(super) namespacer: Namespacer,
@@ -81,7 +82,7 @@ impl CircuitModule {
             module_id,
             oracles,
             flushes: vec![],
-            constraints: vec![],
+            constraints: DisjointConstraints::default(),
             non_zero_oracle_idxs: vec![],
             exponents: vec![],
             namespacer: Namespacer::default(),
@@ -131,7 +132,7 @@ impl CircuitModule {
         oracle_idxs: impl IntoIterator<Item = OracleIdx>,
         composition: ArithExpr,
     ) {
-        self.constraints.push(Constraint {
+        self.constraints.add_constraint(Constraint {
             name: name.to_string(),
             oracle_idxs: oracle_idxs.into_iter().collect(),
             composition,
@@ -421,6 +422,22 @@ pub fn compile_circuit_modules(
         //     let composition = composition.into_arith_expr_core(&mut oracle_idxs);
         //     constraint_builder.add_zerocheck(name, oracle_idxs, composition.into());
         // }
+        for partition in &module.constraints.partitions {
+            for Constraint {
+                name,
+                oracle_idxs,
+                composition,
+            } in partition
+            {
+                let mut oracle_idxs = oracle_idxs
+                    .iter()
+                    .map(|o| o.oracle_id(oracle_offset))
+                    .collect();
+                let mut composition = composition.clone();
+                composition.offset_oracles(oracle_offset);
+                let composition = composition.into_arith_expr_core(&mut oracle_idxs);
+            }
+        }
 
         for non_zero_oracle_idx in &module.non_zero_oracle_idxs {
             non_zero_oracle_ids.push(non_zero_oracle_idx.oracle_id(oracle_offset));
@@ -495,6 +512,61 @@ pub(super) struct Constraint {
     pub(super) name: String,
     pub(super) oracle_idxs: Vec<OracleIdx>,
     pub(super) composition: ArithExpr,
+}
+
+#[derive(Default)]
+pub(super) struct DisjointConstraints {
+    pub(super) partitions: Vec<Vec<Constraint>>,
+    oracle_map: FxHashMap<OracleIdx, usize>,
+}
+
+impl DisjointConstraints {
+    fn add_constraint(&mut self, constraint: Constraint) {
+        let mut touched_partitions = BTreeSet::new();
+        let oracles = constraint.composition.get_oracles(&constraint.oracle_idxs);
+        for oracle in &oracles {
+            if let Some(&pid) = self.oracle_map.get(&oracle) {
+                touched_partitions.insert(pid);
+            }
+        }
+
+        let new_partition_idx;
+
+        let mut iter = touched_partitions.into_iter();
+        if let Some(first_partition) = iter.next() {
+            // Merge partitions
+            new_partition_idx = first_partition;
+            self.partitions[first_partition].push(constraint);
+
+            // Merge remaining partitions into the first
+            for other_partition in iter {
+                let moved_constraints = self.partitions[other_partition]
+                    .drain(..)
+                    .collect::<Vec<_>>();
+                self.partitions[first_partition].extend(moved_constraints);
+
+                // Update oracle_map to point to the new partition
+                for (_, pid) in self.oracle_map.iter_mut() {
+                    if *pid == other_partition {
+                        *pid = first_partition;
+                    }
+                }
+            }
+        } else {
+            // New independent partition
+            new_partition_idx = self.partitions.len();
+            self.partitions.push(vec![constraint]);
+        }
+
+        // Register the oracles of the new constraint into oracle_map
+        for oracle in oracles {
+            self.oracle_map.insert(oracle, new_partition_idx);
+        }
+    }
+
+    fn partitions<'a>(&'a self) -> Vec<&'a Vec<Constraint>> {
+        self.partitions.iter().filter(|p| !p.is_empty()).collect()
+    }
 }
 
 #[derive(Clone)]

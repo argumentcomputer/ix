@@ -397,7 +397,7 @@ impl Canonical for CircuitModule {
         Canonical::size(module_id)
             + Canonical::size(oracles.get_ref())
             + Canonical::size(flushes)
-            + Canonical::size(constraints)
+            + Canonical::size(&constraints.partitions)
             + Canonical::size(non_zero_oracle_idxs)
             + Canonical::size(exponents)
     }
@@ -414,7 +414,7 @@ impl Canonical for CircuitModule {
         Canonical::write(module_id, buffer);
         Canonical::write(oracles.get_ref(), buffer);
         Canonical::write(flushes, buffer);
-        Canonical::write(constraints, buffer);
+        Canonical::write(&constraints.partitions, buffer);
         Canonical::write(non_zero_oracle_idxs, buffer);
         Canonical::write(exponents, buffer);
     }
