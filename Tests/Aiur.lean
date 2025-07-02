@@ -9,119 +9,124 @@ import Ix.Archon.Protocol
 open LSpec Aiur
 
 def toplevel := ⟦
-  fn id(n: u64) -> u64 {
-    n
-  }
+  -- fn id(n: u64) -> u64 {
+  --   n
+  -- }
 
-  fn proj1(a: u64, _b: u64) -> u64 {
-    a
-  }
+  -- fn proj1(a: u64, _b: u64) -> u64 {
+  --   a
+  -- }
 
-  fn sum(x: u64, y: u64) -> u64 {
-    add(x, y)
-  }
+  -- fn sum(x: u64, y: u64) -> u64 {
+  --   add(x, y)
+  -- }
 
-  fn prod(x: u64, y: u64) -> u64 {
-    mul(x, y)
-  }
+  -- fn prod(x: u64, y: u64) -> u64 {
+  --   mul(x, y)
+  -- }
 
-  fn store_and_load(x: u64) -> u64 {
-    load(store(x))
-  }
+  -- fn store_and_load(x: u64) -> u64 {
+  --   load(store(x))
+  -- }
 
-  enum Nat {
-    Zero,
-    Succ(&Nat)
-  }
+  -- enum Nat {
+  --   Zero,
+  --   Succ(&Nat)
+  -- }
 
-  fn even(m: Nat) -> u1 {
-    match m {
-      Nat.Zero => 1u1,
-      Nat.Succ(m) => odd(load(m)),
-    }
-  }
+  -- fn even(m: Nat) -> u1 {
+  --   match m {
+  --     Nat.Zero => 1u1,
+  --     Nat.Succ(m) => odd(load(m)),
+  --   }
+  -- }
 
-  fn odd(m: Nat) -> u1 {
-    match m {
-      Nat.Zero => 0u1,
-      Nat.Succ(m) => even(load(m)),
-    }
-  }
+  -- fn odd(m: Nat) -> u1 {
+  --   match m {
+  --     Nat.Zero => 0u1,
+  --     Nat.Succ(m) => even(load(m)),
+  --   }
+  -- }
 
-  fn is_0_even() -> u1 {
-    even(Nat.Zero)
-  }
+  -- fn is_0_even() -> u1 {
+  --   even(Nat.Zero)
+  -- }
 
-  fn is_1_even() -> u1 {
-    even(Nat.Succ(store(Nat.Zero)))
-  }
+  -- fn is_1_even() -> u1 {
+  --   even(Nat.Succ(store(Nat.Zero)))
+  -- }
 
-  fn is_2_even() -> u1 {
-    even(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))
-  }
+  -- fn is_2_even() -> u1 {
+  --   even(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))
+  -- }
 
-  fn is_3_even() -> u1 {
-    even(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))
-  }
+  -- fn is_3_even() -> u1 {
+  --   even(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))
+  -- }
 
-  fn is_4_even() -> u1 {
-    even(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))))
-  }
+  -- fn is_4_even() -> u1 {
+  --   even(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))))
+  -- }
 
-  fn is_0_odd() -> u1 {
-    odd(Nat.Zero)
-  }
+  -- fn is_0_odd() -> u1 {
+  --   odd(Nat.Zero)
+  -- }
 
-  fn is_1_odd() -> u1 {
-    odd(Nat.Succ(store(Nat.Zero)))
-  }
+  -- fn is_1_odd() -> u1 {
+  --   odd(Nat.Succ(store(Nat.Zero)))
+  -- }
 
-  fn is_2_odd() -> u1 {
-    odd(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))
-  }
+  -- fn is_2_odd() -> u1 {
+  --   odd(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))
+  -- }
 
-  fn is_3_odd() -> u1 {
-    odd(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))
-  }
+  -- fn is_3_odd() -> u1 {
+  --   odd(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))
+  -- }
 
-  fn is_4_odd() -> u1 {
-    odd(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))))
-  }
+  -- fn is_4_odd() -> u1 {
+  --   odd(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))))))
+  -- }
 
-  fn factorial(n: u64) -> u64 {
-    if n {
-      mul(n, factorial(sub(n, 1u64)))
-    } else {
-      1u64
-    }
-  }
+  -- fn factorial(n: u64) -> u64 {
+  --   if n {
+  --     mul(n, factorial(sub(n, 1u64)))
+  --   } else {
+  --     1u64
+  --   }
+  -- }
 
-  fn fibonacci(n: u64) -> u64 {
-    if n {
-      let n_minus_1 = sub(n, 1u64);
-      if n_minus_1 {
-        let n_minus_2 = sub(n_minus_1, 1u64);
-        add(fibonacci(n_minus_1), fibonacci(n_minus_2))
-      } else {
-        1u64
-      }
-    } else {
-      1u64
-    }
-  }
+  -- fn fibonacci(n: u64) -> u64 {
+  --   if n {
+  --     let n_minus_1 = sub(n, 1u64);
+  --     if n_minus_1 {
+  --       let n_minus_2 = sub(n_minus_1, 1u64);
+  --       add(fibonacci(n_minus_1), fibonacci(n_minus_2))
+  --     } else {
+  --       1u64
+  --     }
+  --   } else {
+  --     1u64
+  --   }
+  -- }
 
-  fn call_bit_xor(a: u64, b: u64) -> u64 {
-    let c = ffi(bit_xor, a, b);
-    get(c, 0)
-  }
+  -- fn call_bit_xor(a: u64, b: u64) -> u64 {
+  --   let c = ffi(bit_xor, a, b);
+  --   get(c, 0)
+  -- }
 
-  fn call_bit_xor2(a: u64, b: u64) -> u64 {
-    let (c) = ffi(bit_xor, a, b);
-    c
-  }
+  -- fn call_bit_xor2(a: u64, b: u64) -> u64 {
+  --   let (c) = ffi(bit_xor, a, b);
+  --   c
+  -- }
 
-  fn slice_and_get(as: (u64, u64, u64, u64)) -> u64 {
-    get(slice(as, 1, 4), 2)
+  -- fn slice_and_get(as: (u64, u64, u64, u64)) -> u64 {
+  --   get(slice(as, 1, 4), 2)
+  -- }
+
+  fn call_id2() -> u64 {
+    let _ = ffi(id2);
+    0u64
   }
 ⟧
 
@@ -174,38 +179,53 @@ where
       let witnessModule := witnessModule.pushUInt64sTo mData multiplicityEntry
       (witnessModule, mode)
 
+def id2 : Gadget :=
+{
+  name := `id2
+  inputSize := 0
+  outputSize := 0
+  execute := fun input => input
+  synthesize
+  populate
+}
+where
+  synthesize _channelId circuitModule := (circuitModule, #[])
+  populate _entries _oracles witnessModule := (witnessModule, .active 0 0)
+
 structure TestCase where
   functionName : Lean.Name
   input : Array UInt64
   expectedOutput : Array UInt64
 
 def testCases : List TestCase := [
-    ⟨`id, #[42], #[42]⟩,
-    ⟨`proj1, #[42, 64], #[42]⟩,
-    ⟨`sum, #[3, 5], #[8]⟩,
-    ⟨`prod, #[3, 5], #[15]⟩,
-    ⟨`store_and_load, #[42], #[42]⟩,
-    ⟨`is_0_even, #[], #[1]⟩,
-    ⟨`is_1_even, #[], #[0]⟩,
-    ⟨`is_2_even, #[], #[1]⟩,
-    ⟨`is_3_even, #[], #[0]⟩,
-    ⟨`is_4_even, #[], #[1]⟩,
-    ⟨`is_0_odd, #[], #[0]⟩,
-    ⟨`is_1_odd, #[], #[1]⟩,
-    ⟨`is_2_odd, #[], #[0]⟩,
-    ⟨`is_3_odd, #[], #[1]⟩,
-    ⟨`is_4_odd, #[], #[0]⟩,
-    ⟨`factorial, #[5], #[120]⟩,
-    ⟨`fibonacci, #[0], #[1]⟩,
-    ⟨`fibonacci, #[1], #[1]⟩,
-    ⟨`fibonacci, #[6], #[13]⟩,
-    ⟨`call_bit_xor, #[13, 7], #[10]⟩,
-    ⟨`call_bit_xor2, #[13, 7], #[10]⟩,
-    ⟨`slice_and_get, #[1, 2, 3, 4], #[4]⟩,
+    -- ⟨`id, #[42], #[42]⟩,
+    -- ⟨`proj1, #[42, 64], #[42]⟩,
+    -- ⟨`sum, #[3, 5], #[8]⟩,
+    -- ⟨`prod, #[3, 5], #[15]⟩,
+    -- ⟨`store_and_load, #[42], #[42]⟩,
+    -- ⟨`is_0_even, #[], #[1]⟩,
+    -- ⟨`is_1_even, #[], #[0]⟩,
+    -- ⟨`is_2_even, #[], #[1]⟩,
+    -- ⟨`is_3_even, #[], #[0]⟩,
+    -- ⟨`is_4_even, #[], #[1]⟩,
+    -- ⟨`is_0_odd, #[], #[0]⟩,
+    -- ⟨`is_1_odd, #[], #[1]⟩,
+    -- ⟨`is_2_odd, #[], #[0]⟩,
+    -- ⟨`is_3_odd, #[], #[1]⟩,
+    -- ⟨`is_4_odd, #[], #[0]⟩,
+    -- ⟨`factorial, #[5], #[120]⟩,
+    -- ⟨`fibonacci, #[0], #[1]⟩,
+    -- ⟨`fibonacci, #[1], #[1]⟩,
+    -- ⟨`fibonacci, #[6], #[13]⟩,
+    -- ⟨`call_bit_xor, #[13, 7], #[10]⟩,
+    -- ⟨`call_bit_xor2, #[13, 7], #[10]⟩,
+    -- ⟨`slice_and_get, #[1, 2, 3, 4], #[4]⟩,
+    ⟨`id2, #[], #[0] ⟩
   ]
 
 def aiurTest : TestSeq :=
   let toplevel := toplevel.addGadget bitXor
+  let toplevel := toplevel.addGadget id2
   withExceptOk "Check and simplification works" (checkAndSimplifyToplevel toplevel) fun decls =>
     let bytecodeToplevel := decls.compile
     let (aiurCircuits, funcChannels) := Circuit.synthesize bytecodeToplevel
@@ -235,3 +255,14 @@ def aiurTest : TestSeq :=
       tSeq ++ runTestCase testCase
 
 def Tests.Aiur.suite := [aiurTest]
+
+
+/-
+  Algorithm for writing gadgets in Aiur
+
+  1) Create gadget's stub. That would be gadget that does actually nothing - it has empty IO.
+  But it is important for getting some "workable" skeleton that can be extended later.
+  To do so: comment out all the top-level, leaving only Aiur function that invokes the gadget.
+  Also you need to manually add your gadget structure to the toplevel (toplevel.addGadget X)
+  Test case need to contain only one test with your gadget.
+-/
