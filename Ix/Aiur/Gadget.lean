@@ -26,4 +26,10 @@ instance : Inhabited Gadget where
 instance : Repr Gadget where
   reprPrec g _ := s!"[{g.inputSize}] → [{g.outputSize}]"
 
+def Gadget.provide (circuitModule: CircuitModule) (channelId : ChannelId) (multiplicity: OracleIdx)
+    (args : Array OracleOrConst) : CircuitModule :=
+  let circuitModule := circuitModule.flush .push channelId CircuitModule.selector
+    (args.push (.const 1 .b1)) 1
+  circuitModule.flush .pull channelId CircuitModule.selector (args.push (.oracle multiplicity)) 1
+
 end Aiur
