@@ -133,8 +133,37 @@ def toplevel := ⟦
     ffi(u32nucleate4, a0, a1, a2, a3)
   }
 
+  fn call_u32nucleate1(
+    a0: u64
+  ) -> (u64, u64) {
+    ffi(u32nucleate1, a0)
+  }
+
   fn call_rotate_right16(a: u64) -> u64 {
     let (c) = ffi(rotate_right16, a);
+    c
+  }
+
+  fn power_of_two(power: u64) -> u64 {
+   if power {
+      let p = power_of_two(sub(power, 1u64));
+      add(p, p)
+    } else {
+      1u64
+    }
+  }
+
+  fn shl(a: u64, b: u64) -> u64 {
+    if b {
+      let b_power = power_of_two(b);
+      mul(a, b_power)
+    } else {
+      a
+    }
+  }
+
+  fn call_shift_right63(a: u64) -> u64 {
+    let (c) = ffi(shift_right63, a);
     c
   }
 ⟧
@@ -291,6 +320,122 @@ def u32nucleate4 : Gadget :=
 
       (witnessModule, .active log2Height entries.size.toUInt64 )
 
+def u32nucleate1 : Gadget :=
+{
+  name := `u32nucleate1
+  inputSize := 1
+  outputSize := 2
+  execute
+  synthesize
+  populate
+} where
+  execute input :=
+    let u32nucleate (input : Array UInt64) : Array UInt32 :=
+      input.flatMap (fun item => #[
+        UInt32.ofBitVec ((item.shiftRight 32).toBitVec.truncate 32),
+        UInt32.ofBitVec (item.toBitVec.truncate 32),
+      ])
+    let nucleated := u32nucleate #[input[0]!]
+    nucleated.map (fun i => i.toUInt64)
+
+  synthesize channelId circuitModule :=
+    let circuitModule := circuitModule.pushNamespace "nucleate1"
+    let (a0, circuitModule) := circuitModule.addCommitted "a0" .b1 (.mul2 6)
+
+    let (multiplicity, circuitModule) := circuitModule.addCommitted "multiplicity" .b64 .base
+
+    let (out0, circuitModule) := circuitModule.addShifted "out0" a0 32 6 .logicalRight
+    let (out1Temp, circuitModule) := circuitModule.addShifted "out1Temp" a0 32 6 .logicalLeft
+    let (out1, circuitModule) := circuitModule.addShifted "out1" out1Temp 32 6 .logicalRight
+
+    let (a0p, circuitModule) := circuitModule.addPacked "a0-packed" a0 6
+    let (out0p, circuitModule) := circuitModule.addPacked "out0-packed" out0 6
+    let (out1p, circuitModule) := circuitModule.addPacked "out1-packed" out1 6
+
+    let args := #[a0p, out0p, out1p]
+
+    let circuitModule := Gadget.provide circuitModule channelId multiplicity (args.map .oracle)
+
+    (circuitModule.popNamespace, (#[a0, multiplicity]))
+
+  populate entries oracles witnessModule :=
+    if entries.isEmpty then (witnessModule, .inactive) else
+      let height := entries.size.nextPowerOfTwo.max 2
+      let log2Height := height.log2.toUInt8
+
+      let a0 := oracles[0]!
+      let multiplicity := oracles[1]!
+
+      let (a0Data, multiplicityData) :=
+        entries.foldl (init := (#[], #[]))
+          fun (a0, multiplicityData) entry =>
+            let multiplicity := powUInt64InBinaryField MultiplicativeGenerator entry.multiplicity
+            (
+              a0.push entry.input[0]!,
+              multiplicityData.push multiplicity
+            )
+
+      let (a0Entry, witnessModule) := witnessModule.addEntry
+      let (multiplicityEntry, witnessModule) := witnessModule.addEntry
+
+      let witnessModule := witnessModule.pushUInt64sTo a0Data a0Entry
+      let witnessModule := witnessModule.pushUInt64sTo multiplicityData multiplicityEntry
+
+      let witnessModule := witnessModule.bindOracleTo a0 a0Entry .b1
+      let witnessModule := witnessModule.bindOracleTo multiplicity multiplicityEntry .b64
+
+      (witnessModule, .active log2Height entries.size.toUInt64 )
+
+def shiftRight63 : Gadget :=
+{
+  name := `shift_right63
+  inputSize := 1
+  outputSize := 1
+  execute := fun input =>
+    let x := input[0]!
+    #[x >>> 63]
+  synthesize
+  populate
+}
+where
+  synthesize channelId circuitModule :=
+    let circuitModule := circuitModule.pushNamespace "shiftRight63"
+    let (aIn, circuitModule) := circuitModule.addCommitted "aIn" .b1 (.mul2 6)
+    let (multiplicity, circuitModule) := circuitModule.addCommitted "multiplicity" .b64 .base
+    let (out, circuitModule) := circuitModule.addShifted "out" aIn 63 6 .logicalRight
+
+    let (aInPacked, circuitModule) := circuitModule.addPacked "aInPacked" aIn 6
+    let (outPacked, circuitModule) := circuitModule.addPacked "out" out 6
+    let args := #[aInPacked, outPacked].map .oracle
+
+    let circuitModule := Gadget.provide circuitModule channelId multiplicity args
+
+    (circuitModule.popNamespace, #[aIn, multiplicity])
+
+  populate entries oracles witnessModule :=
+    if entries.isEmpty then (witnessModule, .inactive) else
+      let height := entries.size.nextPowerOfTwo.max 2
+      let log2Height := height.log2.toUInt8
+
+      let aIn := oracles[0]!
+      let multiplicity := oracles[1]!
+
+      let (aData, multiplicityData) := entries.foldl (init := (#[], #[]))
+        fun (a, mult) entry =>
+          let multiplicity := powUInt64InBinaryField MultiplicativeGenerator entry.multiplicity
+          (a.push entry.input[0]!, mult.push multiplicity)
+
+      let (aEntry, witnessModule) := witnessModule.addEntry
+      let (multiplicityEntry, witnessModule) := witnessModule.addEntry
+
+      let witnessModule := witnessModule.pushUInt64sTo aData aEntry
+      let witnessModule := witnessModule.pushUInt64sTo multiplicityData multiplicityEntry
+
+      let witnessModule := witnessModule.bindOracleTo aIn aEntry .b1
+      let witnessModule := witnessModule.bindOracleTo multiplicity multiplicityEntry .b64
+
+      (witnessModule, .active log2Height entries.size.toUInt64)
+
 def rotateRight16 : Gadget :=
 {
   name := `rotate_right16
@@ -304,6 +449,7 @@ def rotateRight16 : Gadget :=
 }
 where
   synthesize channelId circuitModule :=
+    let circuitModule := circuitModule.pushNamespace "rotateRight16"
     let (aIn, circuitModule) := circuitModule.addCommitted "aIn" .b1 (.mul2 6)
     let (multiplicity, circuitModule) := circuitModule.addCommitted "multiplicity" .b64 .base
     let (out, circuitModule) := circuitModule.addShifted "out" aIn (64 - 16) 6 .circularLeft
@@ -314,7 +460,7 @@ where
 
     let circuitModule := Gadget.provide circuitModule channelId multiplicity args
 
-    (circuitModule, #[aIn, multiplicity])
+    (circuitModule.popNamespace, #[aIn, multiplicity])
 
   populate entries oracles witnessModule :=
     if entries.isEmpty then (witnessModule, .inactive) else
@@ -383,13 +529,20 @@ def testCases : List TestCase := [
       0xaaaaaaaa,
       0xbbbbbbbb,
     ]⟩,
-    ⟨`call_rotate_right16, #[0xaaaaaaaaffffffff], #[0xffffaaaaaaaaffff] ⟩
+    ⟨`call_rotate_right16, #[0xaaaaaaaaffffffff], #[0xffffaaaaaaaaffff] ⟩,
+    ⟨`shl, #[0xffffffffffffffff, 1], #[0xfffffffffffffffe] ⟩,
+    ⟨`shl, #[0xffffffffffffffff, 10], #[0xfffffffffffffc00] ⟩,
+    ⟨`call_shift_right63, #[0xffffffffffffffff], #[1] ⟩,
+    ⟨`call_shift_right63, #[0x0fffffffffffffff], #[0] ⟩,
+    ⟨`call_u32nucleate1, #[0x1111111122222222], #[0x11111111,0x22222222]⟩,
   ]
 
 def aiurTest : TestSeq :=
   let toplevel := toplevel.addGadget bitXor
   let toplevel := toplevel.addGadget u32nucleate4
+  let toplevel := toplevel.addGadget u32nucleate1
   let toplevel := toplevel.addGadget rotateRight16
+  let toplevel := toplevel.addGadget shiftRight63
 
   withExceptOk "Check and simplification works" (checkAndSimplifyToplevel toplevel) fun decls =>
     let bytecodeToplevel := decls.compile
