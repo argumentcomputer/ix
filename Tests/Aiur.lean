@@ -132,6 +132,11 @@ def toplevel := ⟦
   ) -> (u64, u64, u64, u64, u64, u64, u64, u64) {
     ffi(u32nucleate4, a0, a1, a2, a3)
   }
+
+  fn call_rotate_right16(a: u64) -> u64 {
+    let (c) = ffi(rotate_right16, a);
+    c
+  }
 ⟧
 
 open Archon Binius
@@ -286,6 +291,55 @@ def u32nucleate4 : Gadget :=
 
       (witnessModule, .active log2Height entries.size.toUInt64 )
 
+def rotateRight16 : Gadget :=
+{
+  name := `rotate_right16
+  inputSize := 1
+  outputSize := 1
+  execute := fun input =>
+    let x := input[0]!
+    #[UInt64.ofBitVec (x.toBitVec.rotateRight 16)]
+  synthesize
+  populate
+}
+where
+  synthesize channelId circuitModule :=
+    let (aIn, circuitModule) := circuitModule.addCommitted "aIn" .b1 (.mul2 6)
+    let (multiplicity, circuitModule) := circuitModule.addCommitted "multiplicity" .b64 .base
+    let (out, circuitModule) := circuitModule.addShifted "out" aIn (64 - 16) 6 .circularLeft
+
+    let (aInPacked, circuitModule) := circuitModule.addPacked "aInPacked" aIn 6
+    let (outPacked, circuitModule) := circuitModule.addPacked "out" out 6
+    let args := #[aInPacked, outPacked].map .oracle
+
+    let circuitModule := Gadget.provide circuitModule channelId multiplicity args
+
+    (circuitModule, #[aIn, multiplicity])
+
+  populate entries oracles witnessModule :=
+    if entries.isEmpty then (witnessModule, .inactive) else
+      let height := entries.size.nextPowerOfTwo.max 2
+      let log2Height := height.log2.toUInt8
+
+      let aIn := oracles[0]!
+      let multiplicity := oracles[1]!
+
+      let (aData, multiplicityData) := entries.foldl (init := (#[], #[]))
+        fun (a, mult) entry =>
+          let multiplicity := powUInt64InBinaryField MultiplicativeGenerator entry.multiplicity
+          (a.push entry.input[0]!, mult.push multiplicity)
+
+      let (aEntry, witnessModule) := witnessModule.addEntry
+      let (multiplicityEntry, witnessModule) := witnessModule.addEntry
+
+      let witnessModule := witnessModule.pushUInt64sTo aData aEntry
+      let witnessModule := witnessModule.pushUInt64sTo multiplicityData multiplicityEntry
+
+      let witnessModule := witnessModule.bindOracleTo aIn aEntry .b1
+      let witnessModule := witnessModule.bindOracleTo multiplicity multiplicityEntry .b64
+
+      (witnessModule, .active log2Height entries.size.toUInt64)
+
 structure TestCase where
   functionName : Lean.Name
   input : Array UInt64
@@ -329,11 +383,13 @@ def testCases : List TestCase := [
       0xaaaaaaaa,
       0xbbbbbbbb,
     ]⟩,
+    ⟨`call_rotate_right16, #[0xaaaaaaaaffffffff], #[0xffffaaaaaaaaffff] ⟩
   ]
 
 def aiurTest : TestSeq :=
   let toplevel := toplevel.addGadget bitXor
   let toplevel := toplevel.addGadget u32nucleate4
+  let toplevel := toplevel.addGadget rotateRight16
 
   withExceptOk "Check and simplification works" (checkAndSimplifyToplevel toplevel) fun decls =>
     let bytecodeToplevel := decls.compile
