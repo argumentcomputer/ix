@@ -163,6 +163,7 @@ def toplevel := ⟦
   }
 
   fn call_shift_right63(a: u64) -> u64 {
+    let (c0, c1) = ffi(u32nucleate1, a);
     let (c) = ffi(shift_right63, a);
     c
   }
