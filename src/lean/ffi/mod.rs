@@ -1,3 +1,4 @@
+pub mod aiur2;
 pub mod archon;
 pub mod binius;
 pub mod byte_array;

@@ -6,8 +6,8 @@ use p3_goldilocks::Goldilocks as G;
 use rustc_hash::FxBuildHasher;
 
 pub struct Toplevel {
-    pub(super) functions: Vec<Function>,
-    pub(super) memory_widths: Vec<usize>,
+    pub(crate) functions: Vec<Function>,
+    pub(crate) memory_widths: Vec<usize>,
 }
 
 pub struct Function {
@@ -21,7 +21,8 @@ pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 pub struct Block {
     pub(super) ops: Vec<Op>,
     pub(super) ctrl: Ctrl,
-    sel_range: SelRange,
+    min_sel_included: SelIdx,
+    max_sel_excluded: SelIdx,
 }
 
 pub enum Op {
@@ -36,11 +37,6 @@ pub enum Op {
 pub enum Ctrl {
     Match(ValIdx, FxIndexMap<G, Block>, Option<Box<Block>>),
     Return(SelIdx, Vec<ValIdx>),
-}
-
-pub struct SelRange {
-    min_included: SelIdx,
-    max_excluded: SelIdx,
 }
 
 #[derive(Clone, Copy)]
