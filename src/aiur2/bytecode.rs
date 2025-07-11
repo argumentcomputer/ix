@@ -6,27 +6,29 @@ use p3_goldilocks::Goldilocks as G;
 use rustc_hash::FxBuildHasher;
 
 pub struct Toplevel {
-    pub(super) functions: Vec<Function>,
-    pub(super) memory_widths: Vec<usize>,
+    pub(crate) functions: Vec<Function>,
+    pub(crate) memory_widths: Vec<usize>,
 }
 
 pub struct Function {
-    input_size: usize,
-    output_size: usize,
-    pub(super) body: Block,
+    pub(crate) input_size: usize,
+    pub(crate) output_size: usize,
+    pub(crate) body: Block,
 }
 
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 pub struct Block {
-    pub(super) ops: Vec<Op>,
-    pub(super) ctrl: Ctrl,
-    sel_range: SelRange,
+    pub(crate) ops: Vec<Op>,
+    pub(crate) ctrl: Ctrl,
+    pub(crate) min_sel_included: SelIdx,
+    pub(crate) max_sel_excluded: SelIdx,
 }
 
 pub enum Op {
     Const(G),
     Add(ValIdx, ValIdx),
+    Sub(ValIdx, ValIdx),
     Mul(ValIdx, ValIdx),
     Call(FunIdx, Vec<ValIdx>),
     Store(Vec<ValIdx>),
@@ -38,37 +40,6 @@ pub enum Ctrl {
     Return(SelIdx, Vec<ValIdx>),
 }
 
-pub struct SelRange {
-    min_included: SelIdx,
-    max_excluded: SelIdx,
-}
-
-#[derive(Clone, Copy)]
-pub struct SelIdx(usize);
-
-impl SelIdx {
-    #[inline]
-    pub(super) fn to_usize(self) -> usize {
-        self.0
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct ValIdx(usize);
-
-impl ValIdx {
-    #[inline]
-    pub(super) fn to_usize(self) -> usize {
-        self.0
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct FunIdx(usize);
-
-impl FunIdx {
-    #[inline]
-    pub(super) fn to_usize(self) -> usize {
-        self.0
-    }
-}
+pub type SelIdx = usize;
+pub type ValIdx = usize;
+pub type FunIdx = usize;
