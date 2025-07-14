@@ -1,6 +1,6 @@
-namespace Aiur
+import Ix.Aiur2.Goldilocks
 
-abbrev G := Fin 0xFFFFFFFF00000001
+namespace Aiur
 
 namespace Bytecode
 

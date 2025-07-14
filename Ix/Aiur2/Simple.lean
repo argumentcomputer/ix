@@ -1,5 +1,5 @@
-import Ix.Aiur.Match
-import Ix.Aiur.Check
+import Ix.Aiur2.Match
+import Ix.Aiur2.Check
 
 namespace Aiur
 
@@ -20,9 +20,6 @@ partial def simplifyTerm (decls: Decls) : Term → Term
     | none => unreachable!
   | .ret r => .ret (recr r)
   | .app global args => .app global (args.map recr)
-  | .preimg global out => .preimg global (recr out)
-  | .ffi global args => .ffi global (args.map recr)
-  | .if b t f => .if (recr b) (recr t) (recr f)
   | .data (.tuple args) => .data (.tuple (args.map recr))
   | t => t
 where
@@ -46,6 +43,5 @@ def checkAndSimplifyToplevel (toplevel : Toplevel) : Except CheckError TypedDecl
     | .function f => do
       let f ← (checkFunction f) (getFunctionContext f decls)
       pure $ typedDecls.insert name (.function f)
-    | .gadget g => pure $ typedDecls.insert name (.gadget g)
 
 end Aiur
