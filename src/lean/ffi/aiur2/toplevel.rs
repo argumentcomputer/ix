@@ -6,7 +6,7 @@ use p3_goldilocks::Goldilocks as G;
 use std::ffi::c_void;
 
 use crate::{
-    aiur2::bytecode::{Block, Ctrl, Function, FxIndexMap, Op, Toplevel, ValIdx},
+    aiur2::bytecode::{Block, CircuitLayout, Ctrl, Function, FxIndexMap, Op, Toplevel, ValIdx},
     lean::{
         array::LeanArrayObject,
         ctor::LeanCtorObject,
@@ -135,16 +135,32 @@ fn lean_ctor_to_block(ctor: &LeanCtorObject) -> Block {
     }
 }
 
+fn lean_ctor_to_circuit_layout(ctor: &LeanCtorObject) -> CircuitLayout {
+    let [selectors_ptr, auxiliaries_ptr, shared_constraints_ptr] = ctor.objs();
+    CircuitLayout {
+        selectors: lean_unbox_nat_as_usize(selectors_ptr),
+        auxiliaries: lean_unbox_nat_as_usize(auxiliaries_ptr),
+        shared_constraints: lean_unbox_nat_as_usize(shared_constraints_ptr),
+    }
+}
+
 fn lean_ptr_to_function(ptr: *const c_void) -> Function {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-    let [input_size_ptr, output_size_ptr, body_ptr] = ctor.objs();
+    let [
+        input_size_ptr,
+        output_size_ptr,
+        body_ptr,
+        circuit_layout_ptr,
+    ] = ctor.objs();
     let input_size = lean_unbox_nat_as_usize(input_size_ptr);
     let output_size = lean_unbox_nat_as_usize(output_size_ptr);
     let body = lean_ctor_to_block(as_ref_unsafe(body_ptr.cast()));
+    let circuit_layout = lean_ctor_to_circuit_layout(as_ref_unsafe(circuit_layout_ptr.cast()));
     Function {
         input_size,
         output_size,
         body,
+        circuit_layout,
     }
 }
 

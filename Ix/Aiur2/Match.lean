@@ -23,9 +23,6 @@ structure ExtTerm where
   value : Term
   deriving Inhabited
 
-def ExtTerm.modifyRenames (t : ExtTerm) (f : Array (Local × Term) → Array (Local × Term)) : ExtTerm :=
-  { t with renames := f t.renames }
-
 structure Row where
   clauses : Array Clause
   body : ExtTerm
@@ -80,9 +77,6 @@ where
     let varIds ← args.mapM fun _ => newId
     let guards := args.zip varIds |>.map fun (arg, id) => (arg, (id, .var (.idx id)))
     pure (varIds.map .idx, guards)
-
-def toRows (clause : Pattern × UniqTerm) : ExtTerm → CompilerM (Array Row) :=
-  dnfProd [clause]
 
 inductive Decision
   | success : ExtTerm → Decision
@@ -186,7 +180,7 @@ def compile (term : Term) (rules : List (Pattern × Term)) : CompilerM (Decision
 where
   fromRule id rule :=
     let (pat, bod) := rule
-    toRows (pat, (id, term)) ⟨#[], bod⟩
+    dnfProd [(pat, (id, term))] ⟨#[], bod⟩
 
 def runWithNewCompiler (typs : Decls) (f : CompilerM α) : α :=
   StateT.run' f ⟨0, typs, ⟨false, []⟩⟩

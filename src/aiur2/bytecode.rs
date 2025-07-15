@@ -14,6 +14,13 @@ pub struct Function {
     pub(crate) input_size: usize,
     pub(crate) output_size: usize,
     pub(crate) body: Block,
+    pub(crate) circuit_layout: CircuitLayout,
+}
+
+pub struct CircuitLayout {
+    pub(crate) selectors: usize,
+    pub(crate) auxiliaries: usize,
+    pub(crate) shared_constraints: usize,
 }
 
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
