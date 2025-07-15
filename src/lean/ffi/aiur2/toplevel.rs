@@ -1,9 +1,9 @@
 // TODO: remove
 #![allow(dead_code)]
 
-use p3_field::integers::QuotientMap;
+use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks as G;
-use std::ffi::c_void;
+use std::{ffi::c_void, mem::transmute};
 
 use crate::{
     aiur2::bytecode::{Block, CircuitLayout, Ctrl, Function, FxIndexMap, Op, Toplevel, ValIdx},
@@ -22,7 +22,7 @@ fn lean_unbox_nat_as_usize(ptr: *const c_void) -> usize {
 
 fn lean_unbox_nat_as_g(ptr: *const c_void) -> G {
     assert!(lean_is_scalar(ptr));
-    unsafe { G::from_canonical_unchecked(lean_unbox!(u64, ptr)) }
+    G::from_usize(lean_unbox!(usize, ptr))
 }
 
 fn lean_ptr_to_vec_val_idx(ptr: *const c_void) -> Vec<ValIdx> {
@@ -174,4 +174,31 @@ fn lean_ctor_to_toplevel(ctor: &LeanCtorObject) -> Toplevel {
         functions,
         memory_widths,
     }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_toplevel_execute_test(
+    toplevel: &LeanCtorObject,
+    fun_idx: *const c_void,
+    args: &LeanArrayObject,
+    output: &mut LeanArrayObject,
+) {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx);
+    let toplevel = lean_ctor_to_toplevel(toplevel);
+    let args = args.to_vec(lean_unbox_nat_as_g);
+    let record = toplevel.execute(fun_idx, args.clone());
+    let output_values = record.function_queries[fun_idx]
+        .get(&args)
+        .map(|res| &res.output)
+        .unwrap();
+    let boxed_values = output_values
+        .iter()
+        .map(|g| {
+            let g_u64 = unsafe { transmute::<G, u64>(*g) };
+            let g_usize = usize::try_from(g_u64).unwrap();
+            let g_boxed = (g_usize << 1) | 1;
+            g_boxed as *const c_void
+        })
+        .collect::<Vec<_>>();
+    output.set_data(&boxed_values);
 }

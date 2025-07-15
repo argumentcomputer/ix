@@ -1,4 +1,4 @@
-import Tests.Aiur
+import Tests.Aiur2
 import Tests.Archon
 import Tests.FFIConsistency
 import Tests.ByteArray

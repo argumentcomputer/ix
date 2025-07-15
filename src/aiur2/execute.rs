@@ -4,15 +4,15 @@ use p3_goldilocks::Goldilocks as G;
 use crate::aiur2::bytecode::{Ctrl, FunIdx, Function, FxIndexMap, Op, Toplevel};
 
 pub struct QueryResult {
-    output: Vec<G>,
-    multiplicity: G,
+    pub(crate) output: Vec<G>,
+    pub(crate) multiplicity: G,
 }
 
 pub type QueryMap = FxIndexMap<Vec<G>, QueryResult>;
 
 pub struct QueryRecord {
-    function_queries: Vec<QueryMap>,
-    memory_queries: FxIndexMap<usize, QueryMap>,
+    pub(crate) function_queries: Vec<QueryMap>,
+    pub(crate) memory_queries: FxIndexMap<usize, QueryMap>,
 }
 
 impl QueryRecord {
@@ -117,7 +117,7 @@ impl Function {
                         result.multiplicity += G::ONE;
                         map.extend(&result.output);
                     } else {
-                        let ptr = G::ZERO;
+                        let ptr = G::from_usize(memory_queries.len());
                         let result = QueryResult {
                             output: vec![ptr],
                             multiplicity: G::ONE,
@@ -150,6 +150,15 @@ impl Function {
                     }
                 }
                 ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
+                    // Register the query.
+                    let input_size = toplevel.functions[fun_idx].input_size;
+                    let args = map[..input_size].to_vec();
+                    let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
+                    let result = QueryResult {
+                        output: output.clone(),
+                        multiplicity: G::ONE,
+                    };
+                    record.function_queries[fun_idx].insert(args, result);
                     if let Some(CallerState {
                         fun_idx: caller_idx,
                         map: caller_map,
@@ -158,7 +167,6 @@ impl Function {
                         // Recover the state of the caller.
                         fun_idx = caller_idx;
                         map = caller_map;
-                        let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
                         map.extend(output);
                     } else {
                         // No outer caller. About to exit.

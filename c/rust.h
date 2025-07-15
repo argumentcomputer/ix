@@ -2,6 +2,10 @@
 
 #include "lean/lean.h"
 
+void rs_toplevel_execute_test(
+    b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg, lean_obj_arg
+);
+
 typedef struct {
     bool is_ok;
     void *data;

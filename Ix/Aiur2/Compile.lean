@@ -53,7 +53,10 @@ def setSharedData (sharedData : SharedData) : LayoutM Unit :=
     auxiliaries := sharedData.auxiliaries
     sharedConstraints := sharedData.constraints } }
 
-def opLayout : Bytecode.Op → LayoutM Unit := fun _ => pure () -- TODO
+def opLayout : Bytecode.Op → LayoutM Unit
+  | .store values => addMemWidth values.size
+  | .load width _ => addMemWidth width
+  | _ => pure () -- TODO
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do -- TODO
   block.ops.forM opLayout
@@ -299,15 +302,15 @@ partial def toIndex
     let arg ← toIndex layoutMap bindings arg
     pure $ arg.extract offset (offset + length)
   | .store arg => do
-    let arg ← toIndex layoutMap bindings arg
-    pushOp (Bytecode.Op.store arg)
+    let args ← toIndex layoutMap bindings arg
+    pushOp (Bytecode.Op.store args)
   | .load ptr => do
     let size := match ptr.typ.unwrap with
     | .pointer typ => typSize layoutMap typ
     | _ => unreachable!
     let ptr ← toIndex layoutMap bindings ptr
     assert! (ptr.size == 1)
-    pushOp (Bytecode.Op.load size (ptr[0]!)) size
+    pushOp (Bytecode.Op.load size ptr[0]!) size
   | .ptrVal ptr => toIndex layoutMap bindings ptr
   -- | .trace str expr => do
   --   let arr ← toIndex layoutMap bindings expr
