@@ -1,10 +1,10 @@
 use multi_stark::lookup::Lookup;
 use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
-use p3_goldilocks::Goldilocks as G;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_maybe_rayon::prelude::ParallelSliceMut;
 
 use super::{
+    G,
     bytecode::{Block, Ctrl, Function, Op, Toplevel},
     execute::QueryRecord,
 };
@@ -30,8 +30,8 @@ struct ColumnIndex {
 
 struct ColumnMutSlice<'a> {
     inputs: &'a mut [G],
-    auxiliaries: &'a mut [G],
     selectors: &'a mut [G],
+    auxiliaries: &'a mut [G],
     lookups: &'a mut [Lookup<G>],
 }
 
@@ -39,14 +39,14 @@ type Degree = u8;
 
 impl<'a> ColumnMutSlice<'a> {
     fn from_slice(function: &Function, slice: &'a mut [G], lookups: &'a mut [Lookup<G>]) -> Self {
-        let (inputs, slice) = slice.split_at_mut(function.input_size);
-        let (auxiliaries, slice) = slice.split_at_mut(function.circuit_layout.auxiliaries);
-        let (selectors, slice) = slice.split_at_mut(function.circuit_layout.selectors);
+        let (inputs, slice) = slice.split_at_mut(function.layout.input_size);
+        let (selectors, slice) = slice.split_at_mut(function.layout.selectors);
+        let (auxiliaries, slice) = slice.split_at_mut(function.layout.auxiliaries);
         assert!(slice.is_empty());
         Self {
             inputs,
-            auxiliaries,
             selectors,
+            auxiliaries,
             lookups,
         }
     }
@@ -91,15 +91,14 @@ impl Toplevel {
                 let (inputs, result) = queries.get_index(i).unwrap();
                 let index = &mut ColumnIndex {
                     auxiliary: 0,
-                    lookup: 0,
+                    // we skip the first lookup, which is reserved for return
+                    lookup: 1,
                 };
-                let mut lookups = vec![
-                    Lookup {
-                        multiplicity: G::ZERO,
-                        args: vec![],
-                    };
-                    func.circuit_layout.lookups
-                ];
+                let empty_lookup = Lookup {
+                    multiplicity: G::ZERO,
+                    args: vec![],
+                };
+                let mut lookups = vec![empty_lookup; func.layout.lookups];
                 let slice = &mut ColumnMutSlice::from_slice(func, row, &mut lookups);
                 let context = TraceContext {
                     function_index: G::from_usize(function_index),
@@ -119,7 +118,7 @@ impl Toplevel {
 
 impl Function {
     pub fn width(&self) -> usize {
-        self.input_size + self.circuit_layout.auxiliaries + self.circuit_layout.selectors
+        self.layout.input_size + self.layout.auxiliaries + self.layout.selectors
     }
 
     fn populate_row(
@@ -128,7 +127,11 @@ impl Function {
         slice: &mut ColumnMutSlice<'_>,
         context: TraceContext<'_>,
     ) {
-        debug_assert_eq!(self.input_size, context.inputs.len(), "Argument mismatch");
+        debug_assert_eq!(
+            self.layout.input_size,
+            context.inputs.len(),
+            "Argument mismatch"
+        );
         // Variable to value map
         let map = &mut context.inputs.iter().map(|arg| (*arg, 1)).collect();
         // One column per input
@@ -167,15 +170,15 @@ impl Ctrl {
         context: TraceContext<'_>,
     ) {
         match self {
-            Ctrl::Return(ident, _) => {
-                slice.selectors[*ident] = G::ONE;
+            Ctrl::Return(sel, _) => {
+                slice.selectors[*sel] = G::ONE;
                 let lookup = function_lookup(
                     -context.multiplicity,
                     context.function_index,
                     context.inputs,
                     context.output,
                 );
-                slice.push_lookup(index, lookup);
+                slice.lookups[0] = lookup;
             }
             Ctrl::Match(var, cases, def) => {
                 let val = map[*var].0;

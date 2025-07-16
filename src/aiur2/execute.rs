@@ -1,7 +1,9 @@
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
-use p3_goldilocks::Goldilocks as G;
 
-use crate::aiur2::bytecode::{Ctrl, FunIdx, Function, FxIndexMap, Op, Toplevel};
+use super::{
+    G,
+    bytecode::{Ctrl, FunIdx, Function, FxIndexMap, Op, Toplevel},
+};
 
 pub struct QueryResult {
     pub(crate) output: Vec<G>,
@@ -151,7 +153,7 @@ impl Function {
                 }
                 ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
                     // Register the query.
-                    let input_size = toplevel.functions[fun_idx].input_size;
+                    let input_size = toplevel.functions[fun_idx].layout.input_size;
                     let args = map[..input_size].to_vec();
                     let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
                     let result = QueryResult {
