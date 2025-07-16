@@ -233,7 +233,7 @@ impl Op {
                     slice.push_auxiliary(index, f);
                 }
             }
-            Op::Call(function_index, inputs) => {
+            Op::Call(function_index, inputs, _) => {
                 let inputs = inputs.iter().map(|a| map[*a].0).collect::<Vec<_>>();
                 let queries = &context.query_record.function_queries[*function_index];
                 let result = queries.get(&inputs).expect("Cannot find query result");

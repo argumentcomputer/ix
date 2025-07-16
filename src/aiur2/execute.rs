@@ -90,7 +90,7 @@ impl Function {
                     let b = map[*b];
                     map.push(a * b);
                 }
-                ExecEntry::Op(Op::Call(callee_idx, args)) => {
+                ExecEntry::Op(Op::Call(callee_idx, args, _)) => {
                     let args = args.iter().map(|i| map[*i]).collect();
                     if let Some(result) = record.function_queries[*callee_idx].get_mut(&args) {
                         result.multiplicity += G::ONE;

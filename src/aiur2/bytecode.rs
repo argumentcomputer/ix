@@ -13,6 +13,7 @@ pub struct Function {
     pub(crate) layout: FunctionLayout,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub struct FunctionLayout {
     pub(crate) input_size: usize,
@@ -36,7 +37,7 @@ pub enum Op {
     Add(ValIdx, ValIdx),
     Sub(ValIdx, ValIdx),
     Mul(ValIdx, ValIdx),
-    Call(FunIdx, Vec<ValIdx>),
+    Call(FunIdx, Vec<ValIdx>, usize),
     Store(Vec<ValIdx>),
     Load(usize, ValIdx),
 }

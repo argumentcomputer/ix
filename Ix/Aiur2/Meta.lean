@@ -33,7 +33,7 @@ def elabEmptyList (listEltTypeName : Name) : TermElabM Expr :=
   mkListLit (mkConst listEltTypeName) []
 
 def elabG (n : TSyntax `num) : TermElabM Expr :=
-  mkAppM ``Fin.ofNat' #[mkConst ``gSize, mkNatLit n.getNat]
+  mkAppM ``G.ofNat #[mkNatLit n.getNat]
 
 partial def elabPattern : ElabStxCat `pattern
   | `(pattern| $v:ident($p:pattern $[, $ps:pattern]*)) => do

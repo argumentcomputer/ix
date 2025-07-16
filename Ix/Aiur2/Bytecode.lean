@@ -13,7 +13,7 @@ inductive Op
   | add : ValIdx → ValIdx → Op
   | sub : ValIdx → ValIdx → Op
   | mul : ValIdx → ValIdx → Op
-  | call : FunIdx → Array ValIdx → Op
+  | call : FunIdx → Array ValIdx → (outputSize : Nat) → Op
   | store : Array ValIdx → Op
   | load : (width : Nat) → ValIdx → Op
   deriving Repr
@@ -33,22 +33,23 @@ mutual
 end
 
 /-- The circuit layout of a function -/
-structure CircuitLayout where
+structure FunctionLayout where
+  inputSize : Nat
+  outputSize : Nat
   /-- Bit values that identify which path the computation took.
     Exactly one selector must be set. -/
   selectors : Nat
   /-- Represent registers that hold temporary values and can be shared by
     different circuit paths, since they never overlap. -/
   auxiliaries : Nat
-  /-- Constraint slots that can be shared in different paths of the circuit. -/
-  sharedConstraints : Nat
+  /-- Lookups can be shared across calls, stores, loads and returns from
+    different paths. -/
+  lookups : Nat
   deriving Inhabited, Repr
 
 structure Function where
-  inputSize : Nat
-  outputSize : Nat
   body : Block
-  circuitLayout: CircuitLayout
+  layout: FunctionLayout
   deriving Inhabited, Repr
 
 structure Toplevel where
@@ -62,7 +63,7 @@ private opaque Toplevel.executeTest' :
 
 def Toplevel.executeTest (toplevel : Toplevel) (funIdx : FunIdx) (args : Array G) : Array G :=
   let function := toplevel.functions[funIdx]!
-  toplevel.executeTest' funIdx args function.outputSize.toUSize
+  toplevel.executeTest' funIdx args function.layout.outputSize.toUSize
 
 end Bytecode
 

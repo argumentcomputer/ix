@@ -117,7 +117,7 @@ impl Block {
         let sel = self.get_block_selector(state);
         self.ops
             .iter()
-            .for_each(|op| op.collect_constraints(&sel, state, toplevel));
+            .for_each(|op| op.collect_constraints(&sel, state));
         self.ctrl.collect_constraints(sel, state, toplevel);
     }
 
@@ -189,7 +189,7 @@ impl Ctrl {
 }
 
 impl Op {
-    fn collect_constraints(&self, sel: &Expr, state: &mut ConstraintState, toplevel: &Toplevel) {
+    fn collect_constraints(&self, sel: &Expr, state: &mut ConstraintState) {
         match self {
             Op::Const(f) => state.map.push(((*f).into(), 0)),
             Op::Add(a, b) => {
@@ -217,7 +217,7 @@ impl Op {
                     state.constraints.zeros.push(col - mul);
                 }
             }
-            Op::Call(function_index, inputs) => {
+            Op::Call(function_index, inputs, output_size) => {
                 // channel and function index
                 let mut vector = vec![
                     sel.clone() * Channel::Function.to_field(),
@@ -230,8 +230,7 @@ impl Op {
                         .map(|arg| sel.clone() * state.map[*arg].0.clone()),
                 );
                 // output
-                let output_size = toplevel.functions[*function_index].layout.output_size;
-                let output = (0..output_size).map(|_| {
+                let output = (0..*output_size).map(|_| {
                     let col = state.next_auxiliary();
                     state.map.push((col.clone(), 1));
                     col
