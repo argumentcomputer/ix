@@ -2,7 +2,7 @@ use multi_stark::{
     lookup::LookupAir,
     prover::{Claim, Proof},
     system::{Circuit, CircuitWitness, System, SystemWitness},
-    types::{PcsError, StarkConfig},
+    types::{FriParameters, PcsError, new_stark_config},
     verifier::VerificationError,
 };
 use p3_air::{Air, AirBuilder, BaseAir};
@@ -48,7 +48,12 @@ impl AiurSystem {
         AiurSystem { system, toplevel }
     }
 
-    pub fn prove(&self, config: &StarkConfig, fun_idx: FunIdx, input: &[G]) -> (Claim, Proof) {
+    pub fn prove(
+        &self,
+        fri_parameters: &FriParameters,
+        fun_idx: FunIdx,
+        input: &[G],
+    ) -> (Claim, Proof) {
         let query_record = self.toplevel.execute(fun_idx, input.to_vec());
         let output = &query_record.function_queries[fun_idx]
             .get(input)
@@ -71,17 +76,19 @@ impl AiurSystem {
             circuit_idx: fun_idx,
             args,
         };
-        let proof = self.system.prove(config, &claim, witness, stage_2);
+        let config = new_stark_config(fri_parameters);
+        let proof = self.system.prove(&config, &claim, witness, stage_2);
         (claim, proof)
     }
 
     #[inline]
     pub fn verify(
         &self,
-        config: &StarkConfig,
+        fri_parameters: &FriParameters,
         claim: &Claim,
         proof: &Proof,
     ) -> Result<(), VerificationError<PcsError>> {
-        self.system.verify(config, claim, proof)
+        let config = new_stark_config(fri_parameters);
+        self.system.verify(&config, claim, proof)
     }
 }
