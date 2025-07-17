@@ -1,6 +1,5 @@
 use multi_stark::{
-    builder::symbolic::SymbolicExpression,
-    lookup::{AirWithLookup, Lookup, LookupAir},
+    lookup::LookupAir,
     prover::{Claim, Proof},
     system::{Circuit, CircuitWitness, System, SystemWitness},
     types::{PcsError, StarkConfig},
@@ -16,7 +15,7 @@ use super::{G, bytecode::Toplevel, constraints::Constraints};
 
 pub struct AiurSystem {
     toplevel: Toplevel,
-    system: System<LookupAir<Constraints>>,
+    system: System<LookupAir<Constraints, G>>,
 }
 
 impl BaseAir<G> for Constraints {
@@ -38,22 +37,12 @@ where
     }
 }
 
-impl AirWithLookup<G> for Constraints {
-    fn lookups(&self) -> Vec<Lookup<SymbolicExpression<G>>> {
-        self.lookups.clone()
-    }
-}
-
 impl Toplevel {
     pub fn build_system(self) -> AiurSystem {
         let iter = self.functions.iter().enumerate().map(|(i, f)| {
-            let constraints = self.build_constraints(i);
-            let stage_2_width = constraints.lookups.len() + 1;
-            let air = LookupAir::new(constraints);
-            (
-                f.name.as_str(),
-                Circuit::from_air(air, stage_2_width).unwrap(),
-            )
+            let (constraints, lookups) = self.build_constraints(i);
+            let air = LookupAir::new(constraints, lookups);
+            (f.name.as_str(), Circuit::from_air(air).unwrap())
         });
         let system = System::new(iter);
         AiurSystem {

@@ -22,7 +22,6 @@ type Degree = u8;
 #[derive(Clone)]
 pub struct Constraints {
     pub zeros: Vec<Expr>,
-    pub lookups: Vec<Lookup<Expr>>,
     pub width: usize,
 }
 
@@ -31,6 +30,7 @@ struct ConstraintState {
     layout: FunctionLayout,
     column: usize,
     lookup: usize,
+    lookups: Vec<Lookup<Expr>>,
     map: Vec<(Expr, Degree)>,
     constraints: Constraints,
 }
@@ -47,7 +47,7 @@ impl ConstraintState {
     }
 
     fn next_lookup(&mut self) -> &mut Lookup<Expr> {
-        let lookup = &mut self.constraints.lookups[self.lookup];
+        let lookup = &mut self.lookups[self.lookup];
         self.lookup += 1;
         lookup
     }
@@ -74,7 +74,7 @@ impl ConstraintState {
 }
 
 impl Toplevel {
-    pub fn build_constraints(&self, function_index: usize) -> Constraints {
+    pub fn build_constraints(&self, function_index: usize) -> (Constraints, Vec<Lookup<Expr>>) {
         let function = &self.functions[function_index];
         let empty_lookup = Lookup {
             multiplicity: Expr::Constant(G::ZERO),
@@ -82,7 +82,6 @@ impl Toplevel {
         };
         let constraints = Constraints {
             zeros: vec![],
-            lookups: vec![empty_lookup; function.layout.lookups],
             width: function.layout.width(),
         };
         let mut state = ConstraintState {
@@ -91,10 +90,11 @@ impl Toplevel {
             column: 0,
             lookup: 0,
             map: vec![],
+            lookups: vec![empty_lookup; function.layout.lookups],
             constraints,
         };
         function.build_constraints(&mut state, self);
-        state.constraints
+        (state.constraints, state.lookups)
     }
 }
 
@@ -108,7 +108,7 @@ impl Function {
         // the multiplicity occupies another column
         state.column += 1;
         // finally, the return lookup occupies the first lookup slot
-        state.constraints.lookups[0].multiplicity = var!(state.column - 1);
+        state.lookups[0].multiplicity = var!(state.column - 1);
         state.lookup += 1;
 
         self.body.collect_constraints(state, toplevel);
@@ -152,7 +152,7 @@ impl Ctrl {
                         .map(|arg| sel.clone() * state.map[*arg].0.clone()),
                 );
                 let mut values_iter = vector.into_iter();
-                let lookup = &mut state.constraints.lookups[0];
+                let lookup = &mut state.lookups[0];
                 lookup
                     .args
                     .iter_mut()
