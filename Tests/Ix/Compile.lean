@@ -102,6 +102,19 @@ def testRoundtripGetEnv : IO TestSeq := do
     | .none => throw (IO.userError "name {n} not in env")
     IO.println s!"✓ {c.name} -> {anon}:{meta}"
     cstt := stt
+  for (_, c) in env.getConstMap do
+    let (_, stt) <- match (compileConst c).run (.init 200000) cstt with
+    | .ok a stt => do
+      --stt.store.forM fun a c => discard $ (Store.forceWriteConst a c).toIO
+      pure (a, stt)
+    | .error e _ => do
+      IO.println s!"failed {c.name}"
+      throw (IO.userError (<- e.pretty))
+    let (anon, meta) <- match stt.names.find? c.name with
+    | .some (a, m) => pure (a, m)
+    | .none => throw (IO.userError "name {n} not in env")
+    IO.println s!"✓ {c.name} -> {anon}:{meta}"
+    cstt := stt
   IO.println s!"compiled env"
   IO.println s!"decompiling env"
   let denv := DecompileEnv.init cstt.names cstt.store

@@ -23,7 +23,6 @@ def runProveCheck
   let signature <- runMeta (Lean.PrettyPrinter.ppSignature constInfo.name) env
   IO.println "typechecking:"
   IO.println signature.fmt.pretty
-  let ((claim, _, _), _stt) <- 
   let ((claim, _, _), _stt) <-
     (checkClaim constInfo.name constInfo.type constSort constInfo.levelParams commit).runIO env
   IO.println $ s!"claim: {claim}"
