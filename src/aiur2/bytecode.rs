@@ -9,6 +9,7 @@ pub struct Toplevel {
 }
 
 pub struct Function {
+    pub(crate) name: String,
     pub(crate) body: Block,
     pub(crate) layout: FunctionLayout,
 }
@@ -21,6 +22,12 @@ pub struct FunctionLayout {
     pub(crate) selectors: usize,
     pub(crate) auxiliaries: usize,
     pub(crate) lookups: usize,
+}
+
+impl FunctionLayout {
+    pub fn width(&self) -> usize {
+        self.input_size + self.selectors + self.auxiliaries
+    }
 }
 
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;

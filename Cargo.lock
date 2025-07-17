@@ -102,6 +102,7 @@ version = "0.1.0"
 dependencies = [
  "indexmap",
  "multi-stark",
+ "p3-air",
  "p3-field",
  "p3-goldilocks",
  "p3-matrix",
@@ -112,7 +113,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark?rev=a74fac711c41fc93a7a6faf93079166b6d4a9421#a74fac711c41fc93a7a6faf93079166b6d4a9421"
+source = "git+https://github.com/argumentcomputer/multi-stark?branch=dev#dc575a4484f78f4464558e41a4dbc534ec434b6c"
 dependencies = [
  "bincode",
  "p3-air",

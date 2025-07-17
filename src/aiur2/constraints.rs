@@ -23,6 +23,7 @@ type Degree = u8;
 pub struct Constraints {
     pub zeros: Vec<Expr>,
     pub lookups: Vec<Lookup<Expr>>,
+    pub width: usize,
 }
 
 struct ConstraintState {
@@ -64,6 +65,7 @@ impl ConstraintState {
         }
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn restore(&mut self, init: SharedState) {
         self.column = init.column;
         self.lookup = init.lookup;
@@ -81,6 +83,7 @@ impl Toplevel {
         let constraints = Constraints {
             zeros: vec![],
             lookups: vec![empty_lookup; function.layout.lookups],
+            width: function.layout.width(),
         };
         let mut state = ConstraintState {
             function_index: G::from_usize(function_index),
@@ -129,6 +132,7 @@ impl Block {
 }
 
 impl Ctrl {
+    #[allow(clippy::needless_pass_by_value)]
     fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState, toplevel: &Toplevel) {
         match self {
             Ctrl::Return(_, values) => {

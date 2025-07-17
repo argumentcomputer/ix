@@ -21,7 +21,7 @@ crate-type = ["staticlib"]
 # bumpalo = "3"
 # groestl_crypto = { package = "groestl", version = "0.10.1" }
 # proptest = "1"
-# p3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "e9ab5a4b3d39c3a03de7d32dabd63dbfb310f74d" }
+p3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "e9ab5a4b3d39c3a03de7d32dabd63dbfb310f74d" }
 p3-goldilocks = { git = "https://github.com/Plonky3/Plonky3", rev = "e9ab5a4b3d39c3a03de7d32dabd63dbfb310f74d" }
 # p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "e9ab5a4b3d39c3a03de7d32dabd63dbfb310f74d" }
 # p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "e9ab5a4b3d39c3a03de7d32dabd63dbfb310f74d" }
@@ -34,7 +34,7 @@ p3-maybe-rayon = { git = "https://github.com/Plonky3/Plonky3", rev = "e9ab5a4b3d
 # p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "e9ab5a4b3d39c3a03de7d32dabd63dbfb310f74d" }
 # p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "e9ab5a4b3d39c3a03de7d32dabd63dbfb310f74d" }
 # p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "e9ab5a4b3d39c3a03de7d32dabd63dbfb310f74d" }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark", rev = "a74fac711c41fc93a7a6faf93079166b6d4a9421" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark", branch = "dev" }
 # rayon = "1.7.0"
 # rand = "0.9.1"
 rustc-hash = "2"
