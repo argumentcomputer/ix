@@ -2,6 +2,10 @@
 
 #include "lean/lean.h"
 
+void rs_toplevel_execute_test(
+    b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg, lean_obj_arg
+);
+
 typedef struct {
     bool is_ok;
     void *data;
@@ -18,7 +22,10 @@ void rs_witness_module_push_u16s_to(void*, b_lean_obj_arg, size_t);
 void rs_witness_module_push_u32s_to(void*, b_lean_obj_arg, size_t);
 void rs_witness_module_push_u64s_to(void*, b_lean_obj_arg, size_t);
 void rs_witness_module_push_u128s_to(void*, b_lean_obj_arg, size_t);
-void rs_witness_module_populate(void*, uint64_t);
+void rs_witness_module_populate(void*, b_lean_obj_arg);
+void rs_witness_module_par_populate(void**, b_lean_obj_arg);
+size_t rs_witness_module_get_data_num_bytes(void*, size_t);
+void rs_witness_module_get_data(void*, size_t, lean_obj_arg);
 void *rs_compile_witness_modules(void**, b_lean_obj_arg);
 
 void rs_witness_free(void*);
@@ -29,21 +36,22 @@ void *rs_circuit_module_new(size_t);
 void rs_circuit_module_free(void*);
 void rs_circuit_module_freeze_oracles(void*);
 void *rs_circuit_module_init_witness_module(void*);
-void rs_circuit_module_flush(void*, bool, size_t, b_lean_obj_arg, uint64_t);
+void rs_circuit_module_flush(void*, bool, size_t, size_t, b_lean_obj_arg, uint64_t);
 void rs_circuit_module_assert_zero(
     void*, char const*, b_lean_obj_arg, b_lean_obj_arg
 );
 void rs_circuit_module_assert_not_zero(void*, size_t);
-size_t rs_circuit_module_add_committed(void*, char const *, uint8_t);
-size_t rs_circuit_module_add_transparent(void*, char const *, b_lean_obj_arg);
+void rs_circuit_module_assert_exp(void*, b_lean_obj_arg, size_t, b_lean_obj_arg);
+size_t rs_circuit_module_add_committed(void*, char const *, uint8_t, b_lean_obj_arg);
+size_t rs_circuit_module_add_transparent(void*, char const *, b_lean_obj_arg, b_lean_obj_arg);
 size_t rs_circuit_module_add_linear_combination(
-    void*, char const *, b_lean_obj_arg, b_lean_obj_arg
+    void*, char const *, b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg
 );
 size_t rs_circuit_module_add_packed(void*, char const *, size_t, size_t);
 size_t rs_circuit_module_add_shifted(
     void*, char const *, size_t, uint32_t, size_t, uint8_t
 );
-size_t rs_circuit_module_add_projected(void*, char const *, size_t, uint64_t, size_t, size_t);
+size_t rs_circuit_module_add_projected(void*, char const *, size_t, uint64_t, size_t);
 void rs_circuit_module_push_namespace(void*, char const *);
 void rs_circuit_module_pop_namespace(void*);
 size_t rs_circuit_module_canonical_bytes_size(void*);
@@ -72,3 +80,10 @@ void *rs_keccak256_hasher_init(void);
 void rs_keccak256_hasher_free(void*);
 void *rs_keccak256_hasher_update(void*, void*);
 void *rs_keccak256_hasher_finalize(void*, void*);
+
+/* --- u128 --- */
+
+uint8_t *rs_add_u128_in_binary_field(uint8_t*, uint8_t*);
+uint8_t *rs_mul_u128_in_binary_field(uint8_t*, uint8_t*);
+uint8_t *rs_pow_u128_in_binary_field(uint8_t*, uint64_t);
+uint8_t *rs_exterior_mul_u64(uint64_t, uint64_t);

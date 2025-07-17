@@ -86,3 +86,44 @@ extern uint8_t c_u128_cmp(b_lean_obj_arg a, b_lean_obj_arg b) {
 extern lean_obj_res c_u128_to_le_bytes(b_lean_obj_arg u128) {
     return mk_byte_array(2 * sizeof(uint64_t), lean_get_external_data(u128));
 }
+
+extern lean_obj_res c_rs_add_u128_in_binary_field(
+    b_lean_obj_arg a,
+    b_lean_obj_arg b
+) {
+    uint8_t *bytes = rs_add_u128_in_binary_field(
+        lean_get_external_data(a),
+        lean_get_external_data(b)
+    );
+    return lean_alloc_external(get_u128_class(), bytes);
+}
+
+extern lean_obj_res c_rs_mul_u128_in_binary_field(
+    b_lean_obj_arg a,
+    b_lean_obj_arg b
+) {
+    uint8_t *bytes = rs_mul_u128_in_binary_field(
+        lean_get_external_data(a),
+        lean_get_external_data(b)
+    );
+    return lean_alloc_external(get_u128_class(), bytes);
+}
+
+extern lean_obj_res c_rs_exterior_mul_u64(
+    uint64_t a,
+    uint64_t b
+) {
+    uint8_t *bytes = rs_exterior_mul_u64(a, b);
+    return lean_alloc_external(get_u128_class(), bytes);
+}
+
+extern lean_obj_res c_rs_pow_u128_in_binary_field(
+    b_lean_obj_arg a,
+    uint64_t b
+) {
+    uint8_t *bytes = rs_pow_u128_in_binary_field(
+        lean_get_external_data(a),
+        b
+    );
+    return lean_alloc_external(get_u128_class(), bytes);
+}

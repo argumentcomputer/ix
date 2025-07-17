@@ -21,6 +21,7 @@ partial def simplifyTerm (decls: Decls) : Term → Term
   | .ret r => .ret (recr r)
   | .app global args => .app global (args.map recr)
   | .preimg global out => .preimg global (recr out)
+  | .ffi global args => .ffi global (args.map recr)
   | .if b t f => .if (recr b) (recr t) (recr f)
   | .data (.tuple args) => .data (.tuple (args.map recr))
   | t => t
@@ -43,8 +44,8 @@ def checkAndSimplifyToplevel (toplevel : Toplevel) : Except CheckError TypedDecl
     | .constructor d c => pure $ typedDecls.insert name (.constructor d c)
     | .dataType d => pure $ typedDecls.insert name (.dataType d)
     | .function f => do
-      let _ ← (checkFunction f) (getFunctionContext f decls)
       let f ← (checkFunction f) (getFunctionContext f decls)
       pure $ typedDecls.insert name (.function f)
+    | .gadget g => pure $ typedDecls.insert name (.gadget g)
 
 end Aiur

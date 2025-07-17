@@ -1,3 +1,4 @@
+pub mod aiur2;
 pub mod archon;
 pub mod binius;
 pub mod byte_array;
@@ -6,7 +7,10 @@ pub mod keccak;
 
 use std::ffi::{CStr, CString, c_char, c_void};
 
-use crate::lean::{boxed::BoxedUSize, external::LeanExternalObject};
+use crate::lean::{
+    array::LeanArrayObject, boxed::BoxedUSize, external::LeanExternalObject,
+    sarray::LeanSArrayObject,
+};
 
 /// ```c
 /// typedef struct {
@@ -71,7 +75,7 @@ pub(super) fn lean_is_scalar<T>(ptr: *const T) -> bool {
 #[macro_export]
 macro_rules! lean_unbox {
     ($t:ident, $e:expr) => {
-        $e as $t >> 1
+        $t::try_from(($e as usize) >> 1).expect("Unintended truncation")
     };
 }
 
@@ -87,14 +91,26 @@ macro_rules! lean_unbox {
 /// }
 /// ```
 #[inline]
-#[allow(dead_code)]
 pub(super) fn lean_unbox_u32(ptr: *const c_void) -> u32 {
-    if size_of::<c_void>() == 4 {
+    if cfg!(target_pointer_width = "32") {
         let boxed_usize: &BoxedUSize = as_ref_unsafe(ptr.cast());
         u32::try_from(boxed_usize.value).expect("Cannot convert from usize")
     } else {
         lean_unbox!(u32, ptr)
     }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_boxed_u32s_are_equivalent_to_bytes(
+    u32s: &LeanArrayObject,
+    bytes: &LeanSArrayObject,
+) -> bool {
+    let u32s = u32s
+        .to_vec(lean_unbox_u32)
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect::<Vec<_>>();
+    u32s == bytes.data()
 }
 
 /// ```c
@@ -117,4 +133,10 @@ pub(super) fn boxed_usize_ptr_to_usize(ptr: *const c_void) -> usize {
 pub(super) fn external_ptr_to_u128(ptr: *const c_void) -> u128 {
     let u128_external = as_ref_unsafe(ptr.cast::<LeanExternalObject>());
     *as_ref_unsafe(u128_external.cast_data())
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_exterior_mul_u64(a: u64, b: u64) -> *const u128 {
+    let c = a as u128 * b as u128;
+    to_raw(c)
 }

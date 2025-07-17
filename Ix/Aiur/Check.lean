@@ -10,6 +10,7 @@ inductive CheckError
   | notAConstructor : Global → CheckError
   | notAValue : Global → CheckError
   | notAFunction : Global → CheckError
+  | notAGadget : Global → CheckError
   | cannotApply : Global → CheckError
   | notADataType : Global → CheckError
   | typeMismatch : Typ → Typ → CheckError
@@ -39,7 +40,9 @@ for functions and datatypes.
 def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
   let map ← toplevel.functions.foldlM (init := default)
     fun acc function => addDecl acc Function.name .function function
-  toplevel.dataTypes.foldlM (init := map) addDataType
+  let map ← toplevel.dataTypes.foldlM (init := map) addDataType
+  toplevel.gadgets.foldlM (init := map)
+    fun map gadget => addDecl map (Global.mk ∘ Gadget.name) .gadget gadget
 where
   ensureUnique name (map : IndexMap Global _) := do
     if map.containsKey name then throw $ .duplicatedDefinition name
@@ -156,7 +159,7 @@ partial def inferTerm : Term → CheckM TypedTerm
     | some (.function function) =>
       let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
       pure $ .mk (.evaluates function.output) (.app func args)
-    | some (.constructor dataType constr) => do
+    | some (.constructor dataType constr) =>
       let args ← checkArgsAndInputs func args constr.argTypes
       pure $ .mk (.evaluates (.dataType dataType.name)) (.app func args)
     | _ => throw $ .cannotApply func
@@ -166,13 +169,13 @@ partial def inferTerm : Term → CheckM TypedTerm
     -- Errors if the function isn't found in the context.
     let ctx ← read
     match ctx.varTypes[Local.str unqualifiedFunc]? with
-    | some (.function inputs output) => do
+    | some (.function inputs output) =>
       let argInner ← checkNoEscape arg output
       let arg' := .mk (.evaluates output) argInner
       pure $ .mk (.evaluates (.tuple inputs.toArray)) (.preimg func arg')
     | some _ => throw $ .notAFunction func
     | none => match ctx.decls.getByKey func with
-      | some (.function function) => do
+      | some (.function function) =>
         let argInner ← checkNoEscape arg function.output
         let arg' := .mk (.evaluates function.output) argInner
         let inpTyp := function.inputs.map Prod.snd
@@ -183,13 +186,23 @@ partial def inferTerm : Term → CheckM TypedTerm
     -- Only checks global map if it is not unqualified
     let ctx ← read
     match ctx.decls.getByKey func with
-    | some (.function function) => do
+    | some (.function function) =>
       let argInner ← checkNoEscape arg function.output
       let arg' := .mk (.evaluates function.output) argInner
       let inpTyp := function.inputs.map Prod.snd
       pure $ .mk (.evaluates (.tuple inpTyp.toArray)) (.preimg func arg')
     | some _ => throw $ .notAFunction func
     | _ => throw $ .unboundVariable func
+  | .ffi g args => do
+    -- Gadget calls typecheck as tuples of u64s
+    let ctx ← read
+    match ctx.decls.getByKey g with
+    | some (.gadget gadget) =>
+      let mkU64sList := (List.replicate · (.primitive .u64))
+      let args ← checkArgsAndInputs g args $ mkU64sList gadget.inputSize
+      pure $ .mk (.evaluates (.tuple ⟨mkU64sList gadget.outputSize⟩)) (.ffi g args)
+    | some _ => throw $ .notAGadget g
+    | _ => throw $ .unboundVariable g
   | .xor a b => do
     let (typ, aInner) ← inferNumber a
     let bInner ← checkNoEscape b typ
@@ -355,7 +368,7 @@ where
     | (.primitive (.u32 _), .primitive .u32)
     | (.primitive (.u64 _), .primitive .u64) => pure []
     | (.tuple pats, .tuple typs) => do
-      unless pats.size != typs.size do throw $ .incompatiblePattern pat typ
+      unless pats.size == typs.size do throw $ .incompatiblePattern pat typ
       pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
     | (.ref funcName [], typ@(.function ..)) => do
       let ctx ← read
@@ -428,6 +441,7 @@ where
       function.inputs.forM fun (_, typ) => wellFormedType typ
     -- No need to check constructors because they come from datatype declarations.
     | .constructor .. => pure ()
+    | .gadget _ => pure () -- Gadgets don't have inner types to be checked
   wellFormedType : Typ → EStateM CheckError (Std.HashSet Global) Unit
     | .tuple typs => typs.forM wellFormedType
     | .pointer pointerTyp => wellFormedType pointerTyp
@@ -458,5 +472,6 @@ def checkToplevel (toplevel : Toplevel) : Except CheckError TypedDecls := do
     | .function f => do
       let f ← (checkFunction f) (getFunctionContext f decls)
       pure $ typedDecls.insert name (.function f)
+    | .gadget g => pure $ typedDecls.insert name (.gadget g)
 
 end Aiur

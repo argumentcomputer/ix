@@ -23,6 +23,9 @@ abbrev size := 2^128
 @[extern "c_u128_of_lo_hi"]
 opaque ofLoHi : (lo : UInt64) → (hi : UInt64) → UInt128
 
+instance : Inhabited UInt128 where
+  default := ofLoHi 0 0
+
 def ofNatCore (n : Nat) (_ : n < size := by decide) : UInt128 :=
   let lo := n % UInt64.size |>.toUInt64
   let hi := n / UInt64.size |>.toUInt64
@@ -36,6 +39,9 @@ instance : OfNat UInt128 n := ⟨ofNatWrap n⟩
 
 @[extern "c_u128_to_lo_hi"]
 opaque toLoHi : @& UInt128 → UInt64 × UInt64
+
+@[extern "c_rs_exterior_mul_u64"]
+opaque exteriorMul : @& UInt64 → @& UInt64 → UInt128
 
 def toNat (u128 : @& UInt128) : Nat :=
   let (lo, hi) := u128.toLoHi

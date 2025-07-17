@@ -2,6 +2,7 @@ use binius_field::{
     BinaryField1b as B1, BinaryField2b as B2, BinaryField4b as B4, BinaryField8b as B8,
     BinaryField16b as B16, BinaryField32b as B32, BinaryField64b as B64, BinaryField128b as B128,
 };
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::{
     archon::{
@@ -11,7 +12,12 @@ use crate::{
     lean::{
         CArray,
         array::LeanArrayObject,
-        ffi::{drop_raw, external_ptr_to_u128, lean_unbox_u32, lean_unbox_u64, to_raw},
+        ctor::LeanCtorObject,
+        ffi::{
+            archon::module_mode::lean_ctor_ptr_to_module_mode, drop_raw, external_ptr_to_u128,
+            lean_unbox_u32, lean_unbox_u64, to_raw,
+        },
+        sarray::LeanSArrayObject,
     },
     lean_unbox,
 };
@@ -121,26 +127,69 @@ extern "C" fn rs_witness_module_push_u128s_to(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn rs_witness_module_populate(witness_module: &mut WitnessModule, height: u64) {
+extern "C" fn rs_witness_module_populate(
+    witness_module: &mut WitnessModule,
+    mode: &LeanCtorObject,
+) {
+    let mode = lean_ctor_ptr_to_module_mode(mode);
     witness_module
-        .populate(height)
+        .populate(mode)
         .expect("WitnessModule::populate failure");
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_module_par_populate(
+    witness_modules: &CArray<*mut WitnessModule>,
+    modes: &LeanArrayObject,
+) {
+    let modes = modes.to_vec(|ptr| lean_ctor_ptr_to_module_mode(ptr.cast()));
+    let mut witness_modules = witness_modules
+        .slice(modes.len())
+        .iter()
+        .map(|&ptr| unsafe { &mut *ptr })
+        .collect::<Vec<_>>();
+    witness_modules
+        .par_iter_mut()
+        .zip(modes)
+        .enumerate()
+        .for_each(|(i, (w, m))| {
+            if let Err(e) = w.populate(m) {
+                panic!("rs_witness_module_par_populate failure at index {i}: {e}");
+            }
+        });
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_module_get_data_num_bytes(
+    witness_module: &WitnessModule,
+    oracle_idx: OracleIdx,
+) -> usize {
+    witness_module.get_data_num_bytes(&oracle_idx)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_witness_module_get_data(
+    witness_module: &WitnessModule,
+    oracle_idx: OracleIdx,
+    bytes: &mut LeanSArrayObject,
+) {
+    bytes.set_data(&witness_module.get_data(&oracle_idx));
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_compile_witness_modules(
     modules_ptrs: &CArray<*mut WitnessModule>,
-    heights: &LeanArrayObject,
+    modes: &LeanArrayObject,
 ) -> *const WitnessWrap {
-    let heights = heights.to_vec(lean_unbox_u64);
+    let modes = modes.to_vec(|ptr| lean_ctor_ptr_to_module_mode(ptr.cast()));
     let witness_modules = modules_ptrs
-        .slice(heights.len())
+        .slice(modes.len())
         .iter()
         .map(|&ptr| std::mem::take(unsafe { &mut *ptr }))
         .collect::<Vec<_>>();
     let witness_modules = Box::leak(Box::new(witness_modules));
     let witness =
-        compile_witness_modules(witness_modules, heights).expect("compile_witness_modules failure");
+        compile_witness_modules(witness_modules, modes).expect("compile_witness_modules failure");
     to_raw(WitnessWrap {
         witness_modules,
         witness,

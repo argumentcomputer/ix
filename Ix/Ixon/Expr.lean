@@ -112,7 +112,7 @@ def getExpr : GetM Expr := do
         let n ← getExprTag isLarge small
         if n == 0 then
           .let_ .false <$> go f <*> go f <*> go f
-        else 
+        else
           .let_ .true <$> go f <*> go f <*> go f
       | 0x8 => do
         let n ← getExprTag isLarge small
@@ -156,7 +156,7 @@ def getArray (getM: GetM A) : GetM (List A) := do
   match tag with
   | 0xB => do
     let len <- UInt64.toNat <$> getExprTag isLarge small
-    List.mapM (λ _ => getM) (List.range len) 
+    List.mapM (λ _ => getM) (List.range len)
   | e => throw s!"expected Array with tag 0xB, got {e}"
 
 def getByteArray : GetM ByteArray := do

@@ -16,7 +16,9 @@ use crate::{
         ffi::{
             archon::{
                 arith_expr::lean_ctor_to_arith_expr, boxed_usize_ptr_to_oracle_idx,
-                ctor_ptr_to_lc_factor, transparent::lean_ctor_ptr_to_transparent,
+                ctor_ptr_to_lc_factor, oracle_or_const::lean_ctor_ptr_to_oracle_or_const,
+                relative_height::lean_ctor_ptr_to_relative_height,
+                transparent::lean_ctor_ptr_to_transparent,
             },
             drop_raw, raw_to_str, to_raw,
         },
@@ -54,15 +56,15 @@ extern "C" fn rs_circuit_module_flush(
     circuit_module: &mut CircuitModule,
     direction_pull: bool,
     channel_idx: usize,
-    oracle_id: OracleIdx,
-    oracle_idxs: &LeanArrayObject,
+    selector: OracleIdx,
+    values: &LeanArrayObject,
     multiplicity: u64,
 ) {
-    let oracle_idxs = oracle_idxs.to_vec(boxed_usize_ptr_to_oracle_idx);
+    let values = values.to_vec(|ptr| lean_ctor_ptr_to_oracle_or_const(ptr.cast()));
     use FlushDirection::{Pull, Push};
     let direction = if direction_pull { Pull } else { Push };
     let channel_id = channel_idx;
-    circuit_module.flush(direction, channel_id, oracle_id, oracle_idxs, multiplicity);
+    circuit_module.flush(direction, channel_id, selector, values, multiplicity);
 }
 
 #[unsafe(no_mangle)]
@@ -86,21 +88,35 @@ extern "C" fn rs_circuit_module_assert_not_zero(
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn rs_circuit_module_assert_exp(
+    circuit_module: &mut CircuitModule,
+    exp_bits: &LeanArrayObject,
+    result: OracleIdx,
+    base: &LeanCtorObject,
+) {
+    let exp_bits = exp_bits.to_vec(boxed_usize_ptr_to_oracle_idx);
+    let base = lean_ctor_ptr_to_oracle_or_const(base);
+    circuit_module.assert_exp(exp_bits, result, base);
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rs_circuit_module_add_committed(
     circuit_module: &mut CircuitModule,
     name: *const c_char,
     tower_level: u8,
+    relative_height: *const LeanCtorObject,
 ) -> OracleIdx {
     let name = raw_to_str(name);
+    let relative_height = lean_ctor_ptr_to_relative_height(relative_height);
     match tower_level {
-        0 => circuit_module.add_committed::<B1>(name),
-        1 => circuit_module.add_committed::<B2>(name),
-        2 => circuit_module.add_committed::<B4>(name),
-        3 => circuit_module.add_committed::<B8>(name),
-        4 => circuit_module.add_committed::<B16>(name),
-        5 => circuit_module.add_committed::<B32>(name),
-        6 => circuit_module.add_committed::<B64>(name),
-        7 => circuit_module.add_committed::<B128>(name),
+        0 => circuit_module.add_committed::<B1>(name, relative_height),
+        1 => circuit_module.add_committed::<B2>(name, relative_height),
+        2 => circuit_module.add_committed::<B4>(name, relative_height),
+        3 => circuit_module.add_committed::<B8>(name, relative_height),
+        4 => circuit_module.add_committed::<B16>(name, relative_height),
+        5 => circuit_module.add_committed::<B32>(name, relative_height),
+        6 => circuit_module.add_committed::<B64>(name, relative_height),
+        7 => circuit_module.add_committed::<B128>(name, relative_height),
         _ => unreachable!(),
     }
     .expect("CircuitModule::add_committed failure")
@@ -111,11 +127,13 @@ extern "C" fn rs_circuit_module_add_transparent(
     circuit_module: &mut CircuitModule,
     name: *const c_char,
     transparent_ptr: *const LeanCtorObject,
+    relative_height: *const LeanCtorObject,
 ) -> OracleIdx {
     let name = raw_to_str(name);
     let transparent = lean_ctor_ptr_to_transparent(transparent_ptr);
+    let relative_height = lean_ctor_ptr_to_relative_height(relative_height);
     circuit_module
-        .add_transparent(name, transparent)
+        .add_transparent(name, transparent, relative_height)
         .expect("CircuitModule::add_transparent failure")
 }
 
@@ -125,11 +143,13 @@ extern "C" fn rs_circuit_module_add_linear_combination(
     name: *const c_char,
     offset: &u128,
     inner: &LeanArrayObject,
+    relative_height: *const LeanCtorObject,
 ) -> OracleIdx {
     let inner = inner.to_vec(ctor_ptr_to_lc_factor);
     let offset = B128::new(*offset);
+    let relative_height = lean_ctor_ptr_to_relative_height(relative_height);
     circuit_module
-        .add_linear_combination(raw_to_str(name), offset, inner)
+        .add_linear_combination(raw_to_str(name), offset, inner, relative_height)
         .expect("CircuitModule::add_linear_combination failure")
 }
 
@@ -176,12 +196,11 @@ extern "C" fn rs_circuit_module_add_projected(
     circuit_module: &mut CircuitModule,
     name: *const c_char,
     inner: OracleIdx,
-    mask: u64,
-    unprojected_size: usize,
-    start_index: usize,
+    selection: u64,
+    chunk_size: usize,
 ) -> OracleIdx {
     circuit_module
-        .add_projected(raw_to_str(name), inner, mask, unprojected_size, start_index)
+        .add_projected(raw_to_str(name), inner, selection, chunk_size)
         .expect("CircuitModule::add_projected failure")
 }
 

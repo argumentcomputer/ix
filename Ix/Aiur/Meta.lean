@@ -53,16 +53,18 @@ syntax "(" pattern (", " pattern)* ")"       : pattern
 syntax pattern "|" pattern                   : pattern
 
 def elabListCore (head : α) (tail : Array α) (elabFn : α → TermElabM Expr)
-    (listEltType : Expr) : TermElabM Expr := do
+    (listEltType : Expr) (isArray := false) : TermElabM Expr := do
   let mut elaborated := Array.mkEmpty (tail.size + 1)
   elaborated := elaborated.push $ ← elabFn head
   for elt in tail do
     elaborated := elaborated.push $ ← elabFn elt
-  mkListLit listEltType elaborated.toList
+  if isArray
+  then mkArrayLit listEltType elaborated.toList
+  else mkListLit listEltType elaborated.toList
 
 def elabList (head : α) (tail : Array α) (elabFn : α → TermElabM Expr)
-    (listEltTypeName : Name) : TermElabM Expr :=
-  elabListCore head tail elabFn (mkConst listEltTypeName)
+    (listEltTypeName : Name) (isArray := false) : TermElabM Expr :=
+  elabListCore head tail elabFn (mkConst listEltTypeName) isArray
 
 def elabEmptyList (listEltTypeName : Name) : TermElabM Expr :=
   mkListLit (mkConst listEltTypeName) []
@@ -85,7 +87,7 @@ partial def elabPattern : ElabStxCat `pattern
   | `(pattern| $prim:primitive) => do
     mkAppM ``Pattern.primitive #[← elabPrimitive prim]
   | `(pattern| ($p:pattern $[, $ps:pattern]*)) => do
-    mkAppM ``Pattern.tuple #[← elabList p ps elabPattern ``Pattern]
+    mkAppM ``Pattern.tuple #[← elabList p ps elabPattern ``Pattern true]
   | `(pattern| $p₁:pattern | $p₂:pattern) => do
     mkAppM ``Pattern.or #[← elabPattern p₁, ← elabPattern p₂]
   | stx => throw $ .error stx "Invalid syntax for pattern"
@@ -117,7 +119,7 @@ partial def elabTyp : ElabStxCat `typ
   | `(typ| $p:primitive_type) => do
     mkAppM ``Typ.primitive #[← elabPrimitiveType p]
   | `(typ| ($t:typ $[, $ts:typ]*)) => do
-    mkAppM ``Typ.tuple #[← elabList t ts elabTyp ``Typ]
+    mkAppM ``Typ.tuple #[← elabList t ts elabTyp ``Typ true]
   | `(typ| &$t:typ) => do
     mkAppM ``Typ.pointer #[← elabTyp t]
   | `(typ| $[.]?$i:ident) => do
@@ -140,6 +142,7 @@ syntax "if " trm " { " trm " } " " else " " { " trm " } " : trm
 syntax ("." noWs)? ident "(" ")"                          : trm
 syntax ("." noWs)? ident "(" trm (", " trm)* ")"          : trm
 syntax "preimg" "(" ("." noWs)? ident ", " trm ")"        : trm
+syntax "ffi" "(" ident (", " trm)* ")"                    : trm
 syntax "xor" "(" trm ", " trm ")"                         : trm
 syntax "and" "(" trm ", " trm ")"                         : trm
 syntax "add" "(" trm ", " trm ")"                         : trm
@@ -166,7 +169,7 @@ partial def elabTrm : ElabStxCat `trm
     let data ← mkAppM ``Data.primitive #[← elabPrimitive p]
     mkAppM ``Term.data #[data]
   | `(trm| ($t:trm $[, $ts:trm]*)) => do
-    let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term]
+    let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term true]
     mkAppM ``Term.data #[data]
   | `(trm| return $t:trm) => do
     mkAppM ``Term.ret #[← elabTrm t]
@@ -189,6 +192,9 @@ partial def elabTrm : ElabStxCat `trm
   | `(trm| preimg($[.]?$f:ident, $t:trm)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
     mkAppM ``Term.preimg #[g, ← elabTrm t]
+  | `(trm| ffi($g:ident $[, $as:trm]*)) => do
+    let g ← mkAppM ``Global.mk #[toExpr g.getId]
+    mkAppM ``Term.ffi #[g, ← mkListLit (mkConst ``Term) (← as.toList.mapM elabTrm)]
   | `(trm| add($a:trm, $b:trm)) => do
     mkAppM ``Term.addU64 #[← elabTrm a, ← elabTrm b]
   | `(trm| sub($a:trm, $b:trm)) => do
@@ -292,6 +298,7 @@ def elabToplevel : ElabStxCat `toplevel
     mkAppM ``Toplevel.mk #[
       ← mkListLit (mkConst ``DataType) dataTypes.toList,
       ← mkListLit (mkConst ``Function) functions.toList,
+      ← mkArrayLit (mkConst ``Gadget) [],
     ]
   | stx => throw $ .error stx "Invalid syntax for toplevel"
 

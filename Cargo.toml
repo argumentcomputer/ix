@@ -21,13 +21,14 @@ binius_utils = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "23
 bumpalo = "3"
 groestl_crypto = { package = "groestl", version = "0.10.1" }
 proptest = "1"
+p3-goldilocks = "0.3.0"
+p3-field = "0.3.0"
 rayon = "1"
 rand = "0.9.1"
 rustc-hash = "2"
 indexmap = "2"
 bytes = "1.10.1"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
-bytemuck = "1.23.0"
 
 [target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
 iroh = "0.34.0"

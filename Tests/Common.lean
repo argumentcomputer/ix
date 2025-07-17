@@ -3,6 +3,12 @@ import Ix.Unsigned
 
 open LSpec SlimCheck Gen
 
+def genUInt8 : Gen UInt8 :=
+  UInt8.ofNat <$> choose Nat 0 0xFF
+
+def genUInt32 : Gen UInt32 :=
+  UInt32.ofNat <$> choose Nat 0 0xFFFFFFFF
+
 def genUInt64 : Gen UInt64 :=
   UInt64.ofNat <$> choose Nat 0 0xFFFFFFFFFFFFFFFF
 

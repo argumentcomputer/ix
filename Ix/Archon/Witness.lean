@@ -1,10 +1,9 @@
 import Ix.Archon.OracleIdx
+import Ix.Archon.ModuleMode
+import Ix.Archon.TowerField
 import Ix.Unsigned
 
 namespace Archon
-
-inductive TowerField
-  | b1 | b2 | b4 | b8 | b16 | b32 | b64 | b128
 
 private opaque GenericNonempty : NonemptyType
 def WitnessModule : Type := GenericNonempty.type
@@ -54,12 +53,20 @@ opaque pushUInt128sTo : WitnessModule → @& Array UInt128 → EntryId → Witne
 
 /-- **Invalidates** the input `WitnessModule` -/
 @[never_extract, extern "c_rs_witness_module_populate"]
-opaque populate : WitnessModule → (height : UInt64) → WitnessModule
+opaque populate : WitnessModule → @& ModuleMode → WitnessModule
+
+/-- **Invalidates** the elements of the input `Array WitnessModule` -/
+@[never_extract, extern "c_rs_witness_module_par_populate"]
+opaque parPopulate : @& Array WitnessModule → @& Array ModuleMode → Array WitnessModule
+
+/-- **Panics** if there's no entry bound to the oracle -/
+@[extern "c_rs_witness_module_get_data"]
+opaque getData : @& WitnessModule → OracleIdx → ByteArray
 
 end WitnessModule
 
 /-- **Invalidates** the elements of the input `Array WitnessModule` -/
 @[never_extract, extern "c_rs_compile_witness_modules"]
-opaque compileWitnessModules : Array WitnessModule → (heights : @& Array UInt64) → Witness
+opaque compileWitnessModules : Array WitnessModule → @& Array ModuleMode → Witness
 
 end Archon

@@ -1,6 +1,8 @@
 import Blake3
 import Ix.Archon.ArithExpr
 import Ix.Archon.OracleIdx
+import Ix.Archon.RelativeHeight
+import Ix.Archon.OracleOrConst
 import Ix.Archon.Transparent
 import Ix.Archon.Witness
 import Ix.Binius.Common
@@ -19,7 +21,7 @@ namespace CircuitModule
 @[never_extract, extern "c_rs_circuit_module_new"]
 opaque new : USize → CircuitModule
 
-abbrev selector : CircuitModule → OracleIdx := fun _ => ⟨0⟩
+abbrev selector : OracleIdx := ⟨0⟩
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_freeze_oracles"]
@@ -30,8 +32,8 @@ opaque initWitnessModule : @& CircuitModule → WitnessModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_flush"]
-opaque flush : CircuitModule → Binius.FlushDirection → Binius.ChannelId → @& Array OracleIdx →
-  (multiplicity : UInt64) → CircuitModule
+opaque flush : CircuitModule → Binius.FlushDirection → Binius.ChannelId →
+  (selector : OracleIdx) → @& Array OracleOrConst → (multiplicity : UInt64) → CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_assert_zero"]
@@ -43,17 +45,24 @@ opaque assertZero : CircuitModule → @& String → @& Array OracleIdx →
 opaque assertNotZero : CircuitModule → OracleIdx → CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
+@[never_extract, extern "c_rs_circuit_module_assert_exp"]
+opaque assertExp : CircuitModule → (expBits : @& Array OracleIdx) →
+  (result : OracleIdx) → (base : @& OracleOrConst) → CircuitModule
+
+/-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_committed"]
-opaque addCommitted : CircuitModule → @& String → TowerField → OracleIdx × CircuitModule
+opaque addCommitted : CircuitModule → @& String → TowerField → @& RelativeHeight →
+  OracleIdx × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_transparent"]
-opaque addTransparent : CircuitModule → @& String → @& Transparent → OracleIdx × CircuitModule
+opaque addTransparent : CircuitModule → @& String → @& Transparent → @& RelativeHeight →
+  OracleIdx × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_linear_combination"]
 opaque addLinearCombination : CircuitModule → @& String → (offset : @& UInt128) →
-  (inner : @& Array (OracleIdx × UInt128)) → OracleIdx × CircuitModule
+  (inner : @& Array (OracleIdx × UInt128)) → @& RelativeHeight → OracleIdx × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_packed"]
@@ -67,8 +76,8 @@ opaque addShifted : CircuitModule → @& String → OracleIdx → (shiftOffset :
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_add_projected"]
-opaque addProjected : CircuitModule → @& String → OracleIdx → (mask : UInt64) →
-  (unprojectedSize startIndex : USize) → OracleIdx × CircuitModule
+opaque addProjected : CircuitModule → @& String → OracleIdx → (selection : UInt64) →
+  (chunkSize : USize) → OracleIdx × CircuitModule
 
 /-- **Invalidates** the input `CircuitModule` -/
 @[never_extract, extern "c_rs_circuit_module_push_namespace"]

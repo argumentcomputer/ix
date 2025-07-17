@@ -11,9 +11,22 @@ inductive ArithExpr
   | add : ArithExpr → ArithExpr → ArithExpr
   | mul : ArithExpr → ArithExpr → ArithExpr
   | pow : ArithExpr → UInt64 → ArithExpr
-  deriving Inhabited
+  deriving Inhabited, Ord
+
+instance : Add ArithExpr := ⟨.add⟩
+instance : Sub ArithExpr := ⟨.add⟩
+instance : Mul ArithExpr := ⟨.mul⟩
+instance : HPow ArithExpr UInt64 ArithExpr where
+  hPow x e := .pow x e
+
+instance : Zero ArithExpr := ⟨.const 0⟩
+
+instance : Coe OracleIdx ArithExpr := ⟨.oracle⟩
 
 namespace ArithExpr
+
+@[inline] def zero : ArithExpr := Zero.zero
+@[inline] def one : ArithExpr := .const 1
 
 def toString : ArithExpr → String
   | const c => s!"Const({c})"
@@ -22,6 +35,8 @@ def toString : ArithExpr → String
   | add x y => s!"Add({x.toString}, {y.toString})"
   | mul x y => s!"Mul({x.toString}, {y.toString})"
   | pow x e => s!"Pow({x.toString}, {e})"
+
+instance : ToString ArithExpr := ⟨toString⟩
 
 def toBytes : @& ArithExpr → ByteArray
   | const u128 => ⟨#[0]⟩ ++ u128.toLEBytes

@@ -1,13 +1,15 @@
 import Std.Data.HashMap
 import Ix.Aiur.Term
+import Ix.Aiur.Gadget
 
 open Std
 
 abbrev Name := Aiur.Global
 abbrev ValIdx := Nat
 abbrev SelIdx := Nat
-abbrev FuncIdx := UInt64
+abbrev FuncIdx := Nat
 abbrev MemIdx := Nat
+abbrev GadgetIdx := Nat
 
 def Std.HashMap.get' [Inhabited β] [BEq α] [Hashable α] [Repr α] (m : HashMap α β) (a : α) : β :=
   match m.get? a with
@@ -40,6 +42,7 @@ inductive Op where
   | dynCall : ValIdx → Array ValIdx → ValIdx → Op
   | preimg : FuncIdx → Array ValIdx → ValIdx → Op
   | dynPreimg : ValIdx → Array ValIdx → ValIdx → Op
+  | ffi : GadgetIdx → Array ValIdx → Nat → Op
   | trace : String → Array ValIdx → Op
   deriving Repr, Inhabited
 
@@ -89,17 +92,20 @@ structure Layout where
   u8Auxiliaries : Nat
   u64Auxiliaries : Nat
   sharedConstraints : Nat
-  deriving Repr
+  deriving Repr, Inhabited
 
-structure LayoutBranchState where
-  u1AuxiliariesInit : Nat
-  u1AuxiliariesMax  : Nat
-  u8AuxiliariesInit : Nat
-  u8AuxiliariesMax  : Nat
-  u64AuxiliariesInit : Nat
-  u64AuxiliariesMax  : Nat
-  sharedConstraintsInit : Nat
-  sharedConstraintsMax  : Nat
+structure SharedData where
+  u1Auxiliaries : Nat
+  u8Auxiliaries : Nat
+  u64Auxiliaries : Nat
+  constraints : Nat
+
+def SharedData.maximals (a b : SharedData) : SharedData := {
+  u1Auxiliaries := a.u1Auxiliaries.max b.u1Auxiliaries
+  u8Auxiliaries := a.u8Auxiliaries.max b.u8Auxiliaries
+  u64Auxiliaries := a.u64Auxiliaries.max b.u64Auxiliaries
+  constraints := a.constraints.max b.constraints
+}
 
 @[inline] def Layout.init (inputs outputs : Nat) : Layout :=
   ⟨inputs, outputs, 0, 0, 0, 0, 0⟩
@@ -133,43 +139,21 @@ abbrev LayoutM := StateM LayoutMState
       else stt.memWidths.push memWidth
     { stt with memWidths }
 
-namespace LayoutBranchState
-
-def save : LayoutM LayoutBranchState := do
+def getSharedData : LayoutM SharedData := do
   let stt ← get
   pure {
-    u1AuxiliariesInit := stt.layout.u1Auxiliaries
-    u1AuxiliariesMax := stt.layout.u1Auxiliaries
-    u8AuxiliariesInit := stt.layout.u8Auxiliaries
-    u8AuxiliariesMax := stt.layout.u8Auxiliaries
-    u64AuxiliariesInit := stt.layout.u64Auxiliaries
-    u64AuxiliariesMax := stt.layout.u64Auxiliaries
-    sharedConstraintsInit := stt.layout.sharedConstraints
-    sharedConstraintsMax := stt.layout.sharedConstraints }
+    u1Auxiliaries := stt.layout.u1Auxiliaries
+    u8Auxiliaries := stt.layout.u8Auxiliaries
+    u64Auxiliaries := stt.layout.u64Auxiliaries
+    constraints := stt.layout.sharedConstraints
+  }
 
-def merge (lbs : LayoutBranchState) : LayoutM LayoutBranchState := do
-  let stt ← get
-  let lbs' := { lbs with
-    u1AuxiliariesMax := lbs.u1AuxiliariesMax.max stt.layout.u1Auxiliaries
-    u8AuxiliariesMax := lbs.u8AuxiliariesMax.max stt.layout.u8Auxiliaries
-    u64AuxiliariesMax := lbs.u64AuxiliariesMax.max stt.layout.u64Auxiliaries
-    sharedConstraintsMax := lbs.sharedConstraintsMax.max stt.layout.sharedConstraints }
-  let layout := { stt.layout with
-    u1Auxiliaries := lbs.u1AuxiliariesInit
-    u8Auxiliaries := lbs.u8AuxiliariesInit
-    u64Auxiliaries := lbs.u64AuxiliariesInit
-    sharedConstraints := lbs.sharedConstraintsInit }
-  set { stt with layout }
-  pure lbs'
-
-def finish (lbs : LayoutBranchState) : LayoutM Unit := do
+def setSharedData (sharedData : SharedData) : LayoutM Unit :=
   modify fun stt => { stt with layout := { stt.layout with
-    u1Auxiliaries := lbs.u1AuxiliariesMax.max stt.layout.u1Auxiliaries
-    u8Auxiliaries := lbs.u8AuxiliariesMax.max stt.layout.u8Auxiliaries
-    u64Auxiliaries := lbs.u64AuxiliariesMax.max stt.layout.u64Auxiliaries
-    sharedConstraints := lbs.sharedConstraintsMax.max stt.layout.sharedConstraints } }
-
-end LayoutBranchState
+    u1Auxiliaries := sharedData.u1Auxiliaries
+    u8Auxiliaries := sharedData.u8Auxiliaries
+    u64Auxiliaries := sharedData.u64Auxiliaries
+    sharedConstraints := sharedData.constraints } }
 
 def opLayout : Bytecode.Op → LayoutM Unit
   | .prim _ | .xor .. => pure ()
@@ -198,26 +182,40 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .call _ _ outSize =>
     -- Outputs the call values and a require hint
     bumpU64Auxiliaries (outSize + 1)
+  | .ffi _ _ outSize =>
+    -- Outputs the ffi values and a require hint
+    bumpU64Auxiliaries (outSize + 1)
   | _ => panic! "TODO"
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   block.ops.forM opLayout
   match block.ctrl with
   | .if _ tt ff =>
-    let lbs ← LayoutBranchState.save
+    let initSharedData ← getSharedData
     -- This auxiliary is for proving inequality
     bumpU64Auxiliaries 1
     blockLayout tt
-    let lbs ← lbs.merge
+    let ttSharedData ← getSharedData
+    setSharedData initSharedData
     blockLayout ff
-    lbs.finish
+    let ffSharedData ← getSharedData
+    setSharedData $ ttSharedData.maximals ffSharedData
   | .match _ branches defaultBranch =>
-    let lbs ← branches.foldlM (init := ← LayoutBranchState.save) fun lbs (_, block) => do
+    let initSharedData ← getSharedData
+    let mut maximalSharedData := initSharedData
+    for (_, block) in branches do
+      setSharedData initSharedData
+      -- This auxiliary is for proving inequality
+      bumpU64Auxiliaries 1
       blockLayout block
-      lbs.merge
+      let blockSharedData ← getSharedData
+      maximalSharedData := maximalSharedData.maximals blockSharedData
     if let some defaultBlock := defaultBranch then
+      setSharedData initSharedData
       blockLayout defaultBlock
-    lbs.finish
+      let defaultBlockSharedData ← getSharedData
+      maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
+    setSharedData maximalSharedData
   | .ret _ out =>
     -- One selector per return
     bumpSelectors
@@ -239,22 +237,28 @@ structure DataTypeLayout where
   deriving Repr, Inhabited
 
 structure FunctionLayout where
-  index: UInt64
+  index: Nat
   inputSize : Nat
   outputSize : Nat
   offsets: Array Nat
   deriving Repr, Inhabited
 
 structure ConstructorLayout where
-  index: UInt64
+  index: Nat
   size: Nat
   offsets: Array Nat
+  deriving Repr, Inhabited
+
+structure GadgetLayout where
+  index : Nat
+  outputSize : Nat
   deriving Repr, Inhabited
 
 inductive Layout
   | dataType : DataTypeLayout → Layout
   | function : FunctionLayout → Layout
   | constructor : ConstructorLayout → Layout
+  | gadget : GadgetLayout → Layout
   deriving Repr, Inhabited
 
 abbrev LayoutMap := HashMap Global Layout
@@ -263,6 +267,7 @@ structure Toplevel where
   functions : Array Function
   memWidths : Array Nat
   layouts : Array Circuit.Layout
+  gadgets : Array Gadget
   deriving Repr, Inhabited
 
 end Aiur.Bytecode
@@ -306,10 +311,10 @@ partial def toIndex
     pure (bindings.get' name)
   | .ref name => match layoutMap.get' name with
     | .function layout => do
-      pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
+      pushOp (Bytecode.Op.prim (Primitive.u64 layout.index.toUInt64))
     | .constructor layout => do
       let size := layout.size
-      let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
+      let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index.toUInt64))
       if index.size < size then
         let padding := (← pushOp (Bytecode.Op.prim (Primitive.u64 0)))[0]!
         pure $ index ++ Array.mkArray (size - index.size) padding
@@ -366,7 +371,7 @@ partial def toIndex
         pushOp (Bytecode.Op.call layout.index args layout.outputSize) layout.outputSize
       | .constructor layout => do
         let size := layout.size
-        let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
+        let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index.toUInt64))
         let index ← buildArgs args index
         if index.size < size then
           let padding := (← pushOp (Bytecode.Op.prim (Primitive.u64 0)))[0]!
@@ -380,7 +385,7 @@ partial def toIndex
       pushOp (Bytecode.Op.call layout.index args layout.outputSize) layout.outputSize
     | .constructor layout => do
       let size := layout.size
-      let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index))
+      let index ← pushOp (Bytecode.Op.prim (Primitive.u64 layout.index.toUInt64))
       let index ← buildArgs args index
       if index.size < size then
         let padding := (← pushOp (Bytecode.Op.prim (Primitive.u64 0)))[0]!
@@ -401,19 +406,30 @@ partial def toIndex
       let out ← toIndex layoutMap bindings out
       pushOp (Bytecode.Op.preimg layout.index out layout.inputSize) layout.inputSize
     | _ => panic! "should not happen after typechecking"
+  | .ffi name args => match layoutMap.get' name with
+    | .gadget layout => do
+      let args ← buildArgs args
+      pushOp (Bytecode.Op.ffi layout.index args layout.outputSize) layout.outputSize
+    | _ => panic! "should not happen after typechecking"
   | .get arg i => do
     let typs := (match arg.typ with
       | .evaluates (.tuple typs) => typs
       | _ => panic! "should not happen after typechecking")
-    let offset := (typs.extract 0 i).foldl (init := 0) (fun acc typ => typSize layoutMap typ + acc)
-    pure $ Array.range' offset (typSize layoutMap typ)
+    let offset := (typs.extract 0 i).foldl (init := 0)
+      fun acc typ => typSize layoutMap typ + acc
+    let arg ← toIndex layoutMap bindings arg
+    let length := typSize layoutMap typ
+    pure $ arg.extract offset (offset + length)
   | .slice arg i j => do
     let typs := (match arg.typ with
       | .evaluates (.tuple typs) => typs
       | _ => panic! "should not happen after typechecking")
-    let offset := (typs.extract 0 i).foldl (init := 0) (fun acc typ => typSize layoutMap typ + acc)
-    let length := (typs.extract i j).foldl (init := 0) (fun acc typ => typSize layoutMap typ + acc)
-    pure $ Array.range' offset length
+    let offset := (typs.extract 0 i).foldl (init := 0)
+      fun acc typ => typSize layoutMap typ + acc
+    let length := (typs.extract i j).foldl (init := 0)
+      fun acc typ => typSize layoutMap typ + acc
+    let arg ← toIndex layoutMap bindings arg
+    pure $ arg.extract offset (offset + length)
   | .store arg => do
     let arg ← toIndex layoutMap bindings arg
     pushOp (Bytecode.Op.store arg)
@@ -432,9 +448,9 @@ partial def toIndex
     pure arr
   where
     buildArgs (args : List TypedTerm) (init : Array ValIdx := #[]) : StateM CompilerState (Array ValIdx) :=
-      let append arg acc := do
+      let append acc arg := do
         pure (acc.append (← toIndex layoutMap bindings arg))
-      args.foldrM (init := init) append
+      args.foldlM (init := init) append
 
 mutual
 
@@ -528,7 +544,8 @@ partial def addCase
     let (index, offsets) := match layout with
     | .function layout => (layout.index, layout.offsets)
     | .constructor layout => (layout.index, layout.offsets)
-    | .dataType _ => panic! "impossible after typechecking"
+    | .dataType _
+    | .gadget _ => panic! "impossible after typechecking"
     let bindArgs bindings pats offsets idxs :=
       let n := pats.length
       let bindings := (List.range n).foldl (init := bindings) fun bindings i =>
@@ -545,7 +562,7 @@ partial def addCase
     let initState ← get
     let term ← term.compile returnTyp layoutMap bindings
     set { initState with returnIdent := (← get).returnIdent }
-    let cases' := cases.cons (index, term)
+    let cases' := cases.cons (index.toUInt64, term)
     pure (cases', default)
   | .wildcard => do
     let initState ← get
@@ -570,46 +587,50 @@ def TypedFunction.compile (layoutMap : Bytecode.LayoutMap) (f : TypedFunction) :
   { name := f.name, inputSize, outputSize, body }
 
 def TypedDecls.dataTypeLayouts (decls : TypedDecls) : Bytecode.LayoutMap :=
-  let pass := fun (acc, funcIndex) (_, v) => match v with
-  | .dataType dataType =>
-    let dataTypeSize := dataType.size decls
-    let acc := acc.insert dataType.name (.dataType { size := dataTypeSize })
-    let pass := fun (acc, index) constructor =>
+  let pass := fun (layoutMap, funcIdx, gadgetIdx) (_, v) => match v with
+    | .dataType dataType =>
+      let dataTypeSize := dataType.size decls
+      let layoutMap := layoutMap.insert dataType.name (.dataType { size := dataTypeSize })
+      let pass := fun (acc, index) constructor =>
+        let offsets :=
+          constructor.argTypes.foldl (init := #[0])
+            (fun offsets typ => offsets.push (offsets[offsets.size - 1]! + typ.size decls))
+        let decl := .constructor {
+          size := dataTypeSize,
+          offsets,
+          index,
+        }
+        let name := dataType.name.pushNamespace constructor.nameHead
+        (acc.insert name decl, index + 1)
+      let (layoutMap, _) := dataType.constructors.foldl (init := (layoutMap, 0)) pass
+      (layoutMap, funcIdx, gadgetIdx)
+    | .function function =>
+      let inputSize := function.inputs.foldl (init := 0) (fun acc (_, typ) => acc + typ.size decls)
+      let outputSize := function.output.size decls
       let offsets :=
-        constructor.argTypes.foldl (init := #[0])
-          (fun offsets typ => offsets.push (offsets[offsets.size - 1]! + typ.size decls))
-      let decl := .constructor {
-        size := dataTypeSize,
-        offsets,
-        index,
-      }
-      let name := dataType.name.pushNamespace constructor.nameHead
-      (acc.insert name decl, index + 1)
-    let (layout, _) := dataType.constructors.foldl (init := (acc, 0)) pass
-    (layout, funcIndex)
-  | .function function =>
-    let inputSize := function.inputs.foldl (init := 0) (fun acc (_, typ) => acc + typ.size decls)
-    let outputSize := function.output.size decls
-    let offsets :=
-      function.inputs.foldl (init := #[0])
-        (fun offsets (_, typ) => offsets.push (offsets[offsets.size - 1]! + typ.size decls))
-    let layout := acc.insert function.name (.function { index := funcIndex, inputSize, outputSize, offsets })
-    (layout, funcIndex + 1)
-  | .constructor .. => (acc, funcIndex)
-  let (layout, _) := decls.foldl (init := ({}, 0)) pass
-  layout
+        function.inputs.foldl (init := #[0])
+          (fun offsets (_, typ) => offsets.push (offsets[offsets.size - 1]! + typ.size decls))
+      let layoutMap := layoutMap.insert function.name (.function { index := funcIdx, inputSize, outputSize, offsets })
+      (layoutMap, funcIdx + 1, gadgetIdx)
+    | .constructor .. => (layoutMap, funcIdx, gadgetIdx)
+    | .gadget g =>
+      let layoutMap := layoutMap.insert ⟨g.name⟩ (.gadget ⟨gadgetIdx, g.outputSize⟩)
+      (layoutMap, funcIdx, gadgetIdx + 1)
+  let (layoutMap, _) := decls.foldl pass ({}, 0, 0)
+  layoutMap
 
 def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
   let layout := decls.dataTypeLayouts
-  let (functions, memWidths, layouts) := decls.foldl (init := (#[], #[], #[]))
-    fun acc@(functions, memWidths, layouts) (_, decl) => match decl with
+  let (functions, memWidths, layouts, gadgets) := decls.foldl (init := (#[], #[], #[], #[]))
+    fun acc@(functions, memWidths, layouts, gadgets) (_, decl) => match decl with
       | .function function =>
         let compiledFunction := function.compile layout
         let layoutMState := Circuit.functionLayout compiledFunction
         let memWidths := layoutMState.memWidths.foldl (init := memWidths) fun memWidths memWidth =>
           if memWidths.contains memWidth then memWidths else memWidths.push memWidth
-        (functions.push compiledFunction, memWidths, layouts.push layoutMState.layout)
+        (functions.push compiledFunction, memWidths, layouts.push layoutMState.layout, gadgets)
+      | .gadget gadget => (functions, memWidths, layouts, gadgets.push gadget)
       | _ => acc
-  ⟨functions, memWidths.qsort, layouts⟩
+  ⟨functions, memWidths.qsort, layouts, gadgets⟩
 
 end Aiur
