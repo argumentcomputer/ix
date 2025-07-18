@@ -25,7 +25,7 @@ structure LayoutMState where
 
 /-- A new `LayoutMState` starts with one auxiliar for the multiplicity. -/
 @[inline] def LayoutMState.new (inputSize outputSize : Nat) : LayoutMState :=
-  ⟨{ inputSize, outputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, #[]⟩
+  ⟨{ inputSize, outputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, Array.mkArray inputSize 1⟩
 
 abbrev LayoutM := StateM LayoutMState
 
@@ -103,13 +103,13 @@ partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
     let mut maximalSharedData := initSharedData
     for (_, block) in branches do
       setSharedData initSharedData
-      -- An auxiliary for proving inequality
-      bumpAuxiliaries 1
       blockLayout block
       let blockSharedData ← getSharedData
       maximalSharedData := maximalSharedData.maximals blockSharedData
     if let some defaultBlock := defaultBranch then
       setSharedData initSharedData
+      -- An auxiliary per case for proving inequality
+      bumpAuxiliaries branches.size
       blockLayout defaultBlock
       let defaultBlockSharedData ← getSharedData
       maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
