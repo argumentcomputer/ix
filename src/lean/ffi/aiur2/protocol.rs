@@ -1,6 +1,6 @@
 use multi_stark::{
     prover::{Claim, Proof},
-    types::{FriParameters, new_stark_config},
+    types::FriParameters,
 };
 use std::{
     ffi::{CString, c_void},
@@ -83,8 +83,7 @@ extern "C" fn rs_aiur_system_prove(
 ) -> *const ProveData {
     let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
     let args = args.to_vec(lean_unbox_nat_as_g);
-    let config = new_stark_config(&fri_parameters);
-    let (claim, proof) = aiur_system.prove(&config, lean_unbox!(usize, fun_idx), &args);
+    let (claim, proof) = aiur_system.prove(&fri_parameters, lean_unbox!(usize, fun_idx), &args);
     let claim_num_args = claim.args.len();
     let prove_data = ProveData {
         claim_num_args,
@@ -126,8 +125,7 @@ extern "C" fn rs_aiur_system_verify(
 ) -> *const CResult {
     let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
     let claim = lean_ctor_to_claim(claim);
-    let config = new_stark_config(&fri_parameters);
-    let c_result = match aiur_system.verify(&config, &claim, proof) {
+    let c_result = match aiur_system.verify(&fri_parameters, &claim, proof) {
         Ok(()) => CResult {
             is_ok: true,
             data: std::ptr::null(),

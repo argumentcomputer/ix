@@ -1,7 +1,7 @@
 use multi_stark::{
     lookup::LookupAir,
     prover::{Claim, Proof},
-    system::{Circuit, CircuitWitness, System, SystemWitness},
+    system::{Circuit, System, SystemWitness},
     types::{FriParameters, PcsError, new_stark_config},
     verifier::VerificationError,
 };
@@ -15,7 +15,7 @@ use crate::aiur2::{
 
 pub struct AiurSystem {
     toplevel: Toplevel,
-    system: System<LookupAir<Constraints>>,
+    system: System<Constraints>,
 }
 
 impl BaseAir<G> for Constraints {
@@ -39,7 +39,7 @@ where
 
 impl AiurSystem {
     pub fn build(toplevel: Toplevel) -> Self {
-        let iter = toplevel.functions.iter().enumerate().map(|(i, _f)| {
+        let iter = (0..toplevel.functions.len()).map(|i| {
             let (constraints, lookups) = toplevel.build_constraints(i);
             let air = LookupAir::new(constraints, lookups);
             Circuit::from_air(air).unwrap()
@@ -59,16 +59,17 @@ impl AiurSystem {
             .get(input)
             .unwrap()
             .output;
-        let mut witness = SystemWitness { circuits: vec![] };
-        let mut lookups = vec![];
+        let mut witness = SystemWitness {
+            traces: vec![],
+            lookups: vec![],
+        };
         // TODO: parallelize
         for function_index in 0..self.toplevel.functions.len() {
             let (trace, lookups_per_function) =
                 self.toplevel.generate_trace(function_index, &query_record);
-            witness.circuits.push(CircuitWitness { trace });
-            lookups.push(lookups_per_function);
+            witness.traces.push(trace);
+            witness.lookups.push(lookups_per_function);
         }
-        let stage_2 = witness.stage_2_from_lookups(lookups);
         let mut args = vec![Channel::Function.to_field(), G::from_usize(fun_idx)];
         args.extend(input);
         args.extend(output);
@@ -77,7 +78,7 @@ impl AiurSystem {
             args,
         };
         let config = new_stark_config(fri_parameters);
-        let proof = self.system.prove(&config, &claim, witness, stage_2);
+        let proof = self.system.prove(&config, &claim, witness);
         (claim, proof)
     }
 
