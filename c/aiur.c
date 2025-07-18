@@ -9,6 +9,10 @@ extern lean_obj_res c_rs_toplevel_execute_test(
     size_t output_size
 ) {
     lean_obj_res output = lean_alloc_array(output_size, output_size);
+    lean_object **output_data = lean_array_cptr(output);
+    for (size_t i = 0; i < output_size; i++) {
+        output_data[i] = lean_box_uint64(0);
+    }
     rs_toplevel_execute_test(toplevel, fun_idx, args, output);
     return output;
 }
@@ -57,7 +61,12 @@ extern lean_obj_res c_rs_aiur_system_prove(
     );
 
     // Build the claim object
-    lean_object *claim_args = lean_alloc_array(pd->claim_num_args, pd->claim_num_args);
+    size_t claim_num_args = pd->claim_num_args;
+    lean_object *claim_args = lean_alloc_array(claim_num_args, claim_num_args);
+    lean_object **claim_args_data = lean_array_cptr(claim_args);
+    for (size_t i = 0; i < claim_num_args; i++) {
+        claim_args_data[i] = lean_box_uint64(0);
+    }
     rs_set_aiur_claim_args(claim_args, pd->claim_ptr);
     lean_object *claim = lean_alloc_ctor(0, 2, 0);
     lean_ctor_set(claim, 0, fun_idx);

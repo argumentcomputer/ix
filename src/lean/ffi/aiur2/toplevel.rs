@@ -7,7 +7,7 @@ use crate::{
         array::LeanArrayObject,
         ctor::LeanCtorObject,
         ffi::{
-            aiur2::{lean_unbox_nat_as_g, lean_unbox_nat_as_usize, set_lean_array_data},
+            aiur2::{lean_unbox_g, lean_unbox_nat_as_usize, set_lean_array_data},
             as_ref_unsafe, lean_is_scalar,
         },
     },
@@ -23,7 +23,7 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
     match ctor.tag() {
         0 => {
             let [const_val_ptr] = ctor.objs();
-            Op::Const(lean_unbox_nat_as_g(const_val_ptr))
+            Op::Const(lean_unbox_g(const_val_ptr))
         }
         1 => {
             let [a_ptr, b_ptr] = ctor.objs();
@@ -71,7 +71,7 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
 fn lean_ptr_to_g_block_pair(ptr: *const c_void) -> (G, Block) {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [g_ptr, block_ptr] = ctor.objs();
-    let g = lean_unbox_nat_as_g(g_ptr);
+    let g = lean_unbox_g(g_ptr);
     let block = lean_ctor_to_block(as_ref_unsafe(block_ptr.cast()));
     (g, block)
 }
@@ -170,7 +170,7 @@ extern "C" fn rs_toplevel_execute_test(
 ) {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx);
     let toplevel = lean_ctor_to_toplevel(toplevel);
-    let args = args.to_vec(lean_unbox_nat_as_g);
+    let args = args.to_vec(lean_unbox_g);
     let (_, output_values) = toplevel.execute(fun_idx, args);
     set_lean_array_data(output, &output_values);
 }

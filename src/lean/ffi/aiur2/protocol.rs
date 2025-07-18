@@ -12,7 +12,7 @@ use crate::{
         ffi::{
             CResult,
             aiur2::{
-                lean_unbox_nat_as_g, lean_unbox_nat_as_usize, set_lean_array_data,
+                lean_unbox_g, lean_unbox_nat_as_usize, set_lean_array_data,
                 toplevel::lean_ctor_to_toplevel,
             },
             as_ref_unsafe, drop_raw, to_raw,
@@ -80,7 +80,7 @@ extern "C" fn rs_aiur_system_prove(
     args: &LeanArrayObject,
 ) -> *const ProveData {
     let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
-    let args = args.to_vec(lean_unbox_nat_as_g);
+    let args = args.to_vec(lean_unbox_g);
     let (claim, proof) = aiur_system.prove(&fri_parameters, lean_unbox!(usize, fun_idx), &args);
     let claim_num_args = claim.args.len();
     let prove_data = ProveData {
@@ -100,7 +100,7 @@ fn lean_ctor_to_claim(ctor: &LeanCtorObject) -> Claim {
     let [circuit_idx_ptr, args_ptr] = ctor.objs();
     let circuit_idx = lean_unbox_nat_as_usize(circuit_idx_ptr);
     let args_array: &LeanArrayObject = as_ref_unsafe(args_ptr.cast());
-    let args = args_array.to_vec(lean_unbox_nat_as_g);
+    let args = args_array.to_vec(lean_unbox_g);
     Claim { circuit_idx, args }
 }
 

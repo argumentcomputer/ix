@@ -89,7 +89,7 @@ def modifyDiagnostics (f : Diagnostics → Diagnostics) : CompilerM Unit :=
   modify fun stt => { stt with diagnostics := f stt.diagnostics }
 
 def patTypeLength (decls : Decls) : SPattern → Nat
-  | .field _ => gSize
+  | .field _ => gSize.toNat
   | .tuple _ => 1
   | .ref global _ => typeLookup global |>.constructors.length
 where

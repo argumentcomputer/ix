@@ -1,34 +1,36 @@
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
+use p3_field::{PrimeField64, integers::QuotientMap};
 use std::ffi::c_void;
 
 use crate::{
     aiur2::G,
-    lean::{array::LeanArrayObject, ffi::lean_is_scalar},
+    lean::{
+        array::LeanArrayObject,
+        boxed::BoxedU64,
+        ffi::{as_mut_unsafe, lean_is_scalar, lean_unbox_u64},
+    },
     lean_unbox,
 };
 
 pub mod protocol;
 pub mod toplevel;
 
+#[inline]
 pub(super) fn lean_unbox_nat_as_usize(ptr: *const c_void) -> usize {
     assert!(lean_is_scalar(ptr));
     lean_unbox!(usize, ptr)
 }
 
-pub(super) fn lean_unbox_nat_as_g(ptr: *const c_void) -> G {
-    assert!(lean_is_scalar(ptr));
-    G::from_usize(lean_unbox!(usize, ptr))
+#[inline]
+pub(super) fn lean_unbox_g(ptr: *const c_void) -> G {
+    let u64 = lean_unbox_u64(ptr);
+    unsafe { G::from_canonical_unchecked(u64) }
 }
 
 pub(super) fn set_lean_array_data(array: &mut LeanArrayObject, gs: &[G]) {
-    let boxed_values = gs
-        .iter()
-        .map(|g| {
-            let g_u64 = g.as_canonical_u64();
-            let g_usize = usize::try_from(g_u64).expect("Not enough room for 64 bits");
-            let g_boxed = (g_usize << 1) | 1;
-            g_boxed as *const c_void
-        })
-        .collect::<Vec<_>>();
-    array.set_data(&boxed_values);
+    let array_data = array.data();
+    assert_eq!(array_data.len(), gs.len());
+    array_data.iter().zip(gs).for_each(|(ptr, g)| {
+        let boxed_u64 = as_mut_unsafe(*ptr as *mut BoxedU64);
+        boxed_u64.value = g.as_canonical_u64();
+    });
 }
