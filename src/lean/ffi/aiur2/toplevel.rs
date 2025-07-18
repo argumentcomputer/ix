@@ -1,5 +1,5 @@
 use p3_goldilocks::Goldilocks as G;
-use std::{ffi::c_void, mem::transmute};
+use std::ffi::c_void;
 
 use crate::{
     aiur2::bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx},
@@ -7,7 +7,7 @@ use crate::{
         array::LeanArrayObject,
         ctor::LeanCtorObject,
         ffi::{
-            aiur2::{lean_unbox_nat_as_g, lean_unbox_nat_as_usize},
+            aiur2::{lean_unbox_nat_as_g, lean_unbox_nat_as_usize, set_lean_array_data},
             as_ref_unsafe, lean_is_scalar,
         },
     },
@@ -171,19 +171,6 @@ extern "C" fn rs_toplevel_execute_test(
     let fun_idx = lean_unbox_nat_as_usize(fun_idx);
     let toplevel = lean_ctor_to_toplevel(toplevel);
     let args = args.to_vec(lean_unbox_nat_as_g);
-    let record = toplevel.execute(fun_idx, args.clone());
-    let output_values = record.function_queries[fun_idx]
-        .get(&args)
-        .map(|res| &res.output)
-        .unwrap();
-    let boxed_values = output_values
-        .iter()
-        .map(|g| {
-            let g_u64 = unsafe { transmute::<G, u64>(*g) };
-            let g_usize = usize::try_from(g_u64).unwrap();
-            let g_boxed = (g_usize << 1) | 1;
-            g_boxed as *const c_void
-        })
-        .collect::<Vec<_>>();
-    output.set_data(&boxed_values);
+    let (_, output_values) = toplevel.execute(fun_idx, args);
+    set_lean_array_data(output, &output_values);
 }

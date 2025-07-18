@@ -150,15 +150,16 @@ def friParameters : Aiur.FriParameters := {
 def aiurTest : TestSeq :=
   withExceptOk "Check and simplification works" toplevel.checkAndSimplify fun decls =>
     let bytecodeToplevel := decls.compile
+    let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel
     let runTestCase := fun testCase =>
       let functionName := testCase.functionName
       let funIdx := toplevel.getFuncIdx functionName |>.get!
       let output := bytecodeToplevel.executeTest funIdx testCase.input
-      let executionTest := test s!"Result of {functionName} with arguments {testCase.input} is correct"
+      let caseDescr := s!"{functionName} with arguments {testCase.input}"
+      let executionTest := test s!"Result of {caseDescr} is correct"
         (output == testCase.expectedOutput)
-      let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel
       let (claim, proof) := aiurSystem.prove friParameters funIdx testCase.input
-      let protocolTest := withExceptOk s!"Prove/verify works for {functionName} with arguments {testCase.input}"
+      let protocolTest := withExceptOk s!"Prove/verify works for {caseDescr}"
         (aiurSystem.verify friParameters claim proof) fun _ => .done
       executionTest ++ protocolTest
     testCases.foldl (init := .done) fun tSeq testCase =>

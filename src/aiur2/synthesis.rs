@@ -54,11 +54,7 @@ impl AiurSystem {
         fun_idx: FunIdx,
         input: &[G],
     ) -> (Claim, Proof) {
-        let query_record = self.toplevel.execute(fun_idx, input.to_vec());
-        let output = &query_record.function_queries[fun_idx]
-            .get(input)
-            .unwrap()
-            .output;
+        let (query_record, output) = self.toplevel.execute(fun_idx, input.to_vec());
         let mut witness = SystemWitness {
             traces: vec![],
             lookups: vec![],

@@ -2,20 +2,18 @@ use multi_stark::{
     prover::{Claim, Proof},
     types::FriParameters,
 };
-use std::{
-    ffi::{CString, c_void},
-    mem::transmute,
-};
+use std::ffi::{CString, c_void};
 
 use crate::{
-    aiur2::{G, synthesis::AiurSystem},
+    aiur2::synthesis::AiurSystem,
     lean::{
         array::LeanArrayObject,
         ctor::LeanCtorObject,
         ffi::{
             CResult,
             aiur2::{
-                lean_unbox_nat_as_g, lean_unbox_nat_as_usize, toplevel::lean_ctor_to_toplevel,
+                lean_unbox_nat_as_g, lean_unbox_nat_as_usize, set_lean_array_data,
+                toplevel::lean_ctor_to_toplevel,
             },
             as_ref_unsafe, drop_raw, to_raw,
         },
@@ -78,7 +76,7 @@ extern "C" fn rs_aiur_prove_data_free(ptr: *mut ProveData) {
 extern "C" fn rs_aiur_system_prove(
     aiur_system: &AiurSystem,
     fri_parameters: &LeanCtorObject,
-    fun_idx: *const c_void,
+    fun_idx: *const c_void, // Already checked to be a scalar in the C code
     args: &LeanArrayObject,
 ) -> *const ProveData {
     let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
@@ -95,17 +93,7 @@ extern "C" fn rs_aiur_system_prove(
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_set_aiur_claim_args(claim_args: &mut LeanArrayObject, claim: &Claim) {
-    let boxed_values = claim
-        .args
-        .iter()
-        .map(|g| {
-            let g_u64 = unsafe { transmute::<G, u64>(*g) };
-            let g_usize = usize::try_from(g_u64).unwrap();
-            let g_boxed = (g_usize << 1) | 1;
-            g_boxed as *const c_void
-        })
-        .collect::<Vec<_>>();
-    claim_args.set_data(&boxed_values);
+    set_lean_array_data(claim_args, &claim.args)
 }
 
 fn lean_ctor_to_claim(ctor: &LeanCtorObject) -> Claim {

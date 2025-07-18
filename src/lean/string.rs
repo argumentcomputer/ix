@@ -20,7 +20,7 @@ pub struct LeanStringObject {
 
 impl LeanStringObject {
     #[inline]
-    pub fn to_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         let bytes = self.m_data.slice(self.m_size);
         unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
     }

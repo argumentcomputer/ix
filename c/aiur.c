@@ -68,7 +68,7 @@ extern lean_obj_res c_rs_aiur_system_prove(
     lean_ctor_set(tuple, 0, claim);
     lean_ctor_set(tuple, 1, lean_alloc_external(get_aiur_proof_class(), pd->proof_ptr));
 
-    // Free the Rust claim and the `ProveData` objects
+    // Free the Rust `Claim` and `ProveData` objects
     rs_aiur_claim_free(pd->claim_ptr);
     rs_aiur_prove_data_free(pd);
 

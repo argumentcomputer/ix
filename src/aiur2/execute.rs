@@ -37,11 +37,11 @@ impl QueryRecord {
 }
 
 impl Toplevel {
-    pub fn execute(&self, fun_idx: FunIdx, args: Vec<G>) -> QueryRecord {
+    pub fn execute(&self, fun_idx: FunIdx, args: Vec<G>) -> (QueryRecord, Vec<G>) {
         let mut record = QueryRecord::new(self);
         let function = &self.functions[fun_idx];
-        function.execute(fun_idx, args, self, &mut record);
-        record
+        let output = function.execute(fun_idx, args, self, &mut record);
+        (record, output)
     }
 }
 
@@ -62,7 +62,7 @@ impl Function {
         mut map: Vec<G>,
         toplevel: &Toplevel,
         record: &mut QueryRecord,
-    ) {
+    ) -> Vec<G> {
         let mut exec_entries_stack = vec![];
         let mut callers_states_stack = vec![];
         macro_rules! push_block_exec_entries {
@@ -173,10 +173,12 @@ impl Function {
                     } else {
                         // No outer caller. About to exit.
                         assert!(exec_entries_stack.is_empty());
+                        map = output;
                         break;
                     }
                 }
             }
         }
+        map
     }
 }
