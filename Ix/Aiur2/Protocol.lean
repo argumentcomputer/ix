@@ -25,10 +25,10 @@ def Proof : Type := PoofNonempty.type
 instance : Nonempty Proof := PoofNonempty.property
 
 @[extern "c_rs_aiur_system_prove"]
-private opaque AiurSystem.prove : @& AiurSystem → @& FriParameters →
+opaque AiurSystem.prove : @& AiurSystem → @& FriParameters →
   @& Bytecode.FunIdx → @& Array G → Claim × Proof
 
-@[extern "c_rs_aiur_verify"]
+@[extern "c_rs_aiur_system_verify"]
 opaque AiurSystem.verify : @& AiurSystem → @& FriParameters → @& Claim → @& Proof →
   Except String Unit
 
