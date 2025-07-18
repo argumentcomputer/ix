@@ -1,7 +1,7 @@
 use multi_stark::lookup::Lookup;
 use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 use p3_matrix::dense::RowMajorMatrix;
-use p3_maybe_rayon::prelude::ParallelSliceMut;
+use rayon::{iter::*, slice::*};
 
 use super::{
     G,
@@ -84,22 +84,24 @@ impl Toplevel {
         let height = height_no_padding.next_power_of_two();
         let mut rows = vec![G::ZERO; height * width];
         let rows_no_padding = &mut rows[0..height_no_padding * width];
-        let lookups = rows_no_padding
+        let empty_lookup = Lookup {
+            multiplicity: G::ZERO,
+            args: vec![],
+        };
+        let mut lookups = vec![vec![empty_lookup; func.layout.lookups]; height];
+        let lookups_no_padding = &mut lookups[0..height_no_padding];
+        rows_no_padding
             .par_chunks_mut(width)
+            .zip(lookups_no_padding.par_iter_mut())
             .enumerate()
-            .map(|(i, row)| {
+            .for_each(|(i, (row, lookups))| {
                 let (inputs, result) = queries.get_index(i).unwrap();
                 let index = &mut ColumnIndex {
                     auxiliary: 0,
                     // we skip the first lookup, which is reserved for return
                     lookup: 1,
                 };
-                let empty_lookup = Lookup {
-                    multiplicity: G::ZERO,
-                    args: vec![],
-                };
-                let mut lookups = vec![empty_lookup; func.layout.lookups];
-                let slice = &mut ColumnMutSlice::from_slice(func, row, &mut lookups);
+                let slice = &mut ColumnMutSlice::from_slice(func, row, lookups);
                 let context = TraceContext {
                     function_index: G::from_usize(function_index),
                     inputs,
@@ -108,9 +110,7 @@ impl Toplevel {
                     query_record,
                 };
                 func.populate_row(index, slice, context);
-                lookups
-            })
-            .collect::<Vec<_>>();
+            });
         let trace = RowMajorMatrix::new(rows, width);
         (trace, lookups)
     }
