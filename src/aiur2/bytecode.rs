@@ -9,7 +9,6 @@ pub struct Toplevel {
 }
 
 pub struct Function {
-    pub(crate) name: String,
     pub(crate) body: Block,
     pub(crate) layout: FunctionLayout,
 }

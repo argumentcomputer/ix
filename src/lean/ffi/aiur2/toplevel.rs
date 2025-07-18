@@ -1,7 +1,3 @@
-// TODO: remove
-#![allow(dead_code)]
-
-use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::Goldilocks as G;
 use std::{ffi::c_void, mem::transmute};
 
@@ -10,20 +6,12 @@ use crate::{
     lean::{
         array::LeanArrayObject,
         ctor::LeanCtorObject,
-        ffi::{as_ref_unsafe, lean_is_scalar},
+        ffi::{
+            aiur2::{lean_unbox_nat_as_g, lean_unbox_nat_as_usize},
+            as_ref_unsafe, lean_is_scalar,
+        },
     },
-    lean_unbox,
 };
-
-fn lean_unbox_nat_as_usize(ptr: *const c_void) -> usize {
-    assert!(lean_is_scalar(ptr));
-    lean_unbox!(usize, ptr)
-}
-
-fn lean_unbox_nat_as_g(ptr: *const c_void) -> G {
-    assert!(lean_is_scalar(ptr));
-    G::from_usize(lean_unbox!(usize, ptr))
-}
 
 fn lean_ptr_to_vec_val_idx(ptr: *const c_void) -> Vec<ValIdx> {
     let array: &LeanArrayObject = as_ref_unsafe(ptr.cast());
@@ -161,7 +149,7 @@ fn lean_ptr_to_function(ptr: *const c_void) -> Function {
     Function { body, layout }
 }
 
-fn lean_ctor_to_toplevel(ctor: &LeanCtorObject) -> Toplevel {
+pub(crate) fn lean_ctor_to_toplevel(ctor: &LeanCtorObject) -> Toplevel {
     let [functions_ptr, memory_widths_ptr] = ctor.objs();
     let functions_array: &LeanArrayObject = as_ref_unsafe(functions_ptr.cast());
     let functions = functions_array.to_vec(lean_ptr_to_function);

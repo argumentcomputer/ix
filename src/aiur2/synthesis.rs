@@ -9,13 +9,13 @@ use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::Matrix;
 
-use crate::aiur2::trace::Channel;
-
-use super::{G, bytecode::Toplevel, constraints::Constraints};
+use crate::aiur2::{
+    G, bytecode::FunIdx, bytecode::Toplevel, constraints::Constraints, trace::Channel,
+};
 
 pub struct AiurSystem {
     toplevel: Toplevel,
-    system: System<LookupAir<Constraints, G>>,
+    system: System<LookupAir<Constraints>>,
 }
 
 impl BaseAir<G> for Constraints {
@@ -37,27 +37,26 @@ where
     }
 }
 
-impl Toplevel {
-    pub fn build_system(self) -> AiurSystem {
-        let iter = self.functions.iter().enumerate().map(|(i, f)| {
-            let (constraints, lookups) = self.build_constraints(i);
+impl AiurSystem {
+    pub fn build(toplevel: Toplevel) -> Self {
+        let iter = toplevel.functions.iter().enumerate().map(|(i, _f)| {
+            let (constraints, lookups) = toplevel.build_constraints(i);
             let air = LookupAir::new(constraints, lookups);
-            (f.name.as_str(), Circuit::from_air(air).unwrap())
+            Circuit::from_air(air).unwrap()
         });
         let system = System::new(iter);
-        AiurSystem {
-            system,
-            toplevel: self,
-        }
+        AiurSystem { system, toplevel }
     }
-}
 
-impl AiurSystem {
-    pub fn prove(&self, config: &StarkConfig, name: &str, input: &[G]) -> (Claim, Proof) {
-        let function_index = *self.system.circuit_names.get(name).unwrap();
-        let query_record = self.toplevel.execute(function_index, input.to_vec());
+    pub fn prove(&self, config: &StarkConfig, fun_idx: FunIdx, input: &[G]) -> (Claim, Proof) {
+        let query_record = self.toplevel.execute(fun_idx, input.to_vec());
+        let output = &query_record.function_queries[fun_idx]
+            .get(input)
+            .unwrap()
+            .output;
         let mut witness = SystemWitness { circuits: vec![] };
         let mut lookups = vec![];
+        // TODO: parallelize
         for function_index in 0..self.toplevel.functions.len() {
             let (trace, lookups_per_function) =
                 self.toplevel.generate_trace(function_index, &query_record);
@@ -65,22 +64,18 @@ impl AiurSystem {
             lookups.push(lookups_per_function);
         }
         let stage_2 = witness.stage_2_from_lookups(lookups);
-        let mut args = vec![Channel::Function.to_field(), G::from_usize(function_index)];
+        let mut args = vec![Channel::Function.to_field(), G::from_usize(fun_idx)];
         args.extend(input);
-        args.extend(
-            &query_record.function_queries[function_index]
-                .get(input)
-                .unwrap()
-                .output,
-        );
+        args.extend(output);
         let claim = Claim {
-            circuit_name: name.to_string(),
+            circuit_idx: fun_idx,
             args,
         };
         let proof = self.system.prove(config, &claim, witness, stage_2);
         (claim, proof)
     }
 
+    #[inline]
     pub fn verify(
         &self,
         config: &StarkConfig,
