@@ -167,19 +167,21 @@ impl Ctrl {
                 let (var, _) = state.map[*var].clone();
                 for (&value, branch) in cases.iter() {
                     let init = state.save();
+                    let branch_sel = branch.get_block_selector(state);
                     state
                         .constraints
                         .zeros
-                        .push(sel.clone() * (var.clone() - Expr::from(value)));
+                        .push(branch_sel * (var.clone() - Expr::from(value)));
                     branch.collect_constraints(state, toplevel);
                     state.restore(init);
                 }
                 def.iter().for_each(|branch| {
                     let init = state.save();
+                    let branch_sel = branch.get_block_selector(state);
                     for &value in cases.keys() {
                         let inverse = state.next_auxiliary();
                         state.constraints.zeros.push(
-                            sel.clone()
+                            branch_sel.clone()
                                 * ((var.clone() - Expr::from(value)) * inverse
                                     - Expr::from(G::ONE)),
                         );
@@ -216,9 +218,9 @@ impl Op {
                 if deg < 2 {
                     state.map.push((mul, deg));
                 } else {
-                    state.map.push((mul.clone(), 1));
                     let col = state.next_auxiliary();
-                    state.constraints.zeros.push(col - mul);
+                    state.map.push((col.clone(), 1));
+                    state.constraints.zeros.push(sel.clone() * (col - mul));
                 }
             }
             Op::Call(function_index, inputs, output_size) => {
