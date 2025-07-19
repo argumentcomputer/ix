@@ -1,6 +1,6 @@
 use multi_stark::{
     lookup::LookupAir,
-    prover::{Claim, Proof},
+    prover::Proof,
     system::{Circuit, System, SystemWitness},
     types::{FriParameters, PcsError, new_stark_config},
     verifier::VerificationError,
@@ -53,7 +53,7 @@ impl AiurSystem {
         fri_parameters: &FriParameters,
         fun_idx: FunIdx,
         input: &[G],
-    ) -> (Claim, Proof) {
+    ) -> (Vec<G>, Proof) {
         let (query_record, output) = self.toplevel.execute(fun_idx, input.to_vec());
         let mut witness = SystemWitness {
             traces: vec![],
@@ -66,13 +66,9 @@ impl AiurSystem {
             witness.traces.push(trace);
             witness.lookups.push(lookups_per_function);
         }
-        let mut args = vec![Channel::Function.to_field(), G::from_usize(fun_idx)];
-        args.extend(input);
-        args.extend(output);
-        let claim = Claim {
-            circuit_idx: fun_idx,
-            args,
-        };
+        let mut claim = vec![Channel::Function.to_field(), G::from_usize(fun_idx)];
+        claim.extend(input);
+        claim.extend(output);
         let config = new_stark_config(fri_parameters);
         let proof = self.system.prove(&config, &claim, witness);
         (claim, proof)
@@ -82,7 +78,7 @@ impl AiurSystem {
     pub fn verify(
         &self,
         fri_parameters: &FriParameters,
-        claim: &Claim,
+        claim: &[G],
         proof: &Proof,
     ) -> Result<(), VerificationError<PcsError>> {
         let config = new_stark_config(fri_parameters);

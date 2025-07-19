@@ -1,6 +1,6 @@
 use multi_stark::{
-    prover::{Claim, Proof},
-    types::FriParameters,
+    prover::Proof,
+    types::{FriParameters, Val},
 };
 use std::ffi::{CString, c_void};
 
@@ -51,6 +51,12 @@ fn lean_ctor_to_fri_parameters(ctor: &LeanCtorObject) -> FriParameters {
 }
 
 #[repr(C)]
+struct Claim {
+    circuit_idx: usize,
+    args: Vec<Val>,
+}
+
+#[repr(C)]
 struct ProveData {
     claim_num_args: usize,
     claim_ptr: *const Claim,
@@ -81,7 +87,11 @@ extern "C" fn rs_aiur_system_prove(
 ) -> *const ProveData {
     let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
     let args = args.to_vec(lean_unbox_g);
-    let (claim, proof) = aiur_system.prove(&fri_parameters, lean_unbox!(usize, fun_idx), &args);
+    let (args, proof) = aiur_system.prove(&fri_parameters, lean_unbox!(usize, fun_idx), &args);
+    let claim = Claim {
+        args,
+        circuit_idx: 0,
+    };
     let claim_num_args = claim.args.len();
     let prove_data = ProveData {
         claim_num_args,
@@ -113,7 +123,7 @@ extern "C" fn rs_aiur_system_verify(
 ) -> *const CResult {
     let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
     let claim = lean_ctor_to_claim(claim);
-    let c_result = match aiur_system.verify(&fri_parameters, &claim, proof) {
+    let c_result = match aiur_system.verify(&fri_parameters, &claim.args, proof) {
         Ok(()) => CResult {
             is_ok: true,
             data: std::ptr::null(),
