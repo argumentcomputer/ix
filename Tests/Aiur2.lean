@@ -154,14 +154,13 @@ def aiurTest : TestSeq :=
     let runTestCase := fun testCase =>
       let functionName := testCase.functionName
       let funIdx := toplevel.getFuncIdx functionName |>.get!
-      let output := bytecodeToplevel.executeTest funIdx testCase.input
-      let caseDescr := s!"{functionName} with arguments {testCase.input}"
-      let executionTest := test s!"Result of {caseDescr} is correct"
-        (output == testCase.expectedOutput)
       let (claim, proof) := aiurSystem.prove friParameters funIdx testCase.input
-      let protocolTest := withExceptOk s!"Prove/verify works for {caseDescr}"
+      let caseDescr := s!"{functionName} with arguments {testCase.input}"
+      let ioTest := test s!"Claim matches for {caseDescr}"
+        (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
+      let pvTest := withExceptOk s!"Prove/verify works for {caseDescr}"
         (aiurSystem.verify friParameters claim proof) fun _ => .done
-      executionTest ++ protocolTest
+      ioTest ++ pvTest
     testCases.foldl (init := .done) fun tSeq testCase =>
       tSeq ++ runTestCase testCase
 

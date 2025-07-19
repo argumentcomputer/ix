@@ -2,17 +2,13 @@
 
 #include "lean/lean.h"
 
-void rs_toplevel_execute_test(
-    b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg, lean_obj_arg
-);
-
 void rs_aiur_system_free(void*);
 void *rs_aiur_system_build(b_lean_obj_arg);
 
 typedef struct {
-    size_t claim_num_args;
-    void *claim_ptr;
-    void *proof_ptr;
+    size_t claim_size;
+    void *claim;
+    void *proof;
 } prove_data;
 
 void rs_aiur_claim_free(void*);

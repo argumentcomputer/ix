@@ -57,14 +57,6 @@ structure Toplevel where
   memoryWidths : Array Nat
   deriving Repr
 
-@[extern "c_rs_toplevel_execute_test"]
-private opaque Toplevel.executeTest' :
-  @& Toplevel → @& FunIdx → @& Array G → USize → Array G
-
-def Toplevel.executeTest (toplevel : Toplevel) (funIdx : FunIdx) (args : Array G) : Array G :=
-  let function := toplevel.functions[funIdx]!
-  toplevel.executeTest' funIdx args function.layout.outputSize.toUSize
-
 end Bytecode
 
 end Aiur

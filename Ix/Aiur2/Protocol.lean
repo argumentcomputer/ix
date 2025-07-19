@@ -15,21 +15,21 @@ structure FriParameters where
   numQueries : Nat
   proofOfWorkBits : Nat
 
-structure Claim where
-  circuitIdx : Nat
-  args : Array G
-  deriving Inhabited
-
 private opaque PoofNonempty : NonemptyType
 def Proof : Type := PoofNonempty.type
 instance : Nonempty Proof := PoofNonempty.property
 
 @[extern "c_rs_aiur_system_prove"]
 opaque AiurSystem.prove : @& AiurSystem → @& FriParameters →
-  @& Bytecode.FunIdx → @& Array G → Claim × Proof
+  @& Bytecode.FunIdx → @& Array G → Array G × Proof
 
 @[extern "c_rs_aiur_system_verify"]
-opaque AiurSystem.verify : @& AiurSystem → @& FriParameters → @& Claim → @& Proof →
-  Except String Unit
+opaque AiurSystem.verify : @& AiurSystem → @& FriParameters →
+  @& Array G → @& Proof → Except String Unit
+
+abbrev functionChannel : G := .ofNat 0
+
+def buildClaim (funIdx : Bytecode.FunIdx) (input output : Array G) :=
+  #[functionChannel, .ofNat funIdx] ++ input ++ output
 
 end Aiur

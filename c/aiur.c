@@ -2,21 +2,6 @@
 #include "common.h"
 #include "rust.h"
 
-extern lean_obj_res c_rs_toplevel_execute_test(
-    b_lean_obj_arg toplevel,
-    b_lean_obj_arg fun_idx,
-    b_lean_obj_arg args,
-    size_t output_size
-) {
-    lean_obj_res output = lean_alloc_array(output_size, output_size);
-    lean_object **output_data = lean_array_cptr(output);
-    for (size_t i = 0; i < output_size; i++) {
-        output_data[i] = lean_box_uint64(0);
-    }
-    rs_toplevel_execute_test(toplevel, fun_idx, args, output);
-    return output;
-}
-
 static lean_external_class *g_aiur_system_class = NULL;
 
 static lean_external_class *get_aiur_system_class() {
@@ -61,24 +46,20 @@ extern lean_obj_res c_rs_aiur_system_prove(
     );
 
     // Build the claim object
-    size_t claim_num_args = pd->claim_num_args;
-    lean_object *claim_args = lean_alloc_array(claim_num_args, claim_num_args);
-    lean_object **claim_args_data = lean_array_cptr(claim_args);
-    for (size_t i = 0; i < claim_num_args; i++) {
-        claim_args_data[i] = lean_box_uint64(0);
+    size_t claim_size = pd->claim_size;
+    lean_object *claim = lean_alloc_array(claim_size, claim_size);
+    lean_object **claim_data = lean_array_cptr(claim);
+    for (size_t i = 0; i < claim_size; i++) {
+        claim_data[i] = lean_box_uint64(0);
     }
-    rs_set_aiur_claim_args(claim_args, pd->claim_ptr);
-    lean_object *claim = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(claim, 0, fun_idx);
-    lean_ctor_set(claim, 1, claim_args);
+    rs_set_aiur_claim_args(claim, pd->claim);
+    rs_aiur_claim_free(pd->claim);
 
     // Build the tuple for return
     lean_object *tuple = lean_alloc_ctor(0, 2, 0);
     lean_ctor_set(tuple, 0, claim);
-    lean_ctor_set(tuple, 1, lean_alloc_external(get_aiur_proof_class(), pd->proof_ptr));
+    lean_ctor_set(tuple, 1, lean_alloc_external(get_aiur_proof_class(), pd->proof));
 
-    // Free the Rust `Claim` and `ProveData` objects
-    rs_aiur_claim_free(pd->claim_ptr);
     rs_aiur_prove_data_free(pd);
 
     return tuple;

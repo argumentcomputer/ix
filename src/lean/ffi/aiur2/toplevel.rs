@@ -7,7 +7,7 @@ use crate::{
         array::LeanArrayObject,
         ctor::LeanCtorObject,
         ffi::{
-            aiur2::{lean_unbox_g, lean_unbox_nat_as_usize, set_lean_array_data},
+            aiur2::{lean_unbox_g, lean_unbox_nat_as_usize},
             as_ref_unsafe, lean_is_scalar,
         },
     },
@@ -159,18 +159,4 @@ pub(crate) fn lean_ctor_to_toplevel(ctor: &LeanCtorObject) -> Toplevel {
         functions,
         memory_widths,
     }
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn rs_toplevel_execute_test(
-    toplevel: &LeanCtorObject,
-    fun_idx: *const c_void,
-    args: &LeanArrayObject,
-    output: &mut LeanArrayObject,
-) {
-    let fun_idx = lean_unbox_nat_as_usize(fun_idx);
-    let toplevel = lean_ctor_to_toplevel(toplevel);
-    let args = args.to_vec(lean_unbox_g);
-    let (_, output_values) = toplevel.execute(fun_idx, args);
-    set_lean_array_data(output, &output_values);
 }
