@@ -108,7 +108,7 @@ impl Function {
         // the multiplicity occupies another column
         state.column += 1;
         // finally, the return lookup occupies the first lookup slot
-        state.lookups[0].multiplicity = var!(state.column - 1);
+        state.lookups[0].multiplicity = -var!(state.column - 1);
         state.lookup += 1;
 
         self.body.collect_constraints(state, toplevel);
