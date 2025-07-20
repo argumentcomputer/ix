@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use multi_stark::{builder::symbolic::SymbolicExpression, lookup::Lookup};
 use p3_field::PrimeCharacteristicRing;
 
@@ -22,6 +24,7 @@ type Degree = u8;
 #[derive(Clone)]
 pub struct Constraints {
     pub zeros: Vec<Expr>,
+    pub selectors: Range<usize>,
     pub width: usize,
 }
 
@@ -82,6 +85,7 @@ impl Toplevel {
         };
         let constraints = Constraints {
             zeros: vec![],
+            selectors: 0..0,
             width: function.layout.width(),
         };
         let mut state = ConstraintState {
@@ -104,20 +108,28 @@ impl Function {
         state.column += self.layout.input_size;
         (0..self.layout.input_size).for_each(|i| state.map.push((var!(i), 1)));
         // then comes the selectors, which are not mapped
-        state.column += self.layout.selectors;
+        let init_sel = state.column;
+        let final_sel = state.column + self.layout.selectors;
+        state.constraints.selectors = init_sel..final_sel;
+        state.column = final_sel;
         // the multiplicity occupies another column
+        let multiplicity = var!(state.column);
         state.column += 1;
-        // finally, the return lookup occupies the first lookup slot
-        state.lookups[0].multiplicity = -var!(state.column - 1);
+        // the return lookup occupies the first lookup slot
+        state.lookups[0].multiplicity = -multiplicity.clone();
         state.lookup += 1;
-
-        self.body.collect_constraints(state, toplevel);
+        // the multiplicity can only be set if one and only one selector is set
+        let sel = self.body.get_block_selector(state);
+        state
+            .constraints
+            .zeros
+            .push(multiplicity * (Expr::from(G::ONE) - sel.clone()));
+        self.body.collect_constraints(sel, state, toplevel);
     }
 }
 
 impl Block {
-    fn collect_constraints(&self, state: &mut ConstraintState, toplevel: &Toplevel) {
-        let sel = self.get_block_selector(state);
+    fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState, toplevel: &Toplevel) {
         self.ops
             .iter()
             .for_each(|op| op.collect_constraints(&sel, state));
@@ -171,8 +183,8 @@ impl Ctrl {
                     state
                         .constraints
                         .zeros
-                        .push(branch_sel * (var.clone() - Expr::from(value)));
-                    branch.collect_constraints(state, toplevel);
+                        .push(branch_sel.clone() * (var.clone() - Expr::from(value)));
+                    branch.collect_constraints(branch_sel, state, toplevel);
                     state.restore(init);
                 }
                 def.iter().for_each(|branch| {
@@ -186,7 +198,7 @@ impl Ctrl {
                                     - Expr::from(G::ONE)),
                         );
                     }
-                    branch.collect_constraints(state, toplevel);
+                    branch.collect_constraints(branch_sel, state, toplevel);
                     state.restore(init);
                 })
             }

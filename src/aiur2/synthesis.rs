@@ -34,6 +34,9 @@ where
         for zero in self.zeros.iter() {
             builder.assert_zero(zero.interpret(&row));
         }
+        for sel in self.selectors.clone() {
+            builder.assert_bool(row[sel].clone());
+        }
     }
 }
 
