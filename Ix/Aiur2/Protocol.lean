@@ -2,12 +2,19 @@ import Ix.Aiur2.Bytecode
 
 namespace Aiur
 
-private opaque AiurSystemNonempty : NonemptyType
-def AiurSystem : Type := AiurSystemNonempty.type
-instance : Nonempty AiurSystem := AiurSystemNonempty.property
+private opaque PoofNonempty : NonemptyType
+def Proof : Type := PoofNonempty.type
+instance : Nonempty Proof := PoofNonempty.property
 
-@[extern "c_rs_aiur_system_build"]
-opaque AiurSystem.build : @&Bytecode.Toplevel → AiurSystem
+namespace Proof
+
+@[extern "c_rs_aiur_proof_to_bytes"]
+opaque toBytes : @& Proof → ByteArray
+
+@[extern "c_rs_aiur_proof_of_bytes"]
+opaque ofBytes : @& ByteArray → Proof
+
+end Proof
 
 structure FriParameters where
   logBlowup : Nat
@@ -15,17 +22,24 @@ structure FriParameters where
   numQueries : Nat
   proofOfWorkBits : Nat
 
-private opaque PoofNonempty : NonemptyType
-def Proof : Type := PoofNonempty.type
-instance : Nonempty Proof := PoofNonempty.property
+private opaque AiurSystemNonempty : NonemptyType
+def AiurSystem : Type := AiurSystemNonempty.type
+instance : Nonempty AiurSystem := AiurSystemNonempty.property
+
+namespace AiurSystem
+
+@[extern "c_rs_aiur_system_build"]
+opaque build : @&Bytecode.Toplevel → AiurSystem
 
 @[extern "c_rs_aiur_system_prove"]
-opaque AiurSystem.prove : @& AiurSystem → @& FriParameters →
+opaque prove : @& AiurSystem → @& FriParameters →
   @& Bytecode.FunIdx → @& Array G → Array G × Proof
 
 @[extern "c_rs_aiur_system_verify"]
-opaque AiurSystem.verify : @& AiurSystem → @& FriParameters →
+opaque verify : @& AiurSystem → @& FriParameters →
   @& Array G → @& Proof → Except String Unit
+
+end AiurSystem
 
 abbrev functionChannel : G := .ofNat 0
 

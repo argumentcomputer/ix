@@ -8,12 +8,26 @@ use crate::{
         boxed::BoxedU64,
         ctor::LeanCtorObject,
         ffi::{
-            CResult,
+            BytesData, CResult,
             aiur2::{lean_unbox_g, lean_unbox_nat_as_usize, toplevel::lean_ctor_to_toplevel},
             as_mut_unsafe, drop_raw, to_raw,
         },
+        sarray::LeanSArrayObject,
     },
 };
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_proof_to_bytes(proof: &Proof) -> *const BytesData {
+    let bytes = proof.to_bytes().expect("Serialization error");
+    let bytes_data = BytesData::from_vec(bytes);
+    to_raw(bytes_data)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_proof_of_bytes(byte_array: &LeanSArrayObject) -> *const Proof {
+    let proof = Proof::from_bytes(byte_array.data()).expect("Deserialization error");
+    to_raw(proof)
+}
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_free(ptr: *mut AiurSystem) {

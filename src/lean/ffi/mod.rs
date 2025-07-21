@@ -148,3 +148,28 @@ extern "C" fn rs_exterior_mul_u64(a: u64, b: u64) -> *const u128 {
     let c = a as u128 * b as u128;
     to_raw(c)
 }
+
+#[repr(C)]
+pub struct BytesData {
+    size: usize,
+    bytes_vec: *const Vec<u8>,
+}
+
+impl BytesData {
+    #[inline]
+    pub(super) fn from_vec(vec: Vec<u8>) -> Self {
+        Self {
+            size: vec.len(),
+            bytes_vec: to_raw(vec),
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_move_bytes(bytes_data: *mut BytesData, byte_array: &mut LeanSArrayObject) {
+    let bytes_data = unsafe { Box::from_raw(bytes_data) };
+    let bytes_vec = unsafe { Box::from_raw(bytes_data.bytes_vec as *mut Vec<_>) };
+    byte_array.set_data(&bytes_vec);
+    drop(bytes_vec);
+    drop(bytes_data);
+}

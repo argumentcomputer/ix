@@ -158,6 +158,7 @@ def aiurTest : TestSeq :=
       let caseDescr := s!"{functionName} with arguments {testCase.input}"
       let ioTest := test s!"Claim matches for {caseDescr}"
         (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
+      let proof := .ofBytes proof.toBytes
       let pvTest := withExceptOk s!"Prove/verify works for {caseDescr}"
         (aiurSystem.verify friParameters claim proof) fun _ => .done
       ioTest ++ pvTest

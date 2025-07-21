@@ -2,6 +2,31 @@
 #include "common.h"
 #include "rust.h"
 
+static lean_external_class *g_aiur_proof_class = NULL;
+
+static lean_external_class *get_aiur_proof_class() {
+    if (g_aiur_proof_class == NULL) {
+        g_aiur_proof_class = lean_register_external_class(
+            &rs_aiur_proof_free,
+            &noop_foreach
+        );
+    }
+    return g_aiur_proof_class;
+}
+
+extern lean_obj_res c_rs_aiur_proof_to_bytes(b_lean_obj_arg proof) {
+    bytes_data *proof_bytes = rs_aiur_proof_to_bytes(lean_get_external_data(proof));
+    size_t proof_size = proof_bytes->size;
+    lean_object *byte_array = lean_alloc_sarray(1, proof_size, proof_size);
+    rs_move_bytes(proof_bytes, byte_array);
+    return byte_array;
+}
+
+extern lean_obj_res c_rs_aiur_proof_of_bytes(b_lean_obj_arg bytes) {
+    void *proof = rs_aiur_proof_of_bytes(bytes);
+    return lean_alloc_external(get_aiur_proof_class(), proof);
+}
+
 static lean_external_class *g_aiur_system_class = NULL;
 
 static lean_external_class *get_aiur_system_class() {
@@ -17,18 +42,6 @@ static lean_external_class *get_aiur_system_class() {
 extern lean_obj_res c_rs_aiur_system_build(b_lean_obj_arg toplevel) {
     void *aiur_system = rs_aiur_system_build(toplevel);
     return lean_alloc_external(get_aiur_system_class(), aiur_system);
-}
-
-static lean_external_class *g_aiur_proof_class = NULL;
-
-static lean_external_class *get_aiur_proof_class() {
-    if (g_aiur_proof_class == NULL) {
-        g_aiur_proof_class = lean_register_external_class(
-            &rs_aiur_proof_free,
-            &noop_foreach
-        );
-    }
-    return g_aiur_proof_class;
 }
 
 extern lean_obj_res c_rs_aiur_system_prove(
