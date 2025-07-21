@@ -1,5 +1,4 @@
-use multi_stark::{prover::Proof, types::FriParameters};
-use p3_field::PrimeField64;
+use multi_stark::{p3_field::PrimeField64, prover::Proof, types::FriParameters};
 use std::ffi::{CString, c_void};
 
 use crate::{

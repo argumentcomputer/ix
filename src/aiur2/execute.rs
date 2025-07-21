@@ -1,4 +1,4 @@
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
+use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 use super::{
     G,

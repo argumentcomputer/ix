@@ -1,13 +1,13 @@
 use multi_stark::{
     lookup::LookupAir,
+    p3_air::{Air, AirBuilder, BaseAir},
+    p3_field::PrimeCharacteristicRing,
+    p3_matrix::Matrix,
     prover::Proof,
     system::{Circuit, System, SystemWitness},
     types::{FriParameters, PcsError, new_stark_config},
     verifier::VerificationError,
 };
-use p3_air::{Air, AirBuilder, BaseAir};
-use p3_field::PrimeCharacteristicRing;
-use p3_matrix::Matrix;
 
 use crate::aiur2::{
     G, bytecode::FunIdx, bytecode::Toplevel, constraints::Constraints, trace::Channel,

@@ -1,6 +1,8 @@
-use multi_stark::lookup::Lookup;
-use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
-use p3_matrix::dense::RowMajorMatrix;
+use multi_stark::{
+    lookup::Lookup,
+    p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
+    p3_matrix::dense::RowMajorMatrix,
+};
 use rayon::{iter::*, slice::*};
 
 use super::{

@@ -1,4 +1,4 @@
-use p3_field::integers::QuotientMap;
+use multi_stark::p3_field::integers::QuotientMap;
 use std::ffi::c_void;
 
 use crate::{

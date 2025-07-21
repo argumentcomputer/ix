@@ -1,7 +1,8 @@
 use std::ops::Range;
 
-use multi_stark::{builder::symbolic::SymbolicExpression, lookup::Lookup};
-use p3_field::PrimeCharacteristicRing;
+use multi_stark::{
+    builder::symbolic::SymbolicExpression, lookup::Lookup, p3_field::PrimeCharacteristicRing,
+};
 
 use crate::aiur2::trace::Channel;
 

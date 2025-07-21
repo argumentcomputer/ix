@@ -1,8 +1,10 @@
-use p3_goldilocks::Goldilocks as G;
 use std::ffi::c_void;
 
 use crate::{
-    aiur2::bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx},
+    aiur2::{
+        G,
+        bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx},
+    },
     lean::{
         array::LeanArrayObject,
         ctor::LeanCtorObject,
