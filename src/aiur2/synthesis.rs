@@ -77,7 +77,7 @@ impl AiurSystem {
             let air = LookupAir::new(AiurCircuit::Function(constraints), lookups);
             Circuit::from_air(air).unwrap()
         });
-        let memory_circuits = toplevel.memory_widths.iter().map(|&width| {
+        let memory_circuits = toplevel.memory_sizes.iter().map(|&width| {
             let (memory, lookup) = Memory::build(width);
             let air = LookupAir::new(AiurCircuit::Memory(memory), vec![lookup]);
             Circuit::from_air(air).unwrap()
@@ -104,7 +104,7 @@ impl AiurSystem {
             witness.traces.push(trace);
             witness.lookups.push(lookups_per_function);
         }
-        for width in &self.toplevel.memory_widths {
+        for width in &self.toplevel.memory_sizes {
             let (trace, lookups) = Memory::generate_trace(*width, &query_record);
             witness.traces.push(trace);
             witness.lookups.push(lookups);

@@ -5,7 +5,7 @@ use super::G;
 
 pub struct Toplevel {
     pub(crate) functions: Vec<Function>,
-    pub(crate) memory_widths: Vec<usize>,
+    pub(crate) memory_sizes: Vec<usize>,
 }
 
 pub struct Function {

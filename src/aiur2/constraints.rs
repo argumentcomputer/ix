@@ -269,13 +269,13 @@ impl Op {
                 lookup.multiplicity += sel.clone();
             }
             Op::Store(values) => {
-                let width = values.len();
+                let size = values.len();
                 // channel, function index and pointer
                 let ptr = state.next_auxiliary();
                 state.map.push((ptr.clone(), 1));
                 let mut vector = vec![
                     sel.clone() * Channel::Memory.to_field(),
-                    sel.clone() * G::from_usize(width),
+                    sel.clone() * G::from_usize(size),
                     sel.clone() * ptr.clone(),
                 ];
                 // stored values
@@ -296,15 +296,15 @@ impl Op {
                 lookup.args.extend(values_iter);
                 lookup.multiplicity += sel.clone();
             }
-            Op::Load(width, ptr) => {
-                // channel, function index and pointer
+            Op::Load(size, ptr) => {
+                // channel, size and pointer
                 let mut vector = vec![
                     sel.clone() * Channel::Memory.to_field(),
-                    sel.clone() * G::from_usize(*width),
+                    sel.clone() * G::from_usize(*size),
                     sel.clone() * state.map[*ptr].0.clone(),
                 ];
                 // loaded values
-                let values = (0..*width).map(|_| {
+                let values = (0..*size).map(|_| {
                     let col = state.next_auxiliary();
                     state.map.push((col.clone(), 1));
                     col

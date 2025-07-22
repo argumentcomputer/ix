@@ -25,7 +25,7 @@ impl QueryRecord {
             .map(|_| QueryMap::default())
             .collect();
         let memory_queries = toplevel
-            .memory_widths
+            .memory_sizes
             .iter()
             .map(|width| (*width, QueryMap::default()))
             .collect();
@@ -110,11 +110,11 @@ impl Function {
                 }
                 ExecEntry::Op(Op::Store(values)) => {
                     let values = values.iter().map(|v| map[*v]).collect::<Vec<_>>();
-                    let width = values.len();
+                    let size = values.len();
                     let memory_queries = record
                         .memory_queries
-                        .get_mut(&width)
-                        .expect("Invalid memory width");
+                        .get_mut(&size)
+                        .expect("Invalid memory size");
                     if let Some(result) = memory_queries.get_mut(&values) {
                         result.multiplicity += G::ONE;
                         map.extend(&result.output);
@@ -128,11 +128,11 @@ impl Function {
                         map.push(ptr);
                     }
                 }
-                ExecEntry::Op(Op::Load(width, ptr)) => {
+                ExecEntry::Op(Op::Load(size, ptr)) => {
                     let memory_queries = record
                         .memory_queries
-                        .get_mut(width)
-                        .expect("Invalid memory width");
+                        .get_mut(size)
+                        .expect("Invalid memory size");
                     let ptr = &map[*ptr];
                     let ptr_u64 = ptr.as_canonical_u64();
                     let ptr_usize = usize::try_from(ptr_u64).expect("Pointer is too big");

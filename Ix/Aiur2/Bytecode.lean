@@ -15,7 +15,7 @@ inductive Op
   | mul : ValIdx → ValIdx → Op
   | call : FunIdx → Array ValIdx → (outputSize : Nat) → Op
   | store : Array ValIdx → Op
-  | load : (width : Nat) → ValIdx → Op
+  | load : (size : Nat) → ValIdx → Op
   deriving Repr
 
 mutual
@@ -54,7 +54,7 @@ structure Function where
 
 structure Toplevel where
   functions : Array Function
-  memoryWidths : Array Nat
+  memorySizes : Array Nat
   deriving Repr
 
 end Bytecode

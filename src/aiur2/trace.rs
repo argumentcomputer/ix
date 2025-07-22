@@ -256,12 +256,12 @@ impl Op {
                 slice.push_lookup(index, lookup);
             }
             Op::Store(values) => {
-                let width = values.len();
+                let size = values.len();
                 let memory_queries = context
                     .query_record
                     .memory_queries
-                    .get(&width)
-                    .expect("Invalid memory width");
+                    .get(&size)
+                    .expect("Invalid memory size");
                 let values = values.iter().map(|a| map[*a].0).collect::<Vec<_>>();
                 let ptr = G::from_usize(
                     memory_queries
@@ -270,15 +270,15 @@ impl Op {
                 );
                 map.push((ptr, 1));
                 slice.push_auxiliary(index, ptr);
-                let lookup = Memory::lookup(G::ONE, G::from_usize(width), ptr, &values);
+                let lookup = Memory::lookup(G::ONE, G::from_usize(size), ptr, &values);
                 slice.push_lookup(index, lookup);
             }
-            Op::Load(width, ptr) => {
+            Op::Load(size, ptr) => {
                 let memory_queries = context
                     .query_record
                     .memory_queries
-                    .get(width)
-                    .expect("Invalid memory width");
+                    .get(size)
+                    .expect("Invalid memory size");
                 let (ptr, _) = map[*ptr];
                 let ptr_u64 = ptr.as_canonical_u64();
                 let ptr_usize = usize::try_from(ptr_u64).expect("Pointer is too big");
@@ -289,7 +289,7 @@ impl Op {
                     map.push((*f, 1));
                     slice.push_auxiliary(index, *f);
                 }
-                let lookup = Memory::lookup(G::ONE, G::from_usize(*width), ptr, values);
+                let lookup = Memory::lookup(G::ONE, G::from_usize(*size), ptr, values);
                 slice.push_lookup(index, lookup);
             }
         }

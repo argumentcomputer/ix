@@ -16,11 +16,11 @@ def SharedData.maximals (a b : SharedData) : SharedData := {
   lookups := a.lookups.max b.lookups
 }
 
-abbrev MemWidths := Lean.RBTree Nat compare
+abbrev MemSizes := Lean.RBTree Nat compare
 
 structure LayoutMState where
   functionLayout : FunctionLayout
-  memWidths : MemWidths
+  memSizes : MemSizes
   degrees : Array Nat
 
 /-- A new `LayoutMState` starts with one auxiliar for the multiplicity. -/
@@ -41,8 +41,8 @@ abbrev LayoutM := StateM LayoutMState
   modify fun stt => { stt with
     functionLayout := { stt.functionLayout with auxiliaries := stt.functionLayout.auxiliaries + n } }
 
-@[inline] def addMemWidth (memWidth : Nat) : LayoutM Unit :=
-  modify fun stt => { stt with memWidths := stt.memWidths.insert memWidth }
+@[inline] def addMemSize (size : Nat) : LayoutM Unit :=
+  modify fun stt => { stt with memSizes := stt.memSizes.insert size }
 
 @[inline] def pushDegree (degree : Nat) : LayoutM Unit :=
   modify fun stt => { stt with degrees := stt.degrees.push degree }
@@ -88,12 +88,12 @@ def opLayout : Bytecode.Op → LayoutM Unit
     pushDegree 1
     bumpAuxiliaries 1
     bumpLookups
-    addMemWidth values.size
-  | .load width _ => do
-    pushDegrees $ .mkArray width 1
-    bumpAuxiliaries width
+    addMemSize values.size
+  | .load size _ => do
+    pushDegrees $ .mkArray size 1
+    bumpAuxiliaries size
     bumpLookups
-    addMemWidth width
+    addMemSize size
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   block.ops.forM opLayout
@@ -467,15 +467,15 @@ def TypedFunction.compile (layoutMap : LayoutMap) (f : TypedFunction) :
 
 def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
   let layout := decls.layoutMap
-  let initMemWidths : Bytecode.MemWidths := .empty
-  let (functions, memWidths) := decls.foldl (init := (#[], initMemWidths))
-    fun acc@(functions, memWidths) (_, decl) => match decl with
+  let initMemSizes : Bytecode.MemSizes := .empty
+  let (functions, memSizes) := decls.foldl (init := (#[], initMemSizes))
+    fun acc@(functions, memSizes) (_, decl) => match decl with
       | .function function =>
         let (body, layoutMState) := function.compile layout
         let function := ⟨body, layoutMState.functionLayout⟩
-        let memWidths := layoutMState.memWidths.fold (·.insert ·) memWidths
-        (functions.push function, memWidths)
+        let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
+        (functions.push function, memSizes)
       | _ => acc
-  ⟨functions, memWidths.toArray⟩
+  ⟨functions, memSizes.toArray⟩
 
 end Aiur

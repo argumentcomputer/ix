@@ -19,46 +19,46 @@ use crate::{
 };
 
 pub struct Memory {
-    width: usize,
+    size: usize,
 }
 
 impl Memory {
-    pub(super) fn lookup(multiplicity: G, memory_width: G, ptr: G, values: &[G]) -> Lookup<G> {
-        let mut args = vec![Channel::Memory.to_field(), memory_width, ptr];
+    pub(super) fn lookup(multiplicity: G, size: G, ptr: G, values: &[G]) -> Lookup<G> {
+        let mut args = vec![Channel::Memory.to_field(), size, ptr];
         args.extend(values);
         Lookup { multiplicity, args }
     }
 
-    fn trace_width(width: usize) -> usize {
+    fn width(size: usize) -> usize {
         // multiplicity, selector, pointer and values
-        3 + width
+        3 + size
     }
 
-    pub fn build(width: usize) -> (Self, Lookup<SymbolicExpression<G>>) {
+    pub fn build(size: usize) -> (Self, Lookup<SymbolicExpression<G>>) {
         let multiplicity = sym_var!(0);
         let selector = sym_var!(1);
         let pointer = sym_var!(2);
-        let mut args = Vec::with_capacity(3 + width);
+        let mut args = Vec::with_capacity(3 + size);
         args.push(selector.clone() * Channel::Memory.to_field());
-        args.push(selector.clone() * G::from_usize(width));
+        args.push(selector.clone() * G::from_usize(size));
         args.push(selector.clone() * pointer);
-        for val_idx in 0..width {
+        for val_idx in 0..size {
             args.push(selector.clone() * sym_var!(3 + val_idx));
         }
-        (Self { width }, Lookup { multiplicity, args })
+        (Self { size }, Lookup { multiplicity, args })
     }
 
     pub fn generate_trace(
-        width: usize,
+        size: usize,
         record: &QueryRecord,
     ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
-        let queries = record.memory_queries.get(&width).expect("Invalid width");
-        let trace_width = Self::trace_width(width);
+        let queries = record.memory_queries.get(&size).expect("Invalid size");
+        let width = Self::width(size);
         let height_no_padding = queries.len();
         let height = height_no_padding.next_power_of_two();
 
-        let mut rows = vec![G::ZERO; height * trace_width];
-        let rows_no_padding = &mut rows[0..height_no_padding * trace_width];
+        let mut rows = vec![G::ZERO; height * width];
+        let rows_no_padding = &mut rows[0..height_no_padding * width];
 
         let empty_lookup = Lookup {
             multiplicity: G::ZERO,
@@ -68,7 +68,7 @@ impl Memory {
         let lookups_no_padding = &mut lookups[0..height_no_padding];
 
         rows_no_padding
-            .par_chunks_mut(trace_width)
+            .par_chunks_mut(width)
             .zip(queries.par_iter())
             .zip(lookups_no_padding.par_iter_mut())
             .enumerate()
@@ -78,17 +78,17 @@ impl Memory {
                 row[2] = G::from_usize(i);
                 row[3..].copy_from_slice(values);
 
-                row_lookups[0] = Self::lookup(row[0], G::from_usize(width), row[2], &row[3..]);
+                row_lookups[0] = Self::lookup(row[0], G::from_usize(size), row[2], &row[3..]);
             });
 
-        let trace = RowMajorMatrix::new(rows, trace_width);
+        let trace = RowMajorMatrix::new(rows, width);
         (trace, lookups)
     }
 }
 
 impl BaseAir<G> for Memory {
     fn width(&self) -> usize {
-        Self::trace_width(self.width)
+        Self::width(self.size)
     }
 }
 

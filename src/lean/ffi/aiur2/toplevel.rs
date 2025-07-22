@@ -152,13 +152,13 @@ fn lean_ptr_to_function(ptr: *const c_void) -> Function {
 }
 
 pub(crate) fn lean_ctor_to_toplevel(ctor: &LeanCtorObject) -> Toplevel {
-    let [functions_ptr, memory_widths_ptr] = ctor.objs();
+    let [functions_ptr, memory_sizes_ptr] = ctor.objs();
     let functions_array: &LeanArrayObject = as_ref_unsafe(functions_ptr.cast());
     let functions = functions_array.to_vec(lean_ptr_to_function);
-    let memory_widths_array: &LeanArrayObject = as_ref_unsafe(memory_widths_ptr.cast());
-    let memory_widths = memory_widths_array.to_vec(lean_unbox_nat_as_usize);
+    let memory_sizes_array: &LeanArrayObject = as_ref_unsafe(memory_sizes_ptr.cast());
+    let memory_sizes = memory_sizes_array.to_vec(lean_unbox_nat_as_usize);
     Toplevel {
         functions,
-        memory_widths,
+        memory_sizes,
     }
 }
