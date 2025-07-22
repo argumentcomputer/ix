@@ -1,14 +1,12 @@
-use std::ops::Range;
-
 use multi_stark::{
     builder::symbolic::SymbolicExpression, lookup::Lookup, p3_field::PrimeCharacteristicRing,
 };
-
-use crate::aiur2::trace::Channel;
+use std::ops::Range;
 
 use super::{
     G,
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
+    trace::Channel,
 };
 
 #[macro_export]
@@ -23,7 +21,7 @@ macro_rules! sym_var {
 type Expr = SymbolicExpression<G>;
 type Degree = u8;
 
-#[derive(Clone)]
+/// Holds data for a function circuit.
 pub struct Constraints {
     pub zeros: Vec<Expr>,
     pub selectors: Range<usize>,

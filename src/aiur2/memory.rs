@@ -19,7 +19,7 @@ use crate::{
 };
 
 pub struct Memory {
-    size: usize,
+    width: usize,
 }
 
 impl Memory {
@@ -30,7 +30,7 @@ impl Memory {
     }
 
     fn width(size: usize) -> usize {
-        // multiplicity, selector, pointer and values
+        // Multiplicity, selector, pointer and values.
         3 + size
     }
 
@@ -45,7 +45,8 @@ impl Memory {
         for val_idx in 0..size {
             args.push(selector.clone() * sym_var!(3 + val_idx));
         }
-        (Self { size }, Lookup { multiplicity, args })
+        let width = Self::width(size);
+        (Self { width }, Lookup { multiplicity, args })
     }
 
     pub fn generate_trace(
@@ -88,7 +89,7 @@ impl Memory {
 
 impl BaseAir<G> for Memory {
     fn width(&self) -> usize {
-        Self::width(self.size)
+        self.width
     }
 }
 

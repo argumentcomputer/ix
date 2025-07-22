@@ -29,9 +29,11 @@ enum AiurCircuit {
 
 impl BaseAir<G> for AiurCircuit {
     fn width(&self) -> usize {
+        // Even though the inner types might have `width` attributes, we dispatch
+        // to their trait implementations for correctness.
         match self {
-            Self::Function(constraints) => <Constraints as BaseAir<G>>::width(constraints),
-            Self::Memory(memory) => <Memory as BaseAir<G>>::width(memory),
+            Self::Function(constraints) => constraints.width(),
+            Self::Memory(memory) => memory.width(),
         }
     }
 }
@@ -42,8 +44,8 @@ where
 {
     fn eval(&self, builder: &mut AB) {
         match self {
-            Self::Function(constraints) => <Constraints as Air<AB>>::eval(constraints, builder),
-            Self::Memory(memory) => <Memory as Air<AB>>::eval(memory, builder),
+            Self::Function(constraints) => constraints.eval(builder),
+            Self::Memory(memory) => memory.eval(builder),
         }
     }
 }
@@ -104,6 +106,7 @@ impl AiurSystem {
             witness.traces.push(trace);
             witness.lookups.push(lookups_per_function);
         }
+        // TODO: parallelize
         for width in &self.toplevel.memory_sizes {
             let (trace, lookups) = Memory::generate_trace(*width, &query_record);
             witness.traces.push(trace);
