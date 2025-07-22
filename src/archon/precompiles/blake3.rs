@@ -114,12 +114,12 @@ fn state_transition_module(
     let mut circuit_module = CircuitModule::new(id);
     let state_transitions: [OracleIdx; STATE_SIZE] = array_util::try_from_fn(|xy| {
         circuit_module
-            .add_committed::<B32>(&format!("state-transition-{:?}", xy), RelativeHeight::Base)
+            .add_committed::<B32>(&format!("state-transition-{xy:?}"), RelativeHeight::Base)
     })?;
 
     let input: [OracleIdx; STATE_SIZE] = array_util::try_from_fn(|xy| {
         circuit_module.add_projected(
-            &format!("input-{:?}", xy),
+            &format!("input-{xy:?}"),
             state_transitions[xy],
             PROJECTED_SELECTOR_INPUT,
             SINGLE_COMPRESSION_HEIGHT,
@@ -128,7 +128,7 @@ fn state_transition_module(
 
     let output: [OracleIdx; STATE_SIZE] = array_util::try_from_fn(|xy| {
         circuit_module.add_projected(
-            &format!("output-{:?}", xy),
+            &format!("output-{xy:?}"),
             state_transitions[xy],
             PROJECTED_SELECTOR_OUTPUT,
             SINGLE_COMPRESSION_HEIGHT,
@@ -238,11 +238,11 @@ fn additions_xor_rotates_module(
     )?;
 
     let couts: [OracleIdx; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
-        circuit_module.add_committed::<B1>(&format!("cout-{:?}", xy), RelativeHeight::Base)
+        circuit_module.add_committed::<B1>(&format!("cout-{xy:?}"), RelativeHeight::Base)
     })?;
     let cins: [OracleIdx; ADDITION_OPERATIONS_NUMBER] = array_util::try_from_fn(|xy| {
         circuit_module.add_shifted(
-            &format!("cin-{:?}", xy),
+            &format!("cin-{xy:?}"),
             couts[xy],
             1,
             5,
