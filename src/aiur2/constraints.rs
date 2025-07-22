@@ -11,7 +11,8 @@ use super::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
 };
 
-macro_rules! var {
+#[macro_export]
+macro_rules! sym_var {
     ($a:expr) => {{
         use multi_stark::builder::symbolic::*;
         let entry = Entry::Main { offset: 0 };
@@ -58,7 +59,7 @@ impl ConstraintState {
 
     fn next_auxiliary(&mut self) -> Expr {
         self.column += 1;
-        var!(self.column - 1)
+        sym_var!(self.column - 1)
     }
 
     fn save(&mut self) -> SharedState {
@@ -107,14 +108,14 @@ impl Function {
     fn build_constraints(&self, state: &mut ConstraintState, toplevel: &Toplevel) {
         // the first columns are occupied by the input, which is also mapped
         state.column += self.layout.input_size;
-        (0..self.layout.input_size).for_each(|i| state.map.push((var!(i), 1)));
+        (0..self.layout.input_size).for_each(|i| state.map.push((sym_var!(i), 1)));
         // then comes the selectors, which are not mapped
         let init_sel = state.column;
         let final_sel = state.column + self.layout.selectors;
         state.constraints.selectors = init_sel..final_sel;
         state.column = final_sel;
         // the multiplicity occupies another column
-        let multiplicity = var!(state.column);
+        let multiplicity = sym_var!(state.column);
         state.column += 1;
         // the return lookup occupies the first lookup slot
         state.lookups[0].multiplicity = -multiplicity.clone();
@@ -139,7 +140,7 @@ impl Block {
 
     fn get_block_selector(&self, state: &mut ConstraintState) -> Expr {
         (self.min_sel_included..self.max_sel_excluded)
-            .map(|i| var!(state.selector_index(i)))
+            .map(|i| sym_var!(state.selector_index(i)))
             .fold(Expr::Constant(G::ZERO), |var, acc| var + acc)
     }
 }

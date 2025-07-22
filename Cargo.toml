@@ -25,7 +25,7 @@ multi-stark = { git = "https://github.com/argumentcomputer/multi-stark", branch 
 rayon = "1.7.0"
 rand = "0.9.1"
 rustc-hash = "2"
-indexmap = "2"
+indexmap = { version = "2", features = ["rayon"] }
 bytes = "1.10.1"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 

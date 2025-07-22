@@ -3,12 +3,16 @@ use multi_stark::{
     p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
     p3_matrix::dense::RowMajorMatrix,
 };
-use rayon::{iter::*, slice::*};
+use rayon::{
+    iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
 
 use super::{
     G,
     bytecode::{Block, Ctrl, Function, Op, Toplevel},
     execute::QueryRecord,
+    memory::Memory,
 };
 
 pub enum Channel {
@@ -266,7 +270,7 @@ impl Op {
                 );
                 map.push((ptr, 1));
                 slice.push_auxiliary(index, ptr);
-                let lookup = memory_lookup(G::ONE, G::from_usize(width), ptr, &values);
+                let lookup = Memory::lookup(G::ONE, G::from_usize(width), ptr, &values);
                 slice.push_lookup(index, lookup);
             }
             Op::Load(width, ptr) => {
@@ -285,7 +289,7 @@ impl Op {
                     map.push((*f, 1));
                     slice.push_auxiliary(index, *f);
                 }
-                let lookup = memory_lookup(G::ONE, G::from_usize(*width), ptr, values);
+                let lookup = Memory::lookup(G::ONE, G::from_usize(*width), ptr, values);
                 slice.push_lookup(index, lookup);
             }
         }
@@ -296,11 +300,5 @@ fn function_lookup(multiplicity: G, function_index: G, inputs: &[G], output: &[G
     let mut args = vec![Channel::Function.to_field(), function_index];
     args.extend(inputs);
     args.extend(output);
-    Lookup { multiplicity, args }
-}
-
-fn memory_lookup(multiplicity: G, memory_index: G, ptr: G, values: &[G]) -> Lookup<G> {
-    let mut args = vec![Channel::Memory.to_field(), memory_index, ptr];
-    args.extend(values);
     Lookup { multiplicity, args }
 }

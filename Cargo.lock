@@ -2192,6 +2192,7 @@ checksum = "fe4cd85333e22411419a0bcae1297d25e58c9443848b11dc6a86fefe8c78a661"
 dependencies = [
  "equivalent",
  "hashbrown 0.15.4",
+ "rayon",
 ]
 
 [[package]]
@@ -2774,7 +2775,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark?branch=dev#c9b5485e48db3b6c182b0088f02b474fadea6aa0"
+source = "git+https://github.com/argumentcomputer/multi-stark?branch=dev#eda5032f8086cb8e5d3db30eb3a4dd20e109189a"
 dependencies = [
  "bincode",
  "p3-air",
@@ -4166,9 +4167,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.5.14"
+version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de3a5d9f0aba1dbcec1cc47f0ff94a4b778fe55bca98a6dfa92e4e094e57b1c4"
+checksum = "7e8af0dde094006011e6a740d4879319439489813bd0bcdc7d821beaeeff48ec"
 dependencies = [
  "bitflags 2.9.1",
 ]

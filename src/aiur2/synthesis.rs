@@ -10,12 +10,42 @@ use multi_stark::{
 };
 
 use crate::aiur2::{
-    G, bytecode::FunIdx, bytecode::Toplevel, constraints::Constraints, trace::Channel,
+    G,
+    bytecode::{FunIdx, Toplevel},
+    constraints::Constraints,
+    memory::Memory,
+    trace::Channel,
 };
 
 pub struct AiurSystem {
     toplevel: Toplevel,
-    system: System<Constraints>,
+    system: System<AiurCircuit>,
+}
+
+enum AiurCircuit {
+    Function(Constraints),
+    Memory(Memory),
+}
+
+impl BaseAir<G> for AiurCircuit {
+    fn width(&self) -> usize {
+        match self {
+            Self::Function(constraints) => <Constraints as BaseAir<G>>::width(constraints),
+            Self::Memory(memory) => <Memory as BaseAir<G>>::width(memory),
+        }
+    }
+}
+
+impl<AB> Air<AB> for AiurCircuit
+where
+    AB: AirBuilder<F = G>,
+{
+    fn eval(&self, builder: &mut AB) {
+        match self {
+            Self::Function(constraints) => <Constraints as Air<AB>>::eval(constraints, builder),
+            Self::Memory(memory) => <Memory as Air<AB>>::eval(memory, builder),
+        }
+    }
 }
 
 impl BaseAir<G> for Constraints {
@@ -42,12 +72,17 @@ where
 
 impl AiurSystem {
     pub fn build(toplevel: Toplevel) -> Self {
-        let iter = (0..toplevel.functions.len()).map(|i| {
+        let function_circuits = (0..toplevel.functions.len()).map(|i| {
             let (constraints, lookups) = toplevel.build_constraints(i);
-            let air = LookupAir::new(constraints, lookups);
+            let air = LookupAir::new(AiurCircuit::Function(constraints), lookups);
             Circuit::from_air(air).unwrap()
         });
-        let system = System::new(iter);
+        let memory_circuits = toplevel.memory_widths.iter().map(|&width| {
+            let (memory, lookup) = Memory::build(width);
+            let air = LookupAir::new(AiurCircuit::Memory(memory), vec![lookup]);
+            Circuit::from_air(air).unwrap()
+        });
+        let system = System::new(function_circuits.chain(memory_circuits));
         AiurSystem { system, toplevel }
     }
 
@@ -68,6 +103,11 @@ impl AiurSystem {
                 self.toplevel.generate_trace(function_index, &query_record);
             witness.traces.push(trace);
             witness.lookups.push(lookups_per_function);
+        }
+        for width in &self.toplevel.memory_widths {
+            let (trace, lookups) = Memory::generate_trace(*width, &query_record);
+            witness.traces.push(trace);
+            witness.lookups.push(lookups);
         }
         let mut claim = vec![Channel::Function.to_field(), G::from_usize(fun_idx)];
         claim.extend(input);
