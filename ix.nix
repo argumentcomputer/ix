@@ -3,7 +3,7 @@ let
   # Pins the Rust toolchain
   rustToolchain = fenix.packages.${system}.fromToolchainFile {
     file = ./rust-toolchain.toml;
-    sha256 = "sha256-K6JpsrjePh1Bzfy09OABWWdYgbQ36iWyp+tV9MSnveY=";
+    sha256 = "sha256-pyALh2dsNqnioKUs2BY07gOU96ZNB7D4esEmcxym//4=";
   };
 
   # Rust package
