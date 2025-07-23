@@ -35,7 +35,7 @@ impl Memory {
     }
 
     pub fn build(size: usize) -> (Self, Lookup<SymbolicExpression<G>>) {
-        let multiplicity = sym_var!(0);
+        let multiplicity = -sym_var!(0);
         let selector = sym_var!(1);
         let pointer = sym_var!(2);
         let mut args = Vec::with_capacity(3 + size);
@@ -74,12 +74,12 @@ impl Memory {
             .zip(lookups_no_padding.par_iter_mut())
             .enumerate()
             .for_each(|(i, ((row, (values, result)), row_lookups))| {
-                row[0] = -result.multiplicity;
+                row[0] = result.multiplicity;
                 row[1] = G::ONE;
                 row[2] = G::from_usize(i);
                 row[3..].copy_from_slice(values);
 
-                row_lookups[0] = Self::lookup(row[0], G::from_usize(size), row[2], &row[3..]);
+                row_lookups[0] = Self::lookup(-row[0], G::from_usize(size), row[2], &row[3..]);
             });
 
         let trace = RowMajorMatrix::new(rows, width);
