@@ -1,5 +1,4 @@
 #include "lean/lean.h"
-#include "common.h"
 #include "rust.h"
 
 #define memcpy __builtin_memcpy // Avoids including `string.h`
