@@ -1,117 +1,124 @@
-use binius_circuits::builder::{ConstraintSystemBuilder, witness};
-use binius_core::{constraint_system::channel::ChannelId, oracle::OracleId};
-use binius_field::Field;
-
-use crate::aiur::{layout::B64, trace::load_mem_map, transparent::Address};
-
-use super::{
-    execute::QueryRecord,
-    layout::B64_LEVEL,
-    synthesis::{VirtualMap, provide},
-    trace::MULT_GEN,
+use multi_stark::{
+    builder::symbolic::SymbolicExpression,
+    lookup::Lookup,
+    p3_air::{Air, AirBuilder, BaseAir},
+    p3_field::PrimeCharacteristicRing,
+    p3_matrix::{Matrix, dense::RowMajorMatrix},
+};
+use rayon::{
+    iter::{
+        IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
+        ParallelIterator,
+    },
+    slice::ParallelSliceMut,
 };
 
-struct MemCols {
-    address: OracleId,
-    values: Vec<OracleId>,
-    multiplicity: OracleId,
+use crate::{
+    aiur::{G, execute::QueryRecord, trace::Channel},
+    sym_var,
+};
+
+pub struct Memory {
+    width: usize,
 }
 
-pub struct MemTrace {
-    pub values: Vec<Vec<u64>>,
-    pub multiplicity: Vec<B64>,
-    pub height: usize,
-}
+impl Memory {
+    pub(super) fn lookup(multiplicity: G, size: G, ptr: G, values: &[G]) -> Lookup<G> {
+        let mut args = vec![Channel::Memory.to_field(), size, ptr];
+        args.extend(values);
+        Lookup { multiplicity, args }
+    }
 
-impl MemTrace {
-    pub fn generate_trace(width: u32, record: &QueryRecord) -> Self {
-        let mem_map = load_mem_map(&record.mem_queries, width);
-        let height = mem_map.len();
-        let mut trace = MemTrace {
-            values: vec![Vec::with_capacity(height); width as usize],
-            multiplicity: Vec::with_capacity(height),
-            height,
+    fn width(size: usize) -> usize {
+        // Multiplicity, selector, pointer and values.
+        3 + size
+    }
+
+    pub fn build(size: usize) -> (Self, Lookup<SymbolicExpression<G>>) {
+        let multiplicity = -sym_var!(0);
+        let selector = sym_var!(1);
+        let pointer = sym_var!(2);
+        let mut args = Vec::with_capacity(3 + size);
+        args.push(selector.clone() * Channel::Memory.to_field());
+        args.push(selector.clone() * G::from_usize(size));
+        args.push(selector.clone() * pointer);
+        for val_idx in 0..size {
+            args.push(selector.clone() * sym_var!(3 + val_idx));
+        }
+        let width = Self::width(size);
+        (Self { width }, Lookup { multiplicity, args })
+    }
+
+    pub fn generate_trace(
+        size: usize,
+        record: &QueryRecord,
+    ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
+        let queries = record.memory_queries.get(&size).expect("Invalid size");
+        let width = Self::width(size);
+        let height_no_padding = queries.len();
+        let height = height_no_padding.next_power_of_two();
+
+        let mut rows = vec![G::ZERO; height * width];
+        let rows_no_padding = &mut rows[0..height_no_padding * width];
+
+        let empty_lookup = Lookup {
+            multiplicity: G::ZERO,
+            args: vec![],
         };
-        for (args, result) in mem_map.iter() {
-            for (i, arg) in args.iter().enumerate() {
-                trace.values[i].push(*arg);
-            }
-            trace.multiplicity.push(MULT_GEN.pow([result.multiplicity]));
-        }
-        trace
+        let mut lookups = vec![vec![empty_lookup]; height];
+        let lookups_no_padding = &mut lookups[0..height_no_padding];
+
+        rows_no_padding
+            .par_chunks_mut(width)
+            .zip(queries.par_iter())
+            .zip(lookups_no_padding.par_iter_mut())
+            .enumerate()
+            .for_each(|(i, ((row, (values, result)), row_lookups))| {
+                row[0] = result.multiplicity;
+                row[1] = G::ONE;
+                row[2] = G::from_usize(i);
+                row[3..].copy_from_slice(values);
+
+                row_lookups[0] = Self::lookup(-row[0], G::from_usize(size), row[2], &row[3..]);
+            });
+
+        let trace = RowMajorMatrix::new(rows, width);
+        (trace, lookups)
     }
 }
 
-impl MemCols {
-    fn new(builder: &mut ConstraintSystemBuilder<'_>, log_n: usize, width: usize) -> Self {
-        let address = builder.add_transparent("", Address::new(log_n)).unwrap();
-        let values: Vec<_> = (0..width)
-            .map(|i| builder.add_committed(format!("value-{i}"), log_n, B64_LEVEL))
-            .collect();
-        let multiplicity = builder.add_committed("multiplicity", log_n, B64_LEVEL);
-        MemCols {
-            address,
-            values,
-            multiplicity,
-        }
-    }
-
-    fn populate(&self, witness: &mut witness::Builder<'_>, trace: &MemTrace) {
-        let count = trace.height;
-        Address::populate(self.address, witness);
-        for (id, values) in self.values.iter().zip(trace.values.iter()) {
-            witness.new_column::<B64>(*id).as_mut_slice::<u64>()[..count].copy_from_slice(values);
-        }
-        {
-            witness
-                .new_column::<B64>(self.multiplicity)
-                .as_mut_slice::<B64>()[..count]
-                .copy_from_slice(&trace.multiplicity);
-        }
+impl BaseAir<G> for Memory {
+    fn width(&self) -> usize {
+        self.width
     }
 }
 
-pub fn prover_synthesize_mem(
-    builder: &mut ConstraintSystemBuilder<'_>,
-    mem_channel_id: ChannelId,
-    trace: &MemTrace,
-) -> u8 {
-    let log_n = trace.height.next_power_of_two().ilog2() as usize;
-    let width = trace.values.len();
-    let count = trace.height.try_into().expect("");
-    let cols = MemCols::new(builder, log_n, width);
-    cols.populate(builder.witness().unwrap(), trace);
-    let mut virt_map = VirtualMap::default();
-    let mut args = [cols.address].to_vec();
-    args.extend(cols.values);
-    provide(
-        builder,
-        mem_channel_id,
-        cols.multiplicity,
-        args,
-        count,
-        &mut virt_map,
-    );
-    log_n.try_into().expect("Trace too large")
-}
+impl<AB> Air<AB> for Memory
+where
+    AB: AirBuilder<F = G>,
+{
+    fn eval(&self, builder: &mut AB) {
+        let main = builder.main();
+        let local: &[AB::Var] = &main.row_slice(0).unwrap();
+        let next: &[AB::Var] = &main.row_slice(1).unwrap();
 
-pub fn verifier_synthesize_mem(
-    builder: &mut ConstraintSystemBuilder<'_>,
-    mem_channel_id: ChannelId,
-    width: u32,
-    count: u64,
-) {
-    let log_n = count.next_power_of_two().ilog2() as usize;
-    let cols = MemCols::new(builder, log_n, width as usize);
-    let mut virt_map = VirtualMap::default();
-    let mut args = cols.values;
-    args.push(cols.address);
-    provide(
-        builder,
-        mem_channel_id,
-        cols.multiplicity,
-        args,
-        count,
-        &mut virt_map,
-    );
+        let (is_real, ptr) = (local[1].clone(), local[2].clone());
+        let (is_real_next, ptr_next) = (next[1].clone(), next[2].clone());
+
+        builder.assert_bool(is_real.clone());
+
+        // Whether the next row is real.
+        let is_real_transition = is_real_next * builder.is_transition();
+
+        // If the next row is real, the current row is real.
+        builder.when(is_real_transition.clone()).assert_one(is_real);
+
+        // Is this necessary?
+        // builder.when_first_row().when(is_real).assert_zero(ptr);
+
+        // Pointer increases by one
+        builder
+            .when(is_real_transition)
+            .assert_eq(ptr + AB::Expr::ONE, ptr_next);
+    }
 }

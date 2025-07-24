@@ -1,5 +1,4 @@
-# TODO: Add periodic Rust toolchain upgrade workflow in CI
 [toolchain]
 # The default profile includes rustc, rust-std, cargo, rust-docs, rustfmt and clippy.
 profile = "default"
-channel = "nightly-2025-05-08"
+channel = "1.88"

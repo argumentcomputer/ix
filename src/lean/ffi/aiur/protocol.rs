@@ -2,15 +2,16 @@ use multi_stark::{p3_field::PrimeField64, prover::Proof, types::FriParameters};
 use std::ffi::{CString, c_void};
 
 use crate::{
-    aiur2::{G, synthesis::AiurSystem},
+    aiur::{G, synthesis::AiurSystem},
     lean::{
         array::LeanArrayObject,
+        as_mut_unsafe,
         boxed::BoxedU64,
         ctor::LeanCtorObject,
         ffi::{
             BytesData, CResult,
-            aiur2::{lean_unbox_g, lean_unbox_nat_as_usize, toplevel::lean_ctor_to_toplevel},
-            as_mut_unsafe, drop_raw, to_raw,
+            aiur::{lean_unbox_g, lean_unbox_nat_as_usize, toplevel::lean_ctor_to_toplevel},
+            drop_raw, to_raw,
         },
         sarray::LeanSArrayObject,
     },

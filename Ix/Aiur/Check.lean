@@ -16,7 +16,7 @@ inductive CheckError
   | typeMismatch : Typ → Typ → CheckError
   | illegalReturn : CheckError
   | nonNumeric : Typ → CheckError
-  | notU64 : Typ → CheckError
+  | notAField : Typ → CheckError
   | wrongNumArgs : Global → Nat → Nat → CheckError
   | notATuple : Typ → CheckError
   | indexOoB : Nat → CheckError
@@ -40,9 +40,7 @@ for functions and datatypes.
 def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
   let map ← toplevel.functions.foldlM (init := default)
     fun acc function => addDecl acc Function.name .function function
-  let map ← toplevel.dataTypes.foldlM (init := map) addDataType
-  toplevel.gadgets.foldlM (init := map)
-    fun map gadget => addDecl map (Global.mk ∘ Gadget.name) .gadget gadget
+  toplevel.dataTypes.foldlM (init := map) addDataType
 where
   ensureUnique name (map : IndexMap Global _) := do
     if map.containsKey name then throw $ .duplicatedDefinition name
@@ -75,13 +73,6 @@ def refLookup (global : Global) : CheckM Typ := do
     pure $ .dataType $ dataType.name
   | some _ => throw $ .notAValue global
   | none => throw $ .unboundVariable global
-
-def Primitive.type : Primitive → PrimitiveType
-  | u1 _ => .u1
-  | u8 _ => .u8
-  | u16 _ => .u16
-  | u32 _ => .u32
-  | u64 _ => .u64
 
 /-- Extend context with locally bound variables. -/
 def bindIdents (bindings : List (Local × Typ)) (ctx : CheckContext) : CheckContext :=
@@ -120,21 +111,6 @@ partial def inferTerm : Term → CheckM TypedTerm
     let body' ← withReader (bindIdents bindings) (inferTerm body)
     pure $ .mk body'.typ (.let pat expr' body')
   | .match term branches => inferMatch term branches
-  | .if b t f => do
-    -- Ensures that the type of the conditional is a number and the type of both branches are equal,
-    -- unless one of them escapes.
-    -- The returned type is the type of the branches.
-    let (numTyp, numInner) ← inferNumber b
-    let inferredNum := .mk (.evaluates numTyp) numInner
-    let inferredT ← inferTerm t
-    let inferredF ← inferTerm f
-    let inner := .if inferredNum inferredT inferredF
-    match (inferredT.typ, inferredF.typ) with
-    | (.evaluates typT, .evaluates typF) => do
-      unless typT == typF do throw $ .typeMismatch typT typF
-      pure $ .mk inferredT.typ inner
-    | (.evaluates _, .escapes) => pure $ .mk inferredT.typ inner
-    | _ => pure $ .mk inferredF.typ inner
   | .app func@(⟨.str .anonymous unqualifiedFunc⟩) args => do
     -- Ensures the function exists in the context and that the arguments, which aren't allowed to
     -- escape, match the function's input types. Returns the function's output type.
@@ -163,84 +139,15 @@ partial def inferTerm : Term → CheckM TypedTerm
       let args ← checkArgsAndInputs func args constr.argTypes
       pure $ .mk (.evaluates (.dataType dataType.name)) (.app func args)
     | _ => throw $ .cannotApply func
-  | .preimg func@(⟨.str .anonymous unqualifiedFunc⟩) arg => do
-    -- Checks if the type of the argument, which isn't allowed to escape, matches the
-    -- output type of the function, and infers the type of the function's inputs as a tuple.
-    -- Errors if the function isn't found in the context.
-    let ctx ← read
-    match ctx.varTypes[Local.str unqualifiedFunc]? with
-    | some (.function inputs output) =>
-      let argInner ← checkNoEscape arg output
-      let arg' := .mk (.evaluates output) argInner
-      pure $ .mk (.evaluates (.tuple inputs.toArray)) (.preimg func arg')
-    | some _ => throw $ .notAFunction func
-    | none => match ctx.decls.getByKey func with
-      | some (.function function) =>
-        let argInner ← checkNoEscape arg function.output
-        let arg' := .mk (.evaluates function.output) argInner
-        let inpTyp := function.inputs.map Prod.snd
-        pure $ .mk (.evaluates (.tuple inpTyp.toArray)) (.preimg func arg')
-      | some _ => throw $ .notAFunction func
-      | _ => throw $ .unboundVariable func
-  | .preimg func arg => do
-    -- Only checks global map if it is not unqualified
-    let ctx ← read
-    match ctx.decls.getByKey func with
-    | some (.function function) =>
-      let argInner ← checkNoEscape arg function.output
-      let arg' := .mk (.evaluates function.output) argInner
-      let inpTyp := function.inputs.map Prod.snd
-      pure $ .mk (.evaluates (.tuple inpTyp.toArray)) (.preimg func arg')
-    | some _ => throw $ .notAFunction func
-    | _ => throw $ .unboundVariable func
-  | .ffi g args => do
-    -- Gadget calls typecheck as tuples of u64s
-    let ctx ← read
-    match ctx.decls.getByKey g with
-    | some (.gadget gadget) =>
-      let mkU64sList := (List.replicate · (.primitive .u64))
-      let args ← checkArgsAndInputs g args $ mkU64sList gadget.inputSize
-      pure $ .mk (.evaluates (.tuple ⟨mkU64sList gadget.outputSize⟩)) (.ffi g args)
-    | some _ => throw $ .notAGadget g
-    | _ => throw $ .unboundVariable g
-  | .xor a b => do
-    let (typ, aInner) ← inferNumber a
-    let bInner ← checkNoEscape b typ
-    let ctxTyp := .evaluates typ
-    let a := .mk ctxTyp aInner
-    let b := .mk ctxTyp bInner
-    pure $ .mk ctxTyp (.xor a b)
-  | .and a b => do
-    let (typ, aInner) ← inferNumber a
-    let bInner ← checkNoEscape b typ
-    let ctxTyp := .evaluates typ
-    let a := .mk ctxTyp aInner
-    let b := .mk ctxTyp bInner
-    pure $ .mk ctxTyp (.and a b)
-  | .addU64 a b => do
-    let (typ, aInner) ← inferNoEscape a
-    unless (typ == .primitive .u64) do throw $ .notU64 typ
-    let bInner ← checkNoEscape b typ
-    let ctxTyp := .evaluates typ
-    let a := .mk ctxTyp aInner
-    let b := .mk ctxTyp bInner
-    pure $ .mk ctxTyp (.addU64 a b)
-  | .subU64 a b => do
-    let (typ, aInner) ← inferNoEscape a
-    unless (typ == .primitive .u64) do throw $ .notU64 typ
-    let bInner ← checkNoEscape b typ
-    let ctxTyp := .evaluates typ
-    let a := .mk ctxTyp aInner
-    let b := .mk ctxTyp bInner
-    pure $ .mk ctxTyp (.subU64 a b)
-  | .mulU64 a b => do
-    let (typ, aInner) ← inferNoEscape a
-    unless (typ == .primitive .u64) do throw $ .notU64 typ
-    let bInner ← checkNoEscape b typ
-    let ctxTyp := .evaluates typ
-    let a := .mk ctxTyp aInner
-    let b := .mk ctxTyp bInner
-    pure $ .mk ctxTyp (.mulU64 a b)
+  | .add a b => do
+    let (ctxTyp, a, b) ← checkArith a b
+    pure $ .mk ctxTyp (.add a b)
+  | .sub a b => do
+    let (ctxTyp, a, b) ← checkArith a b
+    pure $ .mk ctxTyp (.sub a b)
+  | .mul a b => do
+    let (ctxTyp, a, b) ← checkArith a b
+    pure $ .mk ctxTyp (.mul a b)
   | .get tup i => do
     let (typs, tupInner) ← inferTuple tup
     if i < typs.size then
@@ -275,21 +182,18 @@ partial def inferTerm : Term → CheckM TypedTerm
       let load := .load (.mk (.evaluates typ) inner)
       pure $ .mk (.evaluates innerTyp) load
     | _ => throw $ .notAPointer typ
-  | .pointerAsU64 term => do
+  | .ptrVal term => do
     -- Infers the type of the term, which must be a pointer, but returns `.u64`, as in a cast.
     -- The term is not allowed to early return.
     let (typ, inner) ← inferNoEscape term
     match typ with
     | .pointer _ =>
-      let asU64 := .pointerAsU64 (.mk (.evaluates typ) inner)
-      pure $ .mk (.evaluates (.primitive .u64)) asU64
+      let asU64 := .ptrVal (.mk (.evaluates typ) inner)
+      pure $ .mk (.evaluates .field) asU64
     | _ => throw $ .notAPointer typ
   | .ann typ term => do
     let inner ← checkNoEscape term typ
     pure $ .mk (.evaluates typ) inner
-  | .trace str term => do
-    let (typ, inner) ← inferNoEscape term
-    pure $ .mk (.evaluates typ) (.trace str (.mk (.evaluates typ) inner))
 where
   /--
   Ensures that there are as many arguments and as expected types and that
@@ -303,6 +207,14 @@ where
       let inner ← checkNoEscape arg input
       pure $ .mk (.evaluates input) inner
     args.zip inputs |>.mapM pass
+  checkArith a b := do
+    let (typ, aInner) ← inferNoEscape a
+    unless (typ == .field) do throw $ .notAField typ
+    let bInner ← checkNoEscape b typ
+    let ctxTyp := .evaluates typ
+    let a := .mk ctxTyp aInner
+    let b := .mk ctxTyp bInner
+    pure (ctxTyp, a, b)
 
 partial def checkNoEscape (term : Term) (typ : Typ) : CheckM TypedTermInner := do
   let (typ', inner) ← inferNoEscape term
@@ -316,7 +228,7 @@ partial def inferNoEscape (term : Term) : CheckM (Typ × TypedTermInner) := do
   | .evaluates type => pure (type, typedTerm.inner)
 
 partial def inferData : Data → CheckM (Typ × TypedTermInner)
-  | .primitive prim => pure (.primitive prim.type, .data (.primitive prim))
+  | .field g => pure (.field, .data (.field g))
   | .tuple terms => do
     let typsAndInners ← terms.mapM inferNoEscape
     let typs := typsAndInners.map Prod.fst
@@ -362,11 +274,7 @@ where
   aux pat typ := match (pat, typ) with
     | (.var var, _) => pure [(var, typ)]
     | (.wildcard, _)
-    | (.primitive (.u1 _), .primitive .u1)
-    | (.primitive (.u8 _), .primitive .u8)
-    | (.primitive (.u16 _), .primitive .u16)
-    | (.primitive (.u32 _), .primitive .u32)
-    | (.primitive (.u64 _), .primitive .u64) => pure []
+    | (.field _, .field) => pure []
     | (.tuple pats, .tuple typs) => do
       unless pats.size == typs.size do throw $ .incompatiblePattern pat typ
       pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
@@ -392,15 +300,15 @@ where
       if bind != bind' then throw $ .differentBindings bind bind' else pure bind
     | _ => throw $ .incompatiblePattern pat typ
 
-partial def inferNumber (term : Term) : CheckM (Typ × TypedTermInner) := do
-  let (typ, inner) ← inferNoEscape term
-  match typ with
-  | .primitive .u1
-  | .primitive .u8
-  | .primitive .u16
-  | .primitive .u32
-  | .primitive .u64 => pure (typ, inner)
-  | _ => throw $ .nonNumeric typ
+-- partial def inferNumber (term : Term) : CheckM (Typ × TypedTermInner) := do
+--   let (typ, inner) ← inferNoEscape term
+--   match typ with
+--   | .primitive .u1
+--   | .primitive .u8
+--   | .primitive .u16
+--   | .primitive .u32
+--   | .primitive .u64 => pure (typ, inner)
+--   | _ => throw $ .nonNumeric typ
 
 partial def inferTuple (term : Term) : CheckM (Array Typ × TypedTermInner) := do
   let (typ, inner) ← inferNoEscape term
@@ -441,7 +349,6 @@ where
       function.inputs.forM fun (_, typ) => wellFormedType typ
     -- No need to check constructors because they come from datatype declarations.
     | .constructor .. => pure ()
-    | .gadget _ => pure () -- Gadgets don't have inner types to be checked
   wellFormedType : Typ → EStateM CheckError (Std.HashSet Global) Unit
     | .tuple typs => typs.forM wellFormedType
     | .pointer pointerTyp => wellFormedType pointerTyp
@@ -451,27 +358,11 @@ where
       | none => throw $ .undefinedGlobal dataTypeRef
     | _ => pure ()
 
-
 /-- Checks a function to ensure its body's type matches its declared output type. -/
 def checkFunction (function : Function) : CheckM TypedFunction := do
   let body ← inferTerm function.body
   if let .evaluates typ := body.typ then
     unless typ == function.output do throw $ .typeMismatch typ function.output
-  pure { name := function.name, inputs := function.inputs, output := function.output, body := body }
-
-/--
-Checks all top-level definitions in a program, ensuring they are valid and return the map
-of declarations.
--/
-def checkToplevel (toplevel : Toplevel) : Except CheckError TypedDecls := do
-  let decls ← toplevel.mkDecls
-  wellFormedDecls decls
-  decls.foldlM (init := default) fun typedDecls (name, decl) => match decl with
-    | .constructor d c => pure $ typedDecls.insert name (.constructor d c)
-    | .dataType d => pure $ typedDecls.insert name (.dataType d)
-    | .function f => do
-      let f ← (checkFunction f) (getFunctionContext f decls)
-      pure $ typedDecls.insert name (.function f)
-    | .gadget g => pure $ typedDecls.insert name (.gadget g)
+  pure ⟨function.name, function.inputs, function.output, body⟩
 
 end Aiur
