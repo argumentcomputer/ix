@@ -1,310 +1,304 @@
-use binius_field::underlier::{U1, WithUnderlier};
-use binius_field::{BinaryField, Field};
+use multi_stark::{
+    lookup::Lookup,
+    p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
+    p3_matrix::dense::RowMajorMatrix,
+};
+use rayon::{
+    iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
 
-use super::execute::{FxIndexMap, QueryRecord, QueryResult};
-use super::ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, Toplevel};
-use super::layout::{B64, Layout};
+use super::{
+    G,
+    bytecode::{Block, Ctrl, Function, Op, Toplevel},
+    execute::QueryRecord,
+    memory::Memory,
+};
 
-pub const MULT_GEN: B64 = B64::MULTIPLICATIVE_GENERATOR;
-
-#[derive(Clone, Default, Debug)]
-pub struct Trace {
-    pub num_queries: u64,
-    pub inputs: Vec<Vec<u64>>,
-    pub outputs: Vec<Vec<u64>>,
-    pub u1_auxiliaries: Vec<Vec<U1>>,
-    pub u8_auxiliaries: Vec<Vec<u8>>,
-    pub u64_auxiliaries: Vec<Vec<u64>>,
-    pub multiplicity: Vec<u64>,
-    pub selectors: Vec<Vec<U1>>,
+pub enum Channel {
+    Function,
+    Memory,
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+impl Channel {
+    pub fn to_field(&self) -> G {
+        match self {
+            Channel::Function => G::ZERO,
+            Channel::Memory => G::ONE,
+        }
+    }
+}
+
 struct ColumnIndex {
-    u1_auxiliary: usize,
-    u8_auxiliary: usize,
-    u64_auxiliary: usize,
+    auxiliary: usize,
+    lookup: usize,
 }
 
-impl Trace {
-    fn blank_trace_with_io(
-        shape: &Layout,
-        num_queries: usize,
-        multiplicity: Vec<u64>,
-        inputs: Vec<Vec<u64>>,
-        outputs: Vec<Vec<u64>>,
-    ) -> Self {
-        let height = num_queries.next_power_of_two();
-        let blank_column = vec![U1::new(0); height];
-        let u1_auxiliaries = vec![blank_column.clone(); shape.u1_auxiliaries as usize];
-        let selectors = vec![blank_column; shape.selectors as usize];
-        let blank_column = vec![0; height];
-        let u8_auxiliaries = vec![blank_column; shape.u8_auxiliaries as usize];
-        let blank_column = vec![0; height];
-        let u64_auxiliaries = vec![blank_column; shape.u64_auxiliaries as usize];
+struct ColumnMutSlice<'a> {
+    inputs: &'a mut [G],
+    selectors: &'a mut [G],
+    auxiliaries: &'a mut [G],
+    lookups: &'a mut [Lookup<G>],
+}
+
+type Degree = u8;
+
+impl<'a> ColumnMutSlice<'a> {
+    fn from_slice(function: &Function, slice: &'a mut [G], lookups: &'a mut [Lookup<G>]) -> Self {
+        let (inputs, slice) = slice.split_at_mut(function.layout.input_size);
+        let (selectors, slice) = slice.split_at_mut(function.layout.selectors);
+        let (auxiliaries, slice) = slice.split_at_mut(function.layout.auxiliaries);
+        assert!(slice.is_empty());
         Self {
             inputs,
-            outputs,
-            u1_auxiliaries,
-            u8_auxiliaries,
-            u64_auxiliaries,
-            multiplicity,
             selectors,
-            num_queries: num_queries as u64,
+            auxiliaries,
+            lookups,
         }
     }
 
-    fn push_u1(&mut self, row: usize, col: &mut ColumnIndex, val: U1) {
-        self.u1_auxiliaries[col.u1_auxiliary][row] = val;
-        col.u1_auxiliary += 1;
+    fn push_auxiliary(&mut self, index: &mut ColumnIndex, t: G) {
+        self.auxiliaries[index.auxiliary] = t;
+        index.auxiliary += 1;
     }
 
-    #[allow(dead_code)]
-    fn push_u8(&mut self, row: usize, col: &mut ColumnIndex, val: u8) {
-        self.u8_auxiliaries[col.u8_auxiliary][row] = val;
-        col.u8_auxiliary += 1;
-    }
-
-    fn push_u64(&mut self, row: usize, col: &mut ColumnIndex, val: u64) {
-        self.u64_auxiliaries[col.u64_auxiliary][row] = val;
-        col.u64_auxiliary += 1;
-    }
-
-    fn set_selector(&mut self, row: usize, sel: SelIdx) {
-        self.selectors[sel.0 as usize][row] = U1::new(1);
+    fn push_lookup(&mut self, index: &mut ColumnIndex, t: Lookup<G>) {
+        self.lookups[index.lookup] = t;
+        index.lookup += 1;
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-enum Query {
-    Func(FuncIdx, Vec<u64>),
-    Mem(u32, Vec<u64>),
+#[derive(Clone, Copy)]
+struct TraceContext<'a> {
+    function_index: G,
+    multiplicity: G,
+    inputs: &'a [G],
+    output: &'a [G],
+    query_record: &'a QueryRecord,
 }
 
 impl Toplevel {
-    pub fn generate_trace(&self, record: &QueryRecord) -> Vec<Trace> {
-        let mut traces = Vec::with_capacity(self.functions.len());
-        let prev_counts = &mut FxIndexMap::default();
-        for (func_idx, func) in self.functions.iter().enumerate() {
-            let func_map = &record.func_queries[func_idx];
-            let layout = &self.layouts[func_idx];
-            let trace = generate_func_trace(func, func_map, layout, record, prev_counts);
-            traces.push(trace);
-        }
-        traces
+    pub fn generate_trace(
+        &self,
+        function_index: usize,
+        query_record: &QueryRecord,
+    ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
+        let func = &self.functions[function_index];
+        let width = func.width();
+        let queries = &query_record.function_queries[function_index];
+        let height_no_padding = queries.len();
+        let height = height_no_padding.next_power_of_two();
+        let mut rows = vec![G::ZERO; height * width];
+        let rows_no_padding = &mut rows[0..height_no_padding * width];
+        let empty_lookup = Lookup {
+            multiplicity: G::ZERO,
+            args: vec![],
+        };
+        let mut lookups = vec![vec![empty_lookup; func.layout.lookups]; height];
+        let lookups_no_padding = &mut lookups[0..height_no_padding];
+        rows_no_padding
+            .par_chunks_mut(width)
+            .zip(lookups_no_padding.par_iter_mut())
+            .enumerate()
+            .for_each(|(i, (row, lookups))| {
+                let (inputs, result) = queries.get_index(i).unwrap();
+                let index = &mut ColumnIndex {
+                    auxiliary: 0,
+                    // we skip the first lookup, which is reserved for return
+                    lookup: 1,
+                };
+                let slice = &mut ColumnMutSlice::from_slice(func, row, lookups);
+                let context = TraceContext {
+                    function_index: G::from_usize(function_index),
+                    inputs,
+                    multiplicity: result.multiplicity,
+                    output: &result.output,
+                    query_record,
+                };
+                func.populate_row(index, slice, context);
+            });
+        let trace = RowMajorMatrix::new(rows, width);
+        (trace, lookups)
     }
 }
 
-fn generate_func_trace(
-    func: &Function,
-    func_map: &FxIndexMap<Vec<u64>, QueryResult>,
-    shape: &Layout,
-    record: &QueryRecord,
-    prev_counts: &mut FxIndexMap<Query, B64>,
-) -> Trace {
-    let num_queries = func_map.len();
-    let (multiplicity, inputs, outputs) = extract_io(func_map, shape);
-    let mut trace = Trace::blank_trace_with_io(shape, num_queries, multiplicity, inputs, outputs);
-    for row in 0..num_queries {
-        let mut col = ColumnIndex::default();
-        let mut map = trace.inputs.iter().map(|col| col[row]).collect::<Vec<_>>();
-        populate_block_trace(
-            &func.body,
-            &mut trace,
-            &mut map,
-            row,
-            &mut col,
-            record,
-            prev_counts,
+impl Function {
+    pub fn width(&self) -> usize {
+        self.layout.input_size + self.layout.auxiliaries + self.layout.selectors
+    }
+
+    fn populate_row(
+        &self,
+        index: &mut ColumnIndex,
+        slice: &mut ColumnMutSlice<'_>,
+        context: TraceContext<'_>,
+    ) {
+        debug_assert_eq!(
+            self.layout.input_size,
+            context.inputs.len(),
+            "Argument mismatch"
         );
-    }
-    trace
-}
-
-fn populate_block_trace(
-    block: &Block,
-    trace: &mut Trace,
-    map: &mut Vec<u64>,
-    row: usize,
-    col: &mut ColumnIndex,
-    record: &QueryRecord,
-    prev_counts: &mut FxIndexMap<Query, B64>,
-) {
-    block
-        .ops
-        .iter()
-        .for_each(|op| populate_op_trace(op, trace, map, row, col, record, prev_counts));
-    match block.ctrl.as_ref() {
-        Ctrl::If(b, t, f) => {
-            let val = map[b.to_usize()];
-            if val != 0 {
-                let inv = B64::new(val).invert().unwrap().to_underlier();
-                trace.push_u64(row, col, inv);
-                populate_block_trace(t, trace, map, row, col, record, prev_counts);
-            } else {
-                populate_block_trace(f, trace, map, row, col, record, prev_counts);
-            }
-        }
-        Ctrl::Return(sel, _) => trace.set_selector(row, *sel),
+        // Variable to value map
+        let map = &mut context.inputs.iter().map(|arg| (*arg, 1)).collect();
+        // One column per input
+        context
+            .inputs
+            .iter()
+            .enumerate()
+            .for_each(|(i, arg)| slice.inputs[i] = *arg);
+        // Push the multiplicity
+        slice.push_auxiliary(index, context.multiplicity);
+        self.body.populate_row(map, index, slice, context);
     }
 }
 
-fn populate_op_trace(
-    op: &Op,
-    trace: &mut Trace,
-    map: &mut Vec<u64>,
-    row: usize,
-    col: &mut ColumnIndex,
-    record: &QueryRecord,
-    prev_counts: &mut FxIndexMap<Query, B64>,
-) {
-    match op {
-        Op::Prim(Prim::U64(a)) => {
-            map.push(*a);
-        }
-        Op::Prim(Prim::Bool(a)) => {
-            map.push(*a as u64);
-        }
-        Op::Xor(a, b) => {
-            let a = map[a.to_usize()];
-            let b = map[b.to_usize()];
-            map.push(a ^ b);
-        }
-        Op::And(a, b) => {
-            let a = map[a.to_usize()];
-            let b = map[b.to_usize()];
-            // NOTE: this operation only works when `a` and `b` are both bits
-            let c = a & b;
-            trace.push_u1(
-                row,
-                col,
-                U1::new(c.try_into().expect("Result exceed 1 bit")),
-            );
-            map.push(c);
-        }
-        Op::Add(a, b) => {
-            let a = map[a.to_usize()];
-            let b = map[b.to_usize()];
-            let (c, overflow) = a.overflowing_add(b);
-            trace.push_u64(row, col, c);
-            map.push(c);
-            trace.push_u1(row, col, U1::new(overflow as u8));
-        }
-        Op::Sub(c, b) => {
-            let c = map[c.to_usize()];
-            let b = map[b.to_usize()];
-            let (a, overflow) = c.overflowing_sub(b);
-            trace.push_u64(row, col, a);
-            map.push(a);
-            trace.push_u1(row, col, U1::new(overflow as u8));
-        }
-        Op::Lt(c, b) => {
-            let c = map[c.to_usize()];
-            let b = map[b.to_usize()];
-            let (a, overflow) = c.overflowing_sub(b);
-            trace.push_u64(row, col, a);
-            trace.push_u1(row, col, U1::new(overflow as u8));
-            map.push(overflow as u64);
-        }
-        Op::Mul(a, b) => {
-            let a = map[a.to_usize()];
-            let b = map[b.to_usize()];
-            let c = a.wrapping_mul(b);
-            trace.push_u64(row, col, c);
-            map.push(c);
-        }
-        Op::Store(values) => {
-            let len = values
-                .len()
-                .try_into()
-                .expect("Error: too many arguments to store");
-            let mem_map = load_mem_map(&record.mem_queries, len);
-            let values = values
-                .iter()
-                .map(|value| map[value.to_usize()])
-                .collect::<Vec<_>>();
-            let query_result = mem_map
-                .get(&values)
-                .unwrap_or_else(|| panic!("Value {values:?} not in memory"));
-            for value in query_result.result.iter() {
-                trace.push_u64(row, col, *value);
-                map.push(*value);
+impl Block {
+    fn populate_row(
+        &self,
+        map: &mut Vec<(G, Degree)>,
+        index: &mut ColumnIndex,
+        slice: &mut ColumnMutSlice<'_>,
+        context: TraceContext<'_>,
+    ) {
+        self.ops
+            .iter()
+            .for_each(|op| op.populate_row(map, index, slice, context));
+        self.ctrl.populate_row(map, index, slice, context);
+    }
+}
+
+impl Ctrl {
+    fn populate_row(
+        &self,
+        map: &mut Vec<(G, Degree)>,
+        index: &mut ColumnIndex,
+        slice: &mut ColumnMutSlice<'_>,
+        context: TraceContext<'_>,
+    ) {
+        match self {
+            Ctrl::Return(sel, _) => {
+                slice.selectors[*sel] = G::ONE;
+                let lookup = function_lookup(
+                    -context.multiplicity,
+                    context.function_index,
+                    context.inputs,
+                    context.output,
+                );
+                slice.lookups[0] = lookup;
             }
-            let count = prev_counts
-                .entry(Query::Mem(len, values.clone()))
-                .or_insert(B64::ONE);
-            trace.push_u64(row, col, count.to_underlier());
-            *count *= MULT_GEN;
-        }
-        Op::Load(len, ptr) => {
-            let ptr = map[ptr.to_usize()]
-                .try_into()
-                .expect("Value too big for current architecture");
-            let mem_map = load_mem_map(&record.mem_queries, *len);
-            let (values, _) = mem_map
-                .get_index(ptr)
-                .unwrap_or_else(|| panic!("Unbound {len}-wide pointer {ptr}"));
-            for value in values.iter() {
-                trace.push_u64(row, col, *value);
-                map.push(*value);
+            Ctrl::Match(var, cases, def) => {
+                let val = map[*var].0;
+                let branch = cases
+                    .get(&val)
+                    .or_else(|| {
+                        for &case in cases.keys() {
+                            // the witness shows that val is different from case
+                            let witness = (val - case).inverse();
+                            slice.push_auxiliary(index, witness);
+                        }
+                        def.as_deref()
+                    })
+                    .expect("No match");
+                branch.populate_row(map, index, slice, context);
             }
-            let count = prev_counts
-                .entry(Query::Mem(*len, values.clone()))
-                .or_insert(B64::ONE);
-            trace.push_u64(row, col, count.to_underlier());
-            *count *= MULT_GEN;
-        }
-        Op::Call(func_idx, args, _) => {
-            let args = args.iter().map(|a| map[a.to_usize()]).collect::<Vec<_>>();
-            let output = &record.get_from_u64(*func_idx, &args).unwrap().result;
-            for byte in output {
-                trace.push_u64(row, col, *byte);
-                map.push(*byte);
-            }
-            let count = prev_counts
-                .entry(Query::Func(*func_idx, args))
-                .or_insert(B64::ONE);
-            trace.push_u64(row, col, count.to_underlier());
-            *count *= MULT_GEN;
         }
     }
 }
 
-fn extract_io(
-    func_map: &FxIndexMap<Vec<u64>, QueryResult>,
-    shape: &Layout,
-) -> (Vec<u64>, Vec<Vec<u64>>, Vec<Vec<u64>>) {
-    let height = func_map.len().next_power_of_two();
-    let blank_column = vec![0; height];
-    let mut inputs = vec![blank_column.clone(); shape.inputs as usize];
-    let mut outputs = vec![blank_column; shape.outputs as usize];
-    let mut multiplicity = vec![1; height];
-    func_map
-        .iter()
-        .enumerate()
-        .for_each(|(i, (input_bytes, result))| {
-            multiplicity[i] = MULT_GEN.pow([result.multiplicity]).to_underlier();
-            assert_eq!(input_bytes.len(), inputs.len());
-            input_bytes
-                .iter()
-                .zip(inputs.iter_mut())
-                .for_each(|(byte, inp)| inp[i] = *byte);
-            let output_bytes = &result.result;
-            assert_eq!(output_bytes.len(), outputs.len());
-            output_bytes
-                .iter()
-                .zip(outputs.iter_mut())
-                .for_each(|(byte, out)| out[i] = *byte);
-        });
-    (multiplicity, inputs, outputs)
+impl Op {
+    fn populate_row(
+        &self,
+        map: &mut Vec<(G, Degree)>,
+        index: &mut ColumnIndex,
+        slice: &mut ColumnMutSlice<'_>,
+        context: TraceContext<'_>,
+    ) {
+        match self {
+            Op::Const(f) => map.push((*f, 0)),
+            Op::Add(a, b) => {
+                let (a, a_deg) = map[*a];
+                let (b, b_deg) = map[*b];
+                let deg = a_deg.max(b_deg);
+                map.push((a + b, deg));
+            }
+            Op::Sub(a, b) => {
+                let (a, a_deg) = map[*a];
+                let (b, b_deg) = map[*b];
+                let deg = a_deg.max(b_deg);
+                map.push((a - b, deg));
+            }
+            Op::Mul(a, b) => {
+                let (a, a_deg) = map[*a];
+                let (b, b_deg) = map[*b];
+                let deg = a_deg + b_deg;
+                let f = a * b;
+                if deg < 2 {
+                    map.push((f, deg));
+                } else {
+                    map.push((f, 1));
+                    slice.push_auxiliary(index, f);
+                }
+            }
+            Op::Call(function_index, inputs, _) => {
+                let inputs = inputs.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+                let queries = &context.query_record.function_queries[*function_index];
+                let result = queries.get(&inputs).expect("Cannot find query result");
+                for f in result.output.iter() {
+                    map.push((*f, 1));
+                    slice.push_auxiliary(index, *f);
+                }
+                let lookup = function_lookup(
+                    G::ONE,
+                    G::from_usize(*function_index),
+                    &inputs,
+                    &result.output,
+                );
+                slice.push_lookup(index, lookup);
+            }
+            Op::Store(values) => {
+                let size = values.len();
+                let memory_queries = context
+                    .query_record
+                    .memory_queries
+                    .get(&size)
+                    .expect("Invalid memory size");
+                let values = values.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+                let ptr = G::from_usize(
+                    memory_queries
+                        .get_index_of(&values)
+                        .expect("Unbound pointer"),
+                );
+                map.push((ptr, 1));
+                slice.push_auxiliary(index, ptr);
+                let lookup = Memory::lookup(G::ONE, G::from_usize(size), ptr, &values);
+                slice.push_lookup(index, lookup);
+            }
+            Op::Load(size, ptr) => {
+                let memory_queries = context
+                    .query_record
+                    .memory_queries
+                    .get(size)
+                    .expect("Invalid memory size");
+                let (ptr, _) = map[*ptr];
+                let ptr_u64 = ptr.as_canonical_u64();
+                let ptr_usize = usize::try_from(ptr_u64).expect("Pointer is too big");
+                let (values, _) = memory_queries
+                    .get_index(ptr_usize)
+                    .expect("Unbound pointer");
+                for f in values.iter() {
+                    map.push((*f, 1));
+                    slice.push_auxiliary(index, *f);
+                }
+                let lookup = Memory::lookup(G::ONE, G::from_usize(*size), ptr, values);
+                slice.push_lookup(index, lookup);
+            }
+        }
+    }
 }
 
-pub(crate) fn load_mem_map(
-    mem_queries: &[(u32, FxIndexMap<Vec<u64>, QueryResult>)],
-    len: u32,
-) -> &FxIndexMap<Vec<u64>, QueryResult> {
-    mem_queries.iter().find(|(k, _)| *k == len).map_or_else(
-        || panic!("Internal error: no memory map of size {len}"),
-        |(_, v)| v,
-    )
+fn function_lookup(multiplicity: G, function_index: G, inputs: &[G], output: &[G]) -> Lookup<G> {
+    let mut args = vec![Channel::Function.to_field(), function_index];
+    args.extend(inputs);
+    args.extend(output);
+    Lookup { multiplicity, args }
 }

@@ -1,17 +1,12 @@
-pub mod aiur2;
-pub mod archon;
-pub mod binius;
+pub mod aiur;
 pub mod byte_array;
-pub mod iroh;
+// pub mod iroh;
 pub mod keccak;
 
 use std::ffi::{CStr, CString, c_char, c_void};
 
 use crate::lean::{
-    array::LeanArrayObject,
-    boxed::{BoxedU64, BoxedUSize},
-    external::LeanExternalObject,
-    sarray::LeanSArrayObject,
+    array::LeanArrayObject, as_ref_unsafe, lean_unbox_u32, sarray::LeanSArrayObject,
 };
 
 /// ```c
@@ -52,60 +47,10 @@ pub(super) fn drop_raw<T>(ptr: *mut T) {
 }
 
 #[inline]
+#[allow(dead_code)]
 pub(super) fn raw_to_str<'a>(ptr: *const c_char) -> &'a str {
     let c_str = unsafe { CStr::from_ptr(ptr) };
     c_str.to_str().expect("Invalid UTF-8 string")
-}
-
-#[inline]
-pub(super) fn as_ref_unsafe<'a, T>(ptr: *const T) -> &'a T {
-    let t_ref = unsafe { ptr.as_ref() };
-    t_ref.expect("Null pointer dereference")
-}
-
-#[inline]
-pub(super) fn as_mut_unsafe<'a, T>(ptr: *mut T) -> &'a mut T {
-    let t_ref = unsafe { ptr.as_mut() };
-    t_ref.expect("Null pointer dereference")
-}
-
-/// ```c
-/// bool lean_is_scalar(lean_object * o) { return ((size_t)(o) & 1) == 1; }
-/// ```
-#[inline]
-pub(super) fn lean_is_scalar<T>(ptr: *const T) -> bool {
-    ptr as usize & 1 == 1
-}
-
-/// ```c
-/// size_t lean_unbox(lean_object * o) { return (size_t)(o) >> 1; }
-/// ```
-#[macro_export]
-macro_rules! lean_unbox {
-    ($t:ident, $e:expr) => {
-        $t::try_from(($e as usize) >> 1).expect("Unintended truncation")
-    };
-}
-
-/// ```c
-/// unsigned lean_unbox_uint32(b_lean_obj_arg o) {
-///     if (sizeof(void*) == 4) {
-///         /* 32-bit implementation */
-///         return lean_ctor_get_uint32(o, 0);
-///     } else {
-///         /* 64-bit implementation */
-///         return lean_unbox(o);
-///     }
-/// }
-/// ```
-#[inline]
-pub(super) fn lean_unbox_u32(ptr: *const c_void) -> u32 {
-    if cfg!(target_pointer_width = "32") {
-        let boxed_usize: &BoxedUSize = as_ref_unsafe(ptr.cast());
-        u32::try_from(boxed_usize.value).expect("Cannot convert from usize")
-    } else {
-        lean_unbox!(u32, ptr)
-    }
 }
 
 #[unsafe(no_mangle)]
@@ -119,34 +64,6 @@ extern "C" fn rs_boxed_u32s_are_equivalent_to_bytes(
         .flat_map(u32::to_le_bytes)
         .collect::<Vec<_>>();
     u32s == bytes.data()
-}
-
-/// ```c
-/// uint64_t lean_unbox_uint64(b_lean_obj_arg o) {
-///     return lean_ctor_get_uint64(o, 0);
-/// }
-/// ```
-#[inline]
-pub(super) fn lean_unbox_u64(ptr: *const c_void) -> u64 {
-    let boxed_usize: &BoxedU64 = as_ref_unsafe(ptr.cast());
-    boxed_usize.value
-}
-
-pub(super) fn boxed_usize_ptr_to_usize(ptr: *const c_void) -> usize {
-    let boxed_usize_ptr = ptr.cast::<BoxedUSize>();
-    let boxed_usize = as_ref_unsafe(boxed_usize_ptr);
-    boxed_usize.value
-}
-
-pub(super) fn external_ptr_to_u128(ptr: *const c_void) -> u128 {
-    let u128_external = as_ref_unsafe(ptr.cast::<LeanExternalObject>());
-    *as_ref_unsafe(u128_external.cast_data())
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn rs_exterior_mul_u64(a: u64, b: u64) -> *const u128 {
-    let c = a as u128 * b as u128;
-    to_raw(c)
 }
 
 #[repr(C)]

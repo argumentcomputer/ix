@@ -1,7 +1,7 @@
 use std::ffi::c_void;
 
 use crate::{
-    aiur2::{
+    aiur::{
         G,
         bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx},
     },
@@ -9,9 +9,10 @@ use crate::{
         array::LeanArrayObject,
         ctor::LeanCtorObject,
         ffi::{
-            aiur2::{lean_unbox_g, lean_unbox_nat_as_usize},
-            as_ref_unsafe, lean_is_scalar,
+            aiur::{lean_unbox_g, lean_unbox_nat_as_usize},
+            as_ref_unsafe,
         },
+        lean_is_scalar,
     },
 };
 
