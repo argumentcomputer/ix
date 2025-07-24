@@ -1,409 +1,325 @@
-use std::ops::{Add, AddAssign, Mul, Sub};
-
-use binius_circuits::builder::ConstraintSystemBuilder;
-use binius_core::oracle::OracleId;
-use binius_field::{Field, underlier::WithUnderlier};
+use multi_stark::{
+    builder::symbolic::SymbolicExpression, lookup::Lookup, p3_field::PrimeCharacteristicRing,
+};
+use std::ops::Range;
 
 use super::{
-    ir::{Block, Ctrl, FuncIdx, Function, Op, Prim, SelIdx, ValIdx},
-    layout::{B1_LEVEL, B8_LEVEL, B64, B64_LEVEL, Layout},
+    G,
+    bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
+    trace::Channel,
 };
 
-#[derive(Clone, Debug)]
-pub enum Expr {
-    Const(B64),
-    Var(OracleId),
-    Add(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>),
-    Pow(Box<Expr>, u64),
+#[macro_export]
+macro_rules! sym_var {
+    ($a:expr) => {{
+        use multi_stark::builder::symbolic::*;
+        let entry = Entry::Main { offset: 0 };
+        SymbolicExpression::Variable(SymbolicVariable::new(entry, $a))
+    }};
 }
 
-impl Mul for Expr {
-    type Output = Self;
+type Expr = SymbolicExpression<G>;
+type Degree = u8;
 
-    fn mul(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Expr::Const(B64::ONE), b) => b,
-            (a, Expr::Const(B64::ONE)) => a,
-            (Expr::Const(a), Expr::Const(b)) => Expr::Const(a * b),
-            (a, b) => Self::Mul(a.into(), b.into()),
-        }
-    }
-}
-
-impl AddAssign for Expr {
-    fn add_assign(&mut self, rhs: Expr) {
-        *self = self.clone() + rhs;
-    }
-}
-
-impl Add for Expr {
-    type Output = Self;
-
-    fn add(self, rhs: Expr) -> Self {
-        match (self, rhs) {
-            (Expr::Const(B64::ZERO), b) => b,
-            (a, Expr::Const(B64::ZERO)) => a,
-            (Expr::Const(a), Expr::Const(b)) => Expr::Const(a + b),
-            (a, b) => Self::Add(a.into(), b.into()),
-        }
-    }
-}
-
-impl Sub for Expr {
-    type Output = Self;
-
-    // Subtraction is the same thing as addition in Binius
-    #[allow(clippy::suspicious_arithmetic_impl)]
-    fn sub(self, rhs: Expr) -> Self {
-        self + rhs
-    }
-}
-
-impl Expr {
-    fn zero() -> Self {
-        Self::Const(B64::ZERO)
-    }
-
-    fn one() -> Self {
-        Self::Const(B64::ONE)
-    }
-}
-
-#[derive(Clone)]
+/// Holds data for a function circuit.
 pub struct Constraints {
-    pub shared_constraints: Vec<Expr>,
-    pub unique_constraints: Vec<Expr>,
-    pub sends: Vec<(Channel, Expr, Vec<Expr>)>,
-    pub requires: Vec<(Channel, Expr, OracleId, Vec<Expr>)>,
-    pub topmost_selector: Expr,
-    pub io: Vec<OracleId>,
-    pub multiplicity: OracleId,
+    pub zeros: Vec<Expr>,
+    pub selectors: Range<usize>,
+    pub width: usize,
 }
 
-#[derive(Clone)]
-pub enum Channel {
-    Add,
-    Mul,
-    Fun(FuncIdx),
-    Mem(u32),
-}
-
-impl Constraints {
-    pub fn new(function: &Function, layout: &Layout, columns: &Columns) -> Self {
-        let shared_constraints = vec![Expr::zero(); layout.shared_constraints as usize];
-        let unique_constraints = vec![];
-        let sends = vec![];
-        let requires = vec![];
-        let topmost_selector = block_selector(&function.body, columns);
-        let mut io = columns.inputs.clone();
-        io.extend(columns.outputs.iter().cloned());
-        let multiplicity = columns.multiplicity;
-        Self {
-            shared_constraints,
-            unique_constraints,
-            sends,
-            requires,
-            topmost_selector,
-            io,
-            multiplicity,
-        }
-    }
-
-    fn push_unique(&mut self, expr: Expr) {
-        self.unique_constraints.push(expr);
-    }
-
-    fn send(&mut self, channel: Channel, sel: Expr, args: Vec<Expr>) {
-        self.sends.push((channel, sel, args));
-    }
-
-    fn require(&mut self, channel: Channel, sel: Expr, prev_idx: OracleId, args: Vec<Expr>) {
-        self.requires.push((channel, sel, prev_idx, args));
-    }
-}
-
-#[derive(Clone, Default)]
 struct ConstraintState {
-    constraint_index: usize,
-    u1_auxiliary_index: usize,
-    u8_auxiliary_index: usize,
-    u64_auxiliary_index: usize,
-    var_map: Vec<Expr>,
+    function_index: G,
+    layout: FunctionLayout,
+    column: usize,
+    lookup: usize,
+    lookups: Vec<Lookup<Expr>>,
+    map: Vec<(Expr, Degree)>,
+    constraints: Constraints,
+}
+
+struct SharedState {
+    column: usize,
+    lookup: usize,
+    map_len: usize,
 }
 
 impl ConstraintState {
-    fn save(&self) -> Self {
-        self.clone()
+    fn selector_index(&self, sel: usize) -> usize {
+        sel + self.layout.input_size
     }
 
-    fn restore(&mut self, state: Self) {
-        *self = state;
+    fn next_lookup(&mut self) -> &mut Lookup<Expr> {
+        let lookup = &mut self.lookups[self.lookup];
+        self.lookup += 1;
+        lookup
     }
 
-    fn push_var(&mut self, expr: Expr) {
-        self.var_map.push(expr);
+    fn next_auxiliary(&mut self) -> Expr {
+        self.column += 1;
+        sym_var!(self.column - 1)
     }
 
-    fn get_var(&self, idx: ValIdx) -> &Expr {
-        &self.var_map[idx.to_usize()]
-    }
-
-    #[allow(dead_code)]
-    fn get_vars(&self, idx: ValIdx, offset: usize) -> &[Expr] {
-        let idx = idx.to_usize();
-        &self.var_map[idx..idx + offset]
-    }
-
-    fn bind_u1_column(&mut self, columns: &Columns) -> OracleId {
-        let col = self.next_u1_column(columns);
-        self.var_map.push(Expr::Var(col));
-        col
-    }
-
-    #[allow(dead_code)]
-    fn bind_u8_column(&mut self, columns: &Columns) -> OracleId {
-        let col = self.next_u8_column(columns);
-        self.var_map.push(Expr::Var(col));
-        col
-    }
-
-    fn bind_u64_column(&mut self, columns: &Columns) -> OracleId {
-        let col = self.next_u64_column(columns);
-        self.var_map.push(Expr::Var(col));
-        col
-    }
-
-    fn next_u1_column(&mut self, columns: &Columns) -> OracleId {
-        let col = columns.u1_auxiliaries[self.u1_auxiliary_index];
-        self.u1_auxiliary_index += 1;
-        col
-    }
-
-    #[allow(dead_code)]
-    fn next_u8_column(&mut self, columns: &Columns) -> OracleId {
-        let col = columns.u8_auxiliaries[self.u8_auxiliary_index];
-        self.u8_auxiliary_index += 1;
-        col
-    }
-
-    fn next_u64_column(&mut self, columns: &Columns) -> OracleId {
-        let col = columns.u64_auxiliaries[self.u64_auxiliary_index];
-        self.u64_auxiliary_index += 1;
-        col
-    }
-
-    fn add_shared_constraint(&mut self, constraints: &mut Constraints, expr: Expr) {
-        constraints.shared_constraints[self.constraint_index] += expr;
-        self.constraint_index += 1;
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct Columns {
-    pub inputs: Vec<OracleId>,
-    pub outputs: Vec<OracleId>,
-    pub u1_auxiliaries: Vec<OracleId>,
-    pub u8_auxiliaries: Vec<OracleId>,
-    pub u64_auxiliaries: Vec<OracleId>,
-    pub multiplicity: OracleId,
-    pub selectors: Vec<OracleId>,
-}
-
-impl Columns {
-    pub fn get_selector(&self, idx: SelIdx) -> OracleId {
-        self.selectors[idx.to_usize()]
-    }
-
-    pub fn from_layout(
-        builder: &mut ConstraintSystemBuilder<'_>,
-        layout: &Layout,
-        log_n: u8,
-    ) -> Self {
-        let log_n = log_n as usize;
-        let inputs = (0..layout.inputs)
-            .map(|i| builder.add_committed(format!("input{i}"), log_n, B64_LEVEL))
-            .collect();
-        let outputs = (0..layout.outputs)
-            .map(|i| builder.add_committed(format!("outputs{i}"), log_n, B64_LEVEL))
-            .collect();
-        let u1_auxiliaries = (0..layout.u1_auxiliaries)
-            .map(|i| builder.add_committed(format!("u1_auxiliaries{i}"), log_n, B1_LEVEL))
-            .collect();
-        let u8_auxiliaries = (0..layout.u8_auxiliaries)
-            .map(|i| builder.add_committed(format!("u8_auxiliaries{i}"), log_n, B8_LEVEL))
-            .collect();
-        let u64_auxiliaries = (0..layout.u64_auxiliaries)
-            .map(|i| builder.add_committed(format!("u64_auxiliary{i}"), log_n, B64_LEVEL))
-            .collect();
-        let multiplicity = builder.add_committed("multiplicity", log_n, B64_LEVEL);
-        let selectors = (0..layout.selectors)
-            .map(|i| builder.add_committed(format!("selectors{i}"), log_n, B1_LEVEL))
-            .collect();
-        Self {
-            inputs,
-            outputs,
-            u1_auxiliaries,
-            u8_auxiliaries,
-            u64_auxiliaries,
-            multiplicity,
-            selectors,
+    fn save(&mut self) -> SharedState {
+        SharedState {
+            column: self.column,
+            lookup: self.lookup,
+            map_len: self.map.len(),
         }
     }
+
+    #[allow(clippy::needless_pass_by_value)]
+    fn restore(&mut self, init: SharedState) {
+        self.column = init.column;
+        self.lookup = init.lookup;
+        self.map.truncate(init.map_len);
+    }
 }
 
-pub fn build_func_constraints(
-    function: &Function,
-    layout: &Layout,
-    columns: &Columns,
-) -> Constraints {
-    let mut state = ConstraintState::default();
-    columns
-        .inputs
-        .iter()
-        .for_each(|input| state.var_map.push(Expr::Var(*input)));
-    let mut constraints = Constraints::new(function, layout, columns);
-    collect_block_constraints(&function.body, &mut state, columns, &mut constraints);
-    constraints
+impl Toplevel {
+    pub fn build_constraints(&self, function_index: usize) -> (Constraints, Vec<Lookup<Expr>>) {
+        let function = &self.functions[function_index];
+        let empty_lookup = Lookup {
+            multiplicity: Expr::Constant(G::ZERO),
+            args: vec![],
+        };
+        let constraints = Constraints {
+            zeros: vec![],
+            selectors: 0..0,
+            width: function.layout.width(),
+        };
+        let mut state = ConstraintState {
+            function_index: G::from_usize(function_index),
+            layout: function.layout,
+            column: 0,
+            lookup: 0,
+            map: vec![],
+            lookups: vec![empty_lookup; function.layout.lookups],
+            constraints,
+        };
+        function.build_constraints(&mut state, self);
+        (state.constraints, state.lookups)
+    }
 }
 
-fn collect_block_constraints(
-    block: &Block,
-    state: &mut ConstraintState,
-    columns: &Columns,
-    constraints: &mut Constraints,
-) {
-    let sel = block_selector(block, columns);
-    block
-        .ops
-        .iter()
-        .for_each(|op| collect_op_constraints(op, state, columns, constraints, &sel));
-    match block.ctrl.as_ref() {
-        Ctrl::If(b, t, f) => {
-            let b = state.get_var(*b).clone();
-            let saved = state.save();
-            let t_sel = block_selector(t, columns);
-            let d = Expr::Var(state.next_u64_column(columns));
-            constraints.push_unique(t_sel * (b.clone() * d - Expr::one()));
-            collect_block_constraints(t, state, columns, constraints);
-            state.restore(saved);
-            let f_sel = block_selector(f, columns);
-            constraints.push_unique(f_sel * b);
-            collect_block_constraints(f, state, columns, constraints);
-        }
-        Ctrl::Return(id, rs) => {
-            let sel_col = columns.get_selector(*id);
-            for (r, o) in rs.iter().zip(columns.outputs.iter()) {
-                let r = state.get_var(*r).clone();
-                let o = Expr::Var(*o);
-                let sel = Expr::Var(sel_col);
-                state.add_shared_constraint(constraints, sel * (r - o));
+impl Function {
+    fn build_constraints(&self, state: &mut ConstraintState, toplevel: &Toplevel) {
+        // the first columns are occupied by the input, which is also mapped
+        state.column += self.layout.input_size;
+        (0..self.layout.input_size).for_each(|i| state.map.push((sym_var!(i), 1)));
+        // then comes the selectors, which are not mapped
+        let init_sel = state.column;
+        let final_sel = state.column + self.layout.selectors;
+        state.constraints.selectors = init_sel..final_sel;
+        state.column = final_sel;
+        // the multiplicity occupies another column
+        let multiplicity = sym_var!(state.column);
+        state.column += 1;
+        // the return lookup occupies the first lookup slot
+        state.lookups[0].multiplicity = -multiplicity.clone();
+        state.lookup += 1;
+        // the multiplicity can only be set if one and only one selector is set
+        let sel = self.body.get_block_selector(state);
+        state
+            .constraints
+            .zeros
+            .push(multiplicity * (Expr::from(G::ONE) - sel.clone()));
+        self.body.collect_constraints(sel, state, toplevel);
+    }
+}
+
+impl Block {
+    fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState, toplevel: &Toplevel) {
+        self.ops
+            .iter()
+            .for_each(|op| op.collect_constraints(&sel, state));
+        self.ctrl.collect_constraints(sel, state, toplevel);
+    }
+
+    fn get_block_selector(&self, state: &mut ConstraintState) -> Expr {
+        (self.min_sel_included..self.max_sel_excluded)
+            .map(|i| sym_var!(state.selector_index(i)))
+            .fold(Expr::Constant(G::ZERO), |var, acc| var + acc)
+    }
+}
+
+impl Ctrl {
+    #[allow(clippy::needless_pass_by_value)]
+    fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState, toplevel: &Toplevel) {
+        match self {
+            Ctrl::Return(_, values) => {
+                // channel and function index
+                let mut vector = vec![
+                    sel.clone() * Channel::Function.to_field(),
+                    sel.clone() * state.function_index,
+                ];
+                // input
+                vector.extend(
+                    (0..state.layout.input_size).map(|arg| sel.clone() * state.map[arg].0.clone()),
+                );
+                // output
+                vector.extend(
+                    values
+                        .iter()
+                        .map(|arg| sel.clone() * state.map[*arg].0.clone()),
+                );
+                let mut values_iter = vector.into_iter();
+                let lookup = &mut state.lookups[0];
+                lookup
+                    .args
+                    .iter_mut()
+                    .zip(values_iter.by_ref())
+                    .for_each(|(arg, value)| {
+                        *arg += value;
+                    });
+                lookup.args.extend(values_iter);
+                // multiplicity is already set
+            }
+            Ctrl::Match(var, cases, def) => {
+                let (var, _) = state.map[*var].clone();
+                for (&value, branch) in cases.iter() {
+                    let init = state.save();
+                    let branch_sel = branch.get_block_selector(state);
+                    state
+                        .constraints
+                        .zeros
+                        .push(branch_sel.clone() * (var.clone() - Expr::from(value)));
+                    branch.collect_constraints(branch_sel, state, toplevel);
+                    state.restore(init);
+                }
+                def.iter().for_each(|branch| {
+                    let init = state.save();
+                    let branch_sel = branch.get_block_selector(state);
+                    for &value in cases.keys() {
+                        let inverse = state.next_auxiliary();
+                        state.constraints.zeros.push(
+                            branch_sel.clone()
+                                * ((var.clone() - Expr::from(value)) * inverse
+                                    - Expr::from(G::ONE)),
+                        );
+                    }
+                    branch.collect_constraints(branch_sel, state, toplevel);
+                    state.restore(init);
+                })
             }
         }
     }
 }
 
-fn collect_op_constraints(
-    op: &Op,
-    state: &mut ConstraintState,
-    columns: &Columns,
-    constraints: &mut Constraints,
-    sel: &Expr,
-) {
-    match op {
-        Op::Prim(Prim::Bool(a)) => {
-            let a = B64::from_underlier(*a as u64);
-            state.push_var(Expr::Const(a));
-        }
-        Op::Prim(Prim::U64(a)) => {
-            let a = B64::from_underlier(*a);
-            state.push_var(Expr::Const(a));
-        }
-        Op::Add(a, b) => {
-            let a = state.get_var(*a).clone();
-            let b = state.get_var(*b).clone();
-            // 8 bytes of result
-            let c = Expr::Var(state.bind_u64_column(columns));
-            // 1 byte of carry, which is not bound
-            let carry = Expr::Var(state.next_u1_column(columns));
-            let args = [a, b, c, carry];
-            constraints.send(Channel::Add, sel.clone(), args.to_vec());
-        }
-        Op::Sub(c, b) => {
-            // `c - b = a` is equivalent to `a + b = c`.
-            let a = Expr::Var(state.bind_u64_column(columns));
-            let b = state.get_var(*b).clone();
-            let c = state.get_var(*c).clone();
-            let carry = Expr::Var(state.next_u1_column(columns));
-            let args = [a, b, c, carry];
-            constraints.send(Channel::Add, sel.clone(), args.to_vec());
-        }
-        Op::Lt(c, b) => {
-            // `c < b` is equivalent to `c - b` underflowing, which is
-            // equivalent to the addition in `a + b = c` overflowing
-            // Note that the result of the subtraction is not bound
-            let a = Expr::Var(state.next_u64_column(columns));
-            let b = state.get_var(*b).clone();
-            let c = state.get_var(*c).clone();
-            // The carry is bound
-            let carry = Expr::Var(state.bind_u1_column(columns));
-            let args = [a, b, c, carry];
-            constraints.send(Channel::Add, sel.clone(), args.to_vec());
-        }
-        Op::Mul(a, b) => {
-            let a = state.get_var(*a).clone();
-            let b = state.get_var(*b).clone();
-            // 8 bytes of result
-            let c = Expr::Var(state.bind_u64_column(columns));
-            let args = [a, b, c];
-            constraints.send(Channel::Mul, sel.clone(), args.to_vec());
-        }
-        Op::Xor(a, b) => {
-            let a = state.get_var(*a).clone();
-            let b = state.get_var(*b).clone();
-            state.push_var(a + b);
-        }
-        Op::And(a, b) => {
-            let a = state.get_var(*a).clone();
-            let b = state.get_var(*b).clone();
-            let c = Expr::Var(state.bind_u1_column(columns));
-            state.push_var(c.clone());
-            state.add_shared_constraint(constraints, sel.clone() * (c - a * b));
-        }
-        Op::Store(values) => {
-            let len = values
-                .len()
-                .try_into()
-                .expect("Error: too many arguments to store");
-            let mut args = [Expr::Var(state.bind_u64_column(columns))].to_vec();
-            args.extend(values.iter().map(|value| state.get_var(*value).clone()));
-            let require = state.next_u64_column(columns);
-            constraints.require(Channel::Mem(len), sel.clone(), require, args);
-        }
-        Op::Load(len, ptr) => {
-            let mut args = [state.get_var(*ptr).clone()].to_vec();
-            let values = (0..*len).map(|_| Expr::Var(state.bind_u64_column(columns)));
-            args.extend(values);
-            let require = state.next_u64_column(columns);
-            constraints.require(Channel::Mem(*len), sel.clone(), require, args);
-        }
-        Op::Call(f, args, out_size) => {
-            let mut args = args
-                .iter()
-                .map(|a| state.get_var(*a).clone())
-                .collect::<Vec<_>>();
-            let out = (0..*out_size).map(|_| Expr::Var(state.bind_u64_column(columns)));
-            args.extend(out);
-            let require = state.next_u64_column(columns);
-            constraints.require(Channel::Fun(*f), sel.clone(), require, args);
+impl Op {
+    fn collect_constraints(&self, sel: &Expr, state: &mut ConstraintState) {
+        match self {
+            Op::Const(f) => state.map.push(((*f).into(), 0)),
+            Op::Add(a, b) => {
+                let (a, a_deg) = &state.map[*a];
+                let (b, b_deg) = &state.map[*b];
+                let deg = a_deg.max(b_deg);
+                state.map.push((a.clone() + b.clone(), *deg));
+            }
+            Op::Sub(a, b) => {
+                let (a, a_deg) = &state.map[*a];
+                let (b, b_deg) = &state.map[*b];
+                let deg = a_deg.max(b_deg);
+                state.map.push((a.clone() - b.clone(), *deg));
+            }
+            Op::Mul(a, b) => {
+                let (a, a_deg) = &state.map[*a];
+                let (b, b_deg) = &state.map[*b];
+                let deg = a_deg + b_deg;
+                let mul = a.clone() * b.clone();
+                if deg < 2 {
+                    state.map.push((mul, deg));
+                } else {
+                    let col = state.next_auxiliary();
+                    state.map.push((col.clone(), 1));
+                    state.constraints.zeros.push(sel.clone() * (col - mul));
+                }
+            }
+            Op::Call(function_index, inputs, output_size) => {
+                // channel and function index
+                let mut vector = vec![
+                    sel.clone() * Channel::Function.to_field(),
+                    sel.clone() * G::from_usize(*function_index),
+                ];
+                // input
+                vector.extend(
+                    inputs
+                        .iter()
+                        .map(|arg| sel.clone() * state.map[*arg].0.clone()),
+                );
+                // output
+                let output = (0..*output_size).map(|_| {
+                    let col = state.next_auxiliary();
+                    state.map.push((col.clone(), 1));
+                    col
+                });
+                vector.extend(output);
+                let mut values_iter = vector.into_iter();
+                let lookup = state.next_lookup();
+                lookup
+                    .args
+                    .iter_mut()
+                    .zip(values_iter.by_ref())
+                    .for_each(|(arg, value)| {
+                        *arg += value;
+                    });
+                lookup.args.extend(values_iter);
+                lookup.multiplicity += sel.clone();
+            }
+            Op::Store(values) => {
+                let size = values.len();
+                // channel, function index and pointer
+                let ptr = state.next_auxiliary();
+                state.map.push((ptr.clone(), 1));
+                let mut vector = vec![
+                    sel.clone() * Channel::Memory.to_field(),
+                    sel.clone() * G::from_usize(size),
+                    sel.clone() * ptr.clone(),
+                ];
+                // stored values
+                vector.extend(
+                    values
+                        .iter()
+                        .map(|value| sel.clone() * state.map[*value].0.clone()),
+                );
+                let mut values_iter = vector.into_iter();
+                let lookup = state.next_lookup();
+                lookup
+                    .args
+                    .iter_mut()
+                    .zip(values_iter.by_ref())
+                    .for_each(|(arg, value)| {
+                        *arg += value;
+                    });
+                lookup.args.extend(values_iter);
+                lookup.multiplicity += sel.clone();
+            }
+            Op::Load(size, ptr) => {
+                // channel, size and pointer
+                let mut vector = vec![
+                    sel.clone() * Channel::Memory.to_field(),
+                    sel.clone() * G::from_usize(*size),
+                    sel.clone() * state.map[*ptr].0.clone(),
+                ];
+                // loaded values
+                let values = (0..*size).map(|_| {
+                    let col = state.next_auxiliary();
+                    state.map.push((col.clone(), 1));
+                    col
+                });
+                vector.extend(values);
+                let mut values_iter = vector.into_iter();
+                let lookup = state.next_lookup();
+                lookup
+                    .args
+                    .iter_mut()
+                    .zip(values_iter.by_ref())
+                    .for_each(|(arg, value)| {
+                        *arg += value;
+                    });
+                lookup.args.extend(values_iter);
+                lookup.multiplicity += sel.clone();
+            }
         }
     }
-}
-
-fn block_selector(block: &Block, columns: &Columns) -> Expr {
-    block
-        .return_idents
-        .iter()
-        .map(|id| Expr::Var(columns.get_selector(*id)))
-        .fold(Expr::zero(), |var, acc| acc + var)
 }

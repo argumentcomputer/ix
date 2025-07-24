@@ -1,4 +1,10 @@
 pub mod aiur;
-pub mod aiur2;
-pub mod archon;
 pub mod lean;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {
+        assert_eq!(2 + 2, 4);
+    }
+}

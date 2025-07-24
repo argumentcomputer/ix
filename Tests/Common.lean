@@ -15,9 +15,6 @@ def genUInt64 : Gen UInt64 :=
 def genUSize : Gen USize :=
   .ofNat <$> choose Nat 0 (2^System.Platform.numBits - 1)
 
-def genUInt128 : Gen UInt128 :=
-  .ofLoHi <$> genUInt64 <*> genUInt64
-
 def frequency' (default: Gen α) (xs: List (Nat × Gen α)) : Gen α := do
   let n ← choose Nat 0 total
   pick n xs

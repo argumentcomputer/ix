@@ -7,48 +7,11 @@ open Lean Elab Meta
 
 abbrev ElabStxCat name := TSyntax name → TermElabM Expr
 
-declare_syntax_cat                             primitive
-syntax (name := primitiveU1)  num noWs "u1"  : primitive
-syntax (name := primitiveU8)  num noWs "u8"  : primitive
-syntax (name := primitiveU16) num noWs "u16" : primitive
-syntax (name := primitiveU32) num noWs "u32" : primitive
-syntax (name := primitiveU64) num noWs "u64" : primitive
-
-def elabPrimitive : ElabStxCat `primitive
-  | stx@⟨.node _ ``primitiveU1 ts⟩ =>
-    match getNat ts with
-    | 0 => mkAppM ``Primitive.u1 #[mkConst ``Bool.false]
-    | 1 => mkAppM ``Primitive.u1 #[mkConst ``Bool.true]
-    | n => throwOutOfRange stx n "u1"
-  | stx@⟨.node _ ``primitiveU8 ts⟩ =>
-    let n := getNat ts
-    if h : n < UInt8.size then mkAppM ``Primitive.u8 #[toExpr $ UInt8.ofNatLT n h]
-    else throwOutOfRange stx n "u8"
-  | stx@⟨.node _ ``primitiveU16 ts⟩ =>
-    let n := getNat ts
-    if h : n < UInt16.size then mkAppM ``Primitive.u16 #[toExpr $ UInt16.ofNatLT n h]
-    else throwOutOfRange stx n "u16"
-  | stx@⟨.node _ ``primitiveU32 ts⟩ =>
-    let n := getNat ts
-    if h : n < UInt32.size then mkAppM ``Primitive.u32 #[toExpr $ UInt32.ofNatLT n h]
-    else throwOutOfRange stx n "u32"
-  | stx@⟨.node _ ``primitiveU64 ts⟩ =>
-    let n := getNat ts
-    if h : n < UInt64.size then mkAppM ``Primitive.u64 #[toExpr $ UInt64.ofNatLT n h]
-    else throwOutOfRange stx n "u64"
-  | stx => throw $ .error stx "Invalid syntax for primitive"
-where
-  getNat ts :=
-    let numLit : NumLit := ⟨ts[0]!⟩
-    numLit.getNat
-  throwOutOfRange stx n ty :=
-    throw $ .error stx s!"{n} is out of range for {ty}"
-
 declare_syntax_cat                             pattern
 syntax ("." noWs)? ident                     : pattern
 syntax "_"                                   : pattern
 syntax ident "(" pattern (", " pattern)* ")" : pattern
-syntax primitive                             : pattern
+syntax num                                   : pattern
 syntax "(" pattern (", " pattern)* ")"       : pattern
 syntax pattern "|" pattern                   : pattern
 
@@ -69,6 +32,9 @@ def elabList (head : α) (tail : Array α) (elabFn : α → TermElabM Expr)
 def elabEmptyList (listEltTypeName : Name) : TermElabM Expr :=
   mkListLit (mkConst listEltTypeName) []
 
+def elabG (n : TSyntax `num) : TermElabM Expr :=
+  mkAppM ``G.ofNat #[mkNatLit n.getNat]
+
 partial def elabPattern : ElabStxCat `pattern
   | `(pattern| $v:ident($p:pattern $[, $ps:pattern]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr v.getId]
@@ -84,31 +50,15 @@ partial def elabPattern : ElabStxCat `pattern
       mkAppM ``Pattern.ref #[g, ← elabEmptyList ``Pattern]
     | _ => throw $ .error i "Illegal pattern name"
   | `(pattern| _) => pure $ mkConst ``Pattern.wildcard
-  | `(pattern| $prim:primitive) => do
-    mkAppM ``Pattern.primitive #[← elabPrimitive prim]
+  | `(pattern| $n:num) => do mkAppM ``Pattern.field #[← elabG n]
   | `(pattern| ($p:pattern $[, $ps:pattern]*)) => do
     mkAppM ``Pattern.tuple #[← elabList p ps elabPattern ``Pattern true]
   | `(pattern| $p₁:pattern | $p₂:pattern) => do
     mkAppM ``Pattern.or #[← elabPattern p₁, ← elabPattern p₂]
   | stx => throw $ .error stx "Invalid syntax for pattern"
 
-declare_syntax_cat primitive_type
-syntax "u1"      : primitive_type
-syntax "u8"      : primitive_type
-syntax "u16"     : primitive_type
-syntax "u32"     : primitive_type
-syntax "u64"     : primitive_type
-
-def elabPrimitiveType : ElabStxCat `primitive_type
-  | `(primitive_type| u1) => pure $ mkConst ``PrimitiveType.u1
-  | `(primitive_type| u8) => pure $ mkConst ``PrimitiveType.u8
-  | `(primitive_type| u16) => pure $ mkConst ``PrimitiveType.u16
-  | `(primitive_type| u32) => pure $ mkConst ``PrimitiveType.u32
-  | `(primitive_type| u64) => pure $ mkConst ``PrimitiveType.u64
-  | stx => throw $ .error stx "Invalid syntax for primitive type"
-
 declare_syntax_cat                               typ
-syntax primitive_type                          : typ
+syntax "G"                                     : typ
 syntax "(" typ (", " typ)* ")"                 : typ
 syntax "&" typ                                 : typ
 syntax ("." noWs)? ident                       : typ
@@ -116,8 +66,7 @@ syntax "fn" "(" ")" " -> " typ                 : typ
 syntax "fn" "(" typ (", " typ)* ")" " -> " typ : typ
 
 partial def elabTyp : ElabStxCat `typ
-  | `(typ| $p:primitive_type) => do
-    mkAppM ``Typ.primitive #[← elabPrimitiveType p]
+  | `(typ| G) => pure $ mkConst ``Typ.field
   | `(typ| ($t:typ $[, $ts:typ]*)) => do
     mkAppM ``Typ.tuple #[← elabList t ts elabTyp ``Typ true]
   | `(typ| &$t:typ) => do
@@ -133,18 +82,13 @@ partial def elabTyp : ElabStxCat `typ
 
 declare_syntax_cat                                          trm
 syntax ("." noWs)? ident                                  : trm
-syntax primitive                                          : trm
+syntax num                                                : trm
 syntax "(" trm (", " trm)* ")"                            : trm
 syntax "return " trm                                      : trm
 syntax "let " pattern " = " trm "; " trm                  : trm
 syntax "match " trm " { " (pattern " => " trm ", ")+ " }" : trm
-syntax "if " trm " { " trm " } " " else " " { " trm " } " : trm
 syntax ("." noWs)? ident "(" ")"                          : trm
 syntax ("." noWs)? ident "(" trm (", " trm)* ")"          : trm
-syntax "preimg" "(" ("." noWs)? ident ", " trm ")"        : trm
-syntax "ffi" "(" ident (", " trm)* ")"                    : trm
-syntax "xor" "(" trm ", " trm ")"                         : trm
-syntax "and" "(" trm ", " trm ")"                         : trm
 syntax "add" "(" trm ", " trm ")"                         : trm
 syntax "sub" "(" trm ", " trm ")"                         : trm
 syntax "mul" "(" trm ", " trm ")"                         : trm
@@ -152,8 +96,7 @@ syntax "get" "(" trm ", " num ")"                         : trm
 syntax "slice" "(" trm ", " num ", " num ")"              : trm
 syntax "store" "(" trm ")"                                : trm
 syntax "load" "(" trm ")"                                 : trm
-syntax "pointer_as_u64" "(" trm ")"                       : trm
-syntax "trace" "(" str ", " trm ")"                       : trm
+syntax "ptr_val" "(" trm ")"                              : trm
 syntax trm ": " typ                                       : trm
 
 partial def elabTrm : ElabStxCat `trm
@@ -165,8 +108,8 @@ partial def elabTrm : ElabStxCat `trm
     | name@(.str _ _) => do
       mkAppM ``Term.ref #[← mkAppM ``Global.mk #[toExpr name]]
     | _ => throw $ .error i "Illegal name"
-  | `(trm| $p:primitive) => do
-    let data ← mkAppM ``Data.primitive #[← elabPrimitive p]
+  | `(trm| $n:num) => do
+    let data ← mkAppM ``Data.field #[← elabG n]
     mkAppM ``Term.data #[data]
   | `(trm| ($t:trm $[, $ts:trm]*)) => do
     let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term true]
@@ -181,30 +124,18 @@ partial def elabTrm : ElabStxCat `trm
       prods := prods.push $ ← mkAppM ``Prod.mk #[← elabPattern p, ← elabTrm t]
     let prodType ← mkAppM ``Prod #[mkConst ``Pattern, mkConst ``Term]
     mkAppM ``Term.match #[← elabTrm t, ← mkListLit prodType prods.toList]
-  | `(trm| if $b:trm {$t:trm} else {$f:trm}) => do
-    mkAppM ``Term.if #[← elabTrm b, ← elabTrm t, ← elabTrm f]
   | `(trm| $[.]?$f:ident ()) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
     mkAppM ``Term.app #[g, ← elabEmptyList ``Term]
   | `(trm| $[.]?$f:ident ($a:trm $[, $as:trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
     mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term]
-  | `(trm| preimg($[.]?$f:ident, $t:trm)) => do
-    let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.preimg #[g, ← elabTrm t]
-  | `(trm| ffi($g:ident $[, $as:trm]*)) => do
-    let g ← mkAppM ``Global.mk #[toExpr g.getId]
-    mkAppM ``Term.ffi #[g, ← mkListLit (mkConst ``Term) (← as.toList.mapM elabTrm)]
   | `(trm| add($a:trm, $b:trm)) => do
-    mkAppM ``Term.addU64 #[← elabTrm a, ← elabTrm b]
+    mkAppM ``Term.add #[← elabTrm a, ← elabTrm b]
   | `(trm| sub($a:trm, $b:trm)) => do
-    mkAppM ``Term.subU64 #[← elabTrm a, ← elabTrm b]
+    mkAppM ``Term.sub #[← elabTrm a, ← elabTrm b]
   | `(trm| mul($a:trm, $b:trm)) => do
-    mkAppM ``Term.mulU64 #[← elabTrm a, ← elabTrm b]
-  | `(trm| xor($a:trm, $b:trm)) => do
-    mkAppM ``Term.xor #[← elabTrm a, ← elabTrm b]
-  | `(trm| and($a:trm, $b:trm)) => do
-    mkAppM ``Term.and #[← elabTrm a, ← elabTrm b]
+    mkAppM ``Term.mul #[← elabTrm a, ← elabTrm b]
   | `(trm| get($a:trm, $i:num)) => do
     mkAppM ``Term.get #[← elabTrm a, toExpr i.getNat]
   | `(trm| slice($a:trm, $i:num, $j:num)) => do
@@ -213,12 +144,10 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.store #[← elabTrm a]
   | `(trm| load($a:trm)) => do
     mkAppM ``Term.load #[← elabTrm a]
-  | `(trm| pointer_as_u64($a:trm)) => do
-    mkAppM ``Term.pointerAsU64 #[← elabTrm a]
+  | `(trm| ptr_val($a:trm)) => do
+    mkAppM ``Term.ptrVal #[← elabTrm a]
   | `(trm| $v:trm : $t:typ) => do
     mkAppM ``Term.ann #[← elabTyp t, ← elabTrm v]
-  | `(trm| trace($s:str, $e:trm)) => do
-    mkAppM ``Term.trace #[mkStrLit s.getString, ← elabTrm e]
   | stx => throw $ .error stx "Invalid syntax for term"
 
 declare_syntax_cat                     constructor
@@ -298,7 +227,6 @@ def elabToplevel : ElabStxCat `toplevel
     mkAppM ``Toplevel.mk #[
       ← mkListLit (mkConst ``DataType) dataTypes.toList,
       ← mkListLit (mkConst ``Function) functions.toList,
-      ← mkArrayLit (mkConst ``Gadget) [],
     ]
   | stx => throw $ .error stx "Invalid syntax for toplevel"
 

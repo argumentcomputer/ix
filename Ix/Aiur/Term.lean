@@ -1,5 +1,5 @@
 import Std.Data.HashSet.Basic
-import Ix.Aiur.Gadget
+import Ix.Aiur.Goldilocks
 import Ix.IndexMap
 
 namespace Aiur
@@ -38,36 +38,17 @@ def Global.popNamespace (global : Global) : Option (String × Global) :=
   | .str tail head => some (head, ⟨tail⟩)
   | _ => none
 
-inductive Primitive
-  | u1 : Bool → Primitive
-  | u8 : UInt8 → Primitive
-  | u16 : UInt16 → Primitive
-  | u32 : UInt32 → Primitive
-  | u64 : UInt64 → Primitive
-  deriving Repr, BEq, Hashable
-
-def Primitive.toU64 : Primitive → UInt64
-| .u1 n => n.toUInt64
-| .u8 n => n.toUInt64
-| .u16 n => n.toUInt64
-| .u32 n => n.toUInt64
-| .u64 n => n
-
 inductive Pattern
   | var : Local → Pattern
   | wildcard : Pattern
   | ref : Global → List Pattern → Pattern
-  | primitive : Primitive → Pattern
+  | field : G → Pattern
   | tuple : Array Pattern → Pattern
   | or : Pattern → Pattern → Pattern
   deriving Repr, BEq, Hashable, Inhabited
 
-inductive PrimitiveType
-  | u1 | u8 | u16 | u32 | u64
-  deriving Repr, BEq, Hashable
-
 inductive Typ where
-  | primitive : PrimitiveType → Typ
+  | field
   | tuple : Array Typ → Typ
   | pointer : Typ → Typ
   | dataType : Global → Typ
@@ -83,26 +64,20 @@ inductive Term
   | ret : Term → Term
   | let : Pattern → Term → Term → Term
   | match : Term → List (Pattern × Term) → Term
-  | if : Term → Term → Term → Term
   | app : Global → List Term → Term
-  | preimg : Global → Term → Term
-  | ffi : Global → List Term → Term
-  | xor : Term → Term → Term
-  | and : Term → Term → Term
-  | addU64 : Term → Term → Term
-  | subU64 : Term → Term → Term
-  | mulU64 : Term → Term → Term
+  | add : Term → Term → Term
+  | sub : Term → Term → Term
+  | mul : Term → Term → Term
   | get : Term → Nat → Term
   | slice : Term → Nat → Nat → Term
   | store : Term → Term
   | load : Term → Term
-  | pointerAsU64 : Term → Term
+  | ptrVal : Term → Term
   | ann : Typ → Term → Term
-  | trace : String → Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Data
-  | primitive : Primitive → Data
+  | field : G → Data
   | tuple : Array Term → Data
   deriving Repr
 
@@ -129,21 +104,15 @@ inductive TypedTermInner
   | ret : TypedTerm → TypedTermInner
   | let : Pattern → TypedTerm → TypedTerm → TypedTermInner
   | match : TypedTerm → List (Pattern × TypedTerm) → TypedTermInner
-  | if : TypedTerm → TypedTerm → TypedTerm → TypedTermInner
   | app : Global → List TypedTerm → TypedTermInner
-  | preimg : Global → TypedTerm → TypedTermInner
-  | ffi : Global → List TypedTerm → TypedTermInner
-  | xor : TypedTerm → TypedTerm → TypedTermInner
-  | and : TypedTerm → TypedTerm → TypedTermInner
-  | addU64 : TypedTerm → TypedTerm → TypedTermInner
-  | subU64 : TypedTerm → TypedTerm → TypedTermInner
-  | mulU64 : TypedTerm → TypedTerm → TypedTermInner
+  | add : TypedTerm → TypedTerm → TypedTermInner
+  | sub : TypedTerm → TypedTerm → TypedTermInner
+  | mul : TypedTerm → TypedTerm → TypedTermInner
   | get : TypedTerm → Nat → TypedTermInner
   | slice : TypedTerm → Nat → Nat → TypedTermInner
   | store : TypedTerm → TypedTermInner
   | load : TypedTerm → TypedTermInner
-  | pointerAsU64 : TypedTerm → TypedTermInner
-  | trace : String → TypedTerm → TypedTermInner
+  | ptrVal : TypedTerm → TypedTermInner
   deriving Repr, Inhabited
 
 structure TypedTerm where
@@ -152,7 +121,7 @@ structure TypedTerm where
   deriving Repr, Inhabited
 
 inductive TypedData
-  | primitive : Primitive → TypedData
+  | field : G → TypedData
   | tuple : Array TypedTerm → TypedData
   deriving Repr
 
@@ -178,20 +147,15 @@ structure Function where
 structure Toplevel where
   dataTypes : List DataType
   functions : List Function
-  gadgets : Array Gadget
   deriving Repr
 
 def Toplevel.getFuncIdx (toplevel : Toplevel) (funcName : Lean.Name) : Option Nat := do
   toplevel.functions.findIdx? fun function => function.name.toName == funcName
 
-@[inline] def Toplevel.addGadget (toplevel : Toplevel) (gadget : Gadget) : Toplevel :=
-  { toplevel with gadgets := toplevel.gadgets.push gadget }
-
 inductive Declaration
   | function : Function → Declaration
   | dataType : DataType → Declaration
   | constructor : DataType → Constructor → Declaration
-  | gadget : Gadget → Declaration
   deriving Repr, Inhabited
 
 abbrev Decls := IndexMap Global Declaration
@@ -207,7 +171,6 @@ inductive TypedDeclaration
   | function : TypedFunction → TypedDeclaration
   | dataType : DataType → TypedDeclaration
   | constructor : DataType → Constructor → TypedDeclaration
-  | gadget : Gadget → TypedDeclaration
   deriving Repr, Inhabited
 
 abbrev TypedDecls := IndexMap Global TypedDeclaration
@@ -217,7 +180,7 @@ mutual
 open Std (HashSet)
 
 partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) : Typ → Nat
-  | Typ.primitive .. => 1
+  | Typ.field .. => 1
   | Typ.pointer .. => 1
   | Typ.function .. => 1
   | Typ.tuple ts => ts.foldl (init := 0) (fun acc t => acc + t.size decls visited)

@@ -8,32 +8,18 @@ crate-type = ["staticlib"]
 
 [dependencies]
 anyhow = "1"
-array-util = "1.0.2"
-binius_core = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "2326ae9b78a9679eeed86d30188a9bcc5eea55e0" }
-binius_circuits = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "2326ae9b78a9679eeed86d30188a9bcc5eea55e0" }
-binius_field = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "2326ae9b78a9679eeed86d30188a9bcc5eea55e0" }
-binius_macros = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "2326ae9b78a9679eeed86d30188a9bcc5eea55e0" }
-binius_maybe_rayon = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "2326ae9b78a9679eeed86d30188a9bcc5eea55e0" }
-binius_math = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "2326ae9b78a9679eeed86d30188a9bcc5eea55e0" }
-binius_hal = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "2326ae9b78a9679eeed86d30188a9bcc5eea55e0" }
-binius_hash = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "2326ae9b78a9679eeed86d30188a9bcc5eea55e0" }
-binius_utils = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "2326ae9b78a9679eeed86d30188a9bcc5eea55e0" }
-bumpalo = "3"
-groestl_crypto = { package = "groestl", version = "0.10.1" }
-proptest = "1"
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "f3017f7f1ad5f3e3149b552e188e9f9e09370a97" }
-rayon = "1.7.0"
-rand = "0.9.1"
+rayon = "1"
 rustc-hash = "2"
 indexmap = { version = "2", features = ["rayon"] }
-bytes = "1.10.1"
-tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+tiny-keccak = { version = "2", features = ["keccak"] }
 
-[target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
-iroh = "0.34.0"
-tokio = "1.44.1"
-iroh-base = "0.34.0"
-iroh-blobs = { version = "0.34.0", features = ["rpc"] }
+# bytes = "1.10.1"
+# [target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
+# iroh = "0.34.0"
+# tokio = "1.44.1"
+# iroh-base = "0.34.0"
+# iroh-blobs = { version = "0.34.0", features = ["rpc"] }
 
 [features]
 parallel = ["multi-stark/parallel"]

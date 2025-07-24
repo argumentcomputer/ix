@@ -1,15 +1,7 @@
 import LSpec
 import Tests.Common
-import Ix.Binius.Boundary
-import Ix.Archon.ArithExpr
-import Ix.Archon.OracleOrConst
-import Ix.Archon.ModuleMode
-import Ix.Archon.RelativeHeight
-import Ix.Archon.Transparent
 
 open LSpec SlimCheck Gen
-
-open Archon Binius
 
 /- Array UInt32 -/
 
@@ -31,134 +23,9 @@ instance : Shrinkable (Array UInt32) where
 
 instance : SampleableExt (Array UInt32) := SampleableExt.mkSelfContained genArrayUInt32
 
-/- Boundary -/
-
-def genBoundary : Gen Boundary := do
-  let numValues ← choose Nat 0 128
-  let mut values := Array.mkEmpty numValues
-  for _ in [:numValues] do
-    values := values.push $ ← genUInt128
-  let direction := if ← chooseAny Bool then .pull else .push
-  pure ⟨values, ⟨← genUSize⟩, direction, ← genUInt64⟩
-
-instance : Shrinkable Boundary where
-  shrink _ := []
-
-instance : Repr Boundary where
-  reprPrec boundary _ := boundary.toString
-
-instance : SampleableExt Boundary := SampleableExt.mkSelfContained genBoundary
-
-/- ArithExpr -/
-
-def genArithExpr : Gen ArithExpr := getSize >>= go
-  where
-    go : Nat → Gen ArithExpr
-    | 0 => return .const 0
-    | Nat.succ n =>
-      frequency [
-        (30, .const <$> genUInt128),
-        (30, .var <$> genUSize),
-        (30, .oracle <$> OracleIdx.mk <$> genUSize),
-        (25, .add <$> go n <*> go n),
-        (25, .mul <$> go n <*> go n),
-        (40, .pow <$> go n <*> genUInt64)
-      ]
-
-instance : Shrinkable ArithExpr where
-  shrink _ := []
-
-instance : Repr ArithExpr where
-  reprPrec expr _ := expr.toString
-
-instance : SampleableExt ArithExpr := SampleableExt.mkSelfContained genArithExpr
-
-/- ModuleMode -/
-
-def genModuleMode : Gen ModuleMode :=
-  frequency [
-      (5, pure .inactive),
-      (15, .active <$> genUInt8 <*> genUInt64),
-    ]
-
-instance : Shrinkable ModuleMode where
-  shrink _ := []
-
-instance : Repr ModuleMode where
-  reprPrec mode _ := mode.toString
-
-instance : SampleableExt ModuleMode := SampleableExt.mkSelfContained genModuleMode
-
-/- OracleOrConst -/
-
-def genOracleIdx : Gen OracleIdx :=
-  OracleIdx.mk <$> genUSize
-
-def genTowerField : Gen TowerField :=
-  elements #[.b1, .b2, .b4, .b8, .b16, .b32, .b64, .b128]
-
-def genOracleOrConst : Gen OracleOrConst :=
-  frequency [
-      (5, .oracle <$> genOracleIdx),
-      (10, .const <$> genUInt128 <*> genTowerField),
-    ]
-
-instance : Shrinkable OracleOrConst where
-  shrink _ := []
-
-instance : Repr OracleOrConst where
-  reprPrec oc _ := oc.toString
-
-instance : SampleableExt OracleOrConst := SampleableExt.mkSelfContained genOracleOrConst
-
-/- RelativeHeight -/
-
-def genRelativeHeight : Gen RelativeHeight :=
-  frequency [
-      (5, pure .base),
-      (15, .div2 <$> genUInt8),
-      (15, .mul2 <$> genUInt8),
-    ]
-
-instance : Shrinkable RelativeHeight where
-  shrink _ := []
-
-instance : Repr RelativeHeight where
-  reprPrec relativeHeight _ := relativeHeight.toString
-
-instance : SampleableExt RelativeHeight := SampleableExt.mkSelfContained genRelativeHeight
-
-/- Transparent -/
-
-def genTransparent : Gen Transparent :=
-  frequency [
-      (10, .const <$> genUInt128),
-      (10, pure .incremental),
-    ]
-
-instance : Shrinkable Transparent where
-  shrink _ := []
-
-instance : Repr Transparent where
-  reprPrec transparent _ := transparent.toString
-
-instance : SampleableExt Transparent := SampleableExt.mkSelfContained genTransparent
-
 /- Suite -/
 
 def Tests.FFIConsistency.suite := [
     check "Boxed UInt32s are unboxed correctly in Rust"
       (∀ arr : Array UInt32, boxedUInt32sAreEquivalentToBytes arr (arrayUInt32sToBytes arr)),
-    check "ArithExpr Lean->Rust mapping matches the deserialized bytes"
-      (∀ expr : ArithExpr, expr.isEquivalentToBytes expr.toBytes),
-    check "Boundary Lean->Rust mapping matches the deserialized bytes"
-      (∀ boundary : Boundary, boundary.isEquivalentToBytes boundary.toBytes),
-    check "ModuleMode Lean->Rust mapping matches the deserialized bytes"
-      (∀ moduleMode : ModuleMode, moduleMode.isEquivalentToBytes moduleMode.toBytes),
-    check "OracleOrConst Lean->Rust mapping matches the deserialized bytes"
-      (∀ oc : OracleOrConst, oc.isEquivalentToBytes oc.toBytes),
-    check "RelativeHeight Lean->Rust mapping matches the deserialized bytes"
-      (∀ relativeHeight : RelativeHeight, relativeHeight.isEquivalentToBytes relativeHeight.toBytes),
-    check "Transparent Lean->Rust mapping matches the deserialized bytes"
-      (∀ transparent : Transparent, transparent.isEquivalentToBytes transparent.toBytes),
   ]

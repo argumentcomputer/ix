@@ -1,7 +1,7 @@
 import Std.Data.HashMap
 import Lean.Data.RBTree
-import Ix.Aiur2.Term
-import Ix.Aiur2.Bytecode
+import Ix.Aiur.Term
+import Ix.Aiur.Bytecode
 
 namespace Aiur
 

@@ -7,7 +7,7 @@ abbrev TermId := Nat
 abbrev UniqTerm := TermId × Term
 
 inductive SPattern
-  | primitive : Primitive → SPattern
+  | field : G → SPattern
   | ref : Global → Array Local → SPattern
   | tuple : Array Local → SPattern
   deriving BEq, Hashable, Inhabited
@@ -22,9 +22,6 @@ structure ExtTerm where
   renames : Array (Local × Term)
   value : Term
   deriving Inhabited
-
-def ExtTerm.modifyRenames (t : ExtTerm) (f : Array (Local × Term) → Array (Local × Term)) : ExtTerm :=
-  { t with renames := f t.renames }
 
 structure Row where
   clauses : Array Clause
@@ -65,7 +62,7 @@ def dnfProd (branches: List $ Pattern × UniqTerm) (body : ExtTerm) : CompilerM 
       pure $ rowsL ++ rowsR
     | (.wildcard, _) :: rest => aux renames clauses rest body
     | (.var var, (_, term)) :: rest => aux (renames.push (var, term)) clauses rest body
-    | (.primitive prim, term) :: rest => aux renames (clauses.push ⟨.primitive prim, #[], term⟩) rest body
+    | (.field g, term) :: rest => aux renames (clauses.push ⟨.field g, #[], term⟩) rest body
     | (.tuple args, term) :: rest => do
       let (vars, guards) ← flattenArgs args
       let clause := ⟨.tuple vars, guards, term⟩
@@ -81,9 +78,6 @@ where
     let guards := args.zip varIds |>.map fun (arg, id) => (arg, (id, .var (.idx id)))
     pure (varIds.map .idx, guards)
 
-def toRows (clause : Pattern × UniqTerm) : ExtTerm → CompilerM (Array Row) :=
-  dnfProd [clause]
-
 inductive Decision
   | success : ExtTerm → Decision
   | failure
@@ -95,11 +89,7 @@ def modifyDiagnostics (f : Diagnostics → Diagnostics) : CompilerM Unit :=
   modify fun stt => { stt with diagnostics := f stt.diagnostics }
 
 def patTypeLength (decls : Decls) : SPattern → Nat
-  | .primitive (.u1 _) => 2
-  | .primitive (.u8 _) => UInt8.size
-  | .primitive (.u16 _) => UInt16.size
-  | .primitive (.u32 _) => UInt32.size
-  | .primitive (.u64 _) => UInt64.size
+  | .field _ => gSize.toNat
   | .tuple _ => 1
   | .ref global _ => typeLookup global |>.constructors.length
 where
@@ -190,7 +180,7 @@ def compile (term : Term) (rules : List (Pattern × Term)) : CompilerM (Decision
 where
   fromRule id rule :=
     let (pat, bod) := rule
-    toRows (pat, (id, term)) ⟨#[], bod⟩
+    dnfProd [(pat, (id, term))] ⟨#[], bod⟩
 
 def runWithNewCompiler (typs : Decls) (f : CompilerM α) : α :=
   StateT.run' f ⟨0, typs, ⟨false, []⟩⟩
@@ -200,7 +190,7 @@ def runMatchCompiler (typs : Decls) (term : Term) (rules : List (Pattern × Term
   runWithNewCompiler typs (compile term rules)
 
 def spatternToPattern : SPattern → Pattern
-  | .primitive prim => .primitive prim
+  | .field g => .field g
   | .ref global vars => .ref global (vars.map .var).toList
   | .tuple vars => .tuple (vars.map .var)
 

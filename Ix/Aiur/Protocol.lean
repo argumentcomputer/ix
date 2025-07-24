@@ -1,4 +1,4 @@
-import Ix.Aiur2.Bytecode
+import Ix.Aiur.Bytecode
 
 namespace Aiur
 

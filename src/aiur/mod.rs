@@ -1,11 +1,8 @@
-pub mod arithmetic;
+pub mod bytecode;
 pub mod constraints;
 pub mod execute;
-pub mod frontend;
-pub mod gadgets;
-pub mod ir;
-pub mod layout;
 pub mod memory;
 pub mod synthesis;
 pub mod trace;
-pub mod transparent;
+
+pub type G = multi_stark::p3_goldilocks::Goldilocks;
