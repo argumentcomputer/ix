@@ -16,7 +16,7 @@ use rayon::{
     slice::{ParallelSlice, ParallelSliceMut},
 };
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
-use std::{collections::hash_map::Entry, iter::repeat, mem::transmute};
+use std::{collections::hash_map::Entry, iter::repeat_n, mem::transmute};
 
 use super::{
     ModuleMode, OracleIdx, OracleKind, RelativeHeight,
@@ -108,7 +108,7 @@ impl WitnessModule {
 
         // Pad missing bytes with zeros.
         for (entry_id, num_missing_bytes) in missing_bytes_map {
-            self.push_u8s_to(repeat(0).take(num_missing_bytes), entry_id);
+            self.push_u8s_to(repeat_n(0, num_missing_bytes), entry_id);
         }
 
         // The incoming code block aims to calculate a compute order for the
@@ -647,7 +647,7 @@ impl WitnessModule {
                                 let pad_len = projected_field_elements.len() % DIVISOR;
                                 if pad_len != 0 {
                                     projected_field_elements
-                                        .extend(repeat($ty::ZERO).take(DIVISOR - pad_len));
+                                        .extend(repeat_n($ty::ZERO, DIVISOR - pad_len));
                                 }
 
                                 // Compose underliers in parallel

@@ -21,12 +21,11 @@ binius_utils = { git = "https://github.com/IrreducibleOSS/binius.git", rev = "23
 bumpalo = "3"
 groestl_crypto = { package = "groestl", version = "0.10.1" }
 proptest = "1"
-p3-goldilocks = "0.3.0"
-p3-field = "0.3.0"
-rayon = "1"
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "f3017f7f1ad5f3e3149b552e188e9f9e09370a97" }
+rayon = "1.7.0"
 rand = "0.9.1"
 rustc-hash = "2"
-indexmap = "2"
+indexmap = { version = "2", features = ["rayon"] }
 bytes = "1.10.1"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 
@@ -37,4 +36,4 @@ iroh-base = "0.34.0"
 iroh-blobs = { version = "0.34.0", features = ["rpc"] }
 
 [features]
-default = []
+parallel = ["multi-stark/parallel"]

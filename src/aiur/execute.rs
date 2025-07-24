@@ -83,9 +83,9 @@ impl Toplevel {
     /// Implementation of the execution algorithm
     ///
     /// 1) The values from the input are the very first values in the inner stack of the execution
-    ///     algorithm
+    ///    algorithm
     /// 2) You can write additional input values (for example if you need some constants) into the
-    ///     stack while implementing particular block of the program
+    ///    stack while implementing particular block of the program
     pub fn execute(&self, mut func_idx: FuncIdx, input: Vec<u64>) -> QueryRecord {
         let func = &self.functions[func_idx.to_usize()];
         assert_eq!(input.len(), func.input_size as usize);

@@ -29,7 +29,7 @@ where
 def Toplevel.checkAndSimplify (toplevel : Toplevel) : Except CheckError TypedDecls := do
   let decls ← toplevel.mkDecls
   wellFormedDecls decls
-  -- TODO: do not duplicate type inference. I.e. do simplification on typed expressions
+  -- The first check happens on the original terms.
   toplevel.functions.forM fun function => do
     let _ ← (checkFunction function) (getFunctionContext function decls)
   let decls := decls.map fun decl => match decl with
@@ -39,6 +39,7 @@ def Toplevel.checkAndSimplify (toplevel : Toplevel) : Except CheckError TypedDec
     | .constructor d c => pure $ typedDecls.insert name (.constructor d c)
     | .dataType d => pure $ typedDecls.insert name (.dataType d)
     | .function f => do
+      -- The second check happens on the simplified terms.
       let f ← (checkFunction f) (getFunctionContext f decls)
       pure $ typedDecls.insert name (.function f)
 

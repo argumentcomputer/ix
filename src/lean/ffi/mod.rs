@@ -8,7 +8,9 @@ pub mod keccak;
 use std::ffi::{CStr, CString, c_char, c_void};
 
 use crate::lean::{
-    array::LeanArrayObject, boxed::BoxedUSize, external::LeanExternalObject,
+    array::LeanArrayObject,
+    boxed::{BoxedU64, BoxedUSize},
+    external::LeanExternalObject,
     sarray::LeanSArrayObject,
 };
 
@@ -58,6 +60,12 @@ pub(super) fn raw_to_str<'a>(ptr: *const c_char) -> &'a str {
 #[inline]
 pub(super) fn as_ref_unsafe<'a, T>(ptr: *const T) -> &'a T {
     let t_ref = unsafe { ptr.as_ref() };
+    t_ref.expect("Null pointer dereference")
+}
+
+#[inline]
+pub(super) fn as_mut_unsafe<'a, T>(ptr: *mut T) -> &'a mut T {
+    let t_ref = unsafe { ptr.as_mut() };
     t_ref.expect("Null pointer dereference")
 }
 
@@ -120,8 +128,8 @@ extern "C" fn rs_boxed_u32s_are_equivalent_to_bytes(
 /// ```
 #[inline]
 pub(super) fn lean_unbox_u64(ptr: *const c_void) -> u64 {
-    let boxed_usize: &BoxedUSize = as_ref_unsafe(ptr.cast());
-    boxed_usize.value as u64
+    let boxed_usize: &BoxedU64 = as_ref_unsafe(ptr.cast());
+    boxed_usize.value
 }
 
 pub(super) fn boxed_usize_ptr_to_usize(ptr: *const c_void) -> usize {
@@ -139,4 +147,29 @@ pub(super) fn external_ptr_to_u128(ptr: *const c_void) -> u128 {
 extern "C" fn rs_exterior_mul_u64(a: u64, b: u64) -> *const u128 {
     let c = a as u128 * b as u128;
     to_raw(c)
+}
+
+#[repr(C)]
+pub struct BytesData {
+    size: usize,
+    bytes_vec: *const Vec<u8>,
+}
+
+impl BytesData {
+    #[inline]
+    pub(super) fn from_vec(vec: Vec<u8>) -> Self {
+        Self {
+            size: vec.len(),
+            bytes_vec: to_raw(vec),
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_move_bytes(bytes_data: *mut BytesData, byte_array: &mut LeanSArrayObject) {
+    let bytes_data = unsafe { Box::from_raw(bytes_data) };
+    let bytes_vec = unsafe { Box::from_raw(bytes_data.bytes_vec as *mut Vec<_>) };
+    byte_array.set_data(&bytes_vec);
+    drop(bytes_vec);
+    drop(bytes_data);
 }

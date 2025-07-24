@@ -1,26 +1,32 @@
-// TODO: remove
-#![allow(dead_code)]
-
 use indexmap::IndexMap;
-use p3_goldilocks::Goldilocks as G;
 use rustc_hash::FxBuildHasher;
+
+use super::G;
 
 pub struct Toplevel {
     pub(crate) functions: Vec<Function>,
-    pub(crate) memory_widths: Vec<usize>,
+    pub(crate) memory_sizes: Vec<usize>,
 }
 
 pub struct Function {
-    pub(crate) input_size: usize,
-    pub(crate) output_size: usize,
     pub(crate) body: Block,
-    pub(crate) circuit_layout: CircuitLayout,
+    pub(crate) layout: FunctionLayout,
 }
 
-pub struct CircuitLayout {
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub struct FunctionLayout {
+    pub(crate) input_size: usize,
+    pub(crate) output_size: usize,
     pub(crate) selectors: usize,
     pub(crate) auxiliaries: usize,
-    pub(crate) shared_constraints: usize,
+    pub(crate) lookups: usize,
+}
+
+impl FunctionLayout {
+    pub fn width(&self) -> usize {
+        self.input_size + self.selectors + self.auxiliaries
+    }
 }
 
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
@@ -37,7 +43,7 @@ pub enum Op {
     Add(ValIdx, ValIdx),
     Sub(ValIdx, ValIdx),
     Mul(ValIdx, ValIdx),
-    Call(FunIdx, Vec<ValIdx>),
+    Call(FunIdx, Vec<ValIdx>, usize),
     Store(Vec<ValIdx>),
     Load(usize, ValIdx),
 }
