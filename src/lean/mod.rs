@@ -11,6 +11,7 @@ pub mod external;
 pub mod ffi;
 pub mod object;
 pub mod sarray;
+pub mod string;
 
 /// Emulates arrays of flexible size from C.
 #[repr(C)]

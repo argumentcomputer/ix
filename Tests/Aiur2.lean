@@ -2,6 +2,7 @@ import LSpec
 import Ix.Aiur2.Meta
 import Ix.Aiur2.Simple
 import Ix.Aiur2.Compile
+import Ix.Aiur2.Protocol
 
 open LSpec
 
@@ -139,15 +140,28 @@ def testCases : List TestCase := [
     ⟨`slice_and_get, #[1, 2, 3, 4], #[4]⟩,
   ]
 
+def friParameters : Aiur.FriParameters := {
+  logBlowup := 1
+  logFinalPolyLen := 0
+  numQueries := 100
+  proofOfWorkBits := 20
+}
+
 def aiurTest : TestSeq :=
   withExceptOk "Check and simplification works" toplevel.checkAndSimplify fun decls =>
     let bytecodeToplevel := decls.compile
+    let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel
     let runTestCase := fun testCase =>
       let functionName := testCase.functionName
       let funIdx := toplevel.getFuncIdx functionName |>.get!
-      let output := bytecodeToplevel.executeTest funIdx testCase.input
-      test s!"Result of {functionName} with arguments {testCase.input} is correct"
-        (output == testCase.expectedOutput)
+      let (claim, proof) := aiurSystem.prove friParameters funIdx testCase.input
+      let caseDescr := s!"{functionName} with arguments {testCase.input}"
+      let ioTest := test s!"Claim matches for {caseDescr}"
+        (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
+      let proof := .ofBytes proof.toBytes
+      let pvTest := withExceptOk s!"Prove/verify works for {caseDescr}"
+        (aiurSystem.verify friParameters claim proof) fun _ => .done
+      ioTest ++ pvTest
     testCases.foldl (init := .done) fun tSeq testCase =>
       tSeq ++ runTestCase testCase
 

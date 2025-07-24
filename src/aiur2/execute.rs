@@ -1,7 +1,9 @@
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
-use p3_goldilocks::Goldilocks as G;
+use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
-use crate::aiur2::bytecode::{Ctrl, FunIdx, Function, FxIndexMap, Op, Toplevel};
+use super::{
+    G,
+    bytecode::{Ctrl, FunIdx, Function, FxIndexMap, Op, Toplevel},
+};
 
 pub struct QueryResult {
     pub(crate) output: Vec<G>,
@@ -23,7 +25,7 @@ impl QueryRecord {
             .map(|_| QueryMap::default())
             .collect();
         let memory_queries = toplevel
-            .memory_widths
+            .memory_sizes
             .iter()
             .map(|width| (*width, QueryMap::default()))
             .collect();
@@ -35,11 +37,11 @@ impl QueryRecord {
 }
 
 impl Toplevel {
-    pub fn execute(&self, fun_idx: FunIdx, args: Vec<G>) -> QueryRecord {
+    pub fn execute(&self, fun_idx: FunIdx, args: Vec<G>) -> (QueryRecord, Vec<G>) {
         let mut record = QueryRecord::new(self);
         let function = &self.functions[fun_idx];
-        function.execute(fun_idx, args, self, &mut record);
-        record
+        let output = function.execute(fun_idx, args, self, &mut record);
+        (record, output)
     }
 }
 
@@ -60,7 +62,7 @@ impl Function {
         mut map: Vec<G>,
         toplevel: &Toplevel,
         record: &mut QueryRecord,
-    ) {
+    ) -> Vec<G> {
         let mut exec_entries_stack = vec![];
         let mut callers_states_stack = vec![];
         macro_rules! push_block_exec_entries {
@@ -88,7 +90,7 @@ impl Function {
                     let b = map[*b];
                     map.push(a * b);
                 }
-                ExecEntry::Op(Op::Call(callee_idx, args)) => {
+                ExecEntry::Op(Op::Call(callee_idx, args, _)) => {
                     let args = args.iter().map(|i| map[*i]).collect();
                     if let Some(result) = record.function_queries[*callee_idx].get_mut(&args) {
                         result.multiplicity += G::ONE;
@@ -108,11 +110,11 @@ impl Function {
                 }
                 ExecEntry::Op(Op::Store(values)) => {
                     let values = values.iter().map(|v| map[*v]).collect::<Vec<_>>();
-                    let width = values.len();
+                    let size = values.len();
                     let memory_queries = record
                         .memory_queries
-                        .get_mut(&width)
-                        .expect("Invalid memory width");
+                        .get_mut(&size)
+                        .expect("Invalid memory size");
                     if let Some(result) = memory_queries.get_mut(&values) {
                         result.multiplicity += G::ONE;
                         map.extend(&result.output);
@@ -126,11 +128,11 @@ impl Function {
                         map.push(ptr);
                     }
                 }
-                ExecEntry::Op(Op::Load(width, ptr)) => {
+                ExecEntry::Op(Op::Load(size, ptr)) => {
                     let memory_queries = record
                         .memory_queries
-                        .get_mut(width)
-                        .expect("Invalid memory width");
+                        .get_mut(size)
+                        .expect("Invalid memory size");
                     let ptr = &map[*ptr];
                     let ptr_u64 = ptr.as_canonical_u64();
                     let ptr_usize = usize::try_from(ptr_u64).expect("Pointer is too big");
@@ -151,7 +153,7 @@ impl Function {
                 }
                 ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
                     // Register the query.
-                    let input_size = toplevel.functions[fun_idx].input_size;
+                    let input_size = toplevel.functions[fun_idx].layout.input_size;
                     let args = map[..input_size].to_vec();
                     let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
                     let result = QueryResult {
@@ -171,10 +173,12 @@ impl Function {
                     } else {
                         // No outer caller. About to exit.
                         assert!(exec_entries_stack.is_empty());
+                        map = output;
                         break;
                     }
                 }
             }
         }
+        map
     }
 }

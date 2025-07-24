@@ -45,8 +45,8 @@ impl std::fmt::Display for Var {
 impl std::fmt::Display for Ident {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Ident::User(n) => write!(f, "{}", n),
-            Ident::Internal(n) => write!(f, "${}", n),
+            Ident::User(n) => write!(f, "{n}"),
+            Ident::Internal(n) => write!(f, "${n}"),
         }
     }
 }
@@ -82,9 +82,9 @@ impl std::fmt::Display for VarVec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = self.var_list_str();
         if self.as_slice().len() == 1 {
-            write!(f, "{}", s)
+            write!(f, "{s}")
         } else {
-            write!(f, "({})", s)
+            write!(f, "({s})")
         }
     }
 }
@@ -188,7 +188,7 @@ impl OpE {
     pub fn pretty(&self) -> String {
         match self {
             OpE::Prim(x, c) => {
-                format!("let {x} = {:?};", c)
+                format!("let {x} = {c:?};")
             }
             OpE::Add(x, y, z) => {
                 format!("let {x} = add({y}, {z});")

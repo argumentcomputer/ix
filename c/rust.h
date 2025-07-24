@@ -2,14 +2,38 @@
 
 #include "lean/lean.h"
 
-void rs_toplevel_execute_test(
-    b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg, lean_obj_arg
-);
-
 typedef struct {
     bool is_ok;
     void *data;
 } c_result;
+
+typedef struct {
+    size_t size;
+    void *bytes_vec;
+} bytes_data;
+
+void rs_move_bytes(bytes_data*, lean_obj_arg);
+
+bytes_data *rs_aiur_proof_to_bytes(void*);
+void *rs_aiur_proof_of_bytes(b_lean_obj_arg);
+
+void rs_aiur_system_free(void*);
+void *rs_aiur_system_build(b_lean_obj_arg);
+
+typedef struct {
+    size_t claim_size;
+    void *claim;
+    void *proof;
+} prove_data;
+
+void rs_aiur_claim_free(void*);
+void rs_aiur_proof_free(void*);
+void rs_aiur_prove_data_free(prove_data*);
+
+prove_data *rs_aiur_system_prove(void*, b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg);
+void rs_set_aiur_claim_args(lean_obj_arg, void*);
+
+c_result *rs_aiur_system_verify(void*, b_lean_obj_arg, b_lean_obj_arg, void*);
 
 /* --- WitnessModule --- */
 

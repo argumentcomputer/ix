@@ -578,10 +578,11 @@ fn require(
 ) {
     let mut receive_args = send_args.clone();
     let index = builder
-        .add_linear_combination(format!("index-{channel_id}"), log_n, [(
-            prev_index,
-            MULT_GEN.into(),
-        )])
+        .add_linear_combination(
+            format!("index-{channel_id}"),
+            log_n,
+            [(prev_index, MULT_GEN.into())],
+        )
         .unwrap();
     if let Some(witness) = builder.witness() {
         (

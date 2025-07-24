@@ -1,29 +1,19 @@
-// TODO: remove
-#![allow(dead_code)]
-
-use p3_field::PrimeCharacteristicRing;
-use p3_goldilocks::Goldilocks as G;
-use std::{ffi::c_void, mem::transmute};
+use std::ffi::c_void;
 
 use crate::{
-    aiur2::bytecode::{Block, CircuitLayout, Ctrl, Function, FxIndexMap, Op, Toplevel, ValIdx},
+    aiur2::{
+        G,
+        bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx},
+    },
     lean::{
         array::LeanArrayObject,
         ctor::LeanCtorObject,
-        ffi::{as_ref_unsafe, lean_is_scalar},
+        ffi::{
+            aiur2::{lean_unbox_g, lean_unbox_nat_as_usize},
+            as_ref_unsafe, lean_is_scalar,
+        },
     },
-    lean_unbox,
 };
-
-fn lean_unbox_nat_as_usize(ptr: *const c_void) -> usize {
-    assert!(lean_is_scalar(ptr));
-    lean_unbox!(usize, ptr)
-}
-
-fn lean_unbox_nat_as_g(ptr: *const c_void) -> G {
-    assert!(lean_is_scalar(ptr));
-    G::from_usize(lean_unbox!(usize, ptr))
-}
 
 fn lean_ptr_to_vec_val_idx(ptr: *const c_void) -> Vec<ValIdx> {
     let array: &LeanArrayObject = as_ref_unsafe(ptr.cast());
@@ -35,7 +25,7 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
     match ctor.tag() {
         0 => {
             let [const_val_ptr] = ctor.objs();
-            Op::Const(lean_unbox_nat_as_g(const_val_ptr))
+            Op::Const(lean_unbox_g(const_val_ptr))
         }
         1 => {
             let [a_ptr, b_ptr] = ctor.objs();
@@ -59,10 +49,11 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
             )
         }
         4 => {
-            let [fun_idx_ptr, val_idxs_ptr] = ctor.objs();
+            let [fun_idx_ptr, val_idxs_ptr, output_size_ptr] = ctor.objs();
             let fun_idx = lean_unbox_nat_as_usize(fun_idx_ptr);
             let val_idxs = lean_ptr_to_vec_val_idx(val_idxs_ptr);
-            Op::Call(fun_idx, val_idxs)
+            let output_size = lean_unbox_nat_as_usize(output_size_ptr);
+            Op::Call(fun_idx, val_idxs, output_size)
         }
         5 => {
             let [val_idxs_ptr] = ctor.objs();
@@ -82,7 +73,7 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
 fn lean_ptr_to_g_block_pair(ptr: *const c_void) -> (G, Block) {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [g_ptr, block_ptr] = ctor.objs();
-    let g = lean_unbox_nat_as_g(g_ptr);
+    let g = lean_unbox_g(g_ptr);
     let block = lean_ctor_to_block(as_ref_unsafe(block_ptr.cast()));
     (g, block)
 }
@@ -135,70 +126,39 @@ fn lean_ctor_to_block(ctor: &LeanCtorObject) -> Block {
     }
 }
 
-fn lean_ctor_to_circuit_layout(ctor: &LeanCtorObject) -> CircuitLayout {
-    let [selectors_ptr, auxiliaries_ptr, shared_constraints_ptr] = ctor.objs();
-    CircuitLayout {
+fn lean_ctor_to_function_layout(ctor: &LeanCtorObject) -> FunctionLayout {
+    let [
+        input_size_ptr,
+        output_size_ptr,
+        selectors_ptr,
+        auxiliaries_ptr,
+        lookups_ptr,
+    ] = ctor.objs();
+    FunctionLayout {
+        input_size: lean_unbox_nat_as_usize(input_size_ptr),
+        output_size: lean_unbox_nat_as_usize(output_size_ptr),
         selectors: lean_unbox_nat_as_usize(selectors_ptr),
         auxiliaries: lean_unbox_nat_as_usize(auxiliaries_ptr),
-        shared_constraints: lean_unbox_nat_as_usize(shared_constraints_ptr),
+        lookups: lean_unbox_nat_as_usize(lookups_ptr),
     }
 }
 
 fn lean_ptr_to_function(ptr: *const c_void) -> Function {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-    let [
-        input_size_ptr,
-        output_size_ptr,
-        body_ptr,
-        circuit_layout_ptr,
-    ] = ctor.objs();
-    let input_size = lean_unbox_nat_as_usize(input_size_ptr);
-    let output_size = lean_unbox_nat_as_usize(output_size_ptr);
+    let [body_ptr, layout_ptr] = ctor.objs();
     let body = lean_ctor_to_block(as_ref_unsafe(body_ptr.cast()));
-    let circuit_layout = lean_ctor_to_circuit_layout(as_ref_unsafe(circuit_layout_ptr.cast()));
-    Function {
-        input_size,
-        output_size,
-        body,
-        circuit_layout,
-    }
+    let layout = lean_ctor_to_function_layout(as_ref_unsafe(layout_ptr.cast()));
+    Function { body, layout }
 }
 
-fn lean_ctor_to_toplevel(ctor: &LeanCtorObject) -> Toplevel {
-    let [functions_ptr, memory_widths_ptr] = ctor.objs();
+pub(crate) fn lean_ctor_to_toplevel(ctor: &LeanCtorObject) -> Toplevel {
+    let [functions_ptr, memory_sizes_ptr] = ctor.objs();
     let functions_array: &LeanArrayObject = as_ref_unsafe(functions_ptr.cast());
     let functions = functions_array.to_vec(lean_ptr_to_function);
-    let memory_widths_array: &LeanArrayObject = as_ref_unsafe(memory_widths_ptr.cast());
-    let memory_widths = memory_widths_array.to_vec(lean_unbox_nat_as_usize);
+    let memory_sizes_array: &LeanArrayObject = as_ref_unsafe(memory_sizes_ptr.cast());
+    let memory_sizes = memory_sizes_array.to_vec(lean_unbox_nat_as_usize);
     Toplevel {
         functions,
-        memory_widths,
+        memory_sizes,
     }
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn rs_toplevel_execute_test(
-    toplevel: &LeanCtorObject,
-    fun_idx: *const c_void,
-    args: &LeanArrayObject,
-    output: &mut LeanArrayObject,
-) {
-    let fun_idx = lean_unbox_nat_as_usize(fun_idx);
-    let toplevel = lean_ctor_to_toplevel(toplevel);
-    let args = args.to_vec(lean_unbox_nat_as_g);
-    let record = toplevel.execute(fun_idx, args.clone());
-    let output_values = record.function_queries[fun_idx]
-        .get(&args)
-        .map(|res| &res.output)
-        .unwrap();
-    let boxed_values = output_values
-        .iter()
-        .map(|g| {
-            let g_u64 = unsafe { transmute::<G, u64>(*g) };
-            let g_usize = usize::try_from(g_u64).unwrap();
-            let g_boxed = (g_usize << 1) | 1;
-            g_boxed as *const c_void
-        })
-        .collect::<Vec<_>>();
-    output.set_data(&boxed_values);
 }
