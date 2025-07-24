@@ -56,7 +56,11 @@ section FFI
 
 /-- Build the static lib for the Rust crate -/
 extern_lib ix_rs pkg := do
-  let args := #["build", "--release", "--features", "parallel"]
+  let ixNoPar ← IO.getEnv "IX_NO_PAR"
+  let buildArgs := #["build", "--release"]
+  let args := if ixNoPar == some "1"
+    then buildArgs
+    else buildArgs ++ #["--features", "parallel"]
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
   let libName := nameToStaticLib "ix_rs"
   inputBinFile $ pkg.dir / "target" / "release" / libName
