@@ -14,12 +14,12 @@ rustc-hash = "2"
 indexmap = { version = "2", features = ["rayon"] }
 tiny-keccak = { version = "2", features = ["keccak"] }
 
-bytes = "1.10.1"
-[target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
-iroh = "0.34.0"
-tokio = "1.44.1"
-iroh-base = "0.34.0"
-iroh-blobs = { version = "0.34.0", features = ["rpc"] }
+# bytes = "1.10.1"
+# [target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
+# iroh = "0.34.0"
+# tokio = "1.44.1"
+# iroh-base = "0.34.0"
+# iroh-blobs = { version = "0.34.0", features = ["rpc"] }
 
 [features]
 parallel = ["multi-stark/parallel"]

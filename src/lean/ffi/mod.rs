@@ -1,6 +1,6 @@
 pub mod aiur;
 pub mod byte_array;
-pub mod iroh;
+// pub mod iroh;
 pub mod keccak;
 
 use std::ffi::{CStr, CString, c_char, c_void};
@@ -47,6 +47,7 @@ pub(super) fn drop_raw<T>(ptr: *mut T) {
 }
 
 #[inline]
+#[allow(dead_code)]
 pub(super) fn raw_to_str<'a>(ptr: *const c_char) -> &'a str {
     let c_str = unsafe { CStr::from_ptr(ptr) };
     c_str.to_str().expect("Invalid UTF-8 string")
