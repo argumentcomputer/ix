@@ -94,29 +94,38 @@ impl AiurSystem {
         fun_idx: FunIdx,
         input: &[G],
     ) -> (Vec<G>, Proof) {
+        cronos::clock("exec");
         let (query_record, output) = self.toplevel.execute(fun_idx, input.to_vec());
+        cronos::clock("exec");
         let mut witness = SystemWitness {
             traces: vec![],
             lookups: vec![],
         };
         // TODO: parallelize
+        cronos::clock("ftraces");
         for function_index in 0..self.toplevel.functions.len() {
             let (trace, lookups_per_function) =
                 self.toplevel.generate_trace(function_index, &query_record);
             witness.traces.push(trace);
             witness.lookups.push(lookups_per_function);
         }
+        cronos::clock("ftraces");
         // TODO: parallelize
+        cronos::clock("mtraces");
         for width in &self.toplevel.memory_sizes {
             let (trace, lookups) = Memory::generate_trace(*width, &query_record);
             witness.traces.push(trace);
             witness.lookups.push(lookups);
         }
+        cronos::clock("mtraces");
         let mut claim = vec![Channel::Function.to_field(), G::from_usize(fun_idx)];
         claim.extend(input);
         claim.extend(output);
         let config = new_stark_config(fri_parameters);
+        cronos::clock("prove");
         let proof = self.system.prove(&config, &claim, witness);
+        cronos::clock("prove");
+        cronos::print();
         (claim, proof)
     }
 

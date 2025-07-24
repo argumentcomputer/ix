@@ -8,6 +8,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 anyhow = "1"
+cronos = { git = "https://github.com/argumentcomputer/cronos.git" }
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "f3017f7f1ad5f3e3149b552e188e9f9e09370a97" }
 rayon = "1"
 rustc-hash = "2"

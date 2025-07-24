@@ -1,6 +1,9 @@
 import Lake
 open System Lake DSL
 
+lean_exe clock where
+  root := `Clock
+
 package ix where
   version := v!"0.1.0"
 
@@ -22,7 +25,6 @@ require Cli from git
 
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "613510345e4d4b3ce3d8c129595e7241990d5b39"
-
 
 section Tests
 
