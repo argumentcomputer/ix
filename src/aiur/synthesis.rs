@@ -8,6 +8,7 @@ use multi_stark::{
     types::{FriParameters, PcsError, new_stark_config},
     verifier::VerificationError,
 };
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use crate::aiur::{
     G,
@@ -72,6 +73,11 @@ where
     }
 }
 
+enum CircuitType {
+    Function { idx: usize },
+    Memory { width: usize },
+}
+
 impl AiurSystem {
     pub fn build(toplevel: Toplevel) -> Self {
         let function_circuits = (0..toplevel.functions.len()).map(|i| {
@@ -99,16 +105,22 @@ impl AiurSystem {
             traces: vec![],
             lookups: vec![],
         };
-        // TODO: parallelize
-        for function_index in 0..self.toplevel.functions.len() {
-            let (trace, lookups_per_function) =
-                self.toplevel.generate_trace(function_index, &query_record);
-            witness.traces.push(trace);
-            witness.lookups.push(lookups_per_function);
-        }
-        // TODO: parallelize
-        for width in &self.toplevel.memory_sizes {
-            let (trace, lookups) = Memory::generate_trace(*width, &query_record);
+        let functions = (0..self.toplevel.functions.len())
+            .into_par_iter()
+            .map(|idx| CircuitType::Function { idx });
+        let memories = self
+            .toplevel
+            .memory_sizes
+            .par_iter()
+            .map(|&width| CircuitType::Memory { width });
+        let witness_data = functions
+            .chain(memories)
+            .map(|circuit_type| match circuit_type {
+                CircuitType::Function { idx } => self.toplevel.generate_trace(idx, &query_record),
+                CircuitType::Memory { width } => Memory::generate_trace(width, &query_record),
+            })
+            .collect::<Vec<_>>();
+        for (trace, lookups) in witness_data {
             witness.traces.push(trace);
             witness.lookups.push(lookups);
         }
