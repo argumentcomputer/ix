@@ -1,9 +1,6 @@
 import Lake
 open System Lake DSL
 
-lean_exe clock where
-  root := `Clock
-
 package ix where
   version := v!"0.1.0"
 
