@@ -74,6 +74,10 @@ inductive Term
   | load : Term → Term
   | ptrVal : Term → Term
   | ann : Typ → Term → Term
+  | addU8 : Term → Term → Term
+  | xorU8 : Term → Term → Term
+  | rotateR2U32 : Term → Term → Term → Term → Term
+  | rotateR4U32 : Term → Term → Term → Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Data
@@ -113,6 +117,10 @@ inductive TypedTermInner
   | store : TypedTerm → TypedTermInner
   | load : TypedTerm → TypedTermInner
   | ptrVal : TypedTerm → TypedTermInner
+  | addU8 : TypedTerm → TypedTerm → TypedTermInner
+  | xorU8 : TypedTerm → TypedTerm → TypedTermInner
+  | rotateR2U32 : TypedTerm → TypedTerm → TypedTerm → TypedTerm → TypedTermInner
+  | rotateR4U32 : TypedTerm → TypedTerm → TypedTerm → TypedTerm → TypedTermInner
   deriving Repr, Inhabited
 
 structure TypedTerm where

@@ -107,7 +107,7 @@ def toplevel := ⟦
     }
   }
 
-  fn slice_and_get(as: (G, G, G, G)) -> G {
+  fn slice_and_get(as: [G; 4]) -> G {
     get(slice(as, 1, 4), 2)
   }
 ⟧

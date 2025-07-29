@@ -60,6 +60,7 @@ partial def elabPattern : ElabStxCat `pattern
 declare_syntax_cat                               typ
 syntax "G"                                     : typ
 syntax "(" typ (", " typ)* ")"                 : typ
+syntax "[" typ ";" num "]"                     : typ
 syntax "&" typ                                 : typ
 syntax ("." noWs)? ident                       : typ
 syntax "fn" "(" ")" " -> " typ                 : typ
@@ -69,6 +70,9 @@ partial def elabTyp : ElabStxCat `typ
   | `(typ| G) => pure $ mkConst ``Typ.field
   | `(typ| ($t:typ $[, $ts:typ]*)) => do
     mkAppM ``Typ.tuple #[← elabList t ts elabTyp ``Typ true]
+  | `(typ| [$t:typ; $n:num]) => do
+    let t ← elabTyp t
+    mkAppM ``Typ.tuple #[← mkArrayLit (mkConst ``Typ) (.replicate n.getNat t)]
   | `(typ| &$t:typ) => do
     mkAppM ``Typ.pointer #[← elabTyp t]
   | `(typ| $[.]?$i:ident) => do

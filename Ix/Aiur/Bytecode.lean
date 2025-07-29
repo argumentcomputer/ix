@@ -16,6 +16,10 @@ inductive Op
   | call : FunIdx → Array ValIdx → (outputSize : Nat) → Op
   | store : Array ValIdx → Op
   | load : (size : Nat) → ValIdx → Op
+  | addU8 : ValIdx → ValIdx → Op
+  | xorU8 : ValIdx → ValIdx → Op
+  | rotateR2U32 : ValIdx → ValIdx → ValIdx → ValIdx → Op
+  | rotateR4U32 : ValIdx → ValIdx → ValIdx → ValIdx → Op
   deriving Repr
 
 mutual

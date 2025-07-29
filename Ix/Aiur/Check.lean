@@ -10,13 +10,10 @@ inductive CheckError
   | notAConstructor : Global → CheckError
   | notAValue : Global → CheckError
   | notAFunction : Global → CheckError
-  | notAGadget : Global → CheckError
   | cannotApply : Global → CheckError
   | notADataType : Global → CheckError
   | typeMismatch : Typ → Typ → CheckError
   | illegalReturn : CheckError
-  | nonNumeric : Typ → CheckError
-  | notAField : Typ → CheckError
   | wrongNumArgs : Global → Nat → Nat → CheckError
   | notATuple : Typ → CheckError
   | indexOoB : Nat → CheckError
@@ -194,6 +191,16 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .ann typ term => do
     let inner ← checkNoEscape term typ
     pure $ .mk (.evaluates typ) inner
+  | .addU8 a b => do
+    let aInner ← checkNoEscape a .field
+    let bInner ← checkNoEscape b .field
+    let inner := .addU8 (fieldTerm aInner) (fieldTerm bInner)
+    pure $ .mk (.evaluates (.tuple $ .mkArray 2 .field)) inner
+  | .xorU8 a b => do
+    let (ctxTyp, a, b) ← checkArith a b
+    pure $ .mk ctxTyp (.xorU8 a b)
+  | .rotateR2U32 a b c d => checkRotate TypedTermInner.rotateR2U32 a b c d
+  | .rotateR4U32 a b c d => checkRotate TypedTermInner.rotateR4U32 a b c d
 where
   /--
   Ensures that there are as many arguments and as expected types and that
@@ -208,13 +215,18 @@ where
       pure $ .mk (.evaluates input) inner
     args.zip inputs |>.mapM pass
   checkArith a b := do
-    let (typ, aInner) ← inferNoEscape a
-    unless (typ == .field) do throw $ .notAField typ
-    let bInner ← checkNoEscape b typ
-    let ctxTyp := .evaluates typ
-    let a := .mk ctxTyp aInner
-    let b := .mk ctxTyp bInner
-    pure (ctxTyp, a, b)
+    let aInner ← checkNoEscape a .field
+    let bInner ← checkNoEscape b .field
+    pure (.evaluates .field, fieldTerm aInner, fieldTerm bInner)
+  fieldTerm := (.mk (.evaluates .field) ·)
+  checkRotate wrapper a b c d := do
+    let aInner ← checkNoEscape a .field
+    let bInner ← checkNoEscape b .field
+    let cInner ← checkNoEscape c .field
+    let dInner ← checkNoEscape d .field
+    let inner := wrapper
+      (fieldTerm aInner) (fieldTerm bInner) (fieldTerm cInner) (fieldTerm dInner)
+    pure $ .mk (.evaluates (.tuple $ .mkArray 4 .field)) inner
 
 partial def checkNoEscape (term : Term) (typ : Typ) : CheckM TypedTermInner := do
   let (typ', inner) ← inferNoEscape term

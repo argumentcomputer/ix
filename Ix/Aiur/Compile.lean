@@ -94,6 +94,16 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpAuxiliaries size
     bumpLookups
     addMemSize size
+  | .addU8 .. => do
+    pushDegrees $ .mkArray 2 1
+    bumpAuxiliaries 2
+    bumpLookups
+  | .xorU8 .. => do
+    pushDegree 1
+    bumpAuxiliaries 1
+    bumpLookups
+  | .rotateR2U32 .. => sorry
+  | .rotateR4U32 .. => sorry
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   block.ops.forM opLayout
@@ -234,23 +244,17 @@ partial def toIndex
     toIndex layoutMap (bindings.insert var val) bod
   | .let .. => panic! "should not happen after simplifying"
   | .add a b => do
-    let a ← toIndex layoutMap bindings a
-    assert! (a.size == 1)
-    let b ← toIndex layoutMap bindings b
-    assert! (b.size == 1)
-    pushOp (.add (a[0]!) (b[0]!))
+    let a ← expectIdx a
+    let b ← expectIdx b
+    pushOp (.add a b)
   | .sub a b => do
-    let a ← toIndex layoutMap bindings a
-    assert! (a.size == 1)
-    let b ← toIndex layoutMap bindings b
-    assert! (b.size == 1)
-    pushOp (.sub (a[0]!) (b[0]!))
+    let a ← expectIdx a
+    let b ← expectIdx b
+    pushOp (.sub a b)
   | .mul a b => do
-    let a ← toIndex layoutMap bindings a
-    assert! (a.size == 1)
-    let b ← toIndex layoutMap bindings b
-    assert! (b.size == 1)
-    pushOp (.mul (a[0]!) (b[0]!))
+    let a ← expectIdx a
+    let b ← expectIdx b
+    pushOp (.mul a b)
   | .app name@(⟨.str .anonymous unqualifiedName⟩) args =>
     match bindings.get? (.str unqualifiedName) with
     | some _ => panic! "dynamic calls not yet implemented"
@@ -295,11 +299,6 @@ partial def toIndex
   --     let out ← toIndex layoutMap bindings out
   --     pushOp (Bytecode.Op.preimg layout.index out layout.inputSize) layout.inputSize
   --   | _ => panic! "should not happen after typechecking"
-  -- | .ffi name args => match layoutMap.get' name with
-  --   | .gadget layout => do
-  --     let args ← buildArgs args
-  --     pushOp (Bytecode.Op.ffi layout.index args layout.outputSize) layout.outputSize
-  --   | _ => panic! "should not happen after typechecking"
   | .get arg i => do
     let typs := (match arg.typ with
       | .evaluates (.tuple typs) => typs
@@ -326,20 +325,36 @@ partial def toIndex
     let size := match ptr.typ.unwrap with
     | .pointer typ => typSize layoutMap typ
     | _ => unreachable!
-    let ptr ← toIndex layoutMap bindings ptr
-    assert! (ptr.size == 1)
-    pushOp (Bytecode.Op.load size ptr[0]!) size
+    let ptr ← expectIdx ptr
+    pushOp (Bytecode.Op.load size ptr) size
   | .ptrVal ptr => toIndex layoutMap bindings ptr
-  -- | .trace str expr => do
-  --   let arr ← toIndex layoutMap bindings expr
-  --   let op := .trace str arr
-  --   modify (fun state => { state with ops := state.ops.push op})
-  --   pure arr
+  | .addU8 a b => do
+    let a ← expectIdx a
+    let b ← expectIdx b
+    pushOp (.addU8 a b) 2
+  | .xorU8 a b => do
+    let a ← expectIdx a
+    let b ← expectIdx b
+    pushOp (.xorU8 a b)
+  | .rotateR2U32 a b c d => toIndexRotation Bytecode.Op.rotateR2U32 a b c d
+  | .rotateR4U32 a b c d => toIndexRotation Bytecode.Op.rotateR4U32 a b c d
   where
     buildArgs (args : List TypedTerm) (init := #[]) :=
       let append acc arg := do
         pure (acc.append (← toIndex layoutMap bindings arg))
       args.foldlM (init := init) append
+    expectIdx term := do
+      let idxs ← toIndex layoutMap bindings term
+      if h : idxs.size = 1 then
+        have : 0 < idxs.size := by simp only [h, Nat.lt_add_one]
+        pure idxs[0]
+      else panic! "Term is not of size 1"
+    toIndexRotation wrapper a b c d := do
+      let a ← expectIdx a
+      let b ← expectIdx b
+      let c ← expectIdx c
+      let d ← expectIdx d
+      pushOp (wrapper a b c d) 4
 
 mutual
 
