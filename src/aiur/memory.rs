@@ -24,7 +24,8 @@ pub struct Memory {
 
 impl Memory {
     pub(super) fn lookup(multiplicity: G, size: G, ptr: G, values: &[G]) -> Lookup<G> {
-        let mut args = vec![Channel::Memory.to_field(), size, ptr];
+        let mut args = Vec::with_capacity(3 + values.len());
+        args.extend([Channel::Memory.to_field(), size, ptr]);
         args.extend(values);
         Lookup { multiplicity, args }
     }
@@ -35,7 +36,7 @@ impl Memory {
     }
 
     pub fn build(size: usize) -> (Self, Lookup<SymbolicExpression<G>>) {
-        let multiplicity = -sym_var!(0);
+        let multiplicity = sym_var!(0);
         let selector = sym_var!(1);
         let pointer = sym_var!(2);
         let mut args = Vec::with_capacity(3 + size);
@@ -46,7 +47,7 @@ impl Memory {
             args.push(selector.clone() * sym_var!(3 + val_idx));
         }
         let width = Self::width(size);
-        (Self { width }, Lookup { multiplicity, args })
+        (Self { width }, Lookup::pull(multiplicity, args))
     }
 
     pub fn generate_trace(
@@ -61,11 +62,7 @@ impl Memory {
         let mut rows = vec![G::ZERO; height * width];
         let rows_no_padding = &mut rows[0..height_no_padding * width];
 
-        let empty_lookup = Lookup {
-            multiplicity: G::ZERO,
-            args: vec![],
-        };
-        let mut lookups = vec![vec![empty_lookup]; height];
+        let mut lookups = vec![vec![Lookup::empty()]; height];
         let lookups_no_padding = &mut lookups[0..height_no_padding];
 
         rows_no_padding

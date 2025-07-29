@@ -140,8 +140,11 @@ def testCases : List TestCase := [
     ⟨`slice_and_get, #[1, 2, 3, 4], #[4]⟩,
   ]
 
-def friParameters : Aiur.FriParameters := {
+def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
+}
+
+def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   numQueries := 100
   proofOfWorkBits := 20
@@ -150,7 +153,7 @@ def friParameters : Aiur.FriParameters := {
 def aiurTest : TestSeq :=
   withExceptOk "Check and simplification works" toplevel.checkAndSimplify fun decls =>
     let bytecodeToplevel := decls.compile
-    let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel
+    let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel commitmentParameters
     let runTestCase := fun testCase =>
       let functionName := testCase.functionName
       let funIdx := toplevel.getFuncIdx functionName |>.get!

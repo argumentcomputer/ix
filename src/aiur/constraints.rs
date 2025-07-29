@@ -79,10 +79,6 @@ impl ConstraintState {
 impl Toplevel {
     pub fn build_constraints(&self, function_index: usize) -> (Constraints, Vec<Lookup<Expr>>) {
         let function = &self.functions[function_index];
-        let empty_lookup = Lookup {
-            multiplicity: Expr::Constant(G::ZERO),
-            args: vec![],
-        };
         let constraints = Constraints {
             zeros: vec![],
             selectors: 0..0,
@@ -94,7 +90,7 @@ impl Toplevel {
             column: 0,
             lookup: 0,
             map: vec![],
-            lookups: vec![empty_lookup; function.layout.lookups],
+            lookups: vec![Lookup::empty(); function.layout.lookups],
             constraints,
         };
         function.build_constraints(&mut state, self);
