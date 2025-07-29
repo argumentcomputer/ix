@@ -4,8 +4,8 @@ use multi_stark::{
     p3_field::PrimeCharacteristicRing,
     p3_matrix::Matrix,
     prover::Proof,
-    system::{Circuit, System, SystemWitness},
-    types::{FriParameters, PcsError, new_stark_config},
+    system::{ProverKey, System, SystemWitness},
+    types::{CommitmentParameters, FriParameters, PcsError},
     verifier::VerificationError,
 };
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
@@ -20,6 +20,8 @@ use crate::aiur::{
 
 pub struct AiurSystem {
     toplevel: Toplevel,
+    // perhaps remove the key from the system in verifier only mode?
+    key: ProverKey,
     system: System<AiurCircuit>,
 }
 
@@ -65,7 +67,7 @@ where
         let main = builder.main();
         let row = main.row_slice(0).unwrap();
         for zero in self.zeros.iter() {
-            builder.assert_zero(zero.interpret(&row));
+            builder.assert_zero(zero.interpret(&row, None));
         }
         for sel in self.selectors.clone() {
             builder.assert_bool(row[sel].clone());
@@ -79,24 +81,29 @@ enum CircuitType {
 }
 
 impl AiurSystem {
-    pub fn build(toplevel: Toplevel) -> Self {
+    pub fn build(commitment_parameters: CommitmentParameters, toplevel: Toplevel) -> Self {
         let function_circuits = (0..toplevel.functions.len()).map(|i| {
             let (constraints, lookups) = toplevel.build_constraints(i);
-            let air = LookupAir::new(AiurCircuit::Function(constraints), lookups);
-            Circuit::from_air(air).unwrap()
+            LookupAir::new(AiurCircuit::Function(constraints), lookups)
         });
         let memory_circuits = toplevel.memory_sizes.iter().map(|&width| {
             let (memory, lookup) = Memory::build(width);
-            let air = LookupAir::new(AiurCircuit::Memory(memory), vec![lookup]);
-            Circuit::from_air(air).unwrap()
+            LookupAir::new(AiurCircuit::Memory(memory), vec![lookup])
         });
-        let system = System::new(function_circuits.chain(memory_circuits));
-        AiurSystem { system, toplevel }
+        let (system, key) = System::new(
+            commitment_parameters,
+            function_circuits.chain(memory_circuits),
+        );
+        AiurSystem {
+            system,
+            key,
+            toplevel,
+        }
     }
 
     pub fn prove(
         &self,
-        fri_parameters: &FriParameters,
+        fri_parameters: FriParameters,
         fun_idx: FunIdx,
         input: &[G],
     ) -> (Vec<G>, Proof) {
@@ -127,19 +134,19 @@ impl AiurSystem {
         let mut claim = vec![Channel::Function.to_field(), G::from_usize(fun_idx)];
         claim.extend(input);
         claim.extend(output);
-        let config = new_stark_config(fri_parameters);
-        let proof = self.system.prove(&config, &claim, witness);
+        let proof = self
+            .system
+            .prove(fri_parameters, &self.key, &claim, witness);
         (claim, proof)
     }
 
     #[inline]
     pub fn verify(
         &self,
-        fri_parameters: &FriParameters,
+        fri_parameters: FriParameters,
         claim: &[G],
         proof: &Proof,
     ) -> Result<(), VerificationError<PcsError>> {
-        let config = new_stark_config(fri_parameters);
-        self.system.verify(&config, claim, proof)
+        self.system.verify(fri_parameters, claim, proof)
     }
 }

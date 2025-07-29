@@ -1,4 +1,8 @@
-use multi_stark::{p3_field::PrimeField64, prover::Proof, types::FriParameters};
+use multi_stark::{
+    p3_field::PrimeField64,
+    prover::Proof,
+    types::{CommitmentParameters, FriParameters},
+};
 use std::ffi::{CString, c_void};
 
 use crate::{
@@ -37,22 +41,25 @@ extern "C" fn rs_aiur_system_free(ptr: *mut AiurSystem) {
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_build(toplevel: &LeanCtorObject) -> *const AiurSystem {
-    to_raw(AiurSystem::build(lean_ctor_to_toplevel(toplevel)))
+    // TODO: receive the `log_blowup`
+    let commitment_parameters = CommitmentParameters { log_blowup: 1 };
+    to_raw(AiurSystem::build(
+        commitment_parameters,
+        lean_ctor_to_toplevel(toplevel),
+    ))
 }
 
 fn lean_ctor_to_fri_parameters(ctor: &LeanCtorObject) -> FriParameters {
     let [
-        log_blowup_ptr,
+        _log_blowup_ptr,
         log_final_poly_len_ptr,
         num_queries_ptr,
         proof_of_work_bits_ptr,
     ] = ctor.objs();
-    let log_blowup = lean_unbox_nat_as_usize(log_blowup_ptr);
     let log_final_poly_len = lean_unbox_nat_as_usize(log_final_poly_len_ptr);
     let num_queries = lean_unbox_nat_as_usize(num_queries_ptr);
     let proof_of_work_bits = lean_unbox_nat_as_usize(proof_of_work_bits_ptr);
     FriParameters {
-        log_blowup,
         log_final_poly_len,
         num_queries,
         proof_of_work_bits,
@@ -91,7 +98,7 @@ extern "C" fn rs_aiur_system_prove(
     let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
     let fun_idx = lean_unbox_nat_as_usize(fun_idx);
     let args = args.to_vec(lean_unbox_g);
-    let (claim, proof) = aiur_system.prove(&fri_parameters, fun_idx, &args);
+    let (claim, proof) = aiur_system.prove(fri_parameters, fun_idx, &args);
     let claim_size = claim.len();
     let prove_data = ProveData {
         claim_size,
@@ -120,7 +127,7 @@ extern "C" fn rs_aiur_system_verify(
 ) -> *const CResult {
     let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
     let claim = claim.to_vec(lean_unbox_g);
-    let c_result = match aiur_system.verify(&fri_parameters, &claim, proof) {
+    let c_result = match aiur_system.verify(fri_parameters, &claim, proof) {
         Ok(()) => CResult {
             is_ok: true,
             data: std::ptr::null(),
