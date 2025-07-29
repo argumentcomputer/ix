@@ -16,8 +16,10 @@ opaque ofBytes : @& ByteArray → Proof
 
 end Proof
 
-structure FriParameters where
+structure CommitmentParameters where
   logBlowup : Nat
+
+structure FriParameters where
   logFinalPolyLen : Nat
   numQueries : Nat
   proofOfWorkBits : Nat
@@ -29,7 +31,7 @@ instance : Nonempty AiurSystem := AiurSystemNonempty.property
 namespace AiurSystem
 
 @[extern "c_rs_aiur_system_build"]
-opaque build : @&Bytecode.Toplevel → AiurSystem
+opaque build : @&Bytecode.Toplevel → @&CommitmentParameters → AiurSystem
 
 @[extern "c_rs_aiur_system_prove"]
 opaque prove : @& AiurSystem → @& FriParameters →

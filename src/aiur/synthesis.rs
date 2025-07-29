@@ -81,7 +81,7 @@ enum CircuitType {
 }
 
 impl AiurSystem {
-    pub fn build(commitment_parameters: CommitmentParameters, toplevel: Toplevel) -> Self {
+    pub fn build(toplevel: Toplevel, commitment_parameters: CommitmentParameters) -> Self {
         let function_circuits = (0..toplevel.functions.len()).map(|i| {
             let (constraints, lookups) = toplevel.build_constraints(i);
             LookupAir::new(AiurCircuit::Function(constraints), lookups)

@@ -39,30 +39,36 @@ extern "C" fn rs_aiur_system_free(ptr: *mut AiurSystem) {
     drop_raw(ptr);
 }
 
+fn lean_ptr_to_commitment_parameters(
+    commitment_parameters_ptr: *const c_void,
+) -> CommitmentParameters {
+    // Single-attribute structure in Lean.
+    CommitmentParameters {
+        log_blowup: lean_unbox_nat_as_usize(commitment_parameters_ptr),
+    }
+}
+
 #[unsafe(no_mangle)]
-extern "C" fn rs_aiur_system_build(toplevel: &LeanCtorObject) -> *const AiurSystem {
-    // TODO: receive the `log_blowup`
-    let commitment_parameters = CommitmentParameters { log_blowup: 1 };
+extern "C" fn rs_aiur_system_build(
+    toplevel: &LeanCtorObject,
+    commitment_parameters: *const c_void,
+) -> *const AiurSystem {
     to_raw(AiurSystem::build(
-        commitment_parameters,
         lean_ctor_to_toplevel(toplevel),
+        lean_ptr_to_commitment_parameters(commitment_parameters),
     ))
 }
 
 fn lean_ctor_to_fri_parameters(ctor: &LeanCtorObject) -> FriParameters {
     let [
-        _log_blowup_ptr,
         log_final_poly_len_ptr,
         num_queries_ptr,
         proof_of_work_bits_ptr,
     ] = ctor.objs();
-    let log_final_poly_len = lean_unbox_nat_as_usize(log_final_poly_len_ptr);
-    let num_queries = lean_unbox_nat_as_usize(num_queries_ptr);
-    let proof_of_work_bits = lean_unbox_nat_as_usize(proof_of_work_bits_ptr);
     FriParameters {
-        log_final_poly_len,
-        num_queries,
-        proof_of_work_bits,
+        log_final_poly_len: lean_unbox_nat_as_usize(log_final_poly_len_ptr),
+        num_queries: lean_unbox_nat_as_usize(num_queries_ptr),
+        proof_of_work_bits: lean_unbox_nat_as_usize(proof_of_work_bits_ptr),
     }
 }
 
