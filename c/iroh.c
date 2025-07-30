@@ -27,6 +27,7 @@ extern lean_obj_res c_rs_iroh_recv(b_lean_obj_arg ticket, size_t buffer_capacity
     }
     else {
         io_result = lean_mk_io_user_error(lean_mk_string(result->data));
+        // TODO: This frees an invalid pointer, but if removed causes an uncaught exception
         free(buffer);
     }
     rs__c_result_unit_string_free(result);
