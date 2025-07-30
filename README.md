@@ -144,11 +144,10 @@ e53c3d4bad8538e152a89d8bf75be178a3876252744961b9a087fe3973545c20
 b44236ba17ad7445ae3eac48a8ba86ba00f08c069237b08451e311b688146e7e
 ```
 
-to generate a [Binius](https://www.irreducible.com/binius) proof that the
-theorem typechecks. With a Groth16 circuit that recursively proves verification
-of Binius proofs, i.e. a Groth16 final SNARK for Binius, the construction is
-complete, and we can embed a proof of Fermat's Last Theorem in Fermat's Margin
-Note.
+to generate a [multi-STARK](https://github.com/argumentcomputer/multi-stark)
+proof that the theorem typechecks. With a Groth16 circuit that recursively proves
+verification of such proofs, i.e. a Groth16 final SNARK, the construction is complete,
+and we can embed a proof of Fermat's Last Theorem in Fermat's Margin Note.
 
 ![Fits in the Margin](docs/fitsinthemargin.png "alternatively, we could use a QR code")
 
@@ -166,19 +165,12 @@ Ix consists of the following core components:
   Lean programs (by preserving the alpha-relevant metadata in a separate ixon
   object and re-merging the computationally relevant and irrelevant parts).
 - The [Aiur zkDSL](https://github.com/argumentcomputer/ix/tree/main/Ix/Aiur)
-  which is a first-order functional programming language that generates Binius
-  circuits.
-- The [Archon
-  library](https://github.com/argumentcomputer/ix/tree/main/Ix/Archon), which
-  provides high-level abstractions and FFI bindings in Lean for the Binius
-  libraries in Rust, as well as other Rust dependencies.
+  which is a first-order functional programming language that generates
+  multi-STARK circuits.
 - The IxVM (not yet released), which implements reduction and typechecking
   of `ixon` (including ingress and egress from and to binary data).
-- Binius precompiles for the IxVM, including the Blake3 hash function and Lean4
-  primitives. This work has been [upstreamed](https://github.com/IrreducibleOSS/binius/pulls?q=is%3Apr+Blake3+is%3Aclosed) to Binius where possible.
 - Integration with the [iroh p2p network](https://www.iroh.computer/) so that
   different ix users can easily share `ixon` data between themselves.
-
 
 ## Build & Install
 
