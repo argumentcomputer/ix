@@ -10,13 +10,10 @@ inductive CheckError
   | notAConstructor : Global → CheckError
   | notAValue : Global → CheckError
   | notAFunction : Global → CheckError
-  | notAGadget : Global → CheckError
   | cannotApply : Global → CheckError
   | notADataType : Global → CheckError
   | typeMismatch : Typ → Typ → CheckError
   | illegalReturn : CheckError
-  | nonNumeric : Typ → CheckError
-  | notAField : Typ → CheckError
   | wrongNumArgs : Global → Nat → Nat → CheckError
   | notATuple : Typ → CheckError
   | indexOoB : Nat → CheckError
@@ -150,8 +147,8 @@ partial def inferTerm : Term → CheckM TypedTerm
     pure $ .mk ctxTyp (.mul a b)
   | .get tup i => do
     let (typs, tupInner) ← inferTuple tup
-    if i < typs.size then
-      let typ := typs[i]!
+    if h : i < typs.size then
+      let typ := typs[i]
       let tup := .mk (.evaluates (.tuple typs)) tupInner
       pure $ .mk (.evaluates typ) (.get tup i)
     else
@@ -161,8 +158,8 @@ partial def inferTerm : Term → CheckM TypedTerm
     -- returns them encoded in a `Typ.tuple`. Errors if the index is out of bounds.
     if j < i then throw $ .negativeRange i j else do
     let (typs, tupInner) ← inferTuple tup
-    if i < typs.size then
-      let slice := typs.drop i |>.take (j - i)
+    if j ≤ typs.size then
+      let slice := typs.extract i j
       let tup := .mk (.evaluates (.tuple typs)) tupInner
       pure $ .mk (.evaluates (.tuple slice)) (.slice tup i j)
     else
@@ -208,13 +205,10 @@ where
       pure $ .mk (.evaluates input) inner
     args.zip inputs |>.mapM pass
   checkArith a b := do
-    let (typ, aInner) ← inferNoEscape a
-    unless (typ == .field) do throw $ .notAField typ
-    let bInner ← checkNoEscape b typ
-    let ctxTyp := .evaluates typ
-    let a := .mk ctxTyp aInner
-    let b := .mk ctxTyp bInner
-    pure (ctxTyp, a, b)
+    let aInner ← checkNoEscape a .field
+    let bInner ← checkNoEscape b .field
+    pure (.evaluates .field, fieldTerm aInner, fieldTerm bInner)
+  fieldTerm := (.mk (.evaluates .field) ·)
 
 partial def checkNoEscape (term : Term) (typ : Typ) : CheckM TypedTermInner := do
   let (typ', inner) ← inferNoEscape term
