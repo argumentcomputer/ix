@@ -206,8 +206,8 @@ partial def toIndex
  (term : TypedTerm) : StateM CompilerState (Array Bytecode.ValIdx) :=
   let typ := term.typ.unwrap
   match term.inner with
-  | .ret .. => panic! "should not happen after typechecking"
-  | .match .. => panic! "non-tail `match` not yet implemented"
+  | .ret .. => panic! "Should not happen after typechecking"
+  | .match .. => panic! "Non-tail `match` not yet implemented"
   | .var name => do
     pure (bindings[name]!)
   | .ref name => match layoutMap[name]! with
@@ -222,7 +222,7 @@ partial def toIndex
         pure $ index ++ Array.mkArray (size - index.size) padding
       else
         pure index
-    | _ => panic! "should not happen after typechecking"
+    | _ => panic! "Should not happen after typechecking"
   | .data (.field g) => pushOp (Bytecode.Op.const g)
   | .data (.tuple args) =>
       -- TODO use `buildArgs`
@@ -232,28 +232,22 @@ partial def toIndex
   | .let (.var var) val bod => do
     let val ← toIndex layoutMap bindings val
     toIndex layoutMap (bindings.insert var val) bod
-  | .let .. => panic! "should not happen after simplifying"
+  | .let .. => panic! "Should not happen after simplifying"
   | .add a b => do
-    let a ← toIndex layoutMap bindings a
-    assert! (a.size == 1)
-    let b ← toIndex layoutMap bindings b
-    assert! (b.size == 1)
-    pushOp (.add (a[0]!) (b[0]!))
+    let a ← expectIdx a
+    let b ← expectIdx b
+    pushOp (.add a b)
   | .sub a b => do
-    let a ← toIndex layoutMap bindings a
-    assert! (a.size == 1)
-    let b ← toIndex layoutMap bindings b
-    assert! (b.size == 1)
-    pushOp (.sub (a[0]!) (b[0]!))
+    let a ← expectIdx a
+    let b ← expectIdx b
+    pushOp (.sub a b)
   | .mul a b => do
-    let a ← toIndex layoutMap bindings a
-    assert! (a.size == 1)
-    let b ← toIndex layoutMap bindings b
-    assert! (b.size == 1)
-    pushOp (.mul (a[0]!) (b[0]!))
+    let a ← expectIdx a
+    let b ← expectIdx b
+    pushOp (.mul a b)
   | .app name@(⟨.str .anonymous unqualifiedName⟩) args =>
     match bindings.get? (.str unqualifiedName) with
-    | some _ => panic! "dynamic calls not yet implemented"
+    | some _ => panic! "Dynamic calls not yet implemented"
     | none => match layoutMap[name]! with
       | .function layout => do
         let args ← buildArgs args
@@ -267,7 +261,7 @@ partial def toIndex
           pure $ index ++ Array.mkArray (size - index.size) padding
         else
           pure index
-      | _ => panic! "should not happen after typechecking"
+      | _ => panic! "Should not happen after typechecking"
   | .app name args => match layoutMap[name]! with
     | .function layout => do
       let args ← buildArgs args
@@ -281,7 +275,7 @@ partial def toIndex
         pure $ index ++ Array.mkArray (size - index.size) padding
       else
         pure index
-    | _ => panic! "should not happen after typechecking"
+    | _ => panic! "Should not happen after typechecking"
   -- | .preimg name@(⟨.str .anonymous unqualifiedName⟩) out =>
   --   match bindings.get? (.str unqualifiedName) with
   --   | some _ => panic! "dynamic preimage not yet implemented"
@@ -295,24 +289,19 @@ partial def toIndex
   --     let out ← toIndex layoutMap bindings out
   --     pushOp (Bytecode.Op.preimg layout.index out layout.inputSize) layout.inputSize
   --   | _ => panic! "should not happen after typechecking"
-  -- | .ffi name args => match layoutMap.get' name with
-  --   | .gadget layout => do
-  --     let args ← buildArgs args
-  --     pushOp (Bytecode.Op.ffi layout.index args layout.outputSize) layout.outputSize
-  --   | _ => panic! "should not happen after typechecking"
   | .get arg i => do
-    let typs := (match arg.typ with
+    let typs := match arg.typ with
       | .evaluates (.tuple typs) => typs
-      | _ => panic! "should not happen after typechecking")
+      | _ => panic! "Should not happen after typechecking"
     let offset := (typs.extract 0 i).foldl (init := 0)
       fun acc typ => typSize layoutMap typ + acc
     let arg ← toIndex layoutMap bindings arg
     let length := typSize layoutMap typ
     pure $ arg.extract offset (offset + length)
   | .slice arg i j => do
-    let typs := (match arg.typ with
+    let typs := match arg.typ with
       | .evaluates (.tuple typs) => typs
-      | _ => panic! "should not happen after typechecking")
+      | _ => panic! "Should not happen after typechecking"
     let offset := (typs.extract 0 i).foldl (init := 0)
       fun acc typ => typSize layoutMap typ + acc
     let length := (typs.extract i j).foldl (init := 0)
@@ -326,9 +315,8 @@ partial def toIndex
     let size := match ptr.typ.unwrap with
     | .pointer typ => typSize layoutMap typ
     | _ => unreachable!
-    let ptr ← toIndex layoutMap bindings ptr
-    assert! (ptr.size == 1)
-    pushOp (Bytecode.Op.load size ptr[0]!) size
+    let ptr ← expectIdx ptr
+    pushOp (Bytecode.Op.load size ptr) size
   | .ptrVal ptr => toIndex layoutMap bindings ptr
   -- | .trace str expr => do
   --   let arr ← toIndex layoutMap bindings expr
@@ -340,6 +328,12 @@ partial def toIndex
       let append acc arg := do
         pure (acc.append (← toIndex layoutMap bindings arg))
       args.foldlM (init := init) append
+    expectIdx term := do
+      let idxs ← toIndex layoutMap bindings term
+      if h : idxs.size = 1 then
+        have : 0 < idxs.size := by simp only [h, Nat.lt_add_one]
+        pure idxs[0]
+      else panic! "Term is not of size 1"
 
 mutual
 
@@ -352,7 +346,7 @@ partial def TypedTerm.compile
   | .let (.var var) val bod => do
     let val ← toIndex layoutMap bindings val
     bod.compile returnTyp layoutMap (bindings.insert var val)
-  | .let .. => panic! "should not happen after simplifying"
+  | .let .. => panic! "Should not happen after simplifying"
   | .match term cases =>
     match term.typ.unwrapOr returnTyp with
     -- Also do this for tuple-like (one constructor only) datatypes
@@ -367,7 +361,7 @@ partial def TypedTerm.compile
               let len := typSize layoutMap typs[i]!
               let new_offset := offset + len
               (bindings.insert var (idxs.extract offset new_offset), new_offset)
-            | _ => panic! "should not happen after simplification"
+            | _ => panic! "Should not happen after simplification"
           bindings
         let idxs ← toIndex layoutMap bindings term
         let bindings := bindArgs bindings vars typs idxs
@@ -422,7 +416,7 @@ partial def addCase
     | .function layout => (layout.index, layout.offsets)
     | .constructor layout => (layout.index, layout.offsets)
     | .dataType _
-    | .gadget _ => panic! "impossible after typechecking"
+    | .gadget _ => panic! "Impossible after typechecking"
     let bindArgs bindings pats offsets idxs :=
       let n := pats.length
       let bindings := (List.range n).foldl (init := bindings) fun bindings i =>
@@ -433,7 +427,7 @@ partial def addCase
         match pat with
         | .var var =>
           bindings.insert var (idxs.extract offset next_offset)
-        | _ => panic! "should not happen after simplification"
+        | _ => panic! "Should not happen after simplification"
       bindings
     let bindings := bindArgs bindings pats offsets idxs
     let initState ← get
