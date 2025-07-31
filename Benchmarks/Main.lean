@@ -50,37 +50,79 @@ def toplevel := ⟦
   }
 ⟧
 
-def friParameters : Aiur.FriParameters := {
+def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
+}
+
+def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   numQueries := 100
   proofOfWorkBits := 20
 }
 
-def fib (n : Nat) : Nat :=
-  match n with
-  | 0 => 0
-  | 1 => 1
-  | n' + 2 => fib (n' + 1) + fib (n')
-
-def fibBench := (bgroup "fib" [
-  bench "fib 1" fib 1,
-  --bench "fib 2" fib 2,
-  --bench "fib 30" fib 30
-] { samplingMode := .linear } )
-
-def addBench := (bgroup "add" [
-  bench "add 1 2" (Nat.add 1) 2
-])
-
-def main (_args : List String) : IO UInt32 := do
+def proveE2E (name: Lean.Name) : IO UInt32 := do
   match toplevel.checkAndSimplify with
   | .error e => IO.eprintln e; return 1
   | .ok decls =>
     let bytecode := decls.compile
-    let system := Aiur.AiurSystem.build bytecode
-    let funIdx := toplevel.getFuncIdx `main |>.get!
-    let (claim, proof) := system.prove friParameters funIdx #[26]
+    let system := Aiur.AiurSystem.build bytecode commitmentParameters
+    let funIdx := toplevel.getFuncIdx name |>.get!
+    let (claim, proof) := system.prove friParameters funIdx #[10]
     match system.verify friParameters claim proof with
     | .ok _ => return 0
     | .error e => IO.eprintln e; return 1
+
+
+-- End-to-end proof generation and verification benchmark
+def proveE2EBench := bgroup "prove E2E" [
+  benchIO "fib 10" proveE2E `main
+] { samplingMode := .flat }
+
+-- Individual benchmarks of each step from `proveE2E`
+
+def toplevelBench := bgroup "nat_fib" [
+  bench "simplify toplevel" Aiur.Toplevel.checkAndSimplify toplevel
+]
+
+def compileBench : IO Unit := do
+  match toplevel.checkAndSimplify with
+  | .error e => IO.eprintln e
+  | .ok decls =>
+    bgroup "nat_fib" [
+      bench "compile decls" Aiur.TypedDecls.compile decls
+    ]
+
+def buildAiurSystemBench : IO Unit := do
+  match toplevel.checkAndSimplify with
+  | .error e => IO.eprintln e
+  | .ok decls =>
+    let bytecode := decls.compile
+    bgroup "nat_fib" [
+      bench "build AiurSystem" (Aiur.AiurSystem.build bytecode) commitmentParameters
+    ]
+
+def proveBench : IO Unit := do
+  match toplevel.checkAndSimplify with
+  | .error e => IO.eprintln e
+  | .ok decls =>
+    let bytecode := decls.compile
+    let system := Aiur.AiurSystem.build bytecode commitmentParameters
+    let funIdx := toplevel.getFuncIdx `main |>.get!
+    bgroup "nat_fib" [
+      bench "prove fib 10" (Aiur.AiurSystem.prove system friParameters funIdx) #[10]
+    ]
+
+def verifyBench : IO Unit := do
+  match toplevel.checkAndSimplify with
+  | .error e => IO.eprintln e
+  | .ok decls =>
+    let bytecode := decls.compile
+    let system := Aiur.AiurSystem.build bytecode commitmentParameters
+    let funIdx := toplevel.getFuncIdx `main |>.get!
+    let (claim, proof) := system.prove friParameters funIdx #[10]
+    bgroup "nat_fib" [
+      bench "verify fib 10" (Aiur.AiurSystem.verify system friParameters claim) proof
+    ]
+
+def main (_args : List String) : IO Unit := do
+  let _result ← proveBench
