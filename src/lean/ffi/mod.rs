@@ -1,4 +1,7 @@
-#[cfg(not(feature = "net"))]
+#[cfg(any(
+    not(feature = "net"),
+    all(target_os = "macos", target_arch = "aarch64")
+))]
 pub mod _iroh;
 pub mod aiur;
 pub mod byte_array;
