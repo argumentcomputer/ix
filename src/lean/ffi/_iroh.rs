@@ -12,7 +12,7 @@ extern "C" fn rs_iroh_send(_bytes: &LeanSArrayObject) -> *const CResult {
     println!("{msg_str}");
     let msg = CString::new(msg_str).expect("CString::new failure");
     let c_result = CResult {
-        is_ok: true,
+        is_ok: false,
         data: msg.into_raw().cast(),
     };
     to_raw(c_result)
