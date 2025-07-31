@@ -1,7 +1,7 @@
 namespace Iroh.Transfer
 
 @[never_extract, extern "c_rs_iroh_send"]
-opaque sendBytes' : @& ByteArray → Except String Unit
+private opaque sendBytes' : @& ByteArray → Except String Unit
 
 def sendBytes (bytes: @&ByteArray) : IO Unit :=
   match sendBytes' bytes with
