@@ -50,8 +50,11 @@ def toplevel := ⟦
   }
 ⟧
 
-def friParameters : Aiur.FriParameters := {
+def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
+}
+
+def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   numQueries := 100
   proofOfWorkBits := 20
@@ -62,7 +65,7 @@ def proveE2E (name: Lean.Name) : IO UInt32 := do
   | .error e => IO.eprintln e; return 1
   | .ok decls =>
     let bytecode := decls.compile
-    let system := Aiur.AiurSystem.build bytecode
+    let system := Aiur.AiurSystem.build bytecode commitmentParameters
     let funIdx := toplevel.getFuncIdx name |>.get!
     let (claim, proof) := system.prove friParameters funIdx #[10]
     match system.verify friParameters claim proof with
@@ -95,7 +98,7 @@ def buildAiurSystemBench : IO Unit := do
   | .ok decls =>
     let bytecode := decls.compile
     bgroup "nat_fib" [
-      bench "build AiurSystem" Aiur.AiurSystem.build bytecode
+      bench "build AiurSystem" (Aiur.AiurSystem.build bytecode) commitmentParameters
     ]
 
 def proveBench : IO Unit := do
@@ -103,7 +106,7 @@ def proveBench : IO Unit := do
   | .error e => IO.eprintln e
   | .ok decls =>
     let bytecode := decls.compile
-    let system := Aiur.AiurSystem.build bytecode
+    let system := Aiur.AiurSystem.build bytecode commitmentParameters
     let funIdx := toplevel.getFuncIdx `main |>.get!
     bgroup "nat_fib" [
       bench "prove fib 10" (Aiur.AiurSystem.prove system friParameters funIdx) #[10]
@@ -114,7 +117,7 @@ def verifyBench : IO Unit := do
   | .error e => IO.eprintln e
   | .ok decls =>
     let bytecode := decls.compile
-    let system := Aiur.AiurSystem.build bytecode
+    let system := Aiur.AiurSystem.build bytecode commitmentParameters
     let funIdx := toplevel.getFuncIdx `main |>.get!
     let (claim, proof) := system.prove friParameters funIdx #[10]
     bgroup "nat_fib" [
@@ -122,4 +125,4 @@ def verifyBench : IO Unit := do
     ]
 
 def main (_args : List String) : IO Unit := do
-  let _result ← proveE2EBench
+  let _result ← proveBench
