@@ -124,5 +124,37 @@ def verifyBench : IO Unit := do
       bench "verify fib 10" (Aiur.AiurSystem.verify system friParameters claim) proof
     ]
 
+def pipeToplevel (toplevel' : Aiur.Toplevel) : Aiur.TypedDecls :=
+  match toplevel'.checkAndSimplify with
+  | .error e => panic! s!"{e}"
+  | .ok decls => decls
+
+def pipeCompile (decls : Aiur.TypedDecls) : Aiur.Bytecode.Toplevel :=
+  decls.compile
+
+def pipeAiurSystem (bytecode : Aiur.Bytecode.Toplevel) : Aiur.AiurSystem :=
+  Aiur.AiurSystem.build bytecode commitmentParameters
+
+-- #eval toplevel.getFuncIdx `main
+
+def pipeProve (system : Aiur.AiurSystem) : (Aiur.AiurSystem × Array Aiur.G × Aiur.Proof) :=
+  let (claim, proof) := system.prove friParameters 4 #[10]
+  (system, claim, proof)
+
+def pipeVerify (proof: (Aiur.AiurSystem × Array Aiur.G × Aiur.Proof)) : Unit :=
+  match proof.fst.verify friParameters proof.snd.fst proof.snd.snd with
+  | .error e => panic! s!"{e}"
+  | .ok _ => ()
+
+def myPipe : Pipe Aiur.Toplevel Unit :=
+  .cons "simplify toplevel" pipeToplevel $
+  .cons "compile decls" pipeCompile $
+  .cons "build AiurSystem" pipeAiurSystem $
+  .cons "prove fib 10" pipeProve $
+  .cons "verify fib 10" pipeVerify .nil
+
+def stagedBench := benchStaged "Prove pipeline" myPipe toplevel {}
+
 def main (_args : List String) : IO Unit := do
-  let _result ← proveBench
+  --let _result ← proveBench
+  let _result ← stagedBench

@@ -321,3 +321,47 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
     bg.printResults b.name m
     IO.println ""
     saveResults b.name m
+
+
+inductive Pipe : Type → Type → Type 1
+  | nil : Pipe α α
+  | cons : String → (α → β) → Pipe β γ → Pipe α γ
+
+-- TODO: Factor out benchmark logic into separate function
+def benchPipe (bg : BenchGroup) (pipe : Pipe α β) (acc : α) : IO β :=
+  match pipe with
+  | .nil => pure acc
+  | .cons desc x xs => do
+    let benchFn := bench desc x acc
+    let warmupMean ← bg.warmup benchFn
+    IO.println s!"Running {benchFn.name}"
+    let (iters, times) ← bg.sample benchFn warmupMean
+    let data := iters.zip times
+    let avgTimes : Distribution := { d := data.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
+    let gen ← IO.stdGenRef.get
+    let mut (distributions, estimates) := avgTimes.estimates bg.config gen
+    if bg.config.samplingMode == .linear
+    then
+      let data' : Data := { d := data }
+      let (distribution, slope) := data'.regression bg.config gen
+      estimates := { estimates with slope := .some slope }
+      distributions := { distributions with slope := .some distribution }
+    let comparisonData : Option ComparisonData ← bg.getComparison benchFn.name avgTimes
+    let m :=  {
+      data := { d := data },
+      avgTimes,
+      absoluteEstimates := estimates,
+      distributions,
+      comparison := comparisonData
+      throughput := none
+    }
+    bg.printResults benchFn.name m
+    IO.println ""
+    saveResults benchFn.name m
+
+    benchPipe bg xs (x acc)
+
+def benchStaged (name : String) (pipeline: Pipe α β) (input : α) (config : Config := {}) : IO Unit := do
+  let bg : BenchGroup := { name, config }
+  IO.println s!"Running bench group {name}\n"
+  let _res ← benchPipe bg pipeline input
