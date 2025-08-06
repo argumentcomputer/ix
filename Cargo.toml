@@ -13,6 +13,13 @@ rayon = "1"
 rustc-hash = "2"
 indexmap = { version = "2", features = ["rayon"] }
 tiny-keccak = { version = "2", features = ["keccak"] }
+num-bigint = "0.4.6"
+blake3 = "1.8.2"
+
+[dev-dependencies]
+quickcheck = "1.0.3"
+rand = "0.8.5"
+quickcheck_macros = "1.0.0"
 
 # bytes = "1.10.1"
 # [target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
