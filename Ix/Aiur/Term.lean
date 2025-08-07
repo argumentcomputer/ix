@@ -50,6 +50,7 @@ inductive Pattern
 inductive Typ where
   | field
   | tuple : Array Typ → Typ
+  | array : Typ → Nat → Typ
   | pointer : Typ → Typ
   | dataType : Global → Typ
   | function : List Typ → Typ → Typ
@@ -68,6 +69,7 @@ inductive Term
   | add : Term → Term → Term
   | sub : Term → Term → Term
   | mul : Term → Term → Term
+  | proj : Term → Nat → Term
   | get : Term → Nat → Term
   | slice : Term → Nat → Nat → Term
   | store : Term → Term
@@ -79,6 +81,7 @@ inductive Term
 inductive Data
   | field : G → Data
   | tuple : Array Term → Data
+  | array : Array Term → Data
   deriving Repr
 
 end
@@ -108,6 +111,7 @@ inductive TypedTermInner
   | add : TypedTerm → TypedTerm → TypedTermInner
   | sub : TypedTerm → TypedTerm → TypedTermInner
   | mul : TypedTerm → TypedTerm → TypedTermInner
+  | proj : TypedTerm → Nat → TypedTermInner
   | get : TypedTerm → Nat → TypedTermInner
   | slice : TypedTerm → Nat → Nat → TypedTermInner
   | store : TypedTerm → TypedTermInner
@@ -123,6 +127,7 @@ structure TypedTerm where
 inductive TypedData
   | field : G → TypedData
   | tuple : Array TypedTerm → TypedData
+  | array : Array TypedTerm → TypedData
   deriving Repr
 
 end
@@ -180,11 +185,12 @@ mutual
 open Std (HashSet)
 
 partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) : Typ → Nat
-  | Typ.field .. => 1
-  | Typ.pointer .. => 1
-  | Typ.function .. => 1
-  | Typ.tuple ts => ts.foldl (init := 0) (fun acc t => acc + t.size decls visited)
-  | Typ.dataType g => match decls.getByKey g with
+  | .field .. => 1
+  | .pointer .. => 1
+  | .function .. => 1
+  | .tuple ts => ts.foldl (init := 0) (fun acc t => acc + t.size decls visited)
+  | .array t n => n * t.size decls visited
+  | .dataType g => match decls.getByKey g with
     | some (.dataType data) => data.size decls visited
     | _ => panic! "impossible case"
 

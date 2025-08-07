@@ -16,6 +16,8 @@ inductive CheckError
   | illegalReturn : CheckError
   | wrongNumArgs : Global → Nat → Nat → CheckError
   | notATuple : Typ → CheckError
+  | notAnArray : Typ → CheckError
+  | emptyArray : Data → CheckError
   | indexOoB : Nat → CheckError
   | negativeRange : Nat → Nat → CheckError
   | rangeOoB : Nat → Nat → CheckError
@@ -145,23 +147,26 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .mul a b => do
     let (ctxTyp, a, b) ← checkArith a b
     pure $ .mk ctxTyp (.mul a b)
-  | .get tup i => do
+  | .proj tup i => do
     let (typs, tupInner) ← inferTuple tup
     if h : i < typs.size then
       let typ := typs[i]
       let tup := .mk (.evaluates (.tuple typs)) tupInner
-      pure $ .mk (.evaluates typ) (.get tup i)
+      pure $ .mk (.evaluates typ) (.proj tup i)
     else
       throw $ .indexOoB i
-  | .slice tup i j =>
-    -- Retrieves the types of elements in a tuple by a range (checked to be non-negative) and
-    -- returns them encoded in a `Typ.tuple`. Errors if the index is out of bounds.
-    if j < i then throw $ .negativeRange i j else do
-    let (typs, tupInner) ← inferTuple tup
-    if j ≤ typs.size then
-      let slice := typs.extract i j
-      let tup := .mk (.evaluates (.tuple typs)) tupInner
-      pure $ .mk (.evaluates (.tuple slice)) (.slice tup i j)
+  | .get arr i => do
+    let (typ, n, inner) ← inferArray arr
+    if i ≥ n then
+      throw $ .indexOoB i
+    else
+      let arr := .mk (.evaluates (.array typ n)) inner
+      pure $ .mk (.evaluates typ) (.get arr i)
+  | .slice arr i j => if j < i then throw $ .negativeRange i j else do
+    let (typ, n, inner) ← inferArray arr
+    if j ≤ n then
+      let arr := .mk (.evaluates (.array typ n)) inner
+      pure $ .mk (.evaluates (.array typ (j - i))) (.slice arr i j)
     else
       throw $ .rangeOoB i j
   | .store term => do
@@ -226,8 +231,18 @@ partial def inferData : Data → CheckM (Typ × TypedTermInner)
   | .tuple terms => do
     let typsAndInners ← terms.mapM inferNoEscape
     let typs := typsAndInners.map Prod.fst
-    let terms := typsAndInners.map fun (typ, inner) => TypedTerm.mk (.evaluates typ) inner
+    let terms := typsAndInners.map fun (typ, inner) => .mk (.evaluates typ) inner
     pure (.tuple typs, .data (.tuple terms))
+  | arr@(.array terms) => do
+    if h : terms.size > 0 then
+      let (typ, firstInner) ← inferNoEscape terms[0]
+      let mut typedTerms := Array.mkEmpty terms.size
+        |>.push (.mk (.evaluates typ) firstInner)
+      for term in terms[1:] do
+        let inner ← checkNoEscape term typ
+        typedTerms := typedTerms.push (.mk (.evaluates typ) inner)
+      pure (.array typ terms.size, .data (.array typedTerms))
+    else throw $ .emptyArray arr
 
 /-- Infers the type of a 'match' expression and ensures its patterns and branches are valid. -/
 partial def inferMatch (term : Term) (branches : List (Pattern × Term)) : CheckM TypedTerm := do
@@ -306,9 +321,13 @@ where
 
 partial def inferTuple (term : Term) : CheckM (Array Typ × TypedTermInner) := do
   let (typ, inner) ← inferNoEscape term
-  match typ with
-  | .tuple typs => pure (typs, inner)
-  | _ => throw $ .notATuple typ
+  let .tuple typs := typ | throw $ .notATuple typ
+  pure (typs, inner)
+
+partial def inferArray (term : Term) : CheckM (Typ × Nat × TypedTermInner) := do
+  let (typ, inner) ← inferNoEscape term
+  let .array typs n := typ | throw $ .notAnArray typ
+  pure (typs, n, inner)
 end
 
 def getFunctionContext (function : Function) (decls : Decls) : CheckContext :=
