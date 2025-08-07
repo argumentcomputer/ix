@@ -107,8 +107,14 @@ def toplevel := ⟦
     }
   }
 
-  fn slice_and_get(as: (G, G, G, G)) -> G {
-    get(slice(as, 1, 4), 2)
+  fn projections(as: (G, G, G, G, G)) -> (G, G) {
+    (proj(as, 1), proj(as, 3))
+  }
+
+  fn slice_and_get(as: [G; 5]) -> [G; 2] {
+    let left = as[0 .. 2];
+    let right = as[3 .. 5];
+    [left[1], right[0]]
   }
 ⟧
 
@@ -137,7 +143,8 @@ def testCases : List TestCase := [
     ⟨`fibonacci, #[0], #[1]⟩,
     ⟨`fibonacci, #[1], #[1]⟩,
     ⟨`fibonacci, #[6], #[13]⟩,
-    ⟨`slice_and_get, #[1, 2, 3, 4], #[4]⟩,
+    ⟨`projections, #[1, 2, 3, 4, 5], #[2, 4]⟩,
+    ⟨`slice_and_get, #[1, 2, 3, 4, 5], #[2, 4]⟩,
   ]
 
 def commitmentParameters : Aiur.CommitmentParameters := {
