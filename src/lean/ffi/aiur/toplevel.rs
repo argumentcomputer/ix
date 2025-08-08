@@ -67,6 +67,10 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
                 lean_unbox_nat_as_usize(val_idx_ptr),
             )
         }
+        7 => {
+            let [val_idxs_ptr] = ctor.objs();
+            Op::IOGetInfo(lean_ptr_to_vec_val_idx(val_idxs_ptr))
+        }
         _ => unreachable!(),
     }
 }
@@ -128,16 +132,9 @@ fn lean_ctor_to_block(ctor: &LeanCtorObject) -> Block {
 }
 
 fn lean_ctor_to_function_layout(ctor: &LeanCtorObject) -> FunctionLayout {
-    let [
-        input_size_ptr,
-        output_size_ptr,
-        selectors_ptr,
-        auxiliaries_ptr,
-        lookups_ptr,
-    ] = ctor.objs();
+    let [input_size_ptr, selectors_ptr, auxiliaries_ptr, lookups_ptr] = ctor.objs();
     FunctionLayout {
         input_size: lean_unbox_nat_as_usize(input_size_ptr),
-        output_size: lean_unbox_nat_as_usize(output_size_ptr),
         selectors: lean_unbox_nat_as_usize(selectors_ptr),
         auxiliaries: lean_unbox_nat_as_usize(auxiliaries_ptr),
         lookups: lean_unbox_nat_as_usize(lookups_ptr),

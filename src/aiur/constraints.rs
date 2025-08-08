@@ -316,6 +316,7 @@ impl Op {
                 lookup.args.extend(values_iter);
                 lookup.multiplicity += sel.clone();
             }
+            Op::IOGetInfo(_) | Op::IOSetInfo(..) | Op::IORead(..) | Op::IOWrite(_) => (),
         }
     }
 }

@@ -36,11 +36,36 @@ impl QueryRecord {
     }
 }
 
+pub(crate) struct IOKeyInfo {
+    pub(crate) idx: G,
+    pub(crate) len: G,
+}
+
+pub struct IOBuffer {
+    data: Vec<G>,
+    map: FxIndexMap<Vec<G>, IOKeyInfo>,
+}
+
+impl IOBuffer {
+    #[inline]
+    pub(crate) fn get_info(&self, key: &[G]) -> &IOKeyInfo {
+        self.map.get(key).expect("Invalid IO key")
+    }
+    fn set_info(&mut self, key: Vec<G>, idx: G, len: G) {
+        self.map.insert(key, IOKeyInfo { idx, len });
+    }
+}
+
 impl Toplevel {
-    pub fn execute(&self, fun_idx: FunIdx, args: Vec<G>) -> (QueryRecord, Vec<G>) {
+    pub fn execute(
+        &self,
+        fun_idx: FunIdx,
+        args: Vec<G>,
+        io_buffer: &mut IOBuffer,
+    ) -> (QueryRecord, Vec<G>) {
         let mut record = QueryRecord::new(self);
         let function = &self.functions[fun_idx];
-        let output = function.execute(fun_idx, args, self, &mut record);
+        let output = function.execute(fun_idx, args, self, &mut record, io_buffer);
         (record, output)
     }
 }
@@ -62,6 +87,7 @@ impl Function {
         mut map: Vec<G>,
         toplevel: &Toplevel,
         record: &mut QueryRecord,
+        io_buffer: &mut IOBuffer,
     ) -> Vec<G> {
         let mut exec_entries_stack = vec![];
         let mut callers_states_stack = vec![];
@@ -142,6 +168,18 @@ impl Function {
                     result.multiplicity += G::ONE;
                     map.extend(args);
                 }
+                ExecEntry::Op(Op::IOGetInfo(key)) => {
+                    let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
+                    let IOKeyInfo { idx, len } = io_buffer.get_info(&key);
+                    map.push(*idx);
+                    map.push(*len);
+                }
+                ExecEntry::Op(Op::IOSetInfo(key, idx, len)) => {
+                    let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
+                    io_buffer.set_info(key, map[*idx], map[*len]);
+                }
+                ExecEntry::Op(Op::IORead(idx, len)) => {}
+                ExecEntry::Op(Op::IOWrite(data)) => {}
                 ExecEntry::Ctrl(Ctrl::Match(val_idx, cases, default)) => {
                     let val = &map[*val_idx];
                     if let Some(block) = cases.get(val) {

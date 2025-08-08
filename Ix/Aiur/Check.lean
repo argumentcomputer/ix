@@ -196,6 +196,16 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .ann typ term => do
     let inner ← checkNoEscape term typ
     pure $ .mk (.evaluates typ) inner
+  | .ioGetInfo key => do
+    let (typ, keyInner) ← inferNoEscape key
+    match typ with
+    | .array .. =>
+      let ioGetInfo := .ioGetInfo (.mk (.evaluates typ) keyInner)
+      pure $ .mk (.evaluates (.tuple #[.field, .field])) ioGetInfo
+    | _ => throw $ .notAnArray typ
+  | .ioSetInfo key info ret => sorry
+  | .ioRead idx len => sorry
+  | .ioWrite data ret => sorry
 where
   /--
   Ensures that there are as many arguments and as expected types and that

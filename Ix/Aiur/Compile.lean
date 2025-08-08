@@ -24,8 +24,8 @@ structure LayoutMState where
   degrees : Array Nat
 
 /-- A new `LayoutMState` starts with one auxiliar for the multiplicity. -/
-@[inline] def LayoutMState.new (inputSize outputSize : Nat) : LayoutMState :=
-  ⟨{ inputSize, outputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, Array.mkArray inputSize 1⟩
+@[inline] def LayoutMState.new (inputSize : Nat) : LayoutMState :=
+  ⟨{ inputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, Array.mkArray inputSize 1⟩
 
 abbrev LayoutM := StateM LayoutMState
 
@@ -94,6 +94,9 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpAuxiliaries size
     bumpLookups
     addMemSize size
+  | .ioGetInfo _ => do
+    pushDegrees #[1, 1]
+    bumpAuxiliaries 2
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   block.ops.forM opLayout
@@ -180,7 +183,7 @@ def typSize (layoutMap : LayoutMap) : Typ → Nat
 | .field .. => 1
 | .pointer .. => 1
 | .function .. => 1
-| .tuple ts => ts.foldl (init := 0) (fun acc t => acc + typSize layoutMap t)
+| .tuple ts => ts.foldl (fun acc t => acc + typSize layoutMap t) 0
 | .array typ n => n * typSize layoutMap typ
 | .dataType g => match layoutMap[g]? with
   | some (.dataType layout) => layout.size
@@ -313,19 +316,22 @@ partial def toIndex
     pure $ arr.extract (i * eltSize) (j * eltSize)
   | .store arg => do
     let args ← toIndex layoutMap bindings arg
-    pushOp (Bytecode.Op.store args)
+    pushOp (.store args)
   | .load ptr => do
     let size := match ptr.typ.unwrap with
     | .pointer typ => typSize layoutMap typ
     | _ => unreachable!
     let ptr ← expectIdx ptr
-    pushOp (Bytecode.Op.load size ptr) size
+    pushOp (.load size ptr) size
   | .ptrVal ptr => toIndex layoutMap bindings ptr
   -- | .trace str expr => do
   --   let arr ← toIndex layoutMap bindings expr
   --   let op := .trace str arr
   --   modify (fun state => { state with ops := state.ops.push op})
   --   pure arr
+  | .ioGetInfo key => do
+    let key ← toIndex layoutMap bindings key
+    pushOp (.ioGetInfo key) 2
   where
     buildArgs (args : List TypedTerm) (init := #[]) :=
       let append acc arg := do
@@ -462,7 +468,7 @@ end
 
 def TypedFunction.compile (layoutMap : LayoutMap) (f : TypedFunction) :
     Bytecode.Block × Bytecode.LayoutMState :=
-  let (inputSize, outputSize) := match layoutMap[f.name]? with
+  let (inputSize, _outputSize) := match layoutMap[f.name]? with
     | some (.function layout) => (layout.inputSize, layout.outputSize)
     | _ => panic! s!"`{f.name}` should be a function"
   let (valIdx, bindings) := f.inputs.foldl (init := (0, default))
@@ -472,7 +478,7 @@ def TypedFunction.compile (layoutMap : LayoutMap) (f : TypedFunction) :
       (valIdx + len, bindings.insert arg indices)
   let state := { valIdx, selIdx := 0, ops := #[] }
   let body := f.body.compile f.output layoutMap bindings |>.run' state
-  let (_, layoutMState) := Bytecode.blockLayout body |>.run $ .new inputSize outputSize
+  let (_, layoutMState) := Bytecode.blockLayout body |>.run $ .new inputSize
   (body, layoutMState)
 
 def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
