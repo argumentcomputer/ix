@@ -16,11 +16,11 @@ def toplevel := ⟦
   }
 
   fn sum(x: G, y: G) -> G {
-    add(x, y)
+    x + y
   }
 
   fn prod(x: G, y: G) -> G {
-    mul(x, y)
+    x * y
   }
 
   fn store_and_load(x: G) -> G {
@@ -89,7 +89,7 @@ def toplevel := ⟦
   fn factorial(n: G) -> G {
     match n {
       0 => 1,
-      _ => mul(n, factorial(sub(n, 1))),
+      _ => n * factorial(n - 1),
     }
   }
 
@@ -97,12 +97,12 @@ def toplevel := ⟦
     match n {
       0 => 1,
       _ =>
-        let n_minus_1 = sub(n, 1);
+        let n_minus_1 = n - 1;
         match n_minus_1 {
           0 => 1,
           _ =>
-            let n_minus_2 = sub(n_minus_1, 1);
-            add(fibonacci(n_minus_1), fibonacci(n_minus_2)),
+            let n_minus_2 = n_minus_1 - 1;
+            fibonacci(n_minus_1) + fibonacci(n_minus_2),
         },
     }
   }
@@ -115,6 +115,16 @@ def toplevel := ⟦
     let left = as[0 .. 2];
     let right = as[3 .. 5];
     [left[1], right[0]]
+  }
+
+  fn deconstruct_tuple(as: (G, G, G, G, G)) -> (G, G) {
+    let (_, b, _, d, _) = as;
+    (b, d)
+  }
+
+  fn deconstruct_array(as: [G; 5]) -> [G; 2] {
+    let [_, b, _, d, _] = as;
+    [b, d]
   }
 ⟧
 
@@ -145,6 +155,8 @@ def testCases : List TestCase := [
     ⟨`fibonacci, #[6], #[13]⟩,
     ⟨`projections, #[1, 2, 3, 4, 5], #[2, 4]⟩,
     ⟨`slice_and_get, #[1, 2, 3, 4, 5], #[2, 4]⟩,
+    ⟨`deconstruct_tuple, #[1, 2, 3, 4, 5], #[2, 4]⟩,
+    ⟨`deconstruct_array, #[1, 2, 3, 4, 5], #[2, 4]⟩,
   ]
 
 def commitmentParameters : Aiur.CommitmentParameters := {

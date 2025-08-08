@@ -352,22 +352,35 @@ partial def TypedTerm.compile
   | .let .. => panic! "Should not happen after simplifying"
   | .match term cases =>
     match term.typ.unwrapOr returnTyp with
-    -- Also do this for tuple-like (one constructor only) datatypes
+    -- Also do this for tuple-like and array-like (one constructor only) datatypes
     | .tuple typs => match cases with
       | [(.tuple vars, branch)] => do
         let bindArgs bindings pats typs idxs :=
-          let n := pats.size
-          let init := (bindings, 0)
-          let (bindings, _) := (List.range n).foldl (init := init) fun (bindings, offset) i =>
-            match pats[i]! with
-            | .var var =>
-              let len := typSize layoutMap typs[i]!
-              let new_offset := offset + len
-              (bindings.insert var (idxs.extract offset new_offset), new_offset)
-            | _ => panic! "Should not happen after simplification"
+          let (bindings, _) := (pats.zip typs).foldl (init := (bindings, 0))
+            fun (bindings, offset) (pat, typ) => match pat with
+              | .var var =>
+                let len := typSize layoutMap typ
+                let newOffset := offset + len
+                (bindings.insert var (idxs.extract offset newOffset), newOffset)
+              | _ => panic! "Should not happen after simplification"
           bindings
         let idxs ← toIndex layoutMap bindings term
         let bindings := bindArgs bindings vars typs idxs
+        branch.compile returnTyp layoutMap bindings
+      | _ => unreachable!
+    | .array typ _ => match cases with
+      | [(.array vars, branch)] => do
+        let bindArgs bindings pats idxs :=
+          let len := typSize layoutMap typ
+          let (bindings, _) := pats.foldl (init := (bindings, 0))
+            fun (bindings, offset) pat => match pat with
+              | .var var =>
+                let newOffset := offset + len
+                (bindings.insert var (idxs.extract offset newOffset), newOffset)
+              | _ => panic! "Should not happen after simplification"
+          bindings
+        let idxs ← toIndex layoutMap bindings term
+        let bindings := bindArgs bindings vars idxs
         branch.compile returnTyp layoutMap bindings
       | _ => unreachable!
     | _ => do
@@ -377,7 +390,7 @@ partial def TypedTerm.compile
       let (cases, default) ← cases.foldlM (init := default)
         (addCase layoutMap bindings returnTyp idxs)
       let maxSelExcluded := (← get).selIdx
-      let ctrl := .match (idxs[0]!) cases default
+      let ctrl := .match idxs[0]! cases default
       pure { ops, ctrl, minSelIncluded, maxSelExcluded }
   | .ret term => do
     let idxs ← toIndex layoutMap bindings term
@@ -423,10 +436,10 @@ partial def addCase
     let bindArgs bindings pats offsets idxs :=
       let n := pats.length
       let bindings := (List.range n).foldl (init := bindings) fun bindings i =>
-        let pat := (pats[i]!)
+        let pat := pats[i]!
         -- the `+ 1` is to account for the tag
-        let offset := (offsets[i]!) + 1
-        let next_offset := (offsets[(i + 1)]!) + 1
+        let offset := offsets[i]! + 1
+        let next_offset := offsets[(i + 1)]! + 1
         match pat with
         | .var var =>
           bindings.insert var (idxs.extract offset next_offset)

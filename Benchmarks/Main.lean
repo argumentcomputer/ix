@@ -13,14 +13,14 @@ def toplevel := ⟦
   fn g_to_nat(g: G) -> Nat {
     match g {
       0 => Nat.Zero,
-      _ => Nat.Succ(store(g_to_nat(sub(g, 1)))),
+      _ => Nat.Succ(store(g_to_nat(g - 1))),
     }
   }
 
   fn nat_to_g(n: Nat) -> G {
     match n {
       Nat.Zero => 0,
-      Nat.Succ(ptr) => add(nat_to_g(load(ptr)), 1),
+      Nat.Succ(ptr) => nat_to_g(load(ptr)) + 1,
     }
   }
 
