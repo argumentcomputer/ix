@@ -67,7 +67,7 @@ def proveE2E (name: Lean.Name) : IO UInt32 := do
     let bytecode := decls.compile
     let system := Aiur.AiurSystem.build bytecode commitmentParameters
     let funIdx := toplevel.getFuncIdx name |>.get!
-    let (claim, proof) := system.prove friParameters funIdx #[10]
+    let (claim, proof, _) := system.prove friParameters funIdx #[10] default
     match system.verify friParameters claim proof with
     | .ok _ => return 0
     | .error e => IO.eprintln e; return 1
@@ -119,7 +119,7 @@ def verifyBench : IO Unit := do
     let bytecode := decls.compile
     let system := Aiur.AiurSystem.build bytecode commitmentParameters
     let funIdx := toplevel.getFuncIdx `main |>.get!
-    let (claim, proof) := system.prove friParameters funIdx #[10]
+    let (claim, proof, _) := system.prove friParameters funIdx #[10] default
     bgroup "nat_fib" [
       bench "verify fib 10" (Aiur.AiurSystem.verify system friParameters claim) proof
     ]

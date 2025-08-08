@@ -1,4 +1,6 @@
 use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
+use rustc_hash::FxHashMap;
+use std::collections::hash_map::Entry;
 
 use super::{
     G,
@@ -36,11 +38,46 @@ impl QueryRecord {
     }
 }
 
+pub(crate) struct IOKeyInfo {
+    pub(crate) idx: usize,
+    pub(crate) len: usize,
+}
+
+pub struct IOBuffer {
+    pub(crate) data: Vec<G>,
+    pub(crate) map: FxHashMap<Vec<G>, IOKeyInfo>,
+}
+
+impl IOBuffer {
+    #[inline]
+    pub(crate) fn get_info(&self, key: &[G]) -> &IOKeyInfo {
+        self.map.get(key).expect("Invalid IO key")
+    }
+    fn set_info(&mut self, key: Vec<G>, idx: usize, len: usize) {
+        let Entry::Vacant(e) = self.map.entry(key) else {
+            panic!("Mapping already set for key");
+        };
+        e.insert(IOKeyInfo { idx, len });
+    }
+    #[inline]
+    pub(crate) fn read(&self, idx: usize, len: usize) -> &[G] {
+        &self.data[idx..idx + len]
+    }
+    fn write(&mut self, data: impl Iterator<Item = G>) {
+        self.data.extend(data)
+    }
+}
+
 impl Toplevel {
-    pub fn execute(&self, fun_idx: FunIdx, args: Vec<G>) -> (QueryRecord, Vec<G>) {
+    pub fn execute(
+        &self,
+        fun_idx: FunIdx,
+        args: Vec<G>,
+        io_buffer: &mut IOBuffer,
+    ) -> (QueryRecord, Vec<G>) {
         let mut record = QueryRecord::new(self);
         let function = &self.functions[fun_idx];
-        let output = function.execute(fun_idx, args, self, &mut record);
+        let output = function.execute(fun_idx, args, self, &mut record, io_buffer);
         (record, output)
     }
 }
@@ -62,6 +99,7 @@ impl Function {
         mut map: Vec<G>,
         toplevel: &Toplevel,
         record: &mut QueryRecord,
+        io_buffer: &mut IOBuffer,
     ) -> Vec<G> {
         let mut exec_entries_stack = vec![];
         let mut callers_states_stack = vec![];
@@ -142,6 +180,31 @@ impl Function {
                     result.multiplicity += G::ONE;
                     map.extend(args);
                 }
+                ExecEntry::Op(Op::IOGetInfo(key)) => {
+                    let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
+                    let IOKeyInfo { idx, len } = io_buffer.get_info(&key);
+                    map.push(G::from_usize(*idx));
+                    map.push(G::from_usize(*len));
+                }
+                ExecEntry::Op(Op::IOSetInfo(key, idx, len)) => {
+                    let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
+                    let get = |x: &usize| {
+                        map[*x]
+                            .as_canonical_u64()
+                            .try_into()
+                            .expect("Index is too big for an usize")
+                    };
+                    io_buffer.set_info(key, get(idx), get(len));
+                }
+                ExecEntry::Op(Op::IORead(idx, len)) => {
+                    let idx = map[*idx]
+                        .as_canonical_u64()
+                        .try_into()
+                        .expect("Index is too big for an usize");
+                    let data = io_buffer.read(idx, *len);
+                    map.extend(data);
+                }
+                ExecEntry::Op(Op::IOWrite(data)) => io_buffer.write(data.iter().map(|v| map[*v])),
                 ExecEntry::Ctrl(Ctrl::Match(val_idx, cases, default)) => {
                     let val = &map[*val_idx];
                     if let Some(block) = cases.get(val) {

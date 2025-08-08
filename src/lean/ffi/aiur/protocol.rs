@@ -3,13 +3,21 @@ use multi_stark::{
     prover::Proof,
     types::{CommitmentParameters, FriParameters},
 };
-use std::ffi::{CString, c_void};
+use rustc_hash::{FxBuildHasher, FxHashMap};
+use std::{
+    ffi::{CString, c_void},
+    slice,
+};
 
 use crate::{
-    aiur::{G, synthesis::AiurSystem},
+    aiur::{
+        G,
+        execute::{IOBuffer, IOKeyInfo},
+        synthesis::AiurSystem,
+    },
     lean::{
         array::LeanArrayObject,
-        as_mut_unsafe,
+        as_mut_unsafe, as_ref_unsafe,
         boxed::BoxedU64,
         ctor::LeanCtorObject,
         ffi::{
@@ -19,6 +27,7 @@ use crate::{
         },
         sarray::LeanSArrayObject,
     },
+    lean_box,
 };
 
 #[unsafe(no_mangle)]
@@ -77,6 +86,10 @@ struct ProveData {
     claim_size: usize,
     claim: *const Vec<G>,
     proof: *const Proof,
+    io_buffer: *const IOBuffer,
+    io_data_size: usize,
+    io_map_size: usize,
+    io_keys_sizes: *const usize,
 }
 
 #[unsafe(no_mangle)]
@@ -90,8 +103,40 @@ extern "C" fn rs_aiur_proof_free(ptr: *mut Proof) {
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn rs_aiur_prove_data_io_buffer_free(prove_data: &ProveData) {
+    let boxed_io_keys_sizes = unsafe {
+        let slice = slice::from_raw_parts_mut(
+            prove_data.io_keys_sizes as *mut usize,
+            prove_data.io_map_size,
+        );
+        Box::from_raw(slice)
+    };
+    drop(boxed_io_keys_sizes);
+    drop_raw(prove_data.io_buffer as *mut ProveData);
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rs_aiur_prove_data_free(ptr: *mut ProveData) {
     drop_raw(ptr);
+}
+
+fn lean_array_to_io_buffer_map(array: &LeanArrayObject) -> FxHashMap<Vec<G>, IOKeyInfo> {
+    let array_data = array.data();
+    let mut map = FxHashMap::with_capacity_and_hasher(array_data.len(), FxBuildHasher);
+    for ptr in array_data {
+        let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
+        let [key_ptr, info_ptr] = ctor.objs();
+        let key_array: &LeanArrayObject = as_ref_unsafe(key_ptr.cast());
+        let key = key_array.to_vec(lean_unbox_g);
+        let info_ctor: &LeanCtorObject = as_ref_unsafe(info_ptr.cast());
+        let [idx_ptr, len_ptr] = info_ctor.objs();
+        let info = IOKeyInfo {
+            idx: lean_unbox_nat_as_usize(idx_ptr),
+            len: lean_unbox_nat_as_usize(len_ptr),
+        };
+        map.insert(key, info);
+    }
+    map
 }
 
 #[unsafe(no_mangle)]
@@ -100,28 +145,67 @@ extern "C" fn rs_aiur_system_prove(
     fri_parameters: &LeanCtorObject,
     fun_idx: *const c_void,
     args: &LeanArrayObject,
+    io_data: &LeanArrayObject,
+    io_map: &LeanArrayObject,
 ) -> *const ProveData {
     let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
     let fun_idx = lean_unbox_nat_as_usize(fun_idx);
     let args = args.to_vec(lean_unbox_g);
-    let (claim, proof) = aiur_system.prove(fri_parameters, fun_idx, &args);
+    let io_data = io_data.to_vec(lean_unbox_g);
+    let io_map = lean_array_to_io_buffer_map(io_map);
+    let mut io_buffer = IOBuffer {
+        data: io_data,
+        map: io_map,
+    };
+    let (claim, proof) = aiur_system.prove(fri_parameters, fun_idx, &args, &mut io_buffer);
     let claim_size = claim.len();
+    let io_keys_sizes_boxed: Box<[usize]> = io_buffer.map.keys().map(Vec::len).collect();
+    let io_keys_sizes = io_keys_sizes_boxed.as_ptr();
+    std::mem::forget(io_keys_sizes_boxed);
+    let io_data_size = io_buffer.data.len();
+    let io_map_size = io_buffer.map.len();
     let prove_data = ProveData {
         claim_size,
         claim: to_raw(claim),
         proof: to_raw(proof),
+        io_buffer: to_raw(io_buffer),
+        io_data_size,
+        io_map_size,
+        io_keys_sizes,
     };
     to_raw(prove_data)
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn rs_set_aiur_claim_args(claim_array: &mut LeanArrayObject, claim: &Vec<G>) {
-    let claim_data = claim_array.data();
-    assert_eq!(claim_data.len(), claim.len());
-    claim_data.iter().zip(claim).for_each(|(ptr, g)| {
+extern "C" fn rs_set_array_g_values(array: &LeanArrayObject, values: &Vec<G>) {
+    let array_values = array.data();
+    assert_eq!(array_values.len(), values.len());
+    array_values.iter().zip(values).for_each(|(ptr, g)| {
         let boxed_u64 = as_mut_unsafe(*ptr as *mut BoxedU64);
         boxed_u64.value = g.as_canonical_u64();
     });
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_set_aiur_io_data_values(io_data_array: &LeanArrayObject, io_buffer: &IOBuffer) {
+    rs_set_array_g_values(io_data_array, &io_buffer.data);
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_set_aiur_io_map_values(io_map_array: &LeanArrayObject, io_buffer: &IOBuffer) {
+    let io_map_values = io_map_array.data();
+    assert_eq!(io_map_values.len(), io_buffer.map.len());
+    io_map_values
+        .iter()
+        .zip(&io_buffer.map)
+        .for_each(|(ptr, (key, info))| {
+            let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
+            let [key_array, key_info] = ctor.objs();
+            rs_set_array_g_values(as_mut_unsafe(key_array as *mut LeanArrayObject), key);
+
+            let key_info_ctor: &mut LeanCtorObject = as_mut_unsafe(key_info as *mut _);
+            key_info_ctor.set_objs(&[lean_box!(info.idx), lean_box!(info.len)]);
+        });
 }
 
 #[unsafe(no_mangle)]
