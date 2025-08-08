@@ -16,11 +16,11 @@ def toplevel := ⟦
   }
 
   fn sum(x: G, y: G) -> G {
-    add(x, y)
+    x + y
   }
 
   fn prod(x: G, y: G) -> G {
-    mul(x, y)
+    x * y
   }
 
   fn store_and_load(x: G) -> G {
@@ -89,7 +89,7 @@ def toplevel := ⟦
   fn factorial(n: G) -> G {
     match n {
       0 => 1,
-      _ => mul(n, factorial(sub(n, 1))),
+      _ => n * factorial(n - 1),
     }
   }
 
@@ -97,12 +97,12 @@ def toplevel := ⟦
     match n {
       0 => 1,
       _ =>
-        let n_minus_1 = sub(n, 1);
+        let n_minus_1 = n - 1;
         match n_minus_1 {
           0 => 1,
           _ =>
-            let n_minus_2 = sub(n_minus_1, 1);
-            add(fibonacci(n_minus_1), fibonacci(n_minus_2)),
+            let n_minus_2 = n_minus_1 - 1;
+            fibonacci(n_minus_1) + fibonacci(n_minus_2),
         },
     }
   }
