@@ -44,6 +44,7 @@ inductive Pattern
   | ref : Global → List Pattern → Pattern
   | field : G → Pattern
   | tuple : Array Pattern → Pattern
+  | array : Array Pattern → Pattern
   | or : Pattern → Pattern → Pattern
   deriving Repr, BEq, Hashable, Inhabited
 

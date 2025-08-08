@@ -116,6 +116,16 @@ def toplevel := ⟦
     let right = as[3 .. 5];
     [left[1], right[0]]
   }
+
+  fn deconstruct_tuple(as: (G, G, G, G, G)) -> (G, G) {
+    let (_, b, _, d, _) = as;
+    (b, d)
+  }
+
+  fn deconstruct_array(as: [G; 5]) -> [G; 2] {
+    let [_, b, _, d, _] = as;
+    [b, d]
+  }
 ⟧
 
 structure TestCase where
@@ -145,6 +155,8 @@ def testCases : List TestCase := [
     ⟨`fibonacci, #[6], #[13]⟩,
     ⟨`projections, #[1, 2, 3, 4, 5], #[2, 4]⟩,
     ⟨`slice_and_get, #[1, 2, 3, 4, 5], #[2, 4]⟩,
+    ⟨`deconstruct_tuple, #[1, 2, 3, 4, 5], #[2, 4]⟩,
+    ⟨`deconstruct_array, #[1, 2, 3, 4, 5], #[2, 4]⟩,
   ]
 
 def commitmentParameters : Aiur.CommitmentParameters := {

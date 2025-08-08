@@ -287,6 +287,9 @@ where
     | (.tuple pats, .tuple typs) => do
       unless pats.size == typs.size do throw $ .incompatiblePattern pat typ
       pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
+    | (.array pats, .array innerTyp n) => do
+      unless pats.size == n do throw $ .incompatiblePattern pat typ
+      pats.foldlM (init := []) fun acc pat => acc.append <$> aux pat innerTyp
     | (.ref funcName [], typ@(.function ..)) => do
       let ctx ← read
       let some (.function function) := ctx.decls.getByKey funcName | throw $ .incompatiblePattern pat typ
@@ -308,16 +311,6 @@ where
       let bind' ← aux pat' typ
       if bind != bind' then throw $ .differentBindings bind bind' else pure bind
     | _ => throw $ .incompatiblePattern pat typ
-
--- partial def inferNumber (term : Term) : CheckM (Typ × TypedTermInner) := do
---   let (typ, inner) ← inferNoEscape term
---   match typ with
---   | .primitive .u1
---   | .primitive .u8
---   | .primitive .u16
---   | .primitive .u32
---   | .primitive .u64 => pure (typ, inner)
---   | _ => throw $ .nonNumeric typ
 
 partial def inferTuple (term : Term) : CheckM (Array Typ × TypedTermInner) := do
   let (typ, inner) ← inferNoEscape term
