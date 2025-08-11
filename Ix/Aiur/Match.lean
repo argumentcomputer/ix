@@ -10,6 +10,7 @@ inductive SPattern
   | field : G → SPattern
   | ref : Global → Array Local → SPattern
   | tuple : Array Local → SPattern
+  | array : Array Local → SPattern
   deriving BEq, Hashable, Inhabited
 
 structure Clause where
@@ -67,6 +68,10 @@ def dnfProd (branches: List $ Pattern × UniqTerm) (body : ExtTerm) : CompilerM 
       let (vars, guards) ← flattenArgs args
       let clause := ⟨.tuple vars, guards, term⟩
       aux renames (clauses.push clause) rest body
+    | (.array args, term) :: rest => do
+      let (vars, guards) ← flattenArgs args
+      let clause := ⟨.array vars, guards, term⟩
+      aux renames (clauses.push clause) rest body
     | (.ref global args, term) :: rest => do
       let (vars, guards) ← flattenArgs args.toArray
       let clause := ⟨.ref global vars, guards, term⟩
@@ -91,6 +96,7 @@ def modifyDiagnostics (f : Diagnostics → Diagnostics) : CompilerM Unit :=
 def patTypeLength (decls : Decls) : SPattern → Nat
   | .field _ => gSize.toNat
   | .tuple _ => 1
+  | .array _ => 1
   | .ref global _ => typeLookup global |>.constructors.length
 where
   typeLookup (global : Global) :=
@@ -193,6 +199,7 @@ def spatternToPattern : SPattern → Pattern
   | .field g => .field g
   | .ref global vars => .ref global (vars.map .var).toList
   | .tuple vars => .tuple (vars.map .var)
+  | .array vars => .array (vars.map .var)
 
 mutual
 

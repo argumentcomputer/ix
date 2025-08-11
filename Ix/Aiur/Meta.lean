@@ -13,6 +13,7 @@ syntax "_"                                   : pattern
 syntax ident "(" pattern (", " pattern)* ")" : pattern
 syntax num                                   : pattern
 syntax "(" pattern (", " pattern)* ")"       : pattern
+syntax "[" pattern (", " pattern)* "]"       : pattern
 syntax pattern "|" pattern                   : pattern
 
 def elabListCore (head : α) (tail : Array α) (elabFn : α → TermElabM Expr)
@@ -53,6 +54,8 @@ partial def elabPattern : ElabStxCat `pattern
   | `(pattern| $n:num) => do mkAppM ``Pattern.field #[← elabG n]
   | `(pattern| ($p:pattern $[, $ps:pattern]*)) => do
     mkAppM ``Pattern.tuple #[← elabList p ps elabPattern ``Pattern true]
+  | `(pattern| [$p:pattern $[, $ps:pattern]*]) => do
+    mkAppM ``Pattern.array #[← elabList p ps elabPattern ``Pattern true]
   | `(pattern| $p₁:pattern | $p₂:pattern) => do
     mkAppM ``Pattern.or #[← elabPattern p₁, ← elabPattern p₂]
   | stx => throw $ .error stx "Invalid syntax for pattern"
@@ -60,6 +63,7 @@ partial def elabPattern : ElabStxCat `pattern
 declare_syntax_cat                               typ
 syntax "G"                                     : typ
 syntax "(" typ (", " typ)* ")"                 : typ
+syntax "[" typ "; " num "]"                    : typ
 syntax "&" typ                                 : typ
 syntax ("." noWs)? ident                       : typ
 syntax "fn" "(" ")" " -> " typ                 : typ
@@ -69,6 +73,8 @@ partial def elabTyp : ElabStxCat `typ
   | `(typ| G) => pure $ mkConst ``Typ.field
   | `(typ| ($t:typ $[, $ts:typ]*)) => do
     mkAppM ``Typ.tuple #[← elabList t ts elabTyp ``Typ true]
+  | `(typ| [$t:typ; $n:num]) => do
+    mkAppM ``Typ.array #[← elabTyp t, mkNatLit n.getNat]
   | `(typ| &$t:typ) => do
     mkAppM ``Typ.pointer #[← elabTyp t]
   | `(typ| $[.]?$i:ident) => do
@@ -84,16 +90,18 @@ declare_syntax_cat                                          trm
 syntax ("." noWs)? ident                                  : trm
 syntax num                                                : trm
 syntax "(" trm (", " trm)* ")"                            : trm
+syntax "[" trm (", " trm)* "]"                            : trm
 syntax "return " trm                                      : trm
 syntax "let " pattern " = " trm "; " trm                  : trm
 syntax "match " trm " { " (pattern " => " trm ", ")+ " }" : trm
 syntax ("." noWs)? ident "(" ")"                          : trm
 syntax ("." noWs)? ident "(" trm (", " trm)* ")"          : trm
-syntax "add" "(" trm ", " trm ")"                         : trm
-syntax "sub" "(" trm ", " trm ")"                         : trm
-syntax "mul" "(" trm ", " trm ")"                         : trm
-syntax "get" "(" trm ", " num ")"                         : trm
-syntax "slice" "(" trm ", " num ", " num ")"              : trm
+syntax:50 trm " + " trm                                   : trm
+syntax:50 trm " - " trm                                   : trm
+syntax trm " * " trm:51                                   : trm
+syntax "proj" "(" trm ", " num ")"                        : trm
+syntax trm "[" num "]"                                    : trm
+syntax trm "[" num ".." num "]"                           : trm
 syntax "store" "(" trm ")"                                : trm
 syntax "load" "(" trm ")"                                 : trm
 syntax "ptr_val" "(" trm ")"                              : trm
@@ -114,6 +122,9 @@ partial def elabTrm : ElabStxCat `trm
   | `(trm| ($t:trm $[, $ts:trm]*)) => do
     let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term true]
     mkAppM ``Term.data #[data]
+  | `(trm| [$t:trm $[, $ts:trm]*]) => do
+    let data ← mkAppM ``Data.array #[← elabList t ts elabTrm ``Term true]
+    mkAppM ``Term.data #[data]
   | `(trm| return $t:trm) => do
     mkAppM ``Term.ret #[← elabTrm t]
   | `(trm| let $p:pattern = $t:trm; $t':trm) => do
@@ -130,16 +141,18 @@ partial def elabTrm : ElabStxCat `trm
   | `(trm| $[.]?$f:ident ($a:trm $[, $as:trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
     mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term]
-  | `(trm| add($a:trm, $b:trm)) => do
+  | `(trm| $a:trm + $b:trm) => do
     mkAppM ``Term.add #[← elabTrm a, ← elabTrm b]
-  | `(trm| sub($a:trm, $b:trm)) => do
+  | `(trm| $a:trm - $b:trm) => do
     mkAppM ``Term.sub #[← elabTrm a, ← elabTrm b]
-  | `(trm| mul($a:trm, $b:trm)) => do
+  | `(trm| $a:trm * $b:trm) => do
     mkAppM ``Term.mul #[← elabTrm a, ← elabTrm b]
-  | `(trm| get($a:trm, $i:num)) => do
-    mkAppM ``Term.get #[← elabTrm a, toExpr i.getNat]
-  | `(trm| slice($a:trm, $i:num, $j:num)) => do
-    mkAppM ``Term.slice #[← elabTrm a, toExpr i.getNat, toExpr j.getNat]
+  | `(trm| proj($a:trm, $i:num)) => do
+    mkAppM ``Term.proj #[← elabTrm a, toExpr i.getNat]
+  | `(trm| $t:trm[$i:num]) => do
+    mkAppM ``Term.get #[← elabTrm t, toExpr i.getNat]
+  | `(trm| $t:trm[$i:num .. $j:num]) => do
+    mkAppM ``Term.slice #[← elabTrm t, toExpr i.getNat, toExpr j.getNat]
   | `(trm| store($a:trm)) => do
     mkAppM ``Term.store #[← elabTrm a]
   | `(trm| load($a:trm)) => do
