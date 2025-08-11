@@ -2,13 +2,13 @@ use crate::ixon::serialize::Serialize;
 use blake3::Hash;
 use std::cmp::{Ordering, PartialOrd};
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Address {
   pub hash: Hash,
 }
 
 impl Serialize for Address {
-  fn put(self, buf: &mut Vec<u8>) {
+  fn put(&self, buf: &mut Vec<u8>) {
     buf.extend_from_slice(self.hash.as_bytes())
   }
 
@@ -32,5 +32,21 @@ impl Ord for Address {
 impl PartialOrd for Address {
   fn partial_cmp(&self, other: &Address) -> Option<Ordering> {
     Some(self.cmp(other))
+  }
+}
+
+#[cfg(test)]
+pub mod tests {
+  use super::*;
+  use quickcheck::{Arbitrary, Gen};
+
+  impl Arbitrary for Address {
+    fn arbitrary(g: &mut Gen) -> Self {
+      let mut bytes = [0u8; 32];
+      for b in &mut bytes {
+        *b = u8::arbitrary(g);
+      }
+      Address { hash: Hash::from_slice(&bytes).unwrap() }
+    }
   }
 }

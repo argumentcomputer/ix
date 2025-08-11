@@ -1,11 +1,11 @@
 pub trait Serialize: Sized {
-  fn put(self, buf: &mut Vec<u8>);
+  fn put(&self, buf: &mut Vec<u8>);
   fn get(buf: &mut &[u8]) -> Result<Self, String>;
 }
 
 impl Serialize for u8 {
-  fn put(self, buf: &mut Vec<u8>) {
-    buf.push(self)
+  fn put(&self, buf: &mut Vec<u8>) {
+    buf.push(*self)
   }
 
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
@@ -20,7 +20,7 @@ impl Serialize for u8 {
 }
 
 impl Serialize for u16 {
-  fn put(self, buf: &mut Vec<u8>) {
+  fn put(&self, buf: &mut Vec<u8>) {
     buf.extend_from_slice(&self.to_le_bytes());
   }
 
@@ -36,7 +36,7 @@ impl Serialize for u16 {
 }
 
 impl Serialize for u32 {
-  fn put(self, buf: &mut Vec<u8>) {
+  fn put(&self, buf: &mut Vec<u8>) {
     buf.extend_from_slice(&self.to_le_bytes());
   }
 
@@ -52,7 +52,7 @@ impl Serialize for u32 {
 }
 
 impl Serialize for u64 {
-  fn put(self, buf: &mut Vec<u8>) {
+  fn put(&self, buf: &mut Vec<u8>) {
     buf.extend_from_slice(&self.to_le_bytes());
   }
 
@@ -71,10 +71,10 @@ impl Serialize for u64 {
 }
 
 impl Serialize for bool {
-  fn put(self, buf: &mut Vec<u8>) {
+  fn put(&self, buf: &mut Vec<u8>) {
     match self {
-      false => Serialize::put(0u8, buf),
-      true => Serialize::put(1u8, buf),
+      false => Serialize::put(&0u8, buf),
+      true => Serialize::put(&1u8, buf),
     }
   }
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
@@ -126,6 +126,44 @@ mod tests {
   use super::*;
   use quickcheck::{Arbitrary, Gen};
 
+  #[test]
+  fn unit_u64_trimmed() {
+    fn test(input: u64, expected: Vec<u8>) -> bool {
+      let mut tmp = Vec::new();
+      let n = u64_byte_count(input);
+      u64_put_trimmed_le(input, &mut tmp);
+      if tmp != expected {
+        return false;
+      }
+      match u64_get_trimmed_le(n as usize, &mut tmp.as_slice()) {
+        Ok(out) => input == out,
+        Err(e) => {
+          println!("err: {e}");
+          false
+        },
+      }
+    }
+    assert!(test(0x0, vec![]));
+    assert!(test(0x01, vec![0x01]));
+    assert!(test(0x0000000000000100, vec![0x00, 0x01]));
+    assert!(test(0x0000000000010000, vec![0x00, 0x00, 0x01]));
+    assert!(test(0x0000000001000000, vec![0x00, 0x00, 0x00, 0x01]));
+    assert!(test(0x0000000100000000, vec![0x00, 0x00, 0x00, 0x00, 0x01]));
+    assert!(test(0x0000010000000000, vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x01]));
+    assert!(test(
+      0x0001000000000000,
+      vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
+    ));
+    assert!(test(
+      0x0100000000000000,
+      vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
+    ));
+    assert!(test(
+      0x0102030405060708,
+      vec![0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]
+    ));
+  }
+
   #[quickcheck]
   fn prop_u64_trimmed_le_readback(x: u64) -> bool {
     let mut buf = Vec::new();
@@ -134,7 +172,7 @@ mod tests {
     match u64_get_trimmed_le(n as usize, &mut buf.as_slice()) {
       Ok(y) => x == y,
       Err(e) => {
-        println!("err: {}", e);
+        println!("err: {e}");
         false
       },
     }
