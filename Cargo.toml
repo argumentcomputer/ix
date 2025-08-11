@@ -8,7 +8,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 anyhow = "1"
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "333f41f21034b0b5cda2c5682a6b9cb7ac085ef3" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "d49512f9a9dc5ebe780af52c7397235ddedcbcc1" }
 rayon = "1"
 rustc-hash = "2"
 indexmap = { version = "2", features = ["rayon"] }
