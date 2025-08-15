@@ -8,7 +8,6 @@ use num_bigint::BigUint;
 
 // 0xTTTT_LXXX
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(C)]
 pub enum Expr {
   // 0x0, ^1
   Vari(u64),
@@ -59,6 +58,31 @@ impl Expr {
       u64_get_trimmed_le((small + 1) as usize, buf)
     } else {
       Ok(small as u64)
+    }
+  }
+
+  pub fn put_array<S: Serialize>(xs: &[S], buf: &mut Vec<u8>) {
+    Self::put_tag(0xB, xs.len() as u64, buf);
+    for x in xs {
+      x.put(buf)
+    }
+  }
+  pub fn get_array<S: Serialize>(buf: &mut &[u8]) -> Result<Vec<S>, String> {
+    let tag_byte = u8::get(buf)?;
+    let tag = tag_byte >> 4;
+    let small_size = tag_byte & 0b111;
+    let is_large = tag_byte & 0b1000 != 0;
+    match tag {
+      0xB => {
+        let len = Self::get_tag(is_large, small_size, buf)?;
+        let mut vec = vec![];
+        for _ in 0..len {
+          let s = S::get(buf)?;
+          vec.push(s);
+        }
+        Ok(vec)
+      },
+      x => Err(format!("get array invalid tag {x}")),
     }
   }
 }
@@ -243,7 +267,7 @@ impl Serialize for Expr {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
   use super::*;
   use crate::ixon::common::tests::{gen_range, next_case};
   use crate::ixon::nat::tests::*;

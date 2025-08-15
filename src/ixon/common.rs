@@ -1,17 +1,3 @@
-pub enum BinderInfo {
-  Default,
-  Implicit,
-  StrictImplicit,
-  InstImplicit,
-  AuxDecl,
-}
-
-pub enum ReducibilityHints {
-  Opaque,
-  Abbrev,
-  Regular,
-}
-
 #[cfg(test)]
 pub mod tests {
   use quickcheck::{Arbitrary, Gen};

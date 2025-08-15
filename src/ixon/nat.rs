@@ -1,14 +1,29 @@
+use crate::ixon::serialize::Serialize;
+use crate::ixon::*;
 use num_bigint::BigUint;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nat(pub BigUint);
 
-//impl Nat {}
+impl Nat {}
+
+impl Serialize for Nat {
+  fn put(&self, buf: &mut Vec<u8>) {
+    Ixon::Natl(self.clone()).put(buf)
+  }
+  fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    match Ixon::get(buf) {
+      Ok(Ixon::Natl(x)) => Ok(x),
+      Ok(x) => Err(format!("get Nat invalid {x:?}")),
+      Err(e) => Err(e),
+    }
+  }
+}
 
 #[cfg(test)]
 pub mod tests {
   use super::*;
-  use crate::ixon::common::tests::gen_range;
+  use crate::ixon::tests::gen_range;
   use quickcheck::{Arbitrary, Gen};
 
   pub fn arbitrary_nat(g: &mut Gen, size: usize) -> Nat {

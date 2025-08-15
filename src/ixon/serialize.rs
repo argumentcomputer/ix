@@ -1,3 +1,5 @@
+use crate::ixon::*;
+
 pub trait Serialize: Sized {
   fn put(&self, buf: &mut Vec<u8>);
   fn get(buf: &mut &[u8]) -> Result<Self, String>;
@@ -73,108 +75,44 @@ impl Serialize for u64 {
 impl Serialize for bool {
   fn put(&self, buf: &mut Vec<u8>) {
     match self {
-      false => Serialize::put(&0u8, buf),
-      true => Serialize::put(&1u8, buf),
+      false => buf.push(0),
+      true => buf.push(1),
     }
   }
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    match <u8 as Serialize>::get(buf) {
-      Ok(0u8) => Ok(false),
-      Ok(1u8) => Ok(true),
-      Ok(x) => Err(format!("get bool invalid {x}")),
-      Err(e) => Err(e),
-    }
-  }
-}
-
-pub fn u64_byte_count(x: u64) -> u8 {
-  match x {
-    0 => 0,
-    x if x < 0x0000000000000100 => 1,
-    x if x < 0x0000000000010000 => 2,
-    x if x < 0x0000000001000000 => 3,
-    x if x < 0x0000000100000000 => 4,
-    x if x < 0x0000010000000000 => 5,
-    x if x < 0x0001000000000000 => 6,
-    x if x < 0x0100000000000000 => 7,
-    _ => 8,
-  }
-}
-
-pub fn u64_put_trimmed_le(x: u64, buf: &mut Vec<u8>) {
-  let n = u64_byte_count(x) as usize;
-  buf.extend_from_slice(&x.to_le_bytes()[..n])
-}
-
-pub fn u64_get_trimmed_le(len: usize, buf: &mut &[u8]) -> Result<u64, String> {
-  let mut res = [0u8; 8];
-  if len > 8 {
-    return Err("get trimmed_le_64 len > 8".to_string());
-  }
-  match buf.split_at_checked(len) {
-    Some((head, rest)) => {
-      *buf = rest;
-      res[..len].copy_from_slice(head);
-      Ok(u64::from_le_bytes(res))
-    },
-    None => Err("get trimmed_le_u64 EOF".to_string()),
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use quickcheck::{Arbitrary, Gen};
-
-  #[test]
-  fn unit_u64_trimmed() {
-    fn test(input: u64, expected: Vec<u8>) -> bool {
-      let mut tmp = Vec::new();
-      let n = u64_byte_count(input);
-      u64_put_trimmed_le(input, &mut tmp);
-      if tmp != expected {
-        return false;
-      }
-      match u64_get_trimmed_le(n as usize, &mut tmp.as_slice()) {
-        Ok(out) => input == out,
-        Err(e) => {
-          println!("err: {e}");
-          false
-        },
-      }
-    }
-    assert!(test(0x0, vec![]));
-    assert!(test(0x01, vec![0x01]));
-    assert!(test(0x0000000000000100, vec![0x00, 0x01]));
-    assert!(test(0x0000000000010000, vec![0x00, 0x00, 0x01]));
-    assert!(test(0x0000000001000000, vec![0x00, 0x00, 0x00, 0x01]));
-    assert!(test(0x0000000100000000, vec![0x00, 0x00, 0x00, 0x00, 0x01]));
-    assert!(test(0x0000010000000000, vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x01]));
-    assert!(test(
-      0x0001000000000000,
-      vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
-    ));
-    assert!(test(
-      0x0100000000000000,
-      vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
-    ));
-    assert!(test(
-      0x0102030405060708,
-      vec![0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]
-    ));
-  }
-
-  #[quickcheck]
-  fn prop_u64_trimmed_le_readback(x: u64) -> bool {
-    let mut buf = Vec::new();
-    let n = u64_byte_count(x);
-    u64_put_trimmed_le(x, &mut buf);
-    match u64_get_trimmed_le(n as usize, &mut buf.as_slice()) {
-      Ok(y) => x == y,
-      Err(e) => {
-        println!("err: {e}");
-        false
+    match buf.split_at_checked(1) {
+      Some((head, rest)) => {
+        *buf = rest;
+        match head[0] {
+          0 => Ok(false),
+          1 => Ok(true),
+          x => Err(format!("get bool invalid {x}")),
+        }
       },
+      None => Err("get bool EOF".to_string()),
     }
+  }
+}
+
+impl<S: Serialize> Serialize for Vec<S> {
+  fn put(&self, buf: &mut Vec<u8>) {
+    Ixon::put_array(self, buf)
+  }
+
+  fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Ixon::get_array(buf)
+  }
+}
+
+impl<X: Serialize, Y: Serialize> Serialize for (X, Y) {
+  fn put(&self, buf: &mut Vec<u8>) {
+    Serialize::put(&self.0, buf);
+    Serialize::put(&self.1, buf);
+  }
+
+  fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    let x = Serialize::get(buf)?;
+    let y = Serialize::get(buf)?;
+    Ok((x, y))
   }
 }

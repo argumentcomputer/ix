@@ -1,10 +1,9 @@
 use crate::ixon::address::Address;
-use crate::ixon::claim::{Claim, Claims, Proof};
-use crate::ixon::expr::Expr;
-use crate::ixon::meta::Metadata;
 use crate::ixon::nat::Nat;
-use crate::ixon::serialize::{pack_bools, unpack_bools, Serialize};
+use crate::ixon::serialize::Serialize;
+use crate::ixon::*;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuotKind {
   Type,
   Ctor,
@@ -12,55 +11,63 @@ pub enum QuotKind {
   Ind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Quotient {
   pub lvls: Nat,
-  pub typ: Box<Expr>,
+  pub typ: Address,
   pub kind: QuotKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Axiom {
   pub lvls: Nat,
-  pub typ: Box<Expr>,
+  pub typ: Address,
   pub is_unsafe: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DefKind {
   Definition,
   Opaque,
   Theorem,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DefSafety {
   Unsafe,
   Safe,
   Partial,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Definition {
   pub lvls: Nat,
-  pub typ: Box<Expr>,
+  pub typ: Address,
   pub mode: DefKind,
-  pub value: Box<Expr>,
+  pub value: Address,
   pub safety: DefSafety,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Constructor {
   pub lvls: Nat,
-  pub typ: Box<Expr>,
+  pub typ: Address,
   pub cidx: Nat,
   pub params: Nat,
   pub fields: Nat,
   pub is_unsafe: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecursorRule {
   pub fields: Nat,
-  pub rhs: Box<Expr>,
+  pub rhs: Address,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recursor {
   pub lvls: Nat,
-  pub typ: Box<Expr>,
+  pub typ: Address,
   pub params: Nat,
   pub indices: Nat,
   pub motives: Nat,
@@ -70,9 +77,10 @@ pub struct Recursor {
   pub is_unsafe: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Inductive {
   pub lvls: Nat,
-  pub typ: Box<Expr>,
+  pub typ: Address,
   pub params: Nat,
   pub indices: Nat,
   pub ctors: Vec<Constructor>,
@@ -83,186 +91,36 @@ pub struct Inductive {
   pub is_unsafe: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InductiveProj {
   pub block: Address,
   pub idx: Nat,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstructorProj {
   pub block: Address,
   pub idx: Nat,
   pub cidx: Nat,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecursorProj {
   pub block: Address,
   pub idx: Nat,
   pub ridx: Nat,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionProj {
   pub block: Address,
   pub idx: Nat,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comm {
   pub secret: Address,
   pub payload: Address,
-}
-
-pub enum Const {
-  // 0xC0
-  Defn(Definition),
-  // 0xC1
-  Axio(Axiom),
-  // 0xC2
-  Quot(Quotient),
-  // 0xC3
-  CtorProj(ConstructorProj),
-  // 0xC4
-  RecrProj(RecursorProj),
-  // 0xC5
-  IndcProj(InductiveProj),
-  // 0xC6
-  DefnProj(DefinitionProj),
-  // 0xC7
-  MutDef(Vec<Definition>),
-  // 0xC8
-  MutInd(Vec<Inductive>),
-  // 0xC9
-  Meta(Metadata),
-  // 0xCA
-  Proof(Proof),
-  // 0xCB
-  Claim(Claim),
-  // 0xCC
-  Comm(Comm),
-  // 0xCD
-  Env(Claims),
-}
-
-pub enum Ixon {
-  // Expressions
-  EVar(u64),                              // 0x0X
-  ERef(Address, Vec<Ixon>),               // 0x1X
-  ERec(u64, Vec<Ixon>),                   // 0x2X
-  EApp(Box<Ixon>, Box<Ixon>, Vec<Ixon>),  // 0x3X
-  ELam(Vec<Ixon>, Box<Ixon>),             // 0x4X
-  EAll(Vec<Ixon>, Box<Ixon>),             // 0x5X
-  EPrj(Address, u64, Box<Ixon>),          // 0x6X
-  EStr(String),                           // 0x7X
-  ENat(Nat),                              // 0x8X
-  ELet(Box<Ixon>, Box<Ixon>, Box<Ixon>),  // 0xE0
-  ELetD(Box<Ixon>, Box<Ixon>, Box<Ixon>), // 0xE1
-  // Arrays
-  Array(Vec<Ixon>), //0xA
-  // Constants
-  Defn(Definition),          // 0xC0
-  Axio(Axiom),               // 0xC1
-  Quot(Quotient),            // 0xC2
-  CtorProj(ConstructorProj), // 0xC3
-  RecrProj(RecursorProj),    // 0xC4
-  IndcProj(InductiveProj),   // 0xC5
-  DefnProj(DefinitionProj),  // 0xC6
-  MutDef(Vec<Definition>),   // 0xC7
-  MutInd(Vec<Inductive>),    // 0xC8
-  Meta(Metadata),            // 0xC9
-  Proof(Proof),              // 0xCA
-  Claim(Claim),              // 0xCB
-  Comm(Comm),                // 0xCC
-  Env(Claims),               // 0xCD
-  // Universes
-  UVar(u64),                   // 0x9X
-  UConst(u64),                 // 0xBX
-  UAdd(u64, Box<Ixon>),        // 0xDX
-  UMax(Box<Ixon>, Box<Ixon>),  // 0xE2
-  UIMax(Box<Ixon>, Box<Ixon>), // 0xE3
-}
-
-impl Const {}
-
-impl Serialize for Const {
-  fn put(&self, buf: &mut Vec<u8>) {
-    match self {
-      Self::Defn(x) => {
-        u8::put(&0xC0, buf);
-        x.put(buf);
-      },
-      Self::Axio(x) => {
-        u8::put(&0xC1, buf);
-        x.put(buf);
-      },
-      Self::Quot(x) => {
-        u8::put(&0xC2, buf);
-        x.put(buf);
-      },
-      Self::CtorProj(x) => {
-        u8::put(&0xC3, buf);
-        x.put(buf);
-      },
-      Self::RecrProj(x) => {
-        u8::put(&0xC4, buf);
-        x.put(buf);
-      },
-      Self::IndcProj(x) => {
-        u8::put(&0xC5, buf);
-        x.put(buf);
-      },
-      Self::DefnProj(x) => {
-        u8::put(&0xC6, buf);
-        x.put(buf);
-      },
-      Self::MutDef(x) => {
-        u8::put(&0xC7, buf);
-        Expr::put_array(x, buf);
-      },
-      Self::MutInd(x) => {
-        u8::put(&0xC8, buf);
-        Expr::put_array(x, buf);
-      },
-      Self::Meta(x) => {
-        u8::put(&0xC9, buf);
-        x.put(buf);
-      },
-      Self::Proof(x) => {
-        u8::put(&0xCA, buf);
-        x.put(buf);
-      },
-      Self::Claim(x) => {
-        u8::put(&0xCB, buf);
-        x.put(buf);
-      },
-      Self::Comm(x) => {
-        u8::put(&0xCC, buf);
-        x.put(buf);
-      },
-      Self::Env(x) => {
-        u8::put(&0xCD, buf);
-        x.put(buf);
-      },
-    }
-  }
-
-  fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let tag = u8::get(buf)?;
-    match tag {
-      0xC0 => Ok(Self::Defn(Definition::get(buf)?)),
-      0xC1 => Ok(Self::Axio(Axiom::get(buf)?)),
-      0xC2 => Ok(Self::Quot(Quotient::get(buf)?)),
-      0xC3 => Ok(Self::CtorProj(ConstructorProj::get(buf)?)),
-      0xC4 => Ok(Self::RecrProj(RecursorProj::get(buf)?)),
-      0xC5 => Ok(Self::IndcProj(InductiveProj::get(buf)?)),
-      0xC6 => Ok(Self::DefnProj(DefinitionProj::get(buf)?)),
-      0xC7 => Ok(Self::MutDef(Expr::get_array(buf)?)),
-      0xC8 => Ok(Self::MutInd(Expr::get_array(buf)?)),
-      0xC9 => Ok(Self::Meta(Metadata::get(buf)?)),
-      0xCA => Ok(Self::Proof(Proof::get(buf)?)),
-      0xCB => Ok(Self::Claim(Claim::get(buf)?)),
-      0xCC => Ok(Self::Comm(Comm::get(buf)?)),
-      0xCD => Ok(Self::Env(Claims::get(buf)?)),
-      x => Err(format!("get Expr invalid tag {x}")),
-    }
-  }
 }
 
 impl Serialize for QuotKind {
@@ -301,9 +159,9 @@ impl Serialize for Quotient {
 
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let lvls = Nat::get(buf)?;
-    let typ = Expr::get(buf)?;
+    let typ = Address::get(buf)?;
     let kind = QuotKind::get(buf)?;
-    Ok(Quotient { lvls, typ: Box::new(typ), kind })
+    Ok(Quotient { lvls, typ, kind })
   }
 }
 
@@ -316,9 +174,9 @@ impl Serialize for Axiom {
 
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let lvls = Nat::get(buf)?;
-    let typ = Expr::get(buf)?;
+    let typ = Address::get(buf)?;
     let is_unsafe = bool::get(buf)?;
-    Ok(Axiom { lvls, typ: Box::new(typ), is_unsafe })
+    Ok(Axiom { lvls, typ, is_unsafe })
   }
 }
 
@@ -383,17 +241,11 @@ impl Serialize for Definition {
 
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let lvls = Nat::get(buf)?;
-    let typ = Expr::get(buf)?;
+    let typ = Address::get(buf)?;
     let mode = DefKind::get(buf)?;
-    let value = Expr::get(buf)?;
+    let value = Address::get(buf)?;
     let safety = DefSafety::get(buf)?;
-    Ok(Definition {
-      lvls,
-      typ: Box::new(typ),
-      mode,
-      value: Box::new(value),
-      safety,
-    })
+    Ok(Definition { lvls, typ, mode, value, safety })
   }
 }
 
@@ -409,19 +261,12 @@ impl Serialize for Constructor {
 
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let lvls = Nat::get(buf)?;
-    let typ = Expr::get(buf)?;
+    let typ = Address::get(buf)?;
     let cidx = Nat::get(buf)?;
     let params = Nat::get(buf)?;
     let fields = Nat::get(buf)?;
     let is_unsafe = bool::get(buf)?;
-    Ok(Constructor {
-      lvls,
-      typ: Box::new(typ),
-      cidx,
-      params,
-      fields,
-      is_unsafe,
-    })
+    Ok(Constructor { lvls, typ, cidx, params, fields, is_unsafe })
   }
 }
 
@@ -433,8 +278,8 @@ impl Serialize for RecursorRule {
 
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let fields = Nat::get(buf)?;
-    let rhs = Expr::get(buf)?;
-    Ok(RecursorRule { fields, rhs: Box::new(rhs) })
+    let rhs = Address::get(buf)?;
+    Ok(RecursorRule { fields, rhs })
   }
 }
 
@@ -446,22 +291,22 @@ impl Serialize for Recursor {
     self.indices.put(buf);
     self.motives.put(buf);
     self.minors.put(buf);
-    Expr::put_array(&self.rules, buf);
-    pack_bools(vec![self.k, self.is_unsafe]).put(buf);
+    self.rules.put(buf);
+    Ixon::pack_bools(vec![self.k, self.is_unsafe]).put(buf);
   }
 
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let lvls = Nat::get(buf)?;
-    let typ = Expr::get(buf)?;
+    let typ = Serialize::get(buf)?;
     let params = Nat::get(buf)?;
     let indices = Nat::get(buf)?;
     let motives = Nat::get(buf)?;
     let minors = Nat::get(buf)?;
-    let rules = Expr::get_array(buf)?;
-    let bools = unpack_bools(2, u8::get(buf)?);
+    let rules = Serialize::get(buf)?;
+    let bools = Ixon::unpack_bools(2, u8::get(buf)?);
     Ok(Recursor {
       lvls,
-      typ: Box::new(typ),
+      typ,
       params,
       indices,
       motives,
@@ -479,24 +324,24 @@ impl Serialize for Inductive {
     self.typ.put(buf);
     self.params.put(buf);
     self.indices.put(buf);
-    Expr::put_array(&self.ctors, buf);
-    Expr::put_array(&self.recrs, buf);
+    Serialize::put(&self.ctors, buf);
+    Serialize::put(&self.recrs, buf);
     self.nested.put(buf);
-    pack_bools(vec![self.recr, self.refl, self.is_unsafe]).put(buf);
+    Ixon::pack_bools(vec![self.recr, self.refl, self.is_unsafe]).put(buf);
   }
 
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let lvls = Nat::get(buf)?;
-    let typ = Expr::get(buf)?;
+    let typ = Address::get(buf)?;
     let params = Nat::get(buf)?;
     let indices = Nat::get(buf)?;
-    let ctors = Expr::get_array(buf)?;
-    let recrs = Expr::get_array(buf)?;
+    let ctors = Serialize::get(buf)?;
+    let recrs = Serialize::get(buf)?;
     let nested = Nat::get(buf)?;
-    let bools = unpack_bools(3, u8::get(buf)?);
+    let bools = Ixon::unpack_bools(3, u8::get(buf)?);
     Ok(Inductive {
       lvls,
-      typ: Box::new(typ),
+      typ,
       params,
       indices,
       ctors,
@@ -581,31 +426,179 @@ impl Serialize for Comm {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ixon::common::tests::{gen_range, next_case};
-  use crate::ixon::expr::tests::*;
-  use crate::ixon::nat::tests::*;
-  use crate::ixon::univ::tests::*;
+  use crate::ixon::tests::gen_range;
   use quickcheck::{Arbitrary, Gen};
 
   use std::ptr;
 
-  //impl Arbitrary for Expr {
-  //  fn arbitrary(g: &mut Gen) -> Self {
-  //    let ctx = gen_range(g, 0..4);
-  //    arbitrary_expr(g, ctx as u64)
-  //  }
-  //}
+  impl Arbitrary for QuotKind {
+    fn arbitrary(g: &mut Gen) -> Self {
+      let x = gen_range(g, 0..3);
+      match x {
+        0 => Self::Type,
+        1 => Self::Ctor,
+        2 => Self::Lift,
+        _ => Self::Ind,
+      }
+    }
+  }
 
-  //#[quickcheck]
-  //fn prop_expr_readback(x: Expr) -> bool {
-  //  let mut buf = Vec::new();
-  //  Expr::put(&x, &mut buf);
-  //  match Expr::get(&mut buf.as_slice()) {
-  //    Ok(y) => x == y,
-  //    Err(e) => {
-  //      println!("err: {e}");
-  //      false
-  //    },
-  //  }
-  //}
+  impl Arbitrary for Quotient {
+    fn arbitrary(g: &mut Gen) -> Self {
+      Self {
+        lvls: Nat::arbitrary(g),
+        typ: Address::arbitrary(g),
+        kind: QuotKind::arbitrary(g),
+      }
+    }
+  }
+
+  impl Arbitrary for Axiom {
+    fn arbitrary(g: &mut Gen) -> Self {
+      Self {
+        lvls: Nat::arbitrary(g),
+        typ: Address::arbitrary(g),
+        is_unsafe: bool::arbitrary(g),
+      }
+    }
+  }
+
+  impl Arbitrary for DefKind {
+    fn arbitrary(g: &mut Gen) -> Self {
+      let x = gen_range(g, 0..2);
+      match x {
+        0 => Self::Definition,
+        1 => Self::Opaque,
+        _ => Self::Theorem,
+      }
+    }
+  }
+
+  impl Arbitrary for DefSafety {
+    fn arbitrary(g: &mut Gen) -> Self {
+      let x = gen_range(g, 0..2);
+      match x {
+        0 => Self::Unsafe,
+        1 => Self::Safe,
+        _ => Self::Partial,
+      }
+    }
+  }
+
+  impl Arbitrary for Definition {
+    fn arbitrary(g: &mut Gen) -> Self {
+      Self {
+        lvls: Nat::arbitrary(g),
+        typ: Address::arbitrary(g),
+        mode: DefKind::arbitrary(g),
+        value: Address::arbitrary(g),
+        safety: DefSafety::arbitrary(g),
+      }
+    }
+  }
+
+  impl Arbitrary for Constructor {
+    fn arbitrary(g: &mut Gen) -> Self {
+      Self {
+        lvls: Nat::arbitrary(g),
+        typ: Address::arbitrary(g),
+        cidx: Nat::arbitrary(g),
+        params: Nat::arbitrary(g),
+        fields: Nat::arbitrary(g),
+        is_unsafe: bool::arbitrary(g),
+      }
+    }
+  }
+
+  impl Arbitrary for RecursorRule {
+    fn arbitrary(g: &mut Gen) -> Self {
+      Self { fields: Nat::arbitrary(g), rhs: Address::arbitrary(g) }
+    }
+  }
+
+  impl Arbitrary for Recursor {
+    fn arbitrary(g: &mut Gen) -> Self {
+      let x = gen_range(g, 0..9);
+      let mut rules = vec![];
+      for _ in 0..x {
+        rules.push(RecursorRule::arbitrary(g));
+      }
+      Self {
+        lvls: Nat::arbitrary(g),
+        typ: Address::arbitrary(g),
+        params: Nat::arbitrary(g),
+        indices: Nat::arbitrary(g),
+        motives: Nat::arbitrary(g),
+        minors: Nat::arbitrary(g),
+        rules,
+        k: bool::arbitrary(g),
+        is_unsafe: bool::arbitrary(g),
+      }
+    }
+  }
+
+  impl Arbitrary for Inductive {
+    fn arbitrary(g: &mut Gen) -> Self {
+      let x = gen_range(g, 0..9);
+      let y = gen_range(g, 0..9);
+      let mut ctors = vec![];
+      let mut recrs = vec![];
+      for _ in 0..x {
+        ctors.push(Constructor::arbitrary(g));
+      }
+      for _ in 0..y {
+        recrs.push(Recursor::arbitrary(g));
+      }
+      Self {
+        lvls: Nat::arbitrary(g),
+        typ: Address::arbitrary(g),
+        params: Nat::arbitrary(g),
+        indices: Nat::arbitrary(g),
+        ctors,
+        recrs,
+        nested: Nat::arbitrary(g),
+        recr: bool::arbitrary(g),
+        refl: bool::arbitrary(g),
+        is_unsafe: bool::arbitrary(g),
+      }
+    }
+  }
+
+  impl Arbitrary for InductiveProj {
+    fn arbitrary(g: &mut Gen) -> Self {
+      Self { block: Address::arbitrary(g), idx: Nat::arbitrary(g) }
+    }
+  }
+
+  impl Arbitrary for ConstructorProj {
+    fn arbitrary(g: &mut Gen) -> Self {
+      Self {
+        block: Address::arbitrary(g),
+        idx: Nat::arbitrary(g),
+        cidx: Nat::arbitrary(g),
+      }
+    }
+  }
+
+  impl Arbitrary for RecursorProj {
+    fn arbitrary(g: &mut Gen) -> Self {
+      Self {
+        block: Address::arbitrary(g),
+        idx: Nat::arbitrary(g),
+        ridx: Nat::arbitrary(g),
+      }
+    }
+  }
+
+  impl Arbitrary for DefinitionProj {
+    fn arbitrary(g: &mut Gen) -> Self {
+      Self { block: Address::arbitrary(g), idx: Nat::arbitrary(g) }
+    }
+  }
+
+  impl Arbitrary for Comm {
+    fn arbitrary(g: &mut Gen) -> Self {
+      Self { secret: Address::arbitrary(g), payload: Address::arbitrary(g) }
+    }
+  }
 }
