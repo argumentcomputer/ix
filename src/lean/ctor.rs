@@ -28,4 +28,9 @@ impl LeanCtorObject {
         ptrs.copy_from_slice(self.m_objs.slice(N));
         ptrs
     }
+
+    #[inline]
+    pub fn set_objs(&mut self, data: &[*const c_void]) {
+        self.m_objs.copy_from_slice(data);
+    }
 }

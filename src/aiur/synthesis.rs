@@ -14,6 +14,7 @@ use crate::aiur::{
     G,
     bytecode::{FunIdx, Toplevel},
     constraints::Constraints,
+    execute::IOBuffer,
     memory::Memory,
     trace::Channel,
 };
@@ -106,8 +107,9 @@ impl AiurSystem {
         fri_parameters: FriParameters,
         fun_idx: FunIdx,
         input: &[G],
+        io_buffer: &mut IOBuffer,
     ) -> (Vec<G>, Proof) {
-        let (query_record, output) = self.toplevel.execute(fun_idx, input.to_vec());
+        let (query_record, output) = self.toplevel.execute(fun_idx, input.to_vec(), io_buffer);
         let mut witness = SystemWitness {
             traces: vec![],
             lookups: vec![],
@@ -123,7 +125,9 @@ impl AiurSystem {
         let witness_data = functions
             .chain(memories)
             .map(|circuit_type| match circuit_type {
-                CircuitType::Function { idx } => self.toplevel.generate_trace(idx, &query_record),
+                CircuitType::Function { idx } => {
+                    self.toplevel.generate_trace(idx, &query_record, io_buffer)
+                }
                 CircuitType::Memory { width } => Memory::generate_trace(width, &query_record),
             })
             .collect::<Vec<_>>();

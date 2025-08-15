@@ -11,7 +11,7 @@ use rayon::{
 use super::{
     G,
     bytecode::{Block, Ctrl, Function, Op, Toplevel},
-    execute::QueryRecord,
+    execute::{IOBuffer, IOKeyInfo, QueryRecord},
     memory::Memory,
 };
 
@@ -82,6 +82,7 @@ impl Toplevel {
         &self,
         function_index: usize,
         query_record: &QueryRecord,
+        io_buffer: &IOBuffer,
     ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
         let func = &self.functions[function_index];
         let width = func.width();
@@ -115,7 +116,7 @@ impl Toplevel {
                     output: &result.output,
                     query_record,
                 };
-                func.populate_row(index, slice, context);
+                func.populate_row(index, slice, context, io_buffer);
             });
         let trace = RowMajorMatrix::new(rows, width);
         (trace, lookups)
@@ -132,6 +133,7 @@ impl Function {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_>,
         context: TraceContext<'_>,
+        io_buffer: &IOBuffer,
     ) {
         debug_assert_eq!(
             self.layout.input_size,
@@ -148,7 +150,8 @@ impl Function {
             .for_each(|(i, arg)| slice.inputs[i] = *arg);
         // Push the multiplicity
         slice.push_auxiliary(index, context.multiplicity);
-        self.body.populate_row(map, index, slice, context);
+        self.body
+            .populate_row(map, index, slice, context, io_buffer);
     }
 }
 
@@ -159,11 +162,13 @@ impl Block {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_>,
         context: TraceContext<'_>,
+        io_buffer: &IOBuffer,
     ) {
         self.ops
             .iter()
-            .for_each(|op| op.populate_row(map, index, slice, context));
-        self.ctrl.populate_row(map, index, slice, context);
+            .for_each(|op| op.populate_row(map, index, slice, context, io_buffer));
+        self.ctrl
+            .populate_row(map, index, slice, context, io_buffer);
     }
 }
 
@@ -174,6 +179,7 @@ impl Ctrl {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_>,
         context: TraceContext<'_>,
+        io_buffer: &IOBuffer,
     ) {
         match self {
             Ctrl::Return(sel, _) => {
@@ -199,7 +205,7 @@ impl Ctrl {
                         def.as_deref()
                     })
                     .expect("No match");
-                branch.populate_row(map, index, slice, context);
+                branch.populate_row(map, index, slice, context, io_buffer);
             }
         }
     }
@@ -212,6 +218,7 @@ impl Op {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_>,
         context: TraceContext<'_>,
+        io_buffer: &IOBuffer,
     ) {
         match self {
             Op::Const(f) => map.push((*f, 0)),
@@ -292,6 +299,26 @@ impl Op {
                 let lookup = Memory::lookup(G::ONE, G::from_usize(*size), ptr, values);
                 slice.push_lookup(index, lookup);
             }
+            Op::IOGetInfo(key) => {
+                let key = key.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+                let IOKeyInfo { idx, len } = io_buffer.get_info(&key);
+                for f in [G::from_usize(*idx), G::from_usize(*len)] {
+                    map.push((f, 1));
+                    slice.push_auxiliary(index, f);
+                }
+            }
+            Op::IORead(idx, len) => {
+                let idx = map[*idx]
+                    .0
+                    .as_canonical_u64()
+                    .try_into()
+                    .expect("Index is too big for an usize");
+                for &f in io_buffer.read(idx, *len) {
+                    map.push((f, 1));
+                    slice.push_auxiliary(index, f);
+                }
+            }
+            Op::IOSetInfo(..) | Op::IOWrite(_) => (),
         }
     }
 }

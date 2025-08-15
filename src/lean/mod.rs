@@ -39,6 +39,16 @@ pub fn lean_is_scalar<T>(ptr: *const T) -> bool {
     ptr as usize & 1 == 1
 }
 
+#[macro_export]
+/// ```c
+/// lean_object * lean_box(size_t n) { return (lean_object*)(((size_t)(n) << 1) | 1); }
+/// ```
+macro_rules! lean_box {
+    ($e:expr) => {
+        (($e << 1) | 1) as *const std::ffi::c_void
+    };
+}
+
 /// ```c
 /// size_t lean_unbox(lean_object * o) { return (size_t)(o) >> 1; }
 /// ```
