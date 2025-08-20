@@ -2,9 +2,13 @@ use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 
-use super::{
+use crate::aiur::{
     G,
     bytecode::{Ctrl, FunIdx, Function, FxIndexMap, Op, Toplevel},
+    gadgets::{
+        AiurGadget,
+        bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
+    },
 };
 
 pub struct QueryResult {
@@ -17,6 +21,7 @@ pub type QueryMap = FxIndexMap<Vec<G>, QueryResult>;
 pub struct QueryRecord {
     pub(crate) function_queries: Vec<QueryMap>,
     pub(crate) memory_queries: FxIndexMap<usize, QueryMap>,
+    pub(crate) bytes1_queries: Bytes1Queries,
 }
 
 impl QueryRecord {
@@ -31,9 +36,11 @@ impl QueryRecord {
             .iter()
             .map(|width| (*width, QueryMap::default()))
             .collect();
+        let bytes1_queries = Bytes1Queries::new();
         Self {
             function_queries,
             memory_queries,
+            bytes1_queries,
         }
     }
 }
@@ -205,6 +212,15 @@ impl Function {
                     map.extend(data);
                 }
                 ExecEntry::Op(Op::IOWrite(data)) => io_buffer.write(data.iter().map(|v| map[*v])),
+                ExecEntry::Op(Op::U8BitDecomposition(byte)) => {
+                    bytes1_execute(*byte, &Bytes1Op::BitDecomposition, &mut map, record)
+                }
+                ExecEntry::Op(Op::U8ShiftLeft(byte)) => {
+                    bytes1_execute(*byte, &Bytes1Op::ShiftLeft, &mut map, record)
+                }
+                ExecEntry::Op(Op::U8ShiftRight(byte)) => {
+                    bytes1_execute(*byte, &Bytes1Op::ShiftRight, &mut map, record)
+                }
                 ExecEntry::Ctrl(Ctrl::Match(val_idx, cases, default)) => {
                     let val = &map[*val_idx];
                     if let Some(block) = cases.get(val) {
@@ -244,4 +260,8 @@ impl Function {
         }
         map
     }
+}
+
+fn bytes1_execute(byte: usize, op: &Bytes1Op, map: &mut Vec<G>, record: &mut QueryRecord) {
+    map.extend(Bytes1.execute(op, &[map[byte]], record));
 }

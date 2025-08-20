@@ -48,6 +48,9 @@ pub enum Op {
     IOSetInfo(Vec<ValIdx>, ValIdx, ValIdx),
     IORead(ValIdx, usize),
     IOWrite(Vec<ValIdx>),
+    U8BitDecomposition(ValIdx),
+    U8ShiftLeft(ValIdx),
+    U8ShiftRight(ValIdx),
 }
 
 pub enum Ctrl {

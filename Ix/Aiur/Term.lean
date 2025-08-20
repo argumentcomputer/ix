@@ -81,6 +81,9 @@ inductive Term
   | ioSetInfo : (key : Term) → (idx : Term) → (len : Term) → (ret : Term) → Term
   | ioRead : (idx : Term) → (len : Nat) → Term
   | ioWrite : (data : Term) → (ret : Term) → Term
+  | u8BitDecomposition : Term → Term
+  | u8ShiftLeft : Term → Term
+  | u8ShiftRight : Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Data
@@ -126,6 +129,9 @@ inductive TypedTermInner
   | ioSetInfo : TypedTerm → TypedTerm → TypedTerm → TypedTerm → TypedTermInner
   | ioRead : TypedTerm → Nat → TypedTermInner
   | ioWrite : TypedTerm → TypedTerm → TypedTermInner
+  | u8BitDecomposition : TypedTerm → TypedTermInner
+  | u8ShiftLeft : TypedTerm → TypedTermInner
+  | u8ShiftRight : TypedTerm → TypedTermInner
   deriving Repr, Inhabited
 
 structure TypedTerm where

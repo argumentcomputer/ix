@@ -226,6 +226,18 @@ partial def inferTerm : Term → CheckM TypedTerm
       let ioWrite := .ioWrite (.mk (.evaluates dataTyp) dataInner) ret
       pure $ .mk (.evaluates ret.typ.unwrap) ioWrite
     | _ => throw $ .notAnArray dataTyp
+  | .u8BitDecomposition byte => do
+    let byte ← fieldTerm <$> checkNoEscape byte .field
+    let u8BitDecomposition := .u8BitDecomposition byte
+    pure $ .mk (.evaluates (.array .field 8)) u8BitDecomposition
+  | .u8ShiftLeft byte => do
+    let byte ← fieldTerm <$> checkNoEscape byte .field
+    let u8ShiftLeft := .u8ShiftLeft byte
+    pure $ .mk (.evaluates .field) u8ShiftLeft
+  | .u8ShiftRight byte => do
+    let byte ← fieldTerm <$> checkNoEscape byte .field
+    let u8ShiftRight := .u8ShiftRight byte
+    pure $ .mk (.evaluates .field) u8ShiftRight
 where
   /--
   Ensures that there are as many arguments and as expected types and that
