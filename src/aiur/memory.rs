@@ -1,5 +1,5 @@
 use multi_stark::{
-    builder::symbolic::SymbolicExpression,
+    builder::symbolic::{SymbolicExpression, var},
     lookup::Lookup,
     p3_air::{Air, AirBuilder, BaseAir},
     p3_field::PrimeCharacteristicRing,
@@ -13,10 +13,7 @@ use rayon::{
     slice::ParallelSliceMut,
 };
 
-use crate::{
-    aiur::{G, execute::QueryRecord, trace::Channel},
-    sym_var,
-};
+use crate::aiur::{G, execute::QueryRecord, trace::Channel};
 
 pub struct Memory {
     width: usize,
@@ -36,15 +33,15 @@ impl Memory {
     }
 
     pub fn build(size: usize) -> (Self, Lookup<SymbolicExpression<G>>) {
-        let multiplicity = sym_var!(0);
-        let selector = sym_var!(1);
-        let pointer = sym_var!(2);
+        let multiplicity = var(0);
+        let selector = var(1);
+        let pointer = var(2);
         let mut args = Vec::with_capacity(3 + size);
         args.push(selector.clone() * Channel::Memory.to_field());
         args.push(selector.clone() * G::from_usize(size));
         args.push(selector.clone() * pointer);
         for val_idx in 0..size {
-            args.push(selector.clone() * sym_var!(3 + val_idx));
+            args.push(selector.clone() * var(3 + val_idx));
         }
         let width = Self::width(size);
         (Self { width }, Lookup::pull(multiplicity, args))

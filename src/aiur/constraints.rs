@@ -1,5 +1,7 @@
 use multi_stark::{
-    builder::symbolic::SymbolicExpression, lookup::Lookup, p3_field::PrimeCharacteristicRing,
+    builder::symbolic::{SymbolicExpression, var},
+    lookup::Lookup,
+    p3_field::PrimeCharacteristicRing,
 };
 use std::ops::Range;
 
@@ -8,15 +10,6 @@ use super::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
     trace::Channel,
 };
-
-#[macro_export]
-macro_rules! sym_var {
-    ($a:expr) => {{
-        use multi_stark::builder::symbolic::*;
-        let entry = Entry::Main { offset: 0 };
-        SymbolicExpression::Variable(SymbolicVariable::new(entry, $a))
-    }};
-}
 
 type Expr = SymbolicExpression<G>;
 type Degree = u8;
@@ -57,7 +50,7 @@ impl ConstraintState {
 
     fn next_auxiliary(&mut self) -> Expr {
         self.column += 1;
-        sym_var!(self.column - 1)
+        var(self.column - 1)
     }
 
     fn save(&mut self) -> SharedState {
@@ -68,8 +61,7 @@ impl ConstraintState {
         }
     }
 
-    #[allow(clippy::needless_pass_by_value)]
-    fn restore(&mut self, init: SharedState) {
+    fn restore(&mut self, init: &SharedState) {
         self.column = init.column;
         self.lookup = init.lookup;
         self.map.truncate(init.map_len);
@@ -102,14 +94,14 @@ impl Function {
     fn build_constraints(&self, state: &mut ConstraintState, toplevel: &Toplevel) {
         // the first columns are occupied by the input, which is also mapped
         state.column += self.layout.input_size;
-        (0..self.layout.input_size).for_each(|i| state.map.push((sym_var!(i), 1)));
+        (0..self.layout.input_size).for_each(|i| state.map.push((var(i), 1)));
         // then comes the selectors, which are not mapped
         let init_sel = state.column;
         let final_sel = state.column + self.layout.selectors;
         state.constraints.selectors = init_sel..final_sel;
         state.column = final_sel;
         // the multiplicity occupies another column
-        let multiplicity = sym_var!(state.column);
+        let multiplicity = var(state.column);
         state.column += 1;
         // the return lookup occupies the first lookup slot
         state.lookups[0].multiplicity = -multiplicity.clone();
@@ -134,7 +126,7 @@ impl Block {
 
     fn get_block_selector(&self, state: &mut ConstraintState) -> Expr {
         (self.min_sel_included..self.max_sel_excluded)
-            .map(|i| sym_var!(state.selector_index(i)))
+            .map(|i| var(state.selector_index(i)))
             .fold(Expr::Constant(G::ZERO), |var, acc| var + acc)
     }
 }
@@ -181,7 +173,7 @@ impl Ctrl {
                         .zeros
                         .push(branch_sel.clone() * (var.clone() - Expr::from(value)));
                     branch.collect_constraints(branch_sel, state, toplevel);
-                    state.restore(init);
+                    state.restore(&init);
                 }
                 def.iter().for_each(|branch| {
                     let init = state.save();
@@ -195,7 +187,7 @@ impl Ctrl {
                         );
                     }
                     branch.collect_constraints(branch_sel, state, toplevel);
-                    state.restore(init);
+                    state.restore(&init);
                 })
             }
         }
@@ -316,6 +308,15 @@ impl Op {
                 lookup.args.extend(values_iter);
                 lookup.multiplicity += sel.clone();
             }
+            Op::IOGetInfo(_) => (0..2).for_each(|_| {
+                let col = state.next_auxiliary();
+                state.map.push((col, 1));
+            }),
+            Op::IORead(_, len) => (0..*len).for_each(|_| {
+                let col = state.next_auxiliary();
+                state.map.push((col, 1));
+            }),
+            Op::IOSetInfo(..) | Op::IOWrite(_) => (),
         }
     }
 }

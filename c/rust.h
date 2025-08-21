@@ -26,14 +26,23 @@ typedef struct {
     size_t claim_size;
     void *claim;
     void *proof;
+    void *io_buffer;
+    size_t io_data_size;
+    size_t io_map_size;
+    size_t *io_keys_sizes;
 } prove_data;
 
 void rs_aiur_claim_free(void*);
 void rs_aiur_proof_free(void*);
+void rs_aiur_prove_data_io_buffer_free(void*);
 void rs_aiur_prove_data_free(prove_data*);
 
-prove_data *rs_aiur_system_prove(void*, b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg);
-void rs_set_aiur_claim_args(lean_obj_arg, void*);
+prove_data *rs_aiur_system_prove(
+    void*, b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg, b_lean_obj_arg
+);
+void rs_set_array_g_values(lean_obj_arg, void*);
+void rs_set_aiur_io_data_values(lean_obj_arg, void*);
+void rs_set_aiur_io_map_values(lean_obj_arg, void*);
 
 c_result *rs_aiur_system_verify(void*, b_lean_obj_arg, b_lean_obj_arg, void*);
 

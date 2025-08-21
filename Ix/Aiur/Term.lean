@@ -77,6 +77,10 @@ inductive Term
   | load : Term → Term
   | ptrVal : Term → Term
   | ann : Typ → Term → Term
+  | ioGetInfo : (key : Term) → Term
+  | ioSetInfo : (key : Term) → (idx : Term) → (len : Term) → (ret : Term) → Term
+  | ioRead : (idx : Term) → (len : Nat) → Term
+  | ioWrite : (data : Term) → (ret : Term) → Term
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Data
@@ -118,6 +122,10 @@ inductive TypedTermInner
   | store : TypedTerm → TypedTermInner
   | load : TypedTerm → TypedTermInner
   | ptrVal : TypedTerm → TypedTermInner
+  | ioGetInfo : TypedTerm → TypedTermInner
+  | ioSetInfo : TypedTerm → TypedTerm → TypedTerm → TypedTerm → TypedTermInner
+  | ioRead : TypedTerm → Nat → TypedTermInner
+  | ioWrite : TypedTerm → TypedTerm → TypedTermInner
   deriving Repr, Inhabited
 
 structure TypedTerm where
@@ -189,14 +197,14 @@ partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) : Typ
   | .field .. => 1
   | .pointer .. => 1
   | .function .. => 1
-  | .tuple ts => ts.foldl (init := 0) (fun acc t => acc + t.size decls visited)
+  | .tuple ts => ts.foldl (init := 0) fun acc t => acc + t.size decls visited
   | .array t n => n * t.size decls visited
   | .dataType g => match decls.getByKey g with
     | some (.dataType data) => data.size decls visited
     | _ => panic! "impossible case"
 
 partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {}) (c : Constructor) : Nat :=
-  c.argTypes.foldl (λ acc t => acc + t.size decls visited) 0
+  c.argTypes.foldl (fun acc t => acc + t.size decls visited) 0
 
 partial def DataType.size (dt : DataType) (decls : TypedDecls) (visited : HashSet Global := {}) : Nat :=
   if visited.contains dt.name then
