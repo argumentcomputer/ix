@@ -131,7 +131,7 @@ structure PreDefinition where
   name: Lean.Name
   levelParams : List Lean.Name
   type : Lean.Expr
-  mode : DefMode
+  mode : DefKind
   value : Lean.Expr
   hints : Lean.ReducibilityHints
   safety : Lean.DefinitionSafety
@@ -148,13 +148,12 @@ def mkPreOpaque (x: Lean.OpaqueVal) : PreDefinition :=
   ⟨x.name, x.levelParams, x.type, .opaque, x.value, .opaque,
     if x.isUnsafe then .unsafe else .safe, x.all⟩
 
-
 /--
 Ix.Definition definitions combine Lean.DefinitionVal, Lean.OpaqueVal and
 Lean.TheoremVal into a single structure in order to enable content-addressing of
-mutually recursive blocks. These cases are disambiguated via the Ix.DefMode
+mutually recursive blocks. These cases are disambiguated via the Ix.DefKind
 inductive. ReducibilityHints are preserved only as metadata, and are set to
-`ReducibilityHints.opaque` and ignored if the DefMode is either .opaque or
+`ReducibilityHints.opaque` and ignored if the DefKind is either .opaque or
 .theorem. The `safety : Lean.DefinitionSafety` parameter from DefinitionVal is
 replaced with a boolean for partial definitions, as Ix definitions are
 restricted to exclude unsafe constants.
@@ -163,7 +162,7 @@ structure Definition where
   name: Lean.Name
   levelParams : List Lean.Name
   type : Expr
-  mode: DefMode
+  mode: DefKind
   value : Expr
   hints : Lean.ReducibilityHints
   safety: Lean.DefinitionSafety

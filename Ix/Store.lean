@@ -7,6 +7,7 @@ import Init.System.IO
 import Init.System.IOError
 
 open System
+open Ixon
 
 inductive StoreError
 | unknownAddress (a: Address)
@@ -40,8 +41,8 @@ def ensureStoreDir : StoreIO Unit := do
   let store ← storeDir
   IO.toEIO .ioError (IO.FS.createDirAll store)
 
-def writeConst (x: Ixon.Const) : StoreIO Address := do
-  let bytes := Ixon.Serialize.put x
+def writeConst (x: Ixon) : StoreIO Address := do
+  let bytes := runPut (Serialize.put x)
   let addr  := Address.blake3 bytes
   let store ← storeDir
   let path := store / hexOfBytes addr.hash
@@ -49,18 +50,18 @@ def writeConst (x: Ixon.Const) : StoreIO Address := do
   return addr
 
 -- unsafe, can corrupt store if called with bad address
-def forceWriteConst (addr: Address) (x: Ixon.Const) : StoreIO Address := do
-  let bytes := Ixon.Serialize.put x
+def forceWriteConst (addr: Address) (x: Ixon) : StoreIO Address := do
+  let bytes := runPut (Serialize.put x)
   let store ← storeDir
   let path := store / hexOfBytes addr.hash
   let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
   return addr
 
-def readConst (a: Address) : StoreIO Ixon.Const := do
+def readConst (a: Address) : StoreIO Ixon := do
   let store ← storeDir
   let path := store / hexOfBytes a.hash
   let bytes ← IO.toEIO .ioError (IO.FS.readBinFile path)
-  match Ixon.Serialize.get bytes with
+  match runGet Serialize.get bytes with
   | .ok c => return c
   | .error e => throw (.ixonError e)
 

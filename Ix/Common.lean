@@ -56,7 +56,7 @@ def UInt32.MAX : UInt64 := 0xFFFFFFFF
 def UInt64.MAX : UInt64 := 0xFFFFFFFFFFFFFFFF
 
 /-- Distinguish different kinds of Ix definitions --/
-inductive Ix.DefMode where
+inductive Ix.DefKind where
 | «definition»
 | «opaque»
 | «theorem»

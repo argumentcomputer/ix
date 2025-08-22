@@ -63,7 +63,7 @@ def genConst : Gen Ix.Const := getSize >>= go
       let n <- genName
       let lvls <- genNames
       let type <- genExpr
-      let mode <- genDefMode
+      let mode <- genDefKind
       let value <- genExpr
       let hints <- genReducibilityHints
       let safety <- oneOf #[pure .safe, pure .partial, pure .unsafe]

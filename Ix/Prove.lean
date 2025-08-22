@@ -10,7 +10,6 @@ import Ix.Common
 --
 --abbrev ProveM := ExceptT ProveError IO
 
-
 structure Proof where
   claim: Claim
   /-- Bytes of the Binius proof -/

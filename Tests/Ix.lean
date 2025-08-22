@@ -19,7 +19,7 @@ open SlimCheck
 open SlimCheck.Gen
 
 def serde [Ixon.Serialize A] [BEq A] (x: A) : Bool :=
-  match Ixon.Serialize.get (Ixon.Serialize.put x) with
+  match Ixon.runGet Ixon.Serialize.get (Ixon.runPut <| Ixon.Serialize.put x) with
   | .ok (y : A) => x == y
   | _ => false
 
@@ -29,7 +29,7 @@ def transportUniv (univ: Ix.Level): Bool :=
   match EStateM.run (dematUniv univ) emptyDematState with
   | .ok ixon stt =>
     let remat := (ReaderT.run (rematUniv ixon) { meta := stt.meta})
-    match EStateM.run remat emptyRematState with
+    match EStateM.run remat (rematStateWithStore stt.store) with
     | .ok ix _ => univ == ix
     | .error _ _ => .false
   | .error _ _ => .false
@@ -38,7 +38,7 @@ def transportExpr (x: Ix.Expr): Bool :=
   match EStateM.run (dematExpr x) emptyDematState with
   | .ok ixon stt =>
     let remat := (ReaderT.run (rematExpr ixon) { meta := stt.meta})
-    match EStateM.run remat emptyRematState with
+    match EStateM.run remat (rematStateWithStore stt.store) with
     | .ok ix _ => x == ix
     | .error _ _ => .false
   | .error _ _ => .false
@@ -47,7 +47,7 @@ def transportConst (x: Ix.Const): Bool :=
   match EStateM.run (dematConst x) emptyDematState with
   | .ok ixon stt =>
     let remat := (ReaderT.run (rematConst ixon) { meta := stt.meta})
-    match EStateM.run remat emptyRematState with
+    match EStateM.run remat (rematStateWithStore stt.store) with
     | .ok ix _ => x == ix
     | .error _ _ => .false
   | .error _ _ => .false
@@ -83,8 +83,13 @@ def Tests.Ix.suite : List LSpec.TestSeq :=
     check "metadatum serde" (∀ x : Ixon.Metadatum, serde x),
     check "universe serde" (∀ x : Ixon.Univ, serde x),
     check "universe transport" (∀ x : Ix.Level, transportUniv x),
-    check "expr serde" (∀ x : Ixon.Expr, serde x),
+    check "expr serde" (∀ x : Ixon.IxonExpr, serde x),
     check "expr transport" (∀ x : Ix.Expr, transportExpr x),
-    check "const serde" (∀ x : Ixon.Const, serde x),
+    --check "axiom serde" (∀ x : Ixon.Axiom, serde x),
+    --check "recursor rule serde" (∀ x : Ixon.RecursorRule, serde x),
+    --check "recursor serde" (∀ x : Ixon.Recursor, serde x),
+    --check "constructor serde" (∀ x : Ixon.Constructor, serde x),
+    --check "inductive serde" (∀ x : Ixon.Inductive, serde x),
+    check "const serde" (∀ x : Ixon.IxonConst, serde x),
     check "const transport" (∀ x : Ix.Const, transportConst x),
   ]

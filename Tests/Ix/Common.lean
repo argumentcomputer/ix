@@ -13,6 +13,7 @@ import Tests.Common
 open LSpec
 open SlimCheck
 open SlimCheck.Gen
+open Ixon
 
 def genAddress : SlimCheck.Gen Address := 
   pure (Address.mk (Blake3.hash "foobar".toUTF8).val)
@@ -70,7 +71,7 @@ def genBinderInfo : Gen Lean.BinderInfo := oneOf'
    , pure .instImplicit
    ]
 
-def genDefMode : Gen Ix.DefMode := oneOf'
+def genDefKind : Gen Ix.DefKind := oneOf'
    [ pure .opaque
    , pure .theorem
    , pure .definition
