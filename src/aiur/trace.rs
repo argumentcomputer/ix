@@ -8,26 +8,15 @@ use rayon::{
     slice::ParallelSliceMut,
 };
 
-use super::{
+use crate::aiur::{
     G,
     bytecode::{Block, Ctrl, Function, Op, Toplevel},
     execute::{IOBuffer, IOKeyInfo, QueryRecord},
+    function_channel,
+    gadgets::bytes1::{bit_decompose, shift_left, shift_right},
     memory::Memory,
+    u8_bit_decomposition_channel, u8_shift_left_channel, u8_shift_right_channel,
 };
-
-pub enum Channel {
-    Function,
-    Memory,
-}
-
-impl Channel {
-    pub fn to_field(&self) -> G {
-        match self {
-            Channel::Function => G::ZERO,
-            Channel::Memory => G::ONE,
-        }
-    }
-}
 
 struct ColumnIndex {
     auxiliary: usize,
@@ -78,7 +67,7 @@ struct TraceContext<'a> {
 }
 
 impl Toplevel {
-    pub fn generate_trace(
+    pub fn witness_data(
         &self,
         function_index: usize,
         query_record: &QueryRecord,
@@ -319,12 +308,39 @@ impl Op {
                 }
             }
             Op::IOSetInfo(..) | Op::IOWrite(_) => (),
+            Op::U8BitDecomposition(byte) => {
+                let (byte, _) = map[*byte];
+                let bits = bit_decompose(&byte);
+                for &b in &bits {
+                    map.push((b, 1));
+                    slice.push_auxiliary(index, b);
+                }
+                let mut lookup_args = vec![u8_bit_decomposition_channel(), byte];
+                lookup_args.extend(bits);
+                slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+            }
+            Op::U8ShiftLeft(byte) => {
+                let (byte, _) = map[*byte];
+                let byte_shifted = shift_left(&byte);
+                map.push((byte_shifted, 1));
+                slice.push_auxiliary(index, byte_shifted);
+                let lookup_args = vec![u8_shift_left_channel(), byte, byte_shifted];
+                slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+            }
+            Op::U8ShiftRight(byte) => {
+                let (byte, _) = map[*byte];
+                let byte_shifted = shift_right(&byte);
+                map.push((byte_shifted, 1));
+                slice.push_auxiliary(index, byte_shifted);
+                let lookup_args = vec![u8_shift_right_channel(), byte, byte_shifted];
+                slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+            }
         }
     }
 }
 
 fn function_lookup(multiplicity: G, function_index: G, inputs: &[G], output: &[G]) -> Lookup<G> {
-    let mut args = vec![Channel::Function.to_field(), function_index];
+    let mut args = vec![function_channel(), function_index];
     args.extend(inputs);
     args.extend(output);
     Lookup { multiplicity, args }

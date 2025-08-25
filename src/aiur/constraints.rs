@@ -1,14 +1,21 @@
 use multi_stark::{
     builder::symbolic::{SymbolicExpression, var},
     lookup::Lookup,
+    p3_air::{Air, AirBuilder, BaseAir},
     p3_field::PrimeCharacteristicRing,
+    p3_matrix::Matrix,
 };
 use std::ops::Range;
 
-use super::{
+use crate::aiur::{
     G,
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
-    trace::Channel,
+    function_channel,
+    gadgets::{
+        AiurGadget,
+        bytes1::{Bytes1, Bytes1Op},
+    },
+    memory_channel, u8_bit_decomposition_channel, u8_shift_left_channel, u8_shift_right_channel,
 };
 
 type Expr = SymbolicExpression<G>;
@@ -19,6 +26,28 @@ pub struct Constraints {
     pub zeros: Vec<Expr>,
     pub selectors: Range<usize>,
     pub width: usize,
+}
+
+impl BaseAir<G> for Constraints {
+    fn width(&self) -> usize {
+        self.width
+    }
+}
+
+impl<AB> Air<AB> for Constraints
+where
+    AB: AirBuilder<F = G>,
+{
+    fn eval(&self, builder: &mut AB) {
+        let main = builder.main();
+        let row = main.row_slice(0).unwrap();
+        for zero in &self.zeros {
+            builder.assert_zero(zero.interpret(&row, None));
+        }
+        for sel in self.selectors.clone() {
+            builder.assert_bool(row[sel].clone());
+        }
+    }
 }
 
 struct ConstraintState {
@@ -138,7 +167,7 @@ impl Ctrl {
             Ctrl::Return(_, values) => {
                 // channel and function index
                 let mut vector = vec![
-                    sel.clone() * Channel::Function.to_field(),
+                    sel.clone() * function_channel(),
                     sel.clone() * state.function_index,
                 ];
                 // input
@@ -225,12 +254,12 @@ impl Op {
             }
             Op::Call(function_index, inputs, output_size) => {
                 // channel and function index
-                let mut vector = vec![
-                    sel.clone() * Channel::Function.to_field(),
+                let mut lookup_args = vec![
+                    sel.clone() * function_channel(),
                     sel.clone() * G::from_usize(*function_index),
                 ];
                 // input
-                vector.extend(
+                lookup_args.extend(
                     inputs
                         .iter()
                         .map(|arg| sel.clone() * state.map[*arg].0.clone()),
@@ -241,17 +270,10 @@ impl Op {
                     state.map.push((col.clone(), 1));
                     col
                 });
-                vector.extend(output);
-                let mut values_iter = vector.into_iter();
+                lookup_args.extend(output);
+
                 let lookup = state.next_lookup();
-                lookup
-                    .args
-                    .iter_mut()
-                    .zip(values_iter.by_ref())
-                    .for_each(|(arg, value)| {
-                        *arg += value;
-                    });
-                lookup.args.extend(values_iter);
+                combine_lookup_args(lookup, lookup_args);
                 lookup.multiplicity += sel.clone();
             }
             Op::Store(values) => {
@@ -259,33 +281,26 @@ impl Op {
                 // channel, function index and pointer
                 let ptr = state.next_auxiliary();
                 state.map.push((ptr.clone(), 1));
-                let mut vector = vec![
-                    sel.clone() * Channel::Memory.to_field(),
+                let mut lookup_args = vec![
+                    sel.clone() * memory_channel(),
                     sel.clone() * G::from_usize(size),
-                    sel.clone() * ptr.clone(),
+                    sel.clone() * ptr,
                 ];
                 // stored values
-                vector.extend(
+                lookup_args.extend(
                     values
                         .iter()
                         .map(|value| sel.clone() * state.map[*value].0.clone()),
                 );
-                let mut values_iter = vector.into_iter();
+
                 let lookup = state.next_lookup();
-                lookup
-                    .args
-                    .iter_mut()
-                    .zip(values_iter.by_ref())
-                    .for_each(|(arg, value)| {
-                        *arg += value;
-                    });
-                lookup.args.extend(values_iter);
+                combine_lookup_args(lookup, lookup_args);
                 lookup.multiplicity += sel.clone();
             }
             Op::Load(size, ptr) => {
                 // channel, size and pointer
-                let mut vector = vec![
-                    sel.clone() * Channel::Memory.to_field(),
+                let mut lookup_args = vec![
+                    sel.clone() * memory_channel(),
                     sel.clone() * G::from_usize(*size),
                     sel.clone() * state.map[*ptr].0.clone(),
                 ];
@@ -295,17 +310,10 @@ impl Op {
                     state.map.push((col.clone(), 1));
                     col
                 });
-                vector.extend(values);
-                let mut values_iter = vector.into_iter();
+                lookup_args.extend(values);
+
                 let lookup = state.next_lookup();
-                lookup
-                    .args
-                    .iter_mut()
-                    .zip(values_iter.by_ref())
-                    .for_each(|(arg, value)| {
-                        *arg += value;
-                    });
-                lookup.args.extend(values_iter);
+                combine_lookup_args(lookup, lookup_args);
                 lookup.multiplicity += sel.clone();
             }
             Op::IOGetInfo(_) => (0..2).for_each(|_| {
@@ -317,6 +325,68 @@ impl Op {
                 state.map.push((col, 1));
             }),
             Op::IOSetInfo(..) | Op::IOWrite(_) => (),
+            Op::U8BitDecomposition(byte) => bytes1_constraints(
+                *byte,
+                &Bytes1Op::BitDecomposition,
+                u8_bit_decomposition_channel(),
+                sel.clone(),
+                state,
+            ),
+            Op::U8ShiftLeft(byte) => bytes1_constraints(
+                *byte,
+                &Bytes1Op::ShiftLeft,
+                u8_shift_left_channel(),
+                sel.clone(),
+                state,
+            ),
+            Op::U8ShiftRight(byte) => bytes1_constraints(
+                *byte,
+                &Bytes1Op::ShiftRight,
+                u8_shift_right_channel(),
+                sel.clone(),
+                state,
+            ),
         }
     }
+}
+
+fn bytes1_constraints(
+    byte: usize,
+    op: &Bytes1Op,
+    channel: G,
+    sel: SymbolicExpression<G>,
+    state: &mut ConstraintState,
+) {
+    let size = Bytes1.output_size(op);
+
+    let mut lookup_args = vec![
+        sel.clone() * channel,
+        sel.clone() * state.map[byte].0.clone(),
+    ];
+
+    let output = (0..size).map(|_| {
+        let col = state.next_auxiliary();
+        state.map.push((col.clone(), 1));
+        col
+    });
+    lookup_args.extend(output);
+
+    let lookup = state.next_lookup();
+    combine_lookup_args(lookup, lookup_args);
+    lookup.multiplicity += sel;
+}
+
+fn combine_lookup_args(
+    lookup: &mut Lookup<SymbolicExpression<G>>,
+    args: impl IntoIterator<Item = SymbolicExpression<G>>,
+) {
+    let mut args_iterator = args.into_iter();
+    lookup
+        .args
+        .iter_mut()
+        .zip(args_iterator.by_ref())
+        .for_each(|(arg, value)| {
+            *arg += value;
+        });
+    lookup.args.extend(args_iterator);
 }

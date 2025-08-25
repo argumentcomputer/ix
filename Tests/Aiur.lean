@@ -134,6 +134,13 @@ def toplevel := ⟦
     io_set_info([1], idx, len + 4);
     len
   }
+
+  fn shr_shr_shl_decompose(byte: G) -> [G; 8] {
+    let byte_shr = u8_shift_right(byte);
+    let byte_shr_shr = u8_shift_right(byte_shr);
+    let byte_shr_shr_shl = u8_shift_left(byte_shr_shr);
+    u8_bit_decomposition(byte_shr_shr_shl)
+  }
 ⟧
 
 structure TestCase where
@@ -169,7 +176,8 @@ def testCases : List TestCase := [
     ⟨`deconstruct_array, #[1, 2, 3, 4, 5], #[2, 4], default, default⟩,
     ⟨`read_write_io, #[], #[4],
       ⟨#[1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩)]⟩,
-      ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩⟩
+      ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩⟩,
+    ⟨`shr_shr_shl_decompose, #[87], #[0, 1, 0, 1, 0, 1, 0, 0], default, default⟩,
   ]
 
 def commitmentParameters : Aiur.CommitmentParameters := {

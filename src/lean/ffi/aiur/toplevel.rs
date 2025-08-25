@@ -90,6 +90,18 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
             let [data_ptr] = ctor.objs();
             Op::IOWrite(lean_ptr_to_vec_val_idx(data_ptr))
         }
+        11 => {
+            let [byte_ptr] = ctor.objs();
+            Op::U8BitDecomposition(lean_unbox_nat_as_usize(byte_ptr))
+        }
+        12 => {
+            let [byte_ptr] = ctor.objs();
+            Op::U8ShiftLeft(lean_unbox_nat_as_usize(byte_ptr))
+        }
+        13 => {
+            let [byte_ptr] = ctor.objs();
+            Op::U8ShiftRight(lean_unbox_nat_as_usize(byte_ptr))
+        }
         _ => unreachable!(),
     }
 }

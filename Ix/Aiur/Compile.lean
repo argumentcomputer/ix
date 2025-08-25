@@ -102,6 +102,14 @@ def opLayout : Bytecode.Op → LayoutM Unit
     pushDegrees $ .mkArray len 1
     bumpAuxiliaries len
   | .ioWrite .. => pure ()
+  | .u8BitDecomposition _ => do
+    pushDegrees $ .mkArray 8 1
+    bumpAuxiliaries 8
+    bumpLookups
+  | .u8ShiftLeft _ | .u8ShiftRight _ => do
+    pushDegree 1
+    bumpAuxiliaries 1
+    bumpLookups
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   block.ops.forM opLayout
@@ -350,6 +358,15 @@ partial def toIndex
     let data ← toIndex layoutMap bindings data
     modify fun stt => { stt with ops := stt.ops.push (.ioWrite data) }
     toIndex layoutMap bindings ret
+  | .u8BitDecomposition byte => do
+    let byte ← expectIdx byte
+    pushOp (.u8BitDecomposition byte) 8
+  | .u8ShiftLeft byte => do
+    let byte ← expectIdx byte
+    pushOp (.u8ShiftLeft byte)
+  | .u8ShiftRight byte => do
+    let byte ← expectIdx byte
+    pushOp (.u8ShiftRight byte)
   where
     buildArgs (args : List TypedTerm) (init := #[]) :=
       let append acc arg := do
