@@ -121,5 +121,217 @@ instance : Serialize Ixon where
   put := putIxon
   get := getIxon
 
-end Ixon
+section FFI
 
+/--
+# Ixon FFI types
+
+This section defines FFI-friendly versions of the original Ixon datatypes by
+* Replacing `Nat` by `ByteArray` containing the corresponding bytes in LE
+* Replacing `List` by `Array`
+* Replacing maps by `Array`s of pairs
+-/
+
+@[inline] def nat2Bytes (n : Nat) : ByteArray :=
+  ⟨natToBytesLE n⟩
+
+structure DefinitionFFI where
+  lvls : ByteArray
+  type : Address
+  mode : Ix.DefKind
+  value : Address
+  safety : Lean.DefinitionSafety
+
+def Definition.toFFI : Definition → DefinitionFFI
+  | ⟨lvls, type, mode, value, safety⟩ =>
+    ⟨nat2Bytes lvls, type, mode, value, safety⟩
+
+structure AxiomFFI where
+  lvls : ByteArray
+  type : Address
+  isUnsafe: Bool
+
+def Axiom.toFFI : Axiom → AxiomFFI
+  | ⟨lvls, type, isUnsafe⟩ => ⟨nat2Bytes lvls, type, isUnsafe⟩
+
+structure QuotientFFI where
+  lvls : ByteArray
+  type : Address
+  kind : Lean.QuotKind
+
+def Quotient.toFFI : Quotient → QuotientFFI
+  | ⟨lvls, type, kind⟩ => ⟨nat2Bytes lvls, type, kind⟩
+
+structure ConstructorProjFFI where
+  block : Address
+  idx : ByteArray
+  cidx : ByteArray
+
+def ConstructorProj.toFFI : ConstructorProj → ConstructorProjFFI
+  | ⟨block, idx, cidx⟩ => ⟨block, nat2Bytes idx, nat2Bytes cidx⟩
+
+structure RecursorProjFFI where
+  block : Address
+  idx : ByteArray
+  ridx : ByteArray
+
+def RecursorProj.toFFI : RecursorProj → RecursorProjFFI
+  | ⟨block, idx, ridx⟩ => ⟨block, nat2Bytes idx, nat2Bytes ridx⟩
+
+structure InductiveProjFFI where
+  block : Address
+  idx : ByteArray
+
+def InductiveProj.toFFI : InductiveProj → InductiveProjFFI
+  | ⟨block, idx⟩ => ⟨block, nat2Bytes idx⟩
+
+structure DefinitionProjFFI where
+  block : Address
+  idx : ByteArray
+
+def DefinitionProj.toFFI : DefinitionProj → DefinitionProjFFI
+  | ⟨block, idx⟩ => ⟨block, nat2Bytes idx⟩
+
+structure RecursorRuleFFI where
+  fields : ByteArray
+  rhs : Address
+
+def RecursorRule.toFFI : RecursorRule → RecursorRuleFFI
+  | ⟨fields, rhs⟩ => ⟨nat2Bytes fields, rhs⟩
+
+structure RecursorFFI where
+  lvls : ByteArray
+  type : Address
+  params : ByteArray
+  indices : ByteArray
+  motives : ByteArray
+  minors : ByteArray
+  rules : Array RecursorRuleFFI
+  k : Bool
+  isUnsafe: Bool
+
+def Recursor.toFFI : Recursor → RecursorFFI
+  | ⟨lvls, type, params, indices, motives, minors, rules, k, isUnsafe⟩ =>
+    ⟨nat2Bytes lvls, type, nat2Bytes params, nat2Bytes indices,
+      nat2Bytes motives, nat2Bytes minors, rules.toArray.map RecursorRule.toFFI,
+      k, isUnsafe⟩
+
+structure ConstructorFFI where
+  lvls : ByteArray
+  type : Address
+  cidx : ByteArray
+  params : ByteArray
+  fields : ByteArray
+  isUnsafe: Bool
+
+def Constructor.toFFI : Constructor → ConstructorFFI
+  | ⟨lvls, type, cidx, params, fields, isUnsafe⟩ =>
+    ⟨nat2Bytes lvls, type, nat2Bytes cidx, nat2Bytes params, nat2Bytes fields, isUnsafe⟩
+
+structure InductiveFFI where
+  lvls : ByteArray
+  type : Address
+  params : ByteArray
+  indices : ByteArray
+  ctors : Array ConstructorFFI
+  recrs : Array RecursorFFI
+  nested : ByteArray
+  recr : Bool
+  refl : Bool
+  isUnsafe: Bool
+
+def Inductive.toFFI : Inductive → InductiveFFI
+  | ⟨lvls, type, params, indices, ctors, recrs, nested, recr, refl, isUnsafe⟩ =>
+    ⟨nat2Bytes lvls, type, nat2Bytes params, nat2Bytes indices,
+      ctors.toArray.map Constructor.toFFI, recrs.toArray.map Recursor.toFFI,
+      nat2Bytes nested, recr, refl, isUnsafe⟩
+
+inductive NameFFI
+  | anonymous
+  | str : NameFFI → String → NameFFI
+  | num : NameFFI → ByteArray → NameFFI
+
+def _root_.Lean.Name.toFFI : Lean.Name → NameFFI
+  | .anonymous => .anonymous
+  | .str name s => .str name.toFFI s
+  | .num name n => .num name.toFFI (nat2Bytes n)
+
+inductive MetadatumFFI where
+| name : NameFFI -> MetadatumFFI
+| info : Lean.BinderInfo -> MetadatumFFI
+| link : Address -> MetadatumFFI
+| hints : Lean.ReducibilityHints -> MetadatumFFI
+| all : Array NameFFI -> MetadatumFFI
+| mutCtx : Array (Array NameFFI) -> MetadatumFFI
+
+def Metadatum.toFFI : Metadatum → MetadatumFFI
+  | .name n => .name n.toFFI
+  | .info i => .info i
+  | .link addr => .link addr
+  | .hints h => .hints h
+  | .all ns => .all (ns.toArray.map Lean.Name.toFFI)
+  | .mutCtx ctx => .mutCtx $ ctx.toArray.map (·.toArray.map Lean.Name.toFFI)
+
+inductive IxonFFI where
+| vari : UInt64 -> IxonFFI
+| sort : Univ -> IxonFFI
+| refr : Address -> Array Univ -> IxonFFI
+| recr : UInt64 -> Array Univ -> IxonFFI
+| apps : IxonFFI -> IxonFFI -> Array IxonFFI -> IxonFFI
+| lams : Array IxonFFI -> IxonFFI -> IxonFFI
+| alls : Array IxonFFI -> IxonFFI -> IxonFFI
+| letE : Bool -> IxonFFI -> IxonFFI -> IxonFFI -> IxonFFI
+| proj : Address -> UInt64 -> IxonFFI -> IxonFFI
+| strl : String -> IxonFFI
+| natl : ByteArray -> IxonFFI
+| list : Array IxonFFI -> IxonFFI
+| defn : DefinitionFFI -> IxonFFI
+| axio : AxiomFFI -> IxonFFI
+| quot : QuotientFFI -> IxonFFI
+| cprj : ConstructorProjFFI -> IxonFFI
+| rprj : RecursorProjFFI -> IxonFFI
+| iprj : InductiveProjFFI -> IxonFFI
+| dprj : DefinitionProjFFI -> IxonFFI
+| inds : Array InductiveFFI -> IxonFFI
+| defs : Array DefinitionFFI -> IxonFFI
+| meta : Array (ByteArray × (Array MetadatumFFI)) -> IxonFFI
+| prof : Proof -> IxonFFI
+| eval : EvalClaim -> IxonFFI
+| chck : CheckClaim -> IxonFFI
+| comm : Comm -> IxonFFI
+| envn : Unit -> IxonFFI
+
+def Ixon.toFFI : Ixon → IxonFFI
+  | .vari i => .vari i
+  | .sort u => .sort u
+  | .refr addr univs => .refr addr univs.toArray
+  | .recr i us => .recr i us.toArray
+  | .apps f a as => .apps f.toFFI a.toFFI (as.map Ixon.toFFI).toArray
+  | .lams xs b => .lams (xs.map Ixon.toFFI).toArray b.toFFI
+  | .alls xs x => .alls (xs.map Ixon.toFFI).toArray x.toFFI
+  | .letE x v t b => .letE x v.toFFI t.toFFI b.toFFI
+  | .proj addr i x => .proj addr i x.toFFI
+  | .strl s => .strl s
+  | .natl n => .natl (nat2Bytes n)
+  | .list xs => .list (xs.map Ixon.toFFI).toArray
+  | .defn d => .defn d.toFFI
+  | .axio a => .axio a.toFFI
+  | .quot q => .quot q.toFFI
+  | .cprj c => .cprj c.toFFI
+  | .rprj r => .rprj r.toFFI
+  | .iprj i => .iprj i.toFFI
+  | .dprj d => .dprj d.toFFI
+  | .inds is => .inds (is.map Inductive.toFFI).toArray
+  | .defs d => .defs (d.map Definition.toFFI).toArray
+  | .meta ⟨map⟩ =>
+    .meta $ map.toList.toArray.map
+      fun (x, y) => (nat2Bytes x, y.toArray.map Metadatum.toFFI)
+  | .prof p => .prof p
+  | .eval x => .eval x
+  | .chck x => .chck x
+  | .comm x => .comm x
+  | .envn x => .envn x
+
+end FFI
+
+end Ixon

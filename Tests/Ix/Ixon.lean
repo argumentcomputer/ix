@@ -68,11 +68,11 @@ instance : Serialize IxonExpr where
 instance : Shrinkable IxonExpr where
   shrink _ := []
 
-instance : SampleableExt IxonExpr := 
+instance : SampleableExt IxonExpr :=
   SampleableExt.mkSelfContained (IxonExpr.mk <$> genExpr)
 
 -- Metadata
-def genMetadatum : Gen Ixon.Metadatum := 
+def genMetadatum : Gen Ixon.Metadatum :=
   frequency [
     (100, .name <$> genName),
     (100, .info <$> genBinderInfo),
@@ -87,7 +87,7 @@ instance : Shrinkable Metadatum where
 instance : SampleableExt Metadatum :=
   SampleableExt.mkSelfContained genMetadatum
 
-def genMetaNode : Gen (List Metadatum) := 
+def genMetaNode : Gen (List Metadatum) :=
   genList' genMetadatum
 
 def genMetadata : Gen Metadata := do
@@ -101,7 +101,7 @@ def genAxiom : Gen Axiom := .mk <$> genNat' <*> genAddress <*> genBool
 instance : Shrinkable Axiom where
   shrink _ := []
 
-instance : SampleableExt Axiom 
+instance : SampleableExt Axiom
   := SampleableExt.mkSelfContained genAxiom
 
 def genDefinition : Gen Definition := do
@@ -195,7 +195,14 @@ instance : Serialize IxonConst where
 instance : Shrinkable IxonConst where
   shrink _ := []
 
-instance : SampleableExt IxonConst 
+instance : SampleableExt IxonConst
   := SampleableExt.mkSelfContained (IxonConst.mk <$> genConst)
+
+/--
+Whether the provided IxonFFI term, reconstructed and serialized in Rust, matches
+the provided bytes.
+-/
+@[extern "rs_eq_lean_rust_serialization"]
+opaque eqLeanRustSerialization : @& IxonFFI -> @& ByteArray -> Bool
 
 end Ixon

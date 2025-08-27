@@ -10,6 +10,7 @@ pub mod byte_array;
   not(all(target_os = "macos", target_arch = "aarch64"))
 ))]
 pub mod iroh;
+pub mod ixon;
 pub mod keccak;
 
 use std::ffi::{c_char, c_void, CStr, CString};
