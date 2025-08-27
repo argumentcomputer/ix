@@ -20,6 +20,9 @@ inductive Op
   | ioSetInfo : Array ValIdx → ValIdx → ValIdx → Op
   | ioRead : ValIdx → Nat → Op
   | ioWrite : Array ValIdx → Op
+  | u8BitDecomposition : ValIdx → Op
+  | u8ShiftLeft : ValIdx → Op
+  | u8ShiftRight : ValIdx → Op
   deriving Repr
 
 mutual

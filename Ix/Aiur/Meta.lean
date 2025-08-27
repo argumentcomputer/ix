@@ -110,6 +110,9 @@ syntax "io_get_info" "(" trm ")"                           : trm
 syntax "io_set_info" "(" trm ", " trm ", " trm ")" ";" trm : trm
 syntax "io_read" "(" trm ", " num ")"                      : trm
 syntax "io_write" "(" trm ")" ";" trm                      : trm
+syntax "u8_bit_decomposition" "(" trm ")"                  : trm
+syntax "u8_shift_left" "(" trm ")"                         : trm
+syntax "u8_shift_right" "(" trm ")"                        : trm
 
 partial def elabTrm : ElabStxCat `trm
   | `(trm| .$i:ident) => do
@@ -177,6 +180,12 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.ioRead #[← elabTrm idx, mkNatLit len.getNat]
   | `(trm| io_write($data:trm); $ret:trm) => do
     mkAppM ``Term.ioWrite #[← elabTrm data, ← elabTrm ret]
+  | `(trm| u8_bit_decomposition($byte:trm)) => do
+    mkAppM ``Term.u8BitDecomposition #[← elabTrm byte]
+  | `(trm| u8_shift_left($byte:trm)) => do
+    mkAppM ``Term.u8ShiftLeft #[← elabTrm byte]
+  | `(trm| u8_shift_right($byte:trm)) => do
+    mkAppM ``Term.u8ShiftRight #[← elabTrm byte]
   | stx => throw $ .error stx "Invalid syntax for term"
 
 declare_syntax_cat                     constructor
