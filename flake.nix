@@ -2,13 +2,11 @@
   description = "Ix Nix flake (Lean4 + C + Rust)";
 
   inputs = {
-    # Lean + System packages
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    lean4-nix = {
-      url = "github:argumentcomputer/lean4-nix";
-      # Follow top-level nixpkgs so we stay in sync
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # System packages
+    nixpkgs.follows = "lean4-nix/nixpkgs";
+
+    # Lean 4 & Lake
+    lean4-nix.url = "github:lenianiva/lean4-nix";
 
     # Helper: flake-parts for easier outputs
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -16,16 +14,17 @@
     # Rust-related inputs
     fenix = {
       url = "github:nix-community/fenix";
-      # Follow top-level nixpkgs so we stay in sync
-      inputs.nixpkgs.follows = "nixpkgs";
+      # Follow lean4-nix nixpkgs so we stay in sync
+      inputs.nixpkgs.follows = "lean4-nix/nixpkgs";
     };
 
     crane.url = "github:ipetkov/crane";
 
+    # Blake3 C dependency for static linking
     blake3-lean = {
       url = "github:argumentcomputer/Blake3.lean";
-      # Follow top-level nixpkgs so we stay in sync
-      inputs.nixpkgs.follows = "nixpkgs";
+      # Follow lean4-nix nixpkgs so we stay in sync
+      inputs.nixpkgs.follows = "lean4-nix/nixpkgs";
     };
   };
 

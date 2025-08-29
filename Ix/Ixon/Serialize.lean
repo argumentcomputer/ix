@@ -106,7 +106,7 @@ def natFromBytesLE (xs: Array UInt8) : Nat :=
 def natPackAsAddress (x: Nat) : Option Address := 
   let bytes := natToBytesLE x
   if bytes.size > 32 then .none
-  else .some (Address.mk ⟨bytes.append (mkArray (32 - bytes.size) 0)⟩)
+  else .some (Address.mk ⟨bytes.append (Array.replicate (32 - bytes.size) 0)⟩)
 
 def natUnpackFromAddress (x: Address) : Nat := 
   natFromBytesLE x.hash.data

@@ -25,7 +25,7 @@ structure LayoutMState where
 
 /-- A new `LayoutMState` starts with one auxiliar for the multiplicity. -/
 @[inline] def LayoutMState.new (inputSize : Nat) : LayoutMState :=
-  ⟨{ inputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, Array.mkArray inputSize 1⟩
+  ⟨{ inputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, Array.replicate inputSize 1⟩
 
 abbrev LayoutM := StateM LayoutMState
 
@@ -81,7 +81,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
       pushDegree 1
       bumpAuxiliaries 1
   | .call _ _ outputSize => do
-    pushDegrees $ .mkArray outputSize 1
+    pushDegrees $ .replicate outputSize 1
     bumpAuxiliaries outputSize
     bumpLookups
   | .store values => do
@@ -90,7 +90,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpLookups
     addMemSize values.size
   | .load size _ => do
-    pushDegrees $ .mkArray size 1
+    pushDegrees $ .replicate size 1
     bumpAuxiliaries size
     bumpLookups
     addMemSize size
@@ -99,11 +99,11 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpAuxiliaries 2
   | .ioSetInfo .. => pure ()
   | .ioRead _ len => do
-    pushDegrees $ .mkArray len 1
+    pushDegrees $ .replicate len 1
     bumpAuxiliaries len
   | .ioWrite .. => pure ()
   | .u8BitDecomposition _ => do
-    pushDegrees $ .mkArray 8 1
+    pushDegrees $ .replicate 8 1
     bumpAuxiliaries 8
     bumpLookups
   | .u8ShiftLeft _ | .u8ShiftRight _ => do
@@ -235,7 +235,7 @@ partial def toIndex
       let index ← pushOp paddingOp
       if index.size < size then
         let padding := (← pushOp paddingOp)[0]!
-        pure $ index ++ Array.mkArray (size - index.size) padding
+        pure $ index ++ Array.replicate (size - index.size) padding
       else
         pure index
     | _ => panic! "Should not happen after typechecking"
@@ -272,7 +272,7 @@ partial def toIndex
         let index ← buildArgs args index
         if index.size < size then
           let padding := (← pushOp (.const (.ofNat 0)))[0]!
-          pure $ index ++ Array.mkArray (size - index.size) padding
+          pure $ index ++ Array.replicate (size - index.size) padding
         else
           pure index
       | _ => panic! "Should not happen after typechecking"
@@ -286,7 +286,7 @@ partial def toIndex
       let index ← buildArgs args index
       if index.size < size then
         let padding := (← pushOp (.const (.ofNat 0)))[0]!
-        pure $ index ++ Array.mkArray (size - index.size) padding
+        pure $ index ++ Array.replicate (size - index.size) padding
       else
         pure index
     | _ => panic! "Should not happen after typechecking"
