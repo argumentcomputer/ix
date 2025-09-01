@@ -14,25 +14,18 @@ jobs:
   # Runs Lean tests via Nix
   nix-test:
     name: Nix Tests
-    strategy:
-      matrix:
-        os: [ubuntu-latest, warp-macos-latest-arm64-6x]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v16
-        with:
-          name: argumentcomputer
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       # Ix CLI
-      - run: nix build --print-build-logs
+      - run: nix build --print-build-logs --accept-flake-config
       - run: nix run .#default -- --help
       # Ix tests
-      - run: nix build .#test --print-build-logs
+      - run: nix build .#test --print-build-logs --accept-flake-config
       - run: nix run .#test
 
   # Tests Nix devShell support on Ubuntu
@@ -45,9 +38,5 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v16
-        with:
-          name: argumentcomputer
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       # Builds and runs tests using Lake as a Nix package
       - run: nix develop --command bash -c "lake build && lake test"

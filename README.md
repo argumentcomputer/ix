@@ -194,17 +194,11 @@ Ix consists of the following core components:
   - Add `trusted-users = root MYUSER` to `/etc/nix/nix.conf`
   - Then restart the Nix daemon with `sudo pkill nix-daemon`
 
-- *Recommended*: Install [Cachix](https://docs.cachix.org/installation). This
-  will use our cached nix flake artifacts, saving you from recompiling Lean and
-  other dependencies from scratch, which can take a substantial amount of time.
-  - Run `nix profile install --accept-flake-config nixpkgs#cachix`
-  - Enable the cache with `cachix use argumentcomputer`
-  - When building, you should see `querying <...> on
-    https://argumentcomputer.cachix.org`
-
 #### Build
 
 Build and run the Ix CLI with `nix build` and `nix run`.
+
+This will prompt you to enable the Garnix cache, which can also be done by passing `--accept-flake-config` to the Nix command. Then when building, you should see `copying path '/nix/store/<...>' from https://cache.garnix.io`
 
 To build and run the test suite, run `nix build .#test` and `nix run .#test`.
 
@@ -214,11 +208,10 @@ If the Nix build hangs with a message like `building lean-stage0`, it's not
 finding the cached packages and will likely take >15 minutes to build the Lean
 compiler from source. Ctrl+C and check the following:
 
-- Note that caching is only provided for `x86_64-linux` and `aarch64-darwin` at
+- Note that caching is only provided for `x86_64-linux` at
   the moment
 - Make sure `substituters` and `trusted-public-keys` have been added to
-  `~/.config/nix/nix.conf`
-- Try restarting the Nix daemon again
-- Check the given derivation is present in the cache, see the [Cachix FAQ](https://docs.cachix.org/faq#why-is-nix-not-picking-up-on-any-of-the-pre-built-artifacts)
-- Check the Lean version is supported at
-  https://github.com/argumentcomputer/lean4-nix/tree/dev/manifests
+  `~/.config/nix/nix.conf`, or you've built with `nix build --accept-flake-config`
+- Check the Lean version is supported at https://github.com/lenianiva/lean4-nix/tree/main/manifests
+- If using Ix as a flake input, make sure any top-level nixpkgs version is also pinned to follow `lean4-nix/nixpkgs`. Otherwise the overlay will have to rebuild lean4-nix from scratch
+- Try restarting the Nix daemon

@@ -16,7 +16,7 @@ structure Global where
 instance : EquivBEq Global where
   symm {_ _} h := by rw [BEq.beq] at h ⊢; exact BEq.symm h
   trans {_ _ _} h₁ h₂ := by rw [BEq.beq] at h₁ h₂ ⊢; exact BEq.trans h₁ h₂
-  refl {_} := by rw [BEq.beq]; apply BEq.refl
+  rfl {_} := by rw [BEq.beq]; apply BEq.rfl
 
 instance : Hashable Global where
   hash a := hash a.toName
