@@ -238,6 +238,16 @@ partial def inferTerm : Term → CheckM TypedTerm
     let byte ← fieldTerm <$> checkNoEscape byte .field
     let u8ShiftRight := .u8ShiftRight byte
     pure $ .mk (.evaluates .field) u8ShiftRight
+  | .u8Xor i j => do
+    let i ← fieldTerm <$> checkNoEscape i .field
+    let j ← fieldTerm <$> checkNoEscape j .field
+    let u8Xor := .u8Xor i j
+    pure $ .mk (.evaluates .field) u8Xor
+  | .u8Add i j => do
+    let i ← fieldTerm <$> checkNoEscape i .field
+    let j ← fieldTerm <$> checkNoEscape j .field
+    let u8Add := .u8Add i j
+    pure $ .mk (.evaluates (.tuple #[.field, .field])) u8Add
 where
   /--
   Ensures that there are as many arguments and as expected types and that

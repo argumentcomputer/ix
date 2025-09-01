@@ -34,3 +34,13 @@ pub fn u8_shift_left_channel() -> G {
 pub fn u8_shift_right_channel() -> G {
     G::from_u8(4)
 }
+
+#[inline]
+pub fn u8_xor_channel() -> G {
+    G::from_u8(5)
+}
+
+#[inline]
+pub fn u8_add_channel() -> G {
+    G::from_u8(6)
+}

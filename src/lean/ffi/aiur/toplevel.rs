@@ -102,6 +102,14 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
             let [byte_ptr] = ctor.objs();
             Op::U8ShiftRight(lean_unbox_nat_as_usize(byte_ptr))
         }
+        14 => {
+            let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
+            Op::U8Xor(i, j)
+        }
+        15 => {
+            let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
+            Op::U8Add(i, j)
+        }
         _ => unreachable!(),
     }
 }

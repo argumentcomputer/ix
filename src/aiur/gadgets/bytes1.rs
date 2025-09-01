@@ -24,7 +24,7 @@ const TRACE_WIDTH: usize = 3;
 /// - value shifted right
 const PREPROCESSED_TRACE_WIDTH: usize = 11;
 
-/// AIR implementer for byte-related lookups.
+/// AIR implementer for arity 1 byte-related lookups.
 pub(crate) struct Bytes1;
 
 pub(crate) enum Bytes1Op {
@@ -51,15 +51,15 @@ impl BaseAir<G> for Bytes1 {
                 row[0] = byte;
 
                 // 8 bits in LE
-                for (row_elt, bit) in row[1..].iter_mut().zip(bit_decompose(&byte)) {
+                for (row_elt, bit) in row[1..].iter_mut().zip(Self::bit_decompose(&byte)) {
                     *row_elt = bit;
                 }
 
                 // Byte shifted left
-                row[9] = shift_left(&byte);
+                row[9] = Self::shift_left(&byte);
 
                 // Byte shifted right
-                row[10] = shift_right(&byte);
+                row[10] = Self::shift_right(&byte);
             });
         Some(RowMajorMatrix::new(values, PREPROCESSED_TRACE_WIDTH))
     }
@@ -85,15 +85,15 @@ impl AiurGadget for Bytes1 {
         match op {
             Bytes1Op::BitDecomposition => {
                 record.bytes1_queries.bump_bit_decomposition(byte);
-                bit_decompose(byte)
+                Self::bit_decompose(byte)
             }
             Bytes1Op::ShiftLeft => {
                 record.bytes1_queries.bump_shift_left(byte);
-                vec![shift_left(byte)]
+                vec![Self::shift_left(byte)]
             }
             Bytes1Op::ShiftRight => {
                 record.bytes1_queries.bump_shift_right(byte);
-                vec![shift_right(byte)]
+                vec![Self::shift_right(byte)]
             }
         }
     }
@@ -175,28 +175,30 @@ impl AiurGadget for Bytes1 {
                 // Pull bit decomposition.
                 let mut bit_decomposition_args = Vec::with_capacity(10);
                 bit_decomposition_args.extend([bit_decomposition_channel, byte]);
-                bit_decomposition_args.extend(bit_decompose(&byte));
+                bit_decomposition_args.extend(Self::bit_decompose(&byte));
                 row_lookups[0] = Lookup::pull(bd, bit_decomposition_args);
 
                 // Pull shift left.
                 row_lookups[1] =
-                    Lookup::pull(shl, vec![shift_left_channel, byte, shift_left(&byte)]);
+                    Lookup::pull(shl, vec![shift_left_channel, byte, Self::shift_left(&byte)]);
 
                 // Pull shift right.
-                row_lookups[2] =
-                    Lookup::pull(shr, vec![shift_right_channel, byte, shift_right(&byte)]);
+                row_lookups[2] = Lookup::pull(
+                    shr,
+                    vec![shift_right_channel, byte, Self::shift_right(&byte)],
+                );
             });
         (RowMajorMatrix::new(rows, TRACE_WIDTH), lookups)
     }
 }
 
 /// Accumulator of queries performed against `Bytes1`.
-pub(crate) struct Bytes1Queries([[G; 3]; 256]);
+pub(crate) struct Bytes1Queries([[G; TRACE_WIDTH]; 256]);
 
 impl Bytes1Queries {
     #[inline]
     pub(crate) fn new() -> Self {
-        Self([[G::ZERO; 3]; 256])
+        Self([[G::ZERO; TRACE_WIDTH]; 256])
     }
 
     fn bump_bit_decomposition(&mut self, byte: &G) {
@@ -217,20 +219,22 @@ impl Bytes1Queries {
     }
 }
 
-#[inline]
-pub(crate) fn bit_decompose(byte: &G) -> Vec<G> {
-    let byte_u64 = byte.as_canonical_u64();
-    (0..8)
-        .map(|i| G::from_bool((byte_u64 >> i) & 1 == 1))
-        .collect()
-}
+impl Bytes1 {
+    #[inline]
+    pub(crate) fn bit_decompose(byte: &G) -> Vec<G> {
+        let byte_u64 = byte.as_canonical_u64();
+        (0..8)
+            .map(|i| G::from_bool((byte_u64 >> i) & 1 == 1))
+            .collect()
+    }
 
-#[inline]
-pub(crate) fn shift_left(byte: &G) -> G {
-    G::from_u64((byte.as_canonical_u64() << 1) & 255)
-}
+    #[inline]
+    pub(crate) fn shift_left(byte: &G) -> G {
+        G::from_u64((byte.as_canonical_u64() << 1) & 255)
+    }
 
-#[inline]
-pub(crate) fn shift_right(byte: &G) -> G {
-    G::from_u64(byte.as_canonical_u64() >> 1)
+    #[inline]
+    pub(crate) fn shift_right(byte: &G) -> G {
+        G::from_u64(byte.as_canonical_u64() >> 1)
+    }
 }

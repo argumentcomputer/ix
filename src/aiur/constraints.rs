@@ -14,8 +14,10 @@ use crate::aiur::{
     gadgets::{
         AiurGadget,
         bytes1::{Bytes1, Bytes1Op},
+        bytes2::{Bytes2, Bytes2Op},
     },
-    memory_channel, u8_bit_decomposition_channel, u8_shift_left_channel, u8_shift_right_channel,
+    memory_channel, u8_add_channel, u8_bit_decomposition_channel, u8_shift_left_channel,
+    u8_shift_right_channel, u8_xor_channel,
 };
 
 type Expr = SymbolicExpression<G>;
@@ -346,6 +348,12 @@ impl Op {
                 sel.clone(),
                 state,
             ),
+            Op::U8Xor(i, j) => {
+                bytes2_constraints(*i, *j, &Bytes2Op::Xor, u8_xor_channel(), sel.clone(), state)
+            }
+            Op::U8Add(i, j) => {
+                bytes2_constraints(*i, *j, &Bytes2Op::Add, u8_add_channel(), sel.clone(), state)
+            }
         }
     }
 }
@@ -362,6 +370,34 @@ fn bytes1_constraints(
     let mut lookup_args = vec![
         sel.clone() * channel,
         sel.clone() * state.map[byte].0.clone(),
+    ];
+
+    let output = (0..size).map(|_| {
+        let col = state.next_auxiliary();
+        state.map.push((col.clone(), 1));
+        col
+    });
+    lookup_args.extend(output);
+
+    let lookup = state.next_lookup();
+    combine_lookup_args(lookup, lookup_args);
+    lookup.multiplicity += sel;
+}
+
+fn bytes2_constraints(
+    i: usize,
+    j: usize,
+    op: &Bytes2Op,
+    channel: G,
+    sel: SymbolicExpression<G>,
+    state: &mut ConstraintState,
+) {
+    let size = Bytes2.output_size(op);
+
+    let mut lookup_args = vec![
+        sel.clone() * channel,
+        sel.clone() * state.map[i].0.clone(),
+        sel.clone() * state.map[j].0.clone(),
     ];
 
     let output = (0..size).map(|_| {

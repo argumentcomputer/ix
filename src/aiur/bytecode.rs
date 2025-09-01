@@ -51,6 +51,8 @@ pub enum Op {
     U8BitDecomposition(ValIdx),
     U8ShiftLeft(ValIdx),
     U8ShiftRight(ValIdx),
+    U8Xor(ValIdx, ValIdx),
+    U8Add(ValIdx, ValIdx),
 }
 
 pub enum Ctrl {

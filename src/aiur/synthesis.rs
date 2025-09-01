@@ -16,7 +16,7 @@ use crate::aiur::{
     constraints::Constraints,
     execute::IOBuffer,
     function_channel,
-    gadgets::{AiurGadget, bytes1::Bytes1},
+    gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
     memory::Memory,
 };
 
@@ -31,6 +31,7 @@ enum AiurCircuit {
     Function(Constraints),
     Memory(Memory),
     Bytes1,
+    Bytes2,
 }
 
 impl BaseAir<G> for AiurCircuit {
@@ -39,6 +40,7 @@ impl BaseAir<G> for AiurCircuit {
             Self::Function(constraints) => constraints.width(),
             Self::Memory(memory) => memory.width(),
             Self::Bytes1 => Bytes1.width(),
+            Self::Bytes2 => Bytes2.width(),
         }
     }
 
@@ -47,6 +49,7 @@ impl BaseAir<G> for AiurCircuit {
             Self::Function(constraints) => constraints.preprocessed_trace(),
             Self::Memory(memory) => memory.preprocessed_trace(),
             Self::Bytes1 => Bytes1.preprocessed_trace(),
+            Self::Bytes2 => Bytes2.preprocessed_trace(),
         }
     }
 }
@@ -60,6 +63,7 @@ where
             Self::Function(constraints) => constraints.eval(builder),
             Self::Memory(memory) => memory.eval(builder),
             Self::Bytes1 => Bytes1.eval(builder),
+            Self::Bytes2 => Bytes2.eval(builder),
         }
     }
 }
@@ -68,6 +72,7 @@ enum CircuitType {
     Function { idx: usize },
     Memory { width: usize },
     Bytes1,
+    Bytes2,
 }
 
 impl AiurSystem {
@@ -82,7 +87,11 @@ impl AiurSystem {
         });
 
         // Gadgets attached
-        let gadget_circuits = [LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups())].into_iter();
+        let gadget_circuits = [
+            LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups()),
+            LookupAir::new(AiurCircuit::Bytes2, Bytes2.lookups()),
+        ]
+        .into_iter();
 
         let (system, key) = System::new(
             commitment_parameters,
@@ -116,7 +125,7 @@ impl AiurSystem {
             .memory_sizes
             .par_iter()
             .map(|&width| CircuitType::Memory { width });
-        let gadgets = [CircuitType::Bytes1].into_par_iter();
+        let gadgets = [CircuitType::Bytes1, CircuitType::Bytes2].into_par_iter();
         let witness_data = functions
             .chain(memories)
             .chain(gadgets)
@@ -126,6 +135,7 @@ impl AiurSystem {
                 }
                 CircuitType::Memory { width } => Memory::witness_data(width, &query_record),
                 CircuitType::Bytes1 => Bytes1.witness_data(&query_record),
+                CircuitType::Bytes2 => Bytes2.witness_data(&query_record),
             })
             .collect::<Vec<_>>();
         drop(query_record); // Early drop to free memory.
