@@ -12,16 +12,16 @@ lean_exe ix where
   supportInterpreter := true
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "24cceb69c20fadca0fd3acabe39fa9270dfb47e6"
+  "https://github.com/argumentcomputer/LSpec" @ "db76512cd5266f0c576d561d8c69e2dc4890bea5"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "0e60b1d263d5a1c08f95b5470e4e160fc5754eee"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "7df6528278c63a9fa9e039c882ccb10728ae4c41"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "7cde559c7e6541d964984bff81caca3fe4e763a6"
+  "https://github.com/leanprover/lean4-cli" @ "73f293f8b15c3bb1fe32d8368135930541008f8a"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "613510345e4d4b3ce3d8c129595e7241990d5b39"
+  "https://github.com/leanprover-community/batteries" @ "8d2067bf518731a70a255d4a61b5c103922c772e"
 
 section Tests
 
@@ -97,7 +97,7 @@ extern_lib ix_c pkg := do
       buildJobs := buildJobs.push buildJob
 
   let libName := nameToStaticLib "ix_c"
-  buildStaticLib (pkg.nativeLibDir / libName) buildJobs
+  buildStaticLib (pkg.staticLibDir / libName) buildJobs
 
 end FFI
 
@@ -137,7 +137,7 @@ script install := do
   return 0
 
 script "check-lean-h-hash" := do
-  let cachedLeanHHash := 2852512314838227027
+  let cachedLeanHHash := 10195253849214811475
 
   let leanIncludeDir ← getLeanIncludeDir
   let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"

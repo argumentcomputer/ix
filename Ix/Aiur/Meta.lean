@@ -86,26 +86,33 @@ partial def elabTyp : ElabStxCat `typ
     mkAppM ``Typ.function #[← elabList t ts elabTyp ``Typ, ← elabTyp t']
   | stx => throw $ .error stx "Invalid syntax for type"
 
-declare_syntax_cat                                          trm
-syntax ("." noWs)? ident                                  : trm
-syntax num                                                : trm
-syntax "(" trm (", " trm)* ")"                            : trm
-syntax "[" trm (", " trm)* "]"                            : trm
-syntax "return " trm                                      : trm
-syntax "let " pattern " = " trm "; " trm                  : trm
-syntax "match " trm " { " (pattern " => " trm ", ")+ " }" : trm
-syntax ("." noWs)? ident "(" ")"                          : trm
-syntax ("." noWs)? ident "(" trm (", " trm)* ")"          : trm
-syntax:50 trm " + " trm                                   : trm
-syntax:50 trm " - " trm                                   : trm
-syntax trm " * " trm:51                                   : trm
-syntax "proj" "(" trm ", " num ")"                        : trm
-syntax trm "[" num "]"                                    : trm
-syntax trm "[" num ".." num "]"                           : trm
-syntax "store" "(" trm ")"                                : trm
-syntax "load" "(" trm ")"                                 : trm
-syntax "ptr_val" "(" trm ")"                              : trm
-syntax trm ": " typ                                       : trm
+declare_syntax_cat                                           trm
+syntax ("." noWs)? ident                                   : trm
+syntax num                                                 : trm
+syntax "(" trm (", " trm)* ")"                             : trm
+syntax "[" trm (", " trm)* "]"                             : trm
+syntax "return " trm                                       : trm
+syntax "let " pattern (":" typ)? " = " trm "; " trm        : trm
+syntax "match " trm " { " (pattern " => " trm ", ")+ " }"  : trm
+syntax ("." noWs)? ident "(" ")"                           : trm
+syntax ("." noWs)? ident "(" trm (", " trm)* ")"           : trm
+syntax:50 trm " + " trm                                    : trm
+syntax:50 trm " - " trm                                    : trm
+syntax trm " * " trm:51                                    : trm
+syntax "proj" "(" trm ", " num ")"                         : trm
+syntax trm "[" num "]"                                     : trm
+syntax trm "[" num ".." num "]"                            : trm
+syntax "store" "(" trm ")"                                 : trm
+syntax "load" "(" trm ")"                                  : trm
+syntax "ptr_val" "(" trm ")"                               : trm
+syntax trm ": " typ                                        : trm
+syntax "io_get_info" "(" trm ")"                           : trm
+syntax "io_set_info" "(" trm ", " trm ", " trm ")" ";" trm : trm
+syntax "io_read" "(" trm ", " num ")"                      : trm
+syntax "io_write" "(" trm ")" ";" trm                      : trm
+syntax "u8_bit_decomposition" "(" trm ")"                  : trm
+syntax "u8_shift_left" "(" trm ")"                         : trm
+syntax "u8_shift_right" "(" trm ")"                        : trm
 
 partial def elabTrm : ElabStxCat `trm
   | `(trm| .$i:ident) => do
@@ -127,8 +134,11 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.data #[data]
   | `(trm| return $t:trm) => do
     mkAppM ``Term.ret #[← elabTrm t]
-  | `(trm| let $p:pattern = $t:trm; $t':trm) => do
-    mkAppM ``Term.let #[← elabPattern p, ← elabTrm t, ← elabTrm t']
+  | `(trm| let $p:pattern $[: $ty:typ]? = $t:trm; $t':trm) => match ty with
+    | none => do mkAppM ``Term.let #[← elabPattern p, ← elabTrm t, ← elabTrm t']
+    | some ty => do
+      let t ← mkAppM ``Term.ann #[← elabTyp ty, ← elabTrm t]
+      mkAppM ``Term.let #[← elabPattern p, t, ← elabTrm t']
   | `(trm| match $t:trm {$[$ps:pattern => $ts:trm,]*}) => do
     let mut prods := Array.mkEmpty (ps.size + 1)
     for (p, t) in ps.zip ts do
@@ -161,6 +171,21 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.ptrVal #[← elabTrm a]
   | `(trm| $v:trm : $t:typ) => do
     mkAppM ``Term.ann #[← elabTyp t, ← elabTrm v]
+  | `(trm| io_get_info($key:trm)) => do
+    mkAppM ``Term.ioGetInfo #[← elabTrm key]
+  | `(trm| io_set_info($key:trm, $idx:trm, $len:trm); $ret:trm) => do
+    mkAppM ``Term.ioSetInfo
+      #[← elabTrm key, ← elabTrm idx, ← elabTrm len, ← elabTrm ret]
+  | `(trm| io_read($idx:trm, $len:num)) => do
+    mkAppM ``Term.ioRead #[← elabTrm idx, mkNatLit len.getNat]
+  | `(trm| io_write($data:trm); $ret:trm) => do
+    mkAppM ``Term.ioWrite #[← elabTrm data, ← elabTrm ret]
+  | `(trm| u8_bit_decomposition($byte:trm)) => do
+    mkAppM ``Term.u8BitDecomposition #[← elabTrm byte]
+  | `(trm| u8_shift_left($byte:trm)) => do
+    mkAppM ``Term.u8ShiftLeft #[← elabTrm byte]
+  | `(trm| u8_shift_right($byte:trm)) => do
+    mkAppM ``Term.u8ShiftRight #[← elabTrm byte]
   | stx => throw $ .error stx "Invalid syntax for term"
 
 declare_syntax_cat                     constructor

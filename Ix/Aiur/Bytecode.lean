@@ -16,6 +16,13 @@ inductive Op
   | call : FunIdx → Array ValIdx → (outputSize : Nat) → Op
   | store : Array ValIdx → Op
   | load : (size : Nat) → ValIdx → Op
+  | ioGetInfo : Array ValIdx → Op
+  | ioSetInfo : Array ValIdx → ValIdx → ValIdx → Op
+  | ioRead : ValIdx → Nat → Op
+  | ioWrite : Array ValIdx → Op
+  | u8BitDecomposition : ValIdx → Op
+  | u8ShiftLeft : ValIdx → Op
+  | u8ShiftRight : ValIdx → Op
   deriving Repr
 
 mutual
@@ -35,7 +42,6 @@ end
 /-- The circuit layout of a function -/
 structure FunctionLayout where
   inputSize : Nat
-  outputSize : Nat
   /-- Bit values that identify which path the computation took.
     Exactly one selector must be set. -/
   selectors : Nat

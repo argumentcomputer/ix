@@ -1,5 +1,5 @@
 use multi_stark::{
-    builder::symbolic::SymbolicExpression,
+    builder::symbolic::{SymbolicExpression, var},
     lookup::Lookup,
     p3_air::{Air, AirBuilder, BaseAir},
     p3_field::PrimeCharacteristicRing,
@@ -13,10 +13,7 @@ use rayon::{
     slice::ParallelSliceMut,
 };
 
-use crate::{
-    aiur::{G, execute::QueryRecord, trace::Channel},
-    sym_var,
-};
+use crate::aiur::{G, execute::QueryRecord, memory_channel};
 
 pub struct Memory {
     width: usize,
@@ -25,7 +22,7 @@ pub struct Memory {
 impl Memory {
     pub(super) fn lookup(multiplicity: G, size: G, ptr: G, values: &[G]) -> Lookup<G> {
         let mut args = Vec::with_capacity(3 + values.len());
-        args.extend([Channel::Memory.to_field(), size, ptr]);
+        args.extend([memory_channel(), size, ptr]);
         args.extend(values);
         Lookup { multiplicity, args }
     }
@@ -35,22 +32,22 @@ impl Memory {
         3 + size
     }
 
-    pub fn build(size: usize) -> (Self, Lookup<SymbolicExpression<G>>) {
-        let multiplicity = sym_var!(0);
-        let selector = sym_var!(1);
-        let pointer = sym_var!(2);
+    pub fn build(size: usize) -> (Self, Vec<Lookup<SymbolicExpression<G>>>) {
+        let multiplicity = var(0);
+        let selector = var(1);
+        let pointer = var(2);
         let mut args = Vec::with_capacity(3 + size);
-        args.push(selector.clone() * Channel::Memory.to_field());
+        args.push(selector.clone() * memory_channel());
         args.push(selector.clone() * G::from_usize(size));
         args.push(selector.clone() * pointer);
         for val_idx in 0..size {
-            args.push(selector.clone() * sym_var!(3 + val_idx));
+            args.push(selector.clone() * var(3 + val_idx));
         }
         let width = Self::width(size);
-        (Self { width }, Lookup::pull(multiplicity, args))
+        (Self { width }, vec![Lookup::pull(multiplicity, args)])
     }
 
-    pub fn generate_trace(
+    pub fn witness_data(
         size: usize,
         record: &QueryRecord,
     ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {

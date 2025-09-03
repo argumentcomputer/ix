@@ -8,26 +8,15 @@ use rayon::{
     slice::ParallelSliceMut,
 };
 
-use super::{
+use crate::aiur::{
     G,
     bytecode::{Block, Ctrl, Function, Op, Toplevel},
-    execute::QueryRecord,
+    execute::{IOBuffer, IOKeyInfo, QueryRecord},
+    function_channel,
+    gadgets::bytes1::{bit_decompose, shift_left, shift_right},
     memory::Memory,
+    u8_bit_decomposition_channel, u8_shift_left_channel, u8_shift_right_channel,
 };
-
-pub enum Channel {
-    Function,
-    Memory,
-}
-
-impl Channel {
-    pub fn to_field(&self) -> G {
-        match self {
-            Channel::Function => G::ZERO,
-            Channel::Memory => G::ONE,
-        }
-    }
-}
 
 struct ColumnIndex {
     auxiliary: usize,
@@ -78,10 +67,11 @@ struct TraceContext<'a> {
 }
 
 impl Toplevel {
-    pub fn generate_trace(
+    pub fn witness_data(
         &self,
         function_index: usize,
         query_record: &QueryRecord,
+        io_buffer: &IOBuffer,
     ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
         let func = &self.functions[function_index];
         let width = func.width();
@@ -115,7 +105,7 @@ impl Toplevel {
                     output: &result.output,
                     query_record,
                 };
-                func.populate_row(index, slice, context);
+                func.populate_row(index, slice, context, io_buffer);
             });
         let trace = RowMajorMatrix::new(rows, width);
         (trace, lookups)
@@ -132,6 +122,7 @@ impl Function {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_>,
         context: TraceContext<'_>,
+        io_buffer: &IOBuffer,
     ) {
         debug_assert_eq!(
             self.layout.input_size,
@@ -148,7 +139,8 @@ impl Function {
             .for_each(|(i, arg)| slice.inputs[i] = *arg);
         // Push the multiplicity
         slice.push_auxiliary(index, context.multiplicity);
-        self.body.populate_row(map, index, slice, context);
+        self.body
+            .populate_row(map, index, slice, context, io_buffer);
     }
 }
 
@@ -159,11 +151,13 @@ impl Block {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_>,
         context: TraceContext<'_>,
+        io_buffer: &IOBuffer,
     ) {
         self.ops
             .iter()
-            .for_each(|op| op.populate_row(map, index, slice, context));
-        self.ctrl.populate_row(map, index, slice, context);
+            .for_each(|op| op.populate_row(map, index, slice, context, io_buffer));
+        self.ctrl
+            .populate_row(map, index, slice, context, io_buffer);
     }
 }
 
@@ -174,6 +168,7 @@ impl Ctrl {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_>,
         context: TraceContext<'_>,
+        io_buffer: &IOBuffer,
     ) {
         match self {
             Ctrl::Return(sel, _) => {
@@ -199,7 +194,7 @@ impl Ctrl {
                         def.as_deref()
                     })
                     .expect("No match");
-                branch.populate_row(map, index, slice, context);
+                branch.populate_row(map, index, slice, context, io_buffer);
             }
         }
     }
@@ -212,6 +207,7 @@ impl Op {
         index: &mut ColumnIndex,
         slice: &mut ColumnMutSlice<'_>,
         context: TraceContext<'_>,
+        io_buffer: &IOBuffer,
     ) {
         match self {
             Op::Const(f) => map.push((*f, 0)),
@@ -292,12 +288,59 @@ impl Op {
                 let lookup = Memory::lookup(G::ONE, G::from_usize(*size), ptr, values);
                 slice.push_lookup(index, lookup);
             }
+            Op::IOGetInfo(key) => {
+                let key = key.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+                let IOKeyInfo { idx, len } = io_buffer.get_info(&key);
+                for f in [G::from_usize(*idx), G::from_usize(*len)] {
+                    map.push((f, 1));
+                    slice.push_auxiliary(index, f);
+                }
+            }
+            Op::IORead(idx, len) => {
+                let idx = map[*idx]
+                    .0
+                    .as_canonical_u64()
+                    .try_into()
+                    .expect("Index is too big for an usize");
+                for &f in io_buffer.read(idx, *len) {
+                    map.push((f, 1));
+                    slice.push_auxiliary(index, f);
+                }
+            }
+            Op::IOSetInfo(..) | Op::IOWrite(_) => (),
+            Op::U8BitDecomposition(byte) => {
+                let (byte, _) = map[*byte];
+                let bits = bit_decompose(&byte);
+                for &b in &bits {
+                    map.push((b, 1));
+                    slice.push_auxiliary(index, b);
+                }
+                let mut lookup_args = vec![u8_bit_decomposition_channel(), byte];
+                lookup_args.extend(bits);
+                slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+            }
+            Op::U8ShiftLeft(byte) => {
+                let (byte, _) = map[*byte];
+                let byte_shifted = shift_left(&byte);
+                map.push((byte_shifted, 1));
+                slice.push_auxiliary(index, byte_shifted);
+                let lookup_args = vec![u8_shift_left_channel(), byte, byte_shifted];
+                slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+            }
+            Op::U8ShiftRight(byte) => {
+                let (byte, _) = map[*byte];
+                let byte_shifted = shift_right(&byte);
+                map.push((byte_shifted, 1));
+                slice.push_auxiliary(index, byte_shifted);
+                let lookup_args = vec![u8_shift_right_channel(), byte, byte_shifted];
+                slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+            }
         }
     }
 }
 
 fn function_lookup(multiplicity: G, function_index: G, inputs: &[G], output: &[G]) -> Lookup<G> {
-    let mut args = vec![Channel::Function.to_field(), function_index];
+    let mut args = vec![function_channel(), function_index];
     args.extend(inputs);
     args.extend(output);
     Lookup { multiplicity, args }

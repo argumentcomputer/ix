@@ -17,7 +17,7 @@ inductive CheckError
   | wrongNumArgs : Global → Nat → Nat → CheckError
   | notATuple : Typ → CheckError
   | notAnArray : Typ → CheckError
-  | emptyArray : Data → CheckError
+  | emptyArray : CheckError
   | indexOoB : Nat → CheckError
   | negativeRange : Nat → Nat → CheckError
   | rangeOoB : Nat → Nat → CheckError
@@ -189,13 +189,55 @@ partial def inferTerm : Term → CheckM TypedTerm
     -- The term is not allowed to early return.
     let (typ, inner) ← inferNoEscape term
     match typ with
-    | .pointer _ =>
-      let asU64 := .ptrVal (.mk (.evaluates typ) inner)
-      pure $ .mk (.evaluates .field) asU64
+    | .pointer _ => pure $ fieldTerm (.ptrVal (.mk (.evaluates typ) inner))
     | _ => throw $ .notAPointer typ
   | .ann typ term => do
     let inner ← checkNoEscape term typ
     pure $ .mk (.evaluates typ) inner
+  | .ioGetInfo key => do
+    let (typ, keyInner) ← inferNoEscape key
+    match typ with
+    | .array .. =>
+      let ioGetInfo := .ioGetInfo (.mk (.evaluates typ) keyInner)
+      pure $ .mk (.evaluates (.tuple #[.field, .field])) ioGetInfo
+    | _ => throw $ .notAnArray typ
+  | .ioSetInfo key idx len ret => do
+    let (keyTyp, keyInner) ← inferNoEscape key
+    match keyTyp with
+    | .array keyEltTyp _ =>
+      if keyEltTyp != .field then throw $ .typeMismatch .field keyEltTyp
+      let idx ← fieldTerm <$> checkNoEscape idx .field
+      let len ← fieldTerm <$> checkNoEscape len .field
+      let ret ← inferTerm ret
+      let ioSetInfo := .ioSetInfo (.mk (.evaluates keyTyp) keyInner) idx len ret
+      pure $ .mk (.evaluates ret.typ.unwrap) ioSetInfo
+    | _ => throw $ .notAnArray keyTyp
+  | .ioRead idx len => do
+    if len = 0 then throw .emptyArray
+    let idx ← fieldTerm <$> checkNoEscape idx .field
+    let ioRead := .ioRead idx len
+    pure $ .mk (.evaluates (.array .field len)) ioRead
+  | .ioWrite data ret => do
+    let (dataTyp, dataInner) ← inferNoEscape data
+    match dataTyp with
+    | .array dataEltTyp _ =>
+      if dataEltTyp != .field then throw $ .typeMismatch .field dataEltTyp
+      let ret ← inferTerm ret
+      let ioWrite := .ioWrite (.mk (.evaluates dataTyp) dataInner) ret
+      pure $ .mk (.evaluates ret.typ.unwrap) ioWrite
+    | _ => throw $ .notAnArray dataTyp
+  | .u8BitDecomposition byte => do
+    let byte ← fieldTerm <$> checkNoEscape byte .field
+    let u8BitDecomposition := .u8BitDecomposition byte
+    pure $ .mk (.evaluates (.array .field 8)) u8BitDecomposition
+  | .u8ShiftLeft byte => do
+    let byte ← fieldTerm <$> checkNoEscape byte .field
+    let u8ShiftLeft := .u8ShiftLeft byte
+    pure $ .mk (.evaluates .field) u8ShiftLeft
+  | .u8ShiftRight byte => do
+    let byte ← fieldTerm <$> checkNoEscape byte .field
+    let u8ShiftRight := .u8ShiftRight byte
+    pure $ .mk (.evaluates .field) u8ShiftRight
 where
   /--
   Ensures that there are as many arguments and as expected types and that
@@ -233,7 +275,7 @@ partial def inferData : Data → CheckM (Typ × TypedTermInner)
     let typs := typsAndInners.map Prod.fst
     let terms := typsAndInners.map fun (typ, inner) => .mk (.evaluates typ) inner
     pure (.tuple typs, .data (.tuple terms))
-  | arr@(.array terms) => do
+  | .array terms => do
     if h : terms.size > 0 then
       let (typ, firstInner) ← inferNoEscape terms[0]
       let mut typedTerms := Array.mkEmpty terms.size
@@ -242,7 +284,7 @@ partial def inferData : Data → CheckM (Typ × TypedTermInner)
         let inner ← checkNoEscape term typ
         typedTerms := typedTerms.push (.mk (.evaluates typ) inner)
       pure (.array typ terms.size, .data (.array typedTerms))
-    else throw $ .emptyArray arr
+    else throw .emptyArray
 
 /-- Infers the type of a 'match' expression and ensures its patterns and branches are valid. -/
 partial def inferMatch (term : Term) (branches : List (Pattern × Term)) : CheckM TypedTerm := do

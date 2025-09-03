@@ -13,11 +13,9 @@ pub struct Function {
     pub(crate) layout: FunctionLayout,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub struct FunctionLayout {
     pub(crate) input_size: usize,
-    pub(crate) output_size: usize,
     pub(crate) selectors: usize,
     pub(crate) auxiliaries: usize,
     pub(crate) lookups: usize,
@@ -46,6 +44,13 @@ pub enum Op {
     Call(FunIdx, Vec<ValIdx>, usize),
     Store(Vec<ValIdx>),
     Load(usize, ValIdx),
+    IOGetInfo(Vec<ValIdx>),
+    IOSetInfo(Vec<ValIdx>, ValIdx, ValIdx),
+    IORead(ValIdx, usize),
+    IOWrite(Vec<ValIdx>),
+    U8BitDecomposition(ValIdx),
+    U8ShiftLeft(ValIdx),
+    U8ShiftRight(ValIdx),
 }
 
 pub enum Ctrl {

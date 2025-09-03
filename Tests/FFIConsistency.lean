@@ -7,7 +7,7 @@ open LSpec SlimCheck Gen
 
 def genArrayUInt32 : Gen $ Array UInt32 := do
   let numValues ← choose Nat 1 8
-  let mut values := Array.mkEmpty numValues
+  let mut values := Array.emptyWithCapacity numValues
   for _ in [:numValues] do
     values := values.push $ ← genUInt32
   pure values
@@ -16,7 +16,7 @@ def genArrayUInt32 : Gen $ Array UInt32 := do
 opaque boxedUInt32sAreEquivalentToBytes : @& Array UInt32 → @& ByteArray → Bool
 
 def arrayUInt32sToBytes (arr : Array UInt32) : ByteArray :=
-  arr.foldl (init := .mkEmpty (4 * arr.size)) fun acc u => acc ++ u.toLEBytes
+  arr.foldl (init := .emptyWithCapacity (4 * arr.size)) fun acc u => acc ++ u.toLEBytes
 
 instance : Shrinkable (Array UInt32) where
   shrink _ := []
