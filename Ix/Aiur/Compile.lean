@@ -106,9 +106,13 @@ def opLayout : Bytecode.Op → LayoutM Unit
     pushDegrees $ .replicate 8 1
     bumpAuxiliaries 8
     bumpLookups
-  | .u8ShiftLeft _ | .u8ShiftRight _ => do
+  | .u8ShiftLeft _ | .u8ShiftRight _ | .u8Xor .. => do
     pushDegree 1
     bumpAuxiliaries 1
+    bumpLookups
+  | .u8Add .. => do
+    pushDegrees #[1, 1]
+    bumpAuxiliaries 2
     bumpLookups
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
@@ -367,6 +371,14 @@ partial def toIndex
   | .u8ShiftRight byte => do
     let byte ← expectIdx byte
     pushOp (.u8ShiftRight byte)
+  | .u8Xor i j => do
+    let i ← expectIdx i
+    let j ← expectIdx j
+    pushOp (.u8Xor i j)
+  | .u8Add i j => do
+    let i ← expectIdx i
+    let j ← expectIdx j
+    pushOp (.u8Add i j) 2
   where
     buildArgs (args : List TypedTerm) (init := #[]) :=
       let append acc arg := do

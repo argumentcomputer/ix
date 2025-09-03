@@ -23,6 +23,8 @@ inductive Op
   | u8BitDecomposition : ValIdx → Op
   | u8ShiftLeft : ValIdx → Op
   | u8ShiftRight : ValIdx → Op
+  | u8Xor : ValIdx → ValIdx → Op
+  | u8Add : ValIdx → ValIdx → Op
   deriving Repr
 
 mutual

@@ -8,6 +8,7 @@ use crate::aiur::{
     gadgets::{
         AiurGadget,
         bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
+        bytes2::{Bytes2, Bytes2Op, Bytes2Queries},
     },
 };
 
@@ -22,6 +23,7 @@ pub struct QueryRecord {
     pub(crate) function_queries: Vec<QueryMap>,
     pub(crate) memory_queries: FxIndexMap<usize, QueryMap>,
     pub(crate) bytes1_queries: Bytes1Queries,
+    pub(crate) bytes2_queries: Bytes2Queries,
 }
 
 impl QueryRecord {
@@ -37,10 +39,12 @@ impl QueryRecord {
             .map(|width| (*width, QueryMap::default()))
             .collect();
         let bytes1_queries = Bytes1Queries::new();
+        let bytes2_queries = Bytes2Queries::new();
         Self {
             function_queries,
             memory_queries,
             bytes1_queries,
+            bytes2_queries,
         }
     }
 }
@@ -221,6 +225,12 @@ impl Function {
                 ExecEntry::Op(Op::U8ShiftRight(byte)) => {
                     bytes1_execute(*byte, &Bytes1Op::ShiftRight, &mut map, record)
                 }
+                ExecEntry::Op(Op::U8Xor(i, j)) => {
+                    bytes2_execute(*i, *j, &Bytes2Op::Xor, &mut map, record)
+                }
+                ExecEntry::Op(Op::U8Add(i, j)) => {
+                    bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record)
+                }
                 ExecEntry::Ctrl(Ctrl::Match(val_idx, cases, default)) => {
                     let val = &map[*val_idx];
                     if let Some(block) = cases.get(val) {
@@ -264,4 +274,8 @@ impl Function {
 
 fn bytes1_execute(byte: usize, op: &Bytes1Op, map: &mut Vec<G>, record: &mut QueryRecord) {
     map.extend(Bytes1.execute(op, &[map[byte]], record));
+}
+
+fn bytes2_execute(i: usize, j: usize, op: &Bytes2Op, map: &mut Vec<G>, record: &mut QueryRecord) {
+    map.extend(Bytes2.execute(op, &[map[i], map[j]], record));
 }

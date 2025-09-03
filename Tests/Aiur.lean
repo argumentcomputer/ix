@@ -141,6 +141,11 @@ def toplevel := ⟦
     let byte_shr_shr_shl = u8_shift_left(byte_shr_shr);
     u8_bit_decomposition(byte_shr_shr_shl)
   }
+
+  fn u8_add_xor(i: G, j: G) -> ((G, G), (G, G)) {
+    let i_xor_j = u8_xor(i, j);
+    (u8_add(i_xor_j, i), u8_add(i_xor_j, j))
+  }
 ⟧
 
 structure TestCase where
@@ -178,6 +183,7 @@ def testCases : List TestCase := [
       ⟨#[1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩)]⟩,
       ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩⟩,
     ⟨`shr_shr_shl_decompose, #[87], #[0, 1, 0, 1, 0, 1, 0, 0], default, default⟩,
+    ⟨`u8_add_xor, #[45, 131], #[219, 0, 49, 1], default, default⟩,
   ]
 
 def commitmentParameters : Aiur.CommitmentParameters := {
