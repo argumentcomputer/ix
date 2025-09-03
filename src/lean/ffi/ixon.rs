@@ -4,13 +4,23 @@ use std::ffi::c_void;
 
 use crate::{
     ixon::{
-        address::Address, claim::{Claim, Proof}, constant::{
-            Axiom, Comm, Constructor, ConstructorProj, DefKind, DefSafety, Definition, DefinitionProj, Inductive, InductiveProj, QuotKind, Quotient, Recursor, RecursorProj, RecursorRule
-        }, meta::{BinderInfo, Metadata, Metadatum, ReducibilityHints}, name::{Name, NamePart}, nat::Nat, serialize::Serialize, univ::Univ, Ixon
+        Ixon,
+        address::Address,
+        claim::{Claim, Proof},
+        constant::{
+            Axiom, Comm, Constructor, ConstructorProj, DefKind, DefSafety, Definition,
+            DefinitionProj, Inductive, InductiveProj, QuotKind, Quotient, Recursor, RecursorProj,
+            RecursorRule,
+        },
+        meta::{BinderInfo, Metadata, Metadatum, ReducibilityHints},
+        name::{Name, NamePart},
+        nat::Nat,
+        serialize::Serialize,
+        univ::Univ,
     },
     lean::{
         array::LeanArrayObject, as_ref_unsafe, ctor::LeanCtorObject, lean_is_scalar,
-        sarray::LeanSArrayObject, string::LeanStringObject
+        sarray::LeanSArrayObject, string::LeanStringObject,
     },
     lean_unbox,
 };
@@ -82,7 +92,13 @@ fn lean_ptr_to_definition(ptr: *const c_void) -> Definition {
         2 => DefSafety::Partial,
         _ => unreachable!(),
     };
-    Definition {lvls, typ, mode: mode, value, safety}
+    Definition {
+        lvls,
+        typ,
+        mode: mode,
+        value,
+        safety,
+    }
 }
 
 fn lean_ptr_to_constructor(ptr: *const c_void) -> Constructor {
@@ -94,7 +110,14 @@ fn lean_ptr_to_constructor(ptr: *const c_void) -> Constructor {
     let params = lean_ptr_to_nat(params);
     let fields = lean_ptr_to_nat(fields);
     let is_unsafe = is_unsafe as usize == 1;
-    Constructor { lvls, typ, cidx, params, fields, is_unsafe }
+    Constructor {
+        lvls,
+        typ,
+        cidx,
+        params,
+        fields,
+        is_unsafe,
+    }
 }
 
 fn lean_ptr_to_recursor_rule(ptr: *const c_void) -> RecursorRule {
@@ -107,7 +130,16 @@ fn lean_ptr_to_recursor_rule(ptr: *const c_void) -> RecursorRule {
 
 fn lean_ptr_to_recursor(ptr: *const c_void) -> Recursor {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-    let [lvls, typ, params, indices, motives, minors, rules, k_isunsafe] = ctor.objs();
+    let [
+        lvls,
+        typ,
+        params,
+        indices,
+        motives,
+        minors,
+        rules,
+        k_isunsafe,
+    ] = ctor.objs();
     let lvls = lean_ptr_to_nat(lvls);
     let typ = lean_ptr_to_address(typ);
     let params = lean_ptr_to_nat(params);
@@ -119,12 +151,31 @@ fn lean_ptr_to_recursor(ptr: *const c_void) -> Recursor {
     let [k, is_unsafe, ..] = (k_isunsafe as usize).to_le_bytes();
     let k = k == 1;
     let is_unsafe = is_unsafe == 1;
-    Recursor { lvls, typ, params, indices, motives, minors, rules, k, is_unsafe }
+    Recursor {
+        lvls,
+        typ,
+        params,
+        indices,
+        motives,
+        minors,
+        rules,
+        k,
+        is_unsafe,
+    }
 }
 
 fn lean_ptr_to_inductive(ptr: *const c_void) -> Inductive {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-    let [lvls, typ, params, indices, ctors, recrs, nested, recr_refl_isunsafe] = ctor.objs();
+    let [
+        lvls,
+        typ,
+        params,
+        indices,
+        ctors,
+        recrs,
+        nested,
+        recr_refl_isunsafe,
+    ] = ctor.objs();
     let lvls = lean_ptr_to_nat(lvls);
     let typ = lean_ptr_to_address(typ);
     let params = lean_ptr_to_nat(params);
@@ -138,7 +189,18 @@ fn lean_ptr_to_inductive(ptr: *const c_void) -> Inductive {
     let recr = recr == 1;
     let refl = refl == 1;
     let is_unsafe = is_unsafe == 1;
-    Inductive { lvls, typ, params, indices, ctors, recrs, nested, recr, refl, is_unsafe }
+    Inductive {
+        lvls,
+        typ,
+        params,
+        indices,
+        ctors,
+        recrs,
+        nested,
+        recr,
+        refl,
+        is_unsafe,
+    }
 }
 
 fn lean_ptr_to_name_parts(ptr: *const c_void) -> Vec<NamePart> {
@@ -178,7 +240,7 @@ fn lean_ptr_to_metadatum(ptr: *const c_void) -> Metadatum {
             let [name] = ctor.objs();
             let name = lean_ptr_to_name(name);
             Metadatum::Name(name)
-        },
+        }
         1 => {
             let [info] = ctor.objs();
             let info = match info as usize {
@@ -239,7 +301,12 @@ fn lean_ptr_to_metadata_entry(ptr: *const c_void) -> (Nat, Vec<Metadatum>) {
 fn lean_ptr_to_eval_claim(ptr: *const c_void) -> Claim {
     let evals: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [lvls, input, output, typ] = evals.objs().map(lean_ptr_to_address);
-    Claim::Evals { lvls, typ, input, output }
+    Claim::Evals {
+        lvls,
+        typ,
+        input,
+        output,
+    }
 }
 
 fn lean_ptr_to_check_claim(ptr: *const c_void) -> Claim {
@@ -332,7 +399,11 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let lvls = lean_ptr_to_nat(lvls);
             let typ = lean_ptr_to_address(typ);
             let is_unsafe = is_unsafe as usize == 1;
-            Ixon::Axio(Axiom { lvls, typ, is_unsafe })
+            Ixon::Axio(Axiom {
+                lvls,
+                typ,
+                is_unsafe,
+            })
         }
         14 => {
             let [quot_ptr] = ctor.objs();
@@ -347,7 +418,7 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
                 3 => QuotKind::Ind,
                 _ => unreachable!(),
             };
-            Ixon::Quot(Quotient {lvls, typ, kind})
+            Ixon::Quot(Quotient { lvls, typ, kind })
         }
         15 => {
             let [cprj_ptr] = ctor.objs();
@@ -373,7 +444,7 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let [block, idx] = iprj_ctor.objs();
             let block = lean_ptr_to_address(block);
             let idx = lean_ptr_to_nat(idx);
-            Ixon::IndcProj(InductiveProj {block, idx})
+            Ixon::IndcProj(InductiveProj { block, idx })
         }
         18 => {
             let [dprj_ptr] = ctor.objs();
@@ -381,7 +452,7 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let [block, idx] = dprj_ctor.objs();
             let block = lean_ptr_to_address(block);
             let idx = lean_ptr_to_nat(idx);
-            Ixon::DefnProj(DefinitionProj {block, idx})
+            Ixon::DefnProj(DefinitionProj { block, idx })
         }
         19 => {
             let [inds_ptr] = ctor.objs();
@@ -418,7 +489,10 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
                 _ => unreachable!(),
             };
             let bin: &LeanSArrayObject = as_ref_unsafe(bin.cast());
-            Ixon::Proof(Proof {claim, proof: bin.data().to_vec()})
+            Ixon::Proof(Proof {
+                claim,
+                proof: bin.data().to_vec(),
+            })
         }
         23 => {
             let [evals] = ctor.objs();
@@ -440,7 +514,10 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn rs_eq_lean_rust_serialization(ixon: &LeanCtorObject, bytes: &LeanSArrayObject) -> bool {
+extern "C" fn rs_eq_lean_rust_serialization(
+    ixon: &LeanCtorObject,
+    bytes: &LeanSArrayObject,
+) -> bool {
     let mut buf = Vec::new();
     println!("{:?}", lean_ctor_to_ixon(ixon));
     lean_ctor_to_ixon(ixon).put(&mut buf);
