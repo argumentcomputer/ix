@@ -53,6 +53,7 @@ def transportConst (x: Ix.Const): Bool :=
     | .error _ _ => .false
   | .error _ _ => .false
 
+
 --def transportExpr' (x: Ix.Expr): Except TransportError Bool :=
 --  match EStateM.run (dematExpr x) emptyDematState with
 --  | .ok ixon stt =>
@@ -61,7 +62,16 @@ def transportConst (x: Ix.Const): Bool :=
 --    | .ok ix _ => .ok (x == ix)
 --    | .error e _ => .error e
 --  | .error e _ => .error e
---
+
+def ffiConst (x: Ixon.IxonConst) : Bool := 
+  let bytes := (Ixon.runPut <| Ixon.Serialize.put x)
+  Ixon.eqLeanRustSerialization x.ixon.toFFI bytes
+
+def ffiExpr (x: Ixon.IxonExpr) : Bool := 
+  let bytes := (Ixon.runPut <| Ixon.Serialize.put x)
+  Ixon.eqLeanRustSerialization x.ixon.toFFI bytes
+
+
 def myConfig : SlimCheck.Configuration where
   numInst := 10000
   maxSize := 100
@@ -87,11 +97,12 @@ def Tests.Ix.suite : List LSpec.TestSeq :=
     check "universe transport" (∀ x : Ix.Level, transportUniv x),
     check "expr serde" (∀ x : Ixon.IxonExpr, serde x),
     check "expr transport" (∀ x : Ix.Expr, transportExpr x),
+    check "expr ffi with Rust" (∀ x : Ixon.IxonExpr, ffiExpr x),
     ----check "axiom serde" (∀ x : Ixon.Axiom, serde x),
     ----check "recursor rule serde" (∀ x : Ixon.RecursorRule, serde x),
     ----check "recursor serde" (∀ x : Ixon.Recursor, serde x),
     ----check "constructor serde" (∀ x : Ixon.Constructor, serde x),
     check "claim serde" (∀ x : Claim, serde x),
-    check "const serde" (∀ x : Ixon.IxonConst, serde x),
+    check "const ffi with Rust" (∀ x : Ixon.IxonConst, ffiConst x),
     --check "const transport" (∀ x : Ix.Const, transportConst x),
   ]

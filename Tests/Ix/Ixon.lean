@@ -1,4 +1,5 @@
 import Ix.Ixon
+import Ix.Claim
 import Ix.Ixon.Serialize
 import Ix.Ixon.Univ
 import LSpec.SlimCheck.Gen
@@ -185,7 +186,7 @@ def genProof: Gen Proof := .mk <$> genClaim <*> (Address.hash <$> genAddress)
 
 def genComm: Gen Comm := .mk <$> genAddress <*> genAddress
 
-def genEnvn: Gen Unit := pure ()
+def genEnvn: Gen Env := .mk <$> genList ((·,·) <$> genAddress <*> genAddress)
 
 def genConst : Gen Ixon := getSize >>= go
   where

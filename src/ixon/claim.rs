@@ -2,18 +2,24 @@ use crate::ixon::address::Address;
 use crate::ixon::serialize::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvalClaim {
+    pub lvls: Address,
+    pub typ: Address,
+    pub input: Address,
+    pub output: Address,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckClaim {
+    pub lvls: Address,
+    pub typ: Address,
+    pub value: Address,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Claim {
-    Checks {
-        lvls: Address,
-        typ: Address,
-        value: Address,
-    },
-    Evals {
-        lvls: Address,
-        typ: Address,
-        input: Address,
-        output: Address,
-    },
+    Checks(CheckClaim),
+    Evals(EvalClaim),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,29 +30,56 @@ pub struct Proof {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Env {
-    env: Vec<(Address, Address)>,
+    pub env: Vec<(Address, Address)>,
+}
+
+impl Serialize for EvalClaim {
+    fn put(&self, buf: &mut Vec<u8>) {
+        self.lvls.put(buf);
+        self.typ.put(buf);
+        self.input.put(buf);
+        self.output.put(buf);
+    }
+
+    fn get(buf: &mut &[u8]) -> Result<Self, String> {
+        let lvls = Address::get(buf)?;
+        let typ = Address::get(buf)?;
+        let input = Address::get(buf)?;
+        let output = Address::get(buf)?;
+        Ok(Self {
+            lvls,
+            typ,
+            input,
+            output,
+        })
+    }
+}
+
+impl Serialize for CheckClaim {
+    fn put(&self, buf: &mut Vec<u8>) {
+        self.lvls.put(buf);
+        self.typ.put(buf);
+        self.value.put(buf);
+    }
+
+    fn get(buf: &mut &[u8]) -> Result<Self, String> {
+        let lvls = Address::get(buf)?;
+        let typ = Address::get(buf)?;
+        let value = Address::get(buf)?;
+        Ok(Self { lvls, typ, value })
+    }
 }
 
 impl Serialize for Claim {
     fn put(&self, buf: &mut Vec<u8>) {
         match self {
-            Self::Checks { lvls, typ, value } => {
-                buf.push(0);
-                lvls.put(buf);
-                typ.put(buf);
-                value.put(buf);
+            Self::Evals(x) => {
+                u8::put(&0xE2, buf);
+                x.put(buf)
             }
-            Self::Evals {
-                lvls,
-                typ,
-                input,
-                output,
-            } => {
-                buf.push(1);
-                lvls.put(buf);
-                typ.put(buf);
-                input.put(buf);
-                output.put(buf);
+            Self::Checks(x) => {
+                u8::put(&0xE3, buf);
+                x.put(buf)
             }
         }
     }
@@ -56,23 +89,13 @@ impl Serialize for Claim {
             Some((head, rest)) => {
                 *buf = rest;
                 match head[0] {
-                    0 => {
-                        let lvls = Address::get(buf)?;
-                        let typ = Address::get(buf)?;
-                        let value = Address::get(buf)?;
-                        Ok(Self::Checks { lvls, typ, value })
+                    0xE2 => {
+                        let x = EvalClaim::get(buf)?;
+                        Ok(Self::Evals(x))
                     }
-                    1 => {
-                        let lvls = Address::get(buf)?;
-                        let typ = Address::get(buf)?;
-                        let input = Address::get(buf)?;
-                        let output = Address::get(buf)?;
-                        Ok(Self::Evals {
-                            lvls,
-                            typ,
-                            input,
-                            output,
-                        })
+                    0xE3 => {
+                        let x = CheckClaim::get(buf)?;
+                        Ok(Self::Checks(x))
                     }
                     x => Err(format!("get Claim invalid {x}")),
                 }
@@ -113,21 +136,33 @@ mod tests {
     use crate::ixon::tests::gen_range;
     use quickcheck::{Arbitrary, Gen};
 
+    impl Arbitrary for EvalClaim {
+        fn arbitrary(g: &mut Gen) -> Self {
+            Self {
+                lvls: Address::arbitrary(g),
+                typ: Address::arbitrary(g),
+                input: Address::arbitrary(g),
+                output: Address::arbitrary(g),
+            }
+        }
+    }
+
+    impl Arbitrary for CheckClaim {
+        fn arbitrary(g: &mut Gen) -> Self {
+            Self {
+                lvls: Address::arbitrary(g),
+                typ: Address::arbitrary(g),
+                value: Address::arbitrary(g),
+            }
+        }
+    }
+
     impl Arbitrary for Claim {
         fn arbitrary(g: &mut Gen) -> Self {
             let x = gen_range(g, 0..1);
             match x {
-                0 => Self::Checks {
-                    lvls: Address::arbitrary(g),
-                    typ: Address::arbitrary(g),
-                    value: Address::arbitrary(g),
-                },
-                _ => Self::Evals {
-                    lvls: Address::arbitrary(g),
-                    typ: Address::arbitrary(g),
-                    input: Address::arbitrary(g),
-                    output: Address::arbitrary(g),
-                },
+                0 => Self::Evals(EvalClaim::arbitrary(g)),
+                _ => Self::Checks(CheckClaim::arbitrary(g)),
             }
         }
     }

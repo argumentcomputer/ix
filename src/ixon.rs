@@ -21,38 +21,38 @@ use univ::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ixon {
-    Var(u64),                                   // 0x0X, variables
-    Sort(Box<Univ>),                            // 0xB0, universes
-    Ref(Address, Vec<Univ>),                    // 0x1X, global reference
-    Rec(u64, Vec<Univ>),                        // 0x2X, local const recursion
-    App(Box<Ixon>, Box<Ixon>, Vec<Ixon>),       // 0x3X, applications
-    Lam(Vec<Ixon>, Box<Ixon>),                  // 0x4X, lambdas
-    All(Vec<Ixon>, Box<Ixon>),                  // 0x5X, foralls
-    Proj(Address, u64, Box<Ixon>),              // 0x6X, structure projection
-    Strl(String),                               // 0x7X, unicode string
-    Natl(Nat),                                  // 0x8X, natural numbers
-    Let(bool, Box<Ixon>, Box<Ixon>, Box<Ixon>), // 0xB1, 0xB2, local binder
-    Array(Vec<Ixon>),                           // 0xA, array
-    Defn(Definition),                           // 0xC0, definition
-    Axio(Axiom),                                // 0xC1, axiom
-    Quot(Quotient),                             // 0xC2, quotient
-    CtorProj(ConstructorProj),                  // 0xC3, constructor projection
-    RecrProj(RecursorProj),                     // 0xC4, recursor projection
-    IndcProj(InductiveProj),                    // 0xC5, inductive projection
-    DefnProj(DefinitionProj),                   // 0xC6, definition projection
-    Meta(Metadata),                             // 0xC7, metadata
-    Proof(Proof),                               // 0xC8, zero-knowledge proof
-    Claim(Claim),                               // 0xC9, cryptographic claim
-    Comm(Comm),                                 // 0xCA, cryptographic commitment
-    Env(Env),                                   // 0xCB, multi-claim environment
-    MutDef(Vec<Definition>),                    // 0xDX, mutual definition
-    MutInd(Vec<Inductive>),                     // 0xEX, mutual inductive data
-                                                // unused: 0x9, 0xB3..0xBF, 0xFX
+    Vari(u64),                                   // 0x0X, variables
+    Sort(Box<Univ>),                             // 0x90, universes
+    Refr(Address, Vec<Univ>),                    // 0x1X, global reference
+    Recr(u64, Vec<Univ>),                        // 0x2X, local const recursion
+    Apps(Box<Ixon>, Box<Ixon>, Vec<Ixon>),       // 0x3X, applications
+    Lams(Vec<Ixon>, Box<Ixon>),                  // 0x4X, lambdas
+    Alls(Vec<Ixon>, Box<Ixon>),                  // 0x5X, foralls
+    Proj(Address, u64, Box<Ixon>),               // 0x6X, structure projection
+    Strl(String),                                // 0x7X, unicode string
+    Natl(Nat),                                   // 0x8X, natural numbers
+    LetE(bool, Box<Ixon>, Box<Ixon>, Box<Ixon>), // 0x91, 0x92, local binder
+    List(Vec<Ixon>),                             // 0xA, list
+    Defn(Definition),                            // 0xB0, definition
+    Axio(Axiom),                                 // 0xB1, axiom
+    Quot(Quotient),                              // 0xB2, quotient
+    CPrj(ConstructorProj),                       // 0xB3, constructor projection
+    RPrj(RecursorProj),                          // 0xB4, recursor projection
+    IPrj(InductiveProj),                         // 0xB5, inductive projection
+    DPrj(DefinitionProj),                        // 0xB6, definition projection
+    Inds(Vec<Inductive>),                        // 0xCX, mutual inductive data
+    Defs(Vec<Definition>),                       // 0xDX, mutual definition
+    Meta(Metadata),                              // 0xE0, metadata
+    Prof(Proof),                                 // 0xE1, zero-knowledge proof
+    Eval(EvalClaim),                             // 0xE2, evaluation claim
+    Chck(CheckClaim),                            // 0xE3, typechecking claim
+    Comm(Comm),                                  // 0xE4, cryptographic commitment
+    Envn(Env),                                   // 0xE5, multi-claim environment
 }
 
 impl Default for Ixon {
     fn default() -> Self {
-        Self::Var(0)
+        Self::Vari(0)
     }
 }
 
@@ -160,26 +160,26 @@ impl Ixon {
 impl Serialize for Ixon {
     fn put(&self, buf: &mut Vec<u8>) {
         match self {
-            Self::Var(x) => Self::put_tag(0x0, *x, buf),
+            Self::Vari(x) => Self::put_tag(0x0, *x, buf),
             Self::Sort(x) => {
-                u8::put(&0xB0, buf);
+                u8::put(&0x90, buf);
                 x.put(buf);
             }
-            Self::Ref(addr, lvls) => {
+            Self::Refr(addr, lvls) => {
                 Self::put_tag(0x1, lvls.len() as u64, buf);
                 addr.put(buf);
                 for l in lvls {
                     l.put(buf);
                 }
             }
-            Self::Rec(x, lvls) => {
+            Self::Recr(x, lvls) => {
                 Self::put_tag(0x2, lvls.len() as u64, buf);
                 x.put(buf);
                 for l in lvls {
                     l.put(buf);
                 }
             }
-            Self::App(f, a, args) => {
+            Self::Apps(f, a, args) => {
                 Self::put_tag(0x3, args.len() as u64, buf);
                 f.put(buf);
                 a.put(buf);
@@ -187,14 +187,14 @@ impl Serialize for Ixon {
                     x.put(buf);
                 }
             }
-            Self::Lam(ts, b) => {
+            Self::Lams(ts, b) => {
                 Self::put_tag(0x4, ts.len() as u64, buf);
                 for t in ts {
                     t.put(buf);
                 }
                 b.put(buf);
             }
-            Self::All(ts, b) => {
+            Self::Alls(ts, b) => {
                 Self::put_tag(0x5, ts.len() as u64, buf);
                 for t in ts {
                     t.put(buf);
@@ -216,76 +216,80 @@ impl Serialize for Ixon {
                 Self::put_tag(0x8, bytes.len() as u64, buf);
                 buf.extend_from_slice(&bytes);
             }
-            Self::Let(nd, t, d, b) => {
+            Self::LetE(nd, t, d, b) => {
                 if *nd {
-                    u8::put(&0xB2, buf);
+                    u8::put(&0x91, buf);
                 } else {
-                    u8::put(&0xB1, buf);
+                    u8::put(&0x92, buf);
                 }
                 t.put(buf);
                 d.put(buf);
                 b.put(buf);
             }
-            Self::Array(xs) => Ixon::put_array(xs, buf),
+            Self::List(xs) => Ixon::put_array(xs, buf),
             Self::Defn(x) => {
-                u8::put(&0xC0, buf);
+                u8::put(&0xB0, buf);
                 x.put(buf);
             }
             Self::Axio(x) => {
-                u8::put(&0xC1, buf);
+                u8::put(&0xB1, buf);
                 x.put(buf);
             }
             Self::Quot(x) => {
-                u8::put(&0xC2, buf);
+                u8::put(&0xB2, buf);
                 x.put(buf);
             }
-            Self::CtorProj(x) => {
-                u8::put(&0xC3, buf);
+            Self::CPrj(x) => {
+                u8::put(&0xB3, buf);
                 x.put(buf);
             }
-            Self::RecrProj(x) => {
-                u8::put(&0xC4, buf);
+            Self::RPrj(x) => {
+                u8::put(&0xB4, buf);
                 x.put(buf);
             }
-            Self::IndcProj(x) => {
-                u8::put(&0xC5, buf);
+            Self::IPrj(x) => {
+                u8::put(&0xB5, buf);
                 x.put(buf);
             }
-            Self::DefnProj(x) => {
-                u8::put(&0xC6, buf);
+            Self::DPrj(x) => {
+                u8::put(&0xB6, buf);
                 x.put(buf);
             }
-            Self::Meta(x) => {
-                u8::put(&0xC7, buf);
-                x.put(buf);
+            Self::Inds(xs) => {
+                Self::put_tag(0xC, xs.len() as u64, buf);
+                for x in xs {
+                    x.put(buf);
+                }
             }
-            Self::Proof(x) => {
-                u8::put(&0xC8, buf);
-                x.put(buf);
-            }
-            Self::Claim(x) => {
-                u8::put(&0xC9, buf);
-                x.put(buf);
-            }
-            Self::Comm(x) => {
-                u8::put(&0xCA, buf);
-                x.put(buf);
-            }
-            Self::Env(x) => {
-                u8::put(&0xCB, buf);
-                x.put(buf);
-            }
-            Self::MutDef(xs) => {
+            Self::Defs(xs) => {
                 Self::put_tag(0xD, xs.len() as u64, buf);
                 for x in xs {
                     x.put(buf);
                 }
             }
-            Self::MutInd(xs) => {
-                Self::put_tag(0xE, xs.len() as u64, buf);
-                for x in xs {
-                    x.put(buf);
-                }
+            Self::Meta(x) => {
+                u8::put(&0xE0, buf);
+                x.put(buf);
+            }
+            Self::Prof(x) => {
+                u8::put(&0xE1, buf);
+                x.put(buf);
+            }
+            Self::Eval(x) => {
+                u8::put(&0xE2, buf);
+                x.put(buf);
+            }
+            Self::Chck(x) => {
+                u8::put(&0xE3, buf);
+                x.put(buf);
+            }
+            Self::Comm(x) => {
+                u8::put(&0xE4, buf);
+                x.put(buf);
+            }
+            Self::Envn(x) => {
+                u8::put(&0xE5, buf);
+                x.put(buf);
             }
         }
     }
@@ -297,9 +301,9 @@ impl Serialize for Ixon {
         match tag_byte {
             0x00..=0x0F => {
                 let x = Ixon::get_size(is_large, small_size, buf)?;
-                Ok(Self::Var(x))
+                Ok(Self::Vari(x))
             }
-            0xB0 => {
+            0x90 => {
                 let u = Univ::get(buf)?;
                 Ok(Self::Sort(Box::new(u)))
             }
@@ -311,7 +315,7 @@ impl Serialize for Ixon {
                     let l = Univ::get(buf)?;
                     lvls.push(l);
                 }
-                Ok(Self::Ref(a, lvls))
+                Ok(Self::Refr(a, lvls))
             }
             0x20..=0x2F => {
                 let n = Ixon::get_size(is_large, small_size, buf)?;
@@ -321,7 +325,7 @@ impl Serialize for Ixon {
                     let l = Univ::get(buf)?;
                     lvls.push(l);
                 }
-                Ok(Self::Rec(x, lvls))
+                Ok(Self::Recr(x, lvls))
             }
             0x30..=0x3F => {
                 let n = Ixon::get_size(is_large, small_size, buf)?;
@@ -332,7 +336,7 @@ impl Serialize for Ixon {
                     let x = Ixon::get(buf)?;
                     args.push(x);
                 }
-                Ok(Self::App(Box::new(f), Box::new(a), args))
+                Ok(Self::Apps(Box::new(f), Box::new(a), args))
             }
             0x40..=0x4F => {
                 let n = Ixon::get_size(is_large, small_size, buf)?;
@@ -342,7 +346,7 @@ impl Serialize for Ixon {
                     ts.push(x);
                 }
                 let b = Ixon::get(buf)?;
-                Ok(Self::Lam(ts, Box::new(b)))
+                Ok(Self::Lams(ts, Box::new(b)))
             }
             0x50..=0x5F => {
                 let n = Ixon::get_size(is_large, small_size, buf)?;
@@ -352,7 +356,7 @@ impl Serialize for Ixon {
                     ts.push(x);
                 }
                 let b = Ixon::get(buf)?;
-                Ok(Self::All(ts, Box::new(b)))
+                Ok(Self::Alls(ts, Box::new(b)))
             }
             0x60..=0x6F => {
                 let n = Ixon::get_size(is_large, small_size, buf)?;
@@ -383,12 +387,12 @@ impl Serialize for Ixon {
                     None => Err("get Expr Natl EOF".to_string()),
                 }
             }
-            0xB1..=0xB2 => {
-                let nd = tag_byte == 0xB2;
+            0x91..=0x92 => {
+                let nd = tag_byte == 0x91;
                 let t = Ixon::get(buf)?;
                 let d = Ixon::get(buf)?;
                 let b = Ixon::get(buf)?;
-                Ok(Self::Let(nd, Box::new(t), Box::new(d), Box::new(b)))
+                Ok(Self::LetE(nd, Box::new(t), Box::new(d), Box::new(b)))
             }
             0xA0..=0xAF => {
                 let len = Self::get_size(is_large, small_size, buf)?;
@@ -397,20 +401,24 @@ impl Serialize for Ixon {
                     let s = Ixon::get(buf)?;
                     vec.push(s);
                 }
-                Ok(Self::Array(vec))
+                Ok(Self::List(vec))
             }
-            0xC0 => Ok(Self::Defn(Definition::get(buf)?)),
-            0xC1 => Ok(Self::Axio(Axiom::get(buf)?)),
-            0xC2 => Ok(Self::Quot(Quotient::get(buf)?)),
-            0xC3 => Ok(Self::CtorProj(ConstructorProj::get(buf)?)),
-            0xC4 => Ok(Self::RecrProj(RecursorProj::get(buf)?)),
-            0xC5 => Ok(Self::IndcProj(InductiveProj::get(buf)?)),
-            0xC6 => Ok(Self::DefnProj(DefinitionProj::get(buf)?)),
-            0xC7 => Ok(Self::Meta(Metadata::get(buf)?)),
-            0xC8 => Ok(Self::Proof(Proof::get(buf)?)),
-            0xC9 => Ok(Self::Claim(Claim::get(buf)?)),
-            0xCA => Ok(Self::Comm(Comm::get(buf)?)),
-            0xCB => Ok(Self::Env(Env::get(buf)?)),
+            0xB0 => Ok(Self::Defn(Definition::get(buf)?)),
+            0xB1 => Ok(Self::Axio(Axiom::get(buf)?)),
+            0xB2 => Ok(Self::Quot(Quotient::get(buf)?)),
+            0xB3 => Ok(Self::CPrj(ConstructorProj::get(buf)?)),
+            0xB4 => Ok(Self::RPrj(RecursorProj::get(buf)?)),
+            0xB5 => Ok(Self::IPrj(InductiveProj::get(buf)?)),
+            0xB6 => Ok(Self::DPrj(DefinitionProj::get(buf)?)),
+            0xC0..=0xCF => {
+                let n = Ixon::get_size(is_large, small_size, buf)?;
+                let mut inds = Vec::new();
+                for _ in 0..n {
+                    let x = Inductive::get(buf)?;
+                    inds.push(x);
+                }
+                Ok(Self::Inds(inds))
+            }
             0xD0..=0xDF => {
                 let n = Ixon::get_size(is_large, small_size, buf)?;
                 let mut defs = Vec::new();
@@ -418,17 +426,14 @@ impl Serialize for Ixon {
                     let x = Definition::get(buf)?;
                     defs.push(x);
                 }
-                Ok(Self::MutDef(defs))
+                Ok(Self::Defs(defs))
             }
-            0xE0..=0xEF => {
-                let n = Ixon::get_size(is_large, small_size, buf)?;
-                let mut inds = Vec::new();
-                for _ in 0..n {
-                    let x = Inductive::get(buf)?;
-                    inds.push(x);
-                }
-                Ok(Self::MutInd(inds))
-            }
+            0xE0 => Ok(Self::Meta(Metadata::get(buf)?)),
+            0xE1 => Ok(Self::Prof(Proof::get(buf)?)),
+            0xE2 => Ok(Self::Eval(EvalClaim::get(buf)?)),
+            0xE3 => Ok(Self::Chck(CheckClaim::get(buf)?)),
+            0xE4 => Ok(Self::Comm(Comm::get(buf)?)),
+            0xE5 => Ok(Self::Envn(Env::get(buf)?)),
             x => Err(format!("get Ixon invalid tag {x}")),
         }
     }
@@ -541,32 +546,33 @@ pub mod tests {
 
     #[derive(Debug, Clone, Copy)]
     pub enum IxonCase {
-        Var,
+        Vari,
         Sort,
-        Ref,
-        Rec,
-        App,
-        Lam,
-        All,
+        Refr,
+        Recr,
+        Apps,
+        Lams,
+        Alls,
         Proj,
         Strl,
         Natl,
-        Let,
-        Array,
+        LetE,
+        List,
         Defn,
         Axio,
         Quot,
-        CtorProj,
-        RecrProj,
-        IndcProj,
-        DefnProj,
+        CPrj,
+        RPrj,
+        IPrj,
+        DPrj,
+        Defs,
+        Inds,
         Meta,
-        Proof,
-        Claim,
+        Prof,
+        Eval,
+        Chck,
         Comm,
-        Env,
-        MutDef,
-        MutInd,
+        Envn,
     }
 
     pub fn arbitrary_string(g: &mut Gen, cs: usize) -> String {
@@ -579,44 +585,45 @@ pub mod tests {
 
     // incremental tree generation without recursion stack overflows
     pub fn arbitrary_ixon(g: &mut Gen, ctx: u64) -> Ixon {
-        let mut root = Ixon::Var(0);
+        let mut root = Ixon::Vari(0);
         let mut stack = vec![&mut root as *mut Ixon];
 
         while let Some(ptr) = stack.pop() {
             let gens: Vec<(usize, IxonCase)> = vec![
-                (100, IxonCase::Var),
+                (100, IxonCase::Vari),
                 (100, IxonCase::Sort),
-                (15, IxonCase::Ref),
-                (15, IxonCase::Rec),
-                (15, IxonCase::App),
-                (15, IxonCase::Lam),
-                (15, IxonCase::All),
-                (50, IxonCase::Let),
+                (15, IxonCase::Refr),
+                (15, IxonCase::Recr),
+                (15, IxonCase::Apps),
+                (15, IxonCase::Lams),
+                (15, IxonCase::Alls),
+                (20, IxonCase::LetE),
                 (50, IxonCase::Proj),
                 (100, IxonCase::Strl),
                 (100, IxonCase::Natl),
-                (10, IxonCase::Array),
+                (10, IxonCase::List),
                 (100, IxonCase::Defn),
                 (100, IxonCase::Axio),
                 (100, IxonCase::Quot),
-                (100, IxonCase::CtorProj),
-                (100, IxonCase::RecrProj),
-                (100, IxonCase::IndcProj),
-                (100, IxonCase::DefnProj),
+                (100, IxonCase::CPrj),
+                (100, IxonCase::RPrj),
+                (100, IxonCase::IPrj),
+                (100, IxonCase::DPrj),
+                (15, IxonCase::Inds),
+                (15, IxonCase::Defs),
                 (100, IxonCase::Meta),
-                (100, IxonCase::Proof),
-                (100, IxonCase::Claim),
+                (100, IxonCase::Prof),
+                (100, IxonCase::Eval),
+                (100, IxonCase::Chck),
                 (100, IxonCase::Comm),
-                (100, IxonCase::Env),
-                (15, IxonCase::MutDef),
-                (15, IxonCase::MutInd),
+                (100, IxonCase::Envn),
             ];
 
             match next_case(g, &gens) {
-                IxonCase::Var => {
+                IxonCase::Vari => {
                     let x: u64 = Arbitrary::arbitrary(g);
                     unsafe {
-                        ptr::replace(ptr, Ixon::Var(x));
+                        ptr::replace(ptr, Ixon::Vari(x));
                     }
                 }
                 IxonCase::Sort => {
@@ -625,27 +632,27 @@ pub mod tests {
                         ptr::replace(ptr, Ixon::Sort(Box::new(u)));
                     }
                 }
-                IxonCase::Ref => {
+                IxonCase::Refr => {
                     let addr = Address::arbitrary(g);
                     let mut lvls = vec![];
                     for _ in 0..gen_range(g, 0..9) {
                         lvls.push(arbitrary_univ(g, ctx));
                     }
                     unsafe {
-                        ptr::replace(ptr, Ixon::Ref(addr, lvls));
+                        ptr::replace(ptr, Ixon::Refr(addr, lvls));
                     }
                 }
-                IxonCase::Rec => {
+                IxonCase::Recr => {
                     let n = u64::arbitrary(g);
                     let mut lvls = vec![];
                     for _ in 0..gen_range(g, 0..9) {
                         lvls.push(arbitrary_univ(g, ctx));
                     }
                     unsafe {
-                        ptr::replace(ptr, Ixon::Rec(n, lvls));
+                        ptr::replace(ptr, Ixon::Recr(n, lvls));
                     }
                 }
-                IxonCase::App => {
+                IxonCase::Apps => {
                     let mut f_box = Box::new(Ixon::default());
                     let f_ptr: *mut Ixon = &mut *f_box;
                     stack.push(f_ptr);
@@ -656,19 +663,19 @@ pub mod tests {
 
                     let n = gen_range(g, 0..9);
                     let mut xs: Vec<Ixon> = Vec::with_capacity(n);
-                    xs.resize(n, Ixon::Var(0));
+                    xs.resize(n, Ixon::Vari(0));
                     for i in 0..n {
                         let p = unsafe { xs.as_mut_ptr().add(i) };
                         stack.push(p);
                     }
                     unsafe {
-                        std::ptr::replace(ptr, Ixon::App(f_box, a_box, xs));
+                        std::ptr::replace(ptr, Ixon::Apps(f_box, a_box, xs));
                     }
                 }
-                IxonCase::Lam => {
+                IxonCase::Lams => {
                     let n = gen_range(g, 0..9);
                     let mut ts: Vec<Ixon> = Vec::with_capacity(n);
-                    ts.resize(n, Ixon::Var(0));
+                    ts.resize(n, Ixon::Vari(0));
                     for i in 0..n {
                         let p = unsafe { ts.as_mut_ptr().add(i) };
                         stack.push(p);
@@ -677,13 +684,13 @@ pub mod tests {
                     let b_ptr: *mut Ixon = &mut *b_box;
                     stack.push(b_ptr);
                     unsafe {
-                        std::ptr::replace(ptr, Ixon::Lam(ts, b_box));
+                        std::ptr::replace(ptr, Ixon::Lams(ts, b_box));
                     }
                 }
-                IxonCase::All => {
+                IxonCase::Alls => {
                     let n = gen_range(g, 0..9);
                     let mut ts: Vec<Ixon> = Vec::with_capacity(n);
-                    ts.resize(n, Ixon::Var(0));
+                    ts.resize(n, Ixon::Vari(0));
                     for i in 0..n {
                         let p = unsafe { ts.as_mut_ptr().add(i) };
                         stack.push(p);
@@ -692,10 +699,10 @@ pub mod tests {
                     let b_ptr: *mut Ixon = &mut *b_box;
                     stack.push(b_ptr);
                     unsafe {
-                        std::ptr::replace(ptr, Ixon::All(ts, b_box));
+                        std::ptr::replace(ptr, Ixon::Alls(ts, b_box));
                     }
                 }
-                IxonCase::Let => {
+                IxonCase::LetE => {
                     let nd = bool::arbitrary(g);
                     let mut t_box = Box::new(Ixon::default());
                     let t_ptr: *mut Ixon = &mut *t_box;
@@ -707,7 +714,7 @@ pub mod tests {
                     let b_ptr: *mut Ixon = &mut *b_box;
                     stack.push(b_ptr);
                     unsafe {
-                        ptr::replace(ptr, Ixon::Let(nd, t_box, d_box, b_box));
+                        ptr::replace(ptr, Ixon::LetE(nd, t_box, d_box, b_box));
                     }
                 }
                 IxonCase::Proj => {
@@ -730,16 +737,16 @@ pub mod tests {
                         ptr::replace(ptr, Ixon::Natl(arbitrary_nat(g, size)));
                     }
                 }
-                IxonCase::Array => {
+                IxonCase::List => {
                     let n = gen_range(g, 0..9);
                     let mut ts: Vec<Ixon> = Vec::with_capacity(n);
-                    ts.resize(n, Ixon::Var(0));
+                    ts.resize(n, Ixon::Vari(0));
                     for i in 0..n {
                         let p = unsafe { ts.as_mut_ptr().add(i) };
                         stack.push(p);
                     }
                     unsafe {
-                        std::ptr::replace(ptr, Ixon::Array(ts));
+                        std::ptr::replace(ptr, Ixon::List(ts));
                     }
                 }
                 IxonCase::Quot => unsafe {
@@ -751,40 +758,43 @@ pub mod tests {
                 IxonCase::Defn => unsafe {
                     std::ptr::replace(ptr, Ixon::Defn(Definition::arbitrary(g)));
                 },
-                IxonCase::CtorProj => unsafe {
-                    std::ptr::replace(ptr, Ixon::CtorProj(ConstructorProj::arbitrary(g)));
+                IxonCase::CPrj => unsafe {
+                    std::ptr::replace(ptr, Ixon::CPrj(ConstructorProj::arbitrary(g)));
                 },
-                IxonCase::RecrProj => unsafe {
-                    std::ptr::replace(ptr, Ixon::RecrProj(RecursorProj::arbitrary(g)));
+                IxonCase::RPrj => unsafe {
+                    std::ptr::replace(ptr, Ixon::RPrj(RecursorProj::arbitrary(g)));
                 },
-                IxonCase::DefnProj => unsafe {
-                    std::ptr::replace(ptr, Ixon::DefnProj(DefinitionProj::arbitrary(g)));
+                IxonCase::DPrj => unsafe {
+                    std::ptr::replace(ptr, Ixon::DPrj(DefinitionProj::arbitrary(g)));
                 },
-                IxonCase::IndcProj => unsafe {
-                    std::ptr::replace(ptr, Ixon::IndcProj(InductiveProj::arbitrary(g)));
+                IxonCase::IPrj => unsafe {
+                    std::ptr::replace(ptr, Ixon::IPrj(InductiveProj::arbitrary(g)));
+                },
+                IxonCase::Inds => unsafe {
+                    let inds = gen_vec(g, 9, Inductive::arbitrary);
+                    std::ptr::replace(ptr, Ixon::Inds(inds));
+                },
+                IxonCase::Defs => unsafe {
+                    let defs = gen_vec(g, 9, Definition::arbitrary);
+                    std::ptr::replace(ptr, Ixon::Defs(defs));
                 },
                 IxonCase::Meta => unsafe {
                     std::ptr::replace(ptr, Ixon::Meta(Metadata::arbitrary(g)));
                 },
-                IxonCase::Proof => unsafe {
-                    std::ptr::replace(ptr, Ixon::Proof(Proof::arbitrary(g)));
+                IxonCase::Prof => unsafe {
+                    std::ptr::replace(ptr, Ixon::Prof(Proof::arbitrary(g)));
                 },
-                IxonCase::Claim => unsafe {
-                    std::ptr::replace(ptr, Ixon::Claim(Claim::arbitrary(g)));
+                IxonCase::Eval => unsafe {
+                    std::ptr::replace(ptr, Ixon::Eval(EvalClaim::arbitrary(g)));
+                },
+                IxonCase::Chck => unsafe {
+                    std::ptr::replace(ptr, Ixon::Chck(CheckClaim::arbitrary(g)));
                 },
                 IxonCase::Comm => unsafe {
                     std::ptr::replace(ptr, Ixon::Comm(Comm::arbitrary(g)));
                 },
-                IxonCase::Env => unsafe {
-                    std::ptr::replace(ptr, Ixon::Env(Env::arbitrary(g)));
-                },
-                IxonCase::MutDef => unsafe {
-                    let defs = gen_vec(g, 9, Definition::arbitrary);
-                    std::ptr::replace(ptr, Ixon::MutDef(defs));
-                },
-                IxonCase::MutInd => unsafe {
-                    let inds = gen_vec(g, 9, Inductive::arbitrary);
-                    std::ptr::replace(ptr, Ixon::MutInd(inds));
+                IxonCase::Envn => unsafe {
+                    std::ptr::replace(ptr, Ixon::Envn(Env::arbitrary(g)));
                 },
             }
         }

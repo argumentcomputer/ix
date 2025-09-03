@@ -6,7 +6,7 @@ use crate::{
     ixon::{
         Ixon,
         address::Address,
-        claim::{Claim, Proof},
+        claim::{CheckClaim, Claim, Env, EvalClaim, Proof},
         constant::{
             Axiom, Comm, Constructor, ConstructorProj, DefKind, DefSafety, Definition,
             DefinitionProj, Inductive, InductiveProj, QuotKind, Quotient, Recursor, RecursorProj,
@@ -57,6 +57,7 @@ fn lean_ctor_to_univ(ctor: &LeanCtorObject) -> Univ {
     }
 }
 
+// FIXME
 fn lean_ptr_to_address(ptr: *const c_void) -> Address {
     let sarray: &LeanSArrayObject = as_ref_unsafe(ptr.cast());
     let hash = Hash::from_slice(sarray.data()).unwrap();
@@ -95,7 +96,7 @@ fn lean_ptr_to_definition(ptr: *const c_void) -> Definition {
     Definition {
         lvls,
         typ,
-        mode: mode,
+        mode,
         value,
         safety,
     }
@@ -230,7 +231,9 @@ fn lean_ptr_to_name_parts(ptr: *const c_void) -> Vec<NamePart> {
 fn lean_ptr_to_name(ptr: *const c_void) -> Name {
     let parts = lean_ptr_to_name_parts(ptr);
     // Is `parts` reversed?
-    Name { parts }
+    Name {
+        parts: parts.into_iter().rev().collect(),
+    }
 }
 
 fn lean_ptr_to_metadatum(ptr: *const c_void) -> Metadatum {
@@ -298,10 +301,17 @@ fn lean_ptr_to_metadata_entry(ptr: *const c_void) -> (Nat, Vec<Metadatum>) {
     (fst, snd)
 }
 
-fn lean_ptr_to_eval_claim(ptr: *const c_void) -> Claim {
+// FIXME
+fn lean_ptr_to_env_entry(ptr: *const c_void) -> (Address, Address) {
+    let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
+    let [fst, snd] = ctor.objs().map(lean_ptr_to_address);
+    (fst, snd)
+}
+
+fn lean_ptr_to_eval_claim(ptr: *const c_void) -> EvalClaim {
     let evals: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [lvls, input, output, typ] = evals.objs().map(lean_ptr_to_address);
-    Claim::Evals {
+    EvalClaim {
         lvls,
         typ,
         input,
@@ -309,10 +319,10 @@ fn lean_ptr_to_eval_claim(ptr: *const c_void) -> Claim {
     }
 }
 
-fn lean_ptr_to_check_claim(ptr: *const c_void) -> Claim {
+fn lean_ptr_to_check_claim(ptr: *const c_void) -> CheckClaim {
     let checks: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [lvls, typ, value] = checks.objs().map(lean_ptr_to_address);
-    Claim::Checks { lvls, typ, value }
+    CheckClaim { lvls, typ, value }
 }
 
 fn lean_ptr_to_ixon(ptr: *const c_void) -> Ixon {
@@ -323,7 +333,7 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
     match ctor.tag() {
         0 => {
             let [idx] = ctor.objs();
-            Ixon::Var(idx as u64)
+            Ixon::Vari(idx as u64)
         }
         1 => {
             let [univ_ptr] = ctor.objs();
@@ -333,11 +343,11 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
         2 => {
             let [addr_ptr, univs_ptr] = ctor.objs();
             let addr = lean_ptr_to_address(addr_ptr);
-            Ixon::Ref(addr, lean_ptr_to_univs(univs_ptr))
+            Ixon::Refr(addr, lean_ptr_to_univs(univs_ptr))
         }
         3 => {
             let [univs_ptr, idx] = ctor.objs();
-            Ixon::Rec(idx as u64, lean_ptr_to_univs(univs_ptr))
+            Ixon::Recr(idx as u64, lean_ptr_to_univs(univs_ptr))
         }
         4 => {
             let [f, x, xs] = ctor.objs();
@@ -345,48 +355,48 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let x = lean_ptr_to_ixon(x).into();
             let xs_array: &LeanArrayObject = as_ref_unsafe(xs.cast());
             let xs = xs_array.to_vec(lean_ptr_to_ixon);
-            Ixon::App(f, x, xs)
+            Ixon::Apps(f, x, xs)
         }
         5 => {
             let [xs, x] = ctor.objs();
             let xs_array: &LeanArrayObject = as_ref_unsafe(xs.cast());
             let xs = xs_array.to_vec(lean_ptr_to_ixon);
             let x = lean_ptr_to_ixon(x);
-            Ixon::Lam(xs, x.into())
+            Ixon::Lams(xs, x.into())
         }
         6 => {
             let [xs, x] = ctor.objs();
             let xs_array: &LeanArrayObject = as_ref_unsafe(xs.cast());
             let xs = xs_array.to_vec(lean_ptr_to_ixon);
             let x = lean_ptr_to_ixon(x).into();
-            Ixon::All(xs, x)
+            Ixon::Alls(xs, x)
         }
         7 => {
-            let [v, t, b, x] = ctor.objs();
-            let v = lean_ptr_to_ixon(v).into();
-            let t = lean_ptr_to_ixon(t).into();
-            let b = lean_ptr_to_ixon(b).into();
-            Ixon::Let(x as usize == 1, v, t, b)
-        }
-        8 => {
             let [addr_ptr, ptr, idx] = ctor.objs();
             let addr = lean_ptr_to_address(addr_ptr);
             let term = lean_ptr_to_ixon(ptr).into();
             Ixon::Proj(addr, idx as u64, term)
         }
-        9 => {
+        8 => {
             let [str_ptr] = ctor.objs();
             let str: &LeanStringObject = as_ref_unsafe(str_ptr.cast());
             Ixon::Strl(str.as_string())
         }
-        10 => {
+        9 => {
             let [nat_bytes_ptr] = ctor.objs();
             Ixon::Natl(lean_ptr_to_nat(nat_bytes_ptr))
+        }
+        10 => {
+            let [v, t, b, x] = ctor.objs();
+            let v = lean_ptr_to_ixon(v).into();
+            let t = lean_ptr_to_ixon(t).into();
+            let b = lean_ptr_to_ixon(b).into();
+            Ixon::LetE(x as usize == 1, v, t, b)
         }
         11 => {
             let [xs] = ctor.objs();
             let xs: &LeanArrayObject = as_ref_unsafe(xs.cast());
-            Ixon::Array(xs.to_vec(lean_ptr_to_ixon))
+            Ixon::List(xs.to_vec(lean_ptr_to_ixon))
         }
         12 => {
             let [defn_ptr] = ctor.objs();
@@ -427,7 +437,7 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let block = lean_ptr_to_address(block);
             let idx = lean_ptr_to_nat(idx);
             let cidx = lean_ptr_to_nat(cidx);
-            Ixon::CtorProj(ConstructorProj { block, idx, cidx })
+            Ixon::CPrj(ConstructorProj { block, idx, cidx })
         }
         16 => {
             let [rprj_ptr] = ctor.objs();
@@ -436,7 +446,7 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let block = lean_ptr_to_address(block);
             let idx = lean_ptr_to_nat(idx);
             let ridx = lean_ptr_to_nat(ridx);
-            Ixon::RecrProj(RecursorProj { block, idx, ridx })
+            Ixon::RPrj(RecursorProj { block, idx, ridx })
         }
         17 => {
             let [iprj_ptr] = ctor.objs();
@@ -444,7 +454,7 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let [block, idx] = iprj_ctor.objs();
             let block = lean_ptr_to_address(block);
             let idx = lean_ptr_to_nat(idx);
-            Ixon::IndcProj(InductiveProj { block, idx })
+            Ixon::IPrj(InductiveProj { block, idx })
         }
         18 => {
             let [dprj_ptr] = ctor.objs();
@@ -452,19 +462,19 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let [block, idx] = dprj_ctor.objs();
             let block = lean_ptr_to_address(block);
             let idx = lean_ptr_to_nat(idx);
-            Ixon::DefnProj(DefinitionProj { block, idx })
+            Ixon::DPrj(DefinitionProj { block, idx })
         }
         19 => {
             let [inds_ptr] = ctor.objs();
             let inds: &LeanArrayObject = as_ref_unsafe(inds_ptr.cast());
             let inds = inds.to_vec(lean_ptr_to_inductive);
-            Ixon::MutInd(inds)
+            Ixon::Inds(inds)
         }
         20 => {
             let [defs_ptr] = ctor.objs();
             let defs: &LeanArrayObject = as_ref_unsafe(defs_ptr.cast());
             let defs = defs.to_vec(lean_ptr_to_definition);
-            Ixon::MutDef(defs)
+            Ixon::Defs(defs)
         }
         21 => {
             let [pairs_ptr] = ctor.objs();
@@ -479,28 +489,28 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let claim: &LeanCtorObject = as_ref_unsafe(claim.cast());
             let claim = match claim.tag() {
                 0 => {
-                    let [checks] = claim.objs();
-                    lean_ptr_to_check_claim(checks)
+                    let [evals] = claim.objs();
+                    Claim::Evals(lean_ptr_to_eval_claim(evals))
                 }
                 1 => {
-                    let [evals] = claim.objs();
-                    lean_ptr_to_eval_claim(evals)
+                    let [checks] = claim.objs();
+                    Claim::Checks(lean_ptr_to_check_claim(checks))
                 }
                 _ => unreachable!(),
             };
             let bin: &LeanSArrayObject = as_ref_unsafe(bin.cast());
-            Ixon::Proof(Proof {
+            Ixon::Prof(Proof {
                 claim,
                 proof: bin.data().to_vec(),
             })
         }
         23 => {
             let [evals] = ctor.objs();
-            Ixon::Claim(lean_ptr_to_eval_claim(evals))
+            Ixon::Eval(lean_ptr_to_eval_claim(evals))
         }
         24 => {
             let [checks] = ctor.objs();
-            Ixon::Claim(lean_ptr_to_check_claim(checks))
+            Ixon::Chck(lean_ptr_to_check_claim(checks))
         }
         25 => {
             let [comm] = ctor.objs();
@@ -508,7 +518,15 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let [secret, payload] = comm.objs().map(lean_ptr_to_address);
             Ixon::Comm(Comm { secret, payload })
         }
-        26 => todo!("Env"),
+        // FIXME
+        26 => {
+            let [env_ptr] = ctor.objs();
+            let env: &LeanCtorObject = as_ref_unsafe(env_ptr.cast());
+            let [map_ptr] = env.objs();
+            let map: &LeanArrayObject = as_ref_unsafe(map_ptr.cast());
+            let env = map.to_vec(lean_ptr_to_env_entry);
+            Ixon::Envn(Env { env })
+        }
         _ => unreachable!(),
     }
 }

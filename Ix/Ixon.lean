@@ -16,10 +16,10 @@ inductive Ixon where
 | apps : Ixon -> Ixon -> List Ixon -> Ixon    -- 0x3X, funciton application
 | lams : List Ixon -> Ixon -> Ixon            -- 0x4X, lambda abstraction
 | alls : List Ixon -> Ixon -> Ixon            -- 0x5X, universal quantification
-| letE : Bool -> Ixon -> Ixon -> Ixon -> Ixon -- 0x91, 0x92 let expression
 | proj : Address -> UInt64 -> Ixon -> Ixon    -- 0x6X, structure projection
 | strl : String -> Ixon                       -- 0x7X, utf8 string
 | natl : Nat -> Ixon                          -- 0x8X, natural number
+| letE : Bool -> Ixon -> Ixon -> Ixon -> Ixon -- 0x91, 0x92 let expression
 | list : List Ixon -> Ixon                    -- 0xAX, list
 | defn : Definition -> Ixon                   -- 0xB0, definition
 | axio : Axiom -> Ixon                        -- 0xB1, axiom
@@ -35,7 +35,7 @@ inductive Ixon where
 | eval : EvalClaim -> Ixon                    -- 0xE2, cryptographic claim
 | chck : CheckClaim -> Ixon                   -- 0xE3, cryptographic claim
 | comm : Comm -> Ixon                         -- 0xE4, cryptographic commitment
-| envn : Unit -> Ixon                         -- 0xE5, Lean4 environment
+| envn : Env -> Ixon                         -- 0xE5, Lean4 environment
 deriving BEq, Repr, Inhabited
 
 open Serialize
@@ -264,6 +264,11 @@ inductive MetadatumFFI where
 | all : Array NameFFI -> MetadatumFFI
 | mutCtx : Array (Array NameFFI) -> MetadatumFFI
 
+structure EnvFFI where
+  env : Array (Address × Address)
+
+def Env.toFFI (x: Env) : EnvFFI := .mk x.env.toArray
+
 def Metadatum.toFFI : Metadatum → MetadatumFFI
   | .name n => .name n.toFFI
   | .info i => .info i
@@ -299,7 +304,7 @@ inductive IxonFFI where
 | eval : EvalClaim -> IxonFFI
 | chck : CheckClaim -> IxonFFI
 | comm : Comm -> IxonFFI
-| envn : Unit -> IxonFFI
+| envn : EnvFFI -> IxonFFI
 
 def Ixon.toFFI : Ixon → IxonFFI
   | .vari i => .vari i
@@ -330,7 +335,7 @@ def Ixon.toFFI : Ixon → IxonFFI
   | .eval x => .eval x
   | .chck x => .chck x
   | .comm x => .comm x
-  | .envn x => .envn x
+  | .envn x => .envn x.toFFI
 
 end FFI
 

@@ -191,6 +191,14 @@ structure Comm where
   payload : Address
   deriving BEq, Repr
 
+structure Env where
+  env : List (Address × Address)
+  deriving BEq, Repr
+
+instance : Serialize Env where
+  put x := Serialize.put x.env
+  get := .mk <$> Serialize.get
+
 instance : Serialize Comm where
   put := fun x => Serialize.put (x.secret, x.payload)
   get := (fun (x,y) => .mk x y) <$> Serialize.get
