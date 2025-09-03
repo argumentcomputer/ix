@@ -14,8 +14,8 @@ structure CheckClaim where
 deriving BEq, Repr, Inhabited
 
 inductive Claim where
-| checks : CheckClaim -> Claim
 | evals : EvalClaim -> Claim
+| checks : CheckClaim -> Claim
 deriving BEq, Repr, Inhabited
 
 instance : ToString CheckClaim where

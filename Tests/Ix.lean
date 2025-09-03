@@ -4,6 +4,7 @@ import Ix.Ixon.Metadata
 import Ix.Address
 import Ix.Ixon.Serialize
 import Ix.Ixon.Univ
+import Ix.Claim
 import Ix.TransportM
 import LSpec.SlimCheck.Gen
 import LSpec
@@ -81,15 +82,16 @@ def dbg : IO UInt32 := do
 def Tests.Ix.suite : List LSpec.TestSeq :=
   [
     check "metadatum serde" (∀ x : Ixon.Metadatum, serde x),
+    check "metadata serde" (∀ x : Ixon.Metadata, serde x),
     check "universe serde" (∀ x : Ixon.Univ, serde x),
     check "universe transport" (∀ x : Ix.Level, transportUniv x),
     check "expr serde" (∀ x : Ixon.IxonExpr, serde x),
     check "expr transport" (∀ x : Ix.Expr, transportExpr x),
-    --check "axiom serde" (∀ x : Ixon.Axiom, serde x),
-    --check "recursor rule serde" (∀ x : Ixon.RecursorRule, serde x),
-    --check "recursor serde" (∀ x : Ixon.Recursor, serde x),
-    --check "constructor serde" (∀ x : Ixon.Constructor, serde x),
-    --check "inductive serde" (∀ x : Ixon.Inductive, serde x),
+    ----check "axiom serde" (∀ x : Ixon.Axiom, serde x),
+    ----check "recursor rule serde" (∀ x : Ixon.RecursorRule, serde x),
+    ----check "recursor serde" (∀ x : Ixon.Recursor, serde x),
+    ----check "constructor serde" (∀ x : Ixon.Constructor, serde x),
+    check "claim serde" (∀ x : Claim, serde x),
     check "const serde" (∀ x : Ixon.IxonConst, serde x),
-    check "const transport" (∀ x : Ix.Const, transportConst x),
+    --check "const transport" (∀ x : Ix.Const, transportConst x),
   ]

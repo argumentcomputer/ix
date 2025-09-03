@@ -196,7 +196,10 @@ instance : Serialize Comm where
   get := (fun (x,y) => .mk x y) <$> Serialize.get
 
 instance : Serialize CheckClaim where
-  put x := Serialize.put (x.lvls, x.type, x.value)
+  put x := do
+    Serialize.put x.lvls
+    Serialize.put x.type
+    Serialize.put x.value
   get := (fun (x,y,z) => .mk x y z) <$> Serialize.get
 
 instance : Serialize EvalClaim where
@@ -205,10 +208,10 @@ instance : Serialize EvalClaim where
 
 instance : Serialize Claim where
   put
-  | .checks x => putTag4 ⟨0xE, 2⟩ *> Serialize.put x
-  | .evals x => putTag4 ⟨0xE, 3⟩ *> Serialize.put x
+  | .evals x => putTag4 ⟨0xE, 2⟩ *> Serialize.put x
+  | .checks x => putTag4 ⟨0xE, 3⟩ *> Serialize.put x
   get := do match <- getTag4 with
-  | ⟨0xE,2⟩ => .checks <$> Serialize.get
+  | ⟨0xE,2⟩ => .evals <$> Serialize.get
   | ⟨0xE,3⟩ => .checks <$> Serialize.get
   | e => throw s!"expected Claim with tag 0xE2 or 0xE3, got {repr e}"
 
