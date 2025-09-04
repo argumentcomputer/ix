@@ -1,8 +1,6 @@
 import LSpec
+import Tests.Common
 import Ix.Aiur.Meta
-import Ix.Aiur.Simple
-import Ix.Aiur.Compile
-import Ix.Aiur.Protocol
 
 open LSpec
 
@@ -127,6 +125,10 @@ def toplevel := ⟦
     [b, d]
   }
 
+  fn array_set(arr: [(G, G); 3]) -> [(G, G); 3] {
+    set(arr, 1, (0, 0))
+  }
+
   fn read_write_io() -> G {
     let (idx, len) = io_get_info([0]);
     let xs: [G; 4] = io_read(idx, 4);
@@ -148,14 +150,7 @@ def toplevel := ⟦
   }
 ⟧
 
-structure TestCase where
-  functionName : Lean.Name
-  input : Array Aiur.G
-  expectedOutput : Array Aiur.G
-  inputIOBuffer: Aiur.IOBuffer
-  expectedIOBuffer: Aiur.IOBuffer
-
-def testCases : List TestCase := [
+def aiurTestCases : List AiurTestCase := [
     ⟨`id, #[42], #[42], default, default⟩,
     ⟨`proj1, #[42, 64], #[42], default, default⟩,
     ⟨`sum, #[3, 5], #[8], default, default⟩,
@@ -179,6 +174,7 @@ def testCases : List TestCase := [
     ⟨`slice_and_get, #[1, 2, 3, 4, 5], #[2, 4], default, default⟩,
     ⟨`deconstruct_tuple, #[1, 2, 3, 4, 5], #[2, 4], default, default⟩,
     ⟨`deconstruct_array, #[1, 2, 3, 4, 5], #[2, 4], default, default⟩,
+    ⟨`array_set, #[1, 1, 2, 2, 3, 3], #[1, 1, 0, 0, 3, 3], default, default⟩,
     ⟨`read_write_io, #[], #[4],
       ⟨#[1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩)]⟩,
       ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩⟩,
@@ -186,35 +182,6 @@ def testCases : List TestCase := [
     ⟨`u8_add_xor, #[45, 131], #[219, 0, 49, 1], default, default⟩,
   ]
 
-def commitmentParameters : Aiur.CommitmentParameters := {
-  logBlowup := 1
-}
-
-def friParameters : Aiur.FriParameters := {
-  logFinalPolyLen := 0
-  numQueries := 100
-  proofOfWorkBits := 20
-}
-
-def aiurTest : TestSeq :=
-  withExceptOk "Check and simplification works" toplevel.checkAndSimplify fun decls =>
-    let bytecodeToplevel := decls.compile
-    let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel commitmentParameters
-    let runTestCase := fun testCase =>
-      let functionName := testCase.functionName
-      let funIdx := toplevel.getFuncIdx functionName |>.get!
-      let (claim, proof, ioBuffer) := aiurSystem.prove
-        friParameters funIdx testCase.input testCase.inputIOBuffer
-      let caseDescr := s!"{functionName} with arguments {testCase.input}"
-      let claimTest := test s!"Claim matches for {caseDescr}"
-        (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
-      let ioTest := test s!"IOBuffer matches for {caseDescr}"
-        (ioBuffer == testCase.expectedIOBuffer)
-      let proof := .ofBytes proof.toBytes
-      let pvTest := withExceptOk s!"Prove/verify works for {caseDescr}"
-        (aiurSystem.verify friParameters claim proof) fun _ => .done
-      claimTest ++ ioTest ++ pvTest
-    testCases.foldl (init := .done) fun tSeq testCase =>
-      tSeq ++ runTestCase testCase
-
-def Tests.Aiur.suite := [aiurTest]
+def Tests.Aiur.suite := [
+  mkAiurTests toplevel aiurTestCases
+]

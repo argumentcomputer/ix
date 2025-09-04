@@ -102,6 +102,7 @@ syntax trm " * " trm:51                                    : trm
 syntax "proj" "(" trm ", " num ")"                         : trm
 syntax trm "[" num "]"                                     : trm
 syntax trm "[" num ".." num "]"                            : trm
+syntax "set" "(" trm ", " num ", " trm ")"                 : trm
 syntax "store" "(" trm ")"                                 : trm
 syntax "load" "(" trm ")"                                  : trm
 syntax "ptr_val" "(" trm ")"                               : trm
@@ -165,6 +166,8 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.get #[← elabTrm t, toExpr i.getNat]
   | `(trm| $t:trm[$i:num .. $j:num]) => do
     mkAppM ``Term.slice #[← elabTrm t, toExpr i.getNat, toExpr j.getNat]
+  | `(trm| set($a:trm, $i:num, $v:trm)) => do
+    mkAppM ``Term.set #[← elabTrm a, toExpr i.getNat, ← elabTrm v]
   | `(trm| store($a:trm)) => do
     mkAppM ``Term.store #[← elabTrm a]
   | `(trm| load($a:trm)) => do
