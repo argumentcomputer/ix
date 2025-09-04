@@ -264,11 +264,6 @@ inductive MetadatumFFI where
 | all : Array NameFFI -> MetadatumFFI
 | mutCtx : Array (Array NameFFI) -> MetadatumFFI
 
-structure EnvFFI where
-  env : Array (Address × Address)
-
-def Env.toFFI (x: Env) : EnvFFI := .mk x.env.toArray
-
 def Metadatum.toFFI : Metadatum → MetadatumFFI
   | .name n => .name n.toFFI
   | .info i => .info i
@@ -285,10 +280,10 @@ inductive IxonFFI where
 | apps : IxonFFI -> IxonFFI -> Array IxonFFI -> IxonFFI
 | lams : Array IxonFFI -> IxonFFI -> IxonFFI
 | alls : Array IxonFFI -> IxonFFI -> IxonFFI
-| letE : Bool -> IxonFFI -> IxonFFI -> IxonFFI -> IxonFFI
 | proj : Address -> UInt64 -> IxonFFI -> IxonFFI
 | strl : String -> IxonFFI
 | natl : ByteArray -> IxonFFI
+| letE : Bool -> IxonFFI -> IxonFFI -> IxonFFI -> IxonFFI
 | list : Array IxonFFI -> IxonFFI
 | defn : DefinitionFFI -> IxonFFI
 | axio : AxiomFFI -> IxonFFI
@@ -304,7 +299,7 @@ inductive IxonFFI where
 | eval : EvalClaim -> IxonFFI
 | chck : CheckClaim -> IxonFFI
 | comm : Comm -> IxonFFI
-| envn : EnvFFI -> IxonFFI
+| envn : Array (Address × Address) -> IxonFFI
 
 def Ixon.toFFI : Ixon → IxonFFI
   | .vari i => .vari i
@@ -314,10 +309,10 @@ def Ixon.toFFI : Ixon → IxonFFI
   | .apps f a as => .apps f.toFFI a.toFFI (as.map Ixon.toFFI).toArray
   | .lams xs b => .lams (xs.map Ixon.toFFI).toArray b.toFFI
   | .alls xs x => .alls (xs.map Ixon.toFFI).toArray x.toFFI
-  | .letE x v t b => .letE x v.toFFI t.toFFI b.toFFI
   | .proj addr i x => .proj addr i x.toFFI
   | .strl s => .strl s
   | .natl n => .natl (nat2Bytes n)
+  | .letE x v t b => .letE x v.toFFI t.toFFI b.toFFI
   | .list xs => .list (xs.map Ixon.toFFI).toArray
   | .defn d => .defn d.toFFI
   | .axio a => .axio a.toFFI
@@ -335,7 +330,7 @@ def Ixon.toFFI : Ixon → IxonFFI
   | .eval x => .eval x
   | .chck x => .chck x
   | .comm x => .comm x
-  | .envn x => .envn x.toFFI
+  | .envn x => .envn x.env.toArray
 
 end FFI
 

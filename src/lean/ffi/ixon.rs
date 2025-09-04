@@ -57,7 +57,6 @@ fn lean_ctor_to_univ(ctor: &LeanCtorObject) -> Univ {
     }
 }
 
-// FIXME
 fn lean_ptr_to_address(ptr: *const c_void) -> Address {
     let sarray: &LeanSArrayObject = as_ref_unsafe(ptr.cast());
     let hash = Hash::from_slice(sarray.data()).unwrap();
@@ -229,11 +228,9 @@ fn lean_ptr_to_name_parts(ptr: *const c_void) -> Vec<NamePart> {
 }
 
 fn lean_ptr_to_name(ptr: *const c_void) -> Name {
-    let parts = lean_ptr_to_name_parts(ptr);
-    // Is `parts` reversed?
-    Name {
-        parts: parts.into_iter().rev().collect(),
-    }
+    let mut parts = lean_ptr_to_name_parts(ptr);
+    parts.reverse();
+    Name { parts }
 }
 
 fn lean_ptr_to_metadatum(ptr: *const c_void) -> Metadatum {
@@ -301,7 +298,6 @@ fn lean_ptr_to_metadata_entry(ptr: *const c_void) -> (Nat, Vec<Metadatum>) {
     (fst, snd)
 }
 
-// FIXME
 fn lean_ptr_to_env_entry(ptr: *const c_void) -> (Address, Address) {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [fst, snd] = ctor.objs().map(lean_ptr_to_address);
@@ -518,11 +514,8 @@ fn lean_ctor_to_ixon(ctor: &LeanCtorObject) -> Ixon {
             let [secret, payload] = comm.objs().map(lean_ptr_to_address);
             Ixon::Comm(Comm { secret, payload })
         }
-        // FIXME
         26 => {
-            let [env_ptr] = ctor.objs();
-            let env: &LeanCtorObject = as_ref_unsafe(env_ptr.cast());
-            let [map_ptr] = env.objs();
+            let [map_ptr] = ctor.objs();
             let map: &LeanArrayObject = as_ref_unsafe(map_ptr.cast());
             let env = map.to_vec(lean_ptr_to_env_entry);
             Ixon::Envn(Env { env })
@@ -537,7 +530,6 @@ extern "C" fn rs_eq_lean_rust_serialization(
     bytes: &LeanSArrayObject,
 ) -> bool {
     let mut buf = Vec::new();
-    println!("{:?}", lean_ctor_to_ixon(ixon));
     lean_ctor_to_ixon(ixon).put(&mut buf);
     buf == bytes.data()
 }
