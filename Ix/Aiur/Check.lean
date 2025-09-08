@@ -169,6 +169,16 @@ partial def inferTerm : Term → CheckM TypedTerm
       pure $ .mk (.evaluates (.array typ (j - i))) (.slice arr i j)
     else
       throw $ .rangeOoB i j
+  | .set arr i val => do
+    let (typ, n, inner) ← inferArray arr
+    if i ≥ n then
+      throw $ .indexOoB i
+    else
+      let val ← checkNoEscape val typ
+      let arrTyp := .array typ n
+      let arr := .mk (.evaluates arrTyp) inner
+      let val := .mk (.evaluates typ) val
+      pure $ .mk (.evaluates arrTyp) (.set arr i val)
   | .store term => do
     -- Infers the type of the term and returns it, wrapped by a pointer type.
     -- The term is not allowed to early return.
@@ -371,8 +381,8 @@ partial def inferTuple (term : Term) : CheckM (Array Typ × TypedTermInner) := d
 
 partial def inferArray (term : Term) : CheckM (Typ × Nat × TypedTermInner) := do
   let (typ, inner) ← inferNoEscape term
-  let .array typs n := typ | throw $ .notAnArray typ
-  pure (typs, n, inner)
+  let .array typ n := typ | throw $ .notAnArray typ
+  pure (typ, n, inner)
 end
 
 def getFunctionContext (function : Function) (decls : Decls) : CheckContext :=

@@ -331,6 +331,16 @@ partial def toIndex
     let eltSize := typSize layoutMap eltTyp
     let arr ← toIndex layoutMap bindings arr
     pure $ arr.extract (i * eltSize) (j * eltSize)
+  | .set arr i val => do
+    let eltTyp := match arr.typ with
+      | .evaluates (.array typ _) => typ
+      | _ => panic! "Should not happen after typechecking"
+    let eltSize := typSize layoutMap eltTyp
+    let arr ← toIndex layoutMap bindings arr
+    let left := arr.extract 0 (i * eltSize)
+    let val ← toIndex layoutMap bindings val
+    let right := arr.extract ((i + 1) * eltSize)
+    pure $ left ++ val ++ right
   | .store arg => do
     let args ← toIndex layoutMap bindings arg
     pushOp (.store args)

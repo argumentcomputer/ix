@@ -73,6 +73,7 @@ inductive Term
   | proj : Term → Nat → Term
   | get : Term → Nat → Term
   | slice : Term → Nat → Nat → Term
+  | set : Term → Nat → Term → Term
   | store : Term → Term
   | load : Term → Term
   | ptrVal : Term → Term
@@ -124,6 +125,7 @@ inductive TypedTermInner
   | proj : TypedTerm → Nat → TypedTermInner
   | get : TypedTerm → Nat → TypedTermInner
   | slice : TypedTerm → Nat → Nat → TypedTermInner
+  | set : TypedTerm → Nat → TypedTerm → TypedTermInner
   | store : TypedTerm → TypedTermInner
   | load : TypedTerm → TypedTermInner
   | ptrVal : TypedTerm → TypedTermInner
