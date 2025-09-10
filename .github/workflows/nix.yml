@@ -39,4 +39,4 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       # Builds and runs tests using Lake as a Nix package
-      - run: nix develop --command bash -c "lake build && lake test"
+      - run: nix develop --accept-flake-config --command bash -c "lake build && lake test"
