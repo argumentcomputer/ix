@@ -1,4 +1,5 @@
 import Ix.Ixon
+import Ix.Claim
 import Ix.Ixon.Serialize
 import Ix.Ixon.Univ
 import LSpec.SlimCheck.Gen
@@ -36,42 +37,49 @@ instance : SampleableExt Univ := SampleableExt.mkSelfContained genUniv
 
 -- Expr
 
-def genExpr : SlimCheck.Gen Ixon.Expr := getSize >>= go
+def genExpr : SlimCheck.Gen Ixon := getSize >>= go
   where
-    go : Nat -> SlimCheck.Gen Ixon.Expr
+    go : Nat -> SlimCheck.Gen Ixon
     | 0 => return .vari 0
     | Nat.succ f =>
       frequency [
         (100, .vari <$> genUInt64),
         (100, .sort <$> genUniv),
-        (100, .cnst <$> genAddress <*> resizeListOf genUniv),
-        (100, .rec_ <$> genUInt64 <*> resizeListOf genUniv),
-        (30, .apps <$> go f <*> go f <*> resizeListOf (go f)),
-        (30, .lams <$> resizeListOf (go f) <*> go f),
-        (30, .alls <$> resizeListOf (go f) <*> go f),
-        (15, .let_ .true <$> go f <*> go f <*> go f),
-        (15, .let_ .false <$> go f <*> go f <*> go f),
+        (100, .refr <$> genAddress <*> genList genUniv),
+        (100, .recr <$> genUInt64 <*> genList genUniv),
+        (15, .apps <$> go f <*> go f <*> genList (go f)),
+        (15, .lams <$> genList (go f) <*> go f),
+        (15, .alls <$> genList (go f) <*> go f),
+        (15, .letE .true <$> go f <*> go f <*> go f),
+        (15, .letE .false <$> go f <*> go f <*> go f),
         (50, .proj <$> genAddress <*> genUInt64 <*> go f),
         (100, .strl <$> genString),
         (100, .natl <$> chooseAny Nat)
       ]
 
+structure IxonExpr where
+  ixon : Ixon
+deriving BEq, Repr
+
+instance : Serialize IxonExpr where
+  put x := Serialize.put x.ixon
+  get := .mk <$> Serialize.get
+
 -- TODO: useful shrinking
-instance : Shrinkable Expr where
+instance : Shrinkable IxonExpr where
   shrink _ := []
 
-instance : SampleableExt Expr := SampleableExt.mkSelfContained genExpr
+instance : SampleableExt IxonExpr :=
+  SampleableExt.mkSelfContained (IxonExpr.mk <$> genExpr)
 
 -- Metadata
-
-
-def genMetadatum : Gen Ixon.Metadatum := 
+def genMetadatum : Gen Ixon.Metadatum :=
   frequency [
-    (100, .name <$> genName),
+    (50, .name <$> genName),
     (100, .info <$> genBinderInfo),
     (100, .link <$> genAddress),
     (100, .hints <$> genReducibilityHints),
-    (25, .all <$> genList' genName),
+    (10, .all <$> genList genName),
   ]
 
 instance : Shrinkable Metadatum where
@@ -80,76 +88,156 @@ instance : Shrinkable Metadatum where
 instance : SampleableExt Metadatum :=
   SampleableExt.mkSelfContained genMetadatum
 
-def genMetaNode : Gen (List Metadatum) := 
-  genList' genMetadatum
+def genMetaNode : Gen (List Metadatum) := genList genMetadatum
 
 def genMetadata : Gen Metadata := do
-  let xs ← genList' genMetaNode
+  let xs ← genList genMetaNode
   return .mk (Batteries.RBMap.ofList ((List.range xs.length).zip xs) compare)
 
+instance : Shrinkable Metadata where
+  shrink _ := []
+
+instance : SampleableExt Metadata :=
+  SampleableExt.mkSelfContained genMetadata
 
 -- Const
+def genAxiom : Gen Axiom := .mk <$> genNat <*> genAddress <*> genBool
 
-def genAxiom : Gen Axiom := .mk <$> genNat' <*> genExpr <*> genBool
+-- TODO: useful shrinking
+instance : Shrinkable Axiom where
+  shrink _ := []
+
+instance : SampleableExt Axiom
+  := SampleableExt.mkSelfContained genAxiom
 
 def genDefinition : Gen Definition := do
-  let lvls <- genNat'
-  let type <- genExpr
-  let mode <- genDefMode
-  let value <- genExpr
+  let lvls <- genNat
+  let type <- genAddress
+  let mode <- genDefKind
+  let value <- genAddress
   let safety <- oneOf #[pure .safe, pure .unsafe, pure .partial]
   return .mk lvls type mode value safety
 
 def genConstructor : Gen Constructor :=
-  .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat' <*> genNat' <*> genBool
+  .mk <$> genNat <*> genAddress <*> genNat <*> genNat <*> genNat <*> genBool
 
-def genRecursorRule : Gen RecursorRule := .mk <$> genNat' <*> genExpr
+-- TODO: useful shrinking
+instance : Shrinkable Constructor where
+  shrink _ := []
+
+instance : SampleableExt Constructor
+  := SampleableExt.mkSelfContained genConstructor
+
+def genRecursorRule : Gen RecursorRule := .mk <$> genNat <*> genAddress
+
+-- TODO: useful shrinking
+instance : Shrinkable RecursorRule where
+  shrink _ := []
+
+instance : SampleableExt RecursorRule
+  := SampleableExt.mkSelfContained genRecursorRule
 
 def genRecursor : Gen Recursor :=
-  .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat' <*> genNat'
-    <*> genNat' <*> genList' genRecursorRule <*> genBool <*> genBool
+  .mk <$> genNat <*> genAddress <*> genNat <*> genNat <*> genNat
+    <*> genNat <*> genList genRecursorRule <*> genBool <*> genBool
+
+-- TODO: useful shrinking
+instance : Shrinkable Recursor where
+  shrink _ := []
+
+instance : SampleableExt Recursor
+  := SampleableExt.mkSelfContained genRecursor
 
 def genInductive : Gen Inductive :=
-  .mk <$> genNat' <*> genExpr <*> genNat' <*> genNat'
-    <*> genList' genConstructor <*> genList' genRecursor <*> genNat'
+  .mk <$> genNat <*> genAddress <*> genNat <*> genNat
+    <*> genList genConstructor <*> genList genRecursor <*> genNat
     <*> genBool <*> genBool <*> genBool
 
+-- TODO: useful shrinking
+instance : Shrinkable Inductive where
+  shrink _ := []
+
+instance : SampleableExt Inductive
+  := SampleableExt.mkSelfContained genInductive
+
 def genConstructorProj : Gen ConstructorProj :=
-  .mk <$> genAddress <*> genNat' <*> genNat'
+  .mk <$> genAddress <*> genNat <*> genNat
 
 def genRecursorProj : Gen RecursorProj :=
-  .mk <$> genAddress <*> genNat' <*> genNat'
+  .mk <$> genAddress <*> genNat <*> genNat
 
 def genDefinitionProj : Gen DefinitionProj :=
-  .mk <$> genAddress <*> genNat'
+  .mk <$> genAddress <*> genNat
 
 def genInductiveProj : Gen InductiveProj :=
-  .mk <$> genAddress <*> genNat'
+  .mk <$> genAddress <*> genNat
 
+def genCheckClaim : Gen CheckClaim :=
+  .mk <$> genAddress <*> genAddress <*> genAddress
 
-def genConst : Gen Ixon.Const := getSize >>= go
+def genEvalClaim : Gen EvalClaim :=
+  .mk <$> genAddress <*> genAddress <*> genAddress <*> genAddress
+
+def genClaim: Gen Claim :=
+  oneOf #[.checks <$> genCheckClaim, .evals <$> genEvalClaim]
+
+-- TODO: different dummy ByteArray perhaps
+def genProof: Gen Proof := .mk <$> genClaim <*> (Address.hash <$> genAddress)
+
+def genComm: Gen Comm := .mk <$> genAddress <*> genAddress
+
+def genEnvn: Gen Env := .mk <$> genList ((·,·) <$> genAddress <*> genAddress)
+
+def genConst : Gen Ixon := getSize >>= go
   where
-    go : Nat -> Gen Ixon.Const
-    | 0 => return .axio ⟨0, .vari 0, false⟩
+    go : Nat -> Gen Ixon
+    | 0 => .axio <$> genAxiom
     | Nat.succ _ =>
       frequency [
         (100, .axio <$> genAxiom),
         (100, .defn <$> genDefinition),
-        --(100, .ctor <$> genConstructor),
-        --(100, .recr <$> genRecursor),
-        --(100, .indc <$> genInductive),
-        (100, .ctorProj <$> genConstructorProj),
-        (100, .recrProj <$> genRecursorProj),
-        (100, .indcProj <$> genInductiveProj),
-        (100, .defnProj <$> genDefinitionProj),
-        (100, .mutDef <$> genList' genDefinition),
-        (100, .mutInd <$> genList' genInductive),
+        (100, .cprj <$> genConstructorProj),
+        (100, .rprj <$> genRecursorProj),
+        (100, .iprj <$> genInductiveProj),
+        (100, .dprj <$> genDefinitionProj),
+        (100, .defs <$> genList genDefinition),
+        (100, .inds <$> genList genInductive),
         (100, .meta <$> genMetadata),
+        (100, .prof <$> genProof),
+        (100, .eval <$> genEvalClaim),
+        (100, .chck <$> genCheckClaim),
+        (100, .comm <$> genComm),
+        (100, .envn <$> genEnvn),
       ]
 
+structure IxonConst where
+  ixon : Ixon
+deriving BEq, Repr
+
+instance : Serialize IxonConst where
+  put x := Serialize.put x.ixon
+  get := .mk <$> Serialize.get
+
 -- TODO: useful shrinking
-instance : Shrinkable Const where
+instance : Shrinkable IxonConst where
   shrink _ := []
 
-instance : SampleableExt Const := SampleableExt.mkSelfContained genConst
+instance : SampleableExt IxonConst
+  := SampleableExt.mkSelfContained (IxonConst.mk <$> genConst)
+
+-- TODO: useful shrinking
+instance : Shrinkable Claim where
+  shrink _ := []
+
+instance : SampleableExt Claim
+  := SampleableExt.mkSelfContained genClaim
+
+
+/--
+Whether the provided IxonFFI term, reconstructed and serialized in Rust, matches
+the provided bytes.
+-/
+@[extern "rs_eq_lean_rust_serialization"]
+opaque eqLeanRustSerialization : @& IxonFFI -> @& ByteArray -> Bool
+
 end Ixon

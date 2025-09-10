@@ -16,8 +16,8 @@ def main (args: List String) : IO UInt32 := do
     LSpec.lspecIO (.ofList [
       ("aiur", Tests.Aiur.suite),
       ("ffi-consistency", Tests.FFIConsistency.suite),
-      ("byte-array", Tests.ByteArray.suite),
+    ("byte-array", Tests.ByteArray.suite),
       ("ix", Tests.Ix.suite),
       ("ixvm", Tests.IxVM.suite),
       ("keccak", Tests.Keccak.suite),
-    ]) args
+  ]) args

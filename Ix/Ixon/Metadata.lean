@@ -1,6 +1,5 @@
 import Ix.Common
 import Ix.Ixon.Serialize
-import Ix.Ixon.Expr
 import Ix.Address
 import Batteries.Data.RBMap
 
@@ -34,47 +33,59 @@ def nameFromParts: List NamePart → Lean.Name
 | (.str n)::ns => .str (nameFromParts ns) n
 | (.num i)::ns => .num (nameFromParts ns) i
 
-def putNamePart : NamePart → PutM
-| .str s => putExpr (.strl s)
-| .num i => putExpr (.natl i)
+open Serialize
+
+def putNamePart : NamePart → PutM Unit
+| .str s => put s
+| .num i => put i
 
 def getNamePart : GetM NamePart := do
-  match (← getExpr) with
-  | .strl s => return (.str s)
-  | .natl s => return (.num s)
-  | e => throw s!"expected NamePart from .strl or .natl, got {repr e}"
+  match (← getTag4) with
+  | ⟨0x7, x⟩ => .str <$> getString' ⟨0x7, x⟩
+  | ⟨0x8, x⟩ => .num <$> getNat' ⟨0x8, x⟩
+  | e => throw s!"expected NamePart from 0x7 or 0x8 got {repr e}"
 
-def putName (n: Lean.Name): PutM := putArray putNamePart (nameToParts n)
-def getName: GetM Lean.Name := nameFromParts <$> getArray getNamePart
+instance : Serialize NamePart where
+  put := putNamePart
+  get := getNamePart
 
-def putMetadatum : Metadatum → PutM
+def putName (n: Lean.Name): PutM Unit := put (nameToParts n)
+def getName: GetM Lean.Name := nameFromParts <$> get
+
+instance : Serialize Lean.Name where
+  put := putName
+  get := getName
+
+def putMetadatum : Metadatum → PutM Unit
 | .name n => putUInt8 0 *> putName n
 | .info i => putUInt8 1 *> putBinderInfo i
 | .link l => putUInt8 2 *> putBytes l.hash
 | .hints h => putUInt8 3 *> putReducibilityHints h
-| .all ns => putUInt8 4 *> putArray putName ns
-| .mutCtx ctx => putUInt8 5 *> (putArray (putArray putName) ctx)
+| .all ns => putUInt8 4 *> put ns
+| .mutCtx ctx => putUInt8 5 *> put ctx
 
 def getMetadatum : GetM Metadatum := do
   match (<- getUInt8) with
-  | 0 => .name <$> getName
-  | 1 => .info <$> getBinderInfo
+  | 0 => .name <$> get
+  | 1 => .info <$> get
   | 2 => .link <$> (.mk <$> getBytes 32)
-  | 3 => .hints <$> getReducibilityHints
-  | 4 => .all <$> getArray getName
-  | 5 => .mutCtx <$> getArray (getArray getName)
+  | 3 => .hints <$> get
+  | 4 => .all <$> get
+  | 5 => .mutCtx <$> get
   | e => throw s!"expected Metadatum encoding between 0 and 4, got {e}"
 
-def putMetadata (m: Metadata) : PutM := putArray putEntry m.map.toList
-  where
-    putEntry e := putNatl e.fst *> putArray putMetadatum e.snd
+instance : Serialize Metadatum where
+  put := putMetadatum
+  get := getMetadatum
+
+def putMetadata (m: Metadata) : PutM Unit := put m.map.toList
 
 def getMetadata : GetM Metadata := do
-  let xs <- getArray (Prod.mk <$> getNatl <*> getArray getMetadatum)
+  let xs <- Serialize.get
   return Metadata.mk (Batteries.RBMap.ofList xs compare)
 
-instance : Serialize Metadatum where
-  put := runPut ∘ putMetadatum
-  get := runGet getMetadatum
+instance : Serialize Metadata where
+  put := putMetadata
+  get := getMetadata
 
 end Ixon

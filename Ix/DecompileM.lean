@@ -11,6 +11,7 @@ open Batteries (RBMap)
 open Batteries (RBSet)
 open Ix.TransportM
 open Ix.Compile
+open Ixon
 
 namespace Ix.Decompile
 
@@ -27,7 +28,7 @@ instance : ToString Named where
 /- The local environment for the Ix -> Lean4 decompiler -/
 structure DecompileEnv where
   names : RBMap Lean.Name (Address × Address) compare
-  store : RBMap Address Ixon.Const compare
+  store : RBMap Address Ixon compare
   univCtx : List Lean.Name
   bindCtx : List Lean.Name
   mutCtx  : RBMap Lean.Name Nat compare
@@ -37,7 +38,7 @@ structure DecompileEnv where
 /- initialize from an Ixon store and a name-index to the store -/
 def DecompileEnv.init
   (names : RBMap Lean.Name (Address × Address) compare)
-  (store : RBMap Address Ixon.Const compare)
+  (store : RBMap Address Ixon compare)
   : DecompileEnv
   := ⟨names, store, default, default, default, default⟩
 
@@ -116,7 +117,7 @@ inductive DecompileError
 | transport (curr: Named) (err: TransportError) (cont meta: Address)
 | unknownName (curr: Named) (name: Lean.Name)
 | unknownStoreAddress (curr: Named) (exp: Address)
-| expectedIxonMetadata (curr: Named) (exp: Address) (got: Ixon.Const)
+| expectedIxonMetadata (curr: Named) (exp: Address) (got: Ixon)
 | badProjection
   (curr: Named) (name: Lean.Name) (cont meta: Address) (msg: String)
 | nonCongruentInductives (curr: Named) (x y: Ix.Inductive)

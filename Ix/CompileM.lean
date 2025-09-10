@@ -1,6 +1,7 @@
 import Batteries.Data.RBMap
 import Ix.TransportM
 import Ix.Ixon.Metadata
+import Ix.Ixon
 import Ix.Ixon.Const
 import Ix.Ixon.Serialize
 import Ix.Common
@@ -68,11 +69,13 @@ structure CompileEnv where
 def CompileEnv.init (maxHeartBeats: USize): CompileEnv :=
   ⟨default, default, default, maxHeartBeats, default⟩
 
+open Ixon
+
 structure CompileState where
   env: Lean.Environment
   prng: StdGen
   names: RBMap Lean.Name (Address × Address) compare
-  store: RBMap Address Ixon.Const compare
+  store: RBMap Address Ixon compare
   cache: RBMap Ix.Const (Address × Address) compare
   comms: RBMap Lean.Name (Address × Address) compare
   axioms: RBMap Lean.Name (Address × Address) compare
@@ -87,8 +90,8 @@ def CompileM.run (env: CompileEnv) (stt: CompileState) (c : CompileM α)
   : EStateM.Result CompileError CompileState α
   := EStateM.run (ReaderT.run c env) stt
 
-def storeConst (const: Ixon.Const): CompileM Address := do
-  let addr := Address.blake3 (Ixon.Serialize.put const)
+def storeConst (const: Ixon): CompileM Address := do
+  let addr := Address.blake3 (runPut (Serialize.put const))
   modifyGet fun stt => (addr, { stt with
     store := stt.store.insert addr const
   })
@@ -907,7 +910,7 @@ partial def checkClaim
   let (value, valMeta) <- compileConst leanConst >>= comm
   let (type, typeMeta) <- addDef lvls sort type >>= comm
   let lvls <- packLevel lvls.length commit
-  return (Claim.checks lvls type value, typeMeta, valMeta)
+  return (Claim.checks (CheckClaim.mk lvls type value), typeMeta, valMeta)
   where
     comm a := if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
 
@@ -923,7 +926,7 @@ partial def evalClaim
   let (output, outputMeta) <- addDef lvls type output >>= comm
   let (type, typeMeta) <- addDef lvls sort type >>= comm
   let lvlsAddr <- packLevel lvls.length commit
-  return (Claim.evals lvlsAddr input output type, inputMeta, outputMeta, typeMeta)
+  return (Claim.evals (EvalClaim.mk lvlsAddr input output type), inputMeta, outputMeta, typeMeta)
   where
     comm a := if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
 
