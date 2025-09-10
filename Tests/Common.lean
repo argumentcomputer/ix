@@ -41,6 +41,9 @@ structure AiurTestCase where
   inputIOBuffer: Aiur.IOBuffer
   expectedIOBuffer: Aiur.IOBuffer
 
+def AiurTestCase.noIO :=
+  (AiurTestCase.mk · · · default default)
+
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
 }
