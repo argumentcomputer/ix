@@ -106,6 +106,7 @@ syntax "set" "(" trm ", " num ", " trm ")"                    : trm
 syntax "store" "(" trm ")"                                    : trm
 syntax "load" "(" trm ")"                                     : trm
 syntax "ptr_val" "(" trm ")"                                  : trm
+syntax "assert_eq!" "(" trm ", " trm ")" ";" (trm)?           : trm
 syntax trm ": " typ                                           : trm
 syntax "io_get_info" "(" trm ")"                              : trm
 syntax "io_set_info" "(" trm ", " trm ", " trm ")" ";" (trm)? : trm
@@ -174,6 +175,8 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.load #[← elabTrm a]
   | `(trm| ptr_val($a:trm)) => do
     mkAppM ``Term.ptrVal #[← elabTrm a]
+  | `(trm| assert_eq!($a:trm, $b:trm); $[$ret:trm]?) => do
+    mkAppM ``Term.assertEq #[← elabTrm a, ← elabTrm b, ← elabRet ret]
   | `(trm| $v:trm : $t:typ) => do
     mkAppM ``Term.ann #[← elabTyp t, ← elabTrm v]
   | `(trm| io_get_info($key:trm)) => do

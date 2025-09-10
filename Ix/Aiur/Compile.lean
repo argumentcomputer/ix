@@ -94,6 +94,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpAuxiliaries size
     bumpLookups
     addMemSize size
+  | .assertEq .. => pure ()
   | .ioGetInfo _ => do
     pushDegrees #[1, 1]
     bumpAuxiliaries 2
@@ -358,6 +359,11 @@ partial def toIndex
   --   let op := .trace str arr
   --   modify (fun state => { state with ops := state.ops.push op})
   --   pure arr
+  | .assertEq a b ret => do
+    let a ← toIndex layoutMap bindings a
+    let b ← toIndex layoutMap bindings b
+    modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
+    toIndex layoutMap bindings ret
   | .ioGetInfo key => do
     let key ← toIndex layoutMap bindings key
     pushOp (.ioGetInfo key) 2

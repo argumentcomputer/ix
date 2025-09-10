@@ -68,10 +68,17 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
             )
         }
         7 => {
+            let [as_ptr, bs_ptr] = ctor.objs();
+            Op::AssertEq(
+                lean_ptr_to_vec_val_idx(as_ptr),
+                lean_ptr_to_vec_val_idx(bs_ptr),
+            )
+        }
+        8 => {
             let [key_ptr] = ctor.objs();
             Op::IOGetInfo(lean_ptr_to_vec_val_idx(key_ptr))
         }
-        8 => {
+        9 => {
             let [key_ptr, idx_ptr, len_ptr] = ctor.objs();
             Op::IOSetInfo(
                 lean_ptr_to_vec_val_idx(key_ptr),
@@ -79,34 +86,34 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
                 lean_unbox_nat_as_usize(len_ptr),
             )
         }
-        9 => {
+        10 => {
             let [idx_ptr, len_ptr] = ctor.objs();
             Op::IORead(
                 lean_unbox_nat_as_usize(idx_ptr),
                 lean_unbox_nat_as_usize(len_ptr),
             )
         }
-        10 => {
+        11 => {
             let [data_ptr] = ctor.objs();
             Op::IOWrite(lean_ptr_to_vec_val_idx(data_ptr))
         }
-        11 => {
+        12 => {
             let [byte_ptr] = ctor.objs();
             Op::U8BitDecomposition(lean_unbox_nat_as_usize(byte_ptr))
         }
-        12 => {
+        13 => {
             let [byte_ptr] = ctor.objs();
             Op::U8ShiftLeft(lean_unbox_nat_as_usize(byte_ptr))
         }
-        13 => {
+        14 => {
             let [byte_ptr] = ctor.objs();
             Op::U8ShiftRight(lean_unbox_nat_as_usize(byte_ptr))
         }
-        14 => {
+        15 => {
             let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
             Op::U8Xor(i, j)
         }
-        15 => {
+        16 => {
             let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
             Op::U8Add(i, j)
         }

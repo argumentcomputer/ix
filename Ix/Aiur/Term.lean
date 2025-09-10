@@ -80,6 +80,7 @@ inductive Term
   | load : Term → Term
   | ptrVal : Term → Term
   | ann : Typ → Term → Term
+  | assertEq : Term → Term → (ret : Term) → Term
   | ioGetInfo : (key : Term) → Term
   | ioSetInfo : (key : Term) → (idx : Term) → (len : Term) → (ret : Term) → Term
   | ioRead : (idx : Term) → (len : Nat) → Term
@@ -132,6 +133,7 @@ inductive TypedTermInner
   | store : TypedTerm → TypedTermInner
   | load : TypedTerm → TypedTermInner
   | ptrVal : TypedTerm → TypedTermInner
+  | assertEq : TypedTerm → TypedTerm → TypedTerm → TypedTermInner
   | ioGetInfo : TypedTerm → TypedTermInner
   | ioSetInfo : TypedTerm → TypedTerm → TypedTerm → TypedTerm → TypedTermInner
   | ioRead : TypedTerm → Nat → TypedTermInner
