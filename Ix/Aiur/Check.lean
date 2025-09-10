@@ -79,6 +79,7 @@ def bindIdents (bindings : List (Local × Typ)) (ctx : CheckContext) : CheckCont
 
 mutual
 partial def inferTerm : Term → CheckM TypedTerm
+  | .unit => pure $ .mk (.evaluates .unit) .unit
   | .var x => do
     -- Retrieves and returns the variable type from the context.
     let ctx ← read

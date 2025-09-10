@@ -129,12 +129,11 @@ def toplevel := ⟦
     set(arr, 1, (0, 0))
   }
 
-  fn read_write_io() -> G {
+  fn read_write_io() {
     let (idx, len) = io_get_info([0]);
     let xs: [G; 4] = io_read(idx, 4);
     io_write(xs);
     io_set_info([1], idx, len + 4);
-    len
   }
 
   fn shr_shr_shl_decompose(byte: G) -> [G; 8] {
@@ -175,7 +174,7 @@ def aiurTestCases : List AiurTestCase := [
     ⟨`deconstruct_tuple, #[1, 2, 3, 4, 5], #[2, 4], default, default⟩,
     ⟨`deconstruct_array, #[1, 2, 3, 4, 5], #[2, 4], default, default⟩,
     ⟨`array_set, #[1, 1, 2, 2, 3, 3], #[1, 1, 0, 0, 3, 3], default, default⟩,
-    ⟨`read_write_io, #[], #[4],
+    ⟨`read_write_io, #[], #[],
       ⟨#[1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩)]⟩,
       ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩⟩,
     ⟨`shr_shr_shl_decompose, #[87], #[0, 1, 0, 1, 0, 1, 0, 0], default, default⟩,

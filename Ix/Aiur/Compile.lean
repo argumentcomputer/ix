@@ -197,6 +197,7 @@ def TypedDecls.layoutMap (decls : TypedDecls) : LayoutMap :=
   layoutMap
 
 def typSize (layoutMap : LayoutMap) : Typ → Nat
+| .unit => 0
 | .field .. => 1
 | .pointer .. => 1
 | .function .. => 1
@@ -226,6 +227,7 @@ partial def toIndex
  (bindings : Std.HashMap Local (Array Bytecode.ValIdx))
  (term : TypedTerm) : StateM CompilerState (Array Bytecode.ValIdx) :=
   match term.inner with
+  | .unit => pure #[]
   | .ret .. => panic! "Should not happen after typechecking"
   | .match .. => panic! "Non-tail `match` not yet implemented"
   | .var name => do

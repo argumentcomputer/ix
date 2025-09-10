@@ -49,6 +49,7 @@ inductive Pattern
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Typ where
+  | unit
   | field
   | tuple : Array Typ → Typ
   | array : Typ → Nat → Typ
@@ -60,6 +61,7 @@ inductive Typ where
 mutual
 
 inductive Term
+  | unit
   | var : Local → Term
   | ref : Global → Term
   | data : Data → Term
@@ -112,6 +114,7 @@ def ContextualType.unwrapOr : ContextualType → Typ → Typ
 
 mutual
 inductive TypedTermInner
+  | unit
   | var : Local → TypedTermInner
   | ref : Global → TypedTermInner
   | data : TypedData → TypedTermInner
@@ -206,6 +209,7 @@ mutual
 open Std (HashSet)
 
 partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) : Typ → Nat
+  | .unit => 0
   | .field .. => 1
   | .pointer .. => 1
   | .function .. => 1
