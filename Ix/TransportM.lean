@@ -12,22 +12,24 @@ namespace Ix.TransportM
 
 open Ixon
 
+abbrev MetadataMap := Batteries.RBMap Nat (List Metadatum) compare
+
 structure DematState where
   idx: Nat
   store: Batteries.RBMap Address Ixon compare
-  meta: Ixon.Metadata
+  meta: MetadataMap
   deriving Repr
 
 def emptyDematState : DematState := 
-  { idx := 0, store := .empty, meta := { map := .empty }}
+  { idx := 0, store := .empty, meta := .empty }
 
 inductive TransportError
 | natTooBig (idx: Nat) (x: Nat)
-| unknownIndex (idx: Nat) (m: Ixon.Metadata)
+| unknownIndex (idx: Nat) (m: MetadataMap)
 | unknownAddress (adr: Address)
-| unexpectedNode (idx: Nat) (m: Ixon.Metadata)
-| nonExprIxon (x: Ixon) (m: Ixon.Metadata)
-| nonConstIxon (x: Ixon) (m: Ixon.Metadata)
+| unexpectedNode (idx: Nat) (m: MetadataMap)
+| nonExprIxon (x: Ixon) (m: MetadataMap)
+| nonConstIxon (x: Ixon) (m: MetadataMap)
 | rawMetadata (m: Ixon.Metadata)
 | expectedMetadata (m: Ixon.Ixon)
 | rawProof (m: Proof)
@@ -60,7 +62,7 @@ def rematStateWithStore (store: Batteries.RBMap Address Ixon compare) : RematSta
   { idx := 0, store }
 
 structure RematCtx where
-  meta: Ixon.Metadata
+  meta: MetadataMap
 
 abbrev RematM := ReaderT RematCtx (EStateM TransportError RematState)
 
@@ -87,8 +89,7 @@ def dematIncr : DematM Nat := dematIncrN 1
 def dematMeta (node: List Ixon.Metadatum): DematM Unit := do
   let n <- (·.idx) <$> get
   modify fun stt =>
-    { stt with meta :=
-      { stt.meta with map := stt.meta.map.insert n node } }
+    { stt with meta := stt.meta.insert n node  }
 
 partial def dematUniv : Ix.Level -> DematM Ixon.Univ
 | .zero => dematIncr *> return .const 0
@@ -122,7 +123,7 @@ def rematIncr : RematM Nat := rematIncrN 1
 def rematMeta : RematM (List Ixon.Metadatum) := do
   let n <- (·.idx) <$> get
   let m <- (·.meta) <$> read
-  match m.map.find? n with
+  match m.find? n with
   | .some n => return n
   | .none => throw (.unknownIndex n m)
 
@@ -269,25 +270,25 @@ partial def dematConst : Ix.Const -> DematM Ixon
   dematMeta [.name x.name]
   let lvls <- dematLevels x.levelParams
   let type <- dematExpr x.type >>= dematStore
-  return .axio (.mk lvls type x.isUnsafe)
+  return .axio (.mk x.isUnsafe lvls type)
 | .«definition» x => .defn <$> dematDefn x
 | .quotient x => do
   dematMeta [.name x.name]
   let lvls <- dematLevels x.levelParams
   let type <- dematExpr x.type >>= dematStore
-  return .quot (.mk lvls type x.kind)
+  return .quot (.mk x.kind lvls type)
 | .inductiveProj x => do
   dematMeta [.name x.name, .link x.blockMeta]
-  return .iprj (.mk x.blockCont x.idx)
+  return .iprj (.mk x.idx x.blockCont)
 | .constructorProj x => do
   dematMeta [.name x.name, .link x.blockMeta, .name x.induct]
-  return .cprj (.mk x.blockCont x.idx x.cidx)
+  return .cprj (.mk x.idx x.cidx x.blockCont)
 | .recursorProj x => do
   dematMeta [.name x.name, .link x.blockMeta, .name x.induct]
-  return .rprj (.mk x.blockCont x.idx x.ridx)
+  return .rprj (.mk x.idx x.ridx x.blockCont)
 | .definitionProj x => do
   dematMeta [.name x.name, .link x.blockMeta]
-  return .dprj (.mk x.blockCont x.idx)
+  return .dprj (.mk x.idx x.blockCont)
 | .mutual x => do
   dematMeta [.mutCtx x.ctx]
   let defs <- x.defs.mapM fun ds => ds.mapM dematDefn
@@ -309,13 +310,13 @@ partial def dematConst : Ix.Const -> DematM Ixon
       let lvls <- dematLevels x.levelParams
       let type <- dematExpr x.type >>= dematStore
       let value <- dematExpr x.value >>= dematStore
-      return .mk lvls type x.mode value x.safety
+      return .mk x.kind x.safety lvls type value
     dematCtor (x: Ix.Constructor): DematM Ixon.Constructor := do
       let _ <- dematIncr
       dematMeta [.name x.name]
       let lvls <- dematLevels x.levelParams
       let t <- dematExpr x.type >>= dematStore
-      return .mk lvls t x.cidx x.numParams x.numFields x.isUnsafe
+      return .mk x.isUnsafe lvls x.cidx x.numParams x.numFields t
     dematRecrRule (x: Ix.RecursorRule): DematM Ixon.RecursorRule := do
       let _ <- dematIncr
       dematMeta [.name x.ctor]
@@ -327,8 +328,8 @@ partial def dematConst : Ix.Const -> DematM Ixon
       let lvls <- dematLevels x.levelParams
       let t <- dematExpr x.type >>= dematStore
       let rrs <- x.rules.mapM dematRecrRule
-      return ⟨lvls, t, x.numParams, x.numIndices, x.numMotives, x.numMinors, 
-        rrs, x.k, x.isUnsafe⟩
+      return ⟨x.k, x.isUnsafe, lvls, x.numParams, x.numIndices, x.numMotives, 
+        x.numMinors, t, rrs⟩
     dematIndc (x: Ix.Inductive): DematM Ixon.Inductive := do
       let _ <- dematIncr
       dematMeta [.name x.name, .all x.all]
@@ -336,12 +337,13 @@ partial def dematConst : Ix.Const -> DematM Ixon
       let type <- dematExpr x.type >>= dematStore
       let ctors <- x.ctors.mapM dematCtor
       let recrs <- x.recrs.mapM dematRecr
-      return ⟨lvls, type, x.numParams, x.numIndices, ctors, recrs, x.numNested,
-        x.isRec, x.isReflexive, x.isUnsafe⟩
+      return ⟨x.isRec, x.isReflexive, x.isUnsafe,
+        lvls, x.numParams, x.numIndices,x.numNested, type, ctors, recrs,
+        ⟩
 
 def constToIxon (x: Ix.Const) : Except TransportError (Ixon × Ixon) := 
   match EStateM.run (dematConst x) emptyDematState with
-  | .ok ix stt => .ok (ix, Ixon.meta stt.meta)
+  | .ok ix stt => .ok (ix, Ixon.meta ⟨stt.meta.toList⟩)
   | .error e _ => .error e
 
 def constToBytes (x: Ix.Const) : Except TransportError ByteArray := do
@@ -436,7 +438,7 @@ partial def rematConst : Ixon -> RematM Ix.Const
       let lvls <- rematLevels x.lvls
       let type <- rematExprAddress x.type
       let value <- rematExprAddress x.value
-      return .mk name lvls type x.mode value hints x.safety all
+      return .mk name lvls type x.kind value hints x.safety all
     rematCtor (x: Ixon.Constructor) : RematM Ix.Constructor := do
       let _ <- rematIncr
       let name <- match (<- rematMeta) with
@@ -477,6 +479,7 @@ def rematerialize (c m: Ixon) : Except TransportError Ix.Const := do
   let m <- match m with
   | .meta m => pure m
   | x => throw <| .expectedMetadata x
+  let m := Batteries.RBMap.ofList m.map compare
   match ((rematConst c).run { meta := m }).run emptyRematState with
     | .ok a _ => return a
     | .error e _ => throw e

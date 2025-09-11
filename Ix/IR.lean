@@ -131,7 +131,7 @@ structure PreDefinition where
   name: Lean.Name
   levelParams : List Lean.Name
   type : Lean.Expr
-  mode : DefKind
+  kind : DefKind
   value : Lean.Expr
   hints : Lean.ReducibilityHints
   safety : Lean.DefinitionSafety
@@ -162,7 +162,7 @@ structure Definition where
   name: Lean.Name
   levelParams : List Lean.Name
   type : Expr
-  mode: DefKind
+  kind: DefKind
   value : Expr
   hints : Lean.ReducibilityHints
   safety: Lean.DefinitionSafety

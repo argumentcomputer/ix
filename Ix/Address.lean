@@ -74,6 +74,9 @@ instance : Repr Address where
 instance : Ord Address where
   compare a b := compare a.hash.data.toList b.hash.data.toList
 
+instance : Inhabited Address where
+  default := Address.blake3 ⟨#[]⟩
+
 def byteOfHex : Char -> Char -> Option UInt8
 | hi, lo => do
   let hi <- natOfHex hi

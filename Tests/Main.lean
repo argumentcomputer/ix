@@ -17,5 +17,6 @@ def main (args: List String) : IO UInt32 := do
       ("ffi-consistency", Tests.FFIConsistency.suite),
     ("byte-array", Tests.ByteArray.suite),
       ("ix", Tests.Ix.suite),
+      ("ixon", Tests.Ixon.units),
       ("keccak", Tests.Keccak.suite),
   ]) args

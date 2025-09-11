@@ -16,7 +16,7 @@ pub enum BinderInfo {
 pub enum ReducibilityHints {
     Opaque,
     Abbrev,
-    Regular,
+    Regular(u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,7 +68,10 @@ impl Serialize for ReducibilityHints {
         match self {
             Self::Opaque => buf.push(0),
             Self::Abbrev => buf.push(1),
-            Self::Regular => buf.push(2),
+            Self::Regular(x) => {
+                buf.push(2);
+                x.put(buf);
+            }
         }
     }
 
@@ -79,7 +82,10 @@ impl Serialize for ReducibilityHints {
                 match head[0] {
                     0 => Ok(Self::Opaque),
                     1 => Ok(Self::Abbrev),
-                    2 => Ok(Self::Regular),
+                    2 => {
+                        let x: u32 = Serialize::get(buf)?;
+                        Ok(Self::Regular(x))
+                    }
                     x => Err(format!("get ReducibilityHints invalid {x}")),
                 }
             }
@@ -192,7 +198,7 @@ mod tests {
             match x {
                 0 => Self::Opaque,
                 1 => Self::Abbrev,
-                _ => Self::Regular,
+                _ => Self::Regular(Arbitrary::arbitrary(g)),
             }
         }
     }

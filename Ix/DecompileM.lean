@@ -331,7 +331,7 @@ partial def decompileDefn (x: Ix.Definition)
   : DecompileM Lean.ConstantInfo := withLevels x.levelParams do
     let type <- decompileExpr x.type
     let val <- decompileExpr x.value
-    match x.mode with
+    match x.kind with
     | .definition => return .defnInfo <|
       Lean.mkDefinitionValEx x.name x.levelParams type val x.hints x.safety x.all
     | .opaque => return .opaqueInfo <|

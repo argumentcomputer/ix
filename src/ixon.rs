@@ -1,4 +1,3 @@
-use blake3::Hash;
 use num_bigint::BigUint;
 
 pub mod address;
@@ -173,11 +172,8 @@ impl Serialize for Ixon {
                 }
             }
             Self::Recr(x, lvls) => {
-                Self::put_tag(0x2, lvls.len() as u64, buf);
-                x.put(buf);
-                for l in lvls {
-                    l.put(buf);
-                }
+                Self::put_tag(0x2, *x, buf);
+                Ixon::put_array(lvls, buf);
             }
             Self::Apps(f, a, args) => {
                 Self::put_tag(0x3, args.len() as u64, buf);
@@ -318,13 +314,8 @@ impl Serialize for Ixon {
                 Ok(Self::Refr(a, lvls))
             }
             0x20..=0x2F => {
-                let n = Ixon::get_size(is_large, small_size, buf)?;
-                let x = u64::get(buf)?;
-                let mut lvls = Vec::new();
-                for _ in 0..n {
-                    let l = Univ::get(buf)?;
-                    lvls.push(l);
-                }
+                let x = Ixon::get_size(is_large, small_size, buf)?;
+                let lvls = Ixon::get_array(buf)?;
                 Ok(Self::Recr(x, lvls))
             }
             0x30..=0x3F => {
@@ -445,6 +436,7 @@ pub mod tests {
     use crate::ixon::nat::tests::arbitrary_nat;
     use crate::ixon::univ::tests::arbitrary_univ;
     use quickcheck::{Arbitrary, Gen};
+    use std::fmt::Write;
     use std::ops::Range;
     use std::ptr;
 
@@ -819,6 +811,679 @@ pub mod tests {
                 false
             }
         }
+    }
+
+    /// Parse a hex string (optional `0x`/`0X` prefix, `_` separators OK) into bytes.
+    pub fn parse_hex(s: &str) -> Result<Vec<u8>, String> {
+        // Strip prefix, drop underscores, and require an even count of hex digits.
+        let s = s.trim();
+        let s = s
+            .strip_prefix("0x")
+            .or_else(|| s.strip_prefix("0X"))
+            .unwrap_or(s);
+        let clean: String = s.chars().filter(|&c| c != '_').collect();
+
+        if clean.len() % 2 != 0 {
+            return Err("odd number of hex digits".into());
+        }
+
+        // Parse each 2-char chunk as a byte.
+        (0..clean.len())
+            .step_by(2)
+            .map(|i| {
+                u8::from_str_radix(&clean[i..i + 2], 16)
+                    .map_err(|_| format!("invalid hex at chars {}..{}", i, i + 2))
+            })
+            .collect()
+    }
+
+    /// Format bytes as a lowercase hex string with a `0x` prefix.
+    pub fn to_hex(bytes: &[u8]) -> String {
+        let mut out = String::with_capacity(2 + bytes.len() * 2);
+        out.push_str("0x");
+        for b in bytes {
+            // `{:02x}` = two lowercase hex digits, zero-padded.
+            write!(&mut out, "{b:02x}").unwrap();
+        }
+        out
+    }
+
+    #[test]
+    fn unit_ixon() {
+        fn test(input: Ixon, expected: &str) -> bool {
+            let mut tmp = Vec::new();
+            let expect = parse_hex(expected).unwrap();
+            Serialize::put(&input, &mut tmp);
+            if tmp != expect {
+                println!(
+                    "serialied {input:?} as:\n {}\n test expects:\n {}",
+                    to_hex(&tmp),
+                    to_hex(&expect),
+                );
+                return false;
+            }
+            match Serialize::get(&mut tmp.as_slice()) {
+                Ok(output) => {
+                    if input != output {
+                        println!(
+                            "deserialized {} as {output:?}, expected {input:?}",
+                            to_hex(&tmp)
+                        );
+                        false
+                    } else {
+                        true
+                    }
+                }
+                Err(e) => {
+                    println!("err: {e}");
+                    false
+                }
+            }
+        }
+        assert!(test(Ixon::Vari(0x0), "0x00"));
+        assert!(test(Ixon::Vari(0x7), "0x07"));
+        assert!(test(Ixon::Vari(0x8), "0x0808"));
+        assert!(test(Ixon::Vari(0xff), "0x08FF"));
+        assert!(test(Ixon::Vari(0x0100), "0x090001"));
+        assert!(test(Ixon::Vari(0xFFFF), "0x09FFFF"));
+        assert!(test(Ixon::Vari(0x010000), "0x0A000001"));
+        assert!(test(Ixon::Vari(0xFFFFFF), "0x0AFFFFFF"));
+        assert!(test(Ixon::Vari(0x01000000), "0x0B00000001"));
+        assert!(test(Ixon::Vari(0xFFFFFFFF), "0x0BFFFFFFFF"));
+        assert!(test(Ixon::Vari(0x0100000000), "0x0C0000000001"));
+        assert!(test(Ixon::Vari(0xFFFFFFFFFF), "0x0CFFFFFFFFFF"));
+        assert!(test(Ixon::Vari(0x010000000000), "0x0D000000000001"));
+        assert!(test(Ixon::Vari(0xFFFFFFFFFFFF), "0x0DFFFFFFFFFFFF"));
+        assert!(test(Ixon::Vari(0x01000000000000), "0x0E00000000000001"));
+        assert!(test(Ixon::Vari(0xFFFFFFFFFFFFFF), "0x0EFFFFFFFFFFFFFF"));
+        assert!(test(Ixon::Vari(0x0100000000000000), "0x0F0000000000000001"));
+        assert!(test(Ixon::Vari(0xFFFFFFFFFFFFFFFF), "0x0FFFFFFFFFFFFFFFFF"));
+        // universes use 2-bit sub-tags
+        assert!(test(Ixon::Sort(Box::new(Univ::Const(0x0))), "0x9000"));
+        assert!(test(Ixon::Sort(Box::new(Univ::Const(0x1F))), "0x901F"));
+        assert!(test(Ixon::Sort(Box::new(Univ::Const(0x20))), "0x902020"));
+        assert!(test(Ixon::Sort(Box::new(Univ::Const(0xFF))), "0x9020FF"));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0x0100))),
+            "0x90210001"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0xFFFF))),
+            "0x9021FFFF"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0x010000))),
+            "0x9022000001"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0xFFFFFF))),
+            "0x9022FFFFFF"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0x01000000))),
+            "0x902300000001"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0xFFFFFFFF))),
+            "0x9023FFFFFFFF"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0x0100000000))),
+            "0x90240000000001"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0xFFFFFFFFFF))),
+            "0x9024FFFFFFFFFF"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0x010000000000))),
+            "0x9025000000000001"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0xFFFFFFFFFFFF))),
+            "0x9025FFFFFFFFFFFF"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0x01000000000000))),
+            "0x902600000000000001"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0xFFFFFFFFFFFFFF))),
+            "0x9026FFFFFFFFFFFFFF"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0x0100000000000000))),
+            "0x90270000000000000001"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Const(0xFFFFFFFFFFFFFFFF))),
+            "0x9027FFFFFFFFFFFFFFFF"
+        ));
+        assert!(test(Ixon::Sort(Box::new(Univ::Var(0x0))), "0x9040"));
+        assert!(test(Ixon::Sort(Box::new(Univ::Var(0x1F))), "0x905F"));
+        assert!(test(Ixon::Sort(Box::new(Univ::Var(0x20))), "0x906020"));
+        assert!(test(Ixon::Sort(Box::new(Univ::Var(0xFF))), "0x9060FF"));
+        assert!(test(Ixon::Sort(Box::new(Univ::Var(0x0100))), "0x90610001"));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Var(0xFFFFFFFFFFFFFFFF))),
+            "0x9067FFFFFFFFFFFFFFFF"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Add(0x0, Box::new(Univ::Const(0x0))))),
+            "0x908000"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Add(0x0, Box::new(Univ::Var(0x0))))),
+            "0x908040"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Add(0x1F, Box::new(Univ::Var(0x0))))),
+            "0x909F40"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Add(0x20, Box::new(Univ::Var(0x0))))),
+            "0x90A02040"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Add(0xFF, Box::new(Univ::Var(0x0))))),
+            "0x90A0FF40"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Add(
+                0xFFFF_FFFF_FFFF_FFFF,
+                Box::new(Univ::Var(0x0))
+            ))),
+            "0x90A7FFFFFFFFFFFFFFFF40"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Max(
+                Box::new(Univ::Var(0x0)),
+                Box::new(Univ::Var(0x0))
+            ))),
+            "0x90C04040"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Max(
+                Box::new(Univ::Var(0x0)),
+                Box::new(Univ::Var(0x1))
+            ))),
+            "0x90C04041"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Max(
+                Box::new(Univ::Var(0x1)),
+                Box::new(Univ::Var(0x0))
+            ))),
+            "0x90C04140"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::Max(
+                Box::new(Univ::Var(0x1)),
+                Box::new(Univ::Var(0x1))
+            ))),
+            "0x90C04141"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::IMax(
+                Box::new(Univ::Var(0x0)),
+                Box::new(Univ::Var(0x0))
+            ))),
+            "0x90C14040"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::IMax(
+                Box::new(Univ::Var(0x0)),
+                Box::new(Univ::Var(0x1))
+            ))),
+            "0x90C14041"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::IMax(
+                Box::new(Univ::Var(0x1)),
+                Box::new(Univ::Var(0x0))
+            ))),
+            "0x90C14140"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::IMax(
+                Box::new(Univ::Var(0x1)),
+                Box::new(Univ::Var(0x1))
+            ))),
+            "0x90C14141"
+        ));
+        assert!(test(
+            Ixon::Sort(Box::new(Univ::IMax(
+                Box::new(Univ::Var(0x1)),
+                Box::new(Univ::Var(0x1))
+            ))),
+            "0x90C14141"
+        ));
+        assert!(test(
+            Ixon::Refr(Address::hash(&[]), vec![]),
+            "0x10af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(
+            Ixon::Refr(Address::hash(&[]), vec![Univ::Var(0x0)]),
+            "0x11af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f326240"
+        ));
+        assert!(test(Ixon::Recr(0x0, vec![Univ::Var(0x0)]), "0x20A140"));
+        assert!(test(
+            Ixon::Recr(0x0, vec![Univ::Var(0x0), Univ::Var(0x1)]),
+            "0x20A24041"
+        ));
+        assert!(test(
+            Ixon::Recr(0x8, vec![Univ::Var(0x0), Univ::Var(0x1)]),
+            "0x2808A24041"
+        ));
+        assert!(test(
+            Ixon::Apps(Box::new(Ixon::Vari(0x0)), Box::new(Ixon::Vari(0x1)), vec![]),
+            "0x300001"
+        ));
+        assert!(test(
+            Ixon::Apps(
+                Box::new(Ixon::Vari(0x0)),
+                Box::new(Ixon::Vari(0x1)),
+                vec![Ixon::Vari(0x2)]
+            ),
+            "0x31000102"
+        ));
+        assert!(test(
+            Ixon::Apps(
+                Box::new(Ixon::Vari(0x0)),
+                Box::new(Ixon::Vari(0x1)),
+                vec![
+                    Ixon::Vari(0x2),
+                    Ixon::Vari(0x3),
+                    Ixon::Vari(0x4),
+                    Ixon::Vari(0x5),
+                    Ixon::Vari(0x6),
+                    Ixon::Vari(0x7),
+                    Ixon::Vari(0x8),
+                    Ixon::Vari(0x9),
+                ]
+            ),
+            "0x3808000102030405060708080809"
+        ));
+        assert!(test(
+            Ixon::Lams(vec![Ixon::Vari(0x0)], Box::new(Ixon::Vari(0x1))),
+            "0x410001"
+        ));
+        assert!(test(
+            Ixon::Lams(
+                vec![
+                    Ixon::Vari(0x0),
+                    Ixon::Vari(0x1),
+                    Ixon::Vari(0x2),
+                    Ixon::Vari(0x3),
+                    Ixon::Vari(0x4),
+                    Ixon::Vari(0x5),
+                    Ixon::Vari(0x6),
+                    Ixon::Vari(0x7)
+                ],
+                Box::new(Ixon::Vari(0x8))
+            ),
+            "0x480800010203040506070808"
+        ));
+        assert!(test(
+            Ixon::Alls(vec![Ixon::Vari(0x0)], Box::new(Ixon::Vari(0x1))),
+            "0x510001"
+        ));
+        assert!(test(
+            Ixon::Alls(
+                vec![
+                    Ixon::Vari(0x0),
+                    Ixon::Vari(0x1),
+                    Ixon::Vari(0x2),
+                    Ixon::Vari(0x3),
+                    Ixon::Vari(0x4),
+                    Ixon::Vari(0x5),
+                    Ixon::Vari(0x6),
+                    Ixon::Vari(0x7)
+                ],
+                Box::new(Ixon::Vari(0x8))
+            ),
+            "0x580800010203040506070808"
+        ));
+        assert!(test(
+            Ixon::Proj(Address::hash(&[]), 0x0, Box::new(Ixon::Vari(0x0))),
+            "0x60af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f326200"
+        ));
+        assert!(test(
+            Ixon::Proj(Address::hash(&[]), 0x8, Box::new(Ixon::Vari(0x0))),
+            "0x6808af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f326200"
+        ));
+        assert!(test(Ixon::Strl("".to_string()), "0x70"));
+        assert!(test(Ixon::Strl("foobar".to_string()), "0x76666f6f626172"));
+        assert!(test(Ixon::Natl(Nat::new_le(&[])), "0x8100"));
+        assert!(test(Ixon::Natl(Nat::new_le(&[0x0])), "0x8100"));
+        assert!(test(Ixon::Natl(Nat::new_le(&[0xFF])), "0x81FF"));
+        assert!(test(Ixon::Natl(Nat::new_le(&[0x00, 0x01])), "0x820001"));
+        assert!(test(
+            Ixon::LetE(
+                true,
+                Box::new(Ixon::Vari(0x0)),
+                Box::new(Ixon::Vari(0x1)),
+                Box::new(Ixon::Vari(0x2))
+            ),
+            "0x91000102"
+        ));
+        assert!(test(Ixon::List(vec![]), "0xA0"));
+        assert!(test(
+            Ixon::List(vec![Ixon::Vari(0x0), Ixon::Vari(0x1), Ixon::Vari(0x2)]),
+            "0xA3000102"
+        ));
+        assert!(test(
+            Ixon::Defn(Definition {
+                kind: DefKind::Definition,
+                safety: DefSafety::Unsafe,
+                lvls: 0u64.into(),
+                typ: Address::hash(&[]),
+                value: Address::hash(&[]),
+            }),
+            "0xB000008100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(
+            Ixon::Defn(Definition {
+                kind: DefKind::Opaque,
+                safety: DefSafety::Safe,
+                lvls: 1u64.into(),
+                typ: Address::hash(&[]),
+                value: Address::hash(&[]),
+            }),
+            "0xB001018101af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(
+            Ixon::Axio(Axiom {
+                is_unsafe: true,
+                lvls: 0u64.into(),
+                typ: Address::hash(&[]),
+            }),
+            "0xB1018100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(
+            Ixon::Quot(Quotient {
+                kind: QuotKind::Type,
+                lvls: 0u64.into(),
+                typ: Address::hash(&[]),
+            }),
+            "0xB2008100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(
+            Ixon::CPrj(ConstructorProj {
+                idx: 0u64.into(),
+                cidx: 0u64.into(),
+                block: Address::hash(&[]),
+            }),
+            "0xB381008100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(
+            Ixon::RPrj(RecursorProj {
+                idx: 0u64.into(),
+                ridx: 0u64.into(),
+                block: Address::hash(&[]),
+            }),
+            "0xB481008100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(
+            Ixon::IPrj(InductiveProj {
+                idx: 0u64.into(),
+                block: Address::hash(&[]),
+            }),
+            "0xB58100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(
+            Ixon::DPrj(DefinitionProj {
+                idx: 0u64.into(),
+                block: Address::hash(&[]),
+            }),
+            "0xB68100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(Ixon::Inds(vec![]), "0xC0"));
+        assert!(test(
+            Ixon::Inds(vec![Inductive {
+                recr: false,
+                refl: false,
+                is_unsafe: false,
+                lvls: 0u64.into(),
+                params: 0u64.into(),
+                indices: 0u64.into(),
+                nested: 0u64.into(),
+                typ: Address::hash(&[]),
+                ctors: vec![],
+                recrs: vec![],
+            }]),
+            "0xC1008100810081008100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262A0A0"
+        ));
+        assert!(test(
+            Ixon::Inds(vec![Inductive {
+                recr: false,
+                refl: false,
+                is_unsafe: false,
+                lvls: 0u64.into(),
+                params: 0u64.into(),
+                indices: 0u64.into(),
+                nested: 0u64.into(),
+                typ: Address::hash(&[]),
+                ctors: vec![],
+                recrs: vec![],
+            }]),
+            "0xC1008100810081008100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262A0A0"
+        ));
+        assert!(test(
+            Ixon::Inds(vec![Inductive {
+                recr: false,
+                refl: false,
+                is_unsafe: false,
+                lvls: 0u64.into(),
+                params: 0u64.into(),
+                indices: 0u64.into(),
+                nested: 0u64.into(),
+                typ: Address::hash(&[]),
+                ctors: vec![Constructor {
+                    is_unsafe: false,
+                    lvls: 0u64.into(),
+                    cidx: 0u64.into(),
+                    params: 0u64.into(),
+                    fields: 0u64.into(),
+                    typ: Address::hash(&[])
+                }],
+                recrs: vec![Recursor {
+                    k: false,
+                    is_unsafe: false,
+                    lvls: 0u64.into(),
+                    params: 0u64.into(),
+                    indices: 0u64.into(),
+                    motives: 0u64.into(),
+                    minors: 0u64.into(),
+                    typ: Address::hash(&[]),
+                    rules: vec![RecursorRule {
+                        fields: 0u64.into(),
+                        rhs: Address::hash(&[])
+                    }]
+                }],
+            }]),
+            "0xC1008100810081008100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262A1008100810081008100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262A10081008100810081008100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262A18100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(Ixon::Defs(vec![]), "0xD0"));
+        assert!(test(
+            Ixon::Defs(vec![Definition {
+                kind: DefKind::Definition,
+                safety: DefSafety::Unsafe,
+                lvls: 0u64.into(),
+                typ: Address::hash(&[]),
+                value: Address::hash(&[]),
+            }]),
+            "0xD100008100af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(Ixon::Meta(Metadata { map: vec![] }), "0xE0A0"));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(0u64.into(), vec![])]
+            }),
+            "0xE0A18100A0"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(0u64.into(), vec![Metadatum::Name(Name { parts: vec![] })])]
+            }),
+            "0xE0A18100A100A0"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(
+                    0u64.into(),
+                    vec![Metadatum::Name(Name {
+                        parts: vec![NamePart::Str("a".to_string())]
+                    })]
+                )]
+            }),
+            "0xE0A18100A100A17161"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(
+                    0u64.into(),
+                    vec![Metadatum::Name(Name {
+                        parts: vec![
+                            NamePart::Str("a".to_string()),
+                            NamePart::Str("b".to_string()),
+                        ]
+                    })]
+                )]
+            }),
+            "0xE0A18100A100A271617162"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(
+                    0u64.into(),
+                    vec![Metadatum::Name(Name {
+                        parts: vec![
+                            NamePart::Str("a".to_string()),
+                            NamePart::Str("b".to_string()),
+                            NamePart::Str("c".to_string()),
+                        ]
+                    })]
+                )]
+            }),
+            "0xE0A18100A100A3716171627163"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(
+                    0u64.into(),
+                    vec![Metadatum::Name(Name {
+                        parts: vec![NamePart::Num(165851424810452359u64.into())]
+                    })]
+                )]
+            }),
+            "0xE0A18100A100A1880887C551FDFD384D02"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(0u64.into(), vec![Metadatum::Info(BinderInfo::Default)])]
+            }),
+            "0xE0A18100A10100"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(0u64.into(), vec![Metadatum::Link(Address::hash(&[]))])]
+            }),
+            "0xE0A18100A102af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(
+                    0u64.into(),
+                    vec![
+                        Metadatum::Name(Name {
+                            parts: vec![NamePart::Str("d".to_string())]
+                        }),
+                        Metadatum::Link(Address::hash(&[])),
+                        Metadatum::Hints(ReducibilityHints::Regular(576554452)),
+                        Metadatum::Link(Address::hash(&[]))
+                    ]
+                )]
+            }),
+            "0xe0a18100a400a1716402af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f32620302d4855d2202af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(
+                    0u64.into(),
+                    vec![Metadatum::Hints(ReducibilityHints::Opaque)]
+                )]
+            }),
+            "0xE0A18100A10300"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(0u64.into(), vec![Metadatum::All(vec![])])]
+            }),
+            "0xE0A18100A104A0"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(0u64.into(), vec![Metadatum::MutCtx(vec![])])]
+            }),
+            "0xE0A18100A105A0"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![(
+                    0u64.into(),
+                    vec![Metadatum::Hints(ReducibilityHints::Regular(42))]
+                )]
+            }),
+            "0xe0a18100a103022a000000"
+        ));
+        assert!(test(
+            Ixon::Meta(Metadata {
+                map: vec![
+                    (
+                        0u64.into(),
+                        vec![
+                            Metadatum::Name(Name {
+                                parts: vec![NamePart::Str("d".to_string())]
+                            }),
+                            Metadatum::Link(Address::hash(&[])),
+                            Metadatum::Hints(ReducibilityHints::Regular(576554452)),
+                            Metadatum::Link(Address::hash(&[]))
+                        ]
+                    ),
+                    (
+                        1u64.into(),
+                        vec![
+                            Metadatum::Info(BinderInfo::InstImplicit),
+                            Metadatum::Info(BinderInfo::InstImplicit),
+                            Metadatum::Info(BinderInfo::StrictImplicit),
+                        ]
+                    ),
+                    (
+                        2u64.into(),
+                        vec![
+                            Metadatum::All(vec![Name {
+                                parts: vec![NamePart::Num(165851424810452359u64.into())]
+                            }]),
+                            Metadatum::Info(BinderInfo::Default)
+                        ]
+                    ),
+                    (3u64.into(), vec![]),
+                    (4u64.into(), vec![]),
+                    (
+                        5u64.into(),
+                        vec![Metadatum::Hints(ReducibilityHints::Opaque)]
+                    ),
+                    (
+                        6u64.into(),
+                        vec![Metadatum::Name(Name {
+                            parts: vec![NamePart::Num(871843802607008850u64.into())]
+                        })]
+                    )
+                ]
+            }),
+            "0xe0a78100a400a1716402af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f32620302d4855d2202af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f32628101a30103010301028102a204a1a1880887c551fdfd384d0201008103a08104a08105a103008106a100a18808523c04ba5169190c"
+        ));
     }
 }
 

@@ -5,7 +5,11 @@ use num_bigint::BigUint;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nat(pub BigUint);
 
-impl Nat {}
+impl Nat {
+    pub fn new_le(bytes: &[u8]) -> Self {
+        Nat(BigUint::from_bytes_le(bytes))
+    }
+}
 
 impl Serialize for Nat {
     fn put(&self, buf: &mut Vec<u8>) {
@@ -17,6 +21,15 @@ impl Serialize for Nat {
             Ok(x) => Err(format!("get Nat invalid {x:?}")),
             Err(e) => Err(e),
         }
+    }
+}
+
+impl<T> From<T> for Nat
+where
+    T: Into<BigUint>,
+{
+    fn from(x: T) -> Self {
+        Nat(x.into())
     }
 }
 

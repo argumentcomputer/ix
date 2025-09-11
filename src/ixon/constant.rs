@@ -13,16 +13,16 @@ pub enum QuotKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Quotient {
+    pub kind: QuotKind,
     pub lvls: Nat,
     pub typ: Address,
-    pub kind: QuotKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Axiom {
+    pub is_unsafe: bool,
     pub lvls: Nat,
     pub typ: Address,
-    pub is_unsafe: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,21 +41,21 @@ pub enum DefSafety {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Definition {
+    pub kind: DefKind,
+    pub safety: DefSafety,
     pub lvls: Nat,
     pub typ: Address,
-    pub mode: DefKind,
     pub value: Address,
-    pub safety: DefSafety,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Constructor {
+    pub is_unsafe: bool,
     pub lvls: Nat,
-    pub typ: Address,
     pub cidx: Nat,
     pub params: Nat,
     pub fields: Nat,
-    pub is_unsafe: bool,
+    pub typ: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,55 +66,55 @@ pub struct RecursorRule {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recursor {
+    pub k: bool,
+    pub is_unsafe: bool,
     pub lvls: Nat,
-    pub typ: Address,
     pub params: Nat,
     pub indices: Nat,
     pub motives: Nat,
     pub minors: Nat,
+    pub typ: Address,
     pub rules: Vec<RecursorRule>,
-    pub k: bool,
-    pub is_unsafe: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Inductive {
-    pub lvls: Nat,
-    pub typ: Address,
-    pub params: Nat,
-    pub indices: Nat,
-    pub ctors: Vec<Constructor>,
-    pub recrs: Vec<Recursor>,
-    pub nested: Nat,
     pub recr: bool,
     pub refl: bool,
     pub is_unsafe: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InductiveProj {
-    pub block: Address,
-    pub idx: Nat,
+    pub lvls: Nat,
+    pub params: Nat,
+    pub indices: Nat,
+    pub nested: Nat,
+    pub typ: Address,
+    pub ctors: Vec<Constructor>,
+    pub recrs: Vec<Recursor>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstructorProj {
-    pub block: Address,
     pub idx: Nat,
     pub cidx: Nat,
+    pub block: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecursorProj {
-    pub block: Address,
     pub idx: Nat,
     pub ridx: Nat,
+    pub block: Address,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InductiveProj {
+    pub idx: Nat,
+    pub block: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionProj {
-    pub block: Address,
     pub idx: Nat,
+    pub block: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,30 +152,30 @@ impl Serialize for QuotKind {
 
 impl Serialize for Quotient {
     fn put(&self, buf: &mut Vec<u8>) {
+        self.kind.put(buf);
         self.lvls.put(buf);
         self.typ.put(buf);
-        self.kind.put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
+        let kind = QuotKind::get(buf)?;
         let lvls = Nat::get(buf)?;
         let typ = Address::get(buf)?;
-        let kind = QuotKind::get(buf)?;
-        Ok(Quotient { lvls, typ, kind })
+        Ok(Quotient { kind, lvls, typ })
     }
 }
 
 impl Serialize for Axiom {
     fn put(&self, buf: &mut Vec<u8>) {
+        self.is_unsafe.put(buf);
         self.lvls.put(buf);
         self.typ.put(buf);
-        self.is_unsafe.put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
+        let is_unsafe = bool::get(buf)?;
         let lvls = Nat::get(buf)?;
         let typ = Address::get(buf)?;
-        let is_unsafe = bool::get(buf)?;
         Ok(Axiom {
             lvls,
             typ,
@@ -236,46 +236,46 @@ impl Serialize for DefSafety {
 
 impl Serialize for Definition {
     fn put(&self, buf: &mut Vec<u8>) {
+        self.kind.put(buf);
+        self.safety.put(buf);
         self.lvls.put(buf);
         self.typ.put(buf);
-        self.mode.put(buf);
         self.value.put(buf);
-        self.safety.put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
+        let kind = DefKind::get(buf)?;
+        let safety = DefSafety::get(buf)?;
         let lvls = Nat::get(buf)?;
         let typ = Address::get(buf)?;
-        let mode = DefKind::get(buf)?;
         let value = Address::get(buf)?;
-        let safety = DefSafety::get(buf)?;
         Ok(Definition {
+            kind,
+            safety,
             lvls,
             typ,
-            mode,
             value,
-            safety,
         })
     }
 }
 
 impl Serialize for Constructor {
     fn put(&self, buf: &mut Vec<u8>) {
+        self.is_unsafe.put(buf);
         self.lvls.put(buf);
-        self.typ.put(buf);
         self.cidx.put(buf);
         self.params.put(buf);
         self.fields.put(buf);
-        self.is_unsafe.put(buf);
+        self.typ.put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
+        let is_unsafe = bool::get(buf)?;
         let lvls = Nat::get(buf)?;
-        let typ = Address::get(buf)?;
         let cidx = Nat::get(buf)?;
         let params = Nat::get(buf)?;
         let fields = Nat::get(buf)?;
-        let is_unsafe = bool::get(buf)?;
+        let typ = Address::get(buf)?;
         Ok(Constructor {
             lvls,
             typ,
@@ -302,25 +302,25 @@ impl Serialize for RecursorRule {
 
 impl Serialize for Recursor {
     fn put(&self, buf: &mut Vec<u8>) {
+        Ixon::pack_bools(vec![self.k, self.is_unsafe]).put(buf);
         self.lvls.put(buf);
-        self.typ.put(buf);
         self.params.put(buf);
         self.indices.put(buf);
         self.motives.put(buf);
         self.minors.put(buf);
+        self.typ.put(buf);
         self.rules.put(buf);
-        Ixon::pack_bools(vec![self.k, self.is_unsafe]).put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
+        let bools = Ixon::unpack_bools(2, u8::get(buf)?);
         let lvls = Nat::get(buf)?;
-        let typ = Serialize::get(buf)?;
         let params = Nat::get(buf)?;
         let indices = Nat::get(buf)?;
         let motives = Nat::get(buf)?;
         let minors = Nat::get(buf)?;
+        let typ = Serialize::get(buf)?;
         let rules = Serialize::get(buf)?;
-        let bools = Ixon::unpack_bools(2, u8::get(buf)?);
         Ok(Recursor {
             lvls,
             typ,
@@ -337,93 +337,93 @@ impl Serialize for Recursor {
 
 impl Serialize for Inductive {
     fn put(&self, buf: &mut Vec<u8>) {
+        Ixon::pack_bools(vec![self.recr, self.refl, self.is_unsafe]).put(buf);
         self.lvls.put(buf);
-        self.typ.put(buf);
         self.params.put(buf);
         self.indices.put(buf);
+        self.nested.put(buf);
+        self.typ.put(buf);
         Serialize::put(&self.ctors, buf);
         Serialize::put(&self.recrs, buf);
-        self.nested.put(buf);
-        Ixon::pack_bools(vec![self.recr, self.refl, self.is_unsafe]).put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
+        let bools = Ixon::unpack_bools(3, u8::get(buf)?);
         let lvls = Nat::get(buf)?;
-        let typ = Address::get(buf)?;
         let params = Nat::get(buf)?;
         let indices = Nat::get(buf)?;
+        let nested = Nat::get(buf)?;
+        let typ = Address::get(buf)?;
         let ctors = Serialize::get(buf)?;
         let recrs = Serialize::get(buf)?;
-        let nested = Nat::get(buf)?;
-        let bools = Ixon::unpack_bools(3, u8::get(buf)?);
         Ok(Inductive {
-            lvls,
-            typ,
-            params,
-            indices,
-            ctors,
-            recrs,
-            nested,
             recr: bools[0],
             refl: bools[1],
             is_unsafe: bools[2],
+            lvls,
+            params,
+            indices,
+            nested,
+            typ,
+            ctors,
+            recrs,
         })
     }
 }
 
 impl Serialize for InductiveProj {
     fn put(&self, buf: &mut Vec<u8>) {
-        self.block.put(buf);
         self.idx.put(buf);
+        self.block.put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
-        let block = Address::get(buf)?;
         let idx = Nat::get(buf)?;
-        Ok(InductiveProj { block, idx })
+        let block = Address::get(buf)?;
+        Ok(InductiveProj { idx, block })
     }
 }
 
 impl Serialize for ConstructorProj {
     fn put(&self, buf: &mut Vec<u8>) {
-        self.block.put(buf);
         self.idx.put(buf);
         self.cidx.put(buf);
+        self.block.put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
-        let block = Address::get(buf)?;
         let idx = Nat::get(buf)?;
         let cidx = Nat::get(buf)?;
-        Ok(ConstructorProj { block, idx, cidx })
+        let block = Address::get(buf)?;
+        Ok(ConstructorProj { idx, cidx, block })
     }
 }
 
 impl Serialize for RecursorProj {
     fn put(&self, buf: &mut Vec<u8>) {
-        self.block.put(buf);
         self.idx.put(buf);
         self.ridx.put(buf);
+        self.block.put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
-        let block = Address::get(buf)?;
         let idx = Nat::get(buf)?;
         let ridx = Nat::get(buf)?;
-        Ok(RecursorProj { block, idx, ridx })
+        let block = Address::get(buf)?;
+        Ok(RecursorProj { idx, ridx, block })
     }
 }
 
 impl Serialize for DefinitionProj {
     fn put(&self, buf: &mut Vec<u8>) {
-        self.block.put(buf);
         self.idx.put(buf);
+        self.block.put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
-        let block = Address::get(buf)?;
         let idx = Nat::get(buf)?;
-        Ok(DefinitionProj { block, idx })
+        let block = Address::get(buf)?;
+        Ok(DefinitionProj { idx, block })
     }
 }
 
@@ -505,11 +505,11 @@ mod tests {
     impl Arbitrary for Definition {
         fn arbitrary(g: &mut Gen) -> Self {
             Self {
+                kind: DefKind::arbitrary(g),
+                safety: DefSafety::arbitrary(g),
                 lvls: Nat::arbitrary(g),
                 typ: Address::arbitrary(g),
-                mode: DefKind::arbitrary(g),
                 value: Address::arbitrary(g),
-                safety: DefSafety::arbitrary(g),
             }
         }
     }

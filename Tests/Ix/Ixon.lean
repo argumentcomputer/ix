@@ -14,7 +14,6 @@ open SlimCheck.Gen
 open Ixon
 
 -- Univ
-
 namespace Ixon
 
 def genUniv : Gen Ixon.Univ := getSize >>= go
@@ -92,7 +91,7 @@ def genMetaNode : Gen (List Metadatum) := genList genMetadatum
 
 def genMetadata : Gen Metadata := do
   let xs ← genList genMetaNode
-  return .mk (Batteries.RBMap.ofList ((List.range xs.length).zip xs) compare)
+  return .mk ((List.range xs.length).zip xs)
 
 instance : Shrinkable Metadata where
   shrink _ := []
@@ -101,7 +100,7 @@ instance : SampleableExt Metadata :=
   SampleableExt.mkSelfContained genMetadata
 
 -- Const
-def genAxiom : Gen Axiom := .mk <$> genNat <*> genAddress <*> genBool
+def genAxiom : Gen Axiom := .mk <$> genBool <*> genNat <*> genAddress
 
 -- TODO: useful shrinking
 instance : Shrinkable Axiom where
@@ -113,13 +112,13 @@ instance : SampleableExt Axiom
 def genDefinition : Gen Definition := do
   let lvls <- genNat
   let type <- genAddress
-  let mode <- genDefKind
+  let kind <- genDefKind
   let value <- genAddress
   let safety <- oneOf #[pure .safe, pure .unsafe, pure .partial]
-  return .mk lvls type mode value safety
+  return .mk kind safety lvls type value
 
 def genConstructor : Gen Constructor :=
-  .mk <$> genNat <*> genAddress <*> genNat <*> genNat <*> genNat <*> genBool
+  .mk <$> genBool <*> genNat <*> genNat <*> genNat <*> genNat <*> genAddress
 
 -- TODO: useful shrinking
 instance : Shrinkable Constructor where
@@ -138,8 +137,8 @@ instance : SampleableExt RecursorRule
   := SampleableExt.mkSelfContained genRecursorRule
 
 def genRecursor : Gen Recursor :=
-  .mk <$> genNat <*> genAddress <*> genNat <*> genNat <*> genNat
-    <*> genNat <*> genList genRecursorRule <*> genBool <*> genBool
+  .mk <$> genBool <*> genBool <*> genNat <*> genNat <*> genNat <*> genNat
+    <*> genNat <*> genAddress <*> genList genRecursorRule
 
 -- TODO: useful shrinking
 instance : Shrinkable Recursor where
@@ -149,9 +148,9 @@ instance : SampleableExt Recursor
   := SampleableExt.mkSelfContained genRecursor
 
 def genInductive : Gen Inductive :=
-  .mk <$> genNat <*> genAddress <*> genNat <*> genNat
-    <*> genList genConstructor <*> genList genRecursor <*> genNat
-    <*> genBool <*> genBool <*> genBool
+  .mk <$> genBool <*> genBool <*> genBool
+    <*> genNat <*> genNat <*> genNat <*> genNat
+    <*> genAddress <*> genList genConstructor <*> genList genRecursor
 
 -- TODO: useful shrinking
 instance : Shrinkable Inductive where
@@ -161,16 +160,16 @@ instance : SampleableExt Inductive
   := SampleableExt.mkSelfContained genInductive
 
 def genConstructorProj : Gen ConstructorProj :=
-  .mk <$> genAddress <*> genNat <*> genNat
+  .mk <$> genNat <*> genNat <*> genAddress
 
 def genRecursorProj : Gen RecursorProj :=
-  .mk <$> genAddress <*> genNat <*> genNat
+  .mk <$> genNat <*> genNat <*> genAddress
 
 def genDefinitionProj : Gen DefinitionProj :=
-  .mk <$> genAddress <*> genNat
+  .mk <$> genNat <*> genAddress
 
 def genInductiveProj : Gen InductiveProj :=
-  .mk <$> genAddress <*> genNat
+  .mk <$> genNat <*> genAddress
 
 def genCheckClaim : Gen CheckClaim :=
   .mk <$> genAddress <*> genAddress <*> genAddress
@@ -240,4 +239,6 @@ the provided bytes.
 @[extern "rs_eq_lean_rust_serialization"]
 opaque eqLeanRustSerialization : @& IxonFFI -> @& ByteArray -> Bool
 
+
 end Ixon
+

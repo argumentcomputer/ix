@@ -15,7 +15,7 @@ inductive Metadatum where
 deriving BEq, Repr, Ord, Inhabited
 
 structure Metadata where
-  map: Batteries.RBMap Nat (List Metadatum) compare
+  map: List (Nat × (List Metadatum))
   deriving BEq, Repr
 
 inductive NamePart where
@@ -49,8 +49,8 @@ instance : Serialize NamePart where
   put := putNamePart
   get := getNamePart
 
-def putName (n: Lean.Name): PutM Unit := put (nameToParts n)
-def getName: GetM Lean.Name := nameFromParts <$> get
+def putName (n: Lean.Name): PutM Unit := put (List.reverse $ nameToParts n)
+def getName: GetM Lean.Name := (nameFromParts ∘ List.reverse) <$> get
 
 instance : Serialize Lean.Name where
   put := putName
@@ -78,14 +78,8 @@ instance : Serialize Metadatum where
   put := putMetadatum
   get := getMetadatum
 
-def putMetadata (m: Metadata) : PutM Unit := put m.map.toList
-
-def getMetadata : GetM Metadata := do
-  let xs <- Serialize.get
-  return Metadata.mk (Batteries.RBMap.ofList xs compare)
-
 instance : Serialize Metadata where
-  put := putMetadata
-  get := getMetadata
+  put m := put m.map
+  get := .mk <$> get
 
 end Ixon

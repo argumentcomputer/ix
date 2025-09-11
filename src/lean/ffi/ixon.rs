@@ -20,7 +20,7 @@ use crate::{
     },
     lean::{
         array::LeanArrayObject, as_ref_unsafe, ctor::LeanCtorObject, lean_is_scalar,
-        sarray::LeanSArrayObject, string::LeanStringObject,
+        lean_unbox_u32, sarray::LeanSArrayObject, string::LeanStringObject,
     },
     lean_unbox,
 };
@@ -79,8 +79,8 @@ fn lean_ptr_to_definition(ptr: *const c_void) -> Definition {
     let lvls = lean_ptr_to_nat(lvls);
     let typ = lean_ptr_to_address(typ);
     let value = lean_ptr_to_address(value);
-    let [mode, safety, ..] = (mode_safety as usize).to_le_bytes();
-    let mode = match mode {
+    let [kind, safety, ..] = (mode_safety as usize).to_le_bytes();
+    let kind = match kind {
         0 => DefKind::Definition,
         1 => DefKind::Opaque,
         2 => DefKind::Theorem,
@@ -95,7 +95,7 @@ fn lean_ptr_to_definition(ptr: *const c_void) -> Definition {
     Definition {
         lvls,
         typ,
-        mode,
+        kind,
         value,
         safety,
     }
@@ -266,7 +266,10 @@ fn lean_ptr_to_metadatum(ptr: *const c_void) -> Metadatum {
                     _ => unreachable!(),
                 }
             } else {
-                ReducibilityHints::Regular
+                let ctor: &LeanCtorObject = as_ref_unsafe(hints.cast());
+                let [x] = ctor.objs();
+                let x = lean_unbox_u32(x);
+                ReducibilityHints::Regular(x)
             };
             Metadatum::Hints(hints)
         }

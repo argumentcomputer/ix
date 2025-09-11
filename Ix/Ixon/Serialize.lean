@@ -104,7 +104,7 @@ def getBytes (len: Nat) : GetM ByteArray := do
 
 def putTag2 (tag: Tag2) : PutM Unit := do
   putUInt8 (encodeTag2Head tag)
-  if tag.size < 8
+  if tag.size < 32
   then pure ()
   else putBytes (.mk (trimmedLE tag.size))
 

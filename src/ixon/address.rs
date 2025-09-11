@@ -7,6 +7,14 @@ pub struct Address {
     pub hash: Hash,
 }
 
+impl Address {
+    pub fn hash(input: &[u8]) -> Self {
+        Address {
+            hash: blake3::hash(input),
+        }
+    }
+}
+
 impl Serialize for Address {
     fn put(&self, buf: &mut Vec<u8>) {
         buf.extend_from_slice(self.hash.as_bytes())

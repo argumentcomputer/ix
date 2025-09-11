@@ -136,15 +136,15 @@ This section defines FFI-friendly versions of the original Ixon datatypes by
   ⟨natToBytesLE n⟩
 
 structure DefinitionFFI where
+  kind: Ix.DefKind
+  safety : Lean.DefinitionSafety
   lvls : ByteArray
   type : Address
-  mode : Ix.DefKind
   value : Address
-  safety : Lean.DefinitionSafety
 
 def Definition.toFFI : Definition → DefinitionFFI
-  | ⟨lvls, type, mode, value, safety⟩ =>
-    ⟨nat2Bytes lvls, type, mode, value, safety⟩
+  | ⟨kind, safety, lvls, type, value⟩ =>
+    ⟨kind, safety, nat2Bytes lvls, type, value⟩
 
 structure AxiomFFI where
   lvls : ByteArray
@@ -152,7 +152,7 @@ structure AxiomFFI where
   isUnsafe: Bool
 
 def Axiom.toFFI : Axiom → AxiomFFI
-  | ⟨lvls, type, isUnsafe⟩ => ⟨nat2Bytes lvls, type, isUnsafe⟩
+  | ⟨isUnsafe, lvls, type⟩ => ⟨nat2Bytes lvls, type, isUnsafe⟩
 
 structure QuotientFFI where
   lvls : ByteArray
@@ -160,7 +160,7 @@ structure QuotientFFI where
   kind : Lean.QuotKind
 
 def Quotient.toFFI : Quotient → QuotientFFI
-  | ⟨lvls, type, kind⟩ => ⟨nat2Bytes lvls, type, kind⟩
+  | ⟨kind, lvls, type⟩ => ⟨nat2Bytes lvls, type, kind⟩
 
 structure ConstructorProjFFI where
   block : Address
@@ -168,7 +168,7 @@ structure ConstructorProjFFI where
   cidx : ByteArray
 
 def ConstructorProj.toFFI : ConstructorProj → ConstructorProjFFI
-  | ⟨block, idx, cidx⟩ => ⟨block, nat2Bytes idx, nat2Bytes cidx⟩
+  | ⟨idx, cidx, block⟩ => ⟨block, nat2Bytes idx, nat2Bytes cidx⟩
 
 structure RecursorProjFFI where
   block : Address
@@ -176,21 +176,21 @@ structure RecursorProjFFI where
   ridx : ByteArray
 
 def RecursorProj.toFFI : RecursorProj → RecursorProjFFI
-  | ⟨block, idx, ridx⟩ => ⟨block, nat2Bytes idx, nat2Bytes ridx⟩
+  | ⟨idx, ridx, block⟩ => ⟨block, nat2Bytes idx, nat2Bytes ridx⟩
 
 structure InductiveProjFFI where
   block : Address
   idx : ByteArray
 
 def InductiveProj.toFFI : InductiveProj → InductiveProjFFI
-  | ⟨block, idx⟩ => ⟨block, nat2Bytes idx⟩
+  | ⟨idx, block⟩ => ⟨block, nat2Bytes idx⟩
 
 structure DefinitionProjFFI where
   block : Address
   idx : ByteArray
 
 def DefinitionProj.toFFI : DefinitionProj → DefinitionProjFFI
-  | ⟨block, idx⟩ => ⟨block, nat2Bytes idx⟩
+  | ⟨idx, block⟩ => ⟨block, nat2Bytes idx⟩
 
 structure RecursorRuleFFI where
   fields : ByteArray
@@ -211,7 +211,7 @@ structure RecursorFFI where
   isUnsafe: Bool
 
 def Recursor.toFFI : Recursor → RecursorFFI
-  | ⟨lvls, type, params, indices, motives, minors, rules, k, isUnsafe⟩ =>
+  | ⟨k, isUnsafe, lvls, params, indices, motives, minors, type, rules⟩ =>
     ⟨nat2Bytes lvls, type, nat2Bytes params, nat2Bytes indices,
       nat2Bytes motives, nat2Bytes minors, rules.toArray.map RecursorRule.toFFI,
       k, isUnsafe⟩
@@ -225,7 +225,7 @@ structure ConstructorFFI where
   isUnsafe: Bool
 
 def Constructor.toFFI : Constructor → ConstructorFFI
-  | ⟨lvls, type, cidx, params, fields, isUnsafe⟩ =>
+  | ⟨isUnsafe, lvls, cidx, params, fields, type⟩ =>
     ⟨nat2Bytes lvls, type, nat2Bytes cidx, nat2Bytes params, nat2Bytes fields, isUnsafe⟩
 
 structure InductiveFFI where
@@ -241,7 +241,7 @@ structure InductiveFFI where
   isUnsafe: Bool
 
 def Inductive.toFFI : Inductive → InductiveFFI
-  | ⟨lvls, type, params, indices, ctors, recrs, nested, recr, refl, isUnsafe⟩ =>
+  | ⟨recr, refl, isUnsafe, lvls, params, indices, nested, type, ctors, recrs⟩ =>
     ⟨nat2Bytes lvls, type, nat2Bytes params, nat2Bytes indices,
       ctors.toArray.map Constructor.toFFI, recrs.toArray.map Recursor.toFFI,
       nat2Bytes nested, recr, refl, isUnsafe⟩
@@ -323,8 +323,7 @@ def Ixon.toFFI : Ixon → IxonFFI
   | .dprj d => .dprj d.toFFI
   | .inds is => .inds (is.map Inductive.toFFI).toArray
   | .defs d => .defs (d.map Definition.toFFI).toArray
-  | .meta ⟨map⟩ =>
-    .meta $ map.toList.toArray.map
+  | .meta ⟨map⟩ => .meta $ map.toArray.map
       fun (x, y) => (nat2Bytes x, y.toArray.map Metadatum.toFFI)
   | .prof p => .prof p
   | .eval x => .eval x

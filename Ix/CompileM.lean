@@ -327,7 +327,7 @@ partial def preDefinitionToIR (d: PreDefinition)
   : CompileM Ix.Definition := withCurrent d.name $ withLevels d.levelParams do
   let typ <- compileExpr d.type
   let val <- compileExpr d.value
-  return ⟨d.name, d.levelParams, typ, d.mode, val, d.hints, d.safety, d.all⟩
+  return ⟨d.name, d.levelParams, typ, d.kind, val, d.hints, d.safety, d.all⟩
 
 partial def getRecursors (ind : Lean.InductiveVal) 
   : CompileM (List Lean.RecursorVal) := do
@@ -625,11 +625,11 @@ partial def compareDef
   (weakOrd : RBMap Lean.Name Nat compare)
   (x y: PreDefinition)
   : CompileM Ordering := do
-  let mode := compare x.mode y.mode
+  let kind := compare x.kind y.kind
   let ls := compare x.levelParams.length y.levelParams.length
   let ts ← compareExpr weakOrd x.levelParams y.levelParams x.type y.type
   let vs ← compareExpr weakOrd x.levelParams y.levelParams x.value y.value
-  return concatOrds [mode, ls, ts, vs]
+  return concatOrds [kind, ls, ts, vs]
 
 /-- AST equality between two Lean definitions.
   `weakOrd` contains the best known current mutual ordering -/
