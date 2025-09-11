@@ -231,7 +231,6 @@ instance : Shrinkable Claim where
 instance : SampleableExt Claim
   := SampleableExt.mkSelfContained genClaim
 
-
 /--
 Whether the provided IxonFFI term, reconstructed and serialized in Rust, matches
 the provided bytes.
@@ -239,6 +238,4 @@ the provided bytes.
 @[extern "rs_eq_lean_rust_serialization"]
 opaque eqLeanRustSerialization : @& IxonFFI -> @& ByteArray -> Bool
 
-
 end Ixon
-

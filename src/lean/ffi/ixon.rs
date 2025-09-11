@@ -20,7 +20,7 @@ use crate::{
     },
     lean::{
         array::LeanArrayObject, as_ref_unsafe, ctor::LeanCtorObject, lean_is_scalar,
-        lean_unbox_u32, sarray::LeanSArrayObject, string::LeanStringObject,
+        sarray::LeanSArrayObject, string::LeanStringObject,
     },
     lean_unbox,
 };
@@ -267,9 +267,8 @@ fn lean_ptr_to_metadatum(ptr: *const c_void) -> Metadatum {
                 }
             } else {
                 let ctor: &LeanCtorObject = as_ref_unsafe(hints.cast());
-                let [x] = ctor.objs();
-                let x = lean_unbox_u32(x);
-                ReducibilityHints::Regular(x)
+                let [height] = ctor.objs();
+                ReducibilityHints::Regular(height as u32)
             };
             Metadatum::Hints(hints)
         }
