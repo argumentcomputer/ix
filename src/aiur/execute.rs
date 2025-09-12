@@ -191,6 +191,12 @@ impl Function {
                     result.multiplicity += G::ONE;
                     map.extend(args);
                 }
+                ExecEntry::Op(Op::AssertEq(xs, ys)) => {
+                    assert_eq!(xs.len(), ys.len());
+                    for (x, y) in xs.iter().zip(ys) {
+                        assert_eq!(map[*x], map[*y]);
+                    }
+                }
                 ExecEntry::Op(Op::IOGetInfo(key)) => {
                     let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
                     let IOKeyInfo { idx, len } = io_buffer.get_info(&key);

@@ -318,6 +318,17 @@ impl Op {
                 combine_lookup_args(lookup, lookup_args);
                 lookup.multiplicity += sel.clone();
             }
+            Op::AssertEq(xs, ys) => {
+                assert_eq!(xs.len(), ys.len());
+                for (x, y) in xs.iter().zip(ys) {
+                    let (x, _) = &state.map[*x];
+                    let (y, _) = &state.map[*y];
+                    state
+                        .constraints
+                        .zeros
+                        .push(sel.clone() * (x.clone() - y.clone()));
+                }
+            }
             Op::IOGetInfo(_) => (0..2).for_each(|_| {
                 let col = state.next_auxiliary();
                 state.map.push((col, 1));
@@ -326,7 +337,6 @@ impl Op {
                 let col = state.next_auxiliary();
                 state.map.push((col, 1));
             }),
-            Op::IOSetInfo(..) | Op::IOWrite(_) => (),
             Op::U8BitDecomposition(byte) => bytes1_constraints(
                 *byte,
                 &Bytes1Op::BitDecomposition,
@@ -354,6 +364,7 @@ impl Op {
             Op::U8Add(i, j) => {
                 bytes2_constraints(*i, *j, &Bytes2Op::Add, u8_add_channel(), sel.clone(), state)
             }
+            Op::IOSetInfo(..) | Op::IOWrite(_) => (),
         }
     }
 }

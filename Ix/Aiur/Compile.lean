@@ -94,6 +94,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpAuxiliaries size
     bumpLookups
     addMemSize size
+  | .assertEq .. => pure ()
   | .ioGetInfo _ => do
     pushDegrees #[1, 1]
     bumpAuxiliaries 2
@@ -197,6 +198,7 @@ def TypedDecls.layoutMap (decls : TypedDecls) : LayoutMap :=
   layoutMap
 
 def typSize (layoutMap : LayoutMap) : Typ → Nat
+| .unit => 0
 | .field .. => 1
 | .pointer .. => 1
 | .function .. => 1
@@ -226,6 +228,7 @@ partial def toIndex
  (bindings : Std.HashMap Local (Array Bytecode.ValIdx))
  (term : TypedTerm) : StateM CompilerState (Array Bytecode.ValIdx) :=
   match term.inner with
+  | .unit => pure #[]
   | .ret .. => panic! "Should not happen after typechecking"
   | .match .. => panic! "Non-tail `match` not yet implemented"
   | .var name => do
@@ -356,6 +359,11 @@ partial def toIndex
   --   let op := .trace str arr
   --   modify (fun state => { state with ops := state.ops.push op})
   --   pure arr
+  | .assertEq a b ret => do
+    let a ← toIndex layoutMap bindings a
+    let b ← toIndex layoutMap bindings b
+    modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
+    toIndex layoutMap bindings ret
   | .ioGetInfo key => do
     let key ← toIndex layoutMap bindings key
     pushOp (.ioGetInfo key) 2

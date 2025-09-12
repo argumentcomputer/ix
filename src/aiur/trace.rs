@@ -308,7 +308,6 @@ impl Op {
                     slice.push_auxiliary(index, f);
                 }
             }
-            Op::IOSetInfo(..) | Op::IOWrite(_) => (),
             Op::U8BitDecomposition(byte) => {
                 let (byte, _) = map[*byte];
                 let bits = Bytes1::bit_decompose(&byte);
@@ -356,6 +355,7 @@ impl Op {
                 let lookup_args = vec![u8_add_channel(), i, j, r, o];
                 slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
             }
+            Op::AssertEq(..) | Op::IOSetInfo(..) | Op::IOWrite(_) => (),
         }
     }
 }

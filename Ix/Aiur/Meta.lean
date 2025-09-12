@@ -86,36 +86,37 @@ partial def elabTyp : ElabStxCat `typ
     mkAppM ``Typ.function #[← elabList t ts elabTyp ``Typ, ← elabTyp t']
   | stx => throw $ .error stx "Invalid syntax for type"
 
-declare_syntax_cat                                           trm
-syntax ("." noWs)? ident                                   : trm
-syntax num                                                 : trm
-syntax "(" trm (", " trm)* ")"                             : trm
-syntax "[" trm (", " trm)* "]"                             : trm
-syntax "return " trm                                       : trm
-syntax "let " pattern (":" typ)? " = " trm "; " trm        : trm
-syntax "match " trm " { " (pattern " => " trm ", ")+ " }"  : trm
-syntax ("." noWs)? ident "(" ")"                           : trm
-syntax ("." noWs)? ident "(" trm (", " trm)* ")"           : trm
-syntax:50 trm " + " trm                                    : trm
-syntax:50 trm " - " trm                                    : trm
-syntax trm " * " trm:51                                    : trm
-syntax "proj" "(" trm ", " num ")"                         : trm
-syntax trm "[" num "]"                                     : trm
-syntax trm "[" num ".." num "]"                            : trm
-syntax "set" "(" trm ", " num ", " trm ")"                 : trm
-syntax "store" "(" trm ")"                                 : trm
-syntax "load" "(" trm ")"                                  : trm
-syntax "ptr_val" "(" trm ")"                               : trm
-syntax trm ": " typ                                        : trm
-syntax "io_get_info" "(" trm ")"                           : trm
-syntax "io_set_info" "(" trm ", " trm ", " trm ")" ";" trm : trm
-syntax "io_read" "(" trm ", " num ")"                      : trm
-syntax "io_write" "(" trm ")" ";" trm                      : trm
-syntax "u8_bit_decomposition" "(" trm ")"                  : trm
-syntax "u8_shift_left" "(" trm ")"                         : trm
-syntax "u8_shift_right" "(" trm ")"                        : trm
-syntax "u8_xor" "(" trm ", " trm ")"                       : trm
-syntax "u8_add" "(" trm ", " trm ")"                       : trm
+declare_syntax_cat                                              trm
+syntax ("." noWs)? ident                                      : trm
+syntax num                                                    : trm
+syntax "(" trm (", " trm)* ")"                                : trm
+syntax "[" trm (", " trm)* "]"                                : trm
+syntax "return " trm                                          : trm
+syntax "let " pattern (":" typ)? " = " trm "; " trm           : trm
+syntax "match " trm " { " (pattern " => " trm ", ")+ " }"     : trm
+syntax ("." noWs)? ident "(" ")"                              : trm
+syntax ("." noWs)? ident "(" trm (", " trm)* ")"              : trm
+syntax:50 trm " + " trm                                       : trm
+syntax:50 trm " - " trm                                       : trm
+syntax trm " * " trm:51                                       : trm
+syntax "proj" "(" trm ", " num ")"                            : trm
+syntax trm "[" num "]"                                        : trm
+syntax trm "[" num ".." num "]"                               : trm
+syntax "set" "(" trm ", " num ", " trm ")"                    : trm
+syntax "store" "(" trm ")"                                    : trm
+syntax "load" "(" trm ")"                                     : trm
+syntax "ptr_val" "(" trm ")"                                  : trm
+syntax "assert_eq!" "(" trm ", " trm ")" ";" (trm)?           : trm
+syntax trm ": " typ                                           : trm
+syntax "io_get_info" "(" trm ")"                              : trm
+syntax "io_set_info" "(" trm ", " trm ", " trm ")" ";" (trm)? : trm
+syntax "io_read" "(" trm ", " num ")"                         : trm
+syntax "io_write" "(" trm ")" ";" (trm)?                      : trm
+syntax "u8_bit_decomposition" "(" trm ")"                     : trm
+syntax "u8_shift_left" "(" trm ")"                            : trm
+syntax "u8_shift_right" "(" trm ")"                           : trm
+syntax "u8_xor" "(" trm ", " trm ")"                          : trm
+syntax "u8_add" "(" trm ", " trm ")"                          : trm
 
 partial def elabTrm : ElabStxCat `trm
   | `(trm| .$i:ident) => do
@@ -174,17 +175,19 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.load #[← elabTrm a]
   | `(trm| ptr_val($a:trm)) => do
     mkAppM ``Term.ptrVal #[← elabTrm a]
+  | `(trm| assert_eq!($a:trm, $b:trm); $[$ret:trm]?) => do
+    mkAppM ``Term.assertEq #[← elabTrm a, ← elabTrm b, ← elabRet ret]
   | `(trm| $v:trm : $t:typ) => do
     mkAppM ``Term.ann #[← elabTyp t, ← elabTrm v]
   | `(trm| io_get_info($key:trm)) => do
     mkAppM ``Term.ioGetInfo #[← elabTrm key]
-  | `(trm| io_set_info($key:trm, $idx:trm, $len:trm); $ret:trm) => do
+  | `(trm| io_set_info($key:trm, $idx:trm, $len:trm); $[$ret:trm]?) => do
     mkAppM ``Term.ioSetInfo
-      #[← elabTrm key, ← elabTrm idx, ← elabTrm len, ← elabTrm ret]
+      #[← elabTrm key, ← elabTrm idx, ← elabTrm len, ← elabRet ret]
   | `(trm| io_read($idx:trm, $len:num)) => do
     mkAppM ``Term.ioRead #[← elabTrm idx, mkNatLit len.getNat]
-  | `(trm| io_write($data:trm); $ret:trm) => do
-    mkAppM ``Term.ioWrite #[← elabTrm data, ← elabTrm ret]
+  | `(trm| io_write($data:trm); $[$ret:trm]?) => do
+    mkAppM ``Term.ioWrite #[← elabTrm data, ← elabRet ret]
   | `(trm| u8_bit_decomposition($byte:trm)) => do
     mkAppM ``Term.u8BitDecomposition #[← elabTrm byte]
   | `(trm| u8_shift_left($byte:trm)) => do
@@ -196,6 +199,9 @@ partial def elabTrm : ElabStxCat `trm
   | `(trm| u8_add($i:trm, $j:trm)) => do
     mkAppM ``Term.u8Add #[← elabTrm i, ← elabTrm j]
   | stx => throw $ .error stx "Invalid syntax for term"
+where elabRet : Option (TSyntax `trm) → TermElabM Expr
+  | none => pure $ mkConst ``Term.unit
+  | some ret => elabTrm ret
 
 declare_syntax_cat                     constructor
 syntax ident                         : constructor
@@ -235,21 +241,24 @@ def elabBind : ElabStxCat `bind
     | _ => throw $ .error i "Illegal variable name"
   | stx => throw $ .error stx "Invalid syntax for binding"
 
-declare_syntax_cat                                                    function
-syntax "fn " ident "(" ")" " -> " typ "{" trm "}"                   : function
-syntax "fn " ident "(" bind (", " bind)* ")" " -> " typ "{" trm "}" : function
+declare_syntax_cat                                                       function
+syntax "fn " ident "(" ")" (" -> " typ)? "{" trm "}"                   : function
+syntax "fn " ident "(" bind (", " bind)* ")" (" -> " typ)? "{" trm "}" : function
 
 def elabFunction : ElabStxCat `function
-  | `(function| fn $i:ident() -> $ty:typ {$t:trm}) => do
+  | `(function| fn $i:ident() $[-> $ty:typ]? {$t:trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    mkAppM ``Function.mk #[g, ← mkListLit bindType [], ← elabTyp ty, ← elabTrm t]
-  | `(function| fn $i:ident($b:bind $[, $bs:bind]*) -> $ty:typ {$t:trm}) => do
+    mkAppM ``Function.mk #[g, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t]
+  | `(function| fn $i:ident($b:bind $[, $bs:bind]*) $[-> $ty:typ]? {$t:trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     mkAppM ``Function.mk
-      #[g, ← elabListCore b bs elabBind bindType, ← elabTyp ty, ← elabTrm t]
+      #[g, ← elabListCore b bs elabBind bindType, ← elabRetTyp ty, ← elabTrm t]
   | stx => throw $ .error stx "Invalid syntax for function"
+where elabRetTyp : Option (TSyntax `typ) → TermElabM Expr
+  | none => pure $ mkConst ``Typ.unit
+  | some typ => elabTyp typ
 
 declare_syntax_cat declaration
 syntax function  : declaration
