@@ -1,6 +1,87 @@
 import Ix.Aiur.Meta
 
 def ixVM := ⟦
+  enum ByteStream {
+    Cons(G, &ByteStream),
+    Nil
+  }
+
+  enum Layer {
+    Push(&Layer, [G; 32]),
+    Nil
+  }
+
+  fn compress(buffer: [G; 64], digest: [G; 32], count: G, index: G, flags: G) -> [G; 32] {
+    digest -- TODO
+  }
+
+  fn blake3_compress_chunks(
+    input: ByteStream,
+    block_buffer: [G; 64],
+    block_index: G,
+    chunk_index: G,
+    chunk_count: G,
+    block_digest: [G; 32],
+    layer: Layer
+  ) -> Layer {
+    let CHUNK_START = 1;
+    let CHUNK_END = 2;
+    let PARENT = 4;
+    let ROOT = 8;
+    match (input, block_index, chunk_index, chunk_count) {
+      (ByteStream.Nil, 0, 0, 0) => Layer.Push(store(layer), compress(block_buffer, block_digest, 0, 0, CHUNK_START + CHUNK_END + ROOT)),
+
+      (ByteStream.Nil, 0, 0, _) => layer,
+
+      (ByteStream.Nil, 0, _, _) => Layer.Push(store(layer), block_digest),
+
+      (ByteStream.Nil, _, _, _) =>
+        let flags = 0; -- TODO
+        Layer.Push(store(layer), compress(block_buffer, block_digest, chunk_count, block_index, flags)),
+
+      (ByteStream.Cons(head, input_ptr), 63, 1023, _) =>
+        let flags = 0; -- TODO
+        -- let block_buffer = assign(block_buffer, block_index, head); -- TODO
+        let IV = [103, 230, 9, 106, 133, 174, 103, 187, 114, 243, 110, 60, 58, 245, 79, 165, 127, 82, 14, 81, 140, 104, 5, 155, 171, 217, 131, 31, 25, 205, 224, 91];
+        let empty_buffer = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let layer = Layer.Push(store(layer), compress(block_buffer, block_digest, chunk_count, 64, flags));
+        blake3_compress_chunks(input, empty_buffer, 0, 0, chunk_count + 1, IV, layer),
+
+      (ByteStream.Cons(head, input_ptr), 63, _, _) =>
+        -- let block_buffer = assign(block_buffer, block_index, head); -- TODO
+        let flags = 0; -- TODO
+        let block_digest = compress(
+            block_buffer,
+            block_digest,
+            chunk_count,
+            64,
+            flags
+        );
+        let empty_buffer = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        blake3_compress_chunks(
+            input,
+            empty_buffer,
+            0,
+            chunk_index + 1,
+            chunk_count,
+            block_digest,
+            layer
+        ),
+
+      (ByteStream.Cons(head, input_ptr), _, _, _) =>
+        -- let block_buffer = assign(block_buffer, block_index, head); -- TODO
+        blake3_compress_chunks(
+            input,
+            block_buffer,
+            block_index + 1,
+            chunk_index + 1,
+            chunk_count,
+            block_digest,
+            layer
+        ),
+    }
+  }
+
   fn u32_add(a: [G; 4], b: [G; 4]) -> [G; 4] {
     let [a0, a1, a2, a3] = a;
     let [b0, b1, b2, b3] = b;
