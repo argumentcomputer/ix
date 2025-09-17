@@ -95,7 +95,7 @@ content-addresses
 inductive Expr
   | var   (idx: Nat)
   | sort  (univ: Level)
-  | const (name: Lean.Name) (ref: Address) (meta: Address) (univs: List Level)
+  | const (name: Lean.Name) (ref: Address) («meta»: Address) (univs: List Level)
   | rec_  (name: Lean.Name) (idx: Nat) (univs: List Level)
   | app   (func: Expr) (argm: Expr)
   | lam   (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
@@ -138,13 +138,13 @@ structure PreDefinition where
   all : List Lean.Name
   deriving BEq, Repr, Nonempty
 
-def mkPreDefinition (x: Lean.DefinitionVal) : PreDefinition := 
+def mkPreDefinition (x: Lean.DefinitionVal) : PreDefinition :=
   ⟨x.name, x.levelParams, x.type, .definition, x.value, x.hints, x.safety, x.all⟩
 
-def mkPreTheorem (x: Lean.TheoremVal) : PreDefinition := 
+def mkPreTheorem (x: Lean.TheoremVal) : PreDefinition :=
   ⟨x.name, x.levelParams, x.type, .theorem, x.value, .opaque, .safe, x.all⟩
 
-def mkPreOpaque (x: Lean.OpaqueVal) : PreDefinition := 
+def mkPreOpaque (x: Lean.OpaqueVal) : PreDefinition :=
   ⟨x.name, x.levelParams, x.type, .opaque, x.value, .opaque,
     if x.isUnsafe then .unsafe else .safe, x.all⟩
 
@@ -209,7 +209,7 @@ structure Constructor where
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 /--
-Ix.RecursorRule is analogous to Lean.RecursorRule 
+Ix.RecursorRule is analogous to Lean.RecursorRule
 --/
 structure RecursorRule where
   ctor : Lean.Name

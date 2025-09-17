@@ -97,10 +97,10 @@ def testRoundtripGetEnv : IO TestSeq := do
     | .error e _ => do
       IO.println s!"failed {c.name}"
       throw (IO.userError (<- e.pretty))
-    let (anon, meta) <- match stt.names.find? c.name with
+    let (anon, «meta») <- match stt.names.find? c.name with
     | .some (a, m) => pure (a, m)
     | .none => throw (IO.userError "name {n} not in env")
-    IO.println s!"✓ {c.name} -> {anon}:{meta}"
+    IO.println s!"✓ {c.name} -> {anon}:{«meta»}"
     cstt := stt
   IO.println s!"compiled env"
   IO.println s!"decompiling env"
@@ -112,7 +112,7 @@ def testRoundtripGetEnv : IO TestSeq := do
       throw (IO.userError e.pretty)
   IO.println s!"decompiled env"
   let mut res := true
-  for (n, (anon, meta)) in denv.names do
+  for (n, (anon, «meta»)) in denv.names do
     let c <- match env.constants.find? n with
     | .some c => pure c
     | .none => throw (IO.userError "name {n} not in env")
@@ -120,9 +120,9 @@ def testRoundtripGetEnv : IO TestSeq := do
     | .some c2 =>
       if c.stripMData == c2.stripMData
       then
-        IO.println s!"✓ {n} @ {anon}:{meta}"
+        IO.println s!"✓ {n} @ {anon}:{«meta»}"
       else
-        IO.println s!"× {n} @ {anon}:{meta}"
+        IO.println s!"× {n} @ {anon}:{«meta»}"
         IO.FS.writeFile "c.out" s!"{repr c.stripMData}"
         IO.FS.writeFile "c2.out" s!"{repr c2.stripMData}"
         res := false

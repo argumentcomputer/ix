@@ -114,7 +114,7 @@ inductive Const where
   -- 0xC8
   | mutInd : List Inductive -> Const
   -- 0xC9
-  | meta   : Metadata -> Const
+  | «meta»  : Metadata -> Const
   -- 0xCA
   | proof : Proof -> Const
   -- 0xCC

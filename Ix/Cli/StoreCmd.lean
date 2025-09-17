@@ -21,12 +21,12 @@ def runStore (p : Cli.Parsed) : IO UInt32 := do
   -- Start content-addressing
   cronos ← cronos.clock "content-address"
   let stt ← Ix.Compile.compileEnvIO leanEnv
-  stt.names.forM fun name (const, meta) => do
+  stt.names.forM fun name (const, «meta») => do
      IO.println <| s!"{name}:"
      IO.println <| s!"  #{const}"
      --IO.println <| s!"  {repr <| stt.store.find! const}"
      --IO.println <| s!"  {hexOfBytes (Ixon.Serialize.put (stt.store.find! const))}"
-     IO.println <| s!"  #{meta}"
+     IO.println <| s!"  #{«meta»}"
      --IO.println <| s!"  {repr <| stt.store.find! meta}"
      --IO.println <| s!"  {hexOfBytes (Ixon.Serialize.put (stt.store.find! meta))}"
   --stt.store.forM fun adr const => do
@@ -52,15 +52,15 @@ def runGet (p : Cli.Parsed) : IO UInt32 := do
 
 def runRemat (p : Cli.Parsed) : IO UInt32 := do
   let cont : String       := p.positionalArg! "constantAddress" |>.as! String
-  let meta : String       := p.positionalArg! "metadataAddress" |>.as! String
+  let «meta» : String       := p.positionalArg! "metadataAddress" |>.as! String
   let (c, m) <- IO.ofExcept $
-    match Address.fromString cont, Address.fromString meta with
+    match Address.fromString cont, Address.fromString «meta» with
     | .some c, .some m => .ok (c, m)
     | .none, _ => .error "bad address {cont}"
     | _, .none => .error "bad address {meta}"
   let cont <- StoreIO.toIO (Store.readConst c)
-  let meta <- StoreIO.toIO (Store.readConst m)
-  let ix := Ix.TransportM.rematerialize cont meta
+  let «meta» <- StoreIO.toIO (Store.readConst m)
+  let ix := Ix.TransportM.rematerialize cont «meta»
   IO.println <| s!"{repr ix}"
   return 0
 

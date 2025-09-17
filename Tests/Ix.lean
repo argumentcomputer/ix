@@ -28,7 +28,7 @@ open Ix.TransportM
 def transportUniv (univ: Ix.Level): Bool :=
   match EStateM.run (dematUniv univ) emptyDematState with
   | .ok ixon stt =>
-    let remat := (ReaderT.run (rematUniv ixon) { meta := stt.meta})
+    let remat := (ReaderT.run (rematUniv ixon) { «meta» := stt.meta})
     match EStateM.run remat emptyRematState with
     | .ok ix _ => univ == ix
     | .error _ _ => .false
@@ -37,7 +37,7 @@ def transportUniv (univ: Ix.Level): Bool :=
 def transportExpr (x: Ix.Expr): Bool :=
   match EStateM.run (dematExpr x) emptyDematState with
   | .ok ixon stt =>
-    let remat := (ReaderT.run (rematExpr ixon) { meta := stt.meta})
+    let remat := (ReaderT.run (rematExpr ixon) { «meta» := stt.meta})
     match EStateM.run remat emptyRematState with
     | .ok ix _ => x == ix
     | .error _ _ => .false
@@ -46,7 +46,7 @@ def transportExpr (x: Ix.Expr): Bool :=
 def transportConst (x: Ix.Const): Bool :=
   match EStateM.run (dematConst x) emptyDematState with
   | .ok ixon stt =>
-    let remat := (ReaderT.run (rematConst ixon) { meta := stt.meta})
+    let remat := (ReaderT.run (rematConst ixon) { «meta» := stt.meta})
     match EStateM.run remat emptyRematState with
     | .ok ix _ => x == ix
     | .error _ _ => .false
