@@ -74,8 +74,17 @@ def blake3CompressOutput : Array Aiur.G := #[
 ]
 
 def ixTestCases : List AiurTestCase := [
-  ⟨`blake3_g_function, blake3GFunctionInput, blake3GFunctionOutput, default, default⟩,
-  ⟨`blake3_compress, blake3CompressInput, blake3CompressOutput, default, default⟩,
+  .noIO `blake3_g_function blake3GFunctionInput blake3GFunctionOutput,
+  .noIO `blake3_compress blake3CompressInput blake3CompressOutput,
+  .noIO `relaxed_u64_succ #[0, 0, 0, 0, 0, 0, 0, 0] #[1, 0, 0, 0, 0, 0, 0, 0],
+  .noIO `relaxed_u64_succ #[255, 0, 0, 0, 0, 0, 0, 0] #[0, 1, 0, 0, 0, 0, 0, 0],
+  .noIO `relaxed_u64_succ #[255, 255, 0, 0, 0, 0, 0, 0] #[0, 0, 1, 0, 0, 0, 0, 0],
+  .noIO `relaxed_u64_succ #[255, 255, 255, 0, 0, 0, 0, 0] #[0, 0, 0, 1, 0, 0, 0, 0],
+  .noIO `relaxed_u64_succ #[255, 255, 255, 255, 0, 0, 0, 0] #[0, 0, 0, 0, 1, 0, 0, 0],
+  .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 0, 0, 0] #[0, 0, 0, 0, 0, 1, 0, 0],
+  .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 255, 0, 0] #[0, 0, 0, 0, 0, 0, 1, 0],
+  .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 255, 255, 0] #[0, 0, 0, 0, 0, 0, 0, 1],
+  .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 255, 255, 255] #[0, 0, 0, 0, 0, 0, 0, 0],
 ]
 
 def Tests.IxVM.suite := [
