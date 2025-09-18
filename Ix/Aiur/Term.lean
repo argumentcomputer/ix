@@ -72,6 +72,7 @@ inductive Term
   | add : Term → Term → Term
   | sub : Term → Term → Term
   | mul : Term → Term → Term
+  | eqZero : Term → Term
   | proj : Term → Nat → Term
   | get : Term → Nat → Term
   | slice : Term → Nat → Nat → Term
@@ -126,6 +127,7 @@ inductive TypedTermInner
   | add : TypedTerm → TypedTerm → TypedTermInner
   | sub : TypedTerm → TypedTerm → TypedTermInner
   | mul : TypedTerm → TypedTerm → TypedTermInner
+  | eqZero : TypedTerm → TypedTermInner
   | proj : TypedTerm → Nat → TypedTermInner
   | get : TypedTerm → Nat → TypedTermInner
   | slice : TypedTerm → Nat → Nat → TypedTermInner

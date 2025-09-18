@@ -41,6 +41,7 @@ pub enum Op {
     Add(ValIdx, ValIdx),
     Sub(ValIdx, ValIdx),
     Mul(ValIdx, ValIdx),
+    EqZero(ValIdx),
     Call(FunIdx, Vec<ValIdx>, usize),
     Store(Vec<ValIdx>),
     Load(usize, ValIdx),

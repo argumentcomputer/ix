@@ -236,6 +236,23 @@ impl Op {
                     slice.push_auxiliary(index, f);
                 }
             }
+            Op::EqZero(a) => {
+                let (a, deg) = map[*a];
+                let is_zero = a == G::ZERO;
+                let is_zero_g = G::from_bool(is_zero);
+                if deg == 0 {
+                    map.push((is_zero_g, 0));
+                } else {
+                    let (d, x) = if is_zero {
+                        (G::ZERO, G::ONE)
+                    } else {
+                        (a.inverse(), G::ZERO)
+                    };
+                    slice.push_auxiliary(index, d);
+                    slice.push_auxiliary(index, x);
+                    map.push((is_zero_g, 1));
+                }
+            }
             Op::Call(function_index, inputs, _) => {
                 let inputs = inputs.iter().map(|a| map[*a].0).collect::<Vec<_>>();
                 let queries = &context.query_record.function_queries[*function_index];

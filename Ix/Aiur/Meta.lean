@@ -99,6 +99,7 @@ syntax ("." noWs)? ident "(" trm (", " trm)* ")"              : trm
 syntax:50 trm " + " trm                                       : trm
 syntax:50 trm " - " trm                                       : trm
 syntax trm " * " trm:51                                       : trm
+syntax "eq_zero" "(" trm ")"                                  : trm
 syntax "proj" "(" trm ", " num ")"                            : trm
 syntax trm "[" num "]"                                        : trm
 syntax trm "[" num ".." num "]"                               : trm
@@ -161,6 +162,8 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.sub #[← elabTrm a, ← elabTrm b]
   | `(trm| $a:trm * $b:trm) => do
     mkAppM ``Term.mul #[← elabTrm a, ← elabTrm b]
+  | `(trm| eq_zero($a:trm)) => do
+    mkAppM ``Term.eqZero #[← elabTrm a]
   | `(trm| proj($a:trm, $i:num)) => do
     mkAppM ``Term.proj #[← elabTrm a, toExpr i.getNat]
   | `(trm| $t:trm[$i:num]) => do

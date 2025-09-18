@@ -254,6 +254,33 @@ impl Op {
                     state.constraints.zeros.push(sel.clone() * (col - mul));
                 }
             }
+            Op::EqZero(a) => {
+                let (a, deg) = state.map[*a].clone();
+                if let Expr::Constant(a) = a {
+                    assert_eq!(deg, 0);
+                    state.map.push((Expr::from_bool(a == G::ZERO), 0));
+                } else {
+                    // We have two constraints:
+                    // 1. ax = 0
+                    // 2. ad + x = 1
+                    // When a = 0, the first constraint is trivial and the second
+                    // constraint enforces x = 1.
+                    // When a ≠ 0, the first constraint enforces x = 0 and the
+                    // second constraint can be satisfied with d = a⁻¹.
+                    // In both cases, x has the semantics that we want.
+                    let d = state.next_auxiliary();
+                    let x = state.next_auxiliary();
+                    state
+                        .constraints
+                        .zeros
+                        .push(sel.clone() * a.clone() * x.clone());
+                    state
+                        .constraints
+                        .zeros
+                        .push(sel.clone() * (a * d + x.clone() - Expr::ONE));
+                    state.map.push((x, 1));
+                }
+            }
             Op::Call(function_index, inputs, output_size) => {
                 // channel and function index
                 let mut lookup_args = vec![
