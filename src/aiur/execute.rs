@@ -139,6 +139,10 @@ impl Function {
                     let b = map[*b];
                     map.push(a * b);
                 }
+                ExecEntry::Op(Op::EqZero(a)) => {
+                    let a = map[*a];
+                    map.push(G::from_bool(a == G::ZERO));
+                }
                 ExecEntry::Op(Op::Call(callee_idx, args, _)) => {
                     let args = args.iter().map(|i| map[*i]).collect();
                     if let Some(result) = record.function_queries[*callee_idx].get_mut(&args) {

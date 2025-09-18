@@ -148,6 +148,9 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .mul a b => do
     let (ctxTyp, a, b) ← checkArith a b
     pure $ .mk ctxTyp (.mul a b)
+  | .eqZero a => do
+    let a ← fieldTerm <$> checkNoEscape a .field
+    pure $ .mk (.evaluates .field) (.eqZero a)
   | .proj tup i => do
     let (typs, tupInner) ← inferTuple tup
     if h : i < typs.size then

@@ -20,6 +20,12 @@ def toplevel := ⟦
     x * y
   }
 
+  fn eq_zero_dummy(a: G, b: G) -> [G; 4] {
+    let c = 0;
+    let d = 101;
+    [eq_zero(a), eq_zero(b), eq_zero(c), eq_zero(d)]
+  }
+
   fn store_and_load(x: G) -> G {
     load(store(x))
   }
@@ -157,6 +163,7 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `proj1 #[42, 64] #[42],
     .noIO `sum #[3, 5] #[8],
     .noIO `prod #[3, 5] #[15],
+    .noIO `eq_zero_dummy #[0, 37] #[1, 0, 1, 0],
     .noIO `store_and_load #[42] #[42],
     .noIO `is_0_even #[] #[1],
     .noIO `is_1_even #[] #[0],

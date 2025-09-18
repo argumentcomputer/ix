@@ -80,6 +80,12 @@ def opLayout : Bytecode.Op → LayoutM Unit
     else
       pushDegree 1
       bumpAuxiliaries 1
+  | .eqZero a => do
+    let degree ← getDegree a
+    if degree = 0 then pushDegree 0
+    else
+      pushDegrees #[1, 1]
+      bumpAuxiliaries 2
   | .call _ _ outputSize => do
     pushDegrees $ .replicate outputSize 1
     bumpAuxiliaries outputSize
@@ -266,6 +272,9 @@ partial def toIndex
     let a ← expectIdx a
     let b ← expectIdx b
     pushOp (.mul a b)
+  | .eqZero a => do
+    let a ← expectIdx a
+    pushOp (.eqZero a)
   | .app name@(⟨.str .anonymous unqualifiedName⟩) args =>
     match bindings.get? (.str unqualifiedName) with
     | some _ => panic! "Dynamic calls not yet implemented"
