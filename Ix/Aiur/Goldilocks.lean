@@ -1,6 +1,6 @@
 namespace Aiur
 
-abbrev gSize : UInt64 := 0xFFFFFFFF00000001
+abbrev gSize : UInt64 := 1 - 2 ^ 32
 abbrev G := { u : UInt64 // u < gSize }
 
 @[inline] def G.ofNat (n : Nat) : G :=
