@@ -1,5 +1,7 @@
 use std::ffi::c_void;
 
+use multi_stark::p3_field::PrimeCharacteristicRing;
+
 use crate::{
     aiur::{
         G,
@@ -26,7 +28,7 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
     match ctor.tag() {
         0 => {
             let [const_val_ptr] = ctor.objs();
-            Op::Const(lean_unbox_g(const_val_ptr))
+            Op::Const(G::from_u64(const_val_ptr as u64))
         }
         1 => {
             let [a_ptr, b_ptr] = ctor.objs();
