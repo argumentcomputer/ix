@@ -16,7 +16,7 @@ structure DematState where
   «meta»: Ixon.Metadata
   deriving Repr
 
-def emptyDematState : DematState :=
+def emptyDematState : DematState := 
   { idx := 0, «meta» := { map := Batteries.RBMap.empty }}
 
 inductive TransportError
@@ -207,7 +207,7 @@ partial def rematExpr : Ixon.Expr -> RematM Ix.Expr
   match node with
   | [.name name, .link link] => return (.const name adr link us')
   | _ => rematThrowUnexpected
-| .rec_ i us => do
+| .rec_ i us => do 
   let _ <- rematIncr
   let node <- rematMeta
   let us' <- us.mapM rematUniv
@@ -220,7 +220,7 @@ partial def rematExpr : Ixon.Expr -> RematM Ix.Expr
   let a' <- rematExpr a
   return as'.reverse.foldl .app (.app f' a')
 | .lams ts b => do
-  let ts' <- ts.mapM
+  let ts' <- ts.mapM 
     (fun e => rematIncr *> Prod.mk <$> rematBindMeta <*> rematExpr e)
   let b' <- rematExpr b
   return ts'.foldr (fun (m, t) b => Expr.lam m.fst m.snd t b) b'
@@ -309,7 +309,7 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
       let lvls <- dematLevels x.levelParams
       let t <- dematExpr x.type
       let rrs <- x.rules.mapM dematRecrRule
-      return ⟨lvls, t, x.numParams, x.numIndices, x.numMotives, x.numMinors,
+      return ⟨lvls, t, x.numParams, x.numIndices, x.numMotives, x.numMinors, 
         rrs, x.k, x.isUnsafe⟩
     dematIndc (x: Ix.Inductive): DematM Ixon.Inductive := do
       let _ <- dematIncr
@@ -321,7 +321,7 @@ partial def dematConst : Ix.Const -> DematM Ixon.Const
       return ⟨lvls, type, x.numParams, x.numIndices, ctors, recrs, x.numNested,
         x.isRec, x.isReflexive, x.isUnsafe⟩
 
-def constToIxon (x: Ix.Const) : Except TransportError (Ixon.Const × Ixon.Const) :=
+def constToIxon (x: Ix.Const) : Except TransportError (Ixon.Const × Ixon.Const) := 
   match EStateM.run (dematConst x) emptyDematState with
   | .ok ix stt => .ok (ix, Ixon.Const.meta stt.meta)
   | .error e _ => .error e

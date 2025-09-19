@@ -48,7 +48,7 @@ structure InductiveBlock where
   recrs: List Lean.ConstantInfo
 deriving Repr
 
-def InductiveBlock.contains (i: InductiveBlock) (name: Lean.Name) : Bool :=
+def InductiveBlock.contains (i: InductiveBlock) (name: Lean.Name) : Bool := 
   i.val.name == name ||
   i.ctors.any (fun c => c.name == name) ||
   i.recrs.any (fun r => r.name == name)
@@ -75,7 +75,7 @@ structure InductiveBlockNames where
   recrs: List Lean.Name
 deriving Repr
 
-def InductiveBlockNames.contains (i: InductiveBlockNames) (name: Lean.Name) : Bool :=
+def InductiveBlockNames.contains (i: InductiveBlockNames) (name: Lean.Name) : Bool := 
   i.val == name ||
   i.ctors.any (fun c => c == name) ||
   i.recrs.any (fun r => r == name)
@@ -109,9 +109,9 @@ inductive DecompileError
   (exp: Lean.Name) (idx: Nat)
 | invalidBVarIndex (curr: Named) (ctx: List Lean.Name) (idx: Nat)
 | mismatchedMutIdx
-  (curr: Named) (ctx: RBMap Lean.Name Nat compare) (exp: Lean.Name)
+  (curr: Named) (ctx: RBMap Lean.Name Nat compare) (exp: Lean.Name) 
   (idx: Nat) (got: Nat)
-| unknownMutual
+| unknownMutual 
   (curr: Named) (ctx: RBMap Lean.Name Nat compare) (exp: Lean.Name) (idx: Nat)
 | transport (curr: Named) (err: TransportError) (cont «meta»: Address)
 | unknownName (curr: Named) (name: Lean.Name)
@@ -140,13 +140,13 @@ deriving Repr
 
 def DecompileError.pretty : DecompileError -> String
 | .freeLevel c lvls n i => s!"Free level {n} at {i} with ctx {repr lvls} @ {c}"
-| .mismatchedLevelName c ctx n' n i =>
+| .mismatchedLevelName c ctx n' n i => 
   s!"Expected level name {n} at index {i} but got {n'} with context {repr ctx} @ {c}"
-| .invalidBVarIndex c ctx i =>
+| .invalidBVarIndex c ctx i => 
   s!"Bound variable {i} escapes context {ctx} @ {c}"
-| .mismatchedMutIdx c ctx n i i' =>
+| .mismatchedMutIdx c ctx n i i' => 
   s!"expected mutual recusion index {i} at name {n} but got {i'} with context {repr ctx} @ {c}"
-| .unknownMutual c ctx n i =>
+| .unknownMutual c ctx n i => 
   s!"unknown mutual name {n} with expected index {i} with context {repr ctx} @ {c}"
 | .transport curr e c m => s!"decompiler transport error {e} at {c} {m} @ {curr}"
 | .unknownName c n => s!"unknown name {n} @ {c}"
@@ -156,9 +156,9 @@ def DecompileError.pretty : DecompileError -> String
 | .nonCongruentInductives c x y  => s!"noncongruent inductives {repr x} {repr y} @ {c}"
 | .nameNotInBlockNames curr b n c m  => s!"expected block names {repr b} at {c}:{m} to contain {n} @ {curr}"
 | .nameNotInBlock curr b n c m  => s!"expected block {repr b} at {c}:{m} to contain {n} @ {curr}"
-| .mismatchedName curr e g c m =>
+| .mismatchedName curr e g c m => 
   s!"expected name {e}, got {g} at address {c} {m} @ {curr}"
-| .expectedNameInBlock curr e b c m =>
+| .expectedNameInBlock curr e b c m => 
   s!"expected name {e} in block {repr b} at address {c} {m} @ {curr}"
 | .expectedDefnBlock curr e g c m =>
   s!"expected definition named {e}, got {repr g} at address {c} {m} @ {curr}"
@@ -170,7 +170,7 @@ def DecompileError.pretty : DecompileError -> String
   s!"expected mutual inductive constant, got {repr g} at address {c} {m} @ {curr}"
 | .expectedMutDefConst curr g c m =>
   s!"expected mutual definition constant, got {repr g} at address {c} {m} @ {curr}"
-| .overloadedConstants curr x y =>
+| .overloadedConstants curr x y => 
   s!"overloaded constants, tried to overwrite {repr y} with {repr x} @ {curr}"
 | .todo => s!"todo"
 
@@ -189,7 +189,7 @@ def withLevels (lvls : List Lean.Name) : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with univCtx := lvls }
 
 -- add mutual recursion info to local context
-def withMutCtx (mutCtx : RBMap Lean.Name Nat compare)
+def withMutCtx (mutCtx : RBMap Lean.Name Nat compare) 
   : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with mutCtx := mutCtx }
 
@@ -224,7 +224,7 @@ partial def insertConst
   | .some const' =>
       if const == const' then return const.name
       else throw <| .overloadedConstants (<- read).current const const'
-  | .none => modify fun stt =>
+  | .none => modify fun stt => 
     { stt with constants := stt.constants.insert const.name const }
     return const.name
 
@@ -415,5 +415,3 @@ def decompileEnv : DecompileM Unit := do
     let _ <- ensureBlock n anon «meta»
 
 end Decompile
-
-def myVal: (UInt8 × UInt8 × UInt8) := ⟨1,2,3⟩

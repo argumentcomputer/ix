@@ -51,11 +51,11 @@ def CompileError.pretty : CompileError -> IO String
 | .kernelException e => (·.pretty 80) <$> (e.toMessageData .empty).format
 | .cantPackLevel n => pure s!"Can't pack level {n} greater than 2^256'"
 | .nonCongruentInductives a b => pure s!"noncongruent inductives {a.name} {b.name}'"
-| .alphaInvarianceFailure x xa y ya =>
+| .alphaInvarianceFailure x xa y ya => 
   pure s!"alpha invariance failure {repr x} hashes to {xa}, but {repr y} hashes to {ya}"
-| .emptyDefsEquivalenceClass dss =>
+| .emptyDefsEquivalenceClass dss => 
   pure s!"empty equivalence class while sorting definitions {dss.map fun ds => ds.map (·.name)}"
-| .emptyIndsEquivalenceClass dss =>
+| .emptyIndsEquivalenceClass dss => 
   pure s!"empty equivalence class while sorting inductives {dss.map fun ds => ds.map (·.name)}"
 
 structure CompileEnv where
@@ -94,7 +94,7 @@ def storeConst (const: Ixon.Const): CompileM Address := do
   })
 
 def randByte (lo hi: Nat): CompileM Nat := do
-  modifyGet fun s =>
+  modifyGet fun s => 
   let (res, g') := randNat s.prng lo hi
   (res, {s with prng := g'})
 
@@ -118,7 +118,7 @@ def withLevels (lvls : List Lean.Name) : CompileM α -> CompileM α :=
   withReader $ fun c => { c with univCtx := lvls }
 
 -- add mutual recursion info to local context
-def withMutCtx (mutCtx : RBMap Lean.Name Nat compare)
+def withMutCtx (mutCtx : RBMap Lean.Name Nat compare) 
   : CompileM α -> CompileM α :=
   withReader $ fun c => { c with mutCtx := mutCtx }
 
@@ -177,9 +177,9 @@ def compareLevel (xctx yctx: List Lean.Name)
   | .param x, .param y => do
     match (xctx.idxOf? x), (yctx.idxOf? y) with
     | some xi, some yi => return (compare xi yi)
-    | none,    _       =>
+    | none,    _       => 
       throw $ .levelNotFound x xctx s!"compareLevel @ {(<- read).current}"
-    | _,       none    =>
+    | _,       none    => 
       throw $ .levelNotFound y yctx s!"compareLevel @ {(<- read).current}"
 
 /-- Canonicalizes a Lean universe level and adds it to the store -/
@@ -326,7 +326,7 @@ partial def preDefinitionToIR (d: PreDefinition)
   let val <- compileExpr d.value
   return ⟨d.name, d.levelParams, typ, d.mode, val, d.hints, d.safety, d.all⟩
 
-partial def getRecursors (ind : Lean.InductiveVal)
+partial def getRecursors (ind : Lean.InductiveVal) 
   : CompileM (List Lean.RecursorVal) := do
     return (<- get).env.constants.fold accRecr []
     where
@@ -341,7 +341,7 @@ partial def getRecursors (ind : Lean.InductiveVal)
           else acc
         | _ => acc
 
-partial def makePreInductive (ind: Lean.InductiveVal)
+partial def makePreInductive (ind: Lean.InductiveVal) 
   : CompileM Ix.PreInductive := do
     let ctors <- ind.ctors.mapM getCtor
     let recrs <- getRecursors ind
@@ -370,7 +370,7 @@ mutual block, even if the inductive itself is not in a mutual block.
 Content-addressing an inductive involves content-addressing its associated
 constructors and recursors, hence the complexity of this function.
 -/
-partial def compileInductive (initInd: Lean.InductiveVal)
+partial def compileInductive (initInd: Lean.InductiveVal) 
   : CompileM (Address × Address) := do
   let mut preInds := #[]
   let mut nameData : RBMap Lean.Name (List Lean.Name × List Lean.Name) compare
@@ -440,7 +440,7 @@ partial def compileInductive (initInd: Lean.InductiveVal)
   | some ret => return ret
   | none => throw $ .constantNotContentAddressed initInd.name
 
-partial def preInductiveToIR (ind : Ix.PreInductive) : CompileM Ix.Inductive
+partial def preInductiveToIR (ind : Ix.PreInductive) : CompileM Ix.Inductive 
   := withCurrent ind.name $ withLevels ind.levelParams $ do
   let (recs, ctors) := <- ind.recrs.foldrM (init := ([], [])) collectRecsCtors
   let type <- compileExpr ind.type
@@ -451,7 +451,7 @@ partial def preInductiveToIR (ind : Ix.PreInductive) : CompileM Ix.Inductive
   where
     collectRecsCtors
       : Lean.RecursorVal
-      -> List Recursor × List Constructor
+      -> List Recursor × List Constructor 
       -> CompileM (List Recursor × List Constructor)
       | r, (recs, ctors) =>
         if isInternalRec r.type ind.name then do
@@ -494,7 +494,7 @@ partial def recRuleToIR (rule : Lean.RecursorRule)
   | const =>
     throw $ .invalidConstantKind const.name "constructor" const.ctorName
 
-partial def externalRecRuleToIR (rule : Lean.RecursorRule)
+partial def externalRecRuleToIR (rule : Lean.RecursorRule) 
   : CompileM RecursorRule :=
   return ⟨rule.ctor, rule.nfields, ← compileExpr rule.rhs⟩
 
@@ -575,7 +575,7 @@ partial def compareExpr
     | some _, none =>
       return .lt
     | none, none =>
-      if x == y then
+      if x == y then 
         return .eq
       else do
         let x' <- compileConst $ ← findLeanConst x
@@ -632,7 +632,7 @@ partial def compareDef
   `weakOrd` contains the best known current mutual ordering -/
 @[inline] partial def eqDef
   (weakOrd : RBMap Lean.Name Nat compare)
-  (x y : PreDefinition)
+  (x y : PreDefinition) 
   : CompileM Bool :=
   return (← compareDef weakOrd x y) == .eq
 
@@ -693,7 +693,7 @@ partial def sortDefs: List PreDefinition -> CompileM (List (List PreDefinition))
 | [] => return []
 | xs => sortDefs' [xs.sortBy (fun x y => compare x.name y.name)]
 
-partial def weakOrdDefs (dss: List (List PreDefinition))
+partial def weakOrdDefs (dss: List (List PreDefinition)) 
   : CompileM (RBMap Lean.Name Nat compare) := do
   let mut weakOrd := default
   for (ds, n) in dss.zipIdx do
@@ -751,7 +751,7 @@ partial def compareInd
       let rrs <- compareListM (compareRules x.levelParams y.levelParams) x.rules y.rules
       let ks := compare x.k y.k
       return concatOrds [ls, ts, nps, nis, nmos, nmis, rrs, ks]
-    compareRules (xlvls ylvls: List Lean.Name) (x y: Lean.RecursorRule)
+    compareRules (xlvls ylvls: List Lean.Name) (x y: Lean.RecursorRule) 
       : CompileM Ordering := do
       let nfs := compare x.nfields y.nfields
       let rs <- compareExpr weakOrd xlvls ylvls x.rhs y.rhs
@@ -820,7 +820,7 @@ partial def sortInds' (iss: List (List PreInductive))
 end
 
 partial def makeLeanDef
-  (name: Lean.Name) (levelParams: List Lean.Name) (type value: Lean.Expr)
+  (name: Lean.Name) (levelParams: List Lean.Name) (type value: Lean.Expr) 
   : Lean.DefinitionVal :=
   { name, levelParams, type, value, hints := .opaque, safety := .safe }
 
@@ -843,14 +843,14 @@ partial def addDef
   : CompileM (Address × Address) := do
   let typ' <- compileExpr typ
   let val' <- compileExpr val
-  let anonConst := Ix.Const.definition
+  let anonConst := Ix.Const.definition 
     ⟨.anonymous, lvls, typ', .definition, val', .opaque, .safe, []⟩
   let anonIxon <- match constToIxon anonConst with
     | .ok (a, _) => pure a
     | .error e => throw (.transportError e)
   let anonAddr <- storeConst anonIxon
   let name := anonAddr.toUniqueName
-  let const :=
+  let const := 
     Ix.Const.definition ⟨name, lvls, typ', .definition, val', .opaque, .safe, []⟩
   let (a, m) <- hashConst const
   if a != anonAddr then
@@ -871,8 +871,8 @@ partial def commitConst (anon «meta»: Address)
   }
   return (commAddr, commMetaAddr)
 
-partial def commitDef
-  (lvls: List Lean.Name)
+partial def commitDef 
+  (lvls: List Lean.Name) 
   (typ val: Lean.Expr)
   : CompileM (Address × Address) := do
   let (a, m) <- addDef lvls typ val
@@ -943,7 +943,7 @@ def compileEnv (env: Lean.Environment)
   compileDelta env.getDelta
   env.getConstMap.forM fun _ c => if !c.isUnsafe then discard $ compileConst c else pure ()
 
-def CompileM.runIO (c : CompileM α)
+def CompileM.runIO (c : CompileM α) 
   (env: Lean.Environment)
   (maxHeartBeats: USize := 200000)
   (seed : Option Nat := .none)
@@ -957,7 +957,7 @@ def CompileM.runIO (c : CompileM α)
     return (a, stt)
   | .error e _ => throw (IO.userError (<- e.pretty))
 
-def CompileM.runIO' (c : CompileM α)
+def CompileM.runIO' (c : CompileM α) 
   (stt: CompileState)
   (maxHeartBeats: USize := 200000)
   : IO (α × CompileState) := do
