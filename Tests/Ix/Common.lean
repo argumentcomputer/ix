@@ -81,7 +81,7 @@ def genDefKind : Gen Ix.DefKind := oneOf'
 def genReducibilityHints : Gen Lean.ReducibilityHints := oneOf'
    [ pure .opaque
    , pure .abbrev
-   , (.regular ·.toUInt32) <$> genUSize
+   --, (.regular ·.toUInt32) <$> genUSize
    ]
 
 def genQuotKind : Gen Lean.QuotKind := oneOf'

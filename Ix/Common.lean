@@ -1,7 +1,6 @@
 import Lean
 import Batteries
 
--- TODO: move to a utils namespace
 def compareList [Ord α] : List α -> List α -> Ordering
 | a::as, b::bs => match compare a b with
   | .eq => compareList as bs
@@ -29,7 +28,7 @@ instance [Ord α] [Ord β] : Ord (α × β) where
     | x => x
 
 instance : Ord Lean.Name where
-  compare := Lean.Name.quickCmp
+  compare := Lean.Name.cmp
 
 deriving instance Ord for Lean.Literal
 --deriving instance Ord for Lean.Expr
@@ -108,12 +107,14 @@ def sortByM [Monad μ] (xs: List α) (cmp: α -> α -> μ Ordering) : μ (List �
   sequencesM cmp xs >>= mergeAllM cmp
 
 /--
-Mergesort from least to greatest. To sort from greatest to least set `rev`
+Mergesort from least to greatest.
 -/
 def sortBy (cmp : α -> α -> Ordering) (xs: List α) : List α :=
   Id.run <| xs.sortByM (fun x y => pure <| cmp x y)
 
+
 def sort [Ord α] (xs: List α) : List α := sortBy compare xs
+
 
 def groupByMAux [Monad μ] (eq : α → α → μ Bool) : List α → List (List α) → μ (List (List α))
   | a::as, (ag::g)::gs => do match (← eq a ag) with
@@ -128,6 +129,88 @@ def groupByM [Monad μ] (p : α → α → μ Bool) : List α → μ (List (List
 def joinM [Monad μ] : List (List α) → μ (List α)
   | []      => return []
   | a :: as => do return a ++ (← joinM as)
+
+-- Combined sort and group operations over (List (List α))
+
+-- Merge two sorted lists of groups, combining groups with equal elements
+partial def mergeGroupsM [Monad μ] (cmp : α → α → μ Ordering)
+  : List (List α) → List (List α) → μ (List (List α))
+  | gs@((g@(a::_))::gs'), hs@((h@(b::_))::hs') => do
+    match (← cmp a b) with
+    | Ordering.lt => List.cons g <$> mergeGroupsM cmp gs' hs
+    | Ordering.gt => List.cons h <$> mergeGroupsM cmp gs hs'
+    | Ordering.eq => List.cons (g ++ h) <$> mergeGroupsM cmp gs' hs'  -- Combine equal groups
+  | [], hs => return hs
+  | gs, [] => return gs
+  | _, _ => return []
+
+-- Merge pairs of grouped lists
+def mergePairsGroupsM [Monad μ] (cmp: α → α → μ Ordering) 
+  : List (List (List α)) → μ (List (List (List α)))
+  | a::b::xs => List.cons <$> (mergeGroupsM cmp a b) <*> mergePairsGroupsM cmp xs
+  | xs => return xs
+
+-- Merge all grouped lists
+partial def mergeAllGroupsM [Monad μ] (cmp: α → α → μ Ordering) 
+  : List (List (List α)) → μ (List (List α))
+  | [] => return []
+  | [x] => return x
+  | xs => mergePairsGroupsM cmp xs >>= mergeAllGroupsM cmp
+
+-- Helper to collect equal consecutive elements into a group
+def collectEqualM [Monad μ] (cmp : α → α → μ Ordering) (x : α)
+  : List α → μ (List α × List α)
+  | y::ys => do
+    if (← cmp x y) == Ordering.eq
+    then do
+      let (group, rest) ← collectEqualM cmp x ys
+      return (y::group, rest)
+    else return ([x], y::ys)
+  | [] => return ([x], [])
+
+mutual
+  -- Build sequences of groups (ascending/descending runs with grouping)
+  partial def sequencesGroupedM [Monad μ] (cmp : α → α → μ Ordering)
+    : List α → μ (List (List (List α)))
+    | [] => return []
+    | a::xs => do
+      let (aGroup, rest) ← collectEqualM cmp a xs
+      match rest with
+      | [] => return [[aGroup]]
+      | b::bs => do
+        let (bGroup, rest') ← collectEqualM cmp b bs
+        if (← cmp a b) == .gt
+        then descendingGroupedM cmp b bGroup [aGroup] rest'
+        else ascendingGroupedM cmp b bGroup (fun gs => aGroup :: gs) rest'
+
+  partial def descendingGroupedM [Monad μ]
+    (cmp : α → α → μ Ordering) (rep : α) (curr : List α) (acc : List (List α))
+    : List α → μ (List (List (List α)))
+    | [] => return [curr::acc]
+    | x::xs => do
+      let (xGroup, rest) ← collectEqualM cmp x xs
+      if (← cmp rep x) == .gt
+      then descendingGroupedM cmp x xGroup (curr::acc) rest
+      else List.cons (curr::acc) <$> sequencesGroupedM cmp (x::xs)
+
+  partial def ascendingGroupedM [Monad μ]
+    (cmp : α → α → μ Ordering) (rep : α) (curr : List α)
+    (acc : List (List α) → List (List α))
+    : List α → μ (List (List (List α)))
+    | [] => return [acc [curr]]
+    | x::xs => do
+      let (xGroup, rest) ← collectEqualM cmp x xs
+      if (← cmp rep x) != .gt
+      then ascendingGroupedM cmp x xGroup (fun gs => acc (curr :: gs)) rest
+      else List.cons (acc [curr]) <$> sequencesGroupedM cmp (x::xs)
+end
+
+def sortAndGroupByM [Monad μ] (xs: List α) (cmp: α -> α -> μ Ordering)
+  : μ (List (List α)) :=
+  sequencesGroupedM cmp xs >>= mergeAllGroupsM cmp
+
+def sortGroupsByM [Monad μ] (xs: List (List α)) (cmp: α -> α -> μ Ordering)
+  : μ (List (List α)) := sortAndGroupByM xs.flatten cmp
 
 end List
 
@@ -238,6 +321,24 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
       (← msgs.toList.mapM (·.toString)).map String.trim
   else return s.commandState.env
 
+def Expr.size: Expr -> Nat
+| .mdata _ x => 1 + x.size
+| .app f a => 1 + f.size + a.size
+| .lam bn bt b bi => 1 + bt.size + b.size
+| .forallE bn bt b bi => 1 + bt.size + b.size
+| .letE ln t v b nd =>  1 + t.size + v.size + b.size
+| .proj tn i s => 1 + s.size
+| x => 1
+
+def Expr.msize: Expr -> Nat
+| .mdata _ x => 1 + x.msize
+| .app f a => f.msize + a.msize
+| .lam bn bt b bi => bt.msize + b.msize
+| .forallE bn bt b bi => bt.msize + b.msize
+| .letE ln t v b nd => t.msize + v.msize + b.msize
+| .proj tn i s => s.msize
+| x => 0
+
 def Expr.stripMData : Expr -> Expr
 | .mdata _ x => x.stripMData
 | .app f a => .app f.stripMData a.stripMData
@@ -245,19 +346,56 @@ def Expr.stripMData : Expr -> Expr
 | .forallE bn bt b bi => .forallE bn bt.stripMData b.stripMData bi
 | .letE ln t v b nd => .letE ln t.stripMData v.stripMData b.stripMData nd
 | .proj tn i s => .proj tn i s.stripMData
-| x => x
+| x@(.lit ..) => x
+| x@(.const ..) => x
+| x@(.bvar ..) => x
+| x@(.fvar ..) => x
+| x@(.sort ..) => x
+| x@(.mvar ..) => x
 
 def RecursorRule.stripMData : RecursorRule -> RecursorRule
-| ⟨c, nf, rhs⟩ => ⟨c, nf, rhs.stripMData⟩
+| x =>
+  dbg_trace s!"RecursorRule.stripMData"
+  match x with
+  | ⟨c, nf, rhs⟩ => ⟨c, nf, rhs.stripMData⟩
+
+def RecursorRule.size : RecursorRule -> Nat
+| ⟨c, nf, rhs⟩ => rhs.size
+
+def RecursorRule.msize : RecursorRule -> Nat
+| ⟨c, nf, rhs⟩ => rhs.msize
 
 def ConstantInfo.stripMData : Lean.ConstantInfo -> Lean.ConstantInfo
-| .axiomInfo x => .axiomInfo { x with type := x.type.stripMData }
-| .defnInfo x => .defnInfo { x with type := x.type.stripMData, value := x.value.stripMData }
-| .thmInfo x => .thmInfo { x with type := x.type.stripMData, value := x.value.stripMData }
-| .quotInfo x => .quotInfo { x with type := x.type.stripMData }
-| .opaqueInfo x => .opaqueInfo { x with type := x.type.stripMData, value := x.value.stripMData }
-| .inductInfo x => .inductInfo { x with type := x.type.stripMData }
-| .ctorInfo x => .ctorInfo { x with type := x.type.stripMData }
-| .recInfo x => .recInfo { x with type := x.type.stripMData, rules := x.rules.map (·.stripMData) }
+| x =>
+  dbg_trace s!"ConstantInfo.stripMData"
+  match x with
+  | .axiomInfo x => .axiomInfo { x with type := x.type.stripMData }
+  | .defnInfo x => .defnInfo { x with type := x.type.stripMData, value := x.value.stripMData }
+  | .thmInfo x => .thmInfo { x with type := x.type.stripMData, value := x.value.stripMData }
+  | .quotInfo x => .quotInfo { x with type := x.type.stripMData }
+  | .opaqueInfo x => .opaqueInfo { x with type := x.type.stripMData, value := x.value.stripMData }
+  | .inductInfo x => .inductInfo { x with type := x.type.stripMData }
+  | .ctorInfo x => .ctorInfo { x with type := x.type.stripMData }
+  | .recInfo x => .recInfo { x with type := x.type.stripMData, rules := x.rules.map (·.stripMData) }
+
+def ConstantInfo.size : Lean.ConstantInfo -> Nat
+| .axiomInfo x => x.type.size
+| .defnInfo x => x.type.size + x.value.size
+| .thmInfo x => x.type.size + x.value.size
+| .quotInfo x => x.type.size
+| .opaqueInfo x => x.type.size + x.value.size
+| .inductInfo x => x.type.size
+| .ctorInfo x => x.type.size
+| .recInfo x => x.type.size + x.rules.foldr (fun a acc => a.size + acc) 0
+
+def ConstantInfo.msize : Lean.ConstantInfo -> Nat
+| .axiomInfo x => x.type.msize
+| .defnInfo x => x.type.msize + x.value.msize
+| .thmInfo x => x.type.msize + x.value.msize
+| .quotInfo x => x.type.msize
+| .opaqueInfo x => x.type.msize + x.value.msize
+| .inductInfo x => x.type.msize
+| .ctorInfo x => x.type.msize
+| .recInfo x => x.type.msize + x.rules.foldr (fun a acc => a.msize + acc) 0
 end Lean
 

@@ -77,7 +77,7 @@ are closed.
 
 /--
 Ix.Level universe levels are almost identical to Lean.Level, except that they
-exclude metavariables and de-bruijn index variable parameters.
+add de-bruijn indices for variable parameters and exclude metavariables.
 --/
 inductive Level
   | zero
@@ -136,7 +136,7 @@ structure PreDefinition where
   hints : Lean.ReducibilityHints
   safety : Lean.DefinitionSafety
   all : List Lean.Name
-  deriving BEq, Repr, Nonempty
+  deriving BEq, Repr, Nonempty, Hashable, Inhabited
 
 def mkPreDefinition (x: Lean.DefinitionVal) : PreDefinition := 
   ⟨x.name, x.levelParams, x.type, .definition, x.value, x.hints, x.safety, x.all⟩
@@ -147,6 +147,18 @@ def mkPreTheorem (x: Lean.TheoremVal) : PreDefinition :=
 def mkPreOpaque (x: Lean.OpaqueVal) : PreDefinition := 
   ⟨x.name, x.levelParams, x.type, .opaque, x.value, .opaque,
     if x.isUnsafe then .unsafe else .safe, x.all⟩
+
+def defMutCtx (defss: List (List PreDefinition)) : Std.HashMap Lean.Name Nat 
+  := Id.run do
+  let mut mutCtx := default
+  let mut i := 0
+  for defs in defss do
+    let mut x := #[]
+    for d in defs do
+      x := x.push d.name
+      mutCtx := mutCtx.insert d.name i
+    i := i + 1
+  return mutCtx
 
 /--
 Ix.Definition definitions combine Lean.DefinitionVal, Lean.OpaqueVal and
@@ -208,7 +220,7 @@ structure Constructor where
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 /--
-Ix.RecursorRule is analogous to Lean.RecursorRule 
+Ix.RecursorRule is analogous to Lean.RecursorRule
 --/
 structure RecursorRule where
   ctor : Lean.Name
@@ -253,7 +265,53 @@ structure PreInductive where
   isRec : Bool
   isReflexive : Bool
   isUnsafe: Bool
-  deriving BEq, Repr, Nonempty
+  deriving BEq, Repr, Nonempty, Inhabited
+
+
+-- We have a list of classes of inductive datatypes, each class representing a
+-- possible equivalence class. We would like to construct a unique numerical
+-- index for each inductive, constructor and recursor within this list of
+-- classes.
+
+-- Consider the classes: `[e_0, e_1, ..., e_a]`, where `a` is the maximum index
+-- of our input. Each class `e_x` contains inductives `[i_x_0, i_j_1, ...,
+-- i_j_b]`, where `b` is the maximum index of `e_x`. Each `i_x_y` contains
+-- `i_x_y_c` constructors and `i_x_y_r` recursors. If the classes are true
+-- equivalence classes then the all inductives in `e_x` will have the same
+-- number of constructors and recursors and 
+-- `∀ y1 y2: i_x_y1_c == i_x_y2_c && i_x_y1_r == i_x_y2_r` 
+--
+-- Unfortunately, since we use this function within the sorting function that
+-- produces the equivalence classes, our indexing has to be robust to the
+-- possiblity that inductives in a class do *not* have the same number of
+-- constructors and recursors.
+--
+-- We do this by first finding the inductives in the class with the maximum
+-- number of constructors and the maximum number of recursors. Then we
+-- "reserves" index space for the entire class based on those two maxima.
+-- Inductives with smaller numbers of constructors or recursors will not create
+-- conflicts. For example, if a class has an inductive with 2 ctors and 4 recrs
+-- and an inductive with 3 ctors and 2 recrs, then the whole class will reserve
+-- 8 indices (one for the inductive type itself plus 3 ctors and 4 recrs).
+
+def indMutCtx (indss: List (List PreInductive))
+  : Std.HashMap Lean.Name Nat := Id.run do
+  let mut mutCtx := default
+  let mut idx := 0
+  for inds in indss do
+    let mut maxCtors := 0
+    let mut maxRecrs := 0
+    for ind in inds do
+      maxCtors := max maxCtors ind.ctors.length
+      maxRecrs := max maxRecrs ind.recrs.length
+    for ind in inds do
+      mutCtx := mutCtx.insert ind.name idx
+      for (c, cidx) in List.zipIdx ind.ctors do
+        mutCtx := mutCtx.insert c.name (idx + 1 + cidx)
+      for (r, ridx) in List.zipIdx ind.recrs do
+        mutCtx := mutCtx.insert r.name (idx + 1 + maxCtors + ridx)
+    idx := idx + 1 + maxCtors + maxRecrs
+  return mutCtx
 
 /--
 Ix.Inductive represents inductive datatypes and is analogous to
@@ -355,11 +413,22 @@ inductive Const where
   -- constants to represent mutual blocks
   | «mutual» : MutualBlock → Const
   | «inductive» : InductiveBlock → Const
-  deriving Ord, BEq, Inhabited, Repr, Nonempty
+  deriving Ord, BEq, Inhabited, Repr, Nonempty, Hashable
 
 def Const.isMutBlock : Const → Bool
   | .mutual _ | .inductive _ => true
   | _ => false
+
+def Const.name : Const → List (Lean.Name)
+  | .axiom x => [x.name]
+  | .quotient x => [x.name]
+  | .definition x => [x.name]
+  | .inductiveProj x => [x.name]
+  | .constructorProj x => [x.name]
+  | .recursorProj x => [x.name]
+  | .definitionProj x => [x.name]
+  | .mutual x => x.ctx.flatten
+  | .inductive x => x.ctx.flatten
 
 namespace Level
 

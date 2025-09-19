@@ -1,4 +1,4 @@
-import Batteries.Data.RBMap
+import Std.Data.HashMap
 import Ix.TransportM
 import Ix.Ixon.Metadata
 import Ix.Ixon.Const
@@ -7,8 +7,6 @@ import Ix.Common
 import Ix.Store
 import Ix.CompileM
 
-open Batteries (RBMap)
-open Batteries (RBSet)
 open Ix.TransportM
 open Ix.Compile
 open Ixon
@@ -27,18 +25,18 @@ instance : ToString Named where
 
 /- The local environment for the Ix -> Lean4 decompiler -/
 structure DecompileEnv where
-  names : RBMap Lean.Name (Address × Address) compare
-  store : RBMap Address Ixon compare
+  names : Std.HashMap Lean.Name (Address × Address) 
+  store : Std.HashMap Address Ixon
   univCtx : List Lean.Name
   bindCtx : List Lean.Name
-  mutCtx  : RBMap Lean.Name Nat compare
+  mutCtx  : Std.HashMap Lean.Name Nat
   current: Named
   deriving Repr, Inhabited
 
 /- initialize from an Ixon store and a name-index to the store -/
 def DecompileEnv.init
-  (names : RBMap Lean.Name (Address × Address) compare)
-  (store : RBMap Address Ixon compare)
+  (names : Std.HashMap Lean.Name (Address × Address))
+  (store : Std.HashMap Address Ixon)
   : DecompileEnv
   := ⟨names, store, default, default, default, default⟩
 
@@ -99,8 +97,8 @@ def BlockNames.contains (name: Lean.Name) : BlockNames -> Bool
 | .inductive is => is.any (fun i => i.contains name)
 
 structure DecompileState where
-  constants: RBMap Lean.Name Lean.ConstantInfo compare
-  blocks : RBMap (Address × Address) BlockNames compare
+  constants: Std.HashMap Lean.Name Lean.ConstantInfo
+  blocks : Std.HashMap (Address × Address) BlockNames
   deriving Inhabited
 
 inductive DecompileError
@@ -110,10 +108,10 @@ inductive DecompileError
   (exp: Lean.Name) (idx: Nat)
 | invalidBVarIndex (curr: Named) (ctx: List Lean.Name) (idx: Nat)
 | mismatchedMutIdx
-  (curr: Named) (ctx: RBMap Lean.Name Nat compare) (exp: Lean.Name) 
+  (curr: Named) (ctx: Std.HashMap Lean.Name Nat) (exp: Lean.Name) 
   (idx: Nat) (got: Nat)
 | unknownMutual 
-  (curr: Named) (ctx: RBMap Lean.Name Nat compare) (exp: Lean.Name) (idx: Nat)
+  (curr: Named) (ctx: Std.HashMap Lean.Name Nat) (exp: Lean.Name) (idx: Nat)
 | transport (curr: Named) (err: TransportError) (cont meta: Address)
 | unknownName (curr: Named) (name: Lean.Name)
 | unknownStoreAddress (curr: Named) (exp: Address)
@@ -190,7 +188,7 @@ def withLevels (lvls : List Lean.Name) : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with univCtx := lvls }
 
 -- add mutual recursion info to local context
-def withMutCtx (mutCtx : RBMap Lean.Name Nat compare) 
+def withMutCtx (mutCtx : Std.HashMap Lean.Name Nat)
   : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with mutCtx := mutCtx }
 
@@ -200,10 +198,10 @@ def withNamed (name: Lean.Name) (cont meta: Address)
 
 -- reset local context
 def resetCtx : DecompileM α -> DecompileM α :=
-  withReader $ fun c => { c with univCtx := [], bindCtx := [], mutCtx := .empty }
+  withReader $ fun c => { c with univCtx := [], bindCtx := [], mutCtx := {} }
 
 def resetCtxWithLevels (lvls: List Lean.Name) : DecompileM α -> DecompileM α :=
-  withReader $ fun c => { c with univCtx := lvls, bindCtx := [], mutCtx := .empty }
+  withReader $ fun c => { c with univCtx := lvls, bindCtx := [], mutCtx := {} }
 
 def decompileLevel: Ix.Level → DecompileM Lean.Level
 | .zero => pure .zero
@@ -221,7 +219,7 @@ def decompileLevel: Ix.Level → DecompileM Lean.Level
 partial def insertConst
   (const: Lean.ConstantInfo)
   : DecompileM Lean.Name := do
-  match (<- get).constants.find? const.name with
+  match (<- get).constants.get? const.name with
   | .some const' =>
       if const == const' then return const.name
       else throw <| .overloadedConstants (<- read).current const const'
@@ -244,8 +242,8 @@ partial def insertBlock (c m: Address) (b: Block) : DecompileM BlockNames := do
       return ⟨val, ctors, recrs⟩
 
 partial def decompileMutualCtx (ctx: List (List Lean.Name))
-  : DecompileM (RBMap Lean.Name Nat compare) := do
-  let mut mutCtx : RBMap Lean.Name Nat compare := RBMap.empty
+  : DecompileM (Std.HashMap Lean.Name Nat) := do
+  let mut mutCtx : Std.HashMap Lean.Name Nat := {}
   for (ns, i) in List.zipIdx ctx do
     for n in ns do
       mutCtx := mutCtx.insert n i
@@ -262,8 +260,8 @@ partial def checkCtorRecrLengths : List Ix.Inductive -> DecompileM (Nat × Nat)
       then go x as else throw <| .nonCongruentInductives (<- read).current x a
 
 partial def decompileMutIndCtx (block: Ix.InductiveBlock)
-  : DecompileM (RBMap Lean.Name Nat compare) := do
-  let mut mutCtx : RBMap Lean.Name Nat compare := RBMap.empty
+  : DecompileM (Std.HashMap Lean.Name Nat) := do
+  let mut mutCtx : Std.HashMap Lean.Name Nat := {}
   let mut i := 0
   for inds in block.inds do
     let (numCtors, numRecrs) <- checkCtorRecrLengths inds
@@ -301,22 +299,22 @@ partial def decompileExpr: Ix.Expr → DecompileM Lean.Expr
 | .const n cont meta us => do
     let _ <- ensureBlock n cont meta
     return Lean.mkConst n (<- us.mapM decompileLevel)
-| .rec_ n i us => do match (<- read).mutCtx.find? n with
+| .rec_ n i us => do match (<- read).mutCtx.get? n with
   | some i' =>
     if i == i' then return Lean.mkConst n (<- us.mapM decompileLevel)
     else throw <| .mismatchedMutIdx (<- read).current (<- read).mutCtx n i i'
   | none => throw <| .unknownMutual (<- read).current (<- read).mutCtx n i
 
 partial def ensureBlock (name: Lean.Name) (c m: Address) : DecompileM BlockNames := do
-  match (<- get).blocks.find? (c, m) with
+  match (<- get).blocks.get? (c, m) with
   | .some b =>
     if b.contains name then pure b
     else throw <| .nameNotInBlockNames (<- read).current b name c m
   | .none =>
-    let cont : Ixon.Const <- match (<- read).store.find? c with
+    let cont : Ixon.Const <- match (<- read).store.get? c with
       | .some ixon => pure ixon
       | .none => throw <| .unknownStoreAddress (<- read).current c
-    let meta : Ixon.Const <- match (<- read).store.find? m with
+    let meta : Ixon.Const <- match (<- read).store.get? m with
       | .some ixon => pure ixon
       | .none => throw <| .unknownStoreAddress (<- read).current m
     match rematerialize cont meta with

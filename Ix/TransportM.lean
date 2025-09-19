@@ -1,3 +1,4 @@
+import Std.Data.HashMap
 import Ix.IR
 import Ix.Ixon.Univ
 import Ix.Ixon
@@ -12,24 +13,21 @@ namespace Ix.TransportM
 
 open Ixon
 
-abbrev MetadataMap := Batteries.RBMap Nat (List Metadatum) compare
-
 structure DematState where
   idx: Nat
-  store: Batteries.RBMap Address Ixon compare
-  meta: MetadataMap
+  store: Store
+  meta: Std.HashMap Nat (List Metadatum)
   deriving Repr
 
-def emptyDematState : DematState := 
-  { idx := 0, store := .empty, meta := .empty }
+def emptyDematState : DematState := { idx := 0, store := {}, meta := {} }
 
 inductive TransportError
 | natTooBig (idx: Nat) (x: Nat)
-| unknownIndex (idx: Nat) (m: MetadataMap)
+| unknownIndex (idx: Nat) (m: List (Nat × List Metadatum))
 | unknownAddress (adr: Address)
-| unexpectedNode (idx: Nat) (m: MetadataMap)
-| nonExprIxon (x: Ixon) (m: MetadataMap)
-| nonConstIxon (x: Ixon) (m: MetadataMap)
+| unexpectedNode (idx: Nat) (m: List (Nat × List Metadatum))
+| nonExprIxon (x: Ixon) (m: List (Nat × List Metadatum))
+| nonConstIxon (x: Ixon) (m: List (Nat × List Metadatum))
 | rawMetadata (m: Ixon.Metadata)
 | expectedMetadata (m: Ixon.Ixon)
 | rawProof (m: Proof)
@@ -54,15 +52,15 @@ abbrev DematM := EStateM TransportError DematState
 
 structure RematState where
   idx: Nat
-  store: Batteries.RBMap Address Ixon compare
+  store: Store
 
-def emptyRematState : RematState := { idx := 0, store := .empty }
+def emptyRematState : RematState := { idx := 0, store := {} }
 
-def rematStateWithStore (store: Batteries.RBMap Address Ixon compare) : RematState := 
+def rematStateWithStore (store: Std.HashMap Address Ixon) : RematState := 
   { idx := 0, store }
 
 structure RematCtx where
-  meta: MetadataMap
+  meta: Std.HashMap Nat (List Metadatum)
 
 abbrev RematM := ReaderT RematCtx (EStateM TransportError RematState)
 
@@ -123,14 +121,14 @@ def rematIncr : RematM Nat := rematIncrN 1
 def rematMeta : RematM (List Ixon.Metadatum) := do
   let n <- (·.idx) <$> get
   let m <- (·.meta) <$> read
-  match m.find? n with
+  match m.get? n with
   | .some n => return n
-  | .none => throw (.unknownIndex n m)
+  | .none => throw (.unknownIndex n m.toList)
 
 def rematThrowUnexpected : RematM α := do
   let n <- (·.idx) <$> get
   let m <- (·.meta) <$> read
-  throw (.unexpectedNode n m)
+  throw (.unexpectedNode n m.toList)
 
 partial def rematLevels (lvls: Nat): RematM (List Lean.Name) := do
   go [] lvls
@@ -257,7 +255,7 @@ partial def rematExpr : Ixon -> RematM Ix.Expr
   .proj name t link i.toNat <$> rematExpr s
 | .strl s => rematIncr *> return .lit (.strVal s)
 | .natl n => rematIncr *> return .lit (.natVal n)
-| e => do throw (.nonExprIxon e (<- read).meta)
+| e => do throw (.nonExprIxon e (<- read).meta.toList)
 
 def dematStore (ixon: Ixon): DematM Address :=
   let addr := Address.blake3 (Ixon.runPut (Ixon.Serialize.put ixon))
@@ -341,26 +339,19 @@ partial def dematConst : Ix.Const -> DematM Ixon
         lvls, x.numParams, x.numIndices,x.numNested, type, ctors, recrs,
         ⟩
 
-def constToIxon (x: Ix.Const) : Except TransportError (Ixon × Ixon) := 
+def dematerialize (x: Ix.Const) : Except TransportError (Ixon × DematState) :=
+  dbg_trace "dematerialize"
   match EStateM.run (dematConst x) emptyDematState with
-  | .ok ix stt => .ok (ix, Ixon.meta ⟨stt.meta.toList⟩)
+  | .ok ix stt => .ok (ix, stt)
   | .error e _ => .error e
 
-def constToBytes (x: Ix.Const) : Except TransportError ByteArray := do
-  let (ix, _) <- constToIxon x
-  return runPut (Serialize.put ix)
-
-def constAddress (x: Ix.Const) : Except TransportError Address := do
-  let bs <- constToBytes x
-  return Address.blake3 bs
-
 def rematAddress (adr: Address): RematM Ixon := do
-  match (<- get).store.find? adr with
+  match (<- get).store.get? adr with
   | .some x => return x
   | .none => throw (.unknownAddress adr)
 
 def rematExprAddress (adr: Address): RematM Ix.Expr := do
-  match (<- get).store.find? adr with
+  match (<- get).store.get? adr with
   | .some x => rematExpr x
   | .none => throw (.unknownAddress adr)
 
@@ -428,7 +419,7 @@ partial def rematConst : Ixon -> RematM Ix.Const
 -- TODO: This could return a Proof inductive, since proofs have no metadata
 | .prof p => throw (.rawProof p)
 | .comm p => throw (.rawComm p)
-| e => do throw (.nonConstIxon e (<- read).meta)
+| e => do throw (.nonConstIxon e (<- read).meta.toList)
   where
     rematDefn (x: Ixon.Definition) : RematM Ix.Definition := do
       let _ <- rematIncr
@@ -476,10 +467,11 @@ partial def rematConst : Ixon -> RematM Ix.Const
         x.refl, x.isUnsafe⟩
 
 def rematerialize (c m: Ixon) : Except TransportError Ix.Const := do
+  dbg_trace "rematerialize"
   let m <- match m with
   | .meta m => pure m
   | x => throw <| .expectedMetadata x
-  let m := Batteries.RBMap.ofList m.map compare
+  let m := Std.HashMap.ofList m.map
   match ((rematConst c).run { meta := m }).run emptyRematState with
     | .ok a _ => return a
     | .error e _ => throw e

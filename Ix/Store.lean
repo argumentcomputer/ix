@@ -33,20 +33,22 @@ def getHomeDir : StoreIO FilePath := do
   | .some path => return ⟨path⟩
   | .none => throw .noHome
 
+-- TODO: make this the default dir for the store, but customizable
 def storeDir : StoreIO FilePath := do
   let home ← getHomeDir
-  return home / ".ix" / "store"
-
-def ensureStoreDir : StoreIO Unit := do
-  let store ← storeDir
-  IO.toEIO .ioError (IO.FS.createDirAll store)
+  let path := home / ".ix" / "store"
+  if !(<- path.pathExists) then
+    IO.toEIO .ioError (IO.FS.createDirAll path)
+  return path
 
 def writeConst (x: Ixon) : StoreIO Address := do
   let bytes := runPut (Serialize.put x)
   let addr  := Address.blake3 bytes
   let store ← storeDir
   let path := store / hexOfBytes addr.hash
-  let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
+  -- trust that the store is correct
+  if !(<- path.pathExists) then
+    let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
   return addr
 
 -- unsafe, can corrupt store if called with bad address

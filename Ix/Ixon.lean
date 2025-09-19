@@ -1,3 +1,4 @@
+import Std.Data.HashMap
 import Ix.Address
 import Ix.Ixon.Serialize
 import Ix.Ixon.Univ
@@ -13,7 +14,7 @@ inductive Ixon where
 | sort : Univ -> Ixon                         -- 0x90, universes
 | refr : Address -> List Univ -> Ixon         -- 0x1X, global reference
 | recr : UInt64 -> List Univ -> Ixon          -- 0x2X, local recursion
-| apps : Ixon -> Ixon -> List Ixon -> Ixon    -- 0x3X, funciton application
+| apps : Ixon -> Ixon -> List Ixon -> Ixon    -- 0x3X, function application
 | lams : List Ixon -> Ixon -> Ixon            -- 0x4X, lambda abstraction
 | alls : List Ixon -> Ixon -> Ixon            -- 0x5X, universal quantification
 | proj : Address -> UInt64 -> Ixon -> Ixon    -- 0x6X, structure projection
@@ -37,6 +38,8 @@ inductive Ixon where
 | comm : Comm -> Ixon                         -- 0xE4, cryptographic commitment
 | envn : Env -> Ixon                         -- 0xE5, Lean4 environment
 deriving BEq, Repr, Inhabited
+
+abbrev Store := Std.HashMap Address Ixon
 
 open Serialize
 

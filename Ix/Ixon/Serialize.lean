@@ -399,4 +399,10 @@ instance : Serialize Address where
   put x := putBytes x.hash
   get := Address.mk <$> getBytes 32
 
+def serialize {A: Type} [Serialize A] (x: A) : ByteArray :=
+  runPut <| Serialize.put x
+
+def deserialize {A: Type} [Serialize A] (bs: ByteArray) : Except String A :=
+  runGet Serialize.get bs
+
 end Ixon

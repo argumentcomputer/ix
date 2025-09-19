@@ -1,4 +1,4 @@
-import Batteries.Data.RBMap
+import Std.Data.HashMap
 import Ix.TransportM
 import Ix.Ixon.Metadata
 import Ix.Ixon
@@ -6,9 +6,10 @@ import Ix.Ixon.Const
 import Ix.Ixon.Serialize
 import Ix.Common
 import Ix.Store
+import Ix.SOrder
+import Ix.Cronos
 
-open Batteries (RBMap)
-open Batteries (RBSet)
+
 open Ix.TransportM
 
 namespace Ix.Compile
@@ -59,10 +60,11 @@ def CompileError.pretty : CompileError -> IO String
 | .emptyIndsEquivalenceClass dss => 
   pure s!"empty equivalence class while sorting inductives {dss.map fun ds => ds.map (·.name)}"
 
+
 structure CompileEnv where
   univCtx : List Lean.Name
   bindCtx : List Lean.Name
-  mutCtx  : RBMap Lean.Name Nat compare
+  mutCtx: Std.HashMap Lean.Name Nat
   maxHeartBeats: USize
   current : Lean.Name
 
@@ -74,27 +76,26 @@ open Ixon
 structure CompileState where
   env: Lean.Environment
   prng: StdGen
-  names: RBMap Lean.Name (Address × Address) compare
-  store: RBMap Address Ixon compare
-  cache: RBMap Ix.Const (Address × Address) compare
-  comms: RBMap Lean.Name (Address × Address) compare
-  axioms: RBMap Lean.Name (Address × Address) compare
-  blocks: RBSet (Address × Address) compare
+  names: Std.HashMap Lean.Name (Address × Address)
+  cache: Std.HashMap Ix.Const (Address × Address)
+  comms: Std.HashMap Lean.Name (Address × Address)
+  eqConst: Std.HashMap (Lean.Name × Lean.Name) Ordering
+  axioms: Std.HashMap Lean.Name (Address × Address)
+  blocks: Std.HashSet (Address × Address)
+  cronos: Cronos
 
 def CompileState.init (env: Lean.Environment) (seed: Nat): CompileState :=
-  ⟨env, mkStdGen seed, default, default, default, default, default, default⟩
+  ⟨env, mkStdGen seed, default, default, default, default, default, default, default, default⟩
 
-abbrev CompileM := ReaderT CompileEnv <| EStateM CompileError CompileState
+abbrev CompileM :=
+  ReaderT CompileEnv <| ExceptT CompileError <| StateT CompileState IO
 
 def CompileM.run (env: CompileEnv) (stt: CompileState) (c : CompileM α)
-  : EStateM.Result CompileError CompileState α
-  := EStateM.run (ReaderT.run c env) stt
+  : IO (Except CompileError α × CompileState)
+  := StateT.run (ExceptT.run (ReaderT.run c env)) stt
 
 def storeConst (const: Ixon): CompileM Address := do
-  let addr := Address.blake3 (runPut (Serialize.put const))
-  modifyGet fun stt => (addr, { stt with
-    store := stt.store.insert addr const
-  })
+  liftM (Store.writeConst const).toIO
 
 def randByte (lo hi: Nat): CompileM Nat := do
   modifyGet fun s => 
@@ -121,65 +122,77 @@ def withLevels (lvls : List Lean.Name) : CompileM α -> CompileM α :=
   withReader $ fun c => { c with univCtx := lvls }
 
 -- add mutual recursion info to local context
-def withMutCtx (mutCtx : RBMap Lean.Name Nat compare) 
+def withMutCtx (mutCtx : Std.HashMap Lean.Name Nat)
   : CompileM α -> CompileM α :=
   withReader $ fun c => { c with mutCtx := mutCtx }
 
 -- reset local context
 def resetCtx : CompileM α -> CompileM α :=
-  withReader $ fun c => { c with univCtx := [], bindCtx := [], mutCtx := .empty }
+  withReader $ fun c => { c with univCtx := [], bindCtx := [], mutCtx := {} }
 
 def resetCtxWithLevels (lvls: List Lean.Name) : CompileM α -> CompileM α :=
-  withReader $ fun c => { c with univCtx := lvls, bindCtx := [], mutCtx := .empty }
+  withReader $ fun c => { c with univCtx := lvls, bindCtx := [], mutCtx := {} }
+
+def dematerializeConst (x: Ix.Const) : CompileM (Ixon × Ixon) :=
+  match dematerialize x with
+  | .ok (ix, tstt) => do
+    for (addr, ixon) in tstt.store do
+      let _ <- liftM (Store.forceWriteConst addr ixon).toIO
+    return (ix, Ixon.meta ⟨tstt.meta.toList⟩)
+  | .error e => throw (.transportError e)
+
+def cron (tag: String) : CompileM Unit := do
+  let stt <- get
+  let c <- liftM <| Cronos.clock stt.cronos tag
+  modify fun stt => { stt with cronos := c }
+
+def getCron (tag: String) : CompileM String := do
+  return (<- get).cronos.tagSummary tag
 
 -- lookup or compute the addresses of a constant
 def hashConst (const: Ix.Const) : CompileM (Address × Address) := do
-  match (<- get).cache.find? const with
+  match (<- get).cache.get? const with
   | some (anonAddr, metaAddr) => pure (anonAddr, metaAddr)
   | none => do
-    let (anonIxon, metaIxon) <- match constToIxon const with
-      | .ok (a, m) => pure (a, m)
-      | .error e => throw (.transportError e)
+    let cronTag := s!"hashConst {const.name}"
+    dbg_trace "-> hashConst {const.name}";
+    cron cronTag
+    let (anonIxon, metaIxon) <- dematerializeConst const
     let anonAddr <- storeConst anonIxon
     let metaAddr <- storeConst metaIxon
+    cron cronTag
+    let timing <- getCron cronTag
+    dbg_trace "✓ {timing}";
+    dbg_trace "names: {(<- get).names.size}";
+    dbg_trace "cache: {(<- get).cache.size}";
+    dbg_trace "eqConst: {(<- get).eqConst.size}";
+    dbg_trace "blocks: {(<- get).blocks.size}";
     modifyGet fun stt => ((anonAddr, metaAddr), { stt with
       cache := stt.cache.insert const (anonAddr, metaAddr)
     })
 
-scoped instance : HMul Ordering Ordering Ordering where hMul
-  | .gt, _ => .gt
-  | .lt, _ => .lt
-  | .eq, x => x
-
-def concatOrds : List Ordering → Ordering :=
-  List.foldl (· * ·) .eq
-
 /-- Defines an ordering for Lean universes -/
 def compareLevel (xctx yctx: List Lean.Name)
-  : Lean.Level -> Lean.Level -> CompileM Ordering
+  : Lean.Level -> Lean.Level -> CompileM SOrder
   | x@(.mvar ..), _ => throw $ .unfilledLevelMetavariable x
   | _, y@(.mvar ..) => throw $ .unfilledLevelMetavariable y
-  | .zero, .zero => return .eq
-  | .zero, _ => return .lt
-  | _, .zero => return .gt
+  | .zero, .zero => return ⟨true, .eq⟩
+  | .zero, _ => return ⟨true, .lt⟩
+  | _, .zero => return ⟨true, .gt⟩
   | .succ x, .succ y => compareLevel xctx yctx x y
-  | .succ .., _ => return .lt
-  | _, .succ .. => return .gt
-  | .max xl xr, .max yl yr => do
-    let l' <- compareLevel xctx yctx xl yl
-    let r' <- compareLevel xctx yctx xr yr
-    return l' * r'
-  | .max .., _ => return .lt
-  | _, .max .. => return .gt
-  | .imax xl xr, .imax yl yr => do
-    let l' <- compareLevel xctx yctx xl yl
-    let r' <- compareLevel xctx yctx xr yr
-    return l' * r'
-  | .imax .., _ => return .lt
-  | _, .imax .. => return .gt
+  | .succ .., _ => return ⟨true, .lt⟩
+  | _, .succ .. => return ⟨true, .gt⟩
+  | .max xl xr, .max yl yr => SOrder.cmpM
+    (compareLevel xctx yctx xl yl) (compareLevel xctx yctx xr yr)
+  | .max .., _ => return ⟨true, .lt⟩
+  | _, .max .. => return ⟨true, .gt⟩
+  | .imax xl xr, .imax yl yr => SOrder.cmpM
+      (compareLevel xctx yctx xl yl) (compareLevel xctx yctx xr yr)
+  | .imax .., _ => return ⟨true, .lt⟩
+  | _, .imax .. => return ⟨true, .gt⟩
   | .param x, .param y => do
     match (xctx.idxOf? x), (yctx.idxOf? y) with
-    | some xi, some yi => return (compare xi yi)
+    | some xi, some yi => return ⟨true, compare xi yi⟩
     | none,    _       => 
       throw $ .levelNotFound x xctx s!"compareLevel @ {(<- read).current}"
     | _,       none    => 
@@ -220,12 +233,22 @@ mutual
 partial def compileConst (const : Lean.ConstantInfo)
   : CompileM (Address × Address) := do
   -- first check if we've already compiled this const
-  match (← get).names.find? const.name with
+  match (← get).names.get? const.name with
   -- if we have, returned the cached address
   | some (anonAddr, metaAddr) => do
     pure (anonAddr, metaAddr)
   -- if not, pattern match on the const
-  | none => resetCtx $ withCurrent const.name $ match const with
+  | none => do
+    dbg_trace "-> compileConst {const.name}";
+    let cronTag := s!"compileConst {const.name}"
+    cron cronTag
+    let addrs <- compileInner const
+    cron cronTag
+    let timing <- getCron cronTag
+    dbg_trace "✓ {timing}";
+    return addrs
+  where
+    compileInner (const: Lean.ConstantInfo) := resetCtx $ withCurrent const.name $ match const with
     -- convert possible mutual block elements to PreDefinitions
     | .defnInfo val => do
       compileDefinition (mkPreDefinition val)
@@ -274,9 +297,10 @@ partial def compileConst (const : Lean.ConstantInfo)
 /-- compile possibly mutual Lean definition --/
 partial def compileDefinition (struct: PreDefinition)
   : CompileM (Address × Address) := do
+  dbg_trace "compileDefinition {struct.name}"
   -- If the mutual size is one, simply content address the single definition
   if struct.all matches [_] then
-    let defn <- withMutCtx (.single struct.name 0) $ preDefinitionToIR struct
+    let defn <- withMutCtx ({(struct.name,0)}) $ preDefinitionToIR struct
     let (anonAddr, metaAddr) <- hashConst $ .definition defn
     modify fun stt => { stt with
       names := stt.names.insert struct.name (anonAddr, metaAddr)
@@ -291,19 +315,11 @@ partial def compileDefinition (struct: PreDefinition)
       | .thmInfo x => mutDefs := mutDefs.push (mkPreTheorem x)
       | x => throw $ .invalidConstantKind x.name "mutdef" x.ctorName
   let mutualDefs <- sortDefs mutDefs.toList
-  -- Building the `mutCtx`
-  let mut mutCtx := default
-  let mut i := 0
-  for ds in mutualDefs do
-    let mut x := #[]
-    for d in ds do
-      x := x.push d.name
-      mutCtx := mutCtx.insert d.name i
-    i := i + 1
-  let definitions ← withMutCtx mutCtx $ mutualDefs.mapM (·.mapM preDefinitionToIR)
+  let mutCtx := defMutCtx mutualDefs
+  let definitions ← withMutCtx mutCtx <|
+    mutualDefs.mapM (·.mapM preDefinitionToIR)
   -- Building and storing the block
-  let (blockAnonAddr, blockMetaAddr) ←
-    hashConst $ .mutual ⟨definitions⟩
+  let (blockAnonAddr, blockMetaAddr) ← hashConst $ .mutual ⟨definitions⟩
   modify fun stt =>
     { stt with blocks := stt.blocks.insert (blockAnonAddr, blockMetaAddr) }
   -- While iterating on the definitions from the mutual block, we need to track
@@ -312,7 +328,7 @@ partial def compileDefinition (struct: PreDefinition)
   for name in struct.all do
     -- Storing and caching the definition projection
     -- Also adds the constant to the array of constants
-    let some idx := mutCtx.find? name | throw $ .cantFindMutDefIndex name
+    let some idx := mutCtx.get? name | throw $ .cantFindMutDefIndex name
     let (anonAddr, metaAddr) ←
       hashConst $ .definitionProj ⟨name, blockAnonAddr, blockMetaAddr, idx⟩
     modify fun stt => { stt with
@@ -325,6 +341,7 @@ partial def compileDefinition (struct: PreDefinition)
 
 partial def preDefinitionToIR (d: PreDefinition)
   : CompileM Ix.Definition := withCurrent d.name $ withLevels d.levelParams do
+  dbg_trace "preDefinitionToIR {d.name}"
   let typ <- compileExpr d.type
   let val <- compileExpr d.value
   return ⟨d.name, d.levelParams, typ, d.kind, val, d.hints, d.safety, d.all⟩
@@ -346,6 +363,7 @@ partial def getRecursors (ind : Lean.InductiveVal)
 
 partial def makePreInductive (ind: Lean.InductiveVal) 
   : CompileM Ix.PreInductive := do
+    dbg_trace "-> makePreInductive {ind.name}";
     let ctors <- ind.ctors.mapM getCtor
     let recrs <- getRecursors ind
     return ⟨ind.name, ind.levelParams, ind.type, ind.numParams, ind.numIndices,
@@ -356,16 +374,6 @@ partial def makePreInductive (ind: Lean.InductiveVal)
         | .ctorInfo c => pure c
         | _ => throw <| .invalidConstantKind name "constructor" ""
 
-partial def checkCtorRecrLengths : List PreInductive -> CompileM (Nat × Nat)
-| [] => return (0, 0)
-| x::xs => go x xs
-  where
-    go : PreInductive -> List PreInductive -> CompileM (Nat × Nat)
-    | x, [] => return (x.ctors.length, x.recrs.length)
-    | x, a::as =>
-      if x.ctors.length == a.ctors.length && x.recrs.length == a.recrs.length
-      then go x as else throw <| .nonCongruentInductives x a
-
 /--
 Content-addresses an inductive and all inductives in the mutual block as a
 mutual block, even if the inductive itself is not in a mutual block.
@@ -375,9 +383,9 @@ constructors and recursors, hence the complexity of this function.
 -/
 partial def compileInductive (initInd: Lean.InductiveVal) 
   : CompileM (Address × Address) := do
+  dbg_trace "-> compileInductive {initInd.name}";
   let mut preInds := #[]
-  let mut nameData : RBMap Lean.Name (List Lean.Name × List Lean.Name) compare
-    := .empty
+  let mut nameData : Std.HashMap Lean.Name (List Lean.Name × List Lean.Name) := {}
   -- collect all mutual inductives as Ix.PreInductives
   for indName in initInd.all do
     match ← findLeanConst indName with
@@ -388,22 +396,7 @@ partial def compileInductive (initInd: Lean.InductiveVal)
     | const => throw $ .invalidConstantKind const.name "inductive" const.ctorName
   -- sort PreInductives into equivalence classes
   let mutualInds <- sortInds preInds.toList
-  let mut mutCtx : RBMap Lean.Name Nat compare := default
-  let mut i := 0
-  -- build the mutual context
-  for inds in mutualInds do
-    let mut x := #[]
-    -- double-check that all inductives in the class have the same number
-    -- of constructors and recursors
-    let (numCtors, numRecrs) <- checkCtorRecrLengths inds
-    for ind in inds do
-      x := x.push ind.name
-      mutCtx := mutCtx.insert ind.name i
-      for (c, cidx) in List.zipIdx ind.ctors do
-        mutCtx := mutCtx.insert c.name (i + cidx)
-      for (r, ridx) in List.zipIdx ind.recrs do
-        mutCtx := mutCtx.insert r.name (i + numCtors + ridx)
-    i := i + 1 + numCtors + numRecrs
+  let mutCtx := indMutCtx mutualInds
   -- compile each preinductive with the mutCtx
   let irInds ← withMutCtx mutCtx $ mutualInds.mapM (·.mapM preInductiveToIR)
   let (blockAnonAddr, blockMetaAddr) ← hashConst $ .inductive ⟨irInds⟩
@@ -421,7 +414,7 @@ partial def compileInductive (initInd: Lean.InductiveVal)
       names := stt.names.insert name (anonAddr, metaAddr)
     }
     if name == initInd.name then ret? := some (anonAddr, metaAddr)
-    let some (ctors, recrs) := nameData.find? indName
+    let some (ctors, recrs) := nameData.get? indName
       | throw $ .cantFindMutDefIndex indName
     for (ctorName, ctorIdx) in ctors.zipIdx do
       -- Store and cache constructor projections
@@ -445,6 +438,7 @@ partial def compileInductive (initInd: Lean.InductiveVal)
 
 partial def preInductiveToIR (ind : Ix.PreInductive) : CompileM Ix.Inductive 
   := withCurrent ind.name $ withLevels ind.levelParams $ do
+  dbg_trace "-> preInductiveToIR {ind.name}";
   let (recs, ctors) := <- ind.recrs.foldrM (init := ([], [])) collectRecsCtors
   let type <- compileExpr ind.type
     -- NOTE: for the purpose of extraction, the order of `ctors` and `recs` MUST
@@ -467,6 +461,7 @@ partial def preInductiveToIR (ind : Ix.PreInductive) : CompileM Ix.Inductive
 partial def internalRecToIR (ctors : List Lean.Name) (recr: Lean.RecursorVal)
   : CompileM (Ix.Recursor × List Ix.Constructor) :=
   withCurrent recr.name $ withLevels recr.levelParams do
+    dbg_trace s!"internalRecToIR"
     let typ ← compileExpr recr.type
     let (retCtors, retRules) ← recr.rules.foldrM (init := ([], []))
       fun r (retCtors, retRules) => do
@@ -480,6 +475,7 @@ partial def internalRecToIR (ctors : List Lean.Name) (recr: Lean.RecursorVal)
 
 partial def externalRecToIR (recr: Lean.RecursorVal): CompileM Recursor :=
   withCurrent recr.name $ withLevels recr.levelParams do
+    dbg_trace s!"externalRecToIR"
     let typ ← compileExpr recr.type
     let rules ← recr.rules.mapM externalRecRuleToIR
     return ⟨recr.name, recr.levelParams, typ, recr.numParams, recr.numIndices,
@@ -487,6 +483,7 @@ partial def externalRecToIR (recr: Lean.RecursorVal): CompileM Recursor :=
 
 partial def recRuleToIR (rule : Lean.RecursorRule)
   : CompileM (Ix.Constructor × Ix.RecursorRule) := do
+  dbg_trace s!"recRuleToIR"
   let rhs ← compileExpr rule.rhs
   match ← findLeanConst rule.ctor with
   | .ctorInfo ctor => withCurrent ctor.name $ withLevels ctor.levelParams do
@@ -511,314 +508,333 @@ encoded as `.rec_` with indexes based on order in the mutual definition
 and thus we can canon the actual constant right away
 -/
 partial def compileExpr : Lean.Expr → CompileM Expr
-| .mdata _ e => compileExpr e
-| expr => match expr with
-  | .bvar idx => do match (← read).bindCtx[idx]? with
-    -- Bound variables must be in the bind context
-    | some _ => return .var idx
-    | none => throw $ .invalidBVarIndex idx
-  | .sort lvl => return .sort $ ← compileLevel lvl
-  | .const name lvls => do
-    let univs ← lvls.mapM compileLevel
-    match (← read).mutCtx.find? name with
-    -- recursing!
-    | some i => return .rec_ name i univs
-    | none => match (<- get).comms.find? name with
-      | some (commAddr, metaAddr) => do
-        return .const name commAddr metaAddr univs
-      | none => do
-        let (contAddr, metaAddr) ← compileConst (← findLeanConst name)
-        return .const name contAddr metaAddr univs
-  | .app fnc arg => return .app (← compileExpr fnc) (← compileExpr arg)
-  | .lam name typ bod info =>
-    return .lam name info (← compileExpr typ) (← withBinder name $ compileExpr bod)
-  | .forallE name dom img info =>
-    return .pi name info (← compileExpr dom) (← withBinder name $ compileExpr img)
-  | .letE name typ exp bod nD =>
-    return .letE name (← compileExpr typ) (← compileExpr exp)
-      (← withBinder name $ compileExpr bod) nD
-  | .lit lit => return .lit lit
-  | .proj name idx exp => do
-    let (contAddr, metaAddr) ← compileConst (← findLeanConst name)
-    return .proj name contAddr metaAddr idx (← compileExpr exp)
-  | .fvar ..  => throw $ .freeVariableExpr expr
-  | .mvar ..  => throw $ .metaVariableExpr expr
-  | .mdata .. => throw $ .metaDataExpr expr
+| .bvar idx => do match (← read).bindCtx[idx]? with
+  -- Bound variables must be in the bind context
+  | some _ => return .var idx
+  | none => throw $ .invalidBVarIndex idx
+| .sort lvl => return .sort $ ← compileLevel lvl
+| .const name lvls => do
+  let univs ← lvls.mapM compileLevel
+  match (← read).mutCtx.get? name with
+  -- recursing!
+  | some i => return .rec_ name i univs
+  | none => match (<- get).comms.get? name with
+    | some (commAddr, metaAddr) => do
+      return .const name commAddr metaAddr univs
+    | none => do
+      let (contAddr, metaAddr) ← compileConst (← findLeanConst name)
+      return .const name contAddr metaAddr univs
+| .app fnc arg => return .app (← compileExpr fnc) (← compileExpr arg)
+| .lam name typ bod info =>
+  return .lam name info (← compileExpr typ) (← withBinder name $ compileExpr bod)
+| .forallE name dom img info =>
+  return .pi name info (← compileExpr dom) (← withBinder name $ compileExpr img)
+| .letE name typ exp bod nD =>
+  return .letE name (← compileExpr typ) (← compileExpr exp)
+    (← withBinder name $ compileExpr bod) nD
+| .lit lit => return .lit lit
+| .proj name idx exp => do
+  let (contAddr, metaAddr) ← compileConst (← findLeanConst name)
+  return .proj name contAddr metaAddr idx (← compileExpr exp)
+| expr@(.fvar ..)  => throw $ .freeVariableExpr expr
+| expr@(.mvar ..)  => throw $ .metaVariableExpr expr
+-- TODO: cursed
+| (.mdata _ x) => compileExpr x
 
 /--
 A name-irrelevant ordering of Lean expressions.
-`weakOrd` contains the best known current mutual ordering
 -/
-partial def compareExpr
-  (weakOrd : RBMap Lean.Name Nat compare)
+partial def compareExpr (ctx: Std.HashMap Lean.Name Nat)
   (xlvls ylvls: List Lean.Name)
-  : Lean.Expr → Lean.Expr → CompileM Ordering
+  --: Lean.Expr → Lean.Expr → CompileM SOrder
+  (x y: Lean.Expr) : CompileM SOrder := do
+  --dbg_trace "compareExpr {repr xlvls} {repr ylvls} {repr x} {repr y}"
+  --let mutCtx := (<- read).mutCtx
+  --dbg_trace "mutCtx {repr mutCtx}";
+  match x, y with
   | e@(.mvar ..), _ => throw $ .unfilledExprMetavariable e
   | _, e@(.mvar ..) => throw $ .unfilledExprMetavariable e
   | e@(.fvar ..), _ => throw $ .freeVariableExpr e
   | _, e@(.fvar ..) => throw $ .freeVariableExpr e
-  | .mdata _ x, .mdata _ y  => compareExpr weakOrd xlvls ylvls x y
-  | .mdata _ x, y  => compareExpr weakOrd xlvls ylvls x y
-  | x, .mdata _ y  => compareExpr weakOrd xlvls ylvls x y
-  | .bvar x, .bvar y => return (compare x y)
-  | .bvar .., _ => return .lt
-  | _, .bvar .. => return .gt
+  | .mdata _ x, .mdata _ y  => compareExpr ctx xlvls ylvls x y
+  | .mdata _ x, y  => compareExpr ctx xlvls ylvls x y
+  | x, .mdata _ y  => compareExpr ctx xlvls ylvls x y
+  | .bvar x, .bvar y => return ⟨true, compare x y⟩
+  | .bvar .., _ => return ⟨true, .lt⟩
+  | _, .bvar .. => return ⟨true, .gt⟩
   | .sort x, .sort y => compareLevel xlvls ylvls x y
-  | .sort .., _ => return .lt
-  | _, .sort .. => return .gt
+  | .sort .., _ => return ⟨true, .lt⟩
+  | _, .sort .. => return ⟨true, .gt⟩
   | .const x xls, .const y yls => do
-    let univs ← concatOrds <$> (xls.zip yls).mapM
-      fun (x,y) => compareLevel xlvls ylvls x y
-    if univs != .eq then
-      return univs
-    match weakOrd.find? x, weakOrd.find? y with
-    | some nx, some ny => return compare nx ny
+    --dbg_trace "compare const {x} {y}";
+    let univs ← SOrder.zipM (compareLevel xlvls ylvls) xls yls
+    if univs.ord != .eq then return univs
+    --dbg_trace "compare const {x} {y} {repr ctx}";
+    match ctx.get? x, ctx.get? y with
+    | some nx, some ny => return ⟨false, compare nx ny⟩
     | none, some _ => do
-      return .gt
+      return ⟨true, .gt⟩
     | some _, none =>
-      return .lt
+      return ⟨true, .lt⟩
     | none, none =>
       if x == y then 
-        return .eq
+        return ⟨true, .eq⟩
       else do
         let x' <- compileConst $ ← findLeanConst x
         let y' <- compileConst $ ← findLeanConst y
-        return compare x' y'
-  | .const .., _ => return .lt
-  | _, .const .. => return .gt
-  | .app xf xa, .app yf ya => do
-    let f' <- compareExpr weakOrd xlvls ylvls xf yf
-    let a' <- compareExpr weakOrd xlvls ylvls xa ya
-    return f' * a'
-  | .app .., _ => return .lt
-  | _, .app .. => return .gt
-  | .lam _ xt xb _, .lam _ yt yb _ => do
-    let t' <- compareExpr weakOrd xlvls ylvls xt yt
-    let b' <- compareExpr weakOrd xlvls ylvls xb yb
-    return t' * b'
-  | .lam .., _ => return .lt
-  | _, .lam .. => return .gt
-  | .forallE _ xt xb _, .forallE _ yt yb _ => do
-    let t' <- compareExpr weakOrd xlvls ylvls xt yt
-    let b' <- compareExpr weakOrd xlvls ylvls xb yb
-    return t' * b'
-  | .forallE .., _ => return .lt
-  | _, .forallE .. => return .gt
-  | .letE _ xt xv xb _, .letE _ yt yv yb _ => do
-    let t' <- compareExpr weakOrd xlvls ylvls xt yt
-    let v' <- compareExpr weakOrd xlvls ylvls xv yv
-    let b' <- compareExpr weakOrd xlvls ylvls xb yb
-    return t' * v' * b'
-  | .letE .., _ => return .lt
-  | _, .letE .. => return .gt
-  | .lit x, .lit y =>
-    return if x < y then .lt else if x == y then .eq else .gt
-  | .lit .., _ => return .lt
-  | _, .lit .. => return .gt
-  | .proj _ nx tx, .proj _ ny ty => do
-    let ts ← compareExpr weakOrd xlvls ylvls tx ty
-    return concatOrds [compare nx ny, ts]
+        return ⟨true, compare x' y'⟩
+  | .const .., _ => return ⟨true, .lt⟩
+  | _, .const .. => return ⟨true, .gt⟩
+  | .app xf xa, .app yf ya =>
+    SOrder.cmpM 
+      (compareExpr ctx xlvls ylvls xf yf) 
+      (compareExpr ctx xlvls ylvls xa ya)
+  | .app .., _ => return ⟨true, .lt⟩
+  | _, .app .. => return ⟨true, .gt⟩
+  | .lam _ xt xb _, .lam _ yt yb _ => 
+    SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) (compareExpr ctx xlvls ylvls xb yb)
+  | .lam .., _ => return ⟨true, .lt⟩
+  | _, .lam .. => return ⟨true, .gt⟩
+  | .forallE _ xt xb _, .forallE _ yt yb _ => 
+    SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) (compareExpr ctx xlvls ylvls xb yb)
+  | .forallE .., _ => return ⟨true, .lt⟩
+  | _, .forallE .. => return ⟨true, .gt⟩
+  | .letE _ xt xv xb _, .letE _ yt yv yb _ =>
+    SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) <|
+    SOrder.cmpM (compareExpr ctx xlvls ylvls xv yv)
+      (compareExpr ctx xlvls ylvls xb yb)
+  | .letE .., _ => return ⟨true, .lt⟩
+  | _, .letE .. => return ⟨true, .gt⟩
+  | .lit x, .lit y => return ⟨true, compare x y⟩
+  | .lit .., _ => return ⟨true, .lt⟩
+  | _, .lit .. => return ⟨true, .gt⟩
+  | .proj _ nx tx, .proj _ ny ty => 
+    SOrder.cmpM (pure ⟨true, compare nx ny⟩) 
+      (compareExpr ctx xlvls ylvls tx ty)
 
-/-- AST comparison of two Lean definitions.
-  `weakOrd` contains the best known current mutual ordering -/
-partial def compareDef
-  (weakOrd : RBMap Lean.Name Nat compare)
-  (x y: PreDefinition)
-  : CompileM Ordering := do
-  let kind := compare x.kind y.kind
-  let ls := compare x.levelParams.length y.levelParams.length
-  let ts ← compareExpr weakOrd x.levelParams y.levelParams x.type y.type
-  let vs ← compareExpr weakOrd x.levelParams y.levelParams x.value y.value
-  return concatOrds [kind, ls, ts, vs]
-
-/-- AST equality between two Lean definitions.
-  `weakOrd` contains the best known current mutual ordering -/
-@[inline] partial def eqDef
-  (weakOrd : RBMap Lean.Name Nat compare)
-  (x y : PreDefinition) 
-  : CompileM Bool :=
-  return (← compareDef weakOrd x y) == .eq
+/-- AST comparison of two Lean definitions. --/
+partial def compareDef (ctx: Std.HashMap Lean.Name Nat) (x y: PreDefinition) : CompileM Ordering := do
+  let key := match compare x.name y.name with
+    | .lt => (x.name, y.name)
+    | _ => (y.name, x.name)
+  match (<- get).eqConst.get? key with
+  | some o => return o
+  | none => do
+    let sorder <- SOrder.cmpM (pure ⟨true, compare x.kind y.kind⟩) <|
+      SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
+      SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type)
+        (compareExpr ctx x.levelParams y.levelParams x.value y.value)
+    if sorder.strong then modify fun stt => { stt with
+        eqConst := stt.eqConst.insert key sorder.ord
+      }
+    return sorder.ord
 
 /--
-`sortDefs` recursively sorts a list of mutual definitions into weakly equal blocks.
-At each stage, we take as input the current best approximation of known weakly equal
-blocks as a List of blocks, hence the `List (List DefinitionVal)` as the argument type.
-We recursively take the input blocks and resort to improve the approximate known
-weakly equal blocks, obtaining a sequence of list of blocks:
+`sortDefs` recursively sorts a list of mutual definitions into equivalence classes.
+At each stage, we take as input the current best known equivalence
+classes (held in the `mutCtx` of the CompileEnv). For most cases, equivalence
+can be determined by syntactic differences which are invariant to the current
+best known classification. For example:
+
 ```
-dss₀ := [startDefs]
-dss₁ := sortDefs dss₀
-dss₂ := sortDefs dss₁
-dss₍ᵢ₊₁₎ := sortDefs dssᵢ ...
+mutual
+  def : Nat := 1
+  def bar : Nat := 2
+end
 ```
-Initially, `startDefs` is simply the list of definitions we receive from `DefinitionVal.all`;
-since there is no order yet, we treat it as one block all weakly equal. On the other hand,
-at the end, there is some point where `dss₍ᵢ₊₁₎ := dssᵢ`, then we have hit a fixed point
-and we may end the sorting process. (We claim that such a fixed point exists, although
-technically we don't really have a proof.)
 
-On each iteration, we hope to improve our knowledge of weakly equal blocks and use that
-knowledge in the next iteration. e.g. We start with just one block with everything in it,
-but the first sort may differentiate the one block into 3 blocks. Then in the second
-iteration, we have more information than than first, since the relationship of the 3 blocks
-gives us more information; this information may then be used to sort again, turning 3 blocks
-into 4 blocks, and again 4 blocks into 6 blocks, etc, until we have hit a fixed point.
-This step is done in the computation of `newDss` and then comparing it to the original `dss`.
+are both different due to the different values in the definition. We call this a
+"strong" ordering, and comparisons between defintions that produce strong
+orderings are cached across compilation.
 
-Two optimizations:
+However, there are also weak orderings, where the order of definitions in a
+mutual block depends on itself.
 
-1. `names := enum dss` records the ordering information in a map for faster access.
-    Directly using `List.findIdx?` on dss is slow and introduces `Option` everywhere.
-    `names` is used as a custom comparison in `ds.sortByM (cmpDef names)`.
-2. `normDss/normNewDss`. We want to compare if two lists of blocks are equal.
-    Technically blocks are sets and their order doesn't matter, but we have encoded
-    them as lists. To fix this, we sort the list by name before comparing. Note we
-    could maybe also use `List (RBTree ..)` everywhere, but it seemed like a hassle.
+```
+mutual
+  def A : Nat → Nat
+  | 0 => 0
+  | n + 1 => B n + C n + 1
+
+  def B : Nat → Nat
+  | 0 => 0
+  | n + 1 => C n + 1
+
+  def C : Nat → Nat
+  | 0 => 0
+  | n + 1 => A n + 1
+end
+```
+
+Here since any reference to A, B, C has to be compiled into an index, the
+ordering chosen for A, B, C will effect itself, since we compile into
+something that looks, with order [A, B, C] like:
+
+```
+mutual
+  def #1 : Nat → Nat
+  | 0 => 0
+  | n + 1 => #2 n + #3 n + 1
+
+  def #2 : Nat → Nat
+  | 0 => 0
+  | n + 1 => #3 n + 1
+
+  def #3 : Nat → Nat
+  | 0 => 0
+  | n + 1 => #1 n + 1
+end
+```
+
+This is all well and good, but if we chose order `[C, B, A]` then the block
+would compile as
+
+```
+mutual
+  def #1 : Nat → Nat
+  | 0 => 0
+  | n + 1 => #3 n + 1
+
+  def #2 : Nat → Nat
+  | 0 => 0
+  | n + 1 => #1 n + 1
+
+  def #3 : Nat → Nat
+  | 0 => 0
+  | n + 1 => #2 n + #1 n + 1
+end
+```
+
+with completely different hashes. So we need to figure out a canonical order for
+such mutual blocks.
+
+We start by assuming that all definitions in a mutual block are equal and then 
+recursively refining this assumption through successive sorting passes. This
+algorithm bears some similarity to partition refinement:
+```
+classes₀ := [startDefs]
+classes₁ := sortDefs classes₀
+classes₂ := sortDefs classes₁
+classes₍ᵢ₊₁₎ := sortDefs classesᵢ ...
+```
+Initially, `startDefs` is simply the list of definitions we receive from
+`DefinitionVal.all`, sorted by name. We assume that at we will reach some
+fixed-point where `classes₍ᵢ₊₁₎ := classesᵢ` and no further refinement is
+possible (we have not rigourously proven such a fixed point exists, but
+it seams reasonable given that after the first pass to find the strongly ordered
+definitions, the algorithm should only separate partitions into smaller ones)
 -/
-partial def sortPreDefs (dss : List (List PreDefinition)) :
-    CompileM (List (List PreDefinition)) := do
-  let enum (ll : List (List PreDefinition)) :=
-    RBMap.ofList (ll.zipIdx.map fun (xs, n) => xs.map (·.name, n)).flatten
-  let weakOrd := enum dss _
-  let newDss ← (← dss.mapM fun ds =>
-    match ds with
-    | []  => unreachable!
-    | [d] => pure [[d]]
-    | ds  => do pure $ (← List.groupByM (eqDef weakOrd) $
-      ← ds.sortByM (compareDef weakOrd))).joinM
-  -- must normalize, see comments
-  let normDss    := dss.map    fun ds => ds.map (·.name) |>.sort
-  let normNewDss := newDss.map fun ds => ds.map (·.name) |>.sort
-  if normDss == normNewDss then return newDss
-  else sortPreDefs newDss
-
-partial def sortDefs: List PreDefinition -> CompileM (List (List PreDefinition))
-| [] => return []
-| xs => sortDefs' [xs.sortBy (fun x y => compare x.name y.name)]
-
-partial def weakOrdDefs (dss: List (List PreDefinition)) 
-  : CompileM (RBMap Lean.Name Nat compare) := do
-  let mut weakOrd := default
-  for (ds, n) in dss.zipIdx do
-    for d in ds do
-      weakOrd := weakOrd.insert d.name n
-  return weakOrd
-
-partial def sortDefs' (dss: List (List PreDefinition))
+partial def sortDefs (classes : List PreDefinition)
   : CompileM (List (List PreDefinition)) := do
-  let weakOrd <- weakOrdDefs dss
-  let mut dss' : Array (List PreDefinition) := default
-  for ds in dss do
-    match ds with
-    | [] => throw <| .emptyDefsEquivalenceClass dss
-    | [d] => dss' := dss'.push [d]
-    | ds => do
-      let ds' <- ds.sortByM (compareDef weakOrd)
-      let ds' <- List.groupByM (eqDef weakOrd) ds'
-      for d in ds' do
-        let d' <- d.sortByM (fun x y => pure $ compare x.name y.name)
-        dss' := dss'.push d'
-  if dss == dss'.toList
-  then return dss
-  else sortDefs' dss'.toList
-
-
-/-- AST comparison of two Lean opaque definitions.
-  `weakOrd` contains the best known current mutual ordering -/
-partial def compareInd
-  (weakOrd : RBMap Lean.Name Nat compare)
-  (x y: PreInductive)
-  : CompileM Ordering := do
-  let ls := compare x.levelParams.length y.levelParams.length
-  let ts ← compareExpr weakOrd x.levelParams y.levelParams x.type y.type
-  let nps := compare x.numParams y.numParams
-  let nis := compare x.numIndices y.numIndices
-  let ctors <- compareListM compareCtors x.ctors y.ctors
-  let recrs <- compareListM compareRecrs x.recrs y.recrs
-  return concatOrds [ls, ts,nps, nis, ctors, recrs]
+    sortDefsInner [List.sortBy (compare ·.name ·.name) classes] 0
   where
-    compareCtors (x y: Lean.ConstructorVal) : CompileM Ordering := do
-      let ls := compare x.levelParams.length y.levelParams.length
-      let ts <- compareExpr weakOrd x.levelParams y.levelParams x.type y.type
-      let cis := compare x.cidx y.cidx
-      let nps := compare x.numParams y.numParams
-      let nfs := compare x.numFields y.numFields
-      return concatOrds [ls, ts, cis, nps, nfs]
-    compareRecrs (x y: Lean.RecursorVal) : CompileM Ordering := do
-      let ls := compare x.levelParams.length y.levelParams.length
-      let ts <- compareExpr weakOrd x.levelParams y.levelParams x.type y.type
-      let nps := compare x.numParams y.numParams
-      let nis := compare x.numIndices y.numIndices
-      let nmos := compare x.numMotives y.numMotives
-      let nmis := compare x.numMinors y.numMinors
-      let rrs <- compareListM (compareRules x.levelParams y.levelParams) x.rules y.rules
-      let ks := compare x.k y.k
-      return concatOrds [ls, ts, nps, nis, nmos, nmis, rrs, ks]
-    compareRules (xlvls ylvls: List Lean.Name) (x y: Lean.RecursorRule) 
-      : CompileM Ordering := do
-      let nfs := compare x.nfields y.nfields
-      let rs <- compareExpr weakOrd xlvls ylvls x.rhs y.rhs
-      return concatOrds [nfs, rs]
+    eqDef (ctx: Std.HashMap Lean.Name Nat) (x y: PreDefinition) 
+      : CompileM Bool := (· == .eq) <$> compareDef ctx x y
+    sortDefsInner (classes: List (List PreDefinition)) (iter: Nat)
+      : CompileM (List (List PreDefinition)) := do
+      let ctx := defMutCtx classes
+      dbg_trace "sortdefs {iter} classes {repr (classes.map (·.map (·.name)))}";
+      let newClasses ← classes.mapM fun ds =>
+        match ds with
+        | []  => unreachable!
+        | [d] => pure [[d]]
+        | ds  => do pure $ (← List.groupByM (eqDef ctx) $ ← ds.sortByM (compareDef ctx))
+      let newClasses := newClasses.flatten.map (List.sortBy (compare ·.name ·.name))
+      if classes == newClasses then return newClasses
+      else sortDefsInner newClasses (iter + 1)
 
-/-- AST equality between two Lean opaque definitions.
-  `weakOrd` contains the best known current mutual ordering -/
-@[inline] partial def eqInd
-  (weakOrd : RBMap Lean.Name Nat compare)
-  (x y : PreInductive)
-  : CompileM Bool :=
-  return (← compareInd weakOrd x y) == .eq
+/-- AST comparison of two Lean inductives. --/
+partial def compareInd (ctx: Std.HashMap Lean.Name Nat) (x y: PreInductive) 
+  : CompileM Ordering := do
+  --dbg_trace "compareInd {x.name} {y.name}";
+  let key := match compare x.name y.name with
+    | .lt => (x.name, y.name)
+    | _ => (y.name, x.name)
+  match (<- get).eqConst.get? key with
+  | some o => return o
+  | none => do
+    let sorder <- do
+      SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
+      SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
+      SOrder.cmpM (pure ⟨true, compare x.numIndices y.numIndices⟩) <|
+      SOrder.cmpM (pure ⟨true, compare x.ctors.length y.ctors.length⟩) <|
+      SOrder.cmpM (pure ⟨true, compare x.recrs.length y.recrs.length⟩) <|
+      SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type) <|
+      SOrder.cmpM (SOrder.zipM compareCtor x.ctors y.ctors)
+        (SOrder.zipM compareRecr x.recrs y.recrs)
+    if sorder.strong then modify fun stt => { stt with
+        eqConst := stt.eqConst.insert key sorder.ord
+      }
+    --dbg_trace "compareInd {x.name} {y.name} -> {repr sorder.ord}";
+    return sorder.ord
+  where
+    compareCtor (x y: Lean.ConstructorVal) : CompileM SOrder := do
+     --dbg_trace "compareCtor {x.name} {y.name}";
+      let key := match compare x.name y.name with
+        | .lt => (x.name, y.name)
+        | _ => (y.name, x.name)
+      match (<- get).eqConst.get? key with
+      | some o => return ⟨true, o⟩
+      | none => do
+      let sorder <- do
+        SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
+        SOrder.cmpM (pure ⟨true, compare x.cidx y.cidx⟩) <|
+        SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
+        SOrder.cmpM (pure ⟨true, compare x.numFields y.numFields⟩) <|
+          (compareExpr ctx x.levelParams y.levelParams x.type y.type)
+      if sorder.strong then modify fun stt => { stt with
+          eqConst := stt.eqConst.insert key sorder.ord
+        }
+      return sorder
+    compareRecr (x y: Lean.RecursorVal) : CompileM SOrder := do
+      --dbg_trace "compareRecr {x.name} {y.name}";
+      let key := match compare x.name y.name with
+        | .lt => (x.name, y.name)
+        | _ => (y.name, x.name)
+      match (<- get).eqConst.get? key with
+      | some o => return ⟨true, o⟩
+      | none => do
+      let sorder <- do
+        SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
+        SOrder.cmpM (pure ⟨true,compare x.numParams y.numParams⟩) <|
+        SOrder.cmpM (pure ⟨true,compare x.numIndices y.numIndices⟩) <|
+        SOrder.cmpM (pure ⟨true, compare x.numMotives y.numMotives⟩) <|
+        SOrder.cmpM (pure ⟨true,compare x.numMinors y.numMinors⟩) <|
+        SOrder.cmpM (pure ⟨true, compare x.k y.k⟩) <|
+        SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type) <|
+          (SOrder.zipM (compareRule x.levelParams y.levelParams) x.rules y.rules)
+      if sorder.strong then modify fun stt => { stt with
+          eqConst := stt.eqConst.insert key sorder.ord
+        }
+      return sorder
+    compareRule (xlvls ylvls: List Lean.Name) (x y: Lean.RecursorRule)
+      : CompileM SOrder := do
+        SOrder.cmpM (pure ⟨true, compare x.nfields y.nfields⟩)
+          (compareExpr ctx xlvls ylvls x.rhs y.rhs)
 
-partial def sortInds: List PreInductive -> CompileM (List (List PreInductive))
-| [] => return []
-| xs => sortInds' [xs.sortBy (fun x y => compare x.name y.name)]
+--#check List.sortBy (compare ·.name ·.name) [`Test.Ix.Inductives.C, `Test.Ix.Inductives.A, `Test.Ix.Inductives.B]
 
---          e_1                    e_2                         e_k
--- [ [i_1_1, i_1_2, ..., i_1_E1], [i_2_1, i_2_2, ..., i_1_E2], ... [i_k_1, i_k_2, ..., i_k_EK]]
--- let x be the class index, and y be the inductive index within the class
---  i_x_y contains c constructors and r recursors, each with a `cidx`
---  constructor index and a `ridx` recursor index
--- to construct a weak ordering, we need to create a natural number index `n` for each
--- inductive, constructor and recursors in the list of equivalence classes, such
--- that inductives in the same class, constructors with the same cidx, and
--- recursors with the same ridx all have the same weak index
-
-partial def weakOrdInds (iss: List (List PreInductive))
-  : CompileM (RBMap Lean.Name Nat compare) := do
-  let mut weakOrd := default
-  let mut idx := 0
-  for is in iss do
-    let mut maxCtors := 0
-    let mut maxRecrs := 0
-    for i in is do
-      weakOrd := weakOrd.insert i.name idx
-      let numCtors := i.ctors.length
-      let numRecrs := i.recrs.length
-      if numCtors > maxCtors then maxCtors := numCtors
-      if numRecrs > maxRecrs then maxRecrs := numRecrs
-      for (ctor, cidx) in i.ctors.zipIdx do
-        weakOrd := weakOrd.insert ctor.name (idx + 1 + cidx )
-      for (recr, ridx) in i.recrs.zipIdx do
-        weakOrd := weakOrd.insert recr.name (idx + 1 + numCtors + ridx)
-    idx := idx + 1 + maxCtors + maxRecrs
-  return weakOrd
-
-partial def sortInds' (iss: List (List PreInductive))
+/-- `sortInds` recursively sorts a list of inductive datatypes into equivalence
+classes, analogous to `sortDefs`
+--/
+partial def sortInds (classes : (List PreInductive)) 
   : CompileM (List (List PreInductive)) := do
-  let weakOrd <- weakOrdInds iss
-  let mut iss' : Array (List PreInductive) := default
-  for is in iss do
-    match is with
-    | [] => throw <| .emptyIndsEquivalenceClass iss
-    | [i] => iss' := iss'.push [i]
-    | is => do
-      let is' <- is.sortByM (compareInd weakOrd)
-      let is' <- List.groupByM (eqInd weakOrd) is'
-      for i in is' do
-        let i' <- i.sortByM (fun x y => pure $ compare x.name y.name)
-        iss' := iss'.push i'
-  if iss == iss'.toList
-  then return iss
-  else sortInds' iss'.toList
+    sortIndsInner [List.sortBy (compare ·.name ·.name) classes] 0
+  where
+    eqInd (ctx: Std.HashMap Lean.Name Nat) (x y: PreInductive) : CompileM Bool
+      := (· == .eq) <$> compareInd ctx x y
+    sortIndsInner (classes: List (List PreInductive)) (iter: Nat)
+      : CompileM (List (List PreInductive)) := do
+      dbg_trace "sortInds {iter} classes {repr (classes.map (·.map (·.name)))}";
+      let ctx := indMutCtx classes
+      let newClasses ← classes.mapM fun ds =>
+        match ds with
+        | []  => unreachable!
+        | [d] => pure [[d]]
+        | ds  => do pure $ (← List.groupByM (eqInd ctx) $ ← ds.sortByM (compareInd ctx))
+      let newClasses := newClasses.flatten.map (List.sortBy (compare ·.name ·.name))
+      if classes == newClasses then return newClasses
+      else sortIndsInner newClasses (iter + 1)
 
 end
 
@@ -848,9 +864,7 @@ partial def addDef
   let val' <- compileExpr val
   let anonConst := Ix.Const.definition 
     ⟨.anonymous, lvls, typ', .definition, val', .opaque, .safe, []⟩
-  let anonIxon <- match constToIxon anonConst with
-    | .ok (a, _) => pure a
-    | .error e => throw (.transportError e)
+  let (anonIxon,_) <- dematerializeConst anonConst
   let anonAddr <- storeConst anonIxon
   let name := anonAddr.toUniqueName
   let const := 
@@ -954,21 +968,17 @@ def CompileM.runIO (c : CompileM α)
   let seed <- match seed with
     | .none => IO.monoNanosNow
     | .some s => pure s
-  match c.run (.init maxHeartBeats) (.init env seed) with
-  | .ok a stt => do
-    stt.store.forM fun a c => discard $ (Store.forceWriteConst a c).toIO
-    return (a, stt)
-  | .error e _ => throw (IO.userError (<- e.pretty))
+  match <- c.run (.init maxHeartBeats) (.init env seed) with
+  | (.ok a, stt) => return (a, stt)
+  | (.error e, _) => throw (IO.userError (<- e.pretty))
 
 def CompileM.runIO' (c : CompileM α) 
   (stt: CompileState)
   (maxHeartBeats: USize := 200000)
   : IO (α × CompileState) := do
-  match c.run (.init maxHeartBeats) stt with
-  | .ok a stt => do
-    stt.store.forM fun a c => discard $ (Store.forceWriteConst a c).toIO
-    return (a, stt)
-  | .error e _ => throw (IO.userError (<- e.pretty))
+  match <- c.run (.init maxHeartBeats) stt with
+  | (.ok a, stt) => return (a, stt)
+  | (.error e, _) => throw (IO.userError (<- e.pretty))
 
-def compileEnvIO (env: Lean.Environment) : IO CompileState := do
+def compileEnvIO (env: Lean.Environment) : IO (CompileState):= do
   Prod.snd <$> (compileDelta env.getDelta).runIO env
