@@ -95,7 +95,7 @@ content-addresses
 inductive Expr
   | var   (idx: Nat)
   | sort  (univ: Level)
-  | const (name: Lean.Name) (ref: Address) (meta: Address) (univs: List Level)
+  | const (name: Lean.Name) (ref: Address) («meta»: Address) (univs: List Level)
   | rec_  (name: Lean.Name) (idx: Nat) (univs: List Level)
   | app   (func: Expr) (argm: Expr)
   | lam   (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)

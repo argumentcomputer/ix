@@ -13,11 +13,11 @@ namespace Ix.TransportM
 
 structure DematState where
   idx: Nat
-  meta: Ixon.Metadata
+  «meta»: Ixon.Metadata
   deriving Repr
 
 def emptyDematState : DematState := 
-  { idx := 0, meta := { map := Batteries.RBMap.empty }}
+  { idx := 0, «meta» := { map := Batteries.RBMap.empty }}
 
 inductive TransportError
 | natTooBig (idx: Nat) (x: Nat)
@@ -48,7 +48,7 @@ structure RematState where
 def emptyRematState : RematState := { idx := 0 }
 
 structure RematCtx where
-  meta: Ixon.Metadata
+  «meta»: Ixon.Metadata
 
 abbrev RematM := ReaderT RematCtx (EStateM TransportError RematState)
 
@@ -76,7 +76,7 @@ def dematIncr : DematM Nat := dematIncrN 1
 def dematMeta (node: List Ixon.Metadatum): DematM Unit := do
   let n <- (·.idx) <$> get
   modify fun stt =>
-    { stt with meta :=
+    { stt with «meta» :=
       { stt.meta with map := stt.meta.map.insert n node } }
 
 partial def dematUniv : Ix.Level -> DematM Ixon.Univ
@@ -448,7 +448,7 @@ def rematerialize (c m: Ixon.Const) : Except TransportError Ix.Const := do
   let m <- match m with
   | .meta m => pure m
   | x => throw <| .expectedMetadata x
-  match ((rematConst c).run { meta := m }).run emptyRematState with
+  match ((rematConst c).run { «meta» := m }).run emptyRematState with
     | .ok a _ => return a
     | .error e _ => throw e
 

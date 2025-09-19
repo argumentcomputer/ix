@@ -859,12 +859,12 @@ partial def addDef
     tryAddLeanDef (makeLeanDef a.toUniqueName lvls typ val)
     return (a, m)
 
-partial def commitConst (anon meta: Address)
+partial def commitConst (anon «meta»: Address)
   : CompileM (Address × Address) := do
   let secret <- freshSecret
   let comm := .comm ⟨secret, anon⟩
   let commAddr <- storeConst comm
-  let commMeta := .comm ⟨secret, meta⟩
+  let commMeta := .comm ⟨secret, «meta»⟩
   let commMetaAddr <- storeConst commMeta
   modify fun stt => { stt with
     comms := stt.comms.insert commAddr.toUniqueName (commAddr, commMetaAddr)

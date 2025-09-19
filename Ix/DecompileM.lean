@@ -18,7 +18,7 @@ namespace Ix.Decompile
 structure Named where
   name: Lean.Name
   cont: Address
-  meta: Address
+  «meta»: Address
 deriving Inhabited, Repr
 
 instance : ToString Named where
@@ -113,26 +113,26 @@ inductive DecompileError
   (idx: Nat) (got: Nat)
 | unknownMutual 
   (curr: Named) (ctx: RBMap Lean.Name Nat compare) (exp: Lean.Name) (idx: Nat)
-| transport (curr: Named) (err: TransportError) (cont meta: Address)
+| transport (curr: Named) (err: TransportError) (cont «meta»: Address)
 | unknownName (curr: Named) (name: Lean.Name)
 | unknownStoreAddress (curr: Named) (exp: Address)
 | expectedIxonMetadata (curr: Named) (exp: Address) (got: Ixon.Const)
 | badProjection
-  (curr: Named) (name: Lean.Name) (cont meta: Address) (msg: String)
+  (curr: Named) (name: Lean.Name) (cont «meta»: Address) (msg: String)
 | nonCongruentInductives (curr: Named) (x y: Ix.Inductive)
 | nameNotInBlockNames
-  (curr: Named) (block: BlockNames) (name: Lean.Name) (cont meta: Address)
+  (curr: Named) (block: BlockNames) (name: Lean.Name) (cont «meta»: Address)
 | nameNotInBlock
-  (curr: Named) (block: Block) (name: Lean.Name) (cont meta: Address)
+  (curr: Named) (block: Block) (name: Lean.Name) (cont «meta»: Address)
 | mismatchedName
-  (curr: Named) (exp: Lean.Name) (got: Lean.Name) (cont meta: Address)
+  (curr: Named) (exp: Lean.Name) (got: Lean.Name) (cont «meta»: Address)
 | expectedNameInBlock
-  (curr: Named) (exp: Lean.Name) (got: BlockNames) (cont meta: Address)
-| expectedDefnBlock (curr: Named) (exp: Lean.Name) (got: Block) (cont meta: Address)
-| expectedMutDefBlock (curr: Named) (got: BlockNames) (cont meta: Address)
-| expectedMutIndBlock (curr: Named) (got: BlockNames) (cont meta: Address)
-| expectedMutIndConst (curr: Named) (got: Ix.Const) (cont meta: Address)
-| expectedMutDefConst (curr: Named) (got: Ix.Const) (cont meta: Address)
+  (curr: Named) (exp: Lean.Name) (got: BlockNames) (cont «meta»: Address)
+| expectedDefnBlock (curr: Named) (exp: Lean.Name) (got: Block) (cont «meta»: Address)
+| expectedMutDefBlock (curr: Named) (got: BlockNames) (cont «meta»: Address)
+| expectedMutIndBlock (curr: Named) (got: BlockNames) (cont «meta»: Address)
+| expectedMutIndConst (curr: Named) (got: Ix.Const) (cont «meta»: Address)
+| expectedMutDefConst (curr: Named) (got: Ix.Const) (cont «meta»: Address)
 | overloadedConstants (curr: Named) (x y: Lean.ConstantInfo)
 | todo
 deriving Repr
@@ -193,9 +193,9 @@ def withMutCtx (mutCtx : RBMap Lean.Name Nat compare)
   : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with mutCtx := mutCtx }
 
-def withNamed (name: Lean.Name) (cont meta: Address)
+def withNamed (name: Lean.Name) (cont «meta»: Address)
   : DecompileM α -> DecompileM α :=
-  withReader $ fun c => { c with current := ⟨name, cont, meta⟩ }
+  withReader $ fun c => { c with current := ⟨name, cont, «meta»⟩ }
 
 -- reset local context
 def resetCtx : DecompileM α -> DecompileM α :=
@@ -294,11 +294,11 @@ partial def decompileExpr: Ix.Expr → DecompileM Lean.Expr
       <*> decompileExpr v
       <*> withBinder n (decompileExpr b)
       <*> pure nd
-| .proj n cont meta i e => do
-    let _ <- ensureBlock n cont meta
+| .proj n cont «meta» i e => do
+    let _ <- ensureBlock n cont «meta»
     Lean.mkProj n i <$> decompileExpr e
-| .const n cont meta us => do
-    let _ <- ensureBlock n cont meta
+| .const n cont «meta» us => do
+    let _ <- ensureBlock n cont «meta»
     return Lean.mkConst n (<- us.mapM decompileLevel)
 | .rec_ n i us => do match (<- read).mutCtx.find? n with
   | some i' =>
@@ -315,10 +315,10 @@ partial def ensureBlock (name: Lean.Name) (c m: Address) : DecompileM BlockNames
     let cont : Ixon.Const <- match (<- read).store.find? c with
       | .some ixon => pure ixon
       | .none => throw <| .unknownStoreAddress (<- read).current c
-    let meta : Ixon.Const <- match (<- read).store.find? m with
+    let «meta» : Ixon.Const <- match (<- read).store.find? m with
       | .some ixon => pure ixon
       | .none => throw <| .unknownStoreAddress (<- read).current m
-    match rematerialize cont meta with
+    match rematerialize cont «meta» with
     | .ok const  => do
       let blockNames <- withNamed name c m <| decompileConst const
       if !blockNames.contains name then
@@ -411,7 +411,7 @@ partial def decompileConst : Ix.Const -> DecompileM BlockNames
 end
 
 def decompileEnv : DecompileM Unit := do
-  for (n, (anon, meta)) in (<- read).names do
-    let _ <- ensureBlock n anon meta
+  for (n, (anon, «meta»)) in (<- read).names do
+    let _ <- ensureBlock n anon «meta»
 
 end Decompile
