@@ -16,6 +16,6 @@ def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["run", "install"]) none
   let ixTestDir := (← IO.currentDir) / "ix_test"
   Tests.Cli.run "lake" (#["build"]) (some ixTestDir)
-  Tests.Cli.run "ix" (#["store", "IxTest.lean"]) (some ixTestDir)
-  Tests.Cli.run "ix" (#["prove", "IxTest.lean", "one"]) (some ixTestDir)
+  Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
+  Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0
