@@ -33,6 +33,9 @@ lean_exe Tests.Main where
 
 end Tests
 
+lean_lib IxTest where
+  srcDir := "ix_test"
+
 section IxApplications
 
 section Benchmarks
