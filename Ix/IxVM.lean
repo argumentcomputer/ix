@@ -32,6 +32,75 @@ def ixVM := ⟦
       * eq_zero(chunk_count[7])
   }
 
+  fn assign_block_value(block: [[G; 4]; 16], idx: G, val: G) -> [[G; 4]; 16] {
+    match idx {
+      0 => set(block, 0, set(block[0], 0, val)),
+      1 => set(block, 0, set(block[0], 1, val)),
+      2 => set(block, 0, set(block[0], 2, val)),
+      3 => set(block, 0, set(block[0], 3, val)),
+      4 => set(block, 1, set(block[1], 0, val)),
+      5 => set(block, 1, set(block[1], 1, val)),
+      6 => set(block, 1, set(block[1], 2, val)),
+      7 => set(block, 1, set(block[1], 3, val)),
+      8 => set(block, 2, set(block[2], 0, val)),
+      9 => set(block, 2, set(block[2], 1, val)),
+      10 => set(block, 2, set(block[2], 2, val)),
+      11 => set(block, 2, set(block[2], 3, val)),
+      12 => set(block, 3, set(block[3], 0, val)),
+      13 => set(block, 3, set(block[3], 1, val)),
+      14 => set(block, 3, set(block[3], 2, val)),
+      15 => set(block, 3, set(block[3], 3, val)),
+      16 => set(block, 4, set(block[4], 0, val)),
+      17 => set(block, 4, set(block[4], 1, val)),
+      18 => set(block, 4, set(block[4], 2, val)),
+      19 => set(block, 4, set(block[4], 3, val)),
+      20 => set(block, 5, set(block[5], 0, val)),
+      21 => set(block, 5, set(block[5], 1, val)),
+      22 => set(block, 5, set(block[5], 2, val)),
+      23 => set(block, 5, set(block[5], 3, val)),
+      24 => set(block, 6, set(block[6], 0, val)),
+      25 => set(block, 6, set(block[6], 1, val)),
+      26 => set(block, 6, set(block[6], 2, val)),
+      27 => set(block, 6, set(block[6], 3, val)),
+      28 => set(block, 7, set(block[7], 0, val)),
+      29 => set(block, 7, set(block[7], 1, val)),
+      30 => set(block, 7, set(block[7], 2, val)),
+      31 => set(block, 7, set(block[7], 3, val)),
+      32 => set(block, 8, set(block[8], 0, val)),
+      33 => set(block, 8, set(block[8], 1, val)),
+      34 => set(block, 8, set(block[8], 2, val)),
+      35 => set(block, 8, set(block[8], 3, val)),
+      36 => set(block, 9, set(block[9], 0, val)),
+      37 => set(block, 9, set(block[9], 1, val)),
+      38 => set(block, 9, set(block[9], 2, val)),
+      39 => set(block, 9, set(block[9], 3, val)),
+      40 => set(block, 10, set(block[10], 0, val)),
+      41 => set(block, 10, set(block[10], 1, val)),
+      42 => set(block, 10, set(block[10], 2, val)),
+      43 => set(block, 10, set(block[10], 3, val)),
+      44 => set(block, 11, set(block[11], 0, val)),
+      45 => set(block, 11, set(block[11], 1, val)),
+      46 => set(block, 11, set(block[11], 2, val)),
+      47 => set(block, 11, set(block[11], 3, val)),
+      48 => set(block, 12, set(block[12], 0, val)),
+      49 => set(block, 12, set(block[12], 1, val)),
+      50 => set(block, 12, set(block[12], 2, val)),
+      51 => set(block, 12, set(block[12], 3, val)),
+      52 => set(block, 13, set(block[13], 0, val)),
+      53 => set(block, 13, set(block[13], 1, val)),
+      54 => set(block, 13, set(block[13], 2, val)),
+      55 => set(block, 13, set(block[13], 3, val)),
+      56 => set(block, 14, set(block[14], 0, val)),
+      57 => set(block, 14, set(block[14], 1, val)),
+      58 => set(block, 14, set(block[14], 2, val)),
+      59 => set(block, 14, set(block[14], 3, val)),
+      60 => set(block, 15, set(block[15], 0, val)),
+      61 => set(block, 15, set(block[15], 1, val)),
+      62 => set(block, 15, set(block[15], 2, val)),
+      63 => set(block, 15, set(block[15], 3, val)),
+    }
+  }
+
   fn blake3_compress_chunks(
     input: ByteStream,
     block_buffer: [[G; 4]; 16],
@@ -63,7 +132,7 @@ def ixVM := ⟦
       (ByteStream.Cons(head, input_ptr), 63, 1023) =>
         let input = load(input_ptr);
         let flags = [0, 0, 0, 0]; -- TODO: FIX THE BUG IN -- ROOT * byte_stream_is_empty(input) * chunk_count_is_zero(chunk_count) + CHUNK_END];
-        -- let block_buffer = assign(block_buffer, block_index, head); -- TODO
+        let block_buffer = assign_block_value(block_buffer, block_index, head);
         let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
         let z = [0, 0, 0, 0];
         let empty_buffer = [z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z];
@@ -72,7 +141,7 @@ def ixVM := ⟦
 
       (ByteStream.Cons(head, input_ptr), 63, _) =>
         let input = load(input_ptr);
-        -- let block_buffer = assign(block_buffer, block_index, head); -- TODO
+        let block_buffer = assign_block_value(block_buffer, block_index, head);
         let tmp = CHUNK_END + ROOT * chunk_count_is_zero(chunk_count);
         let flags = [0, 0, 0, byte_stream_is_empty(input) * tmp + CHUNK_START * eq_zero(chunk_index - block_index)];
         let block_digest = blake3_compress(
@@ -96,7 +165,7 @@ def ixVM := ⟦
 
       (ByteStream.Cons(head, input_ptr), _, _) =>
         let input = load(input_ptr);
-        -- let block_buffer = assign(block_buffer, block_index, head); -- TODO
+        let block_buffer = assign_block_value(block_buffer, block_index, head);
         blake3_compress_chunks(
             input,
             block_buffer,
