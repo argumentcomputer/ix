@@ -132,8 +132,10 @@ partial def elabTrm : ElabStxCat `trm
     let data ← mkAppM ``Data.field #[← elabG n]
     mkAppM ``Term.data #[data]
   | `(trm| ($t:trm $[, $ts:trm]*)) => do
-    let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term true]
-    mkAppM ``Term.data #[data]
+    if ts.isEmpty then elabTrm t
+    else
+      let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term true]
+      mkAppM ``Term.data #[data]
   | `(trm| [$t:trm $[, $ts:trm]*]) => do
     let data ← mkAppM ``Data.array #[← elabList t ts elabTrm ``Term true]
     mkAppM ``Term.data #[data]
