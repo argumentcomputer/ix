@@ -50,8 +50,14 @@ abbrev LayoutM := StateM LayoutMState
 @[inline] def pushDegrees (degrees : Array Nat) : LayoutM Unit :=
   modify fun stt => { stt with degrees := stt.degrees ++ degrees }
 
+@[inline] def getDegrees : LayoutM $ Array Nat :=
+  get >>= (pure ·.degrees)
+
 @[inline] def getDegree (v : ValIdx) : LayoutM Nat :=
   get >>= fun stt => pure stt.degrees[v]!
+
+@[inline] def setDegrees (degrees : Array Nat) : LayoutM Unit :=
+  modify fun stt => { stt with degrees }
 
 def getSharedData : LayoutM SharedData :=
   get >>= fun stt =>
@@ -128,11 +134,13 @@ partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   | .match _ branches defaultBranch =>
     let initSharedData ← getSharedData
     let mut maximalSharedData := initSharedData
+    let mut degrees ← getDegrees
     for (_, block) in branches do
       setSharedData initSharedData
       blockLayout block
       let blockSharedData ← getSharedData
       maximalSharedData := maximalSharedData.maximals blockSharedData
+      setDegrees degrees
     if let some defaultBlock := defaultBranch then
       setSharedData initSharedData
       -- An auxiliary per case for proving inequality
@@ -140,6 +148,7 @@ partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
       blockLayout defaultBlock
       let defaultBlockSharedData ← getSharedData
       maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
+      setDegrees degrees
     setSharedData maximalSharedData
   | .return .. =>
     bumpSelectors

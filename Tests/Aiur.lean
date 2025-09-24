@@ -20,6 +20,13 @@ def toplevel := ⟦
     x * y
   }
 
+  fn match_mul(x: G) -> G {
+    match x {
+      0 => 0,
+      _ => x * x * x,
+    }
+  }
+
   fn eq_zero_dummy(a: G, b: G) -> [G; 4] {
     let c = 0;
     let d = 101;
@@ -163,6 +170,7 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `proj1 #[42, 64] #[42],
     .noIO `sum #[3, 5] #[8],
     .noIO `prod #[3, 5] #[15],
+    .noIO `match_mul #[2] #[8],
     .noIO `eq_zero_dummy #[0, 37] #[1, 0, 1, 0],
     .noIO `store_and_load #[42] #[42],
     .noIO `is_0_even #[] #[1],
