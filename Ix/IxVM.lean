@@ -6,6 +6,16 @@ def ixVM := ⟦
     Nil
   }
 
+  fn read_byte_stream(idx: G, len: G) -> ByteStream {
+    match len {
+      0 => ByteStream.Nil,
+      _ =>
+        let tail = read_byte_stream(idx + 1, len - 1);
+        let [byte] = io_read(idx, 1);
+        ByteStream.Cons(byte, store(tail)),
+    }
+  }
+
   enum Layer {
     Push(&Layer, [[G; 4]; 8]),
     Nil
@@ -505,5 +515,13 @@ def ixVM := ⟦
       },
       _ => [b0 + 1, b1, b2, b3, b4, b5, b6, b7],
     }
+  }
+
+  /- # Test entrypoints -/
+
+  fn blake3_test() -> [[G; 4]; 8] {
+    let (idx, len) = io_get_info([0]);
+    let byte_stream = read_byte_stream(idx, len);
+    blake3(byte_stream)
   }
 ⟧

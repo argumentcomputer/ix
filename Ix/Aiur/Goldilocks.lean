@@ -10,4 +10,12 @@ abbrev G := { u : UInt64 // u < gSize }
 
 instance : OfNat G n := ⟨G.ofNat n⟩
 
+@[inline] def G.ofUInt8 (u8 : UInt8) : G :=
+  let u64 := u8.toUInt64
+  have h : u64 < gSize := by
+    have lt256 : u64 < 256 := by
+      simpa [UInt64.lt_iff_toNat_lt] using UInt8.toNat_lt _
+    exact UInt64.lt_trans lt256 (by decide)
+  ⟨u64, h⟩
+
 end Aiur

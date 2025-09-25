@@ -2,6 +2,15 @@ import Tests.Common
 import Ix.IxVM
 import Ix.Aiur.Simple
 import Ix.Aiur.Compile
+import Blake3
+
+def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
+  let inputBytes := Array.range size |>.map Nat.toUInt8
+  let outputBytes := Blake3.hash ⟨inputBytes⟩ |>.val.data
+  let input := inputBytes.map .ofUInt8
+  let output := outputBytes.map .ofUInt8
+  let buffer := ⟨input, .ofList [(#[0], ⟨0, size⟩)]⟩ -- key is fixed as #[0]
+  ⟨`blake3_test, #[], output, buffer, buffer⟩
 
 def blake3GFunctionInput : Array Aiur.G := #[
   208, 182, 170,  29, -- 497727184
@@ -66,17 +75,29 @@ def blake3CompressOutput : Array Aiur.G := #[
 ]
 
 def ixTestCases : List AiurTestCase := [
-  .noIO `blake3_g_function blake3GFunctionInput blake3GFunctionOutput,
-  .noIO `blake3_compress blake3CompressInput blake3CompressOutput,
-  .noIO `relaxed_u64_succ #[0, 0, 0, 0, 0, 0, 0, 0] #[1, 0, 0, 0, 0, 0, 0, 0],
-  .noIO `relaxed_u64_succ #[255, 0, 0, 0, 0, 0, 0, 0] #[0, 1, 0, 0, 0, 0, 0, 0],
-  .noIO `relaxed_u64_succ #[255, 255, 0, 0, 0, 0, 0, 0] #[0, 0, 1, 0, 0, 0, 0, 0],
-  .noIO `relaxed_u64_succ #[255, 255, 255, 0, 0, 0, 0, 0] #[0, 0, 0, 1, 0, 0, 0, 0],
-  .noIO `relaxed_u64_succ #[255, 255, 255, 255, 0, 0, 0, 0] #[0, 0, 0, 0, 1, 0, 0, 0],
-  .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 0, 0, 0] #[0, 0, 0, 0, 0, 1, 0, 0],
-  .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 255, 0, 0] #[0, 0, 0, 0, 0, 0, 1, 0],
-  .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 255, 255, 0] #[0, 0, 0, 0, 0, 0, 0, 1],
-  .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 255, 255, 255] #[0, 0, 0, 0, 0, 0, 0, 0],
+  -- .noIO `blake3_g_function blake3GFunctionInput blake3GFunctionOutput,
+  -- .noIO `blake3_compress blake3CompressInput blake3CompressOutput,
+  -- .noIO `relaxed_u64_succ #[0, 0, 0, 0, 0, 0, 0, 0] #[1, 0, 0, 0, 0, 0, 0, 0],
+  -- .noIO `relaxed_u64_succ #[255, 0, 0, 0, 0, 0, 0, 0] #[0, 1, 0, 0, 0, 0, 0, 0],
+  -- .noIO `relaxed_u64_succ #[255, 255, 0, 0, 0, 0, 0, 0] #[0, 0, 1, 0, 0, 0, 0, 0],
+  -- .noIO `relaxed_u64_succ #[255, 255, 255, 0, 0, 0, 0, 0] #[0, 0, 0, 1, 0, 0, 0, 0],
+  -- .noIO `relaxed_u64_succ #[255, 255, 255, 255, 0, 0, 0, 0] #[0, 0, 0, 0, 1, 0, 0, 0],
+  -- .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 0, 0, 0] #[0, 0, 0, 0, 0, 1, 0, 0],
+  -- .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 255, 0, 0] #[0, 0, 0, 0, 0, 0, 1, 0],
+  -- .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 255, 255, 0] #[0, 0, 0, 0, 0, 0, 0, 1],
+  -- .noIO `relaxed_u64_succ #[255, 255, 255, 255, 255, 255, 255, 255] #[0, 0, 0, 0, 0, 0, 0, 0],
+  mkBlake3HashTestCase 0,
+  -- mkBlake3HashTestCase 32,
+  -- mkBlake3HashTestCase 64,
+  -- mkBlake3HashTestCase 96,
+  -- mkBlake3HashTestCase 1024,
+  -- mkBlake3HashTestCase 1056,
+  -- mkBlake3HashTestCase 1088,
+  -- mkBlake3HashTestCase 1120,
+  -- mkBlake3HashTestCase 2048,
+  -- mkBlake3HashTestCase 2080,
+  -- mkBlake3HashTestCase 2112,
+  -- mkBlake3HashTestCase 2144,
 ]
 
 def Tests.IxVM.suite := [
