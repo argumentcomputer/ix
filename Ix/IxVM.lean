@@ -11,6 +11,60 @@ def ixVM := ⟦
     Nil
   }
 
+  enum MaybeDigest {
+    None,
+    Some([[G; 4]; 8])
+  }
+
+  fn blake3(input: ByteStream) -> [[G; 4]; 8] {
+    let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
+    blake3_compress_layer(blake3_compress_chunks(input, [[0; 4]; 16], 0, 0, [0; 8], IV, Layer.Nil))
+  }
+
+  fn blake3_next_layer(layer: Layer, digest: [[G; 4]; 8], root: G) -> (MaybeDigest, Layer) {
+    match layer {
+      Layer.Nil => (MaybeDigest.Some(digest), Layer.Nil),
+      Layer.Push(layer, other) =>
+        let (last, new_layer) = blake3_next_layer(load(layer), other, 0);
+        match last {
+          MaybeDigest.None => (MaybeDigest.Some(other), new_layer),
+          MaybeDigest.Some(last) =>
+            let PARENT = 4;
+            let ROOT = 8;
+            match new_layer {
+              Layer.Nil =>
+                let flags = [0, 0, 0, PARENT + ROOT * root];
+                let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
+                let [x0, x1, x2, x3, x4, x5, x6, x7] = last;
+                let [x8, x9, x10, x11, x12, x13, x14, x15] = other;
+                let blocks = [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15];
+                let digest = blake3_compress(IV, blocks, [0; 8], [0, 0, 0, 64], flags);
+                (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
+              _ =>
+                let flags = [0, 0, 0, PARENT];
+                let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
+                let [x0, x1, x2, x3, x4, x5, x6, x7] = last;
+                let [x8, x9, x10, x11, x12, x13, x14, x15] = other;
+                let blocks = [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15];
+                let digest = blake3_compress(IV, blocks, [0; 8], [0, 0, 0, 64], flags);
+                (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
+            },
+        },
+    }
+  }
+
+  fn blake3_compress_layer(layer: Layer) -> [[G; 4]; 8] {
+    let Layer.Push(rest, digest) = layer;
+    match load(rest) {
+      Layer.Nil => digest,
+      rest =>
+        let (last, new_merkle) = blake3_next_layer(rest, digest, 1);
+        match last {
+          MaybeDigest.None => blake3_compress_layer(new_merkle),
+          MaybeDigest.Some(last) => blake3_compress_layer(Layer.Push(store(new_merkle), last)),
+        },
+    }
+  }
 
   -- TODO remove this function
   fn byte_stream_is_empty(input: ByteStream) -> G {
@@ -354,7 +408,9 @@ def ixVM := ⟦
     new_state
   }
 
-  -- TODO: `block_len` and `flags` could be single bytes
+  -- TODO:
+  -- `block_len` and `flags` could be single bytes.
+  -- `block_words` could be two arguments of type [[G; 4]; 8]
   fn blake3_compress(
     chaining_value: [[G; 4]; 8],
     block_words: [[G; 4]; 16],
