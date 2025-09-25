@@ -131,11 +131,10 @@ def ixVM := ⟦
 
       (ByteStream.Cons(head, input_ptr), 63, 1023) =>
         let input = load(input_ptr);
-        let flags = [0, 0, 0, 0]; -- TODO: FIX THE BUG IN -- ROOT * byte_stream_is_empty(input) * chunk_count_is_zero(chunk_count) + CHUNK_END];
+        let flags = [0, 0, 0, ROOT * byte_stream_is_empty(input) * chunk_count_is_zero(chunk_count) + CHUNK_END];
         let block_buffer = assign_block_value(block_buffer, block_index, head);
         let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-        let z = [0, 0, 0, 0];
-        let empty_buffer = [z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z];
+        let empty_buffer = [[0; 4]; 16];
         let layer = Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, [0, 0, 0, 64], flags));
         blake3_compress_chunks(input, empty_buffer, 0, 0, relaxed_u64_succ(chunk_count), IV, layer),
 
@@ -151,8 +150,7 @@ def ixVM := ⟦
             [0, 0, 0, 64],
             flags
         );
-        let z = [0, 0, 0, 0];
-        let empty_buffer = [z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z];
+        let empty_buffer = [[0; 4]; 16];
         blake3_compress_chunks(
             input,
             empty_buffer,

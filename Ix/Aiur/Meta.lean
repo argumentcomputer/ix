@@ -91,6 +91,7 @@ syntax ("." noWs)? ident                                      : trm
 syntax num                                                    : trm
 syntax "(" trm (", " trm)* ")"                                : trm
 syntax "[" trm (", " trm)* "]"                                : trm
+syntax "[" trm "; " num "]"                                   : trm
 syntax "return " trm                                          : trm
 syntax "let " pattern (":" typ)? " = " trm "; " trm           : trm
 syntax "match " trm " { " (pattern " => " trm ", ")+ " }"     : trm
@@ -138,6 +139,10 @@ partial def elabTrm : ElabStxCat `trm
       mkAppM ``Term.data #[data]
   | `(trm| [$t:trm $[, $ts:trm]*]) => do
     let data ← mkAppM ``Data.array #[← elabList t ts elabTrm ``Term true]
+    mkAppM ``Term.data #[data]
+  | `(trm| [$t:trm; $n:num]) => do
+    let ts ← mkArrayLit (mkConst ``Term) (.replicate n.getNat (← elabTrm t))
+    let data ← mkAppM ``Data.array #[ts]
     mkAppM ``Term.data #[data]
   | `(trm| return $t:trm) => do
     mkAppM ``Term.ret #[← elabTrm t]
