@@ -117,6 +117,29 @@ def toplevel := ⟦
     }
   }
 
+  enum List {
+    Nil,
+    Cons(G, &List)
+  }
+
+  fn g_to_list(g: G) -> List {
+    match g {
+      0 => List.Nil,
+      _ =>
+        let tail = g_to_list(g - 1);
+        List.Cons(g, store(tail)),
+    }
+  }
+
+  fn complex_match(x: G, y: G) -> G {
+    let x_list = g_to_list(x);
+    match (x_list, y) {
+      (List.Cons(g, _), 0) => g,
+      (List.Nil, n) => n,
+      (List.Cons(g, _), n) => g * n,
+    }
+  }
+
   fn projections(as: (G, G, G, G, G)) -> (G, G) {
     (proj(as, 1), proj(as, 3))
   }
@@ -187,6 +210,9 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `fibonacci #[0] #[1],
     .noIO `fibonacci #[1] #[1],
     .noIO `fibonacci #[6] #[13],
+    .noIO `complex_match #[3, 0] #[3],
+    .noIO `complex_match #[0, 4] #[4],
+    .noIO `complex_match #[3, 4] #[12],
     .noIO `projections #[1, 2, 3, 4, 5] #[2, 4],
     .noIO `slice_and_get #[1, 2, 3, 4, 5] #[2, 4],
     .noIO `deconstruct_tuple #[1, 2, 3, 4, 5] #[2, 4],
