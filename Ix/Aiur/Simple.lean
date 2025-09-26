@@ -12,10 +12,11 @@ partial def simplifyTerm (decls : Decls) : Term → Term
   -- A sequencing operation would be needed.
   | .let .wildcard _ body => recr body
   | .let pat val body =>
-    let mtch := .match (.var tmpVar) [(pat, recr body)]
+    let mtch := .match (.var tmpVar) [(pat, body)]
     .let (.var tmpVar) (recr val) (recr mtch)
   | .match term branches =>
-    let (tree, _diag) := runMatchCompiler decls term branches
+    let simpBranches := branches.map (fun (pat, term) => (pat, recr term))
+    let (tree, _diag) := runMatchCompiler decls (recr term) simpBranches
     match decisionToTerm tree with
     | some term => term
     | none => unreachable!
