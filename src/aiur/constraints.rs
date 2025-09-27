@@ -297,7 +297,7 @@ impl Op {
                 let output = (0..*output_size).map(|_| {
                     let col = state.next_auxiliary();
                     state.map.push((col.clone(), 1));
-                    col
+                    sel.clone() * col
                 });
                 lookup_args.extend(output);
 
@@ -337,7 +337,7 @@ impl Op {
                 let values = (0..*size).map(|_| {
                     let col = state.next_auxiliary();
                     state.map.push((col.clone(), 1));
-                    col
+                    sel.clone() * col
                 });
                 lookup_args.extend(values);
 
