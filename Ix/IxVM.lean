@@ -205,8 +205,10 @@ def ixVM := ⟦
       (ByteStream.Cons(head, input_ptr), 63, _) =>
         let input = load(input_ptr);
         let block_buffer = assign_block_value(block_buffer, block_index, head);
-        let tmp = CHUNK_END + ROOT * chunk_count_is_zero(chunk_count);
-        let flags = [0, 0, 0, byte_stream_is_empty(input) * tmp + CHUNK_START * eq_zero(chunk_index - block_index)];
+        let chunk_end_flag = byte_stream_is_empty(input) * CHUNK_END;
+        let root_flag = byte_stream_is_empty(input) * chunk_count_is_zero(chunk_count) * ROOT;
+        let chunk_start_flag = eq_zero(chunk_index - block_index) * CHUNK_START;
+        let flags = [0, 0, 0, chunk_end_flag + root_flag + chunk_start_flag];
         let block_digest = blake3_compress(
             block_digest,
             block_buffer,
