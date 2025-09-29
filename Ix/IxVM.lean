@@ -42,19 +42,16 @@ def ixVM := ⟦
             let PARENT = 4;
             let ROOT = 8;
             let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
+            let [x0, x1, x2, x3, x4, x5, x6, x7] = last;
+            let [x8, x9, x10, x11, x12, x13, x14, x15] = other;
+            let blocks = [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15];
             match new_layer {
               Layer.Nil =>
                 let flags = [PARENT + ROOT * root, 0, 0, 0];
-                let [x0, x1, x2, x3, x4, x5, x6, x7] = last;
-                let [x8, x9, x10, x11, x12, x13, x14, x15] = other;
-                let blocks = [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15];
                 let digest = blake3_compress(IV, blocks, [0; 8], [64, 0, 0, 0], flags);
                 (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
               _ =>
                 let flags = [PARENT, 0, 0, 0];
-                let [x0, x1, x2, x3, x4, x5, x6, x7] = last;
-                let [x8, x9, x10, x11, x12, x13, x14, x15] = other;
-                let blocks = [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15];
                 let digest = blake3_compress(IV, blocks, [0; 8], [64, 0, 0, 0], flags);
                 (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
             },
