@@ -91,6 +91,7 @@ syntax ("." noWs)? ident                                      : trm
 syntax num                                                    : trm
 syntax "(" trm (", " trm)* ")"                                : trm
 syntax "[" trm (", " trm)* "]"                                : trm
+syntax "[" trm "; " num "]"                                   : trm
 syntax "return " trm                                          : trm
 syntax "let " pattern (":" typ)? " = " trm "; " trm           : trm
 syntax "match " trm " { " (pattern " => " trm ", ")+ " }"     : trm
@@ -118,6 +119,7 @@ syntax "u8_shift_left" "(" trm ")"                            : trm
 syntax "u8_shift_right" "(" trm ")"                           : trm
 syntax "u8_xor" "(" trm ", " trm ")"                          : trm
 syntax "u8_add" "(" trm ", " trm ")"                          : trm
+syntax "dbg!" "(" str (", " trm)? ")" ";" (trm)?              : trm
 
 partial def elabTrm : ElabStxCat `trm
   | `(trm| .$i:ident) => do
@@ -132,10 +134,16 @@ partial def elabTrm : ElabStxCat `trm
     let data ← mkAppM ``Data.field #[← elabG n]
     mkAppM ``Term.data #[data]
   | `(trm| ($t:trm $[, $ts:trm]*)) => do
-    let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term true]
-    mkAppM ``Term.data #[data]
+    if ts.isEmpty then elabTrm t
+    else
+      let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term true]
+      mkAppM ``Term.data #[data]
   | `(trm| [$t:trm $[, $ts:trm]*]) => do
     let data ← mkAppM ``Data.array #[← elabList t ts elabTrm ``Term true]
+    mkAppM ``Term.data #[data]
+  | `(trm| [$t:trm; $n:num]) => do
+    let ts ← mkArrayLit (mkConst ``Term) (.replicate n.getNat (← elabTrm t))
+    let data ← mkAppM ``Data.array #[ts]
     mkAppM ``Term.data #[data]
   | `(trm| return $t:trm) => do
     mkAppM ``Term.ret #[← elabTrm t]
@@ -201,6 +209,11 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.u8Xor #[← elabTrm i, ← elabTrm j]
   | `(trm| u8_add($i:trm, $j:trm)) => do
     mkAppM ``Term.u8Add #[← elabTrm i, ← elabTrm j]
+  | `(trm| dbg!($label:str $[, $t:trm]?); $[$ret:trm]?) => do
+    let t ← match t with
+      | none => mkAppOptM ``Option.none #[some (mkConst ``Term)]
+      | some t => mkAppM ``Option.some #[← elabTrm t]
+    mkAppM ``Term.debug #[mkStrLit label.getString, t, ← elabRet ret]
   | stx => throw $ .error stx "Invalid syntax for term"
 where elabRet : Option (TSyntax `trm) → TermElabM Expr
   | none => pure $ mkConst ``Term.unit

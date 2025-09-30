@@ -269,6 +269,11 @@ partial def inferTerm : Term → CheckM TypedTerm
     let j ← fieldTerm <$> checkNoEscape j .field
     let u8Add := .u8Add i j
     pure $ .mk (.evaluates (.tuple #[.field, .field])) u8Add
+  | .debug label term ret => do
+    let term ← term.mapM inferTerm
+    let ret ← inferTerm ret
+    let debug := .debug label term ret
+    pure $ .mk (.evaluates ret.typ.unwrap) debug
 where
   /--
   Ensures that there are as many arguments and as expected types and that

@@ -27,6 +27,7 @@ inductive Op
   | u8ShiftRight : ValIdx → Op
   | u8Xor : ValIdx → ValIdx → Op
   | u8Add : ValIdx → ValIdx → Op
+  | debug : String → Option (Array ValIdx) → Op
   deriving Repr
 
 mutual

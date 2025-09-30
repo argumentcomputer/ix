@@ -196,8 +196,8 @@ impl Ctrl {
             }
             Ctrl::Match(var, cases, def) => {
                 let (var, _) = state.map[*var].clone();
+                let init = state.save();
                 for (&value, branch) in cases.iter() {
-                    let init = state.save();
                     let branch_sel = branch.get_block_selector(state);
                     state
                         .constraints
@@ -206,8 +206,7 @@ impl Ctrl {
                     branch.collect_constraints(branch_sel, state, toplevel);
                     state.restore(&init);
                 }
-                def.iter().for_each(|branch| {
-                    let init = state.save();
+                if let Some(branch) = def {
                     let branch_sel = branch.get_block_selector(state);
                     for &value in cases.keys() {
                         let inverse = state.next_auxiliary();
@@ -218,8 +217,7 @@ impl Ctrl {
                         );
                     }
                     branch.collect_constraints(branch_sel, state, toplevel);
-                    state.restore(&init);
-                })
+                }
             }
         }
     }
@@ -297,7 +295,7 @@ impl Op {
                 let output = (0..*output_size).map(|_| {
                     let col = state.next_auxiliary();
                     state.map.push((col.clone(), 1));
-                    col
+                    sel.clone() * col
                 });
                 lookup_args.extend(output);
 
@@ -337,7 +335,7 @@ impl Op {
                 let values = (0..*size).map(|_| {
                     let col = state.next_auxiliary();
                     state.map.push((col.clone(), 1));
-                    col
+                    sel.clone() * col
                 });
                 lookup_args.extend(values);
 
@@ -391,7 +389,7 @@ impl Op {
             Op::U8Add(i, j) => {
                 bytes2_constraints(*i, *j, &Bytes2Op::Add, u8_add_channel(), sel.clone(), state)
             }
-            Op::IOSetInfo(..) | Op::IOWrite(_) => (),
+            Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => (),
         }
     }
 }

@@ -127,6 +127,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     pushDegrees #[1, 1]
     bumpAuxiliaries 2
     bumpLookups
+  | .debug .. => pure ()
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   block.ops.forM opLayout
@@ -246,8 +247,7 @@ partial def toIndex
   | .unit => pure #[]
   | .ret .. => panic! "Should not happen after typechecking"
   | .match .. => panic! "Non-tail `match` not yet implemented"
-  | .var name => do
-    pure (bindings[name]!)
+  | .var name => pure bindings[name]!
   | .ref name => match layoutMap[name]! with
     | .function layout => do
       pushOp (.const (.ofNat layout.index))
@@ -415,6 +415,10 @@ partial def toIndex
     let i ← expectIdx i
     let j ← expectIdx j
     pushOp (.u8Add i j) 2
+  | .debug label term ret => do
+    let term ← term.mapM (toIndex layoutMap bindings)
+    modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
+    toIndex layoutMap bindings ret
   where
     buildArgs (args : List TypedTerm) (init := #[]) :=
       let append acc arg := do
@@ -439,6 +443,10 @@ partial def TypedTerm.compile
     let val ← toIndex layoutMap bindings val
     bod.compile returnTyp layoutMap (bindings.insert var val)
   | .let .. => panic! "Should not happen after simplifying"
+  | .debug label term ret => do
+    let term ← term.mapM (toIndex layoutMap bindings)
+    modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
+    ret.compile returnTyp layoutMap bindings
   | .match term cases =>
     match term.typ.unwrapOr returnTyp with
     -- Also do this for tuple-like and array-like (one constructor only) datatypes

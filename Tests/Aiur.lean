@@ -27,6 +27,10 @@ def toplevel := ⟦
     }
   }
 
+  fn sum_prod(x: G, y: G, z: G) -> G {
+    (x + y) * z
+  }
+
   fn eq_zero_dummy(a: G, b: G) -> [G; 4] {
     let c = 0;
     let d = 101;
@@ -171,6 +175,7 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `sum #[3, 5] #[8],
     .noIO `prod #[3, 5] #[15],
     .noIO `match_mul #[2] #[8],
+    .noIO `sum_prod #[2, 3, 4] #[20],
     .noIO `eq_zero_dummy #[0, 37] #[1, 0, 1, 0],
     .noIO `store_and_load #[42] #[42],
     .noIO `is_0_even #[] #[1],

@@ -91,6 +91,7 @@ inductive Term
   | u8ShiftRight : Term → Term
   | u8Xor : Term → Term → Term
   | u8Add : Term → Term → Term
+  | debug : String → Option Term → Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Data
@@ -145,6 +146,7 @@ inductive TypedTermInner
   | u8ShiftRight : TypedTerm → TypedTermInner
   | u8Xor : TypedTerm → TypedTerm → TypedTermInner
   | u8Add : TypedTerm → TypedTerm → TypedTermInner
+  | debug : String → Option TypedTerm → TypedTerm → TypedTermInner
   deriving Repr, Inhabited
 
 structure TypedTerm where
