@@ -23,6 +23,8 @@ partial def simplifyTerm (decls : Decls) : Term → Term
   | .ret r => .ret (recr r)
   | .app global args => .app global (args.map recr)
   | .data (.tuple args) => .data (.tuple (args.map recr))
+  | .data (.array args) => .data (.array (args.map recr))
+  | .debug label term ret => .debug label (term.map recr) (recr ret)
   | t => t
 where
   recr := simplifyTerm decls
