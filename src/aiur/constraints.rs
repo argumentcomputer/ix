@@ -196,8 +196,8 @@ impl Ctrl {
             }
             Ctrl::Match(var, cases, def) => {
                 let (var, _) = state.map[*var].clone();
+                let init = state.save();
                 for (&value, branch) in cases.iter() {
-                    let init = state.save();
                     let branch_sel = branch.get_block_selector(state);
                     state
                         .constraints
@@ -206,8 +206,7 @@ impl Ctrl {
                     branch.collect_constraints(branch_sel, state, toplevel);
                     state.restore(&init);
                 }
-                def.iter().for_each(|branch| {
-                    let init = state.save();
+                if let Some(branch) = def {
                     let branch_sel = branch.get_block_selector(state);
                     for &value in cases.keys() {
                         let inverse = state.next_auxiliary();
@@ -218,8 +217,7 @@ impl Ctrl {
                         );
                     }
                     branch.collect_constraints(branch_sel, state, toplevel);
-                    state.restore(&init);
-                })
+                }
             }
         }
     }

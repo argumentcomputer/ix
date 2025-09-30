@@ -4,7 +4,8 @@ use multi_stark::p3_field::PrimeCharacteristicRing;
 
 use crate::{
     aiur::{
-        bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx}, G
+        G,
+        bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx},
     },
     lean::{
         array::LeanArrayObject,
@@ -13,7 +14,8 @@ use crate::{
             aiur::{lean_unbox_g, lean_unbox_nat_as_usize},
             as_ref_unsafe,
         },
-        lean_is_scalar, string::LeanStringObject,
+        lean_is_scalar,
+        string::LeanStringObject,
     },
 };
 

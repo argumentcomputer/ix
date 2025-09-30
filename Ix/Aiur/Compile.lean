@@ -247,8 +247,7 @@ partial def toIndex
   | .unit => pure #[]
   | .ret .. => panic! "Should not happen after typechecking"
   | .match .. => panic! "Non-tail `match` not yet implemented"
-  | .var name => do
-    pure (bindings[name]!)
+  | .var name => pure bindings[name]!
   | .ref name => match layoutMap[name]! with
     | .function layout => do
       pushOp (.const (.ofNat layout.index))
