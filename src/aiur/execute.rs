@@ -241,6 +241,14 @@ impl Function {
                 ExecEntry::Op(Op::U8Add(i, j)) => {
                     bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record)
                 }
+                ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
+                    None => println!("{label}"),
+                    Some(idxs) => {
+                        let parts: Vec<_> = idxs.iter().map(|idx| map[*idx].to_string()).collect();
+                        let parts_joined = parts.join(", ");
+                        println!("{label}: {parts_joined}");
+                    }
+                },
                 ExecEntry::Ctrl(Ctrl::Match(val_idx, cases, default)) => {
                     let val = &map[*val_idx];
                     if let Some(block) = cases.get(val) {

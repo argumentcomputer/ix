@@ -119,6 +119,7 @@ syntax "u8_shift_left" "(" trm ")"                            : trm
 syntax "u8_shift_right" "(" trm ")"                           : trm
 syntax "u8_xor" "(" trm ", " trm ")"                          : trm
 syntax "u8_add" "(" trm ", " trm ")"                          : trm
+syntax "dbg!" "(" str (", " trm)? ")" ";" (trm)?              : trm
 
 partial def elabTrm : ElabStxCat `trm
   | `(trm| .$i:ident) => do
@@ -208,6 +209,11 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.u8Xor #[← elabTrm i, ← elabTrm j]
   | `(trm| u8_add($i:trm, $j:trm)) => do
     mkAppM ``Term.u8Add #[← elabTrm i, ← elabTrm j]
+  | `(trm| dbg!($label:str $[, $t:trm]?); $[$ret:trm]?) => do
+    let t ← match t with
+      | none => mkAppOptM ``Option.none #[some (mkConst ``Term)]
+      | some t => mkAppM ``Option.some #[← elabTrm t]
+    mkAppM ``Term.debug #[mkStrLit label.getString, t, ← elabRet ret]
   | stx => throw $ .error stx "Invalid syntax for term"
 where elabRet : Option (TSyntax `trm) → TermElabM Expr
   | none => pure $ mkConst ``Term.unit

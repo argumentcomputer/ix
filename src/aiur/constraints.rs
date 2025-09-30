@@ -391,7 +391,7 @@ impl Op {
             Op::U8Add(i, j) => {
                 bytes2_constraints(*i, *j, &Bytes2Op::Add, u8_add_channel(), sel.clone(), state)
             }
-            Op::IOSetInfo(..) | Op::IOWrite(_) => (),
+            Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => (),
         }
     }
 }

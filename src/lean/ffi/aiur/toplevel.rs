@@ -4,8 +4,7 @@ use multi_stark::p3_field::PrimeCharacteristicRing;
 
 use crate::{
     aiur::{
-        G,
-        bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx},
+        bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx}, G
     },
     lean::{
         array::LeanArrayObject,
@@ -14,7 +13,7 @@ use crate::{
             aiur::{lean_unbox_g, lean_unbox_nat_as_usize},
             as_ref_unsafe,
         },
-        lean_is_scalar,
+        lean_is_scalar, string::LeanStringObject,
     },
 };
 
@@ -122,6 +121,20 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
         17 => {
             let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
             Op::U8Add(i, j)
+        }
+        18 => {
+            let [label_ptr, idxs_ptr] = ctor.objs();
+            let label_str: &LeanStringObject = as_ref_unsafe(label_ptr.cast());
+            let label = label_str.as_string();
+            let idxs = if lean_is_scalar(idxs_ptr) {
+                None
+            } else {
+                let option_ctor: &LeanCtorObject = as_ref_unsafe(idxs_ptr.cast());
+                let [idxs_ptr] = option_ctor.objs();
+                let idxs: &LeanArrayObject = as_ref_unsafe(idxs_ptr.cast());
+                Some(idxs.to_vec(lean_unbox_nat_as_usize))
+            };
+            Op::Debug(label, idxs)
         }
         _ => unreachable!(),
     }

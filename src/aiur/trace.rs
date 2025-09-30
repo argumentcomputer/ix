@@ -372,7 +372,7 @@ impl Op {
                 let lookup_args = vec![u8_add_channel(), i, j, r, o];
                 slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
             }
-            Op::AssertEq(..) | Op::IOSetInfo(..) | Op::IOWrite(_) => (),
+            Op::AssertEq(..) | Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => (),
         }
     }
 }

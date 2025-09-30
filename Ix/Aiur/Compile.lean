@@ -127,6 +127,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     pushDegrees #[1, 1]
     bumpAuxiliaries 2
     bumpLookups
+  | .debug .. => pure ()
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   block.ops.forM opLayout
@@ -415,6 +416,10 @@ partial def toIndex
     let i ← expectIdx i
     let j ← expectIdx j
     pushOp (.u8Add i j) 2
+  | .debug label term ret => do
+    let term ← term.mapM (toIndex layoutMap bindings)
+    modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
+    toIndex layoutMap bindings ret
   where
     buildArgs (args : List TypedTerm) (init := #[]) :=
       let append acc arg := do

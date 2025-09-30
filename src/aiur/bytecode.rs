@@ -55,6 +55,7 @@ pub enum Op {
     U8ShiftRight(ValIdx),
     U8Xor(ValIdx, ValIdx),
     U8Add(ValIdx, ValIdx),
+    Debug(String, Option<Vec<ValIdx>>),
 }
 
 pub enum Ctrl {
