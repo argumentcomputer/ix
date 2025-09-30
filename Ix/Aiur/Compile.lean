@@ -444,6 +444,10 @@ partial def TypedTerm.compile
     let val ← toIndex layoutMap bindings val
     bod.compile returnTyp layoutMap (bindings.insert var val)
   | .let .. => panic! "Should not happen after simplifying"
+  | .debug label term ret => do
+    let term ← term.mapM (toIndex layoutMap bindings)
+    modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
+    ret.compile returnTyp layoutMap bindings
   | .match term cases =>
     match term.typ.unwrapOr returnTyp with
     -- Also do this for tuple-like and array-like (one constructor only) datatypes
