@@ -65,6 +65,7 @@ struct TraceContext<'a> {
     inputs: &'a [G],
     output: &'a [G],
     query_record: &'a QueryRecord,
+    toplevel: &'a Toplevel,
 }
 
 impl Toplevel {
@@ -76,6 +77,11 @@ impl Toplevel {
     ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
         let func = &self.functions[function_index];
         let width = func.width();
+        if func.unconstrained {
+            let trace = RowMajorMatrix::default(width, 1);
+            let lookups = vec![vec![]];
+            return (trace, lookups);
+        }
         let queries = &query_record.function_queries[function_index];
         let height_no_padding = queries.len();
         let height = height_no_padding.next_power_of_two();
@@ -105,6 +111,7 @@ impl Toplevel {
                     multiplicity: result.multiplicity,
                     output: &result.output,
                     query_record,
+                    toplevel: self,
                 };
                 func.populate_row(index, slice, context, io_buffer);
             });
@@ -260,6 +267,11 @@ impl Op {
                 for f in result.output.iter() {
                     map.push((*f, 1));
                     slice.push_auxiliary(index, *f);
+                }
+                if context.toplevel.functions[*function_index].unconstrained {
+                    // The callee is unconstrained and isn't going to pull its claim.
+                    // Therefore we don't push it.
+                    return;
                 }
                 let lookup = function_lookup(
                     G::ONE,
