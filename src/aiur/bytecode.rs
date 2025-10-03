@@ -11,6 +11,7 @@ pub struct Toplevel {
 pub struct Function {
     pub(crate) body: Block,
     pub(crate) layout: FunctionLayout,
+    pub(crate) unconstrained: bool,
 }
 
 #[derive(Clone, Copy)]

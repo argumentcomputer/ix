@@ -177,6 +177,7 @@ structure Function where
   inputs : List (Local × Typ)
   output : Typ
   body : Term
+  unconstrained : Bool
   deriving Repr
 
 structure Toplevel where
@@ -200,6 +201,7 @@ structure TypedFunction where
   inputs : List (Local × Typ)
   output : Typ
   body : TypedTerm
+  unconstrained : Bool
   deriving Repr
 
 inductive TypedDeclaration
@@ -209,6 +211,11 @@ inductive TypedDeclaration
   deriving Repr, Inhabited
 
 abbrev TypedDecls := IndexMap Global TypedDeclaration
+
+def TypedDecls.isUnconstrainedFunction (decls : TypedDecls) (funIdx : Nat) : Bool :=
+  match decls.getByIdx funIdx with
+  | some (_, .function f,) => f.unconstrained
+  | _ => false
 
 mutual
 
