@@ -1,6 +1,5 @@
 import Ix.Address
 import Ix.Ixon
-import Ix.Ixon.Serialize
 
 import Init.System.FilePath
 import Init.System.IO

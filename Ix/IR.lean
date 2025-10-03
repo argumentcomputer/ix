@@ -1,5 +1,6 @@
 import Ix.Common
 import Ix.Address
+import Lean
 
 namespace Ix
 
@@ -93,18 +94,17 @@ and metavariables, and annotate global constant references with Ix.Address
 content-addresses
 --/
 inductive Expr
-  | var   (idx: Nat)
-  | sort  (univ: Level)
-  | const (name: Lean.Name) (ref: Address) (meta: Address) (univs: List Level)
-  | rec_  (name: Lean.Name) (idx: Nat) (univs: List Level)
-  | app   (func: Expr) (argm: Expr)
-  | lam   (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
-  | pi    (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
-  | letE  (name: Lean.Name) (type: Expr) (value: Expr) (body: Expr) (nonDep: Bool)
-  | lit   (lit: Lean.Literal)
-  | proj  (typeName: Lean.Name) (typeCont: Address) (typeMeta: Address) (idx: Nat) (struct: Expr)
+  | var   (mdata: List Address) (idx: Nat)
+  | sort  (mdata: List Address) (univ: Level)
+  | const (mdata: List Address) (name: Lean.Name) (ref: MetaAddress) (univs: List Level)
+  | rec_  (mdata: List Address) (name: Lean.Name) (idx: Nat) (univs: List Level)
+  | app   (mdata: List Address) (func: Expr) (argm: Expr)
+  | lam   (mdata: List Address) (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
+  | pi    (mdata: List Address) (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
+  | letE  (mdata: List Address) (name: Lean.Name) (type: Expr) (value: Expr) (body: Expr) (nonDep: Bool)
+  | lit   (mdata: List Address) (lit: Lean.Literal)
+  | proj  (mdata: List Address) (typeName: Lean.Name) (type: MetaAddress) (idx: Nat) (struct: Expr)
   deriving Inhabited, Ord, BEq, Repr, Hashable
-
 
 /--
 Ix.Quotient quotients are analogous to Lean.QuotVal
@@ -117,8 +117,7 @@ structure Quotient where
   deriving Ord, BEq, Hashable, Repr, Nonempty
 
 /--
-Ix.Axiom axioms are analogous to Lean.AxiomVal, differing only in not including
-the `isUnsafe` parameter, as Ix constants are never unsafe
+Ix.Axiom axioms are analogous to Lean.AxiomVal
 --/
 structure Axiom where
   name: Lean.Name

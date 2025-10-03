@@ -4,12 +4,14 @@ import Ix.Common
 import Blake3
 
 deriving instance Lean.ToExpr for ByteArray
+deriving instance Repr for ByteArray
 
 structure Address where
   hash : ByteArray
   deriving Inhabited, Lean.ToExpr, BEq, Hashable
 
 def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.hash x).val⟩
+
 
 def hexOfNat : Nat -> Option Char
 | 0 => .some '0'
@@ -106,4 +108,9 @@ def Address.fromUniqueName (name: Lean.Name) : Option Address :=
   match name with
   | .str (.str (.str .anonymous "Ix") "_#") s => Address.fromString s
   | _ => .none
+
+structure MetaAddress where
+  data : Address
+  meta : Address
+  deriving Inhabited, Lean.ToExpr, BEq, Hashable, Repr, Ord
 

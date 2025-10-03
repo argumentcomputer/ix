@@ -1,4 +1,4 @@
-import Ix.Claim
+import Ix.Ixon
 import Ix.Address
 import Ix.Meta
 import Ix.CompileM
