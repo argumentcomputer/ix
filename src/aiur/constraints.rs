@@ -151,7 +151,7 @@ impl Block {
     fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState, toplevel: &Toplevel) {
         self.ops
             .iter()
-            .for_each(|op| op.collect_constraints(&sel, state));
+            .for_each(|op| op.collect_constraints(&sel, state, toplevel));
         self.ctrl.collect_constraints(sel, state, toplevel);
     }
 
@@ -168,30 +168,22 @@ impl Ctrl {
         match self {
             Ctrl::Return(_, values) => {
                 // channel and function index
-                let mut vector = vec![
+                let mut args = vec![
                     sel.clone() * function_channel(),
                     sel.clone() * state.function_index,
                 ];
                 // input
-                vector.extend(
+                args.extend(
                     (0..state.layout.input_size).map(|arg| sel.clone() * state.map[arg].0.clone()),
                 );
                 // output
-                vector.extend(
+                args.extend(
                     values
                         .iter()
                         .map(|arg| sel.clone() * state.map[*arg].0.clone()),
                 );
-                let mut values_iter = vector.into_iter();
                 let lookup = &mut state.lookups[0];
-                lookup
-                    .args
-                    .iter_mut()
-                    .zip(values_iter.by_ref())
-                    .for_each(|(arg, value)| {
-                        *arg += value;
-                    });
-                lookup.args.extend(values_iter);
+                combine_lookup_args(lookup, args);
                 // multiplicity is already set
             }
             Ctrl::Match(var, cases, def) => {
@@ -224,7 +216,7 @@ impl Ctrl {
 }
 
 impl Op {
-    fn collect_constraints(&self, sel: &Expr, state: &mut ConstraintState) {
+    fn collect_constraints(&self, sel: &Expr, state: &mut ConstraintState, toplevel: &Toplevel) {
         match self {
             Op::Const(f) => state.map.push(((*f).into(), 0)),
             Op::Add(a, b) => {
@@ -280,6 +272,18 @@ impl Op {
                 }
             }
             Op::Call(function_index, inputs, output_size) => {
+                if toplevel.functions[*function_index].unconstrained {
+                    // The callee is unconstrained and isn't going to pull its claim.
+                    // Therefore we don't push it.
+
+                    // Just feed the map with the output and move on.
+                    for _ in 0..*output_size {
+                        let col = state.next_auxiliary();
+                        state.map.push((col.clone(), 1));
+                    }
+                    return;
+                }
+
                 // channel and function index
                 let mut lookup_args = vec![
                     sel.clone() * function_channel(),
