@@ -28,7 +28,7 @@ def runGet (getm: GetM A) (bytes: ByteArray) : Except String A :=
   | .error e _ => .error e
 
 def ser [Serialize α] (a: α): ByteArray := runPut (Serialize.put a)
-def de [Serialize α] (bytes: ByteArray): Except String α := 
+def de [Serialize α] (bytes: ByteArray): Except String α :=
   runGet Serialize.get bytes
 
 def putUInt8 (x: UInt8) : PutM Unit :=
@@ -184,13 +184,13 @@ instance : Serialize ByteArray where
   put := putBytesTagged
   get := getBytesTagged
 
-def putMany {A: Type} (put : A -> PutM Unit) (xs: List A) : PutM Unit := 
+def putMany {A: Type} (put : A -> PutM Unit) (xs: List A) : PutM Unit :=
   List.forM xs put
 
 def getMany {A: Type} (x: Nat) (getm : GetM A) : GetM (List A) :=
   (List.range x).mapM (fun _ => getm)
 
-def puts {A: Type} [Serialize A] (xs: List A) : PutM Unit := 
+def puts {A: Type} [Serialize A] (xs: List A) : PutM Unit :=
   putMany Serialize.put xs
 
 def gets {A: Type} [Serialize A] (x: Nat) : GetM (List A) :=
@@ -253,46 +253,46 @@ instance (priority := default + 100) : Serialize (Bool × Bool) where
   put := fun (a, b) => putBools [a, b]
   get := do match (<- getBools 2) with
     | [a, b] => pure (a, b)
-    | e => throw s!"expected packed (Bool × Bool), got {e}" 
+    | e => throw s!"expected packed (Bool × Bool), got {e}"
 
 instance (priority := default + 101): Serialize (Bool × Bool × Bool) where
   put := fun (a, b, c) => putBools [a, b, c]
   get := do match (<- getBools 3) with
     | [a, b, c] => pure (a, b, c)
-    | e => throw s!"expected packed (Bool × Bool × Bool), got {e}" 
+    | e => throw s!"expected packed (Bool × Bool × Bool), got {e}"
 
 instance (priority := default + 102): Serialize (Bool × Bool × Bool × Bool) where
   put := fun (a, b, c,d) => putBools [a, b, c, d]
   get := do match (<- getBools 4) with
     | [a, b, c, d] => pure (a, b, c, d)
-    | e => throw s!"expected packed (Bool × Bool × Bool × Bool), got {e}" 
+    | e => throw s!"expected packed (Bool × Bool × Bool × Bool), got {e}"
 
 instance (priority := default + 103): Serialize (Bool × Bool × Bool × Bool × Bool) where
   put := fun (a, b, c, d, e) => putBools [a, b, c, d, e]
   get := do match (<- getBools 5) with
     | [a, b, c, d, e] => pure (a, b, c, d, e)
-    | e => throw s!"expected packed (Bool × Bool × Bool × Bool × Bool), got {e}" 
+    | e => throw s!"expected packed (Bool × Bool × Bool × Bool × Bool), got {e}"
 
 instance (priority := default + 104)
   : Serialize (Bool × Bool × Bool × Bool × Bool × Bool) where
   put := fun (a, b, c, d, e, f) => putBools [a, b, c, d, e, f]
   get := do match (<- getBools 6) with
     | [a, b, c, d, e, f] => pure (a, b, c, d, e, f)
-    | e => throw s!"expected packed (Bool × Bool × Bool × Bool × Bool × Bool), got {e}" 
+    | e => throw s!"expected packed (Bool × Bool × Bool × Bool × Bool × Bool), got {e}"
 
 instance (priority := default + 106)
   : Serialize (Bool × Bool × Bool × Bool × Bool × Bool × Bool) where
   put := fun (a, b, c, d, e, f, g) => putBools [a, b, c, d, e, f, g]
   get := do match (<- getBools 7) with
     | [a, b, c, d, e, f, g] => pure (a, b, c, d, e, f, g)
-    | e => throw s!"expected packed (Bool × Bool × Bool × Bool × Bool × Bool × Bool), got {e}" 
+    | e => throw s!"expected packed (Bool × Bool × Bool × Bool × Bool × Bool × Bool), got {e}"
 
 instance (priority := default + 105)
   : Serialize (Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool) where
   put := fun (a, b, c, d, e, f, g, h) => putBools [a, b, c, d, e, f, g, h]
   get := do match (<- getBools 8) with
     | [a, b, c, d, e, f, g, h] => pure (a, b, c, d, e, f, g, h)
-    | e => throw s!"expected packed (Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool), got {e}" 
+    | e => throw s!"expected packed (Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool), got {e}"
 
 def putQuotKind : Lean.QuotKind → PutM Unit
 | .type => putUInt8 0
@@ -354,7 +354,7 @@ def putReducibilityHints : Lean.ReducibilityHints → PutM Unit
 def getReducibilityHints : GetM Lean.ReducibilityHints := do
   match (← getUInt8) with
   | 0 => return .«opaque»
-  | 1 => return .«abbrev» 
+  | 1 => return .«abbrev»
   | 2 => .regular <$> getUInt32LE
   | e => throw s!"expected ReducibilityHints encoding between 0 and 2, got {e}"
 
@@ -371,7 +371,7 @@ def getDefinitionSafety : GetM Lean.DefinitionSafety := do
   match (← getUInt8) with
   | 0 => return .«unsafe»
   | 1 => return .«safe»
-  | 2 => return .«partial» 
+  | 2 => return .«partial»
   | e => throw s!"expected DefinitionSafety encoding between 0 and 2, got {e}"
 
 instance : Serialize Lean.DefinitionSafety where
@@ -824,7 +824,7 @@ partial def putIxon : Ixon -> PutM Unit
 | .usucc u => put (Tag4.mk 0x0 4) *> put u
 | .umax x y => put (Tag4.mk 0x0 5) *> put x *> put y
 | .uimax x y => put (Tag4.mk 0x0 6) *> put x *> put y
-| .uvar x => 
+| .uvar x =>
   let bytes := x.toBytesLE
   put (Tag4.mk 0x1 bytes.size.toUInt64) *> putBytes ⟨bytes⟩
 | .evar x =>
@@ -836,7 +836,7 @@ partial def putIxon : Ixon -> PutM Unit
   put (Tag4.mk 0x4 bytes.size.toUInt64) *> putBytes ⟨bytes⟩ *> putList ls
 | .eprj t n x =>
   let bytes := n.toBytesLE
-  put (Tag4.mk 0x5 bytes.size.toUInt64) *> putBytes ⟨bytes⟩ *> putBytes t.hash *> put x
+  put (Tag4.mk 0x5 bytes.size.toUInt64) *> put t *> putBytes ⟨bytes⟩ *> put x
 | .esort u => put (Tag4.mk 0x9 0x0) *> put u
 | .estr s => put (Tag4.mk 0x9 0x1) *> put s
 | .enat n => put (Tag4.mk 0x9 0x2) *> put n
@@ -856,11 +856,11 @@ partial def putIxon : Ixon -> PutM Unit
 | .dprj x => put (Tag4.mk 0xB 0x6) *> put x
 | .inds xs => put (Tag4.mk 0xC xs.length.toUInt64) *> puts xs
 | .defs xs => put (Tag4.mk 0xD xs.length.toUInt64) *> puts xs
-| .prof x => put (Tag4.mk 0xE 0x1) *> put x
-| .eval x => put (Tag4.mk 0xE 0x2) *> put x
-| .chck x => put (Tag4.mk 0xE 0x3) *> put x
-| .comm x => put (Tag4.mk 0xE 0x4) *> put x
-| .envn x => put (Tag4.mk 0xE 0x5) *> put x
+| .prof x => put (Tag4.mk 0xE 0x0) *> put x
+| .eval x => put (Tag4.mk 0xE 0x1) *> put x
+| .chck x => put (Tag4.mk 0xE 0x2) *> put x
+| .comm x => put (Tag4.mk 0xE 0x3) *> put x
+| .envn x => put (Tag4.mk 0xE 0x4) *> put x
 | .meta m => put m
 
 def getIxon : GetM Ixon := do
