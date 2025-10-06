@@ -114,3 +114,6 @@ structure MetaAddress where
   meta : Address
   deriving Inhabited, Lean.ToExpr, BEq, Hashable, Repr, Ord
 
+instance : ToString MetaAddress where
+  toString adr := s!"{hexOfBytes adr.data.hash}:{hexOfBytes adr.meta.hash}"
+

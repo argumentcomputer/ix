@@ -47,6 +47,10 @@ deriving instance BEq, Repr, Hashable for Lean.RecursorVal
 deriving instance BEq, Repr, Hashable for Lean.ConstructorVal
 deriving instance BEq, Repr, Hashable for Lean.InductiveVal
 deriving instance BEq, Repr, Hashable for Lean.ConstantInfo
+deriving instance BEq, Repr, Hashable for Substring
+deriving instance BEq, Repr, Hashable for Lean.SourceInfo
+deriving instance BEq, Repr, Hashable for Lean.Syntax.Preresolved
+deriving instance BEq, Repr, Hashable for Lean.Syntax
 deriving instance BEq, Repr for Ordering
 
 def UInt8.MAX : UInt64 := 0xFF

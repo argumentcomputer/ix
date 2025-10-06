@@ -94,16 +94,16 @@ and metavariables, and annotate global constant references with Ix.Address
 content-addresses
 --/
 inductive Expr
-  | var   (mdata: List Address) (idx: Nat)
-  | sort  (mdata: List Address) (univ: Level)
-  | const (mdata: List Address) (name: Lean.Name) (ref: MetaAddress) (univs: List Level)
-  | rec_  (mdata: List Address) (name: Lean.Name) (idx: Nat) (univs: List Level)
-  | app   (mdata: List Address) (func: Expr) (argm: Expr)
-  | lam   (mdata: List Address) (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
-  | pi    (mdata: List Address) (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
-  | letE  (mdata: List Address) (name: Lean.Name) (type: Expr) (value: Expr) (body: Expr) (nonDep: Bool)
-  | lit   (mdata: List Address) (lit: Lean.Literal)
-  | proj  (mdata: List Address) (typeName: Lean.Name) (type: MetaAddress) (idx: Nat) (struct: Expr)
+  | var   (mdata: Address) (idx: Nat)
+  | sort  (mdata: Address) (univ: Level)
+  | const (mdata: Address) (name: Lean.Name) (ref: MetaAddress) (univs: List Level)
+  | rec_  (mdata: Address) (name: Lean.Name) (idx: Nat) (univs: List Level)
+  | app   (mdata: Address) (func: Expr) (argm: Expr)
+  | lam   (mdata: Address) (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
+  | pi    (mdata: Address) (name: Lean.Name) (info: Lean.BinderInfo) (type: Expr) (body: Expr)
+  | letE  (mdata: Address) (name: Lean.Name) (type: Expr) (value: Expr) (body: Expr) (nonDep: Bool)
+  | lit   (mdata: Address) (lit: Lean.Literal)
+  | proj  (mdata: Address) (typeName: Lean.Name) (type: MetaAddress) (idx: Nat) (struct: Expr)
   deriving Inhabited, Ord, BEq, Repr, Hashable
 
 /--
@@ -117,7 +117,7 @@ structure Quotient where
   deriving Ord, BEq, Hashable, Repr, Nonempty
 
 /--
-Ix.Axiom axioms are analogous to Lean.AxiomVal
+Ix.Axiom axioms are analogous to Lean.AxiomVal, differing only in not including
 --/
 structure Axiom where
   name: Lean.Name
@@ -126,7 +126,7 @@ structure Axiom where
   isUnsafe: Bool
   deriving Ord, BEq, Hashable, Repr, Nonempty
 
-structure PreDefinition where
+structure PreDef where
   name: Lean.Name
   levelParams : List Lean.Name
   type : Lean.Expr
@@ -137,17 +137,17 @@ structure PreDefinition where
   all : List Lean.Name
   deriving BEq, Repr, Nonempty, Hashable, Inhabited
 
-def mkPreDefinition (x: Lean.DefinitionVal) : PreDefinition := 
+def mkPreDef (x: Lean.DefinitionVal) : PreDef := 
   ⟨x.name, x.levelParams, x.type, .definition, x.value, x.hints, x.safety, x.all⟩
 
-def mkPreTheorem (x: Lean.TheoremVal) : PreDefinition := 
+def mkPreTheorem (x: Lean.TheoremVal) : PreDef := 
   ⟨x.name, x.levelParams, x.type, .theorem, x.value, .opaque, .safe, x.all⟩
 
-def mkPreOpaque (x: Lean.OpaqueVal) : PreDefinition := 
+def mkPreOpaque (x: Lean.OpaqueVal) : PreDef := 
   ⟨x.name, x.levelParams, x.type, .opaque, x.value, .opaque,
     if x.isUnsafe then .unsafe else .safe, x.all⟩
 
-def defMutCtx (defss: List (List PreDefinition)) : Std.HashMap Lean.Name Nat 
+def defMutCtx (defss: List (List PreDef)) : Std.HashMap Lean.Name Nat 
   := Id.run do
   let mut mutCtx := default
   let mut i := 0
@@ -248,10 +248,10 @@ structure Recursor where
   deriving BEq, Ord, Hashable, Repr, Nonempty
 
 /--
-Ix.PreInductive is used to capture a Lean.InductiveVal along with their
+Ix.PreInd is used to capture a Lean.InductiveVal along with their
 constructors and recursors, in order to perform structural sorting
 --/
-structure PreInductive where
+structure PreInd where
   name: Lean.Name
   levelParams : List Lean.Name
   type : Lean.Expr
@@ -293,7 +293,7 @@ structure PreInductive where
 -- and an inductive with 3 ctors and 2 recrs, then the whole class will reserve
 -- 8 indices (one for the inductive type itself plus 3 ctors and 4 recrs).
 
-def indMutCtx (indss: List (List PreInductive))
+def indMutCtx (indss: List (List PreInd))
   : Std.HashMap Lean.Name Nat := Id.run do
   let mut mutCtx := default
   let mut idx := 0
@@ -337,9 +337,7 @@ structure InductiveProj where
   /-- name of an inductive within a mutual inductive block --/
   name: Lean.Name
   /-- content-address of a mutual inductive block --/
-  blockCont : Address
-  /-- metadata content-address a mutual inductive block --/
-  blockMeta : Address
+  block: MetaAddress
   /-- index of the specific inductive datatype within the block --/
   idx   : Nat
   deriving BEq, Ord, Hashable, Repr, Nonempty
@@ -348,9 +346,7 @@ structure ConstructorProj where
   /-- name of a specific constructor within an inductive --/
   name: Lean.Name
   /-- content-address of a mutual inductive block --/
-  blockCont : Address
-  /-- metadata content-address a mutual inductive block --/
-  blockMeta : Address
+  block: MetaAddress
   /-- index of a specific inductive datatype within the block --/
   idx   : Nat
   /-- name of a specific inductive datatype within the block --/
@@ -363,9 +359,7 @@ structure RecursorProj where
   /-- name of a specific recursor within the inductive --/
   name: Lean.Name
   /-- content-address of a mutual inductive block --/
-  blockCont : Address
-  /-- metadata content-address of a mutual inductive block --/
-  blockMeta : Address
+  block: MetaAddress
   /-- index of a specific inductive datatype within the block --/
   idx : Nat
   /-- name of a specific inductive datatype within the block --/
@@ -377,9 +371,7 @@ structure RecursorProj where
 structure DefinitionProj where
   name: Lean.Name
   /-- content-address of a mutual definition block --/
-  blockCont : Address
-  /-- metadata content-address of a mutual definition block --/
-  blockMeta : Address
+  block: MetaAddress
   /-- index of a specific definition within the block --/
   idx : Nat
   deriving BEq, Ord, Hashable, Repr, Nonempty

@@ -579,7 +579,6 @@ instance : ToString Claim where
   | .checks x => toString x
   | .evals x => toString x
 
-
 instance : Serialize CheckClaim where
   put x := Serialize.put (x.lvls, x.type, x.value)
   get := (fun (x,y,z) => .mk x y z) <$> Serialize.get
@@ -613,21 +612,136 @@ instance : Serialize Proof where
   put := fun x => Serialize.put (x.claim, x.bin)
   get := (fun (x,y) => .mk x y) <$> Serialize.get
 
+structure Substring where
+  str: Address
+  startPos: Nat
+  stopPos: Nat
+
+instance : Serialize Substring where
+  put := fun x => Serialize.put (x.str, x.startPos, x.stopPos)
+  get := (fun (x,y,z) => .mk x y z) <$> Serialize.get
+
+inductive SourceInfo where
+| original (leading: Substring) (pos: Nat) (trailing: Substring) (endPos: Nat)
+| synthetic (pos endPos: Nat) (canonical: Bool)
+| none
+
+open Serialize
+def putSourceInfo : SourceInfo → PutM Unit
+| .original l p t e => putUInt8 0 *> put l *> put p *> put t *> put e
+| .synthetic p e c => putUInt8 1 *> put p *> put e *> put c
+| .none => putUInt8 2
+
+def getSourceInfo : GetM SourceInfo := do
+  match (← getUInt8) with
+  | 0 => .original <$> get <*> get <*> get <*> get
+  | 1 => .synthetic <$> get <*> get <*> get
+  | 2 => pure .none
+  | e => throw s!"expected SourceInfo encoding between 0 and 2, got {e}"
+
+instance : Serialize SourceInfo where
+  put := putSourceInfo
+  get := getSourceInfo
+
+inductive Preresolved where
+| «namespace» (ns: Address)
+| decl (n: Address) (fields: List Address)
+
+def putPreresolved : Preresolved → PutM Unit
+| .namespace ns => putUInt8 0 *> put ns
+| .decl n fs => putUInt8 1 *> put n *> put fs
+
+def getPreresolved : GetM Preresolved := do
+  match (← getUInt8) with
+  | 0 => .namespace <$> get
+  | 1 => .decl <$> get <*> get
+  | e => throw s!"expected Preresolved encoding between 0 and 2, got {e}"
+
+instance : Serialize Preresolved where
+  put := putPreresolved
+  get := getPreresolved
+
+inductive Syntax where
+| missing
+| node (info: SourceInfo) (kind: Address) (args: List Address)
+| atom (info: SourceInfo) (val: Address)
+| ident (info: SourceInfo) (rawVal: Substring) (val: Address) (preresolved: List Preresolved)
+
+def putSyntax : Syntax → PutM Unit
+| .missing => putUInt8 0
+| .node i k as => putUInt8 1 *> put i *> put k *> put as
+| .atom i v => putUInt8 2 *> put i *> put v
+| .ident i r v ps => putUInt8 3 *> put i *> put r *> put v *> put ps
+
+def getSyntax : GetM Syntax := do
+  match (← getUInt8) with
+  | 0 => pure .missing
+  | 1 => .node <$> get <*> get <*> get
+  | 2 => .atom <$> get <*> get
+  | 3 => .ident <$> get <*> get <*> get <*> get
+  | e => throw s!"expected Syntax encoding between 0 and 2, got {e}"
+
+instance : Serialize Syntax where
+  put := putSyntax
+  get := getSyntax
+
+def putInt : Int -> PutM Unit
+| .ofNat n => putUInt8 0 *> put n
+| .negSucc n => putUInt8 1 *> put n
+
+def getInt : GetM Int := do
+  match (<- getUInt8) with
+  | 0 => .ofNat <$> get
+  | 1 => .negSucc <$> get
+  | e => throw s!"expected Int encoding between 0 and 1, got {e}"
+
+instance : Serialize Int where
+  put := putInt
+  get := getInt
+
+inductive DataValue where
+| ofString (v: Address)
+| ofBool (v: Bool)
+| ofName (v: Address)
+| ofNat (v: Address)
+| ofInt (v: Address)
+| ofSyntax (v: Address)
+deriving BEq, Repr, Ord, Inhabited
+
+def putDataValue : DataValue → PutM Unit
+| .ofString v => putUInt8 0 *> put v
+| .ofBool v => putUInt8 1 *> put v
+| .ofName v => putUInt8 2 *> put v
+| .ofNat v => putUInt8 3 *> put v
+| .ofInt v => putUInt8 4 *> put v
+| .ofSyntax v => putUInt8 5 *> put v
+
+def getDataValue : GetM DataValue := do
+  match (← getUInt8) with
+  | 0 => .ofString <$> get
+  | 1 => .ofBool <$> get
+  | 2 => .ofName <$> get
+  | 3 => .ofNat <$> get
+  | 4 => .ofInt <$> get
+  | 5 => .ofSyntax <$> get
+  | e => throw s!"expected DataValue encoding between 0 and 5, got {e}"
+
+instance : Serialize DataValue where
+  put := putDataValue
+  get := getDataValue
+
 inductive Metadatum where
 | name : Address -> Metadatum
 | info : Lean.BinderInfo -> Metadatum
 | link : Address -> Metadatum
 | hints : Lean.ReducibilityHints -> Metadatum
 | all : List Address -> Metadatum
-| mutCtx : List (List Address) -> Metadatum
-| kvmap : Address -> Metadatum
+| kvmap : List (Address × DataValue) -> Metadatum
 deriving BEq, Repr, Ord, Inhabited
 
 structure Metadata where
   nodes: List Metadatum
   deriving BEq, Repr, Inhabited
-
-open Serialize
 
 def putMetadatum : Metadatum → PutM Unit
 | .name n => putUInt8 0 *> put n
@@ -635,8 +749,7 @@ def putMetadatum : Metadatum → PutM Unit
 | .link l => putUInt8 2 *> putBytes l.hash
 | .hints h => putUInt8 3 *> putReducibilityHints h
 | .all ns => putUInt8 4 *> put ns
-| .mutCtx ctx => putUInt8 5 *> put ctx
-| .kvmap ctx => putUInt8 6 *> put ctx
+| .kvmap map => putUInt8 5 *> put map
 
 def getMetadatum : GetM Metadatum := do
   match (<- getUInt8) with
@@ -645,9 +758,8 @@ def getMetadatum : GetM Metadatum := do
   | 2 => .link <$> (.mk <$> getBytes 32)
   | 3 => .hints <$> get
   | 4 => .all <$> get
-  | 5 => .mutCtx <$> get
-  | 6 => .kvmap <$> get
-  | e => throw s!"expected Metadatum encoding between 0 and 6, got {e}"
+  | 5 => .kvmap <$> get
+  | e => throw s!"expected Metadatum encoding between 0 and 5, got {e}"
 
 instance : Serialize Metadatum where
   put := putMetadatum
@@ -663,20 +775,7 @@ instance : Serialize Metadata where
       return ⟨nodes⟩
     | x => throw s!"Expected metadata tag, got {repr x}"
 
--- TODO: update docs
-/-- The core content-addressing datatype. The wire format is divided into
-several sections:
-1. 0x00 through 0x3F are dynamic expression objects with variable size. The
-   low nibble in the byte changes depending on the size of the expression.
-2. 0x40 through 0x8F are reserved for future dynamic objects
-3. 0x90 through 0x97 are static expression objects
-4. 0x98 through 0x9F are reserved for future static expression objects
-5. 0xA0 through 0xAF are dynamic lists of objects
-6. 0xB0 through 0xB7 are static constant (as in Lean.ConstantInfo) objects
-6. 0xC0 through 0xDf are dynamic constant objects
-7. 0xE0 through 0xE7 are addtional static objects
-8. 0xF0 thtrouh 0xFF are reserved for future objects
---/
+-- TODO: docs
 inductive Ixon where
 | nanon : Ixon                                          -- 0x00 anon name
 | nstr  : Address -> Address -> Ixon                    -- 0x01 str name
@@ -818,6 +917,9 @@ instance : Serialize Ixon where
   get := getIxon
 
 def Ixon.address (ixon: Ixon): Address := Address.blake3 (ser ixon)
+
+
+
 
 --
 ----section FFI
