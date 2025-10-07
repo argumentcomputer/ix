@@ -2,6 +2,9 @@ import Ix.Common
 import Ix.Address
 import Lean
 
+import Batteries.Data.RBMap
+open Batteries (RBMap)
+
 namespace Ix
 
 /-
@@ -86,7 +89,7 @@ inductive Level
   | max  : Level → Level → Level
   | imax : Level → Level → Level
   | param: Lean.Name → Nat → Level
-  deriving Inhabited, Ord, BEq, Hashable, Repr
+  deriving Inhabited, Ord, BEq, Repr
 
 /--
 Ix.Expr expressions are similar to Lean.Expr, except they exclude free variables
@@ -104,7 +107,7 @@ inductive Expr
   | letE  (mdata: Address) (name: Lean.Name) (type: Expr) (value: Expr) (body: Expr) (nonDep: Bool)
   | lit   (mdata: Address) (lit: Lean.Literal)
   | proj  (mdata: Address) (typeName: Lean.Name) (type: MetaAddress) (idx: Nat) (struct: Expr)
-  deriving Inhabited, Ord, BEq, Repr, Hashable
+  deriving Inhabited, Ord, BEq, Repr
 
 /--
 Ix.Quotient quotients are analogous to Lean.QuotVal
@@ -114,7 +117,7 @@ structure Quotient where
   levelParams : List Lean.Name
   type : Expr
   kind : Lean.QuotKind
-  deriving Ord, BEq, Hashable, Repr, Nonempty
+  deriving Ord, BEq, Repr, Nonempty
 
 /--
 Ix.Axiom axioms are analogous to Lean.AxiomVal, differing only in not including
@@ -124,7 +127,7 @@ structure Axiom where
   levelParams : List Lean.Name
   type : Expr
   isUnsafe: Bool
-  deriving Ord, BEq, Hashable, Repr, Nonempty
+  deriving Ord, BEq, Repr, Nonempty
 
 structure PreDef where
   name: Lean.Name
@@ -135,7 +138,7 @@ structure PreDef where
   hints : Lean.ReducibilityHints
   safety : Lean.DefinitionSafety
   all : List Lean.Name
-  deriving BEq, Repr, Nonempty, Hashable, Inhabited
+  deriving BEq, Repr, Nonempty, Inhabited, Ord
 
 def mkPreDef (x: Lean.DefinitionVal) : PreDef := 
   ⟨x.name, x.levelParams, x.type, .definition, x.value, x.hints, x.safety, x.all⟩
@@ -147,7 +150,7 @@ def mkPreOpaque (x: Lean.OpaqueVal) : PreDef :=
   ⟨x.name, x.levelParams, x.type, .opaque, x.value, .opaque,
     if x.isUnsafe then .unsafe else .safe, x.all⟩
 
-def defMutCtx (defss: List (List PreDef)) : Std.HashMap Lean.Name Nat 
+def defMutCtx (defss: List (List PreDef)) : RBMap Lean.Name Nat compare
   := Id.run do
   let mut mutCtx := default
   let mut i := 0
@@ -178,7 +181,7 @@ structure Definition where
   hints : Lean.ReducibilityHints
   safety: Lean.DefinitionSafety
   all : List Lean.Name
-  deriving BEq, Ord, Hashable, Repr, Nonempty
+  deriving BEq, Ord, Repr, Nonempty
 
 def mkTheorem
   (name: Lean.Name)
@@ -216,7 +219,7 @@ structure Constructor where
   numParams : Nat
   numFields : Nat
   isUnsafe: Bool
-  deriving BEq, Ord, Hashable, Repr, Nonempty
+  deriving BEq, Ord, Repr, Nonempty
 
 /--
 Ix.RecursorRule is analogous to Lean.RecursorRule
@@ -225,7 +228,7 @@ structure RecursorRule where
   ctor : Lean.Name
   nfields : Nat
   rhs : Expr
-  deriving BEq, Ord, Hashable, Repr, Nonempty
+  deriving BEq, Ord, Repr, Nonempty
 
 /--
 Ix.Recursor represents inductive recursors and is analogous to Lean.RecursorVal.
@@ -245,7 +248,7 @@ structure Recursor where
   rules : List RecursorRule
   k : Bool
   isUnsafe: Bool
-  deriving BEq, Ord, Hashable, Repr, Nonempty
+  deriving BEq, Ord, Repr, Nonempty
 
 /--
 Ix.PreInd is used to capture a Lean.InductiveVal along with their
@@ -293,8 +296,8 @@ structure PreInd where
 -- and an inductive with 3 ctors and 2 recrs, then the whole class will reserve
 -- 8 indices (one for the inductive type itself plus 3 ctors and 4 recrs).
 
-def indMutCtx (indss: List (List PreInd))
-  : Std.HashMap Lean.Name Nat := Id.run do
+def indMutCtx (indss: List (List PreInd)) : RBMap Lean.Name Nat compare 
+  := Id.run do
   let mut mutCtx := default
   let mut idx := 0
   for inds in indss do
@@ -330,7 +333,7 @@ structure Inductive where
   isRec : Bool
   isReflexive : Bool
   isUnsafe: Bool
-  deriving BEq, Ord, Hashable, Repr, Nonempty
+  deriving BEq, Ord, Repr, Nonempty
 
 
 structure InductiveProj where
@@ -340,7 +343,7 @@ structure InductiveProj where
   block: MetaAddress
   /-- index of the specific inductive datatype within the block --/
   idx   : Nat
-  deriving BEq, Ord, Hashable, Repr, Nonempty
+  deriving BEq, Ord, Repr, Nonempty
 
 structure ConstructorProj where
   /-- name of a specific constructor within an inductive --/
@@ -353,7 +356,7 @@ structure ConstructorProj where
   induct: Lean.Name
   /-- index of a specific constructor within the inductive --/
   cidx  : Nat
-  deriving BEq, Ord, Hashable, Repr, Nonempty
+  deriving BEq, Ord, Repr, Nonempty
 
 structure RecursorProj where
   /-- name of a specific recursor within the inductive --/
@@ -366,7 +369,7 @@ structure RecursorProj where
   induct: Lean.Name
   /-- index of a specific recursor within the inductive --/
   ridx : Nat
-  deriving BEq, Ord, Hashable, Repr, Nonempty
+  deriving BEq, Ord, Repr, Nonempty
 
 structure DefinitionProj where
   name: Lean.Name
@@ -374,12 +377,12 @@ structure DefinitionProj where
   block: MetaAddress
   /-- index of a specific definition within the block --/
   idx : Nat
-  deriving BEq, Ord, Hashable, Repr, Nonempty
+  deriving BEq, Ord, Repr, Nonempty
 
 structure MutualBlock where
   defs : List (List Definition)
   --all: List Lean.Name
-  deriving BEq, Ord, Hashable, Repr, Nonempty
+  deriving BEq, Ord, Repr, Nonempty
 
 def MutualBlock.ctx (x: MutualBlock) : List (List Lean.Name) :=
   x.defs.map fun xs => xs.map fun x => x.name
@@ -387,7 +390,7 @@ def MutualBlock.ctx (x: MutualBlock) : List (List Lean.Name) :=
 structure InductiveBlock where
   inds : List (List Inductive)
   --all: List Lean.Name
-  deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited
+  deriving BEq, Ord, Repr, Nonempty, Inhabited
 
 def InductiveBlock.ctx (x: InductiveBlock) : List (List Lean.Name) :=
   x.inds.map fun xs => xs.map fun x => x.name
@@ -404,7 +407,7 @@ inductive Const where
   -- constants to represent mutual blocks
   | «mutual» : MutualBlock → Const
   | «inductive» : InductiveBlock → Const
-  deriving Ord, BEq, Inhabited, Repr, Nonempty, Hashable
+  deriving BEq, Ord, Inhabited, Repr, Nonempty
 
 def Const.isMutBlock : Const → Bool
   | .mutual _ | .inductive _ => true

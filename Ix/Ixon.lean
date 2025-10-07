@@ -1,4 +1,3 @@
-import Std.Data.HashMap
 import Ix.Address
 import Lean.Declaration
 import Lean.Data.KVMap
@@ -122,7 +121,7 @@ def getBytes (len: Nat) : GetM ByteArray := do
 structure Tag4 where
   flag: Fin 16
   size: UInt64
-  deriving Inhabited, Repr, BEq, Hashable
+  deriving Inhabited, Repr, BEq, Ord
 
 def Tag4.encodeHead (tag: Tag4): UInt8 :=
   let t := UInt8.shiftLeft (UInt8.ofNat tag.flag.val) 4
@@ -412,7 +411,7 @@ structure Quotient where
   kind : Lean.QuotKind
   lvls : Nat
   type : Address
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize Quotient where
   put := fun x => Serialize.put (x.kind, x.lvls, x.type)
@@ -422,7 +421,7 @@ structure Axiom where
   isUnsafe: Bool
   lvls : Nat
   type : Address
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize Axiom where
   put := fun x => Serialize.put (x.isUnsafe, x.lvls, x.type)
@@ -434,7 +433,7 @@ structure Definition where
   lvls : Nat
   type : Address
   value : Address
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize Definition where
   put x := Serialize.put (x.kind, x.safety, x.lvls, x.type, x.value)
@@ -447,7 +446,7 @@ structure Constructor where
   params : Nat
   fields : Nat
   type : Address
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize Constructor where
   put x := Serialize.put (x.isUnsafe, x.lvls, x.cidx, x.params, x.fields, x.type)
@@ -456,7 +455,7 @@ instance : Serialize Constructor where
 structure RecursorRule where
   fields : Nat
   rhs : Address
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize RecursorRule where
   put x := Serialize.put (x.fields, x.rhs)
@@ -472,7 +471,7 @@ structure Recursor where
   minors : Nat
   type : Address
   rules : List RecursorRule
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize Recursor where
   put x := Serialize.put ((x.k, x.isUnsafe), x.lvls, x.params, x.indices, x.motives, x.minors, x.type, x.rules)
@@ -489,7 +488,7 @@ structure Inductive where
   type : Address
   ctors : List Constructor
   recrs : List Recursor
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize Inductive where
   put x := Serialize.put ((x.recr,x.refl,x.isUnsafe), x.lvls, x.params, x.indices, x.nested, x.type, x.ctors, x.recrs)
@@ -498,7 +497,7 @@ instance : Serialize Inductive where
 structure InductiveProj where
   idx : Nat
   block : Address
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize InductiveProj where
   put := fun x => Serialize.put (x.idx, x.block)
@@ -508,7 +507,7 @@ structure ConstructorProj where
   idx : Nat
   cidx : Nat
   block : Address
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize ConstructorProj where
   put := fun x => Serialize.put (x.idx, x.cidx, x.block)
@@ -518,7 +517,7 @@ structure RecursorProj where
   idx : Nat
   ridx : Nat
   block : Address
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize RecursorProj where
   put := fun x => Serialize.put (x.idx, x.ridx, x.block)
@@ -527,7 +526,7 @@ instance : Serialize RecursorProj where
 structure DefinitionProj where
   idx : Nat
   block : Address
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize DefinitionProj where
   put := fun x => Serialize.put (x.idx, x.block)
@@ -536,7 +535,7 @@ instance : Serialize DefinitionProj where
 structure Comm where
   secret : Address
   payload : Address
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize Comm where
   put := fun x => Serialize.put (x.secret, x.payload)
@@ -544,7 +543,7 @@ instance : Serialize Comm where
 
 structure Env where
   env : List MetaAddress
-  deriving BEq, Repr
+  deriving BEq, Repr, Inhabited, Ord
 
 instance : Serialize Env where
   put x := Serialize.put x.env
@@ -555,18 +554,18 @@ structure EvalClaim where
   input: Address
   output: Address
   type : Address
-deriving BEq, Repr, Inhabited
+deriving BEq, Repr, Inhabited, Ord
 
 structure CheckClaim where
   lvls : Address
   type : Address
   value : Address
-deriving BEq, Repr, Inhabited
+deriving BEq, Repr, Inhabited, Ord
 
 inductive Claim where
 | evals : EvalClaim -> Claim
 | checks : CheckClaim -> Claim
-deriving BEq, Repr, Inhabited
+deriving BEq, Repr, Inhabited, Ord
 
 instance : ToString CheckClaim where
   toString x := s!"#{x.value} : #{x.type} @ #{x.lvls}"
@@ -600,7 +599,7 @@ structure Proof where
   claim: Claim
   /-- Bytes of the Binius proof -/
   bin : ByteArray
-  deriving Inhabited, BEq
+  deriving Inhabited, BEq, Ord
 
 instance : ToString Proof where
   toString p := s!"<{toString p.claim} := {hexOfBytes p.bin}>"
@@ -706,7 +705,7 @@ inductive DataValue where
 | ofNat (v: Address)
 | ofInt (v: Address)
 | ofSyntax (v: Address)
-deriving BEq, Repr, Ord, Inhabited
+deriving BEq, Repr, Ord, Inhabited, Ord
 
 def putDataValue : DataValue → PutM Unit
 | .ofString v => putUInt8 0 *> put v
@@ -737,11 +736,11 @@ inductive Metadatum where
 | hints : Lean.ReducibilityHints -> Metadatum
 | all : List Address -> Metadatum
 | kvmap : List (Address × DataValue) -> Metadatum
-deriving BEq, Repr, Ord, Inhabited
+deriving BEq, Repr, Ord, Inhabited, Ord
 
 structure Metadata where
   nodes: List Metadatum
-  deriving BEq, Repr, Inhabited
+  deriving BEq, Repr, Inhabited, Ord
 
 def putMetadatum : Metadatum → PutM Unit
 | .name n => putUInt8 0 *> put n
@@ -812,9 +811,8 @@ inductive Ixon where
 | comm : Comm -> Ixon                                   -- 0xE3, cryptographic commitment
 | envn : Env -> Ixon                                    -- 0xE4, Lean4 environment
 | meta : Metadata -> Ixon                               -- 0xFX, Lean4 metadata
-deriving BEq, Repr, Inhabited
+deriving BEq, Repr, Inhabited, Ord
 
---abbrev Store := Std.HashMap Address ByteArray
 
 partial def putIxon : Ixon -> PutM Unit
 | .nanon => put (Tag4.mk 0x0 0)
@@ -917,8 +915,6 @@ instance : Serialize Ixon where
   get := getIxon
 
 def Ixon.address (ixon: Ixon): Address := Address.blake3 (ser ixon)
-
-
 
 
 --
