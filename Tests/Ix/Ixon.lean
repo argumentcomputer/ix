@@ -101,11 +101,11 @@ def genDataValue : Gen Ixon.DataValue :=
 
 def genMetadatum : Gen Ixon.Metadatum :=
   frequency [
-    (10, .name <$> genAddress),
     (10, .info <$> genBinderInfo),
     (10, .link <$> genAddress),
     (10, .hints <$> genReducibilityHints),
-    (10, .all <$> genList genAddress),
+    (10, .links <$> genList genAddress),
+    --(10, .rules <$> genList genAddress),
     (10, .kvmap <$> genList (Prod.mk <$> genAddress <*> genDataValue)),
   ]
 

@@ -91,7 +91,7 @@ def testInductives : IO TestSeq := do
   --let consts := env.getConstMap.filter fun n _ => namesp.isPrefixOf n
   let all := (env.getDelta.find! `Test.Ix.Inductives.A).all
   let preinds <- all.mapM fun n => match env.getDelta.find! n with
-    | .inductInfo v => do match (<- (makePreInd v).run .init cstt) with
+    | .inductInfo v => do match (<- (mkPreInd v).run .init cstt) with
       | (.ok a, _) => pure a
       | (.error e, _) => do throw (IO.userError (<- e.pretty))
     | _ => throw (IO.userError "not an inductive")
@@ -117,7 +117,7 @@ def testDifficult : IO TestSeq := do
       | none => match env.getConstMap.get? name with
         | some c => pure c
         | none => throw (IO.userError s!"{name} not in env")
-    let (addr, stt) <- do match (<- (compileConst const >>= dematerializeConst).run .init cstt) with
+    let (addr, stt) <- do match (<- (compileConst const).run .init cstt) with
     | (.ok a, stt) => pure (a, stt)
     | (.error e, _) => IO.println s!"failed {const.name}" *> throw (IO.userError (<- e.pretty))
     IO.println s!"{const.name} -> {addr}"
@@ -166,7 +166,7 @@ def testRoundtripGetEnv : IO TestSeq := do
     | (.error e, _) => do
       IO.println s!"failed {c.name}"
       throw (IO.userError (<- e.pretty))
-    let addr <- match stt.constNames.find? c.name with
+    let addr <- match stt.constCache.find? c.name with
     | .some addr => pure addr
     | .none => throw (IO.userError "name {n} not in env")
     IO.println s!"✓ {c.name} -> {addr}"
@@ -178,7 +178,7 @@ def testRoundtripGetEnv : IO TestSeq := do
     | (.error e, _) => do
       IO.println s!"failed {c.name}"
       throw (IO.userError (<- e.pretty))
-    let addr <- match stt.constNames.find? c.name with
+    let addr <- match stt.constCache.find? c.name with
     | .some addr => pure addr
     | .none => throw (IO.userError "name {n} not in env")
     IO.println s!"✓ {c.name} -> {addr}"

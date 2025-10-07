@@ -1,4 +1,4 @@
-import Batteries.Data.RBMap
+import Std.Data.HashMap
 import Ix.Ixon
 import Ix.Address
 import Ix.IR
@@ -7,8 +7,6 @@ import Ix.Common
 import Ix.SOrder
 import Ix.Cronos
 
-open Batteries (RBMap)
-open Batteries (RBSet)
 
 namespace Ix
 open Ixon hiding Substring
@@ -26,30 +24,26 @@ structure CompileState where
   maxHeartBeats: USize
   env: Lean.Environment
   prng: StdGen
-  store: RBMap Address ByteArray compare
-  ixonCache: RBMap Ixon Address compare
-  univCache: RBMap Lean.Level Ix.Level compare
-  univAddrs: RBMap Ix.Level MetaAddress compare
-  constNames: RBMap Lean.Name MetaAddress compare
-  constCache: RBMap Lean.ConstantInfo Ix.Const compare
-  constAddrs : RBMap Ix.Const MetaAddress compare
-  exprCache: RBMap Lean.Expr Ix.Expr compare
-  exprAddrs: RBMap Ix.Expr MetaAddress compare
-  synCache: RBMap Lean.Syntax Ixon.Syntax compare
-  nameCache: RBMap Lean.Name Address compare
-  strCache: RBMap String Address compare
-  comms: RBMap Lean.Name MetaAddress compare
-  constCmp: RBMap (Lean.Name × Lean.Name) Ordering compare
-  exprCmp: RBMap (CompileEnv × Lean.Expr × Lean.Expr) Ordering compare
-  axioms: RBMap Lean.Name MetaAddress compare
-  blocks: RBSet MetaAddress compare
+  store: Map Address ByteArray
+  ixonCache: Map Ixon Address
+  univCache: Map Lean.Level MetaAddress
+  constCache: Map Lean.Name MetaAddress
+  exprCache: Map Lean.Expr MetaAddress
+  synCache: Map Lean.Syntax Ixon.Syntax
+  nameCache: Map Lean.Name Address
+  strCache: Map String Address
+  comms: Map Lean.Name MetaAddress
+  constCmp: Map (Lean.Name × Lean.Name) Ordering
+  --exprCmp: Map (CompileEnv × Lean.Expr × Lean.Expr) Ordering
+  axioms: Map Lean.Name MetaAddress
+  blocks: Map MetaAddress Unit
   cronos: Cronos
 
 def CompileState.init (env: Lean.Environment) (seed: Nat) (maxHeartBeats: USize := 200000)
   : CompileState :=
   ⟨maxHeartBeats, env, mkStdGen seed, default, default, default, default,
   default, default, default, default, default, default, default, default,
-  default, default, default, default, default, default⟩
+  default, default⟩
 
 inductive CompileError where
 | unknownConstant : Lean.Name -> CompileError
@@ -66,11 +60,13 @@ inductive CompileError where
 | kernelException : Lean.Kernel.Exception → CompileError
 --| cantPackLevel : Nat → CompileError
 --| nonCongruentInductives : PreInd -> PreInd -> CompileError
-| alphaInvarianceFailure : Ix.Const -> MetaAddress -> Ix.Const -> MetaAddress -> CompileError
-| dematBadMutualBlock: MutualBlock -> CompileError
-| dematBadInductiveBlock: InductiveBlock -> CompileError
-| emptyDefsClass: List (List PreDef) -> CompileError
-| emptyIndsClass: List (List PreInd) -> CompileError
+| alphaInvarianceFailure : Lean.ConstantInfo -> MetaAddress -> Lean.ConstantInfo -> MetaAddress -> CompileError
+--| dematBadMutualBlock: MutualBlock -> CompileError
+--| dematBadInductiveBlock: InductiveBlock -> CompileError
+| badMutualBlock: List (List PreDef) -> CompileError
+| badInductiveBlock: List (List PreInd) -> CompileError
+| badIxonDeserialization : Address -> String -> CompileError
+| unknownStoreAddress : Address -> CompileError
 --| emptyIndsEquivalenceClass: List (List PreInd) -> CompileError
 
 def CompileError.pretty : CompileError -> IO String
@@ -87,12 +83,10 @@ def CompileError.pretty : CompileError -> IO String
 | .kernelException e => (·.pretty 80) <$> (e.toMessageData .empty).format
 | .alphaInvarianceFailure x xa y ya => 
   pure s!"alpha invariance failure {repr x} hashes to {xa}, but {repr y} hashes to {ya}"
-| .dematBadMutualBlock block => pure s!"bad mutual block while dematerializing {repr block}"
-| .dematBadInductiveBlock block => pure s!"bad mutual block while dematerializing {repr block}"
-| .emptyDefsClass dss => 
-  pure s!"empty equivalence class while sorting definitions {dss.map fun ds => ds.map (·.name)}"
-| .emptyIndsClass dss => 
-  pure s!"empty equivalence class while sorting inductives {dss.map fun ds => ds.map (·.name)}"
+| .badMutualBlock block => pure s!"bad mutual block {repr block}"
+| .badInductiveBlock block => pure s!"bad mutual block {repr block}"
+| .badIxonDeserialization a s => pure s!"bad deserialization of ixon at {a}, error: {s}"
+| .unknownStoreAddress a => pure s!"unknown store address {a}"
 
 abbrev CompileM :=
   ReaderT CompileEnv <| ExceptT CompileError <| StateT CompileState IO
@@ -143,10 +137,17 @@ def storeIxon (ixon: Ixon): CompileM Address := do
   | none => do
     let bytes := Ixon.ser ixon
     let addr := Address.blake3 bytes
-    dbg_trace "storeIxon hash {addr} {(<- read).current}"
+    --dbg_trace "storeIxon hash {addr} {(<- read).current}"
     modifyGet fun stt => (addr, { stt with
       store := stt.store.insert addr bytes
     })
+
+def getIxon (addr: Address) : CompileM Ixon := do
+  match (<- get).store.find? addr with
+  | some bytes => match Ixon.de bytes with
+    | .ok ixon => pure ixon
+    | .error e => throw <| .badIxonDeserialization addr e
+  | none => throw <| .unknownStoreAddress addr
 
 def storeString (str: String): CompileM Address := do
   match (<- get).strCache.find? str with
@@ -173,14 +174,14 @@ def storeSerial [Serialize A] (a: A): CompileM Address := do
     store := stt.store.insert addr bytes
   })
 
-def storeMetadata (meta: Metadata): CompileM Address := do
+def storeMeta (meta: Metadata): CompileM Address := do
   let bytes := Ixon.ser meta
   let addr := Address.blake3 bytes
   modifyGet fun stt => (addr, { stt with
     store := stt.store.insert addr bytes
   })
 
-def dematerializeName (name: Lean.Name): CompileM Address := do
+def compileName (name: Lean.Name): CompileM Address := do
   match (<- get).nameCache.find? name with
   | some addr => pure addr
   | none => do
@@ -192,11 +193,11 @@ def dematerializeName (name: Lean.Name): CompileM Address := do
     go : Lean.Name -> CompileM Address
     | .anonymous => pure <| Address.blake3 ⟨#[]⟩
     | .str n s => do
-      let n' <- dematerializeName n
+      let n' <- compileName n
       let s' <- storeString s
       storeIxon (.nstr n' s')
     | .num n i => do
-      let n' <- dematerializeName n
+      let n' <- compileName n
       let i' <- storeNat i
       storeIxon (.nnum n' i')
 
@@ -227,310 +228,58 @@ def compareLevel (xctx yctx: List Lean.Name)
     | _,       none    => 
       throw $ .levelNotFound y yctx s!"compareLevel"
 
-def dematerializeLevel (lvl: Ix.Level): CompileM MetaAddress := do
-  match (<- get).univAddrs.find? lvl with
+/-- Canonicalizes a Lean universe level --/
+def compileLevel (lvl: Lean.Level): CompileM MetaAddress := do
+  match (<- get).univCache.find? lvl with
   | some l => pure l
   | none => do
-    --dbg_trace "dematerializeLevel go {(<- get).univAddrs.size} {(<- read).current}"
+    --dbg_trace "compileLevel go {(<- get).univAddrs.size} {(<- read).current}"
     let (anon, meta) <- go lvl
     let anonAddr <- storeIxon anon
     let metaAddr <- storeIxon meta
     let maddr := ⟨anonAddr, metaAddr⟩
     modifyGet fun stt => (maddr, { stt with
-      univAddrs := stt.univAddrs.insert lvl maddr
+      univCache := stt.univCache.insert lvl maddr
     })
   where
-    go : Ix.Level -> CompileM (Ixon × Ixon)
+    go : Lean.Level -> CompileM (Ixon × Ixon)
     | .zero => pure (.uzero, .meta default)
     | .succ x => do
-      let ⟨a, m⟩ <- dematerializeLevel x
+      let ⟨a, m⟩ <- compileLevel x
       pure (.usucc a, .meta ⟨[.link m]⟩)
     | .max x y => do
-      let ⟨xa, xm⟩ <- dematerializeLevel x
-      let ⟨ya, ym⟩ <- dematerializeLevel y
+      let ⟨xa, xm⟩ <- compileLevel x
+      let ⟨ya, ym⟩ <- compileLevel y
       pure (.umax xa ya, .meta ⟨[.link xm, .link ym]⟩)
     | .imax x y => do
-      let ⟨xa, xm⟩ <- dematerializeLevel x
-      let ⟨ya, ym⟩ <- dematerializeLevel y
+      let ⟨xa, xm⟩ <- compileLevel x
+      let ⟨ya, ym⟩ <- compileLevel y
       pure (.uimax xa ya, .meta ⟨[.link xm, .link ym]⟩)
-    | .param n i => do
-      let n' <- dematerializeName n
-      pure (.uvar i, .meta ⟨[.name n']⟩)
-
-/-- Canonicalizes a Lean universe level --/
-def compileLevel (lvl: Lean.Level): CompileM Ix.Level := do
-  match (<- get).univCache.find? lvl with
-  | some l => pure l
-  | none => do
-    --dbg_trace "compileLevel go {(<- get).univCache.size} {(<- read).current}"
-    let lvl' <- go lvl
-    --let _ <- dematerializeLevel lvl'
-    modifyGet fun stt => (lvl', { stt with
-      univCache := stt.univCache.insert lvl lvl'
-    })
-  where
-    go : Lean.Level -> CompileM Ix.Level
-    | .zero => pure .zero
-    | .succ u => return .succ (← compileLevel u)
-    | .max a b  => return .max (← compileLevel a) (← compileLevel b)
-    | .imax a b => return .imax (← compileLevel a) (← compileLevel b)
-    | .param name => do
+    | .param n => do
       let lvls := (← read).univCtx
-      match lvls.idxOf? name with
-      | some n => pure $ .param name n
-      | none   => throw $ .levelNotFound name lvls s!"compileLevel"
+      match lvls.idxOf? n with
+      | some i => pure (.uvar i, .meta ⟨[.link (<- compileName n)]⟩)
+      | none   => throw $ .levelNotFound n lvls s!"compileLevel"
     | l@(.mvar ..) => throw $ .levelMetavariable l
 
-def dematerializeExpr (expr: Ix.Expr): CompileM MetaAddress := do
-  match (<- get).exprAddrs.find? expr with
-  | some x => pure x
-  | none => do
-    --dbg_trace "dematerializeExpr go {(<- get).exprAddrs.size} {(<- read).current}"
-    let (anon, meta) <- go expr
-    --dbg_trace "dematerializeExpr store {(<- get).exprAddrs.size} {(<- read).current}"
-    let anonAddr <- storeIxon anon
-    let metaAddr <- storeIxon meta
-    let maddr := ⟨anonAddr, metaAddr⟩
-    modifyGet fun stt => (maddr, { stt with
-      exprAddrs := stt.exprAddrs.insert expr maddr
-    })
-  where
-    go : Ix.Expr -> CompileM (Ixon × Ixon)
-    | .var md idx => do
-      --dbg_trace "dematExpr var {(<- get).exprAddrs.size} {(<- read).current}"
-      pure (.evar idx, .meta ⟨[.link md]⟩)
-    | .sort md univ => do
-      --dbg_trace "dematExpr sort {(<- get).exprAddrs.size} {(<- read).current}"
-      let ⟨udata, umeta⟩ <- dematerializeLevel univ
-      let data := .esort udata
-      let meta := .meta ⟨[.link md, .link umeta]⟩
-      pure (data, meta)
-    | .const md name ref univs => do
-      --dbg_trace "dematExpr const {(<- get).exprAddrs.size} {(<- read).current}"
-      let n <- dematerializeName name
-      let us <- univs.mapM dematerializeLevel
-      let data := .eref ref.data (us.map (·.data))
-      let meta := .meta ⟨[.link md, .name n, .link ref.meta] ++ us.map (.name ·.meta)⟩
-      pure (data, meta)
-    | .rec_ md name idx univs => do
-      --dbg_trace "dematExpr rec {(<- get).exprAddrs.size} {(<- read).current}"
-      let n <- dematerializeName name
-      let us <- univs.mapM dematerializeLevel
-      let data := .erec idx (us.map (·.data))
-      let meta := .meta ⟨[.link md, .name n] ++ us.map (.name ·.meta)⟩
-      pure (data, meta)
-    | .app md func argm => do
-      --dbg_trace "dematExpr app {(<- get).exprAddrs.size} {(<- read).current}"
-      let f' <- dematerializeExpr func
-      let a' <- dematerializeExpr argm
-      let data := .eapp f'.data a'.data
-      let meta := .meta ⟨[.link md, .link f'.meta, .link a'.meta]⟩
-      pure (data, meta)
-    | .lam md name info type body => do
-      --dbg_trace "dematExpr lam {(<- get).exprAddrs.size} {(<- read).current}"
-      let n <- dematerializeName name
-      let t' <- dematerializeExpr type
-      let b' <- dematerializeExpr body
-      let data := .elam t'.data b'.data
-      let meta := .meta ⟨[.link md, .name n, .info info, .link t'.meta, .link b'.meta]⟩
-      pure (data, meta)
-    | .pi md name info type body => do
-      --dbg_trace "dematExpr pi {(<- get).exprAddrs.size} {(<- read).current}"
-      let n <- dematerializeName name
-      let t' <- dematerializeExpr type
-      let b' <- dematerializeExpr body
-      let data := .eall t'.data b'.data
-      let meta := .meta ⟨[.link md, .name n, .info info, .link t'.meta, .link b'.meta]⟩
-      pure (data, meta)
-    | .letE md name type value body nD => do
-      --dbg_trace "dematExpr letE {(<- get).exprAddrs.size} {(<- read).current}"
-      let n <- dematerializeName name
-      let t' <- dematerializeExpr type
-      let v' <- dematerializeExpr value
-      let b' <- dematerializeExpr body
-      let data := .elet nD t'.data v'.data b'.data
-      let meta := .meta ⟨[.link md, .name n, .link t'.meta, .link v'.meta, .link b'.meta]⟩
-      pure (data, meta)
-    | .lit md (.natVal n) => do pure (.enat (<- storeNat n), .meta ⟨[.link md]⟩)
-    | .lit md (.strVal s) => do pure (.estr (<- storeString s), .meta ⟨[.link md]⟩)
-    | .proj md typeName type idx struct => do
-      --dbg_trace "dematExpr proj {(<- get).exprAddrs.size} {(<- read).current}"
-      let n <- dematerializeName typeName
-      let s' <- dematerializeExpr struct
-      let data := .eprj type.data idx s'.data
-      let meta := .meta ⟨[.link md, .name n, .link type.meta, .link s'.meta]⟩
-      pure (data, meta)
-
-def dematerializeConst (const: Ix.Const): CompileM MetaAddress := do
-  match (<- get).constAddrs.find? const with
-  | some x => pure x
-  | none => do
-    let (anon, meta) <- go const
-    let anonAddr <- storeIxon anon
-    let metaAddr <- storeIxon meta
-    let maddr := ⟨anonAddr, metaAddr⟩
-    dbg_trace "dematerializeConst exprAddrs {(<- get).exprAddrs.size} {(<- read).current}"
-    dbg_trace "dematerializeConst constAddrs {(<- get).constAddrs.size} {(<- read).current}"
-    modifyGet fun stt => (maddr, { stt with
-      constAddrs := stt.constAddrs.insert const maddr
-    })
-  where
-    goDef : Ix.Definition -> CompileM (Ixon.Definition × Ixon.Metadata)
-    | ⟨name, lvls, type, kind, value, hints, safety, all⟩ => do
-      let n <- dematerializeName name
-      let ls <- storeMetadata ⟨<- lvls.mapM (.name <$> dematerializeName ·)⟩
-      let t <- dematerializeExpr type
-      let v <- dematerializeExpr value
-      let as <- storeMetadata ⟨<- all.mapM (.name <$> dematerializeName ·)⟩
-      let data := ⟨kind, safety, lvls.length, t.data, v.data⟩
-      let meta := ⟨[.name n, .link ls, .hints hints, .link t.meta, .link v.meta, .link as]⟩
-      pure (data, meta)
-    goCtor : Ix.Constructor -> CompileM (Ixon.Constructor × Ixon.Metadata)
-    | ⟨name, lvls, type, cidx, params, fields, usafe⟩ => do
-      let n <- dematerializeName name
-      let ls <- storeMetadata ⟨<- lvls.mapM (.name <$> dematerializeName ·)⟩
-      let t <- dematerializeExpr type
-      let ctor := ⟨usafe, lvls.length, cidx, params, fields, t.data⟩
-      let meta := ⟨[.name n, .link ls, .link t.meta]⟩
-      pure (ctor, meta)
-    goRecrRule : Ix.RecursorRule -> CompileM (Ixon.RecursorRule × Ixon.Metadata)
-    | ⟨ctor, fields, rhs⟩ => do
-      let c <- dematerializeName ctor
-      let x <- dematerializeExpr rhs
-      let rule := ⟨fields, x.data⟩
-      let meta := ⟨[.name c, .link x.meta]⟩
-      pure (rule, meta)
-    goRecr : Ix.Recursor -> CompileM (Ixon.Recursor × Ixon.Metadata)
-    | ⟨name, lvls, type, params, indices, motives, minors, rules, k, usafe⟩ => do
-      let n <- dematerializeName name
-      let ls <- storeMetadata ⟨<- lvls.mapM (.name <$> dematerializeName ·)⟩
-      let t <- dematerializeExpr type
-      let rules <- rules.mapM goRecrRule
-      let rulesData := rules.map (·.1)
-      let rulesMeta <- storeMetadata ⟨<- rules.mapM (.link <$> storeMetadata ·.2)⟩
-      let recr := ⟨k, usafe, lvls.length, params, indices, motives, minors, t.data, rulesData⟩
-      let meta := ⟨[.name n, .link ls, .link t.meta, .link rulesMeta]⟩
-      pure (recr, meta)
-    goInd : Ix.Inductive -> CompileM (Ixon.Inductive × Ixon.Metadata)
-    | ⟨name, lvls, type, params, indices, all, ctors, recrs, nested, recr, refl, usafe⟩ => do
-      let n <- dematerializeName name
-      let ls <- storeMetadata ⟨<- lvls.mapM (.name <$> dematerializeName ·)⟩
-      let t <- dematerializeExpr type
-      let cs <- ctors.mapM goCtor
-      let ctorsData := cs.map (·.1)
-      let ctorsMeta <- storeMetadata ⟨<- cs.mapM (.link <$> storeMetadata ·.2)⟩
-      let rs <- recrs.mapM goRecr
-      let recrsData := rs.map (·.1)
-      let recrsMeta <- storeMetadata ⟨<- rs.mapM (.link <$> storeMetadata ·.2)⟩
-      let as <- storeMetadata ⟨<- all.mapM (.name <$> dematerializeName ·)⟩
-      let data := ⟨recr, refl, usafe, lvls.length, params, indices, nested, t.data, ctorsData, recrsData⟩
-      let meta := ⟨[.name n, .link ls, .link t.meta, .link as, .link ctorsMeta, .link recrsMeta]⟩
-      pure (data, meta)
-    go : Ix.Const -> CompileM (Ixon × Ixon)
-    | .axiom ⟨name, lvls, type, isUnsafe⟩ => do
-      let n <- dematerializeName name
-      let ls <- storeMetadata ⟨<- lvls.mapM (.name <$> dematerializeName ·)⟩
-      let t <- dematerializeExpr type
-      let data := .axio ⟨isUnsafe, lvls.length, t.data⟩
-      let meta := .meta ⟨[.name n, .link ls]⟩
-      pure (data, meta)
-    | .quotient ⟨name, lvls, type, kind⟩ => do
-      let n <- dematerializeName name
-      let ls <- storeMetadata ⟨<- lvls.mapM (.name <$> dematerializeName ·)⟩
-      let t <- dematerializeExpr type
-      let data := .quot ⟨kind, lvls.length, t.data⟩
-      let meta := .meta ⟨[.name n, .link ls, .link t.meta]⟩
-      pure (data, meta)
-    | .definition d => (fun (d, m) => (.defn d, .meta m)) <$> goDef d
-    | .inductiveProj ⟨name, block, idx⟩ => do
-      let n <- dematerializeName name
-      let data := .iprj ⟨idx, block.data⟩
-      let meta := .meta ⟨[.name n, .link block.meta]⟩
-      pure (data, meta)
-    | .constructorProj ⟨name, block, idx, induct, cidx⟩ => do
-      let n <- dematerializeName name
-      let ind <- dematerializeName induct
-      let data := .cprj ⟨idx, cidx, block.data⟩
-      let meta := .meta ⟨[.name n, .link block.meta, .name ind]⟩
-      pure (data, meta)
-    | .recursorProj ⟨name, block, idx, induct, ridx⟩ => do
-      let n <- dematerializeName name
-      let ind <- dematerializeName induct
-      let data := .rprj ⟨idx, ridx, block.data⟩
-      let meta := .meta ⟨[.name n, .link block.meta, .name ind]⟩
-      pure (data, meta)
-    | .definitionProj ⟨name, block, idx⟩ => do
-      let n <- dematerializeName name
-      let data := .dprj ⟨idx, block.data⟩
-      let meta := .meta ⟨[.name n, .link block.meta]⟩
-      pure (data, meta)
-    | .mutual block => do
-      let mut data := #[]
-      let mut meta := #[]
-      -- iterate through each equivalence class
-      for defsClass in block.defs do
-        let mut classData := #[]
-        let mut classMeta := #[]
-        -- dematerialize each def in a class
-        for defn in defsClass do
-          let (defn', meta') <- goDef defn
-          classData := classData.push defn'
-          -- build up the class metadata as a list of links to the def metadata
-          classMeta := classMeta.push (.link (<- storeMetadata meta'))
-        -- make sure we have no empty classes and all defs in a class are equal
-        match classData.toList with
-          | [] => throw (.dematBadMutualBlock block)
-          | [x] => data := data.push x
-          | x::xs =>
-            if xs.foldr (fun y acc => (y == x) && acc) true
-            then data := data.push x
-            else throw (.dematBadMutualBlock block)
-        -- build up the block metadata as a list of links to the class metadata
-        meta := meta.push (.link (<- storeMetadata ⟨classMeta.toList⟩))
-      pure (.defs data.toList, .meta ⟨meta.toList⟩)
-    | .inductive block => do
-      let mut data := #[]
-      let mut meta := #[]
-      -- iterate through each equivalence class
-      for indsClass in block.inds do
-        let mut classData := #[]
-        let mut classMeta := #[]
-        -- dematerialize each inductive in a class
-        for indc in indsClass do
-          let (indc', meta') <- goInd indc
-          classData := classData.push indc'
-          -- build up the class metadata as a list of links to the indc metadata
-          classMeta := classMeta.push (.link (<- storeMetadata meta'))
-        -- make sure we have no empty classes and all defs in a class are equal
-        match classData.toList with
-          | [] => throw (.dematBadInductiveBlock block)
-          | [x] => data := data.push x
-          | x::xs =>
-            if xs.foldr (fun y acc => (y == x) && acc) true
-            then data := data.push x
-            else throw (.dematBadInductiveBlock block)
-        -- build up the block metadata as a list of links to the class metadata
-        meta := meta.push (.link (<- storeMetadata ⟨classMeta.toList⟩))
-      pure (.inds data.toList, .meta ⟨meta.toList⟩)
-
-def dematerializeSubstring : Substring -> CompileM Ixon.Substring
+def compileSubstring : Substring -> CompileM Ixon.Substring
 | ⟨str, startPos, stopPos⟩ => do
     pure ⟨<- storeString str, startPos.byteIdx, stopPos.byteIdx⟩
 
-def dematerializeSourceInfo : Lean.SourceInfo -> CompileM Ixon.SourceInfo
+def compileSourceInfo : Lean.SourceInfo -> CompileM Ixon.SourceInfo
 | .original l p t e => do
-  let l' <- dematerializeSubstring l
-  let t' <- dematerializeSubstring t
+  let l' <- compileSubstring l
+  let t' <- compileSubstring t
   pure <| .original l' p.byteIdx t' e.byteIdx
 | .synthetic p e c => pure (.synthetic p.byteIdx e.byteIdx c)
 | .none => pure .none
 
-def dematerializePreresolved : Lean.Syntax.Preresolved -> CompileM Ixon.Preresolved
-| .namespace ns => .namespace <$> dematerializeName ns
-| .decl n fs => .decl <$> dematerializeName n <*> fs.mapM storeString
+def compilePreresolved : Lean.Syntax.Preresolved -> CompileM Ixon.Preresolved
+| .namespace ns => .namespace <$> compileName ns
+| .decl n fs => .decl <$> compileName n <*> fs.mapM storeString
 
-partial def dematerializeSyntax (syn: Lean.Syntax) : CompileM Ixon.Syntax := do
-  dbg_trace "dematerializeSyntax {(<- read).current}"
+partial def compileSyntax (syn: Lean.Syntax) : CompileM Ixon.Syntax := do
+  dbg_trace "compileSyntax {(<- read).current}"
   match (<- get).synCache.find? syn with
   | some x => pure x
   | none => do
@@ -542,37 +291,37 @@ partial def dematerializeSyntax (syn: Lean.Syntax) : CompileM Ixon.Syntax := do
     go : Lean.Syntax -> CompileM Ixon.Syntax
     | .missing => pure .missing
     | .node info kind args => do
-      let info' <- dematerializeSourceInfo info
-      let kind' <- dematerializeName kind
-      let args' <- args.toList.mapM (dematerializeSyntax · >>= storeSerial)
+      let info' <- compileSourceInfo info
+      let kind' <- compileName kind
+      let args' <- args.toList.mapM (compileSyntax · >>= storeSerial)
       pure <| .node info' kind' args'
     | .atom info val => do
-      let info' <- dematerializeSourceInfo info 
+      let info' <- compileSourceInfo info 
       let val' <- storeString val
       pure <| .atom info' val'
     | .ident info rawVal val preresolved => do
-      let info' <- dematerializeSourceInfo info
-      let rawVal' <- dematerializeSubstring rawVal
-      let val' <- dematerializeName val
-      let ps' <- preresolved.mapM dematerializePreresolved
+      let info' <- compileSourceInfo info
+      let rawVal' <- compileSubstring rawVal
+      let val' <- compileName val
+      let ps' <- preresolved.mapM compilePreresolved
       pure <| .ident info' rawVal' val' ps'
 
-def dematerializeDataValue : Lean.DataValue -> CompileM Ixon.DataValue
+def compileDataValue : Lean.DataValue -> CompileM Ixon.DataValue
 | .ofString s => .ofString <$> storeString s
 | .ofBool b => pure (.ofBool b)
-| .ofName n => .ofName <$> dematerializeName n
+| .ofName n => .ofName <$> compileName n
 | .ofNat i => .ofName <$> storeNat i
 | .ofInt i => .ofInt <$> storeSerial i
-| .ofSyntax s => .ofSyntax <$> (dematerializeSyntax s >>= storeSerial)
+| .ofSyntax s => .ofSyntax <$> (compileSyntax s >>= storeSerial)
 
-def dematerializeKVMaps (maps: List Lean.KVMap): CompileM Address := do
+def compileKVMaps (maps: List Lean.KVMap): CompileM Address := do
   storeIxon (.meta ⟨<- maps.mapM go⟩)
   where
     go (map: Lean.KVMap): CompileM Metadatum := do
     let mut list := #[]
     for (name, dataValue) in map do
-      let n <- dematerializeName name
-      let d <- dematerializeDataValue dataValue
+      let n <- compileName name
+      let d <- compileDataValue dataValue
       list := list.push (n, d)
     pure <| .kvmap list.toList
 
@@ -590,157 +339,282 @@ def isInternalRec (expr : Lean.Expr) (name : Lean.Name) : Bool :=
   | .const n .. => n == name
   | _ => false
 
-
 mutual
 
-partial def compileExpr (kvs: List Lean.KVMap) (expr: Lean.Expr): CompileM Ix.Expr := do
-  match (<- get).exprCache.find? expr with
-  | some x => pure x
-  | none => do
-    --dbg_trace "compileExpr go {(<- get).exprCache.size} {(<- read).current}"
-    let expr' <- go expr
-    --let _ <- dematerializeExpr expr'
-    --dbg_trace "compileExpr exprCache {(<- get).exprCache.size} {(<- read).current}"
-    modifyGet fun stt => (expr', { stt with
-      exprCache := stt.exprCache.insert expr expr'
-    })
+partial def compileExpr: Lean.Expr -> CompileM MetaAddress 
+| expr => outer [] expr
   where
-    kv := dematerializeKVMaps kvs
-    go : Lean.Expr -> CompileM Ix.Expr
-    | (.mdata kv x) => do
-      --dbg_trace "compileExpr mdata {(<- read).current}"
-      compileExpr (kv::kvs) x
-    | .bvar idx => do 
-      --dbg_trace "compileExpr bvar {(<- read).current}"
-      match (← read).bindCtx[idx]? with
-      -- Bound variables must be in the bind context
-      | some _ => return .var (<- kv) idx
-      | none => throw $ .invalidBVarIndex idx
-    | .sort lvl => .sort <$> kv <*> compileLevel lvl
+    outer (kvs: List Lean.KVMap) (expr: Lean.Expr): CompileM MetaAddress := do
+      match (<- get).exprCache.find? expr with
+      | some x => pure x
+      | none => do
+        let (anon, meta) <- go kvs expr
+        let anonAddr <- storeIxon anon
+        let metaAddr <- storeIxon meta
+        let maddr := ⟨anonAddr, metaAddr⟩
+        modifyGet fun stt => (maddr, { stt with
+          exprCache := stt.exprCache.insert expr maddr
+        })
+    go (kvs: List Lean.KVMap): Lean.Expr -> CompileM (Ixon × Ixon)
+    | (.mdata kv x) => go (kv::kvs) x
+    | .bvar idx => do
+      let md <- compileKVMaps kvs
+      let data := .evar idx
+      let sort := .meta ⟨[.link md]⟩
+      pure (data, sort)
+    | .sort univ => do
+      let md <- compileKVMaps kvs
+      let ⟨udata, umeta⟩ <- compileLevel univ
+      let data := .esort udata
+      let meta := .meta ⟨[.link md, .link umeta]⟩
+      pure (data, meta)
     | .const name lvls => do
-      --dbg_trace "compileExpr const {name} {(<- read).current}"
-      let univs ← lvls.mapM compileLevel
+      let md <- compileKVMaps kvs
+      let n <- compileName name
+      let us <- lvls.mapM compileLevel
       match (← read).mutCtx.find? name with
-      | some i => return .rec_ (<- kv) name i univs
-      | none => match (<- get).comms.find? name with
-        | some addr => return .const (<- kv) name addr univs
-        | none => do
-          let addr <- findLeanConst name >>= compileConst >>= dematerializeConst
-          return .const (<- kv) name addr univs
-    | .app fnc arg => do
-      --dbg_trace "compileExpr app {(<- read).current}"
-      .app <$> kv <*> compileExpr [] fnc <*> compileExpr [] arg
-    | .lam name typ bod info => do
-      --dbg_trace "compileExpr lam {(<- read).current}"
-      let t <- compileExpr [] typ
-      let b <- withBinder name <| compileExpr [] bod
-      return .lam (<- kv) name info t b
-    | .forallE name dom img info => do
-      --dbg_trace "compileExpr all {(<- read).current}"
-      let d <- compileExpr [] dom
-      let i <- withBinder name <| compileExpr [] img
-      return .pi (<- kv) name info d i
-    | .letE name typ val bod nD => do
-      --dbg_trace "compileExpr let {(<- read).current}"
-      let t <- compileExpr [] typ
-      let v <- compileExpr [] val
-      let b <- withBinder name <| compileExpr [] bod
-      return .letE (<- kv) name t v b nD
-    | .lit lit => return .lit (<- kv) lit
-    | .proj name idx exp => do
-      --dbg_trace "compileExpr proj {(<- read).current}"
-      let addr <- findLeanConst name >>= compileConst >>= dematerializeConst
-      return .proj (<- kv) name addr idx (<- compileExpr [] exp)
+      | some idx => 
+        let data := .erec idx (us.map (·.data))
+        let meta := .meta ⟨[.link md, .link n, .links (us.map (·.meta))]⟩
+        pure (data, meta)
+      | none => do
+        let ref <- match (<- get).comms.find? name with
+          | some comm => pure comm
+          | none => findLeanConst name >>= compileConst
+        let data := .eref ref.data (us.map (·.data))
+        let meta := .meta ⟨[.link md, .link n, .link ref.meta, .links (us.map (·.meta))]⟩
+        pure (data, meta)
+    | .app func argm => do
+      let md <- compileKVMaps kvs
+      let f <- compileExpr func
+      let a <- compileExpr argm
+      let data := .eapp f.data a.data
+      let meta := .meta ⟨[.link md, .link f.meta, .link a.meta]⟩
+      pure (data, meta)
+    | .lam name type body info => do
+      let md <- compileKVMaps kvs
+      let n <- compileName name
+      let t <- compileExpr type
+      let b <- compileExpr body
+      let data := .elam t.data b.data
+      let meta := .meta ⟨[.link md, .link n, .info info, .link t.meta, .link b.meta]⟩
+      pure (data, meta)
+    | .forallE name type body info => do
+      let md <- compileKVMaps kvs
+      let n <- compileName name
+      let t <- compileExpr type
+      let b <- compileExpr body
+      let data := .eall t.data b.data
+      let meta := .meta ⟨[.link md, .link n, .info info, .link t.meta, .link b.meta]⟩
+      pure (data, meta)
+    | .letE name type value body nD => do
+      let md <- compileKVMaps kvs
+      let n <- compileName name
+      let t <- compileExpr type
+      let v <- compileExpr value
+      let b <- compileExpr body
+      let data := .elet nD t.data v.data b.data
+      let meta := .meta ⟨[.link md, .link n, .link t.meta, .link v.meta, .link b.meta]⟩
+      pure (data, meta)
+    | .lit (.natVal n) => do
+      let md <- compileKVMaps kvs
+      pure (.enat (<- storeNat n), .meta ⟨[.link md]⟩)
+    | .lit (.strVal s) => do
+      let md <- compileKVMaps kvs
+      pure (.estr (<- storeString s), .meta ⟨[.link md]⟩)
+    | .proj typeName idx struct => do
+      let md <- compileKVMaps kvs
+      let t <- match (<- get).comms.find? typeName with
+        | some comm => pure comm
+        | none => findLeanConst typeName >>= compileConst
+      let n <- compileName typeName
+      let s <- compileExpr struct
+      let data := .eprj t.data idx s.data
+      let meta := .meta ⟨[.link md, .link n, .link t.meta, .link s.meta]⟩
+      pure (data, meta)
     | expr@(.fvar ..)  => throw $ .exprFreeVariable expr
     | expr@(.mvar ..)  => throw $ .exprMetavariable expr
 
-partial def compileConst (const : Lean.ConstantInfo) : CompileM Ix.Const := do
-  match (<- get).constCache.find? const with
+partial def compileConst (const: Lean.ConstantInfo): CompileM MetaAddress := do
+  match (<- get).constCache.find? const.name with
   | some x => pure x
   | none => resetCtx const.name <| do
-    let const' <- go const
-    let addr <- dematerializeConst const'
+    let (anon, meta) <- go const
     let stt <- get
     dbg_trace "✓ compileConst {const.name}"
     dbg_trace "store {stt.store.size}"
-    dbg_trace "constNames {stt.constNames.size}"
     dbg_trace "constCache {stt.constCache.size}"
     dbg_trace "exprCache {stt.exprCache.size}"
     dbg_trace "nameCache {stt.nameCache.size}"
     dbg_trace "synCache {stt.synCache.size}"
     dbg_trace "strCache {stt.strCache.size}"
     dbg_trace "univCache {stt.univCache.size}"
-    modifyGet fun stt => (const', { stt with
-      constNames := stt.constNames.insert const.name addr
-      constCache := stt.constCache.insert const const'
+    let maddr := ⟨<- storeIxon anon, <- storeIxon meta⟩
+    modifyGet fun stt => (maddr, { stt with
+      constCache := stt.constCache.insert const.name maddr
     })
   where
-    go : Lean.ConstantInfo -> CompileM Ix.Const
-    | .defnInfo val => compileDefinition (mkPreDef val)
-    | .thmInfo val => compileDefinition (mkPreTheorem val)
-    | .opaqueInfo val => compileDefinition (mkPreOpaque val)
-    | .inductInfo val => compileInductive val
-    -- compile constructors through their parent inductive
+    go : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
+    | .defnInfo val => compilePreDef (mkPreDef val)
+    | .thmInfo val => compilePreDef (mkPreTheorem val)
+    | .opaqueInfo val => compilePreDef (mkPreOpaque val)
+    | .inductInfo val => mkPreInd val >>= compilePreInd
     | .ctorInfo val => do match <- findLeanConst val.induct with
       | .inductInfo ind => do
-        let _ <- compileInductive ind
-        compileConst (.ctorInfo val)
-      | c => throw $ .invalidConstantKind c.name "inductive" c.ctorName
+        let _ <- mkPreInd ind >>= compilePreInd
+        match (<- get).constCache.find? const.name with
+        | some ⟨data, meta⟩ => do pure (<- getIxon data, <- getIxon meta)
+        | none => throw <| .compileInductiveBlockMissingProjection const.name
+      | c => throw <| .invalidConstantKind c.name "inductive" c.ctorName
     -- compile recursors through their parent inductive
     | .recInfo val => do
       match ← findLeanConst val.getMajorInduct with
       | .inductInfo ind => do
-        let _ <- compileInductive ind
-        compileConst (.recInfo val)
+        let _ <- mkPreInd ind >>= compilePreInd
+        match (<- get).constCache.find? const.name with
+        | some ⟨data, meta⟩ => do pure (<- getIxon data, <- getIxon meta)
+        | none => throw <| .compileInductiveBlockMissingProjection const.name
       | c => throw $ .invalidConstantKind c.name "inductive" c.ctorName
     | .axiomInfo ⟨⟨name, lvls, type⟩, isUnsafe⟩ => withLevels lvls do
-      return .axiom ⟨name, lvls, <- compileExpr [] type, isUnsafe⟩
+      let n <- compileName name
+      let ls <- lvls.mapM compileName
+      let t <- compileExpr type
+      let data := .axio ⟨isUnsafe, lvls.length, t.data⟩
+      let meta := .meta ⟨[.link n, .links ls, .link t.meta]⟩
+      pure (data, meta)
     | .quotInfo ⟨⟨name, lvls, type⟩, kind⟩ => withLevels lvls do
-      return .quotient ⟨name, lvls, <- compileExpr [] type, kind⟩
+      let n <- compileName name
+      let ls <- lvls.mapM compileName
+      let t <- compileExpr type
+      let data := .quot ⟨kind, lvls.length, t.data⟩
+      let meta := .meta ⟨[.link n, .links ls, .link t.meta]⟩
+      pure (data, meta)
 
-partial def preDefToIR (d: PreDef) : CompileM Ix.Definition :=
-  withLevels d.levelParams do
-    let typ <- compileExpr [] d.type
-    let val <- compileExpr [] d.value
-    return ⟨d.name, d.levelParams, typ, d.kind, val, d.hints, d.safety, d.all⟩
+partial def compileDef: PreDef -> CompileM (Ixon.Definition × Ixon.Metadata)
+| d => withLevels d.levelParams do
+  let n <- compileName d.name
+  let ls <- d.levelParams.mapM compileName
+  let t <- compileExpr d.type
+  let v <- compileExpr d.value
+  let as <- d.all.mapM compileName
+  let data := ⟨d.kind, d.safety, ls.length, t.data, v.data⟩
+  let meta := ⟨[.link n, .links ls, .hints d.hints, .link t.meta, .link v.meta, .links as]⟩
+  return (data, meta)
 
-partial def compileDefinition: PreDef -> CompileM Ix.Const
-| defn => do
-  -- single definition outside a mutual block
-  if defn.all matches [_] then
-    return .definition (<- withMutCtx (.single defn.name 0) <| preDefToIR defn)
+partial def compileMutDefs: List (List PreDef) -> CompileM (Ixon × Ixon)
+| defs => do
+  let mut data := #[]
+  let mut meta := #[]
+  -- iterate through each equivalence class
+  for defsClass in defs do
+    let mut classData := #[]
+    let mut classMeta := #[]
+    -- dematerialize each def in a class
+    for defn in defsClass do
+      let (defn', meta') <- compileDef defn
+      classData := classData.push defn'
+      -- build up the class metadata as a list of links to the def metadata
+      classMeta := classMeta.push (.link (<- storeMeta meta'))
+    -- make sure we have no empty classes and all defs in a class are equal
+    match classData.toList with
+      | [] => throw (.badMutualBlock defs)
+      | [x] => data := data.push x
+      | x::xs =>
+        if xs.foldr (fun y acc => (y == x) && acc) true
+        then data := data.push x
+        else throw (.badMutualBlock defs)
+    -- build up the block metadata as a list of links to the class metadata
+    meta := meta.push (.link (<- storeMeta ⟨classMeta.toList⟩))
+  pure (.defs data.toList, .meta ⟨meta.toList⟩)
+
+partial def compilePreDef: PreDef -> CompileM (Ixon × Ixon)
+| d => do
+  if d.all matches [_] then do
+    let (data, meta) <- withMutCtx {(d.name,0)} <| compileDef d
+    pure (.defn data, .meta meta)
   else do
-  -- collecting and sorting all definitions in the mutual block
-  let mut defs : Array PreDef := #[]
-  for name in defn.all do
-    match <- findLeanConst name with
-    | .defnInfo x => defs := defs.push (mkPreDef x)
-    | .opaqueInfo x => defs := defs.push (mkPreOpaque x)
-    | .thmInfo x => defs := defs.push (mkPreTheorem x)
-    | x => throw $ .invalidConstantKind x.name "mutdef" x.ctorName
-  let mutDefs <- sortDefs defs.toList
-  let mutCtx := defMutCtx mutDefs
-  let definitions ← withMutCtx mutCtx <| mutDefs.mapM (·.mapM preDefToIR)
-  -- add top-level mutual block to our state
-  let block ← dematerializeConst <| .mutual ⟨definitions⟩
-  modify fun stt => { stt with blocks := stt.blocks.insert block }
-  -- then add all the projections, returning the def we started with
-  let mut ret? : Option Ix.Const := none
-  for name in defn.all do
-    let idx <- do match mutCtx.find? name with
-    | some idx => pure idx
-    | none => throw $ .cantFindMutDefIndex name
-    let const <- findLeanConst name
-    let const' := .definitionProj ⟨name, block, idx⟩
-    let addr <- dematerializeConst const'
-    modify fun stt => { stt with
-      constNames := stt.constNames.insert name addr
-      constCache := stt.constCache.insert const const'
-    }
-    if name == defn.name then ret? := some const'
-  match ret? with
-  | some ret => return ret
-  | none => throw $ .compileMutualBlockMissingProjection defn.name
+    let mut predefs : Array PreDef := #[]
+    for name in d.all do
+      match <- findLeanConst name with
+      | .defnInfo x => predefs := predefs.push (mkPreDef x)
+      | .opaqueInfo x => predefs := predefs.push (mkPreOpaque x)
+      | .thmInfo x => predefs := predefs.push (mkPreTheorem x)
+      | x => throw $ .invalidConstantKind x.name "mutdef" x.ctorName
+    let mutDefs <- sortDefs predefs.toList
+    let mutCtx := defMutCtx mutDefs
+    let (data, meta) <- withMutCtx mutCtx <| compileMutDefs mutDefs
+    -- add top-level mutual block to our state
+    let block := ⟨<- storeIxon data, <- storeIxon meta⟩
+    modify fun stt => { stt with blocks := stt.blocks.insert block () }
+    -- then add all the projections, returning the def we started with
+    let mut ret? : Option (Ixon × Ixon) := none
+    for name in d.all do
+      let idx <- do match mutCtx.find? name with
+      | some idx => pure idx
+      | none => throw $ .cantFindMutDefIndex name
+      let data := .dprj ⟨idx, block.data⟩
+      let meta := .meta ⟨[.link block.meta]⟩
+      let addr := ⟨<- storeIxon data, <- storeIxon meta⟩
+      modify fun stt => { stt with
+        constCache := stt.constCache.insert name addr
+      }
+      if name == d.name then ret? := some (data, meta)
+    match ret? with
+    | some ret => return ret
+    | none => throw $ .compileMutualBlockMissingProjection d.name
+
+/--
+`sortDefs` recursively sorts a list of mutually referential definitions into
+ordered equivalence classes. For most cases equivalence can be determined by
+syntactic differences in the definitions, but when two definitions
+refer to one another in the same syntactical position the classification can
+be self-referential. Therefore we use a partition refinement algorithm that
+starts by assuming that all definitions in the mutual block are equal and
+recursively improves our classification by sorting based on syntax:
+
+```
+classes₀ := [startDefs]
+classes₁ := sortDefs classes₀
+classes₂ := sortDefs classes₁
+classes₍ᵢ₊₁₎ := sortDefs classesᵢ ...
+```
+Eventually we reach a fixed-point where `classes₍ᵢ₊₁₎ := classesᵢ` and no
+further refinement is possible (trivially when each def is in its own class). --/
+partial def sortDefs (classes : List PreDef) : CompileM (List (List PreDef)) :=
+  go [List.sortBy (compare ·.name ·.name) classes]
+  where
+    go (cs: List (List PreDef)): CompileM (List (List PreDef)) := do
+      dbg_trace "sortDefs blocks {(<- get).blocks.size} {(<- read).current}"
+      let ctx := defMutCtx cs
+      let cs' <- cs.mapM fun ds =>
+        match ds with
+        | []  => throw <| .badMutualBlock cs
+        | [d] => pure [[d]]
+        | ds  => ds.sortByM (compareDef ctx) >>= List.groupByM (eqDef ctx)
+      let cs' := cs'.flatten.map (List.sortBy (compare ·.name ·.name))
+      if cs == cs' then return cs' else go cs'
+
+/-- AST comparison of two Lean definitions. --/
+partial def compareDef (ctx: MutCtx) (x y: PreDef)
+  : CompileM Ordering := do
+  dbg_trace "compareDefs constCmp {(<- get).constCmp.size} {(<- read).current}"
+  let key := match compare x.name y.name with
+    | .lt => (x.name, y.name)
+    | _ => (y.name, x.name)
+  match (<- get).constCmp.find? key with
+  | some o => return o
+  | none => do
+    let sorder <- SOrder.cmpM (pure ⟨true, compare x.kind y.kind⟩) <|
+      SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
+      SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type)
+        (compareExpr ctx x.levelParams y.levelParams x.value y.value)
+    if sorder.strong then modify fun stt => { stt with
+        constCmp := stt.constCmp.insert key sorder.ord
+      }
+    return sorder.ord
+
+partial def eqDef (ctx: MutCtx) (x y: PreDef) : CompileM Bool :=
+  (fun o => o == .eq) <$> compareDef ctx x y
 
 /-- A name-irrelevant ordering of Lean expressions --/
 partial def compareExpr (ctx: MutCtx) (xlvls ylvls: List Lean.Name)
@@ -800,168 +674,105 @@ partial def compareExpr (ctx: MutCtx) (xlvls ylvls: List Lean.Name)
     SOrder.cmpM (pure ⟨true, compare nx ny⟩) 
       (compareExpr ctx xlvls ylvls tx ty)
 
-/-- AST comparison of two Lean definitions. --/
-partial def compareDef (ctx: MutCtx) (x y: PreDef)
-  : CompileM Ordering := do
-  dbg_trace "compareDefs constCmp {(<- get).constCmp.size} {(<- read).current}"
-  let key := match compare x.name y.name with
-    | .lt => (x.name, y.name)
-    | _ => (y.name, x.name)
-  match (<- get).constCmp.find? key with
-  | some o => return o
-  | none => do
-    let sorder <- SOrder.cmpM (pure ⟨true, compare x.kind y.kind⟩) <|
-      SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
-      SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type)
-        (compareExpr ctx x.levelParams y.levelParams x.value y.value)
-    if sorder.strong then modify fun stt => { stt with
-        constCmp := stt.constCmp.insert key sorder.ord
-      }
-    return sorder.ord
-
-partial def eqDef (ctx: MutCtx) (x y: PreDef) : CompileM Bool :=
-  (fun o => o == .eq) <$> compareDef ctx x y
-
-/--
-`sortDefs` recursively sorts a list of mutual definitions into equivalence classes.
-At each stage, we take as input the current best known equivalence
-classes (held in the `mutCtx` of the CompileEnv). For most cases, equivalence
-can be determined by syntactic differences which are invariant to the current
-best known classification. For example:
-
-```
-mutual
-  def : Nat := 1
-  def bar : Nat := 2
-end
-```
-
-are both different due to the different values in the definition. We call this a
-"strong" ordering, and comparisons between defintions that produce strong
-orderings are cached across compilation.
-
-However, there are also weak orderings, where the order of definitions in a
-mutual block depends on itself.
-
-```
-mutual
-  def A : Nat → Nat
-  | 0 => 0
-  | n + 1 => B n + C n + 1
-
-  def B : Nat → Nat
-  | 0 => 0
-  | n + 1 => C n + 1
-
-  def C : Nat → Nat
-  | 0 => 0
-  | n + 1 => A n + 1
-end
-```
-
-Here since any reference to A, B, C has to be compiled into an index, the
-ordering chosen for A, B, C will effect itself, since we compile into
-something that looks, with order [A, B, C] like:
-
-```
-mutual
-  def #1 : Nat → Nat
-  | 0 => 0
-  | n + 1 => #2 n + #3 n + 1
-
-  def #2 : Nat → Nat
-  | 0 => 0
-  | n + 1 => #3 n + 1
-
-  def #3 : Nat → Nat
-  | 0 => 0
-  | n + 1 => #1 n + 1
-end
-```
-
-This is all well and good, but if we chose order `[C, B, A]` then the block
-would compile as
-
-```
-mutual
-  def #1 : Nat → Nat
-  | 0 => 0
-  | n + 1 => #3 n + 1
-
-  def #2 : Nat → Nat
-  | 0 => 0
-  | n + 1 => #1 n + 1
-
-  def #3 : Nat → Nat
-  | 0 => 0
-  | n + 1 => #2 n + #1 n + 1
-end
-```
-
-with completely different hashes. So we need to figure out a canonical order for
-such mutual blocks.
-
-We start by assuming that all definitions in a mutual block are equal and then
-recursively refining this assumption through successive sorting passes, similar
-to partition refinement:
-```
-classes₀ := [startDefs]
-classes₁ := sortDefs classes₀
-classes₂ := sortDefs classes₁
-classes₍ᵢ₊₁₎ := sortDefs classesᵢ ...
-```
-Initially, `startDefs` is simply the list of definitions we receive from
-`DefinitionVal.all`, sorted by name. We assume that at we will reach some
-fixed-point where `classes₍ᵢ₊₁₎ := classesᵢ` and no further refinement is
-possible (we have not rigourously proven such a fixed point exists, but
-it seams reasonable given that after the first pass to find the strongly ordered
-definitions, the algorithm should only separate partitions into smaller ones)
--/
-partial def sortDefs (classes : List PreDef) : CompileM (List (List PreDef)) :=
-  go [List.sortBy (compare ·.name ·.name) classes]
-  where
-    go (cs: List (List PreDef)): CompileM (List (List PreDef)) := do
-      dbg_trace "sortDefs blocks {(<- get).blocks.size} {(<- read).current}"
-      let ctx := defMutCtx cs
-      let cs' <- cs.mapM fun ds =>
-        match ds with
-        | []  => throw <| .emptyDefsClass cs
-        | [d] => pure [[d]]
-        | ds  => ds.sortByM (compareDef ctx) >>= List.groupByM (eqDef ctx)
-      let cs' := cs'.flatten.map (List.sortBy (compare ·.name ·.name))
-      if cs == cs' then return cs' else go cs'
-
-partial def makePreInd (ind: Lean.InductiveVal) : CompileM Ix.PreInd := do
-  let ctors <- ind.ctors.mapM getCtor
+partial def mkPreInd (i: Lean.InductiveVal) : CompileM Ix.PreInd := do
+  let ctors <- i.ctors.mapM getCtor
   let recrs := (<- get).env.constants.fold getRecrs []
-  return ⟨ind.name, ind.levelParams, ind.type, ind.numParams, ind.numIndices,
-    ind.all, ctors, recrs, ind.numNested, ind.isRec, ind.isReflexive, ind.isUnsafe⟩
+  return ⟨i.name, i.levelParams, i.type, i.numParams, i.numIndices, i.all,
+    ctors, recrs, i.numNested, i.isRec, i.isReflexive, i.isUnsafe⟩
   where
     getCtor (name: Lean.Name) : CompileM (Lean.ConstructorVal) := do
       match (<- findLeanConst name) with
       | .ctorInfo c => pure c
       | _ => throw <| .invalidConstantKind name "constructor" ""
-    getRecrs (acc: List Lean.RecursorVal) : Lean.Name -> Lean.ConstantInfo -> List Lean.RecursorVal
+    getRecrs (acc: List Lean.RecursorVal)
+    : Lean.Name -> Lean.ConstantInfo -> List Lean.RecursorVal
     | .str n .., .recInfo r
-    | .num n .., .recInfo r => if n == ind.name then r::acc else acc
+    | .num n .., .recInfo r => if n == i.name then r::acc else acc
     | _, _ => acc
 
-/--
-Content-addresses an inductive and all inductives in the mutual block as a
-mutual block, even if the inductive itself is not in a mutual block.
+partial def compileRule: Lean.RecursorRule -> CompileM (Ixon.RecursorRule × (Address × Address))
+| r => do
+  let n <- compileName r.ctor
+  let rhs <- compileExpr r.rhs
+  pure (⟨r.nfields, rhs.data⟩, (n, rhs.meta))
 
-Content-addressing an inductive involves content-addressing its associated
-constructors and recursors, hence the complexity of this function.
--/
-partial def compileInductive: Lean.InductiveVal -> CompileM Ix.Const
+partial def compileRecursor: Lean.RecursorVal -> CompileM (Ixon.Recursor × Address)
+| r => withLevels r.levelParams <| do
+  let n <- compileName r.name
+  let ls <- r.levelParams.mapM compileName
+  let t <- compileExpr r.type
+  let rules <- r.rules.mapM compileRule
+  let data := ⟨r.k, r.isUnsafe, ls.length, r.numParams, r.numIndices,
+    r.numMotives, r.numMinors, t.data, rules.map (·.1)⟩
+  let meta <- storeMeta ⟨[.link n, .links ls, .rules (rules.map (·.2))]⟩
+  pure (data, meta)
+
+partial def compileConstructor: Lean.ConstructorVal -> CompileM (Ixon.Constructor × Address)
+| c => withLevels c.levelParams <| do
+  let n <- compileName c.name
+  let ls <- c.levelParams.mapM compileName
+  let t <- compileExpr c.type
+  let data := ⟨c.isUnsafe, ls.length, c.cidx, c.numParams, c.numFields, t.data⟩
+  let meta <- storeMeta ⟨[.link n, .links ls, .link t.meta]⟩
+  pure (data, meta)
+
+partial def compileInd: PreInd -> CompileM (Ixon.Inductive × Ixon.Metadata)
+| ⟨name, lvls, type, ps, is, all, ctors, recrs, nest, rcr, refl, usafe⟩ =>
+  withLevels lvls do 
+  let n <- compileName name
+  let ls <- lvls.mapM compileName
+  let t <- compileExpr type
+  let rs <- recrs.mapM compileRecursor
+  let cs <- ctors.mapM compileConstructor
+  let as <- all.mapM compileName
+  let data := ⟨rcr, refl, usafe, ls.length, ps, is, nest, t.data,
+    cs.map (·.1), rs.map (·.1)⟩
+  let meta := ⟨[.link n, .links ls, .link t.meta,
+    .links (cs.map (·.2)), .links (rs.map (·.2)), .links as]⟩
+  pure (data, meta)
+
+partial def compileMutInds : List (List PreInd) -> CompileM (Ixon × Ixon)
+| inds => do
+  let mut data := #[]
+  let mut meta := #[]
+  -- iterate through each equivalence class
+  for indsClass in inds do
+    let mut classData := #[]
+    let mut classMeta := #[]
+    -- dematerialize each inductive in a class
+    for indc in indsClass do
+      let (indc', meta') <- compileInd indc
+      classData := classData.push indc'
+      -- build up the class metadata as a list of links to the indc metadata
+      classMeta := classMeta.push (.link (<- storeMeta meta'))
+    -- make sure we have no empty classes and all defs in a class are equal
+    match classData.toList with
+      | [] => throw (.badInductiveBlock inds)
+      | [x] => data := data.push x
+      | x::xs =>
+        if xs.foldr (fun y acc => (y == x) && acc) true
+        then data := data.push x
+        else throw (.badInductiveBlock inds)
+    -- build up the block metadata as a list of links to the class metadata
+    meta := meta.push (.link (<- storeMeta ⟨classMeta.toList⟩))
+  pure (.inds data.toList, .meta ⟨meta.toList⟩)
+
+--/--
+--Content-addresses an inductive and all inductives in the mutual block as a
+--mutual block, even if the inductive itself is not in a mutual block.
+--
+--Content-addressing an inductive involves content-addressing its associated
+--constructors and recursors, hence the complexity of this function.
+---/
+partial def compilePreInd: PreInd -> CompileM (Ixon × Ixon)
 | ind => do
   let mut preInds := #[]
-  let mut ctorNames : RBMap Lean.Name (List Lean.Name × List Lean.Name) compare := {}
+  let mut ctorNames : Map Lean.Name (List Lean.Name × List Lean.Name) := {}
   -- collect all mutual inductives as Ix.PreInds
   for n in ind.all do
     match <- findLeanConst n with
     | .inductInfo ind =>
-      let preInd <- makePreInd ind
+      let preInd <- mkPreInd ind
       preInds := preInds.push preInd
       ctorNames := ctorNames.insert n (ind.ctors, preInd.recrs.map (·.name))
     | c => throw <| .invalidConstantKind c.name "inductive" c.ctorName
@@ -969,99 +780,42 @@ partial def compileInductive: Lean.InductiveVal -> CompileM Ix.Const
   let mutInds <- sortInds preInds.toList
   let mutCtx := indMutCtx mutInds
   -- compile each preinductive with the mutCtx
-  let inds ← withMutCtx mutCtx <| mutInds.mapM (·.mapM preInductiveToIR)
+  let (data, meta) <- withMutCtx mutCtx <| compileMutInds mutInds
   -- add top-level mutual block to our state
-  let block <- dematerializeConst <| .inductive ⟨inds⟩
-  modify fun stt => { stt with blocks := stt.blocks.insert block }
+  let block := ⟨<- storeIxon data, <- storeIxon meta⟩
+  modify fun stt => { stt with blocks := stt.blocks.insert block () }
   -- then add all projections, returning the inductive we started with
-  let mut ret? : Option Ix.Const := none
+  let mut ret? : Option (Ixon × Ixon) := none
   for (name, idx) in ind.all.zipIdx do
-    let const <- findLeanConst name
-    let const' := .inductiveProj ⟨name, block, idx⟩
-    let addr <- dematerializeConst const'
+    let n <- compileName name
+    let data := .iprj ⟨idx, block.data⟩
+    let meta := .meta ⟨[.link n, .link block.meta]⟩
+    let addr := ⟨<- storeIxon data, <- storeIxon meta⟩
     modify fun stt => { stt with
-      constNames := stt.constNames.insert name addr
-      constCache := stt.constCache.insert const const'
+      constCache := stt.constCache.insert name addr
     }
-    if name == ind.name then ret? := some const'
+    if name == ind.name then ret? := some (data, meta)
     let some (ctors, recrs) := ctorNames.find? ind.name
       | throw $ .cantFindMutDefIndex ind.name
     for (cname, cidx) in ctors.zipIdx do
-      -- Store and cache constructor projections
-      let cconst <- findLeanConst cname
-      let cconst' := .constructorProj ⟨cname, block, idx, name, cidx⟩
-      let caddr <- dematerializeConst cconst'
+      let cn <- compileName cname
+      let cdata := .cprj ⟨idx, cidx, block.data⟩
+      let cmeta := .meta ⟨[.link cn, .link block.meta]⟩
+      let caddr := ⟨<- storeIxon cdata, <- storeIxon cmeta⟩
       modify fun stt => { stt with
-        constNames := stt.constNames.insert cname caddr
-        constCache := stt.constCache.insert cconst cconst'
+        constCache := stt.constCache.insert cname caddr
       }
     for (rname, ridx) in recrs.zipIdx do
-      -- Store and cache recursor projections
-      let rconst <- findLeanConst rname
-      let rconst' := .recursorProj ⟨rname, block, idx, name, ridx⟩
-      let raddr <- dematerializeConst rconst'
+      let rn <- compileName rname
+      let rdata := .rprj ⟨idx, ridx, block.data⟩
+      let rmeta := .meta ⟨[.link rn, .link block.meta]⟩
+      let raddr := ⟨<- storeIxon rdata, <- storeIxon rmeta⟩
       modify fun stt => { stt with
-        constNames := stt.constNames.insert rname raddr
-        constCache := stt.constCache.insert rconst rconst'
+        constCache := stt.constCache.insert rname raddr
       }
   match ret? with
   | some ret => return ret
   | none => throw $ .compileInductiveBlockMissingProjection ind.name
-
-partial def preInductiveToIR (ind : Ix.PreInd) : CompileM Ix.Inductive 
-  := withLevels ind.levelParams $ do
-  let (recs, ctors) := <- ind.recrs.foldrM (init := ([], [])) collectRecsCtors
-  let type <- compileExpr [] ind.type
-    -- NOTE: for the purpose of extraction, the order of `ctors` and `recs` MUST
-    -- match the order used in `mutCtx`
-  return ⟨ind.name, ind.levelParams, type, ind.numParams, ind.numIndices,
-    ind.all, ctors, recs, ind.numNested, ind.isRec, ind.isReflexive, ind.isUnsafe⟩
-  where
-    collectRecsCtors : Lean.RecursorVal -> List Recursor × List Constructor
-    -> CompileM (List Recursor × List Constructor)
-    | r, (recs, ctors) =>
-      if isInternalRec r.type ind.name then do
-        let (thisRec, thisCtors) <- internalRecToIR (ind.ctors.map (·.name)) r
-        pure (thisRec :: recs, thisCtors)
-      else do
-        let thisRec ← externalRecToIR r
-        pure (thisRec :: recs, ctors)
-
-partial def internalRecToIR (ctors : List Lean.Name) (recr: Lean.RecursorVal)
-  : CompileM (Ix.Recursor × List Ix.Constructor) 
-  := withLevels recr.levelParams do
-    let typ ← compileExpr [] recr.type
-    let (retCtors, retRules) ← recr.rules.foldrM (init := ([], []))
-      fun r (retCtors, retRules) => do
-        if ctors.contains r.ctor then
-          let (ctor, rule) ← recRuleToIR r
-          pure $ (ctor :: retCtors, rule :: retRules)
-        else pure (retCtors, retRules) -- this is an external recursor rule
-    let recr := ⟨recr.name, recr.levelParams, typ, recr.numParams, recr.numIndices,
-      recr.numMotives, recr.numMinors, retRules, recr.k, recr.isUnsafe⟩
-    return (recr, retCtors)
-
-partial def externalRecToIR: Lean.RecursorVal -> CompileM Recursor
-| recr => withLevels recr.levelParams do
-    let typ ← compileExpr [] recr.type
-    let rules ← recr.rules.mapM externalRecRuleToIR
-    return ⟨recr.name, recr.levelParams, typ, recr.numParams, recr.numIndices,
-      recr.numMotives, recr.numMinors, rules, recr.k, recr.isUnsafe⟩
-
-partial def recRuleToIR: Lean.RecursorRule -> CompileM (Ix.Constructor × Ix.RecursorRule)
-| rule => do
-  let rhs ← compileExpr [] rule.rhs
-  match ← findLeanConst rule.ctor with
-  | .ctorInfo ctor => withLevels ctor.levelParams do
-    let typ ← compileExpr [] ctor.type
-    let ctor := ⟨ctor.name, ctor.levelParams, typ, ctor.cidx,
-      ctor.numParams, ctor.numFields, ctor.isUnsafe⟩
-    pure (ctor, ⟨rule.ctor, rule.nfields, rhs⟩)
-  | const =>
-    throw $ .invalidConstantKind const.name "constructor" const.ctorName
-
-partial def externalRecRuleToIR: Lean.RecursorRule -> CompileM RecursorRule
-| rule => do return ⟨rule.ctor, rule.nfields, <- compileExpr [] rule.rhs⟩
 
 /-- AST comparison of two Lean inductives. --/
 partial def compareInd (ctx: MutCtx) (x y: PreInd) 
@@ -1142,7 +896,7 @@ partial def sortInds (classes : List PreInd) : CompileM (List (List PreInd)) :=
       let ctx := indMutCtx cs
       let cs' <- cs.mapM fun ds =>
         match ds with
-        | []  => throw <| .emptyIndsClass cs
+        | []  => throw <| .badInductiveBlock cs
         | [d] => pure [[d]]
         | ds  => ds.sortByM (compareInd ctx) >>= List.groupByM (eqInd ctx)
       let cs' := cs'.flatten.map (List.sortBy (compare ·.name ·.name))
@@ -1168,13 +922,13 @@ partial def tryAddLeanDef (defn: Lean.DefinitionVal) : CompileM Unit := do
     | .error e => throw $ .kernelException e
 
 partial def addDef (lvls: List Lean.Name) (typ val: Lean.Expr) : CompileM MetaAddress := do
-  let typ' <- compileExpr [] typ
-  let val' <- compileExpr [] val
-  let anon := .definition ⟨.anonymous, lvls, typ', .definition, val', .opaque, .safe, []⟩
-  let anonAddr <- dematerializeConst anon
+  --let typ' <- compileExpr typ
+  --let val' <- compileExpr val
+  let anon := .defnInfo ⟨⟨.anonymous, lvls, typ⟩, val, .opaque, .safe, []⟩
+  let anonAddr <- compileConst anon
   let name := anonAddr.data.toUniqueName
-  let const := .definition ⟨name, lvls, typ', .definition, val', .opaque, .safe, []⟩
-  let addr <- dematerializeConst const
+  let const := .defnInfo ⟨⟨name, lvls, typ⟩, val, .opaque, .safe, []⟩
+  let addr <- compileConst const
   if addr.data != anonAddr.data then
     throw <| .alphaInvarianceFailure anon anonAddr const addr
   else
@@ -1210,43 +964,43 @@ partial def storeLevel (lvls: Nat) (secret: Option Address): CompileM Address :=
     }
     return commAddr
   | none => return addr
-
---partial def checkClaim
---  (const: Lean.Name)
---  (type: Lean.Expr)
---  (sort: Lean.Expr)
---  (lvls: List Lean.Name)
---  (secret: Option Address)
---  : CompileM (Claim × Address × Address) := do
---  let leanConst <- findLeanConst const
---  let valAddr <- compileConst leanConst >>= comm
---  let typeAddr <- addDef lvls sort type >>= comm
---  let lvls <- packLevel lvls.length commit
---  return (Claim.checks (CheckClaim.mk lvls type value), typeMeta, valMeta)
---  where
---    commit (c: Ix.Const) : MetaAddress := do
---      match commit with
---      | none => dematerializeConst c
---      | some secret => 
 --
---    if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
-
+----partial def checkClaim
+----  (const: Lean.Name)
+----  (type: Lean.Expr)
+----  (sort: Lean.Expr)
+----  (lvls: List Lean.Name)
+----  (secret: Option Address)
+----  : CompileM (Claim × Address × Address) := do
+----  let leanConst <- findLeanConst const
+----  let valAddr <- compileConst leanConst >>= comm
+----  let typeAddr <- addDef lvls sort type >>= comm
+----  let lvls <- packLevel lvls.length commit
+----  return (Claim.checks (CheckClaim.mk lvls type value), typeMeta, valMeta)
+----  where
+----    commit (c: Ix.Const) : MetaAddress := do
+----      match commit with
+----      | none => dematerializeConst c
+----      | some secret => 
+----
+----    if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
 --
---partial def evalClaim
---  (lvls: List Lean.Name)
---  (input: Lean.Expr)
---  (output: Lean.Expr)
---  (type: Lean.Expr)
---  (sort: Lean.Expr)
---  (commit: Bool)
---  : CompileM (Claim × Address × Address × Address) := do
---  let (input, inputMeta) <- addDef lvls type input >>= comm
---  let (output, outputMeta) <- addDef lvls type output >>= comm
---  let (type, typeMeta) <- addDef lvls sort type >>= comm
---  let lvlsAddr <- packLevel lvls.length commit
---  return (Claim.evals (EvalClaim.mk lvlsAddr input output type), inputMeta, outputMeta, typeMeta)
---  where
---    comm a := if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
+----
+----partial def evalClaim
+----  (lvls: List Lean.Name)
+----  (input: Lean.Expr)
+----  (output: Lean.Expr)
+----  (type: Lean.Expr)
+----  (sort: Lean.Expr)
+----  (commit: Bool)
+----  : CompileM (Claim × Address × Address × Address) := do
+----  let (input, inputMeta) <- addDef lvls type input >>= comm
+----  let (output, outputMeta) <- addDef lvls type output >>= comm
+----  let (type, typeMeta) <- addDef lvls sort type >>= comm
+----  let lvlsAddr <- packLevel lvls.length commit
+----  return (Claim.evals (EvalClaim.mk lvlsAddr input output type), inputMeta, outputMeta, typeMeta)
+----  where
+----    comm a := if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
 
 
 /--

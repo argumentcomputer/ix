@@ -34,15 +34,15 @@ instance : Ord Lean.Name where
 deriving instance Ord for Lean.Literal
 --deriving instance Ord for Lean.Expr
 deriving instance Ord for Lean.BinderInfo
-deriving instance BEq, Repr, Ord, Ord for Lean.QuotKind
-deriving instance Ord, Repr for Lean.ReducibilityHints
-deriving instance BEq, Ord, Ord, Repr for Lean.DefinitionSafety
-deriving instance BEq, Repr, Ord for ByteArray
-deriving instance BEq, Repr, Ord for String.Pos
-deriving instance BEq, Repr, Ord for Substring
-deriving instance BEq, Repr, Ord for Lean.SourceInfo
-deriving instance BEq, Repr, Ord for Lean.Syntax.Preresolved
-deriving instance BEq, Repr, Ord for Lean.Syntax
+deriving instance BEq, Repr, Ord, Hashable for Lean.QuotKind
+deriving instance BEq, Repr, Ord, Hashable for Lean.ReducibilityHints
+deriving instance BEq, Repr, Ord, Hashable for Lean.DefinitionSafety
+deriving instance BEq, Repr, Ord, Hashable for ByteArray
+deriving instance BEq, Repr, Ord, Hashable for String.Pos
+deriving instance BEq, Repr, Ord, Hashable for Substring
+deriving instance BEq, Repr, Ord, Hashable for Lean.SourceInfo
+deriving instance BEq, Repr, Ord, Hashable for Lean.Syntax.Preresolved
+deriving instance BEq, Repr, Ord, Hashable for Lean.Syntax
 deriving instance BEq, Repr for Ordering
 deriving instance BEq, Repr, Ord for Lean.FVarId
 deriving instance BEq, Repr, Ord for Lean.MVarId
@@ -51,17 +51,17 @@ deriving instance BEq, Repr, Ord for Lean.KVMap
 deriving instance BEq, Repr, Ord for Lean.LevelMVarId
 deriving instance BEq, Repr, Ord for Lean.Level
 deriving instance BEq, Repr, Ord for Lean.Expr
-deriving instance BEq, Repr, Ord for Lean.ConstantVal
-deriving instance BEq, Repr, Ord for Lean.QuotVal
-deriving instance BEq, Repr, Ord for Lean.AxiomVal
-deriving instance BEq, Repr, Ord for Lean.TheoremVal
-deriving instance BEq, Repr, Ord for Lean.DefinitionVal
-deriving instance BEq, Repr, Ord for Lean.OpaqueVal
-deriving instance BEq, Repr, Ord for Lean.RecursorRule
-deriving instance BEq, Repr, Ord for Lean.RecursorVal
-deriving instance BEq, Repr, Ord for Lean.ConstructorVal
-deriving instance BEq, Repr, Ord for Lean.InductiveVal
-deriving instance BEq, Repr, Ord for Lean.ConstantInfo
+deriving instance BEq, Repr, Ord, Hashable for Lean.ConstantVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.QuotVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.AxiomVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.TheoremVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.DefinitionVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.OpaqueVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.RecursorRule
+deriving instance BEq, Repr, Ord, Hashable for Lean.RecursorVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.ConstructorVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.InductiveVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.ConstantInfo
 
 def UInt8.MAX : UInt64 := 0xFF
 def UInt16.MAX : UInt64 := 0xFFFF
@@ -261,10 +261,15 @@ def sortGroupsByM [Monad μ] (xs: List (List α)) (cmp: α -> α -> μ Ordering)
 
 end List
 
-abbrev MutCtx := Batteries.RBMap Lean.Name Nat compare
+def Std.HashMap.find? {A B} [BEq A] [Hashable A] (map: Std.HashMap A B) (a: A) 
+  := Std.HashMap.get? map a
+
+abbrev Ix.Map := Std.HashMap
+
+abbrev MutCtx := Ix.Map Lean.Name Nat
 
 instance : BEq MutCtx where
-  beq a b := a.size == b.size && a.foldl
+  beq a b := a.size == b.size && a.fold
     (fun acc k v => acc && match b.find? k with
       | some v' => v == v'
       | none => false) true
