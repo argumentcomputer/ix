@@ -112,7 +112,6 @@ def getBytes (len: Nat) : GetM ByteArray := do
     return chunk
   else throw s!"EOF: need {len} bytes at index {st.idx}, but size is {st.bytes.size}"
 
-
 --  F := flag, L := large-bit, X := small-field, A := large_field
 -- 0xFFFF_LXXX {AAAA_AAAA, ...}
 -- "Tag" means the whole thing
@@ -139,7 +138,7 @@ def flag4_to_Fin16 (x: UInt8) : Fin 16 :=
 def Tag4.decodeHead (head: UInt8) : (Fin 16 × Bool × UInt8) :=
   let flag : Fin 16 := flag4_to_Fin16 head
   let largeBit := UInt8.land head 0b1000 != 0
-  let small := if flag == 0xC then head % 0b10000 else head % 0b1000
+  let small := head % 0b1000
   (flag, largeBit, small)
 
 def getTagSize (large: Bool) (small: UInt8) : GetM UInt64 := do

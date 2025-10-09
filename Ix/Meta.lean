@@ -38,7 +38,8 @@ elab "this_file!" : term => do
 macro "get_env!" : term =>
   `(getFileEnv this_file!)
 
-def computeIxAddress (env: Lean.Environment) (const : ConstantInfo) : IO MetaAddress := do
+def computeIxAddress (env: Lean.Environment) (const: ConstantInfo): IO MetaAddress 
+  := do
   let (addr, _) <- (Ix.compileConst const).runIO env
   return addr
 

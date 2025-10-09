@@ -4,6 +4,7 @@ import Ix.Ixon
 import Ix.Address
 import Ix.Common
 import Ix.CompileM
+import Ix.Cronos
 --import Ix.DecompileM
 import Ix.Meta
 import Ix.IR
@@ -104,6 +105,29 @@ def testInductives : IO TestSeq := do
   let nss := dss.map fun ds => ds.map (·.name)
   return test "test inductives" (res == nss)
 
+def testEasy : IO TestSeq := do
+  let env <- get_env!
+  let difficult := [
+    `Nat.add_comm
+  ]
+  let mut res := true
+  for name in difficult do
+    IO.println s!"⚙️ Compiling {name}"
+    let mut cstt : CompileState := .init env 0
+    let start <- IO.monoNanosNow
+    let const <- do match env.getDelta.find? name with
+      | some c => pure c
+      | none => match env.getConstMap.get? name with
+        | some c => pure c
+        | none => throw (IO.userError s!"{name} not in env")
+    let (addr, stt) <- do match (<- (compileConst const).run .init cstt) with
+    | (.ok a, stt) => pure (a, stt)
+    | (.error e, _) => IO.println s!"failed {const.name}" *> throw (IO.userError (<- e.pretty))
+    let done <- IO.monoNanosNow
+    IO.println s!"✅ {addr}"
+    IO.println s!"Elapsed {Cronos.nanoToSec (done - start)}"
+  return test "easy compile roundtrip" (res == true)
+
 def testDifficult : IO TestSeq := do
   let env <- get_env!
   let difficult := [
@@ -156,22 +180,31 @@ def testDifficult : IO TestSeq := do
   return test "difficult compile roundtrip" (res == true)
 
 def testRoundtripGetEnv : IO TestSeq := do
+  IO.println s!"Getting env"
   let env <- get_env!
   let mut cstt : CompileState := .init env 0
-  --IO.println s!"compiling env"
+  IO.println s!"Compiling env"
+  let mut inDelta := 0
+  let mut inConst := 0
+  let numDelta := env.getDelta.stats.numNodes
+  let numConst := env.getConstMap.size
+  let allStart <- IO.monoNanosNow
   for (_, c) in env.getDelta do
-    let (_, stt) <- do match (<- (compileConst c).run .init cstt) with
-    | (.ok a, stt) => do
-      pure (a, stt)
+    let start <- IO.monoNanosNow
+    IO.println s!"⚙️ Compiling {inDelta}/{numDelta}: {c.name}"
+    let (addr, stt) <- do match (<- (compileConst c).run .init cstt) with
+    | (.ok a, stt) => pure (a, stt)
     | (.error e, _) => do
       IO.println s!"failed {c.name}"
       throw (IO.userError (<- e.pretty))
-    let addr <- match stt.constCache.find? c.name with
-    | .some addr => pure addr
-    | .none => throw (IO.userError "name {n} not in env")
-    IO.println s!"✓ {c.name} -> {addr}"
+    let done <- IO.monoNanosNow
+    IO.println s!"✅ {addr}"
+    IO.println s!"Elapsed {Cronos.nanoToSec (done - start)}/{Cronos.nanoToSec (done - allStart)}"
+    inDelta := inDelta + 1
     cstt := stt
   for (_, c) in env.getConstMap do
+    let start <- IO.monoNanosNow
+    IO.println s!"⚙️ Compiling {inConst}/{numConst}: {c.name} "
     let (_, stt) <- do match (<- (compileConst c).run .init cstt) with
     | (.ok a, stt) => do
       pure (a, stt)
@@ -181,9 +214,13 @@ def testRoundtripGetEnv : IO TestSeq := do
     let addr <- match stt.constCache.find? c.name with
     | .some addr => pure addr
     | .none => throw (IO.userError "name {n} not in env")
-    IO.println s!"✓ {c.name} -> {addr}"
+    let done <- IO.monoNanosNow
+    IO.println s!"✅ {addr}"
+    IO.println s!"Elapsed {Cronos.nanoToSec (done - start)}/{Cronos.nanoToSec (done - allStart)}"
+    inConst := inConst + 1
     cstt := stt
-  IO.println s!"compiled env"
+  let allDone <- IO.monoNanosNow
+  IO.println s!"Compiled env in {Cronos.nanoToSec (allDone - allStart)}"
  -- IO.println s!"decompiling env"
  -- let mut store : Ixon.Store := {}
  -- for (_,(a, b)) in cstt.names do
@@ -223,9 +260,10 @@ def testRoundtripGetEnv : IO TestSeq := do
   return test "env compile roundtrip" true --(res == true)
 
 def Tests.Ix.Compile.suiteIO: List (IO TestSeq) := [
-   testMutual,
-   testInductives,
-   testDifficult,
---   testUnits,
-   --testRoundtripGetEnv
+  --testMutual,
+  --testInductives,
+  --testDifficult,
+  --testUnits,
+  testEasy
+  --testRoundtripGetEnv
 ]

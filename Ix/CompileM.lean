@@ -279,7 +279,7 @@ def compilePreresolved : Lean.Syntax.Preresolved -> CompileM Ixon.Preresolved
 | .decl n fs => .decl <$> compileName n <*> fs.mapM storeString
 
 partial def compileSyntax (syn: Lean.Syntax) : CompileM Ixon.Syntax := do
-  dbg_trace "compileSyntax {(<- read).current}"
+  --dbg_trace "compileSyntax {(<- read).current}"
   match (<- get).synCache.find? syn with
   | some x => pure x
   | none => do
@@ -440,15 +440,15 @@ partial def compileConst (const: Lean.ConstantInfo): CompileM MetaAddress := do
   | some x => pure x
   | none => resetCtx const.name <| do
     let (anon, meta) <- go const
-    let stt <- get
-    dbg_trace "✓ compileConst {const.name}"
-    dbg_trace "store {stt.store.size}"
-    dbg_trace "constCache {stt.constCache.size}"
-    dbg_trace "exprCache {stt.exprCache.size}"
-    dbg_trace "nameCache {stt.nameCache.size}"
-    dbg_trace "synCache {stt.synCache.size}"
-    dbg_trace "strCache {stt.strCache.size}"
-    dbg_trace "univCache {stt.univCache.size}"
+    --let stt <- get
+    --dbg_trace "✓ compileConst {const.name}"
+    --dbg_trace "store {stt.store.size}"
+    --dbg_trace "constCache {stt.constCache.size}"
+    --dbg_trace "exprCache {stt.exprCache.size}"
+    --dbg_trace "nameCache {stt.nameCache.size}"
+    --dbg_trace "synCache {stt.synCache.size}"
+    --dbg_trace "strCache {stt.strCache.size}"
+    --dbg_trace "univCache {stt.univCache.size}"
     let maddr := ⟨<- storeIxon anon, <- storeIxon meta⟩
     modifyGet fun stt => (maddr, { stt with
       constCache := stt.constCache.insert const.name maddr
@@ -584,7 +584,7 @@ partial def sortDefs (classes : List PreDef) : CompileM (List (List PreDef)) :=
   go [List.sortBy (compare ·.name ·.name) classes]
   where
     go (cs: List (List PreDef)): CompileM (List (List PreDef)) := do
-      dbg_trace "sortDefs blocks {(<- get).blocks.size} {(<- read).current}"
+      --dbg_trace "sortDefs blocks {(<- get).blocks.size} {(<- read).current}"
       let ctx := defMutCtx cs
       let cs' <- cs.mapM fun ds =>
         match ds with
@@ -597,7 +597,7 @@ partial def sortDefs (classes : List PreDef) : CompileM (List (List PreDef)) :=
 /-- AST comparison of two Lean definitions. --/
 partial def compareDef (ctx: MutCtx) (x y: PreDef)
   : CompileM Ordering := do
-  dbg_trace "compareDefs constCmp {(<- get).constCmp.size} {(<- read).current}"
+  --dbg_trace "compareDefs constCmp {(<- get).constCmp.size} {(<- read).current}"
   let key := match compare x.name y.name with
     | .lt => (x.name, y.name)
     | _ => (y.name, x.name)
@@ -820,7 +820,7 @@ partial def compilePreInd: PreInd -> CompileM (Ixon × Ixon)
 /-- AST comparison of two Lean inductives. --/
 partial def compareInd (ctx: MutCtx) (x y: PreInd) 
   : CompileM Ordering := do
-  dbg_trace "compareInd constCmp {(<- get).constCmp.size} {(<- read).current}"
+  --dbg_trace "compareInd constCmp {(<- get).constCmp.size} {(<- read).current}"
   let key := match compare x.name y.name with
     | .lt => (x.name, y.name)
     | _ => (y.name, x.name)
@@ -892,7 +892,7 @@ partial def sortInds (classes : List PreInd) : CompileM (List (List PreInd)) :=
   go [List.sortBy (compare ·.name ·.name) classes]
   where
     go (cs: List (List PreInd)): CompileM (List (List PreInd)) := do
-      dbg_trace "sortInds blocks {(<- get).blocks.size} {(<- read).current}"
+      --dbg_trace "sortInds blocks {(<- get).blocks.size} {(<- read).current}"
       let ctx := indMutCtx cs
       let cs' <- cs.mapM fun ds =>
         match ds with
