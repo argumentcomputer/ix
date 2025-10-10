@@ -1,5 +1,6 @@
 pub mod aiur;
 pub mod lean;
+pub mod lean_env;
 
 #[cfg(test)]
 mod tests {

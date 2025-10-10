@@ -29,6 +29,11 @@ impl LeanArrayObject {
         self.data().iter().map(|ptr| map_fn(*ptr)).collect()
     }
 
+    #[inline]
+    pub fn to_vec_with<T, C>(&self, map_fn: fn(*const c_void, &mut C) -> T, c: &mut C) -> Vec<T> {
+        self.data().iter().map(|ptr| map_fn(*ptr, c)).collect()
+    }
+
     pub fn set_data(&mut self, data: &[*const c_void]) {
         assert!(self.m_capacity >= data.len());
         self.m_data.copy_from_slice(data);
