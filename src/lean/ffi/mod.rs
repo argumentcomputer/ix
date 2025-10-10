@@ -11,6 +11,7 @@ pub mod byte_array;
 ))]
 pub mod iroh;
 pub mod keccak;
+pub mod lean_env;
 
 use std::ffi::{CStr, CString, c_char, c_void};
 
