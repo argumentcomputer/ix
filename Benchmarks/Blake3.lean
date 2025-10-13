@@ -4,7 +4,7 @@ import Ix.Aiur.Compile
 import Ix.Aiur.Protocol
 
 abbrev dataSizes := #[64, 128, 256, 512, 1024, 2048]
-abbrev numHashes := #[1, 2, 4, 8, 16, 32]
+abbrev numHashesPerProof := #[1, 2, 4, 8, 16, 32]
 
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
@@ -18,9 +18,9 @@ def friParameters : Aiur.FriParameters := {
 
 def runBenches (aiurSystem : Aiur.AiurSystem) (funIdx : Nat) :
     IO $ Array (Nat × Float) := do
-  let mut results := Array.emptyWithCapacity $ dataSizes.size * numHashes.size
+  let mut results := Array.emptyWithCapacity $ dataSizes.size * numHashesPerProof.size
   for dataSize in dataSizes do
-    for numHashes in numHashes do
+    for numHashes in numHashesPerProof do
       let ioBuffer := Array.range numHashes |>.foldl
         (init := default)
         fun ioBuffer idx =>
