@@ -36,7 +36,7 @@ def genConstructorProj : Gen Ixon.ConstructorProj :=
   .mk <$> genNat <*> genNat <*> genAddress
 
 def genRecursorProj : Gen Ixon.RecursorProj :=
-  .mk <$> genNat <*> genNat <*> genAddress
+  .mk <$> genNat <*> genAddress
 
 def genInductiveProj : Gen Ixon.InductiveProj :=
   .mk <$> genNat <*> genAddress
@@ -56,7 +56,8 @@ def genConstructor : Gen Ixon.Constructor :=
 
 def genInductive : Gen Ixon.Inductive :=
   .mk <$> genBool <*> genBool <*> genBool <*> genNat <*> genNat <*> genNat <*> genNat
-    <*> genAddress <*> genList genConstructor <*> genList genRecursor
+    <*> genAddress <*> genList genConstructor
+    --<*> genList genRecursor
 
 def genEvalClaim : Gen Ixon.EvalClaim :=
   .mk <$> genAddress <*> genAddress <*> genAddress <*> genAddress
@@ -133,16 +134,16 @@ partial def genIxon : Gen Ixon.Ixon :=
     (10, .elam <$> genAddress <*> genAddress),
     (10, .eall <$> genAddress <*> genAddress),
     (10, .elet <$> genBool <*> genAddress <*> genAddress <*> genAddress),
-    (10, .list <$> genList genIxon),
+    (10, (.blob ∘ .mk ∘ .mk) <$> genList genUInt8),
     (10, .defn <$> genDefinition),
     (10, .axio <$> genAxiom),
     (10, .quot <$> genQuotient),
     (10, .cprj <$> genConstructorProj),
-    (10, .rprj <$> genRecursorProj),
     (10, .iprj <$> genInductiveProj),
     (10, .dprj <$> genDefinitionProj),
     (10, .inds <$> genList genInductive),
     (10, .defs <$> genList genDefinition),
+    (10, .recs <$> genList genRecursor),
     (10, .prof <$> genProof),
     (10, .eval <$> genEvalClaim),
     (10, .chck <$> genCheckClaim),

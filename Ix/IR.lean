@@ -159,6 +159,18 @@ def defMutCtx (defss: List (List PreDef)) : Map Lean.Name Nat
     i := i + 1
   return mutCtx
 
+def recMutCtx (recss: List (List Lean.RecursorVal)) : Map Lean.Name Nat
+  := Id.run do
+  let mut mutCtx := default
+  let mut i := 0
+  for recs in recss do
+    let mut x := #[]
+    for r in recs do
+      x := x.push r.name
+      mutCtx := mutCtx.insert r.name i
+    i := i + 1
+  return mutCtx
+
 /--
 Ix.Definition definitions combine Lean.DefinitionVal, Lean.OpaqueVal and
 Lean.TheoremVal into a single structure in order to enable content-addressing of
@@ -259,7 +271,7 @@ structure PreInd where
   numIndices : Nat
   all : List Lean.Name
   ctors : List Lean.ConstructorVal
-  recrs : List Lean.RecursorVal
+  --recrs : List Lean.RecursorVal
   numNested: Nat
   isRec : Bool
   isReflexive : Bool
@@ -299,17 +311,18 @@ def indMutCtx (indss: List (List PreInd)) : Map Lean.Name Nat
   let mut idx := 0
   for inds in indss do
     let mut maxCtors := 0
-    let mut maxRecrs := 0
+    --let mut maxRecrs := 0
     for ind in inds do
       maxCtors := max maxCtors ind.ctors.length
-      maxRecrs := max maxRecrs ind.recrs.length
+      --maxRecrs := max maxRecrs ind.recrs.length
     for ind in inds do
       mutCtx := mutCtx.insert ind.name idx
       for (c, cidx) in List.zipIdx ind.ctors do
         mutCtx := mutCtx.insert c.name (idx + 1 + cidx)
-      for (r, ridx) in List.zipIdx ind.recrs do
-        mutCtx := mutCtx.insert r.name (idx + 1 + maxCtors + ridx)
-    idx := idx + 1 + maxCtors + maxRecrs
+      --for (r, ridx) in List.zipIdx ind.recrs do
+      --  mutCtx := mutCtx.insert r.name (idx + 1 + maxCtors + ridx)
+    --idx := idx + 1 + maxCtors + maxRecrs
+    idx := idx + 1 + maxCtors
   return mutCtx
 
 /--
@@ -325,7 +338,7 @@ structure Inductive where
   numIndices : Nat
   all : List Lean.Name
   ctors : List Constructor
-  recrs : List Recursor
+  --recrs : List Recursor
   numNested: Nat
   isRec : Bool
   isReflexive : Bool

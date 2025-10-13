@@ -3,6 +3,7 @@ import Ix.Ixon
 import Ix.Address
 import Ix.IR
 import Ix.Common
+import Ix.CondenseM
 --import Ix.Store
 import Ix.SOrder
 import Ix.Cronos
@@ -35,15 +36,27 @@ structure CompileState where
   comms: Map Lean.Name MetaAddress
   constCmp: Map (Lean.Name × Lean.Name) Ordering
   --exprCmp: Map (CompileEnv × Lean.Expr × Lean.Expr) Ordering
+  alls: Map Lean.Name (Set Lean.Name)
   axioms: Map Lean.Name MetaAddress
   blocks: Map MetaAddress Unit
   cronos: Cronos
 
+def collectRecursors (env: Lean.Environment) : Map Lean.Name (Set Lean.Name) := Id.run do
+ let mut map := {}
+ for (n, c) in env.constants do
+  match c with
+  | .recInfo val => do
+    map := map.alter val.getMajorInduct <| fun x => match x with
+      | .none => .some {n}
+      | .some s => .some (s.insert n)
+  | _ => continue
+ return map
+
 def CompileState.init (env: Lean.Environment) (seed: Nat) (maxHeartBeats: USize := 200000)
   : CompileState :=
   ⟨maxHeartBeats, env, mkStdGen seed, default, default, default, default,
-  default, default, default, default, default, default, default, default,
-  default, default⟩
+  default, default, default, default, default, default, CondenseM.run env,
+  default, default, default⟩
 
 inductive CompileError where
 | unknownConstant : Lean.Name -> CompileError
@@ -65,8 +78,10 @@ inductive CompileError where
 --| dematBadInductiveBlock: InductiveBlock -> CompileError
 | badMutualBlock: List (List PreDef) -> CompileError
 | badInductiveBlock: List (List PreInd) -> CompileError
+| badRecursorBlock: List (List Lean.RecursorVal) -> CompileError
 | badIxonDeserialization : Address -> String -> CompileError
 | unknownStoreAddress : Address -> CompileError
+| condensationError : Lean.Name -> CompileError
 --| emptyIndsEquivalenceClass: List (List PreInd) -> CompileError
 
 def CompileError.pretty : CompileError -> IO String
@@ -85,8 +100,10 @@ def CompileError.pretty : CompileError -> IO String
   pure s!"alpha invariance failure {repr x} hashes to {xa}, but {repr y} hashes to {ya}"
 | .badMutualBlock block => pure s!"bad mutual block {repr block}"
 | .badInductiveBlock block => pure s!"bad mutual block {repr block}"
+| .badRecursorBlock block => pure s!"bad mutual block {repr block}"
 | .badIxonDeserialization a s => pure s!"bad deserialization of ixon at {a}, error: {s}"
 | .unknownStoreAddress a => pure s!"unknown store address {a}"
+| .condensationError n => pure s!"condensation error {n}"
 
 abbrev CompileM :=
   ReaderT CompileEnv <| ExceptT CompileError <| StateT CompileState IO
@@ -148,6 +165,11 @@ def getIxon (addr: Address) : CompileM Ixon := do
     | .ok ixon => pure ixon
     | .error e => throw <| .badIxonDeserialization addr e
   | none => throw <| .unknownStoreAddress addr
+
+def getAll (name: Lean.Name) : CompileM (Set Lean.Name) := do
+  match (<- get).alls.get? name with
+  | some set => pure set
+  | none => throw <| .condensationError name
 
 def storeString (str: String): CompileM Address := do
   match (<- get).strCache.find? str with
@@ -455,26 +477,19 @@ partial def compileConst (const: Lean.ConstantInfo): CompileM MetaAddress := do
     })
   where
     go : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
-    | .defnInfo val => compilePreDef (mkPreDef val)
-    | .thmInfo val => compilePreDef (mkPreTheorem val)
-    | .opaqueInfo val => compilePreDef (mkPreOpaque val)
-    | .inductInfo val => mkPreInd val >>= compilePreInd
+    | .defnInfo val => compileDefs (mkPreDef val)
+    | .thmInfo val => compileDefs (mkPreTheorem val)
+    | .opaqueInfo val => compileDefs (mkPreOpaque val)
+    | .inductInfo val => mkPreInd val >>= compileInds
     | .ctorInfo val => do match <- findLeanConst val.induct with
       | .inductInfo ind => do
-        let _ <- mkPreInd ind >>= compilePreInd
+        let _ <- mkPreInd ind >>= compileInds
         match (<- get).constCache.find? const.name with
         | some ⟨data, meta⟩ => do pure (<- getIxon data, <- getIxon meta)
         | none => throw <| .compileInductiveBlockMissingProjection const.name
       | c => throw <| .invalidConstantKind c.name "inductive" c.ctorName
     -- compile recursors through their parent inductive
-    | .recInfo val => do
-      match ← findLeanConst val.getMajorInduct with
-      | .inductInfo ind => do
-        let _ <- mkPreInd ind >>= compilePreInd
-        match (<- get).constCache.find? const.name with
-        | some ⟨data, meta⟩ => do pure (<- getIxon data, <- getIxon meta)
-        | none => throw <| .compileInductiveBlockMissingProjection const.name
-      | c => throw $ .invalidConstantKind c.name "inductive" c.ctorName
+    | .recInfo val => compileRecs val
     | .axiomInfo ⟨⟨name, lvls, type⟩, isUnsafe⟩ => withLevels lvls do
       let n <- compileName name
       let ls <- lvls.mapM compileName
@@ -509,7 +524,7 @@ partial def compileMutDefs: List (List PreDef) -> CompileM (Ixon × Ixon)
   for defsClass in defs do
     let mut classData := #[]
     let mut classMeta := #[]
-    -- dematerialize each def in a class
+    -- compile each def in a class
     for defn in defsClass do
       let (defn', meta') <- compileDef defn
       classData := classData.push defn'
@@ -527,20 +542,21 @@ partial def compileMutDefs: List (List PreDef) -> CompileM (Ixon × Ixon)
     meta := meta.push (.link (<- storeMeta ⟨classMeta.toList⟩))
   pure (.defs data.toList, .meta ⟨meta.toList⟩)
 
-partial def compilePreDef: PreDef -> CompileM (Ixon × Ixon)
+partial def compileDefs: PreDef -> CompileM (Ixon × Ixon)
 | d => do
-  if d.all matches [_] then do
+  let all: Set Lean.Name <- getAll d.name
+  if all == {d.name} then do
     let (data, meta) <- withMutCtx {(d.name,0)} <| compileDef d
     pure (.defn data, .meta meta)
   else do
-    let mut predefs : Array PreDef := #[]
-    for name in d.all do
+    let mut defs : Array PreDef := #[]
+    for name in all do
       match <- findLeanConst name with
-      | .defnInfo x => predefs := predefs.push (mkPreDef x)
-      | .opaqueInfo x => predefs := predefs.push (mkPreOpaque x)
-      | .thmInfo x => predefs := predefs.push (mkPreTheorem x)
+      | .defnInfo x => defs := defs.push (mkPreDef x)
+      | .opaqueInfo x => defs := defs.push (mkPreOpaque x)
+      | .thmInfo x => defs := defs.push (mkPreTheorem x)
       | x => throw $ .invalidConstantKind x.name "mutdef" x.ctorName
-    let mutDefs <- sortDefs predefs.toList
+    let mutDefs <- sortDefs defs.toList
     let mutCtx := defMutCtx mutDefs
     let (data, meta) <- withMutCtx mutCtx <| compileMutDefs mutDefs
     -- add top-level mutual block to our state
@@ -548,7 +564,7 @@ partial def compilePreDef: PreDef -> CompileM (Ixon × Ixon)
     modify fun stt => { stt with blocks := stt.blocks.insert block () }
     -- then add all the projections, returning the def we started with
     let mut ret? : Option (Ixon × Ixon) := none
-    for name in d.all do
+    for name in all do
       let idx <- do match mutCtx.find? name with
       | some idx => pure idx
       | none => throw $ .cantFindMutDefIndex name
@@ -580,7 +596,7 @@ classes₍ᵢ₊₁₎ := sortDefs classesᵢ ...
 ```
 Eventually we reach a fixed-point where `classes₍ᵢ₊₁₎ := classesᵢ` and no
 further refinement is possible (trivially when each def is in its own class). --/
-partial def sortDefs (classes : List PreDef) : CompileM (List (List PreDef)) :=
+partial def sortDefs (classes: List PreDef) : CompileM (List (List PreDef)) :=
   go [List.sortBy (compare ·.name ·.name) classes]
   where
     go (cs: List (List PreDef)): CompileM (List (List PreDef)) := do
@@ -676,36 +692,14 @@ partial def compareExpr (ctx: MutCtx) (xlvls ylvls: List Lean.Name)
 
 partial def mkPreInd (i: Lean.InductiveVal) : CompileM Ix.PreInd := do
   let ctors <- i.ctors.mapM getCtor
-  let recrs := (<- get).env.constants.fold getRecrs []
+  --let recrs := (<- get).env.constants.fold getRecrs []
   return ⟨i.name, i.levelParams, i.type, i.numParams, i.numIndices, i.all,
-    ctors, recrs, i.numNested, i.isRec, i.isReflexive, i.isUnsafe⟩
+    ctors, i.numNested, i.isRec, i.isReflexive, i.isUnsafe⟩
   where
     getCtor (name: Lean.Name) : CompileM (Lean.ConstructorVal) := do
       match (<- findLeanConst name) with
       | .ctorInfo c => pure c
       | _ => throw <| .invalidConstantKind name "constructor" ""
-    getRecrs (acc: List Lean.RecursorVal)
-    : Lean.Name -> Lean.ConstantInfo -> List Lean.RecursorVal
-    | .str n .., .recInfo r
-    | .num n .., .recInfo r => if n == i.name then r::acc else acc
-    | _, _ => acc
-
-partial def compileRule: Lean.RecursorRule -> CompileM (Ixon.RecursorRule × (Address × Address))
-| r => do
-  let n <- compileName r.ctor
-  let rhs <- compileExpr r.rhs
-  pure (⟨r.nfields, rhs.data⟩, (n, rhs.meta))
-
-partial def compileRecursor: Lean.RecursorVal -> CompileM (Ixon.Recursor × Address)
-| r => withLevels r.levelParams <| do
-  let n <- compileName r.name
-  let ls <- r.levelParams.mapM compileName
-  let t <- compileExpr r.type
-  let rules <- r.rules.mapM compileRule
-  let data := ⟨r.k, r.isUnsafe, ls.length, r.numParams, r.numIndices,
-    r.numMotives, r.numMinors, t.data, rules.map (·.1)⟩
-  let meta <- storeMeta ⟨[.link n, .links ls, .rules (rules.map (·.2))]⟩
-  pure (data, meta)
 
 partial def compileConstructor: Lean.ConstructorVal -> CompileM (Ixon.Constructor × Address)
 | c => withLevels c.levelParams <| do
@@ -717,18 +711,18 @@ partial def compileConstructor: Lean.ConstructorVal -> CompileM (Ixon.Constructo
   pure (data, meta)
 
 partial def compileInd: PreInd -> CompileM (Ixon.Inductive × Ixon.Metadata)
-| ⟨name, lvls, type, ps, is, all, ctors, recrs, nest, rcr, refl, usafe⟩ =>
+| ⟨name, lvls, type, ps, is, all, ctors, nest, rcr, refl, usafe⟩ =>
   withLevels lvls do 
   let n <- compileName name
   let ls <- lvls.mapM compileName
   let t <- compileExpr type
-  let rs <- recrs.mapM compileRecursor
+  --let rs <- recrs.mapM compileRecursor
   let cs <- ctors.mapM compileConstructor
   let as <- all.mapM compileName
   let data := ⟨rcr, refl, usafe, ls.length, ps, is, nest, t.data,
-    cs.map (·.1), rs.map (·.1)⟩
+    cs.map (·.1)⟩
   let meta := ⟨[.link n, .links ls, .link t.meta,
-    .links (cs.map (·.2)), .links (rs.map (·.2)), .links as]⟩
+    .links (cs.map (·.2)), .links as]⟩
   pure (data, meta)
 
 partial def compileMutInds : List (List PreInd) -> CompileM (Ixon × Ixon)
@@ -757,27 +751,28 @@ partial def compileMutInds : List (List PreInd) -> CompileM (Ixon × Ixon)
     meta := meta.push (.link (<- storeMeta ⟨classMeta.toList⟩))
   pure (.inds data.toList, .meta ⟨meta.toList⟩)
 
---/--
---Content-addresses an inductive and all inductives in the mutual block as a
---mutual block, even if the inductive itself is not in a mutual block.
---
---Content-addressing an inductive involves content-addressing its associated
---constructors and recursors, hence the complexity of this function.
----/
-partial def compilePreInd: PreInd -> CompileM (Ixon × Ixon)
+/--
+Content-addresses an inductive and all inductives in the mutual block as a
+mutual block, even if the inductive itself is not in a mutual block.
+
+Content-addressing an inductive involves content-addressing its associated
+constructors and recursors, hence the complexity of this function.
+-/
+partial def compileInds: PreInd -> CompileM (Ixon × Ixon)
 | ind => do
-  let mut preInds := #[]
-  let mut ctorNames : Map Lean.Name (List Lean.Name × List Lean.Name) := {}
+  let all: Set Lean.Name <- getAll ind.name
+  let mut inds := #[]
+  let mut ctorNames : Map Lean.Name (List Lean.Name) := {}
   -- collect all mutual inductives as Ix.PreInds
-  for n in ind.all do
+  for n in all do
     match <- findLeanConst n with
-    | .inductInfo ind =>
-      let preInd <- mkPreInd ind
-      preInds := preInds.push preInd
-      ctorNames := ctorNames.insert n (ind.ctors, preInd.recrs.map (·.name))
-    | c => throw <| .invalidConstantKind c.name "inductive" c.ctorName
+    | .inductInfo val =>
+      let ind <- mkPreInd val
+      inds := inds.push ind
+      ctorNames := ctorNames.insert n val.ctors
+    | _ => continue
   -- sort PreInds into equivalence classes
-  let mutInds <- sortInds preInds.toList
+  let mutInds <- sortInds inds.toList
   let mutCtx := indMutCtx mutInds
   -- compile each preinductive with the mutCtx
   let (data, meta) <- withMutCtx mutCtx <| compileMutInds mutInds
@@ -786,16 +781,16 @@ partial def compilePreInd: PreInd -> CompileM (Ixon × Ixon)
   modify fun stt => { stt with blocks := stt.blocks.insert block () }
   -- then add all projections, returning the inductive we started with
   let mut ret? : Option (Ixon × Ixon) := none
-  for (name, idx) in ind.all.zipIdx do
-    let n <- compileName name
+  for (ind', idx) in inds.zipIdx do
+    let n <- compileName ind'.name
     let data := .iprj ⟨idx, block.data⟩
     let meta := .meta ⟨[.link n, .link block.meta]⟩
     let addr := ⟨<- storeIxon data, <- storeIxon meta⟩
     modify fun stt => { stt with
-      constCache := stt.constCache.insert name addr
+      constCache := stt.constCache.insert ind'.name addr
     }
-    if name == ind.name then ret? := some (data, meta)
-    let some (ctors, recrs) := ctorNames.find? ind.name
+    if ind'.name == ind.name then ret? := some (data, meta)
+    let some ctors := ctorNames.find? ind.name
       | throw $ .cantFindMutDefIndex ind.name
     for (cname, cidx) in ctors.zipIdx do
       let cn <- compileName cname
@@ -805,14 +800,14 @@ partial def compilePreInd: PreInd -> CompileM (Ixon × Ixon)
       modify fun stt => { stt with
         constCache := stt.constCache.insert cname caddr
       }
-    for (rname, ridx) in recrs.zipIdx do
-      let rn <- compileName rname
-      let rdata := .rprj ⟨idx, ridx, block.data⟩
-      let rmeta := .meta ⟨[.link rn, .link block.meta]⟩
-      let raddr := ⟨<- storeIxon rdata, <- storeIxon rmeta⟩
-      modify fun stt => { stt with
-        constCache := stt.constCache.insert rname raddr
-      }
+    --for (rname, ridx) in recrs.zipIdx do
+    --  let rn <- compileName rname
+    --  let rdata := .rprj ⟨idx, ridx, block.data⟩
+    --  let rmeta := .meta ⟨[.link rn, .link block.meta]⟩
+    --  let raddr := ⟨<- storeIxon rdata, <- storeIxon rmeta⟩
+    --  modify fun stt => { stt with
+    --    constCache := stt.constCache.insert rname raddr
+    --  }
   match ret? with
   | some ret => return ret
   | none => throw $ .compileInductiveBlockMissingProjection ind.name
@@ -832,10 +827,11 @@ partial def compareInd (ctx: MutCtx) (x y: PreInd)
       SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
       SOrder.cmpM (pure ⟨true, compare x.numIndices y.numIndices⟩) <|
       SOrder.cmpM (pure ⟨true, compare x.ctors.length y.ctors.length⟩) <|
-      SOrder.cmpM (pure ⟨true, compare x.recrs.length y.recrs.length⟩) <|
+      --SOrder.cmpM (pure ⟨true, compare x.recrs.length y.recrs.length⟩) <|
       SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type) <|
-      SOrder.cmpM (SOrder.zipM compareCtor x.ctors y.ctors)
-        (SOrder.zipM compareRecr x.recrs y.recrs)
+      (SOrder.zipM compareCtor x.ctors y.ctors)
+      --SOrder.cmpM (SOrder.zipM compareCtor x.ctors y.ctors)
+      --  (SOrder.zipM compareRecr x.recrs y.recrs)
     if sorder.strong then modify fun stt => { stt with
         constCmp := stt.constCmp.insert key sorder.ord
     }
@@ -858,30 +854,6 @@ partial def compareInd (ctx: MutCtx) (x y: PreInd)
           constCmp := stt.constCmp.insert key sorder.ord
         }
       return sorder
-    compareRecr (x y: Lean.RecursorVal) : CompileM SOrder := do
-      let key := match compare x.name y.name with
-        | .lt => (x.name, y.name)
-        | _ => (y.name, x.name)
-      match (<- get).constCmp.find? key with
-      | some o => return ⟨true, o⟩
-      | none => do
-      let sorder <- do
-        SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
-        SOrder.cmpM (pure ⟨true,compare x.numParams y.numParams⟩) <|
-        SOrder.cmpM (pure ⟨true,compare x.numIndices y.numIndices⟩) <|
-        SOrder.cmpM (pure ⟨true, compare x.numMotives y.numMotives⟩) <|
-        SOrder.cmpM (pure ⟨true,compare x.numMinors y.numMinors⟩) <|
-        SOrder.cmpM (pure ⟨true, compare x.k y.k⟩) <|
-        SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type) <|
-          (SOrder.zipM (compareRule x.levelParams y.levelParams) x.rules y.rules)
-      if sorder.strong then modify fun stt => { stt with
-          constCmp := stt.constCmp.insert key sorder.ord
-        }
-      return sorder
-    compareRule (xlvls ylvls: List Lean.Name) (x y: Lean.RecursorRule)
-      : CompileM SOrder := do
-        SOrder.cmpM (pure ⟨true, compare x.nfields y.nfields⟩)
-          (compareExpr ctx xlvls ylvls x.rhs y.rhs)
 
 partial def eqInd (ctx: MutCtx) (x y: PreInd) : CompileM Bool :=
   (fun o => o == .eq) <$> compareInd ctx x y
@@ -901,6 +873,127 @@ partial def sortInds (classes : List PreInd) : CompileM (List (List PreInd)) :=
         | ds  => ds.sortByM (compareInd ctx) >>= List.groupByM (eqInd ctx)
       let cs' := cs'.flatten.map (List.sortBy (compare ·.name ·.name))
       if cs == cs' then return cs' else go cs'
+
+/-- AST comparison of two Lean inductives. --/
+partial def compareRec (ctx: MutCtx) (x y: Lean.RecursorVal) 
+  : CompileM Ordering := do
+  let key := match compare x.name y.name with
+    | .lt => (x.name, y.name)
+    | _ => (y.name, x.name)
+  match (<- get).constCmp.find? key with
+  | some o => return o
+  | none => do
+    let sorder <- do
+      SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
+      SOrder.cmpM (pure ⟨true,compare x.numParams y.numParams⟩) <|
+      SOrder.cmpM (pure ⟨true,compare x.numIndices y.numIndices⟩) <|
+      SOrder.cmpM (pure ⟨true, compare x.numMotives y.numMotives⟩) <|
+      SOrder.cmpM (pure ⟨true,compare x.numMinors y.numMinors⟩) <|
+      SOrder.cmpM (pure ⟨true, compare x.k y.k⟩) <|
+      SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type) <|
+        (SOrder.zipM (compareRule x.levelParams y.levelParams) x.rules y.rules)
+    if sorder.strong then modify fun stt => { stt with
+        constCmp := stt.constCmp.insert key sorder.ord
+      }
+    return sorder.ord
+  where
+    compareRule (xlvls ylvls: List Lean.Name) (x y: Lean.RecursorRule)
+      : CompileM SOrder := do
+        SOrder.cmpM (pure ⟨true, compare x.nfields y.nfields⟩)
+          (compareExpr ctx xlvls ylvls x.rhs y.rhs)
+
+partial def eqRec (ctx: MutCtx) (x y: Lean.RecursorVal) : CompileM Bool :=
+  (fun o => o == .eq) <$> compareRec ctx x y
+
+/-- `sortRecs` recursively sorts a list of inductive recursors into equivalence
+classes, analogous to `sortDefs` --/
+partial def sortRecs (classes : List Lean.RecursorVal)
+  : CompileM (List (List Lean.RecursorVal)) :=
+  go [List.sortBy (compare ·.name ·.name) classes]
+  where
+    go (cs: List (List Lean.RecursorVal)): CompileM (List (List Lean.RecursorVal)) := do
+      --dbg_trace "sortInds blocks {(<- get).blocks.size} {(<- read).current}"
+      let ctx := recMutCtx cs
+      let cs' <- cs.mapM fun ds =>
+        match ds with
+        | []  => throw <| .badRecursorBlock cs
+        | [d] => pure [[d]]
+        | ds  => ds.sortByM (compareRec ctx) >>= List.groupByM (eqRec ctx)
+      let cs' := cs'.flatten.map (List.sortBy (compare ·.name ·.name))
+      if cs == cs' then return cs' else go cs'
+
+partial def compileRule: Lean.RecursorRule -> CompileM (Ixon.RecursorRule × (Address × Address))
+| r => do
+  let n <- compileName r.ctor
+  let rhs <- compileExpr r.rhs
+  pure (⟨r.nfields, rhs.data⟩, (n, rhs.meta))
+
+partial def compileRec: Lean.RecursorVal -> CompileM (Ixon.Recursor × Metadata)
+| r => withLevels r.levelParams <| do
+  let n <- compileName r.name
+  let ls <- r.levelParams.mapM compileName
+  let t <- compileExpr r.type
+  let rules <- r.rules.mapM compileRule
+  let data := ⟨r.k, r.isUnsafe, ls.length, r.numParams, r.numIndices,
+    r.numMotives, r.numMinors, t.data, rules.map (·.1)⟩
+  let meta := ⟨[.link n, .links ls, .rules (rules.map (·.2))]⟩
+  pure (data, meta)
+
+partial def compileMutRecs: List (List Lean.RecursorVal) -> CompileM (Ixon × Ixon)
+| recs => do
+  let mut data := #[]
+  let mut meta := #[]
+  -- iterate through each equivalence class
+  for recsClass in recs do
+    let mut classData := #[]
+    let mut classMeta := #[]
+    -- compile each def in a class
+    for recr in recsClass do
+      let (recr', meta') <- compileRec recr
+      classData := classData.push recr'
+      -- build up the class metadata as a list of links to the def metadata
+      classMeta := classMeta.push (.link (<- storeMeta meta'))
+    -- make sure we have no empty classes and all defs in a class are equal
+    match classData.toList with
+      | [] => throw (.badRecursorBlock recs)
+      | [x] => data := data.push x
+      | x::xs =>
+        if xs.foldr (fun y acc => (y == x) && acc) true
+        then data := data.push x
+        else throw (.badRecursorBlock recs)
+    -- build up the block metadata as a list of links to the class metadata
+    meta := meta.push (.link (<- storeMeta ⟨classMeta.toList⟩))
+  pure (.recs data.toList, .meta ⟨meta.toList⟩)
+
+partial def compileRecs : Lean.RecursorVal -> CompileM (Ixon × Ixon)
+| r => do
+  let all: Set Lean.Name <- getAll r.name
+  let mut recs : Array Lean.RecursorVal := #[]
+  for name in all do
+    match <- findLeanConst name with
+    | .recInfo val => recs := recs.push val
+    | x => throw $ .invalidConstantKind x.name "recursor" x.ctorName
+  let mutRecs <- sortRecs recs.toList
+  let mutCtx := recMutCtx mutRecs
+  let (data, meta) <- withMutCtx mutCtx <| compileMutRecs mutRecs
+  let block := ⟨<- storeIxon data, <- storeIxon meta⟩
+  modify fun stt => { stt with blocks := stt.blocks.insert block () }
+  let mut ret? : Option (Ixon × Ixon) := none
+  for recr in recs do
+    let idx <- do match mutCtx.find? recr.name with
+    | some idx => pure idx
+    | none => throw $ .cantFindMutDefIndex recr.name
+    let data := .rprj ⟨idx, block.data⟩
+    let meta := .meta ⟨[.link block.meta]⟩
+    let addr := ⟨<- storeIxon data, <- storeIxon meta⟩
+    modify fun stt => { stt with
+      constCache := stt.constCache.insert recr.name addr
+    }
+    if recr.name == r.name then ret? := some (data, meta)
+  match ret? with
+  | some ret => return ret
+  | none => throw $ .compileMutualBlockMissingProjection r.name
+
 end
 
 partial def makeLeanDef

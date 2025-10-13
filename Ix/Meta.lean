@@ -68,4 +68,3 @@ def metaMakeEvalClaim (func: Lean.Name) (args : List Lean.Expr)
   let lvls := (Lean.collectLevelParams default input).params.toList
   return (lvls, input, output, type, sort)
 
-

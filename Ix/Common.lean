@@ -265,6 +265,7 @@ def Std.HashMap.find? {A B} [BEq A] [Hashable A] (map: Std.HashMap A B) (a: A)
   := Std.HashMap.get? map a
 
 abbrev Ix.Map := Std.HashMap
+abbrev Ix.Set := Std.HashSet
 
 abbrev MutCtx := Ix.Map Lean.Name Nat
 

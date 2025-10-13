@@ -4,4 +4,5 @@ import Ix.Ixon
 import Ix.IR
 import Ix.Meta
 import Ix.CompileM
+import Ix.CondenseM
 --import Ix.DecompileM

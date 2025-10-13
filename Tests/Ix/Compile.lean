@@ -182,12 +182,13 @@ def testDifficult : IO TestSeq := do
 def testRoundtripGetEnv : IO TestSeq := do
   IO.println s!"Getting env"
   let env <- get_env!
+  IO.println s!"Building condensation graph of env"
+  let numDelta := env.getDelta.stats.numNodes
+  let numConst := env.getConstMap.size
   let mut cstt : CompileState := .init env 0
   IO.println s!"Compiling env"
   let mut inDelta := 0
   let mut inConst := 0
-  let numDelta := env.getDelta.stats.numNodes
-  let numConst := env.getConstMap.size
   let allStart <- IO.monoNanosNow
   for (_, c) in env.getDelta do
     let start <- IO.monoNanosNow
@@ -264,6 +265,6 @@ def Tests.Ix.Compile.suiteIO: List (IO TestSeq) := [
   --testInductives,
   --testDifficult,
   --testUnits,
-  testEasy
-  --testRoundtripGetEnv
+  --testEasy,
+  testRoundtripGetEnv
 ]

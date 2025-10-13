@@ -160,23 +160,17 @@ instance : Serialize Tag4 where
   put := putTag4
   get := getTag4
 
-def putList [Serialize A] (xs : List A) : PutM Unit := do
-  Serialize.put (Tag4.mk 0xA (UInt64.ofNat xs.length))
-  List.forM xs Serialize.put
+def putBytesTagged (xs : ByteArray) : PutM Unit := do
+  Serialize.put (Tag4.mk 0x9 (UInt64.ofNat xs.size))
+  xs.data.forM Serialize.put
 
-def getList [Serialize A] : GetM (List A) := do
+def getBytesTagged : GetM ByteArray := do
   let tag : Tag4 <- Serialize.get
   match tag with
-  | ⟨0xA, size⟩ => do
-    List.mapM (λ _ => Serialize.get) (List.range size.toNat)
-  | e => throw s!"expected List with tag 0xA, got {repr e}"
-
-instance [Serialize A] : Serialize (List A) where
-  put := putList
-  get := getList
-
-def putBytesTagged (x: ByteArray) : PutM Unit := Serialize.put x.toList
-def getBytesTagged : GetM ByteArray := (.mk ∘ .mk) <$> Serialize.get
+  | ⟨0x9, size⟩ => do
+    let bs <- Array.mapM (λ _ => Serialize.get) (Array.range size.toNat)
+    return ⟨bs⟩
+  | e => throw s!"expected Bytes with tag 0xA, got {repr e}"
 
 instance : Serialize ByteArray where
   put := putBytesTagged
@@ -292,6 +286,14 @@ instance (priority := default + 105)
     | [a, b, c, d, e, f, g, h] => pure (a, b, c, d, e, f, g, h)
     | e => throw s!"expected packed (Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool), got {e}"
 
+instance [Serialize A] : Serialize (List A) where
+  put xs := do
+    Serialize.put xs.length
+    puts xs
+  get := do
+    let len : Nat <- Serialize.get
+    gets len
+
 def putQuotKind : Lean.QuotKind → PutM Unit
 | .type => putUInt8 0
 | .ctor => putUInt8 1
@@ -380,20 +382,6 @@ instance [Serialize A] [Serialize B] : Serialize (A × B) where
   put := fun (a, b) => Serialize.put a *> Serialize.put b
   get := (·,·) <$> Serialize.get <*> Serialize.get
 
-def putOption [Serialize A]: Option A → PutM Unit
-| .none => Serialize.put ([] : List A)
-| .some x => Serialize.put [x]
-
-def getOption [Serialize A] : GetM (Option A) := do
-  match ← Serialize.get with
-  | [] => return .none
-  | [x] => return .some x
-  | _ => throw s!"Expected Option"
-
-instance [Serialize A] : Serialize (Option A) where
-  put := putOption
-  get := getOption
-
 instance: Serialize Unit where
   put _ := pure ()
   get := pure ()
@@ -460,6 +448,22 @@ instance : Serialize RecursorRule where
   put x := Serialize.put (x.fields, x.rhs)
   get := (fun (a,b) => .mk a b) <$> Serialize.get
 
+--structure Recursor where
+--  k : Bool
+--  isUnsafe: Bool
+--  lvls : Nat
+--  params : Nat
+--  indices : Nat
+--  motives : Nat
+--  minors : Nat
+--  type : Address
+--  rules : List RecursorRule
+--  deriving BEq, Repr, Inhabited, Ord, Hashable
+--
+--instance : Serialize Recursor where
+--  put x := Serialize.put ((x.k, x.isUnsafe), x.lvls, x.params, x.indices, x.motives, x.minors, x.type, x.rules)
+--  get := (fun ((a,b),c,d,e,f,g,h,i) => .mk a b c d e f g h i) <$> Serialize.get
+
 structure Recursor where
   k : Bool
   isUnsafe: Bool
@@ -486,12 +490,13 @@ structure Inductive where
   nested : Nat
   type : Address
   ctors : List Constructor
-  recrs : List Recursor
+  --recrs : List Recursor
   deriving BEq, Repr, Inhabited, Ord, Hashable
 
 instance : Serialize Inductive where
-  put x := Serialize.put ((x.recr,x.refl,x.isUnsafe), x.lvls, x.params, x.indices, x.nested, x.type, x.ctors, x.recrs)
-  get := (fun ((a,b,c),d,e,f,g,h,i,j) => .mk a b c d e f g h i j) <$> Serialize.get
+  put x := Serialize.put ((x.recr,x.refl,x.isUnsafe), x.lvls, x.params,
+  x.indices, x.nested, x.type, x.ctors) --, x.recrs)
+  get := (fun ((a,b,c),d,e,f,g,h,i) => .mk a b c d e f g h i) <$> Serialize.get
 
 structure InductiveProj where
   idx : Nat
@@ -514,13 +519,12 @@ instance : Serialize ConstructorProj where
 
 structure RecursorProj where
   idx : Nat
-  ridx : Nat
   block : Address
   deriving BEq, Repr, Inhabited, Ord, Hashable
 
 instance : Serialize RecursorProj where
-  put := fun x => Serialize.put (x.idx, x.ridx, x.block)
-  get := (fun (x,y,z) => .mk x y z) <$> Serialize.get
+  put := fun x => Serialize.put (x.idx, x.block)
+  get := (fun (x,y) => .mk x y) <$> Serialize.get
 
 structure DefinitionProj where
   idx : Nat
@@ -782,27 +786,28 @@ inductive Ixon where
 | usucc : Address -> Ixon                               -- 0x04 univ succ
 | umax  : Address -> Address -> Ixon                    -- 0x05 univ max
 | uimax : Address -> Address -> Ixon                    -- 0x06 univ imax
-| uvar  : Nat -> Ixon                                   -- 0x1X
+| uvar  : Nat -> Ixon                                   -- 0x1X univ var
 | evar  : Nat -> Ixon                                   -- 0x2X, variables
 | eref  : Address -> List Address -> Ixon               -- 0x3X, global reference
 | erec  : Nat -> List Address -> Ixon                   -- 0x4X, local recursion
 | eprj  : Address -> Nat -> Address -> Ixon             -- 0x5X, structure projection
-| esort : Address -> Ixon                               -- 0x90, universes
-| estr  : Address -> Ixon                               -- 0x91, utf8 string
-| enat  : Address -> Ixon                               -- 0x92, natural number
-| eapp  : Address -> Address -> Ixon                    -- 0x93, application
-| elam  : Address -> Address -> Ixon                    -- 0x94, lambda
-| eall  : Address -> Address -> Ixon                    -- 0x95, forall
-| elet  : Bool -> Address -> Address -> Address -> Ixon -- 0x96, 0x97, let
-| list : List Ixon -> Ixon                              -- 0xAX, list
-| defn : Definition -> Ixon                             -- 0xB0, definition
-| axio : Axiom -> Ixon                                  -- 0xB1, axiom
-| quot : Quotient -> Ixon                               -- 0xB2, quotient
-| cprj : ConstructorProj -> Ixon                        -- 0xB3, ctor projection
-| rprj : RecursorProj -> Ixon                           -- 0xB4, recr projection
-| iprj : InductiveProj -> Ixon                          -- 0xB5, indc projection
-| dprj : DefinitionProj -> Ixon                         -- 0xB6, defn projection
-| inds : List Inductive -> Ixon                         -- 0xCX, mutual inductive types
+| esort : Address -> Ixon                               -- 0x80, universes
+| estr  : Address -> Ixon                               -- 0x81, utf8 string
+| enat  : Address -> Ixon                               -- 0x82, natural number
+| eapp  : Address -> Address -> Ixon                    -- 0x83, application
+| elam  : Address -> Address -> Ixon                    -- 0x84, lambda
+| eall  : Address -> Address -> Ixon                    -- 0x85, forall
+| elet  : Bool -> Address -> Address -> Address -> Ixon -- 0x86, 0x87, let
+| blob : ByteArray -> Ixon                              -- 0x9X, bytes
+| defn : Definition -> Ixon                             -- 0xA0, definition
+| axio : Axiom -> Ixon                                  -- 0xA1, axiom
+| quot : Quotient -> Ixon                               -- 0xA2, quotient
+| cprj : ConstructorProj -> Ixon                        -- 0xA3, ctor projection
+| rprj : RecursorProj -> Ixon                           -- 0xA4, recr projection
+| iprj : InductiveProj -> Ixon                          -- 0xA5, indc projection
+| dprj : DefinitionProj -> Ixon                         -- 0xA6, defn projection
+| inds : List Inductive -> Ixon                         -- 0xBX, mutual inductive types
+| recs : List Recursor -> Ixon                          -- 0xCX, mutual recursors
 | defs : List Definition -> Ixon                        -- 0xDX, mutual definitions
 | prof : Proof -> Ixon                                  -- 0xE0, zero-knowledge proof
 | eval : EvalClaim -> Ixon                              -- 0xE1, cryptographic claim
@@ -812,8 +817,7 @@ inductive Ixon where
 | meta : Metadata -> Ixon                               -- 0xFX, Lean4 metadata
 deriving BEq, Repr, Inhabited, Ord, Hashable
 
-
-partial def putIxon : Ixon -> PutM Unit
+def putIxon : Ixon -> PutM Unit
 | .nanon => put (Tag4.mk 0x0 0)
 | .nstr n s => put (Tag4.mk 0x0 1) *> put n *> put s
 | .nnum n i => put (Tag4.mk 0x0 2) *> put n *> put i
@@ -830,28 +834,29 @@ partial def putIxon : Ixon -> PutM Unit
 | .eref a ls => put (Tag4.mk 0x3 ls.length.toUInt64) *> put a *> puts ls
 | .erec i ls =>
   let bytes := i.toBytesLE
-  put (Tag4.mk 0x4 bytes.size.toUInt64) *> putBytes ⟨bytes⟩ *> putList ls
+  put (Tag4.mk 0x4 bytes.size.toUInt64) *> putBytes ⟨bytes⟩ *> puts ls
 | .eprj t n x =>
   let bytes := n.toBytesLE
   put (Tag4.mk 0x5 bytes.size.toUInt64) *> put t *> putBytes ⟨bytes⟩ *> put x
-| .esort u => put (Tag4.mk 0x9 0x0) *> put u
-| .estr s => put (Tag4.mk 0x9 0x1) *> put s
-| .enat n => put (Tag4.mk 0x9 0x2) *> put n
-| .eapp f a => put (Tag4.mk 0x9 0x3) *> put f *> put a
-| .elam t b => put (Tag4.mk 0x9 0x4) *> put t *> put b
-| .eall t b => put (Tag4.mk 0x9 0x5) *> put t *> put b
+| .esort u => put (Tag4.mk 0x8 0x0) *> put u
+| .estr s => put (Tag4.mk 0x8 0x1) *> put s
+| .enat n => put (Tag4.mk 0x8 0x2) *> put n
+| .eapp f a => put (Tag4.mk 0x8 0x3) *> put f *> put a
+| .elam t b => put (Tag4.mk 0x8 0x4) *> put t *> put b
+| .eall t b => put (Tag4.mk 0x8 0x5) *> put t *> put b
 | .elet nD t d b => if nD
-  then put (Tag4.mk 0x9 0x6) *> put t *> put d *> put b
-  else put (Tag4.mk 0x9 0x7) *> put t *> put d *> put b
-| .list xs => put (Tag4.mk 0xA xs.length.toUInt64) *> (List.forM xs putIxon)
-| .defn x => put (Tag4.mk 0xB 0x0) *> put x
-| .axio x => put (Tag4.mk 0xB 0x1) *> put x
-| .quot x => put (Tag4.mk 0xB 0x2) *> put x
-| .cprj x => put (Tag4.mk 0xB 0x3) *> put x
-| .rprj x => put (Tag4.mk 0xB 0x4) *> put x
-| .iprj x => put (Tag4.mk 0xB 0x5) *> put x
-| .dprj x => put (Tag4.mk 0xB 0x6) *> put x
-| .inds xs => put (Tag4.mk 0xC xs.length.toUInt64) *> puts xs
+  then put (Tag4.mk 0x8 0x6) *> put t *> put d *> put b
+  else put (Tag4.mk 0x8 0x7) *> put t *> put d *> put b
+| .blob xs => put (Tag4.mk 0x9 xs.size.toUInt64) *> xs.data.forM put
+| .defn x => put (Tag4.mk 0xA 0x0) *> put x
+| .axio x => put (Tag4.mk 0xA 0x1) *> put x
+| .quot x => put (Tag4.mk 0xA 0x2) *> put x
+| .cprj x => put (Tag4.mk 0xA 0x3) *> put x
+| .rprj x => put (Tag4.mk 0xA 0x4) *> put x
+| .iprj x => put (Tag4.mk 0xA 0x5) *> put x
+| .dprj x => put (Tag4.mk 0xA 0x6) *> put x
+| .inds xs => put (Tag4.mk 0xB xs.length.toUInt64) *> puts xs
+| .recs xs => put (Tag4.mk 0xC xs.length.toUInt64) *> puts xs
 | .defs xs => put (Tag4.mk 0xD xs.length.toUInt64) *> puts xs
 | .prof x => put (Tag4.mk 0xE 0x0) *> put x
 | .eval x => put (Tag4.mk 0xE 0x1) *> put x
@@ -861,53 +866,48 @@ partial def putIxon : Ixon -> PutM Unit
 | .meta m => put m
 
 def getIxon : GetM Ixon := do
-  let st ← MonadState.get
-  go (st.bytes.size - st.idx)
-  where
-    go : Nat → GetM Ixon
-    | 0 => throw "Out of fuel"
-    | Nat.succ f => do
-      let tag <- getTag4
-      match tag with
-      | ⟨0x0, 0⟩ => pure <| .nanon
-      | ⟨0x0, 1⟩ => .nstr <$> get <*> get
-      | ⟨0x0, 2⟩ => .nnum <$> get <*> get
-      | ⟨0x0, 3⟩ => pure <| .uzero
-      | ⟨0x0, 4⟩ => .usucc <$> get
-      | ⟨0x0, 5⟩ => .umax <$> get <*> get
-      | ⟨0x0, 6⟩ => .uimax <$> get <*> get
-      | ⟨0x1, x⟩ => .uvar <$> getNat (getBytes x.toNat)
-      | ⟨0x2, x⟩ => .evar <$> getNat (getBytes x.toNat)
-      | ⟨0x3, x⟩ => .eref <$> get <*> gets x.toNat
-      | ⟨0x4, x⟩ => .erec <$> getNat (getBytes x.toNat) <*> get
-      | ⟨0x5, x⟩ => .eprj <$> get <*> getNat (getBytes x.toNat) <*> get
-      | ⟨0x9, 0⟩ => .esort <$> get
-      | ⟨0x9, 1⟩ => .estr <$> get
-      | ⟨0x9, 2⟩ => .enat <$> get
-      | ⟨0x9, 3⟩ => .eapp <$> get <*> get
-      | ⟨0x9, 4⟩ => .elam <$> get <*> get
-      | ⟨0x9, 5⟩ => .eall <$> get <*> get
-      | ⟨0x9, 6⟩ => .elet true <$> get <*> get <*> get
-      | ⟨0x9, 7⟩ => .elet false <$> get <*> get <*> get
-      | ⟨0xA, x⟩ => .list <$> getMany x.toNat (go f)
-      | ⟨0xB, 0x0⟩ => .defn <$> get
-      | ⟨0xB, 0x1⟩ => .axio <$> get
-      | ⟨0xB, 0x2⟩ => .quot <$> get
-      | ⟨0xB, 0x3⟩ => .cprj <$> get
-      | ⟨0xB, 0x4⟩ => .rprj <$> get
-      | ⟨0xB, 0x5⟩ => .iprj <$> get
-      | ⟨0xB, 0x6⟩ => .dprj <$> get
-      | ⟨0xC, x⟩ => .inds <$> getMany x.toNat get
-      | ⟨0xD, x⟩ => .defs <$> getMany x.toNat get
-      | ⟨0xE, 0x0⟩ => .prof <$> get
-      | ⟨0xE, 0x1⟩ => .eval <$> get
-      | ⟨0xE, 0x2⟩ => .chck <$> get
-      | ⟨0xE, 0x3⟩ => .comm <$> get
-      | ⟨0xE, 0x4⟩ => .envn <$> get
-      | ⟨0xF, x⟩ => do
-        let nodes <- getMany x.toNat Serialize.get
-        return .meta ⟨nodes⟩
-      | x => throw s!"Unknown Ixon tag {repr x}"
+  let tag <- getTag4
+  match tag with
+  | ⟨0x0, 0⟩ => pure <| .nanon
+  | ⟨0x0, 1⟩ => .nstr <$> get <*> get
+  | ⟨0x0, 2⟩ => .nnum <$> get <*> get
+  | ⟨0x0, 3⟩ => pure <| .uzero
+  | ⟨0x0, 4⟩ => .usucc <$> get
+  | ⟨0x0, 5⟩ => .umax <$> get <*> get
+  | ⟨0x0, 6⟩ => .uimax <$> get <*> get
+  | ⟨0x1, x⟩ => .uvar <$> getNat (getBytes x.toNat)
+  | ⟨0x2, x⟩ => .evar <$> getNat (getBytes x.toNat)
+  | ⟨0x3, x⟩ => .eref <$> get <*> gets x.toNat
+  | ⟨0x4, x⟩ => .erec <$> getNat (getBytes x.toNat) <*> get
+  | ⟨0x5, x⟩ => .eprj <$> get <*> getNat (getBytes x.toNat) <*> get
+  | ⟨0x8, 0⟩ => .esort <$> get
+  | ⟨0x8, 1⟩ => .estr <$> get
+  | ⟨0x8, 2⟩ => .enat <$> get
+  | ⟨0x8, 3⟩ => .eapp <$> get <*> get
+  | ⟨0x8, 4⟩ => .elam <$> get <*> get
+  | ⟨0x8, 5⟩ => .eall <$> get <*> get
+  | ⟨0x8, 6⟩ => .elet true <$> get <*> get <*> get
+  | ⟨0x8, 7⟩ => .elet false <$> get <*> get <*> get
+  | ⟨0x9, x⟩ => (.blob ∘ .mk ∘ .mk) <$> getMany x.toNat getUInt8
+  | ⟨0xA, 0x0⟩ => .defn <$> get
+  | ⟨0xA, 0x1⟩ => .axio <$> get
+  | ⟨0xA, 0x2⟩ => .quot <$> get
+  | ⟨0xA, 0x3⟩ => .cprj <$> get
+  | ⟨0xA, 0x4⟩ => .rprj <$> get
+  | ⟨0xA, 0x5⟩ => .iprj <$> get
+  | ⟨0xA, 0x6⟩ => .dprj <$> get
+  | ⟨0xC, x⟩ => .inds <$> getMany x.toNat get
+  | ⟨0xB, x⟩ => .recs <$> getMany x.toNat get
+  | ⟨0xD, x⟩ => .defs <$> getMany x.toNat get
+  | ⟨0xE, 0x0⟩ => .prof <$> get
+  | ⟨0xE, 0x1⟩ => .eval <$> get
+  | ⟨0xE, 0x2⟩ => .chck <$> get
+  | ⟨0xE, 0x3⟩ => .comm <$> get
+  | ⟨0xE, 0x4⟩ => .envn <$> get
+  | ⟨0xF, x⟩ => do
+    let nodes <- getMany x.toNat Serialize.get
+    return .meta ⟨nodes⟩
+  | x => throw s!"Unknown Ixon tag {repr x}"
 
 instance : Serialize Ixon where
   put := putIxon
