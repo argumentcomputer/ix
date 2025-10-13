@@ -40,9 +40,11 @@ section IxApplications
 
 section Benchmarks
 
-lean_exe bench where
-  root := `Benchmarks.Main
-  supportInterpreter := true
+lean_exe «bench-aiur» where
+  root := `Benchmarks.Aiur
+
+lean_exe «bench-blake3» where
+  root := `Benchmarks.Blake3
 
 end Benchmarks
 

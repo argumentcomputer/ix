@@ -67,6 +67,20 @@
             deps = [ lib.leanPkg ];
             staticLibDeps = [ "${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib" ];
           }).executable;
+
+          bench-aiur = ((lean4-nix.lake { inherit pkgs; }).mkPackage {
+            src = ./.;
+            roots = ["Benchmarks.Aiur" "Ix"];
+            deps = [ lib.leanPkg ];
+            staticLibDeps = [ "${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib" ];
+          }).executable;
+
+          bench-blake3 = ((lean4-nix.lake { inherit pkgs; }).mkPackage {
+            src = ./.;
+            roots = ["Benchmarks.Blake3" "Ix"];
+            deps = [ lib.leanPkg ];
+            staticLibDeps = [ "${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib" ];
+          }).executable;
           # Rust static lib, needed for static linking downstream
           rustStaticLib = lib.rustPkg;
           # C static lib, needed for static linking downstream

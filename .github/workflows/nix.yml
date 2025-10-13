@@ -24,6 +24,9 @@ jobs:
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
       - run: nix run .#default -- --help
+
+      - run: nix build .#bench-aiur --print-build-logs --accept-flake-config
+      - run: nix build .#bench-blake3 --print-build-logs --accept-flake-config
       # Ix tests
       - run: nix build .#test --print-build-logs --accept-flake-config
       - run: nix run .#test
