@@ -1,11 +1,9 @@
+use indexmap::{IndexMap, IndexSet};
+use rustc_hash::FxBuildHasher;
+
 pub mod aiur;
 pub mod lean;
 pub mod lean_env;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
+pub type FxIndexSet<K> = IndexSet<K, FxBuildHasher>;

@@ -3,9 +3,10 @@ use std::ffi::c_void;
 use multi_stark::p3_field::PrimeCharacteristicRing;
 
 use crate::{
+    FxIndexMap,
     aiur::{
         G,
-        bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx},
+        bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
     },
     lean::{
         array::LeanArrayObject,

@@ -7,7 +7,7 @@ use crate::{
     lean_unbox,
 };
 
-#[derive(Hash, PartialEq, Eq, Debug)]
+#[derive(Hash, PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
 pub struct Nat(BigUint);
 
 impl Nat {
