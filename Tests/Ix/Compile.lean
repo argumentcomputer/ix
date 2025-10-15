@@ -7,7 +7,6 @@ import Ix.CompileM
 import Ix.Cronos
 --import Ix.DecompileM
 import Ix.Meta
-import Ix.IR
 import Ix.Store
 import Lean
 import Tests.Ix.Fixtures
@@ -71,12 +70,12 @@ def testMutual : IO TestSeq := do
   let env <- get_env!
   let mut cstt : CompileState := .init env 0
   let all := (env.getDelta.find! `Test.Ix.Mutual.A).all
-  let predefs <- all.mapM fun n => match env.getDelta.find! n with
-    | .defnInfo d => pure <| Ix.mkPreDef d
-    | .opaqueInfo d => pure <| Ix.mkPreOpaque d
-    | .thmInfo d => pure <| Ix.mkPreTheorem d
+  let consts <- all.mapM fun n => match env.getDelta.find! n with
+    | .defnInfo d => pure <| Ix.MutConst.mkDefn d
+    | .opaqueInfo d => pure <| Ix.MutConst.mkOpaq d
+    | .thmInfo d => pure <| Ix.MutConst.mkTheo d
     | _ => throw (IO.userError "not a def")
-  let (dss, _) <- match (<- (sortDefs predefs).run .init cstt) with
+  let (dss, _) <- match (<- (sortConsts consts).run .init cstt) with
     | (.ok a, stt) => do
       pure (a, stt)
     | (.error e, _) => do
@@ -91,12 +90,12 @@ def testInductives : IO TestSeq := do
   --let delta := env.getDelta.filter fun n _ => namesp.isPrefixOf n
   --let consts := env.getConstMap.filter fun n _ => namesp.isPrefixOf n
   let all := (env.getDelta.find! `Test.Ix.Inductives.A).all
-  let preinds <- all.mapM fun n => match env.getDelta.find! n with
-    | .inductInfo v => do match (<- (mkPreInd v).run .init cstt) with
+  let consts <- all.mapM fun n => match env.getDelta.find! n with
+    | .inductInfo v => do match (<- (Ix.MutConst.mkIndc v).run .init cstt) with
       | (.ok a, _) => pure a
       | (.error e, _) => do throw (IO.userError (<- e.pretty))
     | _ => throw (IO.userError "not an inductive")
-  let (dss, _) <- do match (<- (sortInds preinds).run .init cstt) with
+  let (dss, _) <- do match (<- (sortConsts consts).run .init cstt) with
     | (.ok a, stt) => do
       pure (a, stt)
     | (.error e, _) => do

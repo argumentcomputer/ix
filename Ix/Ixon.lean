@@ -448,22 +448,6 @@ instance : Serialize RecursorRule where
   put x := Serialize.put (x.fields, x.rhs)
   get := (fun (a,b) => .mk a b) <$> Serialize.get
 
---structure Recursor where
---  k : Bool
---  isUnsafe: Bool
---  lvls : Nat
---  params : Nat
---  indices : Nat
---  motives : Nat
---  minors : Nat
---  type : Address
---  rules : List RecursorRule
---  deriving BEq, Repr, Inhabited, Ord, Hashable
---
---instance : Serialize Recursor where
---  put x := Serialize.put ((x.k, x.isUnsafe), x.lvls, x.params, x.indices, x.motives, x.minors, x.type, x.rules)
---  get := (fun ((a,b),c,d,e,f,g,h,i) => .mk a b c d e f g h i) <$> Serialize.get
-
 structure Recursor where
   k : Bool
   isUnsafe: Bool
@@ -701,6 +685,32 @@ instance : Serialize Int where
   put := putInt
   get := getInt
 
+inductive MutConst where
+| defn : Definition -> MutConst
+| indc : Inductive -> MutConst
+| recr : Recursor -> MutConst
+deriving BEq, Repr, Ord, Inhabited, Ord, Hashable
+
+def putMutConst : MutConst → PutM Unit
+| .defn v => putUInt8 0 *> put v
+| .indc v => putUInt8 1 *> put v
+| .recr v => putUInt8 2 *> put v
+
+def getMutConst : GetM MutConst := do
+  match (← getUInt8) with
+  | 0 => .defn <$> get
+  | 1 => .indc <$> get
+  | 2 => .recr <$> get
+  | e => throw s!"expected MutConst encoding between 0 and 2, got {e}"
+
+instance : Serialize MutConst where
+  put := putMutConst
+  get := getMutConst
+
+instance : Serialize Int where
+  put := putInt
+  get := getInt
+
 inductive DataValue where
 | ofString (v: Address)
 | ofBool (v: Bool)
@@ -800,15 +810,14 @@ inductive Ixon where
 | elet  : Bool -> Address -> Address -> Address -> Ixon -- 0x86, 0x87, let
 | blob : ByteArray -> Ixon                              -- 0x9X, bytes
 | defn : Definition -> Ixon                             -- 0xA0, definition
-| axio : Axiom -> Ixon                                  -- 0xA1, axiom
-| quot : Quotient -> Ixon                               -- 0xA2, quotient
-| cprj : ConstructorProj -> Ixon                        -- 0xA3, ctor projection
-| rprj : RecursorProj -> Ixon                           -- 0xA4, recr projection
-| iprj : InductiveProj -> Ixon                          -- 0xA5, indc projection
-| dprj : DefinitionProj -> Ixon                         -- 0xA6, defn projection
-| inds : List Inductive -> Ixon                         -- 0xBX, mutual inductive types
-| recs : List Recursor -> Ixon                          -- 0xCX, mutual recursors
-| defs : List Definition -> Ixon                        -- 0xDX, mutual definitions
+| recr : Recursor -> Ixon                               -- 0xA1, recursor
+| axio : Axiom -> Ixon                                  -- 0xA2, axiom
+| quot : Quotient -> Ixon                               -- 0xA3, quotient
+| cprj : ConstructorProj -> Ixon                        -- 0xA4, ctor projection
+| rprj : RecursorProj -> Ixon                           -- 0xA5, recr projection
+| iprj : InductiveProj -> Ixon                          -- 0xA6, indc projection
+| dprj : DefinitionProj -> Ixon                         -- 0xA7, defn projection
+| muts : List MutConst -> Ixon                          -- 0xBX, mutual inductive types
 | prof : Proof -> Ixon                                  -- 0xE0, zero-knowledge proof
 | eval : EvalClaim -> Ixon                              -- 0xE1, cryptographic claim
 | chck : CheckClaim -> Ixon                             -- 0xE2, cryptographic claim
@@ -849,15 +858,14 @@ def putIxon : Ixon -> PutM Unit
   else put (Tag4.mk 0x8 0x7) *> put t *> put d *> put b
 | .blob xs => put (Tag4.mk 0x9 xs.size.toUInt64) *> xs.data.forM put
 | .defn x => put (Tag4.mk 0xA 0x0) *> put x
-| .axio x => put (Tag4.mk 0xA 0x1) *> put x
-| .quot x => put (Tag4.mk 0xA 0x2) *> put x
-| .cprj x => put (Tag4.mk 0xA 0x3) *> put x
-| .rprj x => put (Tag4.mk 0xA 0x4) *> put x
-| .iprj x => put (Tag4.mk 0xA 0x5) *> put x
-| .dprj x => put (Tag4.mk 0xA 0x6) *> put x
-| .inds xs => put (Tag4.mk 0xB xs.length.toUInt64) *> puts xs
-| .recs xs => put (Tag4.mk 0xC xs.length.toUInt64) *> puts xs
-| .defs xs => put (Tag4.mk 0xD xs.length.toUInt64) *> puts xs
+| .recr x => put (Tag4.mk 0xA 0x1) *> put x
+| .axio x => put (Tag4.mk 0xA 0x2) *> put x
+| .quot x => put (Tag4.mk 0xA 0x3) *> put x
+| .cprj x => put (Tag4.mk 0xA 0x4) *> put x
+| .rprj x => put (Tag4.mk 0xA 0x5) *> put x
+| .iprj x => put (Tag4.mk 0xA 0x6) *> put x
+| .dprj x => put (Tag4.mk 0xA 0x7) *> put x
+| .muts xs => put (Tag4.mk 0xB xs.length.toUInt64) *> puts xs
 | .prof x => put (Tag4.mk 0xE 0x0) *> put x
 | .eval x => put (Tag4.mk 0xE 0x1) *> put x
 | .chck x => put (Tag4.mk 0xE 0x2) *> put x
@@ -890,15 +898,14 @@ def getIxon : GetM Ixon := do
   | ⟨0x8, 7⟩ => .elet false <$> get <*> get <*> get
   | ⟨0x9, x⟩ => (.blob ∘ .mk ∘ .mk) <$> getMany x.toNat getUInt8
   | ⟨0xA, 0x0⟩ => .defn <$> get
-  | ⟨0xA, 0x1⟩ => .axio <$> get
-  | ⟨0xA, 0x2⟩ => .quot <$> get
-  | ⟨0xA, 0x3⟩ => .cprj <$> get
-  | ⟨0xA, 0x4⟩ => .rprj <$> get
-  | ⟨0xA, 0x5⟩ => .iprj <$> get
-  | ⟨0xA, 0x6⟩ => .dprj <$> get
-  | ⟨0xC, x⟩ => .inds <$> getMany x.toNat get
-  | ⟨0xB, x⟩ => .recs <$> getMany x.toNat get
-  | ⟨0xD, x⟩ => .defs <$> getMany x.toNat get
+  | ⟨0xA, 0x1⟩ => .recr <$> get
+  | ⟨0xA, 0x2⟩ => .axio <$> get
+  | ⟨0xA, 0x3⟩ => .quot <$> get
+  | ⟨0xA, 0x4⟩ => .cprj <$> get
+  | ⟨0xA, 0x5⟩ => .rprj <$> get
+  | ⟨0xA, 0x6⟩ => .iprj <$> get
+  | ⟨0xA, 0x7⟩ => .dprj <$> get
+  | ⟨0xB, x⟩ => .muts <$> getMany x.toNat get
   | ⟨0xE, 0x0⟩ => .prof <$> get
   | ⟨0xE, 0x1⟩ => .eval <$> get
   | ⟨0xE, 0x2⟩ => .chck <$> get
