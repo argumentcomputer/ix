@@ -1,5 +1,4 @@
-use indexmap::IndexMap;
-use rustc_hash::FxBuildHasher;
+use crate::FxIndexMap;
 
 use super::G;
 
@@ -26,8 +25,6 @@ impl FunctionLayout {
         self.input_size + self.selectors + self.auxiliaries
     }
 }
-
-pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 pub struct Block {
     pub(crate) ops: Vec<Op>,

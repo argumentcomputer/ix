@@ -2,13 +2,16 @@ use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 
-use crate::aiur::{
-    G,
-    bytecode::{Ctrl, FunIdx, Function, FxIndexMap, Op, Toplevel},
-    gadgets::{
-        AiurGadget,
-        bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
-        bytes2::{Bytes2, Bytes2Op, Bytes2Queries},
+use crate::{
+    FxIndexMap,
+    aiur::{
+        G,
+        bytecode::{Ctrl, FunIdx, Function, Op, Toplevel},
+        gadgets::{
+            AiurGadget,
+            bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
+            bytes2::{Bytes2, Bytes2Op, Bytes2Queries},
+        },
     },
 };
 

@@ -119,6 +119,22 @@ impl<T> CArray<T> {
     }
 }
 
+pub struct ListIterator(*const c_void);
+
+impl Iterator for ListIterator {
+    type Item = *const c_void;
+    fn next(&mut self) -> Option<Self::Item> {
+        let ptr = self.0;
+        if lean_is_scalar(ptr) {
+            return None;
+        }
+        let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
+        let [head_ptr, tail_ptr] = ctor.objs();
+        self.0 = tail_ptr;
+        Some(head_ptr)
+    }
+}
+
 pub fn collect_list<T>(mut ptr: *const c_void, map_fn: fn(*const c_void) -> T) -> Vec<T> {
     let mut vec = Vec::new();
     while !lean_is_scalar(ptr) {
