@@ -711,6 +711,28 @@ instance : Serialize Int where
   put := putInt
   get := getInt
 
+inductive BuiltIn where
+| obj : BuiltIn
+| neutral : BuiltIn
+| unreachable : BuiltIn
+deriving BEq, Repr, Ord, Inhabited, Ord, Hashable
+
+def putBuiltIn : BuiltIn → PutM Unit
+| .obj => putUInt8 0
+| .neutral => putUInt8 1
+| .unreachable => putUInt8 2
+
+def getBuiltIn : GetM BuiltIn := do
+  match (← getUInt8) with
+  | 0 => pure .obj
+  | 1 => pure .neutral
+  | 2 => pure .unreachable
+  | e => throw s!"expected BuiltIn encoding between 0 and 5, got {e}"
+
+instance : Serialize BuiltIn where
+  put := putBuiltIn
+  get := getBuiltIn
+
 inductive DataValue where
 | ofString (v: Address)
 | ofBool (v: Bool)
@@ -823,6 +845,7 @@ inductive Ixon where
 | chck : CheckClaim -> Ixon                             -- 0xE2, cryptographic claim
 | comm : Comm -> Ixon                                   -- 0xE3, cryptographic commitment
 | envn : Env -> Ixon                                    -- 0xE4, Lean4 environment
+| prim : BuiltIn -> Ixon                                -- 0xE5, compiler builtins
 | meta : Metadata -> Ixon                               -- 0xFX, Lean4 metadata
 deriving BEq, Repr, Inhabited, Ord, Hashable
 
@@ -871,6 +894,7 @@ def putIxon : Ixon -> PutM Unit
 | .chck x => put (Tag4.mk 0xE 0x2) *> put x
 | .comm x => put (Tag4.mk 0xE 0x3) *> put x
 | .envn x => put (Tag4.mk 0xE 0x4) *> put x
+| .prim x => put (Tag4.mk 0xE 0x5) *> put x
 | .meta m => put m
 
 def getIxon : GetM Ixon := do
@@ -911,6 +935,7 @@ def getIxon : GetM Ixon := do
   | ⟨0xE, 0x2⟩ => .chck <$> get
   | ⟨0xE, 0x3⟩ => .comm <$> get
   | ⟨0xE, 0x4⟩ => .envn <$> get
+  | ⟨0xE, 0x5⟩ => .prim <$> get
   | ⟨0xF, x⟩ => do
     let nodes <- getMany x.toNat Serialize.get
     return .meta ⟨nodes⟩

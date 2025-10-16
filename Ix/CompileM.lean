@@ -333,9 +333,13 @@ def compileKVMaps (maps: List Lean.KVMap): CompileM Address := do
     pure <| .kvmap list.toList
 
 def findLeanConst (name : Lean.Name) : CompileM Lean.ConstantInfo := do
-  match (← get).env.constants.find? name with
+  match (<- get).env.constants.find? name with
   | some const => pure const
-  | none => throw $ .unknownConstant name
+  | none => do
+    let cstage2 := Lean.Name.mkSimple "_cstage2"
+    match (<- get).env.constants.find? (name.append cstage2) with
+     | some const => pure const
+     | none => throw $ .unknownConstant name
 
 def MutConst.mkIndc (i: Lean.InductiveVal) : CompileM MutConst := do
   let ctors <- i.ctors.mapM getCtor
@@ -388,7 +392,7 @@ partial def compileExpr: Lean.Expr -> CompileM MetaAddress
       | none => do
         let ref <- match (<- get).comms.find? name with
           | some comm => pure comm
-          | none => findLeanConst name >>= compileConst
+          | none => compileConstName name
         let data := .eref ref.data (us.map (·.data))
         let meta := .meta ⟨[.link md, .link n, .link ref.meta, .links (us.map (·.meta))]⟩
         pure (data, meta)
@@ -434,7 +438,7 @@ partial def compileExpr: Lean.Expr -> CompileM MetaAddress
       let md <- compileKVMaps kvs
       let t <- match (<- get).comms.find? typeName with
         | some comm => pure comm
-        | none => findLeanConst typeName >>= compileConst
+        | none => compileConstName typeName
       let n <- compileName typeName
       let s <- compileExpr struct
       let data := .eprj t.data idx s.data
@@ -443,11 +447,15 @@ partial def compileExpr: Lean.Expr -> CompileM MetaAddress
     | expr@(.fvar ..)  => throw $ .exprFreeVariable expr
     | expr@(.mvar ..)  => throw $ .exprMetavariable expr
 
-partial def compileConst (const: Lean.ConstantInfo): CompileM MetaAddress := do
-  match (<- get).constCache.find? const.name with
+partial def compileConstName (name: Lean.Name): CompileM MetaAddress := do
+  match (<- get).constCache.find? name with
   | some x => pure x
-  | none => resetCtx const.name <| do
-    let (anon, meta) <- go const
+  | none => resetCtx name <| do
+    let (anon, meta) <- do
+      if name == Lean.Name.mkSimple "_obj" then pure (.prim .obj, .meta ⟨[]⟩)
+      else if name == Lean.Name.mkSimple "_neutral" then pure (.prim .neutral, .meta ⟨[]⟩)
+      else if name == Lean.Name.mkSimple "_unreachable" then pure (.prim .unreachable, .meta ⟨[]⟩)
+      else do findLeanConst name >>= compileConstant
     --let stt <- get
     --dbg_trace "✓ compileConst {const.name}"
     --dbg_trace "store {stt.store.size}"
@@ -459,36 +467,36 @@ partial def compileConst (const: Lean.ConstantInfo): CompileM MetaAddress := do
     --dbg_trace "univCache {stt.univCache.size}"
     let maddr := ⟨<- storeIxon anon, <- storeIxon meta⟩
     modifyGet fun stt => (maddr, { stt with
-      constCache := stt.constCache.insert const.name maddr
+      constCache := stt.constCache.insert name maddr
     })
-  where
-    go : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
-    | .defnInfo val => compileMutual (MutConst.mkDefn val)
-    | .thmInfo val => compileMutual (MutConst.mkTheo val)
-    | .opaqueInfo val => compileMutual (MutConst.mkOpaq val)
-    | .inductInfo val => MutConst.mkIndc val >>= compileMutual
-    | .ctorInfo val => do match <- findLeanConst val.induct with
-      | .inductInfo ind => do
-        let _ <- MutConst.mkIndc ind >>= compileMutual
-        match (<- get).constCache.find? const.name with
-        | some ⟨data, meta⟩ => do pure (<- getIxon data, <- getIxon meta)
-        | none => throw <| .mutualBlockMissingProjection const.name
-      | c => throw <| .invalidConstantKind c.name "inductive" c.ctorName
-    | .recInfo val => compileMutual (MutConst.recr val)
-    | .axiomInfo ⟨⟨name, lvls, type⟩, isUnsafe⟩ => withLevels lvls do
-      let n <- compileName name
-      let ls <- lvls.mapM compileName
-      let t <- compileExpr type
-      let data := .axio ⟨isUnsafe, lvls.length, t.data⟩
-      let meta := .meta ⟨[.link n, .links ls, .link t.meta]⟩
-      pure (data, meta)
-    | .quotInfo ⟨⟨name, lvls, type⟩, kind⟩ => withLevels lvls do
-      let n <- compileName name
-      let ls <- lvls.mapM compileName
-      let t <- compileExpr type
-      let data := .quot ⟨kind, lvls.length, t.data⟩
-      let meta := .meta ⟨[.link n, .links ls, .link t.meta]⟩
-      pure (data, meta)
+
+partial def compileConstant : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
+| .defnInfo val => compileMutual (MutConst.mkDefn val)
+| .thmInfo val => compileMutual (MutConst.mkTheo val)
+| .opaqueInfo val => compileMutual (MutConst.mkOpaq val)
+| .inductInfo val => MutConst.mkIndc val >>= compileMutual
+| .ctorInfo val => do match <- findLeanConst val.induct with
+  | .inductInfo ind => do
+    let _ <- MutConst.mkIndc ind >>= compileMutual
+    match (<- get).constCache.find? val.name with
+    | some ⟨data, meta⟩ => do pure (<- getIxon data, <- getIxon meta)
+    | none => throw <| .mutualBlockMissingProjection val.name
+  | c => throw <| .invalidConstantKind c.name "inductive" c.ctorName
+| .recInfo val => compileMutual (MutConst.recr val)
+| .axiomInfo ⟨⟨name, lvls, type⟩, isUnsafe⟩ => withLevels lvls do
+  let n <- compileName name
+  let ls <- lvls.mapM compileName
+  let t <- compileExpr type
+  let data := .axio ⟨isUnsafe, lvls.length, t.data⟩
+  let meta := .meta ⟨[.link n, .links ls, .link t.meta]⟩
+  pure (data, meta)
+| .quotInfo ⟨⟨name, lvls, type⟩, kind⟩ => withLevels lvls do
+  let n <- compileName name
+  let ls <- lvls.mapM compileName
+  let t <- compileExpr type
+  let data := .quot ⟨kind, lvls.length, t.data⟩
+  let meta := .meta ⟨[.link n, .links ls, .link t.meta]⟩
+  pure (data, meta)
 
 partial def compileDefn: Ix.Def -> CompileM (Ixon.Definition × Ixon.Metadata)
 | d => withLevels d.levelParams do
@@ -752,8 +760,8 @@ partial def compareExpr (ctx: MutCtx) (xlvls ylvls: List Lean.Name)
     | none, none =>
       if x == y then return ⟨true, .eq⟩
       else do
-        let x' <- compileConst $ ← findLeanConst x
-        let y' <- compileConst $ ← findLeanConst y
+        let x' <- compileConstName x
+        let y' <- compileConstName y
         return ⟨true, compare x' y'⟩
   | .const .., _ => return ⟨true, .lt⟩
   | _, .const .. => return ⟨true, .gt⟩
@@ -807,10 +815,12 @@ partial def addDef (lvls: List Lean.Name) (typ val: Lean.Expr) : CompileM MetaAd
   --let typ' <- compileExpr typ
   --let val' <- compileExpr val
   let anon := .defnInfo ⟨⟨.anonymous, lvls, typ⟩, val, .opaque, .safe, []⟩
-  let anonAddr <- compileConst anon
+  let (data, meta) <- compileConstant anon
+  let anonAddr := ⟨<- storeIxon data, <- storeIxon meta⟩
   let name := anonAddr.data.toUniqueName
   let const := .defnInfo ⟨⟨name, lvls, typ⟩, val, .opaque, .safe, []⟩
-  let addr <- compileConst const
+  let (data, meta) <- compileConstant const
+  let addr := ⟨<- storeIxon data, <- storeIxon meta⟩
   if addr.data != anonAddr.data then
     throw <| .alphaInvarianceFailure anon anonAddr const addr
   else
@@ -894,12 +904,12 @@ Open references are variables that point to names which aren't present in the
 `Lean.ConstMap`.
 -/
 def compileDelta (delta : Lean.PersistentHashMap Lean.Name Lean.ConstantInfo)
-  : CompileM Unit := delta.forM fun _ c => discard $ compileConst c
+  : CompileM Unit := delta.forM fun n _ => discard $ compileConstName n
 
-def compileEnv (env: Lean.Environment)
-  : CompileM Unit := do
-  compileDelta env.getDelta
-  env.getConstMap.forM fun _ c => if !c.isUnsafe then discard $ compileConst c else pure ()
+--def compileEnv (env: Lean.Environment)
+--  : CompileM Unit := do
+--  compileDelta env.getDelta
+--  env.getConstMap.forM fun n _ => if !c.isUnsafe then discard $ compileConstName n else pure ()
 
 def CompileM.runIO (c : CompileM α) 
   (env: Lean.Environment)

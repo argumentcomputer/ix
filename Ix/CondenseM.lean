@@ -111,7 +111,6 @@ partial def visit : Lean.Name -> CondenseM Unit
 def condense: CondenseM (Map Lean.Name (Set Lean.Name)) := do
   let mut idx := 0
   for (name,_) in (<- read).constants do
-    dbg_trace "condensing {name} {idx}"
     idx := idx + 1
     match (<- get).names.get? name with
     | .some _ => continue

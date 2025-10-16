@@ -106,22 +106,17 @@ def testInductives : IO TestSeq := do
 
 def testEasy : IO TestSeq := do
   let env <- get_env!
-  let difficult := [
+  let easy := [
     `Nat.add_comm
   ]
   let mut res := true
-  for name in difficult do
+  for name in easy do
     IO.println s!"⚙️ Compiling {name}"
     let mut cstt : CompileState := .init env 0
     let start <- IO.monoNanosNow
-    let const <- do match env.getDelta.find? name with
-      | some c => pure c
-      | none => match env.getConstMap.get? name with
-        | some c => pure c
-        | none => throw (IO.userError s!"{name} not in env")
-    let (addr, stt) <- do match (<- (compileConst const).run .init cstt) with
+    let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
     | (.ok a, stt) => pure (a, stt)
-    | (.error e, _) => IO.println s!"failed {const.name}" *> throw (IO.userError (<- e.pretty))
+    | (.error e, _) => IO.println s!"failed {name}" *> throw (IO.userError (<- e.pretty))
     let done <- IO.monoNanosNow
     IO.println s!"✅ {addr}"
     IO.println s!"Elapsed {Cronos.nanoToSec (done - start)}"
@@ -135,15 +130,10 @@ def testDifficult : IO TestSeq := do
   let mut res := true
   for name in difficult do
     let mut cstt : CompileState := .init env 0
-    let const <- do match env.getDelta.find? name with
-      | some c => pure c
-      | none => match env.getConstMap.get? name with
-        | some c => pure c
-        | none => throw (IO.userError s!"{name} not in env")
-    let (addr, stt) <- do match (<- (compileConst const).run .init cstt) with
+    let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
     | (.ok a, stt) => pure (a, stt)
-    | (.error e, _) => IO.println s!"failed {const.name}" *> throw (IO.userError (<- e.pretty))
-    IO.println s!"{const.name} -> {addr}"
+    | (.error e, _) => IO.println s!"failed {name}" *> throw (IO.userError (<- e.pretty))
+    IO.println s!"{name} -> {addr}"
     --cstt := stt
     --let mut store : Ixon.Store := {}
     --for (_,(a, b)) in cstt.names do
@@ -181,42 +171,24 @@ def testDifficult : IO TestSeq := do
 def testRoundtripGetEnv : IO TestSeq := do
   IO.println s!"Getting env"
   let env <- get_env!
+  let sccStart <- IO.monoNanosNow
   IO.println s!"Building condensation graph of env"
-  let numDelta := env.getDelta.stats.numNodes
-  let numConst := env.getConstMap.size
+  let numConst := env.constants.map₁.size + env.constants.map₂.stats.numNodes
   let mut cstt : CompileState := .init env 0
+  let sccEnd <- IO.monoNanosNow
+  IO.println s!"Condensation graph in {Cronos.nanoToSec (sccEnd - sccStart)}"
   IO.println s!"Compiling env"
-  let mut inDelta := 0
   let mut inConst := 0
   let allStart <- IO.monoNanosNow
-  for (_, c) in env.getDelta do
+  for (name, _) in env.constants do
     let start <- IO.monoNanosNow
-    IO.println s!"⚙️ Compiling {inDelta}/{numDelta}: {c.name}"
-    let (addr, stt) <- do match (<- (compileConst c).run .init cstt) with
+    let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
     | (.ok a, stt) => pure (a, stt)
     | (.error e, _) => do
-      IO.println s!"failed {c.name}"
+      IO.println s!"failed {name}"
       throw (IO.userError (<- e.pretty))
     let done <- IO.monoNanosNow
-    IO.println s!"✅ {addr}"
-    IO.println s!"Elapsed {Cronos.nanoToSec (done - start)}/{Cronos.nanoToSec (done - allStart)}"
-    inDelta := inDelta + 1
-    cstt := stt
-  for (_, c) in env.getConstMap do
-    let start <- IO.monoNanosNow
-    IO.println s!"⚙️ Compiling {inConst}/{numConst}: {c.name} "
-    let (_, stt) <- do match (<- (compileConst c).run .init cstt) with
-    | (.ok a, stt) => do
-      pure (a, stt)
-    | (.error e, _) => do
-      IO.println s!"failed {c.name}"
-      throw (IO.userError (<- e.pretty))
-    let addr <- match stt.constCache.find? c.name with
-    | .some addr => pure addr
-    | .none => throw (IO.userError "name {n} not in env")
-    let done <- IO.monoNanosNow
-    IO.println s!"✅ {addr}"
-    IO.println s!"Elapsed {Cronos.nanoToSec (done - start)}/{Cronos.nanoToSec (done - allStart)}"
+    IO.println s!"✓ Compiled {inConst}/{numConst} Elapsed {Cronos.nanoToSec (done - start)}/{Cronos.nanoToSec (done - allStart)} {name} @ {addr}"
     inConst := inConst + 1
     cstt := stt
   let allDone <- IO.monoNanosNow
@@ -258,6 +230,40 @@ def testRoundtripGetEnv : IO TestSeq := do
  -- IO.println s!"input env: {env.constants.toList.length}"
  -- IO.println s!"output env: {dstt.constants.toList.length}"
   return test "env compile roundtrip" true --(res == true)
+
+--#eval (`_cstage2).isSuffixOf (`f.a._cstage2)
+--open Lean Meta
+--
+--set_option pp.all true
+--set_option pp.privateNames true
+--set_option pp.fullNames true
+
+--#eval show MetaM _ from do
+--  getConstInfo `Lean.Language.instInhabitedDynamicSnapshot._closed_2._cstage2
+--
+--#eval show MetaM _ from do
+--  getConstInfo `Lean.Language.instInhabitedDynamicSnapshot._closed_2._cstage2 
+--
+--def printPrivate (pre : Name) : CoreM (Array Name) := do
+--  let env ← getEnv
+--  let mut hits := #[]
+--  for (n, _) in env.const2ModIdx do
+--    if pre.isPrefixOf n then
+--      hits := hits.push n
+--  pure hits
+--
+--#eval do
+--  let hits ← printPrivate `_private.Lean.Language.Basic
+--  IO.println s!"found:"
+--  for n in hits do
+--    IO.println s!"{n}"
+--
+--#eval 
+--  IO.println s!"{(mkPrivateNameCore `Lean.Language.Basic `Lean.Language.DynamicSnapShot)}"
+--
+--#eval show MetaM _ from do
+--  let env ← getEnv
+--  return env.const2ModIdx.size
 
 def Tests.Ix.Compile.suiteIO: List (IO TestSeq) := [
   --testMutual,
