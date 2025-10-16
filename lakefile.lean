@@ -58,21 +58,6 @@ end IxApplications
 
 section FFI
 
-/-- Build the static lib for the Rust crate -/
-extern_lib ix_rs pkg := do
-  -- Default to `--features parallel`, configured via env var
-  let ixNoPar ← IO.getEnv "IX_NO_PAR"
-  let ixNet ← IO.getEnv "IX_NET"
-  let buildArgs := #["build", "--release"]
-  let args := match (ixNoPar, ixNet) with
-  | (some "1", some "1") => buildArgs ++ ["--features", "net"]
-  | (some "1", _) => buildArgs
-  | (_, some "1") => buildArgs ++ ["--features", "parallel,net"]
-  | _ => buildArgs ++ ["--features", "parallel"]
-  proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-  let libName := nameToStaticLib "ix_rs"
-  inputBinFile $ pkg.dir / "target" / "release" / libName
-
 /-- Build the static lib for the C files -/
 extern_lib ix_c pkg := do
   let compiler := "gcc"
@@ -103,6 +88,21 @@ extern_lib ix_c pkg := do
 
   let libName := nameToStaticLib "ix_c"
   buildStaticLib (pkg.staticLibDir / libName) buildJobs
+
+/-- Build the static lib for the Rust crate -/
+extern_lib ix_rs pkg := do
+  -- Default to `--features parallel`, configured via env var
+  let ixNoPar ← IO.getEnv "IX_NO_PAR"
+  let ixNet ← IO.getEnv "IX_NET"
+  let buildArgs := #["build", "--release"]
+  let args := match (ixNoPar, ixNet) with
+  | (some "1", some "1") => buildArgs ++ ["--features", "net"]
+  | (some "1", _) => buildArgs
+  | (_, some "1") => buildArgs ++ ["--features", "parallel,net"]
+  | _ => buildArgs ++ ["--features", "parallel"]
+  proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+  let libName := nameToStaticLib "ix_rs"
+  inputBinFile $ pkg.dir / "target" / "release" / libName
 
 end FFI
 
