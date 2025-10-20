@@ -107,7 +107,6 @@
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
-          LEAN_SYSROOT = "${pkgs.lean.lean}";
           packages = with pkgs; [
             pkg-config
             openssl
@@ -119,6 +118,8 @@
             lean.lean # Includes Lean compiler, lake, stdlib, etc.
           ];
         };
+
+        formatter = pkgs.alejandra;
       };
     };
 }
