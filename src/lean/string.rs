@@ -12,10 +12,10 @@ use crate::lean::{CArray, object::LeanObject};
 #[repr(C)]
 pub struct LeanStringObject {
     m_header: LeanObject,
-    m_size: usize,
+    pub m_size: usize,
     m_capacity: usize,
-    m_length: usize,
-    m_data: CArray<u8>,
+    pub m_length: usize,
+    pub m_data: CArray<u8>,
 }
 
 impl LeanStringObject {
