@@ -80,10 +80,10 @@ async fn serve() -> n0_snafu::Result<()> {
     println!("\nin a separate terminal, cd to `client` and run:");
 
     println!(
-        "\tlake exe ix connect put --nodeId {me} --addrs \"{local_addrs}\" --relayUrl {relay_url}\n --filePath /path/to/bytes"
+        "\tlake exe ix connect put --nodeId {me} --addrs \"{local_addrs}\" --relayUrl {relay_url} --filePath /path/to/bytes"
     );
     println!(
-        "\tlake exe ix connect get --nodeId {me} --addrs \"{local_addrs}\" --relayUrl {relay_url}\n --hash <hash>"
+        "\tlake exe ix connect get --nodeId {me} --addrs \"{local_addrs}\" --relayUrl {relay_url} --hash <hash>"
     );
 
     // TODO: Switch to elsa/frozen map for safe append-only multithreading

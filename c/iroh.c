@@ -38,11 +38,10 @@
 //}
 extern lean_obj_res c_rs_iroh_put(b_lean_obj_arg node_id, b_lean_obj_arg addrs, b_lean_obj_arg relay_url, b_lean_obj_arg file_path) {
     char const *node_id_str = lean_string_cstr(node_id);
-    char const *addrs_str = lean_string_cstr(addrs);
     char const *relay_url_str = lean_string_cstr(relay_url);
     char const *file_path_str = lean_string_cstr(file_path);
 
-    c_result *result = rs_iroh_put(node_id_str, addrs_str, relay_url_str, file_path_str);
+    c_result *result = rs_iroh_put(node_id_str, addrs, relay_url_str, file_path_str);
 
     lean_object *except;
     if (result->is_ok) {
@@ -60,11 +59,10 @@ extern lean_obj_res c_rs_iroh_put(b_lean_obj_arg node_id, b_lean_obj_arg addrs, 
 
 extern lean_obj_res c_rs_iroh_get(b_lean_obj_arg node_id, b_lean_obj_arg addrs, b_lean_obj_arg relay_url, b_lean_obj_arg hash) {
     char const *node_id_str = lean_string_cstr(node_id);
-    char const *addrs_str = lean_string_cstr(addrs);
     char const *relay_url_str = lean_string_cstr(relay_url);
     char const *hash_str = lean_string_cstr(hash);
 
-    c_result *result = rs_iroh_get(node_id_str, addrs_str, relay_url_str, hash_str);
+    c_result *result = rs_iroh_get(node_id_str, addrs, relay_url_str, hash_str);
 
     lean_object *except;
     if (result->is_ok) {

@@ -26,38 +26,27 @@ use crate::lean::string::LeanStringObject;
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
 
-//fn lean_unbox_str(ptr: *const std::ffi::c_void) -> String {
-//    let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
-//    println!(
-//        "Data: {} {} {:?}",
-//        string.m_size,
-//        string.m_length,
-//        string.m_data.slice(string.m_size)
-//    );
-//    string.as_string()
-//}
+fn lean_unbox_str(ptr: *const std::ffi::c_void) -> String {
+    let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
+    string.as_string()
+}
 
-// TODO: Make addrs a Vec<String> and pass through FFI
 // TODO: Make all the params a single struct to simplify FFI
 // TODO: Return hash to Lean
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_put(
     node_id: *const c_char,
-    //addrs: &LeanArrayObject,
-    addrs: *const c_char,
+    addrs: &LeanArrayObject,
     relay_url: *const c_char,
     file_path: *const c_char,
 ) -> *const CResult {
     let node_id = raw_to_str(node_id);
-    let addrs = raw_to_str(addrs);
-    //let addrs: Vec<String> = addrs.to_vec(lean_unbox_str);
-    //addrs.to_vec(|ptr| as_ref_unsafe(ptr.cast::<LeanStringObject>()).as_string());
+    let addrs: Vec<String> = addrs.to_vec(lean_unbox_str);
     println!("Addrs: {addrs:?}");
     let relay_url = raw_to_str(relay_url);
     let file_path = raw_to_str(file_path);
 
-    // TODO: Handle error
-    let contents = std::fs::read_to_string(file_path).unwrap();
+    let contents = std::fs::read_to_string(file_path).expect("Failed to read input file from disk");
     let request = Request::Put(PutRequest {
         bytes: contents.as_bytes().to_owned(),
     });
@@ -65,8 +54,7 @@ extern "C" fn rs_iroh_put(
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
     // Run the async function and block until we get the result
-    //let c_result = match rt.block_on(connect(node_id, &addrs, relay_url, request)) {
-    let c_result = match rt.block_on(connect(node_id, addrs, relay_url, request)) {
+    let c_result = match rt.block_on(connect(node_id, &addrs, relay_url, request)) {
         Ok(_) => CResult {
             is_ok: true,
             data: std::ptr::null(),
@@ -86,14 +74,12 @@ extern "C" fn rs_iroh_put(
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_get(
     node_id: *const c_char,
-    addrs: *const c_char,
-    //_addrs: &LeanArrayObject,
+    addrs: &LeanArrayObject,
     relay_url: *const c_char,
     hash: *const c_char,
 ) -> *const CResult {
     let node_id = raw_to_str(node_id);
-    //let addrs = raw_to_str(addrs);
-    let addrs = raw_to_str(addrs);
+    let addrs: Vec<String> = addrs.to_vec(lean_unbox_str);
     let relay_url = raw_to_str(relay_url);
     let hash = raw_to_str(hash);
     let request = Request::Get(GetRequest {
@@ -102,7 +88,7 @@ extern "C" fn rs_iroh_get(
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
-    let c_result = match rt.block_on(connect(node_id, addrs, relay_url, request)) {
+    let c_result = match rt.block_on(connect(node_id, &addrs, relay_url, request)) {
         Ok(_) => CResult {
             is_ok: true,
             data: std::ptr::null(),
@@ -120,14 +106,14 @@ extern "C" fn rs_iroh_get(
 }
 
 // Largely inspired by https://github.com/n0-computer/iroh/blob/main/iroh/examples/connect.rs
-//async fn connect(node_id: &str, addrs: &[String], relay_url: &str, request: Request) -> Result<()> {
-async fn connect(
-    node_id: &str,
-    //addrs: Vec<String>,
-    addrs: &str,
-    relay_url: &str,
-    request: Request,
-) -> Result<()> {
+async fn connect(node_id: &str, addrs: &[String], relay_url: &str, request: Request) -> Result<()> {
+    //async fn connect(
+    //    node_id: &str,
+    //    addrs: Vec<String>,
+    //    //addrs: &str,
+    //    relay_url: &str,
+    //    request: Request,
+    //) -> Result<()> {
     tracing_subscriber::fmt::init();
     let secret_key = SecretKey::generate(rand::rngs::OsRng);
     println!("public key: {}", secret_key.public());
@@ -157,8 +143,8 @@ async fn connect(
     let addr = NodeAddr::from_parts(
         node_id.parse()?,
         Some(relay_url.parse()?),
-        [addrs.parse().unwrap()],
-        //addrs.into_iter().map(|s| s.parse().unwrap()),
+        //[addrs.parse().unwrap()],
+        addrs.into_iter().map(|s| s.parse().unwrap()),
     );
 
     // Attempt to connect, over the given ALPN.

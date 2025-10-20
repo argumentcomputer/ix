@@ -5,8 +5,7 @@ open Iroh.Connect
 
 def runPutCmd (p : Cli.Parsed) : IO UInt32 := do
   let nodeId : String := p.flag! "nodeId" |>.as! String
-  --let addrs : Array String := p.flag! "addrs" |>.as! (Array String)
-  let addrs : String := p.flag! "addrs" |>.as! String
+  let addrs : Array String := p.flag! "addrs" |>.as! (Array String)
   let relayUrl : String := p.flag! "relayUrl" |>.as! String
   let filePath : String := p.flag! "filePath" |>.as! String
   putBytes nodeId addrs relayUrl filePath
@@ -18,15 +17,14 @@ def put : Cli.Cmd := `[Cli|
 
   FLAGS:
     nodeId  : String; "ID (public key) of the server node"
-    addrs  : String; "Direct UDP addresses for the server node"
+    addrs  : Array String; "Direct UDP addresses for the server node"
     relayUrl : String; "URL of the relay server at which the server node can also be reached"
     filePath : String; "Path to local file to parse into bytes and send to server node"
 ]
 
 def runGetCmd (p : Cli.Parsed) : IO UInt32 := do
   let nodeId : String := p.flag! "nodeId" |>.as! String
-  --let addrs : Array String := p.flag! "addrs" |>.as! (Array String)
-  let addrs : String := p.flag! "addrs" |>.as! String
+  let addrs : Array String := p.flag! "addrs" |>.as! (Array String)
   let relayUrl : String := p.flag! "relayUrl" |>.as! String
   let hash : String := p.flag! "hash" |>.as! String
   getBytes nodeId addrs relayUrl hash
@@ -38,7 +36,7 @@ def get : Cli.Cmd := `[Cli|
 
   FLAGS:
     nodeId  : String; "ID (public key) of the server node"
-    addrs  : String; "Direct UDP addresses for the server node"
+    addrs  : Array String; "Direct UDP addresses for the server node"
     relayUrl : String; "URL of the relay server at which the server node can also be reached"
     hash : String; "Hash of bytes to retrieve from server node"
 ]
