@@ -1,15 +1,5 @@
-#[cfg(any(
-    not(feature = "net"),
-    all(target_os = "macos", target_arch = "aarch64")
-))]
-pub mod _iroh;
 pub mod aiur;
 pub mod byte_array;
-#[cfg(all(
-    feature = "net",
-    not(all(target_os = "macos", target_arch = "aarch64"))
-))]
-//pub mod iroh;
 pub mod keccak;
 pub mod lean_env;
 

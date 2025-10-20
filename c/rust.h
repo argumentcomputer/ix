@@ -48,8 +48,6 @@ c_result *rs_aiur_system_verify(void*, b_lean_obj_arg, b_lean_obj_arg, void*);
 
 /* --- Iroh --- */
 
-//c_result *rs_iroh_send(b_lean_obj_arg);
-//c_result *rs_iroh_recv(char const *, b_lean_obj_arg, size_t);
 c_result *rs_iroh_put(char const *, b_lean_obj_arg, char const *, char const *);
 c_result *rs_iroh_get(char const *, b_lean_obj_arg, char const *, char const *);
 
