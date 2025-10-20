@@ -37,8 +37,16 @@
     };
   };
 
-  outputs = inputs @ { nixpkgs, flake-parts, lean4-nix, fenix, crane, blake3-lean, ... }:
-    flake-parts.lib.mkFlake { inherit inputs; } {
+  outputs = inputs @ {
+    nixpkgs,
+    flake-parts,
+    lean4-nix,
+    fenix,
+    crane,
+    blake3-lean,
+    ...
+  }:
+    flake-parts.lib.mkFlake {inherit inputs;} {
       # Systems we want to build for
       systems = [
         "aarch64-darwin"
@@ -47,9 +55,12 @@
         "x86_64-linux"
       ];
 
-      perSystem = { system, pkgs, ... }:
-      let
-        lib = (import ./ix.nix { inherit system pkgs fenix crane lean4-nix blake3-lean; }).lib;
+      perSystem = {
+        system,
+        pkgs,
+        ...
+      }: let
+        lib = (import ./ix.nix {inherit system pkgs fenix crane lean4-nix blake3-lean;}).lib;
       in {
         # Lean overlay
         _module.args.pkgs = import nixpkgs {
@@ -62,27 +73,30 @@
           default = lib.leanPkg.executable;
 
           # Ix tests
-          test = ((lean4-nix.lake { inherit pkgs; }).mkPackage {
-            src = ./.;
-            roots = ["Tests.Main" "Ix"];
-            deps = [ lib.leanPkg ];
-            staticLibDeps = [ "${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib" ];
-          }).executable;
+          test =
+            ((lean4-nix.lake {inherit pkgs;}).mkPackage {
+              src = ./.;
+              roots = ["Tests.Main" "Ix"];
+              deps = [lib.leanPkg];
+              staticLibDeps = ["${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib"];
+            }).executable;
 
           # Ix benches
-          bench-aiur = ((lean4-nix.lake { inherit pkgs; }).mkPackage {
-            src = ./.;
-            roots = ["Benchmarks.Aiur" "Ix"];
-            deps = [ lib.leanPkg ];
-            staticLibDeps = [ "${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib" ];
-          }).executable;
+          bench-aiur =
+            ((lean4-nix.lake {inherit pkgs;}).mkPackage {
+              src = ./.;
+              roots = ["Benchmarks.Aiur" "Ix"];
+              deps = [lib.leanPkg];
+              staticLibDeps = ["${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib"];
+            }).executable;
 
-          bench-blake3 = ((lean4-nix.lake { inherit pkgs; }).mkPackage {
-            src = ./.;
-            roots = ["Benchmarks.Blake3" "Ix"];
-            deps = [ lib.leanPkg ];
-            staticLibDeps = [ "${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib" ];
-          }).executable;
+          bench-blake3 =
+            ((lean4-nix.lake {inherit pkgs;}).mkPackage {
+              src = ./.;
+              roots = ["Benchmarks.Blake3" "Ix"];
+              deps = [lib.leanPkg];
+              staticLibDeps = ["${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib"];
+            }).executable;
 
           # Rust static lib, needed for static linking downstream
           rustStaticLib = lib.rustPkg;
@@ -93,7 +107,7 @@
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
-          LEAN_SYSROOT="${pkgs.lean.lean}";
+          LEAN_SYSROOT = "${pkgs.lean.lean}";
           packages = with pkgs; [
             pkg-config
             openssl
@@ -102,7 +116,7 @@
             clang
             lib.rustToolchain
             rust-analyzer
-            lean.lean         # Includes Lean compiler, lake, stdlib, etc.
+            lean.lean # Includes Lean compiler, lake, stdlib, etc.
           ];
         };
       };
