@@ -54,7 +54,7 @@ let
     pname = "ix_c";
     version = "0.1.0";
     src = ./c;
-    buildInputs = [ pkgs.gcc pkgs.lean.lean-all rustPkg ];
+    buildInputs = [ pkgs.gcc pkgs.lean.lean rustPkg ];
     # Builds the C files
     buildPhase = builtins.concatStringsSep "\n" buildSteps;
     # Installs the library files

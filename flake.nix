@@ -11,7 +11,7 @@
   };
 
   inputs = {
-    # System packages
+    # System packages, follows lean4-nix so we stay in sync
     nixpkgs.follows = "lean4-nix/nixpkgs";
 
     # Lean 4 & Lake
@@ -93,7 +93,7 @@
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
-          LEAN_SYSROOT="${pkgs.lean.lean-all}";
+          LEAN_SYSROOT="${pkgs.lean.lean}";
           packages = with pkgs; [
             pkg-config
             openssl
@@ -102,8 +102,7 @@
             clang
             lib.rustToolchain
             rust-analyzer
-            lean.lean         # Lean compiler
-            lean.lean-all     # Includes Lake, stdlib, etc.
+            lean.lean         # Includes Lean compiler, lake, stdlib, etc.
           ];
         };
       };
