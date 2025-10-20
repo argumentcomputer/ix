@@ -3,6 +3,7 @@ import Ix.Iroh.Connect
 
 open Iroh.Connect
 
+-- TODO: Error gracefully instead of panicking when flags aren't provided
 def runPutCmd (p : Cli.Parsed) : IO UInt32 := do
   let nodeId : String := p.flag! "nodeId" |>.as! String
   let addrs : Array String := p.flag! "addrs" |>.as! (Array String)

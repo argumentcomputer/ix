@@ -19,17 +19,11 @@ use tracing::info;
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
 use crate::lean::array::LeanArrayObject;
-use crate::lean::as_ref_unsafe;
 use crate::lean::ffi::{CResult, raw_to_str, to_raw};
-use crate::lean::string::LeanStringObject;
+use crate::lean::lean_unbox_str;
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
-
-fn lean_unbox_str(ptr: *const std::ffi::c_void) -> String {
-    let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
-    string.as_string()
-}
 
 // TODO: Make all the params a single struct to simplify FFI
 // TODO: Return hash to Lean

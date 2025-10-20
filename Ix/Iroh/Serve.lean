@@ -1,5 +1,6 @@
 namespace Iroh.Serve
 
+-- TODO: Calling the Rust directly works, but on error the error message get cut off and only the second half of it prints
 @[never_extract, extern "rs_iroh_serve"]
 private opaque serve' : Unit → Except String Unit
 
