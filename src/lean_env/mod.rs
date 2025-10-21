@@ -1,3 +1,4 @@
+pub mod compile;
 pub mod scc;
 
 use rustc_hash::{FxHashMap, FxHasher};
