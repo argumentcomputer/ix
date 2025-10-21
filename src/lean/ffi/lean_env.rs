@@ -12,6 +12,7 @@ use crate::{
         DefinitionSafety, DefinitionVal, Expr, InductiveVal, Int, Level, Literal, Name, OpaqueVal,
         QuotKind, QuotVal, RecursorRule, RecursorVal, ReducibilityHints, SourceInfo, Substring,
         Syntax, SyntaxPreresolved, TheoremVal,
+        compile::compile,
         scc::{NameSet, RefMap, compute_sccs, merge_name_sets},
     },
     lean_unbox,
@@ -613,19 +614,20 @@ fn lean_ptr_to_const_map(ptr: *const c_void) -> (ConstMap, RefMap) {
     let array: &LeanArrayObject = as_ref_unsafe(ptr.cast());
     let mut cache = Cache::default();
     let mut const_map = ConstMap::default();
-    let mut ref_map = RefMap::default();
+    let mut dep_graph = RefMap::default();
     for &ptr in array.data() {
         let (name, constant_info, name_set) = lean_ptr_to_name_constant_info(ptr, &mut cache);
         const_map.insert(name.clone(), constant_info);
-        ref_map.insert(name, name_set);
+        dep_graph.insert(name, name_set);
     }
-    (const_map, ref_map)
+    (const_map, dep_graph)
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
-    let (const_map, ref_map) = lean_ptr_to_const_map(ptr);
-    let sccs = compute_sccs(&ref_map);
+    let (const_map, dep_graph) = lean_ptr_to_const_map(ptr);
+    let sccs = compute_sccs(&dep_graph);
     assert_eq!(sccs.len(), const_map.len());
+    compile(&sccs, &dep_graph, &const_map);
     const_map.len()
 }

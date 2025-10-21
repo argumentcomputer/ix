@@ -8,10 +8,11 @@ crate-type = ["staticlib"]
 
 [dependencies]
 anyhow = "1"
+indexmap = { version = "2", features = ["rayon"] }
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "11a2e444004609174e1ad59e366e7f621bdd427b" }
+num-bigint = "0.4"
 rayon = "1"
 rustc-hash = "2"
-indexmap = { version = "2", features = ["rayon"] }
 tiny-keccak = { version = "2", features = ["keccak"] }
 # Iroh dependencies
 bytes = { version = "1.10.1", optional = true }
@@ -19,7 +20,6 @@ tokio = { version = "1.44.1", optional = true }
 iroh = { version = "0.34.0", optional = true }
 iroh-base = { version = "0.34.0", optional = true }
 iroh-blobs = { version = "0.34.0", features = ["rpc"], optional = true }
-num-bigint = "0.4.6"
 
 [features]
 parallel = ["multi-stark/parallel"]
