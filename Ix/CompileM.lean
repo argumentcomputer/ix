@@ -34,6 +34,7 @@ structure CompileState where
   strCache: Map String Address
   comms: Map Lean.Name MetaAddress
   constCmp: Map (Lean.Name × Lean.Name) Ordering
+  cstagePatch : Map Lean.Name Lean.Name
   --exprCmp: Map (CompileEnv × Lean.Expr × Lean.Expr) Ordering
   alls: Map Lean.Name (Set Lean.Name)
   axioms: Map Lean.Name MetaAddress
@@ -43,8 +44,8 @@ structure CompileState where
 def CompileState.init (env: Lean.Environment) (seed: Nat) (maxHeartBeats: USize := 200000)
   : CompileState :=
   ⟨maxHeartBeats, env, mkStdGen seed, default, default, default, default,
-  default, default, default, default, default, default, CondenseM.run env,
-  default, default, default⟩
+  default, default, default, default, default, default, default,
+  CondenseM.run env, default, default, default⟩
 
 inductive CompileError where
 | unknownConstant : Lean.Name -> CompileError
@@ -57,7 +58,7 @@ inductive CompileError where
 | mutualBlockMissingProjection : Lean.Name -> CompileError
 --| nonRecursorExtractedFromChildren : Lean.Name → CompileError
 | cantFindMutIndex : Lean.Name -> MutCtx -> CompileError
-| cantFindMutMeta : Lean.Name -> Map Lean.Name Metadata -> CompileError
+| cantFindMutMeta : Lean.Name -> Map Address Address -> CompileError
 | kernelException : Lean.Kernel.Exception → CompileError
 --| cantPackLevel : Nat → CompileError
 --| nonCongruentInductives : PreInd -> PreInd -> CompileError
@@ -198,7 +199,7 @@ def compileName (name: Lean.Name): CompileM Address := do
     })
   where
     go : Lean.Name -> CompileM Address
-    | .anonymous => pure <| Address.blake3 ⟨#[]⟩
+    | .anonymous => storeIxon .nanon
     | .str n s => do
       let n' <- compileName n
       let s' <- storeString s
@@ -317,7 +318,7 @@ def compileDataValue : Lean.DataValue -> CompileM Ixon.DataValue
 | .ofString s => .ofString <$> storeString s
 | .ofBool b => pure (.ofBool b)
 | .ofName n => .ofName <$> compileName n
-| .ofNat i => .ofName <$> storeNat i
+| .ofNat i => .ofNat <$> storeNat i
 | .ofInt i => .ofInt <$> storeSerial i
 | .ofSyntax s => .ofSyntax <$> (compileSyntax s >>= storeSerial)
 
@@ -336,9 +337,13 @@ def findLeanConst (name : Lean.Name) : CompileM Lean.ConstantInfo := do
   match (<- get).env.constants.find? name with
   | some const => pure const
   | none => do
-    let cstage2 := Lean.Name.mkSimple "_cstage2"
-    match (<- get).env.constants.find? (name.append cstage2) with
-     | some const => pure const
+    let name2 := name.append (Lean.Name.mkSimple "_cstage2")
+    match (<- get).env.constants.find? name2 with
+     | some const => do
+      let _ <- compileName name2
+      modifyGet fun stt => (const, { stt with
+        cstagePatch := stt.cstagePatch.insert name name2
+      })
      | none => throw $ .unknownConstant name
 
 def MutConst.mkIndc (i: Lean.InductiveVal) : CompileM MutConst := do
@@ -350,6 +355,15 @@ def MutConst.mkIndc (i: Lean.InductiveVal) : CompileM MutConst := do
       match (<- findLeanConst name) with
       | .ctorInfo c => pure c
       | _ => throw <| .invalidConstantKind name "constructor" ""
+
+--def mkProjCtx (mss: List (List MutConst)) : Map Lean.Name Nat := Id.run do
+--  let mut ctx := {}
+--  let mut i := 0
+--  for ms in mss do
+--    for m in ms do
+--      ctx := ctx.insert m.name i
+--    i := i + 1
+--  return ctx
 
 mutual
 
@@ -367,13 +381,14 @@ partial def compileExpr: Lean.Expr -> CompileM MetaAddress
         modifyGet fun stt => (maddr, { stt with
           exprCache := stt.exprCache.insert expr maddr
         })
+
     go (kvs: List Lean.KVMap): Lean.Expr -> CompileM (Ixon × Ixon)
     | (.mdata kv x) => go (kv::kvs) x
     | .bvar idx => do
       let md <- compileKVMaps kvs
       let data := .evar idx
-      let sort := .meta ⟨[.link md]⟩
-      pure (data, sort)
+      let meta := .meta ⟨[.link md]⟩
+      pure (data, meta)
     | .sort univ => do
       let md <- compileKVMaps kvs
       let ⟨udata, umeta⟩ <- compileLevel univ
@@ -521,33 +536,44 @@ partial def compileRecr: Lean.RecursorVal -> CompileM (Ixon.Recursor × Metadata
   let ls <- r.levelParams.mapM compileName
   let t <- compileExpr r.type
   let rules <- r.rules.mapM compileRule
+  let as <- r.all.mapM compileName
   let data := ⟨r.k, r.isUnsafe, ls.length, r.numParams, r.numIndices,
     r.numMotives, r.numMinors, t.data, rules.map (·.1)⟩
-  let meta := ⟨[.link n, .links ls, .rules (rules.map (·.2))]⟩
+  let meta := ⟨[.link n, .links ls, .link t.meta, .map (rules.map (·.2)), .links as]⟩
   pure (data, meta)
 
-partial def compileConstructor: Lean.ConstructorVal -> CompileM (Ixon.Constructor × Address)
+partial def compileConstructor (induct: Address)
+: Lean.ConstructorVal -> CompileM (Ixon.Constructor × Metadata)
 | c => withLevels c.levelParams <| do
   let n <- compileName c.name
   let ls <- c.levelParams.mapM compileName
   let t <- compileExpr c.type
   let data := ⟨c.isUnsafe, ls.length, c.cidx, c.numParams, c.numFields, t.data⟩
-  let meta <- storeMeta ⟨[.link n, .links ls, .link t.meta]⟩
+  let meta := ⟨[.link n, .links ls, .link t.meta, .link induct]⟩
   pure (data, meta)
 
-partial def compileIndc: Ix.Ind -> CompileM (Ixon.Inductive × Ixon.Metadata)
+partial def compileIndc: Ix.Ind -> CompileM (Ixon.Inductive × Map Address Address)
 | ⟨name, lvls, type, ps, is, all, ctors, nest, rcr, refl, usafe⟩ =>
   withLevels lvls do 
   let n <- compileName name
   let ls <- lvls.mapM compileName
   let t <- compileExpr type
-  let cs <- ctors.mapM compileConstructor
+  let mut cds := #[]
+  let mut cms := #[]
+  let mut metaMap := {}
+  for ctor in ctors do
+    let (cd, cm) <- compileConstructor n ctor
+    let cn <- compileName ctor.name
+    cds := cds.push cd
+    let cm' <- storeMeta cm
+    cms := cms.push cm'
+    metaMap := metaMap.insert cn cm'
   let as <- all.mapM compileName
-  let data := ⟨rcr, refl, usafe, ls.length, ps, is, nest, t.data,
-    cs.map (·.1)⟩
-  let meta := ⟨[.link n, .links ls, .link t.meta,
-    .links (cs.map (·.2)), .links as]⟩
-  pure (data, meta)
+  let data := ⟨rcr, refl, usafe, ls.length, ps, is, nest, t.data, cds.toList⟩
+  let meta := ⟨[.link n, .links ls, .link t.meta, .links cms.toList, .links as]⟩
+  let m <- storeMeta meta
+  metaMap := metaMap.insert n m
+  pure (data, metaMap)
 
 partial def compileMutual : MutConst -> CompileM (Ixon × Ixon)
 | const => do
@@ -574,20 +600,24 @@ partial def compileMutual : MutConst -> CompileM (Ixon × Ixon)
     -- sort MutConsts into equivalence classes
     let mutConsts <- sortConsts consts.toList
     let mutCtx := MutConst.ctx mutConsts
+    let mutMeta <- mutConsts.mapM fun m => m.mapM <| fun c => compileName c.name
     -- compile each constant with the mutCtx
     let (data, metas) <- withMutCtx mutCtx (compileMutConsts mutConsts)
     -- add top-level mutual block to our state
-    let allAddrs <- all.toList.mapM compileName
-    let block := ⟨<- storeIxon data, <- storeMeta ⟨[.links allAddrs]⟩⟩
+    let ctx <- mutCtx.toList.mapM fun (n, i) => do
+      pure (<- compileName n, <- storeNat i)
+    let block := ⟨<- storeIxon data, <- storeMeta ⟨[.muts mutMeta, .map ctx, .map metas.toList]⟩⟩
     modify fun stt => { stt with blocks := stt.blocks.insert block () }
     -- then add all projections, returning the inductive we started with
     let mut ret? : Option (Ixon × Ixon) := none
+    --let mut projCtx := mkProjCtx mutConsts
     for const' in consts do
       let idx <- do match mutCtx.find? const'.name with
       | some idx => pure idx
       | none => throw $ .cantFindMutIndex const'.name mutCtx
-      let meta <- do match metas.find? const'.name with
-      | some meta => pure ⟨(.link block.meta)::meta.nodes⟩
+      let n <- compileName const'.name
+      let meta <- do match metas.find? n with
+      | some meta => pure ⟨[.link block.meta, .link meta]⟩
       | none => throw $ .cantFindMutMeta const'.name metas
       let data := match const with
       | .defn _ => .dprj ⟨idx, block.data⟩
@@ -600,8 +630,9 @@ partial def compileMutual : MutConst -> CompileM (Ixon × Ixon)
       if const'.name == const.name then ret? := some (data, .meta meta)
       for ctor in const'.ctors do
         let cdata := .cprj ⟨idx, ctor.cidx, block.data⟩
-        let cmeta <- do match metas.find? const'.name with
-        | some meta => pure ⟨(.link block.meta)::meta.nodes⟩
+        let cn <- compileName ctor.name
+        let cmeta <- do match metas.find? cn with
+        | some meta => pure ⟨[.link block.meta, .link meta]⟩
         | none => throw $ .cantFindMutMeta const'.name metas
         let caddr := ⟨<- storeIxon cdata, <- storeMeta cmeta⟩
         modify fun stt => { stt with
@@ -612,21 +643,29 @@ partial def compileMutual : MutConst -> CompileM (Ixon × Ixon)
     | none => throw $ .mutualBlockMissingProjection const.name
 
 /-- Compile a mutual block --/
-partial def compileMutConsts: List (List MutConst) -> CompileM (Ixon × Map Lean.Name Metadata)
+partial def compileMutConsts: List (List MutConst)
+  -> CompileM (Ixon × Map Address Address)
 | classes => do
   let mut data := #[]
   let mut meta := {}
   -- iterate through each equivalence class
   for constClass in classes do
     let mut classData := #[]
-    -- compile each def in a class
+    -- compile each constant in a class
     for const in constClass do
-      let (data', meta') <- match const with
-      | .indc x => (fun (x, y) => (Ixon.MutConst.indc x, y)) <$> compileIndc x
-      | .defn x => (fun (x, y) => (Ixon.MutConst.defn x, y)) <$> compileDefn x
-      | .recr x => (fun (x, y) => (Ixon.MutConst.recr x, y)) <$> compileRecr x
-      classData := classData.push data'
-      meta := meta.insert const.name meta'
+      match const with
+      | .indc x => do
+        let (i, m) <- compileIndc x
+        classData := classData.push (.indc i)
+        meta := meta.union m
+      | .defn x => do
+        let (d, m) <- compileDefn x
+        classData := classData.push (.defn d)
+        meta := meta.insert (<- compileName x.name) (<- storeMeta m)
+      | .recr x => do
+        let (r, m) <- compileRecr x
+        classData := classData.push (.recr r)
+        meta := meta.insert (<- compileName x.name) (<- storeMeta m)
     -- make sure we have no empty classes and all defs in a class are equal
     match classData.toList with
       | [] => throw (.badMutualBlock classes)
@@ -637,22 +676,21 @@ partial def compileMutConsts: List (List MutConst) -> CompileM (Ixon × Map Lean
         else throw (.badMutualBlock classes)
   pure (.muts data.toList, meta)
 
---/--
---`sortConsts` recursively sorts a list of mutually referential constants into
---ordered equivalence classes. For most cases equivalence can be determined by
---syntactic differences in the definitions, but when two definitions
---refer to one another in the same syntactical position the classification can
---be self-referential. Therefore we use a partition refinement algorithm that
---starts by assuming that all definitions in the mutual block are equal and
---recursively improves our classification by sorting based on syntax:
---```
---classes₀ := [startConsts]
---classes₁ := sortConsts classes₀
---classes₂ := sortConsts classes₁
---classes₍ᵢ₊₁₎ := sortConsts classesᵢ ...
---```
---Eventually we reach a fixed-point where `classes₍ᵢ₊₁₎ := classesᵢ` and no
---further refinement is possible (trivially when each const is in its own class). --/
+/-- `sortConsts` recursively sorts a list of mutually referential constants into
+ordered equivalence classes. For most cases equivalence can be determined by
+syntactic differences in the definitions, but when two definitions
+refer to one another in the same syntactical position the classification can
+be self-referential. Therefore we use a partition refinement algorithm that
+starts by assuming that all definitions in the mutual block are equal and
+recursively improves our classification by sorting based on syntax:
+```
+classes₀ := [startConsts]
+classes₁ := sortConsts classes₀
+classes₂ := sortConsts classes₁
+classes₍ᵢ₊₁₎ := sortConsts classesᵢ ...
+```
+Eventually we reach a fixed-point where `classes₍ᵢ₊₁₎ := classesᵢ` and no
+further refinement is possible (trivially when each const is in its own class). --/
 partial def sortConsts (classes: List MutConst) : CompileM (List (List MutConst))
   := go [List.sortBy (compare ·.name ·.name) classes]
   where

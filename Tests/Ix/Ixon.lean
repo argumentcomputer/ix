@@ -113,6 +113,7 @@ def genMetadatum : Gen Ixon.Metadatum :=
 def genMetadata : Gen Ixon.Metadata :=
   .mk <$> genList genMetadatum
 
+
 partial def genIxon : Gen Ixon.Ixon :=
   frequency [
     (10, pure .nanon),

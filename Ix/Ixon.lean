@@ -170,7 +170,7 @@ def getBytesTagged : GetM ByteArray := do
   | ⟨0x9, size⟩ => do
     let bs <- Array.mapM (λ _ => Serialize.get) (Array.range size.toNat)
     return ⟨bs⟩
-  | e => throw s!"expected Bytes with tag 0xA, got {repr e}"
+  | e => throw s!"expected Bytes with tag 0x9, got {repr e}"
 
 instance : Serialize ByteArray where
   put := putBytesTagged
@@ -769,8 +769,9 @@ inductive Metadatum where
 | info : Lean.BinderInfo -> Metadatum
 | hints : Lean.ReducibilityHints -> Metadatum
 | links : List Address -> Metadatum
-| rules : List (Address × Address) -> Metadatum
+| map : List (Address × Address) -> Metadatum
 | kvmap : List (Address × DataValue) -> Metadatum
+| muts : List (List Address) -> Metadatum
 deriving BEq, Repr, Ord, Inhabited, Ord, Hashable
 
 structure Metadata where
@@ -782,8 +783,9 @@ def putMetadatum : Metadatum → PutM Unit
 | .info i => putUInt8 1 *> putBinderInfo i
 | .hints h => putUInt8 2 *> putReducibilityHints h
 | .links ns => putUInt8 3 *> put ns
-| .rules ns => putUInt8 4 *> put ns
+| .map ns => putUInt8 4 *> put ns
 | .kvmap map => putUInt8 5 *> put map
+| .muts map => putUInt8 6 *> put map
 
 def getMetadatum : GetM Metadatum := do
   match (<- getUInt8) with
@@ -791,8 +793,9 @@ def getMetadatum : GetM Metadatum := do
   | 1 => .info <$> get
   | 2 => .hints <$> get
   | 3 => .links <$> get
-  | 4 => .rules <$> get
+  | 4 => .map <$> get
   | 5 => .kvmap <$> get
+  | 6 => .muts <$> get
   | e => throw s!"expected Metadatum encoding between 0 and 5, got {e}"
 
 instance : Serialize Metadatum where
@@ -865,8 +868,7 @@ def putIxon : Ixon -> PutM Unit
   put (Tag4.mk 0x2 bytes.size.toUInt64) *> putBytes ⟨bytes⟩
 | .eref a ls => put (Tag4.mk 0x3 ls.length.toUInt64) *> put a *> puts ls
 | .erec i ls =>
-  let bytes := i.toBytesLE
-  put (Tag4.mk 0x4 bytes.size.toUInt64) *> putBytes ⟨bytes⟩ *> puts ls
+  put (Tag4.mk 0x4 ls.length.toUInt64) *> put i *> puts ls
 | .eprj t n x =>
   let bytes := n.toBytesLE
   put (Tag4.mk 0x5 bytes.size.toUInt64) *> put t *> putBytes ⟨bytes⟩ *> put x
@@ -910,7 +912,7 @@ def getIxon : GetM Ixon := do
   | ⟨0x1, x⟩ => .uvar <$> getNat (getBytes x.toNat)
   | ⟨0x2, x⟩ => .evar <$> getNat (getBytes x.toNat)
   | ⟨0x3, x⟩ => .eref <$> get <*> gets x.toNat
-  | ⟨0x4, x⟩ => .erec <$> getNat (getBytes x.toNat) <*> get
+  | ⟨0x4, x⟩ => .erec <$> get <*> gets x.toNat
   | ⟨0x5, x⟩ => .eprj <$> get <*> getNat (getBytes x.toNat) <*> get
   | ⟨0x8, 0⟩ => .esort <$> get
   | ⟨0x8, 1⟩ => .estr <$> get

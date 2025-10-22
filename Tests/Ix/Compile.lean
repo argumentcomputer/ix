@@ -4,8 +4,8 @@ import Ix.Ixon
 import Ix.Address
 import Ix.Common
 import Ix.CompileM
+import Ix.DecompileM
 import Ix.Cronos
---import Ix.DecompileM
 import Ix.Meta
 import Ix.Store
 import Lean
@@ -175,10 +175,11 @@ def testRoundtripGetEnv : IO TestSeq := do
   IO.println s!"Building condensation graph of env"
   let numConst := env.constants.map₁.size + env.constants.map₂.stats.numNodes
   let mut cstt : CompileState := .init env 0
+  let mut dstt : DecompileState := default
   let sccEnd <- IO.monoNanosNow
   IO.println s!"Condensation graph in {Cronos.nanoToSec (sccEnd - sccStart)}"
   IO.println s!"Compiling env"
-  let mut inConst := 0
+  let mut inConst := 1
   let allStart <- IO.monoNanosNow
   for (name, _) in env.constants do
     let start <- IO.monoNanosNow
@@ -188,9 +189,40 @@ def testRoundtripGetEnv : IO TestSeq := do
       IO.println s!"failed {name}"
       throw (IO.userError (<- e.pretty))
     let done <- IO.monoNanosNow
-    IO.println s!"✓ Compiled {inConst}/{numConst} Elapsed {Cronos.nanoToSec (done - start)}/{Cronos.nanoToSec (done - allStart)} {name} @ {addr}"
-    inConst := inConst + 1
+    let pct := ((Float.ofNat inConst) / Float.ofNat numConst)
+    let total := done - allStart
+    IO.println s!"-> Compiled {pct * 100}%, {inConst}/{numConst},
+    Elapsed {Cronos.nanoToSec (done - start)}/{Cronos.nanoToSec total},
+    Remaining {((Cronos.nanoToSec total) / pct) / 60} min
+    {name}
+    {addr}"
     cstt := stt
+    let denv := DecompileEnv.init cstt.constCache cstt.store
+    let (name', stt) <- match DecompileM.run denv dstt (decompileNamedConst name addr) with
+    | .ok (n,_) stt => pure (n, stt)
+    | .error e _ => do
+      IO.println s!"failed {name}"
+      --IO.println s!"denv: {repr denv}"
+      --let c := env.constants.find? name
+      --IO.println s!"{repr c}"
+      throw (IO.userError e.pretty)
+    match env.constants.find? name, stt.constants.find? name' with
+    | .some c, .some c' => if c == c then pure () else do
+        IO.println s!"failed {name} {repr c} {repr c'}"
+        throw (IO.userError "decompiled constant not equal")
+    | .some _, .none => do
+      throw (IO.userError s!"{name'} not found in dstt")
+    | .none, _ => do
+      throw (IO.userError "{name} not found in env")
+    let done2 <- IO.monoNanosNow
+    let total2 := done2 - allStart
+    IO.println s!"<- Decompiled {pct * 100}%, {inConst}/{numConst},
+    Elapsed {Cronos.nanoToSec (done2 - done)}/{Cronos.nanoToSec total},
+    Remaining {((Cronos.nanoToSec total2) / pct) / 60} min
+    {name}
+    {addr}"
+    inConst := inConst + 1
+    dstt := stt
   let allDone <- IO.monoNanosNow
   IO.println s!"Compiled env in {Cronos.nanoToSec (allDone - allStart)}"
  -- IO.println s!"decompiling env"

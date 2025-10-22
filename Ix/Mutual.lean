@@ -57,14 +57,20 @@ def MutConst.ctors : MutConst -> List (Lean.ConstructorVal)
 | .defn _ => []
 | .recr _ => []
 
+def MutConst.contains (name: Lean.Name) : MutConst -> Bool
+| .defn val => val.name == name
+| .recr val => val.name == name
+| .indc val => val.name == name || val.ctors.any (fun c => c.name == name)
+
 -- We have a list of classes of mutual constants, each class representing a
--- possible equivalence class. We would like to construct a unique numerical
+-- possible equivalence class. We would like to construct a numerical
 -- index for each constant (which could be a definition, inductive+constructors
--- or recursor) within this list of classes. If the classes are true equivalence
--- classes then all constants in a class will be the same kind of constant,
--- and, if inductives, have the same number of constructors.
+-- or recursor) within this list of classes, such that each constant in the
+-- same equivalence class has the same index. If the classes are true
+-- equivalence classes then all constants in a class will be the same kind of
+-- constant, and, if inductives, have the same number of constructors.
 --
--- Unfortunately, since we use this function within the sorting function that
+-- However, since we use this function within the sorting function that
 -- produces the equivalence classes, our indexing has to be robust to the
 -- possiblity that constants are *not* the same, and that the inductives in a
 -- class do *not* have the same number of constructors.
@@ -77,23 +83,42 @@ def MutConst.ctors : MutConst -> List (Lean.ConstructorVal)
 -- since we index them as if they could have the maximum number of constructors.
 -- For example, if a class has an inductive with 2 ctors
 -- and an inductive with 3 ctors, then the whole class will reserve
--- 4 indices (one for each inductive type itself plus 3 ctors) for each constant.
+-- 4 indices (one for each inductive type itself plus 3 ctors).
 --
 -- In practice, Lean should never give us a mutual block that mixes inductives
 -- definitions and recursors, but we combine them for robustness and code
 -- deduplication.
-def MutConst.ctx (constss: List (List MutConst)) : Map Lean.Name Nat
+-- layout: [i0, i1, ..., iN, i0c0, ... i0cM, ... inc0, iNcM]
+def MutConst.ctx (classes: List (List MutConst)) : Map Lean.Name Nat
   := Id.run do
   let mut mutCtx := default
-  let mut idx := 0
-  for consts in constss do
+  let mut i := classes.length
+  for (consts, j) in classes.zipIdx do
     let mut maxCtors := 0
     for const in consts do
+      mutCtx := mutCtx.insert const.name j
       maxCtors := max maxCtors const.ctors.length
-      mutCtx := mutCtx.insert const.name idx
       for (c, cidx) in List.zipIdx const.ctors do
-        mutCtx := mutCtx.insert c.name (idx + 1 + cidx)
-    idx := idx + 1 + maxCtors
+        mutCtx := mutCtx.insert c.name (i + cidx)
+    i := i + maxCtors
   return mutCtx
+
+
+--def a0 : Lean.ConstructorVal := ⟨⟨`a0, [], .bvar 0⟩, `a, 0, 0, 0, false⟩
+--def a1 : Lean.ConstructorVal := ⟨⟨`a1, [], .bvar 0⟩, `a, 1, 0, 0, false⟩
+--def a2 : Lean.ConstructorVal := ⟨⟨`a2, [], .bvar 0⟩, `a, 2, 0, 0, false⟩
+--def a : Ind := ⟨`a, [], .bvar 0, 0, 0, [], [a0, a1, a2], 0, false, false, false⟩
+--
+--def b0 : Lean.ConstructorVal := ⟨⟨`b0, [], .bvar 0⟩, `b, 0, 0, 0, false⟩
+--def b1 : Lean.ConstructorVal := ⟨⟨`b1, [], .bvar 0⟩, `b, 1, 0, 0, false⟩
+--def b2 : Lean.ConstructorVal := ⟨⟨`b2, [], .bvar 0⟩, `b, 2, 0, 0, false⟩
+--def b : Ind := ⟨`b, [], .bvar 0, 0, 0, [], [b0, b1], 0, false, false, false⟩
+--
+--def c0 : Lean.ConstructorVal := ⟨⟨`c0, [], .bvar 0⟩, `c, 0, 0, 0, false⟩
+--def c1 : Lean.ConstructorVal := ⟨⟨`c1, [], .bvar 0⟩, `c, 1, 0, 0, false⟩
+--def c2 : Lean.ConstructorVal := ⟨⟨`c2, [], .bvar 0⟩, `c, 2, 0, 0, false⟩
+--def c : Ind := ⟨`c, [], .bvar 0, 0, 0, [], [c0, c1, c2], 0, false, false, false⟩
+--
+--#eval MutConst.ctx [[.indc a, .indc b], [.indc c]]
 
 end Ix

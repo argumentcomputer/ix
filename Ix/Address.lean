@@ -12,7 +12,6 @@ structure Address where
 
 def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.hash x).val⟩
 
-
 def hexOfNat : Nat -> Option Char
 | 0 => .some '0'
 | 1 => .some '1'
