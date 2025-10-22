@@ -46,13 +46,15 @@ void rs_set_aiur_io_map_values(lean_obj_arg, void*);
 
 c_result *rs_aiur_system_verify(void*, b_lean_obj_arg, b_lean_obj_arg, void*);
 
+void rs__c_result_unit_string_free(c_result *);
+
 /* --- Iroh --- */
 
 c_result *rs_iroh_put(char const *, b_lean_obj_arg, char const *, char const *);
 c_result *rs_iroh_get(char const *, b_lean_obj_arg, char const *, char const *);
 
-
-void rs__c_result_unit_string_free(c_result *);
+void rs__c_result_iroh_put_response_string_free(c_result *);
+void rs__c_result_iroh_get_response_string_free(c_result *);
 
 /* --- Keccak Hasher --- */
 

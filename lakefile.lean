@@ -91,7 +91,7 @@ extern_lib ix_c pkg := do
 
 /-- Build the static lib for the Rust crate -/
 extern_lib ix_rs pkg := do
-  -- Default to `--features parallel`, configured via env var
+  -- Defaults to `--features parallel`, configured via env var
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
   let ixNet ← IO.getEnv "IX_NET"
   let buildArgs := #["build", "--release"]

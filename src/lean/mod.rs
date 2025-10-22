@@ -96,7 +96,7 @@ pub fn lean_unbox_u64(ptr: *const c_void) -> u64 {
     boxed_usize.value
 }
 
-pub fn lean_unbox_str(ptr: *const std::ffi::c_void) -> String {
+pub fn lean_unbox_string(ptr: *const c_void) -> String {
     let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
     string.as_string()
 }
