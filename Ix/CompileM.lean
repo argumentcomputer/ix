@@ -18,6 +18,15 @@ structure CompileEnv where
   current : Lean.Name
 deriving BEq, Ord
 
+structure ExprCtx where
+  univCtx : List Lean.Name
+  bindCtx : List Lean.Name
+  mutCtx : List (Lean.Name × Nat)
+deriving BEq, Hashable
+
+def ExprCtx.fromEnv : CompileEnv -> ExprCtx
+| ⟨u, b, m, _⟩ => ⟨u, b, m.toList⟩
+
 def CompileEnv.init: CompileEnv := ⟨default, default, default, default⟩
 
 structure CompileState where
@@ -26,9 +35,9 @@ structure CompileState where
   prng: StdGen
   store: Map Address ByteArray
   ixonCache: Map Ixon Address
-  univCache: Map Lean.Level MetaAddress
+  univCache: Map ((List Lean.Name) ×  Lean.Level) MetaAddress
   constCache: Map Lean.Name MetaAddress
-  exprCache: Map Lean.Expr MetaAddress
+  exprCache: Map (ExprCtx × Lean.Expr) MetaAddress
   synCache: Map Lean.Syntax Ixon.Syntax
   nameCache: Map Lean.Name Address
   strCache: Map String Address
@@ -53,7 +62,7 @@ inductive CompileError where
 | exprMetavariable : Lean.Expr -> CompileError
 | exprFreeVariable : Lean.Expr -> CompileError
 | invalidBVarIndex : Nat -> CompileError
-| levelNotFound : Lean.Name -> List Lean.Name -> String -> CompileError
+| levelNotFound : Lean.Name -> Lean.Name -> List Lean.Name -> String -> CompileError
 | invalidConstantKind : Lean.Name -> String -> String -> CompileError
 | mutualBlockMissingProjection : Lean.Name -> CompileError
 --| nonRecursorExtractedFromChildren : Lean.Name → CompileError
@@ -77,7 +86,7 @@ def CompileError.pretty : CompileError -> IO String
 | .exprMetavariable e => pure s!"Unfilled level metavariable on expression '{e}'"
 | .exprFreeVariable e => pure s!"Free variable in expression '{e}'"
 | .invalidBVarIndex idx => pure s!"Invalid index {idx} for bound variable context"
-| .levelNotFound n ns msg => pure s!"'Level {n}' not found in '{ns}', {msg}"
+| .levelNotFound c n ns msg => pure s!"'Level {n}' not found in '{ns}', {msg} @ {c}"
 | .invalidConstantKind n ex gt => pure s!"Invalid constant kind for '{n}'. Expected '{ex}' but got '{gt}'"
 | .mutualBlockMissingProjection n => pure s!"Constant '{n}' wasn't content-addressed in mutual block"
 | .cantFindMutIndex n mc => pure s!"Can't find index for mutual definition '{n}' in {repr mc}"
@@ -191,9 +200,12 @@ def storeMeta (meta: Metadata): CompileM Address := do
 
 def compileName (name: Lean.Name): CompileM Address := do
   match (<- get).nameCache.find? name with
-  | some addr => pure addr
+  | some addr =>
+  --dbg_trace "compileName cached {(<- read).current} {addr} {name}"
+    pure addr
   | none => do
     let addr <- go name
+  --dbg_trace "compileName {(<- read).current} {addr} {name}"
     modifyGet fun stt => (addr, { stt with
       nameCache := stt.nameCache.insert name addr
     })
@@ -232,13 +244,14 @@ def compareLevel (xctx yctx: List Lean.Name)
     match (xctx.idxOf? x), (yctx.idxOf? y) with
     | some xi, some yi => return ⟨true, compare xi yi⟩
     | none,    _       => 
-      throw $ .levelNotFound x xctx s!"compareLevel"
+      throw $ .levelNotFound (<- read).current x xctx s!"compareLevel"
     | _,       none    => 
-      throw $ .levelNotFound y yctx s!"compareLevel"
+      throw $ .levelNotFound (<- read).current y yctx s!"compareLevel"
 
 /-- Canonicalizes a Lean universe level --/
 def compileLevel (lvl: Lean.Level): CompileM MetaAddress := do
-  match (<- get).univCache.find? lvl with
+  let ctx := (<- read).univCtx
+  match (<- get).univCache.find? (ctx, lvl) with
   | some l => pure l
   | none => do
     --dbg_trace "compileLevel go {(<- get).univAddrs.size} {(<- read).current}"
@@ -247,7 +260,7 @@ def compileLevel (lvl: Lean.Level): CompileM MetaAddress := do
     let metaAddr <- storeIxon meta
     let maddr := ⟨anonAddr, metaAddr⟩
     modifyGet fun stt => (maddr, { stt with
-      univCache := stt.univCache.insert lvl maddr
+      univCache := stt.univCache.insert (ctx, lvl) maddr
     })
   where
     go : Lean.Level -> CompileM (Ixon × Ixon)
@@ -267,7 +280,7 @@ def compileLevel (lvl: Lean.Level): CompileM MetaAddress := do
       let lvls := (← read).univCtx
       match lvls.idxOf? n with
       | some i => pure (.uvar i, .meta ⟨[.link (<- compileName n)]⟩)
-      | none   => throw $ .levelNotFound n lvls s!"compileLevel"
+      | none   => do throw <| .levelNotFound (<- read).current n lvls s!"compileLevel"
     | l@(.mvar ..) => throw $ .levelMetavariable l
 
 def compileSubstring : Substring -> CompileM Ixon.Substring
@@ -371,7 +384,8 @@ partial def compileExpr: Lean.Expr -> CompileM MetaAddress
 | expr => outer [] expr
   where
     outer (kvs: List Lean.KVMap) (expr: Lean.Expr): CompileM MetaAddress := do
-      match (<- get).exprCache.find? expr with
+      let ctx := ExprCtx.fromEnv (<- read)
+      match (<- get).exprCache.find? (ctx, expr) with
       | some x => pure x
       | none => do
         let (anon, meta) <- go kvs expr
@@ -379,9 +393,8 @@ partial def compileExpr: Lean.Expr -> CompileM MetaAddress
         let metaAddr <- storeIxon meta
         let maddr := ⟨anonAddr, metaAddr⟩
         modifyGet fun stt => (maddr, { stt with
-          exprCache := stt.exprCache.insert expr maddr
+          exprCache := stt.exprCache.insert (ctx, expr) maddr
         })
-
     go (kvs: List Lean.KVMap): Lean.Expr -> CompileM (Ixon × Ixon)
     | (.mdata kv x) => go (kv::kvs) x
     | .bvar idx => do
@@ -401,6 +414,7 @@ partial def compileExpr: Lean.Expr -> CompileM MetaAddress
       let us <- lvls.mapM compileLevel
       match (← read).mutCtx.find? name with
       | some idx => 
+      --dbg_trace s!"compileExpr {(<- read).current}, const rec {name} {idx}, mutCtx: {repr (<- read).mutCtx}, md {md}, us: {repr us}, n: {n}"
         let data := .erec idx (us.map (·.data))
         let meta := .meta ⟨[.link md, .link n, .links (us.map (·.meta))]⟩
         pure (data, meta)
@@ -408,6 +422,7 @@ partial def compileExpr: Lean.Expr -> CompileM MetaAddress
         let ref <- match (<- get).comms.find? name with
           | some comm => pure comm
           | none => compileConstName name
+      --dbg_trace s!"compileExpr {(<- read).current}, const ref {name}, mutCtx: {repr (<- read).mutCtx}, md {md}, repr {us}, ref {ref}"
         let data := .eref ref.data (us.map (·.data))
         let meta := .meta ⟨[.link md, .link n, .link ref.meta, .links (us.map (·.meta))]⟩
         pure (data, meta)
@@ -465,7 +480,7 @@ partial def compileExpr: Lean.Expr -> CompileM MetaAddress
 partial def compileConstName (name: Lean.Name): CompileM MetaAddress := do
   match (<- get).constCache.find? name with
   | some x => pure x
-  | none => resetCtx name <| do
+  | none => do
     let (anon, meta) <- do
       if name == Lean.Name.mkSimple "_obj" then pure (.prim .obj, .meta ⟨[]⟩)
       else if name == Lean.Name.mkSimple "_neutral" then pure (.prim .neutral, .meta ⟨[]⟩)
@@ -484,8 +499,12 @@ partial def compileConstName (name: Lean.Name): CompileM MetaAddress := do
     modifyGet fun stt => (maddr, { stt with
       constCache := stt.constCache.insert name maddr
     })
-
 partial def compileConstant : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
+| c => do
+--dbg_trace "compileConstant {c.name}"
+  resetCtx c.name <| compileConstant' c
+
+partial def compileConstant' : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
 | .defnInfo val => compileMutual (MutConst.mkDefn val)
 | .thmInfo val => compileMutual (MutConst.mkTheo val)
 | .opaqueInfo val => compileMutual (MutConst.mkOpaq val)
@@ -497,7 +516,9 @@ partial def compileConstant : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
     | some ⟨data, meta⟩ => do pure (<- getIxon data, <- getIxon meta)
     | none => throw <| .mutualBlockMissingProjection val.name
   | c => throw <| .invalidConstantKind c.name "inductive" c.ctorName
-| .recInfo val => compileMutual (MutConst.recr val)
+| .recInfo val => do
+--dbg_trace "compileConstant recInfo {val.name} mutCtx {repr <| (<- read).mutCtx}"
+  compileMutual (MutConst.recr val)
 | .axiomInfo ⟨⟨name, lvls, type⟩, isUnsafe⟩ => withLevels lvls do
   let n <- compileName name
   let ls <- lvls.mapM compileName
@@ -532,6 +553,7 @@ partial def compileRule: Lean.RecursorRule -> CompileM (Ixon.RecursorRule × (Ad
 
 partial def compileRecr: Lean.RecursorVal -> CompileM (Ixon.Recursor × Metadata)
 | r => withLevels r.levelParams <| do
+--dbg_trace s!"compileRecr {(<- read).current} {repr <| r.name} mutCtx: {repr (<- read).mutCtx}"
   let n <- compileName r.name
   let ls <- r.levelParams.mapM compileName
   let t <- compileExpr r.type
@@ -577,14 +599,17 @@ partial def compileIndc: Ix.Ind -> CompileM (Ixon.Inductive × Map Address Addre
 
 partial def compileMutual : MutConst -> CompileM (Ixon × Ixon)
 | const => do
+--dbg_trace s!"compileMutual {const.name}"
   let all: Set Lean.Name <- getAll const.name
-  if all == {const.name} && const matches .defn _ then do
+--dbg_trace s!"compileMutual {const.name} all: {repr all}"
+  if all == {const.name} &&
+    (const matches .defn _ || const matches .recr _) then do
     match const with
     | .defn d => do
-      let (data, meta) <- withMutCtx {(d.name,0)} <| compileDefn d
+      let (data, meta) <- withMutCtx (.single d.name 0) <| compileDefn d
       pure (.defn data, .meta meta)
     | .recr r => do
-      let (data, meta) <- withMutCtx {(r.name,0)} <| compileRecr r
+      let (data, meta) <- withMutCtx (.single r.name 0) <| compileRecr r
       pure (.recr data, .meta meta)
     | _ => unreachable!
   else
@@ -597,9 +622,12 @@ partial def compileMutual : MutConst -> CompileM (Ixon × Ixon)
       | .thmInfo val => consts := consts.push (MutConst.mkTheo val)
       | .recInfo val => consts := consts.push (MutConst.recr val)
       | _ => continue
+  --dbg_trace s!"compileMutual {const.name} consts: {repr <| consts.map (·.name)}"
     -- sort MutConsts into equivalence classes
     let mutConsts <- sortConsts consts.toList
+  --dbg_trace s!"compileMutual {const.name} mutConsts: {repr <| mutConsts.map (·.map (·.name))}"
     let mutCtx := MutConst.ctx mutConsts
+  --dbg_trace s!"compileMutual {const.name} mutCtx: {repr mutCtx}"
     let mutMeta <- mutConsts.mapM fun m => m.mapM <| fun c => compileName c.name
     -- compile each constant with the mutCtx
     let (data, metas) <- withMutCtx mutCtx (compileMutConsts mutConsts)
@@ -646,6 +674,7 @@ partial def compileMutual : MutConst -> CompileM (Ixon × Ixon)
 partial def compileMutConsts: List (List MutConst)
   -> CompileM (Ixon × Map Address Address)
 | classes => do
+--dbg_trace s!"compileMutConsts {(<- read).current} {repr <| classes.map (·.map (·.name))} mutCtx: {repr (<- read).mutCtx}"
   let mut data := #[]
   let mut meta := {}
   -- iterate through each equivalence class
@@ -695,7 +724,7 @@ partial def sortConsts (classes: List MutConst) : CompileM (List (List MutConst)
   := go [List.sortBy (compare ·.name ·.name) classes]
   where
     go (cs: List (List MutConst)): CompileM (List (List MutConst)) := do
-      --dbg_trace "sortDefs blocks {(<- get).blocks.size} {(<- read).current}"
+    --dbg_trace "sortConsts {(<- read).current} {cs.map (·.map (·.name))}"
       let ctx := MutConst.ctx cs
       let cs' <- cs.mapM fun ds =>
         match ds with
@@ -798,6 +827,7 @@ partial def compareExpr (ctx: MutCtx) (xlvls ylvls: List Lean.Name)
     | none, none =>
       if x == y then return ⟨true, .eq⟩
       else do
+      --dbg_trace s!"compareExpr const {(<- read).current} consts {x} {y}"
         let x' <- compileConstName x
         let y' <- compileConstName y
         return ⟨true, compare x' y'⟩
@@ -826,9 +856,20 @@ partial def compareExpr (ctx: MutCtx) (xlvls ylvls: List Lean.Name)
   | .lit x, .lit y => return ⟨true, compare x y⟩
   | .lit .., _ => return ⟨true, .lt⟩
   | _, .lit .. => return ⟨true, .gt⟩
-  | .proj _ nx tx, .proj _ ny ty => 
-    SOrder.cmpM (pure ⟨true, compare nx ny⟩) 
-      (compareExpr ctx xlvls ylvls tx ty)
+  | .proj tnx ix tx, .proj tny iy ty => 
+    SOrder.cmpM (pure ⟨true, compare ix iy⟩) <|
+    SOrder.cmpM (compareExpr ctx xlvls ylvls tx ty) <|
+    match ctx.find? tnx, ctx.find? tny with
+    | some nx, some ny => return ⟨false, compare nx ny⟩
+    | none, some _ => return ⟨true, .gt⟩
+    | some _, none => return ⟨true, .lt⟩
+    | none, none =>
+      if tnx == tny then return ⟨true, .eq⟩
+      else do
+      --dbg_trace s!"compareExpr proj {(<- read).current} consts {tnx} {tny}"
+        let x' <- compileConstName tnx
+        let y' <- compileConstName tny
+        return ⟨true, compare x' y'⟩
 end
 
 partial def makeLeanDef

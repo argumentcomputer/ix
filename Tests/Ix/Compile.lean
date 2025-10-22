@@ -84,6 +84,15 @@ def testMutual : IO TestSeq := do
   let nss := dss.map fun ds => ds.map (·.name)
   return test "test mutual" (res == nss)
 
+--#eval show Lean.MetaM _ from do
+--  let env ← Lean.getEnv
+--  return env.find? `Std.DHashMap.Const.toList._rarg._cstage2
+
+--#eval show Lean.MetaM _ from do
+--  let env ← Lean.getEnv
+--  return env.find? `Array.foldrMUnsafe.fold._at.Std.DHashMap.Const.toList._spec_2
+
+
 def testInductives : IO TestSeq := do
   let env <- get_env!
   let mut cstt : CompileState := .init env 0
@@ -202,7 +211,7 @@ def testRoundtripGetEnv : IO TestSeq := do
     | .ok (n,_) stt => pure (n, stt)
     | .error e _ => do
       IO.println s!"failed {name}"
-      --IO.println s!"denv: {repr denv}"
+      IO.println s!"cstt all: {repr <| cstt.alls.get? name}"
       --let c := env.constants.find? name
       --IO.println s!"{repr c}"
       throw (IO.userError e.pretty)

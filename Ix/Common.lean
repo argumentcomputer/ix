@@ -267,15 +267,15 @@ def Std.HashMap.find? {A B} [BEq A] [Hashable A] (map: Std.HashMap A B) (a: A)
 abbrev Ix.Map := Std.HashMap
 abbrev Ix.Set := Std.HashSet
 
-abbrev MutCtx := Ix.Map Lean.Name Nat
+abbrev MutCtx := Batteries.RBMap Lean.Name Nat compare
 
-instance : BEq MutCtx where
-  beq a b := a.size == b.size && a.fold
-    (fun acc k v => acc && match b.find? k with
-      | some v' => v == v'
-      | none => false) true
+--instance : BEq MutCtx where
+--  beq a b := a.size == b.size && a.fold
+--    (fun acc k v => acc && match b.find? k with
+--      | some v' => v == v'
+--      | none => false) true
 
--- TODO: incremental comparison with ForIn zip
+---- TODO: incremental comparison with ForIn zip
 instance : Ord MutCtx where
   compare a b := compare a.toList b.toList
 

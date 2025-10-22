@@ -89,7 +89,7 @@ def MutConst.contains (name: Lean.Name) : MutConst -> Bool
 -- definitions and recursors, but we combine them for robustness and code
 -- deduplication.
 -- layout: [i0, i1, ..., iN, i0c0, ... i0cM, ... inc0, iNcM]
-def MutConst.ctx (classes: List (List MutConst)) : Map Lean.Name Nat
+def MutConst.ctx (classes: List (List MutConst)) : MutCtx
   := Id.run do
   let mut mutCtx := default
   let mut i := classes.length

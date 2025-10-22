@@ -44,7 +44,7 @@ inductive Block where
 | recr : Lean.RecursorVal -> Block
 | axio : Lean.AxiomVal -> Block
 | quot : Lean.QuotVal -> Block
-| muts : List MutConst -> Block
+| muts : List (List MutConst) -> Block
 deriving Repr, Inhabited, Nonempty
 
 def Block.contains (name: Lean.Name) : Block -> Bool
@@ -53,7 +53,7 @@ def Block.contains (name: Lean.Name) : Block -> Bool
 | .recr val => val.name == name
 | .axio val => val.name == name
 | .quot val => val.name == name
-| .muts consts => consts.any (·.contains name)
+| .muts consts => consts.any (·.any (·.contains name))
 
 def Block.consts : Block -> Set Lean.ConstantInfo
 | .prim => {}
@@ -61,7 +61,8 @@ def Block.consts : Block -> Set Lean.ConstantInfo
 | .recr val => {.recInfo val}
 | .axio val => {.axiomInfo val}
 | .quot val => {.quotInfo val}
-| .muts consts => consts.foldr (fun m set => set.union (mutConst m)) {}
+| .muts consts => consts.foldr (fun m set => set.union (m.foldr 
+    (fun m' set' => set'.union (mutConst m')) {})) {}
 where
   defn: Def -> Lean.ConstantInfo
   | ⟨name, lvls, type, kind, value, hints, safety, all⟩ => match kind with
@@ -91,6 +92,7 @@ inductive DecompileError
   (curr: Named) (ctx: List Lean.Name) (got: Lean.Name)
   (exp: Lean.Name) (idx: Nat)
 | mismatchedName (curr: Named) (n m: Lean.Name)
+| mismatchedNameSet (curr: Named) (n: Lean.Name) (ms: List Lean.Name)
 | invalidBVarIndex (curr: Named) (ctx: List Lean.Name) (idx: Nat)
 | mismatchedUnivArgs (curr: Named) (d m : List Address)
 | mismatchedLevels (curr: Named) (n: Nat) (ls: List Address)
@@ -146,6 +148,8 @@ def DecompileError.pretty : DecompileError -> String
   s!"Expected level name {n} at index {i} but got {n'} with context {repr ctx} @ {c}"
 | .mismatchedName c n m => 
   s!"Expected name {n} got {m} @ {c}"
+| .mismatchedNameSet c n ms => 
+  s!"Expected name {n} in {ms} @ {c}"
 | .invalidBVarIndex c ctx i => 
   s!"Bound variable {i} escapes context {ctx} @ {c}"
 | .mismatchedUnivArgs c d m => s!"mismatched univ args in {repr d} {repr m} @ {c}"
@@ -216,13 +220,12 @@ def withMutCtx' (mutCtx : Std.HashMap Lean.Name Nat)
   : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with mutCtx := mutCtx }
 
-def withNamed (name: Lean.Name) (meta: MetaAddress)
-  : DecompileM α -> DecompileM α :=
-  withReader $ fun c => { c with current := ⟨name, meta⟩ }
-
 -- reset local context
-def resetCtx' : DecompileM α -> DecompileM α :=
-  withReader $ fun c => { c with univCtx := [], bindCtx := [], mutCtx := {} }
+def resetCtx' (name: Lean.Name) (meta: MetaAddress) 
+  : DecompileM α -> DecompileM α :=
+  withReader $ fun c => { c with 
+    univCtx := [], bindCtx := [], mutCtx := {}, current := ⟨name, meta⟩
+  }
 
 def readStore [Serialize A] (addr: Address) (exp: String): DecompileM A := do
   --dbg_trace "readStore {addr}"
@@ -255,11 +258,13 @@ def readIxon (addr: Address) : DecompileM Ixon := do
   | none => throw <| .unknownStoreAddress (<- read).current addr
 
 partial def decompileName (addr: Address) : DecompileM Lean.Name := do
-  --dbg_trace "decompileName {addr}"
   match (<- get).nameCache.find? addr with
-  | some name => pure name
+  | some name => 
+  --dbg_trace "decompileName {(<- read).current.name} {addr} {name}"
+    pure name
   | none => do
     let name <- go (<- readIxon addr)
+  --dbg_trace "decompileName {(<- read).current.name} {addr} {name}"
     modifyGet fun stt => (name, { stt with
       nameCache := stt.nameCache.insert addr name
     })
@@ -380,11 +385,25 @@ partial def insertBlock (block: Block): DecompileM (Set Lean.Name) := do
     set := set.insert c.name
   return set
 
-partial def matchNames (x y: Lean.Name) : DecompileM α -> DecompileM α
-| a => do
+def namesEqPatch (x y: Lean.Name) : Bool :=
   let cs2 := Lean.Name.mkSimple "_cstage2"
-  if x == y || x == y.append cs2  || x.append cs2 == y then a
+  x == y || x == y.append cs2  || x.append cs2 == y
+
+def matchNames (x y: Lean.Name) : DecompileM α -> DecompileM α
+| a => do
+  if namesEqPatch x y then a
   else throw <| .mismatchedName (<- read).current x y
+
+partial def matchBlock (n: Lean.Name) (idx: Nat) (block: Block)
+  : DecompileM MutConst := go block
+  where
+    go : Block -> DecompileM MutConst
+    | .muts mss => match mss[idx]? with
+      | .some ms => match ms.find? (fun m => namesEqPatch n m.name) with
+        | .some m => return m
+        | .none => do throw <| .todo
+      | .none => do throw <| .todo
+    | _ => do throw <| .todo
 
 mutual
 
@@ -418,18 +437,18 @@ partial def decompileExpr (addr: MetaAddress): DecompileM Lean.Expr := do
       let u <- decompileLevel ⟨ua, um⟩
       return mdata kvs (.sort u)
     | .erec idx uas, .meta ⟨[.link md, .link n, .links ums]⟩ => do
-      --dbg_trace s!"decompileExpr erec"
       let kvs <- decompileKVMaps md
       let us <- univs uas ums
       let name <- decompileName n
+    --dbg_trace s!"decompileExpr {(<- read).current} erec {idx} {name}, md: {md}, us: {repr us}, n: {n}"
       match (<- read).mutCtx.get? name with
       | some idx' => do
         if idx' == idx then return mdata kvs (.const name us)
         else throw <| .mismatchedMutIdx (<- read).current (<- read).mutCtx name idx idx'
       | none => do throw <| .unknownMutual (<- read).current (<- read).mutCtx name idx
     | .eref rd uas, .meta ⟨[.link md, .link n, .link rm, .links ums]⟩ => do
-      --dbg_trace s!"decompileExpr eref"
       let name <- decompileName n
+    --dbg_trace s!"decompileExpr {(<- read).current} eref {name}"
       let kvs <- decompileKVMaps md
       let us <- univs uas ums
       let (name', _) <- decompileNamedConst name ⟨rd, rm⟩
@@ -489,8 +508,8 @@ partial def decompileLevels (n: Nat) (ls: List Address)
 
 partial def decompileDef: Ixon.Definition -> Metadata -> DecompileM Def
 | d, ⟨[.link n, .links ls, .hints h, .link tm, .link vm, .links as]⟩ => do
-  --dbg_trace "decompileDef"
   let name <- decompileName n
+--dbg_trace s!"decompileDef {(<- read).current} {name} {repr (<- read).mutCtx}"
   let lvls <- decompileLevels d.lvls ls
   withLevels' lvls <| do
     let t <- decompileExpr ⟨d.type, tm⟩
@@ -511,6 +530,7 @@ partial def decompileRules (rs: List RecursorRule) (ms: List (Address × Address
 partial def decompileRecr: Ixon.Recursor -> Metadata -> DecompileM Rec
 | r, ⟨[.link n, .links ls, .link tm, .map rs, .links as]⟩ => do
   let name <- decompileName n
+--dbg_trace s!"decompileRecr {(<- read).current} {name} {repr (<- read).mutCtx}"
   let lvls <- decompileLevels r.lvls ls
   withLevels' lvls <| do
     let t <- decompileExpr ⟨r.type, tm⟩
@@ -538,6 +558,7 @@ partial def decompileCtors (cs: List Ixon.Constructor) (ms: List Address)
 partial def decompileIndc: Ixon.Inductive -> Metadata -> DecompileM Ind
 | i, ⟨[.link n, .links ls, .link tm, .links cs, .links as]⟩ => do
   let name <- decompileName n
+--dbg_trace s!"decompileIndc {(<- read).current} {name} {repr (<- read).mutCtx}"
   let lvls <- decompileLevels i.lvls ls
   withLevels' lvls <| do
     let t <- decompileExpr ⟨i.type, tm⟩
@@ -549,10 +570,10 @@ partial def decompileIndc: Ixon.Inductive -> Metadata -> DecompileM Ind
 
 partial def decompileConst (addr: MetaAddress)
   : DecompileM (Lean.Name × Set Lean.Name) := do
-  --dbg_trace s!"decompileConst {addr}"
+--dbg_trace s!"decompileConst {(<- read).current} {addr} {repr (<- read).mutCtx}"
   match (<- get).constCache.find? addr with
   | some x => pure x
-  | none => resetCtx' do
+  | none => do
     let (name, block) <- go (<- readIxon addr.data) (<- readIxon addr.meta)
     let blockNames <- insertBlock block
     modifyGet fun stt => ((name, blockNames), { stt with
@@ -587,41 +608,27 @@ partial def decompileConst (addr: MetaAddress)
       | .meta ⟨[.link n, .links _, .hints _, .link _, .link _, .links _]⟩ => do
         let name <- decompileName n
         let block <- decompileMuts (<- readIxon bd) (<- readIxon bm)
-        match block with
-        | .muts ms => match ms[idx]? with
-          | .some (.defn d) => matchNames name d.name (pure (name, block))
-          | _ => do throw <| .badProj (<- read).current block s!"malformed dprj index {idx}"
-        | _ => do throw <| .badProj (<- read).current block "dprj into non-mutual block"
+        match (<- matchBlock name idx block) with
+        | .defn _ => pure (name, block)
+        | e => throw <| .badProj (<- read).current block s!"malformed dprj at {idx} of {repr e}"
       | m => do throw <| .badProjMeta (<- read).current m "dprj"
     | .rprj ⟨idx, bd⟩, .meta ⟨[.link bm, .link m]⟩ => do
       match (<- readIxon m) with
       | .meta ⟨[.link n, .links _, .link _, .map _, .links _]⟩ => do
         let name <- decompileName n
         let block <- decompileMuts (<- readIxon bd) (<- readIxon bm)
-        match block with
-        | .muts ms => match ms[idx]? with
-          | .some (.recr r) => matchNames name r.name (pure (name, block))
-          | _ => do throw <| .badProj (<- read).current block s!"malformed rprj index {idx}"
-        | _ => do throw <| .badProj (<- read).current block "rprj inton non-mutual block"
+        match (<- matchBlock name idx block) with
+        | .recr _ => (pure (name, block))
+        | e => throw <| .badProj (<- read).current block s!"malformed rprj at {idx} of {repr e}"
       | m => do throw <| .badProjMeta (<- read).current m "rprj"
     | .iprj ⟨idx, bd⟩, .meta ⟨[.link bm, .link m]⟩ => do
       match (<- readIxon m) with
       | .meta ⟨[.link n, .links _, .link _, .links _, .links _]⟩ => do
         let name <- decompileName n
         let block <- decompileMuts (<- readIxon bd) (<- readIxon bm)
-        match block with
-        | .muts ms => match ms[idx]? with
-          | .some (.indc i) => matchNames name i.name (pure (name, block))
-          | _ => do 
-            let bmeta <- match (<- readStore bm "metadata") with
-            | Ixon.meta ⟨[.muts _, .map cs, .map _]⟩ => do
-              let mut map : Map Lean.Name Nat := {}
-              for (n, i) in cs do
-                map := map.insert (<- decompileName n) (<- readNat i)
-              pure map
-            | _ => unreachable!
-            throw <| .badProj (<- read).current block s!"malformed iprj index {idx} & {repr bmeta}"
-        | _ => do throw <| .badProj (<- read).current block "iprj into non-mutual block"
+        match (<- matchBlock name idx block) with
+        | .indc _ => (pure (name, block))
+        | e => throw <| .badProj (<- read).current block s!"malformed iprj at {idx} of {repr e}"
       | m => do throw <| .badProjMeta (<- read).current m "iprj"
     | .cprj ⟨idx, cidx, bd⟩, .meta ⟨[.link bm, .link m]⟩ => do
       match (<- readIxon m) with
@@ -629,14 +636,11 @@ partial def decompileConst (addr: MetaAddress)
         let name <- decompileName n
         let induct <- decompileName i
         let block <- decompileMuts (<- readIxon bd) (<- readIxon bm)
-        match block with
-        | .muts ms => match ms[idx]? with
-          | .some (.indc i) => matchNames induct i.name <|
-            match i.ctors[cidx]? with
-            | .some c => matchNames name c.name (pure (name, block))
-            | .none => do throw <| .badProj (<- read).current block s!"malformed cprj ctor index {cidx}"
-          | _ => do throw <| .badProj (<- read).current block s!"malformed cprj index {idx}"
-        | _ => do throw <| .badProj (<- read).current block "cprj into non-mutual block"
+        match (<- matchBlock induct idx block) with
+        | .indc i => match i.ctors[cidx]? with
+          | .some c => matchNames name c.name (pure (name, block))
+          | .none => do throw <| .badProj (<- read).current block s!"malformed cprj ctor index {cidx}"
+        | e => throw <| .badProj (<- read).current block s!"malformed cprj at {idx} of {repr e}"
       | m => do throw <| .badProjMeta (<- read).current m "cprj"
     | .prim .obj, .meta ⟨[]⟩ => do
       --dbg_trace s!"decompileConst prim _obj"
@@ -652,7 +656,8 @@ partial def decompileConst (addr: MetaAddress)
 partial def decompileNamedConst (name: Lean.Name) (addr: MetaAddress)
   : DecompileM (Lean.Name × Set Lean.Name) := do
   --dbg_trace s!"decompileNamedConst {name} {addr}"
-  let (n, set) <- withNamed name addr <| decompileConst addr
+--dbg_trace s!"decompileNamedConst {name} {addr} {repr (<- read).mutCtx}"
+  let (n, set) <- resetCtx' name addr <| decompileConst addr
   matchNames n name (pure (n, set))
 
 partial def decompileMutConst : Ixon.MutConst -> Metadata -> DecompileM MutConst
@@ -662,23 +667,28 @@ partial def decompileMutConst : Ixon.MutConst -> Metadata -> DecompileM MutConst
 
 partial def decompileMuts: Ixon -> Ixon -> DecompileM Block
 | ms@(.muts cs), m@(.meta ⟨[.muts names, .map ctx, .map metaMap]⟩) => do
+  --dbg_trace s!"decompileMuts {(<- read).current} {repr (<- read).mutCtx}"
     if cs.length != names.length then throw <| .badMuts (<- read).current ms m
     else
       let mut map : Map Lean.Name Metadata := {}
       for (name, meta) in metaMap do
         map := map.insert (<- decompileName name) (<- readStore meta "Metadata")
-      let mut muts := #[]
+      let mut mutClasses := #[]
       let mut mutCtx := {}
       for (n, i) in ctx do
         mutCtx := mutCtx.insert (<- decompileName n) (<- readNat i)
+    --dbg_trace s!"decompileMuts {(<- read).current} inner mutCtx {repr mutCtx}"
       for (const, names) in cs.zip names do
+        let mut mutClass := #[]
         for n in names do
           let name <- decompileName n
+        --dbg_trace s!"decompileMuts {(<- read).current} inner loop {name} {repr mutCtx}"
           let const' <- match map.get? name with
             | .some meta => withMutCtx' mutCtx <| decompileMutConst const meta
             | .none => do throw <| .badMuts (<- read).current ms m
-          muts := muts.push const'
-      return .muts muts.toList
+          mutClass := mutClass.push const'
+        mutClasses := mutClasses.push mutClass
+      return .muts (Array.toList <$> mutClasses).toList
 | ms, m => do throw <| .badMuts (<- read).current ms m
 
 end
