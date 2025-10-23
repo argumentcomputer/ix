@@ -2,6 +2,7 @@
 -- Import modules here that should be built as part of the library.
 import Ix.Ixon
 import Ix.Meta
-import Ix.CompileM
+import Ix.GroundM
 import Ix.CondenseM
---import Ix.DecompileM
+import Ix.CompileM
+import Ix.DecompileM

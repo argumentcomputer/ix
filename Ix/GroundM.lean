@@ -172,10 +172,10 @@ def groundEnv: GroundM Unit := do
     | .grounded => continue
     | u@(.ungrounded _) => 
       dbg_trace s!"groundEnv {n} ungrounded {repr u}"
+      stack := stack.push n
       modify fun stt => { stt with
         ungrounded := stt.ungrounded.insert n u
       }
-    stack := stack.push n
   while !stack.isEmpty do
     let name := stack.back!
     dbg_trace s!"groundEnv stack {name}"
