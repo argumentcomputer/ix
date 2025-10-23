@@ -47,8 +47,15 @@ pub(super) fn drop_raw<T>(ptr: *mut T) {
     drop(t);
 }
 
+// Only used in the Iroh client for the moment
 #[inline]
-#[allow(dead_code)]
+#[cfg_attr(
+    any(
+        not(feature = "net"),
+        all(target_os = "macos", target_arch = "aarch64")
+    ),
+    allow(dead_code)
+)]
 pub(crate) fn raw_to_str<'a>(ptr: *const c_char) -> &'a str {
     let c_str = unsafe { CStr::from_ptr(ptr) };
     c_str.to_str().expect("Invalid UTF-8 string")

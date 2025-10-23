@@ -10,6 +10,7 @@ crate-type = ["staticlib"]
 anyhow = "1"
 indexmap = { version = "2", features = ["rayon"] }
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "11a2e444004609174e1ad59e366e7f621bdd427b" }
+num-bigint = "0.4"
 rayon = "1"
 rustc-hash = "2"
 tiny-keccak = { version = "2", features = ["keccak"] }
@@ -27,7 +28,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 bincode = { version = "2.0.1", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
-num-bigint = "0.4.6"
 
 [features]
 default = []
