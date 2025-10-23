@@ -19,18 +19,17 @@ bytes = { version = "1.10.1", optional = true }
 tokio = { version = "1.44.1", optional = true }
 iroh = { version = "0.91", optional = true }
 iroh-base = { version = "0.91", optional = true }
-iroh-blobs = { version = "0.91", optional = true }
 n0-snafu = { version = "0.2.1", optional = true }
 n0-watcher = { version = "0.3", optional = true }
 rand = { version = "0.8", optional = true }
 tracing = { version = "0.1", optional = true }
-tracing-subscriber = { version = "0.3", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 bincode = { version = "2.0.1", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 num-bigint = "0.4.6"
 
 [features]
-default = ["net"]
+default = []
 parallel = ["multi-stark/parallel"]
-net = ["bytes", "tokio", "iroh", "iroh-base", "iroh-blobs", "n0-snafu", "n0-watcher", "rand", "tracing", "tracing-subscriber", "bincode", "serde" ]
+net = ["bytes", "tokio", "iroh", "iroh-base", "n0-snafu", "n0-watcher", "rand", "tracing", "tracing-subscriber", "bincode", "serde" ]

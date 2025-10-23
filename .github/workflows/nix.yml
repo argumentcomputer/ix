@@ -29,7 +29,7 @@ jobs:
       - run: nix build .#bench-blake3 --print-build-logs --accept-flake-config
       # Ix tests
       - run: nix build .#test --print-build-logs --accept-flake-config
-      - run: nix run .#test
+      - run: nix run .#test --accept-flake-config
 
   # Tests Nix devShell support on Ubuntu
   nix-devshell:

@@ -7,12 +7,17 @@ use iroh::{Endpoint, RelayMode, SecretKey, endpoint::ConnectionError};
 use n0_snafu::ResultExt;
 use n0_watcher::Watcher as _;
 use tracing::{debug, info, warn};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetResponse, PutResponse, Request, Response};
 use crate::lean::ffi::{CResult, to_raw};
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
+// Maximum number of characters to read from the client. Connection automatically closed if this is exceeded
+const READ_SIZE_LIMIT: usize = 100_000_000;
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_serve() -> *const CResult {
@@ -37,10 +42,13 @@ extern "C" fn rs_iroh_serve() -> *const CResult {
     to_raw(c_result)
 }
 
-// Largely inspired by https://github.com/n0-computer/iroh/blob/main/iroh/examples/listen.rs
+// Largely taken from https://github.com/n0-computer/iroh/blob/main/iroh/examples/listen.rs
 async fn serve() -> n0_snafu::Result<()> {
-    tracing_subscriber::fmt::init();
-    println!("\nlisten example!\n");
+    // Initialize the subscriber with `RUST_LOG=info` to preserve some server logging
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::new("info"))
+        .init();
     let secret_key = SecretKey::generate(rand::rngs::OsRng);
     println!("public key: {}", secret_key.public());
 
@@ -77,16 +85,16 @@ async fn serve() -> n0_snafu::Result<()> {
         .join(" ");
     let relay_url = endpoint.home_relay().initialized().await;
     println!("node relay server url: {relay_url}");
-    println!("\nin a separate terminal, cd to `client` and run:");
+    println!("\nin a separate terminal run:");
 
     println!(
-        "\tlake exe ix connect put --nodeId {me} --addrs \"{local_addrs}\" --relayUrl {relay_url} /path/to/bytes"
+        "\tix connect put --node-id {me} --addrs \"{local_addrs}\" --relay-url {relay_url} <--input|--file> <input|/path/to/file>"
     );
     println!(
-        "\tlake exe ix connect get --nodeId {me} --addrs \"{local_addrs}\" --relayUrl {relay_url} <hash>"
+        "\tix connect get --node-id {me} --addrs \"{local_addrs}\" --relay-url {relay_url} <hash>"
     );
 
-    // TODO: Switch to elsa/frozen map for safe append-only multithreading
+    // TODO: Switch to dashmap for performance or elsa/frozen map for safe append-only multithreading
     // TODO: Add a backing local file store rather than keeping data in-memory, and enable garbage
     // collection
     let store: Arc<Mutex<BTreeMap<String, Vec<u8>>>> = Arc::new(Mutex::new(BTreeMap::new()));
@@ -115,13 +123,11 @@ async fn serve() -> n0_snafu::Result<()> {
             // use the `quinn` APIs to send and recv content
             let (mut send, mut recv) = conn.accept_bi().await.e()?;
             debug!("accepted bi stream, waiting for data...");
-            let message = recv.read_to_end(1000).await.e()?;
-            //let message = String::from_utf8(message).e()?;
+            let message = recv.read_to_end(READ_SIZE_LIMIT).await.e()?;
             let request = Request::from_bytes(&message);
 
             let response: Response = match request {
                 Request::Put(put_request) => {
-                    // TODO: Fewer clones if possible, maybe change store key to `&str`
                     let hash = blake3::hash(&put_request.bytes)
                         .to_hex()
                         .as_str()
@@ -130,8 +136,8 @@ async fn serve() -> n0_snafu::Result<()> {
                         .lock()
                         .unwrap()
                         .insert(hash.clone(), put_request.bytes);
-                    println!("received PUT for bytes with hash {hash}");
-                    let message = format!("pinned hash: {hash}\nat node ID {me}");
+                    println!("received PUT request for bytes with hash {hash}");
+                    let message = format!("pinned hash {hash}\nat node ID {me}");
                     Response::Put(PutResponse {
                         is_err: false,
                         message,
@@ -139,9 +145,12 @@ async fn serve() -> n0_snafu::Result<()> {
                     })
                 }
                 Request::Get(get_request) => {
-                    println!("received GET for bytes with hash {}", get_request.hash);
+                    println!(
+                        "received GET request for bytes with hash {}",
+                        get_request.hash
+                    );
                     if let Some(bytes) = store_clone.lock().unwrap().get(&get_request.hash) {
-                        let message = format!("retrieved bytes at {}", get_request.hash);
+                        let message = format!("retrieved bytes for hash {}", get_request.hash);
                         Response::Get(GetResponse {
                             is_err: false,
                             message,

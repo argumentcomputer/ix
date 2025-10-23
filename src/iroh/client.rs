@@ -1,35 +1,42 @@
-use iroh::{Endpoint, NodeAddr, RelayMode, SecretKey};
+use iroh::{Endpoint, NodeAddr, NodeId, RelayMode, RelayUrl, SecretKey};
 use n0_snafu::{Result, ResultExt};
 use n0_watcher::Watcher as _;
 use std::ffi::{CString, c_char};
-use std::fs::File;
-use std::io::Write;
+use std::net::SocketAddr;
 use tracing::info;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
 use crate::lean::array::LeanArrayObject;
+use crate::lean::as_ref_unsafe;
 use crate::lean::ffi::iroh::{GetResponseFFI, PutResponseFFI};
 use crate::lean::ffi::{CResult, raw_to_str, to_raw};
-use crate::lean::lean_unbox_string;
+use crate::lean::string::LeanStringObject;
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
+// Maximum number of characters to read from the server. Connection automatically closed if this is exceeded
+const READ_SIZE_LIMIT: usize = 100_000_000;
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_put(
     node_id: *const c_char,
     addrs: &LeanArrayObject,
     relay_url: *const c_char,
-    file_path: *const c_char,
+    input: *const c_char,
 ) -> *const CResult {
     let node_id = raw_to_str(node_id);
-    let addrs: Vec<String> = addrs.to_vec(lean_unbox_string);
+    let addrs: Vec<String> = addrs.to_vec(|ptr| {
+        let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
+        string.as_string()
+    });
     let relay_url = raw_to_str(relay_url);
-    let file_path = raw_to_str(file_path);
+    let input = raw_to_str(input);
 
-    let contents = std::fs::read_to_string(file_path).expect("Failed to read input file from disk");
     let request = Request::Put(PutRequest {
-        bytes: contents.as_bytes().to_owned(),
+        bytes: input.as_bytes().to_vec(),
     });
     // Create a Tokio runtime to block on the async function
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
@@ -38,7 +45,6 @@ extern "C" fn rs_iroh_put(
     let c_result = match rt.block_on(connect(node_id, &addrs, relay_url, request)) {
         Ok(response) => match response {
             Response::Put(put_response) => {
-                println!("{}", put_response.message);
                 let put_response_ffi =
                     PutResponseFFI::new(&put_response.message, &put_response.hash);
                 CResult {
@@ -75,7 +81,10 @@ extern "C" fn rs_iroh_get(
     hash: *const c_char,
 ) -> *const CResult {
     let node_id = raw_to_str(node_id);
-    let addrs: Vec<String> = addrs.to_vec(lean_unbox_string);
+    let addrs: Vec<String> = addrs.to_vec(|ptr| {
+        let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
+        string.as_string()
+    });
     let relay_url = raw_to_str(relay_url);
     let hash = raw_to_str(hash);
     let request = Request::Get(GetRequest {
@@ -87,13 +96,6 @@ extern "C" fn rs_iroh_get(
     let c_result = match rt.block_on(connect(node_id, &addrs, relay_url, request)) {
         Ok(response) => match response {
             Response::Get(get_response) => {
-                println!("{}", get_response.message);
-                if !get_response.is_err {
-                    let file_name = format!("{}.txt", get_response.hash);
-                    println!("Writing bytes to ./{file_name}");
-                    let mut file = File::create(file_name).unwrap();
-                    file.write_all(&get_response.bytes).unwrap();
-                }
                 let get_response_ffi = GetResponseFFI::new(
                     &get_response.message,
                     &get_response.hash,
@@ -125,14 +127,18 @@ extern "C" fn rs_iroh_get(
     to_raw(c_result)
 }
 
-// Largely inspired by https://github.com/n0-computer/iroh/blob/main/iroh/examples/connect.rs
+// Largely taken from https://github.com/n0-computer/iroh/blob/main/iroh/examples/connect.rs
 async fn connect(
     node_id: &str,
     addrs: &[String],
     relay_url: &str,
     request: Request,
 ) -> Result<Response> {
-    tracing_subscriber::fmt::init();
+    // Initialize the subscriber with `RUST_LOG=warn` to remove INFO noise for the client
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::new("warn"))
+        .init();
     let secret_key = SecretKey::generate(rand::rngs::OsRng);
     println!("public key: {}", secret_key.public());
 
@@ -160,9 +166,18 @@ async fn connect(
 
     // Build a `NodeAddr` from the node_id, relay url, and UDP addresses.
     let addr = NodeAddr::from_parts(
-        node_id.parse()?,
-        Some(relay_url.parse()?),
-        addrs.iter().map(|s| s.parse().unwrap()),
+        node_id
+            .parse::<NodeId>()
+            .with_context(|| "Node id parse error".into())?,
+        Some(
+            relay_url
+                .parse::<RelayUrl>()
+                .with_context(|| "Relay url parse error".into())?,
+        ),
+        addrs
+            .iter()
+            .map(|s| s.parse::<SocketAddr>().e())
+            .collect::<Result<std::collections::BTreeSet<SocketAddr>>>()?,
     );
 
     // Attempt to connect, over the given ALPN.
@@ -177,11 +192,12 @@ async fn connect(
 
     // Call `finish` to close the send side of the connection gracefully.
     send.finish().e()?;
-    let message = recv.read_to_end(1000).await.e()?;
+    let message = recv.read_to_end(READ_SIZE_LIMIT).await.e()?;
     let response = Response::from_bytes(&message);
 
     // We received the last message: close all connections and allow for the close
     // message to be sent.
     endpoint.close().await;
+
     Ok(response)
 }

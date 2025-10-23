@@ -19,7 +19,6 @@ use std::ffi::c_void;
 use crate::lean::{
     boxed::{BoxedU64, BoxedUSize},
     ctor::LeanCtorObject,
-    string::LeanStringObject,
 };
 
 #[inline]
@@ -94,11 +93,6 @@ pub fn lean_unbox_u32(ptr: *const c_void) -> u32 {
 pub fn lean_unbox_u64(ptr: *const c_void) -> u64 {
     let boxed_usize: &BoxedU64 = as_ref_unsafe(ptr.cast());
     boxed_usize.value
-}
-
-pub fn lean_unbox_string(ptr: *const c_void) -> String {
-    let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
-    string.as_string()
 }
 
 pub fn boxed_usize_ptr_to_usize(ptr: *const c_void) -> usize {
