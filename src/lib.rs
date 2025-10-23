@@ -2,6 +2,7 @@ use indexmap::{IndexMap, IndexSet};
 use rustc_hash::FxBuildHasher;
 
 pub mod aiur;
+pub mod iroh;
 pub mod lean;
 pub mod lean_env;
 

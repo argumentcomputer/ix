@@ -4,7 +4,7 @@
 # configuration file. This is a similar workaround to the ones presented here:
 # <https://github.com/EmbarkStudios/rust-ecosystem/issues/59>
 xclippy = [
-  "clippy", "--workspace", "--all-targets", "--",
+  "clippy", "--workspace", "--all-targets", "--all-features", "--",
   "-Wclippy::all",
   #"-Wclippy::cast_lossless", # TODO: Fix or remove. Causes issues with Aiur macros
   "-Wclippy::cast_possible_truncation",

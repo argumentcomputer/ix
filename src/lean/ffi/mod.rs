@@ -1,14 +1,5 @@
-#[cfg(any(
-    not(feature = "net"),
-    all(target_os = "macos", target_arch = "aarch64")
-))]
-pub mod _iroh;
 pub mod aiur;
 pub mod byte_array;
-#[cfg(all(
-    feature = "net",
-    not(all(target_os = "macos", target_arch = "aarch64"))
-))]
 pub mod iroh;
 pub mod keccak;
 pub mod lean_env;
@@ -45,7 +36,7 @@ extern "C" fn rs__c_result_unit_string_free(ptr: *mut CResult) {
 }
 
 #[inline]
-pub(super) fn to_raw<T>(t: T) -> *const T {
+pub(crate) fn to_raw<T>(t: T) -> *const T {
     Box::into_raw(Box::new(t))
 }
 
@@ -56,9 +47,16 @@ pub(super) fn drop_raw<T>(ptr: *mut T) {
     drop(t);
 }
 
+// Only used in the Iroh client for the moment
 #[inline]
-#[allow(dead_code)]
-pub(super) fn raw_to_str<'a>(ptr: *const c_char) -> &'a str {
+#[cfg_attr(
+    any(
+        not(feature = "net"),
+        all(target_os = "macos", target_arch = "aarch64")
+    ),
+    allow(dead_code)
+)]
+pub(crate) fn raw_to_str<'a>(ptr: *const c_char) -> &'a str {
     let c_str = unsafe { CStr::from_ptr(ptr) };
     c_str.to_str().expect("Invalid UTF-8 string")
 }
