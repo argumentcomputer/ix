@@ -4,6 +4,7 @@ import Ix.Common
 namespace Ix
 
 structure CondenseEnv where
+  env : Lean.Environment
   outRefs: Map Lean.Name (Set Lean.Name)
 
 structure CondenseState where
@@ -19,9 +20,12 @@ def CondenseState.init : CondenseState := ⟨{}, {}, {}, #[], {}, 0⟩
 abbrev CondenseM := ReaderT CondenseEnv <| StateT CondenseState Id
 
 partial def visit : Lean.Name -> CondenseM Unit
-| name => do match (<- read).outRefs.find? name with
+| name => do match (<- read).env.constants.find? name with
   | .none => return ()
-  | .some refs => do
+  | .some _ => do
+    let refs := match (<- read).outRefs.find? name with
+    | .some x => x
+    | .none => {}
     let id := (<- get).id
     modify fun stt => { stt with
       names := stt.names.insert name id
@@ -32,7 +36,9 @@ partial def visit : Lean.Name -> CondenseM Unit
       id := id + 1
     }
     for ref in refs do
-      do match (<- get).names.get? ref with
+      match (<- read).env.constants.find? ref with
+      | none => continue
+      | some _ => do match (<- get).names.get? ref with
         | .none => do
           visit ref
           modify fun stt =>
@@ -58,7 +64,7 @@ partial def visit : Lean.Name -> CondenseM Unit
 
 def condense: CondenseM (Map Lean.Name (Set Lean.Name)) := do
   let mut idx := 0
-  for (name,_) in (<- read).outRefs do
+  for (name,_) in (<- read).env.constants do
     idx := idx + 1
     match (<- get).names.get? name with
     | .some _ => continue
@@ -75,8 +81,8 @@ def condense: CondenseM (Map Lean.Name (Set Lean.Name)) := do
       blocks := blocks.insert n set
   return blocks
 
-def CondenseM.run (refs: Map Lean.Name (Set Lean.Name))
+def CondenseM.run (env: Lean.Environment) (refs: Map Lean.Name (Set Lean.Name))
   : Map Lean.Name (Set Lean.Name) :=
-  Id.run (StateT.run (ReaderT.run condense ⟨refs⟩) CondenseState.init).1
+  Id.run (StateT.run (ReaderT.run condense ⟨env, refs⟩) CondenseState.init).1
 
 end Ix

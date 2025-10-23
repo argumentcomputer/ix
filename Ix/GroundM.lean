@@ -107,7 +107,7 @@ def groundExpr (expr: Lean.Expr) : GroundM Grounding := do
       let ls <- lvls.foldrM (fun l g => .add g <$> groundLevel l) .grounded
       match (<- read).env.constants.find? name with
       | .some _ => addRef (<- read).current name *> pure ls
-      | .none => 
+      | .none =>
         if name == .mkSimple "_obj"
         || name == .mkSimple "_neutral"
         || name == .mkSimple "_unreachable"
@@ -160,6 +160,14 @@ def groundEnv: GroundM Unit := do
   let mut stack := #[]
   for (n, c) in (<- read).env.constants do
     dbg_trace s!"groundEnv {n}"
+    modify fun stt => { stt with
+      outRefs := stt.outRefs.alter n fun x => match x with
+      | .none => .some {}
+      | x => x
+      inRefs := stt.inRefs.alter n fun x => match x with
+      | .none => .some {}
+      | x => x
+    }
     match (<- .withCurrent n (groundConst c)) with
     | .grounded => continue
     | u@(.ungrounded _) => 

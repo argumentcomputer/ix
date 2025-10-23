@@ -190,7 +190,7 @@ def testRoundtripGetEnv : IO TestSeq := do
     IO.println s!"Found ungrounded {n}: {repr u}"
   let sccStart <- IO.monoNanosNow
   IO.println s!"Building condensation graph of env"
-  let alls := CondenseM.run gstt.outRefs
+  let alls := CondenseM.run env gstt.outRefs
   let sccEnd <- IO.monoNanosNow
   IO.println s!"Condensation graph in {Cronos.nanoToSec (sccEnd - sccStart)}"
   let numConst := env.constants.map₁.size + env.constants.map₂.stats.numNodes

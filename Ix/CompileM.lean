@@ -993,7 +993,7 @@ def CompileM.runIO (c : CompileM α)
   (seed : Option Nat := .none)
   : IO (α × CompileState) := do
   let gstt := GroundM.run env
-  let alls := CondenseM.run gstt.outRefs
+  let alls := CondenseM.run env gstt.outRefs
   let seed <- match seed with
     | .none => IO.monoNanosNow
     | .some s => pure s
