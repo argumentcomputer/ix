@@ -4,6 +4,7 @@ import Ix.Address
 import Ix.Mutual
 import Ix.Common
 import Ix.CondenseM
+import Ix.GroundM
 --import Ix.Store
 import Ix.SOrder
 import Ix.Cronos
@@ -13,21 +14,19 @@ open Ixon hiding Substring
 
 structure CompileEnv where
   univCtx : List Lean.Name
-  bindCtx : List Lean.Name
   mutCtx  : MutCtx
   current : Lean.Name
 deriving BEq, Ord
 
 structure ExprCtx where
   univCtx : List Lean.Name
-  bindCtx : List Lean.Name
   mutCtx : List (Lean.Name × Nat)
 deriving BEq, Hashable
 
 def ExprCtx.fromEnv : CompileEnv -> ExprCtx
-| ⟨u, b, m, _⟩ => ⟨u, b, m.toList⟩
+| ⟨u, m, _⟩ => ⟨u, m.toList⟩
 
-def CompileEnv.init: CompileEnv := ⟨default, default, default, default⟩
+def CompileEnv.init: CompileEnv := ⟨default, default, default⟩
 
 structure CompileState where
   maxHeartBeats: USize
@@ -50,11 +49,13 @@ structure CompileState where
   blocks: Map MetaAddress Unit
   cronos: Cronos
 
-def CompileState.init (env: Lean.Environment) (seed: Nat) (maxHeartBeats: USize := 200000)
+def CompileState.init (env: Lean.Environment)
+  (alls: Map Lean.Name (Set Lean.Name))
+  (seed: Nat) (maxHeartBeats: USize := 200000)
   : CompileState :=
   ⟨maxHeartBeats, env, mkStdGen seed, default, default, default, default,
   default, default, default, default, default, default, default,
-  CondenseM.run env, default, default, default⟩
+  alls, default, default, default⟩
 
 inductive CompileError where
 | unknownConstant : Lean.Name -> CompileError
@@ -123,24 +124,20 @@ def freshSecret : CompileM Address := do
 --  liftM (Store.writeConst const).toIO
 
 -- add binding name to local context
-def withCurrent (name: Lean.Name) : CompileM α -> CompileM α :=
+def CompileM.withCurrent (name: Lean.Name) : CompileM α -> CompileM α :=
   withReader $ fun c => { c with current := name }
 
--- add binding name to local context
-def withBinder (name: Lean.Name) : CompileM α -> CompileM α :=
-  withReader $ fun c => { c with bindCtx := name :: c.bindCtx }
-
 -- add levels to local context
-def withLevels (lvls : List Lean.Name) : CompileM α -> CompileM α :=
+def CompileM.withLevels (lvls : List Lean.Name) : CompileM α -> CompileM α :=
   withReader $ fun c => { c with univCtx := lvls }
 
 -- add mutual recursion info to local context
-def withMutCtx (mutCtx : MutCtx) : CompileM α -> CompileM α :=
+def CompileM.withMutCtx (mutCtx : MutCtx) : CompileM α -> CompileM α :=
   withReader $ fun c => { c with mutCtx := mutCtx }
 
 -- reset local context
-def resetCtx (current: Lean.Name) : CompileM α -> CompileM α :=
-  withReader $ fun c => { c with univCtx := [], bindCtx := [], mutCtx := {}, current }
+def CompileM.resetCtx (current: Lean.Name) : CompileM α -> CompileM α :=
+  withReader $ fun c => { c with univCtx := [], mutCtx := {}, current }
 
 def storeIxon (ixon: Ixon): CompileM Address := do
   --dbg_trace "storeIxon ser {(<- get).store.size} {(<- read).current}"
@@ -349,15 +346,15 @@ def compileKVMaps (maps: List Lean.KVMap): CompileM Address := do
 def findLeanConst (name : Lean.Name) : CompileM Lean.ConstantInfo := do
   match (<- get).env.constants.find? name with
   | some const => pure const
-  | none => do
-    let name2 := name.append (Lean.Name.mkSimple "_cstage2")
-    match (<- get).env.constants.find? name2 with
-     | some const => do
-      let _ <- compileName name2
-      modifyGet fun stt => (const, { stt with
-        cstagePatch := stt.cstagePatch.insert name name2
-      })
-     | none => throw $ .unknownConstant name
+  | none => throw $ .unknownConstant name
+    --let name2 := name.append (Lean.Name.mkSimple "_cstage2")
+    --match (<- get).env.constants.find? name2 with
+    -- | some const => do
+    --  let _ <- compileName name2
+    --  modifyGet fun stt => (const, { stt with
+    --    cstagePatch := stt.cstagePatch.insert name name2
+    --  })
+    -- | none => 
 
 def MutConst.mkIndc (i: Lean.InductiveVal) : CompileM MutConst := do
   let ctors <- i.ctors.mapM getCtor
@@ -502,7 +499,7 @@ partial def compileConstName (name: Lean.Name): CompileM MetaAddress := do
 partial def compileConstant : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
 | c => do
 --dbg_trace "compileConstant {c.name}"
-  resetCtx c.name <| compileConstant' c
+  .resetCtx c.name <| compileConstant' c
 
 partial def compileConstant' : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
 | .defnInfo val => compileMutual (MutConst.mkDefn val)
@@ -519,14 +516,14 @@ partial def compileConstant' : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
 | .recInfo val => do
 --dbg_trace "compileConstant recInfo {val.name} mutCtx {repr <| (<- read).mutCtx}"
   compileMutual (MutConst.recr val)
-| .axiomInfo ⟨⟨name, lvls, type⟩, isUnsafe⟩ => withLevels lvls do
+| .axiomInfo ⟨⟨name, lvls, type⟩, isUnsafe⟩ => .withLevels lvls do
   let n <- compileName name
   let ls <- lvls.mapM compileName
   let t <- compileExpr type
   let data := .axio ⟨isUnsafe, lvls.length, t.data⟩
   let meta := .meta ⟨[.link n, .links ls, .link t.meta]⟩
   pure (data, meta)
-| .quotInfo ⟨⟨name, lvls, type⟩, kind⟩ => withLevels lvls do
+| .quotInfo ⟨⟨name, lvls, type⟩, kind⟩ => .withLevels lvls do
   let n <- compileName name
   let ls <- lvls.mapM compileName
   let t <- compileExpr type
@@ -535,7 +532,7 @@ partial def compileConstant' : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
   pure (data, meta)
 
 partial def compileDefn: Ix.Def -> CompileM (Ixon.Definition × Ixon.Metadata)
-| d => withLevels d.levelParams do
+| d => .withLevels d.levelParams do
   let n <- compileName d.name
   let ls <- d.levelParams.mapM compileName
   let t <- compileExpr d.type
@@ -552,7 +549,7 @@ partial def compileRule: Lean.RecursorRule -> CompileM (Ixon.RecursorRule × (Ad
   pure (⟨r.nfields, rhs.data⟩, (n, rhs.meta))
 
 partial def compileRecr: Lean.RecursorVal -> CompileM (Ixon.Recursor × Metadata)
-| r => withLevels r.levelParams <| do
+| r => .withLevels r.levelParams <| do
 --dbg_trace s!"compileRecr {(<- read).current} {repr <| r.name} mutCtx: {repr (<- read).mutCtx}"
   let n <- compileName r.name
   let ls <- r.levelParams.mapM compileName
@@ -566,7 +563,7 @@ partial def compileRecr: Lean.RecursorVal -> CompileM (Ixon.Recursor × Metadata
 
 partial def compileConstructor (induct: Address)
 : Lean.ConstructorVal -> CompileM (Ixon.Constructor × Metadata)
-| c => withLevels c.levelParams <| do
+| c => .withLevels c.levelParams <| do
   let n <- compileName c.name
   let ls <- c.levelParams.mapM compileName
   let t <- compileExpr c.type
@@ -576,7 +573,7 @@ partial def compileConstructor (induct: Address)
 
 partial def compileIndc: Ix.Ind -> CompileM (Ixon.Inductive × Map Address Address)
 | ⟨name, lvls, type, ps, is, all, ctors, nest, rcr, refl, usafe⟩ =>
-  withLevels lvls do 
+  .withLevels lvls do 
   let n <- compileName name
   let ls <- lvls.mapM compileName
   let t <- compileExpr type
@@ -606,10 +603,10 @@ partial def compileMutual : MutConst -> CompileM (Ixon × Ixon)
     (const matches .defn _ || const matches .recr _) then do
     match const with
     | .defn d => do
-      let (data, meta) <- withMutCtx (.single d.name 0) <| compileDefn d
+      let (data, meta) <- .withMutCtx (.single d.name 0) <| compileDefn d
       pure (.defn data, .meta meta)
     | .recr r => do
-      let (data, meta) <- withMutCtx (.single r.name 0) <| compileRecr r
+      let (data, meta) <- .withMutCtx (.single r.name 0) <| compileRecr r
       pure (.recr data, .meta meta)
     | _ => unreachable!
   else
@@ -630,7 +627,7 @@ partial def compileMutual : MutConst -> CompileM (Ixon × Ixon)
   --dbg_trace s!"compileMutual {const.name} mutCtx: {repr mutCtx}"
     let mutMeta <- mutConsts.mapM fun m => m.mapM <| fun c => compileName c.name
     -- compile each constant with the mutCtx
-    let (data, metas) <- withMutCtx mutCtx (compileMutConsts mutConsts)
+    let (data, metas) <- .withMutCtx mutCtx (compileMutConsts mutConsts)
     -- add top-level mutual block to our state
     let ctx <- mutCtx.toList.mapM fun (n, i) => do
       pure (<- compileName n, <- storeNat i)
@@ -995,10 +992,12 @@ def CompileM.runIO (c : CompileM α)
   (maxHeartBeats: USize := 200000)
   (seed : Option Nat := .none)
   : IO (α × CompileState) := do
+  let gstt := GroundM.run env
+  let alls := CondenseM.run gstt.outRefs
   let seed <- match seed with
     | .none => IO.monoNanosNow
     | .some s => pure s
-  match <- c.run .init (.init env seed maxHeartBeats) with
+  match <- c.run .init (.init env alls seed maxHeartBeats) with
   | (.ok a, stt) => return (a, stt)
   | (.error e, _) => throw (IO.userError (<- e.pretty))
 

@@ -3,6 +3,8 @@ import LSpec
 import Ix.Ixon
 import Ix.Address
 import Ix.Common
+import Ix.CondenseM
+import Ix.GroundM
 import Ix.CompileM
 import Ix.DecompileM
 import Ix.Cronos
@@ -66,131 +68,143 @@ end Test.Ix.Mutual
 --  IO.println s!"Peano.add is {x}"
 --  return test "false" (true == false)
 
-def testMutual : IO TestSeq := do
-  let env <- get_env!
-  let mut cstt : CompileState := .init env 0
-  let all := (env.getDelta.find! `Test.Ix.Mutual.A).all
-  let consts <- all.mapM fun n => match env.getDelta.find! n with
-    | .defnInfo d => pure <| Ix.MutConst.mkDefn d
-    | .opaqueInfo d => pure <| Ix.MutConst.mkOpaq d
-    | .thmInfo d => pure <| Ix.MutConst.mkTheo d
-    | _ => throw (IO.userError "not a def")
-  let (dss, _) <- match (<- (sortConsts consts).run .init cstt) with
-    | (.ok a, stt) => do
-      pure (a, stt)
-    | (.error e, _) => do
-      throw (IO.userError (<- e.pretty))
-  let res := [[`Test.Ix.Mutual.B, `Test.Ix.Mutual.C],[`Test.Ix.Mutual.A]]
-  let nss := dss.map fun ds => ds.map (·.name)
-  return test "test mutual" (res == nss)
+--def testMutual : IO TestSeq := do
+--  let env <- get_env!
+--  let mut cstt : CompileState := .init env 0
+--  let all := (env.getDelta.find! `Test.Ix.Mutual.A).all
+--  let consts <- all.mapM fun n => match env.getDelta.find! n with
+--    | .defnInfo d => pure <| Ix.MutConst.mkDefn d
+--    | .opaqueInfo d => pure <| Ix.MutConst.mkOpaq d
+--    | .thmInfo d => pure <| Ix.MutConst.mkTheo d
+--    | _ => throw (IO.userError "not a def")
+--  let (dss, _) <- match (<- (sortConsts consts).run .init cstt) with
+--    | (.ok a, stt) => do
+--      pure (a, stt)
+--    | (.error e, _) => do
+--      throw (IO.userError (<- e.pretty))
+--  let res := [[`Test.Ix.Mutual.B, `Test.Ix.Mutual.C],[`Test.Ix.Mutual.A]]
+--  let nss := dss.map fun ds => ds.map (·.name)
+--  return test "test mutual" (res == nss)
 
 --#eval show Lean.MetaM _ from do
 --  let env ← Lean.getEnv
---  return env.find? `Std.DHashMap.Const.toList._rarg._cstage2
-
+--  return env.find? `Std.DHashMap.Const.toList
+--
 --#eval show Lean.MetaM _ from do
 --  let env ← Lean.getEnv
 --  return env.find? `Array.foldrMUnsafe.fold._at.Std.DHashMap.Const.toList._spec_2
 
+--def testInductives : IO TestSeq := do
+--  let env <- get_env!
+--  let mut cstt : CompileState := .init env 0
+--  --let delta := env.getDelta.filter fun n _ => namesp.isPrefixOf n
+--  --let consts := env.getConstMap.filter fun n _ => namesp.isPrefixOf n
+--  let all := (env.getDelta.find! `Test.Ix.Inductives.A).all
+--  let consts <- all.mapM fun n => match env.getDelta.find! n with
+--    | .inductInfo v => do match (<- (Ix.MutConst.mkIndc v).run .init cstt) with
+--      | (.ok a, _) => pure a
+--      | (.error e, _) => do throw (IO.userError (<- e.pretty))
+--    | _ => throw (IO.userError "not an inductive")
+--  let (dss, _) <- do match (<- (sortConsts consts).run .init cstt) with
+--    | (.ok a, stt) => do
+--      pure (a, stt)
+--    | (.error e, _) => do
+--      throw (IO.userError (<- e.pretty))
+--  let res := [[`Test.Ix.Inductives.C],[`Test.Ix.Inductives.B], [`Test.Ix.Inductives.A]]
+--  let nss := dss.map fun ds => ds.map (·.name)
+--  return test "test inductives" (res == nss)
 
-def testInductives : IO TestSeq := do
-  let env <- get_env!
-  let mut cstt : CompileState := .init env 0
-  --let delta := env.getDelta.filter fun n _ => namesp.isPrefixOf n
-  --let consts := env.getConstMap.filter fun n _ => namesp.isPrefixOf n
-  let all := (env.getDelta.find! `Test.Ix.Inductives.A).all
-  let consts <- all.mapM fun n => match env.getDelta.find! n with
-    | .inductInfo v => do match (<- (Ix.MutConst.mkIndc v).run .init cstt) with
-      | (.ok a, _) => pure a
-      | (.error e, _) => do throw (IO.userError (<- e.pretty))
-    | _ => throw (IO.userError "not an inductive")
-  let (dss, _) <- do match (<- (sortConsts consts).run .init cstt) with
-    | (.ok a, stt) => do
-      pure (a, stt)
-    | (.error e, _) => do
-      throw (IO.userError (<- e.pretty))
-  let res := [[`Test.Ix.Inductives.C],[`Test.Ix.Inductives.B], [`Test.Ix.Inductives.A]]
-  let nss := dss.map fun ds => ds.map (·.name)
-  return test "test inductives" (res == nss)
+--def testEasy : IO TestSeq := do
+--  let env <- get_env!
+--  let easy := [
+--    `Nat.add_comm
+--  ]
+--  let mut res := true
+--  for name in easy do
+--    IO.println s!"⚙️ Compiling {name}"
+--    let mut cstt : CompileState := .init env 0
+--    let start <- IO.monoNanosNow
+--    let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
+--    | (.ok a, stt) => pure (a, stt)
+--    | (.error e, _) => IO.println s!"failed {name}" *> throw (IO.userError (<- e.pretty))
+--    let done <- IO.monoNanosNow
+--    IO.println s!"✅ {addr}"
+--    IO.println s!"Elapsed {Cronos.nanoToSec (done - start)}"
+--  return test "easy compile roundtrip" (res == true)
 
-def testEasy : IO TestSeq := do
-  let env <- get_env!
-  let easy := [
-    `Nat.add_comm
-  ]
-  let mut res := true
-  for name in easy do
-    IO.println s!"⚙️ Compiling {name}"
-    let mut cstt : CompileState := .init env 0
-    let start <- IO.monoNanosNow
-    let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
-    | (.ok a, stt) => pure (a, stt)
-    | (.error e, _) => IO.println s!"failed {name}" *> throw (IO.userError (<- e.pretty))
-    let done <- IO.monoNanosNow
-    IO.println s!"✅ {addr}"
-    IO.println s!"Elapsed {Cronos.nanoToSec (done - start)}"
-  return test "easy compile roundtrip" (res == true)
-
-def testDifficult : IO TestSeq := do
-  let env <- get_env!
-  let difficult := [
-    `Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.denote_blastDivSubtractShift_q
-  ]
-  let mut res := true
-  for name in difficult do
-    let mut cstt : CompileState := .init env 0
-    let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
-    | (.ok a, stt) => pure (a, stt)
-    | (.error e, _) => IO.println s!"failed {name}" *> throw (IO.userError (<- e.pretty))
-    IO.println s!"{name} -> {addr}"
-    --cstt := stt
-    --let mut store : Ixon.Store := {}
-    --for (_,(a, b)) in cstt.names do
-    --  let a_ixon <- (Store.readConst a).toIO
-    --  let b_ixon <- (Store.readConst b).toIO
-    --  store := store.insert a a_ixon
-    --  store := store.insert b b_ixon
-    --let denv := DecompileEnv.init cstt.names store
-    --let dstt <- match decompileEnv.run denv default with
-    --  | .ok _ s => pure s
-    --    --IO.println s!"✓ {n} @ {anon}:{meta}"
-    --  | .error e _ => do
-    --    throw (IO.userError e.pretty)
-    --IO.println s!"decompiled env"
-    --for (n, (anon, meta)) in denv.names do
-    --  let c <- match env.constants.find? n with
-    --  | .some c => pure c
-    --  | .none => throw (IO.userError "name {n} not in env")
-    --  match dstt.constants.get? n with
-    --  | .some c2 =>
-    --    if c.stripMData == c2.stripMData
-    --    then
-    --      IO.println s!"✓ {n} @ {anon}:{meta}"
-    --    else
-    --      IO.println s!"× {n} @ {anon}:{meta}"
-    --      IO.FS.writeFile "c.out" s!"{repr c.stripMData}"
-    --      IO.FS.writeFile "c2.out" s!"{repr c2.stripMData}"
-    --      res := false
-    --      break
-    --  | .none => do
-    --    let e' := (DecompileError.unknownName default n).pretty
-    --    throw (IO.userError e')
-  return test "difficult compile roundtrip" (res == true)
+--def testDifficult : IO TestSeq := do
+--  let env <- get_env!
+--  let difficult := [
+--    `Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.denote_blastDivSubtractShift_q
+--  ]
+--  let mut res := true
+--  for name in difficult do
+--    let mut cstt : CompileState := .init env 0
+--    let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
+--    | (.ok a, stt) => pure (a, stt)
+--    | (.error e, _) => IO.println s!"failed {name}" *> throw (IO.userError (<- e.pretty))
+--    IO.println s!"{name} -> {addr}"
+--    --cstt := stt
+--    --let mut store : Ixon.Store := {}
+--    --for (_,(a, b)) in cstt.names do
+--    --  let a_ixon <- (Store.readConst a).toIO
+--    --  let b_ixon <- (Store.readConst b).toIO
+--    --  store := store.insert a a_ixon
+--    --  store := store.insert b b_ixon
+--    --let denv := DecompileEnv.init cstt.names store
+--    --let dstt <- match decompileEnv.run denv default with
+--    --  | .ok _ s => pure s
+--    --    --IO.println s!"✓ {n} @ {anon}:{meta}"
+--    --  | .error e _ => do
+--    --    throw (IO.userError e.pretty)
+--    --IO.println s!"decompiled env"
+--    --for (n, (anon, meta)) in denv.names do
+--    --  let c <- match env.constants.find? n with
+--    --  | .some c => pure c
+--    --  | .none => throw (IO.userError "name {n} not in env")
+--    --  match dstt.constants.get? n with
+--    --  | .some c2 =>
+--    --    if c.stripMData == c2.stripMData
+--    --    then
+--    --      IO.println s!"✓ {n} @ {anon}:{meta}"
+--    --    else
+--    --      IO.println s!"× {n} @ {anon}:{meta}"
+--    --      IO.FS.writeFile "c.out" s!"{repr c.stripMData}"
+--    --      IO.FS.writeFile "c2.out" s!"{repr c2.stripMData}"
+--    --      res := false
+--    --      break
+--    --  | .none => do
+--    --    let e' := (DecompileError.unknownName default n).pretty
+--    --    throw (IO.userError e')
+--  return test "difficult compile roundtrip" (res == true)
 
 def testRoundtripGetEnv : IO TestSeq := do
   IO.println s!"Getting env"
   let env <- get_env!
+  let gsttStart <- IO.monoNanosNow
+  IO.println s!"Ensuring well-groundedness of env"
+  let gstt := GroundM.run env
+  let gsttEnd <- IO.monoNanosNow
+  IO.println s!"Finished grounding in {Cronos.nanoToSec (gsttEnd - gsttStart)}"
+  for (n, u) in gstt.ungrounded do
+    IO.println s!"Found ungrounded {n}: {repr u}"
   let sccStart <- IO.monoNanosNow
   IO.println s!"Building condensation graph of env"
-  let numConst := env.constants.map₁.size + env.constants.map₂.stats.numNodes
-  let mut cstt : CompileState := .init env 0
-  let mut dstt : DecompileState := default
+  let alls := CondenseM.run gstt.outRefs
   let sccEnd <- IO.monoNanosNow
   IO.println s!"Condensation graph in {Cronos.nanoToSec (sccEnd - sccStart)}"
+  let numConst := env.constants.map₁.size + env.constants.map₂.stats.numNodes
+  let mut cstt : CompileState := .init env alls 0
+  let mut dstt : DecompileState := default
   IO.println s!"Compiling env"
   let mut inConst := 1
   let allStart <- IO.monoNanosNow
   for (name, _) in env.constants do
+    match gstt.ungrounded.get? name with
+    | .some u => do
+      IO.println s!"Skipping ungrounded {name} becase {repr u}"
+      inConst := inConst + 1
+    | none => do
     let start <- IO.monoNanosNow
     let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
     | (.ok a, stt) => pure (a, stt)

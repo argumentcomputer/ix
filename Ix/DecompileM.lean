@@ -208,20 +208,20 @@ def DecompileM.run (env: DecompileEnv) (stt: DecompileState) (c : DecompileM α)
   := EStateM.run (ReaderT.run c env) stt
 
 -- add binding name to local context
-def withBinder' (name: Lean.Name) : DecompileM α -> DecompileM α :=
+def DecompileM.withBinder (name: Lean.Name) : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with bindCtx := name :: c.bindCtx }
 
 -- add levels to local context
-def withLevels' (lvls : List Lean.Name) : DecompileM α -> DecompileM α :=
+def DecompileM.withLevels (lvls : List Lean.Name) : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with univCtx := lvls }
 
 -- add mutual recursion info to local context
-def withMutCtx' (mutCtx : Std.HashMap Lean.Name Nat)
+def DecompileM.withMutCtx (mutCtx : Std.HashMap Lean.Name Nat)
   : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with mutCtx := mutCtx }
 
 -- reset local context
-def resetCtx' (name: Lean.Name) (meta: MetaAddress) 
+def DecompileM.resetCtx (name: Lean.Name) (meta: MetaAddress) 
   : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with 
     univCtx := [], bindCtx := [], mutCtx := {}, current := ⟨name, meta⟩
@@ -464,14 +464,14 @@ partial def decompileExpr (addr: MetaAddress): DecompileM Lean.Expr := do
       let name <- decompileName n
       let kvs <- decompileKVMaps md
       let t <- decompileExpr ⟨ta, tm⟩
-      let b <- withBinder' name (decompileExpr ⟨ba, bm⟩)
+      let b <- .withBinder name (decompileExpr ⟨ba, bm⟩)
       return mdata kvs (.lam name t b i)
     | .eall ta ba, .meta ⟨[.link md, .link n, .info i, .link tm, .link bm]⟩ => do
       --dbg_trace s!"decompileExpr eall"
       let name <- decompileName n
       let kvs <- decompileKVMaps md
       let t <- decompileExpr ⟨ta, tm⟩
-      let b <- withBinder' name (decompileExpr ⟨ba, bm⟩)
+      let b <- .withBinder name (decompileExpr ⟨ba, bm⟩)
       return mdata kvs (.forallE name t b i)
     | .elet nD ta va ba, .meta ⟨[.link md, .link n, .link tm, .link vm, .link bm]⟩ => do
       --dbg_trace s!"decompileExpr elet"
@@ -479,7 +479,7 @@ partial def decompileExpr (addr: MetaAddress): DecompileM Lean.Expr := do
       let kvs <- decompileKVMaps md
       let t <- decompileExpr ⟨ta, tm⟩
       let v <- decompileExpr ⟨va, vm⟩
-      let b <- withBinder' name (decompileExpr ⟨ba, bm⟩)
+      let b <- .withBinder name (decompileExpr ⟨ba, bm⟩)
       return mdata kvs (.letE name t v b nD)
     | .enat n, .meta ⟨[.link md]⟩ => do
       --dbg_trace s!"decompileExpr enat"
@@ -511,7 +511,7 @@ partial def decompileDef: Ixon.Definition -> Metadata -> DecompileM Def
   let name <- decompileName n
 --dbg_trace s!"decompileDef {(<- read).current} {name} {repr (<- read).mutCtx}"
   let lvls <- decompileLevels d.lvls ls
-  withLevels' lvls <| do
+  .withLevels lvls <| do
     let t <- decompileExpr ⟨d.type, tm⟩
     let v <- decompileExpr ⟨d.value, vm⟩
     let all <- as.mapM decompileName
@@ -532,7 +532,7 @@ partial def decompileRecr: Ixon.Recursor -> Metadata -> DecompileM Rec
   let name <- decompileName n
 --dbg_trace s!"decompileRecr {(<- read).current} {name} {repr (<- read).mutCtx}"
   let lvls <- decompileLevels r.lvls ls
-  withLevels' lvls <| do
+  .withLevels lvls <| do
     let t <- decompileExpr ⟨r.type, tm⟩
     let all <- as.mapM decompileName
     let rs <- decompileRules r.rules rs
@@ -560,7 +560,7 @@ partial def decompileIndc: Ixon.Inductive -> Metadata -> DecompileM Ind
   let name <- decompileName n
 --dbg_trace s!"decompileIndc {(<- read).current} {name} {repr (<- read).mutCtx}"
   let lvls <- decompileLevels i.lvls ls
-  withLevels' lvls <| do
+  .withLevels lvls <| do
     let t <- decompileExpr ⟨i.type, tm⟩
     let all <- as.mapM decompileName
     let ctors <- decompileCtors i.ctors cs
@@ -584,7 +584,7 @@ partial def decompileConst (addr: MetaAddress)
     | .defn d, .meta m@⟨(.link n)::_⟩ => do
       --dbg_trace s!"decompileConst defn"
       let name <- decompileName n
-      let d <- withMutCtx' {(name, 0)} <| decompileDef d m
+      let d <- .withMutCtx {(name, 0)} <| decompileDef d m
       return (d.name, .defn d)
     | .axio a, .meta ⟨[.link n, .links ls, .link tm]⟩ => do
       --dbg_trace s!"decompileConst axio"
@@ -601,7 +601,7 @@ partial def decompileConst (addr: MetaAddress)
     | .recr r, .meta m@⟨(.link n)::_⟩ => do 
       --dbg_trace s!"decompileConst recr"
       let name <- decompileName n
-      let r <- withMutCtx' {(name, 0)} <| decompileRecr r m
+      let r <- .withMutCtx {(name, 0)} <| decompileRecr r m
       return (r.name, .recr r)
     | .dprj ⟨idx, bd⟩, .meta ⟨[.link bm, .link m]⟩ => do
       match (<- readIxon m) with
@@ -657,7 +657,7 @@ partial def decompileNamedConst (name: Lean.Name) (addr: MetaAddress)
   : DecompileM (Lean.Name × Set Lean.Name) := do
   --dbg_trace s!"decompileNamedConst {name} {addr}"
 --dbg_trace s!"decompileNamedConst {name} {addr} {repr (<- read).mutCtx}"
-  let (n, set) <- resetCtx' name addr <| decompileConst addr
+  let (n, set) <- .resetCtx name addr <| decompileConst addr
   matchNames n name (pure (n, set))
 
 partial def decompileMutConst : Ixon.MutConst -> Metadata -> DecompileM MutConst
@@ -684,7 +684,7 @@ partial def decompileMuts: Ixon -> Ixon -> DecompileM Block
           let name <- decompileName n
         --dbg_trace s!"decompileMuts {(<- read).current} inner loop {name} {repr mutCtx}"
           let const' <- match map.get? name with
-            | .some meta => withMutCtx' mutCtx <| decompileMutConst const meta
+            | .some meta => .withMutCtx mutCtx <| decompileMutConst const meta
             | .none => do throw <| .badMuts (<- read).current ms m
           mutClass := mutClass.push const'
         mutClasses := mutClasses.push mutClass

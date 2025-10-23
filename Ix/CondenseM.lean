@@ -3,9 +3,10 @@ import Ix.Common
 
 namespace Ix
 
+structure CondenseEnv where
+  outRefs: Map Lean.Name (Set Lean.Name)
+
 structure CondenseState where
-  exprRefs: Map Lean.Expr (Set Lean.Name)
-  refs: Map Lean.Name (Set Lean.Name)
   names: Map Lean.Name UInt64
   ids: Map UInt64 Lean.Name
   lowLink: Map UInt64 UInt64
@@ -13,65 +14,14 @@ structure CondenseState where
   onStack: Set UInt64
   id : UInt64
 
-def CondenseState.init : CondenseState := ⟨{}, {}, {}, {}, {}, #[], {}, 0⟩
+def CondenseState.init : CondenseState := ⟨{}, {}, {}, #[], {}, 0⟩
 
-abbrev CondenseM := ReaderT Lean.Environment <| StateT CondenseState Id
-
-def refsExpr : Lean.Expr -> CondenseM (Set Lean.Name)
-| expr => do match (<- get).exprRefs.find? expr with
-  | some x => pure x
-  | none => do
-    let refs <- go expr
-    modifyGet fun stt => (refs, { stt with
-      exprRefs := stt.exprRefs.insert expr refs
-    })
-  where
-    go : Lean.Expr -> CondenseM (Set Lean.Name)
-    | .const name _ => pure {name}
-    | .app f a => .union <$> refsExpr f <*> refsExpr a
-    | .lam _ t b _ => .union <$> refsExpr t <*> refsExpr b
-    | .forallE _ t b _ => .union <$> refsExpr t <*> refsExpr b
-    | .letE _ t v b _ => do
-      let t' <- refsExpr t
-      let v' <- refsExpr v
-      let b' <- refsExpr b
-      return t'.union (v'.union b')
-    | .proj n _ s => do return (<- refsExpr s).insert n
-    | .mdata _ x => refsExpr x
-    | _ => return {}
-
-partial def refsConst : Lean.ConstantInfo -> CondenseM (Set Lean.Name)
-| const => do match (<- get).refs.find? const.name with
-  | some x => pure x
-  | none => do
-    let constRefs <- go const
-    modifyGet fun stt => (constRefs, { stt with
-      refs := stt.refs.insert const.name constRefs
-    })
-  where
-    go : Lean.ConstantInfo -> CondenseM (Set Lean.Name)
-    | .axiomInfo val => refsExpr val.type
-    | .defnInfo val => .union <$> refsExpr val.type <*> refsExpr val.value
-    | .thmInfo val => .union <$> refsExpr val.type <*> refsExpr val.value
-    | .opaqueInfo val => .union <$> refsExpr val.type <*> refsExpr val.value
-    | .quotInfo val => refsExpr val.type
-    | .inductInfo val => do
-      let env := (<- read).constants
-      let ctorTypes: Set Lean.Name <- val.ctors.foldrM (fun n acc => do
-        acc.union <$> refsConst (env.find! n)) {}
-      let type <- refsExpr val.type
-      return .union (.ofList val.ctors) (.union ctorTypes type)
-    | .ctorInfo val => refsExpr val.type
-    | .recInfo val => do
-      let t <- refsExpr val.type
-      let rs <- val.rules.foldrM (fun r s => .union s <$> refsExpr r.rhs) {}
-      return .union t rs
+abbrev CondenseM := ReaderT CondenseEnv <| StateT CondenseState Id
 
 partial def visit : Lean.Name -> CondenseM Unit
-| name => do match (<- read).constants.find? name with
+| name => do match (<- read).outRefs.find? name with
   | .none => return ()
-  | .some c => do
-    let refs <- refsConst c
+  | .some refs => do
     let id := (<- get).id
     modify fun stt => { stt with
       names := stt.names.insert name id
@@ -82,9 +32,7 @@ partial def visit : Lean.Name -> CondenseM Unit
       id := id + 1
     }
     for ref in refs do
-      match (<- read).constants.find? ref with
-      | none => continue
-      | some _ => do match (<- get).names.get? ref with
+      do match (<- get).names.get? ref with
         | .none => do
           visit ref
           modify fun stt =>
@@ -110,7 +58,7 @@ partial def visit : Lean.Name -> CondenseM Unit
 
 def condense: CondenseM (Map Lean.Name (Set Lean.Name)) := do
   let mut idx := 0
-  for (name,_) in (<- read).constants do
+  for (name,_) in (<- read).outRefs do
     idx := idx + 1
     match (<- get).names.get? name with
     | .some _ => continue
@@ -127,7 +75,8 @@ def condense: CondenseM (Map Lean.Name (Set Lean.Name)) := do
       blocks := blocks.insert n set
   return blocks
 
-def CondenseM.run (env: Lean.Environment): Map Lean.Name (Set Lean.Name) :=
- Id.run (StateT.run (ReaderT.run condense env) CondenseState.init).1
+def CondenseM.run (refs: Map Lean.Name (Set Lean.Name))
+  : Map Lean.Name (Set Lean.Name) :=
+  Id.run (StateT.run (ReaderT.run condense ⟨refs⟩) CondenseState.init).1
 
 end Ix
