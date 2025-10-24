@@ -1,4 +1,5 @@
 pub mod compile;
+pub mod ref_graph;
 pub mod scc;
 
 use rustc_hash::{FxHashMap, FxHasher};
