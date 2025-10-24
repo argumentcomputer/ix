@@ -520,7 +520,7 @@ partial def compileConstName (name: Lean.Name): CompileM MetaAddress := do
     })
 partial def compileConstant : Lean.ConstantInfo -> CompileM (Ixon × Ixon)
 | c => do
-  dbg_trace "compileConstant {c.name}"
+  --dbg_trace "compileConstant {c.name}"
   .resetCtx c.name <| compileConstant' c
 
 partial def compileConstant' : Lean.ConstantInfo -> CompileM (Ixon × Ixon)

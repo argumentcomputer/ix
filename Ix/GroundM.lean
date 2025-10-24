@@ -24,11 +24,10 @@ structure GroundState where
   outRefs : Map Lean.Name (Set Lean.Name)
   inRefs: Map Lean.Name (Set Lean.Name)
   ungrounded: Map Lean.Name GroundError
-  constCache : Map Lean.Name (Set Lean.Name)
   exprCache : Map (List Lean.Name × List Lean.Name × Lean.Expr) (Set Lean.Name)
   univCache : Set (List Lean.Name × Lean.Level)
 
-def GroundState.init : GroundState := ⟨{}, {}, {}, {}, {}, {}, {}⟩
+def GroundState.init : GroundState := ⟨{}, {}, {}, {}, {}, {}⟩
 
 abbrev GroundM := ReaderT GroundEnv <| ExceptT GroundError <|  StateT GroundState IO
 
@@ -120,40 +119,31 @@ def groundExpr (expr: Lean.Expr) : GroundM (Set Lean.Name) := do
     | x@(.mvar _) => throw <| .mvar x
     | x@(.fvar _) => do throw <| .var x (<- read).bindCtx
 
-def groundConst (const: Lean.ConstantInfo) : GroundM (Set Lean.Name) := do
-  match (<- get).constCache.find? const.name with
-  | some x => pure x
-  | none => do
-    let refs <- .withCurrent const.name <| go const
-    modifyGet fun stt => (refs, { stt with
-      constCache := stt.constCache.insert const.name refs
-    })
-  where
-    go : Lean.ConstantInfo -> GroundM (Set Lean.Name)
-    | .axiomInfo val => .withLevels val.levelParams <| groundExpr val.type
-    | .defnInfo val => .withLevels val.levelParams <|
-      .union <$> groundExpr val.type <*> groundExpr val.value
-    | .thmInfo val => .withLevels val.levelParams <|
-      .union <$> groundExpr val.type <*> groundExpr val.value
-    | .opaqueInfo val => .withLevels val.levelParams <|
-      .union <$> groundExpr val.type <*> groundExpr val.value
-    | .quotInfo val => .withLevels val.levelParams <| groundExpr val.type
-    | .inductInfo val => .withLevels val.levelParams <| do
-      let env := (<- read).env.constants
-      let mut ctors := {}
-      for ctor in val.ctors do
-        let crefs <- match env.find? ctor with
-        | .some (.ctorInfo ctorVal) => 
-          .withLevels ctorVal.levelParams <| groundExpr ctorVal.type
-        | c => throw <| .indc val c
-        ctors := ctors.union crefs
-      let type <- groundExpr val.type
-      return .union ctors type
-    | .ctorInfo val => .withLevels val.levelParams <| groundExpr val.type
-    | .recInfo val => .withLevels val.levelParams <| do
-      let t <- groundExpr val.type
-      let rs <- val.rules.foldrM (fun r s => .union s <$> groundExpr r.rhs) {}
-      return .union t rs
+def groundConst: Lean.ConstantInfo -> GroundM (Set Lean.Name)
+| .axiomInfo val => .withLevels val.levelParams <| groundExpr val.type
+| .defnInfo val => .withLevels val.levelParams <|
+  .union <$> groundExpr val.type <*> groundExpr val.value
+| .thmInfo val => .withLevels val.levelParams <|
+  .union <$> groundExpr val.type <*> groundExpr val.value
+| .opaqueInfo val => .withLevels val.levelParams <|
+  .union <$> groundExpr val.type <*> groundExpr val.value
+| .quotInfo val => .withLevels val.levelParams <| groundExpr val.type
+| .inductInfo val => .withLevels val.levelParams <| do
+  let env := (<- read).env.constants
+  let mut ctors := {}
+  for ctor in val.ctors do
+    let crefs <- match env.find? ctor with
+    | .some (.ctorInfo ctorVal) => 
+      .withLevels ctorVal.levelParams <| groundExpr ctorVal.type
+    | c => throw <| .indc val c
+    ctors := ctors.union crefs
+  let type <- groundExpr val.type
+  return .union ctors type
+| .ctorInfo val => .withLevels val.levelParams <| groundExpr val.type
+| .recInfo val => .withLevels val.levelParams <| do
+  let t <- groundExpr val.type
+  let rs <- val.rules.foldrM (fun r s => .union s <$> groundExpr r.rhs) {}
+  return .union t rs
 
 def groundEnv: GroundM Unit := do
   let mut stack := #[]
