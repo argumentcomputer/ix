@@ -35,12 +35,13 @@ structure GroundState where
   outRefs : Map Lean.Name (Set Lean.Name)
   inRefs: Map Lean.Name (Set Lean.Name)
   ungrounded: Map Lean.Name Grounding
-  exprCache : Map (List Lean.Name × Lean.Expr) Grounding
+  constCache : Map Lean.Name Grounding
+  exprCache : Map (List Lean.Name × List Lean.Name × Lean.Expr) Grounding
   univCache : Map (List Lean.Name × Lean.Level) Grounding
 
-def GroundState.init : GroundState := ⟨{}, {}, {}, {}, {}, {}⟩
+def GroundState.init : GroundState := ⟨{}, {}, {}, {}, {}, {}, {}⟩
 
-abbrev GroundM := ReaderT GroundEnv <| StateT GroundState Id
+abbrev GroundM := ReaderT GroundEnv <| StateT GroundState IO
 
 def GroundM.withCurrent (name: Lean.Name) : GroundM α -> GroundM α :=
   withReader $ fun c => { c with current := name }
@@ -85,14 +86,15 @@ def addRef (current out: Lean.Name) : GroundM Unit := do
       | .none => .some {current}
   }
 
+mutual
 def groundExpr (expr: Lean.Expr) : GroundM Grounding := do
-  let ctx := (<- read).bindCtx
-  match (<- get).exprCache.find? (ctx, expr) with
+  let key := ((<- read).univCtx, (<- read).bindCtx, expr)
+  match (<- get).exprCache.find? key with
   | some l => pure l
   | none => do
     let grounding <- go expr
     modifyGet fun stt => (grounding, { stt with
-      exprCache := stt.exprCache.insert (ctx, expr) grounding
+      exprCache := stt.exprCache.insert key grounding
     })
   where
     go : Lean.Expr -> GroundM Grounding
@@ -130,36 +132,46 @@ def groundExpr (expr: Lean.Expr) : GroundM Grounding := do
     | x@(.mvar _) => pure <| .ungrounded {.mvar x}
     | x@(.fvar _) => do pure <| .ungrounded {.var x (<- read).bindCtx}
 
-def groundConst: Lean.ConstantInfo -> GroundM Grounding
-| .axiomInfo val => .withLevels val.levelParams <| groundExpr val.type
-| .defnInfo val => .withLevels val.levelParams <|
-  .add <$> groundExpr val.type <*> groundExpr val.value
-| .thmInfo val => .withLevels val.levelParams <|
-  .add <$> groundExpr val.type <*> groundExpr val.value
-| .opaqueInfo val => .withLevels val.levelParams <|
-  .add <$> groundExpr val.type <*> groundExpr val.value
-| .quotInfo val => .withLevels val.levelParams <| groundExpr val.type
-| .inductInfo val => .withLevels val.levelParams <| do
-  let env := (<- read).env.constants
-  let mut ctors := .grounded
-  for ctor in val.ctors do
-    let g <- match env.find? ctor with
-    | .some (.ctorInfo ctorVal) => .withLevels ctorVal.levelParams <| do
-      addRef val.name ctor *> groundExpr ctorVal.type
-    | c => pure <| .ungrounded {.indc val c}
-    ctors := .add ctors g
-  let type <- groundExpr val.type
-  return .add ctors type
-| .ctorInfo val => .withLevels val.levelParams <| groundExpr val.type
-| .recInfo val => .withLevels val.levelParams <| do
-  let t <- groundExpr val.type
-  let rs <- val.rules.foldrM (fun r s => .add s <$> groundExpr r.rhs) .grounded
-  return .add t rs
+def groundConst (const: Lean.ConstantInfo) : GroundM Grounding := do
+  match (<- get).constCache.find? const.name with
+  | some g => pure g
+  | none => do
+    let grounding <- .withCurrent const.name <| go const
+    modifyGet fun stt => (grounding, { stt with
+      constCache := stt.constCache.insert const.name grounding
+    })
+  where
+    go : Lean.ConstantInfo -> GroundM Grounding
+    | .axiomInfo val => .withLevels val.levelParams <| groundExpr val.type
+    | .defnInfo val => .withLevels val.levelParams <|
+      .add <$> groundExpr val.type <*> groundExpr val.value
+    | .thmInfo val => .withLevels val.levelParams <|
+      .add <$> groundExpr val.type <*> groundExpr val.value
+    | .opaqueInfo val => .withLevels val.levelParams <|
+      .add <$> groundExpr val.type <*> groundExpr val.value
+    | .quotInfo val => .withLevels val.levelParams <| groundExpr val.type
+    | .inductInfo val => .withLevels val.levelParams <| do
+      let env := (<- read).env.constants
+      let mut ctors := .grounded
+      for ctor in val.ctors do
+        let g <- match env.find? ctor with
+        | .some (.ctorInfo ctorVal) => .withLevels ctorVal.levelParams <| do
+          addRef val.name ctor *> groundExpr ctorVal.type
+        | c => pure <| .ungrounded {.indc val c}
+        ctors := .add ctors g
+      let type <- groundExpr val.type
+      return .add ctors type
+    | .ctorInfo val => .withLevels val.levelParams <| groundExpr val.type
+    | .recInfo val => .withLevels val.levelParams <| do
+      let t <- groundExpr val.type
+      let rs <- val.rules.foldrM (fun r s => .add s <$> groundExpr r.rhs) .grounded
+      return .add t rs
+end
 
 def groundEnv: GroundM Unit := do
   let mut stack := #[]
   for (n, c) in (<- read).env.constants do
-    dbg_trace s!"groundEnv {n}"
+    --dbg_trace s!"groundEnv {n}"
     modify fun stt => { stt with
       outRefs := stt.outRefs.alter n fun x => match x with
       | .none => .some {}
@@ -168,23 +180,23 @@ def groundEnv: GroundM Unit := do
       | .none => .some {}
       | x => x
     }
-    match (<- .withCurrent n (groundConst c)) with
+    match (<- groundConst c) with
     | .grounded => continue
     | u@(.ungrounded _) => 
-      dbg_trace s!"groundEnv {n} ungrounded {repr u}"
+      dbg_trace s!"groundEnv UNGROUNDED {n} {repr u}"
       stack := stack.push n
       modify fun stt => { stt with
         ungrounded := stt.ungrounded.insert n u
       }
   while !stack.isEmpty do
     let name := stack.back!
-    dbg_trace s!"groundEnv stack {name}"
+    --dbg_trace s!"groundEnv stack {name}"
     stack := stack.pop
     let inRefs := match ((<- get).inRefs.get? name) with
     | .some x => x
     | .none => {}
     for ref in inRefs do
-      dbg_trace s!"groundEnv stack {name} {ref}"
+      dbg_trace s!"groundEnv STACK {name} {ref}"
       match (<- get).ungrounded.get? ref with
       | .some u =>
         modify fun stt => { stt with
@@ -196,7 +208,11 @@ def groundEnv: GroundM Unit := do
           ungrounded := stt.ungrounded.insert ref (.ungrounded {.ref name})
         }
 
-def GroundM.run (env: Lean.Environment) : GroundState :=
-  Id.run (StateT.run (ReaderT.run groundEnv (.init env)) GroundState.init).2
+def GroundM.run (env: Lean.Environment) (g: GroundM α): IO (α × GroundState)
+  := (StateT.run (ReaderT.run g (.init env)) GroundState.init)
+
+def GroundM.env (env: Lean.Environment) : IO GroundState := do
+  let (_, stt) <- (GroundM.run env groundEnv)
+  return stt
 
 end Ix

@@ -88,7 +88,8 @@ end Test.Ix.Mutual
 
 --#eval show Lean.MetaM _ from do
 --  let env ← Lean.getEnv
---  return env.find? `Std.DHashMap.Const.toList
+--  let gstt := GroundM.run groundConst (env.find! `Array.mk)
+--  return gstt.
 --
 --#eval show Lean.MetaM _ from do
 --  let env ← Lean.getEnv
@@ -183,11 +184,12 @@ def testRoundtripGetEnv : IO TestSeq := do
   let env <- get_env!
   let gsttStart <- IO.monoNanosNow
   IO.println s!"Ensuring well-groundedness of env"
-  let gstt := GroundM.run env
+  let gstt <- GroundM.env env
   let gsttEnd <- IO.monoNanosNow
   IO.println s!"Finished grounding in {Cronos.nanoToSec (gsttEnd - gsttStart)}"
-  for (n, u) in gstt.ungrounded do
-    IO.println s!"Found ungrounded {n}: {repr u}"
+  IO.println s!"ungrounded {gstt.ungrounded.size}"
+  --for (n, u) in gstt.ungrounded do
+  --  IO.println s!"Found ungrounded {n}: {repr u}"
   let sccStart <- IO.monoNanosNow
   IO.println s!"Building condensation graph of env"
   let alls := CondenseM.run env gstt.outRefs
@@ -247,7 +249,7 @@ def testRoundtripGetEnv : IO TestSeq := do
     inConst := inConst + 1
     dstt := stt
   let allDone <- IO.monoNanosNow
-  IO.println s!"Compiled env in {Cronos.nanoToSec (allDone - allStart)}"
+  --IO.println s!"Compiled env in {Cronos.nanoToSec (allDone - allStart)}"
  -- IO.println s!"decompiling env"
  -- let mut store : Ixon.Store := {}
  -- for (_,(a, b)) in cstt.names do
