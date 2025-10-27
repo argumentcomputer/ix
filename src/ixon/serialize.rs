@@ -1,4 +1,4 @@
-use crate::ixon::*;
+//use crate::ixon::*;
 
 pub trait Serialize: Sized {
     fn put(&self, buf: &mut Vec<u8>);
@@ -93,25 +93,25 @@ impl Serialize for bool {
     }
 }
 
-impl<S: Serialize> Serialize for Vec<S> {
-    fn put(&self, buf: &mut Vec<u8>) {
-        Ixon::put_array(self, buf)
-    }
-
-    fn get(buf: &mut &[u8]) -> Result<Self, String> {
-        Ixon::get_array(buf)
-    }
-}
-
-impl<X: Serialize, Y: Serialize> Serialize for (X, Y) {
-    fn put(&self, buf: &mut Vec<u8>) {
-        Serialize::put(&self.0, buf);
-        Serialize::put(&self.1, buf);
-    }
-
-    fn get(buf: &mut &[u8]) -> Result<Self, String> {
-        let x = Serialize::get(buf)?;
-        let y = Serialize::get(buf)?;
-        Ok((x, y))
-    }
-}
+//impl<S: Serialize> Serialize for Vec<S> {
+//    fn put(&self, buf: &mut Vec<u8>) {
+//        Ixon::put_array(self, buf)
+//    }
+//
+//    fn get(buf: &mut &[u8]) -> Result<Self, String> {
+//        Ixon::get_array(buf)
+//    }
+//}
+//
+//impl<X: Serialize, Y: Serialize> Serialize for (X, Y) {
+//    fn put(&self, buf: &mut Vec<u8>) {
+//        Serialize::put(&self.0, buf);
+//        Serialize::put(&self.1, buf);
+//    }
+//
+//    fn get(buf: &mut &[u8]) -> Result<Self, String> {
+//        let x = Serialize::get(buf)?;
+//        let y = Serialize::get(buf)?;
+//        Ok((x, y))
+//    }
+//}
