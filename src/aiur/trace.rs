@@ -13,9 +13,10 @@ use crate::aiur::{
     bytecode::{Block, Ctrl, Function, Op, Toplevel},
     execute::{IOBuffer, IOKeyInfo, QueryRecord},
     function_channel,
-    gadgets::bytes1::{bit_decompose, shift_left, shift_right},
+    gadgets::{bytes1::Bytes1, bytes2::Bytes2},
     memory::Memory,
-    u8_bit_decomposition_channel, u8_shift_left_channel, u8_shift_right_channel,
+    u8_add_channel, u8_bit_decomposition_channel, u8_shift_left_channel, u8_shift_right_channel,
+    u8_xor_channel,
 };
 
 struct ColumnIndex {
@@ -235,6 +236,23 @@ impl Op {
                     slice.push_auxiliary(index, f);
                 }
             }
+            Op::EqZero(a) => {
+                let (a, deg) = map[*a];
+                let is_zero = a == G::ZERO;
+                let is_zero_g = G::from_bool(is_zero);
+                if deg == 0 {
+                    map.push((is_zero_g, 0));
+                } else {
+                    let (d, x) = if is_zero {
+                        (G::ZERO, G::ONE)
+                    } else {
+                        (a.inverse(), G::ZERO)
+                    };
+                    slice.push_auxiliary(index, d);
+                    slice.push_auxiliary(index, x);
+                    map.push((is_zero_g, 1));
+                }
+            }
             Op::Call(function_index, inputs, _) => {
                 let inputs = inputs.iter().map(|a| map[*a].0).collect::<Vec<_>>();
                 let queries = &context.query_record.function_queries[*function_index];
@@ -307,10 +325,9 @@ impl Op {
                     slice.push_auxiliary(index, f);
                 }
             }
-            Op::IOSetInfo(..) | Op::IOWrite(_) => (),
             Op::U8BitDecomposition(byte) => {
                 let (byte, _) = map[*byte];
-                let bits = bit_decompose(&byte);
+                let bits = Bytes1::bit_decompose(&byte);
                 for &b in &bits {
                     map.push((b, 1));
                     slice.push_auxiliary(index, b);
@@ -321,7 +338,7 @@ impl Op {
             }
             Op::U8ShiftLeft(byte) => {
                 let (byte, _) = map[*byte];
-                let byte_shifted = shift_left(&byte);
+                let byte_shifted = Bytes1::shift_left(&byte);
                 map.push((byte_shifted, 1));
                 slice.push_auxiliary(index, byte_shifted);
                 let lookup_args = vec![u8_shift_left_channel(), byte, byte_shifted];
@@ -329,12 +346,33 @@ impl Op {
             }
             Op::U8ShiftRight(byte) => {
                 let (byte, _) = map[*byte];
-                let byte_shifted = shift_right(&byte);
+                let byte_shifted = Bytes1::shift_right(&byte);
                 map.push((byte_shifted, 1));
                 slice.push_auxiliary(index, byte_shifted);
                 let lookup_args = vec![u8_shift_right_channel(), byte, byte_shifted];
                 slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
             }
+            Op::U8Xor(i, j) => {
+                let (i, _) = map[*i];
+                let (j, _) = map[*j];
+                let xor = Bytes2::xor(&i, &j);
+                map.push((xor, 1));
+                slice.push_auxiliary(index, xor);
+                let lookup_args = vec![u8_xor_channel(), i, j, xor];
+                slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+            }
+            Op::U8Add(i, j) => {
+                let (i, _) = map[*i];
+                let (j, _) = map[*j];
+                let (r, o) = Bytes2::add(&i, &j);
+                map.push((r, 1));
+                map.push((o, 1));
+                slice.push_auxiliary(index, r);
+                slice.push_auxiliary(index, o);
+                let lookup_args = vec![u8_add_channel(), i, j, r, o];
+                slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+            }
+            Op::AssertEq(..) | Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => (),
         }
     }
 }

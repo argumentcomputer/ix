@@ -1,4 +1,5 @@
 pub(crate) mod bytes1;
+pub(crate) mod bytes2;
 
 use multi_stark::{
     builder::symbolic::SymbolicExpression, lookup::Lookup, p3_matrix::dense::RowMajorMatrix,

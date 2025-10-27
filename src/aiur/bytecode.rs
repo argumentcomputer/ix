@@ -1,5 +1,4 @@
-use indexmap::IndexMap;
-use rustc_hash::FxBuildHasher;
+use crate::FxIndexMap;
 
 use super::G;
 
@@ -27,8 +26,6 @@ impl FunctionLayout {
     }
 }
 
-pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
-
 pub struct Block {
     pub(crate) ops: Vec<Op>,
     pub(crate) ctrl: Ctrl,
@@ -41,9 +38,11 @@ pub enum Op {
     Add(ValIdx, ValIdx),
     Sub(ValIdx, ValIdx),
     Mul(ValIdx, ValIdx),
+    EqZero(ValIdx),
     Call(FunIdx, Vec<ValIdx>, usize),
     Store(Vec<ValIdx>),
     Load(usize, ValIdx),
+    AssertEq(Vec<ValIdx>, Vec<ValIdx>),
     IOGetInfo(Vec<ValIdx>),
     IOSetInfo(Vec<ValIdx>, ValIdx, ValIdx),
     IORead(ValIdx, usize),
@@ -51,6 +50,9 @@ pub enum Op {
     U8BitDecomposition(ValIdx),
     U8ShiftLeft(ValIdx),
     U8ShiftRight(ValIdx),
+    U8Xor(ValIdx, ValIdx),
+    U8Add(ValIdx, ValIdx),
+    Debug(String, Option<Vec<ValIdx>>),
 }
 
 pub enum Ctrl {

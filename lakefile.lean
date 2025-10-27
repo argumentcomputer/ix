@@ -12,16 +12,16 @@ lean_exe ix where
   supportInterpreter := true
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "db76512cd5266f0c576d561d8c69e2dc4890bea5"
+  "https://github.com/argumentcomputer/LSpec" @ "1fc461a9b83eeb68da34df72cec2ef1994e906cb"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "7df6528278c63a9fa9e039c882ccb10728ae4c41"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "a5ed3f0bceda9506271a8f95c365e9bd0040288d"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "73f293f8b15c3bb1fe32d8368135930541008f8a"
+  "https://github.com/leanprover/lean4-cli" @ "41c5d0b8814dec559e2e1441171db434fe2281cc"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "8d2067bf518731a70a255d4a61b5c103922c772e"
+  "https://github.com/leanprover-community/batteries" @ "d117e2c28cba42e974bc22568ac999492a34e812"
 
 section Tests
 
@@ -33,13 +33,18 @@ lean_exe Tests.Main where
 
 end Tests
 
+lean_lib IxTest where
+  srcDir := "ix_test"
+
 section IxApplications
 
 section Benchmarks
 
-lean_exe bench where
-  root := `Benchmarks.Main
-  supportInterpreter := true
+lean_exe «bench-aiur» where
+  root := `Benchmarks.Aiur
+
+lean_exe «bench-blake3» where
+  root := `Benchmarks.Blake3
 
 end Benchmarks
 
@@ -52,21 +57,6 @@ lean_exe Apps.ZKVoting.Verifier
 end IxApplications
 
 section FFI
-
-/-- Build the static lib for the Rust crate -/
-extern_lib ix_rs pkg := do
-  -- Default to `--features parallel`, configured via env var
-  let ixNoPar ← IO.getEnv "IX_NO_PAR"
-  let ixNet ← IO.getEnv "IX_NET"
-  let buildArgs := #["build", "--release"]
-  let args := match (ixNoPar, ixNet) with
-  | (some "1", some "1") => buildArgs ++ ["--features", "net"]
-  | (some "1", _) => buildArgs
-  | (_, some "1") => buildArgs ++ ["--features", "parallel,net"]
-  | _ => buildArgs ++ ["--features", "parallel"]
-  proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-  let libName := nameToStaticLib "ix_rs"
-  inputBinFile $ pkg.dir / "target" / "release" / libName
 
 /-- Build the static lib for the C files -/
 extern_lib ix_c pkg := do
@@ -98,6 +88,21 @@ extern_lib ix_c pkg := do
 
   let libName := nameToStaticLib "ix_c"
   buildStaticLib (pkg.staticLibDir / libName) buildJobs
+
+/-- Build the static lib for the Rust crate -/
+extern_lib ix_rs pkg := do
+  -- Defaults to `--features parallel`, configured via env var
+  let ixNoPar ← IO.getEnv "IX_NO_PAR"
+  let ixNet ← IO.getEnv "IX_NET"
+  let buildArgs := #["build", "--release"]
+  let args := match (ixNoPar, ixNet) with
+  | (some "1", some "1") => buildArgs ++ ["--features", "net"]
+  | (some "1", _) => buildArgs
+  | (_, some "1") => buildArgs ++ ["--features", "parallel,net"]
+  | _ => buildArgs ++ ["--features", "parallel"]
+  proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+  let libName := nameToStaticLib "ix_rs"
+  inputBinFile $ pkg.dir / "target" / "release" / libName
 
 end FFI
 
@@ -137,7 +142,7 @@ script install := do
   return 0
 
 script "check-lean-h-hash" := do
-  let cachedLeanHHash := 10195253849214811475
+  let cachedLeanHHash := 1323938820889983873
 
   let leanIncludeDir ← getLeanIncludeDir
   let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"

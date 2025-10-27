@@ -14,8 +14,10 @@ use crate::aiur::{
     gadgets::{
         AiurGadget,
         bytes1::{Bytes1, Bytes1Op},
+        bytes2::{Bytes2, Bytes2Op},
     },
-    memory_channel, u8_bit_decomposition_channel, u8_shift_left_channel, u8_shift_right_channel,
+    memory_channel, u8_add_channel, u8_bit_decomposition_channel, u8_shift_left_channel,
+    u8_shift_right_channel, u8_xor_channel,
 };
 
 type Expr = SymbolicExpression<G>;
@@ -194,8 +196,8 @@ impl Ctrl {
             }
             Ctrl::Match(var, cases, def) => {
                 let (var, _) = state.map[*var].clone();
+                let init = state.save();
                 for (&value, branch) in cases.iter() {
-                    let init = state.save();
                     let branch_sel = branch.get_block_selector(state);
                     state
                         .constraints
@@ -204,8 +206,7 @@ impl Ctrl {
                     branch.collect_constraints(branch_sel, state, toplevel);
                     state.restore(&init);
                 }
-                def.iter().for_each(|branch| {
-                    let init = state.save();
+                if let Some(branch) = def {
                     let branch_sel = branch.get_block_selector(state);
                     for &value in cases.keys() {
                         let inverse = state.next_auxiliary();
@@ -216,8 +217,7 @@ impl Ctrl {
                         );
                     }
                     branch.collect_constraints(branch_sel, state, toplevel);
-                    state.restore(&init);
-                })
+                }
             }
         }
     }
@@ -252,6 +252,33 @@ impl Op {
                     state.constraints.zeros.push(sel.clone() * (col - mul));
                 }
             }
+            Op::EqZero(a) => {
+                let (a, deg) = state.map[*a].clone();
+                if let Expr::Constant(a) = a {
+                    assert_eq!(deg, 0);
+                    state.map.push((Expr::from_bool(a == G::ZERO), 0));
+                } else {
+                    // We have two constraints:
+                    // 1. ax = 0
+                    // 2. ad + x = 1
+                    // When a = 0, the first constraint is trivial and the second
+                    // constraint enforces x = 1.
+                    // When a ≠ 0, the first constraint enforces x = 0 and the
+                    // second constraint can be satisfied with d = a⁻¹.
+                    // In both cases, x has the semantics that we want.
+                    let d = state.next_auxiliary();
+                    let x = state.next_auxiliary();
+                    state
+                        .constraints
+                        .zeros
+                        .push(sel.clone() * a.clone() * x.clone());
+                    state
+                        .constraints
+                        .zeros
+                        .push(sel.clone() * (a * d + x.clone() - Expr::ONE));
+                    state.map.push((x, 1));
+                }
+            }
             Op::Call(function_index, inputs, output_size) => {
                 // channel and function index
                 let mut lookup_args = vec![
@@ -268,7 +295,7 @@ impl Op {
                 let output = (0..*output_size).map(|_| {
                     let col = state.next_auxiliary();
                     state.map.push((col.clone(), 1));
-                    col
+                    sel.clone() * col
                 });
                 lookup_args.extend(output);
 
@@ -308,13 +335,24 @@ impl Op {
                 let values = (0..*size).map(|_| {
                     let col = state.next_auxiliary();
                     state.map.push((col.clone(), 1));
-                    col
+                    sel.clone() * col
                 });
                 lookup_args.extend(values);
 
                 let lookup = state.next_lookup();
                 combine_lookup_args(lookup, lookup_args);
                 lookup.multiplicity += sel.clone();
+            }
+            Op::AssertEq(xs, ys) => {
+                assert_eq!(xs.len(), ys.len());
+                for (x, y) in xs.iter().zip(ys) {
+                    let (x, _) = &state.map[*x];
+                    let (y, _) = &state.map[*y];
+                    state
+                        .constraints
+                        .zeros
+                        .push(sel.clone() * (x.clone() - y.clone()));
+                }
             }
             Op::IOGetInfo(_) => (0..2).for_each(|_| {
                 let col = state.next_auxiliary();
@@ -324,7 +362,6 @@ impl Op {
                 let col = state.next_auxiliary();
                 state.map.push((col, 1));
             }),
-            Op::IOSetInfo(..) | Op::IOWrite(_) => (),
             Op::U8BitDecomposition(byte) => bytes1_constraints(
                 *byte,
                 &Bytes1Op::BitDecomposition,
@@ -346,6 +383,13 @@ impl Op {
                 sel.clone(),
                 state,
             ),
+            Op::U8Xor(i, j) => {
+                bytes2_constraints(*i, *j, &Bytes2Op::Xor, u8_xor_channel(), sel.clone(), state)
+            }
+            Op::U8Add(i, j) => {
+                bytes2_constraints(*i, *j, &Bytes2Op::Add, u8_add_channel(), sel.clone(), state)
+            }
+            Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => (),
         }
     }
 }
@@ -362,6 +406,34 @@ fn bytes1_constraints(
     let mut lookup_args = vec![
         sel.clone() * channel,
         sel.clone() * state.map[byte].0.clone(),
+    ];
+
+    let output = (0..size).map(|_| {
+        let col = state.next_auxiliary();
+        state.map.push((col.clone(), 1));
+        col
+    });
+    lookup_args.extend(output);
+
+    let lookup = state.next_lookup();
+    combine_lookup_args(lookup, lookup_args);
+    lookup.multiplicity += sel;
+}
+
+fn bytes2_constraints(
+    i: usize,
+    j: usize,
+    op: &Bytes2Op,
+    channel: G,
+    sel: SymbolicExpression<G>,
+    state: &mut ConstraintState,
+) {
+    let size = Bytes2.output_size(op);
+
+    let mut lookup_args = vec![
+        sel.clone() * channel,
+        sel.clone() * state.map[i].0.clone(),
+        sel.clone() * state.map[j].0.clone(),
     ];
 
     let output = (0..size).map(|_| {

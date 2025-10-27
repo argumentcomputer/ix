@@ -849,7 +849,7 @@ inductive Ixon where
 | comm : Comm -> Ixon                                   -- 0xE3, cryptographic commitment
 | envn : Env -> Ixon                                    -- 0xE4, Lean4 environment
 | prim : BuiltIn -> Ixon                                -- 0xE5, compiler builtins
-| meta : Metadata -> Ixon                               -- 0xFX, Lean4 metadata
+| «meta» : Metadata -> Ixon                             -- 0xFX, Lean4 metadata
 deriving BEq, Repr, Inhabited, Ord, Hashable
 
 def putIxon : Ixon -> PutM Unit

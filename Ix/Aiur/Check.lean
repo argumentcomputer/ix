@@ -79,6 +79,7 @@ def bindIdents (bindings : List (Local × Typ)) (ctx : CheckContext) : CheckCont
 
 mutual
 partial def inferTerm : Term → CheckM TypedTerm
+  | .unit => pure $ .mk (.evaluates .unit) .unit
   | .var x => do
     -- Retrieves and returns the variable type from the context.
     let ctx ← read
@@ -147,6 +148,9 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .mul a b => do
     let (ctxTyp, a, b) ← checkArith a b
     pure $ .mk ctxTyp (.mul a b)
+  | .eqZero a => do
+    let a ← fieldTerm <$> checkNoEscape a .field
+    pure $ .mk (.evaluates .field) (.eqZero a)
   | .proj tup i => do
     let (typs, tupInner) ← inferTuple tup
     if h : i < typs.size then
@@ -169,6 +173,16 @@ partial def inferTerm : Term → CheckM TypedTerm
       pure $ .mk (.evaluates (.array typ (j - i))) (.slice arr i j)
     else
       throw $ .rangeOoB i j
+  | .set arr i val => do
+    let (typ, n, inner) ← inferArray arr
+    if i ≥ n then
+      throw $ .indexOoB i
+    else
+      let val ← checkNoEscape val typ
+      let arrTyp := .array typ n
+      let arr := .mk (.evaluates arrTyp) inner
+      let val := .mk (.evaluates typ) val
+      pure $ .mk (.evaluates arrTyp) (.set arr i val)
   | .store term => do
     -- Infers the type of the term and returns it, wrapped by a pointer type.
     -- The term is not allowed to early return.
@@ -194,6 +208,13 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .ann typ term => do
     let inner ← checkNoEscape term typ
     pure $ .mk (.evaluates typ) inner
+  | .assertEq a b ret => do
+    -- `a` and `b` must have the same type.
+    let (typ, a) ← inferNoEscape a
+    let b ← checkNoEscape b typ
+    let ret ← inferTerm ret
+    let assertEq := .assertEq (.mk (.evaluates typ) a) (.mk (.evaluates typ) b) ret
+    pure $ .mk (.evaluates ret.typ.unwrap) assertEq
   | .ioGetInfo key => do
     let (typ, keyInner) ← inferNoEscape key
     match typ with
@@ -238,6 +259,21 @@ partial def inferTerm : Term → CheckM TypedTerm
     let byte ← fieldTerm <$> checkNoEscape byte .field
     let u8ShiftRight := .u8ShiftRight byte
     pure $ .mk (.evaluates .field) u8ShiftRight
+  | .u8Xor i j => do
+    let i ← fieldTerm <$> checkNoEscape i .field
+    let j ← fieldTerm <$> checkNoEscape j .field
+    let u8Xor := .u8Xor i j
+    pure $ .mk (.evaluates .field) u8Xor
+  | .u8Add i j => do
+    let i ← fieldTerm <$> checkNoEscape i .field
+    let j ← fieldTerm <$> checkNoEscape j .field
+    let u8Add := .u8Add i j
+    pure $ .mk (.evaluates (.tuple #[.field, .field])) u8Add
+  | .debug label term ret => do
+    let term ← term.mapM inferTerm
+    let ret ← inferTerm ret
+    let debug := .debug label term ret
+    pure $ .mk (.evaluates ret.typ.unwrap) debug
 where
   /--
   Ensures that there are as many arguments and as expected types and that
@@ -361,8 +397,8 @@ partial def inferTuple (term : Term) : CheckM (Array Typ × TypedTermInner) := d
 
 partial def inferArray (term : Term) : CheckM (Typ × Nat × TypedTermInner) := do
   let (typ, inner) ← inferNoEscape term
-  let .array typs n := typ | throw $ .notAnArray typ
-  pure (typs, n, inner)
+  let .array typ n := typ | throw $ .notAnArray typ
+  pure (typ, n, inner)
 end
 
 def getFunctionContext (function : Function) (decls : Decls) : CheckContext :=

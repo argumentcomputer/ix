@@ -24,9 +24,12 @@ jobs:
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
       - run: nix run .#default -- --help
+      # Ix benches
+      - run: nix build .#bench-aiur --print-build-logs --accept-flake-config
+      - run: nix build .#bench-blake3 --print-build-logs --accept-flake-config
       # Ix tests
       - run: nix build .#test --print-build-logs --accept-flake-config
-      - run: nix run .#test
+      - run: nix run .#test --accept-flake-config
 
   # Tests Nix devShell support on Ubuntu
   nix-devshell:
@@ -39,4 +42,4 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       # Builds and runs tests using Lake as a Nix package
-      - run: nix develop --command bash -c "lake build && lake test"
+      - run: nix develop --accept-flake-config --command bash -c "lake build && lake test"

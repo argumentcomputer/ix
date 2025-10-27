@@ -2,12 +2,16 @@ use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 
-use crate::aiur::{
-    G,
-    bytecode::{Ctrl, FunIdx, Function, FxIndexMap, Op, Toplevel},
-    gadgets::{
-        AiurGadget,
-        bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
+use crate::{
+    FxIndexMap,
+    aiur::{
+        G,
+        bytecode::{Ctrl, FunIdx, Function, Op, Toplevel},
+        gadgets::{
+            AiurGadget,
+            bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
+            bytes2::{Bytes2, Bytes2Op, Bytes2Queries},
+        },
     },
 };
 
@@ -22,6 +26,7 @@ pub struct QueryRecord {
     pub(crate) function_queries: Vec<QueryMap>,
     pub(crate) memory_queries: FxIndexMap<usize, QueryMap>,
     pub(crate) bytes1_queries: Bytes1Queries,
+    pub(crate) bytes2_queries: Bytes2Queries,
 }
 
 impl QueryRecord {
@@ -37,10 +42,12 @@ impl QueryRecord {
             .map(|width| (*width, QueryMap::default()))
             .collect();
         let bytes1_queries = Bytes1Queries::new();
+        let bytes2_queries = Bytes2Queries::new();
         Self {
             function_queries,
             memory_queries,
             bytes1_queries,
+            bytes2_queries,
         }
     }
 }
@@ -135,6 +142,10 @@ impl Function {
                     let b = map[*b];
                     map.push(a * b);
                 }
+                ExecEntry::Op(Op::EqZero(a)) => {
+                    let a = map[*a];
+                    map.push(G::from_bool(a == G::ZERO));
+                }
                 ExecEntry::Op(Op::Call(callee_idx, args, _)) => {
                     let args = args.iter().map(|i| map[*i]).collect();
                     if let Some(result) = record.function_queries[*callee_idx].get_mut(&args) {
@@ -187,6 +198,12 @@ impl Function {
                     result.multiplicity += G::ONE;
                     map.extend(args);
                 }
+                ExecEntry::Op(Op::AssertEq(xs, ys)) => {
+                    assert_eq!(xs.len(), ys.len());
+                    for (x, y) in xs.iter().zip(ys) {
+                        assert_eq!(map[*x], map[*y]);
+                    }
+                }
                 ExecEntry::Op(Op::IOGetInfo(key)) => {
                     let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
                     let IOKeyInfo { idx, len } = io_buffer.get_info(&key);
@@ -221,6 +238,20 @@ impl Function {
                 ExecEntry::Op(Op::U8ShiftRight(byte)) => {
                     bytes1_execute(*byte, &Bytes1Op::ShiftRight, &mut map, record)
                 }
+                ExecEntry::Op(Op::U8Xor(i, j)) => {
+                    bytes2_execute(*i, *j, &Bytes2Op::Xor, &mut map, record)
+                }
+                ExecEntry::Op(Op::U8Add(i, j)) => {
+                    bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record)
+                }
+                ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
+                    None => println!("{label}"),
+                    Some(idxs) => {
+                        let parts: Vec<_> = idxs.iter().map(|idx| map[*idx].to_string()).collect();
+                        let parts_joined = parts.join(", ");
+                        println!("{label}: {parts_joined}");
+                    }
+                },
                 ExecEntry::Ctrl(Ctrl::Match(val_idx, cases, default)) => {
                     let val = &map[*val_idx];
                     if let Some(block) = cases.get(val) {
@@ -264,4 +295,8 @@ impl Function {
 
 fn bytes1_execute(byte: usize, op: &Bytes1Op, map: &mut Vec<G>, record: &mut QueryRecord) {
     map.extend(Bytes1.execute(op, &[map[byte]], record));
+}
+
+fn bytes2_execute(i: usize, j: usize, op: &Bytes2Op, map: &mut Vec<G>, record: &mut QueryRecord) {
+    map.extend(Bytes2.execute(op, &[map[i], map[j]], record));
 }

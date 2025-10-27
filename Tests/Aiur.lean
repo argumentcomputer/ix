@@ -1,8 +1,5 @@
-import LSpec
+import Tests.Common
 import Ix.Aiur.Meta
-import Ix.Aiur.Simple
-import Ix.Aiur.Compile
-import Ix.Aiur.Protocol
 
 open LSpec
 
@@ -21,6 +18,23 @@ def toplevel := ⟦
 
   fn prod(x: G, y: G) -> G {
     x * y
+  }
+
+  fn match_mul(x: G) -> G {
+    match x {
+      0 => 0,
+      _ => x * x * x,
+    }
+  }
+
+  fn sum_prod(x: G, y: G, z: G) -> G {
+    (x + y) * z
+  }
+
+  fn eq_zero_dummy(a: G, b: G) -> [G; 4] {
+    let c = 0;
+    let d = 101;
+    [eq_zero(a), eq_zero(b), eq_zero(c), eq_zero(d)]
   }
 
   fn store_and_load(x: G) -> G {
@@ -127,12 +141,19 @@ def toplevel := ⟦
     [b, d]
   }
 
-  fn read_write_io() -> G {
+  fn array_set(arr: [(G, G); 3]) -> [(G, G); 3] {
+    set(arr, 1, (0, 0))
+  }
+
+  fn assert_eq_trivial() {
+    assert_eq!([1, 2, 3], [1, 2, 3]);
+  }
+
+  fn read_write_io() {
     let (idx, len) = io_get_info([0]);
     let xs: [G; 4] = io_read(idx, 4);
     io_write(xs);
     io_set_info([1], idx, len + 4);
-    len
   }
 
   fn shr_shr_shl_decompose(byte: G) -> [G; 8] {
@@ -141,74 +162,49 @@ def toplevel := ⟦
     let byte_shr_shr_shl = u8_shift_left(byte_shr_shr);
     u8_bit_decomposition(byte_shr_shr_shl)
   }
+
+  fn u8_add_xor(i: G, j: G) -> ((G, G), (G, G)) {
+    let i_xor_j = u8_xor(i, j);
+    (u8_add(i_xor_j, i), u8_add(i_xor_j, j))
+  }
 ⟧
 
-structure TestCase where
-  functionName : Lean.Name
-  input : Array Aiur.G
-  expectedOutput : Array Aiur.G
-  inputIOBuffer: Aiur.IOBuffer
-  expectedIOBuffer: Aiur.IOBuffer
-
-def testCases : List TestCase := [
-    ⟨`id, #[42], #[42], default, default⟩,
-    ⟨`proj1, #[42, 64], #[42], default, default⟩,
-    ⟨`sum, #[3, 5], #[8], default, default⟩,
-    ⟨`prod, #[3, 5], #[15], default, default⟩,
-    ⟨`store_and_load, #[42], #[42], default, default⟩,
-    ⟨`is_0_even, #[], #[1], default, default⟩,
-    ⟨`is_1_even, #[], #[0], default, default⟩,
-    ⟨`is_2_even, #[], #[1], default, default⟩,
-    ⟨`is_3_even, #[], #[0], default, default⟩,
-    ⟨`is_4_even, #[], #[1], default, default⟩,
-    ⟨`is_0_odd, #[], #[0], default, default⟩,
-    ⟨`is_1_odd, #[], #[1], default, default⟩,
-    ⟨`is_2_odd, #[], #[0], default, default⟩,
-    ⟨`is_3_odd, #[], #[1], default, default⟩,
-    ⟨`is_4_odd, #[], #[0], default, default⟩,
-    ⟨`factorial, #[5], #[120], default, default⟩,
-    ⟨`fibonacci, #[0], #[1], default, default⟩,
-    ⟨`fibonacci, #[1], #[1], default, default⟩,
-    ⟨`fibonacci, #[6], #[13], default, default⟩,
-    ⟨`projections, #[1, 2, 3, 4, 5], #[2, 4], default, default⟩,
-    ⟨`slice_and_get, #[1, 2, 3, 4, 5], #[2, 4], default, default⟩,
-    ⟨`deconstruct_tuple, #[1, 2, 3, 4, 5], #[2, 4], default, default⟩,
-    ⟨`deconstruct_array, #[1, 2, 3, 4, 5], #[2, 4], default, default⟩,
-    ⟨`read_write_io, #[], #[4],
+def aiurTestCases : List AiurTestCase := [
+    .noIO `id #[42] #[42],
+    .noIO `proj1 #[42, 64] #[42],
+    .noIO `sum #[3, 5] #[8],
+    .noIO `prod #[3, 5] #[15],
+    .noIO `match_mul #[2] #[8],
+    .noIO `sum_prod #[2, 3, 4] #[20],
+    .noIO `eq_zero_dummy #[0, 37] #[1, 0, 1, 0],
+    .noIO `store_and_load #[42] #[42],
+    .noIO `is_0_even #[] #[1],
+    .noIO `is_1_even #[] #[0],
+    .noIO `is_2_even #[] #[1],
+    .noIO `is_3_even #[] #[0],
+    .noIO `is_4_even #[] #[1],
+    .noIO `is_0_odd #[] #[0],
+    .noIO `is_1_odd #[] #[1],
+    .noIO `is_2_odd #[] #[0],
+    .noIO `is_3_odd #[] #[1],
+    .noIO `is_4_odd #[] #[0],
+    .noIO `factorial #[5] #[120],
+    .noIO `fibonacci #[0] #[1],
+    .noIO `fibonacci #[1] #[1],
+    .noIO `fibonacci #[6] #[13],
+    .noIO `projections #[1, 2, 3, 4, 5] #[2, 4],
+    .noIO `slice_and_get #[1, 2, 3, 4, 5] #[2, 4],
+    .noIO `deconstruct_tuple #[1, 2, 3, 4, 5] #[2, 4],
+    .noIO `deconstruct_array #[1, 2, 3, 4, 5] #[2, 4],
+    .noIO `array_set #[1, 1, 2, 2, 3, 3] #[1, 1, 0, 0, 3, 3],
+    .noIO `assert_eq_trivial #[] #[],
+    ⟨`read_write_io, #[], #[],
       ⟨#[1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩)]⟩,
       ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩⟩,
-    ⟨`shr_shr_shl_decompose, #[87], #[0, 1, 0, 1, 0, 1, 0, 0], default, default⟩,
+    .noIO `shr_shr_shl_decompose #[87] #[0, 1, 0, 1, 0, 1, 0, 0],
+    .noIO `u8_add_xor #[45, 131] #[219, 0, 49, 1],
   ]
 
-def commitmentParameters : Aiur.CommitmentParameters := {
-  logBlowup := 1
-}
-
-def friParameters : Aiur.FriParameters := {
-  logFinalPolyLen := 0
-  numQueries := 100
-  proofOfWorkBits := 20
-}
-
-def aiurTest : TestSeq :=
-  withExceptOk "Check and simplification works" toplevel.checkAndSimplify fun decls =>
-    let bytecodeToplevel := decls.compile
-    let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel commitmentParameters
-    let runTestCase := fun testCase =>
-      let functionName := testCase.functionName
-      let funIdx := toplevel.getFuncIdx functionName |>.get!
-      let (claim, proof, ioBuffer) := aiurSystem.prove
-        friParameters funIdx testCase.input testCase.inputIOBuffer
-      let caseDescr := s!"{functionName} with arguments {testCase.input}"
-      let claimTest := test s!"Claim matches for {caseDescr}"
-        (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
-      let ioTest := test s!"IOBuffer matches for {caseDescr}"
-        (ioBuffer == testCase.expectedIOBuffer)
-      let proof := .ofBytes proof.toBytes
-      let pvTest := withExceptOk s!"Prove/verify works for {caseDescr}"
-        (aiurSystem.verify friParameters claim proof) fun _ => .done
-      claimTest ++ ioTest ++ pvTest
-    testCases.foldl (init := .done) fun tSeq testCase =>
-      tSeq ++ runTestCase testCase
-
-def Tests.Aiur.suite := [aiurTest]
+def Tests.Aiur.suite := [
+  mkAiurTests toplevel aiurTestCases
+]

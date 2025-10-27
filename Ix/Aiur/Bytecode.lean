@@ -13,9 +13,11 @@ inductive Op
   | add : ValIdx → ValIdx → Op
   | sub : ValIdx → ValIdx → Op
   | mul : ValIdx → ValIdx → Op
+  | eqZero : ValIdx → Op
   | call : FunIdx → Array ValIdx → (outputSize : Nat) → Op
   | store : Array ValIdx → Op
   | load : (size : Nat) → ValIdx → Op
+  | assertEq : Array ValIdx → Array ValIdx → Op
   | ioGetInfo : Array ValIdx → Op
   | ioSetInfo : Array ValIdx → ValIdx → ValIdx → Op
   | ioRead : ValIdx → Nat → Op
@@ -23,6 +25,9 @@ inductive Op
   | u8BitDecomposition : ValIdx → Op
   | u8ShiftLeft : ValIdx → Op
   | u8ShiftRight : ValIdx → Op
+  | u8Xor : ValIdx → ValIdx → Op
+  | u8Add : ValIdx → ValIdx → Op
+  | debug : String → Option (Array ValIdx) → Op
   deriving Repr
 
 mutual

@@ -108,18 +108,18 @@ inductive DecompileError
 | badDeserialization (addr: Address) (exp: String) (str: String)
 | unknownStoreAddress (curr: Named) (addr: Address)
 | badName (curr: Named) (ixon: Ixon)
-| badLevel (curr: Named) (data meta: Ixon)
+| badLevel (curr: Named) (data «meta»: Ixon)
 | badKVMap (curr: Named) (ixon: Ixon)
-| badKVMapMetadatum (curr: Named) (meta: Metadatum)
-| badExpr (curr: Named) (data meta: Ixon)
-| badDef (curr: Named) (d: Ixon.Definition) (meta: Metadata)
-| badRecr (curr: Named) (d: Ixon.Recursor) (meta: Metadata)
-| badCtor (curr: Named) (ctor: Ixon.Constructor) (meta: Ixon)
-| badIndc (curr: Named) (ctor: Ixon.Inductive) (meta: Metadata)
-| badMuts (curr: Named) (data meta: Ixon)
-| badConst (curr: Named) (data meta: Ixon)
+| badKVMapMetadatum (curr: Named) («meta»: Metadatum)
+| badExpr (curr: Named) (data «meta»: Ixon)
+| badDef (curr: Named) (d: Ixon.Definition) («meta»: Metadata)
+| badRecr (curr: Named) (d: Ixon.Recursor) («meta»: Metadata)
+| badCtor (curr: Named) (ctor: Ixon.Constructor) («meta»: Ixon)
+| badIndc (curr: Named) (ctor: Ixon.Inductive) («meta»: Metadata)
+| badMuts (curr: Named) (data «meta»: Ixon)
+| badConst (curr: Named) (data «meta»: Ixon)
 | badProj (curr: Named) (block: Block) (msg: String)
-| badProjMeta (curr: Named) (meta: Ixon) (msg: String)
+| badProjMeta (curr: Named) («meta»: Ixon) (msg: String)
 | badCache (name: Lean.Name) (set: Set Lean.Name)
 --| expectedIxonMetadata (curr: Named) (exp: Address) (got: Ixon)
 --| badProjection
@@ -220,11 +220,15 @@ def DecompileM.withMutCtx (mutCtx : Std.HashMap Lean.Name Nat)
   : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with mutCtx := mutCtx }
 
+def withNamed (name: Lean.Name) (cont «meta»: Address)
+  : DecompileM α -> DecompileM α :=
+  withReader $ fun c => { c with current := ⟨name, cont, «meta»⟩ }
+
 -- reset local context
-def DecompileM.resetCtx (name: Lean.Name) (meta: MetaAddress) 
+def DecompileM.resetCtx (name: Lean.Name) («meta»: MetaAddress) 
   : DecompileM α -> DecompileM α :=
   withReader $ fun c => { c with 
-    univCtx := [], bindCtx := [], mutCtx := {}, current := ⟨name, meta⟩
+    univCtx := [], bindCtx := [], mutCtx := {}, current := ⟨name, «meta»⟩
   }
 
 def readStore [Serialize A] (addr: Address) (exp: String): DecompileM A := do
@@ -671,8 +675,8 @@ partial def decompileMuts: Ixon -> Ixon -> DecompileM Block
     if cs.length != names.length then throw <| .badMuts (<- read).current ms m
     else
       let mut map : Map Lean.Name Metadata := {}
-      for (name, meta) in metaMap do
-        map := map.insert (<- decompileName name) (<- readStore meta "Metadata")
+      for (name, «meta») in metaMap do
+        map := map.insert (<- decompileName name) (<- readStore «meta» "Metadata")
       let mut mutClasses := #[]
       let mut mutCtx := {}
       for (n, i) in ctx do
@@ -684,7 +688,7 @@ partial def decompileMuts: Ixon -> Ixon -> DecompileM Block
           let name <- decompileName n
         --dbg_trace s!"decompileMuts {(<- read).current} inner loop {name} {repr mutCtx}"
           let const' <- match map.get? name with
-            | .some meta => .withMutCtx mutCtx <| decompileMutConst const meta
+            | .some «meta» => .withMutCtx mutCtx <| decompileMutConst const «meta»
             | .none => do throw <| .badMuts (<- read).current ms m
           mutClass := mutClass.push const'
         mutClasses := mutClasses.push mutClass

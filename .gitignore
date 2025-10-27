@@ -6,3 +6,4 @@
 
 # Nix
 result*
+.direnv/

@@ -1,149 +1,85 @@
-use anyhow::Result;
-use bytes::Bytes;
-use iroh::{Endpoint, protocol::Router};
-use iroh_blobs::{net_protocol::Blobs, ticket::BlobTicket};
-use std::error::Error;
-use std::ffi::CString;
+use crate::lean::ffi::{BytesData, CResult, to_raw};
+use crate::lean::{as_ref_unsafe, ffi::drop_raw};
 
-use crate::lean::ffi::raw_to_str;
-use crate::lean::{
-    ffi::{CResult, c_char, to_raw},
-    sarray::LeanSArrayObject,
-};
+use std::ffi::{CString, c_char};
 
+#[repr(C)]
+pub struct PutResponseFFI {
+    pub message: *mut c_char,
+    pub hash: *mut c_char,
+}
+
+impl PutResponseFFI {
+    pub fn new(message: &str, hash: &str) -> Self {
+        let message = CString::new(message).unwrap().into_raw();
+        let hash = CString::new(hash).unwrap().into_raw();
+        PutResponseFFI { message, hash }
+    }
+}
+
+#[repr(C)]
+pub struct GetResponseFFI {
+    pub message: *mut c_char,
+    pub hash: *mut c_char,
+    pub bytes: *const BytesData,
+}
+
+impl GetResponseFFI {
+    pub fn new(message: &str, hash: &str, bytes: &[u8]) -> Self {
+        let message = CString::new(message).unwrap().into_raw();
+        let hash = CString::new(hash).unwrap().into_raw();
+        let bytes = to_raw(BytesData::from_vec(bytes.to_vec()));
+        GetResponseFFI {
+            message,
+            hash,
+            bytes,
+        }
+    }
+}
+
+// Frees a `CResult` object that corresponds to the Rust type `Result<PutResponseFFI, String>`
 #[unsafe(no_mangle)]
-extern "C" fn rs_iroh_send(bytes: &LeanSArrayObject) -> *const CResult {
-    // Create a Tokio runtime to block on the async function
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
-    // Run the async function and block until we get the result
-    let c_result = match rt.block_on(iroh_send(bytes.data())) {
-        Ok(_) => CResult {
-            is_ok: true,
-            data: std::ptr::null(),
-        },
-        Err(err) => {
-            let msg = CString::new(err.to_string()).expect("CString::new failure");
-            CResult {
-                is_ok: false,
-                data: msg.into_raw().cast(),
-            }
-        }
-    };
-
-    to_raw(c_result)
+extern "C" fn rs__c_result_iroh_put_response_string_free(ptr: *mut CResult) {
+    let c_result = as_ref_unsafe(ptr);
+    // Frees the `PutResponseFFI` struct and inner fields
+    if c_result.is_ok {
+        let put_response_ptr = c_result.data as *mut PutResponseFFI;
+        let put_response = as_ref_unsafe(put_response_ptr);
+        let message = unsafe { CString::from_raw(put_response.message) };
+        let hash = unsafe { CString::from_raw(put_response.hash) };
+        drop(message);
+        drop(hash);
+        drop_raw(put_response_ptr);
+    }
+    // Or free the String error message
+    else {
+        let char_ptr = c_result.data as *mut c_char;
+        let c_string = unsafe { CString::from_raw(char_ptr) };
+        drop(c_string);
+    }
+    drop_raw(ptr);
 }
 
-async fn iroh_send(bytes: &[u8]) -> Result<(), Box<dyn Error>> {
-    // Create an endpoint, it allows creating and accepting
-    // connections in the iroh p2p world
-    let endpoint = Endpoint::builder().discovery_n0().bind().await?;
-    // We initialize the Blobs protocol in-memory
-    let blobs = Blobs::memory().build(&endpoint);
-
-    // Now we build a router that accepts blobs connections & routes them
-    // to the blobs protocol.
-    let router = Router::builder(endpoint)
-        .accept(iroh_blobs::ALPN, blobs.clone())
-        .spawn()
-        .await?;
-
-    // We use a blobs client to interact with the blobs protocol we're running locally:
-    let blobs_client = blobs.client();
-
-    println!("Hashing bytes.");
-
-    let blob = blobs_client
-        .add_bytes(Bytes::copy_from_slice(bytes))
-        .await?;
-
-    let node_id = router.endpoint().node_id();
-    let ticket = BlobTicket::new(node_id.into(), blob.hash, blob.format)?;
-
-    println!(
-        "Bytes hashed. Fetch them by by running the `iroh_recv` function with\nTicket: {ticket}",
-    );
-
-    // TODO: Shut down automatically after the file has been sent at least once
-    tokio::signal::ctrl_c().await?;
-    router.shutdown().await?;
-
-    Ok(())
-}
-
+// Frees a `CResult` object that corresponds to the Rust type `Result<GetResponseFFI, String>`
 #[unsafe(no_mangle)]
-extern "C" fn rs_iroh_recv(
-    ticket: *const c_char,
-    buffer: &mut LeanSArrayObject,
-    buffer_capacity: usize,
-) -> *const CResult {
-    // Create a Tokio runtime to block on the async function
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
-    let ticket = raw_to_str(ticket);
-
-    // Run the async function and block until we get the result
-    let c_result = match rt.block_on(iroh_recv(ticket, buffer_capacity)) {
-        Ok(bytes) => {
-            let data = bytes.as_ref();
-            buffer.set_data(data);
-            CResult {
-                is_ok: true,
-                data: std::ptr::null(),
-            }
-        }
-        Err(err) => {
-            let msg = CString::new(err.to_string()).expect("CString::new failure");
-            CResult {
-                is_ok: false,
-                data: msg.into_raw().cast(),
-            }
-        }
-    };
-
-    to_raw(c_result)
-}
-
-async fn iroh_recv(ticket: &str, buffer_capacity: usize) -> Result<Bytes, Box<dyn Error>> {
-    // Create an endpoint, it allows creating and accepting
-    // connections in the iroh p2p world
-    let endpoint = Endpoint::builder().discovery_n0().bind().await?;
-    // We initialize the Blobs protocol in-memory
-    let blobs = Blobs::memory().build(&endpoint);
-
-    // Now we build a router that accepts blobs connections & routes them
-    // to the blobs protocol.
-    let router = Router::builder(endpoint)
-        .accept(iroh_blobs::ALPN, blobs.clone())
-        .spawn()
-        .await?;
-
-    // We use a blobs client to interact with the blobs protocol we're running locally:
-    let blobs_client = blobs.client();
-
-    println!("Ticket to download: {ticket}");
-
-    let ticket: BlobTicket = ticket.parse()?;
-    let hash = ticket.hash();
-
-    println!("Starting download.");
-
-    blobs_client
-        .download(hash, ticket.node_addr().clone())
-        .await?
-        .finish()
-        .await?;
-
-    println!("Finished download.");
-
-    let mut reader = blobs_client.read(hash).await?;
-    assert!(
-        buffer_capacity >= usize::try_from(reader.size()).expect("Failed to convert u64 to usize")
-    );
-    let bytes = reader.read_to_bytes().await?;
-
-    println!("Finished copying.");
-    router.shutdown().await?;
-
-    Ok(bytes)
+extern "C" fn rs__c_result_iroh_get_response_string_free(ptr: *mut CResult) {
+    let c_result = as_ref_unsafe(ptr);
+    // Frees the `GetResponseFFI` struct and inner fields
+    // `Bytes` is already freed by `rs_move_bytes`
+    if c_result.is_ok {
+        let get_response_ptr = c_result.data as *mut GetResponseFFI;
+        let get_response = as_ref_unsafe(get_response_ptr);
+        let message = unsafe { CString::from_raw(get_response.message) };
+        let hash = unsafe { CString::from_raw(get_response.hash) };
+        drop(message);
+        drop(hash);
+        drop_raw(get_response_ptr);
+    }
+    // Or free the String error message
+    else {
+        let char_ptr = c_result.data as *mut c_char;
+        let c_string = unsafe { CString::from_raw(char_ptr) };
+        drop(c_string);
+    }
+    drop_raw(ptr);
 }

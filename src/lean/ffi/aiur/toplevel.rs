@@ -1,9 +1,12 @@
 use std::ffi::c_void;
 
+use multi_stark::p3_field::PrimeCharacteristicRing;
+
 use crate::{
+    FxIndexMap,
     aiur::{
         G,
-        bytecode::{Block, Ctrl, Function, FunctionLayout, FxIndexMap, Op, Toplevel, ValIdx},
+        bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
     },
     lean::{
         array::LeanArrayObject,
@@ -13,6 +16,7 @@ use crate::{
             as_ref_unsafe,
         },
         lean_is_scalar,
+        string::LeanStringObject,
     },
 };
 
@@ -26,7 +30,7 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
     match ctor.tag() {
         0 => {
             let [const_val_ptr] = ctor.objs();
-            Op::Const(lean_unbox_g(const_val_ptr))
+            Op::Const(G::from_u64(const_val_ptr as u64))
         }
         1 => {
             let [a_ptr, b_ptr] = ctor.objs();
@@ -50,28 +54,39 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
             )
         }
         4 => {
+            let [a_ptr] = ctor.objs();
+            Op::EqZero(lean_unbox_nat_as_usize(a_ptr))
+        }
+        5 => {
             let [fun_idx_ptr, val_idxs_ptr, output_size_ptr] = ctor.objs();
             let fun_idx = lean_unbox_nat_as_usize(fun_idx_ptr);
             let val_idxs = lean_ptr_to_vec_val_idx(val_idxs_ptr);
             let output_size = lean_unbox_nat_as_usize(output_size_ptr);
             Op::Call(fun_idx, val_idxs, output_size)
         }
-        5 => {
+        6 => {
             let [val_idxs_ptr] = ctor.objs();
             Op::Store(lean_ptr_to_vec_val_idx(val_idxs_ptr))
         }
-        6 => {
+        7 => {
             let [width_ptr, val_idx_ptr] = ctor.objs();
             Op::Load(
                 lean_unbox_nat_as_usize(width_ptr),
                 lean_unbox_nat_as_usize(val_idx_ptr),
             )
         }
-        7 => {
+        8 => {
+            let [as_ptr, bs_ptr] = ctor.objs();
+            Op::AssertEq(
+                lean_ptr_to_vec_val_idx(as_ptr),
+                lean_ptr_to_vec_val_idx(bs_ptr),
+            )
+        }
+        9 => {
             let [key_ptr] = ctor.objs();
             Op::IOGetInfo(lean_ptr_to_vec_val_idx(key_ptr))
         }
-        8 => {
+        10 => {
             let [key_ptr, idx_ptr, len_ptr] = ctor.objs();
             Op::IOSetInfo(
                 lean_ptr_to_vec_val_idx(key_ptr),
@@ -79,28 +94,50 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
                 lean_unbox_nat_as_usize(len_ptr),
             )
         }
-        9 => {
+        11 => {
             let [idx_ptr, len_ptr] = ctor.objs();
             Op::IORead(
                 lean_unbox_nat_as_usize(idx_ptr),
                 lean_unbox_nat_as_usize(len_ptr),
             )
         }
-        10 => {
+        12 => {
             let [data_ptr] = ctor.objs();
             Op::IOWrite(lean_ptr_to_vec_val_idx(data_ptr))
         }
-        11 => {
+        13 => {
             let [byte_ptr] = ctor.objs();
             Op::U8BitDecomposition(lean_unbox_nat_as_usize(byte_ptr))
         }
-        12 => {
+        14 => {
             let [byte_ptr] = ctor.objs();
             Op::U8ShiftLeft(lean_unbox_nat_as_usize(byte_ptr))
         }
-        13 => {
+        15 => {
             let [byte_ptr] = ctor.objs();
             Op::U8ShiftRight(lean_unbox_nat_as_usize(byte_ptr))
+        }
+        16 => {
+            let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
+            Op::U8Xor(i, j)
+        }
+        17 => {
+            let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
+            Op::U8Add(i, j)
+        }
+        18 => {
+            let [label_ptr, idxs_ptr] = ctor.objs();
+            let label_str: &LeanStringObject = as_ref_unsafe(label_ptr.cast());
+            let label = label_str.as_string();
+            let idxs = if lean_is_scalar(idxs_ptr) {
+                None
+            } else {
+                let option_ctor: &LeanCtorObject = as_ref_unsafe(idxs_ptr.cast());
+                let [idxs_ptr] = option_ctor.objs();
+                let idxs: &LeanArrayObject = as_ref_unsafe(idxs_ptr.cast());
+                Some(idxs.to_vec(lean_unbox_nat_as_usize))
+            };
+            Op::Debug(label, idxs)
         }
         _ => unreachable!(),
     }

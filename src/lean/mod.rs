@@ -9,13 +9,17 @@ pub mod boxed;
 pub mod ctor;
 pub mod external;
 pub mod ffi;
+pub mod nat;
 pub mod object;
 pub mod sarray;
 pub mod string;
 
 use std::ffi::c_void;
 
-use crate::lean::boxed::{BoxedU64, BoxedUSize};
+use crate::lean::{
+    boxed::{BoxedU64, BoxedUSize},
+    ctor::LeanCtorObject,
+};
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -113,4 +117,46 @@ impl<T> CArray<T> {
             std::ptr::copy_nonoverlapping(src.as_ptr(), self.0.as_ptr() as *mut _, src.len());
         }
     }
+}
+
+pub struct ListIterator(*const c_void);
+
+impl Iterator for ListIterator {
+    type Item = *const c_void;
+    fn next(&mut self) -> Option<Self::Item> {
+        let ptr = self.0;
+        if lean_is_scalar(ptr) {
+            return None;
+        }
+        let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
+        let [head_ptr, tail_ptr] = ctor.objs();
+        self.0 = tail_ptr;
+        Some(head_ptr)
+    }
+}
+
+pub fn collect_list<T>(mut ptr: *const c_void, map_fn: fn(*const c_void) -> T) -> Vec<T> {
+    let mut vec = Vec::new();
+    while !lean_is_scalar(ptr) {
+        let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
+        let [head_ptr, tail_ptr] = ctor.objs();
+        vec.push(map_fn(head_ptr));
+        ptr = tail_ptr;
+    }
+    vec
+}
+
+pub fn collect_list_with<T, C>(
+    mut ptr: *const c_void,
+    map_fn: fn(*const c_void, &mut C) -> T,
+    c: &mut C,
+) -> Vec<T> {
+    let mut vec = Vec::new();
+    while !lean_is_scalar(ptr) {
+        let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
+        let [head_ptr, tail_ptr] = ctor.objs();
+        vec.push(map_fn(head_ptr, c));
+        ptr = tail_ptr;
+    }
+    vec
 }

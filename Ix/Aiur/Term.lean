@@ -49,6 +49,7 @@ inductive Pattern
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Typ where
+  | unit
   | field
   | tuple : Array Typ → Typ
   | array : Typ → Nat → Typ
@@ -60,6 +61,7 @@ inductive Typ where
 mutual
 
 inductive Term
+  | unit
   | var : Local → Term
   | ref : Global → Term
   | data : Data → Term
@@ -70,13 +72,16 @@ inductive Term
   | add : Term → Term → Term
   | sub : Term → Term → Term
   | mul : Term → Term → Term
+  | eqZero : Term → Term
   | proj : Term → Nat → Term
   | get : Term → Nat → Term
   | slice : Term → Nat → Nat → Term
+  | set : Term → Nat → Term → Term
   | store : Term → Term
   | load : Term → Term
   | ptrVal : Term → Term
   | ann : Typ → Term → Term
+  | assertEq : Term → Term → (ret : Term) → Term
   | ioGetInfo : (key : Term) → Term
   | ioSetInfo : (key : Term) → (idx : Term) → (len : Term) → (ret : Term) → Term
   | ioRead : (idx : Term) → (len : Nat) → Term
@@ -84,6 +89,9 @@ inductive Term
   | u8BitDecomposition : Term → Term
   | u8ShiftLeft : Term → Term
   | u8ShiftRight : Term → Term
+  | u8Xor : Term → Term → Term
+  | u8Add : Term → Term → Term
+  | debug : String → Option Term → Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Data
@@ -109,6 +117,7 @@ def ContextualType.unwrapOr : ContextualType → Typ → Typ
 
 mutual
 inductive TypedTermInner
+  | unit
   | var : Local → TypedTermInner
   | ref : Global → TypedTermInner
   | data : TypedData → TypedTermInner
@@ -119,12 +128,15 @@ inductive TypedTermInner
   | add : TypedTerm → TypedTerm → TypedTermInner
   | sub : TypedTerm → TypedTerm → TypedTermInner
   | mul : TypedTerm → TypedTerm → TypedTermInner
+  | eqZero : TypedTerm → TypedTermInner
   | proj : TypedTerm → Nat → TypedTermInner
   | get : TypedTerm → Nat → TypedTermInner
   | slice : TypedTerm → Nat → Nat → TypedTermInner
+  | set : TypedTerm → Nat → TypedTerm → TypedTermInner
   | store : TypedTerm → TypedTermInner
   | load : TypedTerm → TypedTermInner
   | ptrVal : TypedTerm → TypedTermInner
+  | assertEq : TypedTerm → TypedTerm → TypedTerm → TypedTermInner
   | ioGetInfo : TypedTerm → TypedTermInner
   | ioSetInfo : TypedTerm → TypedTerm → TypedTerm → TypedTerm → TypedTermInner
   | ioRead : TypedTerm → Nat → TypedTermInner
@@ -132,6 +144,9 @@ inductive TypedTermInner
   | u8BitDecomposition : TypedTerm → TypedTermInner
   | u8ShiftLeft : TypedTerm → TypedTermInner
   | u8ShiftRight : TypedTerm → TypedTermInner
+  | u8Xor : TypedTerm → TypedTerm → TypedTermInner
+  | u8Add : TypedTerm → TypedTerm → TypedTermInner
+  | debug : String → Option TypedTerm → TypedTerm → TypedTermInner
   deriving Repr, Inhabited
 
 structure TypedTerm where
@@ -200,6 +215,7 @@ mutual
 open Std (HashSet)
 
 partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) : Typ → Nat
+  | .unit => 0
   | .field .. => 1
   | .pointer .. => 1
   | .function .. => 1

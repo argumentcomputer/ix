@@ -50,8 +50,14 @@ abbrev LayoutM := StateM LayoutMState
 @[inline] def pushDegrees (degrees : Array Nat) : LayoutM Unit :=
   modify fun stt => { stt with degrees := stt.degrees ++ degrees }
 
+@[inline] def getDegrees : LayoutM $ Array Nat :=
+  get >>= (pure ·.degrees)
+
 @[inline] def getDegree (v : ValIdx) : LayoutM Nat :=
   get >>= fun stt => pure stt.degrees[v]!
+
+@[inline] def setDegrees (degrees : Array Nat) : LayoutM Unit :=
+  modify fun stt => { stt with degrees }
 
 def getSharedData : LayoutM SharedData :=
   get >>= fun stt =>
@@ -80,6 +86,12 @@ def opLayout : Bytecode.Op → LayoutM Unit
     else
       pushDegree 1
       bumpAuxiliaries 1
+  | .eqZero a => do
+    let degree ← getDegree a
+    if degree = 0 then pushDegree 0
+    else
+      pushDegrees #[1, 1]
+      bumpAuxiliaries 2
   | .call _ _ outputSize => do
     pushDegrees $ .replicate outputSize 1
     bumpAuxiliaries outputSize
@@ -94,6 +106,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpAuxiliaries size
     bumpLookups
     addMemSize size
+  | .assertEq .. => pure ()
   | .ioGetInfo _ => do
     pushDegrees #[1, 1]
     bumpAuxiliaries 2
@@ -106,10 +119,15 @@ def opLayout : Bytecode.Op → LayoutM Unit
     pushDegrees $ .replicate 8 1
     bumpAuxiliaries 8
     bumpLookups
-  | .u8ShiftLeft _ | .u8ShiftRight _ => do
+  | .u8ShiftLeft _ | .u8ShiftRight _ | .u8Xor .. => do
     pushDegree 1
     bumpAuxiliaries 1
     bumpLookups
+  | .u8Add .. => do
+    pushDegrees #[1, 1]
+    bumpAuxiliaries 2
+    bumpLookups
+  | .debug .. => pure ()
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   block.ops.forM opLayout
@@ -117,11 +135,13 @@ partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
   | .match _ branches defaultBranch =>
     let initSharedData ← getSharedData
     let mut maximalSharedData := initSharedData
+    let mut degrees ← getDegrees
     for (_, block) in branches do
       setSharedData initSharedData
       blockLayout block
       let blockSharedData ← getSharedData
       maximalSharedData := maximalSharedData.maximals blockSharedData
+      setDegrees degrees
     if let some defaultBlock := defaultBranch then
       setSharedData initSharedData
       -- An auxiliary per case for proving inequality
@@ -129,6 +149,7 @@ partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
       blockLayout defaultBlock
       let defaultBlockSharedData ← getSharedData
       maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
+      setDegrees degrees
     setSharedData maximalSharedData
   | .return .. =>
     bumpSelectors
@@ -193,6 +214,7 @@ def TypedDecls.layoutMap (decls : TypedDecls) : LayoutMap :=
   layoutMap
 
 def typSize (layoutMap : LayoutMap) : Typ → Nat
+| .unit => 0
 | .field .. => 1
 | .pointer .. => 1
 | .function .. => 1
@@ -222,10 +244,10 @@ partial def toIndex
  (bindings : Std.HashMap Local (Array Bytecode.ValIdx))
  (term : TypedTerm) : StateM CompilerState (Array Bytecode.ValIdx) :=
   match term.inner with
+  | .unit => pure #[]
   | .ret .. => panic! "Should not happen after typechecking"
   | .match .. => panic! "Non-tail `match` not yet implemented"
-  | .var name => do
-    pure (bindings[name]!)
+  | .var name => pure bindings[name]!
   | .ref name => match layoutMap[name]! with
     | .function layout => do
       pushOp (.const (.ofNat layout.index))
@@ -259,6 +281,9 @@ partial def toIndex
     let a ← expectIdx a
     let b ← expectIdx b
     pushOp (.mul a b)
+  | .eqZero a => do
+    let a ← expectIdx a
+    pushOp (.eqZero a)
   | .app name@(⟨.str .anonymous unqualifiedName⟩) args =>
     match bindings.get? (.str unqualifiedName) with
     | some _ => panic! "Dynamic calls not yet implemented"
@@ -327,6 +352,16 @@ partial def toIndex
     let eltSize := typSize layoutMap eltTyp
     let arr ← toIndex layoutMap bindings arr
     pure $ arr.extract (i * eltSize) (j * eltSize)
+  | .set arr i val => do
+    let eltTyp := match arr.typ with
+      | .evaluates (.array typ _) => typ
+      | _ => panic! "Should not happen after typechecking"
+    let eltSize := typSize layoutMap eltTyp
+    let arr ← toIndex layoutMap bindings arr
+    let left := arr.extract 0 (i * eltSize)
+    let val ← toIndex layoutMap bindings val
+    let right := arr.extract ((i + 1) * eltSize)
+    pure $ left ++ val ++ right
   | .store arg => do
     let args ← toIndex layoutMap bindings arg
     pushOp (.store args)
@@ -342,6 +377,11 @@ partial def toIndex
   --   let op := .trace str arr
   --   modify (fun state => { state with ops := state.ops.push op})
   --   pure arr
+  | .assertEq a b ret => do
+    let a ← toIndex layoutMap bindings a
+    let b ← toIndex layoutMap bindings b
+    modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
+    toIndex layoutMap bindings ret
   | .ioGetInfo key => do
     let key ← toIndex layoutMap bindings key
     pushOp (.ioGetInfo key) 2
@@ -367,6 +407,18 @@ partial def toIndex
   | .u8ShiftRight byte => do
     let byte ← expectIdx byte
     pushOp (.u8ShiftRight byte)
+  | .u8Xor i j => do
+    let i ← expectIdx i
+    let j ← expectIdx j
+    pushOp (.u8Xor i j)
+  | .u8Add i j => do
+    let i ← expectIdx i
+    let j ← expectIdx j
+    pushOp (.u8Add i j) 2
+  | .debug label term ret => do
+    let term ← term.mapM (toIndex layoutMap bindings)
+    modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
+    toIndex layoutMap bindings ret
   where
     buildArgs (args : List TypedTerm) (init := #[]) :=
       let append acc arg := do
@@ -391,6 +443,10 @@ partial def TypedTerm.compile
     let val ← toIndex layoutMap bindings val
     bod.compile returnTyp layoutMap (bindings.insert var val)
   | .let .. => panic! "Should not happen after simplifying"
+  | .debug label term ret => do
+    let term ← term.mapM (toIndex layoutMap bindings)
+    modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
+    ret.compile returnTyp layoutMap bindings
   | .match term cases =>
     match term.typ.unwrapOr returnTyp with
     -- Also do this for tuple-like and array-like (one constructor only) datatypes

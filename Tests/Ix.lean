@@ -48,7 +48,6 @@ def serde [Ixon.Serialize A] [BEq A] (x: A) : Bool :=
 --    | .error _ _ => .false
 --  | .error _ _ => .false
 
-
 --def transportExpr' (x: Ix.Expr): Except TransportError Bool :=
 --  match EStateM.run (dematExpr x) emptyDematState with
 --  | .ok ixon stt =>
