@@ -9,7 +9,7 @@ use std::{
 
 use crate::lean_env::{
     ConstMap, Name,
-    scc::{NameSet, RefMap},
+    ref_graph::{NameSet, RefMap},
 };
 
 /// The size of the SCC chunks in which parallel compilation will occur.
@@ -19,7 +19,7 @@ const PAR_CHUNK_SIZE: usize = 1024;
 
 pub fn compile(
     sccs: &RefMap,
-    dep_graph: &RefMap,
+    out_refs: &RefMap,
     const_map: &ConstMap,
 ) -> FxHashMap<Arc<Name>, u64> {
     // The compilation process involves:
@@ -34,13 +34,13 @@ pub fn compile(
             sccs.get($name).expect("Missing SCC")
         };
         (DEPS, $name:expr) => {
-            dep_graph.get($name).expect("Missing dependencies")
+            out_refs.get($name).expect("Missing dependencies")
         };
     }
 
     // Find root SCCs - those that no other SCC depends on.
     let mut roots: FxHashSet<_> = sccs.values().map(NameSetWrap).collect();
-    for (name, deps) in dep_graph {
+    for (name, deps) in out_refs {
         for dep in deps {
             let dep_scc = get!(SCC, dep);
             // Don't remove SCCs due to circular dependencies within the same SCC.
@@ -115,11 +115,11 @@ pub fn compile(
     }
 
     // Verify that we computed hashes for all nodes in the dependency graph.
-    assert_eq!(map.len(), dep_graph.len());
+    assert_eq!(map.len(), out_refs.len());
     map
 }
 
-/// Wrapper for [`NameSet`] to provide concrete Hash and Eq implementations.
+/// Wrapper for [`NameSet`] to provide concrete [`Hash`] and [`Eq`] implementations.
 #[derive(PartialEq, Eq, Clone)]
 struct NameSetWrap<'a>(&'a NameSet);
 

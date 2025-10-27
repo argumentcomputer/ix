@@ -1,29 +1,20 @@
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
-use crate::{FxIndexSet, lean_env::Name};
-
-pub type NameSet = FxHashSet<Arc<Name>>;
-
-/// A map from names to name sets.
-pub type RefMap = FxHashMap<Arc<Name>, NameSet>;
-
-pub fn merge_name_sets(mut a: NameSet, mut b: NameSet) -> NameSet {
-    if a.len() < b.len() {
-        b.extend(a);
-        b
-    } else {
-        a.extend(b);
-        a
-    }
-}
+use crate::{
+    FxIndexSet,
+    lean_env::{
+        Name,
+        ref_graph::{NameSet, RefMap},
+    },
+};
 
 /// Compute strongly connected components using an iterative Tarjan’s algorithm.
 /// Returns a map from each node to the set of nodes in its SCC.
-pub fn compute_sccs(ref_map: &RefMap) -> RefMap {
+pub fn compute_sccs(out_refs: &RefMap) -> RefMap {
     macro_rules! neighbors {
         ($name:expr) => {
-            ref_map.get($name).unwrap().iter().cloned().collect()
+            out_refs.get($name).unwrap().iter().cloned().collect()
         };
     }
 
@@ -38,11 +29,11 @@ pub fn compute_sccs(ref_map: &RefMap) -> RefMap {
     let mut lowlink = FxHashMap::default();
     let mut stack = FxIndexSet::default();
     let mut next_index = 0usize;
-    let mut result = RefMap::default();
+    let mut sccs = RefMap::default();
 
     let mut work = Vec::<Frame>::new();
 
-    for start in ref_map.keys() {
+    for start in out_refs.keys() {
         if index.contains_key(start) {
             continue;
         }
@@ -106,14 +97,15 @@ pub fn compute_sccs(ref_map: &RefMap) -> RefMap {
 
                     // Insert all nodes in the component directly into the result.
                     for node in &component {
-                        result.insert(node.clone(), component.clone());
+                        sccs.insert(node.clone(), component.clone());
                     }
                 }
             }
         }
     }
 
-    result
+    assert_eq!(out_refs.len(), sccs.len());
+    sccs
 }
 
 #[cfg(test)]

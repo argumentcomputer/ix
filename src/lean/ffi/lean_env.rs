@@ -13,14 +13,15 @@ use crate::{
         QuotKind, QuotVal, RecursorRule, RecursorVal, ReducibilityHints, SourceInfo, Substring,
         Syntax, SyntaxPreresolved, TheoremVal,
         compile::compile,
-        scc::{NameSet, RefMap, compute_sccs, merge_name_sets},
+        ref_graph::{RefGraph, build_ref_graph},
+        scc::compute_sccs,
     },
     lean_unbox,
 };
 
 #[derive(Default)]
 struct Cache {
-    exprs: FxHashMap<*const c_void, (Arc<Expr>, NameSet)>,
+    exprs: FxHashMap<*const c_void, Arc<Expr>>,
     names: FxHashMap<*const c_void, Arc<Name>>,
 }
 
@@ -178,52 +179,49 @@ fn lean_ptr_to_name_data_value(ptr: *const c_void, cache: &mut Cache) -> (Arc<Na
     (name, data_value)
 }
 
-fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> (Arc<Expr>, NameSet) {
+fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Arc<Expr> {
     if let Some(cached) = cache.exprs.get(&ptr) {
         return cached.clone();
     }
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-    let (expr, name_set) = match ctor.tag() {
+    let expr = match ctor.tag() {
         0 => {
             let [nat_ptr, hash_ptr] = ctor.objs();
             let nat = Nat::from_ptr(nat_ptr.cast());
             let hash = hash_ptr as u64;
-            (Arc::new(Expr::Bvar(nat, hash)), NameSet::default())
+            Arc::new(Expr::Bvar(nat, hash))
         }
         1 => {
             let [name_ptr, hash_ptr] = ctor.objs();
             let name = lean_ptr_to_name(name_ptr, cache);
             let hash = hash_ptr as u64;
-            (Arc::new(Expr::Fvar(name, hash)), NameSet::default())
+            Arc::new(Expr::Fvar(name, hash))
         }
         2 => {
             let [name_ptr, hash_ptr] = ctor.objs();
             let name = lean_ptr_to_name(name_ptr, cache);
             let hash = hash_ptr as u64;
-            (Arc::new(Expr::Mvar(name, hash)), NameSet::default())
+            Arc::new(Expr::Mvar(name, hash))
         }
         3 => {
             let [u_ptr, hash_ptr] = ctor.objs();
             let u = lean_ptr_to_level(u_ptr, cache);
             let hash = hash_ptr as u64;
-            (Arc::new(Expr::Sort(u, hash)), NameSet::default())
+            Arc::new(Expr::Sort(u, hash))
         }
         4 => {
             let [name_ptr, levels_ptr, hash_ptr] = ctor.objs();
             let name = lean_ptr_to_name(name_ptr, cache);
             let levels = collect_list_with(levels_ptr, lean_ptr_to_level, cache);
             let hash = hash_ptr as u64;
-            let expr = Arc::new(Expr::Const(name.clone(), levels, hash));
-            let name_set = NameSet::from_iter([name]);
-            (expr, name_set)
+            Arc::new(Expr::Const(name.clone(), levels, hash))
         }
         5 => {
             let [f_ptr, a_ptr, hash_ptr] = ctor.objs();
-            let (f, set_f) = lean_ptr_to_expr(f_ptr, cache);
-            let (a, set_a) = lean_ptr_to_expr(a_ptr, cache);
-            let name_set = merge_name_sets(set_f, set_a);
+            let f = lean_ptr_to_expr(f_ptr, cache);
+            let a = lean_ptr_to_expr(a_ptr, cache);
             let hash = hash_ptr as u64;
-            (Arc::new(Expr::App(f, a, hash)), name_set)
+            Arc::new(Expr::App(f, a, hash))
         }
         6 => {
             let [
@@ -234,9 +232,8 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> (Arc<Expr>, NameSe
                 binder_info_ptr,
             ] = ctor.objs();
             let binder_name = lean_ptr_to_name(binder_name_ptr, cache);
-            let (binder_typ, binder_set) = lean_ptr_to_expr(binder_typ_ptr, cache);
-            let (body, body_set) = lean_ptr_to_expr(body_ptr, cache);
-            let name_set = merge_name_sets(binder_set, body_set);
+            let binder_typ = lean_ptr_to_expr(binder_typ_ptr, cache);
+            let body = lean_ptr_to_expr(body_ptr, cache);
             let hash = hash_ptr as u64;
             let binder_info = match binder_info_ptr as usize {
                 0 => BinderInfo::Default,
@@ -245,10 +242,7 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> (Arc<Expr>, NameSe
                 3 => BinderInfo::InstImplicit,
                 _ => unreachable!(),
             };
-            (
-                Arc::new(Expr::Lam(binder_name, binder_typ, body, binder_info, hash)),
-                name_set,
-            )
+            Arc::new(Expr::Lam(binder_name, binder_typ, body, binder_info, hash))
         }
         7 => {
             let [
@@ -259,9 +253,8 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> (Arc<Expr>, NameSe
                 binder_info_ptr,
             ] = ctor.objs();
             let binder_name = lean_ptr_to_name(binder_name_ptr, cache);
-            let (binder_typ, binder_set) = lean_ptr_to_expr(binder_typ_ptr, cache);
-            let (body, body_set) = lean_ptr_to_expr(body_ptr, cache);
-            let name_set = merge_name_sets(binder_set, body_set);
+            let binder_typ = lean_ptr_to_expr(binder_typ_ptr, cache);
+            let body = lean_ptr_to_expr(body_ptr, cache);
             let hash = hash_ptr as u64;
             let binder_info = match binder_info_ptr as usize {
                 0 => BinderInfo::Default,
@@ -270,16 +263,13 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> (Arc<Expr>, NameSe
                 3 => BinderInfo::InstImplicit,
                 _ => unreachable!(),
             };
-            (
-                Arc::new(Expr::ForallE(
-                    binder_name,
-                    binder_typ,
-                    body,
-                    binder_info,
-                    hash,
-                )),
-                name_set,
-            )
+            Arc::new(Expr::ForallE(
+                binder_name,
+                binder_typ,
+                body,
+                binder_info,
+                hash,
+            ))
         }
         8 => {
             let [
@@ -291,23 +281,19 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> (Arc<Expr>, NameSe
                 nondep_ptr,
             ] = ctor.objs();
             let decl_name = lean_ptr_to_name(decl_name_ptr, cache);
-            let (typ, typ_set) = lean_ptr_to_expr(typ_ptr, cache);
-            let (value, value_set) = lean_ptr_to_expr(value_ptr, cache);
-            let (body, body_set) = lean_ptr_to_expr(body_ptr, cache);
-            let name_set = merge_name_sets(typ_set, merge_name_sets(value_set, body_set));
+            let typ = lean_ptr_to_expr(typ_ptr, cache);
+            let value = lean_ptr_to_expr(value_ptr, cache);
+            let body = lean_ptr_to_expr(body_ptr, cache);
             let hash = hash_ptr as u64;
             let nondep = nondep_ptr as usize == 1;
-            (
-                Arc::new(Expr::LetE(decl_name, typ, value, body, nondep, hash)),
-                name_set,
-            )
+            Arc::new(Expr::LetE(decl_name, typ, value, body, nondep, hash))
         }
         9 => {
             let [literal_ptr, hash_ptr] = ctor.objs();
             let literal: &LeanCtorObject = as_ref_unsafe(literal_ptr.cast());
             let [inner_ptr] = literal.objs();
             let hash = hash_ptr as u64;
-            let expr = match literal.tag() {
+            match literal.tag() {
                 0 => {
                     let nat = Nat::from_ptr(inner_ptr);
                     Arc::new(Expr::Lit(Literal::NatVal(nat), hash))
@@ -317,85 +303,74 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> (Arc<Expr>, NameSe
                     Arc::new(Expr::Lit(Literal::StrVal(str.as_string()), hash))
                 }
                 _ => unreachable!(),
-            };
-            (expr, NameSet::default())
+            }
         }
         10 => {
             let [data_ptr, expr_ptr, hash_ptr] = ctor.objs();
             let kv_map = collect_list_with(data_ptr, lean_ptr_to_name_data_value, cache);
-            let (expr, name_set) = lean_ptr_to_expr(expr_ptr, cache);
+            let expr = lean_ptr_to_expr(expr_ptr, cache);
             let hash = hash_ptr as u64;
-            (Arc::new(Expr::Mdata(kv_map, expr, hash)), name_set)
+            Arc::new(Expr::Mdata(kv_map, expr, hash))
         }
         11 => {
             let [typ_name_ptr, idx_ptr, struct_ptr, hash_ptr] = ctor.objs();
             let typ_name = lean_ptr_to_name(typ_name_ptr, cache);
             let idx = Nat::from_ptr(idx_ptr);
-            let (struct_expr, name_set) = lean_ptr_to_expr(struct_ptr, cache);
+            let struct_expr = lean_ptr_to_expr(struct_ptr, cache);
             let hash = hash_ptr as u64;
-            (
-                Arc::new(Expr::Proj(typ_name, idx, struct_expr, hash)),
-                name_set,
-            )
+            Arc::new(Expr::Proj(typ_name, idx, struct_expr, hash))
         }
         _ => unreachable!(),
     };
-    cache.exprs.insert(ptr, (expr.clone(), name_set.clone()));
-    (expr, name_set)
+    cache.exprs.insert(ptr, expr.clone());
+    expr
 }
 
-fn lean_ptr_to_recursor_rule(ptr: *const c_void, cache: &mut Cache) -> (RecursorRule, NameSet) {
+fn lean_ptr_to_recursor_rule(ptr: *const c_void, cache: &mut Cache) -> RecursorRule {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [ctor_ptr, n_fields_ptr, rhs_ptr] = ctor.objs();
     let ctor = lean_ptr_to_name(ctor_ptr, cache);
     let n_fields = Nat::from_ptr(n_fields_ptr);
-    let (rhs, name_set) = lean_ptr_to_expr(rhs_ptr, cache);
-    (
-        RecursorRule {
-            ctor,
-            n_fields,
-            rhs,
-        },
-        name_set,
-    )
+    let rhs = lean_ptr_to_expr(rhs_ptr, cache);
+    RecursorRule {
+        ctor,
+        n_fields,
+        rhs,
+    }
 }
 
-fn lean_ptr_to_constant_val(ptr: *const c_void, cache: &mut Cache) -> (ConstantVal, NameSet) {
+fn lean_ptr_to_constant_val(ptr: *const c_void, cache: &mut Cache) -> ConstantVal {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [name_ptr, level_params_ptr, typ_ptr] = ctor.objs();
     let name = lean_ptr_to_name(name_ptr, cache);
     let level_params = collect_list_with(level_params_ptr, lean_ptr_to_name, cache);
-    let (typ, name_set) = lean_ptr_to_expr(typ_ptr, cache);
-    (
-        ConstantVal {
-            name,
-            level_params,
-            typ,
-        },
-        name_set,
-    )
+    let typ = lean_ptr_to_expr(typ_ptr, cache);
+    ConstantVal {
+        name,
+        level_params,
+        typ,
+    }
 }
 
-fn lean_ptr_to_constant_info(ptr: *const c_void, cache: &mut Cache) -> (ConstantInfo, NameSet) {
+fn lean_ptr_to_constant_info(ptr: *const c_void, cache: &mut Cache) -> ConstantInfo {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [inner_val_ptr] = ctor.objs();
     let inner_val: &LeanCtorObject = as_ref_unsafe(inner_val_ptr.cast());
     match ctor.tag() {
         0 => {
             let [constant_val_ptr, is_unsafe_ptr] = inner_val.objs();
-            let (constant_val, name_set) = lean_ptr_to_constant_val(constant_val_ptr, cache);
+            let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
             let is_unsafe = is_unsafe_ptr as usize == 1;
             let axiom_val = AxiomVal {
                 constant_val,
                 is_unsafe,
             };
-            (ConstantInfo::AxiomInfo(axiom_val), name_set)
+            ConstantInfo::AxiomInfo(axiom_val)
         }
         1 => {
             let [constant_val_ptr, value_ptr, hints_ptr, all_ptr, safety_ptr] = inner_val.objs();
-            let (constant_val, const_set) = lean_ptr_to_constant_val(constant_val_ptr, cache);
-            let (value, value_set) = lean_ptr_to_expr(value_ptr, cache);
-            let name_set = merge_name_sets(const_set, value_set);
+            let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
+            let value = lean_ptr_to_expr(value_ptr, cache);
             let hints = if lean_is_scalar(hints_ptr) {
                 match lean_unbox!(usize, hints_ptr) {
                     0 => ReducibilityHints::Opaque,
@@ -414,52 +389,41 @@ fn lean_ptr_to_constant_info(ptr: *const c_void, cache: &mut Cache) -> (Constant
                 2 => DefinitionSafety::Partial,
                 _ => unreachable!(),
             };
-            (
-                ConstantInfo::DefnInfo(DefinitionVal {
-                    constant_val,
-                    value,
-                    hints,
-                    safety,
-                    all,
-                }),
-                name_set,
-            )
+            ConstantInfo::DefnInfo(DefinitionVal {
+                constant_val,
+                value,
+                hints,
+                safety,
+                all,
+            })
         }
         2 => {
             let [constant_val_ptr, value_ptr, all_ptr] = inner_val.objs();
-            let (constant_val, const_set) = lean_ptr_to_constant_val(constant_val_ptr, cache);
-            let (value, value_set) = lean_ptr_to_expr(value_ptr, cache);
-            let name_set = merge_name_sets(const_set, value_set);
+            let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
+            let value = lean_ptr_to_expr(value_ptr, cache);
             let all = collect_list_with(all_ptr, lean_ptr_to_name, cache);
-            (
-                ConstantInfo::ThmInfo(TheoremVal {
-                    constant_val,
-                    value,
-                    all,
-                }),
-                name_set,
-            )
+            ConstantInfo::ThmInfo(TheoremVal {
+                constant_val,
+                value,
+                all,
+            })
         }
         3 => {
             let [constant_val_ptr, value_ptr, all_ptr, is_unsafe_ptr] = inner_val.objs();
-            let (constant_val, const_set) = lean_ptr_to_constant_val(constant_val_ptr, cache);
-            let (value, value_set) = lean_ptr_to_expr(value_ptr, cache);
-            let name_set = merge_name_sets(const_set, value_set);
+            let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
+            let value = lean_ptr_to_expr(value_ptr, cache);
             let all = collect_list_with(all_ptr, lean_ptr_to_name, cache);
             let is_unsafe = is_unsafe_ptr as usize == 1;
-            (
-                ConstantInfo::OpaqueInfo(OpaqueVal {
-                    constant_val,
-                    value,
-                    is_unsafe,
-                    all,
-                }),
-                name_set,
-            )
+            ConstantInfo::OpaqueInfo(OpaqueVal {
+                constant_val,
+                value,
+                is_unsafe,
+                all,
+            })
         }
         4 => {
             let [constant_val_ptr, kind_ptr] = inner_val.objs();
-            let (constant_val, name_set) = lean_ptr_to_constant_val(constant_val_ptr, cache);
+            let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
             let kind = match kind_ptr as usize {
                 0 => QuotKind::Type,
                 1 => QuotKind::Ctor,
@@ -467,10 +431,7 @@ fn lean_ptr_to_constant_info(ptr: *const c_void, cache: &mut Cache) -> (Constant
                 3 => QuotKind::Ind,
                 _ => unreachable!(),
             };
-            (
-                ConstantInfo::QuotInfo(QuotVal { constant_val, kind }),
-                name_set,
-            )
+            ConstantInfo::QuotInfo(QuotVal { constant_val, kind })
         }
         5 => {
             let [
@@ -482,7 +443,7 @@ fn lean_ptr_to_constant_info(ptr: *const c_void, cache: &mut Cache) -> (Constant
                 num_nested_ptr,
                 bools_ptr,
             ] = inner_val.objs();
-            let (constant_val, name_set) = lean_ptr_to_constant_val(constant_val_ptr, cache);
+            let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
             let num_params = Nat::from_ptr(num_params_ptr);
             let num_indices = Nat::from_ptr(num_indices_ptr);
             let all = collect_list_with(all_ptr, lean_ptr_to_name, cache);
@@ -490,20 +451,17 @@ fn lean_ptr_to_constant_info(ptr: *const c_void, cache: &mut Cache) -> (Constant
             let num_nested = Nat::from_ptr(num_nested_ptr);
             let [is_rec, is_unsafe, is_reflexive, ..] =
                 (bools_ptr as usize).to_le_bytes().map(|b| b == 1);
-            (
-                ConstantInfo::InductInfo(InductiveVal {
-                    constant_val,
-                    num_params,
-                    num_indices,
-                    all,
-                    ctors,
-                    num_nested,
-                    is_rec,
-                    is_unsafe,
-                    is_reflexive,
-                }),
-                name_set,
-            )
+            ConstantInfo::InductInfo(InductiveVal {
+                constant_val,
+                num_params,
+                num_indices,
+                all,
+                ctors,
+                num_nested,
+                is_rec,
+                is_unsafe,
+                is_reflexive,
+            })
         }
         6 => {
             let [
@@ -514,23 +472,20 @@ fn lean_ptr_to_constant_info(ptr: *const c_void, cache: &mut Cache) -> (Constant
                 num_fields_ptr,
                 is_unsafe_ptr,
             ] = inner_val.objs();
-            let (constant_val, name_set) = lean_ptr_to_constant_val(constant_val_ptr, cache);
+            let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
             let induct = lean_ptr_to_name(induct_ptr, cache);
             let cidx = Nat::from_ptr(cidx_ptr);
             let num_params = Nat::from_ptr(num_params_ptr);
             let num_fields = Nat::from_ptr(num_fields_ptr);
             let is_unsafe = is_unsafe_ptr as usize == 1;
-            (
-                ConstantInfo::CtorInfo(ConstructorVal {
-                    constant_val,
-                    induct,
-                    cidx,
-                    num_params,
-                    num_fields,
-                    is_unsafe,
-                }),
-                name_set,
-            )
+            ConstantInfo::CtorInfo(ConstructorVal {
+                constant_val,
+                induct,
+                cidx,
+                num_params,
+                num_fields,
+                is_unsafe,
+            })
         }
         7 => {
             let [
@@ -543,33 +498,27 @@ fn lean_ptr_to_constant_info(ptr: *const c_void, cache: &mut Cache) -> (Constant
                 rules_ptr,
                 bools_ptr,
             ] = inner_val.objs();
-            let (constant_val, mut name_set) = lean_ptr_to_constant_val(constant_val_ptr, cache);
+            let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
             let all = collect_list_with(all_ptr, lean_ptr_to_name, cache);
             let num_params = Nat::from_ptr(num_params_ptr);
             let num_indices = Nat::from_ptr(num_indices_ptr);
             let num_motives = Nat::from_ptr(num_motives_ptr);
             let num_minors = Nat::from_ptr(num_minors_ptr);
-            let mut rules = Vec::new();
-            for rule_ptr in ListIterator(rules_ptr) {
-                let (rule, rule_name_set) = lean_ptr_to_recursor_rule(rule_ptr, cache);
-                rules.push(rule);
-                name_set = merge_name_sets(name_set, rule_name_set);
-            }
+            let rules = ListIterator(rules_ptr)
+                .map(|rule_ptr| lean_ptr_to_recursor_rule(rule_ptr, cache))
+                .collect();
             let [k, is_unsafe, ..] = (bools_ptr as usize).to_le_bytes().map(|b| b == 1);
-            (
-                ConstantInfo::RecInfo(RecursorVal {
-                    constant_val,
-                    all,
-                    num_params,
-                    num_indices,
-                    num_motives,
-                    num_minors,
-                    rules,
-                    k,
-                    is_unsafe,
-                }),
-                name_set,
-            )
+            ConstantInfo::RecInfo(RecursorVal {
+                constant_val,
+                all,
+                num_params,
+                num_indices,
+                num_motives,
+                num_minors,
+                rules,
+                k,
+                is_unsafe,
+            })
         }
         _ => unreachable!(),
     }
@@ -602,32 +551,29 @@ fn lean_ptr_to_name(ptr: *const c_void, cache: &mut Cache) -> Arc<Name> {
 fn lean_ptr_to_name_constant_info(
     ptr: *const c_void,
     cache: &mut Cache,
-) -> (Arc<Name>, ConstantInfo, NameSet) {
+) -> (Arc<Name>, ConstantInfo) {
     let prod_ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [name_ptr, constant_info_ptr] = prod_ctor.objs();
     let name = lean_ptr_to_name(name_ptr, cache);
-    let (constant_info, name_set) = lean_ptr_to_constant_info(constant_info_ptr, cache);
-    (name, constant_info, name_set)
+    let constant_info = lean_ptr_to_constant_info(constant_info_ptr, cache);
+    (name, constant_info)
 }
 
-fn lean_ptr_to_const_map(ptr: *const c_void) -> (ConstMap, RefMap) {
-    let array: &LeanArrayObject = as_ref_unsafe(ptr.cast());
+fn lean_ptr_to_const_map(ptr: *const c_void) -> ConstMap {
     let mut cache = Cache::default();
     let mut const_map = ConstMap::default();
-    let mut dep_graph = RefMap::default();
-    for &ptr in array.data() {
-        let (name, constant_info, name_set) = lean_ptr_to_name_constant_info(ptr, &mut cache);
+    for ptr in ListIterator(ptr) {
+        let (name, constant_info) = lean_ptr_to_name_constant_info(ptr, &mut cache);
         const_map.insert(name.clone(), constant_info);
-        dep_graph.insert(name, name_set);
     }
-    (const_map, dep_graph)
+    const_map
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
-    let (const_map, dep_graph) = lean_ptr_to_const_map(ptr);
-    let sccs = compute_sccs(&dep_graph);
-    assert_eq!(sccs.len(), const_map.len());
-    compile(&sccs, &dep_graph, &const_map);
+    let const_map = lean_ptr_to_const_map(ptr);
+    let RefGraph { out_refs, .. } = build_ref_graph(&const_map);
+    let sccs = compute_sccs(&out_refs);
+    compile(&sccs, &out_refs, &const_map);
     const_map.len()
 }
