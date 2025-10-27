@@ -21,7 +21,7 @@ tokio = { version = "1.44.1", optional = true }
 iroh = { version = "0.91", optional = true }
 iroh-base = { version = "0.91", optional = true }
 n0-snafu = { version = "0.2.1", optional = true }
-n0-watcher = { version = "0.3", optional = true }
+n0-watcher = { version = "0.4", optional = true }
 rand = { version = "0.8", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
