@@ -1,4 +1,5 @@
 pub mod compile;
+pub mod compile2;
 pub mod ref_graph;
 pub mod scc;
 
