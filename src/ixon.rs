@@ -101,6 +101,7 @@ impl Ixon {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn pack_bools<I>(bools: I) -> u8
     where
         I: IntoIterator<Item = bool>,
@@ -116,7 +117,7 @@ impl Ixon {
 
     pub fn unpack_bools(n: usize, b: u8) -> Vec<bool> {
         (0..8)
-            .map(|i| (b & (1u8 << (i as u32))) != 0)
+            .map(|i: u32| (b & (1u8 << i)) != 0)
             .take(n.min(8))
             .collect()
     }
