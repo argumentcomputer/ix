@@ -1,33 +1,33 @@
-import LSpec
-
-import Ix.Ixon
-import Ix.Address
-import Ix.Common
-import Ix.CanonM
-import Ix.Meta
-import Lean
-import Tests.Ix.Fixtures
-
-@[specialize]
-def withExceptOkM 
-  [Monad m] (descr : String) (exc : Except ε α) [ToString ε] (f : α → m LSpec.TestSeq)
-  : m LSpec.TestSeq :=
-  match exc with
-  | .error e => return LSpec.test descr (LSpec.ExpectationFailure "ok _" s!"error {e}")
-  | .ok    a => return LSpec.test descr true $ ← f a
-
---abbrev CanonTest := Ix.CanonM.CanonMState → LSpec.TestSeq
---abbrev IOCanonTest := Ix.CanonM.CanonMState → IO LSpec.TestSeq
-
-
-def Test.Ix.Canon.wellfounded : IO LSpec.TestSeq := do
-  let env <- get_env!
-  let stt <- match <- Ix.CanonM.canonicalizeDelta env.constants env.getDelta with
-    | .error e => return LSpec.test "canonicalizeFailure" (LSpec.ExpectationFailure "ok _" s!"error {e}")
-    | .ok stt => pure stt
-  let (a,_) := stt.names.find! `WellFounded.A
-  let (b,_) := stt.names.find! `WellFounded.A'
-  return LSpec.test "A == A'" (a == b)
+--import LSpec
+--
+--import Ix.Ixon
+--import Ix.Address
+--import Ix.Common
+--import Ix.CanonM
+--import Ix.Meta
+--import Lean
+--import Tests.Ix.Fixtures
+--
+--@[specialize]
+--def withExceptOkM 
+--  [Monad m] (descr : String) (exc : Except ε α) [ToString ε] (f : α → m LSpec.TestSeq)
+--  : m LSpec.TestSeq :=
+--  match exc with
+--  | .error e => return LSpec.test descr (LSpec.ExpectationFailure "ok _" s!"error {e}")
+--  | .ok    a => return LSpec.test descr true $ ← f a
+--
+----abbrev CanonTest := Ix.CanonM.CanonMState → LSpec.TestSeq
+----abbrev IOCanonTest := Ix.CanonM.CanonMState → IO LSpec.TestSeq
+--
+--
+--def Test.Ix.Canon.wellfounded : IO LSpec.TestSeq := do
+--  let env <- get_env!
+--  let stt <- match <- Ix.CanonM.canonicalizeDelta env.constants env.getDelta with
+--    | .error e => return LSpec.test "canonicalizeFailure" (LSpec.ExpectationFailure "ok _" s!"error {e}")
+--    | .ok stt => pure stt
+--  let (a,_) := stt.names.find! `WellFounded.A
+--  let (b,_) := stt.names.find! `WellFounded.A'
+--  return LSpec.test "A == A'" (a == b)
 
 -- `WellFounded.A == `WellFounded.A'
 

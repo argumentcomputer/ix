@@ -1,12 +1,12 @@
 import Ix.Address
 import Ix.Ixon
-import Ix.Ixon.Serialize
 
 import Init.System.FilePath
 import Init.System.IO
 import Init.System.IOError
 
 open System
+open Ixon
 
 inductive StoreError
 | unknownAddress (a: Address)
@@ -32,35 +32,37 @@ def getHomeDir : StoreIO FilePath := do
   | .some path => return ⟨path⟩
   | .none => throw .noHome
 
+-- TODO: make this the default dir for the store, but customizable
 def storeDir : StoreIO FilePath := do
   let home ← getHomeDir
-  return home / ".ix" / "store"
+  let path := home / ".ix" / "store"
+  if !(<- path.pathExists) then
+    IO.toEIO .ioError (IO.FS.createDirAll path)
+  return path
 
-def ensureStoreDir : StoreIO Unit := do
-  let store ← storeDir
-  IO.toEIO .ioError (IO.FS.createDirAll store)
-
-def writeConst (x: Ixon.Const) : StoreIO Address := do
-  let bytes := Ixon.Serialize.put x
+def writeConst (x: Ixon) : StoreIO Address := do
+  let bytes := runPut (Serialize.put x)
   let addr  := Address.blake3 bytes
   let store ← storeDir
   let path := store / hexOfBytes addr.hash
-  let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
+  -- trust that the store is correct
+  if !(<- path.pathExists) then
+    let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
   return addr
 
 -- unsafe, can corrupt store if called with bad address
-def forceWriteConst (addr: Address) (x: Ixon.Const) : StoreIO Address := do
-  let bytes := Ixon.Serialize.put x
+def forceWriteConst (addr: Address) (x: Ixon) : StoreIO Address := do
+  let bytes := runPut (Serialize.put x)
   let store ← storeDir
   let path := store / hexOfBytes addr.hash
   let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
   return addr
 
-def readConst (a: Address) : StoreIO Ixon.Const := do
+def readConst (a: Address) : StoreIO Ixon := do
   let store ← storeDir
   let path := store / hexOfBytes a.hash
   let bytes ← IO.toEIO .ioError (IO.FS.readBinFile path)
-  match Ixon.Serialize.get bytes with
+  match runGet Serialize.get bytes with
   | .ok c => return c
   | .error e => throw (.ixonError e)
 

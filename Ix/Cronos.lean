@@ -1,10 +1,8 @@
-import Batteries
-
-open Batteries (RBMap)
+import Std.Data.HashMap
 
 structure Cronos where
-  refs : RBMap String Nat compare
-  data : RBMap String Nat compare
+  refs : Std.HashMap String Nat
+  data : Std.HashMap String Nat
   deriving Inhabited
 
 namespace Cronos
@@ -14,7 +12,7 @@ def new : Cronos :=
 
 def clock (c : Cronos) (tag : String) : IO Cronos := do
   let now ← IO.monoNanosNow
-  match c.refs.find? tag with
+  match c.refs.get? tag with
   | none => return { c with refs := c.refs.insert tag now }
   | some ref => return {
     refs := c.refs.insert tag now,
@@ -26,14 +24,22 @@ def nanoToSec (nanos : Nat) : Float :=
 def secToNano (s : Float) : Nat :=
   s.toUInt64.toNat * 1000000000
 
-def summary (c : Cronos) : String :=
-  let timings := c.data.foldl (init := "")
-    fun acc tag time => s!"{acc}\n  {tag} | {nanoToSec time}s"
-  s!"Timings:{timings}"
+def tagSummary (c : Cronos) (tag: String): String := Id.run do
+  match c.data.get? tag with
+  | some time => s!"{tag} | {nanoToSec time}s"
+  | none => s!"{tag} not logged"
+
+def summary (c : Cronos) : String := Id.run do
+  let mut str := ""
+  for (tag, time) in c.data do
+    str := str.append s!"\n  {tag} | {nanoToSec time}s"
+  s!"Timings:{str}"
 
 -- Get the average time in nanoseconds, returns NaN if no `data` entries
-def mean (c : Cronos) : Float :=
-  let timings := c.data.valuesList
-  Float.ofNat timings.sum / Float.ofNat timings.length
+def mean (c : Cronos) : Float := Id.run do
+  let mut sum : Nat := 0
+  for (_, time) in c.data do
+    sum := sum + time
+  Float.ofNat sum / Float.ofNat c.data.size
 
 end Cronos

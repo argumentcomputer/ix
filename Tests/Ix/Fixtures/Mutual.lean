@@ -1,9 +1,6 @@
-import Tests.Ix.Fixtures.Export
-
-namespace Test.Ix.Fixtures
+namespace Test.Ix.Mutual
 
 namespace WellFounded
-
 mutual
 
   def A : Nat → Nat
@@ -120,14 +117,13 @@ partial def I : Nat → Nat
 
 end Partial
 
-
-namespace Inductives
+namespace Inductive
 
 inductive BLA
   | nil
   | bla : BLA → BLA → BLA
 
--- an inductive with a differently named constructor but all else equal should be the same
+-- an inductive with a differently named constructor but all else equal should be the smae
 inductive BLU
   | nil
   | blu : BLU → BLU → BLU
@@ -138,6 +134,7 @@ inductive BLA'
   | nil
 
 mutual
+  -- BLE and BLI should be distinct because we don't group by weak equality
   inductive BLE | bli : BLI → BLE
   inductive BLI | ble : BLE → BLI
   inductive BLO | blea : BLE → BLI → BLO
@@ -150,6 +147,7 @@ mutual
 end
 
 mutual
+  -- BLE and BLI should be distinct because we don't group by weak equality
   inductive BLE'' | bli : BLI'' → BLE''
   inductive BLO'' | blea : BLE'' → BLA' → BLO''
   inductive BLI'' | ble : BLE'' → BLI''
@@ -159,19 +157,6 @@ end
 inductive BLEH
   | bleh : BLE → BLEH
   | bloh : BLO → BLEH
+end Inductive
 
-end Inductives
-
-namespace Import
-
-def Foo := MyNat -- triggering the compilation of `MyNat`
-def Bar := Nat   -- triggering the compilation of `Nat`
-
-inductive MyOtherNat
-  | nada
-  | mais : MyOtherNat → MyOtherNat
-
-end Import
-
-end Test.Ix.Fixtures
-
+end Test.Ix.Mutual

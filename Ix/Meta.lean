@@ -38,9 +38,10 @@ elab "this_file!" : term => do
 macro "get_env!" : term =>
   `(getFileEnv this_file!)
 
-def computeIxAddress (env: Lean.Environment) (const : ConstantInfo) : IO Address := do
-  let ((a, _), _) <- (Ix.Compile.compileConst const).runIO env
-  return a
+def computeIxAddress (env: Lean.Environment) (const: Lean.Name): IO MetaAddress 
+  := do
+  let (addr, _) <- (Ix.compileConstName const).runIO env
+  return addr
 
 def runCore (f : CoreM α) (env : Environment) : IO α :=
   Prod.fst <$> f.toIO { fileName := default, fileMap := default } { env }
@@ -66,5 +67,4 @@ def metaMakeEvalClaim (func: Lean.Name) (args : List Lean.Expr)
   let sort <- Meta.inferType type
   let lvls := (Lean.collectLevelParams default input).params.toList
   return (lvls, input, output, type, sort)
-
 

@@ -1,0 +1,325 @@
+--import Lean
+--import Std.Data.HashMap
+--import Blake3
+--
+--namespace List
+--
+--partial def mergeM [Monad μ] (cmp : α → α → μ Ordering) : List α → List α → μ (List α)
+--  | as@(a::as'), bs@(b::bs') => do
+--    if (← cmp a b) == Ordering.gt
+--    then List.cons b <$> mergeM cmp as bs'
+--    else List.cons a <$> mergeM cmp as' bs
+--  | [], bs => return bs
+--  | as, [] => return as
+--
+--def mergePairsM [Monad μ] (cmp: α → α → μ Ordering) : List (List α) → μ (List (List α))
+--  | a::b::xs => List.cons <$> (mergeM cmp a b) <*> mergePairsM cmp xs
+--  | xs => return xs
+--
+--partial def mergeAllM [Monad μ] (cmp: α → α → μ Ordering) : List (List α) → μ (List α)
+--  | [x] => return x
+--  | xs => mergePairsM cmp xs >>= mergeAllM cmp
+--
+--mutual
+--  partial def sequencesM [Monad μ] (cmp : α → α → μ Ordering) : List α → μ (List (List α))
+--    | a::b::xs => do
+--      if (← cmp a b) == .gt
+--      then descendingM cmp b [a] xs
+--      else ascendingM cmp b (fun ys => a :: ys) xs
+--    | xs => return [xs]
+--
+--  partial def descendingM [Monad μ] (cmp : α → α → μ Ordering) (a : α) (as : List α) : List α → μ (List (List α))
+--    | b::bs => do
+--      if (← cmp a b) == .gt
+--      then descendingM cmp b (a::as) bs
+--      else List.cons (a::as) <$> sequencesM cmp (b::bs)
+--    | [] => List.cons (a::as) <$> sequencesM cmp []
+--
+--  partial def ascendingM [Monad μ] (cmp : α → α → μ Ordering) (a : α) (as : List α → List α) : List α → μ (List (List α))
+--    | b::bs => do
+--      if (← cmp a b) != .gt
+--      then ascendingM cmp b (fun ys => as (a :: ys)) bs
+--      else List.cons (as [a]) <$> sequencesM cmp (b::bs)
+--    | [] => List.cons (as [a]) <$> sequencesM cmp []
+--end
+--
+--def sortByM [Monad μ] (xs: List α) (cmp: α -> α -> μ Ordering) : μ (List α) :=
+--  sequencesM cmp xs >>= mergeAllM cmp
+--
+--end List
+--
+--
+--namespace Ix.Toy
+--
+--deriving instance BEq for ByteArray
+--
+--structure Address where
+--  hash : ByteArray
+--  deriving Inhabited, BEq, Hashable
+--
+--instance : Ord Address where
+--  compare a b := compare a.hash.data.toList b.hash.data.toList
+--
+--def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.hash x).val⟩
+--
+--inductive AST where
+--| var : Nat -> AST
+--| lam : AST -> AST
+--| app : AST -> AST -> AST
+--| ref : String -> AST
+--deriving Inhabited, BEq, Hashable
+--
+--structure Def where
+--  name: String
+--  val: AST
+--  all: List String
+--deriving BEq, Inhabited
+--
+--structure Env where
+--  decls: Std.HashMap String Def
+--
+--inductive HAST where
+--| var : Nat -> HAST
+--| ref : Address -> HAST
+--| rcr : Nat -> HAST
+--| lam : HAST -> HAST
+--| app : HAST -> HAST -> HAST
+--deriving BEq, Hashable
+--
+--def natToBytesLE (x: Nat) : Array UInt8 :=
+--  if x == 0 then Array.mkArray1 0 else List.toArray (go x x)
+--  where
+--    go : Nat -> Nat -> List UInt8
+--    | _, 0 => []
+--    | 0, _ => []
+--    | Nat.succ f, x => Nat.toUInt8 x:: go f (x / 256)
+--
+--def HAST.serialize : HAST -> ByteArray
+--| .var x => ⟨#[0x0]⟩ ++ ⟨natToBytesLE x⟩
+--| .ref x => ⟨#[0x1]⟩ ++ x.hash
+--| .rcr x => ⟨#[0x2]⟩ ++ ⟨natToBytesLE x⟩
+--| .lam x => ⟨#[0x3]⟩ ++ x.serialize
+--| .app x y => ⟨#[0x4]⟩ ++ x.serialize ++ y.serialize
+--
+----def HAST.hash (x: HAST) : Address := Address.blake3 x.serialize
+--
+--inductive HConst where
+--| defn : HAST -> HConst
+--| defs : List HAST -> HConst
+--| dprj : Address -> Nat -> HConst
+--deriving BEq, Hashable
+--
+--def HConst.serialize : HConst -> ByteArray
+--| .defn x => ⟨#[0x5]⟩ ++ x.serialize
+--| .defs xs => ⟨#[0x6]⟩ ++ (xs.foldr (fun a acc => a.serialize ++ acc) ⟨#[]⟩)
+--| .dprj a n => ⟨#[0x7]⟩ ++ a.hash ++ ⟨natToBytesLE n⟩
+--
+--structure HEnv where
+--  names: Std.HashMap String (Address × Nat)
+--  consts: Std.HashMap Address HConst
+--
+--structure CompileState where
+--  env: Std.HashMap String Def
+--  names: Std.HashMap String Address
+--  cache: Std.HashMap HConst Address
+--  consts: Std.HashMap Address HConst
+--
+--def CompileState.init (x: Env) : CompileState := 
+--  ⟨x.decls, default, default, default⟩
+--
+--abbrev CompileM := ExceptT String <| StateT CompileState Id
+--
+--def CompileM.run (stt: CompileState) (c : CompileM α)
+--  : Except String α × CompileState
+--  := StateT.run (ExceptT.run c) stt
+--
+--def hashHConst (const: HConst) : CompileM Address := do
+--  match (<- get).cache.get? const with
+--  | some a => pure a
+--  | none => do
+--    let addr := Address.blake3 const.serialize
+--    modifyGet fun stt => (addr, { stt with
+--      cache := stt.cache.insert const addr
+--      consts := stt.consts.insert addr const
+--    })
+--
+--abbrev MutCtx := Std.HashMap String Nat
+--
+--structure SOrder where
+--  strong: Bool
+--  ord: Ordering
+--deriving Inhabited
+--
+--def SOrder.cmp : SOrder -> SOrder -> SOrder
+--| ⟨true, .eq⟩, y => y
+--| ⟨false, .eq⟩, y => ⟨false, y.ord⟩
+--| x, _ => x
+--
+--def SOrder.cmpM [Monad μ] (x y: μ SOrder) : μ SOrder := do
+--  match <- x with
+--  | ⟨true, .eq⟩ => y
+--  | ⟨false, .eq⟩ => y >>= fun ⟨_, b⟩ => pure ⟨false, b⟩
+--  | x => pure x
+--
+--def lookupDef (s: String) : CompileM Def := do match (<- get).env.get? s with
+--| some d => pure d
+--| none => throw "unknown def"
+--
+--mutual
+--
+--partial def compileDef (defn: Def): CompileM Address := do
+--  match (<- get).names.get? defn.name with
+--  | some a => pure a
+--  | none => match defn.all with
+--  | [] => do
+--    let addr <- (.defn <$> compileAST {} defn.val) >>= hashHConst
+--    modifyGet fun stt => (addr, { stt with
+--      names := stt.names.insert defn.name addr
+--    })
+--  | ds => do
+--    let defs <- ds.mapM lookupDef
+--    let (mutDefs, mutCtx) <- partitionDefs defs.toArray
+--    let hasts <- mutDefs.mapM (fun ds => compileAST mutCtx ds[0]!)
+--    let block <- hashHConst (.defs hasts)
+--    for d in ds do
+--      let idx := mutCtx.get! d
+--      let addr <- hashHConst (.dprj block idx)
+--      modify fun stt => { stt with names := stt.names.insert d addr }
+--    hashHConst (.dprj block (mutCtx.get! defn.name))
+--
+--partial def compileAST (mutCtx: MutCtx) : AST -> CompileM HAST
+--| .var x => pure <| .var x
+--| .lam x => .lam <$> compileAST mutCtx x
+--| .app x y => .app <$> compileAST mutCtx x <*> compileAST mutCtx y
+--| .ref s => match mutCtx.get? s with
+--  | .some n => pure <| .rcr n
+--  | .none => do match (<- get).env.get? s with
+--    | some x => do
+--      let addr <- compileDef x
+--      pure $ .ref addr
+--    | .none => throw "unknown reference"
+--
+--partial def compareAST (mutCtx: MutCtx) : AST -> AST -> CompileM SOrder
+--| .var x, .var y => pure ⟨true, compare x y⟩
+--| .var _, _ => pure ⟨true, .lt⟩
+--| _, .var _=> pure ⟨true, .gt⟩
+--| .lam x, .lam y => compareAST mutCtx x y
+--| .lam _, _ => pure ⟨true, .lt⟩
+--| _, .lam _=> pure ⟨true, .gt⟩
+--| .app xf xa, .app yf ya =>
+--  SOrder.cmpM (compareAST mutCtx xf yf) (compareAST mutCtx xa ya)
+--| .app _ _, _ => pure ⟨true, .lt⟩
+--| _ , .app _ _ => pure ⟨true, .gt⟩
+--| .ref x, .ref y => match mutCtx.get? x, mutCtx.get? y with
+--  | some nx, some ny => pure ⟨false, compare nx ny⟩
+--  | none, some _ => pure ⟨true, .gt⟩
+--  | some _, none => pure ⟨true, .lt⟩
+--  | none, none => do 
+--    let x' <- lookupDef x >>= compileDef
+--    let y' <- lookupDef y >>= compileDef
+--    pure ⟨true, compare x' y'⟩
+--
+--
+--partial def partitionDefs (defs: Array Def) : CompileM ((List (List Def)) × MutCtx) := do
+--  -- initial state
+--  let mut partOf: Array Nat := Array.replicate defs.size 0
+--  let mut parts : Array (Array Nat) := #[Array.range defs.size]
+--  let mut cache : Std.HashMap (Nat × Nat) SOrder := {}
+--
+--  -- partiton refinement loop
+--  while true do
+--    let mutCtx := buildMutCtx partOf
+--    let mut newParts : Array (Array Nat) := #[]
+--    let mut nextPartId := 0
+--    let mut changed := false
+--    let mut newPartOf := partOf
+--
+--    for part in parts do
+--      -- singleton partition
+--      if part.size <= 1 then
+--        newParts := newParts.push part
+--        for i in part do
+--          newPartOf := newPartOf.set! i nextPartId
+--        nextPartId := nextPartId + 1
+--      else
+--        -- build comparison signatures
+--        let mut sigs : Array (Array SOrder) := Array.replicate part.size #[]
+--
+--        for idx in [0:part.size] do
+--          let i := part[idx]!
+--          let mut sig : Array SOrder := #[]
+--
+--          for jdx in part[0:part.size] do
+--            let j := part[jdx]!
+--            if i != j then
+--              let key := (min i j, max i j)
+--              let cmp <- match cache.get? key with
+--              | some cmp => pure cmp
+--              | none => do
+--                let cmp <- compareAST mutCtx defs[i]!.val defs[j]!.val
+--                if cmp.strong then cache := cache.insert key cmp
+--                pure cmp
+--              sig := sig.push cmp
+--
+--          sigs := sigs.set! idx sig
+--
+--        let mut splits : Array (Array Nat) := #[]
+--        let mut splitSigs: Array (Array SOrder) := #[]
+--
+--        for idx in [0:part.size] do
+--          let idx := part[idx]!
+--          let sig := sigs[idx]!
+--          let mut found := false
+--
+--          for g in [0:splits.size] do
+--            if sigsEqual sig splitSigs[g]! then
+--              splits := splits.set! g (splits[g]!.push idx)
+--              found := true
+--              break
+--          if !found then
+--            splits := splits.push #[idx]
+--            splitSigs := splitSigs.push sig
+--
+--        if splits.size > 1 then
+--          changed := true
+--        for split in splits do
+--          for idx in split do
+--            newPartOf := newPartOf.set! idx nextPartId
+--          newParts := newParts.push split
+--          nextPartId := nextPartId + 1
+--
+--    parts := newParts
+--    partOf := newPartOf
+--    if !changed then break
+--
+--  let ctx := buildMutCtx partOf
+--  let sortedParts <- sortParts parts ctx
+--
+--  sorry
+--  where
+--    sigsEqual (x y: Array SOrder) : Bool :=
+--      x.size == y.size && ((List.range x.size).all fun i => 
+--        x[i]!.ord == y[i]!.ord)
+--
+--    buildMutCtx (partOf: Array Nat) : MutCtx := Id.run do
+--      let mut ctx : MutCtx := {}
+--      for i in [0:defs.size] do
+--        ctx := ctx.insert defs[i]!.name partOf[i]!
+--      ctx
+--    sortParts (parts: Array (Array Nat)) (ctx: MutCtx) : CompileM (List (List Def)) := do
+--      let mut reps : Array (Nat × Nat) := #[]
+--      for i in [0:parts.size] do
+--        reps := reps.push (i, parts[i]![0]!)
+--
+--      let sortedParts : List (Nat × Nat) <- do
+--        reps.toList.sortByM <| fun (_, i) (_, j) => (·.ord) <$>
+--          compareAST ctx defs[i]!.val defs[j]!.val
+--      let sorted := sortedParts.map <| fun (i, _) => 
+--        parts[pidx]!.qsort (fun i j => defs[i]!.name < defs[j]!.name)
+--      pure sorted
+--
+--end
+--
+--end Ix.Toy
+--
+--

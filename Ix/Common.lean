@@ -1,7 +1,7 @@
 import Lean
 import Batteries
+import Batteries.Data.RBMap
 
--- TODO: move to a utils namespace
 def compareList [Ord α] : List α -> List α -> Ordering
 | a::as, b::bs => match compare a b with
   | .eq => compareList as bs
@@ -29,34 +29,81 @@ instance [Ord α] [Ord β] : Ord (α × β) where
     | x => x
 
 instance : Ord Lean.Name where
-  compare := Lean.Name.quickCmp
+  compare := Lean.Name.cmp
 
 deriving instance Ord for Lean.Literal
 --deriving instance Ord for Lean.Expr
 deriving instance Ord for Lean.BinderInfo
-deriving instance BEq, Repr, Hashable, Ord for Lean.QuotKind
-deriving instance Hashable, Repr for Lean.ReducibilityHints
-deriving instance BEq, Ord, Hashable, Repr for Lean.DefinitionSafety
-deriving instance BEq, Repr for Lean.ConstantVal
-deriving instance BEq, Repr for Lean.QuotVal
-deriving instance BEq, Repr for Lean.AxiomVal
-deriving instance BEq, Repr for Lean.TheoremVal
-deriving instance BEq, Repr for Lean.DefinitionVal
-deriving instance BEq, Repr for Lean.OpaqueVal
-deriving instance BEq, Repr for Lean.RecursorRule
-deriving instance BEq, Repr for Lean.RecursorVal
-deriving instance BEq, Repr for Lean.ConstructorVal
-deriving instance BEq, Repr for Lean.InductiveVal
-deriving instance BEq, Repr for Lean.ConstantInfo
+deriving instance BEq, Repr, Ord, Hashable for Lean.QuotKind
+deriving instance BEq, Repr, Ord, Hashable for Lean.ReducibilityHints
+deriving instance BEq, Repr, Ord, Hashable for Lean.DefinitionSafety
+deriving instance BEq, Repr, Ord, Hashable for ByteArray
+deriving instance BEq, Repr, Ord, Hashable for String.Pos
+deriving instance BEq, Repr, Ord, Hashable for Substring
+deriving instance BEq, Repr, Ord, Hashable for Lean.SourceInfo
+deriving instance BEq, Repr, Ord, Hashable for Lean.Syntax.Preresolved
+deriving instance BEq, Repr, Ord, Hashable for Lean.Syntax
 deriving instance BEq, Repr for Ordering
+deriving instance BEq, Repr, Ord for Lean.FVarId
+deriving instance BEq, Repr, Ord for Lean.MVarId
+deriving instance BEq, Repr, Ord for Lean.DataValue
+deriving instance BEq, Repr, Ord for Lean.KVMap
+deriving instance BEq, Repr, Ord for Lean.LevelMVarId
+deriving instance BEq, Repr, Ord for Lean.Level
+deriving instance BEq, Repr, Ord for Lean.Expr
+deriving instance BEq, Repr, Ord, Hashable for Lean.ConstantVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.QuotVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.AxiomVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.TheoremVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.DefinitionVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.OpaqueVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.RecursorRule
+deriving instance BEq, Repr, Ord, Hashable for Lean.RecursorVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.ConstructorVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.InductiveVal
+deriving instance BEq, Repr, Ord, Hashable for Lean.ConstantInfo
 
 def UInt8.MAX : UInt64 := 0xFF
 def UInt16.MAX : UInt64 := 0xFFFF
 def UInt32.MAX : UInt64 := 0xFFFFFFFF
 def UInt64.MAX : UInt64 := 0xFFFFFFFFFFFFFFFF
 
+def UInt64.byteCount (x: UInt64) : UInt8 :=
+  if      x < 0x0000000000000100 then 1
+  else if x < 0x0000000000010000 then 2
+  else if x < 0x0000000001000000 then 3
+  else if x < 0x0000000100000000 then 4
+  else if x < 0x0000010000000000 then 5
+  else if x < 0x0001000000000000 then 6
+  else if x < 0x0100000000000000 then 7
+  else 8
+
+def UInt64.trimmedLE (x: UInt64) : Array UInt8 :=
+  if x == 0 then Array.mkArray1 0 else List.toArray (go 8 x)
+  where
+    go : Nat → UInt64 → List UInt8
+    | _, 0 => []
+    | 0, _ => []
+    | Nat.succ f, x =>
+      Nat.toUInt8 (UInt64.toNat x) :: go f (UInt64.shiftRight x 8)
+
+def UInt64.fromTrimmedLE (xs: Array UInt8) : UInt64 := List.foldr step 0 xs.toList
+  where
+    step byte acc := UInt64.shiftLeft acc 8 + (UInt8.toUInt64 byte)
+
+def Nat.toBytesLE (x: Nat) : Array UInt8 :=
+  if x == 0 then Array.mkArray1 0 else List.toArray (go x x)
+  where
+    go : Nat -> Nat -> List UInt8
+    | _, 0 => []
+    | 0, _ => []
+    | Nat.succ f, x => Nat.toUInt8 x:: go f (x / 256)
+
+def Nat.fromBytesLE (xs: Array UInt8) : Nat :=
+  (xs.toList.zipIdx 0).foldl (fun acc (b, i) => acc + (UInt8.toNat b) * 256 ^ i) 0
+
 /-- Distinguish different kinds of Ix definitions --/
-inductive Ix.DefMode where
+inductive Ix.DefKind where
 | «definition»
 | «opaque»
 | «theorem»
@@ -108,10 +155,11 @@ def sortByM [Monad μ] (xs: List α) (cmp: α -> α -> μ Ordering) : μ (List �
   sequencesM cmp xs >>= mergeAllM cmp
 
 /--
-Mergesort from least to greatest. To sort from greatest to least set `rev`
+Mergesort from least to greatest.
 -/
 def sortBy (cmp : α -> α -> Ordering) (xs: List α) : List α :=
   Id.run <| xs.sortByM (fun x y => pure <| cmp x y)
+
 
 def sort [Ord α] (xs: List α) : List α := sortBy compare xs
 
@@ -130,6 +178,24 @@ def joinM [Monad μ] : List (List α) → μ (List α)
   | a :: as => do return a ++ (← joinM as)
 
 end List
+
+def Std.HashMap.find? {A B} [BEq A] [Hashable A] (map: Std.HashMap A B) (a: A) 
+  := Std.HashMap.get? map a
+
+abbrev Ix.Map := Std.HashMap
+abbrev Ix.Set := Std.HashSet
+
+abbrev MutCtx := Batteries.RBMap Lean.Name Nat compare
+
+--instance : BEq MutCtx where
+--  beq a b := a.size == b.size && a.fold
+--    (fun acc k v => acc && match b.find? k with
+--      | some v' => v == v'
+--      | none => false) true
+
+---- TODO: incremental comparison with ForIn zip
+instance : Ord MutCtx where
+  compare a b := compare a.toList b.toList
 
 namespace Lean
 
@@ -238,26 +304,93 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
       (← msgs.toList.mapM (·.toString)).map String.trim
   else return s.commandState.env
 
-def Expr.stripMData : Expr -> Expr
-| .mdata _ x => x.stripMData
-| .app f a => .app f.stripMData a.stripMData
-| .lam bn bt b bi => .lam bn bt.stripMData b.stripMData bi
-| .forallE bn bt b bi => .forallE bn bt.stripMData b.stripMData bi
-| .letE ln t v b nd => .letE ln t.stripMData v.stripMData b.stripMData nd
-| .proj tn i s => .proj tn i s.stripMData
-| x => x
+--def Expr.size: Expr -> Nat
+--| .mdata _ x => 1 + x.size
+--| .app f a => 1 + f.size + a.size
+--| .lam bn bt b bi => 1 + bt.size + b.size
+--| .forallE bn bt b bi => 1 + bt.size + b.size
+--| .letE ln t v b nd =>  1 + t.size + v.size + b.size
+--| .proj tn i s => 1 + s.size
+--| x => 1
 
-def RecursorRule.stripMData : RecursorRule -> RecursorRule
-| ⟨c, nf, rhs⟩ => ⟨c, nf, rhs.stripMData⟩
+--def Expr.size (e : Expr) : Nat :=
+--  go e 0
+--where
+--  go e n := match e with
+--    | .mdata _ x => go x n + 1
+--    | .app f a => go a (go f n + 1)
+--    | .lam bn bt b bi => go bt (go b n + 1)
+--    | .forallE bn bt b bi => go bt (go b n + 1)
+--    | .letE ln t v b nd => go b (go v (go t n + 1))
+--    | .proj tn i s => go s n + 1
+--    | x => n
 
-def ConstantInfo.stripMData : Lean.ConstantInfo -> Lean.ConstantInfo
-| .axiomInfo x => .axiomInfo { x with type := x.type.stripMData }
-| .defnInfo x => .defnInfo { x with type := x.type.stripMData, value := x.value.stripMData }
-| .thmInfo x => .thmInfo { x with type := x.type.stripMData, value := x.value.stripMData }
-| .quotInfo x => .quotInfo { x with type := x.type.stripMData }
-| .opaqueInfo x => .opaqueInfo { x with type := x.type.stripMData, value := x.value.stripMData }
-| .inductInfo x => .inductInfo { x with type := x.type.stripMData }
-| .ctorInfo x => .ctorInfo { x with type := x.type.stripMData }
-| .recInfo x => .recInfo { x with type := x.type.stripMData, rules := x.rules.map (·.stripMData) }
+--def Expr.msize: Expr -> Nat
+--| .mdata _ x => 1 + x.msize
+--| .app f a => f.msize + a.msize
+--| .lam bn bt b bi => bt.msize + b.msize
+--| .forallE bn bt b bi => bt.msize + b.msize
+--| .letE ln t v b nd => t.msize + v.msize + b.msize
+--| .proj tn i s => s.msize
+--| x => 0
+--
+--def Expr.stripMData : Expr -> Expr
+--| .mdata _ x => x.stripMData
+--| .app f a => .app f.stripMData a.stripMData
+--| .lam bn bt b bi => .lam bn bt.stripMData b.stripMData bi
+--| .forallE bn bt b bi => .forallE bn bt.stripMData b.stripMData bi
+--| .letE ln t v b nd => .letE ln t.stripMData v.stripMData b.stripMData nd
+--| .proj tn i s => .proj tn i s.stripMData
+--| x@(.lit ..) => x
+--| x@(.const ..) => x
+--| x@(.bvar ..) => x
+--| x@(.fvar ..) => x
+--| x@(.sort ..) => x
+--| x@(.mvar ..) => x
+
+--def RecursorRule.stripMData : RecursorRule -> RecursorRule
+--| x =>
+--  dbg_trace s!"RecursorRule.stripMData"
+--  match x with
+--  | ⟨c, nf, rhs⟩ => ⟨c, nf, rhs.stripMData⟩
+--
+--def RecursorRule.size : RecursorRule -> Nat
+--| ⟨c, nf, rhs⟩ => rhs.size
+--
+--def RecursorRule.msize : RecursorRule -> Nat
+--| ⟨c, nf, rhs⟩ => rhs.msize
+--
+--def ConstantInfo.stripMData : Lean.ConstantInfo -> Lean.ConstantInfo
+--| x =>
+--  dbg_trace s!"ConstantInfo.stripMData"
+--  match x with
+--  | .axiomInfo x => .axiomInfo { x with type := x.type.stripMData }
+--  | .defnInfo x => .defnInfo { x with type := x.type.stripMData, value := x.value.stripMData }
+--  | .thmInfo x => .thmInfo { x with type := x.type.stripMData, value := x.value.stripMData }
+--  | .quotInfo x => .quotInfo { x with type := x.type.stripMData }
+--  | .opaqueInfo x => .opaqueInfo { x with type := x.type.stripMData, value := x.value.stripMData }
+--  | .inductInfo x => .inductInfo { x with type := x.type.stripMData }
+--  | .ctorInfo x => .ctorInfo { x with type := x.type.stripMData }
+--  | .recInfo x => .recInfo { x with type := x.type.stripMData, rules := x.rules.map (·.stripMData) }
+--
+--def ConstantInfo.size : Lean.ConstantInfo -> Nat
+--| .axiomInfo x => x.type.size
+--| .defnInfo x => x.type.size + x.value.size
+--| .thmInfo x => x.type.size + x.value.size
+--| .quotInfo x => x.type.size
+--| .opaqueInfo x => x.type.size + x.value.size
+--| .inductInfo x => x.type.size
+--| .ctorInfo x => x.type.size
+--| .recInfo x => x.type.size + x.rules.foldr (fun a acc => a.size + acc) 0
+--
+--def ConstantInfo.msize : Lean.ConstantInfo -> Nat
+--| .axiomInfo x => x.type.msize
+--| .defnInfo x => x.type.msize + x.value.msize
+--| .thmInfo x => x.type.msize + x.value.msize
+--| .quotInfo x => x.type.msize
+--| .opaqueInfo x => x.type.msize + x.value.msize
+--| .inductInfo x => x.type.msize
+--| .ctorInfo x => x.type.msize
+--| .recInfo x => x.type.msize + x.rules.foldr (fun a acc => a.msize + acc) 0
 end Lean
 

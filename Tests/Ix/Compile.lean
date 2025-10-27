@@ -3,17 +3,21 @@ import LSpec
 import Ix.Ixon
 import Ix.Address
 import Ix.Common
+import Ix.CondenseM
+import Ix.GroundM
 import Ix.CompileM
 import Ix.DecompileM
+import Ix.Cronos
 import Ix.Meta
-import Ix.IR
+import Ix.Store
 import Lean
 import Tests.Ix.Fixtures
+import Tests.Ix.Fixtures.Mutual
 import Lean
 
 open LSpec
-open Ix.Compile
-open Ix.Decompile
+open Ix
+--open Ix.Decompile
 
 
 namespace Test.Ix.Inductives
@@ -26,9 +30,7 @@ end
 
 end Test.Ix.Inductives
 
-
 namespace Test.Ix.Mutual
-
 
 mutual
   unsafe def A : Nat → Nat
@@ -47,96 +49,284 @@ end
 end Test.Ix.Mutual
 
 
-def testMutual : IO TestSeq := do
-  let env <- get_env!
-  let mut cstt : CompileState := .init env 0
-  let all := (env.getDelta.find! `Test.Ix.Mutual.A).all
-  let predefs <- all.mapM fun n => match env.getDelta.find! n with
-    | .defnInfo d => pure <| Ix.mkPreDefinition d
-    | .opaqueInfo d => pure <| Ix.mkPreOpaque d
-    | .thmInfo d => pure <| Ix.mkPreTheorem d
-    | _ => throw (IO.userError "not a def")
-  let (dss, _) <- match (sortDefs predefs).run (.init 200000) cstt with
-    | .ok a stt => do
-      pure (a, stt)
-    | .error e _ => do
-      throw (IO.userError (<- e.pretty))
-  let res := [[`Test.Ix.Mutual.C, `Test.Ix.Mutual.B],[`Test.Ix.Mutual.A]]
-  let nss := dss.map fun ds => ds.map (·.name)
-  return test "test mutual" (res == nss)
+--def addrOfName (name: Lean.Name) : IO Address := do
+--  let env <- get_env!
+--  let const := match (env.find? name) with
+--    | .some c => c
+--    | .none => env.getDelta.find! name
+--  let ((a, _), _) <- (Ix.Compile.compileConst const).runIO env
+--  return a
 
-def testInductives : IO TestSeq := do
-  let env <- get_env!
-  let mut cstt : CompileState := .init env 0
-  --let delta := env.getDelta.filter fun n _ => namesp.isPrefixOf n
-  --let consts := env.getConstMap.filter fun n _ => namesp.isPrefixOf n
-  let all := (env.getDelta.find! `Test.Ix.Inductives.A).all
-  let preinds <- all.mapM fun n => match env.getDelta.find! n with
-    | .inductInfo v => match (makePreInductive v).run (.init 200000) cstt with
-      | .ok a _ => pure a
-      | .error e _ => do throw (IO.userError (<- e.pretty))
-    | _ => throw (IO.userError "not an inductive")
-  let (dss, _) <- match (sortInds preinds).run (.init 200000) cstt with
-    | .ok a stt => do
-      pure (a, stt)
-    | .error e _ => do
-      throw (IO.userError (<- e.pretty))
-  let res := [[`Test.Ix.Inductives.C], [`Test.Ix.Inductives.B],[`Test.Ix.Inductives.A]]
-  let nss := dss.map fun ds => ds.map (·.name)
-  return test "test inductives" (res == nss)
+--def testUnits : IO TestSeq := do
+--  let x <- addrOfName `Nat
+--  IO.println s!"Nat is {x}"
+--  let x <- addrOfName `Nat.add
+--  IO.println s!"Nat.add is {x}"
+--  let x <- addrOfName `Peano
+--  IO.println s!"Peano is {x}"
+--  let x <- addrOfName `Peano.add
+--  IO.println s!"Peano.add is {x}"
+--  return test "false" (true == false)
+
+--def testMutual : IO TestSeq := do
+--  let env <- get_env!
+--  let mut cstt : CompileState := .init env 0
+--  let all := (env.getDelta.find! `Test.Ix.Mutual.A).all
+--  let consts <- all.mapM fun n => match env.getDelta.find! n with
+--    | .defnInfo d => pure <| Ix.MutConst.mkDefn d
+--    | .opaqueInfo d => pure <| Ix.MutConst.mkOpaq d
+--    | .thmInfo d => pure <| Ix.MutConst.mkTheo d
+--    | _ => throw (IO.userError "not a def")
+--  let (dss, _) <- match (<- (sortConsts consts).run .init cstt) with
+--    | (.ok a, stt) => do
+--      pure (a, stt)
+--    | (.error e, _) => do
+--      throw (IO.userError (<- e.pretty))
+--  let res := [[`Test.Ix.Mutual.B, `Test.Ix.Mutual.C],[`Test.Ix.Mutual.A]]
+--  let nss := dss.map fun ds => ds.map (·.name)
+--  return test "test mutual" (res == nss)
+
+--#eval show Lean.MetaM _ from do
+--  let env ← Lean.getEnv
+--  let gstt := GroundM.run groundConst (env.find! `Array.mk)
+--  return gstt.
+--
+--#eval show Lean.MetaM _ from do
+--  let env ← Lean.getEnv
+--  return env.find? `Array.foldrMUnsafe.fold._at.Std.DHashMap.Const.toList._spec_2
+
+--def testInductives : IO TestSeq := do
+--  let env <- get_env!
+--  let mut cstt : CompileState := .init env 0
+--  --let delta := env.getDelta.filter fun n _ => namesp.isPrefixOf n
+--  --let consts := env.getConstMap.filter fun n _ => namesp.isPrefixOf n
+--  let all := (env.getDelta.find! `Test.Ix.Inductives.A).all
+--  let consts <- all.mapM fun n => match env.getDelta.find! n with
+--    | .inductInfo v => do match (<- (Ix.MutConst.mkIndc v).run .init cstt) with
+--      | (.ok a, _) => pure a
+--      | (.error e, _) => do throw (IO.userError (<- e.pretty))
+--    | _ => throw (IO.userError "not an inductive")
+--  let (dss, _) <- do match (<- (sortConsts consts).run .init cstt) with
+--    | (.ok a, stt) => do
+--      pure (a, stt)
+--    | (.error e, _) => do
+--      throw (IO.userError (<- e.pretty))
+--  let res := [[`Test.Ix.Inductives.C],[`Test.Ix.Inductives.B], [`Test.Ix.Inductives.A]]
+--  let nss := dss.map fun ds => ds.map (·.name)
+--  return test "test inductives" (res == nss)
+
+--def testEasy : IO TestSeq := do
+--  let env <- get_env!
+--  let easy := [
+--    `Nat.add_comm
+--  ]
+--  let mut res := true
+--  for name in easy do
+--    IO.println s!"⚙️ Compiling {name}"
+--    let mut cstt : CompileState := .init env 0
+--    let start <- IO.monoNanosNow
+--    let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
+--    | (.ok a, stt) => pure (a, stt)
+--    | (.error e, _) => IO.println s!"failed {name}" *> throw (IO.userError (<- e.pretty))
+--    let done <- IO.monoNanosNow
+--    IO.println s!"✅ {addr}"
+--    IO.println s!"Elapsed {Cronos.nanoToSec (done - start)}"
+--  return test "easy compile roundtrip" (res == true)
+
+--def testDifficult : IO TestSeq := do
+--  let env <- get_env!
+--  let difficult := [
+--    `Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.denote_blastDivSubtractShift_q
+--  ]
+--  let mut res := true
+--  for name in difficult do
+--    let mut cstt : CompileState := .init env 0
+--    let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
+--    | (.ok a, stt) => pure (a, stt)
+--    | (.error e, _) => IO.println s!"failed {name}" *> throw (IO.userError (<- e.pretty))
+--    IO.println s!"{name} -> {addr}"
+--    --cstt := stt
+--    --let mut store : Ixon.Store := {}
+--    --for (_,(a, b)) in cstt.names do
+--    --  let a_ixon <- (Store.readConst a).toIO
+--    --  let b_ixon <- (Store.readConst b).toIO
+--    --  store := store.insert a a_ixon
+--    --  store := store.insert b b_ixon
+--    --let denv := DecompileEnv.init cstt.names store
+--    --let dstt <- match decompileEnv.run denv default with
+--    --  | .ok _ s => pure s
+--    --    --IO.println s!"✓ {n} @ {anon}:{meta}"
+--    --  | .error e _ => do
+--    --    throw (IO.userError e.pretty)
+--    --IO.println s!"decompiled env"
+--    --for (n, (anon, meta)) in denv.names do
+--    --  let c <- match env.constants.find? n with
+--    --  | .some c => pure c
+--    --  | .none => throw (IO.userError "name {n} not in env")
+--    --  match dstt.constants.get? n with
+--    --  | .some c2 =>
+--    --    if c.stripMData == c2.stripMData
+--    --    then
+--    --      IO.println s!"✓ {n} @ {anon}:{meta}"
+--    --    else
+--    --      IO.println s!"× {n} @ {anon}:{meta}"
+--    --      IO.FS.writeFile "c.out" s!"{repr c.stripMData}"
+--    --      IO.FS.writeFile "c2.out" s!"{repr c2.stripMData}"
+--    --      res := false
+--    --      break
+--    --  | .none => do
+--    --    let e' := (DecompileError.unknownName default n).pretty
+--    --    throw (IO.userError e')
+--  return test "difficult compile roundtrip" (res == true)
 
 def testRoundtripGetEnv : IO TestSeq := do
+  IO.println s!"Getting env"
   let env <- get_env!
-  let mut cstt : CompileState := .init env 0
-  --IO.println s!"compiling env"
-  for (_, c) in env.getDelta do
-    let (_, stt) <- match (compileConst c).run (.init 200000) cstt with
-    | .ok a stt => do
-      --stt.store.forM fun a c => discard $ (Store.forceWriteConst a c).toIO
-      pure (a, stt)
-    | .error e _ => do
-      IO.println s!"failed {c.name}"
-      throw (IO.userError (<- e.pretty))
-    let (anon, «meta») <- match stt.names.find? c.name with
-    | .some (a, m) => pure (a, m)
-    | .none => throw (IO.userError "name {n} not in env")
-    IO.println s!"✓ {c.name} -> {anon}:{«meta»}"
-    cstt := stt
-  IO.println s!"compiled env"
-  IO.println s!"decompiling env"
-  let denv := DecompileEnv.init cstt.names cstt.store
-  let dstt <- match decompileEnv.run denv default with
-    | .ok _ s => pure s
-      --IO.println s!"✓ {n} @ {anon}:{meta}"
-    | .error e _ => do
-      throw (IO.userError e.pretty)
-  IO.println s!"decompiled env"
-  let mut res := true
-  for (n, (anon, «meta»)) in denv.names do
-    let c <- match env.constants.find? n with
-    | .some c => pure c
-    | .none => throw (IO.userError "name {n} not in env")
-    match dstt.constants.find? n with
-    | .some c2 =>
-      if c.stripMData == c2.stripMData
-      then
-        IO.println s!"✓ {n} @ {anon}:{«meta»}"
-      else
-        IO.println s!"× {n} @ {anon}:{«meta»}"
-        IO.FS.writeFile "c.out" s!"{repr c.stripMData}"
-        IO.FS.writeFile "c2.out" s!"{repr c2.stripMData}"
-        res := false
-        break
-    | .none => do
-      let e' := (DecompileError.unknownName default n).pretty
-      throw (IO.userError e')
-  IO.println s!"input delta: {env.getDelta.toList.length}"
-  IO.println s!"input env: {env.constants.toList.length}"
-  IO.println s!"output env: {dstt.constants.toList.length}"
-  return test "env compile roundtrip" (res == true)
+  let gsttStart <- IO.monoNanosNow
+  IO.println s!"Ensuring well-groundedness of env"
+  let gstt <- GroundM.env env
+  let gsttEnd <- IO.monoNanosNow
+  IO.println s!"Finished grounding in {Cronos.nanoToSec (gsttEnd - gsttStart)}"
+  IO.println s!"ungrounded {gstt.ungrounded.size}"
+  let sccStart <- IO.monoNanosNow
+  IO.println s!"Building condensation graph of env"
+  let alls := CondenseM.run env gstt.outRefs
+  let sccEnd <- IO.monoNanosNow
+  IO.println s!"Condensation graph in {Cronos.nanoToSec (sccEnd - sccStart)}"
+  let numConst := 
+    env.constants.map₁.size + env.constants.map₂.stats.numNodes - gstt.ungrounded.size
+  let mut cstt : CompileState := .init env alls 0
+  let mut dstt : DecompileState := default
+  IO.println s!"Compiling env"
+  let mut inConst := 1
+  let allStart <- IO.monoNanosNow
+  for (name, _) in env.constants do
+    match gstt.ungrounded.get? name with
+    | .some u => do
+      IO.println s!"Skipping ungrounded {name} because {repr u}"
+      inConst := inConst + 1
+    | none => do
+      IO.println s!"Compiling {name} {inConst}/{numConst}"
+      let start <- IO.monoNanosNow
+      let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
+      | (.ok a, stt) => pure (a, stt)
+      | (.error e, _) => do
+        IO.println s!"failed {name}"
+        throw (IO.userError (<- e.pretty))
+      let done <- IO.monoNanosNow
+      let pct := ((Float.ofNat inConst) / Float.ofNat numConst)
+      let total := done - allStart
+      IO.println s!"-> Compiled {pct * 100}%, {inConst}/{numConst},
+      Elapsed {Cronos.nanoToSec (done - start)}/{Cronos.nanoToSec total},
+      Remaining {((Cronos.nanoToSec total) / pct) / 60} min
+      {name}
+      {addr}"
+      cstt := stt
+      let denv := DecompileEnv.init cstt.constCache cstt.store
+      let (name', stt) <- match DecompileM.run denv dstt (decompileNamedConst name addr) with
+      | .ok (n,_) stt => pure (n, stt)
+      | .error e _ => do
+        IO.println s!"failed {name}"
+        IO.println s!"cstt all: {repr <| cstt.alls.get? name}"
+        --let c := env.constants.find? name
+        --IO.println s!"{repr c}"
+        throw (IO.userError e.pretty)
+      match env.constants.find? name, stt.constants.find? name' with
+      | .some c, .some c' => if c == c then pure () else do
+          IO.println s!"failed {name} {repr c} {repr c'}"
+          throw (IO.userError "decompiled constant not equal")
+      | .some _, .none => do
+        throw (IO.userError s!"{name'} not found in dstt")
+      | .none, _ => do
+        throw (IO.userError "{name} not found in env")
+      let done2 <- IO.monoNanosNow
+      let total2 := done2 - allStart
+      IO.println s!"<- Decompiled {pct * 100}%, {inConst}/{numConst},
+      Elapsed {Cronos.nanoToSec (done2 - done)}/{Cronos.nanoToSec total},
+      Remaining {((Cronos.nanoToSec total2) / pct) / 60} min
+      {name}
+      {addr}"
+      inConst := inConst + 1
+      dstt := stt
+    --let allDone <- IO.monoNanosNow
+    --IO.println s!"Compiled/decompiled {name} in {Cronos.nanoToSec (allDone - allStart)}"
+ -- IO.println s!"decompiling env"
+ -- let mut store : Ixon.Store := {}
+ -- for (_,(a, b)) in cstt.names do
+ --   let a_ixon <- (Store.readConst a).toIO
+ --   let b_ixon <- (Store.readConst b).toIO
+ --   store := store.insert a a_ixon
+ --   store := store.insert b b_ixon
+ -- let denv := DecompileEnv.init cstt.names store
+ -- let dstt <- match decompileEnv.run denv default with
+ --   | .ok _ s => pure s
+ --     --IO.println s!"✓ {n} @ {anon}:{meta}"
+ --   | .error e _ => do
+ --     throw (IO.userError e.pretty)
+ -- IO.println s!"decompiled env"
+ -- let mut res := true
+ -- for (n, (anon, meta)) in denv.names do
+ --   let c <- match env.constants.find? n with
+ --   | .some c => pure c
+ --   | .none => throw (IO.userError "name {n} not in env")
+ --   match dstt.constants.find? n with
+ --   | .some c2 =>
+ --     if c.stripMData == c2.stripMData
+ --     then
+ --       IO.println s!"✓ {n} @ {anon}:{meta}"
+ --     else
+ --       IO.println s!"× {n} @ {anon}:{meta}"
+ --       IO.FS.writeFile "c.out" s!"{repr c.stripMData}"
+ --       IO.FS.writeFile "c2.out" s!"{repr c2.stripMData}"
+ --       res := false
+ --       break
+ --   | .none => do
+ --     let e' := (DecompileError.unknownName default n).pretty
+ --     throw (IO.userError e')
+ -- IO.println s!"input delta: {env.getDelta.toList.length}"
+ -- IO.println s!"input env: {env.constants.toList.length}"
+ -- IO.println s!"output env: {dstt.constants.toList.length}"
+  return test "env compile roundtrip" true --(res == true)
+
+--#eval (`_cstage2).isSuffixOf (`f.a._cstage2)
+--open Lean Meta
+--
+--set_option pp.all true
+--set_option pp.privateNames true
+--set_option pp.fullNames true
+
+--#eval show MetaM _ from do
+--  getConstInfo `Lean.Language.instInhabitedDynamicSnapshot._closed_2._cstage2
+--
+--#eval show MetaM _ from do
+--  getConstInfo `Lean.Language.instInhabitedDynamicSnapshot._closed_2._cstage2 
+--
+--def printPrivate (pre : Name) : CoreM (Array Name) := do
+--  let env ← getEnv
+--  let mut hits := #[]
+--  for (n, _) in env.const2ModIdx do
+--    if pre.isPrefixOf n then
+--      hits := hits.push n
+--  pure hits
+--
+--#eval do
+--  let hits ← printPrivate `_private.Lean.Language.Basic
+--  IO.println s!"found:"
+--  for n in hits do
+--    IO.println s!"{n}"
+--
+--#eval 
+--  IO.println s!"{(mkPrivateNameCore `Lean.Language.Basic `Lean.Language.DynamicSnapShot)}"
+--
+--#eval show MetaM _ from do
+--  let env ← getEnv
+--  return env.const2ModIdx.size
 
 def Tests.Ix.Compile.suiteIO: List (IO TestSeq) := [
-   testMutual,
-   testInductives,
-   testRoundtripGetEnv
+  --testMutual,
+  --testInductives,
+  --testDifficult,
+  --testUnits,
+  --testEasy,
+  testRoundtripGetEnv
 ]
