@@ -474,7 +474,6 @@ structure Inductive where
   nested : Nat
   type : Address
   ctors : List Constructor
-  --recrs : List Recursor
   deriving BEq, Repr, Inhabited, Ord, Hashable
 
 instance : Serialize Inductive where
