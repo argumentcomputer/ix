@@ -12,10 +12,10 @@ lean_exe ix where
   supportInterpreter := true
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "1fc461a9b83eeb68da34df72cec2ef1994e906cb"
+  "https://github.com/argumentcomputer/LSpec" @ "d2bbbfa61a82ac199a5e852aa375acffd9a3b3f1"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "a5ed3f0bceda9506271a8f95c365e9bd0040288d"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "a64c3f568b6538374e437681b770b0f092a89d2e"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "41c5d0b8814dec559e2e1441171db434fe2281cc"
