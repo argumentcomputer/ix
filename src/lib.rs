@@ -1,10 +1,13 @@
-//#[cfg(test)]
-//extern crate quickcheck;
-//#[cfg(test)]
-//#[macro_use(quickcheck)]
-//extern crate quickcheck_macros;
-//#[cfg(test)]
-//extern crate rand;
+#[allow(unused_extern_crates)]
+#[cfg(test)]
+extern crate quickcheck;
+#[allow(unused_extern_crates)]
+#[cfg(test)]
+#[macro_use(quickcheck)]
+extern crate quickcheck_macros;
+#[allow(unused_extern_crates)]
+#[cfg(test)]
+extern crate rand;
 
 use indexmap::{IndexMap, IndexSet};
 use rustc_hash::FxBuildHasher;

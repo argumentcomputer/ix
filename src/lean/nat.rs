@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[derive(Hash, PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
-pub struct Nat(BigUint);
+pub struct Nat(pub BigUint);
 
 impl Nat {
     pub fn from_ptr(ptr: *const c_void) -> Nat {
@@ -31,6 +31,12 @@ impl Nat {
     pub fn to_le_bytes(&self) -> Vec<u8> {
         self.0.to_bytes_le()
     }
+}
+
+#[derive(Hash, PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
+pub enum Int {
+    OfNat(Nat),
+    NegSucc(Nat),
 }
 
 /// From https://github.com/leanprover/lean4/blob/master/src/runtime/object.h:
