@@ -3,34 +3,34 @@ use crate::ixon::address::Address;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvalClaim {
-    pub lvls: Address,
-    pub typ: Address,
-    pub input: Address,
-    pub output: Address,
+  pub lvls: Address,
+  pub typ: Address,
+  pub input: Address,
+  pub output: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckClaim {
-    pub lvls: Address,
-    pub typ: Address,
-    pub value: Address,
+  pub lvls: Address,
+  pub typ: Address,
+  pub value: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Claim {
-    Checks(CheckClaim),
-    Evals(EvalClaim),
+  Checks(CheckClaim),
+  Evals(EvalClaim),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proof {
-    pub claim: Claim,
-    pub proof: Vec<u8>,
+  pub claim: Claim,
+  pub proof: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Env {
-    pub env: Vec<(Address, Address)>,
+  pub env: Vec<(Address, Address)>,
 }
 
 //impl Serialize for EvalClaim {

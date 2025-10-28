@@ -5,33 +5,33 @@ use crate::ixon::nat::Nat;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinderInfo {
-    Default,
-    Implicit,
-    StrictImplicit,
-    InstImplicit,
-    AuxDecl,
+  Default,
+  Implicit,
+  StrictImplicit,
+  InstImplicit,
+  AuxDecl,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReducibilityHints {
-    Opaque,
-    Abbrev,
-    Regular(u32),
+  Opaque,
+  Abbrev,
+  Regular(u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Metadatum {
-    Name(Name),
-    Info(BinderInfo),
-    Link(Address),
-    Hints(ReducibilityHints),
-    All(Vec<Name>),
-    MutCtx(Vec<Vec<Name>>),
+  Name(Name),
+  Info(BinderInfo),
+  Link(Address),
+  Hints(ReducibilityHints),
+  All(Vec<Name>),
+  MutCtx(Vec<Vec<Name>>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Metadata {
-    pub map: Vec<(Nat, Vec<Metadatum>)>,
+  pub map: Vec<(Nat, Vec<Metadatum>)>,
 }
 
 //impl Serialize for BinderInfo {

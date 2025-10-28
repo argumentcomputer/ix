@@ -5,135 +5,135 @@ use crate::ixon::nat::Nat;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuotKind {
-    Type,
-    Ctor,
-    Lift,
-    Ind,
+  Type,
+  Ctor,
+  Lift,
+  Ind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Quotient {
-    pub kind: QuotKind,
-    pub lvls: Nat,
-    pub typ: Address,
+  pub kind: QuotKind,
+  pub lvls: Nat,
+  pub typ: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Axiom {
-    pub is_unsafe: bool,
-    pub lvls: Nat,
-    pub typ: Address,
+  pub is_unsafe: bool,
+  pub lvls: Nat,
+  pub typ: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DefKind {
-    Definition,
-    Opaque,
-    Theorem,
+  Definition,
+  Opaque,
+  Theorem,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DefSafety {
-    Unsafe,
-    Safe,
-    Partial,
+  Unsafe,
+  Safe,
+  Partial,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Definition {
-    pub kind: DefKind,
-    pub safety: DefSafety,
-    pub lvls: Nat,
-    pub typ: Address,
-    pub value: Address,
+  pub kind: DefKind,
+  pub safety: DefSafety,
+  pub lvls: Nat,
+  pub typ: Address,
+  pub value: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Constructor {
-    pub is_unsafe: bool,
-    pub lvls: Nat,
-    pub cidx: Nat,
-    pub params: Nat,
-    pub fields: Nat,
-    pub typ: Address,
+  pub is_unsafe: bool,
+  pub lvls: Nat,
+  pub cidx: Nat,
+  pub params: Nat,
+  pub fields: Nat,
+  pub typ: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecursorRule {
-    pub fields: Nat,
-    pub rhs: Address,
+  pub fields: Nat,
+  pub rhs: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recursor {
-    pub k: bool,
-    pub is_unsafe: bool,
-    pub lvls: Nat,
-    pub params: Nat,
-    pub indices: Nat,
-    pub motives: Nat,
-    pub minors: Nat,
-    pub typ: Address,
-    pub rules: Vec<RecursorRule>,
+  pub k: bool,
+  pub is_unsafe: bool,
+  pub lvls: Nat,
+  pub params: Nat,
+  pub indices: Nat,
+  pub motives: Nat,
+  pub minors: Nat,
+  pub typ: Address,
+  pub rules: Vec<RecursorRule>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Inductive {
-    pub recr: bool,
-    pub refl: bool,
-    pub is_unsafe: bool,
-    pub lvls: Nat,
-    pub params: Nat,
-    pub indices: Nat,
-    pub nested: Nat,
-    pub typ: Address,
-    pub ctors: Vec<Constructor>,
+  pub recr: bool,
+  pub refl: bool,
+  pub is_unsafe: bool,
+  pub lvls: Nat,
+  pub params: Nat,
+  pub indices: Nat,
+  pub nested: Nat,
+  pub typ: Address,
+  pub ctors: Vec<Constructor>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MutConst {
-    Defn(Definition),
-    Indc(Inductive),
-    Recr(Recursor),
+  Defn(Definition),
+  Indc(Inductive),
+  Recr(Recursor),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstructorProj {
-    pub idx: Nat,
-    pub cidx: Nat,
-    pub block: Address,
+  pub idx: Nat,
+  pub cidx: Nat,
+  pub block: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecursorProj {
-    pub idx: Nat,
-    pub ridx: Nat,
-    pub block: Address,
+  pub idx: Nat,
+  pub ridx: Nat,
+  pub block: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InductiveProj {
-    pub idx: Nat,
-    pub block: Address,
+  pub idx: Nat,
+  pub block: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionProj {
-    pub idx: Nat,
-    pub block: Address,
+  pub idx: Nat,
+  pub block: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comm {
-    pub secret: Address,
-    pub payload: Address,
+  pub secret: Address,
+  pub payload: Address,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuiltIn {
-    Obj,
-    Neutral,
-    Unreachable,
+  Obj,
+  Neutral,
+  Unreachable,
 }
 
 //impl Serialize for QuotKind {

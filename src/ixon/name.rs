@@ -4,13 +4,13 @@ use crate::ixon::nat::Nat;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NamePart {
-    Str(String),
-    Num(Nat),
+  Str(String),
+  Num(Nat),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Name {
-    pub parts: Vec<NamePart>,
+  pub parts: Vec<NamePart>,
 }
 
 //impl Serialize for NamePart {

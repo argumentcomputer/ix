@@ -6,9 +6,9 @@ use num_bigint::BigUint;
 pub struct Nat(pub BigUint);
 
 impl Nat {
-    pub fn new_le(bytes: &[u8]) -> Self {
-        Nat(BigUint::from_bytes_le(bytes))
-    }
+  pub fn new_le(bytes: &[u8]) -> Self {
+    Nat(BigUint::from_bytes_le(bytes))
+  }
 }
 
 //impl Serialize for Nat {
@@ -26,11 +26,11 @@ impl Nat {
 //
 impl<T> From<T> for Nat
 where
-    T: Into<BigUint>,
+  T: Into<BigUint>,
 {
-    fn from(x: T) -> Self {
-        Nat(x.into())
-    }
+  fn from(x: T) -> Self {
+    Nat(x.into())
+  }
 }
 //
 //#[cfg(test)]
