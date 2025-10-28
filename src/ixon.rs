@@ -146,6 +146,7 @@ pub struct Tag4 {
 }
 
 impl Tag4 {
+  #[allow(clippy::cast_possible_truncation)]
   pub fn encode_head(&self) -> u8 {
     if self.size < 8 {
       (self.flag << 4) + (self.size as u8)
@@ -1663,9 +1664,7 @@ impl Serialize for Ixon {
 pub mod tests {
   use super::*;
   use quickcheck::{Arbitrary, Gen};
-  use std::fmt::Write;
   use std::ops::Range;
-  use std::ptr;
 
   pub fn gen_range(g: &mut Gen, range: Range<usize>) -> usize {
     let res: usize = Arbitrary::arbitrary(g);
@@ -1689,11 +1688,11 @@ pub mod tests {
   }
   #[test]
   fn unit_u64_trimmed() {
-    fn test(input: u64, expected: Vec<u8>) -> bool {
+    fn test(input: u64, expected: &Vec<u8>) -> bool {
       let mut tmp = Vec::new();
       let n = u64_byte_count(input);
       u64_put_trimmed_le(input, &mut tmp);
-      if tmp != expected {
+      if tmp != *expected {
         return false;
       }
       match u64_get_trimmed_le(n as usize, &mut tmp.as_slice()) {
@@ -1704,28 +1703,31 @@ pub mod tests {
         },
       }
     }
-    assert!(test(0x0, vec![]));
-    assert!(test(0x01, vec![0x01]));
-    assert!(test(0x0000000000000100, vec![0x00, 0x01]));
-    assert!(test(0x0000000000010000, vec![0x00, 0x00, 0x01]));
-    assert!(test(0x0000000001000000, vec![0x00, 0x00, 0x00, 0x01]));
-    assert!(test(0x0000000100000000, vec![0x00, 0x00, 0x00, 0x00, 0x01]));
-    assert!(test(0x0000010000000000, vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x01]));
+    assert!(test(0x0, &vec![]));
+    assert!(test(0x01, &vec![0x01]));
+    assert!(test(0x0000000000000100, &vec![0x00, 0x01]));
+    assert!(test(0x0000000000010000, &vec![0x00, 0x00, 0x01]));
+    assert!(test(0x0000000001000000, &vec![0x00, 0x00, 0x00, 0x01]));
+    assert!(test(0x0000000100000000, &vec![0x00, 0x00, 0x00, 0x00, 0x01]));
+    assert!(test(
+      0x0000010000000000,
+      &vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
+    ));
     assert!(test(
       0x0001000000000000,
-      vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
+      &vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
     ));
     assert!(test(
       0x0100000000000000,
-      vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
+      &vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
     ));
     assert!(test(
       0x0102030405060708,
-      vec![0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]
+      &vec![0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]
     ));
     assert!(test(
       0x57712D6CE2965701,
-      vec![0x01, 0x57, 0x96, 0xE2, 0x6C, 0x2D, 0x71, 0x57]
+      &vec![0x01, 0x57, 0x96, 0xE2, 0x6C, 0x2D, 0x71, 0x57]
     ));
   }
 
@@ -1743,10 +1745,11 @@ pub mod tests {
     }
   }
 
+  #[allow(clippy::needless_pass_by_value)]
   fn serialize_readback<S: Serialize + Eq>(x: S) -> bool {
     let mut buf = Vec::new();
     Serialize::put(&x, &mut buf);
-    match Serialize::get(&mut buf.as_slice()) {
+    match S::get(&mut buf.as_slice()) {
       Ok(y) => x == y,
       Err(e) => {
         println!("err: {e}");
@@ -2374,55 +2377,54 @@ pub mod tests {
 
   impl Arbitrary for Ixon {
     fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 37 {
+      match u8::arbitrary(g) % 36 {
         0 => Self::NAnon,
         1 => Self::NStr(Address::arbitrary(g), Address::arbitrary(g)),
         2 => Self::NNum(Address::arbitrary(g), Address::arbitrary(g)),
         3 => Self::UZero,
         4 => Self::USucc(Address::arbitrary(g)),
         5 => Self::UMax(Address::arbitrary(g), Address::arbitrary(g)),
-        6 => Self::UMax(Address::arbitrary(g), Address::arbitrary(g)),
-        7 => Self::UIMax(Address::arbitrary(g), Address::arbitrary(g)),
-        8 => Self::UVar(Nat::arbitrary(g)),
-        9 => Self::EVar(Nat::arbitrary(g)),
-        10 => {
+        6 => Self::UIMax(Address::arbitrary(g), Address::arbitrary(g)),
+        7 => Self::UVar(Nat::arbitrary(g)),
+        8 => Self::EVar(Nat::arbitrary(g)),
+        9 => {
           Self::ERef(Address::arbitrary(g), gen_vec(g, 12, Address::arbitrary))
         },
-        11 => Self::ERec(Nat::arbitrary(g), gen_vec(g, 12, Address::arbitrary)),
-        12 => Self::EPrj(
+        10 => Self::ERec(Nat::arbitrary(g), gen_vec(g, 12, Address::arbitrary)),
+        11 => Self::EPrj(
           Address::arbitrary(g),
           Nat::arbitrary(g),
           Address::arbitrary(g),
         ),
-        13 => Self::ESort(Address::arbitrary(g)),
-        14 => Self::EStr(Address::arbitrary(g)),
-        15 => Self::ENat(Address::arbitrary(g)),
-        16 => Self::EApp(Address::arbitrary(g), Address::arbitrary(g)),
-        17 => Self::ELam(Address::arbitrary(g), Address::arbitrary(g)),
-        18 => Self::EAll(Address::arbitrary(g), Address::arbitrary(g)),
-        19 => Self::ELet(
+        12 => Self::ESort(Address::arbitrary(g)),
+        13 => Self::EStr(Address::arbitrary(g)),
+        14 => Self::ENat(Address::arbitrary(g)),
+        15 => Self::EApp(Address::arbitrary(g), Address::arbitrary(g)),
+        16 => Self::ELam(Address::arbitrary(g), Address::arbitrary(g)),
+        17 => Self::EAll(Address::arbitrary(g), Address::arbitrary(g)),
+        18 => Self::ELet(
           bool::arbitrary(g),
           Address::arbitrary(g),
           Address::arbitrary(g),
           Address::arbitrary(g),
         ),
-        20 => Self::Blob(gen_vec(g, 12, u8::arbitrary)),
-        21 => Self::Defn(Definition::arbitrary(g)),
-        22 => Self::Recr(Recursor::arbitrary(g)),
-        23 => Self::Axio(Axiom::arbitrary(g)),
-        24 => Self::Quot(Quotient::arbitrary(g)),
-        25 => Self::CPrj(ConstructorProj::arbitrary(g)),
-        26 => Self::RPrj(RecursorProj::arbitrary(g)),
-        27 => Self::IPrj(InductiveProj::arbitrary(g)),
-        28 => Self::DPrj(DefinitionProj::arbitrary(g)),
-        29 => Self::Muts(gen_vec(g, 12, MutConst::arbitrary)),
-        30 => Self::Prof(Proof::arbitrary(g)),
-        31 => Self::Eval(EvalClaim::arbitrary(g)),
-        32 => Self::Chck(CheckClaim::arbitrary(g)),
-        33 => Self::Comm(Comm::arbitrary(g)),
-        34 => Self::Envn(Env::arbitrary(g)),
-        35 => Self::Prim(BuiltIn::arbitrary(g)),
-        36 => Self::Meta(Metadata::arbitrary(g)),
+        19 => Self::Blob(gen_vec(g, 12, u8::arbitrary)),
+        20 => Self::Defn(Definition::arbitrary(g)),
+        21 => Self::Recr(Recursor::arbitrary(g)),
+        22 => Self::Axio(Axiom::arbitrary(g)),
+        23 => Self::Quot(Quotient::arbitrary(g)),
+        24 => Self::CPrj(ConstructorProj::arbitrary(g)),
+        25 => Self::RPrj(RecursorProj::arbitrary(g)),
+        26 => Self::IPrj(InductiveProj::arbitrary(g)),
+        27 => Self::DPrj(DefinitionProj::arbitrary(g)),
+        28 => Self::Muts(gen_vec(g, 12, MutConst::arbitrary)),
+        29 => Self::Prof(Proof::arbitrary(g)),
+        30 => Self::Eval(EvalClaim::arbitrary(g)),
+        31 => Self::Chck(CheckClaim::arbitrary(g)),
+        32 => Self::Comm(Comm::arbitrary(g)),
+        33 => Self::Envn(Env::arbitrary(g)),
+        34 => Self::Prim(BuiltIn::arbitrary(g)),
+        35 => Self::Meta(Metadata::arbitrary(g)),
         _ => unreachable!(),
       }
     }
