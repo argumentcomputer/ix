@@ -115,7 +115,7 @@
             clang
             lib.rustToolchain
             rust-analyzer
-            lean.lean # Includes Lean compiler, lake, stdlib, etc.
+            lean.lean-all # Includes Lean compiler, lake, stdlib, etc.
           ];
         };
 
