@@ -44,4 +44,9 @@ pub mod tests {
       Address { hash: Hash::from_slice(&bytes).unwrap() }
     }
   }
+  impl Arbitrary for MetaAddress {
+    fn arbitrary(g: &mut Gen) -> Self {
+      MetaAddress { data: Address::arbitrary(g), meta: Address::arbitrary(g) }
+    }
+  }
 }
