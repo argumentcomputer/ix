@@ -1,7 +1,45 @@
 use crate::ixon::address::Address;
-use crate::ixon::name::Name;
+//use crate::ixon::name::Name;
 use crate::ixon::nat::Nat;
 //use crate::ixon::serialize::Serialize;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Substring {
+    pub str: Address,
+    pub start_pos: Nat,
+    pub stop_pos: Nat,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceInfo {
+    Original(Substring, Nat, Substring, Nat),
+    Synthetic(Nat, Nat, bool),
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Preresolved {
+    Namespace(Address),
+    Decl(Address, Vec<Address>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Syntax {
+    Missing,
+    Node(SourceInfo, Address, Vec<Address>),
+    Atom(SourceInfo, Address),
+    Ident(SourceInfo, Substring, Address, Vec<Preresolved>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DataValue {
+    OfString(Address),
+    OfBool(bool),
+    OfName(Address),
+    OfNat(Address),
+    OfInt(Address),
+    OfSyntax(Address),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinderInfo {
@@ -21,17 +59,18 @@ pub enum ReducibilityHints {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Metadatum {
-    Name(Name),
-    Info(BinderInfo),
     Link(Address),
+    Info(BinderInfo),
     Hints(ReducibilityHints),
-    All(Vec<Name>),
-    MutCtx(Vec<Vec<Name>>),
+    Links(Vec<Address>),
+    Map(Vec<(Address, Address)>),
+    KVMap(Vec<(Address, DataValue)>),
+    Muts(Vec<Vec<Address>>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Metadata {
-    pub map: Vec<(Nat, Vec<Metadatum>)>,
+    pub nodes: Vec<Metadatum>,
 }
 
 //impl Serialize for BinderInfo {
