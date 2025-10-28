@@ -1,5 +1,5 @@
-import Ix.Cli.ProveCmd
-import Ix.Cli.StoreCmd
+--import Ix.Cli.ProveCmd
+--import Ix.Cli.StoreCmd
 import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
 import Ix
@@ -12,8 +12,8 @@ def ixCmd : Cli.Cmd := `[Cli|
   "A tool for generating content-addressed ZK proofs of Lean 4 code"
 
   SUBCOMMANDS:
-    proveCmd;
-    storeCmd;
+    --proveCmd;
+    --storeCmd;
     serveCmd;
     connectCmd
 ]
