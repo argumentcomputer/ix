@@ -28,11 +28,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1758123462,
-        "narHash": "sha256-kh/xy8M5uqKOUeHNi+HyklrLVA+Ixd4cQCMXsMzswP4=",
+        "lastModified": 1761671743,
+        "narHash": "sha256-Zon0ul+lR4gNXxg9GQOMOZDP8QSwBnbNR5HRYOmA1T8=",
         "owner": "argumentcomputer",
         "repo": "Blake3.lean",
-        "rev": "a5ed3f0bceda9506271a8f95c365e9bd0040288d",
+        "rev": "a64c3f568b6538374e437681b770b0f092a89d2e",
         "type": "github"
       },
       "original": {
@@ -156,11 +156,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1758037834,
-        "narHash": "sha256-P2rBelR9lgFJPE8kEV1wwX1LHK6xWlVcQqEez84ss6E=",
+        "lastModified": 1761368467,
+        "narHash": "sha256-eEs2YpE84+d6a8VKXCACNJy5czcu8GQCaeSZwR/mFMk=",
         "owner": "lenianiva",
         "repo": "lean4-nix",
-        "rev": "d87ff09bad00ca4addd471a68a968f2aa29c7c36",
+        "rev": "3550873ed1a87d666d633d34921e79abaa4671c1",
         "type": "github"
       },
       "original": {
@@ -175,11 +175,11 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1760753731,
-        "narHash": "sha256-RJCrWSH1Iz8WPVL2hB2U/kBXuct4+tKo/aiPCaOYPzM=",
+        "lastModified": 1761368467,
+        "narHash": "sha256-eEs2YpE84+d6a8VKXCACNJy5czcu8GQCaeSZwR/mFMk=",
         "owner": "lenianiva",
         "repo": "lean4-nix",
-        "rev": "ae7abc9f97a26da2ecf5233b9edfe3ba0af1b9a9",
+        "rev": "3550873ed1a87d666d633d34921e79abaa4671c1",
         "type": "github"
       },
       "original": {
