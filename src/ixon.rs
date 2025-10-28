@@ -22,150 +22,150 @@ use nat::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ixon {
-    NAnon,                                 // 0x00, anonymous name
-    NStr(Address, Address),                // 0x01, string name
-    NNum(Address, Address),                // 0x02, number name
-    UZero,                                 // 0x03, universe zero
-    USucc(Address),                        // 0x04, universe successor
-    UMax(Address, Address),                // 0x05, universe max
-    UIMax(Address, Address),               // 0x06, universe impredicative max
-    UVar(Nat),                             // 0x1X, universe variable
-    EVar(Nat),                             // 0x2X, expression variable
-    ERef(Address, Vec<Address>),           // 0x3X, expression reference
-    ERec(Nat, Vec<Address>),               // 0x4X, expression recursion
-    EPrj(Address, Nat, Address),           // 0x5X, expression projection
-    ESort(Address),                        // 0x80, expression sort
-    EStr(Address),                         // 0x81, expression string
-    ENat(Address),                         // 0x82, expression natural
-    EApp(Address, Address),                // 0x83, expression application
-    ELam(Address, Address),                // 0x84, expression lambda
-    EAll(Address, Address),                // 0x85, expression forall
-    ELet(bool, Address, Address, Address), // 0x86, 0x87, expression let
-    Blob(Vec<u8>),                         // 0x9X, tagged bytes
-    Defn(Definition),                      // 0xA0, definition constant
-    Recr(Recursor),                        // 0xA1, recursor constant
-    Axio(Axiom),                           // 0xA2, axiom constant
-    Quot(Quotient),                        // 0xA3, quotient constant
-    CPrj(ConstructorProj),                 // 0xA4, constructor projection
-    RPrj(RecursorProj),                    // 0xA5, recursor projection
-    IPrj(InductiveProj),                   // 0xA6, inductive projection
-    DPrj(DefinitionProj),                  // 0xA7, definition projection
-    Muts(Vec<MutConst>),                   // 0xBX, mutual constants
-    Prof(Proof),                           // 0xE0, zero-knowledge proof
-    Eval(EvalClaim),                       // 0xE1, evaluation claim
-    Chck(CheckClaim),                      // 0xE2, typechecking claim
-    Comm(Comm),                            // 0xE3, cryptographic commitment
-    Envn(Env),                             // 0xE4, multi-claim environment
-    Prim(BuiltIn),                         // 0xE5, compiler built-ins
-    Meta(Metadata),                        // 0xFX, metadata
+  NAnon,                                 // 0x00, anonymous name
+  NStr(Address, Address),                // 0x01, string name
+  NNum(Address, Address),                // 0x02, number name
+  UZero,                                 // 0x03, universe zero
+  USucc(Address),                        // 0x04, universe successor
+  UMax(Address, Address),                // 0x05, universe max
+  UIMax(Address, Address),               // 0x06, universe impredicative max
+  UVar(Nat),                             // 0x1X, universe variable
+  EVar(Nat),                             // 0x2X, expression variable
+  ERef(Address, Vec<Address>),           // 0x3X, expression reference
+  ERec(Nat, Vec<Address>),               // 0x4X, expression recursion
+  EPrj(Address, Nat, Address),           // 0x5X, expression projection
+  ESort(Address),                        // 0x80, expression sort
+  EStr(Address),                         // 0x81, expression string
+  ENat(Address),                         // 0x82, expression natural
+  EApp(Address, Address),                // 0x83, expression application
+  ELam(Address, Address),                // 0x84, expression lambda
+  EAll(Address, Address),                // 0x85, expression forall
+  ELet(bool, Address, Address, Address), // 0x86, 0x87, expression let
+  Blob(Vec<u8>),                         // 0x9X, tagged bytes
+  Defn(Definition),                      // 0xA0, definition constant
+  Recr(Recursor),                        // 0xA1, recursor constant
+  Axio(Axiom),                           // 0xA2, axiom constant
+  Quot(Quotient),                        // 0xA3, quotient constant
+  CPrj(ConstructorProj),                 // 0xA4, constructor projection
+  RPrj(RecursorProj),                    // 0xA5, recursor projection
+  IPrj(InductiveProj),                   // 0xA6, inductive projection
+  DPrj(DefinitionProj),                  // 0xA7, definition projection
+  Muts(Vec<MutConst>),                   // 0xBX, mutual constants
+  Prof(Proof),                           // 0xE0, zero-knowledge proof
+  Eval(EvalClaim),                       // 0xE1, evaluation claim
+  Chck(CheckClaim),                      // 0xE2, typechecking claim
+  Comm(Comm),                            // 0xE3, cryptographic commitment
+  Envn(Env),                             // 0xE4, multi-claim environment
+  Prim(BuiltIn),                         // 0xE5, compiler built-ins
+  Meta(Metadata),                        // 0xFX, metadata
 }
 
 impl Default for Ixon {
-    fn default() -> Self {
-        Self::NAnon
-    }
+  fn default() -> Self {
+    Self::NAnon
+  }
 }
 
 impl Ixon {
-    pub fn u64_byte_count(x: u64) -> u8 {
-        match x {
-            0 => 0,
-            x if x < 0x0000000000000100 => 1,
-            x if x < 0x0000000000010000 => 2,
-            x if x < 0x0000000001000000 => 3,
-            x if x < 0x0000000100000000 => 4,
-            x if x < 0x0000010000000000 => 5,
-            x if x < 0x0001000000000000 => 6,
-            x if x < 0x0100000000000000 => 7,
-            _ => 8,
-        }
+  pub fn u64_byte_count(x: u64) -> u8 {
+    match x {
+      0 => 0,
+      x if x < 0x0000000000000100 => 1,
+      x if x < 0x0000000000010000 => 2,
+      x if x < 0x0000000001000000 => 3,
+      x if x < 0x0000000100000000 => 4,
+      x if x < 0x0000010000000000 => 5,
+      x if x < 0x0001000000000000 => 6,
+      x if x < 0x0100000000000000 => 7,
+      _ => 8,
     }
+  }
 
-    pub fn u64_put_trimmed_le(x: u64, buf: &mut Vec<u8>) {
-        let n = Ixon::u64_byte_count(x) as usize;
-        buf.extend_from_slice(&x.to_le_bytes()[..n])
+  pub fn u64_put_trimmed_le(x: u64, buf: &mut Vec<u8>) {
+    let n = Ixon::u64_byte_count(x) as usize;
+    buf.extend_from_slice(&x.to_le_bytes()[..n])
+  }
+
+  pub fn u64_get_trimmed_le(
+    len: usize,
+    buf: &mut &[u8],
+  ) -> Result<u64, String> {
+    let mut res = [0u8; 8];
+    if len > 8 {
+      return Err("get trimmed_le_64 len > 8".to_string());
     }
-
-    pub fn u64_get_trimmed_le(len: usize, buf: &mut &[u8]) -> Result<u64, String> {
-        let mut res = [0u8; 8];
-        if len > 8 {
-            return Err("get trimmed_le_64 len > 8".to_string());
-        }
-        match buf.split_at_checked(len) {
-            Some((head, rest)) => {
-                *buf = rest;
-                res[..len].copy_from_slice(head);
-                Ok(u64::from_le_bytes(res))
-            }
-            None => Err("get trimmed_le_u64 EOF".to_string()),
-        }
+    match buf.split_at_checked(len) {
+      Some((head, rest)) => {
+        *buf = rest;
+        res[..len].copy_from_slice(head);
+        Ok(u64::from_le_bytes(res))
+      },
+      None => Err("get trimmed_le_u64 EOF".to_string()),
     }
+  }
 
-    #[allow(clippy::cast_possible_truncation)]
-    pub fn pack_bools<I>(bools: I) -> u8
-    where
-        I: IntoIterator<Item = bool>,
-    {
-        let mut acc: u8 = 0;
-        for (i, b) in bools.into_iter().take(8).enumerate() {
-            if b {
-                acc |= 1u8 << (i as u32);
-            }
-        }
-        acc
+  #[allow(clippy::cast_possible_truncation)]
+  pub fn pack_bools<I>(bools: I) -> u8
+  where
+    I: IntoIterator<Item = bool>,
+  {
+    let mut acc: u8 = 0;
+    for (i, b) in bools.into_iter().take(8).enumerate() {
+      if b {
+        acc |= 1u8 << (i as u32);
+      }
     }
+    acc
+  }
 
-    pub fn unpack_bools(n: usize, b: u8) -> Vec<bool> {
-        (0..8)
-            .map(|i: u32| (b & (1u8 << i)) != 0)
-            .take(n.min(8))
-            .collect()
-    }
+  pub fn unpack_bools(n: usize, b: u8) -> Vec<bool> {
+    (0..8).map(|i: u32| (b & (1u8 << i)) != 0).take(n.min(8)).collect()
+  }
 
-    //fn put_tag(tag: u8, val: u64, buf: &mut Vec<u8>) {
-    //    if val < 8 {
-    //        buf.push((tag << 4) | (val as u8));
-    //    } else {
-    //        buf.push((tag << 4) | 0b1000 | (Ixon::u64_byte_count(val) - 1));
-    //        Ixon::u64_put_trimmed_le(val, buf);
-    //    }
-    //}
+  //fn put_tag(tag: u8, val: u64, buf: &mut Vec<u8>) {
+  //    if val < 8 {
+  //        buf.push((tag << 4) | (val as u8));
+  //    } else {
+  //        buf.push((tag << 4) | 0b1000 | (Ixon::u64_byte_count(val) - 1));
+  //        Ixon::u64_put_trimmed_le(val, buf);
+  //    }
+  //}
 
-    //fn get_size(is_large: bool, small: u8, buf: &mut &[u8]) -> Result<u64, String> {
-    //    if is_large {
-    //        Ixon::u64_get_trimmed_le((small + 1) as usize, buf)
-    //    } else {
-    //        Ok(small as u64)
-    //    }
-    //}
+  //fn get_size(is_large: bool, small: u8, buf: &mut &[u8]) -> Result<u64, String> {
+  //    if is_large {
+  //        Ixon::u64_get_trimmed_le((small + 1) as usize, buf)
+  //    } else {
+  //        Ok(small as u64)
+  //    }
+  //}
 
-    //// put_array and get_array are separated from Ixon's serialize implementation
-    //// in order to create a generic Serialize impl for Vec<S>
-    //pub fn put_array<S: Serialize>(xs: &[S], buf: &mut Vec<u8>) {
-    //    Self::put_tag(0xA, xs.len() as u64, buf);
-    //    for x in xs {
-    //        x.put(buf)
-    //    }
-    //}
+  //// put_array and get_array are separated from Ixon's serialize implementation
+  //// in order to create a generic Serialize impl for Vec<S>
+  //pub fn put_array<S: Serialize>(xs: &[S], buf: &mut Vec<u8>) {
+  //    Self::put_tag(0xA, xs.len() as u64, buf);
+  //    for x in xs {
+  //        x.put(buf)
+  //    }
+  //}
 
-    //pub fn get_array<S: Serialize>(buf: &mut &[u8]) -> Result<Vec<S>, String> {
-    //    let tag_byte = u8::get(buf)?;
-    //    let tag = tag_byte >> 4;
-    //    let small_size = tag_byte & 0b111;
-    //    let is_large = tag_byte & 0b1000 != 0;
-    //    match tag {
-    //        0xA => {
-    //            let len = Self::get_size(is_large, small_size, buf)?;
-    //            let mut vec = vec![];
-    //            for _ in 0..len {
-    //                let s = S::get(buf)?;
-    //                vec.push(s);
-    //            }
-    //            Ok(vec)
-    //        }
-    //        x => Err(format!("get array invalid tag {x}")),
-    //    }
-    //}
+  //pub fn get_array<S: Serialize>(buf: &mut &[u8]) -> Result<Vec<S>, String> {
+  //    let tag_byte = u8::get(buf)?;
+  //    let tag = tag_byte >> 4;
+  //    let small_size = tag_byte & 0b111;
+  //    let is_large = tag_byte & 0b1000 != 0;
+  //    match tag {
+  //        0xA => {
+  //            let len = Self::get_size(is_large, small_size, buf)?;
+  //            let mut vec = vec![];
+  //            for _ in 0..len {
+  //                let s = S::get(buf)?;
+  //                vec.push(s);
+  //            }
+  //            Ok(vec)
+  //        }
+  //        x => Err(format!("get array invalid tag {x}")),
+  //    }
+  //}
 }
 
 //impl Serialize for Ixon {
