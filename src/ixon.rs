@@ -180,14 +180,20 @@ impl Serialize for Tag4 {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ByteArray(pub Vec<u8>);
 
-impl Serialize for ByteArray {
-    fn put(&self, buf: &mut Vec<u8>) {
+impl ByteArray {
+    fn put_slice(slice: &[u8], buf: &mut Vec<u8>) {
         Tag4 {
             flag: 0x9,
-            size: self.0.len() as u64,
+            size: slice.len() as u64,
         }
         .put(buf);
-        buf.extend_from_slice(&self.0);
+        buf.extend_from_slice(slice);
+    }
+}
+
+impl Serialize for ByteArray {
+    fn put(&self, buf: &mut Vec<u8>) {
+        Self::put_slice(&self.0, buf);
     }
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
         let tag = Tag4::get(buf)?;
@@ -799,22 +805,19 @@ impl Serialize for ConstructorProj {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecursorProj {
     pub idx: Nat,
-    pub ridx: Nat,
     pub block: Address,
 }
 
 impl Serialize for RecursorProj {
     fn put(&self, buf: &mut Vec<u8>) {
         self.idx.put(buf);
-        self.ridx.put(buf);
         self.block.put(buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
         let idx = Nat::get(buf)?;
-        let ridx = Nat::get(buf)?;
         let block = Address::get(buf)?;
-        Ok(RecursorProj { idx, ridx, block })
+        Ok(RecursorProj { idx, block })
     }
 }
 
@@ -909,19 +912,19 @@ impl Serialize for CheckClaim {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Claim {
-    Checks(CheckClaim),
     Evals(EvalClaim),
+    Checks(CheckClaim),
 }
 
 impl Serialize for Claim {
     fn put(&self, buf: &mut Vec<u8>) {
         match self {
             Self::Evals(x) => {
-                u8::put(&0xE2, buf);
+                u8::put(&0xE1, buf);
                 x.put(buf)
             }
             Self::Checks(x) => {
-                u8::put(&0xE3, buf);
+                u8::put(&0xE2, buf);
                 x.put(buf)
             }
         }
@@ -931,11 +934,11 @@ impl Serialize for Claim {
             Some((head, rest)) => {
                 *buf = rest;
                 match head[0] {
-                    0xE2 => {
+                    0xE1 => {
                         let x = EvalClaim::get(buf)?;
                         Ok(Self::Evals(x))
                     }
-                    0xE3 => {
+                    0xE2 => {
                         let x = CheckClaim::get(buf)?;
                         Ok(Self::Checks(x))
                     }
@@ -956,12 +959,12 @@ pub struct Proof {
 impl Serialize for Proof {
     fn put(&self, buf: &mut Vec<u8>) {
         self.claim.put(buf);
-        self.proof.put(buf);
+        ByteArray::put_slice(&self.proof, buf);
     }
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
         let claim = Claim::get(buf)?;
-        let proof = Serialize::get(buf)?;
+        let ByteArray(proof) = ByteArray::get(buf)?;
         Ok(Proof { claim, proof })
     }
 }
@@ -1689,6 +1692,7 @@ impl Serialize for Ixon {
         }
     }
 }
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -2137,7 +2141,6 @@ pub mod tests {
             Self {
                 block: Address::arbitrary(g),
                 idx: Nat::arbitrary(g),
-                ridx: Nat::arbitrary(g),
             }
         }
     }

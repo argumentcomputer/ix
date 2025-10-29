@@ -158,13 +158,16 @@ instance : Shrinkable Ixon.Ixon where
 
 instance : SampleableExt Ixon.Ixon := SampleableExt.mkSelfContained genIxon
 
+@[extern "rs_eq_lean_rust_serialization"]
+private opaque eqLeanRustSerialization : @& Ixon.Ixon → @& ByteArray → Bool
+
 def ixonSerde (ixon : Ixon.Ixon) : Bool :=
   let bytes := Ixon.ser ixon
-  match Ixon.de bytes with
-  | .ok ixon' => ixon == ixon'
-  | .error _ => false
+  if !eqLeanRustSerialization ixon bytes then false else
+    match Ixon.de bytes with
+    | .ok ixon' => ixon == ixon'
+    | .error _ => false
 
 def Tests.Ixon.suite := [
   check "Ixon serde roundtrips" (∀ ixon : Ixon.Ixon, ixonSerde ixon)
 ]
-

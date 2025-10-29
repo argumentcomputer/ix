@@ -537,9 +537,9 @@ instance : Serialize Env where
 
 structure EvalClaim where
   lvls : Address
+  type : Address
   input: Address
   output: Address
-  type : Address
 deriving BEq, Repr, Inhabited, Ord, Hashable
 
 structure CheckClaim where
@@ -561,15 +561,15 @@ instance : ToString EvalClaim where
 
 instance : ToString Claim where
   toString
-  | .checks x => toString x
   | .evals x => toString x
+  | .checks x => toString x
 
 instance : Serialize CheckClaim where
   put x := Serialize.put (x.lvls, x.type, x.value)
   get := (fun (x,y,z) => .mk x y z) <$> Serialize.get
 
 instance : Serialize EvalClaim where
-  put x := Serialize.put (x.lvls, x.input, x.output, x.type)
+  put x := Serialize.put (x.lvls, x.type, x.input, x.output)
   get := (fun (w,x,y,z) => .mk w x y z) <$> Serialize.get
 
 instance : Serialize Claim where
@@ -579,22 +579,21 @@ instance : Serialize Claim where
   get := do match <- getTag4 with
   | ⟨0xE,1⟩ => .evals <$> Serialize.get
   | ⟨0xE,2⟩ => .checks <$> Serialize.get
-  | e => throw s!"expected Claim with tag 0xE2 or 0xE3, got {repr e}"
+  | e => throw s!"expected Claim with tag 0xE1 or 0xE2, got {repr e}"
 
 structure Proof where
-  claim: Claim
-  /-- Bytes of the Binius proof -/
-  bin : ByteArray
+  claim : Claim
+  proof : ByteArray
   deriving Inhabited, BEq, Ord, Hashable
 
 instance : ToString Proof where
-  toString p := s!"<{toString p.claim} := {hexOfBytes p.bin}>"
+  toString p := s!"<{toString p.claim} := {hexOfBytes p.proof}>"
 
 instance : Repr Proof where
   reprPrec p _ := toString p
 
 instance : Serialize Proof where
-  put := fun x => Serialize.put (x.claim, x.bin)
+  put := fun x => Serialize.put (x.claim, x.proof)
   get := (fun (x,y) => .mk x y) <$> Serialize.get
 
 structure Substring where
