@@ -13,6 +13,7 @@ use crate::{
         QuotKind, QuotVal, RecursorRule, RecursorVal, ReducibilityHints, SourceInfo, Substring,
         Syntax, SyntaxPreresolved, TheoremVal,
         compile::compile,
+        ground::ground_consts,
         ref_graph::{RefGraph, build_ref_graph},
         scc::compute_sccs,
     },
@@ -572,7 +573,9 @@ fn lean_ptr_to_const_map(ptr: *const c_void) -> ConstMap {
 #[unsafe(no_mangle)]
 extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
     let const_map = lean_ptr_to_const_map(ptr);
-    let RefGraph { out_refs, .. } = build_ref_graph(&const_map);
+    let RefGraph { out_refs, in_refs } = build_ref_graph(&const_map);
+    let ungrounded = ground_consts(&const_map, &in_refs);
+    println!("ungrounded: {}", ungrounded.len());
     let sccs = compute_sccs(&out_refs);
     compile(&sccs, &out_refs, &const_map);
     const_map.len()
