@@ -4,7 +4,7 @@ import Ix.Address
 import Ix.Mutual
 import Ix.Common
 import Ix.CondenseM
-import Ix.GroundM
+import Ix.GraphM
 --import Ix.Store
 import Ix.SOrder
 import Ix.Cronos
@@ -1020,12 +1020,12 @@ def CompileM.runIO (c : CompileM α)
   (maxHeartBeats: USize := 200000)
   (seed : Option Nat := .none)
   : IO (α × CompileState) := do
-  let gstt <- GroundM.env env
-  let alls := CondenseM.run env gstt.outRefs
+  let refs := GraphM.env env
+  let blocks := CondenseM.run env refs
   let seed <- match seed with
     | .none => IO.monoNanosNow
     | .some s => pure s
-  match <- c.run .init (.init env alls seed maxHeartBeats) with
+  match <- c.run .init (.init env blocks.blockMembership seed maxHeartBeats) with
   | (.ok a, stt) => return (a, stt)
   | (.error e, _) => throw (IO.userError (<- e.pretty))
 

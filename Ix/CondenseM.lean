@@ -62,7 +62,11 @@ partial def visit : Lean.Name -> CondenseM Unit
           if top == id then break
       modify fun stt => { stt with stack := stack }
 
-def condense: CondenseM (Map Lean.Name (Set Lean.Name)) := do
+structure CondensedBlocks where
+  blockCount: Nat
+  blockMembership: Map Lean.Name (Set Lean.Name)
+
+def condense: CondenseM CondensedBlocks := do
   let mut idx := 0
   for (name,_) in (<- read).env.constants do
     idx := idx + 1
@@ -76,13 +80,14 @@ def condense: CondenseM (Map Lean.Name (Set Lean.Name)) := do
     blocks := blocks.alter lowName fun x => match x with
       | .some s => .some (s.insert name)
       | .none => .some {name}
+  let blockCount := blocks.size
   for (_, set) in blocks do
     for n in set do
       blocks := blocks.insert n set
-  return blocks
+  return ⟨blockCount, blocks⟩
 
 def CondenseM.run (env: Lean.Environment) (refs: Map Lean.Name (Set Lean.Name))
-  : Map Lean.Name (Set Lean.Name) :=
+  : CondensedBlocks :=
   Id.run (StateT.run (ReaderT.run condense ⟨env, refs⟩) CondenseState.init).1
 
 end Ix
