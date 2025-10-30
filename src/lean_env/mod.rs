@@ -1,4 +1,5 @@
 pub mod compile;
+pub mod ground;
 pub mod ref_graph;
 pub mod scc;
 
@@ -172,7 +173,7 @@ impl Hash for Expr {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Level {
     Zero,
     Succ(Box<Level>),

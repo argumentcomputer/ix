@@ -103,7 +103,7 @@ pub fn compile(
         });
     });
 
-    // Collect results and validate completeness.
+    // Collect results and validate disjoint SCCs.
     let mut map = FxHashMap::default();
     for mutex in hashes.values() {
         let mutex_lock = mutex.lock().unwrap();
