@@ -53,15 +53,31 @@ def graphConst: Lean.ConstantInfo -> GraphM (Set Lean.Name)
   let rs <- val.rules.foldrM (fun r s => .union s <$> graphExpr r.rhs) {}
   return .union t rs
 
-def GraphM.run (env: Lean.Environment) (g: GraphM α)
+def GraphM.run (env: Lean.Environment) (stt: GraphState) (g: GraphM α)
   : α × GraphState
-  := StateT.run (ReaderT.run (Id.run g env)) GraphState.init
+  := StateT.run (ReaderT.run (Id.run g env)) stt
 
 def GraphM.env (env: Lean.Environment) : Map Lean.Name (Set Lean.Name) := Id.run do
   let mut tasks : Map Lean.Name (Task (Set Lean.Name)) := {}
   for (name, const) in env.constants do
-    let task <- Task.spawn fun () => (GraphM.run env (graphConst const)).1
+    let task <- Task.spawn fun () => (GraphM.run env .init (graphConst const)).1
     tasks := tasks.insert name task
   return tasks.map fun _ t => t.get
+
+def GraphM.envSerial (env: Lean.Environment) : Map Lean.Name (Set Lean.Name) := Id.run do
+  let mut refs: Map Lean.Name (Set Lean.Name) := {}
+  for (name, const) in env.constants do
+    let (rs, _) := GraphM.run env .init (graphConst const)
+    refs := refs.insert name rs
+  return refs
+
+def GraphM.envSerialShareCache (env: Lean.Environment) : Map Lean.Name (Set Lean.Name) := Id.run do
+  let mut stt : GraphState := .init
+  let mut refs: Map Lean.Name (Set Lean.Name) := {}
+  for (name, const) in env.constants do
+    let (rs, stt') := GraphM.run env stt (graphConst const)
+    refs := refs.insert name rs
+    stt := stt'
+  return refs
 
 end Ix

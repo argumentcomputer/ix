@@ -194,9 +194,19 @@ def testRoundtripGetEnv : IO TestSeq := do
   IO.println s!"..in {time sizeStart sizeStop}"
   let graphStart <- IO.monoNanosNow
   let refs := GraphM.env env
-  IO.println s!"built reference graph of size {refs.size} from Lean environment"
+  IO.println s!"1 built reference graph of size {refs.size} from Lean environment"
   let graphStop <- IO.monoNanosNow
   IO.println s!"..in {time graphStart graphStop}"
+  let graph2Start <- IO.monoNanosNow
+  let refs2: Map Lean.Name (Set Lean.Name) := GraphM.envSerial env
+  IO.println s!"2 built reference graph of size {refs2.size} from Lean environment"
+  let graph2Stop <- IO.monoNanosNow
+  IO.println s!"..in {time graph2Start graph2Stop}"
+  let graph3Start <- IO.monoNanosNow
+  let refs3: Map Lean.Name (Set Lean.Name) := GraphM.envSerialShareCache env
+  IO.println s!"3 built reference graph of size {refs3.size} from Lean environment"
+  let graph3Stop <- IO.monoNanosNow
+  IO.println s!"..in {time graph3Start graph3Stop}"
   IO.println s!"Building condensation graph of env"
   let blockStart <- IO.monoNanosNow
   let blocks := CondenseM.run env refs
