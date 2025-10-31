@@ -111,6 +111,7 @@ pub fn compute_sccs(out_refs: &RefMap) -> RefMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::slice;
 
     fn n(s: &str) -> Arc<Name> {
         Name::mk_str(Name::Anonymous.into(), s.to_string()).into()
@@ -151,7 +152,7 @@ mod tests {
     fn simple_cycle() {
         let a = n("A");
         let b = n("B");
-        let g = map_of(&[(&a, &[b.clone()]), (&b, &[a.clone()])]);
+        let g = map_of(&[(&a, slice::from_ref(&b)), (&b, slice::from_ref(&a))]);
         let sccs = compute_sccs(&g);
         assert_eq!(scc_to_vec(&sccs), vec![vec![n("A"), n("B")]]);
     }
@@ -161,7 +162,11 @@ mod tests {
         let a = n("A");
         let b = n("B");
         let c = n("C");
-        let g = map_of(&[(&a, &[b.clone()]), (&b, &[c.clone()]), (&c, &[])]);
+        let g = map_of(&[
+            (&a, slice::from_ref(&b)),
+            (&b, slice::from_ref(&c)),
+            (&c, &[]),
+        ]);
         let sccs = compute_sccs(&g);
         assert_eq!(
             scc_to_vec(&sccs),
@@ -176,10 +181,10 @@ mod tests {
         let c = n("C");
         let d = n("D");
         let g = map_of(&[
-            (&a, &[b.clone()]),
+            (&a, slice::from_ref(&b)),
             (&b, &[a.clone(), c.clone()]),
-            (&c, &[d.clone()]),
-            (&d, &[c.clone()]),
+            (&c, slice::from_ref(&d)),
+            (&d, slice::from_ref(&c)),
         ]);
         let sccs = compute_sccs(&g);
         assert_eq!(
@@ -200,13 +205,13 @@ mod tests {
         let h = n("H");
 
         let graph = map_of(&[
-            (&a, &[b.clone()]),
+            (&a, slice::from_ref(&b)),
             (&b, &[c.clone(), e.clone(), f.clone()]),
             (&c, &[d.clone(), g.clone()]),
             (&d, &[c.clone(), h.clone()]),
             (&e, &[a.clone(), f.clone()]),
-            (&f, &[g.clone()]),
-            (&g, &[f.clone()]),
+            (&f, slice::from_ref(&g)),
+            (&g, slice::from_ref(&f)),
             (&h, &[d.clone(), g.clone()]),
         ]);
 

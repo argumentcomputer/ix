@@ -1392,8 +1392,10 @@ impl Serialize for Metadata {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[rustfmt::skip]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum Ixon {
+    #[default]
     NAnon,                                 // 0x00, anonymous name
     NStr(Address, Address),                // 0x01, string name
     NNum(Address, Address),                // 0x02, number name
@@ -1430,12 +1432,6 @@ pub enum Ixon {
     Envn(Env),                             // 0xE4, multi-claim environment
     Prim(BuiltIn),                         // 0xE5, compiler built-ins
     Meta(Metadata),                        // 0xFX, metadata
-}
-
-impl Default for Ixon {
-    fn default() -> Self {
-        Self::NAnon
-    }
 }
 
 impl Ixon {
