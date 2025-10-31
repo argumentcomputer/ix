@@ -104,6 +104,7 @@ enum ExecEntry<'a> {
 struct CallerState {
     fun_idx: FunIdx,
     map: Vec<G>,
+    unconstrained: bool,
 }
 
 impl Function {
@@ -124,6 +125,8 @@ impl Function {
             };
         }
         push_block_exec_entries!(&self.body);
+        let mut unconstrained = self.unconstrained;
+        let mut multiplicity_incr = G::from_bool(!unconstrained);
         while let Some(exec_entry) = exec_entries_stack.pop() {
             match exec_entry {
                 ExecEntry::Op(Op::Const(c)) => map.push(*c),
@@ -149,7 +152,7 @@ impl Function {
                 ExecEntry::Op(Op::Call(callee_idx, args, _)) => {
                     let args = args.iter().map(|i| map[*i]).collect();
                     if let Some(result) = record.function_queries[*callee_idx].get_mut(&args) {
-                        result.multiplicity += G::ONE;
+                        result.multiplicity += multiplicity_incr;
                         map.extend(result.output.clone());
                     } else {
                         let saved_map = std::mem::replace(&mut map, args);
@@ -157,10 +160,13 @@ impl Function {
                         callers_states_stack.push(CallerState {
                             fun_idx,
                             map: saved_map,
+                            unconstrained,
                         });
                         // Prepare outer variables to go into the new func scope.
                         fun_idx = *callee_idx;
                         let function = &toplevel.functions[fun_idx];
+                        unconstrained |= function.unconstrained;
+                        multiplicity_incr = G::from_bool(!unconstrained);
                         push_block_exec_entries!(&function.body);
                     }
                 }
@@ -172,13 +178,13 @@ impl Function {
                         .get_mut(&size)
                         .expect("Invalid memory size");
                     if let Some(result) = memory_queries.get_mut(&values) {
-                        result.multiplicity += G::ONE;
+                        result.multiplicity += multiplicity_incr;
                         map.extend(&result.output);
                     } else {
                         let ptr = G::from_usize(memory_queries.len());
                         let result = QueryResult {
                             output: vec![ptr],
-                            multiplicity: G::ONE,
+                            multiplicity: multiplicity_incr,
                         };
                         memory_queries.insert(values, result);
                         map.push(ptr);
@@ -195,7 +201,7 @@ impl Function {
                     let (args, result) = memory_queries
                         .get_index_mut(ptr_usize)
                         .expect("Unbound pointer");
-                    result.multiplicity += G::ONE;
+                    result.multiplicity += multiplicity_incr;
                     map.extend(args);
                 }
                 ExecEntry::Op(Op::AssertEq(xs, ys)) => {
@@ -230,19 +236,40 @@ impl Function {
                 }
                 ExecEntry::Op(Op::IOWrite(data)) => io_buffer.write(data.iter().map(|v| map[*v])),
                 ExecEntry::Op(Op::U8BitDecomposition(byte)) => {
-                    bytes1_execute(*byte, &Bytes1Op::BitDecomposition, &mut map, record)
+                    if unconstrained {
+                        map.extend(Bytes1::bit_decompose(&map[*byte]));
+                    } else {
+                        bytes1_execute(*byte, &Bytes1Op::BitDecomposition, &mut map, record);
+                    }
                 }
                 ExecEntry::Op(Op::U8ShiftLeft(byte)) => {
-                    bytes1_execute(*byte, &Bytes1Op::ShiftLeft, &mut map, record)
+                    if unconstrained {
+                        map.push(Bytes1::shift_left(&map[*byte]));
+                    } else {
+                        bytes1_execute(*byte, &Bytes1Op::ShiftLeft, &mut map, record);
+                    }
                 }
                 ExecEntry::Op(Op::U8ShiftRight(byte)) => {
-                    bytes1_execute(*byte, &Bytes1Op::ShiftRight, &mut map, record)
+                    if unconstrained {
+                        map.push(Bytes1::shift_right(&map[*byte]));
+                    } else {
+                        bytes1_execute(*byte, &Bytes1Op::ShiftRight, &mut map, record);
+                    }
                 }
                 ExecEntry::Op(Op::U8Xor(i, j)) => {
-                    bytes2_execute(*i, *j, &Bytes2Op::Xor, &mut map, record)
+                    if unconstrained {
+                        map.push(Bytes2::xor(&map[*i], &map[*j]));
+                    } else {
+                        bytes2_execute(*i, *j, &Bytes2Op::Xor, &mut map, record);
+                    }
                 }
                 ExecEntry::Op(Op::U8Add(i, j)) => {
-                    bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record)
+                    if unconstrained {
+                        let (r, o) = Bytes2::add(&map[*i], &map[*j]);
+                        map.extend([r, o]);
+                    } else {
+                        bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record);
+                    }
                 }
                 ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
                     None => println!("{label}"),
@@ -268,18 +295,21 @@ impl Function {
                     let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
                     let result = QueryResult {
                         output: output.clone(),
-                        multiplicity: G::ONE,
+                        multiplicity: multiplicity_incr,
                     };
                     record.function_queries[fun_idx].insert(args, result);
                     if let Some(CallerState {
                         fun_idx: caller_idx,
                         map: caller_map,
+                        unconstrained: caller_unconstrained,
                     }) = callers_states_stack.pop()
                     {
                         // Recover the state of the caller.
                         fun_idx = caller_idx;
                         map = caller_map;
                         map.extend(output);
+                        unconstrained = caller_unconstrained;
+                        multiplicity_incr = G::from_bool(!unconstrained);
                     } else {
                         // No outer caller. About to exit.
                         assert!(exec_entries_stack.is_empty());
