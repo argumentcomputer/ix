@@ -12,16 +12,16 @@ lean_exe ix where
   supportInterpreter := true
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "d2bbbfa61a82ac199a5e852aa375acffd9a3b3f1"
+  "https://github.com/argumentcomputer/LSpec" @ "b05e6b83798bce0887eb5001cb10fdcbe675dde3"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "a64c3f568b6538374e437681b770b0f092a89d2e"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "732daca6c67f3be3ca44837643cfda906503e9ac"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "41c5d0b8814dec559e2e1441171db434fe2281cc"
+  "https://github.com/leanprover/lean4-cli" @ "91c18fa62838ad0ab7384c03c9684d99d306e1da"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "d117e2c28cba42e974bc22568ac999492a34e812"
+  "https://github.com/leanprover-community/batteries" @ "8da40b72fece29b7d3fe3d768bac4c8910ce9bee"
 
 section Tests
 
