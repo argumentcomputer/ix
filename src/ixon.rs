@@ -1392,10 +1392,11 @@ impl Serialize for Metadata {
     }
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum Ixon {
     #[default]
-    NAnon, // 0x00, anonymous name
+    NAnon,                                 // 0x00, anonymous name
     NStr(Address, Address),                // 0x01, string name
     NNum(Address, Address),                // 0x02, number name
     UZero,                                 // 0x03, universe zero

@@ -182,7 +182,6 @@ mod tests {
         let d = n("D");
         let g = map_of(&[
             (&a, slice::from_ref(&b)),
-            // (&b, &[a.clone(), c.clone()]),
             (&b, &[a.clone(), c.clone()]),
             (&c, slice::from_ref(&d)),
             (&d, slice::from_ref(&c)),
