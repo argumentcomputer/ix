@@ -222,14 +222,14 @@ fn ground_level<'a>(
     match &level {
         Level::Zero => Ok(()),
         Level::Succ(x) => ground_level(*x.clone(), univs, stt),
-        Level::Max(x, y) => {
+        Level::Max(x, y) | Level::Imax(x, y) => {
             ground_level(*x.clone(), univs.clone(), stt)?;
             ground_level(*y.clone(), univs, stt)
         }
-        Level::Imax(x, y) => {
-            ground_level(*x.clone(), univs.clone(), stt)?;
-            ground_level(*y.clone(), univs, stt)
-        }
+        // Level::Imax(x, y) => {
+        //     ground_level(*x.clone(), univs.clone(), stt)?;
+        //     ground_level(*y.clone(), univs, stt)
+        // }
         Level::Param(n) => {
             if !univs.contains(n) {
                 return Err(GroundError::Level(level, univs.clone()));
