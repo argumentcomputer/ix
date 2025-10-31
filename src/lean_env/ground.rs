@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub enum GroundError<'a> {
-    Level(Level, ConsList<Arc<Name>>),
+    Level(Arc<Level>, ConsList<Arc<Name>>),
     Ref(Arc<Name>),
     MVar(Arc<Expr>),
     Var(Arc<Expr>, ConsList<Arc<Name>>),
@@ -69,7 +69,7 @@ fn const_univs(constant: &ConstantInfo) -> ConsList<Arc<Name>> {
 #[allow(clippy::type_complexity)]
 struct GroundState {
     expr_cache: FxHashSet<(ConsList<Arc<Name>>, ConsList<Arc<Name>>, Arc<Expr>)>,
-    univ_cache: FxHashSet<(ConsList<Arc<Name>>, Level)>,
+    univ_cache: FxHashSet<(ConsList<Arc<Name>>, Arc<Level>)>,
 }
 
 fn ground_const<'a>(
@@ -210,7 +210,7 @@ fn ground_expr<'a>(
 }
 
 fn ground_level<'a>(
-    level: Level,
+    level: Arc<Level>,
     univs: ConsList<Arc<Name>>,
     stt: &mut GroundState,
 ) -> Result<(), GroundError<'a>> {
@@ -219,12 +219,12 @@ fn ground_level<'a>(
         return Ok(());
     }
     stt.univ_cache.insert(key);
-    match &level {
+    match level.as_ref() {
         Level::Zero => Ok(()),
-        Level::Succ(x) => ground_level(*x.clone(), univs, stt),
+        Level::Succ(x) => ground_level(x.clone(), univs, stt),
         Level::Max(x, y) | Level::Imax(x, y) => {
-            ground_level(*x.clone(), univs.clone(), stt)?;
-            ground_level(*y.clone(), univs, stt)
+            ground_level(x.clone(), univs.clone(), stt)?;
+            ground_level(y.clone(), univs, stt)
         }
         Level::Param(n) => {
             if !univs.contains(n) {
