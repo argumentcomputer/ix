@@ -190,7 +190,7 @@ pub struct RecursorRule {
     pub rhs: Arc<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuotKind {
     Type,
     Ctor,
@@ -198,14 +198,14 @@ pub enum QuotKind {
     Ind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReducibilityHints {
     Opaque,
     Abbrev,
     Regular(u32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefinitionSafety {
     Unsafe,
     Safe,
@@ -226,13 +226,13 @@ pub enum BinderInfo {
     InstImplicit,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Int {
     OfNat(Nat),
     NegSucc(Nat),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum DataValue {
     OfString(String),
     OfBool(bool),
@@ -242,7 +242,7 @@ pub enum DataValue {
     OfSyntax(Box<Syntax>),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Syntax {
     Missing,
     Node(SourceInfo, Arc<Name>, Vec<Syntax>),
@@ -250,20 +250,20 @@ pub enum Syntax {
     Ident(SourceInfo, Substring, Arc<Name>, Vec<SyntaxPreresolved>),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SyntaxPreresolved {
     Namespace(Arc<Name>),
     Decl(Arc<Name>, Vec<String>),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SourceInfo {
     Original(Substring, Nat, Substring, Nat),
     Synthetic(Nat, Nat, bool),
     None,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Substring {
     pub str: String,
     pub start_pos: Nat,

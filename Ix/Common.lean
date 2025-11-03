@@ -10,7 +10,7 @@ def compareList [Ord α] : List α -> List α -> Ordering
 | [], _::_ => .lt
 | [], [] => .eq
 
-def compareListM 
+def compareListM
   [Monad μ] (cmp: α -> α -> μ Ordering) : List α -> List α -> μ Ordering
 | a::as, b::bs => do
   match (<- cmp a b) with
@@ -20,10 +20,10 @@ def compareListM
 | [], _::_ => pure .lt
 | [], [] => pure .eq
 
-instance [Ord α] : Ord (List α) where 
+instance [Ord α] : Ord (List α) where
   compare := compareList
 
-instance [Ord α] [Ord β] : Ord (α × β) where 
+instance [Ord α] [Ord β] : Ord (α × β) where
   compare a b := match compare a.fst b.fst with
     | .eq => compare a.snd b.snd
     | x => x
@@ -180,7 +180,7 @@ def joinM [Monad μ] : List (List α) → μ (List α)
 
 end List
 
-def Std.HashMap.find? {A B} [BEq A] [Hashable A] (map: Std.HashMap A B) (a: A) 
+def Std.HashMap.find? {A B} [BEq A] [Hashable A] (map: Std.HashMap A B) (a: A)
   := Std.HashMap.get? map a
 
 abbrev Ix.Map := Std.HashMap
@@ -394,4 +394,3 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
 --| .ctorInfo x => x.type.msize
 --| .recInfo x => x.type.msize + x.rules.foldr (fun a acc => a.msize + acc) 0
 end Lean
-

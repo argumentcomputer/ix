@@ -4,16 +4,15 @@ use std::ffi::c_void;
 use crate::{
     ixon::{
         Axiom, BuiltIn, CheckClaim, Claim, Comm, Constructor, ConstructorProj, DataValue, DefKind,
-        DefSafety, Definition, DefinitionProj, Env, EvalClaim, Inductive, InductiveProj, Ixon,
-        Metadata, Metadatum, MutConst, Proof, QuotKind, Quotient, Recursor, RecursorProj,
-        RecursorRule, ReducibilityHints, Serialize,
+        Definition, DefinitionProj, Env, EvalClaim, Inductive, InductiveProj, Ixon, Metadata,
+        Metadatum, MutConst, Proof, Quotient, Recursor, RecursorProj, RecursorRule, Serialize,
         address::{Address, MetaAddress},
     },
     lean::{
         as_ref_unsafe, collect_list, ctor::LeanCtorObject, lean_is_scalar, nat::Nat,
         sarray::LeanSArrayObject,
     },
-    lean_env::BinderInfo,
+    lean_env::{BinderInfo, DefinitionSafety, QuotKind, ReducibilityHints},
     lean_unbox,
 };
 
@@ -37,9 +36,9 @@ fn lean_ptr_to_definition(ptr: *const c_void) -> Definition {
         _ => unreachable!(),
     };
     let safety = match safety {
-        0 => DefSafety::Unsafe,
-        1 => DefSafety::Safe,
-        2 => DefSafety::Partial,
+        0 => DefinitionSafety::Unsafe,
+        1 => DefinitionSafety::Safe,
+        2 => DefinitionSafety::Partial,
         _ => unreachable!(),
     };
     Definition {

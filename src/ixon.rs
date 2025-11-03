@@ -1,6 +1,10 @@
-use crate::{lean::nat::*, lean_env::BinderInfo};
 use blake3::Hash;
 use num_bigint::BigUint;
+
+use crate::{
+    lean::nat::*,
+    lean_env::{BinderInfo, DefinitionSafety, Int, QuotKind, ReducibilityHints},
+};
 
 pub mod address;
 
@@ -311,14 +315,6 @@ pub fn unpack_bools(n: usize, b: u8) -> Vec<bool> {
         .collect()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum QuotKind {
-    Type,
-    Ctor,
-    Lift,
-    Ind,
-}
-
 impl Serialize for QuotKind {
     fn put(&self, buf: &mut Vec<u8>) {
         match self {
@@ -405,13 +401,6 @@ impl Serialize for BinderInfo {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReducibilityHints {
-    Opaque,
-    Abbrev,
-    Regular(u32),
-}
-
 impl Serialize for ReducibilityHints {
     fn put(&self, buf: &mut Vec<u8>) {
         match self {
@@ -443,14 +432,7 @@ impl Serialize for ReducibilityHints {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DefSafety {
-    Unsafe,
-    Safe,
-    Partial,
-}
-
-impl Serialize for DefSafety {
+impl Serialize for DefinitionSafety {
     fn put(&self, buf: &mut Vec<u8>) {
         match self {
             Self::Unsafe => buf.push(0),
@@ -568,7 +550,7 @@ impl Serialize for Axiom {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Definition {
     pub kind: DefKind,
-    pub safety: DefSafety,
+    pub safety: DefinitionSafety,
     pub lvls: Nat,
     pub typ: Address,
     pub value: Address,
@@ -585,7 +567,7 @@ impl Serialize for Definition {
 
     fn get(buf: &mut &[u8]) -> Result<Self, String> {
         let kind = DefKind::get(buf)?;
-        let safety = DefSafety::get(buf)?;
+        let safety = DefinitionSafety::get(buf)?;
         let lvls = Nat::get(buf)?;
         let typ = Address::get(buf)?;
         let value = Address::get(buf)?;
@@ -1349,7 +1331,7 @@ impl Serialize for Metadatum {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Metadata {
     pub nodes: Vec<Metadatum>,
 }
@@ -1935,7 +1917,7 @@ pub mod tests {
         serialize_readback(x)
     }
 
-    impl Arbitrary for DefSafety {
+    impl Arbitrary for DefinitionSafety {
         fn arbitrary(g: &mut Gen) -> Self {
             match u8::arbitrary(g) % 3 {
                 0 => Self::Unsafe,
@@ -1947,7 +1929,7 @@ pub mod tests {
     }
 
     #[quickcheck]
-    fn prop_defsafety_readback(x: DefSafety) -> bool {
+    fn prop_defsafety_readback(x: DefinitionSafety) -> bool {
         serialize_readback(x)
     }
 
@@ -1994,7 +1976,7 @@ pub mod tests {
         fn arbitrary(g: &mut Gen) -> Self {
             Self {
                 kind: DefKind::arbitrary(g),
-                safety: DefSafety::arbitrary(g),
+                safety: DefinitionSafety::arbitrary(g),
                 lvls: Nat::arbitrary(g),
                 typ: Address::arbitrary(g),
                 value: Address::arbitrary(g),

@@ -601,7 +601,7 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
     let sccs = compute_sccs(&out_refs);
     println!("SCCs: {:.2}s", start_sccs.elapsed().unwrap().as_secs_f32());
     let start_compile = std::time::SystemTime::now();
-    compile(&sccs, &out_refs, &const_map);
+    let _ = compile(&sccs, &out_refs, &const_map);
     println!(
         "Compile: {:.2}s",
         start_compile.elapsed().unwrap().as_secs_f32()

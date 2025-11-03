@@ -11,6 +11,8 @@ use crate::{
 pub struct Nat(pub BigUint);
 
 impl Nat {
+    pub const ZERO: Self = Self(BigUint::ZERO);
+
     pub fn from_ptr(ptr: *const c_void) -> Nat {
         if lean_is_scalar(ptr) {
             let u = lean_unbox!(usize, ptr);
@@ -31,12 +33,6 @@ impl Nat {
     pub fn to_le_bytes(&self) -> Vec<u8> {
         self.0.to_bytes_le()
     }
-}
-
-#[derive(Hash, PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
-pub enum Int {
-    OfNat(Nat),
-    NegSucc(Nat),
 }
 
 /// From https://github.com/leanprover/lean4/blob/master/src/runtime/object.h:
