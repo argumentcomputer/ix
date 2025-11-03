@@ -61,6 +61,7 @@ structure FunctionLayout where
 structure Function where
   body : Block
   layout: FunctionLayout
+  unconstrained : Bool
   deriving Inhabited, Repr
 
 structure Toplevel where

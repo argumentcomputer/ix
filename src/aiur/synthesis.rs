@@ -77,9 +77,13 @@ enum CircuitType {
 
 impl AiurSystem {
     pub fn build(toplevel: Toplevel, commitment_parameters: CommitmentParameters) -> Self {
-        let function_circuits = (0..toplevel.functions.len()).map(|i| {
-            let (constraints, lookups) = toplevel.build_constraints(i);
-            LookupAir::new(AiurCircuit::Function(constraints), lookups)
+        let function_circuits = (0..toplevel.functions.len()).filter_map(|i| {
+            if toplevel.functions[i].unconstrained {
+                None
+            } else {
+                let (constraints, lookups) = toplevel.build_constraints(i);
+                Some(LookupAir::new(AiurCircuit::Function(constraints), lookups))
+            }
         });
         let memory_circuits = toplevel.memory_sizes.iter().map(|&width| {
             let (memory, lookups) = Memory::build(width);
@@ -119,7 +123,13 @@ impl AiurSystem {
         // Build the `SystemWitness`
         let functions = (0..self.toplevel.functions.len())
             .into_par_iter()
-            .map(|idx| CircuitType::Function { idx });
+            .filter_map(|idx| {
+                if self.toplevel.functions[idx].unconstrained {
+                    None
+                } else {
+                    Some(CircuitType::Function { idx })
+                }
+            });
         let memories = self
             .toplevel
             .memory_sizes

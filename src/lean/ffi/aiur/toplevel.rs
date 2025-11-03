@@ -211,10 +211,15 @@ fn lean_ctor_to_function_layout(ctor: &LeanCtorObject) -> FunctionLayout {
 
 fn lean_ptr_to_function(ptr: *const c_void) -> Function {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-    let [body_ptr, layout_ptr] = ctor.objs();
+    let [body_ptr, layout_ptr, unconstrained_ptr] = ctor.objs();
     let body = lean_ctor_to_block(as_ref_unsafe(body_ptr.cast()));
     let layout = lean_ctor_to_function_layout(as_ref_unsafe(layout_ptr.cast()));
-    Function { body, layout }
+    let unconstrained = unconstrained_ptr as usize != 0;
+    Function {
+        body,
+        layout,
+        unconstrained,
+    }
 }
 
 pub(crate) fn lean_ctor_to_toplevel(ctor: &LeanCtorObject) -> Toplevel {
