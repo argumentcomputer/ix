@@ -63,8 +63,10 @@ partial def visit : Lean.Name -> CondenseM Unit
       modify fun stt => { stt with stack := stack }
 
 structure CondensedBlocks where
-  blockCount: Nat
-  blockMembership: Map Lean.Name (Set Lean.Name)
+  count: Nat -- number of blocks
+  lowLinks: Map Lean.Name Lean.Name -- map constants to their lowlinks
+  alls: Map Lean.Name (Set Lean.Name) -- map constants to their mutual blocks
+  deriving Inhabited, Nonempty
 
 def condense: CondenseM CondensedBlocks := do
   let mut idx := 0
@@ -74,17 +76,20 @@ def condense: CondenseM CondensedBlocks := do
     | .some _ => continue
     | .none => visit name
   let mut blocks : Map Lean.Name (Set Lean.Name) := {}
+  let mut lowLinks := {}
   for (i, low) in (<- get).lowLink do
     let name := (<- get).ids.get! i
     let lowName := (<- get).ids.get! low
+    lowLinks := lowLinks.insert name lowName
     blocks := blocks.alter lowName fun x => match x with
       | .some s => .some (s.insert name)
       | .none => .some {name}
   let blockCount := blocks.size
+  let mut alls := {}
   for (_, set) in blocks do
     for n in set do
-      blocks := blocks.insert n set
-  return ⟨blockCount, blocks⟩
+      alls := alls.insert n set
+  return ⟨blockCount, lowLinks, alls⟩
 
 def CondenseM.run (env: Lean.Environment) (refs: Map Lean.Name (Set Lean.Name))
   : CondensedBlocks :=

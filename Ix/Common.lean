@@ -51,17 +51,18 @@ deriving instance BEq, Repr, Ord for Lean.KVMap
 deriving instance BEq, Repr, Ord for Lean.LevelMVarId
 deriving instance BEq, Repr, Ord for Lean.Level
 deriving instance BEq, Repr, Ord for Lean.Expr
-deriving instance BEq, Repr, Ord, Hashable for Lean.ConstantVal
-deriving instance BEq, Repr, Ord, Hashable for Lean.QuotVal
-deriving instance BEq, Repr, Ord, Hashable for Lean.AxiomVal
-deriving instance BEq, Repr, Ord, Hashable for Lean.TheoremVal
-deriving instance BEq, Repr, Ord, Hashable for Lean.DefinitionVal
-deriving instance BEq, Repr, Ord, Hashable for Lean.OpaqueVal
-deriving instance BEq, Repr, Ord, Hashable for Lean.RecursorRule
-deriving instance BEq, Repr, Ord, Hashable for Lean.RecursorVal
-deriving instance BEq, Repr, Ord, Hashable for Lean.ConstructorVal
-deriving instance BEq, Repr, Ord, Hashable for Lean.InductiveVal
-deriving instance BEq, Repr, Ord, Hashable for Lean.ConstantInfo
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.ConstantVal
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.QuotVal
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.AxiomVal
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.TheoremVal
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.DefinitionVal
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.OpaqueVal
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.RecursorRule
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.RecursorVal
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.ConstructorVal
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.InductiveVal
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.ConstantInfo
+deriving instance Nonempty for Lean.Environment
 
 def UInt8.MAX : UInt64 := 0xFF
 def UInt16.MAX : UInt64 := 0xFFFF

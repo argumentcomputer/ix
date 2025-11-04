@@ -40,30 +40,26 @@ def storeDir : StoreIO FilePath := do
     IO.toEIO .ioError (IO.FS.createDirAll path)
   return path
 
-def writeConst (x: Ixon) : StoreIO Address := do
-  let bytes := runPut (Serialize.put x)
-  let addr  := Address.blake3 bytes
-  let store ← storeDir
-  let path := store / hexOfBytes addr.hash
-  -- trust that the store is correct
+def storePath (addr: Address): StoreIO FilePath := do
+  let store <- storeDir
+  let hex := hexOfBytes addr.hash
+  let dir1 := String.mk [(hex.get ⟨0⟩), (hex.get ⟨1⟩)]
+  let dir2 := String.mk [(hex.get ⟨2⟩), (hex.get ⟨3⟩)]
+  let dir3 := String.mk [(hex.get ⟨4⟩), (hex.get ⟨5⟩)]
+  let file := hex.drop 6
+  let path := store / dir1 / dir2 / dir3
   if !(<- path.pathExists) then
-    let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
-  return addr
+    IO.toEIO .ioError (IO.FS.createDirAll path)
+  return path / file
 
--- unsafe, can corrupt store if called with bad address
-def forceWriteConst (addr: Address) (x: Ixon) : StoreIO Address := do
-  let bytes := runPut (Serialize.put x)
-  let store ← storeDir
-  let path := store / hexOfBytes addr.hash
+def write (bytes: ByteArray) : StoreIO Address := do
+  let addr  := Address.blake3 bytes
+  let path <- storePath addr
   let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
   return addr
 
-def readConst (a: Address) : StoreIO Ixon := do
-  let store ← storeDir
-  let path := store / hexOfBytes a.hash
-  let bytes ← IO.toEIO .ioError (IO.FS.readBinFile path)
-  match runGet Serialize.get bytes with
-  | .ok c => return c
-  | .error e => throw (.ixonError e)
+def read (a: Address) : StoreIO ByteArray := do
+  let path <- storePath a
+  IO.toEIO .ioError (IO.FS.readBinFile path)
 
 end Store

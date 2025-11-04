@@ -650,6 +650,7 @@ inductive Syntax where
 | node (info: SourceInfo) (kind: Address) (args: List Address)
 | atom (info: SourceInfo) (val: Address)
 | ident (info: SourceInfo) (rawVal: Substring) (val: Address) (preresolved: List Preresolved)
+deriving Inhabited, Nonempty
 
 def putSyntax : Syntax → PutM Unit
 | .missing => putUInt8 0
