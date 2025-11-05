@@ -937,7 +937,6 @@ structure ScheduleEnv where
   env: Lean.Environment
   blocks: CondensedBlocks
   comms: Map Lean.Name MetaAddress
-  refs: Map Lean.Name (Set Lean.Name)
 
 structure ScheduleState where
   constTasks: Map Lean.Name (Task (Except IO.Error MetaAddress))
@@ -952,7 +951,7 @@ def ScheduleM.run (env: ScheduleEnv) (stt: ScheduleState) (c : ScheduleM α)
 structure ScheduleStats where
   constWaiting: Nat
   constRunning: Nat
-  constfinished: Nat
+  constFinished: Nat
   blockWaiting: Nat
   blockRunning: Nat
   blockfinished: Nat
@@ -986,10 +985,9 @@ partial def ScheduleM.block (lo: Lean.Name)
     return task
   else
     let mut depTasks := []
-    let all := (<- read).blocks.alls.get! lo
+    let all := (<- read).blocks.blocks.get! lo
     let comms := (<- read).comms
-    let refs := (<- read).refs
-    let allRefs: Set Lean.Name := all.fold (fun acc a => acc.union (refs.get! a)) {}
+    let allRefs := (<- read).blocks.blockRefs.get! lo
     for ref in allRefs.filter (!all.contains ·) do
       let refTask <- ScheduleM.const ref
       depTasks := (ref, refTask)::depTasks
@@ -1020,8 +1018,8 @@ partial def ScheduleM.block (lo: Lean.Name)
 
 partial def ScheduleM.const (n: Lean.Name)
   : ScheduleM (Task (Except IO.Error MetaAddress)) := do
-  if let some constTask := (<- get).constTasks.get? n then
-    return constTask
+  if let some task := (<- get).constTasks.get? n then
+    return task
   else 
     let lo := (<- read).blocks.lowLinks.get! n
     let blockTask <- match (<- get).blockTasks.get? lo with
@@ -1054,18 +1052,74 @@ partial def ScheduleM.env : ScheduleM Unit := do
 structure CompiledEnv where
   consts: Map Lean.Name MetaAddress
   refs :  Map Lean.Name (Set Lean.Name)
-  blockCount: Nat
-  alls: Map Lean.Name (Set Lean.Name)
+  blocks: CondensedBlocks
 
-partial def CompileM.env
+partial def CompileM.envTopological
   (env: Lean.Environment)
   (comms: Map Lean.Name MetaAddress)
   : IO CompiledEnv := do
   let refs: Map Lean.Name (Set Lean.Name) := GraphM.env env
+  dbg_trace s!"constants: {refs.size}"
   let blocks := CondenseM.run env refs
-  let (_, stt) <- ScheduleM.run ⟨env, blocks, comms, refs⟩ ⟨{}, {}⟩ ScheduleM.env
+  dbg_trace s!"lowlinks: {blocks.lowLinks.size}, blocks: {blocks.blocks.size}"
 
   let mut consts: Map Lean.Name MetaAddress := {}
+  let mut remaining: Set Lean.Name := {}
+  for (lo, _) in blocks.blocks do
+    remaining := remaining.insert lo
+
+  let numBlocks := remaining.size
+  let mut i := 0
+
+  dbg_trace s!"compiling {numBlocks} blocks"
+  while !remaining.isEmpty do
+    i := i + 1
+    let pct := ((Float.ofNat remaining.size) / Float.ofNat numBlocks)
+    dbg_trace s!"Wave {i}, {(1 - pct) * 100}%: {remaining.size}/{numBlocks} blocks remaining"
+
+    let mut ready : Array (Lean.Name × Set Lean.Name) := #[]
+    for r in remaining do
+      let lo := blocks.lowLinks.get! r
+      let all := blocks.blocks.get! lo
+      let allDeps : Set Lean.Name := blocks.blockRefs.get! lo
+      if allDeps.all (consts.contains ·) then
+        ready := ready.push (r, all)
+      else
+        continue
+
+    let mut tasks := #[]
+
+    for (lo, all) in ready do
+      --dbg_trace s!"Wave {i}: scheduling {lo}"
+      let task <- IO.asTask <| CompileM.run
+        (.init env consts comms all lo) .init (compileConstant lo)
+      tasks := tasks.push task
+
+    for task in tasks do
+      match <- IO.wait task with
+      | .ok (.ok _, stt) => consts := consts.union stt.constCache
+      | .ok (.error e, _) => throw (IO.userError (<- e.pretty))
+      | .error e => throw e
+
+    for (r, _) in ready do
+      remaining := remaining.erase r
+
+  return ⟨consts, refs, blocks⟩
+
+  --return ⟨
+
+partial def CompileM.envScheduler
+  (env: Lean.Environment)
+  (comms: Map Lean.Name MetaAddress)
+  : IO CompiledEnv := do
+  let refs: Map Lean.Name (Set Lean.Name) := GraphM.env env
+  dbg_trace s!"constants: {refs.size}"
+  let blocks := CondenseM.run env refs
+  dbg_trace s!"lowlinks: {blocks.lowLinks.size}, blocks: {blocks.blocks.size}"
+
+  let (_, stt) <- ScheduleM.run ⟨env, blocks, comms⟩ ⟨{}, {}⟩ ScheduleM.env
+
+  let mut consts := {}
 
   let tasksSize := stt.constTasks.size
   let mut i := 1
@@ -1085,7 +1139,7 @@ partial def CompileM.env
     | .ok addr => consts := consts.insert n addr
     | .error e  => throw e
 
-  return ⟨consts, refs, blocks.count, blocks.alls⟩
+  return ⟨consts, refs, blocks⟩
 
 --partial def CompileM.const
 --  (name: Lean.Name) (env: Lean.Environment) (comms: Map Lean.Name MetaAddress)
