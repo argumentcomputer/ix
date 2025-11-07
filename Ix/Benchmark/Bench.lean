@@ -405,9 +405,13 @@ def mkReport (name : String) (benches: List (Benchmarkable α β)) (config : Con
             else if percentChange > 0 then s!"{percentChangeStr}% slower"
             else "No change"
           row := row ++ s!"{baseTime.formatNanos} | {percentChangeStr} |\n"
+        else
+          row := row ++
+            "| |\n"
         pure row
     table := table ++ row
-  IO.println table
+  IO.println $ table ++
+    "|----------|---------------|----------------|--------|\n"
   IO.FS.writeFile (System.mkFilePath [".", s!"benchmark-report-{name}.md"]) table
 
 
