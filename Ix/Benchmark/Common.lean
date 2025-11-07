@@ -34,7 +34,11 @@ structure Config where
   noiseThreshold : Float := 0.01
   /-- Serde format for bench report written to disk, defaults to JSON for human readability -/
   serde : SerdeFormat := .json
-  deriving Repr 
+  /-- Whether to skip sampling altogether and only collect a single data point. Takes precedence over all sampling settings. Used for expensive benchmarks -/
+  oneShot : Bool := false
+  /-- Whether to generate a Markdown report of all timings including comparison to disk if possible-/
+  report : Bool := false
+  deriving Repr
 
 @[inline] def Float.toNanos (f : Float) : Float := f * 10 ^ 9
 
@@ -51,6 +55,7 @@ def Nat.natPretty (n : Nat) : String :=
     toString (n / 10 ^ 6 ) ++ "M"
   else
     toString n
+
 def percentChange (old : Float) (new : Float) : Float :=
   (new - old) / old.abs * 100
 
