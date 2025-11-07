@@ -1,0 +1,103 @@
+# Creates a PR benchmark comment with a comparison to main
+name: Benchmark pull requests
+
+on:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  setup:
+    name: Comparative PR benchmark comment
+    if:
+      github.event.issue.pull_request
+      && github.event.issue.state == 'open'
+      && (contains(github.event.comment.body, '!benchmark'))
+      && (github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'OWNER')
+    runs-on: ubuntu-latest
+    outputs:
+      benches: ${{ steps.bench-params.outputs.benches }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Parse PR comment body
+        id: bench-params
+        run: |
+          # Parse `issue_comment` body
+          printf '${{ github.event.comment.body }}' > comment.txt
+          BENCH_COMMAND=$(head -n 1 comment.txt)
+          echo "$BENCH_COMMAND"
+
+          BENCHES=$(echo $BENCH_COMMAND | awk -F'!benchmark ' '{ print $2 }')
+          echo "BENCHES\n$BENCHES"
+          JSON=$(echo $BENCHES | jq -R -c 'split(" ")')
+
+          #echo "benches<<EOF" >> $GITHUB_OUTPUT
+          #echo "$JSON" | tee -a $GITHUB_OUTPUT
+          #echo "EOF" >> $GITHUB_OUTPUT
+          echo "JSON\n$JSON"
+
+          echo "benches=$JSON" | tee -a $GITHUB_OUTPUT
+
+          # Can't persist env vars between jobs, so we pass them as an output and set them in the next job
+          echo "env-vars=$(tail -n +2 comment.txt)" | tee -a $GITHUB_OUTPUT
+
+  benchmark:
+    needs: [ setup ]
+    runs-on: warp-ubuntu-latest-x64-16x
+    strategy:
+      matrix:
+        # Runs a job for each benchmark specified in the `issue_comment` input
+        bench: ${{ fromJSON(needs.setup.outputs.benches) }}
+    steps:
+      - name: Set env vars
+        run: |
+          # Trims newlines that may arise from `$GITHUB_OUTPUT`
+          for var in ${{ inputs.default-env }}
+          do
+            echo "$(echo $var | tr -d '\n')" | tee -a $GITHUB_ENV
+          done
+          # Overrides default env vars with those specified in the `issue_comment` input if identically named
+          for var in ${{ needs.setup.outputs.env-vars }}
+          do
+            echo "$(echo $var | tr -d '\n')" | tee -a $GITHUB_ENV
+          done
+      - uses: actions/checkout@v5
+      # Get base branch of the PR
+      #- uses: xt0rted/pull-request-comment-branch@v2
+      #  id: comment-branch
+      - name: Checkout PR branch
+        run: gh pr checkout $PR_NUMBER
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+      - uses: leanprover/lean-action@v1
+        with:
+          test: false
+      - name: Run bench
+        run: |
+          lake exe ${{ matrix.bench }} | tee out.txt 2>&1
+      - name: Comment on successful run
+        if: success()
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            `!${{ needs.setup.outputs.command }}` action succeeded! :rocket:
+
+            Bench output:
+            $(cat out.txt)
+
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Comment on failing run
+        if: failure()
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            `!${{ needs.setup.outputs.command }}` action failed :x:
+
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}

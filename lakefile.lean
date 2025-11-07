@@ -46,6 +46,9 @@ lean_exe «bench-aiur» where
 lean_exe «bench-blake3» where
   root := `Benchmarks.Blake3
 
+lean_exe «bench-report» where
+  root := `Benchmarks.Report
+
 end Benchmarks
 
 lean_lib Apps
