@@ -6,7 +6,9 @@ import Ix.Cronos
 import Ix.Address
 import Batteries
 
-import Ix.Benchmark.Serde
+import Ix.Benchmark.Ixon
+import Lean.Data.Json.FromToJson
+import Lean.Data.Json.FromToJson.Basic
 import Ix.Benchmark.Tukey
 
 open Batteries (RBMap)
@@ -154,11 +156,11 @@ structure MeasurementData where
   comparison : Option ComparisonData
   throughput : Option Throughput
 
-/-- Compare performance against prior run -/
+/-- Compares bench results against prior run, using T-test to determine statistical significance -/
 def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Estimates) (avgTimes : Distribution) (gen : StdGen) : ComparisonData :=
-  -- Get `base` data for comparison
+  -- Gets `base` data for comparison
   let baseAvgTimes : Distribution := { d := baseSample.d.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
-  -- Then perform statistical analysis
+  -- Then performs statistical analysis
   let (tValue, tDistribution) := tTest avgTimes baseAvgTimes bg.config gen
   let (relativeEstimates, relativeDistributions) := changeEstimates avgTimes baseAvgTimes bg.config gen
   let pValue := tDistribution.pValue tValue
@@ -175,27 +177,38 @@ def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Es
     baseEstimates
   }
 
+def loadJson (α) [Lean.FromJson α] (path : System.FilePath) : IO α := do
+  let jsonStr ← IO.FS.readFile path
+  let json ← match Lean.Json.parse jsonStr with
+  | .ok js => pure js
+  | .error e => throw $ IO.userError s!"{repr e}"
+  match Lean.fromJson? json with
+  | .ok d => pure d
+  | .error e => throw $ IO.userError s!"{repr e}"
+
+def loadIxon (α) [Ixon.Serialize α] (path : System.FilePath) : IO α := do
+  let ixonBytes ← IO.FS.readBinFile path
+  match Ixon.de ixonBytes with
+  | .ok d => pure d
+  | .error e => throw $ IO.userError s!"expected a, go {repr e}"
+
 -- TODO: Don't compare if different sampling modes were used
-def BenchGroup.getComparison (bg : BenchGroup) (benchName : String) (avgTimes : Distribution) : IO (Option ComparisonData) := do
+/-- Retrieves prior bench result from disk and runs the comparison -/
+def BenchGroup.getComparison (bg : BenchGroup) (benchName : String) (avgTimes : Distribution) (config: Config) : IO (Option ComparisonData) := do
   let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
-  let basePath := benchPath / "base"
-  if (← System.FilePath.pathExists basePath)
-  then do
-    let newPath := benchPath / "new"
-    -- If 2 or more prior runs, then the base data was stored in `new`
-    let basePath' := if (← System.FilePath.pathExists newPath)
-    then
-      newPath
-    else
-      basePath
-    let baseEstimateBytes ← IO.FS.readBinFile (basePath' / "estimates.ixon")
-    let baseEstimates ← match (Ixon.de baseEstimateBytes : Except String Estimates) with
-    | .ok bd' => pure bd'
-    | e => throw $ IO.userError s!"expected `Estimates`, got {repr e}"
-    let baseSampleBytes ← IO.FS.readBinFile (basePath' / "sample.ixon")
-    let baseSample ← match (Ixon.de baseSampleBytes : Except String Data) with
-    | .ok bd' => pure bd'
-    | e => throw $ IO.userError s!"expected `Data`, got {repr e}"
+  let fileExt := toString config.serde
+  -- Base data is at `new` since we haven't written the latest result to disk yet, which moves the prior data to `base`
+  let basePath := benchPath / "new"
+  if (← System.FilePath.pathExists (basePath / s!"estimates.{fileExt}")) then do
+    let (baseSample, baseEstimates) ← match config.serde with
+    | .json => do
+      let baseSample ← loadJson Data (basePath / "sample.json")
+      let baseEstimates ← loadJson Estimates (basePath / "estimates.json")
+      pure (baseSample, baseEstimates)
+    | .ixon => do
+      let baseSample ← loadIxon Data (basePath / "sample.ixon")
+      let baseEstimates ← loadIxon Estimates (basePath / "estimates.ixon")
+      pure (baseSample, baseEstimates)
     let gen ← IO.stdGenRef.get
     return some $ bg.compare baseSample baseEstimates avgTimes gen
   else
@@ -250,43 +263,47 @@ def BenchGroup.printResults (bg : BenchGroup) (benchName : String) (m : Measurem
   IO.println ""
   m.avgTimes.tukey
 
-def saveComparison! (benchName : String) (comparison : Option ComparisonData) : IO Unit := do
-  match comparison with
-  | some comp => do
-    let changeIxon := Ixon.ser comp.relativeEstimates
-    let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
-    let changePath := benchPath / "change"
-    let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", changePath.toString ] }
-    IO.FS.writeBinFile (changePath / "estimates.ixon") changeIxon
-  | none => IO.eprintln s!"Error: expected `comparisonData` to write but found none"
+/-- Writes JSON to disk at `benchPath/fileName` -/
+def storeJson [Lean.ToJson α] (data : α) (benchPath : System.FilePath) (fileName : String) : IO Unit :=
+  let json := Lean.toJson data
+  IO.FS.writeFile (benchPath / fileName) json.pretty
 
--- TODO: Write sampling mode in `sample.json` for comparison
-def saveResults (benchName : String) (m : MeasurementData) : IO Unit := do
+/-- Writes Ixon to disk at `benchPath/fileName` -/
+def storeIxon [Ixon.Serialize α] (data : α) (benchPath : System.FilePath) (fileName : String) : IO Unit :=
+  let ixon := Ixon.ser data
+  IO.FS.writeBinFile (benchPath / fileName) ixon
+
+-- TODO: Write sampling mode and config in `sample.json` for comparison
+def saveComparison (benchName : String) (comparison : ComparisonData) (config : Config) : IO Unit := do
+  let changePath := System.mkFilePath [".", ".lake", "benches", benchName, "change"]
+  match config.serde with
+  | .json => storeJson comparison.relativeEstimates changePath "estimates.json"
+  | .ixon => storeIxon comparison.relativeEstimates changePath "estimates.ixon"
+
+-- Results are always saved to `.lake/benches/<benchName>/new`. If files of the same serde format already exist from a prior run, move them to `base`
+def saveResults (benchName : String) (m : MeasurementData) (config : Config) : IO Unit := do
   let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
-  let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", benchPath.toString] }
-  let basePath := benchPath / "base"
-  let baseDir := basePath.toString
-  -- If prior results were saved to disk, don't overwrite them
-  let newPath ← if (← System.FilePath.pathExists basePath)
-    then do
-      let newPath := benchPath / "new"
-      let newDir := newPath.toString
-      -- If 2 or more prior runs, then the base data was stored in `new`
-      -- Move the base data to `base`
-      if (← System.FilePath.pathExists newPath)
-      then do
-        let _out ← IO.Process.run {cmd := "rm", args := #["-r", baseDir] }
-        let _out ← IO.Process.run {cmd := "mv", args := #[newDir, baseDir] }
-      let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", newPath.toString] }
-      saveComparison! benchName m.comparison
-      pure newPath
-  else do
-    let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", baseDir] }
-    pure basePath
-  let sampleIxon := Ixon.ser m.data
-  IO.FS.writeBinFile (newPath / "sample.ixon") sampleIxon
-  let estimateIxon := Ixon.ser m.absoluteEstimates
-  IO.FS.writeBinFile (newPath / "estimates.ixon") estimateIxon
+  let (basePath, changePath, newPath) := (benchPath / "base", benchPath / "change", benchPath / "new")
+  let (baseDir, changeDir, newDir) := (basePath.toString, changePath.toString, newPath.toString)
+  let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", baseDir, changeDir, newDir] }
+  let fileExt := toString config.serde
+  if (← System.FilePath.pathExists (newPath / s!"estimates.{fileExt}"))
+  then do
+    -- Move prior bench from `new` to `base`
+    for entry in (← System.FilePath.readDir newDir) do
+      let path := entry.path
+      if path.extension == fileExt
+      then
+        let _ ← IO.Process.run { cmd := "mv", args := #[path.toString, baseDir] }
+    if let some compData := m.comparison then saveComparison benchName compData config
+    else IO.eprintln s!"Error: expected `comparisonData` to write but found none"
+  match config.serde with
+  | .json =>
+    storeJson m.data newPath "sample.json"
+    storeJson m.absoluteEstimates newPath "estimates.json"
+  | .ixon =>
+    storeIxon m.data newPath "sample.ixon"
+    storeIxon m.absoluteEstimates newPath "estimates.ixon"
 
 -- TODO: Make sure compiler isn't caching partial evaluation result for future runs of the same function (measure first vs subsequent runs)
 /-- Runs each benchmark in a `BenchGroup` and analyzes the results -/
@@ -307,7 +324,7 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
       let (distribution, slope) := data'.regression bg.config gen
       estimates := { estimates with slope := .some slope }
       distributions := { distributions with slope := .some distribution }
-    let comparisonData : Option ComparisonData ← bg.getComparison b.name avgTimes
+    let comparisonData : Option ComparisonData ← bg.getComparison b.name avgTimes bg.config
     let m :=  {
       data := { d := data },
       avgTimes,
@@ -318,4 +335,4 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
     }
     bg.printResults b.name m
     IO.println ""
-    saveResults b.name m
+    saveResults b.name m config

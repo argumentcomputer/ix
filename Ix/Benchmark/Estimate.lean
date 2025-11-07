@@ -1,14 +1,16 @@
+import Lean.Data.Json
+
 structure ConfidenceInterval where
   confidenceLevel : Float
   lowerBound : Float
   upperBound : Float
-deriving Repr
+  deriving Repr, Lean.ToJson, Lean.FromJson
 
 structure Estimate where
   confidenceInterval : ConfidenceInterval
   pointEstimate : Float
   stdErr : Float
-deriving Repr
+  deriving Repr, Lean.ToJson, Lean.FromJson
 
 structure Estimates where
   mean : Estimate
@@ -16,7 +18,7 @@ structure Estimates where
   medianAbsDev : Estimate
   slope : Option Estimate
   stdDev : Estimate
-deriving Repr
+  deriving Repr, Lean.ToJson, Lean.FromJson
 
 structure PointEstimates where
   mean : Float

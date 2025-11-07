@@ -2,7 +2,7 @@ import Ix.Benchmark.Distribution
 
 structure Data where
   d : Array (Nat × Nat)
-deriving Repr, Inhabited
+  deriving Repr, Inhabited, Lean.ToJson, Lean.FromJson
 
 def dots (acc xys : Nat × Nat) : (Nat × Nat) :=
   let xy := acc.fst + xys.fst * xys.snd

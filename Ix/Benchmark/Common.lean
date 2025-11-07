@@ -1,7 +1,19 @@
+import Lean.Data.Json
+
 inductive SamplingMode where
   | flat : SamplingMode
   | linear : SamplingMode
 deriving Repr, BEq
+
+inductive SerdeFormat where
+  | json
+  | ixon
+  deriving Repr, BEq
+
+instance : ToString SerdeFormat where
+  toString sf := match sf with
+  | .json => "json"
+  | .ixon => "ixon"
 
 structure Config where
   /-- Warmup time in seconds -/
@@ -20,7 +32,9 @@ structure Config where
   significanceLevel : Float := 0.05
   /-- Noise threshold when comparing two benchmark means, if percent change is within this threshold then it's considered noise -/
   noiseThreshold : Float := 0.01
-deriving Repr
+  /-- Serde format for bench report written to disk, defaults to JSON for human readability -/
+  serde : SerdeFormat := .json
+  deriving Repr 
 
 @[inline] def Float.toNanos (f : Float) : Float := f * 10 ^ 9
 
