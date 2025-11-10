@@ -111,7 +111,7 @@ def proveBench : IO Unit := do
     bgroup "nat_fib" [
       bench "prove fib 1" (Aiur.AiurSystem.prove system friParameters funIdx) #[1],
       bench "prove fib 200" (Aiur.AiurSystem.prove system friParameters funIdx) #[200]
-    ] { oneShot := false, serde := .json, report := true }
+    ] { oneShot := true, serde := .json, report := true }
 
 def verifyBench : IO Unit := do
   match toplevel.checkAndSimplify with

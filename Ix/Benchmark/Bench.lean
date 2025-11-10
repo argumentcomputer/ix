@@ -414,10 +414,17 @@ def mkReport (name : String) (benches: List (Benchmarkable α β)) (config : Con
     "|----------|---------------|----------------|--------|\n"
   IO.FS.writeFile (System.mkFilePath [".", s!"benchmark-report-{name}.md"]) table
 
+-- TODO: Integrate this with a `lake bench` CLI to set config options via flags
+/-- Overrides config values with the corresponding `BENCH_<SETTING>` env vars if they are set -/
+def getConfigEnv (config : Config) : IO Config := do
+  let serde : SerdeFormat := if (← IO.getEnv "BENCH_SERDE") == some "ixon" then .ixon else config.serde
+  let report := if let some val := (← IO.getEnv "BENCH_REPORT") then val == "1" else config.report
+  return { config with serde, report }
 
 -- TODO: Make sure compiler isn't caching partial evaluation result for future runs of the same function (measure first vs subsequent runs)
 /-- Runs each benchmark in a `BenchGroup` and analyzes the results -/
 def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) (config : Config := {}) : IO Unit := do
+  let config ← getConfigEnv config
   let bg : BenchGroup := { name, config }
   IO.println s!"Running bench group {name}\n"
   for b in benches do
@@ -439,7 +446,7 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
         estimates := { estimates with slope := .some slope }
         distributions := { distributions with slope := .some distribution }
       let comparisonData : Option ComparisonData ← bg.getComparison b.name avgTimes bg.config
-      let m :=  {
+      let measurement :=  {
         data := { d := data },
         avgTimes,
         absoluteEstimates := estimates,
@@ -447,8 +454,8 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
         comparison := comparisonData
         throughput := none
       }
-      bg.printResults b.name m
+      bg.printResults b.name measurement
       IO.println ""
-      saveResults b.name m config
+      saveResults b.name measurement config
   if config.report then
     mkReport name benches config
