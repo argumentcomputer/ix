@@ -218,7 +218,7 @@ pub enum Literal {
     StrVal(String),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BinderInfo {
     Default,
     Implicit,
