@@ -25,3 +25,4 @@ structure PointEstimates where
   median : Float
   medianAbsDev : Float
   stdDev : Float
+

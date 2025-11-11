@@ -40,6 +40,13 @@ structure Config where
   report : Bool := false
   deriving Repr
 
+-- TODO: Integrate this with a `lake bench` CLI to set config options via flags
+/-- Overrides config values with the corresponding `BENCH_<SETTING>` env vars if they are set -/
+def getConfigEnv (config : Config) : IO Config := do
+  let serde : SerdeFormat := if (← IO.getEnv "BENCH_SERDE") == some "ixon" then .ixon else config.serde
+  let report := if let some val := (← IO.getEnv "BENCH_REPORT") then val == "1" else config.report
+  return { config with serde, report }
+
 @[inline] def Float.toNanos (f : Float) : Float := f * 10 ^ 9
 
 @[inline] def Float.toSeconds (f : Float) : Float := f / 10 ^ 9
