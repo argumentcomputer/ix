@@ -3,16 +3,17 @@ use std::ffi::c_void;
 
 use crate::{
     ixon::{
-        Axiom, BinderInfo, BuiltIn, CheckClaim, Claim, Comm, Constructor, ConstructorProj,
-        DataValue, DefKind, DefSafety, Definition, DefinitionProj, Env, EvalClaim, Inductive,
-        InductiveProj, Ixon, Metadata, Metadatum, MutConst, Proof, QuotKind, Quotient, Recursor,
-        RecursorProj, RecursorRule, ReducibilityHints, Serialize,
+        Axiom, BuiltIn, CheckClaim, Claim, Comm, Constructor, ConstructorProj, DataValue, DefKind,
+        DefSafety, Definition, DefinitionProj, Env, EvalClaim, Inductive, InductiveProj, Ixon,
+        Metadata, Metadatum, MutConst, Proof, QuotKind, Quotient, Recursor, RecursorProj,
+        RecursorRule, ReducibilityHints, Serialize,
         address::{Address, MetaAddress},
     },
     lean::{
         as_ref_unsafe, collect_list, ctor::LeanCtorObject, lean_is_scalar, nat::Nat,
         sarray::LeanSArrayObject,
     },
+    lean_env::BinderInfo,
     lean_unbox,
 };
 
