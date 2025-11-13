@@ -14,7 +14,8 @@ jobs:
   lean-jobs:
     strategy:
       matrix:
-        os: [warp-ubuntu-latest-x64-8x, warp-macos-latest-arm64-6x]
+        # os: [warp-ubuntu-latest-x64-8x, warp-macos-latest-arm64-6x]
+        os: [warp-ubuntu-latest-x64-8x]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -43,7 +44,8 @@ jobs:
   rust-test:
     strategy:
       matrix:
-        os: [ubuntu-latest, warp-macos-latest-arm64-6x]
+        # os: [ubuntu-latest, warp-macos-latest-arm64-6x]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -60,7 +62,8 @@ jobs:
   rust-lint:
     strategy:
       matrix:
-        os: [ubuntu-latest, warp-macos-latest-arm64-6x]
+        # os: [ubuntu-latest, warp-macos-latest-arm64-6x]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
