@@ -1,4 +1,4 @@
-use crate::lean::nat::*;
+use crate::{lean::nat::*, lean_env::BinderInfo};
 use blake3::Hash;
 use num_bigint::BigUint;
 
@@ -378,15 +378,6 @@ impl Serialize for DefKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BinderInfo {
-    Default,
-    Implicit,
-    StrictImplicit,
-    InstImplicit,
-    AuxDecl,
-}
-
 impl Serialize for BinderInfo {
     fn put(&self, buf: &mut Vec<u8>) {
         match self {
@@ -394,7 +385,6 @@ impl Serialize for BinderInfo {
             Self::Implicit => buf.push(1),
             Self::StrictImplicit => buf.push(2),
             Self::InstImplicit => buf.push(3),
-            Self::AuxDecl => buf.push(4),
         }
     }
 
@@ -407,7 +397,6 @@ impl Serialize for BinderInfo {
                     1 => Ok(Self::Implicit),
                     2 => Ok(Self::StrictImplicit),
                     3 => Ok(Self::InstImplicit),
-                    4 => Ok(Self::AuxDecl),
                     x => Err(format!("get BinderInfo invalid {x}")),
                 }
             }
@@ -1392,8 +1381,10 @@ impl Serialize for Metadata {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[rustfmt::skip]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum Ixon {
+    #[default]
     NAnon,                                 // 0x00, anonymous name
     NStr(Address, Address),                // 0x01, string name
     NNum(Address, Address),                // 0x02, number name
@@ -1430,12 +1421,6 @@ pub enum Ixon {
     Envn(Env),                             // 0xE4, multi-claim environment
     Prim(BuiltIn),                         // 0xE5, compiler built-ins
     Meta(Metadata),                        // 0xFX, metadata
-}
-
-impl Default for Ixon {
-    fn default() -> Self {
-        Self::NAnon
-    }
 }
 
 impl Ixon {
@@ -1919,12 +1904,11 @@ pub mod tests {
 
     impl Arbitrary for BinderInfo {
         fn arbitrary(g: &mut Gen) -> Self {
-            match u8::arbitrary(g) % 5 {
+            match u8::arbitrary(g) % 4 {
                 0 => Self::Default,
                 1 => Self::Implicit,
                 2 => Self::StrictImplicit,
                 3 => Self::InstImplicit,
-                4 => Self::AuxDecl,
                 _ => unreachable!(),
             }
         }

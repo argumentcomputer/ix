@@ -27,7 +27,7 @@ structure LayoutMState where
 @[inline] def LayoutMState.new (inputSize : Nat) : LayoutMState :=
   ⟨{ inputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, Array.replicate inputSize 1⟩
 
-abbrev LayoutM := StateM LayoutMState
+abbrev LayoutM := ReaderT TypedDecls $ StateM LayoutMState
 
 @[inline] def bumpSelectors : LayoutM Unit :=
   modify fun stt => { stt with
@@ -92,10 +92,11 @@ def opLayout : Bytecode.Op → LayoutM Unit
     else
       pushDegrees #[1, 1]
       bumpAuxiliaries 2
-  | .call _ _ outputSize => do
+  | .call funIdx _ outputSize => do
     pushDegrees $ .replicate outputSize 1
     bumpAuxiliaries outputSize
-    bumpLookups
+    let decls ← read
+    if !decls.isUnconstrainedFunction funIdx then bumpLookups
   | .store values => do
     pushDegree 1
     bumpAuxiliaries 1
@@ -557,7 +558,7 @@ partial def addCase
 
 end
 
-def TypedFunction.compile (layoutMap : LayoutMap) (f : TypedFunction) :
+def TypedFunction.compile (decls : TypedDecls) (layoutMap : LayoutMap) (f : TypedFunction) :
     Bytecode.Block × Bytecode.LayoutMState :=
   let (inputSize, _outputSize) := match layoutMap[f.name]? with
     | some (.function layout) => (layout.inputSize, layout.outputSize)
@@ -569,7 +570,7 @@ def TypedFunction.compile (layoutMap : LayoutMap) (f : TypedFunction) :
       (valIdx + len, bindings.insert arg indices)
   let state := { valIdx, selIdx := 0, ops := #[] }
   let body := f.body.compile f.output layoutMap bindings |>.run' state
-  let (_, layoutMState) := Bytecode.blockLayout body |>.run $ .new inputSize
+  let (_, layoutMState) := Bytecode.blockLayout body |>.run decls (.new inputSize)
   (body, layoutMState)
 
 def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
@@ -578,8 +579,8 @@ def TypedDecls.compile (decls : TypedDecls) : Bytecode.Toplevel :=
   let (functions, memSizes) := decls.foldl (init := (#[], initMemSizes))
     fun acc@(functions, memSizes) (_, decl) => match decl with
       | .function function =>
-        let (body, layoutMState) := function.compile layout
-        let function := ⟨body, layoutMState.functionLayout⟩
+        let (body, layoutMState) := function.compile decls layout
+        let function := ⟨body, layoutMState.functionLayout, function.unconstrained⟩
         let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
         (functions.push function, memSizes)
       | _ => acc

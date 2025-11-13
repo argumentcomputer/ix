@@ -1,4 +1,5 @@
 pub mod compile;
+pub mod ground;
 pub mod ref_graph;
 pub mod scc;
 
@@ -12,7 +13,7 @@ use crate::lean::nat::Nat;
 
 pub type ConstMap = FxHashMap<Arc<Name>, ConstantInfo>;
 
-#[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum Name {
     Anonymous,
     Str(Arc<Name>, String, u64),
@@ -142,8 +143,8 @@ pub enum Expr {
     Bvar(Nat, u64),
     Fvar(Arc<Name>, u64),
     Mvar(Arc<Name>, u64),
-    Sort(Level, u64),
-    Const(Arc<Name>, Vec<Level>, u64),
+    Sort(Arc<Level>, u64),
+    Const(Arc<Name>, Vec<Arc<Level>>, u64),
     App(Arc<Expr>, Arc<Expr>, u64),
     Lam(Arc<Name>, Arc<Expr>, Arc<Expr>, BinderInfo, u64),
     ForallE(Arc<Name>, Arc<Expr>, Arc<Expr>, BinderInfo, u64),
@@ -172,12 +173,12 @@ impl Hash for Expr {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Level {
     Zero,
-    Succ(Box<Level>),
-    Max(Box<Level>, Box<Level>),
-    Imax(Box<Level>, Box<Level>),
+    Succ(Arc<Level>),
+    Max(Arc<Level>, Arc<Level>),
+    Imax(Arc<Level>, Arc<Level>),
     Param(Arc<Name>),
     Mvar(Arc<Name>),
 }
@@ -217,7 +218,7 @@ pub enum Literal {
     StrVal(String),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BinderInfo {
     Default,
     Implicit,

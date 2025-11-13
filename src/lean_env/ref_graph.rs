@@ -1,8 +1,6 @@
-use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
-use std::{
-    collections::{HashMap, hash_map::Entry},
-    sync::Arc,
-};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::{collections::hash_map::Entry, sync::Arc};
 
 use crate::lean_env::{ConstMap, ConstantInfo, Expr, Name};
 
@@ -38,27 +36,48 @@ pub struct RefGraph {
 }
 
 pub fn build_ref_graph(const_map: &ConstMap) -> RefGraph {
-    let mut out_refs = HashMap::with_capacity_and_hasher(const_map.len(), FxBuildHasher);
-    let mut in_refs = HashMap::with_capacity_and_hasher(const_map.len(), FxBuildHasher);
-    for (name, constant_info) in const_map {
-        let deps = get_constant_info_references(constant_info);
-
-        if let Entry::Vacant(entry) = in_refs.entry(name.clone()) {
-            entry.insert(FxHashSet::default());
-        }
-        for dep in &deps {
+    let mk_in_refs = |name: &Arc<Name>, deps: &NameSet| -> RefMap {
+        let mut in_refs = RefMap::from_iter([(name.clone(), NameSet::default())]);
+        for dep in deps {
             match in_refs.entry(dep.clone()) {
                 Entry::Vacant(entry) => {
-                    entry.insert(FxHashSet::from_iter([name.clone()]));
+                    entry.insert(NameSet::from_iter([name.clone()]));
                 }
                 Entry::Occupied(mut entry) => {
                     entry.get_mut().insert(name.clone());
                 }
             }
         }
+        in_refs
+    };
 
-        out_refs.insert(name.clone(), deps);
-    }
+    let merge = |l: RefMap, r: RefMap| -> RefMap {
+        let (smaller, mut bigger) = if l.len() < r.len() { (l, r) } else { (r, l) };
+        for (name, set) in smaller {
+            match bigger.entry(name) {
+                Entry::Vacant(entry) => {
+                    entry.insert(set);
+                }
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().extend(set);
+                }
+            }
+        }
+        bigger
+    };
+
+    let (out_refs, in_refs) = const_map
+        .par_iter()
+        .map(|(name, constant)| {
+            let deps = get_constant_info_references(constant);
+            let in_refs = mk_in_refs(name, &deps);
+            let out_refs = RefMap::from_iter([(name.clone(), deps)]);
+            (out_refs, in_refs)
+        })
+        .reduce(
+            || (RefMap::default(), RefMap::default()),
+            |(out_l, in_l), (out_r, in_r)| (merge(out_l, out_r), merge(in_l, in_r)),
+        );
 
     assert_eq!(const_map.len(), out_refs.len());
     assert_eq!(out_refs.len(), in_refs.len());

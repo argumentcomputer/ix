@@ -13,6 +13,7 @@ use crate::{
         QuotKind, QuotVal, RecursorRule, RecursorVal, ReducibilityHints, SourceInfo, Substring,
         Syntax, SyntaxPreresolved, TheoremVal,
         compile::compile,
+        ground::ground_consts,
         ref_graph::{RefGraph, build_ref_graph},
         scc::compute_sccs,
     },
@@ -21,38 +22,45 @@ use crate::{
 
 #[derive(Default)]
 struct Cache {
+    univs: FxHashMap<*const c_void, Arc<Level>>,
     exprs: FxHashMap<*const c_void, Arc<Expr>>,
     names: FxHashMap<*const c_void, Arc<Name>>,
 }
 
-fn lean_ptr_to_level(ptr: *const c_void, cache: &mut Cache) -> Level {
-    if lean_is_scalar(ptr) {
-        return Level::Zero;
+fn lean_ptr_to_level(ptr: *const c_void, cache: &mut Cache) -> Arc<Level> {
+    if let Some(cached) = cache.univs.get(&ptr) {
+        return cached.clone();
     }
-    let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-    match ctor.tag() {
-        1 => {
-            let [u] = ctor.objs().map(|ptr| lean_ptr_to_level(ptr, cache));
-            Level::Succ(u.into())
+    let level = if lean_is_scalar(ptr) {
+        Arc::new(Level::Zero)
+    } else {
+        let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
+        match ctor.tag() {
+            1 => {
+                let [u] = ctor.objs().map(|ptr| lean_ptr_to_level(ptr, cache));
+                Arc::new(Level::Succ(u))
+            }
+            2 => {
+                let [u, v] = ctor.objs().map(|ptr| lean_ptr_to_level(ptr, cache));
+                Arc::new(Level::Max(u, v))
+            }
+            3 => {
+                let [u, v] = ctor.objs().map(|ptr| lean_ptr_to_level(ptr, cache));
+                Arc::new(Level::Imax(u, v))
+            }
+            4 => {
+                let [name] = ctor.objs().map(|ptr| lean_ptr_to_name(ptr, cache));
+                Arc::new(Level::Param(name))
+            }
+            5 => {
+                let [name] = ctor.objs().map(|ptr| lean_ptr_to_name(ptr, cache));
+                Arc::new(Level::Mvar(name))
+            }
+            _ => unreachable!(),
         }
-        2 => {
-            let [u, v] = ctor.objs().map(|ptr| lean_ptr_to_level(ptr, cache));
-            Level::Max(u.into(), v.into())
-        }
-        3 => {
-            let [u, v] = ctor.objs().map(|ptr| lean_ptr_to_level(ptr, cache));
-            Level::Imax(u.into(), v.into())
-        }
-        4 => {
-            let [name] = ctor.objs().map(|ptr| lean_ptr_to_name(ptr, cache));
-            Level::Param(name)
-        }
-        5 => {
-            let [name] = ctor.objs().map(|ptr| lean_ptr_to_name(ptr, cache));
-            Level::Mvar(name)
-        }
-        _ => unreachable!(),
-    }
+    };
+    cache.univs.insert(ptr, level.clone());
+    level
 }
 
 fn lean_ptr_to_substring(ptr: *const c_void) -> Substring {
@@ -571,9 +579,36 @@ fn lean_ptr_to_const_map(ptr: *const c_void) -> ConstMap {
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
+    let start_decoding = std::time::SystemTime::now();
     let const_map = lean_ptr_to_const_map(ptr);
-    let RefGraph { out_refs, .. } = build_ref_graph(&const_map);
+    println!(
+        "Decoding: {:.2}s",
+        start_decoding.elapsed().unwrap().as_secs_f32()
+    );
+    let start_ref_graph = std::time::SystemTime::now();
+    let RefGraph { out_refs, in_refs } = build_ref_graph(&const_map);
+    println!(
+        "Ref-graph: {:.2}s",
+        start_ref_graph.elapsed().unwrap().as_secs_f32()
+    );
+    let start_ground = std::time::SystemTime::now();
+    ground_consts(&const_map, &in_refs);
+    println!(
+        "Ground: {:.2}s",
+        start_ground.elapsed().unwrap().as_secs_f32()
+    );
+    let start_sccs = std::time::SystemTime::now();
     let sccs = compute_sccs(&out_refs);
+    println!("SCCs: {:.2}s", start_sccs.elapsed().unwrap().as_secs_f32());
+    let start_compile = std::time::SystemTime::now();
     compile(&sccs, &out_refs, &const_map);
+    println!(
+        "Compile: {:.2}s",
+        start_compile.elapsed().unwrap().as_secs_f32()
+    );
+    println!(
+        "Total: {:.2}s",
+        start_decoding.elapsed().unwrap().as_secs_f32()
+    );
     const_map.len()
 }

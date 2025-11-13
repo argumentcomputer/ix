@@ -257,24 +257,30 @@ def elabBind : ElabStxCat `bind
     | _ => throw $ .error i "Illegal variable name"
   | stx => throw $ .error stx "Invalid syntax for binding"
 
-declare_syntax_cat                                                       function
-syntax "fn " ident "(" ")" (" -> " typ)? "{" trm "}"                   : function
-syntax "fn " ident "(" bind (", " bind)* ")" (" -> " typ)? "{" trm "}" : function
+declare_syntax_cat                                                                              function
+syntax ("#[unconstrained] ")? "fn " ident "(" ")" (" -> " typ)? "{" trm "}"                   : function
+syntax ("#[unconstrained] ")? "fn " ident "(" bind (", " bind)* ")" (" -> " typ)? "{" trm "}" : function
 
 def elabFunction : ElabStxCat `function
-  | `(function| fn $i:ident() $[-> $ty:typ]? {$t:trm}) => do
+  | `(function| $[#[unconstrained]%$u]? fn $i:ident() $[-> $ty:typ]? {$t:trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    mkAppM ``Function.mk #[g, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t]
-  | `(function| fn $i:ident($b:bind $[, $bs:bind]*) $[-> $ty:typ]? {$t:trm}) => do
+    let u := elabUnconstrainedBool u
+    mkAppM ``Function.mk #[g, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t, u]
+  | `(function| $[#[unconstrained]%$u]? fn $i:ident($b:bind $[, $bs:bind]*) $[-> $ty:typ]? {$t:trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
+    let u := elabUnconstrainedBool u
     mkAppM ``Function.mk
-      #[g, ← elabListCore b bs elabBind bindType, ← elabRetTyp ty, ← elabTrm t]
+      #[g, ← elabListCore b bs elabBind bindType, ← elabRetTyp ty, ← elabTrm t, u]
   | stx => throw $ .error stx "Invalid syntax for function"
-where elabRetTyp : Option (TSyntax `typ) → TermElabM Expr
-  | none => pure $ mkConst ``Typ.unit
-  | some typ => elabTyp typ
+where
+  elabUnconstrainedBool : Option Syntax → Expr
+    | none => mkConst ``Bool.false
+    | some _ => mkConst ``Bool.true
+  elabRetTyp : Option (TSyntax `typ) → TermElabM Expr
+    | none => pure $ mkConst ``Typ.unit
+    | some typ => elabTyp typ
 
 declare_syntax_cat declaration
 syntax function  : declaration
