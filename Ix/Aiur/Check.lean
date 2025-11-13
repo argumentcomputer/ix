@@ -208,6 +208,9 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .ann typ term => do
     let inner ← checkNoEscape term typ
     pure $ .mk (.evaluates typ) inner
+  | .unsafeCast term castTyp => do
+    let (typ, inner) ← inferNoEscape term
+    pure $ .mk (.evaluates typ) (.unsafeCast inner castTyp)
   | .assertEq a b ret => do
     -- `a` and `b` must have the same type.
     let (typ, a) ← inferNoEscape a

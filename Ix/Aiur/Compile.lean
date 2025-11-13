@@ -245,6 +245,11 @@ partial def toIndex
  (bindings : Std.HashMap Local (Array Bytecode.ValIdx))
  (term : TypedTerm) : StateM CompilerState (Array Bytecode.ValIdx) :=
   match term.inner with
+  | .unsafeCast inner castTyp =>
+    if typSize layoutMap castTyp != typSize layoutMap term.typ.unwrap then
+      panic! "Impossible cast"
+    else
+      toIndex layoutMap bindings (.mk term.typ inner)
   | .unit => pure #[]
   | .ret .. => panic! "Should not happen after typechecking"
   | .match .. => panic! "Non-tail `match` not yet implemented"
