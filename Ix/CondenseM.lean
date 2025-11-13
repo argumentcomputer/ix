@@ -62,7 +62,13 @@ partial def visit : Lean.Name -> CondenseM Unit
           if top == id then break
       modify fun stt => { stt with stack := stack }
 
-def condense: CondenseM (Map Lean.Name (Set Lean.Name)) := do
+structure CondensedBlocks where
+  lowLinks: Map Lean.Name Lean.Name -- map constants to their lowlinks
+  blocks: Map Lean.Name (Set Lean.Name) -- map lowlinks to blocks
+  blockRefs: Map Lean.Name (Set Lean.Name) -- map lowlinks to block out-references
+  deriving Inhabited, Nonempty
+
+def condense: CondenseM CondensedBlocks := do
   let mut idx := 0
   for (name,_) in (<- read).env.constants do
     idx := idx + 1
@@ -70,19 +76,26 @@ def condense: CondenseM (Map Lean.Name (Set Lean.Name)) := do
     | .some _ => continue
     | .none => visit name
   let mut blocks : Map Lean.Name (Set Lean.Name) := {}
+  let mut lowLinks := {}
   for (i, low) in (<- get).lowLink do
     let name := (<- get).ids.get! i
     let lowName := (<- get).ids.get! low
+    lowLinks := lowLinks.insert name lowName
     blocks := blocks.alter lowName fun x => match x with
       | .some s => .some (s.insert name)
       | .none => .some {name}
-  for (_, set) in blocks do
-    for n in set do
-      blocks := blocks.insert n set
-  return blocks
+  let mut blockRefs := {}
+  let refs := (<- read).outRefs
+  for (lo, all) in blocks do
+    let mut rs: Set Lean.Name := {}
+    for a in all do
+      rs := rs.union (refs.get! a)
+    rs := rs.filter (!all.contains ·)
+    blockRefs := blockRefs.insert lo rs
+  return ⟨lowLinks, blocks, blockRefs⟩
 
 def CondenseM.run (env: Lean.Environment) (refs: Map Lean.Name (Set Lean.Name))
-  : Map Lean.Name (Set Lean.Name) :=
+  : CondensedBlocks :=
   Id.run (StateT.run (ReaderT.run condense ⟨env, refs⟩) CondenseState.init).1
 
 end Ix

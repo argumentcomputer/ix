@@ -4,7 +4,7 @@ import Ix.Ixon
 import Ix.Address
 import Ix.Common
 import Ix.CondenseM
-import Ix.GroundM
+import Ix.GraphM
 import Ix.CompileM
 import Ix.DecompileM
 import Ix.Cronos
@@ -179,75 +179,69 @@ end Test.Ix.Mutual
 --    --    throw (IO.userError e')
 --  return test "difficult compile roundtrip" (res == true)
 
+def time (starts stops: Nat) : Float := Cronos.nanoToSec (stops - starts)
+
 def testRoundtripGetEnv : IO TestSeq := do
   IO.println s!"Getting env"
+  let envStart <- IO.monoNanosNow
   let env <- get_env!
-  let gsttStart <- IO.monoNanosNow
-  IO.println s!"Ensuring well-groundedness of env"
-  let gstt <- GroundM.env env
-  let gsttEnd <- IO.monoNanosNow
-  IO.println s!"Finished grounding in {Cronos.nanoToSec (gsttEnd - gsttStart)}"
-  IO.println s!"ungrounded {gstt.ungrounded.size}"
-  let sccStart <- IO.monoNanosNow
-  IO.println s!"Building condensation graph of env"
-  let alls := CondenseM.run env gstt.outRefs
-  let sccEnd <- IO.monoNanosNow
-  IO.println s!"Condensation graph in {Cronos.nanoToSec (sccEnd - sccStart)}"
-  let numConst := 
-    env.constants.map₁.size + env.constants.map₂.stats.numNodes - gstt.ungrounded.size
-  let mut cstt : CompileState := .init env alls 0
-  let mut dstt : DecompileState := default
+  let envStop <- IO.monoNanosNow
+  IO.println s!"got Lean.Environment in {time envStart envStop}"
+  let sizeStart <- IO.monoNanosNow
+  let envSize := env.constants.fold (fun x _ _=> x + 1) 0
+  IO.println s!"counted Lean.Environment with {envSize} constants" 
+  let sizeStop <- IO.monoNanosNow
+  IO.println s!"..in {time sizeStart sizeStop}"
+  --let numConst := envSize
   IO.println s!"Compiling env"
-  let mut inConst := 1
+  --let mut inConst := 1
   let allStart <- IO.monoNanosNow
-  for (name, _) in env.constants do
-    match gstt.ungrounded.get? name with
-    | .some u => do
-      IO.println s!"Skipping ungrounded {name} because {repr u}"
-      inConst := inConst + 1
-    | none => do
-      IO.println s!"Compiling {name} {inConst}/{numConst}"
-      let start <- IO.monoNanosNow
-      let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
-      | (.ok a, stt) => pure (a, stt)
-      | (.error e, _) => do
-        IO.println s!"failed {name}"
-        throw (IO.userError (<- e.pretty))
-      let done <- IO.monoNanosNow
-      let pct := ((Float.ofNat inConst) / Float.ofNat numConst)
-      let total := done - allStart
-      IO.println s!"-> Compiled {pct * 100}%, {inConst}/{numConst},
-      Elapsed {Cronos.nanoToSec (done - start)}/{Cronos.nanoToSec total},
-      Remaining {((Cronos.nanoToSec total) / pct) / 60} min
-      {name}
-      {addr}"
-      cstt := stt
-      let denv := DecompileEnv.init cstt.constCache cstt.store
-      let (name', stt) <- match DecompileM.run denv dstt (decompileNamedConst name addr) with
-      | .ok (n,_) stt => pure (n, stt)
-      | .error e _ => do
-        IO.println s!"failed {name}"
-        IO.println s!"cstt all: {repr <| cstt.alls.get? name}"
-        --let c := env.constants.find? name
-        --IO.println s!"{repr c}"
-        throw (IO.userError e.pretty)
-      match env.constants.find? name, stt.constants.find? name' with
-      | .some c, .some c' => if c == c then pure () else do
-          IO.println s!"failed {name} {repr c} {repr c'}"
-          throw (IO.userError "decompiled constant not equal")
-      | .some _, .none => do
-        throw (IO.userError s!"{name'} not found in dstt")
-      | .none, _ => do
-        throw (IO.userError "{name} not found in env")
-      let done2 <- IO.monoNanosNow
-      let total2 := done2 - allStart
-      IO.println s!"<- Decompiled {pct * 100}%, {inConst}/{numConst},
-      Elapsed {Cronos.nanoToSec (done2 - done)}/{Cronos.nanoToSec total},
-      Remaining {((Cronos.nanoToSec total2) / pct) / 60} min
-      {name}
-      {addr}"
-      inConst := inConst + 1
-      dstt := stt
+  let res <- CompileM.envScheduler env {}
+  let allDone <- IO.monoNanosNow
+  IO.println s!"Compiled env of {res.consts.size} in {Cronos.nanoToSec (allDone - allStart)}"
+  --for (name, _) in env.constants do
+  --  IO.println s!"Compiling {name} {inConst}/{numConst}"
+  --  let start <- IO.monoNanosNow
+  --  let (addr, stt) <- do match (<- (compileConstName name).run .init cstt) with
+  --  | (.ok a, stt) => pure (a, stt)
+  --  | (.error e, _) => do
+  --    IO.println s!"failed {name}"
+  --    throw (IO.userError (<- e.pretty))
+  --  let done <- IO.monoNanosNow
+  --  let pct := ((Float.ofNat inConst) / Float.ofNat numConst)
+  --  let total := done - allStart
+  --  IO.println s!"-> Compiled {pct * 100}%, {inConst}/{numConst},
+  --  Elapsed {Cronos.nanoToSec (done - start)}/{Cronos.nanoToSec total},
+  --  Remaining {((Cronos.nanoToSec total) / pct) / 60} min
+  --  {name}
+  --  {addr}"
+  --  cstt := stt
+  --  let denv := DecompileEnv.init cstt.constCache cstt.store
+  --  let (name', stt) <- match DecompileM.run denv dstt (decompileNamedConst name addr) with
+  --  | .ok (n,_) stt => pure (n, stt)
+  --  | .error e _ => do
+  --    IO.println s!"failed {name}"
+  --    IO.println s!"cstt all: {repr <| cstt.alls.get? name}"
+  --    --let c := env.constants.find? name
+  --    --IO.println s!"{repr c}"
+  --    throw (IO.userError e.pretty)
+  --  match env.constants.find? name, stt.constants.find? name' with
+  --  | .some c, .some c' => if c == c then pure () else do
+  --      IO.println s!"failed {name} {repr c} {repr c'}"
+  --      throw (IO.userError "decompiled constant not equal")
+  --  | .some _, .none => do
+  --    throw (IO.userError s!"{name'} not found in dstt")
+  --  | .none, _ => do
+  --    throw (IO.userError "{name} not found in env")
+  --  let done2 <- IO.monoNanosNow
+  --  let total2 := done2 - allStart
+  --  IO.println s!"<- Decompiled {pct * 100}%, {inConst}/{numConst},
+  --  Elapsed {Cronos.nanoToSec (done2 - done)}/{Cronos.nanoToSec total},
+  --  Remaining {((Cronos.nanoToSec total2) / pct) / 60} min
+  --  {name}
+  --  {addr}"
+  --  inConst := inConst + 1
+  --  dstt := stt
     --let allDone <- IO.monoNanosNow
     --IO.println s!"Compiled/decompiled {name} in {Cronos.nanoToSec (allDone - allStart)}"
  -- IO.println s!"decompiling env"

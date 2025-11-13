@@ -111,7 +111,7 @@ def Address.fromUniqueName (name: Lean.Name) : Option Address :=
 structure MetaAddress where
   data : Address
   «meta» : Address
-  deriving Inhabited, Lean.ToExpr, BEq, Hashable, Repr, Ord
+  deriving Inhabited, Nonempty, Lean.ToExpr, BEq, Hashable, Repr, Ord
 
 instance : ToString MetaAddress where
   toString adr := s!"{hexOfBytes adr.data.hash}:{hexOfBytes adr.meta.hash}"
