@@ -63,7 +63,7 @@ fn const_univs(constant: &ConstantInfo) -> ConsList<Arc<Name>> {
         ConstantInfo::CtorInfo(val) => &val.constant_val.level_params,
         ConstantInfo::RecInfo(val) => &val.constant_val.level_params,
     };
-    ConsList::from_iter(univs.iter().cloned())
+    ConsList::from_iterator(univs.iter().cloned())
 }
 
 #[derive(Default)]

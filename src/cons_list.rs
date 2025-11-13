@@ -41,11 +41,16 @@ impl<T> ConsList<T> {
     }
 
     #[inline]
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Self::Nil)
+    }
+
+    #[inline]
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         ConsListIter(self)
     }
 
-    pub fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self
+    pub fn from_iterator<I: IntoIterator<Item = T>>(iter: I) -> Self
     where
         T: Clone,
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
@@ -104,7 +109,7 @@ mod tests {
     #[test]
     fn test_from_iter() {
         let vec = vec![1, 2, 3];
-        let list = ConsList::from_iter(vec.clone());
+        let list = ConsList::from_iterator(vec.clone());
         assert_eq!(list.len(), 3);
 
         let collected: Vec<_> = list.iter().cloned().collect();
@@ -113,7 +118,7 @@ mod tests {
 
     #[test]
     fn test_contains() {
-        let list = ConsList::from_iter(vec![10, 20, 30]);
+        let list = ConsList::from_iterator(vec![10, 20, 30]);
 
         assert!(list.contains(&10));
         assert!(list.contains(&30));
@@ -122,7 +127,7 @@ mod tests {
 
     #[test]
     fn test_index_of() {
-        let list = ConsList::from_iter(vec![10, 20, 30]);
+        let list = ConsList::from_iterator(vec![10, 20, 30]);
 
         assert_eq!(list.index_of(&10), Some(0));
         assert_eq!(list.index_of(&30), Some(2));
@@ -132,7 +137,7 @@ mod tests {
     #[test]
     fn test_iter_mutation_order() {
         // Ensure iterator traverses the list without altering it
-        let list = ConsList::from_iter(vec![1, 2, 3]);
+        let list = ConsList::from_iterator(vec![1, 2, 3]);
         let mut iter = list.iter();
 
         assert_eq!(iter.next(), Some(&1));
@@ -147,11 +152,11 @@ mod tests {
 
     #[test]
     fn test_clone_and_eq() {
-        let list1 = ConsList::from_iter(vec![1, 2, 3]);
+        let list1 = ConsList::from_iterator(vec![1, 2, 3]);
         let list2 = list1.clone();
         assert_eq!(list1, list2);
 
-        let different = ConsList::from_iter(vec![1, 2]);
+        let different = ConsList::from_iterator(vec![1, 2]);
         assert_ne!(list1, different);
     }
 
@@ -169,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_with_strings() {
-        let list = ConsList::from_iter(vec!["a", "b"]);
+        let list = ConsList::from_iterator(vec!["a", "b"]);
         assert!(list.contains(&"a"));
         assert!(!list.contains(&"c"));
 

@@ -242,7 +242,7 @@ fn compile_scc(
                     level_params,
                     typ,
                 } = constant_val;
-                let univ_ctx = ConsList::from_iter(level_params.iter().cloned());
+                let univ_ctx = ConsList::from_iterator(level_params.iter().cloned());
                 let n = compile_name(name.clone(), &mut stt);
                 let ls = level_params
                     .iter()
@@ -252,7 +252,7 @@ fn compile_scc(
                     data: data_t,
                     meta: meta_t,
                 } = compile_expr(
-                    typ.clone(),
+                    typ,
                     univ_ctx,
                     ConsList::Nil,
                     sccs,
@@ -284,7 +284,7 @@ fn compile_scc(
                     level_params,
                     typ,
                 } = constant_val;
-                let univ_ctx = ConsList::from_iter(level_params.iter().cloned());
+                let univ_ctx = ConsList::from_iterator(level_params.iter().cloned());
                 let n = compile_name(name.clone(), &mut stt);
                 let ls = level_params
                     .iter()
@@ -294,7 +294,7 @@ fn compile_scc(
                     data: data_t,
                     meta: meta_t,
                 } = compile_expr(
-                    typ.clone(),
+                    typ,
                     univ_ctx,
                     ConsList::Nil,
                     sccs,
@@ -356,7 +356,7 @@ fn compile_mutual<'a>(
             }
             LeanMutConst::Rec(rec) => {
                 let muts_ctx = ConsList::Nil.cons((rec.constant_val.name.clone(), Nat::ZERO));
-                let (data, meta) = compile_rec(rec, muts_ctx, sccs, const_map, hashes, stt)?;
+                let (data, meta) = compile_rec(rec, &muts_ctx, sccs, const_map, hashes, stt)?;
                 Ok((Ixon::Recr(data), Ixon::Meta(meta)))
             }
             _ => unreachable!(),
@@ -410,6 +410,8 @@ fn compile_mutual<'a>(
             Metadatum::Map(ctx),
             Metadatum::Map(metas_vec),
         ];
+
+        #[expect(unused_variables)]
         let block_addr = MetaAddress {
             data: store_ixon(&data),
             meta: store_serialize(&Metadata { nodes }),
@@ -420,18 +422,18 @@ fn compile_mutual<'a>(
 }
 
 fn compile_mut_consts(
-    mut_consts: Vec<Vec<LeanMutConst>>,
-    muts_ctx: ConsList<(Arc<Name>, Nat)>,
+    _mut_consts: Vec<Vec<LeanMutConst<'_>>>,
+    _muts_ctx: ConsList<(Arc<Name>, Nat)>,
 ) -> Result<(Ixon, FxHashMap<Address, Address>), CompileError> {
     todo!()
 }
 
-fn sort_consts<'a>(consts: &[LeanMutConst]) -> Vec<Vec<LeanMutConst<'a>>> {
+fn sort_consts<'a>(_consts: &[LeanMutConst<'_>]) -> Vec<Vec<LeanMutConst<'a>>> {
     todo!()
 }
 
 fn compile_base_def(
-    base_def: BaseDef,
+    base_def: BaseDef<'_>,
     muts_ctx: ConsList<(Arc<Name>, Nat)>,
     sccs: &RefMap,
     const_map: &ConstMap,
@@ -448,7 +450,7 @@ fn compile_base_def(
         safety,
         all,
     } = base_def;
-    let univ_ctx = ConsList::from_iter(level_params.iter().cloned());
+    let univ_ctx = ConsList::from_iterator(level_params.iter().cloned());
     let n = compile_name(name.clone(), stt);
     let ls = level_params
         .iter()
@@ -458,7 +460,7 @@ fn compile_base_def(
         data: data_t,
         meta: meta_t,
     } = compile_expr(
-        typ.clone(),
+        typ,
         univ_ctx.clone(),
         muts_ctx.clone(),
         sccs,
@@ -469,15 +471,7 @@ fn compile_base_def(
     let MetaAddress {
         data: data_v,
         meta: meta_v,
-    } = compile_expr(
-        value.clone(),
-        univ_ctx,
-        muts_ctx,
-        sccs,
-        const_map,
-        hashes,
-        stt,
-    )?;
+    } = compile_expr(value, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
     let all = all.iter().map(|n| compile_name(n.clone(), stt)).collect();
     let lvls = Nat::from_le_bytes(&level_params.len().to_le_bytes());
     let data = Definition {
@@ -499,8 +493,8 @@ fn compile_base_def(
 }
 
 fn compile_rec(
-    base_rec: BaseRec,
-    muts_ctx: ConsList<(Arc<Name>, Nat)>,
+    base_rec: BaseRec<'_>,
+    muts_ctx: &ConsList<(Arc<Name>, Nat)>,
     sccs: &RefMap,
     const_map: &ConstMap,
     hashes: &HashedEntries<'_>,
@@ -522,7 +516,7 @@ fn compile_rec(
         level_params,
         typ,
     } = constant_val;
-    let univ_ctx = ConsList::from_iter(level_params.iter().cloned());
+    let univ_ctx = ConsList::from_iterator(level_params.iter().cloned());
     let n = compile_name(name.clone(), stt);
     let ls = level_params
         .iter()
@@ -532,7 +526,7 @@ fn compile_rec(
         data: data_t,
         meta: meta_t,
     } = compile_expr(
-        typ.clone(),
+        typ,
         univ_ctx.clone(),
         muts_ctx.clone(),
         sccs,
@@ -596,15 +590,7 @@ fn compile_rule(
     let MetaAddress {
         data: data_rhs,
         meta: meta_rhs,
-    } = compile_expr(
-        rhs.clone(),
-        univ_ctx,
-        muts_ctx,
-        sccs,
-        const_map,
-        hashes,
-        stt,
-    )?;
+    } = compile_expr(rhs, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
     let data = ixon::RecursorRule {
         fields: n_fields.clone(),
         rhs: data_rhs,
@@ -700,6 +686,7 @@ impl<'a> BaseDef<'a> {
     }
 }
 
+#[expect(dead_code)]
 struct BaseInd<'a> {
     ind: &'a InductiveVal,
     ctors: Vec<&'a ConstructorVal>,
@@ -731,7 +718,7 @@ struct CompileState {
 }
 
 fn compile_expr(
-    expr: Arc<Expr>,
+    expr: &Arc<Expr>,
     univ_ctx: ConsList<Arc<Name>>,
     muts_ctx: ConsList<(Arc<Name>, Nat)>,
     sccs: &RefMap,
@@ -744,9 +731,10 @@ fn compile_expr(
         return Ok(cached.clone());
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn go(
-        kvs: ConsList<Vec<(Arc<Name>, LeanDataValue)>>,
-        expr: Arc<Expr>,
+        kvs: &ConsList<Vec<(Arc<Name>, LeanDataValue)>>,
+        expr: &Arc<Expr>,
         univ_ctx: ConsList<Arc<Name>>,
         muts_ctx: ConsList<(Arc<Name>, Nat)>,
         sccs: &RefMap,
@@ -756,8 +744,8 @@ fn compile_expr(
     ) -> Result<(Ixon, Ixon), CompileError> {
         match expr.as_ref() {
             Expr::Mdata(kv, x, _) => go(
-                kvs.cons(kv.clone()),
-                x.clone(),
+                &kvs.cons(kv.clone()),
+                x,
                 univ_ctx,
                 muts_ctx,
                 sccs,
@@ -767,30 +755,29 @@ fn compile_expr(
             ),
             Expr::Bvar(idx, _) => {
                 let data = Ixon::EVar(idx.clone());
-                let md = compile_kv_maps(kvs.clone(), stt);
+                let md = compile_kv_maps(kvs, stt);
                 let nodes = vec![Metadatum::Link(md)];
                 let meta = Ixon::Meta(Metadata { nodes });
                 Ok((data, meta))
             }
             Expr::Sort(univ, _) => {
-                let md = compile_kv_maps(kvs.clone(), stt);
+                let md = compile_kv_maps(kvs, stt);
                 let MetaAddress {
                     data: udata,
                     meta: umeta,
-                } = compile_level(univ.clone(), univ_ctx, stt)?;
+                } = compile_level(univ, univ_ctx, stt)?;
                 let data = Ixon::ESort(udata);
                 let nodes = vec![Metadatum::Link(md), Metadatum::Link(umeta)];
                 let meta = Ixon::Meta(Metadata { nodes });
                 Ok((data, meta))
             }
             Expr::Const(name, lvls, _) => {
-                let md = compile_kv_maps(kvs.clone(), stt);
+                let md = compile_kv_maps(kvs, stt);
                 let n = compile_name(name.clone(), stt);
                 let mut us_data = Vec::with_capacity(lvls.len());
                 let mut us_meta = Vec::with_capacity(lvls.len());
                 for u in lvls {
-                    let MetaAddress { data, meta } =
-                        compile_level(u.clone(), univ_ctx.clone(), stt)?;
+                    let MetaAddress { data, meta } = compile_level(u, univ_ctx.clone(), stt)?;
                     us_data.push(data);
                     us_meta.push(meta);
                 }
@@ -827,12 +814,12 @@ fn compile_expr(
                 }
             }
             Expr::App(f, a, _) => {
-                let md = compile_kv_maps(kvs.clone(), stt);
+                let md = compile_kv_maps(kvs, stt);
                 let MetaAddress {
                     data: data_f,
                     meta: meta_f,
                 } = compile_expr(
-                    f.clone(),
+                    f,
                     univ_ctx.clone(),
                     muts_ctx.clone(),
                     sccs,
@@ -843,7 +830,7 @@ fn compile_expr(
                 let MetaAddress {
                     data: data_a,
                     meta: meta_a,
-                } = compile_expr(a.clone(), univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
+                } = compile_expr(a, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
                 let data = Ixon::EApp(data_f, data_a);
                 let nodes = vec![
                     Metadatum::Link(md),
@@ -853,13 +840,13 @@ fn compile_expr(
                 Ok((data, Ixon::Meta(Metadata { nodes })))
             }
             Expr::Lam(n, t, b, i, _) => {
-                let md = compile_kv_maps(kvs.clone(), stt);
+                let md = compile_kv_maps(kvs, stt);
                 let n = compile_name(n.clone(), stt);
                 let MetaAddress {
                     data: data_t,
                     meta: meta_t,
                 } = compile_expr(
-                    t.clone(),
+                    t,
                     univ_ctx.clone(),
                     muts_ctx.clone(),
                     sccs,
@@ -870,7 +857,7 @@ fn compile_expr(
                 let MetaAddress {
                     data: data_b,
                     meta: meta_b,
-                } = compile_expr(b.clone(), univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
+                } = compile_expr(b, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
                 let data = Ixon::ELam(data_t, data_b);
                 let nodes = vec![
                     Metadatum::Link(md),
@@ -882,13 +869,13 @@ fn compile_expr(
                 Ok((data, Ixon::Meta(Metadata { nodes })))
             }
             Expr::ForallE(n, t, b, i, _) => {
-                let md = compile_kv_maps(kvs.clone(), stt);
+                let md = compile_kv_maps(kvs, stt);
                 let n = compile_name(n.clone(), stt);
                 let MetaAddress {
                     data: data_t,
                     meta: meta_t,
                 } = compile_expr(
-                    t.clone(),
+                    t,
                     univ_ctx.clone(),
                     muts_ctx.clone(),
                     sccs,
@@ -899,7 +886,7 @@ fn compile_expr(
                 let MetaAddress {
                     data: data_b,
                     meta: meta_b,
-                } = compile_expr(b.clone(), univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
+                } = compile_expr(b, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
                 let data = Ixon::EAll(data_t, data_b);
                 let nodes = vec![
                     Metadatum::Link(md),
@@ -911,13 +898,13 @@ fn compile_expr(
                 Ok((data, Ixon::Meta(Metadata { nodes })))
             }
             Expr::LetE(n, t, v, b, nd, _) => {
-                let md = compile_kv_maps(kvs.clone(), stt);
+                let md = compile_kv_maps(kvs, stt);
                 let n = compile_name(n.clone(), stt);
                 let MetaAddress {
                     data: data_t,
                     meta: meta_t,
                 } = compile_expr(
-                    t.clone(),
+                    t,
                     univ_ctx.clone(),
                     muts_ctx.clone(),
                     sccs,
@@ -929,7 +916,7 @@ fn compile_expr(
                     data: data_v,
                     meta: meta_v,
                 } = compile_expr(
-                    v.clone(),
+                    v,
                     univ_ctx.clone(),
                     muts_ctx.clone(),
                     sccs,
@@ -940,7 +927,7 @@ fn compile_expr(
                 let MetaAddress {
                     data: data_b,
                     meta: meta_b,
-                } = compile_expr(b.clone(), univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
+                } = compile_expr(b, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
                 let data = Ixon::ELet(*nd, data_t, data_v, data_b);
                 let nodes = vec![
                     Metadatum::Link(md),
@@ -952,17 +939,17 @@ fn compile_expr(
                 Ok((data, Ixon::Meta(Metadata { nodes })))
             }
             Expr::Lit(Literal::NatVal(n), _) => {
-                let md = compile_kv_maps(kvs.clone(), stt);
+                let md = compile_kv_maps(kvs, stt);
                 let nodes = vec![Metadatum::Link(md)];
                 Ok((Ixon::ENat(store_nat(n)), Ixon::Meta(Metadata { nodes })))
             }
             Expr::Lit(Literal::StrVal(s), _) => {
-                let md = compile_kv_maps(kvs.clone(), stt);
+                let md = compile_kv_maps(kvs, stt);
                 let nodes = vec![Metadatum::Link(md)];
                 Ok((Ixon::ENat(store_string(s)), Ixon::Meta(Metadata { nodes })))
             }
             Expr::Proj(n, i, s, _) => {
-                let md = compile_kv_maps(kvs.clone(), stt);
+                let md = compile_kv_maps(kvs, stt);
                 let scc = sccs.get(n).expect("Missing SCC");
                 let scc_wrap = NameSetWrap(scc);
                 let scc_hashes = compile_scc(&scc_wrap, sccs, const_map, hashes)?;
@@ -974,7 +961,7 @@ fn compile_expr(
                 let MetaAddress {
                     data: data_s,
                     meta: meta_s,
-                } = compile_expr(s.clone(), univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
+                } = compile_expr(s, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
                 let data = Ixon::EPrj(data_t.clone(), i.clone(), data_s);
                 let nodes = vec![
                     Metadatum::Link(md),
@@ -989,7 +976,7 @@ fn compile_expr(
     }
 
     let (data_ixon, meta_ixon) = go(
-        ConsList::Nil,
+        &ConsList::Nil,
         expr,
         univ_ctx,
         muts_ctx,
@@ -1006,7 +993,7 @@ fn compile_expr(
 }
 
 fn compile_level(
-    level: Arc<Level>,
+    level: &Arc<Level>,
     univs: ConsList<Arc<Name>>,
     stt: &mut CompileState,
 ) -> Result<MetaAddress, CompileError> {
@@ -1023,7 +1010,7 @@ fn compile_level(
         match level {
             Level::Zero => Ok((Ixon::UZero, Ixon::Meta(Metadata::default()))),
             Level::Succ(x) => {
-                let MetaAddress { data, meta } = compile_level(x.clone(), univs, stt)?;
+                let MetaAddress { data, meta } = compile_level(x, univs, stt)?;
                 let nodes = vec![Metadatum::Link(meta)];
                 Ok((Ixon::USucc(data), Ixon::Meta(Metadata { nodes })))
             }
@@ -1031,11 +1018,11 @@ fn compile_level(
                 let MetaAddress {
                     data: data_x,
                     meta: meta_x,
-                } = compile_level(x.clone(), univs.clone(), stt)?;
+                } = compile_level(x, univs.clone(), stt)?;
                 let MetaAddress {
                     data: data_y,
                     meta: meta_y,
-                } = compile_level(y.clone(), univs, stt)?;
+                } = compile_level(y, univs, stt)?;
                 let nodes = vec![Metadatum::Link(meta_x), Metadatum::Link(meta_y)];
                 Ok((Ixon::UMax(data_x, data_y), Ixon::Meta(Metadata { nodes })))
             }
@@ -1043,11 +1030,11 @@ fn compile_level(
                 let MetaAddress {
                     data: data_x,
                     meta: meta_x,
-                } = compile_level(x.clone(), univs.clone(), stt)?;
+                } = compile_level(x, univs.clone(), stt)?;
                 let MetaAddress {
                     data: data_y,
                     meta: meta_y,
-                } = compile_level(y.clone(), univs, stt)?;
+                } = compile_level(y, univs, stt)?;
                 let nodes = vec![Metadatum::Link(meta_x), Metadatum::Link(meta_y)];
                 Ok((Ixon::UIMax(data_x, data_y), Ixon::Meta(Metadata { nodes })))
             }
@@ -1064,7 +1051,7 @@ fn compile_level(
         }
     }
 
-    let (data_ixon, meta_ixon) = go(&level, univs, stt)?;
+    let (data_ixon, meta_ixon) = go(level, univs, stt)?;
     let data = store_ixon(&data_ixon);
     let meta = store_ixon(&meta_ixon);
     let meta_address = MetaAddress { data, meta };
@@ -1073,7 +1060,7 @@ fn compile_level(
 }
 
 fn compile_kv_maps(
-    maps: ConsList<Vec<(Arc<Name>, LeanDataValue)>>,
+    maps: &ConsList<Vec<(Arc<Name>, LeanDataValue)>>,
     stt: &mut CompileState,
 ) -> Address {
     let nodes = maps
@@ -1111,12 +1098,12 @@ fn compile_name(name: Arc<Name>, stt: &mut CompileState) -> Address {
         Name::Anonymous => store_ixon(&Ixon::NAnon),
         Name::Str(n, s, _) => {
             let n_ = compile_name(n.clone(), stt);
-            let s_ = store_string(&s);
+            let s_ = store_string(s);
             store_ixon(&Ixon::NStr(n_, s_))
         }
         Name::Num(n, i, _) => {
             let n_ = compile_name(n.clone(), stt);
-            let s_ = store_nat(&i);
+            let s_ = store_nat(i);
             store_ixon(&Ixon::NNum(n_, s_))
         }
     };
