@@ -11,14 +11,14 @@ use super::object::LeanObject;
 /// ```
 #[repr(C)]
 pub struct LeanExternalObject {
-    m_header: LeanObject,
-    m_class: *const c_void,
-    m_data: *const c_void,
+  m_header: LeanObject,
+  m_class: *const c_void,
+  m_data: *const c_void,
 }
 
 impl LeanExternalObject {
-    #[inline]
-    pub fn cast_data<T>(&self) -> *const T {
-        self.m_data.cast()
-    }
+  #[inline]
+  pub fn cast_data<T>(&self) -> *const T {
+    self.m_data.cast()
+  }
 }
