@@ -109,8 +109,9 @@ def proveBench : IO Unit := do
     let system := Aiur.AiurSystem.build bytecode commitmentParameters
     let funIdx := toplevel.getFuncIdx `main |>.get!
     bgroup "nat_fib" [
-      bench "prove fib 10" (Aiur.AiurSystem.prove system friParameters funIdx) #[10]
-    ]
+      bench "prove fib 1" (Aiur.AiurSystem.prove system friParameters funIdx) #[1],
+      bench "prove fib 200" (Aiur.AiurSystem.prove system friParameters funIdx) #[200]
+    ] { oneShot := true, serde := .json, report := true }
 
 def verifyBench : IO Unit := do
   match toplevel.checkAndSimplify with

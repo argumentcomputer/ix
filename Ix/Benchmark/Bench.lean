@@ -6,7 +6,9 @@ import Ix.Cronos
 import Ix.Address
 import Batteries
 
-import Ix.Benchmark.Serde
+import Ix.Benchmark.Ixon
+import Lean.Data.Json.FromToJson
+import Lean.Data.Json.FromToJson.Basic
 import Ix.Benchmark.Tukey
 
 open Batteries (RBMap)
@@ -154,11 +156,11 @@ structure MeasurementData where
   comparison : Option ComparisonData
   throughput : Option Throughput
 
-/-- Compare performance against prior run -/
+/-- Compares bench results against prior run, using T-test to determine statistical significance -/
 def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Estimates) (avgTimes : Distribution) (gen : StdGen) : ComparisonData :=
-  -- Get `base` data for comparison
+  -- Gets `base` data for comparison
   let baseAvgTimes : Distribution := { d := baseSample.d.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
-  -- Then perform statistical analysis
+  -- Then performs statistical analysis
   let (tValue, tDistribution) := tTest avgTimes baseAvgTimes bg.config gen
   let (relativeEstimates, relativeDistributions) := changeEstimates avgTimes baseAvgTimes bg.config gen
   let pValue := tDistribution.pValue tValue
@@ -175,27 +177,38 @@ def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Es
     baseEstimates
   }
 
+def loadJson (α) [Lean.FromJson α] (path : System.FilePath) : IO α := do
+  let jsonStr ← IO.FS.readFile path
+  let json ← match Lean.Json.parse jsonStr with
+  | .ok js => pure js
+  | .error e => throw $ IO.userError s!"{repr e}"
+  match Lean.fromJson? json with
+  | .ok d => pure d
+  | .error e => throw $ IO.userError s!"{repr e}"
+
+def loadIxon (α) [Ixon.Serialize α] (path : System.FilePath) : IO α := do
+  let ixonBytes ← IO.FS.readBinFile path
+  match Ixon.de ixonBytes with
+  | .ok d => pure d
+  | .error e => throw $ IO.userError s!"expected a, go {repr e}"
+
 -- TODO: Don't compare if different sampling modes were used
-def BenchGroup.getComparison (bg : BenchGroup) (benchName : String) (avgTimes : Distribution) : IO (Option ComparisonData) := do
+/-- Retrieves prior bench result from disk and runs the comparison -/
+def BenchGroup.getComparison (bg : BenchGroup) (benchName : String) (avgTimes : Distribution) (config: Config) : IO (Option ComparisonData) := do
   let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
-  let basePath := benchPath / "base"
-  if (← System.FilePath.pathExists basePath)
-  then do
-    let newPath := benchPath / "new"
-    -- If 2 or more prior runs, then the base data was stored in `new`
-    let basePath' := if (← System.FilePath.pathExists newPath)
-    then
-      newPath
-    else
-      basePath
-    let baseEstimateBytes ← IO.FS.readBinFile (basePath' / "estimates.ixon")
-    let baseEstimates ← match (Ixon.de baseEstimateBytes : Except String Estimates) with
-    | .ok bd' => pure bd'
-    | e => throw $ IO.userError s!"expected `Estimates`, got {repr e}"
-    let baseSampleBytes ← IO.FS.readBinFile (basePath' / "sample.ixon")
-    let baseSample ← match (Ixon.de baseSampleBytes : Except String Data) with
-    | .ok bd' => pure bd'
-    | e => throw $ IO.userError s!"expected `Data`, got {repr e}"
+  let fileExt := toString config.serde
+  -- Base data is at `new` since we haven't written the latest result to disk yet, which moves the prior data to `base`
+  let basePath := benchPath / "new"
+  if (← System.FilePath.pathExists (basePath / s!"estimates.{fileExt}")) then do
+    let (baseSample, baseEstimates) ← match config.serde with
+    | .json => do
+      let baseSample ← loadJson Data (basePath / "sample.json")
+      let baseEstimates ← loadJson Estimates (basePath / "estimates.json")
+      pure (baseSample, baseEstimates)
+    | .ixon => do
+      let baseSample ← loadIxon Data (basePath / "sample.ixon")
+      let baseEstimates ← loadIxon Estimates (basePath / "estimates.ixon")
+      pure (baseSample, baseEstimates)
     let gen ← IO.stdGenRef.get
     return some $ bg.compare baseSample baseEstimates avgTimes gen
   else
@@ -250,72 +263,242 @@ def BenchGroup.printResults (bg : BenchGroup) (benchName : String) (m : Measurem
   IO.println ""
   m.avgTimes.tukey
 
-def saveComparison! (benchName : String) (comparison : Option ComparisonData) : IO Unit := do
-  match comparison with
-  | some comp => do
-    let changeIxon := Ixon.ser comp.relativeEstimates
-    let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
-    let changePath := benchPath / "change"
-    let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", changePath.toString ] }
-    IO.FS.writeBinFile (changePath / "estimates.ixon") changeIxon
-  | none => IO.eprintln s!"Error: expected `comparisonData` to write but found none"
+/-- Writes JSON to disk at `benchPath/fileName` -/
+def storeJson [Lean.ToJson α] (data : α) (benchPath : System.FilePath) : IO Unit := do
+  let json := Lean.toJson data
+  IO.FS.writeFile benchPath json.pretty
 
--- TODO: Write sampling mode in `sample.json` for comparison
-def saveResults (benchName : String) (m : MeasurementData) : IO Unit := do
+/-- Writes Ixon to disk at `benchPath/fileName` -/
+def storeIxon [Ixon.Serialize α] (data : α) (benchPath : System.FilePath) : IO Unit := do
+  let ixon := Ixon.ser data
+  IO.FS.writeBinFile benchPath ixon
+
+-- TODO: Write sampling mode and config in `sample.json` for comparison
+def saveComparison (benchName : String) (comparison : ComparisonData) (config : Config) : IO Unit := do
+  let changePath := System.mkFilePath [".", ".lake", "benches", benchName, "change"]
+  match config.serde with
+  | .json => storeJson comparison.relativeEstimates (changePath / "estimates.json")
+  | .ixon => storeIxon comparison.relativeEstimates (changePath / "estimates.ixon")
+
+-- Results are always saved to `.lake/benches/<benchName>/new`. If files of the same serde format already exist from a prior run, move them to `base`
+def saveResults (benchName : String) (m : MeasurementData) (config : Config) : IO Unit := do
   let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
-  let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", benchPath.toString] }
-  let basePath := benchPath / "base"
-  let baseDir := basePath.toString
-  -- If prior results were saved to disk, don't overwrite them
-  let newPath ← if (← System.FilePath.pathExists basePath)
-    then do
-      let newPath := benchPath / "new"
-      let newDir := newPath.toString
-      -- If 2 or more prior runs, then the base data was stored in `new`
-      -- Move the base data to `base`
-      if (← System.FilePath.pathExists newPath)
-      then do
-        let _out ← IO.Process.run {cmd := "rm", args := #["-r", baseDir] }
-        let _out ← IO.Process.run {cmd := "mv", args := #[newDir, baseDir] }
-      let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", newPath.toString] }
-      saveComparison! benchName m.comparison
-      pure newPath
-  else do
-    let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", baseDir] }
-    pure basePath
-  let sampleIxon := Ixon.ser m.data
-  IO.FS.writeBinFile (newPath / "sample.ixon") sampleIxon
-  let estimateIxon := Ixon.ser m.absoluteEstimates
-  IO.FS.writeBinFile (newPath / "estimates.ixon") estimateIxon
+  let (basePath, changePath, newPath) := (benchPath / "base", benchPath / "change", benchPath / "new")
+  let (baseDir, changeDir, newDir) := (basePath.toString, changePath.toString, newPath.toString)
+  let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", baseDir, changeDir, newDir] }
+  let fileExt := toString config.serde
+  let (estimatesFile, sampleFile) := (newPath / s!"estimates.{fileExt}", newPath / s!"sample.{fileExt}")
+  if (← System.FilePath.pathExists estimatesFile) && (← System.FilePath.pathExists sampleFile)
+  then do
+    -- Move prior bench from `new` to `base`
+    let _ ← IO.Process.run { cmd := "mv", args := #[estimatesFile.toString, sampleFile.toString, baseDir] }
+    if let some compData := m.comparison then saveComparison benchName compData config
+    else IO.eprintln s!"Error: expected `comparisonData` to write but found none"
+  match config.serde with
+  | .json =>
+    storeJson m.data (newPath / "sample.json")
+    storeJson m.absoluteEstimates (newPath / "estimates.json")
+  | .ixon =>
+    storeIxon m.data (newPath / "sample.ixon")
+    storeIxon m.absoluteEstimates (newPath / "estimates.ixon")
+
+structure OneShot where
+  benchTime : Nat
+deriving Lean.ToJson, Lean.FromJson, Repr
+
+def getOneShot: Ixon.GetM OneShot := do
+  return { benchTime := (← Ixon.Serialize.get) }
+
+instance : Ixon.Serialize OneShot where
+  put os := Ixon.Serialize.put os.benchTime
+  get := getOneShot
+
+-- TODO: Use a typeclass instead?
+inductive BenchResult where
+| oneShot : OneShot → BenchResult
+| sample : Estimates → BenchResult
+deriving Repr
+
+structure BenchReport where
+  function: String
+  newBench : BenchResult
+  baseBench : Option BenchResult
+  percentChange : Option Float
+
+def oneShotBench {α β : Type} (bench: Benchmarkable α β) (config : Config) : IO BenchReport := do
+  let start ← IO.monoNanosNow
+  let _res ← bench.getFn bench.arg
+  let finish ← IO.monoNanosNow
+  let benchTime := finish - start
+  IO.println s!"time:   {benchTime.toFloat.formatNanos}"
+  let benchPath := System.mkFilePath [".", ".lake", "benches", bench.name]
+  let (basePath, changePath, newPath) := (benchPath / "base", benchPath / "change", benchPath / "new")
+  let (baseDir, changeDir, newDir) := (basePath.toString, changePath.toString, newPath.toString)
+  let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", baseDir, changeDir, newDir] }
+  let fileExt := toString config.serde
+  let newFile := newPath / s!"one-shot.{fileExt}"
+  let (baseBench, percentChange) ← if (← System.FilePath.pathExists newFile) then do
+    let baseBench ← match config.serde with
+    | .json => loadJson OneShot newFile
+    | .ixon => loadIxon OneShot newFile
+    let baseTime := baseBench.benchTime.toFloat
+    let percentChange := 100 * (benchTime.toFloat - baseTime) / baseTime
+    let percentChangeStr := percentChange.floatPretty 2
+    let percentChangeStr :=
+      if percentChange < 0 then s!"{percentChangeStr.drop 1}% faster"
+      else if percentChange > 0 then s!"{percentChangeStr}% slower"
+      else "No change"
+    IO.println s!"change: {percentChangeStr}"
+    let _ ← IO.Process.run { cmd := "mv", args := #[newFile.toString, (benchPath / "base").toString] }
+    pure (some baseBench, some percentChange)
+  else
+    let _ ← IO.Process.run { cmd := "mkdir", args := #["-p", newPath.toString] }
+    pure (.none, .none)
+  let newBench : OneShot := { benchTime }
+  IO.println ""
+  match config.serde with
+  | .json => storeJson newBench newFile
+  | .ixon => storeIxon newBench newFile
+  let benchReport : BenchReport := { function := bench.name, newBench := (.oneShot newBench), baseBench := (baseBench).map .oneShot, percentChange }
+  return benchReport
+
+structure ColumnWidths where
+  function : Nat
+  newBench : Nat
+  baseBench : Nat
+  percentChange : Nat
+
+-- Gets the max lengths of each data type for pretty-printing columns
+def getColumnWidths (report : Array BenchReport) : ColumnWidths := Id.run do
+  let mut maxFunctionLen := "Function".length
+  let mut maxNewLen := "New Benchmark".length
+  let mut maxBaseLen := "Base Benchmark".length
+  let mut maxPercentLen := "% change".length
+  for row in report do
+    let fnLen := row.function.length
+    if fnLen > maxFunctionLen then maxFunctionLen := fnLen
+    let newLen := match row.newBench with
+    | .oneShot o => o.benchTime.toFloat.formatNanos.length 
+    | .sample s => s.mean.pointEstimate.formatNanos.length
+    if newLen > maxNewLen then maxNewLen := newLen
+    if let some baseBench := row.baseBench then
+      let baseLen := match baseBench with
+      | .oneShot o => o.benchTime.toFloat.formatNanos.length
+      | .sample s => s.mean.pointEstimate.formatNanos.length
+      if baseLen > maxBaseLen then maxBaseLen := baseLen
+    if let some percentChange := row.percentChange then
+      let percentChangeStr := (percentChange * 100).floatPretty 2
+      let percentChangeStr :=
+        if percentChange < 0 then s!"{percentChangeStr.drop 1}% faster"
+        else if percentChange > 0 then s!"{percentChangeStr}% slower"
+        else "No change"
+      let percentLen := percentChangeStr.length
+      if percentLen > maxPercentLen then
+        maxPercentLen := percentLen
+  { function := maxFunctionLen, newBench := maxNewLen, baseBench := maxBaseLen, percentChange := maxPercentLen }
+
+-- Centers a string with padded whitespace given the total width
+def padWhitespace (input : String) (width : Nat) : String :=
+  let padWidth := width - input.length 
+  let leftPad := padWidth / 2
+  let rightPad := padWidth - leftPad
+  String.mk (List.replicate leftPad ' ') ++ input ++ (String.mk (List.replicate rightPad ' '))
+
+def padDashes (width : Nat) : String :=
+  String.mk (List.replicate width '-')
+
+-- TODO: Bold the faster result and faster/slower % change
+/--
+Generates a Markdown table with comparative benchmark timings based on the results on disk.
+Each table row contains the benchmakr function name, the new timing, the base timing, and the percent change between the two.
+-/
+def mkReportPretty (groupName : String) (report : Array BenchReport) : String := Id.run do
+  let columnWidths := getColumnWidths report
+  let title := s!"## {groupName}\n\n"
+  let (fn, new, base, percent) := (
+    padWhitespace "Function" columnWidths.function,
+    padWhitespace "New Benchmark" columnWidths.newBench,
+    padWhitespace "Base Benchmark" columnWidths.baseBench,
+    padWhitespace "% change" columnWidths.percentChange
+  )
+  let header := s!"| {fn} | {new} | {base} | {percent} |\n"
+  let (d1, d2, d3, d4) := (
+    padDashes columnWidths.function,
+    padDashes columnWidths.newBench,
+    padDashes columnWidths.baseBench,
+    padDashes columnWidths.percentChange
+  )
+  let dashes := s!"|-{d1}-|-{d2}-|-{d3}-|-{d4}-|\n"
+  let mut reportPretty := title ++ header ++ dashes
+  for row in report do
+    let functionStr := padWhitespace row.function columnWidths.function
+    let newBenchStr := match row.newBench with
+    | .oneShot o => o.benchTime.toFloat.formatNanos
+    | .sample s => s.mean.pointEstimate.formatNanos
+    let newBenchStr := padWhitespace newBenchStr columnWidths.newBench
+    let baseBenchStr := if let some baseBench := row.baseBench then
+      match baseBench with
+      | .oneShot o => o.benchTime.toFloat.formatNanos
+      | .sample s => s.mean.pointEstimate.formatNanos
+    else "None"
+    let baseBenchStr := padWhitespace baseBenchStr columnWidths.baseBench
+    let percentChangeStr := if let some percentChange := row.percentChange then
+      let percentChangeStr := (percentChange * 100).floatPretty 2
+      if percentChange < 0 then s!"{percentChangeStr.drop 1}% faster"
+      else if percentChange > 0 then s!"{percentChangeStr}% slower"
+      else "No change"
+    else "N/A" 
+    let percentChangeStr := padWhitespace percentChangeStr columnWidths.percentChange
+    let rowPretty :=
+      s!"| {functionStr} | {newBenchStr} | {baseBenchStr} | {percentChangeStr} |\n"
+    reportPretty := reportPretty ++ rowPretty
+  return reportPretty
 
 -- TODO: Make sure compiler isn't caching partial evaluation result for future runs of the same function (measure first vs subsequent runs)
 /-- Runs each benchmark in a `BenchGroup` and analyzes the results -/
 def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) (config : Config := {}) : IO Unit := do
+  let config ← getConfigEnv config
   let bg : BenchGroup := { name, config }
   IO.println s!"Running bench group {name}\n"
+  let mut reports : Array BenchReport := #[]
   for b in benches do
-    let warmupMean ← bg.warmup b
-    IO.println s!"Running {b.name}"
-    let (iters, times) ← bg.sample b warmupMean
-    let data := iters.zip times
-    let avgTimes : Distribution := { d := data.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
-    let gen ← IO.stdGenRef.get
-    let mut (distributions, estimates) := avgTimes.estimates bg.config gen
-    if bg.config.samplingMode == .linear
-    then
-      let data' : Data := { d := data }
-      let (distribution, slope) := data'.regression bg.config gen
-      estimates := { estimates with slope := .some slope }
-      distributions := { distributions with slope := .some distribution }
-    let comparisonData : Option ComparisonData ← bg.getComparison b.name avgTimes
-    let m :=  {
-      data := { d := data },
-      avgTimes,
-      absoluteEstimates := estimates,
-      distributions,
-      comparison := comparisonData
-      throughput := none
-    }
-    bg.printResults b.name m
-    IO.println ""
-    saveResults b.name m
+    let report : BenchReport ← if config.oneShot then do
+      IO.println s!"{bg.name}/{b.name}"
+      oneShotBench b config
+    else
+      let warmupMean ← bg.warmup b
+      IO.println s!"Running {b.name}"
+      let (iters, times) ← bg.sample b warmupMean
+      let data := iters.zip times
+      let avgTimes : Distribution := { d := data.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
+      let gen ← IO.stdGenRef.get
+      let mut (distributions, estimates) := avgTimes.estimates bg.config gen
+      if bg.config.samplingMode == .linear
+      then
+        let data' : Data := { d := data }
+        let (distribution, slope) := data'.regression bg.config gen
+        estimates := { estimates with slope := .some slope }
+        distributions := { distributions with slope := .some distribution }
+      let comparisonData : Option ComparisonData ← bg.getComparison b.name avgTimes bg.config
+      let measurement :=  {
+        data := { d := data },
+        avgTimes,
+        absoluteEstimates := estimates,
+        distributions,
+        comparison := comparisonData
+        throughput := none
+      }
+      bg.printResults b.name measurement
+      IO.println ""
+      saveResults b.name measurement config
+      let benchReport : BenchReport := { function := b.name, newBench := (.sample estimates), baseBench := (comparisonData.map (.sample ·.baseEstimates)), percentChange := comparisonData.map (·.relativeEstimates.mean.pointEstimate) }
+      pure benchReport
+    reports := reports.push report
+  if config.report then
+    let table := mkReportPretty name reports
+    IO.println table
+    IO.FS.writeFile (System.mkFilePath [".", s!"benchmark-report-{name}.md"]) table
+  else
+    return
+
+

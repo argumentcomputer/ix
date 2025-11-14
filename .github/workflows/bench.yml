@@ -1,0 +1,156 @@
+# Creates a PR benchmark comment with a comparison to main
+name: Benchmark pull requests
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  setup:
+    name: Comparative PR benchmark comment
+    if:
+      github.event.issue.pull_request
+      && github.event.issue.state == 'open'
+      && (contains(github.event.comment.body, '!benchmark'))
+      && (github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'OWNER')
+    runs-on: ubuntu-latest
+    outputs:
+      benches: ${{ steps.bench-params.outputs.benches }}
+      env-vars: ${{ steps.bench-params.outputs.env-vars }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Parse PR comment body
+        id: bench-params
+        run: |
+          # Parse `issue_comment` body
+          printf '${{ github.event.comment.body }}' > comment.txt
+          BENCH_COMMAND=$(head -n 1 comment.txt | tr -d '\r')
+          echo "$BENCH_COMMAND"
+
+          BENCHES=$(echo $BENCH_COMMAND | awk -F'!benchmark ' '{ print $2 }')
+          # Set default benches to run if none specified
+          BENCHES=${BENCHES:-"bench-aiur"}
+          echo "BENCHES:"
+          echo "$BENCHES"
+          JSON=$(echo $BENCHES | jq -R -c 'split(" ")')
+
+          echo "JSON:"
+          echo "$JSON"
+
+          echo "benches=$JSON" | tee -a $GITHUB_OUTPUT
+
+          # Can't persist env vars between jobs, so we pass them as an output and set them in the next job
+          echo "env-vars=$(tail -n +2 comment.txt | tr -d '\r' | tr '\n' ' ')" | tee -a $GITHUB_OUTPUT
+
+  benchmark:
+    needs: [ setup ]
+    runs-on: warp-ubuntu-latest-x64-16x
+    strategy:
+      matrix:
+        # Runs a job for each benchmark specified in the `issue_comment` input
+        bench: ${{ fromJSON(needs.setup.outputs.benches) }}
+    steps:
+      - name: Set env vars
+        run: |
+          # Overrides default env vars with those specified in the `issue_comment` input if identically named
+          for var in ${{ needs.setup.outputs.env-vars }}
+          do
+            echo "$var" | tee -a $GITHUB_ENV
+          done
+      - uses: actions/checkout@v5
+        # Get base branch of the PR
+      - uses: xt0rted/pull-request-comment-branch@v2
+        id: base-branch
+      - name: Checkout base branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.base-branch.outputs.base_sha }}
+          path : ${{ github.workspace }}/base
+      - name: Run `lake build` on base branch
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: ${{ github.workspace }}/base
+          test: false
+      - name: Run bench on base branch
+        run: |
+          if $(lake run get-exe-targets | grep -q ${{ matrix.bench }}); then
+            lake exe ${{ matrix.bench }}
+          else
+            echo "No matching bench target found on base branch"
+          fi
+        working-directory: ${{ github.workspace }}/base
+      - name: Checkout PR branch
+        uses: actions/checkout@v5
+        with:
+          path: ${{ github.workspace }}/pr
+          ref: ${{ steps.base-branch.outputs.head_sha }}
+      - name: Run `lake build` on PR branch
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: ${{ github.workspace }}/pr
+          test: false
+      - name: Copy base benchmarks into PR dir for comparison
+        run: |
+          BENCH_DIR_PR=${{ github.workspace }}/pr/.lake/benches
+          BENCH_DIR_BASE=${{ github.workspace }}/base/.lake/benches
+          mkdir -p $BENCH_DIR_PR
+          [ -d "$BENCH_DIR_BASE" ] && cp -r $BENCH_DIR_BASE/. $BENCH_DIR_PR/
+          ls $BENCH_DIR_PR
+      - name: Run bench on PR branch and generate comparison report
+        run: |
+          BENCH_REPORT=1 lake exe ${{ matrix.bench }}
+        working-directory: ${{ github.workspace }}/pr
+      - name: Get env for PR body
+        if: always()
+        run: |
+          SHORT_SHA_PR=$(git rev-parse --short HEAD)
+          REPO_URL=${{ github.server_url }}/${{ github.repository }}
+          echo "COMMIT_LINK=[\`$SHORT_SHA_PR\`]($REPO_URL/commit/${{ github.sha }})" | tee -a $GITHUB_ENV
+          echo "WORKFLOW_LINK=[Workflow logs]($REPO_URL/actions/runs/${{ github.run_id }})" | tee -a $GITHUB_ENV
+        working-directory: ${{ github.workspace }}/pr
+      - name: Generate token to write PR comment
+        uses: actions/create-github-app-token@v2
+        if: always()
+        id: app-token
+        with:
+          app-id: ${{ secrets.TOKEN_APP_ID }}
+          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
+      - name: Build benchmark comment body
+        if: success()
+        run: |
+          {
+            echo '## Benchmark for `${{ matrix.bench }}` at ${{ env.COMMIT_LINK }}';
+            echo "";
+            for file in benchmark-report-*.md; do
+              cat "$file"
+              echo ""
+            done
+            echo "${{ env.WORKFLOW_LINK }}";
+          } > ${{ github.workspace }}/comment-body.md
+        working-directory: ${{ github.workspace }}/pr
+      - name: Comment on successful run
+        if: success()
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          issue-number: ${{ github.event.issue.number }}
+          body-path: 'comment-body.md'
+      - name: Comment on failing run
+        if: failure()
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## Benchmark for `${{ matrix.bench }}` at ${{ env.COMMIT_LINK }} failed :x:
+
+            [Workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

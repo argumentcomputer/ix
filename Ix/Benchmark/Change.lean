@@ -7,6 +7,7 @@ structure LabeledSample where
 structure ChangeEstimates where
   mean : Estimate
   median : Estimate
+  deriving Lean.ToJson, Lean.FromJson
 
 structure ChangeDistributions where
   mean : Distribution
