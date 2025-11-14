@@ -5,6 +5,11 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
@@ -77,7 +82,11 @@ jobs:
           test: false
       - name: Run bench on base branch
         run: |
-          lake exe ${{ matrix.bench }}
+          if $(lake run get-exe-targets | grep -q ${{ matrix.bench }}); then
+            lake exe ${{ matrix.bench }}
+          else
+            echo "No matching bench target found on base branch"
+          fi
         working-directory: ${{ github.workspace }}/base
       - name: Checkout PR branch
         uses: actions/checkout@v5
@@ -91,9 +100,11 @@ jobs:
           test: false
       - name: Copy base benchmarks into PR dir for comparison
         run: |
-          mkdir -p ${{ github.workspace }}/pr/.lake/benches
-          cp -r ${{ github.workspace }}/base/.lake/benches/* ${{ github.workspace }}/pr/.lake/benches
-          ls ${{ github.workspace }}/pr/.lake/benches/*
+          BENCH_DIR_PR=${{ github.workspace }}/pr/.lake/benches
+          BENCH_DIR_BASE=${{ github.workspace }}/base/.lake/benches
+          mkdir -p $BENCH_DIR_PR
+          [ -d "$BENCH_DIR_BASE" ] && cp -r $BENCH_DIR_BASE/. $BENCH_DIR_PR/
+          ls $BENCH_DIR_PR
       - name: Run bench on PR branch and generate comparison report
         run: |
           BENCH_REPORT=1 lake exe ${{ matrix.bench }}
@@ -106,6 +117,13 @@ jobs:
           echo "COMMIT_LINK=[\`$SHORT_SHA_PR\`]($REPO_URL/commit/${{ github.sha }})" | tee -a $GITHUB_ENV
           echo "WORKFLOW_LINK=[Workflow logs]($REPO_URL/actions/runs/${{ github.run_id }})" | tee -a $GITHUB_ENV
         working-directory: ${{ github.workspace }}/pr
+      - name: Generate token to write PR comment
+        uses: actions/create-github-app-token@v2
+        if: always()
+        id: app-token
+        with:
+          app-id: ${{ secrets.TOKEN_APP_ID }}
+          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
       - name: Build benchmark comment body
         if: success()
         run: |
@@ -123,12 +141,14 @@ jobs:
         if: success()
         uses: peter-evans/create-or-update-comment@v5
         with:
+          token: ${{ steps.app-token.outputs.token }}
           issue-number: ${{ github.event.issue.number }}
           body-path: 'comment-body.md'
       - name: Comment on failing run
         if: failure()
         uses: peter-evans/create-or-update-comment@v5
         with:
+          token: ${{ steps.app-token.outputs.token }}
           issue-number: ${{ github.event.issue.number }}
           body: |
             ## Benchmark for `${{ matrix.bench }}` at ${{ env.COMMIT_LINK }} failed :x:

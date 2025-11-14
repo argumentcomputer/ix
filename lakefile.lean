@@ -46,9 +46,6 @@ lean_exe «bench-aiur» where
 lean_exe «bench-blake3» where
   root := `Benchmarks.Blake3
 
-lean_exe «bench-report» where
-  root := `Benchmarks.Report
-
 end Benchmarks
 
 lean_lib Apps
@@ -159,4 +156,12 @@ script "check-lean-h-hash" := do
     return 1
   return 0
 
+script "get-exe-targets" := do
+  let pkg ← getRootPackage
+  let exeTargets := pkg.configTargets LeanExe.configKind
+  for tgt in exeTargets do
+    IO.println <| tgt.name.toString |>.stripPrefix "«" |>.stripSuffix "»"
+  return 0
+
 end Scripts
+
