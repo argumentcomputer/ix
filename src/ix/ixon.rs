@@ -2,13 +2,11 @@ use blake3::Hash;
 use num_bigint::BigUint;
 
 use crate::{
+  ix::env::{BinderInfo, DefinitionSafety, Int, QuotKind, ReducibilityHints},
   lean::nat::*,
-  lean_env::{BinderInfo, DefinitionSafety, Int, QuotKind, ReducibilityHints},
 };
 
-pub mod address;
-
-use address::*;
+use crate::ix::address::*;
 
 pub trait Serialize: Sized {
   fn put(&self, buf: &mut Vec<u8>);

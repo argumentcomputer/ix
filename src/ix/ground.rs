@@ -1,20 +1,22 @@
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::{collections::hash_map::Entry, sync::Arc};
+use std::collections::hash_map::Entry;
 
 use crate::{
   cons_list::ConsList,
-  lean::nat::Nat,
-  lean_env::{
-    ConstMap, ConstantInfo, Expr, InductiveVal, Level, Name, ref_graph::RefMap,
+  ix::env::{
+    ConstMap, ConstantInfo, Expr, ExprData, InductiveVal, Level, LevelData,
+    Name,
   },
+  ix::graph::RefMap,
+  lean::nat::Nat,
 };
 
 pub enum GroundError<'a> {
-  Level(Arc<Level>, ConsList<Arc<Name>>),
-  Ref(Arc<Name>),
-  MVar(Arc<Expr>),
-  Var(Arc<Expr>, ConsList<Arc<Name>>),
+  Level(Level, ConsList<Name>),
+  Ref(Name),
+  MVar(Expr),
+  Var(Expr, ConsList<Name>),
   Indc(&'a InductiveVal, Option<&'a ConstantInfo>),
   Idx(Nat),
 }
@@ -22,7 +24,7 @@ pub enum GroundError<'a> {
 pub fn ground_consts<'a>(
   const_map: &'a ConstMap,
   in_refs: &RefMap,
-) -> FxHashMap<Arc<Name>, GroundError<'a>> {
+) -> FxHashMap<Name, GroundError<'a>> {
   // Collect immediate ungrounded constants.
   let mut ungrounded: FxHashMap<_, _> = const_map
     .par_iter()
@@ -56,7 +58,7 @@ pub fn ground_consts<'a>(
   ungrounded
 }
 
-fn const_univs(constant: &ConstantInfo) -> ConsList<Arc<Name>> {
+fn const_univs(constant: &ConstantInfo) -> ConsList<Name> {
   let univs = match constant {
     ConstantInfo::AxiomInfo(val) => &val.constant_val.level_params,
     ConstantInfo::DefnInfo(val) => &val.constant_val.level_params,
@@ -73,53 +75,53 @@ fn const_univs(constant: &ConstantInfo) -> ConsList<Arc<Name>> {
 #[derive(Default)]
 #[allow(clippy::type_complexity)]
 struct GroundState {
-  expr_cache: FxHashSet<(ConsList<Arc<Name>>, ConsList<Arc<Name>>, Arc<Expr>)>,
-  univ_cache: FxHashSet<(ConsList<Arc<Name>>, Arc<Level>)>,
+  expr_cache: FxHashSet<(ConsList<Name>, ConsList<Name>, Expr)>,
+  univ_cache: FxHashSet<(ConsList<Name>, Level)>,
 }
 
 fn ground_const<'a>(
   constant: &'a ConstantInfo,
   const_map: &'a ConstMap,
-  univs: ConsList<Arc<Name>>,
-  binds: ConsList<Arc<Name>>,
+  univs: ConsList<Name>,
+  binds: ConsList<Name>,
   stt: &mut GroundState,
 ) -> Result<(), GroundError<'a>> {
   match constant {
     ConstantInfo::AxiomInfo(val) => {
-      ground_expr(val.constant_val.typ.clone(), const_map, univs, binds, stt)
+      ground_expr(&val.constant_val.typ, const_map, univs, binds, stt)
     },
     ConstantInfo::DefnInfo(val) => {
       ground_expr(
-        val.constant_val.typ.clone(),
+        &val.constant_val.typ,
         const_map,
         univs.clone(),
         binds.clone(),
         stt,
       )?;
-      ground_expr(val.value.clone(), const_map, univs, binds, stt)
+      ground_expr(&val.value, const_map, univs, binds, stt)
     },
     ConstantInfo::ThmInfo(val) => {
       ground_expr(
-        val.constant_val.typ.clone(),
+        &val.constant_val.typ,
         const_map,
         univs.clone(),
         binds.clone(),
         stt,
       )?;
-      ground_expr(val.value.clone(), const_map, univs, binds, stt)
+      ground_expr(&val.value, const_map, univs, binds, stt)
     },
     ConstantInfo::OpaqueInfo(val) => {
       ground_expr(
-        val.constant_val.typ.clone(),
+        &val.constant_val.typ,
         const_map,
         univs.clone(),
         binds.clone(),
         stt,
       )?;
-      ground_expr(val.value.clone(), const_map, univs, binds, stt)
+      ground_expr(&val.value, const_map, univs, binds, stt)
     },
     ConstantInfo::QuotInfo(val) => {
-      ground_expr(val.constant_val.typ.clone(), const_map, univs, binds, stt)
+      ground_expr(&val.constant_val.typ, const_map, univs, binds, stt)
     },
     ConstantInfo::InductInfo(val) => {
       for ctor in &val.ctors {
@@ -128,31 +130,25 @@ fn ground_const<'a>(
           c => return Err(GroundError::Indc(val, c)),
         }
       }
-      ground_expr(val.constant_val.typ.clone(), const_map, univs, binds, stt)
+      ground_expr(&val.constant_val.typ, const_map, univs, binds, stt)
     },
     ConstantInfo::CtorInfo(val) => {
-      ground_expr(val.constant_val.typ.clone(), const_map, univs, binds, stt)
+      ground_expr(&val.constant_val.typ, const_map, univs, binds, stt)
     },
     ConstantInfo::RecInfo(val) => {
       for rule in &val.rules {
-        ground_expr(
-          rule.rhs.clone(),
-          const_map,
-          univs.clone(),
-          binds.clone(),
-          stt,
-        )?;
+        ground_expr(&rule.rhs, const_map, univs.clone(), binds.clone(), stt)?;
       }
-      ground_expr(val.constant_val.typ.clone(), const_map, univs, binds, stt)
+      ground_expr(&val.constant_val.typ, const_map, univs, binds, stt)
     },
   }
 }
 
 fn ground_expr<'a>(
-  expr: Arc<Expr>,
+  expr: &Expr,
   const_map: &'a ConstMap,
-  univs: ConsList<Arc<Name>>,
-  binds: ConsList<Arc<Name>>,
+  univs: ConsList<Name>,
+  binds: ConsList<Name>,
   stt: &mut GroundState,
 ) -> Result<(), GroundError<'a>> {
   let key = (univs.clone(), binds.clone(), expr.clone());
@@ -160,11 +156,9 @@ fn ground_expr<'a>(
     return Ok(());
   }
   stt.expr_cache.insert(key);
-  match expr.as_ref() {
-    Expr::Mdata(_, e, _) => {
-      ground_expr(e.clone(), const_map, univs, binds, stt)
-    },
-    Expr::Bvar(idx, _) => {
+  match expr.as_data() {
+    ExprData::Mdata(_, e, _) => ground_expr(e, const_map, univs, binds, stt),
+    ExprData::Bvar(idx, _) => {
       let mut idx_bytes = idx.to_le_bytes();
       if idx_bytes.len() > size_of::<usize>() {
         return Err(GroundError::Idx(idx.clone()));
@@ -172,55 +166,52 @@ fn ground_expr<'a>(
       idx_bytes.resize(size_of::<usize>(), 0);
       let idx_usize = usize::from_le_bytes(idx_bytes.try_into().unwrap());
       if idx_usize >= binds.len() {
-        return Err(GroundError::Var(expr, binds.clone()));
+        return Err(GroundError::Var(expr.clone(), binds.clone()));
       }
       Ok(())
     },
-    Expr::Sort(level, _) => ground_level(level.clone(), univs, stt),
-    Expr::Const(name, levels, _) => {
+    ExprData::Sort(level, _) => ground_level(level, univs, stt),
+    ExprData::Const(name, levels, _) => {
       for level in levels {
-        ground_level(level.clone(), univs.clone(), stt)?;
+        ground_level(level, univs.clone(), stt)?;
       }
       if !const_map.contains_key(name)
-        && name.as_ref()
-          != &Name::mk_str(Name::Anonymous.into(), "_obj".to_string())
-        && name.as_ref()
-          != &Name::mk_str(Name::Anonymous.into(), "_neutral".to_string())
-        && name.as_ref()
-          != &Name::mk_str(Name::Anonymous.into(), "_unreachable".to_string())
+        && name != &Name::str(Name::anon(), "_obj".to_string())
+        && name != &Name::str(Name::anon(), "_neutral".to_string())
+        && name != &Name::str(Name::anon(), "_unreachable".to_string())
       {
         return Err(GroundError::Ref(name.clone()));
       }
       Ok(())
     },
-    Expr::App(f, a, _) => {
-      ground_expr(f.clone(), const_map, univs.clone(), binds.clone(), stt)?;
-      ground_expr(a.clone(), const_map, univs, binds, stt)
+    ExprData::App(f, a, _) => {
+      ground_expr(f, const_map, univs.clone(), binds.clone(), stt)?;
+      ground_expr(a, const_map, univs, binds, stt)
     },
-    Expr::Lam(n, t, b, ..) | Expr::ForallE(n, t, b, ..) => {
-      ground_expr(t.clone(), const_map, univs.clone(), binds.clone(), stt)?;
-      ground_expr(b.clone(), const_map, univs, binds.cons(n.clone()), stt)
+    ExprData::Lam(n, t, b, ..) | ExprData::ForallE(n, t, b, ..) => {
+      ground_expr(t, const_map, univs.clone(), binds.clone(), stt)?;
+      ground_expr(b, const_map, univs, binds.cons(n.clone()), stt)
     },
-    Expr::LetE(n, t, v, b, ..) => {
-      ground_expr(t.clone(), const_map, univs.clone(), binds.clone(), stt)?;
-      ground_expr(v.clone(), const_map, univs.clone(), binds.clone(), stt)?;
-      ground_expr(b.clone(), const_map, univs, binds.cons(n.clone()), stt)
+    ExprData::LetE(n, t, v, b, ..) => {
+      ground_expr(t, const_map, univs.clone(), binds.clone(), stt)?;
+      ground_expr(v, const_map, univs.clone(), binds.clone(), stt)?;
+      ground_expr(b, const_map, univs, binds.cons(n.clone()), stt)
     },
-    Expr::Proj(name, _, e, _) => {
+    ExprData::Proj(name, _, e, _) => {
       if !const_map.contains_key(name) {
         return Err(GroundError::Ref(name.clone()));
       }
-      ground_expr(e.clone(), const_map, univs, binds, stt)
+      ground_expr(e, const_map, univs, binds, stt)
     },
-    Expr::Lit(..) => Ok(()),
-    Expr::Mvar(..) => Err(GroundError::MVar(expr)),
-    Expr::Fvar(..) => Err(GroundError::Var(expr, binds.clone())),
+    ExprData::Lit(..) => Ok(()),
+    ExprData::Mvar(..) => Err(GroundError::MVar(expr.clone())),
+    ExprData::Fvar(..) => Err(GroundError::Var(expr.clone(), binds.clone())),
   }
 }
 
 fn ground_level<'a>(
-  level: Arc<Level>,
-  univs: ConsList<Arc<Name>>,
+  level: &Level,
+  univs: ConsList<Name>,
   stt: &mut GroundState,
 ) -> Result<(), GroundError<'a>> {
   let key = (univs.clone(), level.clone());
@@ -228,19 +219,19 @@ fn ground_level<'a>(
     return Ok(());
   }
   stt.univ_cache.insert(key);
-  match level.as_ref() {
-    Level::Zero => Ok(()),
-    Level::Succ(x) => ground_level(x.clone(), univs, stt),
-    Level::Max(x, y) | Level::Imax(x, y) => {
-      ground_level(x.clone(), univs.clone(), stt)?;
-      ground_level(y.clone(), univs, stt)
+  match level.as_data() {
+    LevelData::Zero => Ok(()),
+    LevelData::Succ(x) => ground_level(x, univs, stt),
+    LevelData::Max(x, y) | LevelData::Imax(x, y) => {
+      ground_level(x, univs.clone(), stt)?;
+      ground_level(y, univs, stt)
     },
-    Level::Param(n) => {
+    LevelData::Param(n) => {
       if !univs.contains(n) {
-        return Err(GroundError::Level(level, univs.clone()));
+        return Err(GroundError::Level(level.clone(), univs.clone()));
       }
       Ok(())
     },
-    Level::Mvar(_) => Err(GroundError::Level(level, univs.clone())),
+    LevelData::Mvar(_) => Err(GroundError::Level(level.clone(), univs.clone())),
   }
 }

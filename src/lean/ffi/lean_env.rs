@@ -1,62 +1,62 @@
-use std::{ffi::c_void, sync::Arc};
+use std::ffi::c_void;
 
 use rustc_hash::FxHashMap;
 
 use crate::{
-  lean::{
-    ListIterator, array::LeanArrayObject, as_ref_unsafe, collect_list,
-    collect_list_with, ctor::LeanCtorObject, lean_is_scalar, nat::Nat,
-    string::LeanStringObject,
-  },
-  lean_env::{
+  ix::condense::compute_sccs,
+  ix::env::{
     AxiomVal, BinderInfo, ConstMap, ConstantInfo, ConstantVal, ConstructorVal,
     DataValue, DefinitionSafety, DefinitionVal, Expr, InductiveVal, Int, Level,
     Literal, Name, OpaqueVal, QuotKind, QuotVal, RecursorRule, RecursorVal,
     ReducibilityHints, SourceInfo, Substring, Syntax, SyntaxPreresolved,
     TheoremVal,
-    compile::compile,
-    ground::ground_consts,
-    ref_graph::{RefGraph, build_ref_graph},
-    scc::compute_sccs,
+  },
+  ix::graph::{RefGraph, build_ref_graph},
+  ix::ground::ground_consts,
+  //ix::compile::compile,
+  lean::{
+    ListIterator, array::LeanArrayObject, as_ref_unsafe, collect_list,
+    collect_list_with, ctor::LeanCtorObject, lean_is_scalar, nat::Nat,
+    string::LeanStringObject,
   },
   lean_unbox,
 };
 
 #[derive(Default)]
 struct Cache {
-  univs: FxHashMap<*const c_void, Arc<Level>>,
-  exprs: FxHashMap<*const c_void, Arc<Expr>>,
-  names: FxHashMap<*const c_void, Arc<Name>>,
+  univs: FxHashMap<*const c_void, Level>,
+  exprs: FxHashMap<*const c_void, Expr>,
+  names: FxHashMap<*const c_void, Name>,
 }
 
-fn lean_ptr_to_level(ptr: *const c_void, cache: &mut Cache) -> Arc<Level> {
+fn lean_ptr_to_level(ptr: *const c_void, cache: &mut Cache) -> Level {
   if let Some(cached) = cache.univs.get(&ptr) {
     return cached.clone();
   }
   let level = if lean_is_scalar(ptr) {
-    Arc::new(Level::Zero)
+    Level::zero()
   } else {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     match ctor.tag() {
       1 => {
         let [u] = ctor.objs().map(|ptr| lean_ptr_to_level(ptr, cache));
-        Arc::new(Level::Succ(u))
+        Level::succ(u)
       },
       2 => {
         let [u, v] = ctor.objs().map(|ptr| lean_ptr_to_level(ptr, cache));
-        Arc::new(Level::Max(u, v))
+        Level::max(u, v)
       },
       3 => {
         let [u, v] = ctor.objs().map(|ptr| lean_ptr_to_level(ptr, cache));
-        Arc::new(Level::Imax(u, v))
+        Level::imax(u, v)
       },
       4 => {
         let [name] = ctor.objs().map(|ptr| lean_ptr_to_name(ptr, cache));
-        Arc::new(Level::Param(name))
+        Level::param(name)
       },
       5 => {
         let [name] = ctor.objs().map(|ptr| lean_ptr_to_name(ptr, cache));
-        Arc::new(Level::Mvar(name))
+        Level::mvar(name)
       },
       _ => unreachable!(),
     }
@@ -163,7 +163,7 @@ fn lean_ptr_to_syntax(ptr: *const c_void, cache: &mut Cache) -> Syntax {
 fn lean_ptr_to_name_data_value(
   ptr: *const c_void,
   cache: &mut Cache,
-) -> (Arc<Name>, DataValue) {
+) -> (Name, DataValue) {
   let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
   let [name_ptr, data_value_ptr] = ctor.objs();
   let name = lean_ptr_to_name(name_ptr, cache);
@@ -194,7 +194,7 @@ fn lean_ptr_to_name_data_value(
   (name, data_value)
 }
 
-fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Arc<Expr> {
+fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Expr {
   if let Some(cached) = cache.exprs.get(&ptr) {
     return cached.clone();
   }
@@ -204,39 +204,39 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Arc<Expr> {
       let [nat_ptr, hash_ptr] = ctor.objs();
       let nat = Nat::from_ptr(nat_ptr.cast());
       let hash = hash_ptr as u64;
-      Arc::new(Expr::Bvar(nat, hash))
+      Expr::bvar(nat, hash)
     },
     1 => {
       let [name_ptr, hash_ptr] = ctor.objs();
       let name = lean_ptr_to_name(name_ptr, cache);
       let hash = hash_ptr as u64;
-      Arc::new(Expr::Fvar(name, hash))
+      Expr::fvar(name, hash)
     },
     2 => {
       let [name_ptr, hash_ptr] = ctor.objs();
       let name = lean_ptr_to_name(name_ptr, cache);
       let hash = hash_ptr as u64;
-      Arc::new(Expr::Mvar(name, hash))
+      Expr::mvar(name, hash)
     },
     3 => {
       let [u_ptr, hash_ptr] = ctor.objs();
       let u = lean_ptr_to_level(u_ptr, cache);
       let hash = hash_ptr as u64;
-      Arc::new(Expr::Sort(u, hash))
+      Expr::sort(u, hash)
     },
     4 => {
       let [name_ptr, levels_ptr, hash_ptr] = ctor.objs();
       let name = lean_ptr_to_name(name_ptr, cache);
       let levels = collect_list_with(levels_ptr, lean_ptr_to_level, cache);
       let hash = hash_ptr as u64;
-      Arc::new(Expr::Const(name.clone(), levels, hash))
+      Expr::cnst(name, levels, hash)
     },
     5 => {
       let [f_ptr, a_ptr, hash_ptr] = ctor.objs();
       let f = lean_ptr_to_expr(f_ptr, cache);
       let a = lean_ptr_to_expr(a_ptr, cache);
       let hash = hash_ptr as u64;
-      Arc::new(Expr::App(f, a, hash))
+      Expr::app(f, a, hash)
     },
     6 => {
       let [
@@ -257,7 +257,7 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Arc<Expr> {
         3 => BinderInfo::InstImplicit,
         _ => unreachable!(),
       };
-      Arc::new(Expr::Lam(binder_name, binder_typ, body, binder_info, hash))
+      Expr::lam(binder_name, binder_typ, body, binder_info, hash)
     },
     7 => {
       let [
@@ -278,7 +278,7 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Arc<Expr> {
         3 => BinderInfo::InstImplicit,
         _ => unreachable!(),
       };
-      Arc::new(Expr::ForallE(binder_name, binder_typ, body, binder_info, hash))
+      Expr::all(binder_name, binder_typ, body, binder_info, hash)
     },
     8 => {
       let [decl_name_ptr, typ_ptr, value_ptr, body_ptr, hash_ptr, nondep_ptr] =
@@ -289,7 +289,7 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Arc<Expr> {
       let body = lean_ptr_to_expr(body_ptr, cache);
       let hash = hash_ptr as u64;
       let nondep = nondep_ptr as usize == 1;
-      Arc::new(Expr::LetE(decl_name, typ, value, body, nondep, hash))
+      Expr::letE(decl_name, typ, value, body, nondep, hash)
     },
     9 => {
       let [literal_ptr, hash_ptr] = ctor.objs();
@@ -299,11 +299,11 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Arc<Expr> {
       match literal.tag() {
         0 => {
           let nat = Nat::from_ptr(inner_ptr);
-          Arc::new(Expr::Lit(Literal::NatVal(nat), hash))
+          Expr::lit(Literal::NatVal(nat), hash)
         },
         1 => {
           let str: &LeanStringObject = as_ref_unsafe(inner_ptr.cast());
-          Arc::new(Expr::Lit(Literal::StrVal(str.as_string()), hash))
+          Expr::lit(Literal::StrVal(str.as_string()), hash)
         },
         _ => unreachable!(),
       }
@@ -314,7 +314,7 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Arc<Expr> {
         collect_list_with(data_ptr, lean_ptr_to_name_data_value, cache);
       let expr = lean_ptr_to_expr(expr_ptr, cache);
       let hash = hash_ptr as u64;
-      Arc::new(Expr::Mdata(kv_map, expr, hash))
+      Expr::mdata(kv_map, expr, hash)
     },
     11 => {
       let [typ_name_ptr, idx_ptr, struct_ptr, hash_ptr] = ctor.objs();
@@ -322,7 +322,7 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Arc<Expr> {
       let idx = Nat::from_ptr(idx_ptr);
       let struct_expr = lean_ptr_to_expr(struct_ptr, cache);
       let hash = hash_ptr as u64;
-      Arc::new(Expr::Proj(typ_name, idx, struct_expr, hash))
+      Expr::proj(typ_name, idx, struct_expr, hash)
     },
     _ => unreachable!(),
   };
@@ -526,12 +526,12 @@ fn lean_ptr_to_constant_info(
   }
 }
 
-fn lean_ptr_to_name(ptr: *const c_void, cache: &mut Cache) -> Arc<Name> {
+fn lean_ptr_to_name(ptr: *const c_void, cache: &mut Cache) -> Name {
   if let Some(name) = cache.names.get(&ptr) {
     return name.clone();
   }
   let name = if lean_is_scalar(ptr) {
-    Name::Anonymous
+    Name::anon()
   } else {
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     let [pre_ptr, pos_ptr] = ctor.objs();
@@ -539,21 +539,20 @@ fn lean_ptr_to_name(ptr: *const c_void, cache: &mut Cache) -> Arc<Name> {
     match ctor.tag() {
       1 => {
         let str_obj: &LeanStringObject = as_ref_unsafe(pos_ptr.cast());
-        Name::mk_str(pre, str_obj.as_string())
+        Name::str(pre, str_obj.as_string())
       },
-      2 => Name::mk_num(pre, Nat::from_ptr(pos_ptr)),
+      2 => Name::num(pre, Nat::from_ptr(pos_ptr)),
       _ => unreachable!(),
     }
   };
-  let name_arc = Arc::new(name);
-  cache.names.insert(ptr, name_arc.clone());
-  name_arc
+  cache.names.insert(ptr, name.clone());
+  name
 }
 
 fn lean_ptr_to_name_constant_info(
   ptr: *const c_void,
   cache: &mut Cache,
-) -> (Arc<Name>, ConstantInfo) {
+) -> (Name, ConstantInfo) {
   let prod_ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
   let [name_ptr, constant_info_ptr] = prod_ctor.objs();
   let name = lean_ptr_to_name(name_ptr, cache);
@@ -588,9 +587,9 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   let start_sccs = std::time::SystemTime::now();
   let sccs = compute_sccs(&out_refs);
   println!("SCCs: {:.2}s", start_sccs.elapsed().unwrap().as_secs_f32());
-  let start_compile = std::time::SystemTime::now();
-  let _ = compile(&sccs, &out_refs, &const_map);
-  println!("Compile: {:.2}s", start_compile.elapsed().unwrap().as_secs_f32());
-  println!("Total: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
+  //let start_compile = std::time::SystemTime::now();
+  //let _ = compile(&sccs, &out_refs, &const_map);
+  //println!("Compile: {:.2}s", start_compile.elapsed().unwrap().as_secs_f32());
+  //println!("Total: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
   const_map.len()
 }
