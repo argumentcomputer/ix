@@ -12,35 +12,35 @@ pub type G = multi_stark::p3_goldilocks::Goldilocks;
 
 #[inline]
 pub const fn function_channel() -> G {
-    G::ZERO
+  G::ZERO
 }
 
 #[inline]
 pub const fn memory_channel() -> G {
-    G::ONE
+  G::ONE
 }
 
 #[inline]
 pub const fn u8_bit_decomposition_channel() -> G {
-    G::TWO
+  G::TWO
 }
 
 #[inline]
 pub fn u8_shift_left_channel() -> G {
-    G::from_u8(3)
+  G::from_u8(3)
 }
 
 #[inline]
 pub fn u8_shift_right_channel() -> G {
-    G::from_u8(4)
+  G::from_u8(4)
 }
 
 #[inline]
 pub fn u8_xor_channel() -> G {
-    G::from_u8(5)
+  G::from_u8(5)
 }
 
 #[inline]
 pub fn u8_add_channel() -> G {
-    G::from_u8(6)
+  G::from_u8(6)
 }
