@@ -121,6 +121,10 @@ syntax "u8_xor" "(" trm ", " trm ")"                          : trm
 syntax "u8_add" "(" trm ", " trm ")"                          : trm
 syntax "dbg!" "(" str (", " trm)? ")" ";" (trm)?              : trm
 
+syntax trm "[" "@" noWs ident "]"                                                      : trm
+syntax "set" "(" trm ", " "@" noWs ident ", " trm ")"                                  : trm
+syntax "fold" "(" num ".." num ", " trm ", " "|" ident ", " "@" noWs ident "|" trm ")" : trm
+
 partial def elabTrm : ElabStxCat `trm
   | `(trm| .$i:ident) => do
     mkAppM ``Term.ref #[← mkAppM ``Global.mk #[toExpr i.getId]]
@@ -214,10 +218,149 @@ partial def elabTrm : ElabStxCat `trm
       | none => mkAppOptM ``Option.none #[some (mkConst ``Term)]
       | some t => mkAppM ``Option.some #[← elabTrm t]
     mkAppM ``Term.debug #[mkStrLit label.getString, t, ← elabRet ret]
+  | `(trm| fold($i .. $j, $init, |$acc, @$v| $body)) => do
+    let mut res := init
+    for n in [i.getNat:j.getNat] do
+      let body' ← replaceToken v.getId n body
+      res ← `(trm| let $acc:ident = $res; $body')
+    elabTrm res
+  | `(trm| $_[@$var]) => throw $ .error var "Unbound macro variable"
+  | `(trm| set($_, @$var, $_)) => throw $ .error var "Unbound macro variable"
   | stx => throw $ .error stx "Invalid syntax for term"
-where elabRet : Option (TSyntax `trm) → TermElabM Expr
-  | none => pure $ mkConst ``Term.unit
-  | some ret => elabTrm ret
+where
+  elabRet : Option (TSyntax `trm) → TermElabM Expr
+    | none => pure $ mkConst ``Term.unit
+    | some ret => elabTrm ret
+  replaceToken (old : Name) (new : Nat) : TSyntax `trm → TermElabM (TSyntax `trm)
+    | `(trm| $arr[@$var]) => do
+      let arr ← replaceToken old new arr
+      if var.getId = old then
+        let new := Syntax.mkNatLit new
+        `(trm| $arr[$new])
+      else `(trm| $arr[@$var])
+    | `(trm| set($arr, @$var, $v)) => do
+      let arr ← replaceToken old new arr
+      let v ← replaceToken old new v
+      if var.getId = old then
+        let new := Syntax.mkNatLit new
+        `(trm| set($arr, $new, $v))
+      else `(trm| set($arr, @$var, $v))
+    | `(trm| ($t $[, $ts]*)) => do
+      let t ← replaceToken old new t
+      let ts ← ts.mapM $ replaceToken old new
+      `(trm| ($t $[, $ts]*))
+    | `(trm| [$t $[, $ts]*]) => do
+      let t ← replaceToken old new t
+      let ts ← ts.mapM $ replaceToken old new
+      `(trm| [$t $[, $ts]*])
+    | `(trm| [$t; $n]) => do
+      let t ← replaceToken old new t
+      `(trm| [$t; $n])
+    | `(trm| return $t:trm) => do
+      let t ← replaceToken old new t
+      `(trm| return $t)
+    | `(trm| let $p:pattern $[: $ty]? = $t:trm; $t':trm) => do
+      let t ← replaceToken old new t
+      let t' ← replaceToken old new t'
+      `(trm| let $p $[: $ty]? = $t; $t')
+    | `(trm| match $t:trm {$[$ps:pattern => $ts:trm,]*}) => do
+      let t ← replaceToken old new t
+      let ts ← ts.mapM $ replaceToken old new
+      `(trm| match $t {$[$ps:pattern => $ts:trm,]*})
+    | `(trm| $[.%$dot]?$f:ident ($a:trm $[, $as:trm]*)) => do
+      let a ← replaceToken old new a
+      let as ← as.mapM $ replaceToken old new
+      if dot.isSome then `(trm| .$f:ident ($a $[, $as]*))
+      else `(trm| $f:ident ($a $[, $as]*))
+    | `(trm| $a + $b) => do
+      let a ← replaceToken old new a
+      let b ← replaceToken old new b
+      `(trm| $a + $b)
+    | `(trm| $a - $b) => do
+      let a ← replaceToken old new a
+      let b ← replaceToken old new b
+      `(trm| $a - $b)
+    | `(trm| $a * $b) => do
+      let a ← replaceToken old new a
+      let b ← replaceToken old new b
+      `(trm| $a * $b)
+    | `(trm| eq_zero($a:trm)) => do
+      let a ← replaceToken old new a
+      `(trm| eq_zero($a))
+    | `(trm| proj($a:trm, $i:num)) => do
+      let a ← replaceToken old new a
+      `(trm| proj($a, $i))
+    | `(trm| $t:trm[$i:num]) => do
+      let t ← replaceToken old new t
+      `(trm| $t[$i])
+    | `(trm| $t:trm[$i:num..$j:num]) => do
+      let t ← replaceToken old new t
+      `(trm| $t[$i..$j])
+    | `(trm| set($a:trm, $i:num, $v:trm)) => do
+      let a ← replaceToken old new a
+      let v ← replaceToken old new v
+      `(trm| set($a, $i, $v))
+    | `(trm| store($a:trm)) => do
+      let a ← replaceToken old new a
+      `(trm| store($a))
+    | `(trm| load($a:trm)) => do
+      let a ← replaceToken old new a
+      `(trm| load($a))
+    | `(trm| ptr_val($a:trm)) => do
+      let a ← replaceToken old new a
+      `(trm| ptr_val($a))
+    | `(trm| assert_eq!($a:trm, $b:trm); $[$ret:trm]?) => do
+      let a ← replaceToken old new a
+      let b ← replaceToken old new b
+      let ret' ← ret.mapM $ replaceToken old new
+      `(trm| assert_eq!($a, $b); $[$ret']?)
+    | `(trm| $v:trm : $t:typ) => do
+      let v ← replaceToken old new v
+      `(trm| $v : $t)
+    | `(trm| io_get_info($key:trm)) => do
+      let key ← replaceToken old new key
+      `(trm| io_get_info($key))
+    | `(trm| io_set_info($key:trm, $idx:trm, $len:trm); $[$ret:trm]?) => do
+      let key ← replaceToken old new key
+      let idx ← replaceToken old new idx
+      let len ← replaceToken old new len
+      let ret' ← ret.mapM $ replaceToken old new
+      `(trm| io_set_info($key, $idx, $len); $[$ret']?)
+    | `(trm| io_read($idx:trm, $len:num)) => do
+      let idx ← replaceToken old new idx
+      `(trm| io_read($idx, $len))
+    | `(trm| io_write($data:trm); $[$ret:trm]?) => do
+      let data ← replaceToken old new data
+      let ret' ← ret.mapM $ replaceToken old new
+      `(trm| io_write($data); $[$ret']?)
+    | `(trm| u8_bit_decomposition($byte:trm)) => do
+      let byte ← replaceToken old new byte
+      `(trm| u8_bit_decomposition($byte))
+    | `(trm| u8_shift_left($byte:trm)) => do
+      let byte ← replaceToken old new byte
+      `(trm| u8_shift_left($byte))
+    | `(trm| u8_shift_right($byte:trm)) => do
+      let byte ← replaceToken old new byte
+      `(trm| u8_shift_right($byte))
+    | `(trm| u8_xor($i:trm, $j:trm)) => do
+      let i ← replaceToken old new i
+      let j ← replaceToken old new j
+      `(trm| u8_xor($i, $j))
+    | `(trm| u8_add($i:trm, $j:trm)) => do
+      let i ← replaceToken old new i
+      let j ← replaceToken old new j
+      `(trm| u8_add($i, $j))
+    | `(trm| dbg!($label:str $[, $t:trm]?); $[$ret:trm]?) => do
+      let t' ← t.mapM $ replaceToken old new
+      let ret' ← ret.mapM $ replaceToken old new
+      `(trm| dbg!($label $[, $t']?); $[$ret']?)
+    | `(trm| fold($i .. $j, $init, |$acc, @$v| $body)) => do
+      let init ← replaceToken old new init
+      -- Don't conflict with shadowing tokens.
+      let body ← if v.getId = old then pure body
+        else replaceToken old new body
+      `(trm| fold($i .. $j, $init, |$acc, @$v| $body))
+    | stx => pure stx
 
 declare_syntax_cat                     constructor
 syntax ident                         : constructor

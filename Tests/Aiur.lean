@@ -167,6 +167,14 @@ def toplevel := ⟦
     let i_xor_j = u8_xor(i, j);
     (u8_add(i_xor_j, i), u8_add(i_xor_j, j))
   }
+
+  fn fold_matrix_sum(m: [[G; 2]; 2]) -> G {
+    fold(0 .. 2, 0, |acc_outer, @i|
+      fold(0 .. 2, acc_outer, |acc_inner, @j|
+        acc_inner + m[@i][@j]
+      )
+    )
+  }
 ⟧
 
 def aiurTestCases : List AiurTestCase := [
@@ -203,6 +211,7 @@ def aiurTestCases : List AiurTestCase := [
       ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩⟩,
     .noIO `shr_shr_shl_decompose #[87] #[0, 1, 0, 1, 0, 1, 0, 0],
     .noIO `u8_add_xor #[45, 131] #[219, 0, 49, 1],
+    .noIO `fold_matrix_sum #[1, 2, 3, 4] #[10],
   ]
 
 def Tests.Aiur.suite := [
