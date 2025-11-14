@@ -31,11 +31,6 @@ def ixVM := ⟦
     Bytes([[G; 4]; 8])
   }
 
-  enum Bool {
-    False,
-    True
-  }
-
   enum Ixon {
     NAnon,                                 -- 0x00, anonymous name
     NStr(Address, Address),                -- 0x01, string name
@@ -55,7 +50,7 @@ def ixVM := ⟦
     EApp(Address, Address),                -- 0x83, expression application
     ELam(Address, Address),                -- 0x84, expression lambda
     EAll(Address, Address),                -- 0x85, expression forall
-    ELet(Bool, Address, Address, Address)  -- 0x86, 0x87, expression let
+    ELet(G, Address, Address, Address)     -- 0x86, 0x87, expression let. TODO: change the first argument to a Bool
     -- Blob(Vec<u8>),                         -- 0x9X, tagged bytes
     -- Defn(Definition),                      -- 0xA0, definition constant
     -- Recr(Recursor),                        -- 0xA1, recursor constant
@@ -674,6 +669,108 @@ def ixVM := ⟦
         let stream = ByteStream.Cons(s29, store(stream));
         let stream = ByteStream.Cons(s30, store(stream));
         let stream = ByteStream.Cons(s31, store(stream));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.ELet(b, n, s, t) =>
+        let tag = 134 + b;
+        let Address.Bytes([[n0, n1, n2, n3], [n4, n5, n6, n7], [n8, n9, n10, n11], [n12, n13, n14, n15], [n16, n17, n18, n19], [n20, n21, n22, n23], [n24, n25, n26, n27], [n28, n29, n30, n31]]) = n;
+        let Address.Bytes([[s0, s1, s2, s3], [s4, s5, s6, s7], [s8, s9, s10, s11], [s12, s13, s14, s15], [s16, s17, s18, s19], [s20, s21, s22, s23], [s24, s25, s26, s27], [s28, s29, s30, s31]]) = s;
+        let Address.Bytes([[t0, t1, t2, t3], [t4, t5, t6, t7], [t8, t9, t10, t11], [t12, t13, t14, t15], [t16, t17, t18, t19], [t20, t21, t22, t23], [t24, t25, t26, t27], [t28, t29, t30, t31]]) = t;
+        let stream = ByteStream.Cons(n0, store(stream));
+        let stream = ByteStream.Cons(n1, store(stream));
+        let stream = ByteStream.Cons(n2, store(stream));
+        let stream = ByteStream.Cons(n3, store(stream));
+        let stream = ByteStream.Cons(n4, store(stream));
+        let stream = ByteStream.Cons(n5, store(stream));
+        let stream = ByteStream.Cons(n6, store(stream));
+        let stream = ByteStream.Cons(n7, store(stream));
+        let stream = ByteStream.Cons(n8, store(stream));
+        let stream = ByteStream.Cons(n9, store(stream));
+        let stream = ByteStream.Cons(n10, store(stream));
+        let stream = ByteStream.Cons(n11, store(stream));
+        let stream = ByteStream.Cons(n12, store(stream));
+        let stream = ByteStream.Cons(n13, store(stream));
+        let stream = ByteStream.Cons(n14, store(stream));
+        let stream = ByteStream.Cons(n15, store(stream));
+        let stream = ByteStream.Cons(n16, store(stream));
+        let stream = ByteStream.Cons(n17, store(stream));
+        let stream = ByteStream.Cons(n18, store(stream));
+        let stream = ByteStream.Cons(n19, store(stream));
+        let stream = ByteStream.Cons(n20, store(stream));
+        let stream = ByteStream.Cons(n21, store(stream));
+        let stream = ByteStream.Cons(n22, store(stream));
+        let stream = ByteStream.Cons(n23, store(stream));
+        let stream = ByteStream.Cons(n24, store(stream));
+        let stream = ByteStream.Cons(n25, store(stream));
+        let stream = ByteStream.Cons(n26, store(stream));
+        let stream = ByteStream.Cons(n27, store(stream));
+        let stream = ByteStream.Cons(n28, store(stream));
+        let stream = ByteStream.Cons(n29, store(stream));
+        let stream = ByteStream.Cons(n30, store(stream));
+        let stream = ByteStream.Cons(n31, store(stream));
+        let stream = ByteStream.Cons(s0, store(stream));
+        let stream = ByteStream.Cons(s1, store(stream));
+        let stream = ByteStream.Cons(s2, store(stream));
+        let stream = ByteStream.Cons(s3, store(stream));
+        let stream = ByteStream.Cons(s4, store(stream));
+        let stream = ByteStream.Cons(s5, store(stream));
+        let stream = ByteStream.Cons(s6, store(stream));
+        let stream = ByteStream.Cons(s7, store(stream));
+        let stream = ByteStream.Cons(s8, store(stream));
+        let stream = ByteStream.Cons(s9, store(stream));
+        let stream = ByteStream.Cons(s10, store(stream));
+        let stream = ByteStream.Cons(s11, store(stream));
+        let stream = ByteStream.Cons(s12, store(stream));
+        let stream = ByteStream.Cons(s13, store(stream));
+        let stream = ByteStream.Cons(s14, store(stream));
+        let stream = ByteStream.Cons(s15, store(stream));
+        let stream = ByteStream.Cons(s16, store(stream));
+        let stream = ByteStream.Cons(s17, store(stream));
+        let stream = ByteStream.Cons(s18, store(stream));
+        let stream = ByteStream.Cons(s19, store(stream));
+        let stream = ByteStream.Cons(s20, store(stream));
+        let stream = ByteStream.Cons(s21, store(stream));
+        let stream = ByteStream.Cons(s22, store(stream));
+        let stream = ByteStream.Cons(s23, store(stream));
+        let stream = ByteStream.Cons(s24, store(stream));
+        let stream = ByteStream.Cons(s25, store(stream));
+        let stream = ByteStream.Cons(s26, store(stream));
+        let stream = ByteStream.Cons(s27, store(stream));
+        let stream = ByteStream.Cons(s28, store(stream));
+        let stream = ByteStream.Cons(s29, store(stream));
+        let stream = ByteStream.Cons(s30, store(stream));
+        let stream = ByteStream.Cons(s31, store(stream));
+        let stream = ByteStream.Cons(t0, store(stream));
+        let stream = ByteStream.Cons(t1, store(stream));
+        let stream = ByteStream.Cons(t2, store(stream));
+        let stream = ByteStream.Cons(t3, store(stream));
+        let stream = ByteStream.Cons(t4, store(stream));
+        let stream = ByteStream.Cons(t5, store(stream));
+        let stream = ByteStream.Cons(t6, store(stream));
+        let stream = ByteStream.Cons(t7, store(stream));
+        let stream = ByteStream.Cons(t8, store(stream));
+        let stream = ByteStream.Cons(t9, store(stream));
+        let stream = ByteStream.Cons(t10, store(stream));
+        let stream = ByteStream.Cons(t11, store(stream));
+        let stream = ByteStream.Cons(t12, store(stream));
+        let stream = ByteStream.Cons(t13, store(stream));
+        let stream = ByteStream.Cons(t14, store(stream));
+        let stream = ByteStream.Cons(t15, store(stream));
+        let stream = ByteStream.Cons(t16, store(stream));
+        let stream = ByteStream.Cons(t17, store(stream));
+        let stream = ByteStream.Cons(t18, store(stream));
+        let stream = ByteStream.Cons(t19, store(stream));
+        let stream = ByteStream.Cons(t20, store(stream));
+        let stream = ByteStream.Cons(t21, store(stream));
+        let stream = ByteStream.Cons(t22, store(stream));
+        let stream = ByteStream.Cons(t23, store(stream));
+        let stream = ByteStream.Cons(t24, store(stream));
+        let stream = ByteStream.Cons(t25, store(stream));
+        let stream = ByteStream.Cons(t26, store(stream));
+        let stream = ByteStream.Cons(t27, store(stream));
+        let stream = ByteStream.Cons(t28, store(stream));
+        let stream = ByteStream.Cons(t29, store(stream));
+        let stream = ByteStream.Cons(t30, store(stream));
+        let stream = ByteStream.Cons(t31, store(stream));
         ByteStream.Cons(tag, store(stream)),
       _ => stream,
     }
