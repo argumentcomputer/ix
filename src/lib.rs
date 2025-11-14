@@ -15,9 +15,8 @@ use rustc_hash::FxBuildHasher;
 pub mod aiur;
 pub mod cons_list;
 pub mod iroh;
-pub mod ixon;
+pub mod ix;
 pub mod lean;
-pub mod lean_env;
 
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 pub type FxIndexSet<K> = IndexSet<K, FxBuildHasher>;
