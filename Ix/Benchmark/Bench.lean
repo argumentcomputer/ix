@@ -304,7 +304,7 @@ def saveResults (benchName : String) (m : MeasurementData) (config : Config) : I
 
 structure OneShot where
   benchTime : Nat
-deriving Lean.ToJson, Lean.FromJson, Repr
+  deriving Lean.ToJson, Lean.FromJson, Repr
 
 def getOneShot: Ixon.GetM OneShot := do
   return { benchTime := (← Ixon.Serialize.get) }
@@ -317,7 +317,7 @@ instance : Ixon.Serialize OneShot where
 inductive BenchResult where
 | oneShot : OneShot → BenchResult
 | sample : Estimates → BenchResult
-deriving Repr
+  deriving Repr
 
 structure BenchReport where
   function: String

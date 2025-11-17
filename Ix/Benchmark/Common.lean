@@ -3,7 +3,7 @@ import Lean.Data.Json
 inductive SamplingMode where
   | flat : SamplingMode
   | linear : SamplingMode
-deriving Repr, BEq
+  deriving Repr, BEq
 
 inductive SerdeFormat where
   | json

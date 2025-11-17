@@ -7,7 +7,7 @@ structure Outliers where
   highMild : Nat
   lowMild : Nat
   lowSevere : Nat
-deriving Repr
+  deriving Repr
 
 def Outliers.getTotal (o : Outliers) : Nat :=
   o.highSevere + o.highMild + o.lowMild + o.lowSevere
