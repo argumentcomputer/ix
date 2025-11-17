@@ -6,3 +6,4 @@ import Ix.GraphM
 import Ix.CondenseM
 import Ix.CompileM
 import Ix.DecompileM
+import Ix.Benchmark.Bench
