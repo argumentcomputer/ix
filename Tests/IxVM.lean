@@ -2,6 +2,7 @@ import Tests.Common
 import Ix.IxVM
 import Ix.Aiur.Simple
 import Ix.Aiur.Compile
+import Ix.Ixon
 import Blake3
 
 def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
@@ -11,6 +12,12 @@ def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
   let output := outputBytes.map .ofUInt8
   let buffer := ⟨input, .ofList [(#[0], ⟨0, size⟩)]⟩ -- key is fixed as #[0]
   ⟨`blake3_test, #[], output, buffer, buffer⟩
+
+def mkIxonSerdeTestCase (ixon : Ixon.Ixon) : AiurTestCase :=
+  let bytes := Ixon.ser ixon |>.data.map .ofUInt8
+  let size := bytes.size
+  let buffer := ⟨bytes, .ofList [(#[0], ⟨0, size⟩)]⟩
+  ⟨`ixon_serde_test, #[], #[], buffer, buffer⟩
 
 def ixTestCases : List AiurTestCase := [
   .noIO `relaxed_u64_succ #[0, 0, 0, 0, 0, 0, 0, 0] #[1, 0, 0, 0, 0, 0, 0, 0],
@@ -38,6 +45,8 @@ def ixTestCases : List AiurTestCase := [
   mkBlake3HashTestCase 3104,
   mkBlake3HashTestCase 3136,
   mkBlake3HashTestCase 3168,
+  mkIxonSerdeTestCase .nanon,
+  mkIxonSerdeTestCase (.nstr default default),
 ]
 
 def Tests.IxVM.suite := [

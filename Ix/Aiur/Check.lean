@@ -27,6 +27,7 @@ inductive CheckError
   | branchMismatch : Typ → Typ → CheckError
   | notAPointer : Typ → CheckError
   | duplicatedBind : Pattern → CheckError
+  | brokenUnconstrainedChain : Global → CheckError
   deriving Repr
 
 instance : ToString CheckError where
@@ -57,6 +58,7 @@ structure CheckContext where
   decls : Decls
   varTypes : Std.HashMap Local Typ
   returnType : Typ
+  unconstrained : Bool
 
 abbrev CheckM := ReaderT CheckContext (Except CheckError)
 
@@ -122,6 +124,8 @@ partial def inferTerm : Term → CheckM TypedTerm
     | some _ => throw $ .notAFunction func
     | none => match ctx.decls.getByKey func with
       | some (.function function) => do
+        if ctx.unconstrained && !function.unconstrained then
+          throw $ .brokenUnconstrainedChain function.name
         let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
         pure $ .mk (.evaluates function.output) (.app func args)
       | some (.constructor dataType constr) => do
@@ -133,6 +137,8 @@ partial def inferTerm : Term → CheckM TypedTerm
     let ctx ← read
     match ctx.decls.getByKey func with
     | some (.function function) =>
+      if ctx.unconstrained && !function.unconstrained then
+        throw $ .brokenUnconstrainedChain function.name
       let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
       pure $ .mk (.evaluates function.output) (.app func args)
     | some (.constructor dataType constr) =>
@@ -409,6 +415,7 @@ def getFunctionContext (function : Function) (decls : Decls) : CheckContext :=
     decls,
     varTypes := .ofList function.inputs
     returnType := function.output
+    unconstrained := function.unconstrained
   }
 
 /--

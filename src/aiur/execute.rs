@@ -159,7 +159,14 @@ impl Function {
             // Prepare outer variables to go into the new func scope.
             fun_idx = *callee_idx;
             let function = &toplevel.functions[fun_idx];
-            unconstrained |= function.unconstrained;
+            if unconstrained {
+              assert!(
+                function.unconstrained,
+                "Unconstrained functions can only call unconstrained functions"
+              );
+            } else {
+              unconstrained = function.unconstrained;
+            }
             multiplicity_incr = G::from_bool(!unconstrained);
             push_block_exec_entries!(&function.body);
           }

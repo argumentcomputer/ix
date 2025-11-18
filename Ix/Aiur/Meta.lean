@@ -121,9 +121,9 @@ syntax "u8_xor" "(" trm ", " trm ")"                          : trm
 syntax "u8_add" "(" trm ", " trm ")"                          : trm
 syntax "dbg!" "(" str (", " trm)? ")" ";" (trm)?              : trm
 
-syntax trm "[" "@" noWs ident "]"                                                      : trm
-syntax "set" "(" trm ", " "@" noWs ident ", " trm ")"                                  : trm
-syntax "fold" "(" num ".." num ", " trm ", " "|" ident ", " "@" noWs ident "|" trm ")" : trm
+syntax trm "[" "@" noWs ident "]"                                                        : trm
+syntax "set" "(" trm ", " "@" noWs ident ", " trm ")"                                    : trm
+syntax "fold" "(" num ".." num ", " trm ", " "|" pattern ", " "@" noWs ident "|" trm ")" : trm
 
 partial def elabTrm : ElabStxCat `trm
   | `(trm| .$i:ident) => do
@@ -219,10 +219,14 @@ partial def elabTrm : ElabStxCat `trm
       | some t => mkAppM ``Option.some #[← elabTrm t]
     mkAppM ``Term.debug #[mkStrLit label.getString, t, ← elabRet ret]
   | `(trm| fold($i .. $j, $init, |$acc, @$v| $body)) => do
+    let i := i.getNat
+    let j := j.getNat
+    let range := if i ≤ j then List.range' i (j - i)
+      else (List.range' j (i - j)).reverse
     let mut res := init
-    for n in [i.getNat:j.getNat] do
+    for n in range do
       let body' ← replaceToken v.getId n body
-      res ← `(trm| let $acc:ident = $res; $body')
+      res ← `(trm| let $acc = $res; $body')
     elabTrm res
   | `(trm| $_[@$var]) => throw $ .error var "Unbound macro variable"
   | `(trm| set($_, @$var, $_)) => throw $ .error var "Unbound macro variable"
