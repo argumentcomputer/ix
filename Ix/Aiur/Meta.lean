@@ -450,8 +450,8 @@ def elabToplevel : ElabStxCat `toplevel
   | `(toplevel| $[$ds:declaration]*) => do
     let (dataTypes, functions) ← ds.foldlM (init := default) accElabDeclarations
     mkAppM ``Toplevel.mk #[
-      ← mkListLit (mkConst ``DataType) dataTypes.toList,
-      ← mkListLit (mkConst ``Function) functions.toList,
+      ← mkArrayLit (mkConst ``DataType) dataTypes.toList,
+      ← mkArrayLit (mkConst ``Function) functions.toList,
     ]
   | stx => throw $ .error stx "Invalid syntax for toplevel"
 

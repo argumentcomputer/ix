@@ -65,5 +65,5 @@ def ixTestCases : List AiurTestCase := [
 ]
 
 def Tests.IxVM.suite := [
-  mkAiurTests ixVM ixTestCases
+  mkAiurTests IxVM.ixVM ixTestCases
 ]

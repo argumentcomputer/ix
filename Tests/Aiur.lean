@@ -215,5 +215,5 @@ def aiurTestCases : List AiurTestCase := [
   ]
 
 def Tests.Aiur.suite := [
-  mkAiurTests toplevel aiurTestCases
+  mkAiurTests (pure toplevel) aiurTestCases
 ]
