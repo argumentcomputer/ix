@@ -281,6 +281,65 @@ def ixVM := ⟦
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.NStr(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(2, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.NNum(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(3, _) => Ixon.UZero,
+      ByteStream.Cons(4, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.USucc(Address.Bytes(addr)),
+      ByteStream.Cons(5, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.UMax(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(6, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.UIMax(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(128, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ESort(Address.Bytes(addr)),
+      ByteStream.Cons(129, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.EStr(Address.Bytes(addr)),
+      ByteStream.Cons(130, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ENat(Address.Bytes(addr)),
+      ByteStream.Cons(131, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.EApp(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(132, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ELam(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(133, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.EAll(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(134, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ELet(0, Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
+      ByteStream.Cons(135, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ELet(1, Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
     }
   }
 

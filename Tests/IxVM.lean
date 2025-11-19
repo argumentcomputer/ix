@@ -49,6 +49,19 @@ def ixTestCases : List AiurTestCase := [
   mkBlake3HashTestCase 3168,
   mkIxonSerdeTestCase .nanon,
   mkIxonSerdeTestCase (.nstr default default),
+  mkIxonSerdeTestCase (.nnum default default),
+  mkIxonSerdeTestCase .uzero,
+  mkIxonSerdeTestCase (.usucc default),
+  mkIxonSerdeTestCase (.umax default default),
+  mkIxonSerdeTestCase (.uimax default default),
+  mkIxonSerdeTestCase (.esort default),
+  mkIxonSerdeTestCase (.estr default),
+  mkIxonSerdeTestCase (.enat default),
+  mkIxonSerdeTestCase (.eapp default default),
+  mkIxonSerdeTestCase (.elam default default),
+  mkIxonSerdeTestCase (.eall default default),
+  mkIxonSerdeTestCase (.elet false default default default),
+  mkIxonSerdeTestCase (.elet true default default default),
 ]
 
 def Tests.IxVM.suite := [
