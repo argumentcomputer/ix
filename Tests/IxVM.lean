@@ -14,10 +14,12 @@ def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
   ⟨`blake3_test, #[], output, buffer, buffer⟩
 
 def mkIxonSerdeTestCase (ixon : Ixon.Ixon) : AiurTestCase :=
-  let bytes := Ixon.ser ixon |>.data.map .ofUInt8
+  let bytes := Ixon.ser ixon
   let size := bytes.size
-  let buffer := ⟨bytes, .ofList [(#[0], ⟨0, size⟩)]⟩
-  ⟨`ixon_serde_test, #[], #[], buffer, buffer⟩
+  let ⟨⟨hash⟩, _⟩ := Blake3.hash bytes
+  let hashG := hash.map .ofUInt8
+  let buffer := ⟨bytes.data.map .ofUInt8, .ofList [(hashG, ⟨0, size⟩)]⟩
+  ⟨`ixon_blake3_test, hashG, #[], buffer, buffer⟩
 
 def ixTestCases : List AiurTestCase := [
   .noIO `relaxed_u64_succ #[0, 0, 0, 0, 0, 0, 0, 0] #[1, 0, 0, 0, 0, 0, 0, 0],
