@@ -37,7 +37,7 @@ structure Distributions where
   medianAbsDevs : Distribution
   slope : Option (Distribution)
   stdDevs : Distribution
-deriving Inhabited
+  deriving Inhabited
 
 def Distribution.confidenceInterval (dist : Distribution) (confidenceLevel : Float) : ConfidenceInterval :=
   let lowerBound := (dist.percentile? (50 * (1 - confidenceLevel))).get!

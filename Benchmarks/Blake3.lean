@@ -2,6 +2,7 @@ import Ix.IxVM
 import Ix.Aiur.Simple
 import Ix.Aiur.Compile
 import Ix.Aiur.Protocol
+import Ix.Benchmark.Bench
 
 abbrev dataSizes := #[64, 128, 256, 512, 1024, 2048]
 abbrev numHashesPerProof := #[1, 2, 4, 8, 16, 32]
@@ -16,9 +17,16 @@ def friParameters : Aiur.FriParameters := {
   proofOfWorkBits := 20
 }
 
-def runBenches (aiurSystem : Aiur.AiurSystem) (funIdx : Nat) :
-    IO $ Array (Nat × Float) := do
-  let mut results := Array.emptyWithCapacity $ dataSizes.size * numHashesPerProof.size
+def blake3Bench : IO $ Array BenchReport := do
+  let .ok ixVM := IxVM.ixVM
+    | throw (IO.userError "IxVM merging failed")
+  let some funIdx := ixVM.getFuncIdx `blake3_bench
+    | throw (IO.userError "Aiur function not found")
+  let .ok decls := ixVM.checkAndSimplify
+    | throw (IO.userError "Simplification failed")
+  let aiurSystem := Aiur.AiurSystem.build decls.compile commitmentParameters
+
+  let mut benches := Array.emptyWithCapacity $ dataSizes.size * numHashesPerProof.size
   for dataSize in dataSizes do
     for numHashes in numHashesPerProof do
       let ioBuffer := Array.range numHashes |>.foldl
@@ -31,35 +39,27 @@ def runBenches (aiurSystem : Aiur.AiurSystem) (funIdx : Nat) :
           { ioBuffer with
               data := ioBuffer.data ++ data
               map := ioBuffer.map.insert #[.ofNat idx] ioKeyInfo }
-      IO.print s!"Proving for dataSize={dataSize}, numHashes={numHashes} "
-      let startMs ← IO.monoMsNow
-      let (claim, proof, _) := aiurSystem.prove friParameters funIdx
-        #[Aiur.G.ofNat numHashes] ioBuffer
-      let finishedMs ← IO.monoMsNow
-      let elapsedMs := finishedMs - startMs
-      let elapsed := elapsedMs.toFloat / 1000.0
-      IO.print s!"{elapsed}s "
-      let verified := aiurSystem.verify friParameters claim proof |>.isOk
-      if verified then println! "✓" else println! "✕"
-      results := results.push (dataSize * numHashes, elapsed)
-  pure results
+      benches := benches.push <| bench s!"prove blake3 dataSize={dataSize} numHashes={numHashes}" (aiurSystem.prove friParameters funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
+  bgroup "blake3" benches.toList { oneShot := true }
 
-def main (_args : List String) : IO Unit := do
-  let .ok ixVM := IxVM.ixVM
-    | println! "IxVM merging failed"; return
-  let some funIdx := ixVM.getFuncIdx `blake3_bench
-    | println! "Aiur function not found"; return
-  let .ok decls := ixVM.checkAndSimplify
-    | println! "Simplification failed"; return
-  let aiurSystem := Aiur.AiurSystem.build decls.compile commitmentParameters
-  let results ← runBenches aiurSystem funIdx
+def parseFunction (words : List String) (param : String): Option String :=
+  words.find? (·.startsWith param) |> .map (·.stripPrefix param)
+
+def main : IO Unit := do
+  let result ← blake3Bench
 
   let mut sumWeights := 0.0
   let mut weightedSum := 0.0
-  for (size, time) in results do
-    let sizeFloat := size.toFloat
-    let throughput := sizeFloat / time
+  for report in result do
+    let words := report.function.splitOn
+    let dataSize := (parseFunction words "dataSize=").get!.toNat!
+    let numHashes := (parseFunction words "numHashes=").get!.toNat!
+    let sizeFloat := (dataSize * numHashes).toFloat
+    let throughput := sizeFloat / (report.newBench.getTime.toSeconds )
+    println! "Throughput: {throughput}"
     weightedSum := weightedSum + sizeFloat * throughput
     sumWeights := sumWeights + sizeFloat
   let avgThroughput := weightedSum / sumWeights
-  println! s!"Average throughput: {avgThroughput.toUSize} bytes/s"
+  println! "Average throughput: {avgThroughput.toUSize} bytes/s"
+
+

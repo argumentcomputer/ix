@@ -319,6 +319,14 @@ inductive BenchResult where
 | sample : Estimates → BenchResult
   deriving Repr
 
+def BenchResult.getTime (bench: BenchResult) : Float :=
+  match bench with
+  | oneShot o => o.benchTime.toFloat
+  | sample s => s.mean.pointEstimate
+
+-- TODO: Include input parameters if specified for post-processing
+-- E.g. Blake3 bench wants to have `dataSize` and `numHashes`
+-- Currently has to parse this from the `function` string
 structure BenchReport where
   function: String
   newBench : BenchResult
@@ -342,8 +350,8 @@ def oneShotBench {α β : Type} (bench: Benchmarkable α β) (config : Config) :
     | .json => loadJson OneShot newFile
     | .ixon => loadIxon OneShot newFile
     let baseTime := baseBench.benchTime.toFloat
-    let percentChange := 100 * (benchTime.toFloat - baseTime) / baseTime
-    let percentChangeStr := percentChange.floatPretty 2
+    let percentChange := (benchTime.toFloat - baseTime) / baseTime
+    let percentChangeStr := (100 * percentChange).floatPretty 2
     let percentChangeStr :=
       if percentChange < 0 then s!"{percentChangeStr.drop 1}% faster"
       else if percentChange > 0 then s!"{percentChangeStr}% slower"
@@ -456,7 +464,7 @@ def mkReportPretty (groupName : String) (report : Array BenchReport) : String :=
 
 -- TODO: Make sure compiler isn't caching partial evaluation result for future runs of the same function (measure first vs subsequent runs)
 /-- Runs each benchmark in a `BenchGroup` and analyzes the results -/
-def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) (config : Config := {}) : IO Unit := do
+def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) (config : Config := {}) : IO $ Array BenchReport := do
   let config ← getConfigEnv config
   let bg : BenchGroup := { name, config }
   IO.println s!"Running bench group {name}\n"
@@ -498,7 +506,6 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
     let table := mkReportPretty name reports
     IO.println table
     IO.FS.writeFile (System.mkFilePath [".", s!"benchmark-report-{name}.md"]) table
-  else
-    return
+  return reports
 
 
