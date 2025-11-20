@@ -63,7 +63,7 @@ mutual
 inductive Term
   | unit
   | var : Local → Term
-  | unsafeCast : Term → Typ → Term
+  -- | unsafeCast : Term → Typ → Term
   | ref : Global → Term
   | data : Data → Term
   | ret : Term → Term
@@ -120,7 +120,7 @@ mutual
 inductive TypedTermInner
   | unit
   | var : Local → TypedTermInner
-  | unsafeCast : TypedTermInner → Typ → TypedTermInner
+  -- | unsafeCast : TypedTermInner → Typ → TypedTermInner
   | ref : Global → TypedTermInner
   | data : TypedData → TypedTermInner
   | ret : TypedTerm → TypedTermInner

@@ -46,6 +46,10 @@ def toplevel := ⟦
     Succ(&Nat)
   }
 
+  -- fn cast_zero() -> (G, G) {
+  --   cast(Nat.Zero, (G, G))
+  -- }
+
   fn even(m: Nat) -> G {
     match m {
       Nat.Zero => 1,
@@ -186,6 +190,7 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `sum_prod #[2, 3, 4] #[20],
     .noIO `eq_zero_dummy #[0, 37] #[1, 0, 1, 0],
     .noIO `store_and_load #[42] #[42],
+    -- .noIO `cast_zero #[] #[0, 0],
     .noIO `is_0_even #[] #[1],
     .noIO `is_1_even #[] #[0],
     .noIO `is_2_even #[] #[1],

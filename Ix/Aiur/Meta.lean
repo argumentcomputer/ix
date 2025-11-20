@@ -88,6 +88,7 @@ partial def elabTyp : ElabStxCat `typ
 
 declare_syntax_cat                                              trm
 syntax ("." noWs)? ident                                      : trm
+-- syntax "cast" "(" trm ", " typ ")"                            : trm
 syntax num                                                    : trm
 syntax "(" trm (", " trm)* ")"                                : trm
 syntax "[" trm (", " trm)* "]"                                : trm
@@ -134,6 +135,8 @@ partial def elabTrm : ElabStxCat `trm
     | name@(.str _ _) => do
       mkAppM ``Term.ref #[← mkAppM ``Global.mk #[toExpr name]]
     | _ => throw $ .error i "Illegal name"
+  -- | `(trm| cast($t:trm, $ty:typ)) => do
+  --   mkAppM ``Term.unsafeCast #[← elabTrm t, ← elabTyp ty]
   | `(trm| $n:num) => do
     let data ← mkAppM ``Data.field #[← elabG n]
     mkAppM ``Term.data #[data]
