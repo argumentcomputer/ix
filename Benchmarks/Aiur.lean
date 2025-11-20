@@ -84,26 +84,26 @@ def toplevelBench := bgroup "nat_fib" [
   bench "simplify toplevel" Aiur.Toplevel.checkAndSimplify toplevel
 ]
 
-def compileBench : IO Unit := do
+def compileBench : IO $ Array BenchReport := do
   match toplevel.checkAndSimplify with
-  | .error e => IO.eprintln e
+  | .error e => throw (IO.userError s!"{repr e}")
   | .ok decls =>
     bgroup "nat_fib" [
       bench "compile decls" Aiur.TypedDecls.compile decls
     ]
 
-def buildAiurSystemBench : IO Unit := do
+def buildAiurSystemBench : IO $ Array BenchReport := do
   match toplevel.checkAndSimplify with
-  | .error e => IO.eprintln e
+  | .error e => throw (IO.userError s!"{repr e}")
   | .ok decls =>
     let bytecode := decls.compile
     bgroup "nat_fib" [
       bench "build AiurSystem" (Aiur.AiurSystem.build bytecode) commitmentParameters
-    ]
+    ] { serde := .ixon }
 
-def proveBench : IO Unit := do
+def proveBench : IO $ Array BenchReport := do
   match toplevel.checkAndSimplify with
-  | .error e => IO.eprintln e
+  | .error e => throw (IO.userError s!"{repr e}")
   | .ok decls =>
     let bytecode := decls.compile
     let system := Aiur.AiurSystem.build bytecode commitmentParameters
@@ -112,9 +112,9 @@ def proveBench : IO Unit := do
       bench "prove fib 10" (Aiur.AiurSystem.prove system friParameters funIdx #[10]) default,
     ]
 
-def verifyBench : IO Unit := do
+def verifyBench : IO $ Array BenchReport := do
   match toplevel.checkAndSimplify with
-  | .error e => IO.eprintln e
+  | .error e => throw (IO.userError s!"{repr e}")
   | .ok decls =>
     let bytecode := decls.compile
     let system := Aiur.AiurSystem.build bytecode commitmentParameters
@@ -125,4 +125,5 @@ def verifyBench : IO Unit := do
     ]
 
 def main (_args : List String) : IO Unit := do
-  let _result ← proveBench
+  -- let _result ← proveBench
+  let _result ← buildAiurSystemBench

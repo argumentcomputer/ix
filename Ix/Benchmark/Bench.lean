@@ -1,4 +1,3 @@
-import Ix.Ixon
 import Ix.Address
 import Ix.Meta
 import Ix.CompileM
@@ -6,9 +5,7 @@ import Ix.Cronos
 import Ix.Address
 import Batteries
 
-import Ix.Benchmark.Ixon
-import Lean.Data.Json.FromToJson
-import Lean.Data.Json.FromToJson.Basic
+import Ix.Benchmark.Serde
 import Ix.Benchmark.Tukey
 
 open Batteries (RBMap)
@@ -76,7 +73,23 @@ def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable α β) : IO Float
   --IO.println s!"{bench.name} warmup avg: {mean}ns"
   return mean
 
--- TODO: Combine with other sampling functions, DRY
+def printRunning (config : Config) (expectedTime : Float) (numIters : Nat) (warningFactor : Nat) : IO Unit := do
+  if warningFactor == 1 then
+    IO.eprintln s!"Warning: Unable to complete {config.numSamples} samples in {config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
+  IO.println s!"Running {config.numSamples} samples in {expectedTime.floatPretty 2}s ({numIters.natPretty} iterations)\n"
+
+-- Core sampling loop that runs the benchmark function and returns the array of measured timings
+def runSample (sampleIters : Array Nat) (bench : Benchmarkable α β) : IO (Array Nat) := do
+  let func := bench.getFn
+  let mut timings : Array Nat := #[]
+  for iters in sampleIters do
+    let start ← IO.monoNanosNow
+    for _i in Array.range iters do
+      let _res ← func bench.arg
+    let finish ← IO.monoNanosNow
+    timings := timings.push (finish - start)
+  return timings
+
 -- TODO: Recommend sample count if expectedTime >>> bg.config.sampleTime (i.e. itersPerSample == 1)
 /--
 Runs the sample as a sequence of constant iterations per data point, where the iteration count attempts to fit into the configurable `sampleTime` but cannot be less than 1.
@@ -90,20 +103,10 @@ def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
   let itersPerSample := (timePerSample / warmupMean).ceil.toUInt64.toNat.max 1
   let totalIters := itersPerSample * bg.config.numSamples
   let expectedTime := warmupMean * Float.ofNat itersPerSample * bg.config.numSamples.toSeconds
-  if itersPerSample == 1
-  then
-    IO.eprintln s!"Warning: Unable to complete {bg.config.numSamples} samples in {bg.config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
-  IO.println s!"Running {bg.config.numSamples} samples in {expectedTime.floatPretty 2}s ({totalIters.natPretty} iterations)\n"
+  printRunning bg.config expectedTime totalIters itersPerSample
   --IO.println s!"Flat sample. Iters per sample: {itersPerSample}"
-  let func := bench.getFn
-  let mut timings : Array Nat := #[]
   let sampleIters := Array.replicate bg.config.numSamples itersPerSample
-  for iters in sampleIters do
-    let start ← IO.monoNanosNow
-    for _i in Array.range iters do
-      let _res ← func bench.arg
-    let finish ← IO.monoNanosNow
-    timings := timings.push (finish - start)
+  let timings ← runSample sampleIters bench
   return (sampleIters, timings)
 
 /--
@@ -116,24 +119,14 @@ Returns the iteration counts and elapsed time per sample.
 def BenchGroup.sampleLinear (bg : BenchGroup) (bench : Benchmarkable α β) (warmupMean : Float) : IO (Array Nat × Array Nat) := do
   let totalRuns := bg.config.numSamples * (bg.config.numSamples + 1) / 2
   let targetTime := bg.config.sampleTime.toNanos
+  -- `d` has a minimum value of 1 if the `warmupMean` is sufficiently large
+  -- If so, that likely means the benchmark takes too long and target time should be increased, as well as considering other config options like flat sampling mode
   let d := (targetTime / warmupMean / (Float.ofNat totalRuns)).ceil.toUInt64.toNat.max 1
   let expectedTime := (Float.ofNat totalRuns) * (Float.ofNat d) * warmupMean.toSeconds
   let sampleIters := (Array.range bg.config.numSamples).map (fun x => (x + 1) * d)
-  -- `d` has a minimum value of 1 if the `warmupMean` is sufficiently large
-  -- If so, that likely means the benchmark takes too long and target time should be increased, as well as other config options like flat sampling mode
-  if d == 1
-  then
-    IO.eprintln s!"Warning: Unable to complete {bg.config.numSamples} samples in {bg.config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
-  IO.println s!"Running {bg.config.numSamples} samples in {expectedTime.floatPretty 2}s ({sampleIters.sum.natPretty} iterations)\n"
+  printRunning bg.config expectedTime sampleIters.sum d
   --IO.println s!"Linear sample. Iters increase by a factor of {d} per sample"
-  let func := bench.getFn
-  let mut timings : Array Nat := #[]
-  for iters in sampleIters do
-    let start ← IO.monoNanosNow
-    for _i in Array.range iters do
-      let _res ← func bench.arg
-    let finish ← IO.monoNanosNow
-    timings := timings.push (finish - start)
+  let timings ← runSample sampleIters bench
   return (sampleIters, timings)
 
 def BenchGroup.sample (bg : BenchGroup) (bench : Benchmarkable α β) (warmupMean : Float) : IO (Array Nat × Array Nat) := do
@@ -177,21 +170,6 @@ def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Es
     baseEstimates
   }
 
-def loadJson (α) [Lean.FromJson α] (path : System.FilePath) : IO α := do
-  let jsonStr ← IO.FS.readFile path
-  let json ← match Lean.Json.parse jsonStr with
-  | .ok js => pure js
-  | .error e => throw $ IO.userError s!"{repr e}"
-  match Lean.fromJson? json with
-  | .ok d => pure d
-  | .error e => throw $ IO.userError s!"{repr e}"
-
-def loadIxon (α) [Ixon.Serialize α] (path : System.FilePath) : IO α := do
-  let ixonBytes ← IO.FS.readBinFile path
-  match Ixon.de ixonBytes with
-  | .ok d => pure d
-  | .error e => throw $ IO.userError s!"expected a, go {repr e}"
-
 -- TODO: Don't compare if different sampling modes were used
 /-- Retrieves prior bench result from disk and runs the comparison -/
 def BenchGroup.getComparison (bg : BenchGroup) (benchName : String) (avgTimes : Distribution) (config: Config) : IO (Option ComparisonData) := do
@@ -200,15 +178,8 @@ def BenchGroup.getComparison (bg : BenchGroup) (benchName : String) (avgTimes : 
   -- Base data is at `new` since we haven't written the latest result to disk yet, which moves the prior data to `base`
   let basePath := benchPath / "new"
   if (← System.FilePath.pathExists (basePath / s!"estimates.{fileExt}")) then do
-    let (baseSample, baseEstimates) ← match config.serde with
-    | .json => do
-      let baseSample ← loadJson Data (basePath / "sample.json")
-      let baseEstimates ← loadJson Estimates (basePath / "estimates.json")
-      pure (baseSample, baseEstimates)
-    | .ixon => do
-      let baseSample ← loadIxon Data (basePath / "sample.ixon")
-      let baseEstimates ← loadIxon Estimates (basePath / "estimates.ixon")
-      pure (baseSample, baseEstimates)
+    let baseSample : Data ← loadFile config.serde (basePath / s!"sample.{fileExt}")
+    let baseEstimates : Estimates ← loadFile config.serde (basePath / s!"estimates.{fileExt}")
     let gen ← IO.stdGenRef.get
     return some $ bg.compare baseSample baseEstimates avgTimes gen
   else
@@ -263,22 +234,10 @@ def BenchGroup.printResults (bg : BenchGroup) (benchName : String) (m : Measurem
   IO.println ""
   m.avgTimes.tukey
 
-/-- Writes JSON to disk at `benchPath/fileName` -/
-def storeJson [Lean.ToJson α] (data : α) (benchPath : System.FilePath) : IO Unit := do
-  let json := Lean.toJson data
-  IO.FS.writeFile benchPath json.pretty
-
-/-- Writes Ixon to disk at `benchPath/fileName` -/
-def storeIxon [Ixon.Serialize α] (data : α) (benchPath : System.FilePath) : IO Unit := do
-  let ixon := Ixon.ser data
-  IO.FS.writeBinFile benchPath ixon
-
 -- TODO: Write sampling mode and config in `sample.json` for comparison
 def saveComparison (benchName : String) (comparison : ComparisonData) (config : Config) : IO Unit := do
   let changePath := System.mkFilePath [".", ".lake", "benches", benchName, "change"]
-  match config.serde with
-  | .json => storeJson comparison.relativeEstimates (changePath / "estimates.json")
-  | .ixon => storeIxon comparison.relativeEstimates (changePath / "estimates.ixon")
+  storeFile config.serde comparison.relativeEstimates (changePath / s!"estimates.{toString config.serde}")
 
 -- Results are always saved to `.lake/benches/<benchName>/new`. If files of the same serde format already exist from a prior run, move them to `base`
 def saveResults (benchName : String) (m : MeasurementData) (config : Config) : IO Unit := do
@@ -294,24 +253,9 @@ def saveResults (benchName : String) (m : MeasurementData) (config : Config) : I
     let _ ← IO.Process.run { cmd := "mv", args := #[estimatesFile.toString, sampleFile.toString, baseDir] }
     if let some compData := m.comparison then saveComparison benchName compData config
     else IO.eprintln s!"Error: expected `comparisonData` to write but found none"
-  match config.serde with
-  | .json =>
-    storeJson m.data (newPath / "sample.json")
-    storeJson m.absoluteEstimates (newPath / "estimates.json")
-  | .ixon =>
-    storeIxon m.data (newPath / "sample.ixon")
-    storeIxon m.absoluteEstimates (newPath / "estimates.ixon")
-
-structure OneShot where
-  benchTime : Nat
-  deriving Lean.ToJson, Lean.FromJson, Repr
-
-def getOneShot: Ixon.GetM OneShot := do
-  return { benchTime := (← Ixon.Serialize.get) }
-
-instance : Ixon.Serialize OneShot where
-  put os := Ixon.Serialize.put os.benchTime
-  get := getOneShot
+  let fileExt := toString config.serde
+  storeFile config.serde m.data (newPath / s!"sample.{fileExt}")
+  storeFile config.serde m.data (newPath / s!"estimates.{fileExt}")
 
 -- TODO: Use a typeclass instead?
 inductive BenchResult where
@@ -333,6 +277,12 @@ structure BenchReport where
   baseBench : Option BenchResult
   percentChange : Option Float
 
+def percentChangeToString (pc : Float) : String :=
+  let rounded := (100 * pc).floatPretty 2
+  if pc < 0 then s!"{rounded.drop 1}% faster"
+  else if pc > 0 then s!"{rounded}% slower"
+  else "No change"
+
 def oneShotBench {α β : Type} (bench: Benchmarkable α β) (config : Config) : IO BenchReport := do
   let start ← IO.monoNanosNow
   let _res ← bench.getFn bench.arg
@@ -346,17 +296,10 @@ def oneShotBench {α β : Type} (bench: Benchmarkable α β) (config : Config) :
   let fileExt := toString config.serde
   let newFile := newPath / s!"one-shot.{fileExt}"
   let (baseBench, percentChange) ← if (← System.FilePath.pathExists newFile) then do
-    let baseBench ← match config.serde with
-    | .json => loadJson OneShot newFile
-    | .ixon => loadIxon OneShot newFile
+    let baseBench : OneShot ← loadFile config.serde newFile
     let baseTime := baseBench.benchTime.toFloat
     let percentChange := (benchTime.toFloat - baseTime) / baseTime
-    let percentChangeStr := (100 * percentChange).floatPretty 2
-    let percentChangeStr :=
-      if percentChange < 0 then s!"{percentChangeStr.drop 1}% faster"
-      else if percentChange > 0 then s!"{percentChangeStr}% slower"
-      else "No change"
-    IO.println s!"change: {percentChangeStr}"
+    IO.println s!"change: {percentChangeToString percentChange}"
     let _ ← IO.Process.run { cmd := "mv", args := #[newFile.toString, (benchPath / "base").toString] }
     pure (some baseBench, some percentChange)
   else
@@ -364,9 +307,7 @@ def oneShotBench {α β : Type} (bench: Benchmarkable α β) (config : Config) :
     pure (.none, .none)
   let newBench : OneShot := { benchTime }
   IO.println ""
-  match config.serde with
-  | .json => storeJson newBench newFile
-  | .ixon => storeIxon newBench newFile
+  storeFile config.serde newBench newFile
   let benchReport : BenchReport := { function := bench.name, newBench := (.oneShot newBench), baseBench := (baseBench).map .oneShot, percentChange }
   return benchReport
 
@@ -385,21 +326,13 @@ def getColumnWidths (report : Array BenchReport) : ColumnWidths := Id.run do
   for row in report do
     let fnLen := row.function.length
     if fnLen > maxFunctionLen then maxFunctionLen := fnLen
-    let newLen := match row.newBench with
-    | .oneShot o => o.benchTime.toFloat.formatNanos.length 
-    | .sample s => s.mean.pointEstimate.formatNanos.length
+    let newLen := row.newBench.getTime.formatNanos.length
     if newLen > maxNewLen then maxNewLen := newLen
     if let some baseBench := row.baseBench then
-      let baseLen := match baseBench with
-      | .oneShot o => o.benchTime.toFloat.formatNanos.length
-      | .sample s => s.mean.pointEstimate.formatNanos.length
+      let baseLen := baseBench.getTime.formatNanos.length
       if baseLen > maxBaseLen then maxBaseLen := baseLen
     if let some percentChange := row.percentChange then
-      let percentChangeStr := (percentChange * 100).floatPretty 2
-      let percentChangeStr :=
-        if percentChange < 0 then s!"{percentChangeStr.drop 1}% faster"
-        else if percentChange > 0 then s!"{percentChangeStr}% slower"
-        else "No change"
+      let percentChangeStr := percentChangeToString percentChange
       let percentLen := percentChangeStr.length
       if percentLen > maxPercentLen then
         maxPercentLen := percentLen
@@ -440,21 +373,14 @@ def mkReportPretty (groupName : String) (report : Array BenchReport) : String :=
   let mut reportPretty := title ++ header ++ dashes
   for row in report do
     let functionStr := padWhitespace row.function columnWidths.function
-    let newBenchStr := match row.newBench with
-    | .oneShot o => o.benchTime.toFloat.formatNanos
-    | .sample s => s.mean.pointEstimate.formatNanos
+    let newBenchStr := row.newBench.getTime.formatNanos
     let newBenchStr := padWhitespace newBenchStr columnWidths.newBench
     let baseBenchStr := if let some baseBench := row.baseBench then
-      match baseBench with
-      | .oneShot o => o.benchTime.toFloat.formatNanos
-      | .sample s => s.mean.pointEstimate.formatNanos
+      baseBench.getTime.formatNanos
     else "None"
     let baseBenchStr := padWhitespace baseBenchStr columnWidths.baseBench
     let percentChangeStr := if let some percentChange := row.percentChange then
-      let percentChangeStr := (percentChange * 100).floatPretty 2
-      if percentChange < 0 then s!"{percentChangeStr.drop 1}% faster"
-      else if percentChange > 0 then s!"{percentChangeStr}% slower"
-      else "No change"
+      percentChangeToString percentChange
     else "N/A" 
     let percentChangeStr := padWhitespace percentChangeStr columnWidths.percentChange
     let rowPretty :=
@@ -507,5 +433,4 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
     IO.println table
     IO.FS.writeFile (System.mkFilePath [".", s!"benchmark-report-{name}.md"]) table
   return reports
-
 

@@ -1,5 +1,3 @@
-import Lean.Data.Json
-
 inductive SamplingMode where
   | flat : SamplingMode
   | linear : SamplingMode
