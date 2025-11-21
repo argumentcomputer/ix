@@ -45,6 +45,8 @@ def runBenches (aiurSystem : Aiur.AiurSystem) (funIdx : Nat) :
   pure results
 
 def main (_args : List String) : IO Unit := do
+  let .ok ixVM := IxVM.ixVM
+    | println! "IxVM merging failed"; return
   let some funIdx := ixVM.getFuncIdx `blake3_bench
     | println! "Aiur function not found"; return
   let .ok decls := ixVM.checkAndSimplify
