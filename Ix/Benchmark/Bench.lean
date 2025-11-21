@@ -140,6 +140,7 @@ inductive Throughput where
 | BytesDecimal (n : UInt64)
 | Elements (n : UInt64)
 | Bits (n : UInt64)
+  deriving Repr
 
 structure MeasurementData where
   data : Data
@@ -148,6 +149,7 @@ structure MeasurementData where
   distributions : Distributions
   comparison : Option ComparisonData
   throughput : Option Throughput
+  deriving Repr
 
 /-- Compares bench results against prior run, using T-test to determine statistical significance -/
 def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Estimates) (avgTimes : Distribution) (gen : StdGen) : ComparisonData :=
@@ -173,7 +175,7 @@ def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Es
 -- TODO: Don't compare if different sampling modes were used
 /-- Retrieves prior bench result from disk and runs the comparison -/
 def BenchGroup.getComparison (bg : BenchGroup) (benchName : String) (avgTimes : Distribution) (config: Config) : IO (Option ComparisonData) := do
-  let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
+  let benchPath := System.mkFilePath [".", ".lake", "benches", bg.name, benchName]
   let fileExt := toString config.serde
   -- Base data is at `new` since we haven't written the latest result to disk yet, which moves the prior data to `base`
   let basePath := benchPath / "new"
@@ -204,6 +206,7 @@ def compareToThreshold (estimate : Estimate) (noiseThreshold : Float) : Comparis
   else
     ComparisonResult.NonSignificant
 
+
 -- TODO: Print ~24 whitespace characters before time, change, regression
 def BenchGroup.printResults (bg : BenchGroup) (benchName : String) (m : MeasurementData) : IO Unit := do
   let estimates := m.absoluteEstimates
@@ -215,12 +218,12 @@ def BenchGroup.printResults (bg : BenchGroup) (benchName : String) (m : Measurem
   IO.println s!"time:   [{lb} {pointEst} {ub}]"
   if let some comp := m.comparison
   then
-    let diffMean := comp.pValue < comp.significanceThreshold
+    let diffMean := comp.pValue > comp.significanceThreshold
     let meanEst := comp.relativeEstimates.mean
     let pointEst := (meanEst.pointEstimate * 100).floatPretty 4
     let lb := (meanEst.confidenceInterval.lowerBound * 100).floatPretty 4
     let ub := (meanEst.confidenceInterval.upperBound * 100).floatPretty 4
-    let symbol := if diffMean then "<" else ">"
+    let symbol := if diffMean then ">" else "<"
     IO.println s!"change: [{lb}% {pointEst}% {ub}%] (p = {comp.pValue.floatPretty 2} {symbol} {comp.significanceThreshold.floatPretty 2})"
     let explanation := if diffMean
     then
@@ -235,27 +238,35 @@ def BenchGroup.printResults (bg : BenchGroup) (benchName : String) (m : Measurem
   m.avgTimes.tukey
 
 -- TODO: Write sampling mode and config in `sample.json` for comparison
-def saveComparison (benchName : String) (comparison : ComparisonData) (config : Config) : IO Unit := do
-  let changePath := System.mkFilePath [".", ".lake", "benches", benchName, "change"]
+def saveComparison (groupName : String) (benchName : String) (comparison : ComparisonData) (config : Config) : IO Unit := do
+  let changePath := System.mkFilePath [".", ".lake", "benches", groupName, benchName, "change"]
   storeFile config.serde comparison.relativeEstimates (changePath / s!"estimates.{toString config.serde}")
 
--- Results are always saved to `.lake/benches/<benchName>/new`. If files of the same serde format already exist from a prior run, move them to `base`
-def saveResults (benchName : String) (m : MeasurementData) (config : Config) : IO Unit := do
-  let benchPath := System.mkFilePath [".", ".lake", "benches", benchName]
+def mkDirs (groupName : String) (benchName : String) : IO (System.FilePath × System.FilePath) := do
+  let benchPath := System.mkFilePath [".", ".lake", "benches", groupName, benchName]
   let (basePath, changePath, newPath) := (benchPath / "base", benchPath / "change", benchPath / "new")
   let (baseDir, changeDir, newDir) := (basePath.toString, changePath.toString, newPath.toString)
   let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", baseDir, changeDir, newDir] }
-  let fileExt := toString config.serde
-  let (estimatesFile, sampleFile) := (newPath / s!"estimates.{fileExt}", newPath / s!"sample.{fileExt}")
-  if (← System.FilePath.pathExists estimatesFile) && (← System.FilePath.pathExists sampleFile)
-  then do
+  return (basePath, newPath)
+
+def moveBaseFile (file : System.FilePath) (baseDir : String) : IO Unit := do
+  if (← System.FilePath.pathExists file) then do
     -- Move prior bench from `new` to `base`
-    let _ ← IO.Process.run { cmd := "mv", args := #[estimatesFile.toString, sampleFile.toString, baseDir] }
-    if let some compData := m.comparison then saveComparison benchName compData config
-    else IO.eprintln s!"Error: expected `comparisonData` to write but found none"
+    let _ ← IO.Process.run { cmd := "mv", args := #[file.toString, baseDir] }
+
+-- Results are always saved to `.lake/benches/<benchName>/new`. If files of the same serde format already exist from a prior run, move them to `base`
+def saveMeasurement (groupName : String) (benchName : String) (mData : MeasurementData) (config : Config) : IO Unit := do
+  let (basePath, newPath) ← mkDirs groupName benchName
+  let baseDir := basePath.toString
   let fileExt := toString config.serde
-  storeFile config.serde m.data (newPath / s!"sample.{fileExt}")
-  storeFile config.serde m.data (newPath / s!"estimates.{fileExt}")
+  if let some compData := mData.comparison then saveComparison groupName benchName compData config
+  else
+    println! "No compdata"
+  let (newEstimatesFile, newSampleFile) := (newPath / s!"estimates.{fileExt}", newPath / s!"sample.{fileExt}")
+  moveBaseFile newSampleFile baseDir
+  moveBaseFile newEstimatesFile baseDir
+  storeFile config.serde mData.data newSampleFile
+  storeFile config.serde mData.absoluteEstimates newEstimatesFile
 
 -- TODO: Use a typeclass instead?
 inductive BenchResult where
@@ -283,60 +294,39 @@ def percentChangeToString (pc : Float) : String :=
   else if pc > 0 then s!"{rounded}% slower"
   else "No change"
 
-def oneShotBench {α β : Type} (bench: Benchmarkable α β) (config : Config) : IO BenchReport := do
-  let start ← IO.monoNanosNow
-  let _res ← bench.getFn bench.arg
-  let finish ← IO.monoNanosNow
-  let benchTime := finish - start
-  IO.println s!"time:   {benchTime.toFloat.formatNanos}"
-  let benchPath := System.mkFilePath [".", ".lake", "benches", bench.name]
-  let (basePath, changePath, newPath) := (benchPath / "base", benchPath / "change", benchPath / "new")
-  let (baseDir, changeDir, newDir) := (basePath.toString, changePath.toString, newPath.toString)
-  let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", baseDir, changeDir, newDir] }
-  let fileExt := toString config.serde
-  let newFile := newPath / s!"one-shot.{fileExt}"
-  let (baseBench, percentChange) ← if (← System.FilePath.pathExists newFile) then do
-    let baseBench : OneShot ← loadFile config.serde newFile
-    let baseTime := baseBench.benchTime.toFloat
-    let percentChange := (benchTime.toFloat - baseTime) / baseTime
-    IO.println s!"change: {percentChangeToString percentChange}"
-    let _ ← IO.Process.run { cmd := "mv", args := #[newFile.toString, (benchPath / "base").toString] }
-    pure (some baseBench, some percentChange)
-  else
-    let _ ← IO.Process.run { cmd := "mkdir", args := #["-p", newPath.toString] }
-    pure (.none, .none)
-  let newBench : OneShot := { benchTime }
-  IO.println ""
-  storeFile config.serde newBench newFile
-  let benchReport : BenchReport := { function := bench.name, newBench := (.oneShot newBench), baseBench := (baseBench).map .oneShot, percentChange }
-  return benchReport
-
 structure ColumnWidths where
   function : Nat
   newBench : Nat
   baseBench : Nat
   percentChange : Nat
 
+def getColumnWidths' (maxWidths : ColumnWidths) (row: BenchReport) : ColumnWidths :=
+  let fnLen := row.function.length
+  let function := if fnLen > maxWidths.function then fnLen else maxWidths.function
+  let newBenchLen := row.newBench.getTime.formatNanos.length
+  let newBench := if newBenchLen > maxWidths.newBench then newBenchLen else maxWidths.newBench
+  let baseBench := if let some baseBench := row.baseBench then
+    let baseBenchLen := baseBench.getTime.formatNanos.length
+    if baseBenchLen > maxWidths.baseBench then baseBenchLen
+    else maxWidths.baseBench
+  else maxWidths.baseBench
+  let percentChange := if let some percentChange := row.percentChange then
+    let percentChangeStr := percentChangeToString percentChange
+    let percentLen := percentChangeStr.length
+    if percentLen > maxWidths.percentChange then percentLen
+    else maxWidths.percentChange
+  else maxWidths.percentChange
+  { function, newBench, baseBench, percentChange }
+
 -- Gets the max lengths of each data type for pretty-printing columns
-def getColumnWidths (report : Array BenchReport) : ColumnWidths := Id.run do
-  let mut maxFunctionLen := "Function".length
-  let mut maxNewLen := "New Benchmark".length
-  let mut maxBaseLen := "Base Benchmark".length
-  let mut maxPercentLen := "% change".length
-  for row in report do
-    let fnLen := row.function.length
-    if fnLen > maxFunctionLen then maxFunctionLen := fnLen
-    let newLen := row.newBench.getTime.formatNanos.length
-    if newLen > maxNewLen then maxNewLen := newLen
-    if let some baseBench := row.baseBench then
-      let baseLen := baseBench.getTime.formatNanos.length
-      if baseLen > maxBaseLen then maxBaseLen := baseLen
-    if let some percentChange := row.percentChange then
-      let percentChangeStr := percentChangeToString percentChange
-      let percentLen := percentChangeStr.length
-      if percentLen > maxPercentLen then
-        maxPercentLen := percentLen
-  { function := maxFunctionLen, newBench := maxNewLen, baseBench := maxBaseLen, percentChange := maxPercentLen }
+def getColumnWidths (report : Array BenchReport) : ColumnWidths :=
+  let maxWidths : ColumnWidths := {
+    function := "Function".length
+    newBench := "New Benchmark".length
+    baseBench := "Base Benchmark".length
+    percentChange := "% change".length
+  }
+  report.foldl getColumnWidths' maxWidths
 
 -- Centers a string with padded whitespace given the total width
 def padWhitespace (input : String) (width : Nat) : String :=
@@ -348,12 +338,28 @@ def padWhitespace (input : String) (width : Nat) : String :=
 def padDashes (width : Nat) : String :=
   String.mk (List.replicate width '-')
 
+def mkReportPretty' (columnWidths : ColumnWidths) (reportPretty : String) (row : BenchReport) : String :=
+  let functionStr := padWhitespace row.function columnWidths.function
+  let newBenchStr := row.newBench.getTime.formatNanos
+  let newBenchStr := padWhitespace newBenchStr columnWidths.newBench
+  let baseBenchStr := if let some baseBench := row.baseBench then
+    baseBench.getTime.formatNanos
+  else "None"
+  let baseBenchStr := padWhitespace baseBenchStr columnWidths.baseBench
+  let percentChangeStr := if let some percentChange := row.percentChange then
+    percentChangeToString percentChange
+  else "N/A"
+  let percentChangeStr := padWhitespace percentChangeStr columnWidths.percentChange
+  let rowPretty :=
+    s!"| {functionStr} | {newBenchStr} | {baseBenchStr} | {percentChangeStr} |\n"
+  reportPretty ++ rowPretty
+
 -- TODO: Bold the faster result and faster/slower % change
 /--
 Generates a Markdown table with comparative benchmark timings based on the results on disk.
 Each table row contains the benchmakr function name, the new timing, the base timing, and the percent change between the two.
 -/
-def mkReportPretty (groupName : String) (report : Array BenchReport) : String := Id.run do
+def mkReportPretty (groupName : String) (report : Array BenchReport) : String :=
   let columnWidths := getColumnWidths report
   let title := s!"## {groupName}\n\n"
   let (fn, new, base, percent) := (
@@ -370,23 +376,33 @@ def mkReportPretty (groupName : String) (report : Array BenchReport) : String :=
     padDashes columnWidths.percentChange
   )
   let dashes := s!"|-{d1}-|-{d2}-|-{d3}-|-{d4}-|\n"
-  let mut reportPretty := title ++ header ++ dashes
-  for row in report do
-    let functionStr := padWhitespace row.function columnWidths.function
-    let newBenchStr := row.newBench.getTime.formatNanos
-    let newBenchStr := padWhitespace newBenchStr columnWidths.newBench
-    let baseBenchStr := if let some baseBench := row.baseBench then
-      baseBench.getTime.formatNanos
-    else "None"
-    let baseBenchStr := padWhitespace baseBenchStr columnWidths.baseBench
-    let percentChangeStr := if let some percentChange := row.percentChange then
-      percentChangeToString percentChange
-    else "N/A" 
-    let percentChangeStr := padWhitespace percentChangeStr columnWidths.percentChange
-    let rowPretty :=
-      s!"| {functionStr} | {newBenchStr} | {baseBenchStr} | {percentChangeStr} |\n"
-    reportPretty := reportPretty ++ rowPretty
-  return reportPretty
+  let reportPretty := title ++ header ++ dashes
+  report.foldl (mkReportPretty' columnWidths) reportPretty
+
+def oneShotBench {α β : Type} (groupName : String) (bench: Benchmarkable α β) (config : Config) : IO BenchReport := do
+  let start ← IO.monoNanosNow
+  let _res ← bench.getFn bench.arg
+  let finish ← IO.monoNanosNow
+  let benchTime := finish - start
+  IO.println s!"time:   {benchTime.toFloat.formatNanos}"
+  let (basePath, newPath) ← mkDirs groupName bench.name
+  let fileExt := toString config.serde
+  let newFile := newPath / s!"one-shot.{fileExt}"
+  let (baseBench, percentChange) ← if (← System.FilePath.pathExists newFile) then do
+    let baseBench : OneShot ← loadFile config.serde newFile
+    let baseTime := baseBench.benchTime.toFloat
+    let percentChange := (benchTime.toFloat - baseTime) / baseTime
+    IO.println s!"change: {percentChangeToString percentChange}"
+    let _ ← IO.Process.run { cmd := "mv", args := #[newFile.toString, basePath.toString] }
+    pure (some baseBench, some percentChange)
+  else
+    let _ ← IO.Process.run { cmd := "mkdir", args := #["-p", newPath.toString] }
+    pure (.none, .none)
+  let newBench : OneShot := { benchTime }
+  IO.println ""
+  storeFile config.serde newBench newFile
+  let benchReport : BenchReport := { function := bench.name, newBench := (.oneShot newBench), baseBench := baseBench.map .oneShot, percentChange }
+  return benchReport
 
 -- TODO: Make sure compiler isn't caching partial evaluation result for future runs of the same function (measure first vs subsequent runs)
 /-- Runs each benchmark in a `BenchGroup` and analyzes the results -/
@@ -398,7 +414,7 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
   for b in benches do
     let report : BenchReport ← if config.oneShot then do
       IO.println s!"{bg.name}/{b.name}"
-      oneShotBench b config
+      oneShotBench name b config
     else
       let warmupMean ← bg.warmup b
       IO.println s!"Running {b.name}"
@@ -424,7 +440,7 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
       }
       bg.printResults b.name measurement
       IO.println ""
-      saveResults b.name measurement config
+      saveMeasurement name b.name measurement config
       let benchReport : BenchReport := { function := b.name, newBench := (.sample estimates), baseBench := (comparisonData.map (.sample ·.baseEstimates)), percentChange := comparisonData.map (·.relativeEstimates.mean.pointEstimate) }
       pure benchReport
     reports := reports.push report

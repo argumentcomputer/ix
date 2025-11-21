@@ -39,8 +39,8 @@ def blake3Bench : IO $ Array BenchReport := do
           { ioBuffer with
               data := ioBuffer.data ++ data
               map := ioBuffer.map.insert #[.ofNat idx] ioKeyInfo }
-      benches := benches.push <| bench s!"prove blake3 dataSize={dataSize} numHashes={numHashes}" (aiurSystem.prove friParameters funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
-  bgroup "blake3" benches.toList { oneShot := true }
+      benches := benches.push <| bench s!"dataSize={dataSize} numHashes={numHashes}" (aiurSystem.prove friParameters funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
+  bgroup "prove blake3" benches.toList { oneShot := true }
 
 def parseFunction (words : List String) (param : String): Option String :=
   words.find? (·.startsWith param) |> .map (·.stripPrefix param)
@@ -56,7 +56,6 @@ def main : IO Unit := do
     let numHashes := (parseFunction words "numHashes=").get!.toNat!
     let sizeFloat := (dataSize * numHashes).toFloat
     let throughput := sizeFloat / (report.newBench.getTime.toSeconds )
-    println! "Throughput: {throughput}"
     weightedSum := weightedSum + sizeFloat * throughput
     sumWeights := sumWeights + sizeFloat
   let avgThroughput := weightedSum / sumWeights

@@ -99,7 +99,7 @@ def buildAiurSystemBench : IO $ Array BenchReport := do
     let bytecode := decls.compile
     bgroup "nat_fib" [
       bench "build AiurSystem" (Aiur.AiurSystem.build bytecode) commitmentParameters
-    ] { serde := .ixon }
+    ]
 
 def proveBench : IO $ Array BenchReport := do
   match toplevel.checkAndSimplify with
@@ -125,5 +125,4 @@ def verifyBench : IO $ Array BenchReport := do
     ]
 
 def main (_args : List String) : IO Unit := do
-  -- let _result ← proveBench
-  let _result ← buildAiurSystemBench
+  let _result ← proveBench
