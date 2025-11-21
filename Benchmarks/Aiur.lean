@@ -124,5 +124,6 @@ def verifyBench : IO $ Array BenchReport := do
       bench "verify fib 10" (Aiur.AiurSystem.verify system friParameters claim) proof
     ]
 
+-- Test
 def main (_args : List String) : IO Unit := do
   let _result ← proveBench
