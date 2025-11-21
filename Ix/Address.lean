@@ -8,7 +8,7 @@ deriving instance Repr for ByteArray
 
 structure Address where
   hash : ByteArray
-  deriving Inhabited, Lean.ToExpr, BEq, Hashable
+  deriving Lean.ToExpr, BEq, Hashable
 
 def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.hash x).val⟩
 
@@ -115,4 +115,3 @@ structure MetaAddress where
 
 instance : ToString MetaAddress where
   toString adr := s!"{hexOfBytes adr.data.hash}:{hexOfBytes adr.meta.hash}"
-

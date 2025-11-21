@@ -1,6 +1,8 @@
 import Ix.Aiur.Meta
 
-def ixVM := ⟦
+namespace IxVM
+
+def byteStream := ⟦
   enum ByteStream {
     Cons(G, &ByteStream),
     Nil
@@ -17,62 +19,6 @@ def ixVM := ⟦
     }
   }
 
-  enum Layer {
-    Push(&Layer, [[G; 4]; 8]),
-    Nil
-  }
-
-  enum MaybeDigest {
-    None,
-    Some([[G; 4]; 8])
-  }
-
-  fn blake3(input: ByteStream) -> [[G; 4]; 8] {
-    let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-    blake3_compress_layer(blake3_compress_chunks(input, [[0; 4]; 16], 0, 0, [0; 8], IV, Layer.Nil))
-  }
-
-  fn blake3_next_layer(layer: Layer, digest: [[G; 4]; 8], root: G) -> (MaybeDigest, Layer) {
-    match layer {
-      Layer.Nil => (MaybeDigest.Some(digest), Layer.Nil),
-      Layer.Push(layer, other) =>
-        let (last, new_layer) = blake3_next_layer(load(layer), other, 0);
-        match last {
-          MaybeDigest.None => (MaybeDigest.Some(digest), new_layer),
-          MaybeDigest.Some(last) =>
-            let PARENT = 4;
-            let ROOT = 8;
-            let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-            let [x0, x1, x2, x3, x4, x5, x6, x7] = last;
-            let [x8, x9, x10, x11, x12, x13, x14, x15] = digest;
-            let blocks = [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15];
-            match new_layer {
-              Layer.Nil =>
-                let flags = PARENT + ROOT * root;
-                let digest = blake3_compress(IV, blocks, [0; 8], 64, flags);
-                (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
-              _ =>
-                let flags = PARENT;
-                let digest = blake3_compress(IV, blocks, [0; 8], 64, flags);
-                (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
-            },
-        },
-    }
-  }
-
-  fn blake3_compress_layer(layer: Layer) -> [[G; 4]; 8] {
-    let Layer.Push(rest, digest) = layer;
-    match load(rest) {
-      Layer.Nil => digest,
-      rest =>
-        let (last, new_merkle) = blake3_next_layer(rest, digest, 1);
-        match last {
-          MaybeDigest.None => blake3_compress_layer(new_merkle),
-          MaybeDigest.Some(last) => blake3_compress_layer(Layer.Push(store(new_merkle), last)),
-        },
-    }
-  }
-
   -- TODO remove this function
   fn byte_stream_is_empty(input: ByteStream) -> G {
     match input {
@@ -80,7 +26,9 @@ def ixVM := ⟦
       ByteStream.Nil => 1,
     }
   }
+⟧
 
+def blake3Aux := ⟦
   -- TODO remove this function
   fn chunk_count_is_zero(chunk_count: [G; 8]) -> G {
     eq_zero(chunk_count[0])
@@ -162,6 +110,134 @@ def ixVM := ⟦
     }
   }
 
+    fn u32_add(a: [G; 4], b: [G; 4]) -> [G; 4] {
+    let [a0, a1, a2, a3] = a;
+    let [b0, b1, b2, b3] = b;
+
+    -- Byte 0, no initial carry
+    let (sum0, carry1) = u8_add(a0, b0);
+
+    -- Byte 1
+    let (sum1, overflow1) = u8_add(a1, b1);
+    let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
+    let carry2 = u8_xor(overflow1, carry1a);
+
+    -- Byte 2
+    let (sum2, overflow2) = u8_add(a2, b2);
+    let (sum2_with_carry, carry2a) = u8_add(sum2, carry2);
+    let carry3 = u8_xor(overflow2, carry2a);
+
+    -- Byte 3
+    let (sum3, _x) = u8_add(a3, b3);
+    let (sum3_with_carry, _x) = u8_add(sum3, carry3);
+
+    [sum0, sum1_with_carry, sum2_with_carry, sum3_with_carry]
+  }
+
+  fn u32_xor(a: [G; 4], b: [G; 4]) -> [G; 4] {
+    let [a0, a1, a2, a3] = a;
+    let [b0, b1, b2, b3] = b;
+    let c0 = u8_xor(a0, b0);
+    let c1 = u8_xor(a1, b1);
+    let c2 = u8_xor(a2, b2);
+    let c3 = u8_xor(a3, b3);
+    [c0, c1, c2, c3]
+  }
+
+  fn u8_recompose(bits: [G; 8]) -> G {
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
+    b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6 + 128 * b7
+  }
+
+  -- Computes the successor of an `u64` assumed to be properly represented in
+  -- little-endian bytes. If that's not the case, this implementation has UB.
+  fn relaxed_u64_succ(bytes: [G; 8]) -> [G; 8] {
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
+    match b0 {
+      255 => match b1 {
+        255 => match b2 {
+          255 => match b3 {
+            255 => match b4 {
+              255 => match b5 {
+                255 => match b6 {
+                  255 => match b7 {
+                    255 => [0, 0, 0, 0, 0, 0, 0, 0],
+                    _ => [0, 0, 0, 0, 0, 0, 0, b7 + 1],
+                  },
+                  _ => [0, 0, 0, 0, 0, 0, b6 + 1, b7],
+                },
+                _ => [0, 0, 0, 0, 0, b5 + 1, b6, b7],
+              },
+              _ => [0, 0, 0, 0, b4 + 1, b5, b6, b7],
+            },
+            _ => [0, 0, 0, b3 + 1, b4, b5, b6, b7],
+          },
+          _ => [0, 0, b2 + 1, b3, b4, b5, b6, b7],
+        },
+        _ => [0, b1 + 1, b2, b3, b4, b5, b6, b7],
+      },
+      _ => [b0 + 1, b1, b2, b3, b4, b5, b6, b7],
+    }
+  }
+⟧
+
+def blake3 := ⟦
+  enum Layer {
+    Push(&Layer, [[G; 4]; 8]),
+    Nil
+  }
+
+  enum MaybeDigest {
+    None,
+    Some([[G; 4]; 8])
+  }
+
+  fn blake3(input: ByteStream) -> [[G; 4]; 8] {
+    let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
+    blake3_compress_layer(blake3_compress_chunks(input, [[0; 4]; 16], 0, 0, [0; 8], IV, Layer.Nil))
+  }
+
+  fn blake3_next_layer(layer: Layer, digest: [[G; 4]; 8], root: G) -> (MaybeDigest, Layer) {
+    match layer {
+      Layer.Nil => (MaybeDigest.Some(digest), Layer.Nil),
+      Layer.Push(layer, other) =>
+        let (last, new_layer) = blake3_next_layer(load(layer), other, 0);
+        match last {
+          MaybeDigest.None => (MaybeDigest.Some(digest), new_layer),
+          MaybeDigest.Some(last) =>
+            let PARENT = 4;
+            let ROOT = 8;
+            let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
+            let [x0, x1, x2, x3, x4, x5, x6, x7] = last;
+            let [x8, x9, x10, x11, x12, x13, x14, x15] = digest;
+            let blocks = [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15];
+            match new_layer {
+              Layer.Nil =>
+                let flags = PARENT + ROOT * root;
+                let digest = blake3_compress(IV, blocks, [0; 8], 64, flags);
+                (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
+              _ =>
+                let flags = PARENT;
+                let digest = blake3_compress(IV, blocks, [0; 8], 64, flags);
+                (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
+            },
+        },
+    }
+  }
+
+  fn blake3_compress_layer(layer: Layer) -> [[G; 4]; 8] {
+    let Layer.Push(rest, digest) = layer;
+    match load(rest) {
+      Layer.Nil => digest,
+      rest =>
+        let (last, new_merkle) = blake3_next_layer(rest, digest, 1);
+        match last {
+          MaybeDigest.None => blake3_compress_layer(new_merkle),
+          MaybeDigest.Some(last) => blake3_compress_layer(Layer.Push(store(new_merkle), last)),
+        },
+    }
+  }
+
   fn blake3_compress_chunks(
     input: ByteStream,
     block_buffer: [[G; 4]; 16],
@@ -237,45 +313,6 @@ def ixVM := ⟦
             layer
         ),
     }
-  }
-
-  fn u32_add(a: [G; 4], b: [G; 4]) -> [G; 4] {
-    let [a0, a1, a2, a3] = a;
-    let [b0, b1, b2, b3] = b;
-
-    -- Byte 0, no initial carry
-    let (sum0, carry1) = u8_add(a0, b0);
-
-    -- Byte 1
-    let (sum1, overflow1) = u8_add(a1, b1);
-    let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
-    let carry2 = u8_xor(overflow1, carry1a);
-
-    -- Byte 2
-    let (sum2, overflow2) = u8_add(a2, b2);
-    let (sum2_with_carry, carry2a) = u8_add(sum2, carry2);
-    let carry3 = u8_xor(overflow2, carry2a);
-
-    -- Byte 3
-    let (sum3, _x) = u8_add(a3, b3);
-    let (sum3_with_carry, _x) = u8_add(sum3, carry3);
-
-    [sum0, sum1_with_carry, sum2_with_carry, sum3_with_carry]
-  }
-
-  fn u32_xor(a: [G; 4], b: [G; 4]) -> [G; 4] {
-    let [a0, a1, a2, a3] = a;
-    let [b0, b1, b2, b3] = b;
-    let c0 = u8_xor(a0, b0);
-    let c1 = u8_xor(a1, b1);
-    let c2 = u8_xor(a2, b2);
-    let c3 = u8_xor(a3, b3);
-    [c0, c1, c2, c3]
-  }
-
-  fn u8_recompose(bits: [G; 8]) -> G {
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
-    b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6 + 128 * b7
   }
 
   fn blake3_g_function(
@@ -485,44 +522,352 @@ def ixVM := ⟦
       u32_xor(state[7], state[15])
     ]
   }
+⟧
 
-  -- Computes the successor of an `u64` assumed to be properly represented in
-  -- little-endian bytes. If that's not the case, this implementation has UB.
-  fn relaxed_u64_succ(bytes: [G; 8]) -> [G; 8] {
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
-    match b0 {
-      255 => match b1 {
-        255 => match b2 {
-          255 => match b3 {
-            255 => match b4 {
-              255 => match b5 {
-                255 => match b6 {
-                  255 => match b7 {
-                    255 => [0, 0, 0, 0, 0, 0, 0, 0],
-                    _ => [0, 0, 0, 0, 0, 0, 0, b7 + 1],
-                  },
-                  _ => [0, 0, 0, 0, 0, 0, b6 + 1, b7],
-                },
-                _ => [0, 0, 0, 0, 0, b5 + 1, b6, b7],
-              },
-              _ => [0, 0, 0, 0, b4 + 1, b5, b6, b7],
-            },
-            _ => [0, 0, 0, b3 + 1, b4, b5, b6, b7],
-          },
-          _ => [0, 0, b2 + 1, b3, b4, b5, b6, b7],
-        },
-        _ => [0, b1 + 1, b2, b3, b4, b5, b6, b7],
-      },
-      _ => [b0 + 1, b1, b2, b3, b4, b5, b6, b7],
+def ixon := ⟦
+  enum Address {
+    Bytes([[G; 4]; 8])
+  }
+
+  enum Ixon {
+    NAnon,                                 -- 0x00, anonymous name
+    NStr(Address, Address),                -- 0x01, string name
+    NNum(Address, Address),                -- 0x02, number name
+    UZero,                                 -- 0x03, universe zero
+    USucc(Address),                        -- 0x04, universe successor
+    UMax(Address, Address),                -- 0x05, universe max
+    UIMax(Address, Address),               -- 0x06, universe impredicative max
+    -- UVar(Nat),                             -- 0x1X, universe variable
+    -- EVar(Nat),                             -- 0x2X, expression variable
+    -- ERef(Address, Vec<Address>),           -- 0x3X, expression reference
+    -- ERec(Nat, Vec<Address>),               -- 0x4X, expression recursion
+    -- EPrj(Address, Nat, Address),           -- 0x5X, expression projection
+    ESort(Address),                        -- 0x80, expression sort
+    EStr(Address),                         -- 0x81, expression string
+    ENat(Address),                         -- 0x82, expression natural
+    EApp(Address, Address),                -- 0x83, expression application
+    ELam(Address, Address),                -- 0x84, expression lambda
+    EAll(Address, Address),                -- 0x85, expression forall
+    ELet(G, Address, Address, Address)     -- 0x86, 0x87, expression let. TODO: change the first argument to a Bool
+    -- Blob(Vec<u8>),                         -- 0x9X, tagged bytes
+    -- Defn(Definition),                      -- 0xA0, definition constant
+    -- Recr(Recursor),                        -- 0xA1, recursor constant
+    -- Axio(Axiom),                           -- 0xA2, axiom constant
+    -- Quot(Quotient),                        -- 0xA3, quotient constant
+    -- CPrj(ConstructorProj),                 -- 0xA4, constructor projection
+    -- RPrj(RecursorProj),                    -- 0xA5, recursor projection
+    -- IPrj(InductiveProj),                   -- 0xA6, inductive projection
+    -- DPrj(DefinitionProj),
+    -- 0xA7, definition projection
+    -- Muts(Vec<MutConst>),                   -- 0xBX, mutual constants
+    -- Prof(Proof),                           -- 0xE0, zero-knowledge proof
+    -- Eval(EvalClaim),                       -- 0xE1, evaluation claim
+    -- Chck(CheckClaim),                      -- 0xE2, typechecking claim
+    -- Comm(Comm),                            -- 0xE3, cryptographic commitment
+    -- Envn(Env),                             -- 0xE4, multi-claim environment
+    -- Prim(BuiltIn),                         -- 0xE5, compiler built-ins
+    -- Meta(Metadata)
+    -- 0xFX, metadata
+  }
+
+  fn serialize(ixon: Ixon, stream: ByteStream) -> ByteStream {
+    match ixon {
+      Ixon.NAnon => ByteStream.Cons(0, store(stream)),
+      Ixon.NStr(Address.Bytes(n), Address.Bytes(s)) =>
+        let tag = 1;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.NNum(Address.Bytes(n), Address.Bytes(s)) =>
+        let tag = 2;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.UZero => ByteStream.Cons(3, store(stream)),
+      Ixon.USucc(Address.Bytes(n)) =>
+        let tag = 4;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.UMax(Address.Bytes(n), Address.Bytes(s)) =>
+        let tag = 5;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.UIMax(Address.Bytes(n), Address.Bytes(s)) =>
+        let tag = 6;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.ESort(Address.Bytes(n)) =>
+        let tag = 128;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.EStr(Address.Bytes(n)) =>
+        let tag = 129;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.ENat(Address.Bytes(n)) =>
+        let tag = 130;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.EApp(Address.Bytes(n), Address.Bytes(s)) =>
+        let tag = 131;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.ELam(Address.Bytes(n), Address.Bytes(s)) =>
+        let tag = 132;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.EAll(Address.Bytes(n), Address.Bytes(s)) =>
+        let tag = 133;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.ELet(b, Address.Bytes(n), Address.Bytes(s), Address.Bytes(t)) =>
+        let tag = 134 + b;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(t[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
+      _ => stream,
     }
   }
 
+  -- TODO: remove this function
+  #[unconstrained]
+  fn deserialize_addr(stream: ByteStream, addr: [[G; 4]; 8], i: G) -> ([[G; 4]; 8], ByteStream) {
+    match stream {
+      ByteStream.Cons(byte, tail_ptr) =>
+        match i {
+          0 =>
+            let addr = set(addr, 0, set(addr[0], 0, byte));
+            deserialize_addr(load(tail_ptr), addr, 1),
+          1 =>
+            let addr = set(addr, 0, set(addr[0], 1, byte));
+            deserialize_addr(load(tail_ptr), addr, 2),
+          2 =>
+            let addr = set(addr, 0, set(addr[0], 2, byte));
+            deserialize_addr(load(tail_ptr), addr, 3),
+          3 =>
+            let addr = set(addr, 0, set(addr[0], 3, byte));
+            deserialize_addr(load(tail_ptr), addr, 4),
+          4 =>
+            let addr = set(addr, 1, set(addr[1], 0, byte));
+            deserialize_addr(load(tail_ptr), addr, 5),
+          5 =>
+            let addr = set(addr, 1, set(addr[1], 1, byte));
+            deserialize_addr(load(tail_ptr), addr, 6),
+          6 =>
+            let addr = set(addr, 1, set(addr[1], 2, byte));
+            deserialize_addr(load(tail_ptr), addr, 7),
+          7 =>
+            let addr = set(addr, 1, set(addr[1], 3, byte));
+            deserialize_addr(load(tail_ptr), addr, 8),
+          8 =>
+            let addr = set(addr, 2, set(addr[2], 0, byte));
+            deserialize_addr(load(tail_ptr), addr, 9),
+          9 =>
+            let addr = set(addr, 2, set(addr[2], 1, byte));
+            deserialize_addr(load(tail_ptr), addr, 10),
+          10 =>
+            let addr = set(addr, 2, set(addr[2], 2, byte));
+            deserialize_addr(load(tail_ptr), addr, 11),
+          11 =>
+            let addr = set(addr, 2, set(addr[2], 3, byte));
+            deserialize_addr(load(tail_ptr), addr, 12),
+          12 =>
+            let addr = set(addr, 3, set(addr[3], 0, byte));
+            deserialize_addr(load(tail_ptr), addr, 13),
+          13 =>
+            let addr = set(addr, 3, set(addr[3], 1, byte));
+            deserialize_addr(load(tail_ptr), addr, 14),
+          14 =>
+            let addr = set(addr, 3, set(addr[3], 2, byte));
+            deserialize_addr(load(tail_ptr), addr, 15),
+          15 =>
+            let addr = set(addr, 3, set(addr[3], 3, byte));
+            deserialize_addr(load(tail_ptr), addr, 16),
+          16 =>
+            let addr = set(addr, 4, set(addr[4], 0, byte));
+            deserialize_addr(load(tail_ptr), addr, 17),
+          17 =>
+            let addr = set(addr, 4, set(addr[4], 1, byte));
+            deserialize_addr(load(tail_ptr), addr, 18),
+          18 =>
+            let addr = set(addr, 4, set(addr[4], 2, byte));
+            deserialize_addr(load(tail_ptr), addr, 19),
+          19 =>
+            let addr = set(addr, 4, set(addr[4], 3, byte));
+            deserialize_addr(load(tail_ptr), addr, 20),
+          20 =>
+            let addr = set(addr, 5, set(addr[5], 0, byte));
+            deserialize_addr(load(tail_ptr), addr, 21),
+          21 =>
+            let addr = set(addr, 5, set(addr[5], 1, byte));
+            deserialize_addr(load(tail_ptr), addr, 22),
+          22 =>
+            let addr = set(addr, 5, set(addr[5], 2, byte));
+            deserialize_addr(load(tail_ptr), addr, 23),
+          23 =>
+            let addr = set(addr, 5, set(addr[5], 3, byte));
+            deserialize_addr(load(tail_ptr), addr, 24),
+          24 =>
+            let addr = set(addr, 6, set(addr[6], 0, byte));
+            deserialize_addr(load(tail_ptr), addr, 25),
+          25 =>
+            let addr = set(addr, 6, set(addr[6], 1, byte));
+            deserialize_addr(load(tail_ptr), addr, 26),
+          26 =>
+            let addr = set(addr, 6, set(addr[6], 2, byte));
+            deserialize_addr(load(tail_ptr), addr, 27),
+          27 =>
+            let addr = set(addr, 6, set(addr[6], 3, byte));
+            deserialize_addr(load(tail_ptr), addr, 28),
+          28 =>
+            let addr = set(addr, 7, set(addr[7], 0, byte));
+            deserialize_addr(load(tail_ptr), addr, 29),
+          29 =>
+            let addr = set(addr, 7, set(addr[7], 1, byte));
+            deserialize_addr(load(tail_ptr), addr, 30),
+          30 =>
+            let addr = set(addr, 7, set(addr[7], 2, byte));
+            deserialize_addr(load(tail_ptr), addr, 31),
+          31 =>
+            let addr = set(addr, 7, set(addr[7], 3, byte));
+            (addr, load(tail_ptr)),
+        },
+    }
+  }
+
+  #[unconstrained]
+  fn deserialize(stream: ByteStream) -> Ixon {
+    match stream {
+      ByteStream.Cons(0, _) => Ixon.NAnon,
+      ByteStream.Cons(1, tail_ptr) =>
+        let tail = load(tail_ptr);
+        -- let (addr1, tail) = fold(0..8, ([[0; 4]; 8], tail), |acc, @i|
+        --   fold(0..4, acc, |(acc_addr, acc_stream), @j|
+        --     let ByteStream.Cons(byte, acc_stream_tail_ptr) = acc_stream;
+        --     (set(acc_addr, @i, set(acc_addr[@i], @j, byte)), load(acc_stream_tail_ptr))));
+        -- let (addr2, _tail) = fold(0..8, ([[0; 4]; 8], tail), |acc, @i|
+        --   fold(0..4, acc, |(acc_addr, acc_stream), @j|
+        --     let ByteStream.Cons(byte, acc_stream_tail_ptr) = acc_stream;
+        --     (set(acc_addr, @i, set(acc_addr[@i], @j, byte)), load(acc_stream_tail_ptr))));
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.NStr(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(2, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.NNum(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(3, _) => Ixon.UZero,
+      ByteStream.Cons(4, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.USucc(Address.Bytes(addr)),
+      ByteStream.Cons(5, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.UMax(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(6, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.UIMax(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(128, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ESort(Address.Bytes(addr)),
+      ByteStream.Cons(129, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.EStr(Address.Bytes(addr)),
+      ByteStream.Cons(130, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ENat(Address.Bytes(addr)),
+      ByteStream.Cons(131, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.EApp(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(132, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ELam(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(133, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.EAll(Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(134, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ELet(0, Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
+      ByteStream.Cons(135, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ELet(1, Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
+    }
+  }
+⟧
+
+def entrypoints := ⟦
   /- # Test entrypoints -/
 
   fn blake3_test() -> [[G; 4]; 8] {
     let (idx, len) = io_get_info([0]);
     let byte_stream = read_byte_stream(idx, len);
     blake3(byte_stream)
+  }
+
+  fn ixon_blake3_test(h: [[G; 4]; 8]) {
+    let key = [
+      h[0][0], h[0][1], h[0][2], h[0][3],
+      h[1][0], h[1][1], h[1][2], h[1][3],
+      h[2][0], h[2][1], h[2][2], h[2][3],
+      h[3][0], h[3][1], h[3][2], h[3][3],
+      h[4][0], h[4][1], h[4][2], h[4][3],
+      h[5][0], h[5][1], h[5][2], h[5][3],
+      h[6][0], h[6][1], h[6][2], h[6][3],
+      h[7][0], h[7][1], h[7][2], h[7][3]
+    ];
+    let (idx, len) = io_get_info(key);
+    let bytes_unconstrained = read_byte_stream(idx, len);
+    let ixon_unconstrained = deserialize(bytes_unconstrained);
+    let bytes = serialize(ixon_unconstrained, ByteStream.Nil);
+    let bytes_hash = blake3(bytes);
+    assert_eq!(h, bytes_hash);
   }
 
   /- # Benchmark entrypoints -/
@@ -539,3 +884,11 @@ def ixVM := ⟦
     }
   }
 ⟧
+
+def ixVM : Except Aiur.Global Aiur.Toplevel := do
+  let vm ← byteStream.merge blake3Aux
+  let vm ← vm.merge blake3
+  let vm ← vm.merge ixon
+  vm.merge entrypoints
+
+end IxVM
