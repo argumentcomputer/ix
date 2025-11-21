@@ -7,11 +7,12 @@ structure LabeledSample where
 structure ChangeEstimates where
   mean : Estimate
   median : Estimate
-  deriving Lean.ToJson, Lean.FromJson
+  deriving Lean.ToJson, Lean.FromJson, Repr
 
 structure ChangeDistributions where
   mean : Distribution
   median : Distribution
+  deriving Repr
 
 structure ComparisonData where
   pValue : Float
@@ -24,6 +25,7 @@ structure ComparisonData where
   baseSample : Data
   baseAvgTimes : Array Float
   baseEstimates : Estimates
+  deriving Repr
 
 def tScore (xs ys : Distribution) : Float :=
   let (xBar, yBar) := (xs.mean, ys.mean)
