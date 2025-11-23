@@ -5,8 +5,7 @@ use std::collections::hash_map::Entry;
 use crate::{
   cons_list::ConsList,
   ix::env::{
-    ConstMap, ConstantInfo, Expr, ExprData, InductiveVal, Level, LevelData,
-    Name,
+    ConstantInfo, Env, Expr, ExprData, InductiveVal, Level, LevelData, Name,
   },
   ix::graph::RefMap,
   lean::nat::Nat,
@@ -22,17 +21,17 @@ pub enum GroundError<'a> {
 }
 
 pub fn ground_consts<'a>(
-  const_map: &'a ConstMap,
+  env: &'a Env,
   in_refs: &RefMap,
 ) -> FxHashMap<Name, GroundError<'a>> {
   // Collect immediate ungrounded constants.
-  let mut ungrounded: FxHashMap<_, _> = const_map
+  let mut ungrounded: FxHashMap<_, _> = env
     .par_iter()
     .filter_map(|(name, constant)| {
       let univs = const_univs(constant);
       let mut stt = GroundState::default();
       if let Err(err) =
-        ground_const(constant, const_map, univs, ConsList::Nil, &mut stt)
+        ground_const(constant, env, univs, ConsList::Nil, &mut stt)
       {
         Some((name.clone(), err))
       } else {
@@ -60,14 +59,14 @@ pub fn ground_consts<'a>(
 
 fn const_univs(constant: &ConstantInfo) -> ConsList<Name> {
   let univs = match constant {
-    ConstantInfo::AxiomInfo(val) => &val.constant_val.level_params,
-    ConstantInfo::DefnInfo(val) => &val.constant_val.level_params,
-    ConstantInfo::ThmInfo(val) => &val.constant_val.level_params,
-    ConstantInfo::OpaqueInfo(val) => &val.constant_val.level_params,
-    ConstantInfo::QuotInfo(val) => &val.constant_val.level_params,
-    ConstantInfo::InductInfo(val) => &val.constant_val.level_params,
-    ConstantInfo::CtorInfo(val) => &val.constant_val.level_params,
-    ConstantInfo::RecInfo(val) => &val.constant_val.level_params,
+    ConstantInfo::AxiomInfo(val) => &val.cnst.level_params,
+    ConstantInfo::DefnInfo(val) => &val.cnst.level_params,
+    ConstantInfo::ThmInfo(val) => &val.cnst.level_params,
+    ConstantInfo::OpaqueInfo(val) => &val.cnst.level_params,
+    ConstantInfo::QuotInfo(val) => &val.cnst.level_params,
+    ConstantInfo::InductInfo(val) => &val.cnst.level_params,
+    ConstantInfo::CtorInfo(val) => &val.cnst.level_params,
+    ConstantInfo::RecInfo(val) => &val.cnst.level_params,
   };
   ConsList::from_iterator(univs.iter().cloned())
 }
@@ -81,72 +80,54 @@ struct GroundState {
 
 fn ground_const<'a>(
   constant: &'a ConstantInfo,
-  const_map: &'a ConstMap,
+  env: &'a Env,
   univs: ConsList<Name>,
   binds: ConsList<Name>,
   stt: &mut GroundState,
 ) -> Result<(), GroundError<'a>> {
   match constant {
     ConstantInfo::AxiomInfo(val) => {
-      ground_expr(&val.constant_val.typ, const_map, univs, binds, stt)
+      ground_expr(&val.cnst.typ, env, univs, binds, stt)
     },
     ConstantInfo::DefnInfo(val) => {
-      ground_expr(
-        &val.constant_val.typ,
-        const_map,
-        univs.clone(),
-        binds.clone(),
-        stt,
-      )?;
-      ground_expr(&val.value, const_map, univs, binds, stt)
+      ground_expr(&val.cnst.typ, env, univs.clone(), binds.clone(), stt)?;
+      ground_expr(&val.value, env, univs, binds, stt)
     },
     ConstantInfo::ThmInfo(val) => {
-      ground_expr(
-        &val.constant_val.typ,
-        const_map,
-        univs.clone(),
-        binds.clone(),
-        stt,
-      )?;
-      ground_expr(&val.value, const_map, univs, binds, stt)
+      ground_expr(&val.cnst.typ, env, univs.clone(), binds.clone(), stt)?;
+      ground_expr(&val.value, env, univs, binds, stt)
     },
     ConstantInfo::OpaqueInfo(val) => {
-      ground_expr(
-        &val.constant_val.typ,
-        const_map,
-        univs.clone(),
-        binds.clone(),
-        stt,
-      )?;
-      ground_expr(&val.value, const_map, univs, binds, stt)
+      ground_expr(&val.cnst.typ, env, univs.clone(), binds.clone(), stt)?;
+      ground_expr(&val.value, env, univs, binds, stt)
     },
     ConstantInfo::QuotInfo(val) => {
-      ground_expr(&val.constant_val.typ, const_map, univs, binds, stt)
+      ground_expr(&val.cnst.typ, env, univs, binds, stt)
     },
     ConstantInfo::InductInfo(val) => {
       for ctor in &val.ctors {
-        match const_map.get(ctor) {
+        match env.get(ctor) {
           Some(ConstantInfo::CtorInfo(_)) => (),
           c => return Err(GroundError::Indc(val, c)),
         }
       }
-      ground_expr(&val.constant_val.typ, const_map, univs, binds, stt)
+      ground_expr(&val.cnst.typ, env, univs, binds, stt)
     },
     ConstantInfo::CtorInfo(val) => {
-      ground_expr(&val.constant_val.typ, const_map, univs, binds, stt)
+      ground_expr(&val.cnst.typ, env, univs, binds, stt)
     },
     ConstantInfo::RecInfo(val) => {
       for rule in &val.rules {
-        ground_expr(&rule.rhs, const_map, univs.clone(), binds.clone(), stt)?;
+        ground_expr(&rule.rhs, env, univs.clone(), binds.clone(), stt)?;
       }
-      ground_expr(&val.constant_val.typ, const_map, univs, binds, stt)
+      ground_expr(&val.cnst.typ, env, univs, binds, stt)
     },
   }
 }
 
 fn ground_expr<'a>(
   expr: &Expr,
-  const_map: &'a ConstMap,
+  env: &'a Env,
   univs: ConsList<Name>,
   binds: ConsList<Name>,
   stt: &mut GroundState,
@@ -157,7 +138,7 @@ fn ground_expr<'a>(
   }
   stt.expr_cache.insert(key);
   match expr.as_data() {
-    ExprData::Mdata(_, e, _) => ground_expr(e, const_map, univs, binds, stt),
+    ExprData::Mdata(_, e, _) => ground_expr(e, env, univs, binds, stt),
     ExprData::Bvar(idx, _) => {
       let mut idx_bytes = idx.to_le_bytes();
       if idx_bytes.len() > size_of::<usize>() {
@@ -175,7 +156,7 @@ fn ground_expr<'a>(
       for level in levels {
         ground_level(level, univs.clone(), stt)?;
       }
-      if !const_map.contains_key(name)
+      if !env.contains_key(name)
         && name != &Name::str(Name::anon(), "_obj".to_string())
         && name != &Name::str(Name::anon(), "_neutral".to_string())
         && name != &Name::str(Name::anon(), "_unreachable".to_string())
@@ -185,23 +166,23 @@ fn ground_expr<'a>(
       Ok(())
     },
     ExprData::App(f, a, _) => {
-      ground_expr(f, const_map, univs.clone(), binds.clone(), stt)?;
-      ground_expr(a, const_map, univs, binds, stt)
+      ground_expr(f, env, univs.clone(), binds.clone(), stt)?;
+      ground_expr(a, env, univs, binds, stt)
     },
     ExprData::Lam(n, t, b, ..) | ExprData::ForallE(n, t, b, ..) => {
-      ground_expr(t, const_map, univs.clone(), binds.clone(), stt)?;
-      ground_expr(b, const_map, univs, binds.cons(n.clone()), stt)
+      ground_expr(t, env, univs.clone(), binds.clone(), stt)?;
+      ground_expr(b, env, univs, binds.cons(n.clone()), stt)
     },
     ExprData::LetE(n, t, v, b, ..) => {
-      ground_expr(t, const_map, univs.clone(), binds.clone(), stt)?;
-      ground_expr(v, const_map, univs.clone(), binds.clone(), stt)?;
-      ground_expr(b, const_map, univs, binds.cons(n.clone()), stt)
+      ground_expr(t, env, univs.clone(), binds.clone(), stt)?;
+      ground_expr(v, env, univs.clone(), binds.clone(), stt)?;
+      ground_expr(b, env, univs, binds.cons(n.clone()), stt)
     },
     ExprData::Proj(name, _, e, _) => {
-      if !const_map.contains_key(name) {
+      if !env.contains_key(name) {
         return Err(GroundError::Ref(name.clone()));
       }
-      ground_expr(e, const_map, univs, binds, stt)
+      ground_expr(e, env, univs, binds, stt)
     },
     ExprData::Lit(..) => Ok(()),
     ExprData::Mvar(..) => Err(GroundError::MVar(expr.clone())),

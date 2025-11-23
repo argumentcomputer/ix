@@ -1714,6 +1714,7 @@ dependencies = [
  "indexmap",
  "iroh",
  "iroh-base",
+ "itertools",
  "multi-stark",
  "n0-snafu",
  "n0-watcher",

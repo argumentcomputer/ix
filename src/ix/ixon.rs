@@ -2,7 +2,9 @@ use blake3::Hash;
 use num_bigint::BigUint;
 
 use crate::{
-  ix::env::{BinderInfo, DefinitionSafety, Int, QuotKind, ReducibilityHints},
+  ix::env::{
+    BinderInfo, DefinitionSafety, Int, Name, QuotKind, ReducibilityHints,
+  },
   lean::nat::*,
 };
 
@@ -326,7 +328,7 @@ impl Serialize for QuotKind {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DefKind {
   Definition,
   Opaque,
@@ -1132,6 +1134,28 @@ pub enum BuiltIn {
   Obj,
   Neutral,
   Unreachable,
+}
+
+impl BuiltIn {
+  pub fn name_of(&self) -> Name {
+    let s = match self {
+      Self::Obj => "_obj",
+      Self::Neutral => "_neutral",
+      Self::Unreachable => "_unreachable",
+    };
+    Name::str(Name::anon(), s.to_string())
+  }
+  pub fn from_name(name: &Name) -> Option<Self> {
+    if *name == BuiltIn::Obj.name_of() {
+      Some(BuiltIn::Obj)
+    } else if *name == BuiltIn::Neutral.name_of() {
+      Some(BuiltIn::Neutral)
+    } else if *name == BuiltIn::Unreachable.name_of() {
+      Some(BuiltIn::Unreachable)
+    } else {
+      None
+    }
+  }
 }
 
 impl Serialize for BuiltIn {

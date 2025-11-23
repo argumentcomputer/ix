@@ -93,6 +93,25 @@ pub enum Literal {
   StrVal(String),
 }
 
+impl PartialOrd for Literal {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+// should match Literal.lt here https://github.com/leanprover/lean4/blob/fe21b950586cde248dae4b2a0f59d43c1f19cd87/src/Lean/Expr.lean#L34
+// TODO: test that Nat and String comparisons match
+impl Ord for Literal {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    match (self, other) {
+      (Literal::NatVal(a), Literal::NatVal(b)) => a.cmp(b),
+      (Literal::StrVal(a), Literal::StrVal(b)) => a.cmp(b),
+      (Literal::NatVal(_), Literal::StrVal(_)) => std::cmp::Ordering::Less,
+      (Literal::StrVal(_), Literal::NatVal(_)) => std::cmp::Ordering::Greater,
+    }
+  }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BinderInfo {
   Default,
@@ -240,38 +259,38 @@ pub enum DefinitionSafety {
   Partial,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstantVal {
   pub name: Name,
   pub level_params: Vec<Name>,
   pub typ: Expr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AxiomVal {
-  pub constant_val: ConstantVal,
+  pub cnst: ConstantVal,
   pub is_unsafe: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DefinitionVal {
-  pub constant_val: ConstantVal,
+  pub cnst: ConstantVal,
   pub value: Expr,
   pub hints: ReducibilityHints,
   pub safety: DefinitionSafety,
   pub all: Vec<Name>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TheoremVal {
-  pub constant_val: ConstantVal,
+  pub cnst: ConstantVal,
   pub value: Expr,
   pub all: Vec<Name>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OpaqueVal {
-  pub constant_val: ConstantVal,
+  pub cnst: ConstantVal,
   pub value: Expr,
   pub is_unsafe: bool,
   pub all: Vec<Name>,
@@ -285,15 +304,15 @@ pub enum QuotKind {
   Ind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QuotVal {
-  pub constant_val: ConstantVal,
+  pub cnst: ConstantVal,
   pub kind: QuotKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InductiveVal {
-  pub constant_val: ConstantVal,
+  pub cnst: ConstantVal,
   pub num_params: Nat,
   pub num_indices: Nat,
   pub all: Vec<Name>,
@@ -304,9 +323,9 @@ pub struct InductiveVal {
   pub is_reflexive: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstructorVal {
-  pub constant_val: ConstantVal,
+  pub cnst: ConstantVal,
   pub induct: Name,
   pub cidx: Nat,
   pub num_params: Nat,
@@ -314,16 +333,16 @@ pub struct ConstructorVal {
   pub is_unsafe: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecursorRule {
   pub ctor: Name,
   pub n_fields: Nat,
   pub rhs: Expr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecursorVal {
-  pub constant_val: ConstantVal,
+  pub cnst: ConstantVal,
   pub all: Vec<Name>,
   pub num_params: Nat,
   pub num_indices: Nat,
@@ -334,7 +353,7 @@ pub struct RecursorVal {
   pub is_unsafe: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ConstantInfo {
   AxiomInfo(AxiomVal),
   DefnInfo(DefinitionVal),
@@ -346,4 +365,4 @@ pub enum ConstantInfo {
   RecInfo(RecursorVal),
 }
 
-pub type ConstMap = FxHashMap<Name, ConstantInfo>;
+pub type Env = FxHashMap<Name, ConstantInfo>;

@@ -5,8 +5,8 @@ use rustc_hash::FxHashMap;
 use crate::{
   ix::condense::compute_sccs,
   ix::env::{
-    AxiomVal, BinderInfo, ConstMap, ConstantInfo, ConstantVal, ConstructorVal,
-    DataValue, DefinitionSafety, DefinitionVal, Expr, InductiveVal, Int, Level,
+    AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
+    DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,
     Literal, Name, OpaqueVal, QuotKind, QuotVal, RecursorRule, RecursorVal,
     ReducibilityHints, SourceInfo, Substring, Syntax, SyntaxPreresolved,
     TheoremVal,
@@ -367,7 +367,7 @@ fn lean_ptr_to_constant_info(
       let [constant_val_ptr, is_unsafe_ptr] = inner_val.objs();
       let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
       let is_unsafe = is_unsafe_ptr as usize == 1;
-      let axiom_val = AxiomVal { constant_val, is_unsafe };
+      let axiom_val = AxiomVal { cnst: constant_val, is_unsafe };
       ConstantInfo::AxiomInfo(axiom_val)
     },
     1 => {
@@ -394,7 +394,7 @@ fn lean_ptr_to_constant_info(
         _ => unreachable!(),
       };
       ConstantInfo::DefnInfo(DefinitionVal {
-        constant_val,
+        cnst: constant_val,
         value,
         hints,
         safety,
@@ -406,7 +406,7 @@ fn lean_ptr_to_constant_info(
       let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
       let value = lean_ptr_to_expr(value_ptr, cache);
       let all = collect_list_with(all_ptr, lean_ptr_to_name, cache);
-      ConstantInfo::ThmInfo(TheoremVal { constant_val, value, all })
+      ConstantInfo::ThmInfo(TheoremVal { cnst: constant_val, value, all })
     },
     3 => {
       let [constant_val_ptr, value_ptr, all_ptr, is_unsafe_ptr] =
@@ -416,7 +416,7 @@ fn lean_ptr_to_constant_info(
       let all = collect_list_with(all_ptr, lean_ptr_to_name, cache);
       let is_unsafe = is_unsafe_ptr as usize == 1;
       ConstantInfo::OpaqueInfo(OpaqueVal {
-        constant_val,
+        cnst: constant_val,
         value,
         is_unsafe,
         all,
@@ -432,7 +432,7 @@ fn lean_ptr_to_constant_info(
         3 => QuotKind::Ind,
         _ => unreachable!(),
       };
-      ConstantInfo::QuotInfo(QuotVal { constant_val, kind })
+      ConstantInfo::QuotInfo(QuotVal { cnst: constant_val, kind })
     },
     5 => {
       let [
@@ -453,7 +453,7 @@ fn lean_ptr_to_constant_info(
       let [is_rec, is_unsafe, is_reflexive, ..] =
         (bools_ptr as usize).to_le_bytes().map(|b| b == 1);
       ConstantInfo::InductInfo(InductiveVal {
-        constant_val,
+        cnst: constant_val,
         num_params,
         num_indices,
         all,
@@ -480,7 +480,7 @@ fn lean_ptr_to_constant_info(
       let num_fields = Nat::from_ptr(num_fields_ptr);
       let is_unsafe = is_unsafe_ptr as usize == 1;
       ConstantInfo::CtorInfo(ConstructorVal {
-        constant_val,
+        cnst: constant_val,
         induct,
         cidx,
         num_params,
@@ -511,7 +511,7 @@ fn lean_ptr_to_constant_info(
       let [k, is_unsafe, ..] =
         (bools_ptr as usize).to_le_bytes().map(|b| b == 1);
       ConstantInfo::RecInfo(RecursorVal {
-        constant_val,
+        cnst: constant_val,
         all,
         num_params,
         num_indices,
@@ -560,29 +560,29 @@ fn lean_ptr_to_name_constant_info(
   (name, constant_info)
 }
 
-fn lean_ptr_to_const_map(ptr: *const c_void) -> ConstMap {
+fn lean_ptr_to_env(ptr: *const c_void) -> Env {
   let mut cache = Cache::default();
-  let mut const_map = ConstMap::default();
+  let mut env = Env::default();
   for ptr in ListIterator(ptr) {
     let (name, constant_info) = lean_ptr_to_name_constant_info(ptr, &mut cache);
-    const_map.insert(name.clone(), constant_info);
+    env.insert(name.clone(), constant_info);
   }
-  const_map
+  env
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   let start_decoding = std::time::SystemTime::now();
-  let const_map = lean_ptr_to_const_map(ptr);
+  let env = lean_ptr_to_env(ptr);
   println!("Decoding: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
   let start_ref_graph = std::time::SystemTime::now();
-  let RefGraph { out_refs, in_refs } = build_ref_graph(&const_map);
+  let RefGraph { out_refs, in_refs } = build_ref_graph(&env);
   println!(
     "Ref-graph: {:.2}s",
     start_ref_graph.elapsed().unwrap().as_secs_f32()
   );
   let start_ground = std::time::SystemTime::now();
-  ground_consts(&const_map, &in_refs);
+  ground_consts(&env, &in_refs);
   println!("Ground: {:.2}s", start_ground.elapsed().unwrap().as_secs_f32());
   let start_sccs = std::time::SystemTime::now();
   let sccs = compute_sccs(&out_refs);
@@ -591,5 +591,5 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   //let _ = compile(&sccs, &out_refs, &const_map);
   //println!("Compile: {:.2}s", start_compile.elapsed().unwrap().as_secs_f32());
   //println!("Total: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
-  const_map.len()
+  env.len()
 }

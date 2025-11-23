@@ -2,7 +2,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
-use crate::ix::env::{ConstMap, ConstantInfo, Expr, ExprData, Name};
+use crate::ix::env::{ConstantInfo, Env, Expr, ExprData, Name};
 
 pub type NameSet = FxHashSet<Name>;
 
@@ -34,7 +34,7 @@ pub struct RefGraph {
   pub in_refs: RefMap,
 }
 
-pub fn build_ref_graph(const_map: &ConstMap) -> RefGraph {
+pub fn build_ref_graph(env: &Env) -> RefGraph {
   let mk_in_refs = |name: &Name, deps: &NameSet| -> RefMap {
     let mut in_refs = RefMap::from_iter([(name.clone(), NameSet::default())]);
     for dep in deps {
@@ -65,7 +65,7 @@ pub fn build_ref_graph(const_map: &ConstMap) -> RefGraph {
     bigger
   };
 
-  let (out_refs, in_refs) = const_map
+  let (out_refs, in_refs) = env
     .par_iter()
     .map(|(name, constant)| {
       let deps = get_constant_info_references(constant);
@@ -78,7 +78,7 @@ pub fn build_ref_graph(const_map: &ConstMap) -> RefGraph {
       |(out_l, in_l), (out_r, in_r)| (merge(out_l, out_r), merge(in_l, in_r)),
     );
 
-  //assert_eq!(const_map.len(), out_refs.len());
+  //assert_eq!(env.len(), out_refs.len());
   //assert_eq!(out_refs.len(), in_refs.len());
   RefGraph { out_refs, in_refs }
 }
@@ -86,36 +86,32 @@ pub fn build_ref_graph(const_map: &ConstMap) -> RefGraph {
 fn get_constant_info_references(constant_info: &ConstantInfo) -> NameSet {
   let cache = &mut FxHashMap::default();
   match constant_info {
-    ConstantInfo::AxiomInfo(val) => {
-      get_expr_references(&val.constant_val.typ, cache)
-    },
+    ConstantInfo::AxiomInfo(val) => get_expr_references(&val.cnst.typ, cache),
     ConstantInfo::DefnInfo(val) => merge_name_sets(
-      get_expr_references(&val.constant_val.typ, cache),
+      get_expr_references(&val.cnst.typ, cache),
       get_expr_references(&val.value, cache),
     ),
     ConstantInfo::ThmInfo(val) => merge_name_sets(
-      get_expr_references(&val.constant_val.typ, cache),
+      get_expr_references(&val.cnst.typ, cache),
       get_expr_references(&val.value, cache),
     ),
     ConstantInfo::OpaqueInfo(val) => merge_name_sets(
-      get_expr_references(&val.constant_val.typ, cache),
+      get_expr_references(&val.cnst.typ, cache),
       get_expr_references(&val.value, cache),
     ),
-    ConstantInfo::QuotInfo(val) => {
-      get_expr_references(&val.constant_val.typ, cache)
-    },
+    ConstantInfo::QuotInfo(val) => get_expr_references(&val.cnst.typ, cache),
     ConstantInfo::InductInfo(val) => {
-      let name_set = get_expr_references(&val.constant_val.typ, cache);
+      let name_set = get_expr_references(&val.cnst.typ, cache);
       let ctors_name_set = val.ctors.iter().cloned().collect();
       merge_name_sets(name_set, ctors_name_set)
     },
     ConstantInfo::CtorInfo(val) => {
-      let mut name_set = get_expr_references(&val.constant_val.typ, cache);
+      let mut name_set = get_expr_references(&val.cnst.typ, cache);
       name_set.insert(val.induct.clone());
       name_set
     },
     ConstantInfo::RecInfo(val) => {
-      let name_set = get_expr_references(&val.constant_val.typ, cache);
+      let name_set = get_expr_references(&val.cnst.typ, cache);
       val.rules.iter().fold(name_set, |mut acc, rule| {
         acc.insert(rule.ctor.clone());
         merge_name_sets(acc, get_expr_references(&rule.rhs, cache))

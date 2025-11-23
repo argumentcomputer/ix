@@ -1,5 +1,6 @@
 use blake3::Hash;
 use std::cmp::{Ordering, PartialOrd};
+use std::hash::{Hash as StdHash, Hasher};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Address {
@@ -9,6 +10,9 @@ pub struct Address {
 impl Address {
   pub fn hash(input: &[u8]) -> Self {
     Address { hash: blake3::hash(input) }
+  }
+  pub fn hex(&self) -> String {
+    self.hash.to_hex().as_str().to_owned()
   }
 }
 
@@ -23,6 +27,11 @@ impl PartialOrd for Address {
     Some(self.cmp(other))
   }
 }
+impl StdHash for Address {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    self.hash.as_bytes().hash(state);
+  }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetaAddress {
@@ -30,13 +39,15 @@ pub struct MetaAddress {
   pub meta: Address,
 }
 
-// TODO: DELETEME
-impl Default for MetaAddress {
-  fn default() -> Self {
-    let addr = Address { hash: [0; 32].into() };
-    Self { data: addr.clone(), meta: addr }
-  }
-}
+//impl Display for MetaAddress {}
+
+//// TODO: DELETEME
+//impl Default for MetaAddress {
+//  fn default() -> Self {
+//    let addr = Address { hash: [0; 32].into() };
+//    Self { data: addr.clone(), meta: addr }
+//  }
+//}
 
 #[cfg(test)]
 pub mod tests {

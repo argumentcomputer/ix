@@ -1,31 +1,1443 @@
-//use indexmap::IndexSet;
-//use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-//use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
-//use std::{
-//  collections::HashMap,
-//  hash::{Hash, Hasher},
-//  sync::{Arc, Mutex},
-//};
-//
-//use crate::{
-//  cons_list::ConsList,
-//  ix::address::{Address, MetaAddress},
-//  ix::ixon::{
-//    self, Axiom, DataValue, DefKind, Definition, Ixon, Metadata, Metadatum,
-//    Preresolved, Quotient, Recursor, Serialize, SourceInfo, Substring, Syntax,
-//  },
-//  lean::nat::Nat,
-//  lean_env::{
-//    AxiomVal, ConstMap, ConstantInfo, ConstantVal, ConstructorVal,
-//    DataValue as LeanDataValue, DefinitionSafety, DefinitionVal, Expr,
-//    InductiveVal, Level, Literal, Name, OpaqueVal, QuotVal, RecursorRule,
-//    RecursorVal, ReducibilityHints, SourceInfo as LeanSourceInfo,
-//    Substring as LeanSubstring, Syntax as LeanSyntax, SyntaxPreresolved,
-//    TheoremVal,
-//    ref_graph::{NameSet, RefMap},
-//  },
-//};
-//
+use indexmap::IndexSet;
+use itertools::Itertools;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use std::{
+  cmp::Ordering,
+  collections::HashMap,
+  hash::{Hash, Hasher},
+  sync::{Arc, Mutex},
+};
+
+use crate::{
+  cons_list::ConsList,
+  ix::address::{Address, MetaAddress},
+  ix::env::{
+    AxiomVal, ConstantInfo, ConstantVal, ConstructorVal,
+    DataValue as LeanDataValue, DefinitionSafety, DefinitionVal, Env, Expr,
+    ExprData, InductiveVal, Level, LevelData, Literal, Name, NameData,
+    OpaqueVal, QuotVal, RecursorRule, RecursorVal, ReducibilityHints,
+    SourceInfo as LeanSourceInfo, Substring as LeanSubstring,
+    Syntax as LeanSyntax, SyntaxPreresolved, TheoremVal,
+  },
+  ix::graph::{NameSet, RefMap},
+  ix::ixon::{
+    self, Axiom, BuiltIn, Constructor, DataValue, DefKind, Definition,
+    Inductive, Ixon, Metadata, Metadatum, Preresolved, Quotient, Recursor,
+    Serialize, SourceInfo, Substring, Syntax,
+  },
+  ix::mutual::{Def, Ind, MutConst, MutCtx, Rec},
+  ix::store::{Store, StoreError},
+  ix::strong_ordering::SOrder,
+  lean::nat::Nat,
+};
+
+#[derive(Default)]
+#[allow(clippy::type_complexity)]
+pub struct CompileState {
+  pub const_cache: FxHashMap<Name, MetaAddress>,
+  pub expr_cache: FxHashMap<Expr, MetaAddress>,
+  pub univ_cache: FxHashMap<Level, MetaAddress>,
+  pub name_cache: FxHashMap<Name, Address>,
+  pub const_cmp: FxHashMap<(Name, Name), Ordering>,
+}
+
+#[derive(Debug)]
+pub enum CompileError {
+  StoreError(StoreError),
+  Todo,
+}
+
+pub type CompileResult =
+  Result<Arc<FxHashMap<Name, MetaAddress>>, CompileError>;
+
+pub type Consts = Arc<FxHashMap<Name, MetaAddress>>;
+
+pub fn store_ixon(ixon: &Ixon) -> Result<Address, CompileError> {
+  let mut bytes = Vec::new();
+  ixon.put(&mut bytes);
+  Store::write(&bytes).map_err(CompileError::StoreError)
+}
+
+pub fn store_string(str: &str) -> Result<Address, CompileError> {
+  Store::write(str.as_bytes()).map_err(CompileError::StoreError)
+}
+
+pub fn store_nat(nat: &Nat) -> Result<Address, CompileError> {
+  Store::write(&nat.to_le_bytes()).map_err(CompileError::StoreError)
+}
+
+pub fn store_serialize<A: Serialize>(a: &A) -> Result<Address, CompileError> {
+  let mut bytes = Vec::new();
+  a.put(&mut bytes);
+  Store::write(&bytes).map_err(CompileError::StoreError)
+}
+
+pub fn store_meta(x: Metadata) -> Result<Address, CompileError> {
+  let mut bytes = Vec::new();
+  x.put(&mut bytes);
+  Store::write(&bytes).map_err(CompileError::StoreError)
+}
+
+pub fn compile_name(
+  name: Name,
+  stt: &mut CompileState,
+) -> Result<Address, CompileError> {
+  if let Some(cached) = stt.name_cache.get(&name) {
+    Ok(cached.clone())
+  } else {
+    let addr = match name.as_data() {
+      NameData::Anonymous => store_ixon(&Ixon::NAnon)?,
+      NameData::Str(n, s, _) => {
+        let n2 = compile_name(n.clone(), stt)?;
+        let s2 = store_string(s)?;
+        store_ixon(&Ixon::NStr(n2, s2))?
+      },
+      NameData::Num(n, i, _) => {
+        let n_ = compile_name(n.clone(), stt)?;
+        let s_ = store_nat(i)?;
+        store_ixon(&Ixon::NNum(n_, s_))?
+      },
+    };
+    stt.name_cache.insert(name, addr.clone());
+    Ok(addr)
+  }
+}
+
+pub fn compile_level(
+  level: &Level,
+  univs: ConsList<Name>,
+  stt: &mut CompileState,
+) -> Result<MetaAddress, CompileError> {
+  if let Some(cached) = stt.univ_cache.get(level) {
+    Ok(cached.clone())
+  } else {
+    let (data_ixon, meta_ixon) = match level.as_data() {
+      LevelData::Zero => (Ixon::UZero, Ixon::Meta(Metadata::default())),
+      LevelData::Succ(x) => {
+        let MetaAddress { data, meta } = compile_level(x, univs, stt)?;
+        let nodes = vec![Metadatum::Link(meta)];
+        (Ixon::USucc(data), Ixon::Meta(Metadata { nodes }))
+      },
+      LevelData::Max(x, y) => {
+        let MetaAddress { data: data_x, meta: meta_x } =
+          compile_level(x, univs.clone(), stt)?;
+        let MetaAddress { data: data_y, meta: meta_y } =
+          compile_level(y, univs, stt)?;
+        let nodes = vec![Metadatum::Link(meta_x), Metadatum::Link(meta_y)];
+        (Ixon::UMax(data_x, data_y), Ixon::Meta(Metadata { nodes }))
+      },
+      LevelData::Imax(x, y) => {
+        let MetaAddress { data: data_x, meta: meta_x } =
+          compile_level(x, univs.clone(), stt)?;
+        let MetaAddress { data: data_y, meta: meta_y } =
+          compile_level(y, univs, stt)?;
+        let nodes = vec![Metadatum::Link(meta_x), Metadatum::Link(meta_y)];
+        (Ixon::UIMax(data_x, data_y), Ixon::Meta(Metadata { nodes }))
+      },
+      LevelData::Param(n) => match univs.index_of(n) {
+        Some(i) => {
+          let data = Ixon::UVar(Nat::from_le_bytes(&i.to_le_bytes()));
+          let n_addr = compile_name(n.clone(), stt)?;
+          let nodes = vec![Metadatum::Link(n_addr)];
+          (data, Ixon::Meta(Metadata { nodes }))
+        },
+        None => return Err(CompileError::Todo),
+      },
+      LevelData::Mvar(_) => return Err(CompileError::Todo),
+    };
+    let data = store_ixon(&data_ixon)?;
+    let meta = store_ixon(&meta_ixon)?;
+    let address = MetaAddress { data, meta };
+    stt.univ_cache.insert(level.clone(), address.clone());
+    Ok(address)
+  }
+}
+
+pub fn compare_level(
+  x_ctx: ConsList<Name>,
+  y_ctx: ConsList<Name>,
+  x: &Level,
+  y: &Level,
+) -> Result<SOrder, CompileError> {
+  match (x.as_data(), y.as_data()) {
+    (LevelData::Mvar(_), _) => Err(CompileError::Todo),
+    (_, LevelData::Mvar(_)) => Err(CompileError::Todo),
+    (LevelData::Zero, LevelData::Zero) => Ok(SOrder::eq(true)),
+    (LevelData::Zero, _) => Ok(SOrder::lt(true)),
+    (_, LevelData::Zero) => Ok(SOrder::gt(true)),
+    (LevelData::Succ(x), LevelData::Succ(y)) => {
+      compare_level(x_ctx.clone(), y_ctx.clone(), x, y)
+    },
+    (LevelData::Succ(_), _) => Ok(SOrder::lt(true)),
+    (_, LevelData::Succ(_)) => Ok(SOrder::gt(true)),
+    (LevelData::Max(xl, xr), LevelData::Max(yl, yr)) => SOrder::try_cmp(
+      compare_level(x_ctx.clone(), y_ctx.clone(), xl, yl)?,
+      || compare_level(x_ctx, y_ctx, xr, yr),
+    ),
+    (LevelData::Max(_, _), _) => Ok(SOrder::lt(true)),
+    (_, LevelData::Max(_, _)) => Ok(SOrder::gt(true)),
+    (LevelData::Imax(xl, xr), LevelData::Imax(yl, yr)) => SOrder::try_cmp(
+      compare_level(x_ctx.clone(), y_ctx.clone(), xl, yl)?,
+      || compare_level(x_ctx, y_ctx, xr, yr),
+    ),
+    (LevelData::Imax(_, _), _) => Ok(SOrder::lt(true)),
+    (_, LevelData::Imax(_, _)) => Ok(SOrder::gt(true)),
+    (LevelData::Param(x), LevelData::Param(y)) => {
+      match (x_ctx.index_of(x), y_ctx.index_of(y)) {
+        (Some(xi), Some(yi)) => {
+          Ok(SOrder { strong: true, ordering: xi.cmp(&yi) })
+        },
+        (None, _) => Err(CompileError::Todo),
+        (_, None) => Err(CompileError::Todo),
+      }
+    },
+  }
+}
+
+pub fn compile_substring(
+  substring: &LeanSubstring,
+) -> Result<Substring, CompileError> {
+  let LeanSubstring { str, start_pos, stop_pos } = substring;
+  let str = store_string(str)?;
+  Ok(Substring {
+    str,
+    start_pos: start_pos.clone(),
+    stop_pos: stop_pos.clone(),
+  })
+}
+
+pub fn compile_preresolved(
+  preresolved: &SyntaxPreresolved,
+  stt: &mut CompileState,
+) -> Result<Preresolved, CompileError> {
+  match preresolved {
+    SyntaxPreresolved::Namespace(ns) => {
+      Ok(Preresolved::Namespace(compile_name(ns.clone(), stt)?))
+    },
+    SyntaxPreresolved::Decl(n, fs) => {
+      let fs = fs.iter().map(|s| store_string(s)).try_collect()?;
+      Ok(Preresolved::Decl(compile_name(n.clone(), stt)?, fs))
+    },
+  }
+}
+
+pub fn compile_source_info(
+  info: &LeanSourceInfo,
+) -> Result<SourceInfo, CompileError> {
+  match info {
+    LeanSourceInfo::Original(l, p, t, e) => {
+      let l = compile_substring(l)?;
+      let t = compile_substring(t)?;
+      Ok(SourceInfo::Original(l, p.clone(), t, e.clone()))
+    },
+    LeanSourceInfo::Synthetic(p, e, c) => {
+      Ok(SourceInfo::Synthetic(p.clone(), e.clone(), *c))
+    },
+    LeanSourceInfo::None => Ok(SourceInfo::None),
+  }
+}
+
+pub fn compile_syntax(
+  syn: &LeanSyntax,
+  stt: &mut CompileState,
+) -> Result<Syntax, CompileError> {
+  match syn {
+    LeanSyntax::Missing => Ok(Syntax::Missing),
+    LeanSyntax::Node(info, kind, args) => {
+      let info = compile_source_info(info)?;
+      let kind = compile_name(kind.clone(), stt)?;
+      let args = args
+        .iter()
+        .map(|s| store_serialize(&compile_syntax(s, stt)?))
+        .try_collect()?;
+      Ok(Syntax::Node(info, kind, args))
+    },
+    LeanSyntax::Atom(info, val) => {
+      let info = compile_source_info(info)?;
+      let val = store_string(val)?;
+      Ok(Syntax::Atom(info, val))
+    },
+    LeanSyntax::Ident(info, raw_val, val, preresolved) => {
+      let info = compile_source_info(info)?;
+      let raw_val = compile_substring(raw_val)?;
+      let val = compile_name(val.clone(), stt)?;
+      let preresolved = preresolved
+        .iter()
+        .map(|pre| compile_preresolved(pre, stt))
+        .try_collect()?;
+      Ok(Syntax::Ident(info, raw_val, val, preresolved))
+    },
+  }
+}
+
+pub fn compile_data_value(
+  data_value: &LeanDataValue,
+  stt: &mut CompileState,
+) -> Result<DataValue, CompileError> {
+  match data_value {
+    LeanDataValue::OfString(s) => Ok(DataValue::OfString(store_string(s)?)),
+    LeanDataValue::OfBool(b) => Ok(DataValue::OfBool(*b)),
+    LeanDataValue::OfName(n) => {
+      Ok(DataValue::OfName(compile_name(n.clone(), stt)?))
+    },
+    LeanDataValue::OfNat(i) => Ok(DataValue::OfNat(store_nat(i)?)),
+    LeanDataValue::OfInt(i) => Ok(DataValue::OfInt(store_serialize(i)?)),
+    LeanDataValue::OfSyntax(s) => {
+      Ok(DataValue::OfSyntax(store_serialize(&compile_syntax(s, stt)?)?))
+    },
+  }
+}
+
+pub fn compile_kv_maps(
+  maps: &ConsList<Vec<(Name, LeanDataValue)>>,
+  stt: &mut CompileState,
+) -> Result<Address, CompileError> {
+  let nodes = maps
+    .iter()
+    .map(|kv_map| {
+      let mut kv = Vec::with_capacity(kv_map.len());
+      for (name, data_value) in kv_map {
+        let n = compile_name(name.clone(), stt)?;
+        let d = compile_data_value(data_value, stt)?;
+        kv.push((n, d));
+      }
+      Ok(Metadatum::KVMap(kv))
+    })
+    .try_collect()?;
+  store_ixon(&Ixon::Meta(Metadata { nodes }))
+}
+pub fn compile_ref(
+  comms: Consts,
+  consts: Consts,
+  name: Name,
+) -> Result<MetaAddress, CompileError> {
+  if let Some(builtin) = BuiltIn::from_name(&name) {
+    Ok(MetaAddress {
+      data: store_ixon(&Ixon::Prim(builtin))?,
+      meta: store_ixon(&Ixon::Meta(Metadata { nodes: vec![] }))?,
+    })
+  } else if let Some(addr) = comms.as_ref().get(&name) {
+    Ok(addr.clone())
+  } else if let Some(addr) = consts.as_ref().get(&name) {
+    Ok(addr.clone())
+  } else {
+    Err(CompileError::Todo)
+  }
+}
+
+pub fn compile_expr_inner(
+  kvs: &ConsList<Vec<(Name, LeanDataValue)>>,
+  expr: &Expr,
+  univ_ctx: ConsList<Name>,
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  stt: &mut CompileState,
+) -> Result<(Ixon, Ixon), CompileError> {
+  match expr.as_data() {
+    ExprData::Mdata(kv, x, _) => compile_expr_inner(
+      &kvs.cons(kv.clone()),
+      x,
+      univ_ctx,
+      mut_ctx,
+      comms,
+      consts,
+      stt,
+    ),
+    ExprData::Bvar(idx, _) => {
+      let data = Ixon::EVar(idx.clone());
+      let md = compile_kv_maps(kvs, stt)?;
+      let nodes = vec![Metadatum::Link(md)];
+      let meta = Ixon::Meta(Metadata { nodes });
+      Ok((data, meta))
+    },
+    ExprData::Sort(univ, _) => {
+      let md = compile_kv_maps(kvs, stt)?;
+      let MetaAddress { data: udata, meta: umeta } =
+        compile_level(univ, univ_ctx, stt)?;
+      let data = Ixon::ESort(udata);
+      let nodes = vec![Metadatum::Link(md), Metadatum::Link(umeta)];
+      let meta = Ixon::Meta(Metadata { nodes });
+      Ok((data, meta))
+    },
+    ExprData::Const(name, lvls, _) => {
+      let md = compile_kv_maps(kvs, stt)?;
+      let n = compile_name(name.clone(), stt)?;
+      let mut us_data = Vec::with_capacity(lvls.len());
+      let mut us_meta = Vec::with_capacity(lvls.len());
+      for u in lvls {
+        let MetaAddress { data, meta } =
+          compile_level(u, univ_ctx.clone(), stt)?;
+        us_data.push(data);
+        us_meta.push(meta);
+      }
+      match mut_ctx.as_ref().get(name) {
+        Some(idx) => {
+          let data = Ixon::ERec(idx.clone(), us_data);
+          let meta = Ixon::Meta(Metadata {
+            nodes: vec![
+              Metadatum::Link(md),
+              Metadatum::Link(n),
+              Metadatum::Links(us_meta),
+            ],
+          });
+          Ok((data, meta))
+        },
+        None => {
+          let addr = compile_ref(comms, consts, name.clone())?;
+          let data = Ixon::ERef(addr.data.clone(), us_data);
+          let meta = Ixon::Meta(Metadata {
+            nodes: vec![
+              Metadatum::Link(md),
+              Metadatum::Link(n),
+              Metadatum::Link(addr.meta.clone()),
+              Metadatum::Links(us_meta),
+            ],
+          });
+          Ok((data, meta))
+        },
+      }
+    },
+    ExprData::App(f, a, _) => {
+      let md = compile_kv_maps(kvs, stt)?;
+      let f = compile_expr(
+        f,
+        univ_ctx.clone(),
+        mut_ctx.clone(),
+        comms.clone(),
+        consts.clone(),
+        stt,
+      )?;
+      let a = compile_expr(a, univ_ctx, mut_ctx, comms, consts, stt)?;
+      let data = Ixon::EApp(f.data, a.data);
+      let meta = Ixon::Meta(Metadata {
+        nodes: vec![
+          Metadatum::Link(md),
+          Metadatum::Link(f.meta),
+          Metadatum::Link(a.meta),
+        ],
+      });
+      Ok((data, meta))
+    },
+    ExprData::Lam(n, t, b, i, _) => {
+      let md = compile_kv_maps(kvs, stt)?;
+      let n = compile_name(n.clone(), stt)?;
+      let t = compile_expr(
+        t,
+        univ_ctx.clone(),
+        mut_ctx.clone(),
+        comms.clone(),
+        consts.clone(),
+        stt,
+      )?;
+      let b = compile_expr(b, univ_ctx, mut_ctx, comms, consts, stt)?;
+      let data = Ixon::ELam(t.data, b.data);
+      let meta = Ixon::Meta(Metadata {
+        nodes: vec![
+          Metadatum::Link(md),
+          Metadatum::Link(n),
+          Metadatum::Info(i.clone()),
+          Metadatum::Link(t.meta),
+          Metadatum::Link(b.meta),
+        ],
+      });
+      Ok((data, meta))
+    },
+    ExprData::ForallE(n, t, b, i, _) => {
+      let md = compile_kv_maps(kvs, stt)?;
+      let n = compile_name(n.clone(), stt)?;
+      let t = compile_expr(
+        t,
+        univ_ctx.clone(),
+        mut_ctx.clone(),
+        comms.clone(),
+        consts.clone(),
+        stt,
+      )?;
+      let b = compile_expr(b, univ_ctx, mut_ctx, comms, consts, stt)?;
+      let data = Ixon::EAll(t.data, b.data);
+      let meta = Ixon::Meta(Metadata {
+        nodes: vec![
+          Metadatum::Link(md),
+          Metadatum::Link(n),
+          Metadatum::Info(i.clone()),
+          Metadatum::Link(t.meta),
+          Metadatum::Link(b.meta),
+        ],
+      });
+      Ok((data, meta))
+    },
+    ExprData::LetE(n, t, v, b, nd, _) => {
+      let md = compile_kv_maps(kvs, stt)?;
+      let n = compile_name(n.clone(), stt)?;
+      let t = compile_expr(
+        t,
+        univ_ctx.clone(),
+        mut_ctx.clone(),
+        comms.clone(),
+        consts.clone(),
+        stt,
+      )?;
+      let v = compile_expr(
+        v,
+        univ_ctx.clone(),
+        mut_ctx.clone(),
+        comms.clone(),
+        consts.clone(),
+        stt,
+      )?;
+      let b = compile_expr(b, univ_ctx, mut_ctx, comms, consts, stt)?;
+      let data = Ixon::ELet(*nd, t.data, v.data, b.data);
+      let meta = Ixon::Meta(Metadata {
+        nodes: vec![
+          Metadatum::Link(md),
+          Metadatum::Link(n),
+          Metadatum::Link(t.meta),
+          Metadatum::Link(v.meta),
+          Metadatum::Link(b.meta),
+        ],
+      });
+      Ok((data, meta))
+    },
+    ExprData::Lit(Literal::NatVal(n), _) => {
+      let md = compile_kv_maps(kvs, stt)?;
+      let data = Ixon::ENat(store_nat(n)?);
+      let meta = Ixon::Meta(Metadata { nodes: vec![Metadatum::Link(md)] });
+      Ok((data, meta))
+    },
+    ExprData::Lit(Literal::StrVal(s), _) => {
+      let md = compile_kv_maps(kvs, stt)?;
+      let data = Ixon::EStr(store_string(s)?);
+      let meta = Ixon::Meta(Metadata { nodes: vec![Metadatum::Link(md)] });
+      Ok((data, meta))
+    },
+    ExprData::Proj(tn, i, s, _) => {
+      let md = compile_kv_maps(kvs, stt)?;
+
+      let n = compile_name(tn.clone(), stt)?;
+      let t = match consts.as_ref().get(tn) {
+        Some(addr) => addr.clone(),
+        None => return Err(CompileError::Todo),
+      };
+      let s =
+        compile_expr(s, univ_ctx, mut_ctx, comms.clone(), consts.clone(), stt)?;
+      let data = Ixon::EPrj(t.data, i.clone(), s.data);
+      let meta = Ixon::Meta(Metadata {
+        nodes: vec![
+          Metadatum::Link(md),
+          Metadatum::Link(n),
+          Metadatum::Link(t.meta),
+          Metadatum::Link(s.meta),
+        ],
+      });
+      Ok((data, meta))
+    },
+    ExprData::Fvar(..) | ExprData::Mvar(..) => Err(CompileError::Todo),
+  }
+}
+
+fn compile_expr(
+  expr: &Expr,
+  univ_ctx: ConsList<Name>,
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  stt: &mut CompileState,
+) -> Result<MetaAddress, CompileError> {
+  if let Some(cached) = stt.expr_cache.get(expr) {
+    Ok(cached.clone())
+  } else {
+    let (data_ixon, meta_ixon) = compile_expr_inner(
+      &ConsList::Nil,
+      expr,
+      univ_ctx,
+      mut_ctx,
+      comms,
+      consts,
+      stt,
+    )?;
+    let data = store_ixon(&data_ixon)?;
+    let meta = store_ixon(&meta_ixon)?;
+    let meta_address = MetaAddress { data, meta };
+    stt.expr_cache.insert(expr.clone(), meta_address.clone());
+    Ok(meta_address)
+  }
+}
+
+pub fn compare_expr(
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  x_lvls: ConsList<Name>,
+  y_lvls: ConsList<Name>,
+  x: &Expr,
+  y: &Expr,
+) -> Result<SOrder, CompileError> {
+  match (x.as_data(), y.as_data()) {
+    (ExprData::Mvar(..), _) => Err(CompileError::Todo),
+    (_, ExprData::Mvar(..)) => Err(CompileError::Todo),
+    (ExprData::Fvar(..), _) => Err(CompileError::Todo),
+    (_, ExprData::Fvar(..)) => Err(CompileError::Todo),
+    (ExprData::Mdata(_, x, _), ExprData::Mdata(_, y, _)) => {
+      compare_expr(mut_ctx, comms, consts, x_lvls, y_lvls, x, y)
+    },
+    (ExprData::Mdata(_, x, _), _) => {
+      compare_expr(mut_ctx, comms, consts, x_lvls, y_lvls, x, y)
+    },
+    (_, ExprData::Mdata(_, y, _)) => {
+      compare_expr(mut_ctx, comms, consts, x_lvls, y_lvls, x, y)
+    },
+    (ExprData::Bvar(x, _), ExprData::Bvar(y, _)) => {
+      Ok(SOrder { strong: true, ordering: x.cmp(y) })
+    },
+    (ExprData::Bvar(..), _) => Ok(SOrder::lt(true)),
+    (_, ExprData::Bvar(..)) => Ok(SOrder::gt(true)),
+    (ExprData::Sort(x, _), ExprData::Sort(y, _)) => {
+      compare_level(x_lvls, y_lvls, x, y)
+    },
+    (ExprData::Sort(..), _) => Ok(SOrder::lt(true)),
+    (_, ExprData::Sort(..)) => Ok(SOrder::gt(true)),
+    (ExprData::Const(x, xls, _), ExprData::Const(y, yls, _)) => {
+      let us = SOrder::try_zip(
+        |a, b| compare_level(x_lvls.clone(), y_lvls.clone(), a, b),
+        xls,
+        yls,
+      )?;
+      if us.ordering != Ordering::Equal {
+        Ok(us)
+      } else if x == y {
+        Ok(SOrder::eq(true))
+      } else {
+        match (mut_ctx.as_ref().get(x), mut_ctx.as_ref().get(y)) {
+          (Some(nx), Some(ny)) => {
+            Ok(SOrder { strong: false, ordering: nx.cmp(ny) })
+          },
+          (Some(..), _) => Ok(SOrder::lt(true)),
+          (None, Some(..)) => Ok(SOrder::gt(true)),
+          (None, None) => {
+            let xa = compile_ref(comms.clone(), consts.clone(), x.clone())?;
+            let ya = compile_ref(comms.clone(), consts.clone(), y.clone())?;
+            Ok(SOrder { strong: true, ordering: xa.data.cmp(&ya.data) })
+          },
+        }
+      }
+    },
+
+    (ExprData::Const(..), _) => Ok(SOrder::lt(true)),
+    (_, ExprData::Const(..)) => Ok(SOrder::gt(true)),
+    (ExprData::App(xl, xr, _), ExprData::App(yl, yr, _)) => SOrder::try_cmp(
+      compare_expr(
+        mut_ctx.clone(),
+        comms.clone(),
+        consts.clone(),
+        x_lvls.clone(),
+        y_lvls.clone(),
+        xl,
+        yl,
+      )?,
+      || compare_expr(mut_ctx, comms, consts, x_lvls, y_lvls, xr, yr),
+    ),
+    (ExprData::App(..), _) => Ok(SOrder::lt(true)),
+    (_, ExprData::App(..)) => Ok(SOrder::gt(true)),
+    (ExprData::Lam(_, xt, xb, _, _), ExprData::Lam(_, yt, yb, _, _)) => {
+      SOrder::try_cmp(
+        compare_expr(
+          mut_ctx.clone(),
+          comms.clone(),
+          consts.clone(),
+          x_lvls.clone(),
+          y_lvls.clone(),
+          xt,
+          yt,
+        )?,
+        || compare_expr(mut_ctx, comms, consts, x_lvls, y_lvls, xb, yb),
+      )
+    },
+    (ExprData::Lam(..), _) => Ok(SOrder::lt(true)),
+    (_, ExprData::Lam(..)) => Ok(SOrder::gt(true)),
+    (
+      ExprData::ForallE(_, xt, xb, _, _),
+      ExprData::ForallE(_, yt, yb, _, _),
+    ) => SOrder::try_cmp(
+      compare_expr(
+        mut_ctx.clone(),
+        comms.clone(),
+        consts.clone(),
+        x_lvls.clone(),
+        y_lvls.clone(),
+        xt,
+        yt,
+      )?,
+      || compare_expr(mut_ctx, comms, consts, x_lvls, y_lvls, xb, yb),
+    ),
+    (ExprData::ForallE(..), _) => Ok(SOrder::lt(true)),
+    (_, ExprData::ForallE(..)) => Ok(SOrder::gt(true)),
+    (
+      ExprData::LetE(_, xt, xv, xb, _, _),
+      ExprData::LetE(_, yt, yv, yb, _, _),
+    ) => SOrder::try_zip(
+      |a, b| {
+        compare_expr(
+          mut_ctx.clone(),
+          comms.clone(),
+          consts.clone(),
+          x_lvls.clone(),
+          y_lvls.clone(),
+          a,
+          b,
+        )
+      },
+      &[xt, xv, xb],
+      &[yt, yv, yb],
+    ),
+    (ExprData::LetE(..), _) => Ok(SOrder::lt(true)),
+    (_, ExprData::LetE(..)) => Ok(SOrder::gt(true)),
+    (ExprData::Lit(x, _), ExprData::Lit(y, _)) => {
+      Ok(SOrder { strong: true, ordering: x.cmp(y) })
+    },
+    (ExprData::Lit(..), _) => Ok(SOrder::lt(true)),
+    (_, ExprData::Lit(..)) => Ok(SOrder::gt(true)),
+    (ExprData::Proj(tnx, ix, tx, _), ExprData::Proj(tny, iy, ty, _)) => {
+      let tn = match (mut_ctx.as_ref().get(tnx), mut_ctx.as_ref().get(tny)) {
+        (Some(nx), Some(ny)) => {
+          Ok(SOrder { strong: false, ordering: nx.cmp(ny) })
+        },
+        (Some(..), _) => Ok(SOrder::lt(true)),
+        (None, Some(..)) => Ok(SOrder::gt(true)),
+        (None, None) => {
+          let xa = compile_ref(comms.clone(), consts.clone(), tnx.clone())?;
+          let ya = compile_ref(comms.clone(), consts.clone(), tny.clone())?;
+          Ok(SOrder { strong: true, ordering: xa.data.cmp(&ya.data) })
+        },
+      }?;
+      SOrder::try_cmp(tn, || {
+        SOrder::try_cmp(SOrder { strong: true, ordering: ix.cmp(iy) }, || {
+          compare_expr(mut_ctx, comms, consts, x_lvls, y_lvls, tx, ty)
+        })
+      })
+    },
+  }
+}
+pub fn compile_defn(
+  def: Def,
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  stt: &mut CompileState,
+) -> Result<(Definition, Metadata), CompileError> {
+  let univ_ctx = ConsList::from_iterator(def.level_params.iter().cloned());
+  let n = compile_name(def.name.clone(), stt)?;
+  let ls = def
+    .level_params
+    .iter()
+    .map(|n| compile_name(n.clone(), stt))
+    .try_collect()?;
+  let t = compile_expr(
+    &def.typ,
+    univ_ctx.clone(),
+    mut_ctx.clone(),
+    comms.clone(),
+    consts.clone(),
+    stt,
+  )?;
+  let v = compile_expr(
+    &def.value,
+    univ_ctx.clone(),
+    mut_ctx.clone(),
+    comms.clone(),
+    consts.clone(),
+    stt,
+  )?;
+  let all =
+    def.all.iter().map(|n| compile_name(n.clone(), stt)).try_collect()?;
+  let data = Definition {
+    kind: def.kind,
+    safety: def.safety,
+    lvls: Nat(def.level_params.len().into()),
+    typ: t.data,
+    value: v.data,
+  };
+  let meta = Metadata {
+    nodes: vec![
+      Metadatum::Link(n),
+      Metadatum::Links(ls),
+      Metadatum::Hints(def.hints),
+      Metadatum::Link(t.meta),
+      Metadatum::Link(v.meta),
+      Metadatum::Links(all),
+    ],
+  };
+  Ok((data, meta))
+}
+
+pub fn compile_rule(
+  rule: &RecursorRule,
+  univ_ctx: ConsList<Name>,
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  stt: &mut CompileState,
+) -> Result<(ixon::RecursorRule, Address, Address), CompileError> {
+  let n = compile_name(rule.ctor.clone(), stt)?;
+  let rhs = compile_expr(&rule.rhs, univ_ctx, mut_ctx, comms, consts, stt)?;
+  let data =
+    ixon::RecursorRule { fields: rule.n_fields.clone(), rhs: rhs.data };
+  Ok((data, n, rhs.meta))
+}
+
+pub fn compile_recr(
+  recr: Rec,
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  stt: &mut CompileState,
+) -> Result<(Recursor, Metadata), CompileError> {
+  let univ_ctx =
+    ConsList::from_iterator(recr.cnst.level_params.iter().cloned());
+  let n = compile_name(recr.cnst.name.clone(), stt)?;
+  let ls: Vec<Address> = recr
+    .cnst
+    .level_params
+    .iter()
+    .map(|n| compile_name(n.clone(), stt))
+    .try_collect()?;
+  let t = compile_expr(
+    &recr.cnst.typ,
+    univ_ctx.clone(),
+    mut_ctx.clone(),
+    consts.clone(),
+    comms.clone(),
+    stt,
+  )?;
+  let mut rule_data = Vec::with_capacity(recr.rules.len());
+  let mut rule_meta = Vec::with_capacity(recr.rules.len());
+  for rule in recr.rules {
+    let (rr, rn, rm) = compile_rule(
+      &rule,
+      univ_ctx.clone(),
+      mut_ctx.clone(),
+      comms.clone(),
+      consts.clone(),
+      stt,
+    )?;
+    rule_data.push(rr);
+    rule_meta.push((rn, rm));
+  }
+  let all =
+    recr.all.iter().map(|n| compile_name(n.clone(), stt)).try_collect()?;
+  let data = Recursor {
+    k: recr.k,
+    is_unsafe: recr.is_unsafe,
+    lvls: Nat(recr.cnst.level_params.len().into()),
+    params: recr.num_params.clone(),
+    indices: recr.num_indices.clone(),
+    motives: recr.num_motives.clone(),
+    minors: recr.num_minors.clone(),
+    typ: t.data,
+    rules: rule_data,
+  };
+  let meta = Metadata {
+    nodes: vec![
+      Metadatum::Link(n),
+      Metadatum::Links(ls),
+      Metadatum::Link(t.meta),
+      Metadatum::Map(rule_meta),
+      Metadatum::Links(all),
+    ],
+  };
+  Ok((data, meta))
+}
+
+fn compile_ctor(
+  ctor: &ConstructorVal,
+  induct: Address,
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  stt: &mut CompileState,
+) -> Result<(Constructor, Metadata), CompileError> {
+  let n = compile_name(ctor.cnst.name.clone(), stt)?;
+  let univ_ctx =
+    ConsList::from_iterator(ctor.cnst.level_params.iter().cloned());
+  let ls = ctor
+    .cnst
+    .level_params
+    .iter()
+    .map(|n| compile_name(n.clone(), stt))
+    .try_collect()?;
+  let t = compile_expr(
+    &ctor.cnst.typ,
+    univ_ctx.clone(),
+    mut_ctx.clone(),
+    comms.clone(),
+    consts.clone(),
+    stt,
+  )?;
+  let data = Constructor {
+    is_unsafe: ctor.is_unsafe,
+    lvls: Nat(ctor.cnst.level_params.len().into()),
+    cidx: ctor.cidx.clone(),
+    params: ctor.num_params.clone(),
+    fields: ctor.num_fields.clone(),
+    typ: t.data,
+  };
+  let meta = Metadata {
+    nodes: vec![
+      Metadatum::Link(n),
+      Metadatum::Links(ls),
+      Metadatum::Link(t.meta),
+      Metadatum::Link(induct),
+    ],
+  };
+  Ok((data, meta))
+}
+
+pub fn compile_indc(
+  ind: &Ind,
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  stt: &mut CompileState,
+) -> Result<(Inductive, FxHashMap<Address, Address>), CompileError> {
+  let n = compile_name(ind.ind.cnst.name.clone(), stt)?;
+  let univ_ctx =
+    ConsList::from_iterator(ind.ind.cnst.level_params.iter().cloned());
+  let ls = ind
+    .ind
+    .cnst
+    .level_params
+    .iter()
+    .map(|n| compile_name(n.clone(), stt))
+    .try_collect()?;
+  let t = compile_expr(
+    &ind.ind.cnst.typ,
+    univ_ctx.clone(),
+    mut_ctx.clone(),
+    comms.clone(),
+    consts.clone(),
+    stt,
+  )?;
+  let mut ctor_data = Vec::with_capacity(ind.ctors.len());
+  let mut ctor_meta = Vec::with_capacity(ind.ctors.len());
+  let mut meta_map = FxHashMap::default();
+  for ctor in ind.ctors.iter() {
+    let (cd, cm) = compile_ctor(
+      ctor,
+      n.clone(),
+      mut_ctx.clone(),
+      comms.clone(),
+      consts.clone(),
+      stt,
+    )?;
+    ctor_data.push(cd);
+    let cn = compile_name(ctor.cnst.name.clone(), stt)?;
+    let cm = store_meta(cm)?;
+    ctor_meta.push(cm.clone());
+    meta_map.insert(cn, cm);
+  }
+  let all =
+    ind.ind.all.iter().map(|n| compile_name(n.clone(), stt)).try_collect()?;
+  let data = Inductive {
+    recr: ind.ind.is_rec,
+    refl: ind.ind.is_reflexive,
+    is_unsafe: ind.ind.is_unsafe,
+    lvls: Nat(ind.ind.cnst.level_params.len().into()),
+    params: ind.ind.num_params.clone(),
+    indices: ind.ind.num_indices.clone(),
+    nested: ind.ind.num_nested.clone(),
+    typ: t.data,
+    ctors: ctor_data,
+  };
+  let meta = Metadata {
+    nodes: vec![
+      Metadatum::Link(n.clone()),
+      Metadatum::Links(ls),
+      Metadatum::Link(t.meta),
+      Metadatum::Links(ctor_meta),
+      Metadatum::Links(all),
+    ],
+  };
+  let m = store_meta(meta)?;
+  meta_map.insert(n, m);
+  Ok((data, meta_map))
+}
+
+pub fn compare_defn(
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  x: &Def,
+  y: &Def,
+) -> Result<SOrder, CompileError> {
+  SOrder::try_cmp(
+    SOrder { strong: true, ordering: x.kind.cmp(&y.kind) },
+    || {
+      SOrder::try_cmp(
+        SOrder {
+          strong: true,
+          ordering: x.level_params.len().cmp(&y.level_params.len()),
+        },
+        || {
+          SOrder::try_cmp(
+            compare_expr(
+              mut_ctx.clone(),
+              comms.clone(),
+              consts.clone(),
+              ConsList::from_iterator(x.level_params.iter().cloned()),
+              ConsList::from_iterator(y.level_params.iter().cloned()),
+              &x.typ,
+              &y.typ,
+            )?,
+            || {
+              compare_expr(
+                mut_ctx.clone(),
+                comms.clone(),
+                consts.clone(),
+                ConsList::from_iterator(x.level_params.iter().cloned()),
+                ConsList::from_iterator(y.level_params.iter().cloned()),
+                &x.value,
+                &y.value,
+              )
+            },
+          )
+        },
+      )
+    },
+  )
+}
+
+pub fn compare_ctor_inner(
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  x: &ConstructorVal,
+  y: &ConstructorVal,
+) -> Result<SOrder, CompileError> {
+  SOrder::try_cmp(
+    SOrder {
+      strong: true,
+      ordering: x.cnst.level_params.len().cmp(&y.cnst.level_params.len()),
+    },
+    || {
+      SOrder::try_cmp(
+        SOrder { strong: true, ordering: x.cidx.cmp(&y.cidx) },
+        || {
+          SOrder::try_cmp(
+            SOrder { strong: true, ordering: x.num_params.cmp(&y.num_params) },
+            || {
+              SOrder::try_cmp(
+                SOrder {
+                  strong: true,
+                  ordering: x.num_fields.cmp(&y.num_fields),
+                },
+                || {
+                  compare_expr(
+                    mut_ctx.clone(),
+                    comms.clone(),
+                    consts.clone(),
+                    ConsList::from_iterator(
+                      x.cnst.level_params.iter().cloned(),
+                    ),
+                    ConsList::from_iterator(
+                      y.cnst.level_params.iter().cloned(),
+                    ),
+                    &x.cnst.typ,
+                    &y.cnst.typ,
+                  )
+                },
+              )
+            },
+          )
+        },
+      )
+    },
+  )
+}
+
+pub fn compare_ctor(
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  stt: &mut CompileState,
+  x: &ConstructorVal,
+  y: &ConstructorVal,
+) -> Result<SOrder, CompileError> {
+  let key = if x.cnst.name <= y.cnst.name {
+    (x.cnst.name.clone(), y.cnst.name.clone())
+  } else {
+    (y.cnst.name.clone(), x.cnst.name.clone())
+  };
+  if let Some(o) = stt.const_cmp.get(&key) {
+    Ok(SOrder { strong: true, ordering: *o })
+  } else {
+    let so = compare_ctor_inner(mut_ctx, comms, consts, x, y)?;
+    if so.strong {
+      stt.const_cmp.insert(key, so.ordering);
+    }
+    Ok(so)
+  }
+}
+
+pub fn compare_indc(
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  stt: &mut CompileState,
+  x: &Ind,
+  y: &Ind,
+) -> Result<SOrder, CompileError> {
+  SOrder::try_cmp(
+    SOrder {
+      strong: true,
+      ordering: x
+        .ind
+        .cnst
+        .level_params
+        .len()
+        .cmp(&y.ind.cnst.level_params.len()),
+    },
+    || {
+      SOrder::try_cmp(
+        SOrder {
+          strong: true,
+          ordering: x.ind.num_params.cmp(&y.ind.num_params),
+        },
+        || {
+          SOrder::try_cmp(
+            SOrder {
+              strong: true,
+              ordering: x.ind.num_indices.cmp(&y.ind.num_indices),
+            },
+            || {
+              SOrder::try_cmp(
+                SOrder {
+                  strong: true,
+                  ordering: x.ind.ctors.len().cmp(&y.ind.ctors.len()),
+                },
+                || {
+                  SOrder::try_cmp(
+                    compare_expr(
+                      mut_ctx.clone(),
+                      comms.clone(),
+                      consts.clone(),
+                      ConsList::from_iterator(
+                        x.ind.cnst.level_params.iter().cloned(),
+                      ),
+                      ConsList::from_iterator(
+                        y.ind.cnst.level_params.iter().cloned(),
+                      ),
+                      &x.ind.cnst.typ,
+                      &y.ind.cnst.typ,
+                    )?,
+                    || {
+                      SOrder::try_zip(
+                        |a, b| {
+                          compare_ctor(
+                            mut_ctx.clone(),
+                            comms.clone(),
+                            consts.clone(),
+                            stt,
+                            a,
+                            b,
+                          )
+                        },
+                        &x.ctors,
+                        &y.ctors,
+                      )
+                    },
+                  )
+                },
+              )
+            },
+          )
+        },
+      )
+    },
+  )
+}
+
+pub fn compare_recr_rule(
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  x_lvls: ConsList<Name>,
+  y_lvls: ConsList<Name>,
+  x: &RecursorRule,
+  y: &RecursorRule,
+) -> Result<SOrder, CompileError> {
+  SOrder::try_cmp(
+    SOrder { strong: true, ordering: x.n_fields.cmp(&y.n_fields) },
+    || {
+      compare_expr(
+        mut_ctx.clone(),
+        comms.clone(),
+        consts.clone(),
+        x_lvls,
+        y_lvls,
+        &x.rhs,
+        &y.rhs,
+      )
+    },
+  )
+}
+
+pub fn compare_recr(
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  x: &Rec,
+  y: &Rec,
+) -> Result<SOrder, CompileError> {
+  SOrder::try_cmp(
+    SOrder {
+      strong: true,
+      ordering: x.cnst.level_params.len().cmp(&y.cnst.level_params.len()),
+    },
+    || {
+      SOrder::try_cmp(
+        SOrder { strong: true, ordering: x.num_params.cmp(&y.num_params) },
+        || {
+          SOrder::try_cmp(
+            SOrder {
+              strong: true,
+              ordering: x.num_indices.cmp(&y.num_indices),
+            },
+            || {
+              SOrder::try_cmp(
+                SOrder {
+                  strong: true,
+                  ordering: x.num_motives.cmp(&y.num_motives),
+                },
+                || {
+                  SOrder::try_cmp(
+                    SOrder {
+                      strong: true,
+                      ordering: x.num_minors.cmp(&y.num_minors),
+                    },
+                    || {
+                      SOrder::try_cmp(
+                        SOrder { strong: true, ordering: x.k.cmp(&y.k) },
+                        || {
+                          SOrder::try_cmp(
+                            compare_expr(
+                              mut_ctx.clone(),
+                              comms.clone(),
+                              consts.clone(),
+                              ConsList::from_iterator(
+                                x.cnst.level_params.iter().cloned(),
+                              ),
+                              ConsList::from_iterator(
+                                y.cnst.level_params.iter().cloned(),
+                              ),
+                              &x.cnst.typ,
+                              &y.cnst.typ,
+                            )?,
+                            || {
+                              SOrder::try_zip(
+                                |a, b| {
+                                  compare_recr_rule(
+                                    mut_ctx.clone(),
+                                    comms.clone(),
+                                    consts.clone(),
+                                    ConsList::from_iterator(
+                                      x.cnst.level_params.iter().cloned(),
+                                    ),
+                                    ConsList::from_iterator(
+                                      y.cnst.level_params.iter().cloned(),
+                                    ),
+                                    a,
+                                    b,
+                                  )
+                                },
+                                &x.rules,
+                                &y.rules,
+                              )
+                            },
+                          )
+                        },
+                      )
+                    },
+                  )
+                },
+              )
+            },
+          )
+        },
+      )
+    },
+  )
+}
+
+pub fn compare_const(
+  mut_ctx: MutCtx,
+  comms: Consts,
+  consts: Consts,
+  stt: &mut CompileState,
+  x: &MutConst,
+  y: &MutConst,
+) -> Result<Ordering, CompileError> {
+  let key = if x.name() <= y.name() {
+    (x.name(), y.name())
+  } else {
+    (y.name(), x.name())
+  };
+  if let Some(so) = stt.const_cmp.get(&key) {
+    Ok(*so)
+  } else {
+    let so: SOrder = match (x, y) {
+      (MutConst::Defn(x), MutConst::Defn(y)) => {
+        compare_defn(mut_ctx.clone(), comms.clone(), consts.clone(), x, y)?
+      },
+      (MutConst::Defn(_), _) => SOrder::lt(true),
+      (MutConst::Indc(x), MutConst::Indc(y)) => {
+        compare_indc(mut_ctx.clone(), comms.clone(), consts.clone(), stt, x, y)?
+      },
+      (MutConst::Indc(_), _) => SOrder::lt(true),
+      (MutConst::Recr(x), MutConst::Recr(y)) => {
+        compare_recr(mut_ctx.clone(), comms.clone(), consts.clone(), x, y)?
+      },
+      (MutConst::Recr(_), _) => SOrder::lt(true),
+    };
+    if so.strong {
+      stt.const_cmp.insert(key, so.ordering);
+    }
+    Ok(so.ordering)
+  }
+}
+
+pub fn eq_const(
+  mut_ctx: &MutCtx,
+  comms: &Consts,
+  consts: &Consts,
+  stt: &mut CompileState,
+  x: &MutConst,
+  y: &MutConst,
+) -> Result<bool, CompileError> {
+  let ordering =
+    compare_const(mut_ctx.clone(), comms.clone(), consts.clone(), stt, x, y)?;
+  Ok(ordering == Ordering::Equal)
+}
+
+pub fn group_by<T, F>(
+  items: Vec<T>,
+  mut eq: F,
+) -> Result<Vec<Vec<T>>, CompileError>
+where
+  F: FnMut(&T, &T) -> Result<bool, CompileError>,
+{
+  let mut groups = Vec::new();
+  let mut current = Vec::new();
+  for item in items {
+    if let Some(last) = current.last() {
+      if eq(last, &item)? {
+        current.push(item);
+      } else {
+        groups.push(std::mem::replace(&mut current, vec![item]));
+      }
+    } else {
+      current.push(item);
+    }
+  }
+  if !current.is_empty() {
+    groups.push(current);
+  }
+  Ok(groups)
+}
+
+pub fn sort_by_compare(
+  items: &[MutConst],
+  ctx: &MutCtx,
+  comms: &Consts,
+  consts: &Consts,
+  stt: &mut CompileState,
+) -> Result<Vec<MutConst>, CompileError> {
+  if items.len() <= 1 {
+    return Ok(items.to_vec());
+  }
+  let mid = items.len() / 2;
+  let (left, right) = items.split_at(mid);
+  let left = sort_by_compare(left, ctx, comms, consts, stt)?;
+  let right = sort_by_compare(right, ctx, comms, consts, stt)?;
+  merge(left, right, ctx, comms, consts, stt)
+}
+
+pub fn merge(
+  left: Vec<MutConst>,
+  right: Vec<MutConst>,
+  ctx: &MutCtx,
+  comms: &Consts,
+  consts: &Consts,
+  stt: &mut CompileState,
+) -> Result<Vec<MutConst>, CompileError> {
+  let mut result = Vec::with_capacity(left.len() + right.len());
+  let mut left_iter = left.into_iter();
+  let mut right_iter = right.into_iter();
+  let mut left_item = left_iter.next();
+  let mut right_item = right_iter.next();
+
+  while let (Some(l), Some(r)) = (&left_item, &right_item) {
+    let cmp =
+      compare_const(ctx.clone(), comms.clone(), consts.clone(), stt, l, r)?;
+    if cmp == Ordering::Greater {
+      result.push(right_item.take().unwrap());
+      right_item = right_iter.next();
+    } else {
+      result.push(left_item.take().unwrap());
+      left_item = left_iter.next();
+    }
+  }
+
+  if let Some(l) = left_item {
+    result.push(l);
+    result.extend(left_iter);
+  }
+  if let Some(r) = right_item {
+    result.push(r);
+    result.extend(right_iter);
+  }
+
+  Ok(result)
+}
+
+pub fn sort_consts(
+  mut cs: Vec<MutConst>,
+  comms: &Consts,
+  consts: &Consts,
+  stt: &mut CompileState,
+) -> Result<Vec<Vec<MutConst>>, CompileError> {
+  cs.sort_by_key(|x| x.name());
+  let mut classes = vec![cs];
+  loop {
+    let ctx = MutConst::ctx(&classes);
+    let mut new_classes: Vec<Vec<MutConst>> = vec![];
+    for class in classes.iter() {
+      match class.len() {
+        0 => {
+          return Err(CompileError::Todo);
+        },
+        1 => {
+          new_classes.push(class.clone());
+        },
+        _ => {
+          let sorted =
+            sort_by_compare(class.as_ref(), &ctx, comms, consts, stt)?;
+          let groups =
+            group_by(sorted, |a, b| eq_const(&ctx, comms, consts, stt, a, b))?;
+          new_classes.extend(groups);
+        },
+      }
+    }
+    for class in &mut new_classes {
+      class.sort_by_key(|x| x.name())
+    }
+    if classes == new_classes {
+      return Ok(new_classes);
+    }
+    classes = new_classes;
+  }
+}
+
 ///// The size of the SCC chunks in which parallel compilation will occur.
 ///// This constant regulates the maximum recursion depth that can happen
 ///// in the worst-case scenario when there's a linear dependency between SCCs.
@@ -339,16 +1751,16 @@
 //  {
 //    match mutual {
 //      LeanMutConst::Def(base_def) => {
-//        let muts_ctx = ConsList::Nil.cons((base_def.name.clone(), Nat::ZERO));
+//        let mut_ctx = ConsList::Nil.cons((base_def.name.clone(), Nat::ZERO));
 //        let (data, meta) =
-//          compile_base_def(base_def, muts_ctx, sccs, const_map, hashes, stt)?;
+//          compile_base_def(base_def, mut_ctx, sccs, const_map, hashes, stt)?;
 //        Ok((Ixon::Defn(data), Ixon::Meta(meta)))
 //      },
 //      LeanMutConst::Rec(rec) => {
-//        let muts_ctx =
+//        let mut_ctx =
 //          ConsList::Nil.cons((rec.constant_val.name.clone(), Nat::ZERO));
 //        let (data, meta) =
-//          compile_rec(rec, &muts_ctx, sccs, const_map, hashes, stt)?;
+//          compile_rec(rec, &mut_ctx, sccs, const_map, hashes, stt)?;
 //        Ok((Ixon::Recr(data), Ixon::Meta(meta)))
 //      },
 //      _ => unreachable!(),
@@ -387,14 +1799,14 @@
 //      .map(|m| m.iter().map(|c| compile_name(c.name(), stt)).collect())
 //      .collect();
 //
-//    let muts_ctx: ConsList<(Arc<Name>, Nat)> = ConsList::Nil; // TODO
+//    let mut_ctx: ConsList<(Arc<Name>, Nat)> = ConsList::Nil; // TODO
 //
-//    let ctx = muts_ctx
+//    let ctx = mut_ctx
 //      .iter()
 //      .map(|(n, i)| (compile_name(n.clone(), stt), store_nat(i)))
 //      .collect();
 //
-//    let (data, metas) = compile_mut_consts(consts_sorted, muts_ctx)?;
+//    let (data, metas) = compile_mut_consts(consts_sorted, mut_ctx)?;
 //
 //    let metas_vec = metas.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 //    let nodes = vec![
@@ -415,7 +1827,7 @@
 //
 //fn compile_mut_consts(
 //  _mut_consts: Vec<Vec<LeanMutConst<'_>>>,
-//  _muts_ctx: ConsList<(Arc<Name>, Nat)>,
+//  _mut_ctx: ConsList<(Arc<Name>, Nat)>,
 //) -> Result<(Ixon, FxHashMap<Address, Address>), CompileError> {
 //  todo!()
 //}
@@ -424,678 +1836,8 @@
 //  todo!()
 //}
 //
-//fn compile_base_def(
-//  base_def: BaseDef<'_>,
-//  muts_ctx: ConsList<(Arc<Name>, Nat)>,
-//  sccs: &RefMap,
-//  const_map: &ConstMap,
-//  hashes: &HashedEntries<'_>,
-//  stt: &mut CompileState,
-//) -> Result<(Definition, Metadata), CompileError> {
-//  let BaseDef { name, level_params, typ, kind, value, hints, safety, all } =
-//    base_def;
-//  let univ_ctx = ConsList::from_iterator(level_params.iter().cloned());
-//  let n = compile_name(name.clone(), stt);
-//  let ls = level_params.iter().map(|n| compile_name(n.clone(), stt)).collect();
-//  let MetaAddress { data: data_t, meta: meta_t } = compile_expr(
-//    typ,
-//    univ_ctx.clone(),
-//    muts_ctx.clone(),
-//    sccs,
-//    const_map,
-//    hashes,
-//    stt,
-//  )?;
-//  let MetaAddress { data: data_v, meta: meta_v } =
-//    compile_expr(value, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
-//  let all = all.iter().map(|n| compile_name(n.clone(), stt)).collect();
-//  let lvls = Nat::from_le_bytes(&level_params.len().to_le_bytes());
-//  let data = Definition { kind, safety, lvls, typ: data_t, value: data_v };
-//  let nodes = vec![
-//    Metadatum::Link(n),
-//    Metadatum::Links(ls),
-//    Metadatum::Hints(hints),
-//    Metadatum::Link(meta_t),
-//    Metadatum::Link(meta_v),
-//    Metadatum::Links(all),
-//  ];
-//  Ok((data, Metadata { nodes }))
-//}
 //
-//fn compile_rec(
-//  base_rec: BaseRec<'_>,
-//  muts_ctx: &ConsList<(Arc<Name>, Nat)>,
-//  sccs: &RefMap,
-//  const_map: &ConstMap,
-//  hashes: &HashedEntries<'_>,
-//  stt: &mut CompileState,
-//) -> Result<(Recursor, Metadata), CompileError> {
-//  let RecursorVal {
-//    constant_val,
-//    all,
-//    num_params,
-//    num_indices,
-//    num_motives,
-//    num_minors,
-//    rules,
-//    k,
-//    is_unsafe,
-//  } = base_rec;
-//  let ConstantVal { name, level_params, typ } = constant_val;
-//  let univ_ctx = ConsList::from_iterator(level_params.iter().cloned());
-//  let n = compile_name(name.clone(), stt);
-//  let ls = level_params.iter().map(|n| compile_name(n.clone(), stt)).collect();
-//  let MetaAddress { data: data_t, meta: meta_t } = compile_expr(
-//    typ,
-//    univ_ctx.clone(),
-//    muts_ctx.clone(),
-//    sccs,
-//    const_map,
-//    hashes,
-//    stt,
-//  )?;
-//  let mut rules_ixon = Vec::with_capacity(rules.len());
-//  let mut rules_map = Vec::with_capacity(rules.len());
-//  for rule in rules {
-//    let (rule_ixon, pair) = compile_rule(
-//      rule,
-//      univ_ctx.clone(),
-//      muts_ctx.clone(),
-//      sccs,
-//      const_map,
-//      hashes,
-//      stt,
-//    )?;
-//    rules_ixon.push(rule_ixon);
-//    rules_map.push(pair);
-//  }
-//  let all = all.iter().map(|n| compile_name(n.clone(), stt)).collect();
-//  let lvls = Nat::from_le_bytes(&level_params.len().to_le_bytes());
-//  let data = Recursor {
-//    k: *k,
-//    is_unsafe: *is_unsafe,
-//    lvls,
-//    params: num_params.clone(),
-//    indices: num_indices.clone(),
-//    motives: num_motives.clone(),
-//    minors: num_minors.clone(),
-//    typ: data_t,
-//    rules: rules_ixon,
-//  };
-//  let nodes = vec![
-//    Metadatum::Link(n),
-//    Metadatum::Links(ls),
-//    Metadatum::Link(meta_t),
-//    Metadatum::Map(rules_map),
-//    Metadatum::Links(all),
-//  ];
-//  Ok((data, Metadata { nodes }))
-//}
 //
-//fn compile_rule(
-//  rule: &RecursorRule,
-//  univ_ctx: ConsList<Arc<Name>>,
-//  muts_ctx: ConsList<(Arc<Name>, Nat)>,
-//  sccs: &RefMap,
-//  const_map: &ConstMap,
-//  hashes: &HashedEntries<'_>,
-//  stt: &mut CompileState,
-//) -> Result<(ixon::RecursorRule, (Address, Address)), CompileError> {
-//  let RecursorRule { ctor, n_fields, rhs } = rule;
-//  let n = compile_name(ctor.clone(), stt);
-//  let MetaAddress { data: data_rhs, meta: meta_rhs } =
-//    compile_expr(rhs, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
-//  let data = ixon::RecursorRule { fields: n_fields.clone(), rhs: data_rhs };
-//  Ok((data, (n, meta_rhs)))
-//}
 //
-//enum LeanMutConst<'a> {
-//  Def(BaseDef<'a>),
-//  Ind(BaseInd<'a>),
-//  Rec(BaseRec<'a>),
-//}
 //
-//impl<'a> LeanMutConst<'a> {
-//  fn name(&self) -> Arc<Name> {
-//    match self {
-//      Self::Def(x) => x.name.clone(),
-//      Self::Ind(x) => x.ind.constant_val.name.clone(),
-//      Self::Rec(x) => x.constant_val.name.clone(),
-//    }
-//  }
-//}
 //
-//struct BaseDef<'a> {
-//  name: &'a Arc<Name>,
-//  level_params: &'a [Arc<Name>],
-//  typ: &'a Arc<Expr>,
-//  kind: DefKind,
-//  value: &'a Arc<Expr>,
-//  hints: ReducibilityHints,
-//  safety: DefinitionSafety,
-//  all: &'a [Arc<Name>],
-//}
-//
-//impl<'a> BaseDef<'a> {
-//  fn mk_defn(val: &'a DefinitionVal) -> Self {
-//    let DefinitionVal { constant_val, value, hints, safety, all } = val;
-//    Self {
-//      name: &constant_val.name,
-//      level_params: &constant_val.level_params,
-//      typ: &constant_val.typ,
-//      kind: DefKind::Definition,
-//      value,
-//      hints: *hints,
-//      safety: *safety,
-//      all,
-//    }
-//  }
-//  fn mk_theo(val: &'a TheoremVal) -> Self {
-//    let TheoremVal { constant_val, value, all } = val;
-//    Self {
-//      name: &constant_val.name,
-//      level_params: &constant_val.level_params,
-//      typ: &constant_val.typ,
-//      kind: DefKind::Theorem,
-//      value,
-//      hints: ReducibilityHints::Opaque,
-//      safety: DefinitionSafety::Safe,
-//      all,
-//    }
-//  }
-//  fn mk_opaq(val: &'a OpaqueVal) -> Self {
-//    let OpaqueVal { constant_val, value, is_unsafe, all } = val;
-//    Self {
-//      name: &constant_val.name,
-//      level_params: &constant_val.level_params,
-//      typ: &constant_val.typ,
-//      kind: DefKind::Opaque,
-//      value,
-//      hints: ReducibilityHints::Opaque,
-//      safety: if *is_unsafe {
-//        DefinitionSafety::Unsafe
-//      } else {
-//        DefinitionSafety::Safe
-//      },
-//      all,
-//    }
-//  }
-//}
-//
-//#[expect(dead_code)]
-//struct BaseInd<'a> {
-//  ind: &'a InductiveVal,
-//  ctors: Vec<&'a ConstructorVal>,
-//}
-//
-//impl<'a> BaseInd<'a> {
-//  fn mk(
-//    val: &'a InductiveVal,
-//    const_map: &'a ConstMap,
-//  ) -> Result<Self, CompileError> {
-//    let mut ctors = Vec::with_capacity(val.ctors.len());
-//    for ctor_name in &val.ctors {
-//      let Some(ConstantInfo::CtorInfo(c)) = const_map.get(ctor_name) else {
-//        return Err(CompileError);
-//      };
-//      ctors.push(c);
-//    }
-//    Ok(BaseInd { ind: val, ctors })
-//  }
-//}
-//
-//type BaseRec<'a> = &'a RecursorVal;
-//
-//#[derive(Default)]
-//#[allow(clippy::type_complexity)]
-//struct CompileState {
-//  expr_cache: FxHashMap<
-//    (ConsList<Arc<Name>>, ConsList<(Arc<Name>, Nat)>, Arc<Expr>),
-//    MetaAddress,
-//  >,
-//  univ_cache: FxHashMap<(ConsList<Arc<Name>>, Arc<Level>), MetaAddress>,
-//  name_cache: FxHashMap<Arc<Name>, Address>,
-//  ctors: FxHashMap<Arc<Name>, MetaAddress>,
-//}
-//
-//fn compile_expr(
-//  expr: &Arc<Expr>,
-//  univ_ctx: ConsList<Arc<Name>>,
-//  muts_ctx: ConsList<(Arc<Name>, Nat)>,
-//  sccs: &RefMap,
-//  const_map: &ConstMap,
-//  hashes: &HashedEntries<'_>,
-//  stt: &mut CompileState,
-//) -> Result<MetaAddress, CompileError> {
-//  let key = (univ_ctx.clone(), muts_ctx.clone(), expr.clone());
-//  if let Some(cached) = stt.expr_cache.get(&key) {
-//    return Ok(cached.clone());
-//  }
-//
-//  #[expect(clippy::too_many_arguments)]
-//  fn go(
-//    kvs: &ConsList<Vec<(Arc<Name>, LeanDataValue)>>,
-//    expr: &Arc<Expr>,
-//    univ_ctx: ConsList<Arc<Name>>,
-//    muts_ctx: ConsList<(Arc<Name>, Nat)>,
-//    sccs: &RefMap,
-//    const_map: &ConstMap,
-//    hashes: &HashedEntries<'_>,
-//    stt: &mut CompileState,
-//  ) -> Result<(Ixon, Ixon), CompileError> {
-//    match expr.as_ref() {
-//      Expr::Mdata(kv, x, _) => go(
-//        &kvs.cons(kv.clone()),
-//        x,
-//        univ_ctx,
-//        muts_ctx,
-//        sccs,
-//        const_map,
-//        hashes,
-//        stt,
-//      ),
-//      Expr::Bvar(idx, _) => {
-//        let data = Ixon::EVar(idx.clone());
-//        let md = compile_kv_maps(kvs, stt);
-//        let nodes = vec![Metadatum::Link(md)];
-//        let meta = Ixon::Meta(Metadata { nodes });
-//        Ok((data, meta))
-//      },
-//      Expr::Sort(univ, _) => {
-//        let md = compile_kv_maps(kvs, stt);
-//        let MetaAddress { data: udata, meta: umeta } =
-//          compile_level(univ, univ_ctx, stt)?;
-//        let data = Ixon::ESort(udata);
-//        let nodes = vec![Metadatum::Link(md), Metadatum::Link(umeta)];
-//        let meta = Ixon::Meta(Metadata { nodes });
-//        Ok((data, meta))
-//      },
-//      Expr::Const(name, lvls, _) => {
-//        let md = compile_kv_maps(kvs, stt);
-//        let n = compile_name(name.clone(), stt);
-//        let mut us_data = Vec::with_capacity(lvls.len());
-//        let mut us_meta = Vec::with_capacity(lvls.len());
-//        for u in lvls {
-//          let MetaAddress { data, meta } =
-//            compile_level(u, univ_ctx.clone(), stt)?;
-//          us_data.push(data);
-//          us_meta.push(meta);
-//        }
-//        let mut mut_idx = None;
-//        for (mut_name, idx) in muts_ctx.iter() {
-//          if name == mut_name {
-//            mut_idx = Some(idx.clone());
-//            break;
-//          }
-//        }
-//        if let Some(idx) = mut_idx {
-//          let data = Ixon::ERec(idx, us_data);
-//          let nodes = vec![
-//            Metadatum::Link(md),
-//            Metadatum::Link(n),
-//            Metadatum::Links(us_meta),
-//          ];
-//          let meta = Ixon::Meta(Metadata { nodes });
-//          Ok((data, meta))
-//        } else {
-//          let scc = sccs.get(name).expect("Missing SCC");
-//          let scc_wrap = NameSetWrap(scc);
-//          let scc_hashes = compile_scc(&scc_wrap, sccs, const_map, hashes)?;
-//          let MetaAddress { data, meta } =
-//            scc_hashes.get(name).expect("Incomplete SCC");
-//          let data = Ixon::ERef(data.clone(), us_data);
-//          let nodes = vec![
-//            Metadatum::Link(md),
-//            Metadatum::Link(n),
-//            Metadatum::Link(meta.clone()),
-//            Metadatum::Links(us_meta),
-//          ];
-//          let meta = Ixon::Meta(Metadata { nodes });
-//          Ok((data, meta))
-//        }
-//      },
-//      Expr::App(f, a, _) => {
-//        let md = compile_kv_maps(kvs, stt);
-//        let MetaAddress { data: data_f, meta: meta_f } = compile_expr(
-//          f,
-//          univ_ctx.clone(),
-//          muts_ctx.clone(),
-//          sccs,
-//          const_map,
-//          hashes,
-//          stt,
-//        )?;
-//        let MetaAddress { data: data_a, meta: meta_a } =
-//          compile_expr(a, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
-//        let data = Ixon::EApp(data_f, data_a);
-//        let nodes = vec![
-//          Metadatum::Link(md),
-//          Metadatum::Link(meta_f),
-//          Metadatum::Link(meta_a),
-//        ];
-//        Ok((data, Ixon::Meta(Metadata { nodes })))
-//      },
-//      Expr::Lam(n, t, b, i, _) => {
-//        let md = compile_kv_maps(kvs, stt);
-//        let n = compile_name(n.clone(), stt);
-//        let MetaAddress { data: data_t, meta: meta_t } = compile_expr(
-//          t,
-//          univ_ctx.clone(),
-//          muts_ctx.clone(),
-//          sccs,
-//          const_map,
-//          hashes,
-//          stt,
-//        )?;
-//        let MetaAddress { data: data_b, meta: meta_b } =
-//          compile_expr(b, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
-//        let data = Ixon::ELam(data_t, data_b);
-//        let nodes = vec![
-//          Metadatum::Link(md),
-//          Metadatum::Link(n),
-//          Metadatum::Info(i.clone()),
-//          Metadatum::Link(meta_t),
-//          Metadatum::Link(meta_b),
-//        ];
-//        Ok((data, Ixon::Meta(Metadata { nodes })))
-//      },
-//      Expr::ForallE(n, t, b, i, _) => {
-//        let md = compile_kv_maps(kvs, stt);
-//        let n = compile_name(n.clone(), stt);
-//        let MetaAddress { data: data_t, meta: meta_t } = compile_expr(
-//          t,
-//          univ_ctx.clone(),
-//          muts_ctx.clone(),
-//          sccs,
-//          const_map,
-//          hashes,
-//          stt,
-//        )?;
-//        let MetaAddress { data: data_b, meta: meta_b } =
-//          compile_expr(b, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
-//        let data = Ixon::EAll(data_t, data_b);
-//        let nodes = vec![
-//          Metadatum::Link(md),
-//          Metadatum::Link(n),
-//          Metadatum::Info(i.clone()),
-//          Metadatum::Link(meta_t),
-//          Metadatum::Link(meta_b),
-//        ];
-//        Ok((data, Ixon::Meta(Metadata { nodes })))
-//      },
-//      Expr::LetE(n, t, v, b, nd, _) => {
-//        let md = compile_kv_maps(kvs, stt);
-//        let n = compile_name(n.clone(), stt);
-//        let MetaAddress { data: data_t, meta: meta_t } = compile_expr(
-//          t,
-//          univ_ctx.clone(),
-//          muts_ctx.clone(),
-//          sccs,
-//          const_map,
-//          hashes,
-//          stt,
-//        )?;
-//        let MetaAddress { data: data_v, meta: meta_v } = compile_expr(
-//          v,
-//          univ_ctx.clone(),
-//          muts_ctx.clone(),
-//          sccs,
-//          const_map,
-//          hashes,
-//          stt,
-//        )?;
-//        let MetaAddress { data: data_b, meta: meta_b } =
-//          compile_expr(b, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
-//        let data = Ixon::ELet(*nd, data_t, data_v, data_b);
-//        let nodes = vec![
-//          Metadatum::Link(md),
-//          Metadatum::Link(n),
-//          Metadatum::Link(meta_t),
-//          Metadatum::Link(meta_v),
-//          Metadatum::Link(meta_b),
-//        ];
-//        Ok((data, Ixon::Meta(Metadata { nodes })))
-//      },
-//      Expr::Lit(Literal::NatVal(n), _) => {
-//        let md = compile_kv_maps(kvs, stt);
-//        let nodes = vec![Metadatum::Link(md)];
-//        Ok((Ixon::ENat(store_nat(n)), Ixon::Meta(Metadata { nodes })))
-//      },
-//      Expr::Lit(Literal::StrVal(s), _) => {
-//        let md = compile_kv_maps(kvs, stt);
-//        let nodes = vec![Metadatum::Link(md)];
-//        Ok((Ixon::ENat(store_string(s)), Ixon::Meta(Metadata { nodes })))
-//      },
-//      Expr::Proj(n, i, s, _) => {
-//        let md = compile_kv_maps(kvs, stt);
-//        let scc = sccs.get(n).expect("Missing SCC");
-//        let scc_wrap = NameSetWrap(scc);
-//        let scc_hashes = compile_scc(&scc_wrap, sccs, const_map, hashes)?;
-//        let MetaAddress { data: data_t, meta: meta_t } =
-//          scc_hashes.get(n).expect("Incomplete SCC");
-//        let n = compile_name(n.clone(), stt);
-//        let MetaAddress { data: data_s, meta: meta_s } =
-//          compile_expr(s, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
-//        let data = Ixon::EPrj(data_t.clone(), i.clone(), data_s);
-//        let nodes = vec![
-//          Metadatum::Link(md),
-//          Metadatum::Link(n),
-//          Metadatum::Link(meta_t.clone()),
-//          Metadatum::Link(meta_s),
-//        ];
-//        Ok((data, Ixon::Meta(Metadata { nodes })))
-//      },
-//      Expr::Fvar(..) | Expr::Mvar(..) => Err(CompileError),
-//    }
-//  }
-//
-//  let (data_ixon, meta_ixon) =
-//    go(&ConsList::Nil, expr, univ_ctx, muts_ctx, sccs, const_map, hashes, stt)?;
-//  let data = store_ixon(&data_ixon);
-//  let meta = store_ixon(&meta_ixon);
-//  let meta_address = MetaAddress { data, meta };
-//  stt.expr_cache.insert(key, meta_address.clone());
-//  Ok(meta_address)
-//}
-//
-//fn compile_level(
-//  level: &Arc<Level>,
-//  univs: ConsList<Arc<Name>>,
-//  stt: &mut CompileState,
-//) -> Result<MetaAddress, CompileError> {
-//  let key = (univs.clone(), level.clone());
-//  if let Some(cached) = stt.univ_cache.get(&key) {
-//    return Ok(cached.clone());
-//  }
-//
-//  fn go(
-//    level: &Level,
-//    univs: ConsList<Arc<Name>>,
-//    stt: &mut CompileState,
-//  ) -> Result<(Ixon, Ixon), CompileError> {
-//    match level {
-//      Level::Zero => Ok((Ixon::UZero, Ixon::Meta(Metadata::default()))),
-//      Level::Succ(x) => {
-//        let MetaAddress { data, meta } = compile_level(x, univs, stt)?;
-//        let nodes = vec![Metadatum::Link(meta)];
-//        Ok((Ixon::USucc(data), Ixon::Meta(Metadata { nodes })))
-//      },
-//      Level::Max(x, y) => {
-//        let MetaAddress { data: data_x, meta: meta_x } =
-//          compile_level(x, univs.clone(), stt)?;
-//        let MetaAddress { data: data_y, meta: meta_y } =
-//          compile_level(y, univs, stt)?;
-//        let nodes = vec![Metadatum::Link(meta_x), Metadatum::Link(meta_y)];
-//        Ok((Ixon::UMax(data_x, data_y), Ixon::Meta(Metadata { nodes })))
-//      },
-//      Level::Imax(x, y) => {
-//        let MetaAddress { data: data_x, meta: meta_x } =
-//          compile_level(x, univs.clone(), stt)?;
-//        let MetaAddress { data: data_y, meta: meta_y } =
-//          compile_level(y, univs, stt)?;
-//        let nodes = vec![Metadatum::Link(meta_x), Metadatum::Link(meta_y)];
-//        Ok((Ixon::UIMax(data_x, data_y), Ixon::Meta(Metadata { nodes })))
-//      },
-//      Level::Param(n) => match univs.index_of(n) {
-//        Some(i) => {
-//          let data = Ixon::UVar(Nat::from_le_bytes(&i.to_le_bytes()));
-//          let n_addr = compile_name(n.clone(), stt);
-//          let nodes = vec![Metadatum::Link(n_addr)];
-//          Ok((data, Ixon::Meta(Metadata { nodes })))
-//        },
-//        None => Err(CompileError),
-//      },
-//      Level::Mvar(_) => Err(CompileError),
-//    }
-//  }
-//
-//  let (data_ixon, meta_ixon) = go(level, univs, stt)?;
-//  let data = store_ixon(&data_ixon);
-//  let meta = store_ixon(&meta_ixon);
-//  let meta_address = MetaAddress { data, meta };
-//  stt.univ_cache.insert(key, meta_address.clone());
-//  Ok(meta_address)
-//}
-//
-//fn compile_kv_maps(
-//  maps: &ConsList<Vec<(Arc<Name>, LeanDataValue)>>,
-//  stt: &mut CompileState,
-//) -> Address {
-//  let nodes = maps
-//    .iter()
-//    .map(|kv_map| {
-//      let mut kv = Vec::with_capacity(kv_map.len());
-//      for (name, data_value) in kv_map {
-//        let n = compile_name(name.clone(), stt);
-//        let d = compile_data_value(data_value, stt);
-//        kv.push((n, d));
-//      }
-//      Metadatum::KVMap(kv)
-//    })
-//    .collect();
-//  store_ixon(&Ixon::Meta(Metadata { nodes }))
-//}
-//
-//fn compile_data_value(
-//  data_value: &LeanDataValue,
-//  stt: &mut CompileState,
-//) -> DataValue {
-//  match data_value {
-//    LeanDataValue::OfString(s) => DataValue::OfString(store_string(s)),
-//    LeanDataValue::OfBool(b) => DataValue::OfBool(*b),
-//    LeanDataValue::OfName(n) => DataValue::OfName(compile_name(n.clone(), stt)),
-//    LeanDataValue::OfNat(i) => DataValue::OfNat(store_nat(i)),
-//    LeanDataValue::OfInt(i) => DataValue::OfInt(store_serialize(i)),
-//    LeanDataValue::OfSyntax(s) => {
-//      DataValue::OfSyntax(store_serialize(&compile_syntax(s, stt)))
-//    },
-//  }
-//}
-//
-//fn compile_name(name: Arc<Name>, stt: &mut CompileState) -> Address {
-//  if let Some(cached) = stt.name_cache.get(&name) {
-//    return cached.clone();
-//  }
-//
-//  let addr = match name.as_ref() {
-//    Name::Anonymous => store_ixon(&Ixon::NAnon),
-//    Name::Str(n, s, _) => {
-//      let n_ = compile_name(n.clone(), stt);
-//      let s_ = store_string(s);
-//      store_ixon(&Ixon::NStr(n_, s_))
-//    },
-//    Name::Num(n, i, _) => {
-//      let n_ = compile_name(n.clone(), stt);
-//      let s_ = store_nat(i);
-//      store_ixon(&Ixon::NNum(n_, s_))
-//    },
-//  };
-//
-//  stt.name_cache.insert(name, addr.clone());
-//  addr
-//}
-//
-//fn compile_syntax(syn: &LeanSyntax, stt: &mut CompileState) -> Syntax {
-//  match syn {
-//    LeanSyntax::Missing => Syntax::Missing,
-//    LeanSyntax::Node(info, kind, args) => {
-//      let info = compile_source_info(info);
-//      let kind = compile_name(kind.clone(), stt);
-//      let args =
-//        args.iter().map(|s| store_serialize(&compile_syntax(s, stt))).collect();
-//      Syntax::Node(info, kind, args)
-//    },
-//    LeanSyntax::Atom(info, val) => {
-//      let info = compile_source_info(info);
-//      let val = store_string(val);
-//      Syntax::Atom(info, val)
-//    },
-//    LeanSyntax::Ident(info, raw_val, val, preresolved) => {
-//      let info = compile_source_info(info);
-//      let raw_val = compile_substring(raw_val);
-//      let val = compile_name(val.clone(), stt);
-//      let preresolved =
-//        preresolved.iter().map(|pre| compile_preresolved(pre, stt)).collect();
-//      Syntax::Ident(info, raw_val, val, preresolved)
-//    },
-//  }
-//}
-//
-//fn compile_substring(substring: &LeanSubstring) -> Substring {
-//  let LeanSubstring { str, start_pos, stop_pos } = substring;
-//  let str = store_string(str);
-//  Substring { str, start_pos: start_pos.clone(), stop_pos: stop_pos.clone() }
-//}
-//
-//fn compile_preresolved(
-//  preresolved: &SyntaxPreresolved,
-//  stt: &mut CompileState,
-//) -> Preresolved {
-//  match preresolved {
-//    SyntaxPreresolved::Namespace(ns) => {
-//      Preresolved::Namespace(compile_name(ns.clone(), stt))
-//    },
-//    SyntaxPreresolved::Decl(n, fs) => {
-//      let fs = fs.iter().map(|s| store_string(s)).collect();
-//      Preresolved::Decl(compile_name(n.clone(), stt), fs)
-//    },
-//  }
-//}
-//
-//fn compile_source_info(info: &LeanSourceInfo) -> SourceInfo {
-//  match info {
-//    LeanSourceInfo::Original(l, p, t, e) => {
-//      let l = compile_substring(l);
-//      let t = compile_substring(t);
-//      SourceInfo::Original(l, p.clone(), t, e.clone())
-//    },
-//    LeanSourceInfo::Synthetic(p, e, c) => {
-//      SourceInfo::Synthetic(p.clone(), e.clone(), *c)
-//    },
-//    LeanSourceInfo::None => SourceInfo::None,
-//  }
-//}
-//
-//fn store_ixon(ixon: &Ixon) -> Address {
-//  let mut bytes = Vec::new();
-//  ixon.put(&mut bytes);
-//  let hash = blake3::hash(&bytes);
-//  Address { hash }
-//}
-//
-//fn store_string(str: &str) -> Address {
-//  let hash = blake3::hash(str.as_bytes());
-//  Address { hash }
-//}
-//
-//fn store_nat(nat: &Nat) -> Address {
-//  let hash = blake3::hash(&nat.to_le_bytes());
-//  Address { hash }
-//}
-//
-//fn store_serialize<A: Serialize>(a: &A) -> Address {
-//  let mut bytes = Vec::new();
-//  a.put(&mut bytes);
-//  let hash = blake3::hash(&bytes);
-//  Address { hash }
-//}
