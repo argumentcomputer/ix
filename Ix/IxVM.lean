@@ -1066,7 +1066,7 @@ def ixon := ⟦
     UMax(Address, Address),                -- 0x05, universe max
     UIMax(Address, Address),               -- 0x06, universe impredicative max
     UVar(Nat),                             -- 0x1X, universe variable
-    -- EVar(Nat),                             -- 0x2X, expression variable
+    EVar(Nat),                             -- 0x2X, expression variable
     -- ERef(Address, Vec<Address>),           -- 0x3X, expression reference
     -- ERec(Nat, Vec<Address>),               -- 0x4X, expression recursion
     -- EPrj(Address, Nat, Address),           -- 0x5X, expression projection
@@ -1076,8 +1076,8 @@ def ixon := ⟦
     EApp(Address, Address),                -- 0x83, expression application
     ELam(Address, Address),                -- 0x84, expression lambda
     EAll(Address, Address),                -- 0x85, expression forall
-    ELet(G, Address, Address, Address)     -- 0x86, 0x87, expression let. TODO: change the first argument to a Bool
-    -- Blob(Vec<u8>),                         -- 0x9X, tagged bytes
+    ELet(G, Address, Address, Address),    -- 0x86, 0x87, expression let. TODO: change the first argument to a Bool
+    Blob(ByteStream)                       -- 0x9X, tagged bytes
     -- Defn(Definition),                      -- 0xA0, definition constant
     -- Recr(Recursor),                        -- 0xA1, recursor constant
     -- Axio(Axiom),                           -- 0xA2, axiom constant
@@ -1297,6 +1297,12 @@ def ixon := ⟦
           Tag4.Mk(1, size) =>
             let (bytes, _) = deserialize_byte_stream(stream, [0; 8], size);
             Ixon.UVar(Nat.Bytes(bytes)),
+          Tag4.Mk(2, size) =>
+            let (bytes, _) = deserialize_byte_stream(stream, [0; 8], size);
+            Ixon.EVar(Nat.Bytes(bytes)),
+          Tag4.Mk(9, size) =>
+            let (bytes, _) = deserialize_byte_stream(stream, [0; 8], size);
+            Ixon.Blob(bytes),
         },
     }
   }
