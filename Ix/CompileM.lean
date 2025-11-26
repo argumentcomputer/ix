@@ -37,10 +37,11 @@ structure CompileState where
   nameCache: Map Lean.Name Address
   strCache: Map String Address
   constCmp: Map (Lean.Name × Lean.Name) Ordering
+  blocks: Set MetaAddress
   deriving Inhabited, Nonempty
 
 def CompileState.init : CompileState :=
-  ⟨default, default, default, default, default, default, default⟩
+  ⟨default, default, default, default, default, default, default, default⟩
 
 inductive CompileError where
 | unknownConstant (curr unknown: Lean.Name): CompileError
@@ -439,7 +440,7 @@ def compileDefn: Ix.Def -> CompileM (Ixon.Definition × Ixon.Metadata)
   let met := ⟨[.link n, .links ls, .hints d.hints, .link t.meta, .link v.meta, .links as]⟩
   return (dat, met)
 
-partial def compileRule: Lean.RecursorRule -> CompileM (Ixon.RecursorRule × (Address × Address))
+partial def compileRule: Lean.RecursorRule -> CompileM (Ixon.RecursorRule × Address × Address)
 | r => do
   --dbg_trace "compileRule"
   let n <- compileName r.ctor
@@ -515,17 +516,16 @@ def compareExpr (ctx: MutCtx) (xlvls ylvls: List Lean.Name)
   | .const x xls, .const y yls => do
     let univs ← SOrder.zipM (compareLevel xlvls ylvls) xls yls
     if univs.ord != .eq then return univs
-    match ctx.find? x, ctx.find? y with
+    if x == y then return ⟨true, .eq⟩
+    else match ctx.find? x, ctx.find? y with
     | some nx, some ny => return ⟨false, compare nx ny⟩
-    | none, some _ => return ⟨true, .gt⟩
     | some _, none => return ⟨true, .lt⟩
-    | none, none =>
-      if x == y then return ⟨true, .eq⟩
-      else do
-        --dbg_trace s!"compareExpr const {(<- read).current} consts {x} {y}"
-        let x' <- compileReference x
-        let y' <- compileReference y
-        return ⟨true, compare x' y'⟩
+    | none, some _ => return ⟨true, .gt⟩
+    | none, none => do
+      --dbg_trace s!"compareExpr const {(<- read).current} consts {x} {y}"
+      let x' <- compileReference x
+      let y' <- compileReference y
+      return ⟨true, compare x'.data y'.data⟩
   | .const .., _ => return ⟨true, .lt⟩
   | _, .const .. => return ⟨true, .gt⟩
   | .app xf xa, .app yf ya =>
@@ -551,22 +551,22 @@ def compareExpr (ctx: MutCtx) (xlvls ylvls: List Lean.Name)
   | .lit x, .lit y => return ⟨true, compare x y⟩
   | .lit .., _ => return ⟨true, .lt⟩
   | _, .lit .. => return ⟨true, .gt⟩
-  | .proj tnx ix tx, .proj tny iy ty =>
+  | .proj tnx ix tx, .proj tny iy ty => do
+    let tn <- match ctx.find? tnx, ctx.find? tny with
+      | some nx, some ny => pure ⟨false, compare nx ny⟩
+      | none, some _ => pure ⟨true, .gt⟩
+      | some _, none => pure ⟨true, .lt⟩
+      | none, none =>
+        if tnx == tny then pure ⟨true, .eq⟩
+        else do
+          let x' <- compileReference tnx
+          let y' <- compileReference tny
+          pure ⟨true, compare x' y'⟩
+    SOrder.cmpM (pure tn) <|
     SOrder.cmpM (pure ⟨true, compare ix iy⟩) <|
-    SOrder.cmpM (compareExpr ctx xlvls ylvls tx ty) <|
-    match ctx.find? tnx, ctx.find? tny with
-    | some nx, some ny => return ⟨false, compare nx ny⟩
-    | none, some _ => return ⟨true, .gt⟩
-    | some _, none => return ⟨true, .lt⟩
-    | none, none =>
-      if tnx == tny then return ⟨true, .eq⟩
-      else do
-        --dbg_trace s!"compareExpr proj {(<- read).current} consts {tnx} {tny}"
-        let x' <- compileReference tnx
-        let y' <- compileReference tny
-        return ⟨true, compare x' y'⟩
+    (compareExpr ctx xlvls ylvls tx ty) 
 
-/-- AST comparison of two Lean definitions. --/
+/-- ast comparison of two lean definitions. --/
 def compareConst (ctx: MutCtx) (x y: MutConst)
   : CompileM Ordering := do
   --dbg_trace "compareConst"
@@ -737,6 +737,7 @@ def compileMutual : MutConst -> CompileM (Ixon × Ixon)
       pure (<- compileName n, <- storeNat i)
     let block: MetaAddress :=
       ⟨<- storeIxon data, <- storeMeta ⟨[.muts mutMeta, .map ctx, .map metas.toList]⟩⟩
+    modify fun stt => { stt with blocks := stt.blocks.insert block }
     -- then add all projections, returning the inductive we started with
     let mut ret? : Option (Ixon × Ixon) := none
     for const' in consts do
@@ -1106,8 +1107,6 @@ partial def CompileM.envTopological
 
   return ⟨consts, refs, blocks⟩
 
-  --return ⟨
-
 partial def CompileM.envScheduler
   (env: Lean.Environment)
   (comms: Map Lean.Name MetaAddress)
@@ -1124,13 +1123,13 @@ partial def CompileM.envScheduler
   let tasksSize := stt.constTasks.size
   let mut i := 1
 
-  --while true do
-  --  let stats <- ScheduleState.stats stt
-  --  if stats.waiting > 0 then
-  --    dbg_trace s!"waiting {repr <| <- ScheduleState.stats stt}"
-  --    continue
-  --  else
-  --    break
+  while true do
+    let stats <- ScheduleState.stats stt
+    if stats.blockWaiting > 0 then
+      dbg_trace s!"waiting {repr <| <- ScheduleState.stats stt}"
+      continue
+    else
+      break
 
   for (n, task) in stt.constTasks do
     dbg_trace s!"waiting {i}/{tasksSize}"
