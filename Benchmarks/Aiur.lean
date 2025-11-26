@@ -110,7 +110,7 @@ def proveBench : IO $ Array BenchReport := do
     let funIdx := toplevel.getFuncIdx `main |>.get!
     bgroup "nat_fib" [
       bench "prove fib 10" (Aiur.AiurSystem.prove system friParameters funIdx #[10]) default,
-    ]
+    ] { samplingMode := .flat, sampleTime := 10, throughput := .some (Throughput.bytes 1) }
 
 def verifyBench : IO $ Array BenchReport := do
   match toplevel.checkAndSimplify with

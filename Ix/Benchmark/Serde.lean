@@ -95,7 +95,10 @@ instance : Ixon.Serialize ChangeEstimates where
   get := getChangeEstimates
 
 def getOneShot: Ixon.GetM OneShot := do
-  return { benchTime := (← Ixon.Serialize.get) }
+  return { 
+    benchTime := (← Ixon.Serialize.get)
+    throughput := (← Ixon.Serialize.get)
+  }
 
 instance : Ixon.Serialize OneShot where
   put os := Ixon.Serialize.put os.benchTime

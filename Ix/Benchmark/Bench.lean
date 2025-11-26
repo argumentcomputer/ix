@@ -7,6 +7,7 @@ import Batteries
 
 import Ix.Benchmark.Serde
 import Ix.Benchmark.Tukey
+import Ix.Benchmark.Throughput
 
 open Batteries (RBMap)
 
@@ -31,7 +32,7 @@ structure BenchGroup where
   name : String
   config : Config
 
-inductive BenchFn ( α β : Type) where
+inductive BenchFn (α β : Type) where
 | pure (fn : α → β)
 | io (fn : α → IO β)
 
@@ -78,8 +79,8 @@ def printRunning (config : Config) (expectedTime : Float) (numIters : Nat) (warn
     IO.eprintln s!"Warning: Unable to complete {config.numSamples} samples in {config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
   IO.println s!"Running {config.numSamples} samples in {expectedTime.floatPretty 2}s ({numIters.natPretty} iterations)\n"
 
--- Core sampling loop that runs the benchmark function and returns the array of measured timings
-def runSample (sampleIters : Array Nat) (bench : Benchmarkable α β) : IO (Array Nat) := do
+-- Core sampling loop that runs the benchmark function for a fixed (if flat) or linearly increasing (if linear) number of iterations per sample, and returns the final dataset as the array of measured times for each sample
+def runSamples (sampleIters : Array Nat) (bench : Benchmarkable α β) : IO (Array Nat) := do
   let func := bench.getFn
   let mut timings : Array Nat := #[]
   for iters in sampleIters do
@@ -92,9 +93,9 @@ def runSample (sampleIters : Array Nat) (bench : Benchmarkable α β) : IO (Arra
 
 -- TODO: Recommend sample count if expectedTime >>> bg.config.sampleTime (i.e. itersPerSample == 1)
 /--
-Runs the sample as a sequence of constant iterations per data point, where the iteration count attempts to fit into the configurable `sampleTime` but cannot be less than 1.
+Runs the benchmark samples as a sequence of constant iterations per data point, where the iteration count attempts to fit into the configurable `sampleTime` but cannot be less than 1.
 
-Returns the iteration counts and elapsed time per data point.
+Returns the iteration counts and elapsed time per sample.
 -/
 def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
 (warmupMean : Float) : IO (Array Nat × Array Nat) := do
@@ -106,11 +107,11 @@ def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
   printRunning bg.config expectedTime totalIters itersPerSample
   --IO.println s!"Flat sample. Iters per sample: {itersPerSample}"
   let sampleIters := Array.replicate bg.config.numSamples itersPerSample
-  let timings ← runSample sampleIters bench
+  let timings ← runSamples sampleIters bench
   return (sampleIters, timings)
 
 /--
-Runs the sample as a sequence of linearly increasing iterations [d, 2d, 3d, ..., Nd] where `N` is the total number of samples and `d` is a factor derived from the warmup iteration time.
+Runs the benchmarks samples as a sequence of linearly increasing iterations [d, 2d, 3d, ..., Nd] where `N` is the total number of samples and `d` is a factor derived from the warmup iteration time.
 
 The sum of this series should be roughly equivalent to the total `sampleTime`.
 
@@ -126,21 +127,13 @@ def BenchGroup.sampleLinear (bg : BenchGroup) (bench : Benchmarkable α β) (war
   let sampleIters := (Array.range bg.config.numSamples).map (fun x => (x + 1) * d)
   printRunning bg.config expectedTime sampleIters.sum d
   --IO.println s!"Linear sample. Iters increase by a factor of {d} per sample"
-  let timings ← runSample sampleIters bench
+  let timings ← runSamples sampleIters bench
   return (sampleIters, timings)
 
 def BenchGroup.sample (bg : BenchGroup) (bench : Benchmarkable α β) (warmupMean : Float) : IO (Array Nat × Array Nat) := do
   match bg.config.samplingMode with
   | .flat => bg.sampleFlat bench warmupMean
   | .linear => bg.sampleLinear bench warmupMean
-
--- TODO
-inductive Throughput where
-| Bytes (n : UInt64)
-| BytesDecimal (n : UInt64)
-| Elements (n : UInt64)
-| Bits (n : UInt64)
-  deriving Repr
 
 structure MeasurementData where
   data : Data
@@ -197,45 +190,68 @@ def compareToThreshold (estimate : Estimate) (noiseThreshold : Float) : Comparis
   let (lb, ub) := (ci.lowerBound, ci.upperBound)
   let noiseNeg := noiseThreshold.neg
 
-  if lb < noiseNeg && ub < noiseNeg
-  then
+  if lb < noiseNeg && ub < noiseNeg then
     ComparisonResult.Improved
-  else if lb > noiseThreshold && ub > noiseThreshold
-  then
+  else if lb > noiseThreshold && ub > noiseThreshold then
     ComparisonResult.Regressed
   else
     ComparisonResult.NonSignificant
 
-
--- TODO: Print ~24 whitespace characters before time, change, regression
+-- TODO: Does color of change percents depend on positive T-test?
 def BenchGroup.printResults (bg : BenchGroup) (benchName : String) (m : MeasurementData) : IO Unit := do
   let estimates := m.absoluteEstimates
   let typicalEstimate := estimates.slope.getD estimates.mean
-  IO.println s!"{bg.name}/{benchName}"
-  let lb := typicalEstimate.confidenceInterval.lowerBound.formatNanos
-  let pointEst := typicalEstimate.pointEstimate.formatNanos
-  let ub := typicalEstimate.confidenceInterval.upperBound.formatNanos
-  IO.println s!"time:   [{lb} {pointEst} {ub}]"
-  if let some comp := m.comparison
-  then
+  let title := green s!"{bg.name}/{benchName}"
+  let indentWidth := 24
+  let indent := String.mk <| List.replicate indentWidth ' '
+  IO.print title
+  -- Print time on separate line from title if title is >22 chars long
+  if title.length + 2 > indentWidth then
+    IO.print s!"\n{indent}"
+  else
+    IO.print <| indent.drop title.length
+  let lb := typicalEstimate.confidenceInterval.lowerBound
+  let pointEst := typicalEstimate.pointEstimate
+  let ub := typicalEstimate.confidenceInterval.upperBound
+  println! "time:   [{lb.formatNanos} {bold pointEst.formatNanos} {ub.formatNanos}]"
+  let thrpts : Option Throughput :=
+    bg.config.throughput.map (fun thrpt =>
+      match thrpt with
+      | .bytes b =>
+        thrptsFromBps b.toFloat lb pointEst ub
+      | .elements _e => ⟨ 1.0, 2.0, 3.0, 4.0 ⟩)
+  if let some ts := thrpts then
+    let (lbStr, pointEstStr, ubStr) :=
+      (formatThrpt ts.lowerBound, formatThrpt ts.pointEstimate, formatThrpt ts.upperBound)
+    println! "{indent}thrpt:  [{lbStr} {bold pointEstStr} {ubStr}]"
+
+  if let some comp := m.comparison then
     let diffMean := comp.pValue > comp.significanceThreshold
     let meanEst := comp.relativeEstimates.mean
-    let pointEst := (meanEst.pointEstimate * 100).floatPretty 4
-    let lb := (meanEst.confidenceInterval.lowerBound * 100).floatPretty 4
-    let ub := (meanEst.confidenceInterval.upperBound * 100).floatPretty 4
-    let symbol := if diffMean then ">" else "<"
-    IO.println s!"change: [{lb}% {pointEst}% {ub}%] (p = {comp.pValue.floatPretty 2} {symbol} {comp.significanceThreshold.floatPretty 2})"
-    let explanation := if diffMean
-    then
-      "No change in performance detected"
+    let (explanation, color) := if diffMean then
+      ("No change in performance detected", false)
     else
       match compareToThreshold meanEst comp.noiseThreshold with
-      | ComparisonResult.Improved => "Performance has improved"
-      | ComparisonResult.Regressed => "Performance has regressed"
-      | ComparisonResult.NonSignificant => "Change within noise threshold"
-    IO.println explanation
-  IO.println ""
-  m.avgTimes.tukey
+      | ComparisonResult.Improved => (s!"Performance has {green "improved"}", true)
+      | ComparisonResult.Regressed => (s!"Performance has {red "regressed"}", true)
+      | ComparisonResult.NonSignificant => ("Change within noise threshold", false)
+    let (lb, pointEst, ub) := meanEst.formatPercents color
+    let symbol := if diffMean then ">" else "<"
+    let changeStr := "change:"
+    if let some thrptsNew := thrpts then
+      let changeIndent := indent.drop changeStr.length
+      IO.println <| changeIndent ++ changeStr
+      println! "{indent}time:   [{lb} {pointEst} {ub}] (p = {comp.pValue.floatPretty 2} {symbol} {comp.significanceThreshold.floatPretty 2})"
+      let base := comp.baseEstimates
+      let typical := base.slope.getD base.mean
+      let thrptsBase := thrptsFromBps thrptsNew.size typical.confidenceInterval.lowerBound typical.pointEstimate typical.confidenceInterval.upperBound
+
+      let (lbStr, pointEstStr, ubStr) := thrptsNew.formatPercents thrptsBase color
+      println! "{indent}thrpt:  [{lbStr}, {pointEstStr}, {ubStr}]"
+    else
+      IO.println s!"{indent}{changeStr} [{lb} {pointEst} {ub}] (p = {comp.pValue.floatPretty 2} {symbol} {comp.significanceThreshold.floatPretty 2})"
+    IO.println <| indent ++ explanation
+  m.avgTimes.runTukey
 
 -- TODO: Write sampling mode and config in `sample.json` for comparison
 def saveComparison (groupName : String) (benchName : String) (comparison : ComparisonData) (config : Config) : IO Unit := do
@@ -261,7 +277,6 @@ def saveMeasurement (groupName : String) (benchName : String) (mData : Measureme
   let fileExt := toString config.serde
   if let some compData := mData.comparison then saveComparison groupName benchName compData config
   else
-    println! "No compdata"
   let (newEstimatesFile, newSampleFile) := (newPath / s!"estimates.{fileExt}", newPath / s!"sample.{fileExt}")
   moveBaseFile newSampleFile baseDir
   moveBaseFile newEstimatesFile baseDir
@@ -305,17 +320,17 @@ def getColumnWidths' (maxWidths : ColumnWidths) (row: BenchReport) : ColumnWidth
   let function := if fnLen > maxWidths.function then fnLen else maxWidths.function
   let newBenchLen := row.newBench.getTime.formatNanos.length
   let newBench := if newBenchLen > maxWidths.newBench then newBenchLen else maxWidths.newBench
-  let baseBench := if let some baseBench := row.baseBench then
-    let baseBenchLen := baseBench.getTime.formatNanos.length
-    if baseBenchLen > maxWidths.baseBench then baseBenchLen
-    else maxWidths.baseBench
-  else maxWidths.baseBench
-  let percentChange := if let some percentChange := row.percentChange then
-    let percentChangeStr := percentChangeToString percentChange
-    let percentLen := percentChangeStr.length
-    if percentLen > maxWidths.percentChange then percentLen
-    else maxWidths.percentChange
-  else maxWidths.percentChange
+  let baseBench :=
+    row.baseBench.elim maxWidths.baseBench (fun baseBench =>
+      let baseBenchLen := baseBench.getTime.formatNanos.length
+      if baseBenchLen > maxWidths.baseBench then baseBenchLen
+      else maxWidths.baseBench)
+  let percentChange :=
+    row.percentChange.elim maxWidths.percentChange (fun percentChange =>
+      let percentChangeStr := percentChangeToString percentChange
+      let percentLen := percentChangeStr.length
+      if percentLen > maxWidths.percentChange then percentLen
+      else maxWidths.percentChange)
   { function, newBench, baseBench, percentChange }
 
 -- Gets the max lengths of each data type for pretty-printing columns
@@ -342,13 +357,11 @@ def mkReportPretty' (columnWidths : ColumnWidths) (reportPretty : String) (row :
   let functionStr := padWhitespace row.function columnWidths.function
   let newBenchStr := row.newBench.getTime.formatNanos
   let newBenchStr := padWhitespace newBenchStr columnWidths.newBench
-  let baseBenchStr := if let some baseBench := row.baseBench then
-    baseBench.getTime.formatNanos
-  else "None"
+  let baseBenchStr :=
+    row.baseBench.elim "None" (·.getTime.formatNanos)
   let baseBenchStr := padWhitespace baseBenchStr columnWidths.baseBench
-  let percentChangeStr := if let some percentChange := row.percentChange then
-    percentChangeToString percentChange
-  else "N/A"
+  let percentChangeStr :=
+    row.percentChange.elim "N/A" (percentChangeToString ·)
   let percentChangeStr := padWhitespace percentChangeStr columnWidths.percentChange
   let rowPretty :=
     s!"| {functionStr} | {newBenchStr} | {baseBenchStr} | {percentChangeStr} |\n"
@@ -384,7 +397,25 @@ def oneShotBench {α β : Type} (groupName : String) (bench: Benchmarkable α β
   let _res ← bench.getFn bench.arg
   let finish ← IO.monoNanosNow
   let benchTime := finish - start
-  IO.println s!"time:   {benchTime.toFloat.formatNanos}"
+  let title := green s!"{groupName}/{bench.name}"
+  let indentWidth := 24
+  let indent := String.mk <| List.replicate indentWidth ' '
+  IO.print title
+  -- Print time on separate line from title if title is >22 chars long
+  if title.length + 2 > indentWidth then
+    IO.print s!"\n{indent}"
+  else
+    IO.print <| indent.drop title.length
+  IO.println s!"time:   {bold benchTime.toFloat.formatNanos}"
+  let thrpts : Option Throughput :=
+    bg.config.throughput.map (fun thrpt =>
+      match thrpt with
+      | .bytes b =>
+        bytesPerSecond b 
+      | .elements _e => ⟨ 1.0, 2.0, 3.0, 4.0 ⟩)
+  if let some ts := thrpts then
+    let thrpt := formatThrpt ts
+    println! "{indent}thrpt: {bold thrpt}"
   let (basePath, newPath) ← mkDirs groupName bench.name
   let fileExt := toString config.serde
   let newFile := newPath / s!"one-shot.{fileExt}"
@@ -413,7 +444,6 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
   let mut reports : Array BenchReport := #[]
   for b in benches do
     let report : BenchReport ← if config.oneShot then do
-      IO.println s!"{bg.name}/{b.name}"
       oneShotBench name b config
     else
       let warmupMean ← bg.warmup b
@@ -423,8 +453,7 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
       let avgTimes : Distribution := { d := data.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
       let gen ← IO.stdGenRef.get
       let mut (distributions, estimates) := avgTimes.estimates bg.config gen
-      if bg.config.samplingMode == .linear
-      then
+      if bg.config.samplingMode == .linear then
         let data' : Data := { d := data }
         let (distribution, slope) := data'.regression bg.config gen
         estimates := { estimates with slope := .some slope }
@@ -436,7 +465,7 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
         absoluteEstimates := estimates,
         distributions,
         comparison := comparisonData
-        throughput := none
+        throughput := config.throughput
       }
       bg.printResults b.name measurement
       IO.println ""
