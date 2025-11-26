@@ -37,10 +37,11 @@ structure CompileState where
   nameCache: Map Lean.Name Address
   strCache: Map String Address
   constCmp: Map (Lean.Name × Lean.Name) Ordering
+  blocks: Set MetaAddress
   deriving Inhabited, Nonempty
 
 def CompileState.init : CompileState :=
-  ⟨default, default, default, default, default, default, default⟩
+  ⟨default, default, default, default, default, default, default, default⟩
 
 inductive CompileError where
 | unknownConstant (curr unknown: Lean.Name): CompileError
@@ -565,7 +566,7 @@ def compareExpr (ctx: MutCtx) (xlvls ylvls: List Lean.Name)
     SOrder.cmpM (pure ⟨true, compare ix iy⟩) <|
     (compareExpr ctx xlvls ylvls tx ty) 
 
-/-- AST comparison of two Lean definitions. --/
+/-- ast comparison of two lean definitions. --/
 def compareConst (ctx: MutCtx) (x y: MutConst)
   : CompileM Ordering := do
   --dbg_trace "compareConst"
@@ -736,6 +737,7 @@ def compileMutual : MutConst -> CompileM (Ixon × Ixon)
       pure (<- compileName n, <- storeNat i)
     let block: MetaAddress :=
       ⟨<- storeIxon data, <- storeMeta ⟨[.muts mutMeta, .map ctx, .map metas.toList]⟩⟩
+    modify fun stt => { stt with blocks := stt.blocks.insert block }
     -- then add all projections, returning the inductive we started with
     let mut ret? : Option (Ixon × Ixon) := none
     for const' in consts do

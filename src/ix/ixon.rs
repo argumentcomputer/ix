@@ -328,7 +328,7 @@ impl Serialize for QuotKind {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DefKind {
   Definition,
   Opaque,

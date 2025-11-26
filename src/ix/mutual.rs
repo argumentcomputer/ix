@@ -109,8 +109,13 @@ impl MutConst {
       },
     }
   }
+  pub fn single_ctx(name: Name) -> MutCtx {
+    let mut mut_ctx = FxHashMap::default();
+    mut_ctx.insert(name, Nat(0u64.into()));
+    Arc::new(mut_ctx)
+  }
 
-  pub fn ctx(classes: &[Vec<MutConst>]) -> MutCtx {
+  pub fn ctx(classes: &[Vec<&MutConst>]) -> MutCtx {
     let mut mut_ctx = FxHashMap::default();
     let mut i = classes.len();
     for (j, consts) in classes.iter().enumerate() {

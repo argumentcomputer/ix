@@ -33,7 +33,7 @@ impl StdHash for Address {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MetaAddress {
   pub data: Address,
   pub meta: Address,
@@ -41,7 +41,7 @@ pub struct MetaAddress {
 
 //impl Display for MetaAddress {}
 
-//// TODO: DELETEME
+// TODO: DELETEME
 //impl Default for MetaAddress {
 //  fn default() -> Self {
 //    let addr = Address { hash: [0; 32].into() };
