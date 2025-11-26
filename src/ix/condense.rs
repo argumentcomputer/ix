@@ -98,21 +98,16 @@ pub fn compute_sccs(refs: &RefMap) -> CondensedBlocks {
           blocks.insert(v.clone(), component.clone());
 
           // Insert all nodes in the component directly into the result.
+          let mut all_refs = NameSet::default();
           for node in &component {
             block_low_links.insert(node.clone(), v.clone());
-            let node_refs: NameSet =
-              refs.get(node).unwrap().difference(&component).cloned().collect();
-            match block_refs.entry(node.clone()) {
-              Entry::Vacant(entry) => {
-                entry.insert(node_refs);
-              },
-              Entry::Occupied(mut entry) => {
-                for n in node_refs {
-                  entry.get_mut().insert(n.clone());
-                }
-              },
+            for r in refs.get(node).unwrap() {
+              if !component.contains(r) && refs.contains_key(r) {
+                all_refs.insert(r.clone());
+              }
             }
           }
+          block_refs.insert(v.clone(), all_refs);
         }
       }
     }

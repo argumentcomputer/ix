@@ -10,7 +10,7 @@ use crate::{
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Def {
   pub name: Name,
   pub level_params: Vec<Name>,
@@ -68,7 +68,7 @@ impl Def {
   }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Ind {
   pub ind: InductiveVal,
   pub ctors: Vec<ConstructorVal>,
@@ -76,7 +76,7 @@ pub struct Ind {
 
 pub type Rec = RecursorVal;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum MutConst {
   Defn(Def),
   Indc(Ind),
@@ -126,8 +126,8 @@ impl MutConst {
         for (cidx, c) in cnst.ctors().iter().enumerate() {
           mut_ctx.insert(c.cnst.name.clone(), Nat((i + cidx).into()));
         }
-        i += max_ctors;
       }
+      i += max_ctors;
     }
     Arc::new(mut_ctx)
   }

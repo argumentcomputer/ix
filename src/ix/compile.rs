@@ -41,21 +41,22 @@ use crate::{
 #[allow(clippy::type_complexity)]
 pub struct CompileState {
   pub consts: DashMap<Name, MetaAddress>,
-  pub exprs: DashMap<Expr, MetaAddress>,
-  pub univs: DashMap<Level, MetaAddress>,
   pub names: DashMap<Name, Address>,
-  pub cmps: DashMap<(Name, Name), Ordering>,
   pub blocks: DashSet<MetaAddress>,
   pub store: DashMap<Address, Vec<u8>>,
+}
+
+#[derive(Default)]
+pub struct BlockCache {
+  pub exprs: FxHashMap<Expr, MetaAddress>,
+  pub univs: FxHashMap<Level, MetaAddress>,
+  pub cmps: FxHashMap<(Name, Name), Ordering>,
 }
 
 #[derive(Debug)]
 pub struct CompileStateStats {
   pub consts: usize,
-  pub exprs: usize,
-  pub univs: usize,
   pub names: usize,
-  pub cmps: usize,
   pub blocks: usize,
   pub store: usize,
 }
@@ -64,10 +65,7 @@ impl CompileState {
   pub fn stats(&self) -> CompileStateStats {
     CompileStateStats {
       consts: self.consts.len(),
-      exprs: self.exprs.len(),
-      univs: self.univs.len(),
       names: self.names.len(),
-      cmps: self.cmps.len(),
       blocks: self.blocks.len(),
       store: self.store.len(),
     }
@@ -86,7 +84,7 @@ pub enum CompileError {
   ExprMVar,
   MkIndc,
   SortConsts,
-  CompileMutConsts,
+  CompileMutConsts(Vec<ixon::MutConst>),
   CompileMutual,
   CompileMutual2,
   CompileMutual3,
@@ -188,31 +186,32 @@ pub fn compile_name(
 pub fn compile_level(
   level: &Level,
   univs: ConsList<Name>,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<MetaAddress, CompileError> {
-  if let Some(cached) = stt.univs.get(level) {
+  if let Some(cached) = cache.univs.get(level) {
     Ok(cached.clone())
   } else {
     let (data_ixon, meta_ixon) = match level.as_data() {
       LevelData::Zero => (Ixon::UZero, Ixon::Meta(Metadata::default())),
       LevelData::Succ(x) => {
-        let MetaAddress { data, meta } = compile_level(x, univs, stt)?;
+        let MetaAddress { data, meta } = compile_level(x, univs, cache, stt)?;
         let nodes = vec![Metadatum::Link(meta)];
         (Ixon::USucc(data), Ixon::Meta(Metadata { nodes }))
       },
       LevelData::Max(x, y) => {
         let MetaAddress { data: data_x, meta: meta_x } =
-          compile_level(x, univs.clone(), stt)?;
+          compile_level(x, univs.clone(), cache, stt)?;
         let MetaAddress { data: data_y, meta: meta_y } =
-          compile_level(y, univs, stt)?;
+          compile_level(y, univs, cache, stt)?;
         let nodes = vec![Metadatum::Link(meta_x), Metadatum::Link(meta_y)];
         (Ixon::UMax(data_x, data_y), Ixon::Meta(Metadata { nodes }))
       },
       LevelData::Imax(x, y) => {
         let MetaAddress { data: data_x, meta: meta_x } =
-          compile_level(x, univs.clone(), stt)?;
+          compile_level(x, univs.clone(), cache, stt)?;
         let MetaAddress { data: data_y, meta: meta_y } =
-          compile_level(y, univs, stt)?;
+          compile_level(y, univs, cache, stt)?;
         let nodes = vec![Metadatum::Link(meta_x), Metadatum::Link(meta_y)];
         (Ixon::UIMax(data_x, data_y), Ixon::Meta(Metadata { nodes }))
       },
@@ -232,16 +231,17 @@ pub fn compile_level(
     let data = store_ixon(&data_ixon, stt)?;
     let meta = store_ixon(&meta_ixon, stt)?;
     let address = MetaAddress { data, meta };
-    stt.univs.insert(level.clone(), address.clone());
+    cache.univs.insert(level.clone(), address.clone());
     Ok(address)
   }
 }
 
 pub fn compare_level(
-  x_ctx: ConsList<Name>,
-  y_ctx: ConsList<Name>,
   x: &Level,
   y: &Level,
+  x_ctx: ConsList<Name>,
+  y_ctx: ConsList<Name>,
+  cache: &mut BlockCache,
 ) -> Result<SOrd, CompileError> {
   match (x.as_data(), y.as_data()) {
     (LevelData::Mvar(e), _) => Err(CompileError::LevelMVar(e.clone())),
@@ -250,27 +250,25 @@ pub fn compare_level(
     (LevelData::Zero, _) => Ok(SOrd::lt(true)),
     (_, LevelData::Zero) => Ok(SOrd::gt(true)),
     (LevelData::Succ(x), LevelData::Succ(y)) => {
-      compare_level(x_ctx.clone(), y_ctx.clone(), x, y)
+      compare_level(x, y, x_ctx.clone(), y_ctx.clone(), cache)
     },
     (LevelData::Succ(_), _) => Ok(SOrd::lt(true)),
     (_, LevelData::Succ(_)) => Ok(SOrd::gt(true)),
     (LevelData::Max(xl, xr), LevelData::Max(yl, yr)) => SOrd::try_compare(
-      compare_level(x_ctx.clone(), y_ctx.clone(), xl, yl)?,
-      || compare_level(x_ctx, y_ctx, xr, yr),
+      compare_level(xl, yl, x_ctx.clone(), y_ctx.clone(), cache)?,
+      || compare_level(xr, yr, x_ctx, y_ctx, cache),
     ),
     (LevelData::Max(_, _), _) => Ok(SOrd::lt(true)),
     (_, LevelData::Max(_, _)) => Ok(SOrd::gt(true)),
     (LevelData::Imax(xl, xr), LevelData::Imax(yl, yr)) => SOrd::try_compare(
-      compare_level(x_ctx.clone(), y_ctx.clone(), xl, yl)?,
-      || compare_level(x_ctx, y_ctx, xr, yr),
+      compare_level(xl, yl, x_ctx.clone(), y_ctx.clone(), cache)?,
+      || compare_level(xr, yr, x_ctx, y_ctx, cache),
     ),
     (LevelData::Imax(_, _), _) => Ok(SOrd::lt(true)),
     (_, LevelData::Imax(_, _)) => Ok(SOrd::gt(true)),
     (LevelData::Param(x), LevelData::Param(y)) => {
       match (x_ctx.index_of(x), y_ctx.index_of(y)) {
-        (Some(xi), Some(yi)) => {
-          Ok(SOrd { strong: true, ordering: xi.cmp(&yi) })
-        },
+        (Some(xi), Some(yi)) => Ok(SOrd::cmp(&xi, &yi)),
         (None, _) => Err(CompileError::LevelParam(x.clone(), x_ctx)),
         (_, None) => Err(CompileError::LevelParam(y.clone(), y_ctx)),
       }
@@ -413,12 +411,18 @@ pub fn compile_expr_inner(
   expr: &Expr,
   univ_ctx: ConsList<Name>,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Ixon, Ixon), CompileError> {
   match expr.as_data() {
-    ExprData::Mdata(kv, x, _) => {
-      compile_expr_inner(&kvs.cons(kv.clone()), x, univ_ctx, mut_ctx, stt)
-    },
+    ExprData::Mdata(kv, x, _) => compile_expr_inner(
+      &kvs.cons(kv.clone()),
+      x,
+      univ_ctx,
+      mut_ctx,
+      cache,
+      stt,
+    ),
     ExprData::Bvar(idx, _) => {
       let data = Ixon::EVar(idx.clone());
       let md = compile_kv_maps(kvs, stt)?;
@@ -429,7 +433,7 @@ pub fn compile_expr_inner(
     ExprData::Sort(univ, _) => {
       let md = compile_kv_maps(kvs, stt)?;
       let MetaAddress { data: udata, meta: umeta } =
-        compile_level(univ, univ_ctx, stt)?;
+        compile_level(univ, univ_ctx, cache, stt)?;
       let data = Ixon::ESort(udata);
       let nodes = vec![Metadatum::Link(md), Metadatum::Link(umeta)];
       let meta = Ixon::Meta(Metadata { nodes });
@@ -442,7 +446,7 @@ pub fn compile_expr_inner(
       let mut us_meta = Vec::with_capacity(lvls.len());
       for u in lvls {
         let MetaAddress { data, meta } =
-          compile_level(u, univ_ctx.clone(), stt)?;
+          compile_level(u, univ_ctx.clone(), cache, stt)?;
         us_data.push(data);
         us_meta.push(meta);
       }
@@ -475,8 +479,8 @@ pub fn compile_expr_inner(
     },
     ExprData::App(f, a, _) => {
       let md = compile_kv_maps(kvs, stt)?;
-      let f = compile_expr(f, univ_ctx.clone(), mut_ctx.clone(), stt)?;
-      let a = compile_expr(a, univ_ctx, mut_ctx, stt)?;
+      let f = compile_expr(f, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+      let a = compile_expr(a, univ_ctx, mut_ctx, cache, stt)?;
       let data = Ixon::EApp(f.data, a.data);
       let meta = Ixon::Meta(Metadata {
         nodes: vec![
@@ -490,8 +494,8 @@ pub fn compile_expr_inner(
     ExprData::Lam(n, t, b, i, _) => {
       let md = compile_kv_maps(kvs, stt)?;
       let n = compile_name(n, stt)?;
-      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), stt)?;
-      let b = compile_expr(b, univ_ctx, mut_ctx, stt)?;
+      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+      let b = compile_expr(b, univ_ctx, mut_ctx, cache, stt)?;
       let data = Ixon::ELam(t.data, b.data);
       let meta = Ixon::Meta(Metadata {
         nodes: vec![
@@ -507,8 +511,8 @@ pub fn compile_expr_inner(
     ExprData::ForallE(n, t, b, i, _) => {
       let md = compile_kv_maps(kvs, stt)?;
       let n = compile_name(n, stt)?;
-      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), stt)?;
-      let b = compile_expr(b, univ_ctx, mut_ctx, stt)?;
+      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+      let b = compile_expr(b, univ_ctx, mut_ctx, cache, stt)?;
       let data = Ixon::EAll(t.data, b.data);
       let meta = Ixon::Meta(Metadata {
         nodes: vec![
@@ -524,9 +528,9 @@ pub fn compile_expr_inner(
     ExprData::LetE(n, t, v, b, nd, _) => {
       let md = compile_kv_maps(kvs, stt)?;
       let n = compile_name(n, stt)?;
-      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), stt)?;
-      let v = compile_expr(v, univ_ctx.clone(), mut_ctx.clone(), stt)?;
-      let b = compile_expr(b, univ_ctx, mut_ctx, stt)?;
+      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+      let v = compile_expr(v, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+      let b = compile_expr(b, univ_ctx, mut_ctx, cache, stt)?;
       let data = Ixon::ELet(*nd, t.data, v.data, b.data);
       let meta = Ixon::Meta(Metadata {
         nodes: vec![
@@ -556,7 +560,7 @@ pub fn compile_expr_inner(
 
       let n = compile_name(tn, stt)?;
       let t = compile_ref(tn, stt)?;
-      let s = compile_expr(s, univ_ctx, mut_ctx, stt)?;
+      let s = compile_expr(s, univ_ctx, mut_ctx, cache, stt)?;
       let data = Ixon::EPrj(t.data, i.clone(), s.data);
       let meta = Ixon::Meta(Metadata {
         nodes: vec![
@@ -577,17 +581,18 @@ fn compile_expr(
   expr: &Expr,
   univ_ctx: ConsList<Name>,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<MetaAddress, CompileError> {
-  if let Some(cached) = stt.exprs.get(expr) {
+  if let Some(cached) = cache.exprs.get(expr) {
     Ok(cached.clone())
   } else {
     let (data_ixon, meta_ixon) =
-      compile_expr_inner(&ConsList::Nil, expr, univ_ctx, mut_ctx, stt)?;
+      compile_expr_inner(&ConsList::Nil, expr, univ_ctx, mut_ctx, cache, stt)?;
     let data = store_ixon(&data_ixon, stt)?;
     let meta = store_ixon(&meta_ixon, stt)?;
     let meta_address = MetaAddress { data, meta };
-    stt.exprs.insert(expr.clone(), meta_address.clone());
+    cache.exprs.insert(expr.clone(), meta_address.clone());
     Ok(meta_address)
   }
 }
@@ -598,6 +603,7 @@ pub fn compare_expr(
   mut_ctx: MutCtx,
   x_lvls: ConsList<Name>,
   y_lvls: ConsList<Name>,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   match (x.as_data(), y.as_data()) {
@@ -606,25 +612,25 @@ pub fn compare_expr(
     (ExprData::Fvar(..), _) => Err(CompileError::ExprFVar),
     (_, ExprData::Fvar(..)) => Err(CompileError::ExprFVar),
     (ExprData::Mdata(_, x, _), ExprData::Mdata(_, y, _)) => {
-      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, stt)
+      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, cache, stt)
     },
     (ExprData::Mdata(_, x, _), _) => {
-      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, stt)
+      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, cache, stt)
     },
     (_, ExprData::Mdata(_, y, _)) => {
-      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, stt)
+      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, cache, stt)
     },
     (ExprData::Bvar(x, _), ExprData::Bvar(y, _)) => Ok(SOrd::cmp(x, y)),
     (ExprData::Bvar(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::Bvar(..)) => Ok(SOrd::gt(true)),
     (ExprData::Sort(x, _), ExprData::Sort(y, _)) => {
-      compare_level(x_lvls, y_lvls, x, y)
+      compare_level(x, y, x_lvls, y_lvls, cache)
     },
     (ExprData::Sort(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::Sort(..)) => Ok(SOrd::gt(true)),
     (ExprData::Const(x, xls, _), ExprData::Const(y, yls, _)) => {
       let us = SOrd::try_zip(
-        |a, b| compare_level(x_lvls.clone(), y_lvls.clone(), a, b),
+        |a, b| compare_level(a, b, x_lvls.clone(), y_lvls.clone(), cache),
         xls,
         yls,
       )?;
@@ -634,7 +640,7 @@ pub fn compare_expr(
         Ok(SOrd::eq(true))
       } else {
         match (mut_ctx.as_ref().get(x), mut_ctx.as_ref().get(y)) {
-          (Some(nx), Some(ny)) => Ok(SOrd::cmp(nx, ny)),
+          (Some(nx), Some(ny)) => Ok(SOrd::weak_cmp(nx, ny)),
           (Some(..), _) => Ok(SOrd::lt(true)),
           (None, Some(..)) => Ok(SOrd::gt(true)),
           (None, None) => {
@@ -655,9 +661,10 @@ pub fn compare_expr(
         mut_ctx.clone(),
         x_lvls.clone(),
         y_lvls.clone(),
+        cache,
         stt,
       )?,
-      || compare_expr(xr, yr, mut_ctx, x_lvls, y_lvls, stt),
+      || compare_expr(xr, yr, mut_ctx, x_lvls, y_lvls, cache, stt),
     ),
     (ExprData::App(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::App(..)) => Ok(SOrd::gt(true)),
@@ -669,9 +676,10 @@ pub fn compare_expr(
           mut_ctx.clone(),
           x_lvls.clone(),
           y_lvls.clone(),
+          cache,
           stt,
         )?,
-        || compare_expr(xb, yb, mut_ctx, x_lvls, y_lvls, stt),
+        || compare_expr(xb, yb, mut_ctx, x_lvls, y_lvls, cache, stt),
       )
     },
     (ExprData::Lam(..), _) => Ok(SOrd::lt(true)),
@@ -686,9 +694,10 @@ pub fn compare_expr(
         mut_ctx.clone(),
         x_lvls.clone(),
         y_lvls.clone(),
+        cache,
         stt,
       )?,
-      || compare_expr(xb, yb, mut_ctx, x_lvls, y_lvls, stt),
+      || compare_expr(xb, yb, mut_ctx, x_lvls, y_lvls, cache, stt),
     ),
     (ExprData::ForallE(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::ForallE(..)) => Ok(SOrd::gt(true)),
@@ -697,7 +706,15 @@ pub fn compare_expr(
       ExprData::LetE(_, yt, yv, yb, _, _),
     ) => SOrd::try_zip(
       |a, b| {
-        compare_expr(a, b, mut_ctx.clone(), x_lvls.clone(), y_lvls.clone(), stt)
+        compare_expr(
+          a,
+          b,
+          mut_ctx.clone(),
+          x_lvls.clone(),
+          y_lvls.clone(),
+          cache,
+          stt,
+        )
       },
       &[xt, xv, xb],
       &[yt, yv, yb],
@@ -709,7 +726,7 @@ pub fn compare_expr(
     (_, ExprData::Lit(..)) => Ok(SOrd::gt(true)),
     (ExprData::Proj(tnx, ix, tx, _), ExprData::Proj(tny, iy, ty, _)) => {
       let tn = match (mut_ctx.as_ref().get(tnx), mut_ctx.as_ref().get(tny)) {
-        (Some(nx), Some(ny)) => Ok(SOrd::cmp(nx, ny)),
+        (Some(nx), Some(ny)) => Ok(SOrd::weak_cmp(nx, ny)),
         (Some(..), _) => Ok(SOrd::lt(true)),
         (None, Some(..)) => Ok(SOrd::gt(true)),
         (None, None) => {
@@ -720,7 +737,7 @@ pub fn compare_expr(
       }?;
       SOrd::try_compare(tn, || {
         SOrd::try_compare(SOrd::cmp(ix, iy), || {
-          compare_expr(tx, ty, mut_ctx, x_lvls, y_lvls, stt)
+          compare_expr(tx, ty, mut_ctx, x_lvls, y_lvls, cache, stt)
         })
       })
     },
@@ -729,14 +746,17 @@ pub fn compare_expr(
 pub fn compile_defn(
   def: &Def,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Definition, Metadata), CompileError> {
   let univ_ctx = ConsList::from_iterator(def.level_params.iter().cloned());
   let n = compile_name(&def.name, stt)?;
   let ls =
     def.level_params.iter().map(|n| compile_name(n, stt)).try_collect()?;
-  let t = compile_expr(&def.typ, univ_ctx.clone(), mut_ctx.clone(), stt)?;
-  let v = compile_expr(&def.value, univ_ctx.clone(), mut_ctx.clone(), stt)?;
+  let t =
+    compile_expr(&def.typ, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+  let v =
+    compile_expr(&def.value, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
   let all = def.all.iter().map(|n| compile_name(n, stt)).try_collect()?;
   let data = Definition {
     kind: def.kind,
@@ -762,10 +782,11 @@ pub fn compile_rule(
   rule: &RecursorRule,
   univ_ctx: ConsList<Name>,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(ixon::RecursorRule, Address, Address), CompileError> {
   let n = compile_name(&rule.ctor, stt)?;
-  let rhs = compile_expr(&rule.rhs, univ_ctx, mut_ctx, stt)?;
+  let rhs = compile_expr(&rule.rhs, univ_ctx, mut_ctx, cache, stt)?;
   let data =
     ixon::RecursorRule { fields: rule.n_fields.clone(), rhs: rhs.data };
   Ok((data, n, rhs.meta))
@@ -774,6 +795,7 @@ pub fn compile_rule(
 pub fn compile_recr(
   recr: &Rec,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Recursor, Metadata), CompileError> {
   let univ_ctx =
@@ -785,12 +807,18 @@ pub fn compile_recr(
     .iter()
     .map(|n| compile_name(n, stt))
     .try_collect()?;
-  let t = compile_expr(&recr.cnst.typ, univ_ctx.clone(), mut_ctx.clone(), stt)?;
+  let t = compile_expr(
+    &recr.cnst.typ,
+    univ_ctx.clone(),
+    mut_ctx.clone(),
+    cache,
+    stt,
+  )?;
   let mut rule_data = Vec::with_capacity(recr.rules.len());
   let mut rule_meta = Vec::with_capacity(recr.rules.len());
   for rule in recr.rules.iter() {
     let (rr, rn, rm) =
-      compile_rule(rule, univ_ctx.clone(), mut_ctx.clone(), stt)?;
+      compile_rule(rule, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
     rule_data.push(rr);
     rule_meta.push((rn, rm));
   }
@@ -822,6 +850,7 @@ fn compile_ctor(
   ctor: &ConstructorVal,
   induct: Address,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Constructor, Metadata), CompileError> {
   let n = compile_name(&ctor.cnst.name, stt)?;
@@ -833,7 +862,13 @@ fn compile_ctor(
     .iter()
     .map(|n| compile_name(n, stt))
     .try_collect()?;
-  let t = compile_expr(&ctor.cnst.typ, univ_ctx.clone(), mut_ctx.clone(), stt)?;
+  let t = compile_expr(
+    &ctor.cnst.typ,
+    univ_ctx.clone(),
+    mut_ctx.clone(),
+    cache,
+    stt,
+  )?;
   let data = Constructor {
     is_unsafe: ctor.is_unsafe,
     lvls: Nat(ctor.cnst.level_params.len().into()),
@@ -868,6 +903,7 @@ pub fn mk_indc(ind: &InductiveVal, env: Arc<Env>) -> Result<Ind, CompileError> {
 pub fn compile_indc(
   ind: &Ind,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Inductive, FxHashMap<Address, Address>), CompileError> {
   let n = compile_name(&ind.ind.cnst.name, stt)?;
@@ -880,13 +916,18 @@ pub fn compile_indc(
     .iter()
     .map(|n| compile_name(n, stt))
     .try_collect()?;
-  let t =
-    compile_expr(&ind.ind.cnst.typ, univ_ctx.clone(), mut_ctx.clone(), stt)?;
+  let t = compile_expr(
+    &ind.ind.cnst.typ,
+    univ_ctx.clone(),
+    mut_ctx.clone(),
+    cache,
+    stt,
+  )?;
   let mut ctor_data = Vec::with_capacity(ind.ctors.len());
   let mut ctor_meta = Vec::with_capacity(ind.ctors.len());
   let mut meta_map = FxHashMap::default();
   for ctor in ind.ctors.iter() {
-    let (cd, cm) = compile_ctor(ctor, n.clone(), mut_ctx.clone(), stt)?;
+    let (cd, cm) = compile_ctor(ctor, n.clone(), mut_ctx.clone(), cache, stt)?;
     ctor_data.push(cd);
     let cn = compile_name(&ctor.cnst.name, stt)?;
     let cm = store_meta(cm, stt)?;
@@ -921,14 +962,20 @@ pub fn compile_indc(
 
 pub fn compile_quot(
   val: &QuotVal,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Quotient, Metadata), CompileError> {
   let n = compile_name(&val.cnst.name, stt)?;
   let univ_ctx = ConsList::from_iterator(val.cnst.level_params.iter().cloned());
   let ls =
     val.cnst.level_params.iter().map(|n| compile_name(n, stt)).try_collect()?;
-  let t =
-    compile_expr(&val.cnst.typ, univ_ctx.clone(), MutCtx::default(), stt)?;
+  let t = compile_expr(
+    &val.cnst.typ,
+    univ_ctx.clone(),
+    MutCtx::default(),
+    cache,
+    stt,
+  )?;
   let data = Quotient {
     kind: val.kind,
     lvls: Nat(val.cnst.level_params.len().into()),
@@ -946,14 +993,20 @@ pub fn compile_quot(
 
 pub fn compile_axio(
   val: &AxiomVal,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Axiom, Metadata), CompileError> {
   let n = compile_name(&val.cnst.name, stt)?;
   let univ_ctx = ConsList::from_iterator(val.cnst.level_params.iter().cloned());
   let ls =
     val.cnst.level_params.iter().map(|n| compile_name(n, stt)).try_collect()?;
-  let t =
-    compile_expr(&val.cnst.typ, univ_ctx.clone(), MutCtx::default(), stt)?;
+  let t = compile_expr(
+    &val.cnst.typ,
+    univ_ctx.clone(),
+    MutCtx::default(),
+    cache,
+    stt,
+  )?;
   let data = Axiom {
     is_unsafe: val.is_unsafe,
     lvls: Nat(val.cnst.level_params.len().into()),
@@ -973,6 +1026,7 @@ pub fn compare_defn(
   x: &Def,
   y: &Def,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   SOrd::try_compare(
@@ -988,6 +1042,7 @@ pub fn compare_defn(
               mut_ctx.clone(),
               ConsList::from_iterator(x.level_params.iter().cloned()),
               ConsList::from_iterator(y.level_params.iter().cloned()),
+              cache,
               stt,
             )?,
             || {
@@ -997,6 +1052,7 @@ pub fn compare_defn(
                 mut_ctx.clone(),
                 ConsList::from_iterator(x.level_params.iter().cloned()),
                 ConsList::from_iterator(y.level_params.iter().cloned()),
+                cache,
                 stt,
               )
             },
@@ -1011,6 +1067,7 @@ pub fn compare_ctor_inner(
   x: &ConstructorVal,
   y: &ConstructorVal,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   SOrd::try_compare(
@@ -1025,6 +1082,7 @@ pub fn compare_ctor_inner(
               mut_ctx.clone(),
               ConsList::from_iterator(x.cnst.level_params.iter().cloned()),
               ConsList::from_iterator(y.cnst.level_params.iter().cloned()),
+              cache,
               stt,
             )
           })
@@ -1038,6 +1096,7 @@ pub fn compare_ctor(
   x: &ConstructorVal,
   y: &ConstructorVal,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   let key = if x.cnst.name <= y.cnst.name {
@@ -1045,12 +1104,12 @@ pub fn compare_ctor(
   } else {
     (y.cnst.name.clone(), x.cnst.name.clone())
   };
-  if let Some(o) = stt.cmps.get(&key) {
+  if let Some(o) = cache.cmps.get(&key) {
     Ok(SOrd { strong: true, ordering: *o })
   } else {
-    let so = compare_ctor_inner(x, y, mut_ctx, stt)?;
+    let so = compare_ctor_inner(x, y, mut_ctx, cache, stt)?;
     if so.strong {
-      stt.cmps.insert(key, so.ordering);
+      cache.cmps.insert(key, so.ordering);
     }
     Ok(so)
   }
@@ -1060,6 +1119,7 @@ pub fn compare_indc(
   x: &Ind,
   y: &Ind,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   SOrd::try_compare(
@@ -1083,11 +1143,12 @@ pub fn compare_indc(
                     ConsList::from_iterator(
                       y.ind.cnst.level_params.iter().cloned(),
                     ),
+                    cache,
                     stt,
                   )?,
                   || {
                     SOrd::try_zip(
-                      |a, b| compare_ctor(a, b, mut_ctx.clone(), stt),
+                      |a, b| compare_ctor(a, b, mut_ctx.clone(), cache, stt),
                       &x.ctors,
                       &y.ctors,
                     )
@@ -1108,10 +1169,11 @@ pub fn compare_recr_rule(
   mut_ctx: MutCtx,
   x_lvls: ConsList<Name>,
   y_lvls: ConsList<Name>,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   SOrd::try_compare(SOrd::cmp(&x.n_fields, &y.n_fields), || {
-    compare_expr(&x.rhs, &y.rhs, mut_ctx.clone(), x_lvls, y_lvls, stt)
+    compare_expr(&x.rhs, &y.rhs, mut_ctx.clone(), x_lvls, y_lvls, cache, stt)
   })
 }
 
@@ -1119,6 +1181,7 @@ pub fn compare_recr(
   x: &Rec,
   y: &Rec,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   SOrd::try_compare(
@@ -1140,6 +1203,7 @@ pub fn compare_recr(
                     ConsList::from_iterator(
                       y.cnst.level_params.iter().cloned(),
                     ),
+                    cache,
                     stt,
                   )?,
                   || {
@@ -1155,6 +1219,7 @@ pub fn compare_recr(
                           ConsList::from_iterator(
                             y.cnst.level_params.iter().cloned(),
                           ),
+                          cache,
                           stt,
                         )
                       },
@@ -1176,6 +1241,7 @@ pub fn compare_const(
   x: &MutConst,
   y: &MutConst,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Ordering, CompileError> {
   let key = if x.name() <= y.name() {
@@ -1183,25 +1249,25 @@ pub fn compare_const(
   } else {
     (y.name(), x.name())
   };
-  if let Some(so) = stt.cmps.get(&key) {
+  if let Some(so) = cache.cmps.get(&key) {
     Ok(*so)
   } else {
     let so: SOrd = match (x, y) {
       (MutConst::Defn(x), MutConst::Defn(y)) => {
-        compare_defn(x, y, mut_ctx.clone(), stt)?
+        compare_defn(x, y, mut_ctx.clone(), cache, stt)?
       },
       (MutConst::Defn(_), _) => SOrd::lt(true),
       (MutConst::Indc(x), MutConst::Indc(y)) => {
-        compare_indc(x, y, mut_ctx.clone(), stt)?
+        compare_indc(x, y, mut_ctx.clone(), cache, stt)?
       },
       (MutConst::Indc(_), _) => SOrd::lt(true),
       (MutConst::Recr(x), MutConst::Recr(y)) => {
-        compare_recr(x, y, mut_ctx.clone(), stt)?
+        compare_recr(x, y, mut_ctx.clone(), cache, stt)?
       },
       (MutConst::Recr(_), _) => SOrd::lt(true),
     };
     if so.strong {
-      stt.cmps.insert(key, so.ordering);
+      cache.cmps.insert(key, so.ordering);
     }
     Ok(so.ordering)
   }
@@ -1211,9 +1277,10 @@ pub fn eq_const(
   x: &MutConst,
   y: &MutConst,
   mut_ctx: &MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<bool, CompileError> {
-  let ordering = compare_const(x, y, mut_ctx.clone(), stt)?;
+  let ordering = compare_const(x, y, mut_ctx.clone(), cache, stt)?;
   Ok(ordering == Ordering::Equal)
 }
 
@@ -1247,6 +1314,7 @@ pub fn merge<'a>(
   left: Vec<&'a MutConst>,
   right: Vec<&'a MutConst>,
   ctx: &MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Vec<&'a MutConst>, CompileError> {
   let mut result = Vec::with_capacity(left.len() + right.len());
@@ -1256,7 +1324,7 @@ pub fn merge<'a>(
   let mut right_item = right_iter.next();
 
   while let (Some(l), Some(r)) = (&left_item, &right_item) {
-    let cmp = compare_const(l, r, ctx.clone(), stt)?;
+    let cmp = compare_const(l, r, ctx.clone(), cache, stt)?;
     if cmp == Ordering::Greater {
       result.push(right_item.take().unwrap());
       right_item = right_iter.next();
@@ -1281,6 +1349,7 @@ pub fn merge<'a>(
 pub fn sort_by_compare<'a>(
   items: &[&'a MutConst],
   ctx: &MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Vec<&'a MutConst>, CompileError> {
   if items.len() <= 1 {
@@ -1288,17 +1357,20 @@ pub fn sort_by_compare<'a>(
   }
   let mid = items.len() / 2;
   let (left, right) = items.split_at(mid);
-  let left = sort_by_compare(left, ctx, stt)?;
-  let right = sort_by_compare(right, ctx, stt)?;
-  merge(left, right, ctx, stt)
+  let left = sort_by_compare(left, ctx, cache, stt)?;
+  let right = sort_by_compare(right, ctx, cache, stt)?;
+  merge(left, right, ctx, cache, stt)
 }
 
 pub fn sort_consts<'a>(
   cs: &[&'a MutConst],
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Vec<Vec<&'a MutConst>>, CompileError> {
+  //println!("sort_consts");
   let mut classes = vec![cs.to_owned()];
   loop {
+    //println!("sort_consts loop");
     let ctx = MutConst::ctx(&classes);
     let mut new_classes: Vec<Vec<&MutConst>> = vec![];
     for class in classes.iter() {
@@ -1310,8 +1382,9 @@ pub fn sort_consts<'a>(
           new_classes.push(class.clone());
         },
         _ => {
-          let sorted = sort_by_compare(class.as_ref(), &ctx, stt)?;
-          let groups = group_by(sorted, |a, b| eq_const(a, b, &ctx, stt))?;
+          let sorted = sort_by_compare(class.as_ref(), &ctx, cache, stt)?;
+          let groups =
+            group_by(sorted, |a, b| eq_const(a, b, &ctx, cache, stt))?;
           new_classes.extend(groups);
         },
       }
@@ -1329,8 +1402,10 @@ pub fn sort_consts<'a>(
 fn compile_mut_consts(
   classes: Vec<Vec<&MutConst>>,
   mut_ctx: MutCtx,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Ixon, FxHashMap<Address, Address>), CompileError> {
+  //println!("compile_mut_consts");
   let mut data = vec![];
   let mut meta = FxHashMap::default();
   for class in classes {
@@ -1338,28 +1413,27 @@ fn compile_mut_consts(
     for cnst in class {
       match cnst {
         MutConst::Indc(x) => {
-          let (i, m) = compile_indc(x, mut_ctx.clone(), stt)?;
+          let (i, m) = compile_indc(x, mut_ctx.clone(), cache, stt)?;
           class_data.push(ixon::MutConst::Indc(i));
           meta.extend(m);
         },
         MutConst::Defn(x) => {
-          let (d, m) = compile_defn(x, mut_ctx.clone(), stt)?;
+          let (d, m) = compile_defn(x, mut_ctx.clone(), cache, stt)?;
           class_data.push(ixon::MutConst::Defn(d));
           meta.insert(compile_name(&x.name, stt)?, store_meta(m, stt)?);
         },
         MutConst::Recr(x) => {
-          let (r, m) = compile_recr(x, mut_ctx.clone(), stt)?;
+          let (r, m) = compile_recr(x, mut_ctx.clone(), cache, stt)?;
           class_data.push(ixon::MutConst::Recr(r));
           meta.insert(compile_name(&x.cnst.name, stt)?, store_meta(m, stt)?);
         },
       }
-      if class_data.is_empty()
-        || !class_data.iter().all(|x| x == &class_data[0])
-      {
-        return Err(CompileError::CompileMutConsts);
-      } else {
-        data.push(class_data[0].clone())
-      }
+    }
+    if class_data.is_empty() || !class_data.iter().all(|x| x == &class_data[0])
+    {
+      return Err(CompileError::CompileMutConsts(class_data.clone()));
+    } else {
+      data.push(class_data[0].clone())
     }
   }
   Ok((Ixon::Muts(data), meta))
@@ -1369,24 +1443,32 @@ pub fn compile_mutual(
   mutual: &MutConst,
   all: &NameSet,
   env: Arc<Env>,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Ixon, Ixon), CompileError> {
+  //println!("compile_mutual");
   if all.len() == 1 && matches!(&mutual, MutConst::Defn(_) | MutConst::Recr(_))
   {
     match mutual {
       MutConst::Defn(defn) => {
+        //println!("compile_mutual defn");
         let mut_ctx = MutConst::single_ctx(defn.name.clone());
-        let (data, meta) = compile_defn(defn, mut_ctx, stt)?;
+        let (data, meta) = compile_defn(defn, mut_ctx, cache, stt)?;
         Ok((Ixon::Defn(data), Ixon::Meta(meta)))
       },
       MutConst::Recr(recr) => {
+        //println!("compile_mutual recr");
         let mut_ctx = MutConst::single_ctx(recr.cnst.name.clone());
-        let (data, meta) = compile_recr(recr, mut_ctx, stt)?;
+        let (data, meta) = compile_recr(recr, mut_ctx, cache, stt)?;
         Ok((Ixon::Recr(data), Ixon::Meta(meta)))
       },
-      _ => unreachable!(),
+      _ => {
+        //println!("compile_mutual unreachable");
+        unreachable!()
+      },
     }
   } else {
+    //println!("compile_mutual else");
     let mut cs = Vec::new();
     for name in all {
       let Some(const_info) = env.get(name) else {
@@ -1394,23 +1476,41 @@ pub fn compile_mutual(
       };
       let mut_const = match const_info {
         ConstantInfo::InductInfo(val) => {
+          //println!("compile_mutual InductInfo");
           MutConst::Indc(mk_indc(val, env.clone())?)
         },
-        ConstantInfo::DefnInfo(val) => MutConst::Defn(Def::mk_defn(val)),
-        ConstantInfo::OpaqueInfo(val) => MutConst::Defn(Def::mk_opaq(val)),
-        ConstantInfo::ThmInfo(val) => MutConst::Defn(Def::mk_theo(val)),
-        ConstantInfo::RecInfo(val) => MutConst::Recr(val.clone()),
-        _ => continue,
+        ConstantInfo::DefnInfo(val) => {
+          //println!("compile_mutual DefnInfo");
+          MutConst::Defn(Def::mk_defn(val))
+        },
+        ConstantInfo::OpaqueInfo(val) => {
+          //println!("compile_mutual OpaqueInfo");
+          MutConst::Defn(Def::mk_opaq(val))
+        },
+        ConstantInfo::ThmInfo(val) => {
+          //println!("compile_mutual ThmInfo");
+          MutConst::Defn(Def::mk_theo(val))
+        },
+        ConstantInfo::RecInfo(val) => {
+          //println!("compile_mutual RecInfo");
+          MutConst::Recr(val.clone())
+        },
+        _ => {
+          //println!("compile_mutual continue");
+          continue;
+        },
       };
       cs.push(mut_const);
     }
-    let mut_consts = sort_consts(&cs.iter().collect::<Vec<&MutConst>>(), stt)?;
+    let mut_consts =
+      sort_consts(&cs.iter().collect::<Vec<&MutConst>>(), cache, stt)?;
     let mut_meta: Vec<Vec<Address>> = mut_consts
       .iter()
       .map(|m| m.iter().map(|c| compile_name(&c.name(), stt)).try_collect())
       .try_collect()?;
     let mut_ctx = MutConst::ctx(&mut_consts);
-    let (data, metas) = compile_mut_consts(mut_consts, mut_ctx.clone(), stt)?;
+    let (data, metas) =
+      compile_mut_consts(mut_consts, mut_ctx.clone(), cache, stt)?;
     let ctx = mut_ctx
       .iter()
       .map(|(n, i)| Ok((compile_name(n, stt)?, store_nat(i, stt)?)))
@@ -1496,31 +1596,52 @@ pub fn compile_const_info(
   cnst: &ConstantInfo,
   all: &NameSet,
   env: Arc<Env>,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<MetaAddress, CompileError> {
   match cnst {
     ConstantInfo::DefnInfo(val) => {
-      let (d, m) =
-        compile_mutual(&MutConst::Defn(Def::mk_defn(val)), all, env, stt)?;
+      //println!("compile_const_info def");
+      let (d, m) = compile_mutual(
+        &MutConst::Defn(Def::mk_defn(val)),
+        all,
+        env,
+        cache,
+        stt,
+      )?;
       Ok(MetaAddress { data: store_ixon(&d, stt)?, meta: store_ixon(&m, stt)? })
     },
     ConstantInfo::OpaqueInfo(val) => {
-      let (d, m) =
-        compile_mutual(&MutConst::Defn(Def::mk_opaq(val)), all, env, stt)?;
+      //println!("compile_const_info opaq");
+      let (d, m) = compile_mutual(
+        &MutConst::Defn(Def::mk_opaq(val)),
+        all,
+        env,
+        cache,
+        stt,
+      )?;
       Ok(MetaAddress { data: store_ixon(&d, stt)?, meta: store_ixon(&m, stt)? })
     },
     ConstantInfo::ThmInfo(val) => {
-      let (d, m) =
-        compile_mutual(&MutConst::Defn(Def::mk_theo(val)), all, env, stt)?;
+      //println!("compile_const_info theo");
+      let (d, m) = compile_mutual(
+        &MutConst::Defn(Def::mk_theo(val)),
+        all,
+        env,
+        cache,
+        stt,
+      )?;
       Ok(MetaAddress { data: store_ixon(&d, stt)?, meta: store_ixon(&m, stt)? })
     },
     ConstantInfo::CtorInfo(val) => {
+      //println!("compile_const_info ctor");
       if let Some(ConstantInfo::InductInfo(ind)) = env.as_ref().get(&val.induct)
       {
         let _ = compile_mutual(
           &MutConst::Indc(mk_indc(ind, env.clone())?),
           all,
           env,
+          cache,
           stt,
         )?;
         let addr = stt
@@ -1533,27 +1654,33 @@ pub fn compile_const_info(
       }
     },
     ConstantInfo::InductInfo(val) => {
+      //println!("compile_const_info ind");
       let (d, m) = compile_mutual(
         &MutConst::Indc(mk_indc(val, env.clone())?),
         all,
         env,
+        cache,
         stt,
       )?;
       Ok(MetaAddress { data: store_ixon(&d, stt)?, meta: store_ixon(&m, stt)? })
     },
     ConstantInfo::RecInfo(val) => {
-      let (d, m) = compile_mutual(&MutConst::Recr(val.clone()), all, env, stt)?;
+      //println!("compile_const_info rec");
+      let (d, m) =
+        compile_mutual(&MutConst::Recr(val.clone()), all, env, cache, stt)?;
       Ok(MetaAddress { data: store_ixon(&d, stt)?, meta: store_ixon(&m, stt)? })
     },
     ConstantInfo::QuotInfo(val) => {
-      let (quot, meta) = compile_quot(val, stt)?;
+      //println!("compile_const_info quot");
+      let (quot, meta) = compile_quot(val, cache, stt)?;
       Ok(MetaAddress {
         data: store_ixon(&Ixon::Quot(quot), stt)?,
         meta: store_ixon(&Ixon::Meta(meta), stt)?,
       })
     },
     ConstantInfo::AxiomInfo(val) => {
-      let (axio, meta) = compile_axio(val, stt)?;
+      //println!("compile_const_info axio");
+      let (axio, meta) = compile_axio(val, cache, stt)?;
       Ok(MetaAddress {
         data: store_ixon(&Ixon::Axio(axio), stt)?,
         meta: store_ixon(&Ixon::Meta(meta), stt)?,
@@ -1566,13 +1693,17 @@ pub fn compile_const(
   name: &Name,
   all: &NameSet,
   env: Arc<Env>,
+  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<MetaAddress, CompileError> {
+  //println!("compile_const {:?}", name.pretty());
   if let Some(cached) = stt.consts.get(name) {
     Ok(cached.clone())
   } else {
     let cnst = env.as_ref().get(name).ok_or(CompileError::CompileConst)?;
-    compile_const_info(cnst, all, env.clone(), stt)
+    let addr = compile_const_info(cnst, all, env.clone(), cache, stt)?;
+    stt.consts.insert(name.clone(), addr.clone());
+    Ok(addr)
   }
 }
 
@@ -1612,9 +1743,9 @@ pub fn compile_env(env: Arc<Env>) -> Result<CompileState, CompileError> {
   while !remaining.is_empty() {
     i += 1;
     let len = remaining.len();
-    let pct = (len as f64 / num_blocks as f64) * 100f64;
-    println!("Wave {i}, {pct}%: {len}/{num_blocks}");
-    println!("Stats {:?}", stt.stats());
+    //let pct = 100f64 - ((len as f64 / num_blocks as f64) * 100f64);
+    //println!("Wave {i}, {pct}%: {len}/{num_blocks}");
+    //println!("Stats {:?}", stt.stats());
     let ready: DashMap<Name, NameSet> = DashMap::default();
     remaining.par_iter().for_each(|entry| {
       let lo = entry.key();
@@ -1623,10 +1754,11 @@ pub fn compile_env(env: Arc<Env>) -> Result<CompileState, CompileError> {
         ready.insert(lo.clone(), all.clone());
       }
     });
-    println!("Wave {i} ready {}", ready.len());
+    //println!("Wave {i} ready {}", ready.len());
 
     ready.par_iter().try_for_each(|entry| {
-      compile_const(entry.key(), entry.value(), env.clone(), &stt)?;
+      let mut cache = BlockCache::default();
+      compile_const(entry.key(), entry.value(), env.clone(), &mut cache, &stt)?;
       remaining.remove(entry.key());
       Ok::<(), CompileError>(())
     })?;

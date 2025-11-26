@@ -42,6 +42,27 @@ impl Name {
     (11, pre.get_hash(), &n).hash(hasher);
     Name(Arc::new(NameData::Num(pre, n, hasher.finish())))
   }
+  pub fn pretty(&self) -> String {
+    let mut components = Vec::new();
+    let mut current = self;
+
+    loop {
+      match current.as_data() {
+        NameData::Anonymous => break,
+        NameData::Str(pre, s, _) => {
+          components.push(s.as_str().to_owned());
+          current = pre;
+        },
+        NameData::Num(pre, n, _) => {
+          components.push(n.0.to_string());
+          current = pre;
+        },
+      }
+    }
+
+    components.reverse();
+    components.join(".")
+  }
 }
 
 impl Hash for Name {

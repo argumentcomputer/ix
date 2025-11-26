@@ -30,6 +30,9 @@ impl SOrd {
   pub fn cmp<A: Ord>(x: &A, y: &A) -> Self {
     SOrd { strong: true, ordering: x.cmp(y) }
   }
+  pub fn weak_cmp<A: Ord>(x: &A, y: &A) -> Self {
+    SOrd { strong: false, ordering: x.cmp(y) }
+  }
 
   #[inline]
   pub fn try_compare<E, F>(self, other: F) -> Result<Self, E>
