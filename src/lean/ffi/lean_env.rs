@@ -1,9 +1,10 @@
 use std::ffi::c_void;
+use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
 use crate::{
-  ix::condense::compute_sccs,
+  ix::compile::{CompileState, CompileStateStats, compile_env},
   ix::env::{
     AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
     DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,
@@ -11,9 +12,6 @@ use crate::{
     ReducibilityHints, SourceInfo, Substring, Syntax, SyntaxPreresolved,
     TheoremVal,
   },
-  ix::graph::{RefGraph, build_ref_graph},
-  ix::ground::ground_consts,
-  //ix::compile::compile,
   lean::{
     ListIterator, array::LeanArrayObject, as_ref_unsafe, collect_list,
     collect_list_with, ctor::LeanCtorObject, lean_is_scalar, nat::Nat,
@@ -574,22 +572,13 @@ fn lean_ptr_to_env(ptr: *const c_void) -> Env {
 extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   let start_decoding = std::time::SystemTime::now();
   let env = lean_ptr_to_env(ptr);
+  let env = Arc::new(env);
   println!("Decoding: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
-  let start_ref_graph = std::time::SystemTime::now();
-  let RefGraph { out_refs, in_refs } = build_ref_graph(&env);
-  println!(
-    "Ref-graph: {:.2}s",
-    start_ref_graph.elapsed().unwrap().as_secs_f32()
-  );
-  let start_ground = std::time::SystemTime::now();
-  ground_consts(&env, &in_refs);
-  println!("Ground: {:.2}s", start_ground.elapsed().unwrap().as_secs_f32());
-  let start_sccs = std::time::SystemTime::now();
-  let sccs = compute_sccs(&out_refs);
-  println!("SCCs: {:.2}s", start_sccs.elapsed().unwrap().as_secs_f32());
-  //let start_compile = std::time::SystemTime::now();
-  //let _ = compile(&sccs, &out_refs, &const_map);
-  //println!("Compile: {:.2}s", start_compile.elapsed().unwrap().as_secs_f32());
-  //println!("Total: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
-  env.len()
+  let res = compile_env(env.clone());
+  match res {
+    Ok(stt) => println!("OK: {:?}", stt.stats()),
+    Err(e) => println!("ERR: {:?}", e),
+  }
+  println!("Total: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
+  env.as_ref().len()
 }

@@ -11,6 +11,7 @@ use crate::{
   lean::nat::Nat,
 };
 
+#[derive(Debug)]
 pub enum GroundError<'a> {
   Level(Level, ConsList<Name>),
   Ref(Name),
