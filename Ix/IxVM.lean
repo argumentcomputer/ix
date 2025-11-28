@@ -1210,7 +1210,7 @@ def ixon := ⟦
             relaxed_u64_succ(count),
             size
           );
-          (ByteStream.Cons(byte, tail_de), remaining),
+          (ByteStream.Cons(byte, store(tail_de)), remaining),
       },
     }
   }
