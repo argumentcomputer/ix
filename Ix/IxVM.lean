@@ -1187,19 +1187,19 @@ def ixon := ⟦
   #[unconstrained]
   fn deserialize_tag(stream: ByteStream) -> (Tag4, ByteStream) {
     match stream {
-      ByteStream(head, tail_ptr) =>
+      ByteStream.Cons(head, tail_ptr) =>
         let (flag, large, small) = decode_tag_head(head);
         match large {
-          0 => (Tag4.Mk([small, 0, 0, 0, 0, 0, 0, 0]), load(tail_ptr)),
+          0 => (Tag4.Mk(flag, [small, 0, 0, 0, 0, 0, 0, 0]), load(tail_ptr)),
           1 =>
             let (u64, tail) = u64_get_trimmed_le(small + 1, load(tail_ptr));
-            (Tag4.Mk(u64), tail),
+            (Tag4.Mk(flag, u64), tail),
         },
     }
   }
 
   #[unconstrained]
-  fn deserialize_byte_stream(stream: ByteArray, count: [G; 8], size: [G; 8]) -> (ByteStream, ByteStream) {
+  fn deserialize_byte_stream(stream: ByteStream, count: [G; 8], size: [G; 8]) -> (ByteStream, ByteStream) {
     match (size[0]-count[0], size[1]-count[1], size[2]-count[2], size[3]-count[3],
            size[4]-count[4], size[5]-count[5], size[6]-count[6], size[7]-count[7]) {
       (0, 0, 0, 0, 0, 0, 0, 0) => (ByteStream.Nil, stream),
