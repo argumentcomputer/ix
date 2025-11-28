@@ -125,6 +125,25 @@ def toplevel := ⟦
     }
   }
 
+  #[unconstrained]
+  fn unconstrained_fibonacci(n: G) -> G {
+    match n {
+      0 => 1,
+      _ =>
+        let n_minus_1 = n - 1;
+        match n_minus_1 {
+          0 => 1,
+          _ =>
+            let n_minus_2 = n_minus_1 - 1;
+            fibonacci(n_minus_1) + unconstrained_fibonacci(n_minus_2),
+        },
+    }
+  }
+
+  fn unconstrained_fibonacci_entrypoint(n: G) -> G {
+    unconstrained_fibonacci(n)
+  }
+
   fn projections(as: (G, G, G, G, G)) -> (G, G) {
     (proj(as, 1), proj(as, 3))
   }
@@ -205,6 +224,7 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `fibonacci #[0] #[1],
     .noIO `fibonacci #[1] #[1],
     .noIO `fibonacci #[6] #[13],
+    .noIO `unconstrained_fibonacci_entrypoint #[6] #[13],
     .noIO `projections #[1, 2, 3, 4, 5] #[2, 4],
     .noIO `slice_and_get #[1, 2, 3, 4, 5] #[2, 4],
     .noIO `deconstruct_tuple #[1, 2, 3, 4, 5] #[2, 4],
