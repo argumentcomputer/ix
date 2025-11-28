@@ -64,6 +64,9 @@ def ixTestCases : List AiurTestCase := [
   mkIxonSerdeTestCase (.eall default default),
   mkIxonSerdeTestCase (.elet false default default default),
   mkIxonSerdeTestCase (.elet true default default default),
+  mkIxonSerdeTestCase (.eval ⟨default, default, default, default⟩),
+  mkIxonSerdeTestCase (.chck ⟨default, default, default⟩),
+  mkIxonSerdeTestCase (.comm ⟨default, default⟩),
   mkIxonSerdeTestCase (.blob ⟨#[0, 1, 2, 3]⟩),
 ]
 

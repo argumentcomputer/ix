@@ -1357,7 +1357,7 @@ def ixon := ⟦
     ELam(Address, Address),                -- 0x84, expression lambda
     EAll(Address, Address),                -- 0x85, expression forall
     ELet(G, Address, Address, Address),    -- 0x86, 0x87, expression let. TODO: change the first argument to a Bool
-    Blob(ByteStream)                       -- 0x9X, tagged bytes
+    Blob(ByteStream),                      -- 0x9X, tagged bytes
     -- Defn(Definition),                      -- 0xA0, definition constant
     -- Recr(Recursor),                        -- 0xA1, recursor constant
     -- Axio(Axiom),                           -- 0xA2, axiom constant
@@ -1452,7 +1452,7 @@ def ixon := ⟦
           fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
       Ixon.ELet(b, Address.Bytes(n), Address.Bytes(s), Address.Bytes(t)) =>
-        let tag = 0x86 + b;
+        let tag = 0x87 - b;
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
@@ -1490,7 +1490,8 @@ def ixon := ⟦
       Ixon.Blob(bytes) =>
         let len: [G; 8] = length(bytes);
         let flag = 0x9;
-        push_front_head(flag, len, append(stream, bytes));
+        let todo = push_front_head(flag, len, append(stream, bytes));
+        todo,
     }
   }
 
@@ -1506,7 +1507,7 @@ def ixon := ⟦
           1 =>
             let tag = encode_tag_head(flag, 1, num_bytes);
             ByteStream.Cons(tag, store(fold(1..0, stream, |stream, @i| ByteStream.Cons(tag, len[@i])))),
-        }
+        },
       [_, _, 0, 0, 0, 0, 0, 0] =>
         let tag = encode_tag_head(flag, 1, num_bytes);
         ByteStream.Cons(tag, store(fold(2..0, stream, |stream, @i| ByteStream.Cons(tag, len[@i])))),
@@ -1565,8 +1566,8 @@ def ixon := ⟦
   #[unconstrained]
   fn deserialize(stream: ByteStream) -> Ixon {
     match stream {
-      ByteStream.Cons(0, _) => Ixon.NAnon,
-      ByteStream.Cons(1, tail_ptr) =>
+      ByteStream.Cons(0x00, _) => Ixon.NAnon,
+      ByteStream.Cons(0x01, tail_ptr) =>
         let tail = load(tail_ptr);
         -- let (addr1, tail) = fold(0..8, ([[0; 4]; 8], tail), |acc, @i|
         --   fold(0..4, acc, |(acc_addr, acc_stream), @j|
@@ -1579,65 +1580,86 @@ def ixon := ⟦
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.NStr(Address.Bytes(addr1), Address.Bytes(addr2)),
-      ByteStream.Cons(2, tail_ptr) =>
+      ByteStream.Cons(0x02, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.NNum(Address.Bytes(addr1), Address.Bytes(addr2)),
-      ByteStream.Cons(3, _) => Ixon.UZero,
-      ByteStream.Cons(4, tail_ptr) =>
+      ByteStream.Cons(0x03, _) => Ixon.UZero,
+      ByteStream.Cons(0x04, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.USucc(Address.Bytes(addr)),
-      ByteStream.Cons(5, tail_ptr) =>
+      ByteStream.Cons(0x05, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.UMax(Address.Bytes(addr1), Address.Bytes(addr2)),
-      ByteStream.Cons(6, tail_ptr) =>
+      ByteStream.Cons(0x06, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.UIMax(Address.Bytes(addr1), Address.Bytes(addr2)),
-      ByteStream.Cons(128, tail_ptr) =>
+      ByteStream.Cons(0x80, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.ESort(Address.Bytes(addr)),
-      ByteStream.Cons(129, tail_ptr) =>
+      ByteStream.Cons(0x81, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.EStr(Address.Bytes(addr)),
-      ByteStream.Cons(130, tail_ptr) =>
+      ByteStream.Cons(0x82, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.ENat(Address.Bytes(addr)),
-      ByteStream.Cons(131, tail_ptr) =>
+      ByteStream.Cons(0x83, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.EApp(Address.Bytes(addr1), Address.Bytes(addr2)),
-      ByteStream.Cons(132, tail_ptr) =>
+      ByteStream.Cons(0x84, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.ELam(Address.Bytes(addr1), Address.Bytes(addr2)),
-      ByteStream.Cons(133, tail_ptr) =>
+      ByteStream.Cons(0x85, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.EAll(Address.Bytes(addr1), Address.Bytes(addr2)),
-      ByteStream.Cons(134, tail_ptr) =>
-        let tail = load(tail_ptr);
-        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
-        let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
-        let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
-        Ixon.ELet(0, Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
-      ByteStream.Cons(135, tail_ptr) =>
+      ByteStream.Cons(0x86, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.ELet(1, Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
+      ByteStream.Cons(0x87, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.ELet(0, Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
+      ByteStream.Cons(0xE1, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr3, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr4, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.Eval(
+          Address.Bytes(addr1), Address.Bytes(addr2),
+          Address.Bytes(addr3), Address.Bytes(addr4)
+        ),
+      ByteStream.Cons(0xE2, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.Chck(Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
+      ByteStream.Cons(0xE3, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.Comm(Address.Bytes(addr1), Address.Bytes(addr2)),
       _ => -- Variable sizes
         let (tag, stream) = deserialize_tag(stream);
         match tag {
