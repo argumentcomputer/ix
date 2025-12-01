@@ -27,7 +27,7 @@ jobs:
       benches: ${{ steps.bench-params.outputs.benches }}
       env-vars: ${{ steps.bench-params.outputs.env-vars }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Parse PR comment body
         id: bench-params
         run: |
@@ -66,12 +66,12 @@ jobs:
           do
             echo "$var" | tee -a $GITHUB_ENV
           done
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         # Get base branch of the PR
-      - uses: xt0rted/pull-request-comment-branch@v2
+      - uses: xt0rted/pull-request-comment-branch@v3
         id: comment-branch
       - name: Checkout base branch
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.comment-branch.outputs.base_sha }}
           path : ${{ github.workspace }}/base
@@ -89,7 +89,7 @@ jobs:
           fi
         working-directory: ${{ github.workspace }}/base
       - name: Checkout PR branch
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           path: ${{ github.workspace }}/pr
           ref: ${{ steps.comment-branch.outputs.head_sha }}
