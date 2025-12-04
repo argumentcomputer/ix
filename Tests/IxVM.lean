@@ -68,6 +68,7 @@ def ixTestCases : List AiurTestCase := [
   mkIxonSerdeTestCase (.chck ⟨default, default, default⟩),
   mkIxonSerdeTestCase (.comm ⟨default, default⟩),
   mkIxonSerdeTestCase (.blob ⟨#[0, 1, 2, 3]⟩),
+  mkIxonSerdeTestCase (.blob ⟨#[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]⟩),
 ]
 
 def Tests.IxVM.suite := [

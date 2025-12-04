@@ -8,6 +8,13 @@ def byteStream := ⟦
     Nil
   }
 
+  fn byte_stream_length(bytes: ByteStream) -> [G; 8] {
+    match bytes {
+      ByteStream.Nil => [0; 8],
+      ByteStream.Cons(_, rest) => relaxed_u64_succ(byte_stream_length(load(rest))),
+    }
+  }
+
   #[unconstrained]
   fn read_byte_stream(idx: G, len: G) -> ByteStream {
     match len {
@@ -631,7 +638,6 @@ def ixonAux := ⟦
     }
   }
 
-  #[unconstrained]
   fn encode_tag_head(x: G, y: G, z: G) -> G {
     match (x, y, z) {
       (0b0000, 0b0, 0b000) => 0b00000000,
@@ -1489,20 +1495,21 @@ def ixon := ⟦
           fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
       Ixon.Blob(bytes) =>
-        let len: [G; 8] = length(bytes);
+        let len: [G; 8] = byte_stream_length(bytes);
         let flag = 0x9;
-        push_front_head(flag, len, bytes),
+        serialize_cons_head(flag, len, bytes),
+      Ixon.UVar(Nat.Bytes(bytes)) =>
+        let len: [G; 8] = byte_stream_length(bytes);
+        let flag = 0x1;
+        serialize_cons_head(flag, len, bytes),
+      Ixon.EVar(Nat.Bytes(bytes)) =>
+        let len: [G; 8] = byte_stream_length(bytes);
+        let flag = 0x2;
+        serialize_cons_head(flag, len, bytes),
     }
   }
 
-  fn length(bytes: ByteStream) -> [G; 8] {
-    match bytes {
-      ByteStream.Nil => [0; 8],
-      ByteStream.Cons(_, rest) => relaxed_u64_succ(length(load(rest))),
-    }
-  }
-
-  fn push_front_head(flag: G, len: [G; 8], stream: ByteStream) -> ByteStream {
+  fn serialize_cons_head(flag: G, len: [G; 8], stream: ByteStream) -> ByteStream {
     match len {
       [b1, 0, 0, 0, 0, 0, 0, 0] =>
         -- 248 is minus 8 in u8
