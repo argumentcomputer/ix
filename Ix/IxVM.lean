@@ -1378,7 +1378,8 @@ def ixon := ⟦
     -- 0xFX, metadata
   }
 
-  fn serialize(ixon: Ixon, stream: ByteStream) -> ByteStream {
+  fn serialize(ixon: Ixon) -> ByteStream {
+    let stream = ByteStream.Nil;
     match ixon {
       Ixon.NAnon => ByteStream.Cons(0x00, store(stream)),
       Ixon.NStr(Address.Bytes(n), Address.Bytes(s)) =>
@@ -1490,19 +1491,15 @@ def ixon := ⟦
       Ixon.Blob(bytes) =>
         let len: [G; 8] = length(bytes);
         let flag = 0x9;
-        let todo = push_front_head(flag, len, append(stream, bytes));
-        todo,
+        push_front_head(flag, len, bytes),
     }
   }
 
   fn length(bytes: ByteStream) -> [G; 8] {
-    -- TODO
-    [0; 8]
-  }
-
-  fn append(as: ByteStream, bs: ByteStream) -> ByteStream {
-    -- TODO
-    as
+    match bytes {
+      ByteStream.Nil => [0; 8],
+      ByteStream.Cons(_, rest) => relaxed_u64_succ(length(load(rest))),
+    }
   }
 
   fn push_front_head(flag: G, len: [G; 8], stream: ByteStream) -> ByteStream {
@@ -1515,29 +1512,29 @@ def ixon := ⟦
             let tag = encode_tag_head(flag, 0, b1);
             ByteStream.Cons(tag, store(stream)),
           1 =>
-            let tag = encode_tag_head(flag, 1, 1);
-            ByteStream.Cons(tag, store(fold(1..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
+            let tag = encode_tag_head(flag, 1, 0);
+            ByteStream.Cons(tag, store(ByteStream.Cons(b1, store(stream)))),
         },
       [_, _, 0, 0, 0, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, 2);
+        let tag = encode_tag_head(flag, 1, 1);
         ByteStream.Cons(tag, store(fold(2..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, 0, 0, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, 3);
+        let tag = encode_tag_head(flag, 1, 2);
         ByteStream.Cons(tag, store(fold(3..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, _, 0, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, 4);
+        let tag = encode_tag_head(flag, 1, 3);
         ByteStream.Cons(tag, store(fold(4..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, _, _, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, 5);
+        let tag = encode_tag_head(flag, 1, 4);
         ByteStream.Cons(tag, store(fold(5..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, _, _, _, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, 6);
+        let tag = encode_tag_head(flag, 1, 5);
         ByteStream.Cons(tag, store(fold(6..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, _, _, _, _, 0] =>
-        let tag = encode_tag_head(flag, 1, 7);
+        let tag = encode_tag_head(flag, 1, 6);
         ByteStream.Cons(tag, store(fold(7..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, _, _, _, _, _] =>
-        let tag = encode_tag_head(flag, 1, 8);
+        let tag = encode_tag_head(flag, 1, 7);
         ByteStream.Cons(tag, store(fold(8..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
     }
   }
@@ -1710,7 +1707,7 @@ def entrypoints := ⟦
     let (idx, len) = io_get_info(key);
     let bytes_unconstrained = read_byte_stream(idx, len);
     let ixon_unconstrained = deserialize(bytes_unconstrained);
-    let bytes = serialize(ixon_unconstrained, ByteStream.Nil);
+    let bytes = serialize(ixon_unconstrained);
     let bytes_hash = blake3(bytes);
     assert_eq!(h, bytes_hash);
   }
