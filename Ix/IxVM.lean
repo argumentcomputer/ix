@@ -1495,6 +1495,16 @@ def ixon := ⟦
     }
   }
 
+  fn length(bytes: ByteStream) -> [G; 8] {
+    -- TODO
+    [0; 8]
+  }
+
+  fn append(as: ByteStream, bs: ByteStream) -> ByteStream {
+    -- TODO
+    as
+  }
+
   fn push_front_head(flag: G, len: [G; 8], stream: ByteStream) -> ByteStream {
     match len {
       [b1, 0, 0, 0, 0, 0, 0, 0] =>
@@ -1502,33 +1512,33 @@ def ixon := ⟦
         let (_, large) = u8_add(b1, 248);
         match large {
           0 =>
-            let tag = encode_tag_head(flag, 0, num_bytes);
-            ByteStream.Cons(tag, stream),
+            let tag = encode_tag_head(flag, 0, b1);
+            ByteStream.Cons(tag, store(stream)),
           1 =>
-            let tag = encode_tag_head(flag, 1, num_bytes);
-            ByteStream.Cons(tag, store(fold(1..0, stream, |stream, @i| ByteStream.Cons(tag, len[@i])))),
+            let tag = encode_tag_head(flag, 1, 1);
+            ByteStream.Cons(tag, store(fold(1..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
         },
       [_, _, 0, 0, 0, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, num_bytes);
-        ByteStream.Cons(tag, store(fold(2..0, stream, |stream, @i| ByteStream.Cons(tag, len[@i])))),
+        let tag = encode_tag_head(flag, 1, 2);
+        ByteStream.Cons(tag, store(fold(2..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, 0, 0, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, num_bytes);
-        ByteStream.Cons(tag, store(fold(3..0, stream, |stream, @i| ByteStream.Cons(tag, len[@i])))),
+        let tag = encode_tag_head(flag, 1, 3);
+        ByteStream.Cons(tag, store(fold(3..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, _, 0, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, num_bytes);
-        ByteStream.Cons(tag, store(fold(4..0, stream, |stream, @i| ByteStream.Cons(tag, len[@i])))),
+        let tag = encode_tag_head(flag, 1, 4);
+        ByteStream.Cons(tag, store(fold(4..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, _, _, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, num_bytes);
-        ByteStream.Cons(tag, store(fold(5..0, stream, |stream, @i| ByteStream.Cons(tag, len[@i])))),
+        let tag = encode_tag_head(flag, 1, 5);
+        ByteStream.Cons(tag, store(fold(5..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, _, _, _, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, num_bytes);
-        ByteStream.Cons(tag, store(fold(6..0, stream, |stream, @i| ByteStream.Cons(tag, len[@i])))),
+        let tag = encode_tag_head(flag, 1, 6);
+        ByteStream.Cons(tag, store(fold(6..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, _, _, _, _, 0] =>
-        let tag = encode_tag_head(flag, 1, num_bytes);
-        ByteStream.Cons(tag, store(fold(7..0, stream, |stream, @i| ByteStream.Cons(tag, len[@i])))),
+        let tag = encode_tag_head(flag, 1, 7);
+        ByteStream.Cons(tag, store(fold(7..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
       [_, _, _, _, _, _, _, _] =>
-        let tag = encode_tag_head(flag, 1, num_bytes);
-        ByteStream.Cons(tag, store(fold(8..0, stream, |stream, @i| ByteStream.Cons(tag, len[@i])))),
+        let tag = encode_tag_head(flag, 1, 8);
+        ByteStream.Cons(tag, store(fold(8..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
     }
   }
 
