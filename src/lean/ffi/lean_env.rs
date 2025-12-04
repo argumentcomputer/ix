@@ -4,7 +4,7 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 
 use crate::{
-  ix::compile::{CompileState, CompileStateStats, compile_env},
+  ix::compile::compile_env,
   ix::env::{
     AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
     DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,

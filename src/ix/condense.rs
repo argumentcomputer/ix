@@ -1,5 +1,4 @@
 use rustc_hash::FxHashMap;
-use std::collections::hash_map::Entry;
 
 use crate::{
   FxIndexSet,

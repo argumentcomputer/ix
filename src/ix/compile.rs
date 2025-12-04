@@ -1,38 +1,28 @@
 use dashmap::{DashMap, DashSet};
-use indexmap::IndexSet;
 use itertools::Itertools;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use rayon::prelude::*;
-use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
-use std::{
-  cmp::Ordering,
-  collections::HashMap,
-  hash::{Hash, Hasher},
-  sync::{Arc, Mutex},
-};
+use rustc_hash::FxHashMap;
+use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
   cons_list::ConsList,
   ix::address::{Address, MetaAddress},
   ix::condense::compute_sccs,
   ix::env::{
-    AxiomVal, ConstantInfo, ConstantVal, ConstructorVal,
-    DataValue as LeanDataValue, DefinitionSafety, DefinitionVal, Env, Expr,
-    ExprData, InductiveVal, Level, LevelData, Literal, Name, NameData,
-    OpaqueVal, QuotVal, RecursorRule, RecursorVal, ReducibilityHints,
-    SourceInfo as LeanSourceInfo, Substring as LeanSubstring,
-    Syntax as LeanSyntax, SyntaxPreresolved, TheoremVal,
+    AxiomVal, ConstantInfo, ConstructorVal, DataValue as LeanDataValue, Env,
+    Expr, ExprData, InductiveVal, Level, LevelData, Literal, Name, NameData,
+    QuotVal, RecursorRule, SourceInfo as LeanSourceInfo,
+    Substring as LeanSubstring, Syntax as LeanSyntax, SyntaxPreresolved,
   },
-  ix::graph::{NameSet, RefMap, build_ref_graph},
+  ix::graph::{NameSet, build_ref_graph},
   ix::ground::ground_consts,
   ix::ixon::{
-    self, Axiom, BuiltIn, Constructor, ConstructorProj, DataValue, DefKind,
-    Definition, DefinitionProj, Inductive, InductiveProj, Ixon, Metadata,
-    Metadatum, Preresolved, Quotient, Recursor, RecursorProj, Serialize,
-    SourceInfo, Substring, Syntax,
+    self, Axiom, BuiltIn, Constructor, ConstructorProj, DataValue, Definition,
+    DefinitionProj, Inductive, InductiveProj, Ixon, Metadata, Metadatum,
+    Preresolved, Quotient, Recursor, RecursorProj, Serialize, SourceInfo,
+    Substring, Syntax,
   },
   ix::mutual::{Def, Ind, MutConst, MutCtx, Rec},
-  ix::store::{Store, StoreError},
   ix::strong_ordering::SOrd,
   lean::nat::Nat,
 };
@@ -74,7 +64,7 @@ impl CompileState {
 
 #[derive(Debug)]
 pub enum CompileError {
-  StoreError(StoreError),
+  //StoreError(StoreError),
   UngroundedEnv,
   CondenseError,
   LevelParam(Name, ConsList<Name>),
@@ -117,7 +107,7 @@ pub fn store_string(
   stt: &CompileState,
 ) -> Result<Address, CompileError> {
   let bytes = str.as_bytes();
-  let addr = Address::hash(&bytes);
+  let addr = Address::hash(bytes);
   stt.store.insert(addr.clone(), bytes.to_vec());
   Ok(addr)
   //Store::write(str.as_bytes()).map_err(CompileError::StoreError)
@@ -162,7 +152,7 @@ pub fn compile_name(
   name: &Name,
   stt: &CompileState,
 ) -> Result<Address, CompileError> {
-  if let Some(cached) = stt.names.get(&name) {
+  if let Some(cached) = stt.names.get(name) {
     Ok(cached.clone())
   } else {
     let addr = match name.as_data() {
@@ -241,7 +231,6 @@ pub fn compare_level(
   y: &Level,
   x_ctx: ConsList<Name>,
   y_ctx: ConsList<Name>,
-  cache: &mut BlockCache,
 ) -> Result<SOrd, CompileError> {
   match (x.as_data(), y.as_data()) {
     (LevelData::Mvar(e), _) => Err(CompileError::LevelMVar(e.clone())),
@@ -250,19 +239,19 @@ pub fn compare_level(
     (LevelData::Zero, _) => Ok(SOrd::lt(true)),
     (_, LevelData::Zero) => Ok(SOrd::gt(true)),
     (LevelData::Succ(x), LevelData::Succ(y)) => {
-      compare_level(x, y, x_ctx.clone(), y_ctx.clone(), cache)
+      compare_level(x, y, x_ctx.clone(), y_ctx.clone())
     },
     (LevelData::Succ(_), _) => Ok(SOrd::lt(true)),
     (_, LevelData::Succ(_)) => Ok(SOrd::gt(true)),
     (LevelData::Max(xl, xr), LevelData::Max(yl, yr)) => SOrd::try_compare(
-      compare_level(xl, yl, x_ctx.clone(), y_ctx.clone(), cache)?,
-      || compare_level(xr, yr, x_ctx, y_ctx, cache),
+      compare_level(xl, yl, x_ctx.clone(), y_ctx.clone())?,
+      || compare_level(xr, yr, x_ctx, y_ctx),
     ),
     (LevelData::Max(_, _), _) => Ok(SOrd::lt(true)),
     (_, LevelData::Max(_, _)) => Ok(SOrd::gt(true)),
     (LevelData::Imax(xl, xr), LevelData::Imax(yl, yr)) => SOrd::try_compare(
-      compare_level(xl, yl, x_ctx.clone(), y_ctx.clone(), cache)?,
-      || compare_level(xr, yr, x_ctx, y_ctx, cache),
+      compare_level(xl, yl, x_ctx.clone(), y_ctx.clone())?,
+      || compare_level(xr, yr, x_ctx, y_ctx),
     ),
     (LevelData::Imax(_, _), _) => Ok(SOrd::lt(true)),
     (_, LevelData::Imax(_, _)) => Ok(SOrd::gt(true)),
@@ -603,7 +592,6 @@ pub fn compare_expr(
   mut_ctx: MutCtx,
   x_lvls: ConsList<Name>,
   y_lvls: ConsList<Name>,
-  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   match (x.as_data(), y.as_data()) {
@@ -612,25 +600,25 @@ pub fn compare_expr(
     (ExprData::Fvar(..), _) => Err(CompileError::ExprFVar),
     (_, ExprData::Fvar(..)) => Err(CompileError::ExprFVar),
     (ExprData::Mdata(_, x, _), ExprData::Mdata(_, y, _)) => {
-      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, cache, stt)
+      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, stt)
     },
     (ExprData::Mdata(_, x, _), _) => {
-      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, cache, stt)
+      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, stt)
     },
     (_, ExprData::Mdata(_, y, _)) => {
-      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, cache, stt)
+      compare_expr(x, y, mut_ctx, x_lvls, y_lvls, stt)
     },
     (ExprData::Bvar(x, _), ExprData::Bvar(y, _)) => Ok(SOrd::cmp(x, y)),
     (ExprData::Bvar(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::Bvar(..)) => Ok(SOrd::gt(true)),
     (ExprData::Sort(x, _), ExprData::Sort(y, _)) => {
-      compare_level(x, y, x_lvls, y_lvls, cache)
+      compare_level(x, y, x_lvls, y_lvls)
     },
     (ExprData::Sort(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::Sort(..)) => Ok(SOrd::gt(true)),
     (ExprData::Const(x, xls, _), ExprData::Const(y, yls, _)) => {
       let us = SOrd::try_zip(
-        |a, b| compare_level(a, b, x_lvls.clone(), y_lvls.clone(), cache),
+        |a, b| compare_level(a, b, x_lvls.clone(), y_lvls.clone()),
         xls,
         yls,
       )?;
@@ -661,10 +649,9 @@ pub fn compare_expr(
         mut_ctx.clone(),
         x_lvls.clone(),
         y_lvls.clone(),
-        cache,
         stt,
       )?,
-      || compare_expr(xr, yr, mut_ctx, x_lvls, y_lvls, cache, stt),
+      || compare_expr(xr, yr, mut_ctx, x_lvls, y_lvls, stt),
     ),
     (ExprData::App(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::App(..)) => Ok(SOrd::gt(true)),
@@ -676,10 +663,9 @@ pub fn compare_expr(
           mut_ctx.clone(),
           x_lvls.clone(),
           y_lvls.clone(),
-          cache,
           stt,
         )?,
-        || compare_expr(xb, yb, mut_ctx, x_lvls, y_lvls, cache, stt),
+        || compare_expr(xb, yb, mut_ctx, x_lvls, y_lvls, stt),
       )
     },
     (ExprData::Lam(..), _) => Ok(SOrd::lt(true)),
@@ -694,10 +680,9 @@ pub fn compare_expr(
         mut_ctx.clone(),
         x_lvls.clone(),
         y_lvls.clone(),
-        cache,
         stt,
       )?,
-      || compare_expr(xb, yb, mut_ctx, x_lvls, y_lvls, cache, stt),
+      || compare_expr(xb, yb, mut_ctx, x_lvls, y_lvls, stt),
     ),
     (ExprData::ForallE(..), _) => Ok(SOrd::lt(true)),
     (_, ExprData::ForallE(..)) => Ok(SOrd::gt(true)),
@@ -706,15 +691,7 @@ pub fn compare_expr(
       ExprData::LetE(_, yt, yv, yb, _, _),
     ) => SOrd::try_zip(
       |a, b| {
-        compare_expr(
-          a,
-          b,
-          mut_ctx.clone(),
-          x_lvls.clone(),
-          y_lvls.clone(),
-          cache,
-          stt,
-        )
+        compare_expr(a, b, mut_ctx.clone(), x_lvls.clone(), y_lvls.clone(), stt)
       },
       &[xt, xv, xb],
       &[yt, yv, yb],
@@ -737,7 +714,7 @@ pub fn compare_expr(
       }?;
       SOrd::try_compare(tn, || {
         SOrd::try_compare(SOrd::cmp(ix, iy), || {
-          compare_expr(tx, ty, mut_ctx, x_lvls, y_lvls, cache, stt)
+          compare_expr(tx, ty, mut_ctx, x_lvls, y_lvls, stt)
         })
       })
     },
@@ -1026,7 +1003,6 @@ pub fn compare_defn(
   x: &Def,
   y: &Def,
   mut_ctx: MutCtx,
-  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   SOrd::try_compare(
@@ -1042,7 +1018,6 @@ pub fn compare_defn(
               mut_ctx.clone(),
               ConsList::from_iterator(x.level_params.iter().cloned()),
               ConsList::from_iterator(y.level_params.iter().cloned()),
-              cache,
               stt,
             )?,
             || {
@@ -1052,7 +1027,6 @@ pub fn compare_defn(
                 mut_ctx.clone(),
                 ConsList::from_iterator(x.level_params.iter().cloned()),
                 ConsList::from_iterator(y.level_params.iter().cloned()),
-                cache,
                 stt,
               )
             },
@@ -1067,7 +1041,6 @@ pub fn compare_ctor_inner(
   x: &ConstructorVal,
   y: &ConstructorVal,
   mut_ctx: MutCtx,
-  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   SOrd::try_compare(
@@ -1082,7 +1055,6 @@ pub fn compare_ctor_inner(
               mut_ctx.clone(),
               ConsList::from_iterator(x.cnst.level_params.iter().cloned()),
               ConsList::from_iterator(y.cnst.level_params.iter().cloned()),
-              cache,
               stt,
             )
           })
@@ -1107,7 +1079,7 @@ pub fn compare_ctor(
   if let Some(o) = cache.cmps.get(&key) {
     Ok(SOrd { strong: true, ordering: *o })
   } else {
-    let so = compare_ctor_inner(x, y, mut_ctx, cache, stt)?;
+    let so = compare_ctor_inner(x, y, mut_ctx, stt)?;
     if so.strong {
       cache.cmps.insert(key, so.ordering);
     }
@@ -1143,7 +1115,6 @@ pub fn compare_indc(
                     ConsList::from_iterator(
                       y.ind.cnst.level_params.iter().cloned(),
                     ),
-                    cache,
                     stt,
                   )?,
                   || {
@@ -1169,11 +1140,10 @@ pub fn compare_recr_rule(
   mut_ctx: MutCtx,
   x_lvls: ConsList<Name>,
   y_lvls: ConsList<Name>,
-  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   SOrd::try_compare(SOrd::cmp(&x.n_fields, &y.n_fields), || {
-    compare_expr(&x.rhs, &y.rhs, mut_ctx.clone(), x_lvls, y_lvls, cache, stt)
+    compare_expr(&x.rhs, &y.rhs, mut_ctx.clone(), x_lvls, y_lvls, stt)
   })
 }
 
@@ -1181,7 +1151,6 @@ pub fn compare_recr(
   x: &Rec,
   y: &Rec,
   mut_ctx: MutCtx,
-  cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
   SOrd::try_compare(
@@ -1203,7 +1172,6 @@ pub fn compare_recr(
                     ConsList::from_iterator(
                       y.cnst.level_params.iter().cloned(),
                     ),
-                    cache,
                     stt,
                   )?,
                   || {
@@ -1219,7 +1187,6 @@ pub fn compare_recr(
                           ConsList::from_iterator(
                             y.cnst.level_params.iter().cloned(),
                           ),
-                          cache,
                           stt,
                         )
                       },
@@ -1254,7 +1221,7 @@ pub fn compare_const(
   } else {
     let so: SOrd = match (x, y) {
       (MutConst::Defn(x), MutConst::Defn(y)) => {
-        compare_defn(x, y, mut_ctx.clone(), cache, stt)?
+        compare_defn(x, y, mut_ctx.clone(), stt)?
       },
       (MutConst::Defn(_), _) => SOrd::lt(true),
       (MutConst::Indc(x), MutConst::Indc(y)) => {
@@ -1262,7 +1229,7 @@ pub fn compare_const(
       },
       (MutConst::Indc(_), _) => SOrd::lt(true),
       (MutConst::Recr(x), MutConst::Recr(y)) => {
-        compare_recr(x, y, mut_ctx.clone(), cache, stt)?
+        compare_recr(x, y, mut_ctx.clone(), stt)?
       },
       (MutConst::Recr(_), _) => SOrd::lt(true),
     };
@@ -1737,12 +1704,12 @@ pub fn compile_env(env: Arc<Env>) -> Result<CompileState, CompileError> {
     Ok::<(), CompileError>(())
   })?;
 
-  let num_blocks = remaining.len();
-  let mut i = 0;
+  //let num_blocks = remaining.len();
+  //let mut i = 0;
 
   while !remaining.is_empty() {
-    i += 1;
-    let len = remaining.len();
+    //i += 1;
+    //let len = remaining.len();
     //let pct = 100f64 - ((len as f64 / num_blocks as f64) * 100f64);
     //println!("Wave {i}, {pct}%: {len}/{num_blocks}");
     //println!("Stats {:?}", stt.stats());
