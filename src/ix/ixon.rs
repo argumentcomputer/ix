@@ -1399,6 +1399,10 @@ impl Ixon {
     }
     Ok(vec)
   }
+
+  pub fn meta(nodes: Vec<Metadatum>) -> Self {
+    Ixon::Meta(Metadata { nodes })
+  }
 }
 
 impl Serialize for Ixon {

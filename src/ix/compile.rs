@@ -9,10 +9,11 @@ use crate::{
   ix::address::{Address, MetaAddress},
   ix::condense::compute_sccs,
   ix::env::{
-    AxiomVal, ConstantInfo, ConstructorVal, DataValue as LeanDataValue, Env,
-    Expr, ExprData, InductiveVal, Level, LevelData, Literal, Name, NameData,
-    QuotVal, RecursorRule, SourceInfo as LeanSourceInfo,
-    Substring as LeanSubstring, Syntax as LeanSyntax, SyntaxPreresolved,
+    AxiomVal, BinderInfo, ConstantInfo, ConstructorVal,
+    DataValue as LeanDataValue, Env, Expr, ExprData, InductiveVal, Level,
+    LevelData, Literal, Name, NameData, QuotVal, RecursorRule,
+    SourceInfo as LeanSourceInfo, Substring as LeanSubstring,
+    Syntax as LeanSyntax, SyntaxPreresolved,
   },
   ix::graph::{NameSet, build_ref_graph},
   ix::ground::ground_consts,
@@ -72,6 +73,7 @@ pub enum CompileError {
   Ref(Name),
   ExprFVar,
   ExprMVar,
+  CompileExpr,
   MkIndc,
   SortConsts,
   CompileMutConsts(Vec<ixon::MutConst>),
@@ -395,196 +397,419 @@ pub fn compile_ref(
   }
 }
 
-pub fn compile_expr_inner(
-  kvs: &ConsList<Vec<(Name, LeanDataValue)>>,
-  expr: &Expr,
-  univ_ctx: ConsList<Name>,
-  mut_ctx: MutCtx,
-  cache: &mut BlockCache,
-  stt: &CompileState,
-) -> Result<(Ixon, Ixon), CompileError> {
-  match expr.as_data() {
-    ExprData::Mdata(kv, x, _) => compile_expr_inner(
-      &kvs.cons(kv.clone()),
-      x,
-      univ_ctx,
-      mut_ctx,
-      cache,
-      stt,
-    ),
-    ExprData::Bvar(idx, _) => {
-      let data = Ixon::EVar(idx.clone());
-      let md = compile_kv_maps(kvs, stt)?;
-      let nodes = vec![Metadatum::Link(md)];
-      let meta = Ixon::Meta(Metadata { nodes });
-      Ok((data, meta))
-    },
-    ExprData::Sort(univ, _) => {
-      let md = compile_kv_maps(kvs, stt)?;
-      let MetaAddress { data: udata, meta: umeta } =
-        compile_level(univ, univ_ctx, cache, stt)?;
-      let data = Ixon::ESort(udata);
-      let nodes = vec![Metadatum::Link(md), Metadatum::Link(umeta)];
-      let meta = Ixon::Meta(Metadata { nodes });
-      Ok((data, meta))
-    },
-    ExprData::Const(name, lvls, _) => {
-      let md = compile_kv_maps(kvs, stt)?;
-      let n = compile_name(name, stt)?;
-      let mut us_data = Vec::with_capacity(lvls.len());
-      let mut us_meta = Vec::with_capacity(lvls.len());
-      for u in lvls {
-        let MetaAddress { data, meta } =
-          compile_level(u, univ_ctx.clone(), cache, stt)?;
-        us_data.push(data);
-        us_meta.push(meta);
-      }
-      match mut_ctx.as_ref().get(name) {
-        Some(idx) => {
-          let data = Ixon::ERec(idx.clone(), us_data);
-          let meta = Ixon::Meta(Metadata {
-            nodes: vec![
-              Metadatum::Link(md),
-              Metadatum::Link(n),
-              Metadatum::Links(us_meta),
-            ],
-          });
-          Ok((data, meta))
-        },
-        None => {
-          let addr = compile_ref(name, stt)?;
-          let data = Ixon::ERef(addr.data.clone(), us_data);
-          let meta = Ixon::Meta(Metadata {
-            nodes: vec![
-              Metadatum::Link(md),
-              Metadatum::Link(n),
-              Metadatum::Link(addr.meta.clone()),
-              Metadatum::Links(us_meta),
-            ],
-          });
-          Ok((data, meta))
-        },
-      }
-    },
-    ExprData::App(f, a, _) => {
-      let md = compile_kv_maps(kvs, stt)?;
-      let f = compile_expr(f, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
-      let a = compile_expr(a, univ_ctx, mut_ctx, cache, stt)?;
-      let data = Ixon::EApp(f.data, a.data);
-      let meta = Ixon::Meta(Metadata {
-        nodes: vec![
-          Metadatum::Link(md),
-          Metadatum::Link(f.meta),
-          Metadatum::Link(a.meta),
-        ],
-      });
-      Ok((data, meta))
-    },
-    ExprData::Lam(n, t, b, i, _) => {
-      let md = compile_kv_maps(kvs, stt)?;
-      let n = compile_name(n, stt)?;
-      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
-      let b = compile_expr(b, univ_ctx, mut_ctx, cache, stt)?;
-      let data = Ixon::ELam(t.data, b.data);
-      let meta = Ixon::Meta(Metadata {
-        nodes: vec![
-          Metadatum::Link(md),
-          Metadatum::Link(n),
-          Metadatum::Info(i.clone()),
-          Metadatum::Link(t.meta),
-          Metadatum::Link(b.meta),
-        ],
-      });
-      Ok((data, meta))
-    },
-    ExprData::ForallE(n, t, b, i, _) => {
-      let md = compile_kv_maps(kvs, stt)?;
-      let n = compile_name(n, stt)?;
-      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
-      let b = compile_expr(b, univ_ctx, mut_ctx, cache, stt)?;
-      let data = Ixon::EAll(t.data, b.data);
-      let meta = Ixon::Meta(Metadata {
-        nodes: vec![
-          Metadatum::Link(md),
-          Metadatum::Link(n),
-          Metadatum::Info(i.clone()),
-          Metadatum::Link(t.meta),
-          Metadatum::Link(b.meta),
-        ],
-      });
-      Ok((data, meta))
-    },
-    ExprData::LetE(n, t, v, b, nd, _) => {
-      let md = compile_kv_maps(kvs, stt)?;
-      let n = compile_name(n, stt)?;
-      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
-      let v = compile_expr(v, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
-      let b = compile_expr(b, univ_ctx, mut_ctx, cache, stt)?;
-      let data = Ixon::ELet(*nd, t.data, v.data, b.data);
-      let meta = Ixon::Meta(Metadata {
-        nodes: vec![
-          Metadatum::Link(md),
-          Metadatum::Link(n),
-          Metadatum::Link(t.meta),
-          Metadatum::Link(v.meta),
-          Metadatum::Link(b.meta),
-        ],
-      });
-      Ok((data, meta))
-    },
-    ExprData::Lit(Literal::NatVal(n), _) => {
-      let md = compile_kv_maps(kvs, stt)?;
-      let data = Ixon::ENat(store_nat(n, stt)?);
-      let meta = Ixon::Meta(Metadata { nodes: vec![Metadatum::Link(md)] });
-      Ok((data, meta))
-    },
-    ExprData::Lit(Literal::StrVal(s), _) => {
-      let md = compile_kv_maps(kvs, stt)?;
-      let data = Ixon::EStr(store_string(s, stt)?);
-      let meta = Ixon::Meta(Metadata { nodes: vec![Metadatum::Link(md)] });
-      Ok((data, meta))
-    },
-    ExprData::Proj(tn, i, s, _) => {
-      let md = compile_kv_maps(kvs, stt)?;
-
-      let n = compile_name(tn, stt)?;
-      let t = compile_ref(tn, stt)?;
-      let s = compile_expr(s, univ_ctx, mut_ctx, cache, stt)?;
-      let data = Ixon::EPrj(t.data, i.clone(), s.data);
-      let meta = Ixon::Meta(Metadata {
-        nodes: vec![
-          Metadatum::Link(md),
-          Metadatum::Link(n),
-          Metadatum::Link(t.meta),
-          Metadatum::Link(s.meta),
-        ],
-      });
-      Ok((data, meta))
-    },
-    ExprData::Fvar(..) => Err(CompileError::ExprFVar),
-    ExprData::Mvar(..) => Err(CompileError::ExprMVar),
-  }
-}
-
-fn compile_expr(
+pub fn compile_expr(
   expr: &Expr,
   univ_ctx: ConsList<Name>,
   mut_ctx: MutCtx,
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<MetaAddress, CompileError> {
-  if let Some(cached) = cache.exprs.get(expr) {
-    Ok(cached.clone())
-  } else {
-    let (data_ixon, meta_ixon) =
-      compile_expr_inner(&ConsList::Nil, expr, univ_ctx, mut_ctx, cache, stt)?;
-    let data = store_ixon(&data_ixon, stt)?;
-    let meta = store_ixon(&meta_ixon, stt)?;
-    let meta_address = MetaAddress { data, meta };
-    cache.exprs.insert(expr.clone(), meta_address.clone());
-    Ok(meta_address)
+  enum Frame<'a> {
+    Compile(&'a Expr),
+    Inner(&'a Expr, ConsList<Vec<(Name, LeanDataValue)>>),
+    App(Address),
+    Lam(Address, Address, BinderInfo),
+    All(Address, Address, BinderInfo),
+    Let(Address, Address, bool),
+    Proj(Address, Address, MetaAddress, Nat),
+    Cache(Expr),
   }
+  if let Some(cached) = cache.exprs.get(expr) {
+    return Ok(cached.clone());
+  }
+  let mut stack: Vec<Frame> = vec![Frame::Compile(expr)];
+  let mut result: Vec<MetaAddress> = vec![];
+
+  while let Some(frame) = stack.pop() {
+    match frame {
+      Frame::Compile(expr) => {
+        if let Some(cached) = cache.exprs.get(expr) {
+          result.push(cached.clone());
+          continue;
+        }
+        stack.push(Frame::Cache(expr.clone()));
+        stack.push(Frame::Inner(expr, ConsList::Nil));
+      },
+      Frame::Inner(expr, kvs) => {
+        let md = compile_kv_maps(&kvs, stt)?;
+        match expr.as_data() {
+          ExprData::Mdata(kv, x, _) => {
+            stack.push(Frame::Inner(x, kvs.cons(kv.clone())))
+          },
+          ExprData::Bvar(idx, _) => {
+            let data = store_ixon(&Ixon::EVar(idx.clone()), stt)?;
+            let meta = store_ixon(&Ixon::meta(vec![Metadatum::Link(md)]), stt)?;
+            result.push(MetaAddress { meta, data })
+          },
+          ExprData::Sort(univ, _) => {
+            let u = compile_level(univ, univ_ctx.clone(), cache, stt)?;
+            let data = store_ixon(&Ixon::ESort(u.data), stt)?;
+            let meta = store_ixon(
+              &Ixon::meta(vec![Metadatum::Link(md), Metadatum::Link(u.meta)]),
+              stt,
+            )?;
+            result.push(MetaAddress { meta, data })
+          },
+          ExprData::Const(name, lvls, _) => {
+            let n = compile_name(name, stt)?;
+            let mut lds = Vec::with_capacity(lvls.len());
+            let mut lms = Vec::with_capacity(lvls.len());
+            for l in lvls {
+              let u = compile_level(l, univ_ctx.clone(), cache, stt)?;
+              lds.push(u.data);
+              lms.push(u.meta);
+            }
+            match mut_ctx.as_ref().get(name) {
+              Some(idx) => {
+                let data = store_ixon(&Ixon::ERec(idx.clone(), lds), stt)?;
+                let meta = store_ixon(
+                  &Ixon::meta(vec![
+                    Metadatum::Link(md),
+                    Metadatum::Link(n),
+                    Metadatum::Links(lms),
+                  ]),
+                  stt,
+                )?;
+                result.push(MetaAddress { data, meta })
+              },
+              None => {
+                let addr = compile_ref(name, stt)?;
+                let data =
+                  store_ixon(&Ixon::ERef(addr.data.clone(), lds), stt)?;
+                let meta = store_ixon(
+                  &Ixon::meta(vec![
+                    Metadatum::Link(md),
+                    Metadatum::Link(n),
+                    Metadatum::Link(addr.meta.clone()),
+                    Metadatum::Links(lms),
+                  ]),
+                  stt,
+                )?;
+                result.push(MetaAddress { data, meta })
+              },
+            };
+          },
+          ExprData::App(f, a, _) => {
+            stack.push(Frame::App(md));
+            stack.push(Frame::Compile(a));
+            stack.push(Frame::Compile(f));
+          },
+          ExprData::Lam(name, t, b, info, _) => {
+            let n = compile_name(name, stt)?;
+            stack.push(Frame::Lam(md, n, info.clone()));
+            stack.push(Frame::Compile(b));
+            stack.push(Frame::Compile(t));
+          },
+          ExprData::ForallE(name, t, b, info, _) => {
+            let n = compile_name(name, stt)?;
+            stack.push(Frame::All(md, n, info.clone()));
+            stack.push(Frame::Compile(b));
+            stack.push(Frame::Compile(t));
+          },
+          ExprData::LetE(name, t, v, b, nd, _) => {
+            let n = compile_name(name, stt)?;
+            stack.push(Frame::Let(md, n, *nd));
+            stack.push(Frame::Compile(b));
+            stack.push(Frame::Compile(v));
+            stack.push(Frame::Compile(t));
+          },
+          ExprData::Lit(Literal::NatVal(n), _) => {
+            let data = store_ixon(&Ixon::ENat(store_nat(n, stt)?), stt)?;
+            let meta = store_ixon(&Ixon::meta(vec![Metadatum::Link(md)]), stt)?;
+            result.push(MetaAddress { data, meta })
+          },
+          ExprData::Lit(Literal::StrVal(n), _) => {
+            let data = store_ixon(&Ixon::EStr(store_string(n, stt)?), stt)?;
+            let meta = store_ixon(&Ixon::meta(vec![Metadatum::Link(md)]), stt)?;
+            result.push(MetaAddress { data, meta })
+          },
+          ExprData::Proj(tn, i, s, _) => {
+            let n = compile_name(tn, stt)?;
+            let t = compile_ref(tn, stt)?;
+            stack.push(Frame::Proj(md, n, t, i.clone()));
+            stack.push(Frame::Compile(s));
+          },
+          ExprData::Fvar(..) => return Err(CompileError::ExprFVar),
+          ExprData::Mvar(..) => return Err(CompileError::ExprMVar),
+        }
+      },
+      Frame::App(md) => {
+        let a = result.pop().expect("Frame::App missing a result");
+        let f = result.pop().expect("Frame::App missing f result");
+        let data = store_ixon(&Ixon::EApp(f.data, a.data), stt)?;
+        let meta = store_ixon(
+          &Ixon::meta(vec![
+            Metadatum::Link(md),
+            Metadatum::Link(f.meta),
+            Metadatum::Link(a.meta),
+          ]),
+          stt,
+        )?;
+        result.push(MetaAddress { data, meta })
+      },
+      Frame::Lam(md, n, i) => {
+        let b = result.pop().expect("Frame::Lam missing b result");
+        let t = result.pop().expect("Frame::Lam missing t result");
+        let data = store_ixon(&Ixon::ELam(t.data, b.data), stt)?;
+        let meta = store_ixon(
+          &Ixon::meta(vec![
+            Metadatum::Link(md),
+            Metadatum::Link(n),
+            Metadatum::Info(i),
+            Metadatum::Link(t.meta),
+            Metadatum::Link(b.meta),
+          ]),
+          stt,
+        )?;
+        result.push(MetaAddress { data, meta })
+      },
+      Frame::All(md, n, i) => {
+        let b = result.pop().expect("Frame::All missing b result");
+        let t = result.pop().expect("Frame::All missing t result");
+        let data = store_ixon(&Ixon::EAll(t.data, b.data), stt)?;
+        let meta = store_ixon(
+          &Ixon::meta(vec![
+            Metadatum::Link(md),
+            Metadatum::Link(n),
+            Metadatum::Info(i),
+            Metadatum::Link(t.meta),
+            Metadatum::Link(b.meta),
+          ]),
+          stt,
+        )?;
+        result.push(MetaAddress { data, meta })
+      },
+      Frame::Let(md, n, nd) => {
+        let b = result.pop().expect("Frame::Let missing b result");
+        let v = result.pop().expect("Frame::Let missing v result");
+        let t = result.pop().expect("Frame::Let missing t result");
+        let data = store_ixon(&Ixon::ELet(nd, t.data, v.data, b.data), stt)?;
+        let meta = store_ixon(
+          &Ixon::meta(vec![
+            Metadatum::Link(md),
+            Metadatum::Link(n),
+            Metadatum::Link(t.meta),
+            Metadatum::Link(v.meta),
+            Metadatum::Link(b.meta),
+          ]),
+          stt,
+        )?;
+        result.push(MetaAddress { data, meta })
+      },
+      Frame::Proj(md, n, t, i) => {
+        let s = result.pop().expect("Frame::Proj missing s result");
+        let data = store_ixon(&Ixon::EPrj(t.data, i.clone(), s.data), stt)?;
+        let meta = store_ixon(
+          &Ixon::meta(vec![
+            Metadatum::Link(md),
+            Metadatum::Link(n),
+            Metadatum::Link(t.meta),
+            Metadatum::Link(s.meta),
+          ]),
+          stt,
+        )?;
+        result.push(MetaAddress { data, meta })
+      },
+      Frame::Cache(expr) => {
+        if let Some(result) = result.last() {
+          cache.exprs.insert(expr, result.clone());
+        }
+      },
+    }
+  }
+  result.pop().ok_or(CompileError::CompileExpr)
 }
+
+//pub fn compile_expr_inner(
+//  kvs: &ConsList<Vec<(Name, LeanDataValue)>>,
+//  expr: &Expr,
+//  univ_ctx: ConsList<Name>,
+//  mut_ctx: MutCtx,
+//  cache: &mut BlockCache,
+//  stt: &CompileState,
+//) -> Result<(Ixon, Ixon), CompileError> {
+//  match expr.as_data() {
+//    ExprData::Mdata(kv, x, _) => compile_expr_inner(
+//      &kvs.cons(kv.clone()),
+//      x,
+//      univ_ctx,
+//      mut_ctx,
+//      cache,
+//      stt,
+//    ),
+//    ExprData::Bvar(idx, _) => {
+//      let data = Ixon::EVar(idx.clone());
+//      let md = compile_kv_maps(kvs, stt)?;
+//      let nodes = vec![Metadatum::Link(md)];
+//      let meta = Ixon::Meta(Metadata { nodes });
+//      Ok((data, meta))
+//    },
+//    ExprData::Sort(univ, _) => {
+//      let md = compile_kv_maps(kvs, stt)?;
+//      let MetaAddress { data: udata, meta: umeta } =
+//        compile_level(univ, univ_ctx, cache, stt)?;
+//      let data = Ixon::ESort(udata);
+//      let nodes = vec![Metadatum::Link(md), Metadatum::Link(umeta)];
+//      let meta = Ixon::Meta(Metadata { nodes });
+//      Ok((data, meta))
+//    },
+//    ExprData::Const(name, lvls, _) => {
+//      let md = compile_kv_maps(kvs, stt)?;
+//      let n = compile_name(name, stt)?;
+//      let mut us_data = Vec::with_capacity(lvls.len());
+//      let mut us_meta = Vec::with_capacity(lvls.len());
+//      for u in lvls {
+//        let MetaAddress { data, meta } =
+//          compile_level(u, univ_ctx.clone(), cache, stt)?;
+//        us_data.push(data);
+//        us_meta.push(meta);
+//      }
+//      match mut_ctx.as_ref().get(name) {
+//        Some(idx) => {
+//          let data = Ixon::ERec(idx.clone(), us_data);
+//          let meta = Ixon::Meta(Metadata {
+//            nodes: vec![
+//              Metadatum::Link(md),
+//              Metadatum::Link(n),
+//              Metadatum::Links(us_meta),
+//            ],
+//          });
+//          Ok((data, meta))
+//        },
+//        None => {
+//          let addr = compile_ref(name, stt)?;
+//          let data = Ixon::ERef(addr.data.clone(), us_data);
+//          let meta = Ixon::Meta(Metadata {
+//            nodes: vec![
+//              Metadatum::Link(md),
+//              Metadatum::Link(n),
+//              Metadatum::Link(addr.meta.clone()),
+//              Metadatum::Links(us_meta),
+//            ],
+//          });
+//          Ok((data, meta))
+//        },
+//      }
+//    },
+//    ExprData::App(f, a, _) => {
+//      let md = compile_kv_maps(kvs, stt)?;
+//      let f = compile_expr(f, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+//      let a = compile_expr(a, univ_ctx, mut_ctx, cache, stt)?;
+//      let data = Ixon::EApp(f.data, a.data);
+//      let meta = Ixon::Meta(Metadata {
+//        nodes: vec![
+//          Metadatum::Link(md),
+//          Metadatum::Link(f.meta),
+//          Metadatum::Link(a.meta),
+//        ],
+//      });
+//      Ok((data, meta))
+//    },
+//    ExprData::Lam(n, t, b, i, _) => {
+//      let md = compile_kv_maps(kvs, stt)?;
+//      let n = compile_name(n, stt)?;
+//      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+//      let b = compile_expr(b, univ_ctx, mut_ctx, cache, stt)?;
+//      let data = Ixon::ELam(t.data, b.data);
+//      let meta = Ixon::Meta(Metadata {
+//        nodes: vec![
+//          Metadatum::Link(md),
+//          Metadatum::Link(n),
+//          Metadatum::Info(i.clone()),
+//          Metadatum::Link(t.meta),
+//          Metadatum::Link(b.meta),
+//        ],
+//      });
+//      Ok((data, meta))
+//    },
+//    ExprData::ForallE(n, t, b, i, _) => {
+//      let md = compile_kv_maps(kvs, stt)?;
+//      let n = compile_name(n, stt)?;
+//      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+//      let b = compile_expr(b, univ_ctx, mut_ctx, cache, stt)?;
+//      let data = Ixon::EAll(t.data, b.data);
+//      let meta = Ixon::Meta(Metadata {
+//        nodes: vec![
+//          Metadatum::Link(md),
+//          Metadatum::Link(n),
+//          Metadatum::Info(i.clone()),
+//          Metadatum::Link(t.meta),
+//          Metadatum::Link(b.meta),
+//        ],
+//      });
+//      Ok((data, meta))
+//    },
+//    ExprData::LetE(n, t, v, b, nd, _) => {
+//      let md = compile_kv_maps(kvs, stt)?;
+//      let n = compile_name(n, stt)?;
+//      let t = compile_expr(t, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+//      let v = compile_expr(v, univ_ctx.clone(), mut_ctx.clone(), cache, stt)?;
+//      let b = compile_expr(b, univ_ctx, mut_ctx, cache, stt)?;
+//      let data = Ixon::ELet(*nd, t.data, v.data, b.data);
+//      let meta = Ixon::Meta(Metadata {
+//        nodes: vec![
+//          Metadatum::Link(md),
+//          Metadatum::Link(n),
+//          Metadatum::Link(t.meta),
+//          Metadatum::Link(v.meta),
+//          Metadatum::Link(b.meta),
+//        ],
+//      });
+//      Ok((data, meta))
+//    },
+//    ExprData::Lit(Literal::NatVal(n), _) => {
+//      let md = compile_kv_maps(kvs, stt)?;
+//      let data = Ixon::ENat(store_nat(n, stt)?);
+//      let meta = Ixon::Meta(Metadata { nodes: vec![Metadatum::Link(md)] });
+//      Ok((data, meta))
+//    },
+//    ExprData::Lit(Literal::StrVal(s), _) => {
+//      let md = compile_kv_maps(kvs, stt)?;
+//      let data = Ixon::EStr(store_string(s, stt)?);
+//      let meta = Ixon::Meta(Metadata { nodes: vec![Metadatum::Link(md)] });
+//      Ok((data, meta))
+//    },
+//    ExprData::Proj(tn, i, s, _) => {
+//      let md = compile_kv_maps(kvs, stt)?;
+//
+//      let n = compile_name(tn, stt)?;
+//      let t = compile_ref(tn, stt)?;
+//      let s = compile_expr(s, univ_ctx, mut_ctx, cache, stt)?;
+//      let data = Ixon::EPrj(t.data, i.clone(), s.data);
+//      let meta = Ixon::Meta(Metadata {
+//        nodes: vec![
+//          Metadatum::Link(md),
+//          Metadatum::Link(n),
+//          Metadatum::Link(t.meta),
+//          Metadatum::Link(s.meta),
+//        ],
+//      });
+//      Ok((data, meta))
+//    },
+//    ExprData::Fvar(..) => Err(CompileError::ExprFVar),
+//    ExprData::Mvar(..) => Err(CompileError::ExprMVar),
+//  }
+//}
+//
+//fn compile_expr(
+//  expr: &Expr,
+//  univ_ctx: ConsList<Name>,
+//  mut_ctx: MutCtx,
+//  cache: &mut BlockCache,
+//  stt: &CompileState,
+//) -> Result<MetaAddress, CompileError> {
+//  if let Some(cached) = cache.exprs.get(expr) {
+//    Ok(cached.clone())
+//  } else {
+//    let (data_ixon, meta_ixon) =
+//      compile_expr_inner(&ConsList::Nil, expr, univ_ctx, mut_ctx, cache, stt)?;
+//    let data = store_ixon(&data_ixon, stt)?;
+//    let meta = store_ixon(&meta_ixon, stt)?;
+//    let meta_address = MetaAddress { data, meta };
+//    cache.exprs.insert(expr.clone(), meta_address.clone());
+//    Ok(meta_address)
+//  }
+//}
 
 pub fn compare_expr(
   x: &Expr,
