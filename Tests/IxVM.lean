@@ -54,6 +54,8 @@ def ixTestCases : List AiurTestCase := [
   mkIxonSerdeTestCase (.usucc default),
   mkIxonSerdeTestCase (.umax default default),
   mkIxonSerdeTestCase (.uimax default default),
+  mkIxonSerdeTestCase (.uvar 42),
+  mkIxonSerdeTestCase (.evar 42),
   mkIxonSerdeTestCase (.esort default),
   mkIxonSerdeTestCase (.estr default),
   mkIxonSerdeTestCase (.enat default),
@@ -62,6 +64,11 @@ def ixTestCases : List AiurTestCase := [
   mkIxonSerdeTestCase (.eall default default),
   mkIxonSerdeTestCase (.elet false default default default),
   mkIxonSerdeTestCase (.elet true default default default),
+  mkIxonSerdeTestCase (.eval ⟨default, default, default, default⟩),
+  mkIxonSerdeTestCase (.chck ⟨default, default, default⟩),
+  mkIxonSerdeTestCase (.comm ⟨default, default⟩),
+  mkIxonSerdeTestCase (.blob ⟨#[0, 1, 2, 3]⟩),
+  mkIxonSerdeTestCase (.blob ⟨#[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]⟩),
 ]
 
 def Tests.IxVM.suite := [
