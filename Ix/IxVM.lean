@@ -1165,149 +1165,86 @@ def ixonAux := ⟦
   fn u64_get_trimmed_le(len: G, stream: ByteStream) -> ([G; 8], ByteStream) {
     let u64 = [0; 8];
     match len {
-      1 => match stream {
-        ByteStream.Cons(b0, tail_ptr) => (set(u64, 0, b0), load(tail_ptr)),
-      },
-      2 => match stream {
-        ByteStream.Cons(b0, tail_ptr) =>
-          match load(tail_ptr) {
-            ByteStream.Cons(b1, tail_ptr) =>
-              let u64 = set(u64, 0, b0);
-              (set(u64, 1, b1), load(tail_ptr)),
-          },
-      },
-      3 => match stream {
-        ByteStream.Cons(b0, tail_ptr) =>
-          match load(tail_ptr) {
-            ByteStream.Cons(b1, tail_ptr) =>
-              match load(tail_ptr) {
-                ByteStream.Cons(b2, tail_ptr) =>
-                  let u64 = set(u64, 0, b0);
-                  let u64 = set(u64, 1, b1);
-                  (set(u64, 2, b2), load(tail_ptr)),
-              },
-          },
-      },
-      4 => match stream {
-        ByteStream.Cons(b0, tail_ptr) =>
-          match load(tail_ptr) {
-            ByteStream.Cons(b1, tail_ptr) =>
-              match load(tail_ptr) {
-                ByteStream.Cons(b2, tail_ptr) =>
-                  match load(tail_ptr) {
-                    ByteStream.Cons(b3, tail_ptr) =>
-                      let u64 = set(u64, 0, b0);
-                      let u64 = set(u64, 1, b1);
-                      let u64 = set(u64, 2, b2);
-                      (set(u64, 3, b3), load(tail_ptr)),
-                  },
-              },
-          },
-      },
-      5 => match stream {
-        ByteStream.Cons(b0, tail_ptr) =>
-          match load(tail_ptr) {
-            ByteStream.Cons(b1, tail_ptr) =>
-              match load(tail_ptr) {
-                ByteStream.Cons(b2, tail_ptr) =>
-                  match load(tail_ptr) {
-                    ByteStream.Cons(b3, tail_ptr) =>
-                      match load(tail_ptr) {
-                        ByteStream.Cons(b4, tail_ptr) =>
-                          let u64 = set(u64, 0, b0);
-                          let u64 = set(u64, 1, b1);
-                          let u64 = set(u64, 2, b2);
-                          let u64 = set(u64, 3, b3);
-                          (set(u64, 4, b4), load(tail_ptr)),
-                      },
-                  },
-              },
-          },
-      },
-      5 => match stream {
-        ByteStream.Cons(b0, tail_ptr) =>
-          match load(tail_ptr) {
-            ByteStream.Cons(b1, tail_ptr) =>
-              match load(tail_ptr) {
-                ByteStream.Cons(b2, tail_ptr) =>
-                  match load(tail_ptr) {
-                    ByteStream.Cons(b3, tail_ptr) =>
-                      match load(tail_ptr) {
-                        ByteStream.Cons(b4, tail_ptr) =>
-                          match load(tail_ptr) {
-                            ByteStream.Cons(b5, tail_ptr) =>
-                              let u64 = set(u64, 0, b0);
-                              let u64 = set(u64, 1, b1);
-                              let u64 = set(u64, 2, b2);
-                              let u64 = set(u64, 3, b3);
-                              let u64 = set(u64, 4, b4);
-                              (set(u64, 5, b5), load(tail_ptr)),
-                          },
-                      },
-                  },
-              },
-          },
-      },
-      6 => match stream {
-        ByteStream.Cons(b0, tail_ptr) =>
-          match load(tail_ptr) {
-            ByteStream.Cons(b1, tail_ptr) =>
-              match load(tail_ptr) {
-                ByteStream.Cons(b2, tail_ptr) =>
-                  match load(tail_ptr) {
-                    ByteStream.Cons(b3, tail_ptr) =>
-                      match load(tail_ptr) {
-                        ByteStream.Cons(b4, tail_ptr) =>
-                          match load(tail_ptr) {
-                            ByteStream.Cons(b5, tail_ptr) =>
-                              match load(tail_ptr) {
-                                ByteStream.Cons(b6, tail_ptr) =>
-                                  let u64 = set(u64, 0, b0);
-                                  let u64 = set(u64, 1, b1);
-                                  let u64 = set(u64, 2, b2);
-                                  let u64 = set(u64, 3, b3);
-                                  let u64 = set(u64, 4, b4);
-                                  let u64 = set(u64, 5, b5);
-                                  (set(u64, 6, b6), load(tail_ptr)),
-                              },
-                          },
-                      },
-                  },
-              },
-          },
-      },
-      7 => match stream {
-        ByteStream.Cons(b0, tail_ptr) =>
-          match load(tail_ptr) {
-            ByteStream.Cons(b1, tail_ptr) =>
-              match load(tail_ptr) {
-                ByteStream.Cons(b2, tail_ptr) =>
-                  match load(tail_ptr) {
-                    ByteStream.Cons(b3, tail_ptr) =>
-                      match load(tail_ptr) {
-                        ByteStream.Cons(b4, tail_ptr) =>
-                          match load(tail_ptr) {
-                            ByteStream.Cons(b5, tail_ptr) =>
-                              match load(tail_ptr) {
-                                ByteStream.Cons(b6, tail_ptr) =>
-                                  match load(tail_ptr) {
-                                    ByteStream.Cons(b7, tail_ptr) =>
-                                      let u64 = set(u64, 0, b0);
-                                      let u64 = set(u64, 1, b1);
-                                      let u64 = set(u64, 2, b2);
-                                      let u64 = set(u64, 3, b3);
-                                      let u64 = set(u64, 4, b4);
-                                      let u64 = set(u64, 5, b5);
-                                      let u64 = set(u64, 6, b6);
-                                      (set(u64, 7, b7), load(tail_ptr)),
-                                  },
-                              },
-                          },
-                      },
-                  },
-              },
-          },
-      },
+      1 =>
+        let ByteStream.Cons(b0, tail_ptr) = stream;
+        (set(u64, 0, b0), load(tail_ptr)),
+      2 =>
+        let ByteStream.Cons(b0, tail_ptr) = stream;
+        let ByteStream.Cons(b1, tail_ptr) = load(tail_ptr);
+        let u64 = set(u64, 0, b0);
+        (set(u64, 1, b1), load(tail_ptr)),
+      3 =>
+        let ByteStream.Cons(b0, tail_ptr) = stream;
+        let ByteStream.Cons(b1, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b2, tail_ptr) = load(tail_ptr);
+        let u64 = set(u64, 0, b0);
+        let u64 = set(u64, 1, b1);
+        (set(u64, 2, b2), load(tail_ptr)),
+      4 =>
+        let ByteStream.Cons(b0, tail_ptr) = stream;
+        let ByteStream.Cons(b1, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b2, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b3, tail_ptr) = load(tail_ptr);
+        let u64 = set(u64, 0, b0);
+        let u64 = set(u64, 1, b1);
+        let u64 = set(u64, 2, b2);
+        (set(u64, 3, b3), load(tail_ptr)),
+      5 =>
+        let ByteStream.Cons(b0, tail_ptr) = stream;
+        let ByteStream.Cons(b1, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b2, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b3, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b4, tail_ptr) = load(tail_ptr);
+        let u64 = set(u64, 0, b0);
+        let u64 = set(u64, 1, b1);
+        let u64 = set(u64, 2, b2);
+        let u64 = set(u64, 3, b3);
+        (set(u64, 4, b4), load(tail_ptr)),
+      6 =>
+        let ByteStream.Cons(b0, tail_ptr) = stream;
+        let ByteStream.Cons(b1, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b2, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b3, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b4, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b5, tail_ptr) = load(tail_ptr);
+        let u64 = set(u64, 0, b0);
+        let u64 = set(u64, 1, b1);
+        let u64 = set(u64, 2, b2);
+        let u64 = set(u64, 3, b3);
+        let u64 = set(u64, 4, b4);
+        (set(u64, 5, b5), load(tail_ptr)),
+      7 =>
+        let ByteStream.Cons(b0, tail_ptr) = stream;
+        let ByteStream.Cons(b1, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b2, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b3, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b4, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b5, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b6, tail_ptr) = load(tail_ptr);
+        let u64 = set(u64, 0, b0);
+        let u64 = set(u64, 1, b1);
+        let u64 = set(u64, 2, b2);
+        let u64 = set(u64, 3, b3);
+        let u64 = set(u64, 4, b4);
+        let u64 = set(u64, 5, b5);
+        (set(u64, 6, b6), load(tail_ptr)),
+      8 =>
+        let ByteStream.Cons(b0, tail_ptr) = stream;
+        let ByteStream.Cons(b1, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b2, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b3, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b4, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b5, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b6, tail_ptr) = load(tail_ptr);
+        let ByteStream.Cons(b7, tail_ptr) = load(tail_ptr);
+        let u64 = set(u64, 0, b0);
+        let u64 = set(u64, 1, b1);
+        let u64 = set(u64, 2, b2);
+        let u64 = set(u64, 3, b3);
+        let u64 = set(u64, 4, b4);
+        let u64 = set(u64, 5, b5);
+        let u64 = set(u64, 6, b6);
+        (set(u64, 7, b7), load(tail_ptr)),
     }
   }
 ⟧
