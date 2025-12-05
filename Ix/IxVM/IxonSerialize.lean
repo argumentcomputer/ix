@@ -8,128 +8,142 @@ def ixonSerialize := ⟦
     let stream = ByteStream.Nil;
     match ixon {
       Ixon.NAnon => ByteStream.Cons(0x00, store(stream)),
-      Ixon.NStr(Address.Bytes(n), Address.Bytes(s)) =>
+      Ixon.NStr(Address.Bytes(a), Address.Bytes(b)) =>
         let tag = 0x01;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
-      Ixon.NNum(Address.Bytes(n), Address.Bytes(s)) =>
+      Ixon.NNum(Address.Bytes(a), Address.Bytes(b)) =>
         let tag = 0x02;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
       Ixon.UZero => ByteStream.Cons(0x03, store(stream)),
-      Ixon.USucc(Address.Bytes(n)) =>
+      Ixon.USucc(Address.Bytes(a)) =>
         let tag = 0x04;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
-      Ixon.UMax(Address.Bytes(n), Address.Bytes(s)) =>
+      Ixon.UMax(Address.Bytes(a), Address.Bytes(b)) =>
         let tag = 0x05;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
-      Ixon.UIMax(Address.Bytes(n), Address.Bytes(s)) =>
+      Ixon.UIMax(Address.Bytes(a), Address.Bytes(b)) =>
         let tag = 0x06;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
-      Ixon.ESort(Address.Bytes(n)) =>
+      Ixon.ESort(Address.Bytes(a)) =>
         let tag = 0x80;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
       Ixon.EStr(Address.Bytes(n)) =>
         let tag = 0x81;
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
-      Ixon.ENat(Address.Bytes(n)) =>
+      Ixon.ENat(Address.Bytes(a)) =>
         let tag = 0x82;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
-      Ixon.EApp(Address.Bytes(n), Address.Bytes(s)) =>
+      Ixon.EApp(Address.Bytes(a), Address.Bytes(b)) =>
         let tag = 0x83;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
-      Ixon.ELam(Address.Bytes(n), Address.Bytes(s)) =>
+      Ixon.ELam(Address.Bytes(a), Address.Bytes(b)) =>
         let tag = 0x84;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
-      Ixon.EAll(Address.Bytes(n), Address.Bytes(s)) =>
+      Ixon.EAll(Address.Bytes(a), Address.Bytes(b)) =>
         let tag = 0x85;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
-      Ixon.ELet(b, Address.Bytes(n), Address.Bytes(s), Address.Bytes(t)) =>
-        let tag = 0x87 - b;
+      Ixon.ELet(bool, Address.Bytes(a), Address.Bytes(b), Address.Bytes(c)) =>
+        let tag = 0x87 - bool;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(c[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(t[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
       Ixon.Eval(Address.Bytes(a), Address.Bytes(b), Address.Bytes(c), Address.Bytes(d)) =>
         let tag = 0xE1;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(d[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(c[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(d[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
       Ixon.Chck(Address.Bytes(a), Address.Bytes(b), Address.Bytes(c)) =>
         let tag = 0xE2;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(c[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(c[@i][@j], store(stream))));
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
       Ixon.Comm(Address.Bytes(a), Address.Bytes(b)) =>
         let tag = 0xE3;
         let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
       Ixon.Blob(bytes) =>
-        let len: [G; 8] = byte_stream_length(bytes);
+        let len = byte_stream_length(bytes);
         let flag = 0x9;
-        serialize_cons_head(flag, len, bytes),
+        let (tag, stream) = serialize_put_length(flag, len, bytes);
+        ByteStream.Cons(tag, store(stream)),
       Ixon.UVar(Nat.Bytes(bytes)) =>
-        let len: [G; 8] = byte_stream_length(bytes);
+        let len = byte_stream_length(bytes);
         let flag = 0x1;
-        serialize_cons_head(flag, len, bytes),
+        let (tag, stream) = serialize_put_length(flag, len, bytes);
+        ByteStream.Cons(tag, store(stream)),
       Ixon.EVar(Nat.Bytes(bytes)) =>
         let len: [G; 8] = byte_stream_length(bytes);
         let flag = 0x2;
-        serialize_cons_head(flag, len, bytes),
+        let (tag, stream) = serialize_put_length(flag, len, bytes);
+        ByteStream.Cons(tag, store(stream)),
+      -- Ixon.ERef(_, _) => stream,
+      -- Ixon.ERec(_, _) => stream,
+      Ixon.EPrj(Address.Bytes(a), Nat.Bytes(n), Address.Bytes(b)) =>
+        let flag = 0x5;
+        let len = byte_stream_length(n);
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
+        let (tag, stream) = serialize_put_length(flag, len, stream);
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
     }
   }
 
-  fn serialize_cons_head(flag: G, len: [G; 8], stream: ByteStream) -> ByteStream {
+  fn serialize_put_length(flag: G, len: [G; 8], stream: ByteStream) -> (G, ByteStream) {
     match len {
       [b1, 0, 0, 0, 0, 0, 0, 0] =>
         -- 248 is minus 8 in u8
@@ -137,32 +151,32 @@ def ixonSerialize := ⟦
         match large {
           0 =>
             let tag = encode_tag_head(flag, 0, b1);
-            ByteStream.Cons(tag, store(stream)),
+            (tag, stream),
           1 =>
             let tag = encode_tag_head(flag, 1, 0);
-            ByteStream.Cons(tag, store(ByteStream.Cons(b1, store(stream)))),
+            (tag, ByteStream.Cons(b1, store(stream))),
         },
       [_, _, 0, 0, 0, 0, 0, 0] =>
         let tag = encode_tag_head(flag, 1, 1);
-        ByteStream.Cons(tag, store(fold(2..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
+        (tag, fold(2..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream)))),
       [_, _, _, 0, 0, 0, 0, 0] =>
         let tag = encode_tag_head(flag, 1, 2);
-        ByteStream.Cons(tag, store(fold(3..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
+        (tag, fold(3..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream)))),
       [_, _, _, _, 0, 0, 0, 0] =>
         let tag = encode_tag_head(flag, 1, 3);
-        ByteStream.Cons(tag, store(fold(4..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
+        (tag, fold(4..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream)))),
       [_, _, _, _, _, 0, 0, 0] =>
         let tag = encode_tag_head(flag, 1, 4);
-        ByteStream.Cons(tag, store(fold(5..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
+        (tag, fold(5..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream)))),
       [_, _, _, _, _, _, 0, 0] =>
         let tag = encode_tag_head(flag, 1, 5);
-        ByteStream.Cons(tag, store(fold(6..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
+        (tag, fold(6..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream)))),
       [_, _, _, _, _, _, _, 0] =>
         let tag = encode_tag_head(flag, 1, 6);
-        ByteStream.Cons(tag, store(fold(7..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
+        (tag, fold(7..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream)))),
       [_, _, _, _, _, _, _, _] =>
         let tag = encode_tag_head(flag, 1, 7);
-        ByteStream.Cons(tag, store(fold(8..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
+        (tag, fold(8..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream)))),
     }
   }
 
