@@ -11,6 +11,11 @@ def ixon := ⟦
     Bytes(ByteStream)
   }
 
+  enum AddressList {
+    Cons(Address, &AddressList),
+    Nil
+  }
+
   enum Tag4 {
     Mk(G, [G; 8])
   }
@@ -43,9 +48,9 @@ def ixon := ⟦
     UIMax(Address, Address),               -- 0x06, universe impredicative max
     UVar(Nat),                             -- 0x1X, universe variable
     EVar(Nat),                             -- 0x2X, expression variable
-    -- ERef(Address, Vec<Address>),           -- 0x3X, expression reference
-    -- ERec(Nat, Vec<Address>),               -- 0x4X, expression recursion
-    -- EPrj(Address, Nat, Address),           -- 0x5X, expression projection
+    ERef(Address, AddressList),            -- 0x3X, expression reference
+    ERec(Nat, AddressList),                -- 0x4X, expression recursion
+    EPrj(Address, Nat, Address),           -- 0x5X, expression projection
     ESort(Address),                        -- 0x80, expression sort
     EStr(Address),                         -- 0x81, expression string
     ENat(Address),                         -- 0x82, expression natural
@@ -70,8 +75,7 @@ def ixon := ⟦
     Comm(Address, Address),                   -- 0xE3, cryptographic commitment
     -- Envn(Env),                             -- 0xE4, multi-claim environment
     Prim(BuiltIn)                             -- 0xE5, compiler built-ins
-    -- Meta(Metadata)
-    -- 0xFX, metadata
+    -- Meta(Metadata)                            --  0xFX, metadata
   }
 ⟧
 
