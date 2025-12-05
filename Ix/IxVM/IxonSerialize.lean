@@ -129,17 +129,43 @@ def ixonSerialize := ⟦
         let flag = 0x2;
         let (tag, stream) = serialize_put_length(flag, len, bytes);
         ByteStream.Cons(tag, store(stream)),
-      -- Ixon.ERef(_, _) => stream,
-      -- Ixon.ERec(_, _) => stream,
+      Ixon.ERef(Address.Bytes(a), addresses) =>
+        let (len, stream) = serialize_put_addresses(addresses, stream);
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
+        let flag = 0x3;
+        let (tag, stream) = serialize_put_length(flag, len, stream);
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.ERec(Nat.Bytes(n), addresses) =>
+        let blob_len = byte_stream_length(n);
+        let blob_flag = 0x9;
+        let (blob_tag, stream) = serialize_put_length(blob_flag, blob_len, n);
+        let stream = ByteStream.Cons(blob_tag, store(stream));
+        let flag = 0x4;
+        let (address_len, stream) = serialize_put_addresses(addresses, stream);
+        let (tag, stream) = serialize_put_length(flag, address_len, stream);
+        ByteStream.Cons(tag, store(stream)),
       Ixon.EPrj(Address.Bytes(a), Nat.Bytes(n), Address.Bytes(b)) =>
         let flag = 0x5;
         let len = byte_stream_length(n);
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
+        let stream = byte_stream_concat(n, stream);
         let (tag, stream) = serialize_put_length(flag, len, stream);
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
+    }
+  }
+
+  fn serialize_put_addresses(addresses: AddressList, stream: ByteStream) -> ([G; 8], ByteStream) {
+    match addresses {
+      AddressList.Nil => ([0; 8], stream),
+      AddressList.Cons(Address.Bytes(a), rest_ptr) =>
+        let (len, stream) = serialize_put_addresses(load(rest_ptr), stream);
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
+        (relaxed_u64_succ(len), stream),
     }
   }
 
