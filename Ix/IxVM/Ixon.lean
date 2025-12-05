@@ -38,6 +38,18 @@ def ixon := ⟦
     Partial
   }
 
+  enum QuotKind {
+    Typ,
+    Ctor,
+    Lift,
+    Ind
+  }
+
+  enum Claim {
+    Evals(Address, Address, Address, Address),
+    Checks(Address, Address, Address)
+  }
+
   enum Ixon {
     NAnon,                                 -- 0x00, anonymous name
     NStr(Address, Address),                -- 0x01, string name
@@ -59,23 +71,28 @@ def ixon := ⟦
     EAll(Address, Address),                -- 0x85, expression forall
     ELet(G, Address, Address, Address),    -- 0x86, 0x87, expression let. TODO: change the first argument to a Bool
     Blob(ByteStream),                      -- 0x9X, tagged bytes
-    -- Defn(Definition),                      -- 0xA0, definition constant
+    Defn(                                  -- 0xA0, definition constant
+      DefKind,
+      DefinitionSafety,
+      Nat,
+      Address,
+      Address
+    ),
     -- Recr(Recursor),                        -- 0xA1, recursor constant
-    -- Axio(Axiom),                           -- 0xA2, axiom constant
-    -- Quot(Quotient),                        -- 0xA3, quotient constant
-    -- CPrj(ConstructorProj),                 -- 0xA4, constructor projection
-    -- RPrj(RecursorProj),                    -- 0xA5, recursor projection
-    -- IPrj(InductiveProj),                   -- 0xA6, inductive projection
-    -- DPrj(DefinitionProj),
-    -- 0xA7, definition projection
+    Axio(G, Nat, Address),                    -- 0xA2, axiom constant. TODO: change the first argument to a Bool
+    Quot(QuotKind, Nat, Address),             -- 0xA3, quotient constant
+    CPrj(Nat, Nat, Address),                  -- 0xA4, constructor projection
+    RPrj(Nat, Address),                       -- 0xA5, recursor projection
+    IPrj(Nat, Address),                       -- 0xA6, inductive projection
+    DPrj(Nat, Address),                       -- 0xA7, definition projection
     -- Muts(Vec<MutConst>),                   -- 0xBX, mutual constants
-    -- Prof(Proof),                              -- 0xE0, zero-knowledge proof
+    Prof(Claim, ByteStream),                  -- 0xE0, zero-knowledge proof
     Eval(Address, Address, Address, Address), -- 0xE1, evaluation claim
     Chck(Address, Address, Address),          -- 0xE2, typechecking claim
     Comm(Address, Address),                   -- 0xE3, cryptographic commitment
     -- Envn(Env),                             -- 0xE4, multi-claim environment
     Prim(BuiltIn)                             -- 0xE5, compiler built-ins
-    -- Meta(Metadata)                            --  0xFX, metadata
+    -- Meta(Metadata)                         --  0xFX, metadata
   }
 ⟧
 
