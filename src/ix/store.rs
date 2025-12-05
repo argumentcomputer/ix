@@ -9,7 +9,7 @@ pub enum StoreError {
   UnknownAddress(Address),
   IoError(io::Error),
   IxonError(String),
-  NoHome,
+  NoHome(env::VarError),
 }
 
 impl std::fmt::Display for StoreError {
@@ -18,7 +18,7 @@ impl std::fmt::Display for StoreError {
       StoreError::UnknownAddress(a) => write!(f, "unknown address {:?}", a),
       StoreError::IoError(e) => write!(f, "IO error: {}", e),
       StoreError::IxonError(e) => write!(f, "ixon error: {}", e),
-      StoreError::NoHome => write!(f, "no HOME environment variable"),
+      StoreError::NoHome(e) => write!(f, "no HOME environment variable: {}", e),
     }
   }
 }
@@ -38,7 +38,7 @@ pub struct Store;
 impl Store {
   /// Get the home directory from the HOME environment variable
   fn get_home_dir() -> StoreResult<PathBuf> {
-    env::var("HOME").map(PathBuf::from).map_err(|_| StoreError::NoHome)
+    env::var("HOME").map(PathBuf::from).map_err(StoreError::NoHome)
   }
 
   /// Get the store directory path (~/.ix/store), creating it if needed

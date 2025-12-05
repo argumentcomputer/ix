@@ -100,12 +100,12 @@ impl MutConst {
       _ => vec![],
     }
   }
-  pub fn contains(&self, name: Name) -> bool {
+  pub fn contains(&self, name: &Name) -> bool {
     match self {
-      Self::Defn(x) => x.name == name,
-      Self::Recr(x) => x.cnst.name == name,
+      Self::Defn(x) => x.name == *name,
+      Self::Recr(x) => x.cnst.name == *name,
       Self::Indc(x) => {
-        x.ind.cnst.name == name || x.ctors.iter().any(|c| c.cnst.name == name)
+        x.ind.cnst.name == *name || x.ctors.iter().any(|c| c.cnst.name == *name)
       },
     }
   }

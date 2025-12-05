@@ -574,7 +574,7 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   let env = lean_ptr_to_env(ptr);
   let env = Arc::new(env);
   println!("Decoding: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
-  let res = compile_env(env.clone());
+  let res = compile_env(&env);
   match res {
     Ok(stt) => println!("OK: {:?}", stt.stats()),
     Err(e) => println!("ERR: {:?}", e),
