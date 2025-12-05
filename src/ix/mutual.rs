@@ -8,7 +8,6 @@ use crate::{
 };
 
 use rustc_hash::FxHashMap;
-use std::sync::Arc;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Def {
@@ -83,7 +82,7 @@ pub enum MutConst {
   Recr(Rec),
 }
 
-pub type MutCtx = Arc<FxHashMap<Name, Nat>>;
+pub type MutCtx = FxHashMap<Name, Nat>;
 
 impl MutConst {
   pub fn name(&self) -> Name {
@@ -112,7 +111,7 @@ impl MutConst {
   pub fn single_ctx(name: Name) -> MutCtx {
     let mut mut_ctx = FxHashMap::default();
     mut_ctx.insert(name, Nat(0u64.into()));
-    Arc::new(mut_ctx)
+    mut_ctx
   }
 
   pub fn ctx(classes: &[Vec<&MutConst>]) -> MutCtx {
@@ -129,6 +128,6 @@ impl MutConst {
       }
       i += max_ctors;
     }
-    Arc::new(mut_ctx)
+    mut_ctx
   }
 }

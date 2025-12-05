@@ -279,21 +279,13 @@ def compileDataValue : Lean.DataValue -> CompileM Ixon.DataValue
 | .ofInt i => .ofInt <$> storeSerial i
 | .ofSyntax s => .ofSyntax <$> (compileSyntax s >>= storeSerial)
 
-def compileKVMaps (maps: List Lean.KVMap): CompileM Address := do
-  --dbg_trace "compileKVMaps"
-  storeIxon (.meta ⟨<- maps.mapM go⟩)
-  where
-    go (map: Lean.KVMap): CompileM Metadatum := do
-    let mut list := #[]
-    --dbg_trace "compileKVMaps go"
-    for (name, dataValue) in map do
-      --dbg_trace "compileKVMaps entry {name}"
-      let n <- compileName name
-      --dbg_trace "compileKVMaps entry {name} n"
-      let d <- compileDataValue dataValue
-      --dbg_trace "compileKVMaps entry {name} d"
-      list := list.push (n, d)
-    pure <| .kvmap list.toList
+def compileKVMap (map: Lean.KVMap): CompileM Address := do
+  let mut list := #[]
+  for (name, dataValue) in map do
+    let n <- compileName name
+    let d <- compileDataValue dataValue
+    list := list.push (n, d)
+  storeIxon (.meta ⟨[.kvmap list.toList]⟩)
 
 def findLeanConst (name : Lean.Name) : CompileM Lean.ConstantInfo := do
   match (<- read).env.constants.find? name with
@@ -324,70 +316,64 @@ def compileReference (name: Lean.Name): CompileM MetaAddress := do
       | none => do throw <| .unknownConstant (<- read).current name
 
 def compileExpr: Lean.Expr -> CompileM MetaAddress
-| expr => outer [] expr
+| expr => do match (<- get).exprCache.find? expr with
+  | some x => pure x
+  | none => do
+    --dbg_trace s!"compileExpr {(<- read).current} {(<- get).exprCache.size}"
+    let maddr <- go expr
+    modifyGet fun stt => (maddr, { stt with
+      exprCache := stt.exprCache.insert expr maddr
+    })
   where
-    outer (kvs: List Lean.KVMap) (expr: Lean.Expr): CompileM MetaAddress := do
-      match (<- get).exprCache.find? expr with
-      | some x => pure x
-      | none => do
-        --dbg_trace s!"compileExpr {(<- read).current} {(<- get).exprCache.size}"
-        let (dat, met) <- go kvs expr
-        let maddr := ⟨<- storeIxon dat, <- storeIxon met⟩
-        modifyGet fun stt => (maddr, { stt with
-          exprCache := stt.exprCache.insert expr maddr
-        })
-    go (kvs: List Lean.KVMap): Lean.Expr -> CompileM (Ixon × Ixon)
-    | (.mdata kv x) => go (kv::kvs) x
+    go: Lean.Expr -> CompileM MetaAddress
+    | (.mdata kv x) => do
+      let md <- compileKVMap kv
+      let x <- compileExpr x
+      return ⟨x.data, <- storeIxon (.meta ⟨[.link md, .link x.meta]⟩)⟩
     | .bvar idx => do
       --dbg_trace s!"compileExpr {(<- read).current} bvar"
-      let md <- compileKVMaps kvs
       let dat := .evar idx
-      let met  := .meta ⟨[.link md]⟩
-      pure (dat, met)
+      let met  := .meta ⟨[]⟩
+      pure ⟨<- storeIxon dat, <- storeIxon met⟩
     | .sort univ => do
       --dbg_trace s!"compileExpr {(<- read).current} sort"
-      let md <- compileKVMaps kvs
       let ⟨udata, umeta⟩ <- compileLevel univ
       let dat := .esort udata
-      let met := .meta ⟨[.link md, .link umeta]⟩
-      pure (dat, met)
+      let met := .meta ⟨[.link umeta]⟩
+      pure ⟨<- storeIxon dat, <- storeIxon met⟩
     | .const name lvls => do
       --dbg_trace s!"compileExpr {(<- read).current} const"
-      let md <- compileKVMaps kvs
       let n <- compileName name
       let us <- lvls.mapM compileLevel
       match (← read).mutCtx.find? name with
       | some idx =>
         --dbg_trace s!"compileExpr {(<- read).current} const rec"
         let dat := .erec idx (us.map (·.data))
-        let met := .meta ⟨[.link md, .link n, .links (us.map (·.meta))]⟩
-        pure (dat, met)
+        let met := .meta ⟨[.link n, .links (us.map (·.meta))]⟩
+        pure ⟨<- storeIxon dat, <- storeIxon met⟩
       | none => do
         let ref <- compileReference name
         --dbg_trace s!"compileExpr {(<- read).current}, const ref {name}, mutCtx: {repr (<- read).mutCtx}"
         let dat := .eref ref.data (us.map (·.data))
-        let met := .meta ⟨[.link md, .link n, .link ref.meta, .links (us.map (·.meta))]⟩
-        pure (dat, met)
+        let met := .meta ⟨[.link n, .link ref.meta, .links (us.map (·.meta))]⟩
+        pure ⟨<- storeIxon dat, <- storeIxon met⟩
     | .app func argm => do
       --dbg_trace s!"compileExpr {(<- read).current} app"
-      let md <- compileKVMaps kvs
       let f <- compileExpr func
       let a <- compileExpr argm
       let dat := .eapp f.data a.data
-      let met := .meta ⟨[.link md, .link f.meta, .link a.meta]⟩
-      pure (dat, met)
+      let met := .meta ⟨[.link f.meta, .link a.meta]⟩
+      pure ⟨<- storeIxon dat, <- storeIxon met⟩
     | .lam name type body info => do
       --dbg_trace s!"compileExpr {(<- read).current} lam"
-      let md <- compileKVMaps kvs
       let n <- compileName name
       let t <- compileExpr type
       let b <- compileExpr body
       let dat := .elam t.data b.data
-      let met := .meta ⟨[.link md, .link n, .info info, .link t.meta, .link b.meta]⟩
-      pure (dat, met)
+      let met := .meta ⟨[.link n, .info info, .link t.meta, .link b.meta]⟩
+      pure ⟨<- storeIxon dat, <- storeIxon met⟩
     | .forallE name type body info => do
       --dbg_trace s!"compileExpr {(<- read).current} all"
-      let md <- compileKVMaps kvs
       --dbg_trace s!"compileExpr {(<- read).current} all md"
       let n <- compileName name
       --dbg_trace s!"compileExpr {(<- read).current} all n"
@@ -396,35 +382,34 @@ def compileExpr: Lean.Expr -> CompileM MetaAddress
       let b <- compileExpr body
       --dbg_trace s!"compileExpr {(<- read).current} all b"
       let dat := .eall t.data b.data
-      let met := .meta ⟨[.link md, .link n, .info info, .link t.meta, .link b.meta]⟩
-      pure (dat, met)
+      let met := .meta ⟨[.link n, .info info, .link t.meta, .link b.meta]⟩
+      pure ⟨<- storeIxon dat, <- storeIxon met⟩
     | .letE name type value body nD => do
       --dbg_trace s!"compileExpr {(<- read).current} let"
-      let md <- compileKVMaps kvs
       let n <- compileName name
       let t <- compileExpr type
       let v <- compileExpr value
       let b <- compileExpr body
       let dat:= .elet nD t.data v.data b.data
-      let met := .meta ⟨[.link md, .link n, .link t.meta, .link v.meta, .link b.meta]⟩
-      pure (dat, met)
+      let met := .meta ⟨[.link n, .link t.meta, .link v.meta, .link b.meta]⟩
+      pure ⟨<- storeIxon dat, <- storeIxon met⟩
     | .lit (.natVal n) => do
-      --dbg_trace s!"compileExpr {(<- read).current} lit nat"
-      let md <- compileKVMaps kvs
-      pure (.enat (<- storeNat n), .meta ⟨[.link md]⟩)
+      let dat := .enat (<- storeNat n)
+      let met := .meta ⟨[]⟩
+      pure ⟨<- storeIxon dat, <- storeIxon met⟩
     | .lit (.strVal s) => do
       --dbg_trace s!"compileExpr {(<- read).current} lit str"
-      let md <- compileKVMaps kvs
-      pure (.estr (<- storeString s), .meta ⟨[.link md]⟩)
+      let dat := .estr (<- storeString s)
+      let met := .meta ⟨[]⟩
+      pure ⟨<- storeIxon dat, <- storeIxon met⟩
     | .proj typeName idx struct => do
       --dbg_trace s!"compileExpr {(<- read).current} lit proj"
-      let md <- compileKVMaps kvs
       let t <- compileReference typeName
       let n <- compileName typeName
       let s <- compileExpr struct
       let dat := .eprj t.data idx s.data
-      let met := .meta ⟨[.link md, .link n, .link t.meta, .link s.meta]⟩
-      pure (dat, met)
+      let met := .meta ⟨[.link n, .link t.meta, .link s.meta]⟩
+      pure ⟨<- storeIxon dat, <- storeIxon met⟩
     | expr@(.fvar ..)  => throw $ .exprFreeVariable expr
     | expr@(.mvar ..)  => throw $ .exprMetavariable expr
 
