@@ -13,7 +13,6 @@ use indexmap::{IndexMap, IndexSet};
 use rustc_hash::FxBuildHasher;
 
 pub mod aiur;
-pub mod cons_list;
 pub mod iroh;
 pub mod ix;
 pub mod lean;
