@@ -28,7 +28,6 @@ use crate::{
 };
 
 #[derive(Default)]
-#[allow(clippy::type_complexity)]
 pub struct CompileState {
   pub consts: DashMap<Name, MetaAddress>,
   pub names: DashMap<Name, Address>,

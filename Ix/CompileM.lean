@@ -1097,9 +1097,9 @@ partial def CompileM.envScheduler
   (comms: Map Lean.Name MetaAddress)
   : IO CompiledEnv := do
   let refs: Map Lean.Name (Set Lean.Name) := GraphM.env env
-  dbg_trace s!"constants: {refs.size}"
+  println! s!"constants: {refs.size}"
   let blocks := CondenseM.run env refs
-  dbg_trace s!"lowlinks: {blocks.lowLinks.size}, blocks: {blocks.blocks.size}"
+  println! s!"lowlinks: {blocks.lowLinks.size}, blocks: {blocks.blocks.size}"
 
   let (_, stt) <- ScheduleM.run ⟨env, blocks, comms⟩ ⟨{}, {}⟩ ScheduleM.env
 
@@ -1111,13 +1111,13 @@ partial def CompileM.envScheduler
   while true do
     let stats <- ScheduleState.stats stt
     if stats.blockWaiting > 0 then
-      dbg_trace s!"waiting {repr <| <- ScheduleState.stats stt}"
+      println! s!"waiting {repr <| <- ScheduleState.stats stt}"
       continue
     else
       break
 
   for (n, task) in stt.constTasks do
-    dbg_trace s!"waiting {i}/{tasksSize}"
+    println! s!"waiting {i}/{tasksSize}"
     i := i + 1
     match (<- IO.wait task) with
     | .ok addr => consts := consts.insert n addr

@@ -31,6 +31,7 @@ pub type RefMap = FxHashMap<Name, NameSet>;
 pub struct RefGraph {
   /// Maps names to the names they reference
   pub out_refs: RefMap,
+  /// Maps names to the names that reference them
   pub in_refs: RefMap,
 }
 
