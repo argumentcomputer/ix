@@ -2,13 +2,13 @@ use blake3::Hash;
 use num_bigint::BigUint;
 
 use crate::{
+  ix::env::{
+    BinderInfo, DefinitionSafety, Int, Name, QuotKind, ReducibilityHints,
+  },
   lean::nat::*,
-  lean_env::{BinderInfo, DefinitionSafety, Int, QuotKind, ReducibilityHints},
 };
 
-pub mod address;
-
-use address::*;
+use crate::ix::address::*;
 
 pub trait Serialize: Sized {
   fn put(&self, buf: &mut Vec<u8>);
@@ -328,7 +328,7 @@ impl Serialize for QuotKind {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DefKind {
   Definition,
   Opaque,
@@ -1136,6 +1136,28 @@ pub enum BuiltIn {
   Unreachable,
 }
 
+impl BuiltIn {
+  pub fn name_of(&self) -> Name {
+    let s = match self {
+      Self::Obj => "_obj",
+      Self::Neutral => "_neutral",
+      Self::Unreachable => "_unreachable",
+    };
+    Name::str(Name::anon(), s.to_string())
+  }
+  pub fn from_name(name: &Name) -> Option<Self> {
+    if *name == BuiltIn::Obj.name_of() {
+      Some(BuiltIn::Obj)
+    } else if *name == BuiltIn::Neutral.name_of() {
+      Some(BuiltIn::Neutral)
+    } else if *name == BuiltIn::Unreachable.name_of() {
+      Some(BuiltIn::Unreachable)
+    } else {
+      None
+    }
+  }
+}
+
 impl Serialize for BuiltIn {
   fn put(&self, buf: &mut Vec<u8>) {
     match self {
@@ -1376,6 +1398,10 @@ impl Ixon {
       vec.push(s);
     }
     Ok(vec)
+  }
+
+  pub fn meta(nodes: Vec<Metadatum>) -> Self {
+    Ixon::Meta(Metadata { nodes })
   }
 }
 

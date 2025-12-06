@@ -2,18 +2,18 @@ use blake3::Hash;
 use std::ffi::c_void;
 
 use crate::{
-  ixon::{
+  ix::address::{Address, MetaAddress},
+  ix::env::{BinderInfo, DefinitionSafety, QuotKind, ReducibilityHints},
+  ix::ixon::{
     Axiom, BuiltIn, CheckClaim, Claim, Comm, Constructor, ConstructorProj,
     DataValue, DefKind, Definition, DefinitionProj, Env, EvalClaim, Inductive,
     InductiveProj, Ixon, Metadata, Metadatum, MutConst, Proof, Quotient,
     Recursor, RecursorProj, RecursorRule, Serialize,
-    address::{Address, MetaAddress},
   },
   lean::{
     as_ref_unsafe, collect_list, ctor::LeanCtorObject, lean_is_scalar,
     nat::Nat, sarray::LeanSArrayObject,
   },
-  lean_env::{BinderInfo, DefinitionSafety, QuotKind, ReducibilityHints},
   lean_unbox,
 };
 

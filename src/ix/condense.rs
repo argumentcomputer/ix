@@ -1,26 +1,27 @@
 use rustc_hash::FxHashMap;
-use std::sync::Arc;
 
 use crate::{
   FxIndexSet,
-  lean_env::{
-    Name,
-    ref_graph::{NameSet, RefMap},
-  },
+  ix::env::Name,
+  ix::graph::{NameSet, RefMap},
 };
+
+pub struct CondensedBlocks {
+  pub low_links: FxHashMap<Name, Name>,
+  pub blocks: RefMap,
+  pub block_refs: RefMap,
+}
 
 /// Compute strongly connected components using an iterative Tarjan’s algorithm.
 /// Returns a map from each node to the set of nodes in its SCC.
-pub fn compute_sccs(out_refs: &RefMap) -> RefMap {
-  macro_rules! neighbors {
-    ($name:expr) => {
-      out_refs.get($name).unwrap().iter().cloned().collect()
-    };
+pub fn compute_sccs(refs: &RefMap) -> CondensedBlocks {
+  fn neighbors(refs: &RefMap, n: &Name) -> Vec<Name> {
+    refs.get(n).unwrap().iter().cloned().collect()
   }
 
   struct Frame {
-    node: Arc<Name>,
-    neighbors: Vec<Arc<Name>>,
+    node: Name,
+    neighbors: Vec<Name>,
     /// Index of the next neighbor to visit.
     idx: usize,
   }
@@ -29,18 +30,21 @@ pub fn compute_sccs(out_refs: &RefMap) -> RefMap {
   let mut lowlink = FxHashMap::default();
   let mut stack = FxIndexSet::default();
   let mut next_index = 0usize;
-  let mut sccs = RefMap::default();
+
+  let mut blocks = RefMap::default();
+  let mut block_low_links = FxHashMap::default();
+  let mut block_refs = RefMap::default();
 
   let mut work = Vec::<Frame>::new();
 
-  for start in out_refs.keys() {
+  for start in refs.keys() {
     if index.contains_key(start) {
       continue;
     }
 
     work.push(Frame {
       node: start.clone(),
-      neighbors: neighbors!(start),
+      neighbors: neighbors(refs, start),
       idx: 0,
     });
 
@@ -60,7 +64,7 @@ pub fn compute_sccs(out_refs: &RefMap) -> RefMap {
 
         if !index.contains_key(&w) {
           // Explore new neighbor.
-          work.push(Frame { neighbors: neighbors!(&w), node: w, idx: 0 });
+          work.push(Frame { neighbors: neighbors(refs, &w), node: w, idx: 0 });
         } else if stack.contains(&w) {
           // w is on stack.
           let low_v = *lowlink.get(v).unwrap();
@@ -86,22 +90,28 @@ pub fn compute_sccs(out_refs: &RefMap) -> RefMap {
           // Pop nodes from stack until we reach v.
           while let Some(node) = stack.pop() {
             component.insert(node.clone());
-            if Arc::ptr_eq(&node, &v) {
+            if node == v {
               break;
             }
           }
+          blocks.insert(v.clone(), component.clone());
 
           // Insert all nodes in the component directly into the result.
+          let mut all_refs = NameSet::default();
           for node in &component {
-            sccs.insert(node.clone(), component.clone());
+            block_low_links.insert(node.clone(), v.clone());
+            for r in refs.get(node).unwrap() {
+              if !component.contains(r) && refs.contains_key(r) {
+                all_refs.insert(r.clone());
+              }
+            }
           }
+          block_refs.insert(v.clone(), all_refs);
         }
       }
     }
   }
-
-  assert_eq!(out_refs.len(), sccs.len());
-  sccs
+  CondensedBlocks { blocks, low_links: block_low_links, block_refs }
 }
 
 #[cfg(test)]
@@ -109,11 +119,11 @@ mod tests {
   use super::*;
   use std::slice;
 
-  fn n(s: &str) -> Arc<Name> {
-    Name::mk_str(Name::Anonymous.into(), s.to_string()).into()
+  fn n(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_string())
   }
 
-  fn map_of(pairs: &[(&Arc<Name>, &[Arc<Name>])]) -> RefMap {
+  fn map_of(pairs: &[(&Name, &[Name])]) -> RefMap {
     let mut map = RefMap::default();
     for (k, vs) in pairs {
       map.insert((*k).clone(), vs.iter().cloned().collect());
@@ -121,10 +131,11 @@ mod tests {
     map
   }
 
-  fn scc_to_vec(map: &FxHashMap<Arc<Name>, NameSet>) -> Vec<Vec<Arc<Name>>> {
+  fn scc_to_vec(map: &CondensedBlocks) -> Vec<Vec<Name>> {
     let mut seen = FxIndexSet::default();
     let mut sccs = Vec::new();
-    for (k, set) in map {
+    for (k, lo) in map.low_links.iter() {
+      let set = map.blocks.get(lo).unwrap();
       if !seen.contains(k) {
         let mut names: Vec<_> = set.iter().cloned().collect();
         names.sort();
