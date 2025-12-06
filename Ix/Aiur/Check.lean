@@ -57,6 +57,7 @@ structure CheckContext where
   decls : Decls
   varTypes : Std.HashMap Local Typ
   returnType : Typ
+  unconstrained : Bool
 
 abbrev CheckM := ReaderT CheckContext (Except CheckError)
 
@@ -208,6 +209,9 @@ partial def inferTerm : Term → CheckM TypedTerm
   | .ann typ term => do
     let inner ← checkNoEscape term typ
     pure $ .mk (.evaluates typ) inner
+  -- | .unsafeCast term castTyp => do
+  --   let (typ, inner) ← inferNoEscape term
+  --   pure $ .mk (.evaluates typ) (.unsafeCast inner castTyp)
   | .assertEq a b ret => do
     -- `a` and `b` must have the same type.
     let (typ, a) ← inferNoEscape a
@@ -406,6 +410,7 @@ def getFunctionContext (function : Function) (decls : Decls) : CheckContext :=
     decls,
     varTypes := .ofList function.inputs
     returnType := function.output
+    unconstrained := function.unconstrained
   }
 
 /--

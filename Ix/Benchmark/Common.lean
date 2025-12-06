@@ -1,7 +1,17 @@
 inductive SamplingMode where
   | flat : SamplingMode
   | linear : SamplingMode
-deriving Repr, BEq
+  deriving Repr, BEq
+
+inductive SerdeFormat where
+  | json
+  | ixon
+  deriving Repr, BEq
+
+instance : ToString SerdeFormat where
+  toString sf := match sf with
+  | .json => "json"
+  | .ixon => "ixon"
 
 structure Config where
   /-- Warmup time in seconds -/
@@ -20,7 +30,20 @@ structure Config where
   significanceLevel : Float := 0.05
   /-- Noise threshold when comparing two benchmark means, if percent change is within this threshold then it's considered noise -/
   noiseThreshold : Float := 0.01
-deriving Repr
+  /-- Serde format for bench report written to disk, defaults to JSON for human readability -/
+  serde : SerdeFormat := .json
+  /-- Whether to skip sampling altogether and only collect a single data point. Takes precedence over all sampling settings. Used for expensive benchmarks -/
+  oneShot : Bool := false
+  /-- Whether to generate a Markdown report of all timings including comparison to disk if possible-/
+  report : Bool := false
+  deriving Repr
+
+-- TODO: Integrate this with a `lake bench` CLI to set config options via flags
+/-- Overrides config values with the corresponding `BENCH_<SETTING>` env vars if they are set -/
+def getConfigEnv (config : Config) : IO Config := do
+  let serde : SerdeFormat := if (← IO.getEnv "BENCH_SERDE") == some "ixon" then .ixon else config.serde
+  let report := if let some val := (← IO.getEnv "BENCH_REPORT") then val == "1" else config.report
+  return { config with serde, report }
 
 @[inline] def Float.toNanos (f : Float) : Float := f * 10 ^ 9
 
@@ -37,6 +60,7 @@ def Nat.natPretty (n : Nat) : String :=
     toString (n / 10 ^ 6 ) ++ "M"
   else
     toString n
+
 def percentChange (old : Float) (new : Float) : Float :=
   (new - old) / old.abs * 100
 

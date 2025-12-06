@@ -63,6 +63,7 @@ mutual
 inductive Term
   | unit
   | var : Local → Term
+  -- | unsafeCast : Term → Typ → Term
   | ref : Global → Term
   | data : Data → Term
   | ret : Term → Term
@@ -119,6 +120,7 @@ mutual
 inductive TypedTermInner
   | unit
   | var : Local → TypedTermInner
+  -- | unsafeCast : TypedTermInner → Typ → TypedTermInner
   | ref : Global → TypedTermInner
   | data : TypedData → TypedTermInner
   | ret : TypedTerm → TypedTermInner
@@ -181,12 +183,30 @@ structure Function where
   deriving Repr
 
 structure Toplevel where
-  dataTypes : List DataType
-  functions : List Function
+  dataTypes : Array DataType
+  functions : Array Function
   deriving Repr
 
 def Toplevel.getFuncIdx (toplevel : Toplevel) (funcName : Lean.Name) : Option Nat := do
   toplevel.functions.findIdx? fun function => function.name.toName == funcName
+
+def Toplevel.merge (x y : Toplevel) : Except Global Toplevel := do
+  let ⟨xDataTypes, xFunctions⟩ := x
+  let ⟨yDataTypes, yFunctions⟩ := y
+  let mut globals : Std.HashSet Global := ∅
+  let mut dataTypes := .emptyWithCapacity (xDataTypes.size + yDataTypes.size)
+  let mut functions := .emptyWithCapacity (xFunctions.size + yFunctions.size)
+  for dtSet in [xDataTypes, yDataTypes] do
+    for dt in dtSet do
+      if globals.contains dt.name then throw dt.name
+      globals := globals.insert dt.name
+      dataTypes := dataTypes.push dt
+  for fSet in [xFunctions, yFunctions] do
+    for f in fSet do
+      if globals.contains f.name then throw f.name
+      globals := globals.insert f.name
+      functions := functions.push f
+  pure ⟨dataTypes, functions⟩
 
 inductive Declaration
   | function : Function → Declaration

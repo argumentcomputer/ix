@@ -78,7 +78,11 @@ impl Toplevel {
   ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
     let func = &self.functions[function_index];
     let width = func.width();
-    let queries = &query_record.function_queries[function_index];
+    let unfiltered_queries = &query_record.function_queries[function_index];
+    let queries = unfiltered_queries
+      .iter()
+      .filter(|(_, res)| !res.multiplicity.is_zero())
+      .collect::<Vec<_>>();
     let height_no_padding = queries.len();
     let height = height_no_padding.next_power_of_two();
     let mut rows = vec![G::ZERO; height * width];
@@ -91,7 +95,7 @@ impl Toplevel {
       .zip(lookups_no_padding.par_iter_mut())
       .enumerate()
       .for_each(|(i, (row, lookups))| {
-        let (inputs, result) = queries.get_index(i).unwrap();
+        let (inputs, result) = queries[i];
         let index = &mut ColumnIndex {
           auxiliary: 0,
           // we skip the first lookup, which is reserved for return

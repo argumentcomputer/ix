@@ -88,6 +88,7 @@ partial def elabTyp : ElabStxCat `typ
 
 declare_syntax_cat                                              trm
 syntax ("." noWs)? ident                                      : trm
+-- syntax "cast" "(" trm ", " typ ")"                            : trm
 syntax num                                                    : trm
 syntax "(" trm (", " trm)* ")"                                : trm
 syntax "[" trm (", " trm)* "]"                                : trm
@@ -121,9 +122,9 @@ syntax "u8_xor" "(" trm ", " trm ")"                          : trm
 syntax "u8_add" "(" trm ", " trm ")"                          : trm
 syntax "dbg!" "(" str (", " trm)? ")" ";" (trm)?              : trm
 
-syntax trm "[" "@" noWs ident "]"                                                      : trm
-syntax "set" "(" trm ", " "@" noWs ident ", " trm ")"                                  : trm
-syntax "fold" "(" num ".." num ", " trm ", " "|" ident ", " "@" noWs ident "|" trm ")" : trm
+syntax trm "[" "@" noWs ident "]"                                                        : trm
+syntax "set" "(" trm ", " "@" noWs ident ", " trm ")"                                    : trm
+syntax "fold" "(" num ".." num ", " trm ", " "|" pattern ", " "@" noWs ident "|" trm ")" : trm
 
 partial def elabTrm : ElabStxCat `trm
   | `(trm| .$i:ident) => do
@@ -134,6 +135,8 @@ partial def elabTrm : ElabStxCat `trm
     | name@(.str _ _) => do
       mkAppM ``Term.ref #[← mkAppM ``Global.mk #[toExpr name]]
     | _ => throw $ .error i "Illegal name"
+  -- | `(trm| cast($t:trm, $ty:typ)) => do
+  --   mkAppM ``Term.unsafeCast #[← elabTrm t, ← elabTyp ty]
   | `(trm| $n:num) => do
     let data ← mkAppM ``Data.field #[← elabG n]
     mkAppM ``Term.data #[data]
@@ -219,10 +222,14 @@ partial def elabTrm : ElabStxCat `trm
       | some t => mkAppM ``Option.some #[← elabTrm t]
     mkAppM ``Term.debug #[mkStrLit label.getString, t, ← elabRet ret]
   | `(trm| fold($i .. $j, $init, |$acc, @$v| $body)) => do
+    let i := i.getNat
+    let j := j.getNat
+    let range := if i ≤ j then List.range' i (j - i)
+      else (List.range' j (i - j)).reverse
     let mut res := init
-    for n in [i.getNat:j.getNat] do
+    for n in range do
       let body' ← replaceToken v.getId n body
-      res ← `(trm| let $acc:ident = $res; $body')
+      res ← `(trm| let $acc = $res; $body')
     elabTrm res
   | `(trm| $_[@$var]) => throw $ .error var "Unbound macro variable"
   | `(trm| set($_, @$var, $_)) => throw $ .error var "Unbound macro variable"
@@ -446,8 +453,8 @@ def elabToplevel : ElabStxCat `toplevel
   | `(toplevel| $[$ds:declaration]*) => do
     let (dataTypes, functions) ← ds.foldlM (init := default) accElabDeclarations
     mkAppM ``Toplevel.mk #[
-      ← mkListLit (mkConst ``DataType) dataTypes.toList,
-      ← mkListLit (mkConst ``Function) functions.toList,
+      ← mkArrayLit (mkConst ``DataType) dataTypes.toList,
+      ← mkArrayLit (mkConst ``Function) functions.toList,
     ]
   | stx => throw $ .error stx "Invalid syntax for toplevel"
 

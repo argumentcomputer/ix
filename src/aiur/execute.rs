@@ -118,7 +118,6 @@ impl Function {
     }
     push_block_exec_entries!(&self.body);
     let mut unconstrained = self.unconstrained;
-    let mut multiplicity_incr = G::from_bool(!unconstrained);
     while let Some(exec_entry) = exec_entries_stack.pop() {
       match exec_entry {
         ExecEntry::Op(Op::Const(c)) => map.push(*c),
@@ -146,7 +145,9 @@ impl Function {
           if let Some(result) =
             record.function_queries[*callee_idx].get_mut(&args)
           {
-            result.multiplicity += multiplicity_incr;
+            if !unconstrained {
+              result.multiplicity += G::ONE;
+            }
             map.extend(result.output.clone());
           } else {
             let saved_map = std::mem::replace(&mut map, args);
@@ -160,7 +161,6 @@ impl Function {
             fun_idx = *callee_idx;
             let function = &toplevel.functions[fun_idx];
             unconstrained |= function.unconstrained;
-            multiplicity_incr = G::from_bool(!unconstrained);
             push_block_exec_entries!(&function.body);
           }
         },
@@ -170,13 +170,15 @@ impl Function {
           let memory_queries =
             record.memory_queries.get_mut(&size).expect("Invalid memory size");
           if let Some(result) = memory_queries.get_mut(&values) {
-            result.multiplicity += multiplicity_incr;
+            if !unconstrained {
+              result.multiplicity += G::ONE;
+            }
             map.extend(&result.output);
           } else {
             let ptr = G::from_usize(memory_queries.len());
             let result = QueryResult {
               output: vec![ptr],
-              multiplicity: multiplicity_incr,
+              multiplicity: G::from_bool(!unconstrained),
             };
             memory_queries.insert(values, result);
             map.push(ptr);
@@ -190,7 +192,9 @@ impl Function {
           let ptr_usize = usize::try_from(ptr_u64).expect("Pointer is too big");
           let (args, result) =
             memory_queries.get_index_mut(ptr_usize).expect("Unbound pointer");
-          result.multiplicity += multiplicity_incr;
+          if !unconstrained {
+            result.multiplicity += G::ONE;
+          }
           map.extend(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys)) => {
@@ -292,7 +296,7 @@ impl Function {
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
           let result = QueryResult {
             output: output.clone(),
-            multiplicity: multiplicity_incr,
+            multiplicity: G::from_bool(!unconstrained),
           };
           record.function_queries[fun_idx].insert(args, result);
           if let Some(CallerState {
@@ -306,7 +310,6 @@ impl Function {
             map = caller_map;
             map.extend(output);
             unconstrained = caller_unconstrained;
-            multiplicity_incr = G::from_bool(!unconstrained);
           } else {
             // No outer caller. About to exit.
             assert!(exec_entries_stack.is_empty());

@@ -54,22 +54,24 @@ def friParameters : Aiur.FriParameters := {
   proofOfWorkBits := 20
 }
 
-def mkAiurTests (toplevel : Aiur.Toplevel) (cases : List AiurTestCase) : TestSeq :=
-  withExceptOk "Check and simplification works" toplevel.checkAndSimplify fun decls =>
-    let bytecodeToplevel := decls.compile
-    let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel commitmentParameters
-    let runTestCase := fun testCase =>
-      let functionName := testCase.functionName
-      let funIdx := toplevel.getFuncIdx functionName |>.get!
-      let (claim, proof, ioBuffer) := aiurSystem.prove
-        friParameters funIdx testCase.input testCase.inputIOBuffer
-      let claimTest := test s!"Claim matches for {functionName}"
-        (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
-      let ioTest := test s!"IOBuffer matches for {functionName}"
-        (ioBuffer == testCase.expectedIOBuffer)
-      let proof := .ofBytes proof.toBytes
-      let pvTest := withExceptOk s!"Prove/verify works for {functionName}"
-        (aiurSystem.verify friParameters claim proof) fun _ => .done
-      claimTest ++ ioTest ++ pvTest
-    cases.foldl (init := .done) fun tSeq testCase =>
-      tSeq ++ runTestCase testCase
+def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Toplevel)
+    (cases : List AiurTestCase) : TestSeq :=
+  withExceptOk "Toplevel merging succeeds" toplevelFn fun toplevel =>
+    withExceptOk "Check and simplification succeed" toplevel.checkAndSimplify fun decls =>
+      let bytecodeToplevel := decls.compile
+      let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel commitmentParameters
+      let runTestCase := fun testCase =>
+        let functionName := testCase.functionName
+        let funIdx := toplevel.getFuncIdx functionName |>.get!
+        let (claim, proof, ioBuffer) := aiurSystem.prove
+          friParameters funIdx testCase.input testCase.inputIOBuffer
+        let claimTest := test s!"Claim matches for {functionName}"
+          (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
+        let ioTest := test s!"IOBuffer matches for {functionName}"
+          (ioBuffer == testCase.expectedIOBuffer)
+        let proof := .ofBytes proof.toBytes
+        let pvTest := withExceptOk s!"Prove/verify works for {functionName}"
+          (aiurSystem.verify friParameters claim proof) fun _ => .done
+        claimTest ++ ioTest ++ pvTest
+      cases.foldl (init := .done) fun tSeq testCase =>
+        tSeq ++ runTestCase testCase

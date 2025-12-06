@@ -4,7 +4,7 @@ import Ix.Benchmark.Estimate
 -- TODO: Ensure all array instances are used linearly for optimal performance
 structure Distribution where
   d : Array Float
-deriving Repr, Inhabited
+  deriving Repr, Inhabited, Lean.ToJson, Lean.FromJson
 
 -- TODO: ↑ coercion doesn't seem to work
 instance : Coe Distribution (Array Float) where
@@ -37,7 +37,7 @@ structure Distributions where
   medianAbsDevs : Distribution
   slope : Option (Distribution)
   stdDevs : Distribution
-deriving Inhabited
+  deriving Inhabited, Repr
 
 def Distribution.confidenceInterval (dist : Distribution) (confidenceLevel : Float) : ConfidenceInterval :=
   let lowerBound := (dist.percentile? (50 * (1 - confidenceLevel))).get!

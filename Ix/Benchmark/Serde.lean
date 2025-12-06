@@ -1,5 +1,6 @@
 import Ix.Ixon
 import Ix.Benchmark.Change
+import Ix.Benchmark.OneShot
 
 @[inline] def putFloat (x : Float) : Ixon.PutM Unit := Ixon.putUInt64LE x.toBits
 @[inline] def getFloat : Ixon.GetM Float := Ixon.getUInt64LE.map Float.ofBits
@@ -92,3 +93,46 @@ def getChangeEstimates : Ixon.GetM ChangeEstimates := do
 instance : Ixon.Serialize ChangeEstimates where
   put := putChangeEstimates
   get := getChangeEstimates
+
+def getOneShot: Ixon.GetM OneShot := do
+  return { benchTime := (← Ixon.Serialize.get) }
+
+instance : Ixon.Serialize OneShot where
+  put os := Ixon.Serialize.put os.benchTime
+  get := getOneShot
+
+/-- Writes JSON to disk at `benchPath/fileName` -/
+def storeJson [Lean.ToJson α] (data : α) (benchPath : System.FilePath) : IO Unit := do
+  let json := Lean.toJson data
+  IO.FS.writeFile benchPath json.pretty
+
+/-- Writes Ixon to disk at `benchPath/fileName` -/
+def storeIxon [Ixon.Serialize α] (data : α) (benchPath : System.FilePath) : IO Unit := do
+  let ixon := Ixon.ser data
+  IO.FS.writeBinFile benchPath ixon
+
+def storeFile [Lean.ToJson α] [Ixon.Serialize α] (fmt : SerdeFormat) (data: α) (path : System.FilePath) : IO Unit := do
+  match fmt with
+  | .json => storeJson data path
+  | .ixon => storeIxon data path
+
+def loadJson [Lean.FromJson α] (path : System.FilePath) : IO α := do
+  let jsonStr ← IO.FS.readFile path
+  let json ← match Lean.Json.parse jsonStr with
+  | .ok js => pure js
+  | .error e => throw $ IO.userError s!"{repr e}"
+  match Lean.fromJson? json with
+  | .ok d => pure d
+  | .error e => throw $ IO.userError s!"{repr e}"
+
+def loadIxon [Ixon.Serialize α] (path : System.FilePath) : IO α := do
+  let ixonBytes ← IO.FS.readBinFile path
+  match Ixon.de ixonBytes with
+  | .ok d => pure d
+  | .error e => throw $ IO.userError s!"expected a, go {repr e}"
+
+def loadFile [Lean.FromJson α] [Ixon.Serialize α] (format : SerdeFormat) (path : System.FilePath) : IO α := do
+  match format with
+  | .json => loadJson path
+  | .ixon => loadIxon path
+
