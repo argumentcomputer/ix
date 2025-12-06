@@ -196,7 +196,7 @@ def testRoundtripGetEnv : IO TestSeq := do
   IO.println s!"Compiling env"
   --let mut inConst := 1
   let allStart <- IO.monoNanosNow
-  let res <- CompileM.envScheduler env {}
+  let res <- CompileM.envTopological env {}
   let allDone <- IO.monoNanosNow
   IO.println s!"Compiled env of {res.consts.size} in {Cronos.nanoToSec (allDone - allStart)}"
   --for (name, _) in env.constants do
