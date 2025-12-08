@@ -104,13 +104,17 @@ def ixonDeserialize := ⟦
       _ => -- Variable sizes
         let (tag, stream) = deserialize_tag(stream);
         match tag {
-          Tag4.Mk(1, size) =>
+          Tag4.Mk(0x1, size) =>
             let (bytes, _) = deserialize_byte_stream(stream, [0; 8], size);
             Ixon.UVar(Nat.Bytes(bytes)),
-          Tag4.Mk(2, size) =>
+          Tag4.Mk(0x2, size) =>
             let (bytes, _) = deserialize_byte_stream(stream, [0; 8], size);
             Ixon.EVar(Nat.Bytes(bytes)),
-          Tag4.Mk(9, size) =>
+          Tag4.Mk(0x3, size) =>
+            let (addr, tail) = deserialize_addr(stream, [[0; 4]; 8], 0);
+            let (addresses, _) = deserialize_addr_list(tail, [0; 8], size);
+            Ixon.ERef(Address.Bytes(addr), addresses),
+          Tag4.Mk(0x9, size) =>
             let (bytes, _) = deserialize_byte_stream(stream, [0; 8], size);
             Ixon.Blob(bytes),
         },
@@ -132,6 +136,23 @@ def ixonDeserialize := ⟦
   }
 
   #[unconstrained]
+  fn deserialize_addr_list(stream: ByteStream, count: [G; 8], size: [G; 8]) -> (AddressList, ByteStream) {
+    match (size[0]-count[0], size[1]-count[1], size[2]-count[2], size[3]-count[3],
+           size[4]-count[4], size[5]-count[5], size[6]-count[6], size[7]-count[7]) {
+      (0, 0, 0, 0, 0, 0, 0, 0) => (AddressList.Nil, stream),
+      _ =>
+        let (addr_bytes, tail) = deserialize_addr(stream, [[0; 4]; 8], 0);
+        let (tail_de, tail) = deserialize_addr_list(
+          tail,
+          relaxed_u64_succ(count),
+          size
+        );
+        let addr_head = Address.Bytes(addr_bytes);
+        (AddressList.Cons(addr_head, store(tail_de)), tail),
+    }
+  }
+
+  #[unconstrained]
   fn deserialize_byte_stream(stream: ByteStream, count: [G; 8], size: [G; 8]) -> (ByteStream, ByteStream) {
     match (size[0]-count[0], size[1]-count[1], size[2]-count[2], size[3]-count[3],
            size[4]-count[4], size[5]-count[5], size[6]-count[6], size[7]-count[7]) {
@@ -148,7 +169,6 @@ def ixonDeserialize := ⟦
     }
   }
 
-  -- TODO: remove this function
   #[unconstrained]
   fn deserialize_addr(stream: ByteStream, addr: [[G; 4]; 8], i: G) -> ([[G; 4]; 8], ByteStream) {
     match stream {
