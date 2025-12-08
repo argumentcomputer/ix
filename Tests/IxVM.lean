@@ -56,6 +56,7 @@ def ixTestCases : List AiurTestCase := [
   mkIxonSerdeTestCase (.uimax default default),
   mkIxonSerdeTestCase (.uvar 42),
   mkIxonSerdeTestCase (.evar 42),
+  mkIxonSerdeTestCase (.eref default [default, default, default]),
   mkIxonSerdeTestCase (.esort default),
   mkIxonSerdeTestCase (.estr default),
   mkIxonSerdeTestCase (.enat default),
