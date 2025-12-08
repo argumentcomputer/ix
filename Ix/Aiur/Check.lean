@@ -392,6 +392,7 @@ where
       let bind ← aux pat typ
       let bind' ← aux pat' typ
       if bind != bind' then throw $ .differentBindings bind bind' else pure bind
+    | (.pointer pat, .pointer typ) => aux pat typ
     | _ => throw $ .incompatiblePattern pat typ
 
 partial def inferTuple (term : Term) : CheckM (Array Typ × TypedTermInner) := do

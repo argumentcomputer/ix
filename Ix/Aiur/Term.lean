@@ -7,7 +7,7 @@ namespace Aiur
 inductive Local
   | str : String → Local
   | idx : Nat → Local
-  deriving Repr, BEq, Hashable
+  deriving Repr, BEq, Inhabited, Hashable
 
 structure Global where
   toName : Lean.Name
@@ -46,6 +46,7 @@ inductive Pattern
   | tuple : Array Pattern → Pattern
   | array : Array Pattern → Pattern
   | or : Pattern → Pattern → Pattern
+  | pointer : Pattern → Pattern
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Typ where
