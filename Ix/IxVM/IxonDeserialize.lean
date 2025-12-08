@@ -114,6 +114,12 @@ def ixonDeserialize := ⟦
             let (addr, tail) = deserialize_addr(stream, [[0; 4]; 8], 0);
             let (addresses, _) = deserialize_addr_list(tail, [0; 8], size);
             Ixon.ERef(Address.Bytes(addr), addresses),
+          Tag4.Mk(0x4, size) =>
+            let (nat_tag, tail) = deserialize_tag(stream);
+            let Tag4.Mk(0x9, nat_size) = nat_tag;
+            let (nat_bytes, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+            let (addresses, _) = deserialize_addr_list(tail, [0; 8], size);
+            Ixon.ERec(Nat.Bytes(nat_bytes), addresses),
           Tag4.Mk(0x9, size) =>
             let (bytes, _) = deserialize_byte_stream(stream, [0; 8], size);
             Ixon.Blob(bytes),
