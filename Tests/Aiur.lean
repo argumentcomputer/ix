@@ -50,6 +50,14 @@ def toplevel := ⟦
   --   cast(Nat.Zero, (G, G))
   -- }
 
+  fn pointer_match() -> G {
+    let two = Nat.Succ(store(Nat.Succ(store(Nat.Zero))));
+    match two {
+      Nat.Succ(&Nat.Succ(&Nat.Zero)) => 1,
+      _ => 0,
+    }
+  }
+
   fn even(m: Nat) -> G {
     match m {
       Nat.Zero => 1,
@@ -210,6 +218,7 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `eq_zero_dummy #[0, 37] #[1, 0, 1, 0],
     .noIO `store_and_load #[42] #[42],
     -- .noIO `cast_zero #[] #[0, 0],
+    .noIO `pointer_match #[] #[1],
     .noIO `is_0_even #[] #[1],
     .noIO `is_1_even #[] #[0],
     .noIO `is_2_even #[] #[1],
