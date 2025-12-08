@@ -137,13 +137,14 @@ def ixonSerialize := ⟦
         let (tag, stream) = serialize_put_length(flag, len, stream);
         ByteStream.Cons(tag, store(stream)),
       Ixon.ERec(Nat.Bytes(n), addresses) =>
-        let blob_len = byte_stream_length(n);
-        let blob_flag = 0x9;
-        let (blob_tag, stream) = serialize_put_length(blob_flag, blob_len, n);
-        let stream = ByteStream.Cons(blob_tag, store(stream));
         let flag = 0x4;
         let (address_len, stream) = serialize_put_addresses(addresses, stream);
         let (tag, stream) = serialize_put_length(flag, address_len, stream);
+        let blob_len = byte_stream_length(n);
+        let blob_flag = 0x9;
+        let stream = byte_stream_concat(n, stream);
+        let (blob_tag, stream) = serialize_put_length(blob_flag, blob_len, stream);
+        let stream = ByteStream.Cons(blob_tag, store(stream));
         ByteStream.Cons(tag, store(stream)),
       Ixon.EPrj(Address.Bytes(a), Nat.Bytes(n), Address.Bytes(b)) =>
         let flag = 0x5;
