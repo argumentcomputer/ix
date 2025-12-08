@@ -15,6 +15,7 @@ syntax num                                   : pattern
 syntax "(" pattern (", " pattern)* ")"       : pattern
 syntax "[" pattern (", " pattern)* "]"       : pattern
 syntax pattern "|" pattern                   : pattern
+syntax "&" pattern                           : pattern
 
 def elabListCore (head : α) (tail : Array α) (elabFn : α → TermElabM Expr)
     (listEltType : Expr) (isArray := false) : TermElabM Expr := do
@@ -58,6 +59,8 @@ partial def elabPattern : ElabStxCat `pattern
     mkAppM ``Pattern.array #[← elabList p ps elabPattern ``Pattern true]
   | `(pattern| $p₁:pattern | $p₂:pattern) => do
     mkAppM ``Pattern.or #[← elabPattern p₁, ← elabPattern p₂]
+  | `(pattern| &$p:pattern) => do
+    mkAppM ``Pattern.pointer #[← elabPattern p]
   | stx => throw $ .error stx "Invalid syntax for pattern"
 
 declare_syntax_cat                               typ

@@ -11,6 +11,7 @@ inductive SPattern
   | ref : Global → Array Local → SPattern
   | tuple : Array Local → SPattern
   | array : Array Local → SPattern
+  | pointer : Local → SPattern
   deriving BEq, Hashable, Inhabited
 
 structure Clause where
@@ -76,6 +77,12 @@ def dnfProd (branches: List $ Pattern × UniqTerm) (body : ExtTerm) : CompilerM 
       let (vars, guards) ← flattenArgs args.toArray
       let clause := ⟨.ref global vars, guards, term⟩
       aux renames (clauses.push clause) rest body
+    | (.pointer arg, term) :: rest => do
+      let id ← newId
+      let var := .idx id
+      let guards := #[(arg, (id, .var var))]
+      let clause := ⟨.pointer var, guards, term⟩
+      aux renames (clauses.push clause) rest body
   aux Array.empty Array.empty branches body
 where
   flattenArgs args := do
@@ -98,6 +105,7 @@ def patTypeLength (decls : Decls) : SPattern → Nat
   | .tuple _ => 1
   | .array _ => 1
   | .ref global _ => typeLookup global |>.constructors.length
+  | .pointer _ => 1
 where
   typeLookup (global : Global) :=
     match global.popNamespace with
@@ -200,6 +208,8 @@ def spatternToPattern : SPattern → Pattern
   | .ref global vars => .ref global (vars.map .var).toList
   | .tuple vars => .tuple (vars.map .var)
   | .array vars => .array (vars.map .var)
+  -- pointer patterns are unique and will be converted into a load operation before this function is called
+  | .pointer _ => unreachable!
 
 mutual
 
@@ -214,6 +224,9 @@ partial def branchesToTerm (branches : List (SPattern × Decision)) (dec : Decis
 partial def decisionToTerm : Decision → Option Term
   | .success ⟨renames, value⟩ =>
     some $ renames.foldr (init := value) fun (x, y) acc => .let (.var x) y acc
+  | .switch ptr [(.pointer val, body)] _ => do
+    let body' ← decisionToTerm body
+    some $ .let (.var val) (.load (.var ptr)) body'
   | .switch var branches dec => some $ .match (.var var) (branchesToTerm branches dec)
   | .let var term body => do
     let body' ← decisionToTerm body
