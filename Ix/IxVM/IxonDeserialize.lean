@@ -10,14 +10,6 @@ def ixonDeserialize := ⟦
       ByteStream.Cons(0x00, _) => Ixon.NAnon,
       ByteStream.Cons(0x01, tail_ptr) =>
         let tail = load(tail_ptr);
-        -- let (addr1, tail) = fold(0..8, ([[0; 4]; 8], tail), |acc, @i|
-        --   fold(0..4, acc, |(acc_addr, acc_stream), @j|
-        --     let ByteStream.Cons(byte, acc_stream_tail_ptr) = acc_stream;
-        --     (set(acc_addr, @i, set(acc_addr[@i], @j, byte)), load(acc_stream_tail_ptr))));
-        -- let (addr2, _tail) = fold(0..8, ([[0; 4]; 8], tail), |acc, @i|
-        --   fold(0..4, acc, |(acc_addr, acc_stream), @j|
-        --     let ByteStream.Cons(byte, acc_stream_tail_ptr) = acc_stream;
-        --     (set(acc_addr, @i, set(acc_addr[@i], @j, byte)), load(acc_stream_tail_ptr))));
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.NStr(Address.Bytes(addr1), Address.Bytes(addr2)),
@@ -80,6 +72,84 @@ def ixonDeserialize := ⟦
         let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.ELet(0, Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
+      ByteStream.Cons(0xA0, tail_ptr) =>
+        let (def_kind, tail) = deserialize_def_kind(load(tail_ptr));
+        let (def_safety, tail) = deserialize_def_safety(tail);
+        let (nat_tag, tail) = deserialize_tag(tail);
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.Defn(def_kind, def_safety, Nat.Bytes(nat_bytes), Address.Bytes(addr1), Address.Bytes(addr2)),
+      ByteStream.Cons(0xA1, tail_ptr) =>
+        let ByteStream.Cons(packed_bools, tail_ptr) = load(tail_ptr);
+        let (k, is_unsafe) = unpack_2_bools(packed_bools);
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes1, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes2, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes3, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes4, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes5, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (addr, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (tag, tail) = deserialize_tag(tail);
+        let Tag4.Mk(0x9, size) = tag;
+        let (recursor_rules, _) = deserialize_recursor_rules(tail, [0; 8], size);
+        Ixon.Recr(
+          k, is_unsafe,
+          Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Nat.Bytes(nat_bytes3),
+          Nat.Bytes(nat_bytes4), Nat.Bytes(nat_bytes5),
+          Address.Bytes(addr), recursor_rules
+        ),
+      ByteStream.Cons(0xA2, tail_ptr) =>
+        let ByteStream.Cons(is_unsafe, tail_ptr) = load(tail_ptr);
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.Axio(is_unsafe, Nat.Bytes(nat_bytes), Address.Bytes(addr)),
+      ByteStream.Cons(0xA3, tail_ptr) =>
+        let (quot_kind, tail) = deserialize_quot_kind(load(tail_ptr));
+        let (nat_tag, tail) = deserialize_tag(tail);
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.Quot(quot_kind, Nat.Bytes(nat_bytes), Address.Bytes(addr)),
+      ByteStream.Cons(0xA4, tail_ptr) =>
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes1, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes2, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.CPrj(Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Address.Bytes(addr)),
+      ByteStream.Cons(0xA5, tail_ptr) =>
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.RPrj(Nat.Bytes(nat_bytes), Address.Bytes(addr)),
+      ByteStream.Cons(0xA6, tail_ptr) =>
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.IPrj(Nat.Bytes(nat_bytes), Address.Bytes(addr)),
+      ByteStream.Cons(0xA7, tail_ptr) =>
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.DPrj(Nat.Bytes(nat_bytes), Address.Bytes(addr)),
       ByteStream.Cons(0xE1, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
@@ -128,7 +198,68 @@ def ixonDeserialize := ⟦
           Tag4.Mk(0x9, size) =>
             let (bytes, _) = deserialize_byte_stream(stream, [0; 8], size);
             Ixon.Blob(bytes),
+          Tag4.Mk(0xB, size) =>
+            let (mut_consts, _) = deserialize_mut_consts(stream, [0; 8], size);
+            Ixon.Muts(mut_consts),
         },
+    }
+  }
+
+  #[unconstrained]
+  fn unpack_2_bools(byte: G) -> (G, G) {
+    match byte {
+      0 => (0, 0),
+      2 => (1, 0),
+      1 => (0, 1),
+      3 => (1, 1),
+    }
+  }
+
+  #[unconstrained]
+  fn unpack_3_bools(byte: G) -> (G, G, G) {
+    match byte {
+      0 => (0, 0, 0),
+      2 => (1, 0, 0),
+      1 => (0, 1, 0),
+      3 => (1, 1, 0),
+      4 => (0, 0, 1),
+      5 => (1, 0, 1),
+      6 => (0, 1, 1),
+      7 => (1, 1, 1),
+    }
+  }
+
+  #[unconstrained]
+  fn deserialize_def_kind(stream: ByteStream) -> (DefKind, ByteStream) {
+    match stream {
+      ByteStream.Cons(byte, tail_ptr) => match byte {
+        0 => (DefKind.Definition, load(tail_ptr)),
+        1 => (DefKind.Opaque, load(tail_ptr)),
+        2 => (DefKind.Theorem, load(tail_ptr)),
+      },
+    }
+  }
+
+  #[unconstrained]
+  fn deserialize_def_safety(stream: ByteStream) -> (DefinitionSafety, ByteStream) {
+    match stream {
+      ByteStream.Cons(byte, tail_ptr) => match byte {
+        0 => (DefinitionSafety.Unsafe, load(tail_ptr)),
+        1 => (DefinitionSafety.Safe, load(tail_ptr)),
+        2 => (DefinitionSafety.Partial, load(tail_ptr)),
+      },
+    }
+  }
+
+  #[unconstrained]
+  fn deserialize_quot_kind(stream: ByteStream) -> (QuotKind, ByteStream) {
+    match stream {
+      ByteStream.Cons(head, tail_ptr) => match head {
+        0 => (QuotKind.Typ, load(tail_ptr)),
+        1 => (QuotKind.Ctor, load(tail_ptr)),
+        2 => (QuotKind.Lift, load(tail_ptr)),
+        3 => (QuotKind.Ind, load(tail_ptr)),
+      },
     }
   }
 
@@ -143,6 +274,157 @@ def ixonDeserialize := ⟦
             let (u64, tail) = u64_get_trimmed_le(small + 1, load(tail_ptr));
             (Tag4.Mk(flag, u64), tail),
         },
+    }
+  }
+
+  #[unconstrained]
+  fn deserialize_mut_consts(stream: ByteStream, count: [G; 8], size: [G; 8]) -> (MutConstList, ByteStream) {
+    match (size[0]-count[0], size[1]-count[1], size[2]-count[2], size[3]-count[3],
+           size[4]-count[4], size[5]-count[5], size[6]-count[6], size[7]-count[7]) {
+      (0, 0, 0, 0, 0, 0, 0, 0) => (MutConstList.Nil, stream),
+      _ =>
+        match stream {
+          ByteStream.Cons(mut_kind, tail_ptr) =>
+            match mut_kind {
+              0 =>
+                let (def_kind, tail) = deserialize_def_kind(load(tail_ptr));
+                let (def_safety, tail) = deserialize_def_safety(tail);
+                let (nat_tag, tail) = deserialize_tag(tail);
+                let Tag4.Mk(0x9, nat_size) = nat_tag;
+                let (nat_bytes, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+                let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+                let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+                let (tail_de, tail) = deserialize_mut_consts(
+                  tail,
+                  relaxed_u64_succ(count),
+                  size
+                );
+                let mut_const = MutConstList.ConsDefn(
+                  def_kind, def_safety, Nat.Bytes(nat_bytes), Address.Bytes(addr1), Address.Bytes(addr2),
+                  store(tail_de)
+                );
+                (mut_const, tail),
+              1 =>
+                let ByteStream.Cons(packed_bools, tail_ptr) = load(tail_ptr);
+                let (recr, refl, is_unsafe) = unpack_3_bools(packed_bools);
+                let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+                let Tag4.Mk(0x9, nat_size) = nat_tag;
+                let (nat_bytes1, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+                let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+                let Tag4.Mk(0x9, nat_size) = nat_tag;
+                let (nat_bytes2, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+                let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+                let Tag4.Mk(0x9, nat_size) = nat_tag;
+                let (nat_bytes3, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+                let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+                let Tag4.Mk(0x9, nat_size) = nat_tag;
+                let (nat_bytes4, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+                let (addr, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+                let (tag, tail) = deserialize_tag(tail);
+                let Tag4.Mk(0x9, size) = tag;
+                let (constructors, tail) = deserialize_constructors(tail, [0; 8], size);
+                let (tail_de, tail) = deserialize_mut_consts(
+                  tail,
+                  relaxed_u64_succ(count),
+                  size
+                );
+                let mut_const = MutConstList.ConsIndc(
+                  recr, refl, is_unsafe,
+                  Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2),
+                  Nat.Bytes(nat_bytes3), Nat.Bytes(nat_bytes4),
+                  Address.Bytes(addr), constructors, store(tail_de)
+                );
+                (mut_const, tail),
+              2 =>
+                let ByteStream.Cons(packed_bools, tail_ptr) = load(tail_ptr);
+                let (k, is_unsafe) = unpack_2_bools(packed_bools);
+                let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+                let Tag4.Mk(0x9, nat_size) = nat_tag;
+                let (nat_bytes1, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+                let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+                let Tag4.Mk(0x9, nat_size) = nat_tag;
+                let (nat_bytes2, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+                let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+                let Tag4.Mk(0x9, nat_size) = nat_tag;
+                let (nat_bytes3, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+                let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+                let Tag4.Mk(0x9, nat_size) = nat_tag;
+                let (nat_bytes4, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+                let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+                let Tag4.Mk(0x9, nat_size) = nat_tag;
+                let (nat_bytes5, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+                let (addr, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+                let (tag, tail) = deserialize_tag(tail);
+                let Tag4.Mk(0x9, size) = tag;
+                let (recursor_rules, tail) = deserialize_recursor_rules(tail, [0; 8], size);
+                let (tail_de, tail) = deserialize_mut_consts(
+                  tail,
+                  relaxed_u64_succ(count),
+                  size
+                );
+                let mut_const = MutConstList.ConsRecr(
+                  k, is_unsafe,
+                  Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Nat.Bytes(nat_bytes3),
+                  Nat.Bytes(nat_bytes4), Nat.Bytes(nat_bytes5),
+                  Address.Bytes(addr), recursor_rules, store(tail_de)
+                );
+                (mut_const, tail),
+            },
+        },
+    }
+  }
+
+  #[unconstrained]
+  fn deserialize_recursor_rules(stream: ByteStream, count: [G; 8], size: [G; 8]) -> (RecursorRuleList, ByteStream) {
+    match (size[0]-count[0], size[1]-count[1], size[2]-count[2], size[3]-count[3],
+           size[4]-count[4], size[5]-count[5], size[6]-count[6], size[7]-count[7]) {
+      (0, 0, 0, 0, 0, 0, 0, 0) => (RecursorRuleList.Nil, stream),
+      _ =>
+        let (nat_tag, tail) = deserialize_tag(stream);
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (addr, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (tail_de, tail) = deserialize_recursor_rules(
+          tail,
+          relaxed_u64_succ(count),
+          size
+        );
+        (RecursorRuleList.Cons(Nat.Bytes(nat_bytes), Address.Bytes(addr), store(tail_de)), tail),
+    }
+  }
+
+  #[unconstrained]
+  fn deserialize_constructors(stream: ByteStream, count: [G; 8], size: [G; 8]) -> (ConstructorList, ByteStream) {
+    match (size[0]-count[0], size[1]-count[1], size[2]-count[2], size[3]-count[3],
+           size[4]-count[4], size[5]-count[5], size[6]-count[6], size[7]-count[7]) {
+      (0, 0, 0, 0, 0, 0, 0, 0) => (ConstructorList.Nil, stream),
+      _ =>
+        let ByteStream.Cons(is_unsafe, tail_ptr) = stream;
+        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes1, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (nat_tag, tail) = deserialize_tag(tail);
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes2, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (nat_tag, tail) = deserialize_tag(tail);
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes3, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (nat_tag, tail) = deserialize_tag(tail);
+        let Tag4.Mk(0x9, nat_size) = nat_tag;
+        let (nat_bytes4, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+        let (addr, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (tail_de, tail) = deserialize_constructors(
+          tail,
+          relaxed_u64_succ(count),
+          size
+        );
+        let list = ConstructorList.Cons(
+          is_unsafe,
+          Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2),
+          Nat.Bytes(nat_bytes3), Nat.Bytes(nat_bytes4),
+          Address.Bytes(addr), store(tail_de)
+        );
+        (list, tail),
     }
   }
 
