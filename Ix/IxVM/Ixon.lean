@@ -16,6 +16,40 @@ def ixon := ⟦
     Nil
   }
 
+  enum RecursorRuleList {
+    Cons(Nat, Address, &RecursorRuleList),
+    Nil
+  }
+
+  enum MutConstList {
+    ConsDefn(
+      DefKind,
+      DefinitionSafety,
+      Nat,
+      Address,
+      Address,
+      &MutConstList
+    ),
+    ConsIndc(
+      G, G, G,
+      Nat, Nat, Nat, Nat,
+      Address, ConstructorList,
+      &MutConstList
+    ),
+    ConsRecr(
+      G, G,
+      Nat, Nat, Nat, Nat, Nat,
+      Address, RecursorRuleList,
+      &MutConstList
+    ),
+    Nil
+  }
+
+  enum ConstructorList {
+    Cons(G, Nat, Nat, Nat, Nat, Address, &ConstructorList),
+    Nil
+  }
+
   enum Tag4 {
     Mk(G, [G; 8])
   }
@@ -24,12 +58,6 @@ def ixon := ⟦
     Definition,
     Opaque,
     Theorem
-  }
-
-  enum BuiltIn {
-    Obj,
-    Neutral,
-    Unreachable
   }
 
   enum DefinitionSafety {
@@ -78,20 +106,24 @@ def ixon := ⟦
       Address,
       Address
     ),
-    -- Recr(Recursor),                        -- 0xA1, recursor constant
+    Recr(                                  -- 0xA1, recursor constant
+      G, G,
+      Nat, Nat, Nat, Nat, Nat,
+      Address, RecursorRuleList
+    ),
     Axio(G, Nat, Address),                    -- 0xA2, axiom constant. TODO: change the first argument to a Bool
     Quot(QuotKind, Nat, Address),             -- 0xA3, quotient constant
     CPrj(Nat, Nat, Address),                  -- 0xA4, constructor projection
     RPrj(Nat, Address),                       -- 0xA5, recursor projection
     IPrj(Nat, Address),                       -- 0xA6, inductive projection
     DPrj(Nat, Address),                       -- 0xA7, definition projection
-    -- Muts(Vec<MutConst>),                   -- 0xBX, mutual constants
+    Muts(MutConstList),                       -- 0xBX, mutual constants
     Prof(Claim, ByteStream),                  -- 0xE0, zero-knowledge proof
     Eval(Address, Address, Address, Address), -- 0xE1, evaluation claim
     Chck(Address, Address, Address),          -- 0xE2, typechecking claim
     Comm(Address, Address),                   -- 0xE3, cryptographic commitment
-    -- Envn(Env),                             -- 0xE4, multi-claim environment
-    Prim(BuiltIn)                             -- 0xE5, compiler built-ins
+    Envn(AddressList)                         -- 0xE4, multi-claim environment
+    -- Prim(BuiltIn)                          -- 0xE5, compiler built-ins
     -- Meta(Metadata)                         --  0xFX, metadata
   }
 ⟧
