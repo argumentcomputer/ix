@@ -118,11 +118,11 @@ def ixon := ⟦
     IPrj(Nat, Address),                       -- 0xA6, inductive projection
     DPrj(Nat, Address),                       -- 0xA7, definition projection
     Muts(MutConstList),                       -- 0xBX, mutual constants
-    Prof(Claim, ByteStream),                  -- 0xE0, zero-knowledge proof
+    -- Prof(Claim, ByteStream),               -- 0xE0, zero-knowledge proof
     Eval(Address, Address, Address, Address), -- 0xE1, evaluation claim
     Chck(Address, Address, Address),          -- 0xE2, typechecking claim
-    Comm(Address, Address),                   -- 0xE3, cryptographic commitment
-    Envn(AddressList)                         -- 0xE4, multi-claim environment
+    Comm(Address, Address)                    -- 0xE3, cryptographic commitment
+    -- Envn(AddressList)                      -- 0xE4, multi-claim environment
     -- Prim(BuiltIn)                          -- 0xE5, compiler built-ins
     -- Meta(Metadata)                         --  0xFX, metadata
   }
