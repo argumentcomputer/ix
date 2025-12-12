@@ -16,9 +16,8 @@ use crate::{
     TheoremVal,
   },
   lean::{
-    ListIterator, array::LeanArrayObject, as_ref_unsafe, collect_list,
-    collect_list_with, ctor::LeanCtorObject, lean_is_scalar, nat::Nat,
-    string::LeanStringObject,
+    array::LeanArrayObject, as_ref_unsafe, collect_list, ctor::LeanCtorObject,
+    lean_is_scalar, nat::Nat, string::LeanStringObject,
   },
   lean_unbox,
 };
@@ -123,7 +122,7 @@ fn lean_ptr_to_name(ptr: *const c_void, global: &GlobalCache) -> Name {
   global.names.entry(ptr).or_insert(name).clone()
 }
 
-fn lean_ptr_to_level(ptr: *const c_void, cache: &mut Cache) -> Level {
+fn lean_ptr_to_level(ptr: *const c_void, cache: &mut Cache<'_>) -> Level {
   if let Some(cached) = cache.local.univs.get(&ptr) {
     return cached.clone();
   }
@@ -196,7 +195,7 @@ fn lean_ptr_to_source_info(ptr: *const c_void) -> SourceInfo {
 
 fn lean_ptr_to_syntax_preresolved(
   ptr: *const c_void,
-  cache: &mut Cache,
+  cache: &mut Cache<'_>,
 ) -> SyntaxPreresolved {
   let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
   match ctor.tag() {
@@ -218,7 +217,7 @@ fn lean_ptr_to_syntax_preresolved(
   }
 }
 
-fn lean_ptr_to_syntax(ptr: *const c_void, cache: &mut Cache) -> Syntax {
+fn lean_ptr_to_syntax(ptr: *const c_void, cache: &mut Cache<'_>) -> Syntax {
   if lean_is_scalar(ptr) {
     return Syntax::Missing;
   }
@@ -259,7 +258,7 @@ fn lean_ptr_to_syntax(ptr: *const c_void, cache: &mut Cache) -> Syntax {
 
 fn lean_ptr_to_name_data_value(
   ptr: *const c_void,
-  cache: &mut Cache,
+  cache: &mut Cache<'_>,
 ) -> (Name, DataValue) {
   let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
   let [name_ptr, data_value_ptr] = ctor.objs();
@@ -291,7 +290,7 @@ fn lean_ptr_to_name_data_value(
   (name, data_value)
 }
 
-fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Expr {
+fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache<'_>) -> Expr {
   if let Some(cached) = cache.local.exprs.get(&ptr) {
     return cached.clone();
   }
@@ -422,7 +421,7 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Expr {
 
 fn lean_ptr_to_recursor_rule(
   ptr: *const c_void,
-  cache: &mut Cache,
+  cache: &mut Cache<'_>,
 ) -> RecursorRule {
   let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
   let [ctor_ptr, n_fields_ptr, rhs_ptr] = ctor.objs();
@@ -434,7 +433,7 @@ fn lean_ptr_to_recursor_rule(
 
 fn lean_ptr_to_constant_val(
   ptr: *const c_void,
-  cache: &mut Cache,
+  cache: &mut Cache<'_>,
 ) -> ConstantVal {
   let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
   let [name_ptr, level_params_ptr, typ_ptr] = ctor.objs();
@@ -449,7 +448,7 @@ fn lean_ptr_to_constant_val(
 
 fn lean_ptr_to_constant_info(
   ptr: *const c_void,
-  cache: &mut Cache,
+  cache: &mut Cache<'_>,
 ) -> ConstantInfo {
   let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
   let [inner_val_ptr] = ctor.objs();
