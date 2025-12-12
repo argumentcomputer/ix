@@ -187,19 +187,19 @@ fn ground_level<'a>(
   }
   stt.univ_cache.insert(key);
   match level.as_data() {
-    LevelData::Zero => Ok(()),
-    LevelData::Succ(x) => ground_level(x, univs, stt),
-    LevelData::Max(x, y) | LevelData::Imax(x, y) => {
+    LevelData::Zero(_) => Ok(()),
+    LevelData::Succ(x, _) => ground_level(x, univs, stt),
+    LevelData::Max(x, y, _) | LevelData::Imax(x, y, _) => {
       ground_level(x, univs, stt)?;
       ground_level(y, univs, stt)
     },
-    LevelData::Param(n) => {
+    LevelData::Param(n, _) => {
       if !univs.contains(n) {
         return Err(GroundError::Level(level.clone(), univs.to_vec()));
       }
       Ok(())
     },
-    LevelData::Mvar(_) => {
+    LevelData::Mvar(_, _) => {
       Err(GroundError::Level(level.clone(), univs.to_vec()))
     },
   }

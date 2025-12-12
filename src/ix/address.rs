@@ -1,24 +1,31 @@
 use blake3::Hash;
+use core::array::TryFromSliceError;
 use std::cmp::{Ordering, PartialOrd};
 use std::hash::{Hash as StdHash, Hasher};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Address {
-  pub hash: Hash,
+  hash: Hash,
 }
 
 impl Address {
+  pub fn from_slice(input: &[u8]) -> Result<Self, TryFromSliceError> {
+    Ok(Address { hash: Hash::from_slice(input)? })
+  }
   pub fn hash(input: &[u8]) -> Self {
     Address { hash: blake3::hash(input) }
   }
   pub fn hex(&self) -> String {
     self.hash.to_hex().as_str().to_owned()
   }
+  pub fn as_bytes(&self) -> &[u8; 32] {
+    self.hash.as_bytes()
+  }
 }
 
 impl Ord for Address {
   fn cmp(&self, other: &Address) -> Ordering {
-    self.hash.as_bytes().cmp(other.hash.as_bytes())
+    self.as_bytes().cmp(other.as_bytes())
   }
 }
 
@@ -29,7 +36,7 @@ impl PartialOrd for Address {
 }
 impl StdHash for Address {
   fn hash<H: Hasher>(&self, state: &mut H) {
-    self.hash.as_bytes().hash(state);
+    self.as_bytes().hash(state);
   }
 }
 
@@ -60,7 +67,7 @@ pub mod tests {
       for b in &mut bytes {
         *b = u8::arbitrary(g);
       }
-      Address { hash: Hash::from_slice(&bytes).unwrap() }
+      Address::from_slice(&bytes).unwrap()
     }
   }
   impl Arbitrary for MetaAddress {

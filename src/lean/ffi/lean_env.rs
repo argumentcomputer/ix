@@ -5,6 +5,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
   ix::compile::compile_env,
+  ix::decompile::{check_decompile, decompile_env},
   ix::env::{
     AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
     DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,
@@ -199,55 +200,48 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Expr {
   let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
   let expr = match ctor.tag() {
     0 => {
-      let [nat_ptr, hash_ptr] = ctor.objs();
+      let [nat_ptr, _hash_ptr] = ctor.objs();
       let nat = Nat::from_ptr(nat_ptr.cast());
-      let hash = hash_ptr as u64;
-      Expr::bvar(nat, hash)
+      Expr::bvar(nat)
     },
     1 => {
-      let [name_ptr, hash_ptr] = ctor.objs();
+      let [name_ptr, _hash_ptr] = ctor.objs();
       let name = lean_ptr_to_name(name_ptr, cache);
-      let hash = hash_ptr as u64;
-      Expr::fvar(name, hash)
+      Expr::fvar(name)
     },
     2 => {
-      let [name_ptr, hash_ptr] = ctor.objs();
+      let [name_ptr, _hash_ptr] = ctor.objs();
       let name = lean_ptr_to_name(name_ptr, cache);
-      let hash = hash_ptr as u64;
-      Expr::mvar(name, hash)
+      Expr::mvar(name)
     },
     3 => {
-      let [u_ptr, hash_ptr] = ctor.objs();
+      let [u_ptr, _hash_ptr] = ctor.objs();
       let u = lean_ptr_to_level(u_ptr, cache);
-      let hash = hash_ptr as u64;
-      Expr::sort(u, hash)
+      Expr::sort(u)
     },
     4 => {
-      let [name_ptr, levels_ptr, hash_ptr] = ctor.objs();
+      let [name_ptr, levels_ptr, _hash_ptr] = ctor.objs();
       let name = lean_ptr_to_name(name_ptr, cache);
       let levels = collect_list_with(levels_ptr, lean_ptr_to_level, cache);
-      let hash = hash_ptr as u64;
-      Expr::cnst(name, levels, hash)
+      Expr::cnst(name, levels)
     },
     5 => {
-      let [f_ptr, a_ptr, hash_ptr] = ctor.objs();
+      let [f_ptr, a_ptr, _hash_ptr] = ctor.objs();
       let f = lean_ptr_to_expr(f_ptr, cache);
       let a = lean_ptr_to_expr(a_ptr, cache);
-      let hash = hash_ptr as u64;
-      Expr::app(f, a, hash)
+      Expr::app(f, a)
     },
     6 => {
       let [
         binder_name_ptr,
         binder_typ_ptr,
         body_ptr,
-        hash_ptr,
+        _hash_ptr,
         binder_info_ptr,
       ] = ctor.objs();
       let binder_name = lean_ptr_to_name(binder_name_ptr, cache);
       let binder_typ = lean_ptr_to_expr(binder_typ_ptr, cache);
       let body = lean_ptr_to_expr(body_ptr, cache);
-      let hash = hash_ptr as u64;
       let binder_info = match binder_info_ptr as usize {
         0 => BinderInfo::Default,
         1 => BinderInfo::Implicit,
@@ -255,20 +249,19 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Expr {
         3 => BinderInfo::InstImplicit,
         _ => unreachable!(),
       };
-      Expr::lam(binder_name, binder_typ, body, binder_info, hash)
+      Expr::lam(binder_name, binder_typ, body, binder_info)
     },
     7 => {
       let [
         binder_name_ptr,
         binder_typ_ptr,
         body_ptr,
-        hash_ptr,
+        _hash_ptr,
         binder_info_ptr,
       ] = ctor.objs();
       let binder_name = lean_ptr_to_name(binder_name_ptr, cache);
       let binder_typ = lean_ptr_to_expr(binder_typ_ptr, cache);
       let body = lean_ptr_to_expr(body_ptr, cache);
-      let hash = hash_ptr as u64;
       let binder_info = match binder_info_ptr as usize {
         0 => BinderInfo::Default,
         1 => BinderInfo::Implicit,
@@ -276,51 +269,47 @@ fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache) -> Expr {
         3 => BinderInfo::InstImplicit,
         _ => unreachable!(),
       };
-      Expr::all(binder_name, binder_typ, body, binder_info, hash)
+      Expr::all(binder_name, binder_typ, body, binder_info)
     },
     8 => {
-      let [decl_name_ptr, typ_ptr, value_ptr, body_ptr, hash_ptr, nondep_ptr] =
+      let [decl_name_ptr, typ_ptr, value_ptr, body_ptr, _hash_ptr, nondep_ptr] =
         ctor.objs();
       let decl_name = lean_ptr_to_name(decl_name_ptr, cache);
       let typ = lean_ptr_to_expr(typ_ptr, cache);
       let value = lean_ptr_to_expr(value_ptr, cache);
       let body = lean_ptr_to_expr(body_ptr, cache);
-      let hash = hash_ptr as u64;
       let nondep = nondep_ptr as usize == 1;
-      Expr::letE(decl_name, typ, value, body, nondep, hash)
+      Expr::letE(decl_name, typ, value, body, nondep)
     },
     9 => {
-      let [literal_ptr, hash_ptr] = ctor.objs();
+      let [literal_ptr, _hash_ptr] = ctor.objs();
       let literal: &LeanCtorObject = as_ref_unsafe(literal_ptr.cast());
       let [inner_ptr] = literal.objs();
-      let hash = hash_ptr as u64;
       match literal.tag() {
         0 => {
           let nat = Nat::from_ptr(inner_ptr);
-          Expr::lit(Literal::NatVal(nat), hash)
+          Expr::lit(Literal::NatVal(nat))
         },
         1 => {
           let str: &LeanStringObject = as_ref_unsafe(inner_ptr.cast());
-          Expr::lit(Literal::StrVal(str.as_string()), hash)
+          Expr::lit(Literal::StrVal(str.as_string()))
         },
         _ => unreachable!(),
       }
     },
     10 => {
-      let [data_ptr, expr_ptr, hash_ptr] = ctor.objs();
+      let [data_ptr, expr_ptr] = ctor.objs();
       let kv_map =
         collect_list_with(data_ptr, lean_ptr_to_name_data_value, cache);
       let expr = lean_ptr_to_expr(expr_ptr, cache);
-      let hash = hash_ptr as u64;
-      Expr::mdata(kv_map, expr, hash)
+      Expr::mdata(kv_map, expr)
     },
     11 => {
-      let [typ_name_ptr, idx_ptr, struct_ptr, hash_ptr] = ctor.objs();
+      let [typ_name_ptr, idx_ptr, struct_ptr] = ctor.objs();
       let typ_name = lean_ptr_to_name(typ_name_ptr, cache);
       let idx = Nat::from_ptr(idx_ptr);
       let struct_expr = lean_ptr_to_expr(struct_ptr, cache);
-      let hash = hash_ptr as u64;
-      Expr::proj(typ_name, idx, struct_expr, hash)
+      Expr::proj(typ_name, idx, struct_expr)
     },
     _ => unreachable!(),
   };
@@ -576,8 +565,20 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   println!("Decoding: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
   let res = compile_env(&env);
   match res {
-    Ok(stt) => println!("OK: {:?}", stt.stats()),
-    Err(e) => println!("ERR: {:?}", e),
+    Ok(stt) => {
+      println!("Compile OK: {:?}", stt.stats());
+      match decompile_env(&stt) {
+        Ok(dstt) => {
+          println!("Decompile OK: {:?}", dstt.stats());
+          match check_decompile(env.as_ref(), &stt, &dstt) {
+            Ok(()) => println!("Roundtrip OK"),
+            Err(e) => println!("Roundtrip ERR: {:?}", e),
+          }
+        },
+        Err(e) => println!("Decompile ERR: {:?}", e),
+      }
+    },
+    Err(e) => println!("Compile ERR: {:?}", e),
   }
   println!("Total: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
   env.as_ref().len()

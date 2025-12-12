@@ -1,4 +1,3 @@
-use blake3::Hash;
 use num_bigint::BigUint;
 
 use crate::{
@@ -456,14 +455,15 @@ impl<A: Serialize, B: Serialize> Serialize for (A, B) {
 
 impl Serialize for Address {
   fn put(&self, buf: &mut Vec<u8>) {
-    buf.extend_from_slice(self.hash.as_bytes())
+    buf.extend_from_slice(self.as_bytes())
   }
 
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
     match buf.split_at_checked(32) {
       Some((head, rest)) => {
         *buf = rest;
-        Ok(Address { hash: Hash::from_slice(head).unwrap() })
+        Address::from_slice(head)
+          .map_err(|_e| "try from slice error".to_string())
       },
       None => Err("get Address out of input".to_string()),
     }
