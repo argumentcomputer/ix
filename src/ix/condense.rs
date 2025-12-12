@@ -175,10 +175,9 @@ mod tests {
       (&c, &[]),
     ]);
     let sccs = compute_sccs(&g);
-    assert_eq!(
-      scc_to_vec(&sccs),
-      vec![vec![n("A")], vec![n("B")], vec![n("C")]]
-    );
+    let mut res = vec![vec![n("A")], vec![n("B")], vec![n("C")]];
+    res.sort();
+    assert_eq!(scc_to_vec(&sccs), res);
   }
 
   #[test]
@@ -194,10 +193,12 @@ mod tests {
       (&d, slice::from_ref(&c)),
     ]);
     let sccs = compute_sccs(&g);
-    assert_eq!(
-      scc_to_vec(&sccs),
-      vec![vec![n("A"), n("B")], vec![n("C"), n("D")]]
-    );
+    let mut res = vec![vec![n("A"), n("B")], vec![n("C"), n("D")]];
+    for scc in &mut res {
+      scc.sort();
+    }
+    res.sort();
+    assert_eq!(scc_to_vec(&sccs), res);
   }
 
   #[test]
@@ -223,13 +224,15 @@ mod tests {
     ]);
 
     let sccs = compute_sccs(&graph);
-    assert_eq!(
-      scc_to_vec(&sccs),
-      vec![
-        vec![n("A"), n("B"), n("E")],
-        vec![n("C"), n("D"), n("H")],
-        vec![n("F"), n("G")],
-      ]
-    );
+    let mut res = vec![
+      vec![n("A"), n("B"), n("E")],
+      vec![n("C"), n("D"), n("H")],
+      vec![n("F"), n("G")],
+    ];
+    for scc in &mut res {
+      scc.sort();
+    }
+    res.sort();
+    assert_eq!(scc_to_vec(&sccs), res,);
   }
 }
