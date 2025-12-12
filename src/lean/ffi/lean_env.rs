@@ -567,11 +567,23 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   match res {
     Ok(stt) => {
       println!("Compile OK: {:?}", stt.stats());
+      let start_decompiling = std::time::SystemTime::now();
       match decompile_env(&stt) {
         Ok(dstt) => {
+          println!(
+            "Decompiling: {:.2}s",
+            start_decompiling.elapsed().unwrap().as_secs_f32()
+          );
           println!("Decompile OK: {:?}", dstt.stats());
+          let start_check = std::time::SystemTime::now();
           match check_decompile(env.as_ref(), &stt, &dstt) {
-            Ok(()) => println!("Roundtrip OK"),
+            Ok(()) => {
+              println!(
+                "Checking: {:.2}s",
+                start_check.elapsed().unwrap().as_secs_f32()
+              );
+              println!("Roundtrip OK");
+            },
             Err(e) => println!("Roundtrip ERR: {:?}", e),
           }
         },
