@@ -1,6 +1,7 @@
 pub mod address;
 pub mod compile;
 pub mod condense;
+pub mod decompile;
 pub mod env;
 pub mod graph;
 pub mod ground;

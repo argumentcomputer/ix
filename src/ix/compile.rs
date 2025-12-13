@@ -38,7 +38,7 @@ pub struct CompileState {
 #[derive(Default)]
 pub struct BlockCache {
   pub exprs: FxHashMap<Expr, MetaAddress>,
-  pub univs: FxHashMap<Level, MetaAddress>,
+  pub univs: FxHashMap<Level, Address>,
   pub cmps: FxHashMap<(Name, Name), Ordering>,
 }
 
@@ -156,7 +156,7 @@ pub fn compile_name(
     Ok(cached.clone())
   } else {
     let addr = match name.as_data() {
-      NameData::Anonymous => store_ixon(&Ixon::NAnon, stt)?,
+      NameData::Anonymous(_) => store_ixon(&Ixon::NAnon, stt)?,
       NameData::Str(n, s, _) => {
         let n2 = compile_name(n, stt)?;
         let s2 = store_string(s, stt)?;
@@ -178,54 +178,36 @@ pub fn compile_level(
   univs: &[Name],
   cache: &mut BlockCache,
   stt: &CompileState,
-) -> Result<MetaAddress, CompileError> {
+) -> Result<Address, CompileError> {
   if let Some(cached) = cache.univs.get(level) {
-    Ok(cached.clone())
-  } else {
-    let (data_ixon, meta_ixon) = match level.as_data() {
-      LevelData::Zero => (Ixon::UZero, Ixon::Meta(Metadata::default())),
-      LevelData::Succ(x) => {
-        let MetaAddress { data, meta } = compile_level(x, univs, cache, stt)?;
-        let nodes = vec![Metadatum::Link(meta)];
-        (Ixon::USucc(data), Ixon::Meta(Metadata { nodes }))
-      },
-      LevelData::Max(x, y) => {
-        let MetaAddress { data: data_x, meta: meta_x } =
-          compile_level(x, univs, cache, stt)?;
-        let MetaAddress { data: data_y, meta: meta_y } =
-          compile_level(y, univs, cache, stt)?;
-        let nodes = vec![Metadatum::Link(meta_x), Metadatum::Link(meta_y)];
-        (Ixon::UMax(data_x, data_y), Ixon::Meta(Metadata { nodes }))
-      },
-      LevelData::Imax(x, y) => {
-        let MetaAddress { data: data_x, meta: meta_x } =
-          compile_level(x, univs, cache, stt)?;
-        let MetaAddress { data: data_y, meta: meta_y } =
-          compile_level(y, univs, cache, stt)?;
-        let nodes = vec![Metadatum::Link(meta_x), Metadatum::Link(meta_y)];
-        (Ixon::UIMax(data_x, data_y), Ixon::Meta(Metadata { nodes }))
-      },
-      LevelData::Param(n) => match univs.iter().position(|x| x == n) {
-        Some(i) => {
-          let data = Ixon::UVar(Nat::from_le_bytes(&i.to_le_bytes()));
-          let n_addr = compile_name(n, stt)?;
-          let nodes = vec![Metadatum::Link(n_addr)];
-          (data, Ixon::Meta(Metadata { nodes }))
-        },
-        None => {
-          return Err(CompileError::LevelParam(n.clone(), univs.to_vec()));
-        },
-      },
-      LevelData::Mvar(x) => {
-        return Err(CompileError::LevelMVar(x.clone()));
-      },
-    };
-    let data = store_ixon(&data_ixon, stt)?;
-    let meta = store_ixon(&meta_ixon, stt)?;
-    let address = MetaAddress { data, meta };
-    cache.univs.insert(level.clone(), address.clone());
-    Ok(address)
+    return Ok(cached.clone());
   }
+  let data_ixon = match level.as_data() {
+    LevelData::Zero(_) => Ixon::UZero,
+    LevelData::Succ(x, _) => Ixon::USucc(compile_level(x, univs, cache, stt)?),
+    LevelData::Max(x, y, _) => {
+      let x = compile_level(x, univs, cache, stt)?;
+      let y = compile_level(y, univs, cache, stt)?;
+      Ixon::UMax(x, y)
+    },
+    LevelData::Imax(x, y, _) => {
+      let x = compile_level(x, univs, cache, stt)?;
+      let y = compile_level(y, univs, cache, stt)?;
+      Ixon::UIMax(x, y)
+    },
+    LevelData::Param(n, _) => match univs.iter().position(|x| x == n) {
+      Some(i) => Ixon::UVar(Nat::from_le_bytes(&i.to_le_bytes())),
+      None => {
+        return Err(CompileError::LevelParam(n.clone(), univs.to_vec()));
+      },
+    },
+    LevelData::Mvar(x, _) => {
+      return Err(CompileError::LevelMVar(x.clone()));
+    },
+  };
+  let addr = store_ixon(&data_ixon, stt)?;
+  cache.univs.insert(level.clone(), addr.clone());
+  Ok(addr)
 }
 
 pub fn compare_level(
@@ -235,32 +217,32 @@ pub fn compare_level(
   y_ctx: &[Name],
 ) -> Result<SOrd, CompileError> {
   match (x.as_data(), y.as_data()) {
-    (LevelData::Mvar(e), _) | (_, LevelData::Mvar(e)) => {
+    (LevelData::Mvar(e, _), _) | (_, LevelData::Mvar(e, _)) => {
       Err(CompileError::LevelMVar(e.clone()))
     },
-    (LevelData::Zero, LevelData::Zero) => Ok(SOrd::eq(true)),
-    (LevelData::Zero, _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Zero) => Ok(SOrd::gt(true)),
-    (LevelData::Succ(x), LevelData::Succ(y)) => {
+    (LevelData::Zero(_), LevelData::Zero(_)) => Ok(SOrd::eq(true)),
+    (LevelData::Zero(_), _) => Ok(SOrd::lt(true)),
+    (_, LevelData::Zero(_)) => Ok(SOrd::gt(true)),
+    (LevelData::Succ(x, _), LevelData::Succ(y, _)) => {
       compare_level(x, y, x_ctx, y_ctx)
     },
-    (LevelData::Succ(_), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Succ(_)) => Ok(SOrd::gt(true)),
-    (LevelData::Max(xl, xr), LevelData::Max(yl, yr)) => {
+    (LevelData::Succ(_, _), _) => Ok(SOrd::lt(true)),
+    (_, LevelData::Succ(_, _)) => Ok(SOrd::gt(true)),
+    (LevelData::Max(xl, xr, _), LevelData::Max(yl, yr, _)) => {
       SOrd::try_compare(compare_level(xl, yl, x_ctx, y_ctx)?, || {
         compare_level(xr, yr, x_ctx, y_ctx)
       })
     },
-    (LevelData::Max(_, _), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Max(_, _)) => Ok(SOrd::gt(true)),
-    (LevelData::Imax(xl, xr), LevelData::Imax(yl, yr)) => {
+    (LevelData::Max(_, _, _), _) => Ok(SOrd::lt(true)),
+    (_, LevelData::Max(_, _, _)) => Ok(SOrd::gt(true)),
+    (LevelData::Imax(xl, xr, _), LevelData::Imax(yl, yr, _)) => {
       SOrd::try_compare(compare_level(xl, yl, x_ctx, y_ctx)?, || {
         compare_level(xr, yr, x_ctx, y_ctx)
       })
     },
-    (LevelData::Imax(_, _), _) => Ok(SOrd::lt(true)),
-    (_, LevelData::Imax(_, _)) => Ok(SOrd::gt(true)),
-    (LevelData::Param(x), LevelData::Param(y)) => {
+    (LevelData::Imax(_, _, _), _) => Ok(SOrd::lt(true)),
+    (_, LevelData::Imax(_, _, _)) => Ok(SOrd::gt(true)),
+    (LevelData::Param(x, _), LevelData::Param(y, _)) => {
       match (
         x_ctx.iter().position(|n| x == n),
         y_ctx.iter().position(|n| y == n),
@@ -372,14 +354,14 @@ pub fn compile_data_value(
 pub fn compile_kv_map(
   kv: &Vec<(Name, LeanDataValue)>,
   stt: &CompileState,
-) -> Result<Address, CompileError> {
+) -> Result<Vec<(Address, DataValue)>, CompileError> {
   let mut list = Vec::with_capacity(kv.len());
   for (name, data_value) in kv {
     let n = compile_name(name, stt)?;
     let d = compile_data_value(data_value, stt)?;
     list.push((n, d));
   }
-  store_ixon(&Ixon::meta(vec![Metadatum::KVMap(list)]), stt)
+  Ok(list)
 }
 pub fn compile_ref(
   name: &Name,
@@ -406,7 +388,7 @@ pub fn compile_expr(
 ) -> Result<MetaAddress, CompileError> {
   enum Frame<'a> {
     Compile(&'a Expr),
-    Mdata(Address),
+    Mdata(Vec<(Address, DataValue)>),
     App,
     Lam(Address, BinderInfo),
     All(Address, BinderInfo),
@@ -430,8 +412,8 @@ pub fn compile_expr(
         stack.push(Frame::Cache(expr.clone()));
         match expr.as_data() {
           ExprData::Mdata(kv, inner, _) => {
-            let md = compile_kv_map(kv, stt)?;
-            stack.push(Frame::Mdata(md));
+            let kvs = compile_kv_map(kv, stt)?;
+            stack.push(Frame::Mdata(kvs));
             stack.push(Frame::Compile(inner));
           },
           ExprData::Bvar(idx, _) => {
@@ -441,27 +423,22 @@ pub fn compile_expr(
           },
           ExprData::Sort(univ, _) => {
             let u = compile_level(univ, univ_ctx, cache, stt)?;
-            let data = store_ixon(&Ixon::ESort(u.data), stt)?;
-            let meta =
-              store_ixon(&Ixon::meta(vec![Metadatum::Link(u.meta)]), stt)?;
+            let data = store_ixon(&Ixon::ESort(u), stt)?;
+            let meta = store_ixon(&Ixon::meta(vec![]), stt)?;
             result.push(MetaAddress { meta, data })
           },
           ExprData::Const(name, lvls, _) => {
             let n = compile_name(name, stt)?;
             let mut lds = Vec::with_capacity(lvls.len());
-            let mut lms = Vec::with_capacity(lvls.len());
             for l in lvls {
               let u = compile_level(l, univ_ctx, cache, stt)?;
-              lds.push(u.data);
-              lms.push(u.meta);
+              lds.push(u);
             }
             match mut_ctx.get(name) {
               Some(idx) => {
                 let data = store_ixon(&Ixon::ERec(idx.clone(), lds), stt)?;
-                let meta = store_ixon(
-                  &Ixon::meta(vec![Metadatum::Link(n), Metadatum::Links(lms)]),
-                  stt,
-                )?;
+                let meta =
+                  store_ixon(&Ixon::meta(vec![Metadatum::Link(n)]), stt)?;
                 result.push(MetaAddress { data, meta })
               },
               None => {
@@ -472,7 +449,6 @@ pub fn compile_expr(
                   &Ixon::meta(vec![
                     Metadatum::Link(n),
                     Metadatum::Link(addr.meta.clone()),
-                    Metadatum::Links(lms),
                   ]),
                   stt,
                 )?;
@@ -524,10 +500,10 @@ pub fn compile_expr(
           ExprData::Mvar(..) => return Err(CompileError::ExprMVar),
         }
       },
-      Frame::Mdata(md) => {
+      Frame::Mdata(kv) => {
         let inner = result.pop().unwrap();
         let meta = store_ixon(
-          &Ixon::meta(vec![Metadatum::Link(md), Metadatum::Link(inner.meta)]),
+          &Ixon::meta(vec![Metadatum::KVMap(kv), Metadatum::Link(inner.meta)]),
           stt,
         )?;
         result.push(MetaAddress { data: inner.data, meta });

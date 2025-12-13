@@ -1,4 +1,3 @@
-use blake3::Hash;
 use std::ffi::c_void;
 
 use crate::{
@@ -19,8 +18,7 @@ use crate::{
 
 fn lean_ptr_to_address(ptr: *const c_void) -> Address {
   let sarray: &LeanSArrayObject = as_ref_unsafe(ptr.cast());
-  let hash = Hash::from_slice(sarray.data()).unwrap();
-  Address { hash }
+  Address::from_slice(sarray.data()).unwrap()
 }
 
 fn lean_ptr_to_definition(ptr: *const c_void) -> Definition {
