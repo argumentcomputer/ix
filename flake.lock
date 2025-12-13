@@ -19,7 +19,7 @@
     },
     "blake3-lean": {
       "inputs": {
-        "blake3": "blake3",
+        "blake3": "blake3_2",
         "flake-parts": "flake-parts",
         "lean4-nix": "lean4-nix",
         "nixpkgs": [
@@ -28,16 +28,34 @@
         ]
       },
       "locked": {
-        "lastModified": 1761919236,
-        "narHash": "sha256-ZF/+uKH+oLwxm5VTXksBS70Bjt5s9gbSKNjjp2JI2hA=",
+        "lastModified": 1765602345,
+        "narHash": "sha256-FWyiv5M4qHyOzm6E0SeuumQXP+0K1vJVCRb0Tn8NNOc=",
         "owner": "argumentcomputer",
         "repo": "Blake3.lean",
-        "rev": "732daca6c67f3be3ca44837643cfda906503e9ac",
+        "rev": "1dc03fe74d74c2f33303b4aa60736599e9ee8667",
         "type": "github"
       },
       "original": {
         "owner": "argumentcomputer",
+        "ref": "nix-lake",
         "repo": "Blake3.lean",
+        "type": "github"
+      }
+    },
+    "blake3_2": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1745192552,
+        "narHash": "sha256-IABVErXWYQFXZcwsFKfQhm3ox7UZUcW5uzVrGwsSp94=",
+        "owner": "BLAKE3-team",
+        "repo": "BLAKE3",
+        "rev": "df610ddc3b93841ffc59a87e3da659a15910eb46",
+        "type": "github"
+      },
+      "original": {
+        "owner": "BLAKE3-team",
+        "ref": "refs/tags/1.8.2",
+        "repo": "BLAKE3",
         "type": "github"
       }
     },
@@ -83,11 +101,11 @@
         "nixpkgs-lib": "nixpkgs-lib"
       },
       "locked": {
-        "lastModified": 1754487366,
-        "narHash": "sha256-pHYj8gUBapuUzKV/kN/tR3Zvqc7o6gdFB9XKXIp1SQ8=",
+        "lastModified": 1765495779,
+        "narHash": "sha256-MhA7wmo/7uogLxiewwRRmIax70g6q1U/YemqTGoFHlM=",
         "owner": "hercules-ci",
         "repo": "flake-parts",
-        "rev": "af66ad14b28a127c5c0f3bbb298218fc63528a18",
+        "rev": "5635c32d666a59ec9a55cab87e898889869f7b71",
         "type": "github"
       },
       "original": {
@@ -156,15 +174,16 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1761368467,
-        "narHash": "sha256-eEs2YpE84+d6a8VKXCACNJy5czcu8GQCaeSZwR/mFMk=",
-        "owner": "lenianiva",
+        "lastModified": 1765602315,
+        "narHash": "sha256-edzV+L6baLm9gF1Bzxu9DqDcCFA8u/1/eYdc+Tq7kX8=",
+        "owner": "argumentcomputer",
         "repo": "lean4-nix",
-        "rev": "3550873ed1a87d666d633d34921e79abaa4671c1",
+        "rev": "9eda9f3a49e5ee23594b314c6889eb7fa09b6da7",
         "type": "github"
       },
       "original": {
-        "owner": "lenianiva",
+        "owner": "argumentcomputer",
+        "ref": "lake-incremental",
         "repo": "lean4-nix",
         "type": "github"
       }
@@ -175,15 +194,16 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1761368467,
-        "narHash": "sha256-eEs2YpE84+d6a8VKXCACNJy5czcu8GQCaeSZwR/mFMk=",
-        "owner": "lenianiva",
+        "lastModified": 1765602315,
+        "narHash": "sha256-edzV+L6baLm9gF1Bzxu9DqDcCFA8u/1/eYdc+Tq7kX8=",
+        "owner": "argumentcomputer",
         "repo": "lean4-nix",
-        "rev": "3550873ed1a87d666d633d34921e79abaa4671c1",
+        "rev": "9eda9f3a49e5ee23594b314c6889eb7fa09b6da7",
         "type": "github"
       },
       "original": {
-        "owner": "lenianiva",
+        "owner": "argumentcomputer",
+        "ref": "lake-incremental",
         "repo": "lean4-nix",
         "type": "github"
       }
@@ -206,11 +226,11 @@
     },
     "nixpkgs-lib": {
       "locked": {
-        "lastModified": 1753579242,
-        "narHash": "sha256-zvaMGVn14/Zz8hnp4VWT9xVnhc8vuL3TStRqwk22biA=",
+        "lastModified": 1761765539,
+        "narHash": "sha256-b0yj6kfvO8ApcSE+QmA6mUfu8IYG6/uU28OFn4PaC8M=",
         "owner": "nix-community",
         "repo": "nixpkgs.lib",
-        "rev": "0f36c44e01a6129be94e3ade315a5883f0228a6e",
+        "rev": "719359f4562934ae99f5443f20aa06c2ffff91fc",
         "type": "github"
       },
       "original": {
@@ -276,6 +296,7 @@
     },
     "root": {
       "inputs": {
+        "blake3": "blake3",
         "blake3-lean": "blake3-lean",
         "crane": "crane",
         "fenix": "fenix",
