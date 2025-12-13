@@ -5,7 +5,8 @@ package ix where
   version := v!"0.1.0"
 
 @[default_target]
-lean_lib Ix
+lean_lib Ix where
+  --needs := #[(PartialBuildKey.parse "ix_c").toOption.get!, (PartialBuildKey.parse "ix_rs").toOption.get!]
 
 lean_exe ix where
   root := `Main
@@ -15,25 +16,27 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "b05e6b83798bce0887eb5001cb10fdcbe675dde3"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "732daca6c67f3be3ca44837643cfda906503e9ac"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "nix-lake"
+--require Blake3 from "/home/sam/repos/argument/Blake3.lean"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "91c18fa62838ad0ab7384c03c9684d99d306e1da"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "8da40b72fece29b7d3fe3d768bac4c8910ce9bee"
+  "https://github.com/leanprover-community/batteries" @ "v4.24.0"
 
 section Tests
 
 lean_lib Tests
 
 @[test_driver]
-lean_exe Tests.Main where
+lean_exe IxTests where
+  root := `Tests.Main
   supportInterpreter := true
 
 end Tests
 
-lean_lib IxTest where
+lean_lib IxTestLib where
   srcDir := "ix_test"
 
 section IxApplications
