@@ -29,6 +29,7 @@ tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 bincode = { version = "2.0.1", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
+crossbeam = { version = "0.8.4"}
 
 
 [dev-dependencies]
