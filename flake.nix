@@ -15,9 +15,8 @@
     nixpkgs.follows = "lean4-nix/nixpkgs";
 
     # Lean 4 & Lake
-    #lean4-nix.url = "github:lenianiva/lean4-nix?ref=lake/static";
+    #lean4-nix.url = "github:lenianiva/lean4-nix";
     lean4-nix.url = "github:argumentcomputer/lean4-nix?ref=lake-incremental";
-    #lean4-nix.url = "github:lenianiva/lean4-nix?rev=f1e91cf5779d5987c219041daf45eecb00e40b7d";
 
     # Helper: flake-parts for easier outputs
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -39,7 +38,6 @@
     # Blake3 C bindings for Lean
     blake3-lean = {
       url = "github:argumentcomputer/Blake3.lean?ref=nix-lake";
-      #url = "path:/home/sam/repos/argument/Blake3.lean";
       # Follow lean4-nix nixpkgs so we stay in sync
       inputs.nixpkgs.follows = "lean4-nix/nixpkgs";
     };
@@ -83,15 +81,12 @@
           strictDeps = true;
 
           buildInputs =
-            [
-              # Add additional build inputs here
-            ]
+            []
             ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               # Additional darwin specific inputs can be set here
               pkgs.libiconv
             ];
         };
-        craneLibLLvmTools = craneLib.overrideToolchain rustToolchain;
         cargoArtifacts = craneLib.buildDepsOnly craneArgs;
 
         rustPkg = craneLib.buildPackage (craneArgs
@@ -101,7 +96,14 @@
 
         # Lake package
         lake2nix = pkgs.callPackage lean4-nix.lake {};
+        lakeDeps = lake2nix.buildDeps {
+          src = ./.;
+          depOverrideDeriv = {
+            Blake3 = blake3-lean.packages.${system}.default;
+          };
+        };
         lakeArgs = {
+          inherit lakeDeps;
           src = ./.;
           depOverrideDeriv = {
             Blake3 = blake3-lean.packages.${system}.default;
@@ -109,34 +111,33 @@
           # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
           postPatch = ''
             substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
+            cat lakefile.lean
           '';
           # Copy the `ix_rs` static lib from Crane to `target/release` so Lake can use it
           postConfigure = ''
             mkdir -p target/release
+            echo "RUNNING POST CONFIGURE"
+            ls -alh target/release
             ln -s ${rustPkg}/lib/libix_rs.a target/release/
+            echo "LINKED libix_rs.a"
+            ls -alh target/release
           '';
-        };
-        lakeDeps = lake2nix.buildDeps {
-          src = ./.;
-          depOverrideDeriv = {
-            Blake3 = blake3-lean.packages.${system}.default;
-          };
         };
         ixLib = lake2nix.mkPackage (lakeArgs
           // {
             name = "Ix";
+            buildLibrary = true;
           });
-        # Ix CLI
-        ixCLI = lake2nix.mkPackage (lakeArgs
+        lakeBinArgs =
+          lakeArgs
           // {
-            name = "ix";
+            lakeArtifacts = ixLib;
             installArtifacts = false;
-          });
-        ixTest = lake2nix.mkPackage (lakeArgs
-          // {
-            name = "IxTests";
-            installArtifacts = false;
-          });
+          };
+        ixCLI = lake2nix.mkPackage (lakeBinArgs // {name = "ix";});
+        ixTest = lake2nix.mkPackage (lakeBinArgs // {name = "IxTests";});
+        benchAiur = lake2nix.mkPackage (lakeBinArgs // {name = "bench-aiur";});
+        benchBlake3 = lake2nix.mkPackage (lakeBinArgs // {name = "bench-blake3";});
       in {
         # Lean overlay
         _module.args.pkgs = import nixpkgs {
@@ -148,29 +149,9 @@
           default = ixLib;
           ix = ixCLI;
           test = ixTest;
-
           ## Ix benches
-          #bench-aiur =
-          #  ((lean4-nix.lake {inherit pkgs;}).mkPackage {
-          #    src = ./.;
-          #    roots = ["Benchmarks.Aiur" "Ix"];
-          #    deps = [lib.leanPkg];
-          #    staticLibDeps = ["${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib"];
-          #  }).executable;
-
-          #bench-blake3 =
-          #  ((lean4-nix.lake {inherit pkgs;}).mkPackage {
-          #    src = ./.;
-          #    roots = ["Benchmarks.Blake3" "Ix"];
-          #    deps = [lib.leanPkg];
-          #    staticLibDeps = ["${lib.rustPkg}/lib" "${lib.cPkg}/lib" "${lib.blake3C}/lib"];
-          #  }).executable;
-
-          ## Rust static lib, needed for static linking downstream
-          #rustStaticLib = lib.rustPkg;
-
-          ## C static lib, needed for static linking downstream
-          #cStaticLib = lib.cPkg;
+          bench-aiur = benchAiur;
+          bench-blake3 = benchBlake3;
         };
 
         # Provide a unified dev shell with Lean + Rust
