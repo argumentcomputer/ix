@@ -13,7 +13,7 @@ def Outliers.getTotal (o : Outliers) : Nat :=
   o.highSevere + o.highMild + o.lowMild + o.lowSevere
 
 -- TODO: Refactor to cut down verbosity, and return the list for plotting
-def Distribution.tukey (data : Distribution) : IO Unit := do
+def Distribution.runTukey (data : Distribution) : IO Unit := do
   let upper := (data.percentile? 75).get!
   let lower := (data.percentile? 25).get!
   let iqr := upper - lower
@@ -34,7 +34,7 @@ def Distribution.tukey (data : Distribution) : IO Unit := do
   let outLength := out.outliers.length
   if outLength > 0 then
     let samples := data.d.size
-    IO.println s!"Found {outLength} outliers among {samples} measurements"
+    IO.println <| yellow s!"Found {outLength} outliers among {samples} measurements"
     if out.lowMild > 0 then
       let pct := Float.ofNat out.lowMild / (Float.ofNat samples) * 100
       IO.println s!"  {out.lowMild} ({pct.floatPretty 2}%) low mild"

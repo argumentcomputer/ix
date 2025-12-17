@@ -13,6 +13,11 @@ instance : ToString SerdeFormat where
   | .json => "json"
   | .ixon => "ixon"
 
+inductive ThroughputUnit where
+| bytes (bytes : Nat)
+| elements (elems : Nat)
+  deriving Repr
+
 structure Config where
   /-- Warmup time in seconds -/
   warmupTime : Float := 3.0
@@ -32,6 +37,8 @@ structure Config where
   noiseThreshold : Float := 0.01
   /-- Serde format for bench report written to disk, defaults to JSON for human readability -/
   serde : SerdeFormat := .json
+  /-- Throughput -/
+  throughput : Option ThroughputUnit := .none
   /-- Whether to skip sampling altogether and only collect a single data point. Takes precedence over all sampling settings. Used for expensive benchmarks -/
   oneShot : Bool := false
   /-- Whether to generate a Markdown report of all timings including comparison to disk if possible-/
@@ -106,3 +113,21 @@ def Float.formatNanos (f : Float) : String :=
     (f / 10 ^ 3).floatPretty 2 ++ "µs"
   else
     f.floatPretty 2  ++ "ns"
+
+def color (code : String) (s : String) : String :=
+  s!"\x1b[{code}m{s}\x1b[0m"
+
+def red := color "31"
+
+def green := color "32"
+
+def yellow := color "33"
+
+def bold := color "1"
+
+def formatPercent (p : Float) : String :=
+  let percent := (p * 100).floatPretty 4 ++ "%"
+  if p > 0 then
+    s!"+{percent}"
+  else
+    percent
