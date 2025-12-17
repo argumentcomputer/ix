@@ -1,20 +1,27 @@
-use std::ffi::c_void;
-use std::sync::Arc;
-
 use rustc_hash::FxHashMap;
+use std::{ffi::c_void, sync::Arc};
 
 use crate::{
-  ix::compile::compile_env,
-  ix::env::{
-    AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
-    DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,
-    Literal, Name, OpaqueVal, QuotKind, QuotVal, RecursorRule, RecursorVal,
-    ReducibilityHints, SourceInfo, Substring, Syntax, SyntaxPreresolved,
-    TheoremVal,
+  ix::{
+    address::Address,
+    compile::compile_env,
+    env::{
+      AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal,
+      DataValue, DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int,
+      Level, Literal, Name, OpaqueVal, QuotKind, QuotVal, RecursorRule,
+      RecursorVal, ReducibilityHints, SourceInfo, Substring, Syntax,
+      SyntaxPreresolved, TheoremVal,
+    },
   },
   lean::{
-    ListIterator, array::LeanArrayObject, as_ref_unsafe, collect_list,
-    collect_list_with, ctor::LeanCtorObject, lean_is_scalar, nat::Nat,
+    ListIterator,
+    array::LeanArrayObject,
+    as_mut_unsafe, as_ref_unsafe, collect_list, collect_list_with,
+    ctor::LeanCtorObject,
+    ffi::{drop_raw, to_raw},
+    lean_is_scalar,
+    nat::Nat,
+    sarray::LeanSArrayObject,
     string::LeanStringObject,
   },
   lean_unbox,
@@ -566,6 +573,72 @@ fn lean_ptr_to_env(ptr: *const c_void) -> Env {
     env.insert(name.clone(), constant_info);
   }
   env
+}
+
+#[repr(C)]
+struct CompiledConstsData {
+  size: usize,
+  ser_sizes: *const usize,
+  pairs: *const Vec<(Address, Vec<u8>)>,
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_compile_consts(
+  name_ptr: *const c_void,
+  consts_ptr: *const c_void,
+  const_addr_bytes: &mut LeanSArrayObject,
+) -> *const CompiledConstsData {
+  let env = lean_ptr_to_env(consts_ptr);
+  let compile_state = compile_env(&Arc::new(env)).unwrap();
+
+  // Populate `const_addr_bytes`.
+  let name = lean_ptr_to_name(name_ptr, &mut Cache::default());
+  let const_addr = compile_state.consts.get(&name).unwrap().data.clone();
+  const_addr_bytes.set_data(const_addr.hash.as_bytes());
+
+  // Build the set of address/ser_bytes pairs.
+  let pairs: Vec<_> = compile_state.store.into_iter().collect();
+
+  let size = pairs.len();
+  let ser_sizes_boxed: Box<[usize]> =
+    pairs.iter().map(|(_, bytes)| bytes.len()).collect();
+  let ser_sizes = ser_sizes_boxed.as_ptr();
+  std::mem::forget(ser_sizes_boxed);
+  let compiled = CompiledConstsData { size, ser_sizes, pairs: to_raw(pairs) };
+  to_raw(compiled)
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_move_compiled_consts(
+  dst_pairs: &LeanArrayObject,
+  compiled: *mut CompiledConstsData,
+) {
+  let &CompiledConstsData { size, ser_sizes, pairs } = as_ref_unsafe(compiled);
+  let src_pairs_vec = as_ref_unsafe(pairs);
+  let dst_pairs_ptrs = dst_pairs.data();
+  for (&dst_pair_ptr, (addr, bytes)) in dst_pairs_ptrs.iter().zip(src_pairs_vec)
+  {
+    let dst_pair: &LeanCtorObject = as_ref_unsafe(dst_pair_ptr.cast());
+    let [dst_addr_ptr, dst_bytes_ptr] = dst_pair.objs();
+    let dst_addr: &mut LeanSArrayObject = as_mut_unsafe(dst_addr_ptr as *mut _);
+    let dst_bytes: &mut LeanSArrayObject =
+      as_mut_unsafe(dst_bytes_ptr as *mut _);
+    dst_addr.set_data(addr.hash.as_bytes());
+    dst_bytes.set_data(bytes);
+  }
+
+  // Free `ser_sizes`.
+  let ser_sizes = unsafe {
+    let slice = std::slice::from_raw_parts_mut(ser_sizes as *mut usize, size);
+    Box::from_raw(slice)
+  };
+  drop(ser_sizes);
+
+  // Free `pairs`.
+  drop_raw(pairs as *mut Vec<(Address, Vec<u8>)>);
+
+  // Free the outer struct.
+  drop_raw(compiled);
 }
 
 #[unsafe(no_mangle)]

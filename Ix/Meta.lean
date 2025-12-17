@@ -1,6 +1,5 @@
 import Lean
 import Ix.Address
-import Ix.CompileM
 
 open Lean
 
@@ -67,4 +66,3 @@ def metaMakeEvalClaim (func: Lean.Name) (args : List Lean.Expr)
   let sort <- Meta.inferType type
   let lvls := (Lean.collectLevelParams default input).params.toList
   return (lvls, input, output, type, sort)
-

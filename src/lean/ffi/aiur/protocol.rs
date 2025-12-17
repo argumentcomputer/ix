@@ -114,7 +114,7 @@ extern "C" fn rs_aiur_prove_data_io_buffer_free(prove_data: &ProveData) {
     Box::from_raw(slice)
   };
   drop(boxed_io_keys_sizes);
-  drop_raw(prove_data.io_buffer as *mut ProveData);
+  drop_raw(prove_data.io_buffer as *mut IOBuffer);
 }
 
 #[unsafe(no_mangle)]

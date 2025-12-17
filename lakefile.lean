@@ -46,6 +46,10 @@ lean_exe «bench-aiur» where
 lean_exe «bench-blake3» where
   root := `Benchmarks.Blake3
 
+lean_exe «bench-serde» where
+  root := `Benchmarks.Serde
+  supportInterpreter := true
+
 end Benchmarks
 
 lean_lib Apps
@@ -164,4 +168,3 @@ script "get-exe-targets" := do
   return 0
 
 end Scripts
-

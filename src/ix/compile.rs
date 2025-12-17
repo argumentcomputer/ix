@@ -5,25 +5,27 @@ use rustc_hash::FxHashMap;
 use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
-  ix::address::{Address, MetaAddress},
-  ix::condense::compute_sccs,
-  ix::env::{
-    AxiomVal, BinderInfo, ConstantInfo, ConstructorVal,
-    DataValue as LeanDataValue, Env, Expr, ExprData, InductiveVal, Level,
-    LevelData, Literal, Name, NameData, QuotVal, RecursorRule,
-    SourceInfo as LeanSourceInfo, Substring as LeanSubstring,
-    Syntax as LeanSyntax, SyntaxPreresolved,
+  ix::{
+    address::{Address, MetaAddress},
+    condense::compute_sccs,
+    env::{
+      AxiomVal, BinderInfo, ConstantInfo, ConstructorVal,
+      DataValue as LeanDataValue, Env, Expr, ExprData, InductiveVal, Level,
+      LevelData, Literal, Name, NameData, QuotVal, RecursorRule,
+      SourceInfo as LeanSourceInfo, Substring as LeanSubstring,
+      Syntax as LeanSyntax, SyntaxPreresolved,
+    },
+    graph::{NameSet, build_ref_graph},
+    ground::ground_consts,
+    ixon::{
+      self, Axiom, BuiltIn, Constructor, ConstructorProj, DataValue,
+      Definition, DefinitionProj, Inductive, InductiveProj, Ixon, Metadata,
+      Metadatum, Preresolved, Quotient, Recursor, RecursorProj, Serialize,
+      SourceInfo, Substring, Syntax,
+    },
+    mutual::{Def, Ind, MutConst, MutCtx, Rec},
+    strong_ordering::SOrd,
   },
-  ix::graph::{NameSet, build_ref_graph},
-  ix::ground::ground_consts,
-  ix::ixon::{
-    self, Axiom, BuiltIn, Constructor, ConstructorProj, DataValue, Definition,
-    DefinitionProj, Inductive, InductiveProj, Ixon, Metadata, Metadatum,
-    Preresolved, Quotient, Recursor, RecursorProj, Serialize, SourceInfo,
-    Substring, Syntax,
-  },
-  ix::mutual::{Def, Ind, MutConst, MutCtx, Rec},
-  ix::strong_ordering::SOrd,
   lean::nat::Nat,
 };
 

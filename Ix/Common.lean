@@ -305,6 +305,48 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
       (← msgs.toList.mapM (·.toString)).map String.trim
   else return s.commandState.env
 
+abbrev ConstList := List (Lean.Name × Lean.ConstantInfo)
+private abbrev CollectM := StateM Lean.NameHashSet
+
+private partial def collectDependenciesAux (const : Lean.ConstantInfo)
+    (consts : Lean.ConstMap) (acc : ConstList) : CollectM ConstList := do
+  modify (·.insert const.name)
+  match const with
+  | .axiomInfo val | .quotInfo val | .inductInfo val | .ctorInfo val =>
+    goExpr consts acc val.type
+  | .defnInfo val | .thmInfo val | .opaqueInfo val => do
+    let acc ← goExpr consts acc val.type
+    goExpr consts acc val.value
+  | .recInfo val =>
+    let acc ← goExpr consts acc val.type
+    val.rules.foldlM (init := acc) fun acc rule => goExpr consts acc rule.rhs
+where
+  goExpr (consts : Lean.ConstMap) (acc : ConstList) : Lean.Expr → CollectM ConstList
+    | .bvar _ | .fvar _ | .mvar _ | .sort _ | .lit _ => pure acc
+    | .const name _ => do
+      let visited ← get
+      if visited.contains name then pure acc
+      else
+        let const := consts.find! name
+        collectDependenciesAux const consts $ (name, const) :: acc
+    | .app f a => do
+      let acc ← goExpr consts acc f
+      goExpr consts acc a
+    | .lam _ t b _ | .forallE _ t b _ => do
+      let acc ← goExpr consts acc t
+      goExpr consts acc b
+    | .letE _ t v b _ => do
+      let acc ← goExpr consts acc t
+      let acc ← goExpr consts acc v
+      goExpr consts acc b
+    | .mdata _ e => goExpr consts acc e
+    | .proj _ _ e => goExpr consts acc e
+
+def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap) : ConstList :=
+  let const := consts.find! name
+  let (constList, _) := collectDependenciesAux const consts [(name, const)] default
+  constList
+
 --def Expr.size: Expr -> Nat
 --| .mdata _ x => 1 + x.size
 --| .app f a => 1 + f.size + a.size

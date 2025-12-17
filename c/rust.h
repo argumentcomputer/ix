@@ -48,6 +48,17 @@ c_result *rs_aiur_system_verify(void*, b_lean_obj_arg, b_lean_obj_arg, void*);
 
 void rs__c_result_unit_string_free(c_result *);
 
+/* --- Env compiler --- */
+
+typedef struct {
+    size_t size;
+    size_t *ser_sizes;
+    void *pairs;
+} compiled_consts_data;
+
+compiled_consts_data *rs_compile_consts(b_lean_obj_arg, b_lean_obj_arg, lean_obj_arg);
+void rs_move_compiled_consts(lean_obj_arg, compiled_consts_data *);
+
 /* --- Iroh --- */
 
 c_result *rs_iroh_serve(void);
