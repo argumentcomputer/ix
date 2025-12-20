@@ -227,7 +227,7 @@ def compileLevel (lvl: Lean.Level): CompileM MetaAddress := do
       | none   => do throw <| .levelNotFound (<- read).current n lvls s!"compileLevel"
     | l@(.mvar ..) => throw $ .levelMetavariable l
 
-def compileSubstring : Substring -> CompileM Ixon.Substring
+def compileSubstring : Substring.Raw -> CompileM Ixon.Substring
 | ⟨str, startPos, stopPos⟩ => do
     pure ⟨<- storeString str, startPos.byteIdx, stopPos.byteIdx⟩
 

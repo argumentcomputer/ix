@@ -38,8 +38,8 @@ deriving instance BEq, Repr, Ord, Hashable for Lean.QuotKind
 deriving instance BEq, Repr, Ord, Hashable for Lean.ReducibilityHints
 deriving instance BEq, Repr, Ord, Hashable for Lean.DefinitionSafety
 deriving instance BEq, Repr, Ord, Hashable for ByteArray
-deriving instance BEq, Repr, Ord, Hashable for String.Pos
-deriving instance BEq, Repr, Ord, Hashable for Substring
+deriving instance BEq, Repr, Ord, Hashable for String.Pos.Raw
+deriving instance BEq, Repr, Ord, Hashable for Substring.Raw
 deriving instance BEq, Repr, Ord, Hashable for Lean.SourceInfo
 deriving instance BEq, Repr, Ord, Hashable for Lean.Syntax.Preresolved
 deriving instance BEq, Repr, Ord, Hashable for Lean.Syntax
