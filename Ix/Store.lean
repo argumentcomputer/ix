@@ -43,9 +43,11 @@ def storeDir : StoreIO FilePath := do
 def storePath (addr: Address): StoreIO FilePath := do
   let store <- storeDir
   let hex := hexOfBytes addr.hash
-  let dir1 := String.mk [(hex.get ⟨0⟩), (hex.get ⟨1⟩)]
-  let dir2 := String.mk [(hex.get ⟨2⟩), (hex.get ⟨3⟩)]
-  let dir3 := String.mk [(hex.get ⟨4⟩), (hex.get ⟨5⟩)]
+  -- TODO: Use Slice API once it matures
+  let hexChars := hex.toSlice.chars.toList
+  let dir1 := String.ofList [hexChars[0]!, hexChars[1]!]
+  let dir2 := String.ofList [hexChars[2]!, hexChars[3]!]
+  let dir3 := String.ofList [hexChars[4]!, hexChars[5]!]
   let file := hex.drop 6
   let path := store / dir1 / dir2 / dir3
   if !(<- path.pathExists) then

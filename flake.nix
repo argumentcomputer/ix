@@ -15,8 +15,7 @@
     nixpkgs.follows = "lean4-nix/nixpkgs";
 
     # Lean 4 & Lake
-    #lean4-nix.url = "github:lenianiva/lean4-nix";
-    lean4-nix.url = "github:argumentcomputer/lean4-nix?ref=lake-incremental";
+    lean4-nix.url = "github:lenianiva/lean4-nix?rev=0bca9d30803e3d65157240e67045badbc547dd45";
 
     # Helper: flake-parts for easier outputs
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -30,15 +29,11 @@
 
     crane.url = "github:ipetkov/crane";
 
-    blake3 = {
-      url = "github:BLAKE3-team/BLAKE3?ref=refs/tags/1.8.2";
-      flake = false;
-    };
-
     # Blake3 C bindings for Lean
     blake3-lean = {
-      url = "github:argumentcomputer/Blake3.lean?ref=nix-lake";
-      # Follow lean4-nix nixpkgs so we stay in sync
+      url = "github:argumentcomputer/Blake3.lean";
+      # System packages, follows lean4-nix so we stay in sync
+      inputs.lean4-nix.follows = "lean4-nix";
       inputs.nixpkgs.follows = "lean4-nix/nixpkgs";
     };
   };
@@ -49,7 +44,6 @@
     lean4-nix,
     fenix,
     crane,
-    blake3,
     blake3-lean,
     ...
   }:
@@ -96,40 +90,38 @@
 
         # Lake package
         lake2nix = pkgs.callPackage lean4-nix.lake {};
+        lakeDepArgs = {
+          src = ./.;
+        };
         lakeDeps = lake2nix.buildDeps {
           src = ./.;
           depOverrideDeriv = {
             Blake3 = blake3-lean.packages.${system}.default;
           };
         };
-        lakeArgs = {
-          inherit lakeDeps;
-          src = ./.;
-          depOverrideDeriv = {
-            Blake3 = blake3-lean.packages.${system}.default;
+        lakeBuildArgs =
+          lakeDepArgs
+          // {
+            inherit lakeDeps;
+            # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
+            postPatch = ''
+              substituteInPlace lakefile.lean --replace-fail "let args := match (ixNoPar, ixNet)" "let _args := match (ixNoPar, ixNet)"
+              substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
+              cat lakefile.lean
+            '';
+            # Copy the `ix_rs` static lib from Crane to `target/release` so Lake can use it
+            postConfigure = ''
+              mkdir -p target/release
+              ln -s ${rustPkg}/lib/libix_rs.a target/release/
+            '';
           };
-          # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
-          postPatch = ''
-            substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
-            cat lakefile.lean
-          '';
-          # Copy the `ix_rs` static lib from Crane to `target/release` so Lake can use it
-          postConfigure = ''
-            mkdir -p target/release
-            echo "RUNNING POST CONFIGURE"
-            ls -alh target/release
-            ln -s ${rustPkg}/lib/libix_rs.a target/release/
-            echo "LINKED libix_rs.a"
-            ls -alh target/release
-          '';
-        };
-        ixLib = lake2nix.mkPackage (lakeArgs
+        ixLib = lake2nix.mkPackage (lakeBuildArgs
           // {
             name = "Ix";
             buildLibrary = true;
           });
         lakeBinArgs =
-          lakeArgs
+          lakeBuildArgs
           // {
             lakeArtifacts = ixLib;
             installArtifacts = false;
@@ -149,7 +141,7 @@
           default = ixLib;
           ix = ixCLI;
           test = ixTest;
-          ## Ix benches
+          # Ix benches
           bench-aiur = benchAiur;
           bench-blake3 = benchBlake3;
         };
