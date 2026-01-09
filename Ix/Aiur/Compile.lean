@@ -246,7 +246,7 @@ partial def toIndex
  (term : TypedTerm) : StateM CompilerState (Array Bytecode.ValIdx) :=
   match term.inner with
   -- | .unsafeCast inner castTyp =>
-  --   if typSize layoutMap castTyp != typSize layoutMap term.typ.unwrap then
+  --   if typSize layoutMap castTyp != typSize layoutMap term.typ then
   --     panic! "Impossible cast"
   --   else
   --     toIndex layoutMap bindings (.mk term.typ inner)
@@ -335,8 +335,8 @@ partial def toIndex
   --     pushOp (Bytecode.Op.preimg layout.index out layout.inputSize) layout.inputSize
   --   | _ => panic! "should not happen after typechecking"
   | .proj arg i => do
-    let typs := match arg.typ with
-      | .evaluates (.tuple typs) => typs
+    let typs := match (arg.typ, arg.escapes) with
+      | (.tuple typs, false) => typs
       | _ => panic! "Should not happen after typechecking"
     let offset := (typs.extract 0 i).foldl (init := 0)
       fun acc typ => typSize layoutMap typ + acc
@@ -344,23 +344,23 @@ partial def toIndex
     let length := typSize layoutMap typs[i]!
     pure $ arg.extract offset (offset + length)
   | .get arr i => do
-    let eltTyp := match arr.typ with
-      | .evaluates (.array typ _) => typ
+    let eltTyp := match (arr.typ, arr.escapes) with
+      | (.array typ _, false) => typ
       | _ => panic! "Should not happen after typechecking"
     let eltSize := typSize layoutMap eltTyp
     let offset := i * eltSize
     let arr ← toIndex layoutMap bindings arr
     pure $ arr.extract offset (offset + eltSize)
   | .slice arr i j => do
-    let eltTyp := match arr.typ with
-      | .evaluates (.array typ _) => typ
+    let eltTyp := match (arr.typ, arr.escapes) with
+      | (.array typ _, false) => typ
       | _ => panic! "Should not happen after typechecking"
     let eltSize := typSize layoutMap eltTyp
     let arr ← toIndex layoutMap bindings arr
     pure $ arr.extract (i * eltSize) (j * eltSize)
   | .set arr i val => do
-    let eltTyp := match arr.typ with
-      | .evaluates (.array typ _) => typ
+    let eltTyp := match (arr.typ, arr.escapes) with
+      | (.array typ _, false) => typ
       | _ => panic! "Should not happen after typechecking"
     let eltSize := typSize layoutMap eltTyp
     let arr ← toIndex layoutMap bindings arr
@@ -372,8 +372,8 @@ partial def toIndex
     let args ← toIndex layoutMap bindings arg
     pushOp (.store args)
   | .load ptr => do
-    let size := match ptr.typ.unwrap with
-    | .pointer typ => typSize layoutMap typ
+    let size := match (ptr.typ, ptr.escapes) with
+    | (.pointer typ, false) => typSize layoutMap typ
     | _ => unreachable!
     let ptr ← expectIdx ptr
     pushOp (.load size ptr) size
@@ -454,7 +454,7 @@ partial def TypedTerm.compile
     modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
     ret.compile returnTyp layoutMap bindings
   | .match term cases =>
-    match term.typ.unwrapOr returnTyp with
+    match term.typ with
     -- Also do this for tuple-like and array-like (one constructor only) datatypes
     | .tuple typs => match cases with
       | [(.tuple vars, branch)] => do

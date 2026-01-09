@@ -104,19 +104,6 @@ inductive Data
 
 end
 
-inductive ContextualType
-  | evaluates : Typ → ContextualType
-  | escapes : ContextualType
-  deriving Repr, BEq, Inhabited
-
-def ContextualType.unwrap : ContextualType → Typ
-| .escapes => panic! "term should not escape"
-| .evaluates typ => typ
-
-def ContextualType.unwrapOr : ContextualType → Typ → Typ
-| .escapes => fun typ => typ
-| .evaluates typ => fun _ => typ
-
 mutual
 inductive TypedTermInner
   | unit
@@ -153,8 +140,9 @@ inductive TypedTermInner
   deriving Repr, Inhabited
 
 structure TypedTerm where
-  typ : ContextualType
+  typ : Typ
   inner : TypedTermInner
+  escapes : Bool
   deriving Repr, Inhabited
 
 inductive TypedData
