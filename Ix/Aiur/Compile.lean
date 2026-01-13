@@ -120,7 +120,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     pushDegrees $ .replicate 8 1
     bumpAuxiliaries 8
     bumpLookups
-  | .u8ShiftLeft _ | .u8ShiftRight _ | .u8Xor .. => do
+  | .u8ShiftLeft _ | .u8ShiftRight _ | .u8Xor .. | .u8And .. | .u8Or .. => do
     pushDegree 1
     bumpAuxiliaries 1
     bumpLookups
@@ -421,6 +421,14 @@ partial def toIndex
     let i ← expectIdx i
     let j ← expectIdx j
     pushOp (.u8Add i j) 2
+  | .u8And i j => do
+    let i ← expectIdx i
+    let j ← expectIdx j
+    pushOp (.u8And i j)
+  | .u8Or i j => do
+    let i ← expectIdx i
+    let j ← expectIdx j
+    pushOp (.u8Or i j)
   | .debug label term ret => do
     let term ← term.mapM (toIndex layoutMap bindings)
     modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
