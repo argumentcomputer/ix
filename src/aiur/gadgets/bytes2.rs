@@ -7,13 +7,16 @@ use multi_stark::{
 };
 
 use crate::aiur::{
-  G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel, u8_xor_channel,
+  G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel, u8_and_channel,
+  u8_or_channel, u8_xor_channel,
 };
 
 /// Number of columns in the trace with multiplicities for
 /// - xor
 /// - overflowing add
-const TRACE_WIDTH: usize = 2;
+/// - and
+/// - or
+const TRACE_WIDTH: usize = 4;
 
 /// Number of columns in the preprocessed trace:
 /// - first raw byte value
@@ -21,7 +24,9 @@ const TRACE_WIDTH: usize = 2;
 /// - xor result
 /// - add result
 /// - add overflow
-const PREPROCESSED_TRACE_WIDTH: usize = 5;
+/// - and result
+/// - or result
+const PREPROCESSED_TRACE_WIDTH: usize = 7;
 
 /// AIR implementer for arity 2 byte-related lookups.
 pub(crate) struct Bytes2;
@@ -29,6 +34,8 @@ pub(crate) struct Bytes2;
 pub(crate) enum Bytes2Op {
   Xor,
   Add,
+  And,
+  Or,
 }
 
 impl BaseAir<G> for Bytes2 {
@@ -53,6 +60,12 @@ impl BaseAir<G> for Bytes2 {
         let (r, o) = i.overflowing_add(j);
         trace_values.push(G::from_u8(r));
         trace_values.push(G::from_bool(o));
+
+        // And
+        trace_values.push(G::from_u8(i & j));
+
+        // Or
+        trace_values.push(G::from_u8(i | j));
       }
     }
     Some(RowMajorMatrix::new(trace_values, PREPROCESSED_TRACE_WIDTH))
@@ -71,6 +84,8 @@ impl AiurGadget for Bytes2 {
     match op {
       Bytes2Op::Xor => 1,
       Bytes2Op::Add => 2,
+      Bytes2Op::And => 1,
+      Bytes2Op::Or => 1,
     }
   }
 
@@ -92,6 +107,14 @@ impl AiurGadget for Bytes2 {
         let (r, o) = Self::add(i, j);
         vec![r, o]
       },
+      Bytes2Op::And => {
+        record.bytes2_queries.bump_and(i, j);
+        vec![Self::and(i, j)]
+      },
+      Bytes2Op::Or => {
+        record.bytes2_queries.bump_or(i, j);
+        vec![Self::or(i, j)]
+      },
     }
   }
 
@@ -99,10 +122,14 @@ impl AiurGadget for Bytes2 {
     // Channels
     let xor_channel = u8_xor_channel().into();
     let add_channel = u8_add_channel().into();
+    let and_channel = u8_and_channel().into();
+    let or_channel = u8_or_channel().into();
 
     // Multiplicity columns
     let xor_multiplicity = var(0);
     let add_multiplicity = var(1);
+    let and_multiplicity = var(2);
+    let or_multiplicity = var(3);
 
     // Preprocessed columns
     let i = preprocessed_var(0);
@@ -110,16 +137,28 @@ impl AiurGadget for Bytes2 {
     let xor = preprocessed_var(2);
     let add_r = preprocessed_var(3);
     let add_o = preprocessed_var(4);
+    let and = preprocessed_var(5);
+    let or = preprocessed_var(6);
 
     let pull_xor = Lookup::pull(
       xor_multiplicity,
       vec![xor_channel, i.clone(), j.clone(), xor],
     );
 
-    let pull_add =
-      Lookup::pull(add_multiplicity, vec![add_channel, i, j, add_r, add_o]);
+    let pull_add = Lookup::pull(
+      add_multiplicity,
+      vec![add_channel, i.clone(), j.clone(), add_r, add_o],
+    );
 
-    vec![pull_xor, pull_add]
+    let pull_and = Lookup::pull(
+      and_multiplicity,
+      vec![and_channel, i.clone(), j.clone(), and],
+    );
+
+    let pull_or =
+      Lookup::pull(or_multiplicity, vec![or_channel, i, j, or]);
+
+    vec![pull_xor, pull_add, pull_and, pull_or]
   }
 
   fn witness_data(
@@ -133,18 +172,22 @@ impl AiurGadget for Bytes2 {
 
     let xor_channel = u8_xor_channel();
     let add_channel = u8_add_channel();
+    let and_channel = u8_and_channel();
+    let or_channel = u8_or_channel();
 
     rows
       .chunks_exact_mut(TRACE_WIDTH)
       .enumerate()
       .zip(&record.bytes2_queries.0)
       .zip(&mut lookups)
-      .for_each(|(((row_idx, row), &[xor, add]), row_lookups)| {
+      .for_each(|(((row_idx, row), &[xor, add, and, or]), row_lookups)| {
         let i = G::from_usize(row_idx / 256);
         let j = G::from_usize(row_idx % 256);
 
         row[0] = xor;
         row[1] = add;
+        row[2] = and;
+        row[3] = or;
 
         // Pull xor.
         row_lookups[0] =
@@ -153,6 +196,14 @@ impl AiurGadget for Bytes2 {
         // Pull add.
         let (r, o) = Self::add(&i, &j);
         row_lookups[1] = Lookup::pull(add, vec![add_channel, i, j, r, o]);
+
+        // Pull and.
+        row_lookups[2] =
+          Lookup::pull(and, vec![and_channel, i, j, Self::and(&i, &j)]);
+
+        // Pull or.
+        row_lookups[3] =
+          Lookup::pull(or, vec![or_channel, i, j, Self::or(&i, &j)]);
       });
     (RowMajorMatrix::new(rows, TRACE_WIDTH), lookups)
   }
@@ -173,6 +224,14 @@ impl Bytes2Queries {
 
   fn bump_add(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 1)
+  }
+
+  fn bump_and(&mut self, i: &G, j: &G) {
+    self.bump_multiplicity_for(i, j, 2)
+  }
+
+  fn bump_or(&mut self, i: &G, j: &G) {
+    self.bump_multiplicity_for(i, j, 3)
   }
 
   fn bump_multiplicity_for(&mut self, i: &G, j: &G, col: usize) {
@@ -197,5 +256,19 @@ impl Bytes2 {
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     let (r, o) = i.overflowing_add(j);
     (G::from_u8(r), G::from_bool(o))
+  }
+
+  #[inline]
+  pub(crate) fn and(i: &G, j: &G) -> G {
+    let i: u8 = i.as_canonical_u64().try_into().unwrap();
+    let j: u8 = j.as_canonical_u64().try_into().unwrap();
+    G::from_u8(i & j)
+  }
+
+  #[inline]
+  pub(crate) fn or(i: &G, j: &G) -> G {
+    let i: u8 = i.as_canonical_u64().try_into().unwrap();
+    let j: u8 = j.as_canonical_u64().try_into().unwrap();
+    G::from_u8(i | j)
   }
 }

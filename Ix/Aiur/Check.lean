@@ -273,6 +273,16 @@ partial def inferTerm : Term → CheckM TypedTerm
     let j ← fieldTerm <$> checkNoEscape j .field
     let u8Add := .u8Add i j
     pure $ .mk (.evaluates (.tuple #[.field, .field])) u8Add
+  | .u8And i j => do
+    let i ← fieldTerm <$> checkNoEscape i .field
+    let j ← fieldTerm <$> checkNoEscape j .field
+    let u8And := .u8And i j
+    pure $ .mk (.evaluates .field) u8And
+  | .u8Or i j => do
+    let i ← fieldTerm <$> checkNoEscape i .field
+    let j ← fieldTerm <$> checkNoEscape j .field
+    let u8Or := .u8Or i j
+    pure $ .mk (.evaluates .field) u8Or
   | .debug label term ret => do
     let term ← term.mapM inferTerm
     let ret ← inferTerm ret
