@@ -1,5 +1,3 @@
-use num_bigint::BigUint;
-
 use crate::{
   ix::env::{
     BinderInfo, DefinitionSafety, Int, Name, QuotKind, ReducibilityHints,

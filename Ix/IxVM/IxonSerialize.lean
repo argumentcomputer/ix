@@ -131,9 +131,7 @@ def ixonSerialize := ⟦
       Ixon.Recr(k, is_unsafe, Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Nat.Bytes(nat_bytes3), Nat.Bytes(nat_bytes4), Nat.Bytes(nat_bytes5), Address.Bytes(addr), recursor_rules) =>
         let tag = 0xA1;
         let (rules_len, stream) = serialize_put_recursor_rules(recursor_rules, stream);
-        let rules_flag = 0x9;
-        let (rules_tag, stream) = serialize_put_length(rules_flag, rules_len, stream);
-        let stream = ByteStream.Cons(rules_tag, store(stream));
+        let stream = serialize_put_compact_u64(rules_len, stream);
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
         let nat5_len = byte_stream_length(nat_bytes5);
@@ -322,6 +320,52 @@ def ixonSerialize := ⟦
         let tag = encode_tag_head(flag, 1, 7);
         (tag, fold(8..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream)))),
     }
+  }
+
+  fn serialize_put_compact_u64(len: [G; 8], stream: ByteStream) -> ByteStream {
+    stream
+    -- match len {
+    --   [b1, 0, 0, 0, 0, 0, 0, 0] =>
+    --     -- 128 is 0x80
+    --     let (_, large) = u8_add(b1, 128);
+    --     match large {
+    --       0 =>
+    --         -- Small value: encoded directly in lower 7 bits
+    --         ByteStream.Cons(b1, store(stream)),
+    --       1 =>
+    --         -- Large value: bit 7 = 1, lower 7 bits = byteCount - 1
+    --         let head = b1 | 0x80;
+    --         ByteStream.Cons(b1, store(ByteStream.Cons(head, store(stream)))),
+    --     },
+    --   [_, _, 0, 0, 0, 0, 0, 0] =>
+    --     let head = 0x80 | 1;  -- byteCount = 2, so header = 0x80 | (2-1) = 0x81
+    --     fold(2..0, ByteStream.Cons(head, store(stream)), |stream, @i|
+    --       ByteStream.Cons(len[@i], store(stream))),
+    --   [_, _, _, 0, 0, 0, 0, 0] =>
+    --     let head = 0x80 | 2;  -- byteCount = 3
+    --     fold(3..0, ByteStream.Cons(head, store(stream)), |stream, @i|
+    --       ByteStream.Cons(len[@i], store(stream))),
+    --   [_, _, _, _, 0, 0, 0, 0] =>
+    --     let head = 0x80 | 3;  -- byteCount = 4
+    --     fold(4..0, ByteStream.Cons(head, store(stream)), |stream, @i|
+    --       ByteStream.Cons(len[@i], store(stream))),
+    --   [_, _, _, _, _, 0, 0, 0] =>
+    --     let head = 0x80 | 4;  -- byteCount = 5
+    --     fold(5..0, ByteStream.Cons(head, store(stream)), |stream, @i|
+    --       ByteStream.Cons(len[@i], store(stream))),
+    --   [_, _, _, _, _, _, 0, 0] =>
+    --     let head = 0x80 | 5;  -- byteCount = 6
+    --     fold(6..0, ByteStream.Cons(head, store(stream)), |stream, @i|
+    --       ByteStream.Cons(len[@i], store(stream))),
+    --   [_, _, _, _, _, _, _, 0] =>
+    --     let head = 0x80 | 6;  -- byteCount = 7
+    --     fold(7..0, ByteStream.Cons(head, store(stream)), |stream, @i|
+    --       ByteStream.Cons(len[@i], store(stream))),
+    --   [_, _, _, _, _, _, _, _] =>
+    --     let head = 0x80 | 7;  -- byteCount = 8
+    --     fold(8..0, ByteStream.Cons(head, store(stream)), |stream, @i|
+    --       ByteStream.Cons(len[@i], store(stream))),
+    -- }
   }
 
   fn encode_tag_head(x: G, y: G, z: G) -> G {
@@ -698,9 +742,7 @@ def ixonSerialize := ⟦
       MutConstList.ConsIndc(recr, refl, is_unsafe, Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Nat.Bytes(nat_bytes3), Nat.Bytes(nat_bytes4), Address.Bytes(addr), constructors, rest_ptr) =>
         let (len, stream) = serialize_put_mut_consts(load(rest_ptr), stream);
         let (constructors_len, stream) = serialize_put_constructors(constructors, stream);
-        let constructors_flag = 0x9;
-        let (constructors_tag, stream) = serialize_put_length(constructors_flag, constructors_len, stream);
-        let stream = ByteStream.Cons(constructors_tag, store(stream));
+        let stream = serialize_put_compact_u64(constructors_len, stream);
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
         let nat4_len = byte_stream_length(nat_bytes4);
@@ -727,9 +769,7 @@ def ixonSerialize := ⟦
       MutConstList.ConsRecr(k, is_unsafe, Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Nat.Bytes(nat_bytes3), Nat.Bytes(nat_bytes4), Nat.Bytes(nat_bytes5), Address.Bytes(addr), recursor_rules, rest_ptr) =>
         let (len, stream) = serialize_put_mut_consts(load(rest_ptr), stream);
         let (rules_len, stream) = serialize_put_recursor_rules(recursor_rules, stream);
-        let rules_flag = 0x9;
-        let (rules_tag, stream) = serialize_put_length(rules_flag, rules_len, stream);
-        let stream = ByteStream.Cons(rules_tag, store(stream));
+        let stream = serialize_put_compact_u64(rules_len, stream);
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
         let nat5_len = byte_stream_length(nat_bytes5);

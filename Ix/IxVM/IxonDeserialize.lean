@@ -107,8 +107,8 @@ def ixonDeserialize := ⟦
 
         let (addr, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
 
-        let (tag, tail) = deserialize_tag(tail);
-        let Tag4.Mk(0x9, size) = tag;
+        -- Use compact u64 for list length
+        let (size, tail) = deserialize_compact_u64(tail);
 
         let (recursor_rules, _) = deserialize_recursor_rules(tail, [0; 8], size);
         Ixon.Recr(
@@ -286,6 +286,21 @@ def ixonDeserialize := ⟦
   }
 
   #[unconstrained]
+  fn deserialize_compact_u64(stream: ByteStream) -> ([G; 8], ByteStream) {
+    -- match stream {
+    --   ByteStream.Cons(head, tail_ptr) =>
+    --     let large = (head & 0x80) != 0;
+    --     match large {
+    --       0 => ([head, 0, 0, 0, 0, 0, 0, 0], load(tail_ptr)),
+    --       1 =>
+    --         let byte_count = (head & 0x7F) + 1;
+    --         u64_get_trimmed_le(byte_count, load(tail_ptr)),
+    --     },
+    -- }
+    ([0; 8], stream)
+  }
+
+  #[unconstrained]
   fn deserialize_mut_consts(stream: ByteStream, count: [G; 8], size: [G; 8]) -> (MutConstList, ByteStream) {
     match (size[0]-count[0], size[1]-count[1], size[2]-count[2], size[3]-count[3],
            size[4]-count[4], size[5]-count[5], size[6]-count[6], size[7]-count[7]) {
@@ -328,8 +343,7 @@ def ixonDeserialize := ⟦
                 let Tag4.Mk(0x9, nat_size) = nat_tag;
                 let (nat_bytes4, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
                 let (addr, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
-                let (tag, tail) = deserialize_tag(tail);
-                let Tag4.Mk(0x9, size) = tag;
+                let (size, tail) = deserialize_compact_u64(tail);
                 let (constructors, tail) = deserialize_constructors(tail, [0; 8], size);
                 let (tail_de, tail) = deserialize_mut_consts(
                   tail,
@@ -362,8 +376,7 @@ def ixonDeserialize := ⟦
                 let Tag4.Mk(0x9, nat_size) = nat_tag;
                 let (nat_bytes5, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
                 let (addr, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
-                let (tag, tail) = deserialize_tag(tail);
-                let Tag4.Mk(0x9, size) = tag;
+                let (size, tail) = deserialize_compact_u64(tail);
                 let (recursor_rules, tail) = deserialize_recursor_rules(tail, [0; 8], size);
                 let (tail_de, tail) = deserialize_mut_consts(
                   tail,
