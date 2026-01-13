@@ -103,6 +103,38 @@ impl Serialize for bool {
   }
 }
 
+/// Compact U64 encoding for list lengths and similar uses
+/// Format: if bit 7 = 0, lower 7 bits = value (0-127)
+///         if bit 7 = 1, lower 7 bits = byteCount - 1, followed by byteCount bytes (little-endian)
+/// This is similar to Tag4's size encoding but without the flag overhead
+/// Examples: 0 -> 0x00 (1 byte)
+///           127 -> 0x7F (1 byte)
+///           128 -> 0x80 0x80 (2 bytes: header + 1 data byte)
+///           255 -> 0x80 0xFF (2 bytes)
+///           256 -> 0x81 0x00 0x01 (3 bytes: header + 2 data bytes)
+pub fn put_compact_u64(x: u64, buf: &mut Vec<u8>) {
+  if x < 128 {
+    buf.push(x as u8);
+  } else {
+    let byte_count = u64_byte_count(x);
+    let head = 0x80 | (byte_count - 1);
+    buf.push(head);
+    u64_put_trimmed_le(x, buf);
+  }
+}
+
+pub fn get_compact_u64(buf: &mut &[u8]) -> Result<u64, String> {
+  let head = u8::get(buf)?;
+  if head & 0x80 == 0 {
+    // Small value: lower 7 bits contain the value directly
+    Ok(head as u64)
+  } else {
+    // Large value: lower 7 bits contain (byteCount - 1)
+    let byte_count = ((head & 0x7F) + 1) as usize;
+    u64_get_trimmed_le(byte_count, buf)
+  }
+}
+
 pub fn u64_byte_count(x: u64) -> u8 {
   match x {
     0 => 0,
@@ -264,19 +296,17 @@ impl Serialize for Int {
 
 impl<S: Serialize> Serialize for Vec<S> {
   fn put(&self, buf: &mut Vec<u8>) {
-    Nat(BigUint::from(self.len())).put(buf);
+    put_compact_u64(self.len() as u64, buf);
     for x in self {
       x.put(buf)
     }
   }
 
   fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let mut res = vec![];
-    let len = Nat::get(buf)?.0;
-    let mut i = BigUint::from(0u32);
-    while i < len {
+    let len = get_compact_u64(buf)? as usize;
+    let mut res = Vec::with_capacity(len.min(1024)); // Cap initial capacity for safety
+    for _ in 0..len {
       res.push(S::get(buf)?);
-      i += 1u32;
     }
     Ok(res)
   }

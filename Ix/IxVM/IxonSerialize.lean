@@ -114,6 +114,118 @@ def ixonSerialize := ⟦
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
+      Ixon.Defn(def_kind, def_safety, Nat.Bytes(nat_bytes), Address.Bytes(addr1), Address.Bytes(addr2)) =>
+        let tag = 0xA0;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr2[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr1[@i][@j], store(stream))));
+        let nat_len = byte_stream_length(nat_bytes);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes, stream);
+        let (nat_tag, stream) = serialize_put_length(nat_flag, nat_len, stream);
+        let stream = ByteStream.Cons(nat_tag, store(stream));
+        let stream = serialize_put_def_safety(def_safety, stream);
+        let stream = serialize_put_def_kind(def_kind, stream);
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.Recr(k, is_unsafe, Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Nat.Bytes(nat_bytes3), Nat.Bytes(nat_bytes4), Nat.Bytes(nat_bytes5), Address.Bytes(addr), recursor_rules) =>
+        let tag = 0xA1;
+        let (rules_len, stream) = serialize_put_recursor_rules(recursor_rules, stream);
+        let rules_flag = 0x9;
+        let (rules_tag, stream) = serialize_put_length(rules_flag, rules_len, stream);
+        let stream = ByteStream.Cons(rules_tag, store(stream));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat5_len = byte_stream_length(nat_bytes5);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes5, stream);
+        let (nat5_tag, stream) = serialize_put_length(nat_flag, nat5_len, stream);
+        let stream = ByteStream.Cons(nat5_tag, store(stream));
+        let nat4_len = byte_stream_length(nat_bytes4);
+        let stream = byte_stream_concat(nat_bytes4, stream);
+        let (nat4_tag, stream) = serialize_put_length(nat_flag, nat4_len, stream);
+        let stream = ByteStream.Cons(nat4_tag, store(stream));
+        let nat3_len = byte_stream_length(nat_bytes3);
+        let stream = byte_stream_concat(nat_bytes3, stream);
+        let (nat3_tag, stream) = serialize_put_length(nat_flag, nat3_len, stream);
+        let stream = ByteStream.Cons(nat3_tag, store(stream));
+        let nat2_len = byte_stream_length(nat_bytes2);
+        let stream = byte_stream_concat(nat_bytes2, stream);
+        let (nat2_tag, stream) = serialize_put_length(nat_flag, nat2_len, stream);
+        let stream = ByteStream.Cons(nat2_tag, store(stream));
+        let nat1_len = byte_stream_length(nat_bytes1);
+        let stream = byte_stream_concat(nat_bytes1, stream);
+        let (nat1_tag, stream) = serialize_put_length(nat_flag, nat1_len, stream);
+        let stream = ByteStream.Cons(nat1_tag, store(stream));
+        let packed_bools = pack_2_bools(k, is_unsafe);
+        let stream = ByteStream.Cons(packed_bools, store(stream));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.Axio(is_unsafe, Nat.Bytes(nat_bytes), Address.Bytes(addr)) =>
+        let tag = 0xA2;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat_len = byte_stream_length(nat_bytes);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes, stream);
+        let (nat_tag, stream) = serialize_put_length(nat_flag, nat_len, stream);
+        let stream = ByteStream.Cons(nat_tag, store(stream));
+        let stream = ByteStream.Cons(is_unsafe, store(stream));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.Quot(quot_kind, Nat.Bytes(nat_bytes), Address.Bytes(addr)) =>
+        let tag = 0xA3;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat_len = byte_stream_length(nat_bytes);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes, stream);
+        let (nat_tag, stream) = serialize_put_length(nat_flag, nat_len, stream);
+        let stream = ByteStream.Cons(nat_tag, store(stream));
+        let stream = serialize_put_quot_kind(quot_kind, stream);
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.CPrj(Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Address.Bytes(addr)) =>
+        let tag = 0xA4;
+        let nat_flag = 0x9;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat2_len = byte_stream_length(nat_bytes2);
+        let stream = byte_stream_concat(nat_bytes2, stream);
+        let (nat2_tag, stream) = serialize_put_length(nat_flag, nat2_len, stream);
+        let stream = ByteStream.Cons(nat2_tag, store(stream));
+        let nat1_len = byte_stream_length(nat_bytes1);
+        let stream = byte_stream_concat(nat_bytes1, stream);
+        let (nat1_tag, stream) = serialize_put_length(nat_flag, nat1_len, stream);
+        let stream = ByteStream.Cons(nat1_tag, store(stream));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.RPrj(Nat.Bytes(nat_bytes), Address.Bytes(addr)) =>
+        let tag = 0xA5;
+        let nat_flag = 0x9;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat_len = byte_stream_length(nat_bytes);
+        let stream = byte_stream_concat(nat_bytes, stream);
+        let (nat_tag, stream) = serialize_put_length(nat_flag, nat_len, stream);
+        let stream = ByteStream.Cons(nat_tag, store(stream));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.IPrj(Nat.Bytes(nat_bytes), Address.Bytes(addr)) =>
+        let tag = 0xA6;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat_len = byte_stream_length(nat_bytes);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes, stream);
+        let (nat_tag, stream) = serialize_put_length(nat_flag, nat_len, stream);
+        let stream = ByteStream.Cons(nat_tag, store(stream));
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.DPrj(Nat.Bytes(nat_bytes), Address.Bytes(addr)) =>
+        let tag = 0xA7;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat_len = byte_stream_length(nat_bytes);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes, stream);
+        let (nat_tag, stream) = serialize_put_length(nat_flag, nat_len, stream);
+        let stream = ByteStream.Cons(nat_tag, store(stream));
+        ByteStream.Cons(tag, store(stream)),
       Ixon.Blob(bytes) =>
         let len = byte_stream_length(bytes);
         let flag = 0x9;
@@ -128,6 +240,11 @@ def ixonSerialize := ⟦
         let len: [G; 8] = byte_stream_length(bytes);
         let flag = 0x2;
         let (tag, stream) = serialize_put_length(flag, len, bytes);
+        ByteStream.Cons(tag, store(stream)),
+      Ixon.Muts(mut_consts) =>
+        let (len, stream) = serialize_put_mut_consts(mut_consts, stream);
+        let flag = 0xB;
+        let (tag, stream) = serialize_put_length(flag, len, stream);
         ByteStream.Cons(tag, store(stream)),
       Ixon.ERef(Address.Bytes(a), addresses) =>
         let (len, stream) = serialize_put_addresses(addresses, stream);
@@ -465,6 +582,181 @@ def ixonSerialize := ⟦
       (0b1111, 0b1, 0b101) => 0b11111101,
       (0b1111, 0b1, 0b110) => 0b11111110,
       (0b1111, 0b1, 0b111) => 0b11111111,
+    }
+  }
+
+  fn pack_2_bools(a: G, b: G) -> G {
+    match (a, b) {
+      (0, 0) => 0,
+      (1, 0) => 2,
+      (0, 1) => 1,
+      (1, 1) => 3,
+    }
+  }
+
+  fn pack_3_bools(a: G, b: G, c: G) -> G {
+    match (a, b, c) {
+      (0, 0, 0) => 0,
+      (1, 0, 0) => 2,
+      (0, 1, 0) => 1,
+      (1, 1, 0) => 3,
+      (0, 0, 1) => 4,
+      (1, 0, 1) => 5,
+      (0, 1, 1) => 6,
+      (1, 1, 1) => 7,
+    }
+  }
+
+  fn serialize_put_def_kind(def_kind: DefKind, stream: ByteStream) -> ByteStream {
+    match def_kind {
+      DefKind.Definition => ByteStream.Cons(0, store(stream)),
+      DefKind.Opaque => ByteStream.Cons(1, store(stream)),
+      DefKind.Theorem => ByteStream.Cons(2, store(stream)),
+    }
+  }
+
+  fn serialize_put_def_safety(def_safety: DefinitionSafety, stream: ByteStream) -> ByteStream {
+    match def_safety {
+      DefinitionSafety.Unsafe => ByteStream.Cons(0, store(stream)),
+      DefinitionSafety.Safe => ByteStream.Cons(1, store(stream)),
+      DefinitionSafety.Partial => ByteStream.Cons(2, store(stream)),
+    }
+  }
+
+  fn serialize_put_quot_kind(quot_kind: QuotKind, stream: ByteStream) -> ByteStream {
+    match quot_kind {
+      QuotKind.Typ => ByteStream.Cons(0, store(stream)),
+      QuotKind.Ctor => ByteStream.Cons(1, store(stream)),
+      QuotKind.Lift => ByteStream.Cons(2, store(stream)),
+      QuotKind.Ind => ByteStream.Cons(3, store(stream)),
+    }
+  }
+
+  fn serialize_put_recursor_rules(rules: RecursorRuleList, stream: ByteStream) -> ([G; 8], ByteStream) {
+    match rules {
+      RecursorRuleList.Nil => ([0; 8], stream),
+      RecursorRuleList.Cons(Nat.Bytes(nat_bytes), Address.Bytes(addr), rest_ptr) =>
+        let (len, stream) = serialize_put_recursor_rules(load(rest_ptr), stream);
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat_len = byte_stream_length(nat_bytes);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes, stream);
+        let (nat_tag, stream) = serialize_put_length(nat_flag, nat_len, stream);
+        let stream = ByteStream.Cons(nat_tag, store(stream));
+        (relaxed_u64_succ(len), stream),
+    }
+  }
+
+  fn serialize_put_constructors(constructors: ConstructorList, stream: ByteStream) -> ([G; 8], ByteStream) {
+    match constructors {
+      ConstructorList.Nil => ([0; 8], stream),
+      ConstructorList.Cons(is_unsafe, Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Nat.Bytes(nat_bytes3), Nat.Bytes(nat_bytes4), Address.Bytes(addr), rest_ptr) =>
+        let (len, stream) = serialize_put_constructors(load(rest_ptr), stream);
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat4_len = byte_stream_length(nat_bytes4);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes4, stream);
+        let (nat4_tag, stream) = serialize_put_length(nat_flag, nat4_len, stream);
+        let stream = ByteStream.Cons(nat4_tag, store(stream));
+        let nat3_len = byte_stream_length(nat_bytes3);
+        let stream = byte_stream_concat(nat_bytes3, stream);
+        let (nat3_tag, stream) = serialize_put_length(nat_flag, nat3_len, stream);
+        let stream = ByteStream.Cons(nat3_tag, store(stream));
+        let nat2_len = byte_stream_length(nat_bytes2);
+        let stream = byte_stream_concat(nat_bytes2, stream);
+        let (nat2_tag, stream) = serialize_put_length(nat_flag, nat2_len, stream);
+        let stream = ByteStream.Cons(nat2_tag, store(stream));
+        let nat1_len = byte_stream_length(nat_bytes1);
+        let stream = byte_stream_concat(nat_bytes1, stream);
+        let (nat1_tag, stream) = serialize_put_length(nat_flag, nat1_len, stream);
+        let stream = ByteStream.Cons(nat1_tag, store(stream));
+        let stream = ByteStream.Cons(is_unsafe, store(stream));
+        (relaxed_u64_succ(len), stream),
+    }
+  }
+
+  fn serialize_put_mut_consts(mut_consts: MutConstList, stream: ByteStream) -> ([G; 8], ByteStream) {
+    match mut_consts {
+      MutConstList.Nil => ([0; 8], stream),
+      MutConstList.ConsDefn(def_kind, def_safety, Nat.Bytes(nat_bytes), Address.Bytes(addr1), Address.Bytes(addr2), rest_ptr) =>
+        let (len, stream) = serialize_put_mut_consts(load(rest_ptr), stream);
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr2[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr1[@i][@j], store(stream))));
+        let nat_len = byte_stream_length(nat_bytes);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes, stream);
+        let (nat_tag, stream) = serialize_put_length(nat_flag, nat_len, stream);
+        let stream = ByteStream.Cons(nat_tag, store(stream));
+        let stream = serialize_put_def_safety(def_safety, stream);
+        let stream = serialize_put_def_kind(def_kind, stream);
+        let stream = ByteStream.Cons(0, store(stream));
+        (relaxed_u64_succ(len), stream),
+      MutConstList.ConsIndc(recr, refl, is_unsafe, Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Nat.Bytes(nat_bytes3), Nat.Bytes(nat_bytes4), Address.Bytes(addr), constructors, rest_ptr) =>
+        let (len, stream) = serialize_put_mut_consts(load(rest_ptr), stream);
+        let (constructors_len, stream) = serialize_put_constructors(constructors, stream);
+        let constructors_flag = 0x9;
+        let (constructors_tag, stream) = serialize_put_length(constructors_flag, constructors_len, stream);
+        let stream = ByteStream.Cons(constructors_tag, store(stream));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat4_len = byte_stream_length(nat_bytes4);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes4, stream);
+        let (nat4_tag, stream) = serialize_put_length(nat_flag, nat4_len, stream);
+        let stream = ByteStream.Cons(nat4_tag, store(stream));
+        let nat3_len = byte_stream_length(nat_bytes3);
+        let stream = byte_stream_concat(nat_bytes3, stream);
+        let (nat3_tag, stream) = serialize_put_length(nat_flag, nat3_len, stream);
+        let stream = ByteStream.Cons(nat3_tag, store(stream));
+        let nat2_len = byte_stream_length(nat_bytes2);
+        let stream = byte_stream_concat(nat_bytes2, stream);
+        let (nat2_tag, stream) = serialize_put_length(nat_flag, nat2_len, stream);
+        let stream = ByteStream.Cons(nat2_tag, store(stream));
+        let nat1_len = byte_stream_length(nat_bytes1);
+        let stream = byte_stream_concat(nat_bytes1, stream);
+        let (nat1_tag, stream) = serialize_put_length(nat_flag, nat1_len, stream);
+        let stream = ByteStream.Cons(nat1_tag, store(stream));
+        let packed_bools = pack_3_bools(recr, refl, is_unsafe);
+        let stream = ByteStream.Cons(packed_bools, store(stream));
+        let stream = ByteStream.Cons(1, store(stream));
+        (relaxed_u64_succ(len), stream),
+      MutConstList.ConsRecr(k, is_unsafe, Nat.Bytes(nat_bytes1), Nat.Bytes(nat_bytes2), Nat.Bytes(nat_bytes3), Nat.Bytes(nat_bytes4), Nat.Bytes(nat_bytes5), Address.Bytes(addr), recursor_rules, rest_ptr) =>
+        let (len, stream) = serialize_put_mut_consts(load(rest_ptr), stream);
+        let (rules_len, stream) = serialize_put_recursor_rules(recursor_rules, stream);
+        let rules_flag = 0x9;
+        let (rules_tag, stream) = serialize_put_length(rules_flag, rules_len, stream);
+        let stream = ByteStream.Cons(rules_tag, store(stream));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(addr[@i][@j], store(stream))));
+        let nat5_len = byte_stream_length(nat_bytes5);
+        let nat_flag = 0x9;
+        let stream = byte_stream_concat(nat_bytes5, stream);
+        let (nat5_tag, stream) = serialize_put_length(nat_flag, nat5_len, stream);
+        let stream = ByteStream.Cons(nat5_tag, store(stream));
+        let nat4_len = byte_stream_length(nat_bytes4);
+        let stream = byte_stream_concat(nat_bytes4, stream);
+        let (nat4_tag, stream) = serialize_put_length(nat_flag, nat4_len, stream);
+        let stream = ByteStream.Cons(nat4_tag, store(stream));
+        let nat3_len = byte_stream_length(nat_bytes3);
+        let stream = byte_stream_concat(nat_bytes3, stream);
+        let (nat3_tag, stream) = serialize_put_length(nat_flag, nat3_len, stream);
+        let stream = ByteStream.Cons(nat3_tag, store(stream));
+        let nat2_len = byte_stream_length(nat_bytes2);
+        let stream = byte_stream_concat(nat_bytes2, stream);
+        let (nat2_tag, stream) = serialize_put_length(nat_flag, nat2_len, stream);
+        let stream = ByteStream.Cons(nat2_tag, store(stream));
+        let nat1_len = byte_stream_length(nat_bytes1);
+        let stream = byte_stream_concat(nat_bytes1, stream);
+        let (nat1_tag, stream) = serialize_put_length(nat_flag, nat1_len, stream);
+        let stream = ByteStream.Cons(nat1_tag, store(stream));
+        let packed_bools = pack_2_bools(k, is_unsafe);
+        let stream = ByteStream.Cons(packed_bools, store(stream));
+        let stream = ByteStream.Cons(2, store(stream));
+        (relaxed_u64_succ(len), stream),
     }
   }
 ⟧

@@ -81,27 +81,35 @@ def ixonDeserialize := ⟦
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.Defn(def_kind, def_safety, Nat.Bytes(nat_bytes), Address.Bytes(addr1), Address.Bytes(addr2)),
-      ByteStream.Cons(0xA1, tail_ptr) =>
-        let ByteStream.Cons(packed_bools, tail_ptr) = load(tail_ptr);
+      ByteStream.Cons(0xA1, &tail) =>
+        let ByteStream.Cons(packed_bools, &tail) = tail;
         let (k, is_unsafe) = unpack_2_bools(packed_bools);
-        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+
+        let (nat_tag, tail) = deserialize_tag(tail);
         let Tag4.Mk(0x9, nat_size) = nat_tag;
         let (nat_bytes1, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
-        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+
+        let (nat_tag, tail) = deserialize_tag(tail);
         let Tag4.Mk(0x9, nat_size) = nat_tag;
         let (nat_bytes2, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
-        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+
+        let (nat_tag, tail) = deserialize_tag(tail);
         let Tag4.Mk(0x9, nat_size) = nat_tag;
         let (nat_bytes3, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
-        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+
+        let (nat_tag, tail) = deserialize_tag(tail);
         let Tag4.Mk(0x9, nat_size) = nat_tag;
         let (nat_bytes4, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
-        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+
+        let (nat_tag, tail) = deserialize_tag(tail);
         let Tag4.Mk(0x9, nat_size) = nat_tag;
         let (nat_bytes5, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
+
         let (addr, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+
         let (tag, tail) = deserialize_tag(tail);
         let Tag4.Mk(0x9, size) = tag;
+
         let (recursor_rules, _) = deserialize_recursor_rules(tail, [0; 8], size);
         Ixon.Recr(
           k, is_unsafe,
@@ -127,7 +135,7 @@ def ixonDeserialize := ⟦
         let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
         let Tag4.Mk(0x9, nat_size) = nat_tag;
         let (nat_bytes1, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
-        let (nat_tag, tail) = deserialize_tag(load(tail_ptr));
+        let (nat_tag, tail) = deserialize_tag(tail);
         let Tag4.Mk(0x9, nat_size) = nat_tag;
         let (nat_bytes2, tail) = deserialize_byte_stream(tail, [0; 8], nat_size);
         let (addr, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);

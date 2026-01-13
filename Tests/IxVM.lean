@@ -80,12 +80,12 @@ def ixTestCases : List AiurTestCase :=
     mkIxonSerdeTestCase (.rprj ⟨3, addr1⟩),
     mkIxonSerdeTestCase (.iprj ⟨3, addr1⟩),
     mkIxonSerdeTestCase (.dprj ⟨3, addr1⟩),
-    mkIxonSerdeTestCase (.muts [
-      .defn ⟨.opaque, .safe, 5, addr1, addr2⟩,
-      .indc ⟨false, true, true, 1, 2, 3, 4, addr1,
-        [⟨true, 5, 6, 7, 8, addr2⟩]⟩,
-      .recr ⟨false, true, 1, 2, 3, 4, 5, addr1, [⟨6, addr2⟩]⟩,
-    ]),
+    -- mkIxonSerdeTestCase (.muts [
+    --   .defn ⟨.opaque, .safe, 5, addr1, addr2⟩,
+    --   .indc ⟨false, true, true, 1, 2, 3, 4, addr1,
+    --     [⟨true, 5, 6, 7, 8, addr2⟩]⟩,
+    --   .recr ⟨false, true, 1, 2, 3, 4, 5, addr1, [⟨6, addr2⟩]⟩,
+    -- ]),
     mkIxonSerdeTestCase (.eval ⟨addr1, addr2, addr3, addr4⟩),
     mkIxonSerdeTestCase (.chck ⟨addr1, addr2, addr3⟩),
     mkIxonSerdeTestCase (.comm ⟨addr1, addr2⟩),

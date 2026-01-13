@@ -97,6 +97,34 @@ instance : Serialize UInt64 where
   put := putUInt64LE
   get := getUInt64LE
 
+-- Compact U64 encoding for list lengths and similar uses
+-- Format: if bit 7 = 0, lower 7 bits = value (0-127)
+--         if bit 7 = 1, lower 7 bits = byteCount - 1, followed by byteCount bytes (little-endian)
+-- This is similar to Tag4's size encoding but without the flag overhead
+-- Examples: 0 -> 0x00 (1 byte)
+--           127 -> 0x7F (1 byte)
+--           128 -> 0x80 0x80 (2 bytes: header + 1 data byte)
+--           255 -> 0x80 0xFF (2 bytes)
+--           256 -> 0x81 0x00 0x01 (3 bytes: header + 2 data bytes)
+def putCompactU64 (x: UInt64) : PutM Unit := do
+  if x < 128 then
+    putUInt8 x.toUInt8
+  else
+    let byteCount := x.byteCount
+    let head := 0x80 ||| (UInt8.ofNat (byteCount - 1))
+    putUInt8 head
+    putBytes (.mk (UInt64.trimmedLE x))
+
+def getCompactU64 : GetM UInt64 := do
+  let head <- getUInt8
+  if head &&& 0x80 == 0 then
+    -- Small value: lower 7 bits contain the value directly
+    return head.toUInt64
+  else
+    -- Large value: lower 7 bits contain (byteCount - 1)
+    let byteCount := (head &&& 0x7F).toNat + 1
+    (UInt64.fromTrimmedLE ·.data) <$> getBytes byteCount
+
 def putBytes (x: ByteArray) : PutM Unit :=
   StateT.modifyGet (fun s => ((), s.append x))
 
@@ -288,11 +316,11 @@ instance (priority := default + 105)
 
 instance [Serialize A] : Serialize (List A) where
   put xs := do
-    Serialize.put xs.length
+    putCompactU64 (UInt64.ofNat xs.length)
     puts xs
   get := do
-    let len : Nat <- Serialize.get
-    gets len
+    let len : UInt64 <- getCompactU64
+    gets len.toNat
 
 def putQuotKind : Lean.QuotKind → PutM Unit
 | .type => putUInt8 0
