@@ -3,19 +3,23 @@
 //! This module provides serialization/deserialization for all Ixon types
 //! using the Tag4/Tag2/Tag0 encoding schemes.
 
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::map_err_ignore)]
+#![allow(clippy::needless_pass_by_value)]
+
 use std::sync::Arc;
 
 use crate::ix::address::Address;
 use crate::ix::env::{DefinitionSafety, QuotKind};
 
 use super::constant::{
-  Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind, Definition,
-  DefinitionProj, Inductive, InductiveProj, MutConst, Quotient, Recursor, RecursorProj,
-  RecursorRule,
+  Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind,
+  Definition, DefinitionProj, Inductive, InductiveProj, MutConst, Quotient,
+  Recursor, RecursorProj, RecursorRule,
 };
 use super::expr::Expr;
 use super::tag::{Tag0, Tag4};
-use super::univ::{get_univ, put_univ, Univ};
+use super::univ::{Univ, get_univ, put_univ};
 
 // ============================================================================
 // Primitive helpers
@@ -30,7 +34,7 @@ fn get_u8(buf: &mut &[u8]) -> Result<u8, String> {
     Some((&x, rest)) => {
       *buf = rest;
       Ok(x)
-    }
+    },
     None => Err("get_u8: EOF".to_string()),
   }
 }
@@ -99,35 +103,35 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
     match curr {
       Expr::Sort(univ_idx) => {
         Tag4::new(Expr::FLAG_SORT, *univ_idx).put(buf);
-      }
+      },
       Expr::Var(idx) => {
         Tag4::new(Expr::FLAG_VAR, *idx).put(buf);
-      }
+      },
       Expr::Ref(ref_idx, univ_indices) => {
         Tag4::new(Expr::FLAG_REF, univ_indices.len() as u64).put(buf);
         put_u64(*ref_idx, buf);
         for idx in univ_indices {
           put_u64(*idx, buf);
         }
-      }
+      },
       Expr::Rec(rec_idx, univ_indices) => {
         Tag4::new(Expr::FLAG_REC, univ_indices.len() as u64).put(buf);
         put_u64(*rec_idx, buf);
         for idx in univ_indices {
           put_u64(*idx, buf);
         }
-      }
+      },
       Expr::Prj(type_ref_idx, field_idx, val) => {
         Tag4::new(Expr::FLAG_PRJ, *field_idx).put(buf);
         put_u64(*type_ref_idx, buf);
         stack.push(val);
-      }
+      },
       Expr::Str(ref_idx) => {
         Tag4::new(Expr::FLAG_STR, *ref_idx).put(buf);
-      }
+      },
       Expr::Nat(ref_idx) => {
         Tag4::new(Expr::FLAG_NAT, *ref_idx).put(buf);
-      }
+      },
       Expr::App(..) => {
         // Telescope compression: count nested apps
         let count = curr.app_telescope_count();
@@ -144,7 +148,7 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
           stack.push(*arg);
         }
         stack.push(e); // func last, processed first
-      }
+      },
       Expr::Lam(..) => {
         // Telescope compression: count nested lambdas
         let count = curr.lam_telescope_count();
@@ -161,7 +165,7 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
         for ty in types.into_iter().rev() {
           stack.push(ty);
         }
-      }
+      },
       Expr::All(..) => {
         // Telescope compression: count nested foralls
         let count = curr.all_telescope_count();
@@ -178,17 +182,18 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
         for ty in types.into_iter().rev() {
           stack.push(ty);
         }
-      }
+      },
       Expr::Let(non_dep, ty, val, body) => {
-        let flag = if *non_dep { Expr::FLAG_LET_NONDEP } else { Expr::FLAG_LET_DEP };
+        let flag =
+          if *non_dep { Expr::FLAG_LET_NONDEP } else { Expr::FLAG_LET_DEP };
         Tag4::new(flag, 0).put(buf);
         stack.push(body); // Process body last
         stack.push(val);
         stack.push(ty); // Process ty first
-      }
+      },
       Expr::Share(idx) => {
         Tag4::new(Expr::FLAG_SHARE, *idx).put(buf);
-      }
+      },
     }
   }
 }
@@ -198,7 +203,7 @@ enum GetExprFrame {
   /// Parse an expression from the buffer
   Parse,
   /// Build Prj with stored idx, pop val and typ
-  BuildPrj(u64, u64),  // type_ref_idx, field_idx
+  BuildPrj(u64, u64), // type_ref_idx, field_idx
   /// Build App: pop func and arg, push App(func, arg)
   BuildApp,
   /// Collect n more args for App telescope, then wrap
@@ -227,10 +232,10 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
         match tag.flag {
           Expr::FLAG_SORT => {
             results.push(Expr::sort(tag.size));
-          }
+          },
           Expr::FLAG_VAR => {
             results.push(Expr::var(tag.size));
-          }
+          },
           Expr::FLAG_REF => {
             let ref_idx = get_u64(buf)?;
             let mut univ_indices = Vec::with_capacity(tag.size as usize);
@@ -238,7 +243,7 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
               univ_indices.push(get_u64(buf)?);
             }
             results.push(Expr::reference(ref_idx, univ_indices));
-          }
+          },
           Expr::FLAG_REC => {
             let rec_idx = get_u64(buf)?;
             let mut univ_indices = Vec::with_capacity(tag.size as usize);
@@ -246,19 +251,19 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
               univ_indices.push(get_u64(buf)?);
             }
             results.push(Expr::rec(rec_idx, univ_indices));
-          }
+          },
           Expr::FLAG_PRJ => {
             let type_ref_idx = get_u64(buf)?;
             // Parse val, then build Prj
             work.push(GetExprFrame::BuildPrj(type_ref_idx, tag.size));
             work.push(GetExprFrame::Parse); // val
-          }
+          },
           Expr::FLAG_STR => {
             results.push(Expr::str(tag.size));
-          }
+          },
           Expr::FLAG_NAT => {
             results.push(Expr::nat(tag.size));
-          }
+          },
           Expr::FLAG_APP => {
             if tag.size == 0 {
               return Err("get_expr: App with zero args".to_string());
@@ -266,52 +271,58 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
             // Parse func, then collect args and wrap
             work.push(GetExprFrame::CollectApps(tag.size));
             work.push(GetExprFrame::Parse); // func
-          }
+          },
           Expr::FLAG_LAM => {
             if tag.size == 0 {
               return Err("get_expr: Lam with zero binders".to_string());
             }
             // Start collecting types
-            work.push(GetExprFrame::CollectLamType { collected: Vec::new(), remaining: tag.size });
+            work.push(GetExprFrame::CollectLamType {
+              collected: Vec::new(),
+              remaining: tag.size,
+            });
             work.push(GetExprFrame::Parse); // first type
-          }
+          },
           Expr::FLAG_ALL => {
             if tag.size == 0 {
               return Err("get_expr: All with zero binders".to_string());
             }
             // Start collecting types
-            work.push(GetExprFrame::CollectAllType { collected: Vec::new(), remaining: tag.size });
+            work.push(GetExprFrame::CollectAllType {
+              collected: Vec::new(),
+              remaining: tag.size,
+            });
             work.push(GetExprFrame::Parse); // first type
-          }
+          },
           Expr::FLAG_LET_DEP => {
             // Parse ty, val, body, then build Let
             work.push(GetExprFrame::BuildLet(false));
             work.push(GetExprFrame::Parse); // body
             work.push(GetExprFrame::Parse); // val
             work.push(GetExprFrame::Parse); // ty
-          }
+          },
           Expr::FLAG_LET_NONDEP => {
             // Parse ty, val, body, then build Let
             work.push(GetExprFrame::BuildLet(true));
             work.push(GetExprFrame::Parse); // body
             work.push(GetExprFrame::Parse); // val
             work.push(GetExprFrame::Parse); // ty
-          }
+          },
           Expr::FLAG_SHARE => {
             results.push(Expr::share(tag.size));
-          }
+          },
           f => return Err(format!("get_expr: invalid flag {f}")),
         }
-      }
+      },
       GetExprFrame::BuildPrj(type_ref_idx, field_idx) => {
         let val = results.pop().ok_or("get_expr: missing val for Prj")?;
         results.push(Expr::prj(type_ref_idx, field_idx, val));
-      }
+      },
       GetExprFrame::BuildApp => {
         let arg = results.pop().ok_or("get_expr: missing arg for App")?;
         let func = results.pop().ok_or("get_expr: missing func for App")?;
         results.push(Expr::app(func, arg));
-      }
+      },
       GetExprFrame::CollectApps(remaining) => {
         if remaining == 0 {
           // All args collected, result is already on stack
@@ -321,7 +332,7 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
           work.push(GetExprFrame::BuildApp);
           work.push(GetExprFrame::Parse); // arg
         }
-      }
+      },
       GetExprFrame::CollectLamType { mut collected, remaining } => {
         // Pop the just-parsed type
         let ty = results.pop().ok_or("get_expr: missing type for Lam")?;
@@ -329,21 +340,24 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
 
         if remaining > 1 {
           // More types to collect
-          work.push(GetExprFrame::CollectLamType { collected, remaining: remaining - 1 });
+          work.push(GetExprFrame::CollectLamType {
+            collected,
+            remaining: remaining - 1,
+          });
           work.push(GetExprFrame::Parse); // next type
         } else {
           // All types collected, now parse body
           work.push(GetExprFrame::BuildLams(collected));
           work.push(GetExprFrame::Parse); // body
         }
-      }
+      },
       GetExprFrame::BuildLams(types) => {
         let mut body = results.pop().ok_or("get_expr: missing body for Lam")?;
         for ty in types.into_iter().rev() {
           body = Expr::lam(ty, body);
         }
         results.push(body);
-      }
+      },
       GetExprFrame::CollectAllType { mut collected, remaining } => {
         // Pop the just-parsed type
         let ty = results.pop().ok_or("get_expr: missing type for All")?;
@@ -351,27 +365,30 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
 
         if remaining > 1 {
           // More types to collect
-          work.push(GetExprFrame::CollectAllType { collected, remaining: remaining - 1 });
+          work.push(GetExprFrame::CollectAllType {
+            collected,
+            remaining: remaining - 1,
+          });
           work.push(GetExprFrame::Parse); // next type
         } else {
           // All types collected, now parse body
           work.push(GetExprFrame::BuildAlls(collected));
           work.push(GetExprFrame::Parse); // body
         }
-      }
+      },
       GetExprFrame::BuildAlls(types) => {
         let mut body = results.pop().ok_or("get_expr: missing body for All")?;
         for ty in types.into_iter().rev() {
           body = Expr::all(ty, body);
         }
         results.push(body);
-      }
+      },
       GetExprFrame::BuildLet(non_dep) => {
         let body = results.pop().ok_or("get_expr: missing body for Let")?;
         let val = results.pop().ok_or("get_expr: missing val for Let")?;
         let ty = results.pop().ok_or("get_expr: missing ty for Let")?;
         results.push(Expr::let_(non_dep, ty, val, body));
-      }
+      },
     }
   }
 
@@ -682,15 +699,15 @@ impl MutConst {
       Self::Defn(d) => {
         put_u8(0, buf);
         d.put(buf);
-      }
+      },
       Self::Indc(i) => {
         put_u8(1, buf);
         i.put(buf);
-      }
+      },
       Self::Recr(r) => {
         put_u8(2, buf);
         r.put(buf);
-      }
+      },
     }
   }
 
@@ -796,7 +813,11 @@ impl Constant {
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let tag = Tag4::get(buf)?;
     if tag.flag != Self::FLAG {
-      return Err(format!("Constant::get: expected flag {}, got {}", Self::FLAG, tag.flag));
+      return Err(format!(
+        "Constant::get: expected flag {}, got {}",
+        Self::FLAG,
+        tag.flag
+      ));
     }
     let info = ConstantInfo::get(tag.size, buf)?;
     let sharing = get_sharing(buf)?;
@@ -827,20 +848,20 @@ pub fn put_name(name: &Name, buf: &mut Vec<u8>) {
   match name.as_data() {
     NameData::Anonymous(_) => {
       put_u8(0, buf);
-    }
+    },
     NameData::Str(parent, s, _) => {
       put_u8(1, buf);
       put_name(parent, buf);
       put_u64(s.len() as u64, buf);
       buf.extend_from_slice(s.as_bytes());
-    }
+    },
     NameData::Num(parent, n, _) => {
       put_u8(2, buf);
       put_name(parent, buf);
       let bytes = n.to_le_bytes();
       put_u64(bytes.len() as u64, buf);
       buf.extend_from_slice(&bytes);
-    }
+    },
   }
 }
 
@@ -852,25 +873,33 @@ pub fn get_name(buf: &mut &[u8]) -> Result<Name, String> {
       let parent = get_name(buf)?;
       let len = get_u64(buf)? as usize;
       if buf.len() < len {
-        return Err(format!("get_name: need {} bytes for string, have {}", len, buf.len()));
+        return Err(format!(
+          "get_name: need {} bytes for string, have {}",
+          len,
+          buf.len()
+        ));
       }
       let (s_bytes, rest) = buf.split_at(len);
       *buf = rest;
       let s = String::from_utf8(s_bytes.to_vec())
         .map_err(|_| "get_name: invalid UTF-8")?;
       Ok(Name::str(parent, s))
-    }
+    },
     2 => {
       let parent = get_name(buf)?;
       let len = get_u64(buf)? as usize;
       if buf.len() < len {
-        return Err(format!("get_name: need {} bytes for nat, have {}", len, buf.len()));
+        return Err(format!(
+          "get_name: need {} bytes for nat, have {}",
+          len,
+          buf.len()
+        ));
       }
       let (n_bytes, rest) = buf.split_at(len);
       *buf = rest;
       let n = Nat::from_le_bytes(n_bytes);
       Ok(Name::num(parent, n))
-    }
+    },
     x => Err(format!("get_name: invalid tag {x}")),
   }
 }
@@ -881,20 +910,20 @@ fn put_name_component(name: &Name, buf: &mut Vec<u8>) {
   match name.as_data() {
     NameData::Anonymous(_) => {
       put_u8(0, buf);
-    }
+    },
     NameData::Str(parent, s, _) => {
       put_u8(1, buf);
       put_address(&Address::from_blake3_hash(parent.get_hash()), buf);
       put_u64(s.len() as u64, buf);
       buf.extend_from_slice(s.as_bytes());
-    }
+    },
     NameData::Num(parent, n, _) => {
       put_u8(2, buf);
       put_address(&Address::from_blake3_hash(parent.get_hash()), buf);
       let bytes = n.to_le_bytes();
       put_u64(bytes.len() as u64, buf);
       buf.extend_from_slice(&bytes);
-    }
+    },
   }
 }
 
@@ -907,35 +936,41 @@ fn get_name_component(
     0 => Ok(Name::anon()),
     1 => {
       let parent_addr = get_address(buf)?;
-      let parent = names
-        .get(&parent_addr)
-        .cloned()
-        .ok_or_else(|| format!("get_name_component: missing parent {:?}", parent_addr))?;
+      let parent = names.get(&parent_addr).cloned().ok_or_else(|| {
+        format!("get_name_component: missing parent {:?}", parent_addr)
+      })?;
       let len = get_u64(buf)? as usize;
       if buf.len() < len {
-        return Err(format!("get_name_component: need {} bytes, have {}", len, buf.len()));
+        return Err(format!(
+          "get_name_component: need {} bytes, have {}",
+          len,
+          buf.len()
+        ));
       }
       let (s_bytes, rest) = buf.split_at(len);
       *buf = rest;
       let s = String::from_utf8(s_bytes.to_vec())
         .map_err(|_| "get_name_component: invalid UTF-8")?;
       Ok(Name::str(parent, s))
-    }
+    },
     2 => {
       let parent_addr = get_address(buf)?;
-      let parent = names
-        .get(&parent_addr)
-        .cloned()
-        .ok_or_else(|| format!("get_name_component: missing parent {:?}", parent_addr))?;
+      let parent = names.get(&parent_addr).cloned().ok_or_else(|| {
+        format!("get_name_component: missing parent {:?}", parent_addr)
+      })?;
       let len = get_u64(buf)? as usize;
       if buf.len() < len {
-        return Err(format!("get_name_component: need {} bytes, have {}", len, buf.len()));
+        return Err(format!(
+          "get_name_component: need {} bytes, have {}",
+          len,
+          buf.len()
+        ));
       }
       let (n_bytes, rest) = buf.split_at(len);
       *buf = rest;
       let n = Nat::from_le_bytes(n_bytes);
       Ok(Name::num(parent, n))
-    }
+    },
     x => Err(format!("get_name_component: invalid tag {x}")),
   }
 }
@@ -954,7 +989,10 @@ pub fn put_named_indexed(named: &Named, idx: &NameIndex, buf: &mut Vec<u8>) {
 }
 
 /// Deserialize a Named entry with indexed metadata.
-pub fn get_named_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Named, String> {
+pub fn get_named_indexed(
+  buf: &mut &[u8],
+  rev: &NameReverseIndex,
+) -> Result<Named, String> {
   let addr = get_address(buf)?;
   let meta = ConstantMeta::get_indexed(buf, rev)?;
   Ok(Named { addr, meta })
@@ -964,8 +1002,8 @@ pub fn get_named_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Name
 // Env serialization
 // ============================================================================
 
-use super::env::Env;
 use super::comm::Comm;
+use super::env::Env;
 
 impl Env {
   /// Tag4 flag for Env (0xE). Reserved: 0xF for Proofs.
@@ -1030,7 +1068,11 @@ impl Env {
     // Header
     let tag = Tag4::get(buf)?;
     if tag.flag != Self::FLAG {
-      return Err(format!("Env::get: expected flag 0x{:X}, got 0x{:X}", Self::FLAG, tag.flag));
+      return Err(format!(
+        "Env::get: expected flag 0x{:X}, got 0x{:X}",
+        Self::FLAG,
+        tag.flag
+      ));
     }
     if tag.size != Self::VERSION {
       return Err(format!("Env::get: unsupported version {}", tag.size));
@@ -1044,7 +1086,11 @@ impl Env {
       let addr = get_address(buf)?;
       let len = get_u64(buf)? as usize;
       if buf.len() < len {
-        return Err(format!("Env::get: need {} bytes for blob, have {}", len, buf.len()));
+        return Err(format!(
+          "Env::get: need {} bytes for blob, have {}",
+          len,
+          buf.len()
+        ));
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
@@ -1062,9 +1108,11 @@ impl Env {
     // Section 3: Names (build lookup table and reverse index for metadata)
     let num_names = get_u64(buf)?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
-    let mut name_reverse_index: NameReverseIndex = Vec::with_capacity(num_names as usize);
+    let mut name_reverse_index: NameReverseIndex =
+      Vec::with_capacity(num_names as usize);
     // Always include anonymous name
-    names_lookup.insert(Address::from_blake3_hash(Name::anon().get_hash()), Name::anon());
+    names_lookup
+      .insert(Address::from_blake3_hash(Name::anon().get_hash()), Name::anon());
     for _ in 0..num_names {
       let addr = get_address(buf)?;
       let name = get_name_component(buf, &names_lookup)?;
@@ -1078,10 +1126,9 @@ impl Env {
     for _ in 0..num_named {
       let name_addr = get_address(buf)?;
       let named = get_named_indexed(buf, &name_reverse_index)?;
-      let name = names_lookup
-        .get(&name_addr)
-        .cloned()
-        .ok_or_else(|| format!("Env::get: missing name for addr {:?}", name_addr))?;
+      let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
+        format!("Env::get: missing name for addr {:?}", name_addr)
+      })?;
       env.addr_to_name.insert(named.addr.clone(), name.clone());
       env.named.insert(name, named);
     }
@@ -1105,7 +1152,9 @@ impl Env {
   }
 
   /// Calculate serialized size with breakdown by section.
-  pub fn serialized_size_breakdown(&self) -> (usize, usize, usize, usize, usize, usize) {
+  pub fn serialized_size_breakdown(
+    &self,
+  ) -> (usize, usize, usize, usize, usize, usize) {
     let mut buf = Vec::new();
 
     // Header
@@ -1179,7 +1228,6 @@ fn topological_sort_names(
 
   fn visit(
     name: &Name,
-    names: &dashmap::DashMap<Address, Name>,
     visited: &mut HashSet<Address>,
     result: &mut Vec<(Address, Name)>,
   ) {
@@ -1190,10 +1238,10 @@ fn topological_sort_names(
 
     // Visit parent first
     match name.as_data() {
-      NameData::Anonymous(_) => {}
+      NameData::Anonymous(_) => {},
       NameData::Str(parent, _, _) | NameData::Num(parent, _, _) => {
-        visit(parent, names, visited, result);
-      }
+        visit(parent, visited, result);
+      },
     }
 
     visited.insert(addr.clone());
@@ -1201,7 +1249,7 @@ fn topological_sort_names(
   }
 
   for entry in names.iter() {
-    visit(entry.value(), names, &mut visited, &mut result);
+    visit(entry.value(), &mut visited, &mut result);
   }
 
   result
@@ -1210,8 +1258,8 @@ fn topological_sort_names(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::ixon::tests::gen_range;
   use crate::ix::ixon::constant::tests::gen_constant;
+  use crate::ix::ixon::tests::gen_range;
   use quickcheck::{Arbitrary, Gen};
 
   #[quickcheck]
@@ -1226,7 +1274,10 @@ mod tests {
     assert_eq!(pack_bools([true, false, true]), 0b101);
     assert_eq!(pack_bools([false, false, false, false, true]), 0b10000);
     assert_eq!(unpack_bools(3, 0b101), vec![true, false, true]);
-    assert_eq!(unpack_bools(5, 0b10000), vec![false, false, false, false, true]);
+    assert_eq!(
+      unpack_bools(5, 0b10000),
+      vec![false, false, false, false, true]
+    );
   }
 
   #[test]
@@ -1300,7 +1351,7 @@ mod tests {
     (0..len).map(|_| Arbitrary::arbitrary(g)).collect()
   }
 
-  pub fn gen_env(g: &mut Gen) -> Env {
+  fn gen_env(g: &mut Gen) -> Env {
     let env = Env::new();
 
     // Generate blobs
@@ -1367,72 +1418,88 @@ mod tests {
       Ok(recovered) => {
         // Check counts match
         if env.blobs.len() != recovered.blobs.len() {
-          eprintln!("blobs mismatch: {} vs {}", env.blobs.len(), recovered.blobs.len());
+          eprintln!(
+            "blobs mismatch: {} vs {}",
+            env.blobs.len(),
+            recovered.blobs.len()
+          );
           return false;
         }
         if env.consts.len() != recovered.consts.len() {
-          eprintln!("consts mismatch: {} vs {}", env.consts.len(), recovered.consts.len());
+          eprintln!(
+            "consts mismatch: {} vs {}",
+            env.consts.len(),
+            recovered.consts.len()
+          );
           return false;
         }
         if env.named.len() != recovered.named.len() {
-          eprintln!("named mismatch: {} vs {}", env.named.len(), recovered.named.len());
+          eprintln!(
+            "named mismatch: {} vs {}",
+            env.named.len(),
+            recovered.named.len()
+          );
           return false;
         }
         if env.comms.len() != recovered.comms.len() {
-          eprintln!("comms mismatch: {} vs {}", env.comms.len(), recovered.comms.len());
+          eprintln!(
+            "comms mismatch: {} vs {}",
+            env.comms.len(),
+            recovered.comms.len()
+          );
           return false;
         }
 
         // Check blobs content
         for entry in env.blobs.iter() {
           match recovered.blobs.get(entry.key()) {
-            Some(v) if v.value() == entry.value() => {}
+            Some(v) if v.value() == entry.value() => {},
             _ => {
               eprintln!("blob content mismatch for {:?}", entry.key());
               return false;
-            }
+            },
           }
         }
 
         // Check consts content
         for entry in env.consts.iter() {
           match recovered.consts.get(entry.key()) {
-            Some(v) if v.value() == entry.value() => {}
+            Some(v) if v.value() == entry.value() => {},
             _ => {
               eprintln!("const content mismatch for {:?}", entry.key());
               return false;
-            }
+            },
           }
         }
 
         // Check named content
         for entry in env.named.iter() {
           match recovered.named.get(entry.key()) {
-            Some(v) if v.addr == entry.value().addr => {}
+            Some(v) if v.addr == entry.value().addr => {},
             _ => {
               eprintln!("named content mismatch for {:?}", entry.key());
               return false;
-            }
+            },
           }
         }
 
         // Check comms content
         for entry in env.comms.iter() {
           match recovered.comms.get(entry.key()) {
-            Some(v) if v.value() == entry.value() => {}
+            Some(v) if v.value() == entry.value() => {},
             _ => {
               eprintln!("comm content mismatch for {:?}", entry.key());
               return false;
-            }
+            },
           }
         }
 
         true
-      }
+      },
       Err(e) => {
         eprintln!("env_roundtrip error: {}", e);
         false
-      }
+      },
     }
   }
 

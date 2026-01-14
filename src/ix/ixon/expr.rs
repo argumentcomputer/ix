@@ -1,5 +1,8 @@
 //! Expressions in the Ixon format.
 
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::needless_pass_by_value)]
+
 use std::sync::Arc;
 
 /// Expression in the Ixon format.
@@ -95,7 +98,12 @@ impl Expr {
     Arc::new(Expr::All(ty, body))
   }
 
-  pub fn let_(non_dep: bool, ty: Arc<Expr>, val: Arc<Expr>, body: Arc<Expr>) -> Arc<Self> {
+  pub fn let_(
+    non_dep: bool,
+    ty: Arc<Expr>,
+    val: Arc<Expr>,
+    body: Arc<Expr>,
+  ) -> Arc<Self> {
     Arc::new(Expr::Let(non_dep, ty, val, body))
   }
 
@@ -147,7 +155,20 @@ pub mod tests {
   use std::ptr;
 
   #[derive(Clone, Copy)]
-  enum Case { Var, Share, Str, Nat, Sort, Ref, Rec, App, Lam, All, Prj, Let }
+  enum Case {
+    Var,
+    Share,
+    Str,
+    Nat,
+    Sort,
+    Ref,
+    Rec,
+    App,
+    Lam,
+    All,
+    Prj,
+    Let,
+  }
 
   /// Generate an arbitrary Expr using pointer-tree technique (no stack overflow)
   pub fn arbitrary_expr(g: &mut Gen) -> Arc<Expr> {
@@ -158,55 +179,104 @@ pub mod tests {
 
     while let Some(ptr) = stack.pop() {
       let gens = [
-        (100, Case::Var), (80, Case::Share), (60, Case::Str), (60, Case::Nat),
-        (40, Case::Sort), (40, Case::Ref), (40, Case::Rec),
-        (30, Case::App), (30, Case::Lam), (30, Case::All),
-        (20, Case::Prj), (10, Case::Let),
+        (100, Case::Var),
+        (80, Case::Share),
+        (60, Case::Str),
+        (60, Case::Nat),
+        (40, Case::Sort),
+        (40, Case::Ref),
+        (40, Case::Rec),
+        (30, Case::App),
+        (30, Case::Lam),
+        (30, Case::All),
+        (20, Case::Prj),
+        (10, Case::Let),
       ];
 
       match next_case(g, &gens) {
-        Case::Var => unsafe { ptr::write(ptr, Expr::Var(gen_range(g, 0..16) as u64)); },
-        Case::Share => unsafe { ptr::write(ptr, Expr::Share(gen_range(g, 0..16) as u64)); },
-        Case::Str => unsafe { ptr::write(ptr, Expr::Str(gen_range(g, 0..16) as u64)); },
-        Case::Nat => unsafe { ptr::write(ptr, Expr::Nat(gen_range(g, 0..16) as u64)); },
-        Case::Sort => unsafe { ptr::write(ptr, Expr::Sort(gen_range(g, 0..16) as u64)); },
+        Case::Var => unsafe {
+          ptr::write(ptr, Expr::Var(gen_range(g, 0..16) as u64));
+        },
+        Case::Share => unsafe {
+          ptr::write(ptr, Expr::Share(gen_range(g, 0..16) as u64));
+        },
+        Case::Str => unsafe {
+          ptr::write(ptr, Expr::Str(gen_range(g, 0..16) as u64));
+        },
+        Case::Nat => unsafe {
+          ptr::write(ptr, Expr::Nat(gen_range(g, 0..16) as u64));
+        },
+        Case::Sort => unsafe {
+          ptr::write(ptr, Expr::Sort(gen_range(g, 0..16) as u64));
+        },
         Case::Ref => {
-          let univ_indices: Vec<_> = (0..gen_range(g, 0..4)).map(|_| gen_range(g, 0..16) as u64).collect();
-          unsafe { ptr::write(ptr, Expr::Ref(gen_range(g, 0..16) as u64, univ_indices)); }
-        }
+          let univ_indices: Vec<_> = (0..gen_range(g, 0..4))
+            .map(|_| gen_range(g, 0..16) as u64)
+            .collect();
+          unsafe {
+            ptr::write(
+              ptr,
+              Expr::Ref(gen_range(g, 0..16) as u64, univ_indices),
+            );
+          }
+        },
         Case::Rec => {
-          let univ_indices: Vec<_> = (0..gen_range(g, 0..4)).map(|_| gen_range(g, 0..16) as u64).collect();
-          unsafe { ptr::write(ptr, Expr::Rec(gen_range(g, 0..8) as u64, univ_indices)); }
-        }
+          let univ_indices: Vec<_> = (0..gen_range(g, 0..4))
+            .map(|_| gen_range(g, 0..16) as u64)
+            .collect();
+          unsafe {
+            ptr::write(ptr, Expr::Rec(gen_range(g, 0..8) as u64, univ_indices));
+          }
+        },
         Case::App => {
           let mut f = Arc::new(Expr::Var(0));
           let mut a = Arc::new(Expr::Var(0));
-          let (f_ptr, a_ptr) = (Arc::get_mut(&mut f).unwrap() as *mut Expr, Arc::get_mut(&mut a).unwrap() as *mut Expr);
-          unsafe { ptr::write(ptr, Expr::App(f, a)); }
-          stack.push(a_ptr); stack.push(f_ptr);
-        }
+          let (f_ptr, a_ptr) = (
+            Arc::get_mut(&mut f).unwrap() as *mut Expr,
+            Arc::get_mut(&mut a).unwrap() as *mut Expr,
+          );
+          unsafe {
+            ptr::write(ptr, Expr::App(f, a));
+          }
+          stack.push(a_ptr);
+          stack.push(f_ptr);
+        },
         Case::Lam => {
           let mut ty = Arc::new(Expr::Var(0));
           let mut body = Arc::new(Expr::Var(0));
-          let (ty_ptr, body_ptr) = (Arc::get_mut(&mut ty).unwrap() as *mut Expr, Arc::get_mut(&mut body).unwrap() as *mut Expr);
-          unsafe { ptr::write(ptr, Expr::Lam(ty, body)); }
-          stack.push(body_ptr); stack.push(ty_ptr);
-        }
+          let (ty_ptr, body_ptr) = (
+            Arc::get_mut(&mut ty).unwrap() as *mut Expr,
+            Arc::get_mut(&mut body).unwrap() as *mut Expr,
+          );
+          unsafe {
+            ptr::write(ptr, Expr::Lam(ty, body));
+          }
+          stack.push(body_ptr);
+          stack.push(ty_ptr);
+        },
         Case::All => {
           let mut ty = Arc::new(Expr::Var(0));
           let mut body = Arc::new(Expr::Var(0));
-          let (ty_ptr, body_ptr) = (Arc::get_mut(&mut ty).unwrap() as *mut Expr, Arc::get_mut(&mut body).unwrap() as *mut Expr);
-          unsafe { ptr::write(ptr, Expr::All(ty, body)); }
-          stack.push(body_ptr); stack.push(ty_ptr);
-        }
+          let (ty_ptr, body_ptr) = (
+            Arc::get_mut(&mut ty).unwrap() as *mut Expr,
+            Arc::get_mut(&mut body).unwrap() as *mut Expr,
+          );
+          unsafe {
+            ptr::write(ptr, Expr::All(ty, body));
+          }
+          stack.push(body_ptr);
+          stack.push(ty_ptr);
+        },
         Case::Prj => {
           let mut val = Arc::new(Expr::Var(0));
           let val_ptr = Arc::get_mut(&mut val).unwrap() as *mut Expr;
           let type_ref_idx = gen_range(g, 0..16) as u64;
           let field_idx = gen_range(g, 0..8) as u64;
-          unsafe { ptr::write(ptr, Expr::Prj(type_ref_idx, field_idx, val)); }
+          unsafe {
+            ptr::write(ptr, Expr::Prj(type_ref_idx, field_idx, val));
+          }
           stack.push(val_ptr);
-        }
+        },
         Case::Let => {
           let mut ty = Arc::new(Expr::Var(0));
           let mut val = Arc::new(Expr::Var(0));
@@ -216,9 +286,13 @@ pub mod tests {
             Arc::get_mut(&mut val).unwrap() as *mut Expr,
             Arc::get_mut(&mut body).unwrap() as *mut Expr,
           );
-          unsafe { ptr::write(ptr, Expr::Let(bool::arbitrary(g), ty, val, body)); }
-          stack.push(body_ptr); stack.push(val_ptr); stack.push(ty_ptr);
-        }
+          unsafe {
+            ptr::write(ptr, Expr::Let(bool::arbitrary(g), ty, val, body));
+          }
+          stack.push(body_ptr);
+          stack.push(val_ptr);
+          stack.push(ty_ptr);
+        },
       }
     }
     Arc::new(root)
@@ -228,41 +302,60 @@ pub mod tests {
   struct ArbitraryExpr(Arc<Expr>);
 
   impl Arbitrary for ArbitraryExpr {
-    fn arbitrary(g: &mut Gen) -> Self { ArbitraryExpr(arbitrary_expr(g)) }
+    fn arbitrary(g: &mut Gen) -> Self {
+      ArbitraryExpr(arbitrary_expr(g))
+    }
   }
 
   fn expr_roundtrip(e: &Expr) -> bool {
     let mut buf = Vec::new();
     put_expr(e, &mut buf);
-    match get_expr(&mut buf.as_slice()) { Ok(e2) => e == e2.as_ref(), Err(err) => { eprintln!("expr_roundtrip error: {err}"); false } }
+    match get_expr(&mut buf.as_slice()) {
+      Ok(e2) => e == e2.as_ref(),
+      Err(err) => {
+        eprintln!("expr_roundtrip error: {err}");
+        false
+      },
+    }
   }
 
   #[quickcheck]
-  fn prop_expr_roundtrip(e: ArbitraryExpr) -> bool { expr_roundtrip(&e.0) }
+  fn prop_expr_roundtrip(e: ArbitraryExpr) -> bool {
+    expr_roundtrip(&e.0)
+  }
 
   #[test]
   fn test_nested_app_telescope() {
-    let e = Expr::app(Expr::app(Expr::app(Expr::var(0), Expr::var(1)), Expr::var(2)), Expr::var(3));
+    let e = Expr::app(
+      Expr::app(Expr::app(Expr::var(0), Expr::var(1)), Expr::var(2)),
+      Expr::var(3),
+    );
     assert!(expr_roundtrip(&e));
   }
 
   #[test]
   fn test_nested_lam_telescope() {
     let ty = Expr::sort(0);
-    let e = Expr::lam(ty.clone(), Expr::lam(ty.clone(), Expr::lam(ty, Expr::var(0))));
+    let e =
+      Expr::lam(ty.clone(), Expr::lam(ty.clone(), Expr::lam(ty, Expr::var(0))));
     assert!(expr_roundtrip(&e));
   }
 
   #[test]
   fn test_nested_all_telescope() {
     let ty = Expr::sort(0);
-    let e = Expr::all(ty.clone(), Expr::all(ty.clone(), Expr::all(ty, Expr::sort(0))));
+    let e = Expr::all(
+      ty.clone(),
+      Expr::all(ty.clone(), Expr::all(ty, Expr::sort(0))),
+    );
     assert!(expr_roundtrip(&e));
   }
 
   #[test]
   fn ser_de_expr_var() {
-    for idx in [0u64, 1, 7, 8, 100, 1000] { assert!(expr_roundtrip(&Expr::Var(idx))); }
+    for idx in [0u64, 1, 7, 8, 100, 1000] {
+      assert!(expr_roundtrip(&Expr::Var(idx)));
+    }
   }
 
   #[test]
@@ -282,13 +375,16 @@ pub mod tests {
 
   #[test]
   fn ser_de_expr_share() {
-    for idx in [0u64, 1, 7, 8, 100] { assert!(expr_roundtrip(&Expr::Share(idx))); }
+    for idx in [0u64, 1, 7, 8, 100] {
+      assert!(expr_roundtrip(&Expr::Share(idx)));
+    }
   }
 
   #[test]
   fn ser_de_expr_lam_telescope_size() {
     let ty = Expr::var(1);
-    let expr = Expr::lam(ty.clone(), Expr::lam(ty.clone(), Expr::lam(ty, Expr::var(0))));
+    let expr =
+      Expr::lam(ty.clone(), Expr::lam(ty.clone(), Expr::lam(ty, Expr::var(0))));
     let mut buf = Vec::new();
     put_expr(expr.as_ref(), &mut buf);
     assert_eq!(buf.len(), 5);
@@ -297,7 +393,10 @@ pub mod tests {
 
   #[test]
   fn ser_de_expr_app_telescope_size() {
-    let expr = Expr::app(Expr::app(Expr::app(Expr::var(3), Expr::var(2)), Expr::var(1)), Expr::var(0));
+    let expr = Expr::app(
+      Expr::app(Expr::app(Expr::var(3), Expr::var(2)), Expr::var(1)),
+      Expr::var(0),
+    );
     let mut buf = Vec::new();
     put_expr(expr.as_ref(), &mut buf);
     assert_eq!(buf.len(), 5);
@@ -306,10 +405,14 @@ pub mod tests {
 
   #[test]
   fn telescope_lam_byte_boundaries() {
-    for (n, tag_bytes) in [(1u64, 1), (7, 1), (8, 2), (255, 2), (256, 3), (500, 3)] {
+    for (n, tag_bytes) in
+      [(1u64, 1), (7, 1), (8, 2), (255, 2), (256, 3), (500, 3)]
+    {
       let ty = Expr::var(1);
       let mut expr: Arc<Expr> = Expr::var(0);
-      for _ in 0..n { expr = Expr::lam(ty.clone(), expr); }
+      for _ in 0..n {
+        expr = Expr::lam(ty.clone(), expr);
+      }
       let mut buf = Vec::new();
       put_expr(expr.as_ref(), &mut buf);
       assert_eq!(buf.len(), tag_bytes + (n as usize) + 1);
@@ -322,6 +425,9 @@ pub mod tests {
     assert_eq!(Expr::FLAG_SORT, 0x0);
     assert_eq!(Expr::FLAG_SHARE, 0xC);
     assert_eq!(Constant::FLAG, 0xD);
-    assert!(![0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC].contains(&Constant::FLAG));
+    assert!(
+      ![0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC]
+        .contains(&Constant::FLAG)
+    );
   }
 }

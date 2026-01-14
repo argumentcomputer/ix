@@ -1,5 +1,7 @@
 //! Universe levels.
 
+#![allow(clippy::needless_pass_by_value)]
+
 use std::sync::Arc;
 
 use super::tag::Tag2;
@@ -55,7 +57,7 @@ pub fn put_univ(u: &Univ, buf: &mut Vec<u8>) {
     match curr {
       Univ::Zero => {
         Tag2::new(Univ::FLAG_ZERO_SUCC, 0).put(buf);
-      }
+      },
       Univ::Succ(inner) => {
         // Count the number of successors for telescope compression
         let mut count = 1u64;
@@ -66,20 +68,20 @@ pub fn put_univ(u: &Univ, buf: &mut Vec<u8>) {
         }
         Tag2::new(Univ::FLAG_ZERO_SUCC, count).put(buf);
         stack.push(base);
-      }
+      },
       Univ::Max(a, b) => {
         Tag2::new(Univ::FLAG_MAX, 0).put(buf);
         stack.push(b); // Process b after a
         stack.push(a);
-      }
+      },
       Univ::IMax(a, b) => {
         Tag2::new(Univ::FLAG_IMAX, 0).put(buf);
         stack.push(b); // Process b after a
         stack.push(a);
-      }
+      },
       Univ::Var(idx) => {
         Tag2::new(Univ::FLAG_VAR, *idx).put(buf);
-      }
+      },
     }
   }
 }
@@ -114,42 +116,43 @@ pub fn get_univ(buf: &mut &[u8]) -> Result<Arc<Univ>, String> {
               work.push(GetUnivFrame::WrapSuccs(tag.size));
               work.push(GetUnivFrame::Parse);
             }
-          }
+          },
           Univ::FLAG_MAX => {
             // Parse a, parse b, then build Max(a, b)
             work.push(GetUnivFrame::BuildMax);
             work.push(GetUnivFrame::Parse); // b
             work.push(GetUnivFrame::Parse); // a
-          }
+          },
           Univ::FLAG_IMAX => {
             // Parse a, parse b, then build IMax(a, b)
             work.push(GetUnivFrame::BuildIMax);
             work.push(GetUnivFrame::Parse); // b
             work.push(GetUnivFrame::Parse); // a
-          }
+          },
           Univ::FLAG_VAR => {
             results.push(Univ::var(tag.size));
-          }
+          },
           f => return Err(format!("get_univ: invalid flag {f}")),
         }
-      }
+      },
       GetUnivFrame::WrapSuccs(count) => {
-        let mut result = results.pop().ok_or("get_univ: missing result for WrapSuccs")?;
+        let mut result =
+          results.pop().ok_or("get_univ: missing result for WrapSuccs")?;
         for _ in 0..count {
           result = Univ::succ(result);
         }
         results.push(result);
-      }
+      },
       GetUnivFrame::BuildMax => {
         let b = results.pop().ok_or("get_univ: missing b for Max")?;
         let a = results.pop().ok_or("get_univ: missing a for Max")?;
         results.push(Univ::max(a, b));
-      }
+      },
       GetUnivFrame::BuildIMax => {
         let b = results.pop().ok_or("get_univ: missing b for IMax")?;
         let a = results.pop().ok_or("get_univ: missing a for IMax")?;
         results.push(Univ::imax(a, b));
-      }
+      },
     }
   }
 
@@ -164,7 +167,13 @@ pub mod tests {
   use std::ptr;
 
   #[derive(Clone, Copy)]
-  enum Case { Zero, Succ, Max, IMax, Var }
+  enum Case {
+    Zero,
+    Succ,
+    Max,
+    IMax,
+    Var,
+  }
 
   /// Generate an arbitrary Univ using pointer-tree technique (no stack overflow)
   pub fn arbitrary_univ(g: &mut Gen) -> Arc<Univ> {
@@ -172,30 +181,54 @@ pub mod tests {
     let mut stack = vec![&mut root as *mut Univ];
 
     while let Some(ptr) = stack.pop() {
-      let gens = [(100, Case::Zero), (100, Case::Var), (50, Case::Succ), (30, Case::Max), (20, Case::IMax)];
+      let gens = [
+        (100, Case::Zero),
+        (100, Case::Var),
+        (50, Case::Succ),
+        (30, Case::Max),
+        (20, Case::IMax),
+      ];
       match next_case(g, &gens) {
-        Case::Zero => unsafe { ptr::write(ptr, Univ::Zero); },
-        Case::Var => unsafe { ptr::write(ptr, Univ::Var(gen_range(g, 0..16) as u64)); },
+        Case::Zero => unsafe {
+          ptr::write(ptr, Univ::Zero);
+        },
+        Case::Var => unsafe {
+          ptr::write(ptr, Univ::Var(gen_range(g, 0..16) as u64));
+        },
         Case::Succ => {
           let mut inner = Arc::new(Univ::Zero);
           let inner_ptr = Arc::get_mut(&mut inner).unwrap() as *mut Univ;
-          unsafe { ptr::write(ptr, Univ::Succ(inner)); }
+          unsafe {
+            ptr::write(ptr, Univ::Succ(inner));
+          }
           stack.push(inner_ptr);
-        }
+        },
         Case::Max => {
           let mut a = Arc::new(Univ::Zero);
           let mut b = Arc::new(Univ::Zero);
-          let (a_ptr, b_ptr) = (Arc::get_mut(&mut a).unwrap() as *mut Univ, Arc::get_mut(&mut b).unwrap() as *mut Univ);
-          unsafe { ptr::write(ptr, Univ::Max(a, b)); }
-          stack.push(b_ptr); stack.push(a_ptr);
-        }
+          let (a_ptr, b_ptr) = (
+            Arc::get_mut(&mut a).unwrap() as *mut Univ,
+            Arc::get_mut(&mut b).unwrap() as *mut Univ,
+          );
+          unsafe {
+            ptr::write(ptr, Univ::Max(a, b));
+          }
+          stack.push(b_ptr);
+          stack.push(a_ptr);
+        },
         Case::IMax => {
           let mut a = Arc::new(Univ::Zero);
           let mut b = Arc::new(Univ::Zero);
-          let (a_ptr, b_ptr) = (Arc::get_mut(&mut a).unwrap() as *mut Univ, Arc::get_mut(&mut b).unwrap() as *mut Univ);
-          unsafe { ptr::write(ptr, Univ::IMax(a, b)); }
-          stack.push(b_ptr); stack.push(a_ptr);
-        }
+          let (a_ptr, b_ptr) = (
+            Arc::get_mut(&mut a).unwrap() as *mut Univ,
+            Arc::get_mut(&mut b).unwrap() as *mut Univ,
+          );
+          unsafe {
+            ptr::write(ptr, Univ::IMax(a, b));
+          }
+          stack.push(b_ptr);
+          stack.push(a_ptr);
+        },
       }
     }
     Arc::new(root)
@@ -205,33 +238,51 @@ pub mod tests {
   struct ArbitraryUniv(Arc<Univ>);
 
   impl Arbitrary for ArbitraryUniv {
-    fn arbitrary(g: &mut Gen) -> Self { ArbitraryUniv(arbitrary_univ(g)) }
+    fn arbitrary(g: &mut Gen) -> Self {
+      ArbitraryUniv(arbitrary_univ(g))
+    }
   }
 
   fn roundtrip(u: &Univ) -> bool {
     let mut buf = Vec::new();
     put_univ(u, &mut buf);
-    match get_univ(&mut buf.as_slice()) { Ok(result) => result.as_ref() == u, Err(_) => false }
+    match get_univ(&mut buf.as_slice()) {
+      Ok(result) => result.as_ref() == u,
+      Err(_) => false,
+    }
   }
 
   #[quickcheck]
-  fn prop_univ_roundtrip(u: ArbitraryUniv) -> bool { roundtrip(&u.0) }
+  fn prop_univ_roundtrip(u: ArbitraryUniv) -> bool {
+    roundtrip(&u.0)
+  }
 
   #[test]
-  fn test_univ_zero() { assert!(roundtrip(&Univ::Zero)); }
+  fn test_univ_zero() {
+    assert!(roundtrip(&Univ::Zero));
+  }
 
   #[test]
   fn test_univ_succ() {
     assert!(roundtrip(&Univ::Succ(Univ::zero())));
-    assert!(roundtrip(&Univ::Succ(Arc::new(Univ::Succ(Arc::new(Univ::Succ(Univ::zero())))))));
+    assert!(roundtrip(&Univ::Succ(Arc::new(Univ::Succ(Arc::new(
+      Univ::Succ(Univ::zero())
+    ))))));
   }
 
   #[test]
-  fn test_univ_max() { assert!(roundtrip(&Univ::Max(Univ::var(0), Univ::var(1)))); }
+  fn test_univ_max() {
+    assert!(roundtrip(&Univ::Max(Univ::var(0), Univ::var(1))));
+  }
 
   #[test]
-  fn test_univ_var() { assert!(roundtrip(&Univ::Var(0))); assert!(roundtrip(&Univ::Var(100))); }
+  fn test_univ_var() {
+    assert!(roundtrip(&Univ::Var(0)));
+    assert!(roundtrip(&Univ::Var(100)));
+  }
 
   #[test]
-  fn test_univ_succ_telescope() { assert!(roundtrip(&Univ::succ(Univ::succ(Univ::succ(Univ::zero()))))); }
+  fn test_univ_succ_telescope() {
+    assert!(roundtrip(&Univ::succ(Univ::succ(Univ::succ(Univ::zero())))));
+  }
 }

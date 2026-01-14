@@ -4,6 +4,8 @@
 //! - Tag2: 2-bit flag for universes (4 variants)
 //! - Tag0: No flag, just variable-length u64
 
+#![allow(clippy::needless_pass_by_value)]
+
 /// Count how many bytes needed to represent a u64.
 pub fn u64_byte_count(x: u64) -> u8 {
   match x {
@@ -36,7 +38,7 @@ pub fn u64_get_trimmed_le(len: usize, buf: &mut &[u8]) -> Result<u64, String> {
       *buf = rest;
       res[..len].copy_from_slice(head);
       Ok(u64::from_le_bytes(res))
-    }
+    },
     None => Err(format!("u64_get_trimmed_le: EOF, need {len} bytes")),
   }
 }
@@ -83,7 +85,7 @@ impl Tag4 {
       Some((&h, rest)) => {
         *buf = rest;
         h
-      }
+      },
       None => return Err("Tag4::get: EOF".to_string()),
     };
     let (flag, large, small) = Self::decode_head(head);
@@ -97,11 +99,7 @@ impl Tag4 {
 
   /// Calculate the encoded size of this tag in bytes.
   pub fn encoded_size(&self) -> usize {
-    if self.size < 8 {
-      1
-    } else {
-      1 + u64_byte_count(self.size) as usize
-    }
+    if self.size < 8 { 1 } else { 1 + u64_byte_count(self.size) as usize }
   }
 }
 
@@ -147,7 +145,7 @@ impl Tag2 {
       Some((&h, rest)) => {
         *buf = rest;
         h
-      }
+      },
       None => return Err("Tag2::get: EOF".to_string()),
     };
     let (flag, large, small) = Self::decode_head(head);
@@ -161,11 +159,7 @@ impl Tag2 {
 
   /// Calculate the encoded size of this tag in bytes.
   pub fn encoded_size(&self) -> usize {
-    if self.size < 32 {
-      1
-    } else {
-      1 + u64_byte_count(self.size) as usize
-    }
+    if self.size < 32 { 1 } else { 1 + u64_byte_count(self.size) as usize }
   }
 }
 
@@ -209,7 +203,7 @@ impl Tag0 {
       Some((&h, rest)) => {
         *buf = rest;
         h
-      }
+      },
       None => return Err("Tag0::get: EOF".to_string()),
     };
     let (large, small) = Self::decode_head(head);
@@ -223,11 +217,7 @@ impl Tag0 {
 
   /// Calculate the encoded size of this tag in bytes.
   pub fn encoded_size(&self) -> usize {
-    if self.size < 128 {
-      1
-    } else {
-      1 + u64_byte_count(self.size) as usize
-    }
+    if self.size < 128 { 1 } else { 1 + u64_byte_count(self.size) as usize }
   }
 }
 
@@ -387,15 +377,24 @@ mod tests {
   #[test]
   fn tag4_byte_boundaries() {
     let test_cases: Vec<(u64, usize)> = vec![
-      (0, 1), (7, 1),
-      (8, 2), (0xFF, 2),
-      (0x100, 3), (0xFFFF, 3),
-      (0x10000, 4), (0xFFFFFF, 4),
-      (0x1000000, 5), (0xFFFFFFFF, 5),
-      (0x100000000, 6), (0xFFFFFFFFFF, 6),
-      (0x10000000000, 7), (0xFFFFFFFFFFFF, 7),
-      (0x1000000000000, 8), (0xFFFFFFFFFFFFFF, 8),
-      (0x100000000000000, 9), (u64::MAX, 9),
+      (0, 1),
+      (7, 1),
+      (8, 2),
+      (0xFF, 2),
+      (0x100, 3),
+      (0xFFFF, 3),
+      (0x10000, 4),
+      (0xFFFFFF, 4),
+      (0x1000000, 5),
+      (0xFFFFFFFF, 5),
+      (0x100000000, 6),
+      (0xFFFFFFFFFF, 6),
+      (0x10000000000, 7),
+      (0xFFFFFFFFFFFF, 7),
+      (0x1000000000000, 8),
+      (0xFFFFFFFFFFFFFF, 8),
+      (0x100000000000000, 9),
+      (u64::MAX, 9),
     ];
 
     for (size, expected_bytes) in &test_cases {
@@ -403,8 +402,14 @@ mod tests {
       let mut buf = Vec::new();
       tag.put(&mut buf);
 
-      assert_eq!(buf.len(), *expected_bytes,
-        "Tag4 with size 0x{:X} should be {} bytes, got {}", size, expected_bytes, buf.len());
+      assert_eq!(
+        buf.len(),
+        *expected_bytes,
+        "Tag4 with size 0x{:X} should be {} bytes, got {}",
+        size,
+        expected_bytes,
+        buf.len()
+      );
 
       let mut slice: &[u8] = &buf;
       let recovered = Tag4::get(&mut slice).unwrap();
@@ -465,15 +470,24 @@ mod tests {
   #[test]
   fn tag2_byte_boundaries() {
     let test_cases: Vec<(u64, usize)> = vec![
-      (0, 1), (31, 1),
-      (32, 2), (0xFF, 2),
-      (0x100, 3), (0xFFFF, 3),
-      (0x10000, 4), (0xFFFFFF, 4),
-      (0x1000000, 5), (0xFFFFFFFF, 5),
-      (0x100000000, 6), (0xFFFFFFFFFF, 6),
-      (0x10000000000, 7), (0xFFFFFFFFFFFF, 7),
-      (0x1000000000000, 8), (0xFFFFFFFFFFFFFF, 8),
-      (0x100000000000000, 9), (u64::MAX, 9),
+      (0, 1),
+      (31, 1),
+      (32, 2),
+      (0xFF, 2),
+      (0x100, 3),
+      (0xFFFF, 3),
+      (0x10000, 4),
+      (0xFFFFFF, 4),
+      (0x1000000, 5),
+      (0xFFFFFFFF, 5),
+      (0x100000000, 6),
+      (0xFFFFFFFFFF, 6),
+      (0x10000000000, 7),
+      (0xFFFFFFFFFFFF, 7),
+      (0x1000000000000, 8),
+      (0xFFFFFFFFFFFFFF, 8),
+      (0x100000000000000, 9),
+      (u64::MAX, 9),
     ];
 
     for (size, expected_bytes) in &test_cases {
@@ -481,8 +495,14 @@ mod tests {
       let mut buf = Vec::new();
       tag.put(&mut buf);
 
-      assert_eq!(buf.len(), *expected_bytes,
-        "Tag2 with size 0x{:X} should be {} bytes, got {}", size, expected_bytes, buf.len());
+      assert_eq!(
+        buf.len(),
+        *expected_bytes,
+        "Tag2 with size 0x{:X} should be {} bytes, got {}",
+        size,
+        expected_bytes,
+        buf.len()
+      );
 
       let mut slice: &[u8] = &buf;
       let recovered = Tag2::get(&mut slice).unwrap();
@@ -539,15 +559,24 @@ mod tests {
   #[test]
   fn tag0_byte_boundaries() {
     let test_cases: Vec<(u64, usize)> = vec![
-      (0, 1), (127, 1),
-      (128, 2), (0xFF, 2),
-      (0x100, 3), (0xFFFF, 3),
-      (0x10000, 4), (0xFFFFFF, 4),
-      (0x1000000, 5), (0xFFFFFFFF, 5),
-      (0x100000000, 6), (0xFFFFFFFFFF, 6),
-      (0x10000000000, 7), (0xFFFFFFFFFFFF, 7),
-      (0x1000000000000, 8), (0xFFFFFFFFFFFFFF, 8),
-      (0x100000000000000, 9), (u64::MAX, 9),
+      (0, 1),
+      (127, 1),
+      (128, 2),
+      (0xFF, 2),
+      (0x100, 3),
+      (0xFFFF, 3),
+      (0x10000, 4),
+      (0xFFFFFF, 4),
+      (0x1000000, 5),
+      (0xFFFFFFFF, 5),
+      (0x100000000, 6),
+      (0xFFFFFFFFFF, 6),
+      (0x10000000000, 7),
+      (0xFFFFFFFFFFFF, 7),
+      (0x1000000000000, 8),
+      (0xFFFFFFFFFFFFFF, 8),
+      (0x100000000000000, 9),
+      (u64::MAX, 9),
     ];
 
     for (size, expected_bytes) in &test_cases {
@@ -555,8 +584,14 @@ mod tests {
       let mut buf = Vec::new();
       tag.put(&mut buf);
 
-      assert_eq!(buf.len(), *expected_bytes,
-        "Tag0 with size 0x{:X} should be {} bytes, got {}", size, expected_bytes, buf.len());
+      assert_eq!(
+        buf.len(),
+        *expected_bytes,
+        "Tag0 with size 0x{:X} should be {} bytes, got {}",
+        size,
+        expected_bytes,
+        buf.len()
+      );
 
       let mut slice: &[u8] = &buf;
       let recovered = Tag0::get(&mut slice).unwrap();

@@ -4,6 +4,11 @@
 //! Expressions that are structurally identical get the same hash, and we decide
 //! which subterms to share based on a profitability heuristic.
 
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::match_same_arms)]
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -40,12 +45,12 @@ fn hash_node(
       buf.push(Expr::FLAG_SORT);
       buf.extend_from_slice(&univ_idx.to_le_bytes());
       vec![]
-    }
+    },
     Expr::Var(idx) => {
       buf.push(Expr::FLAG_VAR);
       buf.extend_from_slice(&idx.to_le_bytes());
       vec![]
-    }
+    },
     Expr::Ref(ref_idx, univ_indices) => {
       buf.push(Expr::FLAG_REF);
       buf.extend_from_slice(&ref_idx.to_le_bytes());
@@ -54,7 +59,7 @@ fn hash_node(
         buf.extend_from_slice(&idx.to_le_bytes());
       }
       vec![]
-    }
+    },
     Expr::Rec(rec_idx, univ_indices) => {
       buf.push(Expr::FLAG_REC);
       buf.extend_from_slice(&rec_idx.to_le_bytes());
@@ -63,7 +68,7 @@ fn hash_node(
         buf.extend_from_slice(&idx.to_le_bytes());
       }
       vec![]
-    }
+    },
     Expr::Prj(type_ref_idx, field_idx, val) => {
       buf.push(Expr::FLAG_PRJ);
       buf.extend_from_slice(&type_ref_idx.to_le_bytes());
@@ -72,17 +77,17 @@ fn hash_node(
       let val_hash = child_hashes.get(&val_ptr).unwrap();
       buf.extend_from_slice(val_hash.as_bytes());
       vec![*val_hash]
-    }
+    },
     Expr::Str(ref_idx) => {
       buf.push(Expr::FLAG_STR);
       buf.extend_from_slice(&ref_idx.to_le_bytes());
       vec![]
-    }
+    },
     Expr::Nat(ref_idx) => {
       buf.push(Expr::FLAG_NAT);
       buf.extend_from_slice(&ref_idx.to_le_bytes());
       vec![]
-    }
+    },
     Expr::App(fun, arg) => {
       buf.push(Expr::FLAG_APP);
       let fun_ptr = fun.as_ref() as *const Expr;
@@ -92,7 +97,7 @@ fn hash_node(
       buf.extend_from_slice(fun_hash.as_bytes());
       buf.extend_from_slice(arg_hash.as_bytes());
       vec![*fun_hash, *arg_hash]
-    }
+    },
     Expr::Lam(ty, body) => {
       buf.push(Expr::FLAG_LAM);
       let ty_ptr = ty.as_ref() as *const Expr;
@@ -102,7 +107,7 @@ fn hash_node(
       buf.extend_from_slice(ty_hash.as_bytes());
       buf.extend_from_slice(body_hash.as_bytes());
       vec![*ty_hash, *body_hash]
-    }
+    },
     Expr::All(ty, body) => {
       buf.push(Expr::FLAG_ALL);
       let ty_ptr = ty.as_ref() as *const Expr;
@@ -112,9 +117,10 @@ fn hash_node(
       buf.extend_from_slice(ty_hash.as_bytes());
       buf.extend_from_slice(body_hash.as_bytes());
       vec![*ty_hash, *body_hash]
-    }
+    },
     Expr::Let(non_dep, ty, val, body) => {
-      let flag = if *non_dep { Expr::FLAG_LET_NONDEP } else { Expr::FLAG_LET_DEP };
+      let flag =
+        if *non_dep { Expr::FLAG_LET_NONDEP } else { Expr::FLAG_LET_DEP };
       buf.push(flag);
       let ty_ptr = ty.as_ref() as *const Expr;
       let val_ptr = val.as_ref() as *const Expr;
@@ -126,12 +132,12 @@ fn hash_node(
       buf.extend_from_slice(val_hash.as_bytes());
       buf.extend_from_slice(body_hash.as_bytes());
       vec![*ty_hash, *val_hash, *body_hash]
-    }
+    },
     Expr::Share(idx) => {
       buf.push(Expr::FLAG_SHARE);
       buf.extend_from_slice(&idx.to_le_bytes());
       vec![]
-    }
+    },
   };
 
   (blake3::hash(buf), children)
@@ -140,33 +146,43 @@ fn hash_node(
 /// Compute the base size of a node (Tag4 header size).
 fn compute_base_size(expr: &Expr) -> usize {
   match expr {
-    Expr::Sort(univ_idx) => Tag4::new(Expr::FLAG_SORT, *univ_idx).encoded_size(),
+    Expr::Sort(univ_idx) => {
+      Tag4::new(Expr::FLAG_SORT, *univ_idx).encoded_size()
+    },
     Expr::Var(idx) => Tag4::new(Expr::FLAG_VAR, *idx).encoded_size(),
     Expr::Ref(ref_idx, univ_indices) => {
       // tag + ref_idx + N univ indices
       Tag4::new(Expr::FLAG_REF, univ_indices.len() as u64).encoded_size()
         + Tag0::new(*ref_idx).encoded_size()
-        + univ_indices.iter().map(|i| Tag0::new(*i).encoded_size()).sum::<usize>()
-    }
+        + univ_indices
+          .iter()
+          .map(|i| Tag0::new(*i).encoded_size())
+          .sum::<usize>()
+    },
     Expr::Rec(rec_idx, univ_indices) => {
       // tag + rec_idx + N univ indices
       Tag4::new(Expr::FLAG_REC, univ_indices.len() as u64).encoded_size()
         + Tag0::new(*rec_idx).encoded_size()
-        + univ_indices.iter().map(|i| Tag0::new(*i).encoded_size()).sum::<usize>()
-    }
+        + univ_indices
+          .iter()
+          .map(|i| Tag0::new(*i).encoded_size())
+          .sum::<usize>()
+    },
     Expr::Prj(type_ref_idx, field_idx, _) => {
       // Tag (field_idx in payload) + type_ref_idx (variable length, estimate 2 bytes)
-      Tag4::new(Expr::FLAG_PRJ, *field_idx).encoded_size() + Tag0::new(*type_ref_idx).encoded_size()
-    }
+      Tag4::new(Expr::FLAG_PRJ, *field_idx).encoded_size()
+        + Tag0::new(*type_ref_idx).encoded_size()
+    },
     Expr::Str(ref_idx) => Tag4::new(Expr::FLAG_STR, *ref_idx).encoded_size(),
     Expr::Nat(ref_idx) => Tag4::new(Expr::FLAG_NAT, *ref_idx).encoded_size(),
     Expr::App(..) => Tag4::new(Expr::FLAG_APP, 1).encoded_size(), // telescope count >= 1
     Expr::Lam(..) => Tag4::new(Expr::FLAG_LAM, 1).encoded_size(),
     Expr::All(..) => Tag4::new(Expr::FLAG_ALL, 1).encoded_size(),
     Expr::Let(non_dep, ..) => {
-      let flag = if *non_dep { Expr::FLAG_LET_NONDEP } else { Expr::FLAG_LET_DEP };
+      let flag =
+        if *non_dep { Expr::FLAG_LET_NONDEP } else { Expr::FLAG_LET_DEP };
       Tag4::new(flag, 0).encoded_size()
-    }
+    },
     Expr::Share(idx) => Tag4::new(Expr::FLAG_SHARE, *idx).encoded_size(),
   }
 }
@@ -174,9 +190,15 @@ fn compute_base_size(expr: &Expr) -> usize {
 /// Get child expressions for traversal.
 fn get_children(expr: &Expr) -> Vec<&Arc<Expr>> {
   match expr {
-    Expr::Sort(_) | Expr::Var(_) | Expr::Ref(..) | Expr::Rec(..) | Expr::Str(_) | Expr::Nat(_) | Expr::Share(_) => {
+    Expr::Sort(_)
+    | Expr::Var(_)
+    | Expr::Ref(..)
+    | Expr::Rec(..)
+    | Expr::Str(_)
+    | Expr::Nat(_)
+    | Expr::Share(_) => {
       vec![]
-    }
+    },
     Expr::Prj(_, _, val) => vec![val],
     Expr::App(fun, arg) => vec![fun, arg],
     Expr::Lam(ty, body) | Expr::All(ty, body) => vec![ty, body],
@@ -190,9 +212,11 @@ fn get_children(expr: &Expr) -> Vec<&Arc<Expr>> {
 /// Uses post-order traversal with Merkle-tree hashing.
 pub fn analyze_block(
   exprs: &[Arc<Expr>],
-) -> (HashMap<blake3::Hash, SubtermInfo>, FxHashMap<*const Expr, blake3::Hash>) {
+) -> (HashMap<blake3::Hash, SubtermInfo>, FxHashMap<*const Expr, blake3::Hash>)
+{
   let mut info_map: HashMap<blake3::Hash, SubtermInfo> = HashMap::new();
-  let mut ptr_to_hash: FxHashMap<*const Expr, blake3::Hash> = FxHashMap::default();
+  let mut ptr_to_hash: FxHashMap<*const Expr, blake3::Hash> =
+    FxHashMap::default();
   let mut hash_buf: Vec<u8> = Vec::with_capacity(128);
 
   // Stack-based post-order traversal
@@ -222,14 +246,15 @@ pub fn analyze_block(
           for child in get_children(arc_expr).into_iter().rev() {
             stack.push(Frame::Visit(child));
           }
-        }
+        },
         Frame::Process(arc_expr) => {
           let ptr = arc_expr.as_ref() as *const Expr;
           if ptr_to_hash.contains_key(&ptr) {
             continue;
           }
 
-          let (hash, children) = hash_node(arc_expr.as_ref(), &ptr_to_hash, &mut hash_buf);
+          let (hash, children) =
+            hash_node(arc_expr.as_ref(), &ptr_to_hash, &mut hash_buf);
 
           // Check if we've seen this content hash before (structural equality)
           if let Some(existing) = info_map.get_mut(&hash) {
@@ -249,7 +274,7 @@ pub fn analyze_block(
             );
             ptr_to_hash.insert(ptr, hash);
           }
-        }
+        },
       }
     }
   }
@@ -258,7 +283,9 @@ pub fn analyze_block(
 }
 
 /// Topological sort of subterms (leaves first, parents last).
-fn topological_sort(info_map: &HashMap<blake3::Hash, SubtermInfo>) -> Vec<blake3::Hash> {
+fn topological_sort(
+  info_map: &HashMap<blake3::Hash, SubtermInfo>,
+) -> Vec<blake3::Hash> {
   #[derive(Clone, Copy, PartialEq, Eq)]
   enum VisitState {
     InProgress,
@@ -277,7 +304,7 @@ fn topological_sort(info_map: &HashMap<blake3::Hash, SubtermInfo>) -> Vec<blake3
     match state.get(&hash) {
       Some(VisitState::Done) => return,
       Some(VisitState::InProgress) => return, // Cycle (shouldn't happen)
-      _ => {}
+      _ => {},
     }
 
     state.insert(hash, VisitState::InProgress);
@@ -343,11 +370,7 @@ pub fn decide_sharing(
       let n = info.usage_count;
       // Potential savings assuming ref_size = 1 (minimum)
       let potential = (n as isize - 1) * (term_size as isize) - (n as isize);
-      if potential > 0 {
-        Some((*hash, term_size, n))
-      } else {
-        None
-      }
+      if potential > 0 { Some((*hash, term_size, n)) } else { None }
     })
     .collect();
 
@@ -363,7 +386,8 @@ pub fn decide_sharing(
   // Process candidates in sorted order
   for (hash, term_size, usage_count) in candidates {
     let next_idx = shared.len();
-    let next_ref_size = Tag4::new(Expr::FLAG_SHARE, next_idx as u64).encoded_size();
+    let next_ref_size =
+      Tag4::new(Expr::FLAG_SHARE, next_idx as u64).encoded_size();
     let n = usage_count as isize;
     let savings = (n - 1) * (term_size as isize) - n * (next_ref_size as isize);
 
@@ -383,7 +407,7 @@ pub fn decide_sharing(
 ///
 /// Returns the rewritten expressions and the sharing vector.
 pub fn build_sharing_vec(
-  exprs: Vec<Arc<Expr>>,
+  exprs: &[Arc<Expr>],
   shared_hashes: &IndexSet<blake3::Hash>,
   ptr_to_hash: &FxHashMap<*const Expr, blake3::Hash>,
   info_map: &HashMap<blake3::Hash, SubtermInfo>,
@@ -399,7 +423,8 @@ pub fn build_sharing_vec(
     // Clear cache - hash_to_idx changed, so cached rewrites are invalid
     cache.clear();
     // Rewrite using only indices < i (hash_to_idx doesn't include i yet)
-    let rewritten = rewrite_expr(&info.expr, &hash_to_idx, ptr_to_hash, &mut cache);
+    let rewritten =
+      rewrite_expr(&info.expr, &hash_to_idx, ptr_to_hash, &mut cache);
     sharing_vec.push(rewritten);
     // Now add this hash to the map for subsequent entries
     hash_to_idx.insert(*h, i as u64);
@@ -455,52 +480,57 @@ fn rewrite_expr(
         }
 
         // Check if this expression should become a Share reference
-        if let Some(hash) = ptr_to_hash.get(&ptr) {
-          if let Some(&idx) = hash_to_idx.get(hash) {
-            let share = Expr::share(idx);
-            cache.insert(ptr, share.clone());
-            results.push(share);
-            continue;
-          }
+        if let Some(hash) = ptr_to_hash.get(&ptr)
+          && let Some(&idx) = hash_to_idx.get(hash)
+        {
+          let share = Expr::share(idx);
+          cache.insert(ptr, share.clone());
+          results.push(share);
+          continue;
         }
 
         // Process based on node type
         match e.as_ref() {
           // Leaf nodes - return as-is
-          Expr::Sort(_) | Expr::Var(_) | Expr::Ref(..) | Expr::Rec(..)
-          | Expr::Str(_) | Expr::Nat(_) | Expr::Share(_) => {
+          Expr::Sort(_)
+          | Expr::Var(_)
+          | Expr::Ref(..)
+          | Expr::Rec(..)
+          | Expr::Str(_)
+          | Expr::Nat(_)
+          | Expr::Share(_) => {
             cache.insert(ptr, e.clone());
             results.push(e.clone());
-          }
+          },
 
           // Nodes with children - push build frame, then visit children
           Expr::Prj(type_ref_idx, field_idx, val) => {
             stack.push(RewriteFrame::BuildPrj(e, *type_ref_idx, *field_idx));
             stack.push(RewriteFrame::Visit(val));
-          }
+          },
           Expr::App(fun, arg) => {
             stack.push(RewriteFrame::BuildApp(e));
             stack.push(RewriteFrame::Visit(arg));
             stack.push(RewriteFrame::Visit(fun));
-          }
+          },
           Expr::Lam(ty, body) => {
             stack.push(RewriteFrame::BuildLam(e));
             stack.push(RewriteFrame::Visit(body));
             stack.push(RewriteFrame::Visit(ty));
-          }
+          },
           Expr::All(ty, body) => {
             stack.push(RewriteFrame::BuildAll(e));
             stack.push(RewriteFrame::Visit(body));
             stack.push(RewriteFrame::Visit(ty));
-          }
+          },
           Expr::Let(non_dep, ty, val, body) => {
             stack.push(RewriteFrame::BuildLet(e, *non_dep));
             stack.push(RewriteFrame::Visit(body));
             stack.push(RewriteFrame::Visit(val));
             stack.push(RewriteFrame::Visit(ty));
-          }
+          },
         }
-      }
+      },
 
       RewriteFrame::BuildPrj(orig, type_ref_idx, field_idx) => {
         let new_val = results.pop().unwrap();
@@ -516,7 +546,7 @@ fn rewrite_expr(
         let ptr = orig.as_ref() as *const Expr;
         cache.insert(ptr, result.clone());
         results.push(result);
-      }
+      },
 
       RewriteFrame::BuildApp(orig) => {
         // Pop in reverse order of push: arg was pushed last, fun first
@@ -526,7 +556,9 @@ fn rewrite_expr(
           Expr::App(f, a) => (f, a),
           _ => unreachable!(),
         };
-        let result = if Arc::ptr_eq(&new_fun, orig_fun) && Arc::ptr_eq(&new_arg, orig_arg) {
+        let result = if Arc::ptr_eq(&new_fun, orig_fun)
+          && Arc::ptr_eq(&new_arg, orig_arg)
+        {
           orig.clone()
         } else {
           Expr::app(new_fun, new_arg)
@@ -534,7 +566,7 @@ fn rewrite_expr(
         let ptr = orig.as_ref() as *const Expr;
         cache.insert(ptr, result.clone());
         results.push(result);
-      }
+      },
 
       RewriteFrame::BuildLam(orig) => {
         // Pop in reverse order of push: body was pushed last, ty first
@@ -544,7 +576,9 @@ fn rewrite_expr(
           Expr::Lam(t, b) => (t, b),
           _ => unreachable!(),
         };
-        let result = if Arc::ptr_eq(&new_ty, orig_ty) && Arc::ptr_eq(&new_body, orig_body) {
+        let result = if Arc::ptr_eq(&new_ty, orig_ty)
+          && Arc::ptr_eq(&new_body, orig_body)
+        {
           orig.clone()
         } else {
           Expr::lam(new_ty, new_body)
@@ -552,7 +586,7 @@ fn rewrite_expr(
         let ptr = orig.as_ref() as *const Expr;
         cache.insert(ptr, result.clone());
         results.push(result);
-      }
+      },
 
       RewriteFrame::BuildAll(orig) => {
         // Pop in reverse order of push: body was pushed last, ty first
@@ -562,7 +596,9 @@ fn rewrite_expr(
           Expr::All(t, b) => (t, b),
           _ => unreachable!(),
         };
-        let result = if Arc::ptr_eq(&new_ty, orig_ty) && Arc::ptr_eq(&new_body, orig_body) {
+        let result = if Arc::ptr_eq(&new_ty, orig_ty)
+          && Arc::ptr_eq(&new_body, orig_body)
+        {
           orig.clone()
         } else {
           Expr::all(new_ty, new_body)
@@ -570,7 +606,7 @@ fn rewrite_expr(
         let ptr = orig.as_ref() as *const Expr;
         cache.insert(ptr, result.clone());
         results.push(result);
-      }
+      },
 
       RewriteFrame::BuildLet(orig, non_dep) => {
         // Pop in reverse order of push: body, val, ty
@@ -592,7 +628,7 @@ fn rewrite_expr(
         let ptr = orig.as_ref() as *const Expr;
         cache.insert(ptr, result.clone());
         results.push(result);
-      }
+      },
     }
   }
 
@@ -617,7 +653,9 @@ mod tests {
 
     // Find Var(0) info - it should have usage_count = 2
     let var_hash = ptr_to_hash.values().find(|h| {
-      info_map.get(*h).map_or(false, |info| matches!(info.expr.as_ref(), Expr::Var(0)))
+      info_map
+        .get(*h)
+        .is_some_and(|info| matches!(info.expr.as_ref(), Expr::Var(0)))
     });
     assert!(var_hash.is_some());
     let var_info = info_map.get(var_hash.unwrap()).unwrap();
@@ -663,7 +701,10 @@ mod tests {
       // App should be last (after its children)
       for child_hash in &info_map.get(&app_h).unwrap().children {
         let child_pos = topo.iter().position(|h| h == child_hash).unwrap();
-        assert!(child_pos < app_pos, "Child should come before parent in topo order");
+        assert!(
+          child_pos < app_pos,
+          "Child should come before parent in topo order"
+        );
       }
     }
   }
@@ -676,12 +717,13 @@ mod tests {
     let app1 = Expr::app(var0.clone(), var0.clone());
     let app2 = Expr::app(app1, var0);
 
-    let (info_map, ptr_to_hash) = analyze_block(&[app2.clone()]);
+    let (info_map, ptr_to_hash) = analyze_block(std::slice::from_ref(&app2));
     let shared = decide_sharing(&info_map);
 
     // If var0 is shared, verify it
     if !shared.is_empty() {
-      let (rewritten, sharing_vec) = build_sharing_vec(vec![app2], &shared, &ptr_to_hash, &info_map);
+      let (rewritten, sharing_vec) =
+        build_sharing_vec(&[app2], &shared, &ptr_to_hash, &info_map);
 
       // Sharing vec should have the shared expressions
       assert_eq!(sharing_vec.len(), shared.len());
@@ -693,7 +735,7 @@ mod tests {
 
   #[test]
   fn test_roundtrip_with_sharing() {
-    use crate::ix::ixon::serialize::{put_expr, get_expr};
+    use crate::ix::ixon::serialize::{get_expr, put_expr};
 
     // Create a simple expression with potential sharing
     let var0 = Expr::var(0);

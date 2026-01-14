@@ -3,6 +3,8 @@
 //! Metadata types use Address internally, but serialize with u64 indices
 //! into a global name index for space efficiency.
 
+#![allow(clippy::cast_possible_truncation)]
+
 use std::collections::HashMap;
 
 use crate::ix::address::Address;
@@ -113,7 +115,10 @@ fn put_u8(x: u8, buf: &mut Vec<u8>) {
 
 fn get_u8(buf: &mut &[u8]) -> Result<u8, String> {
   match buf.split_first() {
-    Some((&x, rest)) => { *buf = rest; Ok(x) }
+    Some((&x, rest)) => {
+      *buf = rest;
+      Ok(x)
+    },
     None => Err("get_u8: EOF".to_string()),
   }
 }
@@ -179,7 +184,7 @@ impl ReducibilityHints {
       Self::Regular(x) => {
         put_u8(2, buf);
         buf.extend_from_slice(&x.to_le_bytes());
-      }
+      },
     }
   }
 
@@ -188,11 +193,15 @@ impl ReducibilityHints {
       0 => Ok(Self::Opaque),
       1 => Ok(Self::Abbrev),
       2 => {
-        if buf.len() < 4 { return Err("ReducibilityHints::get: need 4 bytes".to_string()); }
+        if buf.len() < 4 {
+          return Err("ReducibilityHints::get: need 4 bytes".to_string());
+        }
         let (bytes, rest) = buf.split_at(4);
         *buf = rest;
-        Ok(Self::Regular(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])))
-      }
+        Ok(Self::Regular(u32::from_le_bytes([
+          bytes[0], bytes[1], bytes[2], bytes[3],
+        ])))
+      },
       x => Err(format!("ReducibilityHints::get: invalid {x}")),
     }
   }
@@ -215,18 +224,28 @@ fn put_idx(addr: &Address, idx: &NameIndex, buf: &mut Vec<u8>) {
 
 fn get_idx(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Address, String> {
   let i = get_u64(buf)? as usize;
-  rev.get(i).cloned().ok_or_else(|| format!("invalid name index {i}, max {}", rev.len()))
+  rev
+    .get(i)
+    .cloned()
+    .ok_or_else(|| format!("invalid name index {i}, max {}", rev.len()))
 }
 
 fn put_idx_vec(addrs: &[Address], idx: &NameIndex, buf: &mut Vec<u8>) {
   put_vec_len(addrs.len(), buf);
-  for a in addrs { put_idx(a, idx, buf); }
+  for a in addrs {
+    put_idx(a, idx, buf);
+  }
 }
 
-fn get_idx_vec(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Vec<Address>, String> {
+fn get_idx_vec(
+  buf: &mut &[u8],
+  rev: &NameReverseIndex,
+) -> Result<Vec<Address>, String> {
   let len = get_vec_len(buf)?;
   let mut v = Vec::with_capacity(len);
-  for _ in 0..len { v.push(get_idx(buf, rev)?); }
+  for _ in 0..len {
+    v.push(get_idx(buf, rev)?);
+  }
   Ok(v)
 }
 
@@ -237,16 +256,37 @@ fn get_idx_vec(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Vec<Address>, 
 impl DataValue {
   pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) {
     match self {
-      Self::OfString(a) => { put_u8(0, buf); put_idx(a, idx, buf); }
-      Self::OfBool(b) => { put_u8(1, buf); put_bool(*b, buf); }
-      Self::OfName(a) => { put_u8(2, buf); put_idx(a, idx, buf); }
-      Self::OfNat(a) => { put_u8(3, buf); put_idx(a, idx, buf); }
-      Self::OfInt(a) => { put_u8(4, buf); put_idx(a, idx, buf); }
-      Self::OfSyntax(a) => { put_u8(5, buf); put_idx(a, idx, buf); }
+      Self::OfString(a) => {
+        put_u8(0, buf);
+        put_idx(a, idx, buf);
+      },
+      Self::OfBool(b) => {
+        put_u8(1, buf);
+        put_bool(*b, buf);
+      },
+      Self::OfName(a) => {
+        put_u8(2, buf);
+        put_idx(a, idx, buf);
+      },
+      Self::OfNat(a) => {
+        put_u8(3, buf);
+        put_idx(a, idx, buf);
+      },
+      Self::OfInt(a) => {
+        put_u8(4, buf);
+        put_idx(a, idx, buf);
+      },
+      Self::OfSyntax(a) => {
+        put_u8(5, buf);
+        put_idx(a, idx, buf);
+      },
     }
   }
 
-  pub fn get_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Self, String> {
+  pub fn get_indexed(
+    buf: &mut &[u8],
+    rev: &NameReverseIndex,
+  ) -> Result<Self, String> {
     match get_u8(buf)? {
       0 => Ok(Self::OfString(get_idx(buf, rev)?)),
       1 => Ok(Self::OfBool(get_bool(buf)?)),
@@ -271,7 +311,10 @@ fn put_kvmap_indexed(kvmap: &KVMap, idx: &NameIndex, buf: &mut Vec<u8>) {
   }
 }
 
-fn get_kvmap_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<KVMap, String> {
+fn get_kvmap_indexed(
+  buf: &mut &[u8],
+  rev: &NameReverseIndex,
+) -> Result<KVMap, String> {
   let len = get_vec_len(buf)?;
   let mut kvmap = Vec::with_capacity(len);
   for _ in 0..len {
@@ -280,15 +323,26 @@ fn get_kvmap_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<KVMap, S
   Ok(kvmap)
 }
 
-fn put_mdata_stack_indexed(mdata: &[KVMap], idx: &NameIndex, buf: &mut Vec<u8>) {
+fn put_mdata_stack_indexed(
+  mdata: &[KVMap],
+  idx: &NameIndex,
+  buf: &mut Vec<u8>,
+) {
   put_vec_len(mdata.len(), buf);
-  for kv in mdata { put_kvmap_indexed(kv, idx, buf); }
+  for kv in mdata {
+    put_kvmap_indexed(kv, idx, buf);
+  }
 }
 
-fn get_mdata_stack_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Vec<KVMap>, String> {
+fn get_mdata_stack_indexed(
+  buf: &mut &[u8],
+  rev: &NameReverseIndex,
+) -> Result<Vec<KVMap>, String> {
   let len = get_vec_len(buf)?;
   let mut mdata = Vec::with_capacity(len);
-  for _ in 0..len { mdata.push(get_kvmap_indexed(buf, rev)?); }
+  for _ in 0..len {
+    mdata.push(get_kvmap_indexed(buf, rev)?);
+  }
   Ok(mdata)
 }
 
@@ -304,30 +358,33 @@ impl ExprMeta {
         put_idx(name, idx, buf);
         info.put(buf);
         put_mdata_stack_indexed(mdata, idx, buf);
-      }
+      },
       Self::LetBinder { name, mdata } => {
         put_u8(1, buf);
         put_idx(name, idx, buf);
         put_mdata_stack_indexed(mdata, idx, buf);
-      }
+      },
       Self::Ref { name, mdata } => {
         put_u8(2, buf);
         put_idx(name, idx, buf);
         put_mdata_stack_indexed(mdata, idx, buf);
-      }
+      },
       Self::Prj { struct_name, mdata } => {
         put_u8(3, buf);
         put_idx(struct_name, idx, buf);
         put_mdata_stack_indexed(mdata, idx, buf);
-      }
+      },
       Self::Mdata { mdata } => {
         put_u8(4, buf);
         put_mdata_stack_indexed(mdata, idx, buf);
-      }
+      },
     }
   }
 
-  pub fn get_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Self, String> {
+  pub fn get_indexed(
+    buf: &mut &[u8],
+    rev: &NameReverseIndex,
+  ) -> Result<Self, String> {
     match get_u8(buf)? {
       0 => Ok(Self::Binder {
         name: get_idx(buf, rev)?,
@@ -352,7 +409,11 @@ impl ExprMeta {
   }
 }
 
-fn put_expr_metas_indexed(metas: &ExprMetas, idx: &NameIndex, buf: &mut Vec<u8>) {
+fn put_expr_metas_indexed(
+  metas: &ExprMetas,
+  idx: &NameIndex,
+  buf: &mut Vec<u8>,
+) {
   put_vec_len(metas.len(), buf);
   for (i, meta) in metas {
     Tag0::new(*i).put(buf);
@@ -360,7 +421,10 @@ fn put_expr_metas_indexed(metas: &ExprMetas, idx: &NameIndex, buf: &mut Vec<u8>)
   }
 }
 
-fn get_expr_metas_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<ExprMetas, String> {
+fn get_expr_metas_indexed(
+  buf: &mut &[u8],
+  rev: &NameReverseIndex,
+) -> Result<ExprMetas, String> {
   let len = get_vec_len(buf)?;
   let mut metas = HashMap::with_capacity(len);
   for _ in 0..len {
@@ -382,7 +446,10 @@ impl CtorMeta {
     put_expr_metas_indexed(&self.type_meta, idx, buf);
   }
 
-  pub fn get_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Self, String> {
+  pub fn get_indexed(
+    buf: &mut &[u8],
+    rev: &NameReverseIndex,
+  ) -> Result<Self, String> {
     Ok(CtorMeta {
       name: get_idx(buf, rev)?,
       lvls: get_idx_vec(buf, rev)?,
@@ -391,15 +458,26 @@ impl CtorMeta {
   }
 }
 
-fn put_ctor_metas_indexed(metas: &[CtorMeta], idx: &NameIndex, buf: &mut Vec<u8>) {
+fn put_ctor_metas_indexed(
+  metas: &[CtorMeta],
+  idx: &NameIndex,
+  buf: &mut Vec<u8>,
+) {
   put_vec_len(metas.len(), buf);
-  for meta in metas { meta.put_indexed(idx, buf); }
+  for meta in metas {
+    meta.put_indexed(idx, buf);
+  }
 }
 
-fn get_ctor_metas_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Vec<CtorMeta>, String> {
+fn get_ctor_metas_indexed(
+  buf: &mut &[u8],
+  rev: &NameReverseIndex,
+) -> Result<Vec<CtorMeta>, String> {
   let len = get_vec_len(buf)?;
   let mut metas = Vec::with_capacity(len);
-  for _ in 0..len { metas.push(CtorMeta::get_indexed(buf, rev)?); }
+  for _ in 0..len {
+    metas.push(CtorMeta::get_indexed(buf, rev)?);
+  }
   Ok(metas)
 }
 
@@ -420,19 +498,19 @@ impl ConstantMeta {
         put_idx_vec(ctx, idx, buf);
         put_expr_metas_indexed(type_meta, idx, buf);
         put_expr_metas_indexed(value_meta, idx, buf);
-      }
+      },
       Self::Axio { name, lvls, type_meta } => {
         put_u8(1, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
         put_expr_metas_indexed(type_meta, idx, buf);
-      }
+      },
       Self::Quot { name, lvls, type_meta } => {
         put_u8(2, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
         put_expr_metas_indexed(type_meta, idx, buf);
-      }
+      },
       Self::Indc { name, lvls, ctors, ctor_metas, all, ctx, type_meta } => {
         put_u8(3, buf);
         put_idx(name, idx, buf);
@@ -442,14 +520,14 @@ impl ConstantMeta {
         put_idx_vec(all, idx, buf);
         put_idx_vec(ctx, idx, buf);
         put_expr_metas_indexed(type_meta, idx, buf);
-      }
+      },
       Self::Ctor { name, lvls, induct, type_meta } => {
         put_u8(4, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
         put_idx(induct, idx, buf);
         put_expr_metas_indexed(type_meta, idx, buf);
-      }
+      },
       Self::Rec { name, lvls, rules, all, ctx, type_meta } => {
         put_u8(5, buf);
         put_idx(name, idx, buf);
@@ -458,11 +536,14 @@ impl ConstantMeta {
         put_idx_vec(all, idx, buf);
         put_idx_vec(ctx, idx, buf);
         put_expr_metas_indexed(type_meta, idx, buf);
-      }
+      },
     }
   }
 
-  pub fn get_indexed(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Self, String> {
+  pub fn get_indexed(
+    buf: &mut &[u8],
+    rev: &NameReverseIndex,
+  ) -> Result<Self, String> {
     match get_u8(buf)? {
       255 => Ok(Self::Empty),
       0 => Ok(Self::Def {
@@ -544,7 +625,12 @@ mod tests {
 
   #[test]
   fn test_binder_info_roundtrip() {
-    for bi in [BinderInfo::Default, BinderInfo::Implicit, BinderInfo::StrictImplicit, BinderInfo::InstImplicit] {
+    for bi in [
+      BinderInfo::Default,
+      BinderInfo::Implicit,
+      BinderInfo::StrictImplicit,
+      BinderInfo::InstImplicit,
+    ] {
       let mut buf = Vec::new();
       bi.put(&mut buf);
       assert_eq!(BinderInfo::get_ser(&mut buf.as_slice()).unwrap(), bi);
@@ -553,7 +639,11 @@ mod tests {
 
   #[test]
   fn test_reducibility_hints_roundtrip() {
-    for h in [ReducibilityHints::Opaque, ReducibilityHints::Abbrev, ReducibilityHints::Regular(42)] {
+    for h in [
+      ReducibilityHints::Opaque,
+      ReducibilityHints::Abbrev,
+      ReducibilityHints::Regular(42),
+    ] {
       let mut buf = Vec::new();
       h.put(&mut buf);
       assert_eq!(ReducibilityHints::get_ser(&mut buf.as_slice()).unwrap(), h);
@@ -574,7 +664,8 @@ mod tests {
     idx.insert(addr3.clone(), 2);
 
     // Build reverse index
-    let rev: NameReverseIndex = vec![addr1.clone(), addr2.clone(), addr3.clone()];
+    let rev: NameReverseIndex =
+      vec![addr1.clone(), addr2.clone(), addr3.clone()];
 
     // Test Def variant
     let meta = ConstantMeta::Def {
@@ -589,7 +680,8 @@ mod tests {
 
     let mut buf = Vec::new();
     meta.put_indexed(&idx, &mut buf);
-    let recovered = ConstantMeta::get_indexed(&mut buf.as_slice(), &rev).unwrap();
+    let recovered =
+      ConstantMeta::get_indexed(&mut buf.as_slice(), &rev).unwrap();
     assert_eq!(meta, recovered);
   }
 }

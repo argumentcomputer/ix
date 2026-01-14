@@ -3,6 +3,9 @@
 //! This module compiles Lean constants to alpha-invariant Ixon representations
 //! with sharing analysis for deduplication within constants
 
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_precision_loss)]
+
 use dashmap::{DashMap, DashSet};
 use rustc_hash::FxHashMap;
 use std::{
@@ -231,10 +234,10 @@ pub fn compile_expr(
   enum Frame<'a> {
     Compile(&'a LeanExpr),
     BuildApp,
-    BuildLam(u64, Address, BinderInfo),  // index, name_addr, info
-    BuildAll(u64, Address, BinderInfo),  // index, name_addr, info
-    BuildLet(u64, Address, bool),        // index, name_addr, non_dep
-    BuildProj(u64, u64, u64, Address),   // index, type_ref_idx, field_idx, struct_name_addr
+    BuildLam(u64, Address, BinderInfo), // index, name_addr, info
+    BuildAll(u64, Address, BinderInfo), // index, name_addr, info
+    BuildLet(u64, Address, bool),       // index, name_addr, non_dep
+    BuildProj(u64, u64, u64, Address), // index, type_ref_idx, field_idx, struct_name_addr
     BuildMdata,
     Cache(&'a LeanExpr),
     PopMdata,
@@ -275,7 +278,8 @@ pub fn compile_expr(
           },
 
           ExprData::Const(name, levels, _) => {
-            let univ_indices = compile_univ_indices(levels, univ_params, cache)?;
+            let univ_indices =
+              compile_univ_indices(levels, univ_params, cache)?;
             let name_addr = compile_name(name, stt);
 
             // Check if this is a mutual reference
@@ -284,10 +288,9 @@ pub fn compile_expr(
               results.push(Expr::rec(idx_u64, univ_indices));
               // Store ref metadata for reconstruction
               let mdata = std::mem::take(&mut cache.mdata_stack);
-              cache.expr_metas.insert(node_index, ExprMeta::Ref {
-                name: name_addr,
-                mdata,
-              });
+              cache
+                .expr_metas
+                .insert(node_index, ExprMeta::Ref { name: name_addr, mdata });
             } else {
               // External reference - need to look up the address
               let const_addr = stt
@@ -303,10 +306,9 @@ pub fn compile_expr(
               // Store ref metadata
               let mdata = std::mem::take(&mut cache.mdata_stack);
               if !mdata.is_empty() {
-                cache.expr_metas.insert(node_index, ExprMeta::Ref {
-                  name: name_addr,
-                  mdata,
-                });
+                cache
+                  .expr_metas
+                  .insert(node_index, ExprMeta::Ref { name: name_addr, mdata });
               }
             }
           },
@@ -369,7 +371,12 @@ pub fn compile_expr(
             let name_addr = compile_name(type_name, stt);
 
             // Build projection with ref index directly
-            stack.push(Frame::BuildProj(node_index, ref_idx as u64, idx_u64, name_addr));
+            stack.push(Frame::BuildProj(
+              node_index,
+              ref_idx as u64,
+              idx_u64,
+              name_addr,
+            ));
             stack.push(Frame::Compile(struct_val));
           },
 
@@ -378,7 +385,7 @@ pub fn compile_expr(
             let mut pairs = Vec::new();
             for (k, v) in kv {
               let k_addr = compile_name(k, stt);
-              let v_data = compile_data_value(v, stt)?;
+              let v_data = compile_data_value(v, stt);
               pairs.push((k_addr, v_data));
             }
             cache.mdata_stack.push(pairs);
@@ -412,11 +419,9 @@ pub fn compile_expr(
         results.push(Expr::lam(ty, body));
         // Store binder metadata
         let mdata = std::mem::take(&mut cache.mdata_stack);
-        cache.expr_metas.insert(index, ExprMeta::Binder {
-          name: name_addr,
-          info,
-          mdata,
-        });
+        cache
+          .expr_metas
+          .insert(index, ExprMeta::Binder { name: name_addr, info, mdata });
       },
 
       Frame::BuildAll(index, name_addr, info) => {
@@ -425,11 +430,9 @@ pub fn compile_expr(
         results.push(Expr::all(ty, body));
         // Store binder metadata
         let mdata = std::mem::take(&mut cache.mdata_stack);
-        cache.expr_metas.insert(index, ExprMeta::Binder {
-          name: name_addr,
-          info,
-          mdata,
-        });
+        cache
+          .expr_metas
+          .insert(index, ExprMeta::Binder { name: name_addr, info, mdata });
       },
 
       Frame::BuildLet(index, name_addr, non_dep) => {
@@ -439,10 +442,9 @@ pub fn compile_expr(
         results.push(Expr::let_(non_dep, ty, val, body));
         // Store let binder metadata
         let mdata = std::mem::take(&mut cache.mdata_stack);
-        cache.expr_metas.insert(index, ExprMeta::LetBinder {
-          name: name_addr,
-          mdata,
-        });
+        cache
+          .expr_metas
+          .insert(index, ExprMeta::LetBinder { name: name_addr, mdata });
       },
 
       Frame::BuildProj(index, type_ref_idx, field_idx, struct_name_addr) => {
@@ -450,10 +452,10 @@ pub fn compile_expr(
         results.push(Expr::prj(type_ref_idx, field_idx, struct_val));
         // Store projection metadata
         let mdata = std::mem::take(&mut cache.mdata_stack);
-        cache.expr_metas.insert(index, ExprMeta::Prj {
-          struct_name: struct_name_addr,
-          mdata,
-        });
+        cache.expr_metas.insert(
+          index,
+          ExprMeta::Prj { struct_name: struct_name_addr, mdata },
+        );
       },
 
       Frame::BuildMdata => {
@@ -484,15 +486,12 @@ pub fn compile_expr(
 }
 
 /// Compile a Lean DataValue to Ixon DataValue.
-fn compile_data_value(
-  dv: &LeanDataValue,
-  stt: &CompileState,
-) -> Result<DataValue, CompileError> {
+fn compile_data_value(dv: &LeanDataValue, stt: &CompileState) -> DataValue {
   match dv {
-    LeanDataValue::OfString(s) => Ok(DataValue::OfString(store_string(s, stt))),
-    LeanDataValue::OfBool(b) => Ok(DataValue::OfBool(*b)),
-    LeanDataValue::OfName(n) => Ok(DataValue::OfName(compile_name(n, stt))),
-    LeanDataValue::OfNat(n) => Ok(DataValue::OfNat(store_nat(n, stt))),
+    LeanDataValue::OfString(s) => DataValue::OfString(store_string(s, stt)),
+    LeanDataValue::OfBool(b) => DataValue::OfBool(*b),
+    LeanDataValue::OfName(n) => DataValue::OfName(compile_name(n, stt)),
+    LeanDataValue::OfNat(n) => DataValue::OfNat(store_nat(n, stt)),
     LeanDataValue::OfInt(i) => {
       // Serialize Int and store as blob
       let mut bytes = Vec::new();
@@ -506,12 +505,12 @@ fn compile_data_value(
           bytes.extend_from_slice(&n.to_le_bytes());
         },
       }
-      Ok(DataValue::OfInt(stt.env.store_blob(bytes)))
+      DataValue::OfInt(stt.env.store_blob(bytes))
     },
     LeanDataValue::OfSyntax(syn) => {
       // Serialize syntax and store as blob
       let bytes = serialize_syntax(syn, stt);
-      Ok(DataValue::OfSyntax(stt.env.store_blob(bytes)))
+      DataValue::OfSyntax(stt.env.store_blob(bytes))
     },
   }
 }
@@ -633,12 +632,18 @@ fn apply_sharing(exprs: Vec<Arc<Expr>>) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
     return (exprs, Vec::new());
   }
 
-  build_sharing_vec(exprs, &shared_hashes, &ptr_to_hash, &info_map)
+  build_sharing_vec(&exprs, &shared_hashes, &ptr_to_hash, &info_map)
 }
 
 /// Apply sharing to a Definition and return a Constant.
-fn apply_sharing_to_definition(def: Definition, refs: Vec<Address>, univs: Vec<Arc<Univ>>) -> Constant {
-  let (rewritten, sharing) = apply_sharing(vec![def.typ.clone(), def.value.clone()]);
+#[allow(clippy::needless_pass_by_value)]
+fn apply_sharing_to_definition(
+  def: Definition,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Constant {
+  let (rewritten, sharing) =
+    apply_sharing(vec![def.typ.clone(), def.value.clone()]);
   let def = Definition {
     kind: def.kind,
     safety: def.safety,
@@ -650,29 +655,37 @@ fn apply_sharing_to_definition(def: Definition, refs: Vec<Address>, univs: Vec<A
 }
 
 /// Apply sharing to an Axiom and return a Constant.
-fn apply_sharing_to_axiom(ax: Axiom, refs: Vec<Address>, univs: Vec<Arc<Univ>>) -> Constant {
+#[allow(clippy::needless_pass_by_value)]
+fn apply_sharing_to_axiom(
+  ax: Axiom,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Constant {
   let (rewritten, sharing) = apply_sharing(vec![ax.typ.clone()]);
-  let ax = Axiom {
-    is_unsafe: ax.is_unsafe,
-    lvls: ax.lvls,
-    typ: rewritten[0].clone(),
-  };
+  let ax =
+    Axiom { is_unsafe: ax.is_unsafe, lvls: ax.lvls, typ: rewritten[0].clone() };
   Constant::with_tables(ConstantInfo::Axio(ax), sharing, refs, univs)
 }
 
 /// Apply sharing to a Quotient and return a Constant.
-fn apply_sharing_to_quotient(quot: Quotient, refs: Vec<Address>, univs: Vec<Arc<Univ>>) -> Constant {
+#[allow(clippy::needless_pass_by_value)]
+fn apply_sharing_to_quotient(
+  quot: Quotient,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Constant {
   let (rewritten, sharing) = apply_sharing(vec![quot.typ.clone()]);
-  let quot = Quotient {
-    kind: quot.kind,
-    lvls: quot.lvls,
-    typ: rewritten[0].clone(),
-  };
+  let quot =
+    Quotient { kind: quot.kind, lvls: quot.lvls, typ: rewritten[0].clone() };
   Constant::with_tables(ConstantInfo::Quot(quot), sharing, refs, univs)
 }
 
 /// Apply sharing to a Recursor and return a Constant.
-fn apply_sharing_to_recursor(rec: Recursor, refs: Vec<Address>, univs: Vec<Arc<Univ>>) -> Constant {
+fn apply_sharing_to_recursor(
+  rec: Recursor,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Constant {
   // Collect all expressions: typ + all rule rhs
   let mut exprs = vec![rec.typ.clone()];
   for rule in &rec.rules {
@@ -681,7 +694,8 @@ fn apply_sharing_to_recursor(rec: Recursor, refs: Vec<Address>, univs: Vec<Arc<U
 
   let (rewritten, sharing) = apply_sharing(exprs);
   let typ = rewritten[0].clone();
-  let rules: Vec<RecursorRule> = rec.rules
+  let rules: Vec<RecursorRule> = rec
+    .rules
     .into_iter()
     .zip(rewritten.into_iter().skip(1))
     .map(|(r, rhs)| RecursorRule { fields: r.fields, rhs })
@@ -702,7 +716,11 @@ fn apply_sharing_to_recursor(rec: Recursor, refs: Vec<Address>, univs: Vec<Arc<U
 }
 
 /// Apply sharing to a mutual block and return a Constant.
-fn apply_sharing_to_mutual_block(mut_consts: Vec<IxonMutConst>, refs: Vec<Address>, univs: Vec<Arc<Univ>>) -> Constant {
+fn apply_sharing_to_mutual_block(
+  mut_consts: Vec<IxonMutConst>,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Constant {
   // Collect all expressions from all constants in the block
   let mut all_exprs: Vec<Arc<Expr>> = Vec::new();
   let mut layout: Vec<(MutConstKind, Vec<usize>)> = Vec::new();
@@ -714,7 +732,7 @@ fn apply_sharing_to_mutual_block(mut_consts: Vec<IxonMutConst>, refs: Vec<Addres
         all_exprs.push(def.typ.clone());
         all_exprs.push(def.value.clone());
         (MutConstKind::Defn, vec![start, start + 1])
-      }
+      },
       IxonMutConst::Indc(ind) => {
         let start = all_exprs.len();
         all_exprs.push(ind.typ.clone());
@@ -724,7 +742,7 @@ fn apply_sharing_to_mutual_block(mut_consts: Vec<IxonMutConst>, refs: Vec<Addres
           all_exprs.push(ctor.typ.clone());
         }
         (MutConstKind::Indc, indices)
-      }
+      },
       IxonMutConst::Recr(rec) => {
         let start = all_exprs.len();
         all_exprs.push(rec.typ.clone());
@@ -734,7 +752,7 @@ fn apply_sharing_to_mutual_block(mut_consts: Vec<IxonMutConst>, refs: Vec<Addres
           all_exprs.push(rule.rhs.clone());
         }
         (MutConstKind::Recr, indices)
-      }
+      },
     };
     layout.push((kind, indices));
   }
@@ -755,9 +773,11 @@ fn apply_sharing_to_mutual_block(mut_consts: Vec<IxonMutConst>, refs: Vec<Addres
           typ: rewritten[indices[0]].clone(),
           value: rewritten[indices[1]].clone(),
         })
-      }
+      },
       (MutConstKind::Indc, IxonMutConst::Indc(ind)) => {
-        let new_ctors: Vec<Constructor> = ind.ctors.into_iter()
+        let new_ctors: Vec<Constructor> = ind
+          .ctors
+          .into_iter()
           .enumerate()
           .map(|(ci, ctor)| Constructor {
             is_unsafe: ctor.is_unsafe,
@@ -779,9 +799,11 @@ fn apply_sharing_to_mutual_block(mut_consts: Vec<IxonMutConst>, refs: Vec<Addres
           typ: rewritten[indices[0]].clone(),
           ctors: new_ctors,
         })
-      }
+      },
       (MutConstKind::Recr, IxonMutConst::Recr(rec)) => {
-        let new_rules: Vec<RecursorRule> = rec.rules.into_iter()
+        let new_rules: Vec<RecursorRule> = rec
+          .rules
+          .into_iter()
           .enumerate()
           .map(|(ri, rule)| RecursorRule {
             fields: rule.fields,
@@ -799,7 +821,7 @@ fn apply_sharing_to_mutual_block(mut_consts: Vec<IxonMutConst>, refs: Vec<Addres
           typ: rewritten[indices[0]].clone(),
           rules: new_rules,
         })
-      }
+      },
       _ => unreachable!("layout mismatch"),
     };
     new_consts.push(new_mc);
@@ -1083,17 +1105,10 @@ fn compile_axiom(
   let lvl_addrs: Vec<Address> =
     univ_params.iter().map(|n| compile_name(n, stt)).collect();
 
-  let data = Axiom {
-    is_unsafe: val.is_unsafe,
-    lvls: univ_params.len() as u64,
-    typ,
-  };
+  let data =
+    Axiom { is_unsafe: val.is_unsafe, lvls: univ_params.len() as u64, typ };
 
-  let meta = ConstantMeta::Axio {
-    name: name_addr,
-    lvls: lvl_addrs,
-    type_meta,
-  };
+  let meta = ConstantMeta::Axio { name: name_addr, lvls: lvl_addrs, type_meta };
 
   Ok((data, meta))
 }
@@ -1117,11 +1132,7 @@ fn compile_quotient(
 
   let data = Quotient { kind: val.kind, lvls: univ_params.len() as u64, typ };
 
-  let meta = ConstantMeta::Quot {
-    name: name_addr,
-    lvls: lvl_addrs,
-    type_meta,
-  };
+  let meta = ConstantMeta::Quot { name: name_addr, lvls: lvl_addrs, type_meta };
 
   Ok((data, meta))
 }
@@ -1863,7 +1874,9 @@ fn compile_mutual(
       return Err(CompileError::MissingConstant { name: n.pretty() });
     };
     let mut_const = match const_info {
-      LeanConstantInfo::InductInfo(val) => MutConst::Indc(mk_indc(val, lean_env)?),
+      LeanConstantInfo::InductInfo(val) => {
+        MutConst::Indc(mk_indc(val, lean_env)?)
+      },
       LeanConstantInfo::DefnInfo(val) => MutConst::Defn(Def::mk_defn(val)),
       LeanConstantInfo::OpaqueInfo(val) => MutConst::Defn(Def::mk_opaq(val)),
       LeanConstantInfo::ThmInfo(val) => MutConst::Defn(Def::mk_theo(val)),
@@ -1907,7 +1920,8 @@ fn compile_mutual(
   // Create mutual block with sharing
   let refs: Vec<Address> = cache.refs.iter().cloned().collect();
   let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-  let (block_constant, block_addr) = compile_mutual_block(ixon_mutuals, refs, univs);
+  let (block_constant, block_addr) =
+    compile_mutual_block(ixon_mutuals, refs, univs);
   stt.env.store_const(block_addr.clone(), block_constant);
   stt.blocks.insert(block_addr.clone());
 
@@ -1920,12 +1934,17 @@ fn compile_mutual(
 
       let proj = match cnst {
         MutConst::Defn(_) => {
-          Constant::new(ConstantInfo::DPrj(DefinitionProj { idx, block: block_addr.clone() }))
+          Constant::new(ConstantInfo::DPrj(DefinitionProj {
+            idx,
+            block: block_addr.clone(),
+          }))
         },
         MutConst::Indc(ind) => {
           // Register inductive projection
-          let indc_proj =
-            Constant::new(ConstantInfo::IPrj(InductiveProj { idx, block: block_addr.clone() }));
+          let indc_proj = Constant::new(ConstantInfo::IPrj(InductiveProj {
+            idx,
+            block: block_addr.clone(),
+          }));
           let mut proj_bytes = Vec::new();
           indc_proj.put(&mut proj_bytes);
           let proj_addr = Address::hash(&proj_bytes);
@@ -1940,11 +1959,12 @@ fn compile_mutual(
           for (cidx, ctor) in ind.ctors.iter().enumerate() {
             let ctor_meta =
               all_metas.get(&ctor.cnst.name).cloned().unwrap_or_default();
-            let ctor_proj = Constant::new(ConstantInfo::CPrj(ConstructorProj {
-              idx,
-              cidx: cidx as u64,
-              block: block_addr.clone(),
-            }));
+            let ctor_proj =
+              Constant::new(ConstantInfo::CPrj(ConstructorProj {
+                idx,
+                cidx: cidx as u64,
+                block: block_addr.clone(),
+              }));
             let mut ctor_bytes = Vec::new();
             ctor_proj.put(&mut ctor_bytes);
             let ctor_addr = Address::hash(&ctor_bytes);
@@ -1958,9 +1978,10 @@ fn compile_mutual(
 
           continue;
         },
-        MutConst::Recr(_) => {
-          Constant::new(ConstantInfo::RPrj(RecursorProj { idx, block: block_addr.clone() }))
-        },
+        MutConst::Recr(_) => Constant::new(ConstantInfo::RPrj(RecursorProj {
+          idx,
+          block: block_addr.clone(),
+        })),
       };
 
       let mut proj_bytes = Vec::new();
@@ -2117,8 +2138,12 @@ pub fn compile_env(
               // Check for slow blocks
               let elapsed = block_start.elapsed();
               if elapsed.as_secs_f32() > 1.0 {
-                eprintln!("Slow block {:?} ({} consts): {:.2}s",
-                  lo.pretty(), all.len(), elapsed.as_secs_f32());
+                eprintln!(
+                  "Slow block {:?} ({} consts): {:.2}s",
+                  lo.pretty(),
+                  all.len(),
+                  elapsed.as_secs_f32()
+                );
               }
 
               // Collect newly-ready blocks
@@ -2176,7 +2201,7 @@ pub fn compile_env(
                 return;
               }
               // Brief sleep to avoid busy-waiting
-              std::thread::sleep(std::time::Duration::from_micros(100));
+              thread::sleep(std::time::Duration::from_micros(100));
             },
           }
         }
@@ -2332,7 +2357,10 @@ mod tests {
     match result.as_ref() {
       Expr::Sort(idx) => {
         assert_eq!(*idx, 0);
-        assert!(matches!(cache.univs.get_index(0).unwrap().as_ref(), Univ::Zero));
+        assert!(matches!(
+          cache.univs.get_index(0).unwrap().as_ref(),
+          Univ::Zero
+        ));
       },
       _ => panic!("expected Sort"),
     }
@@ -2370,7 +2398,10 @@ mod tests {
         match ty.as_ref() {
           Expr::Sort(idx) => {
             assert_eq!(*idx, 0);
-            assert!(matches!(cache.univs.get_index(0).unwrap().as_ref(), Univ::Zero));
+            assert!(matches!(
+              cache.univs.get_index(0).unwrap().as_ref(),
+              Univ::Zero
+            ));
           },
           _ => panic!("expected Sort for ty"),
         }
@@ -2417,7 +2448,7 @@ mod tests {
 
   #[test]
   fn test_compile_axiom() {
-    use crate::ix::env::{AxiomVal, ConstantInfo, ConstantVal, Env as LeanEnv};
+    use crate::ix::env::{AxiomVal, ConstantVal};
 
     // Create a simple axiom: axiom myAxiom : Type
     let name = Name::str(Name::anon(), "myAxiom".to_string());
@@ -2445,8 +2476,7 @@ mod tests {
   #[test]
   fn test_compile_simple_def() {
     use crate::ix::env::{
-      ConstantInfo, ConstantVal, DefinitionSafety, DefinitionVal,
-      Env as LeanEnv, ReducibilityHints,
+      ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
     };
 
     // Create a simple definition: def myDef : Nat := 42
@@ -2545,7 +2575,7 @@ mod tests {
 
   #[test]
   fn test_compile_env_single_axiom() {
-    use crate::ix::env::{AxiomVal, ConstantInfo, ConstantVal, Env as LeanEnv};
+    use crate::ix::env::{AxiomVal, ConstantVal};
 
     // Create a minimal environment with just one axiom
     let name = Name::str(Name::anon(), "myAxiom".to_string());
@@ -2567,7 +2597,7 @@ mod tests {
 
   #[test]
   fn test_compile_env_two_independent_axioms() {
-    use crate::ix::env::{AxiomVal, ConstantInfo, ConstantVal, Env as LeanEnv};
+    use crate::ix::env::{AxiomVal, ConstantVal};
 
     let name1 = Name::str(Name::anon(), "axiom1".to_string());
     let name2 = Name::str(Name::anon(), "axiom2".to_string());
@@ -2612,8 +2642,7 @@ mod tests {
   #[test]
   fn test_compile_env_def_referencing_axiom() {
     use crate::ix::env::{
-      AxiomVal, ConstantInfo, ConstantVal, DefinitionSafety, DefinitionVal,
-      Env as LeanEnv, ReducibilityHints,
+      AxiomVal, ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
     };
 
     let axiom_name = Name::str(Name::anon(), "myType".to_string());
@@ -2685,7 +2714,8 @@ mod tests {
       value: Expr::var(1),
     });
 
-    let (constant, addr) = compile_mutual_block(vec![def1, def2], vec![], vec![]);
+    let (constant, addr) =
+      compile_mutual_block(vec![def1, def2], vec![], vec![]);
 
     // Serialize
     let mut buf = Vec::new();
@@ -2758,7 +2788,12 @@ mod tests {
       value: rewritten[1].clone(),
     };
 
-    let constant = Constant::with_tables(ConstantInfo::Defn(def), sharing.clone(), vec![], vec![]);
+    let constant = Constant::with_tables(
+      ConstantInfo::Defn(def),
+      sharing.clone(),
+      vec![],
+      vec![],
+    );
 
     let mut buf = Vec::new();
     constant.put(&mut buf);
@@ -2788,7 +2823,12 @@ mod tests {
     );
 
     let axiom = Axiom { is_unsafe: false, lvls: 0, typ: rewritten[0].clone() };
-    let constant = Constant::with_tables(ConstantInfo::Axio(axiom), sharing.clone(), vec![], vec![]);
+    let constant = Constant::with_tables(
+      ConstantInfo::Axio(axiom),
+      sharing.clone(),
+      vec![],
+      vec![],
+    );
 
     let mut buf = Vec::new();
     constant.put(&mut buf);
@@ -2845,7 +2885,12 @@ mod tests {
         .collect(),
     };
 
-    let constant = Constant::with_tables(ConstantInfo::Recr(rec), sharing.clone(), vec![], vec![]);
+    let constant = Constant::with_tables(
+      ConstantInfo::Recr(rec),
+      sharing.clone(),
+      vec![],
+      vec![],
+    );
 
     let mut buf = Vec::new();
     constant.put(&mut buf);
@@ -2939,7 +2984,7 @@ mod tests {
 
     assert_eq!(sharing.len(), recovered.sharing.len());
     if let ConstantInfo::Muts(mutuals) = &recovered.info {
-      if let Some(IxonMutConst::Indc(ind2)) = mutuals.get(0) {
+      if let Some(IxonMutConst::Indc(ind2)) = mutuals.first() {
         assert_eq!(2, ind2.ctors.len());
       } else {
         panic!("Expected Inductive in Muts");
@@ -2952,7 +2997,7 @@ mod tests {
   #[test]
   fn test_no_sharing_when_not_repeated() {
     // When a subterm only appears once, it shouldn't be shared
-    let sort0 = Expr::sort(0);
+    let _sort0 = Expr::sort(0);
     let var0 = Expr::var(0);
     let var1 = Expr::var(1);
     let app = Expr::app(var0, var1);
@@ -2972,7 +3017,7 @@ mod tests {
   #[test]
   fn test_roundtrip_axiom() {
     use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{AxiomVal, ConstantInfo, ConstantVal, Env as LeanEnv};
+    use crate::ix::env::{AxiomVal, ConstantVal};
 
     // Create an axiom: axiom myAxiom : Type
     let name = Name::str(Name::anon(), "myAxiom".to_string());
@@ -2991,13 +3036,14 @@ mod tests {
     let dstt = decompile_env(&stt).expect("decompile_env failed");
 
     // Check roundtrip
-    let recovered = dstt.env.get(&name).expect("name not found in decompiled env");
+    let recovered =
+      dstt.env.get(&name).expect("name not found in decompiled env");
     match &*recovered {
       LeanConstantInfo::AxiomInfo(ax) => {
         assert_eq!(ax.cnst.name, axiom.cnst.name);
         assert_eq!(ax.is_unsafe, axiom.is_unsafe);
         assert_eq!(ax.cnst.level_params.len(), axiom.cnst.level_params.len());
-      }
+      },
       _ => panic!("Expected AxiomInfo"),
     }
   }
@@ -3011,7 +3057,10 @@ mod tests {
     let name = Name::str(Name::anon(), "myAxiom".to_string());
     let u = Name::str(Name::anon(), "u".to_string());
     let v = Name::str(Name::anon(), "v".to_string());
-    let typ = LeanExpr::sort(Level::max(Level::param(u.clone()), Level::param(v.clone())));
+    let typ = LeanExpr::sort(Level::max(
+      Level::param(u.clone()),
+      Level::param(v.clone()),
+    ));
     let cnst = ConstantVal {
       name: name.clone(),
       level_params: vec![u.clone(), v.clone()],
@@ -3037,7 +3086,7 @@ mod tests {
         assert_eq!(ax.cnst.level_params.len(), 2);
         assert_eq!(ax.cnst.level_params[0], u);
         assert_eq!(ax.cnst.level_params[1], v);
-      }
+      },
       _ => panic!("Expected AxiomInfo"),
     }
   }
@@ -3046,8 +3095,7 @@ mod tests {
   fn test_roundtrip_definition() {
     use crate::ix::decompile::decompile_env;
     use crate::ix::env::{
-      ConstantInfo, ConstantVal, DefinitionSafety, DefinitionVal, Env as LeanEnv,
-      ReducibilityHints,
+      ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
     };
 
     // Create a definition: def id : Type -> Type := fun x => x
@@ -3091,7 +3139,7 @@ mod tests {
         assert_eq!(d.hints, def.hints);
         assert_eq!(d.safety, def.safety);
         assert_eq!(d.all.len(), def.all.len());
-      }
+      },
       _ => panic!("Expected DefnInfo"),
     }
   }
@@ -3100,8 +3148,8 @@ mod tests {
   fn test_roundtrip_def_referencing_axiom() {
     use crate::ix::decompile::decompile_env;
     use crate::ix::env::{
-      AxiomVal, ConstantVal, DefinitionSafety, DefinitionVal,
-      Env as LeanEnv, ReducibilityHints,
+      AxiomVal, ConstantVal, DefinitionSafety, DefinitionVal, Env as LeanEnv,
+      ReducibilityHints,
     };
 
     // Create axiom A : Type and def B : A := A
@@ -3148,7 +3196,7 @@ mod tests {
     match &*dstt.env.get(&def_name).unwrap() {
       LeanConstantInfo::DefnInfo(d) => {
         assert_eq!(d.cnst.name, def_name);
-      }
+      },
       _ => panic!("Expected DefnInfo"),
     }
   }
@@ -3201,7 +3249,8 @@ mod tests {
     };
 
     let mut lean_env = LeanEnv::default();
-    lean_env.insert(quot_name.clone(), LeanConstantInfo::QuotInfo(quot.clone()));
+    lean_env
+      .insert(quot_name.clone(), LeanConstantInfo::QuotInfo(quot.clone()));
     let lean_env = Arc::new(lean_env);
 
     // Compile
@@ -3217,7 +3266,7 @@ mod tests {
         assert_eq!(q.cnst.name, quot_name);
         assert_eq!(q.kind, QuotKind::Type);
         assert_eq!(q.cnst.level_params.len(), 1);
-      }
+      },
       _ => panic!("Expected QuotInfo"),
     }
   }
@@ -3258,7 +3307,7 @@ mod tests {
       LeanConstantInfo::ThmInfo(t) => {
         assert_eq!(t.cnst.name, name);
         assert_eq!(t.all.len(), 1);
-      }
+      },
       _ => panic!("Expected ThmInfo"),
     }
   }
@@ -3298,9 +3347,9 @@ mod tests {
     match &*recovered {
       LeanConstantInfo::OpaqueInfo(o) => {
         assert_eq!(o.cnst.name, name);
-        assert_eq!(o.is_unsafe, false);
+        assert!(!o.is_unsafe);
         assert_eq!(o.all.len(), 1);
-      }
+      },
       _ => panic!("Expected OpaqueInfo"),
     }
   }
@@ -3309,8 +3358,8 @@ mod tests {
   fn test_roundtrip_multiple_constants() {
     use crate::ix::decompile::decompile_env;
     use crate::ix::env::{
-      AxiomVal, ConstantVal, DefinitionSafety, DefinitionVal,
-      Env as LeanEnv, ReducibilityHints, TheoremVal,
+      AxiomVal, ConstantVal, DefinitionSafety, DefinitionVal, Env as LeanEnv,
+      ReducibilityHints, TheoremVal,
     };
 
     // Create multiple constants of different types
@@ -3366,9 +3415,18 @@ mod tests {
     let dstt = decompile_env(&stt).expect("decompile_env failed");
 
     // Check all constants roundtrip
-    assert!(matches!(&*dstt.env.get(&axiom_name).unwrap(), LeanConstantInfo::AxiomInfo(_)));
-    assert!(matches!(&*dstt.env.get(&def_name).unwrap(), LeanConstantInfo::DefnInfo(_)));
-    assert!(matches!(&*dstt.env.get(&thm_name).unwrap(), LeanConstantInfo::ThmInfo(_)));
+    assert!(matches!(
+      &*dstt.env.get(&axiom_name).unwrap(),
+      LeanConstantInfo::AxiomInfo(_)
+    ));
+    assert!(matches!(
+      &*dstt.env.get(&def_name).unwrap(),
+      LeanConstantInfo::DefnInfo(_)
+    ));
+    assert!(matches!(
+      &*dstt.env.get(&thm_name).unwrap(),
+      LeanConstantInfo::ThmInfo(_)
+    ));
   }
 
   #[test]
@@ -3417,8 +3475,12 @@ mod tests {
     };
 
     let mut lean_env = LeanEnv::default();
-    lean_env.insert(unit_name.clone(), LeanConstantInfo::InductInfo(inductive.clone()));
-    lean_env.insert(unit_ctor_name.clone(), LeanConstantInfo::CtorInfo(ctor.clone()));
+    lean_env.insert(
+      unit_name.clone(),
+      LeanConstantInfo::InductInfo(inductive.clone()),
+    );
+    lean_env
+      .insert(unit_ctor_name.clone(), LeanConstantInfo::CtorInfo(ctor.clone()));
     let lean_env = Arc::new(lean_env);
 
     // Compile
@@ -3434,17 +3496,18 @@ mod tests {
         assert_eq!(i.cnst.name, unit_name);
         assert_eq!(i.ctors.len(), 1);
         assert_eq!(i.all.len(), 1);
-      }
+      },
       _ => panic!("Expected InductInfo"),
     }
 
     // Check roundtrip for constructor
-    let recovered_ctor = dstt.env.get(&unit_ctor_name).expect("Unit.unit not found");
+    let recovered_ctor =
+      dstt.env.get(&unit_ctor_name).expect("Unit.unit not found");
     match &*recovered_ctor {
       LeanConstantInfo::CtorInfo(c) => {
         assert_eq!(c.cnst.name, unit_ctor_name);
         assert_eq!(c.induct, unit_name);
-      }
+      },
       _ => panic!("Expected CtorInfo"),
     }
   }
@@ -3524,7 +3587,7 @@ mod tests {
       LeanConstantInfo::InductInfo(i) => {
         assert_eq!(i.cnst.name, bool_name);
         assert_eq!(i.ctors.len(), 2);
-      }
+      },
       _ => panic!("Expected InductInfo"),
     }
 
@@ -3537,7 +3600,8 @@ mod tests {
   fn test_roundtrip_mutual_definitions() {
     use crate::ix::decompile::decompile_env;
     use crate::ix::env::{
-      ConstantVal, DefinitionSafety, DefinitionVal, Env as LeanEnv, ReducibilityHints,
+      ConstantVal, DefinitionSafety, DefinitionVal, Env as LeanEnv,
+      ReducibilityHints,
     };
 
     // Create mutual definitions that only reference each other (self-contained)
@@ -3612,7 +3676,7 @@ mod tests {
     let stt = compile_env(&lean_env).expect("compile_env failed");
 
     // Should have a mutual block
-    assert!(stt.blocks.len() >= 1, "Expected at least one mutual block");
+    assert!(!stt.blocks.is_empty(), "Expected at least one mutual block");
 
     // Decompile
     let dstt = decompile_env(&stt).expect("decompile_env failed");
@@ -3624,7 +3688,7 @@ mod tests {
         assert_eq!(d.cnst.name, f_name);
         // The all field should contain both names
         assert_eq!(d.all.len(), 2);
-      }
+      },
       _ => panic!("Expected DefnInfo for f"),
     }
 
@@ -3633,7 +3697,7 @@ mod tests {
       LeanConstantInfo::DefnInfo(d) => {
         assert_eq!(d.cnst.name, g_name);
         assert_eq!(d.all.len(), 2);
-      }
+      },
       _ => panic!("Expected DefnInfo for g"),
     }
   }
@@ -3751,16 +3815,19 @@ mod tests {
     let mut lean_env = LeanEnv::default();
     lean_env.insert(even_name.clone(), LeanConstantInfo::InductInfo(even_ind));
     lean_env.insert(odd_name.clone(), LeanConstantInfo::InductInfo(odd_ind));
-    lean_env.insert(even_zero.clone(), LeanConstantInfo::CtorInfo(even_zero_ctor));
-    lean_env.insert(even_succ.clone(), LeanConstantInfo::CtorInfo(even_succ_ctor));
-    lean_env.insert(odd_succ.clone(), LeanConstantInfo::CtorInfo(odd_succ_ctor));
+    lean_env
+      .insert(even_zero.clone(), LeanConstantInfo::CtorInfo(even_zero_ctor));
+    lean_env
+      .insert(even_succ.clone(), LeanConstantInfo::CtorInfo(even_succ_ctor));
+    lean_env
+      .insert(odd_succ.clone(), LeanConstantInfo::CtorInfo(odd_succ_ctor));
     let lean_env = Arc::new(lean_env);
 
     // Compile
     let stt = compile_env(&lean_env).expect("compile_env failed");
 
     // Should have at least one mutual block
-    assert!(stt.blocks.len() >= 1, "Expected mutual block for Even/Odd");
+    assert!(!stt.blocks.is_empty(), "Expected mutual block for Even/Odd");
 
     // Decompile
     let dstt = decompile_env(&stt).expect("decompile_env failed");
@@ -3772,7 +3839,7 @@ mod tests {
         assert_eq!(i.cnst.name, even_name);
         assert_eq!(i.ctors.len(), 2);
         assert_eq!(i.all.len(), 2); // Even and Odd in mutual block
-      }
+      },
       _ => panic!("Expected InductInfo for Even"),
     }
 
@@ -3783,7 +3850,7 @@ mod tests {
         assert_eq!(i.cnst.name, odd_name);
         assert_eq!(i.ctors.len(), 1);
         assert_eq!(i.all.len(), 2);
-      }
+      },
       _ => panic!("Expected InductInfo for Odd"),
     }
 
@@ -3796,9 +3863,7 @@ mod tests {
   #[test]
   fn test_roundtrip_inductive_with_recursor() {
     use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{
-      ConstantVal, ConstructorVal, Env as LeanEnv, InductiveVal, RecursorRule, RecursorVal,
-    };
+    use crate::ix::env::{ConstantVal, InductiveVal, RecursorVal};
 
     // Create Empty type with recursor (no constructors)
     // inductive Empty : Type
@@ -3839,7 +3904,10 @@ mod tests {
       LeanExpr::all(
         Name::str(Name::anon(), "e".to_string()),
         empty_type.clone(),
-        LeanExpr::app(LeanExpr::bvar(Nat::from(1u64)), LeanExpr::bvar(Nat::from(0u64))),
+        LeanExpr::app(
+          LeanExpr::bvar(Nat::from(1u64)),
+          LeanExpr::bvar(Nat::from(0u64)),
+        ),
         crate::ix::env::BinderInfo::Default,
       ),
       crate::ix::env::BinderInfo::Implicit,
@@ -3856,14 +3924,16 @@ mod tests {
       num_indices: Nat::from(0u64),
       num_motives: Nat::from(1u64),
       num_minors: Nat::from(0u64), // No minor premises for Empty
-      rules: vec![], // No rules since no constructors
+      rules: vec![],               // No rules since no constructors
       k: true,
       is_unsafe: false,
     };
 
     let mut lean_env = LeanEnv::default();
-    lean_env.insert(empty_name.clone(), LeanConstantInfo::InductInfo(inductive));
-    lean_env.insert(empty_rec_name.clone(), LeanConstantInfo::RecInfo(recursor));
+    lean_env
+      .insert(empty_name.clone(), LeanConstantInfo::InductInfo(inductive));
+    lean_env
+      .insert(empty_rec_name.clone(), LeanConstantInfo::RecInfo(recursor));
     let lean_env = Arc::new(lean_env);
 
     // Compile
@@ -3878,18 +3948,19 @@ mod tests {
       LeanConstantInfo::InductInfo(i) => {
         assert_eq!(i.cnst.name, empty_name);
         assert_eq!(i.ctors.len(), 0);
-      }
+      },
       _ => panic!("Expected InductInfo"),
     }
 
     // Check recursor roundtrip
-    let recovered_rec = dstt.env.get(&empty_rec_name).expect("Empty.rec not found");
+    let recovered_rec =
+      dstt.env.get(&empty_rec_name).expect("Empty.rec not found");
     match &*recovered_rec {
       LeanConstantInfo::RecInfo(r) => {
         assert_eq!(r.cnst.name, empty_rec_name);
         assert_eq!(r.rules.len(), 0);
         assert_eq!(r.cnst.level_params.len(), 1);
-      }
+      },
       _ => panic!("Expected RecInfo"),
     }
   }

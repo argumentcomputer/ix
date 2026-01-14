@@ -1,3 +1,7 @@
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_wrap)]
+
 use dashmap::DashMap;
 use rayon::prelude::*;
 use std::ffi::c_void;
@@ -735,7 +739,8 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
 
       // Measure serialized size (after roundtrip, not counted in total time)
       let start_serialize = std::time::SystemTime::now();
-      let (header, blobs, consts, names, named, comms) = stt.env.serialized_size_breakdown();
+      let (header, blobs, consts, names, named, comms) =
+        stt.env.serialized_size_breakdown();
       let total = header + blobs + consts + names + named + comms;
       println!(
         "Serialized size: {} bytes ({:.2} MB) in {:.2}s",
@@ -743,15 +748,235 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
         total as f64 / (1024.0 * 1024.0),
         start_serialize.elapsed().unwrap().as_secs_f32()
       );
-      println!("  Header: {} bytes ({:.2} MB)", header, header as f64 / (1024.0 * 1024.0));
-      println!("  Blobs:  {} bytes ({:.2} MB)", blobs, blobs as f64 / (1024.0 * 1024.0));
-      println!("  Consts: {} bytes ({:.2} MB)", consts, consts as f64 / (1024.0 * 1024.0));
-      println!("  Names:  {} bytes ({:.2} MB)", names, names as f64 / (1024.0 * 1024.0));
-      println!("  Named:  {} bytes ({:.2} MB)", named, named as f64 / (1024.0 * 1024.0));
-      println!("  Comms:  {} bytes ({:.2} MB)", comms, comms as f64 / (1024.0 * 1024.0));
+      println!(
+        "  Header: {} bytes ({:.2} MB)",
+        header,
+        header as f64 / (1024.0 * 1024.0)
+      );
+      println!(
+        "  Blobs:  {} bytes ({:.2} MB)",
+        blobs,
+        blobs as f64 / (1024.0 * 1024.0)
+      );
+      println!(
+        "  Consts: {} bytes ({:.2} MB)",
+        consts,
+        consts as f64 / (1024.0 * 1024.0)
+      );
+      println!(
+        "  Names:  {} bytes ({:.2} MB)",
+        names,
+        names as f64 / (1024.0 * 1024.0)
+      );
+      println!(
+        "  Named:  {} bytes ({:.2} MB)",
+        named,
+        named as f64 / (1024.0 * 1024.0)
+      );
+      println!(
+        "  Comms:  {} bytes ({:.2} MB)",
+        comms,
+        comms as f64 / (1024.0 * 1024.0)
+      );
+
+      // Analyze serialized size of "Nat.add_comm" and its transitive dependencies
+      analyze_const_size(&stt, "Nat.add_comm");
     },
     Err(e) => println!("Compile ERR: {:?}", e),
   }
   println!("Total: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
   env.as_ref().len()
+}
+
+/// Size breakdown for a constant: alpha-invariant vs metadata
+#[derive(Default, Clone)]
+struct ConstSizeBreakdown {
+  alpha_size: usize,      // Alpha-invariant constant data
+  meta_size: usize,       // Metadata (names, binder info, etc.)
+}
+
+impl ConstSizeBreakdown {
+  fn total(&self) -> usize {
+    self.alpha_size + self.meta_size
+  }
+}
+
+/// Analyze the serialized size of a constant and its transitive dependencies.
+fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
+  use crate::ix::address::Address;
+  use std::collections::{HashSet, VecDeque};
+
+  // Build a global name index for metadata serialization
+  let name_index = build_name_index(stt);
+
+  // Parse the name (e.g., "Nat.add_comm" -> Name::str(Name::str(Name::anon(), "Nat"), "add_comm"))
+  let name = parse_name(name_str);
+
+  // Look up the constant's address
+  let addr = match stt.name_to_addr.get(&name) {
+    Some(a) => a.clone(),
+    None => {
+      println!("\n=== Size analysis for {} ===", name_str);
+      println!("  Constant not found");
+      return;
+    }
+  };
+
+  // Get the constant
+  let constant = match stt.env.consts.get(&addr) {
+    Some(c) => c.clone(),
+    None => {
+      println!("\n=== Size analysis for {} ===", name_str);
+      println!("  Constant data not found at address");
+      return;
+    }
+  };
+
+  // Compute direct sizes (alpha-invariant and metadata)
+  let direct_breakdown = compute_const_size_breakdown(&constant, &name, stt, &name_index);
+
+  // BFS to collect all transitive dependencies
+  let mut visited: HashSet<Address> = HashSet::new();
+  let mut queue: VecDeque<Address> = VecDeque::new();
+  let mut dep_breakdowns: Vec<(String, ConstSizeBreakdown)> = Vec::new();
+
+  // Start with the constant's refs
+  visited.insert(addr.clone());
+  for dep_addr in &constant.refs {
+    if !visited.contains(dep_addr) {
+      queue.push_back(dep_addr.clone());
+      visited.insert(dep_addr.clone());
+    }
+  }
+
+  // BFS through all transitive dependencies
+  while let Some(dep_addr) = queue.pop_front() {
+    if let Some(dep_const) = stt.env.consts.get(&dep_addr) {
+      // Get the name for this dependency
+      let dep_name_opt = stt.env.get_name_by_addr(&dep_addr);
+      let dep_name_str = dep_name_opt.as_ref()
+        .map_or_else(|| format!("{:?}", dep_addr), |n| n.pretty());
+
+      let breakdown = if let Some(ref dep_name) = dep_name_opt {
+        compute_const_size_breakdown(&dep_const, dep_name, stt, &name_index)
+      } else {
+        ConstSizeBreakdown {
+          alpha_size: serialized_const_size(&dep_const),
+          meta_size: 0,
+        }
+      };
+
+      dep_breakdowns.push((dep_name_str, breakdown));
+
+      // Add this constant's refs to the queue
+      for ref_addr in &dep_const.refs {
+        if !visited.contains(ref_addr) {
+          queue.push_back(ref_addr.clone());
+          visited.insert(ref_addr.clone());
+        }
+      }
+    }
+  }
+
+  // Sort by total size descending
+  dep_breakdowns.sort_by(|a, b| b.1.total().cmp(&a.1.total()));
+
+  let total_deps_alpha: usize = dep_breakdowns.iter().map(|(_, b)| b.alpha_size).sum();
+  let total_deps_meta: usize = dep_breakdowns.iter().map(|(_, b)| b.meta_size).sum();
+  let total_deps_size = total_deps_alpha + total_deps_meta;
+
+  let total_alpha = direct_breakdown.alpha_size + total_deps_alpha;
+  let total_meta = direct_breakdown.meta_size + total_deps_meta;
+  let total_size = total_alpha + total_meta;
+
+  println!("\n=== Size analysis for {} ===", name_str);
+  println!("  Direct alpha-invariant size: {} bytes", direct_breakdown.alpha_size);
+  println!("  Direct metadata size: {} bytes", direct_breakdown.meta_size);
+  println!("  Direct total size: {} bytes", direct_breakdown.total());
+  println!();
+  println!("  Transitive dependencies: {} constants", dep_breakdowns.len());
+  println!("  Dependencies alpha-invariant: {} bytes ({:.2} KB)", total_deps_alpha, total_deps_alpha as f64 / 1024.0);
+  println!("  Dependencies metadata: {} bytes ({:.2} KB)", total_deps_meta, total_deps_meta as f64 / 1024.0);
+  println!("  Dependencies total: {} bytes ({:.2} KB)", total_deps_size, total_deps_size as f64 / 1024.0);
+  println!();
+  println!("  TOTAL alpha-invariant: {} bytes ({:.2} KB)", total_alpha, total_alpha as f64 / 1024.0);
+  println!("  TOTAL metadata: {} bytes ({:.2} KB)", total_meta, total_meta as f64 / 1024.0);
+  println!("  TOTAL size: {} bytes ({:.2} KB)", total_size, total_size as f64 / 1024.0);
+
+  // Show top 10 largest dependencies
+  if !dep_breakdowns.is_empty() {
+    println!("\n  Top 10 largest dependencies (by total size):");
+    for (name, breakdown) in dep_breakdowns.iter().take(10) {
+      println!("    {} bytes (alpha: {}, meta: {}): {}",
+        breakdown.total(), breakdown.alpha_size, breakdown.meta_size, name);
+    }
+  }
+}
+
+/// Build a name index for metadata serialization.
+fn build_name_index(stt: &crate::ix::compile::CompileState) -> crate::ix::ixon::metadata::NameIndex {
+  use crate::ix::address::Address;
+  use crate::ix::ixon::metadata::NameIndex;
+
+  let mut idx = NameIndex::new();
+  let mut counter: u64 = 0;
+
+  // Add all names from the names map
+  for entry in stt.env.names.iter() {
+    idx.insert(entry.key().clone(), counter);
+    counter += 1;
+  }
+
+  // Add anonymous name
+  let anon_addr = Address::from_blake3_hash(Name::anon().get_hash());
+  idx.entry(anon_addr).or_insert(counter);
+
+  idx
+}
+
+/// Compute size breakdown for a constant (alpha-invariant vs metadata).
+fn compute_const_size_breakdown(
+  constant: &crate::ix::ixon::constant::Constant,
+  name: &Name,
+  stt: &crate::ix::compile::CompileState,
+  name_index: &crate::ix::ixon::metadata::NameIndex,
+) -> ConstSizeBreakdown {
+  // Alpha-invariant size
+  let alpha_size = serialized_const_size(constant);
+
+  // Metadata size
+  let meta_size = if let Some(named) = stt.env.named.get(name) {
+    serialized_meta_size(&named.meta, name_index)
+  } else {
+    0
+  };
+
+  ConstSizeBreakdown { alpha_size, meta_size }
+}
+
+/// Compute the serialized size of constant metadata.
+fn serialized_meta_size(
+  meta: &crate::ix::ixon::metadata::ConstantMeta,
+  name_index: &crate::ix::ixon::metadata::NameIndex,
+) -> usize {
+  let mut buf = Vec::new();
+  meta.put_indexed(name_index, &mut buf);
+  buf.len()
+}
+
+/// Parse a dotted name string into a Name.
+fn parse_name(s: &str) -> Name {
+  let parts: Vec<&str> = s.split('.').collect();
+  let mut name = Name::anon();
+  for part in parts {
+    name = Name::str(name, part.to_string());
+  }
+  name
+}
+
+/// Compute the serialized size of a constant.
+fn serialized_const_size(constant: &crate::ix::ixon::constant::Constant) -> usize {
+  let mut buf = Vec::new();
+  constant.put(&mut buf);
+  buf.len()
 }

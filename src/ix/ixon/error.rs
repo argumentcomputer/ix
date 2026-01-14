@@ -24,17 +24,23 @@ pub enum SerializeError {
 impl std::fmt::Display for SerializeError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::UnexpectedEof { expected } => write!(f, "unexpected EOF, expected {expected}"),
-      Self::InvalidTag { tag, context } => write!(f, "invalid tag 0x{tag:02X} in {context}"),
-      Self::InvalidFlag { flag, context } => write!(f, "invalid flag {flag} in {context}"),
+      Self::UnexpectedEof { expected } => {
+        write!(f, "unexpected EOF, expected {expected}")
+      },
+      Self::InvalidTag { tag, context } => {
+        write!(f, "invalid tag 0x{tag:02X} in {context}")
+      },
+      Self::InvalidFlag { flag, context } => {
+        write!(f, "invalid flag {flag} in {context}")
+      },
       Self::InvalidVariant { variant, context } => {
         write!(f, "invalid variant {variant} in {context}")
-      }
+      },
       Self::InvalidBool { value } => write!(f, "invalid bool value {value}"),
       Self::AddressError => write!(f, "address parsing error"),
       Self::InvalidShareIndex { idx, max } => {
         write!(f, "invalid Share index {idx}, max is {max}")
-      }
+      },
     }
   }
 }
@@ -61,8 +67,12 @@ impl std::fmt::Display for CompileError {
     match self {
       Self::MissingConstant { name } => write!(f, "missing constant: {name}"),
       Self::MissingAddress(addr) => write!(f, "missing address: {addr:?}"),
-      Self::InvalidMutualBlock { reason } => write!(f, "invalid mutual block: {reason}"),
-      Self::UnsupportedExpr { desc } => write!(f, "unsupported expression: {desc}"),
+      Self::InvalidMutualBlock { reason } => {
+        write!(f, "invalid mutual block: {reason}")
+      },
+      Self::UnsupportedExpr { desc } => {
+        write!(f, "unsupported expression: {desc}")
+      },
       Self::Serialize(e) => write!(f, "serialization error: {e}"),
     }
   }
@@ -110,23 +120,42 @@ impl std::fmt::Display for DecompileError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::MissingAddress(addr) => write!(f, "missing address: {addr:?}"),
-      Self::MissingMetadata(addr) => write!(f, "missing metadata for: {addr:?}"),
+      Self::MissingMetadata(addr) => {
+        write!(f, "missing metadata for: {addr:?}")
+      },
       Self::InvalidShareIndex { idx, max, constant } => {
-        write!(f, "invalid Share({idx}) in '{constant}': sharing vector has {max} entries")
-      }
+        write!(
+          f,
+          "invalid Share({idx}) in '{constant}': sharing vector has {max} entries"
+        )
+      },
       Self::InvalidRecIndex { idx, ctx_size, constant } => {
-        write!(f, "invalid Rec({idx}) in '{constant}': mutual context has {ctx_size} entries")
-      }
+        write!(
+          f,
+          "invalid Rec({idx}) in '{constant}': mutual context has {ctx_size} entries"
+        )
+      },
       Self::InvalidRefIndex { idx, refs_len, constant } => {
-        write!(f, "invalid Ref({idx}) in '{constant}': refs table has {refs_len} entries")
-      }
+        write!(
+          f,
+          "invalid Ref({idx}) in '{constant}': refs table has {refs_len} entries"
+        )
+      },
       Self::InvalidUnivIndex { idx, univs_len, constant } => {
-        write!(f, "invalid univ index {idx} in '{constant}': univs table has {univs_len} entries")
-      }
+        write!(
+          f,
+          "invalid univ index {idx} in '{constant}': univs table has {univs_len} entries"
+        )
+      },
       Self::InvalidUnivVarIndex { idx, max, constant } => {
-        write!(f, "invalid Univ::Var({idx}) in '{constant}': only {max} level params")
-      }
-      Self::MissingName { context } => write!(f, "missing name in metadata: {context}"),
+        write!(
+          f,
+          "invalid Univ::Var({idx}) in '{constant}': only {max} level params"
+        )
+      },
+      Self::MissingName { context } => {
+        write!(f, "missing name in metadata: {context}")
+      },
       Self::Serialize(e) => write!(f, "serialization error: {e}"),
     }
   }

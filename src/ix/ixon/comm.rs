@@ -1,5 +1,8 @@
 //! Cryptographic commitments.
 
+#![allow(clippy::map_err_ignore)]
+#![allow(clippy::needless_pass_by_value)]
+
 use crate::ix::address::Address;
 
 /// A cryptographic commitment.
@@ -33,10 +36,10 @@ impl Comm {
     let (payload_bytes, rest) = rest.split_at(32);
     *buf = rest;
 
-    let secret =
-      Address::from_slice(secret_bytes).map_err(|_| "Comm::get: invalid secret")?;
-    let payload =
-      Address::from_slice(payload_bytes).map_err(|_| "Comm::get: invalid payload")?;
+    let secret = Address::from_slice(secret_bytes)
+      .map_err(|_| "Comm::get: invalid secret")?;
+    let payload = Address::from_slice(payload_bytes)
+      .map_err(|_| "Comm::get: invalid payload")?;
 
     Ok(Comm { secret, payload })
   }
@@ -63,7 +66,9 @@ mod tests {
   }
 
   #[quickcheck]
-  fn prop_comm_roundtrip(c: Comm) -> bool { comm_roundtrip(&c) }
+  fn prop_comm_roundtrip(c: Comm) -> bool {
+    comm_roundtrip(&c)
+  }
 
   #[test]
   fn test_comm_roundtrip() {

@@ -6,6 +6,8 @@
 //! The sharing vector is stored at the Constant level, shared across
 //! all expressions in the constant (including mutual block members).
 
+#![allow(clippy::needless_pass_by_value)]
+
 use std::sync::Arc;
 
 use crate::ix::address::Address;
@@ -235,7 +237,12 @@ impl Constant {
   }
 
   /// Create a new constant with sharing, refs, and univs
-  pub fn with_tables(info: ConstantInfo, sharing: Vec<Arc<Expr>>, refs: Vec<Address>, univs: Vec<Arc<Univ>>) -> Self {
+  pub fn with_tables(
+    info: ConstantInfo,
+    sharing: Vec<Arc<Expr>>,
+    refs: Vec<Address>,
+    univs: Vec<Arc<Univ>>,
+  ) -> Self {
     Constant { info, sharing, refs, univs }
   }
 }
@@ -250,19 +257,32 @@ pub mod tests {
 
   impl Arbitrary for DefKind {
     fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 3 { 0 => DefKind::Definition, 1 => DefKind::Opaque, _ => DefKind::Theorem }
+      match u8::arbitrary(g) % 3 {
+        0 => DefKind::Definition,
+        1 => DefKind::Opaque,
+        _ => DefKind::Theorem,
+      }
     }
   }
 
   impl Arbitrary for DefinitionSafety {
     fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 3 { 0 => DefinitionSafety::Unsafe, 1 => DefinitionSafety::Safe, _ => DefinitionSafety::Partial }
+      match u8::arbitrary(g) % 3 {
+        0 => DefinitionSafety::Unsafe,
+        1 => DefinitionSafety::Safe,
+        _ => DefinitionSafety::Partial,
+      }
     }
   }
 
   impl Arbitrary for QuotKind {
     fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 4 { 0 => QuotKind::Type, 1 => QuotKind::Ctor, 2 => QuotKind::Lift, _ => QuotKind::Ind }
+      match u8::arbitrary(g) % 4 {
+        0 => QuotKind::Type,
+        1 => QuotKind::Ctor,
+        2 => QuotKind::Lift,
+        _ => QuotKind::Ind,
+      }
     }
   }
 
@@ -281,8 +301,11 @@ pub mod tests {
 
   pub fn gen_definition(g: &mut Gen) -> Definition {
     Definition {
-      kind: DefKind::arbitrary(g), safety: DefinitionSafety::arbitrary(g),
-      lvls: u64::arbitrary(g) % 10, typ: arbitrary_expr(g), value: arbitrary_expr(g),
+      kind: DefKind::arbitrary(g),
+      safety: DefinitionSafety::arbitrary(g),
+      lvls: u64::arbitrary(g) % 10,
+      typ: arbitrary_expr(g),
+      value: arbitrary_expr(g),
     }
   }
 
@@ -292,40 +315,64 @@ pub mod tests {
 
   pub fn gen_recursor(g: &mut Gen) -> Recursor {
     Recursor {
-      k: bool::arbitrary(g), is_unsafe: bool::arbitrary(g),
-      lvls: u64::arbitrary(g) % 10, params: u64::arbitrary(g) % 10, indices: u64::arbitrary(g) % 5,
-      motives: u64::arbitrary(g) % 3, minors: u64::arbitrary(g) % 10, typ: arbitrary_expr(g),
+      k: bool::arbitrary(g),
+      is_unsafe: bool::arbitrary(g),
+      lvls: u64::arbitrary(g) % 10,
+      params: u64::arbitrary(g) % 10,
+      indices: u64::arbitrary(g) % 5,
+      motives: u64::arbitrary(g) % 3,
+      minors: u64::arbitrary(g) % 10,
+      typ: arbitrary_expr(g),
       rules: (0..gen_range(g, 0..5)).map(|_| gen_recursor_rule(g)).collect(),
     }
   }
 
   pub fn gen_axiom(g: &mut Gen) -> Axiom {
-    Axiom { is_unsafe: bool::arbitrary(g), lvls: u64::arbitrary(g) % 10, typ: arbitrary_expr(g) }
+    Axiom {
+      is_unsafe: bool::arbitrary(g),
+      lvls: u64::arbitrary(g) % 10,
+      typ: arbitrary_expr(g),
+    }
   }
 
   pub fn gen_quotient(g: &mut Gen) -> Quotient {
-    Quotient { kind: QuotKind::arbitrary(g), lvls: u64::arbitrary(g) % 10, typ: arbitrary_expr(g) }
+    Quotient {
+      kind: QuotKind::arbitrary(g),
+      lvls: u64::arbitrary(g) % 10,
+      typ: arbitrary_expr(g),
+    }
   }
 
   fn gen_constructor(g: &mut Gen) -> Constructor {
     Constructor {
-      is_unsafe: bool::arbitrary(g), lvls: u64::arbitrary(g) % 10, cidx: u64::arbitrary(g) % 10,
-      params: u64::arbitrary(g) % 10, fields: u64::arbitrary(g) % 10, typ: arbitrary_expr(g),
+      is_unsafe: bool::arbitrary(g),
+      lvls: u64::arbitrary(g) % 10,
+      cidx: u64::arbitrary(g) % 10,
+      params: u64::arbitrary(g) % 10,
+      fields: u64::arbitrary(g) % 10,
+      typ: arbitrary_expr(g),
     }
   }
 
   pub fn gen_inductive(g: &mut Gen) -> Inductive {
     Inductive {
-      recr: bool::arbitrary(g), refl: bool::arbitrary(g), is_unsafe: bool::arbitrary(g),
-      lvls: u64::arbitrary(g) % 10, params: u64::arbitrary(g) % 10, indices: u64::arbitrary(g) % 5,
-      nested: u64::arbitrary(g) % 3, typ: arbitrary_expr(g),
+      recr: bool::arbitrary(g),
+      refl: bool::arbitrary(g),
+      is_unsafe: bool::arbitrary(g),
+      lvls: u64::arbitrary(g) % 10,
+      params: u64::arbitrary(g) % 10,
+      indices: u64::arbitrary(g) % 5,
+      nested: u64::arbitrary(g) % 3,
+      typ: arbitrary_expr(g),
       ctors: (0..gen_range(g, 0..4)).map(|_| gen_constructor(g)).collect(),
     }
   }
 
   fn gen_mut_const(g: &mut Gen) -> MutConst {
     match u8::arbitrary(g) % 3 {
-      0 => MutConst::Defn(gen_definition(g)), 1 => MutConst::Indc(gen_inductive(g)), _ => MutConst::Recr(gen_recursor(g)),
+      0 => MutConst::Defn(gen_definition(g)),
+      1 => MutConst::Indc(gen_inductive(g)),
+      _ => MutConst::Recr(gen_recursor(g)),
     }
   }
 
@@ -335,11 +382,26 @@ pub mod tests {
       1 => ConstantInfo::Recr(gen_recursor(g)),
       2 => ConstantInfo::Axio(gen_axiom(g)),
       3 => ConstantInfo::Quot(gen_quotient(g)),
-      4 => ConstantInfo::CPrj(ConstructorProj { idx: u64::arbitrary(g) % 10, cidx: u64::arbitrary(g) % 10, block: Address::arbitrary(g) }),
-      5 => ConstantInfo::RPrj(RecursorProj { idx: u64::arbitrary(g) % 10, block: Address::arbitrary(g) }),
-      6 => ConstantInfo::IPrj(InductiveProj { idx: u64::arbitrary(g) % 10, block: Address::arbitrary(g) }),
-      7 => ConstantInfo::DPrj(DefinitionProj { idx: u64::arbitrary(g) % 10, block: Address::arbitrary(g) }),
-      _ => ConstantInfo::Muts((0..gen_range(g, 1..4)).map(|_| gen_mut_const(g)).collect()),
+      4 => ConstantInfo::CPrj(ConstructorProj {
+        idx: u64::arbitrary(g) % 10,
+        cidx: u64::arbitrary(g) % 10,
+        block: Address::arbitrary(g),
+      }),
+      5 => ConstantInfo::RPrj(RecursorProj {
+        idx: u64::arbitrary(g) % 10,
+        block: Address::arbitrary(g),
+      }),
+      6 => ConstantInfo::IPrj(InductiveProj {
+        idx: u64::arbitrary(g) % 10,
+        block: Address::arbitrary(g),
+      }),
+      7 => ConstantInfo::DPrj(DefinitionProj {
+        idx: u64::arbitrary(g) % 10,
+        block: Address::arbitrary(g),
+      }),
+      _ => ConstantInfo::Muts(
+        (0..gen_range(g, 1..4)).map(|_| gen_mut_const(g)).collect(),
+      ),
     }
   }
 
@@ -356,7 +418,9 @@ pub mod tests {
   struct ArbitraryConstant(Constant);
 
   impl Arbitrary for ArbitraryConstant {
-    fn arbitrary(g: &mut Gen) -> Self { ArbitraryConstant(gen_constant(g)) }
+    fn arbitrary(g: &mut Gen) -> Self {
+      ArbitraryConstant(gen_constant(g))
+    }
   }
 
   fn constant_roundtrip(c: &Constant) -> bool {
@@ -364,7 +428,10 @@ pub mod tests {
     c.put(&mut buf);
     match Constant::get(&mut buf.as_slice()) {
       Ok(c2) => c == &c2,
-      Err(err) => { eprintln!("constant_roundtrip error: {err}"); false }
+      Err(err) => {
+        eprintln!("constant_roundtrip error: {err}");
+        false
+      },
     }
   }
 
