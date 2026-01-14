@@ -3,7 +3,7 @@ use crate::{
     ConstructorVal, DefinitionSafety, DefinitionVal, Expr, InductiveVal, Name,
     OpaqueVal, RecursorVal, ReducibilityHints, TheoremVal,
   },
-  ix::ixon::DefKind,
+  ix::ixon_old::DefKind,
   lean::nat::Nat,
 };
 
@@ -83,6 +83,24 @@ pub enum MutConst {
 }
 
 pub type MutCtx = FxHashMap<Name, Nat>;
+
+/// Convert a MutCtx to a Vec<Name> ordered by index.
+/// Position i contains the name with Nat value i.
+pub fn ctx_to_all(ctx: &MutCtx) -> Vec<Name> {
+  let mut pairs: Vec<_> = ctx.iter().collect();
+  pairs.sort_by_key(|(_, idx)| idx.to_u64().unwrap_or(0));
+  pairs.into_iter().map(|(name, _)| name.clone()).collect()
+}
+
+/// Convert a Vec<Name> to a MutCtx.
+/// Each name gets its position as the Nat value.
+pub fn all_to_ctx(all: &[Name]) -> MutCtx {
+  let mut ctx = FxHashMap::default();
+  for (i, name) in all.iter().enumerate() {
+    ctx.insert(name.clone(), Nat(i.into()));
+  }
+  ctx
+}
 
 impl MutConst {
   pub fn name(&self) -> Name {

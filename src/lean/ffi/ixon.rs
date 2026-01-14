@@ -3,7 +3,7 @@ use std::ffi::c_void;
 use crate::{
   ix::address::{Address, MetaAddress},
   ix::env::{BinderInfo, DefinitionSafety, QuotKind, ReducibilityHints},
-  ix::ixon::{
+  ix::ixon_old::{
     Axiom, BuiltIn, CheckClaim, Claim, Comm, Constructor, ConstructorProj,
     DataValue, DefKind, Definition, DefinitionProj, Env, EvalClaim, Inductive,
     InductiveProj, Ixon, Metadata, Metadatum, MutConst, Proof, Quotient,

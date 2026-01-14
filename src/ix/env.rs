@@ -593,8 +593,9 @@ impl StdHash for ExprData {
   }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReducibilityHints {
+  #[default]
   Opaque,
   Abbrev,
   Regular(u32),

@@ -709,6 +709,7 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   match res {
     Ok(stt) => {
       println!("Compile OK: {:?}", stt.stats());
+
       let start_decompiling = std::time::SystemTime::now();
       match decompile_env(&stt) {
         Ok(dstt) => {
@@ -731,6 +732,23 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
         },
         Err(e) => println!("Decompile ERR: {:?}", e),
       }
+
+      // Measure serialized size (after roundtrip, not counted in total time)
+      let start_serialize = std::time::SystemTime::now();
+      let (header, blobs, consts, names, named, comms) = stt.env.serialized_size_breakdown();
+      let total = header + blobs + consts + names + named + comms;
+      println!(
+        "Serialized size: {} bytes ({:.2} MB) in {:.2}s",
+        total,
+        total as f64 / (1024.0 * 1024.0),
+        start_serialize.elapsed().unwrap().as_secs_f32()
+      );
+      println!("  Header: {} bytes ({:.2} MB)", header, header as f64 / (1024.0 * 1024.0));
+      println!("  Blobs:  {} bytes ({:.2} MB)", blobs, blobs as f64 / (1024.0 * 1024.0));
+      println!("  Consts: {} bytes ({:.2} MB)", consts, consts as f64 / (1024.0 * 1024.0));
+      println!("  Names:  {} bytes ({:.2} MB)", names, names as f64 / (1024.0 * 1024.0));
+      println!("  Named:  {} bytes ({:.2} MB)", named, named as f64 / (1024.0 * 1024.0));
+      println!("  Comms:  {} bytes ({:.2} MB)", comms, comms as f64 / (1024.0 * 1024.0));
     },
     Err(e) => println!("Compile ERR: {:?}", e),
   }
