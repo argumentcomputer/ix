@@ -144,7 +144,7 @@ script install := do
   return 0
 
 script "check-lean-h-hash" := do
-  let cachedLeanHHash := 1323938820889983873
+  let cachedLeanHHash := 11261383907494897568
 
   let leanIncludeDir ← getLeanIncludeDir
   let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"
@@ -156,6 +156,8 @@ script "check-lean-h-hash" := do
     IO.eprintln   "  1. Double-check changes made to lean/lean.h"
     IO.eprintln s!"  2. Cache {includedLeanHHash} instead"
     return 1
+  else
+    IO.println "lean/lean.h hash matches ✓"
   return 0
 
 script "get-exe-targets" := do
