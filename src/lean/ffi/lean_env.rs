@@ -705,6 +705,16 @@ pub fn lean_ptr_to_env_sequential(ptr: *const c_void) -> Env {
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
+  // Enable hash-consed size tracking for debugging
+  // TODO: Make this configurable via CLI instead of hardcoded
+  crate::ix::compile::TRACK_HASH_CONSED_SIZE
+    .store(true, std::sync::atomic::Ordering::Relaxed);
+
+  // Enable verbose sharing analysis for debugging pathological blocks
+  // TODO: Make this configurable via CLI instead of hardcoded
+  crate::ix::compile::ANALYZE_SHARING
+    .store(false, std::sync::atomic::Ordering::Relaxed);
+
   let start_decoding = std::time::SystemTime::now();
   let env = lean_ptr_to_env(ptr);
   let env = Arc::new(env);
@@ -988,6 +998,15 @@ fn serialized_const_size(constant: &crate::ix::ixon::constant::Constant) -> usiz
 fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
   use crate::ix::compile::BlockSizeStats;
 
+  // Check if hash-consed size tracking was enabled
+  let tracking_enabled = crate::ix::compile::TRACK_HASH_CONSED_SIZE
+    .load(std::sync::atomic::Ordering::Relaxed);
+  if !tracking_enabled {
+    println!("\n=== Block Size Analysis ===");
+    println!("  Hash-consed size tracking disabled (set IX_TRACK_HASH_CONSED=1 to enable)");
+    return;
+  }
+
   // Collect all stats into a vector for analysis
   let stats: Vec<(String, BlockSizeStats)> = stt
     .block_stats
@@ -1053,32 +1072,34 @@ fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
     total_serialized as isize - total_hash_consed as isize,
     (total_serialized as f64 - total_hash_consed as f64) / 1024.0);
 
-  // Distribution of ratios
-  let ratio_under_1 = stats.iter().filter(|(_, s)|
-    s.hash_consed_size > 0 && (s.serialized_size as f64 / s.hash_consed_size as f64) < 1.0
-  ).count();
-  let ratio_1_to_1_5 = stats.iter().filter(|(_, s)| {
-    if s.hash_consed_size == 0 { return false; }
-    let r = s.serialized_size as f64 / s.hash_consed_size as f64;
-    r >= 1.0 && r < 1.5
-  }).count();
-  let ratio_1_5_to_2 = stats.iter().filter(|(_, s)| {
-    if s.hash_consed_size == 0 { return false; }
-    let r = s.serialized_size as f64 / s.hash_consed_size as f64;
-    r >= 1.5 && r < 2.0
-  }).count();
-  let ratio_over_2 = stats.iter().filter(|(_, s)| {
-    if s.hash_consed_size == 0 { return false; }
-    let r = s.serialized_size as f64 / s.hash_consed_size as f64;
-    r >= 2.0
-  }).count();
+  // Distribution of ratios (more granular buckets for analysis)
+  let count_in_range = |lo: f64, hi: f64| -> usize {
+    stats.iter().filter(|(_, s)| {
+      if s.hash_consed_size == 0 { return false; }
+      let r = s.serialized_size as f64 / s.hash_consed_size as f64;
+      r >= lo && r < hi
+    }).count()
+  };
+
+  let ratio_under_0_05 = count_in_range(0.0, 0.05);
+  let ratio_0_05_to_0_1 = count_in_range(0.05, 0.1);
+  let ratio_0_1_to_0_2 = count_in_range(0.1, 0.2);
+  let ratio_0_2_to_0_5 = count_in_range(0.2, 0.5);
+  let ratio_0_5_to_1 = count_in_range(0.5, 1.0);
+  let ratio_1_to_1_5 = count_in_range(1.0, 1.5);
+  let ratio_1_5_to_2 = count_in_range(1.5, 2.0);
+  let ratio_over_2 = count_in_range(2.0, f64::INFINITY);
 
   println!();
-  println!("  Ratio distribution:");
-  println!("    < 1.0x (compression):  {} blocks", ratio_under_1);
-  println!("    1.0-1.5x:              {} blocks", ratio_1_to_1_5);
-  println!("    1.5-2.0x:              {} blocks", ratio_1_5_to_2);
-  println!("    >= 2.0x (high bloat):  {} blocks", ratio_over_2);
+  println!("  Ratio distribution (serialized / hash-consed):");
+  println!("    < 0.05x (20x+ compression): {} blocks", ratio_under_0_05);
+  println!("    0.05-0.1x (10-20x):         {} blocks", ratio_0_05_to_0_1);
+  println!("    0.1-0.2x (5-10x):           {} blocks", ratio_0_1_to_0_2);
+  println!("    0.2-0.5x (2-5x):            {} blocks", ratio_0_2_to_0_5);
+  println!("    0.5-1.0x (1-2x):            {} blocks", ratio_0_5_to_1);
+  println!("    1.0-1.5x (slight bloat):    {} blocks", ratio_1_to_1_5);
+  println!("    1.5-2.0x:                   {} blocks", ratio_1_5_to_2);
+  println!("    >= 2.0x (high bloat):       {} blocks", ratio_over_2);
 
   // Top 10 blocks by absolute overhead
   if !overheads.is_empty() {

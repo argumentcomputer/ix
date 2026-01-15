@@ -34,12 +34,13 @@ pub struct SubtermInfo {
 }
 
 /// Hash an expression node using Merkle-tree style hashing.
-/// Returns the hash and child hashes for dependency tracking.
+/// Returns (hash, child_hashes, value_size) where value_size is the size of the
+/// serialized node value in a hash-consed store (not including the 32-byte key).
 fn hash_node(
   expr: &Expr,
   child_hashes: &FxHashMap<*const Expr, blake3::Hash>,
   buf: &mut Vec<u8>,
-) -> (blake3::Hash, Vec<blake3::Hash>) {
+) -> (blake3::Hash, Vec<blake3::Hash>, usize) {
   buf.clear();
 
   let children = match expr {
@@ -141,7 +142,8 @@ fn hash_node(
     },
   };
 
-  (blake3::hash(buf), children)
+  let value_size = buf.len();
+  (blake3::hash(buf), children, value_size)
 }
 
 /// Compute the base size of a node (Tag4 header size) for Ixon serialization.
@@ -187,61 +189,6 @@ fn compute_base_size(expr: &Expr) -> usize {
   }
 }
 
-/// Compute the size of a node in a fully hash-consed store.
-///
-/// In a hash-consed store:
-/// - Each unique expression is stored once, keyed by its 32-byte hash
-/// - External references (constants, universes, blobs) are 32-byte hashes
-/// - Child expressions are referenced by 32-byte hashes
-///
-/// Returns (key_size, value_size) where key is always 32 bytes.
-pub fn compute_hash_consed_node_size(expr: &Expr) -> usize {
-  const HASH_SIZE: usize = 32;
-  const TAG_SIZE: usize = 1;
-
-  let value_size = match expr {
-    // Var just has tag + varint index (no external refs)
-    Expr::Var(idx) => TAG_SIZE + Tag0::new(*idx).encoded_size(),
-
-    // Sort references a universe by hash
-    Expr::Sort(_) => TAG_SIZE + HASH_SIZE,
-
-    // Ref: tag + constant_hash + N * univ_hash
-    Expr::Ref(_, univ_indices) => {
-      TAG_SIZE + HASH_SIZE + univ_indices.len() * HASH_SIZE
-    },
-
-    // Rec: tag + constant_hash + N * univ_hash
-    Expr::Rec(_, univ_indices) => {
-      TAG_SIZE + HASH_SIZE + univ_indices.len() * HASH_SIZE
-    },
-
-    // Prj: tag + type_hash + field_idx + child_hash
-    Expr::Prj(_, field_idx, _) => {
-      TAG_SIZE + HASH_SIZE + Tag0::new(*field_idx).encoded_size() + HASH_SIZE
-    },
-
-    // Str/Nat: tag + blob_hash
-    Expr::Str(_) | Expr::Nat(_) => TAG_SIZE + HASH_SIZE,
-
-    // App: tag + fun_hash + arg_hash
-    Expr::App(..) => TAG_SIZE + 2 * HASH_SIZE,
-
-    // Lam/All: tag + ty_hash + body_hash
-    Expr::Lam(..) | Expr::All(..) => TAG_SIZE + 2 * HASH_SIZE,
-
-    // Let: tag + ty_hash + val_hash + body_hash
-    Expr::Let(..) => TAG_SIZE + 3 * HASH_SIZE,
-
-    // Share doesn't exist in hash-consed model (sharing is implicit via hashes)
-    // But if we encounter it during analysis, count it minimally
-    Expr::Share(_) => TAG_SIZE + HASH_SIZE,
-  };
-
-  // Total = 32-byte key + value
-  HASH_SIZE + value_size
-}
-
 /// Get child expressions for traversal.
 fn get_children(expr: &Expr) -> Vec<&Arc<Expr>> {
   match expr {
@@ -265,8 +212,13 @@ fn get_children(expr: &Expr) -> Vec<&Arc<Expr>> {
 ///
 /// Returns a map from content hash to SubtermInfo, and a map from pointer to hash.
 /// Uses post-order traversal with Merkle-tree hashing.
+///
+/// If `track_hash_consed_size` is true, computes the hash-consed size for each
+/// subterm (32-byte key + value). This adds overhead and can be disabled when
+/// only sharing analysis is needed.
 pub fn analyze_block(
   exprs: &[Arc<Expr>],
+  track_hash_consed_size: bool,
 ) -> (HashMap<blake3::Hash, SubtermInfo>, FxHashMap<*const Expr, blake3::Hash>)
 {
   let mut info_map: HashMap<blake3::Hash, SubtermInfo> = HashMap::new();
@@ -308,7 +260,7 @@ pub fn analyze_block(
             continue;
           }
 
-          let (hash, children) =
+          let (hash, children, value_size) =
             hash_node(arc_expr.as_ref(), &ptr_to_hash, &mut hash_buf);
 
           // Check if we've seen this content hash before (structural equality)
@@ -318,8 +270,8 @@ pub fn analyze_block(
           } else {
             // New subterm
             let base_size = compute_base_size(arc_expr.as_ref());
-            let hash_consed_size =
-              compute_hash_consed_node_size(arc_expr.as_ref());
+            // Hash-consed size = 32-byte key + value
+            let hash_consed_size = if track_hash_consed_size { 32 + value_size } else { 0 };
             info_map.insert(
               hash,
               SubtermInfo {
@@ -405,6 +357,168 @@ fn compute_effective_sizes(
   sizes
 }
 
+/// Analyze sharing statistics for debugging pathological cases.
+/// Returns a summary of why sharing may not be effective.
+#[allow(dead_code)]
+pub fn analyze_sharing_stats(
+  info_map: &HashMap<blake3::Hash, SubtermInfo>,
+) -> SharingStats {
+  let topo_order = topological_sort(info_map);
+  let effective_sizes = compute_effective_sizes(info_map, &topo_order);
+
+  let total_subterms = info_map.len();
+  let mut usage_distribution: HashMap<usize, usize> = HashMap::new();
+  let mut size_distribution: HashMap<usize, usize> = HashMap::new();
+  let mut total_usage: usize = 0;
+  let mut unique_subterms = 0;
+  let mut shared_subterms = 0;
+
+  for (hash, info) in info_map.iter() {
+    total_usage += info.usage_count;
+    *usage_distribution.entry(info.usage_count).or_insert(0) += 1;
+
+    let size = effective_sizes.get(hash).copied().unwrap_or(0);
+    let size_bucket = match size {
+      0..=1 => 1,
+      2..=4 => 4,
+      5..=10 => 10,
+      11..=50 => 50,
+      51..=100 => 100,
+      _ => 1000,
+    };
+    *size_distribution.entry(size_bucket).or_insert(0) += 1;
+
+    if info.usage_count == 1 {
+      unique_subterms += 1;
+    } else {
+      shared_subterms += 1;
+    }
+  }
+
+  // Count candidates at each filtering stage
+  let candidates_usage_ge_2: usize = info_map
+    .values()
+    .filter(|info| info.usage_count >= 2)
+    .count();
+
+  let candidates_positive_potential: usize = info_map
+    .iter()
+    .filter(|(_, info)| info.usage_count >= 2)
+    .filter(|(hash, info)| {
+      let term_size = effective_sizes.get(hash).copied().unwrap_or(0);
+      let n = info.usage_count;
+      let potential = (n as isize - 1) * (term_size as isize) - (n as isize);
+      potential > 0
+    })
+    .count();
+
+  // Simulate actual sharing to count how many pass
+  let mut simulated_shared = 0;
+  let mut candidates: Vec<_> = info_map
+    .iter()
+    .filter(|(_, info)| info.usage_count >= 2)
+    .filter_map(|(hash, info)| {
+      let term_size = *effective_sizes.get(hash)?;
+      let n = info.usage_count;
+      let potential = (n as isize - 1) * (term_size as isize) - (n as isize);
+      if potential > 0 {
+        Some((term_size, n))
+      } else {
+        None
+      }
+    })
+    .collect();
+
+  candidates.sort_unstable_by(|a, b| {
+    let pot_a = (a.1 as isize - 1) * (a.0 as isize);
+    let pot_b = (b.1 as isize - 1) * (b.0 as isize);
+    pot_b.cmp(&pot_a)
+  });
+
+  for (term_size, usage_count) in candidates {
+    let next_ref_size =
+      Tag4::new(Expr::FLAG_SHARE, simulated_shared as u64).encoded_size();
+    let n = usage_count as isize;
+    let savings = (n - 1) * (term_size as isize) - n * (next_ref_size as isize);
+    if savings > 0 {
+      simulated_shared += 1;
+    }
+    // Don't break - process all candidates
+  }
+
+  SharingStats {
+    total_subterms,
+    unique_subterms,
+    shared_subterms,
+    total_usage,
+    candidates_usage_ge_2,
+    candidates_positive_potential,
+    actually_shared: simulated_shared,
+    usage_distribution,
+    size_distribution,
+  }
+}
+
+/// Statistics about sharing analysis.
+#[derive(Debug)]
+pub struct SharingStats {
+  pub total_subterms: usize,
+  pub unique_subterms: usize,
+  pub shared_subterms: usize,
+  pub total_usage: usize,
+  pub candidates_usage_ge_2: usize,
+  pub candidates_positive_potential: usize,
+  pub actually_shared: usize,
+  pub usage_distribution: HashMap<usize, usize>,
+  pub size_distribution: HashMap<usize, usize>,
+}
+
+impl std::fmt::Display for SharingStats {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    writeln!(f, "=== Sharing Analysis ===")?;
+    writeln!(f, "Total unique subterms: {}", self.total_subterms)?;
+    writeln!(f, "  - Unique (usage=1): {}", self.unique_subterms)?;
+    writeln!(f, "  - Shared (usage>=2): {}", self.shared_subterms)?;
+    writeln!(f, "Total usage count: {}", self.total_usage)?;
+    writeln!(
+      f,
+      "Average usage: {:.2}",
+      self.total_usage as f64 / self.total_subterms as f64
+    )?;
+    writeln!(f)?;
+    writeln!(f, "Filtering pipeline:")?;
+    writeln!(
+      f,
+      "  1. Candidates with usage >= 2: {}",
+      self.candidates_usage_ge_2
+    )?;
+    writeln!(
+      f,
+      "  2. With positive potential: {}",
+      self.candidates_positive_potential
+    )?;
+    writeln!(f, "  3. Actually shared: {}", self.actually_shared)?;
+    writeln!(f)?;
+    writeln!(f, "Usage distribution:")?;
+    let mut usage_counts: Vec<_> = self.usage_distribution.iter().collect();
+    usage_counts.sort_by_key(|(k, _)| *k);
+    for (usage, count) in usage_counts.iter().take(10) {
+      writeln!(f, "  usage={}: {} subterms", usage, count)?;
+    }
+    if usage_counts.len() > 10 {
+      writeln!(f, "  ... and {} more buckets", usage_counts.len() - 10)?;
+    }
+    writeln!(f)?;
+    writeln!(f, "Size distribution (effective_size buckets):")?;
+    let mut size_counts: Vec<_> = self.size_distribution.iter().collect();
+    size_counts.sort_by_key(|(k, _)| *k);
+    for (size_bucket, count) in size_counts {
+      writeln!(f, "  size<={}: {} subterms", size_bucket, count)?;
+    }
+    Ok(())
+  }
+}
+
 /// Decide which subterms to share based on profitability.
 ///
 /// Sharing is profitable when: `(N - 1) * term_size > N * share_ref_size`
@@ -441,7 +555,10 @@ pub fn decide_sharing(
 
   let mut shared: IndexSet<blake3::Hash> = IndexSet::new();
 
-  // Process candidates in sorted order
+  // Process ALL candidates - don't break early!
+  // The early-break was incorrect: ref_size growth affects candidates differently
+  // based on their usage count. A high-usage small term may become unprofitable
+  // while a low-usage large term remains profitable.
   for (hash, term_size, usage_count) in candidates {
     let next_idx = shared.len();
     let next_ref_size =
@@ -451,10 +568,6 @@ pub fn decide_sharing(
 
     if savings > 0 {
       shared.insert(hash);
-    } else {
-      // Since candidates are sorted by decreasing potential and ref_size only grows,
-      // remaining candidates won't be profitable either
-      break;
     }
   }
 
@@ -470,22 +583,34 @@ pub fn build_sharing_vec(
   ptr_to_hash: &FxHashMap<*const Expr, blake3::Hash>,
   info_map: &HashMap<blake3::Hash, SubtermInfo>,
 ) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
+  // CRITICAL: Re-sort shared_hashes in topological order (leaves first).
+  // decide_sharing returns hashes sorted by gross benefit (large terms first),
+  // but we need leaves first so that when serializing sharing[i], all its
+  // children are already available as Share(j) for j < i.
+  let topo_order = topological_sort(info_map);
+  let shared_in_topo_order: Vec<blake3::Hash> = topo_order
+    .into_iter()
+    .filter(|h| shared_hashes.contains(h))
+    .collect();
+
   // Build sharing vector incrementally to avoid forward references.
   // When building sharing[i], only Share(j) for j < i is allowed.
   let mut sharing_vec: Vec<Arc<Expr>> = Vec::with_capacity(shared_hashes.len());
   let mut hash_to_idx: HashMap<blake3::Hash, u64> = HashMap::new();
   let mut cache: FxHashMap<*const Expr, Arc<Expr>> = FxHashMap::default();
 
-  for (i, h) in shared_hashes.iter().enumerate() {
+  for h in &shared_in_topo_order {
     let info = info_map.get(h).expect("shared hash must be in info_map");
     // Clear cache - hash_to_idx changed, so cached rewrites are invalid
     cache.clear();
-    // Rewrite using only indices < i (hash_to_idx doesn't include i yet)
+    // Rewrite using only indices < current length (hash_to_idx doesn't include this entry yet)
     let rewritten =
       rewrite_expr(&info.expr, &hash_to_idx, ptr_to_hash, &mut cache);
+
+    let idx = sharing_vec.len() as u64;
     sharing_vec.push(rewritten);
     // Now add this hash to the map for subsequent entries
-    hash_to_idx.insert(*h, i as u64);
+    hash_to_idx.insert(*h, idx);
   }
 
   // Rewrite the root expressions (can use all Share indices)
@@ -697,6 +822,90 @@ fn rewrite_expr(
 mod tests {
   use super::*;
 
+  /// Test that demonstrates the early-break bug in decide_sharing.
+  ///
+  /// The bug: decide_sharing sorts candidates by "gross benefit" (n-1)*size
+  /// and breaks on the first unprofitable candidate. However, as ref_size
+  /// grows (1 byte for idx<8, 2 bytes for idx>=8), a high-usage small-size
+  /// term may become unprofitable while a low-usage large-size term remains
+  /// profitable.
+  ///
+  /// At ref_size=2 (idx >= 8):
+  /// - Term A: size=2, n=10, gross=18, savings = 18 - 20 = -2 < 0 (triggers break!)
+  /// - Term B: size=5, n=2, gross=5, savings = 5 - 4 = 1 > 0 (profitable but skipped)
+  ///
+  /// We need 8 filler terms with gross > 18 to fill indices 0-7 first.
+  #[test]
+  fn test_early_break_bug() {
+    // Filler: 8 unique terms with gross > 18
+    // Var(256)..Var(263), each appearing 10 times
+    // size=3 (256 fits in 2 bytes after Tag4 header), n=10, gross=9*3=27 > 18
+    let mut all_exprs: Vec<Arc<Expr>> = Vec::new();
+
+    for i in 0..8u64 {
+      let var = Expr::var(256 + i); // size=3
+      for _ in 0..10 {
+        all_exprs.push(var.clone());
+      }
+    }
+
+    // Term A: Var(10), appearing 10 times
+    // size=2 (10 < 256, so fits in Tag4 with 2-byte encoding), n=10, gross=9*2=18
+    // At ref_size=2 (idx >= 8): savings = 18 - 20 = -2 < 0 (triggers break!)
+    let term_a = Expr::var(10);
+    for _ in 0..10 {
+      all_exprs.push(term_a.clone());
+    }
+
+    // Term B: All(Var(0), All(Var(1), Var(2))) appearing 2 times
+    // This has effective_size = 1 + 1 + (1 + 1 + 1) = 5
+    // gross = 1*5 = 5 < 18 ✓ (comes after A in sort order)
+    // At ref_size=2: savings = 5 - 4 = 1 > 0 ✓ (profitable!)
+    let term_b = Expr::all(Expr::var(0), Expr::all(Expr::var(1), Expr::var(2)));
+    all_exprs.push(term_b.clone());
+    all_exprs.push(term_b.clone());
+
+    // Analyze all expressions together
+    let (info_map, ptr_to_hash) = analyze_block(&all_exprs, false);
+    let shared = decide_sharing(&info_map);
+
+    // Verify term_a was found with usage_count=10
+    let term_a_ptr = term_a.as_ref() as *const Expr;
+    let term_a_hash = ptr_to_hash.get(&term_a_ptr);
+    if let Some(hash) = term_a_hash {
+      let info = info_map.get(hash).unwrap();
+      assert_eq!(info.usage_count, 10, "term_a should have usage_count=10");
+    }
+
+    // Find term B's hash - it's the outer All(Var(0), ...)
+    let term_b_ptr = term_b.as_ref() as *const Expr;
+    let term_b_hash = ptr_to_hash.get(&term_b_ptr);
+
+    if let Some(hash) = term_b_hash {
+      let info = info_map.get(hash).unwrap();
+      assert_eq!(info.usage_count, 2, "term_b should have usage_count=2");
+
+      // Compute effective size
+      let topo = topological_sort(&info_map);
+      let sizes = compute_effective_sizes(&info_map, &topo);
+      let term_b_size = sizes.get(hash).copied().unwrap_or(0);
+
+      // This assertion will FAIL with buggy code (early break) and PASS with fix
+      assert!(
+        shared.contains(hash),
+        "Term B (effective_size={}, n=2, gross={}) should be shared. \
+         At ref_size=2, savings = {} - 4 = {} > 0. \
+         But early-break bug skips it after term A fails. \
+         shared.len()={}",
+        term_b_size,
+        term_b_size, // gross = (n-1)*size = 1*size
+        term_b_size,
+        term_b_size as isize - 4,
+        shared.len()
+      );
+    }
+  }
+
   #[test]
   fn test_analyze_simple() {
     // Create a simple expression: App(Var(0), Var(0))
@@ -704,7 +913,7 @@ mod tests {
     let var0 = Expr::var(0);
     let app = Expr::app(var0.clone(), var0);
 
-    let (info_map, ptr_to_hash) = analyze_block(&[app]);
+    let (info_map, ptr_to_hash) = analyze_block(&[app], false);
 
     // Should have 2 unique subterms: Var(0) and App(Var(0), Var(0))
     assert_eq!(info_map.len(), 2);
@@ -728,7 +937,7 @@ mod tests {
     let lam2 = Expr::lam(ty.clone(), Expr::var(1));
     let app = Expr::app(lam1, lam2);
 
-    let (info_map, _) = analyze_block(&[app]);
+    let (info_map, _) = analyze_block(&[app], false);
     let shared = decide_sharing(&info_map);
 
     // ty (Sort(0)) appears twice, might be shared depending on size
@@ -742,7 +951,7 @@ mod tests {
     let var1 = Expr::var(1);
     let app = Expr::app(var0, var1);
 
-    let (info_map, _) = analyze_block(&[app]);
+    let (info_map, _) = analyze_block(&[app], false);
     let topo = topological_sort(&info_map);
 
     // Should have all hashes
@@ -775,7 +984,7 @@ mod tests {
     let app1 = Expr::app(var0.clone(), var0.clone());
     let app2 = Expr::app(app1, var0);
 
-    let (info_map, ptr_to_hash) = analyze_block(std::slice::from_ref(&app2));
+    let (info_map, ptr_to_hash) = analyze_block(std::slice::from_ref(&app2), false);
     let shared = decide_sharing(&info_map);
 
     // If var0 is shared, verify it
