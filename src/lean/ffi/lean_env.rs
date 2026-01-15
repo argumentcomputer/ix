@@ -781,6 +781,9 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
 
       // Analyze serialized size of "Nat.add_comm" and its transitive dependencies
       analyze_const_size(&stt, "Nat.add_comm");
+
+      // Analyze hash-consing vs serialization efficiency
+      analyze_block_size_stats(&stt);
     },
     Err(e) => println!("Compile ERR: {:?}", e),
   }
@@ -979,4 +982,150 @@ fn serialized_const_size(constant: &crate::ix::ixon::constant::Constant) -> usiz
   let mut buf = Vec::new();
   constant.put(&mut buf);
   buf.len()
+}
+
+/// Analyze block size statistics: hash-consing vs serialization.
+fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
+  use crate::ix::compile::BlockSizeStats;
+
+  // Collect all stats into a vector for analysis
+  let stats: Vec<(String, BlockSizeStats)> = stt
+    .block_stats
+    .iter()
+    .map(|entry| (entry.key().pretty(), entry.value().clone()))
+    .collect();
+
+  if stats.is_empty() {
+    println!("\n=== Block Size Analysis ===");
+    println!("  No block statistics collected");
+    return;
+  }
+
+  // Compute totals
+  let total_hash_consed: usize = stats.iter().map(|(_, s)| s.hash_consed_size).sum();
+  let total_serialized: usize = stats.iter().map(|(_, s)| s.serialized_size).sum();
+  let total_blocks = stats.len();
+  let total_consts: usize = stats.iter().map(|(_, s)| s.const_count).sum();
+
+  // Compute per-block overhead (serialized - hash_consed)
+  let mut overheads: Vec<(String, isize, f64, usize)> = stats
+    .iter()
+    .map(|(name, s)| {
+      let overhead = s.serialized_size as isize - s.hash_consed_size as isize;
+      let ratio = if s.hash_consed_size > 0 {
+        s.serialized_size as f64 / s.hash_consed_size as f64
+      } else {
+        1.0
+      };
+      (name.clone(), overhead, ratio, s.const_count)
+    })
+    .collect();
+
+  // Sort by overhead descending (most bloated first)
+  overheads.sort_by(|a, b| b.1.cmp(&a.1));
+
+  // Compute statistics
+  let avg_ratio = if total_hash_consed > 0 {
+    total_serialized as f64 / total_hash_consed as f64
+  } else {
+    1.0
+  };
+
+  // Find blocks with worst ratio (only for blocks with >100 bytes hash-consed)
+  let mut ratios: Vec<_> = stats
+    .iter()
+    .filter(|(_, s)| s.hash_consed_size > 100)
+    .map(|(name, s)| {
+      let ratio = s.serialized_size as f64 / s.hash_consed_size as f64;
+      (name.clone(), ratio, s.hash_consed_size, s.serialized_size)
+    })
+    .collect();
+  ratios.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  println!("\n=== Block Size Analysis (Hash-Consing vs Serialization) ===");
+  println!("  Total blocks: {}", total_blocks);
+  println!("  Total constants: {}", total_consts);
+  println!();
+  println!("  Total hash-consed size: {} bytes ({:.2} KB)", total_hash_consed, total_hash_consed as f64 / 1024.0);
+  println!("  Total serialized size:  {} bytes ({:.2} KB)", total_serialized, total_serialized as f64 / 1024.0);
+  println!("  Overall ratio: {:.3}x", avg_ratio);
+  println!("  Total overhead: {} bytes ({:.2} KB)",
+    total_serialized as isize - total_hash_consed as isize,
+    (total_serialized as f64 - total_hash_consed as f64) / 1024.0);
+
+  // Distribution of ratios
+  let ratio_under_1 = stats.iter().filter(|(_, s)|
+    s.hash_consed_size > 0 && (s.serialized_size as f64 / s.hash_consed_size as f64) < 1.0
+  ).count();
+  let ratio_1_to_1_5 = stats.iter().filter(|(_, s)| {
+    if s.hash_consed_size == 0 { return false; }
+    let r = s.serialized_size as f64 / s.hash_consed_size as f64;
+    r >= 1.0 && r < 1.5
+  }).count();
+  let ratio_1_5_to_2 = stats.iter().filter(|(_, s)| {
+    if s.hash_consed_size == 0 { return false; }
+    let r = s.serialized_size as f64 / s.hash_consed_size as f64;
+    r >= 1.5 && r < 2.0
+  }).count();
+  let ratio_over_2 = stats.iter().filter(|(_, s)| {
+    if s.hash_consed_size == 0 { return false; }
+    let r = s.serialized_size as f64 / s.hash_consed_size as f64;
+    r >= 2.0
+  }).count();
+
+  println!();
+  println!("  Ratio distribution:");
+  println!("    < 1.0x (compression):  {} blocks", ratio_under_1);
+  println!("    1.0-1.5x:              {} blocks", ratio_1_to_1_5);
+  println!("    1.5-2.0x:              {} blocks", ratio_1_5_to_2);
+  println!("    >= 2.0x (high bloat):  {} blocks", ratio_over_2);
+
+  // Top 10 blocks by absolute overhead
+  if !overheads.is_empty() {
+    println!();
+    println!("  Top 10 blocks by overhead (serialized - hash_consed):");
+    for (name, overhead, ratio, const_count) in overheads.iter().take(10) {
+      println!("    {:+} bytes ({:.2}x, {} consts): {}",
+        overhead, ratio, const_count, truncate_name(name, 50));
+    }
+  }
+
+  // Top 10 blocks by worst ratio (with >100 bytes)
+  if !ratios.is_empty() {
+    println!();
+    println!("  Top 10 blocks by ratio (hash-consed > 100 bytes):");
+    for (name, ratio, hc, ser) in ratios.iter().take(10) {
+      println!("    {:.2}x ({} -> {} bytes): {}",
+        ratio, hc, ser, truncate_name(name, 50));
+    }
+  }
+
+  // Bottom 10 blocks by ratio (best compression)
+  let mut best_ratios: Vec<_> = stats
+    .iter()
+    .filter(|(_, s)| s.hash_consed_size > 100)
+    .map(|(name, s)| {
+      let ratio = s.serialized_size as f64 / s.hash_consed_size as f64;
+      (name.clone(), ratio, s.hash_consed_size, s.serialized_size)
+    })
+    .collect();
+  best_ratios.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  if !best_ratios.is_empty() {
+    println!();
+    println!("  Top 10 blocks by best ratio (most efficient):");
+    for (name, ratio, hc, ser) in best_ratios.iter().take(10) {
+      println!("    {:.2}x ({} -> {} bytes): {}",
+        ratio, hc, ser, truncate_name(name, 50));
+    }
+  }
+}
+
+/// Truncate a name for display.
+fn truncate_name(name: &str, max_len: usize) -> String {
+  if name.len() <= max_len {
+    name.to_string()
+  } else {
+    format!("...{}", &name[name.len() - max_len + 3..])
+  }
 }

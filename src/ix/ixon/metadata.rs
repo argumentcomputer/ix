@@ -351,31 +351,51 @@ fn get_mdata_stack_indexed(
 // ===========================================================================
 
 impl ExprMeta {
+  // Tags 0-3: Binder with BinderInfo packed into tag
+  // Tag 4: LetBinder
+  // Tag 5: Ref
+  // Tag 6: Prj
+  // Tag 7: Mdata
+  const TAG_BINDER_DEFAULT: u8 = 0;
+  const TAG_BINDER_IMPLICIT: u8 = 1;
+  const TAG_BINDER_STRICT_IMPLICIT: u8 = 2;
+  const TAG_BINDER_INST_IMPLICIT: u8 = 3;
+  const TAG_LET_BINDER: u8 = 4;
+  const TAG_REF: u8 = 5;
+  const TAG_PRJ: u8 = 6;
+  const TAG_MDATA: u8 = 7;
+
   pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) {
     match self {
       Self::Binder { name, info, mdata } => {
-        put_u8(0, buf);
+        // Pack BinderInfo into tag (0-3)
+        let tag = match info {
+          BinderInfo::Default => Self::TAG_BINDER_DEFAULT,
+          BinderInfo::Implicit => Self::TAG_BINDER_IMPLICIT,
+          BinderInfo::StrictImplicit => Self::TAG_BINDER_STRICT_IMPLICIT,
+          BinderInfo::InstImplicit => Self::TAG_BINDER_INST_IMPLICIT,
+        };
+        put_u8(tag, buf);
         put_idx(name, idx, buf);
-        info.put(buf);
         put_mdata_stack_indexed(mdata, idx, buf);
       },
       Self::LetBinder { name, mdata } => {
-        put_u8(1, buf);
+        put_u8(Self::TAG_LET_BINDER, buf);
         put_idx(name, idx, buf);
         put_mdata_stack_indexed(mdata, idx, buf);
       },
       Self::Ref { name, mdata } => {
-        put_u8(2, buf);
+        put_u8(Self::TAG_REF, buf);
         put_idx(name, idx, buf);
         put_mdata_stack_indexed(mdata, idx, buf);
       },
       Self::Prj { struct_name, mdata } => {
-        put_u8(3, buf);
+        put_u8(Self::TAG_PRJ, buf);
         put_idx(struct_name, idx, buf);
         put_mdata_stack_indexed(mdata, idx, buf);
       },
       Self::Mdata { mdata } => {
-        put_u8(4, buf);
+        put_u8(Self::TAG_MDATA, buf);
         put_mdata_stack_indexed(mdata, idx, buf);
       },
     }
@@ -386,24 +406,34 @@ impl ExprMeta {
     rev: &NameReverseIndex,
   ) -> Result<Self, String> {
     match get_u8(buf)? {
-      0 => Ok(Self::Binder {
+      // Tags 0-3: Binder with BinderInfo packed into tag
+      tag @ 0..=3 => {
+        let info = match tag {
+          Self::TAG_BINDER_DEFAULT => BinderInfo::Default,
+          Self::TAG_BINDER_IMPLICIT => BinderInfo::Implicit,
+          Self::TAG_BINDER_STRICT_IMPLICIT => BinderInfo::StrictImplicit,
+          Self::TAG_BINDER_INST_IMPLICIT => BinderInfo::InstImplicit,
+          _ => unreachable!(),
+        };
+        Ok(Self::Binder {
+          name: get_idx(buf, rev)?,
+          info,
+          mdata: get_mdata_stack_indexed(buf, rev)?,
+        })
+      },
+      Self::TAG_LET_BINDER => Ok(Self::LetBinder {
         name: get_idx(buf, rev)?,
-        info: BinderInfo::get_ser(buf)?,
         mdata: get_mdata_stack_indexed(buf, rev)?,
       }),
-      1 => Ok(Self::LetBinder {
+      Self::TAG_REF => Ok(Self::Ref {
         name: get_idx(buf, rev)?,
         mdata: get_mdata_stack_indexed(buf, rev)?,
       }),
-      2 => Ok(Self::Ref {
-        name: get_idx(buf, rev)?,
-        mdata: get_mdata_stack_indexed(buf, rev)?,
-      }),
-      3 => Ok(Self::Prj {
+      Self::TAG_PRJ => Ok(Self::Prj {
         struct_name: get_idx(buf, rev)?,
         mdata: get_mdata_stack_indexed(buf, rev)?,
       }),
-      4 => Ok(Self::Mdata { mdata: get_mdata_stack_indexed(buf, rev)? }),
+      Self::TAG_MDATA => Ok(Self::Mdata { mdata: get_mdata_stack_indexed(buf, rev)? }),
       x => Err(format!("ExprMeta::get: invalid tag {x}")),
     }
   }

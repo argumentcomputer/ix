@@ -188,6 +188,8 @@ pub enum ConstantInfo {
 
 impl ConstantInfo {
   // Constant variant indices (used as Tag4 size field)
+  // These are 0-7, fitting in 3 bits for single-byte Tag4
+  // Note: Muts uses a separate flag (0xC), not a variant here
   pub const CONST_DEFN: u64 = 0;
   pub const CONST_RECR: u64 = 1;
   pub const CONST_AXIO: u64 = 2;
@@ -196,20 +198,20 @@ impl ConstantInfo {
   pub const CONST_RPRJ: u64 = 5;
   pub const CONST_IPRJ: u64 = 6;
   pub const CONST_DPRJ: u64 = 7;
-  pub const CONST_MUTS: u64 = 8;
 
   /// Returns the variant index (used as Tag4 size field)
-  pub fn variant(&self) -> u64 {
+  /// Returns None for Muts (which uses its own flag)
+  pub fn variant(&self) -> Option<u64> {
     match self {
-      Self::Defn(_) => Self::CONST_DEFN,
-      Self::Recr(_) => Self::CONST_RECR,
-      Self::Axio(_) => Self::CONST_AXIO,
-      Self::Quot(_) => Self::CONST_QUOT,
-      Self::CPrj(_) => Self::CONST_CPRJ,
-      Self::RPrj(_) => Self::CONST_RPRJ,
-      Self::IPrj(_) => Self::CONST_IPRJ,
-      Self::DPrj(_) => Self::CONST_DPRJ,
-      Self::Muts(_) => Self::CONST_MUTS,
+      Self::Defn(_) => Some(Self::CONST_DEFN),
+      Self::Recr(_) => Some(Self::CONST_RECR),
+      Self::Axio(_) => Some(Self::CONST_AXIO),
+      Self::Quot(_) => Some(Self::CONST_QUOT),
+      Self::CPrj(_) => Some(Self::CONST_CPRJ),
+      Self::RPrj(_) => Some(Self::CONST_RPRJ),
+      Self::IPrj(_) => Some(Self::CONST_IPRJ),
+      Self::DPrj(_) => Some(Self::CONST_DPRJ),
+      Self::Muts(_) => None, // Uses FLAG_MUTS, not a variant
     }
   }
 }
@@ -228,8 +230,10 @@ pub struct Constant {
 }
 
 impl Constant {
-  /// Tag4 flag used for all constants (discriminated by size field)
+  /// Tag4 flag used for non-Muts constants (variant in size field, always 1 byte)
   pub const FLAG: u8 = 0xD;
+  /// Tag4 flag used for Muts constants (entry count in size field)
+  pub const FLAG_MUTS: u8 = 0xC;
 
   /// Create a new constant with no sharing, refs, or univs
   pub fn new(info: ConstantInfo) -> Self {

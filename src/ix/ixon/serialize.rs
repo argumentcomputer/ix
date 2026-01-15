@@ -184,9 +184,8 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
         }
       },
       Expr::Let(non_dep, ty, val, body) => {
-        let flag =
-          if *non_dep { Expr::FLAG_LET_NONDEP } else { Expr::FLAG_LET_DEP };
-        Tag4::new(flag, 0).put(buf);
+        // size=0 for dep, size=1 for non_dep
+        Tag4::new(Expr::FLAG_LET, if *non_dep { 1 } else { 0 }).put(buf);
         stack.push(body); // Process body last
         stack.push(val);
         stack.push(ty); // Process ty first
@@ -294,16 +293,10 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
             });
             work.push(GetExprFrame::Parse); // first type
           },
-          Expr::FLAG_LET_DEP => {
-            // Parse ty, val, body, then build Let
-            work.push(GetExprFrame::BuildLet(false));
-            work.push(GetExprFrame::Parse); // body
-            work.push(GetExprFrame::Parse); // val
-            work.push(GetExprFrame::Parse); // ty
-          },
-          Expr::FLAG_LET_NONDEP => {
-            // Parse ty, val, body, then build Let
-            work.push(GetExprFrame::BuildLet(true));
+          Expr::FLAG_LET => {
+            // size=0 for dep, size=1 for non_dep
+            let non_dep = tag.size != 0;
+            work.push(GetExprFrame::BuildLet(non_dep));
             work.push(GetExprFrame::Parse); // body
             work.push(GetExprFrame::Parse); // val
             work.push(GetExprFrame::Parse); // ty
@@ -400,41 +393,53 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
 // ============================================================================
 
 impl DefKind {
-  pub fn put(&self, buf: &mut Vec<u8>) {
+  fn to_u8(self) -> u8 {
     match self {
-      Self::Definition => put_u8(0, buf),
-      Self::Opaque => put_u8(1, buf),
-      Self::Theorem => put_u8(2, buf),
+      Self::Definition => 0,
+      Self::Opaque => 1,
+      Self::Theorem => 2,
     }
   }
 
-  pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    match get_u8(buf)? {
+  fn from_u8(x: u8) -> Result<Self, String> {
+    match x {
       0 => Ok(Self::Definition),
       1 => Ok(Self::Opaque),
       2 => Ok(Self::Theorem),
-      x => Err(format!("DefKind::get: invalid {x}")),
+      x => Err(format!("DefKind::from_u8: invalid {x}")),
     }
   }
 }
 
 impl DefinitionSafety {
-  pub fn put_ser(&self, buf: &mut Vec<u8>) {
+  fn to_u8(self) -> u8 {
     match self {
-      Self::Unsafe => put_u8(0, buf),
-      Self::Safe => put_u8(1, buf),
-      Self::Partial => put_u8(2, buf),
+      Self::Unsafe => 0,
+      Self::Safe => 1,
+      Self::Partial => 2,
     }
   }
 
-  pub fn get_ser(buf: &mut &[u8]) -> Result<Self, String> {
-    match get_u8(buf)? {
+  fn from_u8(x: u8) -> Result<Self, String> {
+    match x {
       0 => Ok(Self::Unsafe),
       1 => Ok(Self::Safe),
       2 => Ok(Self::Partial),
-      x => Err(format!("DefinitionSafety::get: invalid {x}")),
+      x => Err(format!("DefinitionSafety::from_u8: invalid {x}")),
     }
   }
+}
+
+/// Pack DefKind (2 bits) and DefinitionSafety (2 bits) into a single byte.
+fn pack_def_kind_safety(kind: DefKind, safety: DefinitionSafety) -> u8 {
+  (kind.to_u8() << 2) | safety.to_u8()
+}
+
+/// Unpack DefKind and DefinitionSafety from a single byte.
+fn unpack_def_kind_safety(b: u8) -> Result<(DefKind, DefinitionSafety), String> {
+  let kind = DefKind::from_u8(b >> 2)?;
+  let safety = DefinitionSafety::from_u8(b & 0x3)?;
+  Ok((kind, safety))
 }
 
 impl QuotKind {
@@ -476,16 +481,15 @@ fn get_sharing(buf: &mut &[u8]) -> Result<Vec<Arc<Expr>>, String> {
 
 impl Definition {
   pub fn put(&self, buf: &mut Vec<u8>) {
-    self.kind.put(buf);
-    self.safety.put_ser(buf);
+    // Pack DefKind + DefinitionSafety into single byte
+    put_u8(pack_def_kind_safety(self.kind, self.safety), buf);
     put_u64(self.lvls, buf);
     put_expr(&self.typ, buf);
     put_expr(&self.value, buf);
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let kind = DefKind::get(buf)?;
-    let safety = DefinitionSafety::get_ser(buf)?;
+    let (kind, safety) = unpack_def_kind_safety(get_u8(buf)?)?;
     let lvls = get_u64(buf)?;
     let typ = get_expr(buf)?;
     let value = get_expr(buf)?;
@@ -721,23 +725,8 @@ impl MutConst {
   }
 }
 
-fn put_mutuals(mutuals: &[MutConst], buf: &mut Vec<u8>) {
-  put_u64(mutuals.len() as u64, buf);
-  for m in mutuals {
-    m.put(buf);
-  }
-}
-
-fn get_mutuals(buf: &mut &[u8]) -> Result<Vec<MutConst>, String> {
-  let num = get_u64(buf)?;
-  let mut mutuals = Vec::with_capacity(num as usize);
-  for _ in 0..num {
-    mutuals.push(MutConst::get(buf)?);
-  }
-  Ok(mutuals)
-}
-
 impl ConstantInfo {
+  /// Serialize a non-Muts ConstantInfo (Muts is handled separately in Constant::put)
   pub fn put(&self, buf: &mut Vec<u8>) {
     match self {
       Self::Defn(d) => d.put(buf),
@@ -748,10 +737,11 @@ impl ConstantInfo {
       Self::RPrj(r) => r.put(buf),
       Self::IPrj(i) => i.put(buf),
       Self::DPrj(d) => d.put(buf),
-      Self::Muts(m) => put_mutuals(m, buf),
+      Self::Muts(_) => unreachable!("Muts handled in Constant::put"),
     }
   }
 
+  /// Deserialize a non-Muts ConstantInfo (Muts is handled separately with FLAG_MUTS)
   pub fn get(variant: u64, buf: &mut &[u8]) -> Result<Self, String> {
     match variant {
       Self::CONST_DEFN => Ok(Self::Defn(Definition::get(buf)?)),
@@ -762,7 +752,6 @@ impl ConstantInfo {
       Self::CONST_RPRJ => Ok(Self::RPrj(RecursorProj::get(buf)?)),
       Self::CONST_IPRJ => Ok(Self::IPrj(InductiveProj::get(buf)?)),
       Self::CONST_DPRJ => Ok(Self::DPrj(DefinitionProj::get(buf)?)),
-      Self::CONST_MUTS => Ok(Self::Muts(get_mutuals(buf)?)),
       x => Err(format!("ConstantInfo::get: invalid variant {x}")),
     }
   }
@@ -802,9 +791,21 @@ fn get_univs(buf: &mut &[u8]) -> Result<Vec<Arc<Univ>>, String> {
 
 impl Constant {
   pub fn put(&self, buf: &mut Vec<u8>) {
-    // Use Tag4 with flag 0xD, variant in size field
-    Tag4::new(Self::FLAG, self.info.variant()).put(buf);
-    self.info.put(buf);
+    match &self.info {
+      ConstantInfo::Muts(mutuals) => {
+        // Use FLAG_MUTS (0xC) with entry count in size field
+        Tag4::new(Self::FLAG_MUTS, mutuals.len() as u64).put(buf);
+        // Entries directly (no length prefix - it's in the tag)
+        for m in mutuals {
+          m.put(buf);
+        }
+      },
+      _ => {
+        // Use FLAG (0xD) with variant in size field (always 0-7, fits in 1 byte)
+        Tag4::new(Self::FLAG, self.info.variant().unwrap()).put(buf);
+        self.info.put(buf);
+      },
+    }
     put_sharing(&self.sharing, buf);
     put_refs(&self.refs, buf);
     put_univs(&self.univs, buf);
@@ -812,14 +813,28 @@ impl Constant {
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let tag = Tag4::get(buf)?;
-    if tag.flag != Self::FLAG {
-      return Err(format!(
-        "Constant::get: expected flag {}, got {}",
-        Self::FLAG,
-        tag.flag
-      ));
-    }
-    let info = ConstantInfo::get(tag.size, buf)?;
+    let info = match tag.flag {
+      Self::FLAG_MUTS => {
+        // Muts: size field is entry count
+        let mut mutuals = Vec::with_capacity(tag.size as usize);
+        for _ in 0..tag.size {
+          mutuals.push(MutConst::get(buf)?);
+        }
+        ConstantInfo::Muts(mutuals)
+      },
+      Self::FLAG => {
+        // Non-Muts: size field is variant
+        ConstantInfo::get(tag.size, buf)?
+      },
+      _ => {
+        return Err(format!(
+          "Constant::get: expected flag {} or {}, got {}",
+          Self::FLAG,
+          Self::FLAG_MUTS,
+          tag.flag
+        ));
+      },
+    };
     let sharing = get_sharing(buf)?;
     let refs = get_refs(buf)?;
     let univs = get_univs(buf)?;

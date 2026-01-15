@@ -53,10 +53,9 @@ impl Expr {
   pub const FLAG_APP: u8 = 0x7;
   pub const FLAG_LAM: u8 = 0x8;
   pub const FLAG_ALL: u8 = 0x9;
-  pub const FLAG_LET_DEP: u8 = 0xA;
-  pub const FLAG_LET_NONDEP: u8 = 0xB;
-  pub const FLAG_SHARE: u8 = 0xC;
-  // Reserved: 0xD for Constants, 0xE-0xF unused
+  pub const FLAG_LET: u8 = 0xA; // size=0 for dep, size=1 for non_dep
+  pub const FLAG_SHARE: u8 = 0xB;
+  // Reserved: 0xC unused, 0xD for Constants, 0xE-0xF unused
 
   pub fn sort(univ_idx: u64) -> Arc<Self> {
     Arc::new(Expr::Sort(univ_idx))
@@ -423,11 +422,17 @@ pub mod tests {
   #[test]
   fn expr_and_constant_flags_unique() {
     assert_eq!(Expr::FLAG_SORT, 0x0);
-    assert_eq!(Expr::FLAG_SHARE, 0xC);
+    assert_eq!(Expr::FLAG_SHARE, 0xB);
+    assert_eq!(Constant::FLAG_MUTS, 0xC);
     assert_eq!(Constant::FLAG, 0xD);
+    // Expression flags are 0x0-0xB, Constant flags are 0xC-0xD
     assert!(
-      ![0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC]
+      ![0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB]
         .contains(&Constant::FLAG)
+    );
+    assert!(
+      ![0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB]
+        .contains(&Constant::FLAG_MUTS)
     );
   }
 }

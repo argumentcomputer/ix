@@ -21,8 +21,10 @@ use super::tag::{Tag0, Tag4};
 /// Information about a subterm for sharing analysis.
 #[derive(Debug)]
 pub struct SubtermInfo {
-  /// Base size of this node alone (Tag4 header, not including children)
+  /// Base size of this node alone (Tag4 header, not including children) for Ixon format
   pub base_size: usize,
+  /// Size in a fully hash-consed store (32-byte key + value with hash references)
+  pub hash_consed_size: usize,
   /// Number of occurrences within this block
   pub usage_count: usize,
   /// Canonical representative expression
@@ -119,9 +121,8 @@ fn hash_node(
       vec![*ty_hash, *body_hash]
     },
     Expr::Let(non_dep, ty, val, body) => {
-      let flag =
-        if *non_dep { Expr::FLAG_LET_NONDEP } else { Expr::FLAG_LET_DEP };
-      buf.push(flag);
+      buf.push(Expr::FLAG_LET);
+      buf.push(if *non_dep { 1 } else { 0 }); // size field encodes non_dep
       let ty_ptr = ty.as_ref() as *const Expr;
       let val_ptr = val.as_ref() as *const Expr;
       let body_ptr = body.as_ref() as *const Expr;
@@ -143,7 +144,7 @@ fn hash_node(
   (blake3::hash(buf), children)
 }
 
-/// Compute the base size of a node (Tag4 header size).
+/// Compute the base size of a node (Tag4 header size) for Ixon serialization.
 fn compute_base_size(expr: &Expr) -> usize {
   match expr {
     Expr::Sort(univ_idx) => {
@@ -179,12 +180,66 @@ fn compute_base_size(expr: &Expr) -> usize {
     Expr::Lam(..) => Tag4::new(Expr::FLAG_LAM, 1).encoded_size(),
     Expr::All(..) => Tag4::new(Expr::FLAG_ALL, 1).encoded_size(),
     Expr::Let(non_dep, ..) => {
-      let flag =
-        if *non_dep { Expr::FLAG_LET_NONDEP } else { Expr::FLAG_LET_DEP };
-      Tag4::new(flag, 0).encoded_size()
+      // size=0 for dep, size=1 for non_dep
+      Tag4::new(Expr::FLAG_LET, if *non_dep { 1 } else { 0 }).encoded_size()
     },
     Expr::Share(idx) => Tag4::new(Expr::FLAG_SHARE, *idx).encoded_size(),
   }
+}
+
+/// Compute the size of a node in a fully hash-consed store.
+///
+/// In a hash-consed store:
+/// - Each unique expression is stored once, keyed by its 32-byte hash
+/// - External references (constants, universes, blobs) are 32-byte hashes
+/// - Child expressions are referenced by 32-byte hashes
+///
+/// Returns (key_size, value_size) where key is always 32 bytes.
+pub fn compute_hash_consed_node_size(expr: &Expr) -> usize {
+  const HASH_SIZE: usize = 32;
+  const TAG_SIZE: usize = 1;
+
+  let value_size = match expr {
+    // Var just has tag + varint index (no external refs)
+    Expr::Var(idx) => TAG_SIZE + Tag0::new(*idx).encoded_size(),
+
+    // Sort references a universe by hash
+    Expr::Sort(_) => TAG_SIZE + HASH_SIZE,
+
+    // Ref: tag + constant_hash + N * univ_hash
+    Expr::Ref(_, univ_indices) => {
+      TAG_SIZE + HASH_SIZE + univ_indices.len() * HASH_SIZE
+    },
+
+    // Rec: tag + constant_hash + N * univ_hash
+    Expr::Rec(_, univ_indices) => {
+      TAG_SIZE + HASH_SIZE + univ_indices.len() * HASH_SIZE
+    },
+
+    // Prj: tag + type_hash + field_idx + child_hash
+    Expr::Prj(_, field_idx, _) => {
+      TAG_SIZE + HASH_SIZE + Tag0::new(*field_idx).encoded_size() + HASH_SIZE
+    },
+
+    // Str/Nat: tag + blob_hash
+    Expr::Str(_) | Expr::Nat(_) => TAG_SIZE + HASH_SIZE,
+
+    // App: tag + fun_hash + arg_hash
+    Expr::App(..) => TAG_SIZE + 2 * HASH_SIZE,
+
+    // Lam/All: tag + ty_hash + body_hash
+    Expr::Lam(..) | Expr::All(..) => TAG_SIZE + 2 * HASH_SIZE,
+
+    // Let: tag + ty_hash + val_hash + body_hash
+    Expr::Let(..) => TAG_SIZE + 3 * HASH_SIZE,
+
+    // Share doesn't exist in hash-consed model (sharing is implicit via hashes)
+    // But if we encounter it during analysis, count it minimally
+    Expr::Share(_) => TAG_SIZE + HASH_SIZE,
+  };
+
+  // Total = 32-byte key + value
+  HASH_SIZE + value_size
 }
 
 /// Get child expressions for traversal.
@@ -263,10 +318,13 @@ pub fn analyze_block(
           } else {
             // New subterm
             let base_size = compute_base_size(arc_expr.as_ref());
+            let hash_consed_size =
+              compute_hash_consed_node_size(arc_expr.as_ref());
             info_map.insert(
               hash,
               SubtermInfo {
                 base_size,
+                hash_consed_size,
                 usage_count: 1,
                 expr: arc_expr.clone(),
                 children,

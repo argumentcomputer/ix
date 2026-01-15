@@ -39,13 +39,24 @@ use crate::{
     env::{Env as IxonEnv, Named},
     expr::Expr,
     metadata::{ConstantMeta, CtorMeta, DataValue, ExprMeta, ExprMetas, KVMap},
-    sharing::{analyze_block, build_sharing_vec, decide_sharing},
+    sharing::{self, analyze_block, build_sharing_vec, decide_sharing},
     univ::Univ,
   },
   ix::mutual::{Def, Ind, MutConst, MutCtx, Rec, ctx_to_all},
   ix::strong_ordering::SOrd,
   lean::nat::Nat,
 };
+
+/// Size statistics for a compiled block.
+#[derive(Clone, Debug, Default)]
+pub struct BlockSizeStats {
+  /// Hash-consed size: sum of unique subterm sizes (theoretical minimum with perfect sharing)
+  pub hash_consed_size: usize,
+  /// Serialized Ixon size: actual bytes when serialized
+  pub serialized_size: usize,
+  /// Number of constants in the block
+  pub const_count: usize,
+}
 
 /// Compile state for building the Ixon environment.
 #[derive(Default)]
@@ -56,6 +67,8 @@ pub struct CompileState {
   pub name_to_addr: DashMap<Name, Address>,
   /// Addresses of mutual blocks
   pub blocks: DashSet<Address>,
+  /// Per-block size statistics (keyed by low-link name)
+  pub block_stats: DashMap<Name, BlockSizeStats>,
 }
 
 /// Per-block compilation cache.
@@ -614,90 +627,135 @@ fn serialize_preresolved(
 // Sharing analysis helper
 // ===========================================================================
 
+/// Result of sharing analysis including size statistics.
+struct SharingResult {
+  /// Rewritten expressions with Share nodes
+  rewritten: Vec<Arc<Expr>>,
+  /// Shared subexpressions
+  sharing: Vec<Arc<Expr>>,
+  /// Hash-consed size: sum of unique subterm base_sizes
+  hash_consed_size: usize,
+}
+
+/// Compute the hash-consed size from the info_map.
+/// This is the theoretical size if each unique subterm were stored once in a content-addressed store.
+/// Each unique expression = 32-byte key + value (with 32-byte hash references for children/externals).
+fn compute_hash_consed_size(
+  info_map: &std::collections::HashMap<blake3::Hash, sharing::SubtermInfo>,
+) -> usize {
+  info_map.values().map(|info| info.hash_consed_size).sum()
+}
+
 /// Apply sharing analysis to a set of expressions.
-/// Returns the rewritten expressions and the sharing vector.
-fn apply_sharing(exprs: Vec<Arc<Expr>>) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
+/// Returns the rewritten expressions, sharing vector, and hash-consed size.
+fn apply_sharing_with_stats(exprs: Vec<Arc<Expr>>) -> SharingResult {
   let (info_map, ptr_to_hash) = analyze_block(&exprs);
+
+  // Compute hash-consed size (always computed, even if no sharing)
+  let hash_consed_size = compute_hash_consed_size(&info_map);
 
   // Early exit if no sharing opportunities (< 2 repeated subterms)
   let has_candidates = info_map.values().any(|info| info.usage_count >= 2);
   if !has_candidates {
-    return (exprs, Vec::new());
+    return SharingResult { rewritten: exprs, sharing: Vec::new(), hash_consed_size };
   }
 
   let shared_hashes = decide_sharing(&info_map);
 
   // Early exit if nothing to share
   if shared_hashes.is_empty() {
-    return (exprs, Vec::new());
+    return SharingResult { rewritten: exprs, sharing: Vec::new(), hash_consed_size };
   }
 
-  build_sharing_vec(&exprs, &shared_hashes, &ptr_to_hash, &info_map)
+  let (rewritten, sharing) =
+    build_sharing_vec(&exprs, &shared_hashes, &ptr_to_hash, &info_map);
+  SharingResult { rewritten, sharing, hash_consed_size }
 }
 
-/// Apply sharing to a Definition and return a Constant.
+/// Apply sharing analysis to a set of expressions (without stats).
+/// Returns the rewritten expressions and the sharing vector.
+#[cfg(test)]
+fn apply_sharing(exprs: Vec<Arc<Expr>>) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
+  let result = apply_sharing_with_stats(exprs);
+  (result.rewritten, result.sharing)
+}
+
+/// Result of applying sharing to a singleton constant.
+struct SingletonSharingResult {
+  /// The compiled Constant
+  constant: Constant,
+  /// Hash-consed size of expressions
+  hash_consed_size: usize,
+}
+
+/// Apply sharing to a Definition and return a Constant with stats.
 #[allow(clippy::needless_pass_by_value)]
-fn apply_sharing_to_definition(
+fn apply_sharing_to_definition_with_stats(
   def: Definition,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> Constant {
-  let (rewritten, sharing) =
-    apply_sharing(vec![def.typ.clone(), def.value.clone()]);
+) -> SingletonSharingResult {
+  let result = apply_sharing_with_stats(vec![def.typ.clone(), def.value.clone()]);
   let def = Definition {
     kind: def.kind,
     safety: def.safety,
     lvls: def.lvls,
-    typ: rewritten[0].clone(),
-    value: rewritten[1].clone(),
+    typ: result.rewritten[0].clone(),
+    value: result.rewritten[1].clone(),
   };
-  Constant::with_tables(ConstantInfo::Defn(def), sharing, refs, univs)
+  let constant =
+    Constant::with_tables(ConstantInfo::Defn(def), result.sharing, refs, univs);
+  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
 }
 
-/// Apply sharing to an Axiom and return a Constant.
+/// Apply sharing to an Axiom and return a Constant with stats.
 #[allow(clippy::needless_pass_by_value)]
-fn apply_sharing_to_axiom(
+fn apply_sharing_to_axiom_with_stats(
   ax: Axiom,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> Constant {
-  let (rewritten, sharing) = apply_sharing(vec![ax.typ.clone()]);
+) -> SingletonSharingResult {
+  let result = apply_sharing_with_stats(vec![ax.typ.clone()]);
   let ax =
-    Axiom { is_unsafe: ax.is_unsafe, lvls: ax.lvls, typ: rewritten[0].clone() };
-  Constant::with_tables(ConstantInfo::Axio(ax), sharing, refs, univs)
+    Axiom { is_unsafe: ax.is_unsafe, lvls: ax.lvls, typ: result.rewritten[0].clone() };
+  let constant =
+    Constant::with_tables(ConstantInfo::Axio(ax), result.sharing, refs, univs);
+  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
 }
 
-/// Apply sharing to a Quotient and return a Constant.
+/// Apply sharing to a Quotient and return a Constant with stats.
 #[allow(clippy::needless_pass_by_value)]
-fn apply_sharing_to_quotient(
+fn apply_sharing_to_quotient_with_stats(
   quot: Quotient,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> Constant {
-  let (rewritten, sharing) = apply_sharing(vec![quot.typ.clone()]);
+) -> SingletonSharingResult {
+  let result = apply_sharing_with_stats(vec![quot.typ.clone()]);
   let quot =
-    Quotient { kind: quot.kind, lvls: quot.lvls, typ: rewritten[0].clone() };
-  Constant::with_tables(ConstantInfo::Quot(quot), sharing, refs, univs)
+    Quotient { kind: quot.kind, lvls: quot.lvls, typ: result.rewritten[0].clone() };
+  let constant =
+    Constant::with_tables(ConstantInfo::Quot(quot), result.sharing, refs, univs);
+  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
 }
 
-/// Apply sharing to a Recursor and return a Constant.
-fn apply_sharing_to_recursor(
+/// Apply sharing to a Recursor and return a Constant with stats.
+fn apply_sharing_to_recursor_with_stats(
   rec: Recursor,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> Constant {
+) -> SingletonSharingResult {
   // Collect all expressions: typ + all rule rhs
   let mut exprs = vec![rec.typ.clone()];
   for rule in &rec.rules {
     exprs.push(rule.rhs.clone());
   }
 
-  let (rewritten, sharing) = apply_sharing(exprs);
-  let typ = rewritten[0].clone();
+  let result = apply_sharing_with_stats(exprs);
+  let typ = result.rewritten[0].clone();
   let rules: Vec<RecursorRule> = rec
     .rules
     .into_iter()
-    .zip(rewritten.into_iter().skip(1))
+    .zip(result.rewritten.into_iter().skip(1))
     .map(|(r, rhs)| RecursorRule { fields: r.fields, rhs })
     .collect();
 
@@ -712,15 +770,25 @@ fn apply_sharing_to_recursor(
     typ,
     rules,
   };
-  Constant::with_tables(ConstantInfo::Recr(rec), sharing, refs, univs)
+  let constant =
+    Constant::with_tables(ConstantInfo::Recr(rec), result.sharing, refs, univs);
+  SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
 }
 
-/// Apply sharing to a mutual block and return a Constant.
+/// Result of applying sharing to a mutual block.
+struct MutualBlockSharingResult {
+  /// The compiled Constant
+  constant: Constant,
+  /// Hash-consed size of all expressions in the block
+  hash_consed_size: usize,
+}
+
+/// Apply sharing to a mutual block and return a Constant with stats.
 fn apply_sharing_to_mutual_block(
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> Constant {
+) -> MutualBlockSharingResult {
   // Collect all expressions from all constants in the block
   let mut all_exprs: Vec<Arc<Expr>> = Vec::new();
   let mut layout: Vec<(MutConstKind, Vec<usize>)> = Vec::new();
@@ -757,8 +825,11 @@ fn apply_sharing_to_mutual_block(
     layout.push((kind, indices));
   }
 
-  // Apply sharing analysis to all expressions at once
-  let (rewritten, sharing) = apply_sharing(all_exprs);
+  // Apply sharing analysis to all expressions at once (with stats)
+  let sharing_result = apply_sharing_with_stats(all_exprs);
+  let rewritten = sharing_result.rewritten;
+  let sharing = sharing_result.sharing;
+  let hash_consed_size = sharing_result.hash_consed_size;
 
   // Rebuild the constants with rewritten expressions
   let mut new_consts = Vec::with_capacity(mut_consts.len());
@@ -827,7 +898,8 @@ fn apply_sharing_to_mutual_block(
     new_consts.push(new_mc);
   }
 
-  Constant::with_tables(ConstantInfo::Muts(new_consts), sharing, refs, univs)
+  let constant = Constant::with_tables(ConstantInfo::Muts(new_consts), sharing, refs, univs);
+  MutualBlockSharingResult { constant, hash_consed_size }
 }
 
 /// Helper enum for tracking mutual constant layout during sharing.
@@ -1141,22 +1213,38 @@ fn compile_quotient(
 // Mutual block compilation
 // ===========================================================================
 
+/// Result of compiling a mutual block.
+struct CompiledMutualBlock {
+  /// The compiled Constant
+  constant: Constant,
+  /// Content-addressed hash
+  addr: Address,
+  /// Hash-consed size (theoretical minimum with perfect DAG sharing)
+  hash_consed_size: usize,
+  /// Serialized size (actual bytes)
+  serialized_size: usize,
+}
+
 /// Compile a mutual block with block-level sharing.
-/// Returns the Constant and its content-addressed hash.
+/// Returns the Constant, its content-addressed hash, and size statistics.
 fn compile_mutual_block(
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-) -> (Constant, Address) {
+  _const_count: usize,
+) -> CompiledMutualBlock {
   // Apply sharing analysis across all expressions in the mutual block
-  let constant = apply_sharing_to_mutual_block(mut_consts, refs, univs);
+  let result = apply_sharing_to_mutual_block(mut_consts, refs, univs);
+  let constant = result.constant;
+  let hash_consed_size = result.hash_consed_size;
 
-  // Compute content address
+  // Compute content address and serialized size
   let mut bytes = Vec::new();
   constant.put(&mut bytes);
+  let serialized_size = bytes.len();
   let addr = Address::hash(&bytes);
 
-  (constant, addr)
+  CompiledMutualBlock { constant, addr, hash_consed_size, serialized_size }
 }
 
 /// Create Inductive from InductiveVal and Env.
@@ -1739,12 +1827,21 @@ pub fn compile_const(
         let (data, meta) = compile_definition(&def, &mut_ctx, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-        let constant = apply_sharing_to_definition(data, refs, univs);
+        let result = apply_sharing_to_definition_with_stats(data, refs, univs);
         let mut bytes = Vec::new();
-        constant.put(&mut bytes);
+        result.constant.put(&mut bytes);
+        let serialized_size = bytes.len();
         let addr = Address::hash(&bytes);
-        stt.env.store_const(addr.clone(), constant);
+        stt.env.store_const(addr.clone(), result.constant);
         stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.block_stats.insert(
+          name.clone(),
+          BlockSizeStats {
+            hash_consed_size: result.hash_consed_size,
+            serialized_size,
+            const_count: 1,
+          },
+        );
         addr
       } else {
         // Part of a mutual block - handled separately
@@ -1759,12 +1856,21 @@ pub fn compile_const(
         let (data, meta) = compile_definition(&def, &mut_ctx, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-        let constant = apply_sharing_to_definition(data, refs, univs);
+        let result = apply_sharing_to_definition_with_stats(data, refs, univs);
         let mut bytes = Vec::new();
-        constant.put(&mut bytes);
+        result.constant.put(&mut bytes);
+        let serialized_size = bytes.len();
         let addr = Address::hash(&bytes);
-        stt.env.store_const(addr.clone(), constant);
+        stt.env.store_const(addr.clone(), result.constant);
         stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.block_stats.insert(
+          name.clone(),
+          BlockSizeStats {
+            hash_consed_size: result.hash_consed_size,
+            serialized_size,
+            const_count: 1,
+          },
+        );
         addr
       } else {
         compile_mutual(name, all, lean_env, cache, stt)?
@@ -1778,12 +1884,21 @@ pub fn compile_const(
         let (data, meta) = compile_definition(&def, &mut_ctx, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-        let constant = apply_sharing_to_definition(data, refs, univs);
+        let result = apply_sharing_to_definition_with_stats(data, refs, univs);
         let mut bytes = Vec::new();
-        constant.put(&mut bytes);
+        result.constant.put(&mut bytes);
+        let serialized_size = bytes.len();
         let addr = Address::hash(&bytes);
-        stt.env.store_const(addr.clone(), constant);
+        stt.env.store_const(addr.clone(), result.constant);
         stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.block_stats.insert(
+          name.clone(),
+          BlockSizeStats {
+            hash_consed_size: result.hash_consed_size,
+            serialized_size,
+            const_count: 1,
+          },
+        );
         addr
       } else {
         compile_mutual(name, all, lean_env, cache, stt)?
@@ -1794,12 +1909,21 @@ pub fn compile_const(
       let (data, meta) = compile_axiom(val, cache, stt)?;
       let refs: Vec<Address> = cache.refs.iter().cloned().collect();
       let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-      let constant = apply_sharing_to_axiom(data, refs, univs);
+      let result = apply_sharing_to_axiom_with_stats(data, refs, univs);
       let mut bytes = Vec::new();
-      constant.put(&mut bytes);
+      result.constant.put(&mut bytes);
+      let serialized_size = bytes.len();
       let addr = Address::hash(&bytes);
-      stt.env.store_const(addr.clone(), constant);
+      stt.env.store_const(addr.clone(), result.constant);
       stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+      stt.block_stats.insert(
+        name.clone(),
+        BlockSizeStats {
+          hash_consed_size: result.hash_consed_size,
+          serialized_size,
+          const_count: 1,
+        },
+      );
       addr
     },
 
@@ -1807,12 +1931,21 @@ pub fn compile_const(
       let (data, meta) = compile_quotient(val, cache, stt)?;
       let refs: Vec<Address> = cache.refs.iter().cloned().collect();
       let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-      let constant = apply_sharing_to_quotient(data, refs, univs);
+      let result = apply_sharing_to_quotient_with_stats(data, refs, univs);
       let mut bytes = Vec::new();
-      constant.put(&mut bytes);
+      result.constant.put(&mut bytes);
+      let serialized_size = bytes.len();
       let addr = Address::hash(&bytes);
-      stt.env.store_const(addr.clone(), constant);
+      stt.env.store_const(addr.clone(), result.constant);
       stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+      stt.block_stats.insert(
+        name.clone(),
+        BlockSizeStats {
+          hash_consed_size: result.hash_consed_size,
+          serialized_size,
+          const_count: 1,
+        },
+      );
       addr
     },
 
@@ -1826,12 +1959,21 @@ pub fn compile_const(
         let (data, meta) = compile_recursor(val, &mut_ctx, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-        let constant = apply_sharing_to_recursor(data, refs, univs);
+        let result = apply_sharing_to_recursor_with_stats(data, refs, univs);
         let mut bytes = Vec::new();
-        constant.put(&mut bytes);
+        result.constant.put(&mut bytes);
+        let serialized_size = bytes.len();
         let addr = Address::hash(&bytes);
-        stt.env.store_const(addr.clone(), constant);
+        stt.env.store_const(addr.clone(), result.constant);
         stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.block_stats.insert(
+          name.clone(),
+          BlockSizeStats {
+            hash_consed_size: result.hash_consed_size,
+            serialized_size,
+            const_count: 1,
+          },
+        );
         addr
       } else {
         compile_mutual(name, all, lean_env, cache, stt)?
@@ -1920,10 +2062,21 @@ fn compile_mutual(
   // Create mutual block with sharing
   let refs: Vec<Address> = cache.refs.iter().cloned().collect();
   let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-  let (block_constant, block_addr) =
-    compile_mutual_block(ixon_mutuals, refs, univs);
-  stt.env.store_const(block_addr.clone(), block_constant);
+  let const_count = ixon_mutuals.len();
+  let compiled = compile_mutual_block(ixon_mutuals, refs, univs, const_count);
+  let block_addr = compiled.addr.clone();
+  stt.env.store_const(block_addr.clone(), compiled.constant);
   stt.blocks.insert(block_addr.clone());
+
+  // Store block size statistics (keyed by low-link name)
+  stt.block_stats.insert(
+    name.clone(),
+    BlockSizeStats {
+      hash_consed_size: compiled.hash_consed_size,
+      serialized_size: compiled.serialized_size,
+      const_count,
+    },
+  );
 
   // Create projections for each constant
   let mut idx = 0u64;
@@ -2714,8 +2867,10 @@ mod tests {
       value: Expr::var(1),
     });
 
-    let (constant, addr) =
-      compile_mutual_block(vec![def1, def2], vec![], vec![]);
+    let compiled =
+      compile_mutual_block(vec![def1, def2], vec![], vec![], 2);
+    let constant = compiled.constant;
+    let addr = compiled.addr;
 
     // Serialize
     let mut buf = Vec::new();
