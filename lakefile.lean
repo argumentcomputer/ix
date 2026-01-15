@@ -5,7 +5,7 @@ package ix where
   version := v!"0.1.0"
 
 @[default_target]
-lean_lib Ix where
+lean_lib Ix
 
 lean_exe ix where
   root := `Main
@@ -14,8 +14,9 @@ lean_exe ix where
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "fdf848d6cda9f080a09e49e760e2d6f70878800b"
 
+-- TODO: Update to latest Blake3 main here and in flake.nix
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "c42d5a54a142c195ea8a2643b423bcdf7d61ad9f"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "4a3528f2b905854b554b1ae107f543c50611563d"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.26.0"
