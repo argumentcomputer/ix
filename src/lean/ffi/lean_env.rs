@@ -699,6 +699,139 @@ pub fn lean_ptr_to_env_sequential(ptr: *const c_void) -> Env {
 //  env.len()
 //}
 
+fn print_store_analysis(stt: &crate::ix::compile::CompileState) {
+  let analysis = stt.analyze_store_size();
+  println!("\n=== Old Ixon Store Size Analysis ===");
+  println!("  Entries: {}", analysis.entry_count);
+  println!(
+    "  Value bytes: {} ({:.2} MB)",
+    analysis.value_bytes,
+    analysis.value_bytes as f64 / 1_000_000.0
+  );
+  println!(
+    "  Total bytes (with 32-byte keys): {} ({:.2} MB)",
+    analysis.total_bytes,
+    analysis.total_bytes as f64 / 1_000_000.0
+  );
+  println!("  Average value size: {:.2} bytes", analysis.avg_value_size);
+  println!("\n  Size distribution:");
+  let dist = &analysis.size_distribution;
+  let total = analysis.entry_count as f64;
+  println!(
+    "    1-10 bytes (tiny):     {:>8} ({:.1}%)",
+    dist.tiny,
+    100.0 * dist.tiny as f64 / total
+  );
+  println!(
+    "    11-50 bytes (small):   {:>8} ({:.1}%)",
+    dist.small,
+    100.0 * dist.small as f64 / total
+  );
+  println!(
+    "    51-200 bytes (medium): {:>8} ({:.1}%)",
+    dist.medium,
+    100.0 * dist.medium as f64 / total
+  );
+  println!(
+    "    201-1000 bytes (large):{:>8} ({:.1}%)",
+    dist.large,
+    100.0 * dist.large as f64 / total
+  );
+  println!(
+    "    >1000 bytes (huge):    {:>8} ({:.1}%)",
+    dist.huge,
+    100.0 * dist.huge as f64 / total
+  );
+
+  // Per-constant footprint analysis (BFS from each constant root)
+  println!("\n=== Per-Constant Footprint Analysis ===");
+  let start_footprint = std::time::SystemTime::now();
+
+  // Collect all unique root addresses (data and meta) from constants
+  let roots: Vec<_> = stt
+    .consts
+    .iter()
+    .flat_map(|entry| {
+      let addr = entry.value();
+      vec![addr.data.clone(), addr.meta.clone()]
+    })
+    .collect();
+
+  println!("  Computing footprints for {} constant roots...", roots.len());
+  // Compute all footprints (None) for accurate results
+  // Use Some(N) to only compute top N by estimated size for faster but approximate results
+  let footprint_map = stt.compute_footprints(&roots, None);
+  println!(
+    "  Computed footprints for {} addresses in {:.2}s",
+    footprint_map.len(),
+    start_footprint.elapsed().unwrap().as_secs_f32()
+  );
+
+  // Now look up sizes for each constant
+  let mut footprints: Vec<(String, usize, usize, usize)> = stt
+    .consts
+    .iter()
+    .map(|entry| {
+      let name = entry.key().pretty();
+      let addr = entry.value();
+
+      let (data_entries, data_bytes) = footprint_map
+        .get(&addr.data)
+        .copied()
+        .unwrap_or((0, 0));
+      let (meta_entries, meta_bytes) = footprint_map
+        .get(&addr.meta)
+        .copied()
+        .unwrap_or((0, 0));
+
+      let data_total = data_bytes + data_entries * 32;
+      let meta_total = meta_bytes + meta_entries * 32;
+
+      (name, data_entries + meta_entries, data_total, meta_total)
+    })
+    .collect();
+
+  println!(
+    "  Footprint analysis done in {:.2}s",
+    start_footprint.elapsed().unwrap().as_secs_f32()
+  );
+
+  // Sort by data footprint descending
+  footprints.sort_by(|a, b| b.2.cmp(&a.2));
+
+  println!("  Top 20 constants by data footprint:");
+  for (name, entries, data_bytes, meta_bytes) in footprints.iter().take(20) {
+    let name_short = if name.len() > 60 {
+      format!("...{}", &name[name.len() - 57..])
+    } else {
+      name.clone()
+    };
+    println!(
+      "    {:>12} bytes ({:>7} entries, meta: {:>10} bytes): {}",
+      data_bytes, entries, meta_bytes, name_short
+    );
+  }
+
+  // Look for bitvector-related constants
+  println!("\n  BVDecide-related constants:");
+  let bv_footprints: Vec<_> = footprints
+    .iter()
+    .filter(|(name, _, _, _)| name.contains("BVDecide") || name.contains("bitblast"))
+    .take(10)
+    .collect();
+  for (name, entries, data_bytes, meta_bytes) in bv_footprints {
+    let name_short = if name.len() > 50 {
+      format!("...{}", &name[name.len() - 47..])
+    } else {
+      name.clone()
+    };
+    println!(
+      "    {:>12} bytes ({:>7} entries): {}",
+      data_bytes, entries, name_short
+    );
+  }
+}
+
 #[unsafe(no_mangle)]
 extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   let start_decoding = std::time::SystemTime::now();
@@ -709,6 +842,7 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   match res {
     Ok(stt) => {
       println!("Compile OK: {:?}", stt.stats());
+      print_store_analysis(&stt);
       let start_decompiling = std::time::SystemTime::now();
       match decompile_env(&stt) {
         Ok(dstt) => {

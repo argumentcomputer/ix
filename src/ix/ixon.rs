@@ -1403,6 +1403,106 @@ impl Ixon {
   pub fn meta(nodes: Vec<Metadatum>) -> Self {
     Ixon::Meta(Metadata { nodes })
   }
+
+  /// Extract all child addresses from this Ixon node.
+  pub fn child_addresses(&self) -> Vec<Address> {
+    match self {
+      Self::NAnon => vec![],
+      Self::NStr(n, s) => vec![n.clone(), s.clone()],
+      Self::NNum(n, s) => vec![n.clone(), s.clone()],
+      Self::UZero => vec![],
+      Self::USucc(a) => vec![a.clone()],
+      Self::UMax(a, b) | Self::UIMax(a, b) => vec![a.clone(), b.clone()],
+      Self::UVar(_) => vec![],
+      Self::EVar(_) => vec![],
+      Self::ERef(a, lvls) => {
+        let mut addrs = vec![a.clone()];
+        addrs.extend(lvls.iter().cloned());
+        addrs
+      },
+      Self::ERec(_, lvls) => lvls.clone(),
+      Self::EPrj(t, _, e) => vec![t.clone(), e.clone()],
+      Self::ESort(a) | Self::EStr(a) | Self::ENat(a) => vec![a.clone()],
+      Self::EApp(a, b) | Self::ELam(a, b) | Self::EAll(a, b) => {
+        vec![a.clone(), b.clone()]
+      },
+      Self::ELet(_, t, v, b) => vec![t.clone(), v.clone(), b.clone()],
+      Self::Blob(_) => vec![],
+      Self::Defn(d) => vec![d.typ.clone(), d.value.clone()],
+      Self::Recr(r) => {
+        let mut addrs = vec![r.typ.clone()];
+        for rule in &r.rules {
+          addrs.push(rule.rhs.clone());
+        }
+        addrs
+      },
+      Self::Axio(a) => vec![a.typ.clone()],
+      Self::Quot(q) => vec![q.typ.clone()],
+      Self::CPrj(p) => vec![p.block.clone()],
+      Self::RPrj(p) => vec![p.block.clone()],
+      Self::IPrj(p) => vec![p.block.clone()],
+      Self::DPrj(p) => vec![p.block.clone()],
+      Self::Muts(consts) => {
+        let mut addrs = vec![];
+        for mc in consts {
+          match mc {
+            MutConst::Defn(d) => {
+              addrs.push(d.typ.clone());
+              addrs.push(d.value.clone());
+            },
+            MutConst::Indc(i) => {
+              addrs.push(i.typ.clone());
+              for c in &i.ctors {
+                addrs.push(c.typ.clone());
+              }
+            },
+            MutConst::Recr(r) => {
+              addrs.push(r.typ.clone());
+              for rule in &r.rules {
+                addrs.push(rule.rhs.clone());
+              }
+            },
+          }
+        }
+        addrs
+      },
+      Self::Prof(p) => match &p.claim {
+        Claim::Evals(e) => {
+          vec![e.lvls.clone(), e.typ.clone(), e.input.clone(), e.output.clone()]
+        },
+        Claim::Checks(c) => vec![c.lvls.clone(), c.typ.clone(), c.value.clone()],
+      },
+      Self::Eval(e) => {
+        vec![e.lvls.clone(), e.typ.clone(), e.input.clone(), e.output.clone()]
+      },
+      Self::Chck(c) => vec![c.lvls.clone(), c.typ.clone(), c.value.clone()],
+      Self::Comm(c) => vec![c.payload.clone()],
+      Self::Envn(_) => vec![], // Environment has its own structure
+      Self::Prim(_) => vec![],
+      Self::Meta(m) => {
+        let mut addrs = vec![];
+        for node in &m.nodes {
+          match node {
+            Metadatum::Link(a) => addrs.push(a.clone()),
+            Metadatum::Links(ls) => addrs.extend(ls.iter().cloned()),
+            Metadatum::Map(pairs) => {
+              for (k, v) in pairs {
+                addrs.push(k.clone());
+                addrs.push(v.clone());
+              }
+            },
+            Metadatum::Muts(groups) => {
+              for group in groups {
+                addrs.extend(group.iter().cloned());
+              }
+            },
+            _ => {},
+          }
+        }
+        addrs
+      },
+    }
+  }
 }
 
 impl Serialize for Ixon {

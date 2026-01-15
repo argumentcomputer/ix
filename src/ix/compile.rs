@@ -33,6 +33,19 @@ pub struct CompileState {
   pub names: DashMap<Name, Address>,
   pub blocks: DashSet<MetaAddress>,
   pub store: DashMap<Address, Vec<u8>>,
+  /// Per-block size stats (keyed by low-link name)
+  pub block_stats: DashMap<Name, BlockSizeStats>,
+}
+
+/// Size statistics for a compiled block.
+#[derive(Clone, Debug, Default)]
+pub struct BlockSizeStats {
+  /// Total bytes in the store for this block's data
+  pub data_bytes: usize,
+  /// Total bytes in the store for this block's metadata
+  pub meta_bytes: usize,
+  /// Number of constants in the block
+  pub const_count: usize,
 }
 
 #[derive(Default)]
@@ -50,6 +63,35 @@ pub struct CompileStateStats {
   pub store: usize,
 }
 
+/// Detailed size analysis of the content-addressed store.
+#[derive(Debug)]
+pub struct StoreSizeAnalysis {
+  /// Number of entries in the store
+  pub entry_count: usize,
+  /// Total size of all values (serialized content)
+  pub value_bytes: usize,
+  /// Total size including 32-byte keys (full hash-consed storage cost)
+  pub total_bytes: usize,
+  /// Average value size
+  pub avg_value_size: f64,
+  /// Size distribution buckets
+  pub size_distribution: SizeDistribution,
+}
+
+#[derive(Debug)]
+pub struct SizeDistribution {
+  /// Entries with size 1-10 bytes
+  pub tiny: usize,
+  /// Entries with size 11-50 bytes
+  pub small: usize,
+  /// Entries with size 51-200 bytes
+  pub medium: usize,
+  /// Entries with size 201-1000 bytes
+  pub large: usize,
+  /// Entries with size > 1000 bytes
+  pub huge: usize,
+}
+
 impl CompileState {
   pub fn stats(&self) -> CompileStateStats {
     CompileStateStats {
@@ -57,6 +99,190 @@ impl CompileState {
       names: self.names.len(),
       blocks: self.blocks.len(),
       store: self.store.len(),
+    }
+  }
+
+  /// Compute footprint (unique reachable entries and bytes) for given root addresses.
+  /// Returns a map from root address to (unique_entry_count, unique_value_bytes).
+  ///
+  /// This properly handles hash-consing by counting each reachable address only once,
+  /// rather than summing cumulative sizes which would overcount shared subterms.
+  ///
+  /// If `top_k` is Some(n), only compute footprints for the n roots with the most
+  /// direct children (an estimate of total reachable size). This is much faster
+  /// for identifying pathological constants.
+  pub fn compute_footprints(
+    &self,
+    roots: &[Address],
+    top_k: Option<usize>,
+  ) -> FxHashMap<Address, (usize, usize)> {
+    use crate::ix::ixon::{Ixon, Serialize};
+    use rayon::prelude::*;
+    use rustc_hash::FxHashSet;
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let total = self.store.len();
+    println!("    Building forward edges for {} entries...", total);
+
+    // Build forward edges and own_size in parallel using DashMap
+    let children_of_dash: DashMap<Address, Vec<Address>> = DashMap::new();
+    let own_size_dash: DashMap<Address, usize> = DashMap::new();
+
+    // First pass: populate own_size
+    self.store.par_iter().for_each(|entry| {
+      own_size_dash.insert(entry.key().clone(), entry.value().len());
+    });
+
+    // Second pass: build forward edges
+    self.store.par_iter().for_each(|entry| {
+      let addr = entry.key().clone();
+      let bytes = entry.value();
+
+      let mut slice: &[u8] = bytes.as_slice();
+      let children = if let Ok(ixon) = Ixon::get(&mut slice) {
+        ixon
+          .child_addresses()
+          .into_iter()
+          .filter(|c| own_size_dash.contains_key(c))
+          .collect::<Vec<_>>()
+      } else {
+        vec![]
+      };
+
+      children_of_dash.insert(addr, children);
+    });
+
+    // Convert to regular HashMaps for lock-free read access in BFS
+    println!("    Converting to lock-free structures...");
+    let children_of: FxHashMap<Address, Vec<Address>> = children_of_dash
+      .into_iter()
+      .collect();
+    let own_size: FxHashMap<Address, usize> = own_size_dash
+      .into_iter()
+      .collect();
+
+    // Deduplicate roots and sort by estimated size (larger first for load balancing)
+    // Use own_size as the heuristic - larger serialized nodes tend to have larger footprints
+    let mut unique_roots: Vec<(Address, usize)> = roots
+      .iter()
+      .filter(|r| own_size.contains_key(*r))
+      .cloned()
+      .collect::<FxHashSet<_>>()
+      .into_iter()
+      .map(|addr| {
+        let size = own_size.get(&addr).copied().unwrap_or(0);
+        (addr, size)
+      })
+      .collect();
+
+    // Sort by size descending (larger roots first for better parallelism)
+    unique_roots.sort_by(|a, b| b.1.cmp(&a.1));
+
+    // Optionally truncate to top_k
+    let total_unique = unique_roots.len();
+    if let Some(k) = top_k {
+      unique_roots.truncate(k);
+    }
+    let unique_roots: Vec<Address> = unique_roots.into_iter().map(|(a, _)| a).collect();
+
+    println!(
+      "    Computing footprints for {} roots via BFS{}...",
+      unique_roots.len(),
+      if top_k.is_some() {
+        format!(" (top {} of {})", unique_roots.len(), total_unique)
+      } else {
+        " (largest first)".to_string()
+      }
+    );
+
+    let results: DashMap<Address, (usize, usize)> = DashMap::new();
+    let processed = AtomicUsize::new(0);
+    let total_roots = unique_roots.len();
+
+    // Process each root in parallel with lock-free graph access
+    unique_roots.par_iter().for_each(|root| {
+      // BFS to find all reachable addresses
+      let mut visited: FxHashSet<Address> = FxHashSet::default();
+      visited.reserve(1024); // Pre-allocate reasonable capacity
+      let mut queue: VecDeque<Address> = VecDeque::with_capacity(1024);
+
+      queue.push_back(root.clone());
+      visited.insert(root.clone());
+
+      while let Some(addr) = queue.pop_front() {
+        if let Some(children) = children_of.get(&addr) {
+          for child in children.iter() {
+            if visited.insert(child.clone()) {
+              queue.push_back(child.clone());
+            }
+          }
+        }
+      }
+
+      // Sum sizes of unique reachable addresses
+      let unique_entries = visited.len();
+      let unique_bytes: usize = visited
+        .iter()
+        .filter_map(|addr| own_size.get(addr).copied())
+        .sum();
+
+      results.insert(root.clone(), (unique_entries, unique_bytes));
+
+      let count = processed.fetch_add(1, Ordering::Relaxed);
+      if count % 10000 == 0 {
+        eprintln!(
+          "\r    Progress: {:.1}% ({}/{})",
+          100.0 * count as f64 / total_roots as f64,
+          count,
+          total_roots
+        );
+      }
+    });
+
+    eprintln!(
+      "\r    Processed {} roots                              ",
+      processed.load(Ordering::Relaxed)
+    );
+
+    results.into_iter().collect()
+  }
+
+  /// Analyze the size of the content-addressed store.
+  pub fn analyze_store_size(&self) -> StoreSizeAnalysis {
+    let mut value_bytes = 0usize;
+    let mut tiny = 0usize;
+    let mut small = 0usize;
+    let mut medium = 0usize;
+    let mut large = 0usize;
+    let mut huge = 0usize;
+
+    for entry in self.store.iter() {
+      let size = entry.value().len();
+      value_bytes += size;
+      match size {
+        1..=10 => tiny += 1,
+        11..=50 => small += 1,
+        51..=200 => medium += 1,
+        201..=1000 => large += 1,
+        _ => huge += 1,
+      }
+    }
+
+    let entry_count = self.store.len();
+    let total_bytes = value_bytes + entry_count * 32; // 32-byte key per entry
+    let avg_value_size = if entry_count > 0 {
+      value_bytes as f64 / entry_count as f64
+    } else {
+      0.0
+    };
+
+    StoreSizeAnalysis {
+      entry_count,
+      value_bytes,
+      total_bytes,
+      avg_value_size,
+      size_distribution: SizeDistribution { tiny, small, medium, large, huge },
     }
   }
 }
