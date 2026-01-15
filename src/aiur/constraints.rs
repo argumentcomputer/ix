@@ -16,9 +16,8 @@ use crate::aiur::{
     bytes1::{Bytes1, Bytes1Op},
     bytes2::{Bytes2, Bytes2Op},
   },
-  memory_channel, u8_add_channel, u8_and_channel,
-  u8_bit_decomposition_channel, u8_or_channel, u8_shift_left_channel,
-  u8_shift_right_channel, u8_xor_channel,
+  memory_channel, u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
+  u8_or_channel, u8_shift_left_channel, u8_shift_right_channel, u8_xor_channel,
 };
 
 type Expr = SymbolicExpression<G>;

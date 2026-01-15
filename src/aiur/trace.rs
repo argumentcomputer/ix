@@ -17,9 +17,8 @@ use crate::aiur::{
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
-  u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_or_channel, u8_shift_left_channel, u8_shift_right_channel,
-  u8_xor_channel,
+  u8_add_channel, u8_and_channel, u8_bit_decomposition_channel, u8_or_channel,
+  u8_shift_left_channel, u8_shift_right_channel, u8_xor_channel,
 };
 
 struct ColumnIndex {

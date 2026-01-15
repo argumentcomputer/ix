@@ -82,10 +82,8 @@ impl AiurGadget for Bytes2 {
 
   fn output_size(&self, op: &Bytes2Op) -> usize {
     match op {
-      Bytes2Op::Xor => 1,
+      Bytes2Op::Xor | Bytes2Op::And | Bytes2Op::Or => 1,
       Bytes2Op::Add => 2,
-      Bytes2Op::And => 1,
-      Bytes2Op::Or => 1,
     }
   }
 
@@ -155,8 +153,7 @@ impl AiurGadget for Bytes2 {
       vec![and_channel, i.clone(), j.clone(), and],
     );
 
-    let pull_or =
-      Lookup::pull(or_multiplicity, vec![or_channel, i, j, or]);
+    let pull_or = Lookup::pull(or_multiplicity, vec![or_channel, i, j, or]);
 
     vec![pull_xor, pull_add, pull_and, pull_or]
   }
