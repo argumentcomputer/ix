@@ -1123,7 +1123,7 @@ Constructor {
   cidx: 0,           // First constructor
   params: 0,
   fields: 0,         // No fields
-  typ: Ref(0, []),   // : Bool
+  typ: Rec(0, []),   // : Bool (mutual reference to inductive at index 0)
 }
 ```
 
@@ -1135,7 +1135,7 @@ Constructor {
   cidx: 1,           // Second constructor
   params: 0,
   fields: 0,
-  typ: Ref(0, []),   // : Bool
+  typ: Rec(0, []),   // : Bool (mutual reference to inductive at index 0)
 }
 ```
 
@@ -1161,14 +1161,14 @@ C3                    -- Tag4 { flag: 0xC, size: 3 } (Muts, 3 entries)
   00                  -- cidx = 0
   00                  -- params = 0
   00                  -- fields = 0
-  20 00               -- typ: Ref(0, [])
+  30 00               -- typ: Rec(0, []) - mutual reference to Bool at index 0
   -- ctor_true
   00                  -- is_unsafe = false
   00                  -- lvls = 0
   01                  -- cidx = 1
   00                  -- params = 0
   00                  -- fields = 0
-  20 00               -- typ: Ref(0, [])
+  30 00               -- typ: Rec(0, []) - mutual reference to Bool at index 0
 
 -- Entry 1: Recursor (Bool.rec) - omitted for brevity
 02 ...
@@ -1178,8 +1178,7 @@ C3                    -- Tag4 { flag: 0xC, size: 3 } (Muts, 3 entries)
 
 -- Shared tables
 00                    -- sharing.len = 0
-01                    -- refs.len = 1
-[32 bytes]            -- refs[0] = addr_of_Bool_block (self-reference)
+00                    -- refs.len = 0 (no external references needed)
 01                    -- univs.len = 1
 00                    -- univs[0] = Zero
 ```
