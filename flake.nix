@@ -31,7 +31,7 @@
 
     # Blake3 C bindings for Lean
     blake3-lean = {
-      url = "github:argumentcomputer/Blake3.lean?rev=40469c68dd5629cda700ff8cf00b3362dee81f1a";
+      url = "github:argumentcomputer/Blake3.lean";
       # System packages, follows lean4-nix so we stay in sync
       inputs.lean4-nix.follows = "lean4-nix";
     };
