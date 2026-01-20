@@ -119,7 +119,7 @@ def parseHex (x : String) : ByteArray :=
   let x :=
     if x.startsWith "0x" || x.startsWith "0X" then x.drop 2 else x
   -- remove underscores
-  let x := String.mk (x.toList.filter (· ≠ '_'))
+  let x := String.ofList (x.toList.filter (· ≠ '_'))
   -- must have an even number of hex digits
   if x.length % 2 = 1 then
     panic! "parseHex: odd number of hex digits"
@@ -128,8 +128,8 @@ def parseHex (x : String) : ByteArray :=
     let rec loop (i : Nat) (acc : ByteArray) : ByteArray :=
       if i < n then
         -- safe since ASCII: `String.get!` indexes by chars
-        let c1 := x.get! ⟨i⟩
-        let c2 := x.get! ⟨i+1⟩
+        let c1 := String.Pos.Raw.get! x ⟨i⟩ 
+        let c2 := String.Pos.Raw.get! x ⟨i+1⟩
         match hexVal? c1, hexVal? c2 with
         | some hi, some lo =>
           let b : UInt8 := (hi <<< 4) ||| lo
@@ -148,8 +148,8 @@ def printHex (ba : ByteArray) : String :=
       let b := ba.get! i
       let hi := (b.toNat / 16)
       let lo := (b.toNat % 16)
-      let acc := acc.push (hexdigits.get! ⟨hi⟩)
-      let acc := acc.push (hexdigits.get! ⟨lo⟩)
+      let acc := acc.push (String.Pos.Raw.get! hexdigits ⟨hi⟩)
+      let acc := acc.push (String.Pos.Raw.get! hexdigits ⟨lo⟩)
       go (i + 1) acc
     else acc
   "0x" ++ go 0 ""

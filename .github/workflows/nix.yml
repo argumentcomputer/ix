@@ -26,7 +26,7 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
-      - run: nix run .#default -- --help
+      - run: nix run .#ix -- --help
       # Ix benches
       - run: nix build .#bench-aiur --print-build-logs --accept-flake-config
       - run: nix build .#bench-blake3 --print-build-logs --accept-flake-config
