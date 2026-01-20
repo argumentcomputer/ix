@@ -87,7 +87,7 @@ impl Toplevel {
     let height = height_no_padding.next_power_of_two();
     let mut rows = vec![G::ZERO; height * width];
     let rows_no_padding = &mut rows[0..height_no_padding * width];
-    let empty_lookup = Lookup { multiplicity: G::ZERO, args: vec![] };
+    let empty_lookup = Lookup::empty();
     let mut lookups = vec![vec![empty_lookup; func.layout.lookups]; height];
     let lookups_no_padding = &mut lookups[0..height_no_padding];
     rows_no_padding

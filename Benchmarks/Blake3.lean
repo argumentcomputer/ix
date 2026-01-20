@@ -14,7 +14,8 @@ def commitmentParameters : Aiur.CommitmentParameters := {
 def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   numQueries := 100
-  proofOfWorkBits := 20
+  commitProofOfWorkBits := 20
+  queryProofOfWorkBits := 0
 }
 
 def blake3Bench : IO $ Array BenchReport := do
@@ -60,5 +61,3 @@ def main : IO Unit := do
     sumWeights := sumWeights + sizeFloat
   let avgThroughput := weightedSum / sumWeights
   println! "Average throughput: {avgThroughput.toUSize} bytes/s"
-
-

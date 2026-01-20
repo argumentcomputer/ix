@@ -51,7 +51,8 @@ def commitmentParameters : Aiur.CommitmentParameters := {
 def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   numQueries := 100
-  proofOfWorkBits := 20
+  commitProofOfWorkBits := 20
+  queryProofOfWorkBits := 0
 }
 
 def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Toplevel)
