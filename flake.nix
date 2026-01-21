@@ -113,10 +113,13 @@
             ocl-icd
             gcc
             clang
+            gmp
             lib.rustToolchain
             rust-analyzer
             lean.lean-all # Includes Lean compiler, lake, stdlib, etc.
           ];
+          # Add GMP dev headers
+          buildInputs = [ pkgs.gmp.dev ];
         };
 
         formatter = pkgs.alejandra;

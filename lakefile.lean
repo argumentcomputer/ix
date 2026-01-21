@@ -12,7 +12,7 @@ lean_exe ix where
   supportInterpreter := true
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "b05e6b83798bce0887eb5001cb10fdcbe675dde3"
+  "https://github.com/argumentcomputer/LSpec" @ "1e6da63a9c92473747e816d07d5c6f6bc7c8a59e"
 
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @ "732daca6c67f3be3ca44837643cfda906503e9ac"
@@ -46,6 +46,9 @@ lean_exe «bench-aiur» where
 lean_exe «bench-blake3» where
   root := `Benchmarks.Blake3
 
+lean_exe «bench-shardmap» where
+  root := `Benchmarks.ShardMap
+
 end Benchmarks
 
 lean_lib Apps
@@ -63,7 +66,12 @@ extern_lib ix_c pkg := do
   let compiler := "gcc"
   let cDir := pkg.dir / "c"
   let buildCDir := pkg.buildDir / "c"
-  let weakArgs := #["-fPIC", "-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
+  -- Get extra C flags from nix environment (includes GMP headers, etc.)
+  let nixCFlags ← IO.getEnv "NIX_CFLAGS_COMPILE"
+  let extraFlags := match nixCFlags with
+    | some flags => flags.splitOn " " |>.filter (· != "") |>.toArray
+    | none => #[]
+  let weakArgs := #["-fPIC", "-I", (← getLeanIncludeDir).toString, "-I", cDir.toString] ++ extraFlags
 
   let cDirEntries ← cDir.readDir
 
