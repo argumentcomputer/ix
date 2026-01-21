@@ -57,7 +57,8 @@ def commitmentParameters : Aiur.CommitmentParameters := {
 def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   numQueries := 100
-  proofOfWorkBits := 20
+  commitProofOfWorkBits := 20
+  queryProofOfWorkBits := 0
 }
 
 def proveE2E (name: Lean.Name) : IO UInt32 := do

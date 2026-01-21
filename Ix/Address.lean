@@ -60,7 +60,7 @@ def natOfHex : Char -> Option Nat
 def hexOfByte (b : UInt8) : String :=
   let hi := hexOfNat (UInt8.toNat (b >>> 4))
   let lo := hexOfNat (UInt8.toNat (b &&& 0xF))
-  String.mk [hi.get!, lo.get!]
+  String.ofList [hi.get!, lo.get!]
 
 /-- Convert a ByteArray to a big-endian hexadecimal string. -/
 def hexOfBytes (ba : ByteArray) : String :=

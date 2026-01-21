@@ -333,10 +333,10 @@ def padWhitespace (input : String) (width : Nat) : String :=
   let padWidth := width - input.length 
   let leftPad := padWidth / 2
   let rightPad := padWidth - leftPad
-  String.mk (List.replicate leftPad ' ') ++ input ++ (String.mk (List.replicate rightPad ' '))
+  String.ofList (List.replicate leftPad ' ') ++ input ++ (String.ofList (List.replicate rightPad ' '))
 
 def padDashes (width : Nat) : String :=
-  String.mk (List.replicate width '-')
+  String.ofList (List.replicate width '-')
 
 def mkReportPretty' (columnWidths : ColumnWidths) (reportPretty : String) (row : BenchReport) : String :=
   let functionStr := padWhitespace row.function columnWidths.function

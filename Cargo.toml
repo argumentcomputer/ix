@@ -11,7 +11,7 @@ anyhow = "1"
 blake3 = "1.8.2"
 itertools = "0.14.0"
 indexmap = { version = "2", features = ["rayon"] }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "b3a5266309c5889b419b975abb3907fa36d7bc81" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "14b70601317e4500c7246c32a13ad08b3f560f2e" }
 num-bigint = "0.4.6"
 rayon = "1"
 rustc-hash = "2"

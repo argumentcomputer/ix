@@ -23,7 +23,8 @@ structure CommitmentParameters where
 structure FriParameters where
   logFinalPolyLen : Nat
   numQueries : Nat
-  proofOfWorkBits : Nat
+  commitProofOfWorkBits : Nat
+  queryProofOfWorkBits : Nat
 
 private opaque AiurSystemNonempty : NonemptyType
 def AiurSystem : Type := AiurSystemNonempty.type

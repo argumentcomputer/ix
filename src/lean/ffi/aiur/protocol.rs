@@ -74,12 +74,19 @@ extern "C" fn rs_aiur_system_build(
 }
 
 fn lean_ctor_to_fri_parameters(ctor: &LeanCtorObject) -> FriParameters {
-  let [log_final_poly_len_ptr, num_queries_ptr, proof_of_work_bits_ptr] =
-    ctor.objs();
+  let [
+    log_final_poly_len_ptr,
+    num_queries_ptr,
+    commit_proof_of_work_bits,
+    query_proof_of_work_bits,
+  ] = ctor.objs();
   FriParameters {
     log_final_poly_len: lean_unbox_nat_as_usize(log_final_poly_len_ptr),
     num_queries: lean_unbox_nat_as_usize(num_queries_ptr),
-    proof_of_work_bits: lean_unbox_nat_as_usize(proof_of_work_bits_ptr),
+    commit_proof_of_work_bits: lean_unbox_nat_as_usize(
+      commit_proof_of_work_bits,
+    ),
+    query_proof_of_work_bits: lean_unbox_nat_as_usize(query_proof_of_work_bits),
   }
 }
 

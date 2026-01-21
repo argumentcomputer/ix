@@ -15,25 +15,26 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "1e6da63a9c92473747e816d07d5c6f6bc7c8a59e"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "732daca6c67f3be3ca44837643cfda906503e9ac"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "f66794edb4612106cd7b04a7fbd04917fb1abb7d"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "91c18fa62838ad0ab7384c03c9684d99d306e1da"
+  "https://github.com/leanprover/lean4-cli" @ "v4.26.0"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "8da40b72fece29b7d3fe3d768bac4c8910ce9bee"
+  "https://github.com/leanprover-community/batteries" @ "v4.26.0"
 
 section Tests
 
 lean_lib Tests
 
 @[test_driver]
-lean_exe Tests.Main where
+lean_exe IxTests where
+  root := `Tests.Main
   supportInterpreter := true
 
 end Tests
 
-lean_lib IxTest where
+lean_lib IxTestLib where
   srcDir := "ix_test"
 
 section IxApplications
@@ -150,7 +151,7 @@ script install := do
   return 0
 
 script "check-lean-h-hash" := do
-  let cachedLeanHHash := 1323938820889983873
+  let cachedLeanHHash := 11261383907494897568
 
   let leanIncludeDir ← getLeanIncludeDir
   let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"
@@ -162,6 +163,8 @@ script "check-lean-h-hash" := do
     IO.eprintln   "  1. Double-check changes made to lean/lean.h"
     IO.eprintln s!"  2. Cache {includedLeanHHash} instead"
     return 1
+  else
+    IO.println "lean/lean.h hash matches ✓"
   return 0
 
 script "get-exe-targets" := do
