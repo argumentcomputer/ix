@@ -1,4 +1,5 @@
 use std::ffi::c_void;
+use std::fmt;
 
 use num_bigint::BigUint;
 
@@ -9,6 +10,12 @@ use crate::{
 
 #[derive(Hash, PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
 pub struct Nat(pub BigUint);
+
+impl fmt::Display for Nat {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", self.0)
+  }
+}
 
 impl From<u64> for Nat {
   fn from(x: u64) -> Self {

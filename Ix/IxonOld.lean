@@ -1,8 +1,9 @@
 import Ix.Address
+import Ix.Common
 import Lean.Declaration
 import Lean.Data.KVMap
 
-namespace Ixon
+namespace IxonOld
 
 -- putter monad
 abbrev PutM := StateM ByteArray
@@ -948,4 +949,4 @@ instance : Serialize Ixon where
 
 def Ixon.address (ixon: Ixon): Address := Address.blake3 (ser ixon)
 
-end Ixon
+end IxonOld

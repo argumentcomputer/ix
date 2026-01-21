@@ -14,7 +14,7 @@ abbrev GraphM := ReaderT Lean.Environment <| StateT GraphState Id
 def graphExpr (expr: Lean.Expr) : GraphM (Set Lean.Name) := do
   match (<- get).exprCache.find? expr with
   | some x => pure x
-  | none => 
+  | none =>
     let refs <- go expr
     modifyGet fun stt => (refs, { stt with
       exprCache := stt.exprCache.insert expr refs
@@ -57,7 +57,27 @@ def GraphM.run (env: Lean.Environment) (stt: GraphState) (g: GraphM α)
   : α × GraphState
   := StateT.run (ReaderT.run (Id.run g env)) stt
 
-def GraphM.env (env: Lean.Environment) : Map Lean.Name (Set Lean.Name) := Id.run do
+/-- Build dependency graph - pure, sequential with shared cache.
+    Pass `dbg := true` and `total` (constant count) to enable progress tracing. -/
+def GraphM.env (env: Lean.Environment) (dbg : Bool := false) (total : Nat := 0)
+    : Map Lean.Name (Set Lean.Name) := Id.run do
+  let mut stt : GraphState := .init
+  let mut refs: Map Lean.Name (Set Lean.Name) := {}
+  let mut i : Nat := 0
+  let mut lastPct : Nat := 0
+  for (name, const) in env.constants do
+    let (rs, stt') := GraphM.run env stt (graphConst const)
+    refs := refs.insert name rs
+    stt := stt'
+    i := i + 1
+    if dbg && total > 0 then
+      let pct := (i * 100) / total
+      if pct >= lastPct + 10 then
+        dbg_trace s!"  [Graph] {pct}% ({i}/{total})"
+        lastPct := pct
+  return refs
+
+def GraphM.envParallel (env: Lean.Environment) : Map Lean.Name (Set Lean.Name) := Id.run do
   let mut tasks : Map Lean.Name (Task (Set Lean.Name)) := {}
   for (name, const) in env.constants do
     let task <- Task.spawn fun () => (GraphM.run env .init (graphConst const)).1

@@ -292,8 +292,18 @@ pub fn analyze_block(
   (info_map, ptr_to_hash)
 }
 
+/// Compute the hash of a single expression.
+/// This is useful for testing hash compatibility with Lean.
+pub fn hash_expr(expr: &Arc<Expr>) -> blake3::Hash {
+  let (_info_map, ptr_to_hash) = analyze_block(&[expr.clone()], false);
+  let ptr = expr.as_ref() as *const Expr;
+  *ptr_to_hash.get(&ptr).expect("Expression not found in ptr_to_hash")
+}
+
 /// Topological sort of subterms (leaves first, parents last).
-fn topological_sort(
+/// CRITICAL: Keys are sorted by hash bytes for deterministic output.
+/// This ensures Lean and Rust produce the same topological order.
+pub fn topological_sort(
   info_map: &HashMap<blake3::Hash, SubtermInfo>,
 ) -> Vec<blake3::Hash> {
   #[derive(Clone, Copy, PartialEq, Eq)]
@@ -329,8 +339,12 @@ fn topological_sort(
     result.push(hash);
   }
 
-  for hash in info_map.keys() {
-    visit(*hash, info_map, &mut state, &mut result);
+  // Sort keys deterministically by hash bytes (lexicographic comparison)
+  let mut sorted_keys: Vec<blake3::Hash> = info_map.keys().cloned().collect();
+  sorted_keys.sort_by_key(|h| *h.as_bytes());
+
+  for hash in sorted_keys {
+    visit(hash, info_map, &mut state, &mut result);
   }
 
   result
@@ -338,7 +352,7 @@ fn topological_sort(
 
 /// Compute effective sizes for all subterms in topological order.
 /// Returns a map from hash to effective size (total serialized bytes).
-fn compute_effective_sizes(
+pub fn compute_effective_sizes(
   info_map: &HashMap<blake3::Hash, SubtermInfo>,
   topo_order: &[blake3::Hash],
 ) -> HashMap<blake3::Hash, usize> {
@@ -546,11 +560,14 @@ pub fn decide_sharing(
     })
     .collect();
 
-  // Sort by decreasing potential savings
+  // Sort by decreasing gross benefit, with hash bytes as tie-breaker for determinism
   candidates.sort_unstable_by(|a, b| {
-    let pot_a = (a.2 as isize - 1) * (a.1 as isize);
-    let pot_b = (b.2 as isize - 1) * (b.1 as isize);
-    pot_b.cmp(&pot_a)
+    let gross_a = (a.2 as isize - 1) * (a.1 as isize);
+    let gross_b = (b.2 as isize - 1) * (b.1 as isize);
+    match gross_b.cmp(&gross_a) {
+      std::cmp::Ordering::Equal => a.0.as_bytes().cmp(b.0.as_bytes()),
+      other => other,
+    }
   });
 
   let mut shared: IndexSet<blake3::Hash> = IndexSet::new();

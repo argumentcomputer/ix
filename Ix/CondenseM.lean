@@ -68,10 +68,16 @@ structure CondensedBlocks where
   blockRefs: Map Lean.Name (Set Lean.Name) -- map lowlinks to block out-references
   deriving Inhabited, Nonempty
 
-def condense: CondenseM CondensedBlocks := do
-  let mut idx := 0
+def condense (dbg : Bool) (total : Nat): CondenseM CondensedBlocks := do
+  let mut idx : Nat := 0
+  let mut lastPct : Nat := 0
   for (name,_) in (<- read).env.constants do
     idx := idx + 1
+    if dbg && total > 0 then
+      let pct := (idx * 100) / total
+      if pct >= lastPct + 10 then
+        dbg_trace s!"  [Condense] {pct}% ({idx}/{total})"
+        lastPct := pct
     match (<- get).names.get? name with
     | .some _ => continue
     | .none => visit name
@@ -94,8 +100,10 @@ def condense: CondenseM CondensedBlocks := do
     blockRefs := blockRefs.insert lo rs
   return ⟨lowLinks, blocks, blockRefs⟩
 
+/-- Run SCC condensation on dependency graph.
+    Pass `dbg := true` and `total` (constant count) to enable progress tracing. -/
 def CondenseM.run (env: Lean.Environment) (refs: Map Lean.Name (Set Lean.Name))
-  : CondensedBlocks :=
-  Id.run (StateT.run (ReaderT.run condense ⟨env, refs⟩) CondenseState.init).1
+    (dbg : Bool := false) (total : Nat := 0) : CondensedBlocks :=
+  Id.run (StateT.run (ReaderT.run (condense dbg total) ⟨env, refs⟩) CondenseState.init).1
 
 end Ix

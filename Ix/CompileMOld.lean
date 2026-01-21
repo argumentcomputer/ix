@@ -1,5 +1,5 @@
 import Std.Data.HashMap
-import Ix.Ixon
+import Ix.IxonOld
 import Ix.Address
 import Ix.Mutual
 import Ix.Common
@@ -10,7 +10,7 @@ import Ix.SOrder
 import Ix.Cronos
 
 namespace Ix
-open Ixon hiding Substring
+open IxonOld hiding Substring
 
 structure CompileEnv where
   env: Lean.Environment
@@ -33,7 +33,7 @@ structure CompileState where
   constCache: Map Lean.Name MetaAddress
   univCache: Map Lean.Level MetaAddress
   exprCache: Map Lean.Expr MetaAddress
-  synCache: Map Lean.Syntax Ixon.Syntax
+  synCache: Map Lean.Syntax IxonOld.Syntax
   nameCache: Map Lean.Name Address
   strCache: Map String Address
   constCmp: Map (Lean.Name × Lean.Name) Ordering
@@ -126,7 +126,7 @@ def CompileM.resetCtx (current: Lean.Name) : CompileM α -> CompileM α :=
   withReader $ fun c => { c with univCtx := [], mutCtx := {}, current }
 
 def storeIxon (ixon: Ixon): CompileM Address := do
-  liftM (Store.write (Ixon.ser ixon)).toIO
+  liftM (Store.write (IxonOld.ser ixon)).toIO
 
 def storeString (str: String): CompileM Address := do
   match (<- get).strCache.find? str with
@@ -138,10 +138,10 @@ def storeNat (nat: Nat): CompileM Address := do
   liftM (Store.write (⟨nat.toBytesLE⟩)).toIO
 
 def storeSerial [Serialize A] (a: A): CompileM Address := do
-  liftM (Store.write (Ixon.ser a)).toIO
+  liftM (Store.write (IxonOld.ser a)).toIO
 
 def storeMeta (met: Metadata): CompileM Address := do
-  liftM (Store.write (Ixon.ser met)).toIO
+  liftM (Store.write (IxonOld.ser met)).toIO
 
 def compileName (name: Lean.Name): CompileM Address := do
   match (<- get).nameCache.find? name with
@@ -231,7 +231,7 @@ def compileSubstring : Substring.Raw -> CompileM Ixon.Substring
 | ⟨str, startPos, stopPos⟩ => do
     pure ⟨<- storeString str, startPos.byteIdx, stopPos.byteIdx⟩
 
-def compileSourceInfo : Lean.SourceInfo -> CompileM Ixon.SourceInfo
+def compileSourceInfo : Lean.SourceInfo -> CompileM IxonOld.SourceInfo
 | .original l p t e => do
   let l' <- compileSubstring l
   let t' <- compileSubstring t
@@ -239,11 +239,11 @@ def compileSourceInfo : Lean.SourceInfo -> CompileM Ixon.SourceInfo
 | .synthetic p e c => pure (.synthetic p.byteIdx e.byteIdx c)
 | .none => pure .none
 
-def compilePreresolved : Lean.Syntax.Preresolved -> CompileM Ixon.Preresolved
+def compilePreresolved : Lean.Syntax.Preresolved -> CompileM IxonOld.Preresolved
 | .namespace ns => .namespace <$> compileName ns
 | .decl n fs => .decl <$> compileName n <*> fs.mapM storeString
 
-partial def compileSyntax (syn: Lean.Syntax) : CompileM Ixon.Syntax := do
+partial def compileSyntax (syn: Lean.Syntax) : CompileM IxonOld.Syntax := do
   --dbg_trace "compileSyntax {(<- read).current}"
   match (<- get).synCache.find? syn with
   | some x => pure x
@@ -253,7 +253,7 @@ partial def compileSyntax (syn: Lean.Syntax) : CompileM Ixon.Syntax := do
       synCache := stt.synCache.insert syn syn'
     })
   where
-    go : Lean.Syntax -> CompileM Ixon.Syntax
+    go : Lean.Syntax -> CompileM IxonOld.Syntax
     | .missing => pure .missing
     | .node info kind args => do
       let info' <- compileSourceInfo info
@@ -271,7 +271,7 @@ partial def compileSyntax (syn: Lean.Syntax) : CompileM Ixon.Syntax := do
       let ps' <- preresolved.mapM compilePreresolved
       pure <| .ident info' rawVal' val' ps'
 
-def compileDataValue : Lean.DataValue -> CompileM Ixon.DataValue
+def compileDataValue : Lean.DataValue -> CompileM IxonOld.DataValue
 | .ofString s => .ofString <$> storeString s
 | .ofBool b => pure (.ofBool b)
 | .ofName n => .ofName <$> compileName n
@@ -413,7 +413,7 @@ def compileExpr: Lean.Expr -> CompileM MetaAddress
     | expr@(.fvar ..)  => throw $ .exprFreeVariable expr
     | expr@(.mvar ..)  => throw $ .exprMetavariable expr
 
-def compileDefn: Ix.Def -> CompileM (Ixon.Definition × Ixon.Metadata)
+def compileDefn: Ix.Def -> CompileM (IxonOld.Definition × IxonOld.Metadata)
 | d => .withLevels d.levelParams do
   --dbg_trace "compileDefn"
   let n <- compileName d.name
@@ -425,14 +425,14 @@ def compileDefn: Ix.Def -> CompileM (Ixon.Definition × Ixon.Metadata)
   let met := ⟨[.link n, .links ls, .hints d.hints, .link t.meta, .link v.meta, .links as]⟩
   return (dat, met)
 
-partial def compileRule: Lean.RecursorRule -> CompileM (Ixon.RecursorRule × Address × Address)
+partial def compileRule: Lean.RecursorRule -> CompileM (IxonOld.RecursorRule × Address × Address)
 | r => do
   --dbg_trace "compileRule"
   let n <- compileName r.ctor
   let rhs <- compileExpr r.rhs
   pure (⟨r.nfields, rhs.data⟩, (n, rhs.meta))
 
-def compileRecr: Lean.RecursorVal -> CompileM (Ixon.Recursor × Metadata)
+def compileRecr: Lean.RecursorVal -> CompileM (IxonOld.Recursor × Metadata)
 | r => .withLevels r.levelParams <| do
   --dbg_trace s!"compileRecr {(<- read).current} {repr <| r.name} mutCtx: {repr (<- read).mutCtx}"
   let n <- compileName r.name
@@ -446,7 +446,7 @@ def compileRecr: Lean.RecursorVal -> CompileM (Ixon.Recursor × Metadata)
   pure (dat, met)
 
 def compileConstructor (induct: Address)
-: Lean.ConstructorVal -> CompileM (Ixon.Constructor × Metadata)
+: Lean.ConstructorVal -> CompileM (IxonOld.Constructor × Metadata)
 | c => .withLevels c.levelParams <| do
   --dbg_trace s!"compileCtor {(<- read).current} {repr <| c.name} mutCtx: {repr (<- read).mutCtx}"
   let n <- compileName c.name
@@ -456,7 +456,7 @@ def compileConstructor (induct: Address)
   let met := ⟨[.link n, .links ls, .link t.meta, .link induct]⟩
   pure (dat, met)
 
-partial def compileIndc: Ix.Ind -> CompileM (Ixon.Inductive × Map Address Address)
+partial def compileIndc: Ix.Ind -> CompileM (IxonOld.Inductive × Map Address Address)
 | ⟨name, lvls, type, ps, is, all, ctors, nest, rcr, refl, usafe⟩ =>
   .withLevels lvls do
   --dbg_trace s!"compileIndc {(<- read).current} {repr <| name} mutCtx: {repr (<- read).mutCtx}"
@@ -833,9 +833,9 @@ def compileConstant (name: Lean.Name): CompileM MetaAddress := do
 --    return addr
 --
 --partial def commitConst (addr: MetaAddress) (secret: Address) : CompileM MetaAddress := do
---  let comm := Ixon.comm ⟨secret, addr.data⟩
+--  let comm := IxonOld.comm ⟨secret, addr.data⟩
 --  let commAddr <- storeIxon comm
---  let commMeta := Ixon.comm ⟨secret, addr.meta⟩
+--  let commMeta := IxonOld.comm ⟨secret, addr.meta⟩
 --  let commMetaAddr <- storeIxon commMeta
 --  let addr' := ⟨commAddr, commMetaAddr⟩
 --  modify fun stt => { stt with

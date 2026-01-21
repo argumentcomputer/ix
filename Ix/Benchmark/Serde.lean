@@ -1,104 +1,104 @@
-import Ix.Ixon
+import Ix.IxonOld
 import Ix.Benchmark.Change
 import Ix.Benchmark.OneShot
 
-@[inline] def putFloat (x : Float) : Ixon.PutM Unit := Ixon.putUInt64LE x.toBits
-@[inline] def getFloat : Ixon.GetM Float := Ixon.getUInt64LE.map Float.ofBits
+@[inline] def putFloat (x : Float) : IxonOld.PutM Unit := IxonOld.putUInt64LE x.toBits
+@[inline] def getFloat : IxonOld.GetM Float := IxonOld.getUInt64LE.map Float.ofBits
 
-instance : Ixon.Serialize Float where
+instance : IxonOld.Serialize Float where
   put := putFloat
   get := getFloat
 
-def putTupleNat (xy : Nat × Nat) : Ixon.PutM Unit := do
-  Ixon.putNat Ixon.putBytesTagged xy.fst
-  Ixon.putNat Ixon.putBytesTagged xy.snd
+def putTupleNat (xy : Nat × Nat) : IxonOld.PutM Unit := do
+  IxonOld.putNat IxonOld.putBytesTagged xy.fst
+  IxonOld.putNat IxonOld.putBytesTagged xy.snd
 
-def getTupleNat : Ixon.GetM (Nat × Nat) := do
-  return (← Ixon.Serialize.get, ← Ixon.Serialize.get)
+def getTupleNat : IxonOld.GetM (Nat × Nat) := do
+  return (← IxonOld.Serialize.get, ← IxonOld.Serialize.get)
 
-instance : Ixon.Serialize (Nat × Nat) where
+instance : IxonOld.Serialize (Nat × Nat) where
   put := putTupleNat
   get := getTupleNat 
 
-def putData (data : Data) : Ixon.PutM Unit := do
-  Ixon.Serialize.put data.d.toList
+def putData (data : Data) : IxonOld.PutM Unit := do
+  IxonOld.Serialize.put data.d.toList
 
-def getData : Ixon.GetM Data := do
-  let data : List (Nat × Nat) ← Ixon.Serialize.get
+def getData : IxonOld.GetM Data := do
+  let data : List (Nat × Nat) ← IxonOld.Serialize.get
   return { d := data.toArray } 
 
-instance : Ixon.Serialize Data where
+instance : IxonOld.Serialize Data where
   put := putData 
   get := getData
 
-def putConfidenceInterval (ci : ConfidenceInterval) : Ixon.PutM Unit := do
+def putConfidenceInterval (ci : ConfidenceInterval) : IxonOld.PutM Unit := do
   putFloat ci.confidenceLevel
   putFloat ci.lowerBound
   putFloat ci.upperBound
 
-def getConfidenceInterval : Ixon.GetM ConfidenceInterval := do
+def getConfidenceInterval : IxonOld.GetM ConfidenceInterval := do
   return { confidenceLevel := (← getFloat), lowerBound := (← getFloat), upperBound := (← getFloat)}
 
-instance : Ixon.Serialize ConfidenceInterval where
+instance : IxonOld.Serialize ConfidenceInterval where
   put := putConfidenceInterval 
   get := getConfidenceInterval 
 
-def putEstimate (est : Estimate) : Ixon.PutM Unit := do
+def putEstimate (est : Estimate) : IxonOld.PutM Unit := do
   putConfidenceInterval est.confidenceInterval
   putFloat est.pointEstimate
   putFloat est.stdErr
 
-def getEstimate : Ixon.GetM Estimate := do
+def getEstimate : IxonOld.GetM Estimate := do
   return { confidenceInterval := (← getConfidenceInterval), pointEstimate := (← getFloat), stdErr := (← getFloat)}
 
-instance : Ixon.Serialize Estimate where
+instance : IxonOld.Serialize Estimate where
   put := putEstimate
   get := getEstimate
 
-def putEstimates (est : Estimates) : Ixon.PutM Unit := do
+def putEstimates (est : Estimates) : IxonOld.PutM Unit := do
   putEstimate est.mean
   putEstimate est.median
   putEstimate est.medianAbsDev
   if let .some x := est.slope
   then
-    Ixon.putUInt8 1
+    IxonOld.putUInt8 1
     putEstimate x
   else
-    Ixon.putUInt8 0
+    IxonOld.putUInt8 0
   putEstimate est.stdDev
 
-def getEstimates : Ixon.GetM Estimates := do
+def getEstimates : IxonOld.GetM Estimates := do
   let mean ← getEstimate
   let median ← getEstimate
   let medianAbsDev ← getEstimate
-  let slope ← match (← Ixon.getUInt8) with
+  let slope ← match (← IxonOld.getUInt8) with
     | 1 => pure $ some (← getEstimate)
     | _ => pure none
   let stdDev ← getEstimate
   return { mean, median, medianAbsDev, slope, stdDev }
 
-instance : Ixon.Serialize Estimates where
+instance : IxonOld.Serialize Estimates where
   put := putEstimates
   get := getEstimates
 
-def putChangeEstimates (changeEst : ChangeEstimates) : Ixon.PutM Unit := do
+def putChangeEstimates (changeEst : ChangeEstimates) : IxonOld.PutM Unit := do
   putEstimate changeEst.mean
   putEstimate changeEst.median
 
-def getChangeEstimates : Ixon.GetM ChangeEstimates := do
+def getChangeEstimates : IxonOld.GetM ChangeEstimates := do
   let mean ← getEstimate
   let median ← getEstimate
   return { mean, median }
 
-instance : Ixon.Serialize ChangeEstimates where
+instance : IxonOld.Serialize ChangeEstimates where
   put := putChangeEstimates
   get := getChangeEstimates
 
-def getOneShot: Ixon.GetM OneShot := do
-  return { benchTime := (← Ixon.Serialize.get) }
+def getOneShot: IxonOld.GetM OneShot := do
+  return { benchTime := (← IxonOld.Serialize.get) }
 
-instance : Ixon.Serialize OneShot where
-  put os := Ixon.Serialize.put os.benchTime
+instance : IxonOld.Serialize OneShot where
+  put os := IxonOld.Serialize.put os.benchTime
   get := getOneShot
 
 /-- Writes JSON to disk at `benchPath/fileName` -/
@@ -107,11 +107,11 @@ def storeJson [Lean.ToJson α] (data : α) (benchPath : System.FilePath) : IO Un
   IO.FS.writeFile benchPath json.pretty
 
 /-- Writes Ixon to disk at `benchPath/fileName` -/
-def storeIxon [Ixon.Serialize α] (data : α) (benchPath : System.FilePath) : IO Unit := do
-  let ixon := Ixon.ser data
+def storeIxon [IxonOld.Serialize α] (data : α) (benchPath : System.FilePath) : IO Unit := do
+  let ixon := IxonOld.ser data
   IO.FS.writeBinFile benchPath ixon
 
-def storeFile [Lean.ToJson α] [Ixon.Serialize α] (fmt : SerdeFormat) (data: α) (path : System.FilePath) : IO Unit := do
+def storeFile [Lean.ToJson α] [IxonOld.Serialize α] (fmt : SerdeFormat) (data: α) (path : System.FilePath) : IO Unit := do
   match fmt with
   | .json => storeJson data path
   | .ixon => storeIxon data path
@@ -125,13 +125,13 @@ def loadJson [Lean.FromJson α] (path : System.FilePath) : IO α := do
   | .ok d => pure d
   | .error e => throw $ IO.userError s!"{repr e}"
 
-def loadIxon [Ixon.Serialize α] (path : System.FilePath) : IO α := do
+def loadIxon [IxonOld.Serialize α] (path : System.FilePath) : IO α := do
   let ixonBytes ← IO.FS.readBinFile path
-  match Ixon.de ixonBytes with
+  match IxonOld.de ixonBytes with
   | .ok d => pure d
   | .error e => throw $ IO.userError s!"expected a, go {repr e}"
 
-def loadFile [Lean.FromJson α] [Ixon.Serialize α] (format : SerdeFormat) (path : System.FilePath) : IO α := do
+def loadFile [Lean.FromJson α] [IxonOld.Serialize α] (format : SerdeFormat) (path : System.FilePath) : IO α := do
   match format with
   | .json => loadJson path
   | .ixon => loadIxon path

@@ -2,7 +2,7 @@ import Tests.Common
 import Ix.IxVM
 import Ix.Aiur.Simple
 import Ix.Aiur.Compile
-import Ix.Ixon
+import Ix.IxonOld
 import Blake3
 
 def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
@@ -13,8 +13,8 @@ def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
   let buffer := ⟨input, .ofList [(#[0], ⟨0, size⟩)]⟩ -- key is fixed as #[0]
   ⟨`blake3_test, #[], output, buffer, buffer⟩
 
-def mkIxonSerdeTestCase (ixon : Ixon.Ixon) : AiurTestCase :=
-  let bytes := Ixon.ser ixon
+def mkIxonSerdeTestCase (ixon : IxonOld.Ixon) : AiurTestCase :=
+  let bytes := IxonOld.ser ixon
   let size := bytes.size
   let ⟨⟨hash⟩, _⟩ := Blake3.hash bytes
   let hashG := hash.map .ofUInt8

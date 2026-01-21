@@ -1,12 +1,12 @@
 import Ix.Address
-import Ix.Ixon
+import Ix.IxonOld
 
 import Init.System.FilePath
 import Init.System.IO
 import Init.System.IOError
 
 open System
-open Ixon
+open IxonOld
 
 inductive StoreError
 | unknownAddress (a: Address)

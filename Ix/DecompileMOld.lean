@@ -1,12 +1,12 @@
 --import Std.Data.HashMap
---import Ix.Ixon
+--import Ix.IxonOld
 --import Ix.Common
 --import Ix.Store
---import Ix.CompileM
+--import Ix.CompileMOld
 --import Init.Data.List.Control
 --
 --open Ix.CompileM
---open Ixon hiding Substring
+--open IxonOld hiding Substring
 --
 --namespace Ix
 --

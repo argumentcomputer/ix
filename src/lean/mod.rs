@@ -112,6 +112,11 @@ impl<T> CArray<T> {
   }
 
   #[inline]
+  pub fn slice_mut(&mut self, len: usize) -> &mut [T] {
+    unsafe { std::slice::from_raw_parts_mut(self.0.as_mut_ptr(), len) }
+  }
+
+  #[inline]
   pub fn copy_from_slice(&mut self, src: &[T]) {
     unsafe {
       std::ptr::copy_nonoverlapping(
@@ -166,4 +171,99 @@ pub fn collect_list_with<T, C>(
     ptr = tail_ptr;
   }
   vec
+}
+
+// =============================================================================
+// Lean C API extern declarations for object construction
+// =============================================================================
+
+use std::ffi::c_uint;
+
+// Lean C API wrappers (defined in c/ixon_ffi.c)
+// These wrap Lean's allocation functions so they can be linked from Rust
+unsafe extern "C" {
+  // Object allocation
+  /// Allocate a constructor object with the given tag, number of object fields,
+  /// and scalar size in bytes.
+  #[link_name = "c_lean_alloc_ctor"]
+  pub fn lean_alloc_ctor(tag: c_uint, num_objs: c_uint, scalar_sz: c_uint) -> *mut c_void;
+
+  /// Set the i-th object field of a constructor.
+  #[link_name = "c_lean_ctor_set"]
+  pub fn lean_ctor_set(o: *mut c_void, i: c_uint, v: *mut c_void);
+
+  /// Get the i-th object field of a constructor.
+  #[link_name = "c_lean_ctor_get"]
+  pub fn lean_ctor_get(o: *mut c_void, i: c_uint) -> *const c_void;
+
+  /// Get the tag of a Lean object.
+  #[link_name = "c_lean_obj_tag"]
+  pub fn lean_obj_tag(o: *mut c_void) -> c_uint;
+
+  /// Set a uint8 scalar field at the given byte offset (after object fields).
+  #[link_name = "c_lean_ctor_set_uint8"]
+  pub fn lean_ctor_set_uint8(o: *mut c_void, offset: usize, v: u8);
+
+  /// Set a uint64 scalar field at the given byte offset (after object fields).
+  #[link_name = "c_lean_ctor_set_uint64"]
+  pub fn lean_ctor_set_uint64(o: *mut c_void, offset: usize, v: u64);
+
+  // String allocation
+  /// Create a Lean string from a null-terminated C string.
+  #[link_name = "c_lean_mk_string"]
+  pub fn lean_mk_string(s: *const std::ffi::c_char) -> *mut c_void;
+
+  // Scalar array (ByteArray) allocation
+  /// Allocate a scalar array with the given element size, initial size, and capacity.
+  #[link_name = "c_lean_alloc_sarray"]
+  pub fn lean_alloc_sarray(elem_size: c_uint, size: usize, capacity: usize) -> *mut c_void;
+
+  /// Get a pointer to the data area of a scalar array.
+  #[link_name = "c_lean_sarray_cptr"]
+  pub fn lean_sarray_cptr(o: *mut c_void) -> *mut u8;
+
+  // Array allocation
+  /// Allocate an array with the given initial size and capacity.
+  #[link_name = "c_lean_alloc_array"]
+  pub fn lean_alloc_array(size: usize, capacity: usize) -> *mut c_void;
+
+  /// Set the i-th element of an array (does not update size).
+  #[link_name = "c_lean_array_set_core"]
+  pub fn lean_array_set_core(o: *mut c_void, i: usize, v: *mut c_void);
+
+  /// Get the i-th element of an array.
+  #[link_name = "c_lean_array_get_core"]
+  pub fn lean_array_get_core(o: *mut c_void, i: usize) -> *const c_void;
+
+  // Reference counting
+  /// Increment the reference count of a Lean object.
+  #[link_name = "c_lean_inc"]
+  pub fn lean_inc(o: *mut c_void);
+
+  /// Increment the reference count by n.
+  #[link_name = "c_lean_inc_n"]
+  pub fn lean_inc_n(o: *mut c_void, n: usize);
+
+  // IO result construction
+  /// Wrap a value in a successful IO result.
+  #[link_name = "c_lean_io_result_mk_ok"]
+  pub fn lean_io_result_mk_ok(v: *mut c_void) -> *mut c_void;
+
+  // Nat allocation for large values
+  /// Create a Nat from a uint64. For values > max boxed, allocates on heap.
+  #[link_name = "c_lean_uint64_to_nat"]
+  pub fn lean_uint64_to_nat(n: u64) -> *mut c_void;
+
+  /// Create a Nat from limbs (little-endian u64 array). Uses GMP internally.
+  #[link_name = "c_lean_nat_from_limbs"]
+  pub fn lean_nat_from_limbs(num_limbs: usize, limbs: *const u64) -> *mut c_void;
+}
+
+/// Box a scalar value into a Lean object pointer.
+/// ```c
+/// lean_object * lean_box(size_t n) { return (lean_object*)(((size_t)(n) << 1) | 1); }
+/// ```
+#[inline]
+pub fn lean_box_fn(n: usize) -> *mut c_void {
+  ((n << 1) | 1) as *mut c_void
 }

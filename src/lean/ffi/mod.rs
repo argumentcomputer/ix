@@ -4,6 +4,7 @@ pub mod iroh;
 pub mod ixon;
 pub mod keccak;
 pub mod lean_env;
+pub mod lean_env_builder;
 
 use std::ffi::{CStr, CString, c_char, c_void};
 

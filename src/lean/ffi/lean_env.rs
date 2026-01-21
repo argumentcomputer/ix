@@ -45,7 +45,7 @@ impl SendPtr {
 
 /// Global cache for Names, shared across all threads.
 #[derive(Default)]
-struct GlobalCache {
+pub struct GlobalCache {
   names: DashMap<*const c_void, Name>,
 }
 
@@ -75,13 +75,13 @@ struct LocalCache {
 unsafe impl Send for LocalCache {}
 
 /// Combined cache reference passed to decoding functions.
-struct Cache<'g> {
+pub struct Cache<'g> {
   global: &'g GlobalCache,
   local: LocalCache,
 }
 
 impl<'g> Cache<'g> {
-  fn new(global: &'g GlobalCache) -> Self {
+  pub fn new(global: &'g GlobalCache) -> Self {
     Self { global, local: LocalCache::default() }
   }
 }
@@ -98,7 +98,7 @@ fn collect_list_ptrs(mut ptr: *const c_void) -> Vec<*const c_void> {
 }
 
 // Name decoding with global cache
-fn lean_ptr_to_name(ptr: *const c_void, global: &GlobalCache) -> Name {
+pub fn lean_ptr_to_name(ptr: *const c_void, global: &GlobalCache) -> Name {
   // Fast path: check if already cached
   if let Some(name) = global.names.get(&ptr) {
     return name.clone();
@@ -294,7 +294,7 @@ fn lean_ptr_to_name_data_value(
   (name, data_value)
 }
 
-fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache<'_>) -> Expr {
+pub fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache<'_>) -> Expr {
   if let Some(cached) = cache.local.exprs.get(&ptr) {
     return cached.clone();
   }
@@ -450,7 +450,7 @@ fn lean_ptr_to_constant_val(
   ConstantVal { name, level_params, typ }
 }
 
-fn lean_ptr_to_constant_info(
+pub fn lean_ptr_to_constant_info(
   ptr: *const c_void,
   cache: &mut Cache<'_>,
 ) -> ConstantInfo {
@@ -1150,3 +1150,4 @@ fn truncate_name(name: &str, max_len: usize) -> String {
     format!("...{}", &name[name.len() - max_len + 3..])
   }
 }
+

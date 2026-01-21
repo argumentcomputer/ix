@@ -112,6 +112,16 @@ pub struct CompileStateStats {
 }
 
 impl CompileState {
+  /// Create an empty compile state for testing (no environment).
+  pub fn new_empty() -> Self {
+    Self {
+      env: IxonEnv::default(),
+      name_to_addr: DashMap::new(),
+      blocks: DashSet::new(),
+      block_stats: DashMap::new(),
+    }
+  }
+
   pub fn stats(&self) -> CompileStateStats {
     CompileStateStats {
       consts: self.env.const_count(),

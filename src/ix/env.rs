@@ -350,7 +350,7 @@ fn hash_syntax(syn: &Syntax, hasher: &mut blake3::Hasher) {
       hasher.update(&[1]);
       hash_source_info(info, hasher);
       hasher.update(kind.get_hash().as_bytes());
-      hasher.update(&(args.len() as u64).to_le_bytes());
+      hasher.update(&Nat::from(args.len() as u64).to_le_bytes());
       for arg in args {
         hash_syntax(arg, hasher);
       }
@@ -365,7 +365,7 @@ fn hash_syntax(syn: &Syntax, hasher: &mut blake3::Hasher) {
       hash_source_info(info, hasher);
       hash_substring(raw_val, hasher);
       hasher.update(val.get_hash().as_bytes());
-      hasher.update(&(preresolved.len() as u64).to_le_bytes());
+      hasher.update(&Nat::from(preresolved.len() as u64).to_le_bytes());
       for pr in preresolved {
         hash_syntax_preresolved(pr, hasher);
       }
@@ -549,7 +549,7 @@ impl Expr {
   pub fn mdata(xs: Vec<(Name, DataValue)>, e: Expr) -> Self {
     let mut hasher = blake3::Hasher::new();
     hasher.update(&[EMDATA]);
-    hasher.update(&(xs.len() as u64).to_le_bytes());
+    hasher.update(&Nat::from(xs.len() as u64).to_le_bytes());
     for (name, dv) in &xs {
       hasher.update(name.get_hash().as_bytes());
       hash_data_value(dv, &mut hasher);
