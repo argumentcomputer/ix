@@ -15,10 +15,11 @@ concurrency:
 
 jobs:
   lean-jobs:
-    runs-on: gh-64vcpu-256gbram-ubuntu-2404
+    runs-on: gh-96vcpu-384gbram-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
       - uses: leanprover/lean-action@v1 # https://github.com/leanprover/lean-action
         with:
           build-args: "--wfail -v"
+          test: false
       - run: lake exe bench-blake3
