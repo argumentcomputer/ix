@@ -10,8 +10,20 @@ use crate::{
 #[derive(Hash, PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
 pub struct Nat(pub BigUint);
 
+impl From<u64> for Nat {
+  fn from(x: u64) -> Self {
+    Nat(BigUint::from(x))
+  }
+}
+
 impl Nat {
   pub const ZERO: Self = Self(BigUint::ZERO);
+
+  /// Try to convert to u64, returning None if the value is too large.
+  #[inline]
+  pub fn to_u64(&self) -> Option<u64> {
+    u64::try_from(&self.0).ok()
+  }
 
   pub fn from_ptr(ptr: *const c_void) -> Nat {
     if lean_is_scalar(ptr) {
