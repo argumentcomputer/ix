@@ -4,8 +4,8 @@ import Ix.Aiur.Compile
 import Ix.Aiur.Protocol
 import Ix.Benchmark.Bench
 
-abbrev dataSizes := #[8192]
-abbrev numHashesPerProof := #[512]
+abbrev dataSizes := #[1000000]
+abbrev numHashesPerProof := #[1, 2, 4, 8]
 
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
