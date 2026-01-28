@@ -50,15 +50,15 @@ def entrypoints := ⟦
     }
   }
 
-  fn poseidon2_24_bench(num_hashes: G) -> G {
+  fn poseidon2_bench(num_hashes: G) -> G {
     let num_hashes_pred = num_hashes - 1;
     let key = [num_hashes_pred];
     let (idx, len) = io_get_info(key);
     let byte_stream = read_byte_stream(idx, len);
-    let _x = poseidon2_24(byte_stream);
+    let _x = poseidon2(byte_stream);
     match num_hashes_pred {
       0 => 0,
-      _ => poseidon2_24_bench(num_hashes_pred),
+      _ => poseidon2_bench(num_hashes_pred),
     }
   }
 ⟧

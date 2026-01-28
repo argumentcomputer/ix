@@ -21,7 +21,7 @@ def friParameters : Aiur.FriParameters := {
 def poseidon2Bench : IO $ Array BenchReport := do
   let .ok ixVM := IxVM.ixVM
     | throw (IO.userError "IxVM merging failed")
-  let some funIdx := ixVM.getFuncIdx `poseidon2_24_bench
+  let some funIdx := ixVM.getFuncIdx `poseidon2_bench
     | throw (IO.userError "Aiur function not found")
   -- let .error err := ixVM.checkAndSimplify
   --   | throw (IO.userError "Simplification failed")
