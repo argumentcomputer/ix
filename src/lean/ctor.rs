@@ -33,4 +33,34 @@ impl LeanCtorObject {
   pub fn set_objs(&mut self, data: &[*const c_void]) {
     self.m_objs.copy_from_slice(data);
   }
+
+  /// Read a u64 scalar field from the constructor.
+  /// `num_objs` is the number of object fields (pointers) in this constructor.
+  /// `scalar_offset` is the byte offset within the scalar area.
+  /// Scalar fields are stored after the object fields in memory.
+  #[inline]
+  pub fn get_scalar_u64(&self, num_objs: usize, scalar_offset: usize) -> u64 {
+    // Scalar area starts after: header (8 bytes) + object pointers (8 bytes each)
+    let base_ptr = self as *const _ as *const u8;
+    let scalar_area = unsafe {
+      base_ptr.add(8 + num_objs * 8 + scalar_offset)
+    };
+    unsafe { *(scalar_area as *const u64) }
+  }
+
+  /// Read a u8 scalar field from the constructor.
+  #[inline]
+  pub fn get_scalar_u8(&self, num_objs: usize, scalar_offset: usize) -> u8 {
+    let base_ptr = self as *const _ as *const u8;
+    let scalar_area = unsafe {
+      base_ptr.add(8 + num_objs * 8 + scalar_offset)
+    };
+    unsafe { *scalar_area }
+  }
+
+  /// Read a bool scalar field from the constructor.
+  #[inline]
+  pub fn get_scalar_bool(&self, num_objs: usize, scalar_offset: usize) -> bool {
+    self.get_scalar_u8(num_objs, scalar_offset) != 0
+  }
 }

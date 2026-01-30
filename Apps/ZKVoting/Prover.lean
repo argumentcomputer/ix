@@ -1,7 +1,7 @@
 import Ix.Claim
 import Ix.Address
 import Ix.Meta
-import Ix.CompileM
+import Ix.CompileMOld
 import Batteries
 
 inductive Candidate

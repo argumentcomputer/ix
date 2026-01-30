@@ -1,0 +1,11 @@
+import Tests.Aiur
+import Tests.FFIConsistency
+import Tests.ByteArray
+import Tests.Ix
+import Tests.Ix.Ixon
+import Tests.Ix.Compile
+import Tests.Ix.Sharing
+import Tests.IxVM
+import Tests.Keccak
+import Tests.Cli
+import Tests.ShardMap

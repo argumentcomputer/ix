@@ -12,6 +12,9 @@ impl Address {
   pub fn from_slice(input: &[u8]) -> Result<Self, TryFromSliceError> {
     Ok(Address { hash: Hash::from_slice(input)? })
   }
+  pub fn from_blake3_hash(hash: Hash) -> Self {
+    Address { hash }
+  }
   pub fn hash(input: &[u8]) -> Self {
     Address { hash: blake3::hash(input) }
   }
