@@ -9,6 +9,7 @@
 -/
 import Ix.Address
 import Ix.Common
+import Ix.Environment
 
 namespace Ixon
 
@@ -399,6 +400,136 @@ structure Constant where
   sharing : Array Expr
   refs : Array Address
   univs : Array Univ
+  deriving BEq, Repr, Inhabited
+
+/-! ## Metadata Types -/
+
+/-- Data values for KVMap metadata -/
+inductive DataValue where
+  | ofString (addr : Address)
+  | ofBool (b : Bool)
+  | ofName (addr : Address)
+  | ofNat (addr : Address)
+  | ofInt (addr : Address)
+  | ofSyntax (addr : Address)
+  deriving BEq, Repr, Inhabited, Hashable
+
+/-- Key-value map for Lean.Expr.mdata -/
+abbrev KVMap := Array (Address × DataValue)
+
+/-- Arena node for per-expression metadata.
+    Nodes are allocated bottom-up (children before parents) in the arena.
+    Arena indices are UInt64 values pointing into `ExprMetaArena.nodes`. -/
+inductive ExprMetaData where
+  | leaf
+  | app (fun_ : UInt64) (arg : UInt64)
+  | binder (name : Address) (info : Lean.BinderInfo)
+           (tyChild : UInt64) (bodyChild : UInt64)
+  | letBinder (name : Address)
+              (tyChild : UInt64) (valChild : UInt64) (bodyChild : UInt64)
+  | ref (name : Address)
+  | prj (structName : Address) (child : UInt64)
+  | mdata (mdata : Array KVMap) (child : UInt64)
+  deriving BEq, Repr, Inhabited
+
+/-- Arena for expression metadata within a single constant. -/
+structure ExprMetaArena where
+  nodes : Array ExprMetaData := #[]
+  deriving BEq, Repr, Inhabited
+
+def ExprMetaArena.alloc (arena : ExprMetaArena) (node : ExprMetaData)
+    : ExprMetaArena × UInt64 :=
+  let idx := arena.nodes.size.toUInt64
+  ({ nodes := arena.nodes.push node }, idx)
+
+/-- Count ExprMetaData nodes by type: (leaf, app, binder, letBinder, ref, prj, mdata) -/
+def ExprMetaArena.countByType (arena : ExprMetaArena) : Nat × Nat × Nat × Nat × Nat × Nat × Nat :=
+  arena.nodes.foldl (init := (0, 0, 0, 0, 0, 0, 0)) fun (le, ap, bi, lb, rf, pj, md) node =>
+    match node with
+    | .leaf => (le + 1, ap, bi, lb, rf, pj, md)
+    | .app .. => (le, ap + 1, bi, lb, rf, pj, md)
+    | .binder .. => (le, ap, bi + 1, lb, rf, pj, md)
+    | .letBinder .. => (le, ap, bi, lb + 1, rf, pj, md)
+    | .ref .. => (le, ap, bi, lb, rf + 1, pj, md)
+    | .prj .. => (le, ap, bi, lb, rf, pj + 1, md)
+    | .mdata .. => (le, ap, bi, lb, rf, pj, md + 1)
+
+/-- Count mdata items in an arena. -/
+def ExprMetaArena.mdataItemCount (arena : ExprMetaArena) : Nat :=
+  arena.nodes.foldl (init := 0) fun acc node =>
+    match node with
+    | .mdata mdata _ => acc + mdata.foldl (fun a kv => a + kv.size) 0
+    | _ => acc
+
+/-- Per-constant metadata with arena-based expression metadata.
+    Each variant stores an ExprMetaArena covering all expressions in
+    that constant, plus root indices pointing into the arena. -/
+inductive ConstantMeta where
+  | empty
+  | defn (name : Address) (lvls : Array Address) (hints : Lean.ReducibilityHints)
+         (all : Array Address) (ctx : Array Address)
+         (arena : ExprMetaArena) (typeRoot : UInt64) (valueRoot : UInt64)
+  | axio (name : Address) (lvls : Array Address)
+         (arena : ExprMetaArena) (typeRoot : UInt64)
+  | quot (name : Address) (lvls : Array Address)
+         (arena : ExprMetaArena) (typeRoot : UInt64)
+  | indc (name : Address) (lvls : Array Address) (ctors : Array Address)
+         (all : Array Address) (ctx : Array Address)
+         (arena : ExprMetaArena) (typeRoot : UInt64)
+  | ctor (name : Address) (lvls : Array Address) (induct : Address)
+         (arena : ExprMetaArena) (typeRoot : UInt64)
+  | recr (name : Address) (lvls : Array Address) (rules : Array Address)
+         (all : Array Address) (ctx : Array Address)
+         (arena : ExprMetaArena) (typeRoot : UInt64)
+         (ruleRoots : Array UInt64)
+  deriving Inhabited, BEq, Repr
+
+/-- Count total arena nodes in this ConstantMeta. -/
+def ConstantMeta.exprMetaCount : ConstantMeta → Nat
+  | .empty => 0
+  | .defn _ _ _ _ _ arena _ _ => arena.nodes.size
+  | .axio _ _ arena _ => arena.nodes.size
+  | .quot _ _ arena _ => arena.nodes.size
+  | .indc _ _ _ _ _ arena _ => arena.nodes.size
+  | .ctor _ _ _ arena _ => arena.nodes.size
+  | .recr _ _ _ _ _ arena _ _ => arena.nodes.size
+
+/-- Count total arena nodes and mdata items in this ConstantMeta. -/
+def ConstantMeta.exprMetaStats : ConstantMeta → Nat × Nat
+  | .empty => (0, 0)
+  | .defn _ _ _ _ _ arena _ _ => (arena.nodes.size, arena.mdataItemCount)
+  | .axio _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
+  | .quot _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
+  | .indc _ _ _ _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
+  | .ctor _ _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
+  | .recr _ _ _ _ _ arena _ _ => (arena.nodes.size, arena.mdataItemCount)
+
+/-- Count ExprMetaData nodes by type: (binder, letBinder, ref, prj, mdata)
+    (compatible signature with old ExprMetas.countByType for comparison) -/
+def ConstantMeta.exprMetaByType : ConstantMeta → Nat × Nat × Nat × Nat × Nat
+  | .empty => (0, 0, 0, 0, 0)
+  | cm =>
+    let arena := match cm with
+      | .defn _ _ _ _ _ a _ _ => a
+      | .axio _ _ a _ => a
+      | .quot _ _ a _ => a
+      | .indc _ _ _ _ _ a _ => a
+      | .ctor _ _ _ a _ => a
+      | .recr _ _ _ _ _ a _ _ => a
+      | .empty => {}
+    let (_, _, bi, lb, rf, pj, md) := arena.countByType
+    (bi, lb, rf, pj, md)
+
+/-- A named constant with metadata -/
+structure Named where
+  addr : Address
+  constMeta : ConstantMeta := .empty
+  deriving Inhabited, BEq, Repr
+
+/-- A cryptographic commitment -/
+structure Comm where
+  secret : Address
+  payload : Address
   deriving BEq, Repr, Inhabited
 
 namespace Constant
@@ -897,6 +1028,325 @@ def desExpr (bytes : ByteArray) : Except String Expr := runGet getExpr bytes
 def serConstant (c : Constant) : ByteArray := runPut (putConstant c)
 def desConstant (bytes : ByteArray) : Except String Constant := runGet getConstant bytes
 
+/-! ## Metadata Serialization -/
+
+/-- Type alias for name index (Address → u64). -/
+abbrev NameIndex := Std.HashMap Address UInt64
+
+/-- Type alias for reverse name index (position → Address). -/
+abbrev NameReverseIndex := Array Address
+
+/-- Put an address as an index. -/
+def putIdx (addr : Address) (idx : NameIndex) : PutM Unit := do
+  let i := idx.get? addr |>.getD 0
+  putTag0 ⟨i⟩
+
+/-- Get an address from an index. -/
+def getIdx (rev : NameReverseIndex) : GetM Address := do
+  let i := (← getTag0).size.toNat
+  match rev[i]? with
+  | some addr => pure addr
+  | none => throw s!"invalid name index {i}, max {rev.size}"
+
+/-- Put a vector of addresses as indices. -/
+def putIdxVec (addrs : Array Address) (idx : NameIndex) : PutM Unit := do
+  putTag0 ⟨addrs.size.toUInt64⟩
+  for a in addrs do putIdx a idx
+
+/-- Get a vector of addresses from indices. -/
+def getIdxVec (rev : NameReverseIndex) : GetM (Array Address) := do
+  let len := (← getTag0).size.toNat
+  let mut v := #[]
+  for _ in [0:len] do
+    v := v.push (← getIdx rev)
+  pure v
+
+/-- Serialize BinderInfo. -/
+def putBinderInfo : Lean.BinderInfo → PutM Unit
+  | .default => putU8 0
+  | .implicit => putU8 1
+  | .strictImplicit => putU8 2
+  | .instImplicit => putU8 3
+
+def getBinderInfo : GetM Lean.BinderInfo := do
+  match ← getU8 with
+  | 0 => pure .default
+  | 1 => pure .implicit
+  | 2 => pure .strictImplicit
+  | 3 => pure .instImplicit
+  | x => throw s!"invalid BinderInfo {x}"
+
+/-- Serialize ReducibilityHints. -/
+def putReducibilityHints : Lean.ReducibilityHints → PutM Unit
+  | .opaque => putU8 0
+  | .abbrev => putU8 1
+  | .regular n => do putU8 2; putU64LE n.toUInt64
+
+def getReducibilityHints : GetM Lean.ReducibilityHints := do
+  match ← getU8 with
+  | 0 => pure .opaque
+  | 1 => pure .abbrev
+  | 2 => pure (.regular (← getU64LE).toUInt32)
+  | x => throw s!"invalid ReducibilityHints {x}"
+
+/-- Serialize DataValue with indexed addresses.
+    OfString/OfNat/OfInt/OfSyntax use raw 32-byte addresses (blob addresses, not in name index). -/
+def putDataValueIndexed (dv : DataValue) (idx : NameIndex) : PutM Unit := do
+  match dv with
+  | .ofString a => putU8 0 *> Serialize.put a
+  | .ofBool b => putU8 1 *> Serialize.put b
+  | .ofName a => putU8 2 *> putIdx a idx
+  | .ofNat a => putU8 3 *> Serialize.put a
+  | .ofInt a => putU8 4 *> Serialize.put a
+  | .ofSyntax a => putU8 5 *> Serialize.put a
+
+def getDataValueIndexed (rev : NameReverseIndex) : GetM DataValue := do
+  match ← getU8 with
+  | 0 => .ofString <$> Serialize.get
+  | 1 => .ofBool <$> Serialize.get
+  | 2 => .ofName <$> getIdx rev
+  | 3 => .ofNat <$> Serialize.get
+  | 4 => .ofInt <$> Serialize.get
+  | 5 => .ofSyntax <$> Serialize.get
+  | x => throw s!"invalid DataValue tag {x}"
+
+/-- Serialize KVMap with indexed addresses. -/
+def putKVMapIndexed (kvmap : KVMap) (idx : NameIndex) : PutM Unit := do
+  putTag0 ⟨kvmap.size.toUInt64⟩
+  for (k, v) in kvmap do
+    putIdx k idx
+    putDataValueIndexed v idx
+
+def getKVMapIndexed (rev : NameReverseIndex) : GetM KVMap := do
+  let len := (← getTag0).size.toNat
+  let mut kvmap := #[]
+  for _ in [0:len] do
+    let k ← getIdx rev
+    let v ← getDataValueIndexed rev
+    kvmap := kvmap.push (k, v)
+  pure kvmap
+
+/-- Serialize mdata stack (Array KVMap) with indexed addresses. -/
+def putMdataStackIndexed (mdata : Array KVMap) (idx : NameIndex) : PutM Unit := do
+  putTag0 ⟨mdata.size.toUInt64⟩
+  for kv in mdata do putKVMapIndexed kv idx
+
+def getMdataStackIndexed (rev : NameReverseIndex) : GetM (Array KVMap) := do
+  let len := (← getTag0).size.toNat
+  let mut mdata := #[]
+  for _ in [0:len] do
+    mdata := mdata.push (← getKVMapIndexed rev)
+  pure mdata
+
+/-- Serialize ExprMetaData with indexed addresses. Arena indices use Tag0 encoding. -/
+def putExprMetaDataIndexed (em : ExprMetaData) (idx : NameIndex) : PutM Unit := do
+  match em with
+  | .leaf => putU8 0
+  | .app f a =>
+    putU8 1
+    putTag0 ⟨f⟩
+    putTag0 ⟨a⟩
+  | .binder name info tyChild bodyChild =>
+    let tag : UInt8 := 2 + match info with
+      | .default => 0 | .implicit => 1 | .strictImplicit => 2 | .instImplicit => 3
+    putU8 tag
+    putIdx name idx
+    putTag0 ⟨tyChild⟩
+    putTag0 ⟨bodyChild⟩
+  | .letBinder name tyChild valChild bodyChild =>
+    putU8 6
+    putIdx name idx
+    putTag0 ⟨tyChild⟩
+    putTag0 ⟨valChild⟩
+    putTag0 ⟨bodyChild⟩
+  | .ref name =>
+    putU8 7
+    putIdx name idx
+  | .prj structName child =>
+    putU8 8
+    putIdx structName idx
+    putTag0 ⟨child⟩
+  | .mdata mdata child =>
+    putU8 9
+    putMdataStackIndexed mdata idx
+    putTag0 ⟨child⟩
+
+def getExprMetaDataIndexed (rev : NameReverseIndex) : GetM ExprMetaData := do
+  let tag ← getU8
+  match tag with
+  | 0 => pure .leaf
+  | 1 =>
+    let f := (← getTag0).size
+    let a := (← getTag0).size
+    pure (.app f a)
+  | 2 | 3 | 4 | 5 =>
+    let info := match tag with
+      | 2 => Lean.BinderInfo.default | 3 => .implicit
+      | 4 => .strictImplicit | _ => .instImplicit
+    let name ← getIdx rev
+    let tyChild := (← getTag0).size
+    let bodyChild := (← getTag0).size
+    pure (.binder name info tyChild bodyChild)
+  | 6 =>
+    let name ← getIdx rev
+    let tyChild := (← getTag0).size
+    let valChild := (← getTag0).size
+    let bodyChild := (← getTag0).size
+    pure (.letBinder name tyChild valChild bodyChild)
+  | 7 =>
+    let name ← getIdx rev
+    pure (.ref name)
+  | 8 =>
+    let structName ← getIdx rev
+    let child := (← getTag0).size
+    pure (.prj structName child)
+  | 9 =>
+    let mdata ← getMdataStackIndexed rev
+    let child := (← getTag0).size
+    pure (.mdata mdata child)
+  | x => throw s!"invalid ExprMetaData tag {x}"
+
+/-- Serialize ExprMetaArena (length-prefixed array of ExprMetaData nodes). -/
+def putExprMetaArenaIndexed (arena : ExprMetaArena) (idx : NameIndex) : PutM Unit := do
+  putTag0 ⟨arena.nodes.size.toUInt64⟩
+  for node in arena.nodes do
+    putExprMetaDataIndexed node idx
+
+def getExprMetaArenaIndexed (rev : NameReverseIndex) : GetM ExprMetaArena := do
+  let len := (← getTag0).size.toNat
+  let mut nodes : Array ExprMetaData := #[]
+  for _ in [0:len] do
+    nodes := nodes.push (← getExprMetaDataIndexed rev)
+  pure ⟨nodes⟩
+
+/-- Serialize ConstantMeta with indexed addresses. -/
+def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := do
+  match cm with
+  | .empty => putU8 255
+  | .defn name lvls hints all ctx arena typeRoot valueRoot =>
+    putU8 0
+    putIdx name idx
+    putIdxVec lvls idx
+    putReducibilityHints hints
+    putIdxVec all idx
+    putIdxVec ctx idx
+    putExprMetaArenaIndexed arena idx
+    putTag0 ⟨typeRoot⟩
+    putTag0 ⟨valueRoot⟩
+  | .axio name lvls arena typeRoot =>
+    putU8 1
+    putIdx name idx
+    putIdxVec lvls idx
+    putExprMetaArenaIndexed arena idx
+    putTag0 ⟨typeRoot⟩
+  | .quot name lvls arena typeRoot =>
+    putU8 2
+    putIdx name idx
+    putIdxVec lvls idx
+    putExprMetaArenaIndexed arena idx
+    putTag0 ⟨typeRoot⟩
+  | .indc name lvls ctors all ctx arena typeRoot =>
+    putU8 3
+    putIdx name idx
+    putIdxVec lvls idx
+    putIdxVec ctors idx
+    putIdxVec all idx
+    putIdxVec ctx idx
+    putExprMetaArenaIndexed arena idx
+    putTag0 ⟨typeRoot⟩
+  | .ctor name lvls induct arena typeRoot =>
+    putU8 4
+    putIdx name idx
+    putIdxVec lvls idx
+    putIdx induct idx
+    putExprMetaArenaIndexed arena idx
+    putTag0 ⟨typeRoot⟩
+  | .recr name lvls rules all ctx arena typeRoot ruleRoots =>
+    putU8 5
+    putIdx name idx
+    putIdxVec lvls idx
+    putIdxVec rules idx
+    putIdxVec all idx
+    putIdxVec ctx idx
+    putExprMetaArenaIndexed arena idx
+    putTag0 ⟨typeRoot⟩
+    putTag0 ⟨ruleRoots.size.toUInt64⟩
+    for r in ruleRoots do putTag0 ⟨r⟩
+
+def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
+  match ← getU8 with
+  | 255 => pure .empty
+  | 0 =>
+    let name ← getIdx rev
+    let lvls ← getIdxVec rev
+    let hints ← getReducibilityHints
+    let all ← getIdxVec rev
+    let ctx ← getIdxVec rev
+    let arena ← getExprMetaArenaIndexed rev
+    let typeRoot := (← getTag0).size
+    let valueRoot := (← getTag0).size
+    pure (.defn name lvls hints all ctx arena typeRoot valueRoot)
+  | 1 =>
+    let name ← getIdx rev
+    let lvls ← getIdxVec rev
+    let arena ← getExprMetaArenaIndexed rev
+    let typeRoot := (← getTag0).size
+    pure (.axio name lvls arena typeRoot)
+  | 2 =>
+    let name ← getIdx rev
+    let lvls ← getIdxVec rev
+    let arena ← getExprMetaArenaIndexed rev
+    let typeRoot := (← getTag0).size
+    pure (.quot name lvls arena typeRoot)
+  | 3 =>
+    let name ← getIdx rev
+    let lvls ← getIdxVec rev
+    let ctors ← getIdxVec rev
+    let all ← getIdxVec rev
+    let ctx ← getIdxVec rev
+    let arena ← getExprMetaArenaIndexed rev
+    let typeRoot := (← getTag0).size
+    pure (.indc name lvls ctors all ctx arena typeRoot)
+  | 4 =>
+    let name ← getIdx rev
+    let lvls ← getIdxVec rev
+    let induct ← getIdx rev
+    let arena ← getExprMetaArenaIndexed rev
+    let typeRoot := (← getTag0).size
+    pure (.ctor name lvls induct arena typeRoot)
+  | 5 =>
+    let name ← getIdx rev
+    let lvls ← getIdxVec rev
+    let rules ← getIdxVec rev
+    let all ← getIdxVec rev
+    let ctx ← getIdxVec rev
+    let arena ← getExprMetaArenaIndexed rev
+    let typeRoot := (← getTag0).size
+    let numRuleRoots := (← getTag0).size.toNat
+    let mut ruleRoots : Array UInt64 := #[]
+    for _ in [0:numRuleRoots] do
+      ruleRoots := ruleRoots.push (← getTag0).size
+    pure (.recr name lvls rules all ctx arena typeRoot ruleRoots)
+  | x => throw s!"invalid ConstantMeta tag {x}"
+
+/-- Serialize Comm (simple - just two addresses). -/
+def putComm (c : Comm) : PutM Unit := do
+  Serialize.put c.secret
+  Serialize.put c.payload
+
+def getComm : GetM Comm := do
+  let secret ← Serialize.get
+  let payload ← Serialize.get
+  pure ⟨secret, payload⟩
+
+instance : Serialize Comm where
+  put := putComm
+  get := getComm
+
+/-- Convenience serialization for Comm. -/
+def serComm (c : Comm) : ByteArray := runPut (putComm c)
+def desComm (bytes : ByteArray) : Except String Comm := runGet getComm bytes
+
 /-! ## Ixon Environment -/
 
 /-- The Ixon environment, containing all compiled constants.
@@ -904,14 +1354,16 @@ def desConstant (bytes : ByteArray) : Except String Constant := runGet getConsta
 structure Env where
   /-- Alpha-invariant constants: Address → Constant -/
   consts : Std.HashMap Address Constant := {}
-  /-- Named references: Name → Address -/
-  named : Std.HashMap Lean.Name Address := {}
+  /-- Named references: Ix.Name → Named (includes address + metadata) -/
+  named : Std.HashMap Ix.Name Named := {}
   /-- Raw data blobs: Address → bytes -/
   blobs : Std.HashMap Address ByteArray := {}
-  /-- Hash-consed name components: Address → Name -/
-  names : Std.HashMap Address Lean.Name := {}
-  /-- Reverse index: constant Address → Name -/
-  addrToName : Std.HashMap Address Lean.Name := {}
+  /-- Hash-consed name components: Address → Ix.Name -/
+  names : Std.HashMap Address Ix.Name := {}
+  /-- Cryptographic commitments: Address → Comm -/
+  comms : Std.HashMap Address Comm := {}
+  /-- Reverse index: constant Address → Ix.Name -/
+  addrToName : Std.HashMap Address Ix.Name := {}
   deriving Inhabited
 
 namespace Env
@@ -924,18 +1376,26 @@ def storeConst (env : Env) (addr : Address) (const : Constant) : Env :=
 def getConst? (env : Env) (addr : Address) : Option Constant :=
   env.consts.get? addr
 
-/-- Register a name mapping. -/
-def registerName (env : Env) (name : Lean.Name) (addr : Address) : Env :=
+/-- Register a name with full Named metadata. -/
+def registerName (env : Env) (name : Ix.Name) (named : Named) : Env :=
   { env with
-    named := env.named.insert name addr
-    addrToName := env.addrToName.insert addr name }
+    named := env.named.insert name named
+    addrToName := env.addrToName.insert named.addr name }
+
+/-- Register a name with just an address (empty metadata). -/
+def registerNameAddr (env : Env) (name : Ix.Name) (addr : Address) : Env :=
+  env.registerName name { addr, constMeta := .empty }
 
 /-- Look up a name's address. -/
-def getAddr? (env : Env) (name : Lean.Name) : Option Address :=
+def getAddr? (env : Env) (name : Ix.Name) : Option Address :=
+  env.named.get? name |>.map (·.addr)
+
+/-- Look up a name's Named entry. -/
+def getNamed? (env : Env) (name : Ix.Name) : Option Named :=
   env.named.get? name
 
 /-- Look up an address's name. -/
-def getName? (env : Env) (addr : Address) : Option Lean.Name :=
+def getName? (env : Env) (addr : Address) : Option Ix.Name :=
   env.addrToName.get? addr
 
 /-- Store a blob and return its content address. -/
@@ -947,6 +1407,14 @@ def storeBlob (env : Env) (bytes : ByteArray) : Env × Address :=
 def getBlob? (env : Env) (addr : Address) : Option ByteArray :=
   env.blobs.get? addr
 
+/-- Store a commitment. -/
+def storeComm (env : Env) (addr : Address) (comm : Comm) : Env :=
+  { env with comms := env.comms.insert addr comm }
+
+/-- Get a commitment by address. -/
+def getComm? (env : Env) (addr : Address) : Option Comm :=
+  env.comms.get? addr
+
 /-- Number of constants. -/
 def constCount (env : Env) : Nat := env.consts.size
 
@@ -956,14 +1424,121 @@ def blobCount (env : Env) : Nat := env.blobs.size
 /-- Number of named constants. -/
 def namedCount (env : Env) : Nat := env.named.size
 
+/-- Number of commitments. -/
+def commCount (env : Env) : Nat := env.comms.size
+
 instance : Repr Env where
   reprPrec env _ := s!"Env({env.constCount} consts, {env.blobCount} blobs, {env.namedCount} named)"
 
 end Env
 
+/-! ## Raw FFI Types for Env -/
+
+/-- Raw FFI structure for a constant: Address → Constant.
+    Array-based version for FFI compatibility (no HashMap). -/
+structure RawConst where
+  addr : Address
+  const : Constant
+  deriving Repr, Inhabited, BEq
+
+/-- Raw FFI structure for a named entry: Ix.Name → (Address, ConstantMeta).
+    Array-based version for FFI compatibility (no HashMap). -/
+structure RawNamed where
+  name : Ix.Name
+  addr : Address
+  constMeta : ConstantMeta
+  deriving Repr, Inhabited, BEq
+
+/-- Raw FFI structure for a blob: Address → ByteArray.
+    Array-based version for FFI compatibility (no HashMap). -/
+structure RawBlob where
+  addr : Address
+  bytes : ByteArray
+  deriving Repr, Inhabited, BEq
+
+/-- Raw FFI structure for a commitment: Address → Comm.
+    Array-based version for FFI compatibility (no HashMap). -/
+structure RawComm where
+  addr : Address
+  comm : Comm
+  deriving Repr, Inhabited, BEq
+
+/-- Raw FFI environment structure using arrays instead of HashMaps.
+    This is the array-based equivalent of `Env` for FFI compatibility. -/
+structure RawEnv where
+  consts : Array RawConst
+  named : Array RawNamed
+  blobs : Array RawBlob
+  comms : Array RawComm
+  deriving Repr, Inhabited, BEq
+
+namespace RawEnv
+
+/-- Recursively add all name components to the names map.
+    Uses Ix.Name.getHash for address computation. -/
+partial def addNameComponents (names : Std.HashMap Address Ix.Name) (name : Ix.Name) : Std.HashMap Address Ix.Name :=
+  let addr := name.getHash
+  if names.contains addr then names
+  else
+    let names := names.insert addr name
+    match name with
+    | .anonymous _ => names
+    | .str parent _ _ => addNameComponents names parent
+    | .num parent _ _ => addNameComponents names parent
+
+/-- Recursively add all name components to the names map AND store string components as blobs.
+    This matches Rust's behavior for deduplication of string data. -/
+partial def addNameComponentsWithBlobs
+    (names : Std.HashMap Address Ix.Name)
+    (blobs : Std.HashMap Address ByteArray)
+    (name : Ix.Name)
+    : Std.HashMap Address Ix.Name × Std.HashMap Address ByteArray :=
+  let addr := name.getHash
+  if names.contains addr then (names, blobs)
+  else
+    let names := names.insert addr name
+    match name with
+    | .anonymous _ => (names, blobs)
+    | .str parent s _ =>
+      -- Store string component as blob for deduplication
+      let strBytes := s.toUTF8
+      let strAddr := Address.blake3 strBytes
+      let blobs := blobs.insert strAddr strBytes
+      addNameComponentsWithBlobs names blobs parent
+    | .num parent _ _ =>
+      addNameComponentsWithBlobs names blobs parent
+
+/-- Convert RawEnv to Env with HashMaps.
+    This is done on the Lean side for correct hash function usage. -/
+def toEnv (raw : RawEnv) : Env := Id.run do
+  let mut env : Env := {}
+  for rc in raw.consts do
+    env := { env with consts := env.consts.insert rc.addr rc.const }
+  for rn in raw.named do
+    -- Add all name components to the names map
+    env := { env with names := addNameComponents env.names rn.name }
+    env := env.registerName rn.name { addr := rn.addr, constMeta := rn.constMeta }
+  for rb in raw.blobs do
+    env := { env with blobs := env.blobs.insert rb.addr rb.bytes }
+  for rc in raw.comms do
+    env := { env with comms := env.comms.insert rc.addr rc.comm }
+  return env
+
+end RawEnv
+
 /-! ## Env Serialization -/
 
 namespace Env
+
+/-- Convert Env with HashMaps to RawEnv with Arrays for FFI.
+    Note: The `names` and `addrToName` fields are not included in RawEnv
+    as they can be reconstructed from `named` entries. -/
+def toRaw (env : Env) : RawEnv := {
+  consts := env.consts.toArray.map fun (addr, const) => { addr, const }
+  named := env.named.toArray.map fun (name, n) => { name, addr := n.addr, constMeta := n.constMeta }
+  blobs := env.blobs.toArray.map fun (addr, bytes) => { addr, bytes }
+  comms := env.comms.toArray.map fun (addr, comm) => { addr, comm }
+}
 
 /-- Tag4 flag for Env (0xE). -/
 def FLAG : UInt8 := 0xE
@@ -971,70 +1546,69 @@ def FLAG : UInt8 := 0xE
 /-- Env format version. -/
 def VERSION : UInt64 := 2
 
-/-- Compute blake3 hash of a Lean.Name. -/
-def hashName (name : Lean.Name) : Address :=
-  -- Use the same approach as Rust: hash the name's components
-  let rec hashRec : Lean.Name → ByteArray
-    | .anonymous => ByteArray.mk #[0]
-    | .str parent s =>
-      let parentHash := hashRec parent
-      let sBytes := s.toUTF8
-      -- Combine: tag(1) + parent_hash + string
-      ByteArray.mk #[1] ++ parentHash ++ sBytes
-    | .num parent n =>
-      let parentHash := hashRec parent
-      let nBytes := ByteArray.mk (Nat.toBytesLE n)
-      -- Combine: tag(2) + parent_hash + num
-      ByteArray.mk #[2] ++ parentHash ++ nBytes
-  Address.blake3 (hashRec name)
-
 /-- Serialize a name component (references parent by address).
     Format: tag (1 byte) + parent_addr (32 bytes) + data -/
-def putNameComponent (name : Lean.Name) : PutM Unit := do
+def putNameComponent (name : Ix.Name) : PutM Unit := do
   match name with
-  | .anonymous => putU8 0
-  | .str parent s =>
+  | .anonymous _ => putU8 0
+  | .str parent s _ =>
     putU8 1
-    Serialize.put (hashName parent)
+    Serialize.put parent.getHash
     putTag0 ⟨s.utf8ByteSize.toUInt64⟩
     putBytes s.toUTF8
-  | .num parent n =>
+  | .num parent n _ =>
     putU8 2
-    Serialize.put (hashName parent)
+    Serialize.put parent.getHash
     let bytes := ByteArray.mk (Nat.toBytesLE n)
     putTag0 ⟨bytes.size.toUInt64⟩
     putBytes bytes
 
 /-- Deserialize a name component using a lookup table for parents. -/
-def getNameComponent (namesLookup : Std.HashMap Address Lean.Name) : GetM Lean.Name := do
+def getNameComponent (namesLookup : Std.HashMap Address Ix.Name) : GetM Ix.Name := do
   let tag ← getU8
   match tag with
-  | 0 => pure .anonymous
+  | 0 => pure Ix.Name.mkAnon
   | 1 =>
     let parentAddr ← Serialize.get
-    let parent := namesLookup.getD parentAddr .anonymous
+    let parent := namesLookup.getD parentAddr Ix.Name.mkAnon
     let len := (← getTag0).size.toNat
     let sBytes ← getBytes len
     match String.fromUTF8? sBytes with
-    | some s => pure (.str parent s)
+    | some s => pure (Ix.Name.mkStr parent s)
     | none => throw "getNameComponent: invalid UTF-8"
   | 2 =>
     let parentAddr ← Serialize.get
-    let parent := namesLookup.getD parentAddr .anonymous
+    let parent := namesLookup.getD parentAddr Ix.Name.mkAnon
     let len := (← getTag0).size.toNat
     let nBytes ← getBytes len
-    pure (.num parent (Nat.fromBytesLE nBytes.data))
+    pure (Ix.Name.mkNat parent (Nat.fromBytesLE nBytes.data))
   | t => throw s!"getNameComponent: invalid tag {t}"
 
 /-- Topologically sort names so parents come before children. -/
-def topologicalSortNames (names : Std.HashMap Address Lean.Name) : Array (Address × Lean.Name) :=
-  -- Sort by depth (anonymous=0, str/num = 1 + parent depth)
-  let rec depth : Lean.Name → Nat
-    | .anonymous => 0
-    | .str parent _ => 1 + depth parent
-    | .num parent _ => 1 + depth parent
-  let pairs := names.toList.toArray
-  pairs.qsort fun (_, n1) (_, n2) => depth n1 < depth n2
+partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (Address × Ix.Name) :=
+  -- DFS topological sort: visit parent before child
+  -- This matches the Rust implementation
+  let anonAddr := Ix.Name.mkAnon.getHash
+  let rec visit (name : Ix.Name) (visited : Std.HashSet Address) (result : Array (Address × Ix.Name))
+      : Std.HashSet Address × Array (Address × Ix.Name) :=
+    let addr := name.getHash
+    if visited.contains addr then (visited, result)
+    else
+      -- Visit parent first
+      let (visited, result) := match name with
+        | .anonymous _ => (visited, result)
+        | .str parent _ _ => visit parent visited result
+        | .num parent _ _ => visit parent visited result
+      let visited := visited.insert addr
+      let result := result.push (addr, name)
+      (visited, result)
+  -- Start with anonymous already visited (it's implicit)
+  let initVisited : Std.HashSet Address := ({} : Std.HashSet Address).insert anonAddr
+  -- Sort names by address before iterating to ensure deterministic DFS order
+  let sortedEntries := names.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  let (_, result) := sortedEntries.foldl (init := (initVisited, #[])) fun (visited, result) (_, name) =>
+    visit name visited result
+  result
 
 /-- Serialize an Env to bytes. -/
 def putEnv (env : Env) : PutM Unit := do
@@ -1042,41 +1616,46 @@ def putEnv (env : Env) : PutM Unit := do
   putTag4 ⟨FLAG, VERSION⟩
 
   -- Section 1: Blobs (Address -> bytes)
-  let blobs := env.blobs.toList.toArray
-  putU64LE blobs.size.toUInt64
+  let blobs := env.blobs.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  putTag0 ⟨blobs.size.toUInt64⟩
   for (addr, bytes) in blobs do
     Serialize.put addr
-    putU64LE bytes.size.toUInt64
+    putTag0 ⟨bytes.size.toUInt64⟩
     putBytes bytes
 
   -- Section 2: Consts (Address -> Constant)
-  let consts := env.consts.toList.toArray
-  putU64LE consts.size.toUInt64
+  let consts := env.consts.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  putTag0 ⟨consts.size.toUInt64⟩
   for (addr, constant) in consts do
     Serialize.put addr
     putConstant constant
 
   -- Section 3: Names (Address -> Name component)
-  -- Topologically sorted so parents come before children
+  -- Topologically sorted so parents come before children, with ties broken by address
   let sortedNames := topologicalSortNames env.names
-  putU64LE sortedNames.size.toUInt64
+  -- Build name index from sorted positions (matching Rust)
+  let nameIdx := sortedNames.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64) {}
+  putTag0 ⟨sortedNames.size.toUInt64⟩
   for (addr, name) in sortedNames do
     Serialize.put addr
     putNameComponent name
 
-  -- Section 4: Named (name Address -> const Address)
-  -- Simplified: just address, no metadata
-  let named := env.named.toList.toArray
-  putU64LE named.size.toUInt64
-  for (name, constAddr) in named do
-    let nameAddr := hashName name
-    Serialize.put nameAddr
-    Serialize.put constAddr
-    -- Empty metadata placeholder (ConstantMeta default)
-    putU8 0  -- ConstantMeta flag for empty
+  -- Section 4: Named (name Address -> Named with metadata)
+  let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  putTag0 ⟨named.size.toUInt64⟩
+  for (name, namedEntry) in named do
+    -- Use the name's stored hash, which matches how it was stored in env.names
+    Serialize.put name.getHash
+    Serialize.put namedEntry.addr
+    putConstantMetaIndexed namedEntry.constMeta nameIdx
 
-  -- Section 5: Comms (empty)
-  putU64LE 0
+  -- Section 5: Comms (Address -> Comm)
+  let comms := env.comms.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  putTag0 ⟨comms.size.toUInt64⟩
+  for (addr, comm) in comms do
+    Serialize.put addr
+    putComm comm
 
 /-- Deserialize an Env from bytes. -/
 def getEnv : GetM Env := do
@@ -1090,52 +1669,55 @@ def getEnv : GetM Env := do
   let mut env : Env := {}
 
   -- Section 1: Blobs
-  let numBlobs ← getU64LE
+  let numBlobs := (← getTag0).size
   for _ in [:numBlobs.toNat] do
     let addr ← Serialize.get
-    let len ← getU64LE
+    let len := (← getTag0).size
     let bytes ← getBytes len.toNat
     env := { env with blobs := env.blobs.insert addr bytes }
 
   -- Section 2: Consts
-  let numConsts ← getU64LE
+  let numConsts := (← getTag0).size
   for _ in [:numConsts.toNat] do
     let addr ← Serialize.get
     let constant ← getConstant
     env := { env with consts := env.consts.insert addr constant }
 
-  -- Section 3: Names (build lookup table)
-  let numNames ← getU64LE
-  let mut namesLookup : Std.HashMap Address Lean.Name := {}
+  -- Section 3: Names (build lookup table AND reverse index)
+  let numNames := (← getTag0).size
+  let mut namesLookup : Std.HashMap Address Ix.Name := {}
+  let mut nameRev : NameReverseIndex := #[]
   -- Always include anonymous name
-  namesLookup := namesLookup.insert (hashName .anonymous) .anonymous
+  namesLookup := namesLookup.insert Ix.Name.mkAnon.getHash Ix.Name.mkAnon
   for _ in [:numNames.toNat] do
     let addr ← Serialize.get
     let name ← getNameComponent namesLookup
+    nameRev := nameRev.push addr
     namesLookup := namesLookup.insert addr name
     env := { env with names := env.names.insert addr name }
 
-  -- Section 4: Named
-  let numNamed ← getU64LE
+  -- Section 4: Named (name Address -> Named with metadata)
+  let numNamed := (← getTag0).size
   for _ in [:numNamed.toNat] do
     let nameAddr ← Serialize.get
     let constAddr : Address ← Serialize.get
-    let _ ← getU8  -- Skip metadata flag
+    let constMeta ← getConstantMetaIndexed nameRev
     match namesLookup.get? nameAddr with
     | some name =>
+      let namedEntry : Named := ⟨constAddr, constMeta⟩
       env := { env with
-        named := env.named.insert name constAddr
+        named := env.named.insert name namedEntry
         addrToName := env.addrToName.insert constAddr name }
     | none =>
       -- Name not in lookup, skip
       pure ()
 
-  -- Section 5: Comms (skip)
-  let numComms ← getU64LE
+  -- Section 5: Comms
+  let numComms := (← getTag0).size
   for _ in [:numComms.toNat] do
-    let _ ← Serialize.get (α := Address)
-    -- Skip comm data - for now just fail if there are any
-    throw "getEnv: comms not supported in Lean"
+    let addr ← Serialize.get (α := Address)
+    let comm ← getComm
+    env := { env with comms := env.comms.insert addr comm }
 
   pure env
 
@@ -1146,5 +1728,54 @@ def serEnv (env : Env) : ByteArray := runPut (Env.putEnv env)
 
 /-- Deserialize an Env from bytes. -/
 def desEnv (bytes : ByteArray) : Except String Env := runGet Env.getEnv bytes
+
+/-- Compute section sizes for debugging. Returns (blobs, consts, names, named, comms). -/
+def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat := Id.run do
+  -- Blobs section
+  let blobsBytes := runPut do
+    let blobs := env.blobs.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+    putTag0 ⟨blobs.size.toUInt64⟩
+    for (addr, bytes) in blobs do
+      Serialize.put addr
+      putTag0 ⟨bytes.size.toUInt64⟩
+      putBytes bytes
+
+  -- Consts section
+  let constsBytes := runPut do
+    let consts := env.consts.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+    putTag0 ⟨consts.size.toUInt64⟩
+    for (addr, constant) in consts do
+      Serialize.put addr
+      putConstant constant
+
+  -- Names section
+  let namesBytes := runPut do
+    let sortedNames := Env.topologicalSortNames env.names
+    putTag0 ⟨sortedNames.size.toUInt64⟩
+    for (addr, name) in sortedNames do
+      Serialize.put addr
+      Env.putNameComponent name
+
+  -- Named section
+  let namedBytes := runPut do
+    let sortedNames := Env.topologicalSortNames env.names
+    let nameIdx : NameIndex := sortedNames.zipIdx.foldl
+      (fun acc ((addr, _), i) => acc.insert addr i.toUInt64) {}
+    let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+    putTag0 ⟨named.size.toUInt64⟩
+    for (name, namedEntry) in named do
+      Serialize.put name.getHash
+      Serialize.put namedEntry.addr
+      putConstantMetaIndexed namedEntry.constMeta nameIdx
+
+  -- Comms section
+  let commsBytes := runPut do
+    let comms := env.comms.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+    putTag0 ⟨comms.size.toUInt64⟩
+    for (addr, comm) in comms do
+      Serialize.put addr
+      putComm comm
+
+  (blobsBytes.size, constsBytes.size, namesBytes.size, namedBytes.size, commsBytes.size)
 
 end Ixon

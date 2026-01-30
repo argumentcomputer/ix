@@ -30,7 +30,7 @@ use crate::{
   ix::graph::{NameSet, build_ref_graph},
   ix::ground::ground_consts,
   ix::ixon::{
-    CompileError,
+    CompileError, Tag0,
     constant::{
       Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind,
       Definition, DefinitionProj, Inductive, InductiveProj,
@@ -38,7 +38,7 @@ use crate::{
     },
     env::{Env as IxonEnv, Named},
     expr::Expr,
-    metadata::{ConstantMeta, CtorMeta, DataValue, ExprMeta, ExprMetas, KVMap},
+    metadata::{ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap},
     sharing::{self, analyze_block, build_sharing_vec, decide_sharing},
     univ::Univ,
   },
@@ -82,21 +82,29 @@ pub struct CompileState {
   pub block_stats: DashMap<Name, BlockSizeStats>,
 }
 
+/// Cached compiled expression with arena root index.
+///
+/// On cache hit: O(1) — just push the cached expr and arena_root.
+/// The subtree's metadata nodes are already in the arena (append-only).
+#[derive(Clone, Debug)]
+pub struct CachedExpr {
+  pub expr: Arc<Expr>,
+  pub arena_root: u64,
+}
+
 /// Per-block compilation cache.
 #[derive(Default)]
 pub struct BlockCache {
-  /// Cache for compiled expressions
-  pub exprs: FxHashMap<*const LeanExpr, Arc<Expr>>,
+  /// Cache for compiled expressions (keyed by Lean hash address)
+  pub exprs: FxHashMap<Address, CachedExpr>,
   /// Cache for compiled universes (Level -> Univ conversion)
   pub univ_cache: FxHashMap<Level, Arc<Univ>>,
   /// Cache for expression comparisons
   pub cmps: FxHashMap<(Name, Name), Ordering>,
-  /// Pre-order traversal index for current expression tree
-  pub expr_index: u64,
-  /// Expression metadata collected during compilation (keyed by pre-order index)
-  pub expr_metas: ExprMetas,
-  /// Stack for collecting mdata wrappers
-  pub mdata_stack: Vec<KVMap>,
+  /// Arena for expression metadata (append-only within a constant)
+  pub arena: ExprMeta,
+  /// Arena root indices parallel to the results stack
+  pub arena_roots: Vec<u64>,
   /// Reference table: unique addresses of constants referenced by Expr::Ref
   pub refs: indexmap::IndexSet<Address>,
   /// Universe table: unique universes referenced by expressions
@@ -256,7 +264,7 @@ fn compile_univ_indices(
 // ===========================================================================
 
 /// Compile a Lean expression to an Ixon expression.
-/// Also collects metadata (names, binder info) into cache.expr_metas using pre-order indices.
+/// Builds arena-based metadata in cache.arena with bottom-up allocation.
 pub fn compile_expr(
   expr: &LeanExpr,
   univ_params: &[Name],
@@ -268,18 +276,19 @@ pub fn compile_expr(
   enum Frame<'a> {
     Compile(&'a LeanExpr),
     BuildApp,
-    BuildLam(u64, Address, BinderInfo), // index, name_addr, info
-    BuildAll(u64, Address, BinderInfo), // index, name_addr, info
-    BuildLet(u64, Address, bool),       // index, name_addr, non_dep
-    BuildProj(u64, u64, u64, Address), // index, type_ref_idx, field_idx, struct_name_addr
-    BuildMdata,
+    BuildLam(Address, BinderInfo),
+    BuildAll(Address, BinderInfo),
+    BuildLet(Address, bool),
+    BuildProj(u64, u64, Address),  // type_ref_idx, field_idx, struct_name_addr
+    WrapMdata(Vec<KVMap>),
     Cache(&'a LeanExpr),
-    PopMdata,
   }
 
-  let expr_ptr = expr as *const LeanExpr;
-  if let Some(cached) = cache.exprs.get(&expr_ptr) {
-    return Ok(cached.clone());
+  // Top-level cache check (O(1) with arena)
+  let expr_key = Address::from_blake3_hash(*expr.get_hash());
+  if let Some(cached) = cache.exprs.get(&expr_key).cloned() {
+    cache.arena_roots.push(cached.arena_root);
+    return Ok(cached.expr);
   }
 
   let mut stack: Vec<Frame<'_>> = vec![Frame::Compile(expr)];
@@ -288,15 +297,13 @@ pub fn compile_expr(
   while let Some(frame) = stack.pop() {
     match frame {
       Frame::Compile(e) => {
-        let ptr = e as *const LeanExpr;
-        if let Some(cached) = cache.exprs.get(&ptr) {
-          results.push(cached.clone());
+        let e_key = Address::from_blake3_hash(*e.get_hash());
+        if let Some(cached) = cache.exprs.get(&e_key).cloned() {
+          // O(1) cache hit: arena root already valid
+          results.push(cached.expr);
+          cache.arena_roots.push(cached.arena_root);
           continue;
         }
-
-        // Assign pre-order index for this node
-        let node_index = cache.expr_index;
-        cache.expr_index += 1;
 
         stack.push(Frame::Cache(e));
 
@@ -304,11 +311,13 @@ pub fn compile_expr(
           ExprData::Bvar(idx, _) => {
             let idx_u64 = nat_to_u64(idx, "bvar index too large")?;
             results.push(Expr::var(idx_u64));
+            cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
           },
 
           ExprData::Sort(level, _) => {
             let univ_idx = compile_univ_idx(level, univ_params, cache)?;
             results.push(Expr::sort(univ_idx));
+            cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
           },
 
           ExprData::Const(name, levels, _) => {
@@ -320,13 +329,11 @@ pub fn compile_expr(
             if let Some(idx) = mut_ctx.get(name) {
               let idx_u64 = nat_to_u64(idx, "mutual index too large")?;
               results.push(Expr::rec(idx_u64, univ_indices));
-              // Store ref metadata for reconstruction
-              let mdata = std::mem::take(&mut cache.mdata_stack);
-              cache
-                .expr_metas
-                .insert(node_index, ExprMeta::Ref { name: name_addr, mdata });
+              cache.arena_roots.push(
+                cache.arena.alloc(ExprMetaData::Ref { name: name_addr }),
+              );
             } else {
-              // External reference - need to look up the address
+              // External reference
               let const_addr = stt
                 .name_to_addr
                 .get(name)
@@ -334,16 +341,11 @@ pub fn compile_expr(
                   name: name.pretty(),
                 })?
                 .clone();
-              // Add to refs table and get index
               let (ref_idx, _) = cache.refs.insert_full(const_addr);
               results.push(Expr::reference(ref_idx as u64, univ_indices));
-              // Store ref metadata
-              let mdata = std::mem::take(&mut cache.mdata_stack);
-              if !mdata.is_empty() {
-                cache
-                  .expr_metas
-                  .insert(node_index, ExprMeta::Ref { name: name_addr, mdata });
-              }
+              cache.arena_roots.push(
+                cache.arena.alloc(ExprMetaData::Ref { name: name_addr }),
+              );
             }
           },
 
@@ -355,21 +357,21 @@ pub fn compile_expr(
 
           ExprData::Lam(name, ty, body, info, _) => {
             let name_addr = compile_name(name, stt);
-            stack.push(Frame::BuildLam(node_index, name_addr, info.clone()));
+            stack.push(Frame::BuildLam(name_addr, info.clone()));
             stack.push(Frame::Compile(body));
             stack.push(Frame::Compile(ty));
           },
 
           ExprData::ForallE(name, ty, body, info, _) => {
             let name_addr = compile_name(name, stt);
-            stack.push(Frame::BuildAll(node_index, name_addr, info.clone()));
+            stack.push(Frame::BuildAll(name_addr, info.clone()));
             stack.push(Frame::Compile(body));
             stack.push(Frame::Compile(ty));
           },
 
           ExprData::LetE(name, ty, val, body, non_dep, _) => {
             let name_addr = compile_name(name, stt);
-            stack.push(Frame::BuildLet(node_index, name_addr, *non_dep));
+            stack.push(Frame::BuildLet(name_addr, *non_dep));
             stack.push(Frame::Compile(body));
             stack.push(Frame::Compile(val));
             stack.push(Frame::Compile(ty));
@@ -379,18 +381,19 @@ pub fn compile_expr(
             let addr = store_nat(n, stt);
             let (ref_idx, _) = cache.refs.insert_full(addr);
             results.push(Expr::nat(ref_idx as u64));
+            cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
           },
 
           ExprData::Lit(Literal::StrVal(s), _) => {
             let addr = store_string(s, stt);
             let (ref_idx, _) = cache.refs.insert_full(addr);
             results.push(Expr::str(ref_idx as u64));
+            cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
           },
 
           ExprData::Proj(type_name, idx, struct_val, _) => {
             let idx_u64 = nat_to_u64(idx, "proj index too large")?;
 
-            // Get the type's address
             let type_addr = stt
               .name_to_addr
               .get(type_name)
@@ -399,33 +402,23 @@ pub fn compile_expr(
               })?
               .clone();
 
-            // Add to refs table and get index
             let (ref_idx, _) = cache.refs.insert_full(type_addr);
-
             let name_addr = compile_name(type_name, stt);
 
-            // Build projection with ref index directly
-            stack.push(Frame::BuildProj(
-              node_index,
-              ref_idx as u64,
-              idx_u64,
-              name_addr,
-            ));
+            stack.push(Frame::BuildProj(ref_idx as u64, idx_u64, name_addr));
             stack.push(Frame::Compile(struct_val));
           },
 
           ExprData::Mdata(kv, inner, _) => {
-            // Compile KV map and push to mdata stack
+            // Compile KV map
             let mut pairs = Vec::new();
             for (k, v) in kv {
               let k_addr = compile_name(k, stt);
               let v_data = compile_data_value(v, stt);
               pairs.push((k_addr, v_data));
             }
-            cache.mdata_stack.push(pairs);
-
-            stack.push(Frame::PopMdata);
-            stack.push(Frame::BuildMdata);
+            // Mdata becomes a separate arena node wrapping inner
+            stack.push(Frame::WrapMdata(vec![pairs]));
             stack.push(Frame::Compile(inner));
           },
 
@@ -442,75 +435,82 @@ pub fn compile_expr(
       },
 
       Frame::BuildApp => {
+        let a_root = cache.arena_roots.pop().expect("BuildApp missing arg root");
+        let f_root = cache.arena_roots.pop().expect("BuildApp missing fun root");
         let arg = results.pop().expect("BuildApp missing arg");
         let fun = results.pop().expect("BuildApp missing fun");
         results.push(Expr::app(fun, arg));
+        cache.arena_roots.push(
+          cache.arena.alloc(ExprMetaData::App { children: [f_root, a_root] }),
+        );
       },
 
-      Frame::BuildLam(index, name_addr, info) => {
+      Frame::BuildLam(name_addr, info) => {
+        let body_root = cache.arena_roots.pop().expect("BuildLam missing body root");
+        let ty_root = cache.arena_roots.pop().expect("BuildLam missing ty root");
         let body = results.pop().expect("BuildLam missing body");
         let ty = results.pop().expect("BuildLam missing ty");
         results.push(Expr::lam(ty, body));
-        // Store binder metadata
-        let mdata = std::mem::take(&mut cache.mdata_stack);
-        cache
-          .expr_metas
-          .insert(index, ExprMeta::Binder { name: name_addr, info, mdata });
+        cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Binder {
+          name: name_addr,
+          info,
+          children: [ty_root, body_root],
+        }));
       },
 
-      Frame::BuildAll(index, name_addr, info) => {
+      Frame::BuildAll(name_addr, info) => {
+        let body_root = cache.arena_roots.pop().expect("BuildAll missing body root");
+        let ty_root = cache.arena_roots.pop().expect("BuildAll missing ty root");
         let body = results.pop().expect("BuildAll missing body");
         let ty = results.pop().expect("BuildAll missing ty");
         results.push(Expr::all(ty, body));
-        // Store binder metadata
-        let mdata = std::mem::take(&mut cache.mdata_stack);
-        cache
-          .expr_metas
-          .insert(index, ExprMeta::Binder { name: name_addr, info, mdata });
+        cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Binder {
+          name: name_addr,
+          info,
+          children: [ty_root, body_root],
+        }));
       },
 
-      Frame::BuildLet(index, name_addr, non_dep) => {
+      Frame::BuildLet(name_addr, non_dep) => {
+        let body_root = cache.arena_roots.pop().expect("BuildLet missing body root");
+        let val_root = cache.arena_roots.pop().expect("BuildLet missing val root");
+        let ty_root = cache.arena_roots.pop().expect("BuildLet missing ty root");
         let body = results.pop().expect("BuildLet missing body");
         let val = results.pop().expect("BuildLet missing val");
         let ty = results.pop().expect("BuildLet missing ty");
         results.push(Expr::let_(non_dep, ty, val, body));
-        // Store let binder metadata
-        let mdata = std::mem::take(&mut cache.mdata_stack);
-        cache
-          .expr_metas
-          .insert(index, ExprMeta::LetBinder { name: name_addr, mdata });
+        cache.arena_roots.push(cache.arena.alloc(ExprMetaData::LetBinder {
+          name: name_addr,
+          children: [ty_root, val_root, body_root],
+        }));
       },
 
-      Frame::BuildProj(index, type_ref_idx, field_idx, struct_name_addr) => {
+      Frame::BuildProj(type_ref_idx, field_idx, struct_name_addr) => {
+        let child_root = cache.arena_roots.pop().expect("BuildProj missing child root");
         let struct_val = results.pop().expect("BuildProj missing struct_val");
         results.push(Expr::prj(type_ref_idx, field_idx, struct_val));
-        // Store projection metadata
-        let mdata = std::mem::take(&mut cache.mdata_stack);
-        cache.expr_metas.insert(
-          index,
-          ExprMeta::Prj { struct_name: struct_name_addr, mdata },
+        cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Prj {
+          struct_name: struct_name_addr,
+          child: child_root,
+        }));
+      },
+
+      Frame::WrapMdata(mdata) => {
+        // Mdata doesn't change the Ixon expression — only wraps the arena node
+        let inner_root = cache.arena_roots.pop().expect("WrapMdata missing inner root");
+        cache.arena_roots.push(
+          cache.arena.alloc(ExprMetaData::Mdata { mdata, child: inner_root }),
         );
       },
 
-      Frame::BuildMdata => {
-        // Mdata doesn't change the expression structure in Ixon
-        // The metadata is stored in mdata_stack and attached to inner expr
-      },
-
-      Frame::PopMdata => {
-        // Pop mdata after inner is processed (mdata was already consumed)
-        // This happens if mdata was not consumed by a metadata-bearing node
-        if !cache.mdata_stack.is_empty() {
-          // mdata wasn't consumed - need to record it as standalone Mdata
-          // This can happen for nodes like App, Bvar, Sort, Lit that don't have ExprMeta
-          // For now we just discard it - the mdata system needs more work
-        }
-      },
-
       Frame::Cache(e) => {
-        let ptr = e as *const LeanExpr;
+        let e_key = Address::from_blake3_hash(*e.get_hash());
         if let Some(result) = results.last() {
-          cache.exprs.insert(ptr, result.clone());
+          let arena_root = *cache.arena_roots.last().expect("Cache missing arena root");
+          cache.exprs.insert(
+            e_key,
+            CachedExpr { expr: result.clone(), arena_root },
+          );
         }
       },
     }
@@ -567,7 +567,7 @@ fn serialize_syntax_inner(
       bytes.push(1);
       serialize_source_info(info, stt, bytes);
       bytes.extend_from_slice(compile_name(kind, stt).as_bytes());
-      bytes.extend_from_slice(&(args.len() as u64).to_le_bytes());
+      Tag0::new(args.len() as u64).put(bytes);
       for arg in args {
         serialize_syntax_inner(arg, stt, bytes);
       }
@@ -582,7 +582,7 @@ fn serialize_syntax_inner(
       serialize_source_info(info, stt, bytes);
       serialize_substring(raw_val, stt, bytes);
       bytes.extend_from_slice(compile_name(val, stt).as_bytes());
-      bytes.extend_from_slice(&(preresolved.len() as u64).to_le_bytes());
+      Tag0::new(preresolved.len() as u64).put(bytes);
       for pr in preresolved {
         serialize_preresolved(pr, stt, bytes);
       }
@@ -599,14 +599,14 @@ fn serialize_source_info(
     LeanSourceInfo::Original(leading, leading_pos, trailing, trailing_pos) => {
       bytes.push(0);
       serialize_substring(leading, stt, bytes);
-      bytes.extend_from_slice(&leading_pos.to_le_bytes());
+      Tag0::new(leading_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
       serialize_substring(trailing, stt, bytes);
-      bytes.extend_from_slice(&trailing_pos.to_le_bytes());
+      Tag0::new(trailing_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
     },
     LeanSourceInfo::Synthetic(start, end, canonical) => {
       bytes.push(1);
-      bytes.extend_from_slice(&start.to_le_bytes());
-      bytes.extend_from_slice(&end.to_le_bytes());
+      Tag0::new(start.to_u64().unwrap_or(u64::MAX)).put(bytes);
+      Tag0::new(end.to_u64().unwrap_or(u64::MAX)).put(bytes);
       bytes.push(if *canonical { 1 } else { 0 });
     },
     LeanSourceInfo::None => bytes.push(2),
@@ -619,8 +619,8 @@ fn serialize_substring(
   bytes: &mut Vec<u8>,
 ) {
   bytes.extend_from_slice(store_string(&ss.str, stt).as_bytes());
-  bytes.extend_from_slice(&ss.start_pos.to_le_bytes());
-  bytes.extend_from_slice(&ss.stop_pos.to_le_bytes());
+  Tag0::new(ss.start_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
+  Tag0::new(ss.stop_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
 }
 
 fn serialize_preresolved(
@@ -636,7 +636,7 @@ fn serialize_preresolved(
     SyntaxPreresolved::Decl(n, fields) => {
       bytes.push(1);
       bytes.extend_from_slice(compile_name(n, stt).as_bytes());
-      bytes.extend_from_slice(&(fields.len() as u64).to_le_bytes());
+      Tag0::new(fields.len() as u64).put(bytes);
       for f in fields {
         bytes.extend_from_slice(store_string(f, stt).as_bytes());
       }
@@ -995,21 +995,8 @@ enum MutConstKind {
 // Constant compilation
 // ===========================================================================
 
-/// Reset expression metadata tracking for a new expression tree.
-fn reset_expr_meta(cache: &mut BlockCache) {
-  cache.expr_index = 0;
-  cache.expr_metas.clear();
-  cache.mdata_stack.clear();
-}
-
-/// Take the current expression metadata and reset for next expression.
-fn take_expr_metas(cache: &mut BlockCache) -> ExprMetas {
-  cache.expr_index = 0;
-  cache.mdata_stack.clear();
-  std::mem::take(&mut cache.expr_metas)
-}
-
 /// Compile a Definition.
+/// Arena persists across type + value within a constant.
 fn compile_definition(
   def: &Def,
   mut_ctx: &MutCtx,
@@ -1018,21 +1005,22 @@ fn compile_definition(
 ) -> Result<(Definition, ConstantMeta), CompileError> {
   let univ_params = &def.level_params;
 
-  // Compile type expression and collect metadata
-  reset_expr_meta(cache);
+  // Compile type expression (arena grows)
   let typ = compile_expr(&def.typ, univ_params, mut_ctx, cache, stt)?;
-  let type_meta = take_expr_metas(cache);
+  let type_root = *cache.arena_roots.last().expect("missing type arena root");
 
-  // Compile value expression and collect metadata
+  // Compile value expression (arena continues growing)
   let value = compile_expr(&def.value, univ_params, mut_ctx, cache, stt)?;
-  let value_meta = take_expr_metas(cache);
+  let value_root = *cache.arena_roots.last().expect("missing value arena root");
+
+  // Take arena and clear for next constant
+  let arena = std::mem::take(&mut cache.arena);
+  cache.arena_roots.clear();
+  cache.exprs.clear();
 
   let name_addr = compile_name(&def.name, stt);
   let lvl_addrs: Vec<Address> =
     univ_params.iter().map(|n| compile_name(n, stt)).collect();
-  // Store both:
-  // - all: original Lean `all` field (for roundtrip fidelity)
-  // - ctx: mut_ctx used during compilation (for Rec expr decompilation)
   let all_addrs: Vec<Address> =
     def.all.iter().map(|n| compile_name(n, stt)).collect();
   let ctx_addrs: Vec<Address> =
@@ -1056,8 +1044,9 @@ fn compile_definition(
     hints: def.hints,
     all: all_addrs,
     ctx: ctx_addrs,
-    type_meta,
-    value_meta,
+    arena,
+    type_root,
+    value_root,
   };
 
   Ok((data, meta))
@@ -1079,6 +1068,7 @@ fn compile_recursor_rule(
 }
 
 /// Compile a Recursor.
+/// Arena grows across type and all rule RHS expressions.
 fn compile_recursor(
   rec: &Rec,
   mut_ctx: &MutCtx,
@@ -1088,18 +1078,24 @@ fn compile_recursor(
   let univ_params = &rec.cnst.level_params;
 
   // Compile type expression
-  reset_expr_meta(cache);
   let typ = compile_expr(&rec.cnst.typ, univ_params, mut_ctx, cache, stt)?;
-  let type_meta = take_expr_metas(cache);
+  let type_root = *cache.arena_roots.last().expect("missing recursor type arena root");
 
   let mut rules = Vec::with_capacity(rec.rules.len());
   let mut rule_addrs = Vec::new();
+  let mut rule_roots = Vec::new();
   for rule in &rec.rules {
     let (r, ctor_addr) =
       compile_recursor_rule(rule, univ_params, mut_ctx, cache, stt)?;
+    rule_roots.push(*cache.arena_roots.last().expect("missing rule arena root"));
     rule_addrs.push(ctor_addr);
     rules.push(r);
   }
+
+  // Take arena and clear for next constant
+  let arena = std::mem::take(&mut cache.arena);
+  cache.arena_roots.clear();
+  cache.exprs.clear();
 
   let name_addr = compile_name(&rec.cnst.name, stt);
   let lvl_addrs: Vec<Address> =
@@ -1117,9 +1113,6 @@ fn compile_recursor(
     rules,
   };
 
-  // Store both:
-  // - all: original Lean `all` field (for roundtrip fidelity)
-  // - ctx: mut_ctx used during compilation (for Rec expr decompilation)
   let all_addrs: Vec<Address> =
     rec.all.iter().map(|n| compile_name(n, stt)).collect();
   let ctx_addrs: Vec<Address> =
@@ -1131,13 +1124,16 @@ fn compile_recursor(
     rules: rule_addrs,
     all: all_addrs,
     ctx: ctx_addrs,
-    type_meta,
+    arena,
+    type_root,
+    rule_roots,
   };
 
   Ok((data, meta))
 }
 
 /// Compile a Constructor.
+/// Each constructor gets its own arena.
 fn compile_constructor(
   ctor: &ConstructorVal,
   mut_ctx: &MutCtx,
@@ -1146,9 +1142,13 @@ fn compile_constructor(
 ) -> Result<(Constructor, ConstantMeta), CompileError> {
   let univ_params = &ctor.cnst.level_params;
 
-  reset_expr_meta(cache);
   let typ = compile_expr(&ctor.cnst.typ, univ_params, mut_ctx, cache, stt)?;
-  let type_meta = take_expr_metas(cache);
+  let type_root = *cache.arena_roots.last().expect("missing ctor type arena root");
+
+  // Take arena for this constructor
+  let arena = std::mem::take(&mut cache.arena);
+  cache.arena_roots.clear();
+  cache.exprs.clear();
 
   let name_addr = compile_name(&ctor.cnst.name, stt);
   let lvl_addrs: Vec<Address> =
@@ -1168,36 +1168,42 @@ fn compile_constructor(
     name: name_addr,
     lvls: lvl_addrs,
     induct: induct_addr,
-    type_meta,
+    arena,
+    type_root,
   };
 
   Ok((data, meta))
 }
 
 /// Compile an Inductive.
+/// The inductive type gets its own arena. Each constructor gets its own arena
+/// via compile_constructor. No CtorMeta duplication — ConstantMeta::Indc only
+/// stores constructor name addresses.
 fn compile_inductive(
   ind: &Ind,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
   stt: &CompileState,
-) -> Result<(Inductive, ConstantMeta), CompileError> {
+) -> Result<(Inductive, ConstantMeta, Vec<ConstantMeta>), CompileError> {
   let univ_params = &ind.ind.cnst.level_params;
 
-  reset_expr_meta(cache);
+  // Compile inductive type
   let typ = compile_expr(&ind.ind.cnst.typ, univ_params, mut_ctx, cache, stt)?;
-  let type_meta = take_expr_metas(cache);
+  let type_root = *cache.arena_roots.last().expect("missing indc type arena root");
+
+  // Take arena for inductive type
+  let indc_arena = std::mem::take(&mut cache.arena);
+  cache.arena_roots.clear();
+  cache.exprs.clear();
 
   let mut ctors = Vec::with_capacity(ind.ctors.len());
-  let mut ctor_metas = Vec::new();
+  let mut ctor_const_metas = Vec::new();
   let mut ctor_name_addrs = Vec::new();
   for ctor in &ind.ctors {
     let (c, m) = compile_constructor(ctor, mut_ctx, cache, stt)?;
     let ctor_name_addr = compile_name(&ctor.cnst.name, stt);
-    ctor_name_addrs.push(ctor_name_addr.clone());
-    // Extract CtorMeta from ConstantMeta::Ctor
-    if let ConstantMeta::Ctor { name, lvls, type_meta, .. } = m {
-      ctor_metas.push(CtorMeta { name, lvls, type_meta });
-    }
+    ctor_name_addrs.push(ctor_name_addr);
+    ctor_const_metas.push(m);
     ctors.push(c);
   }
 
@@ -1220,9 +1226,6 @@ fn compile_inductive(
     ctors,
   };
 
-  // Store both:
-  // - all: original Lean `all` field (for roundtrip fidelity)
-  // - ctx: mut_ctx used during compilation (for Rec expr decompilation)
   let all_addrs: Vec<Address> =
     ind.ind.all.iter().map(|n| compile_name(n, stt)).collect();
   let ctx_addrs: Vec<Address> =
@@ -1232,13 +1235,13 @@ fn compile_inductive(
     name: name_addr,
     lvls: lvl_addrs,
     ctors: ctor_name_addrs,
-    ctor_metas,
     all: all_addrs,
     ctx: ctx_addrs,
-    type_meta,
+    arena: indc_arena,
+    type_root,
   };
 
-  Ok((data, meta))
+  Ok((data, meta, ctor_const_metas))
 }
 
 /// Compile an Axiom.
@@ -1249,10 +1252,13 @@ fn compile_axiom(
 ) -> Result<(Axiom, ConstantMeta), CompileError> {
   let univ_params = &val.cnst.level_params;
 
-  reset_expr_meta(cache);
   let typ =
     compile_expr(&val.cnst.typ, univ_params, &MutCtx::default(), cache, stt)?;
-  let type_meta = take_expr_metas(cache);
+  let type_root = *cache.arena_roots.last().expect("missing axiom type arena root");
+
+  let arena = std::mem::take(&mut cache.arena);
+  cache.arena_roots.clear();
+  cache.exprs.clear();
 
   let name_addr = compile_name(&val.cnst.name, stt);
   let lvl_addrs: Vec<Address> =
@@ -1261,7 +1267,7 @@ fn compile_axiom(
   let data =
     Axiom { is_unsafe: val.is_unsafe, lvls: univ_params.len() as u64, typ };
 
-  let meta = ConstantMeta::Axio { name: name_addr, lvls: lvl_addrs, type_meta };
+  let meta = ConstantMeta::Axio { name: name_addr, lvls: lvl_addrs, arena, type_root };
 
   Ok((data, meta))
 }
@@ -1274,10 +1280,13 @@ fn compile_quotient(
 ) -> Result<(Quotient, ConstantMeta), CompileError> {
   let univ_params = &val.cnst.level_params;
 
-  reset_expr_meta(cache);
   let typ =
     compile_expr(&val.cnst.typ, univ_params, &MutCtx::default(), cache, stt)?;
-  let type_meta = take_expr_metas(cache);
+  let type_root = *cache.arena_roots.last().expect("missing quot type arena root");
+
+  let arena = std::mem::take(&mut cache.arena);
+  cache.arena_roots.clear();
+  cache.exprs.clear();
 
   let name_addr = compile_name(&val.cnst.name, stt);
   let lvl_addrs: Vec<Address> =
@@ -1285,7 +1294,7 @@ fn compile_quotient(
 
   let data = Quotient { kind: val.kind, lvls: univ_params.len() as u64, typ };
 
-  let meta = ConstantMeta::Quot { name: name_addr, lvls: lvl_addrs, type_meta };
+  let meta = ConstantMeta::Quot { name: name_addr, lvls: lvl_addrs, arena, type_root };
 
   Ok((data, meta))
 }
@@ -1847,7 +1856,10 @@ pub fn sort_consts<'a>(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Vec<Vec<&'a MutConst>>, CompileError> {
-  let mut classes = vec![cs.to_owned()];
+  // Sort by name first to match Lean's behavior and ensure deterministic output
+  let mut sorted_cs: Vec<&'a MutConst> = cs.to_owned();
+  sorted_cs.sort_by_key(|x| x.name());
+  let mut classes = vec![sorted_cs];
   loop {
     let ctx = MutConst::ctx(&classes);
     let mut new_classes: Vec<Vec<&MutConst>> = vec![];
@@ -2177,10 +2189,14 @@ fn compile_mutual(
           all_metas.insert(def.name.clone(), meta);
         },
         MutConst::Indc(ind) => {
-          let (data, meta) = compile_inductive(ind, &mut_ctx, cache, stt)?;
+          let (data, meta, ctor_metas_vec) =
+            compile_inductive(ind, &mut_ctx, cache, stt)?;
           ixon_mutuals.push(IxonMutConst::Indc(data));
+          // Register per-constructor ConstantMeta::Ctor entries
+          for (ctor, ctor_meta) in ind.ctors.iter().zip(ctor_metas_vec) {
+            all_metas.insert(ctor.cnst.name.clone(), ctor_meta);
+          }
           all_metas.insert(ind.ind.cnst.name.clone(), meta);
-          // Constructor metas are now embedded in the Indc meta
         },
         MutConst::Recr(rec) => {
           let (data, meta) = compile_recursor(rec, &mut_ctx, cache, stt)?;

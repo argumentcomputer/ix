@@ -1124,10 +1124,13 @@ impl Env {
     let num_names = get_u64(buf)?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
     let mut name_reverse_index: NameReverseIndex =
-      Vec::with_capacity(num_names as usize);
-    // Always include anonymous name
-    names_lookup
-      .insert(Address::from_blake3_hash(Name::anon().get_hash()), Name::anon());
+      Vec::with_capacity(num_names as usize + 1);
+    // Anonymous name is serialized first (index 0) — read it from the stream
+    // along with all other names below. But pre-seed the lookup so name
+    // reconstruction works for names whose parent is anonymous.
+    let anon_addr = Address::from_blake3_hash(Name::anon().get_hash());
+    names_lookup.insert(anon_addr.clone(), Name::anon());
+    env.names.insert(anon_addr, Name::anon());
     for _ in 0..num_names {
       let addr = get_address(buf)?;
       let name = get_name_component(buf, &names_lookup)?;
@@ -1235,11 +1238,14 @@ fn topological_sort_names(
 ) -> Vec<(Address, Name)> {
   use std::collections::HashSet;
 
-  let mut result = Vec::with_capacity(names.len());
+  let mut result = Vec::with_capacity(names.len() + 1);
   let mut visited: HashSet<Address> = HashSet::new();
 
-  // Always include anonymous as visited (it's implicit)
-  visited.insert(Address::from_blake3_hash(Name::anon().get_hash()));
+  // Include anonymous name first so it gets index 0 in the name index.
+  // Arena nodes frequently reference it as a binder name.
+  let anon_addr = Address::from_blake3_hash(Name::anon().get_hash());
+  result.push((anon_addr.clone(), Name::anon()));
+  visited.insert(anon_addr);
 
   fn visit(
     name: &Name,

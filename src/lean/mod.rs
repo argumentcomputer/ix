@@ -95,6 +95,22 @@ pub fn lean_unbox_u64(ptr: *const c_void) -> u64 {
   boxed_usize.value
 }
 
+/// ```c
+/// lean_object * lean_box_uint64(uint64_t v) {
+///     lean_object * r = lean_alloc_ctor(0, 0, sizeof(uint64_t));
+///     lean_ctor_set_uint64(r, 0, v);
+///     return r;
+/// }
+/// ```
+#[inline]
+pub fn lean_box_u64(v: u64) -> *mut c_void {
+  unsafe {
+    let obj = lean_alloc_ctor(0, 0, 8);
+    lean_ctor_set_uint64(obj, 0, v);
+    obj
+  }
+}
+
 pub fn boxed_usize_ptr_to_usize(ptr: *const c_void) -> usize {
   let boxed_usize_ptr = ptr.cast::<BoxedUSize>();
   let boxed_usize = as_ref_unsafe(boxed_usize_ptr);

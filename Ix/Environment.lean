@@ -476,12 +476,12 @@ structure ConstantVal where
   name : Name
   levelParams : Array Name
   type : Expr
-  deriving Repr
+  deriving Repr, BEq
 
 structure AxiomVal where
   cnst : ConstantVal
   isUnsafe : Bool
-  deriving Repr
+  deriving Repr, BEq
 
 structure DefinitionVal where
   cnst : ConstantVal
@@ -489,25 +489,25 @@ structure DefinitionVal where
   hints : Lean.ReducibilityHints
   safety : Lean.DefinitionSafety
   all : Array Name
-  deriving Repr
+  deriving Repr, BEq
 
 structure TheoremVal where
   cnst : ConstantVal
   value : Expr
   all : Array Name
-  deriving Repr
+  deriving Repr, BEq
 
 structure OpaqueVal where
   cnst : ConstantVal
   value : Expr
   isUnsafe : Bool
   all : Array Name
-  deriving Repr
+  deriving Repr, BEq
 
 structure QuotVal where
   cnst : ConstantVal
   kind : Lean.QuotKind
-  deriving Repr
+  deriving Repr, BEq
 
 structure InductiveVal where
   cnst : ConstantVal
@@ -519,7 +519,7 @@ structure InductiveVal where
   isRec : Bool
   isUnsafe : Bool
   isReflexive : Bool
-  deriving Repr
+  deriving Repr, BEq
 
 structure ConstructorVal where
   cnst : ConstantVal
@@ -528,13 +528,13 @@ structure ConstructorVal where
   numParams : Nat
   numFields : Nat
   isUnsafe : Bool
-  deriving Repr
+  deriving Repr, BEq
 
 structure RecursorRule where
   ctor : Name
   nfields : Nat
   rhs : Expr
-  deriving Repr
+  deriving Repr, BEq
 
 structure RecursorVal where
   cnst : ConstantVal
@@ -546,7 +546,7 @@ structure RecursorVal where
   rules : Array RecursorRule
   k : Bool
   isUnsafe : Bool
-  deriving Repr
+  deriving Repr, BEq
 
 inductive ConstantInfo where
   | axiomInfo (v : AxiomVal)
@@ -578,16 +578,24 @@ structure Environment where
     Use `toEnvironment` to convert to Environment with HashMaps. -/
 structure RawEnvironment where
   consts : Array (Name × ConstantInfo)
+  deriving Repr, Inhabited
 
 /-- Convert raw arrays to Environment with HashMaps.
     This is done on the Lean side for correct hash function usage. -/
 def RawEnvironment.toEnvironment (raw : RawEnvironment) : Environment :=
   { consts := raw.consts.foldl (init := {}) fun m (k, v) => m.insert k v }
 
+/-- Convert Environment to raw arrays for FFI usage. -/
+def Environment.toRaw (env : Environment) : RawEnvironment :=
+  { consts := env.consts.toArray }
+
 /-! ## Context Types for Compilation -/
 
 /-- Mutual context mapping Name to index within block. -/
 abbrev MutCtx := Batteries.RBMap Name Nat nameCompare
+
+instance : Ord MutCtx where
+  compare a b := compare a.toList b.toList
 
 /-- Set of Names (for tracking constants in a block). -/
 abbrev NameSet := Batteries.RBSet Name nameCompare

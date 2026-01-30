@@ -43,6 +43,7 @@ deriving instance BEq, Repr, Ord, Hashable for Substring.Raw
 deriving instance BEq, Repr, Ord, Hashable for Lean.SourceInfo
 deriving instance BEq, Repr, Ord, Hashable for Lean.Syntax.Preresolved
 deriving instance BEq, Repr, Ord, Hashable for Lean.Syntax
+deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.DataValue
 deriving instance BEq, Repr for Ordering
 deriving instance BEq, Repr, Ord for Lean.FVarId
 deriving instance BEq, Repr, Ord for Lean.MVarId
@@ -186,7 +187,8 @@ def Std.HashMap.find? {A B} [BEq A] [Hashable A] (map: Std.HashMap A B) (a: A)
 abbrev Ix.Map := Std.HashMap
 abbrev Ix.Set := Std.HashSet
 
-abbrev MutCtx := Batteries.RBMap Lean.Name Nat compare
+-- Note: MutCtx is now defined in Ix/Environment.lean as:
+-- abbrev MutCtx := Batteries.RBMap Name Nat nameCompare
 
 --instance : BEq MutCtx where
 --  beq a b := a.size == b.size && a.fold
@@ -194,9 +196,7 @@ abbrev MutCtx := Batteries.RBMap Lean.Name Nat compare
 --      | some v' => v == v'
 --      | none => false) true
 
----- TODO: incremental comparison with ForIn zip
-instance : Ord MutCtx where
-  compare a b := compare a.toList b.toList
+-- Ord MutCtx instance moved to Ix/Environment.lean
 
 namespace Lean
 

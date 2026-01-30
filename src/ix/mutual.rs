@@ -88,7 +88,12 @@ pub type MutCtx = FxHashMap<Name, Nat>;
 /// Position i contains the name with Nat value i.
 pub fn ctx_to_all(ctx: &MutCtx) -> Vec<Name> {
   let mut pairs: Vec<_> = ctx.iter().collect();
-  pairs.sort_by_key(|(_, idx)| idx.to_u64().unwrap_or(0));
+  pairs.sort_by(|(n1, i1), (n2, i2)| {
+    i1.to_u64()
+      .unwrap_or(0)
+      .cmp(&i2.to_u64().unwrap_or(0))
+      .then_with(|| n1.cmp(n2))
+  });
   pairs.into_iter().map(|(name, _)| name.clone()).collect()
 }
 

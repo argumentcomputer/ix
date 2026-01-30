@@ -29,7 +29,7 @@ pub use env::{Env, Named};
 pub use error::{CompileError, DecompileError, SerializeError};
 pub use expr::Expr;
 pub use metadata::{
-  ConstantMeta, CtorMeta, DataValue, ExprMeta, ExprMetas, KVMap, NameIndex,
+  ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap, NameIndex,
   NameReverseIndex,
 };
 pub use proof::{CheckClaim, Claim, EvalClaim, Proof};

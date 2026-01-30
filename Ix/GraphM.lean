@@ -1,17 +1,27 @@
 
 import Lean
 import Ix.Common
+import Ix.Environment
 
 namespace Ix
 
+/-!
+  # GraphM - Build dependency graph from Ix.Environment
+
+  This module builds a reference graph from an already-canonicalized Ix.Environment.
+  The canonicalization should be done first (ideally via fast Rust FFI).
+-/
+
 structure GraphState where
-  exprCache: Map Lean.Expr (Set Lean.Name)
+  exprCache: Map Ix.Expr (Set Ix.Name)
 
 def GraphState.init : GraphState := ⟨{}⟩
 
-abbrev GraphM := ReaderT Lean.Environment <| StateT GraphState Id
+abbrev GraphM := ReaderT Ix.Environment <| StateT GraphState Id
 
-def graphExpr (expr: Lean.Expr) : GraphM (Set Lean.Name) := do
+/-- Extract constant references from an Ix.Expr.
+    NOTE: Aligned with Rust's get_expr_references for cross-impl testing. -/
+def graphExpr (expr: Ix.Expr) : GraphM (Set Ix.Name) := do
   match (<- get).exprCache.find? expr with
   | some x => pure x
   | none =>
@@ -20,52 +30,58 @@ def graphExpr (expr: Lean.Expr) : GraphM (Set Lean.Name) := do
       exprCache := stt.exprCache.insert expr refs
     })
   where
-    go : Lean.Expr -> GraphM (Set Lean.Name)
-    | .mdata _ x => graphExpr x
-    | .const name _ => pure {name}
-    | .app f a => .union <$> graphExpr f <*> graphExpr a
-    | .lam _ t b _ => .union <$> graphExpr t <*> graphExpr b
-    | .forallE _ t b _ => .union <$> graphExpr t <*> graphExpr b
-    | .letE _ t v b _ =>
+    go : Ix.Expr -> GraphM (Set Ix.Name)
+    | .mdata _ x _ => graphExpr x
+    | .const name _ _ => pure {name}
+    | .app f a _ => .union <$> graphExpr f <*> graphExpr a
+    | .lam _ t b _ _ => .union <$> graphExpr t <*> graphExpr b
+    | .forallE _ t b _ _ => .union <$> graphExpr t <*> graphExpr b
+    | .letE _ t v b _ _ =>
       .union <$> graphExpr t <*> (.union <$> graphExpr v <*> graphExpr b)
-    | .proj typeName _ s => (.insert · typeName) <$> graphExpr s
+    | .proj typeName _ s _ => (.insert · typeName) <$> graphExpr s
     | _ => pure {}
 
-def graphConst: Lean.ConstantInfo -> GraphM (Set Lean.Name)
-| .axiomInfo val => graphExpr val.type
-| .defnInfo val => .union <$> graphExpr val.type <*> graphExpr val.value
-| .thmInfo val => .union <$> graphExpr val.type <*> graphExpr val.value
-| .opaqueInfo val => .union <$> graphExpr val.type <*> graphExpr val.value
-| .quotInfo val => graphExpr val.type
+/-- Extract constant references from an Ix.ConstantInfo.
+    NOTE: Aligned with Rust's get_constant_info_references for cross-impl testing. -/
+def graphConst: Ix.ConstantInfo -> GraphM (Set Ix.Name)
+| .axiomInfo val => graphExpr val.cnst.type
+| .defnInfo val => .union <$> graphExpr val.cnst.type <*> graphExpr val.value
+| .thmInfo val => .union <$> graphExpr val.cnst.type <*> graphExpr val.value
+| .opaqueInfo val => .union <$> graphExpr val.cnst.type <*> graphExpr val.value
+| .quotInfo val => graphExpr val.cnst.type
 | .inductInfo val => do
-  let env <- read
-  let mut ctorRefs := {}
-  for ctor in val.ctors do
-    let rs <- match env.find? ctor with
-    | .some (.ctorInfo ctorVal) => graphExpr ctorVal.type
-    | _ => continue
-    ctorRefs := ctorRefs.union rs
-  let type <- graphExpr val.type
-  return .union (.union (.ofList val.ctors) ctorRefs) type
-| .ctorInfo val => graphExpr val.type
+  -- Rust: type refs + constructor names (NOT constructor type refs)
+  let ctorNames : Set Ix.Name := val.ctors.foldl (init := {}) fun s n => s.insert n
+  let type <- graphExpr val.cnst.type
+  return .union type ctorNames
+| .ctorInfo val => do
+  -- Rust: type refs + induct name
+  let typeRefs <- graphExpr val.cnst.type
+  return typeRefs.insert val.induct
 | .recInfo val => do
-  let t <- graphExpr val.type
-  let rs <- val.rules.foldrM (fun r s => .union s <$> graphExpr r.rhs) {}
-  return .union t rs
+  -- Rust: type refs + (ctor names + rhs refs for each rule)
+  let t <- graphExpr val.cnst.type
+  let mut rs := t
+  for rule in val.rules do
+    rs := rs.insert rule.ctor
+    let rhsRefs <- graphExpr rule.rhs
+    rs := rs.union rhsRefs
+  return rs
 
-def GraphM.run (env: Lean.Environment) (stt: GraphState) (g: GraphM α)
+def GraphM.run (env: Ix.Environment) (stt: GraphState) (g: GraphM α)
   : α × GraphState
   := StateT.run (ReaderT.run (Id.run g env)) stt
 
-/-- Build dependency graph - pure, sequential with shared cache.
+/-- Build dependency graph from Ix.Environment.
+    Returns a map from Ix.Name to the set of Ix.Names it references.
     Pass `dbg := true` and `total` (constant count) to enable progress tracing. -/
-def GraphM.env (env: Lean.Environment) (dbg : Bool := false) (total : Nat := 0)
-    : Map Lean.Name (Set Lean.Name) := Id.run do
+def GraphM.env (env: Ix.Environment) (dbg : Bool := false) (total : Nat := 0)
+    : Map Ix.Name (Set Ix.Name) := Id.run do
   let mut stt : GraphState := .init
-  let mut refs: Map Lean.Name (Set Lean.Name) := {}
+  let mut refs: Map Ix.Name (Set Ix.Name) := {}
   let mut i : Nat := 0
   let mut lastPct : Nat := 0
-  for (name, const) in env.constants do
+  for (name, const) in env.consts do
     let (rs, stt') := GraphM.run env stt (graphConst const)
     refs := refs.insert name rs
     stt := stt'
@@ -77,27 +93,23 @@ def GraphM.env (env: Lean.Environment) (dbg : Bool := false) (total : Nat := 0)
         lastPct := pct
   return refs
 
-def GraphM.envParallel (env: Lean.Environment) : Map Lean.Name (Set Lean.Name) := Id.run do
-  let mut tasks : Map Lean.Name (Task (Set Lean.Name)) := {}
-  for (name, const) in env.constants do
-    let task <- Task.spawn fun () => (GraphM.run env .init (graphConst const)).1
-    tasks := tasks.insert name task
-  return tasks.map fun _ t => t.get
-
-def GraphM.envSerial (env: Lean.Environment) : Map Lean.Name (Set Lean.Name) := Id.run do
-  let mut refs: Map Lean.Name (Set Lean.Name) := {}
-  for (name, const) in env.constants do
-    let (rs, _) := GraphM.run env .init (graphConst const)
-    refs := refs.insert name rs
+def GraphM.envParallel (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) := Id.run do
+  let mut tasks : Array (Ix.Name × Task (Set Ix.Name)) := #[]
+  for (name, const) in env.consts do
+    let task := Task.spawn fun () =>
+      let (rs, _) := GraphM.run env .init (graphConst const)
+      rs
+    tasks := tasks.push (name, task)
+  let mut refs : Map Ix.Name (Set Ix.Name) := {}
+  for (name, task) in tasks do
+    refs := refs.insert name task.get
   return refs
 
-def GraphM.envSerialShareCache (env: Lean.Environment) : Map Lean.Name (Set Lean.Name) := Id.run do
-  let mut stt : GraphState := .init
-  let mut refs: Map Lean.Name (Set Lean.Name) := {}
-  for (name, const) in env.constants do
-    let (rs, stt') := GraphM.run env stt (graphConst const)
+def GraphM.envSerial (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) := Id.run do
+  let mut refs: Map Ix.Name (Set Ix.Name) := {}
+  for (name, const) in env.consts do
+    let (rs, _) := GraphM.run env .init (graphConst const)
     refs := refs.insert name rs
-    stt := stt'
   return refs
 
 end Ix

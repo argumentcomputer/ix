@@ -90,6 +90,9 @@ void rs_copy_block_bytes(void const *rust_env, b_lean_obj_arg name, lean_obj_arg
 // Get Rust's sharing vector length for a block
 uint64_t rs_get_block_sharing_len(void const *rust_env, b_lean_obj_arg name);
 
+// Compare block with typed result (returns BlockCompareDetail)
+lean_obj_res rs_compare_block_v2(void const *rust_env, b_lean_obj_arg name, b_lean_obj_arg lean_bytes, uint64_t lean_sharing_len);
+
 // Get the buffer length needed for pre-sharing expressions
 uint64_t rs_get_pre_sharing_exprs_len(void const *rust_env, b_lean_obj_arg name);
 
@@ -139,3 +142,50 @@ lean_object *rs_roundtrip_bool(b_lean_obj_arg b);
 lean_object *rs_roundtrip_ix_constant_info(b_lean_obj_arg info);
 lean_object *rs_roundtrip_ix_environment(b_lean_obj_arg env);
 lean_object *rs_roundtrip_ix_raw_environment(b_lean_obj_arg raw_env);
+
+// Round-trip BlockCompareResult and BlockCompareDetail
+lean_object *rs_roundtrip_block_compare_result(b_lean_obj_arg ptr);
+lean_object *rs_roundtrip_block_compare_detail(b_lean_obj_arg ptr);
+
+/* --- RawCompiledEnv FFI --- */
+
+// Compile environment and return RawCompiledEnv
+// Takes: List (Lean.Name × Lean.ConstantInfo)
+// Returns: IO RawCompiledEnv
+lean_obj_res rs_compile_env_to_raw(b_lean_obj_arg env_consts);
+
+// Complete compilation pipeline - returns RustCompilationResult
+// (rawEnv, condensed, compiled)
+lean_obj_res rs_compile_env_full(b_lean_obj_arg env_consts);
+
+// Compile environment to Ixon RawEnv (structured Lean objects)
+// Takes: List (Lean.Name × Lean.ConstantInfo)
+// Returns: IO RawEnv
+lean_obj_res rs_compile_env_to_ixon(b_lean_obj_arg env_consts);
+
+// Round-trip RawEnv for FFI testing
+lean_object *rs_roundtrip_raw_env(b_lean_obj_arg raw_env);
+
+// Round-trip RustCondensedBlocks for FFI testing
+lean_object *rs_roundtrip_rust_condensed_blocks(b_lean_obj_arg condensed);
+
+// Round-trip RustCompilePhases for FFI testing
+lean_object *rs_roundtrip_rust_compile_phases(b_lean_obj_arg phases);
+
+// Combined compilation phases - returns RustCompilePhases
+// (rawEnv, condensed, compileEnv)
+// Takes: List (Lean.Name × Lean.ConstantInfo)
+// Returns: IO RustCompilePhases
+lean_obj_res rs_compile_phases(b_lean_obj_arg env_consts);
+
+/* --- Graph/SCC FFI --- */
+
+// Build reference graph in Rust (returns Ix.Name-based graph)
+// Takes: List (Lean.Name × Lean.ConstantInfo)
+// Returns: IO (Array (Ix.Name × Array Ix.Name))
+lean_obj_res rs_build_ref_graph(b_lean_obj_arg env_consts);
+
+// Compute SCCs in Rust (returns Ix.Name-based CondensedBlocks)
+// Takes: List (Lean.Name × Lean.ConstantInfo)
+// Returns: IO RustCondensedBlocks
+lean_obj_res rs_compute_sccs(b_lean_obj_arg env_consts);

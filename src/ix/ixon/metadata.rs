@@ -1,7 +1,11 @@
-//! Metadata for preserving Lean source information.
+//! Arena-based metadata for preserving Lean source information.
 //!
 //! Metadata types use Address internally, but serialize with u64 indices
 //! into a global name index for space efficiency.
+//!
+//! The arena stores metadata as a tree of ExprMetaData nodes, allocated
+//! bottom-up (children before parents). Each ConstantMeta variant stores
+//! an ExprMeta arena plus root indices for each expression position.
 
 #![allow(clippy::cast_possible_truncation)]
 
@@ -19,33 +23,51 @@ use super::tag::Tag0;
 /// Key-value map for Lean.Expr.mdata
 pub type KVMap = Vec<(Address, DataValue)>;
 
-/// Per-expression metadata keyed by pre-order traversal index
-pub type ExprMetas = HashMap<u64, ExprMeta>;
-
-/// Per-expression metadata (keyed by pre-order traversal index within that expr)
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ExprMeta {
-  /// Lam/All binder
-  Binder { name: Address, info: BinderInfo, mdata: Vec<KVMap> },
-  /// Let binder
-  LetBinder { name: Address, mdata: Vec<KVMap> },
-  /// Const reference (for .mdata on const references)
-  Ref { name: Address, mdata: Vec<KVMap> },
-  /// Projection
-  Prj { struct_name: Address, mdata: Vec<KVMap> },
-  /// Just mdata wrapper (for Sort, Var, App, etc with .mdata)
-  Mdata { mdata: Vec<KVMap> },
+/// Arena node for per-expression metadata.
+///
+/// Nodes are allocated bottom-up (children before parents) in the arena.
+/// Arena indices are u64 values pointing into `ExprMeta.nodes`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ExprMetaData {
+  /// Leaf node: Var, Sort, Nat, Str (no metadata)
+  Leaf,
+  /// Application: children = [fun, arg]
+  App { children: [u64; 2] },
+  /// Lambda/ForAll binder: children = [type, body]
+  Binder { name: Address, info: BinderInfo, children: [u64; 2] },
+  /// Let binder: children = [type, value, body]
+  LetBinder { name: Address, children: [u64; 3] },
+  /// Const reference (Ref or Rec): leaf in the arena
+  Ref { name: Address },
+  /// Projection: child = struct value
+  Prj { struct_name: Address, child: u64 },
+  /// Mdata wrapper: always a separate node, never absorbed into Binder/Ref/Prj
+  Mdata { mdata: Vec<KVMap>, child: u64 },
 }
 
-/// Constructor metadata (embedded in Indc for efficient access)
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CtorMeta {
-  pub name: Address,
-  pub lvls: Vec<Address>,
-  pub type_meta: ExprMetas,
+/// Arena for expression metadata within a single constant.
+///
+/// Nodes are appended bottom-up. Arena indices are stable because the arena
+/// is append-only and never reset during a constant's compilation.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ExprMeta {
+  pub nodes: Vec<ExprMetaData>,
 }
 
-/// Per-constant metadata with ExprMetas embedded at each expression position
+impl ExprMeta {
+  /// Allocate a new node in the arena, returning its index.
+  pub fn alloc(&mut self, node: ExprMetaData) -> u64 {
+    let idx = self.nodes.len() as u64;
+    self.nodes.push(node);
+    idx
+  }
+}
+
+/// Per-constant metadata with arena-based expression metadata.
+///
+/// Each variant stores an ExprMeta arena covering all expressions in
+/// that constant, plus root indices pointing into the arena for each
+/// expression position (type, value, rule RHS, etc.).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum ConstantMeta {
   #[default]
@@ -56,33 +78,37 @@ pub enum ConstantMeta {
     hints: ReducibilityHints,
     all: Vec<Address>,
     ctx: Vec<Address>,
-    type_meta: ExprMetas,
-    value_meta: ExprMetas,
+    arena: ExprMeta,
+    type_root: u64,
+    value_root: u64,
   },
   Axio {
     name: Address,
     lvls: Vec<Address>,
-    type_meta: ExprMetas,
+    arena: ExprMeta,
+    type_root: u64,
   },
   Quot {
     name: Address,
     lvls: Vec<Address>,
-    type_meta: ExprMetas,
+    arena: ExprMeta,
+    type_root: u64,
   },
   Indc {
     name: Address,
     lvls: Vec<Address>,
     ctors: Vec<Address>,
-    ctor_metas: Vec<CtorMeta>,
     all: Vec<Address>,
     ctx: Vec<Address>,
-    type_meta: ExprMetas,
+    arena: ExprMeta,
+    type_root: u64,
   },
   Ctor {
     name: Address,
     lvls: Vec<Address>,
     induct: Address,
-    type_meta: ExprMetas,
+    arena: ExprMeta,
+    type_root: u64,
   },
   Rec {
     name: Address,
@@ -90,12 +116,14 @@ pub enum ConstantMeta {
     rules: Vec<Address>,
     all: Vec<Address>,
     ctx: Vec<Address>,
-    type_meta: ExprMetas,
+    arena: ExprMeta,
+    type_root: u64,
+    rule_roots: Vec<u64>,
   },
 }
 
 /// Data values for KVMap metadata.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DataValue {
   OfString(Address),
   OfBool(bool),
@@ -133,6 +161,34 @@ fn get_bool(buf: &mut &[u8]) -> Result<bool, String> {
     1 => Ok(true),
     x => Err(format!("get_bool: invalid {x}")),
   }
+}
+
+fn put_u32(x: u32, buf: &mut Vec<u8>) {
+  buf.extend_from_slice(&x.to_le_bytes());
+}
+
+fn get_u32(buf: &mut &[u8]) -> Result<u32, String> {
+  if buf.len() < 4 {
+    return Err("get_u32: need 4 bytes".to_string());
+  }
+  let (bytes, rest) = buf.split_at(4);
+  *buf = rest;
+  Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+/// Serialize a raw 32-byte address (for blob addresses not in the name index).
+fn put_address_raw(addr: &Address, buf: &mut Vec<u8>) {
+  buf.extend_from_slice(addr.as_bytes());
+}
+
+/// Deserialize a raw 32-byte address.
+fn get_address_raw(buf: &mut &[u8]) -> Result<Address, String> {
+  if buf.len() < 32 {
+    return Err(format!("get_address_raw: need 32 bytes, have {}", buf.len()));
+  }
+  let (bytes, rest) = buf.split_at(32);
+  *buf = rest;
+  Address::from_slice(bytes).map_err(|_| "get_address_raw: invalid".to_string())
 }
 
 fn put_u64(x: u64, buf: &mut Vec<u8>) {
@@ -218,7 +274,8 @@ pub type NameIndex = HashMap<Address, u64>;
 pub type NameReverseIndex = Vec<Address>;
 
 fn put_idx(addr: &Address, idx: &NameIndex, buf: &mut Vec<u8>) {
-  let i = idx.get(addr).copied().unwrap_or(0);
+  let i = idx.get(addr).copied()
+    .unwrap_or_else(|| panic!("put_idx: address {:?} not in name index", addr));
   put_u64(i, buf);
 }
 
@@ -256,29 +313,31 @@ fn get_idx_vec(
 impl DataValue {
   pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) {
     match self {
+      // OfString, OfNat, OfInt, OfSyntax hold blob addresses (not in name index)
       Self::OfString(a) => {
         put_u8(0, buf);
-        put_idx(a, idx, buf);
+        put_address_raw(a, buf);
       },
       Self::OfBool(b) => {
         put_u8(1, buf);
         put_bool(*b, buf);
       },
+      // OfName holds a name address (in name index)
       Self::OfName(a) => {
         put_u8(2, buf);
         put_idx(a, idx, buf);
       },
       Self::OfNat(a) => {
         put_u8(3, buf);
-        put_idx(a, idx, buf);
+        put_address_raw(a, buf);
       },
       Self::OfInt(a) => {
         put_u8(4, buf);
-        put_idx(a, idx, buf);
+        put_address_raw(a, buf);
       },
       Self::OfSyntax(a) => {
         put_u8(5, buf);
-        put_idx(a, idx, buf);
+        put_address_raw(a, buf);
       },
     }
   }
@@ -288,12 +347,12 @@ impl DataValue {
     rev: &NameReverseIndex,
   ) -> Result<Self, String> {
     match get_u8(buf)? {
-      0 => Ok(Self::OfString(get_idx(buf, rev)?)),
+      0 => Ok(Self::OfString(get_address_raw(buf)?)),
       1 => Ok(Self::OfBool(get_bool(buf)?)),
       2 => Ok(Self::OfName(get_idx(buf, rev)?)),
-      3 => Ok(Self::OfNat(get_idx(buf, rev)?)),
-      4 => Ok(Self::OfInt(get_idx(buf, rev)?)),
-      5 => Ok(Self::OfSyntax(get_idx(buf, rev)?)),
+      3 => Ok(Self::OfNat(get_address_raw(buf)?)),
+      4 => Ok(Self::OfInt(get_address_raw(buf)?)),
+      5 => Ok(Self::OfSyntax(get_address_raw(buf)?)),
       x => Err(format!("DataValue::get: invalid tag {x}")),
     }
   }
@@ -347,56 +406,58 @@ fn get_mdata_stack_indexed(
 }
 
 // ===========================================================================
-// ExprMeta indexed serialization
+// ExprMetaData indexed serialization
 // ===========================================================================
 
-impl ExprMeta {
-  // Tags 0-3: Binder with BinderInfo packed into tag
-  // Tag 4: LetBinder
-  // Tag 5: Ref
-  // Tag 6: Prj
-  // Tag 7: Mdata
-  const TAG_BINDER_DEFAULT: u8 = 0;
-  const TAG_BINDER_IMPLICIT: u8 = 1;
-  const TAG_BINDER_STRICT_IMPLICIT: u8 = 2;
-  const TAG_BINDER_INST_IMPLICIT: u8 = 3;
-  const TAG_LET_BINDER: u8 = 4;
-  const TAG_REF: u8 = 5;
-  const TAG_PRJ: u8 = 6;
-  const TAG_MDATA: u8 = 7;
+impl ExprMetaData {
+  // Tag 0: Leaf (no payload)
+  // Tag 1: App { children: [u32, u32] }
+  // Tags 2-5: Binder with BinderInfo packed into tag (2 + variant)
+  // Tag 6: LetBinder { name_idx, children: [u32, u32, u32] }
+  // Tag 7: Ref { name_idx }
+  // Tag 8: Prj { struct_name_idx, child: u32 }
+  // Tag 9: Mdata { kvmap_count, kvmaps..., child: u32 }
 
   pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) {
     match self {
-      Self::Binder { name, info, mdata } => {
-        // Pack BinderInfo into tag (0-3)
-        let tag = match info {
-          BinderInfo::Default => Self::TAG_BINDER_DEFAULT,
-          BinderInfo::Implicit => Self::TAG_BINDER_IMPLICIT,
-          BinderInfo::StrictImplicit => Self::TAG_BINDER_STRICT_IMPLICIT,
-          BinderInfo::InstImplicit => Self::TAG_BINDER_INST_IMPLICIT,
+      Self::Leaf => put_u8(0, buf),
+      Self::App { children } => {
+        put_u8(1, buf);
+        put_u64(children[0], buf);
+        put_u64(children[1], buf);
+      },
+      Self::Binder { name, info, children } => {
+        let tag = 2 + match info {
+          BinderInfo::Default => 0u8,
+          BinderInfo::Implicit => 1,
+          BinderInfo::StrictImplicit => 2,
+          BinderInfo::InstImplicit => 3,
         };
         put_u8(tag, buf);
         put_idx(name, idx, buf);
-        put_mdata_stack_indexed(mdata, idx, buf);
+        put_u64(children[0], buf);
+        put_u64(children[1], buf);
       },
-      Self::LetBinder { name, mdata } => {
-        put_u8(Self::TAG_LET_BINDER, buf);
+      Self::LetBinder { name, children } => {
+        put_u8(6, buf);
         put_idx(name, idx, buf);
-        put_mdata_stack_indexed(mdata, idx, buf);
+        put_u64(children[0], buf);
+        put_u64(children[1], buf);
+        put_u64(children[2], buf);
       },
-      Self::Ref { name, mdata } => {
-        put_u8(Self::TAG_REF, buf);
+      Self::Ref { name } => {
+        put_u8(7, buf);
         put_idx(name, idx, buf);
-        put_mdata_stack_indexed(mdata, idx, buf);
       },
-      Self::Prj { struct_name, mdata } => {
-        put_u8(Self::TAG_PRJ, buf);
+      Self::Prj { struct_name, child } => {
+        put_u8(8, buf);
         put_idx(struct_name, idx, buf);
-        put_mdata_stack_indexed(mdata, idx, buf);
+        put_u64(*child, buf);
       },
-      Self::Mdata { mdata } => {
-        put_u8(Self::TAG_MDATA, buf);
+      Self::Mdata { mdata, child } => {
+        put_u8(9, buf);
         put_mdata_stack_indexed(mdata, idx, buf);
+        put_u64(*child, buf);
       },
     }
   }
@@ -406,109 +467,90 @@ impl ExprMeta {
     rev: &NameReverseIndex,
   ) -> Result<Self, String> {
     match get_u8(buf)? {
-      // Tags 0-3: Binder with BinderInfo packed into tag
-      tag @ 0..=3 => {
+      0 => Ok(Self::Leaf),
+      1 => {
+        let c0 = get_u64(buf)?;
+        let c1 = get_u64(buf)?;
+        Ok(Self::App { children: [c0, c1] })
+      },
+      tag @ 2..=5 => {
         let info = match tag {
-          Self::TAG_BINDER_DEFAULT => BinderInfo::Default,
-          Self::TAG_BINDER_IMPLICIT => BinderInfo::Implicit,
-          Self::TAG_BINDER_STRICT_IMPLICIT => BinderInfo::StrictImplicit,
-          Self::TAG_BINDER_INST_IMPLICIT => BinderInfo::InstImplicit,
+          2 => BinderInfo::Default,
+          3 => BinderInfo::Implicit,
+          4 => BinderInfo::StrictImplicit,
+          5 => BinderInfo::InstImplicit,
           _ => unreachable!(),
         };
-        Ok(Self::Binder {
-          name: get_idx(buf, rev)?,
-          info,
-          mdata: get_mdata_stack_indexed(buf, rev)?,
-        })
+        let name = get_idx(buf, rev)?;
+        let c0 = get_u64(buf)?;
+        let c1 = get_u64(buf)?;
+        Ok(Self::Binder { name, info, children: [c0, c1] })
       },
-      Self::TAG_LET_BINDER => Ok(Self::LetBinder {
-        name: get_idx(buf, rev)?,
-        mdata: get_mdata_stack_indexed(buf, rev)?,
-      }),
-      Self::TAG_REF => Ok(Self::Ref {
-        name: get_idx(buf, rev)?,
-        mdata: get_mdata_stack_indexed(buf, rev)?,
-      }),
-      Self::TAG_PRJ => Ok(Self::Prj {
-        struct_name: get_idx(buf, rev)?,
-        mdata: get_mdata_stack_indexed(buf, rev)?,
-      }),
-      Self::TAG_MDATA => Ok(Self::Mdata { mdata: get_mdata_stack_indexed(buf, rev)? }),
-      x => Err(format!("ExprMeta::get: invalid tag {x}")),
+      6 => {
+        let name = get_idx(buf, rev)?;
+        let c0 = get_u64(buf)?;
+        let c1 = get_u64(buf)?;
+        let c2 = get_u64(buf)?;
+        Ok(Self::LetBinder { name, children: [c0, c1, c2] })
+      },
+      7 => {
+        let name = get_idx(buf, rev)?;
+        Ok(Self::Ref { name })
+      },
+      8 => {
+        let struct_name = get_idx(buf, rev)?;
+        let child = get_u64(buf)?;
+        Ok(Self::Prj { struct_name, child })
+      },
+      9 => {
+        let mdata = get_mdata_stack_indexed(buf, rev)?;
+        let child = get_u64(buf)?;
+        Ok(Self::Mdata { mdata, child })
+      },
+      x => Err(format!("ExprMetaData::get: invalid tag {x}")),
     }
   }
 }
 
-fn put_expr_metas_indexed(
-  metas: &ExprMetas,
-  idx: &NameIndex,
-  buf: &mut Vec<u8>,
-) {
-  put_vec_len(metas.len(), buf);
-  for (i, meta) in metas {
-    Tag0::new(*i).put(buf);
-    meta.put_indexed(idx, buf);
-  }
-}
-
-fn get_expr_metas_indexed(
-  buf: &mut &[u8],
-  rev: &NameReverseIndex,
-) -> Result<ExprMetas, String> {
-  let len = get_vec_len(buf)?;
-  let mut metas = HashMap::with_capacity(len);
-  for _ in 0..len {
-    let i = Tag0::get(buf)?.size;
-    let meta = ExprMeta::get_indexed(buf, rev)?;
-    metas.insert(i, meta);
-  }
-  Ok(metas)
-}
-
 // ===========================================================================
-// CtorMeta indexed serialization
+// ExprMeta (arena) indexed serialization
 // ===========================================================================
 
-impl CtorMeta {
+impl ExprMeta {
   pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) {
-    put_idx(&self.name, idx, buf);
-    put_idx_vec(&self.lvls, idx, buf);
-    put_expr_metas_indexed(&self.type_meta, idx, buf);
+    put_vec_len(self.nodes.len(), buf);
+    for node in &self.nodes {
+      node.put_indexed(idx, buf);
+    }
   }
 
   pub fn get_indexed(
     buf: &mut &[u8],
     rev: &NameReverseIndex,
   ) -> Result<Self, String> {
-    Ok(CtorMeta {
-      name: get_idx(buf, rev)?,
-      lvls: get_idx_vec(buf, rev)?,
-      type_meta: get_expr_metas_indexed(buf, rev)?,
-    })
+    let len = get_vec_len(buf)?;
+    let mut nodes = Vec::with_capacity(len);
+    for _ in 0..len {
+      nodes.push(ExprMetaData::get_indexed(buf, rev)?);
+    }
+    Ok(ExprMeta { nodes })
   }
 }
 
-fn put_ctor_metas_indexed(
-  metas: &[CtorMeta],
-  idx: &NameIndex,
-  buf: &mut Vec<u8>,
-) {
-  put_vec_len(metas.len(), buf);
-  for meta in metas {
-    meta.put_indexed(idx, buf);
+fn put_u64_vec(v: &[u64], buf: &mut Vec<u8>) {
+  put_vec_len(v.len(), buf);
+  for &x in v {
+    put_u64(x, buf);
   }
 }
 
-fn get_ctor_metas_indexed(
-  buf: &mut &[u8],
-  rev: &NameReverseIndex,
-) -> Result<Vec<CtorMeta>, String> {
+fn get_u64_vec(buf: &mut &[u8]) -> Result<Vec<u64>, String> {
   let len = get_vec_len(buf)?;
-  let mut metas = Vec::with_capacity(len);
+  let mut v = Vec::with_capacity(len);
   for _ in 0..len {
-    metas.push(CtorMeta::get_indexed(buf, rev)?);
+    v.push(get_u64(buf)?);
   }
-  Ok(metas)
+  Ok(v)
 }
 
 // ===========================================================================
@@ -519,53 +561,59 @@ impl ConstantMeta {
   pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) {
     match self {
       Self::Empty => put_u8(255, buf),
-      Self::Def { name, lvls, hints, all, ctx, type_meta, value_meta } => {
+      Self::Def { name, lvls, hints, all, ctx, arena, type_root, value_root } => {
         put_u8(0, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
         hints.put(buf);
         put_idx_vec(all, idx, buf);
         put_idx_vec(ctx, idx, buf);
-        put_expr_metas_indexed(type_meta, idx, buf);
-        put_expr_metas_indexed(value_meta, idx, buf);
+        arena.put_indexed(idx, buf);
+        put_u64(*type_root, buf);
+        put_u64(*value_root, buf);
       },
-      Self::Axio { name, lvls, type_meta } => {
+      Self::Axio { name, lvls, arena, type_root } => {
         put_u8(1, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
-        put_expr_metas_indexed(type_meta, idx, buf);
+        arena.put_indexed(idx, buf);
+        put_u64(*type_root, buf);
       },
-      Self::Quot { name, lvls, type_meta } => {
+      Self::Quot { name, lvls, arena, type_root } => {
         put_u8(2, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
-        put_expr_metas_indexed(type_meta, idx, buf);
+        arena.put_indexed(idx, buf);
+        put_u64(*type_root, buf);
       },
-      Self::Indc { name, lvls, ctors, ctor_metas, all, ctx, type_meta } => {
+      Self::Indc { name, lvls, ctors, all, ctx, arena, type_root } => {
         put_u8(3, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
         put_idx_vec(ctors, idx, buf);
-        put_ctor_metas_indexed(ctor_metas, idx, buf);
         put_idx_vec(all, idx, buf);
         put_idx_vec(ctx, idx, buf);
-        put_expr_metas_indexed(type_meta, idx, buf);
+        arena.put_indexed(idx, buf);
+        put_u64(*type_root, buf);
       },
-      Self::Ctor { name, lvls, induct, type_meta } => {
+      Self::Ctor { name, lvls, induct, arena, type_root } => {
         put_u8(4, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
         put_idx(induct, idx, buf);
-        put_expr_metas_indexed(type_meta, idx, buf);
+        arena.put_indexed(idx, buf);
+        put_u64(*type_root, buf);
       },
-      Self::Rec { name, lvls, rules, all, ctx, type_meta } => {
+      Self::Rec { name, lvls, rules, all, ctx, arena, type_root, rule_roots } => {
         put_u8(5, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
         put_idx_vec(rules, idx, buf);
         put_idx_vec(all, idx, buf);
         put_idx_vec(ctx, idx, buf);
-        put_expr_metas_indexed(type_meta, idx, buf);
+        arena.put_indexed(idx, buf);
+        put_u64(*type_root, buf);
+        put_u64_vec(rule_roots, buf);
       },
     }
   }
@@ -582,33 +630,37 @@ impl ConstantMeta {
         hints: ReducibilityHints::get_ser(buf)?,
         all: get_idx_vec(buf, rev)?,
         ctx: get_idx_vec(buf, rev)?,
-        type_meta: get_expr_metas_indexed(buf, rev)?,
-        value_meta: get_expr_metas_indexed(buf, rev)?,
+        arena: ExprMeta::get_indexed(buf, rev)?,
+        type_root: get_u64(buf)?,
+        value_root: get_u64(buf)?,
       }),
       1 => Ok(Self::Axio {
         name: get_idx(buf, rev)?,
         lvls: get_idx_vec(buf, rev)?,
-        type_meta: get_expr_metas_indexed(buf, rev)?,
+        arena: ExprMeta::get_indexed(buf, rev)?,
+        type_root: get_u64(buf)?,
       }),
       2 => Ok(Self::Quot {
         name: get_idx(buf, rev)?,
         lvls: get_idx_vec(buf, rev)?,
-        type_meta: get_expr_metas_indexed(buf, rev)?,
+        arena: ExprMeta::get_indexed(buf, rev)?,
+        type_root: get_u64(buf)?,
       }),
       3 => Ok(Self::Indc {
         name: get_idx(buf, rev)?,
         lvls: get_idx_vec(buf, rev)?,
         ctors: get_idx_vec(buf, rev)?,
-        ctor_metas: get_ctor_metas_indexed(buf, rev)?,
         all: get_idx_vec(buf, rev)?,
         ctx: get_idx_vec(buf, rev)?,
-        type_meta: get_expr_metas_indexed(buf, rev)?,
+        arena: ExprMeta::get_indexed(buf, rev)?,
+        type_root: get_u64(buf)?,
       }),
       4 => Ok(Self::Ctor {
         name: get_idx(buf, rev)?,
         lvls: get_idx_vec(buf, rev)?,
         induct: get_idx(buf, rev)?,
-        type_meta: get_expr_metas_indexed(buf, rev)?,
+        arena: ExprMeta::get_indexed(buf, rev)?,
+        type_root: get_u64(buf)?,
       }),
       5 => Ok(Self::Rec {
         name: get_idx(buf, rev)?,
@@ -616,7 +668,9 @@ impl ConstantMeta {
         rules: get_idx_vec(buf, rev)?,
         all: get_idx_vec(buf, rev)?,
         ctx: get_idx_vec(buf, rev)?,
-        type_meta: get_expr_metas_indexed(buf, rev)?,
+        arena: ExprMeta::get_indexed(buf, rev)?,
+        type_root: get_u64(buf)?,
+        rule_roots: get_u64_vec(buf)?,
       }),
       x => Err(format!("ConstantMeta::get: invalid tag {x}")),
     }
@@ -697,15 +751,24 @@ mod tests {
     let rev: NameReverseIndex =
       vec![addr1.clone(), addr2.clone(), addr3.clone()];
 
-    // Test Def variant
+    // Test Def variant with arena
+    let mut arena = ExprMeta::default();
+    let leaf = arena.alloc(ExprMetaData::Leaf);
+    let binder = arena.alloc(ExprMetaData::Binder {
+      name: addr1.clone(),
+      info: BinderInfo::Default,
+      children: [leaf, leaf],
+    });
+
     let meta = ConstantMeta::Def {
       name: addr1.clone(),
       lvls: vec![addr2.clone(), addr3.clone()],
       hints: ReducibilityHints::Regular(10),
       all: vec![addr1.clone()],
       ctx: vec![addr2.clone()],
-      type_meta: HashMap::new(),
-      value_meta: HashMap::new(),
+      arena,
+      type_root: binder,
+      value_root: leaf,
     };
 
     let mut buf = Vec::new();
@@ -713,5 +776,30 @@ mod tests {
     let recovered =
       ConstantMeta::get_indexed(&mut buf.as_slice(), &rev).unwrap();
     assert_eq!(meta, recovered);
+  }
+
+  #[test]
+  fn test_expr_meta_arena_roundtrip() {
+    let addr1 = Address::from_slice(&[1u8; 32]).unwrap();
+
+    let mut idx = NameIndex::new();
+    idx.insert(addr1.clone(), 0);
+    let rev: NameReverseIndex = vec![addr1.clone()];
+
+    let mut arena = ExprMeta::default();
+    let leaf = arena.alloc(ExprMetaData::Leaf);
+    let ref_node = arena.alloc(ExprMetaData::Ref { name: addr1.clone() });
+    let app = arena.alloc(ExprMetaData::App { children: [leaf, ref_node] });
+    let mdata = arena.alloc(ExprMetaData::Mdata {
+      mdata: vec![vec![(addr1.clone(), DataValue::OfBool(true))]],
+      child: app,
+    });
+    let _ = mdata;
+
+    let mut buf = Vec::new();
+    arena.put_indexed(&idx, &mut buf);
+    let recovered =
+      ExprMeta::get_indexed(&mut buf.as_slice(), &rev).unwrap();
+    assert_eq!(arena, recovered);
   }
 }

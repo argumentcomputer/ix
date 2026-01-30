@@ -149,8 +149,11 @@ fn get_expr_references<'a>(
         merge_name_sets(value_name_set, body_name_set),
       )
     },
-    ExprData::Mdata(_, expr, _) | ExprData::Proj(_, _, expr, _) => {
-      get_expr_references(expr, cache)
+    ExprData::Mdata(_, expr, _) => get_expr_references(expr, cache),
+    ExprData::Proj(type_name, _, expr, _) => {
+      let mut name_set = get_expr_references(expr, cache);
+      name_set.insert(type_name.clone());
+      name_set
     },
     _ => NameSet::default(),
   };

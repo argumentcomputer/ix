@@ -794,6 +794,86 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
 
       // Analyze hash-consing vs serialization efficiency
       analyze_block_size_stats(&stt);
+
+      // Test decompilation from serialized bytes (simulating "over the wire")
+      println!();
+      println!("=== Decompile from serialized bytes (no CompileState) ===");
+      let start_wire = std::time::SystemTime::now();
+
+      // Serialize the Env to bytes
+      let mut serialized = Vec::new();
+      stt.env.put(&mut serialized);
+      println!(
+        "Serialized: {} bytes in {:.2}s",
+        serialized.len(),
+        start_wire.elapsed().unwrap().as_secs_f32()
+      );
+
+      // Deserialize to a fresh Env
+      let start_deser = std::time::SystemTime::now();
+      let mut buf: &[u8] = &serialized;
+      match crate::ix::ixon::env::Env::get(&mut buf) {
+        Ok(fresh_env) => {
+          println!(
+            "Deserialized: {:.2}s",
+            start_deser.elapsed().unwrap().as_secs_f32()
+          );
+
+          // Build a fresh CompileState from the deserialized Env
+          let fresh_stt = crate::ix::compile::CompileState {
+            env: fresh_env,
+            name_to_addr: DashMap::new(),
+            blocks: dashmap::DashSet::new(),
+            block_stats: DashMap::new(),
+          };
+
+          // Populate name_to_addr from env.named
+          for entry in fresh_stt.env.named.iter() {
+            fresh_stt
+              .name_to_addr
+              .insert(entry.key().clone(), entry.value().addr.clone());
+          }
+
+          // Populate blocks from constants that are mutual blocks
+          for entry in fresh_stt.env.consts.iter() {
+            if matches!(
+              &entry.value().info,
+              crate::ix::ixon::constant::ConstantInfo::Muts(_)
+            ) {
+              fresh_stt.blocks.insert(entry.key().clone());
+            }
+          }
+
+          println!("Fresh CompileState: {:?}", fresh_stt.stats());
+
+          // Decompile from the fresh state
+          let start_decomp2 = std::time::SystemTime::now();
+          match decompile_env(&fresh_stt) {
+            Ok(dstt2) => {
+              println!(
+                "Decompile (from wire): {:.2}s",
+                start_decomp2.elapsed().unwrap().as_secs_f32()
+              );
+              println!("Decompile OK: {:?}", dstt2.stats());
+
+              // Verify against original environment
+              let start_check2 = std::time::SystemTime::now();
+              match check_decompile(env.as_ref(), &fresh_stt, &dstt2) {
+                Ok(()) => {
+                  println!(
+                    "Checking: {:.2}s",
+                    start_check2.elapsed().unwrap().as_secs_f32()
+                  );
+                  println!("Roundtrip from wire OK");
+                },
+                Err(e) => println!("Roundtrip from wire ERR: {:?}", e),
+              }
+            },
+            Err(e) => println!("Decompile from wire ERR: {:?}", e),
+          }
+        },
+        Err(e) => println!("Deserialize ERR: {}", e),
+      }
     },
     Err(e) => println!("Compile ERR: {:?}", e),
   }

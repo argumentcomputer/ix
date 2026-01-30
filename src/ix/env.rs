@@ -225,7 +225,7 @@ impl Ord for Literal {
   }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum BinderInfo {
   Default,
   Implicit,

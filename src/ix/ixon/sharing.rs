@@ -211,7 +211,9 @@ fn get_children(expr: &Expr) -> Vec<&Arc<Expr>> {
 /// Analyze expressions for sharing opportunities within a block.
 ///
 /// Returns a map from content hash to SubtermInfo, and a map from pointer to hash.
-/// Uses post-order traversal with Merkle-tree hashing.
+/// Uses a two-phase algorithm:
+/// 1. Build DAG structure via post-order traversal with Merkle-tree hashing
+/// 2. Propagate usage counts structurally from roots to leaves (O(n) total)
 ///
 /// If `track_hash_consed_size` is true, computes the hash-consed size for each
 /// subterm (32-byte key + value). This adds overhead and can be disabled when
@@ -226,7 +228,8 @@ pub fn analyze_block(
     FxHashMap::default();
   let mut hash_buf: Vec<u8> = Vec::with_capacity(128);
 
-  // Stack-based post-order traversal
+  // Phase 1: Build DAG structure via post-order traversal
+  // Don't compute usage counts here - just build the hash→children mapping
   enum Frame<'a> {
     Visit(&'a Arc<Expr>),
     Process(&'a Arc<Expr>),
@@ -240,11 +243,9 @@ pub fn analyze_block(
         Frame::Visit(arc_expr) => {
           let ptr = arc_expr.as_ref() as *const Expr;
 
-          // Already processed this pointer, just increment usage count
-          if let Some(hash) = ptr_to_hash.get(&ptr) {
-            if let Some(info) = info_map.get_mut(hash) {
-              info.usage_count += 1;
-            }
+          // Already processed this pointer - just skip
+          // Usage counts will be computed in phase 2
+          if ptr_to_hash.contains_key(&ptr) {
             continue;
           }
 
@@ -263,28 +264,63 @@ pub fn analyze_block(
           let (hash, children, value_size) =
             hash_node(arc_expr.as_ref(), &ptr_to_hash, &mut hash_buf);
 
-          // Check if we've seen this content hash before (structural equality)
-          if let Some(existing) = info_map.get_mut(&hash) {
-            existing.usage_count += 1;
-            ptr_to_hash.insert(ptr, hash);
-          } else {
-            // New subterm
+          // Add to ptr_to_hash cache
+          ptr_to_hash.insert(ptr, hash);
+
+          // Add to info_map if not already present (same content hash from different pointer)
+          if !info_map.contains_key(&hash) {
             let base_size = compute_base_size(arc_expr.as_ref());
-            // Hash-consed size = 32-byte key + value
-            let hash_consed_size = if track_hash_consed_size { 32 + value_size } else { 0 };
+            let hash_consed_size =
+              if track_hash_consed_size { 32 + value_size } else { 0 };
             info_map.insert(
               hash,
               SubtermInfo {
                 base_size,
                 hash_consed_size,
-                usage_count: 1,
+                usage_count: 0, // Will be computed in phase 2
                 expr: arc_expr.clone(),
                 children,
               },
             );
-            ptr_to_hash.insert(ptr, hash);
           }
         },
+      }
+    }
+  }
+
+  // Phase 2: Propagate usage counts structurally from roots to leaves
+  // This is O(n) total - no subtree walks needed
+  //
+  // Algorithm:
+  // 1. Each root expression contributes 1 to its hash's count
+  // 2. Process in reverse topological order (roots first, leaves last)
+  // 3. For each node, add its count to each child's count (with multiplicity)
+
+  // Count root contributions
+  for root in exprs {
+    let ptr = root.as_ref() as *const Expr;
+    if let Some(hash) = ptr_to_hash.get(&ptr) {
+      if let Some(info) = info_map.get_mut(hash) {
+        info.usage_count += 1;
+      }
+    }
+  }
+
+  // Get topological order (leaves first) and reverse it (roots first)
+  let topo_order = topological_sort(&info_map);
+
+  // Propagate counts from roots to leaves
+  for hash in topo_order.iter().rev() {
+    // Get this node's count and children
+    let (count, children) = {
+      let info = info_map.get(hash).unwrap();
+      (info.usage_count, info.children.clone())
+    };
+
+    // Add this node's count to each child (with multiplicity from children array)
+    for child_hash in children {
+      if let Some(child_info) = info_map.get_mut(&child_hash) {
+        child_info.usage_count += count;
       }
     }
   }
