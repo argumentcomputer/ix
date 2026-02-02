@@ -204,7 +204,41 @@ pub fn build_raw_comm(rc: &DecodedRawComm) -> *mut c_void {
 }
 
 // =============================================================================
-// RawEnv (consts: Array RawConst, named: Array RawNamed, blobs: Array RawBlob, comms: Array RawComm)
+// RawNameEntry (addr: Address, name: Ix.Name)
+// =============================================================================
+
+/// Decoded Ixon.RawNameEntry
+pub struct DecodedRawNameEntry {
+  pub addr: Address,
+  pub name: Name,
+}
+
+/// Decode Ixon.RawNameEntry from Lean pointer.
+pub fn decode_raw_name_entry(ptr: *const c_void) -> DecodedRawNameEntry {
+  unsafe {
+    let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
+    let name_ptr = lean_ctor_get(ptr as *mut _, 1);
+    DecodedRawNameEntry {
+      addr: decode_ixon_address(addr_ptr),
+      name: decode_ix_name(name_ptr),
+    }
+  }
+}
+
+/// Build Ixon.RawNameEntry Lean object.
+pub fn build_raw_name_entry(cache: &mut LeanBuildCache, addr: &Address, name: &Name) -> *mut c_void {
+  unsafe {
+    let addr_obj = build_address_from_ixon(addr);
+    let name_obj = build_name(cache, name);
+    let obj = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(obj, 0, addr_obj);
+    lean_ctor_set(obj, 1, name_obj);
+    obj
+  }
+}
+
+// =============================================================================
+// RawEnv (consts, named, blobs, comms, names)
 // =============================================================================
 
 /// Decoded Ixon.RawEnv
@@ -213,6 +247,7 @@ pub struct DecodedRawEnv {
   pub named: Vec<DecodedRawNamed>,
   pub blobs: Vec<DecodedRawBlob>,
   pub comms: Vec<DecodedRawComm>,
+  pub names: Vec<DecodedRawNameEntry>,
 }
 
 /// Decode Ixon.RawEnv from Lean pointer.
@@ -222,17 +257,20 @@ pub fn decode_raw_env(ptr: *const c_void) -> DecodedRawEnv {
     let named_ptr = lean_ctor_get(ptr as *mut _, 1);
     let blobs_ptr = lean_ctor_get(ptr as *mut _, 2);
     let comms_ptr = lean_ctor_get(ptr as *mut _, 3);
+    let names_ptr = lean_ctor_get(ptr as *mut _, 4);
 
     let consts_arr: &LeanArrayObject = as_ref_unsafe(consts_ptr.cast());
     let named_arr: &LeanArrayObject = as_ref_unsafe(named_ptr.cast());
     let blobs_arr: &LeanArrayObject = as_ref_unsafe(blobs_ptr.cast());
     let comms_arr: &LeanArrayObject = as_ref_unsafe(comms_ptr.cast());
+    let names_arr: &LeanArrayObject = as_ref_unsafe(names_ptr.cast());
 
     DecodedRawEnv {
       consts: consts_arr.to_vec(decode_raw_const),
       named: named_arr.to_vec(decode_raw_named),
       blobs: blobs_arr.to_vec(decode_raw_blob),
       comms: comms_arr.to_vec(decode_raw_comm),
+      names: names_arr.to_vec(decode_raw_name_entry),
     }
   }
 }
@@ -270,12 +308,20 @@ pub fn build_raw_env(env: &DecodedRawEnv) -> *mut c_void {
       lean_array_set_core(comms_arr, i, obj);
     }
 
+    // Build names array
+    let names_arr = lean_alloc_array(env.names.len(), env.names.len());
+    for (i, rn) in env.names.iter().enumerate() {
+      let obj = build_raw_name_entry(&mut cache, &rn.addr, &rn.name);
+      lean_array_set_core(names_arr, i, obj);
+    }
+
     // Build RawEnv structure
-    let obj = lean_alloc_ctor(0, 4, 0);
+    let obj = lean_alloc_ctor(0, 5, 0);
     lean_ctor_set(obj, 0, consts_arr);
     lean_ctor_set(obj, 1, named_arr);
     lean_ctor_set(obj, 2, blobs_arr);
     lean_ctor_set(obj, 3, comms_arr);
+    lean_ctor_set(obj, 4, names_arr);
     obj
   }
 }

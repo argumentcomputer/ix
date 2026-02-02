@@ -26,7 +26,7 @@ use super::graph::build_condensed_blocks;
 use super::ix::env::build_raw_environment;
 use super::ix::name::build_name;
 use super::ixon::constant::{build_address_from_ixon, build_ixon_constant};
-use super::ixon::env::{build_raw_env, decode_raw_env};
+use super::ixon::env::{build_raw_env, build_raw_name_entry, decode_raw_env};
 use super::ixon::meta::{build_constant_meta, build_ixon_comm};
 use super::lean_env::{lean_ptr_to_env, lean_ptr_to_name, GlobalCache};
 
@@ -410,11 +410,13 @@ pub extern "C" fn rs_compile_phases(env_consts_ptr: *const c_void) -> *mut c_voi
         let empty_named = lean_alloc_array(0, 0);
         let empty_blobs = lean_alloc_array(0, 0);
         let empty_comms = lean_alloc_array(0, 0);
-        let raw_ixon_env = lean_alloc_ctor(0, 4, 0);
+        let empty_names = lean_alloc_array(0, 0);
+        let raw_ixon_env = lean_alloc_ctor(0, 5, 0);
         lean_ctor_set(raw_ixon_env, 0, empty_consts);
         lean_ctor_set(raw_ixon_env, 1, empty_named);
         lean_ctor_set(raw_ixon_env, 2, empty_blobs);
         lean_ctor_set(raw_ixon_env, 3, empty_comms);
+        lean_ctor_set(raw_ixon_env, 4, empty_names);
 
         let result = lean_alloc_ctor(0, 3, 0);
         lean_ctor_set(result, 0, raw_env);
@@ -460,11 +462,21 @@ pub extern "C" fn rs_compile_phases(env_consts_ptr: *const c_void) -> *mut c_voi
       lean_array_set_core(comms_arr, i, raw_comm);
     }
 
-    let raw_ixon_env = lean_alloc_ctor(0, 4, 0);
+    // Build names array (Address → Ix.Name)
+    let names: Vec<_> =
+      compile_stt.env.names.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let names_arr = lean_alloc_array(names.len(), names.len());
+    for (i, (addr, name)) in names.iter().enumerate() {
+      let obj = build_raw_name_entry(&mut cache, addr, name);
+      lean_array_set_core(names_arr, i, obj);
+    }
+
+    let raw_ixon_env = lean_alloc_ctor(0, 5, 0);
     lean_ctor_set(raw_ixon_env, 0, consts_arr);
     lean_ctor_set(raw_ixon_env, 1, named_arr);
     lean_ctor_set(raw_ixon_env, 2, blobs_arr);
     lean_ctor_set(raw_ixon_env, 3, comms_arr);
+    lean_ctor_set(raw_ixon_env, 4, names_arr);
 
     eprintln!(
       "  [rs_compile_phases] Build RawEnv: {:.2}s",
@@ -497,11 +509,13 @@ pub extern "C" fn rs_compile_env_to_ixon(env_consts_ptr: *const c_void) -> *mut 
         let empty_named = lean_alloc_array(0, 0);
         let empty_blobs = lean_alloc_array(0, 0);
         let empty_comms = lean_alloc_array(0, 0);
-        let result = lean_alloc_ctor(0, 4, 0);
+        let empty_names = lean_alloc_array(0, 0);
+        let result = lean_alloc_ctor(0, 5, 0);
         lean_ctor_set(result, 0, empty_consts);
         lean_ctor_set(result, 1, empty_named);
         lean_ctor_set(result, 2, empty_blobs);
         lean_ctor_set(result, 3, empty_comms);
+        lean_ctor_set(result, 4, empty_names);
         return lean_io_result_mk_ok(result);
       }
     }
@@ -542,11 +556,21 @@ pub extern "C" fn rs_compile_env_to_ixon(env_consts_ptr: *const c_void) -> *mut 
       lean_array_set_core(comms_arr, i, raw_comm);
     }
 
-    let result = lean_alloc_ctor(0, 4, 0);
+    // Build names array (Address → Ix.Name)
+    let names: Vec<_> =
+      compile_stt.env.names.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let names_arr = lean_alloc_array(names.len(), names.len());
+    for (i, (addr, name)) in names.iter().enumerate() {
+      let obj = build_raw_name_entry(&mut cache, addr, name);
+      lean_array_set_core(names_arr, i, obj);
+    }
+
+    let result = lean_alloc_ctor(0, 5, 0);
     lean_ctor_set(result, 0, consts_arr);
     lean_ctor_set(result, 1, named_arr);
     lean_ctor_set(result, 2, blobs_arr);
     lean_ctor_set(result, 3, comms_arr);
+    lean_ctor_set(result, 4, names_arr);
     lean_io_result_mk_ok(result)
   }
 }

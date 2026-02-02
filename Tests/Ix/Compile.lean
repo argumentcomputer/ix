@@ -366,6 +366,7 @@ def testCrossImpl : TestSeq :=
         if leanEnvBytes == rustEnvBytes then
           IO.println s!"[Step 4]   Serialized environments match exactly! ✓"
           IO.println ""
+
           return (true, none)
         else
           IO.println s!"[Step 4]   Serialized environments DIFFER"

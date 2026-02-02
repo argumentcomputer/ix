@@ -421,12 +421,17 @@ def genRawBlob : Gen RawBlob :=
 def genRawComm : Gen RawComm :=
   RawComm.mk <$> genAddress <*> genCommNew
 
+/-- Generate a RawNameEntry -/
+def genRawNameEntry : Gen RawNameEntry :=
+  RawNameEntry.mk <$> genAddress <*> genIxName 3
+
 /-- Generate a RawEnv with small arrays to avoid memory issues -/
 def genRawEnv : Gen RawEnv :=
   RawEnv.mk <$> genSmallArray genRawConst
     <*> genSmallArray genRawNamed
     <*> genSmallArray genRawBlob
     <*> genSmallArray genRawComm
+    <*> genSmallArray genRawNameEntry
 
 instance : Shrinkable RawConst where
   shrink _ := []

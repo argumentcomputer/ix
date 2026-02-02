@@ -1463,6 +1463,13 @@ structure RawComm where
   comm : Comm
   deriving Repr, Inhabited, BEq
 
+/-- Raw FFI name entry: address → Ix.Name mapping.
+    Used to transfer the full names table across FFI. -/
+structure RawNameEntry where
+  addr : Address
+  name : Ix.Name
+  deriving Repr, Inhabited, BEq
+
 /-- Raw FFI environment structure using arrays instead of HashMaps.
     This is the array-based equivalent of `Env` for FFI compatibility. -/
 structure RawEnv where
@@ -1470,6 +1477,7 @@ structure RawEnv where
   named : Array RawNamed
   blobs : Array RawBlob
   comms : Array RawComm
+  names : Array RawNameEntry := #[]
   deriving Repr, Inhabited, BEq
 
 namespace RawEnv

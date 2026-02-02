@@ -1935,8 +1935,11 @@ def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
   let mut compileEnv : Ixon.Env := {}
   for ⟨addr, const⟩ in raw.compileEnv.consts do
     compileEnv := compileEnv.storeConst addr const
+  -- Load the full names table from Rust (includes binder names, level params, etc.)
+  for ⟨addr, name⟩ in raw.compileEnv.names do
+    compileEnv := { compileEnv with names := compileEnv.names.insert addr name }
   for ⟨name, addr, constMeta⟩ in raw.compileEnv.named do
-    -- Add all name components to the names map (for indexed serialization)
+    -- Also add name components for indexed serialization
     compileEnv := { compileEnv with names := Ixon.RawEnv.addNameComponents compileEnv.names name }
     compileEnv := compileEnv.registerName name ⟨addr, constMeta⟩
   for ⟨addr, bytes⟩ in raw.compileEnv.blobs do
@@ -1954,7 +1957,11 @@ def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
   let mut env : Ixon.Env := {}
   for ⟨addr, const⟩ in rawEnv.consts do
     env := env.storeConst addr const
+  -- Load the full names table from Rust
+  for ⟨addr, name⟩ in rawEnv.names do
+    env := { env with names := env.names.insert addr name }
   for ⟨name, addr, constMeta⟩ in rawEnv.named do
+    env := { env with names := Ixon.RawEnv.addNameComponents env.names name }
     env := env.registerName name ⟨addr, constMeta⟩
   for ⟨addr, bytes⟩ in rawEnv.blobs do
     env := { env with blobs := env.blobs.insert addr bytes }
