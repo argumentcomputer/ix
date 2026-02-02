@@ -23,7 +23,7 @@ use super::address::build_address;
 /// Uses caching to avoid rebuilding the same name.
 pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> *mut c_void {
   let hash = name.get_hash();
-  if let Some(&cached) = cache.names.get(&hash) {
+  if let Some(&cached) = cache.names.get(hash) {
     unsafe { lean_inc(cached) };
     return cached;
   }
@@ -59,7 +59,7 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> *mut c_void {
     }
   };
 
-  cache.names.insert(hash, result);
+  cache.names.insert(*hash, result);
   result
 }
 

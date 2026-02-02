@@ -168,7 +168,7 @@ pub fn store_nat(n: &Nat, stt: &CompileState) -> Address {
 /// String components are stored in blobs.
 pub fn compile_name(name: &Name, stt: &CompileState) -> Address {
   // Use the Name's internal hash as the address
-  let addr = Address::from_blake3_hash(name.get_hash());
+  let addr = Address::from_blake3_hash(*name.get_hash());
 
   // Check if already stored
   if stt.env.names.contains_key(&addr) {
