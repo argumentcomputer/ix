@@ -5,7 +5,7 @@
 use std::ffi::c_void;
 
 use crate::ix::address::Address;
-use crate::ix::env::{BinderInfo, ReducibilityHints};
+use crate::ix::env::BinderInfo;
 use crate::ix::ixon::Comm;
 use crate::ix::ixon::env::Named;
 use crate::ix::ixon::metadata::{
@@ -160,7 +160,7 @@ fn decode_kvmap_array(ptr: *const c_void) -> Vec<KVMap> {
 /// Decode Array Address.
 fn decode_address_array(ptr: *const c_void) -> Vec<Address> {
   let arr: &LeanArrayObject = as_ref_unsafe(ptr.cast());
-  arr.to_vec(|a| decode_ixon_address(a))
+  arr.to_vec(decode_ixon_address)
 }
 
 /// Build Array UInt64.
@@ -178,7 +178,7 @@ fn build_u64_array(vals: &[u64]) -> *mut c_void {
 /// Decode Array UInt64.
 fn decode_u64_array(ptr: *const c_void) -> Vec<u64> {
   let arr: &LeanArrayObject = as_ref_unsafe(ptr.cast());
-  arr.to_vec(|elem| crate::lean::lean_unbox_u64(elem))
+  arr.to_vec(crate::lean::lean_unbox_u64)
 }
 
 // =============================================================================
@@ -214,9 +214,9 @@ pub fn build_expr_meta_data(node: &ExprMetaData) -> *mut c_void {
         // Lean ABI sorts scalars by size descending: [tyChild: u64 @ 0] [bodyChild: u64 @ 8] [info: u8 @ 16]
         let obj = lean_alloc_ctor(2, 1, 17);
         lean_ctor_set(obj, 0, build_address_from_ixon(name));
-        lean_ctor_set_uint64(obj, 1 * 8, children[0]);
-        lean_ctor_set_uint64(obj, 1 * 8 + 8, children[1]);
-        lean_ctor_set_uint8(obj, 1 * 8 + 16, binder_info_to_u8(info));
+        lean_ctor_set_uint64(obj, 8, children[0]);
+        lean_ctor_set_uint64(obj, 8 + 8, children[1]);
+        lean_ctor_set_uint8(obj, 8 + 16, binder_info_to_u8(info));
         obj
       }
 
@@ -224,9 +224,9 @@ pub fn build_expr_meta_data(node: &ExprMetaData) -> *mut c_void {
         // Tag 3, 1 obj field (name), 24 scalar bytes (3× u64)
         let obj = lean_alloc_ctor(3, 1, 24);
         lean_ctor_set(obj, 0, build_address_from_ixon(name));
-        lean_ctor_set_uint64(obj, 1 * 8, children[0]);
-        lean_ctor_set_uint64(obj, 1 * 8 + 8, children[1]);
-        lean_ctor_set_uint64(obj, 1 * 8 + 16, children[2]);
+        lean_ctor_set_uint64(obj, 8, children[0]);
+        lean_ctor_set_uint64(obj, 8 + 8, children[1]);
+        lean_ctor_set_uint64(obj, 8 + 16, children[2]);
         obj
       }
 
@@ -241,7 +241,7 @@ pub fn build_expr_meta_data(node: &ExprMetaData) -> *mut c_void {
         // Tag 5, 1 obj field (structName), 8 scalar bytes (1× u64)
         let obj = lean_alloc_ctor(5, 1, 8);
         lean_ctor_set(obj, 0, build_address_from_ixon(struct_name));
-        lean_ctor_set_uint64(obj, 1 * 8, *child);
+        lean_ctor_set_uint64(obj, 8, *child);
         obj
       }
 
@@ -250,7 +250,7 @@ pub fn build_expr_meta_data(node: &ExprMetaData) -> *mut c_void {
         let mdata_obj = build_kvmap_array(mdata);
         let obj = lean_alloc_ctor(6, 1, 8);
         lean_ctor_set(obj, 0, mdata_obj);
-        lean_ctor_set_uint64(obj, 1 * 8, *child);
+        lean_ctor_set_uint64(obj, 8, *child);
         obj
       }
     }

@@ -163,19 +163,6 @@ fn get_bool(buf: &mut &[u8]) -> Result<bool, String> {
   }
 }
 
-fn put_u32(x: u32, buf: &mut Vec<u8>) {
-  buf.extend_from_slice(&x.to_le_bytes());
-}
-
-fn get_u32(buf: &mut &[u8]) -> Result<u32, String> {
-  if buf.len() < 4 {
-    return Err("get_u32: need 4 bytes".to_string());
-  }
-  let (bytes, rest) = buf.split_at(4);
-  *buf = rest;
-  Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-}
-
 /// Serialize a raw 32-byte address (for blob addresses not in the name index).
 fn put_address_raw(addr: &Address, buf: &mut Vec<u8>) {
   buf.extend_from_slice(addr.as_bytes());
@@ -188,7 +175,7 @@ fn get_address_raw(buf: &mut &[u8]) -> Result<Address, String> {
   }
   let (bytes, rest) = buf.split_at(32);
   *buf = rest;
-  Address::from_slice(bytes).map_err(|_| "get_address_raw: invalid".to_string())
+  Address::from_slice(bytes).map_err(|_e| "get_address_raw: invalid".to_string())
 }
 
 fn put_u64(x: u64, buf: &mut Vec<u8>) {

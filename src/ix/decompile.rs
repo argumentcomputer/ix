@@ -450,8 +450,7 @@ pub fn decompile_expr(
     match frame {
       Frame::Decompile(e, idx) => {
         // Expand Share transparently with the SAME arena_idx
-        match e.as_ref() {
-          Expr::Share(share_idx) => {
+        if let Expr::Share(share_idx) = e.as_ref() {
             let shared_expr = cache
               .sharing
               .get(*share_idx as usize)
@@ -463,8 +462,6 @@ pub fn decompile_expr(
               .clone();
             stack.push(Frame::Decompile(shared_expr, idx));
             continue;
-          },
-          _ => {},
         }
 
         // Cache check: (Ixon pointer, arena index)
@@ -477,16 +474,11 @@ pub fn decompile_expr(
         // Follow Mdata chain in arena, collecting mdata layers
         let mut current_idx = idx;
         let mut mdata_layers: LeanMdata = Vec::new();
-        loop {
-          match arena.nodes.get(current_idx as usize).unwrap_or(&DEFAULT_NODE) {
-            ExprMetaData::Mdata { mdata, child } => {
+        while let ExprMetaData::Mdata { mdata, child } = arena.nodes.get(current_idx as usize).unwrap_or(&DEFAULT_NODE) {
               for kvm in mdata {
                 mdata_layers.push(decompile_kvmap(kvm, stt)?);
               }
               current_idx = *child;
-            },
-            _ => break,
-          }
         }
 
         let node = arena.nodes.get(current_idx as usize).unwrap_or(&DEFAULT_NODE);
@@ -584,8 +576,7 @@ pub fn decompile_expr(
                   .ctx
                   .iter()
                   .find(|(_, i)| i.to_u64() == Some(*rec_idx))
-                  .map(|(n, _)| n.clone())
-                  .unwrap_or_else(Name::anon)
+                  .map_or_else(Name::anon, |(n, _)| n.clone())
               });
             let levels = decompile_univ_indices(univ_indices, lvl_names, cache)?;
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);

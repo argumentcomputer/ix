@@ -9,7 +9,7 @@ use crate::lean::array::LeanArrayObject;
 use crate::lean::nat::Nat;
 use crate::lean::string::LeanStringObject;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_box_fn,
+  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core,
   lean_ctor_get, lean_ctor_set, lean_ctor_set_uint8, lean_is_scalar, lean_mk_string, lean_obj_tag,
 };
 

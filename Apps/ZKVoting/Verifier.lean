@@ -1,4 +1,3 @@
-import Ix.IxonOld
 import Ix.Prove
 
 def main (args : List String) : IO UInt32 := do

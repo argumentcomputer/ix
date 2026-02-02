@@ -42,10 +42,10 @@ pub fn build_hashmap_from_pairs(
 
     // Insert entries
     for (key_obj, val_obj, hash) in pairs {
-      let bucket_idx = (hash as usize) % bucket_count;
+      let bucket_idx = usize::try_from(hash).expect("hash overflows usize") % bucket_count;
 
       // Get current bucket (AssocList)
-      let buckets_arr = buckets as *mut crate::lean::array::LeanArrayObject;
+      let buckets_arr = buckets.cast::<LeanArrayObject>();
       let current_tail = (*buckets_arr).data()[bucket_idx];
 
       // cons (key : α) (value : β) (tail : AssocList α β) -- tag 1

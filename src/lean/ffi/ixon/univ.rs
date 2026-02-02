@@ -38,8 +38,8 @@ pub fn build_ixon_univ(univ: &IxonUniv) -> *mut c_void {
       }
       IxonUniv::Var(idx) => {
         let obj = lean_alloc_ctor(4, 0, 8);
-        let base = obj as *mut u8;
-        *(base.add(8) as *mut u64) = *idx;
+        let base = obj.cast::<u8>();
+        *base.add(8).cast::<u64>() = *idx;
         obj
       }
     }
@@ -93,8 +93,8 @@ pub fn decode_ixon_univ(ptr: *const c_void) -> IxonUniv {
       }
       4 => {
         // scalar field: UInt64 at offset 8 (after header)
-        let base = ptr as *const u8;
-        let idx = *(base.add(8) as *const u64);
+        let base = ptr.cast::<u8>();
+        let idx = *(base.add(8).cast::<u64>());
         IxonUniv::Var(idx)
       }
       _ => panic!("Invalid Ixon.Univ tag: {}", tag),
@@ -104,7 +104,7 @@ pub fn decode_ixon_univ(ptr: *const c_void) -> IxonUniv {
 
 /// Decode Array Ixon.Univ.
 pub fn decode_ixon_univ_array(ptr: *const c_void) -> Vec<Arc<IxonUniv>> {
-  let arr: &crate::lean::array::LeanArrayObject = unsafe { as_ref_unsafe(ptr.cast()) };
+  let arr: &crate::lean::array::LeanArrayObject = as_ref_unsafe(ptr.cast());
   arr.to_vec(|u| Arc::new(decode_ixon_univ(u)))
 }
 

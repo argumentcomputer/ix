@@ -337,7 +337,7 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let expr_ptr = lean_ctor_get(ptr as *mut _, 1);
 
         let data_obj: &LeanArrayObject = as_ref_unsafe(data_ptr.cast());
-        let data: Vec<(Name, crate::ix::env::DataValue)> = data_obj
+        let data: Vec<(Name, DataValue)> = data_obj
           .data()
           .iter()
           .map(|&p| decode_name_data_value(p))
@@ -386,7 +386,7 @@ pub fn decode_literal(ptr: *const c_void) -> Literal {
 }
 
 /// Decode a (Name × DataValue) pair for mdata.
-fn decode_name_data_value(ptr: *const c_void) -> (Name, crate::ix::env::DataValue) {
+fn decode_name_data_value(ptr: *const c_void) -> (Name, DataValue) {
   unsafe {
     // Prod: ctor 0 with 2 fields
     let name_ptr = lean_ctor_get(ptr as *mut _, 0);

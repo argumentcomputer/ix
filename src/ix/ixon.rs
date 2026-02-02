@@ -295,7 +295,7 @@ mod doc_examples {
   #[test]
   fn eval_claim_tag() {
     // EvalClaim -> Tag4 { flag: 0xF, size: 0 } -> 0xF0
-    let claim = proof::Claim::Evals(proof::EvalClaim {
+    let claim = Claim::Evals(EvalClaim {
       lvls: Address::hash(b"lvls"),
       typ: Address::hash(b"typ"),
       input: Address::hash(b"input"),
@@ -310,8 +310,8 @@ mod doc_examples {
   #[test]
   fn eval_proof_tag() {
     // EvalProof -> Tag4 { flag: 0xF, size: 1 } -> 0xF1
-    let proof = proof::Proof::new(
-      proof::Claim::Evals(proof::EvalClaim {
+    let proof = Proof::new(
+      Claim::Evals(EvalClaim {
         lvls: Address::hash(b"lvls"),
         typ: Address::hash(b"typ"),
         input: Address::hash(b"input"),
@@ -331,7 +331,7 @@ mod doc_examples {
   #[test]
   fn check_claim_tag() {
     // CheckClaim -> Tag4 { flag: 0xF, size: 2 } -> 0xF2
-    let claim = proof::Claim::Checks(proof::CheckClaim {
+    let claim = Claim::Checks(CheckClaim {
       lvls: Address::hash(b"lvls"),
       typ: Address::hash(b"typ"),
       value: Address::hash(b"value"),
@@ -345,8 +345,8 @@ mod doc_examples {
   #[test]
   fn check_proof_tag() {
     // CheckProof -> Tag4 { flag: 0xF, size: 3 } -> 0xF3
-    let proof = proof::Proof::new(
-      proof::Claim::Checks(proof::CheckClaim {
+    let proof = Proof::new(
+      Claim::Checks(CheckClaim {
         lvls: Address::hash(b"lvls"),
         typ: Address::hash(b"typ"),
         value: Address::hash(b"value"),
@@ -471,7 +471,7 @@ mod doc_examples {
   #[test]
   fn env_tag() {
     // Env -> Tag4 { flag: 0xE, size: VERSION=2 } -> 0xE2
-    let env = env::Env::new();
+    let env = Env::new();
     let mut buf = Vec::new();
     env.put(&mut buf);
     assert_eq!(buf[0], 0xE2, "Env should start with 0xE2 (flag=E, version=2)");

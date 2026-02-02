@@ -176,7 +176,7 @@ impl Proof {
     };
 
     // Proof bytes
-    let len = super::tag::Tag0::get(buf)?.size as usize;
+    let len = usize::try_from(super::tag::Tag0::get(buf)?.size).expect("Tag0 size overflows usize");
     if buf.len() < len {
       return Err(format!(
         "Proof::get: need {} bytes for proof data, have {}",
@@ -205,7 +205,7 @@ fn get_address(buf: &mut &[u8]) -> Result<Address, String> {
   }
   let (bytes, rest) = buf.split_at(32);
   *buf = rest;
-  Address::from_slice(bytes).map_err(|_| "get_address: invalid".to_string())
+  Address::from_slice(bytes).map_err(|_e| "get_address: invalid".to_string())
 }
 
 #[cfg(test)]
@@ -276,11 +276,13 @@ mod tests {
     }
   }
 
+  #[allow(clippy::needless_pass_by_value)]
   #[quickcheck]
   fn prop_claim_roundtrip(c: Claim) -> bool {
     claim_roundtrip(&c)
   }
 
+  #[allow(clippy::needless_pass_by_value)]
   #[quickcheck]
   fn prop_proof_roundtrip(p: Proof) -> bool {
     proof_roundtrip(&p)

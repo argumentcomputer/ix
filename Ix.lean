@@ -3,11 +3,9 @@
 import Ix.Environment
 import Ix.CanonM
 import Ix.Ixon
-import Ix.IxonOld
 import Ix.Sharing
 import Ix.Meta
 import Ix.GraphM
 import Ix.CondenseM
 import Ix.CompileM
-import Ix.DecompileMOld
 import Ix.Benchmark.Bench

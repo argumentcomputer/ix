@@ -1,7 +1,6 @@
 pub mod aiur;
 pub mod byte_array;
 pub mod iroh;
-pub mod ixon_legacy;
 pub mod keccak;
 pub mod lean_env;
 

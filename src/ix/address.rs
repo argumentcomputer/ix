@@ -49,16 +49,6 @@ pub struct MetaAddress {
   pub meta: Address,
 }
 
-//impl Display for MetaAddress {}
-
-// TODO: DELETEME
-//impl Default for MetaAddress {
-//  fn default() -> Self {
-//    let addr = Address { hash: [0; 32].into() };
-//    Self { data: addr.clone(), meta: addr }
-//  }
-//}
-
 #[cfg(test)]
 pub mod tests {
   use super::*;

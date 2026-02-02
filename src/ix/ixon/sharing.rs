@@ -268,21 +268,18 @@ pub fn analyze_block(
           ptr_to_hash.insert(ptr, hash);
 
           // Add to info_map if not already present (same content hash from different pointer)
-          if !info_map.contains_key(&hash) {
+          info_map.entry(hash).or_insert_with(|| {
             let base_size = compute_base_size(arc_expr.as_ref());
             let hash_consed_size =
               if track_hash_consed_size { 32 + value_size } else { 0 };
-            info_map.insert(
-              hash,
-              SubtermInfo {
-                base_size,
-                hash_consed_size,
-                usage_count: 0, // Will be computed in phase 2
-                expr: arc_expr.clone(),
-                children,
-              },
-            );
-          }
+            SubtermInfo {
+              base_size,
+              hash_consed_size,
+              usage_count: 0, // Will be computed in phase 2
+              expr: arc_expr.clone(),
+              children,
+            }
+          });
         },
       }
     }
@@ -299,10 +296,10 @@ pub fn analyze_block(
   // Count root contributions
   for root in exprs {
     let ptr = root.as_ref() as *const Expr;
-    if let Some(hash) = ptr_to_hash.get(&ptr) {
-      if let Some(info) = info_map.get_mut(hash) {
-        info.usage_count += 1;
-      }
+    if let Some(hash) = ptr_to_hash.get(&ptr)
+      && let Some(info) = info_map.get_mut(hash)
+    {
+      info.usage_count += 1;
     }
   }
 
@@ -331,7 +328,7 @@ pub fn analyze_block(
 /// Compute the hash of a single expression.
 /// This is useful for testing hash compatibility with Lean.
 pub fn hash_expr(expr: &Arc<Expr>) -> blake3::Hash {
-  let (_info_map, ptr_to_hash) = analyze_block(&[expr.clone()], false);
+  let (_info_map, ptr_to_hash) = analyze_block(std::slice::from_ref(expr), false);
   let ptr = expr.as_ref() as *const Expr;
   *ptr_to_hash.get(&ptr).expect("Expression not found in ptr_to_hash")
 }

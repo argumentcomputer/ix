@@ -3,16 +3,12 @@
 use std::collections::HashMap;
 use std::ffi::c_void;
 
-use crate::ix::compile::{compile_const, compile_env, compile_expr, BlockCache, CompileState};
+use crate::ix::compile::{compile_env, compile_expr, BlockCache, CompileState};
 use crate::ix::env::Name;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
-use crate::lean::array::LeanArrayObject;
 use crate::lean::sarray::LeanSArrayObject;
-use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
-  lean_ctor_set, lean_io_result_mk_ok, lean_obj_tag,
-};
+use crate::lean::{lean_alloc_ctor, lean_ctor_set};
 
 use super::super::lean_env::{lean_ptr_to_expr, lean_ptr_to_name, Cache as LeanCache, GlobalCache};
 
@@ -75,10 +71,10 @@ fn build_block_compare_result(
     } else {
       // mismatch
       let obj = lean_alloc_ctor(1, 0, 24);
-      let base = obj as *mut u8;
-      *(base.add(8) as *mut u64) = lean_size;
-      *(base.add(16) as *mut u64) = rust_size;
-      *(base.add(24) as *mut u64) = first_diff_offset;
+      let base = obj.cast::<u8>();
+      *base.add(8).cast::<u64>() = lean_size;
+      *base.add(16).cast::<u64>() = rust_size;
+      *base.add(24).cast::<u64>() = first_diff_offset;
       obj
     }
   }
@@ -93,16 +89,21 @@ fn build_block_compare_detail(
   unsafe {
     let obj = lean_alloc_ctor(0, 1, 16);
     lean_ctor_set(obj, 0, result);
-    let base = obj as *mut u8;
-    *(base.add(16) as *mut u64) = lean_sharing_len;
-    *(base.add(24) as *mut u64) = rust_sharing_len;
+    let base = obj.cast::<u8>();
+    *base.add(16).cast::<u64>() = lean_sharing_len;
+    *base.add(24).cast::<u64>() = rust_sharing_len;
     obj
   }
 }
 
 /// Compare a single block by lowlink name.
+///
+/// # Safety
+///
+/// `rust_env` must be a valid pointer to a `RustCompiledEnv`.
+/// `lowlink_name` must be a valid Lean object pointer.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compare_block_v2(
+pub unsafe extern "C" fn rs_compare_block_v2(
   rust_env: *const RustCompiledEnv,
   lowlink_name: *const c_void,
   lean_bytes: &LeanSArrayObject,
@@ -137,11 +138,13 @@ pub extern "C" fn rs_compare_block_v2(
     .iter()
     .zip(lean_data.iter())
     .position(|(a, b)| a != b)
-    .map(|i| i as u64)
-    .unwrap_or_else(|| {
-      // One is a prefix of the other
-      rust_bytes.len().min(lean_data.len()) as u64
-    });
+    .map_or_else(
+      || {
+        // One is a prefix of the other
+        rust_bytes.len().min(lean_data.len()) as u64
+      },
+      |i| i as u64,
+    );
 
   let result = build_block_compare_result(
     false,
@@ -154,8 +157,12 @@ pub extern "C" fn rs_compare_block_v2(
 }
 
 /// Free a RustCompiledEnv pointer.
+///
+/// # Safety
+///
+/// `ptr` must be a valid pointer returned by `rs_build_compiled_env`, or null.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_free_compiled_env(ptr: *mut RustCompiledEnv) {
+pub unsafe extern "C" fn rs_free_compiled_env(ptr: *mut RustCompiledEnv) {
   if !ptr.is_null() {
     unsafe {
       drop(Box::from_raw(ptr));

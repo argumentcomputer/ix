@@ -13,7 +13,7 @@
 use std::ffi::c_void;
 
 use crate::ix::env::{
-  AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DefinitionSafety, DefinitionVal,
+  AxiomVal, ConstantInfo, ConstantVal, ConstructorVal, DefinitionSafety, DefinitionVal,
   InductiveVal, Name, OpaqueVal, QuotKind, QuotVal, ReducibilityHints, RecursorRule, RecursorVal,
   TheoremVal,
 };
@@ -60,8 +60,8 @@ pub fn build_reducibility_hints(hints: &ReducibilityHints) -> *mut c_void {
         // UInt32 is a scalar, stored inline
         let obj = lean_alloc_ctor(2, 0, 4);
         // Set the uint32 at offset 0 in the scalar area
-        let ptr = obj as *mut u8;
-        *(ptr.add(8) as *mut u32) = *h;
+        let ptr = obj.cast::<u8>();
+        *(ptr.add(8).cast::<u32>()) = *h;
         obj
       }
     }
@@ -158,7 +158,7 @@ pub fn build_constant_info(cache: &mut LeanBuildCache, info: &ConstantInfo) -> *
 
         let quot_val = lean_alloc_ctor(0, 1, 1); // 1 obj field, 1 scalar byte
         lean_ctor_set(quot_val, 0, cnst_obj);
-        lean_ctor_set_uint8(quot_val, 1 * 8, kind_byte);
+        lean_ctor_set_uint8(quot_val, 8, kind_byte);
 
         let obj = lean_alloc_ctor(4, 1, 0);
         lean_ctor_set(obj, 0, quot_val);
@@ -314,8 +314,8 @@ pub fn decode_reducibility_hints(ptr: *const c_void) -> ReducibilityHints {
       1 => ReducibilityHints::Abbrev,
       2 => {
         // regular: 0 obj fields, 4 scalar bytes (UInt32)
-        let ctor_ptr = ptr as *const u8;
-        let h = *(ctor_ptr.add(8) as *const u32);
+        let ctor_ptr = ptr.cast::<u8>();
+        let h = *(ctor_ptr.add(8).cast::<u32>());
         ReducibilityHints::Regular(h)
       }
       _ => panic!("Invalid ReducibilityHints tag: {}", tag),

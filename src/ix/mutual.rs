@@ -3,7 +3,7 @@ use crate::{
     ConstructorVal, DefinitionSafety, DefinitionVal, Expr, InductiveVal, Name,
     OpaqueVal, RecursorVal, ReducibilityHints, TheoremVal,
   },
-  ix::ixon_old::DefKind,
+  ix::ixon::constant::DefKind,
   lean::nat::Nat,
 };
 

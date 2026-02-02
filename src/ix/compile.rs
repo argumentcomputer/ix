@@ -32,8 +32,8 @@ use crate::{
   ix::ixon::{
     CompileError, Tag0,
     constant::{
-      Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind,
-      Definition, DefinitionProj, Inductive, InductiveProj,
+      Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, Definition,
+      DefinitionProj, Inductive, InductiveProj,
       MutConst as IxonMutConst, Quotient, Recursor, RecursorProj, RecursorRule,
     },
     env::{Env as IxonEnv, Named},
@@ -1027,11 +1027,7 @@ fn compile_definition(
     ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
   let data = Definition {
-    kind: match def.kind {
-      crate::ix::ixon_old::DefKind::Definition => DefKind::Definition,
-      crate::ix::ixon_old::DefKind::Opaque => DefKind::Opaque,
-      crate::ix::ixon_old::DefKind::Theorem => DefKind::Theorem,
-    },
+    kind: def.kind,
     safety: def.safety,
     lvls: def.level_params.len() as u64,
     typ,
@@ -1939,7 +1935,7 @@ pub fn compile_const(
             crate::ix::ixon::serialize::put_expr(s, &mut sharing_bytes);
           }
           eprintln!("  sharing serialized: {} bytes", sharing_bytes.len());
-          if let crate::ix::ixon::constant::ConstantInfo::Defn(def) = &result.constant.info {
+          if let ConstantInfo::Defn(def) = &result.constant.info {
             let mut typ_bytes = Vec::new();
             crate::ix::ixon::serialize::put_expr(&def.typ, &mut typ_bytes);
             let mut val_bytes = Vec::new();
@@ -1992,7 +1988,7 @@ pub fn compile_const(
             crate::ix::ixon::serialize::put_expr(s, &mut sharing_bytes);
           }
           eprintln!("  sharing serialized: {} bytes", sharing_bytes.len());
-          if let crate::ix::ixon::constant::ConstantInfo::Defn(def) = &result.constant.info {
+          if let ConstantInfo::Defn(def) = &result.constant.info {
             let mut typ_bytes = Vec::new();
             crate::ix::ixon::serialize::put_expr(&def.typ, &mut typ_bytes);
             let mut val_bytes = Vec::new();
@@ -3065,7 +3061,7 @@ mod tests {
 
   #[test]
   fn test_definition_with_sharing() {
-    use crate::ix::ixon::constant::Definition;
+    use crate::ix::ixon::constant::{DefKind, Definition};
 
     // Create a definition where typ and value share structure
     let sort0 = Expr::sort(0);

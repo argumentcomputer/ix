@@ -28,6 +28,7 @@ pub fn build_nat(n: &Nat) -> *mut c_void {
   if let Some(val) = n.to_u64() {
     // For small values that fit in a boxed scalar (max value is usize::MAX >> 1)
     if val <= (usize::MAX >> 1) as u64 {
+      #[allow(clippy::cast_possible_truncation)]
       return lean_box_fn(val as usize);
     }
     // For larger u64 values, use lean_uint64_to_nat
@@ -35,7 +36,7 @@ pub fn build_nat(n: &Nat) -> *mut c_void {
   }
   // For values larger than u64, convert to limbs and use GMP
   let bytes = n.to_le_bytes();
-  let mut limbs: Vec<u64> = Vec::with_capacity((bytes.len() + 7) / 8);
+  let mut limbs: Vec<u64> = Vec::with_capacity(bytes.len().div_ceil(8));
   for chunk in bytes.chunks(8) {
     let mut arr = [0u8; 8];
     arr[..chunk.len()].copy_from_slice(chunk);
@@ -272,6 +273,7 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(raw_ptr: *const c_void) -> *
         arr[..len].copy_from_slice(&bytes[..len]);
         u64::from_le_bytes(arr)
       });
+      #[allow(clippy::cast_possible_truncation)]
       let bucket_idx = (k_u64 as usize) & (num_buckets - 1);
 
       let old_bucket = lean_array_get_core(new_buckets, bucket_idx) as *mut c_void;
@@ -296,7 +298,7 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(raw_ptr: *const c_void) -> *
 /// IMPORTANT: Single-field structures are unboxed in Lean 4!
 /// - HashMap has 1 field (inner : DHashMap)
 /// - DHashMap has 1 field (inner : Raw) - wf : Prop is erased
-/// So HashMap pointer points DIRECTLY to Raw!
+///   So HashMap pointer points DIRECTLY to Raw!
 ///
 /// Memory layout (after unboxing):
 /// - HashMap/DHashMap/Raw all share the same pointer
@@ -346,6 +348,7 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(map_ptr: *const c_void) -> *mut c
         u64::from_le_bytes(arr)
       });
       // Lean uses (hash & (buckets.size - 1)) for bucket index (power of 2)
+      #[allow(clippy::cast_possible_truncation)]
       let bucket_idx = (k_u64 as usize) & (num_buckets - 1);
 
       // Get current bucket AssocList
