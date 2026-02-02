@@ -1,26 +1,38 @@
+//! Content-addressed identifiers based on Blake3 hashing.
+//!
+//! [`Address`] wraps a 32-byte Blake3 digest and is used throughout the Ix
+//! pipeline to uniquely identify constants, blobs, and other data.
+//! [`MetaAddress`] pairs a data address with a metadata address.
+
 use blake3::Hash;
 use core::array::TryFromSliceError;
 use std::cmp::{Ordering, PartialOrd};
 use std::hash::{Hash as StdHash, Hasher};
 
+/// A 32-byte Blake3 content address.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Address {
   hash: Hash,
 }
 
 impl Address {
+  /// Constructs an address from a 32-byte slice.
   pub fn from_slice(input: &[u8]) -> Result<Self, TryFromSliceError> {
     Ok(Address { hash: Hash::from_slice(input)? })
   }
+  /// Wraps an existing Blake3 hash as an address.
   pub fn from_blake3_hash(hash: Hash) -> Self {
     Address { hash }
   }
+  /// Hashes arbitrary bytes with Blake3 and returns the resulting address.
   pub fn hash(input: &[u8]) -> Self {
     Address { hash: blake3::hash(input) }
   }
+  /// Returns the address as a lowercase hexadecimal string.
   pub fn hex(&self) -> String {
     self.hash.to_hex().as_str().to_owned()
   }
+  /// Returns the raw 32-byte digest.
   pub fn as_bytes(&self) -> &[u8; 32] {
     self.hash.as_bytes()
   }
@@ -43,9 +55,12 @@ impl StdHash for Address {
   }
 }
 
+/// A pair of content addresses: one for the data payload and one for its metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MetaAddress {
+  /// Address of the data content.
   pub data: Address,
+  /// Address of the associated metadata.
   pub meta: Address,
 }
 

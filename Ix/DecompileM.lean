@@ -1,5 +1,5 @@
 /-
-  DecompileV2: Decompilation from the new Ixon format to Lean.
+  DecompileM: Decompilation from the new Ixon format to Lean.
 
   This module decompiles the new Ixon format (with indirection tables and sharing)
   back to Lean expressions and constants. It's the inverse of CompileV2.
@@ -20,7 +20,7 @@ import Ix.Store
 import Ix.Mutual
 import Ix.CompileV2
 
-namespace Ix.DecompileV2
+namespace Ix.DecompileM
 
 open Ixon
 
@@ -396,4 +396,4 @@ def decompileAll (global : CompileV2.GlobalState)
 
   pure (.ok state)
 
-end Ix.DecompileV2
+end Ix.DecompileM

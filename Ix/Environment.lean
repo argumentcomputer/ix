@@ -55,6 +55,7 @@ def TAG_MDVAL : UInt8 := 0xF6
 
 /-! ## Name -/
 
+/-- Content-addressed hierarchical name. Mirrors `Lean.Name` but carries a Blake3 hash at each node for O(1) equality. -/
 inductive Name where
   | anonymous (hash : Address)
   | str (parent : Name) (s : String) (hash : Address)
@@ -63,6 +64,7 @@ inductive Name where
 
 namespace Name
 
+/-- Extract the Blake3 hash stored at the root of a `Name`. -/
 def getHash : Name → Address
   | anonymous h => h
   | str _ _ h => h
@@ -74,11 +76,13 @@ instance : BEq Name where
 instance : Hashable Name where
   hash n := hash n.getHash  -- Uses Address's Hashable (first 8 bytes as LE u64)
 
+/-- The anonymous (root) name with its canonical hash. -/
 def mkAnon : Name := .anonymous <| Address.blake3 (ByteArray.mk #[TAG_NANON])
 
 instance : Inhabited Name where
   default := mkAnon
 
+/-- Construct a string name component, hashing the tag, parent hash, and string bytes. -/
 def mkStr (pre: Name) (s: String): Name := Id.run <| do
   let mut h := Blake3.Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_NSTR])
@@ -86,6 +90,7 @@ def mkStr (pre: Name) (s: String): Name := Id.run <| do
   h := h.update s.toUTF8
   .str pre s ⟨(h.finalizeWithLength 32).val⟩
 
+/-- Construct a numeric name component, hashing the tag, parent hash, and little-endian nat bytes. -/
 def mkNat (pre: Name) (i: Nat): Name := Id.run <| do
   let mut h := Blake3.Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_NNUM])
@@ -114,6 +119,7 @@ instance : Ord Name where
 
 /-! ## Level -/
 
+/-- Content-addressed universe level. Mirrors `Lean.Level` with a Blake3 hash at each node. -/
 inductive Level where
   | zero (hash : Address)
   | succ (x : Level) (hash : Address)
@@ -125,6 +131,7 @@ inductive Level where
 
 namespace Level
 
+/-- Extract the Blake3 hash stored at the root of a `Level`. -/
 def getHash : Level → Address
   | zero h => h
   | succ _ h => h
@@ -180,6 +187,7 @@ end Level
 
 /-! ## Auxiliary types for MData -/
 
+/-- Ix-local integer type used within `MData` values (mirrors `Int` for serialization). -/
 inductive Int where
   | ofNat (n : Nat)
   | negSucc (n : Nat)
@@ -211,6 +219,7 @@ inductive Syntax where
       (preresolved : Array SyntaxPreresolved)
   deriving BEq, Repr, Inhabited, Nonempty
 
+/-- A metadata value carried in an `mdata` expression node. -/
 inductive DataValue where
   | ofString (s : String)
   | ofBool (b : Bool)
@@ -222,6 +231,8 @@ inductive DataValue where
 
 /-! ## Expr -/
 
+/-- Content-addressed expression. Mirrors `Lean.Expr` with a Blake3 hash at each node,
+    enabling O(1) structural equality and content-addressed storage. -/
 inductive Expr where
   | bvar (idx : Nat) (hash : Address)
   | fvar (name : Name) (hash : Address)
@@ -245,6 +256,7 @@ def binderInfoTag : Lean.BinderInfo → UInt8
   | .strictImplicit => 2
   | .instImplicit => 3
 
+/-- Extract the Blake3 hash stored at the root of an `Expr`. -/
 def getHash : Expr → Address
   | bvar _ h => h
   | fvar _ h => h
@@ -472,6 +484,7 @@ end Expr
 
 /-! ## Constant Types -/
 
+/-- Common fields shared by all constant declarations: name, universe parameters, and type. -/
 structure ConstantVal where
   name : Name
   levelParams : Array Name
@@ -548,6 +561,7 @@ structure RecursorVal where
   isUnsafe : Bool
   deriving Repr, BEq
 
+/-- Sum type of all Lean constant declarations (axioms, definitions, theorems, inductives, etc.). -/
 inductive ConstantInfo where
   | axiomInfo (v : AxiomVal)
   | defnInfo (v : DefinitionVal)
@@ -559,6 +573,7 @@ inductive ConstantInfo where
   | recInfo (v : RecursorVal)
   deriving Repr
 
+/-- Extract the `ConstantVal` common fields from any `ConstantInfo` variant. -/
 def ConstantInfo.getCnst : ConstantInfo → ConstantVal
   | .axiomInfo v => v.cnst
   | .defnInfo v => v.cnst
@@ -571,6 +586,7 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 
 /-! ## Environment -/
 
+/-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`. -/
 structure Environment where
   consts : HashMap Name ConstantInfo
 

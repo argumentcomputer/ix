@@ -1,3 +1,10 @@
+//! Groundedness checking for Lean environment constants.
+//!
+//! A constant is "grounded" if all its references resolve to known constants, all
+//! bound variables are in scope, and no metavariables remain. Ungroundedness
+//! propagates through the reference graph: if A references ungrounded B, then A
+//! is also ungrounded.
+
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
@@ -10,16 +17,27 @@ use crate::{
   lean::nat::Nat,
 };
 
+/// Reason a constant failed groundedness checking.
 #[derive(Debug)]
 pub enum GroundError<'a> {
+  /// A universe level parameter or metavariable is not in scope.
   Level(Level, Vec<Name>),
+  /// A referenced constant does not exist in the environment (or is itself ungrounded).
   Ref(Name),
+  /// An expression-level metavariable was encountered.
   MVar(Expr),
+  /// A free or out-of-scope bound variable was encountered.
   Var(Expr, usize),
+  /// An inductive type's constructor is missing or has the wrong kind.
   Indc(&'a InductiveVal, Option<&'a ConstantInfo>),
+  /// An invalid de Bruijn index.
   Idx(Nat),
 }
 
+/// Checks every constant in `env` for groundedness and returns a map of all ungrounded names.
+///
+/// First collects immediately ungrounded constants in parallel, then propagates
+/// ungroundedness transitively through `in_refs` (the reverse reference graph).
 pub fn ground_consts<'a>(
   env: &'a Env,
   in_refs: &RefMap,

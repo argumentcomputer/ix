@@ -1,9 +1,17 @@
+//! Builds a reference graph from a Lean environment.
+//!
+//! The graph tracks which constants reference which other constants, maintaining
+//! both forward (`out_refs`) and reverse (`in_refs`) edges. This is used to
+//! compute SCCs (strongly connected components) for mutual block detection.
+//! Construction is parallelized via rayon.
+
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
 use crate::ix::env::{ConstantInfo, Env, Expr, ExprData, Name};
 
+/// A set of [`Name`]s, used to represent the neighbors of a node in the reference graph.
 pub type NameSet = FxHashSet<Name>;
 
 /// Absorbs the elements of the smaller [`NameSet`] into the bigger one and returns
@@ -18,10 +26,10 @@ pub fn merge_name_sets(mut a: NameSet, mut b: NameSet) -> NameSet {
   }
 }
 
-/// A general-purpose map from names to name sets.
+/// Maps each [`Name`] to the set of [`Name`]s it is associated with.
 pub type RefMap = FxHashMap<Name, NameSet>;
 
-/// A reference graph of names.
+/// A bidirectional reference graph over [`Name`]s, storing both forward and reverse edges.
 /// ```ignored
 /// A ──> B ──> C <── D ──> E
 /// out_refs: [(A, [B]), (B, [C]), (C, []), (D, [C, E]), (E, [])]
@@ -35,6 +43,10 @@ pub struct RefGraph {
   pub in_refs: RefMap,
 }
 
+/// Builds a [`RefGraph`] from a Lean [`Env`] by collecting all constant references in parallel.
+///
+/// For each constant, extracts the set of names it references (from types, values, constructors,
+/// and recursor rules), then assembles both the forward and reverse edge maps.
 pub fn build_ref_graph(env: &Env) -> RefGraph {
   let mk_in_refs = |name: &Name, deps: &NameSet| -> RefMap {
     let mut in_refs = RefMap::from_iter([(name.clone(), NameSet::default())]);

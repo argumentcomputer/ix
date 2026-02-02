@@ -176,6 +176,18 @@ Ix consists of the following core components:
 
 - Build and test the Ix library with `lake build` and `lake test`
 
+### Testing
+
+**Lean tests:** `lake test` runs all primary test suites.
+
+- `lake test -- <suite>` runs a specific suite. Primary suites: `ffi`, `byte-array`, `ixon`, `canon`, `keccak`, `sharing`, `graph-unit`, `condense-unit`
+- `lake test -- --ignored` runs expensive test suites: `shard-map`, `rust-canon-roundtrip`, `serial-canon-roundtrip`, `parallel-canon-roundtrip`, `graph-cross`, `condense-cross`, `compile`
+- `lake test -- <ignored-suite>` runs a specific expensive suite by name
+- `lake test -- cli` runs CLI integration tests
+- `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
+
+**Rust tests:** `cargo test`
+
 - Run the Ix CLI with `lake exe ix`. Install the binary with `lake run install`
     - `ix store <lean-file>` will compile a lean program into the ix store as
       ixon data

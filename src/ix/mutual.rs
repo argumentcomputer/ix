@@ -1,3 +1,10 @@
+//! Types for representing mutual definition blocks in the compilation pipeline.
+//!
+//! Mutual blocks are groups of definitions that reference each other cyclically.
+//! [`MutCtx`] maps names to their indices within a mutual block, and the
+//! [`ctx_to_all`] / [`all_to_ctx`] functions convert between ordered name
+//! vectors and index maps.
+
 use crate::{
   ix::env::{
     ConstructorVal, DefinitionSafety, DefinitionVal, Expr, InductiveVal, Name,
@@ -9,19 +16,30 @@ use crate::{
 
 use rustc_hash::FxHashMap;
 
+/// A definition-like constant (definition, theorem, or opaque) unified into a
+/// single representation for mutual block processing.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Def {
+  /// Fully-qualified name of the definition.
   pub name: Name,
+  /// Universe-polymorphic level parameter names.
   pub level_params: Vec<Name>,
+  /// The type of the definition.
   pub typ: Expr,
+  /// The kind of definition (definition, theorem, or opaque).
   pub kind: DefKind,
+  /// The definition body.
   pub value: Expr,
+  /// Reducibility hints for the kernel.
   pub hints: ReducibilityHints,
+  /// Safety classification.
   pub safety: DefinitionSafety,
+  /// Names of all constants in the same mutual block.
   pub all: Vec<Name>,
 }
 
 impl Def {
+  /// Constructs a `Def` from a [`DefinitionVal`].
   pub fn mk_defn(val: &DefinitionVal) -> Self {
     let DefinitionVal { cnst, value, hints, safety, all } = val;
     Self {
@@ -35,6 +53,7 @@ impl Def {
       all: all.clone(),
     }
   }
+  /// Constructs a `Def` from a [`TheoremVal`].
   pub fn mk_theo(val: &TheoremVal) -> Self {
     let TheoremVal { cnst, value, all } = val;
     Self {
@@ -48,6 +67,7 @@ impl Def {
       all: all.clone(),
     }
   }
+  /// Constructs a `Def` from an [`OpaqueVal`].
   pub fn mk_opaq(val: &OpaqueVal) -> Self {
     let OpaqueVal { cnst, value, is_unsafe, all } = val;
     Self {
@@ -67,21 +87,30 @@ impl Def {
   }
 }
 
+/// An inductive type bundled with its constructors for mutual block processing.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Ind {
+  /// The inductive type declaration.
   pub ind: InductiveVal,
+  /// The constructors belonging to this inductive type.
   pub ctors: Vec<ConstructorVal>,
 }
 
+/// Type alias for a recursor value within a mutual block.
 pub type Rec = RecursorVal;
 
+/// A constant within a mutual definition block.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum MutConst {
+  /// A definition, theorem, or opaque constant.
   Defn(Def),
+  /// An inductive type with its constructors.
   Indc(Ind),
+  /// A recursor (eliminator).
   Recr(Rec),
 }
 
+/// Maps names to their index within a mutual block.
 pub type MutCtx = FxHashMap<Name, Nat>;
 
 /// Convert a MutCtx to a Vec<Name> ordered by index.
@@ -108,6 +137,7 @@ pub fn all_to_ctx(all: &[Name]) -> MutCtx {
 }
 
 impl MutConst {
+  /// Returns the name of this mutual constant.
   pub fn name(&self) -> Name {
     match self {
       Self::Defn(x) => x.name.clone(),
@@ -116,12 +146,15 @@ impl MutConst {
     }
   }
 
+  /// Returns the constructors if this is an inductive, or an empty vec otherwise.
   pub fn ctors(&self) -> Vec<ConstructorVal> {
     match self {
       Self::Indc(ind) => ind.ctors.clone(),
       _ => vec![],
     }
   }
+  /// Returns `true` if this mutual constant contains the given name
+  /// (including constructor names for inductives).
   pub fn contains(&self, name: &Name) -> bool {
     match self {
       Self::Defn(x) => x.name == *name,
@@ -131,12 +164,15 @@ impl MutConst {
       },
     }
   }
+  /// Creates a [`MutCtx`] with a single name at index 0.
   pub fn single_ctx(name: Name) -> MutCtx {
     let mut mut_ctx = FxHashMap::default();
     mut_ctx.insert(name, Nat(0u64.into()));
     mut_ctx
   }
 
+  /// Builds a [`MutCtx`] from grouped mutual constant classes, assigning
+  /// indices to types first and then to constructors.
   pub fn ctx(classes: &[Vec<&MutConst>]) -> MutCtx {
     let mut mut_ctx = FxHashMap::default();
     let mut i = classes.len();
