@@ -1,6 +1,7 @@
 import Ix.Aiur.Meta
 import Ix.IxVM.ByteStream
 import Ix.IxVM.Blake3
+import Ix.IxVM.Poseidon2
 import Ix.IxVM.Ixon
 import Ix.IxVM.IxonSerialize
 import Ix.IxVM.IxonDeserialize
@@ -48,10 +49,23 @@ def entrypoints := ⟦
       _ => blake3_bench(num_hashes_pred),
     }
   }
+
+  fn poseidon2_bench(num_hashes: G) -> G {
+    let num_hashes_pred = num_hashes - 1;
+    let key = [num_hashes_pred];
+    let (idx, len) = io_get_info(key);
+    let byte_stream = read_byte_stream(idx, len);
+    let _x = poseidon2(byte_stream);
+    match num_hashes_pred {
+      0 => 0,
+      _ => poseidon2_bench(num_hashes_pred),
+    }
+  }
 ⟧
 
 def ixVM : Except Aiur.Global Aiur.Toplevel := do
   let vm ← byteStream.merge blake3
+  let vm ← vm.merge poseidon2
   let vm ← vm.merge ixon
   let vm ← vm.merge ixonSerialize
   let vm ← vm.merge ixonDeserialize
