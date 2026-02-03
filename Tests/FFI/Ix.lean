@@ -10,6 +10,7 @@ import Tests.Gen.Ixon
 import Ix.Environment
 import Ix.Address
 import Ix.CompileM
+import Ix.DecompileM
 import Ix.Ixon
 import Tests.FFI.Ixon
 
@@ -239,12 +240,61 @@ def rustCondensedBlocksTests : TestSeq :=
   test "RustCondensedBlocks empty" (rustCondensedBlocksEq (roundtripRustCondensedBlocks empty) empty) ++
   test "RustCondensedBlocks with data" (rustCondensedBlocksEq (roundtripRustCondensedBlocks withData) withData)
 
+/-! ## SerializeError, DecompileError, and CompileError roundtrip FFI -/
+
+@[extern "rs_roundtrip_serialize_error"]
+opaque roundtripSerializeError : @& Ixon.SerializeError → Ixon.SerializeError
+
+@[extern "rs_roundtrip_decompile_error"]
+opaque roundtripDecompileError : @& Ix.DecompileM.DecompileError → Ix.DecompileM.DecompileError
+
+@[extern "rs_roundtrip_compile_error"]
+opaque roundtripCompileError : @& Ix.CompileM.CompileError → Ix.CompileM.CompileError
+
+def serializeErrorTests : TestSeq :=
+  test "SerializeError.unexpectedEof" (roundtripSerializeError (.unexpectedEof "u64") == .unexpectedEof "u64") ++
+  test "SerializeError.invalidTag" (roundtripSerializeError (.invalidTag 0xFF "expr") == .invalidTag 0xFF "expr") ++
+  test "SerializeError.invalidFlag" (roundtripSerializeError (.invalidFlag 3 "univ") == .invalidFlag 3 "univ") ++
+  test "SerializeError.invalidVariant" (roundtripSerializeError (.invalidVariant 99 "const") == .invalidVariant 99 "const") ++
+  test "SerializeError.invalidBool" (roundtripSerializeError (.invalidBool 2) == .invalidBool 2) ++
+  test "SerializeError.addressError" (roundtripSerializeError .addressError == .addressError) ++
+  test "SerializeError.invalidShareIndex" (roundtripSerializeError (.invalidShareIndex 5 10) == .invalidShareIndex 5 10)
+
+def decompileErrorTests : TestSeq :=
+  let addr := Address.blake3 (ByteArray.mk #[1, 2, 3])
+  let se := Ixon.SerializeError.unexpectedEof "test"
+  test "DecompileError.invalidRefIndex" (roundtripDecompileError (.invalidRefIndex 5 10 "test") == .invalidRefIndex 5 10 "test") ++
+  test "DecompileError.invalidUnivIndex" (roundtripDecompileError (.invalidUnivIndex 3 7 "foo") == .invalidUnivIndex 3 7 "foo") ++
+  test "DecompileError.invalidShareIndex" (roundtripDecompileError (.invalidShareIndex 2 5 "bar") == .invalidShareIndex 2 5 "bar") ++
+  test "DecompileError.invalidRecIndex" (roundtripDecompileError (.invalidRecIndex 1 4 "baz") == .invalidRecIndex 1 4 "baz") ++
+  test "DecompileError.invalidUnivVarIndex" (roundtripDecompileError (.invalidUnivVarIndex 8 3 "qux") == .invalidUnivVarIndex 8 3 "qux") ++
+  test "DecompileError.missingAddress" (roundtripDecompileError (.missingAddress addr) == .missingAddress addr) ++
+  test "DecompileError.missingMetadata" (roundtripDecompileError (.missingMetadata addr) == .missingMetadata addr) ++
+  test "DecompileError.blobNotFound" (roundtripDecompileError (.blobNotFound addr) == .blobNotFound addr) ++
+  test "DecompileError.badBlobFormat" (roundtripDecompileError (.badBlobFormat addr "UTF-8") == .badBlobFormat addr "UTF-8") ++
+  test "DecompileError.badConstantFormat" (roundtripDecompileError (.badConstantFormat "bad") == .badConstantFormat "bad") ++
+  test "DecompileError.serializeError" (roundtripDecompileError (.serializeError se) == .serializeError se)
+
+def compileErrorTests : TestSeq :=
+  let addr := Address.blake3 (ByteArray.mk #[4, 5, 6])
+  let se := Ixon.SerializeError.addressError
+  test "CompileError.missingConstant" (roundtripCompileError (.missingConstant "Nat.add") == .missingConstant "Nat.add") ++
+  test "CompileError.missingAddress" (roundtripCompileError (.missingAddress addr) == .missingAddress addr) ++
+  test "CompileError.invalidMutualBlock" (roundtripCompileError (.invalidMutualBlock "empty") == .invalidMutualBlock "empty") ++
+  test "CompileError.unsupportedExpr" (roundtripCompileError (.unsupportedExpr "mvar") == .unsupportedExpr "mvar") ++
+  test "CompileError.unknownUnivParam" (roundtripCompileError (.unknownUnivParam "Nat" "u") == .unknownUnivParam "Nat" "u") ++
+  test "CompileError.serializeError" (roundtripCompileError (.serializeError se) == .serializeError se)
+
 /-! ## Test Suite -/
 
 def suite : List TestSeq := [
   -- Block comparison types
   blockCompareResultTests,
   blockCompareDetailTests,
+  -- Error type roundtrips
+  serializeErrorTests,
+  decompileErrorTests,
+  compileErrorTests,
   -- Environment unit tests
   ixRawEnvironmentTests,
   rustCondensedBlocksTests,
@@ -265,6 +315,10 @@ def suite : List TestSeq := [
   -- Composite types
   checkIO "RustCondensedBlocks roundtrip" (∀ cb : Ix.RustCondensedBlocks, rustCondensedBlocksEq (roundtripRustCondensedBlocks cb) cb),
   checkIO "RustCompilePhases roundtrip" (∀ p : Ix.CompileM.RustCompilePhases, rustCompilePhasesEq (roundtripRustCompilePhases p) p),
+  -- Error type property tests
+  checkIO "SerializeError roundtrip" (∀ e : Ixon.SerializeError, roundtripSerializeError e == e),
+  checkIO "DecompileError roundtrip" (∀ e : Ix.DecompileM.DecompileError, roundtripDecompileError e == e),
+  checkIO "CompileError roundtrip" (∀ e : Ix.CompileM.CompileError, roundtripCompileError e == e),
 ]
 
 end Tests.FFI.Ix

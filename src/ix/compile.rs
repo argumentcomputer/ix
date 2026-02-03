@@ -146,7 +146,7 @@ impl CompileState {
 
 /// Convert a Nat to u64, returning an error if the value is too large.
 fn nat_to_u64(n: &Nat, context: &'static str) -> Result<u64, CompileError> {
-  n.to_u64().ok_or(CompileError::UnsupportedExpr { desc: context })
+  n.to_u64().ok_or(CompileError::UnsupportedExpr { desc: context.into() })
 }
 
 // ===========================================================================
@@ -227,11 +227,11 @@ pub fn compile_univ(
       let idx = univ_params
         .iter()
         .position(|n| n == name)
-        .ok_or_else(|| CompileError::MissingConstant { name: name.pretty() })?;
+        .ok_or_else(|| CompileError::UnknownUnivParam { curr: String::new(), param: name.pretty() })?;
       Univ::var(idx as u64)
     },
     LevelData::Mvar(_name, _) => {
-      return Err(CompileError::UnsupportedExpr { desc: "level metavariable" });
+      return Err(CompileError::UnsupportedExpr { desc: "level metavariable".into() });
     },
   };
 
@@ -424,12 +424,12 @@ pub fn compile_expr(
 
           ExprData::Fvar(..) => {
             return Err(CompileError::UnsupportedExpr {
-              desc: "free variable",
+              desc: "free variable".into(),
             });
           },
 
           ExprData::Mvar(..) => {
-            return Err(CompileError::UnsupportedExpr { desc: "metavariable" });
+            return Err(CompileError::UnsupportedExpr { desc: "metavariable".into() });
           },
         }
       },
@@ -516,7 +516,7 @@ pub fn compile_expr(
     }
   }
 
-  results.pop().ok_or(CompileError::UnsupportedExpr { desc: "empty result" })
+  results.pop().ok_or(CompileError::UnsupportedExpr { desc: "empty result".into() })
 }
 
 /// Compile a Lean DataValue to Ixon DataValue.
@@ -1363,7 +1363,7 @@ pub fn compare_level(
   match (x.as_data(), y.as_data()) {
     (LevelData::Mvar(..), _) | (_, LevelData::Mvar(..)) => {
       Err(CompileError::UnsupportedExpr {
-        desc: "level metavariable in comparison",
+        desc: "level metavariable in comparison".into(),
       })
     },
     (LevelData::Zero(_), LevelData::Zero(_)) => Ok(SOrd::eq(true)),
@@ -1411,10 +1411,10 @@ pub fn compare_expr(
 ) -> Result<SOrd, CompileError> {
   match (x.as_data(), y.as_data()) {
     (ExprData::Mvar(..), _) | (_, ExprData::Mvar(..)) => {
-      Err(CompileError::UnsupportedExpr { desc: "metavariable in comparison" })
+      Err(CompileError::UnsupportedExpr { desc: "metavariable in comparison".into() })
     },
     (ExprData::Fvar(..), _) | (_, ExprData::Fvar(..)) => {
-      Err(CompileError::UnsupportedExpr { desc: "fvar in comparison" })
+      Err(CompileError::UnsupportedExpr { desc: "fvar in comparison".into() })
     },
     (ExprData::Mdata(_, x, _), ExprData::Mdata(_, y, _)) => {
       compare_expr(x, y, mut_ctx, x_lvls, y_lvls, stt)
@@ -1863,7 +1863,7 @@ pub fn sort_consts<'a>(
       match class.len() {
         0 => {
           return Err(CompileError::InvalidMutualBlock {
-            reason: "empty class",
+            reason: "empty class".into(),
           });
         },
         1 => {
@@ -2322,7 +2322,7 @@ pub fn compile_env(
       println!("Ungrounded {:?}: {:?}", n, e);
     }
     return Err(CompileError::InvalidMutualBlock {
-      reason: "ungrounded environment",
+      reason: "ungrounded environment".into(),
     });
   }
   println!("Ground: {:.2}s", start_ground.elapsed().unwrap().as_secs_f32());
@@ -2347,7 +2347,7 @@ pub fn compile_env(
   for (lo, all) in &condensed.blocks {
     let deps =
       condensed.block_refs.get(lo).ok_or(CompileError::InvalidMutualBlock {
-        reason: "missing block refs",
+        reason: "missing block refs".into(),
       })?;
 
     block_info.insert(lo.clone(), (all.clone(), AtomicUsize::new(deps.len())));
@@ -2531,7 +2531,7 @@ pub fn compile_env(
       }
     }
     return Err(CompileError::InvalidMutualBlock {
-      reason: "circular dependency or missing constant",
+      reason: "circular dependency or missing constant".into(),
     });
   }
 

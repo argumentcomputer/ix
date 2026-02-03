@@ -48,17 +48,21 @@ impl std::fmt::Display for SerializeError {
 impl std::error::Error for SerializeError {}
 
 /// Errors during compilation (Lean → Ixon).
+///
+/// Variant order matches Lean constructor tags (0–5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompileError {
-  /// Referenced constant not found
+  /// Referenced constant not found (tag 0)
   MissingConstant { name: String },
-  /// Address not found in store
+  /// Address not found in store (tag 1)
   MissingAddress(Address),
-  /// Invalid mutual block structure
-  InvalidMutualBlock { reason: &'static str },
-  /// Unsupported expression variant
-  UnsupportedExpr { desc: &'static str },
-  /// Serialization error during compilation
+  /// Invalid mutual block structure (tag 2)
+  InvalidMutualBlock { reason: String },
+  /// Unsupported expression variant (tag 3)
+  UnsupportedExpr { desc: String },
+  /// Unknown universe parameter (tag 4)
+  UnknownUnivParam { curr: String, param: String },
+  /// Serialization error during compilation (tag 5)
   Serialize(SerializeError),
 }
 
@@ -72,6 +76,9 @@ impl std::fmt::Display for CompileError {
       },
       Self::UnsupportedExpr { desc } => {
         write!(f, "unsupported expression: {desc}")
+      },
+      Self::UnknownUnivParam { curr, param } => {
+        write!(f, "unknown universe parameter: compiling {curr}, param {param}")
       },
       Self::Serialize(e) => write!(f, "serialization error: {e}"),
     }
@@ -94,34 +101,48 @@ impl From<SerializeError> for CompileError {
 }
 
 /// Errors during decompilation (Ixon → Lean).
+///
+/// Variant order matches Lean constructor tags (0–10).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecompileError {
-  /// Address not found in store
-  MissingAddress(Address),
-  /// Metadata not found for address
-  MissingMetadata(Address),
-  /// Invalid Share(idx) reference - sharing vector too small
-  InvalidShareIndex { idx: u64, max: usize, constant: String },
-  /// Invalid Rec(idx) reference - mutual context doesn't have this index
-  InvalidRecIndex { idx: u64, ctx_size: usize, constant: String },
-  /// Invalid Ref(idx) reference - refs table too small
+  /// Invalid Ref(idx) reference - refs table too small (tag 0)
   InvalidRefIndex { idx: u64, refs_len: usize, constant: String },
-  /// Invalid universe index - univs table too small
+  /// Invalid universe index - univs table too small (tag 1)
   InvalidUnivIndex { idx: u64, univs_len: usize, constant: String },
-  /// Invalid Univ::Var(idx) reference - level names too small
+  /// Invalid Share(idx) reference - sharing vector too small (tag 2)
+  InvalidShareIndex { idx: u64, max: usize, constant: String },
+  /// Invalid Rec(idx) reference - mutual context doesn't have this index (tag 3)
+  InvalidRecIndex { idx: u64, ctx_size: usize, constant: String },
+  /// Invalid Univ::Var(idx) reference - level names too small (tag 4)
   InvalidUnivVarIndex { idx: u64, max: usize, constant: String },
-  /// Missing name in metadata
-  MissingName { context: &'static str },
-  /// Serialization error during decompilation
+  /// Address not found in store (tag 5)
+  MissingAddress(Address),
+  /// Metadata not found for address (tag 6)
+  MissingMetadata(Address),
+  /// Blob not found at address (tag 7)
+  BlobNotFound(Address),
+  /// Bad blob format at address (tag 8)
+  BadBlobFormat { addr: Address, expected: String },
+  /// Bad constant format (tag 9)
+  BadConstantFormat { msg: String },
+  /// Serialization error during decompilation (tag 10)
   Serialize(SerializeError),
 }
 
 impl std::fmt::Display for DecompileError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::MissingAddress(addr) => write!(f, "missing address: {addr:?}"),
-      Self::MissingMetadata(addr) => {
-        write!(f, "missing metadata for: {addr:?}")
+      Self::InvalidRefIndex { idx, refs_len, constant } => {
+        write!(
+          f,
+          "invalid Ref({idx}) in '{constant}': refs table has {refs_len} entries"
+        )
+      },
+      Self::InvalidUnivIndex { idx, univs_len, constant } => {
+        write!(
+          f,
+          "invalid univ index {idx} in '{constant}': univs table has {univs_len} entries"
+        )
       },
       Self::InvalidShareIndex { idx, max, constant } => {
         write!(
@@ -135,26 +156,22 @@ impl std::fmt::Display for DecompileError {
           "invalid Rec({idx}) in '{constant}': mutual context has {ctx_size} entries"
         )
       },
-      Self::InvalidRefIndex { idx, refs_len, constant } => {
-        write!(
-          f,
-          "invalid Ref({idx}) in '{constant}': refs table has {refs_len} entries"
-        )
-      },
-      Self::InvalidUnivIndex { idx, univs_len, constant } => {
-        write!(
-          f,
-          "invalid univ index {idx} in '{constant}': univs table has {univs_len} entries"
-        )
-      },
       Self::InvalidUnivVarIndex { idx, max, constant } => {
         write!(
           f,
           "invalid Univ::Var({idx}) in '{constant}': only {max} level params"
         )
       },
-      Self::MissingName { context } => {
-        write!(f, "missing name in metadata: {context}")
+      Self::MissingAddress(addr) => write!(f, "missing address: {addr:?}"),
+      Self::MissingMetadata(addr) => {
+        write!(f, "missing metadata for: {addr:?}")
+      },
+      Self::BlobNotFound(addr) => write!(f, "blob not found at: {addr:?}"),
+      Self::BadBlobFormat { addr, expected } => {
+        write!(f, "bad blob format at {addr:?}, expected {expected}")
+      },
+      Self::BadConstantFormat { msg } => {
+        write!(f, "bad constant format: {msg}")
       },
       Self::Serialize(e) => write!(f, "serialization error: {e}"),
     }

@@ -7,13 +7,15 @@ use std::ffi::c_void;
 
 use crate::ix::address::Address;
 use crate::ix::env::Name;
+use crate::ix::ixon::comm::Comm;
 use crate::ix::ixon::constant::Constant as IxonConstant;
+use crate::ix::ixon::env::{Env as IxonEnv, Named as IxonNamed};
 use crate::ix::ixon::metadata::ConstantMeta;
 use crate::lean::array::LeanArrayObject;
 use crate::lean::sarray::LeanSArrayObject;
 use crate::lean::{
   as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray, lean_array_set_core,
-  lean_ctor_get, lean_ctor_set, lean_sarray_cptr,
+  lean_ctor_get, lean_ctor_set, lean_mk_string, lean_sarray_cptr,
 };
 
 use super::constant::{build_address_from_ixon, build_ixon_constant, decode_ixon_address, decode_ixon_constant};
@@ -323,6 +325,139 @@ pub fn build_raw_env(env: &DecodedRawEnv) -> *mut c_void {
     lean_ctor_set(obj, 3, comms_arr);
     lean_ctor_set(obj, 4, names_arr);
     obj
+  }
+}
+
+// =============================================================================
+// DecodedRawEnv ↔ IxonEnv Conversion Helpers
+// =============================================================================
+
+/// Reconstruct a Rust IxonEnv from a DecodedRawEnv.
+pub fn decoded_to_ixon_env(decoded: &DecodedRawEnv) -> IxonEnv {
+  let env = IxonEnv::new();
+  for rc in &decoded.consts {
+    env.store_const(rc.addr.clone(), rc.constant.clone());
+  }
+  for rn in &decoded.names {
+    env.store_name(rn.addr.clone(), rn.name.clone());
+  }
+  for rn in &decoded.named {
+    let named = IxonNamed::new(rn.addr.clone(), rn.const_meta.clone());
+    env.register_name(rn.name.clone(), named);
+  }
+  for rb in &decoded.blobs {
+    env.blobs.insert(rb.addr.clone(), rb.bytes.clone());
+  }
+  for rc in &decoded.comms {
+    let comm = Comm {
+      secret: rc.comm.secret.clone(),
+      payload: rc.comm.payload.clone(),
+    };
+    env.store_comm(rc.addr.clone(), comm);
+  }
+  env
+}
+
+/// Convert a Rust IxonEnv to a DecodedRawEnv.
+pub fn ixon_env_to_decoded(env: &IxonEnv) -> DecodedRawEnv {
+  let consts = env
+    .consts
+    .iter()
+    .map(|e| DecodedRawConst {
+      addr: e.key().clone(),
+      constant: e.value().clone(),
+    })
+    .collect();
+  let named = env
+    .named
+    .iter()
+    .map(|e| DecodedRawNamed {
+      name: e.key().clone(),
+      addr: e.value().addr.clone(),
+      const_meta: e.value().meta.clone(),
+    })
+    .collect();
+  let blobs = env
+    .blobs
+    .iter()
+    .map(|e| DecodedRawBlob {
+      addr: e.key().clone(),
+      bytes: e.value().clone(),
+    })
+    .collect();
+  let comms = env
+    .comms
+    .iter()
+    .map(|e| DecodedRawComm {
+      addr: e.key().clone(),
+      comm: DecodedComm {
+        secret: e.value().secret.clone(),
+        payload: e.value().payload.clone(),
+      },
+    })
+    .collect();
+  let names = env
+    .names
+    .iter()
+    .map(|e| DecodedRawNameEntry {
+      addr: e.key().clone(),
+      name: e.value().clone(),
+    })
+    .collect();
+  DecodedRawEnv { consts, named, blobs, comms, names }
+}
+
+// =============================================================================
+// rs_ser_env: Serialize an Ixon.RawEnv to bytes
+// =============================================================================
+
+/// FFI: Serialize an Ixon.RawEnv → ByteArray via Rust's Env.put. Pure.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_ser_env(raw_env_ptr: *const c_void) -> *mut c_void {
+  let decoded = decode_raw_env(raw_env_ptr);
+  let env = decoded_to_ixon_env(&decoded);
+  let mut buf = Vec::new();
+  env.put(&mut buf);
+
+  unsafe {
+    let ba = lean_alloc_sarray(1, buf.len(), buf.len());
+    std::ptr::copy_nonoverlapping(buf.as_ptr(), lean_sarray_cptr(ba), buf.len());
+    ba
+  }
+}
+
+// =============================================================================
+// rs_des_env: Deserialize bytes to an Ixon.RawEnv
+// =============================================================================
+
+/// FFI: Deserialize ByteArray → Except String Ixon.RawEnv via Rust's Env.get. Pure.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_des_env(bytes_ptr: *const c_void) -> *mut c_void {
+  let bytes_arr: &LeanSArrayObject = as_ref_unsafe(bytes_ptr.cast());
+  let data = bytes_arr.data();
+  let mut slice: &[u8] = data;
+  match IxonEnv::get(&mut slice) {
+    Ok(env) => {
+      let decoded = ixon_env_to_decoded(&env);
+      let raw_env = build_raw_env(&decoded);
+      // Except.ok (tag 1)
+      unsafe {
+        let obj = lean_alloc_ctor(1, 1, 0);
+        lean_ctor_set(obj, 0, raw_env);
+        obj
+      }
+    }
+    Err(e) => {
+      // Except.error (tag 0)
+      let msg = std::ffi::CString::new(format!("rs_des_env: {}", e))
+        .unwrap_or_else(|_| std::ffi::CString::new("rs_des_env: deserialization error").unwrap());
+      unsafe {
+        let lean_str = lean_mk_string(msg.as_ptr());
+        let obj = lean_alloc_ctor(0, 1, 0);
+        lean_ctor_set(obj, 0, lean_str);
+        obj
+      }
+    }
   }
 }
 

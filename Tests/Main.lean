@@ -4,6 +4,8 @@ import Tests.ByteArray
 import Tests.Ix.Ixon
 import Tests.Ix.Compile
 import Tests.Ix.Decompile
+import Tests.Ix.RustSerialize
+import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
@@ -45,6 +47,8 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("condense-cross", Tests.Ix.CondenseM.suiteIO),
   ("compile", Tests.Compile.compileSuiteIO),
   ("decompile", Tests.Decompile.decompileSuiteIO),
+  ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
+  ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   --("sharing-io", Tests.Sharing.suiteIO),
 ]
 

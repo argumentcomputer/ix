@@ -88,7 +88,7 @@ fn read_blob(
   addr: &Address,
   stt: &CompileState,
 ) -> Result<Vec<u8>, DecompileError> {
-  stt.env.get_blob(addr).ok_or(DecompileError::MissingAddress(addr.clone()))
+  stt.env.get_blob(addr).ok_or(DecompileError::BlobNotFound(addr.clone()))
 }
 
 /// Read a Nat from the blob store.
@@ -104,7 +104,7 @@ fn read_string(
 ) -> Result<String, DecompileError> {
   let bytes = read_blob(addr, stt)?;
   String::from_utf8(bytes)
-    .map_err(|_| DecompileError::MissingAddress(addr.clone()))
+    .map_err(|_| DecompileError::BadBlobFormat { addr: addr.clone(), expected: "UTF-8 string".into() })
 }
 
 /// Read a Constant from the const store.
@@ -154,12 +154,12 @@ fn decompile_data_value(
 /// Deserialize an Int from bytes (mirrors compile-side serialization).
 fn deserialize_int(bytes: &[u8]) -> Result<Int, DecompileError> {
   if bytes.is_empty() {
-    return Err(DecompileError::MissingName { context: "deserialize_int: empty" });
+    return Err(DecompileError::BadConstantFormat { msg: "deserialize_int: empty".into() });
   }
   match bytes[0] {
     0 => Ok(Int::OfNat(Nat::from_le_bytes(&bytes[1..]))),
     1 => Ok(Int::NegSucc(Nat::from_le_bytes(&bytes[1..]))),
-    _ => Err(DecompileError::MissingName { context: "deserialize_int: invalid tag" }),
+    _ => Err(DecompileError::BadConstantFormat { msg: "deserialize_int: invalid tag".into() }),
   }
 }
 
@@ -167,18 +167,18 @@ fn deserialize_int(bytes: &[u8]) -> Result<Int, DecompileError> {
 fn read_tag0(buf: &mut &[u8]) -> Result<u64, DecompileError> {
   Tag0::get(buf)
     .map(|t| t.size)
-    .map_err(|_| DecompileError::MissingName { context: "read_tag0: unexpected EOF" })
+    .map_err(|_| DecompileError::BadConstantFormat { msg: "read_tag0: unexpected EOF".into() })
 }
 
 /// Read exactly 32 bytes (Address) from a byte slice, advancing the cursor.
 fn read_addr_bytes(buf: &mut &[u8]) -> Result<Address, DecompileError> {
   if buf.len() < 32 {
-    return Err(DecompileError::MissingName { context: "read_addr: need 32 bytes" });
+    return Err(DecompileError::BadConstantFormat { msg: "read_addr: need 32 bytes".into() });
   }
   let (bytes, rest) = buf.split_at(32);
   *buf = rest;
   Address::from_slice(bytes)
-    .map_err(|_| DecompileError::MissingName { context: "read_addr: invalid" })
+    .map_err(|_| DecompileError::BadConstantFormat { msg: "read_addr: invalid".into() })
 }
 
 /// Deserialize a Substring from bytes.
@@ -199,7 +199,7 @@ fn deserialize_source_info(
   stt: &CompileState,
 ) -> Result<SourceInfo, DecompileError> {
   if buf.is_empty() {
-    return Err(DecompileError::MissingName { context: "source_info: empty" });
+    return Err(DecompileError::BadConstantFormat { msg: "source_info: empty".into() });
   }
   let tag = buf[0];
   *buf = &buf[1..];
@@ -215,14 +215,14 @@ fn deserialize_source_info(
       let start = Nat::from(read_tag0(buf)?);
       let end = Nat::from(read_tag0(buf)?);
       if buf.is_empty() {
-        return Err(DecompileError::MissingName { context: "source_info: missing canonical" });
+        return Err(DecompileError::BadConstantFormat { msg: "source_info: missing canonical".into() });
       }
       let canonical = buf[0] != 0;
       *buf = &buf[1..];
       Ok(SourceInfo::Synthetic(start, end, canonical))
     },
     2 => Ok(SourceInfo::None),
-    _ => Err(DecompileError::MissingName { context: "source_info: invalid tag" }),
+    _ => Err(DecompileError::BadConstantFormat { msg: "source_info: invalid tag".into() }),
   }
 }
 
@@ -232,7 +232,7 @@ fn deserialize_preresolved(
   stt: &CompileState,
 ) -> Result<SyntaxPreresolved, DecompileError> {
   if buf.is_empty() {
-    return Err(DecompileError::MissingName { context: "preresolved: empty" });
+    return Err(DecompileError::BadConstantFormat { msg: "preresolved: empty".into() });
   }
   let tag = buf[0];
   *buf = &buf[1..];
@@ -254,7 +254,7 @@ fn deserialize_preresolved(
       }
       Ok(SyntaxPreresolved::Decl(name, fields))
     },
-    _ => Err(DecompileError::MissingName { context: "preresolved: invalid tag" }),
+    _ => Err(DecompileError::BadConstantFormat { msg: "preresolved: invalid tag".into() }),
   }
 }
 
@@ -273,7 +273,7 @@ fn deserialize_syntax_inner(
   stt: &CompileState,
 ) -> Result<Syntax, DecompileError> {
   if buf.is_empty() {
-    return Err(DecompileError::MissingName { context: "syntax: empty" });
+    return Err(DecompileError::BadConstantFormat { msg: "syntax: empty".into() });
   }
   let tag = buf[0];
   *buf = &buf[1..];
@@ -308,7 +308,7 @@ fn deserialize_syntax_inner(
       }
       Ok(Syntax::Ident(info, raw_val, val, preresolved))
     },
-    _ => Err(DecompileError::MissingName { context: "syntax: invalid tag" }),
+    _ => Err(DecompileError::BadConstantFormat { msg: "syntax: invalid tag".into() }),
   }
 }
 
@@ -728,7 +728,7 @@ pub fn decompile_expr(
     }
   }
 
-  results.pop().ok_or(DecompileError::MissingName { context: "empty result" })
+  results.pop().ok_or(DecompileError::BadConstantFormat { msg: "empty result".into() })
 }
 
 /// Helper: decompile universe indices to Lean levels.
@@ -821,7 +821,7 @@ fn decompile_name_from_meta(
 ) -> Result<Name, DecompileError> {
   match get_name_addr_from_meta(meta) {
     Some(addr) => decompile_name(addr, stt),
-    None => Err(DecompileError::MissingName { context: "empty metadata" }),
+    None => Err(DecompileError::BadConstantFormat { msg: "empty metadata".into() }),
   }
 }
 

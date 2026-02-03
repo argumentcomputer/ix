@@ -117,24 +117,24 @@ structure BlockEnv where
 
 /-! ## Compilation Error -/
 
-/-- Compilation error type. -/
+/-- Compilation error type. Variant order matches Rust CompileError (tags 0–5). -/
 inductive CompileError where
-  | unknownConstant (curr unknown : Name)
-  | unknownUnivParam (curr : Name) (param : Name) (ctx : List Name)
-  | levelMetavariable (lvl : Level)
-  | exprMetavariable (e : Expr)
-  | exprFreeVariable (e : Expr)
-  | badMutualBlock (msg : String)
-  deriving Repr
+  | missingConstant (name : String)
+  | missingAddress (addr : Address)
+  | invalidMutualBlock (reason : String)
+  | unsupportedExpr (desc : String)
+  | unknownUnivParam (curr param : String)
+  | serializeError (err : Ixon.SerializeError)
+  deriving Repr, BEq
 
 instance : ToString CompileError where
   toString
-  | .unknownConstant curr unknown => s!"unknownConstant: compiling {curr}, missing {unknown}"
-  | .unknownUnivParam curr param ctx => s!"unknownUnivParam: compiling {curr}, param {param} not in {ctx}"
-  | .levelMetavariable _ => "levelMetavariable"
-  | .exprMetavariable _ => "exprMetavariable"
-  | .exprFreeVariable _ => "exprFreeVariable"
-  | .badMutualBlock msg => s!"badMutualBlock: {msg}"
+  | .missingConstant name => s!"missingConstant: {name}"
+  | .missingAddress addr => s!"missingAddress: {addr}"
+  | .invalidMutualBlock reason => s!"invalidMutualBlock: {reason}"
+  | .unsupportedExpr desc => s!"unsupportedExpr: {desc}"
+  | .unknownUnivParam curr param => s!"unknownUnivParam: compiling {curr}, param {param}"
+  | .serializeError err => s!"serializeError: {err}"
 
 abbrev CompileM := ReaderT (CompileEnv × BlockEnv) (ExceptT CompileError (StateT BlockState Id))
 
@@ -231,8 +231,8 @@ partial def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
     let ctx := (← getBlockEnv).univCtx
     match ctx.idxOf? name with
     | some i => pure (.var i.toUInt64)
-    | none => throw (.unknownUnivParam (← getBlockEnv).current name ctx)
-  | .mvar _ _ => throw (.levelMetavariable default)
+    | none => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{name}")
+  | .mvar _ _ => throw (.unsupportedExpr "level metavariable")
 
   -- Cache result
   modifyBlockState fun c => { c with univCache := c.univCache.insert lvl u }
@@ -260,18 +260,16 @@ def internRef (addr : Address) : CompileM UInt64 :=
 /-- Look up a constant's address from the global compile environment. -/
 def lookupConstAddr (name : Name) : CompileM Address := do
   let env ← getCompileEnv
-  let blockEnv ← getBlockEnv
   match env.nameToNamed.get? name with
   | some named => pure named.addr
-  | none => throw (.unknownConstant blockEnv.current name)
+  | none => throw (.missingConstant s!"{name}")
 
 /-- Find a constant in the Ix environment. -/
 def findConst (name : Name) : CompileM ConstantInfo := do
   let env ← getCompileEnv
-  let blockEnv ← getBlockEnv
   match env.env.consts.get? name with
   | some const => pure const
-  | none => throw (.unknownConstant blockEnv.current name)
+  | none => throw (.missingConstant s!"{name}")
 
 /-- Get the Expr for a constant's type. -/
 def getConstType (name : Name) : CompileM Expr := do
@@ -285,7 +283,7 @@ def getConstValue (name : Name) : CompileM Expr := do
   | .defnInfo v => pure v.value
   | .thmInfo v => pure v.value
   | .opaqueInfo v => pure v.value
-  | _ => throw (.badMutualBlock s!"Constant {name} has no value")
+  | _ => throw (.invalidMutualBlock s!"Constant {name} has no value")
 
 /-! ## DataValue and KVMap Compilation -/
 
@@ -537,8 +535,8 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
     pure (innerResult, root)
 
-  | .fvar _ _ => throw (.exprFreeVariable default)
-  | .mvar _ _ => throw (.exprMetavariable default)
+  | .fvar _ _ => throw (.unsupportedExpr "free variable")
+  | .mvar _ _ => throw (.unsupportedExpr "metavariable")
 
   -- Store in block-local cache
   modifyBlockState fun c => { c with exprCache := c.exprCache.insert e (result, root) }
@@ -550,8 +548,8 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
 /-- Compare two Ix levels for ordering. -/
 def compareLevel (xctx yctx : List Name)
     : Level → Level → CompileM SOrder
-  | x@(.mvar ..), _ => throw (.levelMetavariable x)
-  | _, y@(.mvar ..) => throw (.levelMetavariable y)
+  | .mvar .., _ => throw (.unsupportedExpr "level metavariable")
+  | _, .mvar .. => throw (.unsupportedExpr "level metavariable")
   | .zero _, .zero _ => pure ⟨true, .eq⟩
   | .zero _, _ => pure ⟨true, .lt⟩
   | _, .zero _ => pure ⟨true, .gt⟩
@@ -569,8 +567,8 @@ def compareLevel (xctx yctx : List Name)
   | .param x _, .param y _ => do
     match (xctx.idxOf? x), (yctx.idxOf? y) with
     | some xi, some yi => pure ⟨true, compare xi yi⟩
-    | none, _ => throw (.unknownUnivParam (← getBlockEnv).current x xctx)
-    | _, none => throw (.unknownUnivParam (← getBlockEnv).current y yctx)
+    | none, _ => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{x}")
+    | _, none => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{y}")
 
 /-! ## Expression Comparison -/
 
@@ -579,10 +577,10 @@ def compareLevel (xctx yctx : List Name)
 partial def compareExpr (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
     (x y : Expr) : CompileM SOrder := do
   match x, y with
-  | e@(.mvar ..), _ => throw (.exprMetavariable e)
-  | _, e@(.mvar ..) => throw (.exprMetavariable e)
-  | e@(.fvar ..), _ => throw (.exprFreeVariable e)
-  | _, e@(.fvar ..) => throw (.exprFreeVariable e)
+  | .mvar .., _ => throw (.unsupportedExpr "metavariable in comparison")
+  | _, .mvar .. => throw (.unsupportedExpr "metavariable in comparison")
+  | .fvar .., _ => throw (.unsupportedExpr "fvar in comparison")
+  | _, .fvar .. => throw (.unsupportedExpr "fvar in comparison")
   | .mdata _ x _, .mdata _ y _ => compareExpr ctx xlvls ylvls x y
   | .mdata _ x _, y => compareExpr ctx xlvls ylvls x y
   | x, .mdata _ y _ => compareExpr ctx xlvls ylvls x y
@@ -734,7 +732,7 @@ where
   getCtor (name : Name) : CompileM ConstructorVal := do
     match ← findConst name with
     | .ctorInfo c => pure c
-    | _ => throw (.badMutualBlock s!"Expected constructor: {name}")
+    | _ => throw (.invalidMutualBlock s!"Expected constructor: {name}")
 
 /-- Sort mutual constants into ordered equivalence classes.
     Uses partition refinement - starts assuming all equal,
@@ -746,7 +744,7 @@ where
     let ctx := MutConst.ctx cs
     let cs' ← cs.mapM fun ds =>
       match ds with
-      | [] => throw (.badMutualBlock "empty class in sortConsts")
+      | [] => throw (.invalidMutualBlock "empty class in sortConsts")
       | [d] => pure [[d]]
       | ds => ds.sortByM (compareConst ctx) >>= List.groupByM (eqConst ctx)
     let cs' := cs'.flatten.map (List.sortBy (compare ·.name ·.name))
@@ -1379,7 +1377,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
         let ctorConst ← findConst ctorName
         match ctorConst with
         | .ctorInfo c => ctorVals := ctorVals.push c
-        | _ => throw (.badMutualBlock s!"Expected constructor for {ctorName}")
+        | _ => throw (.invalidMutualBlock s!"Expected constructor for {ctorName}")
       -- Build mutCtx with all names in the inductive family
       let indMutCtx := buildInductiveMutCtx i ctorVals
       withMutCtx indMutCtx do
@@ -1413,7 +1411,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
           let ctorConst ← findConst ctorName
           match ctorConst with
           | .ctorInfo cv => ctorVals := ctorVals.push cv
-          | _ => throw (.badMutualBlock s!"Expected constructor")
+          | _ => throw (.invalidMutualBlock s!"Expected constructor")
         -- Build mutCtx with all names in the inductive family
         let indMutCtx := buildInductiveMutCtx i ctorVals
         withMutCtx indMutCtx do
@@ -1431,7 +1429,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
             let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
             projections := projections.push (ctorName, ctorProj, ctorMeta)
           pure ⟨block, .empty, projections⟩
-      | _ => throw (.badMutualBlock s!"Constructor has non-inductive parent")
+      | _ => throw (.invalidMutualBlock s!"Constructor has non-inductive parent")
 
 /-- Compile a constant by name (looks it up in the environment).
     Uses the block's `all` set from BlockEnv (populated from SCC analysis). -/
@@ -1931,21 +1929,8 @@ def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
   -- Convert RustCondensedBlocks to CondensedBlocks
   let condensed := raw.condensed.toCondensedBlocks
 
-  -- Convert RawEnv to Ixon.Env (reuse existing logic)
-  let mut compileEnv : Ixon.Env := {}
-  for ⟨addr, const⟩ in raw.compileEnv.consts do
-    compileEnv := compileEnv.storeConst addr const
-  -- Load the full names table from Rust (includes binder names, level params, etc.)
-  for ⟨addr, name⟩ in raw.compileEnv.names do
-    compileEnv := { compileEnv with names := compileEnv.names.insert addr name }
-  for ⟨name, addr, constMeta⟩ in raw.compileEnv.named do
-    -- Also add name components for indexed serialization
-    compileEnv := { compileEnv with names := Ixon.RawEnv.addNameComponents compileEnv.names name }
-    compileEnv := compileEnv.registerName name ⟨addr, constMeta⟩
-  for ⟨addr, bytes⟩ in raw.compileEnv.blobs do
-    compileEnv := { compileEnv with blobs := compileEnv.blobs.insert addr bytes }
-  for ⟨addr, comm⟩ in raw.compileEnv.comms do
-    compileEnv := compileEnv.storeComm addr comm
+  -- Convert RawEnv to Ixon.Env
+  let compileEnv := raw.compileEnv.toEnv
 
   pure { rawEnv, condensed, compileEnv }
 
@@ -1954,19 +1939,6 @@ def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
 def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
   let constList := leanEnv.constants.toList
   let rawEnv ← rsCompileEnvFFI constList
-  let mut env : Ixon.Env := {}
-  for ⟨addr, const⟩ in rawEnv.consts do
-    env := env.storeConst addr const
-  -- Load the full names table from Rust
-  for ⟨addr, name⟩ in rawEnv.names do
-    env := { env with names := env.names.insert addr name }
-  for ⟨name, addr, constMeta⟩ in rawEnv.named do
-    env := { env with names := Ixon.RawEnv.addNameComponents env.names name }
-    env := env.registerName name ⟨addr, constMeta⟩
-  for ⟨addr, bytes⟩ in rawEnv.blobs do
-    env := { env with blobs := env.blobs.insert addr bytes }
-  for ⟨addr, comm⟩ in rawEnv.comms do
-    env := env.storeComm addr comm
-  pure env
+  pure rawEnv.toEnv
 
 end Ix.CompileM

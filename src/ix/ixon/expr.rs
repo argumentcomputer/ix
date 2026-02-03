@@ -55,7 +55,6 @@ impl Expr {
   pub const FLAG_ALL: u8 = 0x9;
   pub const FLAG_LET: u8 = 0xA; // size=0 for dep, size=1 for non_dep
   pub const FLAG_SHARE: u8 = 0xB;
-  // Reserved: 0xC unused, 0xD for Constants, 0xE-0xF unused
 
   pub fn sort(univ_idx: u64) -> Arc<Self> {
     Arc::new(Expr::Sort(univ_idx))

@@ -38,6 +38,30 @@ def ser [Serialize α] (a : α) : ByteArray := runPut (Serialize.put a)
 def de [Serialize α] (bytes : ByteArray) : Except String α :=
   runGet Serialize.get bytes
 
+/-! ## Serialization Error Type -/
+
+/-- Serialization/deserialization error. Variant order matches Rust SerializeError (tags 0–6). -/
+inductive SerializeError where
+  | unexpectedEof (expected : String)
+  | invalidTag (tag : UInt8) (context : String)
+  | invalidFlag (flag : UInt8) (context : String)
+  | invalidVariant (variant : UInt64) (context : String)
+  | invalidBool (value : UInt8)
+  | addressError
+  | invalidShareIndex (idx : UInt64) (max : Nat)
+  deriving Repr, BEq
+
+def SerializeError.toString : SerializeError → String
+  | .unexpectedEof expected => s!"unexpected EOF, expected {expected}"
+  | .invalidTag tag context => s!"invalid tag 0x{tag.toNat.toDigits 16 |>.asString} in {context}"
+  | .invalidFlag flag context => s!"invalid flag {flag} in {context}"
+  | .invalidVariant variant context => s!"invalid variant {variant} in {context}"
+  | .invalidBool value => s!"invalid bool value {value}"
+  | .addressError => "address parsing error"
+  | .invalidShareIndex idx max => s!"invalid Share index {idx}, max is {max}"
+
+instance : ToString SerializeError := ⟨SerializeError.toString⟩
+
 /-! ## Primitive Serialization -/
 
 def putU8 (x : UInt8) : PutM Unit :=
@@ -1520,16 +1544,21 @@ partial def addNameComponentsWithBlobs
     This is done on the Lean side for correct hash function usage. -/
 def toEnv (raw : RawEnv) : Env := Id.run do
   let mut env : Env := {}
-  for rc in raw.consts do
-    env := { env with consts := env.consts.insert rc.addr rc.const }
-  for rn in raw.named do
-    -- Add all name components to the names map
-    env := { env with names := addNameComponents env.names rn.name }
-    env := env.registerName rn.name { addr := rn.addr, constMeta := rn.constMeta }
-  for rb in raw.blobs do
-    env := { env with blobs := env.blobs.insert rb.addr rb.bytes }
-  for rc in raw.comms do
-    env := { env with comms := env.comms.insert rc.addr rc.comm }
+  for ⟨addr, const⟩ in raw.consts do
+    env := env.storeConst addr const
+  -- Load the full names table (includes binder names, level params, etc.)
+  -- Use addNameComponents to store at canonical addresses (name.getHash)
+  -- and ensure all parent components are present for topological consistency.
+  for ⟨_, name⟩ in raw.names do
+    env := { env with names := addNameComponents env.names name }
+  for ⟨name, addr, constMeta⟩ in raw.named do
+    -- Also add name components for indexed serialization
+    env := { env with names := addNameComponents env.names name }
+    env := env.registerName name ⟨addr, constMeta⟩
+  for ⟨addr, bytes⟩ in raw.blobs do
+    env := { env with blobs := env.blobs.insert addr bytes }
+  for ⟨addr, comm⟩ in raw.comms do
+    env := env.storeComm addr comm
   return env
 
 end RawEnv
@@ -1539,13 +1568,13 @@ end RawEnv
 namespace Env
 
 /-- Convert Env with HashMaps to RawEnv with Arrays for FFI.
-    Note: The `names` and `addrToName` fields are not included in RawEnv
-    as they can be reconstructed from `named` entries. -/
-def toRaw (env : Env) : RawEnv := {
+    Includes the full names table for round-trip fidelity. -/
+def toRawEnv (env : Env) : RawEnv := {
   consts := env.consts.toArray.map fun (addr, const) => { addr, const }
   named := env.named.toArray.map fun (name, n) => { name, addr := n.addr, constMeta := n.constMeta }
   blobs := env.blobs.toArray.map fun (addr, bytes) => { addr, bytes }
   comms := env.comms.toArray.map fun (addr, comm) => { addr, comm }
+  names := env.names.toArray.map fun (addr, name) => { addr, name }
 }
 
 /-- Tag4 flag for Env (0xE). -/
@@ -1785,5 +1814,21 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat := Id.run do
       putComm comm
 
   (blobsBytes.size, constsBytes.size, namesBytes.size, namedBytes.size, commsBytes.size)
+
+/-! ## Rust FFI Serialization -/
+
+@[extern "rs_ser_env"]
+opaque rsSerEnvFFI : @& RawEnv → ByteArray
+
+/-- Serialize an Ixon.Env to bytes using Rust. -/
+def rsSerEnv (env : Env) : ByteArray :=
+  rsSerEnvFFI env.toRawEnv
+
+@[extern "rs_des_env"]
+opaque rsDesEnvFFI : @& ByteArray → Except String RawEnv
+
+/-- Deserialize bytes to an Ixon.Env using Rust. -/
+def rsDesEnv (bytes : ByteArray) : Except String Env :=
+  return (← rsDesEnvFFI bytes).toEnv
 
 end Ixon

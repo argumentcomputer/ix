@@ -202,6 +202,14 @@ lean_object *c_lean_io_result_mk_ok(lean_object *v) {
     return lean_io_result_mk_ok(v);
 }
 
+lean_object *c_lean_io_result_mk_error(lean_object *err) {
+    return lean_io_result_mk_error(err);
+}
+
+lean_object *c_lean_mk_io_user_error(lean_object *msg) {
+    return lean_mk_io_user_error(msg);
+}
+
 lean_object *c_lean_uint64_to_nat(uint64_t n) {
     return lean_uint64_to_nat(n);
 }

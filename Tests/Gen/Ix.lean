@@ -10,6 +10,7 @@ import Ix.Address
 import Ix.Environment
 import Ix.CondenseM
 import Ix.CompileM
+import Ix.DecompileM
 
 open LSpec SlimCheck Gen
 
@@ -580,5 +581,85 @@ instance : Shrinkable Ix.CompileM.RustCompilePhases where
     else [empty]
 
 instance : SampleableExt Ix.CompileM.RustCompilePhases := SampleableExt.mkSelfContained genRustCompilePhases
+
+/-! ## Generators for SerializeError, CompileError, and DecompileError -/
+
+instance : Inhabited Ixon.SerializeError where
+  default := .addressError
+
+instance : Inhabited Ix.DecompileM.DecompileError where
+  default := .badConstantFormat ""
+
+instance : Inhabited Ix.CompileM.CompileError where
+  default := .missingConstant ""
+
+/-- Generate a SerializeError with all variants -/
+def genSerializeError : Gen Ixon.SerializeError := do
+  let s ← genString
+  let byte ← Gen.choose Nat 0 255
+  let idx ← Gen.choose Nat 0 100
+  let len ← Gen.choose Nat 0 100
+  Gen.frequency #[
+    (1, pure (.unexpectedEof s)),
+    (1, pure (.invalidTag byte.toUInt8 s)),
+    (1, pure (.invalidFlag byte.toUInt8 s)),
+    (1, pure (.invalidVariant idx.toUInt64 s)),
+    (1, pure (.invalidBool byte.toUInt8)),
+    (1, pure .addressError),
+    (1, pure (.invalidShareIndex idx.toUInt64 len))
+  ] (pure default)
+
+instance : Shrinkable Ixon.SerializeError where
+  shrink _ := []
+
+instance : SampleableExt Ixon.SerializeError :=
+  SampleableExt.mkSelfContained genSerializeError
+
+/-- Generate a DecompileError with all variants -/
+def genDecompileError : Gen Ix.DecompileM.DecompileError := do
+  let addr ← genAddress
+  let idx ← Gen.choose Nat 0 100
+  let len ← Gen.choose Nat 0 100
+  let s ← genString
+  let se ← genSerializeError
+  Gen.frequency #[
+    (1, pure (.invalidRefIndex idx.toUInt64 len s)),
+    (1, pure (.invalidUnivIndex idx.toUInt64 len s)),
+    (1, pure (.invalidShareIndex idx.toUInt64 len s)),
+    (1, pure (.invalidRecIndex idx.toUInt64 len s)),
+    (1, pure (.invalidUnivVarIndex idx.toUInt64 len s)),
+    (1, pure (.missingAddress addr)),
+    (1, pure (.missingMetadata addr)),
+    (1, pure (.blobNotFound addr)),
+    (1, do let expected ← genString; pure (.badBlobFormat addr expected)),
+    (1, pure (.badConstantFormat s)),
+    (1, pure (.serializeError se))
+  ] (pure default)
+
+instance : Shrinkable Ix.DecompileM.DecompileError where
+  shrink _ := []
+
+instance : SampleableExt Ix.DecompileM.DecompileError :=
+  SampleableExt.mkSelfContained genDecompileError
+
+/-- Generate a CompileError with all variants -/
+def genCompileError : Gen Ix.CompileM.CompileError := do
+  let addr ← genAddress
+  let s ← genString
+  let se ← genSerializeError
+  Gen.frequency #[
+    (1, pure (.missingConstant s)),
+    (1, pure (.missingAddress addr)),
+    (1, pure (.invalidMutualBlock s)),
+    (1, pure (.unsupportedExpr s)),
+    (1, do let s2 ← genString; pure (.unknownUnivParam s s2)),
+    (1, pure (.serializeError se))
+  ] (pure default)
+
+instance : Shrinkable Ix.CompileM.CompileError where
+  shrink _ := []
+
+instance : SampleableExt Ix.CompileM.CompileError :=
+  SampleableExt.mkSelfContained genCompileError
 
 end Tests.Gen.Ix

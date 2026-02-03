@@ -34,27 +34,33 @@ def resolveIxName (names : Std.HashMap Address Ix.Name) (addr : Address) : Optio
 
 /-! ## Error Type -/
 
-/-- Decompilation error type. -/
+/-- Decompilation error type. Variant order matches Rust DecompileError (tags 0–10). -/
 inductive DecompileError where
-  | unknownRef (idx : UInt64) (refsLen : Nat)
-  | unknownUniv (idx : UInt64) (univsLen : Nat)
-  | unknownShare (idx : UInt64) (sharingLen : Nat)
-  | unknownRecur (idx : UInt64) (ctxLen : Nat)
-  | unknownAddress (addr : Address)
+  | invalidRefIndex (idx : UInt64) (refsLen : Nat) (constant : String)
+  | invalidUnivIndex (idx : UInt64) (univsLen : Nat) (constant : String)
+  | invalidShareIndex (idx : UInt64) (max : Nat) (constant : String)
+  | invalidRecIndex (idx : UInt64) (ctxSize : Nat) (constant : String)
+  | invalidUnivVarIndex (idx : UInt64) (max : Nat) (constant : String)
+  | missingAddress (addr : Address)
+  | missingMetadata (addr : Address)
   | blobNotFound (addr : Address)
   | badBlobFormat (addr : Address) (expected : String)
   | badConstantFormat (msg : String)
-  deriving Repr
+  | serializeError (err : Ixon.SerializeError)
+  deriving Repr, BEq
 
 def DecompileError.toString : DecompileError → String
-  | .unknownRef idx len => s!"Unknown ref index {idx}, refs table has {len} entries"
-  | .unknownUniv idx len => s!"Unknown univ index {idx}, univs table has {len} entries"
-  | .unknownShare idx len => s!"Unknown share index {idx}, sharing vector has {len} entries"
-  | .unknownRecur idx len => s!"Unknown recur index {idx}, mutual context has {len} entries"
-  | .unknownAddress addr => s!"Unknown address {addr}"
-  | .blobNotFound addr => s!"Blob not found at {addr}"
+  | .invalidRefIndex idx len c => s!"Invalid ref index {idx} in '{c}': refs table has {len} entries"
+  | .invalidUnivIndex idx len c => s!"Invalid univ index {idx} in '{c}': univs table has {len} entries"
+  | .invalidShareIndex idx max c => s!"Invalid share index {idx} in '{c}': sharing vector has {max} entries"
+  | .invalidRecIndex idx sz c => s!"Invalid rec index {idx} in '{c}': mutual context has {sz} entries"
+  | .invalidUnivVarIndex idx max c => s!"Invalid univ var index {idx} in '{c}': only {max} level params"
+  | .missingAddress addr => s!"Missing address: {addr}"
+  | .missingMetadata addr => s!"Missing metadata for: {addr}"
+  | .blobNotFound addr => s!"Blob not found at: {addr}"
   | .badBlobFormat addr expected => s!"Bad blob format at {addr}, expected {expected}"
   | .badConstantFormat msg => s!"Bad constant format: {msg}"
+  | .serializeError err => s!"Serialization error: {err}"
 
 instance : ToString DecompileError := ⟨DecompileError.toString⟩
 
@@ -103,7 +109,7 @@ def withBlockCtx (ctx : BlockCtx) (m : DecompileM α) : DecompileM α :=
 def lookupNameAddr (addr : Address) : DecompileM Ix.Name := do
   match (← getEnv).ixonEnv.names.get? addr with
   | some n => pure n
-  | none => throw (.unknownAddress addr)
+  | none => throw (.missingAddress addr)
 
 /-- Resolve Address → Ix.Name via names table, or anonymous. -/
 def lookupNameAddrOrAnon (addr : Address) : DecompileM Ix.Name := do
@@ -115,7 +121,7 @@ def lookupNameAddrOrAnon (addr : Address) : DecompileM Ix.Name := do
 def lookupConstName (addr : Address) : DecompileM Ix.Name := do
   match (← getEnv).ixonEnv.addrToName.get? addr with
   | some n => pure n
-  | none => throw (.unknownAddress addr)
+  | none => throw (.missingAddress addr)
 
 def lookupBlob (addr : Address) : DecompileM ByteArray := do
   match (← getEnv).ixonEnv.blobs.get? addr with
@@ -126,13 +132,13 @@ def getRef (idx : UInt64) : DecompileM Address := do
   let ctx ← getCtx
   match ctx.refs[idx.toNat]? with
   | some addr => pure addr
-  | none => throw (.unknownRef idx ctx.refs.size)
+  | none => throw (.invalidRefIndex idx ctx.refs.size "")
 
 def getMutName (idx : UInt64) : DecompileM Ix.Name := do
   let ctx ← getCtx
   match ctx.mutCtx[idx.toNat]? with
   | some name => pure name
-  | none => throw (.unknownRecur idx ctx.mutCtx.size)
+  | none => throw (.invalidRecIndex idx ctx.mutCtx.size "")
 
 def readNatBlob (blob : ByteArray) : Nat := Nat.fromBytesLE blob.data
 
@@ -153,7 +159,7 @@ partial def decompileUniv (u : Ixon.Univ) : DecompileM Ix.Level := do
   | .var idx =>
     match ctx.univParams[idx.toNat]? with
     | some name => pure (Ix.Level.mkParam name)
-    | none => throw (.unknownUniv idx ctx.univParams.size)
+    | none => throw (.invalidUnivVarIndex idx ctx.univParams.size "")
 
 def getUniv (idx : UInt64) : DecompileM Ix.Level := do
   let stt ← get
@@ -164,7 +170,7 @@ def getUniv (idx : UInt64) : DecompileM Ix.Level := do
     let lvl ← decompileUniv u
     modify fun s => { s with univCache := s.univCache.insert idx lvl }
     pure lvl
-  | none => throw (.unknownUniv idx ctx.univs.size)
+  | none => throw (.invalidUnivIndex idx ctx.univs.size "")
 
 def decompileUnivIndices (indices : Array UInt64) : DecompileM (Array Ix.Level) :=
   indices.mapM getUniv
@@ -344,7 +350,7 @@ partial def decompileExpr (e : Ixon.Expr) (arenaIdx : UInt64) : DecompileM Ix.Ex
     let ctx ← getCtx
     match ctx.sharing[idx.toNat]? with
     | some sharedExpr => decompileExpr sharedExpr arenaIdx
-    | none => throw (.unknownShare idx ctx.sharing.size)
+    | none => throw (.invalidShareIndex idx ctx.sharing.size "")
   | _ =>
 
   -- Check cache
@@ -793,5 +799,15 @@ def decompileAllParallelIO (ixonEnv : Ixon.Env)
   let elapsed := (← IO.monoMsNow) - startTime
   IO.println s!"  [Decompile] Done: {result.size} ok, {errors.size} errors in {elapsed}ms"
   pure (result, errors)
+
+/-! ## Rust FFI Decompilation -/
+
+@[extern "rs_decompile_env"]
+opaque rsDecompileEnvFFI : @& Ixon.RawEnv → Except DecompileError (Array (Ix.Name × Ix.ConstantInfo))
+
+/-- Decompile an Ixon.Env to Ix.ConstantInfo using Rust. -/
+def rsDecompileEnv (env : Ixon.Env) : Except DecompileError (Std.HashMap Ix.Name Ix.ConstantInfo) := do
+  let arr ← rsDecompileEnvFFI env.toRawEnv
+  return arr.foldl (init := {}) fun m (name, info) => m.insert name info
 
 end Ix.DecompileM

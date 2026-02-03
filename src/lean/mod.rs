@@ -265,6 +265,14 @@ unsafe extern "C" {
   #[link_name = "c_lean_io_result_mk_ok"]
   pub fn lean_io_result_mk_ok(v: *mut c_void) -> *mut c_void;
 
+  /// Wrap an error in an IO error result.
+  #[link_name = "c_lean_io_result_mk_error"]
+  pub fn lean_io_result_mk_error(err: *mut c_void) -> *mut c_void;
+
+  /// Create an IO.Error.userError from a String.
+  #[link_name = "c_lean_mk_io_user_error"]
+  pub fn lean_mk_io_user_error(msg: *mut c_void) -> *mut c_void;
+
   // Nat allocation for large values
   /// Create a Nat from a uint64. For values > max boxed, allocates on heap.
   #[link_name = "c_lean_uint64_to_nat"]
