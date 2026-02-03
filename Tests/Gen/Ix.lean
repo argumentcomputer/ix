@@ -97,7 +97,16 @@ def genIxSubstring : Gen Ix.Substring := do
   let stopPos ← choose Nat startPos maxLen
   pure (Ix.Substring.mk s startPos stopPos)
 
-instance : Shrinkable Ix.Substring where shrink _ := []
+instance : Shrinkable Ix.Name where
+  shrink n := match n with
+    | .anonymous _ => []
+    | .str p _ _ => [p]
+    | .num p _ _ => [p]
+
+instance : Shrinkable Ix.Substring where
+  shrink ss :=
+    (if ss.str.length > 0 then [{ ss with str := "", startPos := 0, stopPos := 0 }] else []) ++
+    (if ss.stopPos > ss.startPos then [{ ss with stopPos := ss.startPos }] else [])
 instance : SampleableExt Ix.Substring := SampleableExt.mkSelfContained genIxSubstring
 
 /-- Generate Ix.SourceInfo with all variants -/
@@ -137,7 +146,13 @@ def genIxSyntaxPreresolved : Gen Ix.SyntaxPreresolved :=
       pure (Ix.SyntaxPreresolved.decl name aliases)),
   ]
 
-instance : Shrinkable Ix.SyntaxPreresolved where shrink _ := []
+instance : Shrinkable Ix.SyntaxPreresolved where
+  shrink sp := match sp with
+    | .namespace n => .namespace <$> Shrinkable.shrink n
+    | .decl n aliases =>
+      [.namespace n] ++
+      (if aliases.size > 0 then [.decl n aliases.pop] else []) ++
+      ((.decl · aliases) <$> Shrinkable.shrink n)
 instance : SampleableExt Ix.SyntaxPreresolved := SampleableExt.mkSelfContained genIxSyntaxPreresolved
 
 /-- Generate Ix.Syntax with all variants including node -/
@@ -257,12 +272,6 @@ def genIxExpr : Nat → Gen Ix.Expr
         let struct ← genIxExpr (fuel / 2)
         pure (Ix.Expr.mkProj typeName idx struct))
     ] (pure (Ix.Expr.mkBVar 0))
-
-instance : Shrinkable Ix.Name where
-  shrink n := match n with
-    | .anonymous _ => []
-    | .str p _ _ => [p]
-    | .num p _ _ => [p]
 
 instance : SampleableExt Ix.Name := SampleableExt.mkSelfContained (genIxName 5)
 
@@ -610,7 +619,9 @@ def genSerializeError : Gen Ixon.SerializeError := do
   ] (pure default)
 
 instance : Shrinkable Ixon.SerializeError where
-  shrink _ := []
+  shrink e := match e with
+    | .addressError => []
+    | _ => [.addressError]
 
 instance : SampleableExt Ixon.SerializeError :=
   SampleableExt.mkSelfContained genSerializeError
@@ -637,7 +648,11 @@ def genDecompileError : Gen Ix.DecompileM.DecompileError := do
   ] (pure default)
 
 instance : Shrinkable Ix.DecompileM.DecompileError where
-  shrink _ := []
+  shrink e := match e with
+    | .badConstantFormat s => if s.isEmpty then [] else [.badConstantFormat ""]
+    | .serializeError se =>
+      [.badConstantFormat ""] ++ (.serializeError <$> Shrinkable.shrink se)
+    | _ => [.badConstantFormat ""]
 
 instance : SampleableExt Ix.DecompileM.DecompileError :=
   SampleableExt.mkSelfContained genDecompileError
@@ -657,7 +672,11 @@ def genCompileError : Gen Ix.CompileM.CompileError := do
   ] (pure default)
 
 instance : Shrinkable Ix.CompileM.CompileError where
-  shrink _ := []
+  shrink e := match e with
+    | .missingConstant s => if s.isEmpty then [] else [.missingConstant ""]
+    | .serializeError se =>
+      [.missingConstant ""] ++ (.serializeError <$> Shrinkable.shrink se)
+    | _ => [.missingConstant ""]
 
 instance : SampleableExt Ix.CompileM.CompileError :=
   SampleableExt.mkSelfContained genCompileError

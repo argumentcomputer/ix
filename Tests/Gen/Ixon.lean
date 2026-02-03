@@ -162,9 +162,31 @@ instance : Shrinkable DefKind where shrink _ := []
 instance : Shrinkable DefinitionSafety where shrink _ := []
 instance : Shrinkable QuotKind where shrink _ := []
 
--- Recursive types - no shrinking for simplicity
-instance : Shrinkable Univ where shrink _ := []
-instance : Shrinkable Expr where shrink _ := []
+-- Recursive types - shrink by returning sub-terms / halving indices
+instance : Shrinkable Univ where
+  shrink u := match u with
+    | .zero => []
+    | .succ inner => [inner]
+    | .max a b => [a, b]
+    | .imax a b => [a, b]
+    | .var idx => if idx > 0 then [.var (idx / 2), .zero] else [.zero]
+
+instance : Shrinkable Expr where
+  shrink e := match e with
+    | .sort idx => if idx > 0 then [.sort (idx / 2)] else []
+    | .var idx => if idx > 0 then [.var (idx / 2)] else []
+    | .ref ri us => (if us.size > 0 then [.ref ri us.pop] else []) ++
+                    (if ri > 0 then [.ref (ri / 2) us] else [])
+    | .recur ri us => (if us.size > 0 then [.recur ri us.pop] else []) ++
+                      (if ri > 0 then [.recur (ri / 2) us] else [])
+    | .prj ti fi val => [val] ++ (if fi > 0 then [.prj ti (fi / 2) val] else [])
+    | .str ri => if ri > 0 then [.str (ri / 2)] else []
+    | .nat ri => if ri > 0 then [.nat (ri / 2)] else []
+    | .app f a => [f, a]
+    | .lam ty body => [ty, body]
+    | .all ty body => [ty, body]
+    | .letE _ ty val body => [ty, val, body]
+    | .share idx => if idx > 0 then [.share (idx / 2)] else []
 
 -- Struct types - shrink by simplifying expressions
 instance : Shrinkable Definition where
@@ -347,10 +369,12 @@ def genConstantMeta : Gen ConstantMeta := do
   ]
 
 instance : Shrinkable ExprMetaData where
-  shrink _ := []
+  shrink em := match em with
+    | .leaf => []
+    | _ => [.leaf]
 
 instance : Shrinkable ExprMetaArena where
-  shrink _ := []
+  shrink arena := if arena.nodes.size > 0 then [{ nodes := arena.nodes.pop }] else []
 
 instance : Shrinkable ConstantMeta where
   shrink m := match m with
@@ -370,7 +394,9 @@ def genCommNew : Gen Comm :=
   Comm.mk <$> genAddress <*> genAddress
 
 instance : Shrinkable Named where
-  shrink _ := []
+  shrink n := match n.constMeta with
+    | .empty => []
+    | _ => [{ n with constMeta := .empty }]
 
 instance : Shrinkable Comm where
   shrink _ := []
@@ -434,10 +460,12 @@ def genRawEnv : Gen RawEnv :=
     <*> genSmallArray genRawNameEntry
 
 instance : Shrinkable RawConst where
-  shrink _ := []
+  shrink rc := (fun c => { rc with const := c }) <$> Shrinkable.shrink rc.const
 
 instance : Shrinkable RawNamed where
-  shrink _ := []
+  shrink rn := match rn.constMeta with
+    | .empty => []
+    | _ => [{ rn with constMeta := .empty }]
 
 instance : Shrinkable RawBlob where
   shrink rb := if rb.bytes.size > 0 then [{ rb with bytes := ByteArray.empty }] else []
@@ -450,7 +478,8 @@ instance : Shrinkable RawEnv where
     (if env.consts.size > 0 then [{ env with consts := env.consts.pop }] else []) ++
     (if env.named.size > 0 then [{ env with named := env.named.pop }] else []) ++
     (if env.blobs.size > 0 then [{ env with blobs := env.blobs.pop }] else []) ++
-    (if env.comms.size > 0 then [{ env with comms := env.comms.pop }] else [])
+    (if env.comms.size > 0 then [{ env with comms := env.comms.pop }] else []) ++
+    (if env.names.size > 0 then [{ env with names := env.names.pop }] else [])
 
 instance : SampleableExt RawConst := SampleableExt.mkSelfContained genRawConst
 instance : SampleableExt RawNamed := SampleableExt.mkSelfContained genRawNamed
