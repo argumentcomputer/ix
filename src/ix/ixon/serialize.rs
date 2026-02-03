@@ -59,8 +59,12 @@ fn get_u64(buf: &mut &[u8]) -> Result<u64, String> {
   Ok(Tag0::get(buf)?.size)
 }
 
+fn put_bytes(bytes: &[u8], buf: &mut Vec<u8>) {
+  buf.extend_from_slice(bytes);
+}
+
 fn put_address(a: &Address, buf: &mut Vec<u8>) {
-  buf.extend_from_slice(a.as_bytes());
+  put_bytes(a.as_bytes(), buf);
 }
 
 fn get_address(buf: &mut &[u8]) -> Result<Address, String> {
@@ -928,13 +932,13 @@ fn put_name_component(name: &Name, buf: &mut Vec<u8>) {
     },
     NameData::Str(parent, s, _) => {
       put_u8(1, buf);
-      put_address(&Address::from_blake3_hash(parent.get_hash()), buf);
+      put_bytes(parent.get_hash().as_bytes(), buf);
       put_u64(s.len() as u64, buf);
       buf.extend_from_slice(s.as_bytes());
     },
     NameData::Num(parent, n, _) => {
       put_u8(2, buf);
-      put_address(&Address::from_blake3_hash(parent.get_hash()), buf);
+      put_bytes(parent.get_hash().as_bytes(), buf);
       let bytes = n.to_le_bytes();
       put_u64(bytes.len() as u64, buf);
       buf.extend_from_slice(&bytes);
@@ -1065,8 +1069,7 @@ impl Env {
     // Use indexed serialization for metadata (saves ~24 bytes per address)
     put_u64(self.named.len() as u64, buf);
     for entry in self.named.iter() {
-      let name_addr = Address::from_blake3_hash(entry.key().get_hash());
-      put_address(&name_addr, buf);
+      put_bytes(entry.key().get_hash().as_bytes(), buf);
       put_named_indexed(entry.value(), &name_index, buf);
     }
 
@@ -1128,7 +1131,7 @@ impl Env {
     // Anonymous name is serialized first (index 0) — read it from the stream
     // along with all other names below. But pre-seed the lookup so name
     // reconstruction works for names whose parent is anonymous.
-    let anon_addr = Address::from_blake3_hash(Name::anon().get_hash());
+    let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
     names_lookup.insert(anon_addr.clone(), Name::anon());
     env.names.insert(anon_addr, Name::anon());
     for _ in 0..num_names {
@@ -1213,8 +1216,7 @@ impl Env {
     let before_named = buf.len();
     put_u64(self.named.len() as u64, &mut buf);
     for entry in self.named.iter() {
-      let name_addr = Address::from_blake3_hash(entry.key().get_hash());
-      put_address(&name_addr, &mut buf);
+      put_bytes(entry.key().get_hash().as_bytes(), &mut buf);
       put_named_indexed(entry.value(), &name_index, &mut buf);
     }
     let named_size = buf.len() - before_named;
@@ -1243,7 +1245,7 @@ fn topological_sort_names(
 
   // Include anonymous name first so it gets index 0 in the name index.
   // Arena nodes frequently reference it as a binder name.
-  let anon_addr = Address::from_blake3_hash(Name::anon().get_hash());
+  let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
   result.push((anon_addr.clone(), Name::anon()));
   visited.insert(anon_addr);
 
@@ -1252,7 +1254,7 @@ fn topological_sort_names(
     visited: &mut HashSet<Address>,
     result: &mut Vec<(Address, Name)>,
   ) {
-    let addr = Address::from_blake3_hash(name.get_hash());
+    let addr = Address::from_blake3_hash(*name.get_hash());
     if visited.contains(&addr) {
       return;
     }
@@ -1388,7 +1390,7 @@ mod tests {
     for _ in 0..num_names {
       let depth = gen_range(g, 1..5);
       let name = gen_name(g, depth);
-      let addr = Address::from_blake3_hash(name.get_hash());
+      let addr = Address::from_blake3_hash(*name.get_hash());
       env.names.insert(addr, name.clone());
       names.push(name);
     }

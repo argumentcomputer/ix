@@ -142,8 +142,8 @@ impl Name {
   }
 
   /// Returns the precomputed Blake3 hash of this name.
-  pub fn get_hash(&self) -> Hash {
-    match *self.0 {
+  pub fn get_hash(&self) -> &Hash {
+    match self.0.as_ref() {
       NameData::Anonymous(h) | NameData::Str(.., h) | NameData::Num(.., h) => h,
     }
   }

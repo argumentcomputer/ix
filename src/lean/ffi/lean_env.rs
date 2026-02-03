@@ -1021,7 +1021,7 @@ fn build_name_index(stt: &crate::ix::compile::CompileState) -> crate::ix::ixon::
   }
 
   // Add anonymous name
-  let anon_addr = Address::from_blake3_hash(Name::anon().get_hash());
+  let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
   idx.entry(anon_addr).or_insert(counter);
 
   idx
