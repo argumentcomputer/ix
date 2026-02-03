@@ -1,6 +1,6 @@
 /-
   Generators for Ix.* types (canonical Lean types with Blake3 hashes).
-  Extracted from Tests/Ix/FFI.lean.
+  Generators for property-based FFI roundtrip tests.
 -/
 
 import LSpec

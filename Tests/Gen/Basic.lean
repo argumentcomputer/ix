@@ -1,6 +1,6 @@
 /-
   Basic type generators for testing.
-  Extracted from Tests/Common.lean and Tests/Ix/FFI.lean.
+  Generators and test types for property-based FFI roundtrip tests.
 -/
 
 import LSpec
