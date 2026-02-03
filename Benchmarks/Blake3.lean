@@ -4,8 +4,10 @@ import Ix.Aiur.Compile
 import Ix.Aiur.Protocol
 import Ix.Benchmark.Bench
 
-abbrev dataSizes := #[64, 128, 256, 512, 1024, 2048]
-abbrev numHashesPerProof := #[1, 2, 4, 8, 16, 32]
+-- abbrev dataSizes := #[64, 128, 256, 512, 1024, 2048]
+-- abbrev numHashesPerProof := #[1, 2, 4, 8, 16, 32]
+abbrev dataSizes := #[1, 2, 3, 4, 5]
+abbrev numHashesPerProof := #[1] 
 
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
@@ -41,7 +43,8 @@ def blake3Bench : IO $ Array BenchReport := do
               data := ioBuffer.data ++ data
               map := ioBuffer.map.insert #[.ofNat idx] ioKeyInfo }
       benches := benches.push <| bench s!"dataSize={dataSize} numHashes={numHashes}" (aiurSystem.prove friParameters funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
-  bgroup "prove blake3" benches.toList { oneShot := true }
+  bgroup "prove blake3" benches.toList { oneShot := false, throughput := .some (Throughput.bytes 100) }
+  -- bgroup "prove blake3" benches.toList { oneShot := false }
 
 def parseFunction (words : List String) (param : String): Option String :=
   words.find? (·.startsWith param) |> .map (·.stripPrefix param)
