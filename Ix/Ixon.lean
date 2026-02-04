@@ -53,7 +53,7 @@ inductive SerializeError where
 
 def SerializeError.toString : SerializeError → String
   | .unexpectedEof expected => s!"unexpected EOF, expected {expected}"
-  | .invalidTag tag context => s!"invalid tag 0x{tag.toNat.toDigits 16 |>.asString} in {context}"
+  | .invalidTag tag context => s!"invalid tag 0x{String.ofList <| tag.toNat.toDigits 16} in {context}"
   | .invalidFlag flag context => s!"invalid flag {flag} in {context}"
   | .invalidVariant variant context => s!"invalid variant {variant} in {context}"
   | .invalidBool value => s!"invalid bool value {value}"

@@ -78,6 +78,8 @@ structure BlockState where
   univsIndex : Std.HashMap Ixon.Univ UInt64 := {}
   /-- Blob storage collected during block compilation -/
   blockBlobs : Std.HashMap Address ByteArray := {}
+  /-- Name components collected during block compilation -/
+  blockNames : Std.HashMap Address Ix.Name := {}
   /-- Arena-based expression metadata for the current constant -/
   arena : Ixon.ExprMetaArena := {}
   deriving Inhabited
@@ -304,16 +306,26 @@ def storeString (s : String) : CompileM Address := do
   modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
   pure addr
 
-/-- Store all string components of a name as blobs for deduplication.
+/-- Compile a name: store all string components as blobs and track
+    name components in blockNames for deduplication.
     This matches Rust's compile_name behavior. -/
-partial def storeNameStrings (name : Ix.Name) : CompileM Unit := do
+partial def compileName (name : Ix.Name) : CompileM Unit := do
+  let addr := name.getHash
+  let state ← getBlockState
+  if state.blockNames.contains addr then return ()
   match name with
-  | .anonymous _ => pure ()
+  | .anonymous _ =>
+    modifyBlockState fun c =>
+      { c with blockNames := c.blockNames.insert addr name }
   | .str parent s _ =>
+    modifyBlockState fun c =>
+      { c with blockNames := c.blockNames.insert addr name }
     discard <| storeString s
-    storeNameStrings parent
+    compileName parent
   | .num parent _ _ =>
-    storeNameStrings parent
+    modifyBlockState fun c =>
+      { c with blockNames := c.blockNames.insert addr name }
+    compileName parent
 
 /-- Count bytes needed to represent a u64 in minimal little-endian form. -/
 def u64ByteCount (x : UInt64) : UInt8 :=
@@ -368,8 +380,10 @@ def serializeIxSourceInfo (si : Ix.SourceInfo) : CompileM ByteArray := do
 def serializeIxSyntaxPreresolved (sp : Ix.SyntaxPreresolved) : CompileM ByteArray := do
   match sp with
   | .namespace name =>
+    compileName name
     pure (ByteArray.mk #[0] ++ name.getHash.hash)
   | .decl name aliases =>
+    compileName name
     let header := ByteArray.mk #[1] ++ name.getHash.hash ++ putTag0 aliases.size
     let mut aliasesBytes := ByteArray.empty
     for a in aliases do
@@ -382,6 +396,7 @@ partial def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
   match syn with
   | .missing => pure (ByteArray.mk #[0])
   | .node info kind args =>
+    compileName kind
     let header := ByteArray.mk #[1]
     let infoBytes ← serializeIxSourceInfo info
     let kindBytes := kind.getHash.hash
@@ -395,6 +410,7 @@ partial def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
     let valAddr ← storeString val
     pure (ByteArray.mk #[2] ++ infoBytes ++ valAddr.hash)
   | .ident info rawVal val preresolved =>
+    compileName val
     let header := ByteArray.mk #[3]
     let infoBytes ← serializeIxSourceInfo info
     let rawBytes ← serializeIxSubstring rawVal
@@ -414,7 +430,9 @@ def compileDataValue (dv : Ix.DataValue) : CompileM Ixon.DataValue := do
     modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
     pure (.ofString addr)
   | .ofBool b => pure (.ofBool b)
-  | .ofName n => pure (.ofName n.getHash)
+  | .ofName n =>
+    compileName n
+    pure (.ofName n.getHash)
   | .ofNat n =>
     let bytes := ByteArray.mk (Nat.toBytesLE n)
     let addr := Address.blake3 bytes
@@ -434,6 +452,7 @@ def compileDataValue (dv : Ix.DataValue) : CompileM Ixon.DataValue := do
 /-- Compile a KVMap (array of name-value pairs). -/
 def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap := do
   kvs.mapM fun (k, v) => do
+    compileName k
     let vData ← compileDataValue v
     pure (k.getHash, vData)
 
@@ -461,7 +480,7 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   | .const name lvls _ => do
     let mutCtx := (← getBlockEnv).mutCtx
     let univIndices ← lvls.mapM compileAndInternUniv
-    storeNameStrings name
+    compileName name
     let nameAddr := name.getHash
     match mutCtx.find? name with
     | some recIdx =>
@@ -480,7 +499,7 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     pure (.app f a, root)
 
   | .lam name ty body bi _ => do
-    storeNameStrings name
+    compileName name
     let nameAddr := name.getHash
     let (t, tyRoot) ← compileExpr ty
     let (b, bodyRoot) ← compileExpr body
@@ -488,7 +507,7 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     pure (.lam t b, root)
 
   | .forallE name ty body bi _ => do
-    storeNameStrings name
+    compileName name
     let nameAddr := name.getHash
     let (t, tyRoot) ← compileExpr ty
     let (b, bodyRoot) ← compileExpr body
@@ -496,7 +515,7 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     pure (.all t b, root)
 
   | .letE name ty val body nonDep _ => do
-    storeNameStrings name
+    compileName name
     let nameAddr := name.getHash
     let (t, tyRoot) ← compileExpr ty
     let (v, valRoot) ← compileExpr val
@@ -521,7 +540,7 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     pure (.str idx, root)
 
   | .proj typeName fieldIdx struct _ => do
-    storeNameStrings typeName
+    compileName typeName
     let typeAddr ← lookupConstAddr typeName
     let typeRefIdx ← internRef typeAddr
     let structNameAddr := typeName.getHash
@@ -859,10 +878,10 @@ def compileDefinition (d : DefinitionVal) : CompileM (Ixon.Definition × Ixon.Co
     clearExprCache
 
     -- Store name string components as blobs for deduplication
-    storeNameStrings d.cnst.name
-    for lvl in d.cnst.levelParams do storeNameStrings lvl
-    for n in d.all do storeNameStrings n
-    for (n, _) in (← getBlockEnv).mutCtx.toList do storeNameStrings n
+    compileName d.cnst.name
+    for lvl in d.cnst.levelParams do compileName lvl
+    for n in d.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
 
     let nameAddr := d.cnst.name.getHash
     let lvlAddrs := d.cnst.levelParams.map (·.getHash)
@@ -889,10 +908,10 @@ def compileTheorem (d : TheoremVal) : CompileM (Ixon.Definition × Ixon.Constant
     clearExprCache
 
     -- Store name string components as blobs for deduplication
-    storeNameStrings d.cnst.name
-    for lvl in d.cnst.levelParams do storeNameStrings lvl
-    for n in d.all do storeNameStrings n
-    for (n, _) in (← getBlockEnv).mutCtx.toList do storeNameStrings n
+    compileName d.cnst.name
+    for lvl in d.cnst.levelParams do compileName lvl
+    for n in d.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
 
     let nameAddr := d.cnst.name.getHash
     let lvlAddrs := d.cnst.levelParams.map (·.getHash)
@@ -919,10 +938,10 @@ def compileOpaque (d : OpaqueVal) : CompileM (Ixon.Definition × Ixon.ConstantMe
     clearExprCache
 
     -- Store name string components as blobs for deduplication
-    storeNameStrings d.cnst.name
-    for lvl in d.cnst.levelParams do storeNameStrings lvl
-    for n in d.all do storeNameStrings n
-    for (n, _) in (← getBlockEnv).mutCtx.toList do storeNameStrings n
+    compileName d.cnst.name
+    for lvl in d.cnst.levelParams do compileName lvl
+    for n in d.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
 
     let nameAddr := d.cnst.name.getHash
     let lvlAddrs := d.cnst.levelParams.map (·.getHash)
@@ -948,8 +967,8 @@ def compileAxiom (a : AxiomVal) : CompileM (Ixon.Axiom × Ixon.ConstantMeta × I
     clearExprCache
 
     -- Store name string components as blobs for deduplication
-    storeNameStrings a.cnst.name
-    for lvl in a.cnst.levelParams do storeNameStrings lvl
+    compileName a.cnst.name
+    for lvl in a.cnst.levelParams do compileName lvl
 
     let nameAddr := a.cnst.name.getHash
     let lvlAddrs := a.cnst.levelParams.map (·.getHash)
@@ -971,8 +990,8 @@ def compileQuotient (q : QuotVal) : CompileM (Ixon.Quotient × Ixon.ConstantMeta
     clearExprCache
 
     -- Store name string components as blobs for deduplication
-    storeNameStrings q.cnst.name
-    for lvl in q.cnst.levelParams do storeNameStrings lvl
+    compileName q.cnst.name
+    for lvl in q.cnst.levelParams do compileName lvl
 
     let nameAddr := q.cnst.name.getHash
     let lvlAddrs := q.cnst.levelParams.map (·.getHash)
@@ -1015,11 +1034,11 @@ def compileRecursor (r : RecursorVal) : CompileM (Ixon.Recursor × Ixon.Constant
     clearExprCache
 
     -- Store name string components as blobs for deduplication
-    storeNameStrings r.cnst.name
-    for lvl in r.cnst.levelParams do storeNameStrings lvl
-    for n in r.all do storeNameStrings n
-    for (n, _) in (← getBlockEnv).mutCtx.toList do storeNameStrings n
-    for rule in r.rules do storeNameStrings rule.ctor
+    compileName r.cnst.name
+    for lvl in r.cnst.levelParams do compileName lvl
+    for n in r.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+    for rule in r.rules do compileName rule.ctor
 
     let nameAddr := r.cnst.name.getHash
     let lvlAddrs := r.cnst.levelParams.map (·.getHash)
@@ -1048,8 +1067,8 @@ def compileConstructor (c : ConstructorVal) : CompileM (Ixon.Constructor × Ixon
   clearExprCache
 
   -- Store name string components as blobs for deduplication
-  storeNameStrings c.cnst.name
-  for lvl in c.cnst.levelParams do storeNameStrings lvl
+  compileName c.cnst.name
+  for lvl in c.cnst.levelParams do compileName lvl
 
   let nameAddr := c.cnst.name.getHash
   let lvlAddrs := c.cnst.levelParams.map (·.getHash)
@@ -1088,10 +1107,10 @@ def compileInductive (i : InductiveVal) (ctorVals : Array ConstructorVal)
       ctorExprs := ctorExprs.push e
 
     -- Store name string components as blobs for deduplication
-    storeNameStrings i.cnst.name
-    for lvl in i.cnst.levelParams do storeNameStrings lvl
-    for n in i.all do storeNameStrings n
-    for (n, _) in (← getBlockEnv).mutCtx.toList do storeNameStrings n
+    compileName i.cnst.name
+    for lvl in i.cnst.levelParams do compileName lvl
+    for n in i.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
 
     let nameAddr := i.cnst.name.getHash
     let lvlAddrs := i.cnst.levelParams.map (·.getHash)
@@ -1122,6 +1141,12 @@ def compileDefinitionData (d : Def) : CompileM (Ixon.Definition × Ixon.Constant
     let (valueExpr, valueRoot) ← compileExpr d.value
     let arena ← takeArena
     clearExprCache
+
+    -- Store name components for deduplication
+    compileName d.name
+    for lvl in d.levelParams do compileName lvl
+    for n in d.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
 
     let nameAddr := d.name.getHash
     let lvlAddrs := d.levelParams.map (·.getHash)
@@ -1169,6 +1194,12 @@ def compileInductiveData (i : Ind)
       ctorNameAddrs := ctorNameAddrs.push ctorVal.cnst.name.getHash
       ctorExprs := ctorExprs.push e
 
+    -- Store name components for deduplication
+    compileName i.name
+    for lvl in i.levelParams do compileName lvl
+    for n in i.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+
     let nameAddr := i.name.getHash
     let lvlAddrs := i.levelParams.map (·.getHash)
     let allAddrs := i.all.map (·.getHash)
@@ -1207,11 +1238,11 @@ def compileRecursorData (r : RecursorVal) : CompileM (Ixon.Recursor × Ixon.Cons
     clearExprCache
 
     -- Store name string components as blobs for deduplication
-    storeNameStrings r.cnst.name
-    for lvl in r.cnst.levelParams do storeNameStrings lvl
-    for n in r.all do storeNameStrings n
-    for (n, _) in (← getBlockEnv).mutCtx.toList do storeNameStrings n
-    for rule in r.rules do storeNameStrings rule.ctor
+    compileName r.cnst.name
+    for lvl in r.cnst.levelParams do compileName lvl
+    for n in r.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+    for rule in r.rules do compileName rule.ctor
 
     let nameAddr := r.cnst.name.getHash
     let lvlAddrs := r.cnst.levelParams.map (·.getHash)
@@ -1479,6 +1510,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
     : Except String (Ixon.Env × Nat) := Id.run do
   -- Initialize compilation state
   let mut compileEnv := CompileEnv.new env
+  let mut blockNames : Std.HashMap Address Ix.Name := {}
 
   -- Build work queue data structures
   let totalBlocks := blocks.blocks.size
@@ -1522,6 +1554,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
         constants := compileEnv.constants.insert blockAddr result.block
         blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) compileEnv.blobs
       }
+      blockNames := cache.blockNames.fold (fun m k v => m.insert k v) blockNames
 
       -- If there are projections, store them and map names to projection addresses
       if result.projections.isEmpty then
@@ -1570,8 +1603,9 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
     return .error s!"Only compiled {blocksCompiled}/{totalBlocks} blocks - circular dependency?"
 
   -- Build reverse index and names map, storing name string components as blobs
+  -- Seed with blockNames collected during compilation (binder names, level params, etc.)
   let (addrToNameMap, namesMap, nameBlobs) :=
-    compileEnv.nameToNamed.fold (init := ({}, {}, {})) fun (addrMap, namesMap, blobs) name named =>
+    compileEnv.nameToNamed.fold (init := ({}, blockNames, {})) fun (addrMap, namesMap, blobs) name named =>
       let addrMap := addrMap.insert named.addr name
       let (namesMap, blobs) := Ixon.RawEnv.addNameComponentsWithBlobs namesMap blobs name
       (addrMap, namesMap, blobs)
@@ -1674,6 +1708,7 @@ structure WaveBlockResult where
   blockAddr : Address
   projections : Array (Name × Ixon.Constant × Address × Ixon.ConstantMeta)
   blobs : Std.HashMap Address ByteArray
+  names : Std.HashMap Address Ix.Name
   totalBytes : Nat
 
 /-- Work item for a worker thread -/
@@ -1761,6 +1796,7 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
               blockAddr
               projections := projsNoBytes
               blobs := cache.blockBlobs
+              names := cache.blockNames
               totalBytes := projBytes
             }
         discard <| resultChan.send result
@@ -1775,6 +1811,7 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let mut nameToNamed : Std.HashMap Name Ixon.Named := {}
   let mut constants : Std.HashMap Address Ixon.Constant := {}
   let mut blobs : Std.HashMap Address ByteArray := {}
+  let mut blockNames : Std.HashMap Address Ix.Name := {}
   let mut totalBytes : Nat := 0
 
   let mut remaining : Set Name := {}
@@ -1831,8 +1868,9 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
         for (name, proj, addr, constMeta) in result.projections do
           constants := constants.insert addr proj
           nameToNamed := nameToNamed.insert name ⟨addr, constMeta⟩
-        -- Store blobs
+        -- Store blobs and names
         blobs := result.blobs.fold (fun m k v => m.insert k v) blobs
+        blockNames := result.names.fold (fun m k v => m.insert k v) blockNames
         totalBytes := totalBytes + result.totalBytes
         compiled := compiled + 1
 
@@ -1851,8 +1889,9 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     return .error <| .system s!"Only compiled {compiled}/{totalBlocks} blocks - circular dependency?"
 
   -- Build reverse index and names map, storing name string components as blobs
+  -- Seed with blockNames collected during compilation (binder names, level params, etc.)
   let (addrToNameMap, namesMap, nameBlobs) :=
-    nameToNamed.fold (init := ({}, {}, {})) fun (addrMap, namesMap, nameBlobs) name named =>
+    nameToNamed.fold (init := ({}, blockNames, {})) fun (addrMap, namesMap, nameBlobs) name named =>
       let addrMap := addrMap.insert named.addr name
       let (namesMap, nameBlobs) := Ixon.RawEnv.addNameComponentsWithBlobs namesMap nameBlobs name
       (addrMap, namesMap, nameBlobs)
