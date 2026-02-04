@@ -34,13 +34,15 @@ jobs:
         with:
           build-args: "--wfail -v"
           test: true
-      - run: |
-          lake build bench-aiur
-          lake build bench-blake3
       - name: Test Ix CLI
         run: |
           mkdir -p ~/.local/bin
           lake test -- cli
+      - run: lake exe test-aiur
+      - run: lake exe test-ixvm
+      - run: |
+          lake build bench-aiur
+          lake build bench-blake3
       - name: Check lean.h.hash
         run: lake run check-lean-h-hash
 

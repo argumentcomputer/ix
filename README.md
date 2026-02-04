@@ -186,6 +186,11 @@ Ix consists of the following core components:
 - `lake test -- cli` runs CLI integration tests
 - `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
 
+To run the Aiur and IxVM tests, which are slower, run:
+
+- `lake exe test-aiur`
+- `lake exe test-ixvm`
+
 **Rust tests:** `cargo test`
 
 - Run the Ix CLI with `lake exe ix`. Install the binary with `lake run install`

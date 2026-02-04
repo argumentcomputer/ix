@@ -32,6 +32,12 @@ lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
 
+lean_exe «test-aiur» where
+  root := `Tests.AiurTest
+
+lean_exe «test-ixvm» where
+  root := `Tests.IxVMTest
+
 end Tests
 
 lean_lib IxTestLib where
