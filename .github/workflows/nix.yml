@@ -30,6 +30,7 @@ jobs:
       # Ix benches
       - run: nix build .#bench-aiur --print-build-logs --accept-flake-config
       - run: nix build .#bench-blake3 --print-build-logs --accept-flake-config
+      - run: nix build .#bench-shardmap --print-build-logs --accept-flake-config
       # Ix tests
       - run: nix build .#test --print-build-logs --accept-flake-config
       - run: nix run .#test --accept-flake-config

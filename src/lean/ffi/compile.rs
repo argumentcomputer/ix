@@ -653,7 +653,7 @@ pub struct RustCompiledEnv {
   /// Map from low-link name to (serialized constant bytes, sharing vector length)
   blocks: HashMap<Name, (Vec<u8>, usize)>,
   /// The full compile state for accessing pre-sharing expressions
-  compile_state: crate::ix::compile::CompileState,
+  compile_state: CompileState,
 }
 
 // =============================================================================
@@ -1144,19 +1144,19 @@ pub fn build_serialize_error(se: &SerializeError) -> *mut c_void {
         // 1 obj (String) + 1 scalar byte (UInt8)
         let obj = lean_alloc_ctor(1, 1, 1);
         lean_ctor_set(obj, 0, build_lean_string(context));
-        lean_ctor_set_uint8(obj, 1 * 8, *tag);
+        lean_ctor_set_uint8(obj, 8, *tag);
         obj
       },
       SerializeError::InvalidFlag { flag, context } => {
         let obj = lean_alloc_ctor(2, 1, 1);
         lean_ctor_set(obj, 0, build_lean_string(context));
-        lean_ctor_set_uint8(obj, 1 * 8, *flag);
+        lean_ctor_set_uint8(obj, 8, *flag);
         obj
       },
       SerializeError::InvalidVariant { variant, context } => {
         let obj = lean_alloc_ctor(3, 1, 8);
         lean_ctor_set(obj, 0, build_lean_string(context));
-        lean_ctor_set_uint64(obj, 1 * 8, *variant);
+        lean_ctor_set_uint64(obj, 8, *variant);
         obj
       },
       SerializeError::InvalidBool { value } => {
@@ -1168,7 +1168,7 @@ pub fn build_serialize_error(se: &SerializeError) -> *mut c_void {
       SerializeError::InvalidShareIndex { idx, max } => {
         let obj = lean_alloc_ctor(6, 1, 8);
         lean_ctor_set(obj, 0, build_lean_nat_usize(*max));
-        lean_ctor_set_uint64(obj, 1 * 8, *idx);
+        lean_ctor_set_uint64(obj, 8, *idx);
         obj
       },
     }
@@ -1191,7 +1191,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
       1 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let base = ptr.cast::<u8>();
-        let tag_val = *base.add(8 + 1 * 8);
+        let tag_val = *base.add(8 + 8);
         let context =
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
         SerializeError::InvalidTag {
@@ -1202,7 +1202,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
       2 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let base = ptr.cast::<u8>();
-        let flag = *base.add(8 + 1 * 8);
+        let flag = *base.add(8 + 8);
         let context =
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
         SerializeError::InvalidFlag {
@@ -1213,7 +1213,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
       3 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let base = ptr.cast::<u8>();
-        let variant = *base.add(8 + 1 * 8).cast::<u64>();
+        let variant = *base.add(8 + 8).cast::<u64>();
         let context =
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
         SerializeError::InvalidVariant {
@@ -1230,8 +1230,11 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
       6 => {
         let nat_ptr = lean_ctor_get(ptr as *mut _, 0);
         let base = ptr.cast::<u8>();
-        let idx = *base.add(8 + 1 * 8).cast::<u64>();
-        let max = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
+        let idx = *base.add(8 + 8).cast::<u64>();
+        let max = Nat::from_ptr(nat_ptr)
+          .to_u64()
+          .and_then(|x| usize::try_from(x).ok())
+          .unwrap_or(0);
         SerializeError::InvalidShareIndex { idx, max }
       },
       _ => panic!("Invalid SerializeError tag: {}", tag),
@@ -1335,10 +1338,12 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let str_ptr = lean_ctor_get(ptr as *mut _, 1);
         let base = ptr.cast::<u8>();
         let idx = *base.add(8 + 2 * 8).cast::<u64>();
-        let refs_len = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
-        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
-          .as_string()
-          .to_string();
+        let refs_len = Nat::from_ptr(nat_ptr)
+          .to_u64()
+          .and_then(|x| usize::try_from(x).ok())
+          .unwrap_or(0);
+        let constant =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().clone();
         DecompileError::InvalidRefIndex { idx, refs_len, constant }
       },
       1 => {
@@ -1346,10 +1351,12 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let str_ptr = lean_ctor_get(ptr as *mut _, 1);
         let base = ptr.cast::<u8>();
         let idx = *base.add(8 + 2 * 8).cast::<u64>();
-        let univs_len = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
-        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
-          .as_string()
-          .to_string();
+        let univs_len = Nat::from_ptr(nat_ptr)
+          .to_u64()
+          .and_then(|x| usize::try_from(x).ok())
+          .unwrap_or(0);
+        let constant =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().clone();
         DecompileError::InvalidUnivIndex { idx, univs_len, constant }
       },
       2 => {
@@ -1357,10 +1364,12 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let str_ptr = lean_ctor_get(ptr as *mut _, 1);
         let base = ptr.cast::<u8>();
         let idx = *base.add(8 + 2 * 8).cast::<u64>();
-        let max = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
-        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
-          .as_string()
-          .to_string();
+        let max = Nat::from_ptr(nat_ptr)
+          .to_u64()
+          .and_then(|x| usize::try_from(x).ok())
+          .unwrap_or(0);
+        let constant =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().clone();
         DecompileError::InvalidShareIndex { idx, max, constant }
       },
       3 => {
@@ -1368,10 +1377,12 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let str_ptr = lean_ctor_get(ptr as *mut _, 1);
         let base = ptr.cast::<u8>();
         let idx = *base.add(8 + 2 * 8).cast::<u64>();
-        let ctx_size = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
-        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
-          .as_string()
-          .to_string();
+        let ctx_size = Nat::from_ptr(nat_ptr)
+          .to_u64()
+          .and_then(|x| usize::try_from(x).ok())
+          .unwrap_or(0);
+        let constant =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().clone();
         DecompileError::InvalidRecIndex { idx, ctx_size, constant }
       },
       4 => {
@@ -1379,10 +1390,12 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let str_ptr = lean_ctor_get(ptr as *mut _, 1);
         let base = ptr.cast::<u8>();
         let idx = *base.add(8 + 2 * 8).cast::<u64>();
-        let max = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
-        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
-          .as_string()
-          .to_string();
+        let max = Nat::from_ptr(nat_ptr)
+          .to_u64()
+          .and_then(|x| usize::try_from(x).ok())
+          .unwrap_or(0);
+        let constant =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().clone();
         DecompileError::InvalidUnivVarIndex { idx, max, constant }
       },
       5 => {
@@ -1401,16 +1414,14 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
         let str_ptr = lean_ctor_get(ptr as *mut _, 1);
         let addr = decode_ixon_address(addr_ptr);
-        let expected = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
-          .as_string()
-          .to_string();
+        let expected =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().clone();
         DecompileError::BadBlobFormat { addr, expected }
       },
       9 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let msg = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
-          .as_string()
-          .to_string();
+        let msg =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().clone();
         DecompileError::BadConstantFormat { msg }
       },
       10 => {
@@ -1476,9 +1487,8 @@ pub fn decode_compile_error(ptr: *const c_void) -> CompileError {
     match tag {
       0 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let name = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
-          .as_string()
-          .to_string();
+        let name =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().clone();
         CompileError::MissingConstant { name }
       },
       1 => {
@@ -1487,27 +1497,23 @@ pub fn decode_compile_error(ptr: *const c_void) -> CompileError {
       },
       2 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let reason = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
-          .as_string()
-          .to_string();
+        let reason =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().clone();
         CompileError::InvalidMutualBlock { reason }
       },
       3 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let desc = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
-          .as_string()
-          .to_string();
+        let desc =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().clone();
         CompileError::UnsupportedExpr { desc }
       },
       4 => {
         let str0 = lean_ctor_get(ptr as *mut _, 0);
         let str1 = lean_ctor_get(ptr as *mut _, 1);
-        let curr = as_ref_unsafe::<LeanStringObject>(str0.cast())
-          .as_string()
-          .to_string();
-        let param = as_ref_unsafe::<LeanStringObject>(str1.cast())
-          .as_string()
-          .to_string();
+        let curr =
+          as_ref_unsafe::<LeanStringObject>(str0.cast()).as_string().clone();
+        let param =
+          as_ref_unsafe::<LeanStringObject>(str1.cast()).as_string().clone();
         CompileError::UnknownUnivParam { curr, param }
       },
       5 => {
