@@ -67,7 +67,7 @@ Used for expressions and constants. Header byte format:
 [flag:4][large:1][size:3]
 ```
 
-- **flag** (4 bits): Discriminates type (0x0-0xB for expressions, 0xC for Muts constants, 0xD for other constants, 0xE for environments, 0xF for proofs)
+- **flag** (4 bits): Discriminates type (0x0-0xB for expressions, 0xC for Muts constants, 0xD for other constants, 0xE for environments/claims/proofs/commitments)
 - **large** (1 bit): If 0, size is in the low 3 bits. If 1, (size+1) bytes follow with the actual value
 - **size** (3 bits): Small values 0-7, or byte count for large values
 
@@ -798,33 +798,67 @@ count (Tag0)
 
 ---
 
-## Proofs
+## Proofs and Claims
 
-Proofs are ZK-compatible claims with associated proof data.
+Claims, proofs, commitments, and environments share Tag4 flag 0xE.
+
+### Tag4 0xE Variant Layout
+
+| Size | Byte | Type | Payload |
+|------|------|------|---------|
+| 0 | `0xE0` | Environment | sections |
+| 1 | `0xE1` | CheckProof | 1 addr + proof bytes |
+| 2 | `0xE2` | EvalProof | 2 addr + proof bytes |
+| 3 | `0xE3` | CheckClaim | 1 addr |
+| 4 | `0xE4` | EvalClaim | 2 addr: input, output |
+| 5 | `0xE5` | Commitment | 2 addr: secret, payload |
+| 6 | `0xE6` | RevealClaim | 1 addr + RevealConstantInfo |
+| 7 | `0xE7` | RevealProof | 1 addr + RevealConstantInfo + proof bytes |
 
 ### Claim Types
 
 ```rust
-/// Evaluation claim: `input` evaluates to `output` at type `typ`
+/// Evaluation claim: the constant at `input` evaluates to the constant at `output`.
 pub struct EvalClaim {
-    pub lvls: Address,    // Universe level parameters
-    pub typ: Address,     // Type address
-    pub input: Address,   // Input expression address
-    pub output: Address,  // Output expression address
+    pub input: Address,   // Input constant address
+    pub output: Address,  // Output constant address
 }
 
-/// Type-checking claim: `value` has type `typ`
+/// Type-checking claim: the constant at `value` is well-typed.
 pub struct CheckClaim {
-    pub lvls: Address,    // Universe level parameters
-    pub typ: Address,     // Type address
-    pub value: Address,   // Value expression address
+    pub value: Address,   // Value constant address
+}
+
+/// Selective revelation of fields of a committed constant.
+pub struct RevealClaim {
+    pub comm: Address,              // Commitment address
+    pub info: RevealConstantInfo,   // Revealed field information
 }
 
 pub enum Claim {
     Evals(EvalClaim),
     Checks(CheckClaim),
+    Reveals(RevealClaim),
 }
 ```
+
+### Commitment Hashing
+
+Commitments are serialized with Tag4(0xE, 5) and hashed with blake3:
+```
+commitment_address = blake3(0xE5 + secret_address + payload_address)
+```
+
+The payload address is always the transparent hash of the constant, regardless of the secret.
+Two commitments to the same constant share the same payload address.
+
+### RevealConstantInfo Format
+
+RevealClaim allows selective revelation of constant metadata fields (kind, safety, idx, etc.)
+without opening the full commitment. Serialization: `variant (1 byte) + field_mask (Tag0) + field values...`
+
+The field_mask uses Tag0 encoding (1 byte for masks < 128). Fields are serialized in mask bit order.
+Expression fields are revealed as `Address = blake3(serialized Expr bytes)`.
 
 ### Proof Structure
 
@@ -835,46 +869,39 @@ pub struct Proof {
 }
 ```
 
-### Serialization
+### Serialization Examples
 
-Claims and proofs use flag 0xF with the variant encoded in the size field:
-
-| Size | Type | Payload |
-|------|------|---------|
-| 0 | EvalClaim | 4 addresses (128 bytes) |
-| 1 | EvalProof | 4 addresses + proof_len (Tag0) + proof bytes |
-| 2 | CheckClaim | 3 addresses (96 bytes) |
-| 3 | CheckProof | 3 addresses + proof_len (Tag0) + proof bytes |
-
-Claims (size 0, 2) have no proof data. Proofs (size 1, 3) include proof bytes.
-
-**Example** (standalone EvalClaim):
+**EvalClaim** (0xE4, 2 addresses):
 ```
-F0                    -- Tag4 { flag: 0xF, size: 0 } (EvalClaim)
-[32 bytes]            -- lvls address
-[32 bytes]            -- typ address
+E4                    -- Tag4 { flag: 0xE, size: 4 } (EvalClaim)
 [32 bytes]            -- input address
 [32 bytes]            -- output address
 ```
 
-**Example** (EvalProof with 4-byte proof):
+**EvalProof** (0xE2, 2 addresses + proof):
 ```
-F1                    -- Tag4 { flag: 0xF, size: 1 } (EvalProof)
-[32 bytes]            -- lvls address
-[32 bytes]            -- typ address
+E2                    -- Tag4 { flag: 0xE, size: 2 } (EvalProof)
 [32 bytes]            -- input address
 [32 bytes]            -- output address
 04                    -- proof.len = 4 (Tag0)
 01 02 03 04           -- proof bytes
 ```
 
-**Example** (standalone CheckClaim):
+**CheckClaim** (0xE3, 1 address):
 ```
-F2                    -- Tag4 { flag: 0xF, size: 2 } (CheckClaim)
-[32 bytes]            -- lvls address
-[32 bytes]            -- typ address
+E3                    -- Tag4 { flag: 0xE, size: 3 } (CheckClaim)
 [32 bytes]            -- value address
 ```
+
+**RevealClaim** — reveal that a committed Definition has `safety = Safe`:
+```
+E6                    -- Tag4 { flag: 0xE, size: 6 } (RevealClaim)
+[32 bytes]            -- comm_addr
+00                    -- variant: Definition
+02                    -- mask: bit 1 (safety) [Tag0]
+01                    -- DefinitionSafety::Safe
+```
+Total: 36 bytes.
 
 ---
 
@@ -1199,20 +1226,24 @@ For zero-knowledge proofs, Ixon supports cryptographic commitments:
 
 ```rust
 pub struct Comm {
-    pub secret: Address,   // Random blinding factor (stored in blobs)
+    pub secret: Address,   // Random blinding factor
     pub payload: Address,  // Address of committed constant
 }
 ```
 
 The commitment address is computed as:
 ```
-commitment = blake3(secret_bytes || payload_address)
+commitment = blake3(Tag4(0xE, 5) + secret + payload)
 ```
 
-This allows proving knowledge of a constant without revealing it, enabling:
-- Private theorem proving
-- Selective disclosure
-- Verifiable computation on encrypted data
+The payload address is the content hash of the committed constant. Two commitments to the
+same constant share the same payload address (canonicity). The secret provides blinding.
+
+Commitments enable:
+- **Whole-constant hiding** via `Comm` (hides everything including metadata)
+- **Selective revelation** via `RevealClaim` (proves specific field values about a committed constant)
+- **Expression-level blinding** via `Expr.ref <comm_addr>` within expression trees
+- **Verifiable computation** on committed data (the ZK circuit opens commitments privately)
 
 ---
 

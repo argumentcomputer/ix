@@ -274,7 +274,6 @@ namespace Expr
   def FLAG_VAR : UInt8 := 0x1
   def FLAG_REF : UInt8 := 0x2
   def FLAG_REC : UInt8 := 0x3
-  def FLAG_RECUR : UInt8 := 0x3
   def FLAG_PRJ : UInt8 := 0x4
   def FLAG_STR : UInt8 := 0x5
   def FLAG_NAT : UInt8 := 0x6
@@ -287,24 +286,9 @@ end Expr
 
 /-! ## Constant Types -/
 
-inductive DefKind where
-  | defn : DefKind
-  | opaq : DefKind
-  | thm : DefKind
-  deriving BEq, Repr, Inhabited, Hashable, DecidableEq
+-- DefKind, DefinitionSafety, QuotKind are defined in Ix.Common
 
-inductive DefinitionSafety where
-  | unsaf : DefinitionSafety
-  | safe : DefinitionSafety
-  | part : DefinitionSafety
-  deriving BEq, Repr, Inhabited, Hashable, DecidableEq
-
-inductive QuotKind where
-  | type : QuotKind
-  | ctor : QuotKind
-  | lift : QuotKind
-  | ind : QuotKind
-  deriving BEq, Repr, Inhabited, Hashable, DecidableEq
+open Ix (DefKind DefinitionSafety QuotKind)
 
 structure Definition where
   kind : DefKind
@@ -557,8 +541,8 @@ structure Comm where
   deriving BEq, Repr, Inhabited
 
 namespace Constant
-  def FLAG : UInt8 := 0xD
   def FLAG_MUTS : UInt8 := 0xC
+  def FLAG : UInt8 := 0xD
 end Constant
 
 /-! ## Univ Serialization -/
@@ -1367,9 +1351,20 @@ instance : Serialize Comm where
   put := putComm
   get := getComm
 
-/-- Convenience serialization for Comm. -/
+/-- Convenience serialization for Comm (untagged). -/
 def serComm (c : Comm) : ByteArray := runPut (putComm c)
 def desComm (bytes : ByteArray) : Except String Comm := runGet getComm bytes
+
+/-- Serialize Comm with Tag4{0xE, 5} header. -/
+def putCommTagged (c : Comm) : PutM Unit := do
+  putTag4 ⟨0xE, 5⟩
+  putComm c
+
+/-- Serialize Comm with Tag4{0xE, 5} header to bytes. -/
+def serCommTagged (c : Comm) : ByteArray := runPut (putCommTagged c)
+
+/-- Compute commitment address: blake3(Tag4{0xE,5} + secret + payload). -/
+def Comm.commit (c : Comm) : Address := Address.blake3 (serCommTagged c)
 
 /-! ## Ixon Environment -/
 
@@ -1577,11 +1572,8 @@ def toRawEnv (env : Env) : RawEnv := {
   names := env.names.toArray.map fun (addr, name) => { addr, name }
 }
 
-/-- Tag4 flag for Env (0xE). -/
+/-- Tag4 flag for Env (0xE), variant 0. -/
 def FLAG : UInt8 := 0xE
-
-/-- Env format version. -/
-def VERSION : UInt64 := 2
 
 /-- Serialize a name component (references parent by address).
     Format: tag (1 byte) + parent_addr (32 bytes) + data -/
@@ -1649,8 +1641,8 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (
 
 /-- Serialize an Env to bytes. -/
 def putEnv (env : Env) : PutM Unit := do
-  -- Header: Tag4 with flag=0xE, size=version
-  putTag4 ⟨FLAG, VERSION⟩
+  -- Header: Tag4 with flag=0xE, size=0 (Env variant)
+  putTag4 ⟨FLAG, 0⟩
 
   -- Section 1: Blobs (Address -> bytes)
   let blobs := env.blobs.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
@@ -1700,8 +1692,8 @@ def getEnv : GetM Env := do
   let tag ← getTag4
   if tag.flag != FLAG then
     throw s!"Env.get: expected flag 0x{FLAG.toNat.toDigits 16}, got 0x{tag.flag.toNat.toDigits 16}"
-  if tag.size != VERSION then
-    throw s!"Env.get: unsupported version {tag.size}"
+  if tag.size != 0 then
+    throw s!"Env.get: expected Env variant 0, got {tag.size}"
 
   let mut env : Env := {}
 

@@ -1025,18 +1025,13 @@ use super::comm::Comm;
 use super::env::Env;
 
 impl Env {
-  /// Tag4 flag for Env (0xE). Reserved: 0xF for Proofs.
+  /// Tag4 flag for Env (0xE), variant 0.
   pub const FLAG: u8 = 0xE;
-
-  /// Env format version (stored in Tag4 size field).
-  /// Version 1: uncompressed
-  /// Version 2: zstd compressed after header
-  pub const VERSION: u64 = 2;
 
   /// Serialize an Env to bytes.
   pub fn put(&self, buf: &mut Vec<u8>) {
-    // Header: Tag4 with flag=0xE, size=version
-    Tag4::new(Self::FLAG, Self::VERSION).put(buf);
+    // Header: Tag4 with flag=0xE, size=0 (Env variant)
+    Tag4::new(Self::FLAG, 0).put(buf);
 
     // Section 1: Blobs (Address -> bytes)
     put_u64(self.blobs.len() as u64, buf);
@@ -1092,8 +1087,8 @@ impl Env {
         tag.flag
       ));
     }
-    if tag.size != Self::VERSION {
-      return Err(format!("Env::get: unsupported version {}", tag.size));
+    if tag.size != 0 {
+      return Err(format!("Env::get: expected Env variant 0, got {}", tag.size));
     }
 
     let env = Env::new();
@@ -1179,7 +1174,7 @@ impl Env {
     let mut buf = Vec::new();
 
     // Header
-    Tag4::new(Self::FLAG, Self::VERSION).put(&mut buf);
+    Tag4::new(Self::FLAG, 0).put(&mut buf);
     let header_size = buf.len();
 
     // Section 1: Blobs

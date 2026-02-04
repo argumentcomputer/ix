@@ -106,10 +106,23 @@ def Nat.fromBytesLE (xs: Array UInt8) : Nat :=
 
 /-- Distinguish different kinds of Ix definitions --/
 inductive Ix.DefKind where
-| «definition»
-| «opaque»
-| «theorem»
-deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited
+| defn : Ix.DefKind
+| opaq : Ix.DefKind
+| thm : Ix.DefKind
+deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited, DecidableEq
+
+inductive Ix.DefinitionSafety where
+  | unsaf : Ix.DefinitionSafety
+  | safe : Ix.DefinitionSafety
+  | part : Ix.DefinitionSafety
+  deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited, DecidableEq
+
+inductive Ix.QuotKind where
+  | type : Ix.QuotKind
+  | ctor : Ix.QuotKind
+  | lift : Ix.QuotKind
+  | ind : Ix.QuotKind
+  deriving BEq, Ord, Hashable, Repr, Nonempty, Inhabited, DecidableEq
 
 namespace List
 

@@ -2308,30 +2308,20 @@ fn compile_mutual(
 pub fn compile_env(
   lean_env: &Arc<LeanEnv>,
 ) -> Result<CompileState, CompileError> {
-  let start_ref_graph = std::time::SystemTime::now();
   let graph = build_ref_graph(lean_env.as_ref());
-  println!(
-    "Ref-graph: {:.2}s",
-    start_ref_graph.elapsed().unwrap().as_secs_f32()
-  );
 
-  let start_ground = std::time::SystemTime::now();
   let ungrounded = ground_consts(lean_env.as_ref(), &graph.in_refs);
   if !ungrounded.is_empty() {
-    for (n, e) in ungrounded {
-      println!("Ungrounded {:?}: {:?}", n, e);
+    for (n, e) in &ungrounded {
+      eprintln!("Ungrounded {:?}: {:?}", n, e);
     }
     return Err(CompileError::InvalidMutualBlock {
       reason: "ungrounded environment".into(),
     });
   }
-  println!("Ground: {:.2}s", start_ground.elapsed().unwrap().as_secs_f32());
 
-  let start_sccs = std::time::SystemTime::now();
   let condensed = compute_sccs(&graph.out_refs);
-  println!("SCCs: {:.2}s", start_sccs.elapsed().unwrap().as_secs_f32());
 
-  let start_compile = std::time::SystemTime::now();
   let stt = CompileState::default();
 
   // Build work-stealing data structures
@@ -2390,7 +2380,7 @@ pub fn compile_env(
   let last_progress = AtomicUsize::new(0);
   let last_progress_ref = &last_progress;
 
-  println!("Compiling {} blocks with {} threads...", total_blocks, num_threads);
+  // Compile blocks in parallel using work-stealing
 
   // Take references to shared data outside the loop
   let error_ref = &error;
@@ -2535,7 +2525,6 @@ pub fn compile_env(
     });
   }
 
-  println!("Compile: {:.2}s", start_compile.elapsed().unwrap().as_secs_f32());
   Ok(stt)
 }
 

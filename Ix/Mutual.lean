@@ -12,7 +12,7 @@ structure Def where
   kind : DefKind
   value : Expr
   hints : Lean.ReducibilityHints
-  safety : Lean.DefinitionSafety
+  safety : DefinitionSafety
   all : Array Name
   deriving Repr, Nonempty, Inhabited, BEq
 
@@ -38,17 +38,20 @@ inductive MutConst where
 | recr : Rec -> MutConst
 deriving Repr, Nonempty, Inhabited, BEq
 
+private def convertSafety : Lean.DefinitionSafety → DefinitionSafety
+  | .unsafe => .unsaf | .safe => .safe | .partial => .part
+
 def MutConst.fromDefinitionVal (x : DefinitionVal) : MutConst :=
-  .defn ⟨x.cnst.name, x.cnst.levelParams, x.cnst.type, .definition, x.value,
-    x.hints, x.safety, x.all⟩
+  .defn ⟨x.cnst.name, x.cnst.levelParams, x.cnst.type, .defn, x.value,
+    x.hints, convertSafety x.safety, x.all⟩
 
 def MutConst.fromTheoremVal (x : TheoremVal) : MutConst :=
-  .defn ⟨x.cnst.name, x.cnst.levelParams, x.cnst.type, .theorem, x.value,
+  .defn ⟨x.cnst.name, x.cnst.levelParams, x.cnst.type, .thm, x.value,
     .opaque, .safe, x.all⟩
 
 def MutConst.fromOpaqueVal (x : OpaqueVal) : MutConst :=
-  .defn ⟨x.cnst.name, x.cnst.levelParams, x.cnst.type, .opaque, x.value,
-    .opaque, if x.isUnsafe then .unsafe else .safe, x.all⟩
+  .defn ⟨x.cnst.name, x.cnst.levelParams, x.cnst.type, .opaq, x.value,
+    .opaque, if x.isUnsafe then .unsaf else .safe, x.all⟩
 
 /-- Create a MutConst.indc from an InductiveVal and its constructor values -/
 def MutConst.fromInductiveVal (i : InductiveVal) (ctorVals : Array ConstructorVal) : MutConst :=

@@ -9,4 +9,6 @@ import Ix.GraphM
 import Ix.CondenseM
 import Ix.CompileM
 import Ix.DecompileM
+import Ix.Claim
+import Ix.Commit
 import Ix.Benchmark.Bench

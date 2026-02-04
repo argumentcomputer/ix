@@ -780,7 +780,7 @@ fn hash_reducibility_hints(
 }
 
 /// Safety classification of a definition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DefinitionSafety {
   /// Marked `unsafe`; no termination or totality guarantees.
   Unsafe,
@@ -869,7 +869,7 @@ pub struct OpaqueVal {
   pub all: Vec<Name>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum QuotKind {
   Type,
   Ctor,

@@ -80,7 +80,13 @@ def ixonDeserialize := ⟦
         let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         Ixon.ELet(0, Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
-      ByteStream.Cons(0xE1, tail_ptr) =>
+      ByteStream.Cons(0xE3, tail_ptr) =>
+        let tail = load(tail_ptr);
+        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
+        Ixon.Chck(Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
+      ByteStream.Cons(0xE4, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
@@ -90,13 +96,7 @@ def ixonDeserialize := ⟦
           Address.Bytes(addr1), Address.Bytes(addr2),
           Address.Bytes(addr3), Address.Bytes(addr4)
         ),
-      ByteStream.Cons(0xE2, tail_ptr) =>
-        let tail = load(tail_ptr);
-        let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
-        let (addr2, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
-        let (addr3, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
-        Ixon.Chck(Address.Bytes(addr1), Address.Bytes(addr2), Address.Bytes(addr3)),
-      ByteStream.Cons(0xE3, tail_ptr) =>
+      ByteStream.Cons(0xE5, tail_ptr) =>
         let tail = load(tail_ptr);
         let (addr1, tail) = deserialize_addr(tail, [[0; 4]; 8], 0);
         let (addr2, _tail) = deserialize_addr(tail, [[0; 4]; 8], 0);

@@ -1,6 +1,6 @@
-import Ix.Prove
+import Ix.Claim
 
-def main (args : List String) : IO UInt32 := do
+def main (_args : List String) : IO UInt32 := do
 --  TODO
 --  let mut votes := #[]
 --  for commStr in args do

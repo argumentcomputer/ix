@@ -483,10 +483,10 @@ partial def decompileExpr (e : Ixon.Expr) (arenaIdx : UInt64) : DecompileM Ix.Ex
 
 /-! ## Type Conversion Helpers -/
 
-def toIxSafety : Ixon.DefinitionSafety → Lean.DefinitionSafety
+def toIxSafety : DefinitionSafety → Lean.DefinitionSafety
   | .unsaf => .unsafe | .safe => .safe | .part => .partial
 
-def toIxQuotKind : Ixon.QuotKind → Lean.QuotKind
+def toIxQuotKind : QuotKind → Lean.QuotKind
   | .type => .type | .ctor => .ctor | .lift => .lift | .ind => .ind
 
 /-! ## ConstantMeta Extraction Helpers -/

@@ -38,10 +38,6 @@ elab "this_file!" : term => do
 macro "get_env!" : term =>
   `(getFileEnv this_file!)
 
---def computeIxAddress (env: Lean.Environment) (const: Lean.Name): Option MetaAddress
---  := Id.run do
---  let (addr, _) <- (Ix.CompileM.const const)
---  return addr
 
 def runCore (f : CoreM α) (env : Environment) : IO α :=
   Prod.fst <$> f.toIO { fileName := default, fileMap := default } { env }

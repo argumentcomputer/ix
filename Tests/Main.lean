@@ -2,6 +2,8 @@
 import Tests.ByteArray
 --import Tests.Ix
 import Tests.Ix.Ixon
+import Tests.Ix.Claim
+import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Decompile
 import Tests.Ix.RustSerialize
@@ -30,6 +32,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("byte-array", Tests.ByteArray.suite),
   --("ix", Tests.Ix.suite),
   ("ixon", Tests.Ixon.suite),
+  ("claim", Tests.Claim.suite),
+  ("commit", Tests.Commit.suite),
   ("canon", [Tests.CanonM.suite]),
   ("keccak", Tests.Keccak.suite),
   ("sharing", Tests.Sharing.suite),
@@ -49,6 +53,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("decompile", Tests.Decompile.decompileSuiteIO),
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
+  ("commit-io", Tests.Commit.suiteIO),
   --("sharing-io", Tests.Sharing.suiteIO),
 ]
 

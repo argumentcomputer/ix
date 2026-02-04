@@ -2,7 +2,6 @@
 //!
 //! [`Address`] wraps a 32-byte Blake3 digest and is used throughout the Ix
 //! pipeline to uniquely identify constants, blobs, and other data.
-//! [`MetaAddress`] pairs a data address with a metadata address.
 
 use blake3::Hash;
 use core::array::TryFromSliceError;
@@ -55,15 +54,6 @@ impl StdHash for Address {
   }
 }
 
-/// A pair of content addresses: one for the data payload and one for its metadata.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct MetaAddress {
-  /// Address of the data content.
-  pub data: Address,
-  /// Address of the associated metadata.
-  pub meta: Address,
-}
-
 #[cfg(test)]
 pub mod tests {
   use super::*;
@@ -76,11 +66,6 @@ pub mod tests {
         *b = u8::arbitrary(g);
       }
       Address::from_slice(&bytes).unwrap()
-    }
-  }
-  impl Arbitrary for MetaAddress {
-    fn arbitrary(g: &mut Gen) -> Self {
-      MetaAddress { data: Address::arbitrary(g), meta: Address::arbitrary(g) }
     }
   }
 }

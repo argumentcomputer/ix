@@ -117,11 +117,3 @@ def Address.fromUniqueName (name: Lean.Name) : Option Address :=
   | .str (.str (.str .anonymous "Ix") "_#") s => Address.fromString s
   | _ => .none
 
-/-- A pair of content addresses: `data` for the computational content and `meta` for alpha-relevant metadata. -/
-structure MetaAddress where
-  data : Address
-  «meta» : Address
-  deriving Inhabited, Nonempty, Lean.ToExpr, BEq, Hashable, Repr, Ord
-
-instance : ToString MetaAddress where
-  toString adr := s!"{hexOfBytes adr.data.hash}:{hexOfBytes adr.meta.hash}"

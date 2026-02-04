@@ -87,8 +87,17 @@ def ixonSerialize := ⟦
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(t[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
+      Ixon.Chck(Address.Bytes(a), Address.Bytes(b), Address.Bytes(c)) =>
+        let tag = 0xE3;
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
+        let stream = fold(8..0, stream, |stream, @i|
+          fold(4..0, stream, |stream, @j| ByteStream.Cons(c[@i][@j], store(stream))));
+        ByteStream.Cons(tag, store(stream)),
       Ixon.Eval(Address.Bytes(a), Address.Bytes(b), Address.Bytes(c), Address.Bytes(d)) =>
-        let tag = 0xE1;
+        let tag = 0xE4;
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|
@@ -98,17 +107,8 @@ def ixonSerialize := ⟦
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(d[@i][@j], store(stream))));
         ByteStream.Cons(tag, store(stream)),
-      Ixon.Chck(Address.Bytes(a), Address.Bytes(b), Address.Bytes(c)) =>
-        let tag = 0xE2;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(c[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
       Ixon.Comm(Address.Bytes(a), Address.Bytes(b)) =>
-        let tag = 0xE3;
+        let tag = 0xE5;
         let stream = fold(8..0, stream, |stream, @i|
           fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
         let stream = fold(8..0, stream, |stream, @i|

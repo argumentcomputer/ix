@@ -32,7 +32,10 @@ pub use metadata::{
   ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap, NameIndex,
   NameReverseIndex,
 };
-pub use proof::{CheckClaim, Claim, EvalClaim, Proof};
+pub use proof::{
+  CheckClaim, Claim, EvalClaim, Proof, RevealClaim, RevealConstantInfo,
+  RevealConstructorInfo, RevealMutConstInfo, RevealRecursorRule,
+};
 pub use tag::{Tag0, Tag2, Tag4};
 pub use univ::Univ;
 
@@ -294,26 +297,22 @@ mod doc_examples {
 
   #[test]
   fn eval_claim_tag() {
-    // EvalClaim -> Tag4 { flag: 0xF, size: 0 } -> 0xF0
+    // EvalClaim -> Tag4 { flag: 0xE, size: 4 } -> 0xE4
     let claim = Claim::Evals(EvalClaim {
-      lvls: Address::hash(b"lvls"),
-      typ: Address::hash(b"typ"),
       input: Address::hash(b"input"),
       output: Address::hash(b"output"),
     });
     let mut buf = Vec::new();
     claim.put(&mut buf);
-    assert_eq!(buf[0], 0xF0, "EvalClaim should start with 0xF0");
-    assert_eq!(buf.len(), 1 + 128, "EvalClaim should be 1 + 4*32 = 129 bytes");
+    assert_eq!(buf[0], 0xE4, "EvalClaim should start with 0xE4");
+    assert_eq!(buf.len(), 1 + 64, "EvalClaim should be 1 + 2*32 = 65 bytes");
   }
 
   #[test]
   fn eval_proof_tag() {
-    // EvalProof -> Tag4 { flag: 0xF, size: 1 } -> 0xF1
+    // EvalProof -> Tag4 { flag: 0xE, size: 2 } -> 0xE2
     let proof = Proof::new(
       Claim::Evals(EvalClaim {
-        lvls: Address::hash(b"lvls"),
-        typ: Address::hash(b"typ"),
         input: Address::hash(b"input"),
         output: Address::hash(b"output"),
       }),
@@ -321,41 +320,37 @@ mod doc_examples {
     );
     let mut buf = Vec::new();
     proof.put(&mut buf);
-    assert_eq!(buf[0], 0xF1, "EvalProof should start with 0xF1");
-    // 1 (tag) + 128 (addresses) + 1 (len=4) + 4 (proof bytes) = 134
-    assert_eq!(buf.len(), 134, "EvalProof with 4 bytes should be 134 bytes");
-    assert_eq!(buf[129], 0x04, "proof.len should be 0x04");
-    assert_eq!(&buf[130..134], &[1, 2, 3, 4], "proof bytes should be [1,2,3,4]");
+    assert_eq!(buf[0], 0xE2, "EvalProof should start with 0xE2");
+    // 1 (tag) + 64 (addresses) + 1 (len=4) + 4 (proof bytes) = 70
+    assert_eq!(buf.len(), 70, "EvalProof with 4 bytes should be 70 bytes");
+    assert_eq!(buf[65], 0x04, "proof.len should be 0x04");
+    assert_eq!(&buf[66..70], &[1, 2, 3, 4], "proof bytes should be [1,2,3,4]");
   }
 
   #[test]
   fn check_claim_tag() {
-    // CheckClaim -> Tag4 { flag: 0xF, size: 2 } -> 0xF2
+    // CheckClaim -> Tag4 { flag: 0xE, size: 3 } -> 0xE3
     let claim = Claim::Checks(CheckClaim {
-      lvls: Address::hash(b"lvls"),
-      typ: Address::hash(b"typ"),
       value: Address::hash(b"value"),
     });
     let mut buf = Vec::new();
     claim.put(&mut buf);
-    assert_eq!(buf[0], 0xF2, "CheckClaim should start with 0xF2");
-    assert_eq!(buf.len(), 1 + 96, "CheckClaim should be 1 + 3*32 = 97 bytes");
+    assert_eq!(buf[0], 0xE3, "CheckClaim should start with 0xE3");
+    assert_eq!(buf.len(), 1 + 32, "CheckClaim should be 1 + 1*32 = 33 bytes");
   }
 
   #[test]
   fn check_proof_tag() {
-    // CheckProof -> Tag4 { flag: 0xF, size: 3 } -> 0xF3
+    // CheckProof -> Tag4 { flag: 0xE, size: 1 } -> 0xE1
     let proof = Proof::new(
       Claim::Checks(CheckClaim {
-        lvls: Address::hash(b"lvls"),
-        typ: Address::hash(b"typ"),
         value: Address::hash(b"value"),
       }),
       vec![5, 6, 7],
     );
     let mut buf = Vec::new();
     proof.put(&mut buf);
-    assert_eq!(buf[0], 0xF3, "CheckProof should start with 0xF3");
+    assert_eq!(buf[0], 0xE1, "CheckProof should start with 0xE1");
   }
 
   // =========================================================================
@@ -470,10 +465,10 @@ mod doc_examples {
 
   #[test]
   fn env_tag() {
-    // Env -> Tag4 { flag: 0xE, size: VERSION=2 } -> 0xE2
+    // Env -> Tag4 { flag: 0xE, size: 0 } -> 0xE0
     let env = Env::new();
     let mut buf = Vec::new();
     env.put(&mut buf);
-    assert_eq!(buf[0], 0xE2, "Env should start with 0xE2 (flag=E, version=2)");
+    assert_eq!(buf[0], 0xE0, "Env should start with 0xE0 (flag=E, variant=0)");
   }
 }

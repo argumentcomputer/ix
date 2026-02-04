@@ -37,6 +37,19 @@ def hexDump (bytes : ByteArray) (maxBytes : Nat := 64) : String := Id.run do
   if bytes.size > maxBytes then s := s ++ s!" ... ({bytes.size} bytes total)"
   return s
 
+/-- Format a byte count with appropriate unit suffix (B, kB, MB, GB). -/
+def fmtBytes (n : Nat) : String :=
+  if n < 1024 then s!"{n} B"
+  else if n < 1024 * 1024 then
+    let kb := n * 10 / 1024
+    s!"{kb / 10}.{kb % 10} kB"
+  else if n < 1024 * 1024 * 1024 then
+    let mb := n * 10 / (1024 * 1024)
+    s!"{mb / 10}.{mb % 10} MB"
+  else
+    let gb := n * 10 / (1024 * 1024 * 1024)
+    s!"{gb / 10}.{gb % 10} GB"
+
 /-- Find first byte position where two arrays differ -/
 def findFirstDiff (a b : ByteArray) : Option Nat := Id.run do
   for i in [:min a.size b.size] do
@@ -160,7 +173,7 @@ def testCrossImpl : TestSeq :=
 
     | .ok (leanIxonEnv, totalBytes) =>
       let leanTime := (← IO.monoMsNow) - leanStart
-      IO.println s!"[Step 2]   Lean: {leanIxonEnv.constCount} constants, {totalBytes} bytes in {leanTime}ms"
+      IO.println s!"[Step 2]   Lean: {leanIxonEnv.constCount} constants, {fmtBytes totalBytes} in {leanTime}ms"
       IO.println ""
 
       -- Step 3: Compare compilation results
@@ -329,13 +342,13 @@ def testCrossImpl : TestSeq :=
         let leanBig := leanBlobSizes.filter (· > 1000) |>.length
         let leanHuge := leanBlobSizes.filter (· > 100000) |>.length
         let leanTopSizes := leanBlobSizes.toArray.insertionSort (· > ·) |>.toList.take 10
-        IO.println s!"[Step 4]   Lean blob stats: total={leanTotalBlobData}, max={leanMaxBlob}, avg={leanAvgBlob}, big(>1KB)={leanBig}, huge(>100KB)={leanHuge}"
-        IO.println s!"[Step 4]   Lean top 10 blob sizes: {leanTopSizes}"
+        IO.println s!"[Step 4]   Lean blob stats: total={fmtBytes leanTotalBlobData}, max={fmtBytes leanMaxBlob}, avg={fmtBytes leanAvgBlob}, big(>1kB)={leanBig}, huge(>100kB)={leanHuge}"
+        IO.println s!"[Step 4]   Lean top 10 blob sizes: {leanTopSizes.map fmtBytes}"
 
         let (leanBlobs, leanConsts, leanNames, leanNamed, leanComms) := Ixon.envSectionSizes leanIxonEnv
-        IO.println s!"[Step 4]   Lean sections: blobs={leanBlobs}, consts={leanConsts}, names={leanNames}, named={leanNamed}, comms={leanComms}"
+        IO.println s!"[Step 4]   Lean sections: blobs={fmtBytes leanBlobs}, consts={fmtBytes leanConsts}, names={fmtBytes leanNames}, named={fmtBytes leanNamed}, comms={fmtBytes leanComms}"
         let leanEnvBytes := serializeEnv leanIxonEnv
-        IO.println s!"[Step 4]   Lean env done: {leanEnvBytes.size} bytes"
+        IO.println s!"[Step 4]   Lean env done: {fmtBytes leanEnvBytes.size}"
 
         IO.println s!"[Step 4]   Serializing Rust env ({phases.compileEnv.constCount} consts)..."
         IO.println s!"[Step 4]   Rust env has {phases.compileEnv.named.size} named, {phases.compileEnv.blobs.size} blobs, {phases.compileEnv.names.size} names"
@@ -350,17 +363,17 @@ def testCrossImpl : TestSeq :=
         let rustBig := rustBlobSizes.filter (· > 1000) |>.length
         let rustHuge := rustBlobSizes.filter (· > 100000) |>.length
         let rustTopSizes := rustBlobSizes.toArray.insertionSort (· > ·) |>.toList.take 10
-        IO.println s!"[Step 4]   Rust blob stats: total={rustTotalBlobData}, max={rustMaxBlob}, avg={rustAvgBlob}, big(>1KB)={rustBig}, huge(>100KB)={rustHuge}"
-        IO.println s!"[Step 4]   Rust top 10 blob sizes: {rustTopSizes}"
+        IO.println s!"[Step 4]   Rust blob stats: total={fmtBytes rustTotalBlobData}, max={fmtBytes rustMaxBlob}, avg={fmtBytes rustAvgBlob}, big(>1kB)={rustBig}, huge(>100kB)={rustHuge}"
+        IO.println s!"[Step 4]   Rust top 10 blob sizes: {rustTopSizes.map fmtBytes}"
 
         let (rustBlobs, rustConsts, rustNames, rustNamed, rustComms) := Ixon.envSectionSizes phases.compileEnv
-        IO.println s!"[Step 4]   Rust sections: blobs={rustBlobs}, consts={rustConsts}, names={rustNames}, named={rustNamed}, comms={rustComms}"
+        IO.println s!"[Step 4]   Rust sections: blobs={fmtBytes rustBlobs}, consts={fmtBytes rustConsts}, names={fmtBytes rustNames}, named={fmtBytes rustNamed}, comms={fmtBytes rustComms}"
         let rustEnvBytes := serializeEnv phases.compileEnv
-        IO.println s!"[Step 4]   Rust env done: {rustEnvBytes.size} bytes"
+        IO.println s!"[Step 4]   Rust env done: {fmtBytes rustEnvBytes.size}"
         let serTime := (← IO.monoMsNow) - serStart
 
-        IO.println s!"[Step 4]   Lean env: {leanEnvBytes.size} bytes"
-        IO.println s!"[Step 4]   Rust env: {rustEnvBytes.size} bytes"
+        IO.println s!"[Step 4]   Lean env: {fmtBytes leanEnvBytes.size}"
+        IO.println s!"[Step 4]   Rust env: {fmtBytes rustEnvBytes.size}"
         IO.println s!"[Step 4]   Serialization time: {serTime}ms"
 
         if leanEnvBytes == rustEnvBytes then
@@ -388,10 +401,10 @@ def testCrossImpl : TestSeq :=
               -- Try to show content if small
               if let some bytes := phases.compileEnv.blobs.get? addr then
                 if size < 100 then
-                  let content := String.fromUTF8? bytes |>.getD s!"<binary {size} bytes>"
-                  IO.println s!"[Step 4]     {addr} ({size} bytes): {content}"
+                  let content := String.fromUTF8? bytes |>.getD s!"<binary {fmtBytes size}>"
+                  IO.println s!"[Step 4]     {addr} ({fmtBytes size}): {content}"
                 else
-                  IO.println s!"[Step 4]     {addr} ({size} bytes)"
+                  IO.println s!"[Step 4]     {addr} ({fmtBytes size})"
 
           -- Find blobs in Lean but not in Rust
           let mut missingInRust : Array (Address × Nat) := #[]
@@ -403,14 +416,14 @@ def testCrossImpl : TestSeq :=
             for (addr, size) in missingInRust.toList.take 10 do
               if let some bytes := leanIxonEnv.blobs.get? addr then
                 if size < 100 then
-                  let content := String.fromUTF8? bytes |>.getD s!"<binary {size} bytes>"
-                  IO.println s!"[Step 4]     {addr} ({size} bytes): {content}"
+                  let content := String.fromUTF8? bytes |>.getD s!"<binary {fmtBytes size}>"
+                  IO.println s!"[Step 4]     {addr} ({fmtBytes size}): {content}"
                 else
-                  IO.println s!"[Step 4]     {addr} ({size} bytes)"
+                  IO.println s!"[Step 4]     {addr} ({fmtBytes size})"
 
           IO.println ""
           -- Note: We expect this to fail until Lean generates metadata
-          return (false, some s!"Serialized environments differ (Lean: {leanEnvBytes.size} bytes, Rust: {rustEnvBytes.size} bytes)")
+          return (false, some s!"Serialized environments differ (Lean: {fmtBytes leanEnvBytes.size}, Rust: {fmtBytes rustEnvBytes.size})")
       else
         -- Report mismatches
         IO.println s!"[Step 3]   Found {result.mismatchedConstants.size} mismatches!"
@@ -423,11 +436,11 @@ def testCrossImpl : TestSeq :=
           IO.println s!"  Rust address: {first.rustAddr}"
           IO.println ""
 
-          IO.println s!"  Lean bytes ({first.leanBytes.size} bytes):"
+          IO.println s!"  Lean bytes ({fmtBytes first.leanBytes.size}):"
           IO.println s!"{hexDump first.leanBytes 128}"
           IO.println ""
 
-          IO.println s!"  Rust bytes ({first.rustBytes.size} bytes):"
+          IO.println s!"  Rust bytes ({fmtBytes first.rustBytes.size}):"
           IO.println s!"{hexDump first.rustBytes 128}"
           IO.println ""
 

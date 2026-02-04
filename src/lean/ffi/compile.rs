@@ -376,39 +376,19 @@ pub extern "C" fn rs_roundtrip_raw_env(raw_env_ptr: *const c_void) -> *mut c_voi
 /// FFI function to run all compilation phases and return combined results.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_phases(env_consts_ptr: *const c_void) -> *mut c_void {
-  use std::time::Instant;
-  let total_start = Instant::now();
-
-  let decode_start = Instant::now();
   let rust_env = lean_ptr_to_env(env_consts_ptr);
   let env_len = rust_env.len();
   let rust_env = Arc::new(rust_env);
-  eprintln!(
-    "  [rs_compile_phases] Decode: {:.2}s ({} constants)",
-    decode_start.elapsed().as_secs_f32(),
-    env_len
-  );
 
-  let raw_env_start = Instant::now();
   let mut cache = LeanBuildCache::with_capacity(env_len);
   let raw_env = build_raw_environment(&mut cache, &rust_env);
-  eprintln!("  [rs_compile_phases] RawEnvironment: {:.2}s", raw_env_start.elapsed().as_secs_f32());
 
-  let graph_start = Instant::now();
   let ref_graph = build_ref_graph(&rust_env);
-  eprintln!("  [rs_compile_phases] Ref graph: {:.2}s", graph_start.elapsed().as_secs_f32());
 
-  let scc_start = Instant::now();
   let condensed = compute_sccs(&ref_graph.out_refs);
-  eprintln!(
-    "  [rs_compile_phases] SCCs: {:.2}s ({} blocks)",
-    scc_start.elapsed().as_secs_f32(),
-    condensed.blocks.len()
-  );
 
   let condensed_obj = build_condensed_blocks(&mut cache, &condensed);
 
-  let compile_start = Instant::now();
   let compile_stt = match compile_env(&rust_env) {
     Ok(stt) => stt,
     Err(e) => {
@@ -434,9 +414,7 @@ pub extern "C" fn rs_compile_phases(env_consts_ptr: *const c_void) -> *mut c_voi
       }
     }
   };
-  eprintln!("  [rs_compile_phases] Compile: {:.2}s", compile_start.elapsed().as_secs_f32());
-
-  let build_raw_start = Instant::now();
+  // Build Lean objects from compile results
   unsafe {
     let consts: Vec<_> =
       compile_stt.env.consts.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
@@ -486,17 +464,10 @@ pub extern "C" fn rs_compile_phases(env_consts_ptr: *const c_void) -> *mut c_voi
     lean_ctor_set(raw_ixon_env, 3, comms_arr);
     lean_ctor_set(raw_ixon_env, 4, names_arr);
 
-    eprintln!(
-      "  [rs_compile_phases] Build RawEnv: {:.2}s",
-      build_raw_start.elapsed().as_secs_f32()
-    );
-
     let result = lean_alloc_ctor(0, 3, 0);
     lean_ctor_set(result, 0, raw_env);
     lean_ctor_set(result, 1, condensed_obj);
     lean_ctor_set(result, 2, raw_ixon_env);
-
-    eprintln!("  [rs_compile_phases] Total: {:.2}s", total_start.elapsed().as_secs_f32());
 
     lean_io_result_mk_ok(result)
   }

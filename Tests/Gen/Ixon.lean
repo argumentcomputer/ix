@@ -9,6 +9,7 @@ import Ix.Ixon
 import Ix.Address
 
 open LSpec SlimCheck Gen Ixon
+open Ix (DefKind DefinitionSafety QuotKind)
 
 namespace Tests.Gen.Ixon
 

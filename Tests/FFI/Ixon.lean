@@ -8,6 +8,7 @@ import Tests.Gen.Ixon
 import Ix.Ixon
 
 open LSpec SlimCheck Gen Ixon
+open Ix (DefKind DefinitionSafety QuotKind)
 
 namespace Tests.FFI.Ixon
 

@@ -64,7 +64,7 @@ def computeNodeHash (e : Ixon.Expr) (childHashes : Array Address) : Address :=
         |>.append (uint64ToBytes univIndices.size.toUInt64)
       univIndices.foldl (fun buf idx => buf.append (uint64ToBytes idx)) base
     | .recur recIdx univIndices =>
-      let base := buf.push Ixon.Expr.FLAG_RECUR
+      let base := buf.push Ixon.Expr.FLAG_REC
         |>.append (uint64ToBytes recIdx)
         |>.append (uint64ToBytes univIndices.size.toUInt64)
       univIndices.foldl (fun buf idx => buf.append (uint64ToBytes idx)) base

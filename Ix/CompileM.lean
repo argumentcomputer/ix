@@ -863,7 +863,7 @@ def buildConstantWithSharing (info : Ixon.ConstantInfo) (rootExprs : Array Ixon.
 /-! ## Individual Constant Compilation -/
 
 /-- Convert Lean DefinitionSafety to Ixon DefinitionSafety -/
-def convertSafety : Lean.DefinitionSafety → Ixon.DefinitionSafety
+def convertSafety : Lean.DefinitionSafety → DefinitionSafety
   | .unsafe => .unsaf
   | .safe => .safe
   | .partial => .part
@@ -996,7 +996,7 @@ def compileQuotient (q : QuotVal) : CompileM (Ixon.Quotient × Ixon.ConstantMeta
     let nameAddr := q.cnst.name.getHash
     let lvlAddrs := q.cnst.levelParams.map (·.getHash)
 
-    let kind : Ixon.QuotKind := match q.kind with
+    let kind : QuotKind := match q.kind with
       | .type => .type
       | .ctor => .ctor
       | .lift => .lift
@@ -1154,22 +1154,16 @@ def compileDefinitionData (d : Def) : CompileM (Ixon.Definition × Ixon.Constant
     let ctxAddrs ← getMutCtxAddrs
 
     let defn : Ixon.Definition := {
-      kind := match d.kind with
-        | .definition => .defn
-        | .theorem => .thm
-        | .opaque => .opaq
-      safety := match d.safety with
-        | .unsafe => .unsaf
-        | .safe => .safe
-        | .partial => .part
+      kind := d.kind
+      safety := d.safety
       lvls := d.levelParams.size.toUInt64
       typ := typeExpr
       value := valueExpr
     }
     let hints := match d.kind with
-      | .definition => d.hints
-      | .theorem => .opaque
-      | .opaque => .opaque
+      | .defn => d.hints
+      | .thm => .opaque
+      | .opaq => .opaque
     let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs hints allAddrs ctxAddrs arena typeRoot valueRoot
     pure (defn, constMeta, typeExpr, valueExpr)
 
