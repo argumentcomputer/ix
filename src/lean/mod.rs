@@ -202,7 +202,11 @@ unsafe extern "C" {
   /// Allocate a constructor object with the given tag, number of object fields,
   /// and scalar size in bytes.
   #[link_name = "c_lean_alloc_ctor"]
-  pub fn lean_alloc_ctor(tag: c_uint, num_objs: c_uint, scalar_sz: c_uint) -> *mut c_void;
+  pub fn lean_alloc_ctor(
+    tag: c_uint,
+    num_objs: c_uint,
+    scalar_sz: c_uint,
+  ) -> *mut c_void;
 
   /// Set the i-th object field of a constructor.
   #[link_name = "c_lean_ctor_set"]
@@ -232,7 +236,11 @@ unsafe extern "C" {
   // Scalar array (ByteArray) allocation
   /// Allocate a scalar array with the given element size, initial size, and capacity.
   #[link_name = "c_lean_alloc_sarray"]
-  pub fn lean_alloc_sarray(elem_size: c_uint, size: usize, capacity: usize) -> *mut c_void;
+  pub fn lean_alloc_sarray(
+    elem_size: c_uint,
+    size: usize,
+    capacity: usize,
+  ) -> *mut c_void;
 
   /// Get a pointer to the data area of a scalar array.
   #[link_name = "c_lean_sarray_cptr"]
@@ -280,7 +288,10 @@ unsafe extern "C" {
 
   /// Create a Nat from limbs (little-endian u64 array). Uses GMP internally.
   #[link_name = "c_lean_nat_from_limbs"]
-  pub fn lean_nat_from_limbs(num_limbs: usize, limbs: *const u64) -> *mut c_void;
+  pub fn lean_nat_from_limbs(
+    num_limbs: usize,
+    limbs: *const u64,
+  ) -> *mut c_void;
 }
 
 /// Box a scalar value into a Lean object pointer.

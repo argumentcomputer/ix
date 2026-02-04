@@ -5,10 +5,12 @@ use std::sync::Arc;
 
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
-use crate::ix::ixon::sharing::{analyze_block, build_sharing_vec, decide_sharing};
+use crate::ix::ixon::sharing::{
+  analyze_block, build_sharing_vec, decide_sharing,
+};
 use crate::lean::array::LeanArrayObject;
-use crate::lean::sarray::LeanSArrayObject;
 use crate::lean::as_ref_unsafe;
+use crate::lean::sarray::LeanSArrayObject;
 
 use super::expr::decode_ixon_expr_array;
 use super::serialize::lean_ptr_to_ixon_expr;
@@ -45,7 +47,8 @@ pub extern "C" fn rs_debug_sharing_analysis(exprs_ptr: *const c_void) {
   println!("[Rust] Subterms with usage >= 2:");
   for (hash, info, eff_size) in candidates {
     let n = info.usage_count;
-    let potential = (n.cast_signed() - 1) * eff_size.cast_signed() - (n.cast_signed() + eff_size.cast_signed());
+    let potential = (n.cast_signed() - 1) * eff_size.cast_signed()
+      - (n.cast_signed() + eff_size.cast_signed());
     println!(
       "  usage={} eff_size={} potential={} hash={:.8}",
       n, eff_size, potential, hash
@@ -95,10 +98,12 @@ extern "C" fn rs_run_sharing_analysis(
   }
 
   // Write to output arrays
-  let sharing_out: &mut LeanSArrayObject = unsafe { &mut *out_sharing_vec.cast() };
+  let sharing_out: &mut LeanSArrayObject =
+    unsafe { &mut *out_sharing_vec.cast() };
   sharing_out.set_data(&sharing_bytes);
 
-  let rewritten_out: &mut LeanSArrayObject = unsafe { &mut *out_rewritten.cast() };
+  let rewritten_out: &mut LeanSArrayObject =
+    unsafe { &mut *out_rewritten.cast() };
   rewritten_out.set_data(&rewritten_bytes);
 
   shared_hashes.len() as u64

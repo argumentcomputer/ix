@@ -14,11 +14,15 @@ use crate::ix::ixon::metadata::ConstantMeta;
 use crate::lean::array::LeanArrayObject;
 use crate::lean::sarray::LeanSArrayObject;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray, lean_array_set_core,
-  lean_ctor_get, lean_ctor_set, lean_mk_string, lean_sarray_cptr,
+  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray,
+  lean_array_set_core, lean_ctor_get, lean_ctor_set, lean_mk_string,
+  lean_sarray_cptr,
 };
 
-use super::constant::{build_address_from_ixon, build_ixon_constant, decode_ixon_address, decode_ixon_constant};
+use super::constant::{
+  build_address_from_ixon, build_ixon_constant, decode_ixon_address,
+  decode_ixon_constant,
+};
 use super::meta::{build_constant_meta, decode_constant_meta};
 use crate::lean::ffi::builder::LeanBuildCache;
 use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
@@ -118,7 +122,10 @@ pub fn decode_raw_named(ptr: *const c_void) -> DecodedRawNamed {
 }
 
 /// Build Ixon.RawNamed Lean object.
-pub fn build_raw_named(cache: &mut LeanBuildCache, rn: &DecodedRawNamed) -> *mut c_void {
+pub fn build_raw_named(
+  cache: &mut LeanBuildCache,
+  rn: &DecodedRawNamed,
+) -> *mut c_void {
   unsafe {
     let name_obj = build_name(cache, &rn.name);
     let addr_obj = build_address_from_ixon(&rn.addr);
@@ -228,7 +235,11 @@ pub fn decode_raw_name_entry(ptr: *const c_void) -> DecodedRawNameEntry {
 }
 
 /// Build Ixon.RawNameEntry Lean object.
-pub fn build_raw_name_entry(cache: &mut LeanBuildCache, addr: &Address, name: &Name) -> *mut c_void {
+pub fn build_raw_name_entry(
+  cache: &mut LeanBuildCache,
+  addr: &Address,
+  name: &Name,
+) -> *mut c_void {
   unsafe {
     let addr_obj = build_address_from_ixon(addr);
     let name_obj = build_name(cache, name);
@@ -349,10 +360,8 @@ pub fn decoded_to_ixon_env(decoded: &DecodedRawEnv) -> IxonEnv {
     env.blobs.insert(rb.addr.clone(), rb.bytes.clone());
   }
   for rc in &decoded.comms {
-    let comm = Comm {
-      secret: rc.comm.secret.clone(),
-      payload: rc.comm.payload.clone(),
-    };
+    let comm =
+      Comm { secret: rc.comm.secret.clone(), payload: rc.comm.payload.clone() };
     env.store_comm(rc.addr.clone(), comm);
   }
   env
@@ -380,10 +389,7 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> DecodedRawEnv {
   let blobs = env
     .blobs
     .iter()
-    .map(|e| DecodedRawBlob {
-      addr: e.key().clone(),
-      bytes: e.value().clone(),
-    })
+    .map(|e| DecodedRawBlob { addr: e.key().clone(), bytes: e.value().clone() })
     .collect();
   let comms = env
     .comms
@@ -421,7 +427,11 @@ pub extern "C" fn rs_ser_env(raw_env_ptr: *const c_void) -> *mut c_void {
 
   unsafe {
     let ba = lean_alloc_sarray(1, buf.len(), buf.len());
-    std::ptr::copy_nonoverlapping(buf.as_ptr(), lean_sarray_cptr(ba), buf.len());
+    std::ptr::copy_nonoverlapping(
+      buf.as_ptr(),
+      lean_sarray_cptr(ba),
+      buf.len(),
+    );
     ba
   }
 }
@@ -446,18 +456,19 @@ pub extern "C" fn rs_des_env(bytes_ptr: *const c_void) -> *mut c_void {
         lean_ctor_set(obj, 0, raw_env);
         obj
       }
-    }
+    },
     Err(e) => {
       // Except.error (tag 0)
       let msg = std::ffi::CString::new(format!("rs_des_env: {}", e))
-        .unwrap_or_else(|_| std::ffi::CString::new("rs_des_env: deserialization error").unwrap());
+        .unwrap_or_else(|_| {
+          std::ffi::CString::new("rs_des_env: deserialization error").unwrap()
+        });
       unsafe {
         let lean_str = lean_mk_string(msg.as_ptr());
         let obj = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(obj, 0, lean_str);
         obj
       }
-    }
+    },
   }
 }
-

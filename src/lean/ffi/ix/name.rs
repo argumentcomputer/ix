@@ -5,14 +5,14 @@
 //! - Tag 1: str (parent : Name) (s : String) (hash : Address)
 //! - Tag 2: num (parent : Name) (i : Nat) (hash : Address)
 
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 
 use crate::ix::env::{Name, NameData};
 use crate::lean::nat::Nat;
 use crate::lean::string::LeanStringObject;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
-  lean_ctor_set, lean_inc, lean_mk_string, lean_obj_tag,
+  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core,
+  lean_ctor_get, lean_ctor_set, lean_inc, lean_mk_string, lean_obj_tag,
 };
 
 use super::super::builder::LeanBuildCache;
@@ -35,7 +35,7 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> *mut c_void {
         let obj = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(obj, 0, build_address(h));
         obj
-      }
+      },
       NameData::Str(parent, s, h) => {
         // str: (parent : Name) (s : String) (hash : Address)
         let parent_obj = build_name(cache, parent);
@@ -45,7 +45,7 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> *mut c_void {
         lean_ctor_set(obj, 1, lean_mk_string(s_cstr.as_ptr()));
         lean_ctor_set(obj, 2, build_address(h));
         obj
-      }
+      },
       NameData::Num(parent, n, h) => {
         // num: (parent : Name) (i : Nat) (hash : Address)
         let parent_obj = build_name(cache, parent);
@@ -55,7 +55,7 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> *mut c_void {
         lean_ctor_set(obj, 1, n_obj);
         lean_ctor_set(obj, 2, build_address(h));
         obj
-      }
+      },
     }
   };
 
@@ -64,7 +64,10 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> *mut c_void {
 }
 
 /// Build an Array of Names.
-pub fn build_name_array(cache: &mut LeanBuildCache, names: &[Name]) -> *mut c_void {
+pub fn build_name_array(
+  cache: &mut LeanBuildCache,
+  names: &[Name],
+) -> *mut c_void {
   unsafe {
     let arr = lean_alloc_array(names.len(), names.len());
     for (i, name) in names.iter().enumerate() {
@@ -83,7 +86,7 @@ pub fn decode_ix_name(ptr: *const c_void) -> Name {
       0 => {
         // anonymous: just has hash, construct anon Name
         Name::anon()
-      }
+      },
       1 => {
         // str: parent, s, hash
         let parent_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -95,7 +98,7 @@ pub fn decode_ix_name(ptr: *const c_void) -> Name {
         let s = s_obj.as_string();
 
         Name::str(parent, s)
-      }
+      },
       2 => {
         // num: parent, i, hash
         let parent_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -106,7 +109,7 @@ pub fn decode_ix_name(ptr: *const c_void) -> Name {
         let i = Nat::from_ptr(i_ptr);
 
         Name::num(parent, i)
-      }
+      },
       _ => panic!("Invalid Ix.Name tag: {}", tag),
     }
   }

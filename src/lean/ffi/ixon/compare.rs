@@ -3,14 +3,16 @@
 use std::collections::HashMap;
 use std::ffi::c_void;
 
-use crate::ix::compile::{compile_env, compile_expr, BlockCache, CompileState};
+use crate::ix::compile::{BlockCache, CompileState, compile_env, compile_expr};
 use crate::ix::env::Name;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
 use crate::lean::sarray::LeanSArrayObject;
 use crate::lean::{lean_alloc_ctor, lean_ctor_set};
 
-use super::super::lean_env::{lean_ptr_to_expr, lean_ptr_to_name, Cache as LeanCache, GlobalCache};
+use super::super::lean_env::{
+  Cache as LeanCache, GlobalCache, lean_ptr_to_expr, lean_ptr_to_name,
+};
 
 /// Rust-side compiled environment for block comparison.
 pub struct RustCompiledEnv {
@@ -40,11 +42,16 @@ pub extern "C" fn rs_compare_expr_compilation(
   let mut block_cache = BlockCache::default();
 
   // Compile with Rust
-  let rust_expr =
-    match compile_expr(&lean_expr, &univ_params, &mut_ctx, &mut block_cache, &compile_stt) {
-      Ok(expr) => expr,
-      Err(_) => return false,
-    };
+  let rust_expr = match compile_expr(
+    &lean_expr,
+    &univ_params,
+    &mut_ctx,
+    &mut block_cache,
+    &compile_stt,
+  ) {
+    Ok(expr) => expr,
+    Err(_) => return false,
+  };
 
   // Serialize Rust's output
   let mut rust_bytes = Vec::new();
@@ -120,17 +127,27 @@ pub unsafe extern "C" fn rs_compare_block_v2(
     Some((bytes, sharing_len)) => (bytes, *sharing_len as u64),
     None => {
       // Block not found in Rust compilation
-      let result = build_block_compare_result(false, true, lean_data.len() as u64, 0, 0);
+      let result =
+        build_block_compare_result(false, true, lean_data.len() as u64, 0, 0);
       return build_block_compare_detail(result, lean_sharing_len, 0);
-    }
+    },
   };
 
   // Compare bytes
   if rust_bytes == lean_data {
     // Match
-    let result =
-      build_block_compare_result(true, false, lean_data.len() as u64, rust_bytes.len() as u64, 0);
-    return build_block_compare_detail(result, lean_sharing_len, rust_sharing_len);
+    let result = build_block_compare_result(
+      true,
+      false,
+      lean_data.len() as u64,
+      rust_bytes.len() as u64,
+      0,
+    );
+    return build_block_compare_detail(
+      result,
+      lean_sharing_len,
+      rust_sharing_len,
+    );
   }
 
   // Mismatch: find first differing byte
@@ -172,7 +189,9 @@ pub unsafe extern "C" fn rs_free_compiled_env(ptr: *mut RustCompiledEnv) {
 
 /// Build a RustCompiledEnv from a Lean environment.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_build_compiled_env(env_consts_ptr: *const c_void) -> *mut RustCompiledEnv {
+pub extern "C" fn rs_build_compiled_env(
+  env_consts_ptr: *const c_void,
+) -> *mut RustCompiledEnv {
   use super::super::lean_env::lean_ptr_to_env;
 
   // Decode Lean environment
@@ -184,8 +203,10 @@ pub extern "C" fn rs_build_compiled_env(env_consts_ptr: *const c_void) -> *mut R
     Ok(stt) => stt,
     Err(_) => {
       // Return empty env on error
-      return Box::into_raw(Box::new(RustCompiledEnv { blocks: HashMap::new() }));
-    }
+      return Box::into_raw(Box::new(RustCompiledEnv {
+        blocks: HashMap::new(),
+      }));
+    },
   };
 
   // Collect blocks

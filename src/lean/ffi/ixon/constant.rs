@@ -9,18 +9,24 @@ use std::sync::Arc;
 
 use crate::ix::address::Address;
 use crate::ix::ixon::constant::{
-  Axiom as IxonAxiom, Constant as IxonConstant, ConstantInfo as IxonConstantInfo,
-  Constructor as IxonConstructor, ConstructorProj, DefKind, Definition as IxonDefinition,
-  DefinitionProj, Inductive as IxonInductive, InductiveProj, MutConst, Quotient as IxonQuotient,
-  Recursor as IxonRecursor, RecursorProj, RecursorRule as IxonRecursorRule,
+  Axiom as IxonAxiom, Constant as IxonConstant,
+  ConstantInfo as IxonConstantInfo, Constructor as IxonConstructor,
+  ConstructorProj, DefKind, Definition as IxonDefinition, DefinitionProj,
+  Inductive as IxonInductive, InductiveProj, MutConst,
+  Quotient as IxonQuotient, Recursor as IxonRecursor, RecursorProj,
+  RecursorRule as IxonRecursorRule,
 };
 use crate::lean::sarray::LeanSArrayObject;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray, lean_array_set_core,
-  lean_ctor_get, lean_ctor_set, lean_obj_tag, lean_sarray_cptr,
+  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray,
+  lean_array_set_core, lean_ctor_get, lean_ctor_set, lean_obj_tag,
+  lean_sarray_cptr,
 };
 
-use super::expr::{build_ixon_expr, build_ixon_expr_array, decode_ixon_expr, decode_ixon_expr_array};
+use super::expr::{
+  build_ixon_expr, build_ixon_expr_array, decode_ixon_expr,
+  decode_ixon_expr_array,
+};
 use super::univ::{build_ixon_univ_array, decode_ixon_univ_array};
 
 /// Build Address from Ixon Address type (which is just a [u8; 32]).
@@ -274,19 +280,19 @@ pub fn build_mut_const(mc: &MutConst) -> *mut c_void {
         let obj = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(obj, 0, def_obj);
         obj
-      }
+      },
       MutConst::Indc(ind) => {
         let ind_obj = build_ixon_inductive(ind);
         let obj = lean_alloc_ctor(1, 1, 0);
         lean_ctor_set(obj, 0, ind_obj);
         obj
-      }
+      },
       MutConst::Recr(rec) => {
         let rec_obj = build_ixon_recursor(rec);
         let obj = lean_alloc_ctor(2, 1, 0);
         lean_ctor_set(obj, 0, rec_obj);
         obj
-      }
+      },
     }
   }
 }
@@ -300,49 +306,49 @@ pub fn build_ixon_constant_info(info: &IxonConstantInfo) -> *mut c_void {
         let obj = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(obj, 0, def_obj);
         obj
-      }
+      },
       IxonConstantInfo::Recr(rec) => {
         let rec_obj = build_ixon_recursor(rec);
         let obj = lean_alloc_ctor(1, 1, 0);
         lean_ctor_set(obj, 0, rec_obj);
         obj
-      }
+      },
       IxonConstantInfo::Axio(ax) => {
         let ax_obj = build_ixon_axiom(ax);
         let obj = lean_alloc_ctor(2, 1, 0);
         lean_ctor_set(obj, 0, ax_obj);
         obj
-      }
+      },
       IxonConstantInfo::Quot(quot) => {
         let quot_obj = build_ixon_quotient(quot);
         let obj = lean_alloc_ctor(3, 1, 0);
         lean_ctor_set(obj, 0, quot_obj);
         obj
-      }
+      },
       IxonConstantInfo::CPrj(proj) => {
         let proj_obj = build_constructor_proj(proj);
         let obj = lean_alloc_ctor(4, 1, 0);
         lean_ctor_set(obj, 0, proj_obj);
         obj
-      }
+      },
       IxonConstantInfo::RPrj(proj) => {
         let proj_obj = build_recursor_proj(proj);
         let obj = lean_alloc_ctor(5, 1, 0);
         lean_ctor_set(obj, 0, proj_obj);
         obj
-      }
+      },
       IxonConstantInfo::IPrj(proj) => {
         let proj_obj = build_inductive_proj(proj);
         let obj = lean_alloc_ctor(6, 1, 0);
         lean_ctor_set(obj, 0, proj_obj);
         obj
-      }
+      },
       IxonConstantInfo::DPrj(proj) => {
         let proj_obj = build_definition_proj(proj);
         let obj = lean_alloc_ctor(7, 1, 0);
         lean_ctor_set(obj, 0, proj_obj);
         obj
-      }
+      },
       IxonConstantInfo::Muts(muts) => {
         let arr = lean_alloc_array(muts.len(), muts.len());
         for (i, mc) in muts.iter().enumerate() {
@@ -352,7 +358,7 @@ pub fn build_ixon_constant_info(info: &IxonConstantInfo) -> *mut c_void {
         let obj = lean_alloc_ctor(8, 1, 0);
         lean_ctor_set(obj, 0, arr);
         obj
-      }
+      },
     }
   }
 }
@@ -459,7 +465,8 @@ pub fn decode_ixon_recursor(ptr: *const c_void) -> IxonRecursor {
     let k = *scalar_base.add(40) != 0;
     let is_unsafe = *scalar_base.add(41) != 0;
 
-    let rules_arr: &crate::lean::array::LeanArrayObject = as_ref_unsafe(rules_ptr.cast());
+    let rules_arr: &crate::lean::array::LeanArrayObject =
+      as_ref_unsafe(rules_ptr.cast());
     let rules = rules_arr.to_vec(decode_ixon_recursor_rule);
 
     IxonRecursor {
@@ -510,11 +517,7 @@ pub fn decode_ixon_quotient(ptr: *const c_void) -> IxonQuotient {
       3 => crate::ix::env::QuotKind::Ind,
       _ => panic!("Invalid QuotKind: {}", kind_val),
     };
-    IxonQuotient {
-      kind,
-      lvls,
-      typ: Arc::new(decode_ixon_expr(typ_ptr)),
-    }
+    IxonQuotient { kind, lvls, typ: Arc::new(decode_ixon_expr(typ_ptr)) }
   }
 }
 
@@ -561,7 +564,8 @@ pub fn decode_ixon_inductive(ptr: *const c_void) -> IxonInductive {
     let refl = *scalar_base.add(33) != 0;
     let is_unsafe = *scalar_base.add(34) != 0;
 
-    let ctors_arr: &crate::lean::array::LeanArrayObject = as_ref_unsafe(ctors_ptr.cast());
+    let ctors_arr: &crate::lean::array::LeanArrayObject =
+      as_ref_unsafe(ctors_ptr.cast());
     let ctors = ctors_arr.to_vec(decode_ixon_constructor);
 
     IxonInductive {
@@ -648,10 +652,11 @@ pub fn decode_ixon_constant_info(ptr: *const c_void) -> IxonConstantInfo {
       6 => IxonConstantInfo::IPrj(decode_ixon_inductive_proj(inner_ptr)),
       7 => IxonConstantInfo::DPrj(decode_ixon_definition_proj(inner_ptr)),
       8 => {
-        let muts_arr: &crate::lean::array::LeanArrayObject = as_ref_unsafe(inner_ptr.cast());
+        let muts_arr: &crate::lean::array::LeanArrayObject =
+          as_ref_unsafe(inner_ptr.cast());
         let muts = muts_arr.to_vec(decode_ixon_mut_const);
         IxonConstantInfo::Muts(muts)
-      }
+      },
       _ => panic!("Invalid Ixon.ConstantInfo tag: {}", tag),
     }
   }
@@ -680,14 +685,18 @@ pub fn decode_ixon_constant(ptr: *const c_void) -> IxonConstant {
 
 /// Round-trip Ixon.Definition.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_definition(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_definition(
+  ptr: *const c_void,
+) -> *mut c_void {
   let def = decode_ixon_definition(ptr);
   build_ixon_definition(&def)
 }
 
 /// Round-trip Ixon.Recursor.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_recursor(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_recursor(
+  ptr: *const c_void,
+) -> *mut c_void {
   let rec = decode_ixon_recursor(ptr);
   build_ixon_recursor(&rec)
 }
@@ -701,77 +710,99 @@ pub extern "C" fn rs_roundtrip_ixon_axiom(ptr: *const c_void) -> *mut c_void {
 
 /// Round-trip Ixon.Quotient.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_quotient(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_quotient(
+  ptr: *const c_void,
+) -> *mut c_void {
   let quot = decode_ixon_quotient(ptr);
   build_ixon_quotient(&quot)
 }
 
 /// Round-trip Ixon.ConstantInfo.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_constant_info(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_constant_info(
+  ptr: *const c_void,
+) -> *mut c_void {
   let info = decode_ixon_constant_info(ptr);
   build_ixon_constant_info(&info)
 }
 
 /// Round-trip Ixon.Constant.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_constant(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_constant(
+  ptr: *const c_void,
+) -> *mut c_void {
   let constant = decode_ixon_constant(ptr);
   build_ixon_constant(&constant)
 }
 
 /// Round-trip Ixon.RecursorRule.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_recursor_rule(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_recursor_rule(
+  ptr: *const c_void,
+) -> *mut c_void {
   let rule = decode_ixon_recursor_rule(ptr);
   build_ixon_recursor_rule(&rule)
 }
 
 /// Round-trip Ixon.Constructor.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_constructor(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_constructor(
+  ptr: *const c_void,
+) -> *mut c_void {
   let ctor = decode_ixon_constructor(ptr);
   build_ixon_constructor(&ctor)
 }
 
 /// Round-trip Ixon.Inductive.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_inductive(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_inductive(
+  ptr: *const c_void,
+) -> *mut c_void {
   let ind = decode_ixon_inductive(ptr);
   build_ixon_inductive(&ind)
 }
 
 /// Round-trip Ixon.InductiveProj.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_inductive_proj(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_inductive_proj(
+  ptr: *const c_void,
+) -> *mut c_void {
   let proj = decode_ixon_inductive_proj(ptr);
   build_inductive_proj(&proj)
 }
 
 /// Round-trip Ixon.ConstructorProj.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_constructor_proj(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_constructor_proj(
+  ptr: *const c_void,
+) -> *mut c_void {
   let proj = decode_ixon_constructor_proj(ptr);
   build_constructor_proj(&proj)
 }
 
 /// Round-trip Ixon.RecursorProj.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_recursor_proj(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_recursor_proj(
+  ptr: *const c_void,
+) -> *mut c_void {
   let proj = decode_ixon_recursor_proj(ptr);
   build_recursor_proj(&proj)
 }
 
 /// Round-trip Ixon.DefinitionProj.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_definition_proj(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_definition_proj(
+  ptr: *const c_void,
+) -> *mut c_void {
   let proj = decode_ixon_definition_proj(ptr);
   build_definition_proj(&proj)
 }
 
 /// Round-trip Ixon.MutConst.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_mut_const(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_mut_const(
+  ptr: *const c_void,
+) -> *mut c_void {
   let mc = decode_ixon_mut_const(ptr);
   build_mut_const(&mc)
 }

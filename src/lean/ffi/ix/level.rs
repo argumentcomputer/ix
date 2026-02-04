@@ -12,8 +12,8 @@ use std::ffi::c_void;
 
 use crate::ix::env::{Level, LevelData};
 use crate::lean::{
-  lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get, lean_ctor_set, lean_inc,
-  lean_obj_tag,
+  lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
+  lean_ctor_set, lean_inc, lean_obj_tag,
 };
 
 use super::super::builder::LeanBuildCache;
@@ -35,14 +35,14 @@ pub fn build_level(cache: &mut LeanBuildCache, level: &Level) -> *mut c_void {
         let obj = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(obj, 0, build_address(h));
         obj
-      }
+      },
       LevelData::Succ(x, h) => {
         let x_obj = build_level(cache, x);
         let obj = lean_alloc_ctor(1, 2, 0);
         lean_ctor_set(obj, 0, x_obj);
         lean_ctor_set(obj, 1, build_address(h));
         obj
-      }
+      },
       LevelData::Max(x, y, h) => {
         let x_obj = build_level(cache, x);
         let y_obj = build_level(cache, y);
@@ -51,7 +51,7 @@ pub fn build_level(cache: &mut LeanBuildCache, level: &Level) -> *mut c_void {
         lean_ctor_set(obj, 1, y_obj);
         lean_ctor_set(obj, 2, build_address(h));
         obj
-      }
+      },
       LevelData::Imax(x, y, h) => {
         let x_obj = build_level(cache, x);
         let y_obj = build_level(cache, y);
@@ -60,21 +60,21 @@ pub fn build_level(cache: &mut LeanBuildCache, level: &Level) -> *mut c_void {
         lean_ctor_set(obj, 1, y_obj);
         lean_ctor_set(obj, 2, build_address(h));
         obj
-      }
+      },
       LevelData::Param(n, h) => {
         let n_obj = build_name(cache, n);
         let obj = lean_alloc_ctor(4, 2, 0);
         lean_ctor_set(obj, 0, n_obj);
         lean_ctor_set(obj, 1, build_address(h));
         obj
-      }
+      },
       LevelData::Mvar(n, h) => {
         let n_obj = build_name(cache, n);
         let obj = lean_alloc_ctor(5, 2, 0);
         lean_ctor_set(obj, 0, n_obj);
         lean_ctor_set(obj, 1, build_address(h));
         obj
-      }
+      },
     }
   };
 
@@ -83,7 +83,10 @@ pub fn build_level(cache: &mut LeanBuildCache, level: &Level) -> *mut c_void {
 }
 
 /// Build an Array of Levels.
-pub fn build_level_array(cache: &mut LeanBuildCache, levels: &[Level]) -> *mut c_void {
+pub fn build_level_array(
+  cache: &mut LeanBuildCache,
+  levels: &[Level],
+) -> *mut c_void {
   unsafe {
     let arr = lean_alloc_array(levels.len(), levels.len());
     for (i, level) in levels.iter().enumerate() {
@@ -104,31 +107,31 @@ pub fn decode_ix_level(ptr: *const c_void) -> Level {
         let x_ptr = lean_ctor_get(ptr as *mut _, 0);
         let x = decode_ix_level(x_ptr);
         Level::succ(x)
-      }
+      },
       2 => {
         let x_ptr = lean_ctor_get(ptr as *mut _, 0);
         let y_ptr = lean_ctor_get(ptr as *mut _, 1);
         let x = decode_ix_level(x_ptr);
         let y = decode_ix_level(y_ptr);
         Level::max(x, y)
-      }
+      },
       3 => {
         let x_ptr = lean_ctor_get(ptr as *mut _, 0);
         let y_ptr = lean_ctor_get(ptr as *mut _, 1);
         let x = decode_ix_level(x_ptr);
         let y = decode_ix_level(y_ptr);
         Level::imax(x, y)
-      }
+      },
       4 => {
         let n_ptr = lean_ctor_get(ptr as *mut _, 0);
         let n = decode_ix_name(n_ptr);
         Level::param(n)
-      }
+      },
       5 => {
         let n_ptr = lean_ctor_get(ptr as *mut _, 0);
         let n = decode_ix_name(n_ptr);
         Level::mvar(n)
-      }
+      },
       _ => panic!("Invalid Ix.Level tag: {}", tag),
     }
   }
@@ -143,7 +146,9 @@ pub fn decode_level_array(ptr: *const c_void) -> Vec<Level> {
 
 /// Round-trip an Ix.Level: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_level(level_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ix_level(
+  level_ptr: *const c_void,
+) -> *mut c_void {
   let level = decode_ix_level(level_ptr);
   let mut cache = LeanBuildCache::new();
   build_level(&mut cache, &level)

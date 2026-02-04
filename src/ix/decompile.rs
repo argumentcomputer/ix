@@ -14,11 +14,11 @@ use crate::{
   ix::compile::CompileState,
   ix::env::{
     AxiomVal, BinderInfo, ConstantInfo as LeanConstantInfo, ConstantVal,
-    ConstructorVal, DataValue as LeanDataValue, DefinitionSafety, DefinitionVal,
-    Env as LeanEnv, Expr as LeanExpr, InductiveVal, Int, Level, Literal, Name,
-    OpaqueVal, QuotVal, RecursorRule as LeanRecursorRule, RecursorVal,
-    ReducibilityHints, SourceInfo, Substring, Syntax, SyntaxPreresolved,
-    TheoremVal,
+    ConstructorVal, DataValue as LeanDataValue, DefinitionSafety,
+    DefinitionVal, Env as LeanEnv, Expr as LeanExpr, InductiveVal, Int, Level,
+    Literal, Name, OpaqueVal, QuotVal, RecursorRule as LeanRecursorRule,
+    RecursorVal, ReducibilityHints, SourceInfo, Substring, Syntax,
+    SyntaxPreresolved, TheoremVal,
   },
   ix::ixon::{
     DecompileError, Tag0,
@@ -28,9 +28,7 @@ use crate::{
     },
     env::Named,
     expr::Expr,
-    metadata::{
-      ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap,
-    },
+    metadata::{ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap},
     univ::Univ,
   },
   ix::mutual::{MutCtx, all_to_ctx},
@@ -103,8 +101,10 @@ fn read_string(
   stt: &CompileState,
 ) -> Result<String, DecompileError> {
   let bytes = read_blob(addr, stt)?;
-  String::from_utf8(bytes)
-    .map_err(|_| DecompileError::BadBlobFormat { addr: addr.clone(), expected: "UTF-8 string".into() })
+  String::from_utf8(bytes).map_err(|_| DecompileError::BadBlobFormat {
+    addr: addr.clone(),
+    expected: "UTF-8 string".into(),
+  })
 }
 
 /// Read a Constant from the const store.
@@ -154,31 +154,40 @@ fn decompile_data_value(
 /// Deserialize an Int from bytes (mirrors compile-side serialization).
 fn deserialize_int(bytes: &[u8]) -> Result<Int, DecompileError> {
   if bytes.is_empty() {
-    return Err(DecompileError::BadConstantFormat { msg: "deserialize_int: empty".into() });
+    return Err(DecompileError::BadConstantFormat {
+      msg: "deserialize_int: empty".into(),
+    });
   }
   match bytes[0] {
     0 => Ok(Int::OfNat(Nat::from_le_bytes(&bytes[1..]))),
     1 => Ok(Int::NegSucc(Nat::from_le_bytes(&bytes[1..]))),
-    _ => Err(DecompileError::BadConstantFormat { msg: "deserialize_int: invalid tag".into() }),
+    _ => Err(DecompileError::BadConstantFormat {
+      msg: "deserialize_int: invalid tag".into(),
+    }),
   }
 }
 
 /// Read a Tag0-encoded u64 from a byte slice, advancing the cursor.
 fn read_tag0(buf: &mut &[u8]) -> Result<u64, DecompileError> {
-  Tag0::get(buf)
-    .map(|t| t.size)
-    .map_err(|_| DecompileError::BadConstantFormat { msg: "read_tag0: unexpected EOF".into() })
+  Tag0::get(buf).map(|t| t.size).map_err(|_| {
+    DecompileError::BadConstantFormat {
+      msg: "read_tag0: unexpected EOF".into(),
+    }
+  })
 }
 
 /// Read exactly 32 bytes (Address) from a byte slice, advancing the cursor.
 fn read_addr_bytes(buf: &mut &[u8]) -> Result<Address, DecompileError> {
   if buf.len() < 32 {
-    return Err(DecompileError::BadConstantFormat { msg: "read_addr: need 32 bytes".into() });
+    return Err(DecompileError::BadConstantFormat {
+      msg: "read_addr: need 32 bytes".into(),
+    });
   }
   let (bytes, rest) = buf.split_at(32);
   *buf = rest;
-  Address::from_slice(bytes)
-    .map_err(|_| DecompileError::BadConstantFormat { msg: "read_addr: invalid".into() })
+  Address::from_slice(bytes).map_err(|_| DecompileError::BadConstantFormat {
+    msg: "read_addr: invalid".into(),
+  })
 }
 
 /// Deserialize a Substring from bytes.
@@ -199,7 +208,9 @@ fn deserialize_source_info(
   stt: &CompileState,
 ) -> Result<SourceInfo, DecompileError> {
   if buf.is_empty() {
-    return Err(DecompileError::BadConstantFormat { msg: "source_info: empty".into() });
+    return Err(DecompileError::BadConstantFormat {
+      msg: "source_info: empty".into(),
+    });
   }
   let tag = buf[0];
   *buf = &buf[1..];
@@ -215,14 +226,18 @@ fn deserialize_source_info(
       let start = Nat::from(read_tag0(buf)?);
       let end = Nat::from(read_tag0(buf)?);
       if buf.is_empty() {
-        return Err(DecompileError::BadConstantFormat { msg: "source_info: missing canonical".into() });
+        return Err(DecompileError::BadConstantFormat {
+          msg: "source_info: missing canonical".into(),
+        });
       }
       let canonical = buf[0] != 0;
       *buf = &buf[1..];
       Ok(SourceInfo::Synthetic(start, end, canonical))
     },
     2 => Ok(SourceInfo::None),
-    _ => Err(DecompileError::BadConstantFormat { msg: "source_info: invalid tag".into() }),
+    _ => Err(DecompileError::BadConstantFormat {
+      msg: "source_info: invalid tag".into(),
+    }),
   }
 }
 
@@ -232,7 +247,9 @@ fn deserialize_preresolved(
   stt: &CompileState,
 ) -> Result<SyntaxPreresolved, DecompileError> {
   if buf.is_empty() {
-    return Err(DecompileError::BadConstantFormat { msg: "preresolved: empty".into() });
+    return Err(DecompileError::BadConstantFormat {
+      msg: "preresolved: empty".into(),
+    });
   }
   let tag = buf[0];
   *buf = &buf[1..];
@@ -254,7 +271,9 @@ fn deserialize_preresolved(
       }
       Ok(SyntaxPreresolved::Decl(name, fields))
     },
-    _ => Err(DecompileError::BadConstantFormat { msg: "preresolved: invalid tag".into() }),
+    _ => Err(DecompileError::BadConstantFormat {
+      msg: "preresolved: invalid tag".into(),
+    }),
   }
 }
 
@@ -273,7 +292,9 @@ fn deserialize_syntax_inner(
   stt: &CompileState,
 ) -> Result<Syntax, DecompileError> {
   if buf.is_empty() {
-    return Err(DecompileError::BadConstantFormat { msg: "syntax: empty".into() });
+    return Err(DecompileError::BadConstantFormat {
+      msg: "syntax: empty".into(),
+    });
   }
   let tag = buf[0];
   *buf = &buf[1..];
@@ -308,7 +329,9 @@ fn deserialize_syntax_inner(
       }
       Ok(Syntax::Ident(info, raw_val, val, preresolved))
     },
-    _ => Err(DecompileError::BadConstantFormat { msg: "syntax: invalid tag".into() }),
+    _ => Err(DecompileError::BadConstantFormat {
+      msg: "syntax: invalid tag".into(),
+    }),
   }
 }
 
@@ -451,17 +474,17 @@ pub fn decompile_expr(
       Frame::Decompile(e, idx) => {
         // Expand Share transparently with the SAME arena_idx
         if let Expr::Share(share_idx) = e.as_ref() {
-            let shared_expr = cache
-              .sharing
-              .get(*share_idx as usize)
-              .ok_or_else(|| DecompileError::InvalidShareIndex {
-                idx: *share_idx,
-                max: cache.sharing.len(),
-                constant: cache.current_const.clone(),
-              })?
-              .clone();
-            stack.push(Frame::Decompile(shared_expr, idx));
-            continue;
+          let shared_expr = cache
+            .sharing
+            .get(*share_idx as usize)
+            .ok_or_else(|| DecompileError::InvalidShareIndex {
+              idx: *share_idx,
+              max: cache.sharing.len(),
+              constant: cache.current_const.clone(),
+            })?
+            .clone();
+          stack.push(Frame::Decompile(shared_expr, idx));
+          continue;
         }
 
         // Cache check: (Ixon pointer, arena index)
@@ -474,14 +497,17 @@ pub fn decompile_expr(
         // Follow Mdata chain in arena, collecting mdata layers
         let mut current_idx = idx;
         let mut mdata_layers: LeanMdata = Vec::new();
-        while let ExprMetaData::Mdata { mdata, child } = arena.nodes.get(current_idx as usize).unwrap_or(&DEFAULT_NODE) {
-              for kvm in mdata {
-                mdata_layers.push(decompile_kvmap(kvm, stt)?);
-              }
-              current_idx = *child;
+        while let ExprMetaData::Mdata { mdata, child } =
+          arena.nodes.get(current_idx as usize).unwrap_or(&DEFAULT_NODE)
+        {
+          for kvm in mdata {
+            mdata_layers.push(decompile_kvmap(kvm, stt)?);
+          }
+          current_idx = *child;
         }
 
-        let node = arena.nodes.get(current_idx as usize).unwrap_or(&DEFAULT_NODE);
+        let node =
+          arena.nodes.get(current_idx as usize).unwrap_or(&DEFAULT_NODE);
 
         // Push CacheResult frame
         stack.push(Frame::CacheResult(Arc::as_ptr(&e), idx));
@@ -517,7 +543,8 @@ pub fn decompile_expr(
               }
             })?;
             let n = read_nat(addr, stt)?;
-            let expr = apply_mdata(LeanExpr::lit(Literal::NatVal(n)), mdata_layers);
+            let expr =
+              apply_mdata(LeanExpr::lit(Literal::NatVal(n)), mdata_layers);
             results.push(expr);
           },
 
@@ -530,22 +557,26 @@ pub fn decompile_expr(
               }
             })?;
             let s = read_string(addr, stt)?;
-            let expr = apply_mdata(LeanExpr::lit(Literal::StrVal(s)), mdata_layers);
+            let expr =
+              apply_mdata(LeanExpr::lit(Literal::StrVal(s)), mdata_layers);
             results.push(expr);
           },
 
           // Ref: resolve name from arena Ref node or fallback
-          (ExprMetaData::Ref { name: name_addr }, Expr::Ref(ref_idx, univ_indices)) => {
-            let name = decompile_name(name_addr, stt)
-              .unwrap_or_else(|_| {
-                // Fallback: resolve from refs table
-                cache
-                  .refs
-                  .get(*ref_idx as usize)
-                  .and_then(|addr| stt.env.get_name_by_addr(addr))
-                  .unwrap_or_else(Name::anon)
-              });
-            let levels = decompile_univ_indices(univ_indices, lvl_names, cache)?;
+          (
+            ExprMetaData::Ref { name: name_addr },
+            Expr::Ref(ref_idx, univ_indices),
+          ) => {
+            let name = decompile_name(name_addr, stt).unwrap_or_else(|_| {
+              // Fallback: resolve from refs table
+              cache
+                .refs
+                .get(*ref_idx as usize)
+                .and_then(|addr| stt.env.get_name_by_addr(addr))
+                .unwrap_or_else(Name::anon)
+            });
+            let levels =
+              decompile_univ_indices(univ_indices, lvl_names, cache)?;
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
             results.push(expr);
           },
@@ -563,22 +594,26 @@ pub fn decompile_expr(
               .env
               .get_name_by_addr(addr)
               .ok_or(DecompileError::MissingAddress(addr.clone()))?;
-            let levels = decompile_univ_indices(univ_indices, lvl_names, cache)?;
+            let levels =
+              decompile_univ_indices(univ_indices, lvl_names, cache)?;
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
             results.push(expr);
           },
 
           // Rec: resolve name from arena Ref node or fallback
-          (ExprMetaData::Ref { name: name_addr }, Expr::Rec(rec_idx, univ_indices)) => {
-            let name = decompile_name(name_addr, stt)
-              .unwrap_or_else(|_| {
-                cache
-                  .ctx
-                  .iter()
-                  .find(|(_, i)| i.to_u64() == Some(*rec_idx))
-                  .map_or_else(Name::anon, |(n, _)| n.clone())
-              });
-            let levels = decompile_univ_indices(univ_indices, lvl_names, cache)?;
+          (
+            ExprMetaData::Ref { name: name_addr },
+            Expr::Rec(rec_idx, univ_indices),
+          ) => {
+            let name = decompile_name(name_addr, stt).unwrap_or_else(|_| {
+              cache
+                .ctx
+                .iter()
+                .find(|(_, i)| i.to_u64() == Some(*rec_idx))
+                .map_or_else(Name::anon, |(n, _)| n.clone())
+            });
+            let levels =
+              decompile_univ_indices(univ_indices, lvl_names, cache)?;
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
             results.push(expr);
           },
@@ -594,7 +629,8 @@ pub fn decompile_expr(
                 ctx_size: cache.ctx.len(),
                 constant: cache.current_const.clone(),
               })?;
-            let levels = decompile_univ_indices(univ_indices, lvl_names, cache)?;
+            let levels =
+              decompile_univ_indices(univ_indices, lvl_names, cache)?;
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
             results.push(expr);
           },
@@ -614,39 +650,64 @@ pub fn decompile_expr(
           },
 
           // Lam: extract binder name/info from arena
-          (ExprMetaData::Binder { name: name_addr, info, children }, Expr::Lam(ty, body)) => {
-            let binder_name = decompile_name(name_addr, stt)
-              .unwrap_or_else(|_| Name::anon());
-            stack.push(Frame::BuildLam(binder_name, info.clone(), mdata_layers));
+          (
+            ExprMetaData::Binder { name: name_addr, info, children },
+            Expr::Lam(ty, body),
+          ) => {
+            let binder_name =
+              decompile_name(name_addr, stt).unwrap_or_else(|_| Name::anon());
+            stack.push(Frame::BuildLam(
+              binder_name,
+              info.clone(),
+              mdata_layers,
+            ));
             stack.push(Frame::Decompile(body.clone(), children[1]));
             stack.push(Frame::Decompile(ty.clone(), children[0]));
           },
 
           (_, Expr::Lam(ty, body)) => {
-            stack.push(Frame::BuildLam(Name::anon(), BinderInfo::Default, mdata_layers));
+            stack.push(Frame::BuildLam(
+              Name::anon(),
+              BinderInfo::Default,
+              mdata_layers,
+            ));
             stack.push(Frame::Decompile(body.clone(), u64::MAX));
             stack.push(Frame::Decompile(ty.clone(), u64::MAX));
           },
 
           // All: extract binder name/info from arena
-          (ExprMetaData::Binder { name: name_addr, info, children }, Expr::All(ty, body)) => {
-            let binder_name = decompile_name(name_addr, stt)
-              .unwrap_or_else(|_| Name::anon());
-            stack.push(Frame::BuildAll(binder_name, info.clone(), mdata_layers));
+          (
+            ExprMetaData::Binder { name: name_addr, info, children },
+            Expr::All(ty, body),
+          ) => {
+            let binder_name =
+              decompile_name(name_addr, stt).unwrap_or_else(|_| Name::anon());
+            stack.push(Frame::BuildAll(
+              binder_name,
+              info.clone(),
+              mdata_layers,
+            ));
             stack.push(Frame::Decompile(body.clone(), children[1]));
             stack.push(Frame::Decompile(ty.clone(), children[0]));
           },
 
           (_, Expr::All(ty, body)) => {
-            stack.push(Frame::BuildAll(Name::anon(), BinderInfo::Default, mdata_layers));
+            stack.push(Frame::BuildAll(
+              Name::anon(),
+              BinderInfo::Default,
+              mdata_layers,
+            ));
             stack.push(Frame::Decompile(body.clone(), u64::MAX));
             stack.push(Frame::Decompile(ty.clone(), u64::MAX));
           },
 
           // Let: extract name from arena
-          (ExprMetaData::LetBinder { name: name_addr, children }, Expr::Let(non_dep, ty, val, body)) => {
-            let let_name = decompile_name(name_addr, stt)
-              .unwrap_or_else(|_| Name::anon());
+          (
+            ExprMetaData::LetBinder { name: name_addr, children },
+            Expr::Let(non_dep, ty, val, body),
+          ) => {
+            let let_name =
+              decompile_name(name_addr, stt).unwrap_or_else(|_| Name::anon());
             stack.push(Frame::BuildLet(let_name, *non_dep, mdata_layers));
             stack.push(Frame::Decompile(body.clone(), children[2]));
             stack.push(Frame::Decompile(val.clone(), children[1]));
@@ -661,28 +722,39 @@ pub fn decompile_expr(
           },
 
           // Prj: extract struct name from arena
-          (ExprMetaData::Prj { struct_name, child }, Expr::Prj(_type_ref_idx, field_idx, struct_val)) => {
+          (
+            ExprMetaData::Prj { struct_name, child },
+            Expr::Prj(_type_ref_idx, field_idx, struct_val),
+          ) => {
             let type_name = decompile_name(struct_name, stt)?;
-            stack.push(Frame::BuildProj(type_name, Nat::from(*field_idx), mdata_layers));
+            stack.push(Frame::BuildProj(
+              type_name,
+              Nat::from(*field_idx),
+              mdata_layers,
+            ));
             stack.push(Frame::Decompile(struct_val.clone(), *child));
           },
 
           (_, Expr::Prj(type_ref_idx, field_idx, struct_val)) => {
             // Fallback: look up from refs table
-            let addr = cache
-              .refs
-              .get(*type_ref_idx as usize)
-              .ok_or_else(|| DecompileError::InvalidRefIndex {
-                idx: *type_ref_idx,
-                refs_len: cache.refs.len(),
-                constant: cache.current_const.clone(),
+            let addr =
+              cache.refs.get(*type_ref_idx as usize).ok_or_else(|| {
+                DecompileError::InvalidRefIndex {
+                  idx: *type_ref_idx,
+                  refs_len: cache.refs.len(),
+                  constant: cache.current_const.clone(),
+                }
               })?;
             let named = stt
               .env
               .get_named_by_addr(addr)
               .ok_or(DecompileError::MissingAddress(addr.clone()))?;
             let type_name = decompile_name_from_meta(&named.meta, stt)?;
-            stack.push(Frame::BuildProj(type_name, Nat::from(*field_idx), mdata_layers));
+            stack.push(Frame::BuildProj(
+              type_name,
+              Nat::from(*field_idx),
+              mdata_layers,
+            ));
             stack.push(Frame::Decompile(struct_val.clone(), u64::MAX));
           },
 
@@ -712,7 +784,10 @@ pub fn decompile_expr(
         let body = results.pop().expect("BuildLet missing body");
         let val = results.pop().expect("BuildLet missing val");
         let ty = results.pop().expect("BuildLet missing ty");
-        results.push(apply_mdata(LeanExpr::letE(name, ty, val, body, non_dep), mdata));
+        results.push(apply_mdata(
+          LeanExpr::letE(name, ty, val, body, non_dep),
+          mdata,
+        ));
       },
 
       Frame::BuildProj(name, idx, mdata) => {
@@ -728,7 +803,9 @@ pub fn decompile_expr(
     }
   }
 
-  results.pop().ok_or(DecompileError::BadConstantFormat { msg: "empty result".into() })
+  results
+    .pop()
+    .ok_or(DecompileError::BadConstantFormat { msg: "empty result".into() })
 }
 
 /// Helper: decompile universe indices to Lean levels.
@@ -821,7 +898,9 @@ fn decompile_name_from_meta(
 ) -> Result<Name, DecompileError> {
   match get_name_addr_from_meta(meta) {
     Some(addr) => decompile_name(addr, stt),
-    None => Err(DecompileError::BadConstantFormat { msg: "empty metadata".into() }),
+    None => {
+      Err(DecompileError::BadConstantFormat { msg: "empty metadata".into() })
+    },
   }
 }
 
@@ -830,10 +909,7 @@ fn decompile_level_names_from_meta(
   meta: &ConstantMeta,
   stt: &CompileState,
 ) -> Result<Vec<Name>, DecompileError> {
-  get_lvls_from_meta(meta)
-    .iter()
-    .map(|a| decompile_name(a, stt))
-    .collect()
+  get_lvls_from_meta(meta).iter().map(|a| decompile_name(a, stt)).collect()
 }
 
 // ===========================================================================
@@ -851,7 +927,8 @@ fn decompile_const_val(
   let name = decompile_name_from_meta(meta, stt)?;
   let level_params = decompile_level_names_from_meta(meta, stt)?;
   let (arena, type_root) = get_arena_and_type_root(meta);
-  let typ = decompile_expr(typ, arena, type_root, &level_params, cache, stt, dstt)?;
+  let typ =
+    decompile_expr(typ, arena, type_root, &level_params, cache, stt, dstt)?;
   Ok(ConstantVal { name, level_params, typ })
 }
 
@@ -876,8 +953,24 @@ fn decompile_definition(
     },
   };
 
-  let typ = decompile_expr(&def.typ, arena, type_root, &level_params, cache, stt, dstt)?;
-  let value = decompile_expr(&def.value, arena, value_root, &level_params, cache, stt, dstt)?;
+  let typ = decompile_expr(
+    &def.typ,
+    arena,
+    type_root,
+    &level_params,
+    cache,
+    stt,
+    dstt,
+  )?;
+  let value = decompile_expr(
+    &def.value,
+    arena,
+    value_root,
+    &level_params,
+    cache,
+    stt,
+    dstt,
+  )?;
 
   let (hints, all) = match meta {
     ConstantMeta::Def { hints, all, .. } => {
@@ -923,16 +1016,28 @@ fn decompile_recursor(
   let level_params = decompile_level_names_from_meta(meta, stt)?;
 
   let (arena, type_root, rule_roots, rule_addrs, all_addrs) = match meta {
-    ConstantMeta::Rec { arena, type_root, rule_roots, rules, all, .. } => {
-      (arena, *type_root, rule_roots.as_slice(), rules.as_slice(), all.as_slice())
-    },
+    ConstantMeta::Rec { arena, type_root, rule_roots, rules, all, .. } => (
+      arena,
+      *type_root,
+      rule_roots.as_slice(),
+      rules.as_slice(),
+      all.as_slice(),
+    ),
     _ => {
       static EMPTY: ExprMeta = ExprMeta { nodes: Vec::new() };
       (&EMPTY, 0u64, &[] as &[u64], &[] as &[Address], &[] as &[Address])
     },
   };
 
-  let typ = decompile_expr(&rec.typ, arena, type_root, &level_params, cache, stt, dstt)?;
+  let typ = decompile_expr(
+    &rec.typ,
+    arena,
+    type_root,
+    &level_params,
+    cache,
+    stt,
+    dstt,
+  )?;
 
   let rule_names = rule_addrs
     .iter()
@@ -945,9 +1050,19 @@ fn decompile_recursor(
     .unwrap_or_else(|_| vec![name.clone()]);
 
   let mut rules = Vec::with_capacity(rec.rules.len());
-  for (i, (rule, ctor_name)) in rec.rules.iter().zip(rule_names.iter()).enumerate() {
+  for (i, (rule, ctor_name)) in
+    rec.rules.iter().zip(rule_names.iter()).enumerate()
+  {
     let rhs_root = rule_roots.get(i).copied().unwrap_or(0);
-    let rhs = decompile_expr(&rule.rhs, arena, rhs_root, &level_params, cache, stt, dstt)?;
+    let rhs = decompile_expr(
+      &rule.rhs,
+      arena,
+      rhs_root,
+      &level_params,
+      cache,
+      stt,
+      dstt,
+    )?;
     rules.push(LeanRecursorRule {
       ctor: ctor_name.clone(),
       n_fields: Nat::from(rule.fields),
@@ -984,7 +1099,15 @@ fn decompile_constructor(
   let level_params = decompile_level_names_from_meta(meta, stt)?;
 
   let (arena, type_root) = get_arena_and_type_root(meta);
-  let typ = decompile_expr(&ctor.typ, arena, type_root, &level_params, cache, stt, dstt)?;
+  let typ = decompile_expr(
+    &ctor.typ,
+    arena,
+    type_root,
+    &level_params,
+    cache,
+    stt,
+    dstt,
+  )?;
 
   let cnst = ConstantVal { name, level_params, typ };
 
@@ -1011,7 +1134,15 @@ fn decompile_inductive(
   let level_params = decompile_level_names_from_meta(meta, stt)?;
 
   let (arena, type_root) = get_arena_and_type_root(meta);
-  let typ = decompile_expr(&ind.typ, arena, type_root, &level_params, cache, stt, dstt)?;
+  let typ = decompile_expr(
+    &ind.typ,
+    arena,
+    type_root,
+    &level_params,
+    cache,
+    stt,
+    dstt,
+  )?;
 
   // Extract constructor name addresses and all from metadata
   let (ctor_name_addrs, all) = match meta {
@@ -1037,7 +1168,10 @@ fn decompile_inductive(
     // Look up constructor's Named entry for its ConstantMeta::Ctor
     let ctor_meta = if let Some(addr) = ctor_name_addrs.get(i) {
       if let Ok(ctor_name) = decompile_name(addr, stt) {
-        stt.env.named.get(&ctor_name)
+        stt
+          .env
+          .named
+          .get(&ctor_name)
           .map(|n| n.meta.clone())
           .unwrap_or_default()
       } else {
@@ -1114,10 +1248,8 @@ fn decompile_projection(
 ) -> Result<(), DecompileError> {
   // Build ctx from metadata's ctx field
   let ctx_addrs = get_ctx_from_meta(&named.meta);
-  let ctx_names: Vec<Name> = ctx_addrs
-    .iter()
-    .filter_map(|a| decompile_name(a, stt).ok())
-    .collect();
+  let ctx_names: Vec<Name> =
+    ctx_addrs.iter().filter_map(|a| decompile_name(a, stt).ok()).collect();
 
   // Set up cache with sharing, refs, univs, and ctx
   let mut cache = BlockCache {
@@ -1140,13 +1272,8 @@ fn decompile_projection(
 
     ConstantInfo::IPrj(_proj) => {
       if let Some(MutConst::Indc(ind)) = mutuals.get(_proj.idx as usize) {
-        let (ind_val, ctors) = decompile_inductive(
-          ind,
-          &named.meta,
-          &mut cache,
-          stt,
-          dstt,
-        )?;
+        let (ind_val, ctors) =
+          decompile_inductive(ind, &named.meta, &mut cache, stt, dstt)?;
         dstt.env.insert(name.clone(), LeanConstantInfo::InductInfo(ind_val));
         for ctor in ctors {
           dstt
@@ -1180,10 +1307,8 @@ fn decompile_const(
 
   // Build ctx from metadata's all field
   let all_addrs = get_all_from_meta(&named.meta);
-  let all_names: Vec<Name> = all_addrs
-    .iter()
-    .filter_map(|a| decompile_name(a, stt).ok())
-    .collect();
+  let all_names: Vec<Name> =
+    all_addrs.iter().filter_map(|a| decompile_name(a, stt).ok()).collect();
   let ctx = all_to_ctx(&all_names);
   let current_const = name.pretty();
 

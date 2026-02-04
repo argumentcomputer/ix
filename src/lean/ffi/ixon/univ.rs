@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::ix::ixon::univ::Univ as IxonUniv;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_box_fn,
-  lean_ctor_get, lean_ctor_set, lean_is_scalar, lean_obj_tag,
+  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core,
+  lean_box_fn, lean_ctor_get, lean_ctor_set, lean_is_scalar, lean_obj_tag,
 };
 
 /// Build Ixon.Univ
@@ -19,7 +19,7 @@ pub fn build_ixon_univ(univ: &IxonUniv) -> *mut c_void {
         let obj = lean_alloc_ctor(1, 1, 0);
         lean_ctor_set(obj, 0, inner_obj);
         obj
-      }
+      },
       IxonUniv::Max(a, b) => {
         let a_obj = build_ixon_univ(a);
         let b_obj = build_ixon_univ(b);
@@ -27,7 +27,7 @@ pub fn build_ixon_univ(univ: &IxonUniv) -> *mut c_void {
         lean_ctor_set(obj, 0, a_obj);
         lean_ctor_set(obj, 1, b_obj);
         obj
-      }
+      },
       IxonUniv::IMax(a, b) => {
         let a_obj = build_ixon_univ(a);
         let b_obj = build_ixon_univ(b);
@@ -35,13 +35,13 @@ pub fn build_ixon_univ(univ: &IxonUniv) -> *mut c_void {
         lean_ctor_set(obj, 0, a_obj);
         lean_ctor_set(obj, 1, b_obj);
         obj
-      }
+      },
       IxonUniv::Var(idx) => {
         let obj = lean_alloc_ctor(4, 0, 8);
         let base = obj.cast::<u8>();
         *base.add(8).cast::<u64>() = *idx;
         obj
-      }
+      },
     }
   }
 }
@@ -80,23 +80,29 @@ pub fn decode_ixon_univ(ptr: *const c_void) -> IxonUniv {
       1 => {
         let inner_ptr = lean_ctor_get(ptr as *mut _, 0);
         IxonUniv::Succ(Arc::new(decode_ixon_univ(inner_ptr)))
-      }
+      },
       2 => {
         let a_ptr = lean_ctor_get(ptr as *mut _, 0);
         let b_ptr = lean_ctor_get(ptr as *mut _, 1);
-        IxonUniv::Max(Arc::new(decode_ixon_univ(a_ptr)), Arc::new(decode_ixon_univ(b_ptr)))
-      }
+        IxonUniv::Max(
+          Arc::new(decode_ixon_univ(a_ptr)),
+          Arc::new(decode_ixon_univ(b_ptr)),
+        )
+      },
       3 => {
         let a_ptr = lean_ctor_get(ptr as *mut _, 0);
         let b_ptr = lean_ctor_get(ptr as *mut _, 1);
-        IxonUniv::IMax(Arc::new(decode_ixon_univ(a_ptr)), Arc::new(decode_ixon_univ(b_ptr)))
-      }
+        IxonUniv::IMax(
+          Arc::new(decode_ixon_univ(a_ptr)),
+          Arc::new(decode_ixon_univ(b_ptr)),
+        )
+      },
       4 => {
         // scalar field: UInt64 at offset 8 (after header)
         let base = ptr.cast::<u8>();
         let idx = *(base.add(8).cast::<u64>());
         IxonUniv::Var(idx)
-      }
+      },
       _ => panic!("Invalid Ixon.Univ tag: {}", tag),
     }
   }

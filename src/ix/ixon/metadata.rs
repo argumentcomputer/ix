@@ -175,7 +175,8 @@ fn get_address_raw(buf: &mut &[u8]) -> Result<Address, String> {
   }
   let (bytes, rest) = buf.split_at(32);
   *buf = rest;
-  Address::from_slice(bytes).map_err(|_e| "get_address_raw: invalid".to_string())
+  Address::from_slice(bytes)
+    .map_err(|_e| "get_address_raw: invalid".to_string())
 }
 
 fn put_u64(x: u64, buf: &mut Vec<u8>) {
@@ -261,7 +262,9 @@ pub type NameIndex = HashMap<Address, u64>;
 pub type NameReverseIndex = Vec<Address>;
 
 fn put_idx(addr: &Address, idx: &NameIndex, buf: &mut Vec<u8>) {
-  let i = idx.get(addr).copied()
+  let i = idx
+    .get(addr)
+    .copied()
     .unwrap_or_else(|| panic!("put_idx: address {:?} not in name index", addr));
   put_u64(i, buf);
 }
@@ -414,12 +417,13 @@ impl ExprMetaData {
         put_u64(children[1], buf);
       },
       Self::Binder { name, info, children } => {
-        let tag = 2 + match info {
-          BinderInfo::Default => 0u8,
-          BinderInfo::Implicit => 1,
-          BinderInfo::StrictImplicit => 2,
-          BinderInfo::InstImplicit => 3,
-        };
+        let tag = 2
+          + match info {
+            BinderInfo::Default => 0u8,
+            BinderInfo::Implicit => 1,
+            BinderInfo::StrictImplicit => 2,
+            BinderInfo::InstImplicit => 3,
+          };
         put_u8(tag, buf);
         put_idx(name, idx, buf);
         put_u64(children[0], buf);
@@ -548,7 +552,16 @@ impl ConstantMeta {
   pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) {
     match self {
       Self::Empty => put_u8(255, buf),
-      Self::Def { name, lvls, hints, all, ctx, arena, type_root, value_root } => {
+      Self::Def {
+        name,
+        lvls,
+        hints,
+        all,
+        ctx,
+        arena,
+        type_root,
+        value_root,
+      } => {
         put_u8(0, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
@@ -591,7 +604,16 @@ impl ConstantMeta {
         arena.put_indexed(idx, buf);
         put_u64(*type_root, buf);
       },
-      Self::Rec { name, lvls, rules, all, ctx, arena, type_root, rule_roots } => {
+      Self::Rec {
+        name,
+        lvls,
+        rules,
+        all,
+        ctx,
+        arena,
+        type_root,
+        rule_roots,
+      } => {
         put_u8(5, buf);
         put_idx(name, idx, buf);
         put_idx_vec(lvls, idx, buf);
@@ -785,8 +807,7 @@ mod tests {
 
     let mut buf = Vec::new();
     arena.put_indexed(&idx, &mut buf);
-    let recovered =
-      ExprMeta::get_indexed(&mut buf.as_slice(), &rev).unwrap();
+    let recovered = ExprMeta::get_indexed(&mut buf.as_slice(), &rev).unwrap();
     assert_eq!(arena, recovered);
   }
 }

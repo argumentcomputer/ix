@@ -440,7 +440,9 @@ fn pack_def_kind_safety(kind: DefKind, safety: DefinitionSafety) -> u8 {
 }
 
 /// Unpack DefKind and DefinitionSafety from a single byte.
-fn unpack_def_kind_safety(b: u8) -> Result<(DefKind, DefinitionSafety), String> {
+fn unpack_def_kind_safety(
+  b: u8,
+) -> Result<(DefKind, DefinitionSafety), String> {
   let kind = DefKind::from_u8(b >> 2)?;
   let safety = DefinitionSafety::from_u8(b & 0x3)?;
   Ok((kind, safety))
@@ -1088,7 +1090,10 @@ impl Env {
       ));
     }
     if tag.size != 0 {
-      return Err(format!("Env::get: expected Env variant 0, got {}", tag.size));
+      return Err(format!(
+        "Env::get: expected Env variant 0, got {}",
+        tag.size
+      ));
     }
 
     let env = Env::new();

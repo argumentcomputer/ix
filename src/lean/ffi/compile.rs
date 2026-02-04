@@ -3,11 +3,11 @@
 //! Contains FFI for rs_compile_env_full, rs_compile_env, rs_compile_phases, etc.
 
 use std::collections::HashMap;
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 use std::sync::Arc;
 
 use crate::ix::address::Address;
-use crate::ix::compile::{compile_env, CompileState};
+use crate::ix::compile::{CompileState, compile_env};
 use crate::ix::condense::compute_sccs;
 use crate::ix::decompile::decompile_env;
 use crate::ix::env::Name;
@@ -20,9 +20,10 @@ use crate::lean::nat::Nat;
 use crate::lean::sarray::LeanSArrayObject;
 use crate::lean::string::LeanStringObject;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray, lean_array_set_core,
-  lean_ctor_get, lean_ctor_set, lean_ctor_set_uint64, lean_ctor_set_uint8, lean_inc,
-  lean_io_result_mk_ok, lean_mk_string, lean_obj_tag, lean_sarray_cptr, lean_uint64_to_nat,
+  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray,
+  lean_array_set_core, lean_ctor_get, lean_ctor_set, lean_ctor_set_uint8,
+  lean_ctor_set_uint64, lean_inc, lean_io_result_mk_ok, lean_mk_string,
+  lean_obj_tag, lean_sarray_cptr, lean_uint64_to_nat,
 };
 
 use dashmap::DashMap;
@@ -33,10 +34,14 @@ use super::graph::build_condensed_blocks;
 use super::ix::constant::build_constant_info;
 use super::ix::env::build_raw_environment;
 use super::ix::name::build_name;
-use super::ixon::constant::{build_address_from_ixon, build_ixon_constant, decode_ixon_address};
-use super::ixon::env::{build_raw_env, build_raw_name_entry, decode_raw_env, decoded_to_ixon_env};
+use super::ixon::constant::{
+  build_address_from_ixon, build_ixon_constant, decode_ixon_address,
+};
+use super::ixon::env::{
+  build_raw_env, build_raw_name_entry, decode_raw_env, decoded_to_ixon_env,
+};
 use super::ixon::meta::{build_constant_meta, build_ixon_comm};
-use super::lean_env::{lean_ptr_to_env, lean_ptr_to_name, GlobalCache};
+use super::lean_env::{GlobalCache, lean_ptr_to_env, lean_ptr_to_name};
 
 // =============================================================================
 // Raw* Builder Functions for Compile FFI
@@ -55,7 +60,12 @@ pub fn build_raw_const(addr: &Address, constant: &IxonConstant) -> *mut c_void {
 }
 
 /// Build RawNamed: { name : Ix.Name, addr : Address, constMeta : Ixon.ConstantMeta }
-pub fn build_raw_named(cache: &mut LeanBuildCache, name: &Name, addr: &Address, meta: &ConstantMeta) -> *mut c_void {
+pub fn build_raw_named(
+  cache: &mut LeanBuildCache,
+  name: &Name,
+  addr: &Address,
+  meta: &ConstantMeta,
+) -> *mut c_void {
   unsafe {
     let name_obj = build_name(cache, name);
     let addr_obj = build_address_from_ixon(addr);
@@ -100,7 +110,9 @@ pub fn build_raw_comm(addr: &Address, comm: &Comm) -> *mut c_void {
 
 /// Round-trip a RustCondensedBlocks structure.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_rust_condensed_blocks(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_rust_condensed_blocks(
+  ptr: *const c_void,
+) -> *mut c_void {
   unsafe {
     let low_links = lean_ctor_get(ptr as *mut _, 0) as *mut c_void;
     let blocks = lean_ctor_get(ptr as *mut _, 1) as *mut c_void;
@@ -120,7 +132,9 @@ pub extern "C" fn rs_roundtrip_rust_condensed_blocks(ptr: *const c_void) -> *mut
 
 /// Round-trip a RustCompilePhases structure.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_rust_compile_phases(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_rust_compile_phases(
+  ptr: *const c_void,
+) -> *mut c_void {
   unsafe {
     let raw_env = lean_ctor_get(ptr as *mut _, 0) as *mut c_void;
     let condensed = lean_ctor_get(ptr as *mut _, 1) as *mut c_void;
@@ -144,7 +158,9 @@ pub extern "C" fn rs_roundtrip_rust_compile_phases(ptr: *const c_void) -> *mut c
 
 /// Round-trip a BlockCompareResult.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_block_compare_result(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_block_compare_result(
+  ptr: *const c_void,
+) -> *mut c_void {
   unsafe {
     let tag = lean_obj_tag(ptr as *mut _);
     match tag {
@@ -161,7 +177,7 @@ pub extern "C" fn rs_roundtrip_block_compare_result(ptr: *const c_void) -> *mut 
         *out_base.add(16).cast::<u64>() = rust_size;
         *out_base.add(24).cast::<u64>() = first_diff;
         obj
-      }
+      },
       2 => lean_alloc_ctor(2, 0, 0),
       _ => panic!("Invalid BlockCompareResult tag: {}", tag),
     }
@@ -170,7 +186,9 @@ pub extern "C" fn rs_roundtrip_block_compare_result(ptr: *const c_void) -> *mut 
 
 /// Round-trip a BlockCompareDetail.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_block_compare_detail(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_block_compare_detail(
+  ptr: *const c_void,
+) -> *mut c_void {
   unsafe {
     let result_ptr = lean_ctor_get(ptr as *mut _, 0);
     let base = ptr.cast::<u8>();
@@ -194,7 +212,9 @@ pub extern "C" fn rs_roundtrip_block_compare_detail(ptr: *const c_void) -> *mut 
 
 /// FFI function to run the complete compilation pipeline and return all data.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_env_full(env_consts_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_compile_env_full(
+  env_consts_ptr: *const c_void,
+) -> *mut c_void {
   use std::time::Instant;
   let total_start = Instant::now();
 
@@ -212,7 +232,10 @@ pub extern "C" fn rs_compile_env_full(env_consts_ptr: *const c_void) -> *mut c_v
   // Phase 2: Build ref graph and compute SCCs
   let graph_start = Instant::now();
   let ref_graph = build_ref_graph(&rust_env);
-  eprintln!("  [Rust Full] Ref graph: {:.2}s", graph_start.elapsed().as_secs_f32());
+  eprintln!(
+    "  [Rust Full] Ref graph: {:.2}s",
+    graph_start.elapsed().as_secs_f32()
+  );
 
   let scc_start = Instant::now();
   let condensed = compute_sccs(&ref_graph.out_refs);
@@ -247,9 +270,12 @@ pub extern "C" fn rs_compile_env_full(env_consts_ptr: *const c_void) -> *mut c_v
         lean_ctor_set(result, 2, empty_compiled);
         return lean_io_result_mk_ok(result);
       }
-    }
+    },
   };
-  eprintln!("  [Rust Full] Compile: {:.2}s", compile_start.elapsed().as_secs_f32());
+  eprintln!(
+    "  [Rust Full] Compile: {:.2}s",
+    compile_start.elapsed().as_secs_f32()
+  );
 
   // Phase 4: Build Lean structures
   let build_start = Instant::now();
@@ -331,8 +357,14 @@ pub extern "C" fn rs_compile_env_full(env_consts_ptr: *const c_void) -> *mut c_v
     lean_ctor_set(result, 1, condensed_obj);
     lean_ctor_set(result, 2, compiled_obj);
 
-    eprintln!("  [Rust Full] Build Lean: {:.2}s", build_start.elapsed().as_secs_f32());
-    eprintln!("  [Rust Full] Total: {:.2}s", total_start.elapsed().as_secs_f32());
+    eprintln!(
+      "  [Rust Full] Build Lean: {:.2}s",
+      build_start.elapsed().as_secs_f32()
+    );
+    eprintln!(
+      "  [Rust Full] Total: {:.2}s",
+      total_start.elapsed().as_secs_f32()
+    );
 
     lean_io_result_mk_ok(result)
   }
@@ -368,14 +400,18 @@ pub extern "C" fn rs_compile_env(env_consts_ptr: *const c_void) -> *mut c_void {
 /// Round-trip a RawEnv: decode from Lean, re-encode via builder.
 /// This performs a full decode/build cycle to verify FFI correctness.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_raw_env(raw_env_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_raw_env(
+  raw_env_ptr: *const c_void,
+) -> *mut c_void {
   let env = decode_raw_env(raw_env_ptr);
   build_raw_env(&env)
 }
 
 /// FFI function to run all compilation phases and return combined results.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_phases(env_consts_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_compile_phases(
+  env_consts_ptr: *const c_void,
+) -> *mut c_void {
   let rust_env = lean_ptr_to_env(env_consts_ptr);
   let env_len = rust_env.len();
   let rust_env = Arc::new(rust_env);
@@ -412,36 +448,52 @@ pub extern "C" fn rs_compile_phases(env_consts_ptr: *const c_void) -> *mut c_voi
         lean_ctor_set(result, 2, raw_ixon_env);
         return lean_io_result_mk_ok(result);
       }
-    }
+    },
   };
   // Build Lean objects from compile results
   unsafe {
-    let consts: Vec<_> =
-      compile_stt.env.consts.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let consts: Vec<_> = compile_stt
+      .env
+      .consts
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
     let consts_arr = lean_alloc_array(consts.len(), consts.len());
     for (i, (addr, constant)) in consts.iter().enumerate() {
       let raw_const = build_raw_const(addr, constant);
       lean_array_set_core(consts_arr, i, raw_const);
     }
 
-    let named: Vec<_> =
-      compile_stt.env.named.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let named: Vec<_> = compile_stt
+      .env
+      .named
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
     let named_arr = lean_alloc_array(named.len(), named.len());
     for (i, (name, n)) in named.iter().enumerate() {
       let raw_named = build_raw_named(&mut cache, name, &n.addr, &n.meta);
       lean_array_set_core(named_arr, i, raw_named);
     }
 
-    let blobs: Vec<_> =
-      compile_stt.env.blobs.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let blobs: Vec<_> = compile_stt
+      .env
+      .blobs
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
     let blobs_arr = lean_alloc_array(blobs.len(), blobs.len());
     for (i, (addr, bytes)) in blobs.iter().enumerate() {
       let raw_blob = build_raw_blob(addr, bytes);
       lean_array_set_core(blobs_arr, i, raw_blob);
     }
 
-    let comms: Vec<_> =
-      compile_stt.env.comms.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let comms: Vec<_> = compile_stt
+      .env
+      .comms
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
     let comms_arr = lean_alloc_array(comms.len(), comms.len());
     for (i, (addr, comm)) in comms.iter().enumerate() {
       let raw_comm = build_raw_comm(addr, comm);
@@ -449,8 +501,12 @@ pub extern "C" fn rs_compile_phases(env_consts_ptr: *const c_void) -> *mut c_voi
     }
 
     // Build names array (Address → Ix.Name)
-    let names: Vec<_> =
-      compile_stt.env.names.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let names: Vec<_> = compile_stt
+      .env
+      .names
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
     let names_arr = lean_alloc_array(names.len(), names.len());
     for (i, (addr, name)) in names.iter().enumerate() {
       let obj = build_raw_name_entry(&mut cache, addr, name);
@@ -475,7 +531,9 @@ pub extern "C" fn rs_compile_phases(env_consts_ptr: *const c_void) -> *mut c_voi
 
 /// FFI function to compile a Lean environment to a RawEnv.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_env_to_ixon(env_consts_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_compile_env_to_ixon(
+  env_consts_ptr: *const c_void,
+) -> *mut c_void {
   let rust_env = lean_ptr_to_env(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
 
@@ -497,38 +555,54 @@ pub extern "C" fn rs_compile_env_to_ixon(env_consts_ptr: *const c_void) -> *mut 
         lean_ctor_set(result, 4, empty_names);
         return lean_io_result_mk_ok(result);
       }
-    }
+    },
   };
 
   let mut cache = LeanBuildCache::with_capacity(rust_env.len());
 
   unsafe {
-    let consts: Vec<_> =
-      compile_stt.env.consts.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let consts: Vec<_> = compile_stt
+      .env
+      .consts
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
     let consts_arr = lean_alloc_array(consts.len(), consts.len());
     for (i, (addr, constant)) in consts.iter().enumerate() {
       let raw_const = build_raw_const(addr, constant);
       lean_array_set_core(consts_arr, i, raw_const);
     }
 
-    let named: Vec<_> =
-      compile_stt.env.named.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let named: Vec<_> = compile_stt
+      .env
+      .named
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
     let named_arr = lean_alloc_array(named.len(), named.len());
     for (i, (name, n)) in named.iter().enumerate() {
       let raw_named = build_raw_named(&mut cache, name, &n.addr, &n.meta);
       lean_array_set_core(named_arr, i, raw_named);
     }
 
-    let blobs: Vec<_> =
-      compile_stt.env.blobs.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let blobs: Vec<_> = compile_stt
+      .env
+      .blobs
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
     let blobs_arr = lean_alloc_array(blobs.len(), blobs.len());
     for (i, (addr, bytes)) in blobs.iter().enumerate() {
       let raw_blob = build_raw_blob(addr, bytes);
       lean_array_set_core(blobs_arr, i, raw_blob);
     }
 
-    let comms: Vec<_> =
-      compile_stt.env.comms.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let comms: Vec<_> = compile_stt
+      .env
+      .comms
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
     let comms_arr = lean_alloc_array(comms.len(), comms.len());
     for (i, (addr, comm)) in comms.iter().enumerate() {
       let raw_comm = build_raw_comm(addr, comm);
@@ -536,8 +610,12 @@ pub extern "C" fn rs_compile_env_to_ixon(env_consts_ptr: *const c_void) -> *mut 
     }
 
     // Build names array (Address → Ix.Name)
-    let names: Vec<_> =
-      compile_stt.env.names.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let names: Vec<_> = compile_stt
+      .env
+      .names
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
     let names_arr = lean_alloc_array(names.len(), names.len());
     for (i, (addr, name)) in names.iter().enumerate() {
       let obj = build_raw_name_entry(&mut cache, addr, name);
@@ -556,7 +634,9 @@ pub extern "C" fn rs_compile_env_to_ixon(env_consts_ptr: *const c_void) -> *mut 
 
 /// FFI function to canonicalize environment to Ix.RawEnvironment.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_canonicalize_env_to_ix(env_consts_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_canonicalize_env_to_ix(
+  env_consts_ptr: *const c_void,
+) -> *mut c_void {
   let rust_env = lean_ptr_to_env(env_consts_ptr);
   let mut cache = LeanBuildCache::with_capacity(rust_env.len());
   let raw_env = build_raw_environment(&mut cache, &rust_env);
@@ -590,7 +670,8 @@ extern "C" fn rs_test_ffi_roundtrip(name_ptr: *const c_void) -> u64 {
   // Return a magic number plus the hash of the name to verify it worked
   let hash = name.get_hash();
   let hash_bytes = hash.as_bytes();
-  let hash_prefix = u64::from_le_bytes(hash_bytes[0..8].try_into().unwrap_or([0u8; 8]));
+  let hash_prefix =
+    u64::from_le_bytes(hash_bytes[0..8].try_into().unwrap_or([0u8; 8]));
 
   // Magic number 0xDEADBEEF plus hash prefix
   0xDEAD_BEEF_0000_0000 | (hash_prefix & 0x0000_0000_FFFF_FFFF)
@@ -602,7 +683,9 @@ extern "C" fn rs_test_ffi_roundtrip(name_ptr: *const c_void) -> u64 {
 ///
 /// Returns: pointer to RustCompiledEnv (or null on failure)
 #[unsafe(no_mangle)]
-extern "C" fn rs_compile_env_rust_first(env_consts_ptr: *const c_void) -> *mut RustCompiledEnv {
+extern "C" fn rs_compile_env_rust_first(
+  env_consts_ptr: *const c_void,
+) -> *mut RustCompiledEnv {
   // Decode Lean environment
   let start_decode = std::time::Instant::now();
   let lean_env = lean_ptr_to_env(env_consts_ptr);
@@ -621,9 +704,12 @@ extern "C" fn rs_compile_env_rust_first(env_consts_ptr: *const c_void) -> *mut R
     Err(e) => {
       eprintln!("Rust compilation failed: {:?}", e);
       return std::ptr::null_mut();
-    }
+    },
   };
-  println!("  [Rust] Compile env: {:.2}s", start_compile.elapsed().as_secs_f32());
+  println!(
+    "  [Rust] Compile env: {:.2}s",
+    start_compile.elapsed().as_secs_f32()
+  );
 
   // Build block map: lowlink name -> (serialized bytes, sharing len)
   let start_extract = std::time::Instant::now();
@@ -679,7 +765,7 @@ extern "C" fn rs_compare_block(
     None => {
       // Block not found in Rust compilation: code 2
       return 2u64 << 32;
-    }
+    },
   };
 
   // Compare bytes
@@ -689,17 +775,13 @@ extern "C" fn rs_compare_block(
   }
 
   // Mismatch: find first differing byte
-  rust_bytes
-    .iter()
-    .zip(lean_data.iter())
-    .position(|(a, b)| a != b)
-    .map_or_else(
-      || {
-        // One is a prefix of the other
-        rust_bytes.len().min(lean_data.len()) as u64
-      },
-      |i| i as u64,
-    )
+  rust_bytes.iter().zip(lean_data.iter()).position(|(a, b)| a != b).map_or_else(
+    || {
+      // One is a prefix of the other
+      rust_bytes.len().min(lean_data.len()) as u64
+    },
+    |i| i as u64,
+  )
 }
 
 /// FFI: Free a RustCompiledEnv.
@@ -714,7 +796,9 @@ extern "C" fn rs_free_rust_env(rust_env: *mut RustCompiledEnv) {
 
 /// FFI: Get the number of blocks in a RustCompiledEnv.
 #[unsafe(no_mangle)]
-extern "C" fn rs_get_rust_env_block_count(rust_env: *const RustCompiledEnv) -> u64 {
+extern "C" fn rs_get_rust_env_block_count(
+  rust_env: *const RustCompiledEnv,
+) -> u64 {
   if rust_env.is_null() {
     return 0;
   }
@@ -785,7 +869,10 @@ extern "C" fn rs_get_block_sharing_len(
 /// Expand Share(idx) references in an expression using the sharing vector.
 /// This reconstructs the "pre-sharing" expression from the post-sharing representation.
 #[allow(clippy::cast_possible_truncation)]
-fn unshare_expr(expr: &Arc<IxonExpr>, sharing: &[Arc<IxonExpr>]) -> Arc<IxonExpr> {
+fn unshare_expr(
+  expr: &Arc<IxonExpr>,
+  sharing: &[Arc<IxonExpr>],
+) -> Arc<IxonExpr> {
   match expr.as_ref() {
     IxonExpr::Share(idx) => {
       // Recursively unshare the sharing vector entry
@@ -794,23 +881,28 @@ fn unshare_expr(expr: &Arc<IxonExpr>, sharing: &[Arc<IxonExpr>]) -> Arc<IxonExpr
       } else {
         expr.clone() // Invalid index, keep as-is
       }
-    }
-    IxonExpr::App(f, a) => {
-      Arc::new(IxonExpr::App(unshare_expr(f, sharing), unshare_expr(a, sharing)))
-    }
-    IxonExpr::Lam(t, b) => {
-      Arc::new(IxonExpr::Lam(unshare_expr(t, sharing), unshare_expr(b, sharing)))
-    }
-    IxonExpr::All(t, b) => {
-      Arc::new(IxonExpr::All(unshare_expr(t, sharing), unshare_expr(b, sharing)))
-    }
+    },
+    IxonExpr::App(f, a) => Arc::new(IxonExpr::App(
+      unshare_expr(f, sharing),
+      unshare_expr(a, sharing),
+    )),
+    IxonExpr::Lam(t, b) => Arc::new(IxonExpr::Lam(
+      unshare_expr(t, sharing),
+      unshare_expr(b, sharing),
+    )),
+    IxonExpr::All(t, b) => Arc::new(IxonExpr::All(
+      unshare_expr(t, sharing),
+      unshare_expr(b, sharing),
+    )),
     IxonExpr::Let(nd, t, v, b) => Arc::new(IxonExpr::Let(
       *nd,
       unshare_expr(t, sharing),
       unshare_expr(v, sharing),
       unshare_expr(b, sharing),
     )),
-    IxonExpr::Prj(ti, fi, v) => Arc::new(IxonExpr::Prj(*ti, *fi, unshare_expr(v, sharing))),
+    IxonExpr::Prj(ti, fi, v) => {
+      Arc::new(IxonExpr::Prj(*ti, *fi, unshare_expr(v, sharing)))
+    },
     // Leaf nodes - no children to unshare
     _ => expr.clone(),
   }
@@ -838,7 +930,7 @@ extern "C" fn rs_get_pre_sharing_exprs(
     None => {
       eprintln!("rs_get_pre_sharing_exprs: name not found: {:?}", name);
       return 0;
-    }
+    },
   };
 
   // Get the constant (note: contains post-sharing expressions)
@@ -847,7 +939,7 @@ extern "C" fn rs_get_pre_sharing_exprs(
     None => {
       eprintln!("rs_get_pre_sharing_exprs: constant not found at addr");
       return 0;
-    }
+    },
   };
 
   // Extract root expressions from the constant info
@@ -861,11 +953,14 @@ extern "C" fn rs_get_pre_sharing_exprs(
         exprs.push(rule.rhs.clone());
       }
       exprs
-    }
+    },
     // Projections don't contain expressions directly
-    ConstantInfo::CPrj(_) | ConstantInfo::RPrj(_) | ConstantInfo::IPrj(_) | ConstantInfo::DPrj(_) => {
+    ConstantInfo::CPrj(_)
+    | ConstantInfo::RPrj(_)
+    | ConstantInfo::IPrj(_)
+    | ConstantInfo::DPrj(_) => {
       vec![]
-    }
+    },
     ConstantInfo::Muts(muts) => {
       let mut exprs = Vec::new();
       for mc in muts {
@@ -873,23 +968,23 @@ extern "C" fn rs_get_pre_sharing_exprs(
           crate::ix::ixon::constant::MutConst::Defn(def) => {
             exprs.push(def.typ.clone());
             exprs.push(def.value.clone());
-          }
+          },
           crate::ix::ixon::constant::MutConst::Indc(ind) => {
             exprs.push(ind.typ.clone());
             for ctor in &ind.ctors {
               exprs.push(ctor.typ.clone());
             }
-          }
+          },
           crate::ix::ixon::constant::MutConst::Recr(rec) => {
             exprs.push(rec.typ.clone());
             for rule in &rec.rules {
               exprs.push(rule.rhs.clone());
             }
-          }
+          },
         }
       }
       exprs
-    }
+    },
   };
 
   // Unshare and serialize each root expression
@@ -948,18 +1043,25 @@ extern "C" fn rs_get_pre_sharing_exprs_len(
     ConstantInfo::Axio(_) | ConstantInfo::Quot(_) => 1,
     ConstantInfo::Recr(rec) => 1 + rec.rules.len(),
     // Projections don't contain expressions directly
-    ConstantInfo::CPrj(_) | ConstantInfo::RPrj(_) | ConstantInfo::IPrj(_) | ConstantInfo::DPrj(_) => 0,
+    ConstantInfo::CPrj(_)
+    | ConstantInfo::RPrj(_)
+    | ConstantInfo::IPrj(_)
+    | ConstantInfo::DPrj(_) => 0,
     ConstantInfo::Muts(muts) => {
       let mut count = 0;
       for mc in muts {
         match mc {
           crate::ix::ixon::constant::MutConst::Defn(_) => count += 2,
-          crate::ix::ixon::constant::MutConst::Indc(ind) => count += 1 + ind.ctors.len(),
-          crate::ix::ixon::constant::MutConst::Recr(rec) => count += 1 + rec.rules.len(),
+          crate::ix::ixon::constant::MutConst::Indc(ind) => {
+            count += 1 + ind.ctors.len()
+          },
+          crate::ix::ixon::constant::MutConst::Recr(rec) => {
+            count += 1 + rec.rules.len()
+          },
         }
       }
       count
-    }
+    },
   };
 
   // Estimate: 8 bytes per header + some for expression data
@@ -988,14 +1090,16 @@ extern "C" fn rs_lookup_const_addr(
       let out_arr: &mut LeanSArrayObject = unsafe { &mut *out_addr.cast() };
       out_arr.set_data(addr_ref.as_bytes());
       1
-    }
+    },
     None => 0,
   }
 }
 
 /// FFI: Get the total number of compiled constants in RustCompiledEnv.
 #[unsafe(no_mangle)]
-extern "C" fn rs_get_compiled_const_count(rust_env: *const RustCompiledEnv) -> u64 {
+extern "C" fn rs_get_compiled_const_count(
+  rust_env: *const RustCompiledEnv,
+) -> u64 {
   let rust_env = unsafe { &*rust_env };
   rust_env.compile_state.name_to_addr.len() as u64
 }
@@ -1008,7 +1112,8 @@ use crate::ix::ixon::error::{CompileError, DecompileError, SerializeError};
 
 /// Build a Lean String from a Rust &str.
 fn build_lean_string(s: &str) -> *mut c_void {
-  let cstr = CString::new(s).unwrap_or_else(|_| CString::new("(invalid string)").unwrap());
+  let cstr = CString::new(s)
+    .unwrap_or_else(|_| CString::new("(invalid string)").unwrap());
   unsafe { lean_mk_string(cstr.as_ptr()) }
 }
 
@@ -1059,9 +1164,7 @@ pub fn build_serialize_error(se: &SerializeError) -> *mut c_void {
         lean_ctor_set_uint8(obj, 0, *value);
         obj
       },
-      SerializeError::AddressError => {
-        lean_alloc_ctor(5, 0, 0)
-      },
+      SerializeError::AddressError => lean_alloc_ctor(5, 0, 0),
       SerializeError::InvalidShareIndex { idx, max } => {
         let obj = lean_alloc_ctor(6, 1, 8);
         lean_ctor_set(obj, 0, build_lean_nat_usize(*max));
@@ -1079,29 +1182,44 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
     match tag {
       0 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let expected = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
-        SerializeError::UnexpectedEof { expected: Box::leak(expected.into_boxed_str()) }
+        let expected =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
+        SerializeError::UnexpectedEof {
+          expected: Box::leak(expected.into_boxed_str()),
+        }
       },
       1 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let base = ptr.cast::<u8>();
         let tag_val = *base.add(8 + 1 * 8);
-        let context = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
-        SerializeError::InvalidTag { tag: tag_val, context: Box::leak(context.into_boxed_str()) }
+        let context =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
+        SerializeError::InvalidTag {
+          tag: tag_val,
+          context: Box::leak(context.into_boxed_str()),
+        }
       },
       2 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let base = ptr.cast::<u8>();
         let flag = *base.add(8 + 1 * 8);
-        let context = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
-        SerializeError::InvalidFlag { flag, context: Box::leak(context.into_boxed_str()) }
+        let context =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
+        SerializeError::InvalidFlag {
+          flag,
+          context: Box::leak(context.into_boxed_str()),
+        }
       },
       3 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let base = ptr.cast::<u8>();
         let variant = *base.add(8 + 1 * 8).cast::<u64>();
-        let context = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
-        SerializeError::InvalidVariant { variant, context: Box::leak(context.into_boxed_str()) }
+        let context =
+          as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
+        SerializeError::InvalidVariant {
+          variant,
+          context: Box::leak(context.into_boxed_str()),
+        }
       },
       4 => {
         let base = ptr.cast::<u8>();
@@ -1218,7 +1336,9 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let base = ptr.cast::<u8>();
         let idx = *base.add(8 + 2 * 8).cast::<u64>();
         let refs_len = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
-        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().to_string();
+        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
+          .as_string()
+          .to_string();
         DecompileError::InvalidRefIndex { idx, refs_len, constant }
       },
       1 => {
@@ -1227,7 +1347,9 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let base = ptr.cast::<u8>();
         let idx = *base.add(8 + 2 * 8).cast::<u64>();
         let univs_len = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
-        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().to_string();
+        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
+          .as_string()
+          .to_string();
         DecompileError::InvalidUnivIndex { idx, univs_len, constant }
       },
       2 => {
@@ -1236,7 +1358,9 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let base = ptr.cast::<u8>();
         let idx = *base.add(8 + 2 * 8).cast::<u64>();
         let max = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
-        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().to_string();
+        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
+          .as_string()
+          .to_string();
         DecompileError::InvalidShareIndex { idx, max, constant }
       },
       3 => {
@@ -1245,7 +1369,9 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let base = ptr.cast::<u8>();
         let idx = *base.add(8 + 2 * 8).cast::<u64>();
         let ctx_size = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
-        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().to_string();
+        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
+          .as_string()
+          .to_string();
         DecompileError::InvalidRecIndex { idx, ctx_size, constant }
       },
       4 => {
@@ -1254,7 +1380,9 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let base = ptr.cast::<u8>();
         let idx = *base.add(8 + 2 * 8).cast::<u64>();
         let max = Nat::from_ptr(nat_ptr).to_u64().unwrap_or(0) as usize;
-        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().to_string();
+        let constant = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
+          .as_string()
+          .to_string();
         DecompileError::InvalidUnivVarIndex { idx, max, constant }
       },
       5 => {
@@ -1273,12 +1401,16 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
         let str_ptr = lean_ctor_get(ptr as *mut _, 1);
         let addr = decode_ixon_address(addr_ptr);
-        let expected = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().to_string();
+        let expected = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
+          .as_string()
+          .to_string();
         DecompileError::BadBlobFormat { addr, expected }
       },
       9 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let msg = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().to_string();
+        let msg = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
+          .as_string()
+          .to_string();
         DecompileError::BadConstantFormat { msg }
       },
       10 => {
@@ -1344,7 +1476,9 @@ pub fn decode_compile_error(ptr: *const c_void) -> CompileError {
     match tag {
       0 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let name = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().to_string();
+        let name = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
+          .as_string()
+          .to_string();
         CompileError::MissingConstant { name }
       },
       1 => {
@@ -1353,19 +1487,27 @@ pub fn decode_compile_error(ptr: *const c_void) -> CompileError {
       },
       2 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let reason = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().to_string();
+        let reason = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
+          .as_string()
+          .to_string();
         CompileError::InvalidMutualBlock { reason }
       },
       3 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let desc = as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string().to_string();
+        let desc = as_ref_unsafe::<LeanStringObject>(str_ptr.cast())
+          .as_string()
+          .to_string();
         CompileError::UnsupportedExpr { desc }
       },
       4 => {
         let str0 = lean_ctor_get(ptr as *mut _, 0);
         let str1 = lean_ctor_get(ptr as *mut _, 1);
-        let curr = as_ref_unsafe::<LeanStringObject>(str0.cast()).as_string().to_string();
-        let param = as_ref_unsafe::<LeanStringObject>(str1.cast()).as_string().to_string();
+        let curr = as_ref_unsafe::<LeanStringObject>(str0.cast())
+          .as_string()
+          .to_string();
+        let param = as_ref_unsafe::<LeanStringObject>(str1.cast())
+          .as_string()
+          .to_string();
         CompileError::UnknownUnivParam { curr, param }
       },
       5 => {
@@ -1379,21 +1521,27 @@ pub fn decode_compile_error(ptr: *const c_void) -> CompileError {
 
 /// FFI: Round-trip a DecompileError: Lean → Rust → Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_decompile_error(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_decompile_error(
+  ptr: *const c_void,
+) -> *mut c_void {
   let err = decode_decompile_error(ptr);
   build_decompile_error(&err)
 }
 
 /// FFI: Round-trip a CompileError: Lean → Rust → Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_compile_error(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_compile_error(
+  ptr: *const c_void,
+) -> *mut c_void {
   let err = decode_compile_error(ptr);
   build_compile_error(&err)
 }
 
 /// FFI: Round-trip a SerializeError: Lean → Rust → Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_serialize_error(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_serialize_error(
+  ptr: *const c_void,
+) -> *mut c_void {
   let err = decode_serialize_error(ptr);
   build_serialize_error(&err)
 }
@@ -1435,7 +1583,7 @@ pub extern "C" fn rs_decompile_env(raw_env_ptr: *const c_void) -> *mut c_void {
         lean_ctor_set(obj, 0, arr);
         obj
       }
-    }
+    },
     Err(e) => {
       // Except.error (tag 0) — build DecompileError directly
       unsafe {
@@ -1444,6 +1592,6 @@ pub extern "C" fn rs_decompile_env(raw_env_ptr: *const c_void) -> *mut c_void {
         lean_ctor_set(obj, 0, err_obj);
         obj
       }
-    }
+    },
   }
 }

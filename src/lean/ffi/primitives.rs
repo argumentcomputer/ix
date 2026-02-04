@@ -6,16 +6,17 @@
 //! - List, Array, ByteArray
 //! - AssocList, HashMap
 
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 
 use crate::lean::array::LeanArrayObject;
 use crate::lean::nat::Nat;
 use crate::lean::sarray::LeanSArrayObject;
 use crate::lean::string::LeanStringObject;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray, lean_array_get_core,
-  lean_array_set_core, lean_box_fn, lean_ctor_get, lean_ctor_set, lean_is_scalar, lean_mk_string,
-  lean_obj_tag, lean_sarray_cptr, lean_uint64_to_nat,
+  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray,
+  lean_array_get_core, lean_array_set_core, lean_box_fn, lean_ctor_get,
+  lean_ctor_set, lean_is_scalar, lean_mk_string, lean_obj_tag,
+  lean_sarray_cptr, lean_uint64_to_nat,
 };
 
 // =============================================================================
@@ -73,7 +74,9 @@ pub extern "C" fn rs_roundtrip_string(s_ptr: *const c_void) -> *mut c_void {
 
 /// Round-trip a List Nat: decode from Lean, re-encode to Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_list_nat(list_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_list_nat(
+  list_ptr: *const c_void,
+) -> *mut c_void {
   // Decode list to Vec<Nat>
   let nats: Vec<Nat> = crate::lean::collect_list(list_ptr, Nat::from_ptr);
   // Re-encode as Lean List
@@ -82,10 +85,13 @@ pub extern "C" fn rs_roundtrip_list_nat(list_ptr: *const c_void) -> *mut c_void 
 
 /// Round-trip an Array Nat: decode from Lean, re-encode to Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_array_nat(arr_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_array_nat(
+  arr_ptr: *const c_void,
+) -> *mut c_void {
   // Decode array
   let arr_obj: &LeanArrayObject = as_ref_unsafe(arr_ptr.cast());
-  let nats: Vec<Nat> = arr_obj.data().iter().map(|&p| Nat::from_ptr(p)).collect();
+  let nats: Vec<Nat> =
+    arr_obj.data().iter().map(|&p| Nat::from_ptr(p)).collect();
   // Re-encode as Lean Array
   build_array_nat(&nats)
 }
@@ -173,7 +179,9 @@ pub extern "C" fn rs_roundtrip_point(point_ptr: *const c_void) -> *mut c_void {
 
 /// Round-trip a NatTree (inductive with leaf : Nat → NatTree | node : NatTree → NatTree → NatTree).
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_nat_tree(tree_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_nat_tree(
+  tree_ptr: *const c_void,
+) -> *mut c_void {
   roundtrip_nat_tree_recursive(tree_ptr)
 }
 
@@ -188,7 +196,7 @@ fn roundtrip_nat_tree_recursive(tree_ptr: *const c_void) -> *mut c_void {
         let leaf = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(leaf, 0, build_nat(&nat));
         leaf
-      }
+      },
       1 => {
         // node : NatTree → NatTree → NatTree
         let left_ptr = lean_ctor_get(tree_ptr as *mut _, 0);
@@ -199,7 +207,7 @@ fn roundtrip_nat_tree_recursive(tree_ptr: *const c_void) -> *mut c_void {
         lean_ctor_set(node, 0, left);
         lean_ctor_set(node, 1, right);
         node
-      }
+      },
       _ => panic!("Invalid NatTree tag: {}", tag),
     }
   }
@@ -209,7 +217,9 @@ fn roundtrip_nat_tree_recursive(tree_ptr: *const c_void) -> *mut c_void {
 /// AssocList: nil (tag 0, 0 fields) | cons key value tail (tag 1, 3 fields)
 /// Note: nil with 0 fields may be represented as lean_box(0)
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_assoclist_nat_nat(list_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_assoclist_nat_nat(
+  list_ptr: *const c_void,
+) -> *mut c_void {
   // Check if it's a scalar (nil represented as lean_box(0))
   if lean_is_scalar(list_ptr) {
     // Return lean_box(0) for nil
@@ -238,7 +248,9 @@ fn build_assoc_list_nat_nat(pairs: &[(Nat, Nat)]) -> *mut c_void {
 
 /// Round-trip a DHashMap.Raw Nat Nat.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(raw_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
+  raw_ptr: *const c_void,
+) -> *mut c_void {
   unsafe {
     if lean_is_scalar(raw_ptr) {
       return raw_ptr as *mut c_void;
@@ -276,7 +288,8 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(raw_ptr: *const c_void) -> *
       #[allow(clippy::cast_possible_truncation)]
       let bucket_idx = (k_u64 as usize) & (num_buckets - 1);
 
-      let old_bucket = lean_array_get_core(new_buckets, bucket_idx) as *mut c_void;
+      let old_bucket =
+        lean_array_get_core(new_buckets, bucket_idx) as *mut c_void;
       let new_bucket = lean_alloc_ctor(1, 3, 0);
       lean_ctor_set(new_bucket, 0, build_nat(k));
       lean_ctor_set(new_bucket, 1, build_nat(v));
@@ -309,7 +322,9 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(raw_ptr: *const c_void) -> *
 ///   - nil: lean_box(0)
 ///   - cons key value tail: ctor 1, 3 fields
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_hashmap_nat_nat(map_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
+  map_ptr: *const c_void,
+) -> *mut c_void {
   unsafe {
     // Due to unboxing, map_ptr points directly to Raw
     let size_ptr = lean_ctor_get(map_ptr as *mut _, 0);
@@ -352,7 +367,8 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(map_ptr: *const c_void) -> *mut c
       let bucket_idx = (k_u64 as usize) & (num_buckets - 1);
 
       // Get current bucket AssocList
-      let old_bucket = lean_array_get_core(new_buckets, bucket_idx) as *mut c_void;
+      let old_bucket =
+        lean_array_get_core(new_buckets, bucket_idx) as *mut c_void;
 
       // Build AssocList.cons key value tail (tag 1, 3 fields)
       let new_bucket = lean_alloc_ctor(1, 3, 0);

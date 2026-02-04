@@ -23,7 +23,9 @@ pub fn build_address(hash: &blake3::Hash) -> *mut c_void {
 /// Round-trip an Ix.Address: decode ByteArray, re-encode.
 /// Address = { hash : ByteArray } - single field struct, so UNBOXED to ByteArray directly
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_address(addr_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ix_address(
+  addr_ptr: *const c_void,
+) -> *mut c_void {
   unsafe {
     // Address is a single-field struct { hash : ByteArray }
     // Due to unboxing, addr_ptr IS the ByteArray directly

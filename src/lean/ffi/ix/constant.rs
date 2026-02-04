@@ -13,24 +13,30 @@
 use std::ffi::c_void;
 
 use crate::ix::env::{
-  AxiomVal, ConstantInfo, ConstantVal, ConstructorVal, DefinitionSafety, DefinitionVal,
-  InductiveVal, Name, OpaqueVal, QuotKind, QuotVal, ReducibilityHints, RecursorRule, RecursorVal,
-  TheoremVal,
+  AxiomVal, ConstantInfo, ConstantVal, ConstructorVal, DefinitionSafety,
+  DefinitionVal, InductiveVal, Name, OpaqueVal, QuotKind, QuotVal,
+  RecursorRule, RecursorVal, ReducibilityHints, TheoremVal,
 };
 use crate::lean::array::LeanArrayObject;
 use crate::lean::nat::Nat;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_box_fn,
-  lean_ctor_get, lean_ctor_set, lean_ctor_set_uint8, lean_is_scalar, lean_obj_tag,
+  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core,
+  lean_box_fn, lean_ctor_get, lean_ctor_set, lean_ctor_set_uint8,
+  lean_is_scalar, lean_obj_tag,
 };
 
 use super::super::builder::LeanBuildCache;
 use super::super::primitives::build_nat;
 use super::expr::{build_expr, decode_ix_expr};
-use super::name::{build_name, build_name_array, decode_ix_name, decode_name_array};
+use super::name::{
+  build_name, build_name_array, decode_ix_name, decode_name_array,
+};
 
 /// Build a Ix.ConstantVal structure.
-pub fn build_constant_val(cache: &mut LeanBuildCache, cv: &ConstantVal) -> *mut c_void {
+pub fn build_constant_val(
+  cache: &mut LeanBuildCache,
+  cv: &ConstantVal,
+) -> *mut c_void {
   unsafe {
     // ConstantVal = { name : Name, levelParams : Array Name, type : Expr }
     let name_obj = build_name(cache, &cv.name);
@@ -63,13 +69,16 @@ pub fn build_reducibility_hints(hints: &ReducibilityHints) -> *mut c_void {
         let ptr = obj.cast::<u8>();
         *(ptr.add(8).cast::<u32>()) = *h;
         obj
-      }
+      },
     }
   }
 }
 
 /// Build a Ix.ConstantInfo from a Rust ConstantInfo.
-pub fn build_constant_info(cache: &mut LeanBuildCache, info: &ConstantInfo) -> *mut c_void {
+pub fn build_constant_info(
+  cache: &mut LeanBuildCache,
+  info: &ConstantInfo,
+) -> *mut c_void {
   unsafe {
     match info {
       // | axiomInfo (v : AxiomVal) -- tag 0
@@ -83,7 +92,7 @@ pub fn build_constant_info(cache: &mut LeanBuildCache, info: &ConstantInfo) -> *
         let obj = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(obj, 0, axiom_val);
         obj
-      }
+      },
       // | defnInfo (v : DefinitionVal) -- tag 1
       ConstantInfo::DefnInfo(v) => {
         // DefinitionVal = { cnst, value, hints, safety, all }
@@ -109,7 +118,7 @@ pub fn build_constant_info(cache: &mut LeanBuildCache, info: &ConstantInfo) -> *
         let obj = lean_alloc_ctor(1, 1, 0);
         lean_ctor_set(obj, 0, defn_val);
         obj
-      }
+      },
       // | thmInfo (v : TheoremVal) -- tag 2
       ConstantInfo::ThmInfo(v) => {
         // TheoremVal = { cnst, value, all }
@@ -125,7 +134,7 @@ pub fn build_constant_info(cache: &mut LeanBuildCache, info: &ConstantInfo) -> *
         let obj = lean_alloc_ctor(2, 1, 0);
         lean_ctor_set(obj, 0, thm_val);
         obj
-      }
+      },
       // | opaqueInfo (v : OpaqueVal) -- tag 3
       ConstantInfo::OpaqueInfo(v) => {
         // OpaqueVal = { cnst, value, isUnsafe, all }
@@ -142,7 +151,7 @@ pub fn build_constant_info(cache: &mut LeanBuildCache, info: &ConstantInfo) -> *
         let obj = lean_alloc_ctor(3, 1, 0);
         lean_ctor_set(obj, 0, opaque_val);
         obj
-      }
+      },
       // | quotInfo (v : QuotVal) -- tag 4
       ConstantInfo::QuotInfo(v) => {
         // QuotVal = { cnst, kind }
@@ -163,7 +172,7 @@ pub fn build_constant_info(cache: &mut LeanBuildCache, info: &ConstantInfo) -> *
         let obj = lean_alloc_ctor(4, 1, 0);
         lean_ctor_set(obj, 0, quot_val);
         obj
-      }
+      },
       // | inductInfo (v : InductiveVal) -- tag 5
       ConstantInfo::InductInfo(v) => {
         // InductiveVal = { cnst, numParams, numIndices, all, ctors, numNested, isRec, isUnsafe, isReflexive }
@@ -189,7 +198,7 @@ pub fn build_constant_info(cache: &mut LeanBuildCache, info: &ConstantInfo) -> *
         let obj = lean_alloc_ctor(5, 1, 0);
         lean_ctor_set(obj, 0, induct_val);
         obj
-      }
+      },
       // | ctorInfo (v : ConstructorVal) -- tag 6
       ConstantInfo::CtorInfo(v) => {
         // ConstructorVal = { cnst, induct, cidx, numParams, numFields, isUnsafe }
@@ -211,7 +220,7 @@ pub fn build_constant_info(cache: &mut LeanBuildCache, info: &ConstantInfo) -> *
         let obj = lean_alloc_ctor(6, 1, 0);
         lean_ctor_set(obj, 0, ctor_val);
         obj
-      }
+      },
       // | recInfo (v : RecursorVal) -- tag 7
       ConstantInfo::RecInfo(v) => {
         // RecursorVal = { cnst, all, numParams, numIndices, numMotives, numMinors, rules, k, isUnsafe }
@@ -238,13 +247,16 @@ pub fn build_constant_info(cache: &mut LeanBuildCache, info: &ConstantInfo) -> *
         let obj = lean_alloc_ctor(7, 1, 0);
         lean_ctor_set(obj, 0, rec_val);
         obj
-      }
+      },
     }
   }
 }
 
 /// Build an Array of RecursorRule.
-fn build_recursor_rules(cache: &mut LeanBuildCache, rules: &[RecursorRule]) -> *mut c_void {
+fn build_recursor_rules(
+  cache: &mut LeanBuildCache,
+  rules: &[RecursorRule],
+) -> *mut c_void {
   unsafe {
     let arr = lean_alloc_array(rules.len(), rules.len());
     for (i, rule) in rules.iter().enumerate() {
@@ -278,7 +290,8 @@ pub fn decode_constant_val(ptr: *const c_void) -> ConstantVal {
 
     let name = decode_ix_name(name_ptr);
 
-    let level_params_obj: &LeanArrayObject = as_ref_unsafe(level_params_ptr.cast());
+    let level_params_obj: &LeanArrayObject =
+      as_ref_unsafe(level_params_ptr.cast());
     let level_params: Vec<Name> =
       level_params_obj.data().iter().map(|&p| decode_ix_name(p)).collect();
 
@@ -317,7 +330,7 @@ pub fn decode_reducibility_hints(ptr: *const c_void) -> ReducibilityHints {
         let ctor_ptr = ptr.cast::<u8>();
         let h = *(ctor_ptr.add(8).cast::<u32>());
         ReducibilityHints::Regular(h)
-      }
+      },
       _ => panic!("Invalid ReducibilityHints tag: {}", tag),
     }
   }
@@ -350,11 +363,15 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         // axiomInfo: AxiomVal = { cnst : ConstantVal, isUnsafe : Bool }
         // Structure: 1 obj field (cnst), 1 scalar byte (isUnsafe)
         let cnst_ptr = lean_ctor_get(inner_ptr as *mut _, 0);
-        let ctor: &crate::lean::ctor::LeanCtorObject = as_ref_unsafe(inner_ptr.cast());
+        let ctor: &crate::lean::ctor::LeanCtorObject =
+          as_ref_unsafe(inner_ptr.cast());
         let is_unsafe = ctor.get_scalar_u8(1, 0) != 0;
 
-        ConstantInfo::AxiomInfo(AxiomVal { cnst: decode_constant_val(cnst_ptr), is_unsafe })
-      }
+        ConstantInfo::AxiomInfo(AxiomVal {
+          cnst: decode_constant_val(cnst_ptr),
+          is_unsafe,
+        })
+      },
       1 => {
         // defnInfo: DefinitionVal = { cnst, value, hints, safety, all }
         // NOTE: safety (DefinitionSafety) is a small enum and is stored as a SCALAR field
@@ -365,7 +382,8 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         let all_ptr = lean_ctor_get(inner_ptr as *mut _, 3); // all is at index 3, not 4!
 
         // safety is a scalar at offset 4*8 = 32 bytes from start of object fields
-        let ctor: &crate::lean::ctor::LeanCtorObject = as_ref_unsafe(inner_ptr.cast());
+        let ctor: &crate::lean::ctor::LeanCtorObject =
+          as_ref_unsafe(inner_ptr.cast());
         let safety_byte = ctor.get_scalar_u8(4, 0); // 4 obj fields, offset 0 in scalar area
         let safety = match safety_byte {
           0 => DefinitionSafety::Unsafe,
@@ -381,7 +399,7 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
           safety,
           all: decode_name_array(all_ptr),
         })
-      }
+      },
       2 => {
         // thmInfo: TheoremVal = { cnst, value, all }
         let cnst_ptr = lean_ctor_get(inner_ptr as *mut _, 0);
@@ -393,14 +411,15 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
           value: decode_ix_expr(value_ptr),
           all: decode_name_array(all_ptr),
         })
-      }
+      },
       3 => {
         // opaqueInfo: OpaqueVal = { cnst, value, isUnsafe, all }
         // Structure: 3 obj fields (cnst, value, all), 1 scalar byte (isUnsafe)
         let cnst_ptr = lean_ctor_get(inner_ptr as *mut _, 0);
         let value_ptr = lean_ctor_get(inner_ptr as *mut _, 1);
         let all_ptr = lean_ctor_get(inner_ptr as *mut _, 2);
-        let ctor: &crate::lean::ctor::LeanCtorObject = as_ref_unsafe(inner_ptr.cast());
+        let ctor: &crate::lean::ctor::LeanCtorObject =
+          as_ref_unsafe(inner_ptr.cast());
         let is_unsafe = ctor.get_scalar_u8(3, 0) != 0;
 
         ConstantInfo::OpaqueInfo(OpaqueVal {
@@ -409,14 +428,15 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
           is_unsafe,
           all: decode_name_array(all_ptr),
         })
-      }
+      },
       4 => {
         // quotInfo: QuotVal = { cnst, kind }
         // NOTE: QuotKind is a small enum (4 0-field ctors), stored as SCALAR
         // Memory layout: 1 obj field (cnst), 1 scalar byte (kind)
         let cnst_ptr = lean_ctor_get(inner_ptr as *mut _, 0);
 
-        let ctor: &crate::lean::ctor::LeanCtorObject = as_ref_unsafe(inner_ptr.cast());
+        let ctor: &crate::lean::ctor::LeanCtorObject =
+          as_ref_unsafe(inner_ptr.cast());
         let kind_byte = ctor.get_scalar_u8(1, 0); // 1 obj field, offset 0 in scalar area
         let kind = match kind_byte {
           0 => QuotKind::Type,
@@ -426,8 +446,11 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
           _ => panic!("Invalid QuotKind: {}", kind_byte),
         };
 
-        ConstantInfo::QuotInfo(QuotVal { cnst: decode_constant_val(cnst_ptr), kind })
-      }
+        ConstantInfo::QuotInfo(QuotVal {
+          cnst: decode_constant_val(cnst_ptr),
+          kind,
+        })
+      },
       5 => {
         // inductInfo: InductiveVal = { cnst, numParams, numIndices, all, ctors, numNested, isRec, isUnsafe, isReflexive }
         // 6 obj fields, 3 scalar bytes
@@ -438,7 +461,8 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         let ctors_ptr = lean_ctor_get(inner_ptr as *mut _, 4);
         let num_nested_ptr = lean_ctor_get(inner_ptr as *mut _, 5);
 
-        let ctor: &crate::lean::ctor::LeanCtorObject = as_ref_unsafe(inner_ptr.cast());
+        let ctor: &crate::lean::ctor::LeanCtorObject =
+          as_ref_unsafe(inner_ptr.cast());
         let is_rec = ctor.get_scalar_u8(6, 0) != 0;
         let is_unsafe = ctor.get_scalar_u8(6, 1) != 0;
         let is_reflexive = ctor.get_scalar_u8(6, 2) != 0;
@@ -454,7 +478,7 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
           is_unsafe,
           is_reflexive,
         })
-      }
+      },
       6 => {
         // ctorInfo: ConstructorVal = { cnst, induct, cidx, numParams, numFields, isUnsafe }
         // 5 obj fields, 1 scalar byte
@@ -464,7 +488,8 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         let num_params_ptr = lean_ctor_get(inner_ptr as *mut _, 3);
         let num_fields_ptr = lean_ctor_get(inner_ptr as *mut _, 4);
 
-        let ctor: &crate::lean::ctor::LeanCtorObject = as_ref_unsafe(inner_ptr.cast());
+        let ctor: &crate::lean::ctor::LeanCtorObject =
+          as_ref_unsafe(inner_ptr.cast());
         let is_unsafe = ctor.get_scalar_u8(5, 0) != 0;
 
         ConstantInfo::CtorInfo(ConstructorVal {
@@ -475,7 +500,7 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
           num_fields: Nat::from_ptr(num_fields_ptr),
           is_unsafe,
         })
-      }
+      },
       7 => {
         // recInfo: RecursorVal = { cnst, all, numParams, numIndices, numMotives, numMinors, rules, k, isUnsafe }
         // 7 obj fields, 2 scalar bytes
@@ -487,7 +512,8 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         let num_minors_ptr = lean_ctor_get(inner_ptr as *mut _, 5);
         let rules_ptr = lean_ctor_get(inner_ptr as *mut _, 6);
 
-        let ctor: &crate::lean::ctor::LeanCtorObject = as_ref_unsafe(inner_ptr.cast());
+        let ctor: &crate::lean::ctor::LeanCtorObject =
+          as_ref_unsafe(inner_ptr.cast());
         let k = ctor.get_scalar_u8(7, 0) != 0;
         let is_unsafe = ctor.get_scalar_u8(7, 1) != 0;
 
@@ -506,7 +532,7 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
           k,
           is_unsafe,
         })
-      }
+      },
       _ => panic!("Invalid ConstantInfo tag: {}", tag),
     }
   }
@@ -514,7 +540,9 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
 
 /// Round-trip an Ix.ConstantInfo: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_constant_info(info_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ix_constant_info(
+  info_ptr: *const c_void,
+) -> *mut c_void {
   let info = decode_constant_info(info_ptr);
   let mut cache = LeanBuildCache::new();
   build_constant_info(&mut cache, &info)
