@@ -1,6 +1,5 @@
---import Tests.Aiur
 import Tests.ByteArray
---import Tests.Ix
+-- import Tests.Ix
 import Tests.Ix.Ixon
 import Tests.Ix.Claim
 import Tests.Ix.Commit
@@ -13,7 +12,6 @@ import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
 import Tests.FFI
---import Tests.IxVM
 import Tests.Keccak
 import Tests.Cli
 import Tests.ShardMap
@@ -25,9 +23,6 @@ opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
 /-- Primary test suites - run by default -/
 def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
-  -- TODO: These tests are expensive at compile-time, should be a separate exe
-  --("aiur", Tests.Aiur.suite),
-  --("ixvm", Tests.IxVM.suite),
   ("ffi", Tests.FFI.suite),
   ("byte-array", Tests.ByteArray.suite),
   --("ix", Tests.Ix.suite),
@@ -41,7 +36,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("condense-unit", Tests.Ix.CondenseM.suite),
 ]
 
-/-- Ignored test suites - expensive, run only when explicitly requested -/
+/-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
 def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("shard-map", Tests.ShardMap.suite),
   ("rust-canon-roundtrip", Tests.CanonM.rustSuiteIO),

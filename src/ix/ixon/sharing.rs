@@ -328,7 +328,8 @@ pub fn analyze_block(
 /// Compute the hash of a single expression.
 /// This is useful for testing hash compatibility with Lean.
 pub fn hash_expr(expr: &Arc<Expr>) -> blake3::Hash {
-  let (_info_map, ptr_to_hash) = analyze_block(std::slice::from_ref(expr), false);
+  let (_info_map, ptr_to_hash) =
+    analyze_block(std::slice::from_ref(expr), false);
   let ptr = expr.as_ref() as *const Expr;
   *ptr_to_hash.get(&ptr).expect("Expression not found in ptr_to_hash")
 }
@@ -443,10 +444,8 @@ pub fn analyze_sharing_stats(
   }
 
   // Count candidates at each filtering stage
-  let candidates_usage_ge_2: usize = info_map
-    .values()
-    .filter(|info| info.usage_count >= 2)
-    .count();
+  let candidates_usage_ge_2: usize =
+    info_map.values().filter(|info| info.usage_count >= 2).count();
 
   let candidates_positive_potential: usize = info_map
     .iter()
@@ -468,11 +467,7 @@ pub fn analyze_sharing_stats(
       let term_size = *effective_sizes.get(hash)?;
       let n = info.usage_count;
       let potential = (n as isize - 1) * (term_size as isize) - (n as isize);
-      if potential > 0 {
-        Some((term_size, n))
-      } else {
-        None
-      }
+      if potential > 0 { Some((term_size, n)) } else { None }
     })
     .collect();
 
@@ -638,10 +633,8 @@ pub fn build_sharing_vec(
   // but we need leaves first so that when serializing sharing[i], all its
   // children are already available as Share(j) for j < i.
   let topo_order = topological_sort(info_map);
-  let shared_in_topo_order: Vec<blake3::Hash> = topo_order
-    .into_iter()
-    .filter(|h| shared_hashes.contains(h))
-    .collect();
+  let shared_in_topo_order: Vec<blake3::Hash> =
+    topo_order.into_iter().filter(|h| shared_hashes.contains(h)).collect();
 
   // Build sharing vector incrementally to avoid forward references.
   // When building sharing[i], only Share(j) for j < i is allowed.
@@ -1034,7 +1027,8 @@ mod tests {
     let app1 = Expr::app(var0.clone(), var0.clone());
     let app2 = Expr::app(app1, var0);
 
-    let (info_map, ptr_to_hash) = analyze_block(std::slice::from_ref(&app2), false);
+    let (info_map, ptr_to_hash) =
+      analyze_block(std::slice::from_ref(&app2), false);
     let shared = decide_sharing(&info_map);
 
     // If var0 is shared, verify it

@@ -14,13 +14,17 @@ use crate::ix::ixon::metadata::{
 use crate::lean::array::LeanArrayObject;
 use crate::lean::ctor::LeanCtorObject;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_box_fn,
-  lean_ctor_get, lean_ctor_set, lean_ctor_set_uint64, lean_ctor_set_uint8, lean_is_scalar,
-  lean_obj_tag,
+  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core,
+  lean_box_fn, lean_ctor_get, lean_ctor_set, lean_ctor_set_uint8,
+  lean_ctor_set_uint64, lean_is_scalar, lean_obj_tag,
 };
 
-use super::constant::{build_address_array, build_address_from_ixon, decode_ixon_address};
-use crate::lean::ffi::ix::constant::{build_reducibility_hints, decode_reducibility_hints};
+use super::constant::{
+  build_address_array, build_address_from_ixon, decode_ixon_address,
+};
+use crate::lean::ffi::ix::constant::{
+  build_reducibility_hints, decode_reducibility_hints,
+};
 use crate::lean::ffi::ix::expr::binder_info_to_u8;
 
 // =============================================================================
@@ -36,36 +40,36 @@ pub fn build_ixon_data_value(dv: &IxonDataValue) -> *mut c_void {
         let obj = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(obj, 0, addr_obj);
         obj
-      }
+      },
       IxonDataValue::OfBool(b) => {
         let obj = lean_alloc_ctor(1, 0, 1);
         lean_ctor_set_uint8(obj, 0, if *b { 1 } else { 0 });
         obj
-      }
+      },
       IxonDataValue::OfName(addr) => {
         let addr_obj = build_address_from_ixon(addr);
         let obj = lean_alloc_ctor(2, 1, 0);
         lean_ctor_set(obj, 0, addr_obj);
         obj
-      }
+      },
       IxonDataValue::OfNat(addr) => {
         let addr_obj = build_address_from_ixon(addr);
         let obj = lean_alloc_ctor(3, 1, 0);
         lean_ctor_set(obj, 0, addr_obj);
         obj
-      }
+      },
       IxonDataValue::OfInt(addr) => {
         let addr_obj = build_address_from_ixon(addr);
         let obj = lean_alloc_ctor(4, 1, 0);
         lean_ctor_set(obj, 0, addr_obj);
         obj
-      }
+      },
       IxonDataValue::OfSyntax(addr) => {
         let addr_obj = build_address_from_ixon(addr);
         let obj = lean_alloc_ctor(5, 1, 0);
         lean_ctor_set(obj, 0, addr_obj);
         obj
-      }
+      },
     }
   }
 }
@@ -78,28 +82,28 @@ pub fn decode_ixon_data_value(ptr: *const c_void) -> IxonDataValue {
       0 => {
         let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
         IxonDataValue::OfString(decode_ixon_address(addr_ptr))
-      }
+      },
       1 => {
         let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
         let b = ctor.get_scalar_u8(0, 0) != 0;
         IxonDataValue::OfBool(b)
-      }
+      },
       2 => {
         let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
         IxonDataValue::OfName(decode_ixon_address(addr_ptr))
-      }
+      },
       3 => {
         let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
         IxonDataValue::OfNat(decode_ixon_address(addr_ptr))
-      }
+      },
       4 => {
         let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
         IxonDataValue::OfInt(decode_ixon_address(addr_ptr))
-      }
+      },
       5 => {
         let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
         IxonDataValue::OfSyntax(decode_ixon_address(addr_ptr))
-      }
+      },
       _ => panic!("Invalid Ixon.DataValue tag: {}", tag),
     }
   }
@@ -207,7 +211,7 @@ pub fn build_expr_meta_data(node: &ExprMetaData) -> *mut c_void {
         lean_ctor_set_uint64(obj, 0, children[0]);
         lean_ctor_set_uint64(obj, 8, children[1]);
         obj
-      }
+      },
 
       ExprMetaData::Binder { name, info, children } => {
         // Tag 2, 1 obj field (name), scalar: 2× u64 + u8 (info)
@@ -218,7 +222,7 @@ pub fn build_expr_meta_data(node: &ExprMetaData) -> *mut c_void {
         lean_ctor_set_uint64(obj, 8 + 8, children[1]);
         lean_ctor_set_uint8(obj, 8 + 16, binder_info_to_u8(info));
         obj
-      }
+      },
 
       ExprMetaData::LetBinder { name, children } => {
         // Tag 3, 1 obj field (name), 24 scalar bytes (3× u64)
@@ -228,14 +232,14 @@ pub fn build_expr_meta_data(node: &ExprMetaData) -> *mut c_void {
         lean_ctor_set_uint64(obj, 8 + 8, children[1]);
         lean_ctor_set_uint64(obj, 8 + 16, children[2]);
         obj
-      }
+      },
 
       ExprMetaData::Ref { name } => {
         // Tag 4, 1 obj field (name), 0 scalar bytes
         let obj = lean_alloc_ctor(4, 1, 0);
         lean_ctor_set(obj, 0, build_address_from_ixon(name));
         obj
-      }
+      },
 
       ExprMetaData::Prj { struct_name, child } => {
         // Tag 5, 1 obj field (structName), 8 scalar bytes (1× u64)
@@ -243,7 +247,7 @@ pub fn build_expr_meta_data(node: &ExprMetaData) -> *mut c_void {
         lean_ctor_set(obj, 0, build_address_from_ixon(struct_name));
         lean_ctor_set_uint64(obj, 8, *child);
         obj
-      }
+      },
 
       ExprMetaData::Mdata { mdata, child } => {
         // Tag 6, 1 obj field (mdata: Array KVMap), 8 scalar bytes (1× u64)
@@ -252,7 +256,7 @@ pub fn build_expr_meta_data(node: &ExprMetaData) -> *mut c_void {
         lean_ctor_set(obj, 0, mdata_obj);
         lean_ctor_set_uint64(obj, 8, *child);
         obj
-      }
+      },
     }
   }
 }
@@ -274,7 +278,7 @@ pub fn decode_expr_meta_data(ptr: *const c_void) -> ExprMetaData {
         let fun_ = ctor.get_scalar_u64(0, 0);
         let arg = ctor.get_scalar_u64(0, 8);
         ExprMetaData::App { children: [fun_, arg] }
-      }
+      },
 
       2 => {
         // binder: 1 obj field (name), scalar (Lean ABI: u64s first, then u8):
@@ -295,7 +299,7 @@ pub fn decode_expr_meta_data(ptr: *const c_void) -> ExprMetaData {
           info,
           children: [ty_child, body_child],
         }
-      }
+      },
 
       3 => {
         // letBinder: 1 obj field (name), 3× u64 scalar
@@ -307,33 +311,27 @@ pub fn decode_expr_meta_data(ptr: *const c_void) -> ExprMetaData {
           name: decode_ixon_address(name_ptr),
           children: [ty_child, val_child, body_child],
         }
-      }
+      },
 
       4 => {
         // ref: 1 obj field (name), 0 scalar
         let name_ptr = lean_ctor_get(ptr as *mut _, 0);
         ExprMetaData::Ref { name: decode_ixon_address(name_ptr) }
-      }
+      },
 
       5 => {
         // prj: 1 obj field (structName), 1× u64 scalar
         let name_ptr = lean_ctor_get(ptr as *mut _, 0);
         let child = ctor.get_scalar_u64(1, 0);
-        ExprMetaData::Prj {
-          struct_name: decode_ixon_address(name_ptr),
-          child,
-        }
-      }
+        ExprMetaData::Prj { struct_name: decode_ixon_address(name_ptr), child }
+      },
 
       6 => {
         // mdata: 1 obj field (mdata: Array KVMap), 1× u64 scalar
         let mdata_ptr = lean_ctor_get(ptr as *mut _, 0);
         let child = ctor.get_scalar_u64(1, 0);
-        ExprMetaData::Mdata {
-          mdata: decode_kvmap_array(mdata_ptr),
-          child,
-        }
-      }
+        ExprMetaData::Mdata { mdata: decode_kvmap_array(mdata_ptr), child }
+      },
 
       _ => panic!("Invalid Ixon.ExprMetaData tag: {}", tag),
     }
@@ -361,9 +359,7 @@ pub fn build_expr_meta_arena(arena: &ExprMeta) -> *mut c_void {
 /// Single-field struct is unboxed — ptr IS the Array directly.
 pub fn decode_expr_meta_arena(ptr: *const c_void) -> ExprMeta {
   let arr: &LeanArrayObject = as_ref_unsafe(ptr.cast());
-  ExprMeta {
-    nodes: arr.to_vec(decode_expr_meta_data),
-  }
+  ExprMeta { nodes: arr.to_vec(decode_expr_meta_data) }
 }
 
 // =============================================================================
@@ -386,7 +382,16 @@ pub fn build_constant_meta(meta: &ConstantMeta) -> *mut c_void {
     match meta {
       ConstantMeta::Empty => lean_box_fn(0),
 
-      ConstantMeta::Def { name, lvls, hints, all, ctx, arena, type_root, value_root } => {
+      ConstantMeta::Def {
+        name,
+        lvls,
+        hints,
+        all,
+        ctx,
+        arena,
+        type_root,
+        value_root,
+      } => {
         let obj = lean_alloc_ctor(1, 6, 16);
         lean_ctor_set(obj, 0, build_address_from_ixon(name));
         lean_ctor_set(obj, 1, build_address_array(lvls));
@@ -397,7 +402,7 @@ pub fn build_constant_meta(meta: &ConstantMeta) -> *mut c_void {
         lean_ctor_set_uint64(obj, 6 * 8, *type_root);
         lean_ctor_set_uint64(obj, 6 * 8 + 8, *value_root);
         obj
-      }
+      },
 
       ConstantMeta::Axio { name, lvls, arena, type_root } => {
         let obj = lean_alloc_ctor(2, 3, 8);
@@ -406,7 +411,7 @@ pub fn build_constant_meta(meta: &ConstantMeta) -> *mut c_void {
         lean_ctor_set(obj, 2, build_expr_meta_arena(arena));
         lean_ctor_set_uint64(obj, 3 * 8, *type_root);
         obj
-      }
+      },
 
       ConstantMeta::Quot { name, lvls, arena, type_root } => {
         let obj = lean_alloc_ctor(3, 3, 8);
@@ -415,7 +420,7 @@ pub fn build_constant_meta(meta: &ConstantMeta) -> *mut c_void {
         lean_ctor_set(obj, 2, build_expr_meta_arena(arena));
         lean_ctor_set_uint64(obj, 3 * 8, *type_root);
         obj
-      }
+      },
 
       ConstantMeta::Indc { name, lvls, ctors, all, ctx, arena, type_root } => {
         let obj = lean_alloc_ctor(4, 6, 8);
@@ -427,7 +432,7 @@ pub fn build_constant_meta(meta: &ConstantMeta) -> *mut c_void {
         lean_ctor_set(obj, 5, build_expr_meta_arena(arena));
         lean_ctor_set_uint64(obj, 6 * 8, *type_root);
         obj
-      }
+      },
 
       ConstantMeta::Ctor { name, lvls, induct, arena, type_root } => {
         let obj = lean_alloc_ctor(5, 4, 8);
@@ -437,9 +442,18 @@ pub fn build_constant_meta(meta: &ConstantMeta) -> *mut c_void {
         lean_ctor_set(obj, 3, build_expr_meta_arena(arena));
         lean_ctor_set_uint64(obj, 4 * 8, *type_root);
         obj
-      }
+      },
 
-      ConstantMeta::Rec { name, lvls, rules, all, ctx, arena, type_root, rule_roots } => {
+      ConstantMeta::Rec {
+        name,
+        lvls,
+        rules,
+        all,
+        ctx,
+        arena,
+        type_root,
+        rule_roots,
+      } => {
         let obj = lean_alloc_ctor(6, 7, 8);
         lean_ctor_set(obj, 0, build_address_from_ixon(name));
         lean_ctor_set(obj, 1, build_address_array(lvls));
@@ -450,7 +464,7 @@ pub fn build_constant_meta(meta: &ConstantMeta) -> *mut c_void {
         lean_ctor_set(obj, 6, build_u64_array(rule_roots));
         lean_ctor_set_uint64(obj, 7 * 8, *type_root);
         obj
-      }
+      },
     }
   }
 }
@@ -467,7 +481,6 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
     let tag = lean_obj_tag(ptr as *mut _);
     let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
     match tag {
-
       1 => {
         // defn: 6 obj fields, 2× u64 scalar
         let name = decode_ixon_address(lean_ctor_get(ptr as *mut _, 0));
@@ -478,8 +491,17 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 5));
         let type_root = ctor.get_scalar_u64(6, 0);
         let value_root = ctor.get_scalar_u64(6, 8);
-        ConstantMeta::Def { name, lvls, hints, all, ctx, arena, type_root, value_root }
-      }
+        ConstantMeta::Def {
+          name,
+          lvls,
+          hints,
+          all,
+          ctx,
+          arena,
+          type_root,
+          value_root,
+        }
+      },
 
       2 => {
         // axio: 3 obj fields, 1× u64 scalar
@@ -488,7 +510,7 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 2));
         let type_root = ctor.get_scalar_u64(3, 0);
         ConstantMeta::Axio { name, lvls, arena, type_root }
-      }
+      },
 
       3 => {
         // quot: 3 obj fields, 1× u64 scalar
@@ -497,7 +519,7 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 2));
         let type_root = ctor.get_scalar_u64(3, 0);
         ConstantMeta::Quot { name, lvls, arena, type_root }
-      }
+      },
 
       4 => {
         // indc: 6 obj fields, 1× u64 scalar
@@ -509,7 +531,7 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 5));
         let type_root = ctor.get_scalar_u64(6, 0);
         ConstantMeta::Indc { name, lvls, ctors, all, ctx, arena, type_root }
-      }
+      },
 
       5 => {
         // ctor: 4 obj fields, 1× u64 scalar
@@ -519,7 +541,7 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 3));
         let type_root = ctor.get_scalar_u64(4, 0);
         ConstantMeta::Ctor { name, lvls, induct, arena, type_root }
-      }
+      },
 
       6 => {
         // recr: 7 obj fields, 1× u64 scalar
@@ -531,8 +553,17 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 5));
         let rule_roots = decode_u64_array(lean_ctor_get(ptr as *mut _, 6));
         let type_root = ctor.get_scalar_u64(7, 0);
-        ConstantMeta::Rec { name, lvls, rules, all, ctx, arena, type_root, rule_roots }
-      }
+        ConstantMeta::Rec {
+          name,
+          lvls,
+          rules,
+          all,
+          ctx,
+          arena,
+          type_root,
+          rule_roots,
+        }
+      },
 
       _ => panic!("Invalid Ixon.ConstantMeta tag: {}", tag),
     }
@@ -597,7 +628,9 @@ pub fn decode_ixon_comm(ptr: *const c_void) -> Comm {
 
 /// Round-trip Ixon.DataValue.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_data_value(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_data_value(
+  ptr: *const c_void,
+) -> *mut c_void {
   let dv = decode_ixon_data_value(ptr);
   build_ixon_data_value(&dv)
 }
@@ -611,21 +644,27 @@ pub extern "C" fn rs_roundtrip_ixon_comm(ptr: *const c_void) -> *mut c_void {
 
 /// Round-trip Ixon.ExprMetaData.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_expr_meta_data(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_expr_meta_data(
+  ptr: *const c_void,
+) -> *mut c_void {
   let node = decode_expr_meta_data(ptr);
   build_expr_meta_data(&node)
 }
 
 /// Round-trip Ixon.ExprMetaArena.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_expr_meta_arena(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_expr_meta_arena(
+  ptr: *const c_void,
+) -> *mut c_void {
   let arena = decode_expr_meta_arena(ptr);
   build_expr_meta_arena(&arena)
 }
 
 /// Round-trip Ixon.ConstantMeta (full arena-based).
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_constant_meta(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_constant_meta(
+  ptr: *const c_void,
+) -> *mut c_void {
   let meta = decode_constant_meta(ptr);
   build_constant_meta(&meta)
 }

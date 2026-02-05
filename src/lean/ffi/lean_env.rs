@@ -884,8 +884,8 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
 /// Size breakdown for a constant: alpha-invariant vs metadata
 #[derive(Default, Clone)]
 struct ConstSizeBreakdown {
-  alpha_size: usize,      // Alpha-invariant constant data
-  meta_size: usize,       // Metadata (names, binder info, etc.)
+  alpha_size: usize, // Alpha-invariant constant data
+  meta_size: usize,  // Metadata (names, binder info, etc.)
 }
 
 impl ConstSizeBreakdown {
@@ -912,7 +912,7 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
       println!("\n=== Size analysis for {} ===", name_str);
       println!("  Constant not found");
       return;
-    }
+    },
   };
 
   // Get the constant
@@ -922,11 +922,12 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
       println!("\n=== Size analysis for {} ===", name_str);
       println!("  Constant data not found at address");
       return;
-    }
+    },
   };
 
   // Compute direct sizes (alpha-invariant and metadata)
-  let direct_breakdown = compute_const_size_breakdown(&constant, &name, stt, &name_index);
+  let direct_breakdown =
+    compute_const_size_breakdown(&constant, &name, stt, &name_index);
 
   // BFS to collect all transitive dependencies
   let mut visited: HashSet<Address> = HashSet::new();
@@ -947,7 +948,8 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
     if let Some(dep_const) = stt.env.consts.get(&dep_addr) {
       // Get the name for this dependency
       let dep_name_opt = stt.env.get_name_by_addr(&dep_addr);
-      let dep_name_str = dep_name_opt.as_ref()
+      let dep_name_str = dep_name_opt
+        .as_ref()
         .map_or_else(|| format!("{:?}", dep_addr), |n| n.pretty());
 
       let breakdown = if let Some(ref dep_name) = dep_name_opt {
@@ -974,8 +976,10 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
   // Sort by total size descending
   dep_breakdowns.sort_by(|a, b| b.1.total().cmp(&a.1.total()));
 
-  let total_deps_alpha: usize = dep_breakdowns.iter().map(|(_, b)| b.alpha_size).sum();
-  let total_deps_meta: usize = dep_breakdowns.iter().map(|(_, b)| b.meta_size).sum();
+  let total_deps_alpha: usize =
+    dep_breakdowns.iter().map(|(_, b)| b.alpha_size).sum();
+  let total_deps_meta: usize =
+    dep_breakdowns.iter().map(|(_, b)| b.meta_size).sum();
   let total_deps_size = total_deps_alpha + total_deps_meta;
 
   let total_alpha = direct_breakdown.alpha_size + total_deps_alpha;
@@ -983,31 +987,65 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
   let total_size = total_alpha + total_meta;
 
   println!("\n=== Size analysis for {} ===", name_str);
-  println!("  Direct alpha-invariant size: {} bytes", direct_breakdown.alpha_size);
+  println!(
+    "  Direct alpha-invariant size: {} bytes",
+    direct_breakdown.alpha_size
+  );
   println!("  Direct metadata size: {} bytes", direct_breakdown.meta_size);
   println!("  Direct total size: {} bytes", direct_breakdown.total());
   println!();
   println!("  Transitive dependencies: {} constants", dep_breakdowns.len());
-  println!("  Dependencies alpha-invariant: {} bytes ({:.2} KB)", total_deps_alpha, total_deps_alpha as f64 / 1024.0);
-  println!("  Dependencies metadata: {} bytes ({:.2} KB)", total_deps_meta, total_deps_meta as f64 / 1024.0);
-  println!("  Dependencies total: {} bytes ({:.2} KB)", total_deps_size, total_deps_size as f64 / 1024.0);
+  println!(
+    "  Dependencies alpha-invariant: {} bytes ({:.2} KB)",
+    total_deps_alpha,
+    total_deps_alpha as f64 / 1024.0
+  );
+  println!(
+    "  Dependencies metadata: {} bytes ({:.2} KB)",
+    total_deps_meta,
+    total_deps_meta as f64 / 1024.0
+  );
+  println!(
+    "  Dependencies total: {} bytes ({:.2} KB)",
+    total_deps_size,
+    total_deps_size as f64 / 1024.0
+  );
   println!();
-  println!("  TOTAL alpha-invariant: {} bytes ({:.2} KB)", total_alpha, total_alpha as f64 / 1024.0);
-  println!("  TOTAL metadata: {} bytes ({:.2} KB)", total_meta, total_meta as f64 / 1024.0);
-  println!("  TOTAL size: {} bytes ({:.2} KB)", total_size, total_size as f64 / 1024.0);
+  println!(
+    "  TOTAL alpha-invariant: {} bytes ({:.2} KB)",
+    total_alpha,
+    total_alpha as f64 / 1024.0
+  );
+  println!(
+    "  TOTAL metadata: {} bytes ({:.2} KB)",
+    total_meta,
+    total_meta as f64 / 1024.0
+  );
+  println!(
+    "  TOTAL size: {} bytes ({:.2} KB)",
+    total_size,
+    total_size as f64 / 1024.0
+  );
 
   // Show top 10 largest dependencies
   if !dep_breakdowns.is_empty() {
     println!("\n  Top 10 largest dependencies (by total size):");
     for (name, breakdown) in dep_breakdowns.iter().take(10) {
-      println!("    {} bytes (alpha: {}, meta: {}): {}",
-        breakdown.total(), breakdown.alpha_size, breakdown.meta_size, name);
+      println!(
+        "    {} bytes (alpha: {}, meta: {}): {}",
+        breakdown.total(),
+        breakdown.alpha_size,
+        breakdown.meta_size,
+        name
+      );
     }
   }
 }
 
 /// Build a name index for metadata serialization.
-fn build_name_index(stt: &crate::ix::compile::CompileState) -> crate::ix::ixon::metadata::NameIndex {
+fn build_name_index(
+  stt: &crate::ix::compile::CompileState,
+) -> crate::ix::ixon::metadata::NameIndex {
   use crate::ix::address::Address;
   use crate::ix::ixon::metadata::NameIndex;
 
@@ -1068,7 +1106,9 @@ fn parse_name(s: &str) -> Name {
 }
 
 /// Compute the serialized size of a constant.
-fn serialized_const_size(constant: &crate::ix::ixon::constant::Constant) -> usize {
+fn serialized_const_size(
+  constant: &crate::ix::ixon::constant::Constant,
+) -> usize {
   let mut buf = Vec::new();
   constant.put(&mut buf);
   buf.len()
@@ -1083,7 +1123,9 @@ fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
     .load(std::sync::atomic::Ordering::Relaxed);
   if !tracking_enabled {
     println!("\n=== Block Size Analysis ===");
-    println!("  Hash-consed size tracking disabled (set IX_TRACK_HASH_CONSED=1 to enable)");
+    println!(
+      "  Hash-consed size tracking disabled (set IX_TRACK_HASH_CONSED=1 to enable)"
+    );
     return;
   }
 
@@ -1101,8 +1143,10 @@ fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
   }
 
   // Compute totals
-  let total_hash_consed: usize = stats.iter().map(|(_, s)| s.hash_consed_size).sum();
-  let total_serialized: usize = stats.iter().map(|(_, s)| s.serialized_size).sum();
+  let total_hash_consed: usize =
+    stats.iter().map(|(_, s)| s.hash_consed_size).sum();
+  let total_serialized: usize =
+    stats.iter().map(|(_, s)| s.serialized_size).sum();
   let total_blocks = stats.len();
   let total_consts: usize = stats.iter().map(|(_, s)| s.const_count).sum();
 
@@ -1139,26 +1183,42 @@ fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
       (name.clone(), ratio, s.hash_consed_size, s.serialized_size)
     })
     .collect();
-  ratios.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+  ratios
+    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
   println!("\n=== Block Size Analysis (Hash-Consing vs Serialization) ===");
   println!("  Total blocks: {}", total_blocks);
   println!("  Total constants: {}", total_consts);
   println!();
-  println!("  Total hash-consed size: {} bytes ({:.2} KB)", total_hash_consed, total_hash_consed as f64 / 1024.0);
-  println!("  Total serialized size:  {} bytes ({:.2} KB)", total_serialized, total_serialized as f64 / 1024.0);
+  println!(
+    "  Total hash-consed size: {} bytes ({:.2} KB)",
+    total_hash_consed,
+    total_hash_consed as f64 / 1024.0
+  );
+  println!(
+    "  Total serialized size:  {} bytes ({:.2} KB)",
+    total_serialized,
+    total_serialized as f64 / 1024.0
+  );
   println!("  Overall ratio: {:.3}x", avg_ratio);
-  println!("  Total overhead: {} bytes ({:.2} KB)",
+  println!(
+    "  Total overhead: {} bytes ({:.2} KB)",
     total_serialized as isize - total_hash_consed as isize,
-    (total_serialized as f64 - total_hash_consed as f64) / 1024.0);
+    (total_serialized as f64 - total_hash_consed as f64) / 1024.0
+  );
 
   // Distribution of ratios (more granular buckets for analysis)
   let count_in_range = |lo: f64, hi: f64| -> usize {
-    stats.iter().filter(|(_, s)| {
-      if s.hash_consed_size == 0 { return false; }
-      let r = s.serialized_size as f64 / s.hash_consed_size as f64;
-      r >= lo && r < hi
-    }).count()
+    stats
+      .iter()
+      .filter(|(_, s)| {
+        if s.hash_consed_size == 0 {
+          return false;
+        }
+        let r = s.serialized_size as f64 / s.hash_consed_size as f64;
+        r >= lo && r < hi
+      })
+      .count()
   };
 
   let ratio_under_0_05 = count_in_range(0.0, 0.05);
@@ -1186,8 +1246,13 @@ fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
     println!();
     println!("  Top 10 blocks by overhead (serialized - hash_consed):");
     for (name, overhead, ratio, const_count) in overheads.iter().take(10) {
-      println!("    {:+} bytes ({:.2}x, {} consts): {}",
-        overhead, ratio, const_count, truncate_name(name, 50));
+      println!(
+        "    {:+} bytes ({:.2}x, {} consts): {}",
+        overhead,
+        ratio,
+        const_count,
+        truncate_name(name, 50)
+      );
     }
   }
 
@@ -1196,8 +1261,13 @@ fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
     println!();
     println!("  Top 10 blocks by ratio (hash-consed > 100 bytes):");
     for (name, ratio, hc, ser) in ratios.iter().take(10) {
-      println!("    {:.2}x ({} -> {} bytes): {}",
-        ratio, hc, ser, truncate_name(name, 50));
+      println!(
+        "    {:.2}x ({} -> {} bytes): {}",
+        ratio,
+        hc,
+        ser,
+        truncate_name(name, 50)
+      );
     }
   }
 
@@ -1210,14 +1280,20 @@ fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
       (name.clone(), ratio, s.hash_consed_size, s.serialized_size)
     })
     .collect();
-  best_ratios.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+  best_ratios
+    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
   if !best_ratios.is_empty() {
     println!();
     println!("  Top 10 blocks by best ratio (most efficient):");
     for (name, ratio, hc, ser) in best_ratios.iter().take(10) {
-      println!("    {:.2}x ({} -> {} bytes): {}",
-        ratio, hc, ser, truncate_name(name, 50));
+      println!(
+        "    {:.2}x ({} -> {} bytes): {}",
+        ratio,
+        hc,
+        ser,
+        truncate_name(name, 50)
+      );
     }
   }
 }
@@ -1230,4 +1306,3 @@ fn truncate_name(name: &str, max_len: usize) -> String {
     format!("...{}", &name[name.len() - max_len + 3..])
   }
 }
-

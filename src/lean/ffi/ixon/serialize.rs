@@ -10,7 +10,7 @@ use crate::ix::address::Address;
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::sharing::hash_expr;
-use crate::ix::ixon::univ::{put_univ, Univ as IxonUniv};
+use crate::ix::ixon::univ::{Univ as IxonUniv, put_univ};
 use crate::lean::array::LeanArrayObject;
 use crate::lean::ctor::LeanCtorObject;
 use crate::lean::sarray::LeanSArrayObject;
@@ -35,58 +35,58 @@ pub fn lean_ptr_to_ixon_expr(ptr: *const c_void) -> Arc<IxonExpr> {
     0 => {
       let idx = ctor.get_scalar_u64(0, 0);
       Arc::new(IxonExpr::Sort(idx))
-    }
+    },
     1 => {
       let idx = ctor.get_scalar_u64(0, 0);
       Arc::new(IxonExpr::Var(idx))
-    }
+    },
     2 => {
       let [univs_ptr] = ctor.objs();
       let ref_idx = ctor.get_scalar_u64(1, 0);
       let univs_arr: &LeanArrayObject = as_ref_unsafe(univs_ptr.cast());
       let univs = univs_arr.to_vec(lean_ptr_to_u64);
       Arc::new(IxonExpr::Ref(ref_idx, univs))
-    }
+    },
     3 => {
       let [univs_ptr] = ctor.objs();
       let rec_idx = ctor.get_scalar_u64(1, 0);
       let univs_arr: &LeanArrayObject = as_ref_unsafe(univs_ptr.cast());
       let univs = univs_arr.to_vec(lean_ptr_to_u64);
       Arc::new(IxonExpr::Rec(rec_idx, univs))
-    }
+    },
     4 => {
       let [val_ptr] = ctor.objs();
       let type_idx = ctor.get_scalar_u64(1, 0);
       let field_idx = ctor.get_scalar_u64(1, 8);
       let val = lean_ptr_to_ixon_expr(val_ptr);
       Arc::new(IxonExpr::Prj(type_idx, field_idx, val))
-    }
+    },
     5 => {
       let idx = ctor.get_scalar_u64(0, 0);
       Arc::new(IxonExpr::Str(idx))
-    }
+    },
     6 => {
       let idx = ctor.get_scalar_u64(0, 0);
       Arc::new(IxonExpr::Nat(idx))
-    }
+    },
     7 => {
       let [fun_ptr, arg_ptr] = ctor.objs();
       let fun_ = lean_ptr_to_ixon_expr(fun_ptr);
       let arg = lean_ptr_to_ixon_expr(arg_ptr);
       Arc::new(IxonExpr::App(fun_, arg))
-    }
+    },
     8 => {
       let [ty_ptr, body_ptr] = ctor.objs();
       let ty = lean_ptr_to_ixon_expr(ty_ptr);
       let body = lean_ptr_to_ixon_expr(body_ptr);
       Arc::new(IxonExpr::Lam(ty, body))
-    }
+    },
     9 => {
       let [ty_ptr, body_ptr] = ctor.objs();
       let ty = lean_ptr_to_ixon_expr(ty_ptr);
       let body = lean_ptr_to_ixon_expr(body_ptr);
       Arc::new(IxonExpr::All(ty, body))
-    }
+    },
     10 => {
       let [ty_ptr, val_ptr, body_ptr] = ctor.objs();
       let base_ptr = (ctor as *const LeanCtorObject).cast::<u8>();
@@ -95,18 +95,21 @@ pub fn lean_ptr_to_ixon_expr(ptr: *const c_void) -> Arc<IxonExpr> {
       let val = lean_ptr_to_ixon_expr(val_ptr);
       let body = lean_ptr_to_ixon_expr(body_ptr);
       Arc::new(IxonExpr::Let(non_dep, ty, val, body))
-    }
+    },
     11 => {
       let idx = ctor.get_scalar_u64(0, 0);
       Arc::new(IxonExpr::Share(idx))
-    }
+    },
     tag => panic!("Unknown Ixon.Expr tag: {}", tag),
   }
 }
 
 /// Check if Lean's computed hash matches Rust's computed hash.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_expr_hash_matches(expr_ptr: *const c_void, expected_hash: *const c_void) -> bool {
+pub extern "C" fn rs_expr_hash_matches(
+  expr_ptr: *const c_void,
+  expected_hash: *const c_void,
+) -> bool {
   let expr = lean_ptr_to_ixon_expr(expr_ptr);
   let hash = hash_expr(&expr);
   let expected = decode_ixon_address(expected_hash);
@@ -123,15 +126,15 @@ fn lean_ptr_to_ixon_univ(ptr: *const c_void) -> Arc<IxonUniv> {
     1 => {
       let [inner] = ctor.objs();
       IxonUniv::succ(lean_ptr_to_ixon_univ(inner))
-    }
+    },
     2 => {
       let [a, b] = ctor.objs();
       IxonUniv::max(lean_ptr_to_ixon_univ(a), lean_ptr_to_ixon_univ(b))
-    }
+    },
     3 => {
       let [a, b] = ctor.objs();
       IxonUniv::imax(lean_ptr_to_ixon_univ(a), lean_ptr_to_ixon_univ(b))
-    }
+    },
     4 => IxonUniv::var(ctor.get_scalar_u64(0, 0)),
     tag => panic!("Unknown Ixon.Univ tag: {}", tag),
   }
@@ -139,7 +142,10 @@ fn lean_ptr_to_ixon_univ(ptr: *const c_void) -> Arc<IxonUniv> {
 
 /// Check if Lean's Ixon.Univ serialization matches Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_eq_univ_serialization(univ_ptr: *const c_void, bytes: &LeanSArrayObject) -> bool {
+pub extern "C" fn rs_eq_univ_serialization(
+  univ_ptr: *const c_void,
+  bytes: &LeanSArrayObject,
+) -> bool {
   let univ = lean_ptr_to_ixon_univ(univ_ptr);
   let bytes_data = bytes.data();
   let mut buf = Vec::with_capacity(bytes_data.len());
@@ -149,7 +155,10 @@ pub extern "C" fn rs_eq_univ_serialization(univ_ptr: *const c_void, bytes: &Lean
 
 /// Check if Lean's Ixon.Expr serialization matches Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_eq_expr_serialization(expr_ptr: *const c_void, bytes: &LeanSArrayObject) -> bool {
+pub extern "C" fn rs_eq_expr_serialization(
+  expr_ptr: *const c_void,
+  bytes: &LeanSArrayObject,
+) -> bool {
   let expr = lean_ptr_to_ixon_expr(expr_ptr);
   let bytes_data = bytes.data();
   let mut buf = Vec::with_capacity(bytes_data.len());
@@ -159,7 +168,10 @@ pub extern "C" fn rs_eq_expr_serialization(expr_ptr: *const c_void, bytes: &Lean
 
 /// Check if Lean's Ixon.Constant serialization matches Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_eq_constant_serialization(constant_ptr: *const c_void, bytes: &LeanSArrayObject) -> bool {
+pub extern "C" fn rs_eq_constant_serialization(
+  constant_ptr: *const c_void,
+  bytes: &LeanSArrayObject,
+) -> bool {
   let constant = decode_ixon_constant(constant_ptr);
   let bytes_data = bytes.data();
   let mut buf = Vec::with_capacity(bytes_data.len());
@@ -170,7 +182,10 @@ pub extern "C" fn rs_eq_constant_serialization(constant_ptr: *const c_void, byte
 /// Check if Lean's Ixon.Env serialization can be deserialized by Rust and content matches.
 /// Due to HashMap ordering differences, we compare deserialized content rather than bytes.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_eq_env_serialization(raw_env_ptr: *const c_void, bytes: &LeanSArrayObject) -> bool {
+pub extern "C" fn rs_eq_env_serialization(
+  raw_env_ptr: *const c_void,
+  bytes: &LeanSArrayObject,
+) -> bool {
   use super::env::decode_raw_env;
   use crate::ix::ixon::env::Env;
 
@@ -190,7 +205,7 @@ pub extern "C" fn rs_eq_env_serialization(raw_env_ptr: *const c_void, bytes: &Le
   }
   for rc in &decoded.consts {
     match rust_env.consts.get(&rc.addr) {
-      Some(c) if *c == rc.constant => {}
+      Some(c) if *c == rc.constant => {},
       _ => return false,
     }
   }
@@ -201,7 +216,7 @@ pub extern "C" fn rs_eq_env_serialization(raw_env_ptr: *const c_void, bytes: &Le
   }
   for rb in &decoded.blobs {
     match rust_env.blobs.get(&rb.addr) {
-      Some(b) if *b == rb.bytes => {}
+      Some(b) if *b == rb.bytes => {},
       _ => return false,
     }
   }
@@ -216,7 +231,7 @@ pub extern "C" fn rs_eq_env_serialization(raw_env_ptr: *const c_void, bytes: &Le
       payload: rc.comm.payload.clone(),
     };
     match rust_env.comms.get(&rc.addr) {
-      Some(c) if *c == expected_comm => {}
+      Some(c) if *c == expected_comm => {},
       _ => return false,
     }
   }
@@ -227,7 +242,7 @@ pub extern "C" fn rs_eq_env_serialization(raw_env_ptr: *const c_void, bytes: &Le
   }
   for rn in &decoded.named {
     match rust_env.named.get(&rn.name) {
-      Some(named) if named.addr == rn.addr => {}
+      Some(named) if named.addr == rn.addr => {},
       _ => return false,
     }
   }
@@ -255,7 +270,7 @@ extern "C" fn rs_env_serde_roundtrip(lean_bytes_ptr: *const c_void) -> bool {
     Err(e) => {
       eprintln!("Rust Env::get failed: {}", e);
       return false;
-    }
+    },
   };
 
   // Re-serialize
@@ -299,6 +314,6 @@ extern "C" fn rs_env_serde_check(lean_bytes_ptr: *const c_void) -> bool {
     Err(e) => {
       eprintln!("Rust Env::get failed: {}", e);
       false
-    }
+    },
   }
 }

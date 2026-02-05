@@ -192,7 +192,11 @@ mod doc_examples {
     // = 0b00_0_00001 = 0x01, then Zero = 0x00
     let mut buf = Vec::new();
     univ::put_univ(&Univ::succ(Univ::zero()), &mut buf);
-    assert_eq!(buf, vec![0x01, 0x00], "Univ::Succ(Zero) should be [0x01, 0x00]");
+    assert_eq!(
+      buf,
+      vec![0x01, 0x00],
+      "Univ::Succ(Zero) should be [0x01, 0x00]"
+    );
   }
 
   #[test]
@@ -243,7 +247,11 @@ mod doc_examples {
     // = 0x20 + 0x00
     let mut buf = Vec::new();
     serialize::put_expr(&Expr::Ref(0, vec![]), &mut buf);
-    assert_eq!(buf, vec![0x20, 0x00], "Expr::Ref(0, []) should be [0x20, 0x00]");
+    assert_eq!(
+      buf,
+      vec![0x20, 0x00],
+      "Expr::Ref(0, []) should be [0x20, 0x00]"
+    );
   }
 
   #[test]
@@ -330,9 +338,7 @@ mod doc_examples {
   #[test]
   fn check_claim_tag() {
     // CheckClaim -> Tag4 { flag: 0xE, size: 3 } -> 0xE3
-    let claim = Claim::Checks(CheckClaim {
-      value: Address::hash(b"value"),
-    });
+    let claim = Claim::Checks(CheckClaim { value: Address::hash(b"value") });
     let mut buf = Vec::new();
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE3, "CheckClaim should start with 0xE3");
@@ -343,9 +349,7 @@ mod doc_examples {
   fn check_proof_tag() {
     // CheckProof -> Tag4 { flag: 0xE, size: 1 } -> 0xE1
     let proof = Proof::new(
-      Claim::Checks(CheckClaim {
-        value: Address::hash(b"value"),
-      }),
+      Claim::Checks(CheckClaim { value: Address::hash(b"value") }),
       vec![5, 6, 7],
     );
     let mut buf = Vec::new();

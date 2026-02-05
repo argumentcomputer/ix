@@ -42,9 +42,7 @@ impl LeanCtorObject {
   pub fn get_scalar_u64(&self, num_objs: usize, scalar_offset: usize) -> u64 {
     // Scalar area starts after: header (8 bytes) + object pointers (8 bytes each)
     let base_ptr = (self as *const Self).cast::<u8>();
-    let scalar_area = unsafe {
-      base_ptr.add(8 + num_objs * 8 + scalar_offset)
-    };
+    let scalar_area = unsafe { base_ptr.add(8 + num_objs * 8 + scalar_offset) };
     unsafe { *scalar_area.cast::<u64>() }
   }
 
@@ -52,9 +50,7 @@ impl LeanCtorObject {
   #[inline]
   pub fn get_scalar_u8(&self, num_objs: usize, scalar_offset: usize) -> u8 {
     let base_ptr = (self as *const Self).cast::<u8>();
-    let scalar_area = unsafe {
-      base_ptr.add(8 + num_objs * 8 + scalar_offset)
-    };
+    let scalar_area = unsafe { base_ptr.add(8 + num_objs * 8 + scalar_offset) };
     unsafe { *scalar_area }
   }
 

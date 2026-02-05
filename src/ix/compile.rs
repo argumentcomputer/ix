@@ -33,8 +33,8 @@ use crate::{
     CompileError, Tag0,
     constant::{
       Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, Definition,
-      DefinitionProj, Inductive, InductiveProj,
-      MutConst as IxonMutConst, Quotient, Recursor, RecursorProj, RecursorRule,
+      DefinitionProj, Inductive, InductiveProj, MutConst as IxonMutConst,
+      Quotient, Recursor, RecursorProj, RecursorRule,
     },
     env::{Env as IxonEnv, Named},
     expr::Expr,
@@ -224,14 +224,19 @@ pub fn compile_univ(
       Univ::imax(a_univ, b_univ)
     },
     LevelData::Param(name, _) => {
-      let idx = univ_params
-        .iter()
-        .position(|n| n == name)
-        .ok_or_else(|| CompileError::UnknownUnivParam { curr: String::new(), param: name.pretty() })?;
+      let idx =
+        univ_params.iter().position(|n| n == name).ok_or_else(|| {
+          CompileError::UnknownUnivParam {
+            curr: String::new(),
+            param: name.pretty(),
+          }
+        })?;
       Univ::var(idx as u64)
     },
     LevelData::Mvar(_name, _) => {
-      return Err(CompileError::UnsupportedExpr { desc: "level metavariable".into() });
+      return Err(CompileError::UnsupportedExpr {
+        desc: "level metavariable".into(),
+      });
     },
   };
 
@@ -279,7 +284,7 @@ pub fn compile_expr(
     BuildLam(Address, BinderInfo),
     BuildAll(Address, BinderInfo),
     BuildLet(Address, bool),
-    BuildProj(u64, u64, Address),  // type_ref_idx, field_idx, struct_name_addr
+    BuildProj(u64, u64, Address), // type_ref_idx, field_idx, struct_name_addr
     WrapMdata(Vec<KVMap>),
     Cache(&'a LeanExpr),
   }
@@ -329,9 +334,9 @@ pub fn compile_expr(
             if let Some(idx) = mut_ctx.get(name) {
               let idx_u64 = nat_to_u64(idx, "mutual index too large")?;
               results.push(Expr::rec(idx_u64, univ_indices));
-              cache.arena_roots.push(
-                cache.arena.alloc(ExprMetaData::Ref { name: name_addr }),
-              );
+              cache
+                .arena_roots
+                .push(cache.arena.alloc(ExprMetaData::Ref { name: name_addr }));
             } else {
               // External reference
               let const_addr = stt
@@ -343,9 +348,9 @@ pub fn compile_expr(
                 .clone();
               let (ref_idx, _) = cache.refs.insert_full(const_addr);
               results.push(Expr::reference(ref_idx as u64, univ_indices));
-              cache.arena_roots.push(
-                cache.arena.alloc(ExprMetaData::Ref { name: name_addr }),
-              );
+              cache
+                .arena_roots
+                .push(cache.arena.alloc(ExprMetaData::Ref { name: name_addr }));
             }
           },
 
@@ -429,14 +434,18 @@ pub fn compile_expr(
           },
 
           ExprData::Mvar(..) => {
-            return Err(CompileError::UnsupportedExpr { desc: "metavariable".into() });
+            return Err(CompileError::UnsupportedExpr {
+              desc: "metavariable".into(),
+            });
           },
         }
       },
 
       Frame::BuildApp => {
-        let a_root = cache.arena_roots.pop().expect("BuildApp missing arg root");
-        let f_root = cache.arena_roots.pop().expect("BuildApp missing fun root");
+        let a_root =
+          cache.arena_roots.pop().expect("BuildApp missing arg root");
+        let f_root =
+          cache.arena_roots.pop().expect("BuildApp missing fun root");
         let arg = results.pop().expect("BuildApp missing arg");
         let fun = results.pop().expect("BuildApp missing fun");
         results.push(Expr::app(fun, arg));
@@ -446,8 +455,10 @@ pub fn compile_expr(
       },
 
       Frame::BuildLam(name_addr, info) => {
-        let body_root = cache.arena_roots.pop().expect("BuildLam missing body root");
-        let ty_root = cache.arena_roots.pop().expect("BuildLam missing ty root");
+        let body_root =
+          cache.arena_roots.pop().expect("BuildLam missing body root");
+        let ty_root =
+          cache.arena_roots.pop().expect("BuildLam missing ty root");
         let body = results.pop().expect("BuildLam missing body");
         let ty = results.pop().expect("BuildLam missing ty");
         results.push(Expr::lam(ty, body));
@@ -459,8 +470,10 @@ pub fn compile_expr(
       },
 
       Frame::BuildAll(name_addr, info) => {
-        let body_root = cache.arena_roots.pop().expect("BuildAll missing body root");
-        let ty_root = cache.arena_roots.pop().expect("BuildAll missing ty root");
+        let body_root =
+          cache.arena_roots.pop().expect("BuildAll missing body root");
+        let ty_root =
+          cache.arena_roots.pop().expect("BuildAll missing ty root");
         let body = results.pop().expect("BuildAll missing body");
         let ty = results.pop().expect("BuildAll missing ty");
         results.push(Expr::all(ty, body));
@@ -472,9 +485,12 @@ pub fn compile_expr(
       },
 
       Frame::BuildLet(name_addr, non_dep) => {
-        let body_root = cache.arena_roots.pop().expect("BuildLet missing body root");
-        let val_root = cache.arena_roots.pop().expect("BuildLet missing val root");
-        let ty_root = cache.arena_roots.pop().expect("BuildLet missing ty root");
+        let body_root =
+          cache.arena_roots.pop().expect("BuildLet missing body root");
+        let val_root =
+          cache.arena_roots.pop().expect("BuildLet missing val root");
+        let ty_root =
+          cache.arena_roots.pop().expect("BuildLet missing ty root");
         let body = results.pop().expect("BuildLet missing body");
         let val = results.pop().expect("BuildLet missing val");
         let ty = results.pop().expect("BuildLet missing ty");
@@ -486,7 +502,8 @@ pub fn compile_expr(
       },
 
       Frame::BuildProj(type_ref_idx, field_idx, struct_name_addr) => {
-        let child_root = cache.arena_roots.pop().expect("BuildProj missing child root");
+        let child_root =
+          cache.arena_roots.pop().expect("BuildProj missing child root");
         let struct_val = results.pop().expect("BuildProj missing struct_val");
         results.push(Expr::prj(type_ref_idx, field_idx, struct_val));
         cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Prj {
@@ -497,7 +514,8 @@ pub fn compile_expr(
 
       Frame::WrapMdata(mdata) => {
         // Mdata doesn't change the Ixon expression — only wraps the arena node
-        let inner_root = cache.arena_roots.pop().expect("WrapMdata missing inner root");
+        let inner_root =
+          cache.arena_roots.pop().expect("WrapMdata missing inner root");
         cache.arena_roots.push(
           cache.arena.alloc(ExprMetaData::Mdata { mdata, child: inner_root }),
         );
@@ -506,17 +524,19 @@ pub fn compile_expr(
       Frame::Cache(e) => {
         let e_key = Address::from_blake3_hash(*e.get_hash());
         if let Some(result) = results.last() {
-          let arena_root = *cache.arena_roots.last().expect("Cache missing arena root");
-          cache.exprs.insert(
-            e_key,
-            CachedExpr { expr: result.clone(), arena_root },
-          );
+          let arena_root =
+            *cache.arena_roots.last().expect("Cache missing arena root");
+          cache
+            .exprs
+            .insert(e_key, CachedExpr { expr: result.clone(), arena_root });
         }
       },
     }
   }
 
-  results.pop().ok_or(CompileError::UnsupportedExpr { desc: "empty result".into() })
+  results
+    .pop()
+    .ok_or(CompileError::UnsupportedExpr { desc: "empty result".into() })
 }
 
 /// Compile a Lean DataValue to Ixon DataValue.
@@ -671,7 +691,10 @@ fn compute_hash_consed_size(
 /// Returns the rewritten expressions, sharing vector, and hash-consed size.
 ///
 /// Hash-consed size tracking is controlled by the global `TRACK_HASH_CONSED_SIZE` flag.
-fn apply_sharing_with_stats(exprs: Vec<Arc<Expr>>, block_name: Option<&str>) -> SharingResult {
+fn apply_sharing_with_stats(
+  exprs: Vec<Arc<Expr>>,
+  block_name: Option<&str>,
+) -> SharingResult {
   let track = TRACK_HASH_CONSED_SIZE.load(AtomicOrdering::Relaxed);
   let analyze = ANALYZE_SHARING.load(AtomicOrdering::Relaxed);
   let (info_map, ptr_to_hash) = analyze_block(&exprs, track);
@@ -686,7 +709,8 @@ fn apply_sharing_with_stats(exprs: Vec<Arc<Expr>>, block_name: Option<&str>) -> 
     let stats = sharing::analyze_sharing_stats(&info_map);
     eprintln!(
       "\n=== Sharing analysis for block {:?} with {} unique subterms ===",
-      name, info_map.len()
+      name,
+      info_map.len()
     );
     eprintln!("{}", stats);
     eprintln!(
@@ -698,14 +722,22 @@ fn apply_sharing_with_stats(exprs: Vec<Arc<Expr>>, block_name: Option<&str>) -> 
   // Early exit if no sharing opportunities (< 2 repeated subterms)
   let has_candidates = info_map.values().any(|info| info.usage_count >= 2);
   if !has_candidates {
-    return SharingResult { rewritten: exprs, sharing: Vec::new(), hash_consed_size };
+    return SharingResult {
+      rewritten: exprs,
+      sharing: Vec::new(),
+      hash_consed_size,
+    };
   }
 
   let shared_hashes = decide_sharing(&info_map);
 
   // Early exit if nothing to share
   if shared_hashes.is_empty() {
-    return SharingResult { rewritten: exprs, sharing: Vec::new(), hash_consed_size };
+    return SharingResult {
+      rewritten: exprs,
+      sharing: Vec::new(),
+      hash_consed_size,
+    };
   }
 
   let (rewritten, sharing) =
@@ -737,7 +769,10 @@ fn apply_sharing_to_definition_with_stats(
   univs: Vec<Arc<Univ>>,
   block_name: Option<&str>,
 ) -> SingletonSharingResult {
-  let result = apply_sharing_with_stats(vec![def.typ.clone(), def.value.clone()], block_name);
+  let result = apply_sharing_with_stats(
+    vec![def.typ.clone(), def.value.clone()],
+    block_name,
+  );
   let def = Definition {
     kind: def.kind,
     safety: def.safety,
@@ -758,8 +793,11 @@ fn apply_sharing_to_axiom_with_stats(
   univs: Vec<Arc<Univ>>,
 ) -> SingletonSharingResult {
   let result = apply_sharing_with_stats(vec![ax.typ.clone()], None);
-  let ax =
-    Axiom { is_unsafe: ax.is_unsafe, lvls: ax.lvls, typ: result.rewritten[0].clone() };
+  let ax = Axiom {
+    is_unsafe: ax.is_unsafe,
+    lvls: ax.lvls,
+    typ: result.rewritten[0].clone(),
+  };
   let constant =
     Constant::with_tables(ConstantInfo::Axio(ax), result.sharing, refs, univs);
   SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
@@ -773,10 +811,17 @@ fn apply_sharing_to_quotient_with_stats(
   univs: Vec<Arc<Univ>>,
 ) -> SingletonSharingResult {
   let result = apply_sharing_with_stats(vec![quot.typ.clone()], None);
-  let quot =
-    Quotient { kind: quot.kind, lvls: quot.lvls, typ: result.rewritten[0].clone() };
-  let constant =
-    Constant::with_tables(ConstantInfo::Quot(quot), result.sharing, refs, univs);
+  let quot = Quotient {
+    kind: quot.kind,
+    lvls: quot.lvls,
+    typ: result.rewritten[0].clone(),
+  };
+  let constant = Constant::with_tables(
+    ConstantInfo::Quot(quot),
+    result.sharing,
+    refs,
+    univs,
+  );
   SingletonSharingResult { constant, hash_consed_size: result.hash_consed_size }
 }
 
@@ -979,7 +1024,8 @@ fn apply_sharing_to_mutual_block(
     new_consts.push(new_mc);
   }
 
-  let constant = Constant::with_tables(ConstantInfo::Muts(new_consts), sharing, refs, univs);
+  let constant =
+    Constant::with_tables(ConstantInfo::Muts(new_consts), sharing, refs, univs);
   MutualBlockSharingResult { constant, hash_consed_size }
 }
 
@@ -1075,7 +1121,8 @@ fn compile_recursor(
 
   // Compile type expression
   let typ = compile_expr(&rec.cnst.typ, univ_params, mut_ctx, cache, stt)?;
-  let type_root = *cache.arena_roots.last().expect("missing recursor type arena root");
+  let type_root =
+    *cache.arena_roots.last().expect("missing recursor type arena root");
 
   let mut rules = Vec::with_capacity(rec.rules.len());
   let mut rule_addrs = Vec::new();
@@ -1083,7 +1130,8 @@ fn compile_recursor(
   for rule in &rec.rules {
     let (r, ctor_addr) =
       compile_recursor_rule(rule, univ_params, mut_ctx, cache, stt)?;
-    rule_roots.push(*cache.arena_roots.last().expect("missing rule arena root"));
+    rule_roots
+      .push(*cache.arena_roots.last().expect("missing rule arena root"));
     rule_addrs.push(ctor_addr);
     rules.push(r);
   }
@@ -1139,7 +1187,8 @@ fn compile_constructor(
   let univ_params = &ctor.cnst.level_params;
 
   let typ = compile_expr(&ctor.cnst.typ, univ_params, mut_ctx, cache, stt)?;
-  let type_root = *cache.arena_roots.last().expect("missing ctor type arena root");
+  let type_root =
+    *cache.arena_roots.last().expect("missing ctor type arena root");
 
   // Take arena for this constructor
   let arena = std::mem::take(&mut cache.arena);
@@ -1185,7 +1234,8 @@ fn compile_inductive(
 
   // Compile inductive type
   let typ = compile_expr(&ind.ind.cnst.typ, univ_params, mut_ctx, cache, stt)?;
-  let type_root = *cache.arena_roots.last().expect("missing indc type arena root");
+  let type_root =
+    *cache.arena_roots.last().expect("missing indc type arena root");
 
   // Take arena for inductive type
   let indc_arena = std::mem::take(&mut cache.arena);
@@ -1250,7 +1300,8 @@ fn compile_axiom(
 
   let typ =
     compile_expr(&val.cnst.typ, univ_params, &MutCtx::default(), cache, stt)?;
-  let type_root = *cache.arena_roots.last().expect("missing axiom type arena root");
+  let type_root =
+    *cache.arena_roots.last().expect("missing axiom type arena root");
 
   let arena = std::mem::take(&mut cache.arena);
   cache.arena_roots.clear();
@@ -1263,7 +1314,8 @@ fn compile_axiom(
   let data =
     Axiom { is_unsafe: val.is_unsafe, lvls: univ_params.len() as u64, typ };
 
-  let meta = ConstantMeta::Axio { name: name_addr, lvls: lvl_addrs, arena, type_root };
+  let meta =
+    ConstantMeta::Axio { name: name_addr, lvls: lvl_addrs, arena, type_root };
 
   Ok((data, meta))
 }
@@ -1278,7 +1330,8 @@ fn compile_quotient(
 
   let typ =
     compile_expr(&val.cnst.typ, univ_params, &MutCtx::default(), cache, stt)?;
-  let type_root = *cache.arena_roots.last().expect("missing quot type arena root");
+  let type_root =
+    *cache.arena_roots.last().expect("missing quot type arena root");
 
   let arena = std::mem::take(&mut cache.arena);
   cache.arena_roots.clear();
@@ -1290,7 +1343,8 @@ fn compile_quotient(
 
   let data = Quotient { kind: val.kind, lvls: univ_params.len() as u64, typ };
 
-  let meta = ConstantMeta::Quot { name: name_addr, lvls: lvl_addrs, arena, type_root };
+  let meta =
+    ConstantMeta::Quot { name: name_addr, lvls: lvl_addrs, arena, type_root };
 
   Ok((data, meta))
 }
@@ -1321,7 +1375,8 @@ fn compile_mutual_block(
   block_name: Option<&str>,
 ) -> CompiledMutualBlock {
   // Apply sharing analysis across all expressions in the mutual block
-  let result = apply_sharing_to_mutual_block(mut_consts, refs, univs, block_name);
+  let result =
+    apply_sharing_to_mutual_block(mut_consts, refs, univs, block_name);
   let constant = result.constant;
   let hash_consed_size = result.hash_consed_size;
 
@@ -1411,7 +1466,9 @@ pub fn compare_expr(
 ) -> Result<SOrd, CompileError> {
   match (x.as_data(), y.as_data()) {
     (ExprData::Mvar(..), _) | (_, ExprData::Mvar(..)) => {
-      Err(CompileError::UnsupportedExpr { desc: "metavariable in comparison".into() })
+      Err(CompileError::UnsupportedExpr {
+        desc: "metavariable in comparison".into(),
+      })
     },
     (ExprData::Fvar(..), _) | (_, ExprData::Fvar(..)) => {
       Err(CompileError::UnsupportedExpr { desc: "fvar in comparison".into() })
@@ -1918,7 +1975,12 @@ pub fn compile_const(
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
         let name_str = name.pretty();
-        let result = apply_sharing_to_definition_with_stats(data, refs.clone(), univs.clone(), Some(&name_str));
+        let result = apply_sharing_to_definition_with_stats(
+          data,
+          refs.clone(),
+          univs.clone(),
+          Some(&name_str),
+        );
         let mut bytes = Vec::new();
         result.constant.put(&mut bytes);
         let serialized_size = bytes.len();
@@ -1972,14 +2034,22 @@ pub fn compile_const(
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
         let name_str = name.pretty();
-        let result = apply_sharing_to_definition_with_stats(data, refs.clone(), univs.clone(), Some(&name_str));
+        let result = apply_sharing_to_definition_with_stats(
+          data,
+          refs.clone(),
+          univs.clone(),
+          Some(&name_str),
+        );
         let mut bytes = Vec::new();
         result.constant.put(&mut bytes);
         let serialized_size = bytes.len();
 
         // Debug: log component sizes for large blocks
         if serialized_size > 10_000_000 {
-          eprintln!("\n=== Serialization breakdown for theorem {:?} ===", name_str);
+          eprintln!(
+            "\n=== Serialization breakdown for theorem {:?} ===",
+            name_str
+          );
           eprintln!("  sharing vector len: {}", result.constant.sharing.len());
           eprintln!("  refs vector len: {}", refs.len());
           eprintln!("  univs vector len: {}", univs.len());
@@ -2024,7 +2094,12 @@ pub fn compile_const(
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
         let name_str = name.pretty();
-        let result = apply_sharing_to_definition_with_stats(data, refs, univs, Some(&name_str));
+        let result = apply_sharing_to_definition_with_stats(
+          data,
+          refs,
+          univs,
+          Some(&name_str),
+        );
         let mut bytes = Vec::new();
         result.constant.put(&mut bytes);
         let serialized_size = bytes.len();
@@ -2208,7 +2283,13 @@ fn compile_mutual(
   let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
   let const_count = ixon_mutuals.len();
   let name_str = name.pretty();
-  let compiled = compile_mutual_block(ixon_mutuals, refs, univs, const_count, Some(&name_str));
+  let compiled = compile_mutual_block(
+    ixon_mutuals,
+    refs,
+    univs,
+    const_count,
+    Some(&name_str),
+  );
   let block_addr = compiled.addr.clone();
   stt.env.store_const(block_addr.clone(), compiled.constant);
   stt.blocks.insert(block_addr.clone());

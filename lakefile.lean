@@ -32,6 +32,12 @@ lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
 
+lean_exe «test-aiur» where
+  root := `Tests.AiurTest
+
+lean_exe «test-ixvm» where
+  root := `Tests.IxVMTest
+
 end Tests
 
 lean_lib IxTestLib where
@@ -67,12 +73,7 @@ extern_lib ix_c pkg := do
   let compiler := "gcc"
   let cDir := pkg.dir / "c"
   let buildCDir := pkg.buildDir / "c"
-  -- Get extra C flags from nix environment (includes GMP headers, etc.)
-  let nixCFlags ← IO.getEnv "NIX_CFLAGS_COMPILE"
-  let extraFlags := match nixCFlags with
-    | some flags => flags.splitOn " " |>.filter (· != "") |>.toArray
-    | none => #[]
-  let weakArgs := #["-fPIC", "-I", (← getLeanIncludeDir).toString, "-I", cDir.toString] ++ extraFlags
+  let weakArgs := #["-fPIC", "-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
 
   let cDirEntries ← cDir.readDir
 

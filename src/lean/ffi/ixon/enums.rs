@@ -91,21 +91,27 @@ pub fn decode_ixon_quot_kind(ptr: *const c_void) -> QuotKind {
 
 /// Round-trip Ixon.DefKind.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_def_kind(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_def_kind(
+  ptr: *const c_void,
+) -> *mut c_void {
   let kind = decode_ixon_def_kind(ptr);
   build_def_kind(&kind)
 }
 
 /// Round-trip Ixon.DefinitionSafety.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_definition_safety(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_definition_safety(
+  ptr: *const c_void,
+) -> *mut c_void {
   let safety = decode_ixon_definition_safety(ptr);
   build_ixon_definition_safety(&safety)
 }
 
 /// Round-trip Ixon.QuotKind.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_quot_kind(ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_roundtrip_ixon_quot_kind(
+  ptr: *const c_void,
+) -> *mut c_void {
   let kind = decode_ixon_quot_kind(ptr);
   build_ixon_quot_kind(&kind)
 }

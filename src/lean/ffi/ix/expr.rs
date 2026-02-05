@@ -14,15 +14,18 @@
 //! - Tag 10: mdata (data : Array (Name × DataValue)) (expr : Expr) (hash : Address)
 //! - Tag 11: proj (typeName : Name) (idx : Nat) (struct : Expr) (hash : Address)
 
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 
-use crate::ix::env::{BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name};
+use crate::ix::env::{
+  BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
+};
 use crate::lean::array::LeanArrayObject;
 use crate::lean::nat::Nat;
 use crate::lean::string::LeanStringObject;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_box_fn,
-  lean_ctor_get, lean_ctor_set, lean_ctor_set_uint8, lean_inc, lean_mk_string, lean_obj_tag,
+  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core,
+  lean_box_fn, lean_ctor_get, lean_ctor_set, lean_ctor_set_uint8, lean_inc,
+  lean_mk_string, lean_obj_tag,
 };
 
 use super::super::builder::LeanBuildCache;
@@ -48,25 +51,25 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
         lean_ctor_set(obj, 0, build_nat(idx));
         lean_ctor_set(obj, 1, build_address(h));
         obj
-      }
+      },
       ExprData::Fvar(name, h) => {
         let obj = lean_alloc_ctor(1, 2, 0);
         lean_ctor_set(obj, 0, build_name(cache, name));
         lean_ctor_set(obj, 1, build_address(h));
         obj
-      }
+      },
       ExprData::Mvar(name, h) => {
         let obj = lean_alloc_ctor(2, 2, 0);
         lean_ctor_set(obj, 0, build_name(cache, name));
         lean_ctor_set(obj, 1, build_address(h));
         obj
-      }
+      },
       ExprData::Sort(level, h) => {
         let obj = lean_alloc_ctor(3, 2, 0);
         lean_ctor_set(obj, 0, build_level(cache, level));
         lean_ctor_set(obj, 1, build_address(h));
         obj
-      }
+      },
       ExprData::Const(name, levels, h) => {
         let name_obj = build_name(cache, name);
         let levels_obj = build_level_array(cache, levels);
@@ -75,7 +78,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
         lean_ctor_set(obj, 1, levels_obj);
         lean_ctor_set(obj, 2, build_address(h));
         obj
-      }
+      },
       ExprData::App(fn_expr, arg_expr, h) => {
         let fn_obj = build_expr(cache, fn_expr);
         let arg_obj = build_expr(cache, arg_expr);
@@ -84,7 +87,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
         lean_ctor_set(obj, 1, arg_obj);
         lean_ctor_set(obj, 2, build_address(h));
         obj
-      }
+      },
       ExprData::Lam(name, ty, body, bi, h) => {
         let name_obj = build_name(cache, name);
         let ty_obj = build_expr(cache, ty);
@@ -98,7 +101,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
         lean_ctor_set(obj, 3, hash_obj);
         lean_ctor_set_uint8(obj, 4 * 8, binder_info_to_u8(bi));
         obj
-      }
+      },
       ExprData::ForallE(name, ty, body, bi, h) => {
         let name_obj = build_name(cache, name);
         let ty_obj = build_expr(cache, ty);
@@ -111,7 +114,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
         lean_ctor_set(obj, 3, hash_obj);
         lean_ctor_set_uint8(obj, 4 * 8, binder_info_to_u8(bi));
         obj
-      }
+      },
       ExprData::LetE(name, ty, val, body, non_dep, h) => {
         let name_obj = build_name(cache, name);
         let ty_obj = build_expr(cache, ty);
@@ -127,14 +130,14 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
         lean_ctor_set(obj, 4, hash_obj);
         lean_ctor_set_uint8(obj, 5 * 8, *non_dep as u8);
         obj
-      }
+      },
       ExprData::Lit(lit, h) => {
         let lit_obj = build_literal(lit);
         let obj = lean_alloc_ctor(9, 2, 0);
         lean_ctor_set(obj, 0, lit_obj);
         lean_ctor_set(obj, 1, build_address(h));
         obj
-      }
+      },
       ExprData::Mdata(md, inner, h) => {
         let md_obj = build_mdata_array(cache, md);
         let inner_obj = build_expr(cache, inner);
@@ -143,7 +146,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
         lean_ctor_set(obj, 1, inner_obj);
         lean_ctor_set(obj, 2, build_address(h));
         obj
-      }
+      },
       ExprData::Proj(type_name, idx, struct_expr, h) => {
         let name_obj = build_name(cache, type_name);
         let idx_obj = build_nat(idx);
@@ -154,7 +157,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
         lean_ctor_set(obj, 2, struct_obj);
         lean_ctor_set(obj, 3, build_address(h));
         obj
-      }
+      },
     }
   };
 
@@ -163,7 +166,10 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
 }
 
 /// Build an Array of (Name × DataValue) for mdata.
-fn build_mdata_array(cache: &mut LeanBuildCache, md: &[(Name, DataValue)]) -> *mut c_void {
+fn build_mdata_array(
+  cache: &mut LeanBuildCache,
+  md: &[(Name, DataValue)],
+) -> *mut c_void {
   unsafe {
     let arr = lean_alloc_array(md.len(), md.len());
     for (i, (name, dv)) in md.iter().enumerate() {
@@ -175,7 +181,11 @@ fn build_mdata_array(cache: &mut LeanBuildCache, md: &[(Name, DataValue)]) -> *m
 }
 
 /// Build a (Name, DataValue) pair (Prod).
-fn build_name_datavalue_pair(cache: &mut LeanBuildCache, name: &Name, dv: &DataValue) -> *mut c_void {
+fn build_name_datavalue_pair(
+  cache: &mut LeanBuildCache,
+  name: &Name,
+  dv: &DataValue,
+) -> *mut c_void {
   unsafe {
     let name_obj = build_name(cache, name);
     let dv_obj = build_data_value(cache, dv);
@@ -194,13 +204,13 @@ pub fn build_literal(lit: &Literal) -> *mut c_void {
         let obj = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(obj, 0, build_nat(n));
         obj
-      }
+      },
       Literal::StrVal(s) => {
         let s_cstr = CString::new(s.as_str()).unwrap();
         let obj = lean_alloc_ctor(1, 1, 0);
         lean_ctor_set(obj, 0, lean_mk_string(s_cstr.as_ptr()));
         obj
-      }
+      },
     }
   }
 }
@@ -231,25 +241,25 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let idx_ptr = lean_ctor_get(ptr as *mut _, 0);
         let idx = Nat::from_ptr(idx_ptr);
         Expr::bvar(idx)
-      }
+      },
       1 => {
         // fvar
         let name_ptr = lean_ctor_get(ptr as *mut _, 0);
         let name = decode_ix_name(name_ptr);
         Expr::fvar(name)
-      }
+      },
       2 => {
         // mvar
         let name_ptr = lean_ctor_get(ptr as *mut _, 0);
         let name = decode_ix_name(name_ptr);
         Expr::mvar(name)
-      }
+      },
       3 => {
         // sort
         let level_ptr = lean_ctor_get(ptr as *mut _, 0);
         let level = decode_ix_level(level_ptr);
         Expr::sort(level)
-      }
+      },
       4 => {
         // const
         let name_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -257,10 +267,11 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
 
         let name = decode_ix_name(name_ptr);
         let levels_obj: &LeanArrayObject = as_ref_unsafe(levels_ptr.cast());
-        let levels: Vec<Level> = levels_obj.data().iter().map(|&p| decode_ix_level(p)).collect();
+        let levels: Vec<Level> =
+          levels_obj.data().iter().map(|&p| decode_ix_level(p)).collect();
 
         Expr::cnst(name, levels)
-      }
+      },
       5 => {
         // app
         let fn_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -268,7 +279,7 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let fn_expr = decode_ix_expr(fn_ptr);
         let arg_expr = decode_ix_expr(arg_ptr);
         Expr::app(fn_expr, arg_expr)
-      }
+      },
       6 => {
         // lam: name, ty, body, hash, bi (scalar)
         let name_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -282,12 +293,13 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let body = decode_ix_expr(body_ptr);
 
         // Read BinderInfo scalar (4 obj fields: name, ty, body, hash)
-        let ctor: &crate::lean::ctor::LeanCtorObject = as_ref_unsafe(ptr.cast());
+        let ctor: &crate::lean::ctor::LeanCtorObject =
+          as_ref_unsafe(ptr.cast());
         let bi_byte = ctor.get_scalar_u8(4, 0);
         let bi = decode_binder_info(bi_byte);
 
         Expr::lam(name, ty, body, bi)
-      }
+      },
       7 => {
         // forallE: same layout as lam
         let name_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -299,12 +311,13 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let body = decode_ix_expr(body_ptr);
 
         // 4 obj fields: name, ty, body, hash
-        let ctor: &crate::lean::ctor::LeanCtorObject = as_ref_unsafe(ptr.cast());
+        let ctor: &crate::lean::ctor::LeanCtorObject =
+          as_ref_unsafe(ptr.cast());
         let bi_byte = ctor.get_scalar_u8(4, 0);
         let bi = decode_binder_info(bi_byte);
 
         Expr::all(name, ty, body, bi)
-      }
+      },
       8 => {
         // letE: name, ty, val, body, hash, nonDep (scalar)
         let name_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -320,32 +333,30 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let body = decode_ix_expr(body_ptr);
 
         // 5 obj fields: name, ty, val, body, hash
-        let ctor: &crate::lean::ctor::LeanCtorObject = as_ref_unsafe(ptr.cast());
+        let ctor: &crate::lean::ctor::LeanCtorObject =
+          as_ref_unsafe(ptr.cast());
         let non_dep = ctor.get_scalar_u8(5, 0) != 0;
 
         Expr::letE(name, ty, val, body, non_dep)
-      }
+      },
       9 => {
         // lit
         let lit_ptr = lean_ctor_get(ptr as *mut _, 0);
         let lit = decode_literal(lit_ptr);
         Expr::lit(lit)
-      }
+      },
       10 => {
         // mdata: data, expr, hash
         let data_ptr = lean_ctor_get(ptr as *mut _, 0);
         let expr_ptr = lean_ctor_get(ptr as *mut _, 1);
 
         let data_obj: &LeanArrayObject = as_ref_unsafe(data_ptr.cast());
-        let data: Vec<(Name, DataValue)> = data_obj
-          .data()
-          .iter()
-          .map(|&p| decode_name_data_value(p))
-          .collect();
+        let data: Vec<(Name, DataValue)> =
+          data_obj.data().iter().map(|&p| decode_name_data_value(p)).collect();
 
         let inner = decode_ix_expr(expr_ptr);
         Expr::mdata(data, inner)
-      }
+      },
       11 => {
         // proj: typeName, idx, struct, hash
         let type_name_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -357,7 +368,7 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let struct_expr = decode_ix_expr(struct_ptr);
 
         Expr::proj(type_name, idx, struct_expr)
-      }
+      },
       _ => panic!("Invalid Ix.Expr tag: {}", tag),
     }
   }
@@ -373,13 +384,13 @@ pub fn decode_literal(ptr: *const c_void) -> Literal {
         let nat_ptr = lean_ctor_get(ptr as *mut _, 0);
         let nat = Nat::from_ptr(nat_ptr);
         Literal::NatVal(nat)
-      }
+      },
       1 => {
         // strVal
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let str_obj: &LeanStringObject = as_ref_unsafe(str_ptr.cast());
         Literal::StrVal(str_obj.as_string())
-      }
+      },
       _ => panic!("Invalid Literal tag: {}", tag),
     }
   }

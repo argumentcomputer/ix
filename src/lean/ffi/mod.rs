@@ -5,12 +5,12 @@ pub mod keccak;
 pub mod lean_env;
 
 // Modular FFI structure
-pub mod builder;      // IxEnvBuilder struct
-pub mod compile;      // Compilation: rs_compile_env_full, rs_compile_phases, etc.
-pub mod graph;        // Graph/SCC: rs_build_ref_graph, rs_compute_sccs
-pub mod primitives;   // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
-pub mod ix;           // Ix types: Name, Level, Expr, ConstantInfo, Environment
-pub mod ixon;         // Ixon types: Univ, Expr, Constant, metadata
+pub mod builder; // IxEnvBuilder struct
+pub mod compile; // Compilation: rs_compile_env_full, rs_compile_phases, etc.
+pub mod graph; // Graph/SCC: rs_build_ref_graph, rs_compute_sccs
+pub mod ix; // Ix types: Name, Level, Expr, ConstantInfo, Environment
+pub mod ixon;
+pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc. // Ixon types: Univ, Expr, Constant, metadata
 
 use std::ffi::{CStr, CString, c_char, c_void};
 
