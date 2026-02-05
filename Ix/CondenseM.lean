@@ -1,4 +1,4 @@
-/-!
+/-
   # CondenseM: Strongly Connected Component Condensation
 
   Implements Tarjan's SCC algorithm to condense a dependency graph of Ix.Names

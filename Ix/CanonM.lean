@@ -1,4 +1,4 @@
-/-!
+/-
   # CanonM: Canonicalize Lean types to Ix types with content-addressed hashing
 
   Converts Lean kernel types (Name, Level, Expr, ConstantInfo) to their Ix
@@ -513,7 +513,7 @@ def uncanonEnv (env : Ix.Environment) : UncanonM (HashMap Lean.Name Lean.Constan
   return result
 
 
-/-! ## Optimized equality with pointer-pair caching -/
+/- ## Optimized equality with pointer-pair caching -/
 
 /-- A pair of pointers for caching equality results. -/
 structure PtrPair where
@@ -702,7 +702,7 @@ def compareEnvsParallel (env1 env2 : Std.HashMap Lean.Name Lean.ConstantInfo)
       mismatchNames := mismatchNames.push name
   (mismatchNames.size, missingNames.size, mismatchNames, missingNames)
 
-/-! ## Parallel Canonicalization -/
+/- ## Parallel Canonicalization -/
 
 /-- Split an array into chunks of the given size. -/
 def chunks (arr : Array α) (chunkSize : Nat) : Array (Array α) := Id.run do

@@ -1,4 +1,4 @@
-/-!
+/-
   # Claim: ZK claim types and serialization
 
   Defines the claim types used in Ix's zero-knowledge proof system:
