@@ -41,7 +41,7 @@ jobs:
           mkdir -p ~/.local/bin
           lake test -- cli
       - run: lake exe test-aiur
-      - run: lake exe test-ixvm
+      - run: lake exe test-aiur-hashes
       - name: Check lean.h.hash
         run: lake run check-lean-h-hash
 

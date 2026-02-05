@@ -1743,6 +1743,7 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "serde",
+ "sha2",
  "tiny-keccak",
  "tokio",
  "tracing",

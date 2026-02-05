@@ -1,4 +1,5 @@
 import Tests.Aiur
+import Tests.AiurHashes
 import Tests.ByteArray
 import Tests.Ix.Ixon
 import Tests.Ix.Claim
@@ -16,4 +17,3 @@ import Tests.Keccak
 import Tests.Cli
 import Tests.ShardMap
 import Tests.Common
-import Tests.IxVM

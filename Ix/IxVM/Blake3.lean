@@ -3,6 +3,30 @@ import Ix.Aiur.Meta
 namespace IxVM
 
 def blake3 := ⟦
+  /- # Test entrypoints -/
+
+  fn blake3_test() -> [[G; 4]; 8] {
+    let (idx, len) = io_get_info([0]);
+    let byte_stream = read_byte_stream(idx, len);
+    blake3(byte_stream)
+  }
+
+  /- # Benchmark entrypoints -/
+
+  fn blake3_bench(num_hashes: G) -> G {
+    let num_hashes_pred = num_hashes - 1;
+    let key = [num_hashes_pred];
+    let (idx, len) = io_get_info(key);
+    let byte_stream = read_byte_stream(idx, len);
+    let _x = blake3(byte_stream);
+    match num_hashes_pred {
+      0 => 0,
+      _ => blake3_bench(num_hashes_pred),
+    }
+  }
+
+  /- # Implementation -/
+
   enum Layer {
     Push(&Layer, [[G; 4]; 8]),
     Nil
@@ -344,16 +368,11 @@ def blake3 := ⟦
     ]
   }
 
-  -- TODO remove this function
   fn chunk_count_is_zero(chunk_count: [G; 8]) -> G {
-    eq_zero(chunk_count[0])
-      * eq_zero(chunk_count[1])
-      * eq_zero(chunk_count[2])
-      * eq_zero(chunk_count[3])
-      * eq_zero(chunk_count[4])
-      * eq_zero(chunk_count[5])
-      * eq_zero(chunk_count[6])
-      * eq_zero(chunk_count[7])
+    match chunk_count {
+      [0, 0, 0, 0, 0, 0, 0, 0] => 1,
+      _ => 0,
+    }
   }
 
   fn assign_block_value(block: [[G; 4]; 16], idx: G, val: G) -> [[G; 4]; 16] {
@@ -422,76 +441,6 @@ def blake3 := ⟦
       61 => set(block, 15, set(block[15], 1, val)),
       62 => set(block, 15, set(block[15], 2, val)),
       63 => set(block, 15, set(block[15], 3, val)),
-    }
-  }
-
-    fn u32_add(a: [G; 4], b: [G; 4]) -> [G; 4] {
-    let [a0, a1, a2, a3] = a;
-    let [b0, b1, b2, b3] = b;
-
-    -- Byte 0, no initial carry
-    let (sum0, carry1) = u8_add(a0, b0);
-
-    -- Byte 1
-    let (sum1, overflow1) = u8_add(a1, b1);
-    let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
-    let carry2 = u8_xor(overflow1, carry1a);
-
-    -- Byte 2
-    let (sum2, overflow2) = u8_add(a2, b2);
-    let (sum2_with_carry, carry2a) = u8_add(sum2, carry2);
-    let carry3 = u8_xor(overflow2, carry2a);
-
-    -- Byte 3
-    let (sum3, _x) = u8_add(a3, b3);
-    let (sum3_with_carry, _x) = u8_add(sum3, carry3);
-
-    [sum0, sum1_with_carry, sum2_with_carry, sum3_with_carry]
-  }
-
-  fn u32_xor(a: [G; 4], b: [G; 4]) -> [G; 4] {
-    let [a0, a1, a2, a3] = a;
-    let [b0, b1, b2, b3] = b;
-    let c0 = u8_xor(a0, b0);
-    let c1 = u8_xor(a1, b1);
-    let c2 = u8_xor(a2, b2);
-    let c3 = u8_xor(a3, b3);
-    [c0, c1, c2, c3]
-  }
-
-  fn u8_recompose(bits: [G; 8]) -> G {
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
-    b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6 + 128 * b7
-  }
-
-  -- Computes the successor of an `u64` assumed to be properly represented in
-  -- little-endian bytes. If that's not the case, this implementation has UB.
-  fn relaxed_u64_succ(bytes: [G; 8]) -> [G; 8] {
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
-    match b0 {
-      255 => match b1 {
-        255 => match b2 {
-          255 => match b3 {
-            255 => match b4 {
-              255 => match b5 {
-                255 => match b6 {
-                  255 => match b7 {
-                    255 => [0, 0, 0, 0, 0, 0, 0, 0],
-                    _ => [0, 0, 0, 0, 0, 0, 0, b7 + 1],
-                  },
-                  _ => [0, 0, 0, 0, 0, 0, b6 + 1, b7],
-                },
-                _ => [0, 0, 0, 0, 0, b5 + 1, b6, b7],
-              },
-              _ => [0, 0, 0, 0, b4 + 1, b5, b6, b7],
-            },
-            _ => [0, 0, 0, b3 + 1, b4, b5, b6, b7],
-          },
-          _ => [0, 0, b2 + 1, b3, b4, b5, b6, b7],
-        },
-        _ => [0, b1 + 1, b2, b3, b4, b5, b6, b7],
-      },
-      _ => [b0 + 1, b1, b2, b3, b4, b5, b6, b7],
     }
   }
 ⟧
