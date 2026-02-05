@@ -1,4 +1,12 @@
-//! Proof and claim types for ZK verification.
+//! Proof, claim, and selective-revelation types for ZK verification.
+//!
+//! Claims assert properties about committed constants (type-checking, evaluation,
+//! or selective field revelation). Proofs pair a claim with opaque proof bytes.
+//!
+//! `RevealConstantInfo` uses bitmask-based serialization: a mask (Tag0) encodes
+//! which fields are present, followed by only the present field values in bit
+//! order. This enables revealing specific fields of a committed constant without
+//! exposing the full structure.
 
 use crate::ix::address::Address;
 use crate::ix::env::{DefinitionSafety, QuotKind};

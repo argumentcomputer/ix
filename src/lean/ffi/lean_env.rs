@@ -1,3 +1,13 @@
+//! Decode Lean kernel objects from their in-memory C representation.
+//!
+//! Provides functions to walk Lean object pointers and decode them into
+//! the Rust `Name`, `Level`, `Expr`, and `ConstantInfo` types defined in
+//! `crate::ix::env`. Used by the compilation pipeline to read the Lean
+//! environment before transforming it to Ixon format.
+//!
+//! Uses a two-level cache (`GlobalCache` + `LocalCache`) to avoid redundant
+//! decoding of shared subterms when processing environments in parallel.
+
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_wrap)]

@@ -1,3 +1,5 @@
+//! Lean constructor object layout and field access.
+
 use std::{ffi::c_void, ptr};
 
 use super::{CArray, object::LeanObject};

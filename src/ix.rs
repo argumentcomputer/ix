@@ -1,3 +1,9 @@
+//! Ix: content-addressed representation of Lean kernel types.
+//!
+//! This module contains the Lean type representation (`env`), the Ixon
+//! serialization format (`ixon`), and the compilation/decompilation pipeline
+//! that transforms between them.
+
 pub mod address;
 pub mod compile;
 pub mod condense;

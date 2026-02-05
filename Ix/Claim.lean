@@ -1,3 +1,16 @@
+/-!
+  # Claim: ZK claim types and serialization
+
+  Defines the claim types used in Ix's zero-knowledge proof system:
+  - `EvalClaim`: asserts that a constant evaluates to a given output
+  - `CheckClaim`: asserts that a constant is well-typed
+  - `RevealClaim`: selectively reveals fields of a committed constant
+
+  `RevealConstantInfo` and `RevealMutConstInfo` use bitmask-based serialization
+  to encode which fields are present, enabling selective revelation without
+  exposing the full constant.
+-/
+
 import Ix.Ixon
 
 namespace Ix

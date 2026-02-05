@@ -1,6 +1,18 @@
-//! Compilation FFI functions.
+//! FFI bridge between Lean and Rust for the Ixon compilation/decompilation pipeline.
 //!
-//! Contains FFI for rs_compile_env_full, rs_compile_env, rs_compile_phases, etc.
+//! Provides `extern "C"` functions callable from Lean via `@[extern]`:
+//! - `rs_compile_env_full` / `rs_compile_env`: compile a Lean environment to Ixon
+//! - `rs_compile_phases`: run individual pipeline phases (canon, condense, graph, compile)
+//! - `rs_decompile_env`: decompile Ixon back to Lean environment
+//! - `rs_roundtrip_*`: roundtrip FFI tests for Lean↔Rust type conversions
+//! - `build_*` / `decode_*`: convert between Lean constructor layouts and Rust types
+//!
+//! ## Lean object layout conventions
+//!
+//! Lean constructors are allocated via `lean_alloc_ctor(tag, num_objs, scalar_size)`:
+//! - Object fields are accessed with `lean_ctor_get(obj, i)` (0-indexed)
+//! - Scalar fields follow objects at byte offset `8 + num_objs * 8`
+//! - Scalar fields are accessed via pointer arithmetic on the object base
 
 use std::collections::HashMap;
 use std::ffi::{CString, c_void};
@@ -179,7 +191,7 @@ pub extern "C" fn rs_roundtrip_block_compare_result(
         obj
       },
       2 => lean_alloc_ctor(2, 0, 0),
-      _ => panic!("Invalid BlockCompareResult tag: {}", tag),
+      _ => unreachable!("Invalid BlockCompareResult tag: {}", tag),
     }
   }
 }
@@ -1237,7 +1249,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
           .unwrap_or(0);
         SerializeError::InvalidShareIndex { idx, max }
       },
-      _ => panic!("Invalid SerializeError tag: {}", tag),
+      _ => unreachable!("Invalid SerializeError tag: {}", tag),
     }
   }
 }
@@ -1428,7 +1440,7 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let se_ptr = lean_ctor_get(ptr as *mut _, 0);
         DecompileError::Serialize(decode_serialize_error(se_ptr))
       },
-      _ => panic!("Invalid DecompileError tag: {}", tag),
+      _ => unreachable!("Invalid DecompileError tag: {}", tag),
     }
   }
 }
@@ -1520,7 +1532,7 @@ pub fn decode_compile_error(ptr: *const c_void) -> CompileError {
         let se_ptr = lean_ctor_get(ptr as *mut _, 0);
         CompileError::Serialize(decode_serialize_error(se_ptr))
       },
-      _ => panic!("Invalid CompileError tag: {}", tag),
+      _ => unreachable!("Invalid CompileError tag: {}", tag),
     }
   }
 }

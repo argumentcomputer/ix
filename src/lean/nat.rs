@@ -1,3 +1,8 @@
+//! Lean `Nat` (arbitrary-precision natural number) representation.
+//!
+//! Lean stores small naturals as tagged scalars and large ones as GMP
+//! `mpz_object`s on the heap. This module handles both representations.
+
 use std::ffi::c_void;
 use std::fmt;
 
@@ -8,6 +13,7 @@ use crate::{
   lean_unbox,
 };
 
+/// Arbitrary-precision natural number, wrapping `BigUint`.
 #[derive(Hash, PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
 pub struct Nat(pub BigUint);
 
@@ -32,6 +38,8 @@ impl Nat {
     u64::try_from(&self.0).ok()
   }
 
+  /// Decode a `Nat` from a Lean object pointer. Handles both scalar (unboxed)
+  /// and heap-allocated (GMP `mpz_object`) representations.
   pub fn from_ptr(ptr: *const c_void) -> Nat {
     if lean_is_scalar(ptr) {
       let u = lean_unbox!(usize, ptr);

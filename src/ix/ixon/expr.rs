@@ -41,8 +41,7 @@ pub enum Expr {
 }
 
 impl Expr {
-  // Tag4 flags for expression variants
-  // Tag4 flags for expression variants (0x0-0xC)
+  // Tag4 flags for expression variants (0x0-0xB)
   pub const FLAG_SORT: u8 = 0x0;
   pub const FLAG_VAR: u8 = 0x1;
   pub const FLAG_REF: u8 = 0x2;

@@ -1,3 +1,21 @@
+/-!
+  # CondenseM: Strongly Connected Component Condensation
+
+  Implements Tarjan's SCC algorithm to condense a dependency graph of Ix.Names
+  into its strongly connected components (mutual blocks). Each SCC becomes a
+  single node in the condensed DAG.
+
+  The algorithm assigns each node a numeric `id` (discovery order) and tracks
+  a `lowLink` — the smallest id reachable from that node via back-edges. When
+  `lowLink[id] == id`, the node is the root of an SCC, and all nodes on the
+  stack down to it form the component.
+
+  The output `CondensedBlocks` provides:
+  - `lowLinks`: maps each constant to its SCC representative
+  - `blocks`: maps each SCC representative to all members
+  - `blockRefs`: maps each SCC representative to its external references
+-/
+
 import Lean
 import Ix.Common
 import Ix.Environment
@@ -11,24 +29,33 @@ structure CondenseEnv where
   outRefs: Map Ix.Name (Set Ix.Name)
 
 structure CondenseState where
+  /-- Map from name to its discovery id -/
   names: Map Ix.Name UInt64
+  /-- Reverse map from discovery id to name -/
   ids: Map UInt64 Ix.Name
+  /-- Smallest reachable discovery id for each node (determines SCC roots) -/
   lowLink: Map UInt64 UInt64
+  /-- Tarjan's working stack of node ids being processed -/
   stack: Array UInt64
+  /-- Set of ids currently on the stack (for O(1) membership checks) -/
   onStack: Set UInt64
+  /-- Next discovery id to assign -/
   id : UInt64
 
 def CondenseState.init : CondenseState := ⟨{}, {}, {}, #[], {}, 0⟩
 
 abbrev CondenseM := ReaderT CondenseEnv <| StateT CondenseState Id
 
+/-- Tarjan's DFS visit. Assigns a discovery `id`, pushes onto the SCC stack,
+    then recurses on neighbors. After visiting neighbors, if `lowLink[id] == id`
+    this node is the root of an SCC — pop the stack to collect all members. -/
 partial def visit : Ix.Name -> CondenseM Unit
 | name => do
-  -- Check if name exists in our valid set
   if !(<- read).validNames.contains name then return ()
   let refs := match (<- read).outRefs.find? name with
     | .some x => x
     | .none => {}
+  -- Assign discovery id and initialize lowLink to self
   let id := (<- get).id
   modify fun stt => { stt with
     names := stt.names.insert name id
@@ -39,19 +66,22 @@ partial def visit : Ix.Name -> CondenseM Unit
     id := id + 1
   }
   for ref in refs do
-    -- Check if ref exists in our valid set
     if !(<- read).validNames.contains ref then continue
     match (<- get).names.get? ref with
     | .none => do
+      -- Tree edge: recurse, then propagate lowLink upward
       visit ref
       modify fun stt =>
         let ll := stt.lowLink.get! id
         let rll := stt.lowLink.get! (stt.names.get! ref)
         { stt with lowLink := stt.lowLink.insert id (min ll rll) }
     | .some id' => if (<- get).onStack.contains id' then
+      -- Back edge: update lowLink to the earlier discovery id
       modify fun stt =>
         let ll := stt.lowLink.get! id
         { stt with lowLink := stt.lowLink.insert id (min ll id') }
+  -- If lowLink equals our own id, we are the root of an SCC.
+  -- Pop the stack until we reach ourselves to collect all SCC members.
   if id == (<- get).lowLink.get! id then
     let mut stack := (<- get).stack
     if !stack.isEmpty then

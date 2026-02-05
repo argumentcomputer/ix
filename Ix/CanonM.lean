@@ -1,5 +1,19 @@
-/-
-  CanonM: Convert Lean expressions to canonical Leon types with embedded hashes.
+/-!
+  # CanonM: Canonicalize Lean types to Ix types with content-addressed hashing
+
+  Converts Lean kernel types (Name, Level, Expr, ConstantInfo) to their Ix
+  counterparts, embedding blake3 hashes at each node for O(1) structural equality.
+
+  Uses pointer-based caching (`ptrAddrUnsafe`) to avoid recomputing hashes for
+  shared subterms — if two Lean values share the same pointer, they map to the
+  same canonical Ix value.
+
+  Key operations:
+  - `canonName` / `uncanonName`: Lean.Name <-> Ix.Name
+  - `canonLevel` / `uncanonLevel`: Lean.Level <-> Ix.Level
+  - `canonExpr` / `uncanonExpr`: Lean.Expr <-> Ix.Expr
+  - `canonEnv` / `uncanonEnv`: whole-environment conversion
+  - `compareEnvsParallel`: parallel structural equality check between environments
 -/
 
 import Lean
@@ -471,10 +485,7 @@ def uncanonConst : Ix.ConstantInfo → UncanonM Lean.ConstantInfo
     deduplication across all constants. -/
 def canonEnv (env : Lean.Environment) : CanonM Ix.Environment := do
   let mut consts : HashMap Ix.Name Ix.ConstantInfo := {}
-  let mut i := 0
   for (name, const) in env.constants do
-    --dbg_trace s!"{i}: {name.toString}"
-    i := i+1
     let name' <- canonName name
     let const' <- canonConst const
     consts := consts.insert name' const'
@@ -492,13 +503,10 @@ def formatTime (ms : Nat) : String :=
     let s := (ms % 60000) / 1000
     s!"{m}m{s}s"
 
-/-- Uncanonicalize a Ix environment back to a map of Lean constants. -/
+/-- Uncanonicalize an Ix environment back to a map of Lean constants. -/
 def uncanonEnv (env : Ix.Environment) : UncanonM (HashMap Lean.Name Lean.ConstantInfo) := do
-  let mut i := 0;
   let mut result : HashMap Lean.Name Lean.ConstantInfo := {}
   for (name, const) in env.consts do
-    --dbg_trace s!"{i}: {toString name}"
-    i := i+1
     let name' ← uncanonName name
     let const' ← uncanonConst const
     result := result.insert name' const'

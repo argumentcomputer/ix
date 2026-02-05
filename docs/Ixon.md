@@ -49,9 +49,11 @@ This separation means cosmetic changes (renaming variables) don't change the con
 | [Sharing](#sharing-system) | Expression deduplication |
 | [Metadata](#metadata) | Names and source info |
 | [Environment](#environment) | Storage and serialization |
+| [Proofs and Claims](#proofs-and-claims) | ZK claims and proofs |
+| [Commitments](#cryptographic-commitments) | Commitment scheme |
 | [Compilation](#compilation-lean--ixon) | Lean to Ixon conversion |
 | [Decompilation](#decompilation-ixon--lean) | Ixon to Lean conversion |
-| [Worked Example](#comprehensive-worked-example) | End-to-end walkthrough |
+| [Worked Examples](#comprehensive-worked-example) | End-to-end walkthroughs |
 
 ---
 
@@ -61,15 +63,36 @@ Ixon uses three variable-length encoding schemes for compact representation.
 
 ### Tag4 (4-bit flag)
 
-Used for expressions and constants. Header byte format:
+Used for expressions, constants, and environment/proof structures. Header byte format:
 
 ```
 [flag:4][large:1][size:3]
 ```
 
-- **flag** (4 bits): Discriminates type (0x0-0xB for expressions, 0xC for Muts constants, 0xD for other constants, 0xE for environments/claims/proofs/commitments)
+- **flag** (4 bits): Discriminates type (see table below)
 - **large** (1 bit): If 0, size is in the low 3 bits. If 1, (size+1) bytes follow with the actual value
 - **size** (3 bits): Small values 0-7, or byte count for large values
+
+**Complete Tag4 flag allocation:**
+
+| Flag | Category | Type | Size field meaning |
+|------|----------|------|-------------------|
+| 0x0 | Expr | Sort | Universe index |
+| 0x1 | Expr | Var | De Bruijn index |
+| 0x2 | Expr | Ref | Univ argument count |
+| 0x3 | Expr | Rec | Univ argument count |
+| 0x4 | Expr | Prj | Field index |
+| 0x5 | Expr | Str | Refs table index |
+| 0x6 | Expr | Nat | Refs table index |
+| 0x7 | Expr | App | Application count (telescoped) |
+| 0x8 | Expr | Lam | Binder count (telescoped) |
+| 0x9 | Expr | All | Binder count (telescoped) |
+| 0xA | Expr | Let | 0=dep, 1=non_dep |
+| 0xB | Expr | Share | Share vector index |
+| 0xC | Constant | Muts | Entry count |
+| 0xD | Constant | Non-Muts | Variant (0-7) |
+| 0xE | Env/Proof | Env/Claim/Proof/Comm | Variant (0-7) |
+| 0xF | - | Reserved | - |
 
 ```rust
 pub struct Tag4 {
@@ -622,60 +645,74 @@ App(
 
 Metadata stores non-structural information that's needed for roundtrip compilation but doesn't affect the constant's identity.
 
-### ConstantMeta
+### ExprMeta Arena
 
-Per-constant metadata:
+Expression metadata is stored as an append-only arena of `ExprMetaData` nodes, built bottom-up during compilation. Each node has an arena index, and parent nodes reference children by index.
 
 ```rust
-pub enum ConstantMeta {
-    Empty,
-    Def {
-        name: Address,           // Constant name address
-        lvls: Vec<Address>,      // Universe parameter name addresses
-        hints: ReducibilityHints,
-        all: Vec<Address>,       // Original 'all' field for mutual blocks
-        ctx: Vec<Address>,       // Mutual context for Rec expr resolution
-        type_meta: ExprMetas,
-        value_meta: ExprMetas,
-    },
-    Axio { name, lvls, type_meta },
-    Quot { name, lvls, type_meta },
-    Indc { name, lvls, ctors, ctor_metas, all, ctx, type_meta },
-    Ctor { name, lvls, induct, type_meta },
-    Rec { name, lvls, rules, all, ctx, type_meta },
+/// Arena for expression metadata within a single constant.
+pub struct ExprMeta {
+    pub nodes: Vec<ExprMetaData>,
+}
+
+pub enum ExprMetaData {
+    Leaf,                                             // Var, Sort, Nat, Str (no metadata)
+    App { children: [u64; 2] },                       // [fun_idx, arg_idx]
+    Binder { name: Address, info: BinderInfo, children: [u64; 2] }, // [type_idx, body_idx]
+    LetBinder { name: Address, children: [u64; 3] },  // [type_idx, value_idx, body_idx]
+    Ref { name: Address },                            // Const/Rec reference name
+    Prj { struct_name: Address, child: u64 },         // Projection struct name
+    Mdata { mdata: Vec<KVMap>, child: u64 },          // Metadata wrapper
 }
 ```
 
-### ExprMeta
-
-Per-expression metadata, keyed by pre-order traversal index:
-
-```rust
-pub type ExprMetas = HashMap<u64, ExprMeta>;
-
-pub enum ExprMeta {
-    Binder { name: Address, info: BinderInfo, mdata: Vec<KVMap> },
-    LetBinder { name: Address, mdata: Vec<KVMap> },
-    Ref { name: Address, mdata: Vec<KVMap> },  // For mutual Rec references
-    Prj { struct_name: Address, mdata: Vec<KVMap> },
-    Mdata { mdata: Vec<KVMap> },  // For mdata-wrapped expressions
-}
-```
-
-**ExprMeta Serialization** (tags pack BinderInfo for Binder variants):
+**ExprMetaData Serialization** (tags 0-9, with BinderInfo packed into Binder tags):
 
 | Tag | Variant | Payload |
 |-----|---------|---------|
-| 0 | Binder (Default) | name_idx + mdata |
-| 1 | Binder (Implicit) | name_idx + mdata |
-| 2 | Binder (StrictImplicit) | name_idx + mdata |
-| 3 | Binder (InstImplicit) | name_idx + mdata |
-| 4 | LetBinder | name_idx + mdata |
-| 5 | Ref | name_idx + mdata |
-| 6 | Prj | struct_name_idx + mdata |
-| 7 | Mdata | mdata |
+| 0 | Leaf | (none) |
+| 1 | App | children: [u64, u64] |
+| 2 | Binder (Default) | name_idx + children: [u64, u64] |
+| 3 | Binder (Implicit) | name_idx + children: [u64, u64] |
+| 4 | Binder (StrictImplicit) | name_idx + children: [u64, u64] |
+| 5 | Binder (InstImplicit) | name_idx + children: [u64, u64] |
+| 6 | LetBinder | name_idx + children: [u64, u64, u64] |
+| 7 | Ref | name_idx |
+| 8 | Prj | struct_name_idx + child: u64 |
+| 9 | Mdata | kvmap_count + kvmaps + child: u64 |
 
-This packing saves 1 byte per binder by encoding BinderInfo into the variant tag.
+Packing BinderInfo into the Binder tag (tags 2-5) saves 1 byte per binder. Name addresses are serialized as indices into a `NameIndex` for compactness.
+
+### ConstantMeta
+
+Per-constant metadata. Each variant stores a name, universe parameter names, an `ExprMeta` arena, and root indices pointing into the arena:
+
+```rust
+pub enum ConstantMeta {
+    Empty,                                              // tag 255
+    Def { name, lvls, hints, all, ctx,
+          arena, type_root, value_root },               // tag 0
+    Axio { name, lvls, arena, type_root },              // tag 1
+    Quot { name, lvls, arena, type_root },              // tag 2
+    Indc { name, lvls, ctors, all, ctx,
+           arena, type_root },                          // tag 3
+    Ctor { name, lvls, induct, arena, type_root },      // tag 4
+    Rec { name, lvls, rules, all, ctx,
+          arena, type_root, rule_roots },               // tag 5
+}
+```
+
+**ConstantMeta Serialization:**
+
+| Tag | Variant | Payload |
+|-----|---------|---------|
+| 0 | Def | name_idx, lvl_idxs, hints, all_idxs, ctx_idxs, arena, type_root, value_root |
+| 1 | Axio | name_idx, lvl_idxs, arena, type_root |
+| 2 | Quot | name_idx, lvl_idxs, arena, type_root |
+| 3 | Indc | name_idx, lvl_idxs, ctor_idxs, all_idxs, ctx_idxs, arena, type_root |
+| 4 | Ctor | name_idx, lvl_idxs, induct_idx, arena, type_root |
+| 5 | Rec | name_idx, lvl_idxs, rule_idxs, all_idxs, ctx_idxs, arena, type_root, rule_roots |
+| 255 | Empty | (none) |
 
 ### Indexed Serialization
 
@@ -1082,12 +1119,22 @@ Named {
     hints: ReducibilityHints::Regular(1),
     all: [addr_of_name("double")],
     ctx: [],
-    type_meta: {
-      0: Binder { name: addr_of_name("n"), info: Default, mdata: [] }
-    },
-    value_meta: {
-      0: Binder { name: addr_of_name("n"), info: Default, mdata: [] }
-    },
+    arena: ExprMeta { nodes: [
+      // type arena: All(Ref(0,[]), Ref(0,[]))
+      Leaf,                                       // 0: Ref(0,[]) inner
+      Leaf,                                       // 1: Ref(0,[]) body
+      Binder { name: "n", info: Default, children: [0, 1] }, // 2: All binder
+      // value arena: Lam(Ref(0,[]), App(App(Ref(1,[]),Var(0)),Var(0)))
+      Leaf,                                       // 3: Ref(0,[])
+      Leaf,                                       // 4: Ref(1,[])
+      Leaf,                                       // 5: Var(0)
+      App { children: [4, 5] },                   // 6: App(Ref(1), Var(0))
+      Leaf,                                       // 7: Var(0)
+      App { children: [6, 7] },                   // 8: App(App(...), Var(0))
+      Binder { name: "n", info: Default, children: [3, 8] }, // 9: Lam binder
+    ]},
+    type_root: 2,
+    value_root: 9,
   }
 }
 ```

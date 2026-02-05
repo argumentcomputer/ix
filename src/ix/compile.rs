@@ -1406,9 +1406,17 @@ pub fn mk_indc(
 }
 
 // ===========================================================================
-// Comparison functions for sorting
+// Alpha-invariant comparison and sorting
+//
+// These functions establish a canonical ordering for constants within mutual
+// blocks. Since names are not alpha-invariant, we compare by structure:
+// universe levels, expressions, field counts, etc. The `SOrd` return type
+// tracks whether the comparison is "strong" (based solely on alpha-invariant
+// data) or "weak" (needed a name-based tiebreaker).
 // ===========================================================================
 
+/// Compare two universe levels structurally, using level parameter position
+/// (not name) for `Param` comparisons.
 pub fn compare_level(
   x: &Level,
   y: &Level,
@@ -1456,6 +1464,9 @@ pub fn compare_level(
   }
 }
 
+/// Compare two Lean expressions structurally for canonical ordering.
+/// Strips `Mdata` wrappers, compares by constructor tag, then recurses
+/// into subexpressions. Constants are compared by address (or mutual index).
 pub fn compare_expr(
   x: &LeanExpr,
   y: &LeanExpr,
@@ -1583,9 +1594,10 @@ pub fn compare_expr(
 }
 
 // ===========================================================================
-// Sorting functions
+// Constant-level comparison and sorting
 // ===========================================================================
 
+/// Compare two definitions by kind, level parameter count, type, then value.
 pub fn compare_defn(
   x: &Def,
   y: &Def,
@@ -1624,6 +1636,7 @@ pub fn compare_defn(
   )
 }
 
+/// Compare two constructors by level params, cidx, params, fields, then type.
 pub fn compare_ctor_inner(
   x: &ConstructorVal,
   y: &ConstructorVal,
@@ -1651,6 +1664,7 @@ pub fn compare_ctor_inner(
   )
 }
 
+/// Compare two constructors with result caching (keyed by name pair).
 pub fn compare_ctor(
   x: &ConstructorVal,
   y: &ConstructorVal,
@@ -1674,6 +1688,7 @@ pub fn compare_ctor(
   }
 }
 
+/// Compare two inductives by params, indices, constructor count, type, then constructors.
 pub fn compare_indc(
   x: &Ind,
   y: &Ind,
@@ -1717,6 +1732,7 @@ pub fn compare_indc(
   )
 }
 
+/// Compare two recursor rules by field count, then RHS expression.
 pub fn compare_recr_rule(
   x: &LeanRecursorRule,
   y: &LeanRecursorRule,
@@ -1730,6 +1746,7 @@ pub fn compare_recr_rule(
   })
 }
 
+/// Compare two recursors by params, indices, motives, minors, k, type, then rules.
 pub fn compare_recr(
   x: &Rec,
   y: &Rec,
@@ -1779,6 +1796,9 @@ pub fn compare_recr(
   )
 }
 
+/// Compare two mutual constants with caching. Dispatches to the appropriate
+/// type-specific comparator (defn, indc, recr). Different-kind constants
+/// are ordered by kind tag.
 pub fn compare_const(
   x: &MutConst,
   y: &MutConst,
@@ -1815,6 +1835,7 @@ pub fn compare_const(
   }
 }
 
+/// Check if two mutual constants are structurally equal.
 pub fn eq_const(
   x: &MutConst,
   y: &MutConst,
@@ -1826,6 +1847,8 @@ pub fn eq_const(
   Ok(ordering == Ordering::Equal)
 }
 
+/// Group consecutive equal elements in a sorted slice. Assumes the input
+/// is already sorted by the same relation used for equality testing.
 pub fn group_by<T, F>(
   items: Vec<&T>,
   mut eq: F,
@@ -1852,6 +1875,7 @@ where
   Ok(groups)
 }
 
+/// Merge two sorted sequences of mutual constants into one sorted sequence.
 pub fn merge<'a>(
   left: Vec<&'a MutConst>,
   right: Vec<&'a MutConst>,
@@ -1888,6 +1912,7 @@ pub fn merge<'a>(
   Ok(result)
 }
 
+/// Merge-sort mutual constants using structural comparison.
 pub fn sort_by_compare<'a>(
   items: &[&'a MutConst],
   ctx: &MutCtx,
@@ -1904,6 +1929,9 @@ pub fn sort_by_compare<'a>(
   merge(left, right, ctx, cache, stt)
 }
 
+/// Sort mutual constants into a canonical ordering and group equal ones.
+/// Uses iterative refinement: sort by structure, group equals, re-sort with
+/// updated mutual context indices, until the partition stabilizes.
 pub fn sort_consts<'a>(
   cs: &[&'a MutConst],
   cache: &mut BlockCache,

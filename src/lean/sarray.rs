@@ -1,3 +1,5 @@
+//! Lean scalar array (`ByteArray`) object layout.
+
 use super::{CArray, object::LeanObject};
 
 /// ```c
