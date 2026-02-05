@@ -729,9 +729,14 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   let env = lean_ptr_to_env(ptr);
   let env = Arc::new(env);
   println!("Decoding: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
+  let start_compiling = std::time::SystemTime::now();
   let res = compile_env(&env);
   match res {
     Ok(stt) => {
+      println!(
+        "Compiling: {:.2}s",
+        start_compiling.elapsed().unwrap().as_secs_f32()
+      );
       println!("Compile OK: {:?}", stt.stats());
 
       let start_decompiling = std::time::SystemTime::now();

@@ -191,3 +191,152 @@ impl Clone for Env {
     Env { consts, named, blobs, names, comms, addr_to_name }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::ix::env::Name;
+  use crate::ix::ixon::constant::{Axiom, Constant, ConstantInfo};
+  use crate::ix::ixon::expr::Expr;
+  use std::sync::Arc;
+
+  fn n(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_string())
+  }
+
+  fn dummy_constant() -> Constant {
+    Constant::new(ConstantInfo::Axio(Axiom {
+      is_unsafe: false,
+      lvls: 0,
+      typ: Arc::new(Expr::Sort(0)),
+    }))
+  }
+
+  #[test]
+  fn store_and_get_blob() {
+    let env = Env::new();
+    let data = vec![1, 2, 3, 4, 5];
+    let addr = env.store_blob(data.clone());
+    assert_eq!(env.get_blob(&addr), Some(data));
+    // Same content produces same address
+    let addr2 = env.store_blob(vec![1, 2, 3, 4, 5]);
+    assert_eq!(addr, addr2);
+  }
+
+  #[test]
+  fn store_and_get_const() {
+    let env = Env::new();
+    let constant = dummy_constant();
+    let addr = Address::hash(b"test-constant");
+    env.store_const(addr.clone(), constant.clone());
+    let got = env.get_const(&addr).unwrap();
+    assert_eq!(got, constant);
+  }
+
+  #[test]
+  fn register_and_lookup_name() {
+    let env = Env::new();
+    let name = n("MyConst");
+    let addr = Address::hash(b"my-const-addr");
+    let named = Named::with_addr(addr.clone());
+    env.register_name(name.clone(), named.clone());
+    let got = env.lookup_name(&name).unwrap();
+    assert_eq!(got.addr, addr);
+  }
+
+  #[test]
+  fn get_name_by_addr_reverse_index() {
+    let env = Env::new();
+    let name = n("Reverse");
+    let addr = Address::hash(b"reverse-addr");
+    let named = Named::with_addr(addr.clone());
+    env.register_name(name.clone(), named);
+    let got_name = env.get_name_by_addr(&addr).unwrap();
+    assert_eq!(got_name, name);
+  }
+
+  #[test]
+  fn get_named_by_addr_resolves_through_reverse_index() {
+    let env = Env::new();
+    let name = n("Through");
+    let addr = Address::hash(b"through-addr");
+    let named = Named::with_addr(addr.clone());
+    env.register_name(name.clone(), named);
+    let got = env.get_named_by_addr(&addr).unwrap();
+    assert_eq!(got.addr, addr);
+  }
+
+  #[test]
+  fn store_and_get_name_component() {
+    let env = Env::new();
+    let name = n("Component");
+    let addr = Address::hash(b"name-component");
+    env.store_name(addr.clone(), name.clone());
+    assert_eq!(env.get_name(&addr), Some(name));
+  }
+
+  #[test]
+  fn store_and_get_comm() {
+    let env = Env::new();
+    let secret = Address::hash(b"secret");
+    let payload = Address::hash(b"payload");
+    let comm = Comm::new(secret.clone(), payload.clone());
+    let comm_addr = Address::hash(b"comm-addr");
+    env.store_comm(comm_addr.clone(), comm.clone());
+    let got = env.get_comm(&comm_addr).unwrap();
+    assert_eq!(got, comm);
+  }
+
+  #[test]
+  fn counts() {
+    let env = Env::new();
+    assert_eq!(env.const_count(), 0);
+    assert_eq!(env.named_count(), 0);
+    assert_eq!(env.blob_count(), 0);
+    assert_eq!(env.name_count(), 0);
+    assert_eq!(env.comm_count(), 0);
+
+    env.store_blob(vec![1]);
+    assert_eq!(env.blob_count(), 1);
+
+    env.store_const(Address::hash(b"c1"), dummy_constant());
+    assert_eq!(env.const_count(), 1);
+
+    env.register_name(n("x"), Named::with_addr(Address::hash(b"x")));
+    assert_eq!(env.named_count(), 1);
+
+    env.store_name(Address::hash(b"n1"), n("n"));
+    assert_eq!(env.name_count(), 1);
+
+    env.store_comm(
+      Address::hash(b"cm"),
+      Comm::new(Address::hash(b"s"), Address::hash(b"p")),
+    );
+    assert_eq!(env.comm_count(), 1);
+  }
+
+  #[test]
+  fn missing_keys_return_none() {
+    let env = Env::new();
+    let missing = Address::hash(b"nonexistent");
+    assert!(env.get_blob(&missing).is_none());
+    assert!(env.get_const(&missing).is_none());
+    assert!(env.lookup_name(&n("missing")).is_none());
+    assert!(env.get_name_by_addr(&missing).is_none());
+    assert!(env.get_named_by_addr(&missing).is_none());
+    assert!(env.get_name(&missing).is_none());
+    assert!(env.get_comm(&missing).is_none());
+  }
+
+  #[test]
+  fn blob_content_addressing() {
+    let env = Env::new();
+    let addr1 = env.store_blob(vec![1, 2, 3]);
+    let addr2 = env.store_blob(vec![4, 5, 6]);
+    // Different content produces different addresses
+    assert_ne!(addr1, addr2);
+    // Same content produces same address
+    let addr3 = env.store_blob(vec![1, 2, 3]);
+    assert_eq!(addr1, addr3);
+  }
+}
