@@ -6,7 +6,7 @@
 //! - List, Array, ByteArray
 //! - AssocList, HashMap
 
-use std::ffi::{CString, c_void};
+use std::ffi::c_void;
 
 use crate::lean::array::LeanArrayObject;
 use crate::lean::nat::Nat;
@@ -67,7 +67,7 @@ pub extern "C" fn rs_roundtrip_string(s_ptr: *const c_void) -> *mut c_void {
   let s = s_obj.as_string();
   // Re-encode
   unsafe {
-    let cstr = CString::new(s.as_str()).unwrap();
+    let cstr = crate::lean::safe_cstring(s.as_str());
     lean_mk_string(cstr.as_ptr())
   }
 }

@@ -14,7 +14,7 @@
 //! - Tag 10: mdata (data : Array (Name × DataValue)) (expr : Expr) (hash : Address)
 //! - Tag 11: proj (typeName : Name) (idx : Nat) (struct : Expr) (hash : Address)
 
-use std::ffi::{CString, c_void};
+use std::ffi::c_void;
 
 use crate::ix::env::{
   BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
@@ -206,7 +206,7 @@ pub fn build_literal(lit: &Literal) -> *mut c_void {
         obj
       },
       Literal::StrVal(s) => {
-        let s_cstr = CString::new(s.as_str()).unwrap();
+        let s_cstr = crate::lean::safe_cstring(s.as_str());
         let obj = lean_alloc_ctor(1, 1, 0);
         lean_ctor_set(obj, 0, lean_mk_string(s_cstr.as_ptr()));
         obj

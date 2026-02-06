@@ -262,10 +262,13 @@ pub type NameIndex = HashMap<Address, u64>;
 pub type NameReverseIndex = Vec<Address>;
 
 fn put_idx(addr: &Address, idx: &NameIndex, buf: &mut Vec<u8>) {
-  let i = idx
-    .get(addr)
-    .copied()
-    .unwrap_or_else(|| panic!("put_idx: address {:?} not in name index", addr));
+  let i = idx.get(addr).copied().unwrap_or_else(|| {
+    panic!(
+      "put_idx: address {:?} not in name index (index has {} entries)",
+      addr,
+      idx.len()
+    )
+  });
   put_u64(i, buf);
 }
 

@@ -14,7 +14,7 @@ pub mod object;
 pub mod sarray;
 pub mod string;
 
-use std::ffi::c_void;
+use std::ffi::{CString, c_void};
 
 use crate::lean::{
   boxed::{BoxedU64, BoxedUSize},
@@ -41,6 +41,17 @@ pub fn as_mut_unsafe<'a, T>(ptr: *mut T) -> &'a mut T {
 #[inline]
 pub fn lean_is_scalar<T>(ptr: *const T) -> bool {
   ptr as usize & 1 == 1
+}
+
+/// Create a CString from a str, stripping any interior null bytes.
+/// Lean strings are length-prefixed and can contain null bytes, but the
+/// `lean_mk_string` FFI requires a null-terminated C string. This function
+/// ensures conversion always succeeds by filtering out interior nulls.
+pub fn safe_cstring(s: &str) -> CString {
+  CString::new(s).unwrap_or_else(|_| {
+    let bytes: Vec<u8> = s.bytes().filter(|&b| b != 0).collect();
+    CString::new(bytes).expect("filtered string should have no nulls")
+  })
 }
 
 #[macro_export]

@@ -1197,7 +1197,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
         let expected =
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
         SerializeError::UnexpectedEof {
-          expected: Box::leak(expected.into_boxed_str()),
+          expected: expected,
         }
       },
       1 => {
@@ -1208,7 +1208,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
         SerializeError::InvalidTag {
           tag: tag_val,
-          context: Box::leak(context.into_boxed_str()),
+          context: context,
         }
       },
       2 => {
@@ -1219,7 +1219,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
         SerializeError::InvalidFlag {
           flag,
-          context: Box::leak(context.into_boxed_str()),
+          context: context,
         }
       },
       3 => {
@@ -1230,7 +1230,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
         SerializeError::InvalidVariant {
           variant,
-          context: Box::leak(context.into_boxed_str()),
+          context: context,
         }
       },
       4 => {

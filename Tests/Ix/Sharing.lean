@@ -259,7 +259,7 @@ def testRecursorSharing : TestSeq := Id.run do
 
   let refShared := sharedHashes.any (· == refHash)
 
-  let (_, sharingVec) := buildSharingVec #[e4] sharedHashes result.infoMap result.ptrToHash result.topoOrder
+  let (_, sharingVec) := buildSharingVec #[e4] sharedHashes result.infoMap result.ptrToHash
   --dbg_trace s!"[testRecursorSharing] sharingVec.size={sharingVec.size}"
 
   return group "recursor sharing" (
@@ -341,7 +341,7 @@ def testRealisticRecursor : TestSeq := Id.run do
   --dbg_trace s!"[testRealisticRecursor] ref 3 (c3): usage={c3Usage}"
 
   -- Build sharing vector
-  let (_rewritten, _sharingVec) := buildSharingVec allExprs sharedHashes result.infoMap result.ptrToHash result.topoOrder
+  let (_rewritten, _sharingVec) := buildSharingVec allExprs sharedHashes result.infoMap result.ptrToHash
   --dbg_trace s!"[testRealisticRecursor] sharingVec ({sharingVec.size} items):"
   --for i in [:sharingVec.size] do
   --  dbg_trace s!"  [{i}] {repr sharingVec[i]!}"
@@ -397,7 +397,7 @@ def testCrossImplSharingSimple : TestSeq := Id.run do
   -- Run Lean's sharing analysis
   let result := analyzeBlock exprs
   let sharedHashes := decideSharing result.infoMap result.topoOrder
-  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash result.topoOrder
+  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
 
   -- Run Rust's sharing analysis via FFI
   let rustSharingCount := rsAnalyzeSharingCount exprs
@@ -426,7 +426,7 @@ def testCrossImplContentHash : TestSeq := Id.run do
   -- Run Lean's sharing analysis
   let result := analyzeBlock exprs
   let sharedHashes := decideSharing result.infoMap result.topoOrder
-  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash result.topoOrder
+  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
 
   -- Run Rust's sharing analysis via FFI
   let rustSharingCount := rsAnalyzeSharingCount exprs
@@ -480,7 +480,7 @@ def testCrossImplRecursor : TestSeq := Id.run do
   -- Run Lean's sharing analysis
   let result := analyzeBlock exprs
   let sharedHashes := decideSharing result.infoMap result.topoOrder
-  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash result.topoOrder
+  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
 
   -- Run Rust's sharing analysis via FFI
   let rustSharingCount := rsAnalyzeSharingCount exprs
@@ -552,7 +552,7 @@ def testForallImpReal : TestSeq := Id.run do
   -- Run Lean sharing analysis
   let result := analyzeBlock exprs
   let sharedHashes := decideSharing result.infoMap result.topoOrder
-  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash result.topoOrder
+  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
 
   -- Run Rust sharing analysis
   let rustCount := rsAnalyzeSharingCount exprs
@@ -597,7 +597,7 @@ def testForallImpSharing : TestSeq := Id.run do
   -- Analyze with Lean
   let result := analyzeBlock exprs
   let sharedHashes := decideSharing result.infoMap result.topoOrder
-  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash result.topoOrder
+  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
 
   -- Check usage and profitability of app21 and app20
   let app21Hash := computeExprHash app21
@@ -653,7 +653,7 @@ def testFlipSharing : TestSeq := Id.run do
   -- Analyze with Lean
   let result := analyzeBlock exprs
   let sharedHashes := decideSharing result.infoMap result.topoOrder
-  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash result.topoOrder
+  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
 
   -- Check what got shared
   let innerAllHash := computeExprHash innerAll
@@ -892,7 +892,7 @@ end Tests.Sharing
 --      IO.println s!"    {repr info.expr}"
 --
 --  -- Build sharing vector
---  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash result.topoOrder
+--  let (rewritten, sharingVec) := buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
 --  IO.println s!"\nLean sharing vector ({sharingVec.size} items):"
 --  for i in [:sharingVec.size] do
 --    IO.println s!"  [{i}] {repr sharingVec[i]!}"

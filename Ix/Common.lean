@@ -279,12 +279,9 @@ def setLibsPaths (s: String) : IO Unit := do
     cmd := "lake"
     args := #["setup-file", s]
   }
-  --IO.println s!"setup-file {out.stdout}"
-  --IO.println s!"setup-file {out.stderr}"
   let split := out.stdout.splitOn "\"oleanPath\":[" |>.getD 1 ""
   let split := split.splitOn "],\"loadDynlibPaths\":[" |>.getD 0 ""
   let paths := split.replace "\"" "" |>.splitOn ","|>.map System.FilePath.mk
-  --IO.println s!"paths {paths}"
   Lean.initSearchPath (← Lean.findSysroot) paths
 
 def runCmd' (cmd : String) (args : Array String) : IO $ Except String String := do
@@ -318,92 +315,4 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
       (← msgs.toList.mapM (·.toString)).map String.trim
   else return s.commandState.env
 
---def Expr.size: Expr -> Nat
---| .mdata _ x => 1 + x.size
---| .app f a => 1 + f.size + a.size
---| .lam bn bt b bi => 1 + bt.size + b.size
---| .forallE bn bt b bi => 1 + bt.size + b.size
---| .letE ln t v b nd =>  1 + t.size + v.size + b.size
---| .proj tn i s => 1 + s.size
---| x => 1
-
---def Expr.size (e : Expr) : Nat :=
---  go e 0
---where
---  go e n := match e with
---    | .mdata _ x => go x n + 1
---    | .app f a => go a (go f n + 1)
---    | .lam bn bt b bi => go bt (go b n + 1)
---    | .forallE bn bt b bi => go bt (go b n + 1)
---    | .letE ln t v b nd => go b (go v (go t n + 1))
---    | .proj tn i s => go s n + 1
---    | x => n
-
---def Expr.msize: Expr -> Nat
---| .mdata _ x => 1 + x.msize
---| .app f a => f.msize + a.msize
---| .lam bn bt b bi => bt.msize + b.msize
---| .forallE bn bt b bi => bt.msize + b.msize
---| .letE ln t v b nd => t.msize + v.msize + b.msize
---| .proj tn i s => s.msize
---| x => 0
---
---def Expr.stripMData : Expr -> Expr
---| .mdata _ x => x.stripMData
---| .app f a => .app f.stripMData a.stripMData
---| .lam bn bt b bi => .lam bn bt.stripMData b.stripMData bi
---| .forallE bn bt b bi => .forallE bn bt.stripMData b.stripMData bi
---| .letE ln t v b nd => .letE ln t.stripMData v.stripMData b.stripMData nd
---| .proj tn i s => .proj tn i s.stripMData
---| x@(.lit ..) => x
---| x@(.const ..) => x
---| x@(.bvar ..) => x
---| x@(.fvar ..) => x
---| x@(.sort ..) => x
---| x@(.mvar ..) => x
-
---def RecursorRule.stripMData : RecursorRule -> RecursorRule
---| x =>
---  dbg_trace s!"RecursorRule.stripMData"
---  match x with
---  | ⟨c, nf, rhs⟩ => ⟨c, nf, rhs.stripMData⟩
---
---def RecursorRule.size : RecursorRule -> Nat
---| ⟨c, nf, rhs⟩ => rhs.size
---
---def RecursorRule.msize : RecursorRule -> Nat
---| ⟨c, nf, rhs⟩ => rhs.msize
---
---def ConstantInfo.stripMData : Lean.ConstantInfo -> Lean.ConstantInfo
---| x =>
---  dbg_trace s!"ConstantInfo.stripMData"
---  match x with
---  | .axiomInfo x => .axiomInfo { x with type := x.type.stripMData }
---  | .defnInfo x => .defnInfo { x with type := x.type.stripMData, value := x.value.stripMData }
---  | .thmInfo x => .thmInfo { x with type := x.type.stripMData, value := x.value.stripMData }
---  | .quotInfo x => .quotInfo { x with type := x.type.stripMData }
---  | .opaqueInfo x => .opaqueInfo { x with type := x.type.stripMData, value := x.value.stripMData }
---  | .inductInfo x => .inductInfo { x with type := x.type.stripMData }
---  | .ctorInfo x => .ctorInfo { x with type := x.type.stripMData }
---  | .recInfo x => .recInfo { x with type := x.type.stripMData, rules := x.rules.map (·.stripMData) }
---
---def ConstantInfo.size : Lean.ConstantInfo -> Nat
---| .axiomInfo x => x.type.size
---| .defnInfo x => x.type.size + x.value.size
---| .thmInfo x => x.type.size + x.value.size
---| .quotInfo x => x.type.size
---| .opaqueInfo x => x.type.size + x.value.size
---| .inductInfo x => x.type.size
---| .ctorInfo x => x.type.size
---| .recInfo x => x.type.size + x.rules.foldr (fun a acc => a.size + acc) 0
---
---def ConstantInfo.msize : Lean.ConstantInfo -> Nat
---| .axiomInfo x => x.type.msize
---| .defnInfo x => x.type.msize + x.value.msize
---| .thmInfo x => x.type.msize + x.value.msize
---| .quotInfo x => x.type.msize
---| .opaqueInfo x => x.type.msize + x.value.msize
---| .inductInfo x => x.type.msize
---| .ctorInfo x => x.type.msize
---| .recInfo x => x.type.msize + x.rules.foldr (fun a acc => a.msize + acc) 0
 end Lean

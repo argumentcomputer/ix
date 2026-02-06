@@ -1409,19 +1409,10 @@ fn decompile_const(
 pub fn decompile_env(
   stt: &CompileState,
 ) -> Result<DecompileState, DecompileError> {
-  use std::sync::atomic::AtomicUsize;
-
   let dstt = DecompileState::default();
-  let start = std::time::SystemTime::now();
 
   // Constructor metadata is now embedded directly in ConstantMeta::Indc,
   // so no pre-indexing is needed.
-
-  let total = stt.env.named.len();
-  let done_count = AtomicUsize::new(0);
-  let last_progress = AtomicUsize::new(0);
-
-  eprintln!("Decompiling {} constants...", total);
 
   // Single pass through all named constants
   stt.env.named.par_iter().try_for_each(|entry| {
@@ -1493,21 +1484,6 @@ pub fn decompile_env(
     } else {
       Ok(())
     };
-
-    // Progress tracking (disabled for cleaner output - uncomment for debugging)
-    // let done = done_count.fetch_add(1, AtomicOrdering::SeqCst) + 1;
-    // let last = last_progress.load(AtomicOrdering::Relaxed);
-    // let pct = done * 100 / total.max(1);
-    // let last_pct = last * 100 / total.max(1);
-    // if pct > last_pct || done == total {
-    //   if last_progress.compare_exchange(
-    //     last, done, AtomicOrdering::SeqCst, AtomicOrdering::Relaxed
-    //   ).is_ok() {
-    //     let elapsed = start.elapsed().unwrap().as_secs_f32();
-    //     eprintln!("Progress: {}/{} ({}%) in {:.1}s", done, total, pct, elapsed);
-    //   }
-    // }
-    let _ = (&done_count, &last_progress, &start); // suppress unused warnings
 
     result
   })?;

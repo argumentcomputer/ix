@@ -451,8 +451,7 @@ where
     The sharing vector is sorted in topological order (leaves first). -/
 def buildSharingVec (exprs : Array Ixon.Expr) (sharedHashes : Array Address)
     (infoMap : Std.HashMap Address SubtermInfo)
-    (ptrToHash : Std.HashMap USize Address)
-    (_topoOrder : Array Address) : Array Ixon.Expr × Array Ixon.Expr := Id.run do
+    (ptrToHash : Std.HashMap USize Address) : Array Ixon.Expr × Array Ixon.Expr := Id.run do
 
   -- CRITICAL: Re-sort shared_hashes in topological order (leaves first).
   -- Use topologicalSort instead of filtering topoOrder from traversal.
@@ -505,6 +504,6 @@ def applySharing (exprs : Array Ixon.Expr) (dbg : Bool := false)
   if sharedHashes.isEmpty then
     return (exprs, #[])
   else
-    return buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash result.topoOrder
+    return buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
 
 end Ix.Sharing

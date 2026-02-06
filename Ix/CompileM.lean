@@ -53,6 +53,9 @@ instance : Inhabited CompileEnv where
 structure BlockResult where
   /-- The main block constant (Muts for mutual blocks, or direct constant) -/
   block : Ixon.Constant
+  /-- Pre-computed serialized bytes and address (avoids re-serialization). -/
+  blockBytes : ByteArray
+  blockAddr : Address
   /-- Metadata for the block constant (for singleton blocks without projections) -/
   blockMeta : Ixon.ConstantMeta := .empty
   /-- Projections: each name maps to its projection constant and metadata.
@@ -327,21 +330,10 @@ partial def compileName (name : Ix.Name) : CompileM Unit := do
       { c with blockNames := c.blockNames.insert addr name }
     compileName parent
 
-/-- Count bytes needed to represent a u64 in minimal little-endian form. -/
-def u64ByteCount (x : UInt64) : UInt8 :=
-  if x == 0 then 0
-  else if x < 0x100 then 1
-  else if x < 0x10000 then 2
-  else if x < 0x1000000 then 3
-  else if x < 0x100000000 then 4
-  else if x < 0x10000000000 then 5
-  else if x < 0x1000000000000 then 6
-  else if x < 0x100000000000000 then 7
-  else 8
-
-/-- Serialize a u64 in trimmed little-endian format (only necessary bytes). -/
+/-- Serialize a u64 in trimmed little-endian format (only necessary bytes).
+    Uses Ixon.u64ByteCount for the byte count calculation. -/
 def putU64TrimmedLE (x : UInt64) : ByteArray := Id.run do
-  let count := u64ByteCount x
+  let count := Ixon.u64ByteCount x
   let mut bytes := ByteArray.empty
   let mut v := x
   for _ in [:count.toNat] do
@@ -349,13 +341,14 @@ def putU64TrimmedLE (x : UInt64) : ByteArray := Id.run do
     v := v >>> 8
   bytes
 
-/-- Serialize a Nat using Tag0 encoding (variable length, compact for small values). -/
+/-- Serialize a Nat using Tag0 encoding (variable length, compact for small values).
+    Uses Ixon.u64ByteCount for the byte count calculation. -/
 def putTag0 (n : Nat) : ByteArray :=
   let x := n.toUInt64
   if x < 128 then
     ByteArray.mk #[x.toUInt8]
   else
-    let byteCount := u64ByteCount x
+    let byteCount := Ixon.u64ByteCount x
     ByteArray.mk #[0x80 ||| (byteCount - 1)] ++ putU64TrimmedLE x
 
 /-- Serialize an Ix.Substring to bytes, storing strings as blobs. -/
@@ -1267,30 +1260,40 @@ def compileMutConsts (classes : List (List MutConst))
   let mut allExprs : Array Ixon.Expr := #[]
   let mut allMetas : Array (Name × Ixon.ConstantMeta) := #[]
 
+  -- Only push one representative per equivalence class into dat,
+  -- since alpha-equivalent constants compile to identical data and share
+  -- the same class index in MutConst.ctx.
   for constClass in classes do
+    let mut representativePushed := false
     for const in constClass do
       match const with
       | .indc i => do
         let (ind, constMeta, ctorMetaPairs, exprs) ← withCurrent i.name (compileInductiveData i)
-        dat := dat.push (Ixon.MutConst.indc ind)
+        if !representativePushed then
+          dat := dat.push (Ixon.MutConst.indc ind)
+          for e in exprs do
+            allExprs := allExprs.push e
+          representativePushed := true
         allMetas := allMetas.push (i.name, constMeta)
-        for e in exprs do
-          allExprs := allExprs.push e
         for (ctorName, ctorMeta) in ctorMetaPairs do
           allMetas := allMetas.push (ctorName, ctorMeta)
       | .defn d => do
         let (defn, constMeta, tExpr, vExpr) ← withCurrent d.name (compileDefinitionData d)
-        dat := dat.push (Ixon.MutConst.defn defn)
+        if !representativePushed then
+          dat := dat.push (Ixon.MutConst.defn defn)
+          allExprs := allExprs.push tExpr
+          allExprs := allExprs.push vExpr
+          representativePushed := true
         allMetas := allMetas.push (d.name, constMeta)
-        allExprs := allExprs.push tExpr
-        allExprs := allExprs.push vExpr
       | .recr r => do
         let (recursor, constMeta, tExpr) ← withCurrent r.cnst.name (compileRecursorData r)
-        dat := dat.push (Ixon.MutConst.recr recursor)
+        if !representativePushed then
+          dat := dat.push (Ixon.MutConst.recr recursor)
+          allExprs := allExprs.push tExpr
+          for rule in recursor.rules do
+            allExprs := allExprs.push rule.rhs
+          representativePushed := true
         allMetas := allMetas.push (r.cnst.name, constMeta)
-        allExprs := allExprs.push tExpr
-        for rule in recursor.rules do
-          allExprs := allExprs.push rule.rhs
 
   pure (dat, allExprs, allMetas)
 
@@ -1304,7 +1307,7 @@ def compileMutualBlock (classes : List (List MutConst))
     let cache ← getBlockState
     let block := buildConstantWithSharing (.muts mutConsts) allExprs cache.refs cache.univs
 
-    -- Compute block address
+    -- Serialize once and compute block address
     let blockBytes := Ixon.ser block
     let blockAddr := Address.blake3 blockBytes
 
@@ -1335,7 +1338,7 @@ def compileMutualBlock (classes : List (List MutConst))
             cidx := cidx + 1
       idx := idx + 1
 
-    pure ⟨block, .empty, projections⟩
+    pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
 
 /-! ## Main Compilation Entry Points -/
 
@@ -1349,6 +1352,13 @@ def buildInductiveMutCtx (i : InductiveVal) (ctorVals : Array ConstructorVal) : 
     ctx := ctx.insert ctor.cnst.name (idx + 1)
   return ctx
 
+/-- Build a BlockResult from a block constant, serializing once. -/
+def BlockResult.mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta := .empty)
+    (projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]) : BlockResult :=
+  let blockBytes := Ixon.ser block
+  let blockAddr := Address.blake3 blockBytes
+  ⟨block, blockBytes, blockAddr, blockMeta, projections⟩
+
 /-- Compile a single Ix.ConstantInfo directly (singleton, non-mutual).
     Returns BlockResult with the constant and any projections needed. -/
 def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
@@ -1360,31 +1370,31 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
       let (defn, constMeta, tExpr, vExpr) ← compileDefinition d
       let cache ← getBlockState
       let block := buildConstantWithSharing (.defn defn) #[tExpr, vExpr] cache.refs cache.univs
-      pure ⟨block, constMeta, #[]⟩
+      pure (BlockResult.mk' block constMeta)
 
     | .thmInfo d =>
       let (defn, constMeta, tExpr, vExpr) ← compileTheorem d
       let cache ← getBlockState
       let block := buildConstantWithSharing (.defn defn) #[tExpr, vExpr] cache.refs cache.univs
-      pure ⟨block, constMeta, #[]⟩
+      pure (BlockResult.mk' block constMeta)
 
     | .opaqueInfo d =>
       let (defn, constMeta, tExpr, vExpr) ← compileOpaque d
       let cache ← getBlockState
       let block := buildConstantWithSharing (.defn defn) #[tExpr, vExpr] cache.refs cache.univs
-      pure ⟨block, constMeta, #[]⟩
+      pure (BlockResult.mk' block constMeta)
 
     | .axiomInfo a =>
       let (axio, constMeta, typeExpr) ← compileAxiom a
       let cache ← getBlockState
       let block := buildConstantWithSharing (.axio axio) #[typeExpr] cache.refs cache.univs
-      pure ⟨block, constMeta, #[]⟩
+      pure (BlockResult.mk' block constMeta)
 
     | .quotInfo q =>
       let (quot, constMeta, typeExpr) ← compileQuotient q
       let cache ← getBlockState
       let block := buildConstantWithSharing (.quot quot) #[typeExpr] cache.refs cache.univs
-      pure ⟨block, constMeta, #[]⟩
+      pure (BlockResult.mk' block constMeta)
 
     | .recInfo r =>
       let (recursor, constMeta, tExpr) ← compileRecursor r
@@ -1393,7 +1403,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
         allExprs := allExprs.push rule.rhs
       let cache ← getBlockState
       let block := buildConstantWithSharing (.recr recursor) allExprs cache.refs cache.univs
-      pure ⟨block, constMeta, #[]⟩
+      pure (BlockResult.mk' block constMeta)
 
     | .inductInfo i =>
       -- Look up constructor values from environment
@@ -1424,7 +1434,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
           let ctorProjInfo : Ixon.ConstantInfo := .cPrj ⟨0, cidx.toUInt64, blockAddr⟩
           let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
           projections := projections.push (ctorName, ctorProj, ctorMeta)
-        pure ⟨block, .empty, projections⟩
+        pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
 
     | .ctorInfo c =>
       -- Constructors are compiled by compiling their parent inductive
@@ -1453,7 +1463,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
             let ctorProjInfo : Ixon.ConstantInfo := .cPrj ⟨0, cidx.toUInt64, blockAddr⟩
             let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
             projections := projections.push (ctorName, ctorProj, ctorMeta)
-          pure ⟨block, .empty, projections⟩
+          pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
       | _ => throw (.invalidMutualBlock s!"Constructor has non-inductive parent")
 
 /-- Compile a constant by name (looks it up in the environment).
@@ -1540,9 +1550,9 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
 
     match compileBlockPure compileEnv all lo with
     | Except.ok (result, cache) =>
-      -- Store the main block constant
-      let blockBytes := Ixon.ser result.block
-      let blockAddr := Address.blake3 blockBytes
+      -- Use pre-computed serialized bytes and address
+      let blockBytes := result.blockBytes
+      let blockAddr := result.blockAddr
       compileEnv := { compileEnv with
         totalBytes := compileEnv.totalBytes + blockBytes.size
         constants := compileEnv.constants.insert blockAddr result.block
@@ -1553,16 +1563,12 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
       -- If there are projections, store them and map names to projection addresses
       if result.projections.isEmpty then
         -- No projections: map lowlink name directly to block
-        if dbg && (toString lo).containsSubstr "BLE'" then
-          dbg_trace s!"  [Compile] Storing {lo} -> {blockAddr} (no projections)"
         compileEnv := { compileEnv with nameToNamed := compileEnv.nameToNamed.insert lo ⟨blockAddr, result.blockMeta⟩ }
       else
         -- Store each projection and map name to projection address
         for (name, proj, constMeta) in result.projections do
           let projBytes := Ixon.ser proj
           let projAddr := Address.blake3 projBytes
-          if dbg && (toString name).containsSubstr "BLE'" then
-            dbg_trace s!"  [Compile] Storing projection {name} -> {projAddr}"
           compileEnv := { compileEnv with
             totalBytes := compileEnv.totalBytes + projBytes.size
             constants := compileEnv.constants.insert projAddr proj
@@ -1745,9 +1751,9 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
           | Except.error e =>
             return .error <| .system s!"Compilation error in {item.lo}: {e}"
           | Except.ok (blockResult, cache) =>
-            -- Compute addresses
-            let blockBytes := Ixon.ser blockResult.block
-            let blockAddr := Address.blake3 blockBytes
+            -- Use pre-computed serialized bytes and address
+            let blockBytes := blockResult.blockBytes
+            let blockAddr := blockResult.blockAddr
             let mut projections : Array (Name × Ixon.Constant × Address × ByteArray × Ixon.ConstantMeta) := #[]
             let mut projBytes := blockBytes.size
 

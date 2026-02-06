@@ -206,7 +206,7 @@ impl AiurGadget for Bytes2 {
   }
 }
 
-/// Accumulator of queries performed against `Bytes1`.
+/// Accumulator of queries performed against `Bytes2`.
 pub(crate) struct Bytes2Queries(Box<[[G; TRACE_WIDTH]]>);
 
 impl Bytes2Queries {

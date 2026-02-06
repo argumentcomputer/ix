@@ -5,7 +5,7 @@
 //! - Tag 1: str (parent : Name) (s : String) (hash : Address)
 //! - Tag 2: num (parent : Name) (i : Nat) (hash : Address)
 
-use std::ffi::{CString, c_void};
+use std::ffi::c_void;
 
 use crate::ix::env::{Name, NameData};
 use crate::lean::nat::Nat;
@@ -39,7 +39,7 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> *mut c_void {
       NameData::Str(parent, s, h) => {
         // str: (parent : Name) (s : String) (hash : Address)
         let parent_obj = build_name(cache, parent);
-        let s_cstr = CString::new(s.as_str()).unwrap();
+        let s_cstr = crate::lean::safe_cstring(s.as_str());
         let obj = lean_alloc_ctor(1, 3, 0);
         lean_ctor_set(obj, 0, parent_obj);
         lean_ctor_set(obj, 1, lean_mk_string(s_cstr.as_ptr()));

@@ -525,7 +525,11 @@ impl std::fmt::Display for SharingStats {
     writeln!(
       f,
       "Average usage: {:.2}",
-      self.total_usage as f64 / self.total_subterms as f64
+      if self.total_subterms > 0 {
+        self.total_usage as f64 / self.total_subterms as f64
+      } else {
+        0.0
+      }
     )?;
     writeln!(f)?;
     writeln!(f, "Filtering pipeline:")?;

@@ -1992,123 +1992,50 @@ pub fn compile_const(
     .get(name)
     .ok_or_else(|| CompileError::MissingConstant { name: name.pretty() })?;
 
+  // Helper: compile a single definition/theorem/opaque (non-mutual case).
+  fn compile_single_def(
+    name: &Name,
+    def: Def,
+    cache: &mut BlockCache,
+    stt: &CompileState,
+  ) -> Result<Address, CompileError> {
+    let mut_ctx = MutConst::single_ctx(def.name.clone());
+    let (data, meta) = compile_definition(&def, &mut_ctx, cache, stt)?;
+    let refs: Vec<Address> = cache.refs.iter().cloned().collect();
+    let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
+    let name_str = name.pretty();
+    let result =
+      apply_sharing_to_definition_with_stats(data, refs, univs, Some(&name_str));
+    let mut bytes = Vec::new();
+    result.constant.put(&mut bytes);
+    let serialized_size = bytes.len();
+    let addr = Address::hash(&bytes);
+    stt.env.store_const(addr.clone(), result.constant);
+    stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+    stt.block_stats.insert(
+      name.clone(),
+      BlockSizeStats {
+        hash_consed_size: result.hash_consed_size,
+        serialized_size,
+        const_count: 1,
+      },
+    );
+    Ok(addr)
+  }
+
   // Handle each constant type
   let addr = match cnst {
     LeanConstantInfo::DefnInfo(val) => {
       if all.len() == 1 {
-        // Single definition - no mutual block
-        let def = Def::mk_defn(val);
-        let mut_ctx = MutConst::single_ctx(def.name.clone());
-        let (data, meta) = compile_definition(&def, &mut_ctx, cache, stt)?;
-        let refs: Vec<Address> = cache.refs.iter().cloned().collect();
-        let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-        let name_str = name.pretty();
-        let result = apply_sharing_to_definition_with_stats(
-          data,
-          refs.clone(),
-          univs.clone(),
-          Some(&name_str),
-        );
-        let mut bytes = Vec::new();
-        result.constant.put(&mut bytes);
-        let serialized_size = bytes.len();
-
-        // Debug: log component sizes for large blocks
-        if serialized_size > 10_000_000 {
-          eprintln!("\n=== Serialization breakdown for {:?} ===", name_str);
-          eprintln!("  sharing vector len: {}", result.constant.sharing.len());
-          eprintln!("  refs vector len: {}", refs.len());
-          eprintln!("  univs vector len: {}", univs.len());
-          // Serialize components separately to measure sizes
-          let mut sharing_bytes = Vec::new();
-          for s in &result.constant.sharing {
-            crate::ix::ixon::serialize::put_expr(s, &mut sharing_bytes);
-          }
-          eprintln!("  sharing serialized: {} bytes", sharing_bytes.len());
-          if let ConstantInfo::Defn(def) = &result.constant.info {
-            let mut typ_bytes = Vec::new();
-            crate::ix::ixon::serialize::put_expr(&def.typ, &mut typ_bytes);
-            let mut val_bytes = Vec::new();
-            crate::ix::ixon::serialize::put_expr(&def.value, &mut val_bytes);
-            eprintln!("  typ serialized: {} bytes", typ_bytes.len());
-            eprintln!("  value serialized: {} bytes", val_bytes.len());
-          }
-          eprintln!("  TOTAL: {} bytes", serialized_size);
-        }
-
-        let addr = Address::hash(&bytes);
-        stt.env.store_const(addr.clone(), result.constant);
-        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
-        stt.block_stats.insert(
-          name.clone(),
-          BlockSizeStats {
-            hash_consed_size: result.hash_consed_size,
-            serialized_size,
-            const_count: 1,
-          },
-        );
-        addr
+        compile_single_def(name, Def::mk_defn(val), cache, stt)?
       } else {
-        // Part of a mutual block - handled separately
         compile_mutual(name, all, lean_env, cache, stt)?
       }
     },
 
     LeanConstantInfo::ThmInfo(val) => {
       if all.len() == 1 {
-        let def = Def::mk_theo(val);
-        let mut_ctx = MutConst::single_ctx(def.name.clone());
-        let (data, meta) = compile_definition(&def, &mut_ctx, cache, stt)?;
-        let refs: Vec<Address> = cache.refs.iter().cloned().collect();
-        let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-        let name_str = name.pretty();
-        let result = apply_sharing_to_definition_with_stats(
-          data,
-          refs.clone(),
-          univs.clone(),
-          Some(&name_str),
-        );
-        let mut bytes = Vec::new();
-        result.constant.put(&mut bytes);
-        let serialized_size = bytes.len();
-
-        // Debug: log component sizes for large blocks
-        if serialized_size > 10_000_000 {
-          eprintln!(
-            "\n=== Serialization breakdown for theorem {:?} ===",
-            name_str
-          );
-          eprintln!("  sharing vector len: {}", result.constant.sharing.len());
-          eprintln!("  refs vector len: {}", refs.len());
-          eprintln!("  univs vector len: {}", univs.len());
-          let mut sharing_bytes = Vec::new();
-          for s in &result.constant.sharing {
-            crate::ix::ixon::serialize::put_expr(s, &mut sharing_bytes);
-          }
-          eprintln!("  sharing serialized: {} bytes", sharing_bytes.len());
-          if let ConstantInfo::Defn(def) = &result.constant.info {
-            let mut typ_bytes = Vec::new();
-            crate::ix::ixon::serialize::put_expr(&def.typ, &mut typ_bytes);
-            let mut val_bytes = Vec::new();
-            crate::ix::ixon::serialize::put_expr(&def.value, &mut val_bytes);
-            eprintln!("  typ serialized: {} bytes", typ_bytes.len());
-            eprintln!("  value serialized: {} bytes", val_bytes.len());
-          }
-          eprintln!("  TOTAL: {} bytes", serialized_size);
-        }
-
-        let addr = Address::hash(&bytes);
-        stt.env.store_const(addr.clone(), result.constant);
-        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
-        stt.block_stats.insert(
-          name.clone(),
-          BlockSizeStats {
-            hash_consed_size: result.hash_consed_size,
-            serialized_size,
-            const_count: 1,
-          },
-        );
-        addr
+        compile_single_def(name, Def::mk_theo(val), cache, stt)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt)?
       }
@@ -2116,33 +2043,7 @@ pub fn compile_const(
 
     LeanConstantInfo::OpaqueInfo(val) => {
       if all.len() == 1 {
-        let def = Def::mk_opaq(val);
-        let mut_ctx = MutConst::single_ctx(def.name.clone());
-        let (data, meta) = compile_definition(&def, &mut_ctx, cache, stt)?;
-        let refs: Vec<Address> = cache.refs.iter().cloned().collect();
-        let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
-        let name_str = name.pretty();
-        let result = apply_sharing_to_definition_with_stats(
-          data,
-          refs,
-          univs,
-          Some(&name_str),
-        );
-        let mut bytes = Vec::new();
-        result.constant.put(&mut bytes);
-        let serialized_size = bytes.len();
-        let addr = Address::hash(&bytes);
-        stt.env.store_const(addr.clone(), result.constant);
-        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
-        stt.block_stats.insert(
-          name.clone(),
-          BlockSizeStats {
-            hash_consed_size: result.hash_consed_size,
-            serialized_size,
-            const_count: 1,
-          },
-        );
-        addr
+        compile_single_def(name, Def::mk_opaq(val), cache, stt)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt)?
       }
@@ -2280,17 +2181,27 @@ fn compile_mutual(
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
 
   for class in &sorted_classes {
+    // Only push one representative per equivalence class into ixon_mutuals,
+    // since alpha-equivalent constants compile to identical data and share
+    // the same class index in MutConst::ctx.
+    let mut representative_pushed = false;
     for cnst in class {
       match cnst {
         MutConst::Defn(def) => {
           let (data, meta) = compile_definition(def, &mut_ctx, cache, stt)?;
-          ixon_mutuals.push(IxonMutConst::Defn(data));
+          if !representative_pushed {
+            ixon_mutuals.push(IxonMutConst::Defn(data));
+            representative_pushed = true;
+          }
           all_metas.insert(def.name.clone(), meta);
         },
         MutConst::Indc(ind) => {
           let (data, meta, ctor_metas_vec) =
             compile_inductive(ind, &mut_ctx, cache, stt)?;
-          ixon_mutuals.push(IxonMutConst::Indc(data));
+          if !representative_pushed {
+            ixon_mutuals.push(IxonMutConst::Indc(data));
+            representative_pushed = true;
+          }
           // Register per-constructor ConstantMeta::Ctor entries
           for (ctor, ctor_meta) in ind.ctors.iter().zip(ctor_metas_vec) {
             all_metas.insert(ctor.cnst.name.clone(), ctor_meta);
@@ -2299,7 +2210,10 @@ fn compile_mutual(
         },
         MutConst::Recr(rec) => {
           let (data, meta) = compile_recursor(rec, &mut_ctx, cache, stt)?;
-          ixon_mutuals.push(IxonMutConst::Recr(data));
+          if !representative_pushed {
+            ixon_mutuals.push(IxonMutConst::Recr(data));
+            representative_pushed = true;
+          }
           all_metas.insert(rec.cnst.name.clone(), meta);
         },
       }
@@ -2481,13 +2395,12 @@ pub fn compile_env(
   let error: std::sync::Mutex<Option<CompileError>> =
     std::sync::Mutex::new(None);
 
+  // Condvar for signaling workers when new work is available or completion
+  let work_available = std::sync::Condvar::new();
+
   // Use scoped threads to borrow from parent scope
   let num_threads =
     thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-
-  // Progress tracking
-  let last_progress = AtomicUsize::new(0);
-  let last_progress_ref = &last_progress;
 
   // Compile blocks in parallel using work-stealing
 
@@ -2498,6 +2411,7 @@ pub fn compile_env(
   let block_info_ref = &block_info;
   let completed_ref = &completed;
   let ready_queue_ref = &ready_queue;
+  let condvar_ref = &work_available;
 
   thread::scope(|s| {
     // Spawn worker threads
@@ -2563,30 +2477,16 @@ pub fn compile_env(
                 }
               }
 
-              // Add newly-ready blocks to the queue
+              // Add newly-ready blocks to the queue and notify waiting workers
               if !newly_ready.is_empty() {
                 let mut queue = ready_queue_ref.lock().unwrap();
                 queue.extend(newly_ready);
+                condvar_ref.notify_all();
               }
 
               completed_ref.fetch_add(1, AtomicOrdering::SeqCst);
-
-              // Print progress every 10000 blocks or at 10%, 20%, etc.
-              // (disabled for cleaner output - uncomment for debugging)
-              // let done = completed_ref.load(AtomicOrdering::Relaxed);
-              // let last = last_progress_ref.load(AtomicOrdering::Relaxed);
-              // let pct = done * 100 / total_blocks;
-              // let last_pct = last * 100 / total_blocks;
-              // if pct > last_pct || done - last >= 10000 {
-              //   if last_progress_ref.compare_exchange(
-              //     last, done, AtomicOrdering::SeqCst, AtomicOrdering::Relaxed
-              //   ).is_ok() {
-              //     let elapsed = start_compile.elapsed().unwrap().as_secs_f32();
-              //     eprintln!("Progress: {}/{} blocks ({}%) in {:.1}s",
-              //       done, total_blocks, pct, elapsed);
-              //   }
-              // }
-              let _ = last_progress_ref; // suppress unused warning
+              // Wake all workers so they can check for completion
+              condvar_ref.notify_all();
             },
             None => {
               // No work available - check if we're done
@@ -2597,8 +2497,11 @@ pub fn compile_env(
               if error_ref.lock().unwrap().is_some() {
                 return;
               }
-              // Brief sleep to avoid busy-waiting
-              thread::sleep(std::time::Duration::from_micros(100));
+              // Wait for new work to become available
+              let queue = ready_queue_ref.lock().unwrap();
+              let _ = condvar_ref
+                .wait_timeout(queue, std::time::Duration::from_millis(10))
+                .unwrap();
             },
           }
         }
@@ -3079,6 +2982,217 @@ mod tests {
     assert!(stt.name_to_addr.contains_key(&axiom_name));
     assert!(stt.name_to_addr.contains_key(&def_name));
     assert_eq!(stt.env.const_count(), 2);
+  }
+
+  /// Test that alpha-equivalent mutual definitions produce correct projection
+  /// indices. Two definitions with identical type/value structure (but different
+  /// names) should form one equivalence class, and projections should resolve
+  /// to the single representative in the Muts array.
+  #[test]
+  fn test_compile_mutual_alpha_equivalent_defs() {
+    use crate::ix::env::{
+      ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
+    };
+
+    // Create two mutually recursive definitions with identical structure.
+    // Both: def X : Type := Type (referencing each other, same shape)
+    let name_f = Name::str(Name::anon(), "f".to_string());
+    let name_g = Name::str(Name::anon(), "g".to_string());
+
+    let typ = LeanExpr::sort(Level::succ(Level::zero())); // Type
+
+    // f and g reference each other but with identical structure:
+    // f : Type := g   and   g : Type := f
+    // After alpha-normalization (mutual refs become recur indices),
+    // both become: recur(0) since they're in the same class.
+    let def_f = DefinitionVal {
+      cnst: ConstantVal {
+        name: name_f.clone(),
+        level_params: vec![],
+        typ: typ.clone(),
+      },
+      value: LeanExpr::cnst(name_g.clone(), vec![]),
+      hints: ReducibilityHints::Opaque,
+      safety: DefinitionSafety::Safe,
+      all: vec![name_f.clone(), name_g.clone()],
+    };
+
+    let def_g = DefinitionVal {
+      cnst: ConstantVal {
+        name: name_g.clone(),
+        level_params: vec![],
+        typ: typ.clone(),
+      },
+      value: LeanExpr::cnst(name_f.clone(), vec![]),
+      hints: ReducibilityHints::Opaque,
+      safety: DefinitionSafety::Safe,
+      all: vec![name_f.clone(), name_g.clone()],
+    };
+
+    let mut lean_env = LeanEnv::default();
+    lean_env
+      .insert(name_f.clone(), LeanConstantInfo::DefnInfo(def_f));
+    lean_env
+      .insert(name_g.clone(), LeanConstantInfo::DefnInfo(def_g));
+    let lean_env = Arc::new(lean_env);
+
+    let result = compile_env(&lean_env);
+    assert!(
+      result.is_ok(),
+      "compile_env failed: {:?}",
+      result.err()
+    );
+
+    let stt = result.unwrap();
+
+    // Both names should be registered
+    assert!(
+      stt.name_to_addr.contains_key(&name_f),
+      "f not in name_to_addr"
+    );
+    assert!(
+      stt.name_to_addr.contains_key(&name_g),
+      "g not in name_to_addr"
+    );
+
+    // Both should point to the same block address (same projection,
+    // since they're alpha-equivalent and share idx=0)
+    let addr_f = stt.name_to_addr.get(&name_f).unwrap().clone();
+    let addr_g = stt.name_to_addr.get(&name_g).unwrap().clone();
+    assert_eq!(
+      addr_f, addr_g,
+      "alpha-equivalent mutual defs should have same projection address"
+    );
+
+    // Verify the block exists and has exactly 1 mutual entry
+    // (one representative for the equivalence class, not two)
+    for block_addr in stt.blocks.iter() {
+      let block = stt.env.get_const(&block_addr).unwrap();
+      if let ConstantInfo::Muts(muts) = &block.info {
+        assert_eq!(
+          muts.len(),
+          1,
+          "alpha-equivalent class should produce 1 entry in Muts, got {}",
+          muts.len()
+        );
+      }
+    }
+  }
+
+  /// Test that alpha-equivalent defs in a mutual block with a non-equivalent
+  /// third definition produce correct indices: 2 classes → 2 Muts entries,
+  /// with projections indexing correctly into the array.
+  #[test]
+  fn test_compile_mutual_alpha_equiv_with_different_third() {
+    use crate::ix::env::{
+      ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
+    };
+
+    let name_f = Name::str(Name::anon(), "f".to_string());
+    let name_g = Name::str(Name::anon(), "g".to_string());
+    let name_h = Name::str(Name::anon(), "h".to_string());
+
+    let typ = LeanExpr::sort(Level::succ(Level::zero())); // Type
+
+    // f and g are alpha-equivalent to each other:
+    //   f : Type := App(g, h)     g : Type := App(f, h)
+    // After alpha-normalization, both become App(recur(class_of_fg), recur(class_of_h))
+    // h is structurally different:
+    //   h : Type := f
+    // After alpha-normalization: recur(class_of_fg)
+    // All three form one SCC: f→g,h  g→f,h  h→f
+    let def_f = DefinitionVal {
+      cnst: ConstantVal {
+        name: name_f.clone(),
+        level_params: vec![],
+        typ: typ.clone(),
+      },
+      value: LeanExpr::app(
+        LeanExpr::cnst(name_g.clone(), vec![]),
+        LeanExpr::cnst(name_h.clone(), vec![]),
+      ),
+      hints: ReducibilityHints::Opaque,
+      safety: DefinitionSafety::Safe,
+      all: vec![name_f.clone(), name_g.clone(), name_h.clone()],
+    };
+
+    let def_g = DefinitionVal {
+      cnst: ConstantVal {
+        name: name_g.clone(),
+        level_params: vec![],
+        typ: typ.clone(),
+      },
+      value: LeanExpr::app(
+        LeanExpr::cnst(name_f.clone(), vec![]),
+        LeanExpr::cnst(name_h.clone(), vec![]),
+      ),
+      hints: ReducibilityHints::Opaque,
+      safety: DefinitionSafety::Safe,
+      all: vec![name_f.clone(), name_g.clone(), name_h.clone()],
+    };
+
+    let def_h = DefinitionVal {
+      cnst: ConstantVal {
+        name: name_h.clone(),
+        level_params: vec![],
+        typ: typ.clone(),
+      },
+      value: LeanExpr::cnst(name_f.clone(), vec![]),
+      hints: ReducibilityHints::Opaque,
+      safety: DefinitionSafety::Safe,
+      all: vec![name_f.clone(), name_g.clone(), name_h.clone()],
+    };
+
+    let mut lean_env = LeanEnv::default();
+    lean_env
+      .insert(name_f.clone(), LeanConstantInfo::DefnInfo(def_f));
+    lean_env
+      .insert(name_g.clone(), LeanConstantInfo::DefnInfo(def_g));
+    lean_env
+      .insert(name_h.clone(), LeanConstantInfo::DefnInfo(def_h));
+    let lean_env = Arc::new(lean_env);
+
+    let result = compile_env(&lean_env);
+    assert!(
+      result.is_ok(),
+      "compile_env failed: {:?}",
+      result.err()
+    );
+
+    let stt = result.unwrap();
+
+    // All three should be registered
+    assert!(stt.name_to_addr.contains_key(&name_f));
+    assert!(stt.name_to_addr.contains_key(&name_g));
+    assert!(stt.name_to_addr.contains_key(&name_h));
+
+    // f and g are alpha-equivalent → same projection address
+    let addr_f = stt.name_to_addr.get(&name_f).unwrap().clone();
+    let addr_g = stt.name_to_addr.get(&name_g).unwrap().clone();
+    assert_eq!(
+      addr_f, addr_g,
+      "alpha-equivalent f and g should share projection address"
+    );
+
+    // h is different → different projection address
+    let addr_h = stt.name_to_addr.get(&name_h).unwrap().clone();
+    assert_ne!(
+      addr_f, addr_h,
+      "h should have a different projection address than f/g"
+    );
+
+    // Verify Muts has exactly 2 entries (one per equivalence class)
+    for block_addr in stt.blocks.iter() {
+      let block = stt.env.get_const(&block_addr).unwrap();
+      if let ConstantInfo::Muts(muts) = &block.info {
+        assert_eq!(
+          muts.len(),
+          2,
+          "2 equivalence classes should produce 2 Muts entries, got {}",
+          muts.len()
+        );
+      }
+    }
   }
 
   // =========================================================================

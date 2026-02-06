@@ -6,13 +6,13 @@ use crate::ix::address::Address;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SerializeError {
   /// Unexpected end of buffer
-  UnexpectedEof { expected: &'static str },
+  UnexpectedEof { expected: String },
   /// Invalid tag byte
-  InvalidTag { tag: u8, context: &'static str },
+  InvalidTag { tag: u8, context: String },
   /// Invalid flag in tag
-  InvalidFlag { flag: u8, context: &'static str },
+  InvalidFlag { flag: u8, context: String },
   /// Invalid variant discriminant
-  InvalidVariant { variant: u64, context: &'static str },
+  InvalidVariant { variant: u64, context: String },
   /// Invalid boolean value
   InvalidBool { value: u8 },
   /// Address parsing error

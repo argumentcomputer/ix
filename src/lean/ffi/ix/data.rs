@@ -1,6 +1,6 @@
 //! Ix.DataValue, Ix.Syntax, Ix.SourceInfo build/decode/roundtrip FFI.
 
-use std::ffi::{CString, c_void};
+use std::ffi::c_void;
 
 use crate::ix::env::{
   DataValue, Int, Name, SourceInfo, Substring, Syntax, SyntaxPreresolved,
@@ -39,7 +39,7 @@ pub fn build_int(int: &Int) -> *mut c_void {
 /// Build a Ix.Substring.
 pub fn build_substring(ss: &Substring) -> *mut c_void {
   unsafe {
-    let s_cstr = CString::new(ss.str.as_str()).unwrap();
+    let s_cstr = crate::lean::safe_cstring(ss.str.as_str());
     let obj = lean_alloc_ctor(0, 3, 0);
     lean_ctor_set(obj, 0, lean_mk_string(s_cstr.as_ptr()));
     lean_ctor_set(obj, 1, build_nat(&ss.start_pos));
@@ -106,7 +106,7 @@ pub fn build_string_array(strings: &[String]) -> *mut c_void {
   unsafe {
     let arr = lean_alloc_array(strings.len(), strings.len());
     for (i, s) in strings.iter().enumerate() {
-      let s_cstr = CString::new(s.as_str()).unwrap();
+      let s_cstr = crate::lean::safe_cstring(s.as_str());
       lean_array_set_core(arr, i, lean_mk_string(s_cstr.as_ptr()));
     }
     arr
@@ -133,7 +133,7 @@ pub fn build_syntax(cache: &mut LeanBuildCache, syn: &Syntax) -> *mut c_void {
       // | atom (info : SourceInfo) (val : String) -- tag 2
       Syntax::Atom(info, val) => {
         let info_obj = build_source_info(info);
-        let val_cstr = CString::new(val.as_str()).unwrap();
+        let val_cstr = crate::lean::safe_cstring(val.as_str());
         let obj = lean_alloc_ctor(2, 2, 0);
         lean_ctor_set(obj, 0, info_obj);
         lean_ctor_set(obj, 1, lean_mk_string(val_cstr.as_ptr()));
@@ -195,7 +195,7 @@ pub fn build_data_value(
   unsafe {
     match dv {
       DataValue::OfString(s) => {
-        let s_cstr = CString::new(s.as_str()).unwrap();
+        let s_cstr = crate::lean::safe_cstring(s.as_str());
         let obj = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(obj, 0, lean_mk_string(s_cstr.as_ptr()));
         obj
