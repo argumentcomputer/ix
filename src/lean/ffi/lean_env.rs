@@ -997,7 +997,9 @@ fn serialized_meta_size(
   name_index: &crate::ix::ixon::metadata::NameIndex,
 ) -> usize {
   let mut buf = Vec::new();
-  meta.put_indexed(name_index, &mut buf).expect("metadata serialization failed");
+  meta
+    .put_indexed(name_index, &mut buf)
+    .expect("metadata serialization failed");
   buf.len()
 }
 

@@ -1046,9 +1046,8 @@ impl Proof {
     };
 
     // Proof bytes
-    let len =
-      usize::try_from(Tag0::get(buf)?.size)
-        .map_err(|_| "Proof::get: Tag0 size overflows usize".to_string())?;
+    let len = usize::try_from(Tag0::get(buf)?.size)
+      .map_err(|_| "Proof::get: Tag0 size overflows usize".to_string())?;
     if buf.len() < len {
       return Err(format!(
         "Proof::get: need {} bytes for proof data, have {}",

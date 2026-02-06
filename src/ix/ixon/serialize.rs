@@ -1014,7 +1014,11 @@ use super::env::Named;
 use super::metadata::{ConstantMeta, NameIndex, NameReverseIndex};
 
 /// Serialize a Named entry with indexed metadata.
-pub fn put_named_indexed(named: &Named, idx: &NameIndex, buf: &mut Vec<u8>) -> Result<(), String> {
+pub fn put_named_indexed(
+  named: &Named,
+  idx: &NameIndex,
+  buf: &mut Vec<u8>,
+) -> Result<(), String> {
   put_address(&named.addr, buf);
   named.meta.put_indexed(idx, buf)?;
   Ok(())
@@ -1262,7 +1266,14 @@ impl Env {
     }
     let comms_size = buf.len() - before_comms;
 
-    Ok((header_size, blobs_size, consts_size, names_size, named_size, comms_size))
+    Ok((
+      header_size,
+      blobs_size,
+      consts_size,
+      names_size,
+      named_size,
+      comms_size,
+    ))
   }
 }
 

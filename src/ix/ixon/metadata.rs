@@ -255,7 +255,11 @@ pub type NameIndex = HashMap<Address, u64>;
 /// Reverse name index for deserialization: position -> Address
 pub type NameReverseIndex = Vec<Address>;
 
-fn put_idx(addr: &Address, idx: &NameIndex, buf: &mut Vec<u8>) -> Result<(), String> {
+fn put_idx(
+  addr: &Address,
+  idx: &NameIndex,
+  buf: &mut Vec<u8>,
+) -> Result<(), String> {
   let i = idx.get(addr).copied().ok_or_else(|| {
     format!(
       "put_idx: address {:?} not in name index (index has {} entries)",
@@ -275,7 +279,11 @@ fn get_idx(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Address, String> {
     .ok_or_else(|| format!("invalid name index {i}, max {}", rev.len()))
 }
 
-fn put_idx_vec(addrs: &[Address], idx: &NameIndex, buf: &mut Vec<u8>) -> Result<(), String> {
+fn put_idx_vec(
+  addrs: &[Address],
+  idx: &NameIndex,
+  buf: &mut Vec<u8>,
+) -> Result<(), String> {
   put_vec_len(addrs.len(), buf);
   for a in addrs {
     put_idx(a, idx, buf)?;
@@ -300,7 +308,11 @@ fn get_idx_vec(
 // ===========================================================================
 
 impl DataValue {
-  pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) -> Result<(), String> {
+  pub fn put_indexed(
+    &self,
+    idx: &NameIndex,
+    buf: &mut Vec<u8>,
+  ) -> Result<(), String> {
     match self {
       // OfString, OfNat, OfInt, OfSyntax hold blob addresses (not in name index)
       Self::OfString(a) => {
@@ -352,7 +364,11 @@ impl DataValue {
 // KVMap and mdata indexed serialization
 // ===========================================================================
 
-fn put_kvmap_indexed(kvmap: &KVMap, idx: &NameIndex, buf: &mut Vec<u8>) -> Result<(), String> {
+fn put_kvmap_indexed(
+  kvmap: &KVMap,
+  idx: &NameIndex,
+  buf: &mut Vec<u8>,
+) -> Result<(), String> {
   put_vec_len(kvmap.len(), buf);
   for (k, v) in kvmap {
     put_idx(k, idx, buf)?;
@@ -410,7 +426,11 @@ impl ExprMetaData {
   // Tag 8: Prj { struct_name_idx, child: u32 }
   // Tag 9: Mdata { kvmap_count, kvmaps..., child: u32 }
 
-  pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) -> Result<(), String> {
+  pub fn put_indexed(
+    &self,
+    idx: &NameIndex,
+    buf: &mut Vec<u8>,
+  ) -> Result<(), String> {
     match self {
       Self::Leaf => put_u8(0, buf),
       Self::App { children } => {
@@ -511,7 +531,11 @@ impl ExprMetaData {
 // ===========================================================================
 
 impl ExprMeta {
-  pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) -> Result<(), String> {
+  pub fn put_indexed(
+    &self,
+    idx: &NameIndex,
+    buf: &mut Vec<u8>,
+  ) -> Result<(), String> {
     put_vec_len(self.nodes.len(), buf);
     for node in &self.nodes {
       node.put_indexed(idx, buf)?;
@@ -553,7 +577,11 @@ fn get_u64_vec(buf: &mut &[u8]) -> Result<Vec<u64>, String> {
 // ===========================================================================
 
 impl ConstantMeta {
-  pub fn put_indexed(&self, idx: &NameIndex, buf: &mut Vec<u8>) -> Result<(), String> {
+  pub fn put_indexed(
+    &self,
+    idx: &NameIndex,
+    buf: &mut Vec<u8>,
+  ) -> Result<(), String> {
     match self {
       Self::Empty => put_u8(255, buf),
       Self::Def {

@@ -1830,15 +1830,11 @@ pub fn compare_const(
     return Ok(if reversed { so.reverse() } else { *so });
   }
   let so: SOrd = match (x, y) {
-    (MutConst::Defn(x), MutConst::Defn(y)) => {
-      compare_defn(x, y, mut_ctx, stt)?
-    },
+    (MutConst::Defn(x), MutConst::Defn(y)) => compare_defn(x, y, mut_ctx, stt)?,
     (MutConst::Indc(x), MutConst::Indc(y)) => {
       compare_indc(x, y, mut_ctx, cache, stt)?
     },
-    (MutConst::Recr(x), MutConst::Recr(y)) => {
-      compare_recr(x, y, mut_ctx, stt)?
-    },
+    (MutConst::Recr(x), MutConst::Recr(y)) => compare_recr(x, y, mut_ctx, stt)?,
     _ => SOrd::cmp(&mut_const_kind(x), &mut_const_kind(y)),
   };
   if so.strong {
@@ -2241,12 +2237,8 @@ fn compile_mutual(
   let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
   let const_count = ixon_mutuals.len();
   let name_str = name.pretty();
-  let compiled = compile_mutual_block(
-    ixon_mutuals,
-    refs,
-    univs,
-    Some(&name_str),
-  );
+  let compiled =
+    compile_mutual_block(ixon_mutuals, refs, univs, Some(&name_str));
   let block_addr = compiled.addr.clone();
   stt.env.store_const(block_addr.clone(), compiled.constant);
   stt.blocks.insert(block_addr.clone());
@@ -3220,8 +3212,7 @@ mod tests {
       value: Expr::var(1),
     });
 
-    let compiled =
-      compile_mutual_block(vec![def1, def2], vec![], vec![], None);
+    let compiled = compile_mutual_block(vec![def1, def2], vec![], vec![], None);
     let constant = compiled.constant;
     let addr = compiled.addr;
 
