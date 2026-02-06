@@ -227,7 +227,7 @@ impl ReducibilityHints {
       Self::Abbrev => put_u8(1, buf),
       Self::Regular(x) => {
         put_u8(2, buf);
-        buf.extend_from_slice(&x.to_le_bytes());
+        Tag0::new(u64::from(*x)).put(buf);
       },
     }
   }
@@ -237,14 +237,8 @@ impl ReducibilityHints {
       0 => Ok(Self::Opaque),
       1 => Ok(Self::Abbrev),
       2 => {
-        if buf.len() < 4 {
-          return Err("ReducibilityHints::get: need 4 bytes".to_string());
-        }
-        let (bytes, rest) = buf.split_at(4);
-        *buf = rest;
-        Ok(Self::Regular(u32::from_le_bytes([
-          bytes[0], bytes[1], bytes[2], bytes[3],
-        ])))
+        let tag = Tag0::get(buf)?;
+        Ok(Self::Regular(tag.size as u32))
       },
       x => Err(format!("ReducibilityHints::get: invalid {x}")),
     }

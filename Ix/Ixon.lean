@@ -95,17 +95,6 @@ instance : Serialize UInt64 where
   put := putU64LE
   get := getU64LE
 
-def putU32LE (x : UInt32) : PutM Unit := do
-  for i in [0:4] do
-    putU8 ((x >>> (i.toUInt32 * 8)).toUInt8)
-
-def getU32LE : GetM UInt32 := do
-  let mut x : UInt32 := 0
-  for i in [0:4] do
-    let b ← getU8
-    x := x ||| (b.toUInt32 <<< (i.toUInt32 * 8))
-  return x
-
 def putBytes (x : ByteArray) : PutM Unit :=
   StateT.modifyGet (fun s => ((), s.append x))
 
@@ -1102,13 +1091,13 @@ def getBinderInfo : GetM Lean.BinderInfo := do
 def putReducibilityHints : Lean.ReducibilityHints → PutM Unit
   | .opaque => putU8 0
   | .abbrev => putU8 1
-  | .regular n => do putU8 2; putU32LE n
+  | .regular n => do putU8 2; putTag0 ⟨n.toUInt64⟩
 
 def getReducibilityHints : GetM Lean.ReducibilityHints := do
   match ← getU8 with
   | 0 => pure .opaque
   | 1 => pure .abbrev
-  | 2 => pure (.regular (← getU32LE))
+  | 2 => pure (.regular (← getTag0).size.toUInt32)
   | x => throw s!"invalid ReducibilityHints {x}"
 
 /-- Serialize DataValue with indexed addresses.
