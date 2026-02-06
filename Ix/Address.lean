@@ -6,12 +6,15 @@ import Blake3
 deriving instance Lean.ToExpr for ByteArray
 deriving instance Repr for ByteArray
 
+/-- A 32-byte Blake3 content hash used as a content address for Ix objects. -/
 structure Address where
   hash : ByteArray
   deriving Lean.ToExpr, BEq, Hashable
 
+/-- Compute the Blake3 hash of a `ByteArray`, returning an `Address`. -/
 def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.hash x).val⟩
 
+/-- Convert a nibble (0--15) to its lowercase hexadecimal character. -/
 def hexOfNat : Nat -> Option Char
 | 0 => .some '0'
 | 1 => .some '1'
@@ -31,6 +34,7 @@ def hexOfNat : Nat -> Option Char
 | 15 => .some 'f'
 |  _ => .none
 
+/-- Parse a hexadecimal character (case-insensitive) into a nibble value 0--15. -/
 def natOfHex : Char -> Option Nat
 | '0' => .some 0
 | '1' => .some 1
@@ -78,12 +82,14 @@ instance : Ord Address where
 instance : Inhabited Address where
   default := Address.blake3 ⟨#[]⟩
 
+/-- Decode two hex characters (high nibble, low nibble) into a single byte. -/
 def byteOfHex : Char -> Char -> Option UInt8
 | hi, lo => do
   let hi <- natOfHex hi
   let lo <- natOfHex lo
   UInt8.ofNat (hi <<< 4 + lo)
 
+/-- Parse a hexadecimal string into a `ByteArray`. Returns `none` on odd length or invalid chars. -/
 def bytesOfHex (s: String) : Option ByteArray := do
   let bs <- go s.toList
   return ⟨bs.toArray⟩
@@ -96,22 +102,18 @@ def bytesOfHex (s: String) : Option ByteArray := do
     | [] => return []
     | _ => .none
 
+/-- Parse a 64-character hex string into an `Address`. Returns `none` if the string is not a valid 32-byte hex encoding. -/
 def Address.fromString (s: String) : Option Address := do
   let ba <- bytesOfHex s
   if ba.size == 32 then .some ⟨ba⟩ else .none
 
+/-- Encode an `Address` as a hierarchical `Lean.Name` under the `Ix._#` namespace. -/
 def Address.toUniqueName (addr: Address): Lean.Name :=
   .str (.str (.str .anonymous "Ix") "_#") (hexOfBytes addr.hash)
 
+/-- Decode an `Address` from a `Lean.Name` previously created by `Address.toUniqueName`. -/
 def Address.fromUniqueName (name: Lean.Name) : Option Address :=
   match name with
   | .str (.str (.str .anonymous "Ix") "_#") s => Address.fromString s
   | _ => .none
 
-structure MetaAddress where
-  data : Address
-  «meta» : Address
-  deriving Inhabited, Nonempty, Lean.ToExpr, BEq, Hashable, Repr, Ord
-
-instance : ToString MetaAddress where
-  toString adr := s!"{hexOfBytes adr.data.hash}:{hexOfBytes adr.meta.hash}"

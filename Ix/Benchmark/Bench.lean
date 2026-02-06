@@ -1,6 +1,5 @@
 import Ix.Address
 import Ix.Meta
-import Ix.CompileM
 import Ix.Cronos
 import Ix.Address
 import Batteries

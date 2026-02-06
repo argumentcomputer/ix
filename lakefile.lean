@@ -12,7 +12,7 @@ lean_exe ix where
   supportInterpreter := true
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "fdf848d6cda9f080a09e49e760e2d6f70878800b"
+  "https://github.com/argumentcomputer/LSpec" @ "1e6da63a9c92473747e816d07d5c6f6bc7c8a59e"
 
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @ "f66794edb4612106cd7b04a7fbd04917fb1abb7d"
@@ -32,6 +32,12 @@ lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
 
+lean_exe «test-aiur» where
+  root := `Tests.AiurTest
+
+lean_exe «test-ixvm» where
+  root := `Tests.IxVMTest
+
 end Tests
 
 lean_lib IxTestLib where
@@ -46,6 +52,9 @@ lean_exe «bench-aiur» where
 
 lean_exe «bench-blake3» where
   root := `Benchmarks.Blake3
+
+lean_exe «bench-shardmap» where
+  root := `Benchmarks.ShardMap
 
 end Benchmarks
 

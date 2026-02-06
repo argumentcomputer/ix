@@ -1,4 +1,4 @@
-/-! Integration tests for the Ix CLI -/
+/- Integration tests for the Ix CLI -/
 
 def Tests.Cli.run (buildCmd: String) (buildArgs : Array String) (buildDir : Option System.FilePath) : IO Unit := do
   let proc : IO.Process.SpawnArgs :=

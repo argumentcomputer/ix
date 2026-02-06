@@ -64,14 +64,11 @@ def ixon := ⟦
     -- DPrj(DefinitionProj),
     -- 0xA7, definition projection
     -- Muts(Vec<MutConst>),                   -- 0xBX, mutual constants
-    -- Prof(Proof),                              -- 0xE0, zero-knowledge proof
-    Eval(Address, Address, Address, Address), -- 0xE1, evaluation claim
-    Chck(Address, Address, Address),          -- 0xE2, typechecking claim
-    Comm(Address, Address),                   -- 0xE3, cryptographic commitment
-    -- Envn(Env),                             -- 0xE4, multi-claim environment
-    Prim(BuiltIn)                             -- 0xE5, compiler built-ins
-    -- Meta(Metadata)
-    -- 0xFX, metadata
+    -- 0xE0: Env (environment), 0xE1: CheckProof, 0xE2: EvalProof
+    Chck(Address, Address, Address),             -- 0xE3, typechecking claim
+    Eval(Address, Address, Address, Address),    -- 0xE4, evaluation claim
+    Comm(Address, Address),                      -- 0xE5, cryptographic commitment
+    Prim(BuiltIn)                                -- 0xE6, compiler built-ins
   }
 ⟧
 

@@ -1,14 +1,25 @@
+//! Content-addressed filesystem store for Ix data.
+//!
+//! Objects are stored at `~/.ix/store/XX/YY/ZZ/<remaining_hex>` where `XX/YY/ZZ`
+//! are derived from the first 6 hex characters of the Blake3 hash. This provides
+//! deterministic addressing: identical content always maps to the same path.
+
 use crate::ix::address::Address;
 use std::env;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+/// Errors that can occur during store operations.
 #[derive(Debug)]
 pub enum StoreError {
+  /// The requested address does not exist in the store.
   UnknownAddress(Address),
+  /// An underlying filesystem I/O error.
   IoError(io::Error),
+  /// An error during ixon serialization or deserialization.
   IxonError(String),
+  /// The `HOME` environment variable is not set.
   NoHome(env::VarError),
 }
 
@@ -31,8 +42,10 @@ impl From<io::Error> for StoreError {
   }
 }
 
+/// Alias for `Result<T, StoreError>`.
 pub type StoreResult<T> = Result<T, StoreError>;
 
+/// Handle for reading and writing content-addressed objects under `~/.ix/store`.
 pub struct Store;
 
 impl Store {

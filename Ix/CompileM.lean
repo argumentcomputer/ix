@@ -1,1161 +1,1983 @@
+/-
+  CompileM: Lean Compiler for Ixon Format (Pure Implementation)
+
+  Architecture:
+  - CompileState: global immutable state (Reader)
+  - BlockEnv: per-block read-only context (Reader)
+  - BlockCache: per-block mutable state (State)
+  - Pure sequential compilation
+
+  This implementation is designed for correctness and formalization.
+  For performance, use the Rust implementation.
+-/
+
 import Std.Data.HashMap
+import Std.Sync
 import Ix.Ixon
-import Ix.Address
-import Ix.Mutual
+import Ix.Environment
+import Ix.Sharing
 import Ix.Common
-import Ix.CondenseM
-import Ix.GraphM
 import Ix.Store
+import Ix.Mutual
+import Ix.GraphM
+import Ix.CondenseM
 import Ix.SOrder
-import Ix.Cronos
+import Ix.CanonM
 
-namespace Ix
-open Ixon hiding Substring
+namespace Ix.CompileM
 
+-- Need Nonempty for partial function compilation
+instance : Nonempty SOrder := ⟨⟨true, .eq⟩⟩
+
+/-- Global compilation environment shared across all blocks. -/
 structure CompileEnv where
-  env: Lean.Environment
-  consts: Map Lean.Name MetaAddress
-  comms: Map Lean.Name MetaAddress
-  all: Set Lean.Name
-  current: Lean.Name
-  mutCtx: MutCtx
-  univCtx: List Lean.Name
+  /-- Canonicalized Leon environment -/
+  env : Ix.Environment
+  /-- Map from constant name to Named (address + metadata) -/
+  nameToNamed : Std.HashMap Name Ixon.Named
+  /-- Compiled constants storage -/
+  constants : Std.HashMap Address Ixon.Constant
+  /-- Blob storage for literals -/
+  blobs : Std.HashMap Address ByteArray
+  /-- Total bytes of serialized constants (for profiling) -/
+  totalBytes : Nat
 
-def CompileEnv.init
-  (env: Lean.Environment)
-  (consts: Map Lean.Name MetaAddress)
-  (comms: Map Lean.Name MetaAddress)
-  (all: Set Lean.Name)
-  (current: Lean.Name)
-  : CompileEnv := ⟨env, consts, comms, all, current, default, default⟩
+/-- Initialize global state from canonicalization result. -/
+def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
+  { env, nameToNamed := {}, constants := {}, blobs := {}, totalBytes := 0 }
 
-structure CompileState where
-  constCache: Map Lean.Name MetaAddress
-  univCache: Map Lean.Level MetaAddress
-  exprCache: Map Lean.Expr MetaAddress
-  synCache: Map Lean.Syntax Ixon.Syntax
-  nameCache: Map Lean.Name Address
-  strCache: Map String Address
-  constCmp: Map (Lean.Name × Lean.Name) Ordering
-  blocks: Set MetaAddress
-  deriving Inhabited, Nonempty
+instance : Inhabited CompileEnv where
+  default := { env := { consts := {} }, nameToNamed := {}, constants := {}, blobs := {}, totalBytes := 0 }
 
-def CompileState.init : CompileState :=
-  ⟨default, default, default, default, default, default, default, default⟩
+/-- Result of compiling a block, including the main constant and any projections. -/
+structure BlockResult where
+  /-- The main block constant (Muts for mutual blocks, or direct constant) -/
+  block : Ixon.Constant
+  /-- Pre-computed serialized bytes and address (avoids re-serialization). -/
+  blockBytes : ByteArray
+  blockAddr : Address
+  /-- Metadata for the block constant (for singleton blocks without projections) -/
+  blockMeta : Ixon.ConstantMeta := .empty
+  /-- Projections: each name maps to its projection constant and metadata.
+      Empty for single non-inductive constants (name maps directly to block).
+      For inductives/mutual blocks: contains IPrj/DPrj/RPrj/CPrj for each name. -/
+  projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]
+  deriving Inhabited
 
-inductive CompileError where
-| unknownConstant (curr unknown: Lean.Name): CompileError
-| levelMetavariable : Lean.Level -> CompileError
-| exprMetavariable : Lean.Expr -> CompileError
-| exprFreeVariable : Lean.Expr -> CompileError
-| invalidBVarIndex : Nat -> CompileError
-| levelNotFound : Lean.Name -> Lean.Name -> List Lean.Name -> String -> CompileError
-| invalidConstantKind : Lean.Name -> String -> String -> CompileError
-| mutualBlockMissingProjection : Lean.Name -> CompileError
---| nonRecursorExtractedFromChildren : Lean.Name → CompileError
-| cantFindMutIndex : Lean.Name -> MutCtx -> CompileError
-| cantFindMutMeta : Lean.Name -> Map Address Address -> CompileError
-| kernelException : Lean.Kernel.Exception → CompileError
---| cantPackLevel : Nat → CompileError
---| nonCongruentInductives : PreInd -> PreInd -> CompileError
-| alphaInvarianceFailure : Lean.ConstantInfo -> MetaAddress -> Lean.ConstantInfo -> MetaAddress -> CompileError
---| dematBadMutualBlock: MutualBlock -> CompileError
---| dematBadInductiveBlock: InductiveBlock -> CompileError
-| badMutualBlock: List (List MutConst) -> CompileError
-| badIxonDeserialization : Address -> String -> CompileError
-| unknownStoreAddress : Address -> CompileError
-| condensationError : Lean.Name -> CompileError
---| emptyIndsEquivalenceClass: List (List PreInd) -> CompileError
+/-- Per-block compilation state and tables. -/
+structure BlockState where
+  /-- Expression compilation cache (keyed by Expr for O(1) lookup).
+      Value is (compiled expression, arena root index). -/
+  exprCache : Std.HashMap Expr (Ixon.Expr × UInt64) := {}
+  /-- Universe compilation cache (keyed by Level for O(1) lookup) -/
+  univCache : Std.HashMap Level Ixon.Univ := {}
+  /-- Constant comparison cache (by name pairs) -/
+  cmpCache : Std.HashMap (Name × Name) Ordering := {}
+  /-- Reference table (ordered unique addresses) -/
+  refs : Array Address := #[]
+  refsIndex : Std.HashMap Address UInt64 := {}
+  /-- Universe table (ordered unique universes) -/
+  univs : Array Ixon.Univ := #[]
+  univsIndex : Std.HashMap Ixon.Univ UInt64 := {}
+  /-- Blob storage collected during block compilation -/
+  blockBlobs : Std.HashMap Address ByteArray := {}
+  /-- Name components collected during block compilation -/
+  blockNames : Std.HashMap Address Ix.Name := {}
+  /-- Arena-based expression metadata for the current constant -/
+  arena : Ixon.ExprMetaArena := {}
+  deriving Inhabited
 
-def CompileError.pretty : CompileError -> IO String
-| .unknownConstant c n => pure s!"Unknown constant '{n}' @ {c}"
-| .levelMetavariable l => pure s!"Unfilled level metavariable on universe '{l}'"
-| .exprMetavariable e => pure s!"Unfilled level metavariable on expression '{e}'"
-| .exprFreeVariable e => pure s!"Free variable in expression '{e}'"
-| .invalidBVarIndex idx => pure s!"Invalid index {idx} for bound variable context"
-| .levelNotFound c n ns msg => pure s!"'Level {n}' not found in '{ns}', {msg} @ {c}"
-| .invalidConstantKind n ex gt => pure s!"Invalid constant kind for '{n}'. Expected '{ex}' but got '{gt}'"
-| .mutualBlockMissingProjection n => pure s!"Constant '{n}' wasn't content-addressed in mutual block"
-| .cantFindMutIndex n mc => pure s!"Can't find index for mutual definition '{n}' in {repr mc}"
-| .cantFindMutMeta n ms => pure s!"Can't find metadata for mutual definition
-'{n}' in {repr ms}"
-| .kernelException e => (·.pretty 80) <$> (e.toMessageData .empty).format
-| .alphaInvarianceFailure x xa y ya =>
-  pure s!"alpha invariance failure {repr x} hashes to {xa}, but {repr y} hashes to {ya}"
-| .badMutualBlock block => pure s!"bad mutual block {repr block}"
-| .badIxonDeserialization a s => pure s!"bad deserialization of ixon at {a}, error: {s}"
-| .unknownStoreAddress a => pure s!"unknown store address {a}"
-| .condensationError n => pure s!"condensation error {n}"
-
-abbrev CompileM :=
-  ReaderT CompileEnv <| ExceptT CompileError <| StateT CompileState IO
-
-abbrev CompileM.Result α := (Except CompileError α × CompileState)
-
-def CompileM.run (env: CompileEnv) (stt: CompileState) (c : CompileM α)
-  : IO (Except CompileError α × CompileState)
-  := StateT.run (ExceptT.run (ReaderT.run c env)) stt
-
---def randByte (lo hi: Nat): CompileM Nat := do
---  modifyGet fun s =>
---  let (res, g') := randNat s.prng lo hi
---  (res, {s with prng := g'})
---
---def freshSecret : CompileM Address := do
---  let mut secret: ByteArray := default
---  for _ in [:32] do
---    let rand <- randByte 0 255
---    secret := secret.push rand.toUInt8
---  return ⟨secret⟩
-
-
--- add binding name to local context
-def CompileM.withCurrent (name: Lean.Name) : CompileM α -> CompileM α :=
-  withReader $ fun c => { c with current := name }
-
--- add levels to local context
-def CompileM.withLevels (lvls : List Lean.Name) : CompileM α -> CompileM α :=
-  withReader $ fun c => { c with univCtx := lvls }
-
--- add mutual recursion info to local context
-def CompileM.withMutCtx (mutCtx : MutCtx) : CompileM α -> CompileM α :=
-  withReader $ fun c => { c with mutCtx := mutCtx }
-
--- reset local context
-def CompileM.resetCtx (current: Lean.Name) : CompileM α -> CompileM α :=
-  withReader $ fun c => { c with univCtx := [], mutCtx := {}, current }
-
-def storeIxon (ixon: Ixon): CompileM Address := do
-  liftM (Store.write (Ixon.ser ixon)).toIO
-
-def storeString (str: String): CompileM Address := do
-  match (<- get).strCache.find? str with
-  | some addr => pure addr
+/-- Get or insert a reference into the refs table, returning its index. -/
+def BlockState.internRef (cache : BlockState) (addr : Address) : BlockState × UInt64 :=
+  match cache.refsIndex.get? addr with
+  | some idx => (cache, idx)
   | none =>
-  liftM (Store.write (str.toUTF8)).toIO
+    let idx := cache.refs.size.toUInt64
+    ({ cache with
+      refs := cache.refs.push addr
+      refsIndex := cache.refsIndex.insert addr idx
+    }, idx)
 
-def storeNat (nat: Nat): CompileM Address := do
-  liftM (Store.write (⟨nat.toBytesLE⟩)).toIO
+/-- Get or insert a universe into the univs table, returning its index. -/
+def BlockState.internUniv (cache : BlockState) (u : Ixon.Univ) : BlockState × UInt64 :=
+  match cache.univsIndex.get? u with
+  | some idx => (cache, idx)
+  | none =>
+    let idx := cache.univs.size.toUInt64
+    ({ cache with
+      univs := cache.univs.push u
+      univsIndex := cache.univsIndex.insert u idx
+    }, idx)
 
-def storeSerial [Serialize A] (a: A): CompileM Address := do
-  liftM (Store.write (Ixon.ser a)).toIO
+/-- Per-block compilation environment. -/
+structure BlockEnv where
+  /-- All constants in current mutual block -/
+  all : Set Name
+  /-- Current constant being compiled -/
+  current : Name
+  /-- Mutual recursion context: name → index within block -/
+  mutCtx : MutCtx
+  /-- Universe parameter context (de Bruijn indices) -/
+  univCtx : List Name
 
-def storeMeta (met: Metadata): CompileM Address := do
-  liftM (Store.write (Ixon.ser met)).toIO
+/-! ## Compilation Error -/
 
-def compileName (name: Lean.Name): CompileM Address := do
-  match (<- get).nameCache.find? name with
-  | some addr =>
-    --dbg_trace "compileName cached {(<- read).current} {name}"
-    pure addr
-  | none => do
-    --dbg_trace "compileName {(<- read).current} {name}"
-    let addr <- go name
-    modifyGet fun stt => (addr, { stt with
-      nameCache := stt.nameCache.insert name addr
-    })
-  where
-    go : Lean.Name -> CompileM Address
-    | .anonymous => storeIxon .nanon
-    | .str n s => do
-      let n' <- compileName n
-      let s' <- storeString s
-      storeIxon (.nstr n' s')
-    | .num n i => do
-      let n' <- compileName n
-      let i' <- storeNat i
-      storeIxon (.nnum n' i')
+/-- Compilation error type. Variant order matches Rust CompileError (tags 0–5). -/
+inductive CompileError where
+  | missingConstant (name : String)
+  | missingAddress (addr : Address)
+  | invalidMutualBlock (reason : String)
+  | unsupportedExpr (desc : String)
+  | unknownUnivParam (curr param : String)
+  | serializeError (err : Ixon.SerializeError)
+  deriving Repr, BEq
 
-/-- Defines an ordering for Lean universes -/
-def compareLevel (xctx yctx: List Lean.Name)
-  : Lean.Level -> Lean.Level -> CompileM SOrder
-  | x@(.mvar ..), _ => throw $ .levelMetavariable x
-  | _, y@(.mvar ..) => throw $ .levelMetavariable y
-  | .zero, .zero => return ⟨true, .eq⟩
-  | .zero, _ => return ⟨true, .lt⟩
-  | _, .zero => return ⟨true, .gt⟩
-  | .succ x, .succ y => compareLevel xctx yctx x y
-  | .succ .., _ => return ⟨true, .lt⟩
-  | _, .succ .. => return ⟨true, .gt⟩
-  | .max xl xr, .max yl yr => SOrder.cmpM
-    (compareLevel xctx yctx xl yl) (compareLevel xctx yctx xr yr)
-  | .max .., _ => return ⟨true, .lt⟩
-  | _, .max .. => return ⟨true, .gt⟩
-  | .imax xl xr, .imax yl yr => SOrder.cmpM
-      (compareLevel xctx yctx xl yl) (compareLevel xctx yctx xr yr)
-  | .imax .., _ => return ⟨true, .lt⟩
-  | _, .imax .. => return ⟨true, .gt⟩
-  | .param x, .param y => do
-    match (xctx.idxOf? x), (yctx.idxOf? y) with
-    | some xi, some yi => return ⟨true, compare xi yi⟩
-    | none,    _       =>
-      throw $ .levelNotFound (<- read).current x xctx s!"compareLevel"
-    | _,       none    =>
-      throw $ .levelNotFound (<- read).current y yctx s!"compareLevel"
+instance : ToString CompileError where
+  toString
+  | .missingConstant name => s!"missingConstant: {name}"
+  | .missingAddress addr => s!"missingAddress: {addr}"
+  | .invalidMutualBlock reason => s!"invalidMutualBlock: {reason}"
+  | .unsupportedExpr desc => s!"unsupportedExpr: {desc}"
+  | .unknownUnivParam curr param => s!"unknownUnivParam: compiling {curr}, param {param}"
+  | .serializeError err => s!"serializeError: {err}"
 
-/-- Canonicalizes a Lean universe level --/
-def compileLevel (lvl: Lean.Level): CompileM MetaAddress := do
-  match (<- get).univCache.find? lvl with
-  | some l =>
-    --dbg_trace "compileLevel cached {(<- get).univCache.size} {(<- read).current}"
-    pure l
-  | none => do
-    --dbg_trace "compileLevel {(<- get).univCache.size} {(<- read).current}"
-    let (dat, met) <- go lvl
-    let maddr := ⟨<- storeIxon dat, <- storeIxon met⟩
-    modifyGet fun stt => (maddr, { stt with
-      univCache := stt.univCache.insert lvl maddr
-    })
-  where
-    go : Lean.Level -> CompileM (Ixon × Ixon)
-    | .zero => pure (.uzero, .meta default)
-    | .succ x => do
-      let ⟨a, m⟩ <- compileLevel x
-      pure (.usucc a, .meta ⟨[.link m]⟩)
-    | .max x y => do
-      let ⟨xa, xm⟩ <- compileLevel x
-      let ⟨ya, ym⟩ <- compileLevel y
-      pure (.umax xa ya, .meta ⟨[.link xm, .link ym]⟩)
-    | .imax x y => do
-      let ⟨xa, xm⟩ <- compileLevel x
-      let ⟨ya, ym⟩ <- compileLevel y
-      pure (.uimax xa ya, .meta ⟨[.link xm, .link ym]⟩)
-    | .param n => do
-      let lvls := (← read).univCtx
-      match lvls.idxOf? n with
-      | some i => pure (.uvar i, .meta ⟨[.link (<- compileName n)]⟩)
-      | none   => do throw <| .levelNotFound (<- read).current n lvls s!"compileLevel"
-    | l@(.mvar ..) => throw $ .levelMetavariable l
+abbrev CompileM := ReaderT (CompileEnv × BlockEnv) (ExceptT CompileError (StateT BlockState Id))
 
-def compileSubstring : Substring.Raw -> CompileM Ixon.Substring
-| ⟨str, startPos, stopPos⟩ => do
-    pure ⟨<- storeString str, startPos.byteIdx, stopPos.byteIdx⟩
+/-- Run a CompileM computation purely. -/
+def CompileM.run (compileEnv : CompileEnv) (blockEnv : BlockEnv) (blockState : BlockState)
+    (m : CompileM α) : Except CompileError (α × BlockState) :=
+  match StateT.run (ExceptT.run (ReaderT.run m (compileEnv, blockEnv))) blockState with
+  | (Except.ok a, state') => Except.ok (a, state')
+  | (Except.error e, _) => Except.error e
 
-def compileSourceInfo : Lean.SourceInfo -> CompileM Ixon.SourceInfo
-| .original l p t e => do
-  let l' <- compileSubstring l
-  let t' <- compileSubstring t
-  pure <| .original l' p.byteIdx t' e.byteIdx
-| .synthetic p e c => pure (.synthetic p.byteIdx e.byteIdx c)
-| .none => pure .none
+/-- Get the global compile environment. -/
+def getCompileEnv : CompileM CompileEnv := do
+  pure (← read).1
 
-def compilePreresolved : Lean.Syntax.Preresolved -> CompileM Ixon.Preresolved
-| .namespace ns => .namespace <$> compileName ns
-| .decl n fs => .decl <$> compileName n <*> fs.mapM storeString
+/-- Get the block environment. -/
+def getBlockEnv : CompileM BlockEnv := do
+  pure (← read).2
 
-partial def compileSyntax (syn: Lean.Syntax) : CompileM Ixon.Syntax := do
-  --dbg_trace "compileSyntax {(<- read).current}"
-  match (<- get).synCache.find? syn with
-  | some x => pure x
-  | none => do
-    let syn' <- go syn
-    modifyGet fun stt => (syn', { stt with
-      synCache := stt.synCache.insert syn syn'
-    })
-  where
-    go : Lean.Syntax -> CompileM Ixon.Syntax
-    | .missing => pure .missing
-    | .node info kind args => do
-      let info' <- compileSourceInfo info
-      let kind' <- compileName kind
-      let args' <- args.toList.mapM (compileSyntax · >>= storeSerial)
-      pure <| .node info' kind' args'
-    | .atom info val => do
-      let info' <- compileSourceInfo info
-      let val' <- storeString val
-      pure <| .atom info' val'
-    | .ident info rawVal val preresolved => do
-      let info' <- compileSourceInfo info
-      let rawVal' <- compileSubstring rawVal
-      let val' <- compileName val
-      let ps' <- preresolved.mapM compilePreresolved
-      pure <| .ident info' rawVal' val' ps'
+/-- Get the block state. -/
+def getBlockState : CompileM BlockState := do
+  get
 
-def compileDataValue : Lean.DataValue -> CompileM Ixon.DataValue
-| .ofString s => .ofString <$> storeString s
-| .ofBool b => pure (.ofBool b)
-| .ofName n => .ofName <$> compileName n
-| .ofNat i => .ofNat <$> storeNat i
-| .ofInt i => .ofInt <$> storeSerial i
-| .ofSyntax s => .ofSyntax <$> (compileSyntax s >>= storeSerial)
+/-- Modify the block state. -/
+def modifyBlockState (f : BlockState → BlockState) : CompileM Unit := do
+  modify f
 
-def compileKVMap (map: Lean.KVMap): CompileM Address := do
-  let mut list := #[]
-  for (name, dataValue) in map do
-    let n <- compileName name
-    let d <- compileDataValue dataValue
-    list := list.push (n, d)
-  storeIxon (.meta ⟨[.kvmap list.toList]⟩)
+/-- Modify the block state and return a value. -/
+def modifyGetBlockState (f : BlockState → α × BlockState) : CompileM α := do
+  modifyGet fun state =>
+    let (a, state') := f state
+    (a, state')
 
-def findLeanConst (name : Lean.Name) : CompileM Lean.ConstantInfo := do
-  match (<- read).env.constants.find? name with
+/-- Modify the block environment locally. -/
+def withBlockEnv (f : BlockEnv → BlockEnv) (m : CompileM α) : CompileM α :=
+  withReader (fun (env, blockEnv) => (env, f blockEnv)) m
+
+/-- Set universe context. -/
+def withUnivCtx (univCtx : List Name) : CompileM α → CompileM α :=
+  withBlockEnv fun env => { env with univCtx }
+
+/-- Set mutual context. -/
+def withMutCtx (mutCtx : MutCtx) : CompileM α → CompileM α :=
+  withBlockEnv fun env => { env with mutCtx }
+
+/-- Get the mutual context as an array of name hashes, ordered by index then name. -/
+def getMutCtxAddrs : CompileM (Array Address) := do
+  let ctx := (← getBlockEnv).mutCtx
+  pure <| ctx.toList.toArray.qsort (fun a b =>
+    if a.2 != b.2 then a.2 < b.2 else (compare a.1 b.1).isLT) |>.map (·.1.getHash)
+
+/-- Set current constant. -/
+def withCurrent (name : Name) : CompileM α → CompileM α :=
+  withBlockEnv fun env => { env with current := name }
+
+/-- Set all constants in block. -/
+def withAll (all : Set Name) : CompileM α → CompileM α :=
+  withBlockEnv fun env => { env with all }
+
+/-! ## Metadata Management (Arena-Based) -/
+
+/-- Allocate a new node in the arena, returning its index. -/
+def allocArenaNode (node : Ixon.ExprMetaData) : CompileM UInt64 :=
+  modifyGetBlockState fun c =>
+    let idx := c.arena.nodes.size.toUInt64
+    (idx, { c with arena := { nodes := c.arena.nodes.push node } })
+
+/-- Take the current arena and reset for next constant. -/
+def takeArena : CompileM Ixon.ExprMetaArena :=
+  modifyGetBlockState fun c => (c.arena, { c with arena := {} })
+
+/-- Reset the arena for a new constant. -/
+def resetArena : CompileM Unit :=
+  modifyBlockState fun c => { c with arena := {} }
+
+/-- Clear the expression cache (between constants to avoid cross-constant arena references). -/
+def clearExprCache : CompileM Unit :=
+  modifyBlockState fun c => { c with exprCache := {} }
+
+/-! ## Universe Compilation -/
+
+/-- Compile an Ix.Level to Ixon.Univ type. -/
+partial def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
+  -- Check cache first (O(1) lookup via embedded hash)
+  let state ← getBlockState
+  if let some u := state.univCache.get? lvl then
+    return u
+
+  let u ← match lvl with
+  | .zero _ => pure .zero
+  | .succ l _ => .succ <$> compileUniv l
+  | .max l r _ => .max <$> compileUniv l <*> compileUniv r
+  | .imax l r _ => .imax <$> compileUniv l <*> compileUniv r
+  | .param name _ => do
+    let ctx := (← getBlockEnv).univCtx
+    match ctx.idxOf? name with
+    | some i => pure (.var i.toUInt64)
+    | none => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{name}")
+  | .mvar _ _ => throw (.unsupportedExpr "level metavariable")
+
+  -- Cache result
+  modifyBlockState fun c => { c with univCache := c.univCache.insert lvl u }
+  pure u
+
+/-- Intern a universe into the block's univs table, returning its index. -/
+def internUniv (u : Ixon.Univ) : CompileM UInt64 :=
+  modifyGetBlockState fun state =>
+    let (state', idx) := state.internUniv u
+    (idx, state')
+
+/-- Compile and intern an Ix.Level, returning its univs table index. -/
+def compileAndInternUniv (lvl : Level) : CompileM UInt64 := do
+  let u ← compileUniv lvl
+  internUniv u
+
+/-! ## Reference Handling -/
+
+/-- Intern an address into the block's refs table, returning its index. -/
+def internRef (addr : Address) : CompileM UInt64 :=
+  modifyGetBlockState fun state =>
+    let (state', idx) := state.internRef addr
+    (idx, state')
+
+/-- Look up a constant's address from the global compile environment. -/
+def lookupConstAddr (name : Name) : CompileM Address := do
+  let env ← getCompileEnv
+  match env.nameToNamed.get? name with
+  | some named => pure named.addr
+  | none => throw (.missingConstant s!"{name}")
+
+/-- Find a constant in the Ix environment. -/
+def findConst (name : Name) : CompileM ConstantInfo := do
+  let env ← getCompileEnv
+  match env.env.consts.get? name with
   | some const => pure const
-  | none => throw $ .unknownConstant (<- read).current name
+  | none => throw (.missingConstant s!"{name}")
 
-def MutConst.mkIndc (i: Lean.InductiveVal) : CompileM MutConst := do
-  let ctors <- i.ctors.mapM getCtor
-  return .indc ⟨i.name, i.levelParams, i.type, i.numParams, i.numIndices, i.all,
-    ctors, i.numNested, i.isRec, i.isReflexive, i.isUnsafe⟩
-  where
-    getCtor (name: Lean.Name) : CompileM (Lean.ConstructorVal) := do
-      match (<- findLeanConst name) with
-      | .ctorInfo c => pure c
-      | _ => throw <| .invalidConstantKind name "constructor" ""
+/-- Get the Expr for a constant's type. -/
+def getConstType (name : Name) : CompileM Expr := do
+  let const ← findConst name
+  pure const.getCnst.type
 
-def compileReference (name: Lean.Name): CompileM MetaAddress := do
-  if name == Lean.Name.mkSimple "_obj" then
-    return ⟨<- storeIxon <| .prim .obj, <- storeIxon <| .meta ⟨[]⟩⟩
-  else if name == Lean.Name.mkSimple "_neutral" then
-    return ⟨<- storeIxon <| .prim .neutral, <- storeIxon <| .meta ⟨[]⟩⟩
-  else if name == Lean.Name.mkSimple "_unreachable" then
-    return ⟨<- storeIxon <| .prim .unreachable, <- storeIxon <| .meta ⟨[]⟩⟩
-  else match (<- read).comms.find? name with
-    | some comm => pure comm
-    | none => match (<- read).consts.find? name with
-      | some ref => pure ref
-      | none => do throw <| .unknownConstant (<- read).current name
+/-- Get the Expr for a definition/theorem/opaque value. -/
+def getConstValue (name : Name) : CompileM Expr := do
+  let const ← findConst name
+  match const with
+  | .defnInfo v => pure v.value
+  | .thmInfo v => pure v.value
+  | .opaqueInfo v => pure v.value
+  | _ => throw (.invalidMutualBlock s!"Constant {name} has no value")
 
-def compileExpr: Lean.Expr -> CompileM MetaAddress
-| expr => do match (<- get).exprCache.find? expr with
-  | some x => pure x
-  | none => do
-    --dbg_trace s!"compileExpr {(<- read).current} {(<- get).exprCache.size}"
-    let maddr <- go expr
-    modifyGet fun stt => (maddr, { stt with
-      exprCache := stt.exprCache.insert expr maddr
-    })
-  where
-    go: Lean.Expr -> CompileM MetaAddress
-    | (.mdata kv x) => do
-      let md <- compileKVMap kv
-      let x <- compileExpr x
-      return ⟨x.data, <- storeIxon (.meta ⟨[.link md, .link x.meta]⟩)⟩
-    | .bvar idx => do
-      --dbg_trace s!"compileExpr {(<- read).current} bvar"
-      let dat := .evar idx
-      let met  := .meta ⟨[]⟩
-      pure ⟨<- storeIxon dat, <- storeIxon met⟩
-    | .sort univ => do
-      --dbg_trace s!"compileExpr {(<- read).current} sort"
-      let ⟨udata, umeta⟩ <- compileLevel univ
-      let dat := .esort udata
-      let met := .meta ⟨[.link umeta]⟩
-      pure ⟨<- storeIxon dat, <- storeIxon met⟩
-    | .const name lvls => do
-      --dbg_trace s!"compileExpr {(<- read).current} const"
-      let n <- compileName name
-      let us <- lvls.mapM compileLevel
-      match (← read).mutCtx.find? name with
-      | some idx =>
-        --dbg_trace s!"compileExpr {(<- read).current} const rec"
-        let dat := .erec idx (us.map (·.data))
-        let met := .meta ⟨[.link n, .links (us.map (·.meta))]⟩
-        pure ⟨<- storeIxon dat, <- storeIxon met⟩
-      | none => do
-        let ref <- compileReference name
-        --dbg_trace s!"compileExpr {(<- read).current}, const ref {name}, mutCtx: {repr (<- read).mutCtx}"
-        let dat := .eref ref.data (us.map (·.data))
-        let met := .meta ⟨[.link n, .link ref.meta, .links (us.map (·.meta))]⟩
-        pure ⟨<- storeIxon dat, <- storeIxon met⟩
-    | .app func argm => do
-      --dbg_trace s!"compileExpr {(<- read).current} app"
-      let f <- compileExpr func
-      let a <- compileExpr argm
-      let dat := .eapp f.data a.data
-      let met := .meta ⟨[.link f.meta, .link a.meta]⟩
-      pure ⟨<- storeIxon dat, <- storeIxon met⟩
-    | .lam name type body info => do
-      --dbg_trace s!"compileExpr {(<- read).current} lam"
-      let n <- compileName name
-      let t <- compileExpr type
-      let b <- compileExpr body
-      let dat := .elam t.data b.data
-      let met := .meta ⟨[.link n, .info info, .link t.meta, .link b.meta]⟩
-      pure ⟨<- storeIxon dat, <- storeIxon met⟩
-    | .forallE name type body info => do
-      --dbg_trace s!"compileExpr {(<- read).current} all"
-      --dbg_trace s!"compileExpr {(<- read).current} all md"
-      let n <- compileName name
-      --dbg_trace s!"compileExpr {(<- read).current} all n"
-      let t <- compileExpr type
-      --dbg_trace s!"compileExpr {(<- read).current} all t"
-      let b <- compileExpr body
-      --dbg_trace s!"compileExpr {(<- read).current} all b"
-      let dat := .eall t.data b.data
-      let met := .meta ⟨[.link n, .info info, .link t.meta, .link b.meta]⟩
-      pure ⟨<- storeIxon dat, <- storeIxon met⟩
-    | .letE name type value body nD => do
-      --dbg_trace s!"compileExpr {(<- read).current} let"
-      let n <- compileName name
-      let t <- compileExpr type
-      let v <- compileExpr value
-      let b <- compileExpr body
-      let dat:= .elet nD t.data v.data b.data
-      let met := .meta ⟨[.link n, .link t.meta, .link v.meta, .link b.meta]⟩
-      pure ⟨<- storeIxon dat, <- storeIxon met⟩
-    | .lit (.natVal n) => do
-      let dat := .enat (<- storeNat n)
-      let met := .meta ⟨[]⟩
-      pure ⟨<- storeIxon dat, <- storeIxon met⟩
-    | .lit (.strVal s) => do
-      --dbg_trace s!"compileExpr {(<- read).current} lit str"
-      let dat := .estr (<- storeString s)
-      let met := .meta ⟨[]⟩
-      pure ⟨<- storeIxon dat, <- storeIxon met⟩
-    | .proj typeName idx struct => do
-      --dbg_trace s!"compileExpr {(<- read).current} lit proj"
-      let t <- compileReference typeName
-      let n <- compileName typeName
-      let s <- compileExpr struct
-      let dat := .eprj t.data idx s.data
-      let met := .meta ⟨[.link n, .link t.meta, .link s.meta]⟩
-      pure ⟨<- storeIxon dat, <- storeIxon met⟩
-    | expr@(.fvar ..)  => throw $ .exprFreeVariable expr
-    | expr@(.mvar ..)  => throw $ .exprMetavariable expr
+/-! ## DataValue and KVMap Compilation -/
 
-def compileDefn: Ix.Def -> CompileM (Ixon.Definition × Ixon.Metadata)
-| d => .withLevels d.levelParams do
-  --dbg_trace "compileDefn"
-  let n <- compileName d.name
-  let ls <- d.levelParams.mapM compileName
-  let t <- compileExpr d.type
-  let v <- compileExpr d.value
-  let as <- d.all.mapM compileName
-  let dat := ⟨d.kind, d.safety, ls.length, t.data, v.data⟩
-  let met := ⟨[.link n, .links ls, .hints d.hints, .link t.meta, .link v.meta, .links as]⟩
-  return (dat, met)
+/-- Serialize an Ix.Int to bytes. -/
+def serializeIxInt (i : Ix.Int) : ByteArray :=
+  match i with
+  | .ofNat n =>
+    let natBytes := ByteArray.mk (Nat.toBytesLE n)
+    ByteArray.mk #[0] ++ natBytes
+  | .negSucc n =>
+    let natBytes := ByteArray.mk (Nat.toBytesLE n)
+    ByteArray.mk #[1] ++ natBytes
 
-partial def compileRule: Lean.RecursorRule -> CompileM (Ixon.RecursorRule × Address × Address)
-| r => do
-  --dbg_trace "compileRule"
-  let n <- compileName r.ctor
-  let rhs <- compileExpr r.rhs
-  pure (⟨r.nfields, rhs.data⟩, (n, rhs.meta))
+/-- Store a string as a blob and return its 32-byte address. -/
+def storeString (s : String) : CompileM Address := do
+  let bytes := s.toUTF8
+  let addr := Address.blake3 bytes
+  modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+  pure addr
 
-def compileRecr: Lean.RecursorVal -> CompileM (Ixon.Recursor × Metadata)
-| r => .withLevels r.levelParams <| do
-  --dbg_trace s!"compileRecr {(<- read).current} {repr <| r.name} mutCtx: {repr (<- read).mutCtx}"
-  let n <- compileName r.name
-  let ls <- r.levelParams.mapM compileName
-  let t <- compileExpr r.type
-  let rules <- r.rules.mapM compileRule
-  let as <- r.all.mapM compileName
-  let dat := ⟨r.k, r.isUnsafe, ls.length, r.numParams, r.numIndices,
-    r.numMotives, r.numMinors, t.data, rules.map (·.1)⟩
-  let met := ⟨[.link n, .links ls, .link t.meta, .map (rules.map (·.2)), .links as]⟩
-  pure (dat, met)
+/-- Compile a name: store all string components as blobs and track
+    name components in blockNames for deduplication.
+    This matches Rust's compile_name behavior. -/
+partial def compileName (name : Ix.Name) : CompileM Unit := do
+  let addr := name.getHash
+  let state ← getBlockState
+  if state.blockNames.contains addr then return ()
+  match name with
+  | .anonymous _ =>
+    modifyBlockState fun c =>
+      { c with blockNames := c.blockNames.insert addr name }
+  | .str parent s _ =>
+    modifyBlockState fun c =>
+      { c with blockNames := c.blockNames.insert addr name }
+    discard <| storeString s
+    compileName parent
+  | .num parent _ _ =>
+    modifyBlockState fun c =>
+      { c with blockNames := c.blockNames.insert addr name }
+    compileName parent
 
-def compileConstructor (induct: Address)
-: Lean.ConstructorVal -> CompileM (Ixon.Constructor × Metadata)
-| c => .withLevels c.levelParams <| do
-  --dbg_trace s!"compileCtor {(<- read).current} {repr <| c.name} mutCtx: {repr (<- read).mutCtx}"
-  let n <- compileName c.name
-  let ls <- c.levelParams.mapM compileName
-  let t <- compileExpr c.type
-  let dat := ⟨c.isUnsafe, ls.length, c.cidx, c.numParams, c.numFields, t.data⟩
-  let met := ⟨[.link n, .links ls, .link t.meta, .link induct]⟩
-  pure (dat, met)
+/-- Serialize a u64 in trimmed little-endian format (only necessary bytes).
+    Uses Ixon.u64ByteCount for the byte count calculation. -/
+def putU64TrimmedLE (x : UInt64) : ByteArray := Id.run do
+  let count := Ixon.u64ByteCount x
+  let mut bytes := ByteArray.empty
+  let mut v := x
+  for _ in [:count.toNat] do
+    bytes := bytes.push (v &&& 0xFF).toUInt8
+    v := v >>> 8
+  bytes
 
-partial def compileIndc: Ix.Ind -> CompileM (Ixon.Inductive × Map Address Address)
-| ⟨name, lvls, type, ps, is, all, ctors, nest, rcr, refl, usafe⟩ =>
-  .withLevels lvls do
-  --dbg_trace s!"compileIndc {(<- read).current} {repr <| name} mutCtx: {repr (<- read).mutCtx}"
-  let n <- compileName name
-  let ls <- lvls.mapM compileName
-  let t <- compileExpr type
-  let mut cds := #[]
-  let mut cms := #[]
-  let mut metaMap := {}
-  for ctor in ctors do
-    let (cd, cm) <- compileConstructor n ctor
-    let cn <- compileName ctor.name
-    cds := cds.push cd
-    let cm' <- storeMeta cm
-    cms := cms.push cm'
-    metaMap := metaMap.insert cn cm'
-  let as <- all.mapM compileName
-  let data := ⟨rcr, refl, usafe, ls.length, ps, is, nest, t.data, cds.toList⟩
-  let «meta» := ⟨[.link n, .links ls, .link t.meta, .links cms.toList, .links as]⟩
-  let m <- storeMeta «meta»
-  metaMap := metaMap.insert n m
-  pure (data, metaMap)
+/-- Serialize a Nat using Tag0 encoding (variable length, compact for small values).
+    Uses Ixon.u64ByteCount for the byte count calculation. -/
+def putTag0 (n : Nat) : ByteArray :=
+  let x := n.toUInt64
+  if x < 128 then
+    ByteArray.mk #[x.toUInt8]
+  else
+    let byteCount := Ixon.u64ByteCount x
+    ByteArray.mk #[0x80 ||| (byteCount - 1)] ++ putU64TrimmedLE x
 
-/-- A name-irrelevant ordering of Lean expressions --/
-def compareExpr (ctx: MutCtx) (xlvls ylvls: List Lean.Name)
-  (x y: Lean.Expr): CompileM SOrder := do
-  --dbg_trace "compareExpr"
+/-- Serialize an Ix.Substring to bytes, storing strings as blobs. -/
+def serializeIxSubstring (ss : Ix.Substring) : CompileM ByteArray := do
+  let strAddr ← storeString ss.str
+  pure (strAddr.hash ++ putTag0 ss.startPos ++ putTag0 ss.stopPos)
+
+/-- Serialize an Ix.SourceInfo to bytes, storing strings as blobs. -/
+def serializeIxSourceInfo (si : Ix.SourceInfo) : CompileM ByteArray := do
+  match si with
+  | .original leading leadingPos trailing trailingPos =>
+    let leadingBytes ← serializeIxSubstring leading
+    let trailingBytes ← serializeIxSubstring trailing
+    pure (ByteArray.mk #[0] ++ leadingBytes ++ putTag0 leadingPos ++
+      trailingBytes ++ putTag0 trailingPos)
+  | .synthetic start stop canonical =>
+    pure (ByteArray.mk #[1] ++ putTag0 start ++ putTag0 stop ++
+      ByteArray.mk #[if canonical then 1 else 0])
+  | .none => pure (ByteArray.mk #[2])
+
+/-- Serialize an Ix.SyntaxPreresolved to bytes, storing strings as blobs. -/
+def serializeIxSyntaxPreresolved (sp : Ix.SyntaxPreresolved) : CompileM ByteArray := do
+  match sp with
+  | .namespace name =>
+    compileName name
+    pure (ByteArray.mk #[0] ++ name.getHash.hash)
+  | .decl name aliases =>
+    compileName name
+    let header := ByteArray.mk #[1] ++ name.getHash.hash ++ putTag0 aliases.size
+    let mut aliasesBytes := ByteArray.empty
+    for a in aliases do
+      let addr ← storeString a
+      aliasesBytes := aliasesBytes ++ addr.hash
+    pure (header ++ aliasesBytes)
+
+/-- Serialize an Ix.Syntax to bytes, storing strings as blobs. -/
+partial def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
+  match syn with
+  | .missing => pure (ByteArray.mk #[0])
+  | .node info kind args =>
+    compileName kind
+    let header := ByteArray.mk #[1]
+    let infoBytes ← serializeIxSourceInfo info
+    let kindBytes := kind.getHash.hash
+    let lenBytes := putTag0 args.size
+    let mut argsBytes := ByteArray.empty
+    for arg in args do
+      argsBytes := argsBytes ++ (← serializeIxSyntax arg)
+    pure (header ++ infoBytes ++ kindBytes ++ lenBytes ++ argsBytes)
+  | .atom info val =>
+    let infoBytes ← serializeIxSourceInfo info
+    let valAddr ← storeString val
+    pure (ByteArray.mk #[2] ++ infoBytes ++ valAddr.hash)
+  | .ident info rawVal val preresolved =>
+    compileName val
+    let header := ByteArray.mk #[3]
+    let infoBytes ← serializeIxSourceInfo info
+    let rawBytes ← serializeIxSubstring rawVal
+    let valBytes := val.getHash.hash
+    let lenBytes := putTag0 preresolved.size
+    let mut presBytes := ByteArray.empty
+    for pr in preresolved do
+      presBytes := presBytes ++ (← serializeIxSyntaxPreresolved pr)
+    pure (header ++ infoBytes ++ rawBytes ++ valBytes ++ lenBytes ++ presBytes)
+
+/-- Compile a DataValue to Ixon.DataValue, storing blobs as needed. -/
+def compileDataValue (dv : Ix.DataValue) : CompileM Ixon.DataValue := do
+  match dv with
+  | .ofString s =>
+    let bytes := s.toUTF8
+    let addr := Address.blake3 bytes
+    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    pure (.ofString addr)
+  | .ofBool b => pure (.ofBool b)
+  | .ofName n =>
+    compileName n
+    pure (.ofName n.getHash)
+  | .ofNat n =>
+    let bytes := ByteArray.mk (Nat.toBytesLE n)
+    let addr := Address.blake3 bytes
+    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    pure (.ofNat addr)
+  | .ofInt i =>
+    let bytes := serializeIxInt i
+    let addr := Address.blake3 bytes
+    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    pure (.ofInt addr)
+  | .ofSyntax syn =>
+    let bytes ← serializeIxSyntax syn
+    let addr := Address.blake3 bytes
+    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    pure (.ofSyntax addr)
+
+/-- Compile a KVMap (array of name-value pairs). -/
+def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap := do
+  kvs.mapM fun (k, v) => do
+    compileName k
+    let vData ← compileDataValue v
+    pure (k.getHash, vData)
+
+/-! ## Expression Compilation -/
+
+/-- Compile a canonical Ix.Expr to Ixon.Expr with arena-based metadata.
+    Returns (compiled expression, arena root index).
+    Uses Ix.Expr as cache key for O(1) lookup via embedded hash. -/
+partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
+  -- Check cache (O(1) lookup via embedded hash)
+  let state ← getBlockState
+  if let some cached := state.exprCache.get? e then
+    return cached
+
+  let (result, root) ← match e with
+  | .bvar idx _ => do
+    let root ← allocArenaNode .leaf
+    pure (.var idx.toUInt64, root)
+
+  | .sort lvl _ => do
+    let idx ← compileAndInternUniv lvl
+    let root ← allocArenaNode .leaf
+    pure (.sort idx, root)
+
+  | .const name lvls _ => do
+    let mutCtx := (← getBlockEnv).mutCtx
+    let univIndices ← lvls.mapM compileAndInternUniv
+    compileName name
+    let nameAddr := name.getHash
+    match mutCtx.find? name with
+    | some recIdx =>
+      let root ← allocArenaNode (.ref nameAddr)
+      pure (.recur recIdx.toUInt64 univIndices, root)
+    | none => do
+      let addr ← lookupConstAddr name
+      let refIdx ← internRef addr
+      let root ← allocArenaNode (.ref nameAddr)
+      pure (.ref refIdx univIndices, root)
+
+  | .app func arg _ => do
+    let (f, fRoot) ← compileExpr func
+    let (a, aRoot) ← compileExpr arg
+    let root ← allocArenaNode (.app fRoot aRoot)
+    pure (.app f a, root)
+
+  | .lam name ty body bi _ => do
+    compileName name
+    let nameAddr := name.getHash
+    let (t, tyRoot) ← compileExpr ty
+    let (b, bodyRoot) ← compileExpr body
+    let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
+    pure (.lam t b, root)
+
+  | .forallE name ty body bi _ => do
+    compileName name
+    let nameAddr := name.getHash
+    let (t, tyRoot) ← compileExpr ty
+    let (b, bodyRoot) ← compileExpr body
+    let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
+    pure (.all t b, root)
+
+  | .letE name ty val body nonDep _ => do
+    compileName name
+    let nameAddr := name.getHash
+    let (t, tyRoot) ← compileExpr ty
+    let (v, valRoot) ← compileExpr val
+    let (b, bodyRoot) ← compileExpr body
+    let root ← allocArenaNode (.letBinder nameAddr tyRoot valRoot bodyRoot)
+    pure (.letE nonDep t v b, root)
+
+  | .lit (.natVal n) _ => do
+    let bytes := ByteArray.mk (Nat.toBytesLE n)
+    let addr := Address.blake3 bytes
+    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    let idx ← internRef addr
+    let root ← allocArenaNode .leaf
+    pure (.nat idx, root)
+
+  | .lit (.strVal s) _ => do
+    let bytes := s.toUTF8
+    let addr := Address.blake3 bytes
+    modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+    let idx ← internRef addr
+    let root ← allocArenaNode .leaf
+    pure (.str idx, root)
+
+  | .proj typeName fieldIdx struct _ => do
+    compileName typeName
+    let typeAddr ← lookupConstAddr typeName
+    let typeRefIdx ← internRef typeAddr
+    let structNameAddr := typeName.getHash
+    let (s, sRoot) ← compileExpr struct
+    let root ← allocArenaNode (.prj structNameAddr sRoot)
+    pure (.prj typeRefIdx fieldIdx.toUInt64 s, root)
+
+  | .mdata kvData inner _ => do
+    let kvmap ← compileKVMap kvData
+    let (innerResult, innerRoot) ← compileExpr inner
+    let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
+    pure (innerResult, root)
+
+  | .fvar _ _ => throw (.unsupportedExpr "free variable")
+  | .mvar _ _ => throw (.unsupportedExpr "metavariable")
+
+  -- Store in block-local cache
+  modifyBlockState fun c => { c with exprCache := c.exprCache.insert e (result, root) }
+
+  pure (result, root)
+
+/-! ## Level Comparison -/
+
+/-- Compare two Ix levels for ordering. -/
+def compareLevel (xctx yctx : List Name)
+    : Level → Level → CompileM SOrder
+  | .mvar .., _ => throw (.unsupportedExpr "level metavariable")
+  | _, .mvar .. => throw (.unsupportedExpr "level metavariable")
+  | .zero _, .zero _ => pure ⟨true, .eq⟩
+  | .zero _, _ => pure ⟨true, .lt⟩
+  | _, .zero _ => pure ⟨true, .gt⟩
+  | .succ x _, .succ y _ => compareLevel xctx yctx x y
+  | .succ .., _ => pure ⟨true, .lt⟩
+  | _, .succ .. => pure ⟨true, .gt⟩
+  | .max xl xr _, .max yl yr _ => SOrder.cmpM
+    (compareLevel xctx yctx xl yl) (compareLevel xctx yctx xr yr)
+  | .max .., _ => pure ⟨true, .lt⟩
+  | _, .max .. => pure ⟨true, .gt⟩
+  | .imax xl xr _, .imax yl yr _ => SOrder.cmpM
+      (compareLevel xctx yctx xl yl) (compareLevel xctx yctx xr yr)
+  | .imax .., _ => pure ⟨true, .lt⟩
+  | _, .imax .. => pure ⟨true, .gt⟩
+  | .param x _, .param y _ => do
+    match (xctx.idxOf? x), (yctx.idxOf? y) with
+    | some xi, some yi => pure ⟨true, compare xi yi⟩
+    | none, _ => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{x}")
+    | _, none => throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{y}")
+
+/-! ## Expression Comparison -/
+
+/-- Name-irrelevant ordering of Ix expressions.
+    Matches Rust's compare_expr - no caching, handles mdata inline. -/
+partial def compareExpr (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
+    (x y : Expr) : CompileM SOrder := do
   match x, y with
-  | e@(.mvar ..), _ => throw $ .exprMetavariable e
-  | _, e@(.mvar ..) => throw $ .exprMetavariable e
-  | e@(.fvar ..), _ => throw $ .exprFreeVariable e
-  | _, e@(.fvar ..) => throw $ .exprFreeVariable e
-  | .mdata _ x, .mdata _ y  => compareExpr ctx xlvls ylvls x y
-  | .mdata _ x, y  => compareExpr ctx xlvls ylvls x y
-  | x, .mdata _ y  => compareExpr ctx xlvls ylvls x y
-  | .bvar x, .bvar y => return ⟨true, compare x y⟩
-  | .bvar .., _ => return ⟨true, .lt⟩
-  | _, .bvar .. => return ⟨true, .gt⟩
-  | .sort x, .sort y => compareLevel xlvls ylvls x y
-  | .sort .., _ => return ⟨true, .lt⟩
-  | _, .sort .. => return ⟨true, .gt⟩
-  | .const x xls, .const y yls => do
-    let univs ← SOrder.zipM (compareLevel xlvls ylvls) xls yls
-    if univs.ord != .eq then return univs
-    if x == y then return ⟨true, .eq⟩
+  | .mvar .., _ => throw (.unsupportedExpr "metavariable in comparison")
+  | _, .mvar .. => throw (.unsupportedExpr "metavariable in comparison")
+  | .fvar .., _ => throw (.unsupportedExpr "fvar in comparison")
+  | _, .fvar .. => throw (.unsupportedExpr "fvar in comparison")
+  | .mdata _ x _, .mdata _ y _ => compareExpr ctx xlvls ylvls x y
+  | .mdata _ x _, y => compareExpr ctx xlvls ylvls x y
+  | x, .mdata _ y _ => compareExpr ctx xlvls ylvls x y
+  | .bvar x _, .bvar y _ => pure ⟨true, compare x y⟩
+  | .bvar .., _ => pure ⟨true, .lt⟩
+  | _, .bvar .. => pure ⟨true, .gt⟩
+  | .sort x _, .sort y _ => compareLevel xlvls ylvls x y
+  | .sort .., _ => pure ⟨true, .lt⟩
+  | _, .sort .. => pure ⟨true, .gt⟩
+  | .const x xls _, .const y yls _ => do
+    let univs ← SOrder.zipM (compareLevel xlvls ylvls) xls.toList yls.toList
+    if univs.ord != .eq then pure univs
+    else if x == y then pure ⟨true, .eq⟩
     else match ctx.find? x, ctx.find? y with
-    | some nx, some ny => return ⟨false, compare nx ny⟩
-    | some _, none => return ⟨true, .lt⟩
-    | none, some _ => return ⟨true, .gt⟩
+    | some nx, some ny => pure ⟨false, compare nx ny⟩
+    | some _, none => pure ⟨true, .lt⟩
+    | none, some _ => pure ⟨true, .gt⟩
     | none, none => do
-      --dbg_trace s!"compareExpr const {(<- read).current} consts {x} {y}"
-      let x' <- compileReference x
-      let y' <- compileReference y
-      return ⟨true, compare x'.data y'.data⟩
-  | .const .., _ => return ⟨true, .lt⟩
-  | _, .const .. => return ⟨true, .gt⟩
-  | .app xf xa, .app yf ya =>
+      let x' ← lookupConstAddr x
+      let y' ← lookupConstAddr y
+      pure ⟨true, compare x' y'⟩
+  | .const .., _ => pure ⟨true, .lt⟩
+  | _, .const .. => pure ⟨true, .gt⟩
+  | .app xf xa _, .app yf ya _ =>
     SOrder.cmpM
       (compareExpr ctx xlvls ylvls xf yf)
       (compareExpr ctx xlvls ylvls xa ya)
-  | .app .., _ => return ⟨true, .lt⟩
-  | _, .app .. => return ⟨true, .gt⟩
-  | .lam _ xt xb _, .lam _ yt yb _ =>
+  | .app .., _ => pure ⟨true, .lt⟩
+  | _, .app .. => pure ⟨true, .gt⟩
+  | .lam _ xt xb _ _, .lam _ yt yb _ _ =>
     SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) (compareExpr ctx xlvls ylvls xb yb)
-  | .lam .., _ => return ⟨true, .lt⟩
-  | _, .lam .. => return ⟨true, .gt⟩
-  | .forallE _ xt xb _, .forallE _ yt yb _ =>
+  | .lam .., _ => pure ⟨true, .lt⟩
+  | _, .lam .. => pure ⟨true, .gt⟩
+  | .forallE _ xt xb _ _, .forallE _ yt yb _ _ =>
     SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) (compareExpr ctx xlvls ylvls xb yb)
-  | .forallE .., _ => return ⟨true, .lt⟩
-  | _, .forallE .. => return ⟨true, .gt⟩
-  | .letE _ xt xv xb _, .letE _ yt yv yb _ =>
+  | .forallE .., _ => pure ⟨true, .lt⟩
+  | _, .forallE .. => pure ⟨true, .gt⟩
+  | .letE _ xt xv xb _ _, .letE _ yt yv yb _ _ =>
     SOrder.cmpM (compareExpr ctx xlvls ylvls xt yt) <|
     SOrder.cmpM (compareExpr ctx xlvls ylvls xv yv)
       (compareExpr ctx xlvls ylvls xb yb)
-  | .letE .., _ => return ⟨true, .lt⟩
-  | _, .letE .. => return ⟨true, .gt⟩
-  | .lit x, .lit y => return ⟨true, compare x y⟩
-  | .lit .., _ => return ⟨true, .lt⟩
-  | _, .lit .. => return ⟨true, .gt⟩
-  | .proj tnx ix tx, .proj tny iy ty => do
-    let tn <- match ctx.find? tnx, ctx.find? tny with
+  | .letE .., _ => pure ⟨true, .lt⟩
+  | _, .letE .. => pure ⟨true, .gt⟩
+  | .lit x _, .lit y _ => pure ⟨true, compare x y⟩
+  | .lit .., _ => pure ⟨true, .lt⟩
+  | _, .lit .. => pure ⟨true, .gt⟩
+  | .proj tnx ix tx _, .proj tny iy ty _ => do
+    let tn ← match ctx.find? tnx, ctx.find? tny with
       | some nx, some ny => pure ⟨false, compare nx ny⟩
       | none, some _ => pure ⟨true, .gt⟩
       | some _, none => pure ⟨true, .lt⟩
       | none, none =>
         if tnx == tny then pure ⟨true, .eq⟩
         else do
-          let x' <- compileReference tnx
-          let y' <- compileReference tny
+          let x' ← lookupConstAddr tnx
+          let y' ← lookupConstAddr tny
           pure ⟨true, compare x' y'⟩
     SOrder.cmpM (pure tn) <|
-    SOrder.cmpM (pure ⟨true, compare ix iy⟩) <|
-    (compareExpr ctx xlvls ylvls tx ty) 
+    SOrder.cmpM (pure ⟨true, compare ix iy⟩)
+      (compareExpr ctx xlvls ylvls tx ty)
 
-/-- ast comparison of two lean definitions. --/
-def compareConst (ctx: MutCtx) (x y: MutConst)
-  : CompileM Ordering := do
-  --dbg_trace "compareConst"
+/-! ## Constant Comparison -/
+
+/-- Compare two mutual constants for ordering. -/
+def compareConst (ctx : Ix.MutCtx) (x y : MutConst) : CompileM Ordering := do
   let key := match compare x.name y.name with
     | .lt => (x.name, y.name)
     | _ => (y.name, x.name)
-  match (<- get).constCmp.find? key with
-  | some o => return o
-  | none => do
-    let sorder: SOrder <- match x,y with
-    | .defn x, .defn y => compareDef x y
-    | .defn _, _ => pure ⟨true, Ordering.lt⟩
-    | .indc x, .indc y => compareInd x y
-    | .indc _, _ => pure ⟨true, Ordering.lt⟩
-    | .recr x, .recr y => compareRecr x y
-    | .recr _, _ => pure ⟨true, Ordering.lt⟩
-    if sorder.strong then modify fun stt => { stt with
-        constCmp := stt.constCmp.insert key sorder.ord
-      }
-    return sorder.ord
-  where
-    compareDef (x y: Def) : CompileM SOrder := do
-      SOrder.cmpM (pure ⟨true, compare x.kind y.kind⟩) <|
-      SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
-      SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type)
-        (compareExpr ctx x.levelParams y.levelParams x.value y.value)
-    compareInd (x y: Ind) : CompileM SOrder := do
-      SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
+  -- Check cache
+  let cache ← getBlockState
+  if let some o := cache.cmpCache.get? key then
+    return o
+
+  let sorder : SOrder ← match x, y with
+  | .defn x, .defn y => compareDef ctx x y
+  | .defn _, _ => pure ⟨true, .lt⟩
+  | .indc x, .indc y => compareInd ctx x y
+  | .indc _, _ => pure ⟨true, .lt⟩
+  | .recr x, .recr y => compareRecr ctx x y
+  | .recr _, _ => pure ⟨true, .lt⟩
+
+  -- Cache if strong ordering
+  if sorder.strong then
+    modifyBlockState fun c => { c with cmpCache := c.cmpCache.insert key sorder.ord }
+  pure sorder.ord
+where
+  compareDef (ctx : Ix.MutCtx) (x y : Def) : CompileM SOrder := do
+    SOrder.cmpM (pure ⟨true, compare x.kind y.kind⟩) <|
+    SOrder.cmpM (pure ⟨true, compare x.levelParams.size y.levelParams.size⟩) <|
+    SOrder.cmpM (compareExpr ctx x.levelParams.toList y.levelParams.toList x.type y.type)
+      (compareExpr ctx x.levelParams.toList y.levelParams.toList x.value y.value)
+  compareInd (ctx : Ix.MutCtx) (x y : Ind) : CompileM SOrder := do
+    SOrder.cmpM (pure ⟨true, compare x.levelParams.size y.levelParams.size⟩) <|
+    SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
+    SOrder.cmpM (pure ⟨true, compare x.numIndices y.numIndices⟩) <|
+    SOrder.cmpM (pure ⟨true, compare x.ctors.size y.ctors.size⟩) <|
+    SOrder.cmpM (compareExpr ctx x.levelParams.toList y.levelParams.toList x.type y.type)
+      (SOrder.zipM (compareCtor ctx x.levelParams.toList y.levelParams.toList) x.ctors.toList y.ctors.toList)
+  compareCtor (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
+      (x y : ConstructorVal) : CompileM SOrder := do
+    -- Cache key: normalize to (smaller, larger) pair
+    let key := match compare x.cnst.name y.cnst.name with
+      | .lt => (x.cnst.name, y.cnst.name)
+      | _ => (y.cnst.name, x.cnst.name)
+    -- Check cache first
+    let cache ← getBlockState
+    if let some o := cache.cmpCache.get? key then
+      return ⟨true, o⟩
+    -- Compute comparison
+    let sorder ←
+      SOrder.cmpM (pure ⟨true, compare x.cnst.levelParams.size y.cnst.levelParams.size⟩) <|
+      SOrder.cmpM (pure ⟨true, compare x.cidx y.cidx⟩) <|
       SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
-      SOrder.cmpM (pure ⟨true, compare x.numIndices y.numIndices⟩) <|
-      SOrder.cmpM (pure ⟨true, compare x.ctors.length y.ctors.length⟩) <|
-      SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type) <|
-      (SOrder.zipM compareCtor x.ctors y.ctors)
-    compareCtor (x y: Lean.ConstructorVal) : CompileM SOrder := do
-      let key := match compare x.name y.name with
-        | .lt => (x.name, y.name)
-        | _ => (y.name, x.name)
-      match (<- get).constCmp.find? key with
-      | some o => return ⟨true, o⟩
-      | none => do
-      let sorder <- do
-        SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
-        SOrder.cmpM (pure ⟨true, compare x.cidx y.cidx⟩) <|
-        SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
-        SOrder.cmpM (pure ⟨true, compare x.numFields y.numFields⟩) <|
-          (compareExpr ctx x.levelParams y.levelParams x.type y.type)
-      if sorder.strong then modify fun stt => { stt with
-          constCmp := stt.constCmp.insert key sorder.ord
-        }
-      return sorder
-    compareRecr (x y: Lean.RecursorVal) : CompileM SOrder := do
-      SOrder.cmpM (pure ⟨true, compare x.levelParams.length y.levelParams.length⟩) <|
-      SOrder.cmpM (pure ⟨true,compare x.numParams y.numParams⟩) <|
-      SOrder.cmpM (pure ⟨true,compare x.numIndices y.numIndices⟩) <|
-      SOrder.cmpM (pure ⟨true, compare x.numMotives y.numMotives⟩) <|
-      SOrder.cmpM (pure ⟨true,compare x.numMinors y.numMinors⟩) <|
-      SOrder.cmpM (pure ⟨true, compare x.k y.k⟩) <|
-      SOrder.cmpM (compareExpr ctx x.levelParams y.levelParams x.type y.type) <|
-        (SOrder.zipM (compareRule x.levelParams y.levelParams) x.rules y.rules)
-    compareRule (xlvls ylvls: List Lean.Name) (x y: Lean.RecursorRule)
-      : CompileM SOrder := do
-        SOrder.cmpM (pure ⟨true, compare x.nfields y.nfields⟩)
-          (compareExpr ctx xlvls ylvls x.rhs y.rhs)
+      SOrder.cmpM (pure ⟨true, compare x.numFields y.numFields⟩)
+        (compareExpr ctx xlvls ylvls x.cnst.type y.cnst.type)
+    -- Cache if strong ordering
+    if sorder.strong then
+      modifyBlockState fun c => { c with cmpCache := c.cmpCache.insert key sorder.ord }
+    return sorder
+  compareRecr (ctx : Ix.MutCtx) (x y : RecursorVal) : CompileM SOrder := do
+    SOrder.cmpM (pure ⟨true, compare x.cnst.levelParams.size y.cnst.levelParams.size⟩) <|
+    SOrder.cmpM (pure ⟨true, compare x.numParams y.numParams⟩) <|
+    SOrder.cmpM (pure ⟨true, compare x.numIndices y.numIndices⟩) <|
+    SOrder.cmpM (pure ⟨true, compare x.numMotives y.numMotives⟩) <|
+    SOrder.cmpM (pure ⟨true, compare x.numMinors y.numMinors⟩) <|
+    SOrder.cmpM (pure ⟨true, compare x.k y.k⟩) <|
+    SOrder.cmpM (compareExpr ctx x.cnst.levelParams.toList y.cnst.levelParams.toList x.cnst.type y.cnst.type)
+      (SOrder.zipM (compareRule ctx x.cnst.levelParams.toList y.cnst.levelParams.toList) x.rules.toList y.rules.toList)
+  compareRule (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
+      (x y : RecursorRule) : CompileM SOrder := do
+    SOrder.cmpM (pure ⟨true, compare x.nfields y.nfields⟩)
+      (compareExpr ctx xlvls ylvls x.rhs y.rhs)
 
-def eqConst (ctx: MutCtx) (x y: MutConst) : CompileM Bool :=
-  (fun o => o == .eq) <$> compareConst ctx x y
+/-- Check if two mutual constants are equal (for grouping). -/
+def eqConst (ctx : Ix.MutCtx) (x y : MutConst) : CompileM Bool :=
+  (· == .eq) <$> compareConst ctx x y
 
-/-- `sortConsts` recursively sorts a list of mutually referential constants into
-ordered equivalence classes. For most cases equivalence can be determined by
-syntactic differences in the definitions, but when two definitions
-refer to one another in the same syntactical position the classification can
-be self-referential. Therefore we use a partition refinement algorithm that
-starts by assuming that all definitions in the mutual block are equal and
-recursively improves our classification by sorting based on syntax:
-```
-classes₀ := [startConsts]
-classes₁ := sortConsts classes₀
-classes₂ := sortConsts classes₁
-classes₍ᵢ₊₁₎ := sortConsts classesᵢ ...
-```
-Eventually we reach a fixed-point where `classes₍ᵢ₊₁₎ := classesᵢ` and no
-further refinement is possible (trivially when each const is in its own class). --/
-partial def sortConsts (classes: List MutConst) : CompileM (List (List MutConst))
-  := go [List.sortBy (compare ·.name ·.name) classes]
-  where
-    go (cs: List (List MutConst)): CompileM (List (List MutConst)) := do
-    --dbg_trace "sortConsts {(<- read).current} {cs.map (·.map (·.name))}"
-      let ctx := MutConst.ctx cs
-      let cs' <- cs.mapM fun ds =>
-        match ds with
-        | []  => throw <| .badMutualBlock cs
-        | [d] => pure [[d]]
-        | ds  => ds.sortByM (compareConst ctx) >>= List.groupByM (eqConst ctx)
-      let cs' := cs'.flatten.map (List.sortBy (compare ·.name ·.name))
-      if cs == cs' then return cs' else go cs'
+/-! ## sortConsts Fixed-Point Algorithm -/
 
-/-- Compile a mutual block --/
-partial def compileMutConsts: List (List MutConst)
-  -> CompileM (Ixon × Map Address Address)
-| classes => do
-  --dbg_trace s!"compileMutConsts {(<- read).current} {repr <| classes.map (·.map (·.name))} mutCtx: {repr (<- read).mutCtx}"
-  let mut dat := #[]
-  let mut met := {}
-  -- iterate through each equivalence class
+/-- Create a MutConst.indc from an InductiveVal by fetching constructors. -/
+def MutConst.mkIndc (i : InductiveVal) : CompileM MutConst := do
+  let mut ctors : Array ConstructorVal := #[]
+  for ctorName in i.ctors do
+    let c ← getCtor ctorName
+    ctors := ctors.push c
+  pure (.indc ⟨i.cnst.name, i.cnst.levelParams, i.cnst.type, i.numParams, i.numIndices, i.all,
+    ctors, i.numNested, i.isRec, i.isReflexive, i.isUnsafe⟩)
+where
+  getCtor (name : Name) : CompileM ConstructorVal := do
+    match ← findConst name with
+    | .ctorInfo c => pure c
+    | _ => throw (.invalidMutualBlock s!"Expected constructor: {name}")
+
+/-- Sort mutual constants into ordered equivalence classes.
+    Uses partition refinement - starts assuming all equal,
+    recursively improves until fixed-point. -/
+partial def sortConsts (classes : List MutConst) : CompileM (List (List MutConst)) :=
+  go [List.sortBy (compare ·.name ·.name) classes]
+where
+  go (cs : List (List MutConst)) : CompileM (List (List MutConst)) := do
+    let ctx := MutConst.ctx cs
+    let cs' ← cs.mapM fun ds =>
+      match ds with
+      | [] => throw (.invalidMutualBlock "empty class in sortConsts")
+      | [d] => pure [[d]]
+      | ds => ds.sortByM (compareConst ctx) >>= List.groupByM (eqConst ctx)
+    let cs' := cs'.flatten.map (List.sortBy (compare ·.name ·.name))
+    if cs == cs' then pure cs' else go cs'
+
+/-! ## Constant Building -/
+
+/-- Count Share references in an expression (for debugging). -/
+partial def countShareRefs : Ixon.Expr → Nat
+  | .share _ => 1
+  | .prj _ _ val => countShareRefs val
+  | .app f a => countShareRefs f + countShareRefs a
+  | .lam ty body => countShareRefs ty + countShareRefs body
+  | .all ty body => countShareRefs ty + countShareRefs body
+  | .letE _ ty val body => countShareRefs ty + countShareRefs val + countShareRefs body
+  | _ => 0
+
+/-- Update recursor rules with rewritten expressions starting at given index.
+    Returns updated rules and next index. -/
+def updateRecursorRules (rules : Array Ixon.RecursorRule) (rewrittenExprs : Array Ixon.Expr) (startIdx : Nat)
+    : Array Ixon.RecursorRule × Nat := Id.run do
+  let mut result := rules
+  let mut idx := startIdx
+  for i in [:rules.size] do
+    if let some rhs := rewrittenExprs[idx]? then
+      result := result.set! i { result[i]! with rhs }
+    idx := idx + 1
+  (result, idx)
+
+/-- Update inductive constructor types with rewritten expressions starting at given index.
+    Returns updated constructors and next index. -/
+def updateConstructorTypes (ctors : Array Ixon.Constructor) (rewrittenExprs : Array Ixon.Expr) (startIdx : Nat)
+    : Array Ixon.Constructor × Nat := Id.run do
+  let mut result := ctors
+  let mut idx := startIdx
+  for i in [:ctors.size] do
+    if let some ctorTyp := rewrittenExprs[idx]? then
+      result := result.set! i { result[i]! with typ := ctorTyp }
+    idx := idx + 1
+  (result, idx)
+
+/-- Update Ixon MutConsts with rewritten expressions. -/
+def updateMutConsts (ms : Array Ixon.MutConst) (rewrittenExprs : Array Ixon.Expr)
+    : Array Ixon.MutConst := Id.run do
+  let mut idx := 0
+  let mut result := ms
+  for i in [:ms.size] do
+    match ms[i]! with
+    | .indc ind =>
+      let typ := rewrittenExprs[idx]?.getD ind.typ
+      idx := idx + 1
+      let (ctors, nextIdx) := updateConstructorTypes ind.ctors rewrittenExprs idx
+      idx := nextIdx
+      result := result.set! i (.indc { ind with typ, ctors })
+    | .defn d =>
+      let typ := rewrittenExprs[idx]?.getD d.typ
+      let value := rewrittenExprs[idx + 1]?.getD d.value
+      idx := idx + 2
+      result := result.set! i (.defn { d with typ, value })
+    | .recr r =>
+      let typ := rewrittenExprs[idx]?.getD r.typ
+      idx := idx + 1
+      let (rules, nextIdx) := updateRecursorRules r.rules rewrittenExprs idx
+      idx := nextIdx
+      result := result.set! i (.recr { r with typ, rules })
+  result
+
+/-- Apply sharing analysis to expressions and build a Constant. -/
+def buildConstantWithSharing (info : Ixon.ConstantInfo) (rootExprs : Array Ixon.Expr)
+    (refs : Array Address) (univs : Array Ixon.Univ) (dbg : Bool := false) : Ixon.Constant := Id.run do
+  let (rewrittenExprs, sharingVec) := Sharing.applySharing rootExprs dbg
+  -- Debug: count Share refs in rewritten expressions
+  if dbg && sharingVec.size > 0 then
+    let totalShareRefs := rewrittenExprs.foldl (fun acc e => acc + countShareRefs e) 0
+    dbg_trace s!"[buildConstant] sharingVec.size={sharingVec.size}, totalShareRefs in rewritten={totalShareRefs}"
+  -- Update expressions in info with rewritten versions
+  let info' := match info with
+  | .defn d =>
+    let typ := rewrittenExprs[0]?.getD d.typ
+    let value := rewrittenExprs[1]?.getD d.value
+    Ixon.ConstantInfo.defn { d with typ, value }
+  | .axio a =>
+    let typ := rewrittenExprs[0]?.getD a.typ
+    Ixon.ConstantInfo.axio { a with typ }
+  | .quot q =>
+    let typ := rewrittenExprs[0]?.getD q.typ
+    Ixon.ConstantInfo.quot { q with typ }
+  | .recr r =>
+    let typ := rewrittenExprs[0]?.getD r.typ
+    let (rules, _) := updateRecursorRules r.rules rewrittenExprs 1
+    Ixon.ConstantInfo.recr { r with typ, rules }
+  | .muts ms =>
+    Ixon.ConstantInfo.muts (updateMutConsts ms rewrittenExprs)
+  | other => other
+  return { info := info', sharing := sharingVec, refs, univs }
+
+/-! ## Individual Constant Compilation -/
+
+/-- Convert Lean DefinitionSafety to Ixon DefinitionSafety -/
+def convertSafety : Lean.DefinitionSafety → DefinitionSafety
+  | .unsafe => .unsaf
+  | .safe => .safe
+  | .partial => .part
+
+/-- Compile a definition to Ixon.Definition with metadata. -/
+def compileDefinition (d : DefinitionVal) : CompileM (Ixon.Definition × Ixon.ConstantMeta × Ixon.Expr × Ixon.Expr) := do
+  withUnivCtx d.cnst.levelParams.toList do
+    resetArena
+    let (typeExpr, typeRoot) ← compileExpr d.cnst.type
+    let (valueExpr, valueRoot) ← compileExpr d.value
+    let arena ← takeArena
+    clearExprCache
+
+    -- Store name string components as blobs for deduplication
+    compileName d.cnst.name
+    for lvl in d.cnst.levelParams do compileName lvl
+    for n in d.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+
+    let nameAddr := d.cnst.name.getHash
+    let lvlAddrs := d.cnst.levelParams.map (·.getHash)
+    let allAddrs := d.all.map (·.getHash)
+    let ctxAddrs ← getMutCtxAddrs
+
+    let defn : Ixon.Definition := {
+      kind := .defn
+      safety := convertSafety d.safety
+      lvls := d.cnst.levelParams.size.toUInt64
+      typ := typeExpr
+      value := valueExpr
+    }
+    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs d.hints allAddrs ctxAddrs arena typeRoot valueRoot
+    pure (defn, constMeta, typeExpr, valueExpr)
+
+/-- Compile a theorem to Ixon.Definition with metadata. -/
+def compileTheorem (d : TheoremVal) : CompileM (Ixon.Definition × Ixon.ConstantMeta × Ixon.Expr × Ixon.Expr) := do
+  withUnivCtx d.cnst.levelParams.toList do
+    resetArena
+    let (typeExpr, typeRoot) ← compileExpr d.cnst.type
+    let (valueExpr, valueRoot) ← compileExpr d.value
+    let arena ← takeArena
+    clearExprCache
+
+    -- Store name string components as blobs for deduplication
+    compileName d.cnst.name
+    for lvl in d.cnst.levelParams do compileName lvl
+    for n in d.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+
+    let nameAddr := d.cnst.name.getHash
+    let lvlAddrs := d.cnst.levelParams.map (·.getHash)
+    let allAddrs := d.all.map (·.getHash)
+    let ctxAddrs ← getMutCtxAddrs
+
+    let defn : Ixon.Definition := {
+      kind := .thm
+      safety := .safe
+      lvls := d.cnst.levelParams.size.toUInt64
+      typ := typeExpr
+      value := valueExpr
+    }
+    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs .opaque allAddrs ctxAddrs arena typeRoot valueRoot
+    pure (defn, constMeta, typeExpr, valueExpr)
+
+/-- Compile an opaque to Ixon.Definition with metadata. -/
+def compileOpaque (d : OpaqueVal) : CompileM (Ixon.Definition × Ixon.ConstantMeta × Ixon.Expr × Ixon.Expr) := do
+  withUnivCtx d.cnst.levelParams.toList do
+    resetArena
+    let (typeExpr, typeRoot) ← compileExpr d.cnst.type
+    let (valueExpr, valueRoot) ← compileExpr d.value
+    let arena ← takeArena
+    clearExprCache
+
+    -- Store name string components as blobs for deduplication
+    compileName d.cnst.name
+    for lvl in d.cnst.levelParams do compileName lvl
+    for n in d.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+
+    let nameAddr := d.cnst.name.getHash
+    let lvlAddrs := d.cnst.levelParams.map (·.getHash)
+    let allAddrs := d.all.map (·.getHash)
+    let ctxAddrs ← getMutCtxAddrs
+
+    let defn : Ixon.Definition := {
+      kind := .opaq
+      safety := if d.isUnsafe then .unsaf else .safe
+      lvls := d.cnst.levelParams.size.toUInt64
+      typ := typeExpr
+      value := valueExpr
+    }
+    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs .opaque allAddrs ctxAddrs arena typeRoot valueRoot
+    pure (defn, constMeta, typeExpr, valueExpr)
+
+/-- Compile an axiom to Ixon.Axiom with metadata. -/
+def compileAxiom (a : AxiomVal) : CompileM (Ixon.Axiom × Ixon.ConstantMeta × Ixon.Expr) := do
+  withUnivCtx a.cnst.levelParams.toList do
+    resetArena
+    let (typeExpr, typeRoot) ← compileExpr a.cnst.type
+    let arena ← takeArena
+    clearExprCache
+
+    -- Store name string components as blobs for deduplication
+    compileName a.cnst.name
+    for lvl in a.cnst.levelParams do compileName lvl
+
+    let nameAddr := a.cnst.name.getHash
+    let lvlAddrs := a.cnst.levelParams.map (·.getHash)
+
+    let axio : Ixon.Axiom := {
+      isUnsafe := a.isUnsafe
+      lvls := a.cnst.levelParams.size.toUInt64
+      typ := typeExpr
+    }
+    let constMeta := Ixon.ConstantMeta.axio nameAddr lvlAddrs arena typeRoot
+    pure (axio, constMeta, typeExpr)
+
+/-- Compile a quotient to Ixon.Quotient with metadata. -/
+def compileQuotient (q : QuotVal) : CompileM (Ixon.Quotient × Ixon.ConstantMeta × Ixon.Expr) := do
+  withUnivCtx q.cnst.levelParams.toList do
+    resetArena
+    let (typeExpr, typeRoot) ← compileExpr q.cnst.type
+    let arena ← takeArena
+    clearExprCache
+
+    -- Store name string components as blobs for deduplication
+    compileName q.cnst.name
+    for lvl in q.cnst.levelParams do compileName lvl
+
+    let nameAddr := q.cnst.name.getHash
+    let lvlAddrs := q.cnst.levelParams.map (·.getHash)
+
+    let kind : QuotKind := match q.kind with
+      | .type => .type
+      | .ctor => .ctor
+      | .lift => .lift
+      | .ind => .ind
+    let quot : Ixon.Quotient := {
+      kind
+      lvls := q.cnst.levelParams.size.toUInt64
+      typ := typeExpr
+    }
+    let constMeta := Ixon.ConstantMeta.quot nameAddr lvlAddrs arena typeRoot
+    pure (quot, constMeta, typeExpr)
+
+/-- Compile a recursor rule to Ixon, returning the ctor address and rhs expression. -/
+def compileRecursorRule (rule : RecursorRule) : CompileM (Ixon.RecursorRule × Address × UInt64) := do
+  let (rhs, ruleRoot) ← compileExpr rule.rhs
+  let ctorAddr := rule.ctor.getHash
+  pure ({ fields := rule.nfields.toUInt64, rhs }, ctorAddr, ruleRoot)
+
+/-- Compile a recursor to Ixon.Recursor with metadata. -/
+def compileRecursor (r : RecursorVal) : CompileM (Ixon.Recursor × Ixon.ConstantMeta × Ixon.Expr) := do
+  withUnivCtx r.cnst.levelParams.toList do
+    resetArena
+    let (typeExpr, typeRoot) ← compileExpr r.cnst.type
+
+    let mut rules : Array Ixon.RecursorRule := #[]
+    let mut ruleAddrs : Array Address := #[]
+    let mut ruleRoots : Array UInt64 := #[]
+    for rule in r.rules do
+      let (ixonRule, ctorAddr, ruleRoot) ← compileRecursorRule rule
+      rules := rules.push ixonRule
+      ruleAddrs := ruleAddrs.push ctorAddr
+      ruleRoots := ruleRoots.push ruleRoot
+
+    let arena ← takeArena
+    clearExprCache
+
+    -- Store name string components as blobs for deduplication
+    compileName r.cnst.name
+    for lvl in r.cnst.levelParams do compileName lvl
+    for n in r.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+    for rule in r.rules do compileName rule.ctor
+
+    let nameAddr := r.cnst.name.getHash
+    let lvlAddrs := r.cnst.levelParams.map (·.getHash)
+    let allAddrs := r.all.map (·.getHash)
+    let ctxAddrs ← getMutCtxAddrs
+
+    let recursor : Ixon.Recursor := {
+      k := r.k
+      isUnsafe := r.isUnsafe
+      lvls := r.cnst.levelParams.size.toUInt64
+      params := r.numParams.toUInt64
+      indices := r.numIndices.toUInt64
+      motives := r.numMotives.toUInt64
+      minors := r.numMinors.toUInt64
+      typ := typeExpr
+      rules := rules
+    }
+    let constMeta := Ixon.ConstantMeta.recr nameAddr lvlAddrs ruleAddrs allAddrs ctxAddrs arena typeRoot ruleRoots
+    pure (recursor, constMeta, typeExpr)
+
+/-- Compile a constructor to Ixon.Constructor with metadata (ConstantMeta.ctor). -/
+def compileConstructor (c : ConstructorVal) : CompileM (Ixon.Constructor × Ixon.ConstantMeta × Ixon.Expr) := do
+  resetArena
+  let (typeExpr, typeRoot) ← compileExpr c.cnst.type
+  let arena ← takeArena
+  clearExprCache
+
+  -- Store name string components as blobs for deduplication
+  compileName c.cnst.name
+  for lvl in c.cnst.levelParams do compileName lvl
+
+  let nameAddr := c.cnst.name.getHash
+  let lvlAddrs := c.cnst.levelParams.map (·.getHash)
+
+  let ctor : Ixon.Constructor := {
+    isUnsafe := c.isUnsafe
+    lvls := c.cnst.levelParams.size.toUInt64
+    cidx := c.cidx.toUInt64
+    params := c.numParams.toUInt64
+    fields := c.numFields.toUInt64
+    typ := typeExpr
+  }
+  let ctorMeta := Ixon.ConstantMeta.ctor nameAddr lvlAddrs c.induct.getHash arena typeRoot
+  pure (ctor, ctorMeta, typeExpr)
+
+/-- Compile an inductive to Ixon.Inductive with metadata.
+    Takes the inductive and its constructors (looked up from Ix.Environment).
+    Returns (inductive, indc meta, ctor metas with names, all exprs). -/
+def compileInductive (i : InductiveVal) (ctorVals : Array ConstructorVal)
+    : CompileM (Ixon.Inductive × Ixon.ConstantMeta × Array (Name × Ixon.ConstantMeta) × Array Ixon.Expr) := do
+  withUnivCtx i.cnst.levelParams.toList do
+    resetArena
+    let (typeExpr, typeRoot) ← compileExpr i.cnst.type
+    let arena ← takeArena
+    clearExprCache
+
+    let mut ctors : Array Ixon.Constructor := #[]
+    let mut ctorMetaPairs : Array (Name × Ixon.ConstantMeta) := #[]
+    let mut ctorNameAddrs : Array Address := #[]
+    let mut ctorExprs : Array Ixon.Expr := #[typeExpr]
+    for ctorVal in ctorVals do
+      let (c, cm, e) ← compileConstructor ctorVal
+      ctors := ctors.push c
+      ctorMetaPairs := ctorMetaPairs.push (ctorVal.cnst.name, cm)
+      ctorNameAddrs := ctorNameAddrs.push ctorVal.cnst.name.getHash
+      ctorExprs := ctorExprs.push e
+
+    -- Store name string components as blobs for deduplication
+    compileName i.cnst.name
+    for lvl in i.cnst.levelParams do compileName lvl
+    for n in i.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+
+    let nameAddr := i.cnst.name.getHash
+    let lvlAddrs := i.cnst.levelParams.map (·.getHash)
+    let allAddrs := i.all.map (·.getHash)
+    let ctxAddrs ← getMutCtxAddrs
+
+    let ind : Ixon.Inductive := {
+      recr := i.isRec
+      refl := i.isReflexive
+      isUnsafe := i.isUnsafe
+      lvls := i.cnst.levelParams.size.toUInt64
+      params := i.numParams.toUInt64
+      indices := i.numIndices.toUInt64
+      nested := i.numNested.toUInt64
+      typ := typeExpr
+      ctors := ctors
+    }
+    let constMeta := Ixon.ConstantMeta.indc nameAddr lvlAddrs ctorNameAddrs allAddrs ctxAddrs arena typeRoot
+    pure (ind, constMeta, ctorMetaPairs, ctorExprs)
+
+/-! ## Internal compilation helpers for mutual blocks -/
+
+/-- Compile definition data for a Def structure (from Mutual.lean). -/
+def compileDefinitionData (d : Def) : CompileM (Ixon.Definition × Ixon.ConstantMeta × Ixon.Expr × Ixon.Expr) := do
+  withUnivCtx d.levelParams.toList do
+    resetArena
+    let (typeExpr, typeRoot) ← compileExpr d.type
+    let (valueExpr, valueRoot) ← compileExpr d.value
+    let arena ← takeArena
+    clearExprCache
+
+    -- Store name components for deduplication
+    compileName d.name
+    for lvl in d.levelParams do compileName lvl
+    for n in d.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+
+    let nameAddr := d.name.getHash
+    let lvlAddrs := d.levelParams.map (·.getHash)
+    let allAddrs := d.all.map (·.getHash)
+    let ctxAddrs ← getMutCtxAddrs
+
+    let defn : Ixon.Definition := {
+      kind := d.kind
+      safety := d.safety
+      lvls := d.levelParams.size.toUInt64
+      typ := typeExpr
+      value := valueExpr
+    }
+    let hints := match d.kind with
+      | .defn => d.hints
+      | .thm => .opaque
+      | .opaq => .opaque
+    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs hints allAddrs ctxAddrs arena typeRoot valueRoot
+    pure (defn, constMeta, typeExpr, valueExpr)
+
+/-- Compile inductive data for an Ind structure (from Mutual.lean).
+    Returns (inductive, indc meta, ctor metas with names, all exprs). -/
+def compileInductiveData (i : Ind)
+    : CompileM (Ixon.Inductive × Ixon.ConstantMeta × Array (Name × Ixon.ConstantMeta) × Array Ixon.Expr) := do
+  withUnivCtx i.levelParams.toList do
+    resetArena
+    let (typeExpr, typeRoot) ← compileExpr i.type
+    let arena ← takeArena
+    clearExprCache
+
+    let mut ctors : Array Ixon.Constructor := #[]
+    let mut ctorMetaPairs : Array (Name × Ixon.ConstantMeta) := #[]
+    let mut ctorNameAddrs : Array Address := #[]
+    let mut ctorExprs : Array Ixon.Expr := #[typeExpr]
+    for ctorVal in i.ctors do
+      let (c, cm, e) ← compileConstructor ctorVal
+      ctors := ctors.push c
+      ctorMetaPairs := ctorMetaPairs.push (ctorVal.cnst.name, cm)
+      ctorNameAddrs := ctorNameAddrs.push ctorVal.cnst.name.getHash
+      ctorExprs := ctorExprs.push e
+
+    -- Store name components for deduplication
+    compileName i.name
+    for lvl in i.levelParams do compileName lvl
+    for n in i.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+
+    let nameAddr := i.name.getHash
+    let lvlAddrs := i.levelParams.map (·.getHash)
+    let allAddrs := i.all.map (·.getHash)
+    let ctxAddrs ← getMutCtxAddrs
+
+    let ind : Ixon.Inductive := {
+      recr := i.isRec
+      refl := i.isReflexive
+      isUnsafe := i.isUnsafe
+      lvls := i.levelParams.size.toUInt64
+      params := i.numParams.toUInt64
+      indices := i.numIndices.toUInt64
+      nested := i.numNested.toUInt64
+      typ := typeExpr
+      ctors := ctors
+    }
+    let constMeta := Ixon.ConstantMeta.indc nameAddr lvlAddrs ctorNameAddrs allAddrs ctxAddrs arena typeRoot
+    pure (ind, constMeta, ctorMetaPairs, ctorExprs)
+
+/-- Compile recursor data for a RecursorVal. -/
+def compileRecursorData (r : RecursorVal) : CompileM (Ixon.Recursor × Ixon.ConstantMeta × Ixon.Expr) := do
+  withUnivCtx r.cnst.levelParams.toList do
+    resetArena
+    let (typeExpr, typeRoot) ← compileExpr r.cnst.type
+
+    let mut rules : Array Ixon.RecursorRule := #[]
+    let mut ruleAddrs : Array Address := #[]
+    let mut ruleRoots : Array UInt64 := #[]
+    for rule in r.rules do
+      let (ixonRule, ctorAddr, ruleRoot) ← compileRecursorRule rule
+      rules := rules.push ixonRule
+      ruleAddrs := ruleAddrs.push ctorAddr
+      ruleRoots := ruleRoots.push ruleRoot
+
+    let arena ← takeArena
+    clearExprCache
+
+    -- Store name string components as blobs for deduplication
+    compileName r.cnst.name
+    for lvl in r.cnst.levelParams do compileName lvl
+    for n in r.all do compileName n
+    for (n, _) in (← getBlockEnv).mutCtx.toList do compileName n
+    for rule in r.rules do compileName rule.ctor
+
+    let nameAddr := r.cnst.name.getHash
+    let lvlAddrs := r.cnst.levelParams.map (·.getHash)
+    let allAddrs := r.all.map (·.getHash)
+    let ctxAddrs ← getMutCtxAddrs
+
+    let recursor : Ixon.Recursor := {
+      k := r.k
+      isUnsafe := r.isUnsafe
+      lvls := r.cnst.levelParams.size.toUInt64
+      params := r.numParams.toUInt64
+      indices := r.numIndices.toUInt64
+      motives := r.numMotives.toUInt64
+      minors := r.numMinors.toUInt64
+      typ := typeExpr
+      rules := rules
+    }
+    let constMeta := Ixon.ConstantMeta.recr nameAddr lvlAddrs ruleAddrs allAddrs ctxAddrs arena typeRoot ruleRoots
+    pure (recursor, constMeta, typeExpr)
+
+/-! ## Mutual Block Compilation -/
+
+/-- Compile sorted equivalence classes of mutual constants.
+    Returns compiled constants, all root expressions, and metadata for each constant. -/
+def compileMutConsts (classes : List (List MutConst))
+    : CompileM (Array Ixon.MutConst × Array Ixon.Expr × Array (Name × Ixon.ConstantMeta)) := do
+  let mut dat : Array Ixon.MutConst := #[]
+  let mut allExprs : Array Ixon.Expr := #[]
+  let mut allMetas : Array (Name × Ixon.ConstantMeta) := #[]
+
+  -- Only push one representative per equivalence class into dat,
+  -- since alpha-equivalent constants compile to identical data and share
+  -- the same class index in MutConst.ctx.
   for constClass in classes do
-    let mut classData := #[]
-    -- compile each constant in a class
+    let mut representativePushed := false
     for const in constClass do
       match const with
-      | .indc x => do
-        let (i, m) <- .withCurrent x.name <| compileIndc x
-        classData := classData.push (.indc i)
-        met := met.union m
-      | .defn x => do
-        let (d, m) <- .withCurrent x.name <| compileDefn x
-        classData := classData.push (.defn d)
-        met := met.insert (<- compileName x.name) (<- storeMeta m)
-      | .recr x => do
-        let (r, m) <- .withCurrent x.name <| compileRecr x
-        classData := classData.push (.recr r)
-        met := met.insert (<- compileName x.name) (<- storeMeta m)
-    -- make sure we have no empty classes and all defs in a class are equal
-    match classData.toList with
-      | [] => throw (.badMutualBlock classes)
-      | [x] => dat := dat.push x
-      | x::xs =>
-        if xs.foldr (fun y acc => (y == x) && acc) true
-        then dat := dat.push x
-        else throw (.badMutualBlock classes)
-  pure (.muts dat.toList, met)
+      | .indc i => do
+        let (ind, constMeta, ctorMetaPairs, exprs) ← withCurrent i.name (compileInductiveData i)
+        if !representativePushed then
+          dat := dat.push (Ixon.MutConst.indc ind)
+          for e in exprs do
+            allExprs := allExprs.push e
+          representativePushed := true
+        allMetas := allMetas.push (i.name, constMeta)
+        for (ctorName, ctorMeta) in ctorMetaPairs do
+          allMetas := allMetas.push (ctorName, ctorMeta)
+      | .defn d => do
+        let (defn, constMeta, tExpr, vExpr) ← withCurrent d.name (compileDefinitionData d)
+        if !representativePushed then
+          dat := dat.push (Ixon.MutConst.defn defn)
+          allExprs := allExprs.push tExpr
+          allExprs := allExprs.push vExpr
+          representativePushed := true
+        allMetas := allMetas.push (d.name, constMeta)
+      | .recr r => do
+        let (recursor, constMeta, tExpr) ← withCurrent r.cnst.name (compileRecursorData r)
+        if !representativePushed then
+          dat := dat.push (Ixon.MutConst.recr recursor)
+          allExprs := allExprs.push tExpr
+          for rule in recursor.rules do
+            allExprs := allExprs.push rule.rhs
+          representativePushed := true
+        allMetas := allMetas.push (r.cnst.name, constMeta)
 
-def compileMutual : MutConst -> CompileM (Ixon × Ixon)
-| const => do
-  --dbg_trace s!"compileMutual {const.name}"
-  let all := (<- read).all
---dbg_trace s!"compileMutual {const.name} all: {repr all}"
-  if all == {const.name} &&
-    (const matches .defn _ || const matches .recr _) then do
+  pure (dat, allExprs, allMetas)
+
+/-- Compile a mutual block and create projections for each constant.
+    Returns the Muts block constant and projections for each name with metadata. -/
+def compileMutualBlock (classes : List (List MutConst))
+    : CompileM BlockResult := do
+  let mutCtx := MutConst.ctx classes
+  withMutCtx mutCtx do
+    let (mutConsts, allExprs, allMetas) ← compileMutConsts classes
+    let cache ← getBlockState
+    let block := buildConstantWithSharing (.muts mutConsts) allExprs cache.refs cache.univs
+
+    -- Serialize once and compute block address
+    let blockBytes := Ixon.ser block
+    let blockAddr := Address.blake3 blockBytes
+
+    -- Build a lookup map from name to metadata
+    let metaMap : Std.HashMap Name Ixon.ConstantMeta := allMetas.foldl (init := {}) fun m (n, constMeta) => m.insert n constMeta
+
+    -- Create projections for each constant
+    let mut projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]
+    let mut idx : UInt64 := 0
+    for constClass in classes do
+      for const in constClass do
+        let projInfo : Ixon.ConstantInfo := match const with
+          | .defn _ => .dPrj ⟨idx, blockAddr⟩
+          | .indc _ => .iPrj ⟨idx, blockAddr⟩
+          | .recr _ => .rPrj ⟨idx, blockAddr⟩
+        let proj : Ixon.Constant := ⟨projInfo, #[], #[], #[]⟩
+        let constMeta := metaMap.get? const.name |>.getD .empty
+        projections := projections.push (const.name, proj, constMeta)
+
+        -- For inductives, also create constructor projections
+        if let .indc i := const then
+          let mut cidx : UInt64 := 0
+          for ctor in i.ctors do
+            let ctorProjInfo : Ixon.ConstantInfo := .cPrj ⟨idx, cidx, blockAddr⟩
+            let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
+            let ctorMeta := metaMap.get? ctor.cnst.name |>.getD .empty
+            projections := projections.push (ctor.cnst.name, ctorProj, ctorMeta)
+            cidx := cidx + 1
+      idx := idx + 1
+
+    pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
+
+/-! ## Main Compilation Entry Points -/
+
+/-- Build mutCtx for an inductive: includes the inductive and all its constructors. -/
+def buildInductiveMutCtx (i : InductiveVal) (ctorVals : Array ConstructorVal) : Ix.MutCtx := Id.run do
+  let mut ctx : Ix.MutCtx := Batteries.RBMap.empty
+  -- Inductive at index 0
+  ctx := ctx.insert i.cnst.name 0
+  -- Constructors at indices 1, 2, ...
+  for (ctor, idx) in ctorVals.zipIdx do
+    ctx := ctx.insert ctor.cnst.name (idx + 1)
+  return ctx
+
+/-- Build a BlockResult from a block constant, serializing once. -/
+def BlockResult.mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta := .empty)
+    (projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]) : BlockResult :=
+  let blockBytes := Ixon.ser block
+  let blockAddr := Address.blake3 blockBytes
+  ⟨block, blockBytes, blockAddr, blockMeta, projections⟩
+
+/-- Compile a single Ix.ConstantInfo directly (singleton, non-mutual).
+    Returns BlockResult with the constant and any projections needed. -/
+def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
+  let name := const.getCnst.name
+  let mutCtx : Ix.MutCtx := Batteries.RBMap.empty.insert name 0
+  withMutCtx mutCtx do
     match const with
-    | .defn d => do
-      let (dat, met) <- .withMutCtx (.single d.name 0) <| compileDefn d
-      pure (.defn dat, .meta met)
-    | .recr r => do
-      let (dat, met) <- .withMutCtx (.single r.name 0) <| compileRecr r
-      pure (.recr dat, .meta met)
-    | _ => unreachable!
+    | .defnInfo d =>
+      let (defn, constMeta, tExpr, vExpr) ← compileDefinition d
+      let cache ← getBlockState
+      let block := buildConstantWithSharing (.defn defn) #[tExpr, vExpr] cache.refs cache.univs
+      pure (BlockResult.mk' block constMeta)
+
+    | .thmInfo d =>
+      let (defn, constMeta, tExpr, vExpr) ← compileTheorem d
+      let cache ← getBlockState
+      let block := buildConstantWithSharing (.defn defn) #[tExpr, vExpr] cache.refs cache.univs
+      pure (BlockResult.mk' block constMeta)
+
+    | .opaqueInfo d =>
+      let (defn, constMeta, tExpr, vExpr) ← compileOpaque d
+      let cache ← getBlockState
+      let block := buildConstantWithSharing (.defn defn) #[tExpr, vExpr] cache.refs cache.univs
+      pure (BlockResult.mk' block constMeta)
+
+    | .axiomInfo a =>
+      let (axio, constMeta, typeExpr) ← compileAxiom a
+      let cache ← getBlockState
+      let block := buildConstantWithSharing (.axio axio) #[typeExpr] cache.refs cache.univs
+      pure (BlockResult.mk' block constMeta)
+
+    | .quotInfo q =>
+      let (quot, constMeta, typeExpr) ← compileQuotient q
+      let cache ← getBlockState
+      let block := buildConstantWithSharing (.quot quot) #[typeExpr] cache.refs cache.univs
+      pure (BlockResult.mk' block constMeta)
+
+    | .recInfo r =>
+      let (recursor, constMeta, tExpr) ← compileRecursor r
+      let mut allExprs : Array Ixon.Expr := #[tExpr]
+      for rule in recursor.rules do
+        allExprs := allExprs.push rule.rhs
+      let cache ← getBlockState
+      let block := buildConstantWithSharing (.recr recursor) allExprs cache.refs cache.univs
+      pure (BlockResult.mk' block constMeta)
+
+    | .inductInfo i =>
+      -- Look up constructor values from environment
+      let mut ctorVals : Array ConstructorVal := #[]
+      for ctorName in i.ctors do
+        let ctorConst ← findConst ctorName
+        match ctorConst with
+        | .ctorInfo c => ctorVals := ctorVals.push c
+        | _ => throw (.invalidMutualBlock s!"Expected constructor for {ctorName}")
+      -- Build mutCtx with all names in the inductive family
+      let indMutCtx := buildInductiveMutCtx i ctorVals
+      withMutCtx indMutCtx do
+        let (ind, indMeta, ctorMetaPairs, ctorExprs) ← compileInductive i ctorVals
+        let cache ← getBlockState
+        -- Wrap single inductive in muts for consistency
+        let block := buildConstantWithSharing (.muts #[.indc ind]) ctorExprs cache.refs cache.univs
+        -- Compute block address for projections
+        let blockBytes := Ixon.ser block
+        let blockAddr := Address.blake3 blockBytes
+        -- Create projections for inductive and constructors
+        let mut projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]
+        -- Inductive projection (index 0)
+        let indProjInfo : Ixon.ConstantInfo := .iPrj ⟨0, blockAddr⟩
+        let indProj : Ixon.Constant := ⟨indProjInfo, #[], #[], #[]⟩
+        projections := projections.push (i.cnst.name, indProj, indMeta)
+        -- Constructor projections from ctorMetaPairs
+        for ((ctorName, ctorMeta), cidx) in ctorMetaPairs.zipIdx do
+          let ctorProjInfo : Ixon.ConstantInfo := .cPrj ⟨0, cidx.toUInt64, blockAddr⟩
+          let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
+          projections := projections.push (ctorName, ctorProj, ctorMeta)
+        pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
+
+    | .ctorInfo c =>
+      -- Constructors are compiled by compiling their parent inductive
+      let parentConst ← findConst c.induct
+      match parentConst with
+      | .inductInfo i =>
+        let mut ctorVals : Array ConstructorVal := #[]
+        for ctorName in i.ctors do
+          let ctorConst ← findConst ctorName
+          match ctorConst with
+          | .ctorInfo cv => ctorVals := ctorVals.push cv
+          | _ => throw (.invalidMutualBlock s!"Expected constructor")
+        -- Build mutCtx with all names in the inductive family
+        let indMutCtx := buildInductiveMutCtx i ctorVals
+        withMutCtx indMutCtx do
+          let (ind, indMeta, ctorMetaPairs, ctorExprs) ← compileInductive i ctorVals
+          let cache ← getBlockState
+          let block := buildConstantWithSharing (.muts #[.indc ind]) ctorExprs cache.refs cache.univs
+          let blockBytes := Ixon.ser block
+          let blockAddr := Address.blake3 blockBytes
+          let mut projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]
+          let indProjInfo : Ixon.ConstantInfo := .iPrj ⟨0, blockAddr⟩
+          let indProj : Ixon.Constant := ⟨indProjInfo, #[], #[], #[]⟩
+          projections := projections.push (i.cnst.name, indProj, indMeta)
+          for ((ctorName, ctorMeta), cidx) in ctorMetaPairs.zipIdx do
+            let ctorProjInfo : Ixon.ConstantInfo := .cPrj ⟨0, cidx.toUInt64, blockAddr⟩
+            let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
+            projections := projections.push (ctorName, ctorProj, ctorMeta)
+          pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
+      | _ => throw (.invalidMutualBlock s!"Constructor has non-inductive parent")
+
+/-- Compile a constant by name (looks it up in the environment).
+    Uses the block's `all` set from BlockEnv (populated from SCC analysis). -/
+def compileConstant (name : Name) : CompileM BlockResult := do
+  let const ← findConst name
+  let blockEnv ← getBlockEnv
+  -- Use the block's all set from SCC analysis
+  let all := blockEnv.all
+
+  -- Handle singleton non-mutual constants
+  if all.size == 1 then
+    compileConstantInfo const
   else
-    let mut consts := #[]
-    for name in all do
-      match <- findLeanConst name with
-      | .inductInfo val => do consts := consts.push (<- MutConst.mkIndc val)
-      | .defnInfo val => consts := consts.push (MutConst.mkDefn val)
-      | .opaqueInfo val => consts := consts.push (MutConst.mkOpaq val)
-      | .thmInfo val => consts := consts.push (MutConst.mkTheo val)
-      | .recInfo val => consts := consts.push (MutConst.recr val)
+    -- Multi-constant mutual block
+    let mut consts : Array MutConst := #[]
+    for n in all do
+      match ← findConst n with
+      | .inductInfo val => consts := consts.push (← MutConst.mkIndc val)
+      | .defnInfo val => consts := consts.push (MutConst.fromDefinitionVal val)
+      | .opaqueInfo val => consts := consts.push (MutConst.fromOpaqueVal val)
+      | .thmInfo val => consts := consts.push (MutConst.fromTheoremVal val)
+      | .recInfo val => consts := consts.push (.recr val)
       | _ => continue
-    --dbg_trace s!"compileMutual {const.name} consts: {repr <| consts.map (·.name)}"
-    -- sort MutConsts into equivalence classes
-    let mutConsts <- sortConsts consts.toList
-    --dbg_trace s!"compileMutual {const.name} mutConsts: {repr <| mutConsts.map (·.map (·.name))}"
-    let mutCtx := MutConst.ctx mutConsts
-    --dbg_trace s!"compileMutual {const.name} mutCtx: {repr mutCtx}"
-    let mutMeta <- mutConsts.mapM fun m => m.mapM <| fun c => compileName c.name
-    -- compile each constant with the mutCtx
-    let (data, metas) <- .withMutCtx mutCtx (compileMutConsts mutConsts)
-    -- add top-level mutual block to our state
-    let ctx <- mutCtx.toList.mapM fun (n, i) => do
-      pure (<- compileName n, <- storeNat i)
-    let block: MetaAddress :=
-      ⟨<- storeIxon data, <- storeMeta ⟨[.muts mutMeta, .map ctx, .map metas.toList]⟩⟩
-    modify fun stt => { stt with blocks := stt.blocks.insert block }
-    -- then add all projections, returning the inductive we started with
-    let mut ret? : Option (Ixon × Ixon) := none
-    for const' in consts do
-      let idx <- do match mutCtx.find? const'.name with
-      | some idx => pure idx
-      | none => throw $ .cantFindMutIndex const'.name mutCtx
-      let n <- compileName const'.name
-      let «meta» <- do match metas.find? n with
-      | some «meta» => pure ⟨[.link block.meta, .link «meta»]⟩
-      | none => throw $ .cantFindMutMeta const'.name metas
-      let data := match const with
-      | .defn _ => .dprj ⟨idx, block.data⟩
-      | .indc _ => .iprj ⟨idx, block.data⟩
-      | .recr _ => .rprj ⟨idx, block.data⟩
-      let addr := ⟨<- storeIxon data, <- storeMeta «meta»⟩
-      modify fun stt => { stt with
-        constCache := stt.constCache.insert const'.name addr
+
+    let mutConsts ← sortConsts consts.toList
+    compileMutualBlock mutConsts
+
+/-! ## Block Compilation Entry Point -/
+
+/-- Compile a single block purely, returning the block result and state. -/
+def compileBlockPure (compileEnv : CompileEnv) (all : Set Name) (lo : Name)
+    : Except CompileError (BlockResult × BlockState) :=
+  let blockEnv : BlockEnv := {
+    all := all
+    current := lo
+    mutCtx := default
+    univCtx := []
+  }
+  CompileM.run compileEnv blockEnv {} (compileConstant lo)
+
+/-! ## Main Compilation Entry Point -/
+
+/-- Compile an Ix.Environment purely (sequential, no IO).
+    Returns the compiled Ixon.Env and total serialized bytes.
+    Pass `dbg := true` to enable progress tracing via dbg_trace. -/
+def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool := false)
+    : Except String (Ixon.Env × Nat) := Id.run do
+  -- Initialize compilation state
+  let mut compileEnv := CompileEnv.new env
+  let mut blockNames : Std.HashMap Address Ix.Name := {}
+
+  -- Build work queue data structures
+  let totalBlocks := blocks.blocks.size
+
+  -- blockInfo: lo → (all names in block, remaining dep count)
+  let mut blockInfo : Std.HashMap Name (Set Name × Nat) := {}
+  -- reverseDeps: constant name → list of block lowlinks that depend on it
+  let mut reverseDeps : Std.HashMap Name (Array Name) := {}
+
+  for (lo, all) in blocks.blocks do
+    let deps := blocks.blockRefs.get! lo
+    blockInfo := blockInfo.insert lo (all, deps.size)
+    -- Register reverse dependencies
+    for depName in deps do
+      reverseDeps := reverseDeps.alter depName fun
+        | some arr => some (arr.push lo)
+        | none => some #[lo]
+
+  -- Initialize ready queue with blocks that have no dependencies
+  let mut readyQueue : Array (Name × Set Name) := #[]
+  for (lo, (all, depCount)) in blockInfo do
+    if depCount == 0 then
+      readyQueue := readyQueue.push (lo, all)
+
+  -- Compile blocks in dependency order
+  let mut blocksCompiled : Nat := 0
+  let mut lastPct : Nat := 0
+
+  while !readyQueue.isEmpty do
+    -- Pop from ready queue
+    let (lo, all) := readyQueue.back!
+    readyQueue := readyQueue.pop
+
+    match compileBlockPure compileEnv all lo with
+    | Except.ok (result, cache) =>
+      -- Use pre-computed serialized bytes and address
+      let blockBytes := result.blockBytes
+      let blockAddr := result.blockAddr
+      compileEnv := { compileEnv with
+        totalBytes := compileEnv.totalBytes + blockBytes.size
+        constants := compileEnv.constants.insert blockAddr result.block
+        blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) compileEnv.blobs
       }
-      if const'.name == const.name then ret? := some (data, .meta «meta»)
-      for ctor in const'.ctors do
-        let cdata := .cprj ⟨idx, ctor.cidx, block.data⟩
-        let cn <- compileName ctor.name
-        let cmeta <- do match metas.find? cn with
-        | some «meta» => pure ⟨[.link block.meta, .link «meta»]⟩
-        | none => throw $ .cantFindMutMeta const'.name metas
-        let caddr := ⟨<- storeIxon cdata, <- storeMeta cmeta⟩
-        modify fun stt => { stt with
-          constCache := stt.constCache.insert ctor.name caddr
-        }
-    match ret? with
-    | some ret => return ret
-    | none => throw $ .mutualBlockMissingProjection const.name
+      blockNames := cache.blockNames.fold (fun m k v => m.insert k v) blockNames
 
+      -- If there are projections, store them and map names to projection addresses
+      if result.projections.isEmpty then
+        -- No projections: map lowlink name directly to block
+        compileEnv := { compileEnv with nameToNamed := compileEnv.nameToNamed.insert lo ⟨blockAddr, result.blockMeta⟩ }
+      else
+        -- Store each projection and map name to projection address
+        for (name, proj, constMeta) in result.projections do
+          let projBytes := Ixon.ser proj
+          let projAddr := Address.blake3 projBytes
+          compileEnv := { compileEnv with
+            totalBytes := compileEnv.totalBytes + projBytes.size
+            constants := compileEnv.constants.insert projAddr proj
+            nameToNamed := compileEnv.nameToNamed.insert name ⟨projAddr, constMeta⟩
+          }
 
-def compileConstant (name: Lean.Name): CompileM MetaAddress := do
-  --dbg_trace "compileConstant {name}"
-  match (<- get).constCache.find? name with
-  | some x => pure x
-  | none => do
-    let c <- findLeanConst name
-    let maddr <- .withCurrent name <| go c
-    modifyGet fun stt => (maddr, { stt with
-      constCache := stt.constCache.insert name maddr
-    })
-  where
-    store: Ixon × Ixon -> CompileM MetaAddress
-    | (d, m) => do pure ⟨<- storeIxon d, <- storeIxon m⟩
-    go : Lean.ConstantInfo -> CompileM MetaAddress
-    | .defnInfo val => compileMutual (MutConst.mkDefn val) >>= store
-    | .thmInfo val => compileMutual (MutConst.mkTheo val) >>= store
-    | .opaqueInfo val => compileMutual (MutConst.mkOpaq val) >>= store
-    | .inductInfo val => MutConst.mkIndc val >>= compileMutual >>= store
-    | .ctorInfo val => do match <- findLeanConst val.induct with
-      | .inductInfo ind => do
-        let _ <- MutConst.mkIndc ind >>= compileMutual
-        match (<- get).constCache.find? val.name with
-        | some maddr => do pure maddr
-        | none => throw <| .mutualBlockMissingProjection val.name
-      | c => throw <| .invalidConstantKind c.name "inductive" c.ctorName
-    | .recInfo val => compileMutual (MutConst.recr val) >>= store
-    | .axiomInfo ⟨⟨name, lvls, type⟩, isUnsafe⟩ => .withLevels lvls do
-      let n <- compileName name
-      let ls <- lvls.mapM compileName
-      let t <- compileExpr type
-      let dat := .axio ⟨isUnsafe, lvls.length, t.data⟩
-      let met := .meta ⟨[.link n, .links ls, .link t.meta]⟩
-      store (dat, met)
-    | .quotInfo ⟨⟨name, lvls, type⟩, kind⟩ => .withLevels lvls do
-      let n <- compileName name
-      let ls <- lvls.mapM compileName
-      let t <- compileExpr type
-      let dat := .quot ⟨kind, lvls.length, t.data⟩
-      let met := .meta ⟨[.link n, .links ls, .link t.meta]⟩
-      store (dat, met)
+      -- Decrement dep counts for blocks that depend on constants in this block
+      for name in all do
+        if let some dependents := reverseDeps.get? name then
+          for dependentLo in dependents do
+            if let some (depAll, depCount) := blockInfo.get? dependentLo then
+              let newCount := depCount - 1
+              blockInfo := blockInfo.insert dependentLo (depAll, newCount)
+              -- If dep count reaches 0, add to ready queue
+              if newCount == 0 then
+                readyQueue := readyQueue.push (dependentLo, depAll)
 
---partial def makeLeanDef
---  (name: Lean.Name) (levelParams: List Lean.Name) (type value: Lean.Expr)
---  : Lean.DefinitionVal :=
---  { name, levelParams, type, value, hints := .opaque, safety := .safe }
---
---partial def tryAddLeanDef (defn: Lean.DefinitionVal) : CompileM Unit := do
---  match (<- get).env.constants.find? defn.name with
---  | some _ => pure ()
---  | none => do
---    let env <- (·.env) <$> get
---    let maxHeartBeats <- (·.maxHeartBeats) <$> get
---    let decl := Lean.Declaration.defnDecl defn
---    match Lean.Environment.addDeclCore env maxHeartBeats decl .none with
---    | .ok e => do
---      modify fun stt => { stt with env := e }
---      return ()
---    | .error e => throw $ .kernelException e
---
---partial def addDef (lvls: List Lean.Name) (typ val: Lean.Expr) : CompileM MetaAddress := do
---  --let typ' <- compileExpr typ
---  --let val' <- compileExpr val
---  let anon := .defnInfo ⟨⟨.anonymous, lvls, typ⟩, val, .opaque, .safe, []⟩
---  let (data, «meta») <- compileConstant anon
---  let anonAddr := ⟨<- storeIxon data, <- storeIxon «meta»⟩
---  let name := anonAddr.data.toUniqueName
---  let const := .defnInfo ⟨⟨name, lvls, typ⟩, val, .opaque, .safe, []⟩
---  let (data, «meta») <- compileConstant const
---  let addr := ⟨<- storeIxon data, <- storeIxon «meta»⟩
---  if addr.data != anonAddr.data then
---    throw <| .alphaInvarianceFailure anon anonAddr const addr
---  else
---    tryAddLeanDef (makeLeanDef name lvls typ val)
---    return addr
---
---partial def commitConst (addr: MetaAddress) (secret: Address) : CompileM MetaAddress := do
---  let comm := Ixon.comm ⟨secret, addr.data⟩
---  let commAddr <- storeIxon comm
---  let commMeta := Ixon.comm ⟨secret, addr.meta⟩
---  let commMetaAddr <- storeIxon commMeta
---  let addr' := ⟨commAddr, commMetaAddr⟩
---  modify fun stt => { stt with
---    comms := stt.comms.insert commAddr.toUniqueName addr'
---  }
---  return addr'
---
---partial def commitDef (lvls: List Lean.Name) (typ val: Lean.Expr) (secret: Address): CompileM MetaAddress := do
---  let addr <- addDef lvls typ val
---  let addr' <- commitConst addr secret
---  tryAddLeanDef (makeLeanDef addr'.data.toUniqueName lvls typ val)
---  --tryAddLeanDecl (makeLeanDef ca.toUniqueName lvls typ (mkConst a.toUniqueName []))
---  return addr'
---
---partial def storeLevel (lvls: Nat) (secret: Option Address): CompileM Address := do
---  let addr <- storeNat lvls
---  match secret with
---  | some secret => do
---    let comm := .comm ⟨secret, addr⟩
---    let commAddr <- storeIxon comm
---    modify fun stt => { stt with
---      comms := stt.comms.insert commAddr.toUniqueName ⟨commAddr, commAddr⟩
---    }
---    return commAddr
---  | none => return addr
---
---partial def checkClaim
---  (const: Lean.Name)
---  (type: Lean.Expr)
---  (sort: Lean.Expr)
---  (lvls: List Lean.Name)
---  (secret: Option Address)
---  : CompileM (Claim × Address × Address) := do
---  let leanConst <- findLeanConst const
---  let valAddr <- compileConst leanConst >>= comm
---  let typeAddr <- addDef lvls sort type >>= comm
---  let lvls <- packLevel lvls.length commit
---  return (Claim.checks (CheckClaim.mk lvls type value), typeMeta, valMeta)
---  where
---    commit (c: Ix.Const) : MetaAddress := do
---      match commit with
---      | none => dematerializeConst c
---      | some secret =>
---
---    if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
+      blocksCompiled := blocksCompiled + 1
+      if dbg then
+        let pct := (blocksCompiled * 100) / totalBlocks
+        if pct >= lastPct + 10 then
+          dbg_trace s!"  [Compile] {pct}% ({blocksCompiled}/{totalBlocks})"
+          lastPct := pct
+    | Except.error e =>
+      if dbg then
+        dbg_trace s!"  [Compile ERROR] {lo}: {e}"
+        dbg_trace s!"  [Compile] nameToNamed has {compileEnv.nameToNamed.size} entries"
+      return .error s!"Compilation error in {lo}: {e}"
 
---
---partial def evalClaim
---  (lvls: List Lean.Name)
---  (input: Lean.Expr)
---  (output: Lean.Expr)
---  (type: Lean.Expr)
---  (sort: Lean.Expr)
---  (commit: Bool)
---  : CompileM (Claim × Address × Address × Address) := do
---  let (input, inputMeta) <- addDef lvls type input >>= comm
---  let (output, outputMeta) <- addDef lvls type output >>= comm
---  let (type, typeMeta) <- addDef lvls sort type >>= comm
---  let lvlsAddr <- packLevel lvls.length commit
---  return (Claim.evals (EvalClaim.mk lvlsAddr input output type), inputMeta, outputMeta, typeMeta)
---  where
---    comm a := if commit then commitConst (Prod.fst a) (Prod.snd a) else pure a
+  -- Check that all blocks were compiled
+  if blocksCompiled != totalBlocks then
+    return .error s!"Only compiled {blocksCompiled}/{totalBlocks} blocks - circular dependency?"
 
---/--
---Content-addresses the "delta" of an environment, that is, the content that is
---added on top of the imports.
---
---Important: constants with open references in their expressions are filtered out.
---Open references are variables that point to names which aren't present in the
---`Lean.ConstMap`.
----/
---def compileDelta (delta : Lean.PersistentHashMap Lean.Name Lean.ConstantInfo)
---  : CompileM Unit := delta.forM fun n _ => discard $ compileConstName n
---
-----def compileEnv (env: Lean.Environment)
-----  : CompileM Unit := do
-----  compileDelta env.getDelta
-----  env.getConstMap.forM fun n _ => if !c.isUnsafe then discard $ compileConstName n else pure ()
---
+  -- Build reverse index and names map, storing name string components as blobs
+  -- Seed with blockNames collected during compilation (binder names, level params, etc.)
+  let (addrToNameMap, namesMap, nameBlobs) :=
+    compileEnv.nameToNamed.fold (init := ({}, blockNames, {})) fun (addrMap, namesMap, blobs) name named =>
+      let addrMap := addrMap.insert named.addr name
+      let (namesMap, blobs) := Ixon.RawEnv.addNameComponentsWithBlobs namesMap blobs name
+      (addrMap, namesMap, blobs)
 
-instance : Nonempty (Task (CompileM.Result MetaAddress)) :=
-  ⟨Task.pure (.ok default, default)⟩
+  -- Merge name string blobs into the main blobs map
+  let allBlobs := nameBlobs.fold (fun m k v => m.insert k v) compileEnv.blobs
 
-structure ScheduleEnv where
-  env: Lean.Environment
-  blocks: CondensedBlocks
-  comms: Map Lean.Name MetaAddress
+  let ixonEnv : Ixon.Env := {
+    consts := compileEnv.constants
+    named := compileEnv.nameToNamed
+    blobs := allBlobs
+    names := namesMap
+    comms := {}
+    addrToName := addrToNameMap
+  }
 
-structure ScheduleState where
-  constTasks: Map Lean.Name (Task (Except IO.Error MetaAddress))
-  blockTasks: Map Lean.Name (Task (Except IO.Error (Map Lean.Name MetaAddress)))
+  return .ok (ixonEnv, compileEnv.totalBytes)
 
-abbrev ScheduleM := ReaderT ScheduleEnv <| StateT ScheduleState IO
+/-! ## Parallel Compilation with Work-Stealing -/
 
-def ScheduleM.run (env: ScheduleEnv) (stt: ScheduleState) (c : ScheduleM α)
-  : IO (α × ScheduleState)
-  := StateT.run (ReaderT.run c env) stt
+/-- Reference to Rust compilation results for incremental comparison. -/
+structure RustRef where
+  /-- Map from constant name to compiled address -/
+  nameToAddr : Std.HashMap Name Address
 
-structure ScheduleStats where
-  constWaiting: Nat
-  constRunning: Nat
-  constFinished: Nat
-  blockWaiting: Nat
-  blockRunning: Nat
-  blockfinished: Nat
-deriving Repr
+/-- A single constant's mismatch info -/
+structure ConstMismatch where
+  name : Name
+  leanAddr : Address
+  rustAddr : Address
+  leanBytes : ByteArray
+  leanConst : Ixon.Constant
+  deriving Inhabited
 
-partial def ScheduleState.stats : ScheduleState -> IO ScheduleStats
-| ⟨constTasks, blockTasks⟩ => do
-  let mut constWaiting := 0
-  let mut constRunning := 0
-  let mut constFinished := 0
-  let mut blockWaiting := 0
-  let mut blockRunning := 0
-  let mut blockFinished := 0
-  for (_, t) in constTasks do
-    match <- IO.getTaskState t with
-    | .waiting => constWaiting := constWaiting + 1
-    | .running => constRunning := constRunning + 1
-    | .finished => constFinished := constFinished + 1
-  for (_, t) in blockTasks do
-    match <- IO.getTaskState t with
-    | .waiting => blockWaiting := blockWaiting + 1
-    | .running => blockRunning := blockRunning + 1
-    | .finished => blockFinished := blockFinished + 1
-  return ⟨constWaiting, constRunning, constFinished, blockWaiting, blockRunning, blockFinished⟩
+/-- Mismatch error with all info needed for debugging -/
+structure MismatchError where
+  /-- The block's lowlink name -/
+  blockName : Name
+  /-- The main block constant (mutual definitions) -/
+  mainBlock : Ixon.Constant
+  /-- Serialized bytes of the main block -/
+  mainBlockBytes : ByteArray
+  /-- Address of the main block -/
+  mainBlockAddr : Address
+  /-- All projection constants in the block with their info -/
+  projections : Array ConstMismatch
+  /-- The specific constant that triggered the mismatch -/
+  failedConst : ConstMismatch
+  /-- Optional system error message (for non-mismatch errors) -/
+  systemError : Option String := none
 
-mutual
+/-- Create a system error (not a mismatch) -/
+def MismatchError.system (msg : String) : MismatchError :=
+  { blockName := default, mainBlock := default, mainBlockBytes := default, mainBlockAddr := default,
+    projections := #[], failedConst := ⟨default, default, default, default, default⟩, systemError := some msg }
 
-partial def ScheduleM.block (lo: Lean.Name)
-  : ScheduleM (Task (Except IO.Error (Map Lean.Name MetaAddress))) := do
-  if let some task := (<- get).blockTasks.get? lo then
-    return task
-  else
-    let mut depTasks := []
-    let all := (<- read).blocks.blocks.get! lo
-    let comms := (<- read).comms
-    let allRefs := (<- read).blocks.blockRefs.get! lo
-    for ref in allRefs.filter (!all.contains ·) do
-      let refTask <- ScheduleM.const ref
-      depTasks := (ref, refTask)::depTasks
-    let env := (<- read).env
-    let task <- bindDeps {} env comms all lo depTasks
-    modify fun stt => { stt with blockTasks := stt.blockTasks.insert lo task }
-    return task
-  where
-    bindDeps
-      (acc: Map Lean.Name MetaAddress)
-      (env: Lean.Environment)
-      (comms: Map Lean.Name MetaAddress)
-      (all: Set Lean.Name)
-      (n: Lean.Name)
-      : List (Lean.Name × Task (Except IO.Error MetaAddress))
-      -> IO (Task (Except IO.Error (Map Lean.Name MetaAddress)))
-      | [] => IO.asTask <| do
-        let (res, stt) <- CompileM.run
-          (.init env acc comms all n) .init (compileConstant n)
-        match res with
-        | .ok _ => pure <| stt.constCache.filter (fun n _ => all.contains n)
-        | .error e => do throw (IO.userError (<- e.pretty))
-      | (ref, task) :: rest => IO.bindTask task (fun result =>
-        match result with
-        | .ok addr => bindDeps (acc.insert ref addr) env comms all n rest
-        | .error e => do throw e
-      )
+/-- Result of compiling a single block. -/
+structure BlockCompileResult where
+  /-- Lowlink name of the block -/
+  lo : Name
+  /-- All names in the block -/
+  all : Set Name
+  /-- The compiled block constant -/
+  block : Ixon.Constant
+  /-- Block address -/
+  blockAddr : Address
+  /-- Projections: name → (projection constant, projection address, metadata) -/
+  projections : Array (Name × Ixon.Constant × Address × Ixon.ConstantMeta)
+  /-- Blobs collected during compilation -/
+  blobs : Std.HashMap Address ByteArray
+  /-- Total serialized bytes -/
+  totalBytes : Nat
 
-partial def ScheduleM.const (n: Lean.Name)
-  : ScheduleM (Task (Except IO.Error MetaAddress)) := do
-  if let some task := (<- get).constTasks.get? n then
-    return task
-  else
-    let lo := (<- read).blocks.lowLinks.get! n
-    let blockTask <- match (<- get).blockTasks.get? lo with
-      | some bt => pure bt
-      | none => ScheduleM.block lo
-    let task <- IO.bindTask blockTask (fun res => match res with
-      | .ok map => match map.get? n with
-        | .some x => IO.asTask <| pure x
-        | .none => do
-          throw (IO.userError (<- (CompileError.unknownConstant lo n).pretty))
-      | .error e => throw e
-    )
-    modify fun stt => { stt with constTasks := stt.constTasks.insert n task }
-    return task
+/-- Shared state for parallel compilation. Protected by mutex. -/
+structure ParallelState where
+  /-- Map from constant name to Named (address + metadata) -/
+  nameToNamed : Std.HashMap Name Ixon.Named
+  /-- Compiled constants storage -/
+  constants : Std.HashMap Address Ixon.Constant
+  /-- Blob storage -/
+  blobs : Std.HashMap Address ByteArray
+  /-- Total bytes compiled -/
+  totalBytes : Nat
+  /-- Block dependency counts (remaining deps) -/
+  blockDepCounts : Std.HashMap Name Nat
+  /-- Blocks compiled so far -/
+  blocksCompiled : Nat
+  /-- First error encountered (if any) -/
+  firstError : Option String
+  /-- Mismatches found during incremental comparison -/
+  mismatches : Array (Name × Address × Address)  -- (name, lean addr, rust addr)
+  /-- Last printed percentage (for progress tracking) -/
+  lastPrintedPct : Nat
 
-end
+/-- Result of compiling a single block in a wave. -/
+structure WaveBlockResult where
+  lo : Name
+  all : Set Name
+  block : Ixon.Constant
+  blockAddr : Address
+  projections : Array (Name × Ixon.Constant × Address × Ixon.ConstantMeta)
+  blobs : Std.HashMap Address ByteArray
+  names : Std.HashMap Address Ix.Name
+  totalBytes : Nat
 
-partial def ScheduleM.env : ScheduleM Unit := do
-  let env := (<- read).env
-  let envSize := env.constants.fold (fun x _ _=> x + 1) 0
-  let mut i := 1
-  for (n,_) in (<- read).env.constants do
-    --let stt <- get
-    dbg_trace s!"scheduling {i}/{envSize} {n}"
-    let _ <- ScheduleM.const n
-    i := i + 1
-  return ()
+/-- Work item for a worker thread -/
+structure WorkItem where
+  lo : Name
+  all : Set Name
+  compileEnv : CompileEnv
+  rustRef : Option RustRef
 
+instance : Inhabited WorkItem where
+  default := { lo := default, all := {}, compileEnv := default, rustRef := none }
 
-structure CompiledEnv where
-  consts: Map Lean.Name MetaAddress
-  refs :  Map Lean.Name (Set Lean.Name)
-  blocks: CondensedBlocks
+instance : Inhabited (Except MismatchError WaveBlockResult) where
+  default := .error { blockName := default, mainBlock := default, mainBlockBytes := default,
+                      mainBlockAddr := default, projections := #[],
+                      failedConst := ⟨default, default, default, default, default⟩ }
 
-partial def CompileM.envTopological
-  (env: Lean.Environment)
-  (comms: Map Lean.Name MetaAddress)
-  : IO CompiledEnv := do
-  let refs: Map Lean.Name (Set Lean.Name) := GraphM.env env
-  dbg_trace s!"constants: {refs.size}"
-  let blocks := CondenseM.run env refs
-  dbg_trace s!"lowlinks: {blocks.lowLinks.size}, blocks: {blocks.blocks.size}"
+/-- Compile an Ix.Environment in parallel using dedicated workers.
+    Workers are created once and reused across waves.
+    Each wave compiles all blocks whose dependencies are satisfied.
+    Optionally compares results against Rust incrementally - fails fast on first mismatch.
+    Returns the compiled Ixon.Env and total bytes, or a MismatchError on first discrepancy. -/
+def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (rustRef : Option RustRef := none) (numWorkers : Nat := 32) (dbg : Bool := false)
+    : IO (Except MismatchError (Ixon.Env × Nat)) := do
+  let totalBlocks := blocks.blocks.size
 
-  let mut consts: Map Lean.Name MetaAddress := {}
-  let mut remaining: Set Lean.Name := {}
+  -- Create channels for work distribution (using Sync for blocking operations)
+  let workChan ← Std.CloseableChannel.Sync.new (α := WorkItem)
+  let resultChan ← Std.CloseableChannel.Sync.new (α := Except MismatchError WaveBlockResult)
+
+  -- Worker function: receive work, compile, send result
+  let worker (_workerId : Nat) : IO Unit := do
+    while true do
+      match ← workChan.recv with
+      | none => break  -- Channel closed, exit
+      | some item =>
+        let result : Except MismatchError WaveBlockResult := Id.run do
+          match compileBlockPure item.compileEnv item.all item.lo with
+          | Except.error e =>
+            return .error <| .system s!"Compilation error in {item.lo}: {e}"
+          | Except.ok (blockResult, cache) =>
+            -- Use pre-computed serialized bytes and address
+            let blockBytes := blockResult.blockBytes
+            let blockAddr := blockResult.blockAddr
+            let mut projections : Array (Name × Ixon.Constant × Address × ByteArray × Ixon.ConstantMeta) := #[]
+            let mut projBytes := blockBytes.size
+
+            if blockResult.projections.isEmpty then
+              projections := #[(item.lo, blockResult.block, blockAddr, blockBytes, blockResult.blockMeta)]
+            else
+              for (name, proj, constMeta) in blockResult.projections do
+                let pBytes := Ixon.ser proj
+                let pAddr := Address.blake3 pBytes
+                projections := projections.push (name, proj, pAddr, pBytes, constMeta)
+                projBytes := projBytes + pBytes.size
+
+            -- Check against Rust reference - fail fast on first mismatch
+            if let some rust := item.rustRef then
+              -- Build full block info for all projection constants
+              let projMismatches : Array ConstMismatch := projections.map fun (name, const, leanAddr, bytes, _) =>
+                let rustAddr := rust.nameToAddr.get? name |>.getD default
+                ⟨name, leanAddr, rustAddr, bytes, const⟩
+
+              -- Check for any mismatch
+              for cm in projMismatches do
+                if let some rustAddr := rust.nameToAddr.get? cm.name then
+                  if cm.leanAddr != rustAddr then
+                    return .error {
+                      blockName := item.lo
+                      mainBlock := blockResult.block
+                      mainBlockBytes := blockBytes
+                      mainBlockAddr := blockAddr
+                      projections := projMismatches
+                      failedConst := { cm with rustAddr }
+                    }
+
+            -- Convert projections to the format without bytes for the result
+            let projsNoBytes := projections.map fun (n, c, a, _, m) => (n, c, a, m)
+
+            return .ok {
+              lo := item.lo
+              all := item.all
+              block := blockResult.block
+              blockAddr
+              projections := projsNoBytes
+              blobs := cache.blockBlobs
+              names := cache.blockNames
+              totalBytes := projBytes
+            }
+        discard <| resultChan.send result
+
+  -- Spawn dedicated worker threads
+  let mut workerTasks : Array (Task (Except IO.Error Unit)) := #[]
+  for i in [:numWorkers] do
+    let task ← IO.asTask (prio := .dedicated) (worker i)
+    workerTasks := workerTasks.push task
+
+  -- Track compiled constants and remaining blocks
+  let mut nameToNamed : Std.HashMap Name Ixon.Named := {}
+  let mut constants : Std.HashMap Address Ixon.Constant := {}
+  let mut blobs : Std.HashMap Address ByteArray := {}
+  let mut blockNames : Std.HashMap Address Ix.Name := {}
+  let mut totalBytes : Nat := 0
+
+  let mut remaining : Set Name := {}
   for (lo, _) in blocks.blocks do
     remaining := remaining.insert lo
 
-  let numBlocks := remaining.size
-  let mut i := 0
+  let baseCompileEnv := CompileEnv.new env
 
-  dbg_trace s!"compiling {numBlocks} blocks"
+  if dbg then
+    IO.println s!"  [Lean Compile] {totalBlocks} blocks, {numWorkers} workers"
+
+  let mut waveNum := 0
+  let mut compiled := 0
+
   while !remaining.isEmpty do
-    i := i + 1
-    let pct := ((Float.ofNat remaining.size) / Float.ofNat numBlocks)
-    dbg_trace s!"Wave {i}, {(1 - pct) * 100}%: {remaining.size}/{numBlocks} blocks remaining"
+    waveNum := waveNum + 1
 
-    let mut ready : Array (Lean.Name × Set Lean.Name) := #[]
-    for r in remaining do
-      let lo := blocks.lowLinks.get! r
+    -- Find all blocks ready to compile (all deps satisfied)
+    let mut ready : Array (Name × Set Name) := #[]
+    for lo in remaining do
       let all := blocks.blocks.get! lo
-      let allDeps : Set Lean.Name := blocks.blockRefs.get! lo
-      if allDeps.all (consts.contains ·) then
-        ready := ready.push (r, all)
-      else
-        continue
+      let deps := blocks.blockRefs.get! lo
+      if deps.all (nameToNamed.contains ·) then
+        ready := ready.push (lo, all)
 
-    let mut tasks := #[]
+    if ready.isEmpty then
+      discard <| workChan.close
+      return .error <| .system s!"Circular dependency detected: {remaining.size} blocks remaining but none ready"
 
+    if dbg then
+      let pct := (compiled * 100) / totalBlocks
+      IO.println s!"  [Lean Compile] Wave {waveNum}: {ready.size} blocks ready, {pct}% ({compiled}/{totalBlocks})"
+
+    -- Create compileEnv for this wave (with current nameToNamed)
+    let compileEnv := { baseCompileEnv with nameToNamed }
+
+    -- Send all ready blocks to workers
     for (lo, all) in ready do
-      --dbg_trace s!"Wave {i}: scheduling {lo}"
-      let task <- IO.asTask <| CompileM.run
-        (.init env consts comms all lo) .init (compileConstant lo)
-      tasks := tasks.push task
+      discard <| workChan.send { lo, all, compileEnv, rustRef }
 
-    for task in tasks do
-      match <- IO.wait task with
-      | .ok (.ok _, stt) => consts := consts.union stt.constCache
-      | .ok (.error e, _) => throw (IO.userError (<- e.pretty))
-      | .error e => throw e
+    -- Collect results for this wave
+    for _ in [:ready.size] do
+      match ← resultChan.recv with
+      | none =>
+        discard <| workChan.close
+        return .error <| .system "Result channel closed unexpectedly"
+      | some (.error e) =>
+        discard <| workChan.close
+        return .error e
+      | some (.ok result) =>
+        -- Store block constant
+        constants := constants.insert result.blockAddr result.block
+        -- Store projections and update nameToNamed
+        for (name, proj, addr, constMeta) in result.projections do
+          constants := constants.insert addr proj
+          nameToNamed := nameToNamed.insert name ⟨addr, constMeta⟩
+        -- Store blobs and names
+        blobs := result.blobs.fold (fun m k v => m.insert k v) blobs
+        blockNames := result.names.fold (fun m k v => m.insert k v) blockNames
+        totalBytes := totalBytes + result.totalBytes
+        compiled := compiled + 1
 
-    for (r, _) in ready do
-      remaining := remaining.erase r
+    -- Remove completed blocks from remaining
+    for (lo, _) in ready do
+      remaining := remaining.erase lo
 
-  return ⟨consts, refs, blocks⟩
+  -- Close work channel to signal workers to exit
+  discard <| workChan.close
 
-partial def CompileM.envScheduler
-  (env: Lean.Environment)
-  (comms: Map Lean.Name MetaAddress)
-  : IO CompiledEnv := do
-  let refs: Map Lean.Name (Set Lean.Name) := GraphM.env env
-  println! s!"constants: {refs.size}"
-  let blocks := CondenseM.run env refs
-  println! s!"lowlinks: {blocks.lowLinks.size}, blocks: {blocks.blocks.size}"
+  if dbg then
+    IO.println s!"  [Lean Compile] All {waveNum} waves finished, {compiled} blocks compiled"
 
-  let (_, stt) <- ScheduleM.run ⟨env, blocks, comms⟩ ⟨{}, {}⟩ ScheduleM.env
+  -- Check all blocks compiled
+  if compiled != totalBlocks then
+    return .error <| .system s!"Only compiled {compiled}/{totalBlocks} blocks - circular dependency?"
 
-  let mut consts := {}
+  -- Build reverse index and names map, storing name string components as blobs
+  -- Seed with blockNames collected during compilation (binder names, level params, etc.)
+  let (addrToNameMap, namesMap, nameBlobs) :=
+    nameToNamed.fold (init := ({}, blockNames, {})) fun (addrMap, namesMap, nameBlobs) name named =>
+      let addrMap := addrMap.insert named.addr name
+      let (namesMap, nameBlobs) := Ixon.RawEnv.addNameComponentsWithBlobs namesMap nameBlobs name
+      (addrMap, namesMap, nameBlobs)
 
-  let tasksSize := stt.constTasks.size
-  let mut i := 1
+  -- Merge name string blobs into the main blobs map
+  let blockBlobCount := blobs.size
+  let nameBlobCount := nameBlobs.size
+  let allBlobs := nameBlobs.fold (fun m k v => m.insert k v) blobs
+  let finalBlobCount := allBlobs.size
+  let overlapCount := blockBlobCount + nameBlobCount - finalBlobCount
 
-  while true do
-    let stats <- ScheduleState.stats stt
-    if stats.blockWaiting > 0 then
-      println! s!"waiting {repr <| <- ScheduleState.stats stt}"
-      continue
-    else
-      break
+  if dbg then
+    IO.println s!"  [Lean Compile] Blobs: {blockBlobCount} from blocks, {nameBlobCount} from names, {overlapCount} overlap, {finalBlobCount} final"
 
-  for (n, task) in stt.constTasks do
-    println! s!"waiting {i}/{tasksSize}"
-    i := i + 1
-    match (<- IO.wait task) with
-    | .ok addr => consts := consts.insert n addr
-    | .error e  => throw e
+  let ixonEnv : Ixon.Env := {
+    consts := constants
+    named := nameToNamed
+    blobs := allBlobs
+    names := namesMap
+    comms := {}
+    addrToName := addrToNameMap
+  }
 
-  return ⟨consts, refs, blocks⟩
+  return .ok (ixonEnv, totalBytes)
 
---partial def CompileM.const
---  (name: Lean.Name) (env: Lean.Environment) (comms: Map Lean.Name MetaAddress)
---  : Except CompileError CompiledEnv := Id.run do
---  let refs: Map Lean.Name (Set Lean.Name) := GraphM.env env
---  let blocks := CondenseM.run env refs
---
---  let (_, stt) <- ScheduleM.run ⟨env, blocks, comms, refs⟩ ⟨{}⟩ (scheduleConst name)
---
---  let mut consts: Map Lean.Name MetaAddress := {}
---  let mut store: Map Address ByteArray := {}
---  let mut axioms: Set Lean.Name := {}
---
---  for (n, task) in stt.tasks do
---    dbg_trace "compiling {n}"
---    match task.get with
---    | .error e _ => return .error e
---    | .ok addr stt =>
---      consts := consts.insert n addr
---      store := store.union stt.store
---      axioms := axioms.union stt.axioms
---
---  return .ok ⟨consts, store, axioms, refs, blocks.count, blocks.alls⟩
+/-! ## Rust Compilation FFI -/
 
---def CompileM.runIO' (c : CompileM α)
---  (stt: CompileState)
---  : IO (α × CompileState) := do
---  match <- c.run .init stt with
---  | (.ok a, stt) => return (a, stt)
---  | (.error e, _) => throw (IO.userError (<- e.pretty))
---
---def compileEnvIO (env: Lean.Environment) : IO (CompileState):= do
---  Prod.snd <$> (compileDelta env.getDelta).runIO env
+/-- FFI: Compile a Lean environment to serialized Ixon.Env bytes using Rust. -/
+@[extern "rs_compile_env"]
+opaque rsCompileEnvBytesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO ByteArray
 
---end Ix
+/-- Compile a Lean environment to Ixon.Env bytes using the Rust compiler. -/
+def rsCompileEnvBytes (leanEnv : Lean.Environment) : IO ByteArray := do
+  let constList := leanEnv.constants.toList
+  rsCompileEnvBytesFFI constList
+
+-- Re-export RawEnv types from Ixon for backwards compatibility
+export Ixon (RawConst RawNamed RawBlob RawComm RawEnv)
+
+/-- FFI: Compile a Lean environment to RawEnv (structured Lean objects) using Rust. -/
+@[extern "rs_compile_env_to_ixon"]
+opaque rsCompileEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO Ixon.RawEnv
+
+/-! ## Combined Compile Phases FFI -/
+
+/-- Raw FFI type returned from Rust's rs_compile_phases.
+    Contains all compilation phases in array-based format for FFI compatibility. -/
+structure RustCompilePhases where
+  rawEnv : Ix.RawEnvironment        -- Array-based canonicalized constants
+  condensed : RustCondensedBlocks   -- Array-based SCC data
+  compileEnv : RawEnv               -- Ixon raw type (RawConst, RawNamed, etc.)
+  deriving Inhabited, Repr
+
+/-- Nice Lean type with proper data structures.
+    Converted from RustCompilePhases for ergonomic use in Lean. -/
+structure CompilePhases where
+  rawEnv : Ix.Environment           -- HashMap-based canonicalized constants
+  condensed : CondensedBlocks       -- Map/Set-based SCC data
+  compileEnv : Ixon.Env             -- HashMap-based Ixon environment
+
+/-- FFI: Run all compilation phases in Rust and return structured data. -/
+@[extern "rs_compile_phases"]
+opaque rsCompilePhasesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO RustCompilePhases
+
+/-- Run all compilation phases using Rust and convert to Lean-friendly types.
+    This is the main entry point for getting Rust compilation results. -/
+def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
+  let constList := leanEnv.constants.toList
+  let raw ← rsCompilePhasesFFI constList
+
+  -- Convert RawEnvironment to Environment
+  let rawEnv := raw.rawEnv.toEnvironment
+
+  -- Convert RustCondensedBlocks to CondensedBlocks
+  let condensed := raw.condensed.toCondensedBlocks
+
+  -- Convert RawEnv to Ixon.Env
+  let compileEnv := raw.compileEnv.toEnv
+
+  pure { rawEnv, condensed, compileEnv }
+
+/-- Compile a Lean environment to Ixon.Env using the Rust compiler.
+    Uses the direct FFI that returns structured Lean objects. -/
+def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
+  let constList := leanEnv.constants.toList
+  let rawEnv ← rsCompileEnvFFI constList
+  pure rawEnv.toEnv
+
+end Ix.CompileM
