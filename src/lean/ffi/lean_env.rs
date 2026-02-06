@@ -749,12 +749,12 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
           println!("Decompile OK: {:?}", dstt.stats());
           let start_check = std::time::SystemTime::now();
           match check_decompile(env.as_ref(), &stt, &dstt) {
-            Ok(()) => {
+            Ok(result) => {
               println!(
                 "Checking: {:.2}s",
                 start_check.elapsed().unwrap().as_secs_f32()
               );
-              println!("Roundtrip OK");
+              println!("Roundtrip OK ({:?})", result);
             },
             Err(e) => println!("Roundtrip ERR: {:?}", e),
           }
@@ -874,12 +874,12 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
               // Verify against original environment
               let start_check2 = std::time::SystemTime::now();
               match check_decompile(env.as_ref(), &fresh_stt, &dstt2) {
-                Ok(()) => {
+                Ok(result) => {
                   println!(
                     "Checking: {:.2}s",
                     start_check2.elapsed().unwrap().as_secs_f32()
                   );
-                  println!("Roundtrip from wire OK");
+                  println!("Roundtrip from wire OK ({:?})", result);
                 },
                 Err(e) => println!("Roundtrip from wire ERR: {:?}", e),
               }

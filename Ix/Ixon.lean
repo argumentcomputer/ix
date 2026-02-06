@@ -828,7 +828,10 @@ def putQuotient (q : Quotient) : PutM Unit := do
   putExpr q.typ
 
 def getQuotient : GetM Quotient := do
-  let k := match ← getU8 with | 0 => QuotKind.type | 1 => .ctor | 2 => .lift | _ => .ind
+  let v ← getU8
+  let k : QuotKind ← match v with
+    | 0 => pure .type | 1 => pure .ctor | 2 => pure .lift | 3 => pure .ind
+    | _ => throw s!"invalid QuotKind tag {v}"
   let lvls := (← getTag0).size
   let typ ← getExpr
   return ⟨k, lvls, typ⟩

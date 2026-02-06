@@ -214,10 +214,6 @@ lean_object *c_lean_uint64_to_nat(uint64_t n) {
     return lean_uint64_to_nat(n);
 }
 
-lean_object *c_lean_cstr_to_nat(char const *s) {
-    return lean_cstr_to_nat(s);
-}
-
 // Create a big Nat from limbs (little-endian u64 array)
 // This uses GMP's mpz_import and Lean's lean_alloc_mpz
 lean_object *c_lean_nat_from_limbs(size_t num_limbs, uint64_t const *limbs) {

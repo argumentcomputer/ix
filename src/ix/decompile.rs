@@ -1489,13 +1489,21 @@ pub fn decompile_env(
   Ok(dstt)
 }
 
+/// Result of checking a decompiled environment against the original.
+#[derive(Debug)]
+pub struct CheckResult {
+  pub matches: usize,
+  pub mismatches: usize,
+  pub missing: usize,
+}
+
 /// Check that decompiled environment matches the original.
 /// Counts and logs hash mismatches (which indicate metadata loss or decompilation errors).
 pub fn check_decompile(
   original: &LeanEnv,
   _stt: &CompileState,
   dstt: &DecompileState,
-) -> Result<(), DecompileError> {
+) -> Result<CheckResult, DecompileError> {
   use std::sync::atomic::{AtomicUsize, Ordering};
 
   let mismatches = AtomicUsize::new(0);
@@ -1537,13 +1545,15 @@ pub fn check_decompile(
     }
   })?;
 
-  let m = mismatches.load(Ordering::Relaxed);
-  let ok = matches.load(Ordering::Relaxed);
-  let miss = missing.load(Ordering::Relaxed);
+  let result = CheckResult {
+    matches: matches.load(Ordering::Relaxed),
+    mismatches: mismatches.load(Ordering::Relaxed),
+    missing: missing.load(Ordering::Relaxed),
+  };
   eprintln!(
     "check_decompile: {} matches, {} mismatches, {} not in original",
-    ok, m, miss
+    result.matches, result.mismatches, result.missing
   );
 
-  Ok(())
+  Ok(result)
 }

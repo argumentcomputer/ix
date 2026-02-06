@@ -1796,6 +1796,15 @@ pub fn compare_recr(
   )
 }
 
+/// Returns a kind ordinal for cross-kind comparison of mutual constants.
+fn mut_const_kind(c: &MutConst) -> u8 {
+  match c {
+    MutConst::Defn(_) => 0,
+    MutConst::Indc(_) => 1,
+    MutConst::Recr(_) => 2,
+  }
+}
+
 /// Compare two mutual constants with caching. Dispatches to the appropriate
 /// type-specific comparator (defn, indc, recr). Different-kind constants
 /// are ordered by kind tag.
@@ -1806,11 +1815,7 @@ pub fn compare_const(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Ordering, CompileError> {
-  let key = if x.name() <= y.name() {
-    (x.name(), y.name())
-  } else {
-    (y.name(), x.name())
-  };
+  let key = (x.name(), y.name());
   if let Some(so) = cache.cmps.get(&key) {
     Ok(*so)
   } else {
@@ -1824,9 +1829,7 @@ pub fn compare_const(
       (MutConst::Recr(x), MutConst::Recr(y)) => {
         compare_recr(x, y, mut_ctx, stt)?
       },
-      (MutConst::Defn(_) | MutConst::Indc(_) | MutConst::Recr(_), _) => {
-        SOrd::lt(true)
-      },
+      _ => SOrd::cmp(&mut_const_kind(x), &mut_const_kind(y)),
     };
     if so.strong {
       cache.cmps.insert(key, so.ordering);

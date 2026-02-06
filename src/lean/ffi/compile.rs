@@ -703,7 +703,7 @@ extern "C" fn rs_compile_env_rust_first(
   let lean_env = lean_ptr_to_env(env_consts_ptr);
   let env_len = lean_env.len();
   let lean_env = Arc::new(lean_env);
-  println!(
+  eprintln!(
     "  [Rust] Decode env: {:.2}s ({} constants)",
     start_decode.elapsed().as_secs_f32(),
     env_len
@@ -718,7 +718,7 @@ extern "C" fn rs_compile_env_rust_first(
       return std::ptr::null_mut();
     },
   };
-  println!(
+  eprintln!(
     "  [Rust] Compile env: {:.2}s",
     start_compile.elapsed().as_secs_f32()
   );
@@ -746,7 +746,7 @@ extern "C" fn rs_compile_env_rust_first(
     }
   }
 
-  println!(
+  eprintln!(
     "  [Rust] Extract {} blocks: {:.2}s",
     blocks.len(),
     start_extract.elapsed().as_secs_f32()
@@ -878,46 +878,95 @@ extern "C" fn rs_get_block_sharing_len(
 // Pre-sharing expression extraction FFI
 // =============================================================================
 
+/// Frame for iterative unshare traversal.
+enum UnshareFrame<'a> {
+  Visit(&'a Arc<IxonExpr>),
+  BuildApp,
+  BuildLam,
+  BuildAll,
+  BuildLet(bool),
+  BuildPrj(u64, u64),
+}
+
 /// Expand Share(idx) references in an expression using the sharing vector.
-/// This reconstructs the "pre-sharing" expression from the post-sharing representation.
+/// This reconstructs the "pre-sharing" expression from the post-sharing
+/// representation. Uses iterative traversal to avoid stack overflow on deep
+/// expressions.
 #[allow(clippy::cast_possible_truncation)]
 fn unshare_expr(
   expr: &Arc<IxonExpr>,
   sharing: &[Arc<IxonExpr>],
 ) -> Arc<IxonExpr> {
-  match expr.as_ref() {
-    IxonExpr::Share(idx) => {
-      // Recursively unshare the sharing vector entry
-      if (*idx as usize) < sharing.len() {
-        unshare_expr(&sharing[*idx as usize], sharing)
-      } else {
-        expr.clone() // Invalid index, keep as-is
-      }
-    },
-    IxonExpr::App(f, a) => Arc::new(IxonExpr::App(
-      unshare_expr(f, sharing),
-      unshare_expr(a, sharing),
-    )),
-    IxonExpr::Lam(t, b) => Arc::new(IxonExpr::Lam(
-      unshare_expr(t, sharing),
-      unshare_expr(b, sharing),
-    )),
-    IxonExpr::All(t, b) => Arc::new(IxonExpr::All(
-      unshare_expr(t, sharing),
-      unshare_expr(b, sharing),
-    )),
-    IxonExpr::Let(nd, t, v, b) => Arc::new(IxonExpr::Let(
-      *nd,
-      unshare_expr(t, sharing),
-      unshare_expr(v, sharing),
-      unshare_expr(b, sharing),
-    )),
-    IxonExpr::Prj(ti, fi, v) => {
-      Arc::new(IxonExpr::Prj(*ti, *fi, unshare_expr(v, sharing)))
-    },
-    // Leaf nodes - no children to unshare
-    _ => expr.clone(),
+  let mut stack: Vec<UnshareFrame<'_>> = vec![UnshareFrame::Visit(expr)];
+  let mut results: Vec<Arc<IxonExpr>> = Vec::new();
+
+  while let Some(frame) = stack.pop() {
+    match frame {
+      UnshareFrame::Visit(e) => match e.as_ref() {
+        IxonExpr::Share(idx) => {
+          if (*idx as usize) < sharing.len() {
+            stack.push(UnshareFrame::Visit(&sharing[*idx as usize]));
+          } else {
+            results.push(e.clone());
+          }
+        },
+        IxonExpr::App(f, a) => {
+          stack.push(UnshareFrame::BuildApp);
+          stack.push(UnshareFrame::Visit(a));
+          stack.push(UnshareFrame::Visit(f));
+        },
+        IxonExpr::Lam(t, b) => {
+          stack.push(UnshareFrame::BuildLam);
+          stack.push(UnshareFrame::Visit(b));
+          stack.push(UnshareFrame::Visit(t));
+        },
+        IxonExpr::All(t, b) => {
+          stack.push(UnshareFrame::BuildAll);
+          stack.push(UnshareFrame::Visit(b));
+          stack.push(UnshareFrame::Visit(t));
+        },
+        IxonExpr::Let(nd, t, v, b) => {
+          stack.push(UnshareFrame::BuildLet(*nd));
+          stack.push(UnshareFrame::Visit(b));
+          stack.push(UnshareFrame::Visit(v));
+          stack.push(UnshareFrame::Visit(t));
+        },
+        IxonExpr::Prj(ti, fi, v) => {
+          stack.push(UnshareFrame::BuildPrj(*ti, *fi));
+          stack.push(UnshareFrame::Visit(v));
+        },
+        // Leaf nodes - no children to unshare
+        _ => results.push(e.clone()),
+      },
+      UnshareFrame::BuildApp => {
+        let a = results.pop().unwrap();
+        let f = results.pop().unwrap();
+        results.push(Arc::new(IxonExpr::App(f, a)));
+      },
+      UnshareFrame::BuildLam => {
+        let b = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Arc::new(IxonExpr::Lam(t, b)));
+      },
+      UnshareFrame::BuildAll => {
+        let b = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Arc::new(IxonExpr::All(t, b)));
+      },
+      UnshareFrame::BuildLet(nd) => {
+        let b = results.pop().unwrap();
+        let v = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Arc::new(IxonExpr::Let(nd, t, v, b)));
+      },
+      UnshareFrame::BuildPrj(ti, fi) => {
+        let v = results.pop().unwrap();
+        results.push(Arc::new(IxonExpr::Prj(ti, fi, v)));
+      },
+    }
   }
+
+  results.pop().unwrap()
 }
 
 /// FFI: Get the pre-sharing root expressions for a constant.

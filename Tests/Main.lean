@@ -1,5 +1,4 @@
 import Tests.ByteArray
--- import Tests.Ix
 import Tests.Ix.Ixon
 import Tests.Ix.Claim
 import Tests.Ix.Commit
@@ -25,7 +24,6 @@ opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("ffi", Tests.FFI.suite),
   ("byte-array", Tests.ByteArray.suite),
-  --("ix", Tests.Ix.suite),
   ("ixon", Tests.Ixon.suite),
   ("claim", Tests.Claim.suite),
   ("commit", Tests.Commit.suite),
@@ -49,7 +47,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
-  --("sharing-io", Tests.Sharing.suiteIO),
+  ("sharing-io", Tests.Sharing.suiteIO),
 ]
 
 def main (args : List String) : IO UInt32 := do
