@@ -1196,9 +1196,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let expected =
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
-        SerializeError::UnexpectedEof {
-          expected: expected,
-        }
+        SerializeError::UnexpectedEof { expected }
       },
       1 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -1206,10 +1204,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
         let tag_val = *base.add(8 + 8);
         let context =
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
-        SerializeError::InvalidTag {
-          tag: tag_val,
-          context: context,
-        }
+        SerializeError::InvalidTag { tag: tag_val, context }
       },
       2 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -1217,10 +1212,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
         let flag = *base.add(8 + 8);
         let context =
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
-        SerializeError::InvalidFlag {
-          flag,
-          context: context,
-        }
+        SerializeError::InvalidFlag { flag, context }
       },
       3 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -1228,10 +1220,7 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
         let variant = *base.add(8 + 8).cast::<u64>();
         let context =
           as_ref_unsafe::<LeanStringObject>(str_ptr.cast()).as_string();
-        SerializeError::InvalidVariant {
-          variant,
-          context: context,
-        }
+        SerializeError::InvalidVariant { variant, context }
       },
       4 => {
         let base = ptr.cast::<u8>();

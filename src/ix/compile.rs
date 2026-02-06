@@ -1995,17 +1995,21 @@ pub fn compile_const(
   // Helper: compile a single definition/theorem/opaque (non-mutual case).
   fn compile_single_def(
     name: &Name,
-    def: Def,
+    def: &Def,
     cache: &mut BlockCache,
     stt: &CompileState,
   ) -> Result<Address, CompileError> {
     let mut_ctx = MutConst::single_ctx(def.name.clone());
-    let (data, meta) = compile_definition(&def, &mut_ctx, cache, stt)?;
+    let (data, meta) = compile_definition(def, &mut_ctx, cache, stt)?;
     let refs: Vec<Address> = cache.refs.iter().cloned().collect();
     let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
     let name_str = name.pretty();
-    let result =
-      apply_sharing_to_definition_with_stats(data, refs, univs, Some(&name_str));
+    let result = apply_sharing_to_definition_with_stats(
+      data,
+      refs,
+      univs,
+      Some(&name_str),
+    );
     let mut bytes = Vec::new();
     result.constant.put(&mut bytes);
     let serialized_size = bytes.len();
@@ -2027,7 +2031,7 @@ pub fn compile_const(
   let addr = match cnst {
     LeanConstantInfo::DefnInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, Def::mk_defn(val), cache, stt)?
+        compile_single_def(name, &Def::mk_defn(val), cache, stt)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt)?
       }
@@ -2035,7 +2039,7 @@ pub fn compile_const(
 
     LeanConstantInfo::ThmInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, Def::mk_theo(val), cache, stt)?
+        compile_single_def(name, &Def::mk_theo(val), cache, stt)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt)?
       }
@@ -2043,7 +2047,7 @@ pub fn compile_const(
 
     LeanConstantInfo::OpaqueInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, Def::mk_opaq(val), cache, stt)?
+        compile_single_def(name, &Def::mk_opaq(val), cache, stt)?
       } else {
         compile_mutual(name, all, lean_env, cache, stt)?
       }
@@ -3030,30 +3034,18 @@ mod tests {
     };
 
     let mut lean_env = LeanEnv::default();
-    lean_env
-      .insert(name_f.clone(), LeanConstantInfo::DefnInfo(def_f));
-    lean_env
-      .insert(name_g.clone(), LeanConstantInfo::DefnInfo(def_g));
+    lean_env.insert(name_f.clone(), LeanConstantInfo::DefnInfo(def_f));
+    lean_env.insert(name_g.clone(), LeanConstantInfo::DefnInfo(def_g));
     let lean_env = Arc::new(lean_env);
 
     let result = compile_env(&lean_env);
-    assert!(
-      result.is_ok(),
-      "compile_env failed: {:?}",
-      result.err()
-    );
+    assert!(result.is_ok(), "compile_env failed: {:?}", result.err());
 
     let stt = result.unwrap();
 
     // Both names should be registered
-    assert!(
-      stt.name_to_addr.contains_key(&name_f),
-      "f not in name_to_addr"
-    );
-    assert!(
-      stt.name_to_addr.contains_key(&name_g),
-      "g not in name_to_addr"
-    );
+    assert!(stt.name_to_addr.contains_key(&name_f), "f not in name_to_addr");
+    assert!(stt.name_to_addr.contains_key(&name_g), "g not in name_to_addr");
 
     // Both should point to the same block address (same projection,
     // since they're alpha-equivalent and share idx=0)
@@ -3144,20 +3136,13 @@ mod tests {
     };
 
     let mut lean_env = LeanEnv::default();
-    lean_env
-      .insert(name_f.clone(), LeanConstantInfo::DefnInfo(def_f));
-    lean_env
-      .insert(name_g.clone(), LeanConstantInfo::DefnInfo(def_g));
-    lean_env
-      .insert(name_h.clone(), LeanConstantInfo::DefnInfo(def_h));
+    lean_env.insert(name_f.clone(), LeanConstantInfo::DefnInfo(def_f));
+    lean_env.insert(name_g.clone(), LeanConstantInfo::DefnInfo(def_g));
+    lean_env.insert(name_h.clone(), LeanConstantInfo::DefnInfo(def_h));
     let lean_env = Arc::new(lean_env);
 
     let result = compile_env(&lean_env);
-    assert!(
-      result.is_ok(),
-      "compile_env failed: {:?}",
-      result.err()
-    );
+    assert!(result.is_ok(), "compile_env failed: {:?}", result.err());
 
     let stt = result.unwrap();
 

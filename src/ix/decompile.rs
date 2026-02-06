@@ -1418,7 +1418,7 @@ pub fn decompile_env(
   stt.env.named.par_iter().try_for_each(|entry| {
     let (name, named) = (entry.key(), entry.value());
 
-    let result = if let Some(cnst) = stt.env.get_const(&named.addr) {
+    if let Some(cnst) = stt.env.get_const(&named.addr) {
       match &cnst.info {
         // Direct constants - decompile immediately
         ConstantInfo::Defn(_)
@@ -1483,9 +1483,7 @@ pub fn decompile_env(
       }
     } else {
       Ok(())
-    };
-
-    result
+    }
   })?;
 
   Ok(dstt)
