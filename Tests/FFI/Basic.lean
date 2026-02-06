@@ -121,6 +121,7 @@ def suite : List TestSeq := [
   largeNatTests,
   assocListTests,
   hashMapTests,
+  boolTests,
   checkIO "Nat roundtrip" (∀ n : Nat, roundtripNat n == n),
   checkIO "String roundtrip" (∀ s : String, roundtripString s == s),
   checkIO "List Nat roundtrip" (∀ xs : List Nat, roundtripListNat xs == xs),

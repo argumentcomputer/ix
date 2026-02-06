@@ -571,7 +571,7 @@ inductive ConstantInfo where
   | inductInfo (v : InductiveVal)
   | ctorInfo (v : ConstructorVal)
   | recInfo (v : RecursorVal)
-  deriving Repr
+  deriving Repr, BEq
 
 /-- Extract the `ConstantVal` common fields from any `ConstantInfo` variant. -/
 def ConstantInfo.getCnst : ConstantInfo → ConstantVal

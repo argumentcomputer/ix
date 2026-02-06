@@ -86,7 +86,7 @@ def genIxInt : Gen Ix.Int :=
   ]
 
 /-- Generate a random string from a list of options -/
-def genString : Gen String :=
+def genIxString : Gen String :=
   Gen.elements #["foo", "bar", "test", "x", "y", "value", "item", "data", "node", "leaf"]
 
 /-- Generate Ix.Substring -/
@@ -142,7 +142,7 @@ def genIxSyntaxPreresolved : Gen Ix.SyntaxPreresolved :=
       let numAliases ← Gen.choose Nat 0 3
       let mut aliases : Array String := #[]
       for _ in [:numAliases] do
-        aliases := aliases.push (← genString)
+        aliases := aliases.push (← genIxString)
       pure (Ix.SyntaxPreresolved.decl name aliases)),
   ]
 
@@ -159,7 +159,7 @@ instance : SampleableExt Ix.SyntaxPreresolved := SampleableExt.mkSelfContained g
 def genIxSyntaxAux : Nat → Gen Ix.Syntax
   | 0 => frequency [
       (10, pure Ix.Syntax.missing),
-      (5, Ix.Syntax.atom <$> genIxSourceInfo <*> genString),
+      (5, Ix.Syntax.atom <$> genIxSourceInfo <*> genIxString),
       (5, do
         let info ← genIxSourceInfo
         let rawVal ← genIxSubstring
@@ -172,7 +172,7 @@ def genIxSyntaxAux : Nat → Gen Ix.Syntax
     ]
   | fuel + 1 => frequency [
       (10, pure Ix.Syntax.missing),
-      (5, Ix.Syntax.atom <$> genIxSourceInfo <*> genString),
+      (5, Ix.Syntax.atom <$> genIxSourceInfo <*> genIxString),
       (5, do
         let info ← genIxSourceInfo
         let rawVal ← genIxSubstring
@@ -197,7 +197,7 @@ def genIxSyntax : Gen Ix.Syntax := genIxSyntaxAux 3
 /-- Generate Ix.DataValue with all variants -/
 def genIxDataValue : Gen Ix.DataValue :=
   frequency [
-    (10, Ix.DataValue.ofString <$> genString),
+    (10, Ix.DataValue.ofString <$> genIxString),
     (10, Ix.DataValue.ofBool <$> frequency [(1, pure true), (1, pure false)]),
     (10, Ix.DataValue.ofName <$> genIxName 3),
     (10, Ix.DataValue.ofNat <$> choose Nat 0 1000),
@@ -508,13 +508,7 @@ instance : SampleableExt Ix.RawEnvironment := SampleableExt.mkSelfContained genI
 
 /-! ## Generators for Additional Ix Types -/
 
-/-- Generate a random Address by hashing random bytes -/
-def genAddress : Gen Address := do
-  let mut bytes : ByteArray := ByteArray.empty
-  for _ in [:32] do
-    let b ← Gen.choose Nat 0 255
-    bytes := bytes.push b.toUInt8
-  pure ⟨(Blake3.hash bytes).val⟩
+def genAddress : Gen Address := Tests.Gen.Ixon.genAddress
 
 instance : Shrinkable Address where shrink _ := []
 instance : SampleableExt Address := SampleableExt.mkSelfContained genAddress
@@ -604,7 +598,7 @@ instance : Inhabited Ix.CompileM.CompileError where
 
 /-- Generate a SerializeError with all variants -/
 def genSerializeError : Gen Ixon.SerializeError := do
-  let s ← genString
+  let s ← genIxString
   let byte ← Gen.choose Nat 0 255
   let idx ← Gen.choose Nat 0 100
   let len ← Gen.choose Nat 0 100
@@ -631,7 +625,7 @@ def genDecompileError : Gen Ix.DecompileM.DecompileError := do
   let addr ← genAddress
   let idx ← Gen.choose Nat 0 100
   let len ← Gen.choose Nat 0 100
-  let s ← genString
+  let s ← genIxString
   let se ← genSerializeError
   Gen.frequency #[
     (1, pure (.invalidRefIndex idx.toUInt64 len s)),
@@ -642,7 +636,7 @@ def genDecompileError : Gen Ix.DecompileM.DecompileError := do
     (1, pure (.missingAddress addr)),
     (1, pure (.missingMetadata addr)),
     (1, pure (.blobNotFound addr)),
-    (1, do let expected ← genString; pure (.badBlobFormat addr expected)),
+    (1, do let expected ← genIxString; pure (.badBlobFormat addr expected)),
     (1, pure (.badConstantFormat s)),
     (1, pure (.serializeError se))
   ] (pure default)
@@ -660,14 +654,14 @@ instance : SampleableExt Ix.DecompileM.DecompileError :=
 /-- Generate a CompileError with all variants -/
 def genCompileError : Gen Ix.CompileM.CompileError := do
   let addr ← genAddress
-  let s ← genString
+  let s ← genIxString
   let se ← genSerializeError
   Gen.frequency #[
     (1, pure (.missingConstant s)),
     (1, pure (.missingAddress addr)),
     (1, pure (.invalidMutualBlock s)),
     (1, pure (.unsupportedExpr s)),
-    (1, do let s2 ← genString; pure (.unknownUnivParam s s2)),
+    (1, do let s2 ← genIxString; pure (.unknownUnivParam s s2)),
     (1, pure (.serializeError se))
   ] (pure default)
 

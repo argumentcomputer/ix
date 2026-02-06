@@ -145,6 +145,7 @@ def readNatBlob (blob : ByteArray) : Nat := Nat.fromBytesLE blob.data
 def readStringBlob (blob : ByteArray) : DecompileM String :=
   match String.fromUTF8? blob with
   | some s => pure s
+  -- TODO: pass actual blob address instead of empty for better error diagnostics
   | none => throw (.badBlobFormat ⟨ByteArray.empty⟩ "UTF-8 string")
 
 /-! ## Universe Decompilation → Ix.Level -/

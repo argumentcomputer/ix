@@ -220,6 +220,10 @@ def rawEnvEq (a b : RawEnv) : Bool :=
   a.named.size == b.named.size &&
   a.blobs.size == b.blobs.size &&
   a.comms.size == b.comms.size &&
+  a.names.size == b.names.size &&
+  -- Size equality + one-directional all/any is sufficient when addresses are unique:
+  -- if sizes match and every element in 'a' has a match in 'b', then 'b' cannot
+  -- have extra elements (since sizes are equal and addresses uniquely identify items).
   -- Content comparison for consts
   a.consts.all fun rc =>
     b.consts.any fun rc' => rc.addr == rc'.addr &&

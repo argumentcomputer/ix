@@ -194,9 +194,6 @@ def joinM [Monad μ] : List (List α) → μ (List α)
 
 end List
 
-def Std.HashMap.find? {A B} [BEq A] [Hashable A] (map: Std.HashMap A B) (a: A)
-  := Std.HashMap.get? map a
-
 abbrev Ix.Map := Std.HashMap
 abbrev Ix.Set := Std.HashSet
 

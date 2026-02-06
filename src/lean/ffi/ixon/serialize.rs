@@ -275,7 +275,10 @@ extern "C" fn rs_env_serde_roundtrip(lean_bytes_ptr: *const c_void) -> bool {
 
   // Re-serialize
   let mut rust_bytes = Vec::new();
-  env.put(&mut rust_bytes);
+  if let Err(e) = env.put(&mut rust_bytes) {
+    eprintln!("Rust Env::put failed: {}", e);
+    return false;
+  }
 
   // Compare
   if lean_bytes != rust_bytes {

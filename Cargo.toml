@@ -40,3 +40,9 @@ quickcheck_macros = "1.0.0"
 default = []
 parallel = ["multi-stark/parallel"]
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-snafu", "n0-watcher", "rand", "tracing", "tracing-subscriber", "bincode", "serde" ]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

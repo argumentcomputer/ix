@@ -619,6 +619,7 @@ fn serialize_source_info(
     LeanSourceInfo::Original(leading, leading_pos, trailing, trailing_pos) => {
       bytes.push(0);
       serialize_substring(leading, stt, bytes);
+      // u64::MAX sentinel for positions that overflow u64 (should never happen in practice)
       Tag0::new(leading_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
       serialize_substring(trailing, stt, bytes);
       Tag0::new(trailing_pos.to_u64().unwrap_or(u64::MAX)).put(bytes);
@@ -1371,7 +1372,6 @@ fn compile_mutual_block(
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
-  _const_count: usize,
   block_name: Option<&str>,
 ) -> CompiledMutualBlock {
   // Apply sharing analysis across all expressions in the mutual block
@@ -1457,8 +1457,14 @@ pub fn compare_level(
         y_ctx.iter().position(|n| y == n),
       ) {
         (Some(xi), Some(yi)) => Ok(SOrd::cmp(&xi, &yi)),
-        (None, _) => Err(CompileError::MissingConstant { name: x.pretty() }),
-        (_, None) => Err(CompileError::MissingConstant { name: y.pretty() }),
+        (None, _) => Err(CompileError::UnknownUnivParam {
+          curr: String::new(),
+          param: x.pretty(),
+        }),
+        (_, None) => Err(CompileError::UnknownUnivParam {
+          curr: String::new(),
+          param: y.pretty(),
+        }),
       }
     },
   }
@@ -1815,27 +1821,30 @@ pub fn compare_const(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Ordering, CompileError> {
-  let key = (x.name(), y.name());
-  if let Some(so) = cache.cmps.get(&key) {
-    Ok(*so)
+  let (key, reversed) = if x.name() <= y.name() {
+    ((x.name(), y.name()), false)
   } else {
-    let so: SOrd = match (x, y) {
-      (MutConst::Defn(x), MutConst::Defn(y)) => {
-        compare_defn(x, y, mut_ctx, stt)?
-      },
-      (MutConst::Indc(x), MutConst::Indc(y)) => {
-        compare_indc(x, y, mut_ctx, cache, stt)?
-      },
-      (MutConst::Recr(x), MutConst::Recr(y)) => {
-        compare_recr(x, y, mut_ctx, stt)?
-      },
-      _ => SOrd::cmp(&mut_const_kind(x), &mut_const_kind(y)),
-    };
-    if so.strong {
-      cache.cmps.insert(key, so.ordering);
-    }
-    Ok(so.ordering)
+    ((y.name(), x.name()), true)
+  };
+  if let Some(so) = cache.cmps.get(&key) {
+    return Ok(if reversed { so.reverse() } else { *so });
   }
+  let so: SOrd = match (x, y) {
+    (MutConst::Defn(x), MutConst::Defn(y)) => {
+      compare_defn(x, y, mut_ctx, stt)?
+    },
+    (MutConst::Indc(x), MutConst::Indc(y)) => {
+      compare_indc(x, y, mut_ctx, cache, stt)?
+    },
+    (MutConst::Recr(x), MutConst::Recr(y)) => {
+      compare_recr(x, y, mut_ctx, stt)?
+    },
+    _ => SOrd::cmp(&mut_const_kind(x), &mut_const_kind(y)),
+  };
+  if so.strong {
+    cache.cmps.insert(key, so.ordering);
+  }
+  Ok(if reversed { so.ordering.reverse() } else { so.ordering })
 }
 
 /// Check if two mutual constants are structurally equal.
@@ -2236,7 +2245,6 @@ fn compile_mutual(
     ixon_mutuals,
     refs,
     univs,
-    const_count,
     Some(&name_str),
   );
   let block_addr = compiled.addr.clone();
@@ -3213,7 +3221,7 @@ mod tests {
     });
 
     let compiled =
-      compile_mutual_block(vec![def1, def2], vec![], vec![], 2, None);
+      compile_mutual_block(vec![def1, def2], vec![], vec![], None);
     let constant = compiled.constant;
     let addr = compiled.addr;
 

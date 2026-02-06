@@ -120,7 +120,7 @@ def sharingTest2 : Bool :=
   let ty := Expr.sort 0
   let e2 := Expr.app (.lam ty (.var 0)) (.lam ty (.var 1))
   let (_, sharing2) := Ix.Sharing.applySharing #[e2]
-  sharing2.size == 1 ∨ sharing2.isEmpty
+  sharing2.size == 1
 
 def sharingTest3 : Bool :=
   let var0 := Expr.var 0
@@ -128,7 +128,7 @@ def sharingTest3 : Bool :=
   let e3b := Expr.app var0 (.var 1)
   let e3c := Expr.app var0 (.var 2)
   let (_, sharing3) := Ix.Sharing.applySharing #[e3a, e3b, e3c]
-  sharing3.isEmpty ∨ sharing3.size > 0
+  sharing3.size >= 1
 
 def sharingTest4 : Bool :=
   let e4 := Expr.lam (.sort 0) (.app (.var 0) (.var 0))

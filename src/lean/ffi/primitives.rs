@@ -434,10 +434,11 @@ pub fn decode_assoc_list_nat_nat(list_ptr: *const c_void) -> Vec<(Nat, Nat)> {
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_bytearray_to_u64_le(ba_ptr: *const c_void) -> u64 {
   unsafe {
-    // ByteArray layout: header followed by data bytes
-    // lean_sarray_cptr gives us the pointer to the data
+    let arr: &LeanSArrayObject = &*(ba_ptr as *const LeanSArrayObject);
+    if arr.data().len() < 8 {
+      return 0;
+    }
     let data_ptr = lean_sarray_cptr(ba_ptr as *mut _);
-    // Direct cast - assumes little-endian platform and at least 8 bytes
-    *(data_ptr as *const u64)
+    std::ptr::read_unaligned(data_ptr as *const u64)
   }
 }

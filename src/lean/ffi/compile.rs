@@ -241,38 +241,16 @@ pub extern "C" fn rs_compile_env_full(
   env_consts_ptr: *const c_void,
 ) -> *mut c_void {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
-    use std::time::Instant;
-    let total_start = Instant::now();
-
     // Phase 1: Decode Lean environment
-    let decode_start = Instant::now();
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let env_len = rust_env.len();
     let rust_env = Arc::new(rust_env);
-    eprintln!(
-      "  [Rust Full] Decode env: {:.2}s ({} constants)",
-      decode_start.elapsed().as_secs_f32(),
-      env_len
-    );
 
     // Phase 2: Build ref graph and compute SCCs
-    let graph_start = Instant::now();
     let ref_graph = build_ref_graph(&rust_env);
-    eprintln!(
-      "  [Rust Full] Ref graph: {:.2}s",
-      graph_start.elapsed().as_secs_f32()
-    );
-
-    let scc_start = Instant::now();
     let condensed = compute_sccs(&ref_graph.out_refs);
-    eprintln!(
-      "  [Rust Full] SCCs: {:.2}s ({} blocks)",
-      scc_start.elapsed().as_secs_f32(),
-      condensed.blocks.len()
-    );
 
     // Phase 3: Compile
-    let compile_start = Instant::now();
     let compile_stt = match compile_env(&rust_env) {
       Ok(stt) => stt,
       Err(e) => {
@@ -281,13 +259,8 @@ pub extern "C" fn rs_compile_env_full(
         return unsafe { make_compile_io_error(&msg) };
       },
     };
-    eprintln!(
-      "  [Rust Full] Compile: {:.2}s",
-      compile_start.elapsed().as_secs_f32()
-    );
 
     // Phase 4: Build Lean structures
-    let build_start = Instant::now();
     let mut cache = LeanBuildCache::with_capacity(env_len);
 
     unsafe {
@@ -367,15 +340,6 @@ pub extern "C" fn rs_compile_env_full(
       lean_ctor_set(result, 1, condensed_obj);
       lean_ctor_set(result, 2, compiled_obj);
 
-      eprintln!(
-        "  [Rust Full] Build Lean: {:.2}s",
-        build_start.elapsed().as_secs_f32()
-      );
-      eprintln!(
-        "  [Rust Full] Total: {:.2}s",
-        total_start.elapsed().as_secs_f32()
-      );
-
       lean_io_result_mk_ok(result)
     }
   }))
@@ -398,7 +362,10 @@ pub extern "C" fn rs_compile_env(env_consts_ptr: *const c_void) -> *mut c_void {
 
     // Serialize the compiled Env to bytes
     let mut buf = Vec::new();
-    compile_stt.env.put(&mut buf);
+    if let Err(e) = compile_stt.env.put(&mut buf) {
+      let msg = format!("rs_compile_env: Env serialization failed: {}", e);
+      return unsafe { make_compile_io_error(&msg) };
+    }
 
     // Build Lean ByteArray
     unsafe {
@@ -676,32 +643,18 @@ extern "C" fn rs_compile_env_rust_first(
   env_consts_ptr: *const c_void,
 ) -> *mut RustCompiledEnv {
   // Decode Lean environment
-  let start_decode = std::time::Instant::now();
   let lean_env = lean_ptr_to_env(env_consts_ptr);
-  let env_len = lean_env.len();
   let lean_env = Arc::new(lean_env);
-  eprintln!(
-    "  [Rust] Decode env: {:.2}s ({} constants)",
-    start_decode.elapsed().as_secs_f32(),
-    env_len
-  );
 
   // Compile with Rust
-  let start_compile = std::time::Instant::now();
   let rust_stt = match compile_env(&lean_env) {
     Ok(stt) => stt,
-    Err(e) => {
-      eprintln!("Rust compilation failed: {:?}", e);
+    Err(_e) => {
       return std::ptr::null_mut();
     },
   };
-  eprintln!(
-    "  [Rust] Compile env: {:.2}s",
-    start_compile.elapsed().as_secs_f32()
-  );
 
   // Build block map: lowlink name -> (serialized bytes, sharing len)
-  let start_extract = std::time::Instant::now();
   let mut blocks: HashMap<Name, (Vec<u8>, usize)> = HashMap::new();
 
   // Iterate over all names and their addresses
@@ -722,12 +675,6 @@ extern "C" fn rs_compile_env_rust_first(
       blocks.insert(name, (bytes, sharing_len));
     }
   }
-
-  eprintln!(
-    "  [Rust] Extract {} blocks: {:.2}s",
-    blocks.len(),
-    start_extract.elapsed().as_secs_f32()
-  );
 
   // Return boxed RustCompiledEnv with full compile state for pre-sharing access
   Box::into_raw(Box::new(RustCompiledEnv { blocks, compile_state: rust_stt }))
@@ -981,7 +928,6 @@ extern "C" fn rs_get_pre_sharing_exprs(
   let addr = match rust_env.compile_state.name_to_addr.get(&name) {
     Some(a) => a.clone(),
     None => {
-      eprintln!("rs_get_pre_sharing_exprs: name not found: {:?}", name);
       return 0;
     },
   };
@@ -990,7 +936,6 @@ extern "C" fn rs_get_pre_sharing_exprs(
   let constant = match rust_env.compile_state.env.get_const(&addr) {
     Some(c) => c,
     None => {
-      eprintln!("rs_get_pre_sharing_exprs: constant not found at addr");
       return 0;
     },
   };

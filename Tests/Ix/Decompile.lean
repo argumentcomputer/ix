@@ -112,7 +112,7 @@ def testDecompile : TestSeq :=
         IO.println s!"  {name}: {diff}"
     IO.println ""
 
-    let success := decompErrors.size == 0
+    let success := decompErrors.size == 0 && nMismatch == 0 && nMissing == 0
     if success then
       return (true, none)
     else

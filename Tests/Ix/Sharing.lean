@@ -114,7 +114,7 @@ def testWithSharing : TestSeq :=
   -- var 42 should be shared since it appears 3 times
   -- But it's a small term, so sharing might not be profitable
   -- Just verify the function runs without error
-  test "sharing analysis completes" true
+  test "sharing analysis completes" (_rewritten.size == exprs.size)
 
 /-- Test that sharing vector is in topological order (leaves first). -/
 def testSharingTopoOrder : TestSeq :=
@@ -254,13 +254,9 @@ def testRecursorSharing : TestSeq := Id.run do
   let refGross : _root_.Int := (refUsage - 1 : _root_.Int) * refEffSize
   let refPotential : _root_.Int := refGross - refUsage
 
-  --dbg_trace s!"[testRecursorSharing] unique={result.infoMap.size} shared={sharedHashes.size}"
-  --dbg_trace s!"[testRecursorSharing] ref 0 #[]: usage={refUsage} effSize={refEffSize} gross={refGross} potential={refPotential}"
-
   let refShared := sharedHashes.any (· == refHash)
 
   let (_, sharingVec) := buildSharingVec #[e4] sharedHashes result.infoMap result.ptrToHash
-  --dbg_trace s!"[testRecursorSharing] sharingVec.size={sharingVec.size}"
 
   return group "recursor sharing" (
     test "ref found with usage >= 4" (refUsage >= 4) ++
@@ -321,9 +317,6 @@ def testRealisticRecursor : TestSeq := Id.run do
   let _effectiveSizes := computeEffectiveSizes result.infoMap result.topoOrder
   let sharedHashes := decideSharing result.infoMap result.topoOrder
 
-  --dbg_trace s!"[testRealisticRecursor] Analyzing {allExprs.size} expressions"
-  --dbg_trace s!"[testRealisticRecursor] unique={result.infoMap.size} shared={sharedHashes.size}"
-
   -- Check each ref
   let tRefHash := computeExprHash tRef
   let c1Hash := computeExprHash c1
@@ -335,16 +328,8 @@ def testRealisticRecursor : TestSeq := Id.run do
   let _c2Usage := result.infoMap.get? c2Hash |>.map (·.usageCount) |>.getD 0
   let _c3Usage := result.infoMap.get? c3Hash |>.map (·.usageCount) |>.getD 0
 
-  --dbg_trace s!"[testRealisticRecursor] ref 0 (type): usage={tRefUsage}"
-  --dbg_trace s!"[testRealisticRecursor] ref 1 (c1): usage={c1Usage}"
-  --dbg_trace s!"[testRealisticRecursor] ref 2 (c2): usage={c2Usage}"
-  --dbg_trace s!"[testRealisticRecursor] ref 3 (c3): usage={c3Usage}"
-
   -- Build sharing vector
   let (_rewritten, _sharingVec) := buildSharingVec allExprs sharedHashes result.infoMap result.ptrToHash
-  --dbg_trace s!"[testRealisticRecursor] sharingVec ({sharingVec.size} items):"
-  --for i in [:sharingVec.size] do
-  --  dbg_trace s!"  [{i}] {repr sharingVec[i]!}"
 
   -- ref 0 (type) appears 2 times: in motiveType and target
   -- With usage=2, size=2: potential = 1*2 - 2 = 0, NOT shared
@@ -372,8 +357,6 @@ def testContentHashCollision : TestSeq := Id.run do
 
   let refHash := computeExprHash (Expr.ref 0 #[])
   let refUsage := result.infoMap.get? refHash |>.map (·.usageCount) |>.getD 0
-
-  --dbg_trace s!"[testContentHashCollision] ref 0 #[]: usage={refUsage} (expected 3)"
 
   return group "content hash collision" (
     test "ref usage counted via hash collision" (refUsage == (3 : Nat))
@@ -403,9 +386,6 @@ def testCrossImplSharingSimple : TestSeq := Id.run do
   let rustSharingCount := rsAnalyzeSharingCount exprs
   let (isMatch, _leanCount, _rustCount) := unpackSharingComparison (rsCompareSharingAnalysis exprs sharingVec rewritten)
 
-  --dbg_trace s!"[testCrossImplSharingSimple] Lean sharing: {sharingVec.size}, Rust sharing: {rustSharingCount}"
-  --dbg_trace s!"[testCrossImplSharingSimple] Comparison: isMatch={isMatch} leanCount={leanCount} rustCount={rustCount}"
-
   return group "cross-impl simple" (
     test "sharing counts match" (sharingVec.size.toUInt64 == rustSharingCount) ++
     test "sharing vectors match" isMatch
@@ -431,9 +411,6 @@ def testCrossImplContentHash : TestSeq := Id.run do
   -- Run Rust's sharing analysis via FFI
   let rustSharingCount := rsAnalyzeSharingCount exprs
   let (isMatch, _leanCount, _rustCount) := unpackSharingComparison (rsCompareSharingAnalysis exprs sharingVec rewritten)
-
-  --dbg_trace s!"[testCrossImplContentHash] Lean sharing: {sharingVec.size}, Rust sharing: {rustSharingCount}"
-  --dbg_trace s!"[testCrossImplContentHash] Comparison: isMatch={isMatch} leanCount={leanCount} rustCount={rustCount}"
 
   return group "cross-impl content hash" (
     test "sharing counts match" (sharingVec.size.toUInt64 == rustSharingCount) ++
@@ -485,14 +462,6 @@ def testCrossImplRecursor : TestSeq := Id.run do
   -- Run Rust's sharing analysis via FFI
   let rustSharingCount := rsAnalyzeSharingCount exprs
   let (isMatch, _leanCount, _rustCount) := unpackSharingComparison (rsCompareSharingAnalysis exprs sharingVec rewritten)
-
-  --dbg_trace s!"[testCrossImplRecursor] Lean sharing: {sharingVec.size}, Rust sharing: {rustSharingCount}"
-  --dbg_trace s!"[testCrossImplRecursor] Comparison: isMatch={isMatch} leanCount={leanCount} rustCount={rustCount}"
-
-  -- Show Lean's sharing vector
-  --dbg_trace s!"[testCrossImplRecursor] Lean sharing vector:"
-  --for i in [:sharingVec.size] do
-  --  dbg_trace s!"  [{i}] {repr sharingVec[i]!}"
 
   return group "cross-impl recursor" (
     test "sharing counts match" (sharingVec.size.toUInt64 == rustSharingCount) ++

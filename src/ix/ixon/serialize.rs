@@ -1014,9 +1014,10 @@ use super::env::Named;
 use super::metadata::{ConstantMeta, NameIndex, NameReverseIndex};
 
 /// Serialize a Named entry with indexed metadata.
-pub fn put_named_indexed(named: &Named, idx: &NameIndex, buf: &mut Vec<u8>) {
+pub fn put_named_indexed(named: &Named, idx: &NameIndex, buf: &mut Vec<u8>) -> Result<(), String> {
   put_address(&named.addr, buf);
-  named.meta.put_indexed(idx, buf);
+  named.meta.put_indexed(idx, buf)?;
+  Ok(())
 }
 
 /// Deserialize a Named entry with indexed metadata.
@@ -1041,7 +1042,7 @@ impl Env {
   pub const FLAG: u8 = 0xE;
 
   /// Serialize an Env to bytes.
-  pub fn put(&self, buf: &mut Vec<u8>) {
+  pub fn put(&self, buf: &mut Vec<u8>) -> Result<(), String> {
     // Header: Tag4 with flag=0xE, size=0 (Env variant)
     Tag4::new(Self::FLAG, 0).put(buf);
 
@@ -1093,7 +1094,7 @@ impl Env {
     put_u64(named.len() as u64, buf);
     for (name, named_entry) in &named {
       put_bytes(name.get_hash().as_bytes(), buf);
-      put_named_indexed(named_entry, &name_index, buf);
+      put_named_indexed(named_entry, &name_index, buf)?;
     }
 
     // Section 5: Comms (Address -> Comm)
@@ -1106,6 +1107,7 @@ impl Env {
       put_address(addr, buf);
       comm.put(buf);
     }
+    Ok(())
   }
 
   /// Deserialize an Env from bytes.
@@ -1196,16 +1198,16 @@ impl Env {
   }
 
   /// Calculate the serialized size of an Env.
-  pub fn serialized_size(&self) -> usize {
+  pub fn serialized_size(&self) -> Result<usize, String> {
     let mut buf = Vec::new();
-    self.put(&mut buf);
-    buf.len()
+    self.put(&mut buf)?;
+    Ok(buf.len())
   }
 
   /// Calculate serialized size with breakdown by section.
   pub fn serialized_size_breakdown(
     &self,
-  ) -> (usize, usize, usize, usize, usize, usize) {
+  ) -> Result<(usize, usize, usize, usize, usize, usize), String> {
     let mut buf = Vec::new();
 
     // Header
@@ -1247,7 +1249,7 @@ impl Env {
     put_u64(self.named.len() as u64, &mut buf);
     for entry in self.named.iter() {
       put_bytes(entry.key().get_hash().as_bytes(), &mut buf);
-      put_named_indexed(entry.value(), &name_index, &mut buf);
+      put_named_indexed(entry.value(), &name_index, &mut buf)?;
     }
     let named_size = buf.len() - before_named;
 
@@ -1260,7 +1262,7 @@ impl Env {
     }
     let comms_size = buf.len() - before_comms;
 
-    (header_size, blobs_size, consts_size, names_size, named_size, comms_size)
+    Ok((header_size, blobs_size, consts_size, names_size, named_size, comms_size))
   }
 }
 
@@ -1359,7 +1361,7 @@ mod tests {
   fn test_env_roundtrip_empty() {
     let env = Env::new();
     let mut buf = Vec::new();
-    env.put(&mut buf);
+    env.put(&mut buf).unwrap();
     let recovered = Env::get(&mut buf.as_slice()).unwrap();
     assert_eq!(env.blobs.len(), recovered.blobs.len());
     assert_eq!(env.consts.len(), recovered.consts.len());
@@ -1470,7 +1472,10 @@ mod tests {
 
   fn env_roundtrip(env: &Env) -> bool {
     let mut buf = Vec::new();
-    env.put(&mut buf);
+    if let Err(e) = env.put(&mut buf) {
+      eprintln!("Env::put failed: {}", e);
+      return false;
+    }
     match Env::get(&mut buf.as_slice()) {
       Ok(recovered) => {
         // Check counts match

@@ -22,7 +22,7 @@ abbrev GraphM := ReaderT Ix.Environment <| StateT GraphState Id
 /-- Extract constant references from an Ix.Expr.
     NOTE: Aligned with Rust's get_expr_references for cross-impl testing. -/
 def graphExpr (expr: Ix.Expr) : GraphM (Set Ix.Name) := do
-  match (<- get).exprCache.find? expr with
+  match (<- get).exprCache.get? expr with
   | some x => pure x
   | none =>
     let refs <- go expr

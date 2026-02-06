@@ -472,7 +472,7 @@ mod doc_examples {
     // Env -> Tag4 { flag: 0xE, size: 0 } -> 0xE0
     let env = Env::new();
     let mut buf = Vec::new();
-    env.put(&mut buf);
+    env.put(&mut buf).unwrap();
     assert_eq!(buf[0], 0xE0, "Env should start with 0xE0 (flag=E, variant=0)");
   }
 }

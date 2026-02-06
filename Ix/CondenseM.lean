@@ -52,7 +52,7 @@ abbrev CondenseM := ReaderT CondenseEnv <| StateT CondenseState Id
 partial def visit : Ix.Name -> CondenseM Unit
 | name => do
   if !(<- read).validNames.contains name then return ()
-  let refs := match (<- read).outRefs.find? name with
+  let refs := match (<- read).outRefs.get? name with
     | .some x => x
     | .none => {}
   -- Assign discovery id and initialize lowLink to self
@@ -72,16 +72,20 @@ partial def visit : Ix.Name -> CondenseM Unit
       -- Tree edge: recurse, then propagate lowLink upward
       visit ref
       modify fun stt =>
+        -- SAFETY: `id` was inserted into lowLink at line 65 before this loop
         let ll := stt.lowLink.get! id
+        -- SAFETY: `ref` was just visited (tree edge), so `names` and `lowLink` contain it
         let rll := stt.lowLink.get! (stt.names.get! ref)
         { stt with lowLink := stt.lowLink.insert id (min ll rll) }
     | .some id' => if (<- get).onStack.contains id' then
       -- Back edge: update lowLink to the earlier discovery id
       modify fun stt =>
+        -- SAFETY: `id` was inserted into lowLink at line 65 before this loop
         let ll := stt.lowLink.get! id
         { stt with lowLink := stt.lowLink.insert id (min ll id') }
   -- If lowLink equals our own id, we are the root of an SCC.
   -- Pop the stack until we reach ourselves to collect all SCC members.
+  -- SAFETY: `id` was inserted into lowLink at line 65; may have been updated but is always present
   if id == (<- get).lowLink.get! id then
     let mut stack := (<- get).stack
     if !stack.isEmpty then
@@ -118,7 +122,9 @@ def condense (dbg : Bool) (total : Nat): CondenseM CondensedBlocks := do
   let mut blocks : Map Ix.Name (Set Ix.Name) := {}
   let mut lowLinks := {}
   for (i, low) in (<- get).lowLink do
+    -- SAFETY: every id `i` in lowLink was assigned via `ids.insert id name` at line 62
     let name := (<- get).ids.get! i
+    -- SAFETY: `low` is always a valid id — either the node's own id or one reached via back-edges
     let lowName := (<- get).ids.get! low
     lowLinks := lowLinks.insert name lowName
     blocks := blocks.alter lowName fun x => match x with
@@ -129,6 +135,7 @@ def condense (dbg : Bool) (total : Nat): CondenseM CondensedBlocks := do
   for (lo, all) in blocks do
     let mut rs: Set Ix.Name := {}
     for a in all do
+      -- SAFETY: `a` is a member of an SCC block, so it exists as a key in the outRefs graph
       rs := rs.union (refs.get! a)
     rs := rs.filter (!all.contains ·)
     blockRefs := blockRefs.insert lo rs

@@ -423,7 +423,7 @@ pub extern "C" fn rs_ser_env(raw_env_ptr: *const c_void) -> *mut c_void {
   let decoded = decode_raw_env(raw_env_ptr);
   let env = decoded_to_ixon_env(&decoded);
   let mut buf = Vec::new();
-  env.put(&mut buf);
+  env.put(&mut buf).expect("Env serialization failed");
 
   unsafe {
     let ba = lean_alloc_sarray(1, buf.len(), buf.len());

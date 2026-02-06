@@ -77,8 +77,7 @@ def internDataValue (ptr: USize) (y : Ix.DataValue) : CanonM Unit := do
 def canonName (n: Lean.Name) : CanonM Ix.Name := do
   let ptr := leanNamePtr n
   let s ← get
-  if let .some addr := s.namePtrAddrs.get? ptr then
-    return s.names.get! addr
+  if let .some val := s.namePtrAddrs.get? ptr |>.bind s.names.get? then return val
   else
     let n' ← match n with
       | .anonymous => pure .mkAnon
@@ -90,8 +89,7 @@ def canonName (n: Lean.Name) : CanonM Ix.Name := do
 def canonLevel (l: Lean.Level) : CanonM Ix.Level := do
   let ptr := leanLevelPtr l
   let s ← get
-  if let .some addr := s.levelPtrAddrs.get? ptr then
-    return s.levels.get! addr
+  if let .some val := s.levelPtrAddrs.get? ptr |>.bind s.levels.get? then return val
   else
     let l' ← match l with
       | .zero => pure .mkZero
@@ -134,8 +132,7 @@ partial def canonSyntax : Lean.Syntax → CanonM Ix.Syntax
 def canonDataValue (d: Lean.DataValue): CanonM Ix.DataValue := do
   let ptr := leanDataValuePtr d
   let s ← get
-  if let .some addr := s.dataValuePtrAddrs.get? ptr then
-    return s.dataValues.get! addr
+  if let .some val := s.dataValuePtrAddrs.get? ptr |>.bind s.dataValues.get? then return val
   let d' ← match d with
   | .ofString s => pure <| .ofString s
   | .ofBool b => pure <| .ofBool b
@@ -157,8 +154,7 @@ def canonMData (md : Lean.MData) : CanonM (Array (Ix.Name × Ix.DataValue)) := d
 def canonExpr (e: Lean.Expr) : CanonM Ix.Expr := do
   let ptr := leanExprPtr e
   let s ← get
-  if let .some addr := s.exprPtrAddrs.get? ptr then
-    return s.exprs.get! addr
+  if let .some val := s.exprPtrAddrs.get? ptr |>.bind s.exprs.get? then return val
   else
     let e' ← match e with
       | .bvar idx => pure (.mkBVar idx)
@@ -604,6 +600,7 @@ partial def exprEqCached (a b : Lean.Expr) : EqState Bool := do
       if !(← exprEqCached valA valB) then return false
       exprEqCached bodyA bodyB
     | .lit lA, .lit lB => pure (lA == lB)
+    -- Mdata entries are ignored for semantic equality (they carry annotations, not semantics)
     | .mdata _ eA, .mdata _ eB => exprEqCached eA eB
     | .proj tnA idxA sA, .proj tnB idxB sB =>
       if tnA != tnB || idxA != idxB then return false
@@ -679,6 +676,8 @@ def constInfoEqCached (a b : Lean.ConstantInfo) : Bool :=
   (check.run {}).1
 
 /-- Compare two environments in parallel using Tasks.
+    One-directional: only checks that env1 entries exist and match in env2.
+    Extra entries in env2 are not detected (by design for roundtrip verification).
     Returns (numMismatches, numMissing, mismatchNames, missingNames). -/
 def compareEnvsParallel (env1 env2 : Std.HashMap Lean.Name Lean.ConstantInfo)
     : Nat × Nat × Array Lean.Name × Array Lean.Name := Id.run do

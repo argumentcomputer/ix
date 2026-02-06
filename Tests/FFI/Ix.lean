@@ -152,15 +152,16 @@ def ixExprEq (a b : Ix.Expr) : Bool := a.getHash == b.getHash
 
 /-! ## Comparison helpers -/
 
-/-- Compare RustCondensedBlocks by checking array sizes -/
+/-- Compare RustCondensedBlocks by checking array sizes.
+    Size-only: element-wise comparison is not feasible because the Lean and Rust
+    condensation algorithms may produce different SCC orderings. -/
 def rustCondensedBlocksEq (a b : Ix.RustCondensedBlocks) : Bool :=
   a.lowLinks.size == b.lowLinks.size &&
   a.blocks.size == b.blocks.size &&
   a.blockRefs.size == b.blockRefs.size
 
-/-- Compare Ix.ConstantInfo by hash of the type -/
-def ixConstantInfoEq (a b : Ix.ConstantInfo) : Bool :=
-  a.getCnst.type.getHash == b.getCnst.type.getHash
+/-- Compare Ix.ConstantInfo by structural equality (all fields). -/
+def ixConstantInfoEq (a b : Ix.ConstantInfo) : Bool := a == b
 
 /-- Compare RawEnvironment with content-aware comparison.
     Checks that all constants in a have matching constants in b by name hash. -/

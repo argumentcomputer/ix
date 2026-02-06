@@ -713,6 +713,10 @@ pub fn lean_ptr_to_env_sequential(ptr: *const c_void) -> Env {
 //  env.len()
 //}
 
+// Debug/analysis entry point invoked via the `rust-compile` test flag in
+// `Tests/FFI/Basic.lean`. Exercises the full compile→decompile→check→serialize
+// roundtrip and size analysis. Output is intentionally suppressed; re-enable
+// individual `eprintln!` lines when debugging locally.
 #[unsafe(no_mangle)]
 extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   // Enable hash-consed size tracking for debugging
@@ -725,174 +729,61 @@ extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
   crate::ix::compile::ANALYZE_SHARING
     .store(false, std::sync::atomic::Ordering::Relaxed);
 
-  let start_decoding = std::time::SystemTime::now();
   let env = lean_ptr_to_env(ptr);
   let env = Arc::new(env);
-  println!("Decoding: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
-  let start_compiling = std::time::SystemTime::now();
-  let res = compile_env(&env);
-  match res {
-    Ok(stt) => {
-      println!(
-        "Compiling: {:.2}s",
-        start_compiling.elapsed().unwrap().as_secs_f32()
-      );
-      println!("Compile OK: {:?}", stt.stats());
+  if let Ok(stt) = compile_env(&env) {
+    if let Ok(dstt) = decompile_env(&stt) {
+      let _ = check_decompile(env.as_ref(), &stt, &dstt);
+    }
 
-      let start_decompiling = std::time::SystemTime::now();
-      match decompile_env(&stt) {
-        Ok(dstt) => {
-          println!(
-            "Decompiling: {:.2}s",
-            start_decompiling.elapsed().unwrap().as_secs_f32()
-          );
-          println!("Decompile OK: {:?}", dstt.stats());
-          let start_check = std::time::SystemTime::now();
-          match check_decompile(env.as_ref(), &stt, &dstt) {
-            Ok(result) => {
-              println!(
-                "Checking: {:.2}s",
-                start_check.elapsed().unwrap().as_secs_f32()
-              );
-              println!("Roundtrip OK ({:?})", result);
-            },
-            Err(e) => println!("Roundtrip ERR: {:?}", e),
-          }
-        },
-        Err(e) => println!("Decompile ERR: {:?}", e),
+    // Measure serialized size (after roundtrip, not counted in total time)
+    let _ = stt.env.serialized_size_breakdown();
+
+    // Analyze serialized size of "Nat.add_comm" and its transitive dependencies
+    analyze_const_size(&stt, "Nat.add_comm");
+
+    // Analyze hash-consing vs serialization efficiency
+    analyze_block_size_stats(&stt);
+
+    // Test decompilation from serialized bytes (simulating "over the wire")
+    let mut serialized = Vec::new();
+    stt.env.put(&mut serialized).expect("Env serialization failed");
+
+    // Deserialize to a fresh Env
+    let mut buf: &[u8] = &serialized;
+    if let Ok(fresh_env) = crate::ix::ixon::env::Env::get(&mut buf) {
+      // Build a fresh CompileState from the deserialized Env
+      let fresh_stt = crate::ix::compile::CompileState {
+        env: fresh_env,
+        name_to_addr: DashMap::new(),
+        blocks: dashmap::DashSet::new(),
+        block_stats: DashMap::new(),
+      };
+
+      // Populate name_to_addr from env.named
+      for entry in fresh_stt.env.named.iter() {
+        fresh_stt
+          .name_to_addr
+          .insert(entry.key().clone(), entry.value().addr.clone());
       }
 
-      // Measure serialized size (after roundtrip, not counted in total time)
-      let start_serialize = std::time::SystemTime::now();
-      let (header, blobs, consts, names, named, comms) =
-        stt.env.serialized_size_breakdown();
-      let total = header + blobs + consts + names + named + comms;
-      println!(
-        "Serialized size: {} bytes ({:.2} MB) in {:.2}s",
-        total,
-        total as f64 / (1024.0 * 1024.0),
-        start_serialize.elapsed().unwrap().as_secs_f32()
-      );
-      println!(
-        "  Header: {} bytes ({:.2} MB)",
-        header,
-        header as f64 / (1024.0 * 1024.0)
-      );
-      println!(
-        "  Blobs:  {} bytes ({:.2} MB)",
-        blobs,
-        blobs as f64 / (1024.0 * 1024.0)
-      );
-      println!(
-        "  Consts: {} bytes ({:.2} MB)",
-        consts,
-        consts as f64 / (1024.0 * 1024.0)
-      );
-      println!(
-        "  Names:  {} bytes ({:.2} MB)",
-        names,
-        names as f64 / (1024.0 * 1024.0)
-      );
-      println!(
-        "  Named:  {} bytes ({:.2} MB)",
-        named,
-        named as f64 / (1024.0 * 1024.0)
-      );
-      println!(
-        "  Comms:  {} bytes ({:.2} MB)",
-        comms,
-        comms as f64 / (1024.0 * 1024.0)
-      );
-
-      // Analyze serialized size of "Nat.add_comm" and its transitive dependencies
-      analyze_const_size(&stt, "Nat.add_comm");
-
-      // Analyze hash-consing vs serialization efficiency
-      analyze_block_size_stats(&stt);
-
-      // Test decompilation from serialized bytes (simulating "over the wire")
-      println!();
-      println!("=== Decompile from serialized bytes (no CompileState) ===");
-      let start_wire = std::time::SystemTime::now();
-
-      // Serialize the Env to bytes
-      let mut serialized = Vec::new();
-      stt.env.put(&mut serialized);
-      println!(
-        "Serialized: {} bytes in {:.2}s",
-        serialized.len(),
-        start_wire.elapsed().unwrap().as_secs_f32()
-      );
-
-      // Deserialize to a fresh Env
-      let start_deser = std::time::SystemTime::now();
-      let mut buf: &[u8] = &serialized;
-      match crate::ix::ixon::env::Env::get(&mut buf) {
-        Ok(fresh_env) => {
-          println!(
-            "Deserialized: {:.2}s",
-            start_deser.elapsed().unwrap().as_secs_f32()
-          );
-
-          // Build a fresh CompileState from the deserialized Env
-          let fresh_stt = crate::ix::compile::CompileState {
-            env: fresh_env,
-            name_to_addr: DashMap::new(),
-            blocks: dashmap::DashSet::new(),
-            block_stats: DashMap::new(),
-          };
-
-          // Populate name_to_addr from env.named
-          for entry in fresh_stt.env.named.iter() {
-            fresh_stt
-              .name_to_addr
-              .insert(entry.key().clone(), entry.value().addr.clone());
-          }
-
-          // Populate blocks from constants that are mutual blocks
-          for entry in fresh_stt.env.consts.iter() {
-            if matches!(
-              &entry.value().info,
-              crate::ix::ixon::constant::ConstantInfo::Muts(_)
-            ) {
-              fresh_stt.blocks.insert(entry.key().clone());
-            }
-          }
-
-          println!("Fresh CompileState: {:?}", fresh_stt.stats());
-
-          // Decompile from the fresh state
-          let start_decomp2 = std::time::SystemTime::now();
-          match decompile_env(&fresh_stt) {
-            Ok(dstt2) => {
-              println!(
-                "Decompile (from wire): {:.2}s",
-                start_decomp2.elapsed().unwrap().as_secs_f32()
-              );
-              println!("Decompile OK: {:?}", dstt2.stats());
-
-              // Verify against original environment
-              let start_check2 = std::time::SystemTime::now();
-              match check_decompile(env.as_ref(), &fresh_stt, &dstt2) {
-                Ok(result) => {
-                  println!(
-                    "Checking: {:.2}s",
-                    start_check2.elapsed().unwrap().as_secs_f32()
-                  );
-                  println!("Roundtrip from wire OK ({:?})", result);
-                },
-                Err(e) => println!("Roundtrip from wire ERR: {:?}", e),
-              }
-            },
-            Err(e) => println!("Decompile from wire ERR: {:?}", e),
-          }
-        },
-        Err(e) => println!("Deserialize ERR: {}", e),
+      // Populate blocks from constants that are mutual blocks
+      for entry in fresh_stt.env.consts.iter() {
+        if matches!(
+          &entry.value().info,
+          crate::ix::ixon::constant::ConstantInfo::Muts(_)
+        ) {
+          fresh_stt.blocks.insert(entry.key().clone());
+        }
       }
-    },
-    Err(e) => println!("Compile ERR: {:?}", e),
+
+      // Decompile from the fresh state
+      if let Ok(dstt2) = decompile_env(&fresh_stt) {
+        // Verify against original environment
+        let _ = check_decompile(env.as_ref(), &fresh_stt, &dstt2);
+      }
+    }
   }
-  println!("Total: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
   env.as_ref().len()
 }
 
@@ -1106,7 +997,7 @@ fn serialized_meta_size(
   name_index: &crate::ix::ixon::metadata::NameIndex,
 ) -> usize {
   let mut buf = Vec::new();
-  meta.put_indexed(name_index, &mut buf);
+  meta.put_indexed(name_index, &mut buf).expect("metadata serialization failed");
   buf.len()
 }
 
