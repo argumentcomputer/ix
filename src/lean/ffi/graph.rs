@@ -3,6 +3,7 @@
 use std::ffi::c_void;
 use std::sync::Arc;
 
+use super::ffi_io_guard;
 use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
 use crate::lean::{
@@ -108,12 +109,14 @@ pub fn build_condensed_blocks(
 pub extern "C" fn rs_build_ref_graph(
   env_consts_ptr: *const c_void,
 ) -> *mut c_void {
-  let rust_env = lean_ptr_to_env(env_consts_ptr);
-  let rust_env = Arc::new(rust_env);
-  let ref_graph = build_ref_graph(&rust_env);
-  let mut cache = LeanBuildCache::with_capacity(rust_env.len());
-  let result = build_ref_graph_array(&mut cache, &ref_graph.out_refs);
-  unsafe { lean_io_result_mk_ok(result) }
+  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let rust_env = Arc::new(rust_env);
+    let ref_graph = build_ref_graph(&rust_env);
+    let mut cache = LeanBuildCache::with_capacity(rust_env.len());
+    let result = build_ref_graph_array(&mut cache, &ref_graph.out_refs);
+    unsafe { lean_io_result_mk_ok(result) }
+  }))
 }
 
 /// FFI function to compute SCCs from a Lean environment.
@@ -121,11 +124,13 @@ pub extern "C" fn rs_build_ref_graph(
 pub extern "C" fn rs_compute_sccs(
   env_consts_ptr: *const c_void,
 ) -> *mut c_void {
-  let rust_env = lean_ptr_to_env(env_consts_ptr);
-  let rust_env = Arc::new(rust_env);
-  let ref_graph = build_ref_graph(&rust_env);
-  let condensed = compute_sccs(&ref_graph.out_refs);
-  let mut cache = LeanBuildCache::with_capacity(rust_env.len());
-  let result = build_condensed_blocks(&mut cache, &condensed);
-  unsafe { lean_io_result_mk_ok(result) }
+  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let rust_env = Arc::new(rust_env);
+    let ref_graph = build_ref_graph(&rust_env);
+    let condensed = compute_sccs(&ref_graph.out_refs);
+    let mut cache = LeanBuildCache::with_capacity(rust_env.len());
+    let result = build_condensed_blocks(&mut cache, &condensed);
+    unsafe { lean_io_result_mk_ok(result) }
+  }))
 }

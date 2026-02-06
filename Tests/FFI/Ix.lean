@@ -150,41 +150,6 @@ def ixNameEq (a b : Ix.Name) : Bool := a.getHash == b.getHash
 def ixLevelEq (a b : Ix.Level) : Bool := a.getHash == b.getHash
 def ixExprEq (a b : Ix.Expr) : Bool := a.getHash == b.getHash
 
-/-! ## Ix type unit tests -/
-
--- Note: Most of these tests are commented out. Uncomment as needed.
-
---def ixAddressEq (a b : Address) : Bool := a.hash == b.hash
---
----- Simple unit test for debugging
---def ixAddressTests : TestSeq :=
---  let addr := Address.blake3 (ByteArray.mk #[1, 2, 3])
---  test "Address roundtrip" (ixAddressEq (roundtripIxAddress addr) addr)
---
---def ixNameTests : TestSeq :=
---  let anon := Ix.Name.mkAnon
---  let str1 := Ix.Name.mkStr anon "test"
---  let str2 := Ix.Name.mkStr str1 "nested"
---  let num1 := Ix.Name.mkNat anon 42
---  test "Ix.Name anon" (ixNameEq (roundtripIxName anon) anon) ++
---  test "Ix.Name str" (ixNameEq (roundtripIxName str1) str1) ++
---  test "Ix.Name str.str" (ixNameEq (roundtripIxName str2) str2) ++
---  test "Ix.Name num" (ixNameEq (roundtripIxName num1) num1)
---
---def ixLevelTests : TestSeq :=
---  let zero := Ix.Level.mkZero
---  let one := Ix.Level.mkSucc zero
---  let two := Ix.Level.mkSucc one
---  let maxL := Ix.Level.mkMax one two
---  let imaxL := Ix.Level.mkIMax one two
---  let paramL := Ix.Level.mkParam (Ix.Name.mkStr Ix.Name.mkAnon "u")
---  test "Ix.Level zero" (ixLevelEq (roundtripIxLevel zero) zero) ++
---  test "Ix.Level succ" (ixLevelEq (roundtripIxLevel one) one) ++
---  test "Ix.Level succ succ" (ixLevelEq (roundtripIxLevel two) two) ++
---  test "Ix.Level max" (ixLevelEq (roundtripIxLevel maxL) maxL) ++
---  test "Ix.Level imax" (ixLevelEq (roundtripIxLevel imaxL) imaxL) ++
---  test "Ix.Level param" (ixLevelEq (roundtripIxLevel paramL) paramL)
-
 /-! ## Comparison helpers -/
 
 /-- Compare RustCondensedBlocks by checking array sizes -/

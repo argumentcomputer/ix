@@ -309,7 +309,6 @@ impl PartialOrd for Literal {
 }
 
 // should match Literal.lt here https://github.com/leanprover/lean4/blob/fe21b950586cde248dae4b2a0f59d43c1f19cd87/src/Lean/Expr.lean#L34
-// TODO: test that Nat and String comparisons match
 impl Ord for Literal {
   fn cmp(&self, other: &Self) -> std::cmp::Ordering {
     match (self, other) {

@@ -25,6 +25,14 @@ use super::univ::{Univ, get_univ, put_univ};
 // Primitive helpers
 // ============================================================================
 
+/// Cap capacity for Vec allocation during deserialization.
+/// Prevents OOM from malicious/malformed input claiming huge sizes.
+/// Each item requires at least 1 byte, so capacity can never exceed buffer length.
+#[inline]
+fn capped_capacity(count: u64, buf: &[u8]) -> usize {
+  (count as usize).min(buf.len())
+}
+
 fn put_u8(x: u8, buf: &mut Vec<u8>) {
   buf.push(x);
 }
@@ -241,7 +249,8 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
           },
           Expr::FLAG_REF => {
             let ref_idx = get_u64(buf)?;
-            let mut univ_indices = Vec::with_capacity(tag.size as usize);
+            let mut univ_indices =
+              Vec::with_capacity(capped_capacity(tag.size, buf));
             for _ in 0..tag.size {
               univ_indices.push(get_u64(buf)?);
             }
@@ -249,7 +258,8 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
           },
           Expr::FLAG_REC => {
             let rec_idx = get_u64(buf)?;
-            let mut univ_indices = Vec::with_capacity(tag.size as usize);
+            let mut univ_indices =
+              Vec::with_capacity(capped_capacity(tag.size, buf));
             for _ in 0..tag.size {
               univ_indices.push(get_u64(buf)?);
             }
@@ -478,7 +488,7 @@ fn put_sharing(sharing: &[Arc<Expr>], buf: &mut Vec<u8>) {
 
 fn get_sharing(buf: &mut &[u8]) -> Result<Vec<Arc<Expr>>, String> {
   let num = get_u64(buf)?;
-  let mut sharing = Vec::with_capacity(num as usize);
+  let mut sharing = Vec::with_capacity(capped_capacity(num, buf));
   for _ in 0..num {
     sharing.push(get_expr(buf)?);
   }
@@ -540,7 +550,7 @@ impl Recursor {
     let minors = get_u64(buf)?;
     let typ = get_expr(buf)?;
     let num_rules = get_u64(buf)?;
-    let mut rules = Vec::with_capacity(num_rules as usize);
+    let mut rules = Vec::with_capacity(capped_capacity(num_rules, buf));
     for _ in 0..num_rules {
       rules.push(RecursorRule::get(buf)?);
     }
@@ -631,7 +641,7 @@ impl Inductive {
     let nested = get_u64(buf)?;
     let typ = get_expr(buf)?;
     let num_ctors = get_u64(buf)?;
-    let mut ctors = Vec::with_capacity(num_ctors as usize);
+    let mut ctors = Vec::with_capacity(capped_capacity(num_ctors, buf));
     for _ in 0..num_ctors {
       ctors.push(Constructor::get(buf)?);
     }
@@ -772,7 +782,7 @@ fn put_refs(refs: &[Address], buf: &mut Vec<u8>) {
 
 fn get_refs(buf: &mut &[u8]) -> Result<Vec<Address>, String> {
   let num = get_u64(buf)?;
-  let mut refs = Vec::with_capacity(num as usize);
+  let mut refs = Vec::with_capacity(capped_capacity(num, buf));
   for _ in 0..num {
     refs.push(get_address(buf)?);
   }
@@ -788,7 +798,7 @@ fn put_univs(univs: &[Arc<Univ>], buf: &mut Vec<u8>) {
 
 fn get_univs(buf: &mut &[u8]) -> Result<Vec<Arc<Univ>>, String> {
   let num = get_u64(buf)?;
-  let mut univs = Vec::with_capacity(num as usize);
+  let mut univs = Vec::with_capacity(capped_capacity(num, buf));
   for _ in 0..num {
     univs.push(get_univ(buf)?);
   }
@@ -822,7 +832,7 @@ impl Constant {
     let info = match tag.flag {
       Self::FLAG_MUTS => {
         // Muts: size field is entry count
-        let mut mutuals = Vec::with_capacity(tag.size as usize);
+        let mut mutuals = Vec::with_capacity(capped_capacity(tag.size, buf));
         for _ in 0..tag.size {
           mutuals.push(MutConst::get(buf)?);
         }
@@ -1036,18 +1046,29 @@ impl Env {
     Tag4::new(Self::FLAG, 0).put(buf);
 
     // Section 1: Blobs (Address -> bytes)
-    put_u64(self.blobs.len() as u64, buf);
-    for entry in self.blobs.iter() {
-      put_address(entry.key(), buf);
-      put_u64(entry.value().len() as u64, buf);
-      buf.extend_from_slice(entry.value());
+    // Sort by address for deterministic serialization (matches Lean)
+    let mut blobs: Vec<_> =
+      self.blobs.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    blobs.sort_by(|a, b| a.0.cmp(&b.0));
+    put_u64(blobs.len() as u64, buf);
+    for (addr, bytes) in &blobs {
+      put_address(addr, buf);
+      put_u64(bytes.len() as u64, buf);
+      buf.extend_from_slice(bytes);
     }
 
     // Section 2: Consts (Address -> Constant)
-    put_u64(self.consts.len() as u64, buf);
-    for entry in self.consts.iter() {
-      put_address(entry.key(), buf);
-      entry.value().put(buf);
+    // Sort by address for deterministic serialization (matches Lean)
+    let mut consts: Vec<_> = self
+      .consts
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    consts.sort_by(|a, b| a.0.cmp(&b.0));
+    put_u64(consts.len() as u64, buf);
+    for (addr, constant) in &consts {
+      put_address(addr, buf);
+      constant.put(buf);
     }
 
     // Section 3: Names (Address -> Name component)
@@ -1063,18 +1084,27 @@ impl Env {
     }
 
     // Section 4: Named (name Address -> Named)
+    // Sort by name hash for deterministic serialization (matches Lean)
     // Use indexed serialization for metadata (saves ~24 bytes per address)
-    put_u64(self.named.len() as u64, buf);
-    for entry in self.named.iter() {
-      put_bytes(entry.key().get_hash().as_bytes(), buf);
-      put_named_indexed(entry.value(), &name_index, buf);
+    let mut named: Vec<_> =
+      self.named.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    named
+      .sort_by(|a, b| a.0.get_hash().as_bytes().cmp(b.0.get_hash().as_bytes()));
+    put_u64(named.len() as u64, buf);
+    for (name, named_entry) in &named {
+      put_bytes(name.get_hash().as_bytes(), buf);
+      put_named_indexed(named_entry, &name_index, buf);
     }
 
     // Section 5: Comms (Address -> Comm)
-    put_u64(self.comms.len() as u64, buf);
-    for entry in self.comms.iter() {
-      put_address(entry.key(), buf);
-      entry.value().put(buf);
+    // Sort by address for deterministic serialization (matches Lean)
+    let mut comms: Vec<_> =
+      self.comms.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    comms.sort_by(|a, b| a.0.cmp(&b.0));
+    put_u64(comms.len() as u64, buf);
+    for (addr, comm) in &comms {
+      put_address(addr, buf);
+      comm.put(buf);
     }
   }
 
@@ -1271,8 +1301,12 @@ fn topological_sort_names(
     result.push((addr, name.clone()));
   }
 
-  for entry in names.iter() {
-    visit(entry.value(), &mut visited, &mut result);
+  // Sort entries by address before DFS for deterministic order (matches Lean)
+  let mut sorted_entries: Vec<_> =
+    names.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+  sorted_entries.sort_by(|a, b| a.0.cmp(&b.0));
+  for (_, name) in &sorted_entries {
+    visit(name, &mut visited, &mut result);
   }
 
   result

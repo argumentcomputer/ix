@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::ffi::{CString, c_void};
 use std::sync::Arc;
 
+use super::ffi_io_guard;
 use crate::ix::address::Address;
 use crate::ix::compile::{CompileState, compile_env};
 use crate::ix::condense::compute_sccs;
@@ -34,8 +35,9 @@ use crate::lean::string::LeanStringObject;
 use crate::lean::{
   as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray,
   lean_array_set_core, lean_ctor_get, lean_ctor_set, lean_ctor_set_uint8,
-  lean_ctor_set_uint64, lean_inc, lean_io_result_mk_ok, lean_mk_string,
-  lean_obj_tag, lean_sarray_cptr, lean_uint64_to_nat,
+  lean_ctor_set_uint64, lean_inc, lean_io_result_mk_error,
+  lean_io_result_mk_ok, lean_mk_io_user_error, lean_mk_string, lean_obj_tag,
+  lean_sarray_cptr, lean_uint64_to_nat,
 };
 
 use dashmap::DashMap;
@@ -222,191 +224,190 @@ pub extern "C" fn rs_roundtrip_block_compare_detail(
 // Full Compilation FFI
 // =============================================================================
 
+/// Create a Lean IO error result from a Rust error message.
+unsafe fn make_compile_io_error(msg: &str) -> *mut c_void {
+  unsafe {
+    let c_msg = CString::new(msg)
+      .unwrap_or_else(|_| CString::new("compilation error").unwrap());
+    let lean_msg = lean_mk_string(c_msg.as_ptr());
+    let lean_err = lean_mk_io_user_error(lean_msg);
+    lean_io_result_mk_error(lean_err)
+  }
+}
+
 /// FFI function to run the complete compilation pipeline and return all data.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env_full(
   env_consts_ptr: *const c_void,
 ) -> *mut c_void {
-  use std::time::Instant;
-  let total_start = Instant::now();
+  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    use std::time::Instant;
+    let total_start = Instant::now();
 
-  // Phase 1: Decode Lean environment
-  let decode_start = Instant::now();
-  let rust_env = lean_ptr_to_env(env_consts_ptr);
-  let env_len = rust_env.len();
-  let rust_env = Arc::new(rust_env);
-  eprintln!(
-    "  [Rust Full] Decode env: {:.2}s ({} constants)",
-    decode_start.elapsed().as_secs_f32(),
-    env_len
-  );
-
-  // Phase 2: Build ref graph and compute SCCs
-  let graph_start = Instant::now();
-  let ref_graph = build_ref_graph(&rust_env);
-  eprintln!(
-    "  [Rust Full] Ref graph: {:.2}s",
-    graph_start.elapsed().as_secs_f32()
-  );
-
-  let scc_start = Instant::now();
-  let condensed = compute_sccs(&ref_graph.out_refs);
-  eprintln!(
-    "  [Rust Full] SCCs: {:.2}s ({} blocks)",
-    scc_start.elapsed().as_secs_f32(),
-    condensed.blocks.len()
-  );
-
-  // Phase 3: Compile
-  let compile_start = Instant::now();
-  let compile_stt = match compile_env(&rust_env) {
-    Ok(stt) => stt,
-    Err(e) => {
-      eprintln!("Rust compilation failed: {:?}", e);
-      unsafe {
-        let empty_raw_env = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(empty_raw_env, 0, lean_alloc_array(0, 0));
-
-        let empty_condensed = lean_alloc_ctor(0, 3, 0);
-        lean_ctor_set(empty_condensed, 0, lean_alloc_array(0, 0));
-        lean_ctor_set(empty_condensed, 1, lean_alloc_array(0, 0));
-        lean_ctor_set(empty_condensed, 2, lean_alloc_array(0, 0));
-
-        let empty_compiled = lean_alloc_ctor(0, 2, 0);
-        lean_ctor_set(empty_compiled, 0, lean_alloc_array(0, 0));
-        lean_ctor_set(empty_compiled, 1, lean_alloc_array(0, 0));
-
-        let result = lean_alloc_ctor(0, 3, 0);
-        lean_ctor_set(result, 0, empty_raw_env);
-        lean_ctor_set(result, 1, empty_condensed);
-        lean_ctor_set(result, 2, empty_compiled);
-        return lean_io_result_mk_ok(result);
-      }
-    },
-  };
-  eprintln!(
-    "  [Rust Full] Compile: {:.2}s",
-    compile_start.elapsed().as_secs_f32()
-  );
-
-  // Phase 4: Build Lean structures
-  let build_start = Instant::now();
-  let mut cache = LeanBuildCache::with_capacity(env_len);
-
-  unsafe {
-    let raw_env = build_raw_environment(&mut cache, &rust_env);
-    let condensed_obj = build_condensed_blocks(&mut cache, &condensed);
-
-    // Collect blocks
-    let mut blocks_data: Vec<(Name, Vec<u8>, usize)> = Vec::new();
-    let mut seen_addrs: std::collections::HashSet<Address> =
-      std::collections::HashSet::new();
-
-    for entry in compile_stt.name_to_addr.iter() {
-      let name = entry.key().clone();
-      let addr = entry.value().clone();
-
-      if seen_addrs.contains(&addr) {
-        continue;
-      }
-      seen_addrs.insert(addr.clone());
-
-      if let Some(constant) = compile_stt.env.get_const(&addr) {
-        let mut bytes = Vec::new();
-        constant.put(&mut bytes);
-        let sharing_len = constant.sharing.len();
-        blocks_data.push((name, bytes, sharing_len));
-      }
-    }
-
-    // Build blocks array
-    let blocks_arr = lean_alloc_array(blocks_data.len(), blocks_data.len());
-    for (i, (name, bytes, sharing_len)) in blocks_data.iter().enumerate() {
-      let name_obj = build_name(&mut cache, name);
-
-      let ba = lean_alloc_sarray(1, bytes.len(), bytes.len());
-      let ba_data = lean_sarray_cptr(ba);
-      std::ptr::copy_nonoverlapping(bytes.as_ptr(), ba_data, bytes.len());
-
-      let block = lean_alloc_ctor(0, 2, 8);
-      lean_ctor_set(block, 0, name_obj);
-      lean_ctor_set(block, 1, ba);
-      let base = block.cast::<u8>();
-      *base.add(8 + 16).cast::<u64>() = *sharing_len as u64;
-
-      lean_array_set_core(blocks_arr, i, block);
-    }
-
-    // Build nameToAddr array
-    let name_to_addr_len = compile_stt.name_to_addr.len();
-    let name_to_addr_arr = lean_alloc_array(name_to_addr_len, name_to_addr_len);
-    for (i, entry) in compile_stt.name_to_addr.iter().enumerate() {
-      let name = entry.key();
-      let addr = entry.value();
-
-      let name_obj = build_name(&mut cache, name);
-
-      let addr_bytes = addr.as_bytes();
-      let addr_ba = lean_alloc_sarray(1, 32, 32);
-      let addr_data = lean_sarray_cptr(addr_ba);
-      std::ptr::copy_nonoverlapping(addr_bytes.as_ptr(), addr_data, 32);
-
-      let entry_obj = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(entry_obj, 0, name_obj);
-      lean_ctor_set(entry_obj, 1, addr_ba);
-
-      lean_array_set_core(name_to_addr_arr, i, entry_obj);
-    }
-
-    // Build RawCompiledEnv
-    let compiled_obj = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(compiled_obj, 0, blocks_arr);
-    lean_ctor_set(compiled_obj, 1, name_to_addr_arr);
-
-    // Build RustCompilationResult
-    let result = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(result, 0, raw_env);
-    lean_ctor_set(result, 1, condensed_obj);
-    lean_ctor_set(result, 2, compiled_obj);
-
+    // Phase 1: Decode Lean environment
+    let decode_start = Instant::now();
+    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let env_len = rust_env.len();
+    let rust_env = Arc::new(rust_env);
     eprintln!(
-      "  [Rust Full] Build Lean: {:.2}s",
-      build_start.elapsed().as_secs_f32()
-    );
-    eprintln!(
-      "  [Rust Full] Total: {:.2}s",
-      total_start.elapsed().as_secs_f32()
+      "  [Rust Full] Decode env: {:.2}s ({} constants)",
+      decode_start.elapsed().as_secs_f32(),
+      env_len
     );
 
-    lean_io_result_mk_ok(result)
-  }
+    // Phase 2: Build ref graph and compute SCCs
+    let graph_start = Instant::now();
+    let ref_graph = build_ref_graph(&rust_env);
+    eprintln!(
+      "  [Rust Full] Ref graph: {:.2}s",
+      graph_start.elapsed().as_secs_f32()
+    );
+
+    let scc_start = Instant::now();
+    let condensed = compute_sccs(&ref_graph.out_refs);
+    eprintln!(
+      "  [Rust Full] SCCs: {:.2}s ({} blocks)",
+      scc_start.elapsed().as_secs_f32(),
+      condensed.blocks.len()
+    );
+
+    // Phase 3: Compile
+    let compile_start = Instant::now();
+    let compile_stt = match compile_env(&rust_env) {
+      Ok(stt) => stt,
+      Err(e) => {
+        let msg =
+          format!("rs_compile_env_full: Rust compilation failed: {:?}", e);
+        return unsafe { make_compile_io_error(&msg) };
+      },
+    };
+    eprintln!(
+      "  [Rust Full] Compile: {:.2}s",
+      compile_start.elapsed().as_secs_f32()
+    );
+
+    // Phase 4: Build Lean structures
+    let build_start = Instant::now();
+    let mut cache = LeanBuildCache::with_capacity(env_len);
+
+    unsafe {
+      let raw_env = build_raw_environment(&mut cache, &rust_env);
+      let condensed_obj = build_condensed_blocks(&mut cache, &condensed);
+
+      // Collect blocks
+      let mut blocks_data: Vec<(Name, Vec<u8>, usize)> = Vec::new();
+      let mut seen_addrs: std::collections::HashSet<Address> =
+        std::collections::HashSet::new();
+
+      for entry in compile_stt.name_to_addr.iter() {
+        let name = entry.key().clone();
+        let addr = entry.value().clone();
+
+        if seen_addrs.contains(&addr) {
+          continue;
+        }
+        seen_addrs.insert(addr.clone());
+
+        if let Some(constant) = compile_stt.env.get_const(&addr) {
+          let mut bytes = Vec::new();
+          constant.put(&mut bytes);
+          let sharing_len = constant.sharing.len();
+          blocks_data.push((name, bytes, sharing_len));
+        }
+      }
+
+      // Build blocks array
+      let blocks_arr = lean_alloc_array(blocks_data.len(), blocks_data.len());
+      for (i, (name, bytes, sharing_len)) in blocks_data.iter().enumerate() {
+        let name_obj = build_name(&mut cache, name);
+
+        let ba = lean_alloc_sarray(1, bytes.len(), bytes.len());
+        let ba_data = lean_sarray_cptr(ba);
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), ba_data, bytes.len());
+
+        let block = lean_alloc_ctor(0, 2, 8);
+        lean_ctor_set(block, 0, name_obj);
+        lean_ctor_set(block, 1, ba);
+        let base = block.cast::<u8>();
+        *base.add(8 + 16).cast::<u64>() = *sharing_len as u64;
+
+        lean_array_set_core(blocks_arr, i, block);
+      }
+
+      // Build nameToAddr array
+      let name_to_addr_len = compile_stt.name_to_addr.len();
+      let name_to_addr_arr =
+        lean_alloc_array(name_to_addr_len, name_to_addr_len);
+      for (i, entry) in compile_stt.name_to_addr.iter().enumerate() {
+        let name = entry.key();
+        let addr = entry.value();
+
+        let name_obj = build_name(&mut cache, name);
+
+        let addr_bytes = addr.as_bytes();
+        let addr_ba = lean_alloc_sarray(1, 32, 32);
+        let addr_data = lean_sarray_cptr(addr_ba);
+        std::ptr::copy_nonoverlapping(addr_bytes.as_ptr(), addr_data, 32);
+
+        let entry_obj = lean_alloc_ctor(0, 2, 0);
+        lean_ctor_set(entry_obj, 0, name_obj);
+        lean_ctor_set(entry_obj, 1, addr_ba);
+
+        lean_array_set_core(name_to_addr_arr, i, entry_obj);
+      }
+
+      // Build RawCompiledEnv
+      let compiled_obj = lean_alloc_ctor(0, 2, 0);
+      lean_ctor_set(compiled_obj, 0, blocks_arr);
+      lean_ctor_set(compiled_obj, 1, name_to_addr_arr);
+
+      // Build RustCompilationResult
+      let result = lean_alloc_ctor(0, 3, 0);
+      lean_ctor_set(result, 0, raw_env);
+      lean_ctor_set(result, 1, condensed_obj);
+      lean_ctor_set(result, 2, compiled_obj);
+
+      eprintln!(
+        "  [Rust Full] Build Lean: {:.2}s",
+        build_start.elapsed().as_secs_f32()
+      );
+      eprintln!(
+        "  [Rust Full] Total: {:.2}s",
+        total_start.elapsed().as_secs_f32()
+      );
+
+      lean_io_result_mk_ok(result)
+    }
+  }))
 }
 
 /// FFI function to compile a Lean environment to serialized Ixon.Env bytes.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env(env_consts_ptr: *const c_void) -> *mut c_void {
-  let rust_env = lean_ptr_to_env(env_consts_ptr);
-  let rust_env = Arc::new(rust_env);
+  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let rust_env = Arc::new(rust_env);
 
-  let compile_stt = match compile_env(&rust_env) {
-    Ok(stt) => stt,
-    Err(_) => unsafe {
-      let empty_ba = lean_alloc_sarray(1, 0, 0);
-      return lean_io_result_mk_ok(empty_ba);
-    },
-  };
+    let compile_stt = match compile_env(&rust_env) {
+      Ok(stt) => stt,
+      Err(e) => {
+        let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
+        return unsafe { make_compile_io_error(&msg) };
+      },
+    };
 
-  // Serialize the compiled Env to bytes
-  let mut buf = Vec::new();
-  compile_stt.env.put(&mut buf);
+    // Serialize the compiled Env to bytes
+    let mut buf = Vec::new();
+    compile_stt.env.put(&mut buf);
 
-  // Build Lean ByteArray
-  unsafe {
-    let ba = lean_alloc_sarray(1, buf.len(), buf.len());
-    let ba_data = lean_sarray_cptr(ba);
-    std::ptr::copy_nonoverlapping(buf.as_ptr(), ba_data, buf.len());
-    lean_io_result_mk_ok(ba)
-  }
+    // Build Lean ByteArray
+    unsafe {
+      let ba = lean_alloc_sarray(1, buf.len(), buf.len());
+      let ba_data = lean_sarray_cptr(ba);
+      std::ptr::copy_nonoverlapping(buf.as_ptr(), ba_data, buf.len());
+      lean_io_result_mk_ok(ba)
+    }
+  }))
 }
 
 /// Round-trip a RawEnv: decode from Lean, re-encode via builder.
@@ -424,121 +425,105 @@ pub extern "C" fn rs_roundtrip_raw_env(
 pub extern "C" fn rs_compile_phases(
   env_consts_ptr: *const c_void,
 ) -> *mut c_void {
-  let rust_env = lean_ptr_to_env(env_consts_ptr);
-  let env_len = rust_env.len();
-  let rust_env = Arc::new(rust_env);
+  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let env_len = rust_env.len();
+    let rust_env = Arc::new(rust_env);
 
-  let mut cache = LeanBuildCache::with_capacity(env_len);
-  let raw_env = build_raw_environment(&mut cache, &rust_env);
+    let mut cache = LeanBuildCache::with_capacity(env_len);
+    let raw_env = build_raw_environment(&mut cache, &rust_env);
 
-  let ref_graph = build_ref_graph(&rust_env);
+    let ref_graph = build_ref_graph(&rust_env);
 
-  let condensed = compute_sccs(&ref_graph.out_refs);
+    let condensed = compute_sccs(&ref_graph.out_refs);
 
-  let condensed_obj = build_condensed_blocks(&mut cache, &condensed);
+    let condensed_obj = build_condensed_blocks(&mut cache, &condensed);
 
-  let compile_stt = match compile_env(&rust_env) {
-    Ok(stt) => stt,
-    Err(e) => {
-      eprintln!("rs_compile_phases: compilation failed: {:?}", e);
-      unsafe {
-        let empty_consts = lean_alloc_array(0, 0);
-        let empty_named = lean_alloc_array(0, 0);
-        let empty_blobs = lean_alloc_array(0, 0);
-        let empty_comms = lean_alloc_array(0, 0);
-        let empty_names = lean_alloc_array(0, 0);
-        let raw_ixon_env = lean_alloc_ctor(0, 5, 0);
-        lean_ctor_set(raw_ixon_env, 0, empty_consts);
-        lean_ctor_set(raw_ixon_env, 1, empty_named);
-        lean_ctor_set(raw_ixon_env, 2, empty_blobs);
-        lean_ctor_set(raw_ixon_env, 3, empty_comms);
-        lean_ctor_set(raw_ixon_env, 4, empty_names);
-
-        let result = lean_alloc_ctor(0, 3, 0);
-        lean_ctor_set(result, 0, raw_env);
-        lean_ctor_set(result, 1, condensed_obj);
-        lean_ctor_set(result, 2, raw_ixon_env);
-        return lean_io_result_mk_ok(result);
+    let compile_stt = match compile_env(&rust_env) {
+      Ok(stt) => stt,
+      Err(e) => {
+        let msg = format!("rs_compile_phases: compilation failed: {:?}", e);
+        return unsafe { make_compile_io_error(&msg) };
+      },
+    };
+    // Build Lean objects from compile results
+    unsafe {
+      let consts: Vec<_> = compile_stt
+        .env
+        .consts
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
+      let consts_arr = lean_alloc_array(consts.len(), consts.len());
+      for (i, (addr, constant)) in consts.iter().enumerate() {
+        let raw_const = build_raw_const(addr, constant);
+        lean_array_set_core(consts_arr, i, raw_const);
       }
-    },
-  };
-  // Build Lean objects from compile results
-  unsafe {
-    let consts: Vec<_> = compile_stt
-      .env
-      .consts
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    let consts_arr = lean_alloc_array(consts.len(), consts.len());
-    for (i, (addr, constant)) in consts.iter().enumerate() {
-      let raw_const = build_raw_const(addr, constant);
-      lean_array_set_core(consts_arr, i, raw_const);
+
+      let named: Vec<_> = compile_stt
+        .env
+        .named
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
+      let named_arr = lean_alloc_array(named.len(), named.len());
+      for (i, (name, n)) in named.iter().enumerate() {
+        let raw_named = build_raw_named(&mut cache, name, &n.addr, &n.meta);
+        lean_array_set_core(named_arr, i, raw_named);
+      }
+
+      let blobs: Vec<_> = compile_stt
+        .env
+        .blobs
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
+      let blobs_arr = lean_alloc_array(blobs.len(), blobs.len());
+      for (i, (addr, bytes)) in blobs.iter().enumerate() {
+        let raw_blob = build_raw_blob(addr, bytes);
+        lean_array_set_core(blobs_arr, i, raw_blob);
+      }
+
+      let comms: Vec<_> = compile_stt
+        .env
+        .comms
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
+      let comms_arr = lean_alloc_array(comms.len(), comms.len());
+      for (i, (addr, comm)) in comms.iter().enumerate() {
+        let raw_comm = build_raw_comm(addr, comm);
+        lean_array_set_core(comms_arr, i, raw_comm);
+      }
+
+      // Build names array (Address → Ix.Name)
+      let names: Vec<_> = compile_stt
+        .env
+        .names
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
+      let names_arr = lean_alloc_array(names.len(), names.len());
+      for (i, (addr, name)) in names.iter().enumerate() {
+        let obj = build_raw_name_entry(&mut cache, addr, name);
+        lean_array_set_core(names_arr, i, obj);
+      }
+
+      let raw_ixon_env = lean_alloc_ctor(0, 5, 0);
+      lean_ctor_set(raw_ixon_env, 0, consts_arr);
+      lean_ctor_set(raw_ixon_env, 1, named_arr);
+      lean_ctor_set(raw_ixon_env, 2, blobs_arr);
+      lean_ctor_set(raw_ixon_env, 3, comms_arr);
+      lean_ctor_set(raw_ixon_env, 4, names_arr);
+
+      let result = lean_alloc_ctor(0, 3, 0);
+      lean_ctor_set(result, 0, raw_env);
+      lean_ctor_set(result, 1, condensed_obj);
+      lean_ctor_set(result, 2, raw_ixon_env);
+
+      lean_io_result_mk_ok(result)
     }
-
-    let named: Vec<_> = compile_stt
-      .env
-      .named
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    let named_arr = lean_alloc_array(named.len(), named.len());
-    for (i, (name, n)) in named.iter().enumerate() {
-      let raw_named = build_raw_named(&mut cache, name, &n.addr, &n.meta);
-      lean_array_set_core(named_arr, i, raw_named);
-    }
-
-    let blobs: Vec<_> = compile_stt
-      .env
-      .blobs
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    let blobs_arr = lean_alloc_array(blobs.len(), blobs.len());
-    for (i, (addr, bytes)) in blobs.iter().enumerate() {
-      let raw_blob = build_raw_blob(addr, bytes);
-      lean_array_set_core(blobs_arr, i, raw_blob);
-    }
-
-    let comms: Vec<_> = compile_stt
-      .env
-      .comms
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    let comms_arr = lean_alloc_array(comms.len(), comms.len());
-    for (i, (addr, comm)) in comms.iter().enumerate() {
-      let raw_comm = build_raw_comm(addr, comm);
-      lean_array_set_core(comms_arr, i, raw_comm);
-    }
-
-    // Build names array (Address → Ix.Name)
-    let names: Vec<_> = compile_stt
-      .env
-      .names
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    let names_arr = lean_alloc_array(names.len(), names.len());
-    for (i, (addr, name)) in names.iter().enumerate() {
-      let obj = build_raw_name_entry(&mut cache, addr, name);
-      lean_array_set_core(names_arr, i, obj);
-    }
-
-    let raw_ixon_env = lean_alloc_ctor(0, 5, 0);
-    lean_ctor_set(raw_ixon_env, 0, consts_arr);
-    lean_ctor_set(raw_ixon_env, 1, named_arr);
-    lean_ctor_set(raw_ixon_env, 2, blobs_arr);
-    lean_ctor_set(raw_ixon_env, 3, comms_arr);
-    lean_ctor_set(raw_ixon_env, 4, names_arr);
-
-    let result = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(result, 0, raw_env);
-    lean_ctor_set(result, 1, condensed_obj);
-    lean_ctor_set(result, 2, raw_ixon_env);
-
-    lean_io_result_mk_ok(result)
-  }
+  }))
 }
 
 /// FFI function to compile a Lean environment to a RawEnv.
@@ -546,102 +531,92 @@ pub extern "C" fn rs_compile_phases(
 pub extern "C" fn rs_compile_env_to_ixon(
   env_consts_ptr: *const c_void,
 ) -> *mut c_void {
-  let rust_env = lean_ptr_to_env(env_consts_ptr);
-  let rust_env = Arc::new(rust_env);
+  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let rust_env = Arc::new(rust_env);
 
-  let compile_stt = match compile_env(&rust_env) {
-    Ok(stt) => stt,
-    Err(e) => {
-      eprintln!("rs_compile_env_to_ixon: compilation failed: {:?}", e);
-      unsafe {
-        let empty_consts = lean_alloc_array(0, 0);
-        let empty_named = lean_alloc_array(0, 0);
-        let empty_blobs = lean_alloc_array(0, 0);
-        let empty_comms = lean_alloc_array(0, 0);
-        let empty_names = lean_alloc_array(0, 0);
-        let result = lean_alloc_ctor(0, 5, 0);
-        lean_ctor_set(result, 0, empty_consts);
-        lean_ctor_set(result, 1, empty_named);
-        lean_ctor_set(result, 2, empty_blobs);
-        lean_ctor_set(result, 3, empty_comms);
-        lean_ctor_set(result, 4, empty_names);
-        return lean_io_result_mk_ok(result);
+    let compile_stt = match compile_env(&rust_env) {
+      Ok(stt) => stt,
+      Err(e) => {
+        let msg =
+          format!("rs_compile_env_to_ixon: compilation failed: {:?}", e);
+        return unsafe { make_compile_io_error(&msg) };
+      },
+    };
+
+    let mut cache = LeanBuildCache::with_capacity(rust_env.len());
+
+    unsafe {
+      let consts: Vec<_> = compile_stt
+        .env
+        .consts
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
+      let consts_arr = lean_alloc_array(consts.len(), consts.len());
+      for (i, (addr, constant)) in consts.iter().enumerate() {
+        let raw_const = build_raw_const(addr, constant);
+        lean_array_set_core(consts_arr, i, raw_const);
       }
-    },
-  };
 
-  let mut cache = LeanBuildCache::with_capacity(rust_env.len());
+      let named: Vec<_> = compile_stt
+        .env
+        .named
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
+      let named_arr = lean_alloc_array(named.len(), named.len());
+      for (i, (name, n)) in named.iter().enumerate() {
+        let raw_named = build_raw_named(&mut cache, name, &n.addr, &n.meta);
+        lean_array_set_core(named_arr, i, raw_named);
+      }
 
-  unsafe {
-    let consts: Vec<_> = compile_stt
-      .env
-      .consts
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    let consts_arr = lean_alloc_array(consts.len(), consts.len());
-    for (i, (addr, constant)) in consts.iter().enumerate() {
-      let raw_const = build_raw_const(addr, constant);
-      lean_array_set_core(consts_arr, i, raw_const);
+      let blobs: Vec<_> = compile_stt
+        .env
+        .blobs
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
+      let blobs_arr = lean_alloc_array(blobs.len(), blobs.len());
+      for (i, (addr, bytes)) in blobs.iter().enumerate() {
+        let raw_blob = build_raw_blob(addr, bytes);
+        lean_array_set_core(blobs_arr, i, raw_blob);
+      }
+
+      let comms: Vec<_> = compile_stt
+        .env
+        .comms
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
+      let comms_arr = lean_alloc_array(comms.len(), comms.len());
+      for (i, (addr, comm)) in comms.iter().enumerate() {
+        let raw_comm = build_raw_comm(addr, comm);
+        lean_array_set_core(comms_arr, i, raw_comm);
+      }
+
+      // Build names array (Address → Ix.Name)
+      let names: Vec<_> = compile_stt
+        .env
+        .names
+        .iter()
+        .map(|e| (e.key().clone(), e.value().clone()))
+        .collect();
+      let names_arr = lean_alloc_array(names.len(), names.len());
+      for (i, (addr, name)) in names.iter().enumerate() {
+        let obj = build_raw_name_entry(&mut cache, addr, name);
+        lean_array_set_core(names_arr, i, obj);
+      }
+
+      let result = lean_alloc_ctor(0, 5, 0);
+      lean_ctor_set(result, 0, consts_arr);
+      lean_ctor_set(result, 1, named_arr);
+      lean_ctor_set(result, 2, blobs_arr);
+      lean_ctor_set(result, 3, comms_arr);
+      lean_ctor_set(result, 4, names_arr);
+      lean_io_result_mk_ok(result)
     }
-
-    let named: Vec<_> = compile_stt
-      .env
-      .named
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    let named_arr = lean_alloc_array(named.len(), named.len());
-    for (i, (name, n)) in named.iter().enumerate() {
-      let raw_named = build_raw_named(&mut cache, name, &n.addr, &n.meta);
-      lean_array_set_core(named_arr, i, raw_named);
-    }
-
-    let blobs: Vec<_> = compile_stt
-      .env
-      .blobs
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    let blobs_arr = lean_alloc_array(blobs.len(), blobs.len());
-    for (i, (addr, bytes)) in blobs.iter().enumerate() {
-      let raw_blob = build_raw_blob(addr, bytes);
-      lean_array_set_core(blobs_arr, i, raw_blob);
-    }
-
-    let comms: Vec<_> = compile_stt
-      .env
-      .comms
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    let comms_arr = lean_alloc_array(comms.len(), comms.len());
-    for (i, (addr, comm)) in comms.iter().enumerate() {
-      let raw_comm = build_raw_comm(addr, comm);
-      lean_array_set_core(comms_arr, i, raw_comm);
-    }
-
-    // Build names array (Address → Ix.Name)
-    let names: Vec<_> = compile_stt
-      .env
-      .names
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    let names_arr = lean_alloc_array(names.len(), names.len());
-    for (i, (addr, name)) in names.iter().enumerate() {
-      let obj = build_raw_name_entry(&mut cache, addr, name);
-      lean_array_set_core(names_arr, i, obj);
-    }
-
-    let result = lean_alloc_ctor(0, 5, 0);
-    lean_ctor_set(result, 0, consts_arr);
-    lean_ctor_set(result, 1, named_arr);
-    lean_ctor_set(result, 2, blobs_arr);
-    lean_ctor_set(result, 3, comms_arr);
-    lean_ctor_set(result, 4, names_arr);
-    lean_io_result_mk_ok(result)
-  }
+  }))
 }
 
 /// FFI function to canonicalize environment to Ix.RawEnvironment.
@@ -649,10 +624,12 @@ pub extern "C" fn rs_compile_env_to_ixon(
 pub extern "C" fn rs_canonicalize_env_to_ix(
   env_consts_ptr: *const c_void,
 ) -> *mut c_void {
-  let rust_env = lean_ptr_to_env(env_consts_ptr);
-  let mut cache = LeanBuildCache::with_capacity(rust_env.len());
-  let raw_env = build_raw_environment(&mut cache, &rust_env);
-  unsafe { lean_io_result_mk_ok(raw_env) }
+  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let mut cache = LeanBuildCache::with_capacity(rust_env.len());
+    let raw_env = build_raw_environment(&mut cache, &rust_env);
+    unsafe { lean_io_result_mk_ok(raw_env) }
+  }))
 }
 
 // =============================================================================
@@ -765,6 +742,9 @@ extern "C" fn rs_compare_block(
   lowlink_name: *const c_void,
   lean_bytes: &LeanSArrayObject,
 ) -> u64 {
+  if rust_env.is_null() {
+    return 2u64 << 32; // not found
+  }
   let global_cache = GlobalCache::default();
   let name = lean_ptr_to_name(lowlink_name, &global_cache);
 
@@ -824,6 +804,9 @@ extern "C" fn rs_get_block_bytes_len(
   rust_env: *const RustCompiledEnv,
   lowlink_name: *const c_void,
 ) -> u64 {
+  if rust_env.is_null() {
+    return 0;
+  }
   let global_cache = GlobalCache::default();
   let name = lean_ptr_to_name(lowlink_name, &global_cache);
 
@@ -842,6 +825,9 @@ extern "C" fn rs_copy_block_bytes(
   lowlink_name: *const c_void,
   dest: *mut c_void,
 ) {
+  if rust_env.is_null() {
+    return;
+  }
   let global_cache = GlobalCache::default();
   let name = lean_ptr_to_name(lowlink_name, &global_cache);
 
@@ -863,6 +849,9 @@ extern "C" fn rs_get_block_sharing_len(
   rust_env: *const RustCompiledEnv,
   lowlink_name: *const c_void,
 ) -> u64 {
+  if rust_env.is_null() {
+    return 0;
+  }
   let global_cache = GlobalCache::default();
   let name = lean_ptr_to_name(lowlink_name, &global_cache);
 
@@ -980,6 +969,9 @@ extern "C" fn rs_get_pre_sharing_exprs(
   lowlink_name: *const c_void,
   out_buf: *mut c_void,
 ) -> u64 {
+  if rust_env.is_null() {
+    return 0;
+  }
   let global_cache = GlobalCache::default();
   let name = lean_ptr_to_name(lowlink_name, &global_cache);
 
@@ -1081,6 +1073,9 @@ extern "C" fn rs_get_pre_sharing_exprs_len(
   rust_env: *const RustCompiledEnv,
   lowlink_name: *const c_void,
 ) -> u64 {
+  if rust_env.is_null() {
+    return 0;
+  }
   let global_cache = GlobalCache::default();
   let name = lean_ptr_to_name(lowlink_name, &global_cache);
 
@@ -1139,6 +1134,9 @@ extern "C" fn rs_lookup_const_addr(
   name_ptr: *const c_void,
   out_addr: *mut c_void,
 ) -> u64 {
+  if rust_env.is_null() {
+    return 0;
+  }
   let global_cache = GlobalCache::default();
   let name = lean_ptr_to_name(name_ptr, &global_cache);
 
@@ -1161,6 +1159,9 @@ extern "C" fn rs_lookup_const_addr(
 extern "C" fn rs_get_compiled_const_count(
   rust_env: *const RustCompiledEnv,
 ) -> u64 {
+  if rust_env.is_null() {
+    return 0;
+  }
   let rust_env = unsafe { &*rust_env };
   rust_env.compile_state.name_to_addr.len() as u64
 }

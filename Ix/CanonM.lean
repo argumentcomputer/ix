@@ -22,7 +22,6 @@ import Std.Data.HashMap
 import Ix.Common
 import Ix.Environment
 import Ix.Address
-import Ix.ShardMap
 
 namespace Ix.CanonM
 
@@ -491,6 +490,15 @@ def canonEnv (env : Lean.Environment) : CanonM Ix.Environment := do
     consts := consts.insert name' const'
   return { consts := consts }
 
+/-- Uncanonicalize an Ix environment back to a map of Lean constants. -/
+def uncanonEnv (env : Ix.Environment) : UncanonM (HashMap Lean.Name Lean.ConstantInfo) := do
+  let mut result : HashMap Lean.Name Lean.ConstantInfo := {}
+  for (name, const) in env.consts do
+    let name' ← uncanonName name
+    let const' ← uncanonConst const
+    result := result.insert name' const'
+  return result
+
 /-- Format milliseconds as human-readable time string. -/
 def formatTime (ms : Nat) : String :=
   if ms < 1000 then s!"{ms}ms"
@@ -502,16 +510,6 @@ def formatTime (ms : Nat) : String :=
     let m := ms / 60000
     let s := (ms % 60000) / 1000
     s!"{m}m{s}s"
-
-/-- Uncanonicalize an Ix environment back to a map of Lean constants. -/
-def uncanonEnv (env : Ix.Environment) : UncanonM (HashMap Lean.Name Lean.ConstantInfo) := do
-  let mut result : HashMap Lean.Name Lean.ConstantInfo := {}
-  for (name, const) in env.consts do
-    let name' ← uncanonName name
-    let const' ← uncanonConst const
-    result := result.insert name' const'
-  return result
-
 
 /- ## Optimized equality with pointer-pair caching -/
 

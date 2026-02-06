@@ -200,17 +200,6 @@ def Std.HashMap.find? {A B} [BEq A] [Hashable A] (map: Std.HashMap A B) (a: A)
 abbrev Ix.Map := Std.HashMap
 abbrev Ix.Set := Std.HashSet
 
--- Note: MutCtx is now defined in Ix/Environment.lean as:
--- abbrev MutCtx := Batteries.RBMap Name Nat nameCompare
-
---instance : BEq MutCtx where
---  beq a b := a.size == b.size && a.fold
---    (fun acc k v => acc && match b.find? k with
---      | some v' => v == v'
---      | none => false) true
-
--- Ord MutCtx instance moved to Ix/Environment.lean
-
 namespace Lean
 
 def ConstantInfo.formatAll (c : ConstantInfo) : String :=

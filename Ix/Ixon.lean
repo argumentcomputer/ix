@@ -95,6 +95,17 @@ instance : Serialize UInt64 where
   put := putU64LE
   get := getU64LE
 
+def putU32LE (x : UInt32) : PutM Unit := do
+  for i in [0:4] do
+    putU8 ((x >>> (i.toUInt32 * 8)).toUInt8)
+
+def getU32LE : GetM UInt32 := do
+  let mut x : UInt32 := 0
+  for i in [0:4] do
+    let b ← getU8
+    x := x ||| (b.toUInt32 <<< (i.toUInt32 * 8))
+  return x
+
 def putBytes (x : ByteArray) : PutM Unit :=
   StateT.modifyGet (fun s => ((), s.append x))
 
@@ -1091,13 +1102,13 @@ def getBinderInfo : GetM Lean.BinderInfo := do
 def putReducibilityHints : Lean.ReducibilityHints → PutM Unit
   | .opaque => putU8 0
   | .abbrev => putU8 1
-  | .regular n => do putU8 2; putU64LE n.toUInt64
+  | .regular n => do putU8 2; putU32LE n
 
 def getReducibilityHints : GetM Lean.ReducibilityHints := do
   match ← getU8 with
   | 0 => pure .opaque
   | 1 => pure .abbrev
-  | 2 => pure (.regular (← getU64LE).toUInt32)
+  | 2 => pure (.regular (← getU32LE))
   | x => throw s!"invalid ReducibilityHints {x}"
 
 /-- Serialize DataValue with indexed addresses.
@@ -1602,7 +1613,9 @@ def getNameComponent (namesLookup : Std.HashMap Address Ix.Name) : GetM Ix.Name 
   | 0 => pure Ix.Name.mkAnon
   | 1 =>
     let parentAddr ← Serialize.get
-    let parent := namesLookup.getD parentAddr Ix.Name.mkAnon
+    let parent ← match namesLookup.get? parentAddr with
+      | some p => pure p
+      | none => throw s!"getNameComponent: missing parent address {reprStr (toString parentAddr)}"
     let len := (← getTag0).size.toNat
     let sBytes ← getBytes len
     match String.fromUTF8? sBytes with
@@ -1610,7 +1623,9 @@ def getNameComponent (namesLookup : Std.HashMap Address Ix.Name) : GetM Ix.Name 
     | none => throw "getNameComponent: invalid UTF-8"
   | 2 =>
     let parentAddr ← Serialize.get
-    let parent := namesLookup.getD parentAddr Ix.Name.mkAnon
+    let parent ← match namesLookup.get? parentAddr with
+      | some p => pure p
+      | none => throw s!"getNameComponent: missing parent address {reprStr (toString parentAddr)}"
     let len := (← getTag0).size.toNat
     let nBytes ← getBytes len
     pure (Ix.Name.mkNat parent (Nat.fromBytesLE nBytes.data))
@@ -1741,8 +1756,7 @@ def getEnv : GetM Env := do
         named := env.named.insert name namedEntry
         addrToName := env.addrToName.insert constAddr name }
     | none =>
-      -- Name not in lookup, skip
-      pure ()
+      throw s!"getEnv: named entry references unknown name address {reprStr (toString nameAddr)}"
 
   -- Section 5: Comms
   let numComms := (← getTag0).size

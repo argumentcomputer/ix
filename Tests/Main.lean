@@ -47,7 +47,6 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
-  ("sharing-io", Tests.Sharing.suiteIO),
 ]
 
 def main (args : List String) : IO UInt32 := do

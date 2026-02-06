@@ -15,7 +15,7 @@ use super::super::lean_env::{
 };
 
 /// Rust-side compiled environment for block comparison.
-pub struct RustCompiledEnv {
+pub struct RustBlockEnv {
   pub blocks: HashMap<Name, (Vec<u8>, usize)>, // (serialized bytes, sharing count)
 }
 
@@ -107,11 +107,11 @@ fn build_block_compare_detail(
 ///
 /// # Safety
 ///
-/// `rust_env` must be a valid pointer to a `RustCompiledEnv`.
+/// `rust_env` must be a valid pointer to a `RustBlockEnv`.
 /// `lowlink_name` must be a valid Lean object pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rs_compare_block_v2(
-  rust_env: *const RustCompiledEnv,
+  rust_env: *const RustBlockEnv,
   lowlink_name: *const c_void,
   lean_bytes: &LeanSArrayObject,
   lean_sharing_len: u64,
@@ -173,13 +173,13 @@ pub unsafe extern "C" fn rs_compare_block_v2(
   build_block_compare_detail(result, lean_sharing_len, rust_sharing_len)
 }
 
-/// Free a RustCompiledEnv pointer.
+/// Free a RustBlockEnv pointer.
 ///
 /// # Safety
 ///
 /// `ptr` must be a valid pointer returned by `rs_build_compiled_env`, or null.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rs_free_compiled_env(ptr: *mut RustCompiledEnv) {
+pub unsafe extern "C" fn rs_free_compiled_env(ptr: *mut RustBlockEnv) {
   if !ptr.is_null() {
     unsafe {
       drop(Box::from_raw(ptr));
@@ -187,11 +187,11 @@ pub unsafe extern "C" fn rs_free_compiled_env(ptr: *mut RustCompiledEnv) {
   }
 }
 
-/// Build a RustCompiledEnv from a Lean environment.
+/// Build a RustBlockEnv from a Lean environment.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_build_compiled_env(
   env_consts_ptr: *const c_void,
-) -> *mut RustCompiledEnv {
+) -> *mut RustBlockEnv {
   use super::super::lean_env::lean_ptr_to_env;
 
   // Decode Lean environment
@@ -203,9 +203,7 @@ pub extern "C" fn rs_build_compiled_env(
     Ok(stt) => stt,
     Err(_) => {
       // Return empty env on error
-      return Box::into_raw(Box::new(RustCompiledEnv {
-        blocks: HashMap::new(),
-      }));
+      return Box::into_raw(Box::new(RustBlockEnv { blocks: HashMap::new() }));
     },
   };
 
@@ -230,5 +228,5 @@ pub extern "C" fn rs_build_compiled_env(
     }
   }
 
-  Box::into_raw(Box::new(RustCompiledEnv { blocks }))
+  Box::into_raw(Box::new(RustBlockEnv { blocks }))
 }
