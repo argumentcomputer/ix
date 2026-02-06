@@ -45,7 +45,7 @@ impl LeanCtorObject {
     // Scalar area starts after: header (8 bytes) + object pointers (8 bytes each)
     let base_ptr = (self as *const Self).cast::<u8>();
     let scalar_area = unsafe { base_ptr.add(8 + num_objs * 8 + scalar_offset) };
-    unsafe { std::ptr::read_unaligned(scalar_area.cast::<u64>()) }
+    unsafe { ptr::read_unaligned(scalar_area.cast::<u64>()) }
   }
 
   /// Read a u8 scalar field from the constructor.

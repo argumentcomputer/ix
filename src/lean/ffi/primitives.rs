@@ -434,7 +434,7 @@ pub fn decode_assoc_list_nat_nat(list_ptr: *const c_void) -> Vec<(Nat, Nat)> {
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_bytearray_to_u64_le(ba_ptr: *const c_void) -> u64 {
   unsafe {
-    let arr: &LeanSArrayObject = &*(ba_ptr as *const LeanSArrayObject);
+    let arr: &LeanSArrayObject = &*ba_ptr.cast::<LeanSArrayObject>();
     if arr.data().len() < 8 {
       return 0;
     }
