@@ -31,8 +31,7 @@
         system,
         pkgs,
         ...
-      }: let
-      in {
+      }: {
         # Lean overlay
         _module.args.pkgs = import nixpkgs {
           inherit system;

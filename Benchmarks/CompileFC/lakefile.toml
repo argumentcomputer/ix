@@ -8,6 +8,7 @@ name = "CompileFC"
 [[lean_exe]]
 name = "compile-fc"
 root = "Main"
+supportInterpreter = true
 
 [[require]]
 name = "formal_conjectures"

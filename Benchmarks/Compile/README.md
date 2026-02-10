@@ -11,4 +11,4 @@ Runs the Ix compiler over the following libraries when imported:
 `lake exe compile-<lib>`, e.g. `compile-mathlib`
 
 > [!NOTE]
-> Compiling Mathlib and FLT, which depends on the former, requires a multi-core CPU and 128+ GB RAM.
+> Compiling Mathlib and FLT, which depends on the former, requires a multi-core CPU and 64+ GB RAM.
