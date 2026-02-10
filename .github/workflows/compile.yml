@@ -1,0 +1,28 @@
+name: Benchmark Ix compiler
+
+on:
+  push:
+    branches: "sb/cli"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  run-compiler:
+    strategy:
+      matrix:
+        bench: [lean, mathlib, flt]
+    runs-on: warp-ubuntu-latest-x64-32x
+    steps:
+      - uses: actions/checkout@v6
+      - uses: leanprover/lean-action@v1
+        with:
+          build-args: "--wfail -v"
+          lake-package-directory: "Benchmarks/Compile"
+      - working-directory: Benchmarks/Compile
+        run: lake exe compile-${{ matrix.bench }}
