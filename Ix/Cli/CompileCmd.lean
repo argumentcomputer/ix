@@ -8,9 +8,14 @@ open System (FilePath)
 
 /-- If the project depends on Mathlib, download the Mathlib cache. -/
 private def fetchMathlibCache (cwd : Option FilePath) : IO Unit := do
-  let manifest := (cwd.getD ".") / "lake-manifest.json"
+  let root := cwd.getD "."
+  let manifest := root / "lake-manifest.json"
   let contents ← IO.FS.readFile manifest
   if contents.containsSubstr "leanprover-community/mathlib4" then
+    let mathlibBuild := root / ".lake" / "packages" / "mathlib" / ".lake" / "build"
+    if ← mathlibBuild.pathExists then
+      println! "Mathlib cache already present, skipping fetch."
+      return
     println! "Detected Mathlib dependency. Fetching Mathlib cache..."
     let child ← IO.Process.spawn {
       cmd := "lake"
