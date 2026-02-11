@@ -35,7 +35,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        bench: [InitStd, Lean, Mathlib, FLT, FC]
+        bench: [InitStd, Lean, Mathlib, FLT] # Add FC when it works
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
@@ -43,14 +43,12 @@ jobs:
         with:
           shared-key: "ix"
           save-if: "false"
-      - if: matrix.bench == 'FC'
-        run: echo "COMPILE_DIR=Benchmarks/CompileFC" | tee -a $GITHUB_ENV
+      # - if: matrix.bench == 'FC'
+      #   run: echo "COMPILE_DIR=Benchmarks/CompileFC" | tee -a $GITHUB_ENV
       - name: Set cache keys
         run: |
           ROOT="lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}"
-          COMPILE="lake-${{ matrix.bench }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}"
           echo "ROOT_CACHE_PREFIX=$ROOT" | tee -a $GITHUB_ENV
-          echo "COMPILE_CACHE_PREFIX=$COMPILE" | tee -a $GITHUB_ENV
       - uses: actions/cache/restore@v4
         with:
           path: ./.lake
@@ -61,18 +59,8 @@ jobs:
           build-args: "ix ${{ env.BUILD_ARGS }}"
           test: false
           use-github-cache: false
-      - uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.COMPILE_DIR }}/.lake
-          key: ${{ env.COMPILE_CACHE_PREFIX }}-${{ github.sha }}
-          restore-keys: ${{ env.COMPILE_CACHE_PREFIX }}
       - uses: leanprover/lean-action@v1
         with:
           build-args: "Compile${{ matrix.bench }} ${{ env.BUILD_ARGS }}"
           lake-package-directory: ${{ env.COMPILE_DIR }}
-          use-github-cache: false
-      - uses: actions/cache/save@v4
-        with:
-          path: ${{ env.COMPILE_DIR }}/.lake
-          key: ${{ env.COMPILE_CACHE_PREFIX }}-${{ github.sha }}
       - run: lake exe ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean
