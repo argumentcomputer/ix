@@ -1,20 +1,11 @@
 name = "CompileFC"
 version = "0.1.0"
-defaultTargets = ["compile-fc"]
+defaultTargets = ["CompileFC"]
 
 [[lean_lib]]
 name = "CompileFC"
-
-[[lean_exe]]
-name = "compile-fc"
-root = "Main"
-supportInterpreter = true
 
 [[require]]
 name = "formal_conjectures"
 git = "https://github.com/google-deepmind/formal-conjectures"
 rev = "20af7726bba72fc97d8feda6958a8afacc664ad4"
-
-[[require]]
-name = "ix"
-path = "../.."

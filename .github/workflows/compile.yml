@@ -35,7 +35,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        bench: [InitStd, Lean, Mathlib, FLT]
+        bench: [InitStd, Lean, Mathlib, FLT, FC]
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
@@ -43,6 +43,8 @@ jobs:
         with:
           shared-key: "ix"
           save-if: "false"
+      - if: matrix.bench == 'FC'
+        run: echo "COMPILE_DIR=Benchmarks/CompileFC" | tee -a $GITHUB_ENV
       - name: Set cache keys
         run: |
           ROOT="lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}"
