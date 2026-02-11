@@ -35,7 +35,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        bench: [InitStd, Lean, Mathlib, FLT] # Add FC when it works
+        bench: [InitStd, Lean, Mathlib, FLT, FC]
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
@@ -53,12 +53,14 @@ jobs:
           path: ./.lake
           key: ${{ env.ROOT_CACHE_PREFIX }}-${{ github.sha }}
           restore-keys: ${{ env.ROOT_CACHE_PREFIX }}
-      # FLT takes a few minutes to rebuild, so we cache the build artifacts
-      - if: matrix.bench == 'FLT'
+      - if: matrix.bench == 'FC'
+        run: echo "COMPILE_DIR=Benchmarks/CompileFC" | tee -a $GITHUB_ENV
+      # FLT and FC take a few minutes to rebuild, so we cache the build artifacts
+      - if: matrix.bench == 'FLT' || matrix.bench == 'FC'
         uses: actions/cache@v4
         with:
           path: ${{ env.COMPILE_DIR }}/.lake/packages/flt/.lake/build
-          key: flt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
+          key: ${{ matrix.bench }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
       # Build the input library
       - uses: leanprover/lean-action@v1
         with:
