@@ -53,9 +53,17 @@ jobs:
           path: ./.lake
           key: ${{ env.ROOT_CACHE_PREFIX }}-${{ github.sha }}
           restore-keys: ${{ env.ROOT_CACHE_PREFIX }}
+      # FLT takes a few minutes to rebuild, so we cache the build artifacts
+      - if: matrix.bench == 'FLT'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.COMPILE_DIR }}/.lake/packages/flt/.lake/build
+          key: flt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
+      # Build the input library
       - uses: leanprover/lean-action@v1
         with:
           build-args: "Compile${{ matrix.bench }} ${{ env.BUILD_ARGS }}"
           lake-package-directory: ${{ env.COMPILE_DIR }}
           use-github-cache: false
+      # Run the `ix` compiler over the input library
       - run: lake exe ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean
