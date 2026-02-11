@@ -23,13 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ix"
       - uses: leanprover/lean-action@v1
         with:
           build-args: "ix --wfail -v"
           test: false
-      - run: echo | lake run install
+      - run: |
+          mkdir -p ~/.local/bin
+          echo | lake run install
       - uses: actions/cache/save@v4
         with:
           path: ~/.local/bin/ix
