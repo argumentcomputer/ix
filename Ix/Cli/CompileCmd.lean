@@ -14,11 +14,14 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
   println! "Running Ix compiler on {pathStr}"
 
+  let totalConsts := leanEnv.constants.toList.length
+  println! "Total constants: {totalConsts}"
+
   let start ← IO.monoMsNow
-  let phases ← Ix.CompileM.rsCompilePhases leanEnv
+  let bytes ← Ix.CompileM.rsCompileEnvBytes leanEnv
   let elapsed := (← IO.monoMsNow) - start
 
-  IO.println s!"{phases.rawEnv.consts.size} consts, {phases.condensed.blocks.size} blocks, {phases.compileEnv.constCount} compiled in {elapsed}ms"
+  println! "Compiled {fmtBytes bytes.size} env in {elapsed.formatMs}"
   return 0
     
 
