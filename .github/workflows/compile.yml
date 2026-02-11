@@ -29,34 +29,30 @@ jobs:
         with:
           build-args: "ix --wfail -v"
           test: false
+      - run: echo | lake run install
+      - uses: actions/cache/save@v4
+        with:
+          path: ~/.local/bin/ix
+          key: ix-${{ github.sha }}
 
   run-compiler:
     needs: build
     strategy:
       matrix:
-        bench: [InitStd, Lean, Mathlib, FLT, FC]
+        bench: [InitStd, Lean, Mathlib, FLT] # Add FC once updated to Lean v4.26.0
         include:
           - bench: FLT
             cache_pkg: flt
-          - bench: FC
-            cache_pkg: formal_conjectures
+          # - bench: FC
+          #   cache_pkg: formal_conjectures
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "ix"
-          save-if: "false"
-      - name: Set cache keys
-        run: |
-          ROOT="lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}"
-          echo "ROOT_CACHE_PREFIX=$ROOT" | tee -a $GITHUB_ENV
-      # Restore cached `ix` build from prior step
       - uses: actions/cache/restore@v4
         with:
-          path: ./.lake
-          key: ${{ env.ROOT_CACHE_PREFIX }}-${{ github.sha }}
-          restore-keys: ${{ env.ROOT_CACHE_PREFIX }}
+          path: ~/.local/bin/ix
+          key: ix-${{ github.sha }}
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       - if: matrix.bench == 'FC'
         run: echo "COMPILE_DIR=${{env.COMPILE_DIR}}FC" | tee -a $GITHUB_ENV
       # Download elan and fetch mathlib cache
@@ -72,8 +68,8 @@ jobs:
           path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
           key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
       # Build the input library
+      # Allow warnings due to copyright notice in formal-conjectures
       - run: lake build Compile${{ matrix.bench }}
         working-directory: ${{ env.COMPILE_DIR }}
       # Run the `ix` compiler over the input library
-      # Allow warnings due to copyright notice in formal-conjectures
-      - run: lake exe ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean
+      - run: ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean
