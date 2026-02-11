@@ -30,7 +30,6 @@ jobs:
           ln -sf /opt/homebrew/bin/gcc-14 ~/local/bin/gcc
           export PATH=~/local/bin:$PATH
           which gcc
-      - uses: Swatinem/rust-cache@v2
       - uses: leanprover/lean-action@v1 # https://github.com/leanprover/lean-action
         with:
           build-args: "--wfail -v"

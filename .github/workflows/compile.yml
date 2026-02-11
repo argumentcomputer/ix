@@ -1,10 +1,8 @@
 name: Benchmark Ix compiler
 
 on:
-  schedule:
-    - cron: "0 0 * * *" # nightly
   push:
-    branches: sb/cli
+    branches: main
   workflow_dispatch:
 
 permissions:
@@ -18,6 +16,7 @@ env:
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
+  # First build and cache the `ix` binary for use in each matrix job
   build:
     runs-on: ubuntu-latest
     steps:
@@ -35,6 +34,7 @@ jobs:
           path: ~/.local/bin/ix
           key: ix-${{ github.sha }}
 
+  # Run the Ix compiler over each library env in Benchmarks/Compile
   run-compiler:
     needs: build
     strategy:
@@ -48,6 +48,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
+      # Restore cached `ix` binary
       - uses: actions/cache/restore@v4
         with:
           path: ~/.local/bin/ix
@@ -71,5 +72,6 @@ jobs:
       # Allow warnings due to copyright notice in formal-conjectures
       - run: lake build Compile${{ matrix.bench }}
         working-directory: ${{ env.COMPILE_DIR }}
-      # Run the `ix` compiler over the input library
+      # Run the `ix` compiler over the input library env
       - run: ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean
+

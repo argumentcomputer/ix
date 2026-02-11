@@ -304,7 +304,7 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
 end Lean
 
 /-- Format a duration in milliseconds with appropriate unit suffix.
-- `0` → `"< 1ms"` (sub-ms precision not available with `Nat` ms)
+- `0` → `"< 1ms"`
 - `1`–`999` → `"Xms"`
 - `≥ 1000` → `"X.XXs"` (rounded to two decimal places) -/
 def Nat.formatMs (ms : Nat) : String :=
