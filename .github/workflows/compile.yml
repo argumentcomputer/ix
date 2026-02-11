@@ -43,12 +43,11 @@ jobs:
         with:
           shared-key: "ix"
           save-if: "false"
-      # - if: matrix.bench == 'FC'
-      #   run: echo "COMPILE_DIR=Benchmarks/CompileFC" | tee -a $GITHUB_ENV
       - name: Set cache keys
         run: |
           ROOT="lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}"
           echo "ROOT_CACHE_PREFIX=$ROOT" | tee -a $GITHUB_ENV
+      # Restore cached `ix` build from prior step
       - uses: actions/cache/restore@v4
         with:
           path: ./.lake
@@ -56,11 +55,7 @@ jobs:
           restore-keys: ${{ env.ROOT_CACHE_PREFIX }}
       - uses: leanprover/lean-action@v1
         with:
-          build-args: "ix ${{ env.BUILD_ARGS }}"
-          test: false
-          use-github-cache: false
-      - uses: leanprover/lean-action@v1
-        with:
           build-args: "Compile${{ matrix.bench }} ${{ env.BUILD_ARGS }}"
           lake-package-directory: ${{ env.COMPILE_DIR }}
+          use-github-cache: false
       - run: lake exe ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean
