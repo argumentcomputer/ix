@@ -15,10 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  run-compiler:
-    strategy:
-      matrix:
-        bench: [Lean, Mathlib, FLT]
+  build:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
@@ -26,9 +23,37 @@ jobs:
         with:
           build-args: "--wfail -v"
           test: false
+
+  run-compiler:
+    needs: build
+    strategy:
+      matrix:
+        bench: [Lean, Mathlib, FLT]
+    runs-on: warp-ubuntu-latest-x64-32x
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/cache/restore@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
+      - uses: leanprover/lean-action@v1
+        with:
+          build-args: "--wfail -v"
+          test: false
+          use-github-cache: false
+      - uses: actions/cache/restore@v4
+        with:
+          path: Benchmarks/Compile/.lake
+          key: lake-${{ matrix.bench }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Benchmarks/Compile/lean-toolchain') }}-${{ hashFiles('Benchmarks/Compile/lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ matrix.bench }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Benchmarks/Compile/lean-toolchain') }}-${{ hashFiles('Benchmarks/Compile/lake-manifest.json') }}
       - uses: leanprover/lean-action@v1
         with:
           build-args: "Compile${{ matrix.bench }} --wfail -v"
           lake-package-directory: "Benchmarks/Compile"
+          use-github-cache: false
+      - uses: actions/cache/save@v4
+        with:
+          path: Benchmarks/Compile/.lake
+          key: lake-${{ matrix.bench }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Benchmarks/Compile/lean-toolchain') }}-${{ hashFiles('Benchmarks/Compile/lake-manifest.json') }}-${{ github.sha }}
       - run: lake exe ix compile --path Benchmarks/Compile/Compile${{ matrix.bench }}.lean
-
