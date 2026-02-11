@@ -20,12 +20,12 @@ env:
 
 jobs:
   build:
-    runs-on: warp-ubuntu-latest-x64-32x
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: leanprover/lean-action@v1
         with:
-          build-args: ${{ env.BUILD_ARGS }}
+          build-args: "ix ${{ env.BUILD_ARGS }}"
           test: false
 
   run-compiler:
@@ -49,7 +49,7 @@ jobs:
           restore-keys: ${{ env.ROOT_CACHE_PREFIX }}
       - uses: leanprover/lean-action@v1
         with:
-          build-args: ${{ env.BUILD_ARGS }}
+          build-args: "ix ${{ env.BUILD_ARGS }}"
           test: false
           use-github-cache: false
       - uses: actions/cache/restore@v4
