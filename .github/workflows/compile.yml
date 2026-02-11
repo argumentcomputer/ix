@@ -18,13 +18,12 @@ jobs:
   run-compiler:
     strategy:
       matrix:
-        bench: [lean, mathlib, flt]
+        bench: [Lean, Mathlib, FLT]
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
-          lake-package-directory: "Benchmarks/Compile"
-      - working-directory: Benchmarks/Compile
-        run: lake exe compile-${{ matrix.bench }}
+      - run: lake exe ix compile --path Benchmarks/Compile/Compile${{ matrix.bench }}.lean
+

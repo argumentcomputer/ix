@@ -1,6 +1,6 @@
 # Compile
 
-Runs the Ix compiler over the following libraries when imported:
+Test libraries for the Ix compiler
 
 - [Lean4](https://github.com/leanprover/lean4)
 - [Mathlib](https://github.com/leanprover-community/mathlib4)
@@ -8,7 +8,7 @@ Runs the Ix compiler over the following libraries when imported:
 
 ## Usage
 
-`lake exe compile-<lib>`, e.g. `compile-mathlib`
+`ix compile --path /path/to/Compile<Lib>.lean` # replace <Lib> with `Lean`, `Mathlib`, or `FLT`
 
 > [!NOTE]
 > Compiling Mathlib and FLT, which depends on the former, requires a multi-core CPU and 64+ GB RAM.
