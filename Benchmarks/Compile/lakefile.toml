@@ -1,6 +1,9 @@
 name = "Compile"
 version = "0.1.0"
-defaultTargets = ["CompileLean"]
+defaultTargets = ["CompileInitStd"]
+
+[[lean_lib]]
+name = "CompileInitStd"
 
 [[lean_lib]]
 name = "CompileLean"

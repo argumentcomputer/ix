@@ -23,6 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ix"
       - uses: leanprover/lean-action@v1
         with:
           build-args: "ix ${{ env.BUILD_ARGS }}"
@@ -32,10 +35,14 @@ jobs:
     needs: build
     strategy:
       matrix:
-        bench: [Lean, Mathlib, FLT]
+        bench: [InitStd, Lean, Mathlib, FLT]
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ix"
+          save-if: "false"
       - name: Set cache keys
         run: |
           ROOT="lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}"
