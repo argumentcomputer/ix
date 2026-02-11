@@ -14,6 +14,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+env:
+  BUILD_ARGS: "--wfail -v"
+  COMPILE_DIR: Benchmarks/Compile
+
 jobs:
   build:
     runs-on: warp-ubuntu-latest-x64-32x
@@ -21,7 +25,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: leanprover/lean-action@v1
         with:
-          build-args: "--wfail -v"
+          build-args: ${{ env.BUILD_ARGS }}
           test: false
 
   run-compiler:
@@ -32,28 +36,34 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
+      - name: Set cache keys
+        run: |
+          ROOT="lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}"
+          COMPILE="lake-${{ matrix.bench }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}"
+          echo "ROOT_CACHE_PREFIX=$ROOT" | tee -a $GITHUB_ENV
+          echo "COMPILE_CACHE_PREFIX=$COMPILE" | tee -a $GITHUB_ENV
       - uses: actions/cache/restore@v4
         with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
+          path: ./.lake
+          key: ${{ env.ROOT_CACHE_PREFIX }}-${{ github.sha }}
+          restore-keys: ${{ env.ROOT_CACHE_PREFIX }}
       - uses: leanprover/lean-action@v1
         with:
-          build-args: "--wfail -v"
+          build-args: ${{ env.BUILD_ARGS }}
           test: false
           use-github-cache: false
       - uses: actions/cache/restore@v4
         with:
-          path: Benchmarks/Compile/.lake
-          key: lake-${{ matrix.bench }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Benchmarks/Compile/lean-toolchain') }}-${{ hashFiles('Benchmarks/Compile/lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-${{ matrix.bench }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Benchmarks/Compile/lean-toolchain') }}-${{ hashFiles('Benchmarks/Compile/lake-manifest.json') }}
+          path: ${{ env.COMPILE_DIR }}/.lake
+          key: ${{ env.COMPILE_CACHE_PREFIX }}-${{ github.sha }}
+          restore-keys: ${{ env.COMPILE_CACHE_PREFIX }}
       - uses: leanprover/lean-action@v1
         with:
-          build-args: "Compile${{ matrix.bench }} --wfail -v"
-          lake-package-directory: "Benchmarks/Compile"
+          build-args: "Compile${{ matrix.bench }} ${{ env.BUILD_ARGS }}"
+          lake-package-directory: ${{ env.COMPILE_DIR }}
           use-github-cache: false
       - uses: actions/cache/save@v4
         with:
-          path: Benchmarks/Compile/.lake
-          key: lake-${{ matrix.bench }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Benchmarks/Compile/lean-toolchain') }}-${{ hashFiles('Benchmarks/Compile/lake-manifest.json') }}-${{ github.sha }}
-      - run: lake exe ix compile --path Benchmarks/Compile/Compile${{ matrix.bench }}.lean
+          path: ${{ env.COMPILE_DIR }}/.lake
+          key: ${{ env.COMPILE_CACHE_PREFIX }}-${{ github.sha }}
+      - run: lake exe ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean
