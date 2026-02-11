@@ -14,8 +14,8 @@ def Tests.Cli.run (buildCmd: String) (buildArgs : Array String) (buildDir : Opti
 
 def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["run", "install"]) none
-  let ixTestDir := (← IO.currentDir) / "ix_test"
-  Tests.Cli.run "lake" (#["build"]) (some ixTestDir)
+  let ixTestDir := (← IO.currentDir) / "ix_test" / "IxTest.lean"
+  Tests.Cli.run "ix" (#["compile", "--path", ixTestDir.toString]) none
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0

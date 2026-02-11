@@ -157,6 +157,7 @@
             rust-analyzer
             lean.lean-all # Includes Lean compiler, lake, stdlib, etc.
             gmp
+            cargo-deny
           ];
         };
 

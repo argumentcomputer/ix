@@ -8,9 +8,11 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let some path := p.flag? "path"
     | p.printError "error: must specify --path"
       return 1
-  let leanEnv ← getFileEnv <| path.as! String
+  let pathStr := path.as! String
 
-  IO.println s!"Running Ix compiler"
+  let leanEnv ← getFileEnv pathStr
+
+  println! "Running Ix compiler on {pathStr}"
 
   let start ← IO.monoMsNow
   let phases ← Ix.CompileM.rsCompilePhases leanEnv

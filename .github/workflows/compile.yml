@@ -1,8 +1,10 @@
 name: Benchmark Ix compiler
 
 on:
+  schedule:
+    - cron: "0 0 * * *" # nightly
   push:
-    branches: "sb/cli"
+    branches: sb/cli
   workflow_dispatch:
 
 permissions:
