@@ -15,7 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  BUILD_ARGS: "--wfail -v"
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
@@ -28,7 +27,7 @@ jobs:
           shared-key: "ix"
       - uses: leanprover/lean-action@v1
         with:
-          build-args: "ix ${{ env.BUILD_ARGS }}"
+          build-args: "ix --wfail -v"
           test: false
 
   run-compiler:
@@ -36,6 +35,11 @@ jobs:
     strategy:
       matrix:
         bench: [InitStd, Lean, Mathlib, FLT, FC]
+        include:
+          - bench: FLT
+            cache_pkg: flt
+          - bench: FC
+            cache_pkg: formal_conjectures
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
@@ -54,18 +58,22 @@ jobs:
           key: ${{ env.ROOT_CACHE_PREFIX }}-${{ github.sha }}
           restore-keys: ${{ env.ROOT_CACHE_PREFIX }}
       - if: matrix.bench == 'FC'
-        run: echo "COMPILE_DIR=Benchmarks/CompileFC" | tee -a $GITHUB_ENV
-      # FLT and FC take a few minutes to rebuild, so we cache the build artifacts
-      - if: matrix.bench == 'FLT' || matrix.bench == 'FC'
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.COMPILE_DIR }}/.lake/packages/flt/.lake/build
-          key: ${{ matrix.bench }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
-      # Build the input library
+        run: echo "COMPILE_DIR=${{env.COMPILE_DIR}}FC" | tee -a $GITHUB_ENV
+      # Download elan and fetch mathlib cache
       - uses: leanprover/lean-action@v1
         with:
-          build-args: "Compile${{ matrix.bench }} ${{ env.BUILD_ARGS }}"
           lake-package-directory: ${{ env.COMPILE_DIR }}
-          use-github-cache: false
+          build: false
+          use-github-cache: false 
+      # FLT and FC take a few minutes to rebuild, so we cache the build artifacts
+      - if: matrix.cache_pkg
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
+          key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
+      # Build the input library
+      - run: lake build Compile${{ matrix.bench }}
+        working-directory: ${{ env.COMPILE_DIR }}
       # Run the `ix` compiler over the input library
+      # Allow warnings due to copyright notice in formal-conjectures
       - run: lake exe ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean
