@@ -25,5 +25,10 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
+          test: false
+      - uses: leanprover/lean-action@v1
+        with:
+          build-args: "Compile${{ matrix.bench }} --wfail -v"
+          lake-package-directory: "Benchmarks/Compile"
       - run: lake exe ix compile --path Benchmarks/Compile/Compile${{ matrix.bench }}.lean
 

@@ -11,4 +11,4 @@ Test libraries for the Ix compiler
 `ix compile --path /path/to/Compile<Lib>.lean` # replace <Lib> with `Lean`, `Mathlib`, or `FLT`
 
 > [!NOTE]
-> Compiling Mathlib and FLT, which depends on the former, requires a multi-core CPU and 64+ GB RAM.
+> Compiling Mathlib and FLT currently requires a multi-core CPU and >64 GB RAM.
