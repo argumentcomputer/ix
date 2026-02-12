@@ -1,5 +1,5 @@
 # Lean
-/.lake
+**/.lake
 
 # Rust
 /target

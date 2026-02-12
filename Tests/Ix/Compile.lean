@@ -37,19 +37,6 @@ def hexDump (bytes : ByteArray) (maxBytes : Nat := 64) : String := Id.run do
   if bytes.size > maxBytes then s := s ++ s!" ... ({bytes.size} bytes total)"
   return s
 
-/-- Format a byte count with appropriate unit suffix (B, kB, MB, GB). -/
-def fmtBytes (n : Nat) : String :=
-  if n < 1024 then s!"{n} B"
-  else if n < 1024 * 1024 then
-    let kb := n * 10 / 1024
-    s!"{kb / 10}.{kb % 10} kB"
-  else if n < 1024 * 1024 * 1024 then
-    let mb := n * 10 / (1024 * 1024)
-    s!"{mb / 10}.{mb % 10} MB"
-  else
-    let gb := n * 10 / (1024 * 1024 * 1024)
-    s!"{gb / 10}.{gb % 10} GB"
-
 /-- Find first byte position where two arrays differ -/
 def findFirstDiff (a b : ByteArray) : Option Nat := Id.run do
   for i in [:min a.size b.size] do

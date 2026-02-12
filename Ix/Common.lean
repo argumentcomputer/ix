@@ -302,3 +302,32 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
   else return s.commandState.env
 
 end Lean
+
+/-- Format a duration in milliseconds with appropriate unit suffix.
+- `0` → `"< 1ms"`
+- `1`–`999` → `"Xms"`
+- `≥ 1000` → `"X.XXs"` (rounded to two decimal places) -/
+def Nat.formatMs (ms : Nat) : String :=
+  if ms ≥ 1000 then
+    let centisecs := ms / 10
+    let whole := centisecs / 100
+    let frac := centisecs % 100
+    let fracStr := if frac < 10 then s!"0{frac}" else s!"{frac}"
+    s!"{whole}.{fracStr}s"
+  else if ms > 0 then
+    s!"{ms}ms"
+  else
+    "< 1ms"
+
+/-- Format a byte count with appropriate unit suffix (B, kB, MB, GB). -/
+def fmtBytes (n : Nat) : String :=
+  if n < 1024 then s!"{n} B"
+  else if n < 1024 * 1024 then
+    let kb := n * 10 / 1024
+    s!"{kb / 10}.{kb % 10} kB"
+  else if n < 1024 * 1024 * 1024 then
+    let mb := n * 10 / (1024 * 1024)
+    s!"{mb / 10}.{mb % 10} MB"
+  else
+    let gb := n * 10 / (1024 * 1024 * 1024)
+    s!"{gb / 10}.{gb % 10} GB"
