@@ -52,9 +52,9 @@ def entrypoints := ⟦
 
 def ixVM : Except Aiur.Global Aiur.Toplevel := do
   let vm ← byteStream.merge blake3
-  let vm ← vm.merge ixon
-  let vm ← vm.merge ixonSerialize
-  let vm ← vm.merge ixonDeserialize
+  -- let vm ← vm.merge ixon
+  -- let vm ← vm.merge ixonSerialize
+  -- let vm ← vm.merge ixonDeserialize
   vm.merge entrypoints
 
 end IxVM

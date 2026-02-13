@@ -1,3 +1,5 @@
+import Tests.Aiur
+import Tests.IxVM
 import Tests.ByteArray
 import Tests.Ix.Ixon
 import Tests.Ix.Claim
@@ -22,6 +24,7 @@ opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
 /-- Primary test suites - run by default -/
 def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
+  ("ixvm", Tests.IxVM.suite),
   ("ffi", Tests.FFI.suite),
   ("byte-array", Tests.ByteArray.suite),
   ("ixon", Tests.Ixon.suite),
@@ -36,6 +39,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
 def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
+  ("aiur", Tests.Aiur.suite),
   ("shard-map", Tests.ShardMap.suite),
   ("rust-canon-roundtrip", Tests.CanonM.rustSuiteIO),
   ("serial-canon-roundtrip", Tests.CanonM.serialSuiteIO),
