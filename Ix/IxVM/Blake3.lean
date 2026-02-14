@@ -108,12 +108,12 @@ def blake3 := ⟦
       (ByteStream.Nil, 0, _) => Layer.Push(store(layer), block_digest),
 
       (ByteStream.Nil, _, _) =>
-        let flags = CHUNK_END + chunk_count_is_zero(chunk_count) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
+        let flags = CHUNK_END + u64_is_zero(chunk_count) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
         Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, block_index, flags)),
 
       (ByteStream.Cons(head, input_ptr), 63, 1023) =>
         let input = load(input_ptr);
-        let flags = ROOT * byte_stream_is_empty(input) * chunk_count_is_zero(chunk_count) + CHUNK_END;
+        let flags = ROOT * byte_stream_is_empty(input) * u64_is_zero(chunk_count) + CHUNK_END;
         let block_buffer = assign_block_value(block_buffer, block_index, head);
         let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
         let empty_buffer = [[0; 4]; 16];
@@ -124,7 +124,7 @@ def blake3 := ⟦
         let input = load(input_ptr);
         let block_buffer = assign_block_value(block_buffer, block_index, head);
         let chunk_end_flag = byte_stream_is_empty(input) * CHUNK_END;
-        let root_flag = byte_stream_is_empty(input) * chunk_count_is_zero(chunk_count) * ROOT;
+        let root_flag = byte_stream_is_empty(input) * u64_is_zero(chunk_count) * ROOT;
         let chunk_start_flag = eq_zero(chunk_index - block_index) * CHUNK_START;
         let flags = chunk_end_flag + root_flag + chunk_start_flag;
         let block_digest = blake3_compress(
@@ -366,13 +366,6 @@ def blake3 := ⟦
       u32_xor(state[6], state[14]),
       u32_xor(state[7], state[15])
     ]
-  }
-
-  fn chunk_count_is_zero(chunk_count: [G; 8]) -> G {
-    match chunk_count {
-      [0, 0, 0, 0, 0, 0, 0, 0] => 1,
-      _ => 0,
-    }
   }
 
   fn assign_block_value(block: [[G; 4]; 16], idx: G, val: G) -> [[G; 4]; 16] {
