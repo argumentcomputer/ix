@@ -84,12 +84,12 @@ def blake3 := ⟦
       (ByteStream.Nil, 0, _) => Layer.Push(store(layer), block_digest),
 
       (ByteStream.Nil, _, _) =>
-        let flags = CHUNK_END + chunk_count_is_zero(chunk_count) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
+        let flags = CHUNK_END + u64_is_zero(chunk_count) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
         Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, block_index, flags)),
 
       (ByteStream.Cons(head, input_ptr), 63, 1023) =>
         let input = load(input_ptr);
-        let flags = ROOT * byte_stream_is_empty(input) * chunk_count_is_zero(chunk_count) + CHUNK_END;
+        let flags = ROOT * byte_stream_is_empty(input) * u64_is_zero(chunk_count) + CHUNK_END;
         let block_buffer = assign_block_value(block_buffer, block_index, head);
         let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
         let empty_buffer = [[0; 4]; 16];
@@ -100,7 +100,7 @@ def blake3 := ⟦
         let input = load(input_ptr);
         let block_buffer = assign_block_value(block_buffer, block_index, head);
         let chunk_end_flag = byte_stream_is_empty(input) * CHUNK_END;
-        let root_flag = byte_stream_is_empty(input) * chunk_count_is_zero(chunk_count) * ROOT;
+        let root_flag = byte_stream_is_empty(input) * u64_is_zero(chunk_count) * ROOT;
         let chunk_start_flag = eq_zero(chunk_index - block_index) * CHUNK_START;
         let flags = chunk_end_flag + root_flag + chunk_start_flag;
         let block_digest = blake3_compress(
@@ -344,18 +344,6 @@ def blake3 := ⟦
     ]
   }
 
-  -- TODO remove this function
-  fn chunk_count_is_zero(chunk_count: [G; 8]) -> G {
-    eq_zero(chunk_count[0])
-      * eq_zero(chunk_count[1])
-      * eq_zero(chunk_count[2])
-      * eq_zero(chunk_count[3])
-      * eq_zero(chunk_count[4])
-      * eq_zero(chunk_count[5])
-      * eq_zero(chunk_count[6])
-      * eq_zero(chunk_count[7])
-  }
-
   fn assign_block_value(block: [[G; 4]; 16], idx: G, val: G) -> [[G; 4]; 16] {
     match idx {
       0 => set(block, 0, set(block[0], 0, val)),
@@ -464,36 +452,6 @@ def blake3 := ⟦
     b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6 + 128 * b7
   }
 
-  -- Computes the successor of an `u64` assumed to be properly represented in
-  -- little-endian bytes. If that's not the case, this implementation has UB.
-  fn relaxed_u64_succ(bytes: [G; 8]) -> [G; 8] {
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
-    match b0 {
-      255 => match b1 {
-        255 => match b2 {
-          255 => match b3 {
-            255 => match b4 {
-              255 => match b5 {
-                255 => match b6 {
-                  255 => match b7 {
-                    255 => [0, 0, 0, 0, 0, 0, 0, 0],
-                    _ => [0, 0, 0, 0, 0, 0, 0, b7 + 1],
-                  },
-                  _ => [0, 0, 0, 0, 0, 0, b6 + 1, b7],
-                },
-                _ => [0, 0, 0, 0, 0, b5 + 1, b6, b7],
-              },
-              _ => [0, 0, 0, 0, b4 + 1, b5, b6, b7],
-            },
-            _ => [0, 0, 0, b3 + 1, b4, b5, b6, b7],
-          },
-          _ => [0, 0, b2 + 1, b3, b4, b5, b6, b7],
-        },
-        _ => [0, b1 + 1, b2, b3, b4, b5, b6, b7],
-      },
-      _ => [b0 + 1, b1, b2, b3, b4, b5, b6, b7],
-    }
-  }
 ⟧
 
 end IxVM

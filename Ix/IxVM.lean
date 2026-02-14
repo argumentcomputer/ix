@@ -4,6 +4,7 @@ import Ix.IxVM.Blake3
 import Ix.IxVM.Ixon
 import Ix.IxVM.IxonSerialize
 import Ix.IxVM.IxonDeserialize
+import Ix.IxVM.U64
 
 namespace IxVM
 
@@ -53,8 +54,9 @@ def entrypoints := ⟦
 def ixVM : Except Aiur.Global Aiur.Toplevel := do
   let vm ← byteStream.merge blake3
   let vm ← vm.merge ixon
-  -- let vm ← vm.merge ixonSerialize
-  -- let vm ← vm.merge ixonDeserialize
+  let vm ← vm.merge ixonSerialize
+  let vm ← vm.merge ixonDeserialize
+  let vm ← vm.merge u64
   vm.merge entrypoints
 
 end IxVM

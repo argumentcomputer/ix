@@ -8,6 +8,14 @@ def byteStream := ⟦
     Nil
   }
 
+  fn byte_streams_concat(a: ByteStream, b: ByteStream) -> ByteStream {
+    match a {
+      ByteStream.Nil => b,
+      ByteStream.Cons(byte, rest) =>
+        ByteStream.Cons(byte, store(concat_byte_streams(load(rest), b))),
+    }
+  }
+
   fn byte_stream_length(bytes: ByteStream) -> [G; 8] {
     match bytes {
       ByteStream.Nil => [0; 8],
