@@ -3,6 +3,20 @@ import Ix.Aiur.Meta
 namespace IxVM
 
 def u64 := ⟦
+  -- Count bytes needed to represent a u64 (0-8)
+  fn u64_byte_count(x: [G; 8]) -> G {
+    match x {
+      [_, 0, 0, 0, 0, 0, 0, 0] => 1,
+      [_, _, 0, 0, 0, 0, 0, 0] => 2,
+      [_, _, _, 0, 0, 0, 0, 0] => 3,
+      [_, _, _, _, 0, 0, 0, 0] => 4,
+      [_, _, _, _, _, 0, 0, 0] => 5,
+      [_, _, _, _, _, _, 0, 0] => 6,
+      [_, _, _, _, _, _, _, 0] => 7,
+      _ => 8,
+    }
+  }
+
   fn u64_is_zero(x: [G; 8]) -> G {
     match x {
       [0, 0, 0, 0, 0, 0, 0, 0] => 1,
@@ -126,7 +140,6 @@ def u64 := ⟦
     let (sum3_with_carry, _x) = u8_add(sum3, carry3);
 
     [sum3_with_carry, sum2_with_carry, sum1_with_carry, sum0]
-  }
 ⟧
 
 end IxVM

@@ -8,11 +8,11 @@ def byteStream := ⟦
     Nil
   }
 
-  fn byte_streams_concat(a: ByteStream, b: ByteStream) -> ByteStream {
+  fn byte_stream_concat(a: ByteStream, b: ByteStream) -> ByteStream {
     match a {
       ByteStream.Nil => b,
       ByteStream.Cons(byte, rest) =>
-        ByteStream.Cons(byte, store(concat_byte_streams(load(rest), b))),
+        ByteStream.Cons(byte, store(byte_stream_concat(load(rest), b))),
     }
   }
 
