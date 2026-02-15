@@ -46,11 +46,21 @@ pub fn u8_add_channel() -> G {
 }
 
 #[inline]
-pub fn u8_and_channel() -> G {
+pub fn u8_sub_channel() -> G {
   G::from_u8(7)
 }
 
 #[inline]
-pub fn u8_or_channel() -> G {
+pub fn u8_and_channel() -> G {
   G::from_u8(8)
+}
+
+#[inline]
+pub fn u8_or_channel() -> G {
+  G::from_u8(9)
+}
+
+#[inline]
+pub fn u8_less_than_channel() -> G {
+  G::from_u8(10)
 }

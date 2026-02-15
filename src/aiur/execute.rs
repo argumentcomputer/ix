@@ -271,6 +271,14 @@ impl Function {
             bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record);
           }
         },
+        ExecEntry::Op(Op::U8Sub(i, j)) => {
+          if unconstrained {
+            let (r, u) = Bytes2::sub(&map[*i], &map[*j]);
+            map.extend([r, u]);
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::Sub, &mut map, record);
+          }
+        },
         ExecEntry::Op(Op::U8And(i, j)) => {
           if unconstrained {
             map.push(Bytes2::and(&map[*i], &map[*j]));
@@ -283,6 +291,13 @@ impl Function {
             map.push(Bytes2::or(&map[*i], &map[*j]));
           } else {
             bytes2_execute(*i, *j, &Bytes2Op::Or, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U8LessThan(i, j)) => {
+          if unconstrained {
+            map.push(Bytes2::less_than(&map[*i], &map[*j]));
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::LessThan, &mut map, record);
           }
         },
         ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
