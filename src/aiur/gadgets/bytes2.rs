@@ -8,15 +8,17 @@ use multi_stark::{
 
 use crate::aiur::{
   G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel, u8_and_channel,
-  u8_or_channel, u8_xor_channel,
+  u8_less_than_channel, u8_or_channel, u8_sub_channel, u8_xor_channel,
 };
 
 /// Number of columns in the trace with multiplicities for
 /// - xor
 /// - overflowing add
+/// - overflowing sub
 /// - and
 /// - or
-const TRACE_WIDTH: usize = 4;
+/// - less_than
+const TRACE_WIDTH: usize = 6;
 
 /// Number of columns in the preprocessed trace:
 /// - first raw byte value
@@ -24,9 +26,12 @@ const TRACE_WIDTH: usize = 4;
 /// - xor result
 /// - add result
 /// - add overflow
+/// - sub result
+/// - sub underflow
 /// - and result
 /// - or result
-const PREPROCESSED_TRACE_WIDTH: usize = 7;
+/// - less_than result
+const PREPROCESSED_TRACE_WIDTH: usize = 10;
 
 /// AIR implementer for arity 2 byte-related lookups.
 pub(crate) struct Bytes2;
@@ -34,8 +39,10 @@ pub(crate) struct Bytes2;
 pub(crate) enum Bytes2Op {
   Xor,
   Add,
+  Sub,
   And,
   Or,
+  LessThan,
 }
 
 impl BaseAir<G> for Bytes2 {
@@ -61,11 +68,19 @@ impl BaseAir<G> for Bytes2 {
         trace_values.push(G::from_u8(r));
         trace_values.push(G::from_bool(o));
 
+        // Overflowing sub
+        let (r, u) = i.overflowing_sub(j);
+        trace_values.push(G::from_u8(r));
+        trace_values.push(G::from_bool(u));
+
         // And
         trace_values.push(G::from_u8(i & j));
 
         // Or
         trace_values.push(G::from_u8(i | j));
+
+        // Less than
+        trace_values.push(G::from_bool(i < j));
       }
     }
     Some(RowMajorMatrix::new(trace_values, PREPROCESSED_TRACE_WIDTH))
@@ -82,8 +97,8 @@ impl AiurGadget for Bytes2 {
 
   fn output_size(&self, op: &Bytes2Op) -> usize {
     match op {
-      Bytes2Op::Xor | Bytes2Op::And | Bytes2Op::Or => 1,
-      Bytes2Op::Add => 2,
+      Bytes2Op::Xor | Bytes2Op::And | Bytes2Op::Or | Bytes2Op::LessThan => 1,
+      Bytes2Op::Add | Bytes2Op::Sub => 2,
     }
   }
 
@@ -105,6 +120,11 @@ impl AiurGadget for Bytes2 {
         let (r, o) = Self::add(i, j);
         vec![r, o]
       },
+      Bytes2Op::Sub => {
+        record.bytes2_queries.bump_sub(i, j);
+        let (r, u) = Self::sub(i, j);
+        vec![r, u]
+      },
       Bytes2Op::And => {
         record.bytes2_queries.bump_and(i, j);
         vec![Self::and(i, j)]
@@ -113,6 +133,10 @@ impl AiurGadget for Bytes2 {
         record.bytes2_queries.bump_or(i, j);
         vec![Self::or(i, j)]
       },
+      Bytes2Op::LessThan => {
+        record.bytes2_queries.bump_less_than(i, j);
+        vec![Self::less_than(i, j)]
+      },
     }
   }
 
@@ -120,14 +144,18 @@ impl AiurGadget for Bytes2 {
     // Channels
     let xor_channel = u8_xor_channel().into();
     let add_channel = u8_add_channel().into();
+    let sub_channel = u8_sub_channel().into();
     let and_channel = u8_and_channel().into();
     let or_channel = u8_or_channel().into();
+    let less_than_channel = u8_less_than_channel().into();
 
     // Multiplicity columns
     let xor_multiplicity = var(0);
     let add_multiplicity = var(1);
-    let and_multiplicity = var(2);
-    let or_multiplicity = var(3);
+    let sub_multiplicity = var(2);
+    let and_multiplicity = var(3);
+    let or_multiplicity = var(4);
+    let less_than_multiplicity = var(5);
 
     // Preprocessed columns
     let i = preprocessed_var(0);
@@ -135,8 +163,11 @@ impl AiurGadget for Bytes2 {
     let xor = preprocessed_var(2);
     let add_r = preprocessed_var(3);
     let add_o = preprocessed_var(4);
-    let and = preprocessed_var(5);
-    let or = preprocessed_var(6);
+    let sub_r = preprocessed_var(5);
+    let sub_u = preprocessed_var(6);
+    let and = preprocessed_var(7);
+    let or = preprocessed_var(8);
+    let less_than = preprocessed_var(9);
 
     let pull_xor = Lookup::pull(
       xor_multiplicity,
@@ -148,14 +179,25 @@ impl AiurGadget for Bytes2 {
       vec![add_channel, i.clone(), j.clone(), add_r, add_o],
     );
 
+    let pull_sub = Lookup::pull(
+      sub_multiplicity,
+      vec![sub_channel, i.clone(), j.clone(), sub_r, sub_u],
+    );
+
     let pull_and = Lookup::pull(
       and_multiplicity,
       vec![and_channel, i.clone(), j.clone(), and],
     );
 
-    let pull_or = Lookup::pull(or_multiplicity, vec![or_channel, i, j, or]);
+    let pull_or =
+      Lookup::pull(or_multiplicity, vec![or_channel, i.clone(), j.clone(), or]);
 
-    vec![pull_xor, pull_add, pull_and, pull_or]
+    let pull_less_than = Lookup::pull(
+      less_than_multiplicity,
+      vec![less_than_channel, i, j, less_than],
+    );
+
+    vec![pull_xor, pull_add, pull_sub, pull_and, pull_or, pull_less_than]
   }
 
   fn witness_data(
@@ -169,39 +211,58 @@ impl AiurGadget for Bytes2 {
 
     let xor_channel = u8_xor_channel();
     let add_channel = u8_add_channel();
+    let sub_channel = u8_sub_channel();
     let and_channel = u8_and_channel();
     let or_channel = u8_or_channel();
+    let less_than_channel = u8_less_than_channel();
 
     rows
       .chunks_exact_mut(TRACE_WIDTH)
       .enumerate()
       .zip(&record.bytes2_queries.0)
       .zip(&mut lookups)
-      .for_each(|(((row_idx, row), &[xor, add, and, or]), row_lookups)| {
-        let i = G::from_usize(row_idx / 256);
-        let j = G::from_usize(row_idx % 256);
+      .for_each(
+        |(
+          ((row_idx, row), &[xor, add, sub, and, or, less_than]),
+          row_lookups,
+        )| {
+          let i = G::from_usize(row_idx / 256);
+          let j = G::from_usize(row_idx % 256);
 
-        row[0] = xor;
-        row[1] = add;
-        row[2] = and;
-        row[3] = or;
+          row[0] = xor;
+          row[1] = add;
+          row[2] = sub;
+          row[3] = and;
+          row[4] = or;
+          row[5] = less_than;
 
-        // Pull xor.
-        row_lookups[0] =
-          Lookup::pull(xor, vec![xor_channel, i, j, Self::xor(&i, &j)]);
+          // Pull xor.
+          row_lookups[0] =
+            Lookup::pull(xor, vec![xor_channel, i, j, Self::xor(&i, &j)]);
 
-        // Pull add.
-        let (r, o) = Self::add(&i, &j);
-        row_lookups[1] = Lookup::pull(add, vec![add_channel, i, j, r, o]);
+          // Pull add.
+          let (r, o) = Self::add(&i, &j);
+          row_lookups[1] = Lookup::pull(add, vec![add_channel, i, j, r, o]);
 
-        // Pull and.
-        row_lookups[2] =
-          Lookup::pull(and, vec![and_channel, i, j, Self::and(&i, &j)]);
+          // Pull sub.
+          let (r, u) = Self::sub(&i, &j);
+          row_lookups[2] = Lookup::pull(sub, vec![sub_channel, i, j, r, u]);
 
-        // Pull or.
-        row_lookups[3] =
-          Lookup::pull(or, vec![or_channel, i, j, Self::or(&i, &j)]);
-      });
+          // Pull and.
+          row_lookups[3] =
+            Lookup::pull(and, vec![and_channel, i, j, Self::and(&i, &j)]);
+
+          // Pull or.
+          row_lookups[4] =
+            Lookup::pull(or, vec![or_channel, i, j, Self::or(&i, &j)]);
+
+          // Pull less_than.
+          row_lookups[5] = Lookup::pull(
+            less_than,
+            vec![less_than_channel, i, j, Self::less_than(&i, &j)],
+          );
+        },
+      );
     (RowMajorMatrix::new(rows, TRACE_WIDTH), lookups)
   }
 }
@@ -223,12 +284,20 @@ impl Bytes2Queries {
     self.bump_multiplicity_for(i, j, 1)
   }
 
-  fn bump_and(&mut self, i: &G, j: &G) {
+  fn bump_sub(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 2)
   }
 
-  fn bump_or(&mut self, i: &G, j: &G) {
+  fn bump_and(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 3)
+  }
+
+  fn bump_or(&mut self, i: &G, j: &G) {
+    self.bump_multiplicity_for(i, j, 4)
+  }
+
+  fn bump_less_than(&mut self, i: &G, j: &G) {
+    self.bump_multiplicity_for(i, j, 5)
   }
 
   fn bump_multiplicity_for(&mut self, i: &G, j: &G, col: usize) {
@@ -267,5 +336,20 @@ impl Bytes2 {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     G::from_u8(i | j)
+  }
+
+  #[inline]
+  pub(crate) fn sub(i: &G, j: &G) -> (G, G) {
+    let i: u8 = i.as_canonical_u64().try_into().unwrap();
+    let j: u8 = j.as_canonical_u64().try_into().unwrap();
+    let (r, u) = i.overflowing_sub(j);
+    (G::from_u8(r), G::from_bool(u))
+  }
+
+  #[inline]
+  pub(crate) fn less_than(i: &G, j: &G) -> G {
+    let i: u8 = i.as_canonical_u64().try_into().unwrap();
+    let j: u8 = j.as_canonical_u64().try_into().unwrap();
+    G::from_bool(i < j)
   }
 }

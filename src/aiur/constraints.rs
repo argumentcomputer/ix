@@ -17,7 +17,8 @@ use crate::aiur::{
     bytes2::{Bytes2, Bytes2Op},
   },
   memory_channel, u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_or_channel, u8_shift_left_channel, u8_shift_right_channel, u8_xor_channel,
+  u8_less_than_channel, u8_or_channel, u8_shift_left_channel,
+  u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
 };
 
 type Expr = SymbolicExpression<G>;
@@ -415,6 +416,14 @@ impl Op {
         sel.clone(),
         state,
       ),
+      Op::U8Sub(i, j) => bytes2_constraints(
+        *i,
+        *j,
+        &Bytes2Op::Sub,
+        u8_sub_channel(),
+        sel.clone(),
+        state,
+      ),
       Op::U8And(i, j) => bytes2_constraints(
         *i,
         *j,
@@ -428,6 +437,14 @@ impl Op {
         *j,
         &Bytes2Op::Or,
         u8_or_channel(),
+        sel.clone(),
+        state,
+      ),
+      Op::U8LessThan(i, j) => bytes2_constraints(
+        *i,
+        *j,
+        &Bytes2Op::LessThan,
+        u8_less_than_channel(),
         sel.clone(),
         state,
       ),

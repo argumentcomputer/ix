@@ -199,11 +199,19 @@ def toplevel := ⟦
     (u8_add(i_xor_j, i), u8_add(i_xor_j, j))
   }
 
-  fn u8_add_and(i: G, j: G) -> G {
+  fn u8_sub_function(i: G, j: G) -> (G, G) {
+    u8_sub(i, j)
+  }
+
+  fn u8_less_than_function(i: G, j: G) -> G {
+    u8_less_than(i, j)
+  }
+
+  fn u8_and_function(i: G, j: G) -> G {
     u8_and(i, j)
   }
 
-  fn u8_add_or(i: G, j: G) -> G {
+  fn u8_or_function(i: G, j: G) -> G {
     u8_or(i, j)
   }
 
@@ -253,8 +261,10 @@ def aiurTestCases : List AiurTestCase := [
       ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩⟩,
     .noIO `shr_shr_shl_decompose #[87] #[0, 1, 0, 1, 0, 1, 0, 0],
     .noIO `u8_add_xor #[45, 131] #[219, 0, 49, 1],
-    .noIO `u8_add_and #[45, 131] #[1],
-    .noIO `u8_add_or #[45, 131] #[175],
+    .noIO `u8_sub_function #[45, 131] #[170, 1],
+    .noIO `u8_less_than_function #[45, 131] #[1],
+    .noIO `u8_and_function #[45, 131] #[1],
+    .noIO `u8_or_function #[45, 131] #[175],
     .noIO `fold_matrix_sum #[1, 2, 3, 4] #[10],
   ]
 
