@@ -2,7 +2,7 @@ name: Benchmark Ix compiler
 
 on:
   push:
-    branches: sb/bench-compiler
+    branches: main
   workflow_dispatch:
 
 permissions:
