@@ -118,5 +118,10 @@ jobs:
             --threshold-max-sample-size 64 \
             --threshold-upper-boundary 0.10 \
             --threshold-lower-boundary _ \
+            --threshold-measure constants \
+            --threshold-test percentage \
+            --threshold-max-sample-size 64 \
+            --threshold-upper-boundary 0.10 \
+            --threshold-lower-boundary _ \
             --thresholds-reset \
             --file benchmark.json
