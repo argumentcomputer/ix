@@ -64,6 +64,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let elapsed := (← IO.monoMsNow) - start
 
   println! "Compiled {fmtBytes bytes.size} env in {elapsed.formatMs}"
+  -- Machine-readable line for CI benchmark tracking
+  IO.println s!"##benchmark## {elapsed} {bytes.size} {totalConsts}"
   return 0
     
 

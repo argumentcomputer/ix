@@ -2,7 +2,7 @@ name: Benchmark Ix compiler
 
 on:
   push:
-    branches: main
+    branches: sb/bench-compiler
   workflow_dispatch:
 
 permissions:
@@ -61,7 +61,7 @@ jobs:
         with:
           lake-package-directory: ${{ env.COMPILE_DIR }}
           build: false
-          use-github-cache: false 
+          use-github-cache: false
       # FLT and FC take a few minutes to rebuild, so we cache the build artifacts
       - if: matrix.cache_pkg
         uses: actions/cache@v4
@@ -73,5 +73,33 @@ jobs:
       - run: lake build Compile${{ matrix.bench }}
         working-directory: ${{ env.COMPILE_DIR }}
       # Run the `ix` compiler over the input library env
-      - run: ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean
-
+      - name: Run ix compile
+        run: ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean 2>&1 | tee output.txt
+      # Parse the ##benchmark## line into Bencher Metric Format JSON
+      - name: Generate benchmark JSON
+        run: |
+          line=$(grep '^##benchmark##' output.txt)
+          elapsed_ms=$(echo "$line" | awk '{print $2}')
+          bytes=$(echo "$line" | awk '{print $3}')
+          constants=$(echo "$line" | awk '{print $4}')
+          cat > benchmark.json <<EOF
+          {
+            "${{ matrix.bench }}": {
+              "compile_time": {"value": ${elapsed_ms}},
+              "binary_size": {"value": ${bytes}},
+              "constants": {"value": ${constants}}
+            }
+          }
+          EOF
+      - uses: bencherdev/bencher@main
+      - name: Track benchmarks
+        run: |
+          bencher run \
+            --project ix \
+            --token '${{ secrets.BENCHER_API_TOKEN }}' \
+            --branch '${{ github.ref_name }}' \
+            --hash '${{ github.sha }}' \
+            --testbed warp-ubuntu-x64-32x \
+            --adapter json \
+            --err \
+            --file benchmark.json
