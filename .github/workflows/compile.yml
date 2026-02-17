@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -79,14 +80,14 @@ jobs:
       - name: Generate benchmark JSON
         run: |
           line=$(grep '^##benchmark##' output.txt)
-          elapsed_ms=$(echo "$line" | awk '{print $2}')
+          elapsed_s=$(echo "$line" | awk '{printf "%.3f", $2 / 1000}')
           bytes=$(echo "$line" | awk '{print $3}')
           constants=$(echo "$line" | awk '{print $4}')
           cat > benchmark.json <<EOF
           {
             "${{ matrix.bench }}": {
-              "compile_time": {"value": ${elapsed_ms}},
-              "binary_size": {"value": ${bytes}},
+              "build-time": {"value": ${elapsed_s}},
+              "file-size": {"value": ${bytes}},
               "constants": {"value": ${constants}}
             }
           }
@@ -102,4 +103,5 @@ jobs:
             --testbed warp-ubuntu-x64-32x \
             --adapter json \
             --err \
+            --github-actions '${{ secrets.GITHUB_TOKEN }}' \
             --file benchmark.json
