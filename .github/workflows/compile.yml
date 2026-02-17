@@ -103,4 +103,9 @@ jobs:
             --adapter json \
             --err \
             --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+            --threshold-measure build-time \
+            --threshold-test log_normal \
+            --threshold-max-sample-size 64 \
+            --threshold-upper-boundary 0.95 \
+            --thresholds-reset \
             --file benchmark.json
