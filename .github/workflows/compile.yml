@@ -92,6 +92,7 @@ jobs:
             }
           }
           EOF
+      # Deploy benchmark results to https://bencher.dev/console/projects/ix/plots
       - uses: bencherdev/bencher@main
       - name: Track benchmarks
         run: |
