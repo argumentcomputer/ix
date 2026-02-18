@@ -14,7 +14,7 @@ def getFileEnv (path : FilePath) : IO Environment := do
     args := #["env", "printenv", "LEAN_PATH"]
     cwd := path.parent
   }
-  let paths := out.stdout.trim.splitOn ":" |>.map FilePath.mk
+  let paths := out.stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
   initSearchPath (← findSysroot) paths
 
   let source ← IO.FS.readFile path
@@ -23,7 +23,7 @@ def getFileEnv (path : FilePath) : IO Environment := do
   let (env, messages) ← processHeader header default messages inputCtx 0
   if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
-      (← messages.toList.mapM (·.toString)).map String.trim
+      (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
   return env
 
 elab "this_file!" : term => do

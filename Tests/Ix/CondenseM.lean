@@ -315,7 +315,7 @@ def compareSCCResults
 
 /-- Cross-implementation test: compare Lean and Rust SCC computation -/
 def testSccComparison : TestSeq :=
-  .individualIO "SCC Computation: Lean vs Rust" (do
+  .individualIO "SCC Computation: Lean vs Rust" none (do
     let env ← get_env!
     let numConsts := env.constants.toList.length
 
@@ -370,9 +370,9 @@ def testSccComparison : TestSeq :=
     IO.println s!"[Test]   SCCs match: {sccsMatch}"
 
     if !sccsMatch then
-      return (false, some s!"SCCs do not match: {mismatches.size} mismatches")
+      return (false, 0, 0, some s!"SCCs do not match: {mismatches.size} mismatches")
 
-    return (true, none)
+    return (true, 0, 0, none)
   ) .done
 
 /-- Cross-implementation test suite (expensive, run with --ignored) -/

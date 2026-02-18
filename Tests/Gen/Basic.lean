@@ -146,7 +146,7 @@ instance : Shrinkable ByteArray where
   shrink ba := if ba.isEmpty then [] else [ba.extract 0 (ba.size - 1)]
 
 instance : Shrinkable String where
-  shrink s := if s.isEmpty then [] else [s.dropRight 1]
+  shrink s := if s.isEmpty then [] else [s.dropEnd 1 |>.toString]
 
 instance : Shrinkable Point where
   shrink p := if p.x == 0 && p.y == 0 then [] else [⟨p.x / 2, p.y / 2⟩]

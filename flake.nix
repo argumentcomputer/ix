@@ -15,7 +15,8 @@
     nixpkgs.follows = "lean4-nix/nixpkgs";
 
     # Lean 4 & Lake
-    lean4-nix.url = "github:lenianiva/lean4-nix";
+    #lean4-nix.url = "github:lenianiva/lean4-nix?rev=561f1a779737e109d4e03a6f967108497bbbd73f";
+    lean4-nix.url = "path:/home/sam/repos/argument/lean4-nix";
 
     # Helper: flake-parts for easier outputs
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -31,7 +32,8 @@
 
     # Blake3 C bindings for Lean
     blake3-lean = {
-      url = "github:argumentcomputer/Blake3.lean";
+      #url = "github:argumentcomputer/Blake3.lean?ref=lean-v4.27.0";
+      url = "path:/home/sam/repos/argument/Blake3.lean";
       # System packages, follows lean4-nix so we stay in sync
       inputs.lean4-nix.follows = "lean4-nix";
     };

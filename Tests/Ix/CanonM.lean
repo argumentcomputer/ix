@@ -237,7 +237,7 @@ This test verifies the full canonicalization pipeline:
 
 /-- Run the full canonicalization roundtrip test. -/
 def testFullCanonRoundtrip : TestSeq :=
-  .individualIO "full canonicalization roundtrip" (do
+  .individualIO "full canonicalization roundtrip" none (do
     let env ← get_env!
     let numConsts := env.constants.toList.length
 
@@ -311,7 +311,7 @@ def testFullCanonRoundtrip : TestSeq :=
     IO.println s!"\r[Test]   Compared {processed}: {mismatches} mismatches, {rustMissing} missing in Rust, {leanMissing} missing in Lean ({formatTime compareTime})"
 
     if rustMissing > 0 || leanMissing > 0 || mismatches > 0 then
-      return (false, some s!"Rust vs Lean: {mismatches} mismatches, {rustMissing} missing in Rust, {leanMissing} missing in Lean")
+      return (false, 0, 0, some s!"Rust vs Lean: {mismatches} mismatches, {rustMissing} missing in Rust, {leanMissing} missing in Lean")
     IO.println ""
 
     -- Step 4: Uncanonicalize Lean's Ix constants back to Lean (parallel)
@@ -353,7 +353,7 @@ def testFullCanonRoundtrip : TestSeq :=
       some s!"rustMissing={rustMissing}, leanMissing={leanMissing}, mismatches={mismatches}, rtMissing={rtMissing}, rtMismatches={rtMismatches}"
     else none
 
-    pure (success, failMsg)
+    pure (success, 0, 0, failMsg)
   ) .done
 
 /-! ## Pure Lean canonicalization roundtrip test
@@ -368,7 +368,7 @@ in pure Lean without any Rust FFI:
 
 /-- Run the pure Lean canonicalization roundtrip test. -/
 def testPureLeanRoundtrip : TestSeq :=
-  .individualIO "pure Lean canonicalization roundtrip" (do
+  .individualIO "pure Lean canonicalization roundtrip" none (do
     let env ← get_env!
     let numConsts := env.constants.toList.length
 
@@ -420,7 +420,7 @@ def testPureLeanRoundtrip : TestSeq :=
       some s!"missing={missing}, mismatches={mismatches}"
     else none
 
-    pure (success, failMsg)
+    pure (success, 0, 0, failMsg)
   ) .done
 
 /-! ## Parallel Lean canonicalization roundtrip test
@@ -434,7 +434,7 @@ This test verifies parallel canonicalization using ShardMap:
 
 /-- Run the parallel Lean canonicalization roundtrip test. -/
 def testParallelLeanRoundtrip : TestSeq :=
-  .individualIO "parallel Lean canonicalization roundtrip" (do
+  .individualIO "parallel Lean canonicalization roundtrip" none (do
     let env ← get_env!
     let numConsts := env.constants.toList.length
 
@@ -486,7 +486,7 @@ def testParallelLeanRoundtrip : TestSeq :=
       some s!"missing={missing}, mismatches={mismatches}"
     else none
 
-    pure (success, failMsg)
+    pure (success, 0, 0, failMsg)
   ) .done
 
 /-- Full canonicalization roundtrip test suite (expensive, in ignored tests). -/
