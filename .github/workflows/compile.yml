@@ -79,7 +79,7 @@ jobs:
           elapsed_s=$(echo "$line" | awk '{printf "%.3f", $2 / 1000}')
           bytes=$(echo "$line" | awk '{print $3}')
           constants=$(echo "$line" | awk '{print $4}')
-          throughput=$(echo "$line" | awk '{if ($2 > 0) printf "%.2f", $3 * 1000 / $2; else print 0}')
+          throughput=$(echo "$line" | awk '{if ($2 > 0) printf "%.2f", $4 * 1000 / $2; else print 0}')
           cat > benchmark.json <<EOF
           {
             "${{ matrix.bench }}": {

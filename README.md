@@ -172,6 +172,10 @@ Ix consists of the following core components:
 - Integration with the [iroh p2p network](https://www.iroh.computer/) so that
   different ix users can easily share `ixon` data between themselves.
 
+## Benchmarks
+
+Compiler performance benchmarks are tracked at https://bencher.dev/console/projects/ix/plots
+
 ## Build & Install
 
 - Build and test the Ix library with `lake build` and `lake test`
