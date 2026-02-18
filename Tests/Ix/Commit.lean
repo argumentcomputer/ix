@@ -223,11 +223,11 @@ def claimConstructorTests : TestSeq :=
 /-! ## IO tests for commitConst -/
 
 def commitConstIOTest : TestSeq :=
-  .individualIO "commitConst: different random secrets produce different addresses" (do
+  .individualIO "commitConst: different random secrets produce different addresses" none (do
     let payload := Address.blake3 "test-payload".toUTF8
     let (_, commitAddr1) ← Ix.Commit.commitConst payload
     let (_, commitAddr2) ← Ix.Commit.commitConst payload
-    return (commitAddr1 != commitAddr2, none)) .done
+    return (commitAddr1 != commitAddr2, 0, 0, none)) .done
 
 /-! ## Suite registration -/
 

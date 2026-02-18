@@ -128,7 +128,7 @@ def serializeEnv (env : Ixon.Env) : ByteArray :=
 
 /-- Cross-implementation compilation test using the new CompilePhases API -/
 def testCrossImpl : TestSeq :=
-  .individualIO "Compilation Cross-Implementation" (do
+  .individualIO "Compilation Cross-Implementation" none (do
     let leanEnv ← get_env!
     let totalConsts := leanEnv.constants.toList.length
 
@@ -155,8 +155,8 @@ def testCrossImpl : TestSeq :=
       IO.println s!"[Step 2] Compilation failed after {leanTime}ms"
       if let some sysErr := err.systemError then
         IO.println s!"[Error] {sysErr}"
-        return (false, some sysErr)
-      return (false, some "Compilation failed")
+        return (false, 0, 0, some sysErr)
+      return (false, 0, 0, some "Compilation failed")
 
     | .ok (leanIxonEnv, totalBytes) =>
       let leanTime := (← IO.monoMsNow) - leanStart
@@ -367,7 +367,7 @@ def testCrossImpl : TestSeq :=
           IO.println s!"[Step 4]   Serialized environments match exactly! ✓"
           IO.println ""
 
-          return (true, none)
+          return (true, 0, 0, none)
         else
           IO.println s!"[Step 4]   Serialized environments DIFFER"
           if let some diffPos := findFirstDiff leanEnvBytes rustEnvBytes then
@@ -410,7 +410,7 @@ def testCrossImpl : TestSeq :=
 
           IO.println ""
           -- Note: We expect this to fail until Lean generates metadata
-          return (false, some s!"Serialized environments differ (Lean: {fmtBytes leanEnvBytes.size}, Rust: {fmtBytes rustEnvBytes.size})")
+          return (false, 0, 0, some s!"Serialized environments differ (Lean: {fmtBytes leanEnvBytes.size}, Rust: {fmtBytes rustEnvBytes.size})")
       else
         -- Report mismatches
         IO.println s!"[Step 3]   Found {result.mismatchedConstants.size} mismatches!"
@@ -455,7 +455,7 @@ def testCrossImpl : TestSeq :=
             IO.println s!"  ... and {result.missingInLean.size - 5} more"
           IO.println ""
 
-        return (false, some s!"Found {result.mismatchedConstants.size} mismatches")
+        return (false, 0, 0, some s!"Found {result.mismatchedConstants.size} mismatches")
   ) .done
 
 /-! ## Test Suite -/

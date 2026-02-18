@@ -18,7 +18,7 @@ namespace Tests.RustSerialize
 
 /-- Test Rust serde roundtrip: compile → rsSerEnv → rsDesEnv → Lean serEnv → byte compare -/
 def testRustSerdeRoundtrip : TestSeq :=
-  .individualIO "Rust Serialize/Deserialize Roundtrip" (do
+  .individualIO "Rust Serialize/Deserialize Roundtrip" none (do
     let leanEnv ← get_env!
     let totalConsts := leanEnv.constants.toList.length
 
@@ -57,7 +57,7 @@ def testRustSerdeRoundtrip : TestSeq :=
       | .ok env => pure env
       | .error e => do
         IO.println s!"[Step 4] FAILED: {e}"
-        return (false, some e)
+        return (false, 0, 0, some e)
     let rustDesTime := (← IO.monoMsNow) - rustDesStart
     IO.println s!"[Step 4]   {roundtrippedFromRust.constCount} constants in {rustDesTime}ms"
     IO.println ""
@@ -75,7 +75,7 @@ def testRustSerdeRoundtrip : TestSeq :=
     if leanBytes == roundtrippedBytes then
       IO.println s!"[Step 6]   Byte-exact match! ({leanBytes.size} bytes) ✓"
       IO.println ""
-      return (true, none)
+      return (true, 0, 0, none)
     else
       IO.println s!"[Step 6]   MISMATCH: {leanBytes.size} bytes vs {roundtrippedBytes.size} bytes"
       -- Find first diff
@@ -87,7 +87,7 @@ def testRustSerdeRoundtrip : TestSeq :=
           break
       IO.println s!"[Step 6]   First difference at byte {firstDiff}"
       IO.println ""
-      return (false, some s!"Bytes differ at offset {firstDiff} (original {leanBytes.size} vs roundtripped {roundtrippedBytes.size})")
+      return (false, 0, 0, some s!"Bytes differ at offset {firstDiff} (original {leanBytes.size} vs roundtripped {roundtrippedBytes.size})")
   ) .done
 
 /-! ## Test Suite -/

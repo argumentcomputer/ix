@@ -84,9 +84,9 @@ def largeNatTests : TestSeq :=
   let testCases : List Nat := [0, 1, 255, 256, 65535, 65536, (2^32 - 1), 2^32,
     (2^63 - 1), 2^63, (2^64 - 1), 2^64, 2^64 + 1, 2^128, 2^256]
   testCases.foldl (init := .done) fun acc n =>
-    acc ++ .individualIO s!"Nat {n}" (do
+    acc ++ .individualIO s!"Nat {n}" none (do
       let rt := roundtripNat n
-      pure (rt == n, if rt == n then none else some s!"got {rt}")) .done
+      pure (rt == n, 0, 0, if rt == n then none else some s!"got {rt}")) .done
 
 /-! ## Helper to compare HashMaps -/
 

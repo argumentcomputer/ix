@@ -12,16 +12,16 @@ lean_exe ix where
   supportInterpreter := true
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "1e6da63a9c92473747e816d07d5c6f6bc7c8a59e"
+  "https://github.com/argumentcomputer/LSpec" @ "lean-v4.27.0"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "f66794edb4612106cd7b04a7fbd04917fb1abb7d"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "lean-v4.27.0"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "v4.26.0"
+  "https://github.com/leanprover/lean4-cli" @ "v4.27.0"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "v4.26.0"
+  "https://github.com/leanprover-community/batteries" @ "v4.27.0"
 
 section Tests
 
@@ -133,11 +133,11 @@ script install := do
     | some homeDir =>
       let binDir : FilePath := homeDir / ".local" / "bin"
       print s!"Target directory for the ix binary? (default={binDir}) "
-      let input := (← (← getStdin).getLine).trim
+      let input := (← (← getStdin).getLine).trimAscii.toString
       pure $ if input.isEmpty then binDir else ⟨input⟩
     | none =>
       print s!"Target directory for the ix binary? "
-      let input := (← (← getStdin).getLine).trim
+      let input := (← (← getStdin).getLine).trimAscii.toString
       if input.isEmpty then
         eprintln "Target directory can't be empty."; return 1
       pure ⟨input⟩
@@ -175,7 +175,7 @@ script "get-exe-targets" := do
   let pkg ← getRootPackage
   let exeTargets := pkg.configTargets LeanExe.configKind
   for tgt in exeTargets do
-    IO.println <| tgt.name.toString |>.stripPrefix "«" |>.stripSuffix "»"
+    IO.println <| tgt.name.toString |>.dropPrefix "«" |>.dropSuffix "»" |>.toString
   return 0
 
 script "build-all" := do
