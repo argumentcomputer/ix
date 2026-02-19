@@ -190,10 +190,10 @@ Compiler performance benchmarks are tracked at https://bencher.dev/console/proje
 - `lake test -- cli` runs CLI integration tests
 - `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
 
-To run the Aiur and IxVM tests, which are slower, run:
+To run the Aiur and Aiur-Hashes tests, which are slower, run:
 
 - `lake exe test-aiur`
-- `lake exe test-ixvm`
+- `lake exe test-aiur-hashes`
 
 **Rust tests:** `cargo test`
 

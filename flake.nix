@@ -124,7 +124,7 @@
         ixCLI = lake2nix.mkPackage (lakeBinArgs // {name = "ix";});
         ixTest = lake2nix.mkPackage (lakeBinArgs // {name = "IxTests";});
         testAiur = lake2nix.mkPackage (lakeBinArgs // {name = "test-aiur";});
-        testIxVM = lake2nix.mkPackage (lakeBinArgs // {name = "test-ixvm";});
+        testAiurHashes = lake2nix.mkPackage (lakeBinArgs // {name = "test-aiur-hashes";});
         benchAiur = lake2nix.mkPackage (lakeBinArgs // {name = "bench-aiur";});
         benchBlake3 = lake2nix.mkPackage (lakeBinArgs // {name = "bench-blake3";});
         benchShardMap = lake2nix.mkPackage (lakeBinArgs // {name = "bench-shardmap";});
@@ -140,7 +140,7 @@
           ix = ixCLI;
           test = ixTest;
           test-aiur = testAiur;
-          test-ixvm = testIxVM;
+          test-aiur-hashes = testAiurHashes;
           # Ix benches
           bench-aiur = benchAiur;
           bench-blake3 = benchBlake3;

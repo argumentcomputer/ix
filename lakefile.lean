@@ -33,10 +33,10 @@ lean_exe IxTests where
   supportInterpreter := true
 
 lean_exe «test-aiur» where
-  root := `Tests.AiurTest
+  root := `Tests.AiurMain
 
-lean_exe «test-ixvm» where
-  root := `Tests.IxVMTest
+lean_exe «test-aiur-hashes» where
+  root := `Tests.AiurHashesMain
 
 end Tests
 
@@ -49,6 +49,9 @@ lean_exe «bench-aiur» where
 
 lean_exe «bench-blake3» where
   root := `Benchmarks.Blake3
+
+lean_exe «bench-sha256» where
+  root := `Benchmarks.Sha256
 
 lean_exe «bench-shardmap» where
   root := `Benchmarks.ShardMap

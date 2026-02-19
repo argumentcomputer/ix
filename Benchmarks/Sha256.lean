@@ -1,5 +1,5 @@
 import Ix.IxVM.ByteStream
-import Ix.IxVM.Blake3
+import Ix.IxVM.Sha256
 import Ix.Aiur.Simple
 import Ix.Aiur.Compile
 import Ix.Aiur.Protocol
@@ -19,10 +19,10 @@ def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
-def blake3Bench : IO $ Array BenchReport := do
-  let .ok toplevel := IxVM.byteStream.merge IxVM.blake3
+def sha256Bench : IO $ Array BenchReport := do
+  let .ok toplevel := IxVM.byteStream.merge IxVM.sha256
     | throw (IO.userError "Merging failed")
-  let some funIdx := toplevel.getFuncIdx `blake3_bench
+  let some funIdx := toplevel.getFuncIdx `sha256_bench
     | throw (IO.userError "Aiur function not found")
   let .ok decls := toplevel.checkAndSimplify
     | throw (IO.userError "Simplification failed")
@@ -42,13 +42,13 @@ def blake3Bench : IO $ Array BenchReport := do
               data := ioBuffer.data ++ data
               map := ioBuffer.map.insert #[.ofNat idx] ioKeyInfo }
       benches := benches.push <| bench s!"dataSize={dataSize} numHashes={numHashes}" (aiurSystem.prove friParameters funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
-  bgroup "prove blake3" benches.toList { oneShot := true }
+  bgroup "prove sha256" benches.toList { oneShot := true }
 
 def parseFunction (words : List String) (param : String): Option String :=
   words.find? (·.startsWith param) |> .map (·.stripPrefix param)
 
 def main : IO Unit := do
-  let result ← blake3Bench
+  let result ← sha256Bench
   let mut sumWeights := 0.0
   let mut weightedSum := 0.0
   for report in result do
