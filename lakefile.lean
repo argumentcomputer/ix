@@ -1,7 +1,5 @@
 import Lake
-
 open System Lake DSL
-
 
 package ix where
   version := v!"0.1.0"
@@ -56,6 +54,8 @@ lean_exe «bench-shardmap» where
   root := `Benchmarks.ShardMap
 
 end Benchmarks
+
+lean_lib Apps
 
 lean_exe Apps.ZKVoting.Prover where
   supportInterpreter := true
