@@ -1,7 +1,6 @@
 import Ix.Aiur.Meta
 
 namespace IxVM
--- #exit
 
 def sha256 := ⟦
   /- # Test entrypoints -/
@@ -50,474 +49,474 @@ def sha256 := ⟦
         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
         fill_W_and_run_rounds(W, state),
-      ByteStream.Cons(b0, tail_ptr) => match load(tail_ptr) {
+      ByteStream.Cons(b0, &tail) => match tail {
         ByteStream.Nil =>
           let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 8]);
           let W = set(W, 0, [b0, 0x80, 0, 0]);
           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
           fill_W_and_run_rounds(W, state),
-        ByteStream.Cons(b1, tail_ptr) => match load(tail_ptr) {
+        ByteStream.Cons(b1, &tail) => match tail {
           ByteStream.Nil =>
             let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 16]);
             let W = set(W, 0, [b0, b1, 0x80, 0]);
             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
             fill_W_and_run_rounds(W, state),
-          ByteStream.Cons(b2, tail_ptr) => match load(tail_ptr) {
+          ByteStream.Cons(b2, &tail) => match tail {
             ByteStream.Nil =>
               let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 24]);
               let W = set(W, 0, [b0, b1, b2, 0x80]);
               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
               fill_W_and_run_rounds(W, state),
-            ByteStream.Cons(b3, tail_ptr) =>
+            ByteStream.Cons(b3, &tail) =>
               let W = set(W, 0, [b0, b1, b2, b3]);
-              match load(tail_ptr) {
+              match tail {
               ByteStream.Nil =>
                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 32]);
                 let W = set(W, 1, [0x80, 0, 0, 0]);
                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                 fill_W_and_run_rounds(W, state),
-              ByteStream.Cons(b4, tail_ptr) => match load(tail_ptr) {
+              ByteStream.Cons(b4, &tail) => match tail {
                 ByteStream.Nil =>
                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 40]);
                   let W = set(W, 1, [b4, 0x80, 0, 0]);
                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                   fill_W_and_run_rounds(W, state),
-                ByteStream.Cons(b5, tail_ptr) => match load(tail_ptr) {
+                ByteStream.Cons(b5, &tail) => match tail {
                   ByteStream.Nil =>
                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 48]);
                     let W = set(W, 1, [b4, b5, 0x80, 0]);
                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                     fill_W_and_run_rounds(W, state),
-                  ByteStream.Cons(b6, tail_ptr) => match load(tail_ptr) {
+                  ByteStream.Cons(b6, &tail) => match tail {
                     ByteStream.Nil =>
                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 56]);
                       let W = set(W, 1, [b4, b5, b6, 0x80]);
                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                       fill_W_and_run_rounds(W, state),
-                    ByteStream.Cons(b7, tail_ptr) =>
+                    ByteStream.Cons(b7, &tail) =>
                       let W = set(W, 1, [b4, b5, b6, b7]);
-                      match load(tail_ptr) {
+                      match tail {
                       ByteStream.Nil =>
                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 64]);
                         let W = set(W, 2, [0x80, 0, 0, 0]);
                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                         fill_W_and_run_rounds(W, state),
-                      ByteStream.Cons(b8, tail_ptr) => match load(tail_ptr) {
+                      ByteStream.Cons(b8, &tail) => match tail {
                         ByteStream.Nil =>
                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 72]);
                           let W = set(W, 2, [b8, 0x80, 0, 0]);
                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                           fill_W_and_run_rounds(W, state),
-                        ByteStream.Cons(b9, tail_ptr) => match load(tail_ptr) {
+                        ByteStream.Cons(b9, &tail) => match tail {
                           ByteStream.Nil =>
                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 80]);
                             let W = set(W, 2, [b8, b9, 0x80, 0]);
                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                             fill_W_and_run_rounds(W, state),
-                          ByteStream.Cons(b10, tail_ptr) => match load(tail_ptr) {
+                          ByteStream.Cons(b10, &tail) => match tail {
                             ByteStream.Nil =>
                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 88]);
                               let W = set(W, 2, [b8, b9, b10, 0x80]);
                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                               fill_W_and_run_rounds(W, state),
-                            ByteStream.Cons(b11, tail_ptr) =>
+                            ByteStream.Cons(b11, &tail) =>
                               let W = set(W, 2, [b8, b9, b10, b11]);
-                              match load(tail_ptr) {
+                              match tail {
                               ByteStream.Nil =>
                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 96]);
                                 let W = set(W, 3, [0x80, 0, 0, 0]);
                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                 fill_W_and_run_rounds(W, state),
-                              ByteStream.Cons(b12, tail_ptr) => match load(tail_ptr) {
+                              ByteStream.Cons(b12, &tail) => match tail {
                                 ByteStream.Nil =>
                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 104]);
                                   let W = set(W, 3, [b12, 0x80, 0, 0]);
                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                   fill_W_and_run_rounds(W, state),
-                                ByteStream.Cons(b13, tail_ptr) => match load(tail_ptr) {
+                                ByteStream.Cons(b13, &tail) => match tail {
                                   ByteStream.Nil =>
                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 112]);
                                     let W = set(W, 3, [b12, b13, 0x80, 0]);
                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                     fill_W_and_run_rounds(W, state),
-                                  ByteStream.Cons(b14, tail_ptr) => match load(tail_ptr) {
+                                  ByteStream.Cons(b14, &tail) => match tail {
                                     ByteStream.Nil =>
                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 120]);
                                       let W = set(W, 3, [b12, b13, b14, 0x80]);
                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                       fill_W_and_run_rounds(W, state),
-                                    ByteStream.Cons(b15, tail_ptr) =>
+                                    ByteStream.Cons(b15, &tail) =>
                                       let W = set(W, 3, [b12, b13, b14, b15]);
-                                      match load(tail_ptr) {
+                                      match tail {
                                       ByteStream.Nil =>
                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 128]);
                                         let W = set(W, 4, [0x80, 0, 0, 0]);
                                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                         fill_W_and_run_rounds(W, state),
-                                      ByteStream.Cons(b16, tail_ptr) => match load(tail_ptr) {
+                                      ByteStream.Cons(b16, &tail) => match tail {
                                         ByteStream.Nil =>
                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 136]);
                                           let W = set(W, 4, [b16, 0x80, 0, 0]);
                                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                           fill_W_and_run_rounds(W, state),
-                                        ByteStream.Cons(b17, tail_ptr) => match load(tail_ptr) {
+                                        ByteStream.Cons(b17, &tail) => match tail {
                                           ByteStream.Nil =>
                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 144]);
                                             let W = set(W, 4, [b16, b17, 0x80, 0]);
                                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                             fill_W_and_run_rounds(W, state),
-                                          ByteStream.Cons(b18, tail_ptr) => match load(tail_ptr) {
+                                          ByteStream.Cons(b18, &tail) => match tail {
                                             ByteStream.Nil =>
                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 152]);
                                               let W = set(W, 4, [b16, b17, b18, 0x80]);
                                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                               fill_W_and_run_rounds(W, state),
-                                            ByteStream.Cons(b19, tail_ptr) =>
+                                            ByteStream.Cons(b19, &tail) =>
                                               let W = set(W, 4, [b16, b17, b18, b19]);
-                                              match load(tail_ptr) {
+                                              match tail {
                                               ByteStream.Nil =>
                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 160]);
                                                 let W = set(W, 5, [0x80, 0, 0, 0]);
                                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                 fill_W_and_run_rounds(W, state),
-                                              ByteStream.Cons(b20, tail_ptr) => match load(tail_ptr) {
+                                              ByteStream.Cons(b20, &tail) => match tail {
                                                 ByteStream.Nil =>
                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 168]);
                                                   let W = set(W, 5, [b20, 0x80, 0, 0]);
                                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                   fill_W_and_run_rounds(W, state),
-                                                ByteStream.Cons(b21, tail_ptr) => match load(tail_ptr) {
+                                                ByteStream.Cons(b21, &tail) => match tail {
                                                   ByteStream.Nil =>
                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 176]);
                                                     let W = set(W, 5, [b20, b21, 0x80, 0]);
                                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                     fill_W_and_run_rounds(W, state),
-                                                  ByteStream.Cons(b22, tail_ptr) => match load(tail_ptr) {
+                                                  ByteStream.Cons(b22, &tail) => match tail {
                                                     ByteStream.Nil =>
                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 184]);
                                                       let W = set(W, 5, [b20, b21, b22, 0x80]);
                                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                       fill_W_and_run_rounds(W, state),
-                                                    ByteStream.Cons(b23, tail_ptr) =>
+                                                    ByteStream.Cons(b23, &tail) =>
                                                       let W = set(W, 5, [b20, b21, b22, b23]);
-                                                      match load(tail_ptr) {
+                                                      match tail {
                                                       ByteStream.Nil =>
                                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 192]);
                                                         let W = set(W, 6, [0x80, 0, 0, 0]);
                                                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                         fill_W_and_run_rounds(W, state),
-                                                      ByteStream.Cons(b24, tail_ptr) => match load(tail_ptr) {
+                                                      ByteStream.Cons(b24, &tail) => match tail {
                                                         ByteStream.Nil =>
                                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 200]);
                                                           let W = set(W, 6, [b24, 0x80, 0, 0]);
                                                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                           fill_W_and_run_rounds(W, state),
-                                                        ByteStream.Cons(b25, tail_ptr) => match load(tail_ptr) {
+                                                        ByteStream.Cons(b25, &tail) => match tail {
                                                           ByteStream.Nil =>
                                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 208]);
                                                             let W = set(W, 6, [b24, b25, 0x80, 0]);
                                                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                             fill_W_and_run_rounds(W, state),
-                                                          ByteStream.Cons(b26, tail_ptr) => match load(tail_ptr) {
+                                                          ByteStream.Cons(b26, &tail) => match tail {
                                                             ByteStream.Nil =>
                                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 216]);
                                                               let W = set(W, 6, [b24, b25, b26, 0x80]);
                                                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                               fill_W_and_run_rounds(W, state),
-                                                            ByteStream.Cons(b27, tail_ptr) =>
+                                                            ByteStream.Cons(b27, &tail) =>
                                                               let W = set(W, 6, [b24, b25, b26, b27]);
-                                                              match load(tail_ptr) {
+                                                              match tail {
                                                               ByteStream.Nil =>
                                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 224]);
                                                                 let W = set(W, 7, [0x80, 0, 0, 0]);
                                                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                 fill_W_and_run_rounds(W, state),
-                                                              ByteStream.Cons(b28, tail_ptr) => match load(tail_ptr) {
+                                                              ByteStream.Cons(b28, &tail) => match tail {
                                                                 ByteStream.Nil =>
                                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 232]);
                                                                   let W = set(W, 7, [b28, 0x80, 0, 0]);
                                                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                   fill_W_and_run_rounds(W, state),
-                                                                ByteStream.Cons(b29, tail_ptr) => match load(tail_ptr) {
+                                                                ByteStream.Cons(b29, &tail) => match tail {
                                                                   ByteStream.Nil =>
                                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 240]);
                                                                     let W = set(W, 7, [b28, b29, 0x80, 0]);
                                                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                     fill_W_and_run_rounds(W, state),
-                                                                  ByteStream.Cons(b30, tail_ptr) => match load(tail_ptr) {
+                                                                  ByteStream.Cons(b30, &tail) => match tail {
                                                                     ByteStream.Nil =>
                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 248]);
                                                                       let W = set(W, 7, [b28, b29, b30, 0x80]);
                                                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                       fill_W_and_run_rounds(W, state),
-                                                                    ByteStream.Cons(b31, tail_ptr) =>
+                                                                    ByteStream.Cons(b31, &tail) =>
                                                                       let W = set(W, 7, [b28, b29, b30, b31]);
-                                                                      match load(tail_ptr) {
+                                                                      match tail {
                                                                       ByteStream.Nil =>
                                                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 0]);
                                                                         let W = set(W, 8, [0x80, 0, 0, 0]);
                                                                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                         fill_W_and_run_rounds(W, state),
-                                                                      ByteStream.Cons(b32, tail_ptr) => match load(tail_ptr) {
+                                                                      ByteStream.Cons(b32, &tail) => match tail {
                                                                         ByteStream.Nil =>
                                                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 8]);
                                                                           let W = set(W, 8, [b32, 0x80, 0, 0]);
                                                                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                           fill_W_and_run_rounds(W, state),
-                                                                        ByteStream.Cons(b33, tail_ptr) => match load(tail_ptr) {
+                                                                        ByteStream.Cons(b33, &tail) => match tail {
                                                                           ByteStream.Nil =>
                                                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 16]);
                                                                             let W = set(W, 8, [b32, b33, 0x80, 0]);
                                                                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                             fill_W_and_run_rounds(W, state),
-                                                                          ByteStream.Cons(b34, tail_ptr) => match load(tail_ptr) {
+                                                                          ByteStream.Cons(b34, &tail) => match tail {
                                                                             ByteStream.Nil =>
                                                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 24]);
                                                                               let W = set(W, 8, [b32, b33, b34, 0x80]);
                                                                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                               fill_W_and_run_rounds(W, state),
-                                                                            ByteStream.Cons(b35, tail_ptr) =>
+                                                                            ByteStream.Cons(b35, &tail) =>
                                                                               let W = set(W, 8, [b32, b33, b34, b35]);
-                                                                              match load(tail_ptr) {
+                                                                              match tail {
                                                                               ByteStream.Nil =>
                                                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 32]);
                                                                                 let W = set(W, 9, [0x80, 0, 0, 0]);
                                                                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                 fill_W_and_run_rounds(W, state),
-                                                                              ByteStream.Cons(b36, tail_ptr) => match load(tail_ptr) {
+                                                                              ByteStream.Cons(b36, &tail) => match tail {
                                                                                 ByteStream.Nil =>
                                                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 40]);
                                                                                   let W = set(W, 9, [b36, 0x80, 0, 0]);
                                                                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                   fill_W_and_run_rounds(W, state),
-                                                                                ByteStream.Cons(b37, tail_ptr) => match load(tail_ptr) {
+                                                                                ByteStream.Cons(b37, &tail) => match tail {
                                                                                   ByteStream.Nil =>
                                                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 48]);
                                                                                     let W = set(W, 9, [b36, b37, 0x80, 0]);
                                                                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                     fill_W_and_run_rounds(W, state),
-                                                                                  ByteStream.Cons(b38, tail_ptr) => match load(tail_ptr) {
+                                                                                  ByteStream.Cons(b38, &tail) => match tail {
                                                                                     ByteStream.Nil =>
                                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 56]);
                                                                                       let W = set(W, 9, [b36, b37, b38, 0x80]);
                                                                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                       fill_W_and_run_rounds(W, state),
-                                                                                    ByteStream.Cons(b39, tail_ptr) =>
+                                                                                    ByteStream.Cons(b39, &tail) =>
                                                                                       let W = set(W, 9, [b36, b37, b38, b39]);
-                                                                                      match load(tail_ptr) {
+                                                                                      match tail {
                                                                                       ByteStream.Nil =>
                                                                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 64]);
                                                                                         let W = set(W, 10, [0x80, 0, 0, 0]);
                                                                                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                         fill_W_and_run_rounds(W, state),
-                                                                                      ByteStream.Cons(b40, tail_ptr) => match load(tail_ptr) {
+                                                                                      ByteStream.Cons(b40, &tail) => match tail {
                                                                                         ByteStream.Nil =>
                                                                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 72]);
                                                                                           let W = set(W, 10, [b40, 0x80, 0, 0]);
                                                                                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                           fill_W_and_run_rounds(W, state),
-                                                                                        ByteStream.Cons(b41, tail_ptr) => match load(tail_ptr) {
+                                                                                        ByteStream.Cons(b41, &tail) => match tail {
                                                                                           ByteStream.Nil =>
                                                                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 80]);
                                                                                             let W = set(W, 10, [b40, b41, 0x80, 0]);
                                                                                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                             fill_W_and_run_rounds(W, state),
-                                                                                          ByteStream.Cons(b42, tail_ptr) => match load(tail_ptr) {
+                                                                                          ByteStream.Cons(b42, &tail) => match tail {
                                                                                             ByteStream.Nil =>
                                                                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 88]);
                                                                                               let W = set(W, 10, [b40, b41, b42, 0x80]);
                                                                                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                               fill_W_and_run_rounds(W, state),
-                                                                                            ByteStream.Cons(b43, tail_ptr) =>
+                                                                                            ByteStream.Cons(b43, &tail) =>
                                                                                               let W = set(W, 10, [b40, b41, b42, b43]);
-                                                                                              match load(tail_ptr) {
+                                                                                              match tail {
                                                                                               ByteStream.Nil =>
                                                                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 96]);
                                                                                                 let W = set(W, 11, [0x80, 0, 0, 0]);
                                                                                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                 fill_W_and_run_rounds(W, state),
-                                                                                              ByteStream.Cons(b44, tail_ptr) => match load(tail_ptr) {
+                                                                                              ByteStream.Cons(b44, &tail) => match tail {
                                                                                                 ByteStream.Nil =>
                                                                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 104]);
                                                                                                   let W = set(W, 11, [b44, 0x80, 0, 0]);
                                                                                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                   fill_W_and_run_rounds(W, state),
-                                                                                                ByteStream.Cons(b45, tail_ptr) => match load(tail_ptr) {
+                                                                                                ByteStream.Cons(b45, &tail) => match tail {
                                                                                                   ByteStream.Nil =>
                                                                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 112]);
                                                                                                     let W = set(W, 11, [b44, b45, 0x80, 0]);
                                                                                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                     fill_W_and_run_rounds(W, state),
-                                                                                                  ByteStream.Cons(b46, tail_ptr) => match load(tail_ptr) {
+                                                                                                  ByteStream.Cons(b46, &tail) => match tail {
                                                                                                     ByteStream.Nil =>
                                                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 120]);
                                                                                                       let W = set(W, 11, [b44, b45, b46, 0x80]);
                                                                                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                       fill_W_and_run_rounds(W, state),
-                                                                                                    ByteStream.Cons(b47, tail_ptr) =>
+                                                                                                    ByteStream.Cons(b47, &tail) =>
                                                                                                       let W = set(W, 11, [b44, b45, b46, b47]);
-                                                                                                      match load(tail_ptr) {
+                                                                                                      match tail {
                                                                                                       ByteStream.Nil =>
                                                                                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 128]);
                                                                                                         let W = set(W, 12, [0x80, 0, 0, 0]);
                                                                                                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                         fill_W_and_run_rounds(W, state),
-                                                                                                      ByteStream.Cons(b48, tail_ptr) => match load(tail_ptr) {
+                                                                                                      ByteStream.Cons(b48, &tail) => match tail {
                                                                                                         ByteStream.Nil =>
                                                                                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 136]);
                                                                                                           let W = set(W, 12, [b48, 0x80, 0, 0]);
                                                                                                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                           fill_W_and_run_rounds(W, state),
-                                                                                                        ByteStream.Cons(b49, tail_ptr) => match load(tail_ptr) {
+                                                                                                        ByteStream.Cons(b49, &tail) => match tail {
                                                                                                           ByteStream.Nil =>
                                                                                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 144]);
                                                                                                             let W = set(W, 12, [b48, b49, 0x80, 0]);
                                                                                                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                             fill_W_and_run_rounds(W, state),
-                                                                                                          ByteStream.Cons(b50, tail_ptr) => match load(tail_ptr) {
+                                                                                                          ByteStream.Cons(b50, &tail) => match tail {
                                                                                                             ByteStream.Nil =>
                                                                                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 152]);
                                                                                                               let W = set(W, 12, [b48, b49, b50, 0x80]);
                                                                                                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                               fill_W_and_run_rounds(W, state),
-                                                                                                            ByteStream.Cons(b51, tail_ptr) =>
+                                                                                                            ByteStream.Cons(b51, &tail) =>
                                                                                                               let W = set(W, 12, [b48, b49, b50, b51]);
-                                                                                                              match load(tail_ptr) {
+                                                                                                              match tail {
                                                                                                               ByteStream.Nil =>
                                                                                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 160]);
                                                                                                                 let W = set(W, 13, [0x80, 0, 0, 0]);
                                                                                                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                                 fill_W_and_run_rounds(W, state),
-                                                                                                              ByteStream.Cons(b52, tail_ptr) => match load(tail_ptr) {
+                                                                                                              ByteStream.Cons(b52, &tail) => match tail {
                                                                                                                 ByteStream.Nil =>
                                                                                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 168]);
                                                                                                                   let W = set(W, 13, [b52, 0x80, 0, 0]);
                                                                                                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                                   fill_W_and_run_rounds(W, state),
-                                                                                                                ByteStream.Cons(b53, tail_ptr) => match load(tail_ptr) {
+                                                                                                                ByteStream.Cons(b53, &tail) => match tail {
                                                                                                                   ByteStream.Nil =>
                                                                                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 176]);
                                                                                                                     let W = set(W, 13, [b52, b53, 0x80, 0]);
                                                                                                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                                     fill_W_and_run_rounds(W, state),
-                                                                                                                  ByteStream.Cons(b54, tail_ptr) => match load(tail_ptr) {
+                                                                                                                  ByteStream.Cons(b54, &tail) => match tail {
                                                                                                                     ByteStream.Nil =>
                                                                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 184]);
                                                                                                                       let W = set(W, 13, [b52, b53, b54, 0x80]);
                                                                                                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                                       fill_W_and_run_rounds(W, state),
-                                                                                                                    ByteStream.Cons(b55, tail_ptr) =>
+                                                                                                                    ByteStream.Cons(b55, &tail) =>
                                                                                                                       let W = set(W, 13, [b52, b53, b54, b55]);
-                                                                                                                      match load(tail_ptr) {
+                                                                                                                      match tail {
                                                                                                                       ByteStream.Nil =>
                                                                                                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 192]);
                                                                                                                         let W = set(W, 14, [0x80, 0, 0, 0]);
                                                                                                                         let state = fill_W_and_run_rounds(W, state);
                                                                                                                         fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                      ByteStream.Cons(b56, tail_ptr) => match load(tail_ptr) {
+                                                                                                                      ByteStream.Cons(b56, &tail) => match tail {
                                                                                                                         ByteStream.Nil =>
                                                                                                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 200]);
                                                                                                                           let W = set(W, 14, [b56, 0x80, 0, 0]);
                                                                                                                           let state = fill_W_and_run_rounds(W, state);
                                                                                                                           fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                        ByteStream.Cons(b57, tail_ptr) => match load(tail_ptr) {
+                                                                                                                        ByteStream.Cons(b57, &tail) => match tail {
                                                                                                                           ByteStream.Nil =>
                                                                                                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 208]);
                                                                                                                             let W = set(W, 14, [b56, b57, 0x80, 0]);
                                                                                                                             let state = fill_W_and_run_rounds(W, state);
                                                                                                                             fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                          ByteStream.Cons(b58, tail_ptr) => match load(tail_ptr) {
+                                                                                                                          ByteStream.Cons(b58, &tail) => match tail {
                                                                                                                             ByteStream.Nil =>
                                                                                                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 216]);
                                                                                                                               let W = set(W, 14, [b56, b57, b58, 0x80]);
                                                                                                                               let state = fill_W_and_run_rounds(W, state);
                                                                                                                               fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                            ByteStream.Cons(b59, tail_ptr) =>
+                                                                                                                            ByteStream.Cons(b59, &tail) =>
                                                                                                                               let W = set(W, 14, [b56, b57, b58, b59]);
-                                                                                                                              match load(tail_ptr) {
+                                                                                                                              match tail {
                                                                                                                               ByteStream.Nil =>
                                                                                                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 224]);
                                                                                                                                 let W = set(W, 15, [0x80, 0, 0, 0]);
                                                                                                                                 let state = fill_W_and_run_rounds(W, state);
                                                                                                                                 fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                              ByteStream.Cons(b60, tail_ptr) => match load(tail_ptr) {
+                                                                                                                              ByteStream.Cons(b60, &tail) => match tail {
                                                                                                                                 ByteStream.Nil =>
                                                                                                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 232]);
                                                                                                                                   let W = set(W, 15, [b60, 0x80, 0, 0]);
                                                                                                                                   let state = fill_W_and_run_rounds(W, state);
                                                                                                                                   fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                                ByteStream.Cons(b61, tail_ptr) => match load(tail_ptr) {
+                                                                                                                                ByteStream.Cons(b61, &tail) => match tail {
                                                                                                                                   ByteStream.Nil =>
                                                                                                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 240]);
                                                                                                                                     let W = set(W, 15, [b60, b61, 0x80, 0]);
                                                                                                                                     let state = fill_W_and_run_rounds(W, state);
                                                                                                                                     fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                                  ByteStream.Cons(b62, tail_ptr) => match load(tail_ptr) {
+                                                                                                                                  ByteStream.Cons(b62, &tail) => match tail {
                                                                                                                                     ByteStream.Nil =>
                                                                                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 248]);
                                                                                                                                       let W = set(W, 15, [b60, b61, b62, 0x80]);
                                                                                                                                       let state = fill_W_and_run_rounds(W, state);
                                                                                                                                       fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                                    ByteStream.Cons(b63, tail_ptr) =>
+                                                                                                                                    ByteStream.Cons(b63, &tail) =>
                                                                                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [2, 0]);
                                                                                                                                       let W = set(W, 15, [b60, b61, b62, b63]);
                                                                                                                                       let state = fill_W_and_run_rounds(W, state);
-                                                                                                                                      sha256_aux(load(tail_ptr), len_be, state),
+                                                                                                                                      sha256_aux(tail, len_be, state),
                                                                                                                                   },
                                                                                                                                 },
                                                                                                                               },
