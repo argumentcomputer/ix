@@ -40,9 +40,6 @@ lean_exe «test-ixvm» where
 
 end Tests
 
-lean_lib IxTestLib where
-  srcDir := "ix_test"
-
 section IxApplications
 
 section Benchmarks
@@ -175,5 +172,16 @@ script "get-exe-targets" := do
     IO.println <| tgt.name.toString |>.stripPrefix "«" |>.stripSuffix "»"
   return 0
 
-end Scripts
+script "build-all" := do
+  let ws ← getWorkspace
+  let pkg ← getRootPackage
+  let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
+  let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
+  let allNames := libNames ++ exeNames |>.toList
+  for name in allNames do
+    IO.println s!"Building: {name}"
+    let specs ← EIO.toIO (·.toString) <| Lake.parseTargetSpecs ws [name]
+    ws.runBuild (buildSpecs specs)
+  return 0
 
+end Scripts
