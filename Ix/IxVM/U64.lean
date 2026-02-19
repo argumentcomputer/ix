@@ -140,6 +140,18 @@ def u64 := ⟦
     let (sum3_with_carry, _x) = u8_add(sum3, carry3);
 
     [sum3_with_carry, sum2_with_carry, sum1_with_carry, sum0]
+
+  enum U64List {
+    Cons([G; 8], &U64List),
+    Nil
+  }
+
+  fn u64_list_length(xs: U64List) -> [G; 8] {
+    match xs {
+      U64List.Nil => [0; 8],
+      U64List.Cons(_, rest) => relaxed_u64_succ(u64_list_length(load(rest))),
+    }
+  }
 ⟧
 
 end IxVM

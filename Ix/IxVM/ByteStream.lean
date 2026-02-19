@@ -11,15 +11,15 @@ def byteStream := ⟦
   fn byte_stream_concat(a: ByteStream, b: ByteStream) -> ByteStream {
     match a {
       ByteStream.Nil => b,
-      ByteStream.Cons(byte, rest) =>
-        ByteStream.Cons(byte, store(byte_stream_concat(load(rest), b))),
+      ByteStream.Cons(byte, &rest) =>
+        ByteStream.Cons(byte, store(byte_stream_concat(rest, b))),
     }
   }
 
   fn byte_stream_length(bytes: ByteStream) -> [G; 8] {
     match bytes {
       ByteStream.Nil => [0; 8],
-      ByteStream.Cons(_, rest) => relaxed_u64_succ(byte_stream_length(load(rest))),
+      ByteStream.Cons(_, &rest) => relaxed_u64_succ(byte_stream_length(rest)),
     }
   }
 

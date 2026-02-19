@@ -3,11 +3,6 @@ import Ix.Aiur.Meta
 namespace IxVM
 
 def ixon := ⟦
-  enum U64List {
-    Cons([G; 8], &U64List),
-    Nil
-  }
-
   enum Expr {
     Srt([G; 8]),
     Var([G; 8]),
