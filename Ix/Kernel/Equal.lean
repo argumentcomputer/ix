@@ -34,7 +34,7 @@ private def equalUnivArrays (us us' : Array (Level m)) : Bool :=
 
 mutual
   /-- Try eta expansion for structure-like types. -/
-  partial def tryEtaStruct (lvl : Nat) (term term' : SusValue m) : TypecheckM m Bool := do
+  partial def tryEtaStruct (lvl : Nat) (term term' : SusValue m) : TypecheckM m σ Bool := do
     match term'.get with
     | .app (.const k _ _) args _ =>
       match (← get).typedConsts.get? k with
@@ -59,7 +59,7 @@ mutual
 
   /-- Check if two suspended values are definitionally equal at the given level.
       Assumes both have the same type and live in the same context. -/
-  partial def equal (lvl : Nat) (term term' : SusValue m) : TypecheckM m Bool :=
+  partial def equal (lvl : Nat) (term term' : SusValue m) : TypecheckM m σ Bool :=
     match term.info, term'.info with
     | .unit, .unit => pure true
     | .proof, .proof => pure true
@@ -67,9 +67,10 @@ mutual
       if (← read).trace then dbg_trace s!"equal: {term.get.ctorName} vs {term'.get.ctorName}"
       -- Fast path: pointer equality on thunks
       if susValuePtrEq term term' then return true
-      -- Check equality cache
+      -- Check equality cache via ST.Ref
       let key := susValueCacheKey term term'
-      if let some true := (← get).equalCache.get? key then return true
+      let eqCache ← (← read).equalCacheRef.get
+      if let some true := eqCache.get? key then return true
       let tv := term.get
       let tv' := term'.get
       let result ← match tv, tv' with
@@ -151,11 +152,11 @@ mutual
         dbg_trace s!"equal FALLTHROUGH at lvl={lvl}: lhs={tv.dump} rhs={tv'.dump}"
         pure false
       if result then
-        modify fun stt => { stt with equalCache := stt.equalCache.insert key true }
+        let _ ← (← read).equalCacheRef.modify fun c => c.insert key true
       return result
 
   /-- Check if two lists of suspended values are pointwise equal. -/
-  partial def equalThunks (lvl : Nat) (vals vals' : List (SusValue m)) : TypecheckM m Bool :=
+  partial def equalThunks (lvl : Nat) (vals vals' : List (SusValue m)) : TypecheckM m σ Bool :=
     match vals, vals' with
     | val :: vals, val' :: vals' => do
       let eq ← equal lvl val val'

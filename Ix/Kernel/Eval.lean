@@ -35,7 +35,7 @@ def listGet? (l : List α) (n : Nat) : Option α :=
 
 /-- Try to reduce a primitive operation if all arguments are available. -/
 private def tryPrimOp (prims : Primitives) (addr : Address)
-    (args : List (SusValue m)) : TypecheckM m (Option (Value m)) := do
+    (args : List (SusValue m)) : TypecheckM m σ (Option (Value m)) := do
   -- Nat.succ: 1 arg
   if addr == prims.natSucc then
     if args.length >= 1 then
@@ -78,7 +78,7 @@ private def tryPrimOp (prims : Primitives) (addr : Address)
 /-- Expand a string literal to its constructor form: String.mk (list-of-chars).
     Each character is represented as Char.ofNat n, and the list uses
     List.cons/List.nil at universe level 0. -/
-def strLitToCtorVal (prims : Primitives) (s : String) : TypecheckM m (Value m) := do
+def strLitToCtorVal (prims : Primitives) (s : String) : TypecheckM m σ (Value m) := do
   let charMkName ← lookupName prims.charMk
   let charName ← lookupName prims.char
   let listNilName ← lookupName prims.listNil
@@ -105,7 +105,7 @@ def strLitToCtorVal (prims : Primitives) (s : String) : TypecheckM m (Value m) :
 
 mutual
   /-- Evaluate a typed expression to a value. -/
-  partial def eval (t : TypedExpr m) : TypecheckM m (Value m) := withFuelCheck do
+  partial def eval (t : TypedExpr m) : TypecheckM m σ (Value m) := withFuelCheck do
     if (← read).trace then dbg_trace s!"eval: {t.body.tag}"
     match t.body with
     | .app fnc arg => do
@@ -171,7 +171,7 @@ mutual
         pure (.app (.proj typeAddr idx ⟨ti, val⟩ typeName) [] [])
       | e => throw s!"Value is impossible to project: {e.ctorName}"
 
-  partial def evalTyped (t : TypedExpr m) : TypecheckM m (AddInfo (TypeInfo m) (Value m)) := do
+  partial def evalTyped (t : TypedExpr m) : TypecheckM m σ (AddInfo (TypeInfo m) (Value m)) := do
     let reducedInfo := t.info.update (← read).env.univs.toArray
     let value ← eval t
     pure ⟨reducedInfo, value⟩
@@ -180,11 +180,12 @@ mutual
       Theorems are treated as opaque (not unfolded) — proof irrelevance handles
       equality of proof terms, and this avoids deep recursion through proof bodies.
       Caches evaluated definition bodies to avoid redundant evaluation. -/
-  partial def evalConst' (addr : Address) (univs : Array (Level m)) (name : MetaField m Ix.Name := default) : TypecheckM m (Value m) := do
+  partial def evalConst' (addr : Address) (univs : Array (Level m)) (name : MetaField m Ix.Name := default) : TypecheckM m σ (Value m) := do
     match (← read).kenv.find? addr with
     | some (.defnInfo _) =>
-      -- Check eval cache (must also match universe parameters)
-      if let some (cachedUnivs, cachedVal) := (← get).evalCache.get? addr then
+      -- Check eval cache via ST.Ref (persists across thunks)
+      let cache ← (← read).evalCacheRef.get
+      if let some (cachedUnivs, cachedVal) := cache.get? addr then
         if cachedUnivs == univs then return cachedVal
       ensureTypedConst addr
       match (← get).typedConsts.get? addr with
@@ -192,29 +193,29 @@ mutual
         if part then pure (mkConst addr univs name)
         else
           let val ← withEnv (.mk [] univs.toList) (eval deref)
-          modify fun stt => { stt with evalCache := stt.evalCache.insert addr (univs, val) }
+          let _ ← (← read).evalCacheRef.modify fun c => c.insert addr (univs, val)
           pure val
       | _ => throw "Invalid const kind for evaluation"
     | _ => pure (mkConst addr univs name)
 
   /-- Evaluate a constant: check if it's Nat.zero, a primitive op, or unfold it. -/
-  partial def evalConst (addr : Address) (univs : Array (Level m)) (name : MetaField m Ix.Name := default) : TypecheckM m (Value m) := do
+  partial def evalConst (addr : Address) (univs : Array (Level m)) (name : MetaField m Ix.Name := default) : TypecheckM m σ (Value m) := do
     let prims := (← read).prims
     if addr == prims.natZero then pure (.lit (.natVal 0))
     else if isPrimOp prims addr then pure (mkConst addr univs name)
     else evalConst' addr univs name
 
   /-- Create a suspended value from a typed expression, capturing context. -/
-  partial def suspend (expr : TypedExpr m) (ctx : TypecheckCtx m) (stt : TypecheckState m) : SusValue m :=
+  partial def suspend (expr : TypedExpr m) (ctx : TypecheckCtx m σ) (stt : TypecheckState m) : SusValue m :=
     let thunk : Thunk (Value m) := .mk fun _ =>
-      match TypecheckM.run ctx stt (eval expr) with
+      match pureRunST (TypecheckM.run ctx stt (eval expr)) with
       | .ok a => a
       | .error e => .exception e
     let reducedInfo := expr.info.update ctx.env.univs.toArray
     ⟨reducedInfo, thunk⟩
 
   /-- Apply a value to an argument. -/
-  partial def apply (val : AddInfo (TypeInfo m) (Value m)) (arg : SusValue m) : TypecheckM m (Value m) := do
+  partial def apply (val : AddInfo (TypeInfo m) (Value m)) (arg : SusValue m) : TypecheckM m σ (Value m) := do
     if (← read).trace then dbg_trace s!"apply: {val.body.ctorName}"
     match val.body with
     | .lam _ bod lamEnv _ _ =>
@@ -233,7 +234,7 @@ mutual
   /-- Apply a named constant to arguments, handling recursors, quotients, and primitives. -/
   partial def applyConst (addr : Address) (univs : Array (Level m)) (arg : SusValue m)
       (args : List (SusValue m)) (info : TypeInfo m) (infos : List (TypeInfo m))
-      (name : MetaField m Ix.Name := default) : TypecheckM m (Value m) := do
+      (name : MetaField m Ix.Name := default) : TypecheckM m σ (Value m) := do
     let prims := (← read).prims
     -- Try primitive operations
     if let some result ← tryPrimOp prims addr (arg :: args) then
@@ -326,7 +327,7 @@ mutual
 
   /-- Apply a quotient to a value. -/
   partial def applyQuot (_prims : Primitives) (major : SusValue m) (args : List (SusValue m))
-      (reduceSize argPos : Nat) (default : Value m) : TypecheckM m (Value m) :=
+      (reduceSize argPos : Nat) (default : Value m) : TypecheckM m σ (Value m) :=
     let argsLength := args.length + 1
     if argsLength == reduceSize then
       match major.get with
@@ -343,7 +344,7 @@ mutual
     else throw s!"argsLength {argsLength} can't be greater than reduceSize {reduceSize}"
 
   /-- Convert a nat literal to Nat.succ/Nat.zero constructors. -/
-  partial def toCtorIfLit (prims : Primitives) : Value m → TypecheckM m (Value m)
+  partial def toCtorIfLit (prims : Primitives) : Value m → TypecheckM m σ (Value m)
     | .lit (.natVal 0) => do
       let name ← lookupName prims.natZero
       pure (Value.neu (.const prims.natZero #[] name))
@@ -357,7 +358,7 @@ end
 /-! ## Quoting (read-back from Value to Expr) -/
 
 mutual
-  partial def quote (lvl : Nat) : Value m → TypecheckM m (Expr m)
+  partial def quote (lvl : Nat) : Value m → TypecheckM m σ (Expr m)
     | .sort univ => do
       let env := (← read).env
       pure (.sort (instBulkReduce env.univs.toArray univ))
@@ -379,14 +380,14 @@ mutual
     | .lit lit => pure (.lit lit)
     | .exception e => throw e
 
-  partial def quoteTyped (lvl : Nat) (val : AddInfo (TypeInfo m) (Value m)) : TypecheckM m (TypedExpr m) := do
+  partial def quoteTyped (lvl : Nat) (val : AddInfo (TypeInfo m) (Value m)) : TypecheckM m σ (TypedExpr m) := do
     pure ⟨val.info, ← quote lvl val.body⟩
 
-  partial def quoteTypedExpr (lvl : Nat) (t : TypedExpr m) (env : ValEnv m) : TypecheckM m (TypedExpr m) := do
+  partial def quoteTypedExpr (lvl : Nat) (t : TypedExpr m) (env : ValEnv m) : TypecheckM m σ (TypedExpr m) := do
     let e ← quoteExpr lvl t.body env
     pure ⟨t.info, e⟩
 
-  partial def quoteExpr (lvl : Nat) (expr : Expr m) (env : ValEnv m) : TypecheckM m (Expr m) :=
+  partial def quoteExpr (lvl : Nat) (expr : Expr m) (env : ValEnv m) : TypecheckM m σ (Expr m) :=
     match expr with
     | .bvar idx _ => do
       match listGet? env.exprs idx with
@@ -421,7 +422,7 @@ mutual
       pure (.proj typeAddr idx struct name)
     | .lit .. => pure expr
 
-  partial def quoteNeutral (lvl : Nat) : Neutral m → TypecheckM m (Expr m)
+  partial def quoteNeutral (lvl : Nat) : Neutral m → TypecheckM m σ (Expr m)
     | .fvar idx name => do
       pure (.bvar (lvl - idx - 1) name)
     | .const addr univs name => do
@@ -501,22 +502,22 @@ partial def foldLiterals (prims : Primitives) : Expr m → Expr m
 
 /-- Pretty-print a value by quoting it back to an Expr, then using Expr.pp.
     Folds Nat/String constructor chains back to literals for readability. -/
-partial def ppValue (lvl : Nat) (v : Value m) : TypecheckM m String := do
+partial def ppValue (lvl : Nat) (v : Value m) : TypecheckM m σ String := do
   let expr ← quote lvl v
   let expr := foldLiterals (← read).prims expr
   return expr.pp
 
 /-- Pretty-print a suspended value. -/
-partial def ppSusValue (lvl : Nat) (sv : SusValue m) : TypecheckM m String :=
+partial def ppSusValue (lvl : Nat) (sv : SusValue m) : TypecheckM m σ String :=
   ppValue lvl sv.get
 
 /-- Pretty-print a value, falling back to the shallow summary on error. -/
-partial def tryPpValue (lvl : Nat) (v : Value m) : TypecheckM m String := do
+partial def tryPpValue (lvl : Nat) (v : Value m) : TypecheckM m σ String := do
   try ppValue lvl v
   catch _ => return v.summary
 
 /-- Apply a value to a list of arguments. -/
-def applyType (v : Value m) (args : List (SusValue m)) : TypecheckM m (Value m) :=
+def applyType (v : Value m) (args : List (SusValue m)) : TypecheckM m σ (Value m) :=
   match args with
   | [] => pure v
   | arg :: rest => do

@@ -573,6 +573,7 @@ impl<'env> TypeChecker<'env> {
           }
         }
         super::inductive::validate_k_flag(v, self.env)?;
+        super::inductive::validate_recursor_rules(v, self.env)?;
       },
     }
     Ok(())
@@ -1542,7 +1543,8 @@ mod tests {
   }
 
   #[test]
-  fn check_rec_with_inductive() {
+  fn check_rec_empty_rules_fails() {
+    // Nat has 2 constructors, so 0 rules should fail
     let env = mk_nat_env();
     let mut tc = TypeChecker::new(&env);
     let rec = ConstantInfo::RecInfo(RecursorVal {
@@ -1560,7 +1562,16 @@ mod tests {
       k: false,
       is_unsafe: false,
     });
-    assert!(tc.check_declar(&rec).is_ok());
+    assert!(tc.check_declar(&rec).is_err());
+  }
+
+  #[test]
+  fn check_rec_with_valid_rules() {
+    // Use the full mk_nat_env which includes Nat.rec with proper rules
+    let env = mk_nat_env();
+    let nat_rec = env.get(&mk_name2("Nat", "rec")).unwrap();
+    let mut tc = TypeChecker::new(&env);
+    assert!(tc.check_declar(nat_rec).is_ok());
   }
 
   // ==========================================================================
@@ -1940,7 +1951,11 @@ mod tests {
       num_indices: Nat::from(1u64),
       num_motives: Nat::from(1u64),
       num_minors: Nat::from(1u64),
-      rules: vec![],
+      rules: vec![RecursorRule {
+        ctor: mk_name2("MyEq", "refl"),
+        n_fields: Nat::from(0u64),
+        rhs: Expr::sort(Level::zero()), // placeholder
+      }],
       k: true,
       is_unsafe: false,
     });
@@ -2183,5 +2198,302 @@ mod tests {
     );
     let ty = tc.infer(&e).unwrap();
     assert_eq!(ty, nat_type());
+  }
+
+  // ==========================================================================
+  // check_declar: Recursor rule validation (integration tests)
+  // ==========================================================================
+
+  #[test]
+  fn check_rec_wrong_nfields_via_check_declar() {
+    // Nat.rec with zero rule claiming 5 fields instead of 0
+    let env = mk_nat_env();
+    let mut tc = TypeChecker::new(&env);
+    let u = mk_name("u");
+
+    let motive_type = Expr::all(
+      mk_name("_"),
+      nat_type(),
+      Expr::sort(Level::param(u.clone())),
+      BinderInfo::Default,
+    );
+    let rec_type = Expr::all(
+      mk_name("motive"),
+      motive_type,
+      Expr::sort(Level::param(u.clone())), // simplified
+      BinderInfo::Implicit,
+    );
+    let rec = ConstantInfo::RecInfo(RecursorVal {
+      cnst: ConstantVal {
+        name: mk_name2("Nat", "rec2"),
+        level_params: vec![u],
+        typ: rec_type,
+      },
+      all: vec![mk_name("Nat")],
+      num_params: Nat::from(0u64),
+      num_indices: Nat::from(0u64),
+      num_motives: Nat::from(1u64),
+      num_minors: Nat::from(2u64),
+      rules: vec![
+        RecursorRule {
+          ctor: mk_name2("Nat", "zero"),
+          n_fields: Nat::from(5u64), // WRONG
+          rhs: Expr::sort(Level::zero()),
+        },
+        RecursorRule {
+          ctor: mk_name2("Nat", "succ"),
+          n_fields: Nat::from(1u64),
+          rhs: Expr::sort(Level::zero()),
+        },
+      ],
+      k: false,
+      is_unsafe: false,
+    });
+    assert!(tc.check_declar(&rec).is_err());
+  }
+
+  #[test]
+  fn check_rec_wrong_ctor_order_via_check_declar() {
+    let env = mk_nat_env();
+    let mut tc = TypeChecker::new(&env);
+    let u = mk_name("u");
+
+    let rec_type = Expr::all(
+      mk_name("motive"),
+      Expr::all(
+        mk_name("_"),
+        nat_type(),
+        Expr::sort(Level::param(u.clone())),
+        BinderInfo::Default,
+      ),
+      Expr::sort(Level::param(u.clone())),
+      BinderInfo::Implicit,
+    );
+    let rec = ConstantInfo::RecInfo(RecursorVal {
+      cnst: ConstantVal {
+        name: mk_name2("Nat", "rec2"),
+        level_params: vec![u],
+        typ: rec_type,
+      },
+      all: vec![mk_name("Nat")],
+      num_params: Nat::from(0u64),
+      num_indices: Nat::from(0u64),
+      num_motives: Nat::from(1u64),
+      num_minors: Nat::from(2u64),
+      rules: vec![
+        // WRONG ORDER: succ then zero
+        RecursorRule {
+          ctor: mk_name2("Nat", "succ"),
+          n_fields: Nat::from(1u64),
+          rhs: Expr::sort(Level::zero()),
+        },
+        RecursorRule {
+          ctor: mk_name2("Nat", "zero"),
+          n_fields: Nat::from(0u64),
+          rhs: Expr::sort(Level::zero()),
+        },
+      ],
+      k: false,
+      is_unsafe: false,
+    });
+    assert!(tc.check_declar(&rec).is_err());
+  }
+
+  #[test]
+  fn check_rec_wrong_num_params_via_check_declar() {
+    let env = mk_nat_env();
+    let mut tc = TypeChecker::new(&env);
+    let u = mk_name("u");
+
+    let rec_type = Expr::all(
+      mk_name("motive"),
+      Expr::all(
+        mk_name("_"),
+        nat_type(),
+        Expr::sort(Level::param(u.clone())),
+        BinderInfo::Default,
+      ),
+      Expr::sort(Level::param(u.clone())),
+      BinderInfo::Implicit,
+    );
+    let rec = ConstantInfo::RecInfo(RecursorVal {
+      cnst: ConstantVal {
+        name: mk_name2("Nat", "rec2"),
+        level_params: vec![u],
+        typ: rec_type,
+      },
+      all: vec![mk_name("Nat")],
+      num_params: Nat::from(99u64), // WRONG: Nat has 0 params
+      num_indices: Nat::from(0u64),
+      num_motives: Nat::from(1u64),
+      num_minors: Nat::from(2u64),
+      rules: vec![
+        RecursorRule {
+          ctor: mk_name2("Nat", "zero"),
+          n_fields: Nat::from(0u64),
+          rhs: Expr::sort(Level::zero()),
+        },
+        RecursorRule {
+          ctor: mk_name2("Nat", "succ"),
+          n_fields: Nat::from(1u64),
+          rhs: Expr::sort(Level::zero()),
+        },
+      ],
+      k: false,
+      is_unsafe: false,
+    });
+    assert!(tc.check_declar(&rec).is_err());
+  }
+
+  #[test]
+  fn check_rec_valid_rules_passes() {
+    // Full Nat.rec declaration from mk_nat_env passes check_declar
+    let env = mk_nat_env();
+    let mut tc = TypeChecker::new(&env);
+    let nat_rec = env.get(&mk_name2("Nat", "rec")).unwrap();
+    assert!(tc.check_declar(nat_rec).is_ok());
+  }
+
+  // ==========================================================================
+  // check_declar: K-flag via check_declar
+  // ==========================================================================
+
+  /// Build an env with an Eq-like Prop inductive that supports K.
+  fn mk_k_env() -> Env {
+    let mut env = mk_nat_env();
+    let u = mk_name("u");
+    let eq_name = mk_name("MyEq");
+    let eq_refl = mk_name2("MyEq", "refl");
+
+    let eq_ty = Expr::all(
+      mk_name("α"),
+      Expr::sort(Level::param(u.clone())),
+      Expr::all(
+        mk_name("a"),
+        Expr::bvar(Nat::from(0u64)),
+        Expr::all(
+          mk_name("b"),
+          Expr::bvar(Nat::from(1u64)),
+          Expr::sort(Level::zero()),
+          BinderInfo::Default,
+        ),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+    env.insert(
+      eq_name.clone(),
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: ConstantVal {
+          name: eq_name.clone(),
+          level_params: vec![u.clone()],
+          typ: eq_ty,
+        },
+        num_params: Nat::from(2u64),
+        num_indices: Nat::from(1u64),
+        all: vec![eq_name.clone()],
+        ctors: vec![eq_refl.clone()],
+        num_nested: Nat::from(0u64),
+        is_rec: false,
+        is_unsafe: false,
+        is_reflexive: true,
+      }),
+    );
+    let refl_ty = Expr::all(
+      mk_name("α"),
+      Expr::sort(Level::param(u.clone())),
+      Expr::all(
+        mk_name("a"),
+        Expr::bvar(Nat::from(0u64)),
+        Expr::app(
+          Expr::app(
+            Expr::app(
+              Expr::cnst(eq_name.clone(), vec![Level::param(u.clone())]),
+              Expr::bvar(Nat::from(1u64)),
+            ),
+            Expr::bvar(Nat::from(0u64)),
+          ),
+          Expr::bvar(Nat::from(0u64)),
+        ),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+    env.insert(
+      eq_refl.clone(),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: ConstantVal {
+          name: eq_refl,
+          level_params: vec![u],
+          typ: refl_ty,
+        },
+        induct: eq_name,
+        cidx: Nat::from(0u64),
+        num_params: Nat::from(2u64),
+        num_fields: Nat::from(0u64),
+        is_unsafe: false,
+      }),
+    );
+    env
+  }
+
+  #[test]
+  fn check_k_flag_valid_via_check_declar() {
+    let env = mk_k_env();
+    let mut tc = TypeChecker::new(&env);
+    let rec = ConstantInfo::RecInfo(RecursorVal {
+      cnst: ConstantVal {
+        name: mk_name2("MyEq", "rec"),
+        level_params: vec![mk_name("u")],
+        typ: Expr::sort(Level::param(mk_name("u"))),
+      },
+      all: vec![mk_name("MyEq")],
+      num_params: Nat::from(2u64),
+      num_indices: Nat::from(1u64),
+      num_motives: Nat::from(1u64),
+      num_minors: Nat::from(1u64),
+      rules: vec![RecursorRule {
+        ctor: mk_name2("MyEq", "refl"),
+        n_fields: Nat::from(0u64),
+        rhs: Expr::sort(Level::zero()),
+      }],
+      k: true,
+      is_unsafe: false,
+    });
+    assert!(tc.check_declar(&rec).is_ok());
+  }
+
+  #[test]
+  fn check_k_flag_invalid_on_nat_via_check_declar() {
+    // K=true on Nat (Sort 1, 2 ctors) should fail
+    let env = mk_nat_env();
+    let mut tc = TypeChecker::new(&env);
+    let rec = ConstantInfo::RecInfo(RecursorVal {
+      cnst: ConstantVal {
+        name: mk_name2("Nat", "recK"),
+        level_params: vec![mk_name("u")],
+        typ: Expr::sort(Level::param(mk_name("u"))),
+      },
+      all: vec![mk_name("Nat")],
+      num_params: Nat::from(0u64),
+      num_indices: Nat::from(0u64),
+      num_motives: Nat::from(1u64),
+      num_minors: Nat::from(2u64),
+      rules: vec![
+        RecursorRule {
+          ctor: mk_name2("Nat", "zero"),
+          n_fields: Nat::from(0u64),
+          rhs: Expr::sort(Level::zero()),
+        },
+        RecursorRule {
+          ctor: mk_name2("Nat", "succ"),
+          n_fields: Nat::from(1u64),
+          rhs: Expr::sort(Level::zero()),
+        },
+      ],
+      k: true,
+      is_unsafe: false,
+    });
+    assert!(tc.check_declar(&rec).is_err());
   }
 }

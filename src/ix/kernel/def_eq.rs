@@ -530,9 +530,8 @@ fn get_applied_def(
         Some((name.clone(), d.hints))
       }
     },
-    ConstantInfo::ThmInfo(_) => {
-      Some((name.clone(), ReducibilityHints::Opaque))
-    },
+    // Theorems are never unfolded — proof irrelevance handles them.
+    // ConstantInfo::ThmInfo(_) => return None,
     _ => None,
   }
 }
@@ -1570,13 +1569,12 @@ mod tests {
   }
 
   #[test]
-  fn test_get_applied_def_includes_theorems_as_opaque() {
+  fn test_get_applied_def_excludes_theorems() {
+    // Theorems should never be unfolded — proof irrelevance handles them.
     let env = mk_thm_env();
     let thm = Expr::cnst(mk_name("thmA"), vec![]);
     let result = get_applied_def(&thm, &env);
-    assert!(result.is_some());
-    let (_, hints) = result.unwrap();
-    assert_eq!(hints, ReducibilityHints::Opaque);
+    assert!(result.is_none());
   }
 
   // ==========================================================================

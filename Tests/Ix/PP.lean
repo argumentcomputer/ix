@@ -248,22 +248,30 @@ def testQuoteRoundtrip : TestSeq :=
     -- Build Value.lam: fun (y : Nat) => y
     let bodyTE : TypedExpr .meta := ⟨.none, .bvar 0 yName⟩
     let lamVal : Value .meta := .lam domVal bodyTE (.mk [] []) yName .default
-    -- Quote and pp in a minimal TypecheckM context
-    let ctx : TypecheckCtx .meta := {
-      lvl := 0, env := .mk [] [], types := [],
-      kenv := default, prims := buildPrimitives,
-      safety := .safe, quotInit := true, mutTypes := default, recAddr? := none
-    }
-    let stt : TypecheckState .meta := { typedConsts := default }
+    -- Quote and pp in a minimal TypecheckM context (wrapped in runST for ST.Ref allocation)
+    let result := runST fun σ => do
+      let fuelRef ← ST.mkRef Ix.Kernel.defaultFuel
+      let evalRef ← ST.mkRef ({} : Std.HashMap Address (Array (Level .meta) × Value .meta))
+      let equalRef ← ST.mkRef ({} : Std.HashMap (USize × USize) Bool)
+      let ctx : TypecheckCtx .meta σ := {
+        lvl := 0, env := .mk [] [], types := [],
+        kenv := default, prims := buildPrimitives,
+        safety := .safe, quotInit := true, mutTypes := default, recAddr? := none,
+        fuelRef := fuelRef, evalCacheRef := evalRef, equalCacheRef := equalRef
+      }
+      let stt : TypecheckState .meta := { typedConsts := default }
+      let piResult ← TypecheckM.run ctx stt (ppValue 0 piVal)
+      let lamResult ← TypecheckM.run ctx stt (ppValue 0 lamVal)
+      pure (piResult, lamResult)
     -- Test pi
-    match TypecheckM.run ctx stt (ppValue 0 piVal) with
+    match result.1 with
     | .ok s =>
       if s != "∀ (x : Nat), Nat" then
         return (false, some s!"pi round-trip: expected '∀ (x : Nat), Nat', got '{s}'")
       else pure ()
     | .error e => return (false, some s!"pi round-trip error: {e}")
     -- Test lam
-    match TypecheckM.run ctx stt (ppValue 0 lamVal) with
+    match result.2 with
     | .ok s =>
       if s != "λ (y : Nat) => y" then
         return (false, some s!"lam round-trip: expected 'λ (y : Nat) => y', got '{s}'")

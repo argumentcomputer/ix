@@ -54,6 +54,23 @@ pub fn is_zero(l: &Level) -> bool {
   leq(l, &Level::zero())
 }
 
+/// Check if a level could possibly be zero (i.e., not definitively non-zero).
+/// Returns false only if the level is guaranteed to be ≥ 1 for all parameter assignments.
+pub fn could_be_zero(l: &Level) -> bool {
+  let s = simplify(l);
+  could_be_zero_core(&s)
+}
+
+fn could_be_zero_core(l: &Level) -> bool {
+  match l.as_data() {
+    LevelData::Zero(_) => true,
+    LevelData::Succ(..) => false, // n+1 is never zero
+    LevelData::Param(..) | LevelData::Mvar(..) => true, // parameter could be instantiated to zero
+    LevelData::Max(a, b, _) => could_be_zero_core(a) && could_be_zero_core(b),
+    LevelData::Imax(_, b, _) => could_be_zero_core(b), // imax(a, 0) = 0
+  }
+}
+
 /// Check if `l <= r`.
 pub fn leq(l: &Level, r: &Level) -> bool {
   let l_s = simplify(l);
@@ -399,5 +416,73 @@ mod tests {
     let result = subst_level(&l, &[u_name], &[zero]);
     let expected = Level::succ(Level::zero());
     assert_eq!(result, expected);
+  }
+
+  // ==========================================================================
+  // could_be_zero
+  // ==========================================================================
+
+  #[test]
+  fn could_be_zero_zero() {
+    assert!(could_be_zero(&Level::zero()));
+  }
+
+  #[test]
+  fn could_be_zero_succ_is_false() {
+    // Succ(0) = 1, never zero
+    assert!(!could_be_zero(&Level::succ(Level::zero())));
+  }
+
+  #[test]
+  fn could_be_zero_succ_param_is_false() {
+    // u+1 is never zero regardless of u
+    let u = Level::param(Name::str(Name::anon(), "u".into()));
+    assert!(!could_be_zero(&Level::succ(u)));
+  }
+
+  #[test]
+  fn could_be_zero_param_is_true() {
+    // Param u could be zero (instantiated to 0)
+    let u = Level::param(Name::str(Name::anon(), "u".into()));
+    assert!(could_be_zero(&u));
+  }
+
+  #[test]
+  fn could_be_zero_max_both_could() {
+    // max(u, v) could be zero if both u and v could be zero
+    let u = Level::param(Name::str(Name::anon(), "u".into()));
+    let v = Level::param(Name::str(Name::anon(), "v".into()));
+    assert!(could_be_zero(&Level::max(u, v)));
+  }
+
+  #[test]
+  fn could_be_zero_max_one_nonzero() {
+    // max(u+1, v) cannot be zero because u+1 ≥ 1
+    let u = Level::param(Name::str(Name::anon(), "u".into()));
+    let v = Level::param(Name::str(Name::anon(), "v".into()));
+    assert!(!could_be_zero(&Level::max(Level::succ(u), v)));
+  }
+
+  #[test]
+  fn could_be_zero_imax_zero_right() {
+    // imax(u, 0) = 0, so could be zero
+    let u = Level::param(Name::str(Name::anon(), "u".into()));
+    assert!(could_be_zero(&Level::imax(u, Level::zero())));
+  }
+
+  #[test]
+  fn could_be_zero_imax_succ_right() {
+    // imax(u, v+1) = max(u, v+1), never zero since v+1 ≥ 1
+    let u = Level::param(Name::str(Name::anon(), "u".into()));
+    let v = Level::param(Name::str(Name::anon(), "v".into()));
+    assert!(!could_be_zero(&Level::imax(u, Level::succ(v))));
+  }
+
+  #[test]
+  fn could_be_zero_imax_param_right() {
+    // imax(u, v): if v=0 then imax(u,0)=0, so could be zero
+    let u = Level::param(Name::str(Name::anon(), "u".into()));
+    let v = Level::param(Name::str(Name::anon(), "v".into()));
+    assert!(could_be_zero(&Level::imax(u, v)));
   }
 }

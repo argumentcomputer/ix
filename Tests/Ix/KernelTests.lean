@@ -131,10 +131,38 @@ def testLevelOps : TestSeq :=
 
 /-! ## Integration tests: Const pipeline -/
 
-/-- Parse a dotted name string like "Nat.add" into an Ix.Name. -/
-private def parseIxName (s : String) : Ix.Name :=
-  let parts := s.splitOn "."
-  parts.foldl (fun acc part => Ix.Name.mkStr acc part) Ix.Name.mkAnon
+/-- Parse a dotted name string like "Nat.add" into an Ix.Name.
+    Handles `«...»` quoted name components (e.g. `Foo.«0».Bar`). -/
+private partial def parseIxName (s : String) : Ix.Name :=
+  let parts := splitParts s.toList []
+  parts.foldl (fun acc part =>
+    match part with
+    | .inl str => Ix.Name.mkStr acc str
+    | .inr nat => Ix.Name.mkNat acc nat
+  ) Ix.Name.mkAnon
+where
+  /-- Split a dotted name into parts: .inl for string components, .inr for numeric (guillemet). -/
+  splitParts : List Char → List (String ⊕ Nat) → List (String ⊕ Nat)
+    | [], acc => acc
+    | '.' :: rest, acc => splitParts rest acc
+    | '«' :: rest, acc =>
+      let (inside, rest') := collectUntilClose rest ""
+      let part := match inside.toNat? with
+        | some n => .inr n
+        | none => .inl inside
+      splitParts rest' (acc ++ [part])
+    | cs, acc =>
+      let (word, rest) := collectUntilDot cs ""
+      splitParts rest (if word.isEmpty then acc else acc ++ [.inl word])
+  collectUntilClose : List Char → String → String × List Char
+    | [], s => (s, [])
+    | '»' :: rest, s => (s, rest)
+    | c :: rest, s => collectUntilClose rest (s.push c)
+  collectUntilDot : List Char → String → String × List Char
+    | [], s => (s, [])
+    | '.' :: rest, s => (s, '.' :: rest)
+    | '«' :: rest, s => (s, '«' :: rest)
+    | c :: rest, s => collectUntilDot rest (s.push c)
 
 /-- Convert a Lean.Name to an Ix.Name (reproducing the Blake3 hashing). -/
 private partial def leanNameToIx : Lean.Name → Ix.Name
@@ -605,6 +633,461 @@ def negativeTests : TestSeq :=
       return (false, some s!"{failures.size} failure(s)")
   ) .done
 
+/-! ## Soundness negative tests (inductive validation) -/
+
+/-- Helper: make unique addresses from a seed byte. -/
+private def mkAddr (seed : UInt8) : Address :=
+  Address.blake3 (ByteArray.mk #[seed, 0xAA, 0xBB])
+
+/-- Soundness negative test suite: verify that the typechecker rejects unsound
+    inductive declarations (positivity, universe constraints, K-flag, recursor rules). -/
+def soundnessNegativeTests : TestSeq :=
+  .individualIO "kernel soundness negative tests" (do
+    let prims := buildPrimitives
+    let mut passed := 0
+    let mut failures : Array String := #[]
+
+    -- ========================================================================
+    -- Test 1: Positivity violation — Bad | mk : (Bad → Bad) → Bad
+    -- The inductive appears in negative position (Pi domain).
+    -- ========================================================================
+    do
+      let badAddr := mkAddr 10
+      let badMkAddr := mkAddr 11
+      let badType : Expr .anon := .sort (.succ .zero) -- Sort 1
+      let badCv : ConstantVal .anon :=
+        { numLevels := 0, type := badType, name := (), levelParams := () }
+      let badInd : ConstantInfo .anon := .inductInfo {
+        toConstantVal := badCv, numParams := 0, numIndices := 0,
+        all := #[badAddr], ctors := #[badMkAddr], numNested := 0,
+        isRec := true, isUnsafe := false, isReflexive := false
+      }
+      -- mk : (Bad → Bad) → Bad
+      -- The domain (Bad → Bad) has Bad in negative position
+      let mkType : Expr .anon :=
+        .forallE
+          (.forallE (.const badAddr #[] ()) (.const badAddr #[] ()) () ())
+          (.const badAddr #[] ())
+          () ()
+      let mkCv : ConstantVal .anon :=
+        { numLevels := 0, type := mkType, name := (), levelParams := () }
+      let mkCtor : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mkCv, induct := badAddr, cidx := 0,
+        numParams := 0, numFields := 1, isUnsafe := false
+      }
+      let env := ((default : Env .anon).insert badAddr badInd).insert badMkAddr mkCtor
+      match typecheckConst env prims badAddr with
+      | .error _ => passed := passed + 1
+      | .ok () => failures := failures.push "positivity-violation: expected error (Bad → Bad in domain)"
+
+    -- ========================================================================
+    -- Test 2: Universe constraint violation — Uni1Bad : Sort 1 | mk : Sort 2 → Uni1Bad
+    -- Field lives in Sort 3 (Sort 2 : Sort 3) but inductive is in Sort 1.
+    -- (Note: Prop inductives have special exception allowing any field universe,
+    --  so we test with a Sort 1 inductive instead.)
+    -- ========================================================================
+    do
+      let ubAddr := mkAddr 20
+      let ubMkAddr := mkAddr 21
+      let ubType : Expr .anon := .sort (.succ .zero) -- Sort 1
+      let ubCv : ConstantVal .anon :=
+        { numLevels := 0, type := ubType, name := (), levelParams := () }
+      let ubInd : ConstantInfo .anon := .inductInfo {
+        toConstantVal := ubCv, numParams := 0, numIndices := 0,
+        all := #[ubAddr], ctors := #[ubMkAddr], numNested := 0,
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      -- mk : Sort 2 → Uni1Bad
+      -- Sort 2 : Sort 3, so field sort = 3. Inductive sort = 1. 3 ≤ 1 fails.
+      let mkType : Expr .anon :=
+        .forallE (.sort (.succ (.succ .zero))) (.const ubAddr #[] ()) () ()
+      let mkCv : ConstantVal .anon :=
+        { numLevels := 0, type := mkType, name := (), levelParams := () }
+      let mkCtor : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mkCv, induct := ubAddr, cidx := 0,
+        numParams := 0, numFields := 1, isUnsafe := false
+      }
+      let env := ((default : Env .anon).insert ubAddr ubInd).insert ubMkAddr mkCtor
+      match typecheckConst env prims ubAddr with
+      | .error _ => passed := passed + 1
+      | .ok () => failures := failures.push "universe-constraint: expected error (Sort 2 field in Sort 1 inductive)"
+
+    -- ========================================================================
+    -- Test 3: K-flag invalid — K=true on non-Prop inductive (Sort 1, 2 ctors)
+    -- ========================================================================
+    do
+      let indAddr := mkAddr 30
+      let mk1Addr := mkAddr 31
+      let mk2Addr := mkAddr 32
+      let recAddr := mkAddr 33
+      let indType : Expr .anon := .sort (.succ .zero) -- Sort 1 (not Prop)
+      let indCv : ConstantVal .anon :=
+        { numLevels := 0, type := indType, name := (), levelParams := () }
+      let indCI : ConstantInfo .anon := .inductInfo {
+        toConstantVal := indCv, numParams := 0, numIndices := 0,
+        all := #[indAddr], ctors := #[mk1Addr, mk2Addr], numNested := 0,
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let mk1Cv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mk1CI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mk1Cv, induct := indAddr, cidx := 0,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      let mk2Cv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mk2CI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mk2Cv, induct := indAddr, cidx := 1,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      -- Recursor with k=true on a non-Prop inductive
+      let recCv : ConstantVal .anon :=
+        { numLevels := 1, type := .sort (.param 0 ()), name := (), levelParams := () }
+      let recCI : ConstantInfo .anon := .recInfo {
+        toConstantVal := recCv, all := #[indAddr],
+        numParams := 0, numIndices := 0, numMotives := 1, numMinors := 2,
+        rules := #[
+          { ctor := mk1Addr, nfields := 0, rhs := .sort .zero },
+          { ctor := mk2Addr, nfields := 0, rhs := .sort .zero }
+        ],
+        k := true, -- INVALID: not Prop
+        isUnsafe := false
+      }
+      let env := ((((default : Env .anon).insert indAddr indCI).insert mk1Addr mk1CI).insert mk2Addr mk2CI).insert recAddr recCI
+      match typecheckConst env prims recAddr with
+      | .error _ => passed := passed + 1
+      | .ok () => failures := failures.push "k-flag-not-prop: expected error"
+
+    -- ========================================================================
+    -- Test 4: Recursor wrong rule count — 1 rule for 2-ctor inductive
+    -- ========================================================================
+    do
+      let indAddr := mkAddr 40
+      let mk1Addr := mkAddr 41
+      let mk2Addr := mkAddr 42
+      let recAddr := mkAddr 43
+      let indType : Expr .anon := .sort (.succ .zero)
+      let indCv : ConstantVal .anon :=
+        { numLevels := 0, type := indType, name := (), levelParams := () }
+      let indCI : ConstantInfo .anon := .inductInfo {
+        toConstantVal := indCv, numParams := 0, numIndices := 0,
+        all := #[indAddr], ctors := #[mk1Addr, mk2Addr], numNested := 0,
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let mk1Cv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mk1CI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mk1Cv, induct := indAddr, cidx := 0,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      let mk2Cv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mk2CI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mk2Cv, induct := indAddr, cidx := 1,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      -- Recursor with only 1 rule (should be 2)
+      let recCv : ConstantVal .anon :=
+        { numLevels := 1, type := .sort (.param 0 ()), name := (), levelParams := () }
+      let recCI : ConstantInfo .anon := .recInfo {
+        toConstantVal := recCv, all := #[indAddr],
+        numParams := 0, numIndices := 0, numMotives := 1, numMinors := 2,
+        rules := #[{ ctor := mk1Addr, nfields := 0, rhs := .sort .zero }], -- only 1!
+        k := false, isUnsafe := false
+      }
+      let env := ((((default : Env .anon).insert indAddr indCI).insert mk1Addr mk1CI).insert mk2Addr mk2CI).insert recAddr recCI
+      match typecheckConst env prims recAddr with
+      | .error _ => passed := passed + 1
+      | .ok () => failures := failures.push "rec-wrong-rule-count: expected error"
+
+    -- ========================================================================
+    -- Test 5: Recursor wrong nfields — ctor has 0 fields but rule claims 5
+    -- ========================================================================
+    do
+      let indAddr := mkAddr 50
+      let mkAddr' := mkAddr 51
+      let recAddr := mkAddr 52
+      let indType : Expr .anon := .sort (.succ .zero)
+      let indCv : ConstantVal .anon :=
+        { numLevels := 0, type := indType, name := (), levelParams := () }
+      let indCI : ConstantInfo .anon := .inductInfo {
+        toConstantVal := indCv, numParams := 0, numIndices := 0,
+        all := #[indAddr], ctors := #[mkAddr'], numNested := 0,
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let mkCv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mkCI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mkCv, induct := indAddr, cidx := 0,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      let recCv : ConstantVal .anon :=
+        { numLevels := 1, type := .sort (.param 0 ()), name := (), levelParams := () }
+      let recCI : ConstantInfo .anon := .recInfo {
+        toConstantVal := recCv, all := #[indAddr],
+        numParams := 0, numIndices := 0, numMotives := 1, numMinors := 1,
+        rules := #[{ ctor := mkAddr', nfields := 5, rhs := .sort .zero }], -- wrong nfields
+        k := false, isUnsafe := false
+      }
+      let env := (((default : Env .anon).insert indAddr indCI).insert mkAddr' mkCI).insert recAddr recCI
+      match typecheckConst env prims recAddr with
+      | .error _ => passed := passed + 1
+      | .ok () => failures := failures.push "rec-wrong-nfields: expected error"
+
+    -- ========================================================================
+    -- Test 6: Recursor wrong num_params — rec claims 5 params, inductive has 0
+    -- ========================================================================
+    do
+      let indAddr := mkAddr 60
+      let mkAddr' := mkAddr 61
+      let recAddr := mkAddr 62
+      let indType : Expr .anon := .sort (.succ .zero)
+      let indCv : ConstantVal .anon :=
+        { numLevels := 0, type := indType, name := (), levelParams := () }
+      let indCI : ConstantInfo .anon := .inductInfo {
+        toConstantVal := indCv, numParams := 0, numIndices := 0,
+        all := #[indAddr], ctors := #[mkAddr'], numNested := 0,
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let mkCv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mkCI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mkCv, induct := indAddr, cidx := 0,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      let recCv : ConstantVal .anon :=
+        { numLevels := 1, type := .sort (.param 0 ()), name := (), levelParams := () }
+      let recCI : ConstantInfo .anon := .recInfo {
+        toConstantVal := recCv, all := #[indAddr],
+        numParams := 5, -- wrong: inductive has 0
+        numIndices := 0, numMotives := 1, numMinors := 1,
+        rules := #[{ ctor := mkAddr', nfields := 0, rhs := .sort .zero }],
+        k := false, isUnsafe := false
+      }
+      let env := (((default : Env .anon).insert indAddr indCI).insert mkAddr' mkCI).insert recAddr recCI
+      match typecheckConst env prims recAddr with
+      | .error _ => passed := passed + 1
+      | .ok () => failures := failures.push "rec-wrong-num-params: expected error"
+
+    -- ========================================================================
+    -- Test 7: Constructor param count mismatch — ctor claims 3 params, ind has 0
+    -- ========================================================================
+    do
+      let indAddr := mkAddr 70
+      let mkAddr' := mkAddr 71
+      let indType : Expr .anon := .sort (.succ .zero)
+      let indCv : ConstantVal .anon :=
+        { numLevels := 0, type := indType, name := (), levelParams := () }
+      let indCI : ConstantInfo .anon := .inductInfo {
+        toConstantVal := indCv, numParams := 0, numIndices := 0,
+        all := #[indAddr], ctors := #[mkAddr'], numNested := 0,
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let mkCv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mkCI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mkCv, induct := indAddr, cidx := 0,
+        numParams := 3, -- wrong: inductive has 0
+        numFields := 0, isUnsafe := false
+      }
+      let env := ((default : Env .anon).insert indAddr indCI).insert mkAddr' mkCI
+      match typecheckConst env prims indAddr with
+      | .error _ => passed := passed + 1
+      | .ok () => failures := failures.push "ctor-param-mismatch: expected error"
+
+    -- ========================================================================
+    -- Test 8: K-flag invalid — K=true on Prop inductive with 2 ctors
+    -- ========================================================================
+    do
+      let indAddr := mkAddr 80
+      let mk1Addr := mkAddr 81
+      let mk2Addr := mkAddr 82
+      let recAddr := mkAddr 83
+      let indType : Expr .anon := .sort .zero -- Prop
+      let indCv : ConstantVal .anon :=
+        { numLevels := 0, type := indType, name := (), levelParams := () }
+      let indCI : ConstantInfo .anon := .inductInfo {
+        toConstantVal := indCv, numParams := 0, numIndices := 0,
+        all := #[indAddr], ctors := #[mk1Addr, mk2Addr], numNested := 0,
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let mk1Cv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mk1CI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mk1Cv, induct := indAddr, cidx := 0,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      let mk2Cv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mk2CI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mk2Cv, induct := indAddr, cidx := 1,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      let recCv : ConstantVal .anon :=
+        { numLevels := 0, type := .sort .zero, name := (), levelParams := () }
+      let recCI : ConstantInfo .anon := .recInfo {
+        toConstantVal := recCv, all := #[indAddr],
+        numParams := 0, numIndices := 0, numMotives := 1, numMinors := 2,
+        rules := #[
+          { ctor := mk1Addr, nfields := 0, rhs := .sort .zero },
+          { ctor := mk2Addr, nfields := 0, rhs := .sort .zero }
+        ],
+        k := true, -- INVALID: 2 ctors
+        isUnsafe := false
+      }
+      let env := ((((default : Env .anon).insert indAddr indCI).insert mk1Addr mk1CI).insert mk2Addr mk2CI).insert recAddr recCI
+      match typecheckConst env prims recAddr with
+      | .error _ => passed := passed + 1
+      | .ok () => failures := failures.push "k-flag-two-ctors: expected error"
+
+    -- ========================================================================
+    -- Test 9: Recursor wrong ctor order — rules in wrong order
+    -- ========================================================================
+    do
+      let indAddr := mkAddr 90
+      let mk1Addr := mkAddr 91
+      let mk2Addr := mkAddr 92
+      let recAddr := mkAddr 93
+      let indType : Expr .anon := .sort (.succ .zero)
+      let indCv : ConstantVal .anon :=
+        { numLevels := 0, type := indType, name := (), levelParams := () }
+      let indCI : ConstantInfo .anon := .inductInfo {
+        toConstantVal := indCv, numParams := 0, numIndices := 0,
+        all := #[indAddr], ctors := #[mk1Addr, mk2Addr], numNested := 0,
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let mk1Cv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mk1CI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mk1Cv, induct := indAddr, cidx := 0,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      let mk2Cv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mk2CI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mk2Cv, induct := indAddr, cidx := 1,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      let recCv : ConstantVal .anon :=
+        { numLevels := 1, type := .sort (.param 0 ()), name := (), levelParams := () }
+      let recCI : ConstantInfo .anon := .recInfo {
+        toConstantVal := recCv, all := #[indAddr],
+        numParams := 0, numIndices := 0, numMotives := 1, numMinors := 2,
+        rules := #[
+          { ctor := mk2Addr, nfields := 0, rhs := .sort .zero }, -- wrong order!
+          { ctor := mk1Addr, nfields := 0, rhs := .sort .zero }
+        ],
+        k := false, isUnsafe := false
+      }
+      let env := ((((default : Env .anon).insert indAddr indCI).insert mk1Addr mk1CI).insert mk2Addr mk2CI).insert recAddr recCI
+      match typecheckConst env prims recAddr with
+      | .error _ => passed := passed + 1
+      | .ok () => failures := failures.push "rec-wrong-ctor-order: expected error"
+
+    -- ========================================================================
+    -- Test 10: Valid single-ctor inductive passes (sanity check)
+    -- ========================================================================
+    do
+      let indAddr := mkAddr 100
+      let mkAddr' := mkAddr 101
+      let indType : Expr .anon := .sort (.succ .zero) -- Sort 1
+      let indCv : ConstantVal .anon :=
+        { numLevels := 0, type := indType, name := (), levelParams := () }
+      let indCI : ConstantInfo .anon := .inductInfo {
+        toConstantVal := indCv, numParams := 0, numIndices := 0,
+        all := #[indAddr], ctors := #[mkAddr'], numNested := 0,
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let mkCv : ConstantVal .anon :=
+        { numLevels := 0, type := .const indAddr #[] (), name := (), levelParams := () }
+      let mkCI : ConstantInfo .anon := .ctorInfo {
+        toConstantVal := mkCv, induct := indAddr, cidx := 0,
+        numParams := 0, numFields := 0, isUnsafe := false
+      }
+      let env := ((default : Env .anon).insert indAddr indCI).insert mkAddr' mkCI
+      match typecheckConst env prims indAddr with
+      | .ok () => passed := passed + 1
+      | .error e => failures := failures.push s!"valid-inductive: unexpected error: {e}"
+
+    let totalTests := 10
+    IO.println s!"[kernel-soundness] {passed}/{totalTests} passed"
+    if failures.isEmpty then
+      return (true, none)
+    else
+      for f in failures do IO.println s!"  [fail] {f}"
+      return (false, some s!"{failures.size} failure(s)")
+  ) .done
+
+/-! ## Unit tests: helper functions -/
+
+def testHelperFunctions : TestSeq :=
+  -- exprMentionsConst
+  let addr1 := mkAddr 200
+  let addr2 := mkAddr 201
+  let c1 : Expr .anon := .const addr1 #[] ()
+  let c2 : Expr .anon := .const addr2 #[] ()
+  test "exprMentionsConst: direct match"
+    (exprMentionsConst c1 addr1) ++
+  test "exprMentionsConst: no match"
+    (!exprMentionsConst c2 addr1) ++
+  test "exprMentionsConst: in app fn"
+    (exprMentionsConst (.app c1 c2) addr1) ++
+  test "exprMentionsConst: in app arg"
+    (exprMentionsConst (.app c2 c1) addr1) ++
+  test "exprMentionsConst: in forallE domain"
+    (exprMentionsConst (.forallE c1 c2 () () : Expr .anon) addr1) ++
+  test "exprMentionsConst: in forallE body"
+    (exprMentionsConst (.forallE c2 c1 () () : Expr .anon) addr1) ++
+  test "exprMentionsConst: in lam"
+    (exprMentionsConst (.lam c1 c2 () () : Expr .anon) addr1) ++
+  test "exprMentionsConst: absent in sort"
+    (!exprMentionsConst (.sort .zero : Expr .anon) addr1) ++
+  test "exprMentionsConst: absent in bvar"
+    (!exprMentionsConst (.bvar 0 () : Expr .anon) addr1) ++
+  -- checkStrictPositivity
+  let indAddrs := #[addr1]
+  test "checkStrictPositivity: no mention is positive"
+    (checkStrictPositivity c2 indAddrs) ++
+  test "checkStrictPositivity: head occurrence is positive"
+    (checkStrictPositivity c1 indAddrs) ++
+  test "checkStrictPositivity: in Pi domain is negative"
+    (!checkStrictPositivity (.forallE c1 c2 () () : Expr .anon) indAddrs) ++
+  test "checkStrictPositivity: in Pi codomain positive"
+    (checkStrictPositivity (.forallE c2 c1 () () : Expr .anon) indAddrs) ++
+  -- getIndResultLevel
+  test "getIndResultLevel: sort zero"
+    (getIndResultLevel (.sort .zero : Expr .anon) == some .zero) ++
+  test "getIndResultLevel: sort (succ zero)"
+    (getIndResultLevel (.sort (.succ .zero) : Expr .anon) == some (.succ .zero)) ++
+  test "getIndResultLevel: forallE _ (sort zero)"
+    (getIndResultLevel (.forallE (.sort .zero) (.sort (.succ .zero)) () () : Expr .anon) == some (.succ .zero)) ++
+  test "getIndResultLevel: bvar (no sort)"
+    (getIndResultLevel (.bvar 0 () : Expr .anon) == none) ++
+  -- levelIsNonZero
+  test "levelIsNonZero: zero is false"
+    (!levelIsNonZero (.zero : Level .anon)) ++
+  test "levelIsNonZero: succ zero is true"
+    (levelIsNonZero (.succ .zero : Level .anon)) ++
+  test "levelIsNonZero: param is false"
+    (!levelIsNonZero (.param 0 () : Level .anon)) ++
+  test "levelIsNonZero: max(succ 0, param) is true"
+    (levelIsNonZero (.max (.succ .zero) (.param 0 ()) : Level .anon)) ++
+  test "levelIsNonZero: imax(param, succ 0) is true"
+    (levelIsNonZero (.imax (.param 0 ()) (.succ .zero) : Level .anon)) ++
+  test "levelIsNonZero: imax(succ, param) depends on second"
+    (!levelIsNonZero (.imax (.succ .zero) (.param 0 ()) : Level .anon)) ++
+  -- checkCtorPositivity
+  test "checkCtorPositivity: no inductive mention is ok"
+    (checkCtorPositivity c2 0 indAddrs == none) ++
+  test "checkCtorPositivity: negative occurrence"
+    (checkCtorPositivity (.forallE (.forallE c1 c2 () ()) (.const addr1 #[] ()) () () : Expr .anon) 0 indAddrs != none) ++
+  -- getCtorReturnType
+  test "getCtorReturnType: no binders returns expr"
+    (getCtorReturnType c1 0 0 == c1) ++
+  test "getCtorReturnType: skips foralls"
+    (getCtorReturnType (.forallE c2 c1 () () : Expr .anon) 0 1 == c1) ++
+  .done
+
 /-! ## Focused NbE constant tests -/
 
 /-- Test individual constants through the NbE kernel to isolate failures. -/
@@ -631,6 +1114,7 @@ def testNbeConsts : TestSeq :=
         "Nat.Linear.Poly.of_denote_eq_cancel",
         -- String theorem (fuel-sensitive)
         "String.length_empty",
+        "_private.Init.Grind.Ring.Basic.«0».Lean.Grind.IsCharP.mk'_aux._proof_1_5",
       ]
       let mut passed := 0
       let mut failures : Array String := #[]
@@ -673,6 +1157,7 @@ def unitSuite : List TestSeq := [
   testLevelLeqComplex,
   testLevelInstBulkReduce,
   testReducibilityHintsLt,
+  testHelperFunctions,
 ]
 
 def convertSuite : List TestSeq := [
@@ -686,6 +1171,7 @@ def constSuite : List TestSeq := [
 
 def negativeSuite : List TestSeq := [
   negativeTests,
+  soundnessNegativeTests,
 ]
 
 def anonConvertSuite : List TestSeq := [

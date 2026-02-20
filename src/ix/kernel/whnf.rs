@@ -509,9 +509,8 @@ pub(crate) fn whnf_dag(dag: &mut DAG, env: &Env, no_delta: bool) {
     eprintln!("[whnf_dag] depth={depth} total={total} no_delta={no_delta}");
   }
   if depth > 200 {
-    eprintln!("[whnf_dag] DEPTH LIMIT depth={depth}, bailing");
     WHNF_DEPTH.fetch_sub(1, Ordering::Relaxed);
-    return;
+    panic!("[whnf_dag] DEPTH LIMIT exceeded (depth={depth}): possible infinite reduction or extremely deep term");
   }
 
   const WHNF_STEP_LIMIT: u64 = 100_000;
@@ -520,9 +519,8 @@ pub(crate) fn whnf_dag(dag: &mut DAG, env: &Env, no_delta: bool) {
   loop {
     steps += 1;
     if steps > WHNF_STEP_LIMIT {
-      eprintln!("[whnf_dag] step limit exceeded ({steps}) depth={depth}");
       whnf_done(depth);
-      return;
+      panic!("[whnf_dag] step limit exceeded ({steps} steps at depth={depth}): possible infinite reduction");
     }
     if steps <= 5 || steps % 10_000 == 0 {
       let head_variant = match dag.head {
@@ -925,7 +923,9 @@ pub(crate) fn try_reduce_nat_dag(
       } else if *name == mk_name2("Nat", "ble") {
         Some(bool_to_dag(a <= b))
       } else if *name == mk_name2("Nat", "pow") {
+        // Limit exponent to prevent OOM (matches yatima's 2^24 limit)
         let exp = u32::try_from(&b).unwrap_or(u32::MAX);
+        if exp > (1 << 24) { return None; }
         Some(nat_lit_dag(Nat(a.pow(exp))))
       } else if *name == mk_name2("Nat", "land") {
         Some(nat_lit_dag(Nat(a & b)))
@@ -934,7 +934,9 @@ pub(crate) fn try_reduce_nat_dag(
       } else if *name == mk_name2("Nat", "xor") {
         Some(nat_lit_dag(Nat(a ^ b)))
       } else if *name == mk_name2("Nat", "shiftLeft") {
+        // Limit shift to prevent OOM
         let shift = u64::try_from(&b).unwrap_or(u64::MAX);
+        if shift > (1 << 24) { return None; }
         Some(nat_lit_dag(Nat(a << shift)))
       } else if *name == mk_name2("Nat", "shiftRight") {
         let shift = u64::try_from(&b).unwrap_or(u64::MAX);
@@ -1094,7 +1096,8 @@ pub fn try_unfold_def(e: &Expr, env: &Env) -> Option<Expr> {
       }
       (&d.cnst.level_params, &d.value)
     },
-    ConstantInfo::ThmInfo(t) => (&t.cnst.level_params, &t.value),
+    // Theorems are never unfolded — proof irrelevance handles them.
+    // ConstantInfo::ThmInfo(_) => return None,
     _ => return None,
   };
 
