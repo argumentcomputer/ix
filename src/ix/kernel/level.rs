@@ -245,31 +245,41 @@ pub fn all_uparams_defined(level: &Level, params: &[Name]) -> bool {
 /// Check that all universe parameters in an expression are contained in `params`.
 /// Recursively walks the Expr, checking all Levels in Sort and Const nodes.
 pub fn all_expr_uparams_defined(e: &Expr, params: &[Name]) -> bool {
-  match e.as_data() {
-    ExprData::Sort(level, _) => all_uparams_defined(level, params),
-    ExprData::Const(_, levels, _) => {
-      levels.iter().all(|l| all_uparams_defined(l, params))
-    },
-    ExprData::App(f, a, _) => {
-      all_expr_uparams_defined(f, params)
-        && all_expr_uparams_defined(a, params)
-    },
-    ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-      all_expr_uparams_defined(t, params)
-        && all_expr_uparams_defined(b, params)
-    },
-    ExprData::LetE(_, t, v, b, _, _) => {
-      all_expr_uparams_defined(t, params)
-        && all_expr_uparams_defined(v, params)
-        && all_expr_uparams_defined(b, params)
-    },
-    ExprData::Proj(_, _, s, _) => all_expr_uparams_defined(s, params),
-    ExprData::Mdata(_, inner, _) => all_expr_uparams_defined(inner, params),
-    ExprData::Bvar(..)
-    | ExprData::Fvar(..)
-    | ExprData::Mvar(..)
-    | ExprData::Lit(..) => true,
+  let mut stack: Vec<&Expr> = vec![e];
+  while let Some(e) = stack.pop() {
+    match e.as_data() {
+      ExprData::Sort(level, _) => {
+        if !all_uparams_defined(level, params) {
+          return false;
+        }
+      },
+      ExprData::Const(_, levels, _) => {
+        if !levels.iter().all(|l| all_uparams_defined(l, params)) {
+          return false;
+        }
+      },
+      ExprData::App(f, a, _) => {
+        stack.push(f);
+        stack.push(a);
+      },
+      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+        stack.push(t);
+        stack.push(b);
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        stack.push(t);
+        stack.push(v);
+        stack.push(b);
+      },
+      ExprData::Proj(_, _, s, _) => stack.push(s),
+      ExprData::Mdata(_, inner, _) => stack.push(inner),
+      ExprData::Bvar(..)
+      | ExprData::Fvar(..)
+      | ExprData::Mvar(..)
+      | ExprData::Lit(..) => {},
+    }
   }
+  true
 }
 
 /// Check that a list of levels are all Params with no duplicates.

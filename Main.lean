@@ -1,5 +1,6 @@
 --import Ix.Cli.ProveCmd
 --import Ix.Cli.StoreCmd
+import Ix.Cli.CheckCmd
 import Ix.Cli.CompileCmd
 import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
@@ -15,6 +16,7 @@ def ixCmd : Cli.Cmd := `[Cli|
   SUBCOMMANDS:
     --proveCmd;
     --storeCmd;
+    checkCmd;
     compileCmd;
     serveCmd;
     connectCmd

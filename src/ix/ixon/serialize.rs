@@ -1186,7 +1186,6 @@ impl Env {
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("Env::get: missing name for addr {:?}", name_addr)
       })?;
-      env.addr_to_name.insert(named.addr.clone(), name.clone());
       env.named.insert(name, named);
     }
 
@@ -1456,7 +1455,6 @@ mod tests {
         let name = names[i % names.len()].clone();
         let meta = ConstantMeta::default();
         let named = Named { addr: addr.clone(), meta };
-        env.addr_to_name.insert(addr, name.clone());
         env.named.insert(name, named);
       }
     }

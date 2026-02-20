@@ -1,5 +1,6 @@
 use crate::ix::env::*;
 use crate::lean::nat::Nat;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::FxHashMap;
 
 use super::def_eq::def_eq;
@@ -13,9 +14,13 @@ type TcResult<T> = Result<T, TcError>;
 pub struct TypeChecker<'env> {
   pub env: &'env Env,
   pub whnf_cache: FxHashMap<Expr, Expr>,
+  pub whnf_no_delta_cache: FxHashMap<Expr, Expr>,
   pub infer_cache: FxHashMap<Expr, Expr>,
   pub local_counter: u64,
   pub local_types: FxHashMap<Name, Expr>,
+  pub def_eq_calls: u64,
+  pub whnf_calls: u64,
+  pub infer_calls: u64,
 }
 
 impl<'env> TypeChecker<'env> {
@@ -23,9 +28,13 @@ impl<'env> TypeChecker<'env> {
     TypeChecker {
       env,
       whnf_cache: FxHashMap::default(),
+      whnf_no_delta_cache: FxHashMap::default(),
       infer_cache: FxHashMap::default(),
       local_counter: 0,
       local_types: FxHashMap::default(),
+      def_eq_calls: 0,
+      whnf_calls: 0,
+      infer_calls: 0,
     }
   }
 
@@ -37,8 +46,33 @@ impl<'env> TypeChecker<'env> {
     if let Some(cached) = self.whnf_cache.get(e) {
       return cached.clone();
     }
+    self.whnf_calls += 1;
+    let tag = match e.as_data() {
+      ExprData::Sort(..) => "Sort",
+      ExprData::Const(_, _, _) => "Const",
+      ExprData::App(..) => "App",
+      ExprData::Lam(..) => "Lam",
+      ExprData::ForallE(..) => "Pi",
+      ExprData::LetE(..) => "Let",
+      ExprData::Lit(..) => "Lit",
+      ExprData::Proj(..) => "Proj",
+      ExprData::Fvar(..) => "Fvar",
+      ExprData::Bvar(..) => "Bvar",
+      ExprData::Mvar(..) => "Mvar",
+      ExprData::Mdata(..) => "Mdata",
+    };
+    eprintln!("[tc.whnf] #{} {tag}", self.whnf_calls);
     let result = whnf(e, self.env);
-    self.whnf_cache.insert(e.clone(), result.clone());
+    eprintln!("[tc.whnf] #{} {tag} done", self.whnf_calls);
+    result
+  }
+
+  pub fn whnf_no_delta(&mut self, e: &Expr) -> Expr {
+    if let Some(cached) = self.whnf_no_delta_cache.get(e) {
+      return cached.clone();
+    }
+    let result = whnf_no_delta(e, self.env);
+    self.whnf_no_delta_cache.insert(e.clone(), result.clone());
     result
   }
 
@@ -102,40 +136,87 @@ impl<'env> TypeChecker<'env> {
     if let Some(cached) = self.infer_cache.get(e) {
       return Ok(cached.clone());
     }
+    self.infer_calls += 1;
+    let tag = match e.as_data() {
+      ExprData::Sort(..) => "Sort".to_string(),
+      ExprData::Const(n, _, _) => format!("Const({})", n.pretty()),
+      ExprData::App(..) => "App".to_string(),
+      ExprData::Lam(..) => "Lam".to_string(),
+      ExprData::ForallE(..) => "Pi".to_string(),
+      ExprData::LetE(..) => "Let".to_string(),
+      ExprData::Lit(..) => "Lit".to_string(),
+      ExprData::Proj(..) => "Proj".to_string(),
+      ExprData::Fvar(n, _) => format!("Fvar({})", n.pretty()),
+      ExprData::Bvar(..) => "Bvar".to_string(),
+      ExprData::Mvar(..) => "Mvar".to_string(),
+      ExprData::Mdata(..) => "Mdata".to_string(),
+    };
+    eprintln!("[tc.infer] #{} {tag}", self.infer_calls);
     let result = self.infer_core(e)?;
     self.infer_cache.insert(e.clone(), result.clone());
     Ok(result)
   }
 
   fn infer_core(&mut self, e: &Expr) -> TcResult<Expr> {
-    match e.as_data() {
-      ExprData::Sort(level, _) => self.infer_sort(level),
-      ExprData::Const(name, levels, _) => self.infer_const(name, levels),
-      ExprData::App(..) => self.infer_app(e),
-      ExprData::Lam(..) => self.infer_lambda(e),
-      ExprData::ForallE(..) => self.infer_pi(e),
-      ExprData::LetE(_, typ, val, body, _, _) => {
-        self.infer_let(typ, val, body)
-      },
-      ExprData::Lit(lit, _) => self.infer_lit(lit),
-      ExprData::Proj(type_name, idx, structure, _) => {
-        self.infer_proj(type_name, idx, structure)
-      },
-      ExprData::Mdata(_, inner, _) => self.infer(inner),
-      ExprData::Fvar(name, _) => {
-        match self.local_types.get(name) {
-          Some(ty) => Ok(ty.clone()),
-          None => Err(TcError::KernelException {
-            msg: "cannot infer type of free variable without context".into(),
-          }),
-        }
-      },
-      ExprData::Bvar(idx, _) => Err(TcError::FreeBoundVariable {
-        idx: idx.to_u64().unwrap_or(u64::MAX),
-      }),
-      ExprData::Mvar(..) => Err(TcError::KernelException {
-        msg: "cannot infer type of metavariable".into(),
-      }),
+    // Peel Mdata and Let layers iteratively to avoid stack depth
+    let mut cursor = e.clone();
+    loop {
+      match cursor.as_data() {
+        ExprData::Mdata(_, inner, _) => {
+          // Check cache for inner before recursing
+          if let Some(cached) = self.infer_cache.get(inner) {
+            return Ok(cached.clone());
+          }
+          cursor = inner.clone();
+          continue;
+        },
+        ExprData::LetE(_, typ, val, body, _, _) => {
+          let val_ty = self.infer(val)?;
+          self.assert_def_eq(&val_ty, typ)?;
+          let body_inst = inst(body, &[val.clone()]);
+          // Check cache for body_inst before looping
+          if let Some(cached) = self.infer_cache.get(&body_inst) {
+            return Ok(cached.clone());
+          }
+          // Cache the current let expression's result once we compute it
+          let orig = cursor.clone();
+          cursor = body_inst;
+          // We need to compute the result and cache it for `orig`
+          let result = self.infer(&cursor)?;
+          self.infer_cache.insert(orig, result.clone());
+          return Ok(result);
+        },
+        ExprData::Sort(level, _) => return self.infer_sort(level),
+        ExprData::Const(name, levels, _) => {
+          return self.infer_const(name, levels)
+        },
+        ExprData::App(..) => return self.infer_app(&cursor),
+        ExprData::Lam(..) => return self.infer_lambda(&cursor),
+        ExprData::ForallE(..) => return self.infer_pi(&cursor),
+        ExprData::Lit(lit, _) => return self.infer_lit(lit),
+        ExprData::Proj(type_name, idx, structure, _) => {
+          return self.infer_proj(type_name, idx, structure)
+        },
+        ExprData::Fvar(name, _) => {
+          return match self.local_types.get(name) {
+            Some(ty) => Ok(ty.clone()),
+            None => Err(TcError::KernelException {
+              msg: "cannot infer type of free variable without context"
+                .into(),
+            }),
+          }
+        },
+        ExprData::Bvar(idx, _) => {
+          return Err(TcError::FreeBoundVariable {
+            idx: idx.to_u64().unwrap_or(u64::MAX),
+          })
+        },
+        ExprData::Mvar(..) => {
+          return Err(TcError::KernelException {
+            msg: "cannot infer type of metavariable".into(),
+          })
+        },
+      }
     }
   }
 
@@ -253,19 +334,6 @@ impl<'env> TypeChecker<'env> {
     Ok(Expr::sort(result_level))
   }
 
-  fn infer_let(
-    &mut self,
-    typ: &Expr,
-    val: &Expr,
-    body: &Expr,
-  ) -> TcResult<Expr> {
-    // Verify value matches declared type
-    let val_ty = self.infer(val)?;
-    self.assert_def_eq(&val_ty, typ)?;
-    let body_inst = inst(body, &[val.clone()]);
-    self.infer(&body_inst)
-  }
-
   fn infer_lit(&mut self, lit: &Literal) -> TcResult<Expr> {
     match lit {
       Literal::NatVal(_) => {
@@ -375,7 +443,11 @@ impl<'env> TypeChecker<'env> {
   // ==========================================================================
 
   pub fn def_eq(&mut self, x: &Expr, y: &Expr) -> bool {
-    def_eq(x, y, self)
+    self.def_eq_calls += 1;
+    eprintln!("[tc.def_eq] #{}", self.def_eq_calls);
+    let result = def_eq(x, y, self);
+    eprintln!("[tc.def_eq] #{} done => {result}", self.def_eq_calls);
+    result
   }
 
   pub fn assert_def_eq(&mut self, x: &Expr, y: &Expr) -> TcResult<()> {
@@ -432,6 +504,31 @@ impl<'env> TypeChecker<'env> {
     Ok(())
   }
 
+  /// Check a declaration that has both a type and a value (DefnInfo, ThmInfo, OpaqueInfo).
+  fn check_value_declar(
+    &mut self,
+    cnst: &ConstantVal,
+    value: &Expr,
+  ) -> TcResult<()> {
+    eprintln!("[check_value_declar] checking type for {}", cnst.name.pretty());
+    self.check_declar_info(cnst)?;
+    eprintln!("[check_value_declar] type OK, checking value uparams");
+    if !all_expr_uparams_defined(value, &cnst.level_params) {
+      return Err(TcError::KernelException {
+        msg: format!(
+          "undeclared universe parameters in value of {}",
+          cnst.name.pretty()
+        ),
+      });
+    }
+    eprintln!("[check_value_declar] inferring value type");
+    let inferred_type = self.infer(value)?;
+    eprintln!("[check_value_declar] inferred, checking def_eq");
+    self.assert_def_eq(&inferred_type, &cnst.typ)?;
+    eprintln!("[check_value_declar] done");
+    Ok(())
+  }
+
   /// Check a single declaration.
   pub fn check_declar(
     &mut self,
@@ -442,43 +539,13 @@ impl<'env> TypeChecker<'env> {
         self.check_declar_info(&v.cnst)?;
       },
       ConstantInfo::DefnInfo(v) => {
-        self.check_declar_info(&v.cnst)?;
-        if !all_expr_uparams_defined(&v.value, &v.cnst.level_params) {
-          return Err(TcError::KernelException {
-            msg: format!(
-              "undeclared universe parameters in value of {}",
-              v.cnst.name.pretty()
-            ),
-          });
-        }
-        let inferred_type = self.infer(&v.value)?;
-        self.assert_def_eq(&inferred_type, &v.cnst.typ)?;
+        self.check_value_declar(&v.cnst, &v.value)?;
       },
       ConstantInfo::ThmInfo(v) => {
-        self.check_declar_info(&v.cnst)?;
-        if !all_expr_uparams_defined(&v.value, &v.cnst.level_params) {
-          return Err(TcError::KernelException {
-            msg: format!(
-              "undeclared universe parameters in value of {}",
-              v.cnst.name.pretty()
-            ),
-          });
-        }
-        let inferred_type = self.infer(&v.value)?;
-        self.assert_def_eq(&inferred_type, &v.cnst.typ)?;
+        self.check_value_declar(&v.cnst, &v.value)?;
       },
       ConstantInfo::OpaqueInfo(v) => {
-        self.check_declar_info(&v.cnst)?;
-        if !all_expr_uparams_defined(&v.value, &v.cnst.level_params) {
-          return Err(TcError::KernelException {
-            msg: format!(
-              "undeclared universe parameters in value of {}",
-              v.cnst.name.pretty()
-            ),
-          });
-        }
-        let inferred_type = self.infer(&v.value)?;
-        self.assert_def_eq(&inferred_type, &v.cnst.typ)?;
+        self.check_value_declar(&v.cnst, &v.value)?;
       },
       ConstantInfo::QuotInfo(v) => {
         self.check_declar_info(&v.cnst)?;
@@ -512,16 +579,77 @@ impl<'env> TypeChecker<'env> {
   }
 }
 
-/// Check all declarations in an environment.
+/// Check all declarations in an environment in parallel.
 pub fn check_env(env: &Env) -> Vec<(Name, TcError)> {
-  let mut errors = Vec::new();
-  for (name, ci) in env.iter() {
-    let mut tc = TypeChecker::new(env);
-    if let Err(e) = tc.check_declar(ci) {
-      errors.push((name.clone(), e));
-    }
+  use std::collections::BTreeSet;
+  use std::io::Write;
+  use std::sync::atomic::{AtomicUsize, Ordering};
+  use std::sync::Mutex;
+
+  let total = env.len();
+  let checked = AtomicUsize::new(0);
+
+  struct Display {
+    active: BTreeSet<String>,
+    prev_lines: usize,
   }
-  errors
+  let display = Mutex::new(Display { active: BTreeSet::new(), prev_lines: 0 });
+
+  let refresh = |d: &mut Display, checked: usize| {
+    let mut stderr = std::io::stderr().lock();
+    if d.prev_lines > 0 {
+      write!(stderr, "\x1b[{}A", d.prev_lines).ok();
+    }
+    write!(
+      stderr,
+      "\x1b[2K[check_env] {}/{} — {} active\n",
+      checked,
+      total,
+      d.active.len()
+    )
+    .ok();
+    let mut new_lines = 1;
+    for name in &d.active {
+      write!(stderr, "\x1b[2K  {}\n", name).ok();
+      new_lines += 1;
+    }
+    let extra = d.prev_lines.saturating_sub(new_lines);
+    for _ in 0..extra {
+      write!(stderr, "\x1b[2K\n").ok();
+    }
+    if extra > 0 {
+      write!(stderr, "\x1b[{}A", extra).ok();
+    }
+    d.prev_lines = new_lines;
+    stderr.flush().ok();
+  };
+
+  env
+    .par_iter()
+    .filter_map(|(name, ci)| {
+      let pretty = name.pretty();
+      {
+        let mut d = display.lock().unwrap();
+        d.active.insert(pretty.clone());
+        refresh(&mut d, checked.load(Ordering::Relaxed));
+      }
+
+      let mut tc = TypeChecker::new(env);
+      let result = tc.check_declar(ci);
+
+      let n = checked.fetch_add(1, Ordering::Relaxed) + 1;
+      {
+        let mut d = display.lock().unwrap();
+        d.active.remove(&pretty);
+        refresh(&mut d, n);
+      }
+
+      match result {
+        Ok(()) => None,
+        Err(e) => Some((name.clone(), e)),
+      }
+    })
+    .collect()
 }
 
 #[cfg(test)]
@@ -553,9 +681,18 @@ mod tests {
     Expr::sort(Level::param(mk_name("u")))
   }
 
-  /// Build a minimal environment with Nat, Nat.zero, and Nat.succ.
+  fn bvar(n: u64) -> Expr {
+    Expr::bvar(Nat::from(n))
+  }
+
+  fn nat_succ_expr() -> Expr {
+    Expr::cnst(mk_name2("Nat", "succ"), vec![])
+  }
+
+  /// Build a minimal environment with Nat, Nat.zero, Nat.succ, and Nat.rec.
   fn mk_nat_env() -> Env {
     let mut env = Env::default();
+    let u = mk_name("u");
 
     let nat_name = mk_name("Nat");
     // Nat : Sort 1
@@ -613,6 +750,147 @@ mod tests {
       is_unsafe: false,
     });
     env.insert(succ_name, succ);
+
+    // Nat.rec.{u} :
+    //   {motive : Nat → Sort u} →
+    //   motive Nat.zero →
+    //   ((n : Nat) → motive n → motive (Nat.succ n)) →
+    //   (t : Nat) → motive t
+    let rec_name = mk_name2("Nat", "rec");
+
+    // Build the type with de Bruijn indices.
+    // Binder stack (from outermost): motive(3), z(2), s(1), t(0)
+    // At the innermost body: motive=bvar(3), z=bvar(2), s=bvar(1), t=bvar(0)
+    let motive_type = Expr::all(
+      mk_name("_"),
+      nat_type(),
+      Expr::sort(Level::param(u.clone())),
+      BinderInfo::Default,
+    ); // Nat → Sort u
+
+    // s type: (n : Nat) → motive n → motive (Nat.succ n)
+    // At s's position: motive=bvar(1), z=bvar(0)
+    // Inside forallE "n": motive=bvar(2), z=bvar(1), n=bvar(0)
+    // Inside forallE "_": motive=bvar(3), z=bvar(2), n=bvar(1), _=bvar(0)
+    let s_type = Expr::all(
+      mk_name("n"),
+      nat_type(),
+      Expr::all(
+        mk_name("_"),
+        Expr::app(bvar(2), bvar(0)),  // motive n
+        Expr::app(bvar(3), Expr::app(nat_succ_expr(), bvar(1))), // motive (Nat.succ n)
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+
+    let rec_type = Expr::all(
+      mk_name("motive"),
+      motive_type.clone(),
+      Expr::all(
+        mk_name("z"),
+        Expr::app(bvar(0), nat_zero()), // motive Nat.zero
+        Expr::all(
+          mk_name("s"),
+          s_type,
+          Expr::all(
+            mk_name("t"),
+            nat_type(),
+            Expr::app(bvar(3), bvar(0)), // motive t
+            BinderInfo::Default,
+          ),
+          BinderInfo::Default,
+        ),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Implicit,
+    );
+
+    // Zero rule RHS: fun (motive) (z) (s) => z
+    // Inside: motive=bvar(2), z=bvar(1), s=bvar(0)
+    let zero_rhs = Expr::lam(
+      mk_name("motive"),
+      motive_type.clone(),
+      Expr::lam(
+        mk_name("z"),
+        Expr::app(bvar(0), nat_zero()),
+        Expr::lam(
+          mk_name("s"),
+          nat_type(), // placeholder type for s (not checked)
+          bvar(1),    // z
+          BinderInfo::Default,
+        ),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+
+    // Succ rule RHS: fun (motive) (z) (s) (n) => s n (Nat.rec.{u} motive z s n)
+    // Inside: motive=bvar(3), z=bvar(2), s=bvar(1), n=bvar(0)
+    let nat_rec_u =
+      Expr::cnst(rec_name.clone(), vec![Level::param(u.clone())]);
+    let recursive_call = Expr::app(
+      Expr::app(
+        Expr::app(
+          Expr::app(nat_rec_u, bvar(3)), // Nat.rec motive
+          bvar(2),                        // z
+        ),
+        bvar(1), // s
+      ),
+      bvar(0), // n
+    );
+    let succ_rhs = Expr::lam(
+      mk_name("motive"),
+      motive_type,
+      Expr::lam(
+        mk_name("z"),
+        Expr::app(bvar(0), nat_zero()),
+        Expr::lam(
+          mk_name("s"),
+          nat_type(), // placeholder
+          Expr::lam(
+            mk_name("n"),
+            nat_type(),
+            Expr::app(
+              Expr::app(bvar(1), bvar(0)), // s n
+              recursive_call,              // (Nat.rec motive z s n)
+            ),
+            BinderInfo::Default,
+          ),
+          BinderInfo::Default,
+        ),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+
+    let rec = ConstantInfo::RecInfo(RecursorVal {
+      cnst: ConstantVal {
+        name: rec_name.clone(),
+        level_params: vec![u],
+        typ: rec_type,
+      },
+      all: vec![mk_name("Nat")],
+      num_params: Nat::from(0u64),
+      num_indices: Nat::from(0u64),
+      num_motives: Nat::from(1u64),
+      num_minors: Nat::from(2u64),
+      rules: vec![
+        RecursorRule {
+          ctor: mk_name2("Nat", "zero"),
+          n_fields: Nat::from(0u64),
+          rhs: zero_rhs,
+        },
+        RecursorRule {
+          ctor: mk_name2("Nat", "succ"),
+          n_fields: Nat::from(1u64),
+          rhs: succ_rhs,
+        },
+      ],
+      k: false,
+      is_unsafe: false,
+    });
+    env.insert(rec_name, rec);
 
     env
   }
@@ -1690,5 +1968,220 @@ mod tests {
       is_unsafe: false,
     });
     assert!(tc.check_declar(&rec).is_err());
+  }
+
+  // ==========================================================================
+  // check_declar: Nat.add via Nat.rec
+  // ==========================================================================
+
+  #[test]
+  fn check_nat_add_via_rec() {
+    // Nat.add : Nat → Nat → Nat :=
+    //   fun (n m : Nat) => @Nat.rec.{1} (fun _ => Nat) n (fun _ ih => Nat.succ ih) m
+    let env = mk_nat_env();
+    let mut tc = TypeChecker::new(&env);
+
+    let nat = nat_type();
+    let nat_rec_1 = Expr::cnst(
+      mk_name2("Nat", "rec"),
+      vec![Level::succ(Level::zero())],
+    );
+
+    // motive: fun (_ : Nat) => Nat
+    let motive = Expr::lam(
+      mk_name("_"),
+      nat.clone(),
+      nat.clone(),
+      BinderInfo::Default,
+    );
+
+    // step: fun (_ : Nat) (ih : Nat) => Nat.succ ih
+    let step = Expr::lam(
+      mk_name("_"),
+      nat.clone(),
+      Expr::lam(
+        mk_name("ih"),
+        nat.clone(),
+        Expr::app(nat_succ_expr(), bvar(0)), // Nat.succ ih
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+
+    // value: fun (n m : Nat) => @Nat.rec.{1} (fun _ => Nat) n (fun _ ih => Nat.succ ih) m
+    // = fun n m => Nat.rec motive n step m
+    let body = Expr::app(
+      Expr::app(
+        Expr::app(
+          Expr::app(nat_rec_1, motive),
+          bvar(1), // n
+        ),
+        step,
+      ),
+      bvar(0), // m
+    );
+    let value = Expr::lam(
+      mk_name("n"),
+      nat.clone(),
+      Expr::lam(
+        mk_name("m"),
+        nat.clone(),
+        body,
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+
+    let typ = Expr::all(
+      mk_name("n"),
+      nat.clone(),
+      Expr::all(mk_name("m"), nat.clone(), nat, BinderInfo::Default),
+      BinderInfo::Default,
+    );
+
+    let defn = ConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal {
+        name: mk_name2("Nat", "add"),
+        level_params: vec![],
+        typ,
+      },
+      value,
+      hints: ReducibilityHints::Abbrev,
+      safety: DefinitionSafety::Safe,
+      all: vec![mk_name2("Nat", "add")],
+    });
+    assert!(tc.check_declar(&defn).is_ok());
+  }
+
+  /// Build mk_nat_env + Nat.add definition in the env.
+  fn mk_nat_add_env() -> Env {
+    let mut env = mk_nat_env();
+    let nat = nat_type();
+
+    let nat_rec_1 = Expr::cnst(
+      mk_name2("Nat", "rec"),
+      vec![Level::succ(Level::zero())],
+    );
+
+    let motive = Expr::lam(
+      mk_name("_"),
+      nat.clone(),
+      nat.clone(),
+      BinderInfo::Default,
+    );
+
+    let step = Expr::lam(
+      mk_name("_"),
+      nat.clone(),
+      Expr::lam(
+        mk_name("ih"),
+        nat.clone(),
+        Expr::app(nat_succ_expr(), bvar(0)),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+
+    let body = Expr::app(
+      Expr::app(
+        Expr::app(
+          Expr::app(nat_rec_1, motive),
+          bvar(1), // n
+        ),
+        step,
+      ),
+      bvar(0), // m
+    );
+    let value = Expr::lam(
+      mk_name("n"),
+      nat.clone(),
+      Expr::lam(
+        mk_name("m"),
+        nat.clone(),
+        body,
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+
+    let typ = Expr::all(
+      mk_name("n"),
+      nat.clone(),
+      Expr::all(mk_name("m"), nat.clone(), nat, BinderInfo::Default),
+      BinderInfo::Default,
+    );
+
+    env.insert(
+      mk_name2("Nat", "add"),
+      ConstantInfo::DefnInfo(DefinitionVal {
+        cnst: ConstantVal {
+          name: mk_name2("Nat", "add"),
+          level_params: vec![],
+          typ,
+        },
+        value,
+        hints: ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![mk_name2("Nat", "add")],
+      }),
+    );
+
+    env
+  }
+
+  #[test]
+  fn check_nat_add_env() {
+    // Verify that the full Nat + Nat.add environment typechecks
+    let env = mk_nat_add_env();
+    let errors = check_env(&env);
+    assert!(errors.is_empty(), "Expected no errors, got: {:?}", errors);
+  }
+
+  #[test]
+  fn whnf_nat_add_zero_zero() {
+    // Nat.add Nat.zero Nat.zero should WHNF to 0 (as nat literal)
+    let env = mk_nat_add_env();
+    let e = Expr::app(
+      Expr::app(
+        Expr::cnst(mk_name2("Nat", "add"), vec![]),
+        nat_zero(),
+      ),
+      nat_zero(),
+    );
+    let result = whnf(&e, &env);
+    assert_eq!(result, Expr::lit(Literal::NatVal(Nat::from(0u64))));
+  }
+
+  #[test]
+  fn whnf_nat_add_lit() {
+    // Nat.add 2 3 should WHNF to 5
+    let env = mk_nat_add_env();
+    let two = Expr::lit(Literal::NatVal(Nat::from(2u64)));
+    let three = Expr::lit(Literal::NatVal(Nat::from(3u64)));
+    let e = Expr::app(
+      Expr::app(
+        Expr::cnst(mk_name2("Nat", "add"), vec![]),
+        two,
+      ),
+      three,
+    );
+    let result = whnf(&e, &env);
+    assert_eq!(result, Expr::lit(Literal::NatVal(Nat::from(5u64))));
+  }
+
+  #[test]
+  fn infer_nat_add_applied() {
+    // Nat.add Nat.zero Nat.zero : Nat
+    let env = mk_nat_add_env();
+    let mut tc = TypeChecker::new(&env);
+    let e = Expr::app(
+      Expr::app(
+        Expr::cnst(mk_name2("Nat", "add"), vec![]),
+        nat_zero(),
+      ),
+      nat_zero(),
+    );
+    let ty = tc.infer(&e).unwrap();
+    assert_eq!(ty, nat_type());
   }
 }

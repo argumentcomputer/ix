@@ -8,14 +8,16 @@ use super::convert::{from_expr, to_expr};
 use super::dag::*;
 use super::level::{simplify, subst_level};
 use super::upcopy::{reduce_lam, reduce_let};
-
+use crate::ix::env::Literal;
 
 // ============================================================================
 // Expression helpers (inst, unfold_apps, foldl_apps, subst_expr_levels)
 // ============================================================================
 
-/// Instantiate bound variables: `body[0 := substs[0], 1 := substs[1], ...]`.
-/// `substs[0]` replaces `Bvar(0)` (innermost).
+/// Instantiate bound variables: `body[0 := substs[n-1], 1 := substs[n-2], ...]`.
+/// Follows Lean 4's `instantiate` convention: `substs[0]` is the outermost
+/// variable and replaces `Bvar(n-1)`, while `substs[n-1]` is the innermost
+/// and replaces `Bvar(0)`.
 pub fn inst(body: &Expr, substs: &[Expr]) -> Expr {
   if substs.is_empty() {
     return body.clone();
@@ -24,56 +26,108 @@ pub fn inst(body: &Expr, substs: &[Expr]) -> Expr {
 }
 
 fn inst_aux(e: &Expr, substs: &[Expr], offset: u64) -> Expr {
-  match e.as_data() {
-    ExprData::Bvar(idx, _) => {
-      let idx_u64 = idx.to_u64().unwrap_or(u64::MAX);
-      if idx_u64 >= offset {
-        let adjusted = (idx_u64 - offset) as usize;
-        if adjusted < substs.len() {
-          return substs[adjusted].clone();
-        }
-      }
-      e.clone()
-    },
-    ExprData::App(f, a, _) => {
-      let f2 = inst_aux(f, substs, offset);
-      let a2 = inst_aux(a, substs, offset);
-      Expr::app(f2, a2)
-    },
-    ExprData::Lam(n, t, b, bi, _) => {
-      let t2 = inst_aux(t, substs, offset);
-      let b2 = inst_aux(b, substs, offset + 1);
-      Expr::lam(n.clone(), t2, b2, bi.clone())
-    },
-    ExprData::ForallE(n, t, b, bi, _) => {
-      let t2 = inst_aux(t, substs, offset);
-      let b2 = inst_aux(b, substs, offset + 1);
-      Expr::all(n.clone(), t2, b2, bi.clone())
-    },
-    ExprData::LetE(n, t, v, b, nd, _) => {
-      let t2 = inst_aux(t, substs, offset);
-      let v2 = inst_aux(v, substs, offset);
-      let b2 = inst_aux(b, substs, offset + 1);
-      Expr::letE(n.clone(), t2, v2, b2, *nd)
-    },
-    ExprData::Proj(n, i, s, _) => {
-      let s2 = inst_aux(s, substs, offset);
-      Expr::proj(n.clone(), i.clone(), s2)
-    },
-    ExprData::Mdata(kvs, inner, _) => {
-      let inner2 = inst_aux(inner, substs, offset);
-      Expr::mdata(kvs.clone(), inner2)
-    },
-    // Terminals with no bound vars
-    ExprData::Sort(..)
-    | ExprData::Const(..)
-    | ExprData::Fvar(..)
-    | ExprData::Mvar(..)
-    | ExprData::Lit(..) => e.clone(),
+  enum Frame<'a> {
+    Visit(&'a Expr, u64),
+    App,
+    Lam(Name, BinderInfo),
+    All(Name, BinderInfo),
+    LetE(Name, bool),
+    Proj(Name, Nat),
+    Mdata(Vec<(Name, DataValue)>),
   }
+
+  let mut work: Vec<Frame<'_>> = vec![Frame::Visit(e, offset)];
+  let mut results: Vec<Expr> = Vec::new();
+
+  while let Some(frame) = work.pop() {
+    match frame {
+      Frame::Visit(e, offset) => match e.as_data() {
+        ExprData::Bvar(idx, _) => {
+          let idx_u64 = idx.to_u64().unwrap_or(u64::MAX);
+          if idx_u64 >= offset {
+            let adjusted = (idx_u64 - offset) as usize;
+            if adjusted < substs.len() {
+              // Lean 4 convention: substs[0] = outermost, substs[n-1] = innermost
+              // bvar(0) = innermost → substs[n-1], bvar(n-1) = outermost → substs[0]
+              results.push(substs[substs.len() - 1 - adjusted].clone());
+              continue;
+            }
+          }
+          results.push(e.clone());
+        },
+        ExprData::App(f, a, _) => {
+          work.push(Frame::App);
+          work.push(Frame::Visit(a, offset));
+          work.push(Frame::Visit(f, offset));
+        },
+        ExprData::Lam(n, t, b, bi, _) => {
+          work.push(Frame::Lam(n.clone(), bi.clone()));
+          work.push(Frame::Visit(b, offset + 1));
+          work.push(Frame::Visit(t, offset));
+        },
+        ExprData::ForallE(n, t, b, bi, _) => {
+          work.push(Frame::All(n.clone(), bi.clone()));
+          work.push(Frame::Visit(b, offset + 1));
+          work.push(Frame::Visit(t, offset));
+        },
+        ExprData::LetE(n, t, v, b, nd, _) => {
+          work.push(Frame::LetE(n.clone(), *nd));
+          work.push(Frame::Visit(b, offset + 1));
+          work.push(Frame::Visit(v, offset));
+          work.push(Frame::Visit(t, offset));
+        },
+        ExprData::Proj(n, i, s, _) => {
+          work.push(Frame::Proj(n.clone(), i.clone()));
+          work.push(Frame::Visit(s, offset));
+        },
+        ExprData::Mdata(kvs, inner, _) => {
+          work.push(Frame::Mdata(kvs.clone()));
+          work.push(Frame::Visit(inner, offset));
+        },
+        ExprData::Sort(..)
+        | ExprData::Const(..)
+        | ExprData::Fvar(..)
+        | ExprData::Mvar(..)
+        | ExprData::Lit(..) => results.push(e.clone()),
+      },
+      Frame::App => {
+        let a = results.pop().unwrap();
+        let f = results.pop().unwrap();
+        results.push(Expr::app(f, a));
+      },
+      Frame::Lam(n, bi) => {
+        let b = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Expr::lam(n, t, b, bi));
+      },
+      Frame::All(n, bi) => {
+        let b = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Expr::all(n, t, b, bi));
+      },
+      Frame::LetE(n, nd) => {
+        let b = results.pop().unwrap();
+        let v = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Expr::letE(n, t, v, b, nd));
+      },
+      Frame::Proj(n, i) => {
+        let s = results.pop().unwrap();
+        results.push(Expr::proj(n, i, s));
+      },
+      Frame::Mdata(kvs) => {
+        let inner = results.pop().unwrap();
+        results.push(Expr::mdata(kvs, inner));
+      },
+    }
+  }
+
+  results.pop().unwrap()
 }
 
-/// Abstract: replace free variable `fvar` with `Bvar(offset)` in `e`.
+/// Abstract: replace free variables with bound variables.
+/// Follows Lean 4 convention: `fvars[0]` (outermost) maps to `Bvar(n-1+offset)`,
+/// `fvars[n-1]` (innermost) maps to `Bvar(0+offset)`.
 pub fn abstr(e: &Expr, fvars: &[Expr]) -> Expr {
   if fvars.is_empty() {
     return e.clone();
@@ -82,50 +136,107 @@ pub fn abstr(e: &Expr, fvars: &[Expr]) -> Expr {
 }
 
 fn abstr_aux(e: &Expr, fvars: &[Expr], offset: u64) -> Expr {
-  match e.as_data() {
-    ExprData::Fvar(..) => {
-      for (i, fv) in fvars.iter().enumerate().rev() {
-        if e == fv {
-          return Expr::bvar(Nat::from(i as u64 + offset));
-        }
-      }
-      e.clone()
-    },
-    ExprData::App(f, a, _) => {
-      let f2 = abstr_aux(f, fvars, offset);
-      let a2 = abstr_aux(a, fvars, offset);
-      Expr::app(f2, a2)
-    },
-    ExprData::Lam(n, t, b, bi, _) => {
-      let t2 = abstr_aux(t, fvars, offset);
-      let b2 = abstr_aux(b, fvars, offset + 1);
-      Expr::lam(n.clone(), t2, b2, bi.clone())
-    },
-    ExprData::ForallE(n, t, b, bi, _) => {
-      let t2 = abstr_aux(t, fvars, offset);
-      let b2 = abstr_aux(b, fvars, offset + 1);
-      Expr::all(n.clone(), t2, b2, bi.clone())
-    },
-    ExprData::LetE(n, t, v, b, nd, _) => {
-      let t2 = abstr_aux(t, fvars, offset);
-      let v2 = abstr_aux(v, fvars, offset);
-      let b2 = abstr_aux(b, fvars, offset + 1);
-      Expr::letE(n.clone(), t2, v2, b2, *nd)
-    },
-    ExprData::Proj(n, i, s, _) => {
-      let s2 = abstr_aux(s, fvars, offset);
-      Expr::proj(n.clone(), i.clone(), s2)
-    },
-    ExprData::Mdata(kvs, inner, _) => {
-      let inner2 = abstr_aux(inner, fvars, offset);
-      Expr::mdata(kvs.clone(), inner2)
-    },
-    ExprData::Bvar(..)
-    | ExprData::Sort(..)
-    | ExprData::Const(..)
-    | ExprData::Mvar(..)
-    | ExprData::Lit(..) => e.clone(),
+  enum Frame<'a> {
+    Visit(&'a Expr, u64),
+    App,
+    Lam(Name, BinderInfo),
+    All(Name, BinderInfo),
+    LetE(Name, bool),
+    Proj(Name, Nat),
+    Mdata(Vec<(Name, DataValue)>),
   }
+
+  let mut work: Vec<Frame<'_>> = vec![Frame::Visit(e, offset)];
+  let mut results: Vec<Expr> = Vec::new();
+
+  while let Some(frame) = work.pop() {
+    match frame {
+      Frame::Visit(e, offset) => match e.as_data() {
+        ExprData::Fvar(..) => {
+          let n = fvars.len();
+          let mut found = false;
+          for (i, fv) in fvars.iter().enumerate() {
+            if e == fv {
+              // fvars[0] (outermost) → Bvar(n-1+offset)
+              // fvars[n-1] (innermost) → Bvar(0+offset)
+              let bvar_idx = (n - 1 - i) as u64 + offset;
+              results.push(Expr::bvar(Nat::from(bvar_idx)));
+              found = true;
+              break;
+            }
+          }
+          if !found {
+            results.push(e.clone());
+          }
+        },
+        ExprData::App(f, a, _) => {
+          work.push(Frame::App);
+          work.push(Frame::Visit(a, offset));
+          work.push(Frame::Visit(f, offset));
+        },
+        ExprData::Lam(n, t, b, bi, _) => {
+          work.push(Frame::Lam(n.clone(), bi.clone()));
+          work.push(Frame::Visit(b, offset + 1));
+          work.push(Frame::Visit(t, offset));
+        },
+        ExprData::ForallE(n, t, b, bi, _) => {
+          work.push(Frame::All(n.clone(), bi.clone()));
+          work.push(Frame::Visit(b, offset + 1));
+          work.push(Frame::Visit(t, offset));
+        },
+        ExprData::LetE(n, t, v, b, nd, _) => {
+          work.push(Frame::LetE(n.clone(), *nd));
+          work.push(Frame::Visit(b, offset + 1));
+          work.push(Frame::Visit(v, offset));
+          work.push(Frame::Visit(t, offset));
+        },
+        ExprData::Proj(n, i, s, _) => {
+          work.push(Frame::Proj(n.clone(), i.clone()));
+          work.push(Frame::Visit(s, offset));
+        },
+        ExprData::Mdata(kvs, inner, _) => {
+          work.push(Frame::Mdata(kvs.clone()));
+          work.push(Frame::Visit(inner, offset));
+        },
+        ExprData::Bvar(..)
+        | ExprData::Sort(..)
+        | ExprData::Const(..)
+        | ExprData::Mvar(..)
+        | ExprData::Lit(..) => results.push(e.clone()),
+      },
+      Frame::App => {
+        let a = results.pop().unwrap();
+        let f = results.pop().unwrap();
+        results.push(Expr::app(f, a));
+      },
+      Frame::Lam(n, bi) => {
+        let b = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Expr::lam(n, t, b, bi));
+      },
+      Frame::All(n, bi) => {
+        let b = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Expr::all(n, t, b, bi));
+      },
+      Frame::LetE(n, nd) => {
+        let b = results.pop().unwrap();
+        let v = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Expr::letE(n, t, v, b, nd));
+      },
+      Frame::Proj(n, i) => {
+        let s = results.pop().unwrap();
+        results.push(Expr::proj(n, i, s));
+      },
+      Frame::Mdata(kvs) => {
+        let inner = results.pop().unwrap();
+        results.push(Expr::mdata(kvs, inner));
+      },
+    }
+  }
+
+  results.pop().unwrap()
 }
 
 /// Decompose `f a1 a2 ... an` into `(f, [a1, a2, ..., an])`.
@@ -154,66 +265,134 @@ pub fn foldl_apps(mut fun: Expr, args: impl Iterator<Item = Expr>) -> Expr {
 }
 
 /// Substitute universe level parameters in an expression.
-pub fn subst_expr_levels(
-  e: &Expr,
-  params: &[Name],
-  values: &[Level],
-) -> Expr {
+pub fn subst_expr_levels(e: &Expr, params: &[Name], values: &[Level]) -> Expr {
   if params.is_empty() {
     return e.clone();
   }
   subst_expr_levels_aux(e, params, values)
 }
 
-fn subst_expr_levels_aux(
-  e: &Expr,
-  params: &[Name],
-  values: &[Level],
-) -> Expr {
-  match e.as_data() {
-    ExprData::Sort(level, _) => {
-      Expr::sort(subst_level(level, params, values))
-    },
-    ExprData::Const(name, levels, _) => {
-      let new_levels: Vec<Level> =
-        levels.iter().map(|l| subst_level(l, params, values)).collect();
-      Expr::cnst(name.clone(), new_levels)
-    },
-    ExprData::App(f, a, _) => {
-      let f2 = subst_expr_levels_aux(f, params, values);
-      let a2 = subst_expr_levels_aux(a, params, values);
-      Expr::app(f2, a2)
-    },
-    ExprData::Lam(n, t, b, bi, _) => {
-      let t2 = subst_expr_levels_aux(t, params, values);
-      let b2 = subst_expr_levels_aux(b, params, values);
-      Expr::lam(n.clone(), t2, b2, bi.clone())
-    },
-    ExprData::ForallE(n, t, b, bi, _) => {
-      let t2 = subst_expr_levels_aux(t, params, values);
-      let b2 = subst_expr_levels_aux(b, params, values);
-      Expr::all(n.clone(), t2, b2, bi.clone())
-    },
-    ExprData::LetE(n, t, v, b, nd, _) => {
-      let t2 = subst_expr_levels_aux(t, params, values);
-      let v2 = subst_expr_levels_aux(v, params, values);
-      let b2 = subst_expr_levels_aux(b, params, values);
-      Expr::letE(n.clone(), t2, v2, b2, *nd)
-    },
-    ExprData::Proj(n, i, s, _) => {
-      let s2 = subst_expr_levels_aux(s, params, values);
-      Expr::proj(n.clone(), i.clone(), s2)
-    },
-    ExprData::Mdata(kvs, inner, _) => {
-      let inner2 = subst_expr_levels_aux(inner, params, values);
-      Expr::mdata(kvs.clone(), inner2)
-    },
-    // No levels to substitute
-    ExprData::Bvar(..)
-    | ExprData::Fvar(..)
-    | ExprData::Mvar(..)
-    | ExprData::Lit(..) => e.clone(),
+fn subst_expr_levels_aux(e: &Expr, params: &[Name], values: &[Level]) -> Expr {
+  use rustc_hash::FxHashMap;
+  use std::sync::Arc;
+
+  enum Frame<'a> {
+    Visit(&'a Expr),
+    CacheResult(*const ExprData),
+    App,
+    Lam(Name, BinderInfo),
+    All(Name, BinderInfo),
+    LetE(Name, bool),
+    Proj(Name, Nat),
+    Mdata(Vec<(Name, DataValue)>),
   }
+
+  let mut cache: FxHashMap<*const ExprData, Expr> = FxHashMap::default();
+  let mut work: Vec<Frame<'_>> = vec![Frame::Visit(e)];
+  let mut results: Vec<Expr> = Vec::new();
+
+  while let Some(frame) = work.pop() {
+    match frame {
+      Frame::Visit(e) => {
+        let key = Arc::as_ptr(&e.0);
+        if let Some(cached) = cache.get(&key) {
+          results.push(cached.clone());
+          continue;
+        }
+        match e.as_data() {
+          ExprData::Sort(level, _) => {
+            let r = Expr::sort(subst_level(level, params, values));
+            cache.insert(key, r.clone());
+            results.push(r);
+          },
+          ExprData::Const(name, levels, _) => {
+            let new_levels: Vec<Level> =
+              levels.iter().map(|l| subst_level(l, params, values)).collect();
+            let r = Expr::cnst(name.clone(), new_levels);
+            cache.insert(key, r.clone());
+            results.push(r);
+          },
+          ExprData::App(f, a, _) => {
+            work.push(Frame::CacheResult(key));
+            work.push(Frame::App);
+            work.push(Frame::Visit(a));
+            work.push(Frame::Visit(f));
+          },
+          ExprData::Lam(n, t, b, bi, _) => {
+            work.push(Frame::CacheResult(key));
+            work.push(Frame::Lam(n.clone(), bi.clone()));
+            work.push(Frame::Visit(b));
+            work.push(Frame::Visit(t));
+          },
+          ExprData::ForallE(n, t, b, bi, _) => {
+            work.push(Frame::CacheResult(key));
+            work.push(Frame::All(n.clone(), bi.clone()));
+            work.push(Frame::Visit(b));
+            work.push(Frame::Visit(t));
+          },
+          ExprData::LetE(n, t, v, b, nd, _) => {
+            work.push(Frame::CacheResult(key));
+            work.push(Frame::LetE(n.clone(), *nd));
+            work.push(Frame::Visit(b));
+            work.push(Frame::Visit(v));
+            work.push(Frame::Visit(t));
+          },
+          ExprData::Proj(n, i, s, _) => {
+            work.push(Frame::CacheResult(key));
+            work.push(Frame::Proj(n.clone(), i.clone()));
+            work.push(Frame::Visit(s));
+          },
+          ExprData::Mdata(kvs, inner, _) => {
+            work.push(Frame::CacheResult(key));
+            work.push(Frame::Mdata(kvs.clone()));
+            work.push(Frame::Visit(inner));
+          },
+          ExprData::Bvar(..)
+          | ExprData::Fvar(..)
+          | ExprData::Mvar(..)
+          | ExprData::Lit(..) => {
+            cache.insert(key, e.clone());
+            results.push(e.clone());
+          },
+        }
+      },
+      Frame::CacheResult(key) => {
+        let result = results.last().unwrap().clone();
+        cache.insert(key, result);
+      },
+      Frame::App => {
+        let a = results.pop().unwrap();
+        let f = results.pop().unwrap();
+        results.push(Expr::app(f, a));
+      },
+      Frame::Lam(n, bi) => {
+        let b = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Expr::lam(n, t, b, bi));
+      },
+      Frame::All(n, bi) => {
+        let b = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Expr::all(n, t, b, bi));
+      },
+      Frame::LetE(n, nd) => {
+        let b = results.pop().unwrap();
+        let v = results.pop().unwrap();
+        let t = results.pop().unwrap();
+        results.push(Expr::letE(n, t, v, b, nd));
+      },
+      Frame::Proj(n, i) => {
+        let s = results.pop().unwrap();
+        results.push(Expr::proj(n, i, s));
+      },
+      Frame::Mdata(kvs) => {
+        let inner = results.pop().unwrap();
+        results.push(Expr::mdata(kvs, inner));
+      },
+    }
+  }
+
+  results.pop().unwrap()
 }
 
 /// Check if an expression has any loose bound variables above `offset`.
@@ -222,40 +401,60 @@ pub fn has_loose_bvars(e: &Expr) -> bool {
 }
 
 fn has_loose_bvars_aux(e: &Expr, depth: u64) -> bool {
-  match e.as_data() {
-    ExprData::Bvar(idx, _) => idx.to_u64().unwrap_or(u64::MAX) >= depth,
-    ExprData::App(f, a, _) => {
-      has_loose_bvars_aux(f, depth) || has_loose_bvars_aux(a, depth)
-    },
-    ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-      has_loose_bvars_aux(t, depth) || has_loose_bvars_aux(b, depth + 1)
-    },
-    ExprData::LetE(_, t, v, b, _, _) => {
-      has_loose_bvars_aux(t, depth)
-        || has_loose_bvars_aux(v, depth)
-        || has_loose_bvars_aux(b, depth + 1)
-    },
-    ExprData::Proj(_, _, s, _) => has_loose_bvars_aux(s, depth),
-    ExprData::Mdata(_, inner, _) => has_loose_bvars_aux(inner, depth),
-    _ => false,
+  let mut stack: Vec<(&Expr, u64)> = vec![(e, depth)];
+  while let Some((e, depth)) = stack.pop() {
+    match e.as_data() {
+      ExprData::Bvar(idx, _) => {
+        if idx.to_u64().unwrap_or(u64::MAX) >= depth {
+          return true;
+        }
+      },
+      ExprData::App(f, a, _) => {
+        stack.push((f, depth));
+        stack.push((a, depth));
+      },
+      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+        stack.push((t, depth));
+        stack.push((b, depth + 1));
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        stack.push((t, depth));
+        stack.push((v, depth));
+        stack.push((b, depth + 1));
+      },
+      ExprData::Proj(_, _, s, _) => stack.push((s, depth)),
+      ExprData::Mdata(_, inner, _) => stack.push((inner, depth)),
+      _ => {},
+    }
   }
+  false
 }
 
 /// Check if expression contains any free variables (Fvar).
 pub fn has_fvars(e: &Expr) -> bool {
-  match e.as_data() {
-    ExprData::Fvar(..) => true,
-    ExprData::App(f, a, _) => has_fvars(f) || has_fvars(a),
-    ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-      has_fvars(t) || has_fvars(b)
-    },
-    ExprData::LetE(_, t, v, b, _, _) => {
-      has_fvars(t) || has_fvars(v) || has_fvars(b)
-    },
-    ExprData::Proj(_, _, s, _) => has_fvars(s),
-    ExprData::Mdata(_, inner, _) => has_fvars(inner),
-    _ => false,
+  let mut stack: Vec<&Expr> = vec![e];
+  while let Some(e) = stack.pop() {
+    match e.as_data() {
+      ExprData::Fvar(..) => return true,
+      ExprData::App(f, a, _) => {
+        stack.push(f);
+        stack.push(a);
+      },
+      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+        stack.push(t);
+        stack.push(b);
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        stack.push(t);
+        stack.push(v);
+        stack.push(b);
+      },
+      ExprData::Proj(_, _, s, _) => stack.push(s),
+      ExprData::Mdata(_, inner, _) => stack.push(inner),
+      _ => {},
+    }
   }
+  false
 }
 
 // ============================================================================
@@ -277,16 +476,63 @@ pub(crate) fn mk_name2(a: &str, b: &str) -> Name {
 /// iota/quot/nat/projection, and uses DAG-level splicing for delta.
 pub fn whnf(e: &Expr, env: &Env) -> Expr {
   let mut dag = from_expr(e);
-  whnf_dag(&mut dag, env);
+  whnf_dag(&mut dag, env, false);
   let result = to_expr(&dag);
   free_dag(dag);
   result
 }
 
+
+
+/// WHNF without delta reduction (beta/zeta/iota/quot/nat/proj only).
+/// Matches Lean 4's `whnf_core` used in `is_def_eq_core`.
+pub fn whnf_no_delta(e: &Expr, env: &Env) -> Expr {
+  let mut dag = from_expr(e);
+  whnf_dag(&mut dag, env, true);
+  let result = to_expr(&dag);
+  free_dag(dag);
+  result
+}
+
+
 /// Trail-based WHNF on DAG. Walks down the App spine collecting a trail,
 /// then dispatches on the head node.
-fn whnf_dag(dag: &mut DAG, env: &Env) {
+/// When `no_delta` is true, skips delta (definition) unfolding.
+pub(crate) fn whnf_dag(dag: &mut DAG, env: &Env, no_delta: bool) {
+  use std::sync::atomic::{AtomicU64, Ordering};
+  static WHNF_DEPTH: AtomicU64 = AtomicU64::new(0);
+  static WHNF_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+  let depth = WHNF_DEPTH.fetch_add(1, Ordering::Relaxed);
+  let total = WHNF_TOTAL.fetch_add(1, Ordering::Relaxed);
+  if depth > 50 || total % 10_000 == 0 {
+    eprintln!("[whnf_dag] depth={depth} total={total} no_delta={no_delta}");
+  }
+  if depth > 200 {
+    eprintln!("[whnf_dag] DEPTH LIMIT depth={depth}, bailing");
+    WHNF_DEPTH.fetch_sub(1, Ordering::Relaxed);
+    return;
+  }
+
+  const WHNF_STEP_LIMIT: u64 = 100_000;
+  let mut steps: u64 = 0;
+  let whnf_done = |depth| { WHNF_DEPTH.fetch_sub(1, Ordering::Relaxed); };
   loop {
+    steps += 1;
+    if steps > WHNF_STEP_LIMIT {
+      eprintln!("[whnf_dag] step limit exceeded ({steps}) depth={depth}");
+      whnf_done(depth);
+      return;
+    }
+    if steps <= 5 || steps % 10_000 == 0 {
+      let head_variant = match dag.head {
+        DAGPtr::Var(_) => "Var", DAGPtr::Sort(_) => "Sort", DAGPtr::Cnst(_) => "Cnst",
+        DAGPtr::App(_) => "App", DAGPtr::Fun(_) => "Fun", DAGPtr::Pi(_) => "Pi",
+        DAGPtr::Let(_) => "Let", DAGPtr::Lit(_) => "Lit", DAGPtr::Proj(_) => "Proj",
+        DAGPtr::Lam(_) => "Lam",
+      };
+      eprintln!("[whnf_dag] step={steps} head={head_variant} trail_build_start");
+    }
     // Build trail of App nodes by walking down the fun chain
     let mut trail: Vec<NonNull<App>> = Vec::new();
     let mut cursor = dag.head;
@@ -295,10 +541,24 @@ fn whnf_dag(dag: &mut DAG, env: &Env) {
       match cursor {
         DAGPtr::App(app) => {
           trail.push(app);
+          if trail.len() > 100_000 {
+            eprintln!("[whnf_dag] TRAIL OVERFLOW: trail.len()={} — possible App cycle!", trail.len());
+            whnf_done(depth); return;
+          }
           cursor = unsafe { (*app.as_ptr()).fun };
         },
         _ => break,
       }
+    }
+
+    if steps <= 5 || steps % 10_000 == 0 {
+      let cursor_variant = match cursor {
+        DAGPtr::Var(_) => "Var", DAGPtr::Sort(_) => "Sort", DAGPtr::Cnst(_) => "Cnst",
+        DAGPtr::App(_) => "App", DAGPtr::Fun(_) => "Fun", DAGPtr::Pi(_) => "Pi",
+        DAGPtr::Let(_) => "Let", DAGPtr::Lit(_) => "Lit", DAGPtr::Proj(_) => "Proj",
+        DAGPtr::Lam(_) => "Lam",
+      };
+      eprintln!("[whnf_dag] step={steps} trail_len={} cursor={cursor_variant}", trail.len());
     }
 
     match cursor {
@@ -320,23 +580,23 @@ fn whnf_dag(dag: &mut DAG, env: &Env) {
 
       // Const: try iota, quot, nat, then delta
       DAGPtr::Cnst(_) => {
-        // Try iota, quot, nat at Expr level
-        if try_expr_reductions(dag, env) {
+        // Try iota, quot, nat
+        if try_dag_reductions(dag, env) {
           continue;
         }
-        // Try delta (definition unfolding) on DAG
-        if try_dag_delta(dag, &trail, env) {
+        // Try delta (definition unfolding) on DAG, unless no_delta
+        if !no_delta && try_dag_delta(dag, &trail, env) {
           continue;
         }
-        return; // stuck
+        whnf_done(depth); return; // stuck
       },
 
       // Proj: try projection reduction (Expr-level fallback)
       DAGPtr::Proj(_) => {
-        if try_expr_reductions(dag, env) {
+        if try_dag_reductions(dag, env) {
           continue;
         }
-        return; // stuck
+        whnf_done(depth); return; // stuck
       },
 
       // Sort: simplify level in place
@@ -345,7 +605,7 @@ fn whnf_dag(dag: &mut DAG, env: &Env) {
           let sort = &mut *sort_ptr.as_ptr();
           sort.level = simplify(&sort.level);
         }
-        return;
+        whnf_done(depth); return;
       },
 
       // Mdata: strip metadata (Expr-level fallback)
@@ -353,15 +613,15 @@ fn whnf_dag(dag: &mut DAG, env: &Env) {
         // Check if this is a Nat literal that could be a Nat.succ application
         // by trying Expr-level reductions (which handles nat ops)
         if !trail.is_empty() {
-          if try_expr_reductions(dag, env) {
+          if try_dag_reductions(dag, env) {
             continue;
           }
         }
-        return;
+        whnf_done(depth); return;
       },
 
       // Everything else (Var, Pi, Lam without args, etc.): already WHNF
-      _ => return,
+      _ => { whnf_done(depth); return; },
     }
   }
 }
@@ -369,11 +629,7 @@ fn whnf_dag(dag: &mut DAG, env: &Env) {
 /// Set the DAG head after a reduction step.
 /// If trail is empty, the result becomes the new head.
 /// If trail is non-empty, splice result into the innermost remaining App.
-fn set_dag_head(
-  dag: &mut DAG,
-  result: DAGPtr,
-  trail: &[NonNull<App>],
-) {
+fn set_dag_head(dag: &mut DAG, result: DAGPtr, trail: &[NonNull<App>]) {
   if trail.is_empty() {
     dag.head = result;
   } else {
@@ -384,60 +640,400 @@ fn set_dag_head(
   }
 }
 
-/// Try iota/quot/nat/projection reductions at Expr level.
-/// Converts current DAG to Expr, attempts reduction, converts back if
-/// successful.
-fn try_expr_reductions(dag: &mut DAG, env: &Env) -> bool {
-  let current_expr = to_expr(&DAG { head: dag.head });
+/// Try iota/quot/nat/projection reductions directly on DAG.
+fn try_dag_reductions(dag: &mut DAG, env: &Env) -> bool {
+  let (head, args) = dag_unfold_apps(dag.head);
 
-  let (head, args) = unfold_apps(&current_expr);
-
-  let reduced = match head.as_data() {
-    ExprData::Const(name, levels, _) => {
-      // Try iota (recursor) reduction
-      if let Some(result) = try_reduce_rec(name, levels, &args, env) {
+  let reduced = match head {
+    DAGPtr::Cnst(cnst) => unsafe {
+      let cnst_ref = &*cnst.as_ptr();
+      if let Some(result) =
+        try_reduce_rec_dag(&cnst_ref.name, &cnst_ref.levels, &args, env)
+      {
         Some(result)
-      }
-      // Try quotient reduction
-      else if let Some(result) = try_reduce_quot(name, &args, env) {
+      } else if let Some(result) =
+        try_reduce_quot_dag(&cnst_ref.name, &args, env)
+      {
         Some(result)
-      }
-      // Try nat reduction
-      else if let Some(result) =
-        try_reduce_nat(&current_expr, env)
+      } else if let Some(result) =
+        try_reduce_native_dag(&cnst_ref.name, &args)
+      {
+        Some(result)
+      } else if let Some(result) =
+        try_reduce_nat_dag(&cnst_ref.name, &args, env)
       {
         Some(result)
       } else {
         None
       }
     },
-    ExprData::Proj(type_name, idx, structure, _) => {
-      reduce_proj(type_name, idx, structure, env)
-        .map(|result| foldl_apps(result, args.into_iter()))
-    },
-    ExprData::Mdata(_, inner, _) => {
-      Some(foldl_apps(inner.clone(), args.into_iter()))
+    DAGPtr::Proj(proj) => unsafe {
+      let proj_ref = &*proj.as_ptr();
+      reduce_proj_dag(&proj_ref.type_name, &proj_ref.idx, proj_ref.expr, env)
+        .map(|result| dag_foldl_apps(result, &args))
     },
     _ => None,
   };
 
-  if let Some(result_expr) = reduced {
-    let result_dag = from_expr(&result_expr);
-    dag.head = result_dag.head;
+  if let Some(result) = reduced {
+    dag.head = result;
     true
   } else {
     false
   }
 }
 
+/// Try to reduce a recursor application (iota reduction) on DAG.
+fn try_reduce_rec_dag(
+  name: &Name,
+  levels: &[Level],
+  args: &[DAGPtr],
+  env: &Env,
+) -> Option<DAGPtr> {
+  let ci = env.get(name)?;
+  let rec = match ci {
+    ConstantInfo::RecInfo(r) => r,
+    _ => return None,
+  };
+
+  let major_idx = rec.num_params.to_u64().unwrap() as usize
+    + rec.num_motives.to_u64().unwrap() as usize
+    + rec.num_minors.to_u64().unwrap() as usize
+    + rec.num_indices.to_u64().unwrap() as usize;
+
+  let major = args.get(major_idx)?;
+
+  // WHNF the major premise directly on the DAG
+  let mut major_dag = DAG { head: *major };
+  whnf_dag(&mut major_dag, env, false);
+
+  // Decompose the major premise into (ctor_head, ctor_args) at DAG level.
+  // Handle nat literal → constructor form as DAG nodes directly.
+  let (ctor_head, ctor_args) = match major_dag.head {
+    DAGPtr::Lit(lit) => unsafe {
+      match &(*lit.as_ptr()).val {
+        Literal::NatVal(n) => {
+          if n.0 == BigUint::ZERO {
+            let zero = DAGPtr::Cnst(alloc_val(Cnst {
+              name: mk_name2("Nat", "zero"),
+              levels: vec![],
+              parents: None,
+            }));
+            (zero, vec![])
+          } else {
+            let pred = Nat(n.0.clone() - BigUint::from(1u64));
+            let succ = DAGPtr::Cnst(alloc_val(Cnst {
+              name: mk_name2("Nat", "succ"),
+              levels: vec![],
+              parents: None,
+            }));
+            let pred_lit = nat_lit_dag(pred);
+            (succ, vec![pred_lit])
+          }
+        },
+        _ => return None,
+      }
+    },
+    _ => dag_unfold_apps(major_dag.head),
+  };
+
+  // Find the matching rec rule by reading ctor name from DAG head
+  let ctor_name = match ctor_head {
+    DAGPtr::Cnst(cnst) => unsafe { &(*cnst.as_ptr()).name },
+    _ => return None,
+  };
+
+  let rule = rec.rules.iter().find(|r| r.ctor == *ctor_name)?;
+
+  let n_fields = rule.n_fields.to_u64().unwrap() as usize;
+  let num_params = rec.num_params.to_u64().unwrap() as usize;
+  let num_motives = rec.num_motives.to_u64().unwrap() as usize;
+  let num_minors = rec.num_minors.to_u64().unwrap() as usize;
+
+  if ctor_args.len() < n_fields {
+    return None;
+  }
+  let ctor_fields = &ctor_args[ctor_args.len() - n_fields..];
+
+  // Build RHS as DAG: from_expr(subst_expr_levels(rule.rhs, ...)) once
+  // (unavoidable — rule RHS is stored as Expr in Env)
+  let rhs_expr = subst_expr_levels(&rule.rhs, &rec.cnst.level_params, levels);
+  let rhs_dag = from_expr(&rhs_expr);
+
+  // Collect all args at DAG level: params+motives+minors, ctor_fields, rest
+  let prefix_count = num_params + num_motives + num_minors;
+  let mut all_args: Vec<DAGPtr> =
+    Vec::with_capacity(prefix_count + n_fields + args.len() - major_idx - 1);
+  all_args.extend_from_slice(&args[..prefix_count]);
+  all_args.extend_from_slice(ctor_fields);
+  all_args.extend_from_slice(&args[major_idx + 1..]);
+
+  Some(dag_foldl_apps(rhs_dag.head, &all_args))
+}
+
+/// Try to reduce a projection on DAG.
+fn reduce_proj_dag(
+  _type_name: &Name,
+  idx: &Nat,
+  structure: DAGPtr,
+  env: &Env,
+) -> Option<DAGPtr> {
+  // WHNF the structure directly on the DAG
+  let mut struct_dag = DAG { head: structure };
+  whnf_dag(&mut struct_dag, env, false);
+
+  // Handle string literal → constructor form at DAG level
+  let struct_whnf = match struct_dag.head {
+    DAGPtr::Lit(lit) => unsafe {
+      match &(*lit.as_ptr()).val {
+        Literal::StrVal(s) => string_lit_to_dag_ctor(s),
+        _ => struct_dag.head,
+      }
+    },
+    _ => struct_dag.head,
+  };
+
+  // Decompose at DAG level
+  let (ctor_head, ctor_args) = dag_unfold_apps(struct_whnf);
+
+  let ctor_name = match ctor_head {
+    DAGPtr::Cnst(cnst) => unsafe { &(*cnst.as_ptr()).name },
+    _ => return None,
+  };
+
+  let ci = env.get(ctor_name)?;
+  let num_params = match ci {
+    ConstantInfo::CtorInfo(c) => c.num_params.to_u64().unwrap() as usize,
+    _ => return None,
+  };
+
+  let field_idx = num_params + idx.to_u64().unwrap() as usize;
+  ctor_args.get(field_idx).copied()
+}
+
+/// Try to reduce a quotient operation on DAG.
+fn try_reduce_quot_dag(
+  name: &Name,
+  args: &[DAGPtr],
+  env: &Env,
+) -> Option<DAGPtr> {
+  let ci = env.get(name)?;
+  let kind = match ci {
+    ConstantInfo::QuotInfo(q) => &q.kind,
+    _ => return None,
+  };
+
+  let (qmk_idx, rest_idx) = match kind {
+    QuotKind::Lift => (5, 6),
+    QuotKind::Ind => (4, 5),
+    _ => return None,
+  };
+
+  let qmk = args.get(qmk_idx)?;
+
+  // WHNF the Quot.mk arg directly on the DAG
+  let mut qmk_dag = DAG { head: *qmk };
+  whnf_dag(&mut qmk_dag, env, false);
+
+  // Check that the head is Quot.mk at DAG level
+  let (qmk_head, _) = dag_unfold_apps(qmk_dag.head);
+  match qmk_head {
+    DAGPtr::Cnst(cnst) => unsafe {
+      if (*cnst.as_ptr()).name != mk_name2("Quot", "mk") {
+        return None;
+      }
+    },
+    _ => return None,
+  }
+
+  let f = args.get(3)?;
+
+  // Extract the argument of Quot.mk (the outermost App's arg)
+  let qmk_arg = match qmk_dag.head {
+    DAGPtr::App(app) => unsafe { (*app.as_ptr()).arg },
+    _ => return None,
+  };
+
+  // Build result directly at DAG level: f qmk_arg rest_args...
+  let mut result_args = Vec::with_capacity(1 + args.len() - rest_idx);
+  result_args.push(qmk_arg);
+  result_args.extend_from_slice(&args[rest_idx..]);
+  Some(dag_foldl_apps(*f, &result_args))
+}
+
+/// Try to reduce `Lean.reduceBool` / `Lean.reduceNat` on DAG.
+pub(crate) fn try_reduce_native_dag(name: &Name, args: &[DAGPtr]) -> Option<DAGPtr> {
+  if args.len() != 1 {
+    return None;
+  }
+  let reduce_bool = mk_name2("Lean", "reduceBool");
+  let reduce_nat = mk_name2("Lean", "reduceNat");
+  if *name == reduce_bool || *name == reduce_nat {
+    Some(args[0])
+  } else {
+    None
+  }
+}
+
+/// Try to reduce nat operations on DAG.
+pub(crate) fn try_reduce_nat_dag(
+  name: &Name,
+  args: &[DAGPtr],
+  env: &Env,
+) -> Option<DAGPtr> {
+  match args.len() {
+    1 => {
+      if *name == mk_name2("Nat", "succ") {
+        // WHNF the arg directly on the DAG
+        let mut arg_dag = DAG { head: args[0] };
+        whnf_dag(&mut arg_dag, env, false);
+        let n = get_nat_value_dag(arg_dag.head)?;
+        let result = alloc_val(LitNode {
+          val: Literal::NatVal(Nat(n + BigUint::from(1u64))),
+          parents: None,
+        });
+        Some(DAGPtr::Lit(result))
+      } else {
+        None
+      }
+    },
+    2 => {
+      // WHNF both args directly on the DAG
+      let mut a_dag = DAG { head: args[0] };
+      whnf_dag(&mut a_dag, env, false);
+      let mut b_dag = DAG { head: args[1] };
+      whnf_dag(&mut b_dag, env, false);
+      let a = get_nat_value_dag(a_dag.head)?;
+      let b = get_nat_value_dag(b_dag.head)?;
+
+      if *name == mk_name2("Nat", "add") {
+        Some(nat_lit_dag(Nat(a + b)))
+      } else if *name == mk_name2("Nat", "sub") {
+        Some(nat_lit_dag(Nat(if a >= b { a - b } else { BigUint::ZERO })))
+      } else if *name == mk_name2("Nat", "mul") {
+        Some(nat_lit_dag(Nat(a * b)))
+      } else if *name == mk_name2("Nat", "div") {
+        Some(nat_lit_dag(Nat(if b == BigUint::ZERO {
+          BigUint::ZERO
+        } else {
+          a / b
+        })))
+      } else if *name == mk_name2("Nat", "mod") {
+        Some(nat_lit_dag(Nat(if b == BigUint::ZERO { a } else { a % b })))
+      } else if *name == mk_name2("Nat", "beq") {
+        Some(bool_to_dag(a == b))
+      } else if *name == mk_name2("Nat", "ble") {
+        Some(bool_to_dag(a <= b))
+      } else if *name == mk_name2("Nat", "pow") {
+        let exp = u32::try_from(&b).unwrap_or(u32::MAX);
+        Some(nat_lit_dag(Nat(a.pow(exp))))
+      } else if *name == mk_name2("Nat", "land") {
+        Some(nat_lit_dag(Nat(a & b)))
+      } else if *name == mk_name2("Nat", "lor") {
+        Some(nat_lit_dag(Nat(a | b)))
+      } else if *name == mk_name2("Nat", "xor") {
+        Some(nat_lit_dag(Nat(a ^ b)))
+      } else if *name == mk_name2("Nat", "shiftLeft") {
+        let shift = u64::try_from(&b).unwrap_or(u64::MAX);
+        Some(nat_lit_dag(Nat(a << shift)))
+      } else if *name == mk_name2("Nat", "shiftRight") {
+        let shift = u64::try_from(&b).unwrap_or(u64::MAX);
+        Some(nat_lit_dag(Nat(a >> shift)))
+      } else if *name == mk_name2("Nat", "blt") {
+        Some(bool_to_dag(a < b))
+      } else {
+        None
+      }
+    },
+    _ => None,
+  }
+}
+
+/// Extract a nat value from a DAGPtr (analog of get_nat_value_expr).
+fn get_nat_value_dag(ptr: DAGPtr) -> Option<BigUint> {
+  unsafe {
+    match ptr {
+      DAGPtr::Lit(lit) => match &(*lit.as_ptr()).val {
+        Literal::NatVal(n) => Some(n.0.clone()),
+        _ => None,
+      },
+      DAGPtr::Cnst(cnst) => {
+        if (*cnst.as_ptr()).name == mk_name2("Nat", "zero") {
+          Some(BigUint::ZERO)
+        } else {
+          None
+        }
+      },
+      _ => None,
+    }
+  }
+}
+
+/// Allocate a Nat literal DAG node.
+pub(crate) fn nat_lit_dag(n: Nat) -> DAGPtr {
+  DAGPtr::Lit(alloc_val(LitNode { val: Literal::NatVal(n), parents: None }))
+}
+
+/// Convert a bool to a DAG constant (Bool.true / Bool.false).
+fn bool_to_dag(b: bool) -> DAGPtr {
+  let name =
+    if b { mk_name2("Bool", "true") } else { mk_name2("Bool", "false") };
+  DAGPtr::Cnst(alloc_val(Cnst { name, levels: vec![], parents: None }))
+}
+
+/// Build `String.mk (List.cons (Char.ofNat n1) (List.cons ... List.nil))`
+/// entirely at the DAG level (no Expr round-trip).
+fn string_lit_to_dag_ctor(s: &str) -> DAGPtr {
+  let list_name = Name::str(Name::anon(), "List".into());
+  let char_name = Name::str(Name::anon(), "Char".into());
+  let char_type = DAGPtr::Cnst(alloc_val(Cnst {
+    name: char_name.clone(),
+    levels: vec![],
+    parents: None,
+  }));
+  let nil = DAGPtr::App(alloc_app(
+    DAGPtr::Cnst(alloc_val(Cnst {
+      name: Name::str(list_name.clone(), "nil".into()),
+      levels: vec![Level::succ(Level::zero())],
+      parents: None,
+    })),
+    char_type,
+    None,
+  ));
+  let list = s.chars().rev().fold(nil, |acc, c| {
+    let of_nat = DAGPtr::Cnst(alloc_val(Cnst {
+      name: Name::str(char_name.clone(), "ofNat".into()),
+      levels: vec![],
+      parents: None,
+    }));
+    let char_val =
+      DAGPtr::App(alloc_app(of_nat, nat_lit_dag(Nat::from(c as u64)), None));
+    let char_type_copy = DAGPtr::Cnst(alloc_val(Cnst {
+      name: char_name.clone(),
+      levels: vec![],
+      parents: None,
+    }));
+    let cons = DAGPtr::Cnst(alloc_val(Cnst {
+      name: Name::str(list_name.clone(), "cons".into()),
+      levels: vec![Level::succ(Level::zero())],
+      parents: None,
+    }));
+    let c1 = DAGPtr::App(alloc_app(cons, char_type_copy, None));
+    let c2 = DAGPtr::App(alloc_app(c1, char_val, None));
+    DAGPtr::App(alloc_app(c2, acc, None))
+  });
+  let string_mk = DAGPtr::Cnst(alloc_val(Cnst {
+    name: Name::str(Name::str(Name::anon(), "String".into()), "mk".into()),
+    levels: vec![],
+    parents: None,
+  }));
+  DAGPtr::App(alloc_app(string_mk, list, None))
+}
+
 /// Try delta (definition) unfolding on DAG.
 /// Looks up the constant, substitutes universe levels in the definition body,
 /// converts it to a DAG, and splices it into the current DAG.
-fn try_dag_delta(
-  dag: &mut DAG,
-  trail: &[NonNull<App>],
-  env: &Env,
-) -> bool {
+fn try_dag_delta(dag: &mut DAG, trail: &[NonNull<App>], env: &Env) -> bool {
   // Extract constant info from head
   let cnst_ref = match dag_head_past_trail(dag, trail) {
     DAGPtr::Cnst(cnst) => unsafe { &*cnst.as_ptr() },
@@ -449,9 +1045,7 @@ fn try_dag_delta(
     None => return false,
   };
   let (def_params, def_value) = match ci {
-    ConstantInfo::DefnInfo(d)
-      if d.hints != ReducibilityHints::Opaque =>
-    {
+    ConstantInfo::DefnInfo(d) if d.hints != ReducibilityHints::Opaque => {
       (&d.cnst.level_params, &d.value)
     },
     _ => return false,
@@ -461,20 +1055,22 @@ fn try_dag_delta(
     return false;
   }
 
+  eprintln!("[try_dag_delta] unfolding: {}", cnst_ref.name.pretty());
+
   // Substitute levels at Expr level, then convert to DAG
   let val = subst_expr_levels(def_value, def_params, &cnst_ref.levels);
+  eprintln!("[try_dag_delta] subst done, calling from_expr");
   let body_dag = from_expr(&val);
+  eprintln!("[try_dag_delta] from_expr done, calling set_dag_head");
 
   // Splice body into the working DAG
   set_dag_head(dag, body_dag.head, trail);
+  eprintln!("[try_dag_delta] set_dag_head done");
   true
 }
 
 /// Get the head node past the trail (the non-App node at the bottom).
-fn dag_head_past_trail(
-  dag: &DAG,
-  trail: &[NonNull<App>],
-) -> DAGPtr {
+fn dag_head_past_trail(dag: &DAG, trail: &[NonNull<App>]) -> DAGPtr {
   if trail.is_empty() {
     dag.head
   } else {
@@ -498,6 +1094,7 @@ pub fn try_unfold_def(e: &Expr, env: &Env) -> Option<Expr> {
       }
       (&d.cnst.level_params, &d.value)
     },
+    ConstantInfo::ThmInfo(t) => (&t.cnst.level_params, &t.value),
     _ => return None,
   };
 
@@ -509,226 +1106,28 @@ pub fn try_unfold_def(e: &Expr, env: &Env) -> Option<Expr> {
   Some(foldl_apps(val, args.into_iter()))
 }
 
-/// Try to reduce a recursor application (iota reduction).
-fn try_reduce_rec(
-  name: &Name,
-  levels: &[Level],
-  args: &[Expr],
-  env: &Env,
-) -> Option<Expr> {
-  let ci = env.get(name)?;
-  let rec = match ci {
-    ConstantInfo::RecInfo(r) => r,
-    _ => return None,
-  };
-
-  let major_idx = rec.num_params.to_u64().unwrap() as usize
-    + rec.num_motives.to_u64().unwrap() as usize
-    + rec.num_minors.to_u64().unwrap() as usize
-    + rec.num_indices.to_u64().unwrap() as usize;
-
-  let major = args.get(major_idx)?;
-
-  // WHNF the major premise
-  let major_whnf = whnf(major, env);
-
-  // Handle nat literal → constructor
-  let major_ctor = match major_whnf.as_data() {
-    ExprData::Lit(Literal::NatVal(n), _) => nat_lit_to_constructor(n),
-    _ => major_whnf.clone(),
-  };
-
-  let (ctor_head, ctor_args) = unfold_apps(&major_ctor);
-
-  // Find the matching rec rule
-  let ctor_name = match ctor_head.as_data() {
-    ExprData::Const(name, _, _) => name,
-    _ => return None,
-  };
-
-  let rule = rec.rules.iter().find(|r| &r.ctor == ctor_name)?;
-
-  let n_fields = rule.n_fields.to_u64().unwrap() as usize;
-  let num_params = rec.num_params.to_u64().unwrap() as usize;
-  let num_motives = rec.num_motives.to_u64().unwrap() as usize;
-  let num_minors = rec.num_minors.to_u64().unwrap() as usize;
-
-  // The constructor args may have extra params for nested inductives
-  let ctor_args_wo_params =
-    if ctor_args.len() >= n_fields {
-      &ctor_args[ctor_args.len() - n_fields..]
-    } else {
-      return None;
-    };
-
-  // Substitute universe levels in the rule's RHS
-  let rhs = subst_expr_levels(
-    &rule.rhs,
-    &rec.cnst.level_params,
-    levels,
-  );
-
-  // Apply: params, motives, minors
-  let prefix_count = num_params + num_motives + num_minors;
-  let mut result = rhs;
-  for arg in args.iter().take(prefix_count) {
-    result = Expr::app(result, arg.clone());
+/// Try to reduce `Lean.reduceBool` / `Lean.reduceNat`.
+///
+/// These are opaque constants with special kernel reduction rules. In the Lean 4
+/// kernel they evaluate their argument using compiled native code. Since both are
+/// semantically identity functions (`fun b => b` / `fun n => n`), we simply
+/// return the argument and let the WHNF loop continue reducing it via our
+/// existing efficient paths (e.g. `try_reduce_nat` handles `Nat.ble` etc. in O(1)).
+pub(crate) fn try_reduce_native(name: &Name, args: &[Expr]) -> Option<Expr> {
+  if args.len() != 1 {
+    return None;
   }
-
-  // Apply constructor fields
-  for arg in ctor_args_wo_params {
-    result = Expr::app(result, arg.clone());
-  }
-
-  // Apply remaining args after major
-  for arg in args.iter().skip(major_idx + 1) {
-    result = Expr::app(result, arg.clone());
-  }
-
-  Some(result)
-}
-
-/// Convert a Nat literal to its constructor form.
-fn nat_lit_to_constructor(n: &Nat) -> Expr {
-  if n.0 == BigUint::ZERO {
-    Expr::cnst(mk_name2("Nat", "zero"), vec![])
+  let reduce_bool = mk_name2("Lean", "reduceBool");
+  let reduce_nat = mk_name2("Lean", "reduceNat");
+  if *name == reduce_bool || *name == reduce_nat {
+    Some(args[0].clone())
   } else {
-    let pred = Nat(n.0.clone() - BigUint::from(1u64));
-    let pred_expr = Expr::lit(Literal::NatVal(pred));
-    Expr::app(Expr::cnst(mk_name2("Nat", "succ"), vec![]), pred_expr)
+    None
   }
-}
-
-/// Convert a string literal to its constructor form:
-/// `"hello"` → `String.mk (List.cons 'h' (List.cons 'e' ... List.nil))`
-/// where chars are represented as `Char.ofNat n`.
-fn string_lit_to_constructor(s: &str) -> Expr {
-  let list_name = Name::str(Name::anon(), "List".into());
-  let char_name = Name::str(Name::anon(), "Char".into());
-  let char_type = Expr::cnst(char_name.clone(), vec![]);
-
-  // Build the list from right to left
-  // List.nil.{0} : List Char
-  let nil = Expr::app(
-    Expr::cnst(
-      Name::str(list_name.clone(), "nil".into()),
-      vec![Level::succ(Level::zero())],
-    ),
-    char_type.clone(),
-  );
-
-  let result = s.chars().rev().fold(nil, |acc, c| {
-    let char_val = Expr::app(
-      Expr::cnst(Name::str(char_name.clone(), "ofNat".into()), vec![]),
-      Expr::lit(Literal::NatVal(Nat::from(c as u64))),
-    );
-    // List.cons.{0} Char char_val acc
-    Expr::app(
-      Expr::app(
-        Expr::app(
-          Expr::cnst(
-            Name::str(list_name.clone(), "cons".into()),
-            vec![Level::succ(Level::zero())],
-          ),
-          char_type.clone(),
-        ),
-        char_val,
-      ),
-      acc,
-    )
-  });
-
-  // String.mk list
-  Expr::app(
-    Expr::cnst(
-      Name::str(Name::str(Name::anon(), "String".into()), "mk".into()),
-      vec![],
-    ),
-    result,
-  )
-}
-
-/// Try to reduce a projection.
-fn reduce_proj(
-  _type_name: &Name,
-  idx: &Nat,
-  structure: &Expr,
-  env: &Env,
-) -> Option<Expr> {
-  let structure_whnf = whnf(structure, env);
-
-  // Handle string literal → constructor
-  let structure_ctor = match structure_whnf.as_data() {
-    ExprData::Lit(Literal::StrVal(s), _) => {
-      string_lit_to_constructor(s)
-    },
-    _ => structure_whnf,
-  };
-
-  let (ctor_head, ctor_args) = unfold_apps(&structure_ctor);
-
-  let ctor_name = match ctor_head.as_data() {
-    ExprData::Const(name, _, _) => name,
-    _ => return None,
-  };
-
-  // Look up constructor to get num_params
-  let ci = env.get(ctor_name)?;
-  let num_params = match ci {
-    ConstantInfo::CtorInfo(c) => c.num_params.to_u64().unwrap() as usize,
-    _ => return None,
-  };
-
-  let field_idx = num_params + idx.to_u64().unwrap() as usize;
-  ctor_args.get(field_idx).cloned()
-}
-
-/// Try to reduce a quotient operation.
-fn try_reduce_quot(
-  name: &Name,
-  args: &[Expr],
-  env: &Env,
-) -> Option<Expr> {
-  let ci = env.get(name)?;
-  let kind = match ci {
-    ConstantInfo::QuotInfo(q) => &q.kind,
-    _ => return None,
-  };
-
-  let (qmk_idx, rest_idx) = match kind {
-    QuotKind::Lift => (5, 6),
-    QuotKind::Ind => (4, 5),
-    _ => return None,
-  };
-
-  let qmk = args.get(qmk_idx)?;
-  let qmk_whnf = whnf(qmk, env);
-
-  // Check that the head is Quot.mk
-  let (qmk_head, _) = unfold_apps(&qmk_whnf);
-  match qmk_head.as_data() {
-    ExprData::Const(n, _, _) if *n == mk_name2("Quot", "mk") => {},
-    _ => return None,
-  }
-
-  let f = args.get(3)?;
-
-  // Extract the argument of Quot.mk
-  let qmk_arg = match qmk_whnf.as_data() {
-    ExprData::App(_, arg, _) => arg,
-    _ => return None,
-  };
-
-  let mut result = Expr::app(f.clone(), qmk_arg.clone());
-  for arg in args.iter().skip(rest_idx) {
-    result = Expr::app(result, arg.clone());
-  }
-
-  Some(result)
 }
 
 /// Try to reduce nat operations.
-fn try_reduce_nat(e: &Expr, env: &Env) -> Option<Expr> {
+pub(crate) fn try_reduce_nat(e: &Expr, env: &Env) -> Option<Expr> {
   if has_fvars(e) {
     return None;
   }
@@ -818,11 +1217,8 @@ fn get_nat_value(e: &Expr) -> Option<BigUint> {
 }
 
 fn bool_to_expr(b: bool) -> Option<Expr> {
-  let name = if b {
-    mk_name2("Bool", "true")
-  } else {
-    mk_name2("Bool", "false")
-  };
+  let name =
+    if b { mk_name2("Bool", "true") } else { mk_name2("Bool", "false") };
   Some(Expr::cnst(name, vec![]))
 }
 
@@ -865,12 +1261,8 @@ mod tests {
       BinderInfo::Default,
     );
     let result = inst(&body, &[nat_zero()]);
-    let expected = Expr::lam(
-      Name::anon(),
-      nat_type(),
-      nat_zero(),
-      BinderInfo::Default,
-    );
+    let expected =
+      Expr::lam(Name::anon(), nat_type(), nat_zero(), BinderInfo::Default);
     assert_eq!(result, expected);
   }
 
@@ -927,11 +1319,7 @@ mod tests {
     env.insert(
       n.clone(),
       ConstantInfo::DefnInfo(DefinitionVal {
-        cnst: ConstantVal {
-          name: n.clone(),
-          level_params: vec![],
-          typ,
-        },
+        cnst: ConstantVal { name: n.clone(), level_params: vec![], typ },
         value,
         hints: ReducibilityHints::Abbrev,
         safety: DefinitionSafety::Safe,
@@ -1198,7 +1586,10 @@ mod tests {
   fn test_nat_shift_right() {
     let env = Env::default();
     let e = Expr::app(
-      Expr::app(Expr::cnst(mk_name2("Nat", "shiftRight"), vec![]), nat_lit(256)),
+      Expr::app(
+        Expr::cnst(mk_name2("Nat", "shiftRight"), vec![]),
+        nat_lit(256),
+      ),
       nat_lit(4),
     );
     assert_eq!(whnf(&e, &env), nat_lit(16));
@@ -1336,12 +1727,8 @@ mod tests {
   #[test]
   fn test_whnf_pi_unchanged() {
     let env = Env::default();
-    let e = Expr::all(
-      mk_name("x"),
-      nat_type(),
-      nat_type(),
-      BinderInfo::Default,
-    );
+    let e =
+      Expr::all(mk_name("x"), nat_type(), nat_type(), BinderInfo::Default);
     let result = whnf(&e, &env);
     assert_eq!(result, e);
   }
@@ -1416,5 +1803,372 @@ mod tests {
     let e = Expr::sort(Level::param(u_name.clone()));
     let result = subst_expr_levels(&e, &[u_name], &[Level::zero()]);
     assert_eq!(result, Expr::sort(Level::zero()));
+  }
+
+  // ==========================================================================
+  // Nat.rec on large literals — reproduces the hang
+  // ==========================================================================
+
+  /// Build a minimal env with Nat, Nat.zero, Nat.succ, and Nat.rec.
+  fn mk_nat_rec_env() -> Env {
+    let mut env = Env::default();
+    let nat_name = mk_name("Nat");
+    let zero_name = mk_name2("Nat", "zero");
+    let succ_name = mk_name2("Nat", "succ");
+    let rec_name = mk_name2("Nat", "rec");
+
+    // Nat : Sort 1
+    env.insert(
+      nat_name.clone(),
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: ConstantVal {
+          name: nat_name.clone(),
+          level_params: vec![],
+          typ: Expr::sort(Level::succ(Level::zero())),
+        },
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        all: vec![nat_name.clone()],
+        ctors: vec![zero_name.clone(), succ_name.clone()],
+        num_nested: Nat::from(0u64),
+        is_rec: true,
+        is_unsafe: false,
+        is_reflexive: false,
+      }),
+    );
+
+    // Nat.zero : Nat
+    env.insert(
+      zero_name.clone(),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: ConstantVal {
+          name: zero_name.clone(),
+          level_params: vec![],
+          typ: nat_type(),
+        },
+        induct: nat_name.clone(),
+        cidx: Nat::from(0u64),
+        num_params: Nat::from(0u64),
+        num_fields: Nat::from(0u64),
+        is_unsafe: false,
+      }),
+    );
+
+    // Nat.succ : Nat → Nat
+    env.insert(
+      succ_name.clone(),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: ConstantVal {
+          name: succ_name.clone(),
+          level_params: vec![],
+          typ: Expr::all(
+            mk_name("n"),
+            nat_type(),
+            nat_type(),
+            BinderInfo::Default,
+          ),
+        },
+        induct: nat_name.clone(),
+        cidx: Nat::from(1u64),
+        num_params: Nat::from(0u64),
+        num_fields: Nat::from(1u64),
+        is_unsafe: false,
+      }),
+    );
+
+    // Nat.rec.{u} : (motive : Nat → Sort u) → motive Nat.zero →
+    //   ((n : Nat) → motive n → motive (Nat.succ n)) → (t : Nat) → motive t
+    // Rules:
+    //   Nat.rec m z s Nat.zero => z
+    //   Nat.rec m z s (Nat.succ n) => s n (Nat.rec m z s n)
+    let u = mk_name("u");
+    env.insert(
+      rec_name.clone(),
+      ConstantInfo::RecInfo(RecursorVal {
+        cnst: ConstantVal {
+          name: rec_name.clone(),
+          level_params: vec![u.clone()],
+          typ: Expr::sort(Level::param(u.clone())), // placeholder
+        },
+        all: vec![nat_name],
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        num_motives: Nat::from(1u64),
+        num_minors: Nat::from(2u64),
+        rules: vec![
+          // Nat.rec m z s Nat.zero => z
+          RecursorRule {
+            ctor: zero_name,
+            n_fields: Nat::from(0u64),
+            // RHS is just bvar(1) = z (the zero minor)
+            // After substitution: Nat.rec m z s Nat.zero
+            //   => rule.rhs applied to [m, z, s]
+            //   => z
+            rhs: Expr::bvar(Nat::from(1u64)),
+          },
+          // Nat.rec m z s (Nat.succ n) => s n (Nat.rec m z s n)
+          RecursorRule {
+            ctor: succ_name,
+            n_fields: Nat::from(1u64),
+            // RHS = fun n => s n (Nat.rec m z s n)
+            // But actually the rule rhs receives [m, z, s] then [n] as args
+            // rhs = bvar(0) = s, applied to the field n
+            // Actually the recursor rule rhs is applied as:
+            //   rhs m z s <fields...>
+            // For Nat.succ with 1 field (the predecessor n):
+            //   rhs m z s n => s n (Nat.rec.{u} m z s n)
+            // So rhs = lam receiving params+minors then fields:
+            // Actually, rhs is an expression that gets applied to
+            // [params..., motives..., minors..., fields...]
+            // For Nat.rec: 0 params, 1 motive, 2 minors, 1 field
+            // So rhs gets applied to: m z s n
+            // We want: s n (Nat.rec.{u} m z s n)
+            // As a closed term using bvars after inst:
+            // After being applied to m z s n:
+            //   bvar(3) = m, bvar(2) = z, bvar(1) = s, bvar(0) = n
+            // We want: s n (Nat.rec.{u} m z s n)
+            // = app(app(bvar(1), bvar(0)),
+            //        app(app(app(app(Nat.rec.{u}, bvar(3)), bvar(2)), bvar(1)), bvar(0)))
+            // But wait, rhs is not a lambda - it gets args applied directly.
+            // The rhs just receives the args via Expr::app in try_reduce_rec.
+            // So rhs should be a term that, after being applied to m, z, s, n,
+            // produces s n (Nat.rec m z s n).
+            //
+            // Simplest: rhs is a 4-arg lambda
+            rhs: Expr::lam(
+              mk_name("m"),
+              Expr::sort(Level::zero()), // placeholder type
+              Expr::lam(
+                mk_name("z"),
+                Expr::sort(Level::zero()),
+                Expr::lam(
+                  mk_name("s"),
+                  Expr::sort(Level::zero()),
+                  Expr::lam(
+                    mk_name("n"),
+                    nat_type(),
+                    // body: s n (Nat.rec.{u} m z s n)
+                    // bvar(3)=m, bvar(2)=z, bvar(1)=s, bvar(0)=n
+                    Expr::app(
+                      Expr::app(
+                        Expr::bvar(Nat::from(1u64)), // s
+                        Expr::bvar(Nat::from(0u64)), // n
+                      ),
+                      Expr::app(
+                        Expr::app(
+                          Expr::app(
+                            Expr::app(
+                              Expr::cnst(
+                                rec_name.clone(),
+                                vec![Level::param(u.clone())],
+                              ),
+                              Expr::bvar(Nat::from(3u64)), // m
+                            ),
+                            Expr::bvar(Nat::from(2u64)), // z
+                          ),
+                          Expr::bvar(Nat::from(1u64)), // s
+                        ),
+                        Expr::bvar(Nat::from(0u64)), // n
+                      ),
+                    ),
+                    BinderInfo::Default,
+                  ),
+                  BinderInfo::Default,
+                ),
+                BinderInfo::Default,
+              ),
+              BinderInfo::Default,
+            ),
+          },
+        ],
+        k: false,
+        is_unsafe: false,
+      }),
+    );
+
+    env
+  }
+
+  #[test]
+  fn test_nat_rec_small_literal() {
+    // Nat.rec (fun _ => Nat) 0 (fun n _ => Nat.succ n) 3
+    // Should reduce to 3 (identity via recursion)
+    let env = mk_nat_rec_env();
+    let motive =
+      Expr::lam(mk_name("_"), nat_type(), nat_type(), BinderInfo::Default);
+    let zero_case = nat_lit(0);
+    let succ_case = Expr::lam(
+      mk_name("n"),
+      nat_type(),
+      Expr::lam(
+        mk_name("_"),
+        nat_type(),
+        Expr::app(
+          Expr::cnst(mk_name2("Nat", "succ"), vec![]),
+          Expr::bvar(Nat::from(1u64)),
+        ),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+    let e = Expr::app(
+      Expr::app(
+        Expr::app(
+          Expr::app(
+            Expr::cnst(
+              mk_name2("Nat", "rec"),
+              vec![Level::succ(Level::zero())],
+            ),
+            motive,
+          ),
+          zero_case,
+        ),
+        succ_case,
+      ),
+      nat_lit(3),
+    );
+    let result = whnf(&e, &env);
+    assert_eq!(result, nat_lit(3));
+  }
+
+  #[test]
+  fn test_nat_rec_large_literal_hangs() {
+    // This test demonstrates the O(n) recursor peeling issue.
+    // Nat.rec on 65536 (2^16) — would take 65536 recursive steps.
+    // We use a timeout-style approach: just verify it works for small n
+    // and document that large n hangs.
+    let env = mk_nat_rec_env();
+    let motive =
+      Expr::lam(mk_name("_"), nat_type(), nat_type(), BinderInfo::Default);
+    let zero_case = nat_lit(0);
+    let succ_case = Expr::lam(
+      mk_name("n"),
+      nat_type(),
+      Expr::lam(
+        mk_name("_"),
+        nat_type(),
+        Expr::app(
+          Expr::cnst(mk_name2("Nat", "succ"), vec![]),
+          Expr::bvar(Nat::from(1u64)),
+        ),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+    // Test with 100 — should be fast enough
+    let e = Expr::app(
+      Expr::app(
+        Expr::app(
+          Expr::app(
+            Expr::cnst(
+              mk_name2("Nat", "rec"),
+              vec![Level::succ(Level::zero())],
+            ),
+            motive.clone(),
+          ),
+          zero_case.clone(),
+        ),
+        succ_case.clone(),
+      ),
+      nat_lit(100),
+    );
+    let result = whnf(&e, &env);
+    assert_eq!(result, nat_lit(100));
+
+    // nat_lit(65536) would hang here — that's the bug to fix
+  }
+
+  // ==========================================================================
+  // try_reduce_native tests (Lean.reduceBool / Lean.reduceNat)
+  // ==========================================================================
+
+  #[test]
+  fn test_reduce_bool_true() {
+    // Lean.reduceBool Bool.true → Bool.true
+    let args = vec![Expr::cnst(mk_name2("Bool", "true"), vec![])];
+    let result = try_reduce_native(&mk_name2("Lean", "reduceBool"), &args);
+    assert_eq!(result, Some(Expr::cnst(mk_name2("Bool", "true"), vec![])));
+  }
+
+  #[test]
+  fn test_reduce_nat_literal() {
+    // Lean.reduceNat (lit 42) → lit 42
+    let args = vec![nat_lit(42)];
+    let result = try_reduce_native(&mk_name2("Lean", "reduceNat"), &args);
+    assert_eq!(result, Some(nat_lit(42)));
+  }
+
+  #[test]
+  fn test_reduce_bool_with_nat_ble() {
+    // Lean.reduceBool (Nat.ble 3 5) → passes through the arg
+    // WHNF will then reduce Nat.ble 3 5 → Bool.true
+    let ble_expr = Expr::app(
+      Expr::app(Expr::cnst(mk_name2("Nat", "ble"), vec![]), nat_lit(3)),
+      nat_lit(5),
+    );
+    let args = vec![ble_expr.clone()];
+    let result = try_reduce_native(&mk_name2("Lean", "reduceBool"), &args);
+    assert_eq!(result, Some(ble_expr));
+
+    // Verify WHNF continues reducing the returned argument
+    let env = Env::default();
+    let full_result = whnf(&result.unwrap(), &env);
+    assert_eq!(full_result, Expr::cnst(mk_name2("Bool", "true"), vec![]));
+  }
+
+  #[test]
+  fn test_reduce_native_wrong_name() {
+    let args = vec![nat_lit(1)];
+    assert_eq!(try_reduce_native(&mk_name2("Lean", "other"), &args), None);
+  }
+
+  #[test]
+  fn test_reduce_native_wrong_arity() {
+    // 0 args
+    let empty: Vec<Expr> = vec![];
+    assert_eq!(try_reduce_native(&mk_name2("Lean", "reduceBool"), &empty), None);
+    // 2 args
+    let two = vec![nat_lit(1), nat_lit(2)];
+    assert_eq!(try_reduce_native(&mk_name2("Lean", "reduceBool"), &two), None);
+  }
+
+  #[test]
+  fn test_nat_rec_65536() {
+    let env = mk_nat_rec_env();
+    let motive =
+      Expr::lam(mk_name("_"), nat_type(), nat_type(), BinderInfo::Default);
+    let zero_case = nat_lit(0);
+    let succ_case = Expr::lam(
+      mk_name("n"),
+      nat_type(),
+      Expr::lam(
+        mk_name("_"),
+        nat_type(),
+        Expr::app(
+          Expr::cnst(mk_name2("Nat", "succ"), vec![]),
+          Expr::bvar(Nat::from(1u64)),
+        ),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    );
+    let e = Expr::app(
+      Expr::app(
+        Expr::app(
+          Expr::app(
+            Expr::cnst(
+              mk_name2("Nat", "rec"),
+              vec![Level::succ(Level::zero())],
+            ),
+            motive,
+          ),
+          zero_case,
+        ),
+        succ_case,
+      ),
+      nat_lit(65536),
+    );
+    let result = whnf(&e, &env);
+    assert_eq!(result, nat_lit(65536));
   }
 }

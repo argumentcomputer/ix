@@ -1,5 +1,6 @@
 pub mod convert;
 pub mod dag;
+pub mod dag_tc;
 pub mod def_eq;
 pub mod dll;
 pub mod error;

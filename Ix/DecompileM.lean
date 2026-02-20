@@ -117,12 +117,6 @@ def lookupNameAddrOrAnon (addr : Address) : DecompileM Ix.Name := do
   | some n => pure n
   | none => pure Ix.Name.mkAnon
 
-/-- Resolve constant Address → Ix.Name via addrToName. -/
-def lookupConstName (addr : Address) : DecompileM Ix.Name := do
-  match (← getEnv).ixonEnv.addrToName.get? addr with
-  | some n => pure n
-  | none => throw (.missingAddress addr)
-
 def lookupBlob (addr : Address) : DecompileM ByteArray := do
   match (← getEnv).ixonEnv.blobs.get? addr with
   | some blob => pure blob
@@ -390,18 +384,14 @@ partial def decompileExpr (e : Ixon.Expr) (arenaIdx : UInt64) : DecompileM Ix.Ex
     pure (applyMdata (Ix.Expr.mkLit (.strVal s)) mdataLayers)
 
   -- Ref with arena metadata
-  | .ref nameAddr, .ref refIdx univIndices => do
-    let name ← match (← getEnv).ixonEnv.names.get? nameAddr with
-      | some n => pure n
-      | none => getRef refIdx >>= lookupConstName
+  | .ref nameAddr, .ref _refIdx univIndices => do
+    let name ← lookupNameAddr nameAddr
     let lvls ← decompileUnivIndices univIndices
     pure (applyMdata (Ix.Expr.mkConst name lvls) mdataLayers)
 
   -- Ref without arena metadata
-  | _, .ref refIdx univIndices => do
-    let name ← getRef refIdx >>= lookupConstName
-    let lvls ← decompileUnivIndices univIndices
-    pure (applyMdata (Ix.Expr.mkConst name lvls) mdataLayers)
+  | _, .ref _refIdx _univIndices => do
+    throw (.badConstantFormat "ref without arena metadata")
 
   -- Rec with arena metadata
   | .ref nameAddr, .recur recIdx univIndices => do
@@ -472,10 +462,8 @@ partial def decompileExpr (e : Ixon.Expr) (arenaIdx : UInt64) : DecompileM Ix.Ex
     let valExpr ← decompileExpr val child
     pure (applyMdata (Ix.Expr.mkProj typeName fieldIdx.toNat valExpr) mdataLayers)
 
-  | _, .prj typeRefIdx fieldIdx val => do
-    let typeName ← getRef typeRefIdx >>= lookupConstName
-    let valExpr ← decompileExpr val UInt64.MAX
-    pure (applyMdata (Ix.Expr.mkProj typeName fieldIdx.toNat valExpr) mdataLayers)
+  | _, .prj _typeRefIdx _fieldIdx _val => do
+    throw (.badConstantFormat "prj without arena metadata")
 
   | _, .share _ => throw (.badConstantFormat "unexpected Share in decompileExpr")
 

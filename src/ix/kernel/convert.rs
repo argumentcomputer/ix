@@ -1,7 +1,10 @@
 use core::ptr::NonNull;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
-use crate::ix::env::{Expr, ExprData, Level, Name};
+use rustc_hash::FxHashMap;
+
+use crate::ix::env::{BinderInfo, Expr, ExprData, Level, Name};
 use crate::lean::nat::Nat;
 
 use super::dag::*;
@@ -23,208 +26,427 @@ fn from_expr_go(
   ctx: &BTreeMap<u64, NonNull<Var>>,
   parents: Option<NonNull<Parents>>,
 ) -> DAGPtr {
-  match expr.as_data() {
-    ExprData::Bvar(idx, _) => {
-      let idx_u64 = idx.to_u64().unwrap_or(u64::MAX);
-      if idx_u64 < depth {
-        let level = depth - 1 - idx_u64;
-        match ctx.get(&level) {
-          Some(&var_ptr) => {
-            if let Some(parent_link) = parents {
-              add_to_parents(DAGPtr::Var(var_ptr), parent_link);
+  // Frame-based iterative Expr → DAG conversion.
+  //
+  // For compound nodes, we pre-allocate the DAG node with dangling child
+  // pointers, then push frames to fill in children after they're converted.
+  //
+  // The ctx is cloned at binder boundaries (Fun, Pi, Let) to track
+  // bound variable bindings.
+  enum Frame<'a> {
+    Visit {
+      expr: &'a Expr,
+      depth: u64,
+      ctx: BTreeMap<u64, NonNull<Var>>,
+      parents: Option<NonNull<Parents>>,
+    },
+    SetAppFun(NonNull<App>),
+    SetAppArg(NonNull<App>),
+    SetFunDom(NonNull<Fun>),
+    SetPiDom(NonNull<Pi>),
+    SetLetTyp(NonNull<LetNode>),
+    SetLetVal(NonNull<LetNode>),
+    SetProjExpr(NonNull<ProjNode>),
+    // After domain is set, wire up binder body with new ctx
+    FunBody {
+      lam_ptr: NonNull<Lam>,
+      body: &'a Expr,
+      depth: u64,
+      ctx: BTreeMap<u64, NonNull<Var>>,
+    },
+    PiBody {
+      lam_ptr: NonNull<Lam>,
+      body: &'a Expr,
+      depth: u64,
+      ctx: BTreeMap<u64, NonNull<Var>>,
+    },
+    LetBody {
+      lam_ptr: NonNull<Lam>,
+      body: &'a Expr,
+      depth: u64,
+      ctx: BTreeMap<u64, NonNull<Var>>,
+    },
+    SetLamBod(NonNull<Lam>),
+  }
+
+  let mut work: Vec<Frame<'_>> = vec![Frame::Visit {
+    expr,
+    depth,
+    ctx: ctx.clone(),
+    parents,
+  }];
+  // Results stack holds DAGPtr for each completed subtree
+  let mut results: Vec<DAGPtr> = Vec::new();
+  let mut visit_count: u64 = 0;
+  // Cache for context-independent leaf nodes (Cnst, Sort, Lit).
+  // Keyed by Arc pointer identity. Enables DAG sharing so the infer cache
+  // (keyed by DAGPtr address) can dedup repeated references to the same constant.
+  let mut leaf_cache: FxHashMap<*const ExprData, DAGPtr> = FxHashMap::default();
+
+  while let Some(frame) = work.pop() {
+    visit_count += 1;
+    if visit_count % 100_000 == 0 {
+      eprintln!("[from_expr_go] visit_count={visit_count} work_len={}", work.len());
+    }
+    match frame {
+      Frame::Visit { expr, depth, ctx, parents } => {
+        match expr.as_data() {
+          ExprData::Bvar(idx, _) => {
+            let idx_u64 = idx.to_u64().unwrap_or(u64::MAX);
+            if idx_u64 < depth {
+              let level = depth - 1 - idx_u64;
+              match ctx.get(&level) {
+                Some(&var_ptr) => {
+                  if let Some(parent_link) = parents {
+                    add_to_parents(DAGPtr::Var(var_ptr), parent_link);
+                  }
+                  results.push(DAGPtr::Var(var_ptr));
+                },
+                None => {
+                  let var = alloc_val(Var {
+                    depth: level,
+                    binder: BinderPtr::Free,
+                    fvar_name: None,
+                    parents,
+                  });
+                  results.push(DAGPtr::Var(var));
+                },
+              }
+            } else {
+              let var = alloc_val(Var {
+                depth: idx_u64,
+                binder: BinderPtr::Free,
+                fvar_name: None,
+                parents,
+              });
+              results.push(DAGPtr::Var(var));
             }
-            DAGPtr::Var(var_ptr)
           },
-          None => {
+
+          ExprData::Fvar(name, _) => {
             let var = alloc_val(Var {
-              depth: level,
+              depth: 0,
               binder: BinderPtr::Free,
+              fvar_name: Some(name.clone()),
               parents,
             });
-            DAGPtr::Var(var)
+            results.push(DAGPtr::Var(var));
+          },
+
+          ExprData::Sort(level, _) => {
+            let key = Arc::as_ptr(&expr.0);
+            if let Some(&cached) = leaf_cache.get(&key) {
+              if let Some(parent_link) = parents {
+                add_to_parents(cached, parent_link);
+              }
+              results.push(cached);
+            } else {
+              let sort = alloc_val(Sort { level: level.clone(), parents });
+              let ptr = DAGPtr::Sort(sort);
+              leaf_cache.insert(key, ptr);
+              results.push(ptr);
+            }
+          },
+
+          ExprData::Const(name, levels, _) => {
+            let key = Arc::as_ptr(&expr.0);
+            if let Some(&cached) = leaf_cache.get(&key) {
+              if let Some(parent_link) = parents {
+                add_to_parents(cached, parent_link);
+              }
+              results.push(cached);
+            } else {
+              let cnst = alloc_val(Cnst {
+                name: name.clone(),
+                levels: levels.clone(),
+                parents,
+              });
+              let ptr = DAGPtr::Cnst(cnst);
+              leaf_cache.insert(key, ptr);
+              results.push(ptr);
+            }
+          },
+
+          ExprData::Lit(lit, _) => {
+            let key = Arc::as_ptr(&expr.0);
+            if let Some(&cached) = leaf_cache.get(&key) {
+              if let Some(parent_link) = parents {
+                add_to_parents(cached, parent_link);
+              }
+              results.push(cached);
+            } else {
+              let lit_node = alloc_val(LitNode { val: lit.clone(), parents });
+              let ptr = DAGPtr::Lit(lit_node);
+              leaf_cache.insert(key, ptr);
+              results.push(ptr);
+            }
+          },
+
+          ExprData::App(fun_expr, arg_expr, _) => {
+            let app_ptr = alloc_app(
+              DAGPtr::Var(NonNull::dangling()),
+              DAGPtr::Var(NonNull::dangling()),
+              parents,
+            );
+            unsafe {
+              let app = &mut *app_ptr.as_ptr();
+              let fun_ref =
+                NonNull::new(&mut app.fun_ref as *mut Parents).unwrap();
+              let arg_ref =
+                NonNull::new(&mut app.arg_ref as *mut Parents).unwrap();
+              // Process arg first (pushed last = processed first after fun)
+              work.push(Frame::SetAppArg(app_ptr));
+              work.push(Frame::Visit {
+                expr: arg_expr,
+                depth,
+                ctx: ctx.clone(),
+                parents: Some(arg_ref),
+              });
+              work.push(Frame::SetAppFun(app_ptr));
+              work.push(Frame::Visit {
+                expr: fun_expr,
+                depth,
+                ctx,
+                parents: Some(fun_ref),
+              });
+            }
+            results.push(DAGPtr::App(app_ptr));
+          },
+
+          ExprData::Lam(name, typ, body, bi, _) => {
+            let lam_ptr =
+              alloc_lam(depth, DAGPtr::Var(NonNull::dangling()), None);
+            let fun_ptr = alloc_fun(
+              name.clone(),
+              bi.clone(),
+              DAGPtr::Var(NonNull::dangling()),
+              lam_ptr,
+              parents,
+            );
+            unsafe {
+              let fun = &mut *fun_ptr.as_ptr();
+              let dom_ref =
+                NonNull::new(&mut fun.dom_ref as *mut Parents).unwrap();
+              let img_ref =
+                NonNull::new(&mut fun.img_ref as *mut Parents).unwrap();
+              add_to_parents(DAGPtr::Lam(lam_ptr), img_ref);
+
+              let dom_ctx = ctx.clone();
+              work.push(Frame::FunBody {
+                lam_ptr,
+                body,
+                depth,
+                ctx,
+              });
+              work.push(Frame::SetFunDom(fun_ptr));
+              work.push(Frame::Visit {
+                expr: typ,
+                depth,
+                ctx: dom_ctx,
+                parents: Some(dom_ref),
+              });
+            }
+            results.push(DAGPtr::Fun(fun_ptr));
+          },
+
+          ExprData::ForallE(name, typ, body, bi, _) => {
+            let lam_ptr =
+              alloc_lam(depth, DAGPtr::Var(NonNull::dangling()), None);
+            let pi_ptr = alloc_pi(
+              name.clone(),
+              bi.clone(),
+              DAGPtr::Var(NonNull::dangling()),
+              lam_ptr,
+              parents,
+            );
+            unsafe {
+              let pi = &mut *pi_ptr.as_ptr();
+              let dom_ref =
+                NonNull::new(&mut pi.dom_ref as *mut Parents).unwrap();
+              let img_ref =
+                NonNull::new(&mut pi.img_ref as *mut Parents).unwrap();
+              add_to_parents(DAGPtr::Lam(lam_ptr), img_ref);
+
+              let dom_ctx = ctx.clone();
+              work.push(Frame::PiBody {
+                lam_ptr,
+                body,
+                depth,
+                ctx,
+              });
+              work.push(Frame::SetPiDom(pi_ptr));
+              work.push(Frame::Visit {
+                expr: typ,
+                depth,
+                ctx: dom_ctx,
+                parents: Some(dom_ref),
+              });
+            }
+            results.push(DAGPtr::Pi(pi_ptr));
+          },
+
+          ExprData::LetE(name, typ, val, body, non_dep, _) => {
+            let lam_ptr =
+              alloc_lam(depth, DAGPtr::Var(NonNull::dangling()), None);
+            let let_ptr = alloc_let(
+              name.clone(),
+              *non_dep,
+              DAGPtr::Var(NonNull::dangling()),
+              DAGPtr::Var(NonNull::dangling()),
+              lam_ptr,
+              parents,
+            );
+            unsafe {
+              let let_node = &mut *let_ptr.as_ptr();
+              let typ_ref =
+                NonNull::new(&mut let_node.typ_ref as *mut Parents).unwrap();
+              let val_ref =
+                NonNull::new(&mut let_node.val_ref as *mut Parents).unwrap();
+              let bod_ref =
+                NonNull::new(&mut let_node.bod_ref as *mut Parents).unwrap();
+              add_to_parents(DAGPtr::Lam(lam_ptr), bod_ref);
+
+              work.push(Frame::LetBody {
+                lam_ptr,
+                body,
+                depth,
+                ctx: ctx.clone(),
+              });
+              work.push(Frame::SetLetVal(let_ptr));
+              work.push(Frame::Visit {
+                expr: val,
+                depth,
+                ctx: ctx.clone(),
+                parents: Some(val_ref),
+              });
+              work.push(Frame::SetLetTyp(let_ptr));
+              work.push(Frame::Visit {
+                expr: typ,
+                depth,
+                ctx,
+                parents: Some(typ_ref),
+              });
+            }
+            results.push(DAGPtr::Let(let_ptr));
+          },
+
+          ExprData::Proj(type_name, idx, structure, _) => {
+            let proj_ptr = alloc_proj(
+              type_name.clone(),
+              idx.clone(),
+              DAGPtr::Var(NonNull::dangling()),
+              parents,
+            );
+            unsafe {
+              let proj = &mut *proj_ptr.as_ptr();
+              let expr_ref =
+                NonNull::new(&mut proj.expr_ref as *mut Parents).unwrap();
+              work.push(Frame::SetProjExpr(proj_ptr));
+              work.push(Frame::Visit {
+                expr: structure,
+                depth,
+                ctx,
+                parents: Some(expr_ref),
+              });
+            }
+            results.push(DAGPtr::Proj(proj_ptr));
+          },
+
+          ExprData::Mdata(_, inner, _) => {
+            // Strip metadata, convert inner
+            work.push(Frame::Visit { expr: inner, depth, ctx, parents });
+          },
+
+          ExprData::Mvar(_name, _) => {
+            let var = alloc_val(Var {
+              depth: 0,
+              binder: BinderPtr::Free,
+              fvar_name: None,
+              parents,
+            });
+            results.push(DAGPtr::Var(var));
           },
         }
-      } else {
-        // Free bound variable (dangling de Bruijn index)
-        let var =
-          alloc_val(Var { depth: idx_u64, binder: BinderPtr::Free, parents });
-        DAGPtr::Var(var)
-      }
-    },
-
-    ExprData::Fvar(_name, _) => {
-      // Encode fvar name into depth as a unique ID.
-      // We'll recover it during to_expr using a side table.
-      let var = alloc_val(Var { depth: 0, binder: BinderPtr::Free, parents });
-      // Store name→var mapping (caller should manage the side table)
-      DAGPtr::Var(var)
-    },
-
-    ExprData::Sort(level, _) => {
-      let sort = alloc_val(Sort { level: level.clone(), parents });
-      DAGPtr::Sort(sort)
-    },
-
-    ExprData::Const(name, levels, _) => {
-      let cnst = alloc_val(Cnst {
-        name: name.clone(),
-        levels: levels.clone(),
-        parents,
-      });
-      DAGPtr::Cnst(cnst)
-    },
-
-    ExprData::Lit(lit, _) => {
-      let lit_node = alloc_val(LitNode { val: lit.clone(), parents });
-      DAGPtr::Lit(lit_node)
-    },
-
-    ExprData::App(fun_expr, arg_expr, _) => {
-      let app_ptr = alloc_app(
-        DAGPtr::Var(NonNull::dangling()),
-        DAGPtr::Var(NonNull::dangling()),
-        parents,
-      );
-      unsafe {
-        let app = &mut *app_ptr.as_ptr();
-        let fun_ref_ptr =
-          NonNull::new(&mut app.fun_ref as *mut Parents).unwrap();
-        let arg_ref_ptr =
-          NonNull::new(&mut app.arg_ref as *mut Parents).unwrap();
-        app.fun = from_expr_go(fun_expr, depth, ctx, Some(fun_ref_ptr));
-        app.arg = from_expr_go(arg_expr, depth, ctx, Some(arg_ref_ptr));
-      }
-      DAGPtr::App(app_ptr)
-    },
-
-    ExprData::Lam(name, typ, body, bi, _) => {
-      // Lean Lam → DAG Fun(dom, Lam(bod, var))
-      let lam_ptr =
-        alloc_lam(depth, DAGPtr::Var(NonNull::dangling()), None);
-      let fun_ptr = alloc_fun(
-        name.clone(),
-        bi.clone(),
-        DAGPtr::Var(NonNull::dangling()),
-        lam_ptr,
-        parents,
-      );
-      unsafe {
-        let fun = &mut *fun_ptr.as_ptr();
-        let dom_ref_ptr =
-          NonNull::new(&mut fun.dom_ref as *mut Parents).unwrap();
-        fun.dom = from_expr_go(typ, depth, ctx, Some(dom_ref_ptr));
-
-        // Set Lam's parent to FunImg
-        let img_ref_ptr =
-          NonNull::new(&mut fun.img_ref as *mut Parents).unwrap();
-        add_to_parents(DAGPtr::Lam(lam_ptr), img_ref_ptr);
-
+      },
+      Frame::SetAppFun(app_ptr) => unsafe {
+        let result = results.pop().unwrap();
+        (*app_ptr.as_ptr()).fun = result;
+      },
+      Frame::SetAppArg(app_ptr) => unsafe {
+        let result = results.pop().unwrap();
+        (*app_ptr.as_ptr()).arg = result;
+      },
+      Frame::SetFunDom(fun_ptr) => unsafe {
+        let result = results.pop().unwrap();
+        (*fun_ptr.as_ptr()).dom = result;
+      },
+      Frame::SetPiDom(pi_ptr) => unsafe {
+        let result = results.pop().unwrap();
+        (*pi_ptr.as_ptr()).dom = result;
+      },
+      Frame::SetLetTyp(let_ptr) => unsafe {
+        let result = results.pop().unwrap();
+        (*let_ptr.as_ptr()).typ = result;
+      },
+      Frame::SetLetVal(let_ptr) => unsafe {
+        let result = results.pop().unwrap();
+        (*let_ptr.as_ptr()).val = result;
+      },
+      Frame::SetProjExpr(proj_ptr) => unsafe {
+        let result = results.pop().unwrap();
+        (*proj_ptr.as_ptr()).expr = result;
+      },
+      Frame::SetLamBod(lam_ptr) => unsafe {
+        let result = results.pop().unwrap();
+        (*lam_ptr.as_ptr()).bod = result;
+      },
+      Frame::FunBody { lam_ptr, body, depth, mut ctx } => unsafe {
+        // Domain has been set; now set up body with var binding
         let lam = &mut *lam_ptr.as_ptr();
         let var_ptr = NonNull::new(&mut lam.var as *mut Var).unwrap();
-        let mut new_ctx = ctx.clone();
-        new_ctx.insert(depth, var_ptr);
-        let bod_ref_ptr =
+        ctx.insert(depth, var_ptr);
+        let bod_ref =
           NonNull::new(&mut lam.bod_ref as *mut Parents).unwrap();
-        lam.bod =
-          from_expr_go(body, depth + 1, &new_ctx, Some(bod_ref_ptr));
-      }
-      DAGPtr::Fun(fun_ptr)
-    },
-
-    ExprData::ForallE(name, typ, body, bi, _) => {
-      let lam_ptr =
-        alloc_lam(depth, DAGPtr::Var(NonNull::dangling()), None);
-      let pi_ptr = alloc_pi(
-        name.clone(),
-        bi.clone(),
-        DAGPtr::Var(NonNull::dangling()),
-        lam_ptr,
-        parents,
-      );
-      unsafe {
-        let pi = &mut *pi_ptr.as_ptr();
-        let dom_ref_ptr =
-          NonNull::new(&mut pi.dom_ref as *mut Parents).unwrap();
-        pi.dom = from_expr_go(typ, depth, ctx, Some(dom_ref_ptr));
-
-        let img_ref_ptr =
-          NonNull::new(&mut pi.img_ref as *mut Parents).unwrap();
-        add_to_parents(DAGPtr::Lam(lam_ptr), img_ref_ptr);
-
+        work.push(Frame::SetLamBod(lam_ptr));
+        work.push(Frame::Visit {
+          expr: body,
+          depth: depth + 1,
+          ctx,
+          parents: Some(bod_ref),
+        });
+      },
+      Frame::PiBody { lam_ptr, body, depth, mut ctx } => unsafe {
         let lam = &mut *lam_ptr.as_ptr();
         let var_ptr = NonNull::new(&mut lam.var as *mut Var).unwrap();
-        let mut new_ctx = ctx.clone();
-        new_ctx.insert(depth, var_ptr);
-        let bod_ref_ptr =
+        ctx.insert(depth, var_ptr);
+        let bod_ref =
           NonNull::new(&mut lam.bod_ref as *mut Parents).unwrap();
-        lam.bod =
-          from_expr_go(body, depth + 1, &new_ctx, Some(bod_ref_ptr));
-      }
-      DAGPtr::Pi(pi_ptr)
-    },
-
-    ExprData::LetE(name, typ, val, body, non_dep, _) => {
-      let lam_ptr =
-        alloc_lam(depth, DAGPtr::Var(NonNull::dangling()), None);
-      let let_ptr = alloc_let(
-        name.clone(),
-        *non_dep,
-        DAGPtr::Var(NonNull::dangling()),
-        DAGPtr::Var(NonNull::dangling()),
-        lam_ptr,
-        parents,
-      );
-      unsafe {
-        let let_node = &mut *let_ptr.as_ptr();
-        let typ_ref_ptr =
-          NonNull::new(&mut let_node.typ_ref as *mut Parents).unwrap();
-        let val_ref_ptr =
-          NonNull::new(&mut let_node.val_ref as *mut Parents).unwrap();
-        let_node.typ = from_expr_go(typ, depth, ctx, Some(typ_ref_ptr));
-        let_node.val = from_expr_go(val, depth, ctx, Some(val_ref_ptr));
-
-        let bod_ref_ptr =
-          NonNull::new(&mut let_node.bod_ref as *mut Parents).unwrap();
-        add_to_parents(DAGPtr::Lam(lam_ptr), bod_ref_ptr);
-
+        work.push(Frame::SetLamBod(lam_ptr));
+        work.push(Frame::Visit {
+          expr: body,
+          depth: depth + 1,
+          ctx,
+          parents: Some(bod_ref),
+        });
+      },
+      Frame::LetBody { lam_ptr, body, depth, mut ctx } => unsafe {
         let lam = &mut *lam_ptr.as_ptr();
         let var_ptr = NonNull::new(&mut lam.var as *mut Var).unwrap();
-        let mut new_ctx = ctx.clone();
-        new_ctx.insert(depth, var_ptr);
-        let inner_bod_ref_ptr =
+        ctx.insert(depth, var_ptr);
+        let bod_ref =
           NonNull::new(&mut lam.bod_ref as *mut Parents).unwrap();
-        lam.bod =
-          from_expr_go(body, depth + 1, &new_ctx, Some(inner_bod_ref_ptr));
-      }
-      DAGPtr::Let(let_ptr)
-    },
-
-    ExprData::Proj(type_name, idx, structure, _) => {
-      let proj_ptr = alloc_proj(
-        type_name.clone(),
-        idx.clone(),
-        DAGPtr::Var(NonNull::dangling()),
-        parents,
-      );
-      unsafe {
-        let proj = &mut *proj_ptr.as_ptr();
-        let expr_ref_ptr =
-          NonNull::new(&mut proj.expr_ref as *mut Parents).unwrap();
-        proj.expr =
-          from_expr_go(structure, depth, ctx, Some(expr_ref_ptr));
-      }
-      DAGPtr::Proj(proj_ptr)
-    },
-
-    // Mdata: strip metadata, convert inner expression
-    ExprData::Mdata(_, inner, _) => from_expr_go(inner, depth, ctx, parents),
-
-    // Mvar: treat as terminal (shouldn't appear in well-typed terms)
-    ExprData::Mvar(_name, _) => {
-      let var = alloc_val(Var { depth: 0, binder: BinderPtr::Free, parents });
-      DAGPtr::Var(var)
-    },
+        work.push(Frame::SetLamBod(lam_ptr));
+        work.push(Frame::Visit {
+          expr: body,
+          depth: depth + 1,
+          ctx,
+          parents: Some(bod_ref),
+        });
+      },
+    }
   }
+
+  results.pop().unwrap()
 }
 
 // ============================================================================
@@ -250,124 +472,193 @@ impl Clone for crate::ix::env::Literal {
 
 pub fn to_expr(dag: &DAG) -> Expr {
   let mut var_map: BTreeMap<*const Var, u64> = BTreeMap::new();
-  to_expr_go(dag.head, &mut var_map, 0)
+  let mut cache: rustc_hash::FxHashMap<(usize, u64), Expr> =
+    rustc_hash::FxHashMap::default();
+  to_expr_go(dag.head, &mut var_map, 0, &mut cache)
 }
 
 fn to_expr_go(
   node: DAGPtr,
   var_map: &mut BTreeMap<*const Var, u64>,
   depth: u64,
+  cache: &mut rustc_hash::FxHashMap<(usize, u64), Expr>,
 ) -> Expr {
-  unsafe {
-    match node {
-      DAGPtr::Var(link) => {
-        let var = link.as_ptr();
-        let var_key = var as *const Var;
-        if let Some(&bind_depth) = var_map.get(&var_key) {
-          let idx = depth - bind_depth - 1;
-          Expr::bvar(Nat::from(idx))
-        } else {
-          // Free variable
-          Expr::bvar(Nat::from((*var).depth))
+  // Frame-based iterative conversion from DAG to Expr.
+  //
+  // Uses a cache keyed on (dag_ptr_key, depth) to avoid exponential
+  // blowup when the DAG has sharing (e.g., after beta reduction).
+  //
+  // For binder nodes (Fun, Pi, Let, Lam), the pattern is:
+  //   1. Visit domain/type/value children
+  //   2. BinderBody: register var in var_map, push Visit for body
+  //   3. *Build: pop results, unregister var, build Expr
+  //   4. CacheStore: cache the built result
+  enum Frame {
+    Visit(DAGPtr, u64),
+    App,
+    BinderBody(*const Var, DAGPtr, u64),
+    FunBuild(Name, BinderInfo, *const Var),
+    PiBuild(Name, BinderInfo, *const Var),
+    LetBuild(Name, bool, *const Var),
+    Proj(Name, Nat),
+    LamBuild(*const Var),
+    CacheStore(usize, u64),
+  }
+
+  let mut work: Vec<Frame> = vec![Frame::Visit(node, depth)];
+  let mut results: Vec<Expr> = Vec::new();
+
+  while let Some(frame) = work.pop() {
+    match frame {
+      Frame::Visit(node, depth) => unsafe {
+        // Check cache first for non-Var nodes
+        match node {
+          DAGPtr::Var(_) => {}, // Vars depend on var_map, skip cache
+          _ => {
+            let key = (dag_ptr_key(node), depth);
+            if let Some(cached) = cache.get(&key) {
+              results.push(cached.clone());
+              continue;
+            }
+          },
+        }
+        match node {
+          DAGPtr::Var(link) => {
+            let var = link.as_ptr();
+            let var_key = var as *const Var;
+            if let Some(&bind_depth) = var_map.get(&var_key) {
+              results.push(Expr::bvar(Nat::from(depth - bind_depth - 1)));
+            } else if let Some(name) = &(*var).fvar_name {
+              results.push(Expr::fvar(name.clone()));
+            } else {
+              results.push(Expr::bvar(Nat::from((*var).depth)));
+            }
+          },
+          DAGPtr::Sort(link) => {
+            let sort = &*link.as_ptr();
+            results.push(Expr::sort(sort.level.clone()));
+          },
+          DAGPtr::Cnst(link) => {
+            let cnst = &*link.as_ptr();
+            results.push(Expr::cnst(cnst.name.clone(), cnst.levels.clone()));
+          },
+          DAGPtr::Lit(link) => {
+            let lit = &*link.as_ptr();
+            results.push(Expr::lit(lit.val.clone()));
+          },
+          DAGPtr::App(link) => {
+            let app = &*link.as_ptr();
+            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
+            work.push(Frame::App);
+            work.push(Frame::Visit(app.arg, depth));
+            work.push(Frame::Visit(app.fun, depth));
+          },
+          DAGPtr::Fun(link) => {
+            let fun = &*link.as_ptr();
+            let lam = &*fun.img.as_ptr();
+            let var_ptr = &lam.var as *const Var;
+            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
+            work.push(Frame::FunBuild(
+              fun.binder_name.clone(),
+              fun.binder_info.clone(),
+              var_ptr,
+            ));
+            work.push(Frame::BinderBody(var_ptr, lam.bod, depth));
+            work.push(Frame::Visit(fun.dom, depth));
+          },
+          DAGPtr::Pi(link) => {
+            let pi = &*link.as_ptr();
+            let lam = &*pi.img.as_ptr();
+            let var_ptr = &lam.var as *const Var;
+            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
+            work.push(Frame::PiBuild(
+              pi.binder_name.clone(),
+              pi.binder_info.clone(),
+              var_ptr,
+            ));
+            work.push(Frame::BinderBody(var_ptr, lam.bod, depth));
+            work.push(Frame::Visit(pi.dom, depth));
+          },
+          DAGPtr::Let(link) => {
+            let let_node = &*link.as_ptr();
+            let lam = &*let_node.bod.as_ptr();
+            let var_ptr = &lam.var as *const Var;
+            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
+            work.push(Frame::LetBuild(
+              let_node.binder_name.clone(),
+              let_node.non_dep,
+              var_ptr,
+            ));
+            work.push(Frame::BinderBody(var_ptr, lam.bod, depth));
+            work.push(Frame::Visit(let_node.val, depth));
+            work.push(Frame::Visit(let_node.typ, depth));
+          },
+          DAGPtr::Proj(link) => {
+            let proj = &*link.as_ptr();
+            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
+            work.push(Frame::Proj(proj.type_name.clone(), proj.idx.clone()));
+            work.push(Frame::Visit(proj.expr, depth));
+          },
+          DAGPtr::Lam(link) => {
+            // Standalone Lam: no domain to visit, just body
+            let lam = &*link.as_ptr();
+            let var_ptr = &lam.var as *const Var;
+            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
+            work.push(Frame::LamBuild(var_ptr));
+            work.push(Frame::BinderBody(var_ptr, lam.bod, depth));
+          },
         }
       },
-
-      DAGPtr::Sort(link) => {
-        let sort = &*link.as_ptr();
-        Expr::sort(sort.level.clone())
+      Frame::App => {
+        let arg = results.pop().unwrap();
+        let fun = results.pop().unwrap();
+        results.push(Expr::app(fun, arg));
       },
-
-      DAGPtr::Cnst(link) => {
-        let cnst = &*link.as_ptr();
-        Expr::cnst(cnst.name.clone(), cnst.levels.clone())
-      },
-
-      DAGPtr::Lit(link) => {
-        let lit = &*link.as_ptr();
-        Expr::lit(lit.val.clone())
-      },
-
-      DAGPtr::App(link) => {
-        let app = &*link.as_ptr();
-        let fun = to_expr_go(app.fun, var_map, depth);
-        let arg = to_expr_go(app.arg, var_map, depth);
-        Expr::app(fun, arg)
-      },
-
-      DAGPtr::Fun(link) => {
-        let fun = &*link.as_ptr();
-        let lam = &*fun.img.as_ptr();
-        let dom = to_expr_go(fun.dom, var_map, depth);
-        let var_ptr = &lam.var as *const Var;
+      Frame::BinderBody(var_ptr, body, depth) => {
         var_map.insert(var_ptr, depth);
-        let bod = to_expr_go(lam.bod, var_map, depth + 1);
-        var_map.remove(&var_ptr);
-        Expr::lam(
-          fun.binder_name.clone(),
-          dom,
-          bod,
-          fun.binder_info.clone(),
-        )
+        work.push(Frame::Visit(body, depth + 1));
       },
-
-      DAGPtr::Pi(link) => {
-        let pi = &*link.as_ptr();
-        let lam = &*pi.img.as_ptr();
-        let dom = to_expr_go(pi.dom, var_map, depth);
-        let var_ptr = &lam.var as *const Var;
-        var_map.insert(var_ptr, depth);
-        let bod = to_expr_go(lam.bod, var_map, depth + 1);
+      Frame::FunBuild(name, bi, var_ptr) => {
         var_map.remove(&var_ptr);
-        Expr::all(
-          pi.binder_name.clone(),
-          dom,
-          bod,
-          pi.binder_info.clone(),
-        )
+        let bod = results.pop().unwrap();
+        let dom = results.pop().unwrap();
+        results.push(Expr::lam(name, dom, bod, bi));
       },
-
-      DAGPtr::Let(link) => {
-        let let_node = &*link.as_ptr();
-        let lam = &*let_node.bod.as_ptr();
-        let typ = to_expr_go(let_node.typ, var_map, depth);
-        let val = to_expr_go(let_node.val, var_map, depth);
-        let var_ptr = &lam.var as *const Var;
-        var_map.insert(var_ptr, depth);
-        let bod = to_expr_go(lam.bod, var_map, depth + 1);
+      Frame::PiBuild(name, bi, var_ptr) => {
         var_map.remove(&var_ptr);
-        Expr::letE(
-          let_node.binder_name.clone(),
-          typ,
-          val,
-          bod,
-          let_node.non_dep,
-        )
+        let bod = results.pop().unwrap();
+        let dom = results.pop().unwrap();
+        results.push(Expr::all(name, dom, bod, bi));
       },
-
-      DAGPtr::Proj(link) => {
-        let proj = &*link.as_ptr();
-        let structure = to_expr_go(proj.expr, var_map, depth);
-        Expr::proj(proj.type_name.clone(), proj.idx.clone(), structure)
-      },
-
-      DAGPtr::Lam(link) => {
-        // Standalone Lam shouldn't appear at the top level,
-        // but handle it gracefully for completeness.
-        let lam = &*link.as_ptr();
-        let var_ptr = &lam.var as *const Var;
-        var_map.insert(var_ptr, depth);
-        let bod = to_expr_go(lam.bod, var_map, depth + 1);
+      Frame::LetBuild(name, non_dep, var_ptr) => {
         var_map.remove(&var_ptr);
-        // Wrap in a lambda with anonymous name and default binder info
-        Expr::lam(
+        let bod = results.pop().unwrap();
+        let val = results.pop().unwrap();
+        let typ = results.pop().unwrap();
+        results.push(Expr::letE(name, typ, val, bod, non_dep));
+      },
+      Frame::Proj(name, idx) => {
+        let structure = results.pop().unwrap();
+        results.push(Expr::proj(name, idx, structure));
+      },
+      Frame::LamBuild(var_ptr) => {
+        var_map.remove(&var_ptr);
+        let bod = results.pop().unwrap();
+        results.push(Expr::lam(
           Name::anon(),
           Expr::sort(Level::zero()),
           bod,
-          crate::ix::env::BinderInfo::Default,
-        )
+          BinderInfo::Default,
+        ));
+      },
+      Frame::CacheStore(key, depth) => {
+        let result = results.last().unwrap().clone();
+        cache.insert((key, depth), result);
       },
     }
   }
+
+  results.pop().unwrap()
 }
 
 #[cfg(test)]

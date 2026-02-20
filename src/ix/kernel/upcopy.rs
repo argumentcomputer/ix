@@ -10,223 +10,225 @@ use super::dll::DLL;
 // ============================================================================
 
 pub fn upcopy(new_child: DAGPtr, cc: ParentPtr) {
-  unsafe {
-    match cc {
-      ParentPtr::Root => {},
-      ParentPtr::LamBod(link) => {
-        let lam = &*link.as_ptr();
-        let var = &lam.var;
-        let new_lam = alloc_lam(var.depth, new_child, None);
-        let new_lam_ref = &mut *new_lam.as_ptr();
-        let bod_ref_ptr =
-          NonNull::new(&mut new_lam_ref.bod_ref as *mut Parents).unwrap();
-        add_to_parents(new_child, bod_ref_ptr);
-        let new_var_ptr =
-          NonNull::new(&mut new_lam_ref.var as *mut Var).unwrap();
-        for parent in DLL::iter_option(var.parents) {
-          upcopy(DAGPtr::Var(new_var_ptr), *parent);
-        }
-        for parent in DLL::iter_option(lam.parents) {
-          upcopy(DAGPtr::Lam(new_lam), *parent);
-        }
-      },
-      ParentPtr::AppFun(link) => {
-        let app = &mut *link.as_ptr();
-        match app.copy {
-          Some(cache) => {
-            (*cache.as_ptr()).fun = new_child;
-          },
-          None => {
-            let new_app = alloc_app_no_uplinks(new_child, app.arg);
-            app.copy = Some(new_app);
-            for parent in DLL::iter_option(app.parents) {
-              upcopy(DAGPtr::App(new_app), *parent);
-            }
-          },
-        }
-      },
-      ParentPtr::AppArg(link) => {
-        let app = &mut *link.as_ptr();
-        match app.copy {
-          Some(cache) => {
-            (*cache.as_ptr()).arg = new_child;
-          },
-          None => {
-            let new_app = alloc_app_no_uplinks(app.fun, new_child);
-            app.copy = Some(new_app);
-            for parent in DLL::iter_option(app.parents) {
-              upcopy(DAGPtr::App(new_app), *parent);
-            }
-          },
-        }
-      },
-      ParentPtr::FunDom(link) => {
-        let fun = &mut *link.as_ptr();
-        match fun.copy {
-          Some(cache) => {
-            (*cache.as_ptr()).dom = new_child;
-          },
-          None => {
-            let new_fun = alloc_fun_no_uplinks(
-              fun.binder_name.clone(),
-              fun.binder_info.clone(),
-              new_child,
-              fun.img,
-            );
-            fun.copy = Some(new_fun);
-            for parent in DLL::iter_option(fun.parents) {
-              upcopy(DAGPtr::Fun(new_fun), *parent);
-            }
-          },
-        }
-      },
-      ParentPtr::FunImg(link) => {
-        let fun = &mut *link.as_ptr();
-        // new_child must be a Lam
-        let new_lam = match new_child {
-          DAGPtr::Lam(p) => p,
-          _ => panic!("FunImg parent expects Lam child"),
-        };
-        match fun.copy {
-          Some(cache) => {
-            (*cache.as_ptr()).img = new_lam;
-          },
-          None => {
-            let new_fun = alloc_fun_no_uplinks(
-              fun.binder_name.clone(),
-              fun.binder_info.clone(),
-              fun.dom,
-              new_lam,
-            );
-            fun.copy = Some(new_fun);
-            for parent in DLL::iter_option(fun.parents) {
-              upcopy(DAGPtr::Fun(new_fun), *parent);
-            }
-          },
-        }
-      },
-      ParentPtr::PiDom(link) => {
-        let pi = &mut *link.as_ptr();
-        match pi.copy {
-          Some(cache) => {
-            (*cache.as_ptr()).dom = new_child;
-          },
-          None => {
-            let new_pi = alloc_pi_no_uplinks(
-              pi.binder_name.clone(),
-              pi.binder_info.clone(),
-              new_child,
-              pi.img,
-            );
-            pi.copy = Some(new_pi);
-            for parent in DLL::iter_option(pi.parents) {
-              upcopy(DAGPtr::Pi(new_pi), *parent);
-            }
-          },
-        }
-      },
-      ParentPtr::PiImg(link) => {
-        let pi = &mut *link.as_ptr();
-        let new_lam = match new_child {
-          DAGPtr::Lam(p) => p,
-          _ => panic!("PiImg parent expects Lam child"),
-        };
-        match pi.copy {
-          Some(cache) => {
-            (*cache.as_ptr()).img = new_lam;
-          },
-          None => {
-            let new_pi = alloc_pi_no_uplinks(
-              pi.binder_name.clone(),
-              pi.binder_info.clone(),
-              pi.dom,
-              new_lam,
-            );
-            pi.copy = Some(new_pi);
-            for parent in DLL::iter_option(pi.parents) {
-              upcopy(DAGPtr::Pi(new_pi), *parent);
-            }
-          },
-        }
-      },
-      ParentPtr::LetTyp(link) => {
-        let let_node = &mut *link.as_ptr();
-        match let_node.copy {
-          Some(cache) => {
-            (*cache.as_ptr()).typ = new_child;
-          },
-          None => {
-            let new_let = alloc_let_no_uplinks(
-              let_node.binder_name.clone(),
-              let_node.non_dep,
-              new_child,
-              let_node.val,
-              let_node.bod,
-            );
-            let_node.copy = Some(new_let);
-            for parent in DLL::iter_option(let_node.parents) {
-              upcopy(DAGPtr::Let(new_let), *parent);
-            }
-          },
-        }
-      },
-      ParentPtr::LetVal(link) => {
-        let let_node = &mut *link.as_ptr();
-        match let_node.copy {
-          Some(cache) => {
-            (*cache.as_ptr()).val = new_child;
-          },
-          None => {
-            let new_let = alloc_let_no_uplinks(
-              let_node.binder_name.clone(),
-              let_node.non_dep,
-              let_node.typ,
-              new_child,
-              let_node.bod,
-            );
-            let_node.copy = Some(new_let);
-            for parent in DLL::iter_option(let_node.parents) {
-              upcopy(DAGPtr::Let(new_let), *parent);
-            }
-          },
-        }
-      },
-      ParentPtr::LetBod(link) => {
-        let let_node = &mut *link.as_ptr();
-        let new_lam = match new_child {
-          DAGPtr::Lam(p) => p,
-          _ => panic!("LetBod parent expects Lam child"),
-        };
-        match let_node.copy {
-          Some(cache) => {
-            (*cache.as_ptr()).bod = new_lam;
-          },
-          None => {
-            let new_let = alloc_let_no_uplinks(
-              let_node.binder_name.clone(),
-              let_node.non_dep,
-              let_node.typ,
-              let_node.val,
-              new_lam,
-            );
-            let_node.copy = Some(new_let);
-            for parent in DLL::iter_option(let_node.parents) {
-              upcopy(DAGPtr::Let(new_let), *parent);
-            }
-          },
-        }
-      },
-      ParentPtr::ProjExpr(link) => {
-        let proj = &*link.as_ptr();
-        let new_proj = alloc_proj_no_uplinks(
-          proj.type_name.clone(),
-          proj.idx.clone(),
-          new_child,
-        );
-        for parent in DLL::iter_option(proj.parents) {
-          upcopy(DAGPtr::Proj(new_proj), *parent);
-        }
-      },
+  let mut stack: Vec<(DAGPtr, ParentPtr)> = vec![(new_child, cc)];
+  while let Some((new_child, cc)) = stack.pop() {
+    unsafe {
+      match cc {
+        ParentPtr::Root => {},
+        ParentPtr::LamBod(link) => {
+          let lam = &*link.as_ptr();
+          let var = &lam.var;
+          let new_lam = alloc_lam(var.depth, new_child, None);
+          let new_lam_ref = &mut *new_lam.as_ptr();
+          let bod_ref_ptr =
+            NonNull::new(&mut new_lam_ref.bod_ref as *mut Parents).unwrap();
+          add_to_parents(new_child, bod_ref_ptr);
+          let new_var_ptr =
+            NonNull::new(&mut new_lam_ref.var as *mut Var).unwrap();
+          for parent in DLL::iter_option(var.parents) {
+            stack.push((DAGPtr::Var(new_var_ptr), *parent));
+          }
+          for parent in DLL::iter_option(lam.parents) {
+            stack.push((DAGPtr::Lam(new_lam), *parent));
+          }
+        },
+        ParentPtr::AppFun(link) => {
+          let app = &mut *link.as_ptr();
+          match app.copy {
+            Some(cache) => {
+              (*cache.as_ptr()).fun = new_child;
+            },
+            None => {
+              let new_app = alloc_app_no_uplinks(new_child, app.arg);
+              app.copy = Some(new_app);
+              for parent in DLL::iter_option(app.parents) {
+                stack.push((DAGPtr::App(new_app), *parent));
+              }
+            },
+          }
+        },
+        ParentPtr::AppArg(link) => {
+          let app = &mut *link.as_ptr();
+          match app.copy {
+            Some(cache) => {
+              (*cache.as_ptr()).arg = new_child;
+            },
+            None => {
+              let new_app = alloc_app_no_uplinks(app.fun, new_child);
+              app.copy = Some(new_app);
+              for parent in DLL::iter_option(app.parents) {
+                stack.push((DAGPtr::App(new_app), *parent));
+              }
+            },
+          }
+        },
+        ParentPtr::FunDom(link) => {
+          let fun = &mut *link.as_ptr();
+          match fun.copy {
+            Some(cache) => {
+              (*cache.as_ptr()).dom = new_child;
+            },
+            None => {
+              let new_fun = alloc_fun_no_uplinks(
+                fun.binder_name.clone(),
+                fun.binder_info.clone(),
+                new_child,
+                fun.img,
+              );
+              fun.copy = Some(new_fun);
+              for parent in DLL::iter_option(fun.parents) {
+                stack.push((DAGPtr::Fun(new_fun), *parent));
+              }
+            },
+          }
+        },
+        ParentPtr::FunImg(link) => {
+          let fun = &mut *link.as_ptr();
+          let new_lam = match new_child {
+            DAGPtr::Lam(p) => p,
+            _ => panic!("FunImg parent expects Lam child"),
+          };
+          match fun.copy {
+            Some(cache) => {
+              (*cache.as_ptr()).img = new_lam;
+            },
+            None => {
+              let new_fun = alloc_fun_no_uplinks(
+                fun.binder_name.clone(),
+                fun.binder_info.clone(),
+                fun.dom,
+                new_lam,
+              );
+              fun.copy = Some(new_fun);
+              for parent in DLL::iter_option(fun.parents) {
+                stack.push((DAGPtr::Fun(new_fun), *parent));
+              }
+            },
+          }
+        },
+        ParentPtr::PiDom(link) => {
+          let pi = &mut *link.as_ptr();
+          match pi.copy {
+            Some(cache) => {
+              (*cache.as_ptr()).dom = new_child;
+            },
+            None => {
+              let new_pi = alloc_pi_no_uplinks(
+                pi.binder_name.clone(),
+                pi.binder_info.clone(),
+                new_child,
+                pi.img,
+              );
+              pi.copy = Some(new_pi);
+              for parent in DLL::iter_option(pi.parents) {
+                stack.push((DAGPtr::Pi(new_pi), *parent));
+              }
+            },
+          }
+        },
+        ParentPtr::PiImg(link) => {
+          let pi = &mut *link.as_ptr();
+          let new_lam = match new_child {
+            DAGPtr::Lam(p) => p,
+            _ => panic!("PiImg parent expects Lam child"),
+          };
+          match pi.copy {
+            Some(cache) => {
+              (*cache.as_ptr()).img = new_lam;
+            },
+            None => {
+              let new_pi = alloc_pi_no_uplinks(
+                pi.binder_name.clone(),
+                pi.binder_info.clone(),
+                pi.dom,
+                new_lam,
+              );
+              pi.copy = Some(new_pi);
+              for parent in DLL::iter_option(pi.parents) {
+                stack.push((DAGPtr::Pi(new_pi), *parent));
+              }
+            },
+          }
+        },
+        ParentPtr::LetTyp(link) => {
+          let let_node = &mut *link.as_ptr();
+          match let_node.copy {
+            Some(cache) => {
+              (*cache.as_ptr()).typ = new_child;
+            },
+            None => {
+              let new_let = alloc_let_no_uplinks(
+                let_node.binder_name.clone(),
+                let_node.non_dep,
+                new_child,
+                let_node.val,
+                let_node.bod,
+              );
+              let_node.copy = Some(new_let);
+              for parent in DLL::iter_option(let_node.parents) {
+                stack.push((DAGPtr::Let(new_let), *parent));
+              }
+            },
+          }
+        },
+        ParentPtr::LetVal(link) => {
+          let let_node = &mut *link.as_ptr();
+          match let_node.copy {
+            Some(cache) => {
+              (*cache.as_ptr()).val = new_child;
+            },
+            None => {
+              let new_let = alloc_let_no_uplinks(
+                let_node.binder_name.clone(),
+                let_node.non_dep,
+                let_node.typ,
+                new_child,
+                let_node.bod,
+              );
+              let_node.copy = Some(new_let);
+              for parent in DLL::iter_option(let_node.parents) {
+                stack.push((DAGPtr::Let(new_let), *parent));
+              }
+            },
+          }
+        },
+        ParentPtr::LetBod(link) => {
+          let let_node = &mut *link.as_ptr();
+          let new_lam = match new_child {
+            DAGPtr::Lam(p) => p,
+            _ => panic!("LetBod parent expects Lam child"),
+          };
+          match let_node.copy {
+            Some(cache) => {
+              (*cache.as_ptr()).bod = new_lam;
+            },
+            None => {
+              let new_let = alloc_let_no_uplinks(
+                let_node.binder_name.clone(),
+                let_node.non_dep,
+                let_node.typ,
+                let_node.val,
+                new_lam,
+              );
+              let_node.copy = Some(new_let);
+              for parent in DLL::iter_option(let_node.parents) {
+                stack.push((DAGPtr::Let(new_let), *parent));
+              }
+            },
+          }
+        },
+        ParentPtr::ProjExpr(link) => {
+          let proj = &*link.as_ptr();
+          let new_proj = alloc_proj_no_uplinks(
+            proj.type_name.clone(),
+            proj.idx.clone(),
+            new_child,
+          );
+          for parent in DLL::iter_option(proj.parents) {
+            stack.push((DAGPtr::Proj(new_proj), *parent));
+          }
+        },
+      }
     }
   }
 }
@@ -352,79 +354,82 @@ fn alloc_proj_no_uplinks(
 // ============================================================================
 
 pub fn clean_up(cc: &ParentPtr) {
-  unsafe {
-    match cc {
-      ParentPtr::Root => {},
-      ParentPtr::LamBod(link) => {
-        let lam = &*link.as_ptr();
-        for parent in DLL::iter_option(lam.var.parents) {
-          clean_up(parent);
-        }
-        for parent in DLL::iter_option(lam.parents) {
-          clean_up(parent);
-        }
-      },
-      ParentPtr::AppFun(link) | ParentPtr::AppArg(link) => {
-        let app = &mut *link.as_ptr();
-        if let Some(app_copy) = app.copy {
-          let App { fun, arg, fun_ref, arg_ref, .. } =
-            &mut *app_copy.as_ptr();
-          app.copy = None;
-          add_to_parents(*fun, NonNull::new(fun_ref).unwrap());
-          add_to_parents(*arg, NonNull::new(arg_ref).unwrap());
-          for parent in DLL::iter_option(app.parents) {
-            clean_up(parent);
+  let mut stack: Vec<ParentPtr> = vec![*cc];
+  while let Some(cc) = stack.pop() {
+    unsafe {
+      match cc {
+        ParentPtr::Root => {},
+        ParentPtr::LamBod(link) => {
+          let lam = &*link.as_ptr();
+          for parent in DLL::iter_option(lam.var.parents) {
+            stack.push(*parent);
           }
-        }
-      },
-      ParentPtr::FunDom(link) | ParentPtr::FunImg(link) => {
-        let fun = &mut *link.as_ptr();
-        if let Some(fun_copy) = fun.copy {
-          let Fun { dom, img, dom_ref, img_ref, .. } =
-            &mut *fun_copy.as_ptr();
-          fun.copy = None;
-          add_to_parents(*dom, NonNull::new(dom_ref).unwrap());
-          add_to_parents(DAGPtr::Lam(*img), NonNull::new(img_ref).unwrap());
-          for parent in DLL::iter_option(fun.parents) {
-            clean_up(parent);
+          for parent in DLL::iter_option(lam.parents) {
+            stack.push(*parent);
           }
-        }
-      },
-      ParentPtr::PiDom(link) | ParentPtr::PiImg(link) => {
-        let pi = &mut *link.as_ptr();
-        if let Some(pi_copy) = pi.copy {
-          let Pi { dom, img, dom_ref, img_ref, .. } =
-            &mut *pi_copy.as_ptr();
-          pi.copy = None;
-          add_to_parents(*dom, NonNull::new(dom_ref).unwrap());
-          add_to_parents(DAGPtr::Lam(*img), NonNull::new(img_ref).unwrap());
-          for parent in DLL::iter_option(pi.parents) {
-            clean_up(parent);
+        },
+        ParentPtr::AppFun(link) | ParentPtr::AppArg(link) => {
+          let app = &mut *link.as_ptr();
+          if let Some(app_copy) = app.copy {
+            let App { fun, arg, fun_ref, arg_ref, .. } =
+              &mut *app_copy.as_ptr();
+            app.copy = None;
+            add_to_parents(*fun, NonNull::new(fun_ref).unwrap());
+            add_to_parents(*arg, NonNull::new(arg_ref).unwrap());
+            for parent in DLL::iter_option(app.parents) {
+              stack.push(*parent);
+            }
           }
-        }
-      },
-      ParentPtr::LetTyp(link)
-      | ParentPtr::LetVal(link)
-      | ParentPtr::LetBod(link) => {
-        let let_node = &mut *link.as_ptr();
-        if let Some(let_copy) = let_node.copy {
-          let LetNode { typ, val, bod, typ_ref, val_ref, bod_ref, .. } =
-            &mut *let_copy.as_ptr();
-          let_node.copy = None;
-          add_to_parents(*typ, NonNull::new(typ_ref).unwrap());
-          add_to_parents(*val, NonNull::new(val_ref).unwrap());
-          add_to_parents(DAGPtr::Lam(*bod), NonNull::new(bod_ref).unwrap());
-          for parent in DLL::iter_option(let_node.parents) {
-            clean_up(parent);
+        },
+        ParentPtr::FunDom(link) | ParentPtr::FunImg(link) => {
+          let fun = &mut *link.as_ptr();
+          if let Some(fun_copy) = fun.copy {
+            let Fun { dom, img, dom_ref, img_ref, .. } =
+              &mut *fun_copy.as_ptr();
+            fun.copy = None;
+            add_to_parents(*dom, NonNull::new(dom_ref).unwrap());
+            add_to_parents(DAGPtr::Lam(*img), NonNull::new(img_ref).unwrap());
+            for parent in DLL::iter_option(fun.parents) {
+              stack.push(*parent);
+            }
           }
-        }
-      },
-      ParentPtr::ProjExpr(link) => {
-        let proj = &*link.as_ptr();
-        for parent in DLL::iter_option(proj.parents) {
-          clean_up(parent);
-        }
-      },
+        },
+        ParentPtr::PiDom(link) | ParentPtr::PiImg(link) => {
+          let pi = &mut *link.as_ptr();
+          if let Some(pi_copy) = pi.copy {
+            let Pi { dom, img, dom_ref, img_ref, .. } =
+              &mut *pi_copy.as_ptr();
+            pi.copy = None;
+            add_to_parents(*dom, NonNull::new(dom_ref).unwrap());
+            add_to_parents(DAGPtr::Lam(*img), NonNull::new(img_ref).unwrap());
+            for parent in DLL::iter_option(pi.parents) {
+              stack.push(*parent);
+            }
+          }
+        },
+        ParentPtr::LetTyp(link)
+        | ParentPtr::LetVal(link)
+        | ParentPtr::LetBod(link) => {
+          let let_node = &mut *link.as_ptr();
+          if let Some(let_copy) = let_node.copy {
+            let LetNode { typ, val, bod, typ_ref, val_ref, bod_ref, .. } =
+              &mut *let_copy.as_ptr();
+            let_node.copy = None;
+            add_to_parents(*typ, NonNull::new(typ_ref).unwrap());
+            add_to_parents(*val, NonNull::new(val_ref).unwrap());
+            add_to_parents(DAGPtr::Lam(*bod), NonNull::new(bod_ref).unwrap());
+            for parent in DLL::iter_option(let_node.parents) {
+              stack.push(*parent);
+            }
+          }
+        },
+        ParentPtr::ProjExpr(link) => {
+          let proj = &*link.as_ptr();
+          for parent in DLL::iter_option(proj.parents) {
+            stack.push(*parent);
+          }
+        },
+      }
     }
   }
 }
@@ -476,119 +481,122 @@ pub fn replace_child(old: DAGPtr, new: DAGPtr) {
 // Free dead nodes
 // ============================================================================
 
-pub fn free_dead_node(node: DAGPtr) {
-  unsafe {
-    match node {
-      DAGPtr::Lam(link) => {
-        let lam = &*link.as_ptr();
-        let bod_ref_ptr = &lam.bod_ref as *const Parents;
-        if let Some(remaining) = (*bod_ref_ptr).unlink_node() {
-          set_parents(lam.bod, Some(remaining));
-        } else {
-          set_parents(lam.bod, None);
-          free_dead_node(lam.bod);
-        }
-        drop(Box::from_raw(link.as_ptr()));
-      },
-      DAGPtr::App(link) => {
-        let app = &*link.as_ptr();
-        let fun_ref_ptr = &app.fun_ref as *const Parents;
-        if let Some(remaining) = (*fun_ref_ptr).unlink_node() {
-          set_parents(app.fun, Some(remaining));
-        } else {
-          set_parents(app.fun, None);
-          free_dead_node(app.fun);
-        }
-        let arg_ref_ptr = &app.arg_ref as *const Parents;
-        if let Some(remaining) = (*arg_ref_ptr).unlink_node() {
-          set_parents(app.arg, Some(remaining));
-        } else {
-          set_parents(app.arg, None);
-          free_dead_node(app.arg);
-        }
-        drop(Box::from_raw(link.as_ptr()));
-      },
-      DAGPtr::Fun(link) => {
-        let fun = &*link.as_ptr();
-        let dom_ref_ptr = &fun.dom_ref as *const Parents;
-        if let Some(remaining) = (*dom_ref_ptr).unlink_node() {
-          set_parents(fun.dom, Some(remaining));
-        } else {
-          set_parents(fun.dom, None);
-          free_dead_node(fun.dom);
-        }
-        let img_ref_ptr = &fun.img_ref as *const Parents;
-        if let Some(remaining) = (*img_ref_ptr).unlink_node() {
-          set_parents(DAGPtr::Lam(fun.img), Some(remaining));
-        } else {
-          set_parents(DAGPtr::Lam(fun.img), None);
-          free_dead_node(DAGPtr::Lam(fun.img));
-        }
-        drop(Box::from_raw(link.as_ptr()));
-      },
-      DAGPtr::Pi(link) => {
-        let pi = &*link.as_ptr();
-        let dom_ref_ptr = &pi.dom_ref as *const Parents;
-        if let Some(remaining) = (*dom_ref_ptr).unlink_node() {
-          set_parents(pi.dom, Some(remaining));
-        } else {
-          set_parents(pi.dom, None);
-          free_dead_node(pi.dom);
-        }
-        let img_ref_ptr = &pi.img_ref as *const Parents;
-        if let Some(remaining) = (*img_ref_ptr).unlink_node() {
-          set_parents(DAGPtr::Lam(pi.img), Some(remaining));
-        } else {
-          set_parents(DAGPtr::Lam(pi.img), None);
-          free_dead_node(DAGPtr::Lam(pi.img));
-        }
-        drop(Box::from_raw(link.as_ptr()));
-      },
-      DAGPtr::Let(link) => {
-        let let_node = &*link.as_ptr();
-        let typ_ref_ptr = &let_node.typ_ref as *const Parents;
-        if let Some(remaining) = (*typ_ref_ptr).unlink_node() {
-          set_parents(let_node.typ, Some(remaining));
-        } else {
-          set_parents(let_node.typ, None);
-          free_dead_node(let_node.typ);
-        }
-        let val_ref_ptr = &let_node.val_ref as *const Parents;
-        if let Some(remaining) = (*val_ref_ptr).unlink_node() {
-          set_parents(let_node.val, Some(remaining));
-        } else {
-          set_parents(let_node.val, None);
-          free_dead_node(let_node.val);
-        }
-        let bod_ref_ptr = &let_node.bod_ref as *const Parents;
-        if let Some(remaining) = (*bod_ref_ptr).unlink_node() {
-          set_parents(DAGPtr::Lam(let_node.bod), Some(remaining));
-        } else {
-          set_parents(DAGPtr::Lam(let_node.bod), None);
-          free_dead_node(DAGPtr::Lam(let_node.bod));
-        }
-        drop(Box::from_raw(link.as_ptr()));
-      },
-      DAGPtr::Proj(link) => {
-        let proj = &*link.as_ptr();
-        let expr_ref_ptr = &proj.expr_ref as *const Parents;
-        if let Some(remaining) = (*expr_ref_ptr).unlink_node() {
-          set_parents(proj.expr, Some(remaining));
-        } else {
-          set_parents(proj.expr, None);
-          free_dead_node(proj.expr);
-        }
-        drop(Box::from_raw(link.as_ptr()));
-      },
-      DAGPtr::Var(link) => {
-        let var = &*link.as_ptr();
-        if let BinderPtr::Free = var.binder {
+pub fn free_dead_node(root: DAGPtr) {
+  let mut stack: Vec<DAGPtr> = vec![root];
+  while let Some(node) = stack.pop() {
+    unsafe {
+      match node {
+        DAGPtr::Lam(link) => {
+          let lam = &*link.as_ptr();
+          let bod_ref_ptr = &lam.bod_ref as *const Parents;
+          if let Some(remaining) = (*bod_ref_ptr).unlink_node() {
+            set_parents(lam.bod, Some(remaining));
+          } else {
+            set_parents(lam.bod, None);
+            stack.push(lam.bod);
+          }
           drop(Box::from_raw(link.as_ptr()));
-        }
-      },
-      DAGPtr::Sort(link) => drop(Box::from_raw(link.as_ptr())),
-      DAGPtr::Cnst(link) => drop(Box::from_raw(link.as_ptr())),
-      DAGPtr::Lit(link) => drop(Box::from_raw(link.as_ptr())),
+        },
+        DAGPtr::App(link) => {
+          let app = &*link.as_ptr();
+          let fun_ref_ptr = &app.fun_ref as *const Parents;
+          if let Some(remaining) = (*fun_ref_ptr).unlink_node() {
+            set_parents(app.fun, Some(remaining));
+          } else {
+            set_parents(app.fun, None);
+            stack.push(app.fun);
+          }
+          let arg_ref_ptr = &app.arg_ref as *const Parents;
+          if let Some(remaining) = (*arg_ref_ptr).unlink_node() {
+            set_parents(app.arg, Some(remaining));
+          } else {
+            set_parents(app.arg, None);
+            stack.push(app.arg);
+          }
+          drop(Box::from_raw(link.as_ptr()));
+        },
+        DAGPtr::Fun(link) => {
+          let fun = &*link.as_ptr();
+          let dom_ref_ptr = &fun.dom_ref as *const Parents;
+          if let Some(remaining) = (*dom_ref_ptr).unlink_node() {
+            set_parents(fun.dom, Some(remaining));
+          } else {
+            set_parents(fun.dom, None);
+            stack.push(fun.dom);
+          }
+          let img_ref_ptr = &fun.img_ref as *const Parents;
+          if let Some(remaining) = (*img_ref_ptr).unlink_node() {
+            set_parents(DAGPtr::Lam(fun.img), Some(remaining));
+          } else {
+            set_parents(DAGPtr::Lam(fun.img), None);
+            stack.push(DAGPtr::Lam(fun.img));
+          }
+          drop(Box::from_raw(link.as_ptr()));
+        },
+        DAGPtr::Pi(link) => {
+          let pi = &*link.as_ptr();
+          let dom_ref_ptr = &pi.dom_ref as *const Parents;
+          if let Some(remaining) = (*dom_ref_ptr).unlink_node() {
+            set_parents(pi.dom, Some(remaining));
+          } else {
+            set_parents(pi.dom, None);
+            stack.push(pi.dom);
+          }
+          let img_ref_ptr = &pi.img_ref as *const Parents;
+          if let Some(remaining) = (*img_ref_ptr).unlink_node() {
+            set_parents(DAGPtr::Lam(pi.img), Some(remaining));
+          } else {
+            set_parents(DAGPtr::Lam(pi.img), None);
+            stack.push(DAGPtr::Lam(pi.img));
+          }
+          drop(Box::from_raw(link.as_ptr()));
+        },
+        DAGPtr::Let(link) => {
+          let let_node = &*link.as_ptr();
+          let typ_ref_ptr = &let_node.typ_ref as *const Parents;
+          if let Some(remaining) = (*typ_ref_ptr).unlink_node() {
+            set_parents(let_node.typ, Some(remaining));
+          } else {
+            set_parents(let_node.typ, None);
+            stack.push(let_node.typ);
+          }
+          let val_ref_ptr = &let_node.val_ref as *const Parents;
+          if let Some(remaining) = (*val_ref_ptr).unlink_node() {
+            set_parents(let_node.val, Some(remaining));
+          } else {
+            set_parents(let_node.val, None);
+            stack.push(let_node.val);
+          }
+          let bod_ref_ptr = &let_node.bod_ref as *const Parents;
+          if let Some(remaining) = (*bod_ref_ptr).unlink_node() {
+            set_parents(DAGPtr::Lam(let_node.bod), Some(remaining));
+          } else {
+            set_parents(DAGPtr::Lam(let_node.bod), None);
+            stack.push(DAGPtr::Lam(let_node.bod));
+          }
+          drop(Box::from_raw(link.as_ptr()));
+        },
+        DAGPtr::Proj(link) => {
+          let proj = &*link.as_ptr();
+          let expr_ref_ptr = &proj.expr_ref as *const Parents;
+          if let Some(remaining) = (*expr_ref_ptr).unlink_node() {
+            set_parents(proj.expr, Some(remaining));
+          } else {
+            set_parents(proj.expr, None);
+            stack.push(proj.expr);
+          }
+          drop(Box::from_raw(link.as_ptr()));
+        },
+        DAGPtr::Var(link) => {
+          let var = &*link.as_ptr();
+          if let BinderPtr::Free = var.binder {
+            drop(Box::from_raw(link.as_ptr()));
+          }
+        },
+        DAGPtr::Sort(link) => drop(Box::from_raw(link.as_ptr())),
+        DAGPtr::Cnst(link) => drop(Box::from_raw(link.as_ptr())),
+        DAGPtr::Lit(link) => drop(Box::from_raw(link.as_ptr())),
+      }
     }
   }
 }
@@ -598,6 +606,11 @@ pub fn free_dead_node(node: DAGPtr) {
 // ============================================================================
 
 /// Contract a lambda redex: (Fun dom (Lam bod var)) arg → [arg/var]bod.
+///
+/// After substitution, propagates the result through the redex App's parent
+/// pointers (via `replace_child`) and frees the dead App/Fun/Lam nodes.
+/// This ensures that enclosing DAG structures are properly updated, enabling
+/// DAG-native sub-term WHNF without Expr roundtrips.
 pub fn reduce_lam(redex: NonNull<App>, lam: NonNull<Lam>) -> DAGPtr {
   unsafe {
     let app = &*redex.as_ptr();
@@ -605,15 +618,43 @@ pub fn reduce_lam(redex: NonNull<App>, lam: NonNull<Lam>) -> DAGPtr {
     let var = &lambda.var;
     let arg = app.arg;
 
+    // Perform substitution
     if DLL::is_singleton(lambda.parents) {
-      if DLL::is_empty(var.parents) {
-        return lambda.bod;
+      if !DLL::is_empty(var.parents) {
+        replace_child(DAGPtr::Var(NonNull::from(var)), arg);
       }
-      replace_child(DAGPtr::Var(NonNull::from(var)), arg);
+    } else if !DLL::is_empty(var.parents) {
+      // General case: upcopy arg through var's parents
+      for parent in DLL::iter_option(var.parents) {
+        upcopy(arg, *parent);
+      }
+      for parent in DLL::iter_option(var.parents) {
+        clean_up(parent);
+      }
+    }
+
+    lambda.bod
+  }
+}
+
+/// Substitute an argument into a Pi's body: given `Pi(dom, Lam(var, body))`
+/// and `arg`, produce `[arg/var]body`. Used for computing the result type
+/// of function application during type inference.
+///
+/// Unlike `reduce_lam`, this does NOT consume the enclosing App/Fun — it
+/// works directly on the Pi's Lam node. The Lam should typically be
+/// singly-parented (freshly inferred types are not shared).
+pub fn subst_pi_body(lam: NonNull<Lam>, arg: DAGPtr) -> DAGPtr {
+  unsafe {
+    let lambda = &*lam.as_ptr();
+    let var = &lambda.var;
+
+    if DLL::is_empty(var.parents) {
       return lambda.bod;
     }
 
-    if DLL::is_empty(var.parents) {
+    if DLL::is_singleton(lambda.parents) {
+      replace_child(DAGPtr::Var(NonNull::from(var)), arg);
       return lambda.bod;
     }
 
@@ -629,6 +670,9 @@ pub fn reduce_lam(redex: NonNull<App>, lam: NonNull<Lam>) -> DAGPtr {
 }
 
 /// Contract a let redex: Let(typ, val, Lam(bod, var)) → [val/var]bod.
+///
+/// After substitution, propagates the result through the Let node's parent
+/// pointers (via `replace_child`) and frees the dead Let/Lam nodes.
 pub fn reduce_let(let_node: NonNull<LetNode>) -> DAGPtr {
   unsafe {
     let ln = &*let_node.as_ptr();
@@ -636,24 +680,20 @@ pub fn reduce_let(let_node: NonNull<LetNode>) -> DAGPtr {
     let var = &lam.var;
     let val = ln.val;
 
+    // Perform substitution
     if DLL::is_singleton(lam.parents) {
-      if DLL::is_empty(var.parents) {
-        return lam.bod;
+      if !DLL::is_empty(var.parents) {
+        replace_child(DAGPtr::Var(NonNull::from(var)), val);
       }
-      replace_child(DAGPtr::Var(NonNull::from(var)), val);
-      return lam.bod;
+    } else if !DLL::is_empty(var.parents) {
+      for parent in DLL::iter_option(var.parents) {
+        upcopy(val, *parent);
+      }
+      for parent in DLL::iter_option(var.parents) {
+        clean_up(parent);
+      }
     }
 
-    if DLL::is_empty(var.parents) {
-      return lam.bod;
-    }
-
-    for parent in DLL::iter_option(var.parents) {
-      upcopy(val, *parent);
-    }
-    for parent in DLL::iter_option(var.parents) {
-      clean_up(parent);
-    }
     lam.bod
   }
 }

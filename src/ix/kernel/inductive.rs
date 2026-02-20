@@ -157,23 +157,33 @@ pub fn validate_k_flag(
 
 /// Check if an expression mentions a constant by name.
 fn expr_mentions_const(e: &Expr, name: &Name) -> bool {
-  match e.as_data() {
-    ExprData::Const(n, _, _) => n == name,
-    ExprData::App(f, a, _) => {
-      expr_mentions_const(f, name) || expr_mentions_const(a, name)
-    },
-    ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
-      expr_mentions_const(t, name) || expr_mentions_const(b, name)
-    },
-    ExprData::LetE(_, t, v, b, _, _) => {
-      expr_mentions_const(t, name)
-        || expr_mentions_const(v, name)
-        || expr_mentions_const(b, name)
-    },
-    ExprData::Proj(_, _, s, _) => expr_mentions_const(s, name),
-    ExprData::Mdata(_, inner, _) => expr_mentions_const(inner, name),
-    _ => false,
+  let mut stack: Vec<&Expr> = vec![e];
+  while let Some(e) = stack.pop() {
+    match e.as_data() {
+      ExprData::Const(n, _, _) => {
+        if n == name {
+          return true;
+        }
+      },
+      ExprData::App(f, a, _) => {
+        stack.push(f);
+        stack.push(a);
+      },
+      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+        stack.push(t);
+        stack.push(b);
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        stack.push(t);
+        stack.push(v);
+        stack.push(b);
+      },
+      ExprData::Proj(_, _, s, _) => stack.push(s),
+      ExprData::Mdata(_, inner, _) => stack.push(inner),
+      _ => {},
+    }
   }
+  false
 }
 
 /// Check that no inductive name from `ind.all` appears in a negative position
@@ -228,44 +238,49 @@ fn check_strict_positivity(
   ind_names: &[Name],
   tc: &mut TypeChecker,
 ) -> TcResult<()> {
-  let whnf_ty = tc.whnf(ty);
+  let mut current = ty.clone();
+  loop {
+    let whnf_ty = tc.whnf(&current);
 
-  // If no inductive name is mentioned, we're fine
-  if !ind_names.iter().any(|n| expr_mentions_const(&whnf_ty, n)) {
-    return Ok(());
-  }
+    // If no inductive name is mentioned, we're fine
+    if !ind_names.iter().any(|n| expr_mentions_const(&whnf_ty, n)) {
+      return Ok(());
+    }
 
-  match whnf_ty.as_data() {
-    ExprData::ForallE(_, domain, body, _, _) => {
-      // Domain must NOT mention any inductive name
-      for ind_name in ind_names {
-        if expr_mentions_const(domain, ind_name) {
-          return Err(TcError::KernelException {
-            msg: format!(
-              "inductive {} occurs in negative position (strict positivity violation)",
-              ind_name.pretty()
-            ),
-          });
+    match whnf_ty.as_data() {
+      ExprData::ForallE(_, domain, body, _, _) => {
+        // Domain must NOT mention any inductive name
+        for ind_name in ind_names {
+          if expr_mentions_const(domain, ind_name) {
+            return Err(TcError::KernelException {
+              msg: format!(
+                "inductive {} occurs in negative position (strict positivity violation)",
+                ind_name.pretty()
+              ),
+            });
+          }
         }
-      }
-      // Recurse into body
-      check_strict_positivity(body, ind_names, tc)
-    },
-    _ => {
-      // The inductive is mentioned and we're not in a Pi — check if
-      // it's simply an application `I args...` (which is OK).
-      let (head, _) = unfold_apps(&whnf_ty);
-      match head.as_data() {
-        ExprData::Const(name, _, _)
-          if ind_names.iter().any(|n| n == name) =>
-        {
-          Ok(())
-        },
-        _ => Err(TcError::KernelException {
-          msg: "inductive type occurs in a non-positive position".into(),
-        }),
-      }
-    },
+        // Continue with body (was tail-recursive)
+        current = body.clone();
+      },
+      _ => {
+        // The inductive is mentioned and we're not in a Pi — check if
+        // it's simply an application `I args...` (which is OK).
+        let (head, _) = unfold_apps(&whnf_ty);
+        match head.as_data() {
+          ExprData::Const(name, _, _)
+            if ind_names.iter().any(|n| n == name) =>
+          {
+            return Ok(());
+          },
+          _ => {
+            return Err(TcError::KernelException {
+              msg: "inductive type occurs in a non-positive position".into(),
+            });
+          },
+        }
+      },
+    }
   }
 }
 

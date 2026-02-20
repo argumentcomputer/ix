@@ -852,8 +852,10 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
   // BFS through all transitive dependencies
   while let Some(dep_addr) = queue.pop_front() {
     if let Some(dep_const) = stt.env.consts.get(&dep_addr) {
-      // Get the name for this dependency
-      let dep_name_opt = stt.env.get_name_by_addr(&dep_addr);
+      // Get the name for this dependency (linear scan through named entries)
+      let dep_name_opt = stt.env.named.iter()
+        .find(|entry| entry.value().addr == dep_addr)
+        .map(|entry| entry.key().clone());
       let dep_name_str = dep_name_opt
         .as_ref()
         .map_or_else(|| format!("{:?}", dep_addr), |n| n.pretty());
