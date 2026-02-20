@@ -21,7 +21,7 @@ namespace Tests.RustDecompile
 
 /-- Test Rust decompilation: compile → rsDecompileEnv → hash comparison -/
 def testRustDecompile : TestSeq :=
-  .individualIO "Rust Decompilation Roundtrip" (do
+  .individualIO "Rust Decompilation Roundtrip" none (do
     let leanEnv ← get_env!
     let totalConsts := leanEnv.constants.toList.length
 
@@ -45,7 +45,7 @@ def testRustDecompile : TestSeq :=
       | .ok env => pure env
       | .error e => do
         IO.println s!"[Step 2] FAILED: {toString e}"
-        return (false, some (toString e))
+        return (false, 0, 0, some (toString e))
     let decompTime := (← IO.monoMsNow) - decompStart
     IO.println s!"[Step 2]   {decompiled.size} constants decompiled in {decompTime}ms"
     IO.println ""
@@ -112,9 +112,9 @@ def testRustDecompile : TestSeq :=
 
     let success := nMismatch == 0 && nMissing == 0
     if success then
-      return (true, none)
+      return (true, 0, 0, none)
     else
-      return (false, some s!"{nMismatch} mismatches, {nMissing} missing")
+      return (false, 0, 0, some s!"{nMismatch} mismatches, {nMissing} missing")
   ) .done
 
 /-! ## Test Suite -/

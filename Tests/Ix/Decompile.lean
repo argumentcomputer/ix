@@ -21,7 +21,7 @@ namespace Tests.Decompile
 
 /-- Decompile roundtrip test: Rust compile → parallel decompile → hash comparison -/
 def testDecompile : TestSeq :=
-  .individualIO "Decompilation Roundtrip" (do
+  .individualIO "Decompilation Roundtrip" none (do
     let leanEnv ← get_env!
     let totalConsts := leanEnv.constants.toList.length
 
@@ -114,9 +114,9 @@ def testDecompile : TestSeq :=
 
     let success := decompErrors.size == 0 && nMismatch == 0 && nMissing == 0
     if success then
-      return (true, none)
+      return (true, 0, 0, none)
     else
-      return (false, some s!"{decompErrors.size} decompilation errors")
+      return (false, 0, 0, some s!"{decompErrors.size} decompilation errors")
   ) .done
 
 /-! ## Test Suite -/

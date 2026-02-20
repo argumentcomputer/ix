@@ -279,8 +279,10 @@ def checkToolchain : IO Unit := do
   match ← runCmd' "lake" #["--version"] with
   | .error e => throw $ IO.userError e
   | .ok out =>
-    let version := (out.splitOn "(Lean version ")[1]!
-    let version := version.splitOn ")" |>.head!
+    let .some version := (out.splitOn "(Lean version ")[1]?
+      | throw $ IO.userError s!"Could not parse Lean version from: {out}"
+    let .some version := (version.splitOn ")").head?
+      | throw $ IO.userError s!"Could not parse Lean version from: {out}"
     let expectedVersion := Lean.versionString
     if version != expectedVersion then
       IO.println s!"Warning: expected toolchain '{expectedVersion}' but got '{version}'"
@@ -298,7 +300,7 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
   let msgs := s.commandState.messages
   if msgs.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
-      (← msgs.toList.mapM (·.toString)).map String.trim
+      (← msgs.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
   else return s.commandState.env
 
 end Lean
