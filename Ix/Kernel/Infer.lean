@@ -387,12 +387,7 @@ def typecheckAllIO (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)
   let total := items.size
   for h : idx in [:total] do
     let (addr, ci) := items[idx]
-    --let typ := ci.type.pp
-    --let val := match ci.value? with
-    --  | some v => s!"\n    value: {v.pp}"
-    --  | none => ""
-    let (typ, val) := ("_", "_")
-    (← IO.getStdout).putStrLn s!"  [{idx + 1}/{total}] {ci.cv.name} ({ci.kindName})\n    type: {typ}{val}"
+    (← IO.getStdout).putStrLn s!"  [{idx + 1}/{total}] {ci.cv.name} ({ci.kindName})"
     (← IO.getStdout).flush
     match typecheckConst kenv prims addr quotInit with
     | .ok () =>
@@ -400,6 +395,10 @@ def typecheckAllIO (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)
       (← IO.getStdout).flush
     | .error e =>
       let header := s!"constant {ci.cv.name} ({ci.kindName}, {addr})"
+      let typ := ci.type.pp
+      let val := match ci.value? with
+        | some v => s!"\n    value: {v.pp}"
+        | none => ""
       return .error s!"{header}: {e}\n    type: {typ}{val}"
   return .ok ()
 
