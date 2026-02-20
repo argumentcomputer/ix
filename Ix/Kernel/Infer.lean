@@ -399,7 +399,8 @@ def typecheckAllIO (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)
       let val := match ci.value? with
         | some v => s!"\n    value: {v.pp}"
         | none => ""
-      return .error s!"{header}: {e}\n    type: {typ}{val}"
+      IO.println s!"type: {typ}{val}"
+      return .error s!"{header}: {e}"
   return .ok ()
 
 end Ix.Kernel
