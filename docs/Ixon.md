@@ -736,7 +736,6 @@ pub struct Env {
     pub blobs: DashMap<Address, Vec<u8>>,        // Raw data (strings, nats)
     pub names: DashMap<Address, Name>,           // Hash-consed Name components
     pub comms: DashMap<Address, Comm>,           // Cryptographic commitments
-    pub addr_to_name: DashMap<Address, Name>,    // Reverse index
 }
 
 pub struct Named {
@@ -1001,7 +1000,7 @@ Decompilation reconstructs Lean constants from Ixon format.
 2. **Initialize tables** from `sharing`, `refs`, `univs`
 3. **Load metadata** from `env.named`
 4. **Reconstruct expressions** with names and binder info from metadata
-5. **Resolve references**: `Ref(idx, _)` → lookup `refs[idx]`, get name from `addr_to_name`
+5. **Resolve references**: `Ref(idx, _)` → lookup name from arena metadata via `names` table
 6. **Expand shares**: `Share(idx)` → inline `sharing[idx]` (or cache result)
 
 ### Roundtrip Verification
@@ -1145,7 +1144,7 @@ To reconstruct the Lean constant:
 
 1. Load `Constant` from `consts[address]`
 2. Load `Named` from `named["double"]`
-3. Resolve `Ref(0, [])` → `refs[0]` → `Nat` (via `addr_to_name`)
+3. Resolve `Ref(0, [])` → name from arena metadata → `Nat` (via `names` table)
 4. Resolve `Ref(1, [])` → `refs[1]` → `Nat.add`
 5. Attach names from metadata: the binder gets name "n" from `type_meta[0]`
 

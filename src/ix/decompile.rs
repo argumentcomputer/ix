@@ -565,39 +565,19 @@ pub fn decompile_expr(
           // Ref: resolve name from arena Ref node or fallback
           (
             ExprMetaData::Ref { name: name_addr },
-            Expr::Ref(ref_idx, univ_indices),
+            Expr::Ref(_ref_idx, univ_indices),
           ) => {
-            let name = decompile_name(name_addr, stt).unwrap_or_else(|_| {
-              // Fallback: resolve from refs table
-              cache
-                .refs
-                .get(*ref_idx as usize)
-                .and_then(|addr| stt.env.get_name_by_addr(addr))
-                .unwrap_or_else(Name::anon)
-            });
+            let name = decompile_name(name_addr, stt)?;
             let levels =
               decompile_univ_indices(univ_indices, lvl_names, cache)?;
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
             results.push(expr);
           },
 
-          (_, Expr::Ref(ref_idx, univ_indices)) => {
-            // No Ref metadata — resolve from refs table
-            let addr = cache.refs.get(*ref_idx as usize).ok_or_else(|| {
-              DecompileError::InvalidRefIndex {
-                idx: *ref_idx,
-                refs_len: cache.refs.len(),
-                constant: cache.current_const.clone(),
-              }
-            })?;
-            let name = stt
-              .env
-              .get_name_by_addr(addr)
-              .ok_or(DecompileError::MissingAddress(addr.clone()))?;
-            let levels =
-              decompile_univ_indices(univ_indices, lvl_names, cache)?;
-            let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
-            results.push(expr);
+          (_, Expr::Ref(_ref_idx, _univ_indices)) => {
+            return Err(DecompileError::BadConstantFormat {
+              msg: "ref without arena metadata".to_string(),
+            });
           },
 
           // Rec: resolve name from arena Ref node or fallback
@@ -735,27 +715,10 @@ pub fn decompile_expr(
             stack.push(Frame::Decompile(struct_val.clone(), *child));
           },
 
-          (_, Expr::Prj(type_ref_idx, field_idx, struct_val)) => {
-            // Fallback: look up from refs table
-            let addr =
-              cache.refs.get(*type_ref_idx as usize).ok_or_else(|| {
-                DecompileError::InvalidRefIndex {
-                  idx: *type_ref_idx,
-                  refs_len: cache.refs.len(),
-                  constant: cache.current_const.clone(),
-                }
-              })?;
-            let named = stt
-              .env
-              .get_named_by_addr(addr)
-              .ok_or(DecompileError::MissingAddress(addr.clone()))?;
-            let type_name = decompile_name_from_meta(&named.meta, stt)?;
-            stack.push(Frame::BuildProj(
-              type_name,
-              Nat::from(*field_idx),
-              mdata_layers,
-            ));
-            stack.push(Frame::Decompile(struct_val.clone(), u64::MAX));
+          (_, Expr::Prj(_type_ref_idx, _field_idx, _struct_val)) => {
+            return Err(DecompileError::BadConstantFormat {
+              msg: "prj without arena metadata".to_string(),
+            });
           },
 
           (_, Expr::Share(_)) => unreachable!("Share handled above"),

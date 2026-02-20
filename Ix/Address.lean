@@ -14,6 +14,7 @@ structure Address where
 /-- Compute the Blake3 hash of a `ByteArray`, returning an `Address`. -/
 def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.hash x).val⟩
 
+
 /-- Convert a nibble (0--15) to its lowercase hexadecimal character. -/
 def hexOfNat : Nat -> Option Char
 | 0 => .some '0'

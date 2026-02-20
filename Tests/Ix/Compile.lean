@@ -9,6 +9,8 @@ import Ix.Address
 import Ix.Common
 import Ix.Meta
 import Ix.CompileM
+import Ix.DecompileM
+import Ix.CanonM
 import Ix.CondenseM
 import Ix.GraphM
 import Ix.Sharing
@@ -458,10 +460,79 @@ def testCrossImpl : TestSeq :=
         return (false, some s!"Found {result.mismatchedConstants.size} mismatches")
   ) .done
 
-/-! ## Test Suite -/
+/-! ## Lean → Ixon → Ix → Lean full roundtrip -/
+
+/-- Full roundtrip: Rust-compile Lean env to Ixon, decompile back to Ix, uncanon back to Lean,
+    then structurally compare every constant against the original. -/
+def testIxonFullRoundtrip : TestSeq :=
+  .individualIO "Lean→Ixon→Ix→Lean full roundtrip" (do
+    let leanEnv ← get_env!
+    let totalConsts := leanEnv.constants.toList.length
+    IO.println s!"[ixon-roundtrip] Lean env: {totalConsts} constants"
+
+    -- Step 1: Rust compile to Ixon.Env
+    IO.println s!"[ixon-roundtrip] Step 1: Rust compile..."
+    let compileStart ← IO.monoMsNow
+    let ixonEnv ← Ix.CompileM.rsCompileEnv leanEnv
+    let compileMs := (← IO.monoMsNow) - compileStart
+    IO.println s!"[ixon-roundtrip]   {ixonEnv.named.size} named, {ixonEnv.consts.size} consts in {compileMs}ms"
+
+    -- Step 2: Decompile Ixon → Ix
+    IO.println s!"[ixon-roundtrip] Step 2: Decompile Ixon→Ix (parallel)..."
+    let decompStart ← IO.monoMsNow
+    let (ixConsts, decompErrors) := Ix.DecompileM.decompileAllParallel ixonEnv
+    let decompMs := (← IO.monoMsNow) - decompStart
+    IO.println s!"[ixon-roundtrip]   {ixConsts.size} ok, {decompErrors.size} errors in {decompMs}ms"
+    if !decompErrors.isEmpty then
+      IO.println s!"[ixon-roundtrip]   First errors:"
+      for (name, err) in decompErrors.toList.take 5 do
+        IO.println s!"    {name}: {err}"
+
+    -- Step 3: Uncanon Ix → Lean
+    IO.println s!"[ixon-roundtrip] Step 3: Uncanon Ix→Lean (parallel)..."
+    let uncanonStart ← IO.monoMsNow
+    let roundtripped := Ix.CanonM.uncanonEnvParallel ixConsts
+    let uncanonMs := (← IO.monoMsNow) - uncanonStart
+    IO.println s!"[ixon-roundtrip]   {roundtripped.size} constants in {uncanonMs}ms"
+
+    -- Step 4: Compare roundtripped Lean constants against originals
+    IO.println s!"[ixon-roundtrip] Step 4: Comparing against original..."
+    let compareStart ← IO.monoMsNow
+    let origMap : Std.HashMap Lean.Name Lean.ConstantInfo :=
+      leanEnv.constants.fold (init := {}) fun acc name const => acc.insert name const
+    let (nMismatches, nMissing, mismatchNames, missingNames) :=
+      Ix.CanonM.compareEnvsParallel origMap roundtripped
+    let compareMs := (← IO.monoMsNow) - compareStart
+    IO.println s!"[ixon-roundtrip]   {nMissing} missing, {nMismatches} mismatches in {compareMs}ms"
+
+    if !missingNames.isEmpty then
+      IO.println s!"[ixon-roundtrip]   First missing:"
+      for name in missingNames.toList.take 10 do
+        IO.println s!"    {name}"
+
+    if !mismatchNames.isEmpty then
+      IO.println s!"[ixon-roundtrip]   First mismatches:"
+      for name in mismatchNames.toList.take 20 do
+        IO.println s!"    {name}"
+
+    let totalMs := compileMs + decompMs + uncanonMs + compareMs
+    IO.println s!"[ixon-roundtrip] Total: {totalMs}ms"
+
+    let success := decompErrors.size == 0 && nMismatches == 0 && nMissing == 0
+    if success then
+      return (true, none)
+    else
+      return (false, some s!"{decompErrors.size} decompile errors, {nMismatches} mismatches, {nMissing} missing")
+  ) .done
+
+/-! ## Test Suites -/
 
 def compileSuiteIO : List TestSeq := [
   testCrossImpl,
+]
+
+def ixonRoundtripSuiteIO : List TestSeq := [
+  testIxonFullRoundtrip,
 ]
 
 end Tests.Compile
