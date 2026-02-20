@@ -31,14 +31,18 @@
         ]
       },
       "locked": {
-        "lastModified": 1771368498,
-        "narHash": "sha256-+nviIXVXexnqijW1hJlRiHiiTsdtuNZuRREkN0U6MCE=",
-        "path": "/home/sam/repos/argument/Blake3.lean",
-        "type": "path"
+        "lastModified": 1771606207,
+        "narHash": "sha256-npGCsTdLRNw6xvaPkzy1Ul/IimiPiz9o+v9OoLwqaOk=",
+        "owner": "argumentcomputer",
+        "repo": "Blake3.lean",
+        "rev": "d886ce88c55eb210ff664c38f8c8782f1156b0b2",
+        "type": "github"
       },
       "original": {
-        "path": "/home/sam/repos/argument/Blake3.lean",
-        "type": "path"
+        "owner": "argumentcomputer",
+        "ref": "lean-v4.27.0",
+        "repo": "Blake3.lean",
+        "type": "github"
       }
     },
     "crane": {
@@ -138,14 +142,18 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1771368440,
-        "narHash": "sha256-xx4lS7oUoUNvIWxPOXwxGoR5N2xMt1tOU+9ePp9L7GQ=",
-        "path": "/home/sam/repos/argument/lean4-nix",
-        "type": "path"
+        "lastModified": 1771604035,
+        "narHash": "sha256-35kZxaGTpP0mGHaxKzb7WXQD2hkw5z/kGxIJ/bE+7cA=",
+        "owner": "argumentcomputer",
+        "repo": "lean4-nix",
+        "rev": "6ba23dd08cfcdf92c4e2aaae7952088a739d3bca",
+        "type": "github"
       },
       "original": {
-        "path": "/home/sam/repos/argument/lean4-nix",
-        "type": "path"
+        "owner": "argumentcomputer",
+        "ref": "lake-config",
+        "repo": "lean4-nix",
+        "type": "github"
       }
     },
     "nixpkgs": {
