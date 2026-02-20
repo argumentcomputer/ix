@@ -2,8 +2,6 @@ import Tests.Common
 import Ix.IxVM.ByteStream
 import Ix.IxVM.Blake3
 import Ix.IxVM.Sha256
-import Ix.Aiur.Simple
-import Ix.Aiur.Compile
 import Blake3
 
 @[extern "rs_sha256"]

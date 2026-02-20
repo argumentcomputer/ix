@@ -38,6 +38,9 @@ lean_exe «test-aiur» where
 lean_exe «test-aiur-hashes» where
   root := `Tests.AiurHashesMain
 
+lean_exe «test-ixvm» where
+  root := `Tests.IxVMMain
+
 end Tests
 
 section IxApplications
