@@ -42,6 +42,7 @@ jobs:
           lake test -- cli
       - run: lake exe test-aiur
       - run: lake exe test-aiur-hashes
+      - run: lake exe test-ixvm
       - name: Check lean.h.hash
         run: lake run check-lean-h-hash
 

@@ -2,428 +2,185 @@ import Ix.Aiur.Meta
 
 namespace IxVM
 
-set_option maxHeartbeats 2000000 in
 def ixonSerialize := ⟦
-  fn serialize(ixon: Ixon) -> ByteStream {
-    let stream = ByteStream.Nil;
-    match ixon {
-      Ixon.NAnon => ByteStream.Cons(0x00, store(stream)),
-      Ixon.NStr(Address.Bytes(n), Address.Bytes(s)) =>
-        let tag = 0x01;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.NNum(Address.Bytes(n), Address.Bytes(s)) =>
-        let tag = 0x02;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.UZero => ByteStream.Cons(0x03, store(stream)),
-      Ixon.USucc(Address.Bytes(n)) =>
-        let tag = 0x04;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.UMax(Address.Bytes(n), Address.Bytes(s)) =>
-        let tag = 0x05;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.UIMax(Address.Bytes(n), Address.Bytes(s)) =>
-        let tag = 0x06;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.ESort(Address.Bytes(n)) =>
-        let tag = 0x80;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.EStr(Address.Bytes(n)) =>
-        let tag = 0x81;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.ENat(Address.Bytes(n)) =>
-        let tag = 0x82;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.EApp(Address.Bytes(n), Address.Bytes(s)) =>
-        let tag = 0x83;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.ELam(Address.Bytes(n), Address.Bytes(s)) =>
-        let tag = 0x84;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.EAll(Address.Bytes(n), Address.Bytes(s)) =>
-        let tag = 0x85;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.ELet(b, Address.Bytes(n), Address.Bytes(s), Address.Bytes(t)) =>
-        let tag = 0x87 - b;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(n[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(s[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(t[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.Chck(Address.Bytes(a), Address.Bytes(b), Address.Bytes(c)) =>
-        let tag = 0xE3;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(c[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.Eval(Address.Bytes(a), Address.Bytes(b), Address.Bytes(c), Address.Bytes(d)) =>
-        let tag = 0xE4;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(c[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(d[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.Comm(Address.Bytes(a), Address.Bytes(b)) =>
-        let tag = 0xE5;
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(a[@i][@j], store(stream))));
-        let stream = fold(8..0, stream, |stream, @i|
-          fold(4..0, stream, |stream, @j| ByteStream.Cons(b[@i][@j], store(stream))));
-        ByteStream.Cons(tag, store(stream)),
-      Ixon.Blob(bytes) =>
-        let len: [G; 8] = byte_stream_length(bytes);
-        let flag = 0x9;
-        serialize_cons_head(flag, len, bytes),
-      Ixon.UVar(Nat.Bytes(bytes)) =>
-        let len: [G; 8] = byte_stream_length(bytes);
-        let flag = 0x1;
-        serialize_cons_head(flag, len, bytes),
-      Ixon.EVar(Nat.Bytes(bytes)) =>
-        let len: [G; 8] = byte_stream_length(bytes);
-        let flag = 0x2;
-        serialize_cons_head(flag, len, bytes),
+  fn put_expr(expr: Expr) -> ByteStream {
+    match expr {
+      -- Srt: Tag4(0x0, univ_idx)
+      Expr.Srt(univ_idx) => put_tag4(0x0, univ_idx),
+
+      -- Var: Tag4(0x1, idx)
+      Expr.Var(idx) => put_tag4(0x1, idx),
+
+      -- Ref: Tag4(0x2, len) + Tag0(ref_idx) + univ_list
+      Expr.Ref(ref_idx, &univ_list) =>
+        let len = u64_list_length(univ_list);
+        let tag = put_tag4(0x2, len);
+        let ref_bytes = put_tag0(ref_idx);
+        let univ_bytes = put_u64_list(univ_list);
+        byte_stream_concat(tag, byte_stream_concat(ref_bytes, univ_bytes)),
+
+      -- Rec: Tag4(0x3, len) + Tag0(rec_idx) + univ_list
+      Expr.Rec(rec_idx, &univ_list) =>
+        let len = u64_list_length(univ_list);
+        let tag = put_tag4(0x3, len);
+        let rec_bytes = put_tag0(rec_idx);
+        let univ_bytes = put_u64_list(univ_list);
+        byte_stream_concat(tag, byte_stream_concat(rec_bytes, univ_bytes)),
+
+      -- Prj: Tag4(0x4, field_idx) + Tag0(type_ref_idx) + put_expr(val)
+      Expr.Prj(type_ref_idx, field_idx, &val) =>
+        let tag = put_tag4(0x4, field_idx);
+        let type_bytes = put_tag0(type_ref_idx);
+        let val_bytes = put_expr(val);
+        byte_stream_concat(tag, byte_stream_concat(type_bytes, val_bytes)),
+
+      -- Str: Tag4(0x5, ref_idx)
+      Expr.Str(ref_idx) => put_tag4(0x5, ref_idx),
+
+      -- Nat: Tag4(0x6, ref_idx)
+      Expr.Nat(ref_idx) => put_tag4(0x6, ref_idx),
+
+      -- App: Tag4(0x7, count) + telescope
+      Expr.App(_, _) =>
+        let count = app_telescope_count(expr);
+        let tag = put_tag4(0x7, count);
+        let telescope = put_app_telescope(expr);
+        byte_stream_concat(tag, telescope),
+
+      -- Lam: Tag4(0x8, count) + telescope
+      Expr.Lam(_, _) =>
+        let count = lam_telescope_count(expr);
+        let tag = put_tag4(0x8, count);
+        let telescope = put_lam_telescope(expr);
+        byte_stream_concat(tag, telescope),
+
+      -- All: Tag4(0x9, count) + telescope
+      Expr.All(_, _) =>
+        let count = all_telescope_count(expr);
+        let tag = put_tag4(0x9, count);
+        let telescope = put_all_telescope(expr);
+        byte_stream_concat(tag, telescope),
+
+      -- Let: Tag4(0xA, non_dep) + put_expr(ty) + put_expr(val) + put_expr(body)
+      -- non_dep: 0 for dependent, 1 for non-dependent
+      Expr.Let(non_dep, &ty, &val, &body) =>
+        let tag = put_tag4(0xA, non_dep);
+        let ty_bytes = put_expr(ty);
+        let val_bytes = put_expr(val);
+        let body_bytes = put_expr(body);
+        byte_stream_concat(
+          tag,
+          byte_stream_concat(
+            ty_bytes,
+            byte_stream_concat(val_bytes, body_bytes)
+          )
+        ),
+
+      -- Share: Tag4(0xB, idx)
+      Expr.Share(idx) => put_tag4(0xB, idx),
     }
   }
 
-  fn serialize_cons_head(flag: G, len: [G; 8], stream: ByteStream) -> ByteStream {
-    match len {
-      [b1, 0, 0, 0, 0, 0, 0, 0] =>
-        -- 248 is minus 8 in u8
-        let (_, large) = u8_add(b1, 248);
-        match large {
-          0 =>
-            let tag = encode_tag_head(flag, 0, b1);
-            ByteStream.Cons(tag, store(stream)),
-          1 =>
-            let tag = encode_tag_head(flag, 1, 0);
-            ByteStream.Cons(tag, store(ByteStream.Cons(b1, store(stream)))),
-        },
-      [_, _, 0, 0, 0, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, 1);
-        ByteStream.Cons(tag, store(fold(2..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
-      [_, _, _, 0, 0, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, 2);
-        ByteStream.Cons(tag, store(fold(3..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
-      [_, _, _, _, 0, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, 3);
-        ByteStream.Cons(tag, store(fold(4..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
-      [_, _, _, _, _, 0, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, 4);
-        ByteStream.Cons(tag, store(fold(5..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
-      [_, _, _, _, _, _, 0, 0] =>
-        let tag = encode_tag_head(flag, 1, 5);
-        ByteStream.Cons(tag, store(fold(6..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
-      [_, _, _, _, _, _, _, 0] =>
-        let tag = encode_tag_head(flag, 1, 6);
-        ByteStream.Cons(tag, store(fold(7..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
-      [_, _, _, _, _, _, _, _] =>
-        let tag = encode_tag_head(flag, 1, 7);
-        ByteStream.Cons(tag, store(fold(8..0, stream, |stream, @i| ByteStream.Cons(len[@i], store(stream))))),
+  fn put_u64_le(bs: [G; 8], num_bytes: G) -> ByteStream {
+    match num_bytes {
+      0 => ByteStream.Nil,
+      _ =>
+        let [b1, b2, b3, b4, b5, b6, b7, b8] = bs;
+        let rest = [b2, b3, b4, b5, b6, b7, b8, 0];
+        ByteStream.Cons(b1, store(put_u64_le(rest, num_bytes - 1))),
     }
   }
 
-  fn encode_tag_head(x: G, y: G, z: G) -> G {
-    match (x, y, z) {
-      (0b0000, 0b0, 0b000) => 0b00000000,
-      (0b0000, 0b0, 0b001) => 0b00000001,
-      (0b0000, 0b0, 0b010) => 0b00000010,
-      (0b0000, 0b0, 0b011) => 0b00000011,
-      (0b0000, 0b0, 0b100) => 0b00000100,
-      (0b0000, 0b0, 0b101) => 0b00000101,
-      (0b0000, 0b0, 0b110) => 0b00000110,
-      (0b0000, 0b0, 0b111) => 0b00000111,
-      (0b0000, 0b1, 0b000) => 0b00001000,
-      (0b0000, 0b1, 0b001) => 0b00001001,
-      (0b0000, 0b1, 0b010) => 0b00001010,
-      (0b0000, 0b1, 0b011) => 0b00001011,
-      (0b0000, 0b1, 0b100) => 0b00001100,
-      (0b0000, 0b1, 0b101) => 0b00001101,
-      (0b0000, 0b1, 0b110) => 0b00001110,
-      (0b0000, 0b1, 0b111) => 0b00001111,
-      (0b0001, 0b0, 0b000) => 0b00010000,
-      (0b0001, 0b0, 0b001) => 0b00010001,
-      (0b0001, 0b0, 0b010) => 0b00010010,
-      (0b0001, 0b0, 0b011) => 0b00010011,
-      (0b0001, 0b0, 0b100) => 0b00010100,
-      (0b0001, 0b0, 0b101) => 0b00010101,
-      (0b0001, 0b0, 0b110) => 0b00010110,
-      (0b0001, 0b0, 0b111) => 0b00010111,
-      (0b0001, 0b1, 0b000) => 0b00011000,
-      (0b0001, 0b1, 0b001) => 0b00011001,
-      (0b0001, 0b1, 0b010) => 0b00011010,
-      (0b0001, 0b1, 0b011) => 0b00011011,
-      (0b0001, 0b1, 0b100) => 0b00011100,
-      (0b0001, 0b1, 0b101) => 0b00011101,
-      (0b0001, 0b1, 0b110) => 0b00011110,
-      (0b0001, 0b1, 0b111) => 0b00011111,
-      (0b0010, 0b0, 0b000) => 0b00100000,
-      (0b0010, 0b0, 0b001) => 0b00100001,
-      (0b0010, 0b0, 0b010) => 0b00100010,
-      (0b0010, 0b0, 0b011) => 0b00100011,
-      (0b0010, 0b0, 0b100) => 0b00100100,
-      (0b0010, 0b0, 0b101) => 0b00100101,
-      (0b0010, 0b0, 0b110) => 0b00100110,
-      (0b0010, 0b0, 0b111) => 0b00100111,
-      (0b0010, 0b1, 0b000) => 0b00101000,
-      (0b0010, 0b1, 0b001) => 0b00101001,
-      (0b0010, 0b1, 0b010) => 0b00101010,
-      (0b0010, 0b1, 0b011) => 0b00101011,
-      (0b0010, 0b1, 0b100) => 0b00101100,
-      (0b0010, 0b1, 0b101) => 0b00101101,
-      (0b0010, 0b1, 0b110) => 0b00101110,
-      (0b0010, 0b1, 0b111) => 0b00101111,
-      (0b0011, 0b0, 0b000) => 0b00110000,
-      (0b0011, 0b0, 0b001) => 0b00110001,
-      (0b0011, 0b0, 0b010) => 0b00110010,
-      (0b0011, 0b0, 0b011) => 0b00110011,
-      (0b0011, 0b0, 0b100) => 0b00110100,
-      (0b0011, 0b0, 0b101) => 0b00110101,
-      (0b0011, 0b0, 0b110) => 0b00110110,
-      (0b0011, 0b0, 0b111) => 0b00110111,
-      (0b0011, 0b1, 0b000) => 0b00111000,
-      (0b0011, 0b1, 0b001) => 0b00111001,
-      (0b0011, 0b1, 0b010) => 0b00111010,
-      (0b0011, 0b1, 0b011) => 0b00111011,
-      (0b0011, 0b1, 0b100) => 0b00111100,
-      (0b0011, 0b1, 0b101) => 0b00111101,
-      (0b0011, 0b1, 0b110) => 0b00111110,
-      (0b0011, 0b1, 0b111) => 0b00111111,
-      (0b0100, 0b0, 0b000) => 0b01000000,
-      (0b0100, 0b0, 0b001) => 0b01000001,
-      (0b0100, 0b0, 0b010) => 0b01000010,
-      (0b0100, 0b0, 0b011) => 0b01000011,
-      (0b0100, 0b0, 0b100) => 0b01000100,
-      (0b0100, 0b0, 0b101) => 0b01000101,
-      (0b0100, 0b0, 0b110) => 0b01000110,
-      (0b0100, 0b0, 0b111) => 0b01000111,
-      (0b0100, 0b1, 0b000) => 0b01001000,
-      (0b0100, 0b1, 0b001) => 0b01001001,
-      (0b0100, 0b1, 0b010) => 0b01001010,
-      (0b0100, 0b1, 0b011) => 0b01001011,
-      (0b0100, 0b1, 0b100) => 0b01001100,
-      (0b0100, 0b1, 0b101) => 0b01001101,
-      (0b0100, 0b1, 0b110) => 0b01001110,
-      (0b0100, 0b1, 0b111) => 0b01001111,
-      (0b0101, 0b0, 0b000) => 0b01010000,
-      (0b0101, 0b0, 0b001) => 0b01010001,
-      (0b0101, 0b0, 0b010) => 0b01010010,
-      (0b0101, 0b0, 0b011) => 0b01010011,
-      (0b0101, 0b0, 0b100) => 0b01010100,
-      (0b0101, 0b0, 0b101) => 0b01010101,
-      (0b0101, 0b0, 0b110) => 0b01010110,
-      (0b0101, 0b0, 0b111) => 0b01010111,
-      (0b0101, 0b1, 0b000) => 0b01011000,
-      (0b0101, 0b1, 0b001) => 0b01011001,
-      (0b0101, 0b1, 0b010) => 0b01011010,
-      (0b0101, 0b1, 0b011) => 0b01011011,
-      (0b0101, 0b1, 0b100) => 0b01011100,
-      (0b0101, 0b1, 0b101) => 0b01011101,
-      (0b0101, 0b1, 0b110) => 0b01011110,
-      (0b0101, 0b1, 0b111) => 0b01011111,
-      (0b0110, 0b0, 0b000) => 0b01100000,
-      (0b0110, 0b0, 0b001) => 0b01100001,
-      (0b0110, 0b0, 0b010) => 0b01100010,
-      (0b0110, 0b0, 0b011) => 0b01100011,
-      (0b0110, 0b0, 0b100) => 0b01100100,
-      (0b0110, 0b0, 0b101) => 0b01100101,
-      (0b0110, 0b0, 0b110) => 0b01100110,
-      (0b0110, 0b0, 0b111) => 0b01100111,
-      (0b0110, 0b1, 0b000) => 0b01101000,
-      (0b0110, 0b1, 0b001) => 0b01101001,
-      (0b0110, 0b1, 0b010) => 0b01101010,
-      (0b0110, 0b1, 0b011) => 0b01101011,
-      (0b0110, 0b1, 0b100) => 0b01101100,
-      (0b0110, 0b1, 0b101) => 0b01101101,
-      (0b0110, 0b1, 0b110) => 0b01101110,
-      (0b0110, 0b1, 0b111) => 0b01101111,
-      (0b0111, 0b0, 0b000) => 0b01110000,
-      (0b0111, 0b0, 0b001) => 0b01110001,
-      (0b0111, 0b0, 0b010) => 0b01110010,
-      (0b0111, 0b0, 0b011) => 0b01110011,
-      (0b0111, 0b0, 0b100) => 0b01110100,
-      (0b0111, 0b0, 0b101) => 0b01110101,
-      (0b0111, 0b0, 0b110) => 0b01110110,
-      (0b0111, 0b0, 0b111) => 0b01110111,
-      (0b0111, 0b1, 0b000) => 0b01111000,
-      (0b0111, 0b1, 0b001) => 0b01111001,
-      (0b0111, 0b1, 0b010) => 0b01111010,
-      (0b0111, 0b1, 0b011) => 0b01111011,
-      (0b0111, 0b1, 0b100) => 0b01111100,
-      (0b0111, 0b1, 0b101) => 0b01111101,
-      (0b0111, 0b1, 0b110) => 0b01111110,
-      (0b0111, 0b1, 0b111) => 0b01111111,
-      (0b1000, 0b0, 0b000) => 0b10000000,
-      (0b1000, 0b0, 0b001) => 0b10000001,
-      (0b1000, 0b0, 0b010) => 0b10000010,
-      (0b1000, 0b0, 0b011) => 0b10000011,
-      (0b1000, 0b0, 0b100) => 0b10000100,
-      (0b1000, 0b0, 0b101) => 0b10000101,
-      (0b1000, 0b0, 0b110) => 0b10000110,
-      (0b1000, 0b0, 0b111) => 0b10000111,
-      (0b1000, 0b1, 0b000) => 0b10001000,
-      (0b1000, 0b1, 0b001) => 0b10001001,
-      (0b1000, 0b1, 0b010) => 0b10001010,
-      (0b1000, 0b1, 0b011) => 0b10001011,
-      (0b1000, 0b1, 0b100) => 0b10001100,
-      (0b1000, 0b1, 0b101) => 0b10001101,
-      (0b1000, 0b1, 0b110) => 0b10001110,
-      (0b1000, 0b1, 0b111) => 0b10001111,
-      (0b1001, 0b0, 0b000) => 0b10010000,
-      (0b1001, 0b0, 0b001) => 0b10010001,
-      (0b1001, 0b0, 0b010) => 0b10010010,
-      (0b1001, 0b0, 0b011) => 0b10010011,
-      (0b1001, 0b0, 0b100) => 0b10010100,
-      (0b1001, 0b0, 0b101) => 0b10010101,
-      (0b1001, 0b0, 0b110) => 0b10010110,
-      (0b1001, 0b0, 0b111) => 0b10010111,
-      (0b1001, 0b1, 0b000) => 0b10011000,
-      (0b1001, 0b1, 0b001) => 0b10011001,
-      (0b1001, 0b1, 0b010) => 0b10011010,
-      (0b1001, 0b1, 0b011) => 0b10011011,
-      (0b1001, 0b1, 0b100) => 0b10011100,
-      (0b1001, 0b1, 0b101) => 0b10011101,
-      (0b1001, 0b1, 0b110) => 0b10011110,
-      (0b1001, 0b1, 0b111) => 0b10011111,
-      (0b1010, 0b0, 0b000) => 0b10100000,
-      (0b1010, 0b0, 0b001) => 0b10100001,
-      (0b1010, 0b0, 0b010) => 0b10100010,
-      (0b1010, 0b0, 0b011) => 0b10100011,
-      (0b1010, 0b0, 0b100) => 0b10100100,
-      (0b1010, 0b0, 0b101) => 0b10100101,
-      (0b1010, 0b0, 0b110) => 0b10100110,
-      (0b1010, 0b0, 0b111) => 0b10100111,
-      (0b1010, 0b1, 0b000) => 0b10101000,
-      (0b1010, 0b1, 0b001) => 0b10101001,
-      (0b1010, 0b1, 0b010) => 0b10101010,
-      (0b1010, 0b1, 0b011) => 0b10101011,
-      (0b1010, 0b1, 0b100) => 0b10101100,
-      (0b1010, 0b1, 0b101) => 0b10101101,
-      (0b1010, 0b1, 0b110) => 0b10101110,
-      (0b1010, 0b1, 0b111) => 0b10101111,
-      (0b1011, 0b0, 0b000) => 0b10110000,
-      (0b1011, 0b0, 0b001) => 0b10110001,
-      (0b1011, 0b0, 0b010) => 0b10110010,
-      (0b1011, 0b0, 0b011) => 0b10110011,
-      (0b1011, 0b0, 0b100) => 0b10110100,
-      (0b1011, 0b0, 0b101) => 0b10110101,
-      (0b1011, 0b0, 0b110) => 0b10110110,
-      (0b1011, 0b0, 0b111) => 0b10110111,
-      (0b1011, 0b1, 0b000) => 0b10111000,
-      (0b1011, 0b1, 0b001) => 0b10111001,
-      (0b1011, 0b1, 0b010) => 0b10111010,
-      (0b1011, 0b1, 0b011) => 0b10111011,
-      (0b1011, 0b1, 0b100) => 0b10111100,
-      (0b1011, 0b1, 0b101) => 0b10111101,
-      (0b1011, 0b1, 0b110) => 0b10111110,
-      (0b1011, 0b1, 0b111) => 0b10111111,
-      (0b1100, 0b0, 0b000) => 0b11000000,
-      (0b1100, 0b0, 0b001) => 0b11000001,
-      (0b1100, 0b0, 0b010) => 0b11000010,
-      (0b1100, 0b0, 0b011) => 0b11000011,
-      (0b1100, 0b0, 0b100) => 0b11000100,
-      (0b1100, 0b0, 0b101) => 0b11000101,
-      (0b1100, 0b0, 0b110) => 0b11000110,
-      (0b1100, 0b0, 0b111) => 0b11000111,
-      (0b1100, 0b1, 0b000) => 0b11001000,
-      (0b1100, 0b1, 0b001) => 0b11001001,
-      (0b1100, 0b1, 0b010) => 0b11001010,
-      (0b1100, 0b1, 0b011) => 0b11001011,
-      (0b1100, 0b1, 0b100) => 0b11001100,
-      (0b1100, 0b1, 0b101) => 0b11001101,
-      (0b1100, 0b1, 0b110) => 0b11001110,
-      (0b1100, 0b1, 0b111) => 0b11001111,
-      (0b1101, 0b0, 0b000) => 0b11010000,
-      (0b1101, 0b0, 0b001) => 0b11010001,
-      (0b1101, 0b0, 0b010) => 0b11010010,
-      (0b1101, 0b0, 0b011) => 0b11010011,
-      (0b1101, 0b0, 0b100) => 0b11010100,
-      (0b1101, 0b0, 0b101) => 0b11010101,
-      (0b1101, 0b0, 0b110) => 0b11010110,
-      (0b1101, 0b0, 0b111) => 0b11010111,
-      (0b1101, 0b1, 0b000) => 0b11011000,
-      (0b1101, 0b1, 0b001) => 0b11011001,
-      (0b1101, 0b1, 0b010) => 0b11011010,
-      (0b1101, 0b1, 0b011) => 0b11011011,
-      (0b1101, 0b1, 0b100) => 0b11011100,
-      (0b1101, 0b1, 0b101) => 0b11011101,
-      (0b1101, 0b1, 0b110) => 0b11011110,
-      (0b1101, 0b1, 0b111) => 0b11011111,
-      (0b1110, 0b0, 0b000) => 0b11100000,
-      (0b1110, 0b0, 0b001) => 0b11100001,
-      (0b1110, 0b0, 0b010) => 0b11100010,
-      (0b1110, 0b0, 0b011) => 0b11100011,
-      (0b1110, 0b0, 0b100) => 0b11100100,
-      (0b1110, 0b0, 0b101) => 0b11100101,
-      (0b1110, 0b0, 0b110) => 0b11100110,
-      (0b1110, 0b0, 0b111) => 0b11100111,
-      (0b1110, 0b1, 0b000) => 0b11101000,
-      (0b1110, 0b1, 0b001) => 0b11101001,
-      (0b1110, 0b1, 0b010) => 0b11101010,
-      (0b1110, 0b1, 0b011) => 0b11101011,
-      (0b1110, 0b1, 0b100) => 0b11101100,
-      (0b1110, 0b1, 0b101) => 0b11101101,
-      (0b1110, 0b1, 0b110) => 0b11101110,
-      (0b1110, 0b1, 0b111) => 0b11101111,
-      (0b1111, 0b0, 0b000) => 0b11110000,
-      (0b1111, 0b0, 0b001) => 0b11110001,
-      (0b1111, 0b0, 0b010) => 0b11110010,
-      (0b1111, 0b0, 0b011) => 0b11110011,
-      (0b1111, 0b0, 0b100) => 0b11110100,
-      (0b1111, 0b0, 0b101) => 0b11110101,
-      (0b1111, 0b0, 0b110) => 0b11110110,
-      (0b1111, 0b0, 0b111) => 0b11110111,
-      (0b1111, 0b1, 0b000) => 0b11111000,
-      (0b1111, 0b1, 0b001) => 0b11111001,
-      (0b1111, 0b1, 0b010) => 0b11111010,
-      (0b1111, 0b1, 0b011) => 0b11111011,
-      (0b1111, 0b1, 0b100) => 0b11111100,
-      (0b1111, 0b1, 0b101) => 0b11111101,
-      (0b1111, 0b1, 0b110) => 0b11111110,
-      (0b1111, 0b1, 0b111) => 0b11111111,
+  fn put_tag0(bs: [G; 8]) -> ByteStream {
+    let byte_count = u64_byte_count(bs);
+    let small = u8_less_than(bs[0], 128);
+    match (byte_count, small) {
+      (1, 1) => ByteStream.Cons(bs[0], store(ByteStream.Nil)),
+      _ =>
+        let head = 128 + (byte_count - 1);
+        ByteStream.Cons(head, store(put_u64_le(bs, byte_count))),
+    }
+  }
+
+  fn put_tag4(flag: G, bs: [G; 8]) -> ByteStream {
+    let byte_count = u64_byte_count(bs);
+    let small = u8_less_than(bs[0], 8);
+    match (byte_count, small) {
+      (1, 1) =>
+        let head = flag * 16 + bs[0];
+        ByteStream.Cons(head, store(ByteStream.Nil)),
+      _ =>
+        let head = flag * 16 + 8 + (byte_count - 1);
+        let bs_bytes = put_u64_le(bs, byte_count);
+        ByteStream.Cons(head, store(bs_bytes)),
+    }
+  }
+
+  -- Serialize field list (each element as Tag0)
+  fn put_u64_list(list: U64List) -> ByteStream {
+    match list {
+      U64List.Nil => ByteStream.Nil,
+      U64List.Cons(idx, rest) =>
+        let idx_bytes = put_tag0(idx);
+        let rest_bytes = put_u64_list(load(rest));
+        byte_stream_concat(idx_bytes, rest_bytes),
+    }
+  }
+
+  -- Count nested App expressions
+  fn app_telescope_count(expr: Expr) -> [G; 8] {
+    match expr {
+      Expr.App(&func, _) => relaxed_u64_succ(app_telescope_count(func)),
+      _ => [0; 8],
+    }
+  }
+
+  -- Count nested Lam expressions
+  fn lam_telescope_count(expr: Expr) -> [G; 8] {
+    match expr {
+      Expr.Lam(_, &body) => relaxed_u64_succ(lam_telescope_count(body)),
+      _ => [0; 8],
+    }
+  }
+
+  -- Count nested All expressions
+  fn all_telescope_count(expr: Expr) -> [G; 8] {
+    match expr {
+      Expr.All(_, &body) => relaxed_u64_succ(all_telescope_count(body)),
+      _ => [0; 8],
+    }
+  }
+
+  -- Serialize App telescope body (function, then all args in order)
+  fn put_app_telescope(expr: Expr) -> ByteStream {
+    match expr {
+      Expr.App(&func, &arg) =>
+        let func_bytes = put_app_telescope(func);
+        let arg_bytes = put_expr(arg);
+        byte_stream_concat(func_bytes, arg_bytes),
+      _ => put_expr(expr),
+    }
+  }
+
+  -- Serialize Lam telescope body (all types, then body)
+  fn put_lam_telescope(expr: Expr) -> ByteStream {
+    match expr {
+      Expr.Lam(&ty, &body) =>
+        let ty_bytes = put_expr(ty);
+        let rest_bytes = put_lam_telescope(body);
+        byte_stream_concat(ty_bytes, rest_bytes),
+      _ => put_expr(expr),
+    }
+  }
+
+  -- Serialize All telescope body (all types, then body)
+  fn put_all_telescope(expr: Expr) -> ByteStream {
+    match expr {
+      Expr.All(&ty, &body) =>
+        let ty_bytes = put_expr(ty);
+        let rest_bytes = put_all_telescope(body);
+        byte_stream_concat(ty_bytes, rest_bytes),
+      _ => put_expr(expr),
     }
   }
 ⟧

@@ -8,10 +8,18 @@ def byteStream := ⟦
     Nil
   }
 
+  fn byte_stream_concat(a: ByteStream, b: ByteStream) -> ByteStream {
+    match a {
+      ByteStream.Nil => b,
+      ByteStream.Cons(byte, &rest) =>
+        ByteStream.Cons(byte, store(byte_stream_concat(rest, b))),
+    }
+  }
+
   fn byte_stream_length(bytes: ByteStream) -> [G; 8] {
     match bytes {
       ByteStream.Nil => [0; 8],
-      ByteStream.Cons(_, rest) => relaxed_u64_succ(byte_stream_length(load(rest))),
+      ByteStream.Cons(_, &rest) => relaxed_u64_succ(byte_stream_length(rest)),
     }
   }
 
@@ -31,6 +39,27 @@ def byteStream := ⟦
     match input {
       ByteStream.Cons(_, _) => 0,
       ByteStream.Nil => 1,
+    }
+  }
+
+  -- Count bytes needed to represent a u64 (0-8)
+  fn u64_byte_count(x: [G; 8]) -> G {
+    match x {
+      [_, 0, 0, 0, 0, 0, 0, 0] => 1,
+      [_, _, 0, 0, 0, 0, 0, 0] => 2,
+      [_, _, _, 0, 0, 0, 0, 0] => 3,
+      [_, _, _, _, 0, 0, 0, 0] => 4,
+      [_, _, _, _, _, 0, 0, 0] => 5,
+      [_, _, _, _, _, _, 0, 0] => 6,
+      [_, _, _, _, _, _, _, 0] => 7,
+      _ => 8,
+    }
+  }
+
+  fn u64_is_zero(x: [G; 8]) -> G {
+    match x {
+      [0, 0, 0, 0, 0, 0, 0, 0] => 1,
+      _ => 0,
     }
   }
 
@@ -150,6 +179,18 @@ def byteStream := ⟦
     let (sum3_with_carry, _x) = u8_add(sum3, carry3);
 
     [sum3_with_carry, sum2_with_carry, sum1_with_carry, sum0]
+  }
+
+  enum U64List {
+    Cons([G; 8], &U64List),
+    Nil
+  }
+
+  fn u64_list_length(xs: U64List) -> [G; 8] {
+    match xs {
+      U64List.Nil => [0; 8],
+      U64List.Cons(_, rest) => relaxed_u64_succ(u64_list_length(load(rest))),
+    }
   }
 ⟧
 
