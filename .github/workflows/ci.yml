@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lean-jobs:
+  lean-test:
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v5
@@ -28,13 +28,10 @@ jobs:
         run: lake test -- cli
       - name: Aiur tests
         run: lake test -- --ignored aiur aiur-hashes ixvm
-      - name: Build Compiler benchmarks
-        uses: leanprover/lean-action@v1
-        with:
-          build-args: "--wfail"
-          lake-package-directory: Benchmarks/Compile
       - name: Check lean.h.hash
         run: lake run check-lean-h-hash
+      - name: Check Lean versions match for Ix and compiler bench
+        run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
 
   rust-test:
     runs-on: ubuntu-latest
