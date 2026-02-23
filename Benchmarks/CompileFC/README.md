@@ -10,8 +10,10 @@ lake exe mk_all --lib FormalConjectures
 mv FormalConjectures.lean ../../../CompileFC.lean
 ```
 
-Uses Lean v4.27.0 to match the formal-conjectures project, hence the separate Lake project.
+This project shadows the `formal-conjectures` project's Lean version, which is not always up to date.
 
 ## Usage
+
+First ensure the Lean version used to build Ix matches the `Benchmarks/CompileFC/lean-toolchain` version (check against `ix --version`). Then run
 
 `ix compile --path /path/to/CompileFC.lean`

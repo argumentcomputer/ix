@@ -146,7 +146,7 @@ script install := do
   return 0
 
 script "check-lean-h-hash" := do
-  let cachedLeanHHash := 11953097959587138033
+  let cachedLeanHHash := 14792798158057885278
 
   let leanIncludeDir ← getLeanIncludeDir
   let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"

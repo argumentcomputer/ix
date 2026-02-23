@@ -8,9 +8,9 @@ Test libraries for the Ix compiler
 
 ## Usage
 
-First ensure the Lean version used to build Ix matches the CompileFC/lean-toolchain version (`ix --version`). Then run
+First ensure the Lean version used to build Ix matches the `Benchmarks/Compile/lean-toolchain` version (check against `ix --version`). Then run
 
-`ix compile --path /path/to/CompileFC.lean`
+`ix compile --path /path/to/Compile<Lib>.lean` # replace `<Lib>` with `InitStd`, `Lean`, `Mathlib`, or `FLT`
 
 > [!NOTE]
 > Compiling Mathlib and FLT currently requires a multi-core CPU and >64 GB RAM.
