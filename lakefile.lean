@@ -33,13 +33,13 @@ lean_exe IxTests where
   supportInterpreter := true
 
 lean_exe «test-aiur» where
-  root := `Tests.AiurMain
+  root := `Tests.Aiur.Aiur
 
 lean_exe «test-aiur-hashes» where
-  root := `Tests.AiurHashesMain
+  root := `Tests.Aiur.Hashes
 
 lean_exe «test-ixvm» where
-  root := `Tests.IxVMMain
+  root := `Tests.Aiur.IxVM
 
 end Tests
 

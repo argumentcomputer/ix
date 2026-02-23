@@ -1,4 +1,4 @@
-import Tests.Common
+import Tests.Aiur.Common
 import Ix.IxVM.ByteStream
 import Ix.IxVM.Blake3
 import Ix.IxVM.Sha256
@@ -13,7 +13,7 @@ def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
   let input := inputBytes.map .ofUInt8
   let output := outputBytes.map .ofUInt8
   let buffer := ⟨input, .ofList [(#[0], ⟨0, size⟩)]⟩ -- key is fixed as #[0]
-  ⟨`blake3_test, #[], output, buffer, buffer⟩
+  ⟨`blake3_test, s!"blake3 (size={size})", #[], output, buffer, buffer⟩
 
 def mkSha256HashTestCase (size : Nat) : AiurTestCase :=
   let inputBytes := Array.range size |>.map Nat.toUInt8
@@ -21,7 +21,7 @@ def mkSha256HashTestCase (size : Nat) : AiurTestCase :=
   let input := inputBytes.map .ofUInt8
   let output := outputBytes.map .ofUInt8
   let buffer := ⟨input, .ofList [(#[0], ⟨0, size⟩)]⟩ -- key is fixed as #[0]
-  ⟨`sha256_test, #[], output, buffer, buffer⟩
+  ⟨`sha256_test, s!"sha256 (size={size})", #[], output, buffer, buffer⟩
 
 def blake3TestCases : List AiurTestCase := [
   mkBlake3HashTestCase 0,
@@ -58,7 +58,15 @@ def sha256TestCases : List AiurTestCase := [
   mkSha256HashTestCase 1200,
 ]
 
-def Tests.AiurHashes.suite := [
-  mkAiurTests (IxVM.byteStream.merge IxVM.blake3) blake3TestCases,
-  mkAiurTests (IxVM.byteStream.merge IxVM.sha256) sha256TestCases,
-]
+open LSpec
+
+def main (_args : List String) : IO UInt32 := do
+  let .ok blake3Env := AiurTestEnv.build (IxVM.byteStream.merge IxVM.blake3)
+    | IO.eprintln "Blake3 setup failed"; return 1
+  let r1 ← lspecEachIO blake3TestCases fun testCase =>
+    pure (blake3Env.runTestCase testCase)
+  let .ok sha256Env := AiurTestEnv.build (IxVM.byteStream.merge IxVM.sha256)
+    | IO.eprintln "SHA256 setup failed"; return 1
+  let r2 ← lspecEachIO sha256TestCases fun testCase =>
+    pure (sha256Env.runTestCase testCase)
+  return if r1 == 0 && r2 == 0 then 0 else 1
