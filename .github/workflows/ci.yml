@@ -40,6 +40,11 @@ jobs:
         run: lake test -- cli
       - name: Aiur tests
         run: lake test -- --ignored aiur aiur-hashes ixvm
+      - name: Build Compiler benchmarks
+        uses: leanprover/lean-action@v1
+        with:
+          build-args: "--wfail"
+          lake-package-directory: Benchmarks/Compile
       - name: Check lean.h.hash
         run: lake run check-lean-h-hash
 

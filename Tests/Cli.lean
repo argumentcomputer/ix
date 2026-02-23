@@ -14,7 +14,6 @@ def Tests.Cli.run (buildCmd: String) (buildArgs : Array String) (buildDir : Opti
 
 def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
-  Tests.Cli.run "lake" (#["exe", "ix", "compile", "--path", "Benchmarks/Compile/CompileInitStd.lean"]) none
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0
