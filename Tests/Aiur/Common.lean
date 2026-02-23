@@ -1,8 +1,3 @@
-/-
-  Common Aiur test utilities.
-  Basic type generators have been moved to Tests/Gen/Basic.lean.
--/
-
 import LSpec
 import Tests.Gen.Basic
 import Ix.Unsigned

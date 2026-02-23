@@ -58,15 +58,3 @@ def sha256TestCases : List AiurTestCase := [
   mkSha256HashTestCase 1200,
 ]
 
-open LSpec
-
-def main (_args : List String) : IO UInt32 := do
-  let .ok blake3Env := AiurTestEnv.build (IxVM.byteStream.merge IxVM.blake3)
-    | IO.eprintln "Blake3 setup failed"; return 1
-  let r1 ← lspecEachIO blake3TestCases fun testCase =>
-    pure (blake3Env.runTestCase testCase)
-  let .ok sha256Env := AiurTestEnv.build (IxVM.byteStream.merge IxVM.sha256)
-    | IO.eprintln "SHA256 setup failed"; return 1
-  let r2 ← lspecEachIO sha256TestCases fun testCase =>
-    pure (sha256Env.runTestCase testCase)
-  return if r1 == 0 && r2 == 0 then 0 else 1

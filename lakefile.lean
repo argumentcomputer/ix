@@ -32,15 +32,6 @@ lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
 
-lean_exe «test-aiur» where
-  root := `Tests.Aiur.Aiur
-
-lean_exe «test-aiur-hashes» where
-  root := `Tests.Aiur.Hashes
-
-lean_exe «test-ixvm» where
-  root := `Tests.Aiur.IxVM
-
 end Tests
 
 section Benchmarks

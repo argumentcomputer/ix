@@ -268,9 +268,3 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `fold_matrix_sum #[1, 2, 3, 4] #[10],
   ]
 
-def main (_args : List String) : IO UInt32 := do
-  match AiurTestEnv.build (pure toplevel) with
-  | .error e => IO.eprintln s!"Setup failed: {e}"; return 1
-  | .ok env =>
-    lspecEachIO aiurTestCases fun testCase =>
-      pure (env.runTestCase testCase)

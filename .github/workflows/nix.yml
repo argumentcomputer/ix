@@ -29,10 +29,6 @@ jobs:
       - run: nix run .#ix -- --help
       # Ix tests
       - run: nix run .#test --accept-flake-config
-      # Expensive tests are only built in Nix to save time
-      - run: nix build .#test-aiur --accept-flake-config
-      - run: nix build .#test-aiur-hashes --accept-flake-config
-      - run: nix build .#test-ixvm --accept-flake-config
 
   # Tests Nix devShell support on Ubuntu
   nix-devshell:
