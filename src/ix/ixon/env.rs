@@ -36,7 +36,6 @@ impl Named {
 /// - `blobs`: Raw data (strings, nats, files)
 /// - `names`: Hash-consed Lean.Name components (Address -> Name)
 /// - `comms`: Cryptographic commitments (secrets)
-/// - `addr_to_name`: Reverse index from constant address to name (for O(1) lookup)
 #[derive(Debug, Default)]
 pub struct Env {
   /// Alpha-invariant constants: Address -> Constant
@@ -49,8 +48,6 @@ pub struct Env {
   pub names: DashMap<Address, Name>,
   /// Cryptographic commitments: commitment Address -> Comm
   pub comms: DashMap<Address, Comm>,
-  /// Reverse index: constant Address -> Name (for fast lookup during decompile)
-  pub addr_to_name: DashMap<Address, Name>,
 }
 
 impl Env {
@@ -61,7 +58,6 @@ impl Env {
       blobs: DashMap::new(),
       names: DashMap::new(),
       comms: DashMap::new(),
-      addr_to_name: DashMap::new(),
     }
   }
 
@@ -90,24 +86,12 @@ impl Env {
 
   /// Register a named constant.
   pub fn register_name(&self, name: Name, named: Named) {
-    // Also insert into reverse index for O(1) lookup by address
-    self.addr_to_name.insert(named.addr.clone(), name.clone());
     self.named.insert(name, named);
   }
 
   /// Look up a name.
   pub fn lookup_name(&self, name: &Name) -> Option<Named> {
     self.named.get(name).map(|r| r.clone())
-  }
-
-  /// Look up name by constant address (O(1) using reverse index).
-  pub fn get_name_by_addr(&self, addr: &Address) -> Option<Name> {
-    self.addr_to_name.get(addr).map(|r| r.clone())
-  }
-
-  /// Look up named entry by constant address (O(1) using reverse index).
-  pub fn get_named_by_addr(&self, addr: &Address) -> Option<Named> {
-    self.get_name_by_addr(addr).and_then(|name| self.lookup_name(&name))
   }
 
   /// Store a hash-consed name component.
@@ -183,12 +167,7 @@ impl Clone for Env {
       comms.insert(entry.key().clone(), entry.value().clone());
     }
 
-    let addr_to_name = DashMap::new();
-    for entry in self.addr_to_name.iter() {
-      addr_to_name.insert(entry.key().clone(), entry.value().clone());
-    }
-
-    Env { consts, named, blobs, names, comms, addr_to_name }
+    Env { consts, named, blobs, names, comms }
   }
 }
 
@@ -241,28 +220,6 @@ mod tests {
     let named = Named::with_addr(addr.clone());
     env.register_name(name.clone(), named.clone());
     let got = env.lookup_name(&name).unwrap();
-    assert_eq!(got.addr, addr);
-  }
-
-  #[test]
-  fn get_name_by_addr_reverse_index() {
-    let env = Env::new();
-    let name = n("Reverse");
-    let addr = Address::hash(b"reverse-addr");
-    let named = Named::with_addr(addr.clone());
-    env.register_name(name.clone(), named);
-    let got_name = env.get_name_by_addr(&addr).unwrap();
-    assert_eq!(got_name, name);
-  }
-
-  #[test]
-  fn get_named_by_addr_resolves_through_reverse_index() {
-    let env = Env::new();
-    let name = n("Through");
-    let addr = Address::hash(b"through-addr");
-    let named = Named::with_addr(addr.clone());
-    env.register_name(name.clone(), named);
-    let got = env.get_named_by_addr(&addr).unwrap();
     assert_eq!(got.addr, addr);
   }
 
@@ -322,8 +279,6 @@ mod tests {
     assert!(env.get_blob(&missing).is_none());
     assert!(env.get_const(&missing).is_none());
     assert!(env.lookup_name(&n("missing")).is_none());
-    assert!(env.get_name_by_addr(&missing).is_none());
-    assert!(env.get_named_by_addr(&missing).is_none());
     assert!(env.get_name(&missing).is_none());
     assert!(env.get_comm(&missing).is_none());
   }

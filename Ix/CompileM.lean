@@ -1604,11 +1604,10 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
 
   -- Build reverse index and names map, storing name string components as blobs
   -- Seed with blockNames collected during compilation (binder names, level params, etc.)
-  let (addrToNameMap, namesMap, nameBlobs) :=
-    compileEnv.nameToNamed.fold (init := ({}, blockNames, {})) fun (addrMap, namesMap, blobs) name named =>
-      let addrMap := addrMap.insert named.addr name
+  let (namesMap, nameBlobs) :=
+    compileEnv.nameToNamed.fold (init := (blockNames, {})) fun (namesMap, blobs) name _named =>
       let (namesMap, blobs) := Ixon.RawEnv.addNameComponentsWithBlobs namesMap blobs name
-      (addrMap, namesMap, blobs)
+      (namesMap, blobs)
 
   -- Merge name string blobs into the main blobs map
   let allBlobs := nameBlobs.fold (fun m k v => m.insert k v) compileEnv.blobs
@@ -1619,7 +1618,6 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
     blobs := allBlobs
     names := namesMap
     comms := {}
-    addrToName := addrToNameMap
   }
 
   return .ok (ixonEnv, compileEnv.totalBytes)
@@ -1890,11 +1888,10 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 
   -- Build reverse index and names map, storing name string components as blobs
   -- Seed with blockNames collected during compilation (binder names, level params, etc.)
-  let (addrToNameMap, namesMap, nameBlobs) :=
-    nameToNamed.fold (init := ({}, blockNames, {})) fun (addrMap, namesMap, nameBlobs) name named =>
-      let addrMap := addrMap.insert named.addr name
+  let (namesMap, nameBlobs) :=
+    nameToNamed.fold (init := (blockNames, {})) fun (namesMap, nameBlobs) name _named =>
       let (namesMap, nameBlobs) := Ixon.RawEnv.addNameComponentsWithBlobs namesMap nameBlobs name
-      (addrMap, namesMap, nameBlobs)
+      (namesMap, nameBlobs)
 
   -- Merge name string blobs into the main blobs map
   let blockBlobCount := blobs.size
@@ -1912,7 +1909,6 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     blobs := allBlobs
     names := namesMap
     comms := {}
-    addrToName := addrToNameMap
   }
 
   return .ok (ixonEnv, totalBytes)

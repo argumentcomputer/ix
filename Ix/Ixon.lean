@@ -1380,12 +1380,10 @@ structure Env where
   named : Std.HashMap Ix.Name Named := {}
   /-- Raw data blobs: Address → bytes -/
   blobs : Std.HashMap Address ByteArray := {}
-  /-- Hash-consed name components: Address → Ix.Name -/
-  names : Std.HashMap Address Ix.Name := {}
   /-- Cryptographic commitments: Address → Comm -/
   comms : Std.HashMap Address Comm := {}
-  /-- Reverse index: constant Address → Ix.Name -/
-  addrToName : Std.HashMap Address Ix.Name := {}
+  /-- Hash-consed name components: Address → Ix.Name -/
+  names : Std.HashMap Address Ix.Name := {}
   deriving Inhabited
 
 namespace Env
@@ -1401,8 +1399,7 @@ def getConst? (env : Env) (addr : Address) : Option Constant :=
 /-- Register a name with full Named metadata. -/
 def registerName (env : Env) (name : Ix.Name) (named : Named) : Env :=
   { env with
-    named := env.named.insert name named
-    addrToName := env.addrToName.insert named.addr name }
+    named := env.named.insert name named }
 
 /-- Register a name with just an address (empty metadata). -/
 def registerNameAddr (env : Env) (name : Ix.Name) (addr : Address) : Env :=
@@ -1415,10 +1412,6 @@ def getAddr? (env : Env) (name : Ix.Name) : Option Address :=
 /-- Look up a name's Named entry. -/
 def getNamed? (env : Env) (name : Ix.Name) : Option Named :=
   env.named.get? name
-
-/-- Look up an address's name. -/
-def getName? (env : Env) (addr : Address) : Option Ix.Name :=
-  env.addrToName.get? addr
 
 /-- Store a blob and return its content address. -/
 def storeBlob (env : Env) (bytes : ByteArray) : Env × Address :=
@@ -1742,8 +1735,7 @@ def getEnv : GetM Env := do
     | some name =>
       let namedEntry : Named := ⟨constAddr, constMeta⟩
       env := { env with
-        named := env.named.insert name namedEntry
-        addrToName := env.addrToName.insert constAddr name }
+        named := env.named.insert name namedEntry }
     | none =>
       throw s!"getEnv: named entry references unknown name address {reprStr (toString nameAddr)}"
 

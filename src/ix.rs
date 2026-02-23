@@ -12,6 +12,7 @@ pub mod env;
 pub mod graph;
 pub mod ground;
 pub mod ixon;
+pub mod kernel;
 pub mod mutual;
 pub mod store;
 pub mod strong_ordering;

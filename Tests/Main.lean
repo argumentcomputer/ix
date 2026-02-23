@@ -12,6 +12,9 @@ import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
+import Tests.Ix.Check
+import Tests.Ix.KernelTests
+import Tests.Ix.PP
 import Tests.Ix.CondenseM
 import Tests.FFI
 import Tests.Keccak
@@ -38,6 +41,10 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("sharing", Tests.Sharing.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
+  --("check", Tests.Check.checkSuiteIO), -- disable until rust kernel works
+  ("kernel-unit", Tests.KernelTests.unitSuite),
+  ("kernel-negative", Tests.KernelTests.negativeSuite),
+  ("pp", Tests.PP.suite),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
@@ -53,6 +60,16 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
+  --("check-all", Tests.Check.checkAllSuiteIO),
+  ("kernel-check-env", Tests.Check.kernelSuiteIO),
+  ("kernel-convert", Tests.KernelTests.convertSuite),
+  ("kernel-anon-convert", Tests.KernelTests.anonConvertSuite),
+  ("kernel-const", Tests.KernelTests.constSuite),
+  ("kernel-verify-prims", [Tests.KernelTests.testVerifyPrimAddrs]),
+  ("kernel-dump-prims", [Tests.KernelTests.testDumpPrimAddrs]),
+  ("nbe-focus", Tests.KernelTests.nbeFocusSuite),
+  ("kernel-roundtrip", Tests.KernelTests.roundtripSuite),
+  ("ixon-full-roundtrip", Tests.Compile.ixonRoundtripSuiteIO),
 ]
 
 def main (args : List String) : IO UInt32 := do
