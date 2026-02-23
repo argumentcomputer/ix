@@ -45,7 +45,7 @@ def sha256Bench : IO $ Array BenchReport := do
   bgroup "prove sha256" benches.toList { oneShot := true }
 
 def parseFunction (words : List String) (param : String): Option String :=
-  words.find? (·.startsWith param) |> .map (·.stripPrefix param)
+  words.find? (·.startsWith param) |>.map (·.dropPrefix param |>.toString)
 
 def main : IO Unit := do
   let result ← sha256Bench

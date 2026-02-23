@@ -169,16 +169,18 @@ script "get-exe-targets" := do
     IO.println <| tgt.name.toString |>.dropPrefix "«" |>.dropSuffix "»" |>.toString
   return 0
 
-script "build-all" := do
-  let ws ← getWorkspace
+script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
   let allNames := libNames ++ exeNames |>.toList
   for name in allNames do
     IO.println s!"Building: {name}"
-    let specs ← EIO.toIO (·.toString) <| Lake.parseTargetSpecs ws [name]
-    ws.runBuild (buildSpecs specs)
+    let child ← IO.Process.spawn {
+      cmd := "lake", args := #["build", name] ++ args
+      stdout := .inherit, stderr := .inherit }
+    let exitCode ← child.wait
+    if exitCode != 0 then return exitCode
   return 0
 
 end Scripts

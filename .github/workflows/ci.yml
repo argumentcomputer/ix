@@ -35,7 +35,7 @@ jobs:
           build-args: "--wfail -v"
           test: true
       - name: Build all targets
-        run: lake run build-all
+        run: lake run build-all --wfail
       - name: Test Ix CLI
         run: |
           mkdir -p ~/.local/bin
