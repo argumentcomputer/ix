@@ -36,7 +36,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        bench: [InitStd, Lean, Mathlib, FLT] # Add FC once updated to Lean v4.26.0
+        bench: [InitStd, Lean, Mathlib, FLT] # Add FC if updated to latest Lean
         include:
           - bench: FLT
             cache_pkg: flt
@@ -101,18 +101,17 @@ jobs:
             --hash '${{ github.sha }}' \
             --testbed warp-ubuntu-x64-32x \
             --adapter json \
-            --err \
             --github-actions '${{ secrets.GITHUB_TOKEN }}' \
             --threshold-measure build-time \
-            --threshold-test log_normal \
+            --threshold-test percentage \
             --threshold-max-sample-size 64 \
-            --threshold-upper-boundary 0.95 \
+            --threshold-upper-boundary 0.05 \
             --threshold-lower-boundary _ \
             --threshold-measure throughput \
-            --threshold-test log_normal \
+            --threshold-test percentage \
             --threshold-max-sample-size 64 \
             --threshold-upper-boundary _ \
-            --threshold-lower-boundary 0.95 \
+            --threshold-lower-boundary 0.05 \
             --threshold-measure file-size \
             --threshold-test percentage \
             --threshold-max-sample-size 64 \

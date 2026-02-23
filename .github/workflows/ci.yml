@@ -22,15 +22,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
-      - name: Install GCC on MacOS
-        if: contains(matrix.os, 'macos')
-        run: |
-          /opt/homebrew/bin/gcc-14 --version
-          mkdir -p ~/local/bin
-          ln -sf /opt/homebrew/bin/gcc-14 ~/local/bin/gcc
-          export PATH=~/local/bin:$PATH
-          which gcc
-      - uses: leanprover/lean-action@v1 # https://github.com/leanprover/lean-action
+      # - name: Install GCC on MacOS
+      #   if: contains(matrix.os, 'macos')
+      #   run: |
+      #     /opt/homebrew/bin/gcc-14 --version
+      #     mkdir -p ~/local/bin
+      #     ln -sf /opt/homebrew/bin/gcc-14 ~/local/bin/gcc
+      #     export PATH=~/local/bin:$PATH
+      #     which gcc
+      - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
           test: true

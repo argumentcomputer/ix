@@ -31,11 +31,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1771855602,
-        "narHash": "sha256-kF96mxMjZLZIMZhcO3DtpUbHLLGgOgpZgrFFEGxlXRY=",
+        "lastModified": 1771879986,
+        "narHash": "sha256-YNIdmaUARBAOuST6/s5HDjNI6Q50C3kZWDHsSm6lal0=",
         "owner": "argumentcomputer",
         "repo": "Blake3.lean",
-        "rev": "686c397ae8a540b25bf6b18bbd4fb9f6cf0459e8",
+        "rev": "810365c0e34a3f72c9ca33bf9b2bd8270986342a",
         "type": "github"
       },
       "original": {
@@ -141,11 +141,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1771784682,
-        "narHash": "sha256-35kZxaGTpP0mGHaxKzb7WXQD2hkw5z/kGxIJ/bE+7cA=",
+        "lastModified": 1771875971,
+        "narHash": "sha256-D3PN4o8RtyHEjlAtsLa6M9xRjIwtMUk4pIkfsNSMAvQ=",
         "owner": "lenianiva",
         "repo": "lean4-nix",
-        "rev": "7a5424eb7cfad9c855cd31d958d84b2209549bbf",
+        "rev": "faebfa2e0d7093fea3ffaa493b316bf3449c1dbf",
         "type": "github"
       },
       "original": {
