@@ -15,7 +15,7 @@
     nixpkgs.follows = "lean4-nix/nixpkgs";
 
     # Lean 4 & Lake
-    lean4-nix.url = "github:argumentcomputer/lean4-nix?ref=lake-config";
+    lean4-nix.url = "github:lenianiva/lean4-nix";
 
     # Helper: flake-parts for easier outputs
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -31,7 +31,7 @@
 
     # Blake3 C bindings for Lean
     blake3-lean = {
-      url = "github:argumentcomputer/Blake3.lean?ref=lean-v4.27.0";
+      url = "github:argumentcomputer/Blake3.lean";
       # System packages, follows lean4-nix so we stay in sync
       inputs.lean4-nix.follows = "lean4-nix";
     };
@@ -126,9 +126,6 @@
         testAiur = lake2nix.mkPackage (lakeBinArgs // {name = "test-aiur";});
         testAiurHashes = lake2nix.mkPackage (lakeBinArgs // {name = "test-aiur-hashes";});
         testIxVM = lake2nix.mkPackage (lakeBinArgs // {name = "test-ixvm";});
-        benchAiur = lake2nix.mkPackage (lakeBinArgs // {name = "bench-aiur";});
-        benchBlake3 = lake2nix.mkPackage (lakeBinArgs // {name = "bench-blake3";});
-        benchShardMap = lake2nix.mkPackage (lakeBinArgs // {name = "bench-shardmap";});
       in {
         # Lean overlay
         _module.args.pkgs = import nixpkgs {
@@ -143,10 +140,6 @@
           test-aiur = testAiur;
           test-aiur-hashes = testAiurHashes;
           test-ixvm = testIxVM;
-          # Ix benches
-          bench-aiur = benchAiur;
-          bench-blake3 = benchBlake3;
-          bench-shardmap = benchShardMap;
         };
 
         # Provide a unified dev shell with Lean + Rust

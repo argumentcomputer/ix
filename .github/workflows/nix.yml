@@ -27,10 +27,6 @@ jobs:
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
       - run: nix run .#ix -- --help
-      # Ix benches
-      - run: nix build .#bench-aiur --print-build-logs --accept-flake-config
-      - run: nix build .#bench-blake3 --print-build-logs --accept-flake-config
-      - run: nix build .#bench-shardmap --print-build-logs --accept-flake-config
       # Ix tests
       - run: nix run .#test --accept-flake-config
       # Expensive tests are only built in Nix to save time

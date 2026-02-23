@@ -15,7 +15,7 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "7f5bb9de3aab89c2c24a1c917b17d9b75e6f220e"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "lean-v4.27.0"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "686c397ae8a540b25bf6b18bbd4fb9f6cf0459e8"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.27.0"
@@ -43,8 +43,6 @@ lean_exe «test-ixvm» where
 
 end Tests
 
-section IxApplications
-
 section Benchmarks
 
 lean_exe «bench-aiur» where
@@ -60,6 +58,8 @@ lean_exe «bench-shardmap» where
   root := `Benchmarks.ShardMap
 
 end Benchmarks
+
+section IxApplications
 
 lean_lib Apps
 
@@ -155,7 +155,7 @@ script install := do
   return 0
 
 script "check-lean-h-hash" := do
-  let cachedLeanHHash := 11261383907494897568
+  let cachedLeanHHash := 11953097959587138033
 
   let leanIncludeDir ← getLeanIncludeDir
   let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"
