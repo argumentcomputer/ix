@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         # os: [warp-ubuntu-latest-x64-8x, warp-macos-latest-arm64-6x]
-        os: [warp-ubuntu-latest-x64-8x]
+        os: [warp-ubuntu-latest-x64-16x]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -37,9 +37,7 @@ jobs:
       - name: Build all targets
         run: lake run build-all --wfail
       - name: Test Ix CLI
-        run: |
-          mkdir -p ~/.local/bin
-          lake test -- cli
+        run: lake test -- cli
       - name: Aiur tests
         run: lake test -- --ignored aiur aiur-hashes ixvm
       - name: Check lean.h.hash

@@ -17,9 +17,9 @@ name = "CompileFLT"
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4"
-rev = "v4.26.0"
+rev = "v4.28.0"
 
 [[require]]
 name = "flt"
 git = "https://github.com/ImperialCollegeLondon/FLT"
-rev = "v4.26.0"
+rev = "v4.28.0"

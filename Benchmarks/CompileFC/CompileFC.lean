@@ -9,6 +9,8 @@ import FormalConjectures.Arxiv.«2107.12475».CollatzLike
 import FormalConjectures.Arxiv.«2208.14736».ZariskiCancellation
 import FormalConjectures.Arxiv.«2501.03234».ArithmeticSumS
 import FormalConjectures.Arxiv.«2504.17644».Margulis
+import FormalConjectures.Arxiv.«2602.05192».FirstProof4
+import FormalConjectures.Arxiv.«2602.05192».FirstProof6
 import FormalConjectures.Books.UniformDistributionOfSequences.Equidistribution
 import FormalConjectures.ErdosProblems.«1003»
 import FormalConjectures.ErdosProblems.«1004»
@@ -16,6 +18,7 @@ import FormalConjectures.ErdosProblems.«100»
 import FormalConjectures.ErdosProblems.«1038»
 import FormalConjectures.ErdosProblems.«1041»
 import FormalConjectures.ErdosProblems.«1043»
+import FormalConjectures.ErdosProblems.«1049»
 import FormalConjectures.ErdosProblems.«1051»
 import FormalConjectures.ErdosProblems.«1052»
 import FormalConjectures.ErdosProblems.«1054»
@@ -57,6 +60,7 @@ import FormalConjectures.ErdosProblems.«1108»
 import FormalConjectures.ErdosProblems.«1135»
 import FormalConjectures.ErdosProblems.«1137»
 import FormalConjectures.ErdosProblems.«1139»
+import FormalConjectures.ErdosProblems.«1141»
 import FormalConjectures.ErdosProblems.«1145»
 import FormalConjectures.ErdosProblems.«1148»
 import FormalConjectures.ErdosProblems.«1150»
@@ -112,6 +116,7 @@ import FormalConjectures.ErdosProblems.«234»
 import FormalConjectures.ErdosProblems.«236»
 import FormalConjectures.ErdosProblems.«238»
 import FormalConjectures.ErdosProblems.«239»
+import FormalConjectures.ErdosProblems.«23»
 import FormalConjectures.ErdosProblems.«242»
 import FormalConjectures.ErdosProblems.«243»
 import FormalConjectures.ErdosProblems.«244»
@@ -163,6 +168,7 @@ import FormalConjectures.ErdosProblems.«324»
 import FormalConjectures.ErdosProblems.«325»
 import FormalConjectures.ErdosProblems.«326»
 import FormalConjectures.ErdosProblems.«329»
+import FormalConjectures.ErdosProblems.«32»
 import FormalConjectures.ErdosProblems.«330»
 import FormalConjectures.ErdosProblems.«331»
 import FormalConjectures.ErdosProblems.«332»
@@ -240,6 +246,7 @@ import FormalConjectures.ErdosProblems.«479»
 import FormalConjectures.ErdosProblems.«480»
 import FormalConjectures.ErdosProblems.«486»
 import FormalConjectures.ErdosProblems.«488»
+import FormalConjectures.ErdosProblems.«489»
 import FormalConjectures.ErdosProblems.«48»
 import FormalConjectures.ErdosProblems.«494»
 import FormalConjectures.ErdosProblems.«495»
@@ -324,6 +331,7 @@ import FormalConjectures.ErdosProblems.«853»
 import FormalConjectures.ErdosProblems.«855»
 import FormalConjectures.ErdosProblems.«859»
 import FormalConjectures.ErdosProblems.«85»
+import FormalConjectures.ErdosProblems.«865»
 import FormalConjectures.ErdosProblems.«868»
 import FormalConjectures.ErdosProblems.«873»
 import FormalConjectures.ErdosProblems.«881»
@@ -372,13 +380,18 @@ import FormalConjectures.ErdosProblems.«97»
 import FormalConjectures.ErdosProblems.«982»
 import FormalConjectures.ErdosProblems.«985»
 import FormalConjectures.ErdosProblems.«996»
+import FormalConjectures.ErdosProblems.«997»
 import FormalConjectures.ErdosProblems.«99»
 import FormalConjectures.ErdosProblems.«9»
 import FormalConjectures.GreensOpenProblems.«12»
+import FormalConjectures.GreensOpenProblems.«15»
 import FormalConjectures.GreensOpenProblems.«16»
+import FormalConjectures.GreensOpenProblems.«18»
+import FormalConjectures.GreensOpenProblems.«19»
 import FormalConjectures.GreensOpenProblems.«1»
 import FormalConjectures.GreensOpenProblems.«23»
 import FormalConjectures.GreensOpenProblems.«24»
+import FormalConjectures.GreensOpenProblems.«26»
 import FormalConjectures.GreensOpenProblems.«2»
 import FormalConjectures.GreensOpenProblems.«35»
 import FormalConjectures.GreensOpenProblems.«37»
@@ -392,12 +405,15 @@ import FormalConjectures.GreensOpenProblems.«61»
 import FormalConjectures.GreensOpenProblems.«62»
 import FormalConjectures.GreensOpenProblems.«63»
 import FormalConjectures.GreensOpenProblems.«72»
+import FormalConjectures.GreensOpenProblems.«77»
 import FormalConjectures.GreensOpenProblems.«7»
 import FormalConjectures.GreensOpenProblems.«81»
 import FormalConjectures.GreensOpenProblems.«85»
 import FormalConjectures.GreensOpenProblems.«94»
 import FormalConjectures.GreensOpenProblems.«9»
 import FormalConjectures.HilbertProblems.«17»
+import FormalConjectures.Kourovka.«19_25»
+import FormalConjectures.Kourovka.«20_76»
 import FormalConjectures.Mathoverflow.«1973»
 import FormalConjectures.Mathoverflow.«21003»
 import FormalConjectures.Mathoverflow.«235893»
@@ -431,7 +447,6 @@ import FormalConjectures.OEIS.«81091»
 import FormalConjectures.OEIS.«87719»
 import FormalConjectures.Other.BeaverMathOlympiad
 import FormalConjectures.Other.EquationalTheories_677_255
-import FormalConjectures.Other.OddPerfectNumber
 import FormalConjectures.Other.SchurTruncatedExponential
 import FormalConjectures.Other.VCDimConvex
 import FormalConjectures.Paper.CardinalityLindelof
@@ -439,9 +454,11 @@ import FormalConjectures.Paper.CasasAlvero
 import FormalConjectures.Paper.CatchUpConjecture
 import FormalConjectures.Paper.Chvatal
 import FormalConjectures.Paper.DegreeSequencesTriangleFree
+import FormalConjectures.Paper.Gourevitch
 import FormalConjectures.Paper.HartshorneConjecture
 import FormalConjectures.Paper.Homogenous
 import FormalConjectures.Paper.Kurepa
+import FormalConjectures.Paper.LatinTableau
 import FormalConjectures.Paper.PrimeTuples
 import FormalConjectures.Paper.Rupert
 import FormalConjectures.Paper.StrongSensitivityConjecture
@@ -456,6 +473,7 @@ import FormalConjectures.Util.Linters.AnswerLinter
 import FormalConjectures.Util.Linters.AnswerLinterTest
 import FormalConjectures.Util.Linters.CategoryLinter
 import FormalConjectures.Util.Linters.CopyrightLinter
+import FormalConjectures.Util.Linters.NamespaceLinter
 import FormalConjectures.Util.ProblemImports
 import FormalConjectures.Wikipedia.ABC
 import FormalConjectures.Wikipedia.AgohGiuga
@@ -464,6 +482,7 @@ import FormalConjectures.Wikipedia.ArtinPrimitiveRootsConjecture
 import FormalConjectures.Wikipedia.BalancedPrimes
 import FormalConjectures.Wikipedia.BatemanHornConjecture
 import FormalConjectures.Wikipedia.BealConjecture
+import FormalConjectures.Wikipedia.BetrothedNumbers
 import FormalConjectures.Wikipedia.BoundedBurnsideProblem
 import FormalConjectures.Wikipedia.BrocardConjecture
 import FormalConjectures.Wikipedia.BrocardProblem
@@ -527,6 +546,7 @@ import FormalConjectures.Wikipedia.NoetherProblem
 import FormalConjectures.Wikipedia.Oppermann
 import FormalConjectures.Wikipedia.PebblingNumberConjecture
 import FormalConjectures.Wikipedia.Pell
+import FormalConjectures.Wikipedia.PerfectNumbers
 import FormalConjectures.Wikipedia.PierceBirkhoff
 import FormalConjectures.Wikipedia.PollocksConjecture
 import FormalConjectures.Wikipedia.PrimesAndPerfectSquares

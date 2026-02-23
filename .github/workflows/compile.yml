@@ -18,7 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
       - uses: leanprover/lean-action@v1
         with:
           build-args: "ix --wfail -v"

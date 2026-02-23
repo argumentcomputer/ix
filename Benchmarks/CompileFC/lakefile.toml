@@ -8,4 +8,4 @@ name = "CompileFC"
 [[require]]
 name = "formal_conjectures"
 git = "https://github.com/google-deepmind/formal-conjectures"
-rev = "20af7726bba72fc97d8feda6958a8afacc664ad4"
+rev = "bfe92e43cf56f4fb5fe1a9fac0fc093acf4f88ea"
