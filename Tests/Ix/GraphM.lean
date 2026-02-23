@@ -406,7 +406,7 @@ def compareRefGraphs (lean rust : Std.HashMap Ix.Name (Std.HashSet Ix.Name))
 
 /-- Cross-implementation test: compare Lean and Rust reference graph construction -/
 def testRefGraphComparison : TestSeq :=
-  .individualIO "Reference Graph: Lean vs Rust" (do
+  .individualIO "Reference Graph: Lean vs Rust" none (do
     let env ← get_env!
     let numConsts := env.constants.toList.length
 
@@ -456,9 +456,9 @@ def testRefGraphComparison : TestSeq :=
     IO.println s!"[Test]   Match: {isEqual}"
 
     if !isEqual then
-      return (false, some s!"Reference graphs do not match: {mismatches.size} mismatches")
+      return (false, 0, 0, some s!"Reference graphs do not match: {mismatches.size} mismatches")
 
-    return (true, none)
+    return (true, 0, 0, none)
   ) .done
 
 /-- Cross-implementation test suite (expensive, run with --ignored) -/

@@ -1,6 +1,4 @@
 import Tests.Aiur
-import Tests.AiurHashes
-import Tests.IxVM
 import Tests.ByteArray
 import Tests.Ix.Ixon
 import Tests.Ix.Claim
@@ -19,15 +17,13 @@ import Tests.Cli
 import Tests.ShardMap
 import Ix.Common
 import Ix.Meta
+import Ix.IxVM
 
 @[extern "rs_tmp_decode_const_map"]
 opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
 /-- Primary test suites - run by default -/
 def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
-  ("aiur", Tests.Aiur.suite),
-  ("aiur-hashes", Tests.AiurHashes.suite),
-  ("ixvm", Tests.IxVM.suite),
   ("ffi", Tests.FFI.suite),
   ("byte-array", Tests.ByteArray.suite),
   ("ixon", Tests.Ixon.suite),
@@ -55,6 +51,25 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("commit-io", Tests.Commit.suiteIO),
 ]
 
+/-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
+def ignoredRunners : List (String × IO UInt32) := [
+  ("aiur", do
+    IO.println "aiur"
+    match AiurTestEnv.build (pure toplevel) with
+    | .error e => IO.eprintln s!"Aiur setup failed: {e}"; return 1
+    | .ok env => LSpec.lspecEachIO aiurTestCases fun tc => pure (env.runTestCase tc)),
+  ("aiur-hashes", do
+    IO.println "aiur-hashes"
+    let .ok blake3Env := AiurTestEnv.build (IxVM.byteStream.merge IxVM.blake3)
+      | IO.eprintln "Blake3 setup failed"; return 1
+    let r1 ← LSpec.lspecEachIO blake3TestCases fun tc => pure (blake3Env.runTestCase tc)
+    let .ok sha256Env := AiurTestEnv.build (IxVM.byteStream.merge IxVM.sha256)
+      | IO.eprintln "SHA256 setup failed"; return 1
+    let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
+    return if r1 == 0 && r2 == 0 then 0 else 1),
+  ("ixvm", do LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM []])]) []),
+]
+
 def main (args : List String) : IO UInt32 := do
   -- Special case: rust-compile diagnostic
   if args.contains "rust-compile" then
@@ -71,15 +86,18 @@ def main (args : List String) : IO UInt32 := do
   let runIgnored := args.contains "--ignored"
   let filterArgs := args.filter (· != "--ignored")
 
-  -- Check if any filterArg matches an ignored suite
-  let ignoredRequested := filterArgs.any (ignoredSuites.contains ·)
-
   -- Run primary tests
   let primaryResult ← LSpec.lspecIO primarySuites filterArgs
   if primaryResult != 0 then return primaryResult
 
-  -- Run ignored tests if --ignored flag or specific ignored suite requested
-  if runIgnored || ignoredRequested then
-    LSpec.lspecIO ignoredSuites filterArgs
+  -- Run ignored tests only when --ignored is specified
+  if runIgnored then
+    let mut result ← LSpec.lspecIO ignoredSuites filterArgs
+    let filtered := if filterArgs.isEmpty then ignoredRunners
+      else ignoredRunners.filter fun (key, _) => filterArgs.any fun arg => key == arg
+    for (_, action) in filtered do
+      let r ← action
+      if r != 0 then result := r
+    return result
   else
     return 0

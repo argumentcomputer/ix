@@ -123,12 +123,6 @@
           };
         ixCLI = lake2nix.mkPackage (lakeBinArgs // {name = "ix";});
         ixTest = lake2nix.mkPackage (lakeBinArgs // {name = "IxTests";});
-        testAiur = lake2nix.mkPackage (lakeBinArgs // {name = "test-aiur";});
-        testAiurHashes = lake2nix.mkPackage (lakeBinArgs // {name = "test-aiur-hashes";});
-        testIxVM = lake2nix.mkPackage (lakeBinArgs // {name = "test-ixvm";});
-        benchAiur = lake2nix.mkPackage (lakeBinArgs // {name = "bench-aiur";});
-        benchBlake3 = lake2nix.mkPackage (lakeBinArgs // {name = "bench-blake3";});
-        benchShardMap = lake2nix.mkPackage (lakeBinArgs // {name = "bench-shardmap";});
       in {
         # Lean overlay
         _module.args.pkgs = import nixpkgs {
@@ -140,13 +134,6 @@
           default = ixLib;
           ix = ixCLI;
           test = ixTest;
-          test-aiur = testAiur;
-          test-aiur-hashes = testAiurHashes;
-          test-ixvm = testIxVM;
-          # Ix benches
-          bench-aiur = benchAiur;
-          bench-blake3 = benchBlake3;
-          bench-shardmap = benchShardMap;
         };
 
         # Provide a unified dev shell with Lean + Rust
