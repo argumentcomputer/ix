@@ -188,17 +188,17 @@ def ixonSerialize := ⟦
 
   -- Pack DefKind (2 bits) and DefinitionSafety (2 bits) into a single byte
   fn pack_def_kind_safety(kind: DefKind, safety: DefinitionSafety) -> G {
-    let kind_bits = match kind {
-      DefKind.Definition => 0,
-      DefKind.Opaque => 1,
-      DefKind.Theorem => 2,
-    };
-    let safety_bits = match safety {
-      DefinitionSafety.Unsafe => 0,
-      DefinitionSafety.Safe => 1,
-      DefinitionSafety.Partial => 2,
-    };
-    kind_bits * 4 + safety_bits
+    match (kind, safety) {
+      (DefKind.Definition, DefinitionSafety.Unsafe) => 0,
+      (DefKind.Opaque, DefinitionSafety.Unsafe) => 4,
+      (DefKind.Theorem, DefinitionSafety.Unsafe) => 8,
+      (DefKind.Definition, DefinitionSafety.Safe) => 1,
+      (DefKind.Opaque, DefinitionSafety.Safe) => 5,
+      (DefKind.Theorem, DefinitionSafety.Safe) => 9,
+      (DefKind.Definition, DefinitionSafety.Partial) => 2,
+      (DefKind.Opaque, DefinitionSafety.Partial) => 6,
+      (DefKind.Theorem, DefinitionSafety.Partial) => 10,
+    }
   }
 
   -- ============================================================================
@@ -341,13 +341,12 @@ def ixonSerialize := ⟦
   -- ============================================================================
 
   fn put_quot_kind(kind: QuotKind, rest: ByteStream) -> ByteStream {
-    let tag = match kind {
-      QuotKind.Typ => 0,
-      QuotKind.Ctor => 1,
-      QuotKind.Lift => 2,
-      QuotKind.Ind => 3,
-    };
-    ByteStream.Cons(tag, store(rest))
+    match kind {
+      QuotKind.Typ => ByteStream.Cons(0, store(rest)),
+      QuotKind.Ctor => ByteStream.Cons(1, store(rest)),
+      QuotKind.Lift => ByteStream.Cons(2, store(rest)),
+      QuotKind.Ind => ByteStream.Cons(3, store(rest)),
+    }
   }
 
   fn put_definition(defn: Definition, rest: ByteStream) -> ByteStream {

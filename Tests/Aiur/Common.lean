@@ -38,8 +38,8 @@ def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Toplevel) :
     Except String AiurTestEnv := do
   let toplevel ← toplevelFn.mapError toString
   let decls ← toplevel.checkAndSimplify.mapError toString
-  let bytecodeToplevel := decls.compile
-  let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel commitmentParameters
+  let bytecode ← decls.compile
+  let aiurSystem := Aiur.AiurSystem.build bytecode commitmentParameters
   return ⟨toplevel, aiurSystem⟩
 
 def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : TestSeq :=
@@ -60,8 +60,8 @@ def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Toplevel)
     (cases : List AiurTestCase) : TestSeq :=
   withExceptOk "Toplevel merging succeeds" toplevelFn fun toplevel =>
     withExceptOk "Check and simplification succeed" toplevel.checkAndSimplify fun decls =>
-      let bytecodeToplevel := decls.compile
-      let aiurSystem := Aiur.AiurSystem.build bytecodeToplevel commitmentParameters
-      let env : AiurTestEnv := ⟨toplevel, aiurSystem⟩
-      cases.foldl (init := .done) fun tSeq testCase =>
-        tSeq ++ env.runTestCase testCase
+      withExceptOk "Compilation succeeds" decls.compile fun bytecode =>
+        let aiurSystem := Aiur.AiurSystem.build bytecode commitmentParameters
+        let env : AiurTestEnv := ⟨toplevel, aiurSystem⟩
+        cases.foldl (init := .done) fun tSeq testCase =>
+          tSeq ++ env.runTestCase testCase

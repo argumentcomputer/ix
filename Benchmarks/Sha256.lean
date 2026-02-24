@@ -26,7 +26,9 @@ def sha256Bench : IO $ Array BenchReport := do
     | throw (IO.userError "Aiur function not found")
   let .ok decls := toplevel.checkAndSimplify
     | throw (IO.userError "Simplification failed")
-  let aiurSystem := Aiur.AiurSystem.build decls.compile commitmentParameters
+  let .ok bytecode := decls.compile
+    | throw (IO.userError "Compilation failed")
+  let aiurSystem := Aiur.AiurSystem.build bytecode commitmentParameters
 
   let mut benches := Array.emptyWithCapacity $ dataSizes.size * numHashesPerProof.size
   for dataSize in dataSizes do
