@@ -12,7 +12,6 @@
 -/
 
 module
-import Std.Data.HashMap
 import Std.Sync
 public import Ix.Ixon
 public import Ix.Environment

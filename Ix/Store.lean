@@ -2,10 +2,6 @@ module
 
 public import Ix.Address
 
-import Init.System.FilePath
-import Init.System.IO
-import Init.System.IOError
-
 public section
 
 open System

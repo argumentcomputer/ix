@@ -11,7 +11,6 @@ module
   This design enables cheap hash-based comparison of decompiled results.
 -/
 
-import Std.Data.HashMap
 public import Ix.Ixon
 public import Ix.Address
 public import Ix.Environment

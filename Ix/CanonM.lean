@@ -17,8 +17,6 @@ module
   - `compareEnvsParallel`: parallel structural equality check between environments
 -/
 
-import Blake3
-import Std.Data.HashMap
 public import Ix.Common
 public import Ix.Environment
 public import Ix.Address

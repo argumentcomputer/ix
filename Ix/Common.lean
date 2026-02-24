@@ -4,8 +4,6 @@ public import Lean.Expr
 public import Lean.Declaration
 public import Lean.Environment
 public import Lean.Elab.Frontend
-import Batteries
-import Batteries.Data.RBMap
 
 public section
 
