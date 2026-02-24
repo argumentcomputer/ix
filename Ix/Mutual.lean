@@ -1,66 +1,82 @@
 import Ix.Common
 import Ix.Address
+import Ix.Environment
 import Lean
 
 namespace Ix
 
 structure Def where
-  name: Lean.Name
-  levelParams : List Lean.Name
-  type : Lean.Expr
+  name: Name
+  levelParams : Array Name
+  type : Expr
   kind : DefKind
-  value : Lean.Expr
+  value : Expr
   hints : Lean.ReducibilityHints
-  safety : Lean.DefinitionSafety
-  all : List Lean.Name
-  deriving BEq, Repr, Nonempty, Inhabited, Ord, Hashable
+  safety : DefinitionSafety
+  all : Array Name
+  deriving Repr, Nonempty, Inhabited, BEq
 
 structure Ind where
-  name: Lean.Name
-  levelParams : List Lean.Name
-  type : Lean.Expr
+  name: Name
+  levelParams : Array Name
+  type : Expr
   numParams : Nat
   numIndices : Nat
-  all : List Lean.Name
-  ctors : List Lean.ConstructorVal
+  all : Array Name
+  ctors : Array ConstructorVal
   numNested: Nat
   isRec : Bool
   isReflexive : Bool
   isUnsafe: Bool
-  deriving BEq, Repr, Nonempty, Inhabited
+  deriving Repr, Nonempty, Inhabited, BEq
 
-abbrev Rec := Lean.RecursorVal
+abbrev Rec := RecursorVal
 
 inductive MutConst where
 | defn : Def -> MutConst
 | indc : Ind -> MutConst
 | recr : Rec -> MutConst
-deriving BEq, Repr, Nonempty, Inhabited
+deriving Repr, Nonempty, Inhabited, BEq
 
-def MutConst.mkDefn : Lean.DefinitionVal -> MutConst
-| x => .defn ⟨x.name, x.levelParams, x.type, .definition, x.value, x.hints, x.safety, x.all⟩
+private def convertSafety : Lean.DefinitionSafety → DefinitionSafety
+  | .unsafe => .unsaf | .safe => .safe | .partial => .part
 
-def MutConst.mkOpaq : Lean.OpaqueVal -> MutConst
-| x => .defn ⟨x.name, x.levelParams, x.type, .opaque, x.value, .opaque,
-    if x.isUnsafe then .unsafe else .safe, x.all⟩
+def MutConst.fromDefinitionVal (x : DefinitionVal) : MutConst :=
+  .defn ⟨x.cnst.name, x.cnst.levelParams, x.cnst.type, .defn, x.value,
+    x.hints, convertSafety x.safety, x.all⟩
 
-def MutConst.mkTheo : Lean.TheoremVal -> MutConst
-| x => .defn ⟨x.name, x.levelParams, x.type, .theorem, x.value, .opaque, .safe, x.all⟩
+def MutConst.fromTheoremVal (x : TheoremVal) : MutConst :=
+  .defn ⟨x.cnst.name, x.cnst.levelParams, x.cnst.type, .thm, x.value,
+    .opaque, .safe, x.all⟩
 
-def MutConst.name : MutConst -> Lean.Name
+def MutConst.fromOpaqueVal (x : OpaqueVal) : MutConst :=
+  .defn ⟨x.cnst.name, x.cnst.levelParams, x.cnst.type, .opaq, x.value,
+    .opaque, if x.isUnsafe then .unsaf else .safe, x.all⟩
+
+/-- Create a MutConst.indc from an InductiveVal and its constructor values -/
+def MutConst.fromInductiveVal (i : InductiveVal) (ctorVals : Array ConstructorVal) : MutConst :=
+  .indc ⟨i.cnst.name, i.cnst.levelParams, i.cnst.type, i.numParams, i.numIndices,
+    i.all, ctorVals, i.numNested, i.isRec, i.isReflexive, i.isUnsafe⟩
+
+def MutConst.name : MutConst -> Name
 | .defn x => x.name
 | .indc x => x.name
-| .recr x => x.name
+| .recr x => x.cnst.name
 
-def MutConst.ctors : MutConst -> List (Lean.ConstructorVal)
+def MutConst.levelParams : MutConst -> Array Name
+| .defn x => x.levelParams
+| .indc x => x.levelParams
+| .recr x => x.cnst.levelParams
+
+def MutConst.ctors : MutConst -> Array ConstructorVal
 | .indc x => x.ctors
-| .defn _ => []
-| .recr _ => []
+| .defn _ => #[]
+| .recr _ => #[]
 
-def MutConst.contains (name: Lean.Name) : MutConst -> Bool
+def MutConst.contains (name: Name) : MutConst -> Bool
 | .defn val => val.name == name
-| .recr val => val.name == name
-| .indc val => val.name == name || val.ctors.any (fun c => c.name == name)
+| .recr val => val.cnst.name == name
+| .indc val => val.name == name || val.ctors.any (fun c => c.cnst.name == name)
 
 -- We have a list of classes of mutual constants, each class representing a
 -- possible equivalence class. We would like to construct a numerical
@@ -89,36 +105,18 @@ def MutConst.contains (name: Lean.Name) : MutConst -> Bool
 -- definitions and recursors, but we combine them for robustness and code
 -- deduplication.
 -- layout: [i0, i1, ..., iN, i0c0, ... i0cM, ... inc0, iNcM]
-def MutConst.ctx (classes: List (List MutConst)) : MutCtx
+def MutConst.ctx (classes: List (List MutConst)) : Ix.MutCtx
   := Id.run do
-  let mut mutCtx := default
+  let mut mutCtx : Ix.MutCtx := default
   let mut i := classes.length
   for (consts, j) in classes.zipIdx do
     let mut maxCtors := 0
     for const in consts do
       mutCtx := mutCtx.insert const.name j
-      maxCtors := max maxCtors const.ctors.length
-      for (c, cidx) in List.zipIdx const.ctors do
-        mutCtx := mutCtx.insert c.name (i + cidx)
+      maxCtors := max maxCtors const.ctors.size
+      for (c, cidx) in Array.zipIdx const.ctors do
+        mutCtx := mutCtx.insert c.cnst.name (i + cidx)
     i := i + maxCtors
   return mutCtx
-
-
---def a0 : Lean.ConstructorVal := ⟨⟨`a0, [], .bvar 0⟩, `a, 0, 0, 0, false⟩
---def a1 : Lean.ConstructorVal := ⟨⟨`a1, [], .bvar 0⟩, `a, 1, 0, 0, false⟩
---def a2 : Lean.ConstructorVal := ⟨⟨`a2, [], .bvar 0⟩, `a, 2, 0, 0, false⟩
---def a : Ind := ⟨`a, [], .bvar 0, 0, 0, [], [a0, a1, a2], 0, false, false, false⟩
---
---def b0 : Lean.ConstructorVal := ⟨⟨`b0, [], .bvar 0⟩, `b, 0, 0, 0, false⟩
---def b1 : Lean.ConstructorVal := ⟨⟨`b1, [], .bvar 0⟩, `b, 1, 0, 0, false⟩
---def b2 : Lean.ConstructorVal := ⟨⟨`b2, [], .bvar 0⟩, `b, 2, 0, 0, false⟩
---def b : Ind := ⟨`b, [], .bvar 0, 0, 0, [], [b0, b1], 0, false, false, false⟩
---
---def c0 : Lean.ConstructorVal := ⟨⟨`c0, [], .bvar 0⟩, `c, 0, 0, 0, false⟩
---def c1 : Lean.ConstructorVal := ⟨⟨`c1, [], .bvar 0⟩, `c, 1, 0, 0, false⟩
---def c2 : Lean.ConstructorVal := ⟨⟨`c2, [], .bvar 0⟩, `c, 2, 0, 0, false⟩
---def c : Ind := ⟨`c, [], .bvar 0, 0, 0, [], [c0, c1, c2], 0, false, false, false⟩
---
---#eval MutConst.ctx [[.indc a, .indc b], [.indc c]]
 
 end Ix

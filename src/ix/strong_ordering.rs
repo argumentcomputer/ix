@@ -73,3 +73,157 @@ impl SOrd {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn eq_strong_then_lt() {
+    let result = SOrd::eq(true).compare(SOrd::lt(true));
+    assert_eq!(result.ordering, Ordering::Less);
+    assert!(result.strong);
+  }
+
+  #[test]
+  fn eq_strong_then_gt() {
+    let result = SOrd::eq(true).compare(SOrd::gt(false));
+    assert_eq!(result.ordering, Ordering::Greater);
+    assert!(!result.strong);
+  }
+
+  #[test]
+  fn eq_strong_then_eq() {
+    let result = SOrd::eq(true).compare(SOrd::eq(true));
+    assert_eq!(result.ordering, Ordering::Equal);
+    assert!(result.strong);
+  }
+
+  #[test]
+  fn eq_weak_then_lt() {
+    let result = SOrd::eq(false).compare(SOrd::lt(true));
+    assert_eq!(result.ordering, Ordering::Less);
+    assert!(!result.strong); // weak propagates
+  }
+
+  #[test]
+  fn eq_weak_then_eq() {
+    let result = SOrd::eq(false).compare(SOrd::eq(true));
+    assert_eq!(result.ordering, Ordering::Equal);
+    assert!(!result.strong); // weak propagates
+  }
+
+  #[test]
+  fn lt_strong_short_circuits() {
+    let result = SOrd::lt(true).compare(SOrd::gt(true));
+    assert_eq!(result.ordering, Ordering::Less);
+    assert!(result.strong);
+  }
+
+  #[test]
+  fn gt_strong_short_circuits() {
+    let result = SOrd::gt(true).compare(SOrd::lt(true));
+    assert_eq!(result.ordering, Ordering::Greater);
+    assert!(result.strong);
+  }
+
+  #[test]
+  fn lt_weak_short_circuits() {
+    let result = SOrd::lt(false).compare(SOrd::gt(true));
+    assert_eq!(result.ordering, Ordering::Less);
+    assert!(!result.strong);
+  }
+
+  #[test]
+  fn try_compare_eq_strong_calls_closure() {
+    let mut called = false;
+    let result: Result<SOrd, ()> = SOrd::eq(true).try_compare(|| {
+      called = true;
+      Ok(SOrd::lt(true))
+    });
+    assert!(called);
+    assert_eq!(result.unwrap().ordering, Ordering::Less);
+  }
+
+  #[test]
+  fn try_compare_lt_does_not_call_closure() {
+    let mut called = false;
+    let result: Result<SOrd, ()> = SOrd::lt(true).try_compare(|| {
+      called = true;
+      Ok(SOrd::gt(true))
+    });
+    assert!(!called);
+    assert_eq!(result.unwrap().ordering, Ordering::Less);
+  }
+
+  #[test]
+  fn try_compare_eq_weak_propagates() {
+    let result: Result<SOrd, ()> =
+      SOrd::eq(false).try_compare(|| Ok(SOrd::lt(true)));
+    let r = result.unwrap();
+    assert_eq!(r.ordering, Ordering::Less);
+    assert!(!r.strong); // weak propagates
+  }
+
+  #[test]
+  fn try_zip_both_empty() {
+    let result: Result<SOrd, ()> =
+      SOrd::try_zip(|x: &i32, y: &i32| Ok(SOrd::cmp(x, y)), &[], &[]);
+    let r = result.unwrap();
+    assert_eq!(r.ordering, Ordering::Equal);
+    assert!(r.strong);
+  }
+
+  #[test]
+  fn try_zip_left_shorter() {
+    let result: Result<SOrd, ()> =
+      SOrd::try_zip(|x: &i32, y: &i32| Ok(SOrd::cmp(x, y)), &[], &[1]);
+    assert_eq!(result.unwrap().ordering, Ordering::Less);
+  }
+
+  #[test]
+  fn try_zip_right_shorter() {
+    let result: Result<SOrd, ()> =
+      SOrd::try_zip(|x: &i32, y: &i32| Ok(SOrd::cmp(x, y)), &[1], &[]);
+    assert_eq!(result.unwrap().ordering, Ordering::Greater);
+  }
+
+  #[test]
+  fn try_zip_equal_elements() {
+    let result: Result<SOrd, ()> = SOrd::try_zip(
+      |x: &i32, y: &i32| Ok(SOrd::cmp(x, y)),
+      &[1, 2, 3],
+      &[1, 2, 3],
+    );
+    let r = result.unwrap();
+    assert_eq!(r.ordering, Ordering::Equal);
+    assert!(r.strong);
+  }
+
+  #[test]
+  fn try_zip_first_difference() {
+    let mut count = 0;
+    let result: Result<SOrd, ()> = SOrd::try_zip(
+      |x: &i32, y: &i32| {
+        count += 1;
+        Ok(SOrd::cmp(x, y))
+      },
+      &[1, 5, 3],
+      &[1, 2, 3],
+    );
+    assert_eq!(result.unwrap().ordering, Ordering::Greater);
+    assert_eq!(count, 2); // stops after finding the difference at index 1
+  }
+
+  #[test]
+  fn try_zip_weak_propagation() {
+    let result: Result<SOrd, ()> = SOrd::try_zip(
+      |x: &i32, y: &i32| Ok(SOrd::weak_cmp(x, y)),
+      &[1, 2],
+      &[1, 2],
+    );
+    let r = result.unwrap();
+    assert_eq!(r.ordering, Ordering::Equal);
+    assert!(!r.strong); // weak propagates through the chain
+  }
+}

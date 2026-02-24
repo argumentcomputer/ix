@@ -108,6 +108,7 @@
             mkdir -p target/release
             ln -s ${rustPkg}/lib/libix_rs.a target/release/
           '';
+          buildInputs = [pkgs.gmp pkgs.lean.lean-all pkgs.rsync];
         };
         ixLib = lake2nix.mkPackage (lakeBuildArgs
           // {
@@ -122,8 +123,6 @@
           };
         ixCLI = lake2nix.mkPackage (lakeBinArgs // {name = "ix";});
         ixTest = lake2nix.mkPackage (lakeBinArgs // {name = "IxTests";});
-        benchAiur = lake2nix.mkPackage (lakeBinArgs // {name = "bench-aiur";});
-        benchBlake3 = lake2nix.mkPackage (lakeBinArgs // {name = "bench-blake3";});
       in {
         # Lean overlay
         _module.args.pkgs = import nixpkgs {
@@ -135,9 +134,6 @@
           default = ixLib;
           ix = ixCLI;
           test = ixTest;
-          # Ix benches
-          bench-aiur = benchAiur;
-          bench-blake3 = benchBlake3;
         };
 
         # Provide a unified dev shell with Lean + Rust
@@ -145,12 +141,12 @@
           packages = with pkgs; [
             pkg-config
             openssl
-            ocl-icd
-            gcc
             clang
             rustToolchain
             rust-analyzer
             lean.lean-all # Includes Lean compiler, lake, stdlib, etc.
+            gmp
+            cargo-deny
           ];
         };
 

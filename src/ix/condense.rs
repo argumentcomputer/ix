@@ -1,3 +1,8 @@
+//! Computes strongly connected components (SCCs) using iterative Tarjan's algorithm.
+//!
+//! Produces a condensation of the reference graph: each SCC becomes a single block.
+//! Used to identify mutual definition groups for the compilation pipeline.
+
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -6,9 +11,13 @@ use crate::{
   ix::graph::{NameSet, RefMap},
 };
 
+/// The condensation of a reference graph into strongly connected components.
 pub struct CondensedBlocks {
+  /// Maps each name to the representative (low-link root) of its SCC.
   pub low_links: FxHashMap<Name, Name>,
+  /// Maps each SCC representative to the set of names in that component.
   pub blocks: RefMap,
+  /// Maps each SCC representative to the set of names referenced outside its component.
   pub block_refs: RefMap,
 }
 

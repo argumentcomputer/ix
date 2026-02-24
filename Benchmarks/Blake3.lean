@@ -1,4 +1,5 @@
-import Ix.IxVM
+import Ix.IxVM.ByteStream
+import Ix.IxVM.Blake3
 import Ix.Aiur.Simple
 import Ix.Aiur.Compile
 import Ix.Aiur.Protocol
@@ -19,11 +20,11 @@ def friParameters : Aiur.FriParameters := {
 }
 
 def blake3Bench : IO $ Array BenchReport := do
-  let .ok ixVM := IxVM.ixVM
-    | throw (IO.userError "IxVM merging failed")
-  let some funIdx := ixVM.getFuncIdx `blake3_bench
+  let .ok toplevel := IxVM.byteStream.merge IxVM.blake3
+    | throw (IO.userError "Merging failed")
+  let some funIdx := toplevel.getFuncIdx `blake3_bench
     | throw (IO.userError "Aiur function not found")
-  let .ok decls := ixVM.checkAndSimplify
+  let .ok decls := toplevel.checkAndSimplify
     | throw (IO.userError "Simplification failed")
   let aiurSystem := Aiur.AiurSystem.build decls.compile commitmentParameters
 
@@ -44,17 +45,22 @@ def blake3Bench : IO $ Array BenchReport := do
   bgroup "prove blake3" benches.toList { oneShot := true }
 
 def parseFunction (words : List String) (param : String): Option String :=
-  words.find? (·.startsWith param) |> .map (·.stripPrefix param)
+  words.find? (·.startsWith param) |> .map (·.dropPrefix param |>.toString)
 
 def main : IO Unit := do
   let result ← blake3Bench
-
   let mut sumWeights := 0.0
   let mut weightedSum := 0.0
   for report in result do
     let words := report.function.splitOn
-    let dataSize := (parseFunction words "dataSize=").get!.toNat!
-    let numHashes := (parseFunction words "numHashes=").get!.toNat!
+    let .some dataSizeStr := parseFunction words "dataSize="
+      | throw $ IO.userError s!"Missing dataSize in: {report.function}"
+    let .some dataSize := dataSizeStr.toNat?
+      | throw $ IO.userError s!"Invalid dataSize: {dataSizeStr}"
+    let .some numHashesStr := parseFunction words "numHashes="
+      | throw $ IO.userError s!"Missing numHashes in: {report.function}"
+    let .some numHashes := numHashesStr.toNat?
+      | throw $ IO.userError s!"Invalid numHashes: {numHashesStr}"
     let sizeFloat := (dataSize * numHashes).toFloat
     let throughput := sizeFloat / (report.newBench.getTime.toSeconds )
     weightedSum := weightedSum + sizeFloat * throughput

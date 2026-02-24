@@ -16,6 +16,7 @@ pub mod aiur;
 pub mod iroh;
 pub mod ix;
 pub mod lean;
+mod sha256;
 
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 pub type FxIndexSet<K> = IndexSet<K, FxBuildHasher>;

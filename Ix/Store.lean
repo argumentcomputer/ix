@@ -1,12 +1,10 @@
 import Ix.Address
-import Ix.Ixon
 
 import Init.System.FilePath
 import Init.System.IO
 import Init.System.IOError
 
 open System
-open Ixon
 
 inductive StoreError
 | unknownAddress (a: Address)
@@ -43,12 +41,11 @@ def storeDir : StoreIO FilePath := do
 def storePath (addr: Address): StoreIO FilePath := do
   let store <- storeDir
   let hex := hexOfBytes addr.hash
-  -- TODO: Use Slice API once it matures
-  let hexChars := hex.toSlice.chars.toList
-  let dir1 := String.ofList [hexChars[0]!, hexChars[1]!]
-  let dir2 := String.ofList [hexChars[2]!, hexChars[3]!]
-  let dir3 := String.ofList [hexChars[4]!, hexChars[5]!]
-  let file := hex.drop 6
+  let s := hex.toSlice
+  let dir1 := (s.take 2).toString
+  let dir2 := (s.drop 2 |>.take 2).toString
+  let dir3 := (s.drop 4 |>.take 2).toString
+  let file := (s.drop 6).toString
   let path := store / dir1 / dir2 / dir3
   if !(<- path.pathExists) then
     IO.toEIO .ioError (IO.FS.createDirAll path)

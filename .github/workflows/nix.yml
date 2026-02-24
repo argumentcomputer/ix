@@ -17,7 +17,7 @@ jobs:
   # Runs Lean tests via Nix
   nix-test:
     name: Nix Tests
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     steps:
       - uses: actions/checkout@v6
       - uses: cachix/install-nix-action@v31
@@ -27,11 +27,7 @@ jobs:
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
       - run: nix run .#ix -- --help
-      # Ix benches
-      - run: nix build .#bench-aiur --print-build-logs --accept-flake-config
-      - run: nix build .#bench-blake3 --print-build-logs --accept-flake-config
       # Ix tests
-      - run: nix build .#test --print-build-logs --accept-flake-config
       - run: nix run .#test --accept-flake-config
 
   # Tests Nix devShell support on Ubuntu

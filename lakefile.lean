@@ -12,16 +12,16 @@ lean_exe ix where
   supportInterpreter := true
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "fdf848d6cda9f080a09e49e760e2d6f70878800b"
+  "https://github.com/argumentcomputer/LSpec" @ "b76de469ebd3ae7a6ba494a36d34f713763623a6"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "f66794edb4612106cd7b04a7fbd04917fb1abb7d"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "810365c0e34a3f72c9ca33bf9b2bd8270986342a"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "v4.26.0"
+  "https://github.com/leanprover/lean4-cli" @ "v4.28.0"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "v4.26.0"
+  "https://github.com/leanprover-community/batteries" @ "v4.28.0"
 
 section Tests
 
@@ -34,11 +34,6 @@ lean_exe IxTests where
 
 end Tests
 
-lean_lib IxTestLib where
-  srcDir := "ix_test"
-
-section IxApplications
-
 section Benchmarks
 
 lean_exe «bench-aiur» where
@@ -47,7 +42,15 @@ lean_exe «bench-aiur» where
 lean_exe «bench-blake3» where
   root := `Benchmarks.Blake3
 
+lean_exe «bench-sha256» where
+  root := `Benchmarks.Sha256
+
+lean_exe «bench-shardmap» where
+  root := `Benchmarks.ShardMap
+
 end Benchmarks
+
+section IxApplications
 
 lean_lib Apps
 
@@ -121,11 +124,11 @@ script install := do
     | some homeDir =>
       let binDir : FilePath := homeDir / ".local" / "bin"
       print s!"Target directory for the ix binary? (default={binDir}) "
-      let input := (← (← getStdin).getLine).trim
+      let input := (← (← getStdin).getLine).trimAscii.toString
       pure $ if input.isEmpty then binDir else ⟨input⟩
     | none =>
       print s!"Target directory for the ix binary? "
-      let input := (← (← getStdin).getLine).trim
+      let input := (← (← getStdin).getLine).trimAscii.toString
       if input.isEmpty then
         eprintln "Target directory can't be empty."; return 1
       pure ⟨input⟩
@@ -143,7 +146,7 @@ script install := do
   return 0
 
 script "check-lean-h-hash" := do
-  let cachedLeanHHash := 11261383907494897568
+  let cachedLeanHHash := 14792798158057885278
 
   let leanIncludeDir ← getLeanIncludeDir
   let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"
@@ -163,8 +166,21 @@ script "get-exe-targets" := do
   let pkg ← getRootPackage
   let exeTargets := pkg.configTargets LeanExe.configKind
   for tgt in exeTargets do
-    IO.println <| tgt.name.toString |>.stripPrefix "«" |>.stripSuffix "»"
+    IO.println <| tgt.name.toString |>.dropPrefix "«" |>.dropSuffix "»" |>.toString
+  return 0
+
+script "build-all" (args) := do
+  let pkg ← getRootPackage
+  let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
+  let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
+  let allNames := libNames ++ exeNames |>.toList
+  for name in allNames do
+    IO.println s!"Building: {name}"
+    let child ← IO.Process.spawn {
+      cmd := "lake", args := #["build", name] ++ args
+      stdout := .inherit, stderr := .inherit }
+    let exitCode ← child.wait
+    if exitCode != 0 then return exitCode
   return 0
 
 end Scripts
-

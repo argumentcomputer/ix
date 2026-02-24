@@ -118,13 +118,21 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
     },
     18 => {
       let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
-      Op::U8And(i, j)
+      Op::U8Sub(i, j)
     },
     19 => {
       let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
-      Op::U8Or(i, j)
+      Op::U8And(i, j)
     },
     20 => {
+      let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
+      Op::U8Or(i, j)
+    },
+    21 => {
+      let [i, j] = ctor.objs().map(lean_unbox_nat_as_usize);
+      Op::U8LessThan(i, j)
+    },
+    22 => {
       let [label_ptr, idxs_ptr] = ctor.objs();
       let label_str: &LeanStringObject = as_ref_unsafe(label_ptr.cast());
       let label = label_str.as_string();

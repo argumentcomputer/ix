@@ -1,3 +1,17 @@
+//! Decode Lean kernel objects from their in-memory C representation.
+//!
+//! Provides functions to walk Lean object pointers and decode them into
+//! the Rust `Name`, `Level`, `Expr`, and `ConstantInfo` types defined in
+//! `crate::ix::env`. Used by the compilation pipeline to read the Lean
+//! environment before transforming it to Ixon format.
+//!
+//! Uses a two-level cache (`GlobalCache` + `LocalCache`) to avoid redundant
+//! decoding of shared subterms when processing environments in parallel.
+
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_wrap)]
+
 use dashmap::DashMap;
 use rayon::prelude::*;
 use std::ffi::c_void;
@@ -41,7 +55,7 @@ impl SendPtr {
 
 /// Global cache for Names, shared across all threads.
 #[derive(Default)]
-struct GlobalCache {
+pub struct GlobalCache {
   names: DashMap<*const c_void, Name>,
 }
 
@@ -71,13 +85,13 @@ struct LocalCache {
 unsafe impl Send for LocalCache {}
 
 /// Combined cache reference passed to decoding functions.
-struct Cache<'g> {
+pub struct Cache<'g> {
   global: &'g GlobalCache,
   local: LocalCache,
 }
 
 impl<'g> Cache<'g> {
-  fn new(global: &'g GlobalCache) -> Self {
+  pub fn new(global: &'g GlobalCache) -> Self {
     Self { global, local: LocalCache::default() }
   }
 }
@@ -94,7 +108,7 @@ fn collect_list_ptrs(mut ptr: *const c_void) -> Vec<*const c_void> {
 }
 
 // Name decoding with global cache
-fn lean_ptr_to_name(ptr: *const c_void, global: &GlobalCache) -> Name {
+pub fn lean_ptr_to_name(ptr: *const c_void, global: &GlobalCache) -> Name {
   // Fast path: check if already cached
   if let Some(name) = global.names.get(&ptr) {
     return name.clone();
@@ -290,7 +304,7 @@ fn lean_ptr_to_name_data_value(
   (name, data_value)
 }
 
-fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache<'_>) -> Expr {
+pub fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache<'_>) -> Expr {
   if let Some(cached) = cache.local.exprs.get(&ptr) {
     return cached.clone();
   }
@@ -446,7 +460,7 @@ fn lean_ptr_to_constant_val(
   ConstantVal { name, level_params, typ }
 }
 
-fn lean_ptr_to_constant_info(
+pub fn lean_ptr_to_constant_info(
   ptr: *const c_void,
   cache: &mut Cache<'_>,
 ) -> ConstantInfo {
@@ -699,41 +713,504 @@ pub fn lean_ptr_to_env_sequential(ptr: *const c_void) -> Env {
 //  env.len()
 //}
 
+// Debug/analysis entry point invoked via the `rust-compile` test flag in
+// `Tests/FFI/Basic.lean`. Exercises the full compile→decompile→check→serialize
+// roundtrip and size analysis. Output is intentionally suppressed; re-enable
+// individual `eprintln!` lines when debugging locally.
 #[unsafe(no_mangle)]
 extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
-  let start_decoding = std::time::SystemTime::now();
+  // Enable hash-consed size tracking for debugging
+  // TODO: Make this configurable via CLI instead of hardcoded
+  crate::ix::compile::TRACK_HASH_CONSED_SIZE
+    .store(true, std::sync::atomic::Ordering::Relaxed);
+
+  // Enable verbose sharing analysis for debugging pathological blocks
+  // TODO: Make this configurable via CLI instead of hardcoded
+  crate::ix::compile::ANALYZE_SHARING
+    .store(false, std::sync::atomic::Ordering::Relaxed);
+
   let env = lean_ptr_to_env(ptr);
   let env = Arc::new(env);
-  println!("Decoding: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
-  let res = compile_env(&env);
-  match res {
-    Ok(stt) => {
-      println!("Compile OK: {:?}", stt.stats());
-      let start_decompiling = std::time::SystemTime::now();
-      match decompile_env(&stt) {
-        Ok(dstt) => {
-          println!(
-            "Decompiling: {:.2}s",
-            start_decompiling.elapsed().unwrap().as_secs_f32()
-          );
-          println!("Decompile OK: {:?}", dstt.stats());
-          let start_check = std::time::SystemTime::now();
-          match check_decompile(env.as_ref(), &stt, &dstt) {
-            Ok(()) => {
-              println!(
-                "Checking: {:.2}s",
-                start_check.elapsed().unwrap().as_secs_f32()
-              );
-              println!("Roundtrip OK");
-            },
-            Err(e) => println!("Roundtrip ERR: {:?}", e),
-          }
-        },
-        Err(e) => println!("Decompile ERR: {:?}", e),
+  if let Ok(stt) = compile_env(&env) {
+    if let Ok(dstt) = decompile_env(&stt) {
+      let _ = check_decompile(env.as_ref(), &stt, &dstt);
+    }
+
+    // Measure serialized size (after roundtrip, not counted in total time)
+    let _ = stt.env.serialized_size_breakdown();
+
+    // Analyze serialized size of "Nat.add_comm" and its transitive dependencies
+    analyze_const_size(&stt, "Nat.add_comm");
+
+    // Analyze hash-consing vs serialization efficiency
+    analyze_block_size_stats(&stt);
+
+    // Test decompilation from serialized bytes (simulating "over the wire")
+    let mut serialized = Vec::new();
+    stt.env.put(&mut serialized).expect("Env serialization failed");
+
+    // Deserialize to a fresh Env
+    let mut buf: &[u8] = &serialized;
+    if let Ok(fresh_env) = crate::ix::ixon::env::Env::get(&mut buf) {
+      // Build a fresh CompileState from the deserialized Env
+      let fresh_stt = crate::ix::compile::CompileState {
+        env: fresh_env,
+        name_to_addr: DashMap::new(),
+        blocks: dashmap::DashSet::new(),
+        block_stats: DashMap::new(),
+      };
+
+      // Populate name_to_addr from env.named
+      for entry in fresh_stt.env.named.iter() {
+        fresh_stt
+          .name_to_addr
+          .insert(entry.key().clone(), entry.value().addr.clone());
       }
-    },
-    Err(e) => println!("Compile ERR: {:?}", e),
+
+      // Populate blocks from constants that are mutual blocks
+      for entry in fresh_stt.env.consts.iter() {
+        if matches!(
+          &entry.value().info,
+          crate::ix::ixon::constant::ConstantInfo::Muts(_)
+        ) {
+          fresh_stt.blocks.insert(entry.key().clone());
+        }
+      }
+
+      // Decompile from the fresh state
+      if let Ok(dstt2) = decompile_env(&fresh_stt) {
+        // Verify against original environment
+        let _ = check_decompile(env.as_ref(), &fresh_stt, &dstt2);
+      }
+    }
   }
-  println!("Total: {:.2}s", start_decoding.elapsed().unwrap().as_secs_f32());
   env.as_ref().len()
+}
+
+/// Size breakdown for a constant: alpha-invariant vs metadata
+#[derive(Default, Clone)]
+struct ConstSizeBreakdown {
+  alpha_size: usize, // Alpha-invariant constant data
+  meta_size: usize,  // Metadata (names, binder info, etc.)
+}
+
+impl ConstSizeBreakdown {
+  fn total(&self) -> usize {
+    self.alpha_size + self.meta_size
+  }
+}
+
+/// Analyze the serialized size of a constant and its transitive dependencies.
+fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
+  use crate::ix::address::Address;
+  use std::collections::{HashSet, VecDeque};
+
+  // Build a global name index for metadata serialization
+  let name_index = build_name_index(stt);
+
+  // Parse the name (e.g., "Nat.add_comm" -> Name::str(Name::str(Name::anon(), "Nat"), "add_comm"))
+  let name = parse_name(name_str);
+
+  // Look up the constant's address
+  let addr = match stt.name_to_addr.get(&name) {
+    Some(a) => a.clone(),
+    None => {
+      println!("\n=== Size analysis for {} ===", name_str);
+      println!("  Constant not found");
+      return;
+    },
+  };
+
+  // Get the constant
+  let constant = match stt.env.consts.get(&addr) {
+    Some(c) => c.clone(),
+    None => {
+      println!("\n=== Size analysis for {} ===", name_str);
+      println!("  Constant data not found at address");
+      return;
+    },
+  };
+
+  // Compute direct sizes (alpha-invariant and metadata)
+  let direct_breakdown =
+    compute_const_size_breakdown(&constant, &name, stt, &name_index);
+
+  // BFS to collect all transitive dependencies
+  let mut visited: HashSet<Address> = HashSet::new();
+  let mut queue: VecDeque<Address> = VecDeque::new();
+  let mut dep_breakdowns: Vec<(String, ConstSizeBreakdown)> = Vec::new();
+
+  // Start with the constant's refs
+  visited.insert(addr.clone());
+  for dep_addr in &constant.refs {
+    if !visited.contains(dep_addr) {
+      queue.push_back(dep_addr.clone());
+      visited.insert(dep_addr.clone());
+    }
+  }
+
+  // BFS through all transitive dependencies
+  while let Some(dep_addr) = queue.pop_front() {
+    if let Some(dep_const) = stt.env.consts.get(&dep_addr) {
+      // Get the name for this dependency
+      let dep_name_opt = stt.env.get_name_by_addr(&dep_addr);
+      let dep_name_str = dep_name_opt
+        .as_ref()
+        .map_or_else(|| format!("{:?}", dep_addr), |n| n.pretty());
+
+      let breakdown = if let Some(ref dep_name) = dep_name_opt {
+        compute_const_size_breakdown(&dep_const, dep_name, stt, &name_index)
+      } else {
+        ConstSizeBreakdown {
+          alpha_size: serialized_const_size(&dep_const),
+          meta_size: 0,
+        }
+      };
+
+      dep_breakdowns.push((dep_name_str, breakdown));
+
+      // Add this constant's refs to the queue
+      for ref_addr in &dep_const.refs {
+        if !visited.contains(ref_addr) {
+          queue.push_back(ref_addr.clone());
+          visited.insert(ref_addr.clone());
+        }
+      }
+    }
+  }
+
+  // Sort by total size descending
+  dep_breakdowns.sort_by(|a, b| b.1.total().cmp(&a.1.total()));
+
+  let total_deps_alpha: usize =
+    dep_breakdowns.iter().map(|(_, b)| b.alpha_size).sum();
+  let total_deps_meta: usize =
+    dep_breakdowns.iter().map(|(_, b)| b.meta_size).sum();
+  let total_deps_size = total_deps_alpha + total_deps_meta;
+
+  let total_alpha = direct_breakdown.alpha_size + total_deps_alpha;
+  let total_meta = direct_breakdown.meta_size + total_deps_meta;
+  let total_size = total_alpha + total_meta;
+
+  println!("\n=== Size analysis for {} ===", name_str);
+  println!(
+    "  Direct alpha-invariant size: {} bytes",
+    direct_breakdown.alpha_size
+  );
+  println!("  Direct metadata size: {} bytes", direct_breakdown.meta_size);
+  println!("  Direct total size: {} bytes", direct_breakdown.total());
+  println!();
+  println!("  Transitive dependencies: {} constants", dep_breakdowns.len());
+  println!(
+    "  Dependencies alpha-invariant: {} bytes ({:.2} KB)",
+    total_deps_alpha,
+    total_deps_alpha as f64 / 1024.0
+  );
+  println!(
+    "  Dependencies metadata: {} bytes ({:.2} KB)",
+    total_deps_meta,
+    total_deps_meta as f64 / 1024.0
+  );
+  println!(
+    "  Dependencies total: {} bytes ({:.2} KB)",
+    total_deps_size,
+    total_deps_size as f64 / 1024.0
+  );
+  println!();
+  println!(
+    "  TOTAL alpha-invariant: {} bytes ({:.2} KB)",
+    total_alpha,
+    total_alpha as f64 / 1024.0
+  );
+  println!(
+    "  TOTAL metadata: {} bytes ({:.2} KB)",
+    total_meta,
+    total_meta as f64 / 1024.0
+  );
+  println!(
+    "  TOTAL size: {} bytes ({:.2} KB)",
+    total_size,
+    total_size as f64 / 1024.0
+  );
+
+  // Show top 10 largest dependencies
+  if !dep_breakdowns.is_empty() {
+    println!("\n  Top 10 largest dependencies (by total size):");
+    for (name, breakdown) in dep_breakdowns.iter().take(10) {
+      println!(
+        "    {} bytes (alpha: {}, meta: {}): {}",
+        breakdown.total(),
+        breakdown.alpha_size,
+        breakdown.meta_size,
+        name
+      );
+    }
+  }
+}
+
+/// Build a name index for metadata serialization.
+fn build_name_index(
+  stt: &crate::ix::compile::CompileState,
+) -> crate::ix::ixon::metadata::NameIndex {
+  use crate::ix::address::Address;
+  use crate::ix::ixon::metadata::NameIndex;
+
+  let mut idx = NameIndex::new();
+  let mut counter: u64 = 0;
+
+  // Add all names from the names map
+  for entry in stt.env.names.iter() {
+    idx.insert(entry.key().clone(), counter);
+    counter += 1;
+  }
+
+  // Add anonymous name
+  let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
+  idx.entry(anon_addr).or_insert(counter);
+
+  idx
+}
+
+/// Compute size breakdown for a constant (alpha-invariant vs metadata).
+fn compute_const_size_breakdown(
+  constant: &crate::ix::ixon::constant::Constant,
+  name: &Name,
+  stt: &crate::ix::compile::CompileState,
+  name_index: &crate::ix::ixon::metadata::NameIndex,
+) -> ConstSizeBreakdown {
+  // Alpha-invariant size
+  let alpha_size = serialized_const_size(constant);
+
+  // Metadata size
+  let meta_size = if let Some(named) = stt.env.named.get(name) {
+    serialized_meta_size(&named.meta, name_index)
+  } else {
+    0
+  };
+
+  ConstSizeBreakdown { alpha_size, meta_size }
+}
+
+/// Compute the serialized size of constant metadata.
+fn serialized_meta_size(
+  meta: &crate::ix::ixon::metadata::ConstantMeta,
+  name_index: &crate::ix::ixon::metadata::NameIndex,
+) -> usize {
+  let mut buf = Vec::new();
+  meta
+    .put_indexed(name_index, &mut buf)
+    .expect("metadata serialization failed");
+  buf.len()
+}
+
+/// Parse a dotted name string into a Name.
+fn parse_name(s: &str) -> Name {
+  let parts: Vec<&str> = s.split('.').collect();
+  let mut name = Name::anon();
+  for part in parts {
+    name = Name::str(name, part.to_string());
+  }
+  name
+}
+
+/// Compute the serialized size of a constant.
+fn serialized_const_size(
+  constant: &crate::ix::ixon::constant::Constant,
+) -> usize {
+  let mut buf = Vec::new();
+  constant.put(&mut buf);
+  buf.len()
+}
+
+/// Analyze block size statistics: hash-consing vs serialization.
+fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
+  use crate::ix::compile::BlockSizeStats;
+
+  // Check if hash-consed size tracking was enabled
+  let tracking_enabled = crate::ix::compile::TRACK_HASH_CONSED_SIZE
+    .load(std::sync::atomic::Ordering::Relaxed);
+  if !tracking_enabled {
+    println!("\n=== Block Size Analysis ===");
+    println!(
+      "  Hash-consed size tracking disabled (set IX_TRACK_HASH_CONSED=1 to enable)"
+    );
+    return;
+  }
+
+  // Collect all stats into a vector for analysis
+  let stats: Vec<(String, BlockSizeStats)> = stt
+    .block_stats
+    .iter()
+    .map(|entry| (entry.key().pretty(), entry.value().clone()))
+    .collect();
+
+  if stats.is_empty() {
+    println!("\n=== Block Size Analysis ===");
+    println!("  No block statistics collected");
+    return;
+  }
+
+  // Compute totals
+  let total_hash_consed: usize =
+    stats.iter().map(|(_, s)| s.hash_consed_size).sum();
+  let total_serialized: usize =
+    stats.iter().map(|(_, s)| s.serialized_size).sum();
+  let total_blocks = stats.len();
+  let total_consts: usize = stats.iter().map(|(_, s)| s.const_count).sum();
+
+  // Compute per-block overhead (serialized - hash_consed)
+  let mut overheads: Vec<(String, isize, f64, usize)> = stats
+    .iter()
+    .map(|(name, s)| {
+      let overhead = s.serialized_size as isize - s.hash_consed_size as isize;
+      let ratio = if s.hash_consed_size > 0 {
+        s.serialized_size as f64 / s.hash_consed_size as f64
+      } else {
+        1.0
+      };
+      (name.clone(), overhead, ratio, s.const_count)
+    })
+    .collect();
+
+  // Sort by overhead descending (most bloated first)
+  overheads.sort_by(|a, b| b.1.cmp(&a.1));
+
+  // Compute statistics
+  let avg_ratio = if total_hash_consed > 0 {
+    total_serialized as f64 / total_hash_consed as f64
+  } else {
+    1.0
+  };
+
+  // Find blocks with worst ratio (only for blocks with >100 bytes hash-consed)
+  let mut ratios: Vec<_> = stats
+    .iter()
+    .filter(|(_, s)| s.hash_consed_size > 100)
+    .map(|(name, s)| {
+      let ratio = s.serialized_size as f64 / s.hash_consed_size as f64;
+      (name.clone(), ratio, s.hash_consed_size, s.serialized_size)
+    })
+    .collect();
+  ratios
+    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  println!("\n=== Block Size Analysis (Hash-Consing vs Serialization) ===");
+  println!("  Total blocks: {}", total_blocks);
+  println!("  Total constants: {}", total_consts);
+  println!();
+  println!(
+    "  Total hash-consed size: {} bytes ({:.2} KB)",
+    total_hash_consed,
+    total_hash_consed as f64 / 1024.0
+  );
+  println!(
+    "  Total serialized size:  {} bytes ({:.2} KB)",
+    total_serialized,
+    total_serialized as f64 / 1024.0
+  );
+  println!("  Overall ratio: {:.3}x", avg_ratio);
+  println!(
+    "  Total overhead: {} bytes ({:.2} KB)",
+    total_serialized as isize - total_hash_consed as isize,
+    (total_serialized as f64 - total_hash_consed as f64) / 1024.0
+  );
+
+  // Distribution of ratios (more granular buckets for analysis)
+  let count_in_range = |lo: f64, hi: f64| -> usize {
+    stats
+      .iter()
+      .filter(|(_, s)| {
+        if s.hash_consed_size == 0 {
+          return false;
+        }
+        let r = s.serialized_size as f64 / s.hash_consed_size as f64;
+        r >= lo && r < hi
+      })
+      .count()
+  };
+
+  let ratio_under_0_05 = count_in_range(0.0, 0.05);
+  let ratio_0_05_to_0_1 = count_in_range(0.05, 0.1);
+  let ratio_0_1_to_0_2 = count_in_range(0.1, 0.2);
+  let ratio_0_2_to_0_5 = count_in_range(0.2, 0.5);
+  let ratio_0_5_to_1 = count_in_range(0.5, 1.0);
+  let ratio_1_to_1_5 = count_in_range(1.0, 1.5);
+  let ratio_1_5_to_2 = count_in_range(1.5, 2.0);
+  let ratio_over_2 = count_in_range(2.0, f64::INFINITY);
+
+  println!();
+  println!("  Ratio distribution (serialized / hash-consed):");
+  println!("    < 0.05x (20x+ compression): {} blocks", ratio_under_0_05);
+  println!("    0.05-0.1x (10-20x):         {} blocks", ratio_0_05_to_0_1);
+  println!("    0.1-0.2x (5-10x):           {} blocks", ratio_0_1_to_0_2);
+  println!("    0.2-0.5x (2-5x):            {} blocks", ratio_0_2_to_0_5);
+  println!("    0.5-1.0x (1-2x):            {} blocks", ratio_0_5_to_1);
+  println!("    1.0-1.5x (slight bloat):    {} blocks", ratio_1_to_1_5);
+  println!("    1.5-2.0x:                   {} blocks", ratio_1_5_to_2);
+  println!("    >= 2.0x (high bloat):       {} blocks", ratio_over_2);
+
+  // Top 10 blocks by absolute overhead
+  if !overheads.is_empty() {
+    println!();
+    println!("  Top 10 blocks by overhead (serialized - hash_consed):");
+    for (name, overhead, ratio, const_count) in overheads.iter().take(10) {
+      println!(
+        "    {:+} bytes ({:.2}x, {} consts): {}",
+        overhead,
+        ratio,
+        const_count,
+        truncate_name(name, 50)
+      );
+    }
+  }
+
+  // Top 10 blocks by worst ratio (with >100 bytes)
+  if !ratios.is_empty() {
+    println!();
+    println!("  Top 10 blocks by ratio (hash-consed > 100 bytes):");
+    for (name, ratio, hc, ser) in ratios.iter().take(10) {
+      println!(
+        "    {:.2}x ({} -> {} bytes): {}",
+        ratio,
+        hc,
+        ser,
+        truncate_name(name, 50)
+      );
+    }
+  }
+
+  // Bottom 10 blocks by ratio (best compression)
+  let mut best_ratios: Vec<_> = stats
+    .iter()
+    .filter(|(_, s)| s.hash_consed_size > 100)
+    .map(|(name, s)| {
+      let ratio = s.serialized_size as f64 / s.hash_consed_size as f64;
+      (name.clone(), ratio, s.hash_consed_size, s.serialized_size)
+    })
+    .collect();
+  best_ratios
+    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  if !best_ratios.is_empty() {
+    println!();
+    println!("  Top 10 blocks by best ratio (most efficient):");
+    for (name, ratio, hc, ser) in best_ratios.iter().take(10) {
+      println!(
+        "    {:.2}x ({} -> {} bytes): {}",
+        ratio,
+        hc,
+        ser,
+        truncate_name(name, 50)
+      );
+    }
+  }
+}
+
+/// Truncate a name for display.
+fn truncate_name(name: &str, max_len: usize) -> String {
+  if name.len() <= max_len {
+    name.to_string()
+  } else {
+    format!("...{}", &name[name.len() - max_len + 3..])
+  }
 }

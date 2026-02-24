@@ -8,27 +8,23 @@ open System (FilePath)
 
 open Elab in
 def getFileEnv (path : FilePath) : IO Environment := do
+  let path ← IO.FS.realPath path
   let out ← IO.Process.output {
     cmd := "lake"
-    args := #["setup-file", path.toString]
+    args := #["env", "printenv", "LEAN_PATH"]
+    cwd := path.parent
   }
-  let split := out.stdout.splitOn "\"oleanPath\":[" |>.getD 1 ""
-  let split := split.splitOn "],\"loadDynlibPaths\":[" |>.getD 0 ""
-  let paths := split.replace "\"" "" |>.splitOn ","|>.map FilePath.mk
+  let paths := out.stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
   initSearchPath (← findSysroot) paths
 
   let source ← IO.FS.readFile path
   let inputCtx := Parser.mkInputContext source path.toString
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
   let (env, messages) ← processHeader header default messages inputCtx 0
-  let env := env.setMainModule default
-  let commandState := Command.mkState env messages default
-  let stt ← IO.processCommands inputCtx parserState commandState
-  let msgs := stt.commandState.messages
-  if msgs.hasErrors then
+  if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
-      (← msgs.toList.mapM (·.toString)).map String.trim
-  else return stt.commandState.env
+      (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
+  return env
 
 elab "this_file!" : term => do
   let ctx ← readThe Core.Context
@@ -38,10 +34,6 @@ elab "this_file!" : term => do
 macro "get_env!" : term =>
   `(getFileEnv this_file!)
 
---def computeIxAddress (env: Lean.Environment) (const: Lean.Name): Option MetaAddress
---  := Id.run do
---  let (addr, _) <- (Ix.CompileM.const const)
---  return addr
 
 def runCore (f : CoreM α) (env : Environment) : IO α :=
   Prod.fst <$> f.toIO { fileName := default, fileMap := default } { env }

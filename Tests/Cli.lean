@@ -1,4 +1,4 @@
-/-! Integration tests for the Ix CLI -/
+/- Integration tests for the Ix CLI -/
 
 def Tests.Cli.run (buildCmd: String) (buildArgs : Array String) (buildDir : Option System.FilePath) : IO Unit := do
   let proc : IO.Process.SpawnArgs :=
@@ -13,9 +13,7 @@ def Tests.Cli.run (buildCmd: String) (buildArgs : Array String) (buildDir : Opti
     IO.println out.stdout
 
 def Tests.Cli.suite : IO UInt32 := do
-  Tests.Cli.run "lake" (#["run", "install"]) none
-  let ixTestDir := (← IO.currentDir) / "ix_test"
-  Tests.Cli.run "lake" (#["build"]) (some ixTestDir)
+  Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0

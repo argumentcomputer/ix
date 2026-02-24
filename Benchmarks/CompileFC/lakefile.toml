@@ -1,0 +1,11 @@
+name = "CompileFC"
+version = "0.1.0"
+defaultTargets = ["CompileFC"]
+
+[[lean_lib]]
+name = "CompileFC"
+
+[[require]]
+name = "formal_conjectures"
+git = "https://github.com/google-deepmind/formal-conjectures"
+rev = "bfe92e43cf56f4fb5fe1a9fac0fc093acf4f88ea"

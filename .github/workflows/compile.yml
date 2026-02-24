@@ -1,0 +1,125 @@
+name: Benchmark Ix compiler
+
+on:
+  push:
+    branches: main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+env:
+  COMPILE_DIR: Benchmarks/Compile
+
+jobs:
+  # First build and cache the `ix` binary for use in each matrix job
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: leanprover/lean-action@v1
+        with:
+          build-args: "ix --wfail -v"
+          test: false
+      - run: |
+          mkdir -p ~/.local/bin
+          echo | lake run install
+      - uses: actions/cache/save@v4
+        with:
+          path: ~/.local/bin/ix
+          key: ix-${{ github.sha }}
+
+  # Run the Ix compiler over each library env in Benchmarks/Compile
+  run-compiler:
+    needs: build
+    strategy:
+      matrix:
+        bench: [InitStd, Lean, Mathlib, FLT] # Add FC if updated to latest Lean
+        include:
+          - bench: FLT
+            cache_pkg: flt
+          # - bench: FC
+          #   cache_pkg: formal_conjectures
+    runs-on: warp-ubuntu-latest-x64-32x
+    steps:
+      - uses: actions/checkout@v6
+      # Restore cached `ix` binary
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/.local/bin/ix
+          key: ix-${{ github.sha }}
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - if: matrix.bench == 'FC'
+        run: echo "COMPILE_DIR=${{env.COMPILE_DIR}}FC" | tee -a $GITHUB_ENV
+      # Download elan and fetch mathlib cache
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: ${{ env.COMPILE_DIR }}
+          build: false
+          use-github-cache: false
+      # FLT and FC take a few minutes to rebuild, so we cache the build artifacts
+      - if: matrix.cache_pkg
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
+          key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
+      # Build the input library
+      # Allow warnings due to copyright notice in formal-conjectures
+      - run: lake build Compile${{ matrix.bench }}
+        working-directory: ${{ env.COMPILE_DIR }}
+      # Run the `ix` compiler over the input library env
+      - name: Run ix compile
+        run: ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean 2>&1 | tee output.txt
+      # Parse the ##benchmark## line into Bencher Metric Format JSON
+      - name: Generate benchmark JSON
+        run: |
+          line=$(grep '^##benchmark##' output.txt)
+          elapsed_s=$(echo "$line" | awk '{printf "%.3f", $2 / 1000}')
+          bytes=$(echo "$line" | awk '{print $3}')
+          constants=$(echo "$line" | awk '{print $4}')
+          throughput=$(echo "$line" | awk '{if ($2 > 0) printf "%.2f", $4 * 1000 / $2; else print 0}')
+          cat > benchmark.json <<EOF
+          {
+            "${{ matrix.bench }}": {
+              "build-time": {"value": ${elapsed_s}},
+              "file-size": {"value": ${bytes}},
+              "throughput": {"value": ${throughput}},
+              "constants": {"value": ${constants}}
+            }
+          }
+          EOF
+      # Deploy benchmark results to https://bencher.dev/console/projects/ix/plots
+      - uses: bencherdev/bencher@main
+      - name: Track benchmarks
+        run: |
+          bencher run \
+            --project ix \
+            --token '${{ secrets.BENCHER_API_TOKEN }}' \
+            --branch '${{ github.ref_name }}' \
+            --hash '${{ github.sha }}' \
+            --testbed warp-ubuntu-x64-32x \
+            --adapter json \
+            --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+            --threshold-measure build-time \
+            --threshold-test percentage \
+            --threshold-max-sample-size 64 \
+            --threshold-upper-boundary 0.05 \
+            --threshold-lower-boundary _ \
+            --threshold-measure throughput \
+            --threshold-test percentage \
+            --threshold-max-sample-size 64 \
+            --threshold-upper-boundary _ \
+            --threshold-lower-boundary 0.05 \
+            --threshold-measure file-size \
+            --threshold-test percentage \
+            --threshold-max-sample-size 64 \
+            --threshold-upper-boundary 0.10 \
+            --threshold-lower-boundary _ \
+            --threshold-measure constants \
+            --threshold-test percentage \
+            --threshold-max-sample-size 64 \
+            --threshold-upper-boundary 0.10 \
+            --threshold-lower-boundary _ \
+            --thresholds-reset \
+            --file benchmark.json

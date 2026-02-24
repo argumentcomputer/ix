@@ -17,8 +17,9 @@ use crate::aiur::{
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
-  u8_add_channel, u8_and_channel, u8_bit_decomposition_channel, u8_or_channel,
-  u8_shift_left_channel, u8_shift_right_channel, u8_xor_channel,
+  u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
+  u8_less_than_channel, u8_or_channel, u8_shift_left_channel,
+  u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
 };
 
 struct ColumnIndex {
@@ -374,6 +375,17 @@ impl Op {
         let lookup_args = vec![u8_add_channel(), i, j, r, o];
         slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
       },
+      Op::U8Sub(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let (r, u) = Bytes2::sub(&i, &j);
+        map.push((r, 1));
+        map.push((u, 1));
+        slice.push_auxiliary(index, r);
+        slice.push_auxiliary(index, u);
+        let lookup_args = vec![u8_sub_channel(), i, j, r, u];
+        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+      },
       Op::U8And(i, j) => {
         let (i, _) = map[*i];
         let (j, _) = map[*j];
@@ -390,6 +402,15 @@ impl Op {
         map.push((or, 1));
         slice.push_auxiliary(index, or);
         let lookup_args = vec![u8_or_channel(), i, j, or];
+        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+      },
+      Op::U8LessThan(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let less_than = Bytes2::less_than(&i, &j);
+        map.push((less_than, 1));
+        slice.push_auxiliary(index, less_than);
+        let lookup_args = vec![u8_less_than_channel(), i, j, less_than];
         slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
       },
       Op::AssertEq(..) | Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => {

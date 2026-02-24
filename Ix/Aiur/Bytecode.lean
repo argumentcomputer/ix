@@ -27,8 +27,10 @@ inductive Op
   | u8ShiftRight : ValIdx → Op
   | u8Xor : ValIdx → ValIdx → Op
   | u8Add : ValIdx → ValIdx → Op
+  | u8Sub : ValIdx → ValIdx → Op
   | u8And : ValIdx → ValIdx → Op
   | u8Or : ValIdx → ValIdx → Op
+  | u8LessThan : ValIdx → ValIdx → Op
   | debug : String → Option (Array ValIdx) → Op
   deriving Repr
 

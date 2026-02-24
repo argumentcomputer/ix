@@ -123,8 +123,10 @@ syntax "u8_shift_left" "(" trm ")"                            : trm
 syntax "u8_shift_right" "(" trm ")"                           : trm
 syntax "u8_xor" "(" trm ", " trm ")"                          : trm
 syntax "u8_add" "(" trm ", " trm ")"                          : trm
+syntax "u8_sub" "(" trm ", " trm ")"                          : trm
 syntax "u8_and" "(" trm ", " trm ")"                          : trm
 syntax "u8_or" "(" trm ", " trm ")"                           : trm
+syntax "u8_less_than" "(" trm ", " trm ")"                    : trm
 syntax "dbg!" "(" str (", " trm)? ")" ";" (trm)?              : trm
 
 syntax trm "[" "@" noWs ident "]"                                                        : trm
@@ -221,10 +223,14 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.u8Xor #[← elabTrm i, ← elabTrm j]
   | `(trm| u8_add($i:trm, $j:trm)) => do
     mkAppM ``Term.u8Add #[← elabTrm i, ← elabTrm j]
+  | `(trm| u8_sub($i:trm, $j:trm)) => do
+    mkAppM ``Term.u8Sub #[← elabTrm i, ← elabTrm j]
   | `(trm| u8_and($i:trm, $j:trm)) => do
     mkAppM ``Term.u8And #[← elabTrm i, ← elabTrm j]
   | `(trm| u8_or($i:trm, $j:trm)) => do
     mkAppM ``Term.u8Or #[← elabTrm i, ← elabTrm j]
+  | `(trm| u8_less_than($i:trm, $j:trm)) => do
+    mkAppM ``Term.u8LessThan #[← elabTrm i, ← elabTrm j]
   | `(trm| dbg!($label:str $[, $t:trm]?); $[$ret:trm]?) => do
     let t ← match t with
       | none => mkAppOptM ``Option.none #[some (mkConst ``Term)]
@@ -366,6 +372,10 @@ where
       let i ← replaceToken old new i
       let j ← replaceToken old new j
       `(trm| u8_add($i, $j))
+    | `(trm| u8_sub($i:trm, $j:trm)) => do
+      let i ← replaceToken old new i
+      let j ← replaceToken old new j
+      `(trm| u8_sub($i, $j))
     | `(trm| u8_and($i:trm, $j:trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j
@@ -374,6 +384,10 @@ where
       let i ← replaceToken old new i
       let j ← replaceToken old new j
       `(trm| u8_or($i, $j))
+    | `(trm| u8_less_than($i:trm, $j:trm)) => do
+      let i ← replaceToken old new i
+      let j ← replaceToken old new j
+      `(trm| u8_less_than($i, $j))
     | `(trm| dbg!($label:str $[, $t:trm]?); $[$ret:trm]?) => do
       let t' ← t.mapM $ replaceToken old new
       let ret' ← ret.mapM $ replaceToken old new

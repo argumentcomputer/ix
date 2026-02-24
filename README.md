@@ -172,15 +172,28 @@ Ix consists of the following core components:
 - Integration with the [iroh p2p network](https://www.iroh.computer/) so that
   different ix users can easily share `ixon` data between themselves.
 
+## Benchmarks
+
+Compiler performance benchmarks are tracked at https://bencher.dev/console/projects/ix/plots
+
 ## Build & Install
 
 - Build and test the Ix library with `lake build` and `lake test`
+- Install the `ix` binary with `lake run install`, or run with `lake exe ix`
 
-- Run the Ix CLI with `lake exe ix`. Install the binary with `lake run install`
-    - `ix store <lean-file>` will compile a lean program into the ix store as
-      ixon data
-    - `ix store get <address>` will print the value of ixon data at the given
-      address
+### Testing
+
+**Lean tests:** `lake test`
+
+- `lake test -- <suite>` runs a specific test suite. Primary suites: `ffi`, `byte-array`, `ixon`, `claim`, `commit`, `canon`, `keccak`, `sharing`, `graph-unit`, `condense-unit`
+- `lake test -- --ignored` runs expensive test suites: `shard-map`, `rust-canon-roundtrip`, `serial-canon-roundtrip`, `parallel-canon-roundtrip`, `graph-cross`, `condense-cross`, `compile`, `decompile`, `rust-serialize`, `rust-decompile`, `commit-io`, `aiur`, `aiur-hashes`, `ixvm`
+    - Any `canon` or `compile` test will require significant RAM, beware of OOM
+    - `aiur` and `aiur-hashes` generate ZK proofs and use significant CPU
+- `lake test -- --ignored <ignored-suite>` runs a specific expensive suite by name
+- `lake test -- cli` runs CLI integration tests
+- `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
+
+**Rust tests:** `cargo test`
 
 ### Nix
 
@@ -198,20 +211,6 @@ Ix consists of the following core components:
 
 Build and run the Ix CLI with `nix build` and `nix run`.
 
-This will prompt you to enable the Garnix cache, which can also be done by passing `--accept-flake-config` to the Nix command. Then when building, you should see `copying path '/nix/store/<...>' from https://cache.garnix.io`
+This will prompt you to optionally enable the Garnix cache, which can also be done by passing `--accept-flake-config` to the Nix command. Then when building, you should see `copying path '/nix/store/<...>' from https://cache.garnix.io`
 
 To build and run the test suite, run `nix build .#test` and `nix run .#test`.
-
-#### Cache Troubleshooting
-
-If the Nix build hangs with a message like `building lean-stage0`, it's not
-finding the cached packages and will likely take >15 minutes to build the Lean
-compiler from source. Ctrl+C and check the following:
-
-- Note that caching is only provided for `x86_64-linux` at
-  the moment
-- Make sure `substituters` and `trusted-public-keys` have been added to
-  `~/.config/nix/nix.conf`, or you've built with `nix build --accept-flake-config`
-- Check the Lean version is supported at https://github.com/lenianiva/lean4-nix/tree/main/manifests
-- If using Ix as a flake input, make sure any top-level nixpkgs version is also pinned to follow `lean4-nix/nixpkgs`. Otherwise the overlay will have to rebuild lean4-nix from scratch
-- Try restarting the Nix daemon
