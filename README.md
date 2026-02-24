@@ -179,6 +179,7 @@ Compiler performance benchmarks are tracked at https://bencher.dev/console/proje
 ## Build & Install
 
 - Build and test the Ix library with `lake build` and `lake test`
+- Install the `ix` binary with `lake run install`, or run with `lake exe ix`
 
 ### Testing
 
@@ -193,12 +194,6 @@ Compiler performance benchmarks are tracked at https://bencher.dev/console/proje
 - `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
 
 **Rust tests:** `cargo test`
-
-- Run the Ix CLI with `lake exe ix`. Install the binary with `lake run install`
-    - `ix store <lean-file>` will compile a lean program into the ix store as
-      ixon data
-    - `ix store get <address>` will print the value of ixon data at the given
-      address
 
 ### Nix
 
