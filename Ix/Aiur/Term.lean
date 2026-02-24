@@ -1,6 +1,9 @@
-import Std.Data.HashSet.Basic
-import Ix.Aiur.Goldilocks
-import Ix.IndexMap
+module
+public import Std.Data.HashSet.Basic
+public import Ix.Aiur.Goldilocks
+public import Ix.IndexMap
+
+public section
 
 namespace Aiur
 
@@ -272,3 +275,5 @@ partial def DataType.size (dt : DataType) (decls : TypedDecls)
 end
 
 end Aiur
+
+end

@@ -2,8 +2,9 @@
   Tests for the commitment pipeline and claim construction.
 -/
 
-import LSpec
-import Ix.Commit
+module
+public import LSpec
+public import Ix.Commit
 
 open LSpec
 open Ixon (Comm runGet serCommTagged)
@@ -231,7 +232,7 @@ def commitConstIOTest : TestSeq :=
 
 /-! ## Suite registration -/
 
-def Tests.Commit.suite : List TestSeq := [
+public def Tests.Commit.suite : List TestSeq := [
   commDeterminismTests,
   claimCommitTests,
   fieldCombinationTests,
@@ -239,6 +240,6 @@ def Tests.Commit.suite : List TestSeq := [
   claimConstructorTests,
 ]
 
-def Tests.Commit.suiteIO : List TestSeq := [
+public def Tests.Commit.suiteIO : List TestSeq := [
   commitConstIOTest,
 ]

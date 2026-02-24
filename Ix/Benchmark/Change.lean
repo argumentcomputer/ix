@@ -1,4 +1,7 @@
-import Ix.Benchmark.Data
+module
+public import Ix.Benchmark.Data
+
+public section
 
 -- TODO: Use in `MeasurementData` and save outliers in `tukey.json`
 structure LabeledSample where
@@ -83,3 +86,5 @@ def changeEstimates (newAvgTimes baseAvgTimes : Distribution) (config : Config) 
   let (mean, median) := changeStats newAvgTimes baseAvgTimes
   let changeEstimates := buildChangeEstimates changeDistributions mean median config.confidenceLevel
   (changeEstimates, changeDistributions)
+
+end

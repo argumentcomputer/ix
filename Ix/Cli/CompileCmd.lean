@@ -1,8 +1,11 @@
-import Cli
-import Ix.Common
-import Ix.CompileM
-import Ix.Meta
-import Lean
+module
+public import Cli
+public import Ix.Common
+public import Ix.CompileM
+public import Ix.Meta
+public import Batteries.Data.String
+
+public section
 
 open System (FilePath)
 
@@ -67,7 +70,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Machine-readable line for CI benchmark tracking
   IO.println s!"##benchmark## {elapsed} {bytes.size} {totalConsts}"
   return 0
-    
+
 
 def compileCmd : Cli.Cmd := `[Cli|
   compile VIA runCompileCmd;
@@ -76,3 +79,5 @@ def compileCmd : Cli.Cmd := `[Cli|
   FLAGS:
     path : String; "Path to file to compile"
 ]
+
+end

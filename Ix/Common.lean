@@ -1,6 +1,13 @@
-import Lean
+module
+public import Lean.Data.Name
+public import Lean.Expr
+public import Lean.Declaration
+public import Lean.Environment
+public import Lean.Elab.Frontend
 import Batteries
 import Batteries.Data.RBMap
+
+public section
 
 def compareList [Ord α] : List α -> List α -> Ordering
 | a::as, b::bs => match compare a b with
@@ -63,7 +70,6 @@ deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.Recurso
 deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.ConstructorVal
 deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.InductiveVal
 deriving instance BEq, Repr, Ord, Hashable, Inhabited, Nonempty for Lean.ConstantInfo
-deriving instance Nonempty for Lean.Environment
 
 def UInt8.MAX : UInt64 := 0xFF
 def UInt16.MAX : UInt64 := 0xFFFF
@@ -333,3 +339,5 @@ def fmtBytes (n : Nat) : String :=
   else
     let gb := n * 10 / (1024 * 1024 * 1024)
     s!"{gb / 10}.{gb % 10} GB"
+
+end

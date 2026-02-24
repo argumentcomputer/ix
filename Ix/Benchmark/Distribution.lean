@@ -1,5 +1,8 @@
-import Ix.Benchmark.Common
-import Ix.Benchmark.Estimate
+module
+public import Ix.Benchmark.Common
+public import Ix.Benchmark.Estimate
+
+public section
 
 -- TODO: Ensure all array instances are used linearly for optimal performance
 structure Distribution where
@@ -117,3 +120,5 @@ def Distribution.estimates (avgTimes : Distribution) (config : Config) (gen : St
   let dists := ((avgTimes.bootstrap config.numSamples config.bootstrapSamples).run gen).fst
   let est := dists.buildEstimates points config.confidenceLevel
   (dists, est)
+
+end

@@ -1,5 +1,8 @@
-import Cli
-import Ix.Iroh.Connect
+module
+public import Cli
+public import Ix.Iroh.Connect
+
+public section
 
 open Iroh.Connect
 
@@ -71,3 +74,5 @@ def connectCmd : Cli.Cmd := `[Cli|
     put;
     get
 ]
+
+end

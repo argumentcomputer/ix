@@ -1,5 +1,7 @@
-import Ix.ShardMap
-import LSpec
+module
+
+public import Ix.ShardMap
+public import LSpec
 
 open LSpec Ix
 
@@ -393,7 +395,7 @@ def testConcurrentTryGet : TestSeq :=
     -- (conservative threshold to avoid flakiness)
     pure (successes > 100, 0, 0, none)) .done
 
-def suite : List TestSeq := [
+public def suite : List TestSeq := [
   testInsertAndGet,
   testGetNonExistent,
   testMultipleInserts,

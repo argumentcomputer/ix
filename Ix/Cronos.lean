@@ -1,4 +1,7 @@
-import Std.Data.HashMap
+module
+public import Std.Data.HashMap
+
+public section
 
 structure Cronos where
   refs : Std.HashMap String Nat
@@ -43,3 +46,5 @@ def mean (c : Cronos) : Float := Id.run do
   Float.ofNat sum / Float.ofNat c.data.size
 
 end Cronos
+
+end

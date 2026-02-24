@@ -1,4 +1,7 @@
-import Ix.Aiur.Meta
+module
+public import Ix.Aiur.Meta
+
+public section
 
 namespace IxVM
 
@@ -808,3 +811,7 @@ def sha256 := ⟦
     u32_be_add(«W_i-16», u32_be_add(«W_i_s0», u32_be_add(«W_i-7», «W_i_s1»)))
   }
 ⟧
+
+end IxVM
+
+end

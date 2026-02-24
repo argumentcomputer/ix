@@ -2,10 +2,11 @@
   Unit tests for CanonM module - verifies canonicalization roundtrips.
 -/
 
-import Ix.CanonM
-import Ix.Environment
-import Ix.Meta
-import LSpec
+module
+public import Ix.CanonM
+public import Ix.Environment
+public import Ix.Meta
+public import LSpec
 
 open LSpec Ix.CanonM
 
@@ -111,7 +112,7 @@ def testInterning : TestSeq :=
 
 /-! ## Full suite -/
 
-def suite : TestSeq :=
+public def suite : TestSeq :=
   group "CanonM" <|
     testNameRoundtrip ++
     testLevelRoundtrip ++
@@ -489,6 +490,8 @@ def testParallelLeanRoundtrip : TestSeq :=
     pure (success, 0, 0, failMsg)
   ) .done
 
+public section
+
 /-- Full canonicalization roundtrip test suite (expensive, in ignored tests). -/
 def rustSuiteIO : List TestSeq := [
   testFullCanonRoundtrip,
@@ -502,4 +505,7 @@ def parallelSuiteIO : List TestSeq := [
   testParallelLeanRoundtrip
 ]
 
+end
+
 end Tests.CanonM
+

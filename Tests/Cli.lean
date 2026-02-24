@@ -1,3 +1,5 @@
+module
+
 /- Integration tests for the Ix CLI -/
 
 def Tests.Cli.run (buildCmd: String) (buildArgs : Array String) (buildDir : Option System.FilePath) : IO Unit := do
@@ -12,7 +14,7 @@ def Tests.Cli.run (buildCmd: String) (buildArgs : Array String) (buildDir : Opti
   else
     IO.println out.stdout
 
-def Tests.Cli.suite : IO UInt32 := do
+public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none

@@ -3,10 +3,11 @@
   Generators have been moved to Tests/Gen/Ixon.lean.
 -/
 
-import Ix.Ixon
-import Ix.Sharing
-import Tests.Gen.Ixon
-import Tests.FFI.Ixon
+module
+public import Ix.Ixon
+public import Ix.Sharing
+public import Tests.Gen.Ixon
+public import Tests.FFI.Ixon
 
 open LSpec SlimCheck Gen Ixon
 open Tests.FFI.Ixon (rsEqUnivSerialization rsEqExprSerialization rsEqConstantSerialization rsEqEnvSerialization)
@@ -241,7 +242,7 @@ def envSerializationUnitTests : TestSeq :=
 
 /-! ## Test Suite (property-based) -/
 
-def Tests.Ixon.suite : List TestSeq := [
+public def Tests.Ixon.suite : List TestSeq := [
   -- Env unit tests (for debugging serialization)
   envUnitTests,
   -- Env serialization comparison unit tests

@@ -1,6 +1,9 @@
-import Ix.Ixon
-import Ix.Benchmark.Change
-import Ix.Benchmark.OneShot
+module
+public import Ix.Ixon
+public import Ix.Benchmark.Change
+public import Ix.Benchmark.OneShot
+
+public section
 
 open Ixon
 
@@ -154,3 +157,5 @@ def loadFile [Lean.FromJson α] [Serialize α] (format : SerdeFormat) (path : Sy
   match format with
   | .json => loadJson path
   | .ixon => loadIxon path
+
+end

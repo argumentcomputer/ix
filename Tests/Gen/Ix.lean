@@ -2,15 +2,18 @@
   Generators for Ix.* types (canonical Lean types with Blake3 hashes).
   Generators for property-based FFI roundtrip tests.
 -/
+module
 
-import LSpec
-import Tests.Gen.Basic
-import Tests.Gen.Ixon
-import Ix.Address
-import Ix.Environment
-import Ix.CondenseM
-import Ix.CompileM
-import Ix.DecompileM
+public import LSpec
+public import Tests.Gen.Basic
+public import Tests.Gen.Ixon
+public import Ix.Address
+public import Ix.Environment
+public import Ix.CondenseM
+public import Ix.CompileM
+public import Ix.DecompileM
+
+public section
 
 open LSpec SlimCheck Gen
 
@@ -676,3 +679,5 @@ instance : SampleableExt Ix.CompileM.CompileError :=
   SampleableExt.mkSelfContained genCompileError
 
 end Tests.Gen.Ix
+
+end

@@ -1,5 +1,8 @@
-import Ix.Aiur.Term
-import Std.Data.HashSet
+module
+public import Ix.Aiur.Term
+public import Std.Data.HashSet
+
+public section
 
 namespace Aiur
 
@@ -473,3 +476,5 @@ def checkFunction (function : Function) : CheckM TypedFunction := do
   pure ⟨function.name, function.inputs, function.output, body, function.unconstrained⟩
 
 end Aiur
+
+end

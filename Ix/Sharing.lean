@@ -12,12 +12,15 @@
   4. Build sharing vector in topological order (leaves first)
   5. Rewrite expressions with Share(idx) references
 -/
+module
 
-import Ix.Ixon
-import Ix.Address
-import Ix.Common
-import Std.Data.HashMap
-import Blake3
+public import Ix.Ixon
+public import Ix.Address
+public import Ix.Common
+public import Std.Data.HashMap
+public import Blake3
+
+public section
 
 namespace Ix.Sharing
 
@@ -507,3 +510,5 @@ def applySharing (exprs : Array Ixon.Expr) (dbg : Bool := false)
     return buildSharingVec exprs sharedHashes result.infoMap result.ptrToHash
 
 end Ix.Sharing
+
+end

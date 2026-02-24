@@ -1,6 +1,9 @@
-import Lean
-import Ix.Address
-import Ix.CompileM
+module
+public import Lean.Meta.Reduce
+public import Ix.Address
+public import Ix.CompileM
+
+public section
 
 open Lean
 
@@ -60,3 +63,4 @@ def metaMakeEvalClaim (func: Lean.Name) (args : List Lean.Expr)
   let lvls := (Lean.collectLevelParams default input).params.toList
   return (lvls, input, output, type, sort)
 
+end

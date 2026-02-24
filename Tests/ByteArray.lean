@@ -1,5 +1,7 @@
-import LSpec
-import Ix.ByteArray
+module
+
+public import LSpec
+public import Ix.ByteArray
 
 def arrays : List ByteArray := [
   ⟨#[]⟩, ⟨#[1]⟩, ⟨#[0, 3]⟩, ⟨#[1, 1, 1]⟩, ⟨#[3, 3, 3, 3]⟩, ⟨#[13]⟩
@@ -19,4 +21,4 @@ def neq : TestSeq :=
   arrays.zip arrays' |>.foldl (init := .done) fun tSeq (x, y) =>
     tSeq ++ (test s!"{x} != {y}" $ !x.beq y && !x.beqNoFFI y && !y.beq x && !y.beqNoFFI x)
 
-def Tests.ByteArray.suite := [beq, neq]
+public def Tests.ByteArray.suite := [beq, neq]

@@ -1,10 +1,13 @@
 /-
   Generators for Ix.Claim types (RevealConstructorInfo, RevealRecursorRule, etc.).
 -/
+module
 
-import LSpec
-import Tests.Gen.Ixon
-import Ix.Claim
+public import LSpec
+public import Tests.Gen.Ixon
+public import Ix.Claim
+
+public section
 
 open LSpec SlimCheck Gen
 open Ix (RevealConstructorInfo RevealRecursorRule RevealMutConstInfo RevealConstantInfo Claim
@@ -128,3 +131,5 @@ instance : SampleableExt RevealConstantInfo := SampleableExt.mkSelfContained gen
 instance : SampleableExt Claim := SampleableExt.mkSelfContained genClaim
 
 end Tests.Gen.Claim
+
+end

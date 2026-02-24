@@ -1,3 +1,7 @@
+-- module
+--
+-- public section
+--
 --import Cli
 --import Ix.Cronos
 --import Ix.Common
@@ -99,3 +103,5 @@
 --   input  : String; "Source file input"
 --   const  : String; "constant name"
 --]
+--
+-- end

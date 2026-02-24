@@ -4,10 +4,11 @@
   - Cross-implementation tests comparing Lean vs Rust graph construction
 -/
 
-import Ix.GraphM
-import Ix.Environment
-import Ix.Meta
-import LSpec
+module
+public import Ix.GraphM
+public import Ix.Environment
+public import Ix.Meta
+public import LSpec
 
 open LSpec Ix
 
@@ -313,7 +314,7 @@ def testEnvParallelVsSerial : TestSeq := Id.run do
 
 /-! ## Full Test Suite (unit tests) -/
 
-def suite : List TestSeq := [
+public def suite : List TestSeq := [
   group "graphExpr" (
     testGraphExprConst ++
     testGraphExprBvar ++
@@ -462,7 +463,7 @@ def testRefGraphComparison : TestSeq :=
   ) .done
 
 /-- Cross-implementation test suite (expensive, run with --ignored) -/
-def suiteIO : List TestSeq := [
+public def suiteIO : List TestSeq := [
   testRefGraphComparison
 ]
 

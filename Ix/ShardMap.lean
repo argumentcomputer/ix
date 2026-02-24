@@ -35,9 +35,12 @@
     -- Atomic read-modify-write
     let result? ← map.modifyGet key fun v => (computeResult v, updateValue v)
 -/
+module
 
-import Std.Data.HashMap
-import Std.Sync.SharedMutex
+public import Std.Data.HashMap
+public import Std.Sync.SharedMutex
+
+public section
 
 namespace Ix
 
@@ -444,3 +447,5 @@ def newWithCapacity (shardBits : Nat := 8) (capacityPerShard : Nat := 64)
 end ShardMap
 
 end Ix
+
+end

@@ -1,5 +1,8 @@
-import Ix.Aiur.Term
-import Ix.SmallMap
+module
+public import Ix.Aiur.Term
+public import Ix.SmallMap
+
+public section
 
 namespace Aiur
 
@@ -236,3 +239,5 @@ partial def decisionToTerm : Decision → Option Term
 end
 
 end Aiur
+
+end

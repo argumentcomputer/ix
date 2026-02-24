@@ -1,3 +1,7 @@
+module
+
+public section
+
 structure UnionFind where
   parent : IO.Ref (Array Nat)
   rank : IO.Ref (Array Nat)
@@ -39,3 +43,4 @@ def unionMany (uf: UnionFind) (pairs: Array (Nat × Nat)) : IO Unit := do
 
 end UnionFind
 
+end

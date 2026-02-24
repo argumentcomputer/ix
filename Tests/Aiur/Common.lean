@@ -1,10 +1,14 @@
-import LSpec
-import Tests.Gen.Basic
-import Ix.Unsigned
-import Ix.Aiur.Goldilocks
-import Ix.Aiur.Protocol
-import Ix.Aiur.Simple
-import Ix.Aiur.Compile
+module
+
+public import LSpec
+public import Tests.Gen.Basic
+public import Ix.Unsigned
+public import Ix.Aiur.Goldilocks
+public import Ix.Aiur.Protocol
+public import Ix.Aiur.Simple
+public import Ix.Aiur.Compile
+
+public section
 
 open LSpec SlimCheck Gen
 
@@ -65,3 +69,5 @@ def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Toplevel)
         let env : AiurTestEnv := ⟨toplevel, aiurSystem⟩
         cases.foldl (init := .done) fun tSeq testCase =>
           tSeq ++ env.runTestCase testCase
+
+end

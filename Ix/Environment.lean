@@ -4,12 +4,14 @@
   Ix types mirror Lean's core types but include a Blake3 hash at each node,
   enabling O(1) equality checks and content-addressed storage.
 -/
+module
 
-import Lean
-import Blake3
-import Std.Data.HashMap
-import Batteries.Data.RBMap
-import Ix.Address
+public import Blake3
+public import Std.Data.HashMap
+public import Batteries.Data.RBMap
+public import Ix.Address
+
+public section
 
 namespace Ix
 
@@ -617,3 +619,5 @@ instance : Ord MutCtx where
 abbrev NameSet := Batteries.RBSet Name nameCompare
 
 end Ix
+
+end

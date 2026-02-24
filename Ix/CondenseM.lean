@@ -1,3 +1,4 @@
+module
 /-
   # CondenseM: Strongly Connected Component Condensation
 
@@ -16,9 +17,10 @@
   - `blockRefs`: maps each SCC representative to its external references
 -/
 
-import Lean
-import Ix.Common
-import Ix.Environment
+public import Ix.Common
+public import Ix.Environment
+
+public section
 
 namespace Ix
 
@@ -168,3 +170,5 @@ def RustCondensedBlocks.toCondensedBlocks (rust : RustCondensedBlocks) : Condens
   { lowLinks, blocks, blockRefs }
 
 end Ix
+
+end

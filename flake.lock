@@ -31,15 +31,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1771879986,
-        "narHash": "sha256-YNIdmaUARBAOuST6/s5HDjNI6Q50C3kZWDHsSm6lal0=",
+        "lastModified": 1771968891,
+        "narHash": "sha256-+RPvPFEuNVQsbcIaVmaY8UGYFqP5NkFLtc6i+oNPeGk=",
         "owner": "argumentcomputer",
         "repo": "Blake3.lean",
-        "rev": "810365c0e34a3f72c9ca33bf9b2bd8270986342a",
+        "rev": "021cbc62b1abc3a9c80d44ad9266aef39e8ff640",
         "type": "github"
       },
       "original": {
         "owner": "argumentcomputer",
+        "ref": "module-system",
         "repo": "Blake3.lean",
         "type": "github"
       }

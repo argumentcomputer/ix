@@ -1,7 +1,8 @@
-import Ix.Common
-import Ix.Address
-import Ix.Environment
-import Lean
+module
+public import Ix.Common
+public import Ix.Address
+public import Ix.Environment
+public section
 
 namespace Ix
 
@@ -120,3 +121,5 @@ def MutConst.ctx (classes: List (List MutConst)) : Ix.MutCtx
   return mutCtx
 
 end Ix
+
+end

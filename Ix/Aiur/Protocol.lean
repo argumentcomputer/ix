@@ -1,5 +1,8 @@
-import Ix.Aiur.Bytecode
-import Std.Data.HashMap
+module
+public import Ix.Aiur.Bytecode
+public import Std.Data.HashMap
+
+public section
 
 namespace Aiur
 
@@ -76,3 +79,5 @@ def buildClaim (funIdx : Bytecode.FunIdx) (input output : Array G) :=
   #[functionChannel, .ofNat funIdx] ++ input ++ output
 
 end Aiur
+
+end

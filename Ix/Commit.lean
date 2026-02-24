@@ -7,10 +7,12 @@
   - Building evaluation, check, and reveal claims
   - Opening committed constants for selective field revelation
 -/
+module
+public import Ix.Claim
+public import Ix.CompileM
+public import Ix.CanonM
 
-import Ix.Claim
-import Ix.CompileM
-import Ix.CanonM
+public section
 
 namespace Ix.Commit
 
@@ -261,3 +263,5 @@ def openCommitment (compileEnv : CompileM.CompileEnv) (commitAddr : Address)
   return openConstantInfo constant.info
 
 end Ix.Commit
+
+end

@@ -11,7 +11,10 @@
   exposing the full constant.
 -/
 
-import Ix.Ixon
+module
+public import Ix.Ixon
+
+public section
 
 namespace Ix
 
@@ -470,3 +473,5 @@ instance : ToString Claim where
 end Claim
 
 end Ix
+
+end

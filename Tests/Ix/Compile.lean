@@ -3,18 +3,19 @@
   Verifies Lean and Rust implementations produce equivalent results.
 -/
 
-import Ix.Ixon
-import Ix.Environment
-import Ix.Address
-import Ix.Common
-import Ix.Meta
-import Ix.CompileM
-import Ix.CondenseM
-import Ix.GraphM
-import Ix.Sharing
-import Lean
-import LSpec
-import Tests.Ix.Fixtures
+module
+public import Ix.Ixon
+public import Ix.Environment
+public import Ix.Address
+public import Ix.Common
+public import Ix.Meta
+public import Ix.CompileM
+public import Ix.CondenseM
+public import Ix.GraphM
+public import Ix.Sharing
+public import Lean
+public import LSpec
+public import Tests.Ix.Fixtures
 
 open LSpec
 
@@ -460,7 +461,7 @@ def testCrossImpl : TestSeq :=
 
 /-! ## Test Suite -/
 
-def compileSuiteIO : List TestSeq := [
+public def compileSuiteIO : List TestSeq := [
   testCrossImpl,
 ]
 
