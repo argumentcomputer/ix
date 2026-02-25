@@ -2,10 +2,13 @@
   Ixon.* type FFI roundtrip tests.
   Pattern: Lean value → Rust (decode) → Rust (re-encode via C API) → Lean value → compare
 -/
+module
 
-import LSpec
-import Tests.Gen.Ixon
-import Ix.Ixon
+public import LSpec
+public import Tests.Gen.Ixon
+public import Ix.Ixon
+
+public section
 
 open LSpec SlimCheck Gen Ixon
 open Ix (DefKind DefinitionSafety QuotKind)
@@ -307,3 +310,5 @@ def suite : List TestSeq := [
 ]
 
 end Tests.FFI.Ixon
+
+end

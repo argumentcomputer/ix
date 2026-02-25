@@ -1,3 +1,7 @@
+-- module
+--
+-- public section
+--
 --import Cli
 --import Ix.Cronos
 --import Ix.Common
@@ -93,3 +97,5 @@
 --    storeGetCmd;
 --    storeRematCmd
 --]
+--
+-- end

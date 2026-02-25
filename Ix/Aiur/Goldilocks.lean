@@ -1,3 +1,7 @@
+module
+
+public section
+
 namespace Aiur
 
 abbrev gSize : UInt64 := 1 - 2 ^ 32
@@ -19,3 +23,5 @@ instance : OfNat G n := ⟨G.ofNat n⟩
   ⟨u64, h⟩
 
 end Aiur
+
+end

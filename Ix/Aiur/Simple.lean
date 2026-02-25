@@ -1,5 +1,8 @@
-import Ix.Aiur.Match
-import Ix.Aiur.Check
+module
+public import Ix.Aiur.Match
+public import Ix.Aiur.Check
+
+public section
 
 namespace Aiur
 
@@ -47,3 +50,5 @@ def Toplevel.checkAndSimplify (toplevel : Toplevel) : Except CheckError TypedDec
       pure $ typedDecls.insert name (.function f)
 
 end Aiur
+
+end

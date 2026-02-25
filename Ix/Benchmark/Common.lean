@@ -1,3 +1,7 @@
+module
+
+public section
+
 inductive SamplingMode where
   | flat : SamplingMode
   | linear : SamplingMode
@@ -106,3 +110,5 @@ def Float.formatNanos (f : Float) : String :=
     (f / 10 ^ 3).floatPretty 2 ++ "µs"
   else
     f.floatPretty 2  ++ "ns"
+
+end

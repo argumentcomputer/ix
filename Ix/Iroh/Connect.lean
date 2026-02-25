@@ -1,3 +1,7 @@
+module
+
+public section
+
 namespace Iroh.Connect
 
 structure PutResponse where
@@ -33,3 +37,5 @@ def getBytes (nodeId : @& String) (addrs : @& Array String) (relayUrl : @& Strin
   | .error e => throw (IO.userError e)
 
 end Iroh.Connect
+
+end

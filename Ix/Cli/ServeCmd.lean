@@ -1,5 +1,8 @@
-import Cli
-import Ix.Iroh.Serve
+module
+public import Cli
+public import Ix.Iroh.Serve
+
+public section
 
 open Iroh.Serve
 
@@ -12,3 +15,5 @@ def serveCmd : Cli.Cmd := `[Cli|
   serve VIA runServe;
   "Start an Iroh byte storage server"
 ]
+
+end

@@ -1,3 +1,5 @@
-import Tests.Aiur.Common
-import Tests.Aiur.Aiur
-import Tests.Aiur.Hashes
+module
+
+public import Tests.Aiur.Common
+public import Tests.Aiur.Aiur
+public import Tests.Aiur.Hashes

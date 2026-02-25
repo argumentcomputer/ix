@@ -1,7 +1,10 @@
-import Std.Data.HashMap
-import Lean.Data.RBTree
-import Ix.Aiur.Term
-import Ix.Aiur.Bytecode
+module
+public import Std.Data.HashMap
+public import Lean.Data.RBTree
+public import Ix.Aiur.Term
+public import Ix.Aiur.Bytecode
+
+public section
 
 namespace Aiur
 
@@ -643,3 +646,5 @@ def TypedDecls.compile (decls : TypedDecls) : Except String Bytecode.Toplevel :=
   pure ⟨functions, memSizes.toArray⟩
 
 end Aiur
+
+end

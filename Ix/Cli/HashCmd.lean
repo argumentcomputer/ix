@@ -1,3 +1,7 @@
+--module
+--
+--public section
+--
 --import Cli
 --import Ix.Cronos
 --import Ix.Common
@@ -46,3 +50,5 @@
 --  ARGS:
 --    input  : String; "Source file input"
 --]
+--
+--end

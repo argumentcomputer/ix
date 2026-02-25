@@ -1,4 +1,7 @@
-import Ix.Aiur.Meta
+module
+public import Ix.Aiur.Meta
+
+public section
 
 namespace IxVM
 
@@ -439,3 +442,5 @@ def blake3 := ⟦
 ⟧
 
 end IxVM
+
+end

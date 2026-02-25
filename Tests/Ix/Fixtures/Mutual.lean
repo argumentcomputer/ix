@@ -1,3 +1,7 @@
+module
+
+public section
+
 namespace Test.Ix.Mutual
 
 namespace WellFounded
@@ -160,3 +164,5 @@ inductive BLEH
 end Inductive
 
 end Test.Ix.Mutual
+
+end

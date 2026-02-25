@@ -1,3 +1,7 @@
+module
+
+public section
+
 /-- A map meant for very few entries, preserving insertion order. -/
 structure SmallMap (α : Type u) (β : Type v) where
   pairs : Array (α × β)
@@ -30,3 +34,5 @@ def update (f : β → β) : SmallMap α β :=
   m.pairs.toList
 
 end SmallMap
+
+end

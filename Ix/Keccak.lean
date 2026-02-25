@@ -1,3 +1,7 @@
+module
+
+public section
+
 namespace Keccak
 
 private opaque GenericNonempty : NonemptyType
@@ -25,3 +29,5 @@ def hash (input : @& ByteArray) : ByteArray :=
   hasher.finalize
 
 end Keccak
+
+end

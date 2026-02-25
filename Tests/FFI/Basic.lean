@@ -2,10 +2,11 @@
   Basic type FFI roundtrip tests.
   Pattern: Lean value → Rust (decode) → Rust (re-encode via C API) → Lean value → compare
 -/
+module
 
-import LSpec
-import Tests.Gen.Basic
-import Std.Data.HashMap
+public import LSpec
+public import Tests.Gen.Basic
+public import Std.Data.HashMap
 
 open LSpec SlimCheck Gen
 
@@ -116,7 +117,7 @@ def boolTests : TestSeq :=
 
 /-! ## Test Suite -/
 
-def suite : List TestSeq := [
+public def suite : List TestSeq := [
   simpleTests,
   largeNatTests,
   assocListTests,

@@ -4,13 +4,14 @@
   by roundtripping through Rust and comparing with the Lean serializer.
 -/
 
-import Ix.Ixon
-import Ix.Common
-import Ix.Meta
-import Ix.CompileM
-import Lean
-import LSpec
-import Tests.Ix.Fixtures
+module
+public import Ix.Ixon
+public import Ix.Common
+public import Ix.Meta
+public import Ix.CompileM
+public import Lean
+public import LSpec
+public import Tests.Ix.Fixtures
 
 open LSpec
 
@@ -92,7 +93,7 @@ def testRustSerdeRoundtrip : TestSeq :=
 
 /-! ## Test Suite -/
 
-def rustSerializeSuiteIO : List TestSeq := [
+public def rustSerializeSuiteIO : List TestSeq := [
   testRustSerdeRoundtrip,
 ]
 

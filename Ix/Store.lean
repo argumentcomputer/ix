@@ -1,8 +1,8 @@
-import Ix.Address
+module
 
-import Init.System.FilePath
-import Init.System.IO
-import Init.System.IOError
+public import Ix.Address
+
+public section
 
 open System
 
@@ -62,3 +62,5 @@ def read (a: Address) : StoreIO ByteArray := do
   IO.toEIO .ioError (IO.FS.readBinFile path)
 
 end Store
+
+end

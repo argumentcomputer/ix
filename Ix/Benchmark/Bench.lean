@@ -1,11 +1,14 @@
-import Ix.Address
-import Ix.Meta
-import Ix.Cronos
-import Ix.Address
-import Batteries
+module
+public import Ix.Address
+public import Ix.Meta
+public import Ix.Cronos
+public import Ix.Address
+public import Batteries
 
-import Ix.Benchmark.Serde
-import Ix.Benchmark.Tukey
+public import Ix.Benchmark.Serde
+public import Ix.Benchmark.Tukey
+
+public section
 
 open Batteries (RBMap)
 
@@ -329,7 +332,7 @@ def getColumnWidths (report : Array BenchReport) : ColumnWidths :=
 
 -- Centers a string with padded whitespace given the total width
 def padWhitespace (input : String) (width : Nat) : String :=
-  let padWidth := width - input.length 
+  let padWidth := width - input.length
   let leftPad := padWidth / 2
   let rightPad := padWidth - leftPad
   String.ofList (List.replicate leftPad ' ') ++ input ++ (String.ofList (List.replicate rightPad ' '))
@@ -449,3 +452,4 @@ def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) 
     IO.FS.writeFile (System.mkFilePath [".", s!"benchmark-report-{name}.md"]) table
   return reports
 
+end

@@ -1,7 +1,9 @@
+module
 
-import Lean
-import Ix.Common
-import Ix.Environment
+public import Ix.Common
+public import Ix.Environment
+
+public section
 
 namespace Ix
 
@@ -113,3 +115,5 @@ def GraphM.envSerial (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) := Id.run
   return refs
 
 end Ix
+
+end

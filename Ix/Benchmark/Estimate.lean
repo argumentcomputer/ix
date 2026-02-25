@@ -1,4 +1,7 @@
-import Lean.Data.Json
+module
+public import Lean.Data.Json
+
+public section
 
 structure ConfidenceInterval where
   confidenceLevel : Float
@@ -26,3 +29,4 @@ structure PointEstimates where
   medianAbsDev : Float
   stdDev : Float
 
+end

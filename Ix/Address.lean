@@ -1,7 +1,10 @@
-import Lean
-import Ix.ByteArray
-import Ix.Common
-import Blake3
+module
+public import Lean.ToExpr
+public import Ix.ByteArray
+public import Ix.Common
+public import Blake3
+
+public section
 
 deriving instance Lean.ToExpr for ByteArray
 deriving instance Repr for ByteArray
@@ -117,3 +120,4 @@ def Address.fromUniqueName (name: Lean.Name) : Option Address :=
   | .str (.str (.str .anonymous "Ix") "_#") s => Address.fromString s
   | _ => .none
 
+end

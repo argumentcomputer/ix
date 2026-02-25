@@ -1,4 +1,7 @@
-import Ix.Benchmark.Distribution
+module
+public import Ix.Benchmark.Distribution
+
+public section
 
 /-- Outliers are classified per https://bheisler.github.io/criterion.rs/book/analysis.html#outlier-classification -/
 structure Outliers where
@@ -47,3 +50,5 @@ def Distribution.tukey (data : Distribution) : IO Unit := do
     if out.highSevere > 0 then
       let pct := Float.ofNat out.highSevere / (Float.ofNat samples) * 100
       IO.println s!"  {out.highSevere} ({pct.floatPretty 2}%) high severe"
+
+end

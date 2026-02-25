@@ -1,4 +1,7 @@
-import Tests.Ix.Fixtures.Export
+module
+public import Tests.Ix.Fixtures.Export
+
+public section
 
 namespace Test.Ix.Fixtures
 
@@ -175,3 +178,4 @@ end Import
 
 end Test.Ix.Fixtures
 
+end

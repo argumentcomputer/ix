@@ -2,17 +2,18 @@
   Ix.* type FFI roundtrip tests.
   Pattern: Lean value → Rust (decode) → Rust (re-encode via C API) → Lean value → compare
 -/
+module
 
-import LSpec
-import Tests.Gen.Basic
-import Tests.Gen.Ix
-import Tests.Gen.Ixon
-import Ix.Environment
-import Ix.Address
-import Ix.CompileM
-import Ix.DecompileM
-import Ix.Ixon
-import Tests.FFI.Ixon
+public import LSpec
+public import Tests.Gen.Basic
+public import Tests.Gen.Ix
+public import Tests.Gen.Ixon
+public import Ix.Environment
+public import Ix.Address
+public import Ix.CompileM
+public import Ix.DecompileM
+public import Ix.Ixon
+public import Tests.FFI.Ixon
 
 open LSpec SlimCheck Gen
 open Tests.Gen.Ix
@@ -253,7 +254,7 @@ def compileErrorTests : TestSeq :=
 
 /-! ## Test Suite -/
 
-def suite : List TestSeq := [
+public def suite : List TestSeq := [
   -- Block comparison types
   blockCompareResultTests,
   blockCompareDetailTests,

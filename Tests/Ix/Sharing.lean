@@ -5,13 +5,16 @@
   for cross-implementation compatibility.
 -/
 
-import Ix.Sharing
-import Ix.Ixon
-import Ix.CompileM
-import Ix.CanonM
-import Ix.Meta
-import Ix.Environment
-import LSpec
+module
+public import Ix.Sharing
+public import Ix.Ixon
+public import Ix.CompileM
+public import Ix.CanonM
+public import Ix.Meta
+public import Ix.Environment
+public import LSpec
+
+public section
 
 open LSpec Ix.Sharing Ixon Ix.CompileM Ix
 
@@ -647,7 +650,7 @@ def testFlipSharing : TestSeq := Id.run do
 
 /-! ## Suite -/
 
-def suite : List TestSeq := [
+public def suite : List TestSeq := [
   testForallImpReal,
   testForallImpSharing,
   testUint64ToBytesLength,

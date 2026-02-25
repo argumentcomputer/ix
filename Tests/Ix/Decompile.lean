@@ -4,16 +4,17 @@
   and compares via content hashes.
 -/
 
-import Ix.Ixon
-import Ix.Environment
-import Ix.Address
-import Ix.Common
-import Ix.Meta
-import Ix.CompileM
-import Ix.DecompileM
-import Lean
-import LSpec
-import Tests.Ix.Fixtures
+module
+public import Ix.Ixon
+public import Ix.Environment
+public import Ix.Address
+public import Ix.Common
+public import Ix.Meta
+public import Ix.CompileM
+public import Ix.DecompileM
+public import Lean
+public import LSpec
+public import Tests.Ix.Fixtures
 
 open LSpec
 
@@ -121,7 +122,7 @@ def testDecompile : TestSeq :=
 
 /-! ## Test Suite -/
 
-def decompileSuiteIO : List TestSeq := [
+public def decompileSuiteIO : List TestSeq := [
   testDecompile,
 ]
 

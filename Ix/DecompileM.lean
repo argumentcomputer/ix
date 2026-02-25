@@ -1,3 +1,4 @@
+module
 /-
   DecompileM: Decompilation from the Ixon format to Ix types.
 
@@ -10,11 +11,12 @@
   This design enables cheap hash-based comparison of decompiled results.
 -/
 
-import Std.Data.HashMap
-import Ix.Ixon
-import Ix.Address
-import Ix.Environment
-import Ix.Common
+public import Ix.Ixon
+public import Ix.Address
+public import Ix.Environment
+public import Ix.Common
+
+public section
 
 namespace Ix.DecompileM
 
@@ -812,3 +814,5 @@ def rsDecompileEnv (env : Ixon.Env) : Except DecompileError (Std.HashMap Ix.Name
   return arr.foldl (init := {}) fun m (name, info) => m.insert name info
 
 end Ix.DecompileM
+
+end

@@ -1,4 +1,7 @@
-import Ix.Aiur.Goldilocks
+module
+public import Ix.Aiur.Goldilocks
+
+public section
 
 namespace Aiur
 
@@ -76,3 +79,5 @@ structure Toplevel where
 end Bytecode
 
 end Aiur
+
+end

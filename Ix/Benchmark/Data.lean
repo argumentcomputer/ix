@@ -1,4 +1,7 @@
-import Ix.Benchmark.Distribution
+module
+public import Ix.Benchmark.Distribution
+
+public section
 
 structure Data where
   d : Array (Nat × Nat)
@@ -50,3 +53,5 @@ def Data.regression (data : Data) (config : Config) (gen : StdGen) : (Distributi
   let stdErr := distribution.stdDev mean
   let estimate : Estimate := { confidenceInterval, pointEstimate, stdErr }
   (distribution, estimate)
+
+end

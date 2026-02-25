@@ -2,8 +2,9 @@
   Serialization roundtrip and encoding tests for Ix.Claim types.
 -/
 
-import Ix.Claim
-import Tests.Gen.Claim
+module
+public import Ix.Claim
+public import Tests.Gen.Claim
 
 open LSpec SlimCheck
 open Ixon (runGet)
@@ -83,7 +84,7 @@ def claimEncodingTests : TestSeq :=
 
 /-! ## Suite -/
 
-def Tests.Claim.suite : List TestSeq := [
+public def Tests.Claim.suite : List TestSeq := [
   claimUnits,
   claimEncodingTests,
   checkIO "Claim serde roundtrips" (∀ c : Claim, claimSerde c),

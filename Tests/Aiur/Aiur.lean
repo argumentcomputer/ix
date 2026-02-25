@@ -1,5 +1,9 @@
-import Tests.Aiur.Common
-import Ix.Aiur.Meta
+module
+
+public import Tests.Aiur.Common
+public import Ix.Aiur.Meta
+
+public section
 
 open LSpec
 
@@ -268,3 +272,4 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `fold_matrix_sum #[1, 2, 3, 4] #[10],
   ]
 
+end

@@ -2,9 +2,12 @@
   Basic type generators for testing.
   Generators and test types for property-based FFI roundtrip tests.
 -/
+module
 
-import LSpec
-import Std.Data.HashMap
+public import LSpec
+public import Std.Data.HashMap
+
+public section
 
 open LSpec SlimCheck Gen
 
@@ -180,3 +183,5 @@ instance : SampleableExt Point := SampleableExt.mkSelfContained genPoint
 instance : SampleableExt NatTree := SampleableExt.mkSelfContained (genNatTree 4)
 
 instance : SampleableExt (Std.HashMap Nat Nat) := SampleableExt.mkSelfContained genHashMapNatNat
+
+end

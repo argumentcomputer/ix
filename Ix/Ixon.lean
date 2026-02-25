@@ -7,9 +7,12 @@
   - Expr, Univ, and Constant types matching Rust exactly
   - All numeric fields use UInt64 (matching Rust's u64)
 -/
-import Ix.Address
-import Ix.Common
-import Ix.Environment
+module
+public import Ix.Address
+public import Ix.Common
+public import Ix.Environment
+
+public section
 
 namespace Ixon
 
@@ -1830,3 +1833,5 @@ def rsDesEnv (bytes : ByteArray) : Except String Env :=
   return (← rsDesEnvFFI bytes).toEnv
 
 end Ixon
+
+end

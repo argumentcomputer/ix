@@ -1,3 +1,7 @@
+module
+
+public section
+
 namespace ByteArray
 
 def beqNoFFI (a b : ByteArray) : Bool :=
@@ -10,3 +14,5 @@ def beq : @& ByteArray → @& ByteArray → Bool :=
 instance : BEq ByteArray := ⟨ByteArray.beq⟩
 
 end ByteArray
+
+end

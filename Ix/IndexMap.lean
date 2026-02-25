@@ -1,4 +1,7 @@
-import Std.Data.HashMap
+module
+public import Std.Data.HashMap
+
+public section
 
 structure IndexMap (α : Type u) (β : Type v) [BEq α] [Hashable α] where
   pairs : Array (α × β)
@@ -67,3 +70,5 @@ def map (f : β → β) : IndexMap α β := by
   m.pairs.foldrM f init
 
 end IndexMap
+
+end

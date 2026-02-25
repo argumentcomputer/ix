@@ -11,20 +11,21 @@
   For performance, use the Rust implementation.
 -/
 
-import Std.Data.HashMap
+module
 import Std.Sync
-import Ix.Ixon
-import Ix.Environment
-import Ix.Sharing
-import Ix.Common
-import Ix.Store
-import Ix.Mutual
-import Ix.GraphM
-import Ix.CondenseM
-import Ix.SOrder
-import Ix.CanonM
+public import Ix.Ixon
+public import Ix.Environment
+public import Ix.Sharing
+public import Ix.Common
+public import Ix.Store
+public import Ix.Mutual
+public import Ix.GraphM
+public import Ix.CondenseM
+public import Ix.SOrder
+public import Ix.CanonM
 
 namespace Ix.CompileM
+public section
 
 -- Need Nonempty for partial function compilation
 instance : Nonempty SOrder := ⟨⟨true, .eq⟩⟩
@@ -1980,4 +1981,5 @@ def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
   let rawEnv ← rsCompileEnvFFI constList
   pure rawEnv.toEnv
 
+end
 end Ix.CompileM

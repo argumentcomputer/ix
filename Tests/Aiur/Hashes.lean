@@ -1,8 +1,10 @@
-import Tests.Aiur.Common
-import Ix.IxVM.ByteStream
-import Ix.IxVM.Blake3
-import Ix.IxVM.Sha256
-import Blake3
+module
+
+public import Tests.Aiur.Common
+public import Ix.IxVM.ByteStream
+public import Ix.IxVM.Blake3
+public import Ix.IxVM.Sha256
+public import Blake3
 
 @[extern "rs_sha256"]
 opaque rsSha256 : @&ByteArray → ByteArray
@@ -23,7 +25,7 @@ def mkSha256HashTestCase (size : Nat) : AiurTestCase :=
   let buffer := ⟨input, .ofList [(#[0], ⟨0, size⟩)]⟩ -- key is fixed as #[0]
   ⟨`sha256_test, s!"sha256 (size={size})", #[], output, buffer, buffer⟩
 
-def blake3TestCases : List AiurTestCase := [
+public def blake3TestCases : List AiurTestCase := [
   mkBlake3HashTestCase 0,
   mkBlake3HashTestCase 32,
   mkBlake3HashTestCase 64,
@@ -42,7 +44,7 @@ def blake3TestCases : List AiurTestCase := [
   mkBlake3HashTestCase 3168,
 ]
 
-def sha256TestCases : List AiurTestCase := [
+public def sha256TestCases : List AiurTestCase := [
   mkSha256HashTestCase 0,
   mkSha256HashTestCase 1,
   mkSha256HashTestCase 14,
@@ -57,4 +59,3 @@ def sha256TestCases : List AiurTestCase := [
   mkSha256HashTestCase 120,
   mkSha256HashTestCase 1200,
 ]
-

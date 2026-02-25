@@ -1,5 +1,9 @@
-import Lean
-import Ix.Aiur.Term
+module
+public import Lean.Elab
+public import Lean.Elab.Term.TermElabM
+public import Ix.Aiur.Term
+
+public meta section
 
 namespace Aiur
 
@@ -492,3 +496,5 @@ def elabToplevel : ElabStxCat `toplevel
 elab "⟦" t:toplevel "⟧" : term => elabToplevel t
 
 end Aiur
+
+end

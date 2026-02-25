@@ -1,3 +1,4 @@
+module
 /-
   # CanonM: Canonicalize Lean types to Ix types with content-addressed hashing
 
@@ -16,12 +17,11 @@
   - `compareEnvsParallel`: parallel structural equality check between environments
 -/
 
-import Lean
-import Blake3
-import Std.Data.HashMap
-import Ix.Common
-import Ix.Environment
-import Ix.Address
+public import Ix.Common
+public import Ix.Environment
+public import Ix.Address
+
+public section
 
 namespace Ix.CanonM
 
@@ -772,3 +772,4 @@ def uncanonEnvParallel (consts : HashMap Ix.Name Ix.ConstantInfo) (numWorkers : 
 
 end Ix.CanonM
 
+end

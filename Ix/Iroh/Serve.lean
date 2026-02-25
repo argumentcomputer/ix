@@ -1,3 +1,7 @@
+module
+
+public section
+
 namespace Iroh.Serve
 
 @[never_extract, extern "c_rs_iroh_serve"]
@@ -9,3 +13,5 @@ def serve : IO Unit :=
   | .error e => throw (IO.userError e)
 
 end Iroh.Serve
+
+end

@@ -1,9 +1,12 @@
-import Ix.Aiur.Meta
-import Ix.IxVM.ByteStream
-import Ix.IxVM.Blake3
-import Ix.IxVM.Ixon
-import Ix.IxVM.IxonSerialize
-import Ix.IxVM.IxonDeserialize
+module
+public import Ix.Aiur.Meta
+public import Ix.IxVM.ByteStream
+public import Ix.IxVM.Blake3
+public import Ix.IxVM.Ixon
+public import Ix.IxVM.IxonSerialize
+public import Ix.IxVM.IxonDeserialize
+
+public section
 
 namespace IxVM
 
@@ -40,3 +43,5 @@ def ixVM : Except Aiur.Global Aiur.Toplevel := do
   vm.merge entrypoints
 
 end IxVM
+
+end

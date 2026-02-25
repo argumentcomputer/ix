@@ -1,3 +1,7 @@
+module
+
+public section
+
 /-- an Ordering with a boolean strength --/
 structure SOrder where
   strong: Bool
@@ -39,7 +43,7 @@ def zip (f: α -> α -> SOrder) : List α -> List α -> SOrder
 | [] , [] => ⟨true, .eq⟩
 | [], _ => ⟨true, .lt⟩
 | _, [] => ⟨true, .gt⟩
-| x::xs, y::ys => 
+| x::xs, y::ys =>
   match f x y with
   | a@⟨_, .eq⟩ => cmp a (zip f xs ys)
   | a => a
@@ -55,3 +59,5 @@ def zipM [Monad μ] (f: α -> α -> μ SOrder)
     | a => pure a
 
 end SOrder
+
+end

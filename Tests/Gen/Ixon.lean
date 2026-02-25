@@ -2,11 +2,14 @@
   Generators for Ixon.* types (alpha-invariant serialization format).
   Extracted from Tests/Ix/Ixon.lean.
 -/
+module
 
-import LSpec
-import Tests.Gen.Basic
-import Ix.Ixon
-import Ix.Address
+public import LSpec
+public import Tests.Gen.Basic
+public import Ix.Ixon
+public import Ix.Address
+
+public section
 
 open LSpec SlimCheck Gen Ixon
 open Ix (DefKind DefinitionSafety QuotKind)
@@ -489,3 +492,5 @@ instance : SampleableExt RawComm := SampleableExt.mkSelfContained genRawComm
 instance : SampleableExt RawEnv := SampleableExt.mkSelfContained genRawEnv
 
 end Tests.Gen.Ixon
+
+end
