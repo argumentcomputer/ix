@@ -238,28 +238,37 @@ mutual
 
 open Std (HashSet)
 
-partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) : Typ → Nat
-  | .unit => 0
-  | .field .. => 1
-  | .pointer .. => 1
-  | .function .. => 1
-  | .tuple ts => ts.foldl (init := 0) fun acc t => acc + t.size decls visited
-  | .array t n => n * t.size decls visited
+partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
+    Typ → Except String Nat
+  | .unit => pure 0
+  | .field .. => pure 1
+  | .pointer .. => pure 1
+  | .function .. => pure 1
+  | .tuple ts => ts.foldlM (init := 0) fun acc t => do
+    let tSize ← t.size decls visited
+    pure $ acc + tSize
+  | .array t n => do
+    let tSize ← t.size decls visited
+    pure $ n * tSize
   | .dataType g => match decls.getByKey g with
     | some (.dataType data) => data.size decls visited
-    | _ => panic! "impossible case"
+    | _ => throw s!"Datatype not found: `{g}`"
 
-partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {}) (c : Constructor) : Nat :=
-  c.argTypes.foldl (fun acc t => acc + t.size decls visited) 0
+partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {})
+    (c : Constructor) : Except String Nat :=
+  c.argTypes.foldlM (init := 0) fun acc t => do
+    let tSize ← t.size decls visited
+    pure $ acc + tSize
 
-partial def DataType.size (dt : DataType) (decls : TypedDecls) (visited : HashSet Global := {}) : Nat :=
+partial def DataType.size (dt : DataType) (decls : TypedDecls)
+    (visited : HashSet Global := {}) : Except String Nat :=
   if visited.contains dt.name then
-    panic! s!"cycle detected at datatype `{dt.name}`"
-  else
+    throw s!"Cycle detected at datatype `{dt.name}`"
+  else do
     let visited := visited.insert dt.name
-    let ctorSizes := dt.constructors.map (Constructor.size decls visited)
+    let ctorSizes ← dt.constructors.mapM (Constructor.size decls visited)
     let maxFields := ctorSizes.foldl max 0
-    maxFields + 1
+    pure $ maxFields + 1
 end
 
 end Aiur
