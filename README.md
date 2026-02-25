@@ -40,7 +40,7 @@ Our expectation is that Ix, and **zkPCC** in general, will allow applications to
 security guarantees to their users. Some possible use cases could be:
 
 - Software written in compiled languages like Rust can attach to their binaries
-  proofs of type signatures or other formal properties verified by tools
+  proofs of type signatures or other formal properties verified by tools such as
   [Aeneas](https://github.com/AeneasVerif/aeneas). Given mature
   certified compilation infrastructure (e.g. a future
   [CompCert](https://en.wikipedia.org/wiki/CompCert) equivalent in Lean4),
@@ -93,7 +93,7 @@ Fermat's claim that he possessed a proof of the first part is credible, which
 seems unlikely given the complexity and modern mathematical infrastructure used
 by the Wiles proof of the first part. Rarely discussed, however, is the third
 part, which is in fact a statement of proof theory, specifically one which
-proposes a information theoretic lower bound to the size of the proof of a
+proposes an information theoretic lower bound to the size of the proof of a
 particular proposition.
 
 The specific margin in question is [page 85 in the 1621 edition of Diophantus'
@@ -115,11 +115,11 @@ At 262 characters, and 8-bits per character, this is 2096 bits, or 262 bytes.
 This is quite small, but fortunately not quite as small as a [Groth16 proof over
 BN254](https://2π.com/23/bn254-compression/):
 
-> A Groth16 proof has two G1 points and one G2. In the BN254 pairing curve these take 64 and 128 bytes respectively uncrompressed totaling 256 bytes for a proof.
+> A Groth16 proof has two G1 points and one G2. In the BN254 pairing curve these take 64 and 128 bytes respectively uncompressed totaling 256 bytes for a proof.
 
 So if we can show that a Groth16 proof of *a* proof of the first part of
 Fermat's Last Theorem is constructible, we will have clearly - though
-non-constructively- disproven the third part. 
+non-constructively- disproven the third part.
 
 [A Lean 4 formalization of Fermat's Last
 Theorem](https://github.com/ImperialCollegeLondon/FLT) is in progress, and gives
