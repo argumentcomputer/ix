@@ -4,3 +4,4 @@
 //! without content addressing.
 
 pub mod expr;
+pub mod reduce;
