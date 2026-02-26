@@ -15,6 +15,7 @@ use rustc_hash::FxBuildHasher;
 pub mod aiur;
 pub mod iroh;
 pub mod ix;
+pub mod kernel;
 pub mod lean;
 mod sha256;
 
