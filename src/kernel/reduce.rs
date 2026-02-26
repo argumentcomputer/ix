@@ -76,19 +76,19 @@ impl Default for Env {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
   /// A neutral value (stuck computation).
-  VNeutral(Neutral),
+  Neutral(Neutral),
   /// A lambda abstraction (closure).
   /// Contains: name, body expression, captured environment, binder info
-  VLam(Name, Box<Expr>, Env, BinderInfo),
+  Fun(Name, Box<Expr>, Env, BinderInfo),
   /// A universe sort.
-  VSort(Level),
+  Sort(Level),
   /// A dependent function type (Pi/forall).
   /// Contains: name, domain value, body expression, captured environment, binder info
-  VForall(Name, Box<Value>, Box<Expr>, Env, BinderInfo),
+  Forall(Name, Box<Value>, Box<Expr>, Env, BinderInfo),
   /// A literal value.
-  VLit(Literal),
+  Lit(Literal),
   /// A constant reference (might be reducible depending on global environment).
-  VConst(Name, Vec<Level>),
+  Const(Name, Vec<Level>),
 }
 
 /// A neutral value represents a stuck computation.
@@ -99,18 +99,18 @@ pub enum Value {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Neutral {
   /// A free variable (stuck).
-  NFvar(Name),
+  Fvar(Name),
   /// A metavariable (stuck).
-  NMvar(Name),
+  Mvar(Name),
   /// A stuck bound variable (should not appear in well-formed terms under sufficient environment).
-  NBvar(usize),
+  Bvar(usize),
   /// A neutral value applied to a value.
   /// This is the "stuck application" - the head is neutral (contains a free variable).
-  NApp(Box<Neutral>, Box<Value>),
+  App(Box<Neutral>, Box<Value>),
   /// Projection from a neutral value.
-  NProj(Name, usize, Box<Neutral>),
+  Proj(Name, usize, Box<Neutral>),
   /// Metadata-annotated neutral.
-  NMdata(Vec<(Name, DataValue)>, Box<Neutral>),
+  Mdata(Vec<(Name, DataValue)>, Box<Neutral>),
 }
 
 // ============================================================================
@@ -129,29 +129,29 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       match env.lookup(*idx) {
         Some(v) => v.clone(),
         // If not in environment, it's a stuck bound variable (shouldn't happen in well-formed terms)
-        None => Value::VNeutral(Neutral::NBvar(*idx)),
+        None => Value::Neutral(Neutral::Bvar(*idx)),
       }
     },
 
     Expr::Fvar(name) => {
       // Free variables are always stuck
-      Value::VNeutral(Neutral::NFvar(name.clone()))
+      Value::Neutral(Neutral::Fvar(name.clone()))
     },
 
     Expr::Mvar(name) => {
       // Metavariables are always stuck
-      Value::VNeutral(Neutral::NMvar(name.clone()))
+      Value::Neutral(Neutral::Mvar(name.clone()))
     },
 
     Expr::Sort(level) => {
       // Sorts are already values
-      Value::VSort(level.clone())
+      Value::Sort(level.clone())
     },
 
     Expr::Const(name, levels) => {
       // Constants might be reducible in a global environment
       // For now, treat as values (would need global env to unfold definitions)
-      Value::VConst(name.clone(), levels.clone())
+      Value::Const(name.clone(), levels.clone())
     },
 
     Expr::App(fun, arg) => {
@@ -164,13 +164,13 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
     Expr::Lam(name, _ty, body, binder_info) => {
       // Lambda evaluates to a closure capturing the current environment
       // The type is not needed at runtime, so we ignore it
-      Value::VLam(name.clone(), body.clone(), env.clone(), binder_info.clone())
+      Value::Fun(name.clone(), body.clone(), env.clone(), binder_info.clone())
     },
 
     Expr::ForallE(name, ty, body, binder_info) => {
       // Forall evaluates to a dependent function type value
       let vty = eval(ty, env);
-      Value::VForall(
+      Value::Forall(
         name.clone(),
         Box::new(vty),
         body.clone(),
@@ -188,7 +188,7 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
 
     Expr::Lit(lit) => {
       // Literals are already values
-      Value::VLit(lit.clone())
+      Value::Lit(lit.clone())
     },
 
     Expr::Mdata(kvs, e) => {
@@ -196,8 +196,8 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       let v = eval(e, env);
       // If the result is neutral, preserve metadata in the neutral
       match v {
-        Value::VNeutral(n) => {
-          Value::VNeutral(Neutral::NMdata(kvs.clone(), Box::new(n)))
+        Value::Neutral(n) => {
+          Value::Neutral(Neutral::Mdata(kvs.clone(), Box::new(n)))
         },
         // Otherwise, metadata is erased during reduction
         _ => v,
@@ -207,9 +207,9 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
     Expr::Proj(name, idx, e) => {
       let v = eval(e, env);
       match v {
-        Value::VNeutral(n) => {
+        Value::Neutral(n) => {
           // Projection from a neutral value is stuck
-          Value::VNeutral(Neutral::NProj(name.clone(), *idx, Box::new(n)))
+          Value::Neutral(Neutral::Proj(name.clone(), *idx, Box::new(n)))
         },
         // In a full implementation with inductive types, we'd handle
         // projections from fully-applied constructors here
@@ -217,10 +217,10 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
           // For now, we don't have enough information to reduce projections
           // In practice, you'd need to know the structure definition
           // to extract the field. Treating as neutral is conservative.
-          Value::VNeutral(Neutral::NProj(
+          Value::Neutral(Neutral::Proj(
             name.clone(),
             *idx,
-            Box::new(Neutral::NFvar(Name::Anonymous)), // placeholder neutral head
+            Box::new(Neutral::Fvar(Name::Anonymous)), // placeholder neutral head
           ))
         },
       }
@@ -231,22 +231,22 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
 /// Applies a value (function) to another value (argument).
 ///
 /// This is the "apply" part of eval-apply style reduction.
-/// If the function is a closure (VLam), we extend its environment with
+/// If the function is a closure (Fun), we extend its environment with
 /// the argument and evaluate the body. If it's neutral, we create a
-/// stuck application (NApp).
+/// stuck application (App).
 pub fn apply(fun: Value, arg: Value) -> Value {
   match fun {
-    Value::VLam(_name, body, env, _binder_info) => {
+    Value::Fun(_name, body, env, _binder_info) => {
       // Beta reduction: extend the closure's environment with the argument
       // and evaluate the body in the extended environment
       let new_env = env.extend(arg);
       eval(&body, &new_env)
     },
 
-    Value::VNeutral(n) => {
+    Value::Neutral(n) => {
       // Application to a neutral value creates a stuck application
       // This is the key case: neutral values at the head mean we can't reduce
-      Value::VNeutral(Neutral::NApp(Box::new(n), Box::new(arg)))
+      Value::Neutral(Neutral::App(Box::new(n), Box::new(arg)))
     },
 
     // Other values cannot be applied (would be a type error in well-typed terms)
@@ -254,8 +254,8 @@ pub fn apply(fun: Value, arg: Value) -> Value {
     _ => {
       // Conservative fallback: treat as a stuck application
       // In practice, this indicates a type error
-      Value::VNeutral(Neutral::NApp(
-        Box::new(Neutral::NFvar(Name::Anonymous)),
+      Value::Neutral(Neutral::App(
+        Box::new(Neutral::Fvar(Name::Anonymous)),
         Box::new(arg),
       ))
     },
@@ -273,11 +273,11 @@ pub fn apply(fun: Value, arg: Value) -> Value {
 /// (which use de Bruijn indices).
 pub fn quote(val: &Value, level: usize) -> Expr {
   match val {
-    Value::VNeutral(n) => quote_neutral(n, level),
+    Value::Neutral(n) => quote_neutral(n, level),
 
-    Value::VLam(name, body, env, binder_info) => {
+    Value::Fun(name, body, env, binder_info) => {
       // Quote a lambda: create a fresh variable and quote the body
-      let fresh_var = Value::VNeutral(Neutral::NBvar(level));
+      let fresh_var = Value::Neutral(Neutral::Bvar(level));
       let new_env = env.extend(fresh_var);
       let body_val = eval(body, &new_env);
       let quoted_body = quote(&body_val, level + 1);
@@ -289,12 +289,12 @@ pub fn quote(val: &Value, level: usize) -> Expr {
       )
     },
 
-    Value::VSort(l) => Expr::Sort(l.clone()),
+    Value::Sort(l) => Expr::Sort(l.clone()),
 
-    Value::VForall(name, ty, body, env, binder_info) => {
+    Value::Forall(name, ty, body, env, binder_info) => {
       let quoted_ty = quote(ty, level);
       // Evaluate body under a fresh variable
-      let fresh_var = Value::VNeutral(Neutral::NBvar(level));
+      let fresh_var = Value::Neutral(Neutral::Bvar(level));
       let new_env = env.extend(fresh_var);
       let body_val = eval(body, &new_env);
       let quoted_body = quote(&body_val, level + 1);
@@ -306,33 +306,33 @@ pub fn quote(val: &Value, level: usize) -> Expr {
       )
     },
 
-    Value::VLit(lit) => Expr::Lit(lit.clone()),
+    Value::Lit(lit) => Expr::Lit(lit.clone()),
 
-    Value::VConst(name, levels) => Expr::Const(name.clone(), levels.clone()),
+    Value::Const(name, levels) => Expr::Const(name.clone(), levels.clone()),
   }
 }
 
 /// Quotes a neutral value back to an expression.
 fn quote_neutral(neutral: &Neutral, level: usize) -> Expr {
   match neutral {
-    Neutral::NFvar(name) => Expr::Fvar(name.clone()),
+    Neutral::Fvar(name) => Expr::Fvar(name.clone()),
 
-    Neutral::NMvar(name) => Expr::Mvar(name.clone()),
+    Neutral::Mvar(name) => Expr::Mvar(name.clone()),
 
-    Neutral::NBvar(idx) => Expr::Bvar(*idx),
+    Neutral::Bvar(idx) => Expr::Bvar(*idx),
 
-    Neutral::NApp(fun, arg) => {
+    Neutral::App(fun, arg) => {
       let quoted_fun = quote_neutral(fun, level);
       let quoted_arg = quote(arg, level);
       Expr::App(Box::new(quoted_fun), Box::new(quoted_arg))
     },
 
-    Neutral::NProj(name, idx, e) => {
+    Neutral::Proj(name, idx, e) => {
       let quoted_e = quote_neutral(e, level);
       Expr::Proj(name.clone(), *idx, Box::new(quoted_e))
     },
 
-    Neutral::NMdata(kvs, n) => {
+    Neutral::Mdata(kvs, n) => {
       let quoted_n = quote_neutral(n, level);
       Expr::Mdata(kvs.clone(), Box::new(quoted_n))
     },
