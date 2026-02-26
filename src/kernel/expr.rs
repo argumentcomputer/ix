@@ -88,18 +88,18 @@ pub struct Substring {
   /// The underlying string.
   pub str: String,
   /// The start byte position (inclusive).
-  pub start_pos: Nat,
+  pub start_pos: usize,
   /// The stop byte position (exclusive).
-  pub stop_pos: Nat,
+  pub stop_pos: usize,
 }
 
 /// Source location metadata attached to syntax nodes.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SourceInfo {
   /// Original source with leading whitespace, leading position, trailing whitespace, trailing position.
-  Original(Substring, Nat, Substring, Nat),
+  Original(Substring, usize, Substring, usize),
   /// Synthetic source span with start position, stop position, and canonical flag.
-  Synthetic(Nat, Nat, bool),
+  Synthetic(usize, usize, bool),
   /// No source information available.
   None,
 }
@@ -151,7 +151,7 @@ pub enum DataValue {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expr {
   /// Bound variable (de Bruijn index).
-  Bvar(Nat),
+  Bvar(usize),
   /// Free variable.
   Fvar(Name),
   /// Metavariable.
@@ -173,7 +173,7 @@ pub enum Expr {
   /// Metadata-annotated expression with key-value pairs.
   Mdata(Vec<(Name, DataValue)>, Box<Expr>),
   /// Projection from a structure (type name, field index, struct expr).
-  Proj(Name, Nat, Box<Expr>),
+  Proj(Name, usize, Box<Expr>),
 }
 
 // ============================================================================
@@ -286,15 +286,15 @@ pub struct InductiveVal {
   /// Common constant fields.
   pub cnst: ConstantVal,
   /// Number of parameters.
-  pub num_params: Nat,
+  pub num_params: usize,
   /// Number of indices.
-  pub num_indices: Nat,
+  pub num_indices: usize,
   /// Names of all types in the same mutual inductive block.
   pub all: Vec<Name>,
   /// Names of the constructors for this type.
   pub ctors: Vec<Name>,
   /// Number of nested (non-mutual) inductives.
-  pub num_nested: Nat,
+  pub num_nested: usize,
   /// Whether this inductive type is recursive.
   pub is_rec: bool,
   /// Whether this inductive type is marked `unsafe`.
@@ -311,11 +311,11 @@ pub struct ConstructorVal {
   /// Name of the parent inductive type.
   pub induct: Name,
   /// Constructor index within the inductive type.
-  pub cidx: Nat,
+  pub cidx: usize,
   /// Number of parameters inherited from the inductive type.
-  pub num_params: Nat,
+  pub num_params: usize,
   /// Number of fields (non-parameter arguments).
-  pub num_fields: Nat,
+  pub num_fields: usize,
   /// Whether this constructor is marked `unsafe`.
   pub is_unsafe: bool,
 }
@@ -326,7 +326,7 @@ pub struct RecursorRule {
   /// The constructor this rule applies to.
   pub ctor: Name,
   /// Number of fields the constructor has.
-  pub n_fields: Nat,
+  pub n_fields: usize,
   /// The right-hand side expression for this branch.
   pub rhs: Expr,
 }
@@ -339,13 +339,13 @@ pub struct RecursorVal {
   /// Names of all types in the same mutual inductive block.
   pub all: Vec<Name>,
   /// Number of parameters.
-  pub num_params: Nat,
+  pub num_params: usize,
   /// Number of indices.
-  pub num_indices: Nat,
+  pub num_indices: usize,
   /// Number of motive arguments.
-  pub num_motives: Nat,
+  pub num_motives: usize,
   /// Number of minor premise arguments.
-  pub num_minors: Nat,
+  pub num_minors: usize,
   /// Reduction rules, one per constructor.
   pub rules: Vec<RecursorRule>,
   /// Whether this is a K-like recursor (proof-irrelevant elimination).
