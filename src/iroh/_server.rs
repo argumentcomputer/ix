@@ -1,10 +1,12 @@
-use std::ffi::CString;
+use std::ffi::c_void;
 
-use crate::lean::ffi::{CResult, to_raw};
+use crate::lean::lean_except_error_string;
 
+/// `Iroh.Serve.serve' : Unit → Except String Unit`
 #[unsafe(no_mangle)]
-extern "C" fn rs_iroh_serve() -> *const CResult {
-  let msg = CString::new("Iroh functions not supported when the Rust `net` feature is disabled or on MacOS aarch64-darwin").expect("CString::new failure");
-  let c_result = CResult { is_ok: false, data: msg.into_raw().cast() };
-  to_raw(c_result)
+extern "C" fn c_rs_iroh_serve() -> *mut c_void {
+  lean_except_error_string(
+    "Iroh functions not supported when the Rust `net` feature is disabled \
+     or on MacOS aarch64-darwin",
+  )
 }
