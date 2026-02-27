@@ -489,7 +489,11 @@ pub fn decode_ixon_axiom(ptr: *const c_void) -> IxonAxiom {
     let lvls = *scalar_base.cast::<u64>();
     // isUnsafe at offset 8
     let is_unsafe = *scalar_base.add(8) != 0;
-    IxonAxiom { is_unsafe, lvls, typ: Arc::new(decode_ixon_expr(typ_ptr.cast())) }
+    IxonAxiom {
+      is_unsafe,
+      lvls,
+      typ: Arc::new(decode_ixon_expr(typ_ptr.cast())),
+    }
   }
 }
 
@@ -640,10 +644,14 @@ pub fn decode_ixon_constant_info(ptr: *const c_void) -> IxonConstantInfo {
       1 => IxonConstantInfo::Recr(decode_ixon_recursor(inner_ptr.cast())),
       2 => IxonConstantInfo::Axio(decode_ixon_axiom(inner_ptr.cast())),
       3 => IxonConstantInfo::Quot(decode_ixon_quotient(inner_ptr.cast())),
-      4 => IxonConstantInfo::CPrj(decode_ixon_constructor_proj(inner_ptr.cast())),
+      4 => {
+        IxonConstantInfo::CPrj(decode_ixon_constructor_proj(inner_ptr.cast()))
+      },
       5 => IxonConstantInfo::RPrj(decode_ixon_recursor_proj(inner_ptr.cast())),
       6 => IxonConstantInfo::IPrj(decode_ixon_inductive_proj(inner_ptr.cast())),
-      7 => IxonConstantInfo::DPrj(decode_ixon_definition_proj(inner_ptr.cast())),
+      7 => {
+        IxonConstantInfo::DPrj(decode_ixon_definition_proj(inner_ptr.cast()))
+      },
       8 => {
         let muts = lean_array_to_vec(inner_ptr.cast(), decode_ixon_mut_const);
         IxonConstantInfo::Muts(muts)

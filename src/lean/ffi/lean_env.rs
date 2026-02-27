@@ -121,9 +121,7 @@ pub fn lean_ptr_to_name(ptr: *const c_void, global: &GlobalCache) -> Name {
     // Recursive call - will also use global cache
     let pre = lean_ptr_to_name(pre_ptr, global);
     match lean_tag(ptr) {
-      1 => {
-        Name::str(pre, lean_obj_to_string(pos_ptr))
-      },
+      1 => Name::str(pre, lean_obj_to_string(pos_ptr)),
       2 => Name::num(pre, Nat::from_ptr(pos_ptr)),
       _ => unreachable!(),
     }
@@ -146,19 +144,23 @@ fn lean_ptr_to_level(ptr: *const c_void, cache: &mut Cache<'_>) -> Level {
         Level::succ(u)
       },
       2 => {
-        let [u, v] = lean_ctor_objs::<2>(ptr).map(|p| lean_ptr_to_level(p, cache));
+        let [u, v] =
+          lean_ctor_objs::<2>(ptr).map(|p| lean_ptr_to_level(p, cache));
         Level::max(u, v)
       },
       3 => {
-        let [u, v] = lean_ctor_objs::<2>(ptr).map(|p| lean_ptr_to_level(p, cache));
+        let [u, v] =
+          lean_ctor_objs::<2>(ptr).map(|p| lean_ptr_to_level(p, cache));
         Level::imax(u, v)
       },
       4 => {
-        let [name] = lean_ctor_objs::<1>(ptr).map(|p| lean_ptr_to_name(p, cache.global));
+        let [name] =
+          lean_ctor_objs::<1>(ptr).map(|p| lean_ptr_to_name(p, cache.global));
         Level::param(name)
       },
       5 => {
-        let [name] = lean_ctor_objs::<1>(ptr).map(|p| lean_ptr_to_name(p, cache.global));
+        let [name] =
+          lean_ctor_objs::<1>(ptr).map(|p| lean_ptr_to_name(p, cache.global));
         Level::mvar(name)
       },
       _ => unreachable!(),
@@ -182,7 +184,8 @@ fn lean_ptr_to_source_info(ptr: *const c_void) -> SourceInfo {
   }
   match lean_tag(ptr) {
     0 => {
-      let [leading_ptr, pos_ptr, trailing_ptr, end_pos_ptr] = lean_ctor_objs(ptr);
+      let [leading_ptr, pos_ptr, trailing_ptr, end_pos_ptr] =
+        lean_ctor_objs(ptr);
       let leading = lean_ptr_to_substring(leading_ptr);
       let pos = Nat::from_ptr(pos_ptr);
       let trailing = lean_ptr_to_substring(trailing_ptr);
@@ -239,7 +242,8 @@ fn lean_ptr_to_syntax(ptr: *const c_void, cache: &mut Cache<'_>) -> Syntax {
       Syntax::Atom(info, lean_obj_to_string(val_ptr))
     },
     3 => {
-      let [info_ptr, raw_val_ptr, val_ptr, preresolved_ptr] = lean_ctor_objs(ptr);
+      let [info_ptr, raw_val_ptr, val_ptr, preresolved_ptr] =
+        lean_ctor_objs(ptr);
       let info = lean_ptr_to_source_info(info_ptr);
       let raw_val = lean_ptr_to_substring(raw_val_ptr);
       let val = lean_ptr_to_name(val_ptr, cache.global);
@@ -261,9 +265,7 @@ fn lean_ptr_to_name_data_value(
   let name = lean_ptr_to_name(name_ptr, cache.global);
   let [inner_ptr] = lean_ctor_objs(data_value_ptr);
   let data_value = match lean_tag(data_value_ptr) {
-    0 => {
-      DataValue::OfString(lean_obj_to_string(inner_ptr))
-    },
+    0 => DataValue::OfString(lean_obj_to_string(inner_ptr)),
     1 => DataValue::OfBool(inner_ptr as usize == 1),
     2 => DataValue::OfName(lean_ptr_to_name(inner_ptr, cache.global)),
     3 => DataValue::OfNat(Nat::from_ptr(inner_ptr)),
@@ -381,9 +383,7 @@ pub fn lean_ptr_to_expr(ptr: *const c_void, cache: &mut Cache<'_>) -> Expr {
           let nat = Nat::from_ptr(inner_ptr);
           Expr::lit(Literal::NatVal(nat))
         },
-        1 => {
-          Expr::lit(Literal::StrVal(lean_obj_to_string(inner_ptr)))
-        },
+        1 => Expr::lit(Literal::StrVal(lean_obj_to_string(inner_ptr))),
         _ => unreachable!(),
       }
     },
@@ -481,7 +481,8 @@ pub fn lean_ptr_to_constant_info(
       })
     },
     2 => {
-      let [constant_val_ptr, value_ptr, all_ptr] = lean_ctor_objs(inner_val_ptr);
+      let [constant_val_ptr, value_ptr, all_ptr] =
+        lean_ctor_objs(inner_val_ptr);
       let constant_val = lean_ptr_to_constant_val(constant_val_ptr, cache);
       let value = lean_ptr_to_expr(value_ptr, cache);
       let all: Vec<_> = collect_list_ptrs(all_ptr)

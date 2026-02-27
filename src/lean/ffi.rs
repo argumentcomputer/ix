@@ -21,7 +21,7 @@ unsafe impl Send for ExternalClassPtr {}
 unsafe impl Sync for ExternalClassPtr {}
 
 use crate::lean::{
-  lean::{ lean_io_result_mk_error, lean_mk_io_user_error, lean_mk_string },
+  lean::{lean_io_result_mk_error, lean_mk_io_user_error, lean_mk_string},
   lean_array_to_vec, lean_sarray_data, lean_unbox_u32,
 };
 

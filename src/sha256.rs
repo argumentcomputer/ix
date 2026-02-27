@@ -1,7 +1,9 @@
 use sha2::{Digest, Sha256};
 use std::ffi::c_void;
 
-use crate::lean::{lean::lean_alloc_sarray, lean_sarray_data, lean_sarray_set_data};
+use crate::lean::{
+  lean::lean_alloc_sarray, lean_sarray_data, lean_sarray_set_data,
+};
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_sha256(bytes: *const c_void) -> *mut c_void {

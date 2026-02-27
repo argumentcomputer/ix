@@ -113,7 +113,10 @@ pub fn decode_ixon_univ(ptr: *const c_void) -> IxonUniv {
 
 /// Decode Array Ixon.Univ.
 pub fn decode_ixon_univ_array(ptr: *const c_void) -> Vec<Arc<IxonUniv>> {
-  crate::lean::lean_array_data(ptr).iter().map(|&u| Arc::new(decode_ixon_univ(u))).collect()
+  crate::lean::lean_array_data(ptr)
+    .iter()
+    .map(|&u| Arc::new(decode_ixon_univ(u)))
+    .collect()
 }
 
 // =============================================================================

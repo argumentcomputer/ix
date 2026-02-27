@@ -5,12 +5,14 @@ use std::ffi::c_void;
 use crate::ix::env::{
   DataValue, Int, Name, SourceInfo, Substring, Syntax, SyntaxPreresolved,
 };
-use crate::lean::nat::Nat;
 use crate::lean::lean::{
   lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
   lean_ctor_set, lean_ctor_set_uint8, lean_mk_string, lean_obj_tag,
 };
-use crate::lean::{lean_array_data, lean_ctor_scalar_u8, lean_is_scalar, lean_obj_to_string};
+use crate::lean::nat::Nat;
+use crate::lean::{
+  lean_array_data, lean_ctor_scalar_u8, lean_is_scalar, lean_obj_to_string,
+};
 
 use super::super::builder::LeanBuildCache;
 use super::super::primitives::build_nat;
@@ -296,8 +298,8 @@ pub fn decode_data_value(ptr: *const c_void) -> DataValue {
       4 => {
         // ofInt: 1 object field
         let inner_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let int_tag = lean_obj_tag(inner_ptr as *mut _);
-        let nat_ptr = lean_ctor_get(inner_ptr as *mut _, 0);
+        let int_tag = lean_obj_tag(inner_ptr.cast());
+        let nat_ptr = lean_ctor_get(inner_ptr.cast(), 0);
         let nat = Nat::from_ptr(nat_ptr.cast());
         match int_tag {
           0 => DataValue::OfInt(Int::OfNat(nat)),
@@ -332,8 +334,10 @@ pub fn decode_ix_syntax(ptr: *const c_void) -> Syntax {
 
         let info = decode_ix_source_info(info_ptr.cast());
         let kind = decode_ix_name(kind_ptr.cast());
-        let args: Vec<Syntax> =
-          lean_array_data(args_ptr.cast()).iter().map(|&p| decode_ix_syntax(p)).collect();
+        let args: Vec<Syntax> = lean_array_data(args_ptr.cast())
+          .iter()
+          .map(|&p| decode_ix_syntax(p))
+          .collect();
 
         Syntax::Node(info, kind, args)
       },
@@ -355,10 +359,11 @@ pub fn decode_ix_syntax(ptr: *const c_void) -> Syntax {
         let info = decode_ix_source_info(info_ptr.cast());
         let raw_val = decode_substring(raw_val_ptr.cast());
         let val = decode_ix_name(val_ptr.cast());
-        let preresolved: Vec<SyntaxPreresolved> = lean_array_data(preresolved_ptr.cast())
-          .iter()
-          .map(|&p| decode_syntax_preresolved(p))
-          .collect();
+        let preresolved: Vec<SyntaxPreresolved> =
+          lean_array_data(preresolved_ptr.cast())
+            .iter()
+            .map(|&p| decode_syntax_preresolved(p))
+            .collect();
 
         Syntax::Ident(info, raw_val, val, preresolved)
       },

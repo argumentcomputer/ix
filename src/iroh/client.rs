@@ -10,7 +10,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
 use crate::lean::{
-  lean::{ lean_alloc_ctor, lean_alloc_sarray, lean_ctor_set, lean_mk_string },
+  lean::{lean_alloc_ctor, lean_alloc_sarray, lean_ctor_set, lean_mk_string},
   lean_array_to_vec, lean_except_error_string, lean_except_ok,
   lean_obj_to_string, lean_sarray_set_data, safe_cstring,
 };
@@ -79,12 +79,10 @@ extern "C" fn rs_iroh_put(
 
   match rt.block_on(connect(&node_id, &addrs, &relay_url, request)) {
     Ok(response) => match response {
-      Response::Put(put_response) => {
-        lean_except_ok(mk_put_response(
-          &put_response.message,
-          &put_response.hash,
-        ))
-      },
+      Response::Put(put_response) => lean_except_ok(mk_put_response(
+        &put_response.message,
+        &put_response.hash,
+      )),
       _ => lean_except_error_string("error: incorrect server response"),
     },
     Err(err) => lean_except_error_string(&err.to_string()),
@@ -110,13 +108,11 @@ extern "C" fn rs_iroh_get(
 
   match rt.block_on(connect(&node_id, &addrs, &relay_url, request)) {
     Ok(response) => match response {
-      Response::Get(get_response) => {
-        lean_except_ok(mk_get_response(
-          &get_response.message,
-          &get_response.hash,
-          &get_response.bytes,
-        ))
-      },
+      Response::Get(get_response) => lean_except_ok(mk_get_response(
+        &get_response.message,
+        &get_response.hash,
+        &get_response.bytes,
+      )),
       _ => lean_except_error_string("error: incorrect server response"),
     },
     Err(err) => lean_except_error_string(&err.to_string()),

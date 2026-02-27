@@ -13,11 +13,11 @@ use crate::ix::ixon::metadata::{
 };
 use crate::lean::lean::{
   lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
-  lean_ctor_set, lean_ctor_set_uint64, lean_ctor_set_uint8, lean_obj_tag,
+  lean_ctor_set, lean_ctor_set_uint8, lean_ctor_set_uint64, lean_obj_tag,
 };
 use crate::lean::{
-  lean_array_data, lean_array_to_vec, lean_box_fn, lean_ctor_scalar_u64,
-  lean_ctor_scalar_u8, lean_is_scalar,
+  lean_array_data, lean_array_to_vec, lean_box_fn, lean_ctor_scalar_u8,
+  lean_ctor_scalar_u64, lean_is_scalar,
 };
 
 use super::constant::{
@@ -143,11 +143,17 @@ pub fn build_kvmap_array(kvmaps: &[KVMap]) -> *mut c_void {
 
 /// Decode KVMap (Array (Address × DataValue)).
 pub fn decode_ixon_kvmap(ptr: *const c_void) -> KVMap {
-  lean_array_data(ptr).iter().map(|&pair| unsafe {
-    let addr_ptr = lean_ctor_get(pair as *mut _, 0);
-    let dv_ptr = lean_ctor_get(pair as *mut _, 1);
-    (decode_ixon_address(addr_ptr.cast()), decode_ixon_data_value(dv_ptr.cast()))
-  }).collect()
+  lean_array_data(ptr)
+    .iter()
+    .map(|&pair| unsafe {
+      let addr_ptr = lean_ctor_get(pair as *mut _, 0);
+      let dv_ptr = lean_ctor_get(pair as *mut _, 1);
+      (
+        decode_ixon_address(addr_ptr.cast()),
+        decode_ixon_data_value(dv_ptr.cast()),
+      )
+    })
+    .collect()
 }
 
 /// Decode Array KVMap.
@@ -318,14 +324,20 @@ pub fn decode_expr_meta_data(ptr: *const c_void) -> ExprMetaData {
         // prj: 1 obj field (structName), 1× u64 scalar
         let name_ptr = lean_ctor_get(ptr as *mut _, 0);
         let child = lean_ctor_scalar_u64(ptr, 1, 0);
-        ExprMetaData::Prj { struct_name: decode_ixon_address(name_ptr.cast()), child }
+        ExprMetaData::Prj {
+          struct_name: decode_ixon_address(name_ptr.cast()),
+          child,
+        }
       },
 
       6 => {
         // mdata: 1 obj field (mdata: Array KVMap), 1× u64 scalar
         let mdata_ptr = lean_ctor_get(ptr as *mut _, 0);
         let child = lean_ctor_scalar_u64(ptr, 1, 0);
-        ExprMetaData::Mdata { mdata: decode_kvmap_array(mdata_ptr.cast()), child }
+        ExprMetaData::Mdata {
+          mdata: decode_kvmap_array(mdata_ptr.cast()),
+          child,
+        }
       },
 
       _ => panic!("Invalid Ixon.ExprMetaData tag: {}", tag),
@@ -478,10 +490,12 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         // defn: 6 obj fields, 2× u64 scalar
         let name = decode_ixon_address(lean_ctor_get(ptr as *mut _, 0).cast());
         let lvls = decode_address_array(lean_ctor_get(ptr as *mut _, 1).cast());
-        let hints = decode_reducibility_hints(lean_ctor_get(ptr as *mut _, 2).cast());
+        let hints =
+          decode_reducibility_hints(lean_ctor_get(ptr as *mut _, 2).cast());
         let all = decode_address_array(lean_ctor_get(ptr as *mut _, 3).cast());
         let ctx = decode_address_array(lean_ctor_get(ptr as *mut _, 4).cast());
-        let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 5).cast());
+        let arena =
+          decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 5).cast());
         let type_root = lean_ctor_scalar_u64(ptr, 6, 0);
         let value_root = lean_ctor_scalar_u64(ptr, 6, 8);
         ConstantMeta::Def {
@@ -500,7 +514,8 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         // axio: 3 obj fields, 1× u64 scalar
         let name = decode_ixon_address(lean_ctor_get(ptr as *mut _, 0).cast());
         let lvls = decode_address_array(lean_ctor_get(ptr as *mut _, 1).cast());
-        let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 2).cast());
+        let arena =
+          decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 2).cast());
         let type_root = lean_ctor_scalar_u64(ptr, 3, 0);
         ConstantMeta::Axio { name, lvls, arena, type_root }
       },
@@ -509,7 +524,8 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         // quot: 3 obj fields, 1× u64 scalar
         let name = decode_ixon_address(lean_ctor_get(ptr as *mut _, 0).cast());
         let lvls = decode_address_array(lean_ctor_get(ptr as *mut _, 1).cast());
-        let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 2).cast());
+        let arena =
+          decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 2).cast());
         let type_root = lean_ctor_scalar_u64(ptr, 3, 0);
         ConstantMeta::Quot { name, lvls, arena, type_root }
       },
@@ -518,10 +534,12 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         // indc: 6 obj fields, 1× u64 scalar
         let name = decode_ixon_address(lean_ctor_get(ptr as *mut _, 0).cast());
         let lvls = decode_address_array(lean_ctor_get(ptr as *mut _, 1).cast());
-        let ctors = decode_address_array(lean_ctor_get(ptr as *mut _, 2).cast());
+        let ctors =
+          decode_address_array(lean_ctor_get(ptr as *mut _, 2).cast());
         let all = decode_address_array(lean_ctor_get(ptr as *mut _, 3).cast());
         let ctx = decode_address_array(lean_ctor_get(ptr as *mut _, 4).cast());
-        let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 5).cast());
+        let arena =
+          decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 5).cast());
         let type_root = lean_ctor_scalar_u64(ptr, 6, 0);
         ConstantMeta::Indc { name, lvls, ctors, all, ctx, arena, type_root }
       },
@@ -530,8 +548,10 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         // ctor: 4 obj fields, 1× u64 scalar
         let name = decode_ixon_address(lean_ctor_get(ptr as *mut _, 0).cast());
         let lvls = decode_address_array(lean_ctor_get(ptr as *mut _, 1).cast());
-        let induct = decode_ixon_address(lean_ctor_get(ptr as *mut _, 2).cast());
-        let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 3).cast());
+        let induct =
+          decode_ixon_address(lean_ctor_get(ptr as *mut _, 2).cast());
+        let arena =
+          decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 3).cast());
         let type_root = lean_ctor_scalar_u64(ptr, 4, 0);
         ConstantMeta::Ctor { name, lvls, induct, arena, type_root }
       },
@@ -540,11 +560,14 @@ pub fn decode_constant_meta(ptr: *const c_void) -> ConstantMeta {
         // recr: 7 obj fields, 1× u64 scalar
         let name = decode_ixon_address(lean_ctor_get(ptr as *mut _, 0).cast());
         let lvls = decode_address_array(lean_ctor_get(ptr as *mut _, 1).cast());
-        let rules = decode_address_array(lean_ctor_get(ptr as *mut _, 2).cast());
+        let rules =
+          decode_address_array(lean_ctor_get(ptr as *mut _, 2).cast());
         let all = decode_address_array(lean_ctor_get(ptr as *mut _, 3).cast());
         let ctx = decode_address_array(lean_ctor_get(ptr as *mut _, 4).cast());
-        let arena = decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 5).cast());
-        let rule_roots = decode_u64_array(lean_ctor_get(ptr as *mut _, 6).cast());
+        let arena =
+          decode_expr_meta_arena(lean_ctor_get(ptr as *mut _, 5).cast());
+        let rule_roots =
+          decode_u64_array(lean_ctor_get(ptr as *mut _, 6).cast());
         let type_root = lean_ctor_scalar_u64(ptr, 7, 0);
         ConstantMeta::Rec {
           name,

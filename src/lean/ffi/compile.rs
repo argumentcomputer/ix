@@ -29,8 +29,6 @@ use crate::ix::ixon::constant::{Constant as IxonConstant, ConstantInfo};
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::{Comm, ConstantMeta};
-use crate::lean::nat::Nat;
-use crate::lean::{lean_obj_to_string, lean_sarray_data, lean_sarray_set_data};
 use crate::lean::lean::{
   lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray, lean_array_set_core,
   lean_ctor_get, lean_ctor_set, lean_ctor_set_uint8, lean_ctor_set_uint64,
@@ -38,6 +36,8 @@ use crate::lean::lean::{
   lean_mk_io_user_error, lean_mk_string, lean_obj_tag, lean_sarray_cptr,
   lean_uint64_to_nat,
 };
+use crate::lean::nat::Nat;
+use crate::lean::{lean_obj_to_string, lean_sarray_data, lean_sarray_set_data};
 
 use dashmap::DashMap;
 use dashmap::DashSet;
@@ -1185,32 +1185,28 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
     match tag {
       0 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let expected =
-          lean_obj_to_string(str_ptr.cast());
+        let expected = lean_obj_to_string(str_ptr.cast());
         SerializeError::UnexpectedEof { expected }
       },
       1 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let base = ptr.cast::<u8>();
         let tag_val = *base.add(8 + 8);
-        let context =
-          lean_obj_to_string(str_ptr.cast());
+        let context = lean_obj_to_string(str_ptr.cast());
         SerializeError::InvalidTag { tag: tag_val, context }
       },
       2 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let base = ptr.cast::<u8>();
         let flag = *base.add(8 + 8);
-        let context =
-          lean_obj_to_string(str_ptr.cast());
+        let context = lean_obj_to_string(str_ptr.cast());
         SerializeError::InvalidFlag { flag, context }
       },
       3 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
         let base = ptr.cast::<u8>();
         let variant = *base.add(8 + 8).cast::<u64>();
-        let context =
-          lean_obj_to_string(str_ptr.cast());
+        let context = lean_obj_to_string(str_ptr.cast());
         SerializeError::InvalidVariant { variant, context }
       },
       4 => {
@@ -1334,8 +1330,7 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
-        let constant =
-          lean_obj_to_string(str_ptr.cast()).clone();
+        let constant = lean_obj_to_string(str_ptr.cast()).clone();
         DecompileError::InvalidRefIndex { idx, refs_len, constant }
       },
       1 => {
@@ -1347,8 +1342,7 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
-        let constant =
-          lean_obj_to_string(str_ptr.cast()).clone();
+        let constant = lean_obj_to_string(str_ptr.cast()).clone();
         DecompileError::InvalidUnivIndex { idx, univs_len, constant }
       },
       2 => {
@@ -1360,8 +1354,7 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
-        let constant =
-          lean_obj_to_string(str_ptr.cast()).clone();
+        let constant = lean_obj_to_string(str_ptr.cast()).clone();
         DecompileError::InvalidShareIndex { idx, max, constant }
       },
       3 => {
@@ -1373,8 +1366,7 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
-        let constant =
-          lean_obj_to_string(str_ptr.cast()).clone();
+        let constant = lean_obj_to_string(str_ptr.cast()).clone();
         DecompileError::InvalidRecIndex { idx, ctx_size, constant }
       },
       4 => {
@@ -1386,8 +1378,7 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
-        let constant =
-          lean_obj_to_string(str_ptr.cast()).clone();
+        let constant = lean_obj_to_string(str_ptr.cast()).clone();
         DecompileError::InvalidUnivVarIndex { idx, max, constant }
       },
       5 => {
@@ -1406,14 +1397,12 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
         let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
         let str_ptr = lean_ctor_get(ptr as *mut _, 1);
         let addr = decode_ixon_address(addr_ptr.cast());
-        let expected =
-          lean_obj_to_string(str_ptr.cast()).clone();
+        let expected = lean_obj_to_string(str_ptr.cast()).clone();
         DecompileError::BadBlobFormat { addr, expected }
       },
       9 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let msg =
-          lean_obj_to_string(str_ptr.cast()).clone();
+        let msg = lean_obj_to_string(str_ptr.cast()).clone();
         DecompileError::BadConstantFormat { msg }
       },
       10 => {
@@ -1479,8 +1468,7 @@ pub fn decode_compile_error(ptr: *const c_void) -> CompileError {
     match tag {
       0 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let name =
-          lean_obj_to_string(str_ptr.cast()).clone();
+        let name = lean_obj_to_string(str_ptr.cast()).clone();
         CompileError::MissingConstant { name }
       },
       1 => {
@@ -1489,14 +1477,12 @@ pub fn decode_compile_error(ptr: *const c_void) -> CompileError {
       },
       2 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let reason =
-          lean_obj_to_string(str_ptr.cast()).clone();
+        let reason = lean_obj_to_string(str_ptr.cast()).clone();
         CompileError::InvalidMutualBlock { reason }
       },
       3 => {
         let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let desc =
-          lean_obj_to_string(str_ptr.cast()).clone();
+        let desc = lean_obj_to_string(str_ptr.cast()).clone();
         CompileError::UnsupportedExpr { desc }
       },
       4 => {

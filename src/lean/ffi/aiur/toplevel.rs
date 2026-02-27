@@ -9,9 +9,9 @@ use crate::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
   },
   lean::{
-    lean_array_to_vec,
     ffi::aiur::{lean_unbox_g, lean_unbox_nat_as_usize},
-    lean_ctor_objs, lean_is_scalar, lean_obj_to_string, lean_tag,
+    lean_array_to_vec, lean_ctor_objs, lean_is_scalar, lean_obj_to_string,
+    lean_tag,
   },
 };
 
@@ -205,6 +205,7 @@ fn lean_ptr_to_function(ptr: *const c_void) -> Function {
 pub(crate) fn lean_ptr_to_toplevel(ptr: *const c_void) -> Toplevel {
   let [functions_ptr, memory_sizes_ptr] = lean_ctor_objs(ptr);
   let functions = lean_array_to_vec(functions_ptr, lean_ptr_to_function);
-  let memory_sizes = lean_array_to_vec(memory_sizes_ptr, lean_unbox_nat_as_usize);
+  let memory_sizes =
+    lean_array_to_vec(memory_sizes_ptr, lean_unbox_nat_as_usize);
   Toplevel { functions, memory_sizes }
 }

@@ -17,7 +17,8 @@ use super::serialize::lean_ptr_to_ixon_expr;
 /// This helps diagnose why Lean and Rust make different sharing decisions.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_debug_sharing_analysis(exprs_ptr: *const c_void) {
-  let exprs: Vec<Arc<IxonExpr>> = lean_array_to_vec(exprs_ptr, lean_ptr_to_ixon_expr);
+  let exprs: Vec<Arc<IxonExpr>> =
+    lean_array_to_vec(exprs_ptr, lean_ptr_to_ixon_expr);
 
   println!("[Rust] Analyzing {} input expressions", exprs.len());
 

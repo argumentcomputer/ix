@@ -2,8 +2,7 @@ use std::ffi::c_void;
 
 use crate::lean::lean_except_error_string;
 
-const ERR_MSG: &str =
-  "Iroh functions not supported when the Rust `net` feature is disabled \
+const ERR_MSG: &str = "Iroh functions not supported when the Rust `net` feature is disabled \
    or on MacOS aarch64-darwin";
 
 /// `Iroh.Connect.putBytes' : @& String → @& Array String → @& String → @& String → Except String PutResponse`

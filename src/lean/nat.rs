@@ -129,12 +129,15 @@ unsafe extern "C" {
 
 /// Create a Lean `Nat` from a little-endian array of u64 limbs.
 /// Replaces the C function `c_lean_nat_from_limbs` from `ixon_ffi.c`.
-pub fn lean_nat_from_limbs(num_limbs: usize, limbs: *const u64) -> *mut c_void {
+/// # Safety
+/// `limbs` must be valid for reading `num_limbs` elements.
+pub unsafe fn lean_nat_from_limbs(num_limbs: usize, limbs: *const u64) -> *mut c_void {
   if num_limbs == 0 {
     return lean_box_fn(0);
   }
   let first = unsafe { *limbs };
   if num_limbs == 1 && first <= LEAN_MAX_SMALL_NAT {
+    #[allow(clippy::cast_possible_truncation)] // only targets 64-bit
     return lean_box_fn(first as usize);
   }
   if num_limbs == 1 {
