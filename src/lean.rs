@@ -108,7 +108,9 @@ pub fn lean_obj_to_string(ptr: *const c_void) -> String {
 #[inline]
 pub fn lean_tag(ptr: *const c_void) -> u8 {
   #[allow(clippy::cast_possible_truncation)] // tags always fit in u8
-  unsafe { lean::lean_obj_tag(ptr as *mut _) as u8 }
+  unsafe {
+    lean::lean_obj_tag(ptr as *mut _) as u8
+  }
 }
 
 #[inline]

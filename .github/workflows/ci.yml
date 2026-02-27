@@ -21,9 +21,6 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
-          # TODO: These should both run automatically
-          test: true
-          lint: true
       - name: Test Ix CLI
         run: lake test -- cli
       - name: Aiur tests
@@ -44,7 +41,7 @@ jobs:
       # Install Lean for rust-bindgen step
       - uses: leanprover/lean-action@v1
         with:
-          build: false
+          auto-config: false
           use-github-cache: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@nextest
