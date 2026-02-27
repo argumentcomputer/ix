@@ -4,6 +4,7 @@
 //! These are the core datatypes used for type checking and reduction.
 
 use crate::lean::nat::Nat;
+use std::rc::Rc;
 
 // ============================================================================
 // Name
@@ -15,9 +16,9 @@ pub enum Name {
   /// The root (empty) name.
   Anonymous,
   /// A string component appended to a prefix name.
-  Str(Box<Name>, String),
+  Str(Rc<Name>, String),
   /// A numeric component appended to a prefix name.
-  Num(Box<Name>, Nat),
+  Num(Rc<Name>, Nat),
 }
 
 // ============================================================================
@@ -30,11 +31,11 @@ pub enum Level {
   /// Universe level 0 (Prop).
   Zero,
   /// Successor of a universe level.
-  Succ(Box<Level>),
+  Succ(Rc<Level>),
   /// Maximum of two universe levels.
-  Max(Box<Level>, Box<Level>),
+  Max(Rc<Level>, Rc<Level>),
   /// Impredicative maximum of two universe levels.
-  Imax(Box<Level>, Box<Level>),
+  Imax(Rc<Level>, Rc<Level>),
   /// A named universe parameter.
   Param(Name),
   /// A universe-level metavariable.
@@ -140,7 +141,7 @@ pub enum DataValue {
   /// An integer value.
   OfInt(Int),
   /// A syntax tree value.
-  OfSyntax(Box<Syntax>),
+  OfSyntax(Rc<Syntax>),
 }
 
 // ============================================================================
@@ -161,19 +162,19 @@ pub enum Expr {
   /// Reference to a named constant with universe level arguments.
   Const(Name, Vec<Level>),
   /// Function application.
-  App(Box<Expr>, Box<Expr>),
+  App(Rc<Expr>, Rc<Expr>),
   /// Lambda abstraction.
-  Lam(Name, Box<Expr>, Box<Expr>, BinderInfo),
+  Lam(Name, Rc<Expr>, Rc<Expr>, BinderInfo),
   /// Dependent function type (Pi / forall).
-  ForallE(Name, Box<Expr>, Box<Expr>, BinderInfo),
+  ForallE(Name, Rc<Expr>, Rc<Expr>, BinderInfo),
   /// Let-binding (name, type, value, body, non-dep flag).
-  LetE(Name, Box<Expr>, Box<Expr>, Box<Expr>, bool),
+  LetE(Name, Rc<Expr>, Rc<Expr>, Rc<Expr>, bool),
   /// Literal value (nat or string).
   Lit(Literal),
   /// Metadata-annotated expression with key-value pairs.
-  Mdata(Vec<(Name, DataValue)>, Box<Expr>),
+  Mdata(Vec<(Name, DataValue)>, Rc<Expr>),
   /// Projection from a structure (type name, field index, struct expr).
-  Proj(Name, usize, Box<Expr>),
+  Proj(Name, usize, Rc<Expr>),
 }
 
 // ============================================================================

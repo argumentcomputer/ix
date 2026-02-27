@@ -7,6 +7,7 @@
 //! - Canonical forms (sorts, literals, fully-applied constructors)
 
 use crate::kernel::expr::*;
+use std::rc::Rc;
 
 // ============================================================================
 // Environment
@@ -79,12 +80,12 @@ pub enum Value {
   Neutral(Neutral),
   /// A lambda abstraction (closure).
   /// Contains: name, body expression, captured environment, binder info
-  Fun(Name, Box<Expr>, Env, BinderInfo),
+  Fun(Name, Rc<Expr>, Env, BinderInfo),
   /// A universe sort.
   Sort(Level),
   /// A dependent function type (Pi/forall).
   /// Contains: name, domain value, body expression, captured environment, binder info
-  Forall(Name, Box<Value>, Box<Expr>, Env, BinderInfo),
+  Forall(Name, Rc<Value>, Rc<Expr>, Env, BinderInfo),
   /// A literal value.
   Lit(Literal),
   /// A constant reference (might be reducible depending on global environment).
@@ -106,11 +107,11 @@ pub enum Neutral {
   Bvar(usize),
   /// A neutral value applied to a value.
   /// This is the "stuck application" - the head is neutral (contains a free variable).
-  App(Box<Neutral>, Box<Value>),
+  App(Rc<Neutral>, Rc<Value>),
   /// Projection from a neutral value.
-  Proj(Name, usize, Box<Neutral>),
+  Proj(Name, usize, Rc<Neutral>),
   /// Metadata-annotated neutral.
-  Mdata(Vec<(Name, DataValue)>, Box<Neutral>),
+  Mdata(Vec<(Name, DataValue)>, Rc<Neutral>),
 }
 
 // ============================================================================
@@ -172,7 +173,7 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       let vty = eval(ty, env);
       Value::Forall(
         name.clone(),
-        Box::new(vty),
+        Rc::new(vty),
         body.clone(),
         env.clone(),
         binder_info.clone(),
@@ -197,7 +198,7 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       // If the result is neutral, preserve metadata in the neutral
       match v {
         Value::Neutral(n) => {
-          Value::Neutral(Neutral::Mdata(kvs.clone(), Box::new(n)))
+          Value::Neutral(Neutral::Mdata(kvs.clone(), Rc::new(n)))
         },
         // Otherwise, metadata is erased during reduction
         _ => v,
@@ -209,7 +210,7 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       match v {
         Value::Neutral(n) => {
           // Projection from a neutral value is stuck
-          Value::Neutral(Neutral::Proj(name.clone(), *idx, Box::new(n)))
+          Value::Neutral(Neutral::Proj(name.clone(), *idx, Rc::new(n)))
         },
         // In a full implementation with inductive types, we'd handle
         // projections from fully-applied constructors here
@@ -220,7 +221,7 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
           Value::Neutral(Neutral::Proj(
             name.clone(),
             *idx,
-            Box::new(Neutral::Fvar(Name::Anonymous)), // placeholder neutral head
+            Rc::new(Neutral::Fvar(Name::Anonymous)), // placeholder neutral head
           ))
         },
       }
@@ -246,7 +247,7 @@ pub fn apply(fun: Value, arg: Value) -> Value {
     Value::Neutral(n) => {
       // Application to a neutral value creates a stuck application
       // This is the key case: neutral values at the head mean we can't reduce
-      Value::Neutral(Neutral::App(Box::new(n), Box::new(arg)))
+      Value::Neutral(Neutral::App(Rc::new(n), Rc::new(arg)))
     },
 
     // Other values cannot be applied (would be a type error in well-typed terms)
@@ -255,8 +256,8 @@ pub fn apply(fun: Value, arg: Value) -> Value {
       // Conservative fallback: treat as a stuck application
       // In practice, this indicates a type error
       Value::Neutral(Neutral::App(
-        Box::new(Neutral::Fvar(Name::Anonymous)),
-        Box::new(arg),
+        Rc::new(Neutral::Fvar(Name::Anonymous)),
+        Rc::new(arg),
       ))
     },
   }
@@ -283,8 +284,8 @@ pub fn quote(val: &Value, level: usize) -> Expr {
       let quoted_body = quote(&body_val, level + 1);
       Expr::Lam(
         name.clone(),
-        Box::new(Expr::Sort(Level::Zero)), // type is not preserved (would need type quotation)
-        Box::new(quoted_body),
+        Rc::new(Expr::Sort(Level::Zero)), // type is not preserved (would need type quotation)
+        Rc::new(quoted_body),
         binder_info.clone(),
       )
     },
@@ -300,8 +301,8 @@ pub fn quote(val: &Value, level: usize) -> Expr {
       let quoted_body = quote(&body_val, level + 1);
       Expr::ForallE(
         name.clone(),
-        Box::new(quoted_ty),
-        Box::new(quoted_body),
+        Rc::new(quoted_ty),
+        Rc::new(quoted_body),
         binder_info.clone(),
       )
     },
@@ -324,17 +325,17 @@ fn quote_neutral(neutral: &Neutral, level: usize) -> Expr {
     Neutral::App(fun, arg) => {
       let quoted_fun = quote_neutral(fun, level);
       let quoted_arg = quote(arg, level);
-      Expr::App(Box::new(quoted_fun), Box::new(quoted_arg))
+      Expr::App(Rc::new(quoted_fun), Rc::new(quoted_arg))
     },
 
     Neutral::Proj(name, idx, e) => {
       let quoted_e = quote_neutral(e, level);
-      Expr::Proj(name.clone(), *idx, Box::new(quoted_e))
+      Expr::Proj(name.clone(), *idx, Rc::new(quoted_e))
     },
 
     Neutral::Mdata(kvs, n) => {
       let quoted_n = quote_neutral(n, level);
-      Expr::Mdata(kvs.clone(), Box::new(quoted_n))
+      Expr::Mdata(kvs.clone(), Rc::new(quoted_n))
     },
   }
 }
