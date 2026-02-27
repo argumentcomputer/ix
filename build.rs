@@ -10,13 +10,14 @@ fn find_lean_include_dir() -> PathBuf {
   }
   // 2. Try `lean --print-prefix`
   if let Ok(output) = Command::new("lean").arg("--print-prefix").output()
-    && output.status.success() {
-      let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
-      let inc = PathBuf::from(prefix).join("include");
-      if inc.exists() {
-        return inc;
-      }
+    && output.status.success()
+  {
+    let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let inc = PathBuf::from(prefix).join("include");
+    if inc.exists() {
+      return inc;
     }
+  }
   panic!(
     "Cannot find Lean include directory. \
      Set LEAN_SYSROOT or ensure `lean` is on PATH."

@@ -131,7 +131,10 @@ unsafe extern "C" {
 /// Replaces the C function `c_lean_nat_from_limbs` from `ixon_ffi.c`.
 /// # Safety
 /// `limbs` must be valid for reading `num_limbs` elements.
-pub unsafe fn lean_nat_from_limbs(num_limbs: usize, limbs: *const u64) -> *mut c_void {
+pub unsafe fn lean_nat_from_limbs(
+  num_limbs: usize,
+  limbs: *const u64,
+) -> *mut c_void {
   if num_limbs == 0 {
     return lean_box_fn(0);
   }
