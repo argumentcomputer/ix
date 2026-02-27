@@ -206,13 +206,13 @@ pub fn collect_list_with<T, C>(
 
 use std::ffi::c_uint;
 
-// Lean C API wrappers (defined in c/ixon_ffi.c)
-// These wrap Lean's allocation functions so they can be linked from Rust
+// Lean C API bindings. Static inline functions use bindgen-generated
+// wrappers (suffix __extern). LEAN_EXPORT functions link directly.
 unsafe extern "C" {
   // Object allocation
   /// Allocate a constructor object with the given tag, number of object fields,
   /// and scalar size in bytes.
-  #[link_name = "c_lean_alloc_ctor"]
+  #[link_name = "lean_alloc_ctor__extern"]
   pub fn lean_alloc_ctor(
     tag: c_uint,
     num_objs: c_uint,
@@ -220,33 +220,32 @@ unsafe extern "C" {
   ) -> *mut c_void;
 
   /// Set the i-th object field of a constructor.
-  #[link_name = "c_lean_ctor_set"]
+  #[link_name = "lean_ctor_set__extern"]
   pub fn lean_ctor_set(o: *mut c_void, i: c_uint, v: *mut c_void);
 
   /// Get the i-th object field of a constructor.
-  #[link_name = "c_lean_ctor_get"]
+  #[link_name = "lean_ctor_get__extern"]
   pub fn lean_ctor_get(o: *mut c_void, i: c_uint) -> *const c_void;
 
   /// Get the tag of a Lean object.
-  #[link_name = "c_lean_obj_tag"]
+  #[link_name = "lean_obj_tag__extern"]
   pub fn lean_obj_tag(o: *mut c_void) -> c_uint;
 
   /// Set a uint8 scalar field at the given byte offset (after object fields).
-  #[link_name = "c_lean_ctor_set_uint8"]
+  #[link_name = "lean_ctor_set_uint8__extern"]
   pub fn lean_ctor_set_uint8(o: *mut c_void, offset: usize, v: u8);
 
   /// Set a uint64 scalar field at the given byte offset (after object fields).
-  #[link_name = "c_lean_ctor_set_uint64"]
+  #[link_name = "lean_ctor_set_uint64__extern"]
   pub fn lean_ctor_set_uint64(o: *mut c_void, offset: usize, v: u64);
 
-  // String allocation
+  // String allocation (LEAN_EXPORT — links directly, no wrapper needed)
   /// Create a Lean string from a null-terminated C string.
-  #[link_name = "c_lean_mk_string"]
   pub fn lean_mk_string(s: *const std::ffi::c_char) -> *mut c_void;
 
   // Scalar array (ByteArray) allocation
   /// Allocate a scalar array with the given element size, initial size, and capacity.
-  #[link_name = "c_lean_alloc_sarray"]
+  #[link_name = "lean_alloc_sarray__extern"]
   pub fn lean_alloc_sarray(
     elem_size: c_uint,
     size: usize,
@@ -254,55 +253,68 @@ unsafe extern "C" {
   ) -> *mut c_void;
 
   /// Get a pointer to the data area of a scalar array.
-  #[link_name = "c_lean_sarray_cptr"]
+  #[link_name = "lean_sarray_cptr__extern"]
   pub fn lean_sarray_cptr(o: *mut c_void) -> *mut u8;
 
   // Array allocation
   /// Allocate an array with the given initial size and capacity.
-  #[link_name = "c_lean_alloc_array"]
+  #[link_name = "lean_alloc_array__extern"]
   pub fn lean_alloc_array(size: usize, capacity: usize) -> *mut c_void;
 
   /// Set the i-th element of an array (does not update size).
-  #[link_name = "c_lean_array_set_core"]
+  #[link_name = "lean_array_set_core__extern"]
   pub fn lean_array_set_core(o: *mut c_void, i: usize, v: *mut c_void);
 
   /// Get the i-th element of an array.
-  #[link_name = "c_lean_array_get_core"]
+  #[link_name = "lean_array_get_core__extern"]
   pub fn lean_array_get_core(o: *mut c_void, i: usize) -> *const c_void;
 
   // Reference counting
   /// Increment the reference count of a Lean object.
-  #[link_name = "c_lean_inc"]
+  #[link_name = "lean_inc__extern"]
   pub fn lean_inc(o: *mut c_void);
 
   /// Increment the reference count by n.
-  #[link_name = "c_lean_inc_n"]
+  #[link_name = "lean_inc_n__extern"]
   pub fn lean_inc_n(o: *mut c_void, n: usize);
+
+  /// Decrement the reference count of a Lean object.
+  #[link_name = "lean_dec__extern"]
+  pub fn lean_dec(o: *mut c_void);
+
+  // External object support
+  /// Register an external class with finalizer and foreach callbacks.
+  /// This is a LEAN_EXPORT function and can be linked directly.
+  pub fn lean_register_external_class(
+    finalize: extern "C" fn(*mut c_void),
+    foreach: extern "C" fn(*mut c_void, *mut c_void),
+  ) -> *mut c_void;
+
+  /// Allocate an external object wrapping opaque data.
+  #[link_name = "lean_alloc_external__extern"]
+  pub fn lean_alloc_external(
+    cls: *mut c_void,
+    data: *mut c_void,
+  ) -> *mut c_void;
 
   // IO result construction
   /// Wrap a value in a successful IO result.
-  #[link_name = "c_lean_io_result_mk_ok"]
+  #[link_name = "lean_io_result_mk_ok__extern"]
   pub fn lean_io_result_mk_ok(v: *mut c_void) -> *mut c_void;
 
   /// Wrap an error in an IO error result.
-  #[link_name = "c_lean_io_result_mk_error"]
+  #[link_name = "lean_io_result_mk_error__extern"]
   pub fn lean_io_result_mk_error(err: *mut c_void) -> *mut c_void;
 
-  /// Create an IO.Error.userError from a String.
-  #[link_name = "c_lean_mk_io_user_error"]
+  /// Create an IO.Error.userError from a String (LEAN_EXPORT — links directly).
   pub fn lean_mk_io_user_error(msg: *mut c_void) -> *mut c_void;
 
   // Nat allocation for large values
   /// Create a Nat from a uint64. For values > max boxed, allocates on heap.
-  #[link_name = "c_lean_uint64_to_nat"]
+  #[link_name = "lean_uint64_to_nat__extern"]
   pub fn lean_uint64_to_nat(n: u64) -> *mut c_void;
 
-  /// Create a Nat from limbs (little-endian u64 array). Uses GMP internally.
-  #[link_name = "c_lean_nat_from_limbs"]
-  pub fn lean_nat_from_limbs(
-    num_limbs: usize,
-    limbs: *const u64,
-  ) -> *mut c_void;
+  // lean_nat_from_limbs moved to src/lean/nat.rs (uses GMP directly)
 }
 
 /// Box a scalar value into a Lean object pointer.
@@ -313,3 +325,37 @@ unsafe extern "C" {
 pub fn lean_box_fn(n: usize) -> *mut c_void {
   ((n << 1) | 1) as *mut c_void
 }
+
+// =============================================================================
+// Lean Except constructors
+// =============================================================================
+
+/// Build `Except.ok val` — tag 1, one object field.
+#[inline]
+pub fn lean_except_ok(val: *mut c_void) -> *mut c_void {
+  unsafe {
+    let obj = lean_alloc_ctor(1, 1, 0);
+    lean_ctor_set(obj, 0, val);
+    obj
+  }
+}
+
+/// Build `Except.error msg` — tag 0, one object field.
+#[inline]
+pub fn lean_except_error(msg: *mut c_void) -> *mut c_void {
+  unsafe {
+    let obj = lean_alloc_ctor(0, 1, 0);
+    lean_ctor_set(obj, 0, msg);
+    obj
+  }
+}
+
+/// Build `Except.error (lean_mk_string str)` from a Rust string.
+#[inline]
+pub fn lean_except_error_string(msg: &str) -> *mut c_void {
+  let c_msg = safe_cstring(msg);
+  unsafe { lean_except_error(lean_mk_string(c_msg.as_ptr())) }
+}
+
+/// No-op foreach callback for external classes that hold no Lean references.
+pub extern "C" fn noop_foreach(_: *mut c_void, _: *mut c_void) {}

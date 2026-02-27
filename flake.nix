@@ -138,10 +138,12 @@
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           packages = with pkgs; [
             pkg-config
             openssl
             clang
+            libclang # needed for bindgen in build.rs
             rustToolchain
             rust-analyzer
             lean.lean-all # Includes Lean compiler, lake, stdlib, etc.
