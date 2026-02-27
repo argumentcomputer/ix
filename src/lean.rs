@@ -1,25 +1,26 @@
 //! Rust bindings for Lean, implemented by mimicking the memory layout of Lean's
 //! low-level C objects.
 //!
-//! This crate must be kept in sync with `lean/lean.h`. Pay close attention to
-//! definitions containing C code in their docstrings.
+//! The `lean` submodule contains auto-generated bindings from `lean.h` via
+//! bindgen. Higher-level helpers and custom `#[repr(C)]` types are defined
+//! alongside it in sibling modules.
 
-pub mod array;
-pub mod boxed;
-pub mod ctor;
-pub mod external;
+#[allow(
+  non_upper_case_globals,
+  non_camel_case_types,
+  non_snake_case,
+  dead_code,
+  unsafe_op_in_unsafe_fn,
+  clippy::all
+)]
+pub mod lean {
+  include!(concat!(env!("OUT_DIR"), "/lean.rs"));
+}
+
 pub mod ffi;
 pub mod nat;
-pub mod object;
-pub mod sarray;
-pub mod string;
 
 use std::ffi::{CString, c_void};
-
-use crate::lean::{
-  boxed::{BoxedU64, BoxedUSize},
-  ctor::LeanCtorObject,
-};
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -74,84 +75,117 @@ macro_rules! lean_unbox {
     };
 }
 
-/// ```c
-/// unsigned lean_unbox_uint32(b_lean_obj_arg o) {
-///     if (sizeof(void*) == 4) {
-///         /* 32-bit implementation */
-///         return lean_ctor_get_uint32(o, 0);
-///     } else {
-///         /* 64-bit implementation */
-///         return lean_unbox(o);
-///     }
-/// }
-/// ```
 #[inline]
 pub fn lean_unbox_u32(ptr: *const c_void) -> u32 {
-  if cfg!(target_pointer_width = "32") {
-    let boxed_usize: &BoxedUSize = as_ref_unsafe(ptr.cast());
-    u32::try_from(boxed_usize.value).expect("Cannot convert from usize")
-  } else {
-    lean_unbox!(u32, ptr)
-  }
+  unsafe { lean::lean_unbox_uint32(ptr as *mut _) as u32 }
 }
 
-/// ```c
-/// uint64_t lean_unbox_uint64(b_lean_obj_arg o) {
-///     return lean_ctor_get_uint64(o, 0);
-/// }
-/// ```
 #[inline]
 pub fn lean_unbox_u64(ptr: *const c_void) -> u64 {
-  let boxed_usize: &BoxedU64 = as_ref_unsafe(ptr.cast());
-  boxed_usize.value
+  unsafe { lean::lean_unbox_uint64(ptr as *mut _) }
 }
 
-/// ```c
-/// lean_object * lean_box_uint64(uint64_t v) {
-///     lean_object * r = lean_alloc_ctor(0, 0, sizeof(uint64_t));
-///     lean_ctor_set_uint64(r, 0, v);
-///     return r;
-/// }
-/// ```
 #[inline]
 pub fn lean_box_u64(v: u64) -> *mut c_void {
+  unsafe { lean::lean_box_uint64(v).cast() }
+}
+
+pub fn lean_obj_to_string(ptr: *const c_void) -> String {
   unsafe {
-    let obj = lean_alloc_ctor(0, 0, 8);
-    lean_ctor_set_uint64(obj, 0, v);
-    obj
+    let obj = ptr as *mut lean::lean_object;
+    let len = lean::lean_string_size(obj) - 1; // m_size includes NUL
+    let data = lean::lean_string_cstr(obj);
+    let bytes = std::slice::from_raw_parts(data as *const u8, len);
+    String::from_utf8_unchecked(bytes.to_vec())
   }
 }
 
-pub fn boxed_usize_ptr_to_usize(ptr: *const c_void) -> usize {
-  let boxed_usize_ptr = ptr.cast::<BoxedUSize>();
-  let boxed_usize = as_ref_unsafe(boxed_usize_ptr);
-  boxed_usize.value
+#[inline]
+pub fn lean_tag(ptr: *const c_void) -> u8 {
+  unsafe { lean::lean_obj_tag(ptr as *mut _) as u8 }
 }
 
-/// Emulates arrays of flexible size from C.
-#[repr(C)]
-pub struct CArray<T>([T; 0]);
+#[inline]
+pub fn lean_ctor_objs<const N: usize>(ptr: *const c_void) -> [*const c_void; N] {
+  // Use raw pointer arithmetic instead of lean_ctor_get to avoid its
+  // bounds-check assertion. Call sites legitimately read past the object
+  // fields into the scalar area (e.g. Expr.Data hash, Bool/BinderInfo
+  // stored as UInt8 scalars). This matches the old LeanCtorObject::objs().
+  let base = unsafe { (ptr as *const *const c_void).add(1) };
+  std::array::from_fn(|i| unsafe { *base.add(i) })
+}
 
-impl<T> CArray<T> {
-  #[inline]
-  pub fn slice(&self, len: usize) -> &[T] {
-    unsafe { std::slice::from_raw_parts(self.0.as_ptr(), len) }
+#[inline]
+pub fn lean_ctor_scalar_u64(ptr: *const c_void, num_objs: usize, offset: usize) -> u64 {
+  unsafe {
+    std::ptr::read_unaligned(ptr.cast::<u8>().add(8 + num_objs * 8 + offset).cast())
   }
+}
 
-  #[inline]
-  pub fn slice_mut(&mut self, len: usize) -> &mut [T] {
-    unsafe { std::slice::from_raw_parts_mut(self.0.as_mut_ptr(), len) }
+#[inline]
+pub fn lean_ctor_scalar_u8(ptr: *const c_void, num_objs: usize, offset: usize) -> u8 {
+  unsafe { *ptr.cast::<u8>().add(8 + num_objs * 8 + offset) }
+}
+
+#[inline]
+pub fn lean_ctor_scalar_bool(ptr: *const c_void, num_objs: usize, offset: usize) -> bool {
+  lean_ctor_scalar_u8(ptr, num_objs, offset) != 0
+}
+
+// =============================================================================
+// Array helpers (replace LeanArrayObject)
+// =============================================================================
+
+/// Return a slice over the elements of a Lean `Array` object.
+pub fn lean_array_data(ptr: *const c_void) -> &'static [*const c_void] {
+  unsafe {
+    let obj = ptr as *mut lean::lean_object;
+    let size = lean::lean_array_size(obj);
+    let cptr = lean::lean_array_cptr(obj);
+    std::slice::from_raw_parts(cptr.cast(), size)
   }
+}
 
-  #[inline]
-  pub fn copy_from_slice(&mut self, src: &[T]) {
-    unsafe {
-      std::ptr::copy_nonoverlapping(
-        src.as_ptr(),
-        self.0.as_ptr() as *mut _,
-        src.len(),
-      );
-    }
+/// Convert a Lean `Array` to a `Vec<T>` by mapping each element.
+pub fn lean_array_to_vec<T>(ptr: *const c_void, f: fn(*const c_void) -> T) -> Vec<T> {
+  lean_array_data(ptr).iter().map(|&p| f(p)).collect()
+}
+
+/// Like `lean_array_to_vec` but threads a mutable context through each call.
+pub fn lean_array_to_vec_with<T, C>(
+  ptr: *const c_void,
+  f: fn(*const c_void, &mut C) -> T,
+  c: &mut C,
+) -> Vec<T> {
+  lean_array_data(ptr).iter().map(|&p| f(p, c)).collect()
+}
+
+// =============================================================================
+// SArray (ByteArray) helpers (replace LeanSArrayObject)
+// =============================================================================
+
+/// Return a byte slice over a Lean `ByteArray` (scalar array) object.
+pub fn lean_sarray_data(ptr: *const c_void) -> &'static [u8] {
+  unsafe {
+    let obj = ptr as *mut lean::lean_object;
+    let size = lean::lean_sarray_size(obj);
+    let cptr = lean::lean_sarray_cptr(obj);
+    std::slice::from_raw_parts(cptr, size)
+  }
+}
+
+/// Write bytes into a Lean `ByteArray` and update its size.
+///
+/// # Safety
+/// The caller must ensure `ptr` points to a valid `lean_sarray_object`
+/// with sufficient capacity for `data`.
+pub unsafe fn lean_sarray_set_data(ptr: *mut c_void, data: &[u8]) {
+  unsafe {
+    let obj = ptr as *mut lean::lean_object;
+    let cptr = lean::lean_sarray_cptr(obj);
+    std::ptr::copy_nonoverlapping(data.as_ptr(), cptr, data.len());
+    // Update m_size: at offset 8 (after lean_object header)
+    *(ptr.cast::<u8>().add(8) as *mut usize) = data.len();
   }
 }
 
@@ -164,8 +198,7 @@ impl Iterator for ListIterator {
     if lean_is_scalar(ptr) {
       return None;
     }
-    let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-    let [head_ptr, tail_ptr] = ctor.objs();
+    let [head_ptr, tail_ptr] = lean_ctor_objs(ptr);
     self.0 = tail_ptr;
     Some(head_ptr)
   }
@@ -177,144 +210,11 @@ pub fn collect_list<T>(
 ) -> Vec<T> {
   let mut vec = Vec::new();
   while !lean_is_scalar(ptr) {
-    let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-    let [head_ptr, tail_ptr] = ctor.objs();
+    let [head_ptr, tail_ptr] = lean_ctor_objs(ptr);
     vec.push(map_fn(head_ptr));
     ptr = tail_ptr;
   }
   vec
-}
-
-pub fn collect_list_with<T, C>(
-  mut ptr: *const c_void,
-  map_fn: fn(*const c_void, &mut C) -> T,
-  c: &mut C,
-) -> Vec<T> {
-  let mut vec = Vec::new();
-  while !lean_is_scalar(ptr) {
-    let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-    let [head_ptr, tail_ptr] = ctor.objs();
-    vec.push(map_fn(head_ptr, c));
-    ptr = tail_ptr;
-  }
-  vec
-}
-
-// =============================================================================
-// Lean C API extern declarations for object construction
-// =============================================================================
-
-use std::ffi::c_uint;
-
-// Lean C API bindings. Static inline functions use bindgen-generated
-// wrappers (suffix __extern). LEAN_EXPORT functions link directly.
-unsafe extern "C" {
-  // Object allocation
-  /// Allocate a constructor object with the given tag, number of object fields,
-  /// and scalar size in bytes.
-  #[link_name = "lean_alloc_ctor__extern"]
-  pub fn lean_alloc_ctor(
-    tag: c_uint,
-    num_objs: c_uint,
-    scalar_sz: c_uint,
-  ) -> *mut c_void;
-
-  /// Set the i-th object field of a constructor.
-  #[link_name = "lean_ctor_set__extern"]
-  pub fn lean_ctor_set(o: *mut c_void, i: c_uint, v: *mut c_void);
-
-  /// Get the i-th object field of a constructor.
-  #[link_name = "lean_ctor_get__extern"]
-  pub fn lean_ctor_get(o: *mut c_void, i: c_uint) -> *const c_void;
-
-  /// Get the tag of a Lean object.
-  #[link_name = "lean_obj_tag__extern"]
-  pub fn lean_obj_tag(o: *mut c_void) -> c_uint;
-
-  /// Set a uint8 scalar field at the given byte offset (after object fields).
-  #[link_name = "lean_ctor_set_uint8__extern"]
-  pub fn lean_ctor_set_uint8(o: *mut c_void, offset: usize, v: u8);
-
-  /// Set a uint64 scalar field at the given byte offset (after object fields).
-  #[link_name = "lean_ctor_set_uint64__extern"]
-  pub fn lean_ctor_set_uint64(o: *mut c_void, offset: usize, v: u64);
-
-  // String allocation (LEAN_EXPORT — links directly, no wrapper needed)
-  /// Create a Lean string from a null-terminated C string.
-  pub fn lean_mk_string(s: *const std::ffi::c_char) -> *mut c_void;
-
-  // Scalar array (ByteArray) allocation
-  /// Allocate a scalar array with the given element size, initial size, and capacity.
-  #[link_name = "lean_alloc_sarray__extern"]
-  pub fn lean_alloc_sarray(
-    elem_size: c_uint,
-    size: usize,
-    capacity: usize,
-  ) -> *mut c_void;
-
-  /// Get a pointer to the data area of a scalar array.
-  #[link_name = "lean_sarray_cptr__extern"]
-  pub fn lean_sarray_cptr(o: *mut c_void) -> *mut u8;
-
-  // Array allocation
-  /// Allocate an array with the given initial size and capacity.
-  #[link_name = "lean_alloc_array__extern"]
-  pub fn lean_alloc_array(size: usize, capacity: usize) -> *mut c_void;
-
-  /// Set the i-th element of an array (does not update size).
-  #[link_name = "lean_array_set_core__extern"]
-  pub fn lean_array_set_core(o: *mut c_void, i: usize, v: *mut c_void);
-
-  /// Get the i-th element of an array.
-  #[link_name = "lean_array_get_core__extern"]
-  pub fn lean_array_get_core(o: *mut c_void, i: usize) -> *const c_void;
-
-  // Reference counting
-  /// Increment the reference count of a Lean object.
-  #[link_name = "lean_inc__extern"]
-  pub fn lean_inc(o: *mut c_void);
-
-  /// Increment the reference count by n.
-  #[link_name = "lean_inc_n__extern"]
-  pub fn lean_inc_n(o: *mut c_void, n: usize);
-
-  /// Decrement the reference count of a Lean object.
-  #[link_name = "lean_dec__extern"]
-  pub fn lean_dec(o: *mut c_void);
-
-  // External object support
-  /// Register an external class with finalizer and foreach callbacks.
-  /// This is a LEAN_EXPORT function and can be linked directly.
-  pub fn lean_register_external_class(
-    finalize: extern "C" fn(*mut c_void),
-    foreach: extern "C" fn(*mut c_void, *mut c_void),
-  ) -> *mut c_void;
-
-  /// Allocate an external object wrapping opaque data.
-  #[link_name = "lean_alloc_external__extern"]
-  pub fn lean_alloc_external(
-    cls: *mut c_void,
-    data: *mut c_void,
-  ) -> *mut c_void;
-
-  // IO result construction
-  /// Wrap a value in a successful IO result.
-  #[link_name = "lean_io_result_mk_ok__extern"]
-  pub fn lean_io_result_mk_ok(v: *mut c_void) -> *mut c_void;
-
-  /// Wrap an error in an IO error result.
-  #[link_name = "lean_io_result_mk_error__extern"]
-  pub fn lean_io_result_mk_error(err: *mut c_void) -> *mut c_void;
-
-  /// Create an IO.Error.userError from a String (LEAN_EXPORT — links directly).
-  pub fn lean_mk_io_user_error(msg: *mut c_void) -> *mut c_void;
-
-  // Nat allocation for large values
-  /// Create a Nat from a uint64. For values > max boxed, allocates on heap.
-  #[link_name = "lean_uint64_to_nat__extern"]
-  pub fn lean_uint64_to_nat(n: u64) -> *mut c_void;
-
-  // lean_nat_from_limbs moved to src/lean/nat.rs (uses GMP directly)
 }
 
 /// Box a scalar value into a Lean object pointer.
@@ -334,9 +234,9 @@ pub fn lean_box_fn(n: usize) -> *mut c_void {
 #[inline]
 pub fn lean_except_ok(val: *mut c_void) -> *mut c_void {
   unsafe {
-    let obj = lean_alloc_ctor(1, 1, 0);
-    lean_ctor_set(obj, 0, val);
-    obj
+    let obj = lean::lean_alloc_ctor(1, 1, 0);
+    lean::lean_ctor_set(obj, 0, val.cast());
+    obj.cast()
   }
 }
 
@@ -344,9 +244,9 @@ pub fn lean_except_ok(val: *mut c_void) -> *mut c_void {
 #[inline]
 pub fn lean_except_error(msg: *mut c_void) -> *mut c_void {
   unsafe {
-    let obj = lean_alloc_ctor(0, 1, 0);
-    lean_ctor_set(obj, 0, msg);
-    obj
+    let obj = lean::lean_alloc_ctor(0, 1, 0);
+    lean::lean_ctor_set(obj, 0, msg.cast());
+    obj.cast()
   }
 }
 
@@ -354,8 +254,12 @@ pub fn lean_except_error(msg: *mut c_void) -> *mut c_void {
 #[inline]
 pub fn lean_except_error_string(msg: &str) -> *mut c_void {
   let c_msg = safe_cstring(msg);
-  unsafe { lean_except_error(lean_mk_string(c_msg.as_ptr())) }
+  unsafe { lean_except_error(lean::lean_mk_string(c_msg.as_ptr()).cast()) }
 }
 
 /// No-op foreach callback for external classes that hold no Lean references.
-pub extern "C" fn noop_foreach(_: *mut c_void, _: *mut c_void) {}
+pub unsafe extern "C" fn noop_foreach(
+  _: *mut c_void,
+  _: *mut lean::lean_object,
+) {
+}

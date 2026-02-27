@@ -1,6 +1,5 @@
 pub mod aiur;
 pub mod byte_array;
-pub mod iroh;
 pub mod keccak;
 pub mod lean_env;
 pub mod unsigned;
@@ -22,9 +21,8 @@ unsafe impl Send for ExternalClassPtr {}
 unsafe impl Sync for ExternalClassPtr {}
 
 use crate::lean::{
-  array::LeanArrayObject, as_ref_unsafe, lean_io_result_mk_error,
-  lean_mk_io_user_error, lean_mk_string, lean_unbox_u32,
-  sarray::LeanSArrayObject,
+  lean::{ lean_io_result_mk_error, lean_mk_io_user_error, lean_mk_string },
+  lean_array_to_vec, lean_sarray_data, lean_unbox_u32,
 };
 
 /// Guard an FFI function that returns a Lean IO result against panics.
@@ -50,7 +48,7 @@ where
       unsafe {
         let lean_msg = lean_mk_string(c_msg.as_ptr());
         let lean_err = lean_mk_io_user_error(lean_msg);
-        lean_io_result_mk_error(lean_err)
+        lean_io_result_mk_error(lean_err).cast()
       }
     },
   }
@@ -70,13 +68,12 @@ pub(super) fn drop_raw<T>(ptr: *mut T) {
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_boxed_u32s_are_equivalent_to_bytes(
-  u32s: &LeanArrayObject,
-  bytes: &LeanSArrayObject,
+  u32s: *const c_void,
+  bytes: *const c_void,
 ) -> bool {
-  let u32s = u32s
-    .to_vec(lean_unbox_u32)
+  let u32s = lean_array_to_vec(u32s, lean_unbox_u32)
     .into_iter()
     .flat_map(u32::to_le_bytes)
     .collect::<Vec<_>>();
-  u32s == bytes.data()
+  u32s == lean_sarray_data(bytes)
 }

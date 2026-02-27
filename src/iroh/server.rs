@@ -21,7 +21,7 @@ const READ_SIZE_LIMIT: usize = 100_000_000;
 
 /// `Iroh.Serve.serve' : Unit → Except String Unit`
 #[unsafe(no_mangle)]
-extern "C" fn c_rs_iroh_serve() -> *mut c_void {
+extern "C" fn rs_iroh_serve() -> *mut c_void {
   // Create a Tokio runtime to block on the async function
   let rt =
     tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");

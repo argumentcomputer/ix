@@ -11,10 +11,10 @@ use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::sharing::hash_expr;
 use crate::ix::ixon::univ::{Univ as IxonUniv, put_univ};
-use crate::lean::array::LeanArrayObject;
-use crate::lean::ctor::LeanCtorObject;
-use crate::lean::sarray::LeanSArrayObject;
-use crate::lean::{as_ref_unsafe, lean_is_scalar, lean_unbox_u64};
+use crate::lean::{
+  lean_array_to_vec, lean_ctor_objs, lean_ctor_scalar_u64, lean_is_scalar,
+  lean_sarray_data, lean_tag, lean_unbox_u64,
+};
 
 use super::constant::{decode_ixon_address, decode_ixon_constant};
 
@@ -30,66 +30,63 @@ fn lean_ptr_to_u64(ptr: *const c_void) -> u64 {
 /// Decode a Lean `Ixon.Expr` to a Rust `IxonExpr`.
 pub fn lean_ptr_to_ixon_expr(ptr: *const c_void) -> Arc<IxonExpr> {
   assert!(!lean_is_scalar(ptr), "Ixon.Expr should not be scalar");
-  let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-  match ctor.tag() {
+  match lean_tag(ptr) {
     0 => {
-      let idx = ctor.get_scalar_u64(0, 0);
+      let idx = lean_ctor_scalar_u64(ptr, 0, 0);
       Arc::new(IxonExpr::Sort(idx))
     },
     1 => {
-      let idx = ctor.get_scalar_u64(0, 0);
+      let idx = lean_ctor_scalar_u64(ptr, 0, 0);
       Arc::new(IxonExpr::Var(idx))
     },
     2 => {
-      let [univs_ptr] = ctor.objs();
-      let ref_idx = ctor.get_scalar_u64(1, 0);
-      let univs_arr: &LeanArrayObject = as_ref_unsafe(univs_ptr.cast());
-      let univs = univs_arr.to_vec(lean_ptr_to_u64);
+      let [univs_ptr] = lean_ctor_objs(ptr);
+      let ref_idx = lean_ctor_scalar_u64(ptr, 1, 0);
+      let univs = lean_array_to_vec(univs_ptr, lean_ptr_to_u64);
       Arc::new(IxonExpr::Ref(ref_idx, univs))
     },
     3 => {
-      let [univs_ptr] = ctor.objs();
-      let rec_idx = ctor.get_scalar_u64(1, 0);
-      let univs_arr: &LeanArrayObject = as_ref_unsafe(univs_ptr.cast());
-      let univs = univs_arr.to_vec(lean_ptr_to_u64);
+      let [univs_ptr] = lean_ctor_objs(ptr);
+      let rec_idx = lean_ctor_scalar_u64(ptr, 1, 0);
+      let univs = lean_array_to_vec(univs_ptr, lean_ptr_to_u64);
       Arc::new(IxonExpr::Rec(rec_idx, univs))
     },
     4 => {
-      let [val_ptr] = ctor.objs();
-      let type_idx = ctor.get_scalar_u64(1, 0);
-      let field_idx = ctor.get_scalar_u64(1, 8);
+      let [val_ptr] = lean_ctor_objs(ptr);
+      let type_idx = lean_ctor_scalar_u64(ptr, 1, 0);
+      let field_idx = lean_ctor_scalar_u64(ptr, 1, 8);
       let val = lean_ptr_to_ixon_expr(val_ptr);
       Arc::new(IxonExpr::Prj(type_idx, field_idx, val))
     },
     5 => {
-      let idx = ctor.get_scalar_u64(0, 0);
+      let idx = lean_ctor_scalar_u64(ptr, 0, 0);
       Arc::new(IxonExpr::Str(idx))
     },
     6 => {
-      let idx = ctor.get_scalar_u64(0, 0);
+      let idx = lean_ctor_scalar_u64(ptr, 0, 0);
       Arc::new(IxonExpr::Nat(idx))
     },
     7 => {
-      let [fun_ptr, arg_ptr] = ctor.objs();
+      let [fun_ptr, arg_ptr] = lean_ctor_objs(ptr);
       let fun_ = lean_ptr_to_ixon_expr(fun_ptr);
       let arg = lean_ptr_to_ixon_expr(arg_ptr);
       Arc::new(IxonExpr::App(fun_, arg))
     },
     8 => {
-      let [ty_ptr, body_ptr] = ctor.objs();
+      let [ty_ptr, body_ptr] = lean_ctor_objs(ptr);
       let ty = lean_ptr_to_ixon_expr(ty_ptr);
       let body = lean_ptr_to_ixon_expr(body_ptr);
       Arc::new(IxonExpr::Lam(ty, body))
     },
     9 => {
-      let [ty_ptr, body_ptr] = ctor.objs();
+      let [ty_ptr, body_ptr] = lean_ctor_objs(ptr);
       let ty = lean_ptr_to_ixon_expr(ty_ptr);
       let body = lean_ptr_to_ixon_expr(body_ptr);
       Arc::new(IxonExpr::All(ty, body))
     },
     10 => {
-      let [ty_ptr, val_ptr, body_ptr] = ctor.objs();
-      let base_ptr = (ctor as *const LeanCtorObject).cast::<u8>();
+      let [ty_ptr, val_ptr, body_ptr] = lean_ctor_objs(ptr);
+      let base_ptr = ptr.cast::<u8>();
       let non_dep = unsafe { *base_ptr.add(8 + 3 * 8) } != 0;
       let ty = lean_ptr_to_ixon_expr(ty_ptr);
       let val = lean_ptr_to_ixon_expr(val_ptr);
@@ -97,7 +94,7 @@ pub fn lean_ptr_to_ixon_expr(ptr: *const c_void) -> Arc<IxonExpr> {
       Arc::new(IxonExpr::Let(non_dep, ty, val, body))
     },
     11 => {
-      let idx = ctor.get_scalar_u64(0, 0);
+      let idx = lean_ctor_scalar_u64(ptr, 0, 0);
       Arc::new(IxonExpr::Share(idx))
     },
     tag => panic!("Unknown Ixon.Expr tag: {}", tag),
@@ -121,21 +118,20 @@ fn lean_ptr_to_ixon_univ(ptr: *const c_void) -> Arc<IxonUniv> {
   if lean_is_scalar(ptr) {
     return IxonUniv::zero();
   }
-  let ctor: &LeanCtorObject = as_ref_unsafe(ptr.cast());
-  match ctor.tag() {
+  match lean_tag(ptr) {
     1 => {
-      let [inner] = ctor.objs();
+      let [inner] = lean_ctor_objs(ptr);
       IxonUniv::succ(lean_ptr_to_ixon_univ(inner))
     },
     2 => {
-      let [a, b] = ctor.objs();
+      let [a, b] = lean_ctor_objs(ptr);
       IxonUniv::max(lean_ptr_to_ixon_univ(a), lean_ptr_to_ixon_univ(b))
     },
     3 => {
-      let [a, b] = ctor.objs();
+      let [a, b] = lean_ctor_objs(ptr);
       IxonUniv::imax(lean_ptr_to_ixon_univ(a), lean_ptr_to_ixon_univ(b))
     },
-    4 => IxonUniv::var(ctor.get_scalar_u64(0, 0)),
+    4 => IxonUniv::var(lean_ctor_scalar_u64(ptr, 0, 0)),
     tag => panic!("Unknown Ixon.Univ tag: {}", tag),
   }
 }
@@ -144,10 +140,10 @@ fn lean_ptr_to_ixon_univ(ptr: *const c_void) -> Arc<IxonUniv> {
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_eq_univ_serialization(
   univ_ptr: *const c_void,
-  bytes: &LeanSArrayObject,
+  bytes: *const c_void,
 ) -> bool {
   let univ = lean_ptr_to_ixon_univ(univ_ptr);
-  let bytes_data = bytes.data();
+  let bytes_data = lean_sarray_data(bytes);
   let mut buf = Vec::with_capacity(bytes_data.len());
   put_univ(&univ, &mut buf);
   buf == bytes_data
@@ -157,10 +153,10 @@ pub extern "C" fn rs_eq_univ_serialization(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_eq_expr_serialization(
   expr_ptr: *const c_void,
-  bytes: &LeanSArrayObject,
+  bytes: *const c_void,
 ) -> bool {
   let expr = lean_ptr_to_ixon_expr(expr_ptr);
-  let bytes_data = bytes.data();
+  let bytes_data = lean_sarray_data(bytes);
   let mut buf = Vec::with_capacity(bytes_data.len());
   put_expr(&expr, &mut buf);
   buf == bytes_data
@@ -170,10 +166,10 @@ pub extern "C" fn rs_eq_expr_serialization(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_eq_constant_serialization(
   constant_ptr: *const c_void,
-  bytes: &LeanSArrayObject,
+  bytes: *const c_void,
 ) -> bool {
   let constant = decode_ixon_constant(constant_ptr);
-  let bytes_data = bytes.data();
+  let bytes_data = lean_sarray_data(bytes);
   let mut buf = Vec::with_capacity(bytes_data.len());
   constant.put(&mut buf);
   buf == bytes_data
@@ -184,13 +180,13 @@ pub extern "C" fn rs_eq_constant_serialization(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_eq_env_serialization(
   raw_env_ptr: *const c_void,
-  bytes: &LeanSArrayObject,
+  bytes: *const c_void,
 ) -> bool {
   use super::env::decode_raw_env;
   use crate::ix::ixon::env::Env;
 
   let decoded = decode_raw_env(raw_env_ptr);
-  let bytes_data = bytes.data();
+  let bytes_data = lean_sarray_data(bytes);
 
   // Deserialize Lean's bytes using Rust's deserializer
   let rust_env = match Env::get(&mut &bytes_data[..]) {
@@ -260,8 +256,7 @@ extern "C" fn rs_env_serde_roundtrip(lean_bytes_ptr: *const c_void) -> bool {
   use crate::ix::ixon::env::Env;
 
   // Get bytes from Lean ByteArray
-  let bytes_arr: &LeanSArrayObject = as_ref_unsafe(lean_bytes_ptr.cast());
-  let lean_bytes = bytes_arr.data().to_vec();
+  let lean_bytes = lean_sarray_data(lean_bytes_ptr).to_vec();
 
   // Try to deserialize with Rust
   let mut slice = lean_bytes.as_slice();
@@ -307,8 +302,7 @@ extern "C" fn rs_env_serde_check(lean_bytes_ptr: *const c_void) -> bool {
   use crate::ix::ixon::env::Env;
 
   // Get bytes from Lean ByteArray
-  let bytes_arr: &LeanSArrayObject = as_ref_unsafe(lean_bytes_ptr.cast());
-  let lean_bytes = bytes_arr.data().to_vec();
+  let lean_bytes = lean_sarray_data(lean_bytes_ptr).to_vec();
 
   // Try to deserialize with Rust
   let mut slice = lean_bytes.as_slice();

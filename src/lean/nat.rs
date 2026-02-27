@@ -10,7 +10,7 @@ use std::mem::MaybeUninit;
 use num_bigint::BigUint;
 
 use crate::{
-  lean::{as_ref_unsafe, lean_is_scalar, object::LeanObject},
+  lean::{as_ref_unsafe, lean_is_scalar},
   lean_unbox,
 };
 
@@ -74,7 +74,7 @@ impl Nat {
 /// ```
 #[repr(C)]
 struct MpzObject {
-  m_header: LeanObject,
+  _header: [u8; 8],
   m_value: Mpz,
 }
 
@@ -102,7 +102,8 @@ impl Mpz {
 // GMP interop for building Lean Nat objects from limbs
 // =============================================================================
 
-use super::{lean_box_fn, lean_uint64_to_nat};
+use super::lean::lean_uint64_to_nat;
+use super::lean_box_fn;
 
 /// LEAN_MAX_SMALL_NAT = SIZE_MAX >> 1
 const LEAN_MAX_SMALL_NAT: u64 = (usize::MAX >> 1) as u64;
@@ -137,7 +138,7 @@ pub fn lean_nat_from_limbs(num_limbs: usize, limbs: *const u64) -> *mut c_void {
     return lean_box_fn(first as usize);
   }
   if num_limbs == 1 {
-    return unsafe { lean_uint64_to_nat(first) };
+    return unsafe { lean_uint64_to_nat(first).cast() };
   }
   // Multi-limb: use GMP
   unsafe {

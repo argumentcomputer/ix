@@ -5,11 +5,11 @@ use std::ffi::c_void;
 use rustc_hash::FxHashMap;
 
 use crate::ix::env::{ConstantInfo, Name};
-use crate::lean::array::LeanArrayObject;
-use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core,
-  lean_box_fn, lean_ctor_get, lean_ctor_set, lean_is_scalar, lean_obj_tag,
+use crate::lean::lean::{
+  lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
+  lean_ctor_set, lean_obj_tag,
 };
+use crate::lean::{lean_array_data, lean_box_fn, lean_is_scalar};
 
 use super::super::builder::LeanBuildCache;
 use super::constant::{build_constant_info, decode_constant_info};
@@ -37,7 +37,7 @@ pub fn build_hashmap_from_pairs(
     // Create array of AssocLists (initially all nil = boxed 0)
     let buckets = lean_alloc_array(bucket_count, bucket_count);
     for i in 0..bucket_count {
-      lean_array_set_core(buckets, i, lean_box_fn(0)); // nil
+      lean_array_set_core(buckets, i, lean_box_fn(0).cast()); // nil
     }
 
     // Insert entries
@@ -46,14 +46,13 @@ pub fn build_hashmap_from_pairs(
         usize::try_from(hash).expect("hash overflows usize") % bucket_count;
 
       // Get current bucket (AssocList)
-      let buckets_arr = buckets.cast::<LeanArrayObject>();
-      let current_tail = (*buckets_arr).data()[bucket_idx];
+      let current_tail = lean_array_data(buckets.cast())[bucket_idx];
 
       // cons (key : α) (value : β) (tail : AssocList α β) -- tag 1
       let cons = lean_alloc_ctor(1, 3, 0);
-      lean_ctor_set(cons, 0, key_obj);
-      lean_ctor_set(cons, 1, val_obj);
-      lean_ctor_set(cons, 2, current_tail as *mut c_void);
+      lean_ctor_set(cons, 0, key_obj.cast());
+      lean_ctor_set(cons, 1, val_obj.cast());
+      lean_ctor_set(cons, 2, current_tail as *mut _);
 
       lean_array_set_core(buckets, bucket_idx, cons);
     }
@@ -62,15 +61,15 @@ pub fn build_hashmap_from_pairs(
     // Due to unboxing, this IS the HashMap directly
     // Field 0 = size, Field 1 = buckets (2 object fields, no scalars)
     let size_obj = if size <= (usize::MAX >> 1) {
-      lean_box_fn(size)
+      lean_box_fn(size).cast()
     } else {
-      crate::lean::lean_uint64_to_nat(size as u64)
+      crate::lean::lean::lean_uint64_to_nat(size as u64)
     };
 
     let raw = lean_alloc_ctor(0, 2, 0);
     lean_ctor_set(raw, 0, size_obj);
     lean_ctor_set(raw, 1, buckets);
-    raw
+    raw.cast()
   }
 }
 
@@ -100,12 +99,12 @@ pub fn build_raw_environment(
       let val_obj = build_constant_info(cache, info);
       // Build pair (Name × ConstantInfo)
       let pair = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(pair, 0, key_obj);
-      lean_ctor_set(pair, 1, val_obj);
+      lean_ctor_set(pair, 0, key_obj.cast());
+      lean_ctor_set(pair, 1, val_obj.cast());
       lean_array_set_core(consts_arr, i, pair);
     }
 
-    consts_arr
+    consts_arr.cast()
   }
 }
 
@@ -143,8 +142,8 @@ where
       let value_ptr = lean_ctor_get(current as *mut _, 1);
       let tail_ptr = lean_ctor_get(current as *mut _, 2);
 
-      result.push((decode_key(key_ptr), decode_val(value_ptr)));
-      current = tail_ptr;
+      result.push((decode_key(key_ptr.cast()), decode_val(value_ptr.cast())));
+      current = tail_ptr.cast();
     }
   }
 
@@ -172,10 +171,8 @@ where
     let _size_ptr = lean_ctor_get(map_ptr as *mut _, 0); // unused but needed for layout
     let buckets_ptr = lean_ctor_get(map_ptr as *mut _, 1);
 
-    let buckets_obj: &LeanArrayObject = as_ref_unsafe(buckets_ptr.cast());
-
     let mut pairs = Vec::new();
-    for &bucket_ptr in buckets_obj.data() {
+    for &bucket_ptr in lean_array_data(buckets_ptr.cast()) {
       let bucket_pairs = decode_assoc_list(bucket_ptr, decode_key, decode_val);
       pairs.extend(bucket_pairs);
     }
@@ -213,14 +210,13 @@ pub fn decode_ix_raw_environment(
   unsafe {
     // RawEnvironment is a single-field structure that may be unboxed
     // Try treating ptr as the array directly first
-    let arr_obj: &LeanArrayObject = as_ref_unsafe(ptr.cast());
     let mut consts: FxHashMap<Name, ConstantInfo> = FxHashMap::default();
 
-    for &pair_ptr in arr_obj.data() {
+    for &pair_ptr in lean_array_data(ptr) {
       let name_ptr = lean_ctor_get(pair_ptr as *mut _, 0);
       let info_ptr = lean_ctor_get(pair_ptr as *mut _, 1);
-      let name = decode_ix_name(name_ptr);
-      let info = decode_constant_info(info_ptr);
+      let name = decode_ix_name(name_ptr.cast());
+      let info = decode_constant_info(info_ptr.cast());
       consts.insert(name, info);
     }
 
@@ -234,14 +230,14 @@ pub fn decode_ix_raw_environment_vec(
   ptr: *const c_void,
 ) -> Vec<(Name, ConstantInfo)> {
   unsafe {
-    let arr_obj: &LeanArrayObject = as_ref_unsafe(ptr.cast());
-    let mut consts = Vec::with_capacity(arr_obj.data().len());
+    let data = lean_array_data(ptr);
+    let mut consts = Vec::with_capacity(data.len());
 
-    for &pair_ptr in arr_obj.data() {
+    for &pair_ptr in data {
       let name_ptr = lean_ctor_get(pair_ptr as *mut _, 0);
       let info_ptr = lean_ctor_get(pair_ptr as *mut _, 1);
-      let name = decode_ix_name(name_ptr);
-      let info = decode_constant_info(info_ptr);
+      let name = decode_ix_name(name_ptr.cast());
+      let info = decode_constant_info(info_ptr.cast());
       consts.push((name, info));
     }
 
@@ -260,11 +256,11 @@ pub fn build_raw_environment_from_vec(
       let key_obj = build_name(cache, name);
       let val_obj = build_constant_info(cache, info);
       let pair = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(pair, 0, key_obj);
-      lean_ctor_set(pair, 1, val_obj);
+      lean_ctor_set(pair, 0, key_obj.cast());
+      lean_ctor_set(pair, 1, val_obj.cast());
       lean_array_set_core(consts_arr, i, pair);
     }
-    consts_arr
+    consts_arr.cast()
   }
 }
 

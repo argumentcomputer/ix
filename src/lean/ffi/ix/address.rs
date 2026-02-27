@@ -5,7 +5,7 @@
 use std::ffi::c_void;
 
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_sarray, lean_sarray_cptr, sarray::LeanSArrayObject,
+  lean::{lean_alloc_sarray, lean_sarray_cptr}, lean_sarray_data,
 };
 
 /// Build a Ix.Address from a blake3::Hash.
@@ -16,7 +16,7 @@ pub fn build_address(hash: &blake3::Hash) -> *mut c_void {
     let ba = lean_alloc_sarray(1, bytes.len(), bytes.len());
     let data_ptr = lean_sarray_cptr(ba);
     std::ptr::copy_nonoverlapping(bytes.as_ptr(), data_ptr, bytes.len());
-    ba // Due to unboxing, ByteArray IS the Address
+    ba.cast() // Due to unboxing, ByteArray IS the Address
   }
 }
 
@@ -29,13 +29,12 @@ pub extern "C" fn rs_roundtrip_ix_address(
   unsafe {
     // Address is a single-field struct { hash : ByteArray }
     // Due to unboxing, addr_ptr IS the ByteArray directly
-    let ba: &LeanSArrayObject = as_ref_unsafe(addr_ptr.cast());
-    let bytes = ba.data();
+    let bytes = lean_sarray_data(addr_ptr);
 
     // Rebuild ByteArray - this IS the Address due to unboxing
     let new_ba = lean_alloc_sarray(1, bytes.len(), bytes.len());
     let data_ptr = lean_sarray_cptr(new_ba);
     std::ptr::copy_nonoverlapping(bytes.as_ptr(), data_ptr, bytes.len());
-    new_ba
+    new_ba.cast()
   }
 }
