@@ -17,12 +17,14 @@ use crate::ix::env::{
   DefinitionVal, InductiveVal, Name, OpaqueVal, QuotKind, QuotVal,
   RecursorRule, RecursorVal, ReducibilityHints, TheoremVal,
 };
-use crate::lean::nat::Nat;
 use crate::lean::lean::{
   lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
   lean_ctor_set, lean_ctor_set_uint8, lean_obj_tag,
 };
-use crate::lean::{lean_array_data, lean_box_fn, lean_ctor_scalar_u8, lean_is_scalar};
+use crate::lean::nat::Nat;
+use crate::lean::{
+  lean_array_data, lean_box_fn, lean_ctor_scalar_u8, lean_is_scalar,
+};
 
 use super::super::builder::LeanBuildCache;
 use super::super::primitives::build_nat;
@@ -289,8 +291,10 @@ pub fn decode_constant_val(ptr: *const c_void) -> ConstantVal {
 
     let name = decode_ix_name(name_ptr.cast());
 
-    let level_params: Vec<Name> =
-      lean_array_data(level_params_ptr.cast()).iter().map(|&p| decode_ix_name(p)).collect();
+    let level_params: Vec<Name> = lean_array_data(level_params_ptr.cast())
+      .iter()
+      .map(|&p| decode_ix_name(p))
+      .collect();
 
     let typ = decode_ix_expr(type_ptr.cast());
 
@@ -500,8 +504,10 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         let k = lean_ctor_scalar_u8(inner_ptr.cast(), 7, 0) != 0;
         let is_unsafe = lean_ctor_scalar_u8(inner_ptr.cast(), 7, 1) != 0;
 
-        let rules: Vec<RecursorRule> =
-          lean_array_data(rules_ptr.cast()).iter().map(|&p| decode_recursor_rule(p)).collect();
+        let rules: Vec<RecursorRule> = lean_array_data(rules_ptr.cast())
+          .iter()
+          .map(|&p| decode_recursor_rule(p))
+          .collect();
 
         ConstantInfo::RecInfo(RecursorVal {
           cnst: decode_constant_val(cnst_ptr.cast()),

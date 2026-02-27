@@ -8,12 +8,12 @@
 use std::ffi::c_void;
 
 use crate::ix::env::{Name, NameData};
-use crate::lean::nat::Nat;
 use crate::lean::lean::{
   lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
   lean_ctor_set, lean_inc, lean_mk_string, lean_obj_tag,
 };
 use crate::lean::lean_obj_to_string;
+use crate::lean::nat::Nat;
 
 use super::super::builder::LeanBuildCache;
 use super::super::primitives::build_nat;

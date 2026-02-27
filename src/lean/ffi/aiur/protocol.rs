@@ -14,8 +14,6 @@ use crate::{
     synthesis::AiurSystem,
   },
   lean::{
-    lean_array_data, lean_array_to_vec, lean_sarray_data, lean_sarray_set_data,
-    lean_ctor_objs,
     ffi::{
       ExternalClassPtr,
       aiur::{
@@ -24,13 +22,13 @@ use crate::{
       drop_raw, to_raw,
     },
     lean::{
-      lean_alloc_array, lean_alloc_ctor, lean_alloc_external, lean_alloc_sarray,
-      lean_array_set_core, lean_ctor_set, lean_get_external_data,
-      lean_register_external_class,
+      lean_alloc_array, lean_alloc_ctor, lean_alloc_external,
+      lean_alloc_sarray, lean_array_set_core, lean_ctor_set,
+      lean_get_external_data, lean_register_external_class,
     },
-    lean_box_fn, lean_box_u64,
-    lean_except_error_string, lean_except_ok,
-    noop_foreach,
+    lean_array_data, lean_array_to_vec, lean_box_fn, lean_box_u64,
+    lean_ctor_objs, lean_except_error_string, lean_except_ok, lean_sarray_data,
+    lean_sarray_set_data, noop_foreach,
   },
 };
 
@@ -44,9 +42,15 @@ static AIUR_SYSTEM_CLASS: OnceLock<ExternalClassPtr> = OnceLock::new();
 fn get_aiur_proof_class() -> *mut c_void {
   AIUR_PROOF_CLASS
     .get_or_init(|| {
-      ExternalClassPtr(unsafe {
-        lean_register_external_class(Some(aiur_proof_finalizer), Some(noop_foreach))
-      }.cast())
+      ExternalClassPtr(
+        unsafe {
+          lean_register_external_class(
+            Some(aiur_proof_finalizer),
+            Some(noop_foreach),
+          )
+        }
+        .cast(),
+      )
     })
     .0
 }
@@ -54,19 +58,25 @@ fn get_aiur_proof_class() -> *mut c_void {
 fn get_aiur_system_class() -> *mut c_void {
   AIUR_SYSTEM_CLASS
     .get_or_init(|| {
-      ExternalClassPtr(unsafe {
-        lean_register_external_class(Some(aiur_system_finalizer), Some(noop_foreach))
-      }.cast())
+      ExternalClassPtr(
+        unsafe {
+          lean_register_external_class(
+            Some(aiur_system_finalizer),
+            Some(noop_foreach),
+          )
+        }
+        .cast(),
+      )
     })
     .0
 }
 
 extern "C" fn aiur_proof_finalizer(ptr: *mut c_void) {
-  drop_raw(ptr as *mut Proof);
+  drop_raw(ptr.cast::<Proof>());
 }
 
 extern "C" fn aiur_system_finalizer(ptr: *mut c_void) {
-  drop_raw(ptr as *mut AiurSystem);
+  drop_raw(ptr.cast::<AiurSystem>());
 }
 
 // =============================================================================
@@ -75,10 +85,9 @@ extern "C" fn aiur_system_finalizer(ptr: *mut c_void) {
 
 /// `Aiur.Proof.toBytes : @& Proof → ByteArray`
 #[unsafe(no_mangle)]
-extern "C" fn rs_aiur_proof_to_bytes(
-  proof_obj: *const c_void,
-) -> *mut c_void {
-  let proof: &Proof = unsafe { &*lean_get_external_data(proof_obj as *mut _).cast() };
+extern "C" fn rs_aiur_proof_to_bytes(proof_obj: *const c_void) -> *mut c_void {
+  let proof: &Proof =
+    unsafe { &*lean_get_external_data(proof_obj as *mut _).cast() };
   let bytes = proof.to_bytes().expect("Serialization error");
   let len = bytes.len();
   let arr_ptr = unsafe { lean_alloc_sarray(1, len, len) };
@@ -88,11 +97,9 @@ extern "C" fn rs_aiur_proof_to_bytes(
 
 /// `Aiur.Proof.ofBytes : @& ByteArray → Proof`
 #[unsafe(no_mangle)]
-extern "C" fn rs_aiur_proof_of_bytes(
-  byte_array: *const c_void,
-) -> *mut c_void {
-  let proof =
-    Proof::from_bytes(lean_sarray_data(byte_array)).expect("Deserialization error");
+extern "C" fn rs_aiur_proof_of_bytes(byte_array: *const c_void) -> *mut c_void {
+  let proof = Proof::from_bytes(lean_sarray_data(byte_array))
+    .expect("Deserialization error");
   let ptr = to_raw(proof) as *mut c_void;
   unsafe { lean_alloc_external(get_aiur_proof_class().cast(), ptr) }.cast()
 }
@@ -164,7 +171,10 @@ extern "C" fn rs_aiur_system_prove(
 
   // proof: Proof (external object)
   let lean_proof = unsafe {
-    lean_alloc_external(get_aiur_proof_class().cast(), to_raw(proof) as *mut c_void)
+    lean_alloc_external(
+      get_aiur_proof_class().cast(),
+      to_raw(proof) as *mut c_void,
+    )
   };
 
   // io_data: Array G

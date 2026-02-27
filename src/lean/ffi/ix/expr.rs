@@ -19,12 +19,14 @@ use std::ffi::c_void;
 use crate::ix::env::{
   BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
 };
-use crate::lean::nat::Nat;
 use crate::lean::lean::{
   lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
   lean_ctor_set, lean_ctor_set_uint8, lean_inc, lean_mk_string, lean_obj_tag,
 };
-use crate::lean::{lean_array_data, lean_box_fn, lean_ctor_scalar_u8, lean_obj_to_string};
+use crate::lean::nat::Nat;
+use crate::lean::{
+  lean_array_data, lean_box_fn, lean_ctor_scalar_u8, lean_obj_to_string,
+};
 
 use super::super::builder::LeanBuildCache;
 use super::super::primitives::build_nat;
@@ -264,8 +266,10 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let levels_ptr = lean_ctor_get(ptr as *mut _, 1);
 
         let name = decode_ix_name(name_ptr.cast());
-        let levels: Vec<Level> =
-          lean_array_data(levels_ptr.cast()).iter().map(|&p| decode_ix_level(p)).collect();
+        let levels: Vec<Level> = lean_array_data(levels_ptr.cast())
+          .iter()
+          .map(|&p| decode_ix_level(p))
+          .collect();
 
         Expr::cnst(name, levels)
       },
@@ -341,8 +345,10 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let data_ptr = lean_ctor_get(ptr as *mut _, 0);
         let expr_ptr = lean_ctor_get(ptr as *mut _, 1);
 
-        let data: Vec<(Name, DataValue)> =
-          lean_array_data(data_ptr.cast()).iter().map(|&p| decode_name_data_value(p)).collect();
+        let data: Vec<(Name, DataValue)> = lean_array_data(data_ptr.cast())
+          .iter()
+          .map(|&p| decode_name_data_value(p))
+          .collect();
 
         let inner = decode_ix_expr(expr_ptr.cast());
         Expr::mdata(data, inner)

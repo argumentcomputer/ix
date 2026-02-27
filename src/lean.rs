@@ -11,7 +11,12 @@
   non_snake_case,
   dead_code,
   unsafe_op_in_unsafe_fn,
-  clippy::all
+  unused_qualifications,
+  clippy::all,
+  clippy::ptr_as_ptr,
+  clippy::cast_possible_wrap,
+  clippy::cast_possible_truncation,
+  clippy::derive_partial_eq_without_eq
 )]
 pub mod lean {
   include!(concat!(env!("OUT_DIR"), "/lean.rs"));
@@ -77,7 +82,7 @@ macro_rules! lean_unbox {
 
 #[inline]
 pub fn lean_unbox_u32(ptr: *const c_void) -> u32 {
-  unsafe { lean::lean_unbox_uint32(ptr as *mut _) as u32 }
+  unsafe { lean::lean_unbox_uint32(ptr as *mut _) }
 }
 
 #[inline]
@@ -92,43 +97,60 @@ pub fn lean_box_u64(v: u64) -> *mut c_void {
 
 pub fn lean_obj_to_string(ptr: *const c_void) -> String {
   unsafe {
-    let obj = ptr as *mut lean::lean_object;
+    let obj = ptr.cast_mut().cast::<lean::lean_object>();
     let len = lean::lean_string_size(obj) - 1; // m_size includes NUL
     let data = lean::lean_string_cstr(obj);
-    let bytes = std::slice::from_raw_parts(data as *const u8, len);
+    let bytes = std::slice::from_raw_parts(data.cast::<u8>(), len);
     String::from_utf8_unchecked(bytes.to_vec())
   }
 }
 
 #[inline]
 pub fn lean_tag(ptr: *const c_void) -> u8 {
+  #[allow(clippy::cast_possible_truncation)] // tags always fit in u8
   unsafe { lean::lean_obj_tag(ptr as *mut _) as u8 }
 }
 
 #[inline]
-pub fn lean_ctor_objs<const N: usize>(ptr: *const c_void) -> [*const c_void; N] {
+pub fn lean_ctor_objs<const N: usize>(
+  ptr: *const c_void,
+) -> [*const c_void; N] {
   // Use raw pointer arithmetic instead of lean_ctor_get to avoid its
   // bounds-check assertion. Call sites legitimately read past the object
   // fields into the scalar area (e.g. Expr.Data hash, Bool/BinderInfo
   // stored as UInt8 scalars). This matches the old LeanCtorObject::objs().
-  let base = unsafe { (ptr as *const *const c_void).add(1) };
+  let base = unsafe { ptr.cast::<*const c_void>().add(1) };
   std::array::from_fn(|i| unsafe { *base.add(i) })
 }
 
 #[inline]
-pub fn lean_ctor_scalar_u64(ptr: *const c_void, num_objs: usize, offset: usize) -> u64 {
+pub fn lean_ctor_scalar_u64(
+  ptr: *const c_void,
+  num_objs: usize,
+  offset: usize,
+) -> u64 {
   unsafe {
-    std::ptr::read_unaligned(ptr.cast::<u8>().add(8 + num_objs * 8 + offset).cast())
+    std::ptr::read_unaligned(
+      ptr.cast::<u8>().add(8 + num_objs * 8 + offset).cast(),
+    )
   }
 }
 
 #[inline]
-pub fn lean_ctor_scalar_u8(ptr: *const c_void, num_objs: usize, offset: usize) -> u8 {
+pub fn lean_ctor_scalar_u8(
+  ptr: *const c_void,
+  num_objs: usize,
+  offset: usize,
+) -> u8 {
   unsafe { *ptr.cast::<u8>().add(8 + num_objs * 8 + offset) }
 }
 
 #[inline]
-pub fn lean_ctor_scalar_bool(ptr: *const c_void, num_objs: usize, offset: usize) -> bool {
+pub fn lean_ctor_scalar_bool(
+  ptr: *const c_void,
+  num_objs: usize,
+  offset: usize,
+) -> bool {
   lean_ctor_scalar_u8(ptr, num_objs, offset) != 0
 }
 
@@ -139,7 +161,7 @@ pub fn lean_ctor_scalar_bool(ptr: *const c_void, num_objs: usize, offset: usize)
 /// Return a slice over the elements of a Lean `Array` object.
 pub fn lean_array_data(ptr: *const c_void) -> &'static [*const c_void] {
   unsafe {
-    let obj = ptr as *mut lean::lean_object;
+    let obj = ptr.cast_mut().cast::<lean::lean_object>();
     let size = lean::lean_array_size(obj);
     let cptr = lean::lean_array_cptr(obj);
     std::slice::from_raw_parts(cptr.cast(), size)
@@ -147,7 +169,10 @@ pub fn lean_array_data(ptr: *const c_void) -> &'static [*const c_void] {
 }
 
 /// Convert a Lean `Array` to a `Vec<T>` by mapping each element.
-pub fn lean_array_to_vec<T>(ptr: *const c_void, f: fn(*const c_void) -> T) -> Vec<T> {
+pub fn lean_array_to_vec<T>(
+  ptr: *const c_void,
+  f: fn(*const c_void) -> T,
+) -> Vec<T> {
   lean_array_data(ptr).iter().map(|&p| f(p)).collect()
 }
 
@@ -167,7 +192,7 @@ pub fn lean_array_to_vec_with<T, C>(
 /// Return a byte slice over a Lean `ByteArray` (scalar array) object.
 pub fn lean_sarray_data(ptr: *const c_void) -> &'static [u8] {
   unsafe {
-    let obj = ptr as *mut lean::lean_object;
+    let obj = ptr.cast_mut().cast::<lean::lean_object>();
     let size = lean::lean_sarray_size(obj);
     let cptr = lean::lean_sarray_cptr(obj);
     std::slice::from_raw_parts(cptr, size)
@@ -181,11 +206,11 @@ pub fn lean_sarray_data(ptr: *const c_void) -> &'static [u8] {
 /// with sufficient capacity for `data`.
 pub unsafe fn lean_sarray_set_data(ptr: *mut c_void, data: &[u8]) {
   unsafe {
-    let obj = ptr as *mut lean::lean_object;
+    let obj = ptr.cast::<lean::lean_object>();
     let cptr = lean::lean_sarray_cptr(obj);
     std::ptr::copy_nonoverlapping(data.as_ptr(), cptr, data.len());
     // Update m_size: at offset 8 (after lean_object header)
-    *(ptr.cast::<u8>().add(8) as *mut usize) = data.len();
+    *ptr.cast::<u8>().add(8).cast::<usize>() = data.len();
   }
 }
 
@@ -258,6 +283,9 @@ pub fn lean_except_error_string(msg: &str) -> *mut c_void {
 }
 
 /// No-op foreach callback for external classes that hold no Lean references.
+///
+/// # Safety
+/// Must only be used as a `lean_external_foreach_fn` callback.
 pub unsafe extern "C" fn noop_foreach(
   _: *mut c_void,
   _: *mut lean::lean_object,

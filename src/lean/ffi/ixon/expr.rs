@@ -145,18 +145,21 @@ pub fn build_ixon_expr_array(exprs: &[Arc<IxonExpr>]) -> *mut c_void {
 fn decode_u64_array(ptr: *const c_void) -> Vec<u64> {
   use crate::lean::lean_is_scalar;
 
-  crate::lean::lean_array_data(ptr).iter().map(|&elem| {
-    if lean_is_scalar(elem) {
-      // Small scalar value
-      lean_unbox!(u64, elem)
-    } else {
-      // Heap-boxed UInt64: value is at offset 8 (after 8-byte header)
-      unsafe {
-        let base = elem.cast::<u8>();
-        *base.add(8).cast::<u64>()
+  crate::lean::lean_array_data(ptr)
+    .iter()
+    .map(|&elem| {
+      if lean_is_scalar(elem) {
+        // Small scalar value
+        lean_unbox!(u64, elem)
+      } else {
+        // Heap-boxed UInt64: value is at offset 8 (after 8-byte header)
+        unsafe {
+          let base = elem.cast::<u8>();
+          *base.add(8).cast::<u64>()
+        }
       }
-    }
-  }).collect()
+    })
+    .collect()
 }
 
 /// Decode Ixon.Expr (12 constructors).
@@ -270,7 +273,10 @@ pub fn decode_ixon_expr(ptr: *const c_void) -> IxonExpr {
 
 /// Decode Array Ixon.Expr.
 pub fn decode_ixon_expr_array(ptr: *const c_void) -> Vec<Arc<IxonExpr>> {
-  crate::lean::lean_array_data(ptr).iter().map(|&e| Arc::new(decode_ixon_expr(e))).collect()
+  crate::lean::lean_array_data(ptr)
+    .iter()
+    .map(|&e| Arc::new(decode_ixon_expr(e)))
+    .collect()
 }
 
 // =============================================================================

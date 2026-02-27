@@ -5,7 +5,8 @@
 use std::ffi::c_void;
 
 use crate::lean::{
-  lean::{lean_alloc_sarray, lean_sarray_cptr}, lean_sarray_data,
+  lean::{lean_alloc_sarray, lean_sarray_cptr},
+  lean_sarray_data,
 };
 
 /// Build a Ix.Address from a blake3::Hash.

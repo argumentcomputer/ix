@@ -43,7 +43,7 @@ pub fn build_nat(n: &Nat) -> *mut c_void {
     arr[..chunk.len()].copy_from_slice(chunk);
     limbs.push(u64::from_le_bytes(arr));
   }
-  crate::lean::nat::lean_nat_from_limbs(limbs.len(), limbs.as_ptr())
+  unsafe { crate::lean::nat::lean_nat_from_limbs(limbs.len(), limbs.as_ptr()) }
 }
 
 // =============================================================================

@@ -4,7 +4,10 @@ use std::sync::OnceLock;
 use tiny_keccak::{Hasher, Keccak};
 
 use crate::lean::{
-  lean::{ lean_alloc_external, lean_alloc_sarray, lean_get_external_data, lean_register_external_class },
+  lean::{
+    lean_alloc_external, lean_alloc_sarray, lean_get_external_data,
+    lean_register_external_class,
+  },
   lean_sarray_data, lean_sarray_set_data, noop_foreach,
 };
 
@@ -15,15 +18,21 @@ static KECCAK_CLASS: OnceLock<ExternalClassPtr> = OnceLock::new();
 fn get_keccak_class() -> *mut c_void {
   KECCAK_CLASS
     .get_or_init(|| {
-      ExternalClassPtr(unsafe {
-        lean_register_external_class(Some(keccak_finalizer), Some(noop_foreach))
-      }.cast())
+      ExternalClassPtr(
+        unsafe {
+          lean_register_external_class(
+            Some(keccak_finalizer),
+            Some(noop_foreach),
+          )
+        }
+        .cast(),
+      )
     })
     .0
 }
 
 extern "C" fn keccak_finalizer(ptr: *mut c_void) {
-  drop_raw(ptr as *mut Keccak);
+  drop_raw(ptr.cast::<Keccak>());
 }
 
 /// `Keccak.Hasher.init : Unit → Hasher`
@@ -40,7 +49,8 @@ extern "C" fn rs_keccak256_hasher_update(
   hasher_obj: *mut c_void,
   input: *const c_void,
 ) -> *mut c_void {
-  let hasher: &Keccak = unsafe { &*lean_get_external_data(hasher_obj.cast()).cast() };
+  let hasher: &Keccak =
+    unsafe { &*lean_get_external_data(hasher_obj.cast()).cast() };
   let mut new_hasher = hasher.clone();
   new_hasher.update(lean_sarray_data(input));
   let ptr = to_raw(new_hasher) as *mut c_void;
@@ -52,7 +62,8 @@ extern "C" fn rs_keccak256_hasher_update(
 extern "C" fn rs_keccak256_hasher_finalize(
   hasher_obj: *mut c_void,
 ) -> *mut c_void {
-  let hasher: &Keccak = unsafe { &*lean_get_external_data(hasher_obj.cast()).cast() };
+  let hasher: &Keccak =
+    unsafe { &*lean_get_external_data(hasher_obj.cast()).cast() };
   let mut data = [0u8; 32];
   hasher.clone().finalize(&mut data);
   let arr_ptr = unsafe { lean_alloc_sarray(1, 32, 32) };

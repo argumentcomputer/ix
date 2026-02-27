@@ -138,6 +138,7 @@ script "get-exe-targets" := do
     IO.println <| tgt.name.toString |>.dropPrefix "«" |>.dropSuffix "»" |>.toString
   return 0
 
+@[lint_driver]
 script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
