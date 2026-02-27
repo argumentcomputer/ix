@@ -11,13 +11,11 @@ use crate::ix::ixon::comm::Comm;
 use crate::ix::ixon::constant::Constant as IxonConstant;
 use crate::ix::ixon::env::{Env as IxonEnv, Named as IxonNamed};
 use crate::ix::ixon::metadata::ConstantMeta;
-use crate::lean::array::LeanArrayObject;
-use crate::lean::sarray::LeanSArrayObject;
-use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray,
-  lean_array_set_core, lean_ctor_get, lean_ctor_set, lean_mk_string,
-  lean_sarray_cptr,
+use crate::lean::lean::{
+  lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray, lean_array_set_core,
+  lean_ctor_get, lean_ctor_set, lean_mk_string, lean_sarray_cptr,
 };
+use crate::lean::{lean_array_to_vec, lean_sarray_data};
 
 use super::constant::{
   build_address_from_ixon, build_ixon_constant, decode_ixon_address,
@@ -44,8 +42,8 @@ pub fn decode_comm(ptr: *const c_void) -> DecodedComm {
     let secret_ptr = lean_ctor_get(ptr as *mut _, 0);
     let payload_ptr = lean_ctor_get(ptr as *mut _, 1);
     DecodedComm {
-      secret: decode_ixon_address(secret_ptr),
-      payload: decode_ixon_address(payload_ptr),
+      secret: decode_ixon_address(secret_ptr.cast()),
+      payload: decode_ixon_address(payload_ptr.cast()),
     }
   }
 }
@@ -56,9 +54,9 @@ pub fn build_comm(comm: &DecodedComm) -> *mut c_void {
     let secret_obj = build_address_from_ixon(&comm.secret);
     let payload_obj = build_address_from_ixon(&comm.payload);
     let obj = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(obj, 0, secret_obj);
-    lean_ctor_set(obj, 1, payload_obj);
-    obj
+    lean_ctor_set(obj, 0, secret_obj.cast());
+    lean_ctor_set(obj, 1, payload_obj.cast());
+    obj.cast()
   }
 }
 
@@ -78,8 +76,8 @@ pub fn decode_raw_const(ptr: *const c_void) -> DecodedRawConst {
     let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
     let const_ptr = lean_ctor_get(ptr as *mut _, 1);
     DecodedRawConst {
-      addr: decode_ixon_address(addr_ptr),
-      constant: decode_ixon_constant(const_ptr),
+      addr: decode_ixon_address(addr_ptr.cast()),
+      constant: decode_ixon_constant(const_ptr.cast()),
     }
   }
 }
@@ -90,9 +88,9 @@ pub fn build_raw_const(rc: &DecodedRawConst) -> *mut c_void {
     let addr_obj = build_address_from_ixon(&rc.addr);
     let const_obj = build_ixon_constant(&rc.constant);
     let obj = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(obj, 0, addr_obj);
-    lean_ctor_set(obj, 1, const_obj);
-    obj
+    lean_ctor_set(obj, 0, addr_obj.cast());
+    lean_ctor_set(obj, 1, const_obj.cast());
+    obj.cast()
   }
 }
 
@@ -114,9 +112,9 @@ pub fn decode_raw_named(ptr: *const c_void) -> DecodedRawNamed {
     let addr_ptr = lean_ctor_get(ptr as *mut _, 1);
     let meta_ptr = lean_ctor_get(ptr as *mut _, 2);
     DecodedRawNamed {
-      name: decode_ix_name(name_ptr),
-      addr: decode_ixon_address(addr_ptr),
-      const_meta: decode_constant_meta(meta_ptr),
+      name: decode_ix_name(name_ptr.cast()),
+      addr: decode_ixon_address(addr_ptr.cast()),
+      const_meta: decode_constant_meta(meta_ptr.cast()),
     }
   }
 }
@@ -131,10 +129,10 @@ pub fn build_raw_named(
     let addr_obj = build_address_from_ixon(&rn.addr);
     let meta_obj = build_constant_meta(&rn.const_meta);
     let obj = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(obj, 0, name_obj);
-    lean_ctor_set(obj, 1, addr_obj);
-    lean_ctor_set(obj, 2, meta_obj);
-    obj
+    lean_ctor_set(obj, 0, name_obj.cast());
+    lean_ctor_set(obj, 1, addr_obj.cast());
+    lean_ctor_set(obj, 2, meta_obj.cast());
+    obj.cast()
   }
 }
 
@@ -153,10 +151,9 @@ pub fn decode_raw_blob(ptr: *const c_void) -> DecodedRawBlob {
   unsafe {
     let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
     let bytes_ptr = lean_ctor_get(ptr as *mut _, 1);
-    let bytes_arr: &LeanSArrayObject = as_ref_unsafe(bytes_ptr.cast());
     DecodedRawBlob {
-      addr: decode_ixon_address(addr_ptr),
-      bytes: bytes_arr.data().to_vec(),
+      addr: decode_ixon_address(addr_ptr.cast()),
+      bytes: lean_sarray_data(bytes_ptr.cast()).to_vec(),
     }
   }
 }
@@ -172,9 +169,9 @@ pub fn build_raw_blob(rb: &DecodedRawBlob) -> *mut c_void {
     std::ptr::copy_nonoverlapping(rb.bytes.as_ptr(), data_ptr, len);
 
     let obj = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(obj, 0, addr_obj);
+    lean_ctor_set(obj, 0, addr_obj.cast());
     lean_ctor_set(obj, 1, bytes_obj);
-    obj
+    obj.cast()
   }
 }
 
@@ -194,8 +191,8 @@ pub fn decode_raw_comm(ptr: *const c_void) -> DecodedRawComm {
     let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
     let comm_ptr = lean_ctor_get(ptr as *mut _, 1);
     DecodedRawComm {
-      addr: decode_ixon_address(addr_ptr),
-      comm: decode_comm(comm_ptr),
+      addr: decode_ixon_address(addr_ptr.cast()),
+      comm: decode_comm(comm_ptr.cast()),
     }
   }
 }
@@ -206,9 +203,9 @@ pub fn build_raw_comm(rc: &DecodedRawComm) -> *mut c_void {
     let addr_obj = build_address_from_ixon(&rc.addr);
     let comm_obj = build_comm(&rc.comm);
     let obj = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(obj, 0, addr_obj);
-    lean_ctor_set(obj, 1, comm_obj);
-    obj
+    lean_ctor_set(obj, 0, addr_obj.cast());
+    lean_ctor_set(obj, 1, comm_obj.cast());
+    obj.cast()
   }
 }
 
@@ -228,8 +225,8 @@ pub fn decode_raw_name_entry(ptr: *const c_void) -> DecodedRawNameEntry {
     let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
     let name_ptr = lean_ctor_get(ptr as *mut _, 1);
     DecodedRawNameEntry {
-      addr: decode_ixon_address(addr_ptr),
-      name: decode_ix_name(name_ptr),
+      addr: decode_ixon_address(addr_ptr.cast()),
+      name: decode_ix_name(name_ptr.cast()),
     }
   }
 }
@@ -244,9 +241,9 @@ pub fn build_raw_name_entry(
     let addr_obj = build_address_from_ixon(addr);
     let name_obj = build_name(cache, name);
     let obj = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(obj, 0, addr_obj);
-    lean_ctor_set(obj, 1, name_obj);
-    obj
+    lean_ctor_set(obj, 0, addr_obj.cast());
+    lean_ctor_set(obj, 1, name_obj.cast());
+    obj.cast()
   }
 }
 
@@ -272,18 +269,12 @@ pub fn decode_raw_env(ptr: *const c_void) -> DecodedRawEnv {
     let comms_ptr = lean_ctor_get(ptr as *mut _, 3);
     let names_ptr = lean_ctor_get(ptr as *mut _, 4);
 
-    let consts_arr: &LeanArrayObject = as_ref_unsafe(consts_ptr.cast());
-    let named_arr: &LeanArrayObject = as_ref_unsafe(named_ptr.cast());
-    let blobs_arr: &LeanArrayObject = as_ref_unsafe(blobs_ptr.cast());
-    let comms_arr: &LeanArrayObject = as_ref_unsafe(comms_ptr.cast());
-    let names_arr: &LeanArrayObject = as_ref_unsafe(names_ptr.cast());
-
     DecodedRawEnv {
-      consts: consts_arr.to_vec(decode_raw_const),
-      named: named_arr.to_vec(decode_raw_named),
-      blobs: blobs_arr.to_vec(decode_raw_blob),
-      comms: comms_arr.to_vec(decode_raw_comm),
-      names: names_arr.to_vec(decode_raw_name_entry),
+      consts: lean_array_to_vec(consts_ptr.cast(), decode_raw_const),
+      named: lean_array_to_vec(named_ptr.cast(), decode_raw_named),
+      blobs: lean_array_to_vec(blobs_ptr.cast(), decode_raw_blob),
+      comms: lean_array_to_vec(comms_ptr.cast(), decode_raw_comm),
+      names: lean_array_to_vec(names_ptr.cast(), decode_raw_name_entry),
     }
   }
 }
@@ -297,35 +288,35 @@ pub fn build_raw_env(env: &DecodedRawEnv) -> *mut c_void {
     let consts_arr = lean_alloc_array(env.consts.len(), env.consts.len());
     for (i, rc) in env.consts.iter().enumerate() {
       let obj = build_raw_const(rc);
-      lean_array_set_core(consts_arr, i, obj);
+      lean_array_set_core(consts_arr, i, obj.cast());
     }
 
     // Build named array
     let named_arr = lean_alloc_array(env.named.len(), env.named.len());
     for (i, rn) in env.named.iter().enumerate() {
       let obj = build_raw_named(&mut cache, rn);
-      lean_array_set_core(named_arr, i, obj);
+      lean_array_set_core(named_arr, i, obj.cast());
     }
 
     // Build blobs array
     let blobs_arr = lean_alloc_array(env.blobs.len(), env.blobs.len());
     for (i, rb) in env.blobs.iter().enumerate() {
       let obj = build_raw_blob(rb);
-      lean_array_set_core(blobs_arr, i, obj);
+      lean_array_set_core(blobs_arr, i, obj.cast());
     }
 
     // Build comms array
     let comms_arr = lean_alloc_array(env.comms.len(), env.comms.len());
     for (i, rc) in env.comms.iter().enumerate() {
       let obj = build_raw_comm(rc);
-      lean_array_set_core(comms_arr, i, obj);
+      lean_array_set_core(comms_arr, i, obj.cast());
     }
 
     // Build names array
     let names_arr = lean_alloc_array(env.names.len(), env.names.len());
     for (i, rn) in env.names.iter().enumerate() {
       let obj = build_raw_name_entry(&mut cache, &rn.addr, &rn.name);
-      lean_array_set_core(names_arr, i, obj);
+      lean_array_set_core(names_arr, i, obj.cast());
     }
 
     // Build RawEnv structure
@@ -335,7 +326,7 @@ pub fn build_raw_env(env: &DecodedRawEnv) -> *mut c_void {
     lean_ctor_set(obj, 2, blobs_arr);
     lean_ctor_set(obj, 3, comms_arr);
     lean_ctor_set(obj, 4, names_arr);
-    obj
+    obj.cast()
   }
 }
 
@@ -432,7 +423,7 @@ pub extern "C" fn rs_ser_env(raw_env_ptr: *const c_void) -> *mut c_void {
       lean_sarray_cptr(ba),
       buf.len(),
     );
-    ba
+    ba.cast()
   }
 }
 
@@ -443,8 +434,7 @@ pub extern "C" fn rs_ser_env(raw_env_ptr: *const c_void) -> *mut c_void {
 /// FFI: Deserialize ByteArray → Except String Ixon.RawEnv via Rust's Env.get. Pure.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_des_env(bytes_ptr: *const c_void) -> *mut c_void {
-  let bytes_arr: &LeanSArrayObject = as_ref_unsafe(bytes_ptr.cast());
-  let data = bytes_arr.data();
+  let data = lean_sarray_data(bytes_ptr);
   let mut slice: &[u8] = data;
   match IxonEnv::get(&mut slice) {
     Ok(env) => {
@@ -453,8 +443,8 @@ pub extern "C" fn rs_des_env(bytes_ptr: *const c_void) -> *mut c_void {
       // Except.ok (tag 1)
       unsafe {
         let obj = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(obj, 0, raw_env);
-        obj
+        lean_ctor_set(obj, 0, raw_env.cast());
+        obj.cast()
       }
     },
     Err(e) => {
@@ -467,7 +457,7 @@ pub extern "C" fn rs_des_env(bytes_ptr: *const c_void) -> *mut c_void {
         let lean_str = lean_mk_string(msg.as_ptr());
         let obj = lean_alloc_ctor(0, 1, 0);
         lean_ctor_set(obj, 0, lean_str);
-        obj
+        obj.cast()
       }
     },
   }

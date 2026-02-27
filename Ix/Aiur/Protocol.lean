@@ -12,10 +12,10 @@ instance : Nonempty Proof := PoofNonempty.property
 
 namespace Proof
 
-@[extern "c_rs_aiur_proof_to_bytes"]
+@[extern "rs_aiur_proof_to_bytes"]
 opaque toBytes : @& Proof → ByteArray
 
-@[extern "c_rs_aiur_proof_of_bytes"]
+@[extern "rs_aiur_proof_of_bytes"]
 opaque ofBytes : @& ByteArray → Proof
 
 end Proof
@@ -48,10 +48,10 @@ instance : BEq IOBuffer where
 
 namespace AiurSystem
 
-@[extern "c_rs_aiur_system_build"]
+@[extern "rs_aiur_system_build"]
 opaque build : @&Bytecode.Toplevel → @&CommitmentParameters → AiurSystem
 
-@[extern "c_rs_aiur_system_prove"]
+@[extern "rs_aiur_system_prove"]
 private opaque prove' : @& AiurSystem → @& FriParameters →
   @& Bytecode.FunIdx → @& Array G → (ioData : @& Array G) →
   (ioMap : @& Array (Array G × IOKeyInfo)) →
@@ -67,7 +67,7 @@ def prove (system : @& AiurSystem) (friParameters : @& FriParameters)
   let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
   (claim, proof, ⟨ioData, ioMap⟩)
 
-@[extern "c_rs_aiur_system_verify"]
+@[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem → @& FriParameters →
   @& Array G → @& Proof → Except String Unit
 

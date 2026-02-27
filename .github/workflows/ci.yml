@@ -17,13 +17,10 @@ jobs:
   lean-test:
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
-          test: true
-      - name: Build all targets
-        run: lake run build-all --wfail
       - name: Test Ix CLI
         run: lake test -- cli
       - name: Aiur tests
@@ -41,28 +38,22 @@ jobs:
           repository: argumentcomputer/ci-workflows
       - uses: ./.github/actions/ci-env
       - uses: actions/checkout@v6
+      # Install Lean for rust-bindgen step
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
-      - name: Tests
-        run: cargo nextest run --release --profile ci --workspace --run-ignored all
-
-  rust-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          repository: argumentcomputer/ci-workflows
-      - uses: ./.github/actions/ci-env
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - name: Check Rustfmt code style
         run: cargo fmt --all --check
-      - name: Check *everything* compiles
-        run: cargo check --all-targets --all-features --workspace
       - name: Check clippy warnings
         run: cargo xclippy -D warnings
+      - name: Check *everything* compiles
+        run: cargo check --all-targets --all-features --workspace
+      - name: Tests
+        run: cargo nextest run --release --profile ci --workspace --run-ignored all
       - name: Get Rust version
         run: |
           echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a $GITHUB_ENV

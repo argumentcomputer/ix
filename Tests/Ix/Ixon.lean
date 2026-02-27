@@ -1,8 +1,3 @@
-/-
-  Pure Lean serialization tests for Ixon types.
-  Generators have been moved to Tests/Gen/Ixon.lean.
--/
-
 module
 public import Ix.Ixon
 public import Ix.Sharing

@@ -8,9 +8,7 @@ use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::sharing::{
   analyze_block, build_sharing_vec, decide_sharing,
 };
-use crate::lean::array::LeanArrayObject;
-use crate::lean::as_ref_unsafe;
-use crate::lean::sarray::LeanSArrayObject;
+use crate::lean::{lean_array_to_vec, lean_sarray_set_data};
 
 use super::expr::decode_ixon_expr_array;
 use super::serialize::lean_ptr_to_ixon_expr;
@@ -19,8 +17,8 @@ use super::serialize::lean_ptr_to_ixon_expr;
 /// This helps diagnose why Lean and Rust make different sharing decisions.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_debug_sharing_analysis(exprs_ptr: *const c_void) {
-  let exprs_arr: &LeanArrayObject = as_ref_unsafe(exprs_ptr.cast());
-  let exprs: Vec<Arc<IxonExpr>> = exprs_arr.to_vec(lean_ptr_to_ixon_expr);
+  let exprs: Vec<Arc<IxonExpr>> =
+    lean_array_to_vec(exprs_ptr, lean_ptr_to_ixon_expr);
 
   println!("[Rust] Analyzing {} input expressions", exprs.len());
 
@@ -98,13 +96,8 @@ extern "C" fn rs_run_sharing_analysis(
   }
 
   // Write to output arrays
-  let sharing_out: &mut LeanSArrayObject =
-    unsafe { &mut *out_sharing_vec.cast() };
-  sharing_out.set_data(&sharing_bytes);
-
-  let rewritten_out: &mut LeanSArrayObject =
-    unsafe { &mut *out_rewritten.cast() };
-  rewritten_out.set_data(&rewritten_bytes);
+  unsafe { lean_sarray_set_data(out_sharing_vec, &sharing_bytes) };
+  unsafe { lean_sarray_set_data(out_rewritten, &rewritten_bytes) };
 
   shared_hashes.len() as u64
 }

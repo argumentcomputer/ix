@@ -15,7 +15,7 @@ structure GetResponse where
   bytes: ByteArray
   deriving Inhabited
 
-@[never_extract, extern "c_rs_iroh_put"]
+@[never_extract, extern "rs_iroh_put"]
 private opaque putBytes' : @& String → @& Array String → @& String → @& String → Except String PutResponse
 
 def putBytes (nodeId : @& String) (addrs : @& Array String) (relayUrl : @& String) (input : @& String) : IO Unit := do
@@ -23,7 +23,7 @@ def putBytes (nodeId : @& String) (addrs : @& Array String) (relayUrl : @& Strin
   | .ok response => IO.println s!"Pinned hash {response.hash}"
   | .error e => throw (IO.userError e)
 
-@[never_extract, extern "c_rs_iroh_get"]
+@[never_extract, extern "rs_iroh_get"]
 private opaque getBytes' : @& String → @& Array String → @& String → @& String → Except String GetResponse
 
 def getBytes (nodeId : @& String) (addrs : @& Array String) (relayUrl : @& String) (hash : @& String) (writeToDisk : Bool): IO Unit := do

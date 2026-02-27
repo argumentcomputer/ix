@@ -1,7 +1,7 @@
 use iroh::{Endpoint, NodeAddr, NodeId, RelayMode, RelayUrl, SecretKey};
 use n0_snafu::{Result, ResultExt};
 use n0_watcher::Watcher as _;
-use std::ffi::{CString, c_char};
+use std::ffi::c_void;
 use std::net::SocketAddr;
 use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
@@ -9,104 +9,114 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
-use crate::lean::array::LeanArrayObject;
-use crate::lean::as_ref_unsafe;
-use crate::lean::ffi::iroh::{GetResponseFFI, PutResponseFFI};
-use crate::lean::ffi::{CResult, raw_to_str, to_raw};
-use crate::lean::string::LeanStringObject;
+use crate::lean::{
+  lean::{lean_alloc_ctor, lean_alloc_sarray, lean_ctor_set, lean_mk_string},
+  lean_array_to_vec, lean_except_error_string, lean_except_ok,
+  lean_obj_to_string, lean_sarray_set_data, safe_cstring,
+};
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
 // Maximum number of characters to read from the server. Connection automatically closed if this is exceeded
 const READ_SIZE_LIMIT: usize = 100_000_000;
 
-#[unsafe(no_mangle)]
-extern "C" fn rs_iroh_put(
-  node_id: *const c_char,
-  addrs: &LeanArrayObject,
-  relay_url: *const c_char,
-  input: *const c_char,
-) -> *const CResult {
-  let node_id = raw_to_str(node_id);
-  let addrs: Vec<String> = addrs.to_vec(|ptr| {
-    let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
-    string.as_string()
-  });
-  let relay_url = raw_to_str(relay_url);
-  let input = raw_to_str(input);
-
-  let request = Request::Put(PutRequest { bytes: input.as_bytes().to_vec() });
-  // Create a Tokio runtime to block on the async function
-  let rt =
-    tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
-  // Run the async function and block until we get the result
-  let c_result = match rt.block_on(connect(node_id, &addrs, relay_url, request))
-  {
-    Ok(response) => match response {
-      Response::Put(put_response) => {
-        let put_response_ffi =
-          PutResponseFFI::new(&put_response.message, &put_response.hash);
-        CResult { is_ok: true, data: to_raw(put_response_ffi).cast() }
-      },
-      _ => {
-        let msg = CString::new("error: incorrect server response")
-          .expect("CString::new failure");
-        CResult { is_ok: false, data: msg.into_raw().cast() }
-      },
-    },
-    Err(err) => {
-      let msg = CString::new(err.to_string()).expect("CString::new failure");
-      CResult { is_ok: false, data: msg.into_raw().cast() }
-    },
-  };
-
-  to_raw(c_result)
+/// Build a Lean `PutResponse` structure:
+/// ```
+/// structure PutResponse where
+///   message: String
+///   hash: String
+/// ```
+fn mk_put_response(message: &str, hash: &str) -> *mut c_void {
+  let c_message = safe_cstring(message);
+  let c_hash = safe_cstring(hash);
+  unsafe {
+    let ctor = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(ctor, 0, lean_mk_string(c_message.as_ptr()));
+    lean_ctor_set(ctor, 1, lean_mk_string(c_hash.as_ptr()));
+    ctor.cast()
+  }
 }
 
+/// Build a Lean `GetResponse` structure:
+/// ```
+/// structure GetResponse where
+///   message: String
+///   hash: String
+///   bytes: ByteArray
+/// ```
+fn mk_get_response(message: &str, hash: &str, bytes: &[u8]) -> *mut c_void {
+  let c_message = safe_cstring(message);
+  let c_hash = safe_cstring(hash);
+  unsafe {
+    let byte_array = lean_alloc_sarray(1, bytes.len(), bytes.len());
+    lean_sarray_set_data(byte_array.cast(), bytes);
+
+    let ctor = lean_alloc_ctor(0, 3, 0);
+    lean_ctor_set(ctor, 0, lean_mk_string(c_message.as_ptr()));
+    lean_ctor_set(ctor, 1, lean_mk_string(c_hash.as_ptr()));
+    lean_ctor_set(ctor, 2, byte_array);
+    ctor.cast()
+  }
+}
+
+/// `Iroh.Connect.putBytes' : @& String → @& Array String → @& String → @& String → Except String PutResponse`
+#[unsafe(no_mangle)]
+extern "C" fn rs_iroh_put(
+  node_id: *const c_void,
+  addrs: *const c_void,
+  relay_url: *const c_void,
+  input: *const c_void,
+) -> *mut c_void {
+  let node_id = lean_obj_to_string(node_id);
+  let addrs: Vec<String> = lean_array_to_vec(addrs, lean_obj_to_string);
+  let relay_url = lean_obj_to_string(relay_url);
+  let input_str = lean_obj_to_string(input);
+
+  let request =
+    Request::Put(PutRequest { bytes: input_str.as_bytes().to_vec() });
+  let rt =
+    tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+
+  match rt.block_on(connect(&node_id, &addrs, &relay_url, request)) {
+    Ok(response) => match response {
+      Response::Put(put_response) => lean_except_ok(mk_put_response(
+        &put_response.message,
+        &put_response.hash,
+      )),
+      _ => lean_except_error_string("error: incorrect server response"),
+    },
+    Err(err) => lean_except_error_string(&err.to_string()),
+  }
+}
+
+/// `Iroh.Connect.getBytes' : @& String → @& Array String → @& String → @& String → Except String GetResponse`
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_get(
-  node_id: *const c_char,
-  addrs: &LeanArrayObject,
-  relay_url: *const c_char,
-  hash: *const c_char,
-) -> *const CResult {
-  let node_id = raw_to_str(node_id);
-  let addrs: Vec<String> = addrs.to_vec(|ptr| {
-    let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
-    string.as_string()
-  });
-  let relay_url = raw_to_str(relay_url);
-  let hash = raw_to_str(hash);
-  let request = Request::Get(GetRequest { hash: hash.to_owned() });
+  node_id: *const c_void,
+  addrs: *const c_void,
+  relay_url: *const c_void,
+  hash: *const c_void,
+) -> *mut c_void {
+  let node_id = lean_obj_to_string(node_id);
+  let addrs: Vec<String> = lean_array_to_vec(addrs, lean_obj_to_string);
+  let relay_url = lean_obj_to_string(relay_url);
+  let hash = lean_obj_to_string(hash);
+  let request = Request::Get(GetRequest { hash: hash.clone() });
 
   let rt =
     tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
-  let c_result = match rt.block_on(connect(node_id, &addrs, relay_url, request))
-  {
+  match rt.block_on(connect(&node_id, &addrs, &relay_url, request)) {
     Ok(response) => match response {
-      Response::Get(get_response) => {
-        let get_response_ffi = GetResponseFFI::new(
-          &get_response.message,
-          &get_response.hash,
-          &get_response.bytes,
-        );
-        CResult { is_ok: true, data: to_raw(get_response_ffi).cast() }
-      },
-      _ => {
-        let msg = CString::new("error: incorrect server response")
-          .expect("CString::new failure");
-        CResult { is_ok: false, data: msg.into_raw().cast() }
-      },
+      Response::Get(get_response) => lean_except_ok(mk_get_response(
+        &get_response.message,
+        &get_response.hash,
+        &get_response.bytes,
+      )),
+      _ => lean_except_error_string("error: incorrect server response"),
     },
-    Err(err) => {
-      let msg = CString::new(err.to_string()).expect("CString::new failure");
-      CResult { is_ok: false, data: msg.into_raw().cast() }
-    },
-  };
-
-  to_raw(c_result)
+    Err(err) => lean_except_error_string(&err.to_string()),
+  }
 }
 
 // Largely taken from https://github.com/n0-computer/iroh/blob/main/iroh/examples/connect.rs

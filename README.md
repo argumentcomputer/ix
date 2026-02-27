@@ -176,7 +176,13 @@ Ix consists of the following core components:
 
 Compiler performance benchmarks are tracked at https://bencher.dev/console/projects/ix/plots
 
-## Build & Install
+## Usage
+
+### Prerequisites
+
+- Install Clang to enable Bindgen, then set `LIBCLANG_PATH` per https://rust-lang.github.io/rust-bindgen/requirements.html
+
+### Build
 
 - Build and test the Ix library with `lake build` and `lake test`
 - Install the `ix` binary with `lake run install`, or run with `lake exe ix`

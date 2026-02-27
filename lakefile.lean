@@ -62,37 +62,6 @@ end IxApplications
 
 section FFI
 
-/-- Build the static lib for the C files -/
-extern_lib ix_c pkg := do
-  let compiler := "gcc"
-  let cDir := pkg.dir / "c"
-  let buildCDir := pkg.buildDir / "c"
-  let weakArgs := #["-fPIC", "-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
-
-  let cDirEntries ← cDir.readDir
-
-  -- Include every C header file in the trace mix
-  let extraDepTrace := cDirEntries.foldl (init := getLeanTrace) fun acc dirEntry =>
-    let filePath := dirEntry.path
-    if filePath.extension == some "h" then do
-      let x ← acc
-      let y ← computeTrace $ TextFilePath.mk filePath
-      pure $ x.mix y
-    else acc
-
-  -- Collect a build job for every C file in `cDir`
-  let mut buildJobs := #[]
-  for dirEntry in cDirEntries do
-    let filePath := dirEntry.path
-    if filePath.extension == some "c" then
-      let oFile := buildCDir / dirEntry.fileName |>.withExtension "o"
-      let srcJob ← inputTextFile filePath
-      let buildJob ← buildO oFile srcJob weakArgs #[] compiler extraDepTrace
-      buildJobs := buildJobs.push buildJob
-
-  let libName := nameToStaticLib "ix_c"
-  buildStaticLib (pkg.staticLibDir / libName) buildJobs
-
 /-- Build the static lib for the Rust crate -/
 extern_lib ix_rs pkg := do
   -- Defaults to `--features parallel`, configured via env var
@@ -169,6 +138,7 @@ script "get-exe-targets" := do
     IO.println <| tgt.name.toString |>.dropPrefix "«" |>.dropSuffix "»" |>.toString
   return 0
 
+@[lint_driver]
 script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)

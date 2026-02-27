@@ -16,12 +16,11 @@ use crate::ix::ixon::constant::{
   Quotient as IxonQuotient, Recursor as IxonRecursor, RecursorProj,
   RecursorRule as IxonRecursorRule,
 };
-use crate::lean::sarray::LeanSArrayObject;
-use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray,
-  lean_array_set_core, lean_ctor_get, lean_ctor_set, lean_obj_tag,
-  lean_sarray_cptr,
+use crate::lean::lean::{
+  lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray, lean_array_set_core,
+  lean_ctor_get, lean_ctor_set, lean_obj_tag, lean_sarray_cptr,
 };
+use crate::lean::{lean_array_to_vec, lean_sarray_data};
 
 use super::expr::{
   build_ixon_expr, build_ixon_expr_array, decode_ixon_expr,
@@ -35,7 +34,7 @@ pub fn build_address_from_ixon(addr: &Address) -> *mut c_void {
     let ba = lean_alloc_sarray(1, 32, 32);
     let data_ptr = lean_sarray_cptr(ba);
     std::ptr::copy_nonoverlapping(addr.as_bytes().as_ptr(), data_ptr, 32);
-    ba
+    ba.cast()
   }
 }
 
@@ -45,9 +44,9 @@ pub fn build_address_array(addrs: &[Address]) -> *mut c_void {
     let arr = lean_alloc_array(addrs.len(), addrs.len());
     for (i, addr) in addrs.iter().enumerate() {
       let addr_obj = build_address_from_ixon(addr);
-      lean_array_set_core(arr, i, addr_obj);
+      lean_array_set_core(arr, i, addr_obj.cast());
     }
-    arr
+    arr.cast()
   }
 }
 
@@ -60,8 +59,8 @@ pub fn build_ixon_definition(def: &IxonDefinition) -> *mut c_void {
     let value_obj = build_ixon_expr(&def.value);
     // 2 obj fields, 16 scalar bytes (lvls(8) + kind(1) + safety(1) + padding(6))
     let obj = lean_alloc_ctor(0, 2, 16);
-    lean_ctor_set(obj, 0, typ_obj);
-    lean_ctor_set(obj, 1, value_obj);
+    lean_ctor_set(obj, 0, typ_obj.cast());
+    lean_ctor_set(obj, 1, value_obj.cast());
     let base = obj.cast::<u8>();
     let scalar_base = base.add(2 * 8 + 8); // offset 24
 
@@ -81,7 +80,7 @@ pub fn build_ixon_definition(def: &IxonDefinition) -> *mut c_void {
       crate::ix::env::DefinitionSafety::Partial => 2,
     };
     *scalar_base.add(9) = safety_val;
-    obj
+    obj.cast()
   }
 }
 
@@ -91,10 +90,10 @@ pub fn build_ixon_recursor_rule(rule: &IxonRecursorRule) -> *mut c_void {
     let rhs_obj = build_ixon_expr(&rule.rhs);
     // 1 obj field, 8 scalar bytes
     let obj = lean_alloc_ctor(0, 1, 8);
-    lean_ctor_set(obj, 0, rhs_obj);
+    lean_ctor_set(obj, 0, rhs_obj.cast());
     let base = obj.cast::<u8>();
     *base.add(8 + 8).cast::<u64>() = rule.fields;
-    obj
+    obj.cast()
   }
 }
 
@@ -107,11 +106,11 @@ pub fn build_ixon_recursor(rec: &IxonRecursor) -> *mut c_void {
     let rules_arr = lean_alloc_array(rec.rules.len(), rec.rules.len());
     for (i, rule) in rec.rules.iter().enumerate() {
       let rule_obj = build_ixon_recursor_rule(rule);
-      lean_array_set_core(rules_arr, i, rule_obj);
+      lean_array_set_core(rules_arr, i, rule_obj.cast());
     }
     // 2 obj fields (typ, rules), 48 scalar bytes (5×8 + 1 + 1 + 6 padding)
     let obj = lean_alloc_ctor(0, 2, 48);
-    lean_ctor_set(obj, 0, typ_obj);
+    lean_ctor_set(obj, 0, typ_obj.cast());
     lean_ctor_set(obj, 1, rules_arr);
     let base = obj.cast::<u8>();
     let scalar_base = base.add(2 * 8 + 8);
@@ -124,7 +123,7 @@ pub fn build_ixon_recursor(rec: &IxonRecursor) -> *mut c_void {
     // bool fields last
     *scalar_base.add(40) = if rec.k { 1 } else { 0 };
     *scalar_base.add(41) = if rec.is_unsafe { 1 } else { 0 };
-    obj
+    obj.cast()
   }
 }
 
@@ -135,14 +134,14 @@ pub fn build_ixon_axiom(ax: &IxonAxiom) -> *mut c_void {
     let typ_obj = build_ixon_expr(&ax.typ);
     // 1 obj field, 16 scalar bytes (lvls(8) + isUnsafe(1) + padding(7))
     let obj = lean_alloc_ctor(0, 1, 16);
-    lean_ctor_set(obj, 0, typ_obj);
+    lean_ctor_set(obj, 0, typ_obj.cast());
     let base = obj.cast::<u8>();
     let scalar_base = base.add(8 + 8);
     // lvls at offset 0
     *scalar_base.cast::<u64>() = ax.lvls;
     // isUnsafe at offset 8
     *scalar_base.add(8) = if ax.is_unsafe { 1 } else { 0 };
-    obj
+    obj.cast()
   }
 }
 
@@ -154,7 +153,7 @@ pub fn build_ixon_quotient(quot: &IxonQuotient) -> *mut c_void {
     let typ_obj = build_ixon_expr(&quot.typ);
     // 1 obj field (typ), 16 scalar bytes (lvls(8) + kind(1) + padding(7))
     let obj = lean_alloc_ctor(0, 1, 16);
-    lean_ctor_set(obj, 0, typ_obj);
+    lean_ctor_set(obj, 0, typ_obj.cast());
     let base = obj.cast::<u8>();
     let scalar_base = base.add(8 + 8);
     // lvls at offset 0
@@ -167,7 +166,7 @@ pub fn build_ixon_quotient(quot: &IxonQuotient) -> *mut c_void {
       crate::ix::env::QuotKind::Ind => 3,
     };
     *scalar_base.add(8) = kind_val;
-    obj
+    obj.cast()
   }
 }
 
@@ -178,7 +177,7 @@ pub fn build_ixon_constructor(ctor: &IxonConstructor) -> *mut c_void {
     let typ_obj = build_ixon_expr(&ctor.typ);
     // 1 obj field, 40 scalar bytes (4×8 + 1 + 7 padding)
     let obj = lean_alloc_ctor(0, 1, 40);
-    lean_ctor_set(obj, 0, typ_obj);
+    lean_ctor_set(obj, 0, typ_obj.cast());
     let base = obj.cast::<u8>();
     let scalar_base = base.add(8 + 8);
     // u64 fields first
@@ -188,7 +187,7 @@ pub fn build_ixon_constructor(ctor: &IxonConstructor) -> *mut c_void {
     *scalar_base.add(24).cast::<u64>() = ctor.fields;
     // bool field last
     *scalar_base.add(32) = if ctor.is_unsafe { 1 } else { 0 };
-    obj
+    obj.cast()
   }
 }
 
@@ -201,11 +200,11 @@ pub fn build_ixon_inductive(ind: &IxonInductive) -> *mut c_void {
     let ctors_arr = lean_alloc_array(ind.ctors.len(), ind.ctors.len());
     for (i, ctor) in ind.ctors.iter().enumerate() {
       let ctor_obj = build_ixon_constructor(ctor);
-      lean_array_set_core(ctors_arr, i, ctor_obj);
+      lean_array_set_core(ctors_arr, i, ctor_obj.cast());
     }
     // 2 obj fields, 40 scalar bytes (4×8 + 3 + 5 padding)
     let obj = lean_alloc_ctor(0, 2, 40);
-    lean_ctor_set(obj, 0, typ_obj);
+    lean_ctor_set(obj, 0, typ_obj.cast());
     lean_ctor_set(obj, 1, ctors_arr);
     let base = obj.cast::<u8>();
     let scalar_base = base.add(2 * 8 + 8);
@@ -218,7 +217,7 @@ pub fn build_ixon_inductive(ind: &IxonInductive) -> *mut c_void {
     *scalar_base.add(32) = if ind.recr { 1 } else { 0 };
     *scalar_base.add(33) = if ind.refl { 1 } else { 0 };
     *scalar_base.add(34) = if ind.is_unsafe { 1 } else { 0 };
-    obj
+    obj.cast()
   }
 }
 
@@ -227,10 +226,10 @@ pub fn build_inductive_proj(proj: &InductiveProj) -> *mut c_void {
   unsafe {
     let block_obj = build_address_from_ixon(&proj.block);
     let obj = lean_alloc_ctor(0, 1, 8);
-    lean_ctor_set(obj, 0, block_obj);
+    lean_ctor_set(obj, 0, block_obj.cast());
     let base = obj.cast::<u8>();
     *base.add(8 + 8).cast::<u64>() = proj.idx;
-    obj
+    obj.cast()
   }
 }
 
@@ -239,11 +238,11 @@ pub fn build_constructor_proj(proj: &ConstructorProj) -> *mut c_void {
   unsafe {
     let block_obj = build_address_from_ixon(&proj.block);
     let obj = lean_alloc_ctor(0, 1, 16);
-    lean_ctor_set(obj, 0, block_obj);
+    lean_ctor_set(obj, 0, block_obj.cast());
     let base = obj.cast::<u8>();
     *base.add(8 + 8).cast::<u64>() = proj.idx;
     *base.add(8 + 16).cast::<u64>() = proj.cidx;
-    obj
+    obj.cast()
   }
 }
 
@@ -252,10 +251,10 @@ pub fn build_recursor_proj(proj: &RecursorProj) -> *mut c_void {
   unsafe {
     let block_obj = build_address_from_ixon(&proj.block);
     let obj = lean_alloc_ctor(0, 1, 8);
-    lean_ctor_set(obj, 0, block_obj);
+    lean_ctor_set(obj, 0, block_obj.cast());
     let base = obj.cast::<u8>();
     *base.add(8 + 8).cast::<u64>() = proj.idx;
-    obj
+    obj.cast()
   }
 }
 
@@ -264,10 +263,10 @@ pub fn build_definition_proj(proj: &DefinitionProj) -> *mut c_void {
   unsafe {
     let block_obj = build_address_from_ixon(&proj.block);
     let obj = lean_alloc_ctor(0, 1, 8);
-    lean_ctor_set(obj, 0, block_obj);
+    lean_ctor_set(obj, 0, block_obj.cast());
     let base = obj.cast::<u8>();
     *base.add(8 + 8).cast::<u64>() = proj.idx;
-    obj
+    obj.cast()
   }
 }
 
@@ -278,20 +277,20 @@ pub fn build_mut_const(mc: &MutConst) -> *mut c_void {
       MutConst::Defn(def) => {
         let def_obj = build_ixon_definition(def);
         let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, def_obj);
-        obj
+        lean_ctor_set(obj, 0, def_obj.cast());
+        obj.cast()
       },
       MutConst::Indc(ind) => {
         let ind_obj = build_ixon_inductive(ind);
         let obj = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(obj, 0, ind_obj);
-        obj
+        lean_ctor_set(obj, 0, ind_obj.cast());
+        obj.cast()
       },
       MutConst::Recr(rec) => {
         let rec_obj = build_ixon_recursor(rec);
         let obj = lean_alloc_ctor(2, 1, 0);
-        lean_ctor_set(obj, 0, rec_obj);
-        obj
+        lean_ctor_set(obj, 0, rec_obj.cast());
+        obj.cast()
       },
     }
   }
@@ -304,60 +303,60 @@ pub fn build_ixon_constant_info(info: &IxonConstantInfo) -> *mut c_void {
       IxonConstantInfo::Defn(def) => {
         let def_obj = build_ixon_definition(def);
         let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, def_obj);
-        obj
+        lean_ctor_set(obj, 0, def_obj.cast());
+        obj.cast()
       },
       IxonConstantInfo::Recr(rec) => {
         let rec_obj = build_ixon_recursor(rec);
         let obj = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(obj, 0, rec_obj);
-        obj
+        lean_ctor_set(obj, 0, rec_obj.cast());
+        obj.cast()
       },
       IxonConstantInfo::Axio(ax) => {
         let ax_obj = build_ixon_axiom(ax);
         let obj = lean_alloc_ctor(2, 1, 0);
-        lean_ctor_set(obj, 0, ax_obj);
-        obj
+        lean_ctor_set(obj, 0, ax_obj.cast());
+        obj.cast()
       },
       IxonConstantInfo::Quot(quot) => {
         let quot_obj = build_ixon_quotient(quot);
         let obj = lean_alloc_ctor(3, 1, 0);
-        lean_ctor_set(obj, 0, quot_obj);
-        obj
+        lean_ctor_set(obj, 0, quot_obj.cast());
+        obj.cast()
       },
       IxonConstantInfo::CPrj(proj) => {
         let proj_obj = build_constructor_proj(proj);
         let obj = lean_alloc_ctor(4, 1, 0);
-        lean_ctor_set(obj, 0, proj_obj);
-        obj
+        lean_ctor_set(obj, 0, proj_obj.cast());
+        obj.cast()
       },
       IxonConstantInfo::RPrj(proj) => {
         let proj_obj = build_recursor_proj(proj);
         let obj = lean_alloc_ctor(5, 1, 0);
-        lean_ctor_set(obj, 0, proj_obj);
-        obj
+        lean_ctor_set(obj, 0, proj_obj.cast());
+        obj.cast()
       },
       IxonConstantInfo::IPrj(proj) => {
         let proj_obj = build_inductive_proj(proj);
         let obj = lean_alloc_ctor(6, 1, 0);
-        lean_ctor_set(obj, 0, proj_obj);
-        obj
+        lean_ctor_set(obj, 0, proj_obj.cast());
+        obj.cast()
       },
       IxonConstantInfo::DPrj(proj) => {
         let proj_obj = build_definition_proj(proj);
         let obj = lean_alloc_ctor(7, 1, 0);
-        lean_ctor_set(obj, 0, proj_obj);
-        obj
+        lean_ctor_set(obj, 0, proj_obj.cast());
+        obj.cast()
       },
       IxonConstantInfo::Muts(muts) => {
         let arr = lean_alloc_array(muts.len(), muts.len());
         for (i, mc) in muts.iter().enumerate() {
           let mc_obj = build_mut_const(mc);
-          lean_array_set_core(arr, i, mc_obj);
+          lean_array_set_core(arr, i, mc_obj.cast());
         }
         let obj = lean_alloc_ctor(8, 1, 0);
         lean_ctor_set(obj, 0, arr);
-        obj
+        obj.cast()
       },
     }
   }
@@ -371,11 +370,11 @@ pub fn build_ixon_constant(constant: &IxonConstant) -> *mut c_void {
     let refs_obj = build_address_array(&constant.refs);
     let univs_obj = build_ixon_univ_array(&constant.univs);
     let obj = lean_alloc_ctor(0, 4, 0);
-    lean_ctor_set(obj, 0, info_obj);
-    lean_ctor_set(obj, 1, sharing_obj);
-    lean_ctor_set(obj, 2, refs_obj);
-    lean_ctor_set(obj, 3, univs_obj);
-    obj
+    lean_ctor_set(obj, 0, info_obj.cast());
+    lean_ctor_set(obj, 1, sharing_obj.cast());
+    lean_ctor_set(obj, 2, refs_obj.cast());
+    lean_ctor_set(obj, 3, univs_obj.cast());
+    obj.cast()
   }
 }
 
@@ -385,15 +384,13 @@ pub fn build_ixon_constant(constant: &IxonConstant) -> *mut c_void {
 
 /// Decode a ByteArray (Address) to Address.
 pub fn decode_ixon_address(ptr: *const c_void) -> Address {
-  let ba: &LeanSArrayObject = as_ref_unsafe(ptr.cast());
-  let bytes = ba.data();
+  let bytes = lean_sarray_data(ptr);
   Address::from_slice(&bytes[..32]).expect("Address should be 32 bytes")
 }
 
 /// Decode Array Address.
 pub fn decode_ixon_address_array(ptr: *const c_void) -> Vec<Address> {
-  let arr: &crate::lean::array::LeanArrayObject = as_ref_unsafe(ptr.cast());
-  arr.to_vec(decode_ixon_address)
+  lean_array_to_vec(ptr, decode_ixon_address)
 }
 
 /// Decode Ixon.Definition.
@@ -401,8 +398,8 @@ pub fn decode_ixon_address_array(ptr: *const c_void) -> Vec<Address> {
 /// Layout: header(8) + typ(8) + value(8) + lvls(8) + kind(1) + safety(1) + padding(6)
 pub fn decode_ixon_definition(ptr: *const c_void) -> IxonDefinition {
   unsafe {
-    let typ_ptr = lean_ctor_get(ptr.cast_mut(), 0);
-    let value_ptr = lean_ctor_get(ptr.cast_mut(), 1);
+    let typ_ptr = lean_ctor_get(ptr as *mut _, 0);
+    let value_ptr = lean_ctor_get(ptr as *mut _, 1);
 
     let base = ptr.cast::<u8>();
     // Scalars start after header (8) + 2 obj fields (16) = offset 24
@@ -431,8 +428,8 @@ pub fn decode_ixon_definition(ptr: *const c_void) -> IxonDefinition {
       kind,
       safety,
       lvls,
-      typ: Arc::new(decode_ixon_expr(typ_ptr)),
-      value: Arc::new(decode_ixon_expr(value_ptr)),
+      typ: Arc::new(decode_ixon_expr(typ_ptr.cast())),
+      value: Arc::new(decode_ixon_expr(value_ptr.cast())),
     }
   }
 }
@@ -440,10 +437,10 @@ pub fn decode_ixon_definition(ptr: *const c_void) -> IxonDefinition {
 /// Decode Ixon.RecursorRule.
 pub fn decode_ixon_recursor_rule(ptr: *const c_void) -> IxonRecursorRule {
   unsafe {
-    let rhs_ptr = lean_ctor_get(ptr.cast_mut(), 0);
+    let rhs_ptr = lean_ctor_get(ptr as *mut _, 0);
     let base = ptr.cast::<u8>();
     let fields = *base.add(8 + 8).cast::<u64>();
-    IxonRecursorRule { fields, rhs: Arc::new(decode_ixon_expr(rhs_ptr)) }
+    IxonRecursorRule { fields, rhs: Arc::new(decode_ixon_expr(rhs_ptr.cast())) }
   }
 }
 
@@ -451,8 +448,8 @@ pub fn decode_ixon_recursor_rule(ptr: *const c_void) -> IxonRecursorRule {
 /// Scalars ordered by size: lvls(8) + params(8) + indices(8) + motives(8) + minors(8) + k(1) + isUnsafe(1) + padding(6)
 pub fn decode_ixon_recursor(ptr: *const c_void) -> IxonRecursor {
   unsafe {
-    let typ_ptr = lean_ctor_get(ptr.cast_mut(), 0);
-    let rules_ptr = lean_ctor_get(ptr.cast_mut(), 1);
+    let typ_ptr = lean_ctor_get(ptr as *mut _, 0);
+    let rules_ptr = lean_ctor_get(ptr as *mut _, 1);
     let base = ptr.cast::<u8>();
     let scalar_base = base.add(2 * 8 + 8);
     // u64 fields first
@@ -465,9 +462,7 @@ pub fn decode_ixon_recursor(ptr: *const c_void) -> IxonRecursor {
     let k = *scalar_base.add(40) != 0;
     let is_unsafe = *scalar_base.add(41) != 0;
 
-    let rules_arr: &crate::lean::array::LeanArrayObject =
-      as_ref_unsafe(rules_ptr.cast());
-    let rules = rules_arr.to_vec(decode_ixon_recursor_rule);
+    let rules = lean_array_to_vec(rules_ptr.cast(), decode_ixon_recursor_rule);
 
     IxonRecursor {
       k,
@@ -477,7 +472,7 @@ pub fn decode_ixon_recursor(ptr: *const c_void) -> IxonRecursor {
       indices,
       motives,
       minors,
-      typ: Arc::new(decode_ixon_expr(typ_ptr)),
+      typ: Arc::new(decode_ixon_expr(typ_ptr.cast())),
       rules,
     }
   }
@@ -487,14 +482,18 @@ pub fn decode_ixon_recursor(ptr: *const c_void) -> IxonRecursor {
 /// Scalars ordered by size: lvls(8) + isUnsafe(1) + padding(7)
 pub fn decode_ixon_axiom(ptr: *const c_void) -> IxonAxiom {
   unsafe {
-    let typ_ptr = lean_ctor_get(ptr.cast_mut(), 0);
+    let typ_ptr = lean_ctor_get(ptr as *mut _, 0);
     let base = ptr.cast::<u8>();
     let scalar_base = base.add(8 + 8);
     // lvls at offset 0
     let lvls = *scalar_base.cast::<u64>();
     // isUnsafe at offset 8
     let is_unsafe = *scalar_base.add(8) != 0;
-    IxonAxiom { is_unsafe, lvls, typ: Arc::new(decode_ixon_expr(typ_ptr)) }
+    IxonAxiom {
+      is_unsafe,
+      lvls,
+      typ: Arc::new(decode_ixon_expr(typ_ptr.cast())),
+    }
   }
 }
 
@@ -503,7 +502,7 @@ pub fn decode_ixon_axiom(ptr: *const c_void) -> IxonAxiom {
 pub fn decode_ixon_quotient(ptr: *const c_void) -> IxonQuotient {
   unsafe {
     // typ is the only object field (at index 0)
-    let typ_ptr = lean_ctor_get(ptr.cast_mut(), 0);
+    let typ_ptr = lean_ctor_get(ptr as *mut _, 0);
     let base = ptr.cast::<u8>();
     let scalar_base = base.add(8 + 8);
     // lvls at offset 0
@@ -517,7 +516,7 @@ pub fn decode_ixon_quotient(ptr: *const c_void) -> IxonQuotient {
       3 => crate::ix::env::QuotKind::Ind,
       _ => panic!("Invalid QuotKind: {}", kind_val),
     };
-    IxonQuotient { kind, lvls, typ: Arc::new(decode_ixon_expr(typ_ptr)) }
+    IxonQuotient { kind, lvls, typ: Arc::new(decode_ixon_expr(typ_ptr.cast())) }
   }
 }
 
@@ -525,7 +524,7 @@ pub fn decode_ixon_quotient(ptr: *const c_void) -> IxonQuotient {
 /// Scalars ordered by size: lvls(8) + cidx(8) + params(8) + fields(8) + isUnsafe(1) + padding(7)
 pub fn decode_ixon_constructor(ptr: *const c_void) -> IxonConstructor {
   unsafe {
-    let typ_ptr = lean_ctor_get(ptr.cast_mut(), 0);
+    let typ_ptr = lean_ctor_get(ptr as *mut _, 0);
     let base = ptr.cast::<u8>();
     let scalar_base = base.add(8 + 8);
     // u64 fields first
@@ -541,7 +540,7 @@ pub fn decode_ixon_constructor(ptr: *const c_void) -> IxonConstructor {
       cidx,
       params,
       fields,
-      typ: Arc::new(decode_ixon_expr(typ_ptr)),
+      typ: Arc::new(decode_ixon_expr(typ_ptr.cast())),
     }
   }
 }
@@ -550,8 +549,8 @@ pub fn decode_ixon_constructor(ptr: *const c_void) -> IxonConstructor {
 /// Scalars ordered by size: lvls(8) + params(8) + indices(8) + nested(8) + recr(1) + refl(1) + isUnsafe(1) + padding(5)
 pub fn decode_ixon_inductive(ptr: *const c_void) -> IxonInductive {
   unsafe {
-    let typ_ptr = lean_ctor_get(ptr.cast_mut(), 0);
-    let ctors_ptr = lean_ctor_get(ptr.cast_mut(), 1);
+    let typ_ptr = lean_ctor_get(ptr as *mut _, 0);
+    let ctors_ptr = lean_ctor_get(ptr as *mut _, 1);
     let base = ptr.cast::<u8>();
     let scalar_base = base.add(2 * 8 + 8);
     // u64 fields first
@@ -564,9 +563,7 @@ pub fn decode_ixon_inductive(ptr: *const c_void) -> IxonInductive {
     let refl = *scalar_base.add(33) != 0;
     let is_unsafe = *scalar_base.add(34) != 0;
 
-    let ctors_arr: &crate::lean::array::LeanArrayObject =
-      as_ref_unsafe(ctors_ptr.cast());
-    let ctors = ctors_arr.to_vec(decode_ixon_constructor);
+    let ctors = lean_array_to_vec(ctors_ptr.cast(), decode_ixon_constructor);
 
     IxonInductive {
       recr,
@@ -576,7 +573,7 @@ pub fn decode_ixon_inductive(ptr: *const c_void) -> IxonInductive {
       params,
       indices,
       nested,
-      typ: Arc::new(decode_ixon_expr(typ_ptr)),
+      typ: Arc::new(decode_ixon_expr(typ_ptr.cast())),
       ctors,
     }
   }
@@ -585,53 +582,53 @@ pub fn decode_ixon_inductive(ptr: *const c_void) -> IxonInductive {
 /// Decode Ixon.InductiveProj.
 pub fn decode_ixon_inductive_proj(ptr: *const c_void) -> InductiveProj {
   unsafe {
-    let block_ptr = lean_ctor_get(ptr.cast_mut(), 0);
+    let block_ptr = lean_ctor_get(ptr as *mut _, 0);
     let base = ptr.cast::<u8>();
     let idx = *base.add(8 + 8).cast::<u64>();
-    InductiveProj { idx, block: decode_ixon_address(block_ptr) }
+    InductiveProj { idx, block: decode_ixon_address(block_ptr.cast()) }
   }
 }
 
 /// Decode Ixon.ConstructorProj.
 pub fn decode_ixon_constructor_proj(ptr: *const c_void) -> ConstructorProj {
   unsafe {
-    let block_ptr = lean_ctor_get(ptr.cast_mut(), 0);
+    let block_ptr = lean_ctor_get(ptr as *mut _, 0);
     let base = ptr.cast::<u8>();
     let idx = *base.add(8 + 8).cast::<u64>();
     let cidx = *base.add(8 + 16).cast::<u64>();
-    ConstructorProj { idx, cidx, block: decode_ixon_address(block_ptr) }
+    ConstructorProj { idx, cidx, block: decode_ixon_address(block_ptr.cast()) }
   }
 }
 
 /// Decode Ixon.RecursorProj.
 pub fn decode_ixon_recursor_proj(ptr: *const c_void) -> RecursorProj {
   unsafe {
-    let block_ptr = lean_ctor_get(ptr.cast_mut(), 0);
+    let block_ptr = lean_ctor_get(ptr as *mut _, 0);
     let base = ptr.cast::<u8>();
     let idx = *base.add(8 + 8).cast::<u64>();
-    RecursorProj { idx, block: decode_ixon_address(block_ptr) }
+    RecursorProj { idx, block: decode_ixon_address(block_ptr.cast()) }
   }
 }
 
 /// Decode Ixon.DefinitionProj.
 pub fn decode_ixon_definition_proj(ptr: *const c_void) -> DefinitionProj {
   unsafe {
-    let block_ptr = lean_ctor_get(ptr.cast_mut(), 0);
+    let block_ptr = lean_ctor_get(ptr as *mut _, 0);
     let base = ptr.cast::<u8>();
     let idx = *base.add(8 + 8).cast::<u64>();
-    DefinitionProj { idx, block: decode_ixon_address(block_ptr) }
+    DefinitionProj { idx, block: decode_ixon_address(block_ptr.cast()) }
   }
 }
 
 /// Decode Ixon.MutConst.
 pub fn decode_ixon_mut_const(ptr: *const c_void) -> MutConst {
   unsafe {
-    let tag = lean_obj_tag(ptr.cast_mut());
-    let inner_ptr = lean_ctor_get(ptr.cast_mut(), 0);
+    let tag = lean_obj_tag(ptr as *mut _);
+    let inner_ptr = lean_ctor_get(ptr as *mut _, 0);
     match tag {
-      0 => MutConst::Defn(decode_ixon_definition(inner_ptr)),
-      1 => MutConst::Indc(decode_ixon_inductive(inner_ptr)),
-      2 => MutConst::Recr(decode_ixon_recursor(inner_ptr)),
+      0 => MutConst::Defn(decode_ixon_definition(inner_ptr.cast())),
+      1 => MutConst::Indc(decode_ixon_inductive(inner_ptr.cast())),
+      2 => MutConst::Recr(decode_ixon_recursor(inner_ptr.cast())),
       _ => panic!("Invalid Ixon.MutConst tag: {}", tag),
     }
   }
@@ -640,21 +637,23 @@ pub fn decode_ixon_mut_const(ptr: *const c_void) -> MutConst {
 /// Decode Ixon.ConstantInfo.
 pub fn decode_ixon_constant_info(ptr: *const c_void) -> IxonConstantInfo {
   unsafe {
-    let tag = lean_obj_tag(ptr.cast_mut());
-    let inner_ptr = lean_ctor_get(ptr.cast_mut(), 0);
+    let tag = lean_obj_tag(ptr as *mut _);
+    let inner_ptr = lean_ctor_get(ptr as *mut _, 0);
     match tag {
-      0 => IxonConstantInfo::Defn(decode_ixon_definition(inner_ptr)),
-      1 => IxonConstantInfo::Recr(decode_ixon_recursor(inner_ptr)),
-      2 => IxonConstantInfo::Axio(decode_ixon_axiom(inner_ptr)),
-      3 => IxonConstantInfo::Quot(decode_ixon_quotient(inner_ptr)),
-      4 => IxonConstantInfo::CPrj(decode_ixon_constructor_proj(inner_ptr)),
-      5 => IxonConstantInfo::RPrj(decode_ixon_recursor_proj(inner_ptr)),
-      6 => IxonConstantInfo::IPrj(decode_ixon_inductive_proj(inner_ptr)),
-      7 => IxonConstantInfo::DPrj(decode_ixon_definition_proj(inner_ptr)),
+      0 => IxonConstantInfo::Defn(decode_ixon_definition(inner_ptr.cast())),
+      1 => IxonConstantInfo::Recr(decode_ixon_recursor(inner_ptr.cast())),
+      2 => IxonConstantInfo::Axio(decode_ixon_axiom(inner_ptr.cast())),
+      3 => IxonConstantInfo::Quot(decode_ixon_quotient(inner_ptr.cast())),
+      4 => {
+        IxonConstantInfo::CPrj(decode_ixon_constructor_proj(inner_ptr.cast()))
+      },
+      5 => IxonConstantInfo::RPrj(decode_ixon_recursor_proj(inner_ptr.cast())),
+      6 => IxonConstantInfo::IPrj(decode_ixon_inductive_proj(inner_ptr.cast())),
+      7 => {
+        IxonConstantInfo::DPrj(decode_ixon_definition_proj(inner_ptr.cast()))
+      },
       8 => {
-        let muts_arr: &crate::lean::array::LeanArrayObject =
-          as_ref_unsafe(inner_ptr.cast());
-        let muts = muts_arr.to_vec(decode_ixon_mut_const);
+        let muts = lean_array_to_vec(inner_ptr.cast(), decode_ixon_mut_const);
         IxonConstantInfo::Muts(muts)
       },
       _ => panic!("Invalid Ixon.ConstantInfo tag: {}", tag),
@@ -665,16 +664,16 @@ pub fn decode_ixon_constant_info(ptr: *const c_void) -> IxonConstantInfo {
 /// Decode Ixon.Constant.
 pub fn decode_ixon_constant(ptr: *const c_void) -> IxonConstant {
   unsafe {
-    let info_ptr = lean_ctor_get(ptr.cast_mut(), 0);
-    let sharing_ptr = lean_ctor_get(ptr.cast_mut(), 1);
-    let refs_ptr = lean_ctor_get(ptr.cast_mut(), 2);
-    let univs_ptr = lean_ctor_get(ptr.cast_mut(), 3);
+    let info_ptr = lean_ctor_get(ptr as *mut _, 0);
+    let sharing_ptr = lean_ctor_get(ptr as *mut _, 1);
+    let refs_ptr = lean_ctor_get(ptr as *mut _, 2);
+    let univs_ptr = lean_ctor_get(ptr as *mut _, 3);
 
     IxonConstant {
-      info: decode_ixon_constant_info(info_ptr),
-      sharing: decode_ixon_expr_array(sharing_ptr),
-      refs: decode_ixon_address_array(refs_ptr),
-      univs: decode_ixon_univ_array(univs_ptr),
+      info: decode_ixon_constant_info(info_ptr.cast()),
+      sharing: decode_ixon_expr_array(sharing_ptr.cast()),
+      refs: decode_ixon_address_array(refs_ptr.cast()),
+      univs: decode_ixon_univ_array(univs_ptr.cast()),
     }
   }
 }

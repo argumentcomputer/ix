@@ -4,7 +4,7 @@ public section
 
 namespace Iroh.Serve
 
-@[never_extract, extern "c_rs_iroh_serve"]
+@[never_extract, extern "rs_iroh_serve"]
 private opaque serve' : Unit → Except String Unit
 
 def serve : IO Unit :=
