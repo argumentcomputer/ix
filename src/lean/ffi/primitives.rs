@@ -8,15 +8,15 @@
 
 use std::ffi::c_void;
 
-use crate::lean::array::LeanArrayObject;
+use crate::lean::lean::{
+  lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray, lean_array_get_core,
+  lean_array_set_core, lean_ctor_get, lean_ctor_set, lean_mk_string,
+  lean_obj_tag, lean_sarray_cptr, lean_uint64_to_nat,
+};
 use crate::lean::nat::Nat;
-use crate::lean::sarray::LeanSArrayObject;
-use crate::lean::string::LeanStringObject;
 use crate::lean::{
-  as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray,
-  lean_array_get_core, lean_array_set_core, lean_box_fn, lean_ctor_get,
-  lean_ctor_set, lean_is_scalar, lean_mk_string, lean_obj_tag,
-  lean_sarray_cptr, lean_uint64_to_nat,
+  lean_array_data, lean_box_fn, lean_is_scalar, lean_obj_to_string,
+  lean_sarray_data,
 };
 
 // =============================================================================
@@ -33,7 +33,7 @@ pub fn build_nat(n: &Nat) -> *mut c_void {
       return lean_box_fn(val as usize);
     }
     // For larger u64 values, use lean_uint64_to_nat
-    return unsafe { lean_uint64_to_nat(val) };
+    return unsafe { lean_uint64_to_nat(val).cast() };
   }
   // For values larger than u64, convert to limbs and use GMP
   let bytes = n.to_le_bytes();
@@ -63,12 +63,11 @@ pub extern "C" fn rs_roundtrip_nat(nat_ptr: *const c_void) -> *mut c_void {
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_string(s_ptr: *const c_void) -> *mut c_void {
   // Decode
-  let s_obj: &LeanStringObject = as_ref_unsafe(s_ptr.cast());
-  let s = s_obj.as_string();
+  let s = lean_obj_to_string(s_ptr);
   // Re-encode
   unsafe {
     let cstr = crate::lean::safe_cstring(s.as_str());
-    lean_mk_string(cstr.as_ptr())
+    lean_mk_string(cstr.as_ptr()).cast()
   }
 }
 
@@ -89,9 +88,8 @@ pub extern "C" fn rs_roundtrip_array_nat(
   arr_ptr: *const c_void,
 ) -> *mut c_void {
   // Decode array
-  let arr_obj: &LeanArrayObject = as_ref_unsafe(arr_ptr.cast());
   let nats: Vec<Nat> =
-    arr_obj.data().iter().map(|&p| Nat::from_ptr(p)).collect();
+    lean_array_data(arr_ptr).iter().map(|&p| Nat::from_ptr(p)).collect();
   // Re-encode as Lean Array
   build_array_nat(&nats)
 }
@@ -100,14 +98,13 @@ pub extern "C" fn rs_roundtrip_array_nat(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_bytearray(ba_ptr: *const c_void) -> *mut c_void {
   // Decode ByteArray (scalar array of u8)
-  let sarray: &LeanSArrayObject = as_ref_unsafe(ba_ptr.cast());
-  let bytes = sarray.data();
+  let bytes = lean_sarray_data(ba_ptr);
   // Re-encode
   unsafe {
     let ba = lean_alloc_sarray(1, bytes.len(), bytes.len());
     let data_ptr = lean_sarray_cptr(ba);
     std::ptr::copy_nonoverlapping(bytes.as_ptr(), data_ptr, bytes.len());
-    ba
+    ba.cast()
   }
 }
 
@@ -127,16 +124,16 @@ pub extern "C" fn rs_roundtrip_bool(bool_ptr: *const c_void) -> *mut c_void {
 fn build_list_nat(nats: &[Nat]) -> *mut c_void {
   unsafe {
     // Build list in reverse (cons builds from the end)
-    let mut list = lean_box_fn(0); // nil
+    let mut list = lean_box_fn(0).cast(); // nil
     for nat in nats.iter().rev() {
       let nat_obj = build_nat(nat);
       // cons : α → List α → List α (tag 1, 2 object fields)
       let cons = lean_alloc_ctor(1, 2, 0);
-      lean_ctor_set(cons, 0, nat_obj);
+      lean_ctor_set(cons, 0, nat_obj.cast());
       lean_ctor_set(cons, 1, list);
       list = cons;
     }
-    list
+    list.cast()
   }
 }
 
@@ -146,9 +143,9 @@ fn build_array_nat(nats: &[Nat]) -> *mut c_void {
     let arr = lean_alloc_array(nats.len(), nats.len());
     for (i, nat) in nats.iter().enumerate() {
       let nat_obj = build_nat(nat);
-      lean_array_set_core(arr, i, nat_obj);
+      lean_array_set_core(arr, i, nat_obj.cast());
     }
-    arr
+    arr.cast()
   }
 }
 
@@ -166,14 +163,14 @@ pub extern "C" fn rs_roundtrip_point(point_ptr: *const c_void) -> *mut c_void {
     let y_ptr = lean_ctor_get(point_ptr as *mut _, 1);
 
     // Decode the Nats
-    let x = Nat::from_ptr(x_ptr);
-    let y = Nat::from_ptr(y_ptr);
+    let x = Nat::from_ptr(x_ptr.cast());
+    let y = Nat::from_ptr(y_ptr.cast());
 
     // Re-encode as Point
     let point = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(point, 0, build_nat(&x));
-    lean_ctor_set(point, 1, build_nat(&y));
-    point
+    lean_ctor_set(point, 0, build_nat(&x).cast());
+    lean_ctor_set(point, 1, build_nat(&y).cast());
+    point.cast()
   }
 }
 
@@ -192,21 +189,21 @@ fn roundtrip_nat_tree_recursive(tree_ptr: *const c_void) -> *mut c_void {
       0 => {
         // leaf : Nat → NatTree
         let nat_ptr = lean_ctor_get(tree_ptr as *mut _, 0);
-        let nat = Nat::from_ptr(nat_ptr);
+        let nat = Nat::from_ptr(nat_ptr.cast());
         let leaf = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(leaf, 0, build_nat(&nat));
-        leaf
+        lean_ctor_set(leaf, 0, build_nat(&nat).cast());
+        leaf.cast()
       },
       1 => {
         // node : NatTree → NatTree → NatTree
         let left_ptr = lean_ctor_get(tree_ptr as *mut _, 0);
         let right_ptr = lean_ctor_get(tree_ptr as *mut _, 1);
-        let left = roundtrip_nat_tree_recursive(left_ptr);
-        let right = roundtrip_nat_tree_recursive(right_ptr);
+        let left = roundtrip_nat_tree_recursive(left_ptr.cast());
+        let right = roundtrip_nat_tree_recursive(right_ptr.cast());
         let node = lean_alloc_ctor(1, 2, 0);
-        lean_ctor_set(node, 0, left);
-        lean_ctor_set(node, 1, right);
-        node
+        lean_ctor_set(node, 0, left.cast());
+        lean_ctor_set(node, 1, right.cast());
+        node.cast()
       },
       _ => panic!("Invalid NatTree tag: {}", tag),
     }
@@ -234,15 +231,15 @@ fn build_assoc_list_nat_nat(pairs: &[(Nat, Nat)]) -> *mut c_void {
   unsafe {
     // Build in reverse to preserve order
     // AssocList.nil with 0 fields is represented as lean_box(0)
-    let mut list = lean_box_fn(0);
+    let mut list = lean_box_fn(0).cast();
     for (k, v) in pairs.iter().rev() {
       let cons = lean_alloc_ctor(1, 3, 0); // AssocList.cons
-      lean_ctor_set(cons, 0, build_nat(k));
-      lean_ctor_set(cons, 1, build_nat(v));
+      lean_ctor_set(cons, 0, build_nat(k).cast());
+      lean_ctor_set(cons, 1, build_nat(v).cast());
       lean_ctor_set(cons, 2, list);
       list = cons;
     }
-    list
+    list.cast()
   }
 }
 
@@ -259,14 +256,14 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
     let size_ptr = lean_ctor_get(raw_ptr as *mut _, 0);
     let buckets_ptr = lean_ctor_get(raw_ptr as *mut _, 1);
 
-    let size = Nat::from_ptr(size_ptr);
+    let size = Nat::from_ptr(size_ptr.cast());
 
     // Decode and rebuild buckets
-    let buckets_obj: &LeanArrayObject = as_ref_unsafe(buckets_ptr.cast());
-    let num_buckets = buckets_obj.data().len();
+    let buckets_data = lean_array_data(buckets_ptr.cast());
+    let num_buckets = buckets_data.len();
 
     let mut all_pairs: Vec<(Nat, Nat)> = Vec::new();
-    for &bucket_ptr in buckets_obj.data() {
+    for &bucket_ptr in buckets_data {
       let pairs = decode_assoc_list_nat_nat(bucket_ptr);
       all_pairs.extend(pairs);
     }
@@ -274,7 +271,7 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
     // Rebuild buckets
     let new_buckets = lean_alloc_array(num_buckets, num_buckets);
     for i in 0..num_buckets {
-      lean_array_set_core(new_buckets, i, lean_box_fn(0)); // AssocList.nil
+      lean_array_set_core(new_buckets, i, lean_box_fn(0).cast()); // AssocList.nil
     }
 
     for (k, v) in &all_pairs {
@@ -288,21 +285,20 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
       #[allow(clippy::cast_possible_truncation)]
       let bucket_idx = (k_u64 as usize) & (num_buckets - 1);
 
-      let old_bucket =
-        lean_array_get_core(new_buckets, bucket_idx) as *mut c_void;
+      let old_bucket = lean_array_get_core(new_buckets, bucket_idx);
       let new_bucket = lean_alloc_ctor(1, 3, 0);
-      lean_ctor_set(new_bucket, 0, build_nat(k));
-      lean_ctor_set(new_bucket, 1, build_nat(v));
+      lean_ctor_set(new_bucket, 0, build_nat(k).cast());
+      lean_ctor_set(new_bucket, 1, build_nat(v).cast());
       lean_ctor_set(new_bucket, 2, old_bucket);
       lean_array_set_core(new_buckets, bucket_idx, new_bucket);
     }
 
     // Build Raw
     let raw = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(raw, 0, build_nat(&size));
+    lean_ctor_set(raw, 0, build_nat(&size).cast());
     lean_ctor_set(raw, 1, new_buckets);
 
-    raw
+    raw.cast()
   }
 }
 
@@ -330,25 +326,25 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
     let size_ptr = lean_ctor_get(map_ptr as *mut _, 0);
     let buckets_ptr = lean_ctor_get(map_ptr as *mut _, 1);
 
-    let size = Nat::from_ptr(size_ptr);
+    let size = Nat::from_ptr(size_ptr.cast());
 
     // Decode buckets (Array of AssocLists)
-    let buckets_obj: &LeanArrayObject = as_ref_unsafe(buckets_ptr.cast());
+    let buckets_data = lean_array_data(buckets_ptr.cast());
     let mut pairs: Vec<(Nat, Nat)> = Vec::new();
 
-    for &bucket_ptr in buckets_obj.data() {
+    for &bucket_ptr in buckets_data {
       // Each bucket is an AssocList
       let bucket_pairs = decode_assoc_list_nat_nat(bucket_ptr);
       pairs.extend(bucket_pairs);
     }
 
     // Rebuild the HashMap with the same bucket count
-    let num_buckets = buckets_obj.data().len();
+    let num_buckets = buckets_data.len();
     let new_buckets = lean_alloc_array(num_buckets, num_buckets);
 
     // Initialize all buckets to AssocList.nil (lean_box(0))
     for i in 0..num_buckets {
-      lean_array_set_core(new_buckets, i, lean_box_fn(0)); // AssocList.nil
+      lean_array_set_core(new_buckets, i, lean_box_fn(0).cast()); // AssocList.nil
     }
 
     // Insert each pair into the appropriate bucket using Lean's hash function
@@ -367,13 +363,12 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
       let bucket_idx = (k_u64 as usize) & (num_buckets - 1);
 
       // Get current bucket AssocList
-      let old_bucket =
-        lean_array_get_core(new_buckets, bucket_idx) as *mut c_void;
+      let old_bucket = lean_array_get_core(new_buckets, bucket_idx);
 
       // Build AssocList.cons key value tail (tag 1, 3 fields)
       let new_bucket = lean_alloc_ctor(1, 3, 0);
-      lean_ctor_set(new_bucket, 0, build_nat(k));
-      lean_ctor_set(new_bucket, 1, build_nat(v));
+      lean_ctor_set(new_bucket, 0, build_nat(k).cast());
+      lean_ctor_set(new_bucket, 1, build_nat(v).cast());
       lean_ctor_set(new_bucket, 2, old_bucket);
 
       lean_array_set_core(new_buckets, bucket_idx, new_bucket);
@@ -382,10 +377,10 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
     // Build Raw (ctor 0, 2 fields: size, buckets)
     // Due to unboxing, this IS the HashMap
     let raw = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(raw, 0, build_nat(&size));
+    lean_ctor_set(raw, 0, build_nat(&size).cast());
     lean_ctor_set(raw, 1, new_buckets);
 
-    raw
+    raw.cast()
   }
 }
 
@@ -413,11 +408,11 @@ pub fn decode_assoc_list_nat_nat(list_ptr: *const c_void) -> Vec<(Nat, Nat)> {
       let value_ptr = lean_ctor_get(current as *mut _, 1);
       let tail_ptr = lean_ctor_get(current as *mut _, 2);
 
-      let k = Nat::from_ptr(key_ptr);
-      let v = Nat::from_ptr(value_ptr);
+      let k = Nat::from_ptr(key_ptr.cast());
+      let v = Nat::from_ptr(value_ptr.cast());
 
       result.push((k, v));
-      current = tail_ptr;
+      current = tail_ptr.cast();
     }
   }
 
@@ -433,12 +428,12 @@ pub fn decode_assoc_list_nat_nat(list_ptr: *const c_void) -> Vec<(Nat, Nat)> {
 /// This is essentially just a pointer cast - very fast.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_bytearray_to_u64_le(ba_ptr: *const c_void) -> u64 {
+  let data = lean_sarray_data(ba_ptr);
+  if data.len() < 8 {
+    return 0;
+  }
   unsafe {
-    let arr: &LeanSArrayObject = &*ba_ptr.cast::<LeanSArrayObject>();
-    if arr.data().len() < 8 {
-      return 0;
-    }
-    let data_ptr = lean_sarray_cptr(ba_ptr as *mut _);
+    let data_ptr = lean_sarray_cptr(ba_ptr.cast_mut().cast());
     std::ptr::read_unaligned(data_ptr as *const u64)
   }
 }

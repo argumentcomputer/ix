@@ -9,12 +9,10 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
-use crate::lean::array::LeanArrayObject;
-use crate::lean::string::LeanStringObject;
 use crate::lean::{
-  as_mut_unsafe, as_ref_unsafe, lean_alloc_ctor, lean_alloc_sarray,
-  lean_ctor_set, lean_except_error_string, lean_except_ok, lean_mk_string,
-  safe_cstring, sarray::LeanSArrayObject,
+  lean::{ lean_alloc_ctor, lean_alloc_sarray, lean_ctor_set, lean_mk_string },
+  lean_array_to_vec, lean_except_error_string, lean_except_ok,
+  lean_obj_to_string, lean_sarray_set_data, safe_cstring,
 };
 
 // An example ALPN that we are using to communicate over the `Endpoint`
@@ -35,7 +33,7 @@ fn mk_put_response(message: &str, hash: &str) -> *mut c_void {
     let ctor = lean_alloc_ctor(0, 2, 0);
     lean_ctor_set(ctor, 0, lean_mk_string(c_message.as_ptr()));
     lean_ctor_set(ctor, 1, lean_mk_string(c_hash.as_ptr()));
-    ctor
+    ctor.cast()
   }
 }
 
@@ -51,32 +49,28 @@ fn mk_get_response(message: &str, hash: &str, bytes: &[u8]) -> *mut c_void {
   let c_hash = safe_cstring(hash);
   unsafe {
     let byte_array = lean_alloc_sarray(1, bytes.len(), bytes.len());
-    let arr: &mut LeanSArrayObject = as_mut_unsafe(byte_array.cast());
-    arr.set_data(bytes);
+    lean_sarray_set_data(byte_array.cast(), bytes);
 
     let ctor = lean_alloc_ctor(0, 3, 0);
     lean_ctor_set(ctor, 0, lean_mk_string(c_message.as_ptr()));
     lean_ctor_set(ctor, 1, lean_mk_string(c_hash.as_ptr()));
     lean_ctor_set(ctor, 2, byte_array);
-    ctor
+    ctor.cast()
   }
 }
 
 /// `Iroh.Connect.putBytes' : @& String → @& Array String → @& String → @& String → Except String PutResponse`
 #[unsafe(no_mangle)]
-extern "C" fn c_rs_iroh_put(
-  node_id: &LeanStringObject,
-  addrs: &LeanArrayObject,
-  relay_url: &LeanStringObject,
-  input: &LeanStringObject,
+extern "C" fn rs_iroh_put(
+  node_id: *const c_void,
+  addrs: *const c_void,
+  relay_url: *const c_void,
+  input: *const c_void,
 ) -> *mut c_void {
-  let node_id = node_id.as_string();
-  let addrs: Vec<String> = addrs.to_vec(|ptr| {
-    let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
-    string.as_string()
-  });
-  let relay_url = relay_url.as_string();
-  let input_str = input.as_string();
+  let node_id = lean_obj_to_string(node_id);
+  let addrs: Vec<String> = lean_array_to_vec(addrs, lean_obj_to_string);
+  let relay_url = lean_obj_to_string(relay_url);
+  let input_str = lean_obj_to_string(input);
 
   let request =
     Request::Put(PutRequest { bytes: input_str.as_bytes().to_vec() });
@@ -99,19 +93,16 @@ extern "C" fn c_rs_iroh_put(
 
 /// `Iroh.Connect.getBytes' : @& String → @& Array String → @& String → @& String → Except String GetResponse`
 #[unsafe(no_mangle)]
-extern "C" fn c_rs_iroh_get(
-  node_id: &LeanStringObject,
-  addrs: &LeanArrayObject,
-  relay_url: &LeanStringObject,
-  hash: &LeanStringObject,
+extern "C" fn rs_iroh_get(
+  node_id: *const c_void,
+  addrs: *const c_void,
+  relay_url: *const c_void,
+  hash: *const c_void,
 ) -> *mut c_void {
-  let node_id = node_id.as_string();
-  let addrs: Vec<String> = addrs.to_vec(|ptr| {
-    let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
-    string.as_string()
-  });
-  let relay_url = relay_url.as_string();
-  let hash = hash.as_string();
+  let node_id = lean_obj_to_string(node_id);
+  let addrs: Vec<String> = lean_array_to_vec(addrs, lean_obj_to_string);
+  let relay_url = lean_obj_to_string(relay_url);
+  let hash = lean_obj_to_string(hash);
   let request = Request::Get(GetRequest { hash: hash.clone() });
 
   let rt =
