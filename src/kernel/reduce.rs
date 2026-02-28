@@ -13,50 +13,56 @@ use std::rc::Rc;
 // Environment
 // ============================================================================
 
-/// A de Bruijn environment mapping indices to values.
-///
-/// Environments are vectors of values where de Bruijn index `i` looks up
-/// the `i`-th value from the end of the vector.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Env {
-  values: Vec<Value>,
+/// Internal node structure for the environment linked list.
+#[derive(Debug, PartialEq, Eq)]
+enum EnvNode {
+  /// Empty environment.
+  Empty,
+  /// Extended environment: most recent value + tail.
+  Cons(Value, Env),
 }
+
+/// A de Bruijn environment as a linked list.
+///
+/// Wraps `Rc<EnvNode>` so that cloning is cheap (just incrementing a reference count).
+/// Environments are immutable linked lists where de Bruijn index `i` refers
+/// to the `i`-th element from the head.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Env(Rc<EnvNode>);
 
 impl Env {
   /// Creates an empty environment.
   pub fn new() -> Self {
-    Env { values: Vec::new() }
-  }
-
-  /// Pushes a value onto the environment.
-  pub fn push(&mut self, v: Value) {
-    self.values.push(v);
+    Env(Rc::new(EnvNode::Empty))
   }
 
   /// Extends the environment with a new value, returning a new environment.
+  ///
+  /// This is O(1) and shares the tail via Rc.
   pub fn extend(&self, v: Value) -> Self {
-    let mut new_env = self.clone();
-    new_env.push(v);
-    new_env
+    Env(Rc::new(EnvNode::Cons(v, self.clone())))
   }
 
   /// Looks up a de Bruijn index in the environment.
   ///
-  /// De Bruijn index 0 refers to the most recently bound variable,
-  /// so we index from the end of the vector.
+  /// De Bruijn index 0 refers to the most recently bound variable (head),
+  /// index 1 refers to the next, etc.
   pub fn lookup(&self, idx: usize) -> Option<&Value> {
-    // de Bruijn index i counts from the end: len - 1 - i
-    self.values.get(self.values.len().checked_sub(idx + 1)?)
-  }
+    let mut current = &*self.0;
+    let mut i = idx;
 
-  /// Returns the length of the environment.
-  pub fn len(&self) -> usize {
-    self.values.len()
-  }
-
-  /// Returns true if the environment is empty.
-  pub fn is_empty(&self) -> bool {
-    self.values.is_empty()
+    loop {
+      match current {
+        EnvNode::Empty => return None,
+        EnvNode::Cons(v, rest) => {
+          if i == 0 {
+            return Some(v);
+          }
+          i -= 1;
+          current = &*rest.0;
+        },
+      }
+    }
   }
 }
 
