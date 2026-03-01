@@ -74,9 +74,9 @@ pub enum BinderInfo {
 // Expr
 // ============================================================================
 
-/// A Lean 4 kernel expression without content addressing.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Expr {
+/// Internal node structure for an expression.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ExprNode {
   /// Bound variable (de Bruijn index).
   Bvar(usize),
   /// Free variable.
@@ -86,18 +86,24 @@ pub enum Expr {
   /// Reference to a named constant with universe level arguments.
   Const(Name, Vec<Level>),
   /// Function application.
-  App(Rc<Expr>, Rc<Expr>),
+  App(Expr, Expr),
   /// Lambda abstraction.
-  Lam(Name, Rc<Expr>, Rc<Expr>, BinderInfo),
+  Lam(Name, Expr, Expr, BinderInfo),
   /// Dependent function type (Pi / forall).
-  ForallE(Name, Rc<Expr>, Rc<Expr>, BinderInfo),
+  ForallE(Name, Expr, Expr, BinderInfo),
   /// Let-binding (name, type, value, body, non-dep flag).
-  LetE(Name, Rc<Expr>, Rc<Expr>, Rc<Expr>, bool),
+  LetE(Name, Expr, Expr, Expr, bool),
   /// Literal value (nat or string).
   Lit(Literal),
   /// Projection from a structure (type name, field index, struct expr).
-  Proj(Name, usize, Rc<Expr>),
+  Proj(Name, usize, Expr),
 }
+
+/// A Lean 4 kernel expression without content addressing.
+///
+/// Wraps `Rc<ExprNode>` so that cloning is cheap (just incrementing a reference count).
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Expr(pub Rc<ExprNode>);
 
 // ============================================================================
 // Constants
