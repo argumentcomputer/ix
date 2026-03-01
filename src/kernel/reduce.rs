@@ -129,14 +129,12 @@ pub enum Value {
 /// A neutral value represents a stuck computation.
 ///
 /// Neutral (or "stuck") values arise when we try to reduce an expression
-/// that depends on a free variable or metavariable. These are values that
-/// cannot reduce further because they're waiting on an unknown.
+/// that depends on a free variable. These are values that cannot reduce
+/// further because they're waiting on an unknown.
 #[derive(Debug, Clone)]
 pub enum Neutral {
   /// A free variable (stuck).
   Fvar(Name),
-  /// A metavariable (stuck).
-  Mvar(Name),
   /// A neutral value applied to a thunk (lazy argument).
   /// This is the "stuck application" - the head is neutral (contains a free variable).
   App(Rc<Neutral>, Thunk),
@@ -205,11 +203,6 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       Value::Neutral(Neutral::Fvar(name.clone()))
     },
 
-    Expr::Mvar(name) => {
-      // Metavariables are always stuck
-      Value::Neutral(Neutral::Mvar(name.clone()))
-    },
-
     Expr::Sort(level) => {
       // Sorts are already values
       Value::Sort(level.clone())
@@ -263,11 +256,6 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
     Expr::Lit(lit) => {
       // Literals are already values
       Value::Lit(lit.clone())
-    },
-
-    Expr::Mdata(_kvs, e) => {
-      // Metadata: just ignore it and evaluate the inner expression
-      eval(e, env)
     },
 
     Expr::Proj(name, idx, e) => {
@@ -390,8 +378,6 @@ pub fn quote(val: &Value, level: usize) -> Expr {
 fn quote_neutral(neutral: &Neutral, level: usize) -> Expr {
   match neutral {
     Neutral::Fvar(name) => Expr::Fvar(name.clone()),
-
-    Neutral::Mvar(name) => Expr::Mvar(name.clone()),
 
     Neutral::App(fun, arg_thunk) => {
       let quoted_fun = quote_neutral(fun, level);

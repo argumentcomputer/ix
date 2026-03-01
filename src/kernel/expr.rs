@@ -38,8 +38,6 @@ pub enum Level {
   Imax(Rc<Level>, Rc<Level>),
   /// A named universe parameter.
   Param(Name),
-  /// A universe-level metavariable.
-  Mvar(Name),
 }
 
 // ============================================================================
@@ -73,78 +71,6 @@ pub enum BinderInfo {
 }
 
 // ============================================================================
-// Metadata Types
-// ============================================================================
-
-/// An integer value.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Int {
-  OfNat(Nat),
-  NegSucc(Nat),
-}
-
-/// A substring reference: a string together with start and stop byte positions.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Substring {
-  /// The underlying string.
-  pub str: String,
-  /// The start byte position (inclusive).
-  pub start_pos: usize,
-  /// The stop byte position (exclusive).
-  pub stop_pos: usize,
-}
-
-/// Source location metadata attached to syntax nodes.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum SourceInfo {
-  /// Original source with leading whitespace, leading position, trailing whitespace, trailing position.
-  Original(Substring, usize, Substring, usize),
-  /// Synthetic source span with start position, stop position, and canonical flag.
-  Synthetic(usize, usize, bool),
-  /// No source information available.
-  None,
-}
-
-/// Pre-resolved reference attached to a syntax identifier.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum SyntaxPreresolved {
-  /// A pre-resolved namespace reference.
-  Namespace(Name),
-  /// A pre-resolved declaration reference with alias strings.
-  Decl(Name, Vec<String>),
-}
-
-/// A Lean 4 concrete syntax tree node.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Syntax {
-  /// Placeholder for missing syntax.
-  Missing,
-  /// An interior syntax node with a kind name and child nodes.
-  Node(SourceInfo, Name, Vec<Syntax>),
-  /// An atomic token (keyword, symbol, etc.).
-  Atom(SourceInfo, String),
-  /// An identifier with optional pre-resolved references.
-  Ident(SourceInfo, Substring, Name, Vec<SyntaxPreresolved>),
-}
-
-/// A dynamically-typed value stored in expression metadata (`KVMap` entries).
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum DataValue {
-  /// A string value.
-  OfString(String),
-  /// A boolean value.
-  OfBool(bool),
-  /// A name value.
-  OfName(Name),
-  /// A natural number value.
-  OfNat(Nat),
-  /// An integer value.
-  OfInt(Int),
-  /// A syntax tree value.
-  OfSyntax(Rc<Syntax>),
-}
-
-// ============================================================================
 // Expr
 // ============================================================================
 
@@ -155,8 +81,6 @@ pub enum Expr {
   Bvar(usize),
   /// Free variable.
   Fvar(Name),
-  /// Metavariable.
-  Mvar(Name),
   /// Sort (universe).
   Sort(Level),
   /// Reference to a named constant with universe level arguments.
@@ -171,8 +95,6 @@ pub enum Expr {
   LetE(Name, Rc<Expr>, Rc<Expr>, Rc<Expr>, bool),
   /// Literal value (nat or string).
   Lit(Literal),
-  /// Metadata-annotated expression with key-value pairs.
-  Mdata(Vec<(Name, DataValue)>, Rc<Expr>),
   /// Projection from a structure (type name, field index, struct expr).
   Proj(Name, usize, Rc<Expr>),
 }
