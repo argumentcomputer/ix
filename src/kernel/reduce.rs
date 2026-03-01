@@ -113,8 +113,8 @@ pub enum Value {
   /// A neutral value (stuck computation).
   Neutral(Neutral),
   /// A lambda abstraction (closure).
-  /// Contains: name, body expression, captured environment, binder info
-  Fun(Name, Rc<Expr>, Env, BinderInfo),
+  /// Contains: name, type thunk, body expression, captured environment, binder info
+  Fun(Name, Thunk, Rc<Expr>, Env, BinderInfo),
   /// A universe sort.
   Sort(Level),
   /// A dependent function type (Pi/forall).
@@ -137,15 +137,11 @@ pub enum Neutral {
   Fvar(Name),
   /// A metavariable (stuck).
   Mvar(Name),
-  /// A stuck bound variable (should not appear in well-formed terms under sufficient environment).
-  Bvar(usize),
   /// A neutral value applied to a thunk (lazy argument).
   /// This is the "stuck application" - the head is neutral (contains a free variable).
   App(Rc<Neutral>, Thunk),
   /// Projection from a neutral value.
   Proj(Name, usize, Rc<Neutral>),
-  /// Metadata-annotated neutral.
-  Mdata(Vec<(Name, DataValue)>, Rc<Neutral>),
 }
 
 // ============================================================================
@@ -199,8 +195,8 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       // Look up the de Bruijn index in the environment and force the thunk
       match env.lookup(*idx) {
         Some(thunk) => (*force(thunk)).clone(),
-        // If not in environment, it's a stuck bound variable (shouldn't happen in well-formed terms)
-        None => Value::Neutral(Neutral::Bvar(*idx)),
+        // Unbound de Bruijn index - should never happen in well-formed terms
+        None => panic!("Unbound de Bruijn index: {}", idx),
       }
     },
 
@@ -232,10 +228,17 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       apply(vfun, arg_thunk)
     },
 
-    Expr::Lam(name, _ty, body, binder_info) => {
+    Expr::Lam(name, ty, body, binder_info) => {
       // Lambda evaluates to a closure capturing the current environment
-      // The type is not needed at runtime, so we ignore it
-      Value::Fun(name.clone(), body.clone(), env.clone(), binder_info.clone())
+      // Type is suspended as a thunk
+      let ty_thunk = suspend(ty.clone(), env.clone());
+      Value::Fun(
+        name.clone(),
+        ty_thunk,
+        body.clone(),
+        env.clone(),
+        binder_info.clone(),
+      )
     },
 
     Expr::ForallE(name, ty, body, binder_info) => {
@@ -262,17 +265,9 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       Value::Lit(lit.clone())
     },
 
-    Expr::Mdata(kvs, e) => {
-      // Metadata: evaluate the inner expression
-      let v = eval(e, env);
-      // If the result is neutral, preserve metadata in the neutral
-      match v {
-        Value::Neutral(n) => {
-          Value::Neutral(Neutral::Mdata(kvs.clone(), Rc::new(n)))
-        },
-        // Otherwise, metadata is erased during reduction
-        _ => v,
-      }
+    Expr::Mdata(_kvs, e) => {
+      // Metadata: just ignore it and evaluate the inner expression
+      eval(e, env)
     },
 
     Expr::Proj(name, idx, e) => {
@@ -308,7 +303,7 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
 /// If it's neutral, we force the argument and create a stuck application (App).
 pub fn apply(fun: Value, arg_thunk: Thunk) -> Value {
   match fun {
-    Value::Fun(_name, body, env, _binder_info) => {
+    Value::Fun(_name, _ty, body, env, _binder_info) => {
       // Beta reduction: extend the closure's environment with the suspended thunk
       // The argument will only be evaluated when/if it's actually used
       let new_env = env.extend(arg_thunk);
@@ -347,16 +342,19 @@ pub fn quote(val: &Value, level: usize) -> Expr {
   match val {
     Value::Neutral(n) => quote_neutral(n, level),
 
-    Value::Fun(name, body, env, binder_info) => {
-      // Quote a lambda: create a fresh variable thunk and quote the body
+    Value::Fun(name, ty_thunk, body, env, binder_info) => {
+      // Quote a lambda: force and quote the type, then quote the body
+      let ty_val = force(ty_thunk);
+      let quoted_ty = quote(&ty_val, level);
+      // Create a fresh variable thunk and quote the body
       let fresh_thunk =
-        Thunk::forced(Rc::new(Value::Neutral(Neutral::Bvar(level))));
+        Thunk::forced(Rc::new(Value::Neutral(Neutral::Fvar(Name::Anonymous))));
       let new_env = env.extend(fresh_thunk);
       let body_val = eval(body, &new_env);
       let quoted_body = quote(&body_val, level + 1);
       Expr::Lam(
         name.clone(),
-        Rc::new(Expr::Sort(Level::Zero)), // type is not preserved (would need type quotation)
+        Rc::new(quoted_ty),
         Rc::new(quoted_body),
         binder_info.clone(),
       )
@@ -370,7 +368,7 @@ pub fn quote(val: &Value, level: usize) -> Expr {
       let quoted_ty = quote(&ty_val, level);
       // Evaluate body under a fresh variable thunk
       let fresh_thunk =
-        Thunk::forced(Rc::new(Value::Neutral(Neutral::Bvar(level))));
+        Thunk::forced(Rc::new(Value::Neutral(Neutral::Fvar(Name::Anonymous))));
       let new_env = env.extend(fresh_thunk);
       let body_val = eval(body, &new_env);
       let quoted_body = quote(&body_val, level + 1);
@@ -395,8 +393,6 @@ fn quote_neutral(neutral: &Neutral, level: usize) -> Expr {
 
     Neutral::Mvar(name) => Expr::Mvar(name.clone()),
 
-    Neutral::Bvar(idx) => Expr::Bvar(*idx),
-
     Neutral::App(fun, arg_thunk) => {
       let quoted_fun = quote_neutral(fun, level);
       // Force the thunk to get the value, then quote it
@@ -408,11 +404,6 @@ fn quote_neutral(neutral: &Neutral, level: usize) -> Expr {
     Neutral::Proj(name, idx, e) => {
       let quoted_e = quote_neutral(e, level);
       Expr::Proj(name.clone(), *idx, Rc::new(quoted_e))
-    },
-
-    Neutral::Mdata(kvs, n) => {
-      let quoted_n = quote_neutral(n, level);
-      Expr::Mdata(kvs.clone(), Rc::new(quoted_n))
     },
   }
 }
