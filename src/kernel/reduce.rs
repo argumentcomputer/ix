@@ -7,19 +7,47 @@
 //! - Canonical forms (sorts, literals, fully-applied constructors)
 
 use crate::kernel::expr::*;
+use std::cell::RefCell;
 use std::rc::Rc;
+
+// ============================================================================
+// Thunks
+// ============================================================================
+
+/// Internal node structure for a thunk.
+#[derive(Debug)]
+enum ThunkNode {
+  /// A suspended computation: expression + environment pair.
+  Suspended(Rc<Expr>, Env),
+  /// An already evaluated value (memoized).
+  Forced(Rc<Value>),
+}
+
+/// A thunk represents a delayed computation with memoization.
+///
+/// Wraps `RefCell<ThunkNode>` so that we can mutate it for memoization.
+/// When forced, the thunk evaluates the expression and caches the result.
+#[derive(Debug, Clone)]
+pub struct Thunk(Rc<RefCell<ThunkNode>>);
+
+impl Thunk {
+  /// Creates a new already-forced thunk.
+  fn forced(value: Rc<Value>) -> Self {
+    Thunk(Rc::new(RefCell::new(ThunkNode::Forced(value))))
+  }
+}
 
 // ============================================================================
 // Environment
 // ============================================================================
 
 /// Internal node structure for the environment linked list.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 enum EnvNode {
   /// Empty environment.
   Empty,
-  /// Extended environment: most recent value + tail.
-  Cons(Value, Env),
+  /// Extended environment: most recent thunk + tail.
+  Cons(Thunk, Env),
 }
 
 /// A de Bruijn environment as a linked list.
@@ -27,7 +55,7 @@ enum EnvNode {
 /// Wraps `Rc<EnvNode>` so that cloning is cheap (just incrementing a reference count).
 /// Environments are immutable linked lists where de Bruijn index `i` refers
 /// to the `i`-th element from the head.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Env(Rc<EnvNode>);
 
 impl Env {
@@ -36,27 +64,27 @@ impl Env {
     Env(Rc::new(EnvNode::Empty))
   }
 
-  /// Extends the environment with a new value, returning a new environment.
+  /// Extends the environment with a new thunk, returning a new environment.
   ///
   /// This is O(1) and shares the tail via Rc.
-  pub fn extend(&self, v: Value) -> Self {
-    Env(Rc::new(EnvNode::Cons(v, self.clone())))
+  pub fn extend(&self, thunk: Thunk) -> Self {
+    Env(Rc::new(EnvNode::Cons(thunk, self.clone())))
   }
 
   /// Looks up a de Bruijn index in the environment.
   ///
   /// De Bruijn index 0 refers to the most recently bound variable (head),
   /// index 1 refers to the next, etc.
-  pub fn lookup(&self, idx: usize) -> Option<&Value> {
+  pub fn lookup(&self, idx: usize) -> Option<&Thunk> {
     let mut current = &*self.0;
     let mut i = idx;
 
     loop {
       match current {
         EnvNode::Empty => return None,
-        EnvNode::Cons(v, rest) => {
+        EnvNode::Cons(thunk, rest) => {
           if i == 0 {
-            return Some(v);
+            return Some(thunk);
           }
           i -= 1;
           current = &*rest.0;
@@ -80,7 +108,7 @@ impl Default for Env {
 ///
 /// Values are in weak head normal form (WHNF) - reduced enough to inspect
 /// the head constructor, but arguments may not be fully normalized.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Value {
   /// A neutral value (stuck computation).
   Neutral(Neutral),
@@ -90,8 +118,8 @@ pub enum Value {
   /// A universe sort.
   Sort(Level),
   /// A dependent function type (Pi/forall).
-  /// Contains: name, domain value, body expression, captured environment, binder info
-  Forall(Name, Rc<Value>, Rc<Expr>, Env, BinderInfo),
+  /// Contains: name, domain thunk, body expression, captured environment, binder info
+  Forall(Name, Thunk, Rc<Expr>, Env, BinderInfo),
   /// A literal value.
   Lit(Literal),
   /// A constant reference (might be reducible depending on global environment).
@@ -103,7 +131,7 @@ pub enum Value {
 /// Neutral (or "stuck") values arise when we try to reduce an expression
 /// that depends on a free variable or metavariable. These are values that
 /// cannot reduce further because they're waiting on an unknown.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Neutral {
   /// A free variable (stuck).
   Fvar(Name),
@@ -111,13 +139,49 @@ pub enum Neutral {
   Mvar(Name),
   /// A stuck bound variable (should not appear in well-formed terms under sufficient environment).
   Bvar(usize),
-  /// A neutral value applied to a value.
+  /// A neutral value applied to a thunk (lazy argument).
   /// This is the "stuck application" - the head is neutral (contains a free variable).
-  App(Rc<Neutral>, Rc<Value>),
+  App(Rc<Neutral>, Thunk),
   /// Projection from a neutral value.
   Proj(Name, usize, Rc<Neutral>),
   /// Metadata-annotated neutral.
   Mdata(Vec<(Name, DataValue)>, Rc<Neutral>),
+}
+
+// ============================================================================
+// Thunk Operations
+// ============================================================================
+
+/// Suspends an expression with its environment, creating a thunk.
+///
+/// This delays the evaluation of the expression until it's needed.
+pub fn suspend(expr: Rc<Expr>, env: Env) -> Thunk {
+  Thunk(Rc::new(RefCell::new(ThunkNode::Suspended(expr, env))))
+}
+
+/// Forces a thunk, evaluating it to a value if necessary with memoization.
+///
+/// If the thunk is already forced, returns the cached value.
+/// If suspended, evaluates the expression in its captured environment,
+/// updates the thunk to cache the result (memoization), and returns the value.
+pub fn force(thunk: &Thunk) -> Rc<Value> {
+  // Need to evaluate - extract expr and env
+  let node = thunk.0.borrow();
+  let (expr, env) = {
+    match &*node {
+      ThunkNode::Suspended(expr, env) => (expr, env),
+      ThunkNode::Forced(v) => return v.clone(),
+    }
+  };
+
+  // Evaluate the expression
+  let value = eval(expr, env);
+  let value_rc = Rc::new(value);
+
+  // Memoize: update the thunk to store the computed value
+  *thunk.0.borrow_mut() = ThunkNode::Forced(value_rc.clone());
+
+  value_rc
 }
 
 // ============================================================================
@@ -132,9 +196,9 @@ pub enum Neutral {
 pub fn eval(expr: &Expr, env: &Env) -> Value {
   match expr {
     Expr::Bvar(idx) => {
-      // Look up the de Bruijn index in the environment
+      // Look up the de Bruijn index in the environment and force the thunk
       match env.lookup(*idx) {
-        Some(v) => v.clone(),
+        Some(thunk) => (*force(thunk)).clone(),
         // If not in environment, it's a stuck bound variable (shouldn't happen in well-formed terms)
         None => Value::Neutral(Neutral::Bvar(*idx)),
       }
@@ -162,10 +226,10 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
     },
 
     Expr::App(fun, arg) => {
-      // Application: evaluate function and argument, then apply
+      // Application: evaluate function, suspend argument (lazy evaluation)
       let vfun = eval(fun, env);
-      let varg = eval(arg, env);
-      apply(vfun, varg)
+      let arg_thunk = suspend(arg.clone(), env.clone());
+      apply(vfun, arg_thunk)
     },
 
     Expr::Lam(name, _ty, body, binder_info) => {
@@ -175,11 +239,11 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
     },
 
     Expr::ForallE(name, ty, body, binder_info) => {
-      // Forall evaluates to a dependent function type value
-      let vty = eval(ty, env);
+      // Forall evaluates to a dependent function type value (type is suspended)
+      let ty_thunk = suspend(ty.clone(), env.clone());
       Value::Forall(
         name.clone(),
-        Rc::new(vty),
+        ty_thunk,
         body.clone(),
         env.clone(),
         binder_info.clone(),
@@ -187,9 +251,9 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
     },
 
     Expr::LetE(_name, _ty, val, body, _non_dep) => {
-      // Let-binding: evaluate the bound value and extend the environment
-      let vval = eval(val, env);
-      let new_env = env.extend(vval);
+      // Let-binding: suspend the bound value (lazy evaluation)
+      let thunk = suspend(val.clone(), env.clone());
+      let new_env = env.extend(thunk);
       eval(body, &new_env)
     },
 
@@ -235,35 +299,36 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
   }
 }
 
-/// Applies a value (function) to another value (argument).
+/// Applies a value (function) to a thunk (argument).
 ///
-/// This is the "apply" part of eval-apply style reduction.
-/// If the function is a closure (Fun), we extend its environment with
-/// the argument and evaluate the body. If it's neutral, we create a
-/// stuck application (App).
-pub fn apply(fun: Value, arg: Value) -> Value {
+/// This is the "apply" part of eval-apply style reduction with lazy evaluation.
+/// If the function is a closure (Fun), we extend its environment with the
+/// suspended argument thunk and evaluate the body. The argument is only
+/// evaluated when actually needed (via Bvar lookup and force).
+/// If it's neutral, we force the argument and create a stuck application (App).
+pub fn apply(fun: Value, arg_thunk: Thunk) -> Value {
   match fun {
     Value::Fun(_name, body, env, _binder_info) => {
-      // Beta reduction: extend the closure's environment with the argument
-      // and evaluate the body in the extended environment
-      let new_env = env.extend(arg);
+      // Beta reduction: extend the closure's environment with the suspended thunk
+      // The argument will only be evaluated when/if it's actually used
+      let new_env = env.extend(arg_thunk);
       eval(&body, &new_env)
     },
 
     Value::Neutral(n) => {
       // Application to a neutral value creates a stuck application
-      // This is the key case: neutral values at the head mean we can't reduce
-      Value::Neutral(Neutral::App(Rc::new(n), Rc::new(arg)))
+      // Keep the argument as a thunk (lazy evaluation)
+      Value::Neutral(Neutral::App(Rc::new(n), arg_thunk))
     },
 
     // Other values cannot be applied (would be a type error in well-typed terms)
     // In a well-typed program, we should never apply a non-function value
     _ => {
       // Conservative fallback: treat as a stuck application
-      // In practice, this indicates a type error
+      // Keep the argument as a thunk
       Value::Neutral(Neutral::App(
         Rc::new(Neutral::Fvar(Name::Anonymous)),
-        Rc::new(arg),
+        arg_thunk,
       ))
     },
   }
@@ -283,9 +348,10 @@ pub fn quote(val: &Value, level: usize) -> Expr {
     Value::Neutral(n) => quote_neutral(n, level),
 
     Value::Fun(name, body, env, binder_info) => {
-      // Quote a lambda: create a fresh variable and quote the body
-      let fresh_var = Value::Neutral(Neutral::Bvar(level));
-      let new_env = env.extend(fresh_var);
+      // Quote a lambda: create a fresh variable thunk and quote the body
+      let fresh_thunk =
+        Thunk::forced(Rc::new(Value::Neutral(Neutral::Bvar(level))));
+      let new_env = env.extend(fresh_thunk);
       let body_val = eval(body, &new_env);
       let quoted_body = quote(&body_val, level + 1);
       Expr::Lam(
@@ -298,11 +364,14 @@ pub fn quote(val: &Value, level: usize) -> Expr {
 
     Value::Sort(l) => Expr::Sort(l.clone()),
 
-    Value::Forall(name, ty, body, env, binder_info) => {
-      let quoted_ty = quote(ty, level);
-      // Evaluate body under a fresh variable
-      let fresh_var = Value::Neutral(Neutral::Bvar(level));
-      let new_env = env.extend(fresh_var);
+    Value::Forall(name, ty_thunk, body, env, binder_info) => {
+      // Force the type thunk and quote it
+      let ty_val = force(ty_thunk);
+      let quoted_ty = quote(&ty_val, level);
+      // Evaluate body under a fresh variable thunk
+      let fresh_thunk =
+        Thunk::forced(Rc::new(Value::Neutral(Neutral::Bvar(level))));
+      let new_env = env.extend(fresh_thunk);
       let body_val = eval(body, &new_env);
       let quoted_body = quote(&body_val, level + 1);
       Expr::ForallE(
@@ -328,9 +397,11 @@ fn quote_neutral(neutral: &Neutral, level: usize) -> Expr {
 
     Neutral::Bvar(idx) => Expr::Bvar(*idx),
 
-    Neutral::App(fun, arg) => {
+    Neutral::App(fun, arg_thunk) => {
       let quoted_fun = quote_neutral(fun, level);
-      let quoted_arg = quote(arg, level);
+      // Force the thunk to get the value, then quote it
+      let arg_val = force(arg_thunk);
+      let quoted_arg = quote(&arg_val, level);
       Expr::App(Rc::new(quoted_fun), Rc::new(quoted_arg))
     },
 
