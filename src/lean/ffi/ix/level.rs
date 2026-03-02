@@ -11,10 +11,8 @@
 use std::ffi::c_void;
 
 use crate::ix::env::{Level, LevelData};
-use crate::lean::lean::{
-  lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
-  lean_ctor_set, lean_inc, lean_obj_tag,
-};
+use crate::lean::lean::{lean_ctor_get, lean_obj_tag};
+use crate::lean::obj::{IxLevel, LeanArray, LeanCtor};
 
 use super::super::builder::LeanBuildCache;
 use super::address::build_address;
@@ -22,60 +20,58 @@ use super::name::{build_name, decode_ix_name};
 
 /// Build a Lean Ix.Level with embedded hash.
 /// Uses caching to avoid rebuilding the same level.
-pub fn build_level(cache: &mut LeanBuildCache, level: &Level) -> *mut c_void {
+pub fn build_level(cache: &mut LeanBuildCache, level: &Level) -> IxLevel {
   let hash = *level.get_hash();
   if let Some(&cached) = cache.levels.get(&hash) {
-    unsafe { lean_inc(cached.cast()) };
+    cached.inc_ref();
     return cached;
   }
 
-  let result = unsafe {
-    match level.as_data() {
-      LevelData::Zero(h) => {
-        let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, build_address(h).cast());
-        obj.cast()
-      },
-      LevelData::Succ(x, h) => {
-        let x_obj = build_level(cache, x);
-        let obj = lean_alloc_ctor(1, 2, 0);
-        lean_ctor_set(obj, 0, x_obj.cast());
-        lean_ctor_set(obj, 1, build_address(h).cast());
-        obj.cast()
-      },
-      LevelData::Max(x, y, h) => {
-        let x_obj = build_level(cache, x);
-        let y_obj = build_level(cache, y);
-        let obj = lean_alloc_ctor(2, 3, 0);
-        lean_ctor_set(obj, 0, x_obj.cast());
-        lean_ctor_set(obj, 1, y_obj.cast());
-        lean_ctor_set(obj, 2, build_address(h).cast());
-        obj.cast()
-      },
-      LevelData::Imax(x, y, h) => {
-        let x_obj = build_level(cache, x);
-        let y_obj = build_level(cache, y);
-        let obj = lean_alloc_ctor(3, 3, 0);
-        lean_ctor_set(obj, 0, x_obj.cast());
-        lean_ctor_set(obj, 1, y_obj.cast());
-        lean_ctor_set(obj, 2, build_address(h).cast());
-        obj.cast()
-      },
-      LevelData::Param(n, h) => {
-        let n_obj = build_name(cache, n);
-        let obj = lean_alloc_ctor(4, 2, 0);
-        lean_ctor_set(obj, 0, n_obj.cast());
-        lean_ctor_set(obj, 1, build_address(h).cast());
-        obj.cast()
-      },
-      LevelData::Mvar(n, h) => {
-        let n_obj = build_name(cache, n);
-        let obj = lean_alloc_ctor(5, 2, 0);
-        lean_ctor_set(obj, 0, n_obj.cast());
-        lean_ctor_set(obj, 1, build_address(h).cast());
-        obj.cast()
-      },
-    }
+  let result = match level.as_data() {
+    LevelData::Zero(h) => {
+      let ctor = LeanCtor::alloc(0, 1, 0);
+      ctor.set(0, build_address(h));
+      IxLevel::new(*ctor)
+    },
+    LevelData::Succ(x, h) => {
+      let x_obj = build_level(cache, x);
+      let ctor = LeanCtor::alloc(1, 2, 0);
+      ctor.set(0, x_obj);
+      ctor.set(1, build_address(h));
+      IxLevel::new(*ctor)
+    },
+    LevelData::Max(x, y, h) => {
+      let x_obj = build_level(cache, x);
+      let y_obj = build_level(cache, y);
+      let ctor = LeanCtor::alloc(2, 3, 0);
+      ctor.set(0, x_obj);
+      ctor.set(1, y_obj);
+      ctor.set(2, build_address(h));
+      IxLevel::new(*ctor)
+    },
+    LevelData::Imax(x, y, h) => {
+      let x_obj = build_level(cache, x);
+      let y_obj = build_level(cache, y);
+      let ctor = LeanCtor::alloc(3, 3, 0);
+      ctor.set(0, x_obj);
+      ctor.set(1, y_obj);
+      ctor.set(2, build_address(h));
+      IxLevel::new(*ctor)
+    },
+    LevelData::Param(n, h) => {
+      let n_obj = build_name(cache, n);
+      let ctor = LeanCtor::alloc(4, 2, 0);
+      ctor.set(0, n_obj);
+      ctor.set(1, build_address(h));
+      IxLevel::new(*ctor)
+    },
+    LevelData::Mvar(n, h) => {
+      let n_obj = build_name(cache, n);
+      let ctor = LeanCtor::alloc(5, 2, 0);
+      ctor.set(0, n_obj);
+      ctor.set(1, build_address(h));
+      IxLevel::new(*ctor)
+    },
   };
 
   cache.levels.insert(hash, result);
@@ -86,15 +82,12 @@ pub fn build_level(cache: &mut LeanBuildCache, level: &Level) -> *mut c_void {
 pub fn build_level_array(
   cache: &mut LeanBuildCache,
   levels: &[Level],
-) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(levels.len(), levels.len());
-    for (i, level) in levels.iter().enumerate() {
-      let level_obj = build_level(cache, level);
-      lean_array_set_core(arr, i, level_obj.cast());
-    }
-    arr.cast()
+) -> LeanArray {
+  let arr = LeanArray::alloc(levels.len());
+  for (i, level) in levels.iter().enumerate() {
+    arr.set(i, build_level(cache, level));
   }
+  arr
 }
 
 /// Decode a Lean Ix.Level to Rust Level.
@@ -144,10 +137,8 @@ pub fn decode_level_array(ptr: *const c_void) -> Vec<Level> {
 
 /// Round-trip an Ix.Level: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_level(
-  level_ptr: *const c_void,
-) -> *mut c_void {
-  let level = decode_ix_level(level_ptr);
+pub extern "C" fn rs_roundtrip_ix_level(level_ptr: IxLevel) -> IxLevel {
+  let level = decode_ix_level(level_ptr.as_ptr());
   let mut cache = LeanBuildCache::new();
   build_level(&mut cache, &level)
 }

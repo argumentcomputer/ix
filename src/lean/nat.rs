@@ -123,7 +123,11 @@ unsafe extern "C" {
     op: *const u64,
   );
 
-  /// Lean's internal mpz allocation — takes ownership of the mpz_t value.
+  #[link_name = "__gmpz_clear"]
+  fn mpz_clear(x: *mut Mpz);
+
+  /// Lean's internal mpz allocation — deep-copies the mpz value.
+  /// Caller must still call mpz_clear on the original.
   fn lean_alloc_mpz(v: *mut Mpz) -> *mut c_void;
 }
 
@@ -153,7 +157,9 @@ pub unsafe fn lean_nat_from_limbs(
     // order = -1 (least significant limb first)
     // size = 8 bytes per limb, endian = 0 (native), nails = 0
     mpz_import(value.as_mut_ptr(), num_limbs, -1, 8, 0, 0, limbs);
-    // lean_alloc_mpz takes ownership of the mpz value
-    lean_alloc_mpz(value.as_mut_ptr())
+    // lean_alloc_mpz deep-copies; we must free the original
+    let result = lean_alloc_mpz(value.as_mut_ptr());
+    mpz_clear(value.as_mut_ptr());
+    result
   }
 }

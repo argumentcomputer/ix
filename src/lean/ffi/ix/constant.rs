@@ -17,13 +17,11 @@ use crate::ix::env::{
   DefinitionVal, InductiveVal, Name, OpaqueVal, QuotKind, QuotVal,
   RecursorRule, RecursorVal, ReducibilityHints, TheoremVal,
 };
-use crate::lean::lean::{
-  lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
-  lean_ctor_set, lean_ctor_set_uint8, lean_obj_tag,
-};
+use crate::lean::lean::{lean_ctor_get, lean_obj_tag};
 use crate::lean::nat::Nat;
+use crate::lean::obj::{IxConstantInfo, LeanArray, LeanCtor, LeanObj};
 use crate::lean::{
-  lean_array_data, lean_box_fn, lean_ctor_scalar_u8, lean_is_scalar,
+  lean_array_data, lean_ctor_scalar_u8, lean_is_scalar,
 };
 
 use super::super::builder::LeanBuildCache;
@@ -37,41 +35,39 @@ use super::name::{
 pub fn build_constant_val(
   cache: &mut LeanBuildCache,
   cv: &ConstantVal,
-) -> *mut c_void {
-  unsafe {
-    // ConstantVal = { name : Name, levelParams : Array Name, type : Expr }
-    let name_obj = build_name(cache, &cv.name);
-    let level_params_obj = build_name_array(cache, &cv.level_params);
-    let type_obj = build_expr(cache, &cv.typ);
+) -> LeanObj {
+  // ConstantVal = { name : Name, levelParams : Array Name, type : Expr }
+  let name_obj = build_name(cache, &cv.name);
+  let level_params_obj = build_name_array(cache, &cv.level_params);
+  let type_obj = build_expr(cache, &cv.typ);
 
-    let obj = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(obj, 0, name_obj.cast());
-    lean_ctor_set(obj, 1, level_params_obj.cast());
-    lean_ctor_set(obj, 2, type_obj.cast());
-    obj.cast()
-  }
+  let obj = LeanCtor::alloc(0, 3, 0);
+  obj.set(0, name_obj);
+  obj.set(1, level_params_obj);
+  obj.set(2, type_obj);
+  *obj
 }
 
 /// Build ReducibilityHints.
 /// NOTE: In Lean 4, 0-field constructors are boxed scalars when the inductive has
-/// other constructors with fields. So opaque and abbrev use lean_box_fn.
-pub fn build_reducibility_hints(hints: &ReducibilityHints) -> *mut c_void {
-  unsafe {
-    match hints {
-      // | opaque -- tag 0, boxed as scalar
-      ReducibilityHints::Opaque => lean_box_fn(0),
-      // | abbrev -- tag 1, boxed as scalar
-      ReducibilityHints::Abbrev => lean_box_fn(1),
-      // | regular (h : UInt32) -- tag 2, object constructor
-      ReducibilityHints::Regular(h) => {
-        // UInt32 is a scalar, stored inline
-        let obj = lean_alloc_ctor(2, 0, 4);
-        // Set the uint32 at offset 0 in the scalar area
-        let ptr = obj.cast::<u8>();
-        *(ptr.add(8).cast::<u32>()) = *h;
-        obj.cast()
-      },
-    }
+/// other constructors with fields. So opaque and abbrev use box_usize.
+pub fn build_reducibility_hints(hints: &ReducibilityHints) -> LeanObj {
+  match hints {
+    // | opaque -- tag 0, boxed as scalar
+    ReducibilityHints::Opaque => LeanObj::box_usize(0),
+    // | abbrev -- tag 1, boxed as scalar
+    ReducibilityHints::Abbrev => LeanObj::box_usize(1),
+    // | regular (h : UInt32) -- tag 2, object constructor
+    ReducibilityHints::Regular(h) => {
+      // UInt32 is a scalar, stored inline
+      let obj = LeanCtor::alloc(2, 0, 4);
+      // Set the uint32 at offset 0 in the scalar area
+      unsafe {
+        let ptr = obj.as_ptr().cast::<u8>();
+        *(ptr.add(8).cast::<u32>().cast_mut()) = *h;
+      }
+      *obj
+    },
   }
 }
 
@@ -79,202 +75,198 @@ pub fn build_reducibility_hints(hints: &ReducibilityHints) -> *mut c_void {
 pub fn build_constant_info(
   cache: &mut LeanBuildCache,
   info: &ConstantInfo,
-) -> *mut c_void {
-  unsafe {
-    match info {
-      // | axiomInfo (v : AxiomVal) -- tag 0
-      ConstantInfo::AxiomInfo(v) => {
-        // AxiomVal = { cnst : ConstantVal, isUnsafe : Bool }
-        let cnst_obj = build_constant_val(cache, &v.cnst);
-        let axiom_val = lean_alloc_ctor(0, 1, 1);
-        lean_ctor_set(axiom_val, 0, cnst_obj.cast());
-        lean_ctor_set_uint8(axiom_val, 8, v.is_unsafe as u8);
+) -> IxConstantInfo {
+  let result = match info {
+    // | axiomInfo (v : AxiomVal) -- tag 0
+    ConstantInfo::AxiomInfo(v) => {
+      // AxiomVal = { cnst : ConstantVal, isUnsafe : Bool }
+      let cnst_obj = build_constant_val(cache, &v.cnst);
+      let axiom_val = LeanCtor::alloc(0, 1, 1);
+      axiom_val.set(0, cnst_obj);
+      axiom_val.set_u8(8, v.is_unsafe as u8);
 
-        let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, axiom_val);
-        obj.cast()
-      },
-      // | defnInfo (v : DefinitionVal) -- tag 1
-      ConstantInfo::DefnInfo(v) => {
-        // DefinitionVal = { cnst, value, hints, safety, all }
-        // NOTE: safety (DefinitionSafety) is a small enum stored as SCALAR
-        // Memory layout: 4 obj fields (cnst, value, hints, all), 1 scalar byte (safety)
-        let cnst_obj = build_constant_val(cache, &v.cnst);
-        let value_obj = build_expr(cache, &v.value);
-        let hints_obj = build_reducibility_hints(&v.hints);
-        let all_obj = build_name_array(cache, &v.all);
-        let safety_byte = match v.safety {
-          DefinitionSafety::Unsafe => 0u8,
-          DefinitionSafety::Safe => 1u8,
-          DefinitionSafety::Partial => 2u8,
-        };
+      let obj = LeanCtor::alloc(0, 1, 0);
+      obj.set(0, axiom_val);
+      *obj
+    },
+    // | defnInfo (v : DefinitionVal) -- tag 1
+    ConstantInfo::DefnInfo(v) => {
+      // DefinitionVal = { cnst, value, hints, safety, all }
+      // Memory layout: 4 obj fields (cnst, value, hints, all), 1 scalar byte (safety)
+      let cnst_obj = build_constant_val(cache, &v.cnst);
+      let value_obj = build_expr(cache, &v.value);
+      let hints_obj = build_reducibility_hints(&v.hints);
+      let all_obj = build_name_array(cache, &v.all);
+      let safety_byte = match v.safety {
+        DefinitionSafety::Unsafe => 0u8,
+        DefinitionSafety::Safe => 1u8,
+        DefinitionSafety::Partial => 2u8,
+      };
 
-        let defn_val = lean_alloc_ctor(0, 4, 1); // 4 obj fields, 1 scalar byte
-        lean_ctor_set(defn_val, 0, cnst_obj.cast());
-        lean_ctor_set(defn_val, 1, value_obj.cast());
-        lean_ctor_set(defn_val, 2, hints_obj.cast());
-        lean_ctor_set(defn_val, 3, all_obj.cast());
-        lean_ctor_set_uint8(defn_val, 4 * 8, safety_byte);
+      let defn_val = LeanCtor::alloc(0, 4, 1);
+      defn_val.set(0, cnst_obj);
+      defn_val.set(1, value_obj);
+      defn_val.set(2, hints_obj);
+      defn_val.set(3, all_obj);
+      defn_val.set_u8(4 * 8, safety_byte);
 
-        let obj = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(obj, 0, defn_val);
-        obj.cast()
-      },
-      // | thmInfo (v : TheoremVal) -- tag 2
-      ConstantInfo::ThmInfo(v) => {
-        // TheoremVal = { cnst, value, all }
-        let cnst_obj = build_constant_val(cache, &v.cnst);
-        let value_obj = build_expr(cache, &v.value);
-        let all_obj = build_name_array(cache, &v.all);
+      let obj = LeanCtor::alloc(1, 1, 0);
+      obj.set(0, defn_val);
+      *obj
+    },
+    // | thmInfo (v : TheoremVal) -- tag 2
+    ConstantInfo::ThmInfo(v) => {
+      // TheoremVal = { cnst, value, all }
+      let cnst_obj = build_constant_val(cache, &v.cnst);
+      let value_obj = build_expr(cache, &v.value);
+      let all_obj = build_name_array(cache, &v.all);
 
-        let thm_val = lean_alloc_ctor(0, 3, 0);
-        lean_ctor_set(thm_val, 0, cnst_obj.cast());
-        lean_ctor_set(thm_val, 1, value_obj.cast());
-        lean_ctor_set(thm_val, 2, all_obj.cast());
+      let thm_val = LeanCtor::alloc(0, 3, 0);
+      thm_val.set(0, cnst_obj);
+      thm_val.set(1, value_obj);
+      thm_val.set(2, all_obj);
 
-        let obj = lean_alloc_ctor(2, 1, 0);
-        lean_ctor_set(obj, 0, thm_val);
-        obj.cast()
-      },
-      // | opaqueInfo (v : OpaqueVal) -- tag 3
-      ConstantInfo::OpaqueInfo(v) => {
-        // OpaqueVal = { cnst, value, isUnsafe, all }
-        let cnst_obj = build_constant_val(cache, &v.cnst);
-        let value_obj = build_expr(cache, &v.value);
-        let all_obj = build_name_array(cache, &v.all);
+      let obj = LeanCtor::alloc(2, 1, 0);
+      obj.set(0, thm_val);
+      *obj
+    },
+    // | opaqueInfo (v : OpaqueVal) -- tag 3
+    ConstantInfo::OpaqueInfo(v) => {
+      // OpaqueVal = { cnst, value, isUnsafe, all }
+      let cnst_obj = build_constant_val(cache, &v.cnst);
+      let value_obj = build_expr(cache, &v.value);
+      let all_obj = build_name_array(cache, &v.all);
 
-        let opaque_val = lean_alloc_ctor(0, 3, 1);
-        lean_ctor_set(opaque_val, 0, cnst_obj.cast());
-        lean_ctor_set(opaque_val, 1, value_obj.cast());
-        lean_ctor_set(opaque_val, 2, all_obj.cast());
-        lean_ctor_set_uint8(opaque_val, 3 * 8, v.is_unsafe as u8);
+      let opaque_val = LeanCtor::alloc(0, 3, 1);
+      opaque_val.set(0, cnst_obj);
+      opaque_val.set(1, value_obj);
+      opaque_val.set(2, all_obj);
+      opaque_val.set_u8(3 * 8, v.is_unsafe as u8);
 
-        let obj = lean_alloc_ctor(3, 1, 0);
-        lean_ctor_set(obj, 0, opaque_val);
-        obj.cast()
-      },
-      // | quotInfo (v : QuotVal) -- tag 4
-      ConstantInfo::QuotInfo(v) => {
-        // QuotVal = { cnst, kind }
-        // NOTE: QuotKind is a small enum stored as SCALAR
-        // Memory layout: 1 obj field (cnst), 1 scalar byte (kind)
-        let cnst_obj = build_constant_val(cache, &v.cnst);
-        let kind_byte = match v.kind {
-          QuotKind::Type => 0u8,
-          QuotKind::Ctor => 1u8,
-          QuotKind::Lift => 2u8,
-          QuotKind::Ind => 3u8,
-        };
+      let obj = LeanCtor::alloc(3, 1, 0);
+      obj.set(0, opaque_val);
+      *obj
+    },
+    // | quotInfo (v : QuotVal) -- tag 4
+    ConstantInfo::QuotInfo(v) => {
+      // QuotVal = { cnst, kind }
+      // Memory layout: 1 obj field (cnst), 1 scalar byte (kind)
+      let cnst_obj = build_constant_val(cache, &v.cnst);
+      let kind_byte = match v.kind {
+        QuotKind::Type => 0u8,
+        QuotKind::Ctor => 1u8,
+        QuotKind::Lift => 2u8,
+        QuotKind::Ind => 3u8,
+      };
 
-        let quot_val = lean_alloc_ctor(0, 1, 1); // 1 obj field, 1 scalar byte
-        lean_ctor_set(quot_val, 0, cnst_obj.cast());
-        lean_ctor_set_uint8(quot_val, 8, kind_byte);
+      let quot_val = LeanCtor::alloc(0, 1, 1);
+      quot_val.set(0, cnst_obj);
+      quot_val.set_u8(8, kind_byte);
 
-        let obj = lean_alloc_ctor(4, 1, 0);
-        lean_ctor_set(obj, 0, quot_val);
-        obj.cast()
-      },
-      // | inductInfo (v : InductiveVal) -- tag 5
-      ConstantInfo::InductInfo(v) => {
-        // InductiveVal = { cnst, numParams, numIndices, all, ctors, numNested, isRec, isUnsafe, isReflexive }
-        let cnst_obj = build_constant_val(cache, &v.cnst);
-        let num_params_obj = build_nat(&v.num_params);
-        let num_indices_obj = build_nat(&v.num_indices);
-        let all_obj = build_name_array(cache, &v.all);
-        let ctors_obj = build_name_array(cache, &v.ctors);
-        let num_nested_obj = build_nat(&v.num_nested);
+      let obj = LeanCtor::alloc(4, 1, 0);
+      obj.set(0, quot_val);
+      *obj
+    },
+    // | inductInfo (v : InductiveVal) -- tag 5
+    ConstantInfo::InductInfo(v) => {
+      // InductiveVal = { cnst, numParams, numIndices, all, ctors, numNested, isRec, isUnsafe, isReflexive }
+      let cnst_obj = build_constant_val(cache, &v.cnst);
+      let num_params_obj = build_nat(&v.num_params);
+      let num_indices_obj = build_nat(&v.num_indices);
+      let all_obj = build_name_array(cache, &v.all);
+      let ctors_obj = build_name_array(cache, &v.ctors);
+      let num_nested_obj = build_nat(&v.num_nested);
 
-        // 6 object fields, 3 scalar bytes for bools
-        let induct_val = lean_alloc_ctor(0, 6, 3);
-        lean_ctor_set(induct_val, 0, cnst_obj.cast());
-        lean_ctor_set(induct_val, 1, num_params_obj.cast());
-        lean_ctor_set(induct_val, 2, num_indices_obj.cast());
-        lean_ctor_set(induct_val, 3, all_obj.cast());
-        lean_ctor_set(induct_val, 4, ctors_obj.cast());
-        lean_ctor_set(induct_val, 5, num_nested_obj.cast());
-        lean_ctor_set_uint8(induct_val, 6 * 8, v.is_rec as u8);
-        lean_ctor_set_uint8(induct_val, 6 * 8 + 1, v.is_unsafe as u8);
-        lean_ctor_set_uint8(induct_val, 6 * 8 + 2, v.is_reflexive as u8);
+      // 6 object fields, 3 scalar bytes for bools
+      let induct_val = LeanCtor::alloc(0, 6, 3);
+      induct_val.set(0, cnst_obj);
+      induct_val.set(1, num_params_obj);
+      induct_val.set(2, num_indices_obj);
+      induct_val.set(3, all_obj);
+      induct_val.set(4, ctors_obj);
+      induct_val.set(5, num_nested_obj);
+      induct_val.set_u8(6 * 8, v.is_rec as u8);
+      induct_val.set_u8(6 * 8 + 1, v.is_unsafe as u8);
+      induct_val.set_u8(6 * 8 + 2, v.is_reflexive as u8);
 
-        let obj = lean_alloc_ctor(5, 1, 0);
-        lean_ctor_set(obj, 0, induct_val);
-        obj.cast()
-      },
-      // | ctorInfo (v : ConstructorVal) -- tag 6
-      ConstantInfo::CtorInfo(v) => {
-        // ConstructorVal = { cnst, induct, cidx, numParams, numFields, isUnsafe }
-        let cnst_obj = build_constant_val(cache, &v.cnst);
-        let induct_obj = build_name(cache, &v.induct);
-        let cidx_obj = build_nat(&v.cidx);
-        let num_params_obj = build_nat(&v.num_params);
-        let num_fields_obj = build_nat(&v.num_fields);
+      let obj = LeanCtor::alloc(5, 1, 0);
+      obj.set(0, induct_val);
+      *obj
+    },
+    // | ctorInfo (v : ConstructorVal) -- tag 6
+    ConstantInfo::CtorInfo(v) => {
+      // ConstructorVal = { cnst, induct, cidx, numParams, numFields, isUnsafe }
+      let cnst_obj = build_constant_val(cache, &v.cnst);
+      let induct_obj = build_name(cache, &v.induct);
+      let cidx_obj = build_nat(&v.cidx);
+      let num_params_obj = build_nat(&v.num_params);
+      let num_fields_obj = build_nat(&v.num_fields);
 
-        // 5 object fields, 1 scalar byte for bool
-        let ctor_val = lean_alloc_ctor(0, 5, 1);
-        lean_ctor_set(ctor_val, 0, cnst_obj.cast());
-        lean_ctor_set(ctor_val, 1, induct_obj.cast());
-        lean_ctor_set(ctor_val, 2, cidx_obj.cast());
-        lean_ctor_set(ctor_val, 3, num_params_obj.cast());
-        lean_ctor_set(ctor_val, 4, num_fields_obj.cast());
-        lean_ctor_set_uint8(ctor_val, 5 * 8, v.is_unsafe as u8);
+      // 5 object fields, 1 scalar byte for bool
+      let ctor_val = LeanCtor::alloc(0, 5, 1);
+      ctor_val.set(0, cnst_obj);
+      ctor_val.set(1, induct_obj);
+      ctor_val.set(2, cidx_obj);
+      ctor_val.set(3, num_params_obj);
+      ctor_val.set(4, num_fields_obj);
+      ctor_val.set_u8(5 * 8, v.is_unsafe as u8);
 
-        let obj = lean_alloc_ctor(6, 1, 0);
-        lean_ctor_set(obj, 0, ctor_val);
-        obj.cast()
-      },
-      // | recInfo (v : RecursorVal) -- tag 7
-      ConstantInfo::RecInfo(v) => {
-        // RecursorVal = { cnst, all, numParams, numIndices, numMotives, numMinors, rules, k, isUnsafe }
-        let cnst_obj = build_constant_val(cache, &v.cnst);
-        let all_obj = build_name_array(cache, &v.all);
-        let num_params_obj = build_nat(&v.num_params);
-        let num_indices_obj = build_nat(&v.num_indices);
-        let num_motives_obj = build_nat(&v.num_motives);
-        let num_minors_obj = build_nat(&v.num_minors);
-        let rules_obj = build_recursor_rules(cache, &v.rules);
+      let obj = LeanCtor::alloc(6, 1, 0);
+      obj.set(0, ctor_val);
+      *obj
+    },
+    // | recInfo (v : RecursorVal) -- tag 7
+    ConstantInfo::RecInfo(v) => {
+      // RecursorVal = { cnst, all, numParams, numIndices, numMotives, numMinors, rules, k, isUnsafe }
+      let cnst_obj = build_constant_val(cache, &v.cnst);
+      let all_obj = build_name_array(cache, &v.all);
+      let num_params_obj = build_nat(&v.num_params);
+      let num_indices_obj = build_nat(&v.num_indices);
+      let num_motives_obj = build_nat(&v.num_motives);
+      let num_minors_obj = build_nat(&v.num_minors);
+      let rules_obj = build_recursor_rules(cache, &v.rules);
 
-        // 7 object fields, 2 scalar bytes for bools
-        let rec_val = lean_alloc_ctor(0, 7, 2);
-        lean_ctor_set(rec_val, 0, cnst_obj.cast());
-        lean_ctor_set(rec_val, 1, all_obj.cast());
-        lean_ctor_set(rec_val, 2, num_params_obj.cast());
-        lean_ctor_set(rec_val, 3, num_indices_obj.cast());
-        lean_ctor_set(rec_val, 4, num_motives_obj.cast());
-        lean_ctor_set(rec_val, 5, num_minors_obj.cast());
-        lean_ctor_set(rec_val, 6, rules_obj.cast());
-        lean_ctor_set_uint8(rec_val, 7 * 8, v.k as u8);
-        lean_ctor_set_uint8(rec_val, 7 * 8 + 1, v.is_unsafe as u8);
+      // 7 object fields, 2 scalar bytes for bools
+      let rec_val = LeanCtor::alloc(0, 7, 2);
+      rec_val.set(0, cnst_obj);
+      rec_val.set(1, all_obj);
+      rec_val.set(2, num_params_obj);
+      rec_val.set(3, num_indices_obj);
+      rec_val.set(4, num_motives_obj);
+      rec_val.set(5, num_minors_obj);
+      rec_val.set(6, rules_obj);
+      rec_val.set_u8(7 * 8, v.k as u8);
+      rec_val.set_u8(7 * 8 + 1, v.is_unsafe as u8);
 
-        let obj = lean_alloc_ctor(7, 1, 0);
-        lean_ctor_set(obj, 0, rec_val);
-        obj.cast()
-      },
-    }
-  }
+      let obj = LeanCtor::alloc(7, 1, 0);
+      obj.set(0, rec_val);
+      *obj
+    },
+  };
+
+  IxConstantInfo::new(result)
 }
 
 /// Build an Array of RecursorRule.
 fn build_recursor_rules(
   cache: &mut LeanBuildCache,
   rules: &[RecursorRule],
-) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(rules.len(), rules.len());
-    for (i, rule) in rules.iter().enumerate() {
-      // RecursorRule = { ctor : Name, nFields : Nat, rhs : Expr }
-      let ctor_obj = build_name(cache, &rule.ctor);
-      let n_fields_obj = build_nat(&rule.n_fields);
-      let rhs_obj = build_expr(cache, &rule.rhs);
+) -> LeanArray {
+  let arr = LeanArray::alloc(rules.len());
+  for (i, rule) in rules.iter().enumerate() {
+    // RecursorRule = { ctor : Name, nFields : Nat, rhs : Expr }
+    let ctor_obj = build_name(cache, &rule.ctor);
+    let n_fields_obj = build_nat(&rule.n_fields);
+    let rhs_obj = build_expr(cache, &rule.rhs);
 
-      let rule_obj = lean_alloc_ctor(0, 3, 0);
-      lean_ctor_set(rule_obj, 0, ctor_obj.cast());
-      lean_ctor_set(rule_obj, 1, n_fields_obj.cast());
-      lean_ctor_set(rule_obj, 2, rhs_obj.cast());
+    let rule_obj = LeanCtor::alloc(0, 3, 0);
+    rule_obj.set(0, ctor_obj);
+    rule_obj.set(1, n_fields_obj);
+    rule_obj.set(2, rhs_obj);
 
-      lean_array_set_core(arr, i, rule_obj);
-    }
-    arr.cast()
+    arr.set(i, rule_obj);
   }
+  arr
 }
 
 // =============================================================================
@@ -303,17 +295,9 @@ pub fn decode_constant_val(ptr: *const c_void) -> ConstantVal {
 }
 
 /// Decode Lean.ReducibilityHints from Lean pointer.
-/// | opaque -- tag 0
-/// | abbrev -- tag 1
-/// | regular (h : UInt32) -- tag 2
-///
-/// NOTE: In Lean 4, boxed scalars are `(tag << 1) | 1`:
-/// - opaque (tag 0) → scalar value 1
-/// - abbrev (tag 1) → scalar value 3
 pub fn decode_reducibility_hints(ptr: *const c_void) -> ReducibilityHints {
   unsafe {
     if lean_is_scalar(ptr) {
-      // Unbox the scalar: tag = (ptr >> 1)
       let tag = (ptr as usize) >> 1;
       match tag {
         0 => return ReducibilityHints::Opaque,
@@ -338,7 +322,6 @@ pub fn decode_reducibility_hints(ptr: *const c_void) -> ReducibilityHints {
 }
 
 /// Decode Ix.RecursorRule from Lean pointer.
-/// RecursorRule = { ctor : Name, nfields : Nat, rhs : Expr }
 fn decode_recursor_rule(ptr: *const c_void) -> RecursorRule {
   unsafe {
     let ctor_ptr = lean_ctor_get(ptr as *mut _, 0);
@@ -361,8 +344,6 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
 
     match tag {
       0 => {
-        // axiomInfo: AxiomVal = { cnst : ConstantVal, isUnsafe : Bool }
-        // Structure: 1 obj field (cnst), 1 scalar byte (isUnsafe)
         let cnst_ptr = lean_ctor_get(inner_ptr, 0);
         let is_unsafe = lean_ctor_scalar_u8(inner_ptr.cast(), 1, 0) != 0;
 
@@ -372,16 +353,12 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         })
       },
       1 => {
-        // defnInfo: DefinitionVal = { cnst, value, hints, safety, all }
-        // NOTE: safety (DefinitionSafety) is a small enum and is stored as a SCALAR field
-        // Memory layout: 4 obj fields (cnst, value, hints, all), 1 scalar byte (safety)
         let cnst_ptr = lean_ctor_get(inner_ptr, 0);
         let value_ptr = lean_ctor_get(inner_ptr, 1);
         let hints_ptr = lean_ctor_get(inner_ptr, 2);
-        let all_ptr = lean_ctor_get(inner_ptr, 3); // all is at index 3, not 4!
+        let all_ptr = lean_ctor_get(inner_ptr, 3);
 
-        // safety is a scalar at offset 4*8 = 32 bytes from start of object fields
-        let safety_byte = lean_ctor_scalar_u8(inner_ptr.cast(), 4, 0); // 4 obj fields, offset 0 in scalar area
+        let safety_byte = lean_ctor_scalar_u8(inner_ptr.cast(), 4, 0);
         let safety = match safety_byte {
           0 => DefinitionSafety::Unsafe,
           1 => DefinitionSafety::Safe,
@@ -398,7 +375,6 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         })
       },
       2 => {
-        // thmInfo: TheoremVal = { cnst, value, all }
         let cnst_ptr = lean_ctor_get(inner_ptr, 0);
         let value_ptr = lean_ctor_get(inner_ptr, 1);
         let all_ptr = lean_ctor_get(inner_ptr, 2);
@@ -410,8 +386,6 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         })
       },
       3 => {
-        // opaqueInfo: OpaqueVal = { cnst, value, isUnsafe, all }
-        // Structure: 3 obj fields (cnst, value, all), 1 scalar byte (isUnsafe)
         let cnst_ptr = lean_ctor_get(inner_ptr, 0);
         let value_ptr = lean_ctor_get(inner_ptr, 1);
         let all_ptr = lean_ctor_get(inner_ptr, 2);
@@ -425,12 +399,9 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         })
       },
       4 => {
-        // quotInfo: QuotVal = { cnst, kind }
-        // NOTE: QuotKind is a small enum (4 0-field ctors), stored as SCALAR
-        // Memory layout: 1 obj field (cnst), 1 scalar byte (kind)
         let cnst_ptr = lean_ctor_get(inner_ptr, 0);
 
-        let kind_byte = lean_ctor_scalar_u8(inner_ptr.cast(), 1, 0); // 1 obj field, offset 0 in scalar area
+        let kind_byte = lean_ctor_scalar_u8(inner_ptr.cast(), 1, 0);
         let kind = match kind_byte {
           0 => QuotKind::Type,
           1 => QuotKind::Ctor,
@@ -445,8 +416,6 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         })
       },
       5 => {
-        // inductInfo: InductiveVal = { cnst, numParams, numIndices, all, ctors, numNested, isRec, isUnsafe, isReflexive }
-        // 6 obj fields, 3 scalar bytes
         let cnst_ptr = lean_ctor_get(inner_ptr, 0);
         let num_params_ptr = lean_ctor_get(inner_ptr, 1);
         let num_indices_ptr = lean_ctor_get(inner_ptr, 2);
@@ -471,8 +440,6 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         })
       },
       6 => {
-        // ctorInfo: ConstructorVal = { cnst, induct, cidx, numParams, numFields, isUnsafe }
-        // 5 obj fields, 1 scalar byte
         let cnst_ptr = lean_ctor_get(inner_ptr, 0);
         let induct_ptr = lean_ctor_get(inner_ptr, 1);
         let cidx_ptr = lean_ctor_get(inner_ptr, 2);
@@ -491,8 +458,6 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
         })
       },
       7 => {
-        // recInfo: RecursorVal = { cnst, all, numParams, numIndices, numMotives, numMinors, rules, k, isUnsafe }
-        // 7 obj fields, 2 scalar bytes
         let cnst_ptr = lean_ctor_get(inner_ptr, 0);
         let all_ptr = lean_ctor_get(inner_ptr, 1);
         let num_params_ptr = lean_ctor_get(inner_ptr, 2);
@@ -529,9 +494,9 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
 /// Round-trip an Ix.ConstantInfo: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_constant_info(
-  info_ptr: *const c_void,
-) -> *mut c_void {
-  let info = decode_constant_info(info_ptr);
+  info_ptr: IxConstantInfo,
+) -> IxConstantInfo {
+  let info = decode_constant_info(info_ptr.as_ptr());
   let mut cache = LeanBuildCache::new();
   build_constant_info(&mut cache, &info)
 }

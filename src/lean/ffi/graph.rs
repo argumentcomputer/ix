@@ -6,10 +6,8 @@ use std::sync::Arc;
 use super::ffi_io_guard;
 use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
-use crate::lean::lean::{
-  lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_set,
-  lean_io_result_mk_ok,
-};
+use crate::lean::lean::lean_io_result_mk_ok;
+use crate::lean::obj::{LeanArray, LeanCtor, LeanObj};
 
 use super::builder::LeanBuildCache;
 use super::ix::name::build_name;
@@ -19,85 +17,77 @@ use super::lean_env::lean_ptr_to_env;
 pub fn build_ref_graph_array(
   cache: &mut LeanBuildCache,
   refs: &crate::ix::graph::RefMap,
-) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(refs.len(), refs.len());
-    for (i, (name, ref_set)) in refs.iter().enumerate() {
-      let name_obj = build_name(cache, name);
+) -> LeanObj {
+  let arr = LeanArray::alloc(refs.len());
+  for (i, (name, ref_set)) in refs.iter().enumerate() {
+    let name_obj = build_name(cache, name);
 
-      let refs_arr = lean_alloc_array(ref_set.len(), ref_set.len());
-      for (j, ref_name) in ref_set.iter().enumerate() {
-        let ref_name_obj = build_name(cache, ref_name);
-        lean_array_set_core(refs_arr, j, ref_name_obj.cast());
-      }
-
-      let pair = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(pair, 0, name_obj.cast());
-      lean_ctor_set(pair, 1, refs_arr);
-
-      lean_array_set_core(arr, i, pair);
+    let refs_arr = LeanArray::alloc(ref_set.len());
+    for (j, ref_name) in ref_set.iter().enumerate() {
+      let ref_name_obj = build_name(cache, ref_name);
+      refs_arr.set(j, ref_name_obj);
     }
-    arr.cast()
+
+    let pair = LeanCtor::alloc(0, 2, 0);
+    pair.set(0, name_obj);
+    pair.set(1, *refs_arr);
+    arr.set(i, *pair);
   }
+  *arr
 }
 
 /// Build a RustCondensedBlocks structure.
 pub fn build_condensed_blocks(
   cache: &mut LeanBuildCache,
   condensed: &crate::ix::condense::CondensedBlocks,
-) -> *mut c_void {
-  unsafe {
-    // Build lowLinks: Array (Ix.Name × Ix.Name)
-    let low_links_arr =
-      lean_alloc_array(condensed.low_links.len(), condensed.low_links.len());
-    for (i, (name, low_link)) in condensed.low_links.iter().enumerate() {
-      let name_obj = build_name(cache, name);
-      let low_link_obj = build_name(cache, low_link);
-      let pair = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(pair, 0, name_obj.cast());
-      lean_ctor_set(pair, 1, low_link_obj.cast());
-      lean_array_set_core(low_links_arr, i, pair);
-    }
-
-    // Build blocks: Array (Ix.Name × Array Ix.Name)
-    let blocks_arr =
-      lean_alloc_array(condensed.blocks.len(), condensed.blocks.len());
-    for (i, (name, block_set)) in condensed.blocks.iter().enumerate() {
-      let name_obj = build_name(cache, name);
-      let block_names_arr = lean_alloc_array(block_set.len(), block_set.len());
-      for (j, block_name) in block_set.iter().enumerate() {
-        let block_name_obj = build_name(cache, block_name);
-        lean_array_set_core(block_names_arr, j, block_name_obj.cast());
-      }
-      let pair = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(pair, 0, name_obj.cast());
-      lean_ctor_set(pair, 1, block_names_arr);
-      lean_array_set_core(blocks_arr, i, pair);
-    }
-
-    // Build blockRefs: Array (Ix.Name × Array Ix.Name)
-    let block_refs_arr =
-      lean_alloc_array(condensed.block_refs.len(), condensed.block_refs.len());
-    for (i, (name, ref_set)) in condensed.block_refs.iter().enumerate() {
-      let name_obj = build_name(cache, name);
-      let refs_arr = lean_alloc_array(ref_set.len(), ref_set.len());
-      for (j, ref_name) in ref_set.iter().enumerate() {
-        let ref_name_obj = build_name(cache, ref_name);
-        lean_array_set_core(refs_arr, j, ref_name_obj.cast());
-      }
-      let pair = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(pair, 0, name_obj.cast());
-      lean_ctor_set(pair, 1, refs_arr);
-      lean_array_set_core(block_refs_arr, i, pair);
-    }
-
-    // Build RustCondensedBlocks structure (3 fields)
-    let result = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(result, 0, low_links_arr);
-    lean_ctor_set(result, 1, blocks_arr);
-    lean_ctor_set(result, 2, block_refs_arr);
-    result.cast()
+) -> LeanObj {
+  // Build lowLinks: Array (Ix.Name × Ix.Name)
+  let low_links_arr = LeanArray::alloc(condensed.low_links.len());
+  for (i, (name, low_link)) in condensed.low_links.iter().enumerate() {
+    let name_obj = build_name(cache, name);
+    let low_link_obj = build_name(cache, low_link);
+    let pair = LeanCtor::alloc(0, 2, 0);
+    pair.set(0, name_obj);
+    pair.set(1, low_link_obj);
+    low_links_arr.set(i, *pair);
   }
+
+  // Build blocks: Array (Ix.Name × Array Ix.Name)
+  let blocks_arr = LeanArray::alloc(condensed.blocks.len());
+  for (i, (name, block_set)) in condensed.blocks.iter().enumerate() {
+    let name_obj = build_name(cache, name);
+    let block_names_arr = LeanArray::alloc(block_set.len());
+    for (j, block_name) in block_set.iter().enumerate() {
+      let block_name_obj = build_name(cache, block_name);
+      block_names_arr.set(j, block_name_obj);
+    }
+    let pair = LeanCtor::alloc(0, 2, 0);
+    pair.set(0, name_obj);
+    pair.set(1, *block_names_arr);
+    blocks_arr.set(i, *pair);
+  }
+
+  // Build blockRefs: Array (Ix.Name × Array Ix.Name)
+  let block_refs_arr = LeanArray::alloc(condensed.block_refs.len());
+  for (i, (name, ref_set)) in condensed.block_refs.iter().enumerate() {
+    let name_obj = build_name(cache, name);
+    let refs_arr = LeanArray::alloc(ref_set.len());
+    for (j, ref_name) in ref_set.iter().enumerate() {
+      let ref_name_obj = build_name(cache, ref_name);
+      refs_arr.set(j, ref_name_obj);
+    }
+    let pair = LeanCtor::alloc(0, 2, 0);
+    pair.set(0, name_obj);
+    pair.set(1, *refs_arr);
+    block_refs_arr.set(i, *pair);
+  }
+
+  // Build RustCondensedBlocks structure (3 fields)
+  let result = LeanCtor::alloc(0, 3, 0);
+  result.set(0, *low_links_arr);
+  result.set(1, *blocks_arr);
+  result.set(2, *block_refs_arr);
+  *result
 }
 
 // =============================================================================
@@ -115,7 +105,7 @@ pub extern "C" fn rs_build_ref_graph(
     let ref_graph = build_ref_graph(&rust_env);
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
     let result = build_ref_graph_array(&mut cache, &ref_graph.out_refs);
-    unsafe { lean_io_result_mk_ok(result.cast()) }.cast()
+    unsafe { lean_io_result_mk_ok(result.as_ptr() as *mut _) }.cast()
   }))
 }
 
@@ -131,6 +121,6 @@ pub extern "C" fn rs_compute_sccs(
     let condensed = compute_sccs(&ref_graph.out_refs);
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
     let result = build_condensed_blocks(&mut cache, &condensed);
-    unsafe { lean_io_result_mk_ok(result.cast()) }.cast()
+    unsafe { lean_io_result_mk_ok(result.as_ptr() as *mut _) }.cast()
   }))
 }

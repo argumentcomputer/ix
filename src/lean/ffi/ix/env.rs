@@ -99,8 +99,8 @@ pub fn build_raw_environment(
       let val_obj = build_constant_info(cache, info);
       // Build pair (Name × ConstantInfo)
       let pair = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(pair, 0, key_obj.cast());
-      lean_ctor_set(pair, 1, val_obj.cast());
+      lean_ctor_set(pair, 0, key_obj.as_mut_ptr().cast());
+      lean_ctor_set(pair, 1, val_obj.as_mut_ptr().cast());
       lean_array_set_core(consts_arr, i, pair);
     }
 
@@ -256,8 +256,8 @@ pub fn build_raw_environment_from_vec(
       let key_obj = build_name(cache, name);
       let val_obj = build_constant_info(cache, info);
       let pair = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(pair, 0, key_obj.cast());
-      lean_ctor_set(pair, 1, val_obj.cast());
+      lean_ctor_set(pair, 0, key_obj.as_mut_ptr().cast());
+      lean_ctor_set(pair, 1, val_obj.as_mut_ptr().cast());
       lean_array_set_core(consts_arr, i, pair);
     }
     consts_arr.cast()

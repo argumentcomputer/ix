@@ -19,14 +19,10 @@ use std::ffi::c_void;
 use crate::ix::env::{
   BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
 };
-use crate::lean::lean::{
-  lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
-  lean_ctor_set, lean_ctor_set_uint8, lean_inc, lean_mk_string, lean_obj_tag,
-};
+use crate::lean::lean::{lean_ctor_get, lean_obj_tag};
 use crate::lean::nat::Nat;
-use crate::lean::{
-  lean_array_data, lean_box_fn, lean_ctor_scalar_u8, lean_obj_to_string,
-};
+use crate::lean::obj::{IxExpr, LeanArray, LeanCtor, LeanObj, LeanString};
+use crate::lean::{lean_array_data, lean_ctor_scalar_u8, lean_obj_to_string};
 
 use super::super::builder::LeanBuildCache;
 use super::super::primitives::build_nat;
@@ -37,128 +33,126 @@ use super::name::{build_name, decode_ix_name};
 
 /// Build a Lean Ix.Expr with embedded hash.
 /// Uses caching to avoid rebuilding the same expression.
-pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
+pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> IxExpr {
   let hash = *expr.get_hash();
   if let Some(&cached) = cache.exprs.get(&hash) {
-    unsafe { lean_inc(cached.cast()) };
+    cached.inc_ref();
     return cached;
   }
 
-  let result = unsafe {
-    match expr.as_data() {
-      ExprData::Bvar(idx, h) => {
-        let obj = lean_alloc_ctor(0, 2, 0);
-        lean_ctor_set(obj, 0, build_nat(idx).cast());
-        lean_ctor_set(obj, 1, build_address(h).cast());
-        obj.cast()
-      },
-      ExprData::Fvar(name, h) => {
-        let obj = lean_alloc_ctor(1, 2, 0);
-        lean_ctor_set(obj, 0, build_name(cache, name).cast());
-        lean_ctor_set(obj, 1, build_address(h).cast());
-        obj.cast()
-      },
-      ExprData::Mvar(name, h) => {
-        let obj = lean_alloc_ctor(2, 2, 0);
-        lean_ctor_set(obj, 0, build_name(cache, name).cast());
-        lean_ctor_set(obj, 1, build_address(h).cast());
-        obj.cast()
-      },
-      ExprData::Sort(level, h) => {
-        let obj = lean_alloc_ctor(3, 2, 0);
-        lean_ctor_set(obj, 0, build_level(cache, level).cast());
-        lean_ctor_set(obj, 1, build_address(h).cast());
-        obj.cast()
-      },
-      ExprData::Const(name, levels, h) => {
-        let name_obj = build_name(cache, name);
-        let levels_obj = build_level_array(cache, levels);
-        let obj = lean_alloc_ctor(4, 3, 0);
-        lean_ctor_set(obj, 0, name_obj.cast());
-        lean_ctor_set(obj, 1, levels_obj.cast());
-        lean_ctor_set(obj, 2, build_address(h).cast());
-        obj.cast()
-      },
-      ExprData::App(fn_expr, arg_expr, h) => {
-        let fn_obj = build_expr(cache, fn_expr);
-        let arg_obj = build_expr(cache, arg_expr);
-        let obj = lean_alloc_ctor(5, 3, 0);
-        lean_ctor_set(obj, 0, fn_obj.cast());
-        lean_ctor_set(obj, 1, arg_obj.cast());
-        lean_ctor_set(obj, 2, build_address(h).cast());
-        obj.cast()
-      },
-      ExprData::Lam(name, ty, body, bi, h) => {
-        let name_obj = build_name(cache, name);
-        let ty_obj = build_expr(cache, ty);
-        let body_obj = build_expr(cache, body);
-        let hash_obj = build_address(h);
-        // 4 object fields, 1 scalar byte for BinderInfo
-        let obj = lean_alloc_ctor(6, 4, 1);
-        lean_ctor_set(obj, 0, name_obj.cast());
-        lean_ctor_set(obj, 1, ty_obj.cast());
-        lean_ctor_set(obj, 2, body_obj.cast());
-        lean_ctor_set(obj, 3, hash_obj.cast());
-        lean_ctor_set_uint8(obj, 4 * 8, binder_info_to_u8(bi));
-        obj.cast()
-      },
-      ExprData::ForallE(name, ty, body, bi, h) => {
-        let name_obj = build_name(cache, name);
-        let ty_obj = build_expr(cache, ty);
-        let body_obj = build_expr(cache, body);
-        let hash_obj = build_address(h);
-        let obj = lean_alloc_ctor(7, 4, 1);
-        lean_ctor_set(obj, 0, name_obj.cast());
-        lean_ctor_set(obj, 1, ty_obj.cast());
-        lean_ctor_set(obj, 2, body_obj.cast());
-        lean_ctor_set(obj, 3, hash_obj.cast());
-        lean_ctor_set_uint8(obj, 4 * 8, binder_info_to_u8(bi));
-        obj.cast()
-      },
-      ExprData::LetE(name, ty, val, body, non_dep, h) => {
-        let name_obj = build_name(cache, name);
-        let ty_obj = build_expr(cache, ty);
-        let val_obj = build_expr(cache, val);
-        let body_obj = build_expr(cache, body);
-        let hash_obj = build_address(h);
-        // 5 object fields, 1 scalar byte for Bool
-        let obj = lean_alloc_ctor(8, 5, 1);
-        lean_ctor_set(obj, 0, name_obj.cast());
-        lean_ctor_set(obj, 1, ty_obj.cast());
-        lean_ctor_set(obj, 2, val_obj.cast());
-        lean_ctor_set(obj, 3, body_obj.cast());
-        lean_ctor_set(obj, 4, hash_obj.cast());
-        lean_ctor_set_uint8(obj, 5 * 8, *non_dep as u8);
-        obj.cast()
-      },
-      ExprData::Lit(lit, h) => {
-        let lit_obj = build_literal(lit);
-        let obj = lean_alloc_ctor(9, 2, 0);
-        lean_ctor_set(obj, 0, lit_obj.cast());
-        lean_ctor_set(obj, 1, build_address(h).cast());
-        obj.cast()
-      },
-      ExprData::Mdata(md, inner, h) => {
-        let md_obj = build_mdata_array(cache, md);
-        let inner_obj = build_expr(cache, inner);
-        let obj = lean_alloc_ctor(10, 3, 0);
-        lean_ctor_set(obj, 0, md_obj.cast());
-        lean_ctor_set(obj, 1, inner_obj.cast());
-        lean_ctor_set(obj, 2, build_address(h).cast());
-        obj.cast()
-      },
-      ExprData::Proj(type_name, idx, struct_expr, h) => {
-        let name_obj = build_name(cache, type_name);
-        let idx_obj = build_nat(idx);
-        let struct_obj = build_expr(cache, struct_expr);
-        let obj = lean_alloc_ctor(11, 4, 0);
-        lean_ctor_set(obj, 0, name_obj.cast());
-        lean_ctor_set(obj, 1, idx_obj.cast());
-        lean_ctor_set(obj, 2, struct_obj.cast());
-        lean_ctor_set(obj, 3, build_address(h).cast());
-        obj.cast()
-      },
-    }
+  let result = match expr.as_data() {
+    ExprData::Bvar(idx, h) => {
+      let obj = LeanCtor::alloc(0, 2, 0);
+      obj.set(0, build_nat(idx));
+      obj.set(1, build_address(h));
+      IxExpr::new(*obj)
+    },
+    ExprData::Fvar(name, h) => {
+      let obj = LeanCtor::alloc(1, 2, 0);
+      obj.set(0, build_name(cache, name));
+      obj.set(1, build_address(h));
+      IxExpr::new(*obj)
+    },
+    ExprData::Mvar(name, h) => {
+      let obj = LeanCtor::alloc(2, 2, 0);
+      obj.set(0, build_name(cache, name));
+      obj.set(1, build_address(h));
+      IxExpr::new(*obj)
+    },
+    ExprData::Sort(level, h) => {
+      let obj = LeanCtor::alloc(3, 2, 0);
+      obj.set(0, build_level(cache, level));
+      obj.set(1, build_address(h));
+      IxExpr::new(*obj)
+    },
+    ExprData::Const(name, levels, h) => {
+      let name_obj = build_name(cache, name);
+      let levels_obj = build_level_array(cache, levels);
+      let obj = LeanCtor::alloc(4, 3, 0);
+      obj.set(0, name_obj);
+      obj.set(1, levels_obj);
+      obj.set(2, build_address(h));
+      IxExpr::new(*obj)
+    },
+    ExprData::App(fn_expr, arg_expr, h) => {
+      let fn_obj = build_expr(cache, fn_expr);
+      let arg_obj = build_expr(cache, arg_expr);
+      let obj = LeanCtor::alloc(5, 3, 0);
+      obj.set(0, fn_obj);
+      obj.set(1, arg_obj);
+      obj.set(2, build_address(h));
+      IxExpr::new(*obj)
+    },
+    ExprData::Lam(name, ty, body, bi, h) => {
+      let name_obj = build_name(cache, name);
+      let ty_obj = build_expr(cache, ty);
+      let body_obj = build_expr(cache, body);
+      let hash_obj = build_address(h);
+      // 4 object fields, 1 scalar byte for BinderInfo
+      let obj = LeanCtor::alloc(6, 4, 1);
+      obj.set(0, name_obj);
+      obj.set(1, ty_obj);
+      obj.set(2, body_obj);
+      obj.set(3, hash_obj);
+      obj.set_u8(4 * 8, binder_info_to_u8(bi));
+      IxExpr::new(*obj)
+    },
+    ExprData::ForallE(name, ty, body, bi, h) => {
+      let name_obj = build_name(cache, name);
+      let ty_obj = build_expr(cache, ty);
+      let body_obj = build_expr(cache, body);
+      let hash_obj = build_address(h);
+      let obj = LeanCtor::alloc(7, 4, 1);
+      obj.set(0, name_obj);
+      obj.set(1, ty_obj);
+      obj.set(2, body_obj);
+      obj.set(3, hash_obj);
+      obj.set_u8(4 * 8, binder_info_to_u8(bi));
+      IxExpr::new(*obj)
+    },
+    ExprData::LetE(name, ty, val, body, non_dep, h) => {
+      let name_obj = build_name(cache, name);
+      let ty_obj = build_expr(cache, ty);
+      let val_obj = build_expr(cache, val);
+      let body_obj = build_expr(cache, body);
+      let hash_obj = build_address(h);
+      // 5 object fields, 1 scalar byte for Bool
+      let obj = LeanCtor::alloc(8, 5, 1);
+      obj.set(0, name_obj);
+      obj.set(1, ty_obj);
+      obj.set(2, val_obj);
+      obj.set(3, body_obj);
+      obj.set(4, hash_obj);
+      obj.set_u8(5 * 8, *non_dep as u8);
+      IxExpr::new(*obj)
+    },
+    ExprData::Lit(lit, h) => {
+      let lit_obj = build_literal(lit);
+      let obj = LeanCtor::alloc(9, 2, 0);
+      obj.set(0, lit_obj);
+      obj.set(1, build_address(h));
+      IxExpr::new(*obj)
+    },
+    ExprData::Mdata(md, inner, h) => {
+      let md_obj = build_mdata_array(cache, md);
+      let inner_obj = build_expr(cache, inner);
+      let obj = LeanCtor::alloc(10, 3, 0);
+      obj.set(0, md_obj);
+      obj.set(1, inner_obj);
+      obj.set(2, build_address(h));
+      IxExpr::new(*obj)
+    },
+    ExprData::Proj(type_name, idx, struct_expr, h) => {
+      let name_obj = build_name(cache, type_name);
+      let idx_obj = build_nat(idx);
+      let struct_obj = build_expr(cache, struct_expr);
+      let obj = LeanCtor::alloc(11, 4, 0);
+      obj.set(0, name_obj);
+      obj.set(1, idx_obj);
+      obj.set(2, struct_obj);
+      obj.set(3, build_address(h));
+      IxExpr::new(*obj)
+    },
   };
 
   cache.exprs.insert(hash, result);
@@ -169,15 +163,13 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> *mut c_void {
 fn build_mdata_array(
   cache: &mut LeanBuildCache,
   md: &[(Name, DataValue)],
-) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(md.len(), md.len());
-    for (i, (name, dv)) in md.iter().enumerate() {
-      let pair = build_name_datavalue_pair(cache, name, dv);
-      lean_array_set_core(arr, i, pair.cast());
-    }
-    arr.cast()
+) -> LeanArray {
+  let arr = LeanArray::alloc(md.len());
+  for (i, (name, dv)) in md.iter().enumerate() {
+    let pair = build_name_datavalue_pair(cache, name, dv);
+    arr.set(i, pair);
   }
+  arr
 }
 
 /// Build a (Name, DataValue) pair (Prod).
@@ -185,40 +177,35 @@ fn build_name_datavalue_pair(
   cache: &mut LeanBuildCache,
   name: &Name,
   dv: &DataValue,
-) -> *mut c_void {
-  unsafe {
-    let name_obj = build_name(cache, name);
-    let dv_obj = build_data_value(cache, dv);
-    let pair = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(pair, 0, name_obj.cast());
-    lean_ctor_set(pair, 1, dv_obj.cast());
-    pair.cast()
-  }
+) -> LeanObj {
+  let name_obj = build_name(cache, name);
+  let dv_obj = build_data_value(cache, dv);
+  let pair = LeanCtor::alloc(0, 2, 0);
+  pair.set(0, name_obj);
+  pair.set(1, dv_obj);
+  *pair
 }
 
 /// Build a Literal (natVal or strVal).
-pub fn build_literal(lit: &Literal) -> *mut c_void {
-  unsafe {
-    match lit {
-      Literal::NatVal(n) => {
-        let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, build_nat(n).cast());
-        obj.cast()
-      },
-      Literal::StrVal(s) => {
-        let s_cstr = crate::lean::safe_cstring(s.as_str());
-        let obj = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(obj, 0, lean_mk_string(s_cstr.as_ptr()));
-        obj.cast()
-      },
-    }
+pub fn build_literal(lit: &Literal) -> LeanObj {
+  match lit {
+    Literal::NatVal(n) => {
+      let obj = LeanCtor::alloc(0, 1, 0);
+      obj.set(0, build_nat(n));
+      *obj
+    },
+    Literal::StrVal(s) => {
+      let obj = LeanCtor::alloc(1, 1, 0);
+      obj.set(0, LeanString::from_str(s.as_str()));
+      *obj
+    },
   }
 }
 
 /// Build Ix.BinderInfo enum.
 /// BinderInfo is a 4-constructor enum with no fields, stored as boxed scalar.
-pub fn build_binder_info(bi: &BinderInfo) -> *mut c_void {
-  lean_box_fn(binder_info_to_u8(bi) as usize)
+pub fn build_binder_info(bi: &BinderInfo) -> LeanObj {
+  LeanObj::box_usize(binder_info_to_u8(bi) as usize)
 }
 
 /// Convert BinderInfo to u8 tag.
@@ -286,8 +273,6 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let name_ptr = lean_ctor_get(ptr as *mut _, 0);
         let ty_ptr = lean_ctor_get(ptr as *mut _, 1);
         let body_ptr = lean_ctor_get(ptr as *mut _, 2);
-        // hash at field 3
-        // bi is a scalar byte at offset 4*8
 
         let name = decode_ix_name(name_ptr.cast());
         let ty = decode_ix_expr(ty_ptr.cast());
@@ -321,8 +306,6 @@ pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
         let ty_ptr = lean_ctor_get(ptr as *mut _, 1);
         let val_ptr = lean_ctor_get(ptr as *mut _, 2);
         let body_ptr = lean_ctor_get(ptr as *mut _, 3);
-        // hash at field 4
-        // nonDep is scalar byte after 5 obj fields
 
         let name = decode_ix_name(name_ptr.cast());
         let ty = decode_ix_expr(ty_ptr.cast());
@@ -418,8 +401,8 @@ pub fn decode_binder_info(bi_byte: u8) -> BinderInfo {
 
 /// Round-trip an Ix.Expr: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_expr(expr_ptr: *const c_void) -> *mut c_void {
-  let expr = decode_ix_expr(expr_ptr);
+pub extern "C" fn rs_roundtrip_ix_expr(expr_ptr: IxExpr) -> IxExpr {
+  let expr = decode_ix_expr(expr_ptr.as_ptr());
   let mut cache = LeanBuildCache::new();
   build_expr(&mut cache, &expr)
 }

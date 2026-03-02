@@ -129,7 +129,7 @@ pub fn build_raw_named(
     let addr_obj = build_address_from_ixon(&rn.addr);
     let meta_obj = build_constant_meta(&rn.const_meta);
     let obj = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(obj, 0, name_obj.cast());
+    lean_ctor_set(obj, 0, name_obj.as_mut_ptr().cast());
     lean_ctor_set(obj, 1, addr_obj.cast());
     lean_ctor_set(obj, 2, meta_obj.cast());
     obj.cast()
@@ -242,7 +242,7 @@ pub fn build_raw_name_entry(
     let name_obj = build_name(cache, name);
     let obj = lean_alloc_ctor(0, 2, 0);
     lean_ctor_set(obj, 0, addr_obj.cast());
-    lean_ctor_set(obj, 1, name_obj.cast());
+    lean_ctor_set(obj, 1, name_obj.as_mut_ptr().cast());
     obj.cast()
   }
 }

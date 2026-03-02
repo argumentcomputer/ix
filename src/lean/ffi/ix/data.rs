@@ -5,11 +5,12 @@ use std::ffi::c_void;
 use crate::ix::env::{
   DataValue, Int, Name, SourceInfo, Substring, Syntax, SyntaxPreresolved,
 };
-use crate::lean::lean::{
-  lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
-  lean_ctor_set, lean_ctor_set_uint8, lean_mk_string, lean_obj_tag,
-};
+use crate::lean::lean::{lean_ctor_get, lean_obj_tag};
 use crate::lean::nat::Nat;
+use crate::lean::obj::{
+  IxDataValue, IxInt, IxSourceInfo, IxSubstring, IxSyntax,
+  IxSyntaxPreresolved, LeanArray, LeanCtor, LeanString,
+};
 use crate::lean::{
   lean_array_data, lean_ctor_scalar_u8, lean_is_scalar, lean_obj_to_string,
 };
@@ -19,59 +20,52 @@ use super::super::primitives::build_nat;
 use super::name::{build_name, decode_ix_name};
 
 /// Build a Ix.Int (ofNat or negSucc).
-pub fn build_int(int: &Int) -> *mut c_void {
-  unsafe {
-    match int {
-      Int::OfNat(n) => {
-        let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, build_nat(n).cast());
-        obj.cast()
-      },
-      Int::NegSucc(n) => {
-        let obj = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(obj, 0, build_nat(n).cast());
-        obj.cast()
-      },
-    }
+pub fn build_int(int: &Int) -> IxInt {
+  match int {
+    Int::OfNat(n) => {
+      let obj = LeanCtor::alloc(0, 1, 0);
+      obj.set(0, build_nat(n));
+      IxInt::new(*obj)
+    },
+    Int::NegSucc(n) => {
+      let obj = LeanCtor::alloc(1, 1, 0);
+      obj.set(0, build_nat(n));
+      IxInt::new(*obj)
+    },
   }
 }
 
 /// Build a Ix.Substring.
-pub fn build_substring(ss: &Substring) -> *mut c_void {
-  unsafe {
-    let s_cstr = crate::lean::safe_cstring(ss.str.as_str());
-    let obj = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(obj, 0, lean_mk_string(s_cstr.as_ptr()));
-    lean_ctor_set(obj, 1, build_nat(&ss.start_pos).cast());
-    lean_ctor_set(obj, 2, build_nat(&ss.stop_pos).cast());
-    obj.cast()
-  }
+pub fn build_substring(ss: &Substring) -> IxSubstring {
+  let obj = LeanCtor::alloc(0, 3, 0);
+  obj.set(0, LeanString::from_str(ss.str.as_str()));
+  obj.set(1, build_nat(&ss.start_pos));
+  obj.set(2, build_nat(&ss.stop_pos));
+  IxSubstring::new(*obj)
 }
 
 /// Build a Ix.SourceInfo.
-pub fn build_source_info(si: &SourceInfo) -> *mut c_void {
-  unsafe {
-    match si {
-      // | original (leading : Substring) (pos : Nat) (trailing : Substring) (endPos : Nat) -- tag 0
-      SourceInfo::Original(leading, pos, trailing, end_pos) => {
-        let obj = lean_alloc_ctor(0, 4, 0);
-        lean_ctor_set(obj, 0, build_substring(leading).cast());
-        lean_ctor_set(obj, 1, build_nat(pos).cast());
-        lean_ctor_set(obj, 2, build_substring(trailing).cast());
-        lean_ctor_set(obj, 3, build_nat(end_pos).cast());
-        obj.cast()
-      },
-      // | synthetic (pos : Nat) (endPos : Nat) (canonical : Bool) -- tag 1
-      SourceInfo::Synthetic(pos, end_pos, canonical) => {
-        let obj = lean_alloc_ctor(1, 2, 1);
-        lean_ctor_set(obj, 0, build_nat(pos).cast());
-        lean_ctor_set(obj, 1, build_nat(end_pos).cast());
-        lean_ctor_set_uint8(obj, 2 * 8, *canonical as u8);
-        obj.cast()
-      },
-      // | none -- tag 2
-      SourceInfo::None => lean_alloc_ctor(2, 0, 0).cast(),
-    }
+pub fn build_source_info(si: &SourceInfo) -> IxSourceInfo {
+  match si {
+    // | original (leading : Substring) (pos : Nat) (trailing : Substring) (endPos : Nat) -- tag 0
+    SourceInfo::Original(leading, pos, trailing, end_pos) => {
+      let obj = LeanCtor::alloc(0, 4, 0);
+      obj.set(0, build_substring(leading));
+      obj.set(1, build_nat(pos));
+      obj.set(2, build_substring(trailing));
+      obj.set(3, build_nat(end_pos));
+      IxSourceInfo::new(*obj)
+    },
+    // | synthetic (pos : Nat) (endPos : Nat) (canonical : Bool) -- tag 1
+    SourceInfo::Synthetic(pos, end_pos, canonical) => {
+      let obj = LeanCtor::alloc(1, 2, 1);
+      obj.set(0, build_nat(pos));
+      obj.set(1, build_nat(end_pos));
+      obj.set_u8(2 * 8, *canonical as u8);
+      IxSourceInfo::new(*obj)
+    },
+    // | none -- tag 2
+    SourceInfo::None => IxSourceInfo::new(*LeanCtor::alloc(2, 0, 0)),
   }
 }
 
@@ -79,81 +73,73 @@ pub fn build_source_info(si: &SourceInfo) -> *mut c_void {
 pub fn build_syntax_preresolved(
   cache: &mut LeanBuildCache,
   sp: &SyntaxPreresolved,
-) -> *mut c_void {
-  unsafe {
-    match sp {
-      // | namespace (name : Name) -- tag 0
-      SyntaxPreresolved::Namespace(name) => {
-        let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, build_name(cache, name).cast());
-        obj.cast()
-      },
-      // | decl (name : Name) (aliases : Array String) -- tag 1
-      SyntaxPreresolved::Decl(name, aliases) => {
-        let name_obj = build_name(cache, name);
-        let aliases_obj = build_string_array(aliases);
-        let obj = lean_alloc_ctor(1, 2, 0);
-        lean_ctor_set(obj, 0, name_obj.cast());
-        lean_ctor_set(obj, 1, aliases_obj.cast());
-        obj.cast()
-      },
-    }
+) -> IxSyntaxPreresolved {
+  match sp {
+    // | namespace (name : Name) -- tag 0
+    SyntaxPreresolved::Namespace(name) => {
+      let obj = LeanCtor::alloc(0, 1, 0);
+      obj.set(0, build_name(cache, name));
+      IxSyntaxPreresolved::new(*obj)
+    },
+    // | decl (name : Name) (aliases : Array String) -- tag 1
+    SyntaxPreresolved::Decl(name, aliases) => {
+      let name_obj = build_name(cache, name);
+      let aliases_obj = build_string_array(aliases);
+      let obj = LeanCtor::alloc(1, 2, 0);
+      obj.set(0, name_obj);
+      obj.set(1, aliases_obj);
+      IxSyntaxPreresolved::new(*obj)
+    },
   }
 }
 
 /// Build an Array of Strings.
-pub fn build_string_array(strings: &[String]) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(strings.len(), strings.len());
-    for (i, s) in strings.iter().enumerate() {
-      let s_cstr = crate::lean::safe_cstring(s.as_str());
-      lean_array_set_core(arr, i, lean_mk_string(s_cstr.as_ptr()));
-    }
-    arr.cast()
+pub fn build_string_array(strings: &[String]) -> LeanArray {
+  let arr = LeanArray::alloc(strings.len());
+  for (i, s) in strings.iter().enumerate() {
+    arr.set(i, LeanString::from_str(s.as_str()));
   }
+  arr
 }
 
 /// Build a Ix.Syntax.
-pub fn build_syntax(cache: &mut LeanBuildCache, syn: &Syntax) -> *mut c_void {
-  unsafe {
-    match syn {
-      // | missing -- tag 0
-      Syntax::Missing => lean_alloc_ctor(0, 0, 0).cast(),
-      // | node (info : SourceInfo) (kind : Name) (args : Array Syntax) -- tag 1
-      Syntax::Node(info, kind, args) => {
-        let info_obj = build_source_info(info);
-        let kind_obj = build_name(cache, kind);
-        let args_obj = build_syntax_array(cache, args);
-        let obj = lean_alloc_ctor(1, 3, 0);
-        lean_ctor_set(obj, 0, info_obj.cast());
-        lean_ctor_set(obj, 1, kind_obj.cast());
-        lean_ctor_set(obj, 2, args_obj.cast());
-        obj.cast()
-      },
-      // | atom (info : SourceInfo) (val : String) -- tag 2
-      Syntax::Atom(info, val) => {
-        let info_obj = build_source_info(info);
-        let val_cstr = crate::lean::safe_cstring(val.as_str());
-        let obj = lean_alloc_ctor(2, 2, 0);
-        lean_ctor_set(obj, 0, info_obj.cast());
-        lean_ctor_set(obj, 1, lean_mk_string(val_cstr.as_ptr()));
-        obj.cast()
-      },
-      // | ident (info : SourceInfo) (rawVal : Substring) (val : Name) (preresolved : Array SyntaxPreresolved) -- tag 3
-      Syntax::Ident(info, raw_val, val, preresolved) => {
-        let info_obj = build_source_info(info);
-        let raw_val_obj = build_substring(raw_val);
-        let val_obj = build_name(cache, val);
-        let preresolved_obj =
-          build_syntax_preresolved_array(cache, preresolved);
-        let obj = lean_alloc_ctor(3, 4, 0);
-        lean_ctor_set(obj, 0, info_obj.cast());
-        lean_ctor_set(obj, 1, raw_val_obj.cast());
-        lean_ctor_set(obj, 2, val_obj.cast());
-        lean_ctor_set(obj, 3, preresolved_obj.cast());
-        obj.cast()
-      },
-    }
+pub fn build_syntax(cache: &mut LeanBuildCache, syn: &Syntax) -> IxSyntax {
+  match syn {
+    // | missing -- tag 0
+    Syntax::Missing => IxSyntax::new(*LeanCtor::alloc(0, 0, 0)),
+    // | node (info : SourceInfo) (kind : Name) (args : Array Syntax) -- tag 1
+    Syntax::Node(info, kind, args) => {
+      let info_obj = build_source_info(info);
+      let kind_obj = build_name(cache, kind);
+      let args_obj = build_syntax_array(cache, args);
+      let obj = LeanCtor::alloc(1, 3, 0);
+      obj.set(0, info_obj);
+      obj.set(1, kind_obj);
+      obj.set(2, args_obj);
+      IxSyntax::new(*obj)
+    },
+    // | atom (info : SourceInfo) (val : String) -- tag 2
+    Syntax::Atom(info, val) => {
+      let info_obj = build_source_info(info);
+      let obj = LeanCtor::alloc(2, 2, 0);
+      obj.set(0, info_obj);
+      obj.set(1, LeanString::from_str(val.as_str()));
+      IxSyntax::new(*obj)
+    },
+    // | ident (info : SourceInfo) (rawVal : Substring) (val : Name) (preresolved : Array SyntaxPreresolved) -- tag 3
+    Syntax::Ident(info, raw_val, val, preresolved) => {
+      let info_obj = build_source_info(info);
+      let raw_val_obj = build_substring(raw_val);
+      let val_obj = build_name(cache, val);
+      let preresolved_obj =
+        build_syntax_preresolved_array(cache, preresolved);
+      let obj = LeanCtor::alloc(3, 4, 0);
+      obj.set(0, info_obj);
+      obj.set(1, raw_val_obj);
+      obj.set(2, val_obj);
+      obj.set(3, preresolved_obj);
+      IxSyntax::new(*obj)
+    },
   }
 }
 
@@ -161,72 +147,63 @@ pub fn build_syntax(cache: &mut LeanBuildCache, syn: &Syntax) -> *mut c_void {
 pub fn build_syntax_array(
   cache: &mut LeanBuildCache,
   items: &[Syntax],
-) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(items.len(), items.len());
-    for (i, item) in items.iter().enumerate() {
-      let item_obj = build_syntax(cache, item);
-      lean_array_set_core(arr, i, item_obj.cast());
-    }
-    arr.cast()
+) -> LeanArray {
+  let arr = LeanArray::alloc(items.len());
+  for (i, item) in items.iter().enumerate() {
+    arr.set(i, build_syntax(cache, item));
   }
+  arr
 }
 
 /// Build an Array of SyntaxPreresolved.
 pub fn build_syntax_preresolved_array(
   cache: &mut LeanBuildCache,
   items: &[SyntaxPreresolved],
-) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(items.len(), items.len());
-    for (i, item) in items.iter().enumerate() {
-      let item_obj = build_syntax_preresolved(cache, item);
-      lean_array_set_core(arr, i, item_obj.cast());
-    }
-    arr.cast()
+) -> LeanArray {
+  let arr = LeanArray::alloc(items.len());
+  for (i, item) in items.iter().enumerate() {
+    arr.set(i, build_syntax_preresolved(cache, item));
   }
+  arr
 }
 
 /// Build Ix.DataValue.
 pub fn build_data_value(
   cache: &mut LeanBuildCache,
   dv: &DataValue,
-) -> *mut c_void {
-  unsafe {
-    match dv {
-      DataValue::OfString(s) => {
-        let s_cstr = crate::lean::safe_cstring(s.as_str());
-        let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, lean_mk_string(s_cstr.as_ptr()));
-        obj.cast()
-      },
-      DataValue::OfBool(b) => {
-        // 0 object fields, 1 scalar byte
-        let obj = lean_alloc_ctor(1, 0, 1);
-        lean_ctor_set_uint8(obj, 0, *b as u8);
-        obj.cast()
-      },
-      DataValue::OfName(n) => {
-        let obj = lean_alloc_ctor(2, 1, 0);
-        lean_ctor_set(obj, 0, build_name(cache, n).cast());
-        obj.cast()
-      },
-      DataValue::OfNat(n) => {
-        let obj = lean_alloc_ctor(3, 1, 0);
-        lean_ctor_set(obj, 0, build_nat(n).cast());
-        obj.cast()
-      },
-      DataValue::OfInt(i) => {
-        let obj = lean_alloc_ctor(4, 1, 0);
-        lean_ctor_set(obj, 0, build_int(i).cast());
-        obj.cast()
-      },
-      DataValue::OfSyntax(syn) => {
-        let obj = lean_alloc_ctor(5, 1, 0);
-        lean_ctor_set(obj, 0, build_syntax(cache, syn).cast());
-        obj.cast()
-      },
-    }
+) -> IxDataValue {
+  match dv {
+    DataValue::OfString(s) => {
+      let obj = LeanCtor::alloc(0, 1, 0);
+      obj.set(0, LeanString::from_str(s.as_str()));
+      IxDataValue::new(*obj)
+    },
+    DataValue::OfBool(b) => {
+      // 0 object fields, 1 scalar byte
+      let obj = LeanCtor::alloc(1, 0, 1);
+      obj.set_u8(0, *b as u8);
+      IxDataValue::new(*obj)
+    },
+    DataValue::OfName(n) => {
+      let obj = LeanCtor::alloc(2, 1, 0);
+      obj.set(0, build_name(cache, n));
+      IxDataValue::new(*obj)
+    },
+    DataValue::OfNat(n) => {
+      let obj = LeanCtor::alloc(3, 1, 0);
+      obj.set(0, build_nat(n));
+      IxDataValue::new(*obj)
+    },
+    DataValue::OfInt(i) => {
+      let obj = LeanCtor::alloc(4, 1, 0);
+      obj.set(0, build_int(i));
+      IxDataValue::new(*obj)
+    },
+    DataValue::OfSyntax(syn) => {
+      let obj = LeanCtor::alloc(5, 1, 0);
+      obj.set(0, build_syntax(cache, syn));
+      IxDataValue::new(*obj)
+    },
   }
 }
 
@@ -234,20 +211,18 @@ pub fn build_data_value(
 pub fn build_kvmap(
   cache: &mut LeanBuildCache,
   data: &[(Name, DataValue)],
-) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(data.len(), data.len());
-    for (i, (name, dv)) in data.iter().enumerate() {
-      let name_obj = build_name(cache, name);
-      let dv_obj = build_data_value(cache, dv);
-      // Prod (Name × DataValue)
-      let pair = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(pair, 0, name_obj.cast());
-      lean_ctor_set(pair, 1, dv_obj.cast());
-      lean_array_set_core(arr, i, pair);
-    }
-    arr.cast()
+) -> LeanArray {
+  let arr = LeanArray::alloc(data.len());
+  for (i, (name, dv)) in data.iter().enumerate() {
+    let name_obj = build_name(cache, name);
+    let dv_obj = build_data_value(cache, dv);
+    // Prod (Name × DataValue)
+    let pair = LeanCtor::alloc(0, 2, 0);
+    pair.set(0, name_obj);
+    pair.set(1, dv_obj);
+    arr.set(i, pair);
   }
+  arr
 }
 
 // =============================================================================
@@ -462,45 +437,43 @@ pub fn decode_syntax_preresolved(ptr: *const c_void) -> SyntaxPreresolved {
 
 /// Round-trip an Ix.Int: decode from Lean, re-encode.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_int(int_ptr: *const c_void) -> *mut c_void {
-  let int_val = decode_ix_int(int_ptr);
+pub extern "C" fn rs_roundtrip_ix_int(int_ptr: IxInt) -> IxInt {
+  let int_val = decode_ix_int(int_ptr.as_ptr());
   build_int(&int_val)
 }
 
 /// Round-trip an Ix.Substring: decode from Lean, re-encode.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_substring(
-  sub_ptr: *const c_void,
-) -> *mut c_void {
-  let sub = decode_substring(sub_ptr);
+  sub_ptr: IxSubstring,
+) -> IxSubstring {
+  let sub = decode_substring(sub_ptr.as_ptr());
   build_substring(&sub)
 }
 
 /// Round-trip an Ix.SourceInfo: decode from Lean, re-encode.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_source_info(
-  si_ptr: *const c_void,
-) -> *mut c_void {
-  let si = decode_ix_source_info(si_ptr);
+  si_ptr: IxSourceInfo,
+) -> IxSourceInfo {
+  let si = decode_ix_source_info(si_ptr.as_ptr());
   build_source_info(&si)
 }
 
 /// Round-trip an Ix.SyntaxPreresolved: decode from Lean, re-encode.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_syntax_preresolved(
-  sp_ptr: *const c_void,
-) -> *mut c_void {
-  let sp = decode_syntax_preresolved(sp_ptr);
+  sp_ptr: IxSyntaxPreresolved,
+) -> IxSyntaxPreresolved {
+  let sp = decode_syntax_preresolved(sp_ptr.as_ptr());
   let mut cache = LeanBuildCache::new();
   build_syntax_preresolved(&mut cache, &sp)
 }
 
 /// Round-trip an Ix.Syntax: decode from Lean, re-encode.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_syntax(
-  syn_ptr: *const c_void,
-) -> *mut c_void {
-  let syn = decode_ix_syntax(syn_ptr);
+pub extern "C" fn rs_roundtrip_ix_syntax(syn_ptr: IxSyntax) -> IxSyntax {
+  let syn = decode_ix_syntax(syn_ptr.as_ptr());
   let mut cache = LeanBuildCache::new();
   build_syntax(&mut cache, &syn)
 }
@@ -508,9 +481,9 @@ pub extern "C" fn rs_roundtrip_ix_syntax(
 /// Round-trip an Ix.DataValue: decode from Lean, re-encode.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_data_value(
-  dv_ptr: *const c_void,
-) -> *mut c_void {
-  let dv = decode_data_value(dv_ptr);
+  dv_ptr: IxDataValue,
+) -> IxDataValue {
+  let dv = decode_data_value(dv_ptr.as_ptr());
   let mut cache = LeanBuildCache::new();
   build_data_value(&mut cache, &dv)
 }

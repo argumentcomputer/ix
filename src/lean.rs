@@ -24,6 +24,7 @@ pub mod lean {
 
 pub mod ffi;
 pub mod nat;
+pub mod obj;
 
 use std::ffi::{CString, c_void};
 

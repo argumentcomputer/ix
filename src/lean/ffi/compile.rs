@@ -84,7 +84,7 @@ pub fn build_raw_named(
     let addr_obj = build_address_from_ixon(addr);
     let meta_obj = build_constant_meta(meta);
     let obj = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(obj, 0, name_obj.cast());
+    lean_ctor_set(obj, 0, name_obj.as_mut_ptr().cast());
     lean_ctor_set(obj, 1, addr_obj.cast());
     lean_ctor_set(obj, 2, meta_obj.cast());
     obj.cast()
@@ -298,7 +298,7 @@ pub extern "C" fn rs_compile_env_full(
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), ba_data, bytes.len());
 
         let block = lean_alloc_ctor(0, 2, 8);
-        lean_ctor_set(block, 0, name_obj.cast());
+        lean_ctor_set(block, 0, name_obj.as_mut_ptr().cast());
         lean_ctor_set(block, 1, ba);
         let base = block.cast::<u8>();
         *base.add(8 + 16).cast::<u64>() = *sharing_len as u64;
@@ -322,7 +322,7 @@ pub extern "C" fn rs_compile_env_full(
         std::ptr::copy_nonoverlapping(addr_bytes.as_ptr(), addr_data, 32);
 
         let entry_obj = lean_alloc_ctor(0, 2, 0);
-        lean_ctor_set(entry_obj, 0, name_obj.cast());
+        lean_ctor_set(entry_obj, 0, name_obj.as_mut_ptr().cast());
         lean_ctor_set(entry_obj, 1, addr_ba);
 
         lean_array_set_core(name_to_addr_arr, i, entry_obj);
@@ -336,7 +336,7 @@ pub extern "C" fn rs_compile_env_full(
       // Build RustCompilationResult
       let result = lean_alloc_ctor(0, 3, 0);
       lean_ctor_set(result, 0, raw_env.cast());
-      lean_ctor_set(result, 1, condensed_obj.cast());
+      lean_ctor_set(result, 1, condensed_obj.as_mut_ptr().cast());
       lean_ctor_set(result, 2, compiled_obj);
 
       lean_io_result_mk_ok(result).cast()
@@ -484,7 +484,7 @@ pub extern "C" fn rs_compile_phases(
 
       let result = lean_alloc_ctor(0, 3, 0);
       lean_ctor_set(result, 0, raw_env.cast());
-      lean_ctor_set(result, 1, condensed_obj.cast());
+      lean_ctor_set(result, 1, condensed_obj.as_mut_ptr().cast());
       lean_ctor_set(result, 2, raw_ixon_env);
 
       lean_io_result_mk_ok(result).cast()
@@ -1556,8 +1556,8 @@ pub extern "C" fn rs_decompile_env(raw_env_ptr: *const c_void) -> *mut c_void {
           let name_obj = build_name(&mut cache, name);
           let info_obj = build_constant_info(&mut cache, info);
           let pair = lean_alloc_ctor(0, 2, 0);
-          lean_ctor_set(pair, 0, name_obj.cast());
-          lean_ctor_set(pair, 1, info_obj.cast());
+          lean_ctor_set(pair, 0, name_obj.as_mut_ptr().cast());
+          lean_ctor_set(pair, 1, info_obj.as_mut_ptr().cast());
           lean_array_set_core(arr, i, pair);
         }
         // Except.ok (tag 1)

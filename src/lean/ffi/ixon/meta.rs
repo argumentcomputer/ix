@@ -401,7 +401,7 @@ pub fn build_constant_meta(meta: &ConstantMeta) -> *mut c_void {
         let obj = lean_alloc_ctor(1, 6, 16);
         lean_ctor_set(obj, 0, build_address_from_ixon(name).cast());
         lean_ctor_set(obj, 1, build_address_array(lvls).cast());
-        lean_ctor_set(obj, 2, build_reducibility_hints(hints).cast());
+        lean_ctor_set(obj, 2, build_reducibility_hints(hints).as_mut_ptr().cast());
         lean_ctor_set(obj, 3, build_address_array(all).cast());
         lean_ctor_set(obj, 4, build_address_array(ctx).cast());
         lean_ctor_set(obj, 5, build_expr_meta_arena(arena).cast());

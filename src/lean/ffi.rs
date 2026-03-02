@@ -14,12 +14,6 @@ pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
 
 use std::ffi::{CString, c_void};
 
-/// Wrapper to allow OnceLock storage of an external class pointer.
-pub(crate) struct ExternalClassPtr(pub(crate) *mut c_void);
-// Safety: the class pointer is initialized once and read-only thereafter.
-unsafe impl Send for ExternalClassPtr {}
-unsafe impl Sync for ExternalClassPtr {}
-
 use crate::lean::{
   lean::{lean_io_result_mk_error, lean_mk_io_user_error, lean_mk_string},
   lean_array_to_vec, lean_sarray_data, lean_unbox_u32,
@@ -52,18 +46,6 @@ where
       }
     },
   }
-}
-
-#[inline]
-pub(crate) fn to_raw<T>(t: T) -> *const T {
-  Box::into_raw(Box::new(t))
-}
-
-#[inline]
-pub(super) fn drop_raw<T>(ptr: *mut T) {
-  assert!(!ptr.is_null(), "Null pointer free attempt");
-  let t = unsafe { Box::from_raw(ptr) };
-  drop(t);
 }
 
 #[unsafe(no_mangle)]

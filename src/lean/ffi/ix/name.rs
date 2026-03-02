@@ -8,12 +8,10 @@
 use std::ffi::c_void;
 
 use crate::ix::env::{Name, NameData};
-use crate::lean::lean::{
-  lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
-  lean_ctor_set, lean_inc, lean_mk_string, lean_obj_tag,
-};
+use crate::lean::lean::{lean_ctor_get, lean_obj_tag};
 use crate::lean::lean_obj_to_string;
 use crate::lean::nat::Nat;
+use crate::lean::obj::{IxName, LeanArray, LeanCtor, LeanString};
 
 use super::super::builder::LeanBuildCache;
 use super::super::primitives::build_nat;
@@ -21,42 +19,37 @@ use super::address::build_address;
 
 /// Build a Lean Ix.Name with embedded hash.
 /// Uses caching to avoid rebuilding the same name.
-pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> *mut c_void {
+pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> IxName {
   let hash = name.get_hash();
   if let Some(&cached) = cache.names.get(hash) {
-    unsafe { lean_inc(cached.cast()) };
+    cached.inc_ref();
     return cached;
   }
 
-  let result = unsafe {
-    match name.as_data() {
-      NameData::Anonymous(h) => {
-        // anonymous: (hash : Address)
-        let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, build_address(h).cast());
-        obj.cast()
-      },
-      NameData::Str(parent, s, h) => {
-        // str: (parent : Name) (s : String) (hash : Address)
-        let parent_obj = build_name(cache, parent);
-        let s_cstr = crate::lean::safe_cstring(s.as_str());
-        let obj = lean_alloc_ctor(1, 3, 0);
-        lean_ctor_set(obj, 0, parent_obj.cast());
-        lean_ctor_set(obj, 1, lean_mk_string(s_cstr.as_ptr()));
-        lean_ctor_set(obj, 2, build_address(h).cast());
-        obj.cast()
-      },
-      NameData::Num(parent, n, h) => {
-        // num: (parent : Name) (i : Nat) (hash : Address)
-        let parent_obj = build_name(cache, parent);
-        let n_obj = build_nat(n);
-        let obj = lean_alloc_ctor(2, 3, 0);
-        lean_ctor_set(obj, 0, parent_obj.cast());
-        lean_ctor_set(obj, 1, n_obj.cast());
-        lean_ctor_set(obj, 2, build_address(h).cast());
-        obj.cast()
-      },
-    }
+  let result = match name.as_data() {
+    NameData::Anonymous(h) => {
+      let ctor = LeanCtor::alloc(0, 1, 0);
+      ctor.set(0, build_address(h));
+      IxName::new(*ctor)
+    },
+    NameData::Str(parent, s, h) => {
+      let parent_obj = build_name(cache, parent);
+      let s_obj = LeanString::from_str(s.as_str());
+      let ctor = LeanCtor::alloc(1, 3, 0);
+      ctor.set(0, parent_obj);
+      ctor.set(1, s_obj);
+      ctor.set(2, build_address(h));
+      IxName::new(*ctor)
+    },
+    NameData::Num(parent, n, h) => {
+      let parent_obj = build_name(cache, parent);
+      let n_obj = build_nat(n);
+      let ctor = LeanCtor::alloc(2, 3, 0);
+      ctor.set(0, parent_obj);
+      ctor.set(1, n_obj);
+      ctor.set(2, build_address(h));
+      IxName::new(*ctor)
+    },
   };
 
   cache.names.insert(*hash, result);
@@ -67,15 +60,12 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> *mut c_void {
 pub fn build_name_array(
   cache: &mut LeanBuildCache,
   names: &[Name],
-) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(names.len(), names.len());
-    for (i, name) in names.iter().enumerate() {
-      let name_obj = build_name(cache, name);
-      lean_array_set_core(arr, i, name_obj.cast());
-    }
-    arr.cast()
+) -> LeanArray {
+  let arr = LeanArray::alloc(names.len());
+  for (i, name) in names.iter().enumerate() {
+    arr.set(i, build_name(cache, name));
   }
+  arr
 }
 
 /// Decode a Lean Ix.Name to Rust Name.
@@ -121,8 +111,8 @@ pub fn decode_name_array(ptr: *const c_void) -> Vec<Name> {
 
 /// Round-trip an Ix.Name: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_name(name_ptr: *const c_void) -> *mut c_void {
-  let name = decode_ix_name(name_ptr);
+pub extern "C" fn rs_roundtrip_ix_name(name_ptr: IxName) -> IxName {
+  let name = decode_ix_name(name_ptr.as_ptr());
   let mut cache = LeanBuildCache::new();
   build_name(&mut cache, &name)
 }
