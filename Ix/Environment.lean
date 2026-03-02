@@ -110,6 +110,11 @@ partial def toStringAux : Name → String
 instance : ToString Name where
   toString := toStringAux
 
+def fromLeanName : Lean.Name → Name
+  | .anonymous => .mkAnon
+  | .str pre s => .mkStr (.fromLeanName pre) s
+  | .num pre n => .mkNat (.fromLeanName pre) n
+
 end Name
 
 /-- Compare Ix.Name by hash for ordered collections. -/

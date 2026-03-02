@@ -13,6 +13,21 @@ namespace IxVM
 def entrypoints := ⟦
   /- # Test entrypoints -/
 
+  fn ixon_serde_test(n: G) {
+    match n {
+      0 => (),
+      _ =>
+        let n_minus_1 = n - 1;
+        let (idx, len) = io_get_info([n_minus_1]);
+        let bytes = read_byte_stream(idx, len);
+        let (const, rest) = get_constant(bytes);
+        assert_eq!(rest, ByteStream.Nil);
+        let bytes2 = put_constant(const, ByteStream.Nil);
+        assert_eq!(bytes, bytes2);
+        ixon_serde_test(n_minus_1),
+    }
+  }
+
   -- fn ixon_blake3_test(h: [[G; 4]; 8]) {
   --   let key = [
   --     h[0][0], h[0][1], h[0][2], h[0][3],
