@@ -240,7 +240,132 @@ def tag : Expr m → String
   | .lit (.strVal s) => s!"strLit({s})"
   | .proj _ idx _ _ => s!"proj({idx})"
 
+/-! ### Substitution helpers -/
+
+/-- Lift free bvar indices by `n`. Under `depth` binders, bvars < depth are
+    bound and stay; bvars >= depth are free and get shifted by n. -/
+partial def liftBVars (e : Expr m) (n : Nat) (depth : Nat := 0) : Expr m :=
+  if n == 0 then e
+  else go e depth
+where
+  go (e : Expr m) (d : Nat) : Expr m :=
+    match e with
+    | .bvar idx name => if idx >= d then .bvar (idx + n) name else e
+    | .app fn arg => .app (go fn d) (go arg d)
+    | .lam ty body name bi => .lam (go ty d) (go body (d + 1)) name bi
+    | .forallE ty body name bi => .forallE (go ty d) (go body (d + 1)) name bi
+    | .letE ty val body name => .letE (go ty d) (go val d) (go body (d + 1)) name
+    | .proj typeAddr idx struct typeName => .proj typeAddr idx (go struct d) typeName
+    | .sort .. | .const .. | .lit .. => e
+
+/-- Bulk substitution: replace bvar i with subst[i] for i < subst.size.
+    Free bvars (i >= subst.size) become bvar (i - subst.size).
+    Under binders, substitution values are lifted appropriately. -/
+partial def instantiate (e : Expr m) (subst : Array (Expr m)) : Expr m :=
+  if subst.isEmpty then e
+  else go e 0
+where
+  go (e : Expr m) (shift : Nat) : Expr m :=
+    match e with
+    | .bvar idx name =>
+      if idx < shift then e  -- bound by inner binder
+      else
+        let realIdx := idx - shift
+        if h : realIdx < subst.size then
+          (subst[realIdx]).liftBVars shift
+        else
+          .bvar (idx - subst.size) name
+    | .app fn arg => .app (go fn shift) (go arg shift)
+    | .lam ty body name bi => .lam (go ty shift) (go body (shift + 1)) name bi
+    | .forallE ty body name bi => .forallE (go ty shift) (go body (shift + 1)) name bi
+    | .letE ty val body name => .letE (go ty shift) (go val shift) (go body (shift + 1)) name
+    | .proj typeAddr idx struct typeName => .proj typeAddr idx (go struct shift) typeName
+    | .sort .. | .const .. | .lit .. => e
+
+/-- Single substitution: replace bvar 0 with val. -/
+def instantiate1 (body val : Expr m) : Expr m := body.instantiate #[val]
+
+/-- Substitute universe level params in an expression's Level nodes using a given
+    level substitution function. -/
+partial def instantiateLevelParamsBy (e : Expr m) (substFn : Level m → Level m) : Expr m :=
+  go e
+where
+  go (e : Expr m) : Expr m :=
+    match e with
+    | .sort lvl => .sort (substFn lvl)
+    | .const addr ls name => .const addr (ls.map substFn) name
+    | .app fn arg => .app (go fn) (go arg)
+    | .lam ty body name bi => .lam (go ty) (go body) name bi
+    | .forallE ty body name bi => .forallE (go ty) (go body) name bi
+    | .letE ty val body name => .letE (go ty) (go val) (go body) name
+    | .proj typeAddr idx struct typeName => .proj typeAddr idx (go struct) typeName
+    | .bvar .. | .lit .. => e
+
+/-- Check if expression has any bvars with index >= depth. -/
+partial def hasLooseBVarsAbove (e : Expr m) (depth : Nat) : Bool :=
+  match e with
+  | .bvar idx _ => idx >= depth
+  | .app fn arg => hasLooseBVarsAbove fn depth || hasLooseBVarsAbove arg depth
+  | .lam ty body _ _ => hasLooseBVarsAbove ty depth || hasLooseBVarsAbove body (depth + 1)
+  | .forallE ty body _ _ => hasLooseBVarsAbove ty depth || hasLooseBVarsAbove body (depth + 1)
+  | .letE ty val body _ =>
+    hasLooseBVarsAbove ty depth || hasLooseBVarsAbove val depth || hasLooseBVarsAbove body (depth + 1)
+  | .proj _ _ struct _ => hasLooseBVarsAbove struct depth
+  | .sort .. | .const .. | .lit .. => false
+
+/-- Does the expression have any loose (free) bvars? -/
+def hasLooseBVars (e : Expr m) : Bool := e.hasLooseBVarsAbove 0
+
+/-- Accessor for binding name. -/
+def bindingName! : Expr m → MetaField m Ix.Name
+  | forallE _ _ n _ => n | lam _ _ n _ => n | _ => panic! "bindingName!"
+
+/-- Accessor for binding binder info. -/
+def bindingInfo! : Expr m → MetaField m Lean.BinderInfo
+  | forallE _ _ _ bi => bi | lam _ _ _ bi => bi | _ => panic! "bindingInfo!"
+
+/-- Accessor for letE name. -/
+def letName! : Expr m → MetaField m Ix.Name
+  | letE _ _ _ n => n | _ => panic! "letName!"
+
+/-- Accessor for letE type. -/
+def letType! : Expr m → Expr m
+  | letE ty _ _ _ => ty | _ => panic! "letType!"
+
+/-- Accessor for letE value. -/
+def letValue! : Expr m → Expr m
+  | letE _ v _ _ => v | _ => panic! "letValue!"
+
+/-- Accessor for letE body. -/
+def letBody! : Expr m → Expr m
+  | letE _ _ b _ => b | _ => panic! "letBody!"
+
 end Expr
+
+/-! ## Hashable instances -/
+
+partial def Level.hash : Level m → UInt64
+  | .zero => 7
+  | .succ l => mixHash 13 (Level.hash l)
+  | .max l₁ l₂ => mixHash 17 (mixHash (Level.hash l₁) (Level.hash l₂))
+  | .imax l₁ l₂ => mixHash 23 (mixHash (Level.hash l₁) (Level.hash l₂))
+  | .param idx _ => mixHash 29 (Hashable.hash idx)
+
+instance : Hashable (Level m) where hash := Level.hash
+
+partial def Expr.hash : Expr m → UInt64
+  | .bvar idx _ => mixHash 31 (Hashable.hash idx)
+  | .sort lvl => mixHash 37 (Level.hash lvl)
+  | .const addr lvls _ => mixHash 41 (mixHash (Hashable.hash addr) (lvls.foldl (fun h l => mixHash h (Level.hash l)) 0))
+  | .app fn arg => mixHash 43 (mixHash (Expr.hash fn) (Expr.hash arg))
+  | .lam ty body _ _ => mixHash 47 (mixHash (Expr.hash ty) (Expr.hash body))
+  | .forallE ty body _ _ => mixHash 53 (mixHash (Expr.hash ty) (Expr.hash body))
+  | .letE ty val body _ => mixHash 59 (mixHash (Expr.hash ty) (mixHash (Expr.hash val) (Expr.hash body)))
+  | .lit (.natVal n) => mixHash 61 (Hashable.hash n)
+  | .lit (.strVal s) => mixHash 67 (Hashable.hash s)
+  | .proj addr idx struct _ => mixHash 71 (mixHash (Hashable.hash addr) (mixHash (Hashable.hash idx) (Expr.hash struct)))
+
+instance : Hashable (Expr m) where hash := Expr.hash
 
 /-! ## Enums -/
 

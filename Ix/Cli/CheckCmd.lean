@@ -46,7 +46,7 @@ private def buildFile (path : FilePath) : IO Unit := do
   if exitCode != 0 then
     throw $ IO.userError "lake build failed"
 
-/-- Run the Lean NbE kernel checker. -/
+/-- Run the Lean kernel checker. -/
 private def runLeanCheck (leanEnv : Lean.Environment) : IO UInt32 := do
   println! "Compiling to Ixon..."
   let compileStart ← IO.monoMsNow
@@ -106,7 +106,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let leanEnv ← getFileEnv pathStr
 
   if useLean then
-    println! "Running Lean NbE kernel checker on {pathStr}"
+    println! "Running Lean kernel checker on {pathStr}"
     runLeanCheck leanEnv
   else
     println! "Running Rust kernel checker on {pathStr}"
@@ -118,5 +118,5 @@ def checkCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     path : String; "Path to file to check"
-    lean; "Use Lean NbE kernel instead of Rust kernel"
+    lean; "Use Lean kernel instead of Rust kernel"
 ]

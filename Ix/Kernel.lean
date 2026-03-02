@@ -4,8 +4,8 @@ import Ix.Kernel.Types
 import Ix.Kernel.Datatypes
 import Ix.Kernel.Level
 import Ix.Kernel.TypecheckM
-import Ix.Kernel.Eval
-import Ix.Kernel.Equal
+import Ix.Kernel.Whnf
+import Ix.Kernel.DefEq
 import Ix.Kernel.Infer
 import Ix.Kernel.Convert
 

@@ -61,7 +61,6 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-const", Tests.KernelTests.constSuite),
   ("kernel-verify-prims", [Tests.KernelTests.testVerifyPrimAddrs]),
   ("kernel-dump-prims", [Tests.KernelTests.testDumpPrimAddrs]),
-  ("nbe-focus", Tests.KernelTests.nbeFocusSuite),
   ("kernel-roundtrip", Tests.KernelTests.roundtripSuite),
   ("ixon-full-roundtrip", Tests.Compile.ixonRoundtripSuiteIO),
 ]

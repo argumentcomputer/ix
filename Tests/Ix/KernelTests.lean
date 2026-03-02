@@ -216,33 +216,79 @@ def testConvertEnv : TestSeq :=
         return (false, some s!"{missing.size} constants missing from Kernel.Env")
   ) .done
 
-/-- Const pipeline: compile, convert, typecheck specific constants. -/
-def testConstPipeline : TestSeq :=
-  .individualIO "kernel const pipeline" (do
+/-- Typecheck specific constants through the Lean kernel. -/
+def testConsts : TestSeq :=
+  .individualIO "kernel const checks" (do
     let leanEnv ← get_env!
     let start ← IO.monoMsNow
     let ixonEnv ← Ix.CompileM.rsCompileEnv leanEnv
     let compileMs := (← IO.monoMsNow) - start
-    IO.println s!"[kernel] rsCompileEnv: {ixonEnv.consts.size} consts in {compileMs.formatMs}"
+    IO.println s!"[kernel-const] rsCompileEnv: {ixonEnv.consts.size} consts in {compileMs.formatMs}"
 
     let convertStart ← IO.monoMsNow
     match Ix.Kernel.Convert.convertEnv .meta ixonEnv with
     | .error e =>
-      IO.println s!"[kernel] convertEnv error: {e}"
+      IO.println s!"[kernel-const] convertEnv error: {e}"
       return (false, some e)
     | .ok (kenv, prims, quotInit) =>
       let convertMs := (← IO.monoMsNow) - convertStart
-      IO.println s!"[kernel] convertEnv: {kenv.size} consts in {convertMs.formatMs}"
+      IO.println s!"[kernel-const] convertEnv: {kenv.size} consts in {convertMs.formatMs}"
 
-      -- Check specific constants
       let constNames := #[
+        -- Basic inductives
         "Nat", "Nat.zero", "Nat.succ", "Nat.rec",
         "Bool", "Bool.true", "Bool.false", "Bool.rec",
         "Eq", "Eq.refl",
         "List", "List.nil", "List.cons",
-        "Nat.below"
+        "Nat.below",
+        -- Quotient types
+        "Quot", "Quot.mk", "Quot.lift", "Quot.ind",
+        -- K-reduction exercisers
+        "Eq.rec", "Eq.subst", "Eq.symm", "Eq.trans",
+        -- Proof irrelevance
+        "And.intro", "Or.inl", "Or.inr",
+        -- K-like reduction with congr
+        "congr", "congrArg", "congrFun",
+        -- Structure projections + eta
+        "Prod.fst", "Prod.snd", "Prod.mk", "Sigma.mk", "Subtype.mk",
+        -- Nat primitives
+        "Nat.add", "Nat.sub", "Nat.mul", "Nat.div", "Nat.mod",
+        "Nat.gcd", "Nat.beq", "Nat.ble",
+        "Nat.land", "Nat.lor", "Nat.xor",
+        "Nat.shiftLeft", "Nat.shiftRight", "Nat.pow",
+        -- Recursors
+        "List.rec",
+        -- Delta unfolding
+        "id", "Function.comp",
+        -- Various inductives
+        "Empty", "PUnit", "Fin", "Sigma", "Prod",
+        -- Proofs / proof irrelevance
+        "True", "False", "And", "Or",
+        -- Mutual/nested inductives
+        "List.map", "List.foldl", "List.append",
+        -- Universe polymorphism
+        "ULift", "PLift",
+        -- More complex
+        "Option", "Option.some", "Option.none",
+        "String", "String.mk", "Char",
+        -- Partial definitions
+        "WellFounded.fix",
+        -- Well-founded recursion scaffolding
+        "Nat.brecOn",
+        -- PProd (used by Nat.below)
+        "PProd", "PProd.mk", "PProd.fst", "PProd.snd",
+        "PUnit.unit",
+        -- noConfusion
+        "Lean.Meta.Grind.Origin.noConfusionType",
+        "Lean.Meta.Grind.Origin.noConfusion",
+        "Lean.Meta.Grind.Origin.stx.noConfusion",
+        -- Complex proofs (fuel-sensitive)
+        "Nat.Linear.Poly.of_denote_eq_cancel",
+        "String.length_empty",
+        "_private.Init.Grind.Ring.Basic.«0».Lean.Grind.IsCharP.mk'_aux._proof_1_5",
+        -- BVDecide regression test (fuel-sensitive)
+        "Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.instLawfulVecOperatorShiftConcatInputBlastShiftConcat"
       ]
-      let checkStart ← IO.monoMsNow
       let mut passed := 0
       let mut failures : Array String := #[]
       for name in constNames do
@@ -250,15 +296,22 @@ def testConstPipeline : TestSeq :=
         let some cNamed := ixonEnv.named.get? ixName
           | do failures := failures.push s!"{name}: not found"; continue
         let addr := cNamed.addr
+        IO.println s!"  checking {name} ..."
+        (← IO.getStdout).flush
+        let start ← IO.monoMsNow
         match Ix.Kernel.typecheckConst kenv prims addr quotInit with
-        | .ok () => passed := passed + 1
-        | .error e => failures := failures.push s!"{name}: {e}"
-      let checkMs := (← IO.monoMsNow) - checkStart
-      IO.println s!"[kernel] {passed}/{constNames.size} passed in {checkMs.formatMs}"
+        | .ok () =>
+          let ms := (← IO.monoMsNow) - start
+          IO.println s!"  ✓ {name} ({ms.formatMs})"
+          passed := passed + 1
+        | .error e =>
+          let ms := (← IO.monoMsNow) - start
+          IO.println s!"  ✗ {name} ({ms.formatMs}): {e}"
+          failures := failures.push s!"{name}: {e}"
+      IO.println s!"[kernel-const] {passed}/{constNames.size} passed"
       if failures.isEmpty then
         return (true, none)
       else
-        for f in failures do IO.println s!"  [fail] {f}"
         return (false, some s!"{failures.size} failure(s)")
   ) .done
 
@@ -447,65 +500,6 @@ def testReducibilityHintsLt : TestSeq :=
 
 /-! ## Expanded integration tests -/
 
-/-- Expanded constant pipeline: more constants including quotients, recursors, projections. -/
-def testMoreConstants : TestSeq :=
-  .individualIO "expanded kernel const pipeline" (do
-    let leanEnv ← get_env!
-    let ixonEnv ← Ix.CompileM.rsCompileEnv leanEnv
-    match Ix.Kernel.Convert.convertEnv .meta ixonEnv with
-    | .error e => return (false, some e)
-    | .ok (kenv, prims, quotInit) =>
-      let constNames := #[
-        -- Quotient types
-        "Quot", "Quot.mk", "Quot.lift", "Quot.ind",
-        -- K-reduction exercisers
-        "Eq.rec", "Eq.subst", "Eq.symm", "Eq.trans",
-        -- Proof irrelevance
-        "And.intro", "Or.inl", "Or.inr",
-        -- K-like reduction with congr
-        "congr", "congrArg", "congrFun",
-        -- Structure projections + eta
-        "Prod.fst", "Prod.snd", "Prod.mk", "Sigma.mk", "Subtype.mk",
-        -- Nat primitives
-        "Nat.add", "Nat.sub", "Nat.mul", "Nat.div", "Nat.mod",
-        "Nat.gcd", "Nat.beq", "Nat.ble",
-        "Nat.land", "Nat.lor", "Nat.xor",
-        "Nat.shiftLeft", "Nat.shiftRight", "Nat.pow",
-        -- Recursors
-        "Bool.rec", "List.rec",
-        -- Delta unfolding
-        "id", "Function.comp",
-        -- Various inductives
-        "Empty", "PUnit", "Fin", "Sigma", "Prod",
-        -- Proofs / proof irrelevance
-        "True", "False", "And", "Or",
-        -- Mutual/nested inductives
-        "List.map", "List.foldl", "List.append",
-        -- Universe polymorphism
-        "ULift", "PLift",
-        -- More complex
-        "Option", "Option.some", "Option.none",
-        "String", "String.mk", "Char",
-        -- Partial definitions
-        "WellFounded.fix"
-      ]
-      let mut passed := 0
-      let mut failures : Array String := #[]
-      for name in constNames do
-        let ixName := parseIxName name
-        let some cNamed := ixonEnv.named.get? ixName
-          | do failures := failures.push s!"{name}: not found"; continue
-        let addr := cNamed.addr
-        match Ix.Kernel.typecheckConst kenv prims addr quotInit with
-        | .ok () => passed := passed + 1
-        | .error e => failures := failures.push s!"{name}: {e}"
-      IO.println s!"[kernel-expanded] {passed}/{constNames.size} passed"
-      if failures.isEmpty then
-        return (true, none)
-      else
-        for f in failures do IO.println s!"  [fail] {f}"
-        return (false, some s!"{failures.size} failure(s)")
-  ) .done
 
 /-! ## Anon mode conversion test -/
 
@@ -1088,64 +1082,6 @@ def testHelperFunctions : TestSeq :=
     (getCtorReturnType (.forallE c2 c1 () () : Expr .anon) 0 1 == c1) ++
   .done
 
-/-! ## Focused NbE constant tests -/
-
-/-- Test individual constants through the NbE kernel to isolate failures. -/
-def testNbeConsts : TestSeq :=
-  .individualIO "nbe focused const checks" (do
-    let leanEnv ← get_env!
-    let ixonEnv ← Ix.CompileM.rsCompileEnv leanEnv
-    match Ix.Kernel.Convert.convertEnv .meta ixonEnv with
-    | .error e => return (false, some s!"convertEnv: {e}")
-    | .ok (kenv, prims, quotInit) =>
-      let constNames := #[
-        -- Nat basics
-        "Nat", "Nat.zero", "Nat.succ", "Nat.rec",
-        -- Below / brecOn (well-founded recursion scaffolding)
-        "Nat.below", "Nat.brecOn",
-        -- PProd (used by Nat.below)
-        "PProd", "PProd.mk", "PProd.fst", "PProd.snd",
-        "PUnit", "PUnit.unit",
-        -- noConfusion (stuck neutral in fresh-state mode)
-        "Lean.Meta.Grind.Origin.noConfusionType",
-        "Lean.Meta.Grind.Origin.noConfusion",
-        "Lean.Meta.Grind.Origin.stx.noConfusion",
-        -- The previously-hanging constant
-        "Nat.Linear.Poly.of_denote_eq_cancel",
-        -- String theorem (fuel-sensitive)
-        "String.length_empty",
-        "_private.Init.Grind.Ring.Basic.«0».Lean.Grind.IsCharP.mk'_aux._proof_1_5",
-      ]
-      let mut passed := 0
-      let mut failures : Array String := #[]
-      for name in constNames do
-        let ixName := parseIxName name
-        let some cNamed := ixonEnv.named.get? ixName
-          | do failures := failures.push s!"{name}: not found"; continue
-        let addr := cNamed.addr
-        IO.println s!"  checking {name} ..."
-        (← IO.getStdout).flush
-        let start ← IO.monoMsNow
-        match Ix.Kernel.typecheckConst kenv prims addr quotInit with
-        | .ok () =>
-          let ms := (← IO.monoMsNow) - start
-          IO.println s!"  ✓ {name} ({ms.formatMs})"
-          passed := passed + 1
-        | .error e =>
-          let ms := (← IO.monoMsNow) - start
-          IO.println s!"  ✗ {name} ({ms.formatMs}): {e}"
-          failures := failures.push s!"{name}: {e}"
-      IO.println s!"[nbe-focus] {passed}/{constNames.size} passed"
-      if failures.isEmpty then
-        return (true, none)
-      else
-        return (false, some s!"{failures.size} failure(s)")
-  ) .done
-
-def nbeFocusSuite : List TestSeq := [
-  testNbeConsts,
-]
-
 /-! ## Test suites -/
 
 def unitSuite : List TestSeq := [
@@ -1165,8 +1101,7 @@ def convertSuite : List TestSeq := [
 ]
 
 def constSuite : List TestSeq := [
-  testConstPipeline,
-  testMoreConstants,
+  testConsts,
 ]
 
 def negativeSuite : List TestSeq := [

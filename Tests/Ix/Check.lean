@@ -1,6 +1,6 @@
 /-
   Kernel type-checker integration tests.
-  Tests both the Rust kernel (via FFI) and the Lean NbE kernel.
+  Tests both the Rust kernel (via FFI) and the Lean kernel.
 -/
 
 import Ix.Kernel
@@ -54,39 +54,39 @@ def testCheckConst (name : String) : TestSeq :=
       return (false, some s!"{name} failed: {repr err}")
   ) .done
 
-/-! ## Lean NbE kernel tests -/
+/-! ## Lean kernel tests -/
 
 def testKernelCheckEnv : TestSeq :=
-  .individualIO "Lean NbE kernel check_env" (do
+  .individualIO "Lean kernel check_env" (do
     let leanEnv ← get_env!
 
-    IO.println s!"[Kernel-NbE] Compiling to Ixon..."
+    IO.println s!"[Kernel] Compiling to Ixon..."
     let compileStart ← IO.monoMsNow
     let ixonEnv ← Ix.CompileM.rsCompileEnv leanEnv
     let compileElapsed := (← IO.monoMsNow) - compileStart
     let numConsts := ixonEnv.consts.size
-    IO.println s!"[Kernel-NbE] Compiled {numConsts} constants in {compileElapsed.formatMs}"
+    IO.println s!"[Kernel] Compiled {numConsts} constants in {compileElapsed.formatMs}"
 
-    IO.println s!"[Kernel-NbE] Converting..."
+    IO.println s!"[Kernel] Converting..."
     let convertStart ← IO.monoMsNow
     match Ix.Kernel.Convert.convertEnv .meta ixonEnv with
     | .error e =>
-      IO.println s!"[Kernel-NbE] convertEnv error: {e}"
+      IO.println s!"[Kernel] convertEnv error: {e}"
       return (false, some e)
     | .ok (kenv, prims, quotInit) =>
       let convertElapsed := (← IO.monoMsNow) - convertStart
-      IO.println s!"[Kernel-NbE] Converted {kenv.size} constants in {convertElapsed.formatMs}"
+      IO.println s!"[Kernel] Converted {kenv.size} constants in {convertElapsed.formatMs}"
 
-      IO.println s!"[Kernel-NbE] Typechecking {kenv.size} constants..."
+      IO.println s!"[Kernel] Typechecking {kenv.size} constants..."
       let checkStart ← IO.monoMsNow
       match ← Ix.Kernel.typecheckAllIO kenv prims quotInit with
       | .error e =>
         let elapsed := (← IO.monoMsNow) - checkStart
-        IO.println s!"[Kernel-NbE] typecheckAll error in {elapsed.formatMs}: {e}"
-        return (false, some s!"Kernel NbE check failed: {e}")
+        IO.println s!"[Kernel] typecheckAll error in {elapsed.formatMs}: {e}"
+        return (false, some s!"Kernel check failed: {e}")
       | .ok () =>
         let elapsed := (← IO.monoMsNow) - checkStart
-        IO.println s!"[Kernel-NbE] All constants passed in {elapsed.formatMs}"
+        IO.println s!"[Kernel] All constants passed in {elapsed.formatMs}"
         return (true, none)
   ) .done
 

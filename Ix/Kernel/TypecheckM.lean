@@ -1,144 +1,121 @@
 /-
   TypecheckM: Monad stack, context, state, and utilities for the kernel typechecker.
+
+  Environment-based kernel: no ST, no thunks, no Value domain.
+  Types and values are Expr m throughout.
 -/
 import Ix.Kernel.Datatypes
 import Ix.Kernel.Level
 
 namespace Ix.Kernel
 
+/-! ## Level substitution on Expr -/
+
+/-- Substitute universe level params in an expression using `instBulkReduce`. -/
+def Expr.instantiateLevelParams (e : Expr m) (levels : Array (Level m)) : Expr m :=
+  if levels.isEmpty then e
+  else e.instantiateLevelParamsBy (Level.instBulkReduce levels)
+
 /-! ## Typechecker Context -/
 
-structure TypecheckCtx (m : MetaMode) (σ : Type) where
-  lvl      : Nat
-  env      : ValEnv m
-  types    : List (SusValue m)
+structure TypecheckCtx (m : MetaMode) where
+  /-- Type of each bound variable, indexed by de Bruijn index.
+      types[0] is the type of bvar 0 (most recently bound). -/
+  types    : Array (Expr m)
   kenv     : Env m
   prims    : Primitives
   safety   : DefinitionSafety
   quotInit : Bool
-  /-- Maps a variable index (mutual reference) to (address, type-value function). -/
-  mutTypes : Std.TreeMap Nat (Address × (Array (Level m) → SusValue m)) compare
+  /-- Maps a variable index (mutual reference) to (address, type function). -/
+  mutTypes : Std.TreeMap Nat (Address × (Array (Level m) → Expr m)) compare
   /-- Tracks the address of the constant currently being checked, for recursion detection. -/
   recAddr? : Option Address
-  /-- Depth fuel: bounds the call-stack depth to prevent native stack overflow.
-      Decremented via the reader on each entry to eval/equal/infer.
-      Thunks inherit the depth from their capture point. -/
-  depth    : Nat := 10000
   /-- Enable dbg_trace on major entry points for debugging. -/
   trace    : Bool := false
-  /-- Global fuel counter: bounds total recursive work across all thunks via ST.Ref. -/
-  fuelRef       : ST.Ref σ Nat
-  /-- Mutable eval cache: persists across thunk evaluations via ST.Ref. -/
-  evalCacheRef  : ST.Ref σ (Std.HashMap Address (Array (Level m) × Value m))
-  /-- Mutable equality cache: persists across thunk evaluations via ST.Ref. -/
-  equalCacheRef : ST.Ref σ (Std.HashMap (USize × USize) Bool)
 
 /-! ## Typechecker State -/
 
 /-- Default fuel for bounding total recursive work per constant. -/
-def defaultFuel : Nat := 200000
+def defaultFuel : Nat := 1_000_000
 
 structure TypecheckState (m : MetaMode) where
-  typedConsts : Std.TreeMap Address (TypedConst m) Address.compare
-  /-- Cache for constant type SusValues. When `infer (.const addr _)` computes a
-      suspended type, it is cached here so repeated references to the same constant
-      share the same SusValue pointer, enabling fast-path pointer equality in `equal`.
-      Stores universe parameters alongside the value for correctness with polymorphic constants. -/
-  constTypeCache : Std.HashMap Address (List (Level m) × SusValue m) := {}
+  typedConsts    : Std.TreeMap Address (TypedConst m) Address.compare
+  whnfCache      : Std.HashMap (Expr m) (Expr m) := {}
+  /-- Cache for structural-only WHNF (whnfCore with cheapRec=false, cheapProj=false).
+      Separate from whnfCache to avoid stale entries from cheap reductions. -/
+  whnfCoreCache  : Std.HashMap (Expr m) (Expr m) := {}
+  /-- Infer cache: maps term → (binding context, inferred type).
+      Keyed on Expr only; context verified on retrieval via ptr equality + BEq fallback. -/
+  inferCache     : Std.HashMap (Expr m) (Array (Expr m) × Expr m) := {}
+  eqvCache       : Std.HashMap (Expr m × Expr m) Bool := {}
+  failureCache   : Std.HashSet (Expr m × Expr m) := {}
+  constTypeCache : Std.HashMap Address (Array (Level m) × Expr m) := {}
+  fuel           : Nat := defaultFuel
+  /-- Tracks nesting depth of whnf calls from within recursor reduction (tryReduceApp → whnf).
+      When this exceeds a threshold, whnfCore is used instead of whnf to prevent stack overflow. -/
+  whnfDepth      : Nat := 0
   deriving Inhabited
 
 /-! ## TypecheckM monad -/
 
-abbrev TypecheckM (m : MetaMode) (σ : Type) :=
-  ReaderT (TypecheckCtx m σ) (ExceptT String (StateT (TypecheckState m) (ST σ)))
+abbrev TypecheckM (m : MetaMode) :=
+  ReaderT (TypecheckCtx m) (ExceptT String (StateM (TypecheckState m)))
 
-def TypecheckM.run (ctx : TypecheckCtx m σ) (stt : TypecheckState m)
-    (x : TypecheckM m σ α) : ST σ (Except String α) := do
-  let (result, _) ← StateT.run (ExceptT.run (ReaderT.run x ctx)) stt
-  pure result
-
-def TypecheckM.runState (ctx : TypecheckCtx m σ) (stt : TypecheckState m) (x : TypecheckM m σ α)
-    : ST σ (Except String (α × TypecheckState m)) := do
-  let (result, stt') ← StateT.run (ExceptT.run (ReaderT.run x ctx)) stt
-  pure (match result with | .ok a => .ok (a, stt') | .error e => .error e)
-
-/-! ## pureRunST -/
-
-/-- Unsafe bridge: run ST σ from pure code (for Thunk bodies).
-    Safe because the only side effects are append-only cache mutations. -/
-@[inline] unsafe def pureRunSTImpl {σ α : Type} [Inhabited α] (x : ST σ α) : α :=
-  (x (unsafeCast ())).val
-
-@[implemented_by pureRunSTImpl]
-opaque pureRunST {σ α : Type} [Inhabited α] : ST σ α → α
+def TypecheckM.run (ctx : TypecheckCtx m) (stt : TypecheckState m)
+    (x : TypecheckM m α) : Except String α × TypecheckState m :=
+  let (result, stt') := StateT.run (ExceptT.run (ReaderT.run x ctx)) stt
+  (result, stt')
 
 /-! ## Context modifiers -/
 
-def withEnv (env : ValEnv m) : TypecheckM m σ α → TypecheckM m σ α :=
-  withReader fun ctx => { ctx with env := env }
-
-def withResetCtx : TypecheckM m σ α → TypecheckM m σ α :=
+def withResetCtx : TypecheckM m α → TypecheckM m α :=
   withReader fun ctx => { ctx with
-    lvl := 0, env := default, types := default, mutTypes := default, recAddr? := none }
+    types := #[], mutTypes := default, recAddr? := none }
 
-def withMutTypes (mutTypes : Std.TreeMap Nat (Address × (Array (Level m) → SusValue m)) compare) :
-    TypecheckM m σ α → TypecheckM m σ α :=
+def withMutTypes (mutTypes : Std.TreeMap Nat (Address × (Array (Level m) → Expr m)) compare) :
+    TypecheckM m α → TypecheckM m α :=
   withReader fun ctx => { ctx with mutTypes := mutTypes }
 
-def withExtendedCtx (val typ : SusValue m) : TypecheckM m σ α → TypecheckM m σ α :=
-  withReader fun ctx => { ctx with
-    lvl := ctx.lvl + 1,
-    types := typ :: ctx.types,
-    env := ctx.env.extendWith val }
+/-- Extend the context with a new bound variable of the given type. -/
+def withExtendedCtx (varType : Expr m) : TypecheckM m α → TypecheckM m α :=
+  withReader fun ctx => { ctx with types := ctx.types.push varType }
 
-def withExtendedEnv (thunk : SusValue m) : TypecheckM m σ α → TypecheckM m σ α :=
-  withReader fun ctx => { ctx with env := ctx.env.extendWith thunk }
-
-def withNewExtendedEnv (env : ValEnv m) (thunk : SusValue m) :
-    TypecheckM m σ α → TypecheckM m σ α :=
-  withReader fun ctx => { ctx with env := env.extendWith thunk }
-
-def withRecAddr (addr : Address) : TypecheckM m σ α → TypecheckM m σ α :=
+def withRecAddr (addr : Address) : TypecheckM m α → TypecheckM m α :=
   withReader fun ctx => { ctx with recAddr? := some addr }
 
-/-- Check both fuel counters, decrement them, and run the action.
-    - State fuel bounds total work (prevents exponential blowup / hanging).
-    - Reader depth bounds call-stack depth (prevents native stack overflow). -/
-def withFuelCheck (action : TypecheckM m σ α) : TypecheckM m σ α := do
-  let ctx ← read
-  if ctx.depth == 0 then
-    throw "deep recursion depth limit reached"
-  let fuel ← ctx.fuelRef.get
-  if fuel == 0 then throw "deep recursion fuel limit reached"
-  let _ ← ctx.fuelRef.set (fuel - 1)
-  withReader (fun ctx => { ctx with depth := ctx.depth - 1 }) action
+/-- The current binding depth (number of bound variables in scope). -/
+def lvl : TypecheckM m Nat := do pure (← read).types.size
+
+/-- Check fuel and decrement it. -/
+def withFuelCheck (action : TypecheckM m α) : TypecheckM m α := do
+  let stt ← get
+  if stt.fuel == 0 then throw "deep recursion fuel limit reached"
+  modify fun s => { s with fuel := s.fuel - 1 }
+  action
 
 /-! ## Name lookup -/
 
 /-- Look up the MetaField name for a constant address from the kernel environment. -/
-def lookupName (addr : Address) : TypecheckM m σ (MetaField m Ix.Name) := do
+def lookupName (addr : Address) : TypecheckM m (MetaField m Ix.Name) := do
   match (← read).kenv.find? addr with
   | some ci => pure ci.cv.name
   | none => pure default
 
 /-! ## Const dereferencing -/
 
-def derefConst (addr : Address) : TypecheckM m σ (ConstantInfo m) := do
-  let ctx ← read
-  match ctx.kenv.find? addr with
+def derefConst (addr : Address) : TypecheckM m (ConstantInfo m) := do
+  match (← read).kenv.find? addr with
   | some ci => pure ci
   | none => throw s!"unknown constant {addr}"
 
-def derefTypedConst (addr : Address) : TypecheckM m σ (TypedConst m) := do
+def derefTypedConst (addr : Address) : TypecheckM m (TypedConst m) := do
   match (← get).typedConsts.get? addr with
   | some tc => pure tc
   | none => throw s!"typed constant not found: {addr}"
 
 /-! ## Provisional TypedConst -/
 
-/-- Extract the major premise's inductive address from a recursor type.
-    Skips numParams + numMotives + numMinors + numIndices foralls,
-    then the next forall's domain's app head is the inductive const. -/
+/-- Extract the major premise's inductive address from a recursor type. -/
 def getMajorInduct (type : Expr m) (numParams numMotives numMinors numIndices : Nat) : Option Address :=
   go (numParams + numMotives + numMinors + numIndices) type
 where
@@ -150,10 +127,7 @@ where
       | .forallE _ body _ _ => go n body
       | _ => none
 
-/-- Build a provisional TypedConst entry from raw ConstantInfo.
-    Used when `infer` encounters a `.const` reference before the constant
-    has been fully typechecked. The entry uses default TypeInfo and raw
-    expressions directly from the kernel environment. -/
+/-- Build a provisional TypedConst entry from raw ConstantInfo. -/
 def provisionalTypedConst (ci : ConstantInfo m) : TypedConst m :=
   let rawType : TypedExpr m := ⟨default, ci.type⟩
   match ci with
@@ -164,7 +138,7 @@ def provisionalTypedConst (ci : ConstantInfo m) : TypedConst m :=
   | .opaqueInfo v => .opaque rawType ⟨default, v.value⟩
   | .quotInfo v => .quotient rawType v.kind
   | .inductInfo v =>
-    let isStruct := v.ctors.size == 1  -- approximate; refined by checkIndBlock
+    let isStruct := v.ctors.size == 1
     .inductive rawType isStruct
   | .ctorInfo v => .constructor rawType v.cidx v.numFields
   | .recInfo v =>
@@ -173,14 +147,23 @@ def provisionalTypedConst (ci : ConstantInfo m) : TypedConst m :=
     let typedRules := v.rules.map fun r => (r.nfields, (⟨default, r.rhs⟩ : TypedExpr m))
     .recursor rawType v.numParams v.numMotives v.numMinors v.numIndices v.k indAddr typedRules
 
-/-- Ensure a constant has a TypedConst entry. If not already present, build a
-    provisional one from raw ConstantInfo. This avoids the deep recursion of
-    `checkConst` when called from `infer`. -/
-def ensureTypedConst (addr : Address) : TypecheckM m σ Unit := do
+/-- Ensure a constant has a TypedConst entry. -/
+def ensureTypedConst (addr : Address) : TypecheckM m Unit := do
   if (← get).typedConsts.get? addr |>.isSome then return ()
   let ci ← derefConst addr
   let tc := provisionalTypedConst ci
   modify fun stt => { stt with
     typedConsts := stt.typedConsts.insert addr tc }
+
+/-! ## Def-eq cache helpers -/
+
+instance : Hashable (Expr m × Expr m) where
+  hash p := mixHash (Hashable.hash p.1) (Hashable.hash p.2)
+
+/-- Symmetric cache key for def-eq pairs. Orders by structural hash to make key(a,b) == key(b,a). -/
+def eqCacheKey (a b : Expr m) : Expr m × Expr m :=
+  let ha := Hashable.hash a
+  let hb := Hashable.hash b
+  if ha ≤ hb then (a, b) else (b, a)
 
 end Ix.Kernel

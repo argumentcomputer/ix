@@ -232,55 +232,7 @@ def testPpComplex : TestSeq :=
   test "nested let" (outerLet.pp == "let x : Nat := 0; let y : Nat := x; y") ++
   .done
 
-/-! ## Quote round-trip: names survive eval → quote → pp -/
-
-/-- Build a Value with named binders and verify names survive through quote → pp.
-    Uses a minimal TypecheckM context. -/
-def testQuoteRoundtrip : TestSeq :=
-  .individualIO "quote round-trip preserves names" (do
-    let xName : MetaField .meta Ix.Name := mkName "x"
-    let yName : MetaField .meta Ix.Name := mkName "y"
-    let nat : Expr .meta := .const testAddr #[] (mkName "Nat")
-    -- Build Value.pi: ∀ (x : Nat), Nat
-    let domVal : SusValue .meta := ⟨.none, Thunk.mk fun _ => Value.neu (.const testAddr #[] (mkName "Nat"))⟩
-    let imgTE : TypedExpr .meta := ⟨.none, nat⟩
-    let piVal : Value .meta := .pi domVal imgTE (.mk [] []) xName .default
-    -- Build Value.lam: fun (y : Nat) => y
-    let bodyTE : TypedExpr .meta := ⟨.none, .bvar 0 yName⟩
-    let lamVal : Value .meta := .lam domVal bodyTE (.mk [] []) yName .default
-    -- Quote and pp in a minimal TypecheckM context (wrapped in runST for ST.Ref allocation)
-    let result := runST fun σ => do
-      let fuelRef ← ST.mkRef Ix.Kernel.defaultFuel
-      let evalRef ← ST.mkRef ({} : Std.HashMap Address (Array (Level .meta) × Value .meta))
-      let equalRef ← ST.mkRef ({} : Std.HashMap (USize × USize) Bool)
-      let ctx : TypecheckCtx .meta σ := {
-        lvl := 0, env := .mk [] [], types := [],
-        kenv := default, prims := buildPrimitives,
-        safety := .safe, quotInit := true, mutTypes := default, recAddr? := none,
-        fuelRef := fuelRef, evalCacheRef := evalRef, equalCacheRef := equalRef
-      }
-      let stt : TypecheckState .meta := { typedConsts := default }
-      let piResult ← TypecheckM.run ctx stt (ppValue 0 piVal)
-      let lamResult ← TypecheckM.run ctx stt (ppValue 0 lamVal)
-      pure (piResult, lamResult)
-    -- Test pi
-    match result.1 with
-    | .ok s =>
-      if s != "∀ (x : Nat), Nat" then
-        return (false, some s!"pi round-trip: expected '∀ (x : Nat), Nat', got '{s}'")
-      else pure ()
-    | .error e => return (false, some s!"pi round-trip error: {e}")
-    -- Test lam
-    match result.2 with
-    | .ok s =>
-      if s != "λ (y : Nat) => y" then
-        return (false, some s!"lam round-trip: expected 'λ (y : Nat) => y', got '{s}'")
-      else pure ()
-    | .error e => return (false, some s!"lam round-trip error: {e}")
-    return (true, none)
-  ) .done
-
-/-! ## Literal folding: Nat/String constructor chains → literals in ppValue -/
+/-! ## Literal folding: Nat/String constructor chains → literals in Expr -/
 
 def testFoldLiterals : TestSeq :=
   let prims := buildPrimitives
@@ -334,7 +286,6 @@ def suite : List TestSeq := [
   testPpAnon,
   testPpMetaDefaultNames,
   testPpComplex,
-  testQuoteRoundtrip,
   testFoldLiterals,
 ]
 
