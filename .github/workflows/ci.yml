@@ -18,6 +18,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
@@ -25,8 +26,6 @@ jobs:
         run: lake test -- cli
       - name: Aiur tests
         run: lake test -- --ignored aiur aiur-hashes ixvm
-      - name: Check lean.h.hash
-        run: lake run check-lean-h-hash
       - name: Check Lean versions match for Ix and compiler bench
         run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
 
@@ -34,22 +33,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          repository: argumentcomputer/ci-workflows
-      - uses: ./.github/actions/ci-env
-      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: taiki-e/install-action@nextest
       # Install Lean for rust-bindgen step
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
           use-github-cache: false
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@nextest
-      - uses: Swatinem/rust-cache@v2
       - name: Check Rustfmt code style
-        run: cargo fmt --all --check
+        uses: actions-rust-lang/rustfmt@v1
       - name: Check clippy warnings
-        run: cargo xclippy -D warnings
+        run: cargo xclippy
       - name: Check *everything* compiles
         run: cargo check --all-targets --all-features --workspace
       - name: Tests

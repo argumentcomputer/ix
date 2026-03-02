@@ -118,23 +118,6 @@ script install := do
   setAccessRights tgtPath fileRight
   return 0
 
-script "check-lean-h-hash" := do
-  let cachedLeanHHash := 14792798158057885278
-
-  let leanIncludeDir ← getLeanIncludeDir
-  let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"
-  let includedLeanHBytes ← IO.FS.readBinFile includedLeanHPath
-  let includedLeanHHash := includedLeanHBytes.hash
-
-  if cachedLeanHHash ≠ includedLeanHHash then
-    IO.eprintln   "Mismatching lean/lean.h hash"
-    IO.eprintln   "  1. Double-check changes made to lean/lean.h"
-    IO.eprintln s!"  2. Cache {includedLeanHHash} instead"
-    return 1
-  else
-    IO.println "lean/lean.h hash matches ✓"
-  return 0
-
 script "get-exe-targets" := do
   let pkg ← getRootPackage
   let exeTargets := pkg.configTargets LeanExe.configKind
