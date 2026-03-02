@@ -19,6 +19,8 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
+use crate::lean::obj::LeanObj;
+
 use crate::{
   ix::compile::compile_env,
   ix::decompile::{check_decompile, decompile_env},
@@ -689,7 +691,8 @@ pub fn lean_ptr_to_env_sequential(ptr: *const c_void) -> Env {
 // roundtrip and size analysis. Output is intentionally suppressed; re-enable
 // individual `eprintln!` lines when debugging locally.
 #[unsafe(no_mangle)]
-extern "C" fn rs_tmp_decode_const_map(ptr: *const c_void) -> usize {
+extern "C" fn rs_tmp_decode_const_map(obj: LeanObj) -> usize {
+  let ptr = obj.as_ptr();
   // Enable hash-consed size tracking for debugging
   // TODO: Make this configurable via CLI instead of hardcoded
   crate::ix::compile::TRACK_HASH_CONSED_SIZE

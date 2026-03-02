@@ -6,19 +6,11 @@
 //! - `rs_decompile_env`: decompile Ixon back to Lean environment
 //! - `rs_roundtrip_*`: roundtrip FFI tests for Lean↔Rust type conversions
 //! - `build_*` / `decode_*`: convert between Lean constructor layouts and Rust types
-//!
-//! ## Lean object layout conventions
-//!
-//! Lean constructors are allocated via `lean_alloc_ctor(tag, num_objs, scalar_size)`:
-//! - Object fields are accessed with `lean_ctor_get(obj, i)` (0-indexed)
-//! - Scalar fields follow objects at byte offset `8 + num_objs * 8`
-//! - Scalar fields are accessed via pointer arithmetic on the object base
 
 use std::collections::HashMap;
-use std::ffi::{CString, c_void};
 use std::sync::Arc;
 
-use super::ffi_io_guard;
+use super::{ffi_io_guard, io_error, io_ok};
 use crate::ix::address::Address;
 use crate::ix::compile::{CompileState, compile_env};
 use crate::ix::condense::compute_sccs;
@@ -29,15 +21,12 @@ use crate::ix::ixon::constant::{Constant as IxonConstant, ConstantInfo};
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::{Comm, ConstantMeta};
-use crate::lean::lean::{
-  lean_alloc_array, lean_alloc_ctor, lean_alloc_sarray, lean_array_set_core,
-  lean_ctor_get, lean_ctor_set, lean_ctor_set_uint8, lean_ctor_set_uint64,
-  lean_inc, lean_io_result_mk_error, lean_io_result_mk_ok,
-  lean_mk_io_user_error, lean_mk_string, lean_obj_tag, lean_sarray_cptr,
-  lean_uint64_to_nat,
-};
+use crate::lean::lean::lean_uint64_to_nat;
 use crate::lean::nat::Nat;
-use crate::lean::{lean_obj_to_string, lean_sarray_data, lean_sarray_set_data};
+use crate::lean::obj::{
+  LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanObj, LeanString,
+};
+use crate::lean::lean_obj_to_string;
 
 use dashmap::DashMap;
 use dashmap::DashSet;
@@ -57,19 +46,29 @@ use super::ixon::meta::{build_constant_meta, build_ixon_comm};
 use super::lean_env::{GlobalCache, lean_ptr_to_env, lean_ptr_to_name};
 
 // =============================================================================
+// Helper builders
+// =============================================================================
+
+/// Build a Lean String from a Rust &str.
+fn build_lean_string(s: &str) -> LeanObj {
+  LeanString::from_str(s).into()
+}
+
+/// Build a Lean Nat from a usize.
+fn build_lean_nat_usize(n: usize) -> LeanObj {
+  unsafe { LeanObj::from_raw(lean_uint64_to_nat(n as u64).cast()) }
+}
+
+// =============================================================================
 // Raw* Builder Functions for Compile FFI
 // =============================================================================
 
 /// Build RawConst: { addr : Address, const : Ixon.Constant }
-pub fn build_raw_const(addr: &Address, constant: &IxonConstant) -> *mut c_void {
-  unsafe {
-    let addr_obj = build_address_from_ixon(addr);
-    let const_obj = build_ixon_constant(constant);
-    let obj = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(obj, 0, addr_obj.cast());
-    lean_ctor_set(obj, 1, const_obj.cast());
-    obj.cast()
-  }
+pub fn build_raw_const(addr: &Address, constant: &IxonConstant) -> LeanObj {
+  let ctor = LeanCtor::alloc(0, 2, 0);
+  ctor.set(0, build_address_from_ixon(addr));
+  ctor.set(1, build_ixon_constant(constant));
+  *ctor
 }
 
 /// Build RawNamed: { name : Ix.Name, addr : Address, constMeta : Ixon.ConstantMeta }
@@ -78,43 +77,28 @@ pub fn build_raw_named(
   name: &Name,
   addr: &Address,
   meta: &ConstantMeta,
-) -> *mut c_void {
-  unsafe {
-    let name_obj = build_name(cache, name);
-    let addr_obj = build_address_from_ixon(addr);
-    let meta_obj = build_constant_meta(meta);
-    let obj = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(obj, 0, name_obj.as_mut_ptr().cast());
-    lean_ctor_set(obj, 1, addr_obj.cast());
-    lean_ctor_set(obj, 2, meta_obj.cast());
-    obj.cast()
-  }
+) -> LeanObj {
+  let ctor = LeanCtor::alloc(0, 3, 0);
+  ctor.set(0, build_name(cache, name));
+  ctor.set(1, build_address_from_ixon(addr));
+  ctor.set(2, build_constant_meta(meta));
+  *ctor
 }
 
 /// Build RawBlob: { addr : Address, bytes : ByteArray }
-pub fn build_raw_blob(addr: &Address, bytes: &[u8]) -> *mut c_void {
-  unsafe {
-    let addr_obj = build_address_from_ixon(addr);
-    let ba = lean_alloc_sarray(1, bytes.len(), bytes.len());
-    let ba_data = lean_sarray_cptr(ba);
-    std::ptr::copy_nonoverlapping(bytes.as_ptr(), ba_data, bytes.len());
-    let obj = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(obj, 0, addr_obj.cast());
-    lean_ctor_set(obj, 1, ba);
-    obj.cast()
-  }
+pub fn build_raw_blob(addr: &Address, bytes: &[u8]) -> LeanObj {
+  let ctor = LeanCtor::alloc(0, 2, 0);
+  ctor.set(0, build_address_from_ixon(addr));
+  ctor.set(1, LeanByteArray::from_bytes(bytes));
+  *ctor
 }
 
 /// Build RawComm: { addr : Address, comm : Ixon.Comm }
-pub fn build_raw_comm(addr: &Address, comm: &Comm) -> *mut c_void {
-  unsafe {
-    let addr_obj = build_address_from_ixon(addr);
-    let comm_obj = build_ixon_comm(comm);
-    let obj = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(obj, 0, addr_obj.cast());
-    lean_ctor_set(obj, 1, comm_obj.cast());
-    obj.cast()
-  }
+pub fn build_raw_comm(addr: &Address, comm: &Comm) -> LeanObj {
+  let ctor = LeanCtor::alloc(0, 2, 0);
+  ctor.set(0, build_address_from_ixon(addr));
+  ctor.set(1, build_ixon_comm(comm));
+  *ctor
 }
 
 // =============================================================================
@@ -123,46 +107,40 @@ pub fn build_raw_comm(addr: &Address, comm: &Comm) -> *mut c_void {
 
 /// Round-trip a RustCondensedBlocks structure.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_rust_condensed_blocks(
-  ptr: *const c_void,
-) -> *mut c_void {
-  unsafe {
-    let low_links = lean_ctor_get(ptr as *mut _, 0);
-    let blocks = lean_ctor_get(ptr as *mut _, 1);
-    let block_refs = lean_ctor_get(ptr as *mut _, 2);
+pub extern "C" fn rs_roundtrip_rust_condensed_blocks(obj: LeanObj) -> LeanObj {
+  let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+  let low_links = ctor.get(0);
+  let blocks = ctor.get(1);
+  let block_refs = ctor.get(2);
 
-    lean_inc(low_links);
-    lean_inc(blocks);
-    lean_inc(block_refs);
+  low_links.inc_ref();
+  blocks.inc_ref();
+  block_refs.inc_ref();
 
-    let result = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(result, 0, low_links);
-    lean_ctor_set(result, 1, blocks);
-    lean_ctor_set(result, 2, block_refs);
-    result.cast()
-  }
+  let result = LeanCtor::alloc(0, 3, 0);
+  result.set(0, low_links);
+  result.set(1, blocks);
+  result.set(2, block_refs);
+  *result
 }
 
 /// Round-trip a RustCompilePhases structure.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_rust_compile_phases(
-  ptr: *const c_void,
-) -> *mut c_void {
-  unsafe {
-    let raw_env = lean_ctor_get(ptr as *mut _, 0);
-    let condensed = lean_ctor_get(ptr as *mut _, 1);
-    let compile_env = lean_ctor_get(ptr as *mut _, 2);
+pub extern "C" fn rs_roundtrip_rust_compile_phases(obj: LeanObj) -> LeanObj {
+  let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+  let raw_env = ctor.get(0);
+  let condensed = ctor.get(1);
+  let compile_env = ctor.get(2);
 
-    lean_inc(raw_env);
-    lean_inc(condensed);
-    lean_inc(compile_env);
+  raw_env.inc_ref();
+  condensed.inc_ref();
+  compile_env.inc_ref();
 
-    let result = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(result, 0, raw_env);
-    lean_ctor_set(result, 1, condensed);
-    lean_ctor_set(result, 2, compile_env);
-    result.cast()
-  }
+  let result = LeanCtor::alloc(0, 3, 0);
+  result.set(0, raw_env);
+  result.set(1, condensed);
+  result.set(2, compile_env);
+  *result
 }
 
 // =============================================================================
@@ -171,77 +149,56 @@ pub extern "C" fn rs_roundtrip_rust_compile_phases(
 
 /// Round-trip a BlockCompareResult.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_block_compare_result(
-  ptr: *const c_void,
-) -> *mut c_void {
-  unsafe {
-    let tag = lean_obj_tag(ptr as *mut _);
-    match tag {
-      0 => lean_alloc_ctor(0, 0, 0).cast(),
-      1 => {
-        let base = ptr.cast::<u8>();
-        let lean_size = *base.add(8).cast::<u64>();
-        let rust_size = *base.add(16).cast::<u64>();
-        let first_diff = *base.add(24).cast::<u64>();
+pub extern "C" fn rs_roundtrip_block_compare_result(obj: LeanObj) -> LeanObj {
+  let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+  match ctor.tag() {
+    0 => *LeanCtor::alloc(0, 0, 0), // match
+    1 => {
+      // mismatch: 0 obj, 24 scalar bytes (3 × u64)
+      let lean_size = ctor.scalar_u64(0, 0);
+      let rust_size = ctor.scalar_u64(0, 8);
+      let first_diff = ctor.scalar_u64(0, 16);
 
-        let obj = lean_alloc_ctor(1, 0, 24);
-        let out_base = obj.cast::<u8>();
-        *out_base.add(8).cast::<u64>() = lean_size;
-        *out_base.add(16).cast::<u64>() = rust_size;
-        *out_base.add(24).cast::<u64>() = first_diff;
-        obj.cast()
-      },
-      2 => lean_alloc_ctor(2, 0, 0).cast(),
-      _ => unreachable!("Invalid BlockCompareResult tag: {}", tag),
-    }
+      let out = LeanCtor::alloc(1, 0, 24);
+      out.set_u64(0, lean_size);
+      out.set_u64(8, rust_size);
+      out.set_u64(16, first_diff);
+      *out
+    },
+    2 => *LeanCtor::alloc(2, 0, 0), // notFound
+    _ => unreachable!("Invalid BlockCompareResult tag: {}", ctor.tag()),
   }
 }
 
 /// Round-trip a BlockCompareDetail.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_block_compare_detail(
-  ptr: *const c_void,
-) -> *mut c_void {
-  unsafe {
-    let result_ptr = lean_ctor_get(ptr as *mut _, 0);
-    let base = ptr.cast::<u8>();
-    let lean_sharing_len = *base.add(16).cast::<u64>();
-    let rust_sharing_len = *base.add(24).cast::<u64>();
+pub extern "C" fn rs_roundtrip_block_compare_detail(obj: LeanObj) -> LeanObj {
+  let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+  let result_ptr = ctor.get(0);
+  let lean_sharing_len = ctor.scalar_u64(1, 0);
+  let rust_sharing_len = ctor.scalar_u64(1, 8);
 
-    let result_obj = rs_roundtrip_block_compare_result(result_ptr.cast());
+  let result_obj = rs_roundtrip_block_compare_result(result_ptr);
 
-    let obj = lean_alloc_ctor(0, 1, 16);
-    lean_ctor_set(obj, 0, result_obj.cast());
-    let out_base = obj.cast::<u8>();
-    *out_base.add(16).cast::<u64>() = lean_sharing_len;
-    *out_base.add(24).cast::<u64>() = rust_sharing_len;
-    obj.cast()
-  }
+  let out = LeanCtor::alloc(0, 1, 16);
+  out.set(0, result_obj);
+  out.set_u64(1 * 8, lean_sharing_len);
+  out.set_u64(1 * 8 + 8, rust_sharing_len);
+  *out
 }
 
 // =============================================================================
 // Full Compilation FFI
 // =============================================================================
 
-/// Create a Lean IO error result from a Rust error message.
-unsafe fn make_compile_io_error(msg: &str) -> *mut c_void {
-  unsafe {
-    let c_msg = CString::new(msg)
-      .unwrap_or_else(|_| CString::new("compilation error").unwrap());
-    let lean_msg = lean_mk_string(c_msg.as_ptr());
-    let lean_err = lean_mk_io_user_error(lean_msg);
-    lean_io_result_mk_error(lean_err).cast()
-  }
-}
-
 /// FFI function to run the complete compilation pipeline and return all data.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env_full(
-  env_consts_ptr: *const c_void,
-) -> *mut c_void {
+  env_consts_ptr: LeanObj,
+) -> LeanObj {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     // Phase 1: Decode Lean environment
-    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let rust_env = lean_ptr_to_env(env_consts_ptr.as_ptr());
     let env_len = rust_env.len();
     let rust_env = Arc::new(rust_env);
 
@@ -255,107 +212,98 @@ pub extern "C" fn rs_compile_env_full(
       Err(e) => {
         let msg =
           format!("rs_compile_env_full: Rust compilation failed: {:?}", e);
-        return unsafe { make_compile_io_error(&msg) };
+        return io_error(&msg);
       },
     };
 
     // Phase 4: Build Lean structures
     let mut cache = LeanBuildCache::with_capacity(env_len);
 
-    unsafe {
-      let raw_env = build_raw_environment(&mut cache, &rust_env);
-      let condensed_obj = build_condensed_blocks(&mut cache, &condensed);
+    let raw_env =
+      unsafe { LeanObj::from_raw(build_raw_environment(&mut cache, &rust_env)) };
+    let condensed_obj = build_condensed_blocks(&mut cache, &condensed);
 
-      // Collect blocks
-      let mut blocks_data: Vec<(Name, Vec<u8>, usize)> = Vec::new();
-      let mut seen_addrs: std::collections::HashSet<Address> =
-        std::collections::HashSet::new();
+    // Collect blocks
+    let mut blocks_data: Vec<(Name, Vec<u8>, usize)> = Vec::new();
+    let mut seen_addrs: std::collections::HashSet<Address> =
+      std::collections::HashSet::new();
 
-      for entry in compile_stt.name_to_addr.iter() {
-        let name = entry.key().clone();
-        let addr = entry.value().clone();
+    for entry in compile_stt.name_to_addr.iter() {
+      let name = entry.key().clone();
+      let addr = entry.value().clone();
 
-        if seen_addrs.contains(&addr) {
-          continue;
-        }
-        seen_addrs.insert(addr.clone());
-
-        if let Some(constant) = compile_stt.env.get_const(&addr) {
-          let mut bytes = Vec::new();
-          constant.put(&mut bytes);
-          let sharing_len = constant.sharing.len();
-          blocks_data.push((name, bytes, sharing_len));
-        }
+      if seen_addrs.contains(&addr) {
+        continue;
       }
+      seen_addrs.insert(addr.clone());
 
-      // Build blocks array
-      let blocks_arr = lean_alloc_array(blocks_data.len(), blocks_data.len());
-      for (i, (name, bytes, sharing_len)) in blocks_data.iter().enumerate() {
-        let name_obj = build_name(&mut cache, name);
-
-        let ba = lean_alloc_sarray(1, bytes.len(), bytes.len());
-        let ba_data = lean_sarray_cptr(ba);
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), ba_data, bytes.len());
-
-        let block = lean_alloc_ctor(0, 2, 8);
-        lean_ctor_set(block, 0, name_obj.as_mut_ptr().cast());
-        lean_ctor_set(block, 1, ba);
-        let base = block.cast::<u8>();
-        *base.add(8 + 16).cast::<u64>() = *sharing_len as u64;
-
-        lean_array_set_core(blocks_arr, i, block);
+      if let Some(constant) = compile_stt.env.get_const(&addr) {
+        let mut bytes = Vec::new();
+        constant.put(&mut bytes);
+        let sharing_len = constant.sharing.len();
+        blocks_data.push((name, bytes, sharing_len));
       }
-
-      // Build nameToAddr array
-      let name_to_addr_len = compile_stt.name_to_addr.len();
-      let name_to_addr_arr =
-        lean_alloc_array(name_to_addr_len, name_to_addr_len);
-      for (i, entry) in compile_stt.name_to_addr.iter().enumerate() {
-        let name = entry.key();
-        let addr = entry.value();
-
-        let name_obj = build_name(&mut cache, name);
-
-        let addr_bytes = addr.as_bytes();
-        let addr_ba = lean_alloc_sarray(1, 32, 32);
-        let addr_data = lean_sarray_cptr(addr_ba);
-        std::ptr::copy_nonoverlapping(addr_bytes.as_ptr(), addr_data, 32);
-
-        let entry_obj = lean_alloc_ctor(0, 2, 0);
-        lean_ctor_set(entry_obj, 0, name_obj.as_mut_ptr().cast());
-        lean_ctor_set(entry_obj, 1, addr_ba);
-
-        lean_array_set_core(name_to_addr_arr, i, entry_obj);
-      }
-
-      // Build RawCompiledEnv
-      let compiled_obj = lean_alloc_ctor(0, 2, 0);
-      lean_ctor_set(compiled_obj, 0, blocks_arr);
-      lean_ctor_set(compiled_obj, 1, name_to_addr_arr);
-
-      // Build RustCompilationResult
-      let result = lean_alloc_ctor(0, 3, 0);
-      lean_ctor_set(result, 0, raw_env.cast());
-      lean_ctor_set(result, 1, condensed_obj.as_mut_ptr().cast());
-      lean_ctor_set(result, 2, compiled_obj);
-
-      lean_io_result_mk_ok(result).cast()
     }
+
+    // Build blocks array
+    let blocks_arr = LeanArray::alloc(blocks_data.len());
+    for (i, (name, bytes, sharing_len)) in blocks_data.iter().enumerate() {
+      let name_obj = build_name(&mut cache, name);
+      let ba = LeanByteArray::from_bytes(bytes);
+
+      // Block: { name: Ix.Name, bytes: ByteArray, sharingLen: UInt64 }
+      let block = LeanCtor::alloc(0, 2, 8);
+      block.set(0, name_obj);
+      block.set(1, ba);
+      block.set_u64(2 * 8, *sharing_len as u64);
+
+      blocks_arr.set(i, *block);
+    }
+
+    // Build nameToAddr array
+    let name_to_addr_len = compile_stt.name_to_addr.len();
+    let name_to_addr_arr = LeanArray::alloc(name_to_addr_len);
+    for (i, entry) in compile_stt.name_to_addr.iter().enumerate() {
+      let name = entry.key();
+      let addr = entry.value();
+
+      let name_obj = build_name(&mut cache, name);
+      let addr_ba = LeanByteArray::from_bytes(addr.as_bytes());
+
+      let entry_obj = LeanCtor::alloc(0, 2, 0);
+      entry_obj.set(0, name_obj);
+      entry_obj.set(1, addr_ba);
+
+      name_to_addr_arr.set(i, *entry_obj);
+    }
+
+    // Build RawCompiledEnv
+    let compiled_obj = LeanCtor::alloc(0, 2, 0);
+    compiled_obj.set(0, *blocks_arr);
+    compiled_obj.set(1, *name_to_addr_arr);
+
+    // Build RustCompilationResult
+    let result = LeanCtor::alloc(0, 3, 0);
+    result.set(0, raw_env);
+    result.set(1, condensed_obj);
+    result.set(2, *compiled_obj);
+
+    io_ok(*result)
   }))
 }
 
 /// FFI function to compile a Lean environment to serialized Ixon.Env bytes.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_env(env_consts_ptr: *const c_void) -> *mut c_void {
+pub extern "C" fn rs_compile_env(env_consts_ptr: LeanObj) -> LeanObj {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
-    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let rust_env = lean_ptr_to_env(env_consts_ptr.as_ptr());
     let rust_env = Arc::new(rust_env);
 
     let compile_stt = match compile_env(&rust_env) {
       Ok(stt) => stt,
       Err(e) => {
         let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
-        return unsafe { make_compile_io_error(&msg) };
+        return io_error(&msg);
       },
     };
 
@@ -363,41 +311,36 @@ pub extern "C" fn rs_compile_env(env_consts_ptr: *const c_void) -> *mut c_void {
     let mut buf = Vec::new();
     if let Err(e) = compile_stt.env.put(&mut buf) {
       let msg = format!("rs_compile_env: Env serialization failed: {}", e);
-      return unsafe { make_compile_io_error(&msg) };
+      return io_error(&msg);
     }
 
     // Build Lean ByteArray
-    unsafe {
-      let ba = lean_alloc_sarray(1, buf.len(), buf.len());
-      let ba_data = lean_sarray_cptr(ba);
-      std::ptr::copy_nonoverlapping(buf.as_ptr(), ba_data, buf.len());
-      lean_io_result_mk_ok(ba).cast()
-    }
+    let ba = LeanByteArray::from_bytes(&buf);
+    io_ok(ba)
   }))
 }
 
 /// Round-trip a RawEnv: decode from Lean, re-encode via builder.
 /// This performs a full decode/build cycle to verify FFI correctness.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_raw_env(
-  raw_env_ptr: *const c_void,
-) -> *mut c_void {
-  let env = decode_raw_env(raw_env_ptr);
+pub extern "C" fn rs_roundtrip_raw_env(raw_env_obj: LeanObj) -> LeanObj {
+  let env = decode_raw_env(raw_env_obj);
   build_raw_env(&env)
 }
 
 /// FFI function to run all compilation phases and return combined results.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_phases(
-  env_consts_ptr: *const c_void,
-) -> *mut c_void {
+  env_consts_ptr: LeanObj,
+) -> LeanObj {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
-    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let rust_env = lean_ptr_to_env(env_consts_ptr.as_ptr());
     let env_len = rust_env.len();
     let rust_env = Arc::new(rust_env);
 
     let mut cache = LeanBuildCache::with_capacity(env_len);
-    let raw_env = build_raw_environment(&mut cache, &rust_env);
+    let raw_env =
+      unsafe { LeanObj::from_raw(build_raw_environment(&mut cache, &rust_env)) };
 
     let ref_graph = build_ref_graph(&rust_env);
 
@@ -409,96 +352,90 @@ pub extern "C" fn rs_compile_phases(
       Ok(stt) => stt,
       Err(e) => {
         let msg = format!("rs_compile_phases: compilation failed: {:?}", e);
-        return unsafe { make_compile_io_error(&msg) };
+        return io_error(&msg);
       },
     };
+
     // Build Lean objects from compile results
-    unsafe {
-      let consts: Vec<_> = compile_stt
-        .env
-        .consts
-        .iter()
-        .map(|e| (e.key().clone(), e.value().clone()))
-        .collect();
-      let consts_arr = lean_alloc_array(consts.len(), consts.len());
-      for (i, (addr, constant)) in consts.iter().enumerate() {
-        let raw_const = build_raw_const(addr, constant);
-        lean_array_set_core(consts_arr, i, raw_const.cast());
-      }
-
-      let named: Vec<_> = compile_stt
-        .env
-        .named
-        .iter()
-        .map(|e| (e.key().clone(), e.value().clone()))
-        .collect();
-      let named_arr = lean_alloc_array(named.len(), named.len());
-      for (i, (name, n)) in named.iter().enumerate() {
-        let raw_named = build_raw_named(&mut cache, name, &n.addr, &n.meta);
-        lean_array_set_core(named_arr, i, raw_named.cast());
-      }
-
-      let blobs: Vec<_> = compile_stt
-        .env
-        .blobs
-        .iter()
-        .map(|e| (e.key().clone(), e.value().clone()))
-        .collect();
-      let blobs_arr = lean_alloc_array(blobs.len(), blobs.len());
-      for (i, (addr, bytes)) in blobs.iter().enumerate() {
-        let raw_blob = build_raw_blob(addr, bytes);
-        lean_array_set_core(blobs_arr, i, raw_blob.cast());
-      }
-
-      let comms: Vec<_> = compile_stt
-        .env
-        .comms
-        .iter()
-        .map(|e| (e.key().clone(), e.value().clone()))
-        .collect();
-      let comms_arr = lean_alloc_array(comms.len(), comms.len());
-      for (i, (addr, comm)) in comms.iter().enumerate() {
-        let raw_comm = build_raw_comm(addr, comm);
-        lean_array_set_core(comms_arr, i, raw_comm.cast());
-      }
-
-      // Build names array (Address → Ix.Name)
-      let names: Vec<_> = compile_stt
-        .env
-        .names
-        .iter()
-        .map(|e| (e.key().clone(), e.value().clone()))
-        .collect();
-      let names_arr = lean_alloc_array(names.len(), names.len());
-      for (i, (addr, name)) in names.iter().enumerate() {
-        let obj = build_raw_name_entry(&mut cache, addr, name);
-        lean_array_set_core(names_arr, i, obj.cast());
-      }
-
-      let raw_ixon_env = lean_alloc_ctor(0, 5, 0);
-      lean_ctor_set(raw_ixon_env, 0, consts_arr);
-      lean_ctor_set(raw_ixon_env, 1, named_arr);
-      lean_ctor_set(raw_ixon_env, 2, blobs_arr);
-      lean_ctor_set(raw_ixon_env, 3, comms_arr);
-      lean_ctor_set(raw_ixon_env, 4, names_arr);
-
-      let result = lean_alloc_ctor(0, 3, 0);
-      lean_ctor_set(result, 0, raw_env.cast());
-      lean_ctor_set(result, 1, condensed_obj.as_mut_ptr().cast());
-      lean_ctor_set(result, 2, raw_ixon_env);
-
-      lean_io_result_mk_ok(result).cast()
+    let consts: Vec<_> = compile_stt
+      .env
+      .consts
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    let consts_arr = LeanArray::alloc(consts.len());
+    for (i, (addr, constant)) in consts.iter().enumerate() {
+      consts_arr.set(i, build_raw_const(addr, constant));
     }
+
+    let named: Vec<_> = compile_stt
+      .env
+      .named
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    let named_arr = LeanArray::alloc(named.len());
+    for (i, (name, n)) in named.iter().enumerate() {
+      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta));
+    }
+
+    let blobs: Vec<_> = compile_stt
+      .env
+      .blobs
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    let blobs_arr = LeanArray::alloc(blobs.len());
+    for (i, (addr, bytes)) in blobs.iter().enumerate() {
+      blobs_arr.set(i, build_raw_blob(addr, bytes));
+    }
+
+    let comms: Vec<_> = compile_stt
+      .env
+      .comms
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    let comms_arr = LeanArray::alloc(comms.len());
+    for (i, (addr, comm)) in comms.iter().enumerate() {
+      comms_arr.set(i, build_raw_comm(addr, comm));
+    }
+
+    // Build names array (Address → Ix.Name)
+    let names: Vec<_> = compile_stt
+      .env
+      .names
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    let names_arr = LeanArray::alloc(names.len());
+    for (i, (addr, name)) in names.iter().enumerate() {
+      names_arr.set(i, build_raw_name_entry(&mut cache, addr, name));
+    }
+
+    let raw_ixon_env = LeanCtor::alloc(0, 5, 0);
+    raw_ixon_env.set(0, *consts_arr);
+    raw_ixon_env.set(1, *named_arr);
+    raw_ixon_env.set(2, *blobs_arr);
+    raw_ixon_env.set(3, *comms_arr);
+    raw_ixon_env.set(4, *names_arr);
+
+    let result = LeanCtor::alloc(0, 3, 0);
+    result.set(0, raw_env);
+    result.set(1, condensed_obj);
+    result.set(2, *raw_ixon_env);
+
+    io_ok(*result)
   }))
 }
 
 /// FFI function to compile a Lean environment to a RawEnv.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env_to_ixon(
-  env_consts_ptr: *const c_void,
-) -> *mut c_void {
+  env_consts_ptr: LeanObj,
+) -> LeanObj {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
-    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let rust_env = lean_ptr_to_env(env_consts_ptr.as_ptr());
     let rust_env = Arc::new(rust_env);
 
     let compile_stt = match compile_env(&rust_env) {
@@ -506,95 +443,89 @@ pub extern "C" fn rs_compile_env_to_ixon(
       Err(e) => {
         let msg =
           format!("rs_compile_env_to_ixon: compilation failed: {:?}", e);
-        return unsafe { make_compile_io_error(&msg) };
+        return io_error(&msg);
       },
     };
 
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
 
-    unsafe {
-      let consts: Vec<_> = compile_stt
-        .env
-        .consts
-        .iter()
-        .map(|e| (e.key().clone(), e.value().clone()))
-        .collect();
-      let consts_arr = lean_alloc_array(consts.len(), consts.len());
-      for (i, (addr, constant)) in consts.iter().enumerate() {
-        let raw_const = build_raw_const(addr, constant);
-        lean_array_set_core(consts_arr, i, raw_const.cast());
-      }
-
-      let named: Vec<_> = compile_stt
-        .env
-        .named
-        .iter()
-        .map(|e| (e.key().clone(), e.value().clone()))
-        .collect();
-      let named_arr = lean_alloc_array(named.len(), named.len());
-      for (i, (name, n)) in named.iter().enumerate() {
-        let raw_named = build_raw_named(&mut cache, name, &n.addr, &n.meta);
-        lean_array_set_core(named_arr, i, raw_named.cast());
-      }
-
-      let blobs: Vec<_> = compile_stt
-        .env
-        .blobs
-        .iter()
-        .map(|e| (e.key().clone(), e.value().clone()))
-        .collect();
-      let blobs_arr = lean_alloc_array(blobs.len(), blobs.len());
-      for (i, (addr, bytes)) in blobs.iter().enumerate() {
-        let raw_blob = build_raw_blob(addr, bytes);
-        lean_array_set_core(blobs_arr, i, raw_blob.cast());
-      }
-
-      let comms: Vec<_> = compile_stt
-        .env
-        .comms
-        .iter()
-        .map(|e| (e.key().clone(), e.value().clone()))
-        .collect();
-      let comms_arr = lean_alloc_array(comms.len(), comms.len());
-      for (i, (addr, comm)) in comms.iter().enumerate() {
-        let raw_comm = build_raw_comm(addr, comm);
-        lean_array_set_core(comms_arr, i, raw_comm.cast());
-      }
-
-      // Build names array (Address → Ix.Name)
-      let names: Vec<_> = compile_stt
-        .env
-        .names
-        .iter()
-        .map(|e| (e.key().clone(), e.value().clone()))
-        .collect();
-      let names_arr = lean_alloc_array(names.len(), names.len());
-      for (i, (addr, name)) in names.iter().enumerate() {
-        let obj = build_raw_name_entry(&mut cache, addr, name);
-        lean_array_set_core(names_arr, i, obj.cast());
-      }
-
-      let result = lean_alloc_ctor(0, 5, 0);
-      lean_ctor_set(result, 0, consts_arr);
-      lean_ctor_set(result, 1, named_arr);
-      lean_ctor_set(result, 2, blobs_arr);
-      lean_ctor_set(result, 3, comms_arr);
-      lean_ctor_set(result, 4, names_arr);
-      lean_io_result_mk_ok(result).cast()
+    let consts: Vec<_> = compile_stt
+      .env
+      .consts
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    let consts_arr = LeanArray::alloc(consts.len());
+    for (i, (addr, constant)) in consts.iter().enumerate() {
+      consts_arr.set(i, build_raw_const(addr, constant));
     }
+
+    let named: Vec<_> = compile_stt
+      .env
+      .named
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    let named_arr = LeanArray::alloc(named.len());
+    for (i, (name, n)) in named.iter().enumerate() {
+      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta));
+    }
+
+    let blobs: Vec<_> = compile_stt
+      .env
+      .blobs
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    let blobs_arr = LeanArray::alloc(blobs.len());
+    for (i, (addr, bytes)) in blobs.iter().enumerate() {
+      blobs_arr.set(i, build_raw_blob(addr, bytes));
+    }
+
+    let comms: Vec<_> = compile_stt
+      .env
+      .comms
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    let comms_arr = LeanArray::alloc(comms.len());
+    for (i, (addr, comm)) in comms.iter().enumerate() {
+      comms_arr.set(i, build_raw_comm(addr, comm));
+    }
+
+    // Build names array (Address → Ix.Name)
+    let names: Vec<_> = compile_stt
+      .env
+      .names
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    let names_arr = LeanArray::alloc(names.len());
+    for (i, (addr, name)) in names.iter().enumerate() {
+      names_arr.set(i, build_raw_name_entry(&mut cache, addr, name));
+    }
+
+    let result = LeanCtor::alloc(0, 5, 0);
+    result.set(0, *consts_arr);
+    result.set(1, *named_arr);
+    result.set(2, *blobs_arr);
+    result.set(3, *comms_arr);
+    result.set(4, *names_arr);
+    io_ok(*result)
   }))
 }
 
 /// FFI function to canonicalize environment to Ix.RawEnvironment.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_canonicalize_env_to_ix(
-  env_consts_ptr: *const c_void,
-) -> *mut c_void {
+  env_consts_ptr: LeanObj,
+) -> LeanObj {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
-    let rust_env = lean_ptr_to_env(env_consts_ptr);
+    let rust_env = lean_ptr_to_env(env_consts_ptr.as_ptr());
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
-    let raw_env = build_raw_environment(&mut cache, &rust_env);
-    unsafe { lean_io_result_mk_ok(raw_env.cast()).cast() }
+    let raw_env =
+      unsafe { LeanObj::from_raw(build_raw_environment(&mut cache, &rust_env)) };
+    io_ok(raw_env)
   }))
 }
 
@@ -618,9 +549,9 @@ pub struct RustCompiledEnv {
 /// FFI: Simple test to verify FFI round-trip works.
 /// Takes a Lean.Name and returns a magic number to verify the call succeeded.
 #[unsafe(no_mangle)]
-extern "C" fn rs_test_ffi_roundtrip(name_ptr: *const c_void) -> u64 {
+extern "C" fn rs_test_ffi_roundtrip(name_ptr: LeanObj) -> u64 {
   let global_cache = GlobalCache::default();
-  let name = lean_ptr_to_name(name_ptr, &global_cache);
+  let name = lean_ptr_to_name(name_ptr.as_ptr(), &global_cache);
 
   // Return a magic number plus the hash of the name to verify it worked
   let hash = name.get_hash();
@@ -633,16 +564,12 @@ extern "C" fn rs_test_ffi_roundtrip(name_ptr: *const c_void) -> u64 {
 }
 
 /// FFI: Compile entire environment with Rust, returning a handle to RustCompiledEnv.
-/// Takes:
-///   - env_consts_ptr: pointer to List (Name x ConstantInfo) from Lean environment
-///
-/// Returns: pointer to RustCompiledEnv (or null on failure)
 #[unsafe(no_mangle)]
 extern "C" fn rs_compile_env_rust_first(
-  env_consts_ptr: *const c_void,
+  env_consts_ptr: LeanObj,
 ) -> *mut RustCompiledEnv {
   // Decode Lean environment
-  let lean_env = lean_ptr_to_env(env_consts_ptr);
+  let lean_env = lean_ptr_to_env(env_consts_ptr.as_ptr());
   let lean_env = Arc::new(lean_env);
 
   // Compile with Rust
@@ -685,17 +612,18 @@ extern "C" fn rs_compile_env_rust_first(
 #[unsafe(no_mangle)]
 extern "C" fn rs_compare_block(
   rust_env: *const RustCompiledEnv,
-  lowlink_name: *const c_void,
-  lean_bytes: *const c_void,
+  lowlink_name: LeanObj,
+  lean_bytes: LeanObj,
 ) -> u64 {
   if rust_env.is_null() {
     return 2u64 << 32; // not found
   }
   let global_cache = GlobalCache::default();
-  let name = lean_ptr_to_name(lowlink_name, &global_cache);
+  let name = lean_ptr_to_name(lowlink_name.as_ptr(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
-  let lean_data = lean_sarray_data(lean_bytes);
+  let ba = unsafe { LeanByteArray::from_raw(lean_bytes.as_ptr()) };
+  let lean_data = ba.as_bytes();
 
   // Look up Rust's compiled block
   let rust_bytes = match rust_env.blocks.get(&name) {
@@ -748,13 +676,13 @@ extern "C" fn rs_get_rust_env_block_count(
 #[unsafe(no_mangle)]
 extern "C" fn rs_get_block_bytes_len(
   rust_env: *const RustCompiledEnv,
-  lowlink_name: *const c_void,
+  lowlink_name: LeanObj,
 ) -> u64 {
   if rust_env.is_null() {
     return 0;
   }
   let global_cache = GlobalCache::default();
-  let name = lean_ptr_to_name(lowlink_name, &global_cache);
+  let name = lean_ptr_to_name(lowlink_name.as_ptr(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -768,14 +696,14 @@ extern "C" fn rs_get_block_bytes_len(
 #[unsafe(no_mangle)]
 extern "C" fn rs_copy_block_bytes(
   rust_env: *const RustCompiledEnv,
-  lowlink_name: *const c_void,
-  dest: *mut c_void,
+  lowlink_name: LeanObj,
+  dest: LeanObj,
 ) {
   if rust_env.is_null() {
     return;
   }
   let global_cache = GlobalCache::default();
-  let name = lean_ptr_to_name(lowlink_name, &global_cache);
+  let name = lean_ptr_to_name(lowlink_name.as_ptr(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -785,20 +713,21 @@ extern "C" fn rs_copy_block_bytes(
   };
 
   // Copy into the Lean ByteArray
-  unsafe { lean_sarray_set_data(dest, bytes) };
+  let ba = unsafe { LeanByteArray::from_raw(dest.as_ptr()) };
+  unsafe { ba.set_data(bytes) };
 }
 
 /// FFI: Get Rust's sharing vector length for a block.
 #[unsafe(no_mangle)]
 extern "C" fn rs_get_block_sharing_len(
   rust_env: *const RustCompiledEnv,
-  lowlink_name: *const c_void,
+  lowlink_name: LeanObj,
 ) -> u64 {
   if rust_env.is_null() {
     return 0;
   }
   let global_cache = GlobalCache::default();
-  let name = lean_ptr_to_name(lowlink_name, &global_cache);
+  let name = lean_ptr_to_name(lowlink_name.as_ptr(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -911,14 +840,14 @@ fn unshare_expr(
 #[unsafe(no_mangle)]
 extern "C" fn rs_get_pre_sharing_exprs(
   rust_env: *const RustCompiledEnv,
-  lowlink_name: *const c_void,
-  out_buf: *mut c_void,
+  lowlink_name: LeanObj,
+  out_buf: LeanObj,
 ) -> u64 {
   if rust_env.is_null() {
     return 0;
   }
   let global_cache = GlobalCache::default();
-  let name = lean_ptr_to_name(lowlink_name, &global_cache);
+  let name = lean_ptr_to_name(lowlink_name.as_ptr(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -1004,7 +933,8 @@ extern "C" fn rs_get_pre_sharing_exprs(
   }
 
   // Write to output buffer
-  unsafe { lean_sarray_set_data(out_buf, &output_bytes) };
+  let ba = unsafe { LeanByteArray::from_raw(out_buf.as_ptr()) };
+  unsafe { ba.set_data(&output_bytes) };
 
   n_exprs
 }
@@ -1013,13 +943,13 @@ extern "C" fn rs_get_pre_sharing_exprs(
 #[unsafe(no_mangle)]
 extern "C" fn rs_get_pre_sharing_exprs_len(
   rust_env: *const RustCompiledEnv,
-  lowlink_name: *const c_void,
+  lowlink_name: LeanObj,
 ) -> u64 {
   if rust_env.is_null() {
     return 0;
   }
   let global_cache = GlobalCache::default();
-  let name = lean_ptr_to_name(lowlink_name, &global_cache);
+  let name = lean_ptr_to_name(lowlink_name.as_ptr(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -1073,14 +1003,14 @@ extern "C" fn rs_get_pre_sharing_exprs_len(
 #[unsafe(no_mangle)]
 extern "C" fn rs_lookup_const_addr(
   rust_env: *const RustCompiledEnv,
-  name_ptr: *const c_void,
-  out_addr: *mut c_void,
+  name_ptr: LeanObj,
+  out_addr: LeanObj,
 ) -> u64 {
   if rust_env.is_null() {
     return 0;
   }
   let global_cache = GlobalCache::default();
-  let name = lean_ptr_to_name(name_ptr, &global_cache);
+  let name = lean_ptr_to_name(name_ptr.as_ptr(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -1088,7 +1018,8 @@ extern "C" fn rs_lookup_const_addr(
   match rust_env.compile_state.name_to_addr.get(&name) {
     Some(addr_ref) => {
       // Copy the 32-byte address into the output ByteArray
-      unsafe { lean_sarray_set_data(out_addr, addr_ref.as_bytes()) };
+      let ba = unsafe { LeanByteArray::from_raw(out_addr.as_ptr()) };
+      unsafe { ba.set_data(addr_ref.as_bytes()) };
       1
     },
     None => 0,
@@ -1113,18 +1044,6 @@ extern "C" fn rs_get_compiled_const_count(
 
 use crate::ix::ixon::error::{CompileError, DecompileError, SerializeError};
 
-/// Build a Lean String from a Rust &str.
-fn build_lean_string(s: &str) -> *mut c_void {
-  let cstr = CString::new(s)
-    .unwrap_or_else(|_| CString::new("(invalid string)").unwrap());
-  unsafe { lean_mk_string(cstr.as_ptr()).cast() }
-}
-
-/// Build a Lean Nat from a usize.
-fn build_lean_nat_usize(n: usize) -> *mut c_void {
-  unsafe { lean_uint64_to_nat(n as u64).cast() }
-}
-
 /// Build a Lean Ixon.SerializeError from a Rust SerializeError.
 ///
 /// Tags 0–6:
@@ -1135,98 +1054,83 @@ fn build_lean_nat_usize(n: usize) -> *mut c_void {
 ///   4: invalidBool (value : UInt8) → 0 obj + 1 scalar (UInt8)
 ///   5: addressError → 0 obj + 0 scalar
 ///   6: invalidShareIndex (idx : UInt64) (max : Nat) → 1 obj (Nat) + 8 scalar (UInt64)
-pub fn build_serialize_error(se: &SerializeError) -> *mut c_void {
-  unsafe {
-    match se {
-      SerializeError::UnexpectedEof { expected } => {
-        let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, build_lean_string(expected).cast());
-        obj.cast()
-      },
-      SerializeError::InvalidTag { tag, context } => {
-        // 1 obj (String) + 1 scalar byte (UInt8)
-        let obj = lean_alloc_ctor(1, 1, 1);
-        lean_ctor_set(obj, 0, build_lean_string(context).cast());
-        lean_ctor_set_uint8(obj, 8, *tag);
-        obj.cast()
-      },
-      SerializeError::InvalidFlag { flag, context } => {
-        let obj = lean_alloc_ctor(2, 1, 1);
-        lean_ctor_set(obj, 0, build_lean_string(context).cast());
-        lean_ctor_set_uint8(obj, 8, *flag);
-        obj.cast()
-      },
-      SerializeError::InvalidVariant { variant, context } => {
-        let obj = lean_alloc_ctor(3, 1, 8);
-        lean_ctor_set(obj, 0, build_lean_string(context).cast());
-        lean_ctor_set_uint64(obj, 8, *variant);
-        obj.cast()
-      },
-      SerializeError::InvalidBool { value } => {
-        let obj = lean_alloc_ctor(4, 0, 1);
-        lean_ctor_set_uint8(obj, 0, *value);
-        obj.cast()
-      },
-      SerializeError::AddressError => lean_alloc_ctor(5, 0, 0).cast(),
-      SerializeError::InvalidShareIndex { idx, max } => {
-        let obj = lean_alloc_ctor(6, 1, 8);
-        lean_ctor_set(obj, 0, build_lean_nat_usize(*max).cast());
-        lean_ctor_set_uint64(obj, 8, *idx);
-        obj.cast()
-      },
-    }
+pub fn build_serialize_error(se: &SerializeError) -> LeanObj {
+  match se {
+    SerializeError::UnexpectedEof { expected } => {
+      let ctor = LeanCtor::alloc(0, 1, 0);
+      ctor.set(0, build_lean_string(expected));
+      *ctor
+    },
+    SerializeError::InvalidTag { tag, context } => {
+      let ctor = LeanCtor::alloc(1, 1, 1);
+      ctor.set(0, build_lean_string(context));
+      ctor.set_u8(1 * 8, *tag);
+      *ctor
+    },
+    SerializeError::InvalidFlag { flag, context } => {
+      let ctor = LeanCtor::alloc(2, 1, 1);
+      ctor.set(0, build_lean_string(context));
+      ctor.set_u8(1 * 8, *flag);
+      *ctor
+    },
+    SerializeError::InvalidVariant { variant, context } => {
+      let ctor = LeanCtor::alloc(3, 1, 8);
+      ctor.set(0, build_lean_string(context));
+      ctor.set_u64(1 * 8, *variant);
+      *ctor
+    },
+    SerializeError::InvalidBool { value } => {
+      let ctor = LeanCtor::alloc(4, 0, 1);
+      ctor.set_u8(0, *value);
+      *ctor
+    },
+    SerializeError::AddressError => *LeanCtor::alloc(5, 0, 0),
+    SerializeError::InvalidShareIndex { idx, max } => {
+      let ctor = LeanCtor::alloc(6, 1, 8);
+      ctor.set(0, build_lean_nat_usize(*max));
+      ctor.set_u64(1 * 8, *idx);
+      *ctor
+    },
   }
 }
 
 /// Decode a Lean Ixon.SerializeError to a Rust SerializeError.
-pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
-  unsafe {
-    let tag = lean_obj_tag(ptr as *mut _);
-    match tag {
-      0 => {
-        let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let expected = lean_obj_to_string(str_ptr.cast());
-        SerializeError::UnexpectedEof { expected }
-      },
-      1 => {
-        let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let base = ptr.cast::<u8>();
-        let tag_val = *base.add(8 + 8);
-        let context = lean_obj_to_string(str_ptr.cast());
-        SerializeError::InvalidTag { tag: tag_val, context }
-      },
-      2 => {
-        let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let base = ptr.cast::<u8>();
-        let flag = *base.add(8 + 8);
-        let context = lean_obj_to_string(str_ptr.cast());
-        SerializeError::InvalidFlag { flag, context }
-      },
-      3 => {
-        let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let base = ptr.cast::<u8>();
-        let variant = *base.add(8 + 8).cast::<u64>();
-        let context = lean_obj_to_string(str_ptr.cast());
-        SerializeError::InvalidVariant { variant, context }
-      },
-      4 => {
-        let base = ptr.cast::<u8>();
-        let value = *base.add(8);
-        SerializeError::InvalidBool { value }
-      },
-      5 => SerializeError::AddressError,
-      6 => {
-        let nat_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let base = ptr.cast::<u8>();
-        let idx = *base.add(8 + 8).cast::<u64>();
-        let max = Nat::from_ptr(nat_ptr.cast())
-          .to_u64()
-          .and_then(|x| usize::try_from(x).ok())
-          .unwrap_or(0);
-        SerializeError::InvalidShareIndex { idx, max }
-      },
-      _ => unreachable!("Invalid SerializeError tag: {}", tag),
-    }
+pub fn decode_serialize_error(obj: LeanObj) -> SerializeError {
+  let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+  match ctor.tag() {
+    0 => {
+      let expected = lean_obj_to_string(ctor.get(0).as_ptr());
+      SerializeError::UnexpectedEof { expected }
+    },
+    1 => {
+      let context = lean_obj_to_string(ctor.get(0).as_ptr());
+      let tag_val = ctor.scalar_u8(1, 0);
+      SerializeError::InvalidTag { tag: tag_val, context }
+    },
+    2 => {
+      let context = lean_obj_to_string(ctor.get(0).as_ptr());
+      let flag = ctor.scalar_u8(1, 0);
+      SerializeError::InvalidFlag { flag, context }
+    },
+    3 => {
+      let context = lean_obj_to_string(ctor.get(0).as_ptr());
+      let variant = ctor.scalar_u64(1, 0);
+      SerializeError::InvalidVariant { variant, context }
+    },
+    4 => {
+      let value = ctor.scalar_u8(0, 0);
+      SerializeError::InvalidBool { value }
+    },
+    5 => SerializeError::AddressError,
+    6 => {
+      let max = Nat::from_ptr(ctor.get(0).as_ptr())
+        .to_u64()
+        .and_then(|x| usize::try_from(x).ok())
+        .unwrap_or(0);
+      let idx = ctor.scalar_u64(1, 0);
+      SerializeError::InvalidShareIndex { idx, max }
+    },
+    _ => unreachable!("Invalid SerializeError tag: {}", ctor.tag()),
   }
 }
 
@@ -1237,180 +1141,142 @@ pub fn decode_serialize_error(ptr: *const c_void) -> SerializeError {
 ///   → 2 object fields (Nat, String) + 8 scalar bytes (UInt64)
 ///   → `lean_alloc_ctor(tag, 2, 8)`
 ///   → obj[0] = Nat, obj[1] = String, scalar[0] = UInt64
-pub fn build_decompile_error(err: &DecompileError) -> *mut c_void {
-  unsafe {
-    match err {
-      DecompileError::InvalidRefIndex { idx, refs_len, constant } => {
-        let obj = lean_alloc_ctor(0, 2, 8);
-        lean_ctor_set(obj, 0, build_lean_nat_usize(*refs_len).cast());
-        lean_ctor_set(obj, 1, build_lean_string(constant).cast());
-        lean_ctor_set_uint64(obj, 2 * 8, *idx);
-        obj.cast()
-      },
-      DecompileError::InvalidUnivIndex { idx, univs_len, constant } => {
-        let obj = lean_alloc_ctor(1, 2, 8);
-        lean_ctor_set(obj, 0, build_lean_nat_usize(*univs_len).cast());
-        lean_ctor_set(obj, 1, build_lean_string(constant).cast());
-        lean_ctor_set_uint64(obj, 2 * 8, *idx);
-        obj.cast()
-      },
-      DecompileError::InvalidShareIndex { idx, max, constant } => {
-        let obj = lean_alloc_ctor(2, 2, 8);
-        lean_ctor_set(obj, 0, build_lean_nat_usize(*max).cast());
-        lean_ctor_set(obj, 1, build_lean_string(constant).cast());
-        lean_ctor_set_uint64(obj, 2 * 8, *idx);
-        obj.cast()
-      },
-      DecompileError::InvalidRecIndex { idx, ctx_size, constant } => {
-        let obj = lean_alloc_ctor(3, 2, 8);
-        lean_ctor_set(obj, 0, build_lean_nat_usize(*ctx_size).cast());
-        lean_ctor_set(obj, 1, build_lean_string(constant).cast());
-        lean_ctor_set_uint64(obj, 2 * 8, *idx);
-        obj.cast()
-      },
-      DecompileError::InvalidUnivVarIndex { idx, max, constant } => {
-        let obj = lean_alloc_ctor(4, 2, 8);
-        lean_ctor_set(obj, 0, build_lean_nat_usize(*max).cast());
-        lean_ctor_set(obj, 1, build_lean_string(constant).cast());
-        lean_ctor_set_uint64(obj, 2 * 8, *idx);
-        obj.cast()
-      },
-      DecompileError::MissingAddress(addr) => {
-        // tag 5, 1 object (Address = ByteArray)
-        let obj = lean_alloc_ctor(5, 1, 0);
-        lean_ctor_set(obj, 0, build_address_from_ixon(addr).cast());
-        obj.cast()
-      },
-      DecompileError::MissingMetadata(addr) => {
-        // tag 6, 1 object (Address = ByteArray)
-        let obj = lean_alloc_ctor(6, 1, 0);
-        lean_ctor_set(obj, 0, build_address_from_ixon(addr).cast());
-        obj.cast()
-      },
-      DecompileError::BlobNotFound(addr) => {
-        // tag 7, 1 object (Address = ByteArray)
-        let obj = lean_alloc_ctor(7, 1, 0);
-        lean_ctor_set(obj, 0, build_address_from_ixon(addr).cast());
-        obj.cast()
-      },
-      DecompileError::BadBlobFormat { addr, expected } => {
-        // tag 8, 2 objects (Address, String)
-        let obj = lean_alloc_ctor(8, 2, 0);
-        lean_ctor_set(obj, 0, build_address_from_ixon(addr).cast());
-        lean_ctor_set(obj, 1, build_lean_string(expected).cast());
-        obj.cast()
-      },
-      DecompileError::BadConstantFormat { msg } => {
-        // tag 9, 1 object (String)
-        let obj = lean_alloc_ctor(9, 1, 0);
-        lean_ctor_set(obj, 0, build_lean_string(msg).cast());
-        obj.cast()
-      },
-      DecompileError::Serialize(se) => {
-        // tag 10, 1 object (SerializeError)
-        let obj = lean_alloc_ctor(10, 1, 0);
-        lean_ctor_set(obj, 0, build_serialize_error(se).cast());
-        obj.cast()
-      },
-    }
+pub fn build_decompile_error(err: &DecompileError) -> LeanObj {
+  match err {
+    DecompileError::InvalidRefIndex { idx, refs_len, constant } => {
+      let ctor = LeanCtor::alloc(0, 2, 8);
+      ctor.set(0, build_lean_nat_usize(*refs_len));
+      ctor.set(1, build_lean_string(constant));
+      ctor.set_u64(2 * 8, *idx);
+      *ctor
+    },
+    DecompileError::InvalidUnivIndex { idx, univs_len, constant } => {
+      let ctor = LeanCtor::alloc(1, 2, 8);
+      ctor.set(0, build_lean_nat_usize(*univs_len));
+      ctor.set(1, build_lean_string(constant));
+      ctor.set_u64(2 * 8, *idx);
+      *ctor
+    },
+    DecompileError::InvalidShareIndex { idx, max, constant } => {
+      let ctor = LeanCtor::alloc(2, 2, 8);
+      ctor.set(0, build_lean_nat_usize(*max));
+      ctor.set(1, build_lean_string(constant));
+      ctor.set_u64(2 * 8, *idx);
+      *ctor
+    },
+    DecompileError::InvalidRecIndex { idx, ctx_size, constant } => {
+      let ctor = LeanCtor::alloc(3, 2, 8);
+      ctor.set(0, build_lean_nat_usize(*ctx_size));
+      ctor.set(1, build_lean_string(constant));
+      ctor.set_u64(2 * 8, *idx);
+      *ctor
+    },
+    DecompileError::InvalidUnivVarIndex { idx, max, constant } => {
+      let ctor = LeanCtor::alloc(4, 2, 8);
+      ctor.set(0, build_lean_nat_usize(*max));
+      ctor.set(1, build_lean_string(constant));
+      ctor.set_u64(2 * 8, *idx);
+      *ctor
+    },
+    DecompileError::MissingAddress(addr) => {
+      let ctor = LeanCtor::alloc(5, 1, 0);
+      ctor.set(0, build_address_from_ixon(addr));
+      *ctor
+    },
+    DecompileError::MissingMetadata(addr) => {
+      let ctor = LeanCtor::alloc(6, 1, 0);
+      ctor.set(0, build_address_from_ixon(addr));
+      *ctor
+    },
+    DecompileError::BlobNotFound(addr) => {
+      let ctor = LeanCtor::alloc(7, 1, 0);
+      ctor.set(0, build_address_from_ixon(addr));
+      *ctor
+    },
+    DecompileError::BadBlobFormat { addr, expected } => {
+      let ctor = LeanCtor::alloc(8, 2, 0);
+      ctor.set(0, build_address_from_ixon(addr));
+      ctor.set(1, build_lean_string(expected));
+      *ctor
+    },
+    DecompileError::BadConstantFormat { msg } => {
+      let ctor = LeanCtor::alloc(9, 1, 0);
+      ctor.set(0, build_lean_string(msg));
+      *ctor
+    },
+    DecompileError::Serialize(se) => {
+      let ctor = LeanCtor::alloc(10, 1, 0);
+      ctor.set(0, build_serialize_error(se));
+      *ctor
+    },
   }
 }
 
 /// Decode a Lean DecompileError to a Rust DecompileError.
-pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
-  unsafe {
-    let tag = lean_obj_tag(ptr as *mut _);
-    match tag {
-      0 => {
-        let nat_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let str_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let base = ptr.cast::<u8>();
-        let idx = *base.add(8 + 2 * 8).cast::<u64>();
-        let refs_len = Nat::from_ptr(nat_ptr.cast())
-          .to_u64()
-          .and_then(|x| usize::try_from(x).ok())
-          .unwrap_or(0);
-        let constant = lean_obj_to_string(str_ptr.cast()).clone();
-        DecompileError::InvalidRefIndex { idx, refs_len, constant }
-      },
-      1 => {
-        let nat_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let str_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let base = ptr.cast::<u8>();
-        let idx = *base.add(8 + 2 * 8).cast::<u64>();
-        let univs_len = Nat::from_ptr(nat_ptr.cast())
-          .to_u64()
-          .and_then(|x| usize::try_from(x).ok())
-          .unwrap_or(0);
-        let constant = lean_obj_to_string(str_ptr.cast()).clone();
-        DecompileError::InvalidUnivIndex { idx, univs_len, constant }
-      },
-      2 => {
-        let nat_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let str_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let base = ptr.cast::<u8>();
-        let idx = *base.add(8 + 2 * 8).cast::<u64>();
-        let max = Nat::from_ptr(nat_ptr.cast())
-          .to_u64()
-          .and_then(|x| usize::try_from(x).ok())
-          .unwrap_or(0);
-        let constant = lean_obj_to_string(str_ptr.cast()).clone();
-        DecompileError::InvalidShareIndex { idx, max, constant }
-      },
-      3 => {
-        let nat_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let str_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let base = ptr.cast::<u8>();
-        let idx = *base.add(8 + 2 * 8).cast::<u64>();
-        let ctx_size = Nat::from_ptr(nat_ptr.cast())
-          .to_u64()
-          .and_then(|x| usize::try_from(x).ok())
-          .unwrap_or(0);
-        let constant = lean_obj_to_string(str_ptr.cast()).clone();
-        DecompileError::InvalidRecIndex { idx, ctx_size, constant }
-      },
-      4 => {
-        let nat_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let str_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let base = ptr.cast::<u8>();
-        let idx = *base.add(8 + 2 * 8).cast::<u64>();
-        let max = Nat::from_ptr(nat_ptr.cast())
-          .to_u64()
-          .and_then(|x| usize::try_from(x).ok())
-          .unwrap_or(0);
-        let constant = lean_obj_to_string(str_ptr.cast()).clone();
-        DecompileError::InvalidUnivVarIndex { idx, max, constant }
-      },
-      5 => {
-        let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
-        DecompileError::MissingAddress(decode_ixon_address(addr_ptr.cast()))
-      },
-      6 => {
-        let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
-        DecompileError::MissingMetadata(decode_ixon_address(addr_ptr.cast()))
-      },
-      7 => {
-        let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
-        DecompileError::BlobNotFound(decode_ixon_address(addr_ptr.cast()))
-      },
-      8 => {
-        let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let str_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let addr = decode_ixon_address(addr_ptr.cast());
-        let expected = lean_obj_to_string(str_ptr.cast()).clone();
-        DecompileError::BadBlobFormat { addr, expected }
-      },
-      9 => {
-        let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let msg = lean_obj_to_string(str_ptr.cast()).clone();
-        DecompileError::BadConstantFormat { msg }
-      },
-      10 => {
-        let se_ptr = lean_ctor_get(ptr as *mut _, 0);
-        DecompileError::Serialize(decode_serialize_error(se_ptr.cast()))
-      },
-      _ => unreachable!("Invalid DecompileError tag: {}", tag),
-    }
+pub fn decode_decompile_error(obj: LeanObj) -> DecompileError {
+  let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+  match ctor.tag() {
+    0 => {
+      let refs_len = Nat::from_ptr(ctor.get(0).as_ptr())
+        .to_u64()
+        .and_then(|x| usize::try_from(x).ok())
+        .unwrap_or(0);
+      let constant = lean_obj_to_string(ctor.get(1).as_ptr());
+      let idx = ctor.scalar_u64(2, 0);
+      DecompileError::InvalidRefIndex { idx, refs_len, constant }
+    },
+    1 => {
+      let univs_len = Nat::from_ptr(ctor.get(0).as_ptr())
+        .to_u64()
+        .and_then(|x| usize::try_from(x).ok())
+        .unwrap_or(0);
+      let constant = lean_obj_to_string(ctor.get(1).as_ptr());
+      let idx = ctor.scalar_u64(2, 0);
+      DecompileError::InvalidUnivIndex { idx, univs_len, constant }
+    },
+    2 => {
+      let max = Nat::from_ptr(ctor.get(0).as_ptr())
+        .to_u64()
+        .and_then(|x| usize::try_from(x).ok())
+        .unwrap_or(0);
+      let constant = lean_obj_to_string(ctor.get(1).as_ptr());
+      let idx = ctor.scalar_u64(2, 0);
+      DecompileError::InvalidShareIndex { idx, max, constant }
+    },
+    3 => {
+      let ctx_size = Nat::from_ptr(ctor.get(0).as_ptr())
+        .to_u64()
+        .and_then(|x| usize::try_from(x).ok())
+        .unwrap_or(0);
+      let constant = lean_obj_to_string(ctor.get(1).as_ptr());
+      let idx = ctor.scalar_u64(2, 0);
+      DecompileError::InvalidRecIndex { idx, ctx_size, constant }
+    },
+    4 => {
+      let max = Nat::from_ptr(ctor.get(0).as_ptr())
+        .to_u64()
+        .and_then(|x| usize::try_from(x).ok())
+        .unwrap_or(0);
+      let constant = lean_obj_to_string(ctor.get(1).as_ptr());
+      let idx = ctor.scalar_u64(2, 0);
+      DecompileError::InvalidUnivVarIndex { idx, max, constant }
+    },
+    5 => DecompileError::MissingAddress(decode_ixon_address(ctor.get(0))),
+    6 => DecompileError::MissingMetadata(decode_ixon_address(ctor.get(0))),
+    7 => DecompileError::BlobNotFound(decode_ixon_address(ctor.get(0))),
+    8 => {
+      let addr = decode_ixon_address(ctor.get(0));
+      let expected = lean_obj_to_string(ctor.get(1).as_ptr());
+      DecompileError::BadBlobFormat { addr, expected }
+    },
+    9 => {
+      let msg = lean_obj_to_string(ctor.get(0).as_ptr());
+      DecompileError::BadConstantFormat { msg }
+    },
+    10 => {
+      DecompileError::Serialize(decode_serialize_error(ctor.get(0)))
+    },
+    _ => unreachable!("Invalid DecompileError tag: {}", ctor.tag()),
   }
 }
 
@@ -1423,108 +1289,89 @@ pub fn decode_decompile_error(ptr: *const c_void) -> DecompileError {
 ///   3: unsupportedExpr (desc : String) → 1 obj
 ///   4: unknownUnivParam (curr param : String) → 2 obj
 ///   5: serializeError (msg : String) → 1 obj
-pub fn build_compile_error(err: &CompileError) -> *mut c_void {
-  unsafe {
-    match err {
-      CompileError::MissingConstant { name } => {
-        let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, build_lean_string(name).cast());
-        obj.cast()
-      },
-      CompileError::MissingAddress(addr) => {
-        let obj = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(obj, 0, build_address_from_ixon(addr).cast());
-        obj.cast()
-      },
-      CompileError::InvalidMutualBlock { reason } => {
-        let obj = lean_alloc_ctor(2, 1, 0);
-        lean_ctor_set(obj, 0, build_lean_string(reason).cast());
-        obj.cast()
-      },
-      CompileError::UnsupportedExpr { desc } => {
-        let obj = lean_alloc_ctor(3, 1, 0);
-        lean_ctor_set(obj, 0, build_lean_string(desc).cast());
-        obj.cast()
-      },
-      CompileError::UnknownUnivParam { curr, param } => {
-        let obj = lean_alloc_ctor(4, 2, 0);
-        lean_ctor_set(obj, 0, build_lean_string(curr).cast());
-        lean_ctor_set(obj, 1, build_lean_string(param).cast());
-        obj.cast()
-      },
-      CompileError::Serialize(se) => {
-        let obj = lean_alloc_ctor(5, 1, 0);
-        lean_ctor_set(obj, 0, build_serialize_error(se).cast());
-        obj.cast()
-      },
-    }
+pub fn build_compile_error(err: &CompileError) -> LeanObj {
+  match err {
+    CompileError::MissingConstant { name } => {
+      let ctor = LeanCtor::alloc(0, 1, 0);
+      ctor.set(0, build_lean_string(name));
+      *ctor
+    },
+    CompileError::MissingAddress(addr) => {
+      let ctor = LeanCtor::alloc(1, 1, 0);
+      ctor.set(0, build_address_from_ixon(addr));
+      *ctor
+    },
+    CompileError::InvalidMutualBlock { reason } => {
+      let ctor = LeanCtor::alloc(2, 1, 0);
+      ctor.set(0, build_lean_string(reason));
+      *ctor
+    },
+    CompileError::UnsupportedExpr { desc } => {
+      let ctor = LeanCtor::alloc(3, 1, 0);
+      ctor.set(0, build_lean_string(desc));
+      *ctor
+    },
+    CompileError::UnknownUnivParam { curr, param } => {
+      let ctor = LeanCtor::alloc(4, 2, 0);
+      ctor.set(0, build_lean_string(curr));
+      ctor.set(1, build_lean_string(param));
+      *ctor
+    },
+    CompileError::Serialize(se) => {
+      let ctor = LeanCtor::alloc(5, 1, 0);
+      ctor.set(0, build_serialize_error(se));
+      *ctor
+    },
   }
 }
 
 /// Decode a Lean CompileError to a Rust CompileError.
-pub fn decode_compile_error(ptr: *const c_void) -> CompileError {
-  unsafe {
-    let tag = lean_obj_tag(ptr as *mut _);
-    match tag {
-      0 => {
-        let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let name = lean_obj_to_string(str_ptr.cast()).clone();
-        CompileError::MissingConstant { name }
-      },
-      1 => {
-        let addr_ptr = lean_ctor_get(ptr as *mut _, 0);
-        CompileError::MissingAddress(decode_ixon_address(addr_ptr.cast()))
-      },
-      2 => {
-        let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let reason = lean_obj_to_string(str_ptr.cast()).clone();
-        CompileError::InvalidMutualBlock { reason }
-      },
-      3 => {
-        let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let desc = lean_obj_to_string(str_ptr.cast()).clone();
-        CompileError::UnsupportedExpr { desc }
-      },
-      4 => {
-        let str0 = lean_ctor_get(ptr as *mut _, 0);
-        let str1 = lean_ctor_get(ptr as *mut _, 1);
-        let curr = lean_obj_to_string(str0 as *const _);
-        let param = lean_obj_to_string(str1 as *const _);
-        CompileError::UnknownUnivParam { curr, param }
-      },
-      5 => {
-        let se_ptr = lean_ctor_get(ptr as *mut _, 0);
-        CompileError::Serialize(decode_serialize_error(se_ptr.cast()))
-      },
-      _ => unreachable!("Invalid CompileError tag: {}", tag),
-    }
+pub fn decode_compile_error(obj: LeanObj) -> CompileError {
+  let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+  match ctor.tag() {
+    0 => {
+      let name = lean_obj_to_string(ctor.get(0).as_ptr());
+      CompileError::MissingConstant { name }
+    },
+    1 => CompileError::MissingAddress(decode_ixon_address(ctor.get(0))),
+    2 => {
+      let reason = lean_obj_to_string(ctor.get(0).as_ptr());
+      CompileError::InvalidMutualBlock { reason }
+    },
+    3 => {
+      let desc = lean_obj_to_string(ctor.get(0).as_ptr());
+      CompileError::UnsupportedExpr { desc }
+    },
+    4 => {
+      let curr = lean_obj_to_string(ctor.get(0).as_ptr());
+      let param = lean_obj_to_string(ctor.get(1).as_ptr());
+      CompileError::UnknownUnivParam { curr, param }
+    },
+    5 => {
+      CompileError::Serialize(decode_serialize_error(ctor.get(0)))
+    },
+    _ => unreachable!("Invalid CompileError tag: {}", ctor.tag()),
   }
 }
 
 /// FFI: Round-trip a DecompileError: Lean → Rust → Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_decompile_error(
-  ptr: *const c_void,
-) -> *mut c_void {
-  let err = decode_decompile_error(ptr);
+pub extern "C" fn rs_roundtrip_decompile_error(obj: LeanObj) -> LeanObj {
+  let err = decode_decompile_error(obj);
   build_decompile_error(&err)
 }
 
 /// FFI: Round-trip a CompileError: Lean → Rust → Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_compile_error(
-  ptr: *const c_void,
-) -> *mut c_void {
-  let err = decode_compile_error(ptr);
+pub extern "C" fn rs_roundtrip_compile_error(obj: LeanObj) -> LeanObj {
+  let err = decode_compile_error(obj);
   build_compile_error(&err)
 }
 
 /// FFI: Round-trip a SerializeError: Lean → Rust → Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_serialize_error(
-  ptr: *const c_void,
-) -> *mut c_void {
-  let err = decode_serialize_error(ptr);
+pub extern "C" fn rs_roundtrip_serialize_error(obj: LeanObj) -> LeanObj {
+  let err = decode_serialize_error(obj);
   build_serialize_error(&err)
 }
 
@@ -1534,8 +1381,8 @@ pub extern "C" fn rs_roundtrip_serialize_error(
 
 /// FFI: Decompile an Ixon.RawEnv → Except DecompileError (Array (Ix.Name × Ix.ConstantInfo)). Pure.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_decompile_env(raw_env_ptr: *const c_void) -> *mut c_void {
-  let decoded = decode_raw_env(raw_env_ptr);
+pub extern "C" fn rs_decompile_env(raw_env_obj: LeanObj) -> LeanObj {
+  let decoded = decode_raw_env(raw_env_obj);
   let env = decoded_to_ixon_env(&decoded);
 
   // Wrap in CompileState (decompile_env only uses .env)
@@ -1550,30 +1397,21 @@ pub extern "C" fn rs_decompile_env(raw_env_ptr: *const c_void) -> *mut c_void {
     Ok(dstt) => {
       let entries: Vec<_> = dstt.env.into_iter().collect();
       let mut cache = LeanBuildCache::with_capacity(entries.len());
-      unsafe {
-        let arr = lean_alloc_array(entries.len(), entries.len());
-        for (i, (name, info)) in entries.iter().enumerate() {
-          let name_obj = build_name(&mut cache, name);
-          let info_obj = build_constant_info(&mut cache, info);
-          let pair = lean_alloc_ctor(0, 2, 0);
-          lean_ctor_set(pair, 0, name_obj.as_mut_ptr().cast());
-          lean_ctor_set(pair, 1, info_obj.as_mut_ptr().cast());
-          lean_array_set_core(arr, i, pair);
-        }
-        // Except.ok (tag 1)
-        let obj = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(obj, 0, arr);
-        obj.cast()
+
+      let arr = LeanArray::alloc(entries.len());
+      for (i, (name, info)) in entries.iter().enumerate() {
+        let name_obj = build_name(&mut cache, name);
+        let info_obj = build_constant_info(&mut cache, info);
+        let pair = LeanCtor::alloc(0, 2, 0);
+        pair.set(0, name_obj);
+        pair.set(1, info_obj);
+        arr.set(i, *pair);
       }
+
+      LeanExcept::ok(arr).into()
     },
     Err(e) => {
-      // Except.error (tag 0) — build DecompileError directly
-      unsafe {
-        let err_obj = build_decompile_error(&e);
-        let obj = lean_alloc_ctor(0, 1, 0);
-        lean_ctor_set(obj, 0, err_obj.cast());
-        obj.cast()
-      }
+      LeanExcept::error(build_decompile_error(&e)).into()
     },
   }
 }

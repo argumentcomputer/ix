@@ -1,122 +1,78 @@
 //! Ixon.Univ build/decode/roundtrip FFI.
 
-use std::ffi::c_void;
 use std::sync::Arc;
 
-use crate::ix::ixon::univ::Univ as IxonUniv;
-use crate::lean::{
-  lean::{
-    lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
-    lean_ctor_set, lean_obj_tag,
-  },
-  lean_box_fn, lean_is_scalar,
-};
+use crate::ix::ixon::univ::Univ;
+use crate::lean::obj::{IxonUniv, LeanArray, LeanCtor, LeanObj};
 
-/// Build Ixon.Univ
-pub fn build_ixon_univ(univ: &IxonUniv) -> *mut c_void {
-  unsafe {
-    match univ {
-      IxonUniv::Zero => lean_box_fn(0),
-      IxonUniv::Succ(inner) => {
-        let inner_obj = build_ixon_univ(inner);
-        let obj = lean_alloc_ctor(1, 1, 0);
-        lean_ctor_set(obj, 0, inner_obj.cast());
-        obj.cast()
+impl IxonUniv {
+  /// Build Ixon.Univ
+  pub fn build(univ: &Univ) -> Self {
+    let obj = match univ {
+      Univ::Zero => LeanObj::box_usize(0),
+      Univ::Succ(inner) => {
+        let ctor = LeanCtor::alloc(1, 1, 0);
+        ctor.set(0, Self::build(inner));
+        *ctor
       },
-      IxonUniv::Max(a, b) => {
-        let a_obj = build_ixon_univ(a);
-        let b_obj = build_ixon_univ(b);
-        let obj = lean_alloc_ctor(2, 2, 0);
-        lean_ctor_set(obj, 0, a_obj.cast());
-        lean_ctor_set(obj, 1, b_obj.cast());
-        obj.cast()
+      Univ::Max(a, b) => {
+        let ctor = LeanCtor::alloc(2, 2, 0);
+        ctor.set(0, Self::build(a));
+        ctor.set(1, Self::build(b));
+        *ctor
       },
-      IxonUniv::IMax(a, b) => {
-        let a_obj = build_ixon_univ(a);
-        let b_obj = build_ixon_univ(b);
-        let obj = lean_alloc_ctor(3, 2, 0);
-        lean_ctor_set(obj, 0, a_obj.cast());
-        lean_ctor_set(obj, 1, b_obj.cast());
-        obj.cast()
+      Univ::IMax(a, b) => {
+        let ctor = LeanCtor::alloc(3, 2, 0);
+        ctor.set(0, Self::build(a));
+        ctor.set(1, Self::build(b));
+        *ctor
       },
-      IxonUniv::Var(idx) => {
-        let obj = lean_alloc_ctor(4, 0, 8);
-        let base = obj.cast::<u8>();
-        *base.add(8).cast::<u64>() = *idx;
-        obj.cast()
+      Univ::Var(idx) => {
+        let ctor = LeanCtor::alloc(4, 0, 8);
+        ctor.set_u64(0, *idx);
+        *ctor
       },
-    }
+    };
+    Self::new(obj)
   }
-}
 
-/// Build an Array of Ixon.Univ.
-pub fn build_ixon_univ_array(univs: &[Arc<IxonUniv>]) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(univs.len(), univs.len());
+  /// Build an Array of Ixon.Univ.
+  pub fn build_array(univs: &[Arc<Univ>]) -> LeanArray {
+    let arr = LeanArray::alloc(univs.len());
     for (i, univ) in univs.iter().enumerate() {
-      let univ_obj = build_ixon_univ(univ);
-      lean_array_set_core(arr, i, univ_obj.cast());
+      arr.set(i, Self::build(univ));
     }
-    arr.cast()
+    arr
   }
-}
 
-// =============================================================================
-// Decode Functions
-// =============================================================================
-
-/// Decode Ixon.Univ (recursive enum).
-/// | zero -- tag 0 (no fields)
-/// | succ (u : Univ) -- tag 1
-/// | max (a b : Univ) -- tag 2
-/// | imax (a b : Univ) -- tag 3
-/// | var (idx : UInt64) -- tag 4 (scalar field)
-pub fn decode_ixon_univ(ptr: *const c_void) -> IxonUniv {
-  unsafe {
-    // Note: .zero is a nullary constructor with tag 0, represented as lean_box(0)
-    if lean_is_scalar(ptr) {
-      return IxonUniv::Zero;
+  /// Decode Ixon.Univ (recursive enum).
+  pub fn decode(self) -> Univ {
+    let obj: LeanObj = *self;
+    if obj.is_scalar() {
+      return Univ::Zero;
     }
-    let tag = lean_obj_tag((ptr as *mut c_void).cast());
-    match tag {
-      0 => IxonUniv::Zero,
-      1 => {
-        let inner_ptr = lean_ctor_get((ptr as *mut c_void).cast(), 0);
-        IxonUniv::Succ(Arc::new(decode_ixon_univ(inner_ptr.cast())))
-      },
-      2 => {
-        let a_ptr = lean_ctor_get((ptr as *mut c_void).cast(), 0);
-        let b_ptr = lean_ctor_get((ptr as *mut c_void).cast(), 1);
-        IxonUniv::Max(
-          Arc::new(decode_ixon_univ(a_ptr.cast())),
-          Arc::new(decode_ixon_univ(b_ptr.cast())),
-        )
-      },
-      3 => {
-        let a_ptr = lean_ctor_get((ptr as *mut c_void).cast(), 0);
-        let b_ptr = lean_ctor_get((ptr as *mut c_void).cast(), 1);
-        IxonUniv::IMax(
-          Arc::new(decode_ixon_univ(a_ptr.cast())),
-          Arc::new(decode_ixon_univ(b_ptr.cast())),
-        )
-      },
-      4 => {
-        // scalar field: UInt64 at offset 8 (after header)
-        let base = ptr.cast::<u8>();
-        let idx = *(base.add(8).cast::<u64>());
-        IxonUniv::Var(idx)
-      },
-      _ => panic!("Invalid Ixon.Univ tag: {}", tag),
+    let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+    match ctor.tag() {
+      0 => Univ::Zero,
+      1 => Univ::Succ(Arc::new(Self::new(ctor.get(0)).decode())),
+      2 => Univ::Max(
+        Arc::new(Self::new(ctor.get(0)).decode()),
+        Arc::new(Self::new(ctor.get(1)).decode()),
+      ),
+      3 => Univ::IMax(
+        Arc::new(Self::new(ctor.get(0)).decode()),
+        Arc::new(Self::new(ctor.get(1)).decode()),
+      ),
+      4 => Univ::Var(ctor.scalar_u64(0, 0)),
+      tag => panic!("Invalid Ixon.Univ tag: {tag}"),
     }
   }
-}
 
-/// Decode Array Ixon.Univ.
-pub fn decode_ixon_univ_array(ptr: *const c_void) -> Vec<Arc<IxonUniv>> {
-  crate::lean::lean_array_data(ptr)
-    .iter()
-    .map(|&u| Arc::new(decode_ixon_univ(u)))
-    .collect()
+  /// Decode Array Ixon.Univ.
+  pub fn decode_array(obj: LeanObj) -> Vec<Arc<Univ>> {
+    let arr = unsafe { LeanArray::from_raw(obj.as_ptr()) };
+    arr.map(|elem| Arc::new(Self::new(elem).decode()))
+  }
 }
 
 // =============================================================================
@@ -125,7 +81,7 @@ pub fn decode_ixon_univ_array(ptr: *const c_void) -> Vec<Arc<IxonUniv>> {
 
 /// Round-trip Ixon.Univ.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_univ(ptr: *const c_void) -> *mut c_void {
-  let univ = decode_ixon_univ(ptr);
-  build_ixon_univ(&univ)
+pub extern "C" fn rs_roundtrip_ixon_univ(obj: LeanObj) -> LeanObj {
+  let univ = IxonUniv::new(obj).decode();
+  IxonUniv::build(&univ).into()
 }

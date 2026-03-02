@@ -1,282 +1,194 @@
 //! Ixon.Expr build/decode/roundtrip FFI.
 
-use std::ffi::c_void;
 use std::sync::Arc;
 
-use crate::ix::ixon::expr::Expr as IxonExpr;
-use crate::lean::lean::{
-  lean_alloc_array, lean_alloc_ctor, lean_array_set_core, lean_ctor_get,
-  lean_ctor_set, lean_obj_tag,
-};
-use crate::lean_unbox;
-
-/// Build Ixon.Expr (12 constructors).
-pub fn build_ixon_expr(expr: &IxonExpr) -> *mut c_void {
-  unsafe {
-    match expr {
-      IxonExpr::Sort(idx) => {
-        let obj = lean_alloc_ctor(0, 0, 8);
-        let base = obj.cast::<u8>();
-        *base.add(8).cast::<u64>() = *idx;
-        obj.cast()
-      },
-      IxonExpr::Var(idx) => {
-        let obj = lean_alloc_ctor(1, 0, 8);
-        let base = obj.cast::<u8>();
-        *base.add(8).cast::<u64>() = *idx;
-        obj.cast()
-      },
-      IxonExpr::Ref(ref_idx, univ_idxs) => {
-        let arr = lean_alloc_array(univ_idxs.len(), univ_idxs.len());
-        for (i, idx) in univ_idxs.iter().enumerate() {
-          // Build heap-boxed UInt64: ctor with tag 0, 0 obj fields, 8 scalar bytes
-          let uint64_obj = lean_alloc_ctor(0, 0, 8);
-          let base = uint64_obj.cast::<u8>();
-          *base.add(8).cast::<u64>() = *idx;
-          lean_array_set_core(arr, i, uint64_obj);
-        }
-        let obj = lean_alloc_ctor(2, 1, 8);
-        lean_ctor_set(obj, 0, arr);
-        let base = obj.cast::<u8>();
-        *base.add(8 + 8).cast::<u64>() = *ref_idx;
-        obj.cast()
-      },
-      IxonExpr::Rec(rec_idx, univ_idxs) => {
-        let arr = lean_alloc_array(univ_idxs.len(), univ_idxs.len());
-        for (i, idx) in univ_idxs.iter().enumerate() {
-          let uint64_obj = lean_alloc_ctor(0, 0, 8);
-          let base = uint64_obj.cast::<u8>();
-          *base.add(8).cast::<u64>() = *idx;
-          lean_array_set_core(arr, i, uint64_obj);
-        }
-        let obj = lean_alloc_ctor(3, 1, 8);
-        lean_ctor_set(obj, 0, arr);
-        let base = obj.cast::<u8>();
-        *base.add(8 + 8).cast::<u64>() = *rec_idx;
-        obj.cast()
-      },
-      IxonExpr::Prj(type_ref_idx, field_idx, val) => {
-        let val_obj = build_ixon_expr(val);
-        let obj = lean_alloc_ctor(4, 1, 16);
-        lean_ctor_set(obj, 0, val_obj.cast());
-        let base = obj.cast::<u8>();
-        *base.add(8 + 8).cast::<u64>() = *type_ref_idx;
-        *base.add(8 + 16).cast::<u64>() = *field_idx;
-        obj.cast()
-      },
-      IxonExpr::Str(ref_idx) => {
-        let obj = lean_alloc_ctor(5, 0, 8);
-        let base = obj.cast::<u8>();
-        *base.add(8).cast::<u64>() = *ref_idx;
-        obj.cast()
-      },
-      IxonExpr::Nat(ref_idx) => {
-        let obj = lean_alloc_ctor(6, 0, 8);
-        let base = obj.cast::<u8>();
-        *base.add(8).cast::<u64>() = *ref_idx;
-        obj.cast()
-      },
-      IxonExpr::App(fun, arg) => {
-        let fun_obj = build_ixon_expr(fun);
-        let arg_obj = build_ixon_expr(arg);
-        let obj = lean_alloc_ctor(7, 2, 0);
-        lean_ctor_set(obj, 0, fun_obj.cast());
-        lean_ctor_set(obj, 1, arg_obj.cast());
-        obj.cast()
-      },
-      IxonExpr::Lam(ty, body) => {
-        let ty_obj = build_ixon_expr(ty);
-        let body_obj = build_ixon_expr(body);
-        let obj = lean_alloc_ctor(8, 2, 0);
-        lean_ctor_set(obj, 0, ty_obj.cast());
-        lean_ctor_set(obj, 1, body_obj.cast());
-        obj.cast()
-      },
-      IxonExpr::All(ty, body) => {
-        let ty_obj = build_ixon_expr(ty);
-        let body_obj = build_ixon_expr(body);
-        let obj = lean_alloc_ctor(9, 2, 0);
-        lean_ctor_set(obj, 0, ty_obj.cast());
-        lean_ctor_set(obj, 1, body_obj.cast());
-        obj.cast()
-      },
-      IxonExpr::Let(non_dep, ty, val, body) => {
-        let ty_obj = build_ixon_expr(ty);
-        let val_obj = build_ixon_expr(val);
-        let body_obj = build_ixon_expr(body);
-        let obj = lean_alloc_ctor(10, 3, 1);
-        lean_ctor_set(obj, 0, ty_obj.cast());
-        lean_ctor_set(obj, 1, val_obj.cast());
-        lean_ctor_set(obj, 2, body_obj.cast());
-        let base = obj.cast::<u8>();
-        *base.add(3 * 8 + 8) = if *non_dep { 1 } else { 0 };
-        obj.cast()
-      },
-      IxonExpr::Share(idx) => {
-        let obj = lean_alloc_ctor(11, 0, 8);
-        let base = obj.cast::<u8>();
-        *base.add(8).cast::<u64>() = *idx;
-        obj.cast()
-      },
-    }
-  }
-}
-
-/// Build an Array of Ixon.Expr.
-pub fn build_ixon_expr_array(exprs: &[Arc<IxonExpr>]) -> *mut c_void {
-  unsafe {
-    let arr = lean_alloc_array(exprs.len(), exprs.len());
-    for (i, expr) in exprs.iter().enumerate() {
-      let expr_obj = build_ixon_expr(expr);
-      lean_array_set_core(arr, i, expr_obj.cast());
-    }
-    arr.cast()
-  }
-}
-
-// =============================================================================
-// Decode Functions
-// =============================================================================
+use crate::ix::ixon::expr::Expr;
+use crate::lean::obj::{IxonExpr, LeanArray, LeanCtor, LeanObj};
 
 /// Decode Array UInt64 from Lean.
 /// UInt64 values in arrays are stored as:
-/// - Scalars (odd pointers) for small values: use lean_unbox
+/// - Scalars (odd pointers) for small values: use unbox_usize
 /// - Heap objects (even pointers) with the u64 value at offset 8
-fn decode_u64_array(ptr: *const c_void) -> Vec<u64> {
-  use crate::lean::lean_is_scalar;
-
-  crate::lean::lean_array_data(ptr)
-    .iter()
-    .map(|&elem| {
-      if lean_is_scalar(elem) {
-        // Small scalar value
-        lean_unbox!(u64, elem)
-      } else {
-        // Heap-boxed UInt64: value is at offset 8 (after 8-byte header)
-        unsafe {
-          let base = elem.cast::<u8>();
-          *base.add(8).cast::<u64>()
-        }
-      }
-    })
-    .collect()
+fn decode_u64_array(obj: LeanObj) -> Vec<u64> {
+  let arr = unsafe { LeanArray::from_raw(obj.as_ptr()) };
+  arr.map(|elem| {
+    if elem.is_scalar() {
+      elem.unbox_usize() as u64
+    } else {
+      let ctor = unsafe { LeanCtor::from_raw(elem.as_ptr()) };
+      ctor.scalar_u64(0, 0)
+    }
+  })
 }
 
-/// Decode Ixon.Expr (12 constructors).
-pub fn decode_ixon_expr(ptr: *const c_void) -> IxonExpr {
-  unsafe {
-    let tag = lean_obj_tag(ptr as *mut _);
-    match tag {
-      0 => {
-        // sort (idx : UInt64)
-        let base = ptr.cast::<u8>();
-        let idx = *base.add(8).cast::<u64>();
-        IxonExpr::Sort(idx)
+impl IxonExpr {
+  /// Build Ixon.Expr (12 constructors).
+  pub fn build(expr: &Expr) -> Self {
+    let obj = match expr {
+      Expr::Sort(idx) => {
+        let ctor = LeanCtor::alloc(0, 0, 8);
+        ctor.set_u64(0, *idx);
+        *ctor
       },
-      1 => {
-        // var (idx : UInt64)
-        let base = ptr.cast::<u8>();
-        let idx = *base.add(8).cast::<u64>();
-        IxonExpr::Var(idx)
+      Expr::Var(idx) => {
+        let ctor = LeanCtor::alloc(1, 0, 8);
+        ctor.set_u64(0, *idx);
+        *ctor
       },
+      Expr::Ref(ref_idx, univ_idxs) => {
+        let arr = LeanArray::alloc(univ_idxs.len());
+        for (i, idx) in univ_idxs.iter().enumerate() {
+          let uint64_obj = LeanCtor::alloc(0, 0, 8);
+          uint64_obj.set_u64(0, *idx);
+          arr.set(i, uint64_obj);
+        }
+        let ctor = LeanCtor::alloc(2, 1, 8);
+        ctor.set(0, arr);
+        ctor.set_u64(8, *ref_idx);
+        *ctor
+      },
+      Expr::Rec(rec_idx, univ_idxs) => {
+        let arr = LeanArray::alloc(univ_idxs.len());
+        for (i, idx) in univ_idxs.iter().enumerate() {
+          let uint64_obj = LeanCtor::alloc(0, 0, 8);
+          uint64_obj.set_u64(0, *idx);
+          arr.set(i, uint64_obj);
+        }
+        let ctor = LeanCtor::alloc(3, 1, 8);
+        ctor.set(0, arr);
+        ctor.set_u64(8, *rec_idx);
+        *ctor
+      },
+      Expr::Prj(type_ref_idx, field_idx, val) => {
+        let val_obj = Self::build(val);
+        let ctor = LeanCtor::alloc(4, 1, 16);
+        ctor.set(0, val_obj);
+        ctor.set_u64(8, *type_ref_idx);
+        ctor.set_u64(16, *field_idx);
+        *ctor
+      },
+      Expr::Str(ref_idx) => {
+        let ctor = LeanCtor::alloc(5, 0, 8);
+        ctor.set_u64(0, *ref_idx);
+        *ctor
+      },
+      Expr::Nat(ref_idx) => {
+        let ctor = LeanCtor::alloc(6, 0, 8);
+        ctor.set_u64(0, *ref_idx);
+        *ctor
+      },
+      Expr::App(fun, arg) => {
+        let fun_obj = Self::build(fun);
+        let arg_obj = Self::build(arg);
+        let ctor = LeanCtor::alloc(7, 2, 0);
+        ctor.set(0, fun_obj);
+        ctor.set(1, arg_obj);
+        *ctor
+      },
+      Expr::Lam(ty, body) => {
+        let ty_obj = Self::build(ty);
+        let body_obj = Self::build(body);
+        let ctor = LeanCtor::alloc(8, 2, 0);
+        ctor.set(0, ty_obj);
+        ctor.set(1, body_obj);
+        *ctor
+      },
+      Expr::All(ty, body) => {
+        let ty_obj = Self::build(ty);
+        let body_obj = Self::build(body);
+        let ctor = LeanCtor::alloc(9, 2, 0);
+        ctor.set(0, ty_obj);
+        ctor.set(1, body_obj);
+        *ctor
+      },
+      Expr::Let(non_dep, ty, val, body) => {
+        let ty_obj = Self::build(ty);
+        let val_obj = Self::build(val);
+        let body_obj = Self::build(body);
+        let ctor = LeanCtor::alloc(10, 3, 1);
+        ctor.set(0, ty_obj);
+        ctor.set(1, val_obj);
+        ctor.set(2, body_obj);
+        ctor.set_u8(3 * 8, if *non_dep { 1 } else { 0 });
+        *ctor
+      },
+      Expr::Share(idx) => {
+        let ctor = LeanCtor::alloc(11, 0, 8);
+        ctor.set_u64(0, *idx);
+        *ctor
+      },
+    };
+    Self::new(obj)
+  }
+
+  /// Build an Array of Ixon.Expr.
+  pub fn build_array(exprs: &[Arc<Expr>]) -> LeanArray {
+    let arr = LeanArray::alloc(exprs.len());
+    for (i, expr) in exprs.iter().enumerate() {
+      arr.set(i, Self::build(expr));
+    }
+    arr
+  }
+
+  /// Decode Ixon.Expr (12 constructors).
+  pub fn decode(self) -> Expr {
+    let obj: LeanObj = *self;
+    let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+    match ctor.tag() {
+      0 => Expr::Sort(ctor.scalar_u64(0, 0)),
+      1 => Expr::Var(ctor.scalar_u64(0, 0)),
       2 => {
-        // ref (refIdx : UInt64) (univIdxs : Array UInt64)
-        let arr_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let base = ptr.cast::<u8>();
-        let ref_idx = *base.add(8 + 8).cast::<u64>();
-        let univ_idxs = decode_u64_array(arr_ptr.cast());
-        IxonExpr::Ref(ref_idx, univ_idxs)
+        let ref_idx = ctor.scalar_u64(1, 0);
+        let univ_idxs = decode_u64_array(ctor.get(0));
+        Expr::Ref(ref_idx, univ_idxs)
       },
       3 => {
-        // recur (recIdx : UInt64) (univIdxs : Array UInt64)
-        let arr_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let base = ptr.cast::<u8>();
-        let rec_idx = *base.add(8 + 8).cast::<u64>();
-        let univ_idxs = decode_u64_array(arr_ptr.cast());
-        IxonExpr::Rec(rec_idx, univ_idxs)
+        let rec_idx = ctor.scalar_u64(1, 0);
+        let univ_idxs = decode_u64_array(ctor.get(0));
+        Expr::Rec(rec_idx, univ_idxs)
       },
       4 => {
-        // prj (typeRefIdx : UInt64) (fieldIdx : UInt64) (val : Expr)
-        let val_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let base = ptr.cast::<u8>();
-        let type_ref_idx = *base.add(8 + 8).cast::<u64>();
-        let field_idx = *base.add(8 + 16).cast::<u64>();
-        IxonExpr::Prj(
+        let type_ref_idx = ctor.scalar_u64(1, 0);
+        let field_idx = ctor.scalar_u64(1, 8);
+        Expr::Prj(
           type_ref_idx,
           field_idx,
-          Arc::new(decode_ixon_expr(val_ptr.cast())),
+          Arc::new(Self::new(ctor.get(0)).decode()),
         )
       },
-      5 => {
-        // str (refIdx : UInt64)
-        let base = ptr.cast::<u8>();
-        let ref_idx = *base.add(8).cast::<u64>();
-        IxonExpr::Str(ref_idx)
-      },
-      6 => {
-        // nat (refIdx : UInt64)
-        let base = ptr.cast::<u8>();
-        let ref_idx = *base.add(8).cast::<u64>();
-        IxonExpr::Nat(ref_idx)
-      },
-      7 => {
-        // app (f a : Expr)
-        let f_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let a_ptr = lean_ctor_get(ptr as *mut _, 1);
-        IxonExpr::App(
-          Arc::new(decode_ixon_expr(f_ptr.cast())),
-          Arc::new(decode_ixon_expr(a_ptr.cast())),
-        )
-      },
-      8 => {
-        // lam (ty body : Expr)
-        let ty_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let body_ptr = lean_ctor_get(ptr as *mut _, 1);
-        IxonExpr::Lam(
-          Arc::new(decode_ixon_expr(ty_ptr.cast())),
-          Arc::new(decode_ixon_expr(body_ptr.cast())),
-        )
-      },
-      9 => {
-        // all (ty body : Expr)
-        let ty_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let body_ptr = lean_ctor_get(ptr as *mut _, 1);
-        IxonExpr::All(
-          Arc::new(decode_ixon_expr(ty_ptr.cast())),
-          Arc::new(decode_ixon_expr(body_ptr.cast())),
-        )
-      },
+      5 => Expr::Str(ctor.scalar_u64(0, 0)),
+      6 => Expr::Nat(ctor.scalar_u64(0, 0)),
+      7 => Expr::App(
+        Arc::new(Self::new(ctor.get(0)).decode()),
+        Arc::new(Self::new(ctor.get(1)).decode()),
+      ),
+      8 => Expr::Lam(
+        Arc::new(Self::new(ctor.get(0)).decode()),
+        Arc::new(Self::new(ctor.get(1)).decode()),
+      ),
+      9 => Expr::All(
+        Arc::new(Self::new(ctor.get(0)).decode()),
+        Arc::new(Self::new(ctor.get(1)).decode()),
+      ),
       10 => {
-        // letE (nonDep : Bool) (ty val body : Expr)
-        let ty_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let val_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let body_ptr = lean_ctor_get(ptr as *mut _, 2);
-        let base = ptr.cast::<u8>();
-        let non_dep = *base.add(3 * 8 + 8) != 0;
-        IxonExpr::Let(
+        let non_dep = ctor.scalar_bool(3, 0);
+        Expr::Let(
           non_dep,
-          Arc::new(decode_ixon_expr(ty_ptr.cast())),
-          Arc::new(decode_ixon_expr(val_ptr.cast())),
-          Arc::new(decode_ixon_expr(body_ptr.cast())),
+          Arc::new(Self::new(ctor.get(0)).decode()),
+          Arc::new(Self::new(ctor.get(1)).decode()),
+          Arc::new(Self::new(ctor.get(2)).decode()),
         )
       },
-      11 => {
-        // share (idx : UInt64)
-        let base = ptr.cast::<u8>();
-        let idx = *base.add(8).cast::<u64>();
-        IxonExpr::Share(idx)
-      },
-      _ => panic!("Invalid Ixon.Expr tag: {}", tag),
+      11 => Expr::Share(ctor.scalar_u64(0, 0)),
+      tag => panic!("Invalid Ixon.Expr tag: {tag}"),
     }
   }
-}
 
-/// Decode Array Ixon.Expr.
-pub fn decode_ixon_expr_array(ptr: *const c_void) -> Vec<Arc<IxonExpr>> {
-  crate::lean::lean_array_data(ptr)
-    .iter()
-    .map(|&e| Arc::new(decode_ixon_expr(e)))
-    .collect()
+  /// Decode Array Ixon.Expr.
+  pub fn decode_array(obj: LeanObj) -> Vec<Arc<Expr>> {
+    let arr = unsafe { LeanArray::from_raw(obj.as_ptr()) };
+    arr.map(|e| Arc::new(Self::new(e).decode()))
+  }
 }
 
 // =============================================================================
@@ -285,7 +197,7 @@ pub fn decode_ixon_expr_array(ptr: *const c_void) -> Vec<Arc<IxonExpr>> {
 
 /// Round-trip Ixon.Expr.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_expr(ptr: *const c_void) -> *mut c_void {
-  let expr = decode_ixon_expr(ptr);
-  build_ixon_expr(&expr)
+pub extern "C" fn rs_roundtrip_ixon_expr(obj: LeanObj) -> LeanObj {
+  let expr = IxonExpr::new(obj).decode();
+  IxonExpr::build(&expr).into()
 }

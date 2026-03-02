@@ -4,30 +4,30 @@
 //!
 //! These fallback modules contain dummy functions that can still be called via Lean->C->Rust FFI, but will return an error message that Lean then prints before exiting.
 
-#[cfg(any(
-  not(feature = "net"),
-  all(target_os = "macos", target_arch = "aarch64")
-))]
-pub mod _client;
-#[cfg(any(
-  not(feature = "net"),
-  all(target_os = "macos", target_arch = "aarch64")
-))]
-pub mod _server;
-#[cfg(all(
-  feature = "net",
-  not(all(target_os = "macos", target_arch = "aarch64"))
-))]
+// #[cfg(any(
+//   not(feature = "net"),
+//   all(target_os = "macos", target_arch = "aarch64")
+// ))]
+// pub mod _client;
+// #[cfg(any(
+//   not(feature = "net"),
+//   all(target_os = "macos", target_arch = "aarch64")
+// ))]
+// pub mod _server;
+// #[cfg(all(
+//   feature = "net",
+//   not(all(target_os = "macos", target_arch = "aarch64"))
+// ))]
 pub mod client;
-#[cfg(all(
-  feature = "net",
-  not(all(target_os = "macos", target_arch = "aarch64"))
-))]
+// #[cfg(all(
+//   feature = "net",
+//   not(all(target_os = "macos", target_arch = "aarch64"))
+// ))]
 pub mod server;
-#[cfg(all(
-  feature = "net",
-  not(all(target_os = "macos", target_arch = "aarch64"))
-))]
+// #[cfg(all(
+//   feature = "net",
+//   not(all(target_os = "macos", target_arch = "aarch64"))
+// ))]
 pub mod common {
   use bincode::{Decode, Encode};
   use serde::{Deserialize, Serialize};

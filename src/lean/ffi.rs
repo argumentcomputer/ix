@@ -12,19 +12,17 @@ pub mod ix; // Ix types: Name, Level, Expr, ConstantInfo, Environment
 pub mod ixon; // Ixon types: Univ, Expr, Constant, metadata
 pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
 
-use std::ffi::{CString, c_void};
-
-use crate::lean::{
-  lean::{lean_io_result_mk_error, lean_mk_io_user_error, lean_mk_string},
-  lean_array_to_vec, lean_sarray_data, lean_unbox_u32,
+use crate::lean::lean::{
+  lean_io_result_mk_error, lean_io_result_mk_ok, lean_mk_io_user_error,
 };
+use crate::lean::obj::{LeanArray, LeanByteArray, LeanObj, LeanString};
 
 /// Guard an FFI function that returns a Lean IO result against panics.
 /// On panic, returns a Lean IO error with the panic message instead of
 /// unwinding across the `extern "C"` boundary (which is undefined behavior).
-pub(crate) fn ffi_io_guard<F>(f: F) -> *mut c_void
+pub(crate) fn ffi_io_guard<F>(f: F) -> LeanObj
 where
-  F: FnOnce() -> *mut c_void + std::panic::UnwindSafe,
+  F: FnOnce() -> LeanObj + std::panic::UnwindSafe,
 {
   match std::panic::catch_unwind(f) {
     Ok(result) => result,
@@ -36,26 +34,39 @@ where
       } else {
         "FFI panic: unknown".to_string()
       };
-      let c_msg = CString::new(msg).unwrap_or_else(|_| {
-        CString::new("FFI panic: (invalid message)").unwrap()
-      });
-      unsafe {
-        let lean_msg = lean_mk_string(c_msg.as_ptr());
-        let lean_err = lean_mk_io_user_error(lean_msg);
-        lean_io_result_mk_error(lean_err).cast()
-      }
+      io_error(&msg)
     },
+  }
+}
+
+/// Wrap a Lean value in an IO success result.
+pub(crate) fn io_ok(val: impl Into<LeanObj>) -> LeanObj {
+  let val: LeanObj = val.into();
+  unsafe {
+    LeanObj::from_raw(lean_io_result_mk_ok(val.as_mut_ptr().cast()).cast())
+  }
+}
+
+/// Create a Lean IO error result from a Rust error message.
+pub(crate) fn io_error(msg: &str) -> LeanObj {
+  let lean_msg = LeanString::from_str(msg);
+  unsafe {
+    let lean_err = lean_mk_io_user_error(lean_msg.as_mut_ptr().cast());
+    LeanObj::from_raw(lean_io_result_mk_error(lean_err).cast())
   }
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_boxed_u32s_are_equivalent_to_bytes(
-  u32s: *const c_void,
-  bytes: *const c_void,
+  u32s: LeanObj,
+  bytes: LeanObj,
 ) -> bool {
-  let u32s = lean_array_to_vec(u32s, lean_unbox_u32)
+  let arr = unsafe { LeanArray::from_raw(u32s.as_ptr()) };
+  let u32s_flat: Vec<u8> = arr
+    .map(|elem| elem.unbox_u32())
     .into_iter()
     .flat_map(u32::to_le_bytes)
-    .collect::<Vec<_>>();
-  u32s == lean_sarray_data(bytes)
+    .collect();
+  let ba = unsafe { LeanByteArray::from_raw(bytes.as_ptr()) };
+  u32s_flat == ba.as_bytes()
 }

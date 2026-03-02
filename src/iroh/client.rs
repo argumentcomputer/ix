@@ -1,7 +1,7 @@
 use iroh::{Endpoint, NodeAddr, NodeId, RelayMode, RelayUrl, SecretKey};
 use n0_snafu::{Result, ResultExt};
 use n0_watcher::Watcher as _;
-use std::ffi::c_void;
+use std::ffi::{CString, c_void};
 use std::net::SocketAddr;
 use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
@@ -12,7 +12,7 @@ use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
 use crate::lean::{
   lean::{lean_alloc_ctor, lean_alloc_sarray, lean_ctor_set, lean_mk_string},
   lean_array_to_vec, lean_except_error_string, lean_except_ok,
-  lean_obj_to_string, lean_sarray_set_data, safe_cstring,
+  lean_obj_to_string, lean_sarray_set_data,
 };
 
 // An example ALPN that we are using to communicate over the `Endpoint`
@@ -27,8 +27,8 @@ const READ_SIZE_LIMIT: usize = 100_000_000;
 ///   hash: String
 /// ```
 fn mk_put_response(message: &str, hash: &str) -> *mut c_void {
-  let c_message = safe_cstring(message);
-  let c_hash = safe_cstring(hash);
+  let c_message = CString::new(message).unwrap();
+  let c_hash = CString::new(hash).unwrap();
   unsafe {
     let ctor = lean_alloc_ctor(0, 2, 0);
     lean_ctor_set(ctor, 0, lean_mk_string(c_message.as_ptr()));
@@ -36,6 +36,9 @@ fn mk_put_response(message: &str, hash: &str) -> *mut c_void {
     ctor.cast()
   }
 }
+
+#[repr(transparent)]
+struct LeanPutResponse {}
 
 /// Build a Lean `GetResponse` structure:
 /// ```

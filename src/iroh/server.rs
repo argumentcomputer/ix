@@ -12,7 +12,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetResponse, PutResponse, Request, Response};
-use crate::lean::{lean_box_fn, lean_except_error_string, lean_except_ok};
+use crate::lean::obj::LeanExcept;
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
@@ -21,15 +21,15 @@ const READ_SIZE_LIMIT: usize = 100_000_000;
 
 /// `Iroh.Serve.serve' : Unit → Except String Unit`
 #[unsafe(no_mangle)]
-extern "C" fn rs_iroh_serve() -> *mut c_void {
+extern "C" fn rs_iroh_serve() -> LeanExcept {
   // Create a Tokio runtime to block on the async function
   let rt =
     tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
   // Run the async function and block until we get the result
   match rt.block_on(serve()) {
-    Ok(()) => lean_except_ok(lean_box_fn(0)),
-    Err(err) => lean_except_error_string(&err.to_string()),
+    Ok(()) => LeanExcept::ok(0),
+    Err(err) => LeanExcept::error_string(&err.to_string()),
   }
 }
 

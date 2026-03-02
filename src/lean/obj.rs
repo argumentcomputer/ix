@@ -146,13 +146,19 @@ impl LeanArray {
   }
 
   pub fn get(&self, i: usize) -> LeanObj {
-    LeanObj(unsafe { lean::lean_array_get_core(self.0.as_ptr() as *mut _, i) }.cast())
+    LeanObj(
+      unsafe { lean::lean_array_get_core(self.0.as_ptr() as *mut _, i) }.cast(),
+    )
   }
 
   pub fn set(&self, i: usize, val: impl Into<LeanObj>) {
     let val: LeanObj = val.into();
     unsafe {
-      lean::lean_array_set_core(self.0.as_ptr() as *mut _, i, val.as_ptr() as *mut _);
+      lean::lean_array_set_core(
+        self.0.as_ptr() as *mut _,
+        i,
+        val.as_ptr() as *mut _,
+      );
     }
   }
 
@@ -334,11 +340,7 @@ impl LeanCtor {
   pub fn alloc(tag: u8, num_objs: usize, scalar_size: usize) -> Self {
     #[allow(clippy::cast_possible_truncation)]
     let obj = unsafe {
-      lean::lean_alloc_ctor(
-        tag as u32,
-        num_objs as u32,
-        scalar_size as u32,
-      )
+      lean::lean_alloc_ctor(tag as u32, num_objs as u32, scalar_size as u32)
     };
     Self(LeanObj(obj.cast()))
   }
@@ -351,7 +353,8 @@ impl LeanCtor {
   pub fn get(&self, i: usize) -> LeanObj {
     #[allow(clippy::cast_possible_truncation)]
     LeanObj(
-      unsafe { lean::lean_ctor_get(self.0.as_ptr() as *mut _, i as u32) }.cast(),
+      unsafe { lean::lean_ctor_get(self.0.as_ptr() as *mut _, i as u32) }
+        .cast(),
     )
   }
 
@@ -376,6 +379,14 @@ impl LeanCtor {
     }
   }
 
+  /// Set a `u64` scalar field at the given byte offset (past all object fields).
+  pub fn set_u64(&self, offset: usize, val: u64) {
+    #[allow(clippy::cast_possible_truncation)]
+    unsafe {
+      lean::lean_ctor_set_uint64(self.0.as_ptr() as *mut _, offset as u32, val);
+    }
+  }
+
   /// Read `N` object-field pointers using raw pointer math.
   ///
   /// This bypasses `lean_ctor_get`'s bounds check, which is necessary when
@@ -390,11 +401,7 @@ impl LeanCtor {
   pub fn scalar_u64(&self, num_objs: usize, offset: usize) -> u64 {
     unsafe {
       std::ptr::read_unaligned(
-        self.0
-          .as_ptr()
-          .cast::<u8>()
-          .add(8 + num_objs * 8 + offset)
-          .cast(),
+        self.0.as_ptr().cast::<u8>().add(8 + num_objs * 8 + offset).cast(),
       )
     }
   }
@@ -442,13 +449,16 @@ impl<T> LeanExternal<T> {
   /// Allocate a new external object holding `data`.
   pub fn alloc(class: &ExternalClass, data: T) -> Self {
     let data_ptr = Box::into_raw(Box::new(data));
-    let obj = unsafe { lean::lean_alloc_external(class.0 as *mut _, data_ptr.cast()) };
+    let obj =
+      unsafe { lean::lean_alloc_external(class.0 as *mut _, data_ptr.cast()) };
     Self(LeanObj(obj.cast()), PhantomData)
   }
 
   /// Get a reference to the wrapped data.
   pub fn get(&self) -> &T {
-    unsafe { &*lean::lean_get_external_data(self.0.as_ptr() as *mut _).cast::<T>() }
+    unsafe {
+      &*lean::lean_get_external_data(self.0.as_ptr() as *mut _).cast::<T>()
+    }
   }
 }
 
@@ -473,7 +483,9 @@ impl ExternalClass {
     finalizer: lean::lean_external_finalize_proc,
     foreach: lean::lean_external_foreach_proc,
   ) -> Self {
-    Self(unsafe { lean::lean_register_external_class(finalizer, foreach) }.cast())
+    Self(
+      unsafe { lean::lean_register_external_class(finalizer, foreach) }.cast(),
+    )
   }
 
   /// Register a new external class that uses `Drop` to finalize `T`
@@ -485,10 +497,7 @@ impl ExternalClass {
       }
     }
     unsafe {
-      Self::register(
-        Some(drop_finalizer::<T>),
-        Some(super::noop_foreach),
-      )
+      Self::register(Some(drop_finalizer::<T>), Some(super::noop_foreach))
     }
   }
 }
@@ -547,7 +556,9 @@ impl LeanList {
   }
 
   /// Build a list from an iterator of values convertible to `LeanObj`.
-  pub fn from_iter(items: impl IntoIterator<Item = impl Into<LeanObj>>) -> Self {
+  pub fn from_iter(
+    items: impl IntoIterator<Item = impl Into<LeanObj>>,
+  ) -> Self {
     let items: Vec<LeanObj> = items.into_iter().map(Into::into).collect();
     let mut list = Self::nil();
     for item in items.into_iter().rev() {
@@ -686,11 +697,7 @@ impl LeanExcept {
 
   pub fn into_result(self) -> Result<LeanObj, LeanObj> {
     let ctor = unsafe { LeanCtor::from_raw(self.0.as_ptr()) };
-    if self.is_ok() {
-      Ok(ctor.get(0))
-    } else {
-      Err(ctor.get(0))
-    }
+    if self.is_ok() { Ok(ctor.get(0)) } else { Err(ctor.get(0)) }
   }
 }
 
@@ -700,42 +707,58 @@ impl LeanExcept {
 
 impl From<LeanArray> for LeanObj {
   #[inline]
-  fn from(x: LeanArray) -> Self { x.0 }
+  fn from(x: LeanArray) -> Self {
+    x.0
+  }
 }
 
 impl From<LeanByteArray> for LeanObj {
   #[inline]
-  fn from(x: LeanByteArray) -> Self { x.0 }
+  fn from(x: LeanByteArray) -> Self {
+    x.0
+  }
 }
 
 impl From<LeanString> for LeanObj {
   #[inline]
-  fn from(x: LeanString) -> Self { x.0 }
+  fn from(x: LeanString) -> Self {
+    x.0
+  }
 }
 
 impl From<LeanCtor> for LeanObj {
   #[inline]
-  fn from(x: LeanCtor) -> Self { x.0 }
+  fn from(x: LeanCtor) -> Self {
+    x.0
+  }
 }
 
 impl<T> From<LeanExternal<T>> for LeanObj {
   #[inline]
-  fn from(x: LeanExternal<T>) -> Self { x.0 }
+  fn from(x: LeanExternal<T>) -> Self {
+    x.0
+  }
 }
 
 impl From<LeanList> for LeanObj {
   #[inline]
-  fn from(x: LeanList) -> Self { x.0 }
+  fn from(x: LeanList) -> Self {
+    x.0
+  }
 }
 
 impl From<LeanOption> for LeanObj {
   #[inline]
-  fn from(x: LeanOption) -> Self { x.0 }
+  fn from(x: LeanOption) -> Self {
+    x.0
+  }
 }
 
 impl From<LeanExcept> for LeanObj {
   #[inline]
-  fn from(x: LeanExcept) -> Self { x.0 }
+  fn from(x: LeanExcept) -> Self {
+    x.0
+  }
 }
 
 // =============================================================================
@@ -869,5 +892,58 @@ lean_domain_type! {
   IxBlockCompareDetail;
 }
 
+// =============================================================================
+// LeanProd — Prod α β (pair)
+// =============================================================================
+
+/// Typed wrapper for a Lean `Prod α β` (ctor tag 0, 2 object fields).
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct LeanProd(LeanObj);
+
+impl Deref for LeanProd {
+  type Target = LeanObj;
+  #[inline]
+  fn deref(&self) -> &LeanObj {
+    &self.0
+  }
+}
+
+impl From<LeanProd> for LeanObj {
+  #[inline]
+  fn from(x: LeanProd) -> Self {
+    x.0
+  }
+}
+
+impl LeanProd {
+  /// Build a pair `(fst, snd)`.
+  pub fn new(fst: impl Into<LeanObj>, snd: impl Into<LeanObj>) -> Self {
+    let ctor = LeanCtor::alloc(0, 2, 0);
+    ctor.set(0, fst);
+    ctor.set(1, snd);
+    Self(*ctor)
+  }
+
+  /// Get the first element.
+  pub fn fst(&self) -> LeanObj {
+    let ctor = unsafe { LeanCtor::from_raw(self.0.as_ptr()) };
+    ctor.get(0)
+  }
+
+  /// Get the second element.
+  pub fn snd(&self) -> LeanObj {
+    let ctor = unsafe { LeanCtor::from_raw(self.0.as_ptr()) };
+    ctor.get(1)
+  }
+}
+
 /// `Ix.Address = { hash : ByteArray }` — single-field struct, unboxed to `ByteArray`.
 pub type IxAddress = LeanByteArray;
+
+impl From<u32> for LeanObj {
+  #[inline]
+  fn from(x: u32) -> Self {
+    Self::box_u32(x)
+  }
+}

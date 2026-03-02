@@ -1,6 +1,5 @@
 //! Ixon sharing analysis FFI.
 
-use std::ffi::c_void;
 use std::sync::Arc;
 
 use crate::ix::ixon::expr::Expr as IxonExpr;
@@ -8,7 +7,7 @@ use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::sharing::{
   analyze_block, build_sharing_vec, decide_sharing,
 };
-use crate::lean::{lean_array_to_vec, lean_sarray_set_data};
+use crate::lean::obj::{LeanArray, LeanByteArray, LeanObj};
 
 use super::expr::decode_ixon_expr_array;
 use super::serialize::lean_ptr_to_ixon_expr;
@@ -16,9 +15,10 @@ use super::serialize::lean_ptr_to_ixon_expr;
 /// FFI: Debug sharing analysis - print usage counts for subterms with usage >= 2.
 /// This helps diagnose why Lean and Rust make different sharing decisions.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_debug_sharing_analysis(exprs_ptr: *const c_void) {
+pub extern "C" fn rs_debug_sharing_analysis(exprs_obj: LeanObj) {
+  let arr = unsafe { LeanArray::from_raw(exprs_obj.as_ptr()) };
   let exprs: Vec<Arc<IxonExpr>> =
-    lean_array_to_vec(exprs_ptr, lean_ptr_to_ixon_expr);
+    arr.map(|elem| lean_ptr_to_ixon_expr(elem));
 
   println!("[Rust] Analyzing {} input expressions", exprs.len());
 
@@ -58,8 +58,8 @@ pub extern "C" fn rs_debug_sharing_analysis(exprs_ptr: *const c_void) {
 /// FFI: Run Rust's sharing analysis on Lean-provided Ixon.Expr array.
 /// Returns the number of shared items Rust would produce.
 #[unsafe(no_mangle)]
-extern "C" fn rs_analyze_sharing_count(exprs_ptr: *const c_void) -> u64 {
-  let exprs = decode_ixon_expr_array(exprs_ptr);
+extern "C" fn rs_analyze_sharing_count(exprs_obj: LeanObj) -> u64 {
+  let exprs = decode_ixon_expr_array(exprs_obj);
 
   let (info_map, _ptr_to_hash) = analyze_block(&exprs, false);
   let shared_hashes = decide_sharing(&info_map);
@@ -72,11 +72,11 @@ extern "C" fn rs_analyze_sharing_count(exprs_ptr: *const c_void) -> u64 {
 /// Returns number of shared items.
 #[unsafe(no_mangle)]
 extern "C" fn rs_run_sharing_analysis(
-  exprs_ptr: *const c_void,
-  out_sharing_vec: *mut c_void,
-  out_rewritten: *mut c_void,
+  exprs_obj: LeanObj,
+  out_sharing_vec: LeanObj,
+  out_rewritten: LeanObj,
 ) -> u64 {
-  let exprs = decode_ixon_expr_array(exprs_ptr);
+  let exprs = decode_ixon_expr_array(exprs_obj);
 
   let (info_map, ptr_to_hash) = analyze_block(&exprs, false);
   let shared_hashes = decide_sharing(&info_map);
@@ -96,8 +96,12 @@ extern "C" fn rs_run_sharing_analysis(
   }
 
   // Write to output arrays
-  unsafe { lean_sarray_set_data(out_sharing_vec, &sharing_bytes) };
-  unsafe { lean_sarray_set_data(out_rewritten, &rewritten_bytes) };
+  let sharing_ba =
+    unsafe { LeanByteArray::from_raw(out_sharing_vec.as_ptr()) };
+  unsafe { sharing_ba.set_data(&sharing_bytes) };
+  let rewritten_ba =
+    unsafe { LeanByteArray::from_raw(out_rewritten.as_ptr()) };
+  unsafe { rewritten_ba.set_data(&rewritten_bytes) };
 
   shared_hashes.len() as u64
 }
@@ -110,15 +114,15 @@ extern "C" fn rs_run_sharing_analysis(
 ///   - bits 48-63: Rust sharing count
 #[unsafe(no_mangle)]
 extern "C" fn rs_compare_sharing_analysis(
-  exprs_ptr: *const c_void,
-  lean_sharing_ptr: *const c_void,
-  _lean_rewritten_ptr: *const c_void,
+  exprs_obj: LeanObj,
+  lean_sharing_obj: LeanObj,
+  _lean_rewritten_obj: LeanObj,
 ) -> u64 {
   // Decode input expressions
-  let exprs = decode_ixon_expr_array(exprs_ptr);
+  let exprs = decode_ixon_expr_array(exprs_obj);
 
   // Decode Lean's sharing vector
-  let lean_sharing = decode_ixon_expr_array(lean_sharing_ptr);
+  let lean_sharing = decode_ixon_expr_array(lean_sharing_obj);
 
   // Run Rust's sharing analysis
   let (info_map, ptr_to_hash) = analyze_block(&exprs, false);
