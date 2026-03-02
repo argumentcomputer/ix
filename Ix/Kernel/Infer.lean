@@ -20,36 +20,8 @@ partial def exprMentionsConst (e : Expr m) (addr : Address) : Bool :=
   | .proj _ _ s _ => exprMentionsConst s addr
   | _ => false
 
-/-- Check strict positivity of a field type w.r.t. a set of inductive addresses. -/
-partial def checkStrictPositivity (ty : Expr m) (indAddrs : Array Address) : Bool :=
-  if !indAddrs.any (exprMentionsConst ty ·) then true
-  else match ty with
-  | .forallE domain body _ _ =>
-    if indAddrs.any (exprMentionsConst domain ·) then false
-    else checkStrictPositivity body indAddrs
-  | e =>
-    let fn := e.getAppFn
-    match fn with
-    | .const addr _ _ => indAddrs.any (· == addr)
-    | _ => false
-
-/-- Walk a Pi chain, skip numParams binders, then check positivity of each field. -/
-partial def checkCtorPositivity (ctorType : Expr m) (numParams : Nat) (indAddrs : Array Address)
-    : Option String :=
-  go ctorType numParams
-where
-  go (ty : Expr m) (remainingParams : Nat) : Option String :=
-    match ty with
-    | .forallE _domain body _name _bi =>
-      if remainingParams > 0 then
-        go body (remainingParams - 1)
-      else
-        let domain := ty.bindingDomain!
-        if !checkStrictPositivity domain indAddrs then
-          some "inductive occurs in negative position (strict positivity violation)"
-        else
-          go body 0
-    | _ => none
+-- checkStrictPositivity and checkCtorPositivity are now monadic (inside the mutual block)
+-- to allow calling whnf, matching lean4lean's checkPositivity.
 
 /-- Walk a Pi chain past numParams + numFields binders to get the return type. -/
 def getCtorReturnType (ctorType : Expr m) (numParams numFields : Nat) : Expr m :=
@@ -389,6 +361,89 @@ mutual
       withExtendedCtx dom (getReturnSort body n)
     | _, _ => throw "inductive type has fewer binders than expected"
 
+  /-- Check that the fields of a nested inductive's constructor use the current
+      inductives only in positive positions. Walks past numParams binders of the
+      outer ctor type, substituting actual param args, then checks each field. -/
+  partial def checkNestedCtorFields (ctorType : Expr m) (numParams : Nat)
+      (paramArgs : Array (Expr m)) (indAddrs : Array Address) : TypecheckM m Bool := do
+    -- Walk past param binders to get the field portion of the ctor type
+    let mut ty := ctorType
+    for _ in [:numParams] do
+      match ty with
+      | .forallE _ body _ _ => ty := body
+      | _ => return true
+    -- Substitute all param bvars: bvar 0 = last param, bvar (n-1) = first param
+    ty := ty.instantiate paramArgs.reverse
+    -- Check each field for positivity
+    loop ty
+  where
+    loop (ty : Expr m) : TypecheckM m Bool := do
+      let ty ← whnf ty
+      match ty with
+      | .forallE dom body _ _ =>
+        if !(← checkPositivity dom indAddrs) then return false
+        loop body
+      | _ => return true
+
+  /-- Check strict positivity of a field type w.r.t. a set of inductive addresses.
+      Handles direct recursion, negative-position rejection, and nested inductives
+      (where the inductive appears as a param of a previously-defined inductive). -/
+  partial def checkPositivity (ty : Expr m) (indAddrs : Array Address) : TypecheckM m Bool := do
+    let ty ← whnf ty
+    if !indAddrs.any (exprMentionsConst ty ·) then return true
+    match ty with
+    | .forallE dom body _ _ =>
+      if indAddrs.any (exprMentionsConst dom ·) then
+        return false
+      checkPositivity body indAddrs
+    | e =>
+      let fn := e.getAppFn
+      match fn with
+      | .const addr _ _ =>
+        if indAddrs.any (· == addr) then return true
+        -- Nested inductive: head is a previously-defined inductive
+        match (← read).kenv.find? addr with
+        | some (.inductInfo fv) =>
+          if fv.isUnsafe then return false
+          let args := e.getAppArgs
+          -- Index args must not mention current inductives
+          for i in [fv.numParams:args.size] do
+            if indAddrs.any (exprMentionsConst args[i]! ·) then return false
+          -- Check all constructors of the outer inductive use params positively.
+          -- Augment indAddrs with the outer inductive's own addresses so that
+          -- its self-recursive fields (e.g., List α in List.cons) are accepted
+          -- immediately rather than causing infinite recursion.
+          let paramArgs := args[:fv.numParams].toArray
+          let augmented := indAddrs ++ fv.all
+          for ctorAddr in fv.ctors do
+            match (← read).kenv.find? ctorAddr with
+            | some (.ctorInfo cv) =>
+              if !(← checkNestedCtorFields cv.type fv.numParams paramArgs augmented) then
+                return false
+            | _ => return false
+          return true
+        | _ => return false
+      | _ => return false
+
+  /-- Walk a Pi chain, skip numParams binders, then check positivity of each field.
+      Monadic to call whnf, matching lean4lean. -/
+  partial def checkCtorFields (ctorType : Expr m) (numParams : Nat) (indAddrs : Array Address)
+      : TypecheckM m (Option String) :=
+    go ctorType numParams
+  where
+    go (ty : Expr m) (remainingParams : Nat) : TypecheckM m (Option String) := do
+      let ty ← whnf ty
+      match ty with
+      | .forallE _dom body _name _bi =>
+        if remainingParams > 0 then
+          go body (remainingParams - 1)
+        else
+          let domain := ty.bindingDomain!
+          if !(← checkPositivity domain indAddrs) then
+            return some "inductive occurs in negative position (strict positivity violation)"
+          go body 0
+      | _ => return none
+
   /-- Typecheck a mutual inductive block. -/
   partial def checkIndBlock (addr : Address) : TypecheckM m Unit := do
     let ci ← derefConst addr
@@ -417,7 +472,7 @@ mutual
         if cv.numParams != iv.numParams then
           throw s!"Constructor {ctorAddr} has {cv.numParams} params but inductive has {iv.numParams}"
         if !iv.isUnsafe then
-          match checkCtorPositivity cv.type cv.numParams indAddrs with
+          match ← checkCtorFields cv.type cv.numParams indAddrs with
           | some msg => throw s!"Constructor {ctorAddr}: {msg}"
           | none => pure ()
         if !iv.isUnsafe then
