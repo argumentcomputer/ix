@@ -170,20 +170,27 @@ mutual
         let (fnTe, fncType) ← infer fn
         let mut currentType := fncType
         let mut resultBody := fnTe.body
+        let inferOnly := (← read).inferOnly
         for h : i in [:args.size] do
           let arg := args[i]
           let currentType' ← whnf currentType
           match currentType' with
           | .forallE dom body _ _ => do
-            let argTe ← check arg dom
-            resultBody := Expr.mkApp resultBody argTe.body
+            if inferOnly then
+              resultBody := Expr.mkApp resultBody arg
+            else
+              let argTe ← check arg dom
+              resultBody := Expr.mkApp resultBody argTe.body
             currentType := body.instantiate1 arg
           | _ =>
             throw s!"Expected a pi type, got {currentType'.pp}\n  function: {fn.pp}\n  arg #{i}: {arg.pp}"
         let te : TypedExpr m := ⟨← infoFromType currentType, resultBody⟩
         pure (te, currentType)
       | .lam ty body lamName lamBi => do
-        let (domTe, _) ← isSort ty
+        let domTe ← if (← read).inferOnly then
+          pure ⟨.none, ty⟩
+        else
+          let (te, _) ← isSort ty; pure te
         let (bodTe, imgType) ← withExtendedCtx ty (infer body)
         let piType := Expr.forallE ty imgType lamName default
         let te : TypedExpr m := ⟨lamInfo bodTe.info, .lam domTe.body bodTe.body lamName lamBi⟩
@@ -196,12 +203,18 @@ mutual
         let te : TypedExpr m := ⟨← infoFromType typ, .forallE domTe.body imgTe.body piName default⟩
         pure (te, typ)
       | .letE ty val body letName => do
-        let (tyTe, _) ← isSort ty
-        let valTe ← check val ty
-        let (bodTe, bodType) ← withExtendedCtx ty (infer body)
-        let resultType := bodType.instantiate1 val
-        let te : TypedExpr m := ⟨bodTe.info, .letE tyTe.body valTe.body bodTe.body letName⟩
-        pure (te, resultType)
+        if (← read).inferOnly then
+          let (bodTe, bodType) ← withExtendedCtx ty (infer body)
+          let resultType := bodType.instantiate1 val
+          let te : TypedExpr m := ⟨bodTe.info, .letE ty val bodTe.body letName⟩
+          pure (te, resultType)
+        else
+          let (tyTe, _) ← isSort ty
+          let valTe ← check val ty
+          let (bodTe, bodType) ← withExtendedCtx ty (infer body)
+          let resultType := bodType.instantiate1 val
+          let te : TypedExpr m := ⟨bodTe.info, .letE tyTe.body valTe.body bodTe.body letName⟩
+          pure (te, resultType)
       | .lit (.natVal _) => do
         let prims := (← read).prims
         let typ := Expr.mkConst prims.nat #[]
@@ -300,7 +313,7 @@ mutual
       whnfCache := {},
       whnfCoreCache := {},
       inferCache := {},
-      eqvCache := {},
+      eqvManager := {},
       failureCache := {},
       fuel := defaultFuel
     }
@@ -319,10 +332,13 @@ mutual
         let value ← withRecAddr addr (check ci.value?.get! type.body)
         pure (TypedConst.opaque type value)
       | .thmInfo _ =>
-        let (type, lvl) ← isSort ci.type
+        let (type, lvl) ← withInferOnly (isSort ci.type)
         if !Level.isZero lvl then
           throw s!"theorem type must be a proposition (Sort 0)"
-        let value ← withRecAddr addr (check ci.value?.get! type.body)
+        let (_, valType) ← withRecAddr addr (withInferOnly (infer ci.value?.get!))
+        if !(← withInferOnly (isDefEq valType type.body)) then
+          throw s!"theorem value type doesn't match declared type"
+        let value : TypedExpr m := ⟨.proof, ci.value?.get!⟩
         pure (TypedConst.theorem type value)
       | .defnInfo v =>
         let (type, _) ← isSort ci.type
@@ -488,13 +504,19 @@ mutual
       - some false: definitely not equal
       - none: unknown, need deeper checks -/
   partial def quickIsDefEq (t s : Expr m) (useHash : Bool := true) : TypecheckM m (Option Bool) := do
-    if t == s then return some true
+    -- Run EquivManager structural walk with union-find
+    let stt ← get
+    let (result, mgr') := EquivManager.isEquiv useHash t s |>.run stt.eqvManager
+    modify fun stt => { stt with eqvManager := mgr' }
+    if result then return some true
+    -- Failure cache (EquivManager only tracks successes)
     let key := eqCacheKey t s
-    if let some r := (← get).eqvCache.get? key then return some r
     if (← get).failureCache.contains key then return some false
+    -- Shape-specific checks with richer equality (Level.equalLevel, etc.)
     match t, s with
     | .sort u, .sort u' => pure (some (Level.equalLevel u u'))
-    | .const a us _, .const b us' _ => pure (some (a == b && equalUnivArrays us us'))
+    | .const a us _, .const b us' _ =>
+      if a == b && equalUnivArrays us us' then pure (some true) else pure none
     | .lit l, .lit l' => pure (some (l == l'))
     | .bvar i _, .bvar j _ => pure (some (i == j))
     | .lam ty body _ _, .lam ty' body' _ _ =>
@@ -520,12 +542,12 @@ mutual
     | some result => return result
     | none => pure ()
 
-    -- 1. Stage 1: structural reduction
-    let tn ← whnfCore t
-    let sn ← whnfCore s
+    -- 1. Stage 1: structural reduction (cheapProj=true: defer full projection resolution)
+    let tn ← whnfCore t (cheapProj := true)
+    let sn ← whnfCore s (cheapProj := true)
 
-    -- 2. Quick check after whnfCore
-    match ← quickIsDefEq tn sn with
+    -- 2. Quick check after whnfCore (useHash=false for thorough union-find walking)
+    match ← quickIsDefEq tn sn (useHash := false) with
     | some true => cacheResult t s true; return true
     | some false => pure ()  -- don't cache — deeper checks may still succeed
     | none => pure ()
@@ -543,12 +565,25 @@ mutual
       cacheResult t s true
       return true
 
-    -- 5. Stage 2: full whnf (resolves projections + remaining delta)
-    let tnn ← whnf tn'
-    let snn ← whnf sn'
-    if tnn == snn then
-      cacheResult t s true
-      return true
+    -- 4b. Cheap structural checks after lazy delta (before full whnfCore)
+    match tn', sn' with
+    | .const a us _, .const b us' _ =>
+      if a == b && equalUnivArrays us us' then
+        cacheResult t s true; return true
+    | .proj _ ti te _, .proj _ si se _ =>
+      if ti == si then
+        if ← isDefEq te se then
+          cacheResult t s true; return true
+    | _, _ => pure ()
+
+    -- 5. Stage 2: full structural reduction (no cheapProj — resolve all projections)
+    let tnn ← whnfCore tn'
+    let snn ← whnfCore sn'
+    -- Only recurse into isDefEqCore if something actually changed
+    if !(tnn == tn' && snn == sn') then
+      let result ← isDefEqCore tnn snn
+      cacheResult t s result
+      return result
 
     -- 6. Structural comparison on fully-reduced terms
     let result ← isDefEqCore tnn snn
@@ -668,7 +703,50 @@ mutual
     | _, .app _ _ => tryEtaStruct t s
     | .app _ _, _ => tryEtaStruct s t
 
-    | _, _ => pure false
+    -- Unit-like fallback: non-recursive, single ctor with 0 fields, 0 indices
+    | _, _ => isDefEqUnitLike t s
+
+  /-- For unit-like types (non-recursive, single ctor with 0 fields, 0 indices),
+      two terms are defeq if their types are defeq. -/
+  partial def isDefEqUnitLike (t s : Expr m) : TypecheckM m Bool := do
+    let kenv := (← read).kenv
+    let (_, tType) ← infer t
+    let tType' ← whnf tType
+    let fn := tType'.getAppFn
+    match fn with
+    | .const addr _ _ =>
+      match kenv.find? addr with
+      | some (.inductInfo v) =>
+        if v.isRec || v.numIndices != 0 || v.ctors.size != 1 then return false
+        match kenv.find? v.ctors[0]! with
+        | some (.ctorInfo cv) =>
+          if cv.numFields != 0 then return false
+          let (_, sType) ← infer s
+          isDefEq tType sType
+        | _ => return false
+      | _ => return false
+    | _ => return false
+
+  /-- If e is an application whose head is a projection, try whnfCore to reduce it. -/
+  partial def tryUnfoldProjApp (e : Expr m) : TypecheckM m (Option (Expr m)) := do
+    match e.getAppFn with
+    | .proj .. =>
+      let e' ← whnfCore e
+      if e' == e then return none else return some e'
+    | _ => return none
+
+  /-- Check if two Nat.succ chains or zero values match structurally. -/
+  partial def isDefEqOffset (t s : Expr m) : TypecheckM m (Option Bool) := do
+    let prims := (← read).prims
+    let isZero (e : Expr m) := e.isConstOf prims.natZero || match e with | .lit (.natVal 0) => true | _ => false
+    let succOf? (e : Expr m) : Option (Expr m) := match e with
+      | .lit (.natVal (n+1)) => some (.lit (.natVal n))
+      | .app fn arg => if fn.isConstOf prims.natSucc then some arg else none
+      | _ => none
+    if isZero t && isZero s then return some true
+    match succOf? t, succOf? s with
+    | some t', some s' => some <$> isDefEq t' s'
+    | _, _ => return none
 
   /-- Lazy delta reduction loop. Unfolds definitions one step at a time,
       guided by ReducibilityHints, until a conclusive comparison or both
@@ -686,11 +764,22 @@ mutual
       -- Syntactic check
       if tn == sn then return (tn, sn, some true)
 
+      -- Quick structural check (EquivManager + lambda/forall matching)
+      -- Only trust "definitely equal"; delta reduction may still make unequal terms equal
+      match ← quickIsDefEq tn sn (useHash := false) with
+      | some true => return (tn, sn, some true)
+      | _ => pure ()
+
+      -- isDefEqOffset: short-circuit Nat.succ chain comparison
+      match ← isDefEqOffset tn sn with
+      | some result => return (tn, sn, some result)
+      | none => pure ()
+
       -- Try nat reduction
       if let some r := ← tryReduceNat tn then
-        tn ← whnfCore r; continue
+        tn ← whnfCore r (cheapProj := true); continue
       if let some r := ← tryReduceNat sn then
-        sn ← whnfCore r; continue
+        sn ← whnfCore r (cheapProj := true); continue
 
       -- Lazy delta step
       let tDelta := isDelta tn kenv
@@ -698,32 +787,42 @@ mutual
       match tDelta, sDelta with
       | none, none => return (tn, sn, none)  -- both stuck
       | some dt, none =>
+        -- Try reducing projection-headed app on the stuck side first
+        if let some sn' ← tryUnfoldProjApp sn then
+          sn := sn'; continue
         match unfoldDelta dt tn with
-        | some r => tn ← whnfCore r; continue
+        | some r => tn ← whnfCore r (cheapProj := true); continue
         | none => return (tn, sn, none)
       | none, some ds =>
+        -- Try reducing projection-headed app on the stuck side first
+        if let some tn' ← tryUnfoldProjApp tn then
+          tn := tn'; continue
         match unfoldDelta ds sn with
-        | some r => sn ← whnfCore r; continue
+        | some r => sn ← whnfCore r (cheapProj := true); continue
         | none => return (tn, sn, none)
       | some dt, some ds =>
         let ht := dt.hints
         let hs := ds.hints
-        -- Same head optimization: try comparing args first
-        if sameHeadConst tn sn && ht.isRegular && hs.isRegular then
-          if ← isDefEqApp tn sn then return (tn, sn, some true)
+        -- Same head optimization: try comparing args first (with failure cache)
+        if tn.isApp && sn.isApp && sameHeadConst tn sn && ht.isRegular then
+          let key := eqCacheKey tn sn
+          if !(← get).failureCache.contains key then
+            if equalUnivArrays tn.getAppFn.constLevels! sn.getAppFn.constLevels! then
+              if ← isDefEqApp tn sn then return (tn, sn, some true)
+            modify fun stt => { stt with failureCache := stt.failureCache.insert key }
         if ht.lt' hs then
           match unfoldDelta ds sn with
-          | some r => sn ← whnfCore r; continue
+          | some r => sn ← whnfCore r (cheapProj := true); continue
           | none =>
             match unfoldDelta dt tn with
-            | some r => tn ← whnfCore r; continue
+            | some r => tn ← whnfCore r (cheapProj := true); continue
             | none => return (tn, sn, none)
         else if hs.lt' ht then
           match unfoldDelta dt tn with
-          | some r => tn ← whnfCore r; continue
+          | some r => tn ← whnfCore r (cheapProj := true); continue
           | none =>
             match unfoldDelta ds sn with
-            | some r => sn ← whnfCore r; continue
+            | some r => sn ← whnfCore r (cheapProj := true); continue
             | none => return (tn, sn, none)
         else
           -- Same height: unfold both
@@ -782,10 +881,12 @@ mutual
 
   /-- Cache a def-eq result (both successes and failures). -/
   partial def cacheResult (t s : Expr m) (result : Bool) : TypecheckM m Unit := do
-    let key := eqCacheKey t s
     if result then
-      modify fun stt => { stt with eqvCache := stt.eqvCache.insert key result }
+      modify fun stt =>
+        let (_, mgr') := EquivManager.addEquiv t s |>.run stt.eqvManager
+        { stt with eqvManager := mgr' }
     else
+      let key := eqCacheKey t s
       modify fun stt => { stt with failureCache := stt.failureCache.insert key }
 
 end -- mutual

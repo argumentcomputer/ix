@@ -3,6 +3,7 @@ import Ix.Environment
 import Ix.Kernel.Types
 import Ix.Kernel.Datatypes
 import Ix.Kernel.Level
+import Ix.Kernel.EquivManager
 import Ix.Kernel.TypecheckM
 import Ix.Kernel.Whnf
 import Ix.Kernel.DefEq

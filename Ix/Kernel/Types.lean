@@ -380,10 +380,11 @@ inductive ReducibilityHints where
 namespace ReducibilityHints
 
 def lt' : ReducibilityHints → ReducibilityHints → Bool
+  | _,           .opaque     => false
+  | .abbrev,     _           => false
+  | .opaque,     _           => true
+  | _,           .abbrev     => true
   | .regular d₁, .regular d₂ => d₁ < d₂
-  | .regular _, .opaque => true
-  | .abbrev, .opaque => true
-  | _, _ => false
 
 def isRegular : ReducibilityHints → Bool
   | .regular _ => true

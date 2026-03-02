@@ -172,8 +172,9 @@ mutual
       | .letE _ val body _ =>
         t := body.instantiate1 val; continue  -- loop instead of recursion
       | .proj typeAddr idx struct _ => do
-        if cheapProj then return t  -- skip projection reduction
-        let struct' ← whnfCore struct cheapRec cheapProj
+        -- cheapProj=true: try structural-only reduction (whnfCore, no delta)
+        -- cheapProj=false: full reduction (whnf, with delta)
+        let struct' ← if cheapProj then whnfCore struct cheapRec cheapProj else whnf struct
         match ← reduceProj typeAddr idx struct' with
         | some result => t := result; continue  -- loop instead of recursion
         | none =>

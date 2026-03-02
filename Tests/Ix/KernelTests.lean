@@ -287,7 +287,9 @@ def testConsts : TestSeq :=
         "String.length_empty",
         "_private.Init.Grind.Ring.Basic.«0».Lean.Grind.IsCharP.mk'_aux._proof_1_5",
         -- BVDecide regression test (fuel-sensitive)
-        "Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.instLawfulVecOperatorShiftConcatInputBlastShiftConcat"
+        "Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.instLawfulVecOperatorShiftConcatInputBlastShiftConcat",
+        -- Theorem with sub-term type mismatch (requires inferOnly)
+        "Std.Do.Spec.tryCatch_ExceptT"
       ]
       let mut passed := 0
       let mut failures : Array String := #[]

@@ -6,6 +6,7 @@
 -/
 import Ix.Kernel.Datatypes
 import Ix.Kernel.Level
+import Ix.Kernel.EquivManager
 
 namespace Ix.Kernel
 
@@ -30,6 +31,8 @@ structure TypecheckCtx (m : MetaMode) where
   mutTypes : Std.TreeMap Nat (Address × (Array (Level m) → Expr m)) compare
   /-- Tracks the address of the constant currently being checked, for recursion detection. -/
   recAddr? : Option Address
+  /-- When true, skip argument type-checking during inference (lean4lean inferOnly). -/
+  inferOnly : Bool := false
   /-- Enable dbg_trace on major entry points for debugging. -/
   trace    : Bool := false
 
@@ -47,13 +50,16 @@ structure TypecheckState (m : MetaMode) where
   /-- Infer cache: maps term → (binding context, inferred type).
       Keyed on Expr only; context verified on retrieval via ptr equality + BEq fallback. -/
   inferCache     : Std.HashMap (Expr m) (Array (Expr m) × Expr m) := {}
-  eqvCache       : Std.HashMap (Expr m × Expr m) Bool := {}
+  eqvManager     : EquivManager m := {}
   failureCache   : Std.HashSet (Expr m × Expr m) := {}
   constTypeCache : Std.HashMap Address (Array (Level m) × Expr m) := {}
   fuel           : Nat := defaultFuel
   /-- Tracks nesting depth of whnf calls from within recursor reduction (tryReduceApp → whnf).
       When this exceeds a threshold, whnfCore is used instead of whnf to prevent stack overflow. -/
   whnfDepth      : Nat := 0
+  /-- Global recursion depth across isDefEq/infer/whnf for stack overflow prevention. -/
+  recDepth       : Nat := 0
+  maxRecDepth    : Nat := 0
   deriving Inhabited
 
 /-! ## TypecheckM monad -/
@@ -82,6 +88,9 @@ def withExtendedCtx (varType : Expr m) : TypecheckM m α → TypecheckM m α :=
 
 def withRecAddr (addr : Address) : TypecheckM m α → TypecheckM m α :=
   withReader fun ctx => { ctx with recAddr? := some addr }
+
+def withInferOnly : TypecheckM m α → TypecheckM m α :=
+  withReader fun ctx => { ctx with inferOnly := true }
 
 /-- The current binding depth (number of bound variables in scope). -/
 def lvl : TypecheckM m Nat := do pure (← read).types.size
