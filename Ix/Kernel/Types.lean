@@ -466,6 +466,8 @@ structure RecursorRule (m : MetaMode) where
 structure RecursorVal (m : MetaMode) extends ConstantVal m where
   all : Array Address
   allNames : MetaField m (Array Ix.Name) := default
+  inductBlock : Array Address := #[]
+  inductNames : MetaField m (Array (Array Ix.Name)) := default
   numParams : Nat
   numIndices : Nat
   numMotives : Nat

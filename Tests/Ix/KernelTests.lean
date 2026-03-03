@@ -143,7 +143,13 @@ def testConsts : TestSeq :=
         -- Theorem with sub-term type mismatch (requires inferOnly)
         "Std.Do.Spec.tryCatch_ExceptT",
         -- Nested inductive positivity check (requires whnf)
-        "Lean.Elab.Term.Do.Code.action"
+        "Lean.Elab.Term.Do.Code.action",
+        -- UInt64/BitVec isDefEq regression
+        "UInt64.decLt",
+        -- Recursor-only Ixon block regression (rec.all was empty)
+        "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
+        -- Deeply nested let chain (stack overflow regression)
+        "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go._sunfold"
       ]
       let mut passed := 0
       let mut failures : Array String := #[]

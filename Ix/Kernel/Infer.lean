@@ -158,35 +158,82 @@ mutual
             throw s!"Expected a pi type, got {currentType'.pp}\n  function: {fn.pp}\n  arg #{i}: {arg.pp}"
         let te : TypedExpr m := ⟨← infoFromType currentType, resultBody⟩
         pure (te, currentType)
-      | .lam ty body lamName lamBi => do
-        let domTe ← if (← read).inferOnly then
-          pure ⟨.none, ty⟩
-        else
-          let (te, _) ← isSort ty; pure te
-        let (bodTe, imgType) ← withExtendedCtx ty (infer body)
-        let piType := Expr.forallE ty imgType lamName default
-        let te : TypedExpr m := ⟨lamInfo bodTe.info, .lam domTe.body bodTe.body lamName lamBi⟩
-        pure (te, piType)
-      | .forallE ty body piName _ => do
-        let (domTe, domLvl) ← isSort ty
-        let (imgTe, imgLvl) ← withExtendedCtx ty (isSort body)
-        let sortLvl := Level.reduceIMax domLvl imgLvl
-        let typ := Expr.mkSort sortLvl
-        let te : TypedExpr m := ⟨← infoFromType typ, .forallE domTe.body imgTe.body piName default⟩
-        pure (te, typ)
-      | .letE ty val body letName => do
-        if (← read).inferOnly then
-          let (bodTe, bodType) ← withExtendedCtx ty (infer body)
-          let resultType := bodType.instantiate1 val
-          let te : TypedExpr m := ⟨bodTe.info, .letE ty val bodTe.body letName⟩
-          pure (te, resultType)
-        else
-          let (tyTe, _) ← isSort ty
-          let valTe ← check val ty
-          let (bodTe, bodType) ← withExtendedCtx ty (infer body)
-          let resultType := bodType.instantiate1 val
-          let te : TypedExpr m := ⟨bodTe.info, .letE tyTe.body valTe.body bodTe.body letName⟩
-          pure (te, resultType)
+      | .lam .. => do
+        -- Iterate lambda chain to avoid O(n) stack depth
+        let inferOnly := (← read).inferOnly
+        let mut cur := term
+        let mut extTypes := (← read).types
+        let mut binderMeta : Array (Expr m × Expr m × MetaField m Ix.Name × MetaField m Lean.BinderInfo) := #[]
+        repeat
+          match cur with
+          | .lam ty body lamName lamBi =>
+            let domBody ← if inferOnly then pure ty
+              else do let (te, _) ← withReader (fun ctx => { ctx with types := extTypes }) (isSort ty); pure te.body
+            binderMeta := binderMeta.push (domBody, ty, lamName, lamBi)
+            extTypes := extTypes.push ty
+            cur := body
+          | _ => break
+        let (bodTe, imgType) ← withReader (fun ctx => { ctx with types := extTypes }) (infer cur)
+        let mut resultType := imgType
+        let mut resultBody := bodTe.body
+        let mut resultInfo := bodTe.info
+        for i in [:binderMeta.size] do
+          let j := binderMeta.size - 1 - i
+          let (domBody, origTy, lamName, lamBi) := binderMeta[j]!
+          resultType := .forallE origTy resultType lamName default
+          resultBody := .lam domBody resultBody lamName lamBi
+          resultInfo := lamInfo resultInfo
+        pure (⟨resultInfo, resultBody⟩, resultType)
+      | .forallE .. => do
+        -- Iterate forallE chain to avoid O(n) stack depth
+        let mut cur := term
+        let mut extTypes := (← read).types
+        let mut binderMeta : Array (Expr m × Level m × MetaField m Ix.Name) := #[]
+        repeat
+          match cur with
+          | .forallE ty body piName _ =>
+            let (domTe, domLvl) ← withReader (fun ctx => { ctx with types := extTypes }) (isSort ty)
+            binderMeta := binderMeta.push (domTe.body, domLvl, piName)
+            extTypes := extTypes.push ty
+            cur := body
+          | _ => break
+        let (imgTe, imgLvl) ← withReader (fun ctx => { ctx with types := extTypes }) (isSort cur)
+        let mut resultLvl := imgLvl
+        let mut resultBody := imgTe.body
+        for i in [:binderMeta.size] do
+          let j := binderMeta.size - 1 - i
+          let (domBody, domLvl, piName) := binderMeta[j]!
+          resultLvl := Level.reduceIMax domLvl resultLvl
+          resultBody := .forallE domBody resultBody piName default
+        let typ := Expr.mkSort resultLvl
+        pure (⟨← infoFromType typ, resultBody⟩, typ)
+      | .letE .. => do
+        -- Iterate let chain to avoid O(n) stack depth
+        let inferOnly := (← read).inferOnly
+        let mut cur := term
+        let mut extTypes := (← read).types
+        let mut binderInfo : Array (Expr m × Expr m × Expr m × MetaField m Ix.Name) := #[]
+        repeat
+          match cur with
+          | .letE ty val body letName =>
+            if inferOnly then
+              binderInfo := binderInfo.push (ty, val, val, letName)
+            else
+              let (tyTe, _) ← withReader (fun ctx => { ctx with types := extTypes }) (isSort ty)
+              let valTe ← withReader (fun ctx => { ctx with types := extTypes }) (check val ty)
+              binderInfo := binderInfo.push (tyTe.body, valTe.body, val, letName)
+            extTypes := extTypes.push ty
+            cur := body
+          | _ => break
+        let (bodTe, bodType) ← withReader (fun ctx => { ctx with types := extTypes }) (infer cur)
+        let mut resultType := bodType
+        let mut resultBody := bodTe.body
+        for i in [:binderInfo.size] do
+          let j := binderInfo.size - 1 - i
+          let (tyBody, valBody, origVal, letName) := binderInfo[j]!
+          resultType := resultType.instantiate1 origVal
+          resultBody := .letE tyBody valBody resultBody letName
+        pure (⟨bodTe.info, resultBody⟩, resultType)
       | .lit (.natVal _) => do
         let prims := (← read).prims
         let typ := Expr.mkConst prims.nat #[]
@@ -509,10 +556,10 @@ mutual
 
   /-- Validate K-flag: requires non-mutual, Prop, single ctor, zero fields. -/
   partial def validateKFlag (rec : RecursorVal m) (indAddr : Address) : TypecheckM m Unit := do
-    if rec.all.size != 1 then
-      throw "recursor claims K but inductive is mutual"
     match (← read).kenv.find? indAddr with
     | some (.inductInfo iv) =>
+      if iv.all.size != 1 then
+        throw "recursor claims K but inductive is mutual"
       match getIndResultLevel iv.type with
       | some lvl =>
         if levelIsNonZero lvl then
@@ -527,31 +574,23 @@ mutual
       | _ => throw "recursor claims K but constructor not found"
     | _ => throw s!"recursor claims K but {indAddr} is not an inductive"
 
-  /-- Validate recursor rules: check rule count, ctor membership, field counts. -/
+  /-- Validate recursor rules: check rule count, ctor membership, field counts.
+      Uses `indAddr` (from getMajorInduct) to look up the inductive directly,
+      since rec.all may be empty for recursor-only Ixon blocks.
+      Does NOT check numParams/numIndices — auxiliary recursors (rec_1, etc.)
+      can have different param counts than the major inductive. -/
   partial def validateRecursorRules (rec : RecursorVal m) (indAddr : Address) : TypecheckM m Unit := do
-    let mut allCtors : Array Address := #[]
-    for iAddr in rec.all do
-      match (← read).kenv.find? iAddr with
-      | some (.inductInfo iv) =>
-        allCtors := allCtors ++ iv.ctors
-      | _ => throw s!"recursor references {iAddr} which is not an inductive"
-    if rec.rules.size != allCtors.size then
-      throw s!"recursor has {rec.rules.size} rules but inductive(s) have {allCtors.size} constructors"
-    for h : i in [:rec.rules.size] do
-      let rule := rec.rules[i]
-      if rule.ctor != allCtors[i]! then
-        throw s!"recursor rule {i} has constructor {rule.ctor} but expected {allCtors[i]!}"
-      match (← read).kenv.find? rule.ctor with
-      | some (.ctorInfo cv) =>
-        if rule.nfields != cv.numFields then
-          throw s!"recursor rule for {rule.ctor} has nfields={rule.nfields} but constructor has {cv.numFields} fields"
-      | _ => throw s!"recursor rule constructor {rule.ctor} not found"
     match (← read).kenv.find? indAddr with
     | some (.inductInfo iv) =>
-      if rec.numParams != iv.numParams then
-        throw s!"recursor numParams={rec.numParams} but inductive has {iv.numParams}"
-      if rec.numIndices != iv.numIndices then
-        throw s!"recursor numIndices={rec.numIndices} but inductive has {iv.numIndices}"
+      if rec.rules.size != iv.ctors.size then
+        throw s!"recursor has {rec.rules.size} rules but inductive has {iv.ctors.size} constructors"
+      for h : i in [:rec.rules.size] do
+        let rule := rec.rules[i]
+        match (← read).kenv.find? iv.ctors[i]! with
+        | some (.ctorInfo cv) =>
+          if rule.nfields != cv.numFields then
+            throw s!"recursor rule for {iv.ctors[i]!} has nfields={rule.nfields} but constructor has {cv.numFields} fields"
+        | _ => throw s!"constructor {iv.ctors[i]!} not found"
     | _ => pure ()
 
   /-- Quick structural equality check without WHNF. Returns:
@@ -636,7 +675,7 @@ mutual
     let snn ← whnfCore sn'
     -- Only recurse into isDefEqCore if something actually changed
     if !(tnn == tn' && snn == sn') then
-      let result ← isDefEqCore tnn snn
+      let result ← isDefEq tnn snn
       cacheResult t s result
       return result
 

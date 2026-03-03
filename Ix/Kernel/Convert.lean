@@ -415,7 +415,10 @@ def convertRecursor (m : MetaMode) (r : Ixon.Recursor)
     (levelParams : MetaField m (Array Ix.Name) := default)
     (cMeta : ConstantMeta := .empty)
     (allNames : MetaField m (Array Ix.Name) := default)
-    (ruleCtorNames : Array (MetaField m Ix.Name) := #[]) : ConvertM m (Ix.Kernel.ConstantInfo m) := do
+    (ruleCtorNames : Array (MetaField m Ix.Name) := #[])
+    (inductBlock : Array Address := #[])
+    (inductNames : MetaField m (Array (Array Ix.Name)) := default)
+    : ConvertM m (Ix.Kernel.ConstantInfo m) := do
   let typ ← convertExpr m r.typ (metaTypeRoot? cMeta)
   let cv := mkConstantVal m r.lvls typ name levelParams
   let ruleRoots := (metaRuleRoots cMeta)
@@ -426,7 +429,7 @@ def convertRecursor (m : MetaMode) (r : Ixon.Recursor)
     let ruleRoot := if h : i < ruleRoots.size then some ruleRoots[i] else none
     rules := rules.push (← convertRule m r.rules[i]! ctorAddr ctorName ruleRoot)
   let v : Ix.Kernel.RecursorVal m :=
-    { toConstantVal := cv, all, allNames,
+    { toConstantVal := cv, all, allNames, inductBlock, inductNames,
       numParams := r.params.toNat, numIndices := r.indices.toNat,
       numMotives := r.motives.toNat, numMinors := r.minors.toNat,
       rules, k := r.k, isUnsafe := r.isUnsafe }
@@ -514,6 +517,77 @@ def buildRecurAddrs (bIdx : BlockIndex) (numMembers : Nat) : Except ConvertError
     | none => throw (.missingMemberAddr i numMembers)
   return addrs
 
+/-! ## Ixon-level major inductive extraction -/
+
+/-- Expand Ixon.Expr.share nodes. -/
+private partial def ixonExpandShare (sharing : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
+  | .share idx =>
+    if h : idx.toNat < sharing.size then ixonExpandShare sharing sharing[idx.toNat]
+    else .share idx
+  | e => e
+
+/-- Extract the major inductive's ref index from an Ixon recursor type.
+    Walks `n` forall (`.all`) binders, then extracts the head `.ref` of the domain.
+    Returns `none` if the structure doesn't match. -/
+private partial def ixonGetMajorRef (sharing : Array Ixon.Expr) (typ : Ixon.Expr) (n : Nat) : Option UInt64 :=
+  let e := ixonExpandShare sharing typ
+  match n, e with
+  | 0, .all dom _ =>
+    let dom' := ixonExpandShare sharing dom
+    getHead dom'
+  | n+1, .all _ body => ixonGetMajorRef sharing body n
+  | _, _ => none
+where
+  getHead : Ixon.Expr → Option UInt64
+    | .ref refIdx _ => some refIdx
+    | .app fn _ => getHead (ixonExpandShare sharing fn)
+    | _ => none
+
+/-- Pre-built index mapping each iPrj address to its block's (allInductAddrs, ctorAddrsInOrder).
+    Built once per convertEnv call, then used for O(1) lookups. -/
+structure InductiveBlockIndex where
+  /-- iPrj address → (allInductAddrs, ctorAddrsInOrder) for its block -/
+  entries : Std.HashMap Address (Array Address × Array Address) := {}
+
+def InductiveBlockIndex.get (idx : InductiveBlockIndex) (indAddr : Address)
+    : Array Address × Array Address :=
+  idx.entries.getD indAddr (#[indAddr], #[])
+
+/-- Build the InductiveBlockIndex by scanning the Ixon env once. -/
+def buildInductiveBlockIndex (ixonEnv : Ixon.Env) : InductiveBlockIndex := Id.run do
+  -- Pass 1: group iPrj and cPrj by block address
+  let mut inductByBlock : Std.HashMap Address (Array (UInt64 × Address)) := {}
+  let mut ctorByBlock : Std.HashMap Address (Array (UInt64 × UInt64 × Address)) := {}
+  for (addr, c) in ixonEnv.consts do
+    match c.info with
+    | .iPrj prj =>
+      inductByBlock := inductByBlock.insert prj.block
+        ((inductByBlock.getD prj.block #[]).push (prj.idx, addr))
+    | .cPrj prj =>
+      ctorByBlock := ctorByBlock.insert prj.block
+        ((ctorByBlock.getD prj.block #[]).push (prj.idx, prj.cidx, addr))
+    | _ => pure ()
+  -- Pass 2: for each block, sort and build the (inductAddrs, ctorAddrs) pair,
+  -- then map each iPrj address to that pair
+  let mut entries : Std.HashMap Address (Array Address × Array Address) := {}
+  for (blockAddr, rawInduct) in inductByBlock do
+    let sortedInduct := rawInduct.insertionSort (fun a b => a.1 < b.1)
+    let inductAddrs := sortedInduct.map (·.2)
+    let rawCtor := ctorByBlock.getD blockAddr #[]
+    let sortedCtor := rawCtor.insertionSort (fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1))
+    let ctorAddrs := sortedCtor.map (·.2.2)
+    let pair := (inductAddrs, ctorAddrs)
+    for (_, addr) in sortedInduct do
+      entries := entries.insert addr pair
+  { entries }
+
+/-- Pre-built reverse index mapping constant address → Array of Ix.Names. -/
+def buildAddrToNames (ixonEnv : Ixon.Env) : Std.HashMap Address (Array Ix.Name) := Id.run do
+  let mut acc : Std.HashMap Address (Array Ix.Name) := {}
+  for (ixName, entry) in ixonEnv.named do
+    acc := acc.insert entry.addr ((acc.getD entry.addr #[]).push ixName)
+  acc
+
 /-! ## Projection conversion -/
 
 /-- Convert a single projection constant as a ConvertM action.
@@ -521,6 +595,9 @@ def buildRecurAddrs (bIdx : BlockIndex) (numMembers : Nat) : Except ConvertError
 def convertProjAction (m : MetaMode)
     (addr : Address) (c : Constant)
     (blockConst : Constant) (bIdx : BlockIndex)
+    (ixonEnv : Ixon.Env)
+    (indBlockIdx : InductiveBlockIndex)
+    (addrToNames : Std.HashMap Address (Array Ix.Name))
     (name : MetaField m Ix.Name := default)
     (levelParams : MetaField m (Array Ix.Name) := default)
     (cMeta : ConstantMeta := .empty)
@@ -555,11 +632,24 @@ def convertProjAction (m : MetaMode)
     if h : prj.idx.toNat < members.size then
       match members[prj.idx.toNat] with
       | .recr r =>
-        let ruleCtorAs := bIdx.allCtorAddrsInOrder
+        -- Extract the major inductive from the Ixon type expression (metadata-free).
+        let skip := r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat
+        let (inductBlock, ruleCtorAs) :=
+          match ixonGetMajorRef blockConst.sharing r.typ skip with
+          | some refIdx =>
+            if h2 : refIdx.toNat < blockConst.refs.size then
+              indBlockIdx.get blockConst.refs[refIdx.toNat]
+            else (bIdx.allInductAddrs, bIdx.allCtorAddrsInOrder)
+          | none => (bIdx.allInductAddrs, bIdx.allCtorAddrsInOrder)
+        let inductNs : MetaField m (Array (Array Ix.Name)) := match m with
+          | .anon => ()
+          | .meta => inductBlock.map fun a => addrToNames.getD a #[]
+        let ruleCtorNs : Array (MetaField m Ix.Name) := match m with
+          | .anon => ruleCtorAs.map fun _ => ()
+          | .meta => ruleCtorAs.map fun a =>
+            (addrToNames.getD a #[])[0]?.getD default
         let allNs := resolveMetaNames m names (match cMeta with | .recr _ _ _ a _ _ _ _ => a | _ => #[])
-        let metaRules := match cMeta with | .recr _ _ rules _ _ _ _ _ => rules | _ => #[]
-        let ruleCtorNs := metaRules.map fun x => resolveMetaName m names x
-        .ok (convertRecursor m r bIdx.allInductAddrs ruleCtorAs name levelParams cMeta allNs ruleCtorNs)
+        .ok (convertRecursor m r bIdx.allInductAddrs ruleCtorAs name levelParams cMeta allNs ruleCtorNs inductBlock inductNs)
       | _ => .error s!"rPrj at {addr} does not point to a recursor"
     else .error s!"rPrj index out of bounds at {addr}"
   | .dPrj prj =>
@@ -647,14 +737,19 @@ def convertStandalone (m : MetaMode) (hashToAddr : Std.HashMap Address Address)
     let ruleCtorAddrs := metaRules.map fun x => hashToAddr.getD x x
     let allNames := resolveMetaNames m ixonEnv.names metaAll
     let ruleCtorNames := metaRules.map fun x => resolveMetaName m ixonEnv.names x
-    let ci ← (ConvertM.run cEnv (convertRecursor m r all ruleCtorAddrs entry.name lps cMeta allNames ruleCtorNames)).mapError toString
+    let inductNs : MetaField m (Array (Array Ix.Name)) := match m with
+      | .anon => ()
+      | .meta => metaAll.map fun x => #[ixonEnv.names.getD x default]
+    let ci ← (ConvertM.run cEnv (convertRecursor m r all ruleCtorAddrs entry.name lps cMeta allNames ruleCtorNames (inductBlock := all) (inductNames := inductNs))).mapError toString
     return some ci
   | .muts _ => return none
   | _ => return none  -- projections handled separately
 
 /-- Convert a complete block group (all projections share cache + recurAddrs). -/
 def convertWorkBlock (m : MetaMode)
-    (ixonEnv : Ixon.Env) (blockAddr : Address)
+    (ixonEnv : Ixon.Env) (indBlockIdx : InductiveBlockIndex)
+    (addrToNames : Std.HashMap Address (Array Ix.Name))
+    (blockAddr : Address)
     (entries : Array (ConvertEntry m))
     (results : Array (Address × Ix.Kernel.ConstantInfo m)) (errors : Array (Address × String))
     : Array (Address × Ix.Kernel.ConstantInfo m) × Array (Address × String) := Id.run do
@@ -690,7 +785,7 @@ def convertWorkBlock (m : MetaMode)
       let lvlNames := resolveLevelParams m ixonEnv.names (metaLvlAddrs cMeta)
       let lps := mkLevelParams m ixonEnv.names (metaLvlAddrs cMeta)
       let cEnv := { baseEnv with arena := (metaArena cMeta), levelParamNames := lvlNames }
-      match convertProjAction m entry.addr entry.const blockConst bIdx entry.name lps cMeta ixonEnv.names with
+      match convertProjAction m entry.addr entry.const blockConst bIdx ixonEnv indBlockIdx addrToNames entry.name lps cMeta ixonEnv.names with
       | .ok action =>
         match ConvertM.runWith cEnv state action with
         | .ok (ci, state') =>
@@ -706,7 +801,9 @@ def convertWorkBlock (m : MetaMode)
 
 /-- Convert a chunk of work items. -/
 def convertChunk (m : MetaMode) (hashToAddr : Std.HashMap Address Address)
-    (ixonEnv : Ixon.Env) (chunk : Array (WorkItem m))
+    (ixonEnv : Ixon.Env) (indBlockIdx : InductiveBlockIndex)
+    (addrToNames : Std.HashMap Address (Array Ix.Name))
+    (chunk : Array (WorkItem m))
     : Array (Address × Ix.Kernel.ConstantInfo m) × Array (Address × String) := Id.run do
   let mut results : Array (Address × Ix.Kernel.ConstantInfo m) := #[]
   let mut errors : Array (Address × String) := #[]
@@ -718,7 +815,7 @@ def convertChunk (m : MetaMode) (hashToAddr : Std.HashMap Address Address)
       | .ok none => pure ()
       | .error e => errors := errors.push (entry.addr, e)
     | .block blockAddr entries =>
-      (results, errors) := convertWorkBlock m ixonEnv blockAddr entries results errors
+      (results, errors) := convertWorkBlock m ixonEnv indBlockIdx addrToNames blockAddr entries results errors
   (results, errors)
 
 /-! ## Top-level conversion -/
@@ -803,7 +900,9 @@ def convertEnv (m : MetaMode) (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
       workItems := workItems.push (.standalone entry)
     for ((blockAddr, _), blockEntries) in blockGroups do
       workItems := workItems.push (.block blockAddr blockEntries)
-    -- Phase 5: Chunk work items and parallelize
+    -- Phase 5: Build indexes and chunk work items for parallel conversion
+    let indBlockIdx := buildInductiveBlockIndex ixonEnv
+    let addrToNames := buildAddrToNames ixonEnv
     let total := workItems.size
     let chunkSize := (total + numWorkers - 1) / numWorkers
     let mut tasks : Array (Task (Array (Address × Ix.Kernel.ConstantInfo m) × Array (Address × String))) := #[]
@@ -812,7 +911,7 @@ def convertEnv (m : MetaMode) (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
       let endIdx := min (offset + chunkSize) total
       let chunk := workItems[offset:endIdx]
       let task := Task.spawn (prio := .dedicated) fun () =>
-        convertChunk m hashToAddr ixonEnv chunk.toArray
+        convertChunk m hashToAddr ixonEnv indBlockIdx addrToNames chunk.toArray
       tasks := tasks.push task
       offset := endIdx
     -- Phase 6: Collect results

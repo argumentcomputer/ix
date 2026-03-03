@@ -149,9 +149,12 @@ def decompileConstantInfo (ci : ConstantInfo .meta) : Lean.ConstantInfo :=
       isUnsafe := v.isUnsafe
     }
   | .recInfo v =>
+    -- Use inductNames (the associated inductives) for Lean's `all` field.
+    -- inductNames is Array (Array Ix.Name) — flatten to a single list.
+    let allLean := (v.inductNames.foldl (fun acc group => acc ++ group) #[]).toList.map ixNameToLean
     .recInfo {
       name, levelParams := lps, type := decompTy
-      all := v.allNames.toList.map ixNameToLean
+      all := allLean
       numParams := v.numParams, numIndices := v.numIndices
       numMotives := v.numMotives, numMinors := v.numMinors
       k := v.k, isUnsafe := v.isUnsafe
