@@ -18,7 +18,7 @@ use crate::ix::env::{
   BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
 };
 use crate::lean::nat::Nat;
-use crate::lean::obj::{IxExpr, LeanArray, LeanCtor, LeanObj, LeanString};
+use crate::lean::object::{LeanIxExpr, LeanArray, LeanCtor, LeanObject, LeanString};
 
 use crate::lean::ffi::builder::LeanBuildCache;
 use crate::lean::ffi::ix::address::build_address;
@@ -31,7 +31,7 @@ use crate::lean::ffi::primitives::build_nat;
 
 /// Build a Lean Ix.Expr with embedded hash.
 /// Uses caching to avoid rebuilding the same expression.
-pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> IxExpr {
+pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> LeanIxExpr {
   let hash = *expr.get_hash();
   if let Some(&cached) = cache.exprs.get(&hash) {
     cached.inc_ref();
@@ -43,25 +43,25 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> IxExpr {
       let obj = LeanCtor::alloc(0, 2, 0);
       obj.set(0, build_nat(idx));
       obj.set(1, build_address(h));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::Fvar(name, h) => {
       let obj = LeanCtor::alloc(1, 2, 0);
       obj.set(0, build_name(cache, name));
       obj.set(1, build_address(h));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::Mvar(name, h) => {
       let obj = LeanCtor::alloc(2, 2, 0);
       obj.set(0, build_name(cache, name));
       obj.set(1, build_address(h));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::Sort(level, h) => {
       let obj = LeanCtor::alloc(3, 2, 0);
       obj.set(0, build_level(cache, level));
       obj.set(1, build_address(h));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::Const(name, levels, h) => {
       let name_obj = build_name(cache, name);
@@ -70,7 +70,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> IxExpr {
       obj.set(0, name_obj);
       obj.set(1, levels_obj);
       obj.set(2, build_address(h));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::App(fn_expr, arg_expr, h) => {
       let fn_obj = build_expr(cache, fn_expr);
@@ -79,7 +79,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> IxExpr {
       obj.set(0, fn_obj);
       obj.set(1, arg_obj);
       obj.set(2, build_address(h));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::Lam(name, ty, body, bi, h) => {
       let name_obj = build_name(cache, name);
@@ -93,7 +93,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> IxExpr {
       obj.set(2, body_obj);
       obj.set(3, hash_obj);
       obj.set_u8(4 * 8, binder_info_to_u8(bi));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::ForallE(name, ty, body, bi, h) => {
       let name_obj = build_name(cache, name);
@@ -106,7 +106,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> IxExpr {
       obj.set(2, body_obj);
       obj.set(3, hash_obj);
       obj.set_u8(4 * 8, binder_info_to_u8(bi));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::LetE(name, ty, val, body, non_dep, h) => {
       let name_obj = build_name(cache, name);
@@ -122,14 +122,14 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> IxExpr {
       obj.set(3, body_obj);
       obj.set(4, hash_obj);
       obj.set_u8(5 * 8, *non_dep as u8);
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::Lit(lit, h) => {
       let lit_obj = build_literal(lit);
       let obj = LeanCtor::alloc(9, 2, 0);
       obj.set(0, lit_obj);
       obj.set(1, build_address(h));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::Mdata(md, inner, h) => {
       let md_obj = build_mdata_array(cache, md);
@@ -138,7 +138,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> IxExpr {
       obj.set(0, md_obj);
       obj.set(1, inner_obj);
       obj.set(2, build_address(h));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
     ExprData::Proj(type_name, idx, struct_expr, h) => {
       let name_obj = build_name(cache, type_name);
@@ -149,7 +149,7 @@ pub fn build_expr(cache: &mut LeanBuildCache, expr: &Expr) -> IxExpr {
       obj.set(1, idx_obj);
       obj.set(2, struct_obj);
       obj.set(3, build_address(h));
-      IxExpr::new(*obj)
+      LeanIxExpr::new(*obj)
     },
   };
 
@@ -175,7 +175,7 @@ fn build_name_datavalue_pair(
   cache: &mut LeanBuildCache,
   name: &Name,
   dv: &DataValue,
-) -> LeanObj {
+) -> LeanObject {
   let name_obj = build_name(cache, name);
   let dv_obj = build_data_value(cache, dv);
   let pair = LeanCtor::alloc(0, 2, 0);
@@ -185,7 +185,7 @@ fn build_name_datavalue_pair(
 }
 
 /// Build a Literal (natVal or strVal).
-pub fn build_literal(lit: &Literal) -> LeanObj {
+pub fn build_literal(lit: &Literal) -> LeanObject {
   match lit {
     Literal::NatVal(n) => {
       let obj = LeanCtor::alloc(0, 1, 0);
@@ -202,8 +202,8 @@ pub fn build_literal(lit: &Literal) -> LeanObj {
 
 /// Build Ix.BinderInfo enum.
 /// BinderInfo is a 4-constructor enum with no fields, stored as boxed scalar.
-pub fn build_binder_info(bi: &BinderInfo) -> LeanObj {
-  LeanObj::box_usize(binder_info_to_u8(bi) as usize)
+pub fn build_binder_info(bi: &BinderInfo) -> LeanObject {
+  LeanObject::box_usize(binder_info_to_u8(bi) as usize)
 }
 
 /// Convert BinderInfo to u8 tag.
@@ -217,7 +217,7 @@ pub fn binder_info_to_u8(bi: &BinderInfo) -> u8 {
 }
 
 /// Decode a Lean Ix.Expr to Rust Expr.
-pub fn decode_ix_expr(obj: LeanObj) -> Expr {
+pub fn decode_ix_expr(obj: LeanObject) -> Expr {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
@@ -315,7 +315,7 @@ pub fn decode_ix_expr(obj: LeanObj) -> Expr {
 }
 
 /// Decode Lean.Literal from a Lean object.
-pub fn decode_literal(obj: LeanObj) -> Literal {
+pub fn decode_literal(obj: LeanObject) -> Literal {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
@@ -332,7 +332,7 @@ pub fn decode_literal(obj: LeanObj) -> Literal {
 }
 
 /// Decode a (Name × DataValue) pair for mdata.
-fn decode_name_data_value(obj: LeanObj) -> (Name, DataValue) {
+fn decode_name_data_value(obj: LeanObject) -> (Name, DataValue) {
   // Prod: ctor 0 with 2 fields
   let ctor = obj.as_ctor();
   let name = decode_ix_name(ctor.get(0));
@@ -353,7 +353,7 @@ pub fn decode_binder_info(bi_byte: u8) -> BinderInfo {
 
 /// Round-trip an Ix.Expr: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_expr(expr_ptr: IxExpr) -> IxExpr {
+pub extern "C" fn rs_roundtrip_ix_expr(expr_ptr: LeanIxExpr) -> LeanIxExpr {
   let expr = decode_ix_expr(*expr_ptr);
   let mut cache = LeanBuildCache::new();
   build_expr(&mut cache, &expr)

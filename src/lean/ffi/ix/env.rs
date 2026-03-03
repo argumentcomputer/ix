@@ -3,7 +3,9 @@
 use rustc_hash::FxHashMap;
 
 use crate::ix::env::{ConstantInfo, Name};
-use crate::lean::obj::{LeanArray, LeanCtor, LeanObj};
+use crate::lean::object::{
+  LeanIxEnvironment, LeanIxRawEnvironment, LeanArray, LeanCtor, LeanObject,
+};
 
 use crate::lean::ffi::builder::LeanBuildCache;
 use crate::lean::ffi::ix::constant::{
@@ -24,14 +26,14 @@ use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
 ///
 /// AssocList α β = nil | cons (key : α) (value : β) (tail : AssocList α β)
 pub fn build_hashmap_from_pairs(
-  pairs: Vec<(LeanObj, LeanObj, u64)>, // (key_obj, val_obj, hash)
-) -> LeanObj {
+  pairs: Vec<(LeanObject, LeanObject, u64)>, // (key_obj, val_obj, hash)
+) -> LeanObject {
   let size = pairs.len();
   let bucket_count = (size * 4 / 3 + 1).next_power_of_two().max(8);
 
   // Create array of AssocLists (initially all nil = boxed 0)
   let buckets = LeanArray::alloc(bucket_count);
-  let nil = LeanObj::box_usize(0);
+  let nil = LeanObject::box_usize(0);
   for i in 0..bucket_count {
     buckets.set(i, nil); // nil
   }
@@ -56,7 +58,7 @@ pub fn build_hashmap_from_pairs(
   // Build Raw { size : Nat, buckets : Array }
   // Due to unboxing, this IS the HashMap directly
   // Field 0 = size, Field 1 = buckets (2 object fields, no scalars)
-  let size_obj = LeanObj::box_usize(size);
+  let size_obj = LeanObject::box_usize(size);
 
   let raw = LeanCtor::alloc(0, 2, 0);
   raw.set(0, size_obj);
@@ -80,7 +82,7 @@ pub fn build_hashmap_from_pairs(
 pub fn build_raw_environment(
   cache: &mut LeanBuildCache,
   consts: &FxHashMap<Name, ConstantInfo>,
-) -> LeanObj {
+) -> LeanObject {
   // Build consts array: Array (Name × ConstantInfo)
   let consts_arr = LeanArray::alloc(consts.len());
   for (i, (name, info)) in consts.iter().enumerate() {
@@ -102,13 +104,13 @@ pub fn build_raw_environment(
 
 /// Decode a HashMap's AssocList and collect key-value pairs using a custom decoder.
 fn decode_assoc_list<K, V, FK, FV>(
-  obj: LeanObj,
+  obj: LeanObject,
   decode_key: FK,
   decode_val: FV,
 ) -> Vec<(K, V)>
 where
-  FK: Fn(LeanObj) -> K,
-  FV: Fn(LeanObj) -> V,
+  FK: Fn(LeanObject) -> K,
+  FV: Fn(LeanObject) -> V,
 {
   let mut result = Vec::new();
   let mut current = obj;
@@ -140,13 +142,13 @@ where
 /// - DHashMap { inner : Raw, wf : Prop } unboxes to Raw (Prop is erased)
 /// - Raw { size : Nat, buckets : Array } - field 0 = size, field 1 = buckets
 fn decode_hashmap<K, V, FK, FV>(
-  obj: LeanObj,
+  obj: LeanObject,
   decode_key: FK,
   decode_val: FV,
 ) -> Vec<(K, V)>
 where
-  FK: Fn(LeanObj) -> K + Copy,
-  FV: Fn(LeanObj) -> V + Copy,
+  FK: Fn(LeanObject) -> K + Copy,
+  FV: Fn(LeanObject) -> V + Copy,
 {
   let ctor = obj.as_ctor();
   // Raw layout: field 0 = size (Nat), field 1 = buckets (Array)
@@ -170,7 +172,7 @@ where
 ///
 /// NOTE: Environment with a single field is UNBOXED by Lean,
 /// so the pointer IS the HashMap directly, not a structure containing it.
-pub fn decode_ix_environment(obj: LeanObj) -> FxHashMap<Name, ConstantInfo> {
+pub fn decode_ix_environment(obj: LeanObject) -> FxHashMap<Name, ConstantInfo> {
   // Environment is unboxed - obj IS the HashMap directly
   let consts_pairs = decode_hashmap(obj, decode_ix_name, decode_constant_info);
   let mut consts: FxHashMap<Name, ConstantInfo> = FxHashMap::default();
@@ -184,7 +186,7 @@ pub fn decode_ix_environment(obj: LeanObj) -> FxHashMap<Name, ConstantInfo> {
 /// RawEnvironment = { consts : Array (Name × ConstantInfo) }
 /// NOTE: Unboxed to just Array. This version deduplicates by name.
 pub fn decode_ix_raw_environment(
-  obj: LeanObj,
+  obj: LeanObject,
 ) -> FxHashMap<Name, ConstantInfo> {
   let arr = obj.as_array();
   let mut consts: FxHashMap<Name, ConstantInfo> = FxHashMap::default();
@@ -202,7 +204,7 @@ pub fn decode_ix_raw_environment(
 /// Decode Ix.RawEnvironment from Lean object preserving array structure.
 /// This version preserves all entries including duplicates.
 pub fn decode_ix_raw_environment_vec(
-  obj: LeanObj,
+  obj: LeanObject,
 ) -> Vec<(Name, ConstantInfo)> {
   let arr = obj.as_array();
   let mut consts = Vec::with_capacity(arr.len());
@@ -221,7 +223,7 @@ pub fn decode_ix_raw_environment_vec(
 pub fn build_raw_environment_from_vec(
   cache: &mut LeanBuildCache,
   consts: &[(Name, ConstantInfo)],
-) -> LeanObj {
+) -> LeanObject {
   let consts_arr = LeanArray::alloc(consts.len());
   for (i, (name, info)) in consts.iter().enumerate() {
     let key_obj = build_name(cache, name);
@@ -240,17 +242,21 @@ pub fn build_raw_environment_from_vec(
 
 /// Round-trip an Ix.Environment: decode from Lean, re-encode.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_environment(env_ptr: LeanObj) -> LeanObj {
-  let env = decode_ix_environment(env_ptr);
+pub extern "C" fn rs_roundtrip_ix_environment(
+  env_ptr: LeanIxEnvironment,
+) -> LeanIxRawEnvironment {
+  let env = decode_ix_environment(*env_ptr);
   let mut cache = LeanBuildCache::with_capacity(env.len());
-  build_raw_environment(&mut cache, &env)
+  build_raw_environment(&mut cache, &env).into()
 }
 
 /// Round-trip an Ix.RawEnvironment: decode from Lean, re-encode.
 /// Uses Vec-preserving functions to maintain array structure and order.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_raw_environment(env_ptr: LeanObj) -> LeanObj {
-  let env = decode_ix_raw_environment_vec(env_ptr);
+pub extern "C" fn rs_roundtrip_ix_raw_environment(
+  env_ptr: LeanIxRawEnvironment,
+) -> LeanIxRawEnvironment {
+  let env = decode_ix_raw_environment_vec(*env_ptr);
   let mut cache = LeanBuildCache::with_capacity(env.len());
-  build_raw_environment_from_vec(&mut cache, &env)
+  build_raw_environment_from_vec(&mut cache, &env).into()
 }

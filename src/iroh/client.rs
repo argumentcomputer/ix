@@ -8,8 +8,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
-use crate::lean::obj::{
-  LeanByteArray, LeanCtor, LeanExcept, LeanObj, LeanString,
+use crate::lean::object::{
+  LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanString,
 };
 
 // An example ALPN that we are using to communicate over the `Endpoint`
@@ -49,15 +49,15 @@ fn mk_get_response(message: &str, hash: &str, bytes: &[u8]) -> LeanCtor {
 /// `Iroh.Connect.putBytes' : @& String → @& Array String → @& String → @& String → Except String PutResponse`
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_put(
-  node_id: LeanObj,
-  addrs: LeanObj,
-  relay_url: LeanObj,
-  input: LeanObj,
+  node_id: LeanString,
+  addrs: LeanArray,
+  relay_url: LeanString,
+  input: LeanString,
 ) -> LeanExcept {
-  let node_id = node_id.as_string().to_string();
-  let addrs: Vec<String> = addrs.as_array().map(|x| x.as_string().to_string());
-  let relay_url = relay_url.as_string().to_string();
-  let input_str = input.as_string().to_string();
+  let node_id = node_id.to_string();
+  let addrs: Vec<String> = addrs.map(|x| x.as_string().to_string());
+  let relay_url = relay_url.to_string();
+  let input_str = input.to_string();
 
   let request =
     Request::Put(PutRequest { bytes: input_str.as_bytes().to_vec() });
@@ -79,15 +79,15 @@ extern "C" fn rs_iroh_put(
 /// `Iroh.Connect.getBytes' : @& String → @& Array String → @& String → @& String → Except String GetResponse`
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_get(
-  node_id: LeanObj,
-  addrs: LeanObj,
-  relay_url: LeanObj,
-  hash: LeanObj,
+  node_id: LeanString,
+  addrs: LeanArray,
+  relay_url: LeanString,
+  hash: LeanString,
 ) -> LeanExcept {
-  let node_id = node_id.as_string().to_string();
-  let addrs: Vec<String> = addrs.as_array().map(|x| x.as_string().to_string());
-  let relay_url = relay_url.as_string().to_string();
-  let hash_str = hash.as_string().to_string();
+  let node_id = node_id.to_string();
+  let addrs: Vec<String> = addrs.map(|x| x.as_string().to_string());
+  let relay_url = relay_url.to_string();
+  let hash_str = hash.to_string();
 
   let request = Request::Get(GetRequest { hash: hash_str.clone() });
 

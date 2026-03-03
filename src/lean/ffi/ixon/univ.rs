@@ -3,13 +3,13 @@
 use std::sync::Arc;
 
 use crate::ix::ixon::univ::Univ;
-use crate::lean::obj::{IxonUniv, LeanArray, LeanCtor, LeanObj};
+use crate::lean::object::{LeanIxonUniv, LeanArray, LeanCtor, LeanObject};
 
-impl IxonUniv {
+impl LeanIxonUniv {
   /// Build Ixon.Univ
   pub fn build(univ: &Univ) -> Self {
     let obj = match univ {
-      Univ::Zero => LeanObj::box_usize(0),
+      Univ::Zero => LeanObject::box_usize(0),
       Univ::Succ(inner) => {
         let ctor = LeanCtor::alloc(1, 1, 0);
         ctor.set(0, Self::build(inner));
@@ -47,7 +47,7 @@ impl IxonUniv {
 
   /// Decode Ixon.Univ (recursive enum).
   pub fn decode(self) -> Univ {
-    let obj: LeanObj = *self;
+    let obj: LeanObject = *self;
     if obj.is_scalar() {
       return Univ::Zero;
     }
@@ -69,7 +69,7 @@ impl IxonUniv {
   }
 
   /// Decode Array Ixon.Univ.
-  pub fn decode_array(obj: LeanObj) -> Vec<Arc<Univ>> {
+  pub fn decode_array(obj: LeanObject) -> Vec<Arc<Univ>> {
     let arr = obj.as_array();
     arr.map(|elem| Arc::new(Self::new(elem).decode()))
   }
@@ -77,12 +77,12 @@ impl IxonUniv {
 
 /// Build an Array of Ixon.Univ (standalone wrapper).
 pub fn build_ixon_univ_array(univs: &[Arc<Univ>]) -> LeanArray {
-  IxonUniv::build_array(univs)
+  LeanIxonUniv::build_array(univs)
 }
 
 /// Decode Array Ixon.Univ (standalone wrapper).
-pub fn decode_ixon_univ_array(obj: LeanObj) -> Vec<Arc<Univ>> {
-  IxonUniv::decode_array(obj)
+pub fn decode_ixon_univ_array(obj: LeanObject) -> Vec<Arc<Univ>> {
+  LeanIxonUniv::decode_array(obj)
 }
 
 // =============================================================================
@@ -91,7 +91,7 @@ pub fn decode_ixon_univ_array(obj: LeanObj) -> Vec<Arc<Univ>> {
 
 /// Round-trip Ixon.Univ.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_univ(obj: LeanObj) -> LeanObj {
-  let univ = IxonUniv::new(obj).decode();
-  IxonUniv::build(&univ).into()
+pub extern "C" fn rs_roundtrip_ixon_univ(obj: LeanIxonUniv) -> LeanIxonUniv {
+  let univ = obj.decode();
+  LeanIxonUniv::build(&univ)
 }

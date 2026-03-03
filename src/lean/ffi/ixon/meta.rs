@@ -9,7 +9,11 @@ use crate::ix::ixon::env::Named;
 use crate::ix::ixon::metadata::{
   ConstantMeta, DataValue as IxonDataValue, ExprMeta, ExprMetaData, KVMap,
 };
-use crate::lean::obj::{LeanArray, LeanCtor, LeanObj};
+use crate::lean::object::{
+  LeanIxonComm, LeanIxonConstantMeta, LeanIxonDataValue,
+  LeanIxonExprMetaArena, LeanIxonExprMetaData, LeanIxonNamed, LeanArray,
+  LeanCtor, LeanObject,
+};
 
 use crate::lean::ffi::ix::constant::{
   build_reducibility_hints, decode_reducibility_hints,
@@ -25,7 +29,7 @@ use crate::lean::ffi::ixon::constant::{
 // =============================================================================
 
 /// Build Ixon.DataValue (for metadata)
-pub fn build_ixon_data_value(dv: &IxonDataValue) -> LeanObj {
+pub fn build_ixon_data_value(dv: &IxonDataValue) -> LeanObject {
   match dv {
     IxonDataValue::OfString(addr) => {
       let ctor = LeanCtor::alloc(0, 1, 0);
@@ -61,7 +65,7 @@ pub fn build_ixon_data_value(dv: &IxonDataValue) -> LeanObj {
 }
 
 /// Decode Ixon.DataValue.
-pub fn decode_ixon_data_value(obj: LeanObj) -> IxonDataValue {
+pub fn decode_ixon_data_value(obj: LeanObject) -> IxonDataValue {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => IxonDataValue::OfString(decode_ixon_address(ctor.get(0))),
@@ -103,7 +107,7 @@ pub fn build_kvmap_array(kvmaps: &[KVMap]) -> LeanArray {
 }
 
 /// Decode KVMap (Array (Address × DataValue)).
-pub fn decode_ixon_kvmap(obj: LeanObj) -> KVMap {
+pub fn decode_ixon_kvmap(obj: LeanObject) -> KVMap {
   let arr = obj.as_array();
   arr
     .iter()
@@ -118,7 +122,7 @@ pub fn decode_ixon_kvmap(obj: LeanObj) -> KVMap {
 }
 
 /// Decode Array KVMap.
-fn decode_kvmap_array(obj: LeanObj) -> Vec<KVMap> {
+fn decode_kvmap_array(obj: LeanObject) -> Vec<KVMap> {
   let arr = obj.as_array();
   arr.map(decode_ixon_kvmap)
 }
@@ -128,7 +132,7 @@ fn decode_kvmap_array(obj: LeanObj) -> Vec<KVMap> {
 // =============================================================================
 
 /// Decode Array Address.
-fn decode_address_array(obj: LeanObj) -> Vec<Address> {
+fn decode_address_array(obj: LeanObject) -> Vec<Address> {
   decode_ixon_address_array(obj)
 }
 
@@ -136,13 +140,13 @@ fn decode_address_array(obj: LeanObj) -> Vec<Address> {
 fn build_u64_array(vals: &[u64]) -> LeanArray {
   let arr = LeanArray::alloc(vals.len());
   for (i, &v) in vals.iter().enumerate() {
-    arr.set(i, LeanObj::box_u64(v));
+    arr.set(i, LeanObject::box_u64(v));
   }
   arr
 }
 
 /// Decode Array UInt64.
-fn decode_u64_array(obj: LeanObj) -> Vec<u64> {
+fn decode_u64_array(obj: LeanObject) -> Vec<u64> {
   let arr = obj.as_array();
   arr.iter().map(|elem| elem.unbox_u64()).collect()
 }
@@ -162,9 +166,9 @@ fn decode_u64_array(obj: LeanObj) -> Vec<u64> {
 /// | ref        | 4   | 1 (name: Address)      | 0                        |
 /// | prj        | 5   | 1 (structName: Address) | 8 (1× u64)             |
 /// | mdata      | 6   | 1 (mdata: Array)       | 8 (1× u64)              |
-pub fn build_expr_meta_data(node: &ExprMetaData) -> LeanObj {
+pub fn build_expr_meta_data(node: &ExprMetaData) -> LeanObject {
   match node {
-    ExprMetaData::Leaf => LeanObj::box_usize(0),
+    ExprMetaData::Leaf => LeanObject::box_usize(0),
 
     ExprMetaData::App { children } => {
       // Tag 1, 0 obj fields, 16 scalar bytes (2× u64)
@@ -223,7 +227,7 @@ pub fn build_expr_meta_data(node: &ExprMetaData) -> LeanObj {
 }
 
 /// Decode Ixon.ExprMetaData from Lean pointer.
-pub fn decode_expr_meta_data(obj: LeanObj) -> ExprMetaData {
+pub fn decode_expr_meta_data(obj: LeanObject) -> ExprMetaData {
   // Leaf (tag 0, no fields) is represented as a scalar lean_box(0)
   if obj.is_scalar() {
     let tag = obj.as_ptr() as usize >> 1;
@@ -308,7 +312,7 @@ pub fn build_expr_meta_arena(arena: &ExprMeta) -> LeanArray {
 
 /// Decode Ixon.ExprMetaArena from Lean pointer.
 /// Single-field struct is unboxed — obj IS the Array directly.
-pub fn decode_expr_meta_arena(obj: LeanObj) -> ExprMeta {
+pub fn decode_expr_meta_arena(obj: LeanObject) -> ExprMeta {
   let arr = obj.as_array();
   ExprMeta { nodes: arr.map(decode_expr_meta_data) }
 }
@@ -328,9 +332,9 @@ pub fn decode_expr_meta_arena(obj: LeanObj) -> ExprMeta {
 /// | indc    | 4   | 6 (name, lvls, ctors, all, ctx, arena) | 8 (1× u64) |
 /// | ctor    | 5   | 4 (name, lvls, induct, arena) | 8 (1× u64) |
 /// | recr    | 6   | 7 (name, lvls, rules, all, ctx, arena, ruleRoots) | 8 (1× u64) |
-pub fn build_constant_meta(meta: &ConstantMeta) -> LeanObj {
+pub fn build_constant_meta(meta: &ConstantMeta) -> LeanObject {
   match meta {
-    ConstantMeta::Empty => LeanObj::box_usize(0),
+    ConstantMeta::Empty => LeanObject::box_usize(0),
 
     ConstantMeta::Def {
       name,
@@ -419,7 +423,7 @@ pub fn build_constant_meta(meta: &ConstantMeta) -> LeanObj {
 }
 
 /// Decode Ixon.ConstantMeta from Lean pointer.
-pub fn decode_constant_meta(obj: LeanObj) -> ConstantMeta {
+pub fn decode_constant_meta(obj: LeanObject) -> ConstantMeta {
   // Empty (tag 0, no fields) is represented as a scalar lean_box(0)
   if obj.is_scalar() {
     let tag = obj.as_ptr() as usize >> 1;
@@ -521,7 +525,7 @@ pub fn decode_constant_meta(obj: LeanObj) -> ConstantMeta {
 // =============================================================================
 
 /// Build Ixon.Named { addr : Address, constMeta : ConstantMeta }
-pub fn build_named(addr: &Address, meta: &ConstantMeta) -> LeanObj {
+pub fn build_named(addr: &Address, meta: &ConstantMeta) -> LeanObject {
   let addr_obj = build_address_from_ixon(addr);
   let meta_obj = build_constant_meta(meta);
   let ctor = LeanCtor::alloc(0, 2, 0);
@@ -531,7 +535,7 @@ pub fn build_named(addr: &Address, meta: &ConstantMeta) -> LeanObj {
 }
 
 /// Decode Ixon.Named.
-pub fn decode_named(obj: LeanObj) -> Named {
+pub fn decode_named(obj: LeanObject) -> Named {
   let ctor = obj.as_ctor();
   Named {
     addr: decode_ixon_address(ctor.get(0)),
@@ -540,7 +544,7 @@ pub fn decode_named(obj: LeanObj) -> Named {
 }
 
 /// Build Ixon.Comm { secret : Address, payload : Address }
-pub fn build_ixon_comm(comm: &Comm) -> LeanObj {
+pub fn build_ixon_comm(comm: &Comm) -> LeanObject {
   let secret_obj = build_address_from_ixon(&comm.secret);
   let payload_obj = build_address_from_ixon(&comm.payload);
   let ctor = LeanCtor::alloc(0, 2, 0);
@@ -550,7 +554,7 @@ pub fn build_ixon_comm(comm: &Comm) -> LeanObj {
 }
 
 /// Decode Ixon.Comm.
-pub fn decode_ixon_comm(obj: LeanObj) -> Comm {
+pub fn decode_ixon_comm(obj: LeanObject) -> Comm {
   let ctor = obj.as_ctor();
   Comm {
     secret: decode_ixon_address(ctor.get(0)),
@@ -564,42 +568,50 @@ pub fn decode_ixon_comm(obj: LeanObj) -> Comm {
 
 /// Round-trip Ixon.DataValue.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_data_value(obj: LeanObj) -> LeanObj {
-  let dv = decode_ixon_data_value(obj);
-  build_ixon_data_value(&dv)
+pub extern "C" fn rs_roundtrip_ixon_data_value(
+  obj: LeanIxonDataValue,
+) -> LeanIxonDataValue {
+  let dv = decode_ixon_data_value(*obj);
+  build_ixon_data_value(&dv).into()
 }
 
 /// Round-trip Ixon.Comm.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_comm(obj: LeanObj) -> LeanObj {
-  let comm = decode_ixon_comm(obj);
-  build_ixon_comm(&comm)
+pub extern "C" fn rs_roundtrip_ixon_comm(obj: LeanIxonComm) -> LeanIxonComm {
+  let comm = decode_ixon_comm(*obj);
+  build_ixon_comm(&comm).into()
 }
 
 /// Round-trip Ixon.ExprMetaData.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_expr_meta_data(obj: LeanObj) -> LeanObj {
-  let node = decode_expr_meta_data(obj);
-  build_expr_meta_data(&node)
+pub extern "C" fn rs_roundtrip_ixon_expr_meta_data(
+  obj: LeanIxonExprMetaData,
+) -> LeanIxonExprMetaData {
+  let node = decode_expr_meta_data(*obj);
+  build_expr_meta_data(&node).into()
 }
 
 /// Round-trip Ixon.ExprMetaArena.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_expr_meta_arena(obj: LeanObj) -> LeanObj {
-  let arena = decode_expr_meta_arena(obj);
-  *build_expr_meta_arena(&arena)
+pub extern "C" fn rs_roundtrip_ixon_expr_meta_arena(
+  obj: LeanIxonExprMetaArena,
+) -> LeanIxonExprMetaArena {
+  let arena = decode_expr_meta_arena(*obj);
+  (*build_expr_meta_arena(&arena)).into()
 }
 
 /// Round-trip Ixon.ConstantMeta (full arena-based).
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_constant_meta(obj: LeanObj) -> LeanObj {
-  let meta = decode_constant_meta(obj);
-  build_constant_meta(&meta)
+pub extern "C" fn rs_roundtrip_ixon_constant_meta(
+  obj: LeanIxonConstantMeta,
+) -> LeanIxonConstantMeta {
+  let meta = decode_constant_meta(*obj);
+  build_constant_meta(&meta).into()
 }
 
 /// Round-trip Ixon.Named (with real metadata).
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_named(obj: LeanObj) -> LeanObj {
-  let named = decode_named(obj);
-  build_named(&named.addr, &named.meta)
+pub extern "C" fn rs_roundtrip_ixon_named(obj: LeanIxonNamed) -> LeanIxonNamed {
+  let named = decode_named(*obj);
+  build_named(&named.addr, &named.meta).into()
 }

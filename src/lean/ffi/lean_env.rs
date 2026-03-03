@@ -20,7 +20,7 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 
 use crate::lean::nat::Nat;
-use crate::lean::obj::LeanObj;
+use crate::lean::object::LeanObject;
 
 use crate::{
   ix::compile::compile_env,
@@ -36,17 +36,17 @@ use crate::{
 
 const PARALLEL_THRESHOLD: usize = 100;
 
-/// Wrapper to allow sending `LeanObj` across threads. The underlying Lean
+/// Wrapper to allow sending `LeanObject` across threads. The underlying Lean
 /// objects must remain valid for the entire duration of parallel decoding.
 #[derive(Clone, Copy)]
-struct SendObj(LeanObj);
+struct SendObj(LeanObject);
 
 unsafe impl Send for SendObj {}
 unsafe impl Sync for SendObj {}
 
 impl SendObj {
   #[inline]
-  fn get(self) -> LeanObj {
+  fn get(self) -> LeanObject {
     self.0
   }
 }
@@ -94,12 +94,12 @@ impl<'g> Cache<'g> {
   }
 }
 
-fn collect_list_objs(obj: LeanObj) -> Vec<LeanObj> {
+fn collect_list_objs(obj: LeanObject) -> Vec<LeanObject> {
   obj.as_list().iter().collect()
 }
 
 // Name decoding with global cache
-pub fn lean_ptr_to_name(obj: LeanObj, global: &GlobalCache) -> Name {
+pub fn lean_ptr_to_name(obj: LeanObject, global: &GlobalCache) -> Name {
   let ptr = obj.as_ptr();
   // Fast path: check if already cached
   if let Some(name) = global.names.get(&ptr) {
@@ -125,7 +125,7 @@ pub fn lean_ptr_to_name(obj: LeanObj, global: &GlobalCache) -> Name {
   global.names.entry(ptr).or_insert(name).clone()
 }
 
-fn lean_ptr_to_level(obj: LeanObj, cache: &mut Cache<'_>) -> Level {
+fn lean_ptr_to_level(obj: LeanObject, cache: &mut Cache<'_>) -> Level {
   let ptr = obj.as_ptr();
   if let Some(cached) = cache.local.univs.get(&ptr) {
     return cached.clone();
@@ -164,7 +164,7 @@ fn lean_ptr_to_level(obj: LeanObj, cache: &mut Cache<'_>) -> Level {
   level
 }
 
-fn lean_ptr_to_substring(obj: LeanObj) -> Substring {
+fn lean_ptr_to_substring(obj: LeanObject) -> Substring {
   let ctor = obj.as_ctor();
   let [str_obj, start_pos, stop_pos] = ctor.objs();
   let str = str_obj.as_string().to_string();
@@ -173,7 +173,7 @@ fn lean_ptr_to_substring(obj: LeanObj) -> Substring {
   Substring { str, start_pos, stop_pos }
 }
 
-fn lean_ptr_to_source_info(obj: LeanObj) -> SourceInfo {
+fn lean_ptr_to_source_info(obj: LeanObject) -> SourceInfo {
   if obj.is_scalar() {
     return SourceInfo::None;
   }
@@ -199,7 +199,7 @@ fn lean_ptr_to_source_info(obj: LeanObj) -> SourceInfo {
 }
 
 fn lean_ptr_to_syntax_preresolved(
-  obj: LeanObj,
+  obj: LeanObject,
   cache: &mut Cache<'_>,
 ) -> SyntaxPreresolved {
   let ctor = obj.as_ctor();
@@ -223,7 +223,7 @@ fn lean_ptr_to_syntax_preresolved(
   }
 }
 
-fn lean_ptr_to_syntax(obj: LeanObj, cache: &mut Cache<'_>) -> Syntax {
+fn lean_ptr_to_syntax(obj: LeanObject, cache: &mut Cache<'_>) -> Syntax {
   if obj.is_scalar() {
     return Syntax::Missing;
   }
@@ -258,7 +258,7 @@ fn lean_ptr_to_syntax(obj: LeanObj, cache: &mut Cache<'_>) -> Syntax {
 }
 
 fn lean_ptr_to_name_data_value(
-  obj: LeanObj,
+  obj: LeanObject,
   cache: &mut Cache<'_>,
 ) -> (Name, DataValue) {
   let ctor = obj.as_ctor();
@@ -288,7 +288,7 @@ fn lean_ptr_to_name_data_value(
   (name, data_value)
 }
 
-pub fn lean_ptr_to_expr(obj: LeanObj, cache: &mut Cache<'_>) -> Expr {
+pub fn lean_ptr_to_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
   let ptr = obj.as_ptr();
   if let Some(cached) = cache.local.exprs.get(&ptr) {
     return cached.clone();
@@ -399,7 +399,7 @@ pub fn lean_ptr_to_expr(obj: LeanObj, cache: &mut Cache<'_>) -> Expr {
 }
 
 fn lean_ptr_to_recursor_rule(
-  obj: LeanObj,
+  obj: LeanObject,
   cache: &mut Cache<'_>,
 ) -> RecursorRule {
   let ctor = obj.as_ctor();
@@ -411,7 +411,7 @@ fn lean_ptr_to_recursor_rule(
 }
 
 fn lean_ptr_to_constant_val(
-  obj: LeanObj,
+  obj: LeanObject,
   cache: &mut Cache<'_>,
 ) -> ConstantVal {
   let ctor = obj.as_ctor();
@@ -426,7 +426,7 @@ fn lean_ptr_to_constant_val(
 }
 
 pub fn lean_ptr_to_constant_info(
-  obj: LeanObj,
+  obj: LeanObject,
   cache: &mut Cache<'_>,
 ) -> ConstantInfo {
   let ctor = obj.as_ctor();
@@ -609,7 +609,7 @@ pub fn lean_ptr_to_constant_info(
 
 /// Decode a single (Name, ConstantInfo) pair.
 fn decode_name_constant_info(
-  obj: LeanObj,
+  obj: LeanObject,
   global: &GlobalCache,
 ) -> (Name, ConstantInfo) {
   let mut cache = Cache::new(global);
@@ -621,7 +621,7 @@ fn decode_name_constant_info(
 }
 
 // Decode a Lean environment in parallel with hybrid caching.
-pub fn lean_ptr_to_env(obj: LeanObj) -> Env {
+pub fn lean_ptr_to_env(obj: LeanObject) -> Env {
   // Phase 1: Collect pointers (sequential)
   let objs = collect_list_objs(obj);
 
@@ -651,7 +651,7 @@ pub fn lean_ptr_to_env(obj: LeanObj) -> Env {
 }
 
 /// Sequential fallback for small environments.
-pub fn lean_ptr_to_env_sequential(obj: LeanObj) -> Env {
+pub fn lean_ptr_to_env_sequential(obj: LeanObject) -> Env {
   let objs = collect_list_objs(obj);
   let global = GlobalCache::new();
   let mut env = Env::default();
@@ -669,7 +669,7 @@ pub fn lean_ptr_to_env_sequential(obj: LeanObj) -> Env {
 // roundtrip and size analysis. Output is intentionally suppressed; re-enable
 // individual `eprintln!` lines when debugging locally.
 #[unsafe(no_mangle)]
-extern "C" fn rs_tmp_decode_const_map(obj: LeanObj) -> usize {
+extern "C" fn rs_tmp_decode_const_map(obj: LeanObject) -> usize {
   // Enable hash-consed size tracking for debugging
   // TODO: Make this configurable via CLI instead of hardcoded
   crate::ix::compile::TRACK_HASH_CONSED_SIZE

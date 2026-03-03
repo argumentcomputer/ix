@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
 use crate::lean::ffi::{ffi_io_guard, io_ok};
-use crate::lean::obj::{LeanArray, LeanCtor, LeanObj};
+use crate::lean::object::{LeanArray, LeanCtor, LeanObject};
 
 use crate::lean::ffi::builder::LeanBuildCache;
 use crate::lean::ffi::ix::name::build_name;
@@ -15,7 +15,7 @@ use crate::lean::ffi::lean_env::lean_ptr_to_env;
 pub fn build_ref_graph_array(
   cache: &mut LeanBuildCache,
   refs: &crate::ix::graph::RefMap,
-) -> LeanObj {
+) -> LeanObject {
   let arr = LeanArray::alloc(refs.len());
   for (i, (name, ref_set)) in refs.iter().enumerate() {
     let name_obj = build_name(cache, name);
@@ -38,7 +38,7 @@ pub fn build_ref_graph_array(
 pub fn build_condensed_blocks(
   cache: &mut LeanBuildCache,
   condensed: &crate::ix::condense::CondensedBlocks,
-) -> LeanObj {
+) -> LeanObject {
   // Build lowLinks: Array (Ix.Name × Ix.Name)
   let low_links_arr = LeanArray::alloc(condensed.low_links.len());
   for (i, (name, low_link)) in condensed.low_links.iter().enumerate() {
@@ -94,7 +94,7 @@ pub fn build_condensed_blocks(
 
 /// FFI function to build a reference graph from a Lean environment.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_build_ref_graph(env_consts_ptr: LeanObj) -> LeanObj {
+pub extern "C" fn rs_build_ref_graph(env_consts_ptr: LeanObject) -> LeanObject {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
@@ -107,7 +107,7 @@ pub extern "C" fn rs_build_ref_graph(env_consts_ptr: LeanObj) -> LeanObj {
 
 /// FFI function to compute SCCs from a Lean environment.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compute_sccs(env_consts_ptr: LeanObj) -> LeanObj {
+pub extern "C" fn rs_compute_sccs(env_consts_ptr: LeanObject) -> LeanObject {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);

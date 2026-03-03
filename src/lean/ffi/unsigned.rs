@@ -1,4 +1,4 @@
-use crate::lean::obj::LeanByteArray;
+use crate::lean::object::LeanByteArray;
 
 #[unsafe(no_mangle)]
 extern "C" fn c_u16_to_le_bytes(v: u16) -> LeanByteArray {

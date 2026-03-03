@@ -1,4 +1,4 @@
-use crate::lean::obj::LeanExcept;
+use crate::lean::object::LeanExcept;
 
 /// `Iroh.Serve.serve' : Unit → Except String Unit`
 #[unsafe(no_mangle)]

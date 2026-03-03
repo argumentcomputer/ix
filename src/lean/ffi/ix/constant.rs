@@ -16,7 +16,7 @@ use crate::ix::env::{
   RecursorRule, RecursorVal, ReducibilityHints, TheoremVal,
 };
 use crate::lean::nat::Nat;
-use crate::lean::obj::{IxConstantInfo, LeanArray, LeanCtor, LeanObj};
+use crate::lean::object::{LeanIxConstantInfo, LeanArray, LeanCtor, LeanObject};
 
 use crate::lean::ffi::builder::LeanBuildCache;
 use crate::lean::ffi::ix::expr::{build_expr, decode_ix_expr};
@@ -29,7 +29,7 @@ use crate::lean::ffi::primitives::build_nat;
 pub fn build_constant_val(
   cache: &mut LeanBuildCache,
   cv: &ConstantVal,
-) -> LeanObj {
+) -> LeanObject {
   // ConstantVal = { name : Name, levelParams : Array Name, type : Expr }
   let name_obj = build_name(cache, &cv.name);
   let level_params_obj = build_name_array(cache, &cv.level_params);
@@ -45,12 +45,12 @@ pub fn build_constant_val(
 /// Build ReducibilityHints.
 /// NOTE: In Lean 4, 0-field constructors are boxed scalars when the inductive has
 /// other constructors with fields. So opaque and abbrev use box_usize.
-pub fn build_reducibility_hints(hints: &ReducibilityHints) -> LeanObj {
+pub fn build_reducibility_hints(hints: &ReducibilityHints) -> LeanObject {
   match hints {
     // | opaque -- tag 0, boxed as scalar
-    ReducibilityHints::Opaque => LeanObj::box_usize(0),
+    ReducibilityHints::Opaque => LeanObject::box_usize(0),
     // | abbrev -- tag 1, boxed as scalar
-    ReducibilityHints::Abbrev => LeanObj::box_usize(1),
+    ReducibilityHints::Abbrev => LeanObject::box_usize(1),
     // | regular (h : UInt32) -- tag 2, object constructor
     ReducibilityHints::Regular(h) => {
       // UInt32 is a scalar, stored inline
@@ -69,7 +69,7 @@ pub fn build_reducibility_hints(hints: &ReducibilityHints) -> LeanObj {
 pub fn build_constant_info(
   cache: &mut LeanBuildCache,
   info: &ConstantInfo,
-) -> IxConstantInfo {
+) -> LeanIxConstantInfo {
   let result = match info {
     // | axiomInfo (v : AxiomVal) -- tag 0
     ConstantInfo::AxiomInfo(v) => {
@@ -238,7 +238,7 @@ pub fn build_constant_info(
     },
   };
 
-  IxConstantInfo::new(result)
+  LeanIxConstantInfo::new(result)
 }
 
 /// Build an Array of RecursorRule.
@@ -269,7 +269,7 @@ fn build_recursor_rules(
 
 /// Decode Ix.ConstantVal from Lean object.
 /// ConstantVal = { name : Name, levelParams : Array Name, type : Expr }
-pub fn decode_constant_val(obj: LeanObj) -> ConstantVal {
+pub fn decode_constant_val(obj: LeanObject) -> ConstantVal {
   let ctor = obj.as_ctor();
   let name = decode_ix_name(ctor.get(0));
   let level_params: Vec<Name> = ctor.get(1).as_array().map(decode_ix_name);
@@ -279,7 +279,7 @@ pub fn decode_constant_val(obj: LeanObj) -> ConstantVal {
 }
 
 /// Decode Lean.ReducibilityHints from Lean object.
-pub fn decode_reducibility_hints(obj: LeanObj) -> ReducibilityHints {
+pub fn decode_reducibility_hints(obj: LeanObject) -> ReducibilityHints {
   if obj.is_scalar() {
     let tag = obj.as_ptr() as usize >> 1;
     match tag {
@@ -303,7 +303,7 @@ pub fn decode_reducibility_hints(obj: LeanObj) -> ReducibilityHints {
 }
 
 /// Decode Ix.RecursorRule from Lean object.
-fn decode_recursor_rule(obj: LeanObj) -> RecursorRule {
+fn decode_recursor_rule(obj: LeanObject) -> RecursorRule {
   let ctor = obj.as_ctor();
   RecursorRule {
     ctor: decode_ix_name(ctor.get(0)),
@@ -313,7 +313,7 @@ fn decode_recursor_rule(obj: LeanObj) -> RecursorRule {
 }
 
 /// Decode Ix.ConstantInfo from Lean object.
-pub fn decode_constant_info(obj: LeanObj) -> ConstantInfo {
+pub fn decode_constant_info(obj: LeanObject) -> ConstantInfo {
   let outer = obj.as_ctor();
   let inner_obj = outer.get(0);
   let inner = inner_obj.as_ctor();
@@ -429,8 +429,8 @@ pub fn decode_constant_info(obj: LeanObj) -> ConstantInfo {
 /// Round-trip an Ix.ConstantInfo: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_constant_info(
-  info_ptr: IxConstantInfo,
-) -> IxConstantInfo {
+  info_ptr: LeanIxConstantInfo,
+) -> LeanIxConstantInfo {
   let info = decode_constant_info(*info_ptr);
   let mut cache = LeanBuildCache::new();
   build_constant_info(&mut cache, &info)

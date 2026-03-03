@@ -9,8 +9,8 @@ use crate::ix::ixon::comm::Comm;
 use crate::ix::ixon::constant::Constant as IxonConstant;
 use crate::ix::ixon::env::{Env as IxonEnv, Named as IxonNamed};
 use crate::ix::ixon::metadata::ConstantMeta;
-use crate::lean::obj::{
-  LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanObj,
+use crate::lean::object::{
+  LeanIxonRawEnv, LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanObject,
 };
 
 use crate::lean::ffi::builder::LeanBuildCache;
@@ -33,7 +33,7 @@ pub struct DecodedComm {
 
 /// Decode Ixon.Comm from Lean pointer.
 /// Comm = { secret : Address, payload : Address }
-pub fn decode_comm(obj: LeanObj) -> DecodedComm {
+pub fn decode_comm(obj: LeanObject) -> DecodedComm {
   let ctor = obj.as_ctor();
   DecodedComm {
     secret: decode_ixon_address(ctor.get(0)),
@@ -42,7 +42,7 @@ pub fn decode_comm(obj: LeanObj) -> DecodedComm {
 }
 
 /// Build Ixon.Comm Lean object.
-pub fn build_comm(comm: &DecodedComm) -> LeanObj {
+pub fn build_comm(comm: &DecodedComm) -> LeanObject {
   let ctor = LeanCtor::alloc(0, 2, 0);
   ctor.set(0, build_address_from_ixon(&comm.secret));
   ctor.set(1, build_address_from_ixon(&comm.payload));
@@ -60,7 +60,7 @@ pub struct DecodedRawConst {
 }
 
 /// Decode Ixon.RawConst from Lean pointer.
-pub fn decode_raw_const(obj: LeanObj) -> DecodedRawConst {
+pub fn decode_raw_const(obj: LeanObject) -> DecodedRawConst {
   let ctor = obj.as_ctor();
   DecodedRawConst {
     addr: decode_ixon_address(ctor.get(0)),
@@ -69,7 +69,7 @@ pub fn decode_raw_const(obj: LeanObj) -> DecodedRawConst {
 }
 
 /// Build Ixon.RawConst Lean object.
-pub fn build_raw_const(rc: &DecodedRawConst) -> LeanObj {
+pub fn build_raw_const(rc: &DecodedRawConst) -> LeanObject {
   let ctor = LeanCtor::alloc(0, 2, 0);
   ctor.set(0, build_address_from_ixon(&rc.addr));
   ctor.set(1, build_ixon_constant(&rc.constant));
@@ -88,7 +88,7 @@ pub struct DecodedRawNamed {
 }
 
 /// Decode Ixon.RawNamed from Lean pointer.
-pub fn decode_raw_named(obj: LeanObj) -> DecodedRawNamed {
+pub fn decode_raw_named(obj: LeanObject) -> DecodedRawNamed {
   let ctor = obj.as_ctor();
   DecodedRawNamed {
     name: decode_ix_name(ctor.get(0)),
@@ -101,7 +101,7 @@ pub fn decode_raw_named(obj: LeanObj) -> DecodedRawNamed {
 pub fn build_raw_named(
   cache: &mut LeanBuildCache,
   rn: &DecodedRawNamed,
-) -> LeanObj {
+) -> LeanObject {
   let ctor = LeanCtor::alloc(0, 3, 0);
   ctor.set(0, build_name(cache, &rn.name));
   ctor.set(1, build_address_from_ixon(&rn.addr));
@@ -120,7 +120,7 @@ pub struct DecodedRawBlob {
 }
 
 /// Decode Ixon.RawBlob from Lean pointer.
-pub fn decode_raw_blob(obj: LeanObj) -> DecodedRawBlob {
+pub fn decode_raw_blob(obj: LeanObject) -> DecodedRawBlob {
   let ctor = obj.as_ctor();
   let ba = ctor.get(1).as_byte_array();
   DecodedRawBlob {
@@ -130,7 +130,7 @@ pub fn decode_raw_blob(obj: LeanObj) -> DecodedRawBlob {
 }
 
 /// Build Ixon.RawBlob Lean object.
-pub fn build_raw_blob(rb: &DecodedRawBlob) -> LeanObj {
+pub fn build_raw_blob(rb: &DecodedRawBlob) -> LeanObject {
   let ctor = LeanCtor::alloc(0, 2, 0);
   ctor.set(0, build_address_from_ixon(&rb.addr));
   ctor.set(1, LeanByteArray::from_bytes(&rb.bytes));
@@ -148,7 +148,7 @@ pub struct DecodedRawComm {
 }
 
 /// Decode Ixon.RawComm from Lean pointer.
-pub fn decode_raw_comm(obj: LeanObj) -> DecodedRawComm {
+pub fn decode_raw_comm(obj: LeanObject) -> DecodedRawComm {
   let ctor = obj.as_ctor();
   DecodedRawComm {
     addr: decode_ixon_address(ctor.get(0)),
@@ -157,7 +157,7 @@ pub fn decode_raw_comm(obj: LeanObj) -> DecodedRawComm {
 }
 
 /// Build Ixon.RawComm Lean object.
-pub fn build_raw_comm(rc: &DecodedRawComm) -> LeanObj {
+pub fn build_raw_comm(rc: &DecodedRawComm) -> LeanObject {
   let ctor = LeanCtor::alloc(0, 2, 0);
   ctor.set(0, build_address_from_ixon(&rc.addr));
   ctor.set(1, build_comm(&rc.comm));
@@ -175,7 +175,7 @@ pub struct DecodedRawNameEntry {
 }
 
 /// Decode Ixon.RawNameEntry from Lean pointer.
-pub fn decode_raw_name_entry(obj: LeanObj) -> DecodedRawNameEntry {
+pub fn decode_raw_name_entry(obj: LeanObject) -> DecodedRawNameEntry {
   let ctor = obj.as_ctor();
   DecodedRawNameEntry {
     addr: decode_ixon_address(ctor.get(0)),
@@ -188,7 +188,7 @@ pub fn build_raw_name_entry(
   cache: &mut LeanBuildCache,
   addr: &Address,
   name: &Name,
-) -> LeanObj {
+) -> LeanObject {
   let ctor = LeanCtor::alloc(0, 2, 0);
   ctor.set(0, build_address_from_ixon(addr));
   ctor.set(1, build_name(cache, name));
@@ -209,7 +209,7 @@ pub struct DecodedRawEnv {
 }
 
 /// Decode Ixon.RawEnv from Lean pointer.
-pub fn decode_raw_env(obj: LeanObj) -> DecodedRawEnv {
+pub fn decode_raw_env(obj: LeanObject) -> DecodedRawEnv {
   let ctor = obj.as_ctor();
   let consts_arr = ctor.get(0).as_array();
   let named_arr = ctor.get(1).as_array();
@@ -227,7 +227,7 @@ pub fn decode_raw_env(obj: LeanObj) -> DecodedRawEnv {
 }
 
 /// Build Ixon.RawEnv Lean object.
-pub fn build_raw_env(env: &DecodedRawEnv) -> LeanObj {
+pub fn build_raw_env(env: &DecodedRawEnv) -> LeanObject {
   let mut cache = LeanBuildCache::new();
 
   // Build consts array
@@ -350,14 +350,13 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> DecodedRawEnv {
 
 /// FFI: Serialize an Ixon.RawEnv -> ByteArray via Rust's Env.put. Pure.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_ser_env(obj: LeanObj) -> LeanObj {
-  let decoded = decode_raw_env(obj);
+pub extern "C" fn rs_ser_env(obj: LeanIxonRawEnv) -> LeanByteArray {
+  let decoded = decode_raw_env(*obj);
   let env = decoded_to_ixon_env(&decoded);
   let mut buf = Vec::new();
   env.put(&mut buf).expect("Env serialization failed");
 
-  let ba = LeanByteArray::from_bytes(&buf);
-  *ba
+  LeanByteArray::from_bytes(&buf)
 }
 
 // =============================================================================
@@ -366,19 +365,18 @@ pub extern "C" fn rs_ser_env(obj: LeanObj) -> LeanObj {
 
 /// FFI: Deserialize ByteArray -> Except String Ixon.RawEnv via Rust's Env.get. Pure.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_des_env(obj: LeanObj) -> LeanObj {
-  let ba = obj.as_byte_array();
-  let data = ba.as_bytes();
+pub extern "C" fn rs_des_env(obj: LeanByteArray) -> LeanExcept {
+  let data = obj.as_bytes();
   let mut slice: &[u8] = data;
   match IxonEnv::get(&mut slice) {
     Ok(env) => {
       let decoded = ixon_env_to_decoded(&env);
       let raw_env = build_raw_env(&decoded);
-      *LeanExcept::ok(raw_env)
+      LeanExcept::ok(raw_env)
     },
     Err(e) => {
       let msg = format!("rs_des_env: {}", e);
-      *LeanExcept::error_string(&msg)
+      LeanExcept::error_string(&msg)
     },
   }
 }

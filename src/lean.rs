@@ -18,13 +18,13 @@
   clippy::cast_possible_truncation,
   clippy::derive_partial_eq_without_eq
 )]
-pub mod lean {
+pub mod lean_sys {
   include!(concat!(env!("OUT_DIR"), "/lean.rs"));
 }
 
 pub mod ffi;
 pub mod nat;
-pub mod obj;
+pub mod object;
 
 use std::ffi::{CString, c_void};
 
@@ -45,6 +45,6 @@ pub fn safe_cstring(s: &str) -> CString {
 /// Must only be used as a `lean_external_foreach_fn` callback.
 pub unsafe extern "C" fn noop_foreach(
   _: *mut c_void,
-  _: *mut lean::lean_object,
+  _: *mut lean_sys::lean_object,
 ) {
 }

@@ -11,7 +11,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetResponse, PutResponse, Request, Response};
-use crate::lean::obj::LeanExcept;
+use crate::lean::object::LeanExcept;
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";

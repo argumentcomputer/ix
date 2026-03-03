@@ -7,7 +7,7 @@
 
 use crate::ix::env::{Name, NameData};
 use crate::lean::nat::Nat;
-use crate::lean::obj::{IxName, LeanArray, LeanCtor, LeanObj, LeanString};
+use crate::lean::object::{LeanIxName, LeanArray, LeanCtor, LeanObject, LeanString};
 
 use crate::lean::ffi::builder::LeanBuildCache;
 use crate::lean::ffi::ix::address::build_address;
@@ -15,7 +15,7 @@ use crate::lean::ffi::primitives::build_nat;
 
 /// Build a Lean Ix.Name with embedded hash.
 /// Uses caching to avoid rebuilding the same name.
-pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> IxName {
+pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> LeanIxName {
   let hash = name.get_hash();
   if let Some(&cached) = cache.names.get(hash) {
     cached.inc_ref();
@@ -26,7 +26,7 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> IxName {
     NameData::Anonymous(h) => {
       let ctor = LeanCtor::alloc(0, 1, 0);
       ctor.set(0, build_address(h));
-      IxName::new(*ctor)
+      LeanIxName::new(*ctor)
     },
     NameData::Str(parent, s, h) => {
       let parent_obj = build_name(cache, parent);
@@ -35,7 +35,7 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> IxName {
       ctor.set(0, parent_obj);
       ctor.set(1, s_obj);
       ctor.set(2, build_address(h));
-      IxName::new(*ctor)
+      LeanIxName::new(*ctor)
     },
     NameData::Num(parent, n, h) => {
       let parent_obj = build_name(cache, parent);
@@ -44,7 +44,7 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> IxName {
       ctor.set(0, parent_obj);
       ctor.set(1, n_obj);
       ctor.set(2, build_address(h));
-      IxName::new(*ctor)
+      LeanIxName::new(*ctor)
     },
   };
 
@@ -65,7 +65,7 @@ pub fn build_name_array(
 }
 
 /// Decode a Lean Ix.Name to Rust Name.
-pub fn decode_ix_name(obj: LeanObj) -> Name {
+pub fn decode_ix_name(obj: LeanObject) -> Name {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
@@ -89,13 +89,13 @@ pub fn decode_ix_name(obj: LeanObj) -> Name {
 }
 
 /// Decode Array of Names from Lean pointer.
-pub fn decode_name_array(obj: LeanObj) -> Vec<Name> {
+pub fn decode_name_array(obj: LeanObject) -> Vec<Name> {
   obj.as_array().map(decode_ix_name)
 }
 
 /// Round-trip an Ix.Name: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_name(name_ptr: IxName) -> IxName {
+pub extern "C" fn rs_roundtrip_ix_name(name_ptr: LeanIxName) -> LeanIxName {
   let name = decode_ix_name(*name_ptr);
   let mut cache = LeanBuildCache::new();
   build_name(&mut cache, &name)

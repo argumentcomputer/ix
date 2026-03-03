@@ -6,16 +6,16 @@ use crate::{
     G,
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
   },
-  lean::obj::LeanObj,
+  lean::object::LeanObject,
 };
 
 use crate::lean::ffi::aiur::{lean_unbox_g, lean_unbox_nat_as_usize};
 
-fn lean_ptr_to_vec_val_idx(obj: LeanObj) -> Vec<ValIdx> {
+fn lean_ptr_to_vec_val_idx(obj: LeanObject) -> Vec<ValIdx> {
   obj.as_array().map(lean_unbox_nat_as_usize)
 }
 
-fn lean_ptr_to_op(obj: LeanObj) -> Op {
+fn lean_ptr_to_op(obj: LeanObject) -> Op {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
@@ -128,7 +128,7 @@ fn lean_ptr_to_op(obj: LeanObj) -> Op {
   }
 }
 
-fn lean_ptr_to_g_block_pair(obj: LeanObj) -> (G, Block) {
+fn lean_ptr_to_g_block_pair(obj: LeanObject) -> (G, Block) {
   let ctor = obj.as_ctor();
   let [g_obj, block_obj] = ctor.objs::<2>();
   let g = lean_unbox_g(g_obj);
@@ -136,7 +136,7 @@ fn lean_ptr_to_g_block_pair(obj: LeanObj) -> (G, Block) {
   (g, block)
 }
 
-fn lean_ptr_to_ctrl(obj: LeanObj) -> Ctrl {
+fn lean_ptr_to_ctrl(obj: LeanObject) -> Ctrl {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
@@ -163,7 +163,7 @@ fn lean_ptr_to_ctrl(obj: LeanObj) -> Ctrl {
   }
 }
 
-fn lean_ptr_to_block(obj: LeanObj) -> Block {
+fn lean_ptr_to_block(obj: LeanObject) -> Block {
   let ctor = obj.as_ctor();
   let [ops_obj, ctrl_obj, min_sel_obj, max_sel_obj] = ctor.objs::<4>();
   let ops = ops_obj.as_array().map(lean_ptr_to_op);
@@ -173,7 +173,7 @@ fn lean_ptr_to_block(obj: LeanObj) -> Block {
   Block { ops, ctrl, min_sel_included, max_sel_excluded }
 }
 
-fn lean_ptr_to_function_layout(obj: LeanObj) -> FunctionLayout {
+fn lean_ptr_to_function_layout(obj: LeanObject) -> FunctionLayout {
   let ctor = obj.as_ctor();
   let [input_size, selectors, auxiliaries, lookups] = ctor.objs::<4>();
   FunctionLayout {
@@ -184,7 +184,7 @@ fn lean_ptr_to_function_layout(obj: LeanObj) -> FunctionLayout {
   }
 }
 
-fn lean_ptr_to_function(obj: LeanObj) -> Function {
+fn lean_ptr_to_function(obj: LeanObject) -> Function {
   let ctor = obj.as_ctor();
   let [body_obj, layout_obj, unconstrained_obj] = ctor.objs::<3>();
   let body = lean_ptr_to_block(body_obj);
@@ -193,7 +193,7 @@ fn lean_ptr_to_function(obj: LeanObj) -> Function {
   Function { body, layout, unconstrained }
 }
 
-pub(crate) fn lean_ptr_to_toplevel(obj: LeanObj) -> Toplevel {
+pub(crate) fn lean_ptr_to_toplevel(obj: LeanObject) -> Toplevel {
   let ctor = obj.as_ctor();
   let [functions_obj, memory_sizes_obj] = ctor.objs::<2>();
   let functions = functions_obj.as_array().map(lean_ptr_to_function);

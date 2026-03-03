@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use tiny_keccak::{Hasher, Keccak};
 
-use crate::lean::obj::{ExternalClass, LeanByteArray, LeanExternal, LeanObj};
+use crate::lean::object::{ExternalClass, LeanByteArray, LeanExternal, LeanObject};
 
 static KECCAK_CLASS: OnceLock<ExternalClass> = OnceLock::new();
 
@@ -12,7 +12,7 @@ fn keccak_class() -> &'static ExternalClass {
 
 /// `Keccak.Hasher.init : Unit → Hasher`
 #[unsafe(no_mangle)]
-extern "C" fn rs_keccak256_hasher_init(_unit: LeanObj) -> LeanExternal<Keccak> {
+extern "C" fn rs_keccak256_hasher_init(_unit: LeanObject) -> LeanExternal<Keccak> {
   LeanExternal::alloc(keccak_class(), Keccak::v256())
 }
 

@@ -12,17 +12,17 @@ pub mod ix; // Ix types: Name, Level, Expr, ConstantInfo, Environment
 pub mod ixon; // Ixon types: Univ, Expr, Constant, metadata
 pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
 
-use crate::lean::lean::{
+use crate::lean::lean_sys::{
   lean_io_result_mk_error, lean_io_result_mk_ok, lean_mk_io_user_error,
 };
-use crate::lean::obj::{LeanObj, LeanString};
+use crate::lean::object::{LeanArray, LeanByteArray, LeanObject, LeanString};
 
 /// Guard an FFI function that returns a Lean IO result against panics.
 /// On panic, returns a Lean IO error with the panic message instead of
 /// unwinding across the `extern "C"` boundary (which is undefined behavior).
-pub(crate) fn ffi_io_guard<F>(f: F) -> LeanObj
+pub(crate) fn ffi_io_guard<F>(f: F) -> LeanObject
 where
-  F: FnOnce() -> LeanObj + std::panic::UnwindSafe,
+  F: FnOnce() -> LeanObject + std::panic::UnwindSafe,
 {
   match std::panic::catch_unwind(f) {
     Ok(result) => result,
@@ -40,33 +40,31 @@ where
 }
 
 /// Wrap a Lean value in an IO success result.
-pub(crate) fn io_ok(val: impl Into<LeanObj>) -> LeanObj {
-  let val: LeanObj = val.into();
+pub(crate) fn io_ok(val: impl Into<LeanObject>) -> LeanObject {
+  let val: LeanObject = val.into();
   unsafe {
-    LeanObj::from_raw(lean_io_result_mk_ok(val.as_mut_ptr().cast()).cast())
+    LeanObject::from_raw(lean_io_result_mk_ok(val.as_mut_ptr().cast()).cast())
   }
 }
 
 /// Create a Lean IO error result from a Rust error message.
-pub(crate) fn io_error(msg: &str) -> LeanObj {
+pub(crate) fn io_error(msg: &str) -> LeanObject {
   let lean_msg = LeanString::from_str(msg);
   unsafe {
     let lean_err = lean_mk_io_user_error(lean_msg.as_mut_ptr().cast());
-    LeanObj::from_raw(lean_io_result_mk_error(lean_err).cast())
+    LeanObject::from_raw(lean_io_result_mk_error(lean_err).cast())
   }
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_boxed_u32s_are_equivalent_to_bytes(
-  u32s: LeanObj,
-  bytes: LeanObj,
+  u32s: LeanArray,
+  bytes: LeanByteArray,
 ) -> bool {
-  let arr = u32s.as_array();
-  let u32s_flat: Vec<u8> = arr
+  let u32s_flat: Vec<u8> = u32s
     .map(|elem| elem.unbox_u32())
     .into_iter()
     .flat_map(u32::to_le_bytes)
     .collect();
-  let ba = bytes.as_byte_array();
-  u32s_flat == ba.as_bytes()
+  u32s_flat == bytes.as_bytes()
 }

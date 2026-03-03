@@ -4,33 +4,33 @@ use std::ffi::c_void;
 
 use crate::ix::env::{DefinitionSafety, QuotKind};
 use crate::ix::ixon::constant::DefKind;
-use crate::lean::obj::LeanObj;
+use crate::lean::object::{LeanIxonDefKind, LeanIxonDefinitionSafety, LeanIxonQuotKind, LeanObject};
 
 /// Build Ixon.DefKind
 /// | defn -- tag 0
 /// | opaq -- tag 1
 /// | thm  -- tag 2
 /// Simple enums are passed as raw (unboxed) tag values across Lean FFI.
-pub fn build_def_kind(kind: &DefKind) -> LeanObj {
+pub fn build_def_kind(kind: &DefKind) -> LeanObject {
   let tag = match kind {
     DefKind::Definition => 0,
     DefKind::Opaque => 1,
     DefKind::Theorem => 2,
   };
-  unsafe { LeanObj::from_raw(tag as *const c_void) }
+  unsafe { LeanObject::from_raw(tag as *const c_void) }
 }
 
 /// Build Ixon.DefinitionSafety
 /// | unsaf -- tag 0
 /// | safe  -- tag 1
 /// | part  -- tag 2
-pub fn build_ixon_definition_safety(safety: &DefinitionSafety) -> LeanObj {
+pub fn build_ixon_definition_safety(safety: &DefinitionSafety) -> LeanObject {
   let tag = match safety {
     DefinitionSafety::Unsafe => 0,
     DefinitionSafety::Safe => 1,
     DefinitionSafety::Partial => 2,
   };
-  unsafe { LeanObj::from_raw(tag as *const c_void) }
+  unsafe { LeanObject::from_raw(tag as *const c_void) }
 }
 
 /// Build Ixon.QuotKind
@@ -38,14 +38,14 @@ pub fn build_ixon_definition_safety(safety: &DefinitionSafety) -> LeanObj {
 /// | ctor -- tag 1
 /// | lift -- tag 2
 /// | ind  -- tag 3
-pub fn build_ixon_quot_kind(kind: &QuotKind) -> LeanObj {
+pub fn build_ixon_quot_kind(kind: &QuotKind) -> LeanObject {
   let tag = match kind {
     QuotKind::Type => 0,
     QuotKind::Ctor => 1,
     QuotKind::Lift => 2,
     QuotKind::Ind => 3,
   };
-  unsafe { LeanObj::from_raw(tag as *const c_void) }
+  unsafe { LeanObject::from_raw(tag as *const c_void) }
 }
 
 // =============================================================================
@@ -53,7 +53,7 @@ pub fn build_ixon_quot_kind(kind: &QuotKind) -> LeanObj {
 // =============================================================================
 
 /// Decode Ixon.DefKind (simple enum, raw unboxed tag value).
-pub fn decode_ixon_def_kind(obj: LeanObj) -> DefKind {
+pub fn decode_ixon_def_kind(obj: LeanObject) -> DefKind {
   let tag = obj.as_ptr() as usize;
   match tag {
     0 => DefKind::Definition,
@@ -64,7 +64,7 @@ pub fn decode_ixon_def_kind(obj: LeanObj) -> DefKind {
 }
 
 /// Decode Ixon.DefinitionSafety (simple enum, raw unboxed tag value).
-pub fn decode_ixon_definition_safety(obj: LeanObj) -> DefinitionSafety {
+pub fn decode_ixon_definition_safety(obj: LeanObject) -> DefinitionSafety {
   let tag = obj.as_ptr() as usize;
   match tag {
     0 => DefinitionSafety::Unsafe,
@@ -75,7 +75,7 @@ pub fn decode_ixon_definition_safety(obj: LeanObj) -> DefinitionSafety {
 }
 
 /// Decode Ixon.QuotKind (simple enum, raw unboxed tag value).
-pub fn decode_ixon_quot_kind(obj: LeanObj) -> QuotKind {
+pub fn decode_ixon_quot_kind(obj: LeanObject) -> QuotKind {
   let tag = obj.as_ptr() as usize;
   match tag {
     0 => QuotKind::Type,
@@ -92,21 +92,23 @@ pub fn decode_ixon_quot_kind(obj: LeanObj) -> QuotKind {
 
 /// Round-trip Ixon.DefKind.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_def_kind(obj: LeanObj) -> LeanObj {
-  let kind = decode_ixon_def_kind(obj);
-  build_def_kind(&kind)
+pub extern "C" fn rs_roundtrip_ixon_def_kind(obj: LeanIxonDefKind) -> LeanIxonDefKind {
+  let kind = decode_ixon_def_kind(*obj);
+  build_def_kind(&kind).into()
 }
 
 /// Round-trip Ixon.DefinitionSafety.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_definition_safety(obj: LeanObj) -> LeanObj {
-  let safety = decode_ixon_definition_safety(obj);
-  build_ixon_definition_safety(&safety)
+pub extern "C" fn rs_roundtrip_ixon_definition_safety(
+  obj: LeanIxonDefinitionSafety,
+) -> LeanIxonDefinitionSafety {
+  let safety = decode_ixon_definition_safety(*obj);
+  build_ixon_definition_safety(&safety).into()
 }
 
 /// Round-trip Ixon.QuotKind.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_quot_kind(obj: LeanObj) -> LeanObj {
-  let kind = decode_ixon_quot_kind(obj);
-  build_ixon_quot_kind(&kind)
+pub extern "C" fn rs_roundtrip_ixon_quot_kind(obj: LeanIxonQuotKind) -> LeanIxonQuotKind {
+  let kind = decode_ixon_quot_kind(*obj);
+  build_ixon_quot_kind(&kind).into()
 }
