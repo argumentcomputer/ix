@@ -15,7 +15,6 @@ use crate::ix::ixon::constant::{
   Quotient as IxonQuotient, Recursor as IxonRecursor, RecursorProj,
   RecursorRule as IxonRecursorRule,
 };
-use lean_sys::object::{LeanArray, LeanByteArray, LeanCtor, LeanObject};
 use crate::lean::{
   LeanIxAddress, LeanIxonAxiom, LeanIxonConstant, LeanIxonConstantInfo,
   LeanIxonConstructor, LeanIxonConstructorProj, LeanIxonDefinition,
@@ -23,6 +22,7 @@ use crate::lean::{
   LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor, LeanIxonRecursorProj,
   LeanIxonRecursorRule,
 };
+use lean_sys::object::{LeanArray, LeanByteArray, LeanCtor, LeanObject};
 
 use crate::ffi::ixon::expr::{
   build_ixon_expr, build_ixon_expr_array, decode_ixon_expr,

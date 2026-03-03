@@ -6,9 +6,9 @@
 //! - Tag 2: num (parent : Name) (i : Nat) (hash : Address)
 
 use crate::ix::env::{Name, NameData};
+use crate::lean::LeanIxName;
 use lean_sys::nat::Nat;
 use lean_sys::object::{LeanArray, LeanCtor, LeanObject, LeanString};
-use crate::lean::LeanIxName;
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::address::build_address;

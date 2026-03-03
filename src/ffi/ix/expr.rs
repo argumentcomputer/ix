@@ -17,9 +17,9 @@
 use crate::ix::env::{
   BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
 };
+use crate::lean::LeanIxExpr;
 use lean_sys::nat::Nat;
 use lean_sys::object::{LeanArray, LeanCtor, LeanObject, LeanString};
-use crate::lean::LeanIxExpr;
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::address::build_address;

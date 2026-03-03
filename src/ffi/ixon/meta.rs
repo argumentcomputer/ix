@@ -9,11 +9,11 @@ use crate::ix::ixon::env::Named;
 use crate::ix::ixon::metadata::{
   ConstantMeta, DataValue as IxonDataValue, ExprMeta, ExprMetaData, KVMap,
 };
-use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
 use crate::lean::{
-  LeanIxonComm, LeanIxonConstantMeta, LeanIxonDataValue,
-  LeanIxonExprMetaArena, LeanIxonExprMetaData, LeanIxonNamed,
+  LeanIxonComm, LeanIxonConstantMeta, LeanIxonDataValue, LeanIxonExprMetaArena,
+  LeanIxonExprMetaData, LeanIxonNamed,
 };
+use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
 
 use crate::ffi::ix::constant::{
   build_reducibility_hints, decode_reducibility_hints,

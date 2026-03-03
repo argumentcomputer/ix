@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::ffi::ffi_io_guard;
-use lean_sys::object::LeanIOResult;
 use crate::ix::address::Address;
 use crate::ix::compile::{CompileState, compile_env};
 use crate::ix::condense::compute_sccs;
@@ -22,14 +21,15 @@ use crate::ix::ixon::constant::{Constant as IxonConstant, ConstantInfo};
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::{Comm, ConstantMeta};
-use lean_sys::nat::Nat;
-use lean_sys::object::{
-  LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanObject, LeanString,
-};
 use crate::lean::{
   LeanIxBlockCompareDetail, LeanIxBlockCompareResult, LeanIxCompileError,
   LeanIxCompilePhases, LeanIxCondensedBlocks, LeanIxDecompileError,
   LeanIxSerializeError, LeanIxonRawEnv,
+};
+use lean_sys::nat::Nat;
+use lean_sys::object::LeanIOResult;
+use lean_sys::object::{
+  LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanObject, LeanString,
 };
 
 use dashmap::DashMap;
@@ -345,7 +345,9 @@ pub extern "C" fn rs_roundtrip_raw_env(
 
 /// FFI function to run all compilation phases and return combined results.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_phases(env_consts_ptr: LeanObject) -> LeanIOResult {
+pub extern "C" fn rs_compile_phases(
+  env_consts_ptr: LeanObject,
+) -> LeanIOResult {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let env_len = rust_env.len();

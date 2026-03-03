@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use crate::ix::ixon::univ::Univ;
-use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
 use crate::lean::LeanIxonUniv;
+use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
 
 impl LeanIxonUniv {
   /// Build Ixon.Univ

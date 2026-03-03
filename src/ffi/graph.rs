@@ -94,7 +94,9 @@ pub fn build_condensed_blocks(
 
 /// FFI function to build a reference graph from a Lean environment.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_build_ref_graph(env_consts_ptr: LeanObject) -> LeanIOResult {
+pub extern "C" fn rs_build_ref_graph(
+  env_consts_ptr: LeanObject,
+) -> LeanIOResult {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);

@@ -7,8 +7,8 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::sync::OnceLock;
 
 use lean_sys::object::{
-  ExternalClass, LeanArray, LeanByteArray, LeanCtor, LeanExcept,
-  LeanExternal, LeanObject,
+  ExternalClass, LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanExternal,
+  LeanObject,
 };
 
 use crate::{

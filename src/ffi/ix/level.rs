@@ -9,8 +9,8 @@
 //! - Tag 5: mvar (n : Name) (hash : Address)
 
 use crate::ix::env::{Level, LevelData};
-use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
 use crate::lean::LeanIxLevel;
+use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::address::build_address;

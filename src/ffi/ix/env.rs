@@ -3,8 +3,8 @@
 use rustc_hash::FxHashMap;
 
 use crate::ix::env::{ConstantInfo, Name};
-use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
 use crate::lean::{LeanIxEnvironment, LeanIxRawEnvironment};
+use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::constant::{build_constant_info, decode_constant_info};
