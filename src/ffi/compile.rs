@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::ffi::{ffi_io_guard, io_error, io_ok};
 use crate::ix::address::Address;
 use crate::ix::compile::{CompileState, compile_env};
 use crate::ix::condense::compute_sccs;
@@ -20,7 +21,6 @@ use crate::ix::ixon::constant::{Constant as IxonConstant, ConstantInfo};
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::{Comm, ConstantMeta};
-use crate::ffi::{ffi_io_guard, io_error, io_ok};
 use crate::lean::nat::Nat;
 use crate::lean::object::{
   LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanIxBlockCompareDetail,
@@ -44,9 +44,7 @@ use crate::ffi::ixon::env::{
   build_raw_env, build_raw_name_entry, decode_raw_env, decoded_to_ixon_env,
 };
 use crate::ffi::ixon::meta::{build_constant_meta, build_ixon_comm};
-use crate::ffi::lean_env::{
-  GlobalCache, lean_ptr_to_env, lean_ptr_to_name,
-};
+use crate::ffi::lean_env::{GlobalCache, lean_ptr_to_env, lean_ptr_to_name};
 
 // =============================================================================
 // Helper builders

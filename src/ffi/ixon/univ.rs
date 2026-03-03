@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::ix::ixon::univ::Univ;
-use crate::lean::object::{LeanIxonUniv, LeanArray, LeanCtor, LeanObject};
+use crate::lean::object::{LeanArray, LeanCtor, LeanIxonUniv, LeanObject};
 
 impl LeanIxonUniv {
   /// Build Ixon.Univ

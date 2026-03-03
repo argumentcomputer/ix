@@ -4,13 +4,11 @@ use rustc_hash::FxHashMap;
 
 use crate::ix::env::{ConstantInfo, Name};
 use crate::lean::object::{
-  LeanIxEnvironment, LeanIxRawEnvironment, LeanArray, LeanCtor, LeanObject,
+  LeanArray, LeanCtor, LeanIxEnvironment, LeanIxRawEnvironment, LeanObject,
 };
 
 use crate::ffi::builder::LeanBuildCache;
-use crate::ffi::ix::constant::{
-  build_constant_info, decode_constant_info,
-};
+use crate::ffi::ix::constant::{build_constant_info, decode_constant_info};
 use crate::ffi::ix::name::{build_name, decode_ix_name};
 
 // =============================================================================

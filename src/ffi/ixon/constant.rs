@@ -16,21 +16,18 @@ use crate::ix::ixon::constant::{
   RecursorRule as IxonRecursorRule,
 };
 use crate::lean::object::{
-  LeanIxAddress, LeanIxonAxiom, LeanIxonConstant, LeanIxonConstantInfo,
-  LeanIxonConstructor, LeanIxonConstructorProj, LeanIxonDefinition,
-  LeanIxonDefinitionProj, LeanIxonInductive, LeanIxonInductiveProj,
-  LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor,
-  LeanIxonRecursorProj, LeanIxonRecursorRule, LeanArray, LeanByteArray,
-  LeanCtor, LeanObject,
+  LeanArray, LeanByteArray, LeanCtor, LeanIxAddress, LeanIxonAxiom,
+  LeanIxonConstant, LeanIxonConstantInfo, LeanIxonConstructor,
+  LeanIxonConstructorProj, LeanIxonDefinition, LeanIxonDefinitionProj,
+  LeanIxonInductive, LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonQuotient,
+  LeanIxonRecursor, LeanIxonRecursorProj, LeanIxonRecursorRule, LeanObject,
 };
 
 use crate::ffi::ixon::expr::{
   build_ixon_expr, build_ixon_expr_array, decode_ixon_expr,
   decode_ixon_expr_array,
 };
-use crate::ffi::ixon::univ::{
-  build_ixon_univ_array, decode_ixon_univ_array,
-};
+use crate::ffi::ixon::univ::{build_ixon_univ_array, decode_ixon_univ_array};
 
 /// Build Address from Ixon Address type (which is just a [u8; 32]).
 pub fn build_address_from_ixon(addr: &Address) -> LeanIxAddress {

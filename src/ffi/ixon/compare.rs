@@ -7,7 +7,7 @@ use crate::ix::env::Name;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
 use crate::lean::object::{
-  LeanIxBlockCompareDetail, LeanByteArray, LeanCtor, LeanObject,
+  LeanByteArray, LeanCtor, LeanIxBlockCompareDetail, LeanObject,
 };
 
 use crate::ffi::lean_env::{

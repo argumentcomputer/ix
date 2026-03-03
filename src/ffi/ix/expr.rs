@@ -18,14 +18,14 @@ use crate::ix::env::{
   BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
 };
 use crate::lean::nat::Nat;
-use crate::lean::object::{LeanIxExpr, LeanArray, LeanCtor, LeanObject, LeanString};
+use crate::lean::object::{
+  LeanArray, LeanCtor, LeanIxExpr, LeanObject, LeanString,
+};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::address::build_address;
 use crate::ffi::ix::data::{build_data_value, decode_data_value};
-use crate::ffi::ix::level::{
-  build_level, build_level_array, decode_ix_level,
-};
+use crate::ffi::ix::level::{build_level, build_level_array, decode_ix_level};
 use crate::ffi::ix::name::{build_name, decode_ix_name};
 use crate::ffi::primitives::build_nat;
 

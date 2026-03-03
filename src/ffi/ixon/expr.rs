@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::ix::ixon::expr::Expr as IxonExpr;
-use crate::lean::object::{LeanIxonExpr, LeanArray, LeanCtor, LeanObject};
+use crate::lean::object::{LeanArray, LeanCtor, LeanIxonExpr, LeanObject};
 
 /// Build Ixon.Expr (12 constructors).
 pub fn build_ixon_expr(expr: &IxonExpr) -> LeanObject {

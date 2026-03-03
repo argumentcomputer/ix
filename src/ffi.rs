@@ -42,7 +42,9 @@ where
 /// Wrap a Lean value in an IO success result.
 pub(crate) fn io_ok(val: impl Into<LeanObject>) -> LeanObject {
   let val: LeanObject = val.into();
-  unsafe { LeanObject::from_lean_ptr(lean_io_result_mk_ok(val.as_mut_ptr().cast())) }
+  unsafe {
+    LeanObject::from_lean_ptr(lean_io_result_mk_ok(val.as_mut_ptr().cast()))
+  }
 }
 
 /// Create a Lean IO error result from a Rust error message.

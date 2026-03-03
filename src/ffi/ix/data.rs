@@ -5,8 +5,9 @@ use crate::ix::env::{
 };
 use crate::lean::nat::Nat;
 use crate::lean::object::{
-  LeanIxDataValue, LeanIxInt, LeanIxSourceInfo, LeanIxSubstring, LeanIxSyntax,
-  LeanIxSyntaxPreresolved, LeanArray, LeanCtor, LeanObject, LeanString,
+  LeanArray, LeanCtor, LeanIxDataValue, LeanIxInt, LeanIxSourceInfo,
+  LeanIxSubstring, LeanIxSyntax, LeanIxSyntaxPreresolved, LeanObject,
+  LeanString,
 };
 
 use crate::ffi::builder::LeanBuildCache;
@@ -411,7 +412,9 @@ pub extern "C" fn rs_roundtrip_ix_syntax_preresolved(
 
 /// Round-trip an Ix.Syntax: decode from Lean, re-encode.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_syntax(syn_ptr: LeanIxSyntax) -> LeanIxSyntax {
+pub extern "C" fn rs_roundtrip_ix_syntax(
+  syn_ptr: LeanIxSyntax,
+) -> LeanIxSyntax {
   let syn = decode_ix_syntax(*syn_ptr);
   let mut cache = LeanBuildCache::new();
   build_syntax(&mut cache, &syn)

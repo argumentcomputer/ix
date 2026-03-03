@@ -7,7 +7,9 @@
 
 use crate::ix::env::{Name, NameData};
 use crate::lean::nat::Nat;
-use crate::lean::object::{LeanIxName, LeanArray, LeanCtor, LeanObject, LeanString};
+use crate::lean::object::{
+  LeanArray, LeanCtor, LeanIxName, LeanObject, LeanString,
+};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::address::build_address;

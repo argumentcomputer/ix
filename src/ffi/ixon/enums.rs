@@ -4,7 +4,9 @@ use std::ffi::c_void;
 
 use crate::ix::env::{DefinitionSafety, QuotKind};
 use crate::ix::ixon::constant::DefKind;
-use crate::lean::object::{LeanIxonDefKind, LeanIxonDefinitionSafety, LeanIxonQuotKind, LeanObject};
+use crate::lean::object::{
+  LeanIxonDefKind, LeanIxonDefinitionSafety, LeanIxonQuotKind, LeanObject,
+};
 
 /// Build Ixon.DefKind
 /// | defn -- tag 0
@@ -92,7 +94,9 @@ pub fn decode_ixon_quot_kind(obj: LeanObject) -> QuotKind {
 
 /// Round-trip Ixon.DefKind.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_def_kind(obj: LeanIxonDefKind) -> LeanIxonDefKind {
+pub extern "C" fn rs_roundtrip_ixon_def_kind(
+  obj: LeanIxonDefKind,
+) -> LeanIxonDefKind {
   let kind = decode_ixon_def_kind(*obj);
   build_def_kind(&kind).into()
 }
@@ -108,7 +112,9 @@ pub extern "C" fn rs_roundtrip_ixon_definition_safety(
 
 /// Round-trip Ixon.QuotKind.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ixon_quot_kind(obj: LeanIxonQuotKind) -> LeanIxonQuotKind {
+pub extern "C" fn rs_roundtrip_ixon_quot_kind(
+  obj: LeanIxonQuotKind,
+) -> LeanIxonQuotKind {
   let kind = decode_ixon_quot_kind(*obj);
   build_ixon_quot_kind(&kind).into()
 }

@@ -542,9 +542,8 @@ impl<T> LeanExternal<T> {
   /// Allocate a new external object holding `data`.
   pub fn alloc(class: &ExternalClass, data: T) -> Self {
     let data_ptr = Box::into_raw(Box::new(data));
-    let obj = unsafe {
-      lean_sys::lean_alloc_external(class.0.cast(), data_ptr.cast())
-    };
+    let obj =
+      unsafe { lean_sys::lean_alloc_external(class.0.cast(), data_ptr.cast()) };
     Self(LeanObject(obj.cast()), PhantomData)
   }
 
@@ -649,7 +648,6 @@ impl LeanList {
   pub fn collect<T>(&self, f: impl Fn(LeanObject) -> T) -> Vec<T> {
     self.iter().map(f).collect()
   }
-
 }
 
 impl<T: Into<LeanObject>> FromIterator<T> for LeanList {

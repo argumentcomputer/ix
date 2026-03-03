@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
+use crate::ffi::{ffi_io_guard, io_ok};
 use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
-use crate::ffi::{ffi_io_guard, io_ok};
 use crate::lean::object::{LeanArray, LeanCtor, LeanObject};
 
 use crate::ffi::builder::LeanBuildCache;
