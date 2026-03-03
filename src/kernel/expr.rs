@@ -105,6 +105,12 @@ pub enum ExprNode {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Expr(pub Rc<ExprNode>);
 
+impl From<ExprNode> for Expr {
+  fn from(node: ExprNode) -> Self {
+    Expr(Rc::new(node))
+  }
+}
+
 // ============================================================================
 // Constants
 // ============================================================================

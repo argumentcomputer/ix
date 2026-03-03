@@ -104,20 +104,32 @@ impl Default for Env {
 // Values
 // ============================================================================
 
-/// A neutral value represents a stuck computation.
+/// Internal node structure for a neutral value.
 ///
 /// Neutral (or "stuck") values arise when we try to reduce an expression
 /// that depends on a free variable. These are values that cannot reduce
 /// further because they're waiting on an unknown.
-#[derive(Debug, Clone)]
-pub enum Neutral {
+#[derive(Debug)]
+pub enum NeutralNode {
   /// A free variable (stuck).
   Fvar(Name),
   /// A neutral value applied to a thunk (lazy argument).
   /// This is the "stuck application" - the head is neutral (contains a free variable).
-  App(Rc<Neutral>, Thunk),
+  App(Neutral, Thunk),
   /// Projection from a neutral value.
-  Proj(Name, usize, Rc<Neutral>),
+  Proj(Name, usize, Neutral),
+}
+
+/// A neutral value represents a stuck computation.
+///
+/// Wraps `Rc<NeutralNode>` so that cloning is cheap (just incrementing a reference count).
+#[derive(Debug, Clone)]
+pub struct Neutral(pub Rc<NeutralNode>);
+
+impl From<NeutralNode> for Neutral {
+  fn from(node: NeutralNode) -> Self {
+    Neutral(Rc::new(node))
+  }
 }
 
 /// Internal node structure for a value.
@@ -146,6 +158,12 @@ pub enum ValueNode {
 /// Wraps `Rc<ValueNode>` so that cloning is cheap (just incrementing a reference count).
 #[derive(Debug, Clone)]
 pub struct Value(pub Rc<ValueNode>);
+
+impl From<ValueNode> for Value {
+  fn from(node: ValueNode) -> Self {
+    Value(Rc::new(node))
+  }
+}
 
 // ============================================================================
 // Thunk Operations
@@ -205,18 +223,18 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
 
     ExprNode::Fvar(name) => {
       // Free variables are always stuck
-      Value(Rc::new(ValueNode::Neutral(Neutral::Fvar(name.clone()))))
+      ValueNode::Neutral(NeutralNode::Fvar(name.clone()).into()).into()
     },
 
     ExprNode::Sort(level) => {
       // Sorts are already values
-      Value(Rc::new(ValueNode::Sort(level.clone())))
+      ValueNode::Sort(level.clone()).into()
     },
 
     ExprNode::Const(name, levels) => {
       // Constants might be reducible in a global environment
       // For now, treat as values (would need global env to unfold definitions)
-      Value(Rc::new(ValueNode::Const(name.clone(), levels.clone())))
+      ValueNode::Const(name.clone(), levels.clone()).into()
     },
 
     ExprNode::App(fun, arg) => {
@@ -230,25 +248,27 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       // Lambda evaluates to a closure capturing the current environment
       // Type is suspended as a thunk
       let ty_thunk = suspend(ty.clone(), env.clone());
-      Value(Rc::new(ValueNode::Fun(
+      ValueNode::Fun(
         name.clone(),
         ty_thunk,
         body.clone(),
         env.clone(),
         binder_info.clone(),
-      )))
+      )
+      .into()
     },
 
     ExprNode::ForallE(name, ty, body, binder_info) => {
       // Forall evaluates to a dependent function type value (type is suspended)
       let ty_thunk = suspend(ty.clone(), env.clone());
-      Value(Rc::new(ValueNode::Forall(
+      ValueNode::Forall(
         name.clone(),
         ty_thunk,
         body.clone(),
         env.clone(),
         binder_info.clone(),
-      )))
+      )
+      .into()
     },
 
     ExprNode::LetE(_name, _ty, val, body, _non_dep) => {
@@ -260,7 +280,7 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
 
     ExprNode::Lit(lit) => {
       // Literals are already values
-      Value(Rc::new(ValueNode::Lit(lit.clone())))
+      ValueNode::Lit(lit.clone()).into()
     },
 
     ExprNode::Proj(name, idx, e) => {
@@ -268,11 +288,10 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       match v.0.as_ref() {
         ValueNode::Neutral(n) => {
           // Projection from a neutral value is stuck
-          Value(Rc::new(ValueNode::Neutral(Neutral::Proj(
-            name.clone(),
-            *idx,
-            Rc::new(n.clone()),
-          ))))
+          ValueNode::Neutral(
+            NeutralNode::Proj(name.clone(), *idx, n.clone()).into(),
+          )
+          .into()
         },
         // In a full implementation with inductive types, we'd handle
         // projections from fully-applied constructors here
@@ -280,11 +299,15 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
           // For now, we don't have enough information to reduce projections
           // In practice, you'd need to know the structure definition
           // to extract the field. Treating as neutral is conservative.
-          Value(Rc::new(ValueNode::Neutral(Neutral::Proj(
-            name.clone(),
-            *idx,
-            Rc::new(Neutral::Fvar(Name::Anonymous)), // placeholder neutral head
-          ))))
+          ValueNode::Neutral(
+            NeutralNode::Proj(
+              name.clone(),
+              *idx,
+              NeutralNode::Fvar(Name::Anonymous).into(), // placeholder neutral head
+            )
+            .into(),
+          )
+          .into()
         },
       }
     },
@@ -310,10 +333,7 @@ pub fn apply(fun: &Value, arg_thunk: Thunk) -> Value {
     ValueNode::Neutral(n) => {
       // Application to a neutral value creates a stuck application
       // Keep the argument as a thunk (lazy evaluation)
-      Value(Rc::new(ValueNode::Neutral(Neutral::App(
-        Rc::new(n.clone()),
-        arg_thunk,
-      ))))
+      ValueNode::Neutral(NeutralNode::App(n.clone(), arg_thunk).into()).into()
     },
 
     // Other values cannot be applied (would be a type error in well-typed terms)
@@ -321,10 +341,11 @@ pub fn apply(fun: &Value, arg_thunk: Thunk) -> Value {
     _ => {
       // Conservative fallback: treat as a stuck application
       // Keep the argument as a thunk
-      Value(Rc::new(ValueNode::Neutral(Neutral::App(
-        Rc::new(Neutral::Fvar(Name::Anonymous)),
-        arg_thunk,
-      ))))
+      ValueNode::Neutral(
+        NeutralNode::App(NeutralNode::Fvar(Name::Anonymous).into(), arg_thunk)
+          .into(),
+      )
+      .into()
     },
   }
 }
@@ -347,65 +368,62 @@ pub fn quote(val: &Value, level: usize) -> Expr {
       let ty_val = force(ty_thunk);
       let quoted_ty = quote(&ty_val, level);
       // Create a fresh variable thunk and quote the body
-      let fresh_thunk = Thunk::forced(Value(Rc::new(ValueNode::Neutral(
-        Neutral::Fvar(Name::Anonymous),
-      ))));
+      let fresh_thunk = Thunk::forced(
+        ValueNode::Neutral(NeutralNode::Fvar(Name::Anonymous).into()).into(),
+      );
       let new_env = env.extend(fresh_thunk);
       let body_val = eval(body, &new_env);
       let quoted_body = quote(&body_val, level + 1);
-      Expr(Rc::new(ExprNode::Lam(
-        name.clone(),
-        quoted_ty,
-        quoted_body,
-        binder_info.clone(),
-      )))
+      ExprNode::Lam(name.clone(), quoted_ty, quoted_body, binder_info.clone())
+        .into()
     },
 
-    ValueNode::Sort(l) => Expr(Rc::new(ExprNode::Sort(l.clone()))),
+    ValueNode::Sort(l) => ExprNode::Sort(l.clone()).into(),
 
     ValueNode::Forall(name, ty_thunk, body, env, binder_info) => {
       // Force the type thunk and quote it
       let ty_val = force(ty_thunk);
       let quoted_ty = quote(&ty_val, level);
       // Evaluate body under a fresh variable thunk
-      let fresh_thunk = Thunk::forced(Value(Rc::new(ValueNode::Neutral(
-        Neutral::Fvar(Name::Anonymous),
-      ))));
+      let fresh_thunk = Thunk::forced(
+        ValueNode::Neutral(NeutralNode::Fvar(Name::Anonymous).into()).into(),
+      );
       let new_env = env.extend(fresh_thunk);
       let body_val = eval(body, &new_env);
       let quoted_body = quote(&body_val, level + 1);
-      Expr(Rc::new(ExprNode::ForallE(
+      ExprNode::ForallE(
         name.clone(),
         quoted_ty,
         quoted_body,
         binder_info.clone(),
-      )))
+      )
+      .into()
     },
 
-    ValueNode::Lit(lit) => Expr(Rc::new(ExprNode::Lit(lit.clone()))),
+    ValueNode::Lit(lit) => ExprNode::Lit(lit.clone()).into(),
 
     ValueNode::Const(name, levels) => {
-      Expr(Rc::new(ExprNode::Const(name.clone(), levels.clone())))
+      ExprNode::Const(name.clone(), levels.clone()).into()
     },
   }
 }
 
 /// Quotes a neutral value back to an expression.
 fn quote_neutral(neutral: &Neutral, level: usize) -> Expr {
-  match neutral {
-    Neutral::Fvar(name) => Expr(Rc::new(ExprNode::Fvar(name.clone()))),
+  match neutral.0.as_ref() {
+    NeutralNode::Fvar(name) => ExprNode::Fvar(name.clone()).into(),
 
-    Neutral::App(fun, arg_thunk) => {
+    NeutralNode::App(fun, arg_thunk) => {
       let quoted_fun = quote_neutral(fun, level);
       // Force the thunk to get the value, then quote it
       let arg_val = force(arg_thunk);
       let quoted_arg = quote(&arg_val, level);
-      Expr(Rc::new(ExprNode::App(quoted_fun, quoted_arg)))
+      ExprNode::App(quoted_fun, quoted_arg).into()
     },
 
-    Neutral::Proj(name, idx, e) => {
+    NeutralNode::Proj(name, idx, e) => {
       let quoted_e = quote_neutral(e, level);
-      Expr(Rc::new(ExprNode::Proj(name.clone(), *idx, quoted_e)))
+      ExprNode::Proj(name.clone(), *idx, quoted_e).into()
     },
   }
 }
@@ -438,12 +456,13 @@ mod tests {
   #[test]
   fn test_identity_normalization() {
     // Create identity function: λx. x
-    let identity = Expr(Rc::new(ExprNode::Lam(
+    let identity = ExprNode::Lam(
       Name::Anonymous,
-      Expr(Rc::new(ExprNode::Sort(Level::Zero))),
-      Expr(Rc::new(ExprNode::Bvar(0))),
+      ExprNode::Sort(Level::Zero).into(),
+      ExprNode::Bvar(0).into(),
       BinderInfo::Default,
-    )));
+    )
+    .into();
 
     // Normalize should preserve it
     let normalized = normalize(&identity);
