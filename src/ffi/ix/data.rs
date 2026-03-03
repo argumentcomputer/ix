@@ -32,7 +32,7 @@ pub fn build_int(int: &Int) -> LeanIxInt {
 /// Build a Ix.Substring.
 pub fn build_substring(ss: &Substring) -> LeanIxSubstring {
   let obj = LeanCtor::alloc(0, 3, 0);
-  obj.set(0, LeanString::from_str(ss.str.as_str()));
+  obj.set(0, LeanString::new(ss.str.as_str()));
   obj.set(1, build_nat(&ss.start_pos));
   obj.set(2, build_nat(&ss.stop_pos));
   LeanIxSubstring::new(*obj)
@@ -91,7 +91,7 @@ pub fn build_syntax_preresolved(
 pub fn build_string_array(strings: &[String]) -> LeanArray {
   let arr = LeanArray::alloc(strings.len());
   for (i, s) in strings.iter().enumerate() {
-    arr.set(i, LeanString::from_str(s.as_str()));
+    arr.set(i, LeanString::new(s.as_str()));
   }
   arr
 }
@@ -117,7 +117,7 @@ pub fn build_syntax(cache: &mut LeanBuildCache, syn: &Syntax) -> LeanIxSyntax {
       let info_obj = build_source_info(info);
       let obj = LeanCtor::alloc(2, 2, 0);
       obj.set(0, info_obj);
-      obj.set(1, LeanString::from_str(val.as_str()));
+      obj.set(1, LeanString::new(val.as_str()));
       LeanIxSyntax::new(*obj)
     },
     // | ident (info : SourceInfo) (rawVal : Substring) (val : Name) (preresolved : Array SyntaxPreresolved) -- tag 3
@@ -168,7 +168,7 @@ pub fn build_data_value(
   match dv {
     DataValue::OfString(s) => {
       let obj = LeanCtor::alloc(0, 1, 0);
-      obj.set(0, LeanString::from_str(s.as_str()));
+      obj.set(0, LeanString::new(s.as_str()));
       LeanIxDataValue::new(*obj)
     },
     DataValue::OfBool(b) => {

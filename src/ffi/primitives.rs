@@ -6,7 +6,6 @@
 //! - List, Array, ByteArray
 //! - AssocList, HashMap
 
-use crate::lean::lean_sys::lean_uint64_to_nat;
 use crate::lean::nat::Nat;
 use crate::lean::object::{
   LeanArray, LeanByteArray, LeanCtor, LeanList, LeanObject, LeanString,
@@ -25,8 +24,7 @@ pub fn build_nat(n: &Nat) -> LeanObject {
       #[allow(clippy::cast_possible_truncation)]
       return LeanObject::box_usize(val as usize);
     }
-    // For larger u64 values, use lean_uint64_to_nat
-    return unsafe { LeanObject::from_raw(lean_uint64_to_nat(val).cast()) };
+    return LeanObject::from_nat_u64(val);
   }
   // For values larger than u64, convert to limbs and use GMP
   let bytes = n.to_le_bytes();
@@ -59,24 +57,20 @@ pub extern "C" fn rs_roundtrip_nat(nat_ptr: LeanObject) -> LeanObject {
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_string(s_ptr: LeanString) -> LeanString {
   let s = s_ptr.to_string();
-  LeanString::from_str(&s)
+  LeanString::new(&s)
 }
 
 /// Round-trip a List Nat: decode from Lean, re-encode to Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_list_nat(list_ptr: LeanList) -> LeanObject {
-  // Decode list to Vec<Nat>
+pub extern "C" fn rs_roundtrip_list_nat(list_ptr: LeanList) -> LeanList {
   let nats: Vec<Nat> = list_ptr.collect(Nat::from_obj);
-  // Re-encode as Lean List
   build_list_nat(&nats)
 }
 
 /// Round-trip an Array Nat: decode from Lean, re-encode to Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_array_nat(arr_ptr: LeanArray) -> LeanObject {
-  // Decode array
+pub extern "C" fn rs_roundtrip_array_nat(arr_ptr: LeanArray) -> LeanArray {
   let nats: Vec<Nat> = arr_ptr.map(Nat::from_obj);
-  // Re-encode as Lean Array
   build_array_nat(&nats)
 }
 
@@ -99,18 +93,18 @@ pub extern "C" fn rs_roundtrip_bool(bool_ptr: LeanObject) -> LeanObject {
 // =============================================================================
 
 /// Build a Lean List Nat from a Vec<Nat>.
-fn build_list_nat(nats: &[Nat]) -> LeanObject {
+fn build_list_nat(nats: &[Nat]) -> LeanList {
   let items: Vec<LeanObject> = nats.iter().map(build_nat).collect();
-  *LeanList::from_iter(items)
+  items.into_iter().collect()
 }
 
 /// Build a Lean Array Nat from a Vec<Nat>.
-fn build_array_nat(nats: &[Nat]) -> LeanObject {
+fn build_array_nat(nats: &[Nat]) -> LeanArray {
   let arr = LeanArray::alloc(nats.len());
   for (i, nat) in nats.iter().enumerate() {
     arr.set(i, build_nat(nat));
   }
-  *arr
+  arr
 }
 
 // =============================================================================
@@ -360,8 +354,5 @@ pub extern "C" fn rs_bytearray_to_u64_le(ba: LeanByteArray) -> u64 {
   if data.len() < 8 {
     return 0;
   }
-  unsafe {
-    let cptr = crate::lean::lean_sys::lean_sarray_cptr(ba.as_ptr() as *mut _);
-    std::ptr::read_unaligned(cptr as *const u64)
-  }
+  u64::from_le_bytes(data[..8].try_into().unwrap())
 }

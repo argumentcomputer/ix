@@ -55,11 +55,7 @@ pub fn build_reducibility_hints(hints: &ReducibilityHints) -> LeanObject {
     ReducibilityHints::Regular(h) => {
       // UInt32 is a scalar, stored inline
       let obj = LeanCtor::alloc(2, 0, 4);
-      // Set the uint32 at offset 0 in the scalar area
-      unsafe {
-        let ptr = obj.as_ptr().cast::<u8>();
-        *(ptr.add(8).cast::<u32>().cast_mut()) = *h;
-      }
+      obj.set_u32(0, *h);
       *obj
     },
   }
@@ -295,8 +291,7 @@ pub fn decode_reducibility_hints(obj: LeanObject) -> ReducibilityHints {
     1 => ReducibilityHints::Abbrev,
     2 => {
       // regular: 0 obj fields, 4 scalar bytes (UInt32)
-      let h = unsafe { *(obj.as_ptr().cast::<u8>().add(8).cast::<u32>()) };
-      ReducibilityHints::Regular(h)
+      ReducibilityHints::Regular(ctor.scalar_u32(0, 0))
     },
     _ => panic!("Invalid ReducibilityHints tag: {}", ctor.tag()),
   }

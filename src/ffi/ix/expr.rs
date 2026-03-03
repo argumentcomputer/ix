@@ -194,7 +194,7 @@ pub fn build_literal(lit: &Literal) -> LeanObject {
     },
     Literal::StrVal(s) => {
       let obj = LeanCtor::alloc(1, 1, 0);
-      obj.set(0, LeanString::from_str(s.as_str()));
+      obj.set(0, LeanString::new(s.as_str()));
       *obj
     },
   }

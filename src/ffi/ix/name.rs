@@ -30,7 +30,7 @@ pub fn build_name(cache: &mut LeanBuildCache, name: &Name) -> LeanIxName {
     },
     NameData::Str(parent, s, h) => {
       let parent_obj = build_name(cache, parent);
-      let s_obj = LeanString::from_str(s.as_str());
+      let s_obj = LeanString::new(s.as_str());
       let ctor = LeanCtor::alloc(1, 3, 0);
       ctor.set(0, parent_obj);
       ctor.set(1, s_obj);

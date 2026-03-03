@@ -12,14 +12,12 @@ use crate::{
     execute::{IOBuffer, IOKeyInfo},
     synthesis::AiurSystem,
   },
-  lean::{
-    ffi::aiur::{
-      lean_unbox_g, lean_unbox_nat_as_usize, toplevel::lean_ptr_to_toplevel,
-    },
-    object::{
-      ExternalClass, LeanArray, LeanByteArray, LeanCtor, LeanExcept,
-      LeanExternal, LeanObject,
-    },
+  ffi::aiur::{
+    lean_unbox_g, lean_unbox_nat_as_usize, toplevel::lean_ptr_to_toplevel,
+  },
+  lean::object::{
+    ExternalClass, LeanArray, LeanByteArray, LeanCtor, LeanExcept,
+    LeanExternal, LeanObject,
   },
 };
 

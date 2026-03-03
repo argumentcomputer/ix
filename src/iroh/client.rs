@@ -25,8 +25,8 @@ const READ_SIZE_LIMIT: usize = 100_000_000;
 /// ```
 fn mk_put_response(message: &str, hash: &str) -> LeanCtor {
   let ctor = LeanCtor::alloc(0, 2, 0);
-  ctor.set(0, LeanString::from_str(message));
-  ctor.set(1, LeanString::from_str(hash));
+  ctor.set(0, LeanString::new(message));
+  ctor.set(1, LeanString::new(hash));
   ctor
 }
 
@@ -40,8 +40,8 @@ fn mk_put_response(message: &str, hash: &str) -> LeanCtor {
 fn mk_get_response(message: &str, hash: &str, bytes: &[u8]) -> LeanCtor {
   let byte_array = LeanByteArray::from_bytes(bytes);
   let ctor = LeanCtor::alloc(0, 3, 0);
-  ctor.set(0, LeanString::from_str(message));
-  ctor.set(1, LeanString::from_str(hash));
+  ctor.set(0, LeanString::new(message));
+  ctor.set(1, LeanString::new(hash));
   ctor.set(2, byte_array);
   ctor
 }

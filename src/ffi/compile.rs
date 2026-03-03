@@ -21,7 +21,6 @@ use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::{Comm, ConstantMeta};
 use crate::ffi::{ffi_io_guard, io_error, io_ok};
-use crate::lean::lean_sys::lean_uint64_to_nat;
 use crate::lean::nat::Nat;
 use crate::lean::object::{
   LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanIxBlockCompareDetail,
@@ -55,12 +54,12 @@ use crate::ffi::lean_env::{
 
 /// Build a Lean String from a Rust &str.
 fn build_lean_string(s: &str) -> LeanObject {
-  LeanString::from_str(s).into()
+  LeanString::new(s).into()
 }
 
 /// Build a Lean Nat from a usize.
 fn build_lean_nat_usize(n: usize) -> LeanObject {
-  unsafe { LeanObject::from_raw(lean_uint64_to_nat(n as u64).cast()) }
+  LeanObject::from_nat_u64(n as u64)
 }
 
 // =============================================================================
@@ -1136,7 +1135,7 @@ pub fn decode_serialize_error(obj: LeanObject) -> SerializeError {
     },
     5 => SerializeError::AddressError,
     6 => {
-      let max = Nat::from_ptr(ctor.get(0).as_ptr())
+      let max = unsafe { Nat::from_ptr(ctor.get(0).as_ptr()) }
         .to_u64()
         .and_then(|x| usize::try_from(x).ok())
         .unwrap_or(0);
@@ -1230,7 +1229,7 @@ pub fn decode_decompile_error(obj: LeanObject) -> DecompileError {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
-      let refs_len = Nat::from_ptr(ctor.get(0).as_ptr())
+      let refs_len = unsafe { Nat::from_ptr(ctor.get(0).as_ptr()) }
         .to_u64()
         .and_then(|x| usize::try_from(x).ok())
         .unwrap_or(0);
@@ -1239,7 +1238,7 @@ pub fn decode_decompile_error(obj: LeanObject) -> DecompileError {
       DecompileError::InvalidRefIndex { idx, refs_len, constant }
     },
     1 => {
-      let univs_len = Nat::from_ptr(ctor.get(0).as_ptr())
+      let univs_len = unsafe { Nat::from_ptr(ctor.get(0).as_ptr()) }
         .to_u64()
         .and_then(|x| usize::try_from(x).ok())
         .unwrap_or(0);
@@ -1248,7 +1247,7 @@ pub fn decode_decompile_error(obj: LeanObject) -> DecompileError {
       DecompileError::InvalidUnivIndex { idx, univs_len, constant }
     },
     2 => {
-      let max = Nat::from_ptr(ctor.get(0).as_ptr())
+      let max = unsafe { Nat::from_ptr(ctor.get(0).as_ptr()) }
         .to_u64()
         .and_then(|x| usize::try_from(x).ok())
         .unwrap_or(0);
@@ -1257,7 +1256,7 @@ pub fn decode_decompile_error(obj: LeanObject) -> DecompileError {
       DecompileError::InvalidShareIndex { idx, max, constant }
     },
     3 => {
-      let ctx_size = Nat::from_ptr(ctor.get(0).as_ptr())
+      let ctx_size = unsafe { Nat::from_ptr(ctor.get(0).as_ptr()) }
         .to_u64()
         .and_then(|x| usize::try_from(x).ok())
         .unwrap_or(0);
@@ -1266,7 +1265,7 @@ pub fn decode_decompile_error(obj: LeanObject) -> DecompileError {
       DecompileError::InvalidRecIndex { idx, ctx_size, constant }
     },
     4 => {
-      let max = Nat::from_ptr(ctor.get(0).as_ptr())
+      let max = unsafe { Nat::from_ptr(ctor.get(0).as_ptr()) }
         .to_u64()
         .and_then(|x| usize::try_from(x).ok())
         .unwrap_or(0);

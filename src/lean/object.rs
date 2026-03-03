@@ -30,6 +30,24 @@ impl LeanObject {
     Self(ptr)
   }
 
+  /// Wrap a `*mut lean_object` returned from a `lean_sys` function.
+  ///
+  /// # Safety
+  /// The pointer must be a valid Lean object (or tagged scalar).
+  #[inline]
+  pub unsafe fn from_lean_ptr(ptr: *mut lean_sys::lean_object) -> Self {
+    Self(ptr.cast())
+  }
+
+  /// Create a Lean `Nat` from a `u64` value.
+  ///
+  /// Small values are stored as tagged scalars; larger ones are heap-allocated
+  /// via the Lean runtime.
+  #[inline]
+  pub fn from_nat_u64(n: u64) -> Self {
+    unsafe { Self::from_lean_ptr(lean_sys::lean_uint64_to_nat(n)) }
+  }
+
   #[inline]
   pub fn as_ptr(self) -> *const c_void {
     self.0
@@ -329,26 +347,28 @@ impl LeanString {
   }
 
   /// Create a Lean string from a Rust `&str`.
-  pub fn from_str(s: &str) -> Self {
+  pub fn new(s: &str) -> Self {
     let c = safe_cstring(s);
     let obj = unsafe { lean_sys::lean_mk_string(c.as_ptr()) };
     Self(LeanObject(obj.cast()))
   }
 
-  /// Decode the Lean string into a Rust `String`.
-  pub fn to_string(&self) -> String {
+  /// Number of data bytes (excluding the trailing NUL).
+  pub fn byte_len(&self) -> usize {
+    unsafe { lean_sys::lean_string_size(self.0.as_ptr() as *mut _) - 1 }
+  }
+}
+
+impl std::fmt::Display for LeanString {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     unsafe {
       let obj = self.0.as_ptr() as *mut _;
       let len = lean_sys::lean_string_size(obj) - 1; // m_size includes NUL
       let data = lean_sys::lean_string_cstr(obj);
       let bytes = std::slice::from_raw_parts(data.cast::<u8>(), len);
-      String::from_utf8_unchecked(bytes.to_vec())
+      let s = std::str::from_utf8_unchecked(bytes);
+      f.write_str(s)
     }
-  }
-
-  /// Number of data bytes (excluding the trailing NUL).
-  pub fn byte_len(&self) -> usize {
-    unsafe { lean_sys::lean_string_size(self.0.as_ptr() as *mut _) - 1 }
   }
 }
 
@@ -427,6 +447,18 @@ impl LeanCtor {
     }
   }
 
+  /// Set a `u32` scalar field at the given byte offset (past all object fields).
+  pub fn set_u32(&self, offset: usize, val: u32) {
+    #[allow(clippy::cast_possible_truncation)]
+    unsafe {
+      lean_sys::lean_ctor_set_uint32(
+        self.0.as_ptr() as *mut _,
+        offset as u32,
+        val,
+      );
+    }
+  }
+
   /// Set a `u64` scalar field at the given byte offset (past all object fields).
   pub fn set_u64(&self, offset: usize, val: u64) {
     #[allow(clippy::cast_possible_truncation)]
@@ -451,6 +483,15 @@ impl LeanCtor {
 
   /// Read a `u64` scalar at `offset` bytes past `num_objs` object fields.
   pub fn scalar_u64(&self, num_objs: usize, offset: usize) -> u64 {
+    unsafe {
+      std::ptr::read_unaligned(
+        self.0.as_ptr().cast::<u8>().add(8 + num_objs * 8 + offset).cast(),
+      )
+    }
+  }
+
+  /// Read a `u32` scalar at `offset` bytes past `num_objs` object fields.
+  pub fn scalar_u32(&self, num_objs: usize, offset: usize) -> u32 {
     unsafe {
       std::ptr::read_unaligned(
         self.0.as_ptr().cast::<u8>().add(8 + num_objs * 8 + offset).cast(),
@@ -502,7 +543,7 @@ impl<T> LeanExternal<T> {
   pub fn alloc(class: &ExternalClass, data: T) -> Self {
     let data_ptr = Box::into_raw(Box::new(data));
     let obj = unsafe {
-      lean_sys::lean_alloc_external(class.0 as *mut _, data_ptr.cast())
+      lean_sys::lean_alloc_external(class.0.cast(), data_ptr.cast())
     };
     Self(LeanObject(obj.cast()), PhantomData)
   }
@@ -609,11 +650,11 @@ impl LeanList {
     self.iter().map(f).collect()
   }
 
-  /// Build a list from an iterator of values convertible to `LeanObject`.
-  pub fn from_iter(
-    items: impl IntoIterator<Item = impl Into<LeanObject>>,
-  ) -> Self {
-    let items: Vec<LeanObject> = items.into_iter().map(Into::into).collect();
+}
+
+impl<T: Into<LeanObject>> FromIterator<T> for LeanList {
+  fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+    let items: Vec<LeanObject> = iter.into_iter().map(Into::into).collect();
     let mut list = Self::nil();
     for item in items.into_iter().rev() {
       list = Self::cons(item, list);
@@ -738,7 +779,7 @@ impl LeanExcept {
 
   /// Build `Except.error (String.mk msg)` from a Rust string.
   pub fn error_string(msg: &str) -> Self {
-    Self::error(LeanString::from_str(msg))
+    Self::error(LeanString::new(msg))
   }
 
   pub fn is_ok(&self) -> bool {

@@ -38,7 +38,10 @@ impl Nat {
 
   /// Decode a `Nat` from a Lean object pointer. Handles both scalar (unboxed)
   /// and heap-allocated (GMP `mpz_object`) representations.
-  pub fn from_ptr(ptr: *const c_void) -> Nat {
+  ///
+  /// # Safety
+  /// The pointer must be a valid Lean `Nat` object (scalar or mpz).
+  pub unsafe fn from_ptr(ptr: *const c_void) -> Nat {
     let obj = unsafe { LeanObject::from_raw(ptr) };
     if obj.is_scalar() {
       let u = obj.unbox_usize();
@@ -52,7 +55,7 @@ impl Nat {
 
   /// Decode a `Nat` from a `LeanObject`. Convenience wrapper over `from_ptr`.
   pub fn from_obj(obj: LeanObject) -> Nat {
-    Self::from_ptr(obj.as_ptr())
+    unsafe { Self::from_ptr(obj.as_ptr()) }
   }
 
   #[inline]
