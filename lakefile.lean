@@ -45,6 +45,10 @@ lean_exe «bench-blake3» where
 lean_exe «bench-sha256» where
   root := `Benchmarks.Sha256
 
+lean_exe «bench-ixvm» where
+  root := `Benchmarks.IxVM
+  supportInterpreter := true
+
 lean_exe «bench-shardmap» where
   root := `Benchmarks.ShardMap
 
