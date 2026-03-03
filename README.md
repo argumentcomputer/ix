@@ -191,15 +191,17 @@ Compiler performance benchmarks are tracked at https://bencher.dev/console/proje
 
 **Lean tests:** `lake test`
 
-- `lake test -- <suite>` runs a specific test suite. Primary suites: `ffi`, `byte-array`, `ixon`, `claim`, `commit`, `canon`, `keccak`, `sharing`, `graph-unit`, `condense-unit`
-- `lake test -- --ignored` runs expensive test suites: `shard-map`, `rust-canon-roundtrip`, `serial-canon-roundtrip`, `parallel-canon-roundtrip`, `graph-cross`, `condense-cross`, `compile`, `decompile`, `rust-serialize`, `rust-decompile`, `commit-io`, `aiur`, `aiur-hashes`, `ixvm`
+- `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `byte-array`, `ixon`, `claim`, `commit`, `canon`, `keccak`, `sharing`, `graph-unit`, `condense-unit`
+- `lake test -- --ignored` runs only the expensive test suites: `shard-map`, `rust-canon-roundtrip`, `serial-canon-roundtrip`, `parallel-canon-roundtrip`, `graph-cross`, `condense-cross`, `compile`, `decompile`, `rust-serialize`, `rust-decompile`, `commit-io`, `aiur`, `aiur-hashes`, `ixvm`
     - Any `canon` or `compile` test will require significant RAM, beware of OOM
     - `aiur` and `aiur-hashes` generate ZK proofs and use significant CPU
-- `lake test -- --ignored <ignored-suite>` runs a specific expensive suite by name
+- `lake test -- --ignored <ignored-suite>` runs one or multiple expensive suites by name
+- `lake test -- --include-ignored` runs both primary and expensive test suites
+- `lake test -- --include-ignored <ignored-suite>` runs all primary suites plus one or multiple expensive suites
 - `lake test -- cli` runs CLI integration tests
 - `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
 
-**Rust tests:** `cargo test`
+**Rust tests:** `cargo test` or `cargo nextest run`
 
 ### Nix
 

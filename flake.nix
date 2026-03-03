@@ -143,6 +143,8 @@
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
+          # Disable fortify hardening as it causes warnings with cargo debug builds
+          hardeningDisable = ["fortify"];
           # Add libclang for FFI with rust-bindgen
           LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           packages = with pkgs; [

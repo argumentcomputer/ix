@@ -795,6 +795,50 @@ impl LeanExcept {
 }
 
 // =============================================================================
+// LeanIOResult — EStateM.Result (BaseIO.Result)
+// =============================================================================
+
+/// Typed wrapper for a Lean `BaseIO.Result α` (`EStateM.Result`).
+/// ok = ctor tag 0 (value, world), error = ctor tag 1 (error, world).
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct LeanIOResult(LeanObject);
+
+impl Deref for LeanIOResult {
+  type Target = LeanObject;
+  #[inline]
+  fn deref(&self) -> &LeanObject {
+    &self.0
+  }
+}
+
+impl LeanIOResult {
+  /// Build a successful IO result (tag 0, fields: [val, box(0)]).
+  pub fn ok(val: impl Into<LeanObject>) -> Self {
+    let ctor = LeanCtor::alloc(0, 2, 0);
+    ctor.set(0, val);
+    ctor.set(1, LeanObject::box_usize(0)); // world token
+    Self(ctor.0)
+  }
+
+  /// Build an IO error result (tag 1, fields: [err, box(0)]).
+  pub fn error(err: impl Into<LeanObject>) -> Self {
+    let ctor = LeanCtor::alloc(1, 2, 0);
+    ctor.set(0, err);
+    ctor.set(1, LeanObject::box_usize(0)); // world token
+    Self(ctor.0)
+  }
+
+  /// Build an IO error from a Rust string via `IO.Error.userError` (tag 7, 1 field).
+  pub fn error_string(msg: &str) -> Self {
+    // IO.Error.userError is tag 7 with 1 object field (the String)
+    let user_error = LeanCtor::alloc(7, 1, 0);
+    user_error.set(0, LeanString::new(msg));
+    Self::error(*user_error)
+  }
+}
+
+// =============================================================================
 // From<T> for LeanObject — allow wrapper types to be passed to set() etc.
 // =============================================================================
 
@@ -850,6 +894,13 @@ impl From<LeanOption> for LeanObject {
 impl From<LeanExcept> for LeanObject {
   #[inline]
   fn from(x: LeanExcept) -> Self {
+    x.0
+  }
+}
+
+impl From<LeanIOResult> for LeanObject {
+  #[inline]
+  fn from(x: LeanIOResult) -> Self {
     x.0
   }
 }

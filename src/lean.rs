@@ -1,7 +1,7 @@
 //! Rust bindings for Lean, implemented by mimicking the memory layout of Lean's
 //! low-level C objects.
 //!
-//! The `lean` submodule contains auto-generated bindings from `lean.h` via
+//! The `lean_sys` submodule contains auto-generated bindings from `lean.h` via
 //! bindgen. Higher-level helpers and custom `#[repr(C)]` types are defined
 //! alongside it in sibling modules.
 

@@ -10,7 +10,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::ffi::{ffi_io_guard, io_error, io_ok};
+use crate::ffi::ffi_io_guard;
+use crate::lean::object::LeanIOResult;
 use crate::ix::address::Address;
 use crate::ix::compile::{CompileState, compile_env};
 use crate::ix::condense::compute_sccs;
@@ -206,7 +207,7 @@ pub extern "C" fn rs_roundtrip_block_compare_detail(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env_full(
   env_consts_ptr: LeanObject,
-) -> LeanObject {
+) -> LeanIOResult {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     // Phase 1: Decode Lean environment
     let rust_env = lean_ptr_to_env(env_consts_ptr);
@@ -223,7 +224,7 @@ pub extern "C" fn rs_compile_env_full(
       Err(e) => {
         let msg =
           format!("rs_compile_env_full: Rust compilation failed: {:?}", e);
-        return io_error(&msg);
+        return LeanIOResult::error_string(&msg);
       },
     };
 
@@ -298,13 +299,13 @@ pub extern "C" fn rs_compile_env_full(
     result.set(1, condensed_obj);
     result.set(2, *compiled_obj);
 
-    io_ok(*result)
+    LeanIOResult::ok(*result)
   }))
 }
 
 /// FFI function to compile a Lean environment to serialized Ixon.Env bytes.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_env(env_consts_ptr: LeanObject) -> LeanObject {
+pub extern "C" fn rs_compile_env(env_consts_ptr: LeanObject) -> LeanIOResult {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
@@ -313,7 +314,7 @@ pub extern "C" fn rs_compile_env(env_consts_ptr: LeanObject) -> LeanObject {
       Ok(stt) => stt,
       Err(e) => {
         let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
-        return io_error(&msg);
+        return LeanIOResult::error_string(&msg);
       },
     };
 
@@ -321,12 +322,12 @@ pub extern "C" fn rs_compile_env(env_consts_ptr: LeanObject) -> LeanObject {
     let mut buf = Vec::new();
     if let Err(e) = compile_stt.env.put(&mut buf) {
       let msg = format!("rs_compile_env: Env serialization failed: {}", e);
-      return io_error(&msg);
+      return LeanIOResult::error_string(&msg);
     }
 
     // Build Lean ByteArray
     let ba = LeanByteArray::from_bytes(&buf);
-    io_ok(ba)
+    LeanIOResult::ok(ba)
   }))
 }
 
@@ -342,7 +343,7 @@ pub extern "C" fn rs_roundtrip_raw_env(
 
 /// FFI function to run all compilation phases and return combined results.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_phases(env_consts_ptr: LeanObject) -> LeanObject {
+pub extern "C" fn rs_compile_phases(env_consts_ptr: LeanObject) -> LeanIOResult {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let env_len = rust_env.len();
@@ -361,7 +362,7 @@ pub extern "C" fn rs_compile_phases(env_consts_ptr: LeanObject) -> LeanObject {
       Ok(stt) => stt,
       Err(e) => {
         let msg = format!("rs_compile_phases: compilation failed: {:?}", e);
-        return io_error(&msg);
+        return LeanIOResult::error_string(&msg);
       },
     };
 
@@ -434,7 +435,7 @@ pub extern "C" fn rs_compile_phases(env_consts_ptr: LeanObject) -> LeanObject {
     result.set(1, condensed_obj);
     result.set(2, *raw_ixon_env);
 
-    io_ok(*result)
+    LeanIOResult::ok(*result)
   }))
 }
 
@@ -442,7 +443,7 @@ pub extern "C" fn rs_compile_phases(env_consts_ptr: LeanObject) -> LeanObject {
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env_to_ixon(
   env_consts_ptr: LeanObject,
-) -> LeanObject {
+) -> LeanIOResult {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
@@ -452,7 +453,7 @@ pub extern "C" fn rs_compile_env_to_ixon(
       Err(e) => {
         let msg =
           format!("rs_compile_env_to_ixon: compilation failed: {:?}", e);
-        return io_error(&msg);
+        return LeanIOResult::error_string(&msg);
       },
     };
 
@@ -520,7 +521,7 @@ pub extern "C" fn rs_compile_env_to_ixon(
     result.set(2, *blobs_arr);
     result.set(3, *comms_arr);
     result.set(4, *names_arr);
-    io_ok(*result)
+    LeanIOResult::ok(*result)
   }))
 }
 
@@ -528,12 +529,12 @@ pub extern "C" fn rs_compile_env_to_ixon(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_canonicalize_env_to_ix(
   env_consts_ptr: LeanObject,
-) -> LeanObject {
+) -> LeanIOResult {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
     let raw_env = build_raw_environment(&mut cache, &rust_env);
-    io_ok(raw_env)
+    LeanIOResult::ok(raw_env)
   }))
 }
 

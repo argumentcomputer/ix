@@ -12,17 +12,14 @@ pub mod ix; // Ix types: Name, Level, Expr, ConstantInfo, Environment
 pub mod ixon; // Ixon types: Univ, Expr, Constant, metadata
 pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
 
-use crate::lean::lean_sys::{
-  lean_io_result_mk_error, lean_io_result_mk_ok, lean_mk_io_user_error,
-};
-use crate::lean::object::{LeanArray, LeanByteArray, LeanObject, LeanString};
+use crate::lean::object::{LeanArray, LeanByteArray, LeanIOResult};
 
 /// Guard an FFI function that returns a Lean IO result against panics.
 /// On panic, returns a Lean IO error with the panic message instead of
 /// unwinding across the `extern "C"` boundary (which is undefined behavior).
-pub(crate) fn ffi_io_guard<F>(f: F) -> LeanObject
+pub(crate) fn ffi_io_guard<F>(f: F) -> LeanIOResult
 where
-  F: FnOnce() -> LeanObject + std::panic::UnwindSafe,
+  F: FnOnce() -> LeanIOResult + std::panic::UnwindSafe,
 {
   match std::panic::catch_unwind(f) {
     Ok(result) => result,
@@ -34,25 +31,8 @@ where
       } else {
         "FFI panic: unknown".to_string()
       };
-      io_error(&msg)
+      LeanIOResult::error_string(&msg)
     },
-  }
-}
-
-/// Wrap a Lean value in an IO success result.
-pub(crate) fn io_ok(val: impl Into<LeanObject>) -> LeanObject {
-  let val: LeanObject = val.into();
-  unsafe {
-    LeanObject::from_lean_ptr(lean_io_result_mk_ok(val.as_mut_ptr().cast()))
-  }
-}
-
-/// Create a Lean IO error result from a Rust error message.
-pub(crate) fn io_error(msg: &str) -> LeanObject {
-  let lean_msg = LeanString::new(msg);
-  unsafe {
-    let lean_err = lean_mk_io_user_error(lean_msg.as_mut_ptr().cast());
-    LeanObject::from_lean_ptr(lean_io_result_mk_error(lean_err))
   }
 }
 
