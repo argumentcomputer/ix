@@ -80,11 +80,11 @@ pub enum ExprNode {
   /// Bound variable (de Bruijn index).
   Bvar(usize),
   /// Free variable.
-  Fvar(Name),
+  Fvar(usize),
   /// Sort (universe).
   Sort(Level),
   /// Reference to a named constant with universe level arguments.
-  Const(Name, Vec<Level>),
+  Const(usize, Vec<Level>),
   /// Function application.
   App(Expr, Expr),
   /// Lambda abstraction.
@@ -96,7 +96,7 @@ pub enum ExprNode {
   /// Literal value (nat or string).
   Lit(Literal),
   /// Projection from a structure (type name, field index, struct expr).
-  Proj(Name, usize, Expr),
+  Proj(usize, usize, Expr),
 }
 
 /// A Lean 4 kernel expression without content addressing.
@@ -308,4 +308,15 @@ pub enum ConstantInfo {
   CtorInfo(ConstructorVal),
   /// A recursor (eliminator).
   RecInfo(RecursorVal),
+}
+
+// ============================================================================
+// Toplevel
+// ============================================================================
+
+/// A collection of all constant declarations in a Lean environment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Toplevel {
+  /// All constant declarations indexed by their position.
+  pub constants: Vec<ConstantInfo>,
 }
