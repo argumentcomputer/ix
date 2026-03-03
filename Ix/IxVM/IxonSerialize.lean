@@ -210,13 +210,13 @@ def ixonSerialize := ⟦
   fn pack_def_kind_safety(kind: DefKind, safety: DefinitionSafety) -> G {
     match (kind, safety) {
       (DefKind.Definition, DefinitionSafety.Unsafe) => 0,
-      (DefKind.Opaque, DefinitionSafety.Unsafe) => 4,
-      (DefKind.Theorem, DefinitionSafety.Unsafe) => 8,
       (DefKind.Definition, DefinitionSafety.Safe) => 1,
-      (DefKind.Opaque, DefinitionSafety.Safe) => 5,
-      (DefKind.Theorem, DefinitionSafety.Safe) => 9,
       (DefKind.Definition, DefinitionSafety.Partial) => 2,
+      (DefKind.Opaque, DefinitionSafety.Unsafe) => 4,
+      (DefKind.Opaque, DefinitionSafety.Safe) => 5,
       (DefKind.Opaque, DefinitionSafety.Partial) => 6,
+      (DefKind.Theorem, DefinitionSafety.Unsafe) => 8,
+      (DefKind.Theorem, DefinitionSafety.Safe) => 9,
       (DefKind.Theorem, DefinitionSafety.Partial) => 10,
     }
   }

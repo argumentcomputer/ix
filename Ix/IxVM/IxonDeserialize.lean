@@ -90,7 +90,7 @@ def ixonDeserialize := ⟦
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (U64List.Nil, stream),
-      _ =>
+      0 =>
         let (val, s) = get_tag0(stream);
         let (rest, s2) = get_u64_list(s, relaxed_u64_pred(count));
         (U64List.Cons(val, store(rest)), s2),
@@ -106,7 +106,7 @@ def ixonDeserialize := ⟦
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (func, stream),
-      _ =>
+      0 =>
         let (arg, s) = get_expr(stream);
         let app = Expr.App(store(func), store(arg));
         get_app_telescope(app, s, relaxed_u64_pred(count)),
@@ -120,7 +120,7 @@ def ixonDeserialize := ⟦
       1 =>
         -- No more types, read the body
         get_expr(stream),
-      _ =>
+      0 =>
         -- Read one type, recurse for remaining types + body
         let (ty, s) = get_expr(stream);
         let (inner, s2) = get_lam_telescope(s, relaxed_u64_pred(count));
@@ -135,7 +135,7 @@ def ixonDeserialize := ⟦
       1 =>
         -- No more types, read the body
         get_expr(stream),
-      _ =>
+      0 =>
         -- Read one type, recurse for remaining types + body
         let (ty, s) = get_expr(stream);
         let (inner, s2) = get_all_telescope(s, relaxed_u64_pred(count));
@@ -148,55 +148,55 @@ def ixonDeserialize := ⟦
     let (flag, size) = tag;
     match flag {
       -- Srt: Tag4(0x0, univ_idx)
-      0 => (Expr.Srt(size), s),
+      0x0 => (Expr.Srt(size), s),
 
       -- Var: Tag4(0x1, idx)
-      1 => (Expr.Var(size), s),
+      0x1 => (Expr.Var(size), s),
 
       -- Ref: Tag4(0x2, len) + Tag0(ref_idx) + univ_list
-      2 =>
+      0x2 =>
         let (ref_idx, s2) = get_tag0(s);
         let (univ_list, s3) = get_u64_list(s2, size);
         (Expr.Ref(ref_idx, store(univ_list)), s3),
 
       -- Rec: Tag4(0x3, len) + Tag0(rec_idx) + univ_list
-      3 =>
+      0x3 =>
         let (rec_idx, s2) = get_tag0(s);
         let (univ_list, s3) = get_u64_list(s2, size);
         (Expr.Rec(rec_idx, store(univ_list)), s3),
 
       -- Prj: Tag4(0x4, field_idx) + Tag0(type_ref_idx) + expr(val)
-      4 =>
+      0x4 =>
         let (type_ref_idx, s2) = get_tag0(s);
         let (val, s3) = get_expr(s2);
         (Expr.Prj(type_ref_idx, size, store(val)), s3),
 
       -- Str: Tag4(0x5, ref_idx)
-      5 => (Expr.Str(size), s),
+      0x5 => (Expr.Str(size), s),
 
       -- Nat: Tag4(0x6, ref_idx)
-      6 => (Expr.Nat(size), s),
+      0x6 => (Expr.Nat(size), s),
 
       -- App: Tag4(0x7, count) + func + args...
-      7 =>
+      0x7 =>
         let (func, s2) = get_expr(s);
         get_app_telescope(func, s2, size),
 
       -- Lam: Tag4(0x8, count) + types... + body
-      8 => get_lam_telescope(s, size),
+      0x8 => get_lam_telescope(s, size),
 
       -- All: Tag4(0x9, count) + types... + body
-      9 => get_all_telescope(s, size),
+      0x9 => get_all_telescope(s, size),
 
       -- Let: Tag4(0xA, non_dep) + expr(ty) + expr(val) + expr(body)
-      10 =>
+      0xA =>
         let (ty, s2) = get_expr(s);
         let (val, s3) = get_expr(s2);
         let (body, s4) = get_expr(s3);
         (Expr.Let(size, store(ty), store(val), store(body)), s4),
 
       -- Share: Tag4(0xB, idx)
-      _ => (Expr.Share(size), s),
+      0xB => (Expr.Share(size), s),
     }
   }
 
@@ -209,7 +209,7 @@ def ixonDeserialize := ⟦
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => base,
-      _ =>
+      0 =>
         let inner = build_succ_chain(base, relaxed_u64_pred(count));
         Univ.Succ(store(inner)),
     }
@@ -224,7 +224,7 @@ def ixonDeserialize := ⟦
         let is_zero = u64_is_zero(size);
         match is_zero {
           1 => (Univ.Zero, s),
-          _ =>
+          0 =>
             let (base, s2) = get_univ(s);
             (build_succ_chain(base, size), s2),
         },
@@ -242,7 +242,7 @@ def ixonDeserialize := ⟦
         (Univ.IMax(store(a), store(b)), s3),
 
       -- Var: Tag2(3, idx)
-      _ => (Univ.Var(size), s),
+      3 => (Univ.Var(size), s),
     }
   }
 
@@ -295,7 +295,7 @@ def ixonDeserialize := ⟦
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (ExprList.Nil, stream),
-      _ =>
+      0 =>
         let (expr, s) = get_expr(stream);
         let (rest, s2) = get_expr_list(s, relaxed_u64_pred(count));
         (ExprList.Cons(store(expr), store(rest)), s2),
@@ -306,7 +306,7 @@ def ixonDeserialize := ⟦
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (UnivList.Nil, stream),
-      _ =>
+      0 =>
         let (u, s) = get_univ(stream);
         let (rest, s2) = get_univ_list(s, relaxed_u64_pred(count));
         (UnivList.Cons(store(u), store(rest)), s2),
@@ -317,7 +317,7 @@ def ixonDeserialize := ⟦
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (AddressList.Nil, stream),
-      _ =>
+      0 =>
         let (addr, s) = get_address(stream);
         let (rest, s2) = get_address_list(s, relaxed_u64_pred(count));
         (AddressList.Cons(addr, store(rest)), s2),
@@ -361,7 +361,7 @@ def ixonDeserialize := ⟦
       6 => (DefKind.Opaque, DefinitionSafety.Partial),
       8 => (DefKind.Theorem, DefinitionSafety.Unsafe),
       9 => (DefKind.Theorem, DefinitionSafety.Safe),
-      _ => (DefKind.Theorem, DefinitionSafety.Partial),
+      10 => (DefKind.Theorem, DefinitionSafety.Partial),
     }
   }
 
@@ -386,7 +386,7 @@ def ixonDeserialize := ⟦
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (RecursorRuleList.Nil, stream),
-      _ =>
+      0 =>
         let (rule, s) = get_recursor_rule(stream);
         let (rest, s2) = get_recursor_rule_list(s, relaxed_u64_pred(count));
         (RecursorRuleList.Cons(rule, store(rest)), s2),
@@ -425,7 +425,7 @@ def ixonDeserialize := ⟦
       0 => QuotKind.Typ,
       1 => QuotKind.Ctor,
       2 => QuotKind.Lift,
-      _ => QuotKind.Ind,
+      3 => QuotKind.Ind,
     }
   }
 
@@ -454,7 +454,7 @@ def ixonDeserialize := ⟦
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (ConstructorList.Nil, stream),
-      _ =>
+      0 =>
         let (ctor, s) = get_constructor(stream);
         let (rest, s2) = get_constructor_list(s, relaxed_u64_pred(count));
         (ConstructorList.Cons(ctor, store(rest)), s2),
@@ -526,7 +526,7 @@ def ixonDeserialize := ⟦
       1 =>
         let (indc, s2) = get_inductive(s);
         (MutConst.Indc(indc), s2),
-      _ =>
+      2 =>
         let (recr, s2) = get_recursor(s);
         (MutConst.Recr(recr), s2),
     }
@@ -536,7 +536,7 @@ def ixonDeserialize := ⟦
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (MutConstList.Nil, stream),
-      _ =>
+      0 =>
         let (mc, s) = get_mut_const(stream);
         let (rest, s2) = get_mut_const_list(s, relaxed_u64_pred(count));
         (MutConstList.Cons(mc, store(rest)), s2),
@@ -571,7 +571,7 @@ def ixonDeserialize := ⟦
       6 =>
         let (prj, s) = get_inductive_proj(stream);
         (ConstantInfo.IPrj(prj), s),
-      _ =>
+      7 =>
         let (prj, s) = get_definition_proj(stream);
         (ConstantInfo.DPrj(prj), s),
     }
@@ -581,11 +581,11 @@ def ixonDeserialize := ⟦
   fn get_constant_info(flag: G, size: [G; 8], stream: ByteStream) -> (ConstantInfo, ByteStream) {
     match flag {
       -- Muts: flag=0xC, size is the entry count
-      12 =>
+      0xC =>
         let (mutuals, s) = get_mut_const_list(stream, size);
         (ConstantInfo.Muts(store(mutuals)), s),
       -- Non-Muts: flag=0xD, size[0] is the variant number
-      _ =>
+      0xD =>
         get_constant_info_by_variant(size[0], stream),
     }
   }
