@@ -115,9 +115,7 @@ pub fn lean_ptr_to_name(obj: LeanObj, global: &GlobalCache) -> Name {
     // Recursive call - will also use global cache
     let pre = lean_ptr_to_name(pre, global);
     match ctor.tag() {
-      1 => {
-        Name::str(pre, pos.as_string().to_string())
-      },
+      1 => Name::str(pre, pos.as_string().to_string()),
       2 => Name::num(pre, Nat::from_obj(pos)),
       _ => unreachable!(),
     }
@@ -214,11 +212,11 @@ fn lean_ptr_to_syntax_preresolved(
     1 => {
       let [name_obj, fields_obj] = ctor.objs();
       let name = lean_ptr_to_name(name_obj, cache.global);
-      let fields: Vec<String> =
-        fields_obj.as_list()
-          .iter()
-          .map(|o| o.as_string().to_string())
-          .collect();
+      let fields: Vec<String> = fields_obj
+        .as_list()
+        .iter()
+        .map(|o| o.as_string().to_string())
+        .collect();
       SyntaxPreresolved::Decl(name, fields)
     },
     _ => unreachable!(),
@@ -235,19 +233,14 @@ fn lean_ptr_to_syntax(obj: LeanObj, cache: &mut Cache<'_>) -> Syntax {
       let [info, kind, args] = ctor.objs();
       let info = lean_ptr_to_source_info(info);
       let kind = lean_ptr_to_name(kind, cache.global);
-      let args: Vec<_> = args.as_array()
-        .iter()
-        .map(|o| lean_ptr_to_syntax(o, cache))
-        .collect();
+      let args: Vec<_> =
+        args.as_array().iter().map(|o| lean_ptr_to_syntax(o, cache)).collect();
       Syntax::Node(info, kind, args)
     },
     2 => {
       let [info, val] = ctor.objs();
       let info = lean_ptr_to_source_info(info);
-      Syntax::Atom(
-        info,
-        val.as_string().to_string(),
-      )
+      Syntax::Atom(info, val.as_string().to_string())
     },
     3 => {
       let [info, raw_val, val, preresolved] = ctor.objs();
@@ -274,9 +267,7 @@ fn lean_ptr_to_name_data_value(
   let dv_ctor = data_value_obj.as_ctor();
   let [inner] = dv_ctor.objs::<1>();
   let data_value = match dv_ctor.tag() {
-    0 => DataValue::OfString(
-      inner.as_string().to_string(),
-    ),
+    0 => DataValue::OfString(inner.as_string().to_string()),
     1 => DataValue::OfBool(inner.as_ptr() as usize == 1),
     2 => DataValue::OfName(lean_ptr_to_name(inner, cache.global)),
     3 => DataValue::OfNat(Nat::from_obj(inner)),
@@ -381,9 +372,7 @@ pub fn lean_ptr_to_expr(obj: LeanObj, cache: &mut Cache<'_>) -> Expr {
       let [inner] = lit_ctor.objs::<1>();
       match lit_ctor.tag() {
         0 => Expr::lit(Literal::NatVal(Nat::from_obj(inner))),
-        1 => Expr::lit(Literal::StrVal(
-          inner.as_string().to_string(),
-        )),
+        1 => Expr::lit(Literal::StrVal(inner.as_string().to_string())),
         _ => unreachable!(),
       }
     },
@@ -523,8 +512,15 @@ pub fn lean_ptr_to_constant_info(
       ConstantInfo::QuotInfo(QuotVal { cnst: constant_val, kind })
     },
     5 => {
-      let [constant_val, num_params, num_indices, all, ctors, num_nested, bools] =
-        inner.objs();
+      let [
+        constant_val,
+        num_params,
+        num_indices,
+        all,
+        ctors,
+        num_nested,
+        bools,
+      ] = inner.objs();
       let constant_val = lean_ptr_to_constant_val(constant_val, cache);
       let num_params = Nat::from_obj(num_params);
       let num_indices = Nat::from_obj(num_indices);

@@ -6,7 +6,9 @@ use crate::ix::env::{ConstantInfo, Name};
 use crate::lean::obj::{LeanArray, LeanCtor, LeanObj};
 
 use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::ix::constant::{build_constant_info, decode_constant_info};
+use crate::lean::ffi::ix::constant::{
+  build_constant_info, decode_constant_info,
+};
 use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
 
 // =============================================================================
@@ -168,9 +170,7 @@ where
 ///
 /// NOTE: Environment with a single field is UNBOXED by Lean,
 /// so the pointer IS the HashMap directly, not a structure containing it.
-pub fn decode_ix_environment(
-  obj: LeanObj,
-) -> FxHashMap<Name, ConstantInfo> {
+pub fn decode_ix_environment(obj: LeanObj) -> FxHashMap<Name, ConstantInfo> {
   // Environment is unboxed - obj IS the HashMap directly
   let consts_pairs = decode_hashmap(obj, decode_ix_name, decode_constant_info);
   let mut consts: FxHashMap<Name, ConstantInfo> = FxHashMap::default();
@@ -240,9 +240,7 @@ pub fn build_raw_environment_from_vec(
 
 /// Round-trip an Ix.Environment: decode from Lean, re-encode.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_environment(
-  env_ptr: LeanObj,
-) -> LeanObj {
+pub extern "C" fn rs_roundtrip_ix_environment(env_ptr: LeanObj) -> LeanObj {
   let env = decode_ix_environment(env_ptr);
   let mut cache = LeanBuildCache::with_capacity(env.len());
   build_raw_environment(&mut cache, &env)
@@ -251,9 +249,7 @@ pub extern "C" fn rs_roundtrip_ix_environment(
 /// Round-trip an Ix.RawEnvironment: decode from Lean, re-encode.
 /// Uses Vec-preserving functions to maintain array structure and order.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_ix_raw_environment(
-  env_ptr: LeanObj,
-) -> LeanObj {
+pub extern "C" fn rs_roundtrip_ix_raw_environment(env_ptr: LeanObj) -> LeanObj {
   let env = decode_ix_raw_environment_vec(env_ptr);
   let mut cache = LeanBuildCache::with_capacity(env.len());
   build_raw_environment_from_vec(&mut cache, &env)

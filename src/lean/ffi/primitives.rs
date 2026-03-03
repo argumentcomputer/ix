@@ -37,9 +37,10 @@ pub fn build_nat(n: &Nat) -> LeanObj {
     limbs.push(u64::from_le_bytes(arr));
   }
   unsafe {
-    LeanObj::from_raw(
-      crate::lean::nat::lean_nat_from_limbs(limbs.len(), limbs.as_ptr()),
-    )
+    LeanObj::from_raw(crate::lean::nat::lean_nat_from_limbs(
+      limbs.len(),
+      limbs.as_ptr(),
+    ))
   }
 }
 

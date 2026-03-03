@@ -15,13 +15,17 @@ use crate::ix::ixon::constant::{
   Quotient as IxonQuotient, Recursor as IxonRecursor, RecursorProj,
   RecursorRule as IxonRecursorRule,
 };
-use crate::lean::obj::{IxAddress, LeanArray, LeanByteArray, LeanCtor, LeanObj};
+use crate::lean::obj::{
+  IxAddress, LeanArray, LeanByteArray, LeanCtor, LeanObj,
+};
 
 use crate::lean::ffi::ixon::expr::{
   build_ixon_expr, build_ixon_expr_array, decode_ixon_expr,
   decode_ixon_expr_array,
 };
-use crate::lean::ffi::ixon::univ::{build_ixon_univ_array, decode_ixon_univ_array};
+use crate::lean::ffi::ixon::univ::{
+  build_ixon_univ_array, decode_ixon_univ_array,
+};
 
 /// Build Address from Ixon Address type (which is just a [u8; 32]).
 pub fn build_address_from_ixon(addr: &Address) -> IxAddress {
@@ -372,7 +376,17 @@ pub fn decode_ixon_recursor(obj: LeanObj) -> IxonRecursor {
   let minors = ctor.scalar_u64(2, 32);
   let k = ctor.scalar_u8(2, 40) != 0;
   let is_unsafe = ctor.scalar_u8(2, 41) != 0;
-  IxonRecursor { k, is_unsafe, lvls, params, indices, motives, minors, typ, rules }
+  IxonRecursor {
+    k,
+    is_unsafe,
+    lvls,
+    params,
+    indices,
+    motives,
+    minors,
+    typ,
+    rules,
+  }
 }
 
 /// Decode Ixon.Axiom.
@@ -429,7 +443,17 @@ pub fn decode_ixon_inductive(obj: LeanObj) -> IxonInductive {
   let recr = ctor.scalar_u8(2, 32) != 0;
   let refl = ctor.scalar_u8(2, 33) != 0;
   let is_unsafe = ctor.scalar_u8(2, 34) != 0;
-  IxonInductive { recr, refl, is_unsafe, lvls, params, indices, nested, typ, ctors }
+  IxonInductive {
+    recr,
+    refl,
+    is_unsafe,
+    lvls,
+    params,
+    indices,
+    nested,
+    typ,
+    ctors,
+  }
 }
 
 /// Decode Ixon.InductiveProj.

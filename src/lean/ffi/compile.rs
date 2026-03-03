@@ -10,7 +10,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::lean::ffi::{ffi_io_guard, io_error, io_ok};
 use crate::ix::address::Address;
 use crate::ix::compile::{CompileState, compile_env};
 use crate::ix::condense::compute_sccs;
@@ -21,6 +20,7 @@ use crate::ix::ixon::constant::{Constant as IxonConstant, ConstantInfo};
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::{Comm, ConstantMeta};
+use crate::lean::ffi::{ffi_io_guard, io_error, io_ok};
 use crate::lean::lean::lean_uint64_to_nat;
 use crate::lean::nat::Nat;
 use crate::lean::obj::{
@@ -42,7 +42,9 @@ use crate::lean::ffi::ixon::env::{
   build_raw_env, build_raw_name_entry, decode_raw_env, decoded_to_ixon_env,
 };
 use crate::lean::ffi::ixon::meta::{build_constant_meta, build_ixon_comm};
-use crate::lean::ffi::lean_env::{GlobalCache, lean_ptr_to_env, lean_ptr_to_name};
+use crate::lean::ffi::lean_env::{
+  GlobalCache, lean_ptr_to_env, lean_ptr_to_name,
+};
 
 // =============================================================================
 // Helper builders
@@ -194,9 +196,7 @@ pub extern "C" fn rs_roundtrip_block_compare_detail(obj: LeanObj) -> LeanObj {
 
 /// FFI function to run the complete compilation pipeline and return all data.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_env_full(
-  env_consts_ptr: LeanObj,
-) -> LeanObj {
+pub extern "C" fn rs_compile_env_full(env_consts_ptr: LeanObj) -> LeanObj {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     // Phase 1: Decode Lean environment
     let rust_env = lean_ptr_to_env(env_consts_ptr);
@@ -220,8 +220,7 @@ pub extern "C" fn rs_compile_env_full(
     // Phase 4: Build Lean structures
     let mut cache = LeanBuildCache::with_capacity(env_len);
 
-    let raw_env =
-      build_raw_environment(&mut cache, &rust_env);
+    let raw_env = build_raw_environment(&mut cache, &rust_env);
     let condensed_obj = build_condensed_blocks(&mut cache, &condensed);
 
     // Collect blocks
@@ -331,17 +330,14 @@ pub extern "C" fn rs_roundtrip_raw_env(raw_env_obj: LeanObj) -> LeanObj {
 
 /// FFI function to run all compilation phases and return combined results.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_phases(
-  env_consts_ptr: LeanObj,
-) -> LeanObj {
+pub extern "C" fn rs_compile_phases(env_consts_ptr: LeanObj) -> LeanObj {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let env_len = rust_env.len();
     let rust_env = Arc::new(rust_env);
 
     let mut cache = LeanBuildCache::with_capacity(env_len);
-    let raw_env =
-      build_raw_environment(&mut cache, &rust_env);
+    let raw_env = build_raw_environment(&mut cache, &rust_env);
 
     let ref_graph = build_ref_graph(&rust_env);
 
@@ -432,9 +428,7 @@ pub extern "C" fn rs_compile_phases(
 
 /// FFI function to compile a Lean environment to a RawEnv.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_env_to_ixon(
-  env_consts_ptr: LeanObj,
-) -> LeanObj {
+pub extern "C" fn rs_compile_env_to_ixon(env_consts_ptr: LeanObj) -> LeanObj {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
@@ -524,8 +518,7 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
-    let raw_env =
-      build_raw_environment(&mut cache, &rust_env);
+    let raw_env = build_raw_environment(&mut cache, &rust_env);
     io_ok(raw_env)
   }))
 }
@@ -1280,9 +1273,7 @@ pub fn decode_decompile_error(obj: LeanObj) -> DecompileError {
       let msg = ctor.get(0).as_string().to_string();
       DecompileError::BadConstantFormat { msg }
     },
-    10 => {
-      DecompileError::Serialize(decode_serialize_error(ctor.get(0)))
-    },
+    10 => DecompileError::Serialize(decode_serialize_error(ctor.get(0))),
     _ => unreachable!("Invalid DecompileError tag: {}", ctor.tag()),
   }
 }
@@ -1354,9 +1345,7 @@ pub fn decode_compile_error(obj: LeanObj) -> CompileError {
       let param = ctor.get(1).as_string().to_string();
       CompileError::UnknownUnivParam { curr, param }
     },
-    5 => {
-      CompileError::Serialize(decode_serialize_error(ctor.get(0)))
-    },
+    5 => CompileError::Serialize(decode_serialize_error(ctor.get(0))),
     _ => unreachable!("Invalid CompileError tag: {}", ctor.tag()),
   }
 }
@@ -1417,8 +1406,6 @@ pub extern "C" fn rs_decompile_env(raw_env_obj: LeanObj) -> LeanObj {
 
       LeanExcept::ok(arr).into()
     },
-    Err(e) => {
-      LeanExcept::error(build_decompile_error(&e)).into()
-    },
+    Err(e) => LeanExcept::error(build_decompile_error(&e)).into(),
   }
 }

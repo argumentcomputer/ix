@@ -5,13 +5,13 @@ use crate::ix::env::{
 };
 use crate::lean::nat::Nat;
 use crate::lean::obj::{
-  IxDataValue, IxInt, IxSourceInfo, IxSubstring, IxSyntax,
-  IxSyntaxPreresolved, LeanArray, LeanCtor, LeanObj, LeanString,
+  IxDataValue, IxInt, IxSourceInfo, IxSubstring, IxSyntax, IxSyntaxPreresolved,
+  LeanArray, LeanCtor, LeanObj, LeanString,
 };
 
 use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::primitives::build_nat;
 use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
+use crate::lean::ffi::primitives::build_nat;
 
 /// Build a Ix.Int (ofNat or negSucc).
 pub fn build_int(int: &Int) -> IxInt {
@@ -125,8 +125,7 @@ pub fn build_syntax(cache: &mut LeanBuildCache, syn: &Syntax) -> IxSyntax {
       let info_obj = build_source_info(info);
       let raw_val_obj = build_substring(raw_val);
       let val_obj = build_name(cache, val);
-      let preresolved_obj =
-        build_syntax_preresolved_array(cache, preresolved);
+      let preresolved_obj = build_syntax_preresolved_array(cache, preresolved);
       let obj = LeanCtor::alloc(3, 4, 0);
       obj.set(0, info_obj);
       obj.set(1, raw_val_obj);
@@ -241,9 +240,7 @@ pub fn decode_data_value(obj: LeanObj) -> DataValue {
   match ctor.tag() {
     0 => {
       // ofString: 1 object field
-      DataValue::OfString(
-        ctor.get(0).as_string().to_string(),
-      )
+      DataValue::OfString(ctor.get(0).as_string().to_string())
     },
     1 => {
       // ofBool: 0 object fields, 1 scalar byte
@@ -289,19 +286,14 @@ pub fn decode_ix_syntax(obj: LeanObj) -> Syntax {
       // node: info, kind, args
       let info = decode_ix_source_info(ctor.get(0));
       let kind = decode_ix_name(ctor.get(1));
-      let args: Vec<Syntax> =
-        ctor.get(2).as_array()
-          .map(decode_ix_syntax);
+      let args: Vec<Syntax> = ctor.get(2).as_array().map(decode_ix_syntax);
 
       Syntax::Node(info, kind, args)
     },
     2 => {
       // atom: info, val
       let info = decode_ix_source_info(ctor.get(0));
-      Syntax::Atom(
-        info,
-        ctor.get(1).as_string().to_string(),
-      )
+      Syntax::Atom(info, ctor.get(1).as_string().to_string())
     },
     3 => {
       // ident: info, rawVal, val, preresolved
@@ -309,8 +301,7 @@ pub fn decode_ix_syntax(obj: LeanObj) -> Syntax {
       let raw_val = decode_substring(ctor.get(1));
       let val = decode_ix_name(ctor.get(2));
       let preresolved: Vec<SyntaxPreresolved> =
-        ctor.get(3).as_array()
-          .map(decode_syntax_preresolved);
+        ctor.get(3).as_array().map(decode_syntax_preresolved);
 
       Syntax::Ident(info, raw_val, val, preresolved)
     },
@@ -371,8 +362,7 @@ pub fn decode_syntax_preresolved(obj: LeanObj) -> SyntaxPreresolved {
       // decl
       let name = decode_ix_name(ctor.get(0));
       let aliases: Vec<String> =
-        ctor.get(1).as_array()
-          .map(|obj| obj.as_string().to_string());
+        ctor.get(1).as_array().map(|obj| obj.as_string().to_string());
 
       SyntaxPreresolved::Decl(name, aliases)
     },

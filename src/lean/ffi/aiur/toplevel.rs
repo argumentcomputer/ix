@@ -51,17 +51,11 @@ fn lean_ptr_to_op(obj: LeanObj) -> Op {
     },
     7 => {
       let [width, val_idx] = ctor.objs::<2>();
-      Op::Load(
-        lean_unbox_nat_as_usize(width),
-        lean_unbox_nat_as_usize(val_idx),
-      )
+      Op::Load(lean_unbox_nat_as_usize(width), lean_unbox_nat_as_usize(val_idx))
     },
     8 => {
       let [a, b] = ctor.objs::<2>();
-      Op::AssertEq(
-        lean_ptr_to_vec_val_idx(a),
-        lean_ptr_to_vec_val_idx(b),
-      )
+      Op::AssertEq(lean_ptr_to_vec_val_idx(a), lean_ptr_to_vec_val_idx(b))
     },
     9 => {
       let [key] = ctor.objs::<1>();
@@ -77,10 +71,7 @@ fn lean_ptr_to_op(obj: LeanObj) -> Op {
     },
     11 => {
       let [idx, len] = ctor.objs::<2>();
-      Op::IORead(
-        lean_unbox_nat_as_usize(idx),
-        lean_unbox_nat_as_usize(len),
-      )
+      Op::IORead(lean_unbox_nat_as_usize(idx), lean_unbox_nat_as_usize(len))
     },
     12 => {
       let [data] = ctor.objs::<1>();
@@ -129,10 +120,7 @@ fn lean_ptr_to_op(obj: LeanObj) -> Op {
         None
       } else {
         let inner_ctor = idxs_obj.as_ctor();
-        Some(
-          inner_ctor.get(0).as_array()
-            .map(lean_unbox_nat_as_usize),
-        )
+        Some(inner_ctor.get(0).as_array().map(lean_unbox_nat_as_usize))
       };
       Op::Debug(label, idxs)
     },
@@ -154,8 +142,7 @@ fn lean_ptr_to_ctrl(obj: LeanObj) -> Ctrl {
     0 => {
       let [val_idx_obj, cases_obj, default_obj] = ctor.objs::<3>();
       let val_idx = lean_unbox_nat_as_usize(val_idx_obj);
-      let vec_cases =
-        cases_obj.as_array().map(lean_ptr_to_g_block_pair);
+      let vec_cases = cases_obj.as_array().map(lean_ptr_to_g_block_pair);
       let cases = FxIndexMap::from_iter(vec_cases);
       let default = if default_obj.is_scalar() {
         None
@@ -209,9 +196,7 @@ fn lean_ptr_to_function(obj: LeanObj) -> Function {
 pub(crate) fn lean_ptr_to_toplevel(obj: LeanObj) -> Toplevel {
   let ctor = obj.as_ctor();
   let [functions_obj, memory_sizes_obj] = ctor.objs::<2>();
-  let functions =
-    functions_obj.as_array().map(lean_ptr_to_function);
-  let memory_sizes =
-    memory_sizes_obj.as_array().map(lean_unbox_nat_as_usize);
+  let functions = functions_obj.as_array().map(lean_ptr_to_function);
+  let memory_sizes = memory_sizes_obj.as_array().map(lean_unbox_nat_as_usize);
   Toplevel { functions, memory_sizes }
 }

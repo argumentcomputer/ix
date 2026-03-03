@@ -12,15 +12,13 @@ use crate::ix::ixon::sharing::hash_expr;
 use crate::ix::ixon::univ::{Univ as IxonUniv, put_univ};
 use crate::lean::obj::LeanObj;
 
-use crate::lean::ffi::ixon::constant::{decode_ixon_address, decode_ixon_constant};
+use crate::lean::ffi::ixon::constant::{
+  decode_ixon_address, decode_ixon_constant,
+};
 
 /// Unbox a Lean UInt64, handling both scalar and boxed representations.
 fn lean_ptr_to_u64(obj: LeanObj) -> u64 {
-  if obj.is_scalar() {
-    obj.unbox_usize() as u64
-  } else {
-    obj.unbox_u64()
-  }
+  if obj.is_scalar() { obj.unbox_usize() as u64 } else { obj.unbox_u64() }
 }
 
 /// Decode a Lean `Ixon.Expr` to a Rust `IxonExpr`.
@@ -181,8 +179,8 @@ pub extern "C" fn rs_eq_env_serialization(
   raw_env_obj: LeanObj,
   bytes_obj: LeanObj,
 ) -> bool {
-  use crate::lean::ffi::ixon::env::decode_raw_env;
   use crate::ix::ixon::env::Env;
+  use crate::lean::ffi::ixon::env::decode_raw_env;
 
   let decoded = decode_raw_env(raw_env_obj);
   let ba = bytes_obj.as_byte_array();

@@ -104,15 +104,12 @@ extern "C" fn rs_aiur_system_prove(
   let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx);
   let args = args.as_array().map(lean_unbox_g);
-  let io_data =
-    io_data_arr.as_array().map(lean_unbox_g);
+  let io_data = io_data_arr.as_array().map(lean_unbox_g);
   let io_map = lean_array_to_io_buffer_map(io_map_arr);
   let mut io_buffer = IOBuffer { data: io_data, map: io_map };
 
   let (claim, proof) =
-    aiur_system_obj
-      .get()
-      .prove(fri_parameters, fun_idx, &args, &mut io_buffer);
+    aiur_system_obj.get().prove(fri_parameters, fun_idx, &args, &mut io_buffer);
 
   // claim: Array G
   let lean_claim = build_g_array(&claim);
@@ -171,9 +168,7 @@ fn build_g_array(values: &[G]) -> LeanObj {
 }
 
 fn lean_ptr_to_commitment_parameters(obj: LeanObj) -> CommitmentParameters {
-  CommitmentParameters {
-    log_blowup: lean_unbox_nat_as_usize(obj),
-  }
+  CommitmentParameters { log_blowup: lean_unbox_nat_as_usize(obj) }
 }
 
 fn lean_ctor_to_fri_parameters(obj: LeanObj) -> FriParameters {
@@ -188,12 +183,10 @@ fn lean_ctor_to_fri_parameters(obj: LeanObj) -> FriParameters {
 
 fn lean_array_to_io_buffer_map(obj: LeanObj) -> FxHashMap<Vec<G>, IOKeyInfo> {
   let arr = obj.as_array();
-  let mut map =
-    FxHashMap::with_capacity_and_hasher(arr.len(), FxBuildHasher);
+  let mut map = FxHashMap::with_capacity_and_hasher(arr.len(), FxBuildHasher);
   for elt in arr.iter() {
     let pair = elt.as_ctor();
-    let key =
-      pair.get(0).as_array().map(lean_unbox_g);
+    let key = pair.get(0).as_array().map(lean_unbox_g);
     let info_ctor = pair.get(1).as_ctor();
     let info = IOKeyInfo {
       idx: lean_unbox_nat_as_usize(info_ctor.get(0)),

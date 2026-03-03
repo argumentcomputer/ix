@@ -19,11 +19,11 @@ use crate::lean::nat::Nat;
 use crate::lean::obj::{IxConstantInfo, LeanArray, LeanCtor, LeanObj};
 
 use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::primitives::build_nat;
 use crate::lean::ffi::ix::expr::{build_expr, decode_ix_expr};
 use crate::lean::ffi::ix::name::{
   build_name, build_name_array, decode_ix_name, decode_name_array,
 };
+use crate::lean::ffi::primitives::build_nat;
 
 /// Build a Ix.ConstantVal structure.
 pub fn build_constant_val(
@@ -272,9 +272,7 @@ fn build_recursor_rules(
 pub fn decode_constant_val(obj: LeanObj) -> ConstantVal {
   let ctor = obj.as_ctor();
   let name = decode_ix_name(ctor.get(0));
-  let level_params: Vec<Name> =
-    ctor.get(1).as_array()
-      .map(decode_ix_name);
+  let level_params: Vec<Name> = ctor.get(1).as_array().map(decode_ix_name);
   let typ = decode_ix_expr(ctor.get(2));
 
   ConstantVal { name, level_params, typ }
@@ -346,13 +344,11 @@ pub fn decode_constant_info(obj: LeanObj) -> ConstantInfo {
         all: decode_name_array(inner.get(3)),
       })
     },
-    2 => {
-      ConstantInfo::ThmInfo(TheoremVal {
-        cnst: decode_constant_val(inner.get(0)),
-        value: decode_ix_expr(inner.get(1)),
-        all: decode_name_array(inner.get(2)),
-      })
-    },
+    2 => ConstantInfo::ThmInfo(TheoremVal {
+      cnst: decode_constant_val(inner.get(0)),
+      value: decode_ix_expr(inner.get(1)),
+      all: decode_name_array(inner.get(2)),
+    }),
     3 => {
       let is_unsafe = inner.scalar_u8(3, 0) != 0;
 
@@ -412,8 +408,7 @@ pub fn decode_constant_info(obj: LeanObj) -> ConstantInfo {
       let is_unsafe = inner.scalar_u8(7, 1) != 0;
 
       let rules: Vec<RecursorRule> =
-        inner.get(6).as_array()
-          .map(decode_recursor_rule);
+        inner.get(6).as_array().map(decode_recursor_rule);
 
       ConstantInfo::RecInfo(RecursorVal {
         cnst: decode_constant_val(inner.get(0)),

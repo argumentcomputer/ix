@@ -10,8 +10,8 @@ use crate::lean::nat::Nat;
 use crate::lean::obj::{IxName, LeanArray, LeanCtor, LeanObj, LeanString};
 
 use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::primitives::build_nat;
 use crate::lean::ffi::ix::address::build_address;
+use crate::lean::ffi::primitives::build_nat;
 
 /// Build a Lean Ix.Name with embedded hash.
 /// Uses caching to avoid rebuilding the same name.

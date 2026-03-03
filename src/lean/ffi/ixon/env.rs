@@ -13,13 +13,13 @@ use crate::lean::obj::{
   LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanObj,
 };
 
+use crate::lean::ffi::builder::LeanBuildCache;
+use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
 use crate::lean::ffi::ixon::constant::{
   build_address_from_ixon, build_ixon_constant, decode_ixon_address,
   decode_ixon_constant,
 };
 use crate::lean::ffi::ixon::meta::{build_constant_meta, decode_constant_meta};
-use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
 
 // =============================================================================
 // Comm Type (secret: Address, payload: Address)

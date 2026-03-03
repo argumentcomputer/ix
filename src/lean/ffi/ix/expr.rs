@@ -21,11 +21,13 @@ use crate::lean::nat::Nat;
 use crate::lean::obj::{IxExpr, LeanArray, LeanCtor, LeanObj, LeanString};
 
 use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::primitives::build_nat;
 use crate::lean::ffi::ix::address::build_address;
 use crate::lean::ffi::ix::data::{build_data_value, decode_data_value};
-use crate::lean::ffi::ix::level::{build_level, build_level_array, decode_ix_level};
+use crate::lean::ffi::ix::level::{
+  build_level, build_level_array, decode_ix_level,
+};
 use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
+use crate::lean::ffi::primitives::build_nat;
 
 /// Build a Lean Ix.Expr with embedded hash.
 /// Uses caching to avoid rebuilding the same expression.
@@ -241,9 +243,7 @@ pub fn decode_ix_expr(obj: LeanObj) -> Expr {
     4 => {
       // const
       let name = decode_ix_name(ctor.get(0));
-      let levels: Vec<Level> =
-        ctor.get(1).as_array()
-          .map(decode_ix_level);
+      let levels: Vec<Level> = ctor.get(1).as_array().map(decode_ix_level);
 
       Expr::cnst(name, levels)
     },
@@ -297,8 +297,7 @@ pub fn decode_ix_expr(obj: LeanObj) -> Expr {
     10 => {
       // mdata: data, expr, hash
       let data: Vec<(Name, DataValue)> =
-        ctor.get(0).as_array()
-          .map(decode_name_data_value);
+        ctor.get(0).as_array().map(decode_name_data_value);
 
       let inner = decode_ix_expr(ctor.get(1));
       Expr::mdata(data, inner)
@@ -326,9 +325,7 @@ pub fn decode_literal(obj: LeanObj) -> Literal {
     },
     1 => {
       // strVal
-      Literal::StrVal(
-        ctor.get(0).as_string().to_string(),
-      )
+      Literal::StrVal(ctor.get(0).as_string().to_string())
     },
     _ => panic!("Invalid Literal tag: {}", ctor.tag()),
   }

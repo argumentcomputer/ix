@@ -3,10 +3,7 @@ use multi_stark::p3_field::integers::QuotientMap;
 pub mod protocol;
 pub mod toplevel;
 
-use crate::{
-  aiur::G,
-  lean::obj::LeanObj,
-};
+use crate::{aiur::G, lean::obj::LeanObj};
 
 #[inline]
 pub(super) fn lean_unbox_nat_as_usize(obj: LeanObj) -> usize {
