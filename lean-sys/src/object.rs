@@ -11,6 +11,16 @@ use std::ops::Deref;
 use crate::include;
 use crate::safe_cstring;
 
+// Tag constants from lean.h
+const LEAN_MAX_CTOR_TAG: u8 = 243;
+const LEAN_TAG_ARRAY: u8 = 246;
+const LEAN_TAG_SCALAR_ARRAY: u8 = 248;
+const LEAN_TAG_STRING: u8 = 249;
+const LEAN_TAG_EXTERNAL: u8 = 254;
+
+/// Constructor tag for `IO.Error.userError`.
+const IO_ERROR_USER_ERROR_TAG: u8 = 7;
+
 // =============================================================================
 // LeanObject — Untyped base wrapper
 // =============================================================================
@@ -110,30 +120,30 @@ impl LeanObject {
     unsafe { include::lean_unbox_uint64(self.0 as *mut _) }
   }
 
-  /// Interpret as a constructor object (tag 0–243).
+  /// Interpret as a constructor object (tag 0–`LEAN_MAX_CTOR_TAG`).
   ///
   /// Debug-asserts the tag is in range.
   #[inline]
   pub fn as_ctor(self) -> LeanCtor {
-    debug_assert!(!self.is_scalar() && self.tag() <= 243);
+    debug_assert!(!self.is_scalar() && self.tag() <= LEAN_MAX_CTOR_TAG);
     LeanCtor(self)
   }
 
-  /// Interpret as a `String` object (tag 249).
+  /// Interpret as a `String` object (tag `LEAN_TAG_STRING`).
   ///
   /// Debug-asserts the tag is correct.
   #[inline]
   pub fn as_string(self) -> LeanString {
-    debug_assert!(!self.is_scalar() && self.tag() == 249);
+    debug_assert!(!self.is_scalar() && self.tag() == LEAN_TAG_STRING);
     LeanString(self)
   }
 
-  /// Interpret as an `Array` object (tag 246).
+  /// Interpret as an `Array` object (tag `LEAN_TAG_ARRAY`).
   ///
   /// Debug-asserts the tag is correct.
   #[inline]
   pub fn as_array(self) -> LeanArray {
-    debug_assert!(!self.is_scalar() && self.tag() == 246);
+    debug_assert!(!self.is_scalar() && self.tag() == LEAN_TAG_ARRAY);
     LeanArray(self)
   }
 
@@ -146,10 +156,10 @@ impl LeanObject {
     LeanList(self)
   }
 
-  /// Interpret as a `ByteArray` object (tag 248).
+  /// Interpret as a `ByteArray` object (tag `LEAN_TAG_SCALAR_ARRAY`).
   #[inline]
   pub fn as_byte_array(self) -> LeanByteArray {
-    debug_assert!(!self.is_scalar() && self.tag() == 248);
+    debug_assert!(!self.is_scalar() && self.tag() == LEAN_TAG_SCALAR_ARRAY);
     LeanByteArray(self)
   }
 
@@ -165,10 +175,10 @@ impl LeanObject {
 }
 
 // =============================================================================
-// LeanArray — Array α (tag 246)
+// LeanArray — Array α (tag LEAN_TAG_ARRAY)
 // =============================================================================
 
-/// Typed wrapper for a Lean `Array α` object (tag 246).
+/// Typed wrapper for a Lean `Array α` object (tag `LEAN_TAG_ARRAY`).
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct LeanArray(LeanObject);
@@ -182,13 +192,13 @@ impl Deref for LeanArray {
 }
 
 impl LeanArray {
-  /// Wrap a raw pointer, asserting it is an `Array` (tag 246).
+  /// Wrap a raw pointer, asserting it is an `Array` (tag `LEAN_TAG_ARRAY`).
   ///
   /// # Safety
   /// The pointer must be a valid Lean `Array` object.
   pub unsafe fn from_raw(ptr: *const c_void) -> Self {
     let obj = LeanObject(ptr);
-    debug_assert!(!obj.is_scalar() && obj.tag() == 246);
+    debug_assert!(!obj.is_scalar() && obj.tag() == LEAN_TAG_ARRAY);
     Self(obj)
   }
 
@@ -244,10 +254,10 @@ impl LeanArray {
 }
 
 // =============================================================================
-// LeanByteArray — ByteArray (tag 248, scalar array)
+// LeanByteArray — ByteArray (tag LEAN_TAG_SCALAR_ARRAY)
 // =============================================================================
 
-/// Typed wrapper for a Lean `ByteArray` object (tag 248).
+/// Typed wrapper for a Lean `ByteArray` object (tag `LEAN_TAG_SCALAR_ARRAY`).
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct LeanByteArray(LeanObject);
@@ -261,13 +271,13 @@ impl Deref for LeanByteArray {
 }
 
 impl LeanByteArray {
-  /// Wrap a raw pointer, asserting it is a `ByteArray` (tag 248).
+  /// Wrap a raw pointer, asserting it is a `ByteArray` (tag `LEAN_TAG_SCALAR_ARRAY`).
   ///
   /// # Safety
   /// The pointer must be a valid Lean `ByteArray` object.
   pub unsafe fn from_raw(ptr: *const c_void) -> Self {
     let obj = LeanObject(ptr);
-    debug_assert!(!obj.is_scalar() && obj.tag() == 248);
+    debug_assert!(!obj.is_scalar() && obj.tag() == LEAN_TAG_SCALAR_ARRAY);
     Self(obj)
   }
 
@@ -319,10 +329,10 @@ impl LeanByteArray {
 }
 
 // =============================================================================
-// LeanString — String (tag 249)
+// LeanString — String (tag LEAN_TAG_STRING)
 // =============================================================================
 
-/// Typed wrapper for a Lean `String` object (tag 249).
+/// Typed wrapper for a Lean `String` object (tag `LEAN_TAG_STRING`).
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct LeanString(LeanObject);
@@ -336,13 +346,13 @@ impl Deref for LeanString {
 }
 
 impl LeanString {
-  /// Wrap a raw pointer, asserting it is a `String` (tag 249).
+  /// Wrap a raw pointer, asserting it is a `String` (tag `LEAN_TAG_STRING`).
   ///
   /// # Safety
   /// The pointer must be a valid Lean `String` object.
   pub unsafe fn from_raw(ptr: *const c_void) -> Self {
     let obj = LeanObject(ptr);
-    debug_assert!(!obj.is_scalar() && obj.tag() == 249);
+    debug_assert!(!obj.is_scalar() && obj.tag() == LEAN_TAG_STRING);
     Self(obj)
   }
 
@@ -373,10 +383,10 @@ impl std::fmt::Display for LeanString {
 }
 
 // =============================================================================
-// LeanCtor — Constructor objects (tag 0–243)
+// LeanCtor — Constructor objects (tag 0–LEAN_MAX_CTOR_TAG)
 // =============================================================================
 
-/// Typed wrapper for a Lean constructor object (tag 0–243).
+/// Typed wrapper for a Lean constructor object (tag 0–`LEAN_MAX_CTOR_TAG`).
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct LeanCtor(LeanObject);
@@ -390,13 +400,13 @@ impl Deref for LeanCtor {
 }
 
 impl LeanCtor {
-  /// Wrap a raw pointer, asserting it is a constructor (tag <= 243).
+  /// Wrap a raw pointer, asserting it is a constructor (tag <= `LEAN_MAX_CTOR_TAG`).
   ///
   /// # Safety
   /// The pointer must be a valid Lean constructor object.
   pub unsafe fn from_raw(ptr: *const c_void) -> Self {
     let obj = LeanObject(ptr);
-    debug_assert!(!obj.is_scalar() && obj.tag() <= 243);
+    debug_assert!(!obj.is_scalar() && obj.tag() <= LEAN_MAX_CTOR_TAG);
     Self(obj)
   }
 
@@ -511,10 +521,10 @@ impl LeanCtor {
 }
 
 // =============================================================================
-// LeanExternal<T> — External objects (tag 254)
+// LeanExternal<T> — External objects (tag LEAN_TAG_EXTERNAL)
 // =============================================================================
 
-/// Typed wrapper for a Lean external object (tag 254) holding a `T`.
+/// Typed wrapper for a Lean external object (tag `LEAN_TAG_EXTERNAL`) holding a `T`.
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct LeanExternal<T>(LeanObject, PhantomData<T>);
@@ -528,14 +538,14 @@ impl<T> Deref for LeanExternal<T> {
 }
 
 impl<T> LeanExternal<T> {
-  /// Wrap a raw pointer, asserting it is an external object (tag 254).
+  /// Wrap a raw pointer, asserting it is an external object (tag `LEAN_TAG_EXTERNAL`).
   ///
   /// # Safety
   /// The pointer must be a valid Lean external object whose data pointer
   /// points to a valid `T`.
   pub unsafe fn from_raw(ptr: *const c_void) -> Self {
     let obj = LeanObject(ptr);
-    debug_assert!(!obj.is_scalar() && obj.tag() == 254);
+    debug_assert!(!obj.is_scalar() && obj.tag() == LEAN_TAG_EXTERNAL);
     Self(obj, PhantomData)
   }
 
@@ -831,8 +841,7 @@ impl LeanIOResult {
 
   /// Build an IO error from a Rust string via `IO.Error.userError` (tag 7, 1 field).
   pub fn error_string(msg: &str) -> Self {
-    // IO.Error.userError is tag 7 with 1 object field (the String)
-    let user_error = LeanCtor::alloc(7, 1, 0);
+    let user_error = LeanCtor::alloc(IO_ERROR_USER_ERROR_TAG, 1, 0);
     user_error.set(0, LeanString::new(msg));
     Self::error(*user_error)
   }

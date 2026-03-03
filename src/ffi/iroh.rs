@@ -24,7 +24,7 @@ impl LeanPutResponse {
     let ctor = LeanCtor::alloc(0, 2, 0);
     ctor.set(0, LeanString::new(message));
     ctor.set(1, LeanString::new(hash));
-    Self::new((*ctor).into())
+    Self::new(*ctor)
   }
 }
 
@@ -42,7 +42,7 @@ impl LeanGetResponse {
     ctor.set(0, LeanString::new(message));
     ctor.set(1, LeanString::new(hash));
     ctor.set(2, LeanByteArray::from_bytes(bytes));
-    Self::new((*ctor).into())
+    Self::new(*ctor)
   }
 }
 

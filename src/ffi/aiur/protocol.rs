@@ -18,7 +18,7 @@ use crate::{
     synthesis::AiurSystem,
   },
   ffi::aiur::{
-    lean_unbox_g, lean_unbox_nat_as_usize, toplevel::lean_ptr_to_toplevel,
+    lean_unbox_g, lean_unbox_nat_as_usize, toplevel::decode_toplevel,
   },
 };
 
@@ -67,7 +67,7 @@ extern "C" fn rs_aiur_system_build(
   commitment_parameters: LeanObject,
 ) -> LeanExternal<AiurSystem> {
   let system = AiurSystem::build(
-    lean_ptr_to_toplevel(toplevel),
+    decode_toplevel(toplevel),
     lean_ptr_to_commitment_parameters(commitment_parameters),
   );
   LeanExternal::alloc(system_class(), system)

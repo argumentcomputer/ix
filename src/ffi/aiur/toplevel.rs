@@ -194,7 +194,7 @@ fn lean_ptr_to_function(obj: LeanObject) -> Function {
   Function { body, layout, unconstrained }
 }
 
-pub(crate) fn lean_ptr_to_toplevel(obj: LeanObject) -> Toplevel {
+pub(crate) fn decode_toplevel(obj: LeanObject) -> Toplevel {
   let ctor = obj.as_ctor();
   let [functions_obj, memory_sizes_obj] = ctor.objs::<2>();
   let functions = functions_obj.as_array().map(lean_ptr_to_function);
