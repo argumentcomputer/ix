@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
-use crate::lean::ffi::{ffi_io_guard, io_ok};
+use crate::ffi::{ffi_io_guard, io_ok};
 use crate::lean::object::{LeanArray, LeanCtor, LeanObject};
 
-use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::ix::name::build_name;
-use crate::lean::ffi::lean_env::lean_ptr_to_env;
+use crate::ffi::builder::LeanBuildCache;
+use crate::ffi::ix::name::build_name;
+use crate::ffi::lean_env::lean_ptr_to_env;
 
 /// Build an Array (Ix.Name × Array Ix.Name) from a RefMap.
 pub fn build_ref_graph_array(

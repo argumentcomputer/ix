@@ -15,11 +15,11 @@ use crate::lean::object::{
   LeanCtor, LeanObject,
 };
 
-use crate::lean::ffi::ix::constant::{
+use crate::ffi::ix::constant::{
   build_reducibility_hints, decode_reducibility_hints,
 };
-use crate::lean::ffi::ix::expr::binder_info_to_u8;
-use crate::lean::ffi::ixon::constant::{
+use crate::ffi::ix::expr::binder_info_to_u8;
+use crate::ffi::ixon::constant::{
   build_address_array, build_address_from_ixon, decode_ixon_address,
   decode_ixon_address_array,
 };

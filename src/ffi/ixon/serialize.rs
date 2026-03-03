@@ -15,7 +15,7 @@ use crate::lean::object::{
   LeanIxonUniv, LeanByteArray, LeanObject,
 };
 
-use crate::lean::ffi::ixon::constant::{
+use crate::ffi::ixon::constant::{
   decode_ixon_address, decode_ixon_constant,
 };
 
@@ -180,7 +180,7 @@ pub extern "C" fn rs_eq_env_serialization(
   bytes_obj: LeanByteArray,
 ) -> bool {
   use crate::ix::ixon::env::Env;
-  use crate::lean::ffi::ixon::env::decode_raw_env;
+  use crate::ffi::ixon::env::decode_raw_env;
 
   let decoded = decode_raw_env(*raw_env_obj);
   let bytes_data = bytes_obj.as_bytes();

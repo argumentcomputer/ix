@@ -18,12 +18,12 @@ use crate::ix::env::{
 use crate::lean::nat::Nat;
 use crate::lean::object::{LeanIxConstantInfo, LeanArray, LeanCtor, LeanObject};
 
-use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::ix::expr::{build_expr, decode_ix_expr};
-use crate::lean::ffi::ix::name::{
+use crate::ffi::builder::LeanBuildCache;
+use crate::ffi::ix::expr::{build_expr, decode_ix_expr};
+use crate::ffi::ix::name::{
   build_name, build_name_array, decode_ix_name, decode_name_array,
 };
-use crate::lean::ffi::primitives::build_nat;
+use crate::ffi::primitives::build_nat;
 
 /// Build a Ix.ConstantVal structure.
 pub fn build_constant_val(

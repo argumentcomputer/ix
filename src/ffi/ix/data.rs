@@ -9,9 +9,9 @@ use crate::lean::object::{
   LeanIxSyntaxPreresolved, LeanArray, LeanCtor, LeanObject, LeanString,
 };
 
-use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
-use crate::lean::ffi::primitives::build_nat;
+use crate::ffi::builder::LeanBuildCache;
+use crate::ffi::ix::name::{build_name, decode_ix_name};
+use crate::ffi::primitives::build_nat;
 
 /// Build a Ix.Int (ofNat or negSucc).
 pub fn build_int(int: &Int) -> LeanIxInt {

@@ -10,7 +10,7 @@ use crate::lean::object::{
   LeanIxBlockCompareDetail, LeanByteArray, LeanCtor, LeanObject,
 };
 
-use crate::lean::ffi::lean_env::{
+use crate::ffi::lean_env::{
   Cache as LeanCache, GlobalCache, lean_ptr_to_expr, lean_ptr_to_name,
 };
 
@@ -186,7 +186,7 @@ pub unsafe extern "C" fn rs_free_compiled_env(ptr: *mut RustBlockEnv) {
 pub extern "C" fn rs_build_compiled_env(
   env_consts_ptr: LeanObject,
 ) -> *mut RustBlockEnv {
-  use crate::lean::ffi::lean_env::lean_ptr_to_env;
+  use crate::ffi::lean_env::lean_ptr_to_env;
 
   // Decode Lean environment
   let rust_env = lean_ptr_to_env(env_consts_ptr);

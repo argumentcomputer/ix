@@ -24,11 +24,11 @@ use crate::lean::object::{
   LeanCtor, LeanObject,
 };
 
-use crate::lean::ffi::ixon::expr::{
+use crate::ffi::ixon::expr::{
   build_ixon_expr, build_ixon_expr_array, decode_ixon_expr,
   decode_ixon_expr_array,
 };
-use crate::lean::ffi::ixon::univ::{
+use crate::ffi::ixon::univ::{
   build_ixon_univ_array, decode_ixon_univ_array,
 };
 

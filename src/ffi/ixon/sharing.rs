@@ -9,8 +9,8 @@ use crate::ix::ixon::sharing::{
 };
 use crate::lean::object::{LeanArray, LeanByteArray};
 
-use crate::lean::ffi::ixon::expr::decode_ixon_expr_array;
-use crate::lean::ffi::ixon::serialize::lean_ptr_to_ixon_expr;
+use crate::ffi::ixon::expr::decode_ixon_expr_array;
+use crate::ffi::ixon::serialize::lean_ptr_to_ixon_expr;
 
 /// FFI: Debug sharing analysis - print usage counts for subterms with usage >= 2.
 /// This helps diagnose why Lean and Rust make different sharing decisions.

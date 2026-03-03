@@ -22,7 +22,6 @@ pub mod lean_sys {
   include!(concat!(env!("OUT_DIR"), "/lean.rs"));
 }
 
-pub mod ffi;
 pub mod nat;
 pub mod object;
 

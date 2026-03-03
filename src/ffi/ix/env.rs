@@ -7,11 +7,11 @@ use crate::lean::object::{
   LeanIxEnvironment, LeanIxRawEnvironment, LeanArray, LeanCtor, LeanObject,
 };
 
-use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::ix::constant::{
+use crate::ffi::builder::LeanBuildCache;
+use crate::ffi::ix::constant::{
   build_constant_info, decode_constant_info,
 };
-use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
+use crate::ffi::ix::name::{build_name, decode_ix_name};
 
 // =============================================================================
 // HashMap Building

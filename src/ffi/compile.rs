@@ -20,7 +20,7 @@ use crate::ix::ixon::constant::{Constant as IxonConstant, ConstantInfo};
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::{Comm, ConstantMeta};
-use crate::lean::ffi::{ffi_io_guard, io_error, io_ok};
+use crate::ffi::{ffi_io_guard, io_error, io_ok};
 use crate::lean::lean_sys::lean_uint64_to_nat;
 use crate::lean::nat::Nat;
 use crate::lean::object::{
@@ -33,19 +33,19 @@ use crate::lean::object::{
 use dashmap::DashMap;
 use dashmap::DashSet;
 
-use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::graph::build_condensed_blocks;
-use crate::lean::ffi::ix::constant::build_constant_info;
-use crate::lean::ffi::ix::env::build_raw_environment;
-use crate::lean::ffi::ix::name::build_name;
-use crate::lean::ffi::ixon::constant::{
+use crate::ffi::builder::LeanBuildCache;
+use crate::ffi::graph::build_condensed_blocks;
+use crate::ffi::ix::constant::build_constant_info;
+use crate::ffi::ix::env::build_raw_environment;
+use crate::ffi::ix::name::build_name;
+use crate::ffi::ixon::constant::{
   build_address_from_ixon, build_ixon_constant, decode_ixon_address,
 };
-use crate::lean::ffi::ixon::env::{
+use crate::ffi::ixon::env::{
   build_raw_env, build_raw_name_entry, decode_raw_env, decoded_to_ixon_env,
 };
-use crate::lean::ffi::ixon::meta::{build_constant_meta, build_ixon_comm};
-use crate::lean::ffi::lean_env::{
+use crate::ffi::ixon::meta::{build_constant_meta, build_ixon_comm};
+use crate::ffi::lean_env::{
   GlobalCache, lean_ptr_to_env, lean_ptr_to_name,
 };
 

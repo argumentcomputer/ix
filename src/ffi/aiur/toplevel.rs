@@ -9,7 +9,7 @@ use crate::{
   lean::object::LeanObject,
 };
 
-use crate::lean::ffi::aiur::{lean_unbox_g, lean_unbox_nat_as_usize};
+use crate::ffi::aiur::{lean_unbox_g, lean_unbox_nat_as_usize};
 
 fn lean_ptr_to_vec_val_idx(obj: LeanObject) -> Vec<ValIdx> {
   obj.as_array().map(lean_unbox_nat_as_usize)

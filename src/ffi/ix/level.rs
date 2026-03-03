@@ -11,9 +11,9 @@
 use crate::ix::env::{Level, LevelData};
 use crate::lean::object::{LeanIxLevel, LeanArray, LeanCtor, LeanObject};
 
-use crate::lean::ffi::builder::LeanBuildCache;
-use crate::lean::ffi::ix::address::build_address;
-use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
+use crate::ffi::builder::LeanBuildCache;
+use crate::ffi::ix::address::build_address;
+use crate::ffi::ix::name::{build_name, decode_ix_name};
 
 /// Build a Lean Ix.Level with embedded hash.
 /// Uses caching to avoid rebuilding the same level.
