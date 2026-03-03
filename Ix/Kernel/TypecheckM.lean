@@ -39,20 +39,20 @@ structure TypecheckCtx (m : MetaMode) where
 /-! ## Typechecker State -/
 
 /-- Default fuel for bounding total recursive work per constant. -/
-def defaultFuel : Nat := 1_000_000
+def defaultFuel : Nat := 10_000_000
 
 structure TypecheckState (m : MetaMode) where
   typedConsts    : Std.TreeMap Address (TypedConst m) Address.compare
-  whnfCache      : Std.HashMap (Expr m) (Expr m) := {}
+  whnfCache      : Std.TreeMap (Expr m) (Expr m) Expr.compare := {}
   /-- Cache for structural-only WHNF (whnfCore with cheapRec=false, cheapProj=false).
       Separate from whnfCache to avoid stale entries from cheap reductions. -/
-  whnfCoreCache  : Std.HashMap (Expr m) (Expr m) := {}
+  whnfCoreCache  : Std.TreeMap (Expr m) (Expr m) Expr.compare := {}
   /-- Infer cache: maps term → (binding context, inferred type).
       Keyed on Expr only; context verified on retrieval via ptr equality + BEq fallback. -/
-  inferCache     : Std.HashMap (Expr m) (Array (Expr m) × Expr m) := {}
+  inferCache     : Std.TreeMap (Expr m) (Array (Expr m) × Expr m) Expr.compare := {}
   eqvManager     : EquivManager m := {}
-  failureCache   : Std.HashSet (Expr m × Expr m) := {}
-  constTypeCache : Std.HashMap Address (Array (Level m) × Expr m) := {}
+  failureCache   : Std.TreeMap (Expr m × Expr m) Unit Expr.pairCompare := {}
+  constTypeCache : Std.TreeMap Address (Array (Level m) × Expr m) Address.compare := {}
   fuel           : Nat := defaultFuel
   /-- Tracks nesting depth of whnf calls from within recursor reduction (tryReduceApp → whnf).
       When this exceeds a threshold, whnfCore is used instead of whnf to prevent stack overflow. -/
@@ -166,13 +166,8 @@ def ensureTypedConst (addr : Address) : TypecheckM m Unit := do
 
 /-! ## Def-eq cache helpers -/
 
-instance : Hashable (Expr m × Expr m) where
-  hash p := mixHash (Hashable.hash p.1) (Hashable.hash p.2)
-
-/-- Symmetric cache key for def-eq pairs. Orders by structural hash to make key(a,b) == key(b,a). -/
+/-- Symmetric cache key for def-eq pairs. Orders by pointer address to make key(a,b) == key(b,a). -/
 def eqCacheKey (a b : Expr m) : Expr m × Expr m :=
-  let ha := Hashable.hash a
-  let hb := Hashable.hash b
-  if ha ≤ hb then (a, b) else (b, a)
+  if Expr.ptrCompare a b != .gt then (a, b) else (b, a)
 
 end Ix.Kernel

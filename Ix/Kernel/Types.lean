@@ -71,7 +71,36 @@ inductive Expr (m : MetaMode) where
   | lit     (l : Lean.Literal)
   | proj    (typeAddr : Address) (idx : Nat) (struct : Expr m)
              (typeName : MetaField m Ix.Name)
-  deriving Inhabited, BEq
+  deriving Inhabited
+
+/-- Structural equality for Expr, iterating over binder body spines to avoid
+    stack overflow on deeply nested let/lam/forallE chains. -/
+partial def Expr.beq : Expr m → Expr m → Bool := go where
+  go (a b : Expr m) : Bool := Id.run do
+    let mut ca := a; let mut cb := b
+    repeat
+      match ca, cb with
+      | .lam ty1 body1 n1 bi1, .lam ty2 body2 n2 bi2 =>
+        if !(go ty1 ty2 && n1 == n2 && bi1 == bi2) then return false
+        ca := body1; cb := body2
+      | .forallE ty1 body1 n1 bi1, .forallE ty2 body2 n2 bi2 =>
+        if !(go ty1 ty2 && n1 == n2 && bi1 == bi2) then return false
+        ca := body1; cb := body2
+      | .letE ty1 val1 body1 n1, .letE ty2 val2 body2 n2 =>
+        if !(go ty1 ty2 && go val1 val2 && n1 == n2) then return false
+        ca := body1; cb := body2
+      | _, _ => break
+    match ca, cb with
+    | .bvar i1 n1, .bvar i2 n2 => return i1 == i2 && n1 == n2
+    | .sort l1, .sort l2 => return l1 == l2
+    | .const a1 ls1 n1, .const a2 ls2 n2 => return a1 == a2 && ls1 == ls2 && n1 == n2
+    | .app fn1 arg1, .app fn2 arg2 => return go fn1 fn2 && go arg1 arg2
+    | .lit l1, .lit l2 => return l1 == l2
+    | .proj a1 i1 s1 n1, .proj a2 i2 s2 n2 =>
+      return a1 == a2 && i1 == i2 && go s1 s2 && n1 == n2
+    | _, _ => return false
+
+instance : BEq (Expr m) where beq := Expr.beq
 
 /-! ## Pretty printing helpers -/
 
@@ -252,9 +281,42 @@ where
     match e with
     | .bvar idx name => if idx >= d then .bvar (idx + n) name else e
     | .app fn arg => .app (go fn d) (go arg d)
-    | .lam ty body name bi => .lam (go ty d) (go body (d + 1)) name bi
-    | .forallE ty body name bi => .forallE (go ty d) (go body (d + 1)) name bi
-    | .letE ty val body name => .letE (go ty d) (go val d) (go body (d + 1)) name
+    | .lam .. => Id.run do
+      let mut cur := e; let mut curD := d
+      let mut acc : Array (Expr m × MetaField m Ix.Name × MetaField m Lean.BinderInfo) := #[]
+      repeat
+        match cur with
+        | .lam ty body name bi => acc := acc.push (go ty curD, name, bi); curD := curD + 1; cur := body
+        | _ => break
+      let mut result := go cur curD
+      for i in [:acc.size] do
+        let j := acc.size - 1 - i; let (ty, name, bi) := acc[j]!
+        result := .lam ty result name bi
+      return result
+    | .forallE .. => Id.run do
+      let mut cur := e; let mut curD := d
+      let mut acc : Array (Expr m × MetaField m Ix.Name × MetaField m Lean.BinderInfo) := #[]
+      repeat
+        match cur with
+        | .forallE ty body name bi => acc := acc.push (go ty curD, name, bi); curD := curD + 1; cur := body
+        | _ => break
+      let mut result := go cur curD
+      for i in [:acc.size] do
+        let j := acc.size - 1 - i; let (ty, name, bi) := acc[j]!
+        result := .forallE ty result name bi
+      return result
+    | .letE .. => Id.run do
+      let mut cur := e; let mut curD := d
+      let mut acc : Array (Expr m × Expr m × MetaField m Ix.Name) := #[]
+      repeat
+        match cur with
+        | .letE ty val body name => acc := acc.push (go ty curD, go val curD, name); curD := curD + 1; cur := body
+        | _ => break
+      let mut result := go cur curD
+      for i in [:acc.size] do
+        let j := acc.size - 1 - i; let (ty, val, name) := acc[j]!
+        result := .letE ty val result name
+      return result
     | .proj typeAddr idx struct typeName => .proj typeAddr idx (go struct d) typeName
     | .sort .. | .const .. | .lit .. => e
 
@@ -276,9 +338,42 @@ where
         else
           .bvar (idx - subst.size) name
     | .app fn arg => .app (go fn shift) (go arg shift)
-    | .lam ty body name bi => .lam (go ty shift) (go body (shift + 1)) name bi
-    | .forallE ty body name bi => .forallE (go ty shift) (go body (shift + 1)) name bi
-    | .letE ty val body name => .letE (go ty shift) (go val shift) (go body (shift + 1)) name
+    | .lam .. => Id.run do
+      let mut cur := e; let mut curShift := shift
+      let mut acc : Array (Expr m × MetaField m Ix.Name × MetaField m Lean.BinderInfo) := #[]
+      repeat
+        match cur with
+        | .lam ty body name bi => acc := acc.push (go ty curShift, name, bi); curShift := curShift + 1; cur := body
+        | _ => break
+      let mut result := go cur curShift
+      for i in [:acc.size] do
+        let j := acc.size - 1 - i; let (ty, name, bi) := acc[j]!
+        result := .lam ty result name bi
+      return result
+    | .forallE .. => Id.run do
+      let mut cur := e; let mut curShift := shift
+      let mut acc : Array (Expr m × MetaField m Ix.Name × MetaField m Lean.BinderInfo) := #[]
+      repeat
+        match cur with
+        | .forallE ty body name bi => acc := acc.push (go ty curShift, name, bi); curShift := curShift + 1; cur := body
+        | _ => break
+      let mut result := go cur curShift
+      for i in [:acc.size] do
+        let j := acc.size - 1 - i; let (ty, name, bi) := acc[j]!
+        result := .forallE ty result name bi
+      return result
+    | .letE .. => Id.run do
+      let mut cur := e; let mut curShift := shift
+      let mut acc : Array (Expr m × Expr m × MetaField m Ix.Name) := #[]
+      repeat
+        match cur with
+        | .letE ty val body name => acc := acc.push (go ty curShift, go val curShift, name); curShift := curShift + 1; cur := body
+        | _ => break
+      let mut result := go cur curShift
+      for i in [:acc.size] do
+        let j := acc.size - 1 - i; let (ty, val, name) := acc[j]!
+        result := .letE ty val result name
+      return result
     | .proj typeAddr idx struct typeName => .proj typeAddr idx (go struct shift) typeName
     | .sort .. | .const .. | .lit .. => e
 
@@ -295,23 +390,66 @@ where
     | .sort lvl => .sort (substFn lvl)
     | .const addr ls name => .const addr (ls.map substFn) name
     | .app fn arg => .app (go fn) (go arg)
-    | .lam ty body name bi => .lam (go ty) (go body) name bi
-    | .forallE ty body name bi => .forallE (go ty) (go body) name bi
-    | .letE ty val body name => .letE (go ty) (go val) (go body) name
+    | .lam .. => Id.run do
+      let mut cur := e
+      let mut acc : Array (Expr m × MetaField m Ix.Name × MetaField m Lean.BinderInfo) := #[]
+      repeat
+        match cur with
+        | .lam ty body name bi => acc := acc.push (go ty, name, bi); cur := body
+        | _ => break
+      let mut result := go cur
+      for i in [:acc.size] do
+        let j := acc.size - 1 - i; let (ty, name, bi) := acc[j]!
+        result := .lam ty result name bi
+      return result
+    | .forallE .. => Id.run do
+      let mut cur := e
+      let mut acc : Array (Expr m × MetaField m Ix.Name × MetaField m Lean.BinderInfo) := #[]
+      repeat
+        match cur with
+        | .forallE ty body name bi => acc := acc.push (go ty, name, bi); cur := body
+        | _ => break
+      let mut result := go cur
+      for i in [:acc.size] do
+        let j := acc.size - 1 - i; let (ty, name, bi) := acc[j]!
+        result := .forallE ty result name bi
+      return result
+    | .letE .. => Id.run do
+      let mut cur := e
+      let mut acc : Array (Expr m × Expr m × MetaField m Ix.Name) := #[]
+      repeat
+        match cur with
+        | .letE ty val body name => acc := acc.push (go ty, go val, name); cur := body
+        | _ => break
+      let mut result := go cur
+      for i in [:acc.size] do
+        let j := acc.size - 1 - i; let (ty, val, name) := acc[j]!
+        result := .letE ty val result name
+      return result
     | .proj typeAddr idx struct typeName => .proj typeAddr idx (go struct) typeName
     | .bvar .. | .lit .. => e
 
 /-- Check if expression has any bvars with index >= depth. -/
-partial def hasLooseBVarsAbove (e : Expr m) (depth : Nat) : Bool :=
-  match e with
-  | .bvar idx _ => idx >= depth
-  | .app fn arg => hasLooseBVarsAbove fn depth || hasLooseBVarsAbove arg depth
-  | .lam ty body _ _ => hasLooseBVarsAbove ty depth || hasLooseBVarsAbove body (depth + 1)
-  | .forallE ty body _ _ => hasLooseBVarsAbove ty depth || hasLooseBVarsAbove body (depth + 1)
-  | .letE ty val body _ =>
-    hasLooseBVarsAbove ty depth || hasLooseBVarsAbove val depth || hasLooseBVarsAbove body (depth + 1)
-  | .proj _ _ struct _ => hasLooseBVarsAbove struct depth
-  | .sort .. | .const .. | .lit .. => false
+partial def hasLooseBVarsAbove (e : Expr m) (depth : Nat) : Bool := Id.run do
+  let mut cur := e; let mut curDepth := depth
+  repeat
+    match cur with
+    | .lam ty body _ _ =>
+      if hasLooseBVarsAbove ty curDepth then return true
+      curDepth := curDepth + 1; cur := body
+    | .forallE ty body _ _ =>
+      if hasLooseBVarsAbove ty curDepth then return true
+      curDepth := curDepth + 1; cur := body
+    | .letE ty val body _ =>
+      if hasLooseBVarsAbove ty curDepth then return true
+      if hasLooseBVarsAbove val curDepth then return true
+      curDepth := curDepth + 1; cur := body
+    | _ => break
+  match cur with
+  | .bvar idx _ => return idx >= curDepth
+  | .app fn arg => return hasLooseBVarsAbove fn curDepth || hasLooseBVarsAbove arg curDepth
+  | .proj _ _ struct _ => return hasLooseBVarsAbove struct curDepth
+  | _ => return false
 
 /-- Does the expression have any loose (free) bvars? -/
 def hasLooseBVars (e : Expr m) : Bool := e.hasLooseBVarsAbove 0
@@ -342,30 +480,137 @@ def letBody! : Expr m → Expr m
 
 end Expr
 
-/-! ## Hashable instances -/
+/-! ## Structural ordering -/
 
-partial def Level.hash : Level m → UInt64
-  | .zero => 7
-  | .succ l => mixHash 13 (Level.hash l)
-  | .max l₁ l₂ => mixHash 17 (mixHash (Level.hash l₁) (Level.hash l₂))
-  | .imax l₁ l₂ => mixHash 23 (mixHash (Level.hash l₁) (Level.hash l₂))
-  | .param idx _ => mixHash 29 (Hashable.hash idx)
+/-- Numeric tag for Level constructors, used for ordering. -/
+private def Level.tag : Level m → UInt8
+  | .zero     => 0
+  | .succ _   => 1
+  | .max _ _  => 2
+  | .imax _ _ => 3
+  | .param _ _ => 4
 
-instance : Hashable (Level m) where hash := Level.hash
+/-- Pointer equality check for Levels (O(1) fast path). -/
+private unsafe def Level.ptrEqUnsafe (a : @& Level m) (b : @& Level m) : Bool :=
+  ptrAddrUnsafe a == ptrAddrUnsafe b
 
-partial def Expr.hash : Expr m → UInt64
-  | .bvar idx _ => mixHash 31 (Hashable.hash idx)
-  | .sort lvl => mixHash 37 (Level.hash lvl)
-  | .const addr lvls _ => mixHash 41 (mixHash (Hashable.hash addr) (lvls.foldl (fun h l => mixHash h (Level.hash l)) 0))
-  | .app fn arg => mixHash 43 (mixHash (Expr.hash fn) (Expr.hash arg))
-  | .lam ty body _ _ => mixHash 47 (mixHash (Expr.hash ty) (Expr.hash body))
-  | .forallE ty body _ _ => mixHash 53 (mixHash (Expr.hash ty) (Expr.hash body))
-  | .letE ty val body _ => mixHash 59 (mixHash (Expr.hash ty) (mixHash (Expr.hash val) (Expr.hash body)))
-  | .lit (.natVal n) => mixHash 61 (Hashable.hash n)
-  | .lit (.strVal s) => mixHash 67 (Hashable.hash s)
-  | .proj addr idx struct _ => mixHash 71 (mixHash (Hashable.hash addr) (mixHash (Hashable.hash idx) (Expr.hash struct)))
+@[implemented_by Level.ptrEqUnsafe]
+opaque Level.ptrEq : @& Level m → @& Level m → Bool
 
-instance : Hashable (Expr m) where hash := Expr.hash
+/-- Structural ordering on universe levels. Pointer-equal levels short-circuit to .eq. -/
+partial def Level.compare (a b : Level m) : Ordering :=
+  if Level.ptrEq a b then .eq
+  else match a, b with
+  | .zero, .zero => .eq
+  | .succ l₁, .succ l₂ => Level.compare l₁ l₂
+  | .max a₁ a₂, .max b₁ b₂ =>
+    match Level.compare a₁ b₁ with | .eq => Level.compare a₂ b₂ | o => o
+  | .imax a₁ a₂, .imax b₁ b₂ =>
+    match Level.compare a₁ b₁ with | .eq => Level.compare a₂ b₂ | o => o
+  | .param i₁ _, .param i₂ _ => Ord.compare i₁ i₂
+  | _, _ => Ord.compare a.tag b.tag
+
+private def Level.compareArray (a b : Array (Level m)) : Ordering := Id.run do
+  match Ord.compare a.size b.size with
+  | .eq =>
+    for i in [:a.size] do
+      match Level.compare a[i]! b[i]! with
+      | .eq => continue
+      | o => return o
+    return .eq
+  | o => return o
+
+/-- Numeric tag for Expr constructors, used for ordering. -/
+private def Expr.tag' : Expr m → UInt8
+  | .bvar ..    => 0
+  | .sort ..    => 1
+  | .const ..   => 2
+  | .app ..     => 3
+  | .lam ..     => 4
+  | .forallE .. => 5
+  | .letE ..    => 6
+  | .lit ..     => 7
+  | .proj ..    => 8
+
+/-- Pointer equality check for Exprs (O(1) fast path). -/
+private unsafe def Expr.ptrEqUnsafe (a : @& Expr m) (b : @& Expr m) : Bool :=
+  ptrAddrUnsafe a == ptrAddrUnsafe b
+
+@[implemented_by Expr.ptrEqUnsafe]
+opaque Expr.ptrEq : @& Expr m → @& Expr m → Bool
+
+/-- Fully iterative structural ordering on expressions using an explicit worklist.
+    Pointer-equal exprs short-circuit to .eq. Never recurses — uses a stack of
+    pending comparison pairs to avoid call-stack overflow on huge expressions. -/
+partial def Expr.compare (a b : Expr m) : Ordering := Id.run do
+  let mut stack : Array (Expr m × Expr m) := #[(a, b)]
+  while h : stack.size > 0 do
+    let (e1, e2) := stack[stack.size - 1]
+    stack := stack.pop
+    if Expr.ptrEq e1 e2 then continue
+    -- Flatten binder chains
+    let mut ca := e1; let mut cb := e2
+    repeat
+      match ca, cb with
+      | .lam ty1 body1 _ _, .lam ty2 body2 _ _ =>
+        stack := stack.push (ty1, ty2); ca := body1; cb := body2
+      | .forallE ty1 body1 _ _, .forallE ty2 body2 _ _ =>
+        stack := stack.push (ty1, ty2); ca := body1; cb := body2
+      | .letE ty1 val1 body1 _, .letE ty2 val2 body2 _ =>
+        stack := stack.push (ty1, ty2); stack := stack.push (val1, val2)
+        ca := body1; cb := body2
+      | _, _ => break
+    -- Flatten app spines, then push heads back for further processing
+    match ca, cb with
+    | .app .., .app .. =>
+      let mut f1 := ca; let mut f2 := cb
+      repeat match f1, f2 with
+        | .app fn1 arg1, .app fn2 arg2 =>
+          stack := stack.push (arg1, arg2); f1 := fn1; f2 := fn2
+        | _, _ => break
+      -- Push heads back onto stack so binder/leaf handling runs on them
+      stack := stack.push (f1, f2)
+      continue
+    | _, _ => pure ()
+    -- Compare leaf nodes (non-binder, non-app)
+    match ca, cb with
+    | .bvar i1 _, .bvar i2 _ =>
+      match Ord.compare i1 i2 with | .eq => pure () | o => return o
+    | .sort l1, .sort l2 =>
+      match Level.compare l1 l2 with | .eq => pure () | o => return o
+    | .const a1 ls1 _, .const a2 ls2 _ =>
+      match Ord.compare a1 a2 with | .eq => pure () | o => return o
+      match Level.compareArray ls1 ls2 with | .eq => pure () | o => return o
+    | .lit l1, .lit l2 =>
+      let o := match l1, l2 with
+        | .natVal n1, .natVal n2 => Ord.compare n1 n2
+        | .natVal _, .strVal _ => .lt
+        | .strVal _, .natVal _ => .gt
+        | .strVal s1, .strVal s2 => Ord.compare s1 s2
+      match o with | .eq => pure () | o => return o
+    | .proj a1 i1 s1 _, .proj a2 i2 s2 _ =>
+      match Ord.compare a1 a2 with | .eq => pure () | o => return o
+      match Ord.compare i1 i2 with | .eq => pure () | o => return o
+      stack := stack.push (s1, s2)
+    | _, _ =>
+      match Ord.compare ca.tag' cb.tag' with | .eq => pure () | o => return o
+  return .eq
+
+/-- Pointer-based comparison for expressions.
+    Structurally-equal expressions at different addresses are considered distinct.
+    This is fine for def-eq failure caches (we just get occasional misses).
+    Lean 4 uses refcounting (no moving GC), so addresses are stable. -/
+private unsafe def Expr.ptrCompareUnsafe (a : @& Expr m) (b : @& Expr m) : Ordering :=
+  Ord.compare (ptrAddrUnsafe a) (ptrAddrUnsafe b)
+
+@[implemented_by Expr.ptrCompareUnsafe]
+opaque Expr.ptrCompare : @& Expr m → @& Expr m → Ordering
+
+/-- Compare pairs of expressions by pointer address (first component, then second). -/
+def Expr.pairCompare (a b : Expr m × Expr m) : Ordering :=
+  match Expr.ptrCompare a.1 b.1 with
+  | .eq => Expr.ptrCompare a.2 b.2
+  | ord => ord
 
 /-! ## Enums -/
 

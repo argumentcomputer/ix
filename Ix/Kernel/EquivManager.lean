@@ -14,7 +14,7 @@ abbrev NodeRef := Nat
 
 structure EquivManager (m : MetaMode) where
   uf        : Batteries.UnionFind := {}
-  toNodeMap : Std.HashMap (Expr m) NodeRef := {}
+  toNodeMap : Std.TreeMap (Expr m) NodeRef Expr.compare := {}
 
 instance : Inhabited (EquivManager m) := ⟨{}⟩
 
@@ -47,12 +47,10 @@ def merge (n1 n2 : NodeRef) : StateM (EquivManager m) Unit := fun mgr =>
 
     When `useHash = true`, expressions with different hashes are immediately
     rejected without structural walking (fast path for obviously different terms). -/
-partial def isEquiv (useHash : Bool) (e1 e2 : Expr m) : StateM (EquivManager m) Bool := do
+partial def isEquiv (_useHash : Bool) (e1 e2 : Expr m) : StateM (EquivManager m) Bool := do
   -- 1. Pointer/structural equality (O(1) via Blake3 content-addressing)
   if e1 == e2 then return true
-  -- 2. Hash mismatch → definitely not structurally equal
-  if useHash && Hashable.hash e1 != Hashable.hash e2 then return false
-  -- 3. BVar fast path (compare indices directly, don't add to union-find)
+  -- 2. BVar fast path (compare indices directly, don't add to union-find)
   match e1, e2 with
   | .bvar i _, .bvar j _ => return i == j
   | _, _ => pure ()
@@ -66,16 +64,16 @@ partial def isEquiv (useHash : Bool) (e1 e2 : Expr m) : StateM (EquivManager m) 
     | .sort l1, .sort l2 => pure (l1 == l2)
     | .lit l1, .lit l2 => pure (l1 == l2)
     | .app f1 a1, .app f2 a2 =>
-      if ← isEquiv useHash f1 f2 then isEquiv useHash a1 a2 else pure false
+      if ← isEquiv _useHash f1 f2 then isEquiv _useHash a1 a2 else pure false
     | .lam d1 b1 _ _, .lam d2 b2 _ _ =>
-      if ← isEquiv useHash d1 d2 then isEquiv useHash b1 b2 else pure false
+      if ← isEquiv _useHash d1 d2 then isEquiv _useHash b1 b2 else pure false
     | .forallE d1 b1 _ _, .forallE d2 b2 _ _ =>
-      if ← isEquiv useHash d1 d2 then isEquiv useHash b1 b2 else pure false
+      if ← isEquiv _useHash d1 d2 then isEquiv _useHash b1 b2 else pure false
     | .proj ta1 i1 s1 _, .proj ta2 i2 s2 _ =>
-      if ta1 == ta2 && i1 == i2 then isEquiv useHash s1 s2 else pure false
+      if ta1 == ta2 && i1 == i2 then isEquiv _useHash s1 s2 else pure false
     | .letE t1 v1 b1 _, .letE t2 v2 b2 _ =>
-      if ← isEquiv useHash t1 t2 then
-        if ← isEquiv useHash v1 v2 then isEquiv useHash b1 b2 else pure false
+      if ← isEquiv _useHash t1 t2 then
+        if ← isEquiv _useHash v1 v2 then isEquiv _useHash b1 b2 else pure false
       else pure false
     | _, _ => pure false
   -- 6. Merge on success

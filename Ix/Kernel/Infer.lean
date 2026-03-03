@@ -903,7 +903,7 @@ mutual
           if !(← get).failureCache.contains key then
             if equalUnivArrays tn.getAppFn.constLevels! sn.getAppFn.constLevels! then
               if ← isDefEqApp tn sn then return (tn, sn, some true)
-            modify fun stt => { stt with failureCache := stt.failureCache.insert key }
+            modify fun stt => { stt with failureCache := stt.failureCache.insert key () }
         if ht.lt' hs then
           match unfoldDelta ds sn with
           | some r => sn ← whnfCore r (cheapProj := true); continue
@@ -981,7 +981,7 @@ mutual
         { stt with eqvManager := mgr' }
     else
       let key := eqCacheKey t s
-      modify fun stt => { stt with failureCache := stt.failureCache.insert key }
+      modify fun stt => { stt with failureCache := stt.failureCache.insert key () }
 
 end -- mutual
 
