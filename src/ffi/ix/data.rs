@@ -3,11 +3,11 @@
 use crate::ix::env::{
   DataValue, Int, Name, SourceInfo, Substring, Syntax, SyntaxPreresolved,
 };
-use crate::lean::nat::Nat;
-use crate::lean::object::{
-  LeanArray, LeanCtor, LeanIxDataValue, LeanIxInt, LeanIxSourceInfo,
-  LeanIxSubstring, LeanIxSyntax, LeanIxSyntaxPreresolved, LeanObject,
-  LeanString,
+use lean_sys::nat::Nat;
+use lean_sys::object::{LeanArray, LeanCtor, LeanObject, LeanString};
+use crate::lean::{
+  LeanIxDataValue, LeanIxInt, LeanIxSourceInfo, LeanIxSubstring, LeanIxSyntax,
+  LeanIxSyntaxPreresolved,
 };
 
 use crate::ffi::builder::LeanBuildCache;

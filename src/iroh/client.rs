@@ -8,7 +8,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
-use crate::lean::object::{
+use lean_sys::object::{
   LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanString,
 };
 

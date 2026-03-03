@@ -3,10 +3,9 @@
 use std::sync::Arc;
 
 use crate::ffi::ffi_io_guard;
-use crate::lean::object::LeanIOResult;
 use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
-use crate::lean::object::{LeanArray, LeanCtor, LeanObject};
+use lean_sys::object::{LeanArray, LeanCtor, LeanIOResult, LeanObject};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::name::build_name;

@@ -9,9 +9,10 @@ use crate::ix::ixon::comm::Comm;
 use crate::ix::ixon::constant::Constant as IxonConstant;
 use crate::ix::ixon::env::{Env as IxonEnv, Named as IxonNamed};
 use crate::ix::ixon::metadata::ConstantMeta;
-use crate::lean::object::{
-  LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanIxonRawEnv, LeanObject,
+use lean_sys::object::{
+  LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanObject,
 };
+use crate::lean::LeanIxonRawEnv;
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::name::{build_name, decode_ix_name};

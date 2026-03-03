@@ -3,7 +3,7 @@
 use blake3::Hash;
 use rustc_hash::FxHashMap;
 
-use crate::lean::object::{LeanIxExpr, LeanIxLevel, LeanIxName};
+use crate::lean::{LeanIxExpr, LeanIxLevel, LeanIxName};
 
 /// Cache for constructing Lean Ix types with deduplication.
 ///

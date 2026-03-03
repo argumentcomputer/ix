@@ -12,7 +12,7 @@ pub mod ix; // Ix types: Name, Level, Expr, ConstantInfo, Environment
 pub mod ixon; // Ixon types: Univ, Expr, Constant, metadata
 pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
 
-use crate::lean::object::{LeanArray, LeanByteArray, LeanIOResult};
+use lean_sys::object::{LeanArray, LeanByteArray, LeanIOResult};
 
 /// Guard an FFI function that returns a Lean IO result against panics.
 /// On panic, returns a Lean IO error with the panic message instead of

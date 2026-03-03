@@ -1,49 +1,107 @@
-//! Rust bindings for Lean, implemented by mimicking the memory layout of Lean's
-//! low-level C objects.
+//! Ix-specific Lean domain type definitions.
 //!
-//! The `lean_sys` submodule contains auto-generated bindings from `lean.h` via
-//! bindgen. Higher-level helpers and custom `#[repr(C)]` types are defined
-//! alongside it in sibling modules.
+//! Generic Lean FFI wrappers live in the `lean_sys` crate. This module defines
+//! typed newtypes for ix-specific Lean types using `lean_sys::lean_domain_type!`.
 
-#[allow(
-  non_upper_case_globals,
-  non_camel_case_types,
-  non_snake_case,
-  dead_code,
-  unsafe_op_in_unsafe_fn,
-  unused_qualifications,
-  clippy::all,
-  clippy::ptr_as_ptr,
-  clippy::cast_possible_wrap,
-  clippy::cast_possible_truncation,
-  clippy::derive_partial_eq_without_eq
-)]
-pub mod lean_sys {
-  include!(concat!(env!("OUT_DIR"), "/lean.rs"));
+lean_sys::lean_domain_type! {
+  // Ix core types
+  /// Lean `Ix.Name` object.
+  LeanIxName;
+  /// Lean `Ix.Level` object.
+  LeanIxLevel;
+  /// Lean `Ix.Expr` object.
+  LeanIxExpr;
+  /// Lean `Ix.ConstantInfo` object.
+  LeanIxConstantInfo;
+  /// Lean `Ix.RawEnvironment` object.
+  LeanIxRawEnvironment;
+  /// Lean `Ix.Environment` object.
+  LeanIxEnvironment;
+  /// Lean `Ix.RustCondensedBlocks` object.
+  LeanIxCondensedBlocks;
+  /// Lean `Ix.CompileM.RustCompilePhases` object.
+  LeanIxCompilePhases;
+
+  // Ix data types
+  /// Lean `Ix.Int` object.
+  LeanIxInt;
+  /// Lean `Ix.Substring` object.
+  LeanIxSubstring;
+  /// Lean `Ix.SourceInfo` object.
+  LeanIxSourceInfo;
+  /// Lean `Ix.SyntaxPreresolved` object.
+  LeanIxSyntaxPreresolved;
+  /// Lean `Ix.Syntax` object.
+  LeanIxSyntax;
+  /// Lean `Ix.DataValue` object.
+  LeanIxDataValue;
+
+  // Ixon types
+  /// Lean `Ixon.DefKind` object.
+  LeanIxonDefKind;
+  /// Lean `Ixon.DefinitionSafety` object.
+  LeanIxonDefinitionSafety;
+  /// Lean `Ixon.QuotKind` object.
+  LeanIxonQuotKind;
+  /// Lean `Ixon.Univ` object.
+  LeanIxonUniv;
+  /// Lean `Ixon.Expr` object.
+  LeanIxonExpr;
+  /// Lean `Ixon.Definition` object.
+  LeanIxonDefinition;
+  /// Lean `Ixon.RecursorRule` object.
+  LeanIxonRecursorRule;
+  /// Lean `Ixon.Recursor` object.
+  LeanIxonRecursor;
+  /// Lean `Ixon.Axiom` object.
+  LeanIxonAxiom;
+  /// Lean `Ixon.Quotient` object.
+  LeanIxonQuotient;
+  /// Lean `Ixon.Constructor` object.
+  LeanIxonConstructor;
+  /// Lean `Ixon.Inductive` object.
+  LeanIxonInductive;
+  /// Lean `Ixon.InductiveProj` object.
+  LeanIxonInductiveProj;
+  /// Lean `Ixon.ConstructorProj` object.
+  LeanIxonConstructorProj;
+  /// Lean `Ixon.RecursorProj` object.
+  LeanIxonRecursorProj;
+  /// Lean `Ixon.DefinitionProj` object.
+  LeanIxonDefinitionProj;
+  /// Lean `Ixon.MutConst` object.
+  LeanIxonMutConst;
+  /// Lean `Ixon.ConstantInfo` object.
+  LeanIxonConstantInfo;
+  /// Lean `Ixon.Constant` object.
+  LeanIxonConstant;
+  /// Lean `Ixon.DataValue` object.
+  LeanIxonDataValue;
+  /// Lean `Ixon.ExprMetaData` object.
+  LeanIxonExprMetaData;
+  /// Lean `Ixon.ExprMetaArena` object.
+  LeanIxonExprMetaArena;
+  /// Lean `Ixon.ConstantMeta` object.
+  LeanIxonConstantMeta;
+  /// Lean `Ixon.Named` object.
+  LeanIxonNamed;
+  /// Lean `Ixon.Comm` object.
+  LeanIxonComm;
+  /// Lean `Ixon.RawEnv` object.
+  LeanIxonRawEnv;
+
+  // Error types
+  /// Lean `Ixon.SerializeError` object.
+  LeanIxSerializeError;
+  /// Lean `Ix.DecompileM.DecompileError` object.
+  LeanIxDecompileError;
+  /// Lean `Ix.CompileM.CompileError` object.
+  LeanIxCompileError;
+  /// Lean `BlockCompareResult` object.
+  LeanIxBlockCompareResult;
+  /// Lean `BlockCompareDetail` object.
+  LeanIxBlockCompareDetail;
 }
 
-pub mod nat;
-pub mod object;
-
-use std::ffi::{CString, c_void};
-
-/// Create a CString from a str, stripping any interior null bytes.
-/// Lean strings are length-prefixed and can contain null bytes, but the
-/// `lean_mk_string` FFI requires a null-terminated C string. This function
-/// ensures conversion always succeeds by filtering out interior nulls.
-pub fn safe_cstring(s: &str) -> CString {
-  CString::new(s).unwrap_or_else(|_| {
-    let bytes: Vec<u8> = s.bytes().filter(|&b| b != 0).collect();
-    CString::new(bytes).expect("filtered string should have no nulls")
-  })
-}
-
-/// No-op foreach callback for external classes that hold no Lean references.
-///
-/// # Safety
-/// Must only be used as a `lean_external_foreach_fn` callback.
-pub unsafe extern "C" fn noop_foreach(
-  _: *mut c_void,
-  _: *mut lean_sys::lean_object,
-) {
-}
+/// `Ix.Address = { hash : ByteArray }` — single-field struct, unboxed to `ByteArray`.
+pub type LeanIxAddress = lean_sys::object::LeanByteArray;

@@ -15,10 +15,9 @@ use crate::ix::env::{
   DefinitionVal, InductiveVal, Name, OpaqueVal, QuotKind, QuotVal,
   RecursorRule, RecursorVal, ReducibilityHints, TheoremVal,
 };
-use crate::lean::nat::Nat;
-use crate::lean::object::{
-  LeanArray, LeanCtor, LeanIxConstantInfo, LeanObject,
-};
+use lean_sys::nat::Nat;
+use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
+use crate::lean::LeanIxConstantInfo;
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::expr::{build_expr, decode_ix_expr};

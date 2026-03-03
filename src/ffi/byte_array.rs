@@ -1,4 +1,4 @@
-use crate::lean::object::LeanByteArray;
+use lean_sys::object::LeanByteArray;
 
 /// `@& ByteArray → @& ByteArray → Bool`
 /// Efficient implementation for `BEq ByteArray`

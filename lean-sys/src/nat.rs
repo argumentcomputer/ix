@@ -9,7 +9,7 @@ use std::mem::MaybeUninit;
 
 use num_bigint::BigUint;
 
-use crate::lean::object::LeanObject;
+use crate::object::LeanObject;
 
 /// Arbitrary-precision natural number, wrapping `BigUint`.
 #[derive(Hash, PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
@@ -108,7 +108,7 @@ impl Mpz {
 // GMP interop for building Lean Nat objects from limbs
 // =============================================================================
 
-use crate::lean::lean_sys::lean_uint64_to_nat;
+use crate::include::lean_uint64_to_nat;
 
 /// LEAN_MAX_SMALL_NAT = SIZE_MAX >> 1
 const LEAN_MAX_SMALL_NAT: u64 = (usize::MAX >> 1) as u64;

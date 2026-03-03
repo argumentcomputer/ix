@@ -6,6 +6,11 @@ use multi_stark::{
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::sync::OnceLock;
 
+use lean_sys::object::{
+  ExternalClass, LeanArray, LeanByteArray, LeanCtor, LeanExcept,
+  LeanExternal, LeanObject,
+};
+
 use crate::{
   aiur::{
     G,
@@ -14,10 +19,6 @@ use crate::{
   },
   ffi::aiur::{
     lean_unbox_g, lean_unbox_nat_as_usize, toplevel::lean_ptr_to_toplevel,
-  },
-  lean::object::{
-    ExternalClass, LeanArray, LeanByteArray, LeanCtor, LeanExcept,
-    LeanExternal, LeanObject,
   },
 };
 

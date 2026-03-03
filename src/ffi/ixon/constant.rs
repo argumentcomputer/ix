@@ -15,12 +15,13 @@ use crate::ix::ixon::constant::{
   Quotient as IxonQuotient, Recursor as IxonRecursor, RecursorProj,
   RecursorRule as IxonRecursorRule,
 };
-use crate::lean::object::{
-  LeanArray, LeanByteArray, LeanCtor, LeanIxAddress, LeanIxonAxiom,
-  LeanIxonConstant, LeanIxonConstantInfo, LeanIxonConstructor,
-  LeanIxonConstructorProj, LeanIxonDefinition, LeanIxonDefinitionProj,
-  LeanIxonInductive, LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonQuotient,
-  LeanIxonRecursor, LeanIxonRecursorProj, LeanIxonRecursorRule, LeanObject,
+use lean_sys::object::{LeanArray, LeanByteArray, LeanCtor, LeanObject};
+use crate::lean::{
+  LeanIxAddress, LeanIxonAxiom, LeanIxonConstant, LeanIxonConstantInfo,
+  LeanIxonConstructor, LeanIxonConstructorProj, LeanIxonDefinition,
+  LeanIxonDefinitionProj, LeanIxonInductive, LeanIxonInductiveProj,
+  LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor, LeanIxonRecursorProj,
+  LeanIxonRecursorRule,
 };
 
 use crate::ffi::ixon::expr::{

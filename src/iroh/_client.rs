@@ -1,4 +1,4 @@
-use crate::lean::object::{LeanExcept, LeanObject};
+use lean_sys::object::{LeanExcept, LeanObject};
 
 const ERR_MSG: &str = "Iroh functions not supported when the Rust `net` feature is disabled \
    or on MacOS aarch64-darwin";

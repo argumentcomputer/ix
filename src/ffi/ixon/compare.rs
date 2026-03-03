@@ -6,9 +6,8 @@ use crate::ix::compile::{BlockCache, CompileState, compile_env, compile_expr};
 use crate::ix::env::Name;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
-use crate::lean::object::{
-  LeanByteArray, LeanCtor, LeanIxBlockCompareDetail, LeanObject,
-};
+use lean_sys::object::{LeanByteArray, LeanCtor, LeanObject};
+use crate::lean::LeanIxBlockCompareDetail;
 
 use crate::ffi::lean_env::{
   Cache as LeanCache, GlobalCache, lean_ptr_to_expr, lean_ptr_to_name,

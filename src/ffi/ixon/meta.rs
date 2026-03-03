@@ -9,9 +9,10 @@ use crate::ix::ixon::env::Named;
 use crate::ix::ixon::metadata::{
   ConstantMeta, DataValue as IxonDataValue, ExprMeta, ExprMetaData, KVMap,
 };
-use crate::lean::object::{
-  LeanArray, LeanCtor, LeanIxonComm, LeanIxonConstantMeta, LeanIxonDataValue,
-  LeanIxonExprMetaArena, LeanIxonExprMetaData, LeanIxonNamed, LeanObject,
+use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
+use crate::lean::{
+  LeanIxonComm, LeanIxonConstantMeta, LeanIxonDataValue,
+  LeanIxonExprMetaArena, LeanIxonExprMetaData, LeanIxonNamed,
 };
 
 use crate::ffi::ix::constant::{

@@ -4,9 +4,8 @@ use std::ffi::c_void;
 
 use crate::ix::env::{DefinitionSafety, QuotKind};
 use crate::ix::ixon::constant::DefKind;
-use crate::lean::object::{
-  LeanIxonDefKind, LeanIxonDefinitionSafety, LeanIxonQuotKind, LeanObject,
-};
+use lean_sys::object::LeanObject;
+use crate::lean::{LeanIxonDefKind, LeanIxonDefinitionSafety, LeanIxonQuotKind};
 
 /// Build Ixon.DefKind
 /// | defn -- tag 0

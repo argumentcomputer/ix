@@ -17,6 +17,8 @@ use std::{
   thread,
 };
 
+use lean_sys::nat::Nat;
+
 use crate::{
   ix::address::Address,
   ix::condense::compute_sccs,
@@ -44,7 +46,6 @@ use crate::{
   },
   ix::mutual::{Def, Ind, MutConst, MutCtx, Rec, ctx_to_all},
   ix::strong_ordering::SOrd,
-  lean::nat::Nat,
 };
 
 /// Whether to track hash-consed sizes during compilation.

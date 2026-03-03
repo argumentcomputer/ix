@@ -6,8 +6,8 @@
 //! - List, Array, ByteArray
 //! - AssocList, HashMap
 
-use crate::lean::nat::Nat;
-use crate::lean::object::{
+use lean_sys::nat::Nat;
+use lean_sys::object::{
   LeanArray, LeanByteArray, LeanCtor, LeanList, LeanObject, LeanString,
 };
 
@@ -35,7 +35,7 @@ pub fn build_nat(n: &Nat) -> LeanObject {
     limbs.push(u64::from_le_bytes(arr));
   }
   unsafe {
-    LeanObject::from_raw(crate::lean::nat::lean_nat_from_limbs(
+    LeanObject::from_raw(lean_sys::nat::lean_nat_from_limbs(
       limbs.len(),
       limbs.as_ptr(),
     ))

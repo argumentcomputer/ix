@@ -7,7 +7,7 @@ use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::sharing::{
   analyze_block, build_sharing_vec, decide_sharing,
 };
-use crate::lean::object::{LeanArray, LeanByteArray};
+use lean_sys::object::{LeanArray, LeanByteArray};
 
 use crate::ffi::ixon::expr::decode_ixon_expr_array;
 use crate::ffi::ixon::serialize::lean_ptr_to_ixon_expr;

@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
-use crate::lean::nat::Nat;
-use crate::lean::object::LeanObject;
+use lean_sys::nat::Nat;
+use lean_sys::object::LeanObject;
 
 use crate::{
   ix::compile::compile_env,

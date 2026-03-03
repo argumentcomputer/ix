@@ -1,12 +1,13 @@
 use multi_stark::p3_field::PrimeCharacteristicRing;
 
+use lean_sys::object::LeanObject;
+
 use crate::{
   FxIndexMap,
   aiur::{
     G,
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
   },
-  lean::object::LeanObject,
 };
 
 use crate::ffi::aiur::{lean_unbox_g, lean_unbox_nat_as_usize};
