@@ -7,108 +7,15 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
-use lean_sys::object::{
-  LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanString,
-};
+use crate::iroh::common::{Request, Response};
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
 // Maximum number of characters to read from the server. Connection automatically closed if this is exceeded
 const READ_SIZE_LIMIT: usize = 100_000_000;
 
-/// Build a Lean `PutResponse` structure:
-/// ```
-/// structure PutResponse where
-///   message: String
-///   hash: String
-/// ```
-fn mk_put_response(message: &str, hash: &str) -> LeanCtor {
-  let ctor = LeanCtor::alloc(0, 2, 0);
-  ctor.set(0, LeanString::new(message));
-  ctor.set(1, LeanString::new(hash));
-  ctor
-}
-
-/// Build a Lean `GetResponse` structure:
-/// ```
-/// structure GetResponse where
-///   message: String
-///   hash: String
-///   bytes: ByteArray
-/// ```
-fn mk_get_response(message: &str, hash: &str, bytes: &[u8]) -> LeanCtor {
-  let byte_array = LeanByteArray::from_bytes(bytes);
-  let ctor = LeanCtor::alloc(0, 3, 0);
-  ctor.set(0, LeanString::new(message));
-  ctor.set(1, LeanString::new(hash));
-  ctor.set(2, byte_array);
-  ctor
-}
-
-/// `Iroh.Connect.putBytes' : @& String → @& Array String → @& String → @& String → Except String PutResponse`
-#[unsafe(no_mangle)]
-extern "C" fn rs_iroh_put(
-  node_id: LeanString,
-  addrs: LeanArray,
-  relay_url: LeanString,
-  input: LeanString,
-) -> LeanExcept {
-  let node_id = node_id.to_string();
-  let addrs: Vec<String> = addrs.map(|x| x.as_string().to_string());
-  let relay_url = relay_url.to_string();
-  let input_str = input.to_string();
-
-  let request =
-    Request::Put(PutRequest { bytes: input_str.as_bytes().to_vec() });
-  let rt =
-    tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
-  match rt.block_on(connect(&node_id, &addrs, &relay_url, request)) {
-    Ok(response) => match response {
-      Response::Put(put_response) => LeanExcept::ok(mk_put_response(
-        &put_response.message,
-        &put_response.hash,
-      )),
-      _ => LeanExcept::error_string("error: incorrect server response"),
-    },
-    Err(err) => LeanExcept::error_string(&err.to_string()),
-  }
-}
-
-/// `Iroh.Connect.getBytes' : @& String → @& Array String → @& String → @& String → Except String GetResponse`
-#[unsafe(no_mangle)]
-extern "C" fn rs_iroh_get(
-  node_id: LeanString,
-  addrs: LeanArray,
-  relay_url: LeanString,
-  hash: LeanString,
-) -> LeanExcept {
-  let node_id = node_id.to_string();
-  let addrs: Vec<String> = addrs.map(|x| x.as_string().to_string());
-  let relay_url = relay_url.to_string();
-  let hash_str = hash.to_string();
-
-  let request = Request::Get(GetRequest { hash: hash_str.clone() });
-
-  let rt =
-    tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
-  match rt.block_on(connect(&node_id, &addrs, &relay_url, request)) {
-    Ok(response) => match response {
-      Response::Get(get_response) => LeanExcept::ok(mk_get_response(
-        &get_response.message,
-        &get_response.hash,
-        &get_response.bytes,
-      )),
-      _ => LeanExcept::error_string("error: incorrect server response"),
-    },
-    Err(err) => LeanExcept::error_string(&err.to_string()),
-  }
-}
-
 // Largely taken from https://github.com/n0-computer/iroh/blob/main/iroh/examples/connect.rs
-async fn connect(
+pub async fn connect(
   node_id: &str,
   addrs: &[String],
   relay_url: &str,

@@ -11,29 +11,14 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetResponse, PutResponse, Request, Response};
-use lean_sys::object::LeanExcept;
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
 // Maximum number of characters to read from the client. Connection automatically closed if this is exceeded
 const READ_SIZE_LIMIT: usize = 100_000_000;
 
-/// `Iroh.Serve.serve' : Unit → Except String Unit`
-#[unsafe(no_mangle)]
-extern "C" fn rs_iroh_serve() -> LeanExcept {
-  // Create a Tokio runtime to block on the async function
-  let rt =
-    tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
-  // Run the async function and block until we get the result
-  match rt.block_on(serve()) {
-    Ok(()) => LeanExcept::ok(0),
-    Err(err) => LeanExcept::error_string(&err.to_string()),
-  }
-}
-
 // Largely taken from https://github.com/n0-computer/iroh/blob/main/iroh/examples/listen.rs
-async fn serve() -> n0_snafu::Result<()> {
+pub async fn serve() -> n0_snafu::Result<()> {
   // Initialize the subscriber with `RUST_LOG=info` to preserve some server logging
   tracing_subscriber::registry()
     .with(fmt::layer())
