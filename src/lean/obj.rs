@@ -8,8 +8,8 @@ use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-use super::lean;
-use super::safe_cstring;
+use crate::lean::lean;
+use crate::lean::safe_cstring;
 
 // =============================================================================
 // LeanObj — Untyped base wrapper
@@ -90,6 +90,49 @@ impl LeanObj {
   #[inline]
   pub fn unbox_u64(self) -> u64 {
     unsafe { lean::lean_unbox_uint64(self.0 as *mut _) }
+  }
+
+  /// Interpret as a constructor object (tag 0–243).
+  ///
+  /// Debug-asserts the tag is in range.
+  #[inline]
+  pub fn as_ctor(self) -> LeanCtor {
+    debug_assert!(!self.is_scalar() && self.tag() <= 243);
+    LeanCtor(self)
+  }
+
+  /// Interpret as a `String` object (tag 249).
+  ///
+  /// Debug-asserts the tag is correct.
+  #[inline]
+  pub fn as_string(self) -> LeanString {
+    debug_assert!(!self.is_scalar() && self.tag() == 249);
+    LeanString(self)
+  }
+
+  /// Interpret as an `Array` object (tag 246).
+  ///
+  /// Debug-asserts the tag is correct.
+  #[inline]
+  pub fn as_array(self) -> LeanArray {
+    debug_assert!(!self.is_scalar() && self.tag() == 246);
+    LeanArray(self)
+  }
+
+  /// Interpret as a `List` (nil = scalar, cons = tag 1).
+  ///
+  /// Debug-asserts the tag is valid for a list.
+  #[inline]
+  pub fn as_list(self) -> LeanList {
+    debug_assert!(self.is_scalar() || self.tag() == 1);
+    LeanList(self)
+  }
+
+  /// Interpret as a `ByteArray` object (tag 248).
+  #[inline]
+  pub fn as_byte_array(self) -> LeanByteArray {
+    debug_assert!(!self.is_scalar() && self.tag() == 248);
+    LeanByteArray(self)
   }
 
   #[inline]
@@ -577,7 +620,7 @@ impl Iterator for LeanListIter {
     if self.0.is_scalar() {
       return None;
     }
-    let ctor = unsafe { LeanCtor::from_raw(self.0.as_ptr()) };
+    let ctor = self.0.as_ctor();
     let [head, tail] = ctor.objs::<2>();
     self.0 = tail;
     Some(head)
@@ -634,7 +677,7 @@ impl LeanOption {
     if self.is_none() {
       None
     } else {
-      let ctor = unsafe { LeanCtor::from_raw(self.0.as_ptr()) };
+      let ctor = self.0.as_ctor();
       Some(ctor.get(0))
     }
   }
@@ -696,7 +739,7 @@ impl LeanExcept {
   }
 
   pub fn into_result(self) -> Result<LeanObj, LeanObj> {
-    let ctor = unsafe { LeanCtor::from_raw(self.0.as_ptr()) };
+    let ctor = self.0.as_ctor();
     if self.is_ok() { Ok(ctor.get(0)) } else { Err(ctor.get(0)) }
   }
 }
@@ -927,13 +970,13 @@ impl LeanProd {
 
   /// Get the first element.
   pub fn fst(&self) -> LeanObj {
-    let ctor = unsafe { LeanCtor::from_raw(self.0.as_ptr()) };
+    let ctor = self.0.as_ctor();
     ctor.get(0)
   }
 
   /// Get the second element.
   pub fn snd(&self) -> LeanObj {
-    let ctor = unsafe { LeanCtor::from_raw(self.0.as_ptr()) };
+    let ctor = self.0.as_ctor();
     ctor.get(1)
   }
 }

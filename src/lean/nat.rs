@@ -9,10 +9,7 @@ use std::mem::MaybeUninit;
 
 use num_bigint::BigUint;
 
-use crate::{
-  lean::{as_ref_unsafe, lean_is_scalar},
-  lean_unbox,
-};
+use crate::lean::obj::LeanObj;
 
 /// Arbitrary-precision natural number, wrapping `BigUint`.
 #[derive(Hash, PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
@@ -42,14 +39,20 @@ impl Nat {
   /// Decode a `Nat` from a Lean object pointer. Handles both scalar (unboxed)
   /// and heap-allocated (GMP `mpz_object`) representations.
   pub fn from_ptr(ptr: *const c_void) -> Nat {
-    if lean_is_scalar(ptr) {
-      let u = lean_unbox!(usize, ptr);
+    let obj = unsafe { LeanObj::from_raw(ptr) };
+    if obj.is_scalar() {
+      let u = obj.unbox_usize();
       Nat(BigUint::from_bytes_le(&u.to_le_bytes()))
     } else {
       // Heap-allocated big integer (mpz_object)
-      let obj: &MpzObject = as_ref_unsafe(ptr.cast());
-      Nat(obj.m_value.to_biguint())
+      let mpz: &MpzObject = unsafe { &*ptr.cast() };
+      Nat(mpz.m_value.to_biguint())
     }
+  }
+
+  /// Decode a `Nat` from a `LeanObj`. Convenience wrapper over `from_ptr`.
+  pub fn from_obj(obj: crate::lean::obj::LeanObj) -> Nat {
+    Self::from_ptr(obj.as_ptr())
   }
 
   #[inline]
@@ -102,8 +105,7 @@ impl Mpz {
 // GMP interop for building Lean Nat objects from limbs
 // =============================================================================
 
-use super::lean::lean_uint64_to_nat;
-use super::lean_box_fn;
+use crate::lean::lean::lean_uint64_to_nat;
 
 /// LEAN_MAX_SMALL_NAT = SIZE_MAX >> 1
 const LEAN_MAX_SMALL_NAT: u64 = (usize::MAX >> 1) as u64;
@@ -140,12 +142,12 @@ pub unsafe fn lean_nat_from_limbs(
   limbs: *const u64,
 ) -> *mut c_void {
   if num_limbs == 0 {
-    return lean_box_fn(0);
+    return LeanObj::box_usize(0).as_mut_ptr();
   }
   let first = unsafe { *limbs };
   if num_limbs == 1 && first <= LEAN_MAX_SMALL_NAT {
     #[allow(clippy::cast_possible_truncation)] // only targets 64-bit
-    return lean_box_fn(first as usize);
+    return LeanObj::box_usize(first as usize).as_mut_ptr();
   }
   if num_limbs == 1 {
     return unsafe { lean_uint64_to_nat(first).cast() };

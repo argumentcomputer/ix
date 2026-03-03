@@ -14,22 +14,18 @@
 //! - Tag 10: mdata (data : Array (Name × DataValue)) (expr : Expr) (hash : Address)
 //! - Tag 11: proj (typeName : Name) (idx : Nat) (struct : Expr) (hash : Address)
 
-use std::ffi::c_void;
-
 use crate::ix::env::{
   BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
 };
-use crate::lean::lean::{lean_ctor_get, lean_obj_tag};
 use crate::lean::nat::Nat;
 use crate::lean::obj::{IxExpr, LeanArray, LeanCtor, LeanObj, LeanString};
-use crate::lean::{lean_array_data, lean_ctor_scalar_u8, lean_obj_to_string};
 
-use super::super::builder::LeanBuildCache;
-use super::super::primitives::build_nat;
-use super::address::build_address;
-use super::data::{build_data_value, decode_data_value};
-use super::level::{build_level, build_level_array, decode_ix_level};
-use super::name::{build_name, decode_ix_name};
+use crate::lean::ffi::builder::LeanBuildCache;
+use crate::lean::ffi::primitives::build_nat;
+use crate::lean::ffi::ix::address::build_address;
+use crate::lean::ffi::ix::data::{build_data_value, decode_data_value};
+use crate::lean::ffi::ix::level::{build_level, build_level_array, decode_ix_level};
+use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
 
 /// Build a Lean Ix.Expr with embedded hash.
 /// Uses caching to avoid rebuilding the same expression.
@@ -219,173 +215,132 @@ pub fn binder_info_to_u8(bi: &BinderInfo) -> u8 {
 }
 
 /// Decode a Lean Ix.Expr to Rust Expr.
-pub fn decode_ix_expr(ptr: *const c_void) -> Expr {
-  unsafe {
-    let tag = lean_obj_tag(ptr as *mut _);
-    match tag {
-      0 => {
-        // bvar
-        let idx_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let idx = Nat::from_ptr(idx_ptr.cast());
-        Expr::bvar(idx)
-      },
-      1 => {
-        // fvar
-        let name_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let name = decode_ix_name(name_ptr.cast());
-        Expr::fvar(name)
-      },
-      2 => {
-        // mvar
-        let name_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let name = decode_ix_name(name_ptr.cast());
-        Expr::mvar(name)
-      },
-      3 => {
-        // sort
-        let level_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let level = decode_ix_level(level_ptr.cast());
-        Expr::sort(level)
-      },
-      4 => {
-        // const
-        let name_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let levels_ptr = lean_ctor_get(ptr as *mut _, 1);
+pub fn decode_ix_expr(obj: LeanObj) -> Expr {
+  let ctor = obj.as_ctor();
+  match ctor.tag() {
+    0 => {
+      // bvar
+      let idx = Nat::from_obj(ctor.get(0));
+      Expr::bvar(idx)
+    },
+    1 => {
+      // fvar
+      let name = decode_ix_name(ctor.get(0));
+      Expr::fvar(name)
+    },
+    2 => {
+      // mvar
+      let name = decode_ix_name(ctor.get(0));
+      Expr::mvar(name)
+    },
+    3 => {
+      // sort
+      let level = decode_ix_level(ctor.get(0));
+      Expr::sort(level)
+    },
+    4 => {
+      // const
+      let name = decode_ix_name(ctor.get(0));
+      let levels: Vec<Level> =
+        ctor.get(1).as_array()
+          .map(decode_ix_level);
 
-        let name = decode_ix_name(name_ptr.cast());
-        let levels: Vec<Level> = lean_array_data(levels_ptr.cast())
-          .iter()
-          .map(|&p| decode_ix_level(p))
-          .collect();
+      Expr::cnst(name, levels)
+    },
+    5 => {
+      // app
+      let fn_expr = decode_ix_expr(ctor.get(0));
+      let arg_expr = decode_ix_expr(ctor.get(1));
+      Expr::app(fn_expr, arg_expr)
+    },
+    6 => {
+      // lam: name, ty, body, hash, bi (scalar)
+      let name = decode_ix_name(ctor.get(0));
+      let ty = decode_ix_expr(ctor.get(1));
+      let body = decode_ix_expr(ctor.get(2));
 
-        Expr::cnst(name, levels)
-      },
-      5 => {
-        // app
-        let fn_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let arg_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let fn_expr = decode_ix_expr(fn_ptr.cast());
-        let arg_expr = decode_ix_expr(arg_ptr.cast());
-        Expr::app(fn_expr, arg_expr)
-      },
-      6 => {
-        // lam: name, ty, body, hash, bi (scalar)
-        let name_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let ty_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let body_ptr = lean_ctor_get(ptr as *mut _, 2);
+      // Read BinderInfo scalar (4 obj fields: name, ty, body, hash)
+      let bi_byte = ctor.scalar_u8(4, 0);
+      let bi = decode_binder_info(bi_byte);
 
-        let name = decode_ix_name(name_ptr.cast());
-        let ty = decode_ix_expr(ty_ptr.cast());
-        let body = decode_ix_expr(body_ptr.cast());
+      Expr::lam(name, ty, body, bi)
+    },
+    7 => {
+      // forallE: same layout as lam
+      let name = decode_ix_name(ctor.get(0));
+      let ty = decode_ix_expr(ctor.get(1));
+      let body = decode_ix_expr(ctor.get(2));
 
-        // Read BinderInfo scalar (4 obj fields: name, ty, body, hash)
-        let bi_byte = lean_ctor_scalar_u8(ptr, 4, 0);
-        let bi = decode_binder_info(bi_byte);
+      // 4 obj fields: name, ty, body, hash
+      let bi_byte = ctor.scalar_u8(4, 0);
+      let bi = decode_binder_info(bi_byte);
 
-        Expr::lam(name, ty, body, bi)
-      },
-      7 => {
-        // forallE: same layout as lam
-        let name_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let ty_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let body_ptr = lean_ctor_get(ptr as *mut _, 2);
+      Expr::all(name, ty, body, bi)
+    },
+    8 => {
+      // letE: name, ty, val, body, hash, nonDep (scalar)
+      let name = decode_ix_name(ctor.get(0));
+      let ty = decode_ix_expr(ctor.get(1));
+      let val = decode_ix_expr(ctor.get(2));
+      let body = decode_ix_expr(ctor.get(3));
 
-        let name = decode_ix_name(name_ptr.cast());
-        let ty = decode_ix_expr(ty_ptr.cast());
-        let body = decode_ix_expr(body_ptr.cast());
+      // 5 obj fields: name, ty, val, body, hash
+      let non_dep = ctor.scalar_u8(5, 0) != 0;
 
-        // 4 obj fields: name, ty, body, hash
-        let bi_byte = lean_ctor_scalar_u8(ptr, 4, 0);
-        let bi = decode_binder_info(bi_byte);
+      Expr::letE(name, ty, val, body, non_dep)
+    },
+    9 => {
+      // lit
+      let lit = decode_literal(ctor.get(0));
+      Expr::lit(lit)
+    },
+    10 => {
+      // mdata: data, expr, hash
+      let data: Vec<(Name, DataValue)> =
+        ctor.get(0).as_array()
+          .map(decode_name_data_value);
 
-        Expr::all(name, ty, body, bi)
-      },
-      8 => {
-        // letE: name, ty, val, body, hash, nonDep (scalar)
-        let name_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let ty_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let val_ptr = lean_ctor_get(ptr as *mut _, 2);
-        let body_ptr = lean_ctor_get(ptr as *mut _, 3);
+      let inner = decode_ix_expr(ctor.get(1));
+      Expr::mdata(data, inner)
+    },
+    11 => {
+      // proj: typeName, idx, struct, hash
+      let type_name = decode_ix_name(ctor.get(0));
+      let idx = Nat::from_obj(ctor.get(1));
+      let struct_expr = decode_ix_expr(ctor.get(2));
 
-        let name = decode_ix_name(name_ptr.cast());
-        let ty = decode_ix_expr(ty_ptr.cast());
-        let val = decode_ix_expr(val_ptr.cast());
-        let body = decode_ix_expr(body_ptr.cast());
-
-        // 5 obj fields: name, ty, val, body, hash
-        let non_dep = lean_ctor_scalar_u8(ptr, 5, 0) != 0;
-
-        Expr::letE(name, ty, val, body, non_dep)
-      },
-      9 => {
-        // lit
-        let lit_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let lit = decode_literal(lit_ptr.cast());
-        Expr::lit(lit)
-      },
-      10 => {
-        // mdata: data, expr, hash
-        let data_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let expr_ptr = lean_ctor_get(ptr as *mut _, 1);
-
-        let data: Vec<(Name, DataValue)> = lean_array_data(data_ptr.cast())
-          .iter()
-          .map(|&p| decode_name_data_value(p))
-          .collect();
-
-        let inner = decode_ix_expr(expr_ptr.cast());
-        Expr::mdata(data, inner)
-      },
-      11 => {
-        // proj: typeName, idx, struct, hash
-        let type_name_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let idx_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let struct_ptr = lean_ctor_get(ptr as *mut _, 2);
-
-        let type_name = decode_ix_name(type_name_ptr.cast());
-        let idx = Nat::from_ptr(idx_ptr.cast());
-        let struct_expr = decode_ix_expr(struct_ptr.cast());
-
-        Expr::proj(type_name, idx, struct_expr)
-      },
-      _ => panic!("Invalid Ix.Expr tag: {}", tag),
-    }
+      Expr::proj(type_name, idx, struct_expr)
+    },
+    _ => panic!("Invalid Ix.Expr tag: {}", ctor.tag()),
   }
 }
 
-/// Decode Lean.Literal from a Lean pointer.
-pub fn decode_literal(ptr: *const c_void) -> Literal {
-  unsafe {
-    let tag = lean_obj_tag(ptr as *mut _);
-    match tag {
-      0 => {
-        // natVal
-        let nat_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let nat = Nat::from_ptr(nat_ptr.cast());
-        Literal::NatVal(nat)
-      },
-      1 => {
-        // strVal
-        let str_ptr = lean_ctor_get(ptr as *mut _, 0);
-        Literal::StrVal(lean_obj_to_string(str_ptr as *const _))
-      },
-      _ => panic!("Invalid Literal tag: {}", tag),
-    }
+/// Decode Lean.Literal from a Lean object.
+pub fn decode_literal(obj: LeanObj) -> Literal {
+  let ctor = obj.as_ctor();
+  match ctor.tag() {
+    0 => {
+      // natVal
+      let nat = Nat::from_obj(ctor.get(0));
+      Literal::NatVal(nat)
+    },
+    1 => {
+      // strVal
+      Literal::StrVal(
+        ctor.get(0).as_string().to_string(),
+      )
+    },
+    _ => panic!("Invalid Literal tag: {}", ctor.tag()),
   }
 }
 
 /// Decode a (Name × DataValue) pair for mdata.
-fn decode_name_data_value(ptr: *const c_void) -> (Name, DataValue) {
-  unsafe {
-    // Prod: ctor 0 with 2 fields
-    let name_ptr = lean_ctor_get(ptr as *mut _, 0);
-    let dv_ptr = lean_ctor_get(ptr as *mut _, 1);
-
-    let name = decode_ix_name(name_ptr.cast());
-    let dv = decode_data_value(dv_ptr.cast());
-
-    (name, dv)
-  }
+fn decode_name_data_value(obj: LeanObj) -> (Name, DataValue) {
+  // Prod: ctor 0 with 2 fields
+  let ctor = obj.as_ctor();
+  let name = decode_ix_name(ctor.get(0));
+  let dv = decode_data_value(ctor.get(1));
+  (name, dv)
 }
 
 /// Decode BinderInfo from byte.
@@ -402,7 +357,7 @@ pub fn decode_binder_info(bi_byte: u8) -> BinderInfo {
 /// Round-trip an Ix.Expr: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_expr(expr_ptr: IxExpr) -> IxExpr {
-  let expr = decode_ix_expr(expr_ptr.as_ptr());
+  let expr = decode_ix_expr(*expr_ptr);
   let mut cache = LeanBuildCache::new();
   build_expr(&mut cache, &expr)
 }

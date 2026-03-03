@@ -1,15 +1,14 @@
 //! Cross-implementation compilation comparison FFI.
 
 use std::collections::HashMap;
-use std::ffi::c_void;
 
 use crate::ix::compile::{BlockCache, CompileState, compile_env, compile_expr};
 use crate::ix::env::Name;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
-use crate::lean::obj::{LeanByteArray, LeanCtor, LeanObj};
+use crate::lean::obj::{LeanCtor, LeanObj};
 
-use super::super::lean_env::{
+use crate::lean::ffi::lean_env::{
   Cache as LeanCache, GlobalCache, lean_ptr_to_expr, lean_ptr_to_name,
 };
 
@@ -21,7 +20,7 @@ pub struct RustBlockEnv {
 /// Compare Lean's compiled expression output with Rust's compilation of the same input.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compare_expr_compilation(
-  lean_expr_ptr: *const c_void,
+  lean_expr_ptr: LeanObj,
   lean_output: LeanObj,
   univ_ctx_size: u64,
 ) -> bool {
@@ -57,7 +56,7 @@ pub extern "C" fn rs_compare_expr_compilation(
   put_expr(&rust_expr, &mut rust_bytes);
 
   // Compare byte-for-byte
-  let lean_ba = unsafe { LeanByteArray::from_raw(lean_output.as_ptr()) };
+  let lean_ba = lean_output.as_byte_array();
   let lean_bytes = lean_ba.as_bytes();
   rust_bytes == lean_bytes
 }
@@ -102,11 +101,10 @@ fn build_block_compare_detail(
 /// # Safety
 ///
 /// `rust_env` must be a valid pointer to a `RustBlockEnv`.
-/// `lowlink_name` must be a valid Lean object pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rs_compare_block_v2(
   rust_env: *const RustBlockEnv,
-  lowlink_name: *const c_void,
+  lowlink_name: LeanObj,
   lean_bytes: LeanObj,
   lean_sharing_len: u64,
 ) -> LeanObj {
@@ -114,7 +112,7 @@ pub unsafe extern "C" fn rs_compare_block_v2(
   let name = lean_ptr_to_name(lowlink_name, &global_cache);
 
   let rust_env = unsafe { &*rust_env };
-  let lean_ba = unsafe { LeanByteArray::from_raw(lean_bytes.as_ptr()) };
+  let lean_ba = lean_bytes.as_byte_array();
   let lean_data = lean_ba.as_bytes();
 
   // Look up Rust's compiled block
@@ -185,9 +183,9 @@ pub unsafe extern "C" fn rs_free_compiled_env(ptr: *mut RustBlockEnv) {
 /// Build a RustBlockEnv from a Lean environment.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_build_compiled_env(
-  env_consts_ptr: *const c_void,
+  env_consts_ptr: LeanObj,
 ) -> *mut RustBlockEnv {
-  use super::super::lean_env::lean_ptr_to_env;
+  use crate::lean::ffi::lean_env::lean_ptr_to_env;
 
   // Decode Lean environment
   let rust_env = lean_ptr_to_env(env_consts_ptr);

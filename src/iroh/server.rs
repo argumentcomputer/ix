@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 

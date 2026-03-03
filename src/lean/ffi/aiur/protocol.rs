@@ -16,7 +16,6 @@ use crate::{
     ffi::aiur::{
       lean_unbox_g, lean_unbox_nat_as_usize, toplevel::lean_ptr_to_toplevel,
     },
-    lean_array_data, lean_array_to_vec, lean_ctor_objs,
     obj::{
       ExternalClass, LeanArray, LeanByteArray, LeanCtor, LeanExcept,
       LeanExternal, LeanObj,
@@ -69,7 +68,7 @@ extern "C" fn rs_aiur_system_build(
   commitment_parameters: LeanObj,
 ) -> LeanExternal<AiurSystem> {
   let system = AiurSystem::build(
-    lean_ptr_to_toplevel(toplevel.as_ptr()),
+    lean_ptr_to_toplevel(toplevel),
     lean_ptr_to_commitment_parameters(commitment_parameters),
   );
   LeanExternal::alloc(system_class(), system)
@@ -84,7 +83,7 @@ extern "C" fn rs_aiur_system_verify(
   proof_obj: LeanExternal<Proof>,
 ) -> LeanExcept {
   let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
-  let claim = lean_array_to_vec(claim.as_ptr(), lean_unbox_g);
+  let claim = claim.as_array().map(lean_unbox_g);
   match aiur_system_obj.get().verify(fri_parameters, &claim, proof_obj.get()) {
     Ok(()) => LeanExcept::ok(LeanObj::box_usize(0)),
     Err(err) => LeanExcept::error_string(&format!("{err:?}")),
@@ -103,9 +102,10 @@ extern "C" fn rs_aiur_system_prove(
   io_map_arr: LeanObj,
 ) -> LeanObj {
   let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.as_ptr());
-  let args = lean_array_to_vec(args.as_ptr(), lean_unbox_g);
-  let io_data = lean_array_to_vec(io_data_arr.as_ptr(), lean_unbox_g);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx);
+  let args = args.as_array().map(lean_unbox_g);
+  let io_data =
+    io_data_arr.as_array().map(lean_unbox_g);
   let io_map = lean_array_to_io_buffer_map(io_map_arr);
   let mut io_buffer = IOBuffer { data: io_data, map: io_map };
 
@@ -172,38 +172,32 @@ fn build_g_array(values: &[G]) -> LeanObj {
 
 fn lean_ptr_to_commitment_parameters(obj: LeanObj) -> CommitmentParameters {
   CommitmentParameters {
-    log_blowup: lean_unbox_nat_as_usize(obj.as_ptr()),
+    log_blowup: lean_unbox_nat_as_usize(obj),
   }
 }
 
 fn lean_ctor_to_fri_parameters(obj: LeanObj) -> FriParameters {
-  let [
-    log_final_poly_len_ptr,
-    num_queries_ptr,
-    commit_proof_of_work_bits,
-    query_proof_of_work_bits,
-  ] = lean_ctor_objs(obj.as_ptr());
+  let ctor = obj.as_ctor();
   FriParameters {
-    log_final_poly_len: lean_unbox_nat_as_usize(log_final_poly_len_ptr),
-    num_queries: lean_unbox_nat_as_usize(num_queries_ptr),
-    commit_proof_of_work_bits: lean_unbox_nat_as_usize(
-      commit_proof_of_work_bits,
-    ),
-    query_proof_of_work_bits: lean_unbox_nat_as_usize(query_proof_of_work_bits),
+    log_final_poly_len: lean_unbox_nat_as_usize(ctor.get(0)),
+    num_queries: lean_unbox_nat_as_usize(ctor.get(1)),
+    commit_proof_of_work_bits: lean_unbox_nat_as_usize(ctor.get(2)),
+    query_proof_of_work_bits: lean_unbox_nat_as_usize(ctor.get(3)),
   }
 }
 
 fn lean_array_to_io_buffer_map(obj: LeanObj) -> FxHashMap<Vec<G>, IOKeyInfo> {
-  let array_data = lean_array_data(obj.as_ptr());
+  let arr = obj.as_array();
   let mut map =
-    FxHashMap::with_capacity_and_hasher(array_data.len(), FxBuildHasher);
-  for ptr in array_data {
-    let [key_ptr, info_ptr] = lean_ctor_objs(*ptr);
-    let key = lean_array_to_vec(key_ptr, lean_unbox_g);
-    let [idx_ptr, len_ptr] = lean_ctor_objs(info_ptr);
+    FxHashMap::with_capacity_and_hasher(arr.len(), FxBuildHasher);
+  for elt in arr.iter() {
+    let pair = elt.as_ctor();
+    let key =
+      pair.get(0).as_array().map(lean_unbox_g);
+    let info_ctor = pair.get(1).as_ctor();
     let info = IOKeyInfo {
-      idx: lean_unbox_nat_as_usize(idx_ptr),
-      len: lean_unbox_nat_as_usize(len_ptr),
+      idx: lean_unbox_nat_as_usize(info_ctor.get(0)),
+      len: lean_unbox_nat_as_usize(info_ctor.get(1)),
     };
     map.insert(key, info);
   }

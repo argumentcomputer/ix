@@ -1,7 +1,6 @@
 use iroh::{Endpoint, NodeAddr, NodeId, RelayMode, RelayUrl, SecretKey};
 use n0_snafu::{Result, ResultExt};
 use n0_watcher::Watcher as _;
-use std::ffi::{CString, c_void};
 use std::net::SocketAddr;
 use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
@@ -9,10 +8,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
-use crate::lean::{
-  lean::{lean_alloc_ctor, lean_alloc_sarray, lean_ctor_set, lean_mk_string},
-  lean_array_to_vec, lean_except_error_string, lean_except_ok,
-  lean_obj_to_string, lean_sarray_set_data,
+use crate::lean::obj::{
+  LeanByteArray, LeanCtor, LeanExcept, LeanObj, LeanString,
 };
 
 // An example ALPN that we are using to communicate over the `Endpoint`
@@ -26,19 +23,12 @@ const READ_SIZE_LIMIT: usize = 100_000_000;
 ///   message: String
 ///   hash: String
 /// ```
-fn mk_put_response(message: &str, hash: &str) -> *mut c_void {
-  let c_message = CString::new(message).unwrap();
-  let c_hash = CString::new(hash).unwrap();
-  unsafe {
-    let ctor = lean_alloc_ctor(0, 2, 0);
-    lean_ctor_set(ctor, 0, lean_mk_string(c_message.as_ptr()));
-    lean_ctor_set(ctor, 1, lean_mk_string(c_hash.as_ptr()));
-    ctor.cast()
-  }
+fn mk_put_response(message: &str, hash: &str) -> LeanCtor {
+  let ctor = LeanCtor::alloc(0, 2, 0);
+  ctor.set(0, LeanString::from_str(message));
+  ctor.set(1, LeanString::from_str(hash));
+  ctor
 }
-
-#[repr(transparent)]
-struct LeanPutResponse {}
 
 /// Build a Lean `GetResponse` structure:
 /// ```
@@ -47,33 +37,27 @@ struct LeanPutResponse {}
 ///   hash: String
 ///   bytes: ByteArray
 /// ```
-fn mk_get_response(message: &str, hash: &str, bytes: &[u8]) -> *mut c_void {
-  let c_message = safe_cstring(message);
-  let c_hash = safe_cstring(hash);
-  unsafe {
-    let byte_array = lean_alloc_sarray(1, bytes.len(), bytes.len());
-    lean_sarray_set_data(byte_array.cast(), bytes);
-
-    let ctor = lean_alloc_ctor(0, 3, 0);
-    lean_ctor_set(ctor, 0, lean_mk_string(c_message.as_ptr()));
-    lean_ctor_set(ctor, 1, lean_mk_string(c_hash.as_ptr()));
-    lean_ctor_set(ctor, 2, byte_array);
-    ctor.cast()
-  }
+fn mk_get_response(message: &str, hash: &str, bytes: &[u8]) -> LeanCtor {
+  let byte_array = LeanByteArray::from_bytes(bytes);
+  let ctor = LeanCtor::alloc(0, 3, 0);
+  ctor.set(0, LeanString::from_str(message));
+  ctor.set(1, LeanString::from_str(hash));
+  ctor.set(2, byte_array);
+  ctor
 }
 
 /// `Iroh.Connect.putBytes' : @& String → @& Array String → @& String → @& String → Except String PutResponse`
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_put(
-  node_id: *const c_void,
-  addrs: *const c_void,
-  relay_url: *const c_void,
-  input: *const c_void,
-) -> *mut c_void {
-  let node_id = lean_obj_to_string(node_id);
-  let addrs: Vec<String> = lean_array_to_vec(addrs, lean_obj_to_string);
-  let relay_url = lean_obj_to_string(relay_url);
-  let input_str = lean_obj_to_string(input);
+  node_id: LeanObj,
+  addrs: LeanObj,
+  relay_url: LeanObj,
+  input: LeanObj,
+) -> LeanExcept {
+  let node_id = node_id.as_string().to_string();
+  let addrs: Vec<String> = addrs.as_array().map(|x| x.as_string().to_string());
+  let relay_url = relay_url.as_string().to_string();
+  let input_str = input.as_string().to_string();
 
   let request =
     Request::Put(PutRequest { bytes: input_str.as_bytes().to_vec() });
@@ -82,43 +66,44 @@ extern "C" fn rs_iroh_put(
 
   match rt.block_on(connect(&node_id, &addrs, &relay_url, request)) {
     Ok(response) => match response {
-      Response::Put(put_response) => lean_except_ok(mk_put_response(
+      Response::Put(put_response) => LeanExcept::ok(mk_put_response(
         &put_response.message,
         &put_response.hash,
       )),
-      _ => lean_except_error_string("error: incorrect server response"),
+      _ => LeanExcept::error_string("error: incorrect server response"),
     },
-    Err(err) => lean_except_error_string(&err.to_string()),
+    Err(err) => LeanExcept::error_string(&err.to_string()),
   }
 }
 
 /// `Iroh.Connect.getBytes' : @& String → @& Array String → @& String → @& String → Except String GetResponse`
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_get(
-  node_id: *const c_void,
-  addrs: *const c_void,
-  relay_url: *const c_void,
-  hash: *const c_void,
-) -> *mut c_void {
-  let node_id = lean_obj_to_string(node_id);
-  let addrs: Vec<String> = lean_array_to_vec(addrs, lean_obj_to_string);
-  let relay_url = lean_obj_to_string(relay_url);
-  let hash = lean_obj_to_string(hash);
-  let request = Request::Get(GetRequest { hash: hash.clone() });
+  node_id: LeanObj,
+  addrs: LeanObj,
+  relay_url: LeanObj,
+  hash: LeanObj,
+) -> LeanExcept {
+  let node_id = node_id.as_string().to_string();
+  let addrs: Vec<String> = addrs.as_array().map(|x| x.as_string().to_string());
+  let relay_url = relay_url.as_string().to_string();
+  let hash_str = hash.as_string().to_string();
+
+  let request = Request::Get(GetRequest { hash: hash_str.clone() });
 
   let rt =
     tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
   match rt.block_on(connect(&node_id, &addrs, &relay_url, request)) {
     Ok(response) => match response {
-      Response::Get(get_response) => lean_except_ok(mk_get_response(
+      Response::Get(get_response) => LeanExcept::ok(mk_get_response(
         &get_response.message,
         &get_response.hash,
         &get_response.bytes,
       )),
-      _ => lean_except_error_string("error: incorrect server response"),
+      _ => LeanExcept::error_string("error: incorrect server response"),
     },
-    Err(err) => lean_except_error_string(&err.to_string()),
+    Err(err) => LeanExcept::error_string(&err.to_string()),
   }
 }
 

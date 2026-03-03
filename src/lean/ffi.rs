@@ -15,7 +15,7 @@ pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
 use crate::lean::lean::{
   lean_io_result_mk_error, lean_io_result_mk_ok, lean_mk_io_user_error,
 };
-use crate::lean::obj::{LeanArray, LeanByteArray, LeanObj, LeanString};
+use crate::lean::obj::{LeanObj, LeanString};
 
 /// Guard an FFI function that returns a Lean IO result against panics.
 /// On panic, returns a Lean IO error with the panic message instead of
@@ -61,12 +61,12 @@ extern "C" fn rs_boxed_u32s_are_equivalent_to_bytes(
   u32s: LeanObj,
   bytes: LeanObj,
 ) -> bool {
-  let arr = unsafe { LeanArray::from_raw(u32s.as_ptr()) };
+  let arr = u32s.as_array();
   let u32s_flat: Vec<u8> = arr
     .map(|elem| elem.unbox_u32())
     .into_iter()
     .flat_map(u32::to_le_bytes)
     .collect();
-  let ba = unsafe { LeanByteArray::from_raw(bytes.as_ptr()) };
+  let ba = bytes.as_byte_array();
   u32s_flat == ba.as_bytes()
 }

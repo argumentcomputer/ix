@@ -10,9 +10,9 @@ use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::sharing::hash_expr;
 use crate::ix::ixon::univ::{Univ as IxonUniv, put_univ};
-use crate::lean::obj::{LeanByteArray, LeanCtor, LeanObj};
+use crate::lean::obj::LeanObj;
 
-use super::constant::{decode_ixon_address, decode_ixon_constant};
+use crate::lean::ffi::ixon::constant::{decode_ixon_address, decode_ixon_constant};
 
 /// Unbox a Lean UInt64, handling both scalar and boxed representations.
 fn lean_ptr_to_u64(obj: LeanObj) -> u64 {
@@ -26,7 +26,7 @@ fn lean_ptr_to_u64(obj: LeanObj) -> u64 {
 /// Decode a Lean `Ixon.Expr` to a Rust `IxonExpr`.
 pub fn lean_ptr_to_ixon_expr(obj: LeanObj) -> Arc<IxonExpr> {
   assert!(!obj.is_scalar(), "Ixon.Expr should not be scalar");
-  let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+  let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
       let idx = ctor.scalar_u64(0, 0);
@@ -38,15 +38,13 @@ pub fn lean_ptr_to_ixon_expr(obj: LeanObj) -> Arc<IxonExpr> {
     },
     2 => {
       let ref_idx = ctor.scalar_u64(1, 0);
-      let univs_arr =
-        unsafe { crate::lean::obj::LeanArray::from_raw(ctor.get(0).as_ptr()) };
+      let univs_arr = ctor.get(0).as_array();
       let univs = univs_arr.map(lean_ptr_to_u64);
       Arc::new(IxonExpr::Ref(ref_idx, univs))
     },
     3 => {
       let rec_idx = ctor.scalar_u64(1, 0);
-      let univs_arr =
-        unsafe { crate::lean::obj::LeanArray::from_raw(ctor.get(0).as_ptr()) };
+      let univs_arr = ctor.get(0).as_array();
       let univs = univs_arr.map(lean_ptr_to_u64);
       Arc::new(IxonExpr::Rec(rec_idx, univs))
     },
@@ -115,7 +113,7 @@ fn lean_ptr_to_ixon_univ(obj: LeanObj) -> Arc<IxonUniv> {
   if obj.is_scalar() {
     return IxonUniv::zero();
   }
-  let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+  let ctor = obj.as_ctor();
   match ctor.tag() {
     1 => {
       let [inner] = ctor.objs::<1>();
@@ -141,7 +139,7 @@ pub extern "C" fn rs_eq_univ_serialization(
   bytes_obj: LeanObj,
 ) -> bool {
   let univ = lean_ptr_to_ixon_univ(univ_obj);
-  let ba = unsafe { LeanByteArray::from_raw(bytes_obj.as_ptr()) };
+  let ba = bytes_obj.as_byte_array();
   let bytes_data = ba.as_bytes();
   let mut buf = Vec::with_capacity(bytes_data.len());
   put_univ(&univ, &mut buf);
@@ -155,7 +153,7 @@ pub extern "C" fn rs_eq_expr_serialization(
   bytes_obj: LeanObj,
 ) -> bool {
   let expr = lean_ptr_to_ixon_expr(expr_obj);
-  let ba = unsafe { LeanByteArray::from_raw(bytes_obj.as_ptr()) };
+  let ba = bytes_obj.as_byte_array();
   let bytes_data = ba.as_bytes();
   let mut buf = Vec::with_capacity(bytes_data.len());
   put_expr(&expr, &mut buf);
@@ -169,7 +167,7 @@ pub extern "C" fn rs_eq_constant_serialization(
   bytes_obj: LeanObj,
 ) -> bool {
   let constant = decode_ixon_constant(constant_obj);
-  let ba = unsafe { LeanByteArray::from_raw(bytes_obj.as_ptr()) };
+  let ba = bytes_obj.as_byte_array();
   let bytes_data = ba.as_bytes();
   let mut buf = Vec::with_capacity(bytes_data.len());
   constant.put(&mut buf);
@@ -183,11 +181,11 @@ pub extern "C" fn rs_eq_env_serialization(
   raw_env_obj: LeanObj,
   bytes_obj: LeanObj,
 ) -> bool {
-  use super::env::decode_raw_env;
+  use crate::lean::ffi::ixon::env::decode_raw_env;
   use crate::ix::ixon::env::Env;
 
   let decoded = decode_raw_env(raw_env_obj);
-  let ba = unsafe { LeanByteArray::from_raw(bytes_obj.as_ptr()) };
+  let ba = bytes_obj.as_byte_array();
   let bytes_data = ba.as_bytes();
 
   // Deserialize Lean's bytes using Rust's deserializer
@@ -258,7 +256,7 @@ extern "C" fn rs_env_serde_roundtrip(lean_bytes_obj: LeanObj) -> bool {
   use crate::ix::ixon::env::Env;
 
   // Get bytes from Lean ByteArray
-  let ba = unsafe { LeanByteArray::from_raw(lean_bytes_obj.as_ptr()) };
+  let ba = lean_bytes_obj.as_byte_array();
   let lean_bytes = ba.as_bytes().to_vec();
 
   // Try to deserialize with Rust
@@ -305,7 +303,7 @@ extern "C" fn rs_env_serde_check(lean_bytes_obj: LeanObj) -> bool {
   use crate::ix::ixon::env::Env;
 
   // Get bytes from Lean ByteArray
-  let ba = unsafe { LeanByteArray::from_raw(lean_bytes_obj.as_ptr()) };
+  let ba = lean_bytes_obj.as_byte_array();
   let lean_bytes = ba.as_bytes().to_vec();
 
   // Try to deserialize with Rust

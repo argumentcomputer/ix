@@ -10,24 +10,18 @@
 //! - Tag 6: ctorInfo (v : ConstructorVal)
 //! - Tag 7: recInfo (v : RecursorVal)
 
-use std::ffi::c_void;
-
 use crate::ix::env::{
   AxiomVal, ConstantInfo, ConstantVal, ConstructorVal, DefinitionSafety,
   DefinitionVal, InductiveVal, Name, OpaqueVal, QuotKind, QuotVal,
   RecursorRule, RecursorVal, ReducibilityHints, TheoremVal,
 };
-use crate::lean::lean::{lean_ctor_get, lean_obj_tag};
 use crate::lean::nat::Nat;
 use crate::lean::obj::{IxConstantInfo, LeanArray, LeanCtor, LeanObj};
-use crate::lean::{
-  lean_array_data, lean_ctor_scalar_u8, lean_is_scalar,
-};
 
-use super::super::builder::LeanBuildCache;
-use super::super::primitives::build_nat;
-use super::expr::{build_expr, decode_ix_expr};
-use super::name::{
+use crate::lean::ffi::builder::LeanBuildCache;
+use crate::lean::ffi::primitives::build_nat;
+use crate::lean::ffi::ix::expr::{build_expr, decode_ix_expr};
+use crate::lean::ffi::ix::name::{
   build_name, build_name_array, decode_ix_name, decode_name_array,
 };
 
@@ -273,221 +267,167 @@ fn build_recursor_rules(
 // ConstantInfo Decoders
 // =============================================================================
 
-/// Decode Ix.ConstantVal from Lean pointer.
+/// Decode Ix.ConstantVal from Lean object.
 /// ConstantVal = { name : Name, levelParams : Array Name, type : Expr }
-pub fn decode_constant_val(ptr: *const c_void) -> ConstantVal {
-  unsafe {
-    let name_ptr = lean_ctor_get(ptr as *mut _, 0);
-    let level_params_ptr = lean_ctor_get(ptr as *mut _, 1);
-    let type_ptr = lean_ctor_get(ptr as *mut _, 2);
+pub fn decode_constant_val(obj: LeanObj) -> ConstantVal {
+  let ctor = obj.as_ctor();
+  let name = decode_ix_name(ctor.get(0));
+  let level_params: Vec<Name> =
+    ctor.get(1).as_array()
+      .map(decode_ix_name);
+  let typ = decode_ix_expr(ctor.get(2));
 
-    let name = decode_ix_name(name_ptr.cast());
-
-    let level_params: Vec<Name> = lean_array_data(level_params_ptr.cast())
-      .iter()
-      .map(|&p| decode_ix_name(p))
-      .collect();
-
-    let typ = decode_ix_expr(type_ptr.cast());
-
-    ConstantVal { name, level_params, typ }
-  }
+  ConstantVal { name, level_params, typ }
 }
 
-/// Decode Lean.ReducibilityHints from Lean pointer.
-pub fn decode_reducibility_hints(ptr: *const c_void) -> ReducibilityHints {
-  unsafe {
-    if lean_is_scalar(ptr) {
-      let tag = (ptr as usize) >> 1;
-      match tag {
-        0 => return ReducibilityHints::Opaque,
-        1 => return ReducibilityHints::Abbrev,
-        _ => panic!("Invalid ReducibilityHints scalar tag: {}", tag),
-      }
-    }
-
-    let tag = lean_obj_tag(ptr as *mut _);
+/// Decode Lean.ReducibilityHints from Lean object.
+pub fn decode_reducibility_hints(obj: LeanObj) -> ReducibilityHints {
+  if obj.is_scalar() {
+    let tag = obj.as_ptr() as usize >> 1;
     match tag {
-      0 => ReducibilityHints::Opaque,
-      1 => ReducibilityHints::Abbrev,
-      2 => {
-        // regular: 0 obj fields, 4 scalar bytes (UInt32)
-        let ctor_ptr = ptr.cast::<u8>();
-        let h = *(ctor_ptr.add(8).cast::<u32>());
-        ReducibilityHints::Regular(h)
-      },
-      _ => panic!("Invalid ReducibilityHints tag: {}", tag),
+      0 => return ReducibilityHints::Opaque,
+      1 => return ReducibilityHints::Abbrev,
+      _ => panic!("Invalid ReducibilityHints scalar tag: {}", tag),
     }
+  }
+
+  let ctor = obj.as_ctor();
+  match ctor.tag() {
+    0 => ReducibilityHints::Opaque,
+    1 => ReducibilityHints::Abbrev,
+    2 => {
+      // regular: 0 obj fields, 4 scalar bytes (UInt32)
+      let h = unsafe { *(obj.as_ptr().cast::<u8>().add(8).cast::<u32>()) };
+      ReducibilityHints::Regular(h)
+    },
+    _ => panic!("Invalid ReducibilityHints tag: {}", ctor.tag()),
   }
 }
 
-/// Decode Ix.RecursorRule from Lean pointer.
-fn decode_recursor_rule(ptr: *const c_void) -> RecursorRule {
-  unsafe {
-    let ctor_ptr = lean_ctor_get(ptr as *mut _, 0);
-    let n_fields_ptr = lean_ctor_get(ptr as *mut _, 1);
-    let rhs_ptr = lean_ctor_get(ptr as *mut _, 2);
-
-    RecursorRule {
-      ctor: decode_ix_name(ctor_ptr.cast()),
-      n_fields: Nat::from_ptr(n_fields_ptr.cast()),
-      rhs: decode_ix_expr(rhs_ptr.cast()),
-    }
+/// Decode Ix.RecursorRule from Lean object.
+fn decode_recursor_rule(obj: LeanObj) -> RecursorRule {
+  let ctor = obj.as_ctor();
+  RecursorRule {
+    ctor: decode_ix_name(ctor.get(0)),
+    n_fields: Nat::from_obj(ctor.get(1)),
+    rhs: decode_ix_expr(ctor.get(2)),
   }
 }
 
-/// Decode Ix.ConstantInfo from Lean pointer.
-pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
-  unsafe {
-    let tag = lean_obj_tag(ptr as *mut _);
-    let inner_ptr = lean_ctor_get(ptr as *mut _, 0);
+/// Decode Ix.ConstantInfo from Lean object.
+pub fn decode_constant_info(obj: LeanObj) -> ConstantInfo {
+  let outer = obj.as_ctor();
+  let inner_obj = outer.get(0);
+  let inner = inner_obj.as_ctor();
 
-    match tag {
-      0 => {
-        let cnst_ptr = lean_ctor_get(inner_ptr, 0);
-        let is_unsafe = lean_ctor_scalar_u8(inner_ptr.cast(), 1, 0) != 0;
+  match outer.tag() {
+    0 => {
+      let is_unsafe = inner.scalar_u8(1, 0) != 0;
 
-        ConstantInfo::AxiomInfo(AxiomVal {
-          cnst: decode_constant_val(cnst_ptr.cast()),
-          is_unsafe,
-        })
-      },
-      1 => {
-        let cnst_ptr = lean_ctor_get(inner_ptr, 0);
-        let value_ptr = lean_ctor_get(inner_ptr, 1);
-        let hints_ptr = lean_ctor_get(inner_ptr, 2);
-        let all_ptr = lean_ctor_get(inner_ptr, 3);
+      ConstantInfo::AxiomInfo(AxiomVal {
+        cnst: decode_constant_val(inner.get(0)),
+        is_unsafe,
+      })
+    },
+    1 => {
+      let safety_byte = inner.scalar_u8(4, 0);
+      let safety = match safety_byte {
+        0 => DefinitionSafety::Unsafe,
+        1 => DefinitionSafety::Safe,
+        2 => DefinitionSafety::Partial,
+        _ => panic!("Invalid DefinitionSafety: {}", safety_byte),
+      };
 
-        let safety_byte = lean_ctor_scalar_u8(inner_ptr.cast(), 4, 0);
-        let safety = match safety_byte {
-          0 => DefinitionSafety::Unsafe,
-          1 => DefinitionSafety::Safe,
-          2 => DefinitionSafety::Partial,
-          _ => panic!("Invalid DefinitionSafety: {}", safety_byte),
-        };
+      ConstantInfo::DefnInfo(DefinitionVal {
+        cnst: decode_constant_val(inner.get(0)),
+        value: decode_ix_expr(inner.get(1)),
+        hints: decode_reducibility_hints(inner.get(2)),
+        safety,
+        all: decode_name_array(inner.get(3)),
+      })
+    },
+    2 => {
+      ConstantInfo::ThmInfo(TheoremVal {
+        cnst: decode_constant_val(inner.get(0)),
+        value: decode_ix_expr(inner.get(1)),
+        all: decode_name_array(inner.get(2)),
+      })
+    },
+    3 => {
+      let is_unsafe = inner.scalar_u8(3, 0) != 0;
 
-        ConstantInfo::DefnInfo(DefinitionVal {
-          cnst: decode_constant_val(cnst_ptr.cast()),
-          value: decode_ix_expr(value_ptr.cast()),
-          hints: decode_reducibility_hints(hints_ptr.cast()),
-          safety,
-          all: decode_name_array(all_ptr.cast()),
-        })
-      },
-      2 => {
-        let cnst_ptr = lean_ctor_get(inner_ptr, 0);
-        let value_ptr = lean_ctor_get(inner_ptr, 1);
-        let all_ptr = lean_ctor_get(inner_ptr, 2);
+      ConstantInfo::OpaqueInfo(OpaqueVal {
+        cnst: decode_constant_val(inner.get(0)),
+        value: decode_ix_expr(inner.get(1)),
+        is_unsafe,
+        all: decode_name_array(inner.get(2)),
+      })
+    },
+    4 => {
+      let kind_byte = inner.scalar_u8(1, 0);
+      let kind = match kind_byte {
+        0 => QuotKind::Type,
+        1 => QuotKind::Ctor,
+        2 => QuotKind::Lift,
+        3 => QuotKind::Ind,
+        _ => panic!("Invalid QuotKind: {}", kind_byte),
+      };
 
-        ConstantInfo::ThmInfo(TheoremVal {
-          cnst: decode_constant_val(cnst_ptr.cast()),
-          value: decode_ix_expr(value_ptr.cast()),
-          all: decode_name_array(all_ptr.cast()),
-        })
-      },
-      3 => {
-        let cnst_ptr = lean_ctor_get(inner_ptr, 0);
-        let value_ptr = lean_ctor_get(inner_ptr, 1);
-        let all_ptr = lean_ctor_get(inner_ptr, 2);
-        let is_unsafe = lean_ctor_scalar_u8(inner_ptr.cast(), 3, 0) != 0;
+      ConstantInfo::QuotInfo(QuotVal {
+        cnst: decode_constant_val(inner.get(0)),
+        kind,
+      })
+    },
+    5 => {
+      let is_rec = inner.scalar_u8(6, 0) != 0;
+      let is_unsafe = inner.scalar_u8(6, 1) != 0;
+      let is_reflexive = inner.scalar_u8(6, 2) != 0;
 
-        ConstantInfo::OpaqueInfo(OpaqueVal {
-          cnst: decode_constant_val(cnst_ptr.cast()),
-          value: decode_ix_expr(value_ptr.cast()),
-          is_unsafe,
-          all: decode_name_array(all_ptr.cast()),
-        })
-      },
-      4 => {
-        let cnst_ptr = lean_ctor_get(inner_ptr, 0);
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: decode_constant_val(inner.get(0)),
+        num_params: Nat::from_obj(inner.get(1)),
+        num_indices: Nat::from_obj(inner.get(2)),
+        all: decode_name_array(inner.get(3)),
+        ctors: decode_name_array(inner.get(4)),
+        num_nested: Nat::from_obj(inner.get(5)),
+        is_rec,
+        is_unsafe,
+        is_reflexive,
+      })
+    },
+    6 => {
+      let is_unsafe = inner.scalar_u8(5, 0) != 0;
 
-        let kind_byte = lean_ctor_scalar_u8(inner_ptr.cast(), 1, 0);
-        let kind = match kind_byte {
-          0 => QuotKind::Type,
-          1 => QuotKind::Ctor,
-          2 => QuotKind::Lift,
-          3 => QuotKind::Ind,
-          _ => panic!("Invalid QuotKind: {}", kind_byte),
-        };
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: decode_constant_val(inner.get(0)),
+        induct: decode_ix_name(inner.get(1)),
+        cidx: Nat::from_obj(inner.get(2)),
+        num_params: Nat::from_obj(inner.get(3)),
+        num_fields: Nat::from_obj(inner.get(4)),
+        is_unsafe,
+      })
+    },
+    7 => {
+      let k = inner.scalar_u8(7, 0) != 0;
+      let is_unsafe = inner.scalar_u8(7, 1) != 0;
 
-        ConstantInfo::QuotInfo(QuotVal {
-          cnst: decode_constant_val(cnst_ptr.cast()),
-          kind,
-        })
-      },
-      5 => {
-        let cnst_ptr = lean_ctor_get(inner_ptr, 0);
-        let num_params_ptr = lean_ctor_get(inner_ptr, 1);
-        let num_indices_ptr = lean_ctor_get(inner_ptr, 2);
-        let all_ptr = lean_ctor_get(inner_ptr, 3);
-        let ctors_ptr = lean_ctor_get(inner_ptr, 4);
-        let num_nested_ptr = lean_ctor_get(inner_ptr, 5);
+      let rules: Vec<RecursorRule> =
+        inner.get(6).as_array()
+          .map(decode_recursor_rule);
 
-        let is_rec = lean_ctor_scalar_u8(inner_ptr.cast(), 6, 0) != 0;
-        let is_unsafe = lean_ctor_scalar_u8(inner_ptr.cast(), 6, 1) != 0;
-        let is_reflexive = lean_ctor_scalar_u8(inner_ptr.cast(), 6, 2) != 0;
-
-        ConstantInfo::InductInfo(InductiveVal {
-          cnst: decode_constant_val(cnst_ptr.cast()),
-          num_params: Nat::from_ptr(num_params_ptr.cast()),
-          num_indices: Nat::from_ptr(num_indices_ptr.cast()),
-          all: decode_name_array(all_ptr.cast()),
-          ctors: decode_name_array(ctors_ptr.cast()),
-          num_nested: Nat::from_ptr(num_nested_ptr.cast()),
-          is_rec,
-          is_unsafe,
-          is_reflexive,
-        })
-      },
-      6 => {
-        let cnst_ptr = lean_ctor_get(inner_ptr, 0);
-        let induct_ptr = lean_ctor_get(inner_ptr, 1);
-        let cidx_ptr = lean_ctor_get(inner_ptr, 2);
-        let num_params_ptr = lean_ctor_get(inner_ptr, 3);
-        let num_fields_ptr = lean_ctor_get(inner_ptr, 4);
-
-        let is_unsafe = lean_ctor_scalar_u8(inner_ptr.cast(), 5, 0) != 0;
-
-        ConstantInfo::CtorInfo(ConstructorVal {
-          cnst: decode_constant_val(cnst_ptr.cast()),
-          induct: decode_ix_name(induct_ptr.cast()),
-          cidx: Nat::from_ptr(cidx_ptr.cast()),
-          num_params: Nat::from_ptr(num_params_ptr.cast()),
-          num_fields: Nat::from_ptr(num_fields_ptr.cast()),
-          is_unsafe,
-        })
-      },
-      7 => {
-        let cnst_ptr = lean_ctor_get(inner_ptr, 0);
-        let all_ptr = lean_ctor_get(inner_ptr, 1);
-        let num_params_ptr = lean_ctor_get(inner_ptr, 2);
-        let num_indices_ptr = lean_ctor_get(inner_ptr, 3);
-        let num_motives_ptr = lean_ctor_get(inner_ptr, 4);
-        let num_minors_ptr = lean_ctor_get(inner_ptr, 5);
-        let rules_ptr = lean_ctor_get(inner_ptr, 6);
-
-        let k = lean_ctor_scalar_u8(inner_ptr.cast(), 7, 0) != 0;
-        let is_unsafe = lean_ctor_scalar_u8(inner_ptr.cast(), 7, 1) != 0;
-
-        let rules: Vec<RecursorRule> = lean_array_data(rules_ptr.cast())
-          .iter()
-          .map(|&p| decode_recursor_rule(p))
-          .collect();
-
-        ConstantInfo::RecInfo(RecursorVal {
-          cnst: decode_constant_val(cnst_ptr.cast()),
-          all: decode_name_array(all_ptr.cast()),
-          num_params: Nat::from_ptr(num_params_ptr.cast()),
-          num_indices: Nat::from_ptr(num_indices_ptr.cast()),
-          num_motives: Nat::from_ptr(num_motives_ptr.cast()),
-          num_minors: Nat::from_ptr(num_minors_ptr.cast()),
-          rules,
-          k,
-          is_unsafe,
-        })
-      },
-      _ => panic!("Invalid ConstantInfo tag: {}", tag),
-    }
+      ConstantInfo::RecInfo(RecursorVal {
+        cnst: decode_constant_val(inner.get(0)),
+        all: decode_name_array(inner.get(1)),
+        num_params: Nat::from_obj(inner.get(2)),
+        num_indices: Nat::from_obj(inner.get(3)),
+        num_motives: Nat::from_obj(inner.get(4)),
+        num_minors: Nat::from_obj(inner.get(5)),
+        rules,
+        k,
+        is_unsafe,
+      })
+    },
+    _ => panic!("Invalid ConstantInfo tag: {}", outer.tag()),
   }
 }
 
@@ -496,7 +436,7 @@ pub fn decode_constant_info(ptr: *const c_void) -> ConstantInfo {
 pub extern "C" fn rs_roundtrip_ix_constant_info(
   info_ptr: IxConstantInfo,
 ) -> IxConstantInfo {
-  let info = decode_constant_info(info_ptr.as_ptr());
+  let info = decode_constant_info(*info_ptr);
   let mut cache = LeanBuildCache::new();
   build_constant_info(&mut cache, &info)
 }

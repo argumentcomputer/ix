@@ -51,7 +51,7 @@ impl IxonUniv {
     if obj.is_scalar() {
       return Univ::Zero;
     }
-    let ctor = unsafe { LeanCtor::from_raw(obj.as_ptr()) };
+    let ctor = obj.as_ctor();
     match ctor.tag() {
       0 => Univ::Zero,
       1 => Univ::Succ(Arc::new(Self::new(ctor.get(0)).decode())),
@@ -70,9 +70,19 @@ impl IxonUniv {
 
   /// Decode Array Ixon.Univ.
   pub fn decode_array(obj: LeanObj) -> Vec<Arc<Univ>> {
-    let arr = unsafe { LeanArray::from_raw(obj.as_ptr()) };
+    let arr = obj.as_array();
     arr.map(|elem| Arc::new(Self::new(elem).decode()))
   }
+}
+
+/// Build an Array of Ixon.Univ (standalone wrapper).
+pub fn build_ixon_univ_array(univs: &[Arc<Univ>]) -> LeanArray {
+  IxonUniv::build_array(univs)
+}
+
+/// Decode Array Ixon.Univ (standalone wrapper).
+pub fn decode_ixon_univ_array(obj: LeanObj) -> Vec<Arc<Univ>> {
+  IxonUniv::decode_array(obj)
 }
 
 // =============================================================================

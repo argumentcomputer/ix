@@ -7,18 +7,17 @@ use crate::ix::ixon::serialize::put_expr;
 use crate::ix::ixon::sharing::{
   analyze_block, build_sharing_vec, decide_sharing,
 };
-use crate::lean::obj::{LeanArray, LeanByteArray, LeanObj};
+use crate::lean::obj::LeanObj;
 
-use super::expr::decode_ixon_expr_array;
-use super::serialize::lean_ptr_to_ixon_expr;
+use crate::lean::ffi::ixon::expr::decode_ixon_expr_array;
+use crate::lean::ffi::ixon::serialize::lean_ptr_to_ixon_expr;
 
 /// FFI: Debug sharing analysis - print usage counts for subterms with usage >= 2.
 /// This helps diagnose why Lean and Rust make different sharing decisions.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_debug_sharing_analysis(exprs_obj: LeanObj) {
-  let arr = unsafe { LeanArray::from_raw(exprs_obj.as_ptr()) };
-  let exprs: Vec<Arc<IxonExpr>> =
-    arr.map(|elem| lean_ptr_to_ixon_expr(elem));
+  let arr = exprs_obj.as_array();
+  let exprs: Vec<Arc<IxonExpr>> = arr.map(|elem| lean_ptr_to_ixon_expr(elem));
 
   println!("[Rust] Analyzing {} input expressions", exprs.len());
 
@@ -96,11 +95,9 @@ extern "C" fn rs_run_sharing_analysis(
   }
 
   // Write to output arrays
-  let sharing_ba =
-    unsafe { LeanByteArray::from_raw(out_sharing_vec.as_ptr()) };
+  let sharing_ba = out_sharing_vec.as_byte_array();
   unsafe { sharing_ba.set_data(&sharing_bytes) };
-  let rewritten_ba =
-    unsafe { LeanByteArray::from_raw(out_rewritten.as_ptr()) };
+  let rewritten_ba = out_rewritten.as_byte_array();
   unsafe { rewritten_ba.set_data(&rewritten_bytes) };
 
   shared_hashes.len() as u64

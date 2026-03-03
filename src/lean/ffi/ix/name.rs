@@ -5,17 +5,13 @@
 //! - Tag 1: str (parent : Name) (s : String) (hash : Address)
 //! - Tag 2: num (parent : Name) (i : Nat) (hash : Address)
 
-use std::ffi::c_void;
-
 use crate::ix::env::{Name, NameData};
-use crate::lean::lean::{lean_ctor_get, lean_obj_tag};
-use crate::lean::lean_obj_to_string;
 use crate::lean::nat::Nat;
-use crate::lean::obj::{IxName, LeanArray, LeanCtor, LeanString};
+use crate::lean::obj::{IxName, LeanArray, LeanCtor, LeanObj, LeanString};
 
-use super::super::builder::LeanBuildCache;
-use super::super::primitives::build_nat;
-use super::address::build_address;
+use crate::lean::ffi::builder::LeanBuildCache;
+use crate::lean::ffi::primitives::build_nat;
+use crate::lean::ffi::ix::address::build_address;
 
 /// Build a Lean Ix.Name with embedded hash.
 /// Uses caching to avoid rebuilding the same name.
@@ -69,50 +65,38 @@ pub fn build_name_array(
 }
 
 /// Decode a Lean Ix.Name to Rust Name.
-pub fn decode_ix_name(ptr: *const c_void) -> Name {
-  unsafe {
-    let tag = lean_obj_tag(ptr as *mut _);
-    match tag {
-      0 => {
-        // anonymous: just has hash, construct anon Name
-        Name::anon()
-      },
-      1 => {
-        // str: parent, s, hash
-        let parent_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let s_ptr = lean_ctor_get(ptr as *mut _, 1);
-        // hash at field 2 is ignored - Rust recomputes it
-
-        let parent = decode_ix_name(parent_ptr.cast());
-        let s = lean_obj_to_string(s_ptr as *const _);
-
-        Name::str(parent, s)
-      },
-      2 => {
-        // num: parent, i, hash
-        let parent_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let i_ptr = lean_ctor_get(ptr as *mut _, 1);
-        // hash at field 2 is ignored
-
-        let parent = decode_ix_name(parent_ptr.cast());
-        let i = Nat::from_ptr(i_ptr.cast());
-
-        Name::num(parent, i)
-      },
-      _ => panic!("Invalid Ix.Name tag: {}", tag),
-    }
+pub fn decode_ix_name(obj: LeanObj) -> Name {
+  let ctor = obj.as_ctor();
+  match ctor.tag() {
+    0 => {
+      // anonymous: just has hash, construct anon Name
+      Name::anon()
+    },
+    1 => {
+      // str: parent, s, hash
+      let parent = decode_ix_name(ctor.get(0));
+      let s = ctor.get(1).as_string().to_string();
+      Name::str(parent, s)
+    },
+    2 => {
+      // num: parent, i, hash
+      let parent = decode_ix_name(ctor.get(0));
+      let i = Nat::from_obj(ctor.get(1));
+      Name::num(parent, i)
+    },
+    _ => panic!("Invalid Ix.Name tag: {}", ctor.tag()),
   }
 }
 
 /// Decode Array of Names from Lean pointer.
-pub fn decode_name_array(ptr: *const c_void) -> Vec<Name> {
-  crate::lean::lean_array_to_vec(ptr, decode_ix_name)
+pub fn decode_name_array(obj: LeanObj) -> Vec<Name> {
+  obj.as_array().map(decode_ix_name)
 }
 
 /// Round-trip an Ix.Name: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_name(name_ptr: IxName) -> IxName {
-  let name = decode_ix_name(name_ptr.as_ptr());
+  let name = decode_ix_name(*name_ptr);
   let mut cache = LeanBuildCache::new();
   build_name(&mut cache, &name)
 }

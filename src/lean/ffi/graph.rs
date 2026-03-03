@@ -2,14 +2,14 @@
 
 use std::sync::Arc;
 
-use super::{ffi_io_guard, io_ok};
+use crate::lean::ffi::{ffi_io_guard, io_ok};
 use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
 use crate::lean::obj::{LeanArray, LeanCtor, LeanObj};
 
-use super::builder::LeanBuildCache;
-use super::ix::name::build_name;
-use super::lean_env::lean_ptr_to_env;
+use crate::lean::ffi::builder::LeanBuildCache;
+use crate::lean::ffi::ix::name::build_name;
+use crate::lean::ffi::lean_env::lean_ptr_to_env;
 
 /// Build an Array (Ix.Name × Array Ix.Name) from a RefMap.
 pub fn build_ref_graph_array(
@@ -96,7 +96,7 @@ pub fn build_condensed_blocks(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_build_ref_graph(env_consts_ptr: LeanObj) -> LeanObj {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
-    let rust_env = lean_ptr_to_env(env_consts_ptr.as_ptr());
+    let rust_env = lean_ptr_to_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
     let ref_graph = build_ref_graph(&rust_env);
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
@@ -109,7 +109,7 @@ pub extern "C" fn rs_build_ref_graph(env_consts_ptr: LeanObj) -> LeanObj {
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compute_sccs(env_consts_ptr: LeanObj) -> LeanObj {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
-    let rust_env = lean_ptr_to_env(env_consts_ptr.as_ptr());
+    let rust_env = lean_ptr_to_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
     let ref_graph = build_ref_graph(&rust_env);
     let condensed = compute_sccs(&ref_graph.out_refs);

@@ -1,5 +1,3 @@
-use std::ffi::c_void;
-
 use multi_stark::p3_field::PrimeCharacteristicRing;
 
 use crate::{
@@ -8,131 +6,133 @@ use crate::{
     G,
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
   },
-  lean::{
-    ffi::aiur::{lean_unbox_g, lean_unbox_nat_as_usize},
-    lean_array_to_vec, lean_ctor_objs, lean_is_scalar, lean_obj_to_string,
-    lean_tag,
-  },
+  lean::obj::LeanObj,
 };
 
-fn lean_ptr_to_vec_val_idx(ptr: *const c_void) -> Vec<ValIdx> {
-  lean_array_to_vec(ptr, lean_unbox_nat_as_usize)
+use crate::lean::ffi::aiur::{lean_unbox_g, lean_unbox_nat_as_usize};
+
+fn lean_ptr_to_vec_val_idx(obj: LeanObj) -> Vec<ValIdx> {
+  obj.as_array().map(lean_unbox_nat_as_usize)
 }
 
-fn lean_ptr_to_op(ptr: *const c_void) -> Op {
-  match lean_tag(ptr) {
+fn lean_ptr_to_op(obj: LeanObj) -> Op {
+  let ctor = obj.as_ctor();
+  match ctor.tag() {
     0 => {
-      let [const_val_ptr] = lean_ctor_objs(ptr);
-      Op::Const(G::from_u64(const_val_ptr as u64))
+      let [const_val] = ctor.objs::<1>();
+      Op::Const(G::from_u64(const_val.as_ptr() as u64))
     },
     1 => {
-      let [a_ptr, b_ptr] = lean_ctor_objs(ptr);
-      Op::Add(lean_unbox_nat_as_usize(a_ptr), lean_unbox_nat_as_usize(b_ptr))
+      let [a, b] = ctor.objs::<2>();
+      Op::Add(lean_unbox_nat_as_usize(a), lean_unbox_nat_as_usize(b))
     },
     2 => {
-      let [a_ptr, b_ptr] = lean_ctor_objs(ptr);
-      Op::Sub(lean_unbox_nat_as_usize(a_ptr), lean_unbox_nat_as_usize(b_ptr))
+      let [a, b] = ctor.objs::<2>();
+      Op::Sub(lean_unbox_nat_as_usize(a), lean_unbox_nat_as_usize(b))
     },
     3 => {
-      let [a_ptr, b_ptr] = lean_ctor_objs(ptr);
-      Op::Mul(lean_unbox_nat_as_usize(a_ptr), lean_unbox_nat_as_usize(b_ptr))
+      let [a, b] = ctor.objs::<2>();
+      Op::Mul(lean_unbox_nat_as_usize(a), lean_unbox_nat_as_usize(b))
     },
     4 => {
-      let [a_ptr] = lean_ctor_objs(ptr);
-      Op::EqZero(lean_unbox_nat_as_usize(a_ptr))
+      let [a] = ctor.objs::<1>();
+      Op::EqZero(lean_unbox_nat_as_usize(a))
     },
     5 => {
-      let [fun_idx_ptr, val_idxs_ptr, output_size_ptr] = lean_ctor_objs(ptr);
-      let fun_idx = lean_unbox_nat_as_usize(fun_idx_ptr);
-      let val_idxs = lean_ptr_to_vec_val_idx(val_idxs_ptr);
-      let output_size = lean_unbox_nat_as_usize(output_size_ptr);
+      let [fun_idx, val_idxs, output_size] = ctor.objs::<3>();
+      let fun_idx = lean_unbox_nat_as_usize(fun_idx);
+      let val_idxs = lean_ptr_to_vec_val_idx(val_idxs);
+      let output_size = lean_unbox_nat_as_usize(output_size);
       Op::Call(fun_idx, val_idxs, output_size)
     },
     6 => {
-      let [val_idxs_ptr] = lean_ctor_objs(ptr);
-      Op::Store(lean_ptr_to_vec_val_idx(val_idxs_ptr))
+      let [val_idxs] = ctor.objs::<1>();
+      Op::Store(lean_ptr_to_vec_val_idx(val_idxs))
     },
     7 => {
-      let [width_ptr, val_idx_ptr] = lean_ctor_objs(ptr);
+      let [width, val_idx] = ctor.objs::<2>();
       Op::Load(
-        lean_unbox_nat_as_usize(width_ptr),
-        lean_unbox_nat_as_usize(val_idx_ptr),
+        lean_unbox_nat_as_usize(width),
+        lean_unbox_nat_as_usize(val_idx),
       )
     },
     8 => {
-      let [as_ptr, bs_ptr] = lean_ctor_objs(ptr);
+      let [a, b] = ctor.objs::<2>();
       Op::AssertEq(
-        lean_ptr_to_vec_val_idx(as_ptr),
-        lean_ptr_to_vec_val_idx(bs_ptr),
+        lean_ptr_to_vec_val_idx(a),
+        lean_ptr_to_vec_val_idx(b),
       )
     },
     9 => {
-      let [key_ptr] = lean_ctor_objs(ptr);
-      Op::IOGetInfo(lean_ptr_to_vec_val_idx(key_ptr))
+      let [key] = ctor.objs::<1>();
+      Op::IOGetInfo(lean_ptr_to_vec_val_idx(key))
     },
     10 => {
-      let [key_ptr, idx_ptr, len_ptr] = lean_ctor_objs(ptr);
+      let [key, idx, len] = ctor.objs::<3>();
       Op::IOSetInfo(
-        lean_ptr_to_vec_val_idx(key_ptr),
-        lean_unbox_nat_as_usize(idx_ptr),
-        lean_unbox_nat_as_usize(len_ptr),
+        lean_ptr_to_vec_val_idx(key),
+        lean_unbox_nat_as_usize(idx),
+        lean_unbox_nat_as_usize(len),
       )
     },
     11 => {
-      let [idx_ptr, len_ptr] = lean_ctor_objs(ptr);
+      let [idx, len] = ctor.objs::<2>();
       Op::IORead(
-        lean_unbox_nat_as_usize(idx_ptr),
-        lean_unbox_nat_as_usize(len_ptr),
+        lean_unbox_nat_as_usize(idx),
+        lean_unbox_nat_as_usize(len),
       )
     },
     12 => {
-      let [data_ptr] = lean_ctor_objs(ptr);
-      Op::IOWrite(lean_ptr_to_vec_val_idx(data_ptr))
+      let [data] = ctor.objs::<1>();
+      Op::IOWrite(lean_ptr_to_vec_val_idx(data))
     },
     13 => {
-      let [byte_ptr] = lean_ctor_objs(ptr);
-      Op::U8BitDecomposition(lean_unbox_nat_as_usize(byte_ptr))
+      let [byte] = ctor.objs::<1>();
+      Op::U8BitDecomposition(lean_unbox_nat_as_usize(byte))
     },
     14 => {
-      let [byte_ptr] = lean_ctor_objs(ptr);
-      Op::U8ShiftLeft(lean_unbox_nat_as_usize(byte_ptr))
+      let [byte] = ctor.objs::<1>();
+      Op::U8ShiftLeft(lean_unbox_nat_as_usize(byte))
     },
     15 => {
-      let [byte_ptr] = lean_ctor_objs(ptr);
-      Op::U8ShiftRight(lean_unbox_nat_as_usize(byte_ptr))
+      let [byte] = ctor.objs::<1>();
+      Op::U8ShiftRight(lean_unbox_nat_as_usize(byte))
     },
     16 => {
-      let [i, j] = lean_ctor_objs::<2>(ptr).map(lean_unbox_nat_as_usize);
+      let [i, j] = ctor.objs::<2>().map(lean_unbox_nat_as_usize);
       Op::U8Xor(i, j)
     },
     17 => {
-      let [i, j] = lean_ctor_objs::<2>(ptr).map(lean_unbox_nat_as_usize);
+      let [i, j] = ctor.objs::<2>().map(lean_unbox_nat_as_usize);
       Op::U8Add(i, j)
     },
     18 => {
-      let [i, j] = lean_ctor_objs::<2>(ptr).map(lean_unbox_nat_as_usize);
+      let [i, j] = ctor.objs::<2>().map(lean_unbox_nat_as_usize);
       Op::U8Sub(i, j)
     },
     19 => {
-      let [i, j] = lean_ctor_objs::<2>(ptr).map(lean_unbox_nat_as_usize);
+      let [i, j] = ctor.objs::<2>().map(lean_unbox_nat_as_usize);
       Op::U8And(i, j)
     },
     20 => {
-      let [i, j] = lean_ctor_objs::<2>(ptr).map(lean_unbox_nat_as_usize);
+      let [i, j] = ctor.objs::<2>().map(lean_unbox_nat_as_usize);
       Op::U8Or(i, j)
     },
     21 => {
-      let [i, j] = lean_ctor_objs::<2>(ptr).map(lean_unbox_nat_as_usize);
+      let [i, j] = ctor.objs::<2>().map(lean_unbox_nat_as_usize);
       Op::U8LessThan(i, j)
     },
     22 => {
-      let [label_ptr, idxs_ptr] = lean_ctor_objs(ptr);
-      let label = lean_obj_to_string(label_ptr);
-      let idxs = if lean_is_scalar(idxs_ptr) {
+      let [label_obj, idxs_obj] = ctor.objs::<2>();
+      let label = label_obj.as_string().to_string();
+      let idxs = if idxs_obj.is_scalar() {
         None
       } else {
-        let [idxs_ptr] = lean_ctor_objs(idxs_ptr);
-        Some(lean_array_to_vec(idxs_ptr, lean_unbox_nat_as_usize))
+        let inner_ctor = idxs_obj.as_ctor();
+        Some(
+          inner_ctor.get(0).as_array()
+            .map(lean_unbox_nat_as_usize),
+        )
       };
       Op::Debug(label, idxs)
     },
@@ -140,72 +140,78 @@ fn lean_ptr_to_op(ptr: *const c_void) -> Op {
   }
 }
 
-fn lean_ptr_to_g_block_pair(ptr: *const c_void) -> (G, Block) {
-  let [g_ptr, block_ptr] = lean_ctor_objs(ptr);
-  let g = lean_unbox_g(g_ptr);
-  let block = lean_ptr_to_block(block_ptr);
+fn lean_ptr_to_g_block_pair(obj: LeanObj) -> (G, Block) {
+  let ctor = obj.as_ctor();
+  let [g_obj, block_obj] = ctor.objs::<2>();
+  let g = lean_unbox_g(g_obj);
+  let block = lean_ptr_to_block(block_obj);
   (g, block)
 }
 
-fn lean_ptr_to_ctrl(ptr: *const c_void) -> Ctrl {
-  match lean_tag(ptr) {
+fn lean_ptr_to_ctrl(obj: LeanObj) -> Ctrl {
+  let ctor = obj.as_ctor();
+  match ctor.tag() {
     0 => {
-      let [val_idx_ptr, cases_ptr, default_ptr] = lean_ctor_objs(ptr);
-      let val_idx = lean_unbox_nat_as_usize(val_idx_ptr);
-      let vec_cases = lean_array_to_vec(cases_ptr, lean_ptr_to_g_block_pair);
+      let [val_idx_obj, cases_obj, default_obj] = ctor.objs::<3>();
+      let val_idx = lean_unbox_nat_as_usize(val_idx_obj);
+      let vec_cases =
+        cases_obj.as_array().map(lean_ptr_to_g_block_pair);
       let cases = FxIndexMap::from_iter(vec_cases);
-      let default = if lean_is_scalar(default_ptr) {
+      let default = if default_obj.is_scalar() {
         None
       } else {
-        let [block_ptr] = lean_ctor_objs(default_ptr);
-        let block = lean_ptr_to_block(block_ptr);
+        let inner_ctor = default_obj.as_ctor();
+        let block = lean_ptr_to_block(inner_ctor.get(0));
         Some(Box::new(block))
       };
       Ctrl::Match(val_idx, cases, default)
     },
     1 => {
-      let [sel_idx_ptr, val_idxs_ptr] = lean_ctor_objs(ptr);
-      let sel_idx = lean_unbox_nat_as_usize(sel_idx_ptr);
-      let val_idxs = lean_ptr_to_vec_val_idx(val_idxs_ptr);
+      let [sel_idx_obj, val_idxs_obj] = ctor.objs::<2>();
+      let sel_idx = lean_unbox_nat_as_usize(sel_idx_obj);
+      let val_idxs = lean_ptr_to_vec_val_idx(val_idxs_obj);
       Ctrl::Return(sel_idx, val_idxs)
     },
     _ => unreachable!(),
   }
 }
 
-fn lean_ptr_to_block(ptr: *const c_void) -> Block {
-  let [ops_ptr, ctrl_ptr, min_sel_included_ptr, max_sel_excluded_ptr] =
-    lean_ctor_objs(ptr);
-  let ops = lean_array_to_vec(ops_ptr, lean_ptr_to_op);
-  let ctrl = lean_ptr_to_ctrl(ctrl_ptr);
-  let min_sel_included = lean_unbox_nat_as_usize(min_sel_included_ptr);
-  let max_sel_excluded = lean_unbox_nat_as_usize(max_sel_excluded_ptr);
+fn lean_ptr_to_block(obj: LeanObj) -> Block {
+  let ctor = obj.as_ctor();
+  let [ops_obj, ctrl_obj, min_sel_obj, max_sel_obj] = ctor.objs::<4>();
+  let ops = ops_obj.as_array().map(lean_ptr_to_op);
+  let ctrl = lean_ptr_to_ctrl(ctrl_obj);
+  let min_sel_included = lean_unbox_nat_as_usize(min_sel_obj);
+  let max_sel_excluded = lean_unbox_nat_as_usize(max_sel_obj);
   Block { ops, ctrl, min_sel_included, max_sel_excluded }
 }
 
-fn lean_ptr_to_function_layout(ptr: *const c_void) -> FunctionLayout {
-  let [input_size_ptr, selectors_ptr, auxiliaries_ptr, lookups_ptr] =
-    lean_ctor_objs(ptr);
+fn lean_ptr_to_function_layout(obj: LeanObj) -> FunctionLayout {
+  let ctor = obj.as_ctor();
+  let [input_size, selectors, auxiliaries, lookups] = ctor.objs::<4>();
   FunctionLayout {
-    input_size: lean_unbox_nat_as_usize(input_size_ptr),
-    selectors: lean_unbox_nat_as_usize(selectors_ptr),
-    auxiliaries: lean_unbox_nat_as_usize(auxiliaries_ptr),
-    lookups: lean_unbox_nat_as_usize(lookups_ptr),
+    input_size: lean_unbox_nat_as_usize(input_size),
+    selectors: lean_unbox_nat_as_usize(selectors),
+    auxiliaries: lean_unbox_nat_as_usize(auxiliaries),
+    lookups: lean_unbox_nat_as_usize(lookups),
   }
 }
 
-fn lean_ptr_to_function(ptr: *const c_void) -> Function {
-  let [body_ptr, layout_ptr, unconstrained_ptr] = lean_ctor_objs(ptr);
-  let body = lean_ptr_to_block(body_ptr);
-  let layout = lean_ptr_to_function_layout(layout_ptr);
-  let unconstrained = unconstrained_ptr as usize != 0;
+fn lean_ptr_to_function(obj: LeanObj) -> Function {
+  let ctor = obj.as_ctor();
+  let [body_obj, layout_obj, unconstrained_obj] = ctor.objs::<3>();
+  let body = lean_ptr_to_block(body_obj);
+  let layout = lean_ptr_to_function_layout(layout_obj);
+  let unconstrained = unconstrained_obj.as_ptr() as usize != 0;
   Function { body, layout, unconstrained }
 }
 
-pub(crate) fn lean_ptr_to_toplevel(ptr: *const c_void) -> Toplevel {
-  let [functions_ptr, memory_sizes_ptr] = lean_ctor_objs(ptr);
-  let functions = lean_array_to_vec(functions_ptr, lean_ptr_to_function);
+pub(crate) fn lean_ptr_to_toplevel(obj: LeanObj) -> Toplevel {
+  let ctor = obj.as_ctor();
+  let [functions_obj, memory_sizes_obj] = ctor.objs::<2>();
+  let functions =
+    functions_obj.as_array().map(lean_ptr_to_function);
   let memory_sizes =
-    lean_array_to_vec(memory_sizes_ptr, lean_unbox_nat_as_usize);
+    memory_sizes_obj.as_array().map(lean_unbox_nat_as_usize);
   Toplevel { functions, memory_sizes }
 }

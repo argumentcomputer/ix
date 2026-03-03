@@ -42,7 +42,7 @@ rand = "0.8.5"
 quickcheck_macros = "1.0.0"
 
 [features]
-default = ["net"]
+default = []
 parallel = ["multi-stark/parallel"]
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-snafu", "n0-watcher", "rand", "tracing", "tracing-subscriber", "bincode", "serde" ]
 

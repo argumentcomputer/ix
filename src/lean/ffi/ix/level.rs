@@ -8,15 +8,12 @@
 //! - Tag 4: param (n : Name) (hash : Address)
 //! - Tag 5: mvar (n : Name) (hash : Address)
 
-use std::ffi::c_void;
-
 use crate::ix::env::{Level, LevelData};
-use crate::lean::lean::{lean_ctor_get, lean_obj_tag};
-use crate::lean::obj::{IxLevel, LeanArray, LeanCtor};
+use crate::lean::obj::{IxLevel, LeanArray, LeanCtor, LeanObj};
 
-use super::super::builder::LeanBuildCache;
-use super::address::build_address;
-use super::name::{build_name, decode_ix_name};
+use crate::lean::ffi::builder::LeanBuildCache;
+use crate::lean::ffi::ix::address::build_address;
+use crate::lean::ffi::ix::name::{build_name, decode_ix_name};
 
 /// Build a Lean Ix.Level with embedded hash.
 /// Uses caching to avoid rebuilding the same level.
@@ -91,54 +88,45 @@ pub fn build_level_array(
 }
 
 /// Decode a Lean Ix.Level to Rust Level.
-pub fn decode_ix_level(ptr: *const c_void) -> Level {
-  unsafe {
-    let tag = lean_obj_tag(ptr as *mut _);
-    match tag {
-      0 => Level::zero(),
-      1 => {
-        let x_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let x = decode_ix_level(x_ptr.cast());
-        Level::succ(x)
-      },
-      2 => {
-        let x_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let y_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let x = decode_ix_level(x_ptr.cast());
-        let y = decode_ix_level(y_ptr.cast());
-        Level::max(x, y)
-      },
-      3 => {
-        let x_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let y_ptr = lean_ctor_get(ptr as *mut _, 1);
-        let x = decode_ix_level(x_ptr.cast());
-        let y = decode_ix_level(y_ptr.cast());
-        Level::imax(x, y)
-      },
-      4 => {
-        let n_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let n = decode_ix_name(n_ptr.cast());
-        Level::param(n)
-      },
-      5 => {
-        let n_ptr = lean_ctor_get(ptr as *mut _, 0);
-        let n = decode_ix_name(n_ptr.cast());
-        Level::mvar(n)
-      },
-      _ => panic!("Invalid Ix.Level tag: {}", tag),
-    }
+pub fn decode_ix_level(obj: LeanObj) -> Level {
+  let ctor = obj.as_ctor();
+  match ctor.tag() {
+    0 => Level::zero(),
+    1 => {
+      let x = decode_ix_level(ctor.get(0));
+      Level::succ(x)
+    },
+    2 => {
+      let x = decode_ix_level(ctor.get(0));
+      let y = decode_ix_level(ctor.get(1));
+      Level::max(x, y)
+    },
+    3 => {
+      let x = decode_ix_level(ctor.get(0));
+      let y = decode_ix_level(ctor.get(1));
+      Level::imax(x, y)
+    },
+    4 => {
+      let n = decode_ix_name(ctor.get(0));
+      Level::param(n)
+    },
+    5 => {
+      let n = decode_ix_name(ctor.get(0));
+      Level::mvar(n)
+    },
+    _ => panic!("Invalid Ix.Level tag: {}", ctor.tag()),
   }
 }
 
 /// Decode Array of Levels from Lean pointer.
-pub fn decode_level_array(ptr: *const c_void) -> Vec<Level> {
-  crate::lean::lean_array_to_vec(ptr, decode_ix_level)
+pub fn decode_level_array(obj: LeanObj) -> Vec<Level> {
+  obj.as_array().map(decode_ix_level)
 }
 
 /// Round-trip an Ix.Level: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_level(level_ptr: IxLevel) -> IxLevel {
-  let level = decode_ix_level(level_ptr.as_ptr());
+  let level = decode_ix_level(*level_ptr);
   let mut cache = LeanBuildCache::new();
   build_level(&mut cache, &level)
 }
