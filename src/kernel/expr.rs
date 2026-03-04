@@ -25,19 +25,31 @@ pub enum Name {
 // Level
 // ============================================================================
 
-/// A universe level without content addressing.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Level {
+/// Internal node structure for a universe level.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LevelNode {
   /// Universe level 0 (Prop).
   Zero,
   /// Successor of a universe level.
-  Succ(Rc<Level>),
+  Succ(Level),
   /// Maximum of two universe levels.
-  Max(Rc<Level>, Rc<Level>),
+  Max(Level, Level),
   /// Impredicative maximum of two universe levels.
-  Imax(Rc<Level>, Rc<Level>),
-  /// A named universe parameter.
-  Param(Name),
+  Imax(Level, Level),
+  /// A universe parameter (de Bruijn indexed).
+  Param(usize),
+}
+
+/// A universe level without content addressing.
+///
+/// Wraps `Rc<LevelNode>` so that cloning is cheap (just incrementing a reference count).
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Level(pub Rc<LevelNode>);
+
+impl From<LevelNode> for Level {
+  fn from(node: LevelNode) -> Self {
+    Level(Rc::new(node))
+  }
 }
 
 // ============================================================================

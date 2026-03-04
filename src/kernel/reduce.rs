@@ -38,59 +38,103 @@ impl Thunk {
 }
 
 // ============================================================================
-// Environment
+// Generic List
 // ============================================================================
 
-/// Internal node structure for the environment linked list.
-#[derive(Debug)]
-enum EnvNode {
-  /// Empty environment.
-  Empty,
-  /// Extended environment: most recent thunk + tail.
-  Cons(Thunk, Env),
+/// Internal node structure for a generic linked list.
+#[derive(Debug, Clone)]
+enum ListNode<T> {
+  /// Empty list.
+  Nil,
+  /// Cons cell: head element + tail.
+  Cons(T, List<T>),
 }
 
-/// A de Bruijn environment as a linked list.
+/// A generic immutable linked list.
 ///
-/// Wraps `Rc<EnvNode>` so that cloning is cheap (just incrementing a reference count).
-/// Environments are immutable linked lists where de Bruijn index `i` refers
-/// to the `i`-th element from the head.
+/// Wraps `Rc<ListNode<T>>` so that cloning is cheap (just incrementing a reference count).
 #[derive(Debug, Clone)]
-pub struct Env(Rc<EnvNode>);
+pub struct List<T>(Rc<ListNode<T>>);
 
-impl Env {
-  /// Creates an empty environment.
+impl<T> List<T> {
+  /// Creates an empty list.
   pub fn new() -> Self {
-    Env(Rc::new(EnvNode::Empty))
+    List(Rc::new(ListNode::Nil))
   }
 
-  /// Extends the environment with a new thunk, returning a new environment.
+  /// Extends the list with a new element at the head, returning a new list.
   ///
   /// This is O(1) and shares the tail via Rc.
-  pub fn extend(&self, thunk: Thunk) -> Self {
-    Env(Rc::new(EnvNode::Cons(thunk, self.clone())))
+  pub fn cons(&self, elem: T) -> Self {
+    List(Rc::new(ListNode::Cons(elem, List(self.0.clone()))))
   }
 
-  /// Looks up a de Bruijn index in the environment.
+  /// Looks up a de Bruijn index in the list.
   ///
-  /// De Bruijn index 0 refers to the most recently bound variable (head),
+  /// De Bruijn index 0 refers to the most recently added element (head),
   /// index 1 refers to the next, etc.
-  pub fn lookup(&self, idx: usize) -> Option<&Thunk> {
+  pub fn lookup(&self, idx: usize) -> Option<&T> {
     let mut current = &*self.0;
     let mut i = idx;
 
     loop {
       match current {
-        EnvNode::Empty => return None,
-        EnvNode::Cons(thunk, rest) => {
+        ListNode::Nil => return None,
+        ListNode::Cons(elem, rest) => {
           if i == 0 {
-            return Some(thunk);
+            return Some(elem);
           }
           i -= 1;
           current = &*rest.0;
         },
       }
     }
+  }
+}
+
+impl<T> Default for List<T> {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
+// ============================================================================
+// Environment
+// ============================================================================
+
+/// A de Bruijn environment containing both value thunks and universe levels.
+#[derive(Debug, Clone)]
+pub struct Env {
+  /// Value environment (de Bruijn indexed thunks).
+  pub values: List<Thunk>,
+  /// Level environment (de Bruijn indexed universe levels).
+  pub levels: List<Level>,
+}
+
+impl Env {
+  /// Creates an empty environment.
+  pub fn new() -> Self {
+    Env { values: List::new(), levels: List::new() }
+  }
+
+  /// Extends the value environment with a new thunk.
+  pub fn cons_value(&self, thunk: Thunk) -> Self {
+    Env { values: self.values.cons(thunk), levels: self.levels.clone() }
+  }
+
+  /// Extends the level environment with a new level.
+  pub fn cons_level(&self, level: Level) -> Self {
+    Env { values: self.values.clone(), levels: self.levels.cons(level) }
+  }
+
+  /// Looks up a value by de Bruijn index.
+  pub fn lookup_value(&self, idx: usize) -> Option<&Thunk> {
+    self.values.lookup(idx)
+  }
+
+  /// Looks up a level by de Bruijn index.
+  pub fn lookup_level(&self, idx: usize) -> Option<&Level> {
+    self.levels.lookup(idx)
   }
 }
 
@@ -191,7 +235,7 @@ pub fn force(thunk: &Thunk, toplevel: &Toplevel) -> Value {
     }
   };
 
-  // Evaluate the expression
+  // Evaluate the expression with the thunk's captured environment
   let value = eval(expr, env, toplevel);
   drop(node);
 
@@ -199,6 +243,91 @@ pub fn force(thunk: &Thunk, toplevel: &Toplevel) -> Value {
   *thunk.0.borrow_mut() = ThunkNode::Forced(value.clone());
 
   value
+}
+
+// ============================================================================
+// Level Reduction
+// ============================================================================
+
+/// Reduces a universe level to normal form.
+///
+/// Level reduction implements:
+/// - `Max(a, b)`: Maximum of two levels
+/// - `IMax(a, b)`: Impredicative maximum (like Max if b is Succ, but Zero if b is Zero)
+/// - `Param(idx)`: Lookup in level environment by de Bruijn index
+pub fn level_reduce(level: &Level, env: &Env) -> Level {
+  match level.0.as_ref() {
+    LevelNode::Zero => LevelNode::Zero.into(),
+
+    LevelNode::Succ(l) => {
+      let reduced = level_reduce(l, env);
+      LevelNode::Succ(reduced).into()
+    },
+
+    LevelNode::Max(l1, l2) => {
+      let r1 = level_reduce(l1, env);
+      let r2 = level_reduce(l2, env);
+      level_max(&r1, &r2)
+    },
+
+    LevelNode::Imax(l1, l2) => {
+      let r1 = level_reduce(l1, env);
+      let r2 = level_reduce(l2, env);
+      level_imax(&r1, &r2)
+    },
+
+    LevelNode::Param(idx) => {
+      // Look up the parameter in the level environment
+      match env.lookup_level(*idx) {
+        Some(level) => level.clone(),
+        // Unbound level parameter - should never happen in well-formed terms
+        None => panic!("Unbound level parameter: {}", idx),
+      }
+    },
+  }
+}
+
+/// Computes the maximum of two reduced levels.
+fn level_max(l1: &Level, l2: &Level) -> Level {
+  match (l1.0.as_ref(), l2.0.as_ref()) {
+    // max(0, l) = l
+    (LevelNode::Zero, _) => l2.clone(),
+    // max(l, 0) = l
+    (_, LevelNode::Zero) => l1.clone(),
+
+    // max(succ(a), succ(b)) = succ(max(a, b))
+    (LevelNode::Succ(a), LevelNode::Succ(b)) => {
+      let max_inner = level_max(a, b);
+      LevelNode::Succ(max_inner).into()
+    },
+
+    // max(max(a, b), c) = max(a, max(b, c)) (associativity, flatten)
+    (LevelNode::Max(a, b), _) => {
+      let max_bc = level_max(b, l2);
+      level_max(a, &max_bc)
+    },
+
+    // can't reduce further
+    _ => LevelNode::Max(l1.clone(), l2.clone()).into(),
+  }
+}
+
+/// Computes the impredicative maximum of two reduced levels.
+///
+/// IMax is like Max when the second argument is a successor,
+/// but reduces to Zero when the second argument is Zero.
+/// This is used for universe-polymorphic definitions in Prop.
+fn level_imax(l1: &Level, l2: &Level) -> Level {
+  match (l1.0.as_ref(), l2.0.as_ref()) {
+    // imax(0, l) = l and imax(l, 0) = 0
+    (LevelNode::Zero, _) | (_, LevelNode::Zero) => l2.clone(),
+
+    // imax(a, succ(b)) = max(a, succ(b))
+    (_, LevelNode::Succ(_)) => level_max(l1, l2),
+
+    // can't reduce further
+    _ => LevelNode::Imax(l1.clone(), l2.clone()).into(),
+  }
 }
 
 // ============================================================================
@@ -214,7 +343,7 @@ pub fn eval(expr: &Expr, env: &Env, toplevel: &Toplevel) -> Value {
   match expr.0.as_ref() {
     ExprNode::Bvar(idx) => {
       // Look up the de Bruijn index in the environment and force the thunk
-      match env.lookup(*idx) {
+      match env.lookup_value(*idx) {
         Some(thunk) => force(thunk, toplevel),
         // Unbound de Bruijn index - should never happen in well-formed terms
         None => panic!("Unbound de Bruijn index: {}", idx),
@@ -227,8 +356,9 @@ pub fn eval(expr: &Expr, env: &Env, toplevel: &Toplevel) -> Value {
     },
 
     ExprNode::Sort(level) => {
-      // Sorts are already values
-      ValueNode::Sort(level.clone()).into()
+      // Reduce the universe level
+      let reduced_level = level_reduce(level, env);
+      ValueNode::Sort(reduced_level).into()
     },
 
     ExprNode::Const(idx, levels) => {
@@ -285,7 +415,7 @@ pub fn eval(expr: &Expr, env: &Env, toplevel: &Toplevel) -> Value {
     ExprNode::LetE(_name, _ty, val, body, _non_dep) => {
       // Let-binding: suspend the bound value (lazy evaluation)
       let thunk = suspend(val.clone(), env.clone());
-      let new_env = env.extend(thunk);
+      let new_env = env.cons_value(thunk);
       eval(body, &new_env, toplevel)
     },
 
@@ -337,7 +467,7 @@ pub fn apply(fun: &Value, arg_thunk: Thunk, toplevel: &Toplevel) -> Value {
     ValueNode::Fun(_name, _ty, body, env, _binder_info) => {
       // Beta reduction: extend the closure's environment with the suspended thunk
       // The argument will only be evaluated when/if it's actually used
-      let new_env = env.extend(arg_thunk);
+      let new_env = env.cons_value(arg_thunk);
       eval(body, &new_env, toplevel)
     },
 
@@ -382,14 +512,14 @@ pub fn quote(val: &Value, level: usize, toplevel: &Toplevel) -> Expr {
       let fresh_thunk = Thunk::forced(
         ValueNode::Neutral(NeutralNode::Fvar(level).into()).into(),
       );
-      let new_env = env.extend(fresh_thunk);
+      let new_env = env.cons_value(fresh_thunk);
       let body_val = eval(body, &new_env, toplevel);
       let quoted_body = quote(&body_val, level + 1, toplevel);
       ExprNode::Lam(name.clone(), quoted_ty, quoted_body, binder_info.clone())
         .into()
     },
 
-    ValueNode::Sort(l) => ExprNode::Sort(l.clone()).into(),
+    ValueNode::Sort(level) => ExprNode::Sort(level.clone()).into(),
 
     ValueNode::Forall(name, ty_thunk, body, env, binder_info) => {
       // Force the type thunk and quote it
@@ -399,7 +529,7 @@ pub fn quote(val: &Value, level: usize, toplevel: &Toplevel) -> Expr {
       let fresh_thunk = Thunk::forced(
         ValueNode::Neutral(NeutralNode::Fvar(level).into()).into(),
       );
-      let new_env = env.extend(fresh_thunk);
+      let new_env = env.cons_value(fresh_thunk);
       let body_val = eval(body, &new_env, toplevel);
       let quoted_body = quote(&body_val, level + 1, toplevel);
       ExprNode::ForallE(
@@ -469,7 +599,7 @@ mod tests {
     // Create identity function: λx. x
     let identity = ExprNode::Lam(
       Name::Anonymous,
-      ExprNode::Sort(Level::Zero).into(),
+      ExprNode::Sort(LevelNode::Zero.into()).into(),
       ExprNode::Bvar(0).into(),
       BinderInfo::Default,
     )
@@ -600,5 +730,99 @@ mod tests {
       },
       _ => panic!("Expected constant reference, got {:?}", normalized),
     }
+  }
+
+  #[test]
+  fn test_level_max_reduction() {
+    // max(0, 1) = 1
+    let zero: Level = LevelNode::Zero.into();
+    let one: Level = LevelNode::Succ(zero.clone()).into();
+    let max_0_1: Level = LevelNode::Max(zero.clone(), one.clone()).into();
+
+    let reduced = level_reduce(&max_0_1, &Env::new());
+    assert_eq!(reduced, one);
+
+    // max(1, 0) = 1
+    let max_1_0: Level = LevelNode::Max(one.clone(), zero.clone()).into();
+    let reduced = level_reduce(&max_1_0, &Env::new());
+    assert_eq!(reduced, one);
+
+    // max(succ(a), succ(b)) = succ(max(a, b))
+    let two: Level = LevelNode::Succ(one.clone()).into();
+    let three: Level = LevelNode::Succ(two.clone()).into();
+    let max_2_3: Level = LevelNode::Max(two.clone(), three.clone()).into();
+    let reduced = level_reduce(&max_2_3, &Env::new());
+    assert_eq!(reduced, three);
+  }
+
+  #[test]
+  fn test_level_imax_reduction() {
+    // imax(a, 0) = 0 (impredicativity)
+    let zero: Level = LevelNode::Zero.into();
+    let one: Level = LevelNode::Succ(zero.clone()).into();
+    let imax_1_0: Level = LevelNode::Imax(one.clone(), zero.clone()).into();
+
+    let reduced = level_reduce(&imax_1_0, &Env::new());
+    assert_eq!(reduced, zero);
+
+    // imax(0, succ(b)) = succ(b)
+    let imax_0_1: Level = LevelNode::Imax(zero.clone(), one.clone()).into();
+    let reduced = level_reduce(&imax_0_1, &Env::new());
+    assert_eq!(reduced, one);
+
+    // imax(succ(a), succ(b)) = succ(max(a, b))
+    let two: Level = LevelNode::Succ(one.clone()).into();
+    let imax_1_2: Level = LevelNode::Imax(one.clone(), two.clone()).into();
+    let reduced = level_reduce(&imax_1_2, &Env::new());
+    assert_eq!(reduced, two);
+  }
+
+  #[test]
+  fn test_sort_reduction() {
+    // Sort with max(0, 1) should reduce to Sort 1
+    let zero: Level = LevelNode::Zero.into();
+    let one: Level = LevelNode::Succ(zero.clone()).into();
+    let max_0_1: Level = LevelNode::Max(zero, one.clone()).into();
+
+    let sort_expr = ExprNode::Sort(max_0_1).into();
+    let toplevel = Toplevel { constants: vec![] };
+
+    let normalized = normalize(&sort_expr, &toplevel);
+
+    match normalized.0.as_ref() {
+      ExprNode::Sort(level) => {
+        assert_eq!(*level, one);
+      },
+      _ => panic!("Expected sort, got {:?}", normalized),
+    }
+  }
+
+  #[test]
+  fn test_level_param_lookup() {
+    // Create an environment with two level parameters
+    // levels[0] = 1, levels[1] = 2
+    let zero: Level = LevelNode::Zero.into();
+    let one: Level = LevelNode::Succ(zero.clone()).into();
+    let two: Level = LevelNode::Succ(one.clone()).into();
+
+    let env = Env::new()
+      .cons_level(one.clone())  // levels[0] = 1
+      .cons_level(two.clone()); // levels[1] = 2
+
+    // Param(0) should reduce to 2 (most recent)
+    let param_0: Level = LevelNode::Param(0).into();
+    let reduced = level_reduce(&param_0, &env);
+    assert_eq!(reduced, two);
+
+    // Param(1) should reduce to 1
+    let param_1: Level = LevelNode::Param(1).into();
+    let reduced = level_reduce(&param_1, &env);
+    assert_eq!(reduced, one);
+
+    // Max(Param(0), Param(1)) = max(2, 1) = 2
+    let max_params: Level =
+      LevelNode::Max(param_0.clone(), param_1.clone()).into();
+    let reduced = level_reduce(&max_params, &env);
+    assert_eq!(reduced, two);
   }
 }
