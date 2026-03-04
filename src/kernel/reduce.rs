@@ -181,7 +181,7 @@ pub fn suspend(expr: Expr, env: Env) -> Thunk {
 /// If the thunk is already forced, returns the cached value.
 /// If suspended, evaluates the expression in its captured environment,
 /// updates the thunk to cache the result (memoization), and returns the value.
-pub fn force(thunk: &Thunk) -> Value {
+pub fn force(thunk: &Thunk, toplevel: &Toplevel) -> Value {
   // Need to evaluate - extract expr and env
   let node = thunk.0.borrow();
   let (expr, env) = {
@@ -192,7 +192,7 @@ pub fn force(thunk: &Thunk) -> Value {
   };
 
   // Evaluate the expression
-  let value = eval(expr, env);
+  let value = eval(expr, env, toplevel);
   drop(node);
 
   // Memoize: update the thunk to store the computed value
@@ -210,12 +210,12 @@ pub fn force(thunk: &Thunk) -> Value {
 /// This performs weak head normalization - it reduces the expression
 /// until the head constructor is visible, but doesn't normalize under
 /// binders or reduce arguments.
-pub fn eval(expr: &Expr, env: &Env) -> Value {
+pub fn eval(expr: &Expr, env: &Env, toplevel: &Toplevel) -> Value {
   match expr.0.as_ref() {
     ExprNode::Bvar(idx) => {
       // Look up the de Bruijn index in the environment and force the thunk
       match env.lookup(*idx) {
-        Some(thunk) => force(thunk),
+        Some(thunk) => force(thunk, toplevel),
         // Unbound de Bruijn index - should never happen in well-formed terms
         None => panic!("Unbound de Bruijn index: {}", idx),
       }
@@ -232,16 +232,27 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
     },
 
     ExprNode::Const(idx, levels) => {
-      // Constants might be reducible in a global environment
-      // For now, treat as values (would need global env to unfold definitions)
-      ValueNode::Const(*idx, levels.clone()).into()
+      // Look up the constant in the toplevel environment
+      match toplevel.constants.get(*idx) {
+        None => panic!("Unbound constant {}", idx),
+        Some(ConstantInfo::DefnInfo(defn))
+          if defn.hints != ReducibilityHints::Opaque =>
+        {
+          // Unfold abbreviations and regular definitions
+          // Evaluate the body in an empty environment (definitions are closed terms)
+          eval(&defn.value, &Env::new(), toplevel)
+        },
+        // Axioms, quotients, inductives, constructors, recursors: no body to unfold
+        // Opaques are never unfolded. Theorems are proof-irrelevant.
+        _ => ValueNode::Const(*idx, levels.clone()).into(),
+      }
     },
 
     ExprNode::App(fun, arg) => {
       // Application: evaluate function, suspend argument (lazy evaluation)
-      let vfun = eval(fun, env);
+      let vfun = eval(fun, env, toplevel);
       let arg_thunk = suspend(arg.clone(), env.clone());
-      apply(&vfun, arg_thunk)
+      apply(&vfun, arg_thunk, toplevel)
     },
 
     ExprNode::Lam(name, ty, body, binder_info) => {
@@ -275,7 +286,7 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
       // Let-binding: suspend the bound value (lazy evaluation)
       let thunk = suspend(val.clone(), env.clone());
       let new_env = env.extend(thunk);
-      eval(body, &new_env)
+      eval(body, &new_env, toplevel)
     },
 
     ExprNode::Lit(lit) => {
@@ -284,7 +295,7 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
     },
 
     ExprNode::Proj(type_idx, field_idx, e) => {
-      let v = eval(e, env);
+      let v = eval(e, env, toplevel);
       match v.0.as_ref() {
         ValueNode::Neutral(n) => {
           // Projection from a neutral value is stuck
@@ -321,13 +332,13 @@ pub fn eval(expr: &Expr, env: &Env) -> Value {
 /// suspended argument thunk and evaluate the body. The argument is only
 /// evaluated when actually needed (via Bvar lookup and force).
 /// If it's neutral, we create a stuck application (App).
-pub fn apply(fun: &Value, arg_thunk: Thunk) -> Value {
+pub fn apply(fun: &Value, arg_thunk: Thunk, toplevel: &Toplevel) -> Value {
   match fun.0.as_ref() {
     ValueNode::Fun(_name, _ty, body, env, _binder_info) => {
       // Beta reduction: extend the closure's environment with the suspended thunk
       // The argument will only be evaluated when/if it's actually used
       let new_env = env.extend(arg_thunk);
-      eval(body, &new_env)
+      eval(body, &new_env, toplevel)
     },
 
     ValueNode::Neutral(n) => {
@@ -338,6 +349,7 @@ pub fn apply(fun: &Value, arg_thunk: Thunk) -> Value {
 
     // Other values cannot be applied (would be a type error in well-typed terms)
     // In a well-typed program, we should never apply a non-function value
+    // TODO: Implement recursor reduction (iota reduction)
     _ => {
       // Conservative fallback: treat as a stuck application
       // Keep the argument as a thunk
@@ -358,21 +370,21 @@ pub fn apply(fun: &Value, arg_thunk: Thunk) -> Value {
 /// The level parameter tracks how many binders we've gone under during quotation.
 /// This is needed to convert values (which use environments) back to expressions
 /// (which use de Bruijn indices).
-pub fn quote(val: &Value, level: usize) -> Expr {
+pub fn quote(val: &Value, level: usize, toplevel: &Toplevel) -> Expr {
   match val.0.as_ref() {
-    ValueNode::Neutral(n) => quote_neutral(n, level),
+    ValueNode::Neutral(n) => quote_neutral(n, level, toplevel),
 
     ValueNode::Fun(name, ty_thunk, body, env, binder_info) => {
       // Quote a lambda: force and quote the type, then quote the body
-      let ty_val = force(ty_thunk);
-      let quoted_ty = quote(&ty_val, level);
+      let ty_val = force(ty_thunk, toplevel);
+      let quoted_ty = quote(&ty_val, level, toplevel);
       // Create a fresh variable thunk and quote the body
       let fresh_thunk = Thunk::forced(
         ValueNode::Neutral(NeutralNode::Fvar(level).into()).into(),
       );
       let new_env = env.extend(fresh_thunk);
-      let body_val = eval(body, &new_env);
-      let quoted_body = quote(&body_val, level + 1);
+      let body_val = eval(body, &new_env, toplevel);
+      let quoted_body = quote(&body_val, level + 1, toplevel);
       ExprNode::Lam(name.clone(), quoted_ty, quoted_body, binder_info.clone())
         .into()
     },
@@ -381,15 +393,15 @@ pub fn quote(val: &Value, level: usize) -> Expr {
 
     ValueNode::Forall(name, ty_thunk, body, env, binder_info) => {
       // Force the type thunk and quote it
-      let ty_val = force(ty_thunk);
-      let quoted_ty = quote(&ty_val, level);
+      let ty_val = force(ty_thunk, toplevel);
+      let quoted_ty = quote(&ty_val, level, toplevel);
       // Evaluate body under a fresh variable thunk
       let fresh_thunk = Thunk::forced(
         ValueNode::Neutral(NeutralNode::Fvar(level).into()).into(),
       );
       let new_env = env.extend(fresh_thunk);
-      let body_val = eval(body, &new_env);
-      let quoted_body = quote(&body_val, level + 1);
+      let body_val = eval(body, &new_env, toplevel);
+      let quoted_body = quote(&body_val, level + 1, toplevel);
       ExprNode::ForallE(
         name.clone(),
         quoted_ty,
@@ -408,20 +420,20 @@ pub fn quote(val: &Value, level: usize) -> Expr {
 }
 
 /// Quotes a neutral value back to an expression.
-fn quote_neutral(neutral: &Neutral, level: usize) -> Expr {
+fn quote_neutral(neutral: &Neutral, level: usize, toplevel: &Toplevel) -> Expr {
   match neutral.0.as_ref() {
     NeutralNode::Fvar(idx) => ExprNode::Fvar(*idx).into(),
 
     NeutralNode::App(fun, arg_thunk) => {
-      let quoted_fun = quote_neutral(fun, level);
+      let quoted_fun = quote_neutral(fun, level, toplevel);
       // Force the thunk to get the value, then quote it
-      let arg_val = force(arg_thunk);
-      let quoted_arg = quote(&arg_val, level);
+      let arg_val = force(arg_thunk, toplevel);
+      let quoted_arg = quote(&arg_val, level, toplevel);
       ExprNode::App(quoted_fun, quoted_arg).into()
     },
 
     NeutralNode::Proj(type_idx, field_idx, e) => {
-      let quoted_e = quote_neutral(e, level);
+      let quoted_e = quote_neutral(e, level, toplevel);
       ExprNode::Proj(*type_idx, *field_idx, quoted_e).into()
     },
   }
@@ -435,17 +447,17 @@ fn quote_neutral(neutral: &Neutral, level: usize) -> Expr {
 /// and quoting the result back to an expression.
 ///
 /// This computes the full normal form (all redexes reduced).
-pub fn normalize(expr: &Expr) -> Expr {
-  let val = eval(expr, &Env::new());
-  quote(&val, 0)
+pub fn normalize(expr: &Expr, toplevel: &Toplevel) -> Expr {
+  let val = eval(expr, &Env::new(), toplevel);
+  quote(&val, 0, toplevel)
 }
 
 /// Reduces an expression to weak head normal form (WHNF).
 ///
 /// This only reduces until the head constructor is visible,
 /// without normalizing under binders or in arguments.
-pub fn whnf(expr: &Expr) -> Value {
-  eval(expr, &Env::new())
+pub fn whnf(expr: &Expr, toplevel: &Toplevel) -> Value {
+  eval(expr, &Env::new(), toplevel)
 }
 
 #[cfg(test)]
@@ -463,13 +475,130 @@ mod tests {
     )
     .into();
 
+    // Create an empty toplevel (no constants)
+    let toplevel = Toplevel { constants: vec![] };
+
     // Normalize should preserve it
-    let normalized = normalize(&identity);
+    let normalized = normalize(&identity, &toplevel);
 
     // Should still be a lambda
     match normalized.0.as_ref() {
       ExprNode::Lam(_, _, _, _) => {},
       _ => panic!("Expected lambda"),
+    }
+  }
+
+  #[test]
+  fn test_definition_unfolding() {
+    use crate::lean::nat::Nat;
+
+    // Create a constant that is an abbreviation for a natural number literal
+    // def myConst : Nat := 42
+    let nat_type = ExprNode::Const(1, vec![]).into(); // Assume Nat is at index 1
+    let nat_val = ExprNode::Lit(Literal::NatVal(Nat::from(42u64))).into();
+
+    let defn = ConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal {
+        name: Name::Str(Rc::new(Name::Anonymous), "myConst".to_string()),
+        level_params: vec![],
+        typ: nat_type,
+      },
+      value: nat_val,
+      hints: ReducibilityHints::Abbrev, // Should always unfold
+      safety: DefinitionSafety::Safe,
+      all: vec![],
+    });
+
+    // Create toplevel with our definition at index 0
+    let toplevel = Toplevel { constants: vec![defn] };
+
+    // Reference to our constant
+    let const_ref = ExprNode::Const(0, vec![]).into();
+
+    // Normalize should unfold the abbreviation
+    let normalized = normalize(&const_ref, &toplevel);
+
+    // Should be the literal value
+    match normalized.0.as_ref() {
+      ExprNode::Lit(Literal::NatVal(n)) => {
+        assert_eq!(n.to_u64(), Some(42));
+      },
+      _ => panic!("Expected literal nat value, got {:?}", normalized),
+    }
+  }
+
+  #[test]
+  fn test_opaque_not_unfolded() {
+    use crate::lean::nat::Nat;
+
+    // Create an opaque constant
+    // opaque myOpaque : Nat := 42
+    let nat_type = ExprNode::Const(1, vec![]).into();
+    let nat_val = ExprNode::Lit(Literal::NatVal(Nat::from(42u64))).into();
+
+    let opaque = ConstantInfo::OpaqueInfo(OpaqueVal {
+      cnst: ConstantVal {
+        name: Name::Str(Rc::new(Name::Anonymous), "myOpaque".to_string()),
+        level_params: vec![],
+        typ: nat_type,
+      },
+      value: nat_val,
+      is_unsafe: false,
+      all: vec![],
+    });
+
+    // Create toplevel with our opaque at index 0
+    let toplevel = Toplevel { constants: vec![opaque] };
+
+    // Reference to our opaque constant
+    let const_ref = ExprNode::Const(0, vec![]).into();
+
+    // Normalize should NOT unfold the opaque
+    let normalized = normalize(&const_ref, &toplevel);
+
+    // Should still be a constant reference
+    match normalized.0.as_ref() {
+      ExprNode::Const(idx, _) => {
+        assert_eq!(*idx, 0);
+      },
+      _ => panic!("Expected constant reference, got {:?}", normalized),
+    }
+  }
+
+  #[test]
+  fn test_theorem_not_unfolded() {
+    use crate::lean::nat::Nat;
+
+    // Create a theorem
+    // theorem myTheorem : Nat := 42
+    let nat_type = ExprNode::Const(1, vec![]).into();
+    let nat_val = ExprNode::Lit(Literal::NatVal(Nat::from(42u64))).into();
+
+    let theorem = ConstantInfo::ThmInfo(TheoremVal {
+      cnst: ConstantVal {
+        name: Name::Str(Rc::new(Name::Anonymous), "myTheorem".to_string()),
+        level_params: vec![],
+        typ: nat_type,
+      },
+      value: nat_val,
+      all: vec![],
+    });
+
+    // Create toplevel with our theorem at index 0
+    let toplevel = Toplevel { constants: vec![theorem] };
+
+    // Reference to our theorem
+    let const_ref = ExprNode::Const(0, vec![]).into();
+
+    // Normalize should NOT unfold theorems (proof irrelevance)
+    let normalized = normalize(&const_ref, &toplevel);
+
+    // Should still be a constant reference
+    match normalized.0.as_ref() {
+      ExprNode::Const(idx, _) => {
+        assert_eq!(*idx, 0);
+      },
+      _ => panic!("Expected constant reference, got {:?}", normalized),
     }
   }
 }
