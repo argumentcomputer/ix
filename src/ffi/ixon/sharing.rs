@@ -10,16 +10,12 @@ use crate::ix::ixon::sharing::{
 use crate::lean::LeanIxonExpr;
 use lean_ffi::object::{LeanArray, LeanByteArray};
 
-use crate::ffi::ixon::expr::decode_ixon_expr_array;
-use crate::ffi::ixon::expr::decode_ixon_expr;
-
 /// FFI: Debug sharing analysis - print usage counts for subterms with usage >= 2.
 /// This helps diagnose why Lean and Rust make different sharing decisions.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_debug_sharing_analysis(exprs_obj: LeanArray) {
-  let arr = exprs_obj;
   let exprs: Vec<Arc<IxonExpr>> =
-    arr.map(|x| Arc::new(decode_ixon_expr(LeanIxonExpr::new(x))));
+    exprs_obj.map(|x| Arc::new(LeanIxonExpr::new(x).decode()));
 
   println!("[Rust] Analyzing {} input expressions", exprs.len());
 
@@ -60,7 +56,7 @@ pub extern "C" fn rs_debug_sharing_analysis(exprs_obj: LeanArray) {
 /// Returns the number of shared items Rust would produce.
 #[unsafe(no_mangle)]
 extern "C" fn rs_analyze_sharing_count(exprs_obj: LeanArray) -> u64 {
-  let exprs = decode_ixon_expr_array(exprs_obj);
+  let exprs = LeanIxonExpr::decode_array(exprs_obj);
 
   let (info_map, _ptr_to_hash) = analyze_block(&exprs, false);
   let shared_hashes = decide_sharing(&info_map);
@@ -77,7 +73,7 @@ extern "C" fn rs_run_sharing_analysis(
   out_sharing_vec: LeanByteArray,
   out_rewritten: LeanByteArray,
 ) -> u64 {
-  let exprs = decode_ixon_expr_array(exprs_obj);
+  let exprs = LeanIxonExpr::decode_array(exprs_obj);
 
   let (info_map, ptr_to_hash) = analyze_block(&exprs, false);
   let shared_hashes = decide_sharing(&info_map);
@@ -116,10 +112,10 @@ extern "C" fn rs_compare_sharing_analysis(
   _lean_rewritten_obj: LeanArray,
 ) -> u64 {
   // Decode input expressions
-  let exprs = decode_ixon_expr_array(exprs_obj);
+  let exprs = LeanIxonExpr::decode_array(exprs_obj);
 
   // Decode Lean's sharing vector
-  let lean_sharing = decode_ixon_expr_array(lean_sharing_obj);
+  let lean_sharing = LeanIxonExpr::decode_array(lean_sharing_obj);
 
   // Run Rust's sharing analysis
   let (info_map, ptr_to_hash) = analyze_block(&exprs, false);

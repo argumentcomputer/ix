@@ -45,7 +45,9 @@ define their own constructor methods using `LeanCtor` (e.g.
 or `*const c_void` directly in an `extern "C" fn`, but this is generally
 not recommended as internal Rust functions may pass in the wrong object
 more easily, and any low-level constructors would not be hidden behind the
-API boundary.
+API boundary. To enforce this, the `From<LeanType> for LeanObject` trait is
+implemented to get the underlying `LeanObject`, but creating a wrapper type
+from a `LeanObject` requires an explicit constructor for clarity.
 
 A key concept in this design is that ownership of the data is transferred to
 Lean, making it responsible for deallocation. If the data type is intended to be

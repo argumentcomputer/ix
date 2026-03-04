@@ -75,16 +75,6 @@ impl LeanIxonUniv {
   }
 }
 
-/// Build an Array of Ixon.Univ (standalone wrapper).
-pub fn build_ixon_univ_array(univs: &[Arc<Univ>]) -> LeanArray {
-  LeanIxonUniv::build_array(univs)
-}
-
-/// Decode Array Ixon.Univ (standalone wrapper).
-pub fn decode_ixon_univ_array(obj: LeanArray) -> Vec<Arc<Univ>> {
-  LeanIxonUniv::decode_array(obj)
-}
-
 // =============================================================================
 // FFI Exports
 // =============================================================================

@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanExternal,
-  LeanObject,
+  LeanNat, LeanObject,
 };
 
 use crate::{
@@ -65,7 +65,7 @@ extern "C" fn rs_aiur_proof_of_bytes(
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_build(
   toplevel: LeanAiurToplevel,
-  commitment_parameters: LeanObject,
+  commitment_parameters: LeanNat,
 ) -> LeanExternal<AiurSystem> {
   let system = AiurSystem::build(
     decode_toplevel(toplevel),
@@ -96,13 +96,13 @@ extern "C" fn rs_aiur_system_verify(
 extern "C" fn rs_aiur_system_prove(
   aiur_system_obj: LeanExternal<AiurSystem>,
   fri_parameters: LeanAiurFriParameters,
-  fun_idx: LeanObject,
+  fun_idx: LeanNat,
   args: LeanArray,
   io_data_arr: LeanArray,
   io_map_arr: LeanArray,
 ) -> LeanObject {
   let fri_parameters = decode_fri_parameters(fri_parameters);
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx);
+  let fun_idx = lean_unbox_nat_as_usize(*fun_idx);
   let args = args.map(lean_unbox_g);
   let io_data = io_data_arr.map(lean_unbox_g);
   let io_map = decode_io_buffer_map(io_map_arr);
@@ -167,8 +167,8 @@ fn build_g_array(values: &[G]) -> LeanArray {
   arr
 }
 
-fn decode_commitment_parameters(obj: LeanObject) -> CommitmentParameters {
-  CommitmentParameters { log_blowup: lean_unbox_nat_as_usize(obj) }
+fn decode_commitment_parameters(obj: LeanNat) -> CommitmentParameters {
+  CommitmentParameters { log_blowup: lean_unbox_nat_as_usize(*obj) }
 }
 
 fn decode_fri_parameters(obj: LeanAiurFriParameters) -> FriParameters {

@@ -7,7 +7,7 @@ use crate::ix::env::Name;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
 use crate::lean::{LeanIxBlockCompareDetail, LeanIxBlockCompareResult};
-use lean_ffi::object::{LeanByteArray, LeanCtor, LeanObject};
+use lean_ffi::object::{LeanByteArray, LeanCtor, LeanList, LeanObject};
 
 use crate::ffi::lean_env::{
   Cache as LeanCache, GlobalCache, decode_expr, decode_name,
@@ -61,40 +61,44 @@ pub extern "C" fn rs_compare_expr_compilation(
   rust_bytes == lean_bytes
 }
 
-/// Build a BlockCompareResult Lean object.
-fn build_block_compare_result(
-  matched: bool,
-  not_found: bool,
-  lean_size: u64,
-  rust_size: u64,
-  first_diff_offset: u64,
-) -> LeanIxBlockCompareResult {
-  let obj = if matched {
-    *LeanCtor::alloc(0, 0, 0) // match
-  } else if not_found {
-    *LeanCtor::alloc(2, 0, 0) // notFound
-  } else {
-    // mismatch
-    let ctor = LeanCtor::alloc(1, 0, 24);
-    ctor.set_u64(0, lean_size);
-    ctor.set_u64(8, rust_size);
-    ctor.set_u64(16, first_diff_offset);
-    *ctor
-  };
-  LeanIxBlockCompareResult::new(obj)
+impl LeanIxBlockCompareResult {
+  /// Build a BlockCompareResult Lean object.
+  fn build(
+    matched: bool,
+    not_found: bool,
+    lean_size: u64,
+    rust_size: u64,
+    first_diff_offset: u64,
+  ) -> Self {
+    let obj = if matched {
+      *LeanCtor::alloc(0, 0, 0) // match
+    } else if not_found {
+      *LeanCtor::alloc(2, 0, 0) // notFound
+    } else {
+      // mismatch
+      let ctor = LeanCtor::alloc(1, 0, 24);
+      ctor.set_u64(0, lean_size);
+      ctor.set_u64(8, rust_size);
+      ctor.set_u64(16, first_diff_offset);
+      *ctor
+    };
+    Self::new(obj)
+  }
 }
 
-/// Build a BlockCompareDetail Lean object.
-fn build_block_compare_detail(
-  result: LeanIxBlockCompareResult,
-  lean_sharing_len: u64,
-  rust_sharing_len: u64,
-) -> LeanIxBlockCompareDetail {
-  let ctor = LeanCtor::alloc(0, 1, 16);
-  ctor.set(0, result);
-  ctor.set_u64(8, lean_sharing_len);
-  ctor.set_u64(8 + 8, rust_sharing_len);
-  LeanIxBlockCompareDetail::new(*ctor)
+impl LeanIxBlockCompareDetail {
+  /// Build a BlockCompareDetail Lean object.
+  fn build(
+    result: LeanIxBlockCompareResult,
+    lean_sharing_len: u64,
+    rust_sharing_len: u64,
+  ) -> Self {
+    let ctor = LeanCtor::alloc(0, 1, 16);
+    ctor.set(0, result);
+    ctor.set_u64(8, lean_sharing_len);
+    ctor.set_u64(8 + 8, rust_sharing_len);
+    Self::new(*ctor)
+  }
 }
 
 /// Compare a single block by lowlink name.
@@ -121,22 +125,22 @@ pub unsafe extern "C" fn rs_compare_block_v2(
     None => {
       // Block not found in Rust compilation
       let result =
-        build_block_compare_result(false, true, lean_data.len() as u64, 0, 0);
-      return build_block_compare_detail(result, lean_sharing_len, 0);
+        LeanIxBlockCompareResult::build(false, true, lean_data.len() as u64, 0, 0);
+      return LeanIxBlockCompareDetail::build(result, lean_sharing_len, 0);
     },
   };
 
   // Compare bytes
   if rust_bytes == lean_data {
     // Match
-    let result = build_block_compare_result(
+    let result = LeanIxBlockCompareResult::build(
       true,
       false,
       lean_data.len() as u64,
       rust_bytes.len() as u64,
       0,
     );
-    return build_block_compare_detail(
+    return LeanIxBlockCompareDetail::build(
       result,
       lean_sharing_len,
       rust_sharing_len,
@@ -156,14 +160,14 @@ pub unsafe extern "C" fn rs_compare_block_v2(
       |i| i as u64,
     );
 
-  let result = build_block_compare_result(
+  let result = LeanIxBlockCompareResult::build(
     false,
     false,
     lean_data.len() as u64,
     rust_bytes.len() as u64,
     first_diff_offset,
   );
-  build_block_compare_detail(result, lean_sharing_len, rust_sharing_len)
+  LeanIxBlockCompareDetail::build(result, lean_sharing_len, rust_sharing_len)
 }
 
 /// Free a RustBlockEnv pointer.
@@ -183,12 +187,12 @@ pub unsafe extern "C" fn rs_free_compiled_env(ptr: *mut RustBlockEnv) {
 /// Build a RustBlockEnv from a Lean environment.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_build_compiled_env(
-  env_consts_ptr: LeanObject,
+  env_consts_ptr: LeanList,
 ) -> *mut RustBlockEnv {
   use crate::ffi::lean_env::decode_env;
 
   // Decode Lean environment
-  let rust_env = decode_env(env_consts_ptr.as_list());
+  let rust_env = decode_env(env_consts_ptr);
   let rust_env = std::sync::Arc::new(rust_env);
 
   // Compile

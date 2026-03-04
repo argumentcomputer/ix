@@ -213,6 +213,14 @@ impl From<LeanNat> for LeanObject {
   }
 }
 
+impl LeanNat {
+  /// Wrap a raw `LeanObject` as a `LeanNat`.
+  #[inline]
+  pub fn new(obj: LeanObject) -> Self {
+    Self(obj)
+  }
+}
+
 // =============================================================================
 // LeanBool — Bool (unboxed scalar: false = 0, true = 1)
 // =============================================================================
@@ -234,6 +242,14 @@ impl From<LeanBool> for LeanObject {
   #[inline]
   fn from(x: LeanBool) -> Self {
     x.0
+  }
+}
+
+impl LeanBool {
+  /// Wrap a raw `LeanObject` as a `LeanBool`.
+  #[inline]
+  pub fn new(obj: LeanObject) -> Self {
+    Self(obj)
   }
 }
 

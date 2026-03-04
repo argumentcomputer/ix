@@ -129,5 +129,36 @@ lean_ffi::lean_domain_type! {
   LeanIxBlockCompareDetail;
 }
 
-/// `Ix.Address = { hash : ByteArray }` — single-field struct, unboxed to `ByteArray`.
-pub type LeanIxAddress = lean_ffi::object::LeanByteArray;
+/// Lean `Address` object — newtype over `LeanByteArray`.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct LeanIxAddress(lean_ffi::object::LeanByteArray);
+
+impl std::ops::Deref for LeanIxAddress {
+  type Target = lean_ffi::object::LeanByteArray;
+  #[inline]
+  fn deref(&self) -> &lean_ffi::object::LeanByteArray {
+    &self.0
+  }
+}
+
+impl From<LeanIxAddress> for lean_ffi::object::LeanObject {
+  #[inline]
+  fn from(x: LeanIxAddress) -> Self {
+    x.0.into()
+  }
+}
+
+impl From<lean_ffi::object::LeanByteArray> for LeanIxAddress {
+  #[inline]
+  fn from(x: lean_ffi::object::LeanByteArray) -> Self {
+    Self(x)
+  }
+}
+
+impl LeanIxAddress {
+  #[inline]
+  pub fn new(obj: lean_ffi::object::LeanObject) -> Self {
+    Self(obj.as_byte_array())
+  }
+}
