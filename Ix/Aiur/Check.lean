@@ -116,6 +116,7 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
   | .u8Add a b => inferBinop a b .u8Add (.tuple #[.field, .field])
   | .u8Sub a b => inferBinop a b .u8Sub (.tuple #[.field, .field])
   | .u8LessThan a b => inferBinop a b .u8LessThan .field
+  | .u32LessThan a b => inferBinop a b .u32LessThan .field
   | .ioGetInfo key => inferIoGetInfo key
   | .ioSetInfo key idx len ret => inferIoSetInfo key idx len ret
   | .ioRead idx len => inferIoRead idx len
