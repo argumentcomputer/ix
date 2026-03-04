@@ -152,10 +152,7 @@ impl LeanIxRecursorRule {
 
 impl LeanIxConstantInfo {
   /// Build a Ix.ConstantInfo from a Rust ConstantInfo.
-  pub fn build(
-    cache: &mut LeanBuildCache,
-    info: &ConstantInfo,
-  ) -> Self {
+  pub fn build(cache: &mut LeanBuildCache, info: &ConstantInfo) -> Self {
     let result = match info {
       // | axiomInfo (v : AxiomVal) -- tag 0
       ConstantInfo::AxiomInfo(v) => {
@@ -422,10 +419,8 @@ impl LeanIxConstantInfo {
         let k = inner.scalar_u8(7, 0) != 0;
         let is_unsafe = inner.scalar_u8(7, 1) != 0;
 
-        let rules: Vec<RecursorRule> = inner
-          .get(6)
-          .as_array()
-          .map(|x| LeanIxRecursorRule::new(x).decode());
+        let rules: Vec<RecursorRule> =
+          inner.get(6).as_array().map(|x| LeanIxRecursorRule::new(x).decode());
 
         ConstantInfo::RecInfo(RecursorVal {
           cnst: LeanIxConstantVal::new(inner.get(0)).decode(),

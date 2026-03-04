@@ -16,8 +16,8 @@ use crate::lean::{
 };
 use lean_ffi::object::{LeanArray, LeanCtor, LeanObject};
 
-use crate::lean::LeanIxBinderInfo;
 use crate::lean::LeanIxAddress;
+use crate::lean::LeanIxBinderInfo;
 
 // =============================================================================
 // KVMap Build/Decode (not domain types, kept as free functions)
@@ -132,21 +132,15 @@ impl LeanIxonDataValue {
   pub fn decode(self) -> IxonDataValue {
     let ctor = self.as_ctor();
     match ctor.tag() {
-      0 => {
-        IxonDataValue::OfString(LeanIxAddress::new(ctor.get(0)).decode())
-      },
+      0 => IxonDataValue::OfString(LeanIxAddress::new(ctor.get(0)).decode()),
       1 => {
         let b = ctor.scalar_u8(0, 0) != 0;
         IxonDataValue::OfBool(b)
       },
-      2 => {
-        IxonDataValue::OfName(LeanIxAddress::new(ctor.get(0)).decode())
-      },
+      2 => IxonDataValue::OfName(LeanIxAddress::new(ctor.get(0)).decode()),
       3 => IxonDataValue::OfNat(LeanIxAddress::new(ctor.get(0)).decode()),
       4 => IxonDataValue::OfInt(LeanIxAddress::new(ctor.get(0)).decode()),
-      5 => {
-        IxonDataValue::OfSyntax(LeanIxAddress::new(ctor.get(0)).decode())
-      },
+      5 => IxonDataValue::OfSyntax(LeanIxAddress::new(ctor.get(0)).decode()),
       tag => panic!("Invalid Ixon.DataValue tag: {}", tag),
     }
   }
@@ -277,9 +271,7 @@ impl LeanIxonExprMetaData {
 
       4 => {
         // ref: 1 obj field (name), 0 scalar
-        ExprMetaData::Ref {
-          name: LeanIxAddress::new(ctor.get(0)).decode(),
-        }
+        ExprMetaData::Ref { name: LeanIxAddress::new(ctor.get(0)).decode() }
       },
 
       5 => {
@@ -321,9 +313,7 @@ impl LeanIxonExprMetaArena {
   /// Single-field struct is unboxed — obj IS the Array directly.
   pub fn decode(self) -> ExprMeta {
     let arr = self.as_array();
-    ExprMeta {
-      nodes: arr.map(|x| LeanIxonExprMetaData::new(x).decode()),
-    }
+    ExprMeta { nodes: arr.map(|x| LeanIxonExprMetaData::new(x).decode()) }
   }
 }
 
@@ -448,12 +438,10 @@ impl LeanIxonConstantMeta {
         // defn: 6 obj fields, 2× u64 scalar
         let name = LeanIxAddress::new(ctor.get(0)).decode();
         let lvls = decode_address_array(ctor.get(1).as_array());
-        let hints =
-          LeanIxReducibilityHints::new(ctor.get(2)).decode();
+        let hints = LeanIxReducibilityHints::new(ctor.get(2)).decode();
         let all = decode_address_array(ctor.get(3).as_array());
         let ctx = decode_address_array(ctor.get(4).as_array());
-        let arena =
-          LeanIxonExprMetaArena::new(ctor.get(5)).decode();
+        let arena = LeanIxonExprMetaArena::new(ctor.get(5)).decode();
         let type_root = ctor.scalar_u64(6, 0);
         let value_root = ctor.scalar_u64(6, 8);
         ConstantMeta::Def {
@@ -472,8 +460,7 @@ impl LeanIxonConstantMeta {
         // axio: 3 obj fields, 1× u64 scalar
         let name = LeanIxAddress::new(ctor.get(0)).decode();
         let lvls = decode_address_array(ctor.get(1).as_array());
-        let arena =
-          LeanIxonExprMetaArena::new(ctor.get(2)).decode();
+        let arena = LeanIxonExprMetaArena::new(ctor.get(2)).decode();
         let type_root = ctor.scalar_u64(3, 0);
         ConstantMeta::Axio { name, lvls, arena, type_root }
       },
@@ -482,8 +469,7 @@ impl LeanIxonConstantMeta {
         // quot: 3 obj fields, 1× u64 scalar
         let name = LeanIxAddress::new(ctor.get(0)).decode();
         let lvls = decode_address_array(ctor.get(1).as_array());
-        let arena =
-          LeanIxonExprMetaArena::new(ctor.get(2)).decode();
+        let arena = LeanIxonExprMetaArena::new(ctor.get(2)).decode();
         let type_root = ctor.scalar_u64(3, 0);
         ConstantMeta::Quot { name, lvls, arena, type_root }
       },
@@ -495,8 +481,7 @@ impl LeanIxonConstantMeta {
         let ctors = decode_address_array(ctor.get(2).as_array());
         let all = decode_address_array(ctor.get(3).as_array());
         let ctx = decode_address_array(ctor.get(4).as_array());
-        let arena =
-          LeanIxonExprMetaArena::new(ctor.get(5)).decode();
+        let arena = LeanIxonExprMetaArena::new(ctor.get(5)).decode();
         let type_root = ctor.scalar_u64(6, 0);
         ConstantMeta::Indc { name, lvls, ctors, all, ctx, arena, type_root }
       },
@@ -506,8 +491,7 @@ impl LeanIxonConstantMeta {
         let name = LeanIxAddress::new(ctor.get(0)).decode();
         let lvls = decode_address_array(ctor.get(1).as_array());
         let induct = LeanIxAddress::new(ctor.get(2)).decode();
-        let arena =
-          LeanIxonExprMetaArena::new(ctor.get(3)).decode();
+        let arena = LeanIxonExprMetaArena::new(ctor.get(3)).decode();
         let type_root = ctor.scalar_u64(4, 0);
         ConstantMeta::Ctor { name, lvls, induct, arena, type_root }
       },
@@ -519,8 +503,7 @@ impl LeanIxonConstantMeta {
         let rules = decode_address_array(ctor.get(2).as_array());
         let all = decode_address_array(ctor.get(3).as_array());
         let ctx = decode_address_array(ctor.get(4).as_array());
-        let arena =
-          LeanIxonExprMetaArena::new(ctor.get(5)).decode();
+        let arena = LeanIxonExprMetaArena::new(ctor.get(5)).decode();
         let rule_roots = decode_u64_array(ctor.get(6).as_array());
         let type_root = ctor.scalar_u64(7, 0);
         ConstantMeta::Rec {

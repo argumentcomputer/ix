@@ -48,10 +48,7 @@ impl LeanIxonRawConst {
   }
 
   /// Build from individual parts (used by compile.rs).
-  pub fn build_from_parts(
-    addr: &Address,
-    constant: &IxonConstant,
-  ) -> Self {
+  pub fn build_from_parts(addr: &Address, constant: &IxonConstant) -> Self {
     let ctor = LeanCtor::alloc(0, 2, 0);
     ctor.set(0, LeanIxAddress::build(addr));
     ctor.set(1, LeanIxonConstant::build(constant));
@@ -82,10 +79,7 @@ impl LeanIxonRawNamed {
   }
 
   /// Build Ixon.RawNamed Lean object.
-  pub fn build(
-    cache: &mut LeanBuildCache,
-    rn: &DecodedRawNamed,
-  ) -> Self {
+  pub fn build(cache: &mut LeanBuildCache, rn: &DecodedRawNamed) -> Self {
     let ctor = LeanCtor::alloc(0, 3, 0);
     ctor.set(0, LeanIxName::build(cache, &rn.name));
     ctor.set(1, LeanIxAddress::build(&rn.addr));
@@ -279,7 +273,8 @@ impl LeanIxonRawEnv {
     // Build names array
     let names_arr = LeanArray::alloc(env.names.len());
     for (i, rn) in env.names.iter().enumerate() {
-      names_arr.set(i, LeanIxonRawNameEntry::build(&mut cache, &rn.addr, &rn.name));
+      names_arr
+        .set(i, LeanIxonRawNameEntry::build(&mut cache, &rn.addr, &rn.name));
     }
 
     // Build RawEnv structure
@@ -346,10 +341,7 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> DecodedRawEnv {
   let comms = env
     .comms
     .iter()
-    .map(|e| DecodedRawComm {
-      addr: e.key().clone(),
-      comm: e.value().clone(),
-    })
+    .map(|e| DecodedRawComm { addr: e.key().clone(), comm: e.value().clone() })
     .collect();
   let names = env
     .names

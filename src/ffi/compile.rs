@@ -24,9 +24,9 @@ use crate::ix::ixon::{Comm, ConstantMeta};
 use crate::lean::{
   LeanIxBlockCompareDetail, LeanIxBlockCompareResult, LeanIxCompileError,
   LeanIxCompilePhases, LeanIxCondensedBlocks, LeanIxConstantInfo,
-  LeanIxDecompileError, LeanIxName, LeanIxRawEnvironment,
-  LeanIxSerializeError, LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst,
-  LeanIxonRawEnv, LeanIxonRawNameEntry, LeanIxonRawNamed,
+  LeanIxDecompileError, LeanIxName, LeanIxRawEnvironment, LeanIxSerializeError,
+  LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst, LeanIxonRawEnv,
+  LeanIxonRawNameEntry, LeanIxonRawNamed,
 };
 use lean_ffi::nat::Nat;
 use lean_ffi::object::LeanIOResult;
@@ -39,9 +39,9 @@ use dashmap::DashMap;
 use dashmap::DashSet;
 
 use crate::ffi::builder::LeanBuildCache;
-use crate::lean::LeanIxAddress;
 use crate::ffi::ixon::env::decoded_to_ixon_env;
 use crate::ffi::lean_env::{GlobalCache, decode_env, decode_name};
+use crate::lean::LeanIxAddress;
 
 // =============================================================================
 // Helper builders
@@ -331,9 +331,7 @@ pub extern "C" fn rs_roundtrip_raw_env(
 
 /// FFI function to run all compilation phases and return combined results.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compile_phases(
-  env_consts_ptr: LeanList,
-) -> LeanIOResult {
+pub extern "C" fn rs_compile_phases(env_consts_ptr: LeanList) -> LeanIOResult {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = decode_env(env_consts_ptr);
     let env_len = rust_env.len();
@@ -1267,15 +1265,15 @@ impl LeanIxDecompileError {
         let idx = ctor.scalar_u64(2, 0);
         DecompileError::InvalidUnivVarIndex { idx, max, constant }
       },
-      5 => DecompileError::MissingAddress(
-        LeanIxAddress::new(ctor.get(0)).decode(),
-      ),
+      5 => {
+        DecompileError::MissingAddress(LeanIxAddress::new(ctor.get(0)).decode())
+      },
       6 => DecompileError::MissingMetadata(
         LeanIxAddress::new(ctor.get(0)).decode(),
       ),
-      7 => DecompileError::BlobNotFound(
-        LeanIxAddress::new(ctor.get(0)).decode(),
-      ),
+      7 => {
+        DecompileError::BlobNotFound(LeanIxAddress::new(ctor.get(0)).decode())
+      },
       8 => {
         let addr = LeanIxAddress::new(ctor.get(0)).decode();
         let expected = ctor.get(1).as_string().to_string();
@@ -1348,9 +1346,9 @@ impl LeanIxCompileError {
         let name = ctor.get(0).as_string().to_string();
         CompileError::MissingConstant { name }
       },
-      1 => CompileError::MissingAddress(
-        LeanIxAddress::new(ctor.get(0)).decode(),
-      ),
+      1 => {
+        CompileError::MissingAddress(LeanIxAddress::new(ctor.get(0)).decode())
+      },
       2 => {
         let reason = ctor.get(0).as_string().to_string();
         CompileError::InvalidMutualBlock { reason }
@@ -1364,9 +1362,9 @@ impl LeanIxCompileError {
         let param = ctor.get(1).as_string().to_string();
         CompileError::UnknownUnivParam { curr, param }
       },
-      5 => CompileError::Serialize(
-        LeanIxSerializeError::new(ctor.get(0)).decode(),
-      ),
+      5 => {
+        CompileError::Serialize(LeanIxSerializeError::new(ctor.get(0)).decode())
+      },
       _ => unreachable!("Invalid CompileError tag: {}", ctor.tag()),
     }
   }

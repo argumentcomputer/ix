@@ -55,10 +55,7 @@ impl LeanIxName {
   }
 
   /// Build an Array of Names.
-  pub fn build_array(
-    cache: &mut LeanBuildCache,
-    names: &[Name],
-  ) -> LeanArray {
+  pub fn build_array(cache: &mut LeanBuildCache, names: &[Name]) -> LeanArray {
     let arr = LeanArray::alloc(names.len());
     for (i, name) in names.iter().enumerate() {
       arr.set(i, Self::build(cache, name));

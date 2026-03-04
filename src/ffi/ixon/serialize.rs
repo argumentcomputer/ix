@@ -14,7 +14,6 @@ use crate::lean::{
 };
 use lean_ffi::object::LeanByteArray;
 
-
 /// Check if Lean's computed hash matches Rust's computed hash.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_expr_hash_matches(

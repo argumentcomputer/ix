@@ -181,9 +181,7 @@ fn decode_fri_parameters(obj: LeanAiurFriParameters) -> FriParameters {
   }
 }
 
-fn decode_io_buffer_map(
-  arr: LeanArray,
-) -> FxHashMap<Vec<G>, IOKeyInfo> {
+fn decode_io_buffer_map(arr: LeanArray) -> FxHashMap<Vec<G>, IOKeyInfo> {
   let mut map = FxHashMap::with_capacity_and_hasher(arr.len(), FxBuildHasher);
   for elt in arr.iter() {
     let pair = elt.as_ctor();

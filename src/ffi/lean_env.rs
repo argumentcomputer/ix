@@ -148,13 +148,11 @@ fn decode_level(obj: LeanObject, cache: &mut Cache<'_>) -> Level {
         Level::imax(u, v)
       },
       4 => {
-        let [name] =
-          ctor.objs::<1>().map(|o| decode_name(o, cache.global));
+        let [name] = ctor.objs::<1>().map(|o| decode_name(o, cache.global));
         Level::param(name)
       },
       5 => {
-        let [name] =
-          ctor.objs::<1>().map(|o| decode_name(o, cache.global));
+        let [name] = ctor.objs::<1>().map(|o| decode_name(o, cache.global));
         Level::mvar(name)
       },
       _ => unreachable!(),
@@ -410,10 +408,7 @@ fn decode_recursor_rule(
   RecursorRule { ctor: ctor_name, n_fields, rhs }
 }
 
-fn decode_constant_val(
-  obj: LeanObject,
-  cache: &mut Cache<'_>,
-) -> ConstantVal {
+fn decode_constant_val(obj: LeanObject, cache: &mut Cache<'_>) -> ConstantVal {
   let ctor = obj.as_ctor();
   let [name_obj, level_params, typ] = ctor.objs();
   let name = decode_name(name_obj, cache.global);

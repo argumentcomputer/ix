@@ -124,10 +124,7 @@ impl LeanIxSourceInfo {
 
 impl LeanIxSyntaxPreresolved {
   /// Build a Ix.SyntaxPreresolved.
-  pub fn build(
-    cache: &mut LeanBuildCache,
-    sp: &SyntaxPreresolved,
-  ) -> Self {
+  pub fn build(cache: &mut LeanBuildCache, sp: &SyntaxPreresolved) -> Self {
     match sp {
       // | namespace (name : Name) -- tag 0
       SyntaxPreresolved::Namespace(name) => {
@@ -283,10 +280,7 @@ impl LeanIxSyntax {
 
 impl LeanIxDataValue {
   /// Build Ix.DataValue.
-  pub fn build(
-    cache: &mut LeanBuildCache,
-    dv: &DataValue,
-  ) -> Self {
+  pub fn build(cache: &mut LeanBuildCache, dv: &DataValue) -> Self {
     match dv {
       DataValue::OfString(s) => {
         let obj = LeanCtor::alloc(0, 1, 0);
@@ -374,9 +368,7 @@ impl LeanIxDataValue {
       },
       5 => {
         // ofSyntax: 1 object field
-        DataValue::OfSyntax(
-          LeanIxSyntax::new(ctor.get(0)).decode().into(),
-        )
+        DataValue::OfSyntax(LeanIxSyntax::new(ctor.get(0)).decode().into())
       },
       _ => panic!("Invalid DataValue tag: {}", ctor.tag()),
     }

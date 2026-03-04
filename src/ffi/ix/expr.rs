@@ -238,13 +238,12 @@ impl LeanIxExpr {
       },
       10 => {
         // mdata: data, expr, hash
-        let data: Vec<(Name, DataValue)> =
-          ctor.get(0).as_array().map(|obj| {
-            let pair = obj.as_ctor();
-            let name = LeanIxName::new(pair.get(0)).decode();
-            let dv = LeanIxDataValue::new(pair.get(1)).decode();
-            (name, dv)
-          });
+        let data: Vec<(Name, DataValue)> = ctor.get(0).as_array().map(|obj| {
+          let pair = obj.as_ctor();
+          let name = LeanIxName::new(pair.get(0)).decode();
+          let dv = LeanIxDataValue::new(pair.get(1)).decode();
+          (name, dv)
+        });
 
         let inner = Self::new(ctor.get(1)).decode();
         Expr::mdata(data, inner)

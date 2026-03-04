@@ -157,11 +157,7 @@ impl LeanIxonExpr {
         let val_obj = Self::new(ctor.get(0));
         let type_ref_idx = ctor.scalar_u64(1, 0);
         let field_idx = ctor.scalar_u64(1, 8);
-        IxonExpr::Prj(
-          type_ref_idx,
-          field_idx,
-          Arc::new(val_obj.decode()),
-        )
+        IxonExpr::Prj(type_ref_idx, field_idx, Arc::new(val_obj.decode()))
       },
       5 => {
         let ref_idx = ctor.scalar_u64(0, 0);
@@ -174,26 +170,17 @@ impl LeanIxonExpr {
       7 => {
         let f_obj = Self::new(ctor.get(0));
         let a_obj = Self::new(ctor.get(1));
-        IxonExpr::App(
-          Arc::new(f_obj.decode()),
-          Arc::new(a_obj.decode()),
-        )
+        IxonExpr::App(Arc::new(f_obj.decode()), Arc::new(a_obj.decode()))
       },
       8 => {
         let ty_obj = Self::new(ctor.get(0));
         let body_obj = Self::new(ctor.get(1));
-        IxonExpr::Lam(
-          Arc::new(ty_obj.decode()),
-          Arc::new(body_obj.decode()),
-        )
+        IxonExpr::Lam(Arc::new(ty_obj.decode()), Arc::new(body_obj.decode()))
       },
       9 => {
         let ty_obj = Self::new(ctor.get(0));
         let body_obj = Self::new(ctor.get(1));
-        IxonExpr::All(
-          Arc::new(ty_obj.decode()),
-          Arc::new(body_obj.decode()),
-        )
+        IxonExpr::All(Arc::new(ty_obj.decode()), Arc::new(body_obj.decode()))
       },
       10 => {
         let ty_obj = Self::new(ctor.get(0));

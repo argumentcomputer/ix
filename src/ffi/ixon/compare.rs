@@ -124,8 +124,13 @@ pub unsafe extern "C" fn rs_compare_block_v2(
     Some((bytes, sharing_len)) => (bytes, *sharing_len as u64),
     None => {
       // Block not found in Rust compilation
-      let result =
-        LeanIxBlockCompareResult::build(false, true, lean_data.len() as u64, 0, 0);
+      let result = LeanIxBlockCompareResult::build(
+        false,
+        true,
+        lean_data.len() as u64,
+        0,
+        0,
+      );
       return LeanIxBlockCompareDetail::build(result, lean_sharing_len, 0);
     },
   };
