@@ -6,7 +6,7 @@ use multi_stark::{
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::sync::OnceLock;
 
-use lean_sys::object::{
+use lean_ffi::object::{
   ExternalClass, LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanExternal,
   LeanObject,
 };

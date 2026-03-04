@@ -22,12 +22,12 @@ control of the underlying memory, needing to implement `Drop`, or having to
 know about the state of Lean's reference counting mechanism. Bindgen runs in
 `build.rs` and generates unsafe Rust functions that link to the `lean.h`
 library. This external module can then be found at
-`target/release/lean-sys-<hash>/out/lean.rs`.
+`target/release/lean-ffi-<hash>/out/lean.rs`.
 
 ## `LeanObject` API
 
 To facilitate working with Lean objects in Rust, we also designed an
-ergonomic API in the `lean-sys` crate to wrap raw C pointers in Rust types,
+ergonomic API in the `lean-ffi` crate to wrap raw C pointers in Rust types,
 with methods to abstract the low-level binding function calls from `lean.h`.
 The fundamental building block is `LeanObject`, a wrapper around an opaque
 Lean value represented in Rust as `*const c_void`. This value is either a

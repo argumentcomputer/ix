@@ -1,11 +1,11 @@
-use lean_sys::object::{
+use lean_ffi::object::{
   LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanString,
 };
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
 use crate::iroh::{client, server};
 
-lean_sys::lean_domain_type! {
+lean_ffi::lean_domain_type! {
   /// Lean `Iroh.Connect.PutResponse` object.
   LeanPutResponse;
   /// Lean `Iroh.Connect.GetResponse` object.

@@ -1,6 +1,6 @@
 use multi_stark::p3_field::PrimeCharacteristicRing;
 
-use lean_sys::object::LeanObject;
+use lean_ffi::object::LeanObject;
 
 use crate::{
   FxIndexMap,

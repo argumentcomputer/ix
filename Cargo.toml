@@ -1,5 +1,5 @@
 [workspace]
-members = ["lean-sys"]
+members = ["lean-ffi"]
 
 [package]
 name = "ix_rs"
@@ -14,7 +14,7 @@ anyhow = "1"
 blake3 = "1.8.2"
 itertools = "0.14.0"
 indexmap = { version = "2", features = ["rayon"] }
-lean-sys = { path = "lean-sys" }
+lean-ffi = { path = "lean-ffi" }
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "14b70601317e4500c7246c32a13ad08b3f560f2e" }
 num-bigint = "0.4.6"
 rayon = "1"

@@ -1,4 +1,4 @@
-use lean_sys::object::LeanByteArray;
+use lean_ffi::object::LeanByteArray;
 
 #[unsafe(no_mangle)]
 extern "C" fn c_u16_to_le_bytes(v: u16) -> LeanByteArray {

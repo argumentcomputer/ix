@@ -9,7 +9,7 @@
 #![allow(clippy::map_err_ignore)]
 #![allow(clippy::match_same_arms)]
 
-use lean_sys::nat::Nat;
+use lean_ffi::nat::Nat;
 
 use crate::{
   ix::address::Address,

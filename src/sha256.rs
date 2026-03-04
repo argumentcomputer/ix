@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 
-use lean_sys::object::LeanByteArray;
+use lean_ffi::object::LeanByteArray;
 
 #[unsafe(no_mangle)]
 extern "C" fn rs_sha256(bytes: LeanByteArray) -> LeanByteArray {

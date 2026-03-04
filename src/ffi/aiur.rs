@@ -4,7 +4,7 @@ pub mod protocol;
 pub mod toplevel;
 
 use crate::aiur::G;
-use lean_sys::object::LeanObject;
+use lean_ffi::object::LeanObject;
 
 #[inline]
 pub(super) fn lean_unbox_nat_as_usize(obj: LeanObject) -> usize {

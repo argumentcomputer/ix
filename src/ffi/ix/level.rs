@@ -10,7 +10,7 @@
 
 use crate::ix::env::{Level, LevelData};
 use crate::lean::LeanIxLevel;
-use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
+use lean_ffi::object::{LeanArray, LeanCtor, LeanObject};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::address::build_address;

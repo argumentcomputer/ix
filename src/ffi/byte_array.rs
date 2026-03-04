@@ -1,4 +1,4 @@
-use lean_sys::object::LeanByteArray;
+use lean_ffi::object::LeanByteArray;
 
 /// `@& ByteArray → @& ByteArray → Bool`
 /// Efficient implementation for `BEq ByteArray`

@@ -7,7 +7,7 @@ use crate::ix::ixon::constant::DefKind;
 use crate::lean::{
   LeanIxonDefKind, LeanIxonDefinitionSafety, LeanIxonQuotKind,
 };
-use lean_sys::object::LeanObject;
+use lean_ffi::object::LeanObject;
 
 /// Build Ixon.DefKind
 /// | defn -- tag 0

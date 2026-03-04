@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::ffi::ffi_io_guard;
 use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
-use lean_sys::object::{LeanArray, LeanCtor, LeanIOResult, LeanObject};
+use lean_ffi::object::{LeanArray, LeanCtor, LeanIOResult, LeanObject};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::name::build_name;

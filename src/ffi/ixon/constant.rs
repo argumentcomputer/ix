@@ -22,7 +22,7 @@ use crate::lean::{
   LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor, LeanIxonRecursorProj,
   LeanIxonRecursorRule,
 };
-use lean_sys::object::{LeanArray, LeanByteArray, LeanCtor, LeanObject};
+use lean_ffi::object::{LeanArray, LeanByteArray, LeanCtor, LeanObject};
 
 use crate::ffi::ixon::expr::{
   build_ixon_expr, build_ixon_expr_array, decode_ixon_expr,

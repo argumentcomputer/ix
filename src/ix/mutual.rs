@@ -5,7 +5,7 @@
 //! [`ctx_to_all`] / [`all_to_ctx`] functions convert between ordered name
 //! vectors and index maps.
 
-use lean_sys::nat::Nat;
+use lean_ffi::nat::Nat;
 
 use crate::{
   ix::env::{

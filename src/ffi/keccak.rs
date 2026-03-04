@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use tiny_keccak::{Hasher, Keccak};
 
-use lean_sys::object::{
+use lean_ffi::object::{
   ExternalClass, LeanByteArray, LeanExternal, LeanObject,
 };
 

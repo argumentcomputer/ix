@@ -13,7 +13,7 @@ use crate::lean::{
   LeanIxonComm, LeanIxonConstantMeta, LeanIxonDataValue, LeanIxonExprMetaArena,
   LeanIxonExprMetaData, LeanIxonNamed,
 };
-use lean_sys::object::{LeanArray, LeanCtor, LeanObject};
+use lean_ffi::object::{LeanArray, LeanCtor, LeanObject};
 
 use crate::ffi::ix::constant::{
   build_reducibility_hints, decode_reducibility_hints,

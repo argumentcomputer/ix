@@ -13,7 +13,7 @@ use crate::ix::ixon::univ::{Univ as IxonUniv, put_univ};
 use crate::lean::{
   LeanIxAddress, LeanIxonConstant, LeanIxonExpr, LeanIxonRawEnv, LeanIxonUniv,
 };
-use lean_sys::object::{LeanByteArray, LeanObject};
+use lean_ffi::object::{LeanByteArray, LeanObject};
 
 use crate::ffi::ixon::constant::{decode_ixon_address, decode_ixon_constant};
 

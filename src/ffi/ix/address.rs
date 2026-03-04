@@ -3,7 +3,7 @@
 //! Address = { hash : ByteArray } - ByteArray wrapper for blake3 Hash
 
 use crate::lean::LeanIxAddress;
-use lean_sys::object::LeanByteArray;
+use lean_ffi::object::LeanByteArray;
 
 /// Build a Ix.Address from a blake3::Hash.
 /// Address = { hash : ByteArray } - single field struct, so UNBOXED to ByteArray

@@ -1,9 +1,9 @@
 //! Ix-specific Lean domain type definitions.
 //!
-//! Generic Lean FFI wrappers live in the `lean_sys` crate. This module defines
-//! typed newtypes for ix-specific Lean types using `lean_sys::lean_domain_type!`.
+//! Generic Lean FFI wrappers live in the `lean_ffi` crate. This module defines
+//! typed newtypes for ix-specific Lean types using `lean_ffi::lean_domain_type!`.
 
-lean_sys::lean_domain_type! {
+lean_ffi::lean_domain_type! {
   // Ix core types
   /// Lean `Ix.Name` object.
   LeanIxName;
@@ -104,4 +104,4 @@ lean_sys::lean_domain_type! {
 }
 
 /// `Ix.Address = { hash : ByteArray }` — single-field struct, unboxed to `ByteArray`.
-pub type LeanIxAddress = lean_sys::object::LeanByteArray;
+pub type LeanIxAddress = lean_ffi::object::LeanByteArray;

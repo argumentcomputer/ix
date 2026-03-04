@@ -1,4 +1,4 @@
-use lean_sys::object::LeanExcept;
+use lean_ffi::object::LeanExcept;
 
 /// `Iroh.Serve.serve' : Unit → Except String Unit`
 #[unsafe(no_mangle)]

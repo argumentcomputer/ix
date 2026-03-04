@@ -7,8 +7,8 @@
 
 use crate::ix::env::{Name, NameData};
 use crate::lean::LeanIxName;
-use lean_sys::nat::Nat;
-use lean_sys::object::{LeanArray, LeanCtor, LeanObject, LeanString};
+use lean_ffi::nat::Nat;
+use lean_ffi::object::{LeanArray, LeanCtor, LeanObject, LeanString};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::address::build_address;

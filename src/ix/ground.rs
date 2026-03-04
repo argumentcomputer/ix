@@ -9,7 +9,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
-use lean_sys::nat::Nat;
+use lean_ffi::nat::Nat;
 
 use crate::{
   ix::env::{

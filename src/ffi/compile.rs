@@ -26,9 +26,9 @@ use crate::lean::{
   LeanIxCompilePhases, LeanIxCondensedBlocks, LeanIxDecompileError,
   LeanIxSerializeError, LeanIxonRawEnv,
 };
-use lean_sys::nat::Nat;
-use lean_sys::object::LeanIOResult;
-use lean_sys::object::{
+use lean_ffi::nat::Nat;
+use lean_ffi::object::LeanIOResult;
+use lean_ffi::object::{
   LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanObject, LeanString,
 };
 

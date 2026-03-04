@@ -7,8 +7,8 @@ use crate::lean::{
   LeanIxDataValue, LeanIxInt, LeanIxSourceInfo, LeanIxSubstring, LeanIxSyntax,
   LeanIxSyntaxPreresolved,
 };
-use lean_sys::nat::Nat;
-use lean_sys::object::{LeanArray, LeanCtor, LeanObject, LeanString};
+use lean_ffi::nat::Nat;
+use lean_ffi::object::{LeanArray, LeanCtor, LeanObject, LeanString};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::name::{build_name, decode_ix_name};

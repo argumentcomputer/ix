@@ -17,7 +17,7 @@ use std::{
   thread,
 };
 
-use lean_sys::nat::Nat;
+use lean_ffi::nat::Nat;
 
 use crate::{
   ix::address::Address,
