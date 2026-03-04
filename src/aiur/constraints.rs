@@ -448,6 +448,125 @@ impl Op {
         sel.clone(),
         state,
       ),
+      Op::U32LessThan(x_idx, y_idx) => {
+        // u32 less-than via byte decomposition and subtraction with borrow chain.
+        //
+        // Goal: constrain output = 1 if x < y, 0 otherwise, where x and y are
+        // u32 values (< 2^32) represented as Goldilocks field elements.
+        //
+        // Step 1 — Byte decomposition. Decompose x and y into 4 little-endian
+        // bytes each:
+        //     x = Σ_{k=0}^{3} x_k · 256^k
+        //     y = Σ_{k=0}^{3} y_k · 256^k
+        // Each byte is range-checked to [0, 255] by appearing as an operand in
+        // a u8_sub lookup against the Bytes2 preprocessed table.
+        //
+        // No canonicality check is needed. Since 2^32 < p, the 4- byte decomposition
+        // of any field element v is unique iff v < 2^32. If v ≥ 2^32, no 4-byte
+        // decomposition sums to v in the field, so the decomposition constraint
+        // is unsatisfiable and the prover simply cannot produce a valid witness.
+        // This means u32_less_than is only usable on values that actually fit in
+        // 32 bits; applying it to larger values will cause proof generation to fail.
+        //
+        // Step 2 — Borrow-chain subtraction. We compute
+        //     y_int − x_int − 1
+        // byte-by-byte using two u8_sub lookups per byte (8 total):
+        //     u8_sub(y_k, x_k) → (t_k, b_k')
+        //     u8_sub(t_k, c_k)  → (r_k, b_k'')
+        // where c_0 = 1 (the −1 offset) and c_k = b_{k−1}' + b_{k−1}'' for k > 0.
+        //
+        // The algebraic identity across all 4 bytes gives:
+        //     r_int − 2^32 · b_3 = y_int − x_int − 1
+        // where r_int = Σ r_k · 256^k ∈ [0, 2^32−1] and b_3 = b_3' + b_3'' is
+        // the final borrow.
+        //
+        // Step 3 — Soundness of the final borrow. Since x, y < 2^32:
+        //   • y − x − 1 ∈ [−(2^32−1), 2^32 − 2]  ⊂  (−2^32, 2^32)
+        //   • r_int ∈ [0, 2^32 − 1]
+        // So b_3 = (r_int − (y − x − 1)) / 2^32. If b_3 ≥ 2 then
+        // y − x − 1 = r_int − 2·2^32 ≤ 2^32−1 − 2^33 < −2^32, contradicting the
+        // lower bound. Hence b_3 ∈ {0, 1}:
+        //   • b_3 = 0  ⟹  y − x − 1 ≥ 0  ⟹  x < y
+        //   • b_3 = 1  ⟹  y − x − 1 < 0  ⟹  x ≥ y
+        //
+        // Output: 1 − b_3 = 1 − (b_3' + b_3'').
+        //
+        // Resources: 24 auxiliaries (8 bytes + 16 borrow chain), 8 lookups
+        // (all u8_sub), 2 polynomial constraints (decomposition only).
+        let x = state.map[*x_idx].0.clone();
+        let y = state.map[*y_idx].0.clone();
+
+        // Byte decomposition: 4 byte auxiliaries per operand
+        let x_bytes: Vec<Expr> =
+          (0..4).map(|_| state.next_auxiliary()).collect();
+        let y_bytes: Vec<Expr> =
+          (0..4).map(|_| state.next_auxiliary()).collect();
+
+        // Decomposition constraints: x = Σ xi * 256^i
+        let x_sum = x_bytes.iter().enumerate().fold(
+          Expr::Constant(G::ZERO),
+          |acc, (k, b)| {
+            acc + b.clone() * G::from_u64(256u64.pow(u32::try_from(k).unwrap()))
+          },
+        );
+        state.constraints.zeros.push(sel.clone() * (x - x_sum));
+
+        let y_sum = y_bytes.iter().enumerate().fold(
+          Expr::Constant(G::ZERO),
+          |acc, (k, b)| {
+            acc + b.clone() * G::from_u64(256u64.pow(u32::try_from(k).unwrap()))
+          },
+        );
+        state.constraints.zeros.push(sel.clone() * (y - y_sum));
+
+        // Borrow chain: y - x - 1 byte-by-byte
+        let sub_channel = u8_sub_channel();
+        let mut prev_borrow: Option<Expr> = None;
+        for k in 0..4 {
+          let t_k = state.next_auxiliary();
+          let b_k_prime = state.next_auxiliary();
+          let r_k = state.next_auxiliary();
+          let b_k_double_prime = state.next_auxiliary();
+
+          // Lookup 1: u8_sub(y_k, x_k) -> (t_k, b_k')
+          let lookup = state.next_lookup();
+          combine_lookup_args(
+            lookup,
+            vec![
+              sel.clone() * sub_channel,
+              sel.clone() * y_bytes[k].clone(),
+              sel.clone() * x_bytes[k].clone(),
+              sel.clone() * t_k.clone(),
+              sel.clone() * b_k_prime.clone(),
+            ],
+          );
+          lookup.multiplicity += sel.clone();
+
+          // Lookup 2: u8_sub(t_k, borrow_in) -> (r_k, b_k'')
+          let borrow_in = match prev_borrow {
+            None => Expr::Constant(G::ONE),
+            Some(prev_borrow) => prev_borrow.clone(),
+          };
+          let lookup = state.next_lookup();
+          combine_lookup_args(
+            lookup,
+            vec![
+              sel.clone() * sub_channel,
+              sel.clone() * t_k,
+              sel.clone() * borrow_in,
+              sel.clone() * r_k,
+              sel.clone() * b_k_double_prime.clone(),
+            ],
+          );
+          lookup.multiplicity += sel.clone();
+
+          prev_borrow = Some(b_k_prime + b_k_double_prime);
+        }
+
+        // Output: 1 - (b_3' + b_3'')
+        let output = Expr::ONE - prev_borrow.unwrap();
+        state.map.push((output, 1));
+      },
       Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => (),
     }
   }
