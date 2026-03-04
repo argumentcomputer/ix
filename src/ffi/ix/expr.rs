@@ -17,7 +17,10 @@
 use crate::ix::env::{
   BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
 };
-use crate::lean::LeanIxExpr;
+use crate::lean::{
+  LeanIxBinderInfo, LeanIxDataValue, LeanIxExpr, LeanIxLevel, LeanIxLiteral,
+  LeanIxName,
+};
 use lean_ffi::nat::Nat;
 use lean_ffi::object::{LeanArray, LeanCtor, LeanObject, LeanString};
 
@@ -175,17 +178,15 @@ fn build_name_datavalue_pair(
   name: &Name,
   dv: &DataValue,
 ) -> LeanObject {
-  let name_obj = build_name(cache, name);
-  let dv_obj = build_data_value(cache, dv);
   let pair = LeanCtor::alloc(0, 2, 0);
-  pair.set(0, name_obj);
-  pair.set(1, dv_obj);
+  pair.set(0, build_name(cache, name));
+  pair.set(1, build_data_value(cache, dv));
   *pair
 }
 
 /// Build a Literal (natVal or strVal).
-pub fn build_literal(lit: &Literal) -> LeanObject {
-  match lit {
+pub fn build_literal(lit: &Literal) -> LeanIxLiteral {
+  let obj = match lit {
     Literal::NatVal(n) => {
       let obj = LeanCtor::alloc(0, 1, 0);
       obj.set(0, build_nat(n));
@@ -196,13 +197,14 @@ pub fn build_literal(lit: &Literal) -> LeanObject {
       obj.set(0, LeanString::new(s.as_str()));
       *obj
     },
-  }
+  };
+  LeanIxLiteral::new(obj)
 }
 
 /// Build Ix.BinderInfo enum.
 /// BinderInfo is a 4-constructor enum with no fields, stored as boxed scalar.
-pub fn build_binder_info(bi: &BinderInfo) -> LeanObject {
-  LeanObject::box_usize(binder_info_to_u8(bi) as usize)
+pub fn build_binder_info(bi: &BinderInfo) -> LeanIxBinderInfo {
+  LeanIxBinderInfo::new(LeanObject::box_usize(binder_info_to_u8(bi) as usize))
 }
 
 /// Convert BinderInfo to u8 tag.
@@ -216,7 +218,7 @@ pub fn binder_info_to_u8(bi: &BinderInfo) -> u8 {
 }
 
 /// Decode a Lean Ix.Expr to Rust Expr.
-pub fn decode_ix_expr(obj: LeanObject) -> Expr {
+pub fn decode_ix_expr(obj: LeanIxExpr) -> Expr {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
@@ -226,37 +228,38 @@ pub fn decode_ix_expr(obj: LeanObject) -> Expr {
     },
     1 => {
       // fvar
-      let name = decode_ix_name(ctor.get(0));
+      let name = decode_ix_name(LeanIxName::new(ctor.get(0)));
       Expr::fvar(name)
     },
     2 => {
       // mvar
-      let name = decode_ix_name(ctor.get(0));
+      let name = decode_ix_name(LeanIxName::new(ctor.get(0)));
       Expr::mvar(name)
     },
     3 => {
       // sort
-      let level = decode_ix_level(ctor.get(0));
+      let level = decode_ix_level(LeanIxLevel::new(ctor.get(0)));
       Expr::sort(level)
     },
     4 => {
       // const
-      let name = decode_ix_name(ctor.get(0));
-      let levels: Vec<Level> = ctor.get(1).as_array().map(decode_ix_level);
+      let name = decode_ix_name(LeanIxName::new(ctor.get(0)));
+      let levels: Vec<Level> =
+        ctor.get(1).as_array().map(|x| decode_ix_level(LeanIxLevel::new(x)));
 
       Expr::cnst(name, levels)
     },
     5 => {
       // app
-      let fn_expr = decode_ix_expr(ctor.get(0));
-      let arg_expr = decode_ix_expr(ctor.get(1));
+      let fn_expr = decode_ix_expr(LeanIxExpr::new(ctor.get(0)));
+      let arg_expr = decode_ix_expr(LeanIxExpr::new(ctor.get(1)));
       Expr::app(fn_expr, arg_expr)
     },
     6 => {
       // lam: name, ty, body, hash, bi (scalar)
-      let name = decode_ix_name(ctor.get(0));
-      let ty = decode_ix_expr(ctor.get(1));
-      let body = decode_ix_expr(ctor.get(2));
+      let name = decode_ix_name(LeanIxName::new(ctor.get(0)));
+      let ty = decode_ix_expr(LeanIxExpr::new(ctor.get(1)));
+      let body = decode_ix_expr(LeanIxExpr::new(ctor.get(2)));
 
       // Read BinderInfo scalar (4 obj fields: name, ty, body, hash)
       let bi_byte = ctor.scalar_u8(4, 0);
@@ -266,9 +269,9 @@ pub fn decode_ix_expr(obj: LeanObject) -> Expr {
     },
     7 => {
       // forallE: same layout as lam
-      let name = decode_ix_name(ctor.get(0));
-      let ty = decode_ix_expr(ctor.get(1));
-      let body = decode_ix_expr(ctor.get(2));
+      let name = decode_ix_name(LeanIxName::new(ctor.get(0)));
+      let ty = decode_ix_expr(LeanIxExpr::new(ctor.get(1)));
+      let body = decode_ix_expr(LeanIxExpr::new(ctor.get(2)));
 
       // 4 obj fields: name, ty, body, hash
       let bi_byte = ctor.scalar_u8(4, 0);
@@ -278,10 +281,10 @@ pub fn decode_ix_expr(obj: LeanObject) -> Expr {
     },
     8 => {
       // letE: name, ty, val, body, hash, nonDep (scalar)
-      let name = decode_ix_name(ctor.get(0));
-      let ty = decode_ix_expr(ctor.get(1));
-      let val = decode_ix_expr(ctor.get(2));
-      let body = decode_ix_expr(ctor.get(3));
+      let name = decode_ix_name(LeanIxName::new(ctor.get(0)));
+      let ty = decode_ix_expr(LeanIxExpr::new(ctor.get(1)));
+      let val = decode_ix_expr(LeanIxExpr::new(ctor.get(2)));
+      let body = decode_ix_expr(LeanIxExpr::new(ctor.get(3)));
 
       // 5 obj fields: name, ty, val, body, hash
       let non_dep = ctor.scalar_u8(5, 0) != 0;
@@ -290,7 +293,7 @@ pub fn decode_ix_expr(obj: LeanObject) -> Expr {
     },
     9 => {
       // lit
-      let lit = decode_literal(ctor.get(0));
+      let lit = decode_literal(LeanIxLiteral::new(ctor.get(0)));
       Expr::lit(lit)
     },
     10 => {
@@ -298,14 +301,14 @@ pub fn decode_ix_expr(obj: LeanObject) -> Expr {
       let data: Vec<(Name, DataValue)> =
         ctor.get(0).as_array().map(decode_name_data_value);
 
-      let inner = decode_ix_expr(ctor.get(1));
+      let inner = decode_ix_expr(LeanIxExpr::new(ctor.get(1)));
       Expr::mdata(data, inner)
     },
     11 => {
       // proj: typeName, idx, struct, hash
-      let type_name = decode_ix_name(ctor.get(0));
+      let type_name = decode_ix_name(LeanIxName::new(ctor.get(0)));
       let idx = Nat::from_obj(ctor.get(1));
-      let struct_expr = decode_ix_expr(ctor.get(2));
+      let struct_expr = decode_ix_expr(LeanIxExpr::new(ctor.get(2)));
 
       Expr::proj(type_name, idx, struct_expr)
     },
@@ -314,7 +317,7 @@ pub fn decode_ix_expr(obj: LeanObject) -> Expr {
 }
 
 /// Decode Lean.Literal from a Lean object.
-pub fn decode_literal(obj: LeanObject) -> Literal {
+pub fn decode_literal(obj: LeanIxLiteral) -> Literal {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
@@ -332,10 +335,9 @@ pub fn decode_literal(obj: LeanObject) -> Literal {
 
 /// Decode a (Name × DataValue) pair for mdata.
 fn decode_name_data_value(obj: LeanObject) -> (Name, DataValue) {
-  // Prod: ctor 0 with 2 fields
   let ctor = obj.as_ctor();
-  let name = decode_ix_name(ctor.get(0));
-  let dv = decode_data_value(ctor.get(1));
+  let name = decode_ix_name(LeanIxName::new(ctor.get(0)));
+  let dv = decode_data_value(LeanIxDataValue::new(ctor.get(1)));
   (name, dv)
 }
 
@@ -353,7 +355,7 @@ pub fn decode_binder_info(bi_byte: u8) -> BinderInfo {
 /// Round-trip an Ix.Expr: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_expr(expr_ptr: LeanIxExpr) -> LeanIxExpr {
-  let expr = decode_ix_expr(*expr_ptr);
+  let expr = decode_ix_expr(expr_ptr);
   let mut cache = LeanBuildCache::new();
   build_expr(&mut cache, &expr)
 }

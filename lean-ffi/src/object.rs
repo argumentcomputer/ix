@@ -98,6 +98,21 @@ impl LeanObject {
     }
   }
 
+  /// Create a `LeanObject` from a raw tag value for zero-field enum constructors.
+  /// Lean passes simple enums (all constructors have zero fields) as unboxed
+  /// tag values (0, 1, 2, ...) across FFI, not as `lean_box(tag)`.
+  #[inline]
+  pub fn from_enum_tag(tag: usize) -> Self {
+    Self(tag as *const c_void)
+  }
+
+  /// Extract the raw tag value from a zero-field enum constructor.
+  /// Inverse of `from_enum_tag`.
+  #[inline]
+  pub fn as_enum_tag(self) -> usize {
+    self.0 as usize
+  }
+
   /// Box a `usize` into a tagged scalar pointer.
   #[inline]
   pub fn box_usize(n: usize) -> Self {
@@ -171,6 +186,62 @@ impl LeanObject {
   #[inline]
   pub fn unbox_u32(self) -> u32 {
     unsafe { include::lean_unbox_uint32(self.0 as *mut _) }
+  }
+}
+
+// =============================================================================
+// LeanNat — Nat (scalar or heap mpz)
+// =============================================================================
+
+/// Typed wrapper for a Lean `Nat` (small = tagged scalar, big = heap `mpz_object`).
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct LeanNat(LeanObject);
+
+impl Deref for LeanNat {
+  type Target = LeanObject;
+  #[inline]
+  fn deref(&self) -> &LeanObject {
+    &self.0
+  }
+}
+
+impl From<LeanNat> for LeanObject {
+  #[inline]
+  fn from(x: LeanNat) -> Self {
+    x.0
+  }
+}
+
+// =============================================================================
+// LeanBool — Bool (unboxed scalar: false = 0, true = 1)
+// =============================================================================
+
+/// Typed wrapper for a Lean `Bool` (always an unboxed scalar: false = 0, true = 1).
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct LeanBool(LeanObject);
+
+impl Deref for LeanBool {
+  type Target = LeanObject;
+  #[inline]
+  fn deref(&self) -> &LeanObject {
+    &self.0
+  }
+}
+
+impl From<LeanBool> for LeanObject {
+  #[inline]
+  fn from(x: LeanBool) -> Self {
+    x.0
+  }
+}
+
+impl LeanBool {
+  /// Decode to a Rust `bool`.
+  #[inline]
+  pub fn to_bool(self) -> bool {
+    self.0.as_enum_tag() != 0
   }
 }
 

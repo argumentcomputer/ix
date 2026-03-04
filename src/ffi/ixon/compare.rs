@@ -6,11 +6,11 @@ use crate::ix::compile::{BlockCache, CompileState, compile_env, compile_expr};
 use crate::ix::env::Name;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
-use crate::lean::LeanIxBlockCompareDetail;
+use crate::lean::{LeanIxBlockCompareDetail, LeanIxBlockCompareResult};
 use lean_ffi::object::{LeanByteArray, LeanCtor, LeanObject};
 
 use crate::ffi::lean_env::{
-  Cache as LeanCache, GlobalCache, lean_ptr_to_expr, lean_ptr_to_name,
+  Cache as LeanCache, GlobalCache, decode_expr, decode_name,
 };
 
 /// Rust-side compiled environment for block comparison.
@@ -28,7 +28,7 @@ pub extern "C" fn rs_compare_expr_compilation(
   // Decode Lean.Expr to Rust's representation
   let global_cache = GlobalCache::default();
   let mut cache = LeanCache::new(&global_cache);
-  let lean_expr = lean_ptr_to_expr(lean_expr_ptr, &mut cache);
+  let lean_expr = decode_expr(lean_expr_ptr, &mut cache);
 
   // Create universe params for de Bruijn indexing (u0, u1, u2, ...)
   let univ_params: Vec<Name> = (0..univ_ctx_size)
@@ -68,8 +68,8 @@ fn build_block_compare_result(
   lean_size: u64,
   rust_size: u64,
   first_diff_offset: u64,
-) -> LeanObject {
-  if matched {
+) -> LeanIxBlockCompareResult {
+  let obj = if matched {
     *LeanCtor::alloc(0, 0, 0) // match
   } else if not_found {
     *LeanCtor::alloc(2, 0, 0) // notFound
@@ -80,20 +80,21 @@ fn build_block_compare_result(
     ctor.set_u64(8, rust_size);
     ctor.set_u64(16, first_diff_offset);
     *ctor
-  }
+  };
+  LeanIxBlockCompareResult::new(obj)
 }
 
 /// Build a BlockCompareDetail Lean object.
 fn build_block_compare_detail(
-  result: LeanObject,
+  result: LeanIxBlockCompareResult,
   lean_sharing_len: u64,
   rust_sharing_len: u64,
-) -> LeanObject {
+) -> LeanIxBlockCompareDetail {
   let ctor = LeanCtor::alloc(0, 1, 16);
   ctor.set(0, result);
   ctor.set_u64(8, lean_sharing_len);
   ctor.set_u64(8 + 8, rust_sharing_len);
-  *ctor
+  LeanIxBlockCompareDetail::new(*ctor)
 }
 
 /// Compare a single block by lowlink name.
@@ -109,7 +110,7 @@ pub unsafe extern "C" fn rs_compare_block_v2(
   lean_sharing_len: u64,
 ) -> LeanIxBlockCompareDetail {
   let global_cache = GlobalCache::default();
-  let name = lean_ptr_to_name(lowlink_name, &global_cache);
+  let name = decode_name(lowlink_name, &global_cache);
 
   let rust_env = unsafe { &*rust_env };
   let lean_data = lean_bytes.as_bytes();
@@ -121,7 +122,7 @@ pub unsafe extern "C" fn rs_compare_block_v2(
       // Block not found in Rust compilation
       let result =
         build_block_compare_result(false, true, lean_data.len() as u64, 0, 0);
-      return build_block_compare_detail(result, lean_sharing_len, 0).into();
+      return build_block_compare_detail(result, lean_sharing_len, 0);
     },
   };
 
@@ -139,8 +140,7 @@ pub unsafe extern "C" fn rs_compare_block_v2(
       result,
       lean_sharing_len,
       rust_sharing_len,
-    )
-    .into();
+    );
   }
 
   // Mismatch: find first differing byte
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn rs_compare_block_v2(
     rust_bytes.len() as u64,
     first_diff_offset,
   );
-  build_block_compare_detail(result, lean_sharing_len, rust_sharing_len).into()
+  build_block_compare_detail(result, lean_sharing_len, rust_sharing_len)
 }
 
 /// Free a RustBlockEnv pointer.
@@ -185,10 +185,10 @@ pub unsafe extern "C" fn rs_free_compiled_env(ptr: *mut RustBlockEnv) {
 pub extern "C" fn rs_build_compiled_env(
   env_consts_ptr: LeanObject,
 ) -> *mut RustBlockEnv {
-  use crate::ffi::lean_env::lean_ptr_to_env;
+  use crate::ffi::lean_env::decode_env;
 
   // Decode Lean environment
-  let rust_env = lean_ptr_to_env(env_consts_ptr);
+  let rust_env = decode_env(env_consts_ptr.as_list());
   let rust_env = std::sync::Arc::new(rust_env);
 
   // Compile

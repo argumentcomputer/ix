@@ -9,8 +9,8 @@
 //! - Tag 5: mvar (n : Name) (hash : Address)
 
 use crate::ix::env::{Level, LevelData};
-use crate::lean::LeanIxLevel;
-use lean_ffi::object::{LeanArray, LeanCtor, LeanObject};
+use crate::lean::{LeanIxLevel, LeanIxName};
+use lean_ffi::object::{LeanArray, LeanCtor};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::address::build_address;
@@ -89,30 +89,30 @@ pub fn build_level_array(
 }
 
 /// Decode a Lean Ix.Level to Rust Level.
-pub fn decode_ix_level(obj: LeanObject) -> Level {
+pub fn decode_ix_level(obj: LeanIxLevel) -> Level {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => Level::zero(),
     1 => {
-      let x = decode_ix_level(ctor.get(0));
+      let x = decode_ix_level(LeanIxLevel::new(ctor.get(0)));
       Level::succ(x)
     },
     2 => {
-      let x = decode_ix_level(ctor.get(0));
-      let y = decode_ix_level(ctor.get(1));
+      let x = decode_ix_level(LeanIxLevel::new(ctor.get(0)));
+      let y = decode_ix_level(LeanIxLevel::new(ctor.get(1)));
       Level::max(x, y)
     },
     3 => {
-      let x = decode_ix_level(ctor.get(0));
-      let y = decode_ix_level(ctor.get(1));
+      let x = decode_ix_level(LeanIxLevel::new(ctor.get(0)));
+      let y = decode_ix_level(LeanIxLevel::new(ctor.get(1)));
       Level::imax(x, y)
     },
     4 => {
-      let n = decode_ix_name(ctor.get(0));
+      let n = decode_ix_name(LeanIxName::new(ctor.get(0)));
       Level::param(n)
     },
     5 => {
-      let n = decode_ix_name(ctor.get(0));
+      let n = decode_ix_name(LeanIxName::new(ctor.get(0)));
       Level::mvar(n)
     },
     _ => panic!("Invalid Ix.Level tag: {}", ctor.tag()),
@@ -120,14 +120,14 @@ pub fn decode_ix_level(obj: LeanObject) -> Level {
 }
 
 /// Decode Array of Levels from Lean pointer.
-pub fn decode_level_array(obj: LeanObject) -> Vec<Level> {
-  obj.as_array().map(decode_ix_level)
+pub fn decode_level_array(obj: LeanArray) -> Vec<Level> {
+  obj.map(|x| decode_ix_level(LeanIxLevel::new(x)))
 }
 
 /// Round-trip an Ix.Level: decode from Lean, re-encode via LeanBuildCache.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_level(level_ptr: LeanIxLevel) -> LeanIxLevel {
-  let level = decode_ix_level(*level_ptr);
+  let level = decode_ix_level(level_ptr);
   let mut cache = LeanBuildCache::new();
   build_level(&mut cache, &level)
 }

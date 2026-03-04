@@ -70,9 +70,8 @@ impl LeanIxonUniv {
   }
 
   /// Decode Array Ixon.Univ.
-  pub fn decode_array(obj: LeanObject) -> Vec<Arc<Univ>> {
-    let arr = obj.as_array();
-    arr.map(|elem| Arc::new(Self::new(elem).decode()))
+  pub fn decode_array(obj: LeanArray) -> Vec<Arc<Univ>> {
+    obj.map(|elem| Arc::new(Self::new(elem).decode()))
   }
 }
 
@@ -82,7 +81,7 @@ pub fn build_ixon_univ_array(univs: &[Arc<Univ>]) -> LeanArray {
 }
 
 /// Decode Array Ixon.Univ (standalone wrapper).
-pub fn decode_ixon_univ_array(obj: LeanObject) -> Vec<Arc<Univ>> {
+pub fn decode_ixon_univ_array(obj: LeanArray) -> Vec<Arc<Univ>> {
   LeanIxonUniv::decode_array(obj)
 }
 

@@ -67,11 +67,6 @@ macro_rules! lean_domain_type {
       fn from(x: $name) -> Self { x.0 }
     }
 
-    impl From<$crate::object::LeanObject> for $name {
-      #[inline]
-      fn from(obj: $crate::object::LeanObject) -> Self { Self(obj) }
-    }
-
     impl $name {
       #[inline]
       pub fn new(obj: $crate::object::LeanObject) -> Self { Self(obj) }

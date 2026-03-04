@@ -8,7 +8,8 @@
 
 use lean_ffi::nat::Nat;
 use lean_ffi::object::{
-  LeanArray, LeanByteArray, LeanCtor, LeanList, LeanObject, LeanString,
+  LeanArray, LeanBool, LeanByteArray, LeanCtor, LeanList, LeanNat, LeanObject,
+  LeanString,
 };
 
 // =============================================================================
@@ -34,12 +35,7 @@ pub fn build_nat(n: &Nat) -> LeanObject {
     arr[..chunk.len()].copy_from_slice(chunk);
     limbs.push(u64::from_le_bytes(arr));
   }
-  unsafe {
-    LeanObject::from_raw(lean_ffi::nat::lean_nat_from_limbs(
-      limbs.len(),
-      limbs.as_ptr(),
-    ))
-  }
+  unsafe { lean_ffi::nat::lean_nat_from_limbs(limbs.len(), limbs.as_ptr()) }
 }
 
 // =============================================================================
@@ -48,8 +44,8 @@ pub fn build_nat(n: &Nat) -> LeanObject {
 
 /// Round-trip a Nat: decode from Lean, re-encode to Lean.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_nat(nat_ptr: LeanObject) -> LeanObject {
-  let nat = Nat::from_obj(nat_ptr);
+pub extern "C" fn rs_roundtrip_nat(nat_ptr: LeanNat) -> LeanObject {
+  let nat = Nat::from_obj(*nat_ptr);
   build_nat(&nat)
 }
 
@@ -83,8 +79,7 @@ pub extern "C" fn rs_roundtrip_bytearray(ba: LeanByteArray) -> LeanByteArray {
 /// Round-trip a Bool: decode from Lean, re-encode.
 /// Bool in Lean is passed as unboxed scalar: false = 0, true = 1
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_bool(bool_ptr: LeanObject) -> LeanObject {
-  // Bool is passed as unboxed scalar - just return it as-is
+pub extern "C" fn rs_roundtrip_bool(bool_ptr: LeanBool) -> LeanBool {
   bool_ptr
 }
 
@@ -114,11 +109,10 @@ fn build_array_nat(nats: &[Nat]) -> LeanArray {
 /// Round-trip a Point (structure with x, y : Nat).
 /// Point is a structure, which in Lean is represented as a constructor with tag 0.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_point(point_ptr: LeanObject) -> LeanObject {
-  let ctor = point_ptr.as_ctor();
+pub extern "C" fn rs_roundtrip_point(point_ptr: LeanCtor) -> LeanObject {
   // Point is a structure (single constructor, tag 0) with 2 Nat fields
-  let x = Nat::from_obj(ctor.get(0));
-  let y = Nat::from_obj(ctor.get(1));
+  let x = Nat::from_obj(point_ptr.get(0));
+  let y = Nat::from_obj(point_ptr.get(1));
 
   // Re-encode as Point
   let point = LeanCtor::alloc(0, 2, 0);
@@ -129,12 +123,11 @@ pub extern "C" fn rs_roundtrip_point(point_ptr: LeanObject) -> LeanObject {
 
 /// Round-trip a NatTree (inductive with leaf : Nat → NatTree | node : NatTree → NatTree → NatTree).
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_nat_tree(tree_ptr: LeanObject) -> LeanObject {
+pub extern "C" fn rs_roundtrip_nat_tree(tree_ptr: LeanCtor) -> LeanObject {
   roundtrip_nat_tree_recursive(tree_ptr)
 }
 
-fn roundtrip_nat_tree_recursive(obj: LeanObject) -> LeanObject {
-  let ctor = obj.as_ctor();
+fn roundtrip_nat_tree_recursive(ctor: LeanCtor) -> LeanObject {
   match ctor.tag() {
     0 => {
       // leaf : Nat → NatTree
@@ -145,8 +138,8 @@ fn roundtrip_nat_tree_recursive(obj: LeanObject) -> LeanObject {
     },
     1 => {
       // node : NatTree → NatTree → NatTree
-      let left = roundtrip_nat_tree_recursive(ctor.get(0));
-      let right = roundtrip_nat_tree_recursive(ctor.get(1));
+      let left = roundtrip_nat_tree_recursive(ctor.get(0).as_ctor());
+      let right = roundtrip_nat_tree_recursive(ctor.get(1).as_ctor());
       let node = LeanCtor::alloc(1, 2, 0);
       node.set(0, left);
       node.set(1, right);
@@ -256,12 +249,11 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
 ///   - cons key value tail: ctor 1, 3 fields
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
-  map_ptr: LeanObject,
+  map_ptr: LeanCtor,
 ) -> LeanObject {
-  let raw_ctor = map_ptr.as_ctor();
   // Due to unboxing, map_ptr points directly to Raw
-  let size = Nat::from_obj(raw_ctor.get(0));
-  let buckets = raw_ctor.get(1).as_array();
+  let size = Nat::from_obj(map_ptr.get(0));
+  let buckets = map_ptr.get(1).as_array();
 
   // Decode buckets (Array of AssocLists)
   let mut pairs: Vec<(Nat, Nat)> = Vec::new();

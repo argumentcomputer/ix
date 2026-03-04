@@ -4,11 +4,11 @@ use crate::ix::env::{
   DataValue, Int, Name, SourceInfo, Substring, Syntax, SyntaxPreresolved,
 };
 use crate::lean::{
-  LeanIxDataValue, LeanIxInt, LeanIxSourceInfo, LeanIxSubstring, LeanIxSyntax,
-  LeanIxSyntaxPreresolved,
+  LeanIxDataValue, LeanIxInt, LeanIxName, LeanIxSourceInfo, LeanIxSubstring,
+  LeanIxSyntax, LeanIxSyntaxPreresolved,
 };
 use lean_ffi::nat::Nat;
-use lean_ffi::object::{LeanArray, LeanCtor, LeanObject, LeanString};
+use lean_ffi::object::{LeanArray, LeanCtor, LeanString};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ix::name::{build_name, decode_ix_name};
@@ -225,7 +225,7 @@ pub fn build_kvmap(
 
 /// Decode Ix.Int from Lean object.
 /// Ix.Int: ofNat (tag 0, 1 field) | negSucc (tag 1, 1 field)
-pub fn decode_ix_int(obj: LeanObject) -> Int {
+pub fn decode_ix_int(obj: LeanIxInt) -> Int {
   let ctor = obj.as_ctor();
   let nat = Nat::from_obj(ctor.get(0));
   match ctor.tag() {
@@ -236,7 +236,7 @@ pub fn decode_ix_int(obj: LeanObject) -> Int {
 }
 
 /// Decode Ix.DataValue from a Lean object.
-pub fn decode_data_value(obj: LeanObject) -> DataValue {
+pub fn decode_data_value(obj: LeanIxDataValue) -> DataValue {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
@@ -250,7 +250,7 @@ pub fn decode_data_value(obj: LeanObject) -> DataValue {
     },
     2 => {
       // ofName: 1 object field
-      DataValue::OfName(decode_ix_name(ctor.get(0)))
+      DataValue::OfName(decode_ix_name(LeanIxName::new(ctor.get(0))))
     },
     3 => {
       // ofNat: 1 object field
@@ -269,14 +269,16 @@ pub fn decode_data_value(obj: LeanObject) -> DataValue {
     },
     5 => {
       // ofSyntax: 1 object field
-      DataValue::OfSyntax(decode_ix_syntax(ctor.get(0)).into())
+      DataValue::OfSyntax(
+        decode_ix_syntax(LeanIxSyntax::new(ctor.get(0))).into(),
+      )
     },
     _ => panic!("Invalid DataValue tag: {}", ctor.tag()),
   }
 }
 
 /// Decode Ix.Syntax from a Lean object.
-pub fn decode_ix_syntax(obj: LeanObject) -> Syntax {
+pub fn decode_ix_syntax(obj: LeanIxSyntax) -> Syntax {
   if obj.is_scalar() {
     return Syntax::Missing;
   }
@@ -285,24 +287,27 @@ pub fn decode_ix_syntax(obj: LeanObject) -> Syntax {
     0 => Syntax::Missing,
     1 => {
       // node: info, kind, args
-      let info = decode_ix_source_info(ctor.get(0));
-      let kind = decode_ix_name(ctor.get(1));
-      let args: Vec<Syntax> = ctor.get(2).as_array().map(decode_ix_syntax);
+      let info = decode_ix_source_info(LeanIxSourceInfo::new(ctor.get(0)));
+      let kind = decode_ix_name(LeanIxName::new(ctor.get(1)));
+      let args: Vec<Syntax> =
+        ctor.get(2).as_array().map(|x| decode_ix_syntax(LeanIxSyntax::new(x)));
 
       Syntax::Node(info, kind, args)
     },
     2 => {
       // atom: info, val
-      let info = decode_ix_source_info(ctor.get(0));
+      let info = decode_ix_source_info(LeanIxSourceInfo::new(ctor.get(0)));
       Syntax::Atom(info, ctor.get(1).as_string().to_string())
     },
     3 => {
       // ident: info, rawVal, val, preresolved
-      let info = decode_ix_source_info(ctor.get(0));
-      let raw_val = decode_substring(ctor.get(1));
-      let val = decode_ix_name(ctor.get(2));
-      let preresolved: Vec<SyntaxPreresolved> =
-        ctor.get(3).as_array().map(decode_syntax_preresolved);
+      let info = decode_ix_source_info(LeanIxSourceInfo::new(ctor.get(0)));
+      let raw_val = decode_substring(LeanIxSubstring::new(ctor.get(1)));
+      let val = decode_ix_name(LeanIxName::new(ctor.get(2)));
+      let preresolved: Vec<SyntaxPreresolved> = ctor
+        .get(3)
+        .as_array()
+        .map(|x| decode_syntax_preresolved(LeanIxSyntaxPreresolved::new(x)));
 
       Syntax::Ident(info, raw_val, val, preresolved)
     },
@@ -311,7 +316,7 @@ pub fn decode_ix_syntax(obj: LeanObject) -> Syntax {
 }
 
 /// Decode Ix.SourceInfo.
-pub fn decode_ix_source_info(obj: LeanObject) -> SourceInfo {
+pub fn decode_ix_source_info(obj: LeanIxSourceInfo) -> SourceInfo {
   if obj.is_scalar() {
     return SourceInfo::None;
   }
@@ -320,9 +325,9 @@ pub fn decode_ix_source_info(obj: LeanObject) -> SourceInfo {
     0 => {
       // original
       SourceInfo::Original(
-        decode_substring(ctor.get(0)),
+        decode_substring(LeanIxSubstring::new(ctor.get(0))),
         Nat::from_obj(ctor.get(1)),
-        decode_substring(ctor.get(2)),
+        decode_substring(LeanIxSubstring::new(ctor.get(2))),
         Nat::from_obj(ctor.get(3)),
       )
     },
@@ -342,7 +347,7 @@ pub fn decode_ix_source_info(obj: LeanObject) -> SourceInfo {
 }
 
 /// Decode Ix.Substring.
-pub fn decode_substring(obj: LeanObject) -> Substring {
+pub fn decode_substring(obj: LeanIxSubstring) -> Substring {
   let ctor = obj.as_ctor();
   Substring {
     str: ctor.get(0).as_string().to_string(),
@@ -352,16 +357,18 @@ pub fn decode_substring(obj: LeanObject) -> Substring {
 }
 
 /// Decode Ix.SyntaxPreresolved.
-pub fn decode_syntax_preresolved(obj: LeanObject) -> SyntaxPreresolved {
+pub fn decode_syntax_preresolved(
+  obj: LeanIxSyntaxPreresolved,
+) -> SyntaxPreresolved {
   let ctor = obj.as_ctor();
   match ctor.tag() {
     0 => {
       // namespace
-      SyntaxPreresolved::Namespace(decode_ix_name(ctor.get(0)))
+      SyntaxPreresolved::Namespace(decode_ix_name(LeanIxName::new(ctor.get(0))))
     },
     1 => {
       // decl
-      let name = decode_ix_name(ctor.get(0));
+      let name = decode_ix_name(LeanIxName::new(ctor.get(0)));
       let aliases: Vec<String> =
         ctor.get(1).as_array().map(|obj| obj.as_string().to_string());
 
@@ -378,7 +385,7 @@ pub fn decode_syntax_preresolved(obj: LeanObject) -> SyntaxPreresolved {
 /// Round-trip an Ix.Int: decode from Lean, re-encode.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ix_int(int_ptr: LeanIxInt) -> LeanIxInt {
-  let int_val = decode_ix_int(*int_ptr);
+  let int_val = decode_ix_int(int_ptr);
   build_int(&int_val)
 }
 
@@ -387,7 +394,7 @@ pub extern "C" fn rs_roundtrip_ix_int(int_ptr: LeanIxInt) -> LeanIxInt {
 pub extern "C" fn rs_roundtrip_ix_substring(
   sub_ptr: LeanIxSubstring,
 ) -> LeanIxSubstring {
-  let sub = decode_substring(*sub_ptr);
+  let sub = decode_substring(sub_ptr);
   build_substring(&sub)
 }
 
@@ -396,7 +403,7 @@ pub extern "C" fn rs_roundtrip_ix_substring(
 pub extern "C" fn rs_roundtrip_ix_source_info(
   si_ptr: LeanIxSourceInfo,
 ) -> LeanIxSourceInfo {
-  let si = decode_ix_source_info(*si_ptr);
+  let si = decode_ix_source_info(si_ptr);
   build_source_info(&si)
 }
 
@@ -405,7 +412,7 @@ pub extern "C" fn rs_roundtrip_ix_source_info(
 pub extern "C" fn rs_roundtrip_ix_syntax_preresolved(
   sp_ptr: LeanIxSyntaxPreresolved,
 ) -> LeanIxSyntaxPreresolved {
-  let sp = decode_syntax_preresolved(*sp_ptr);
+  let sp = decode_syntax_preresolved(sp_ptr);
   let mut cache = LeanBuildCache::new();
   build_syntax_preresolved(&mut cache, &sp)
 }
@@ -415,7 +422,7 @@ pub extern "C" fn rs_roundtrip_ix_syntax_preresolved(
 pub extern "C" fn rs_roundtrip_ix_syntax(
   syn_ptr: LeanIxSyntax,
 ) -> LeanIxSyntax {
-  let syn = decode_ix_syntax(*syn_ptr);
+  let syn = decode_ix_syntax(syn_ptr);
   let mut cache = LeanBuildCache::new();
   build_syntax(&mut cache, &syn)
 }
@@ -425,7 +432,7 @@ pub extern "C" fn rs_roundtrip_ix_syntax(
 pub extern "C" fn rs_roundtrip_ix_data_value(
   dv_ptr: LeanIxDataValue,
 ) -> LeanIxDataValue {
-  let dv = decode_data_value(*dv_ptr);
+  let dv = decode_data_value(dv_ptr);
   let mut cache = LeanBuildCache::new();
   build_data_value(&mut cache, &dv)
 }

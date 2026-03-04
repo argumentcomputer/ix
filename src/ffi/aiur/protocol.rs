@@ -20,6 +20,7 @@ use crate::{
   ffi::aiur::{
     lean_unbox_g, lean_unbox_nat_as_usize, toplevel::decode_toplevel,
   },
+  lean::{LeanAiurFriParameters, LeanAiurToplevel},
 };
 
 // =============================================================================
@@ -63,12 +64,12 @@ extern "C" fn rs_aiur_proof_of_bytes(
 /// `AiurSystem.build : @&Bytecode.Toplevel → @&CommitmentParameters → AiurSystem`
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_build(
-  toplevel: LeanObject,
+  toplevel: LeanAiurToplevel,
   commitment_parameters: LeanObject,
 ) -> LeanExternal<AiurSystem> {
   let system = AiurSystem::build(
     decode_toplevel(toplevel),
-    lean_ptr_to_commitment_parameters(commitment_parameters),
+    decode_commitment_parameters(commitment_parameters),
   );
   LeanExternal::alloc(system_class(), system)
 }
@@ -77,12 +78,12 @@ extern "C" fn rs_aiur_system_build(
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_verify(
   aiur_system_obj: LeanExternal<AiurSystem>,
-  fri_parameters: LeanObject,
-  claim: LeanObject,
+  fri_parameters: LeanAiurFriParameters,
+  claim: LeanArray,
   proof_obj: LeanExternal<Proof>,
 ) -> LeanExcept {
-  let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
-  let claim = claim.as_array().map(lean_unbox_g);
+  let fri_parameters = decode_fri_parameters(fri_parameters);
+  let claim = claim.map(lean_unbox_g);
   match aiur_system_obj.get().verify(fri_parameters, &claim, proof_obj.get()) {
     Ok(()) => LeanExcept::ok(LeanObject::box_usize(0)),
     Err(err) => LeanExcept::error_string(&format!("{err:?}")),
@@ -94,17 +95,17 @@ extern "C" fn rs_aiur_system_verify(
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_prove(
   aiur_system_obj: LeanExternal<AiurSystem>,
-  fri_parameters: LeanObject,
+  fri_parameters: LeanAiurFriParameters,
   fun_idx: LeanObject,
-  args: LeanObject,
-  io_data_arr: LeanObject,
-  io_map_arr: LeanObject,
+  args: LeanArray,
+  io_data_arr: LeanArray,
+  io_map_arr: LeanArray,
 ) -> LeanObject {
-  let fri_parameters = lean_ctor_to_fri_parameters(fri_parameters);
+  let fri_parameters = decode_fri_parameters(fri_parameters);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx);
-  let args = args.as_array().map(lean_unbox_g);
-  let io_data = io_data_arr.as_array().map(lean_unbox_g);
-  let io_map = lean_array_to_io_buffer_map(io_map_arr);
+  let args = args.map(lean_unbox_g);
+  let io_data = io_data_arr.map(lean_unbox_g);
+  let io_map = decode_io_buffer_map(io_map_arr);
   let mut io_buffer = IOBuffer { data: io_data, map: io_map };
 
   let (claim, proof) =
@@ -158,19 +159,19 @@ extern "C" fn rs_aiur_system_prove(
 // =============================================================================
 
 /// Build a Lean `Array G` from a slice of field elements.
-fn build_g_array(values: &[G]) -> LeanObject {
+fn build_g_array(values: &[G]) -> LeanArray {
   let arr = LeanArray::alloc(values.len());
   for (i, g) in values.iter().enumerate() {
     arr.set(i, LeanObject::box_u64(g.as_canonical_u64()));
   }
-  *arr
+  arr
 }
 
-fn lean_ptr_to_commitment_parameters(obj: LeanObject) -> CommitmentParameters {
+fn decode_commitment_parameters(obj: LeanObject) -> CommitmentParameters {
   CommitmentParameters { log_blowup: lean_unbox_nat_as_usize(obj) }
 }
 
-fn lean_ctor_to_fri_parameters(obj: LeanObject) -> FriParameters {
+fn decode_fri_parameters(obj: LeanAiurFriParameters) -> FriParameters {
   let ctor = obj.as_ctor();
   FriParameters {
     log_final_poly_len: lean_unbox_nat_as_usize(ctor.get(0)),
@@ -180,10 +181,9 @@ fn lean_ctor_to_fri_parameters(obj: LeanObject) -> FriParameters {
   }
 }
 
-fn lean_array_to_io_buffer_map(
-  obj: LeanObject,
+fn decode_io_buffer_map(
+  arr: LeanArray,
 ) -> FxHashMap<Vec<G>, IOKeyInfo> {
-  let arr = obj.as_array();
   let mut map = FxHashMap::with_capacity_and_hasher(arr.len(), FxBuildHasher);
   for elt in arr.iter() {
     let pair = elt.as_ctor();

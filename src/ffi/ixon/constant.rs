@@ -18,11 +18,11 @@ use crate::ix::ixon::constant::{
 use crate::lean::{
   LeanIxAddress, LeanIxonAxiom, LeanIxonConstant, LeanIxonConstantInfo,
   LeanIxonConstructor, LeanIxonConstructorProj, LeanIxonDefinition,
-  LeanIxonDefinitionProj, LeanIxonInductive, LeanIxonInductiveProj,
-  LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor, LeanIxonRecursorProj,
-  LeanIxonRecursorRule,
+  LeanIxonDefinitionProj, LeanIxonExpr, LeanIxonInductive,
+  LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor,
+  LeanIxonRecursorProj, LeanIxonRecursorRule,
 };
-use lean_ffi::object::{LeanArray, LeanByteArray, LeanCtor, LeanObject};
+use lean_ffi::object::{LeanArray, LeanByteArray, LeanCtor};
 
 use crate::ffi::ixon::expr::{
   build_ixon_expr, build_ixon_expr_array, decode_ixon_expr,
@@ -47,7 +47,7 @@ pub fn build_address_array(addrs: &[Address]) -> LeanArray {
 /// Build Ixon.Definition
 /// Lean stores scalar fields ordered by size (largest first).
 /// Layout: header(8) + typ(8) + value(8) + lvls(8) + kind(1) + safety(1) + padding(6)
-pub fn build_ixon_definition(def: &IxonDefinition) -> LeanObject {
+pub fn build_ixon_definition(def: &IxonDefinition) -> LeanIxonDefinition {
   let typ_obj = build_ixon_expr(&def.typ);
   let value_obj = build_ixon_expr(&def.value);
   // 2 obj fields, 16 scalar bytes (lvls(8) + kind(1) + safety(1) + padding(6))
@@ -68,22 +68,24 @@ pub fn build_ixon_definition(def: &IxonDefinition) -> LeanObject {
     crate::ix::env::DefinitionSafety::Partial => 2,
   };
   ctor.set_u8(25, safety_val);
-  *ctor
+  LeanIxonDefinition::new(*ctor)
 }
 
 /// Build Ixon.RecursorRule
-pub fn build_ixon_recursor_rule(rule: &IxonRecursorRule) -> LeanObject {
+pub fn build_ixon_recursor_rule(
+  rule: &IxonRecursorRule,
+) -> LeanIxonRecursorRule {
   let rhs_obj = build_ixon_expr(&rule.rhs);
   // 1 obj field, 8 scalar bytes
   let ctor = LeanCtor::alloc(0, 1, 8);
   ctor.set(0, rhs_obj);
   ctor.set_u64(8, rule.fields);
-  *ctor
+  LeanIxonRecursorRule::new(*ctor)
 }
 
 /// Build Ixon.Recursor
 /// Scalars ordered by size: lvls(8) + params(8) + indices(8) + motives(8) + minors(8) + k(1) + isUnsafe(1) + padding(6)
-pub fn build_ixon_recursor(rec: &IxonRecursor) -> LeanObject {
+pub fn build_ixon_recursor(rec: &IxonRecursor) -> LeanIxonRecursor {
   let typ_obj = build_ixon_expr(&rec.typ);
   // Build rules array
   let rules_arr = LeanArray::alloc(rec.rules.len());
@@ -102,12 +104,12 @@ pub fn build_ixon_recursor(rec: &IxonRecursor) -> LeanObject {
   ctor.set_u64(48, rec.minors);
   ctor.set_u8(56, if rec.k { 1 } else { 0 });
   ctor.set_u8(57, if rec.is_unsafe { 1 } else { 0 });
-  *ctor
+  LeanIxonRecursor::new(*ctor)
 }
 
 /// Build Ixon.Axiom
 /// Scalars ordered by size: lvls(8) + isUnsafe(1) + padding(7)
-pub fn build_ixon_axiom(ax: &IxonAxiom) -> LeanObject {
+pub fn build_ixon_axiom(ax: &IxonAxiom) -> LeanIxonAxiom {
   let typ_obj = build_ixon_expr(&ax.typ);
   // 1 obj field, 16 scalar bytes (lvls(8) + isUnsafe(1) + padding(7))
   let ctor = LeanCtor::alloc(0, 1, 16);
@@ -115,13 +117,13 @@ pub fn build_ixon_axiom(ax: &IxonAxiom) -> LeanObject {
   // Scalar offsets from obj_cptr: 1*8=8 base
   ctor.set_u64(8, ax.lvls);
   ctor.set_u8(16, if ax.is_unsafe { 1 } else { 0 });
-  *ctor
+  LeanIxonAxiom::new(*ctor)
 }
 
 /// Build Ixon.Quotient
 /// QuotKind is a simple enum stored as scalar u8, not object field.
 /// Scalars ordered by size: lvls(8) + kind(1) + padding(7)
-pub fn build_ixon_quotient(quot: &IxonQuotient) -> LeanObject {
+pub fn build_ixon_quotient(quot: &IxonQuotient) -> LeanIxonQuotient {
   let typ_obj = build_ixon_expr(&quot.typ);
   // 1 obj field (typ), 16 scalar bytes (lvls(8) + kind(1) + padding(7))
   let ctor = LeanCtor::alloc(0, 1, 16);
@@ -135,12 +137,12 @@ pub fn build_ixon_quotient(quot: &IxonQuotient) -> LeanObject {
     crate::ix::env::QuotKind::Ind => 3,
   };
   ctor.set_u8(16, kind_val);
-  *ctor
+  LeanIxonQuotient::new(*ctor)
 }
 
 /// Build Ixon.Constructor
 /// Scalars ordered by size: lvls(8) + cidx(8) + params(8) + fields(8) + isUnsafe(1) + padding(7)
-pub fn build_ixon_constructor(c: &IxonConstructor) -> LeanObject {
+pub fn build_ixon_constructor(c: &IxonConstructor) -> LeanIxonConstructor {
   let typ_obj = build_ixon_expr(&c.typ);
   // 1 obj field, 40 scalar bytes (4×8 + 1 + 7 padding)
   let ctor = LeanCtor::alloc(0, 1, 40);
@@ -151,12 +153,12 @@ pub fn build_ixon_constructor(c: &IxonConstructor) -> LeanObject {
   ctor.set_u64(24, c.params);
   ctor.set_u64(32, c.fields);
   ctor.set_u8(40, if c.is_unsafe { 1 } else { 0 });
-  *ctor
+  LeanIxonConstructor::new(*ctor)
 }
 
 /// Build Ixon.Inductive
 /// Scalars ordered by size: lvls(8) + params(8) + indices(8) + nested(8) + recr(1) + refl(1) + isUnsafe(1) + padding(5)
-pub fn build_ixon_inductive(ind: &IxonInductive) -> LeanObject {
+pub fn build_ixon_inductive(ind: &IxonInductive) -> LeanIxonInductive {
   let typ_obj = build_ixon_expr(&ind.typ);
   // Build ctors array
   let ctors_arr = LeanArray::alloc(ind.ctors.len());
@@ -175,49 +177,51 @@ pub fn build_ixon_inductive(ind: &IxonInductive) -> LeanObject {
   ctor.set_u8(48, if ind.recr { 1 } else { 0 });
   ctor.set_u8(49, if ind.refl { 1 } else { 0 });
   ctor.set_u8(50, if ind.is_unsafe { 1 } else { 0 });
-  *ctor
+  LeanIxonInductive::new(*ctor)
 }
 
 /// Build Ixon.InductiveProj
-pub fn build_inductive_proj(proj: &InductiveProj) -> LeanObject {
+pub fn build_inductive_proj(proj: &InductiveProj) -> LeanIxonInductiveProj {
   let block_obj = build_address_from_ixon(&proj.block);
   let ctor = LeanCtor::alloc(0, 1, 8);
   ctor.set(0, block_obj);
   ctor.set_u64(8, proj.idx);
-  *ctor
+  LeanIxonInductiveProj::new(*ctor)
 }
 
 /// Build Ixon.ConstructorProj
-pub fn build_constructor_proj(proj: &ConstructorProj) -> LeanObject {
+pub fn build_constructor_proj(
+  proj: &ConstructorProj,
+) -> LeanIxonConstructorProj {
   let block_obj = build_address_from_ixon(&proj.block);
   let ctor = LeanCtor::alloc(0, 1, 16);
   ctor.set(0, block_obj);
   ctor.set_u64(8, proj.idx);
   ctor.set_u64(16, proj.cidx);
-  *ctor
+  LeanIxonConstructorProj::new(*ctor)
 }
 
 /// Build Ixon.RecursorProj
-pub fn build_recursor_proj(proj: &RecursorProj) -> LeanObject {
+pub fn build_recursor_proj(proj: &RecursorProj) -> LeanIxonRecursorProj {
   let block_obj = build_address_from_ixon(&proj.block);
   let ctor = LeanCtor::alloc(0, 1, 8);
   ctor.set(0, block_obj);
   ctor.set_u64(8, proj.idx);
-  *ctor
+  LeanIxonRecursorProj::new(*ctor)
 }
 
 /// Build Ixon.DefinitionProj
-pub fn build_definition_proj(proj: &DefinitionProj) -> LeanObject {
+pub fn build_definition_proj(proj: &DefinitionProj) -> LeanIxonDefinitionProj {
   let block_obj = build_address_from_ixon(&proj.block);
   let ctor = LeanCtor::alloc(0, 1, 8);
   ctor.set(0, block_obj);
   ctor.set_u64(8, proj.idx);
-  *ctor
+  LeanIxonDefinitionProj::new(*ctor)
 }
 
 /// Build Ixon.MutConst
-pub fn build_mut_const(mc: &MutConst) -> LeanObject {
-  match mc {
+pub fn build_mut_const(mc: &MutConst) -> LeanIxonMutConst {
+  let obj = match mc {
     MutConst::Defn(def) => {
       let def_obj = build_ixon_definition(def);
       let ctor = LeanCtor::alloc(0, 1, 0);
@@ -236,12 +240,15 @@ pub fn build_mut_const(mc: &MutConst) -> LeanObject {
       ctor.set(0, rec_obj);
       *ctor
     },
-  }
+  };
+  LeanIxonMutConst::new(obj)
 }
 
 /// Build Ixon.ConstantInfo (9 constructors)
-pub fn build_ixon_constant_info(info: &IxonConstantInfo) -> LeanObject {
-  match info {
+pub fn build_ixon_constant_info(
+  info: &IxonConstantInfo,
+) -> LeanIxonConstantInfo {
+  let obj = match info {
     IxonConstantInfo::Defn(def) => {
       let def_obj = build_ixon_definition(def);
       let ctor = LeanCtor::alloc(0, 1, 0);
@@ -299,11 +306,12 @@ pub fn build_ixon_constant_info(info: &IxonConstantInfo) -> LeanObject {
       ctor.set(0, arr);
       *ctor
     },
-  }
+  };
+  LeanIxonConstantInfo::new(obj)
 }
 
 /// Build Ixon.Constant
-pub fn build_ixon_constant(constant: &IxonConstant) -> LeanObject {
+pub fn build_ixon_constant(constant: &IxonConstant) -> LeanIxonConstant {
   let info_obj = build_ixon_constant_info(&constant.info);
   let sharing_obj = build_ixon_expr_array(&constant.sharing);
   let refs_obj = build_address_array(&constant.refs);
@@ -313,7 +321,7 @@ pub fn build_ixon_constant(constant: &IxonConstant) -> LeanObject {
   ctor.set(1, sharing_obj);
   ctor.set(2, refs_obj);
   ctor.set(3, univs_obj);
-  *ctor
+  LeanIxonConstant::new(*ctor)
 }
 
 // =============================================================================
@@ -321,24 +329,23 @@ pub fn build_ixon_constant(constant: &IxonConstant) -> LeanObject {
 // =============================================================================
 
 /// Decode a ByteArray (Address) to Address.
-pub fn decode_ixon_address(obj: LeanObject) -> Address {
-  let ba = obj.as_byte_array();
-  Address::from_slice(&ba.as_bytes()[..32]).expect("Address should be 32 bytes")
+pub fn decode_ixon_address(obj: LeanIxAddress) -> Address {
+  Address::from_slice(&obj.as_bytes()[..32])
+    .expect("Address should be 32 bytes")
 }
 
 /// Decode Array Address.
-pub fn decode_ixon_address_array(obj: LeanObject) -> Vec<Address> {
-  let arr = obj.as_array();
-  arr.map(decode_ixon_address)
+pub fn decode_ixon_address_array(obj: LeanArray) -> Vec<Address> {
+  obj.map(|x| decode_ixon_address(x.as_byte_array()))
 }
 
 /// Decode Ixon.Definition.
 /// Lean stores scalar fields ordered by size (largest first).
 /// Layout: header(8) + typ(8) + value(8) + lvls(8) + kind(1) + safety(1) + padding(6)
-pub fn decode_ixon_definition(obj: LeanObject) -> IxonDefinition {
+pub fn decode_ixon_definition(obj: LeanIxonDefinition) -> IxonDefinition {
   let ctor = obj.as_ctor();
-  let typ = Arc::new(decode_ixon_expr(ctor.get(0)));
-  let value = Arc::new(decode_ixon_expr(ctor.get(1)));
+  let typ = Arc::new(decode_ixon_expr(LeanIxonExpr::new(ctor.get(0))));
+  let value = Arc::new(decode_ixon_expr(LeanIxonExpr::new(ctor.get(1))));
   let lvls = ctor.scalar_u64(2, 0);
   let kind_val = ctor.scalar_u8(2, 8);
   let kind = match kind_val {
@@ -358,20 +365,23 @@ pub fn decode_ixon_definition(obj: LeanObject) -> IxonDefinition {
 }
 
 /// Decode Ixon.RecursorRule.
-pub fn decode_ixon_recursor_rule(obj: LeanObject) -> IxonRecursorRule {
+pub fn decode_ixon_recursor_rule(
+  obj: LeanIxonRecursorRule,
+) -> IxonRecursorRule {
   let ctor = obj.as_ctor();
-  let rhs = Arc::new(decode_ixon_expr(ctor.get(0)));
+  let rhs = Arc::new(decode_ixon_expr(LeanIxonExpr::new(ctor.get(0))));
   let fields = ctor.scalar_u64(1, 0);
   IxonRecursorRule { fields, rhs }
 }
 
 /// Decode Ixon.Recursor.
 /// Scalars ordered by size: lvls(8) + params(8) + indices(8) + motives(8) + minors(8) + k(1) + isUnsafe(1) + padding(6)
-pub fn decode_ixon_recursor(obj: LeanObject) -> IxonRecursor {
+pub fn decode_ixon_recursor(obj: LeanIxonRecursor) -> IxonRecursor {
   let ctor = obj.as_ctor();
-  let typ = Arc::new(decode_ixon_expr(ctor.get(0)));
+  let typ = Arc::new(decode_ixon_expr(LeanIxonExpr::new(ctor.get(0))));
   let rules_arr = ctor.get(1).as_array();
-  let rules = rules_arr.map(decode_ixon_recursor_rule);
+  let rules =
+    rules_arr.map(|x| decode_ixon_recursor_rule(LeanIxonRecursorRule::new(x)));
   let lvls = ctor.scalar_u64(2, 0);
   let params = ctor.scalar_u64(2, 8);
   let indices = ctor.scalar_u64(2, 16);
@@ -394,9 +404,9 @@ pub fn decode_ixon_recursor(obj: LeanObject) -> IxonRecursor {
 
 /// Decode Ixon.Axiom.
 /// Scalars ordered by size: lvls(8) + isUnsafe(1) + padding(7)
-pub fn decode_ixon_axiom(obj: LeanObject) -> IxonAxiom {
+pub fn decode_ixon_axiom(obj: LeanIxonAxiom) -> IxonAxiom {
   let ctor = obj.as_ctor();
-  let typ = Arc::new(decode_ixon_expr(ctor.get(0)));
+  let typ = Arc::new(decode_ixon_expr(LeanIxonExpr::new(ctor.get(0))));
   let lvls = ctor.scalar_u64(1, 0);
   let is_unsafe = ctor.scalar_u8(1, 8) != 0;
   IxonAxiom { is_unsafe, lvls, typ }
@@ -404,9 +414,9 @@ pub fn decode_ixon_axiom(obj: LeanObject) -> IxonAxiom {
 
 /// Decode Ixon.Quotient.
 /// QuotKind is a scalar (not object field). Scalars: lvls(8) + kind(1) + padding(7)
-pub fn decode_ixon_quotient(obj: LeanObject) -> IxonQuotient {
+pub fn decode_ixon_quotient(obj: LeanIxonQuotient) -> IxonQuotient {
   let ctor = obj.as_ctor();
-  let typ = Arc::new(decode_ixon_expr(ctor.get(0)));
+  let typ = Arc::new(decode_ixon_expr(LeanIxonExpr::new(ctor.get(0))));
   let lvls = ctor.scalar_u64(1, 0);
   let kind_val = ctor.scalar_u8(1, 8);
   let kind = match kind_val {
@@ -421,9 +431,9 @@ pub fn decode_ixon_quotient(obj: LeanObject) -> IxonQuotient {
 
 /// Decode Ixon.Constructor.
 /// Scalars ordered by size: lvls(8) + cidx(8) + params(8) + fields(8) + isUnsafe(1) + padding(7)
-pub fn decode_ixon_constructor(obj: LeanObject) -> IxonConstructor {
+pub fn decode_ixon_constructor(obj: LeanIxonConstructor) -> IxonConstructor {
   let ctor = obj.as_ctor();
-  let typ = Arc::new(decode_ixon_expr(ctor.get(0)));
+  let typ = Arc::new(decode_ixon_expr(LeanIxonExpr::new(ctor.get(0))));
   let lvls = ctor.scalar_u64(1, 0);
   let cidx = ctor.scalar_u64(1, 8);
   let params = ctor.scalar_u64(1, 16);
@@ -434,11 +444,12 @@ pub fn decode_ixon_constructor(obj: LeanObject) -> IxonConstructor {
 
 /// Decode Ixon.Inductive.
 /// Scalars ordered by size: lvls(8) + params(8) + indices(8) + nested(8) + recr(1) + refl(1) + isUnsafe(1) + padding(5)
-pub fn decode_ixon_inductive(obj: LeanObject) -> IxonInductive {
+pub fn decode_ixon_inductive(obj: LeanIxonInductive) -> IxonInductive {
   let ctor = obj.as_ctor();
-  let typ = Arc::new(decode_ixon_expr(ctor.get(0)));
+  let typ = Arc::new(decode_ixon_expr(LeanIxonExpr::new(ctor.get(0))));
   let ctors_arr = ctor.get(1).as_array();
-  let ctors = ctors_arr.map(decode_ixon_constructor);
+  let ctors =
+    ctors_arr.map(|x| decode_ixon_constructor(LeanIxonConstructor::new(x)));
   let lvls = ctor.scalar_u64(2, 0);
   let params = ctor.scalar_u64(2, 8);
   let indices = ctor.scalar_u64(2, 16);
@@ -460,66 +471,86 @@ pub fn decode_ixon_inductive(obj: LeanObject) -> IxonInductive {
 }
 
 /// Decode Ixon.InductiveProj.
-pub fn decode_ixon_inductive_proj(obj: LeanObject) -> InductiveProj {
+pub fn decode_ixon_inductive_proj(obj: LeanIxonInductiveProj) -> InductiveProj {
   let ctor = obj.as_ctor();
-  let block = decode_ixon_address(ctor.get(0));
+  let block = decode_ixon_address(ctor.get(0).as_byte_array());
   let idx = ctor.scalar_u64(1, 0);
   InductiveProj { idx, block }
 }
 
 /// Decode Ixon.ConstructorProj.
-pub fn decode_ixon_constructor_proj(obj: LeanObject) -> ConstructorProj {
+pub fn decode_ixon_constructor_proj(
+  obj: LeanIxonConstructorProj,
+) -> ConstructorProj {
   let ctor = obj.as_ctor();
-  let block = decode_ixon_address(ctor.get(0));
+  let block = decode_ixon_address(ctor.get(0).as_byte_array());
   let idx = ctor.scalar_u64(1, 0);
   let cidx = ctor.scalar_u64(1, 8);
   ConstructorProj { idx, cidx, block }
 }
 
 /// Decode Ixon.RecursorProj.
-pub fn decode_ixon_recursor_proj(obj: LeanObject) -> RecursorProj {
+pub fn decode_ixon_recursor_proj(obj: LeanIxonRecursorProj) -> RecursorProj {
   let ctor = obj.as_ctor();
-  let block = decode_ixon_address(ctor.get(0));
+  let block = decode_ixon_address(ctor.get(0).as_byte_array());
   let idx = ctor.scalar_u64(1, 0);
   RecursorProj { idx, block }
 }
 
 /// Decode Ixon.DefinitionProj.
-pub fn decode_ixon_definition_proj(obj: LeanObject) -> DefinitionProj {
+pub fn decode_ixon_definition_proj(
+  obj: LeanIxonDefinitionProj,
+) -> DefinitionProj {
   let ctor = obj.as_ctor();
-  let block = decode_ixon_address(ctor.get(0));
+  let block = decode_ixon_address(ctor.get(0).as_byte_array());
   let idx = ctor.scalar_u64(1, 0);
   DefinitionProj { idx, block }
 }
 
 /// Decode Ixon.MutConst.
-pub fn decode_ixon_mut_const(obj: LeanObject) -> MutConst {
+pub fn decode_ixon_mut_const(obj: LeanIxonMutConst) -> MutConst {
   let ctor = obj.as_ctor();
   let inner = ctor.get(0);
   match ctor.tag() {
-    0 => MutConst::Defn(decode_ixon_definition(inner)),
-    1 => MutConst::Indc(decode_ixon_inductive(inner)),
-    2 => MutConst::Recr(decode_ixon_recursor(inner)),
+    0 => MutConst::Defn(decode_ixon_definition(LeanIxonDefinition::new(inner))),
+    1 => MutConst::Indc(decode_ixon_inductive(LeanIxonInductive::new(inner))),
+    2 => MutConst::Recr(decode_ixon_recursor(LeanIxonRecursor::new(inner))),
     tag => panic!("Invalid Ixon.MutConst tag: {}", tag),
   }
 }
 
 /// Decode Ixon.ConstantInfo.
-pub fn decode_ixon_constant_info(obj: LeanObject) -> IxonConstantInfo {
+pub fn decode_ixon_constant_info(
+  obj: LeanIxonConstantInfo,
+) -> IxonConstantInfo {
   let ctor = obj.as_ctor();
   let inner = ctor.get(0);
   match ctor.tag() {
-    0 => IxonConstantInfo::Defn(decode_ixon_definition(inner)),
-    1 => IxonConstantInfo::Recr(decode_ixon_recursor(inner)),
-    2 => IxonConstantInfo::Axio(decode_ixon_axiom(inner)),
-    3 => IxonConstantInfo::Quot(decode_ixon_quotient(inner)),
-    4 => IxonConstantInfo::CPrj(decode_ixon_constructor_proj(inner)),
-    5 => IxonConstantInfo::RPrj(decode_ixon_recursor_proj(inner)),
-    6 => IxonConstantInfo::IPrj(decode_ixon_inductive_proj(inner)),
-    7 => IxonConstantInfo::DPrj(decode_ixon_definition_proj(inner)),
+    0 => IxonConstantInfo::Defn(decode_ixon_definition(
+      LeanIxonDefinition::new(inner),
+    )),
+    1 => {
+      IxonConstantInfo::Recr(decode_ixon_recursor(LeanIxonRecursor::new(inner)))
+    },
+    2 => IxonConstantInfo::Axio(decode_ixon_axiom(LeanIxonAxiom::new(inner))),
+    3 => {
+      IxonConstantInfo::Quot(decode_ixon_quotient(LeanIxonQuotient::new(inner)))
+    },
+    4 => IxonConstantInfo::CPrj(decode_ixon_constructor_proj(
+      LeanIxonConstructorProj::new(inner),
+    )),
+    5 => IxonConstantInfo::RPrj(decode_ixon_recursor_proj(
+      LeanIxonRecursorProj::new(inner),
+    )),
+    6 => IxonConstantInfo::IPrj(decode_ixon_inductive_proj(
+      LeanIxonInductiveProj::new(inner),
+    )),
+    7 => IxonConstantInfo::DPrj(decode_ixon_definition_proj(
+      LeanIxonDefinitionProj::new(inner),
+    )),
     8 => {
       let arr = inner.as_array();
-      let muts = arr.map(decode_ixon_mut_const);
+      let muts = arr.map(|x| decode_ixon_mut_const(LeanIxonMutConst::new(x)));
       IxonConstantInfo::Muts(muts)
     },
     tag => panic!("Invalid Ixon.ConstantInfo tag: {}", tag),
@@ -527,13 +558,13 @@ pub fn decode_ixon_constant_info(obj: LeanObject) -> IxonConstantInfo {
 }
 
 /// Decode Ixon.Constant.
-pub fn decode_ixon_constant(obj: LeanObject) -> IxonConstant {
+pub fn decode_ixon_constant(obj: LeanIxonConstant) -> IxonConstant {
   let ctor = obj.as_ctor();
   IxonConstant {
-    info: decode_ixon_constant_info(ctor.get(0)),
-    sharing: decode_ixon_expr_array(ctor.get(1)),
-    refs: decode_ixon_address_array(ctor.get(2)),
-    univs: decode_ixon_univ_array(ctor.get(3)),
+    info: decode_ixon_constant_info(LeanIxonConstantInfo::new(ctor.get(0))),
+    sharing: decode_ixon_expr_array(ctor.get(1).as_array()),
+    refs: decode_ixon_address_array(ctor.get(2).as_array()),
+    univs: decode_ixon_univ_array(ctor.get(3).as_array()),
   }
 }
 
@@ -546,8 +577,8 @@ pub fn decode_ixon_constant(obj: LeanObject) -> IxonConstant {
 pub extern "C" fn rs_roundtrip_ixon_definition(
   obj: LeanIxonDefinition,
 ) -> LeanIxonDefinition {
-  let def = decode_ixon_definition(*obj);
-  build_ixon_definition(&def).into()
+  let def = decode_ixon_definition(obj);
+  build_ixon_definition(&def)
 }
 
 /// Round-trip Ixon.Recursor.
@@ -555,15 +586,15 @@ pub extern "C" fn rs_roundtrip_ixon_definition(
 pub extern "C" fn rs_roundtrip_ixon_recursor(
   obj: LeanIxonRecursor,
 ) -> LeanIxonRecursor {
-  let rec = decode_ixon_recursor(*obj);
-  build_ixon_recursor(&rec).into()
+  let rec = decode_ixon_recursor(obj);
+  build_ixon_recursor(&rec)
 }
 
 /// Round-trip Ixon.Axiom.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ixon_axiom(obj: LeanIxonAxiom) -> LeanIxonAxiom {
-  let ax = decode_ixon_axiom(*obj);
-  build_ixon_axiom(&ax).into()
+  let ax = decode_ixon_axiom(obj);
+  build_ixon_axiom(&ax)
 }
 
 /// Round-trip Ixon.Quotient.
@@ -571,8 +602,8 @@ pub extern "C" fn rs_roundtrip_ixon_axiom(obj: LeanIxonAxiom) -> LeanIxonAxiom {
 pub extern "C" fn rs_roundtrip_ixon_quotient(
   obj: LeanIxonQuotient,
 ) -> LeanIxonQuotient {
-  let quot = decode_ixon_quotient(*obj);
-  build_ixon_quotient(&quot).into()
+  let quot = decode_ixon_quotient(obj);
+  build_ixon_quotient(&quot)
 }
 
 /// Round-trip Ixon.ConstantInfo.
@@ -580,8 +611,8 @@ pub extern "C" fn rs_roundtrip_ixon_quotient(
 pub extern "C" fn rs_roundtrip_ixon_constant_info(
   obj: LeanIxonConstantInfo,
 ) -> LeanIxonConstantInfo {
-  let info = decode_ixon_constant_info(*obj);
-  build_ixon_constant_info(&info).into()
+  let info = decode_ixon_constant_info(obj);
+  build_ixon_constant_info(&info)
 }
 
 /// Round-trip Ixon.Constant.
@@ -589,8 +620,8 @@ pub extern "C" fn rs_roundtrip_ixon_constant_info(
 pub extern "C" fn rs_roundtrip_ixon_constant(
   obj: LeanIxonConstant,
 ) -> LeanIxonConstant {
-  let constant = decode_ixon_constant(*obj);
-  build_ixon_constant(&constant).into()
+  let constant = decode_ixon_constant(obj);
+  build_ixon_constant(&constant)
 }
 
 /// Round-trip Ixon.RecursorRule.
@@ -598,8 +629,8 @@ pub extern "C" fn rs_roundtrip_ixon_constant(
 pub extern "C" fn rs_roundtrip_ixon_recursor_rule(
   obj: LeanIxonRecursorRule,
 ) -> LeanIxonRecursorRule {
-  let rule = decode_ixon_recursor_rule(*obj);
-  build_ixon_recursor_rule(&rule).into()
+  let rule = decode_ixon_recursor_rule(obj);
+  build_ixon_recursor_rule(&rule)
 }
 
 /// Round-trip Ixon.Constructor.
@@ -607,8 +638,8 @@ pub extern "C" fn rs_roundtrip_ixon_recursor_rule(
 pub extern "C" fn rs_roundtrip_ixon_constructor(
   obj: LeanIxonConstructor,
 ) -> LeanIxonConstructor {
-  let c = decode_ixon_constructor(*obj);
-  build_ixon_constructor(&c).into()
+  let c = decode_ixon_constructor(obj);
+  build_ixon_constructor(&c)
 }
 
 /// Round-trip Ixon.Inductive.
@@ -616,8 +647,8 @@ pub extern "C" fn rs_roundtrip_ixon_constructor(
 pub extern "C" fn rs_roundtrip_ixon_inductive(
   obj: LeanIxonInductive,
 ) -> LeanIxonInductive {
-  let ind = decode_ixon_inductive(*obj);
-  build_ixon_inductive(&ind).into()
+  let ind = decode_ixon_inductive(obj);
+  build_ixon_inductive(&ind)
 }
 
 /// Round-trip Ixon.InductiveProj.
@@ -625,8 +656,8 @@ pub extern "C" fn rs_roundtrip_ixon_inductive(
 pub extern "C" fn rs_roundtrip_ixon_inductive_proj(
   obj: LeanIxonInductiveProj,
 ) -> LeanIxonInductiveProj {
-  let proj = decode_ixon_inductive_proj(*obj);
-  build_inductive_proj(&proj).into()
+  let proj = decode_ixon_inductive_proj(obj);
+  build_inductive_proj(&proj)
 }
 
 /// Round-trip Ixon.ConstructorProj.
@@ -634,8 +665,8 @@ pub extern "C" fn rs_roundtrip_ixon_inductive_proj(
 pub extern "C" fn rs_roundtrip_ixon_constructor_proj(
   obj: LeanIxonConstructorProj,
 ) -> LeanIxonConstructorProj {
-  let proj = decode_ixon_constructor_proj(*obj);
-  build_constructor_proj(&proj).into()
+  let proj = decode_ixon_constructor_proj(obj);
+  build_constructor_proj(&proj)
 }
 
 /// Round-trip Ixon.RecursorProj.
@@ -643,8 +674,8 @@ pub extern "C" fn rs_roundtrip_ixon_constructor_proj(
 pub extern "C" fn rs_roundtrip_ixon_recursor_proj(
   obj: LeanIxonRecursorProj,
 ) -> LeanIxonRecursorProj {
-  let proj = decode_ixon_recursor_proj(*obj);
-  build_recursor_proj(&proj).into()
+  let proj = decode_ixon_recursor_proj(obj);
+  build_recursor_proj(&proj)
 }
 
 /// Round-trip Ixon.DefinitionProj.
@@ -652,8 +683,8 @@ pub extern "C" fn rs_roundtrip_ixon_recursor_proj(
 pub extern "C" fn rs_roundtrip_ixon_definition_proj(
   obj: LeanIxonDefinitionProj,
 ) -> LeanIxonDefinitionProj {
-  let proj = decode_ixon_definition_proj(*obj);
-  build_definition_proj(&proj).into()
+  let proj = decode_ixon_definition_proj(obj);
+  build_definition_proj(&proj)
 }
 
 /// Round-trip Ixon.MutConst.
@@ -661,6 +692,6 @@ pub extern "C" fn rs_roundtrip_ixon_definition_proj(
 pub extern "C" fn rs_roundtrip_ixon_mut_const(
   obj: LeanIxonMutConst,
 ) -> LeanIxonMutConst {
-  let mc = decode_ixon_mut_const(*obj);
-  build_mut_const(&mc).into()
+  let mc = decode_ixon_mut_const(obj);
+  build_mut_const(&mc)
 }

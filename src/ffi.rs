@@ -1,3 +1,10 @@
+// Lean and C don't support feature flags, so the _iroh module is exposed as a fallback for when the `net` feature is disabled and/or on the `aarch64-darwin` target.
+// This fallback module contains dummy functions that can still be called via Lean->Rust FFI, but will return an error message that Lean then prints before exiting.
+#[cfg(any(
+  not(feature = "net"),
+  all(target_os = "macos", target_arch = "aarch64")
+))]
+pub mod _iroh;
 pub mod aiur;
 pub mod byte_array;
 #[cfg(all(

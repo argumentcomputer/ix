@@ -3,7 +3,7 @@
 //! Lean stores small naturals as tagged scalars and large ones as GMP
 //! `mpz_object`s on the heap. This module handles both representations.
 
-use std::ffi::{c_int, c_void};
+use std::ffi::c_int;
 use std::fmt;
 use std::mem::MaybeUninit;
 
@@ -36,26 +36,17 @@ impl Nat {
     u64::try_from(&self.0).ok()
   }
 
-  /// Decode a `Nat` from a Lean object pointer. Handles both scalar (unboxed)
+  /// Decode a `Nat` from a `LeanObject`. Handles both scalar (unboxed)
   /// and heap-allocated (GMP `mpz_object`) representations.
-  ///
-  /// # Safety
-  /// The pointer must be a valid Lean `Nat` object (scalar or mpz).
-  pub unsafe fn from_ptr(ptr: *const c_void) -> Nat {
-    let obj = unsafe { LeanObject::from_raw(ptr) };
+  pub fn from_obj(obj: LeanObject) -> Nat {
     if obj.is_scalar() {
       let u = obj.unbox_usize();
       Nat(BigUint::from_bytes_le(&u.to_le_bytes()))
     } else {
       // Heap-allocated big integer (mpz_object)
-      let mpz: &MpzObject = unsafe { &*ptr.cast() };
+      let mpz: &MpzObject = unsafe { &*obj.as_ptr().cast() };
       Nat(mpz.m_value.to_biguint())
     }
-  }
-
-  /// Decode a `Nat` from a `LeanObject`. Convenience wrapper over `from_ptr`.
-  pub fn from_obj(obj: LeanObject) -> Nat {
-    unsafe { Self::from_ptr(obj.as_ptr()) }
   }
 
   #[inline]
@@ -133,7 +124,7 @@ unsafe extern "C" {
 
   /// Lean's internal mpz allocation — deep-copies the mpz value.
   /// Caller must still call mpz_clear on the original.
-  fn lean_alloc_mpz(v: *mut Mpz) -> *mut c_void;
+  fn lean_alloc_mpz(v: *mut Mpz) -> *mut std::ffi::c_void;
 }
 
 /// Create a Lean `Nat` from a little-endian array of u64 limbs.
@@ -143,17 +134,17 @@ unsafe extern "C" {
 pub unsafe fn lean_nat_from_limbs(
   num_limbs: usize,
   limbs: *const u64,
-) -> *mut c_void {
+) -> LeanObject {
   if num_limbs == 0 {
-    return LeanObject::box_usize(0).as_mut_ptr();
+    return LeanObject::box_usize(0);
   }
   let first = unsafe { *limbs };
   if num_limbs == 1 && first <= LEAN_MAX_SMALL_NAT {
     #[allow(clippy::cast_possible_truncation)] // only targets 64-bit
-    return LeanObject::box_usize(first as usize).as_mut_ptr();
+    return LeanObject::box_usize(first as usize);
   }
   if num_limbs == 1 {
-    return unsafe { lean_uint64_to_nat(first).cast() };
+    return unsafe { LeanObject::from_lean_ptr(lean_uint64_to_nat(first)) };
   }
   // Multi-limb: use GMP
   unsafe {
@@ -165,6 +156,6 @@ pub unsafe fn lean_nat_from_limbs(
     // lean_alloc_mpz deep-copies; we must free the original
     let result = lean_alloc_mpz(value.as_mut_ptr());
     mpz_clear(value.as_mut_ptr());
-    result
+    LeanObject::from_raw(result)
   }
 }

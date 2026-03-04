@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::lean::LeanIxonExpr;
-use lean_ffi::object::{LeanArray, LeanCtor, LeanObject};
+use lean_ffi::object::{LeanArray, LeanCtor};
 
 /// Build Ixon.Expr (12 constructors).
-pub fn build_ixon_expr(expr: &IxonExpr) -> LeanObject {
-  match expr {
+pub fn build_ixon_expr(expr: &IxonExpr) -> LeanIxonExpr {
+  let obj = match expr {
     IxonExpr::Sort(idx) => {
       let ctor = LeanCtor::alloc(0, 0, 8);
       ctor.set_u64(0, *idx);
@@ -101,7 +101,8 @@ pub fn build_ixon_expr(expr: &IxonExpr) -> LeanObject {
       ctor.set_u64(0, *idx);
       *ctor
     },
-  }
+  };
+  LeanIxonExpr::new(obj)
 }
 
 /// Build an Array of Ixon.Expr.
@@ -118,9 +119,8 @@ pub fn build_ixon_expr_array(exprs: &[Arc<IxonExpr>]) -> LeanArray {
 // =============================================================================
 
 /// Decode Array UInt64 from Lean.
-fn decode_u64_array(obj: LeanObject) -> Vec<u64> {
-  let arr = obj.as_array();
-  arr
+fn decode_u64_array(obj: LeanArray) -> Vec<u64> {
+  obj
     .iter()
     .map(|elem| {
       if elem.is_scalar() {
@@ -134,7 +134,7 @@ fn decode_u64_array(obj: LeanObject) -> Vec<u64> {
 }
 
 /// Decode Ixon.Expr (12 constructors).
-pub fn decode_ixon_expr(obj: LeanObject) -> IxonExpr {
+pub fn decode_ixon_expr(obj: LeanIxonExpr) -> IxonExpr {
   let ctor = obj.as_ctor();
   let tag = ctor.tag();
   match tag {
@@ -147,19 +147,17 @@ pub fn decode_ixon_expr(obj: LeanObject) -> IxonExpr {
       IxonExpr::Var(idx)
     },
     2 => {
-      let arr_obj = ctor.get(0);
       let ref_idx = ctor.scalar_u64(1, 0);
-      let univ_idxs = decode_u64_array(arr_obj);
+      let univ_idxs = decode_u64_array(ctor.get(0).as_array());
       IxonExpr::Ref(ref_idx, univ_idxs)
     },
     3 => {
-      let arr_obj = ctor.get(0);
       let rec_idx = ctor.scalar_u64(1, 0);
-      let univ_idxs = decode_u64_array(arr_obj);
+      let univ_idxs = decode_u64_array(ctor.get(0).as_array());
       IxonExpr::Rec(rec_idx, univ_idxs)
     },
     4 => {
-      let val_obj = ctor.get(0);
+      let val_obj = LeanIxonExpr::new(ctor.get(0));
       let type_ref_idx = ctor.scalar_u64(1, 0);
       let field_idx = ctor.scalar_u64(1, 8);
       IxonExpr::Prj(
@@ -177,33 +175,33 @@ pub fn decode_ixon_expr(obj: LeanObject) -> IxonExpr {
       IxonExpr::Nat(ref_idx)
     },
     7 => {
-      let f_obj = ctor.get(0);
-      let a_obj = ctor.get(1);
+      let f_obj = LeanIxonExpr::new(ctor.get(0));
+      let a_obj = LeanIxonExpr::new(ctor.get(1));
       IxonExpr::App(
         Arc::new(decode_ixon_expr(f_obj)),
         Arc::new(decode_ixon_expr(a_obj)),
       )
     },
     8 => {
-      let ty_obj = ctor.get(0);
-      let body_obj = ctor.get(1);
+      let ty_obj = LeanIxonExpr::new(ctor.get(0));
+      let body_obj = LeanIxonExpr::new(ctor.get(1));
       IxonExpr::Lam(
         Arc::new(decode_ixon_expr(ty_obj)),
         Arc::new(decode_ixon_expr(body_obj)),
       )
     },
     9 => {
-      let ty_obj = ctor.get(0);
-      let body_obj = ctor.get(1);
+      let ty_obj = LeanIxonExpr::new(ctor.get(0));
+      let body_obj = LeanIxonExpr::new(ctor.get(1));
       IxonExpr::All(
         Arc::new(decode_ixon_expr(ty_obj)),
         Arc::new(decode_ixon_expr(body_obj)),
       )
     },
     10 => {
-      let ty_obj = ctor.get(0);
-      let val_obj = ctor.get(1);
-      let body_obj = ctor.get(2);
+      let ty_obj = LeanIxonExpr::new(ctor.get(0));
+      let val_obj = LeanIxonExpr::new(ctor.get(1));
+      let body_obj = LeanIxonExpr::new(ctor.get(2));
       let non_dep = ctor.scalar_u8(3, 0) != 0;
       IxonExpr::Let(
         non_dep,
@@ -221,9 +219,8 @@ pub fn decode_ixon_expr(obj: LeanObject) -> IxonExpr {
 }
 
 /// Decode Array Ixon.Expr.
-pub fn decode_ixon_expr_array(obj: LeanObject) -> Vec<Arc<IxonExpr>> {
-  let arr = obj.as_array();
-  arr.map(|e| Arc::new(decode_ixon_expr(e)))
+pub fn decode_ixon_expr_array(obj: LeanArray) -> Vec<Arc<IxonExpr>> {
+  obj.map(|e| Arc::new(decode_ixon_expr(LeanIxonExpr::new(e))))
 }
 
 // =============================================================================
@@ -233,6 +230,6 @@ pub fn decode_ixon_expr_array(obj: LeanObject) -> Vec<Arc<IxonExpr>> {
 /// Round-trip Ixon.Expr.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ixon_expr(obj: LeanIxonExpr) -> LeanIxonExpr {
-  let expr = decode_ixon_expr(*obj);
-  build_ixon_expr(&expr).into()
+  let expr = decode_ixon_expr(obj);
+  build_ixon_expr(&expr)
 }

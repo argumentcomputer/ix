@@ -3,7 +3,9 @@
 use rustc_hash::FxHashMap;
 
 use crate::ix::env::{ConstantInfo, Name};
-use crate::lean::{LeanIxEnvironment, LeanIxRawEnvironment};
+use crate::lean::{
+  LeanIxConstantInfo, LeanIxEnvironment, LeanIxName, LeanIxRawEnvironment,
+};
 use lean_ffi::object::{LeanArray, LeanCtor, LeanObject};
 
 use crate::ffi::builder::LeanBuildCache;
@@ -79,7 +81,7 @@ pub fn build_hashmap_from_pairs(
 pub fn build_raw_environment(
   cache: &mut LeanBuildCache,
   consts: &FxHashMap<Name, ConstantInfo>,
-) -> LeanObject {
+) -> LeanIxRawEnvironment {
   // Build consts array: Array (Name × ConstantInfo)
   let consts_arr = LeanArray::alloc(consts.len());
   for (i, (name, info)) in consts.iter().enumerate() {
@@ -92,7 +94,7 @@ pub fn build_raw_environment(
     consts_arr.set(i, pair);
   }
 
-  *consts_arr
+  LeanIxRawEnvironment::new(*consts_arr)
 }
 
 // =============================================================================
@@ -169,9 +171,15 @@ where
 ///
 /// NOTE: Environment with a single field is UNBOXED by Lean,
 /// so the pointer IS the HashMap directly, not a structure containing it.
-pub fn decode_ix_environment(obj: LeanObject) -> FxHashMap<Name, ConstantInfo> {
+pub fn decode_ix_environment(
+  obj: LeanIxEnvironment,
+) -> FxHashMap<Name, ConstantInfo> {
   // Environment is unboxed - obj IS the HashMap directly
-  let consts_pairs = decode_hashmap(obj, decode_ix_name, decode_constant_info);
+  let consts_pairs = decode_hashmap(
+    *obj,
+    |x| decode_ix_name(LeanIxName::new(x)),
+    |x| decode_constant_info(LeanIxConstantInfo::new(x)),
+  );
   let mut consts: FxHashMap<Name, ConstantInfo> = FxHashMap::default();
   for (name, info) in consts_pairs {
     consts.insert(name, info);
@@ -183,15 +191,15 @@ pub fn decode_ix_environment(obj: LeanObject) -> FxHashMap<Name, ConstantInfo> {
 /// RawEnvironment = { consts : Array (Name × ConstantInfo) }
 /// NOTE: Unboxed to just Array. This version deduplicates by name.
 pub fn decode_ix_raw_environment(
-  obj: LeanObject,
+  obj: LeanIxRawEnvironment,
 ) -> FxHashMap<Name, ConstantInfo> {
   let arr = obj.as_array();
   let mut consts: FxHashMap<Name, ConstantInfo> = FxHashMap::default();
 
   for pair_obj in arr.iter() {
     let pair = pair_obj.as_ctor();
-    let name = decode_ix_name(pair.get(0));
-    let info = decode_constant_info(pair.get(1));
+    let name = decode_ix_name(LeanIxName::new(pair.get(0)));
+    let info = decode_constant_info(LeanIxConstantInfo::new(pair.get(1)));
     consts.insert(name, info);
   }
 
@@ -201,15 +209,15 @@ pub fn decode_ix_raw_environment(
 /// Decode Ix.RawEnvironment from Lean object preserving array structure.
 /// This version preserves all entries including duplicates.
 pub fn decode_ix_raw_environment_vec(
-  obj: LeanObject,
+  obj: LeanIxRawEnvironment,
 ) -> Vec<(Name, ConstantInfo)> {
   let arr = obj.as_array();
   let mut consts = Vec::with_capacity(arr.len());
 
   for pair_obj in arr.iter() {
     let pair = pair_obj.as_ctor();
-    let name = decode_ix_name(pair.get(0));
-    let info = decode_constant_info(pair.get(1));
+    let name = decode_ix_name(LeanIxName::new(pair.get(0)));
+    let info = decode_constant_info(LeanIxConstantInfo::new(pair.get(1)));
     consts.push((name, info));
   }
 
@@ -220,7 +228,7 @@ pub fn decode_ix_raw_environment_vec(
 pub fn build_raw_environment_from_vec(
   cache: &mut LeanBuildCache,
   consts: &[(Name, ConstantInfo)],
-) -> LeanObject {
+) -> LeanIxRawEnvironment {
   let consts_arr = LeanArray::alloc(consts.len());
   for (i, (name, info)) in consts.iter().enumerate() {
     let key_obj = build_name(cache, name);
@@ -230,7 +238,7 @@ pub fn build_raw_environment_from_vec(
     pair.set(1, val_obj);
     consts_arr.set(i, pair);
   }
-  *consts_arr
+  LeanIxRawEnvironment::new(*consts_arr)
 }
 
 // =============================================================================
@@ -242,9 +250,9 @@ pub fn build_raw_environment_from_vec(
 pub extern "C" fn rs_roundtrip_ix_environment(
   env_ptr: LeanIxEnvironment,
 ) -> LeanIxRawEnvironment {
-  let env = decode_ix_environment(*env_ptr);
+  let env = decode_ix_environment(env_ptr);
   let mut cache = LeanBuildCache::with_capacity(env.len());
-  build_raw_environment(&mut cache, &env).into()
+  build_raw_environment(&mut cache, &env)
 }
 
 /// Round-trip an Ix.RawEnvironment: decode from Lean, re-encode.
@@ -253,7 +261,7 @@ pub extern "C" fn rs_roundtrip_ix_environment(
 pub extern "C" fn rs_roundtrip_ix_raw_environment(
   env_ptr: LeanIxRawEnvironment,
 ) -> LeanIxRawEnvironment {
-  let env = decode_ix_raw_environment_vec(*env_ptr);
+  let env = decode_ix_raw_environment_vec(env_ptr);
   let mut cache = LeanBuildCache::with_capacity(env.len());
-  build_raw_environment_from_vec(&mut cache, &env).into()
+  build_raw_environment_from_vec(&mut cache, &env)
 }

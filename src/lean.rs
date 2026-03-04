@@ -13,6 +13,16 @@ lean_ffi::lean_domain_type! {
   LeanIxExpr;
   /// Lean `Ix.ConstantInfo` object.
   LeanIxConstantInfo;
+  /// Lean `Ix.ConstantVal` object.
+  LeanIxConstantVal;
+  /// Lean `Ix.ReducibilityHints` object.
+  LeanIxReducibilityHints;
+  /// Lean `Ix.Literal` object.
+  LeanIxLiteral;
+  /// Lean `Ix.BinderInfo` object.
+  LeanIxBinderInfo;
+  /// Lean `Ix.RecursorRule` object.
+  LeanIxRecursorRule;
   /// Lean `Ix.RawEnvironment` object.
   LeanIxRawEnvironment;
   /// Lean `Ix.Environment` object.
@@ -89,6 +99,22 @@ lean_ffi::lean_domain_type! {
   LeanIxonComm;
   /// Lean `Ixon.RawEnv` object.
   LeanIxonRawEnv;
+  /// Lean `Ixon.RawConst` object.
+  LeanIxonRawConst;
+  /// Lean `Ixon.RawNamed` object.
+  LeanIxonRawNamed;
+  /// Lean `Ixon.RawBlob` object.
+  LeanIxonRawBlob;
+  /// Lean `Ixon.RawComm` object.
+  LeanIxonRawComm;
+  /// Lean `Ixon.RawNameEntry` object.
+  LeanIxonRawNameEntry;
+
+  // Aiur types
+  /// Lean `Aiur.Bytecode.Toplevel` object.
+  LeanAiurToplevel;
+  /// Lean `Aiur.FriParameters` object.
+  LeanAiurFriParameters;
 
   // Error types
   /// Lean `Ixon.SerializeError` object.
