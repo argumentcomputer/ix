@@ -287,46 +287,123 @@ pub fn level_reduce(level: &Level, env: &Env) -> Level {
   }
 }
 
+/// Helper: Check if a level is definitely not zero.
+///
+/// Returns true if the level is guaranteed to be non-zero.
+/// This is used for imax simplification.
+fn is_not_zero(l: &Level) -> bool {
+  match l.0.as_ref() {
+    LevelNode::Zero | LevelNode::Param(_) => false,
+    LevelNode::Succ(_) => true,
+    LevelNode::Max(lhs, rhs) => is_not_zero(lhs) || is_not_zero(rhs),
+    LevelNode::Imax(_, rhs) => is_not_zero(rhs), // Only check rhs for imax
+  }
+}
+
+/// Helper: Convert (succ^k l) into (l, k). If l is not a succ, return (l, 0).
+fn to_offset(mut l: Level) -> (Level, usize) {
+  let mut k = 0;
+  while let LevelNode::Succ(inner) = l.0.as_ref() {
+    l = inner.clone();
+    k += 1;
+  }
+  (l, k)
+}
+
 /// Computes the maximum of two reduced levels.
 fn level_max(l1: &Level, l2: &Level) -> Level {
+  // Check for explicit levels (concrete numbers)
+  if is_explicit(l1) && is_explicit(l2) {
+    let d1 = to_offset(l1.clone()).1;
+    let d2 = to_offset(l2.clone()).1;
+    return if d1 >= d2 { l1.clone() } else { l2.clone() };
+  }
+
+  // max(u, u) = u
+  if l1 == l2 {
+    return l1.clone();
+  }
+
   match (l1.0.as_ref(), l2.0.as_ref()) {
     // max(0, l) = l
     (LevelNode::Zero, _) => l2.clone(),
     // max(l, 0) = l
     (_, LevelNode::Zero) => l1.clone(),
 
-    // max(succ(a), succ(b)) = succ(max(a, b))
-    (LevelNode::Succ(a), LevelNode::Succ(b)) => {
-      let max_inner = level_max(a, b);
-      LevelNode::Succ(max_inner).into()
+    // Subsumption: if l2 == max(l1, l'), then max(l1, l2) = l2
+    (_, LevelNode::Max(l2_lhs, l2_rhs)) if l1 == l2_lhs || l1 == l2_rhs => {
+      l2.clone()
     },
 
-    // max(max(a, b), c) = max(a, max(b, c)) (associativity, flatten)
-    (LevelNode::Max(a, b), _) => {
-      let max_bc = level_max(b, l2);
-      level_max(a, &max_bc)
+    // Subsumption: if l1 == max(l2, l'), then max(l1, l2) = l1
+    (LevelNode::Max(l1_lhs, l1_rhs), _) if l2 == l1_lhs || l2 == l1_rhs => {
+      l1.clone()
     },
 
-    // can't reduce further
-    _ => LevelNode::Max(l1.clone(), l2.clone()).into(),
+    // Otherwise check if they have the same base (after stripping succs)
+    _ => {
+      let (base1, offset1) = to_offset(l1.clone());
+      let (base2, offset2) = to_offset(l2.clone());
+
+      if base1 == base2 {
+        // Same base, return the one with larger offset
+        if offset1 > offset2 { l1.clone() } else { l2.clone() }
+      } else {
+        // Different bases, create Max node
+        LevelNode::Max(l1.clone(), l2.clone()).into()
+      }
+    },
+  }
+}
+
+/// Helper: Check if a level is explicit (concrete number).
+fn is_explicit(l: &Level) -> bool {
+  match l.0.as_ref() {
+    LevelNode::Zero => true,
+    LevelNode::Succ(inner) => is_explicit(inner),
+    _ => false,
   }
 }
 
 /// Computes the impredicative maximum of two reduced levels.
 ///
-/// IMax is like Max when the second argument is a successor,
+/// IMax is like Max when the second argument is definitely non-zero,
 /// but reduces to Zero when the second argument is Zero.
 /// This is used for universe-polymorphic definitions in Prop.
 fn level_imax(l1: &Level, l2: &Level) -> Level {
-  match (l1.0.as_ref(), l2.0.as_ref()) {
-    // imax(0, l) = l and imax(l, 0) = 0
-    (LevelNode::Zero, _) | (_, LevelNode::Zero) => l2.clone(),
+  // If we can prove l2 is not zero, convert to max
+  if is_not_zero(l2) {
+    return level_max(l1, l2);
+  }
 
-    // imax(a, succ(b)) = max(a, succ(b))
-    (_, LevelNode::Succ(_)) => level_max(l1, l2),
+  // imax(u, 0) = 0 for any u
+  if matches!(l2.0.as_ref(), LevelNode::Zero) {
+    return l2.clone();
+  }
 
-    // can't reduce further
-    _ => LevelNode::Imax(l1.clone(), l2.clone()).into(),
+  // imax(0, u) = u for any u
+  // imax(1, u) = u for any u
+  if matches!(l1.0.as_ref(), LevelNode::Zero) {
+    return l2.clone();
+  }
+  if is_one(l1) {
+    return l2.clone();
+  }
+
+  // imax(u, u) = u
+  if l1 == l2 {
+    return l1.clone();
+  }
+
+  // Can't reduce further
+  LevelNode::Imax(l1.clone(), l2.clone()).into()
+}
+
+/// Helper: Check if a level is exactly one (succ(zero)).
+fn is_one(l: &Level) -> bool {
+  match l.0.as_ref() {
+    LevelNode::Succ(inner) => matches!(inner.0.as_ref(), LevelNode::Zero),
+    _ => false,
   }
 }
 
@@ -823,6 +900,83 @@ mod tests {
     let max_params: Level =
       LevelNode::Max(param_0.clone(), param_1.clone()).into();
     let reduced = level_reduce(&max_params, &env);
+    assert_eq!(reduced, two);
+  }
+
+  #[test]
+  fn test_level_max_subsumption() {
+    let zero: Level = LevelNode::Zero.into();
+    let one: Level = LevelNode::Succ(zero.clone()).into();
+    let two: Level = LevelNode::Succ(one.clone()).into();
+    let param: Level = LevelNode::Param(0).into();
+
+    // If l2 = max(l1, x), then max(l1, l2) = l2
+    let max_one_two: Level = LevelNode::Max(one.clone(), two.clone()).into();
+    let reduced = level_max(&one, &max_one_two);
+    assert_eq!(reduced, max_one_two);
+
+    // If l1 = max(l2, x), then max(l1, l2) = l1
+    let max_two_param: Level =
+      LevelNode::Max(two.clone(), param.clone()).into();
+    let reduced = level_max(&max_two_param, &two);
+    assert_eq!(reduced, max_two_param);
+
+    // Same base with different offsets: max(succ^2(u), succ^3(u)) = succ^3(u)
+    let succ2_param: Level =
+      LevelNode::Succ(LevelNode::Succ(param.clone()).into()).into();
+    let succ3_param: Level = LevelNode::Succ(succ2_param.clone()).into();
+    let reduced = level_max(&succ2_param, &succ3_param);
+    assert_eq!(reduced, succ3_param);
+  }
+
+  #[test]
+  fn test_imax_with_not_zero() {
+    let zero: Level = LevelNode::Zero.into();
+    let one: Level = LevelNode::Succ(zero.clone()).into();
+    let two: Level = LevelNode::Succ(one.clone()).into();
+
+    // imax(1, succ(v)) = max(1, succ(v)) because succ is definitely not zero
+    let imax_one_two: Level = LevelNode::Imax(one.clone(), two.clone()).into();
+    let reduced = level_reduce(&imax_one_two, &Env::new());
+    // Should convert to max, which should reduce to two (since both are explicit)
+    assert_eq!(reduced, two);
+
+    // imax(1, max(v, w)) where one is not zero should convert to max
+    let max_one_two: Level = LevelNode::Max(one.clone(), two.clone()).into();
+    let imax_one_max: Level =
+      LevelNode::Imax(one.clone(), max_one_two.clone()).into();
+    let reduced = level_reduce(&imax_one_max, &Env::new());
+    // Should convert to max(1, max(1, 2)) which reduces to 2
+    // because max(1, 2) = 2 (both explicit), and max(1, 2) = 2
+    assert_eq!(reduced, two);
+  }
+
+  #[test]
+  fn test_imax_special_cases() {
+    let zero: Level = LevelNode::Zero.into();
+    let one: Level = LevelNode::Succ(zero.clone()).into();
+    let two: Level = LevelNode::Succ(one.clone()).into();
+
+    // imax(1, 0) = 0
+    let imax_one_zero: Level =
+      LevelNode::Imax(one.clone(), zero.clone()).into();
+    let reduced = level_reduce(&imax_one_zero, &Env::new());
+    assert_eq!(reduced, zero);
+
+    // imax(0, 1) = 1
+    let imax_zero_one: Level =
+      LevelNode::Imax(zero.clone(), one.clone()).into();
+    let reduced = level_reduce(&imax_zero_one, &Env::new());
+    assert_eq!(reduced, one);
+
+    // imax(1, 1) = 1
+    let imax_one_one: Level = LevelNode::Imax(one.clone(), one.clone()).into();
+    let reduced = level_reduce(&imax_one_one, &Env::new());
+    assert_eq!(reduced, one);
+
+    // imax(1, 2) = max(1, 2) = 2 (because 2 is not zero)
+    let imax_one_two: Level = LevelNode::Imax(one.clone(), two.clone()).into();
+    let reduced = level_reduce(&imax_one_two, &Env::new());
     assert_eq!(reduced, two);
   }
 }
