@@ -148,6 +148,33 @@ def testConsts : TestSeq :=
         "UInt64.decLt",
         -- Recursor-only Ixon block regression (rec.all was empty)
         "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
+        -- Dependencies of _sunfold (check these first to rule out lazy blowup)
+        "Std.Time.FormatPart",
+        "Std.Time.FormatConfig",
+        "Std.Time.FormatString",
+        "Std.Time.FormatType",
+        "Std.Time.FormatType.match_1",
+        "Std.Time.TypeFormat",
+        "Std.Time.Modifier",
+        "List.below",
+        "List.brecOn",
+        "Std.Internal.Parsec.String.Parser",
+        "Std.Internal.Parsec.instMonad",
+        "Std.Internal.Parsec.instAlternative",
+        "Std.Internal.Parsec.String.skipString",
+        "Std.Internal.Parsec.eof",
+        "Std.Internal.Parsec.fail",
+        "Bind.bind",
+        "Monad.toBind",
+        "SeqRight.seqRight",
+        "Applicative.toSeqRight",
+        "Applicative.toPure",
+        "Alternative.toApplicative",
+        "Pure.pure",
+        "_private.Std.Time.Format.Basic.«0».Std.Time.parseWith",
+        "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go.match_3",
+        "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go.match_1",
+        "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go",
         -- Deeply nested let chain (stack overflow regression)
         "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go._sunfold"
       ]
@@ -160,6 +187,14 @@ def testConsts : TestSeq :=
         let addr := cNamed.addr
         IO.println s!"  checking {name} ..."
         (← IO.getStdout).flush
+        -- if name.containsSubstr "builderParser" then
+        --   if let some ci := kenv.find? addr then
+        --     let safety := match ci with | .defnInfo v => s!"{repr v.safety}" | _ => "n/a"
+        --     IO.println s!"  [{name}] kind={ci.kindName} safety={safety}"
+        --     IO.println s!"  type: {ci.type.pp}"
+        --     if let some val := ci.value? then
+        --       IO.println s!"  value ({val.nodeCount} nodes): {val.pp}"
+        --     (← IO.getStdout).flush
         let start ← IO.monoMsNow
         match Ix.Kernel.typecheckConst kenv prims addr quotInit with
         | .ok () =>

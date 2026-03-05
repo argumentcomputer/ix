@@ -54,9 +54,6 @@ structure TypecheckState (m : MetaMode) where
   failureCache   : Std.TreeMap (Expr m × Expr m) Unit Expr.pairCompare := {}
   constTypeCache : Std.TreeMap Address (Array (Level m) × Expr m) Address.compare := {}
   fuel           : Nat := defaultFuel
-  /-- Tracks nesting depth of whnf calls from within recursor reduction (tryReduceApp → whnf).
-      When this exceeds a threshold, whnfCore is used instead of whnf to prevent stack overflow. -/
-  whnfDepth      : Nat := 0
   /-- Global recursion depth across isDefEq/infer/whnf for stack overflow prevention. -/
   recDepth       : Nat := 0
   maxRecDepth    : Nat := 0
@@ -101,6 +98,20 @@ def withFuelCheck (action : TypecheckM m α) : TypecheckM m α := do
   if stt.fuel == 0 then throw "deep recursion fuel limit reached"
   modify fun s => { s with fuel := s.fuel - 1 }
   action
+
+/-- Maximum recursion depth for the mutual isDefEq/whnf/infer cycle.
+    Prevents native stack overflow. Hard error when exceeded. -/
+def maxRecursionDepth : Nat := 2000
+
+/-- Check and increment recursion depth. Throws on exceeding limit. -/
+def withRecDepthCheck (action : TypecheckM m α) : TypecheckM m α := do
+  let d := (← get).recDepth
+  if d >= maxRecursionDepth then
+    throw s!"maximum recursion depth ({maxRecursionDepth}) exceeded"
+  modify fun s => { s with recDepth := d + 1, maxRecDepth := max s.maxRecDepth (d + 1) }
+  let r ← action
+  modify fun s => { s with recDepth := d }
+  pure r
 
 /-! ## Name lookup -/
 

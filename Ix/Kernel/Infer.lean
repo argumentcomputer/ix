@@ -87,7 +87,7 @@ def infoFromType (typ : Expr m) : TypecheckM m (TypeInfo m) := do
 mutual
   /-- Check that a term has a given type. -/
   partial def check (term : Expr m) (expectedType : Expr m) : TypecheckM m (TypedExpr m) := do
-    if (← read).trace then dbg_trace s!"check: {term.tag}"
+    -- if (← read).trace then dbg_trace s!"check: {term.tag}"
     let (te, inferredType) ← infer term
     if !(← isDefEq inferredType expectedType) then
       let ppInferred := inferredType.pp
@@ -96,15 +96,21 @@ mutual
     pure te
 
   /-- Infer the type of an expression, returning the typed expression and its type. -/
-  partial def infer (term : Expr m) : TypecheckM m (TypedExpr m × Expr m) := withFuelCheck do
-    -- Check infer cache: keyed on Expr, context verified on retrieval
+  partial def infer (term : Expr m) : TypecheckM m (TypedExpr m × Expr m) := do
+    -- Check infer cache FIRST — no fuel or stack cost for cache hits
     let types := (← read).types
     if let some (cachedCtx, cachedType) := (← get).inferCache.get? term then
       -- Ptr equality first, structural BEq fallback
-      if unsafe ptrAddrUnsafe cachedCtx == ptrAddrUnsafe types || cachedCtx == types then
+      -- For consts/sorts/lits, context doesn't matter (always closed)
+      let contextOk := match term with
+        | .const .. | .sort .. | .lit .. => true
+        | _ => unsafe ptrAddrUnsafe cachedCtx == ptrAddrUnsafe types || cachedCtx == types
+      if contextOk then
         let te : TypedExpr m := ⟨← infoFromType cachedType, term⟩
         return (te, cachedType)
-    if (← read).trace then dbg_trace s!"infer: {term.tag}"
+    withRecDepthCheck do
+    withFuelCheck do
+    -- if (← read).trace then dbg_trace s!"infer: {term.tag}"
     let result ← do match term with
       | .bvar idx bvarName => do
         let ctx ← read
@@ -334,7 +340,9 @@ mutual
       inferCache := {},
       eqvManager := {},
       failureCache := {},
-      fuel := defaultFuel
+      fuel := defaultFuel,
+      recDepth := 0,
+      maxRecDepth := 0
     }
     -- Skip if already in typedConsts
     if (← get).typedConsts.get? addr |>.isSome then
@@ -613,14 +621,26 @@ mutual
       if a == b && equalUnivArrays us us' then pure (some true) else pure none
     | .lit l, .lit l' => pure (some (l == l'))
     | .bvar i _, .bvar j _ => pure (some (i == j))
-    | .lam ty body _ _, .lam ty' body' _ _ =>
-      match ← quickIsDefEq ty ty' with
-      | some true => quickIsDefEq body body'
-      | other => pure other
-    | .forallE ty body _ _, .forallE ty' body' _ _ =>
-      match ← quickIsDefEq ty ty' with
-      | some true => quickIsDefEq body body'
-      | other => pure other
+    | .lam .., .lam .. => do
+      let mut a := t; let mut b := s
+      repeat
+        match a, b with
+        | .lam ty body _ _, .lam ty' body' _ _ =>
+          match ← quickIsDefEq ty ty' with
+          | some true => a := body; b := body'
+          | other => return other
+        | _, _ => break
+      quickIsDefEq a b
+    | .forallE .., .forallE .. => do
+      let mut a := t; let mut b := s
+      repeat
+        match a, b with
+        | .forallE ty body _ _, .forallE ty' body' _ _ =>
+          match ← quickIsDefEq ty ty' with
+          | some true => a := body; b := body'
+          | other => return other
+        | _, _ => break
+      quickIsDefEq a b
     | _, _ => pure none
 
   /-- Check if two expressions are definitionally equal.
@@ -630,60 +650,66 @@ mutual
       3. Lazy delta reduction — unfold definitions one step at a time
       4. whnfCore(cheapProj=false) — full projection resolution (only if needed)
       5. Structural comparison -/
-  partial def isDefEq (t s : Expr m) : TypecheckM m Bool := withFuelCheck do
-    -- 0. Quick structural check (avoids WHNF for trivially equal/unequal terms)
+  partial def isDefEq (t s : Expr m) : TypecheckM m Bool := do
+    -- 0. Quick structural check FIRST — no fuel/stack cost for trivial cases
     match ← quickIsDefEq t s with
     | some result => return result
     | none => pure ()
+    withRecDepthCheck do
+    withFuelCheck do
 
-    -- 1. Stage 1: structural reduction (cheapProj=true: defer full projection resolution)
-    let tn ← whnfCore t (cheapProj := true)
-    let sn ← whnfCore s (cheapProj := true)
+    -- Loop: steps 1-5 may restart when whnfCore(cheapProj=false) changes terms
+    let mut ct := t
+    let mut cs := s
+    repeat
+      -- 1. Stage 1: structural reduction (cheapProj=true: defer full projection resolution)
+      let tn ← whnfCore ct (cheapProj := true)
+      let sn ← whnfCore cs (cheapProj := true)
 
-    -- 2. Quick check after whnfCore (useHash=false for thorough union-find walking)
-    match ← quickIsDefEq tn sn (useHash := false) with
-    | some true => cacheResult t s true; return true
-    | some false => pure ()  -- don't cache — deeper checks may still succeed
-    | none => pure ()
+      -- 2. Quick check after whnfCore (useHash=false for thorough union-find walking)
+      match ← quickIsDefEq tn sn (useHash := false) with
+      | some true => cacheResult t s true; return true
+      | some false => pure ()  -- don't cache — deeper checks may still succeed
+      | none => pure ()
 
-    -- 3. Proof irrelevance
-    match ← isDefEqProofIrrel tn sn with
-    | some result =>
-      cacheResult t s result
-      return result
-    | none => pure ()
+      -- 3. Proof irrelevance
+      match ← isDefEqProofIrrel tn sn with
+      | some result =>
+        cacheResult t s result
+        return result
+      | none => pure ()
 
-    -- 4. Lazy delta reduction (incremental unfolding)
-    let (tn', sn', deltaResult) ← lazyDeltaReduction tn sn
-    if deltaResult == some true then
-      cacheResult t s true
-      return true
+      -- 4. Lazy delta reduction (incremental unfolding)
+      let (tn', sn', deltaResult) ← lazyDeltaReduction tn sn
+      if deltaResult == some true then
+        cacheResult t s true
+        return true
 
-    -- 4b. Cheap structural checks after lazy delta (before full whnfCore)
-    match tn', sn' with
-    | .const a us _, .const b us' _ =>
-      if a == b && equalUnivArrays us us' then
-        cacheResult t s true; return true
-    | .proj _ ti te _, .proj _ si se _ =>
-      if ti == si then
-        if ← isDefEq te se then
+      -- 4b. Cheap structural checks after lazy delta (before full whnfCore)
+      match tn', sn' with
+      | .const a us _, .const b us' _ =>
+        if a == b && equalUnivArrays us us' then
           cacheResult t s true; return true
-    | _, _ => pure ()
+      | .proj _ ti te _, .proj _ si se _ =>
+        if ti == si then
+          if ← isDefEq te se then
+            cacheResult t s true; return true
+      | _, _ => pure ()
 
-    -- 5. Stage 2: full structural reduction (no cheapProj — resolve all projections)
-    let tnn ← whnfCore tn'
-    let snn ← whnfCore sn'
-    -- Only recurse into isDefEqCore if something actually changed
-    if !(tnn == tn' && snn == sn') then
-      let result ← isDefEq tnn snn
+      -- 5. Stage 2: full structural reduction (no cheapProj — resolve all projections)
+      let tnn ← whnfCore tn'
+      let snn ← whnfCore sn'
+      -- If terms changed, loop back to step 1 instead of recursing into isDefEq
+      if !(tnn == tn' && snn == sn') then
+        ct := tnn; cs := snn; continue
+
+      -- 6. Structural comparison on fully-reduced terms
+      let result ← isDefEqCore tnn snn
       cacheResult t s result
       return result
 
-    -- 6. Structural comparison on fully-reduced terms
-    let result ← isDefEqCore tnn snn
-
-    cacheResult t s result
-    return result
+    -- unreachable, but needed for type checking
+    return false
 
   /-- Check if both terms are proofs of the same Prop type (proof irrelevance).
       Returns `none` if inference fails (e.g., free bound variables) or the type isn't Prop. -/
@@ -985,15 +1011,34 @@ mutual
 
 end -- mutual
 
+/-! ## Expr size -/
+
+/-- Count the number of nodes in an expression (iterative). -/
+partial def Expr.nodeCount (e : Expr m) : Nat := Id.run do
+  let mut stack : Array (Expr m) := #[e]
+  let mut count : Nat := 0
+  while h : stack.size > 0 do
+    let cur := stack[stack.size - 1]
+    stack := stack.pop
+    count := count + 1
+    match cur with
+    | .app fn arg => stack := stack.push fn |>.push arg
+    | .lam ty body _ _ => stack := stack.push ty |>.push body
+    | .forallE ty body _ _ => stack := stack.push ty |>.push body
+    | .letE ty val body _ => stack := stack.push ty |>.push val |>.push body
+    | .proj _ _ s _ => stack := stack.push s
+    | _ => pure ()
+  return count
+
 /-! ## Top-level entry points -/
 
 /-- Typecheck a single constant by address. -/
 def typecheckConst (kenv : Env m) (prims : Primitives) (addr : Address)
-    (quotInit : Bool := true) : Except String Unit :=
+    (quotInit : Bool := true) (trace : Bool := false) : Except String Unit :=
   let ctx : TypecheckCtx m := {
     types := #[], kenv := kenv,
     prims := prims, safety := .safe, quotInit := quotInit,
-    mutTypes := default, recAddr? := none
+    mutTypes := default, recAddr? := none, trace := trace
   }
   let stt : TypecheckState m := { typedConsts := default }
   let (result, _) := TypecheckM.run ctx stt (checkConst addr)

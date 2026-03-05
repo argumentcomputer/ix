@@ -125,7 +125,7 @@ mutual
       When cheapRec=true, recursor applications are returned as-is (no iota reduction). -/
   partial def whnfCore (e : Expr m) (cheapRec := false) (cheapProj := false)
       : TypecheckM m (Expr m) := do
-    -- Cache lookup (only for full structural reduction, not cheap)
+    -- Cache check FIRST — no stack cost for cache hits
     let useCache := !cheapRec && !cheapProj
     if useCache then
       if let some r := (← get).whnfCoreCache.get? e then return r
@@ -367,18 +367,14 @@ mutual
         then resolve projections iteratively from inside out.
       Tracks nesting depth: when whnf calls nest too deep (from isDefEq ↔ whnf cycles),
       degrades to whnfCore to prevent native stack overflow. -/
-  partial def whnf (e : Expr m) : TypecheckM m (Expr m) := withFuelCheck do
-    -- Depth guard: when whnf nesting is too deep, degrade to structural-only
-    let depth := (← get).whnfDepth
-    if depth > 64 then return ← whnfCore e
-    modify fun s => { s with whnfDepth := s.whnfDepth + 1 }
-    let r ← whnfImpl e
-    modify fun s => { s with whnfDepth := s.whnfDepth - 1 }
-    pure r
+  partial def whnf (e : Expr m) : TypecheckM m (Expr m) := do
+    -- Cache check FIRST — no fuel or stack cost for cache hits
+    if let some r := (← get).whnfCache.get? e then return r
+    withRecDepthCheck do
+    withFuelCheck do
+    whnfImpl e
 
   partial def whnfImpl (e : Expr m) : TypecheckM m (Expr m) := do
-    -- Check cache
-    if let some r := (← get).whnfCache.get? e then return r
     let mut t ← whnfCore e
     let mut steps := 0
     repeat

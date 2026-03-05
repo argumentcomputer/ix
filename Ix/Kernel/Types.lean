@@ -73,10 +73,18 @@ inductive Expr (m : MetaMode) where
              (typeName : MetaField m Ix.Name)
   deriving Inhabited
 
+/-- Pointer equality check for Exprs (O(1) fast path). -/
+private unsafe def Expr.ptrEqUnsafe (a : @& Expr m) (b : @& Expr m) : Bool :=
+  ptrAddrUnsafe a == ptrAddrUnsafe b
+
+@[implemented_by Expr.ptrEqUnsafe]
+opaque Expr.ptrEq : @& Expr m → @& Expr m → Bool
+
 /-- Structural equality for Expr, iterating over binder body spines to avoid
     stack overflow on deeply nested let/lam/forallE chains. -/
 partial def Expr.beq : Expr m → Expr m → Bool := go where
   go (a b : Expr m) : Bool := Id.run do
+    if Expr.ptrEq a b then return true
     let mut ca := a; let mut cb := b
     repeat
       match ca, cb with
@@ -531,13 +539,6 @@ private def Expr.tag' : Expr m → UInt8
   | .letE ..    => 6
   | .lit ..     => 7
   | .proj ..    => 8
-
-/-- Pointer equality check for Exprs (O(1) fast path). -/
-private unsafe def Expr.ptrEqUnsafe (a : @& Expr m) (b : @& Expr m) : Bool :=
-  ptrAddrUnsafe a == ptrAddrUnsafe b
-
-@[implemented_by Expr.ptrEqUnsafe]
-opaque Expr.ptrEq : @& Expr m → @& Expr m → Bool
 
 /-- Fully iterative structural ordering on expressions using an explicit worklist.
     Pointer-equal exprs short-circuit to .eq. Never recurses — uses a stack of
