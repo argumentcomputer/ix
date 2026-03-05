@@ -499,22 +499,6 @@ def ixonSerialize := ⟦
       ConstantInfo.RPrj(prj) => put_recursor_proj(prj, rest),
       ConstantInfo.IPrj(prj) => put_inductive_proj(prj, rest),
       ConstantInfo.DPrj(prj) => put_definition_proj(prj, rest),
-      -- Muts is never called here - handled separately in put_constant
-      ConstantInfo.Muts(_) => rest,
-    }
-  }
-
-  fn constant_info_variant(info: ConstantInfo) -> [G; 8] {
-    match info {
-      ConstantInfo.Defn(_) => [0; 8],                    -- CONST_DEFN
-      ConstantInfo.Recr(_) => [1, 0, 0, 0, 0, 0, 0, 0],  -- CONST_RECR
-      ConstantInfo.Axio(_) => [2, 0, 0, 0, 0, 0, 0, 0],  -- CONST_AXIO
-      ConstantInfo.Quot(_) => [3, 0, 0, 0, 0, 0, 0, 0],  -- CONST_QUOT
-      ConstantInfo.CPrj(_) => [4, 0, 0, 0, 0, 0, 0, 0],  -- CONST_CPRJ
-      ConstantInfo.RPrj(_) => [5, 0, 0, 0, 0, 0, 0, 0],  -- CONST_RPRJ
-      ConstantInfo.IPrj(_) => [6, 0, 0, 0, 0, 0, 0, 0],  -- CONST_IPRJ
-      ConstantInfo.DPrj(_) => [7, 0, 0, 0, 0, 0, 0, 0],  -- CONST_DPRJ
-      ConstantInfo.Muts(_) => [0; 8],  -- Not used (handled separately)
     }
   }
 
@@ -536,23 +520,29 @@ def ixonSerialize := ⟦
   fn put_constant(cnst: Constant, rest: ByteStream) -> ByteStream {
     match cnst {
       Constant.Mk(info, &sharing, &refs, &univs) =>
+        let up_to_sharing = put_sharing(sharing, put_refs(refs, put_univs(univs, rest)));
         match info {
           ConstantInfo.Muts(&mutuals) =>
             -- Use FLAG_MUTS (0xC) with entry count in size field
             let count = mut_const_list_length(mutuals);
-            put_tag4(0xC, count,
-              put_mut_const_list(mutuals,
-                put_sharing(sharing,
-                  put_refs(refs,
-                    put_univs(univs, rest))))),
-          _ =>
-            -- Use FLAG (0xD) with variant in size field
-            let variant = constant_info_variant(info);
-            put_tag4(0xD, variant,
-              put_constant_info(info,
-                put_sharing(sharing,
-                  put_refs(refs,
-                    put_univs(univs, rest))))),
+            put_tag4(0xC, count, put_mut_const_list(mutuals, up_to_sharing)),
+          -- Use FLAG (0xD) with variant in size field
+          ConstantInfo.Defn(_) =>
+            put_tag4(0xD, [0; 8], put_constant_info(info, up_to_sharing)),
+          ConstantInfo.Recr(_) =>
+            put_tag4(0xD, [1, 0, 0, 0, 0, 0, 0, 0], put_constant_info(info, up_to_sharing)),
+          ConstantInfo.Axio(_) =>
+            put_tag4(0xD, [2, 0, 0, 0, 0, 0, 0, 0], put_constant_info(info, up_to_sharing)),
+          ConstantInfo.Quot(_) =>
+            put_tag4(0xD, [3, 0, 0, 0, 0, 0, 0, 0], put_constant_info(info, up_to_sharing)),
+          ConstantInfo.CPrj(_) =>
+            put_tag4(0xD, [4, 0, 0, 0, 0, 0, 0, 0], put_constant_info(info, up_to_sharing)),
+          ConstantInfo.RPrj(_) =>
+            put_tag4(0xD, [5, 0, 0, 0, 0, 0, 0, 0], put_constant_info(info, up_to_sharing)),
+          ConstantInfo.IPrj(_) =>
+            put_tag4(0xD, [6, 0, 0, 0, 0, 0, 0, 0], put_constant_info(info, up_to_sharing)),
+          ConstantInfo.DPrj(_) =>
+            put_tag4(0xD, [7, 0, 0, 0, 0, 0, 0, 0], put_constant_info(info, up_to_sharing)),
         },
     }
   }
