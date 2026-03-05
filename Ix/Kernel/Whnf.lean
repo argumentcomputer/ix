@@ -126,7 +126,8 @@ mutual
   partial def whnfCore (e : Expr m) (cheapRec := false) (cheapProj := false)
       : TypecheckM m (Expr m) := do
     -- Cache check FIRST — no stack cost for cache hits
-    let useCache := !cheapRec && !cheapProj
+    -- Skip cache when let bindings are in scope (bvar zeta makes results context-dependent)
+    let useCache := !cheapRec && !cheapProj && (← read).numLetBindings == 0
     if useCache then
       if let some r := (← get).whnfCoreCache.get? e then return r
     let r ← whnfCoreImpl e cheapRec cheapProj
@@ -169,6 +170,17 @@ mutual
           let r ← tryReduceApp e'
           if r == e' then return r  -- stuck, return
           t := r; continue  -- iota/quot reduced, loop to re-process
+      | .bvar idx _ => do
+        -- Zeta-reduce let-bound bvars: look up the stored value and substitute
+        let ctx ← read
+        let depth := ctx.types.size
+        if idx < depth then
+          let arrayIdx := depth - 1 - idx
+          if h : arrayIdx < ctx.letValues.size then
+            if let some val := ctx.letValues[arrayIdx] then
+              -- Shift free bvars in val past the intermediate binders
+              t := val.liftBVars (idx + 1); continue
+        return t
       | .letE _ val body _ =>
         t := body.instantiate1 val; continue  -- loop instead of recursion
       | .proj typeAddr idx struct _ => do
@@ -197,7 +209,7 @@ mutual
           let major := args[majorIdx]
           let major' ← whnf major
           if isK then
-            tryKReduction e addr args major' params motives indAddr
+            tryKReduction e addr args major' params motives minors indices indAddr
           else
             tryIotaReduction e addr args major' params indices indAddr rules motives minors
         else pure e
@@ -209,9 +221,10 @@ mutual
       | _ => pure e
     | _ => pure e
 
-  /-- K-reduction: for Prop inductives with single zero-field constructor. -/
+  /-- K-reduction: for Prop inductives with single zero-field constructor.
+      Returns the (only) minor premise, plus any extra args after the major. -/
   partial def tryKReduction (e : Expr m) (_addr : Address) (args : Array (Expr m))
-      (major : Expr m) (params motives : Nat) (indAddr : Address)
+      (major : Expr m) (params motives minors indices : Nat) (indAddr : Address)
       : TypecheckM m (Expr m) := do
     let ctx ← read
     let prims := ctx.prims
@@ -237,7 +250,12 @@ mutual
       -- K-reduction: return the (only) minor premise
       let minorIdx := params + motives
       if h : minorIdx < args.size then
-        return args[minorIdx]
+        let mut result := args[minorIdx]
+        -- Apply extra args after major premise (matching lean4 kernel behavior)
+        let majorIdx := params + motives + minors + indices
+        if majorIdx + 1 < args.size then
+          result := result.mkAppRange (majorIdx + 1) args.size args
+        return result
       pure e
     else pure e
 
@@ -369,10 +387,16 @@ mutual
       degrades to whnfCore to prevent native stack overflow. -/
   partial def whnf (e : Expr m) : TypecheckM m (Expr m) := do
     -- Cache check FIRST — no fuel or stack cost for cache hits
-    if let some r := (← get).whnfCache.get? e then return r
+    -- Skip cache when let bindings are in scope (bvar zeta makes results context-dependent)
+    let useWhnfCache := (← read).numLetBindings == 0
+    if useWhnfCache then
+      if let some r := (← get).whnfCache.get? e then return r
     withRecDepthCheck do
     withFuelCheck do
-    whnfImpl e
+    let r ← whnfImpl e
+    if useWhnfCache then
+      modify fun s => { s with whnfCache := s.whnfCache.insert e r }
+    pure r
 
   partial def whnfImpl (e : Expr m) : TypecheckM m (Expr m) := do
     let mut t ← whnfCore e
@@ -382,6 +406,22 @@ mutual
       -- Try nat primitive reduction
       if let some r := ← tryReduceNat t then
         t ← whnfCore r; steps := steps + 1; continue
+      -- If head is a nat primitive but args aren't literals, whnf args and retry
+      match t.getAppFn with
+      | .const addr _ _ =>
+        if isPrimOp (← read).prims addr then
+          let args := t.getAppArgs
+          let mut changed := false
+          let mut newArgs : Array (Expr m) := #[]
+          for arg in args do
+            let arg' ← whnf arg
+            newArgs := newArgs.push arg'
+            if arg' != arg then changed := true
+          if changed then
+            let t' := t.getAppFn.mkAppN newArgs
+            if let some r := ← tryReduceNat t' then
+              t ← whnfCore r; steps := steps + 1; continue
+      | _ => pure ()
       -- Handle stuck projections (including inside app chains).
       -- Flatten nested projection chains to avoid deep whnf→whnf recursion.
       match t.getAppFn with
@@ -432,7 +472,6 @@ mutual
       if let some r := ← unfoldDefinition t then
         t ← whnfCore r; steps := steps + 1; continue
       break
-    modify fun s => { s with whnfCache := s.whnfCache.insert e t }
     pure t
 
   /-- Unfold a single delta step (definition body). -/

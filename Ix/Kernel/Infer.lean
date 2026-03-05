@@ -169,17 +169,19 @@ mutual
         let inferOnly := (← read).inferOnly
         let mut cur := term
         let mut extTypes := (← read).types
+        let mut extLetValues := (← read).letValues
         let mut binderMeta : Array (Expr m × Expr m × MetaField m Ix.Name × MetaField m Lean.BinderInfo) := #[]
         repeat
           match cur with
           | .lam ty body lamName lamBi =>
             let domBody ← if inferOnly then pure ty
-              else do let (te, _) ← withReader (fun ctx => { ctx with types := extTypes }) (isSort ty); pure te.body
+              else do let (te, _) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isSort ty); pure te.body
             binderMeta := binderMeta.push (domBody, ty, lamName, lamBi)
             extTypes := extTypes.push ty
+            extLetValues := extLetValues.push none
             cur := body
           | _ => break
-        let (bodTe, imgType) ← withReader (fun ctx => { ctx with types := extTypes }) (infer cur)
+        let (bodTe, imgType) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (infer cur)
         let mut resultType := imgType
         let mut resultBody := bodTe.body
         let mut resultInfo := bodTe.info
@@ -194,16 +196,18 @@ mutual
         -- Iterate forallE chain to avoid O(n) stack depth
         let mut cur := term
         let mut extTypes := (← read).types
+        let mut extLetValues := (← read).letValues
         let mut binderMeta : Array (Expr m × Level m × MetaField m Ix.Name) := #[]
         repeat
           match cur with
           | .forallE ty body piName _ =>
-            let (domTe, domLvl) ← withReader (fun ctx => { ctx with types := extTypes }) (isSort ty)
+            let (domTe, domLvl) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isSort ty)
             binderMeta := binderMeta.push (domTe.body, domLvl, piName)
             extTypes := extTypes.push ty
+            extLetValues := extLetValues.push none
             cur := body
           | _ => break
-        let (imgTe, imgLvl) ← withReader (fun ctx => { ctx with types := extTypes }) (isSort cur)
+        let (imgTe, imgLvl) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isSort cur)
         let mut resultLvl := imgLvl
         let mut resultBody := imgTe.body
         for i in [:binderMeta.size] do
@@ -218,6 +222,8 @@ mutual
         let inferOnly := (← read).inferOnly
         let mut cur := term
         let mut extTypes := (← read).types
+        let mut extLetValues := (← read).letValues
+        let mut extNumLets := (← read).numLetBindings
         let mut binderInfo : Array (Expr m × Expr m × Expr m × MetaField m Ix.Name) := #[]
         repeat
           match cur with
@@ -225,14 +231,16 @@ mutual
             if inferOnly then
               binderInfo := binderInfo.push (ty, val, val, letName)
             else
-              let (tyTe, _) ← withReader (fun ctx => { ctx with types := extTypes }) (isSort ty)
-              let valTe ← withReader (fun ctx => { ctx with types := extTypes }) (check val ty)
+              let (tyTe, _) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, numLetBindings := extNumLets }) (isSort ty)
+              let valTe ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, numLetBindings := extNumLets }) (check val ty)
               binderInfo := binderInfo.push (tyTe.body, valTe.body, val, letName)
             extTypes := extTypes.push ty
+            extLetValues := extLetValues.push (some val)
+            extNumLets := extNumLets + 1
             cur := body
           | _ => break
-        let (bodTe, bodType) ← withReader (fun ctx => { ctx with types := extTypes }) (infer cur)
-        let mut resultType := bodType
+        let (bodTe, bodType) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, numLetBindings := extNumLets }) (infer cur)
+        let mut resultType := bodType.cheapBetaReduce
         let mut resultBody := bodTe.body
         for i in [:binderInfo.size] do
           let j := binderInfo.size - 1 - i
@@ -657,6 +665,8 @@ mutual
     | none => pure ()
     withRecDepthCheck do
     withFuelCheck do
+    let depth := (← get).recDepth
+    -- Temporarily removed for call-site tracing
 
     -- Loop: steps 1-5 may restart when whnfCore(cheapProj=false) changes terms
     let mut ct := t
@@ -711,19 +721,27 @@ mutual
     -- unreachable, but needed for type checking
     return false
 
+  /-- Check if e lives in Prop: type_of(e) reduces to Sort 0.
+      Matches lean4lean's `isProp`. -/
+  partial def isProp (e : Expr m) : TypecheckM m Bool := do
+    let (_, ty) ← withInferOnly (infer e)
+    let ty' ← whnf ty
+    return ty' == .sort .zero
+
   /-- Check if both terms are proofs of the same Prop type (proof irrelevance).
       Returns `none` if inference fails (e.g., free bound variables) or the type isn't Prop. -/
   partial def isDefEqProofIrrel (t s : Expr m) : TypecheckM m (Option Bool) := do
-    let tType ← try let (_, ty) ← infer t; pure (some ty) catch _ => pure none
+    let tType ← try let (_, ty) ← withInferOnly (infer t); pure (some ty) catch _ => pure none
     let some tType := tType | return none
-    let tType' ← whnf tType
-    match tType' with
-    | .sort .zero =>
-      let sType ← try let (_, ty) ← infer s; pure (some ty) catch _ => pure none
-      let some sType := sType | return none
-      let result ← isDefEq tType sType
-      return some result
-    | _ => return none
+    let isPropType ← try isProp tType catch e => do
+      if (← get).recDepth > 100 then
+        dbg_trace s!"isProp FAILED at depth {(← get).recDepth}: {e}"
+      pure false
+    if !isPropType then return none
+    let sType ← try let (_, ty) ← withInferOnly (infer s); pure (some ty) catch _ => pure none
+    let some sType := sType | return none
+    let result ← isDefEq tType sType
+    return some result
 
   /-- Core structural comparison after whnf. -/
   partial def isDefEqCore (t s : Expr m) : TypecheckM m Bool := do
@@ -739,28 +757,38 @@ mutual
       pure (a == b && equalUnivArrays us us')
 
     -- Lambda: flatten binder chain to avoid O(num_binders) stack depth
+    -- Extend context at each binder so proof irrelevance / infer work on bodies
     | .lam .., .lam .. => do
       let mut a := t
       let mut b := s
+      let mut extTypes := (← read).types
+      let mut extLetValues := (← read).letValues
       repeat
         match a, b with
         | .lam ty body _ _, .lam ty' body' _ _ =>
-          if !(← isDefEq ty ty') then return false
+          if !(← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isDefEq ty ty')) then return false
+          extTypes := extTypes.push ty
+          extLetValues := extLetValues.push none
           a := body; b := body'
         | _, _ => break
-      isDefEq a b
+      withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isDefEq a b)
 
     -- Pi/ForallE: flatten binder chain to avoid O(num_binders) stack depth
+    -- Extend context at each binder so proof irrelevance / infer work on bodies
     | .forallE .., .forallE .. => do
       let mut a := t
       let mut b := s
+      let mut extTypes := (← read).types
+      let mut extLetValues := (← read).letValues
       repeat
         match a, b with
         | .forallE ty body _ _, .forallE ty' body' _ _ =>
-          if !(← isDefEq ty ty') then return false
+          if !(← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isDefEq ty ty')) then return false
+          extTypes := extTypes.push ty
+          extLetValues := extLetValues.push none
           a := body; b := body'
         | _, _ => break
-      isDefEq a b
+      withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isDefEq a b)
 
     -- Application: flatten app spine to avoid O(num_args) stack depth
     | .app .., .app .. => do
@@ -787,13 +815,13 @@ mutual
       -- eta: (\x => body) =?= s  iff  body =?= s x  where x = bvar 0
       let sLifted := s.liftBVars 1
       let sApp := Expr.mkApp sLifted (Expr.mkBVar 0)
-      isDefEq body sApp
+      withExtendedCtx ty (isDefEq body sApp)
 
     | _, .lam ty body _ _ => do
       -- eta: t =?= (\x => body)  iff  t x =?= body
       let tLifted := t.liftBVars 1
       let tApp := Expr.mkApp tLifted (Expr.mkBVar 0)
-      isDefEq tApp body
+      withExtendedCtx ty (isDefEq tApp body)
 
     -- Nat literal vs constructor expansion
     | .lit (.natVal _), _ => do
@@ -830,7 +858,7 @@ mutual
       two terms are defeq if their types are defeq. -/
   partial def isDefEqUnitLike (t s : Expr m) : TypecheckM m Bool := do
     let kenv := (← read).kenv
-    let (_, tType) ← infer t
+    let (_, tType) ← withInferOnly (infer t)
     let tType' ← whnf tType
     let fn := tType'.getAppFn
     match fn with
@@ -841,7 +869,7 @@ mutual
         match kenv.find? v.ctors[0]! with
         | some (.ctorInfo cv) =>
           if cv.numFields != 0 then return false
-          let (_, sType) ← infer s
+          let (_, sType) ← withInferOnly (infer s)
           isDefEq tType sType
         | _ => return false
       | _ => return false

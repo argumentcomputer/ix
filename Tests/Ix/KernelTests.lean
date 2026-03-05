@@ -176,7 +176,15 @@ def testConsts : TestSeq :=
         "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go.match_1",
         "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go",
         -- Deeply nested let chain (stack overflow regression)
-        "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go._sunfold"
+        "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go._sunfold",
+        -- Let-bound bvar zeta-reduction regression (requires whnf to resolve let-bound bvars)
+        "Std.Sat.AIG.mkGate",
+        -- Proof irrelevance regression (requires isProp to check type_of(type_of(t)) == Sort 0)
+        "Fin.dfoldrM.loop._sunfold",
+        -- rfl theorem: both sides must be defeq via delta unfolding
+        "Std.Tactic.BVDecide.BVExpr.eval.eq_10",
+        -- K-reduction: extra args after major premise must be applied
+        "UInt8.toUInt64_toUSize"
       ]
       let mut passed := 0
       let mut failures : Array String := #[]

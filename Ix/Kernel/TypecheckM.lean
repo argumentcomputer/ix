@@ -23,6 +23,12 @@ structure TypecheckCtx (m : MetaMode) where
   /-- Type of each bound variable, indexed by de Bruijn index.
       types[0] is the type of bvar 0 (most recently bound). -/
   types    : Array (Expr m)
+  /-- Let-bound values parallel to `types`. `letValues[i] = some val` means the
+      binding at position `i` was introduced by a `letE` with value `val`.
+      `none` means it was introduced by a lambda/forall binder. -/
+  letValues : Array (Option (Expr m)) := #[]
+  /-- Number of let bindings currently in scope (for cache gating). -/
+  numLetBindings : Nat := 0
   kenv     : Env m
   prims    : Primitives
   safety   : DefinitionSafety
@@ -73,15 +79,25 @@ def TypecheckM.run (ctx : TypecheckCtx m) (stt : TypecheckState m)
 
 def withResetCtx : TypecheckM m α → TypecheckM m α :=
   withReader fun ctx => { ctx with
-    types := #[], mutTypes := default, recAddr? := none }
+    types := #[], letValues := #[], numLetBindings := 0,
+    mutTypes := default, recAddr? := none }
 
 def withMutTypes (mutTypes : Std.TreeMap Nat (Address × (Array (Level m) → Expr m)) compare) :
     TypecheckM m α → TypecheckM m α :=
   withReader fun ctx => { ctx with mutTypes := mutTypes }
 
-/-- Extend the context with a new bound variable of the given type. -/
+/-- Extend the context with a new bound variable of the given type (lambda/forall). -/
 def withExtendedCtx (varType : Expr m) : TypecheckM m α → TypecheckM m α :=
-  withReader fun ctx => { ctx with types := ctx.types.push varType }
+  withReader fun ctx => { ctx with
+    types := ctx.types.push varType,
+    letValues := ctx.letValues.push none }
+
+/-- Extend the context with a let-bound variable (stores both type and value for zeta-reduction). -/
+def withExtendedLetCtx (varType : Expr m) (val : Expr m) : TypecheckM m α → TypecheckM m α :=
+  withReader fun ctx => { ctx with
+    types := ctx.types.push varType,
+    letValues := ctx.letValues.push (some val),
+    numLetBindings := ctx.numLetBindings + 1 }
 
 def withRecAddr (addr : Address) : TypecheckM m α → TypecheckM m α :=
   withReader fun ctx => { ctx with recAddr? := some addr }
@@ -101,7 +117,7 @@ def withFuelCheck (action : TypecheckM m α) : TypecheckM m α := do
 
 /-- Maximum recursion depth for the mutual isDefEq/whnf/infer cycle.
     Prevents native stack overflow. Hard error when exceeded. -/
-def maxRecursionDepth : Nat := 2000
+def maxRecursionDepth : Nat := 10000
 
 /-- Check and increment recursion depth. Throws on exceeding limit. -/
 def withRecDepthCheck (action : TypecheckM m α) : TypecheckM m α := do

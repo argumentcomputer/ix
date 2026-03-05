@@ -388,6 +388,28 @@ where
 /-- Single substitution: replace bvar 0 with val. -/
 def instantiate1 (body val : Expr m) : Expr m := body.instantiate #[val]
 
+/-- Cheap beta reduction: if `e` is `(fun x₁ ... xₙ => body) a₁ ... aₘ`, and `body` is
+    either a bvar or has no loose bvars, substitute without a full traversal.
+    Matches lean4lean's `Expr.cheapBetaReduce`. -/
+def cheapBetaReduce (e : Expr m) : Expr m := Id.run do
+  let fn := e.getAppFn
+  match fn with
+  | .lam .. => pure ()
+  | _ => return e
+  let args := e.getAppArgs
+  -- Walk lambda binders, counting how many args we can consume
+  let mut cur := fn
+  let mut i : Nat := 0
+  repeat
+    if i >= args.size then break
+    match cur with
+    | .lam _ body _ _ => cur := body; i := i + 1
+    | _ => break
+  -- cur is the lambda body after consuming i args; substitute
+  if i == 0 then return e
+  let body := cur.instantiate (args[:i].toArray.reverse)
+  return body.mkAppRange i args.size args
+
 /-- Substitute universe level params in an expression's Level nodes using a given
     level substitution function. -/
 partial def instantiateLevelParamsBy (e : Expr m) (substFn : Level m → Level m) : Expr m :=
