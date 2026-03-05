@@ -116,6 +116,7 @@ mutual
         let ctx ← read
         let depth := ctx.types.size
         if idx < depth then
+          modify fun stt => { stt with lookups := stt.lookups.push idx }
           let arrayIdx := depth - 1 - idx
           if h : arrayIdx < ctx.types.size then
             let rawType := ctx.types[arrayIdx]
@@ -1062,22 +1063,23 @@ partial def Expr.nodeCount (e : Expr m) : Nat := Id.run do
 
 /-- Typecheck a single constant by address. -/
 def typecheckConst (kenv : Env m) (prims : Primitives) (addr : Address)
-    (quotInit : Bool := true) (trace : Bool := false) : Except String Unit :=
+    (quotInit : Bool := true) (trace : Bool := false) : Except String (Array Nat) :=
   let ctx : TypecheckCtx m := {
     types := #[], kenv := kenv,
     prims := prims, safety := .safe, quotInit := quotInit,
     mutTypes := default, recAddr? := none, trace := trace
   }
   let stt : TypecheckState m := { typedConsts := default }
-  let (result, _) := TypecheckM.run ctx stt (checkConst addr)
-  result
+  let (result, stt) := TypecheckM.run ctx stt (checkConst addr)
+  result.map fun _ => stt.lookups
 
 /-- Typecheck all constants in a kernel environment. -/
 def typecheckAll (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)
     : Except String Unit := do
+  let mut allLookups := #[]
   for (addr, ci) in kenv do
     match typecheckConst kenv prims addr quotInit with
-    | .ok () => pure ()
+    | .ok lookups => allLookups := allLookups ++ lookups
     | .error e =>
       let header := s!"constant {ci.cv.name} ({ci.kindName}, {addr})"
       let typ := ci.type.pp
@@ -1085,6 +1087,12 @@ def typecheckAll (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)
         | some v => s!"\n  value: {v.pp}"
         | none => ""
       throw s!"{header}: {e}\n  type: {typ}{val}"
+  let lookupsCounts : Std.HashMap _ _ := default
+  let lookupsCounts := allLookups.foldl (init := lookupsCounts) fun acc n =>
+    acc.alter n fun count => match count with
+      | some count => some (count + 1)
+      | none => some 1
+  dbg_trace lookupsCounts.toArray
 
 /-- Typecheck all constants with IO progress reporting. -/
 def typecheckAllIO (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)
@@ -1098,7 +1106,7 @@ def typecheckAllIO (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)
     (← IO.getStdout).putStrLn s!"  [{idx + 1}/{total}] {ci.cv.name} ({ci.kindName})"
     (← IO.getStdout).flush
     match typecheckConst kenv prims addr quotInit with
-    | .ok () =>
+    | .ok _ =>
       (← IO.getStdout).putStrLn s!"  ✓ {ci.cv.name}"
       (← IO.getStdout).flush
     | .error e =>

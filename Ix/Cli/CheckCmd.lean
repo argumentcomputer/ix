@@ -96,27 +96,28 @@ private def runRustCheck (leanEnv : Lean.Environment) : IO UInt32 := do
     return 1
 
 def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
-  let some path := p.flag? "path"
-    | p.printError "error: must specify --path"
-      return 1
-  let pathStr := path.as! String
-  let useLean := p.hasFlag "lean"
+  -- let some path := p.flag? "path"
+  --   | p.printError "error: must specify --path"
+  --     return 1
+  -- let pathStr := path.as! String
+  -- let useLean := p.hasFlag "lean"
 
-  buildFile pathStr
-  let leanEnv ← getFileEnv pathStr
+  let leanEnv ← get_env!
+  -- buildFile pathStr
+  -- let leanEnv ← getFileEnv pathStr
 
-  if useLean then
-    println! "Running Lean kernel checker on {pathStr}"
-    runLeanCheck leanEnv
-  else
-    println! "Running Rust kernel checker on {pathStr}"
-    runRustCheck leanEnv
+  runLeanCheck leanEnv
+  -- if true then
+  --   println! "Running Lean kernel checker on {pathStr}"
+  -- else
+  --   println! "Running Rust kernel checker on {pathStr}"
+  --   runRustCheck leanEnv
 
 def checkCmd : Cli.Cmd := `[Cli|
   check VIA runCheckCmd;
   "Type-check Lean file with kernel"
 
-  FLAGS:
-    path : String; "Path to file to check"
-    lean; "Use Lean kernel instead of Rust kernel"
+  -- FLAGS:
+  --   path : String; "Path to file to check"
+  --   lean; "Use Lean kernel instead of Rust kernel"
 ]

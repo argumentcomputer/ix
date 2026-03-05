@@ -1972,7 +1972,11 @@ def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
 /-- Compile a Lean environment to Ixon.Env using the Rust compiler.
     Uses the direct FFI that returns structured Lean objects. -/
 def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
-  let constList := leanEnv.constants.toList
+  -- let constList := leanEnv.constants.toList
+  -- let constList := Lean.collectDependencies ``Nat.add_comm leanEnv.constants
+  let constList := Lean.collectDependencies
+    ``Nat.sub_le_of_le_add
+    leanEnv.constants
   let rawEnv ← rsCompileEnvFFI constList
   pure rawEnv.toEnv
 

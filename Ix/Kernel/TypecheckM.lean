@@ -63,6 +63,7 @@ structure TypecheckState (m : MetaMode) where
   /-- Global recursion depth across isDefEq/infer/whnf for stack overflow prevention. -/
   recDepth       : Nat := 0
   maxRecDepth    : Nat := 0
+  lookups        : Array Nat := #[]
   deriving Inhabited
 
 /-! ## TypecheckM monad -/
