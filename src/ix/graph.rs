@@ -177,7 +177,7 @@ fn get_expr_references<'a>(
 mod tests {
   use super::*;
   use crate::ix::env::*;
-  use crate::lean::nat::Nat;
+  use lean_ffi::nat::Nat;
 
   fn n(s: &str) -> Name {
     Name::str(Name::anon(), s.to_string())

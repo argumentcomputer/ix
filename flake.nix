@@ -73,6 +73,11 @@
           inherit src;
           strictDeps = true;
 
+          # build.rs uses LEAN_SYSROOT to locate lean/lean.h for bindgen
+          LEAN_SYSROOT = "${pkgs.lean.lean-all}";
+          # bindgen needs libclang to parse C headers
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+
           buildInputs =
             []
             ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
@@ -138,6 +143,10 @@
 
         # Provide a unified dev shell with Lean + Rust
         devShells.default = pkgs.mkShell {
+          # Disable fortify hardening as it causes warnings with cargo debug builds
+          hardeningDisable = ["fortify"];
+          # Add libclang for FFI with rust-bindgen
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           packages = with pkgs; [
             pkg-config
             openssl
@@ -147,6 +156,7 @@
             lean.lean-all # Includes Lean compiler, lake, stdlib, etc.
             gmp
             cargo-deny
+            valgrind
           ];
         };
 

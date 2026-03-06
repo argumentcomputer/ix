@@ -5,13 +5,14 @@
 //! [`ctx_to_all`] / [`all_to_ctx`] functions convert between ordered name
 //! vectors and index maps.
 
+use lean_ffi::nat::Nat;
+
 use crate::{
   ix::env::{
     ConstructorVal, DefinitionSafety, DefinitionVal, Expr, InductiveVal, Name,
     OpaqueVal, RecursorVal, ReducibilityHints, TheoremVal,
   },
   ix::ixon::constant::DefKind,
-  lean::nat::Nat,
 };
 
 use rustc_hash::FxHashMap;

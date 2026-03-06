@@ -86,17 +86,20 @@ def main (args : List String) : IO UInt32 := do
     return ← Tests.Cli.suite
 
   let runIgnored := args.contains "--ignored"
-  let filterArgs := args.filter (· != "--ignored")
+  let includeIgnored := args.contains "--include-ignored"
+  let filterArgs := args.filter fun a => a != "--ignored" && a != "--include-ignored"
 
-  -- Run primary tests
-  let primaryResult ← LSpec.lspecIO primarySuites filterArgs
-  if primaryResult != 0 then return primaryResult
+  -- Run primary tests unless --ignored (without --include-ignored) is specified
+  if !runIgnored || includeIgnored then
+    let primaryArgs := if runIgnored || includeIgnored then [] else filterArgs
+    let primaryResult ← LSpec.lspecIO primarySuites primaryArgs
+    if primaryResult != 0 then return primaryResult
 
-  -- Run ignored tests only when --ignored is specified
-  if runIgnored then
+  -- Run ignored tests when --ignored or --include-ignored is specified
+  if runIgnored || includeIgnored then
     let mut result ← LSpec.lspecIO ignoredSuites filterArgs
     let filtered := if filterArgs.isEmpty then ignoredRunners
-      else ignoredRunners.filter fun (key, _) => filterArgs.any fun arg => key == arg
+      else filterArgs.filterMap fun arg => ignoredRunners.find? fun (key, _) => key == arg
     for (_, action) in filtered do
       let r ← action
       if r != 0 then result := r

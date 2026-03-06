@@ -14,7 +14,7 @@ use std::{
   sync::Arc,
 };
 
-use crate::lean::nat::Nat;
+use lean_ffi::nat::Nat;
 use rustc_hash::FxHashMap;
 
 // -- Name tags ----------------------------------------------------------------

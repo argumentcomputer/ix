@@ -1,224 +1,119 @@
 # Ix FFI framework
 
 Ix extensively utilizes Lean's FFI capabilities to interface with Rust
-implementations while minimizing overhead. This document consolidates the
-principles for doing so responsibly.
-
-We follow a strict dependency order:
-
-* Lean can interface with C
-* C can interface with Rust
-* Lean can interface with Rust
-
-Hence we use the following naming conventions:
-
-* Names of external C functions start with "c_"
-* Names of external Rust functions start with "rs_"
-* Names of external C functions that depend on Rust functions start with "c_rs_"
+implementations for performance benefits while minimizing overhead. This document
+describes the approach used in Ix and best practices for writing Lean->Rust FFI.
 
 Interfacing with C is a well-established and well-supported case in Lean. After
 all, Lean's runtime is implemented in C and the API for reading, allocating and 
 populating Lean objects is rich enough to support this interaction. Interfacing
-with Rust, however, introduces a new set of challenges.
+with Rust, however, is not trivial because of Rust's distinct
+ownership-based memory management system.
 
-## Reading data from Lean
+## Bindgen Rust bindings to `lean.h`
 
-Making sense of data that's produced by Lean already poses an initial challenge.
-One possible approach is as follows:
+In order to avoid this complexity and keep Lean in control of memory
+management for objects created via FFI to Rust, we use
+[rust-bindgen](https://github.com/rust-lang/rust-bindgen) to automatically
+generate Rust bindings to
+[`lean.h`](https://github.com/leanprover/lean4/blob/master/src/include/lean/lean.h).
+This allows us to create and manage Lean objects in Rust without taking
+control of the underlying memory, needing to implement `Drop`, or having to
+know about the state of Lean's reference counting mechanism. Bindgen runs in
+`build.rs` and generates unsafe Rust functions that link to the `lean.h`
+library. This external module can then be found at
+`target/release/lean-ffi-<hash>/out/lean.rs`.
 
-1. Serialize the data in Lean as a `ByteArray` and provide it to a C function
-2. Get the reference to the slice of bytes and pass it to the Rust function
-3. Deserialize the data and use it as needed
+## `LeanObject` API
 
-While that's possible (and plausible!) it adds a recurring serde cost overhead.
-So the approach taken in Ix is different.
+To facilitate working with Lean objects in Rust, we also designed an
+ergonomic API in the `lean-ffi` crate to wrap raw C pointers in Rust types,
+with methods to abstract the low-level binding function calls from `lean.h`.
+The fundamental building block is `LeanObject`, a wrapper around an opaque
+Lean value represented in Rust as `*const c_void`. This value is either a
+pointer to a heap-allocated object or a tagged scalar (a raw value that fits
+into one pointer's width, e.g. a `Bool` or small `Nat`). `LeanObject` is
+then itself wrapped into Lean types such as `LeanCtor` for inductives,
+`LeanArray` for arrays, etc.
 
-The Ix's Rust static lib mimics the memory layout of Lean runtime objects and
-uses `unsafe` code to turn `*const c_void` pointers into appropriate `&T`
-references. Though, when possible, raw data extraction of Lean objects is
-preferably done in C with the API provided by the Lean toolchain (via `lean.h`).
-
-For example, when targeting a Rust function that consumes a string, we don't
-need to pass a reference to the whole `lean_string_object`. Instead, we make use
-of the fact that Lean strings are `\0`-terminated and only pass a `char const *`
-from C to Rust, which receives it as a `*const c_char` and then (unsafely) turns
-it into a `&str`.
-
-Extra care must be taken when dealing with
-[inductive types](https://github.com/leanprover/lean4/blob/master/doc/dev/ffi.md#inductive-types),
-as the order of arguments in the Lean objects may not match the same order from
-the higher level type definition in Lean.
-
-## Producing data for Lean
-
-Since we can mimic the memory layout of Lean objects in Rust, we should allocate
-and populate them in Rust, right? Well, the answer is "no".
-
-Lean employs different allocation methods depending on compilation flags, making
-it impractical to track them in Rust. Instead, we allocate the inner data on the
-heap and return a raw pointer to C, which then wraps it using the appropriate
-API.
+A `lean_domain_type!` macro is also defined to allow for easy construction
+of arbitrary Lean object types, which can then be used directly in FFI
+functions to disambiguate between other `LeanObject`s. In Ix these are
+defined in `src/lean.rs`. To construct custom data in Rust, the user can
+define their own constructor methods using `LeanCtor` (e.g.
+[`LeanPutResponse`](src/ffi/iroh.rs)). It is possible to use `LeanObject`
+or `*const c_void` directly in an `extern "C" fn`, but this is generally
+not recommended as internal Rust functions may pass in the wrong object
+more easily, and any low-level constructors would not be hidden behind the
+API boundary. To enforce this, the `From<LeanType> for LeanObject` trait is
+implemented to get the underlying `LeanObject`, but creating a wrapper type
+from a `LeanObject` requires an explicit constructor for clarity.
 
 A key concept in this design is that ownership of the data is transferred to
 Lean, making it responsible for deallocation. If the data type is intended to be
-used as a black box by Lean, `lean_external_object` is an useful abstraction. It
-requires a function pointer for deallocation, meaning the Rust code must provide
-a function that properly frees the object's memory by dropping it.
+used as a black box by Lean, `ExternalClass` is a useful abstraction. It
+requires a function pointer for deallocation, meaning the Rust code must
+provide a function that properly frees the object's memory by dropping it.
+See [`KECCAK_CLASS`](src/ffi/keccak.rs) for an example.
 
-## Dealing with mutable objects
+## Notes
 
-As a functional language, Lean primarily uses purely functional data structures,
-whereas Rust functions often mutate objects. This fundamental difference in
-computational paradigms requires special care; otherwise, we risk introducing
-Lean code with unintended or incorrect behavior.
+By convention, names of external Rust functions start with `rs_`.
 
-Let's consider a type `T` and a Rust function `f(&mut T)`. In Lean, we would
-like to have the corresponding `f : T → T`, which returns a modified `T` but
-leaves the input `T` intact. How can we use Rust's `f` as the implementation of
-Lean's `f`?
+### Inductive Types
 
-One approach is to use a Rust function `g(&T) -> T`, implemented as follows:
+Extra care must be taken when dealing with [inductive
+types](https://lean-lang.org/doc/reference/latest/The-Type-System/Inductive-Types/#run-time-inductives)
+as the runtime memory layout of constructor fields may not match the
+declaration order in Lean. Fields are reordered into three groups:
 
-```rust
-fn g<T: Clone>(t: &T) -> T {
-    let mut clone = t.clone();
-    f(&mut clone);
-    clone
-}
+1. Non-scalar fields (lean_object *), in declaration order
+2. `USize` fields, in declaration order
+3. Other scalar fields, in decreasing order by size, then declaration order within each size
+
+This means a structure like
+
+```lean
+structure Reorder where
+  flag : Bool
+  obj : Array Nat
+  size : UInt64
 ```
 
-Already we can see two problems. First, `g` requires `T` to implement `Clone`.
-Second, even when `T: Clone`, cloning might be expensive. The fact is that the
-implementation provided, Rust's `f`, was designed to mutate `T` and we shouldn't
-be fighting against that.
+would be laid out as [obj, size, flag] at runtime — the `UInt64` is placed
+before the `Bool`. Trivial wrapper types (e.g. `Char` wraps `UInt32`) count as
+their underlying scalar type.
 
-So Ix goes with the flow and mutates `T` with Rust's `f`. Consequently, Lean's
-`f : T → T` will, in fact, mutate the input, which will be returned as the
-output. A direct sin against the purity of the functional world.
+To avoid issues, define Lean structures with fields already in runtime order
+(objects first, then scalars in decreasing size), so that declaration order
+matches the reordered layout.
 
-At this point, the best we can do is to create guardrails to protect us against
-ourselves and force us to use terms of `T` linearly when `f` is involved. That
-is, after applying `f (t : T)`, reusing `t` should be prohibitive.
+### Enum FFI convention
 
-### The birth of `linear.h`
+Lean passes simple enums (inductives where all constructors have zero fields,
+e.g. `DefKind`, `QuotKind`) as **raw unboxed tag values** (`0`, `1`, `2`, ...)
+across the FFI boundary, not as `lean_box(tag)`. To decode, use
+`obj.as_ptr() as usize`; to build, use `LeanObject::from_raw(tag as *const c_void)`.
+Do **not** use `box_usize`/`unbox_usize` for these — doing so will silently
+corrupt the value.
 
-We've explored the motivation for the API provided by `linear.h`, in which a
-`linear_object` wraps the reference to the raw Rust object and has a
-`bool outdated` attribute telling whether the linear object can be used or not.
-Then, instead of `lean_external_object` pointing directly to the Rust object, it
-points to a `linear_object`. When we ought to use the Rust object, we must
-always "assert linearity", which panics if `outdated` is `true`.
+### Reference counting for reused objects
 
-To illustrate it, let's use "E" for `lean_external_object`, "L" for
-`linear_object` and "R" for potentially mutating Rust objects. Right after
-initialization, we have:
+When building a new Lean object, if you construct all fields from scratch (e.g.
+`LeanString::new(...)`, `LeanByteArray::from_bytes(...)`), ownership is
+straightforward — the freshly allocated objects start with rc=1 and Lean manages
+them from there.
 
-```
-E0 ──> L0 (outdated = false) ──> R
-```
+However, if you take a Lean object received as a **borrowed** argument (`@&` in
+Lean, `b_lean_obj_arg` in C) and store it directly into a new object via
+`.set()`, you must call `.inc_ref()` on it first. Otherwise Lean will free the
+original while the new object still references it. If you only read/decode the
+argument into Rust types and then build fresh Lean objects, this does not apply.
 
-Now suppose we need to mutate `R`. We do it and then we perform a "linear bump",
-which copies `L` and sets it as outdated. Then we wrap it as another external
-object:
+### `lean_string_size` vs `lean_string_byte_size`
 
-```
-E1 ──> L1 (outdated = false) ─┐
-E0 ──> L0 (outdated = true) ──┴> R
-```
-
-And after `N` linear bumps:
-
-```
-EN ──> LN (outdated = false) ─┐
-...                           ┆
-E2 ──> L2 (outdated = true) ──┤
-E1 ──> L1 (outdated = true) ──┤
-E0 ──> L0 (outdated = true) ──┴> R
-```
-
-Great. Now imagine Lean wants to free these external objects. The function that
-frees a linear object should only free the Rust object when `outdated == false`.
-Following up with the image above, let's free `E1`.
-
-```
-EN ──> LN (outdated = false) ─┐
-...                           ┆
-E2 ──> L2 (outdated = true) ──┤
-                              │
-E0 ──> L0 (outdated = true) ──┴> R
-```
-
-When freeing `EN`, the Rust object will be deallocated:
-
-```
-...                           ┆
-E2 ──> L2 (outdated = true) ──┤
-                              │
-E0 ──> L0 (outdated = true) ──┴> X
-```
-
-All remaining external objects are outdated so their respective linear objects
-won't try to free the (already dropped) Rust object.
-
-## What if a Rust function takes ownership of the object?
-
-When ownership is required, we mutate the Rust object by "taking" or "replacing"
-it with a dummy object. Concretely, `std::mem::take` or `std::mem::replace` are
-used, returning the actual `T` from a `&mut T`. And with `T` at hand, the target
-function can be called.
-
-The latest linear object is marked as outdated and the chain of linear objects
-is broken. But then, how will the residual Rust object be dropped once Lean
-wants to drop all external objects?
-
-It turns out we also need a `bool finalize_even_if_outdated` attribute on the
-`linear_object` struct, which becomes `true` in these scenarios. By doing this,
-we're "ditching" the linear object. And the logic to free linear objects needs
-one small adjustment: the Rust object must be dropped when either the linear
-object is not outdated or when `finalize_even_if_outdated` is set to `true`.
-
-The invariant that needs to be maintained is that *only one* linear object can
-free the shared Rust object.
-
-## Preventing unintentional Lean optimizations
-
-We've done our lower level homework and now we have an `f : T → T` in Lean that
-should panic at runtime when its input is reused. So we do:
-
-```lean4
-  ...
-  let a := f t
-  let b := f t -- reuses `t`!
-  ...
-```
-
-We run the code and it executes smoothly. Why!?
-
-The Lean compilation process detects that both `a` and `b` are equal to `f t` so
-instead of calling `f` a second time it just sets `b` with the value of `a`. It
-appears to be harmless but in fact we want discourage this kind of source code
-at all costs.
-
-Lean provides the tag `never_extract` precisely for this. It's used internally
-when some function performs side-effects and should never be optimized away.
-
-And to conclude, there are cases in which this optimization is truly harmful.
-Consider an initialization function `T.init : Unit → T` in the following code:
-
-```lean4
-  ...
-  let t1 := T.init ()
-  let t2 := T.init ()
-  let a := f t1
-  let b := f t2
-  ...
-```
-
-If `T.init` is not tagged with `never_extract`, `t2` and `t1` will point to the
-same object, the first call to `f` will mark it as outdated and thus the second
-call will panic!
-
-So the `never_extract` tag must be applied to functions that:
-
-* Mutate their input or
-* Return objects that work on the basis of mutation
+`lean_string_byte_size` returns the **total object memory size**
+(`sizeof(lean_string_object) + m_size`), not the string data length.
+Use `lean_string_size` instead, which returns `m_size` — the number of data
+bytes including the NUL terminator. The `LeanString::byte_len()` wrapper handles
+this correctly by returning `lean_string_size(obj) - 1`.

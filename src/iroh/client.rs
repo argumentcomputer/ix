@@ -1,116 +1,21 @@
 use iroh::{Endpoint, NodeAddr, NodeId, RelayMode, RelayUrl, SecretKey};
 use n0_snafu::{Result, ResultExt};
 use n0_watcher::Watcher as _;
-use std::ffi::{CString, c_char};
 use std::net::SocketAddr;
 use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
-use crate::lean::array::LeanArrayObject;
-use crate::lean::as_ref_unsafe;
-use crate::lean::ffi::iroh::{GetResponseFFI, PutResponseFFI};
-use crate::lean::ffi::{CResult, raw_to_str, to_raw};
-use crate::lean::string::LeanStringObject;
+use crate::iroh::common::{Request, Response};
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
 // Maximum number of characters to read from the server. Connection automatically closed if this is exceeded
 const READ_SIZE_LIMIT: usize = 100_000_000;
 
-#[unsafe(no_mangle)]
-extern "C" fn rs_iroh_put(
-  node_id: *const c_char,
-  addrs: &LeanArrayObject,
-  relay_url: *const c_char,
-  input: *const c_char,
-) -> *const CResult {
-  let node_id = raw_to_str(node_id);
-  let addrs: Vec<String> = addrs.to_vec(|ptr| {
-    let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
-    string.as_string()
-  });
-  let relay_url = raw_to_str(relay_url);
-  let input = raw_to_str(input);
-
-  let request = Request::Put(PutRequest { bytes: input.as_bytes().to_vec() });
-  // Create a Tokio runtime to block on the async function
-  let rt =
-    tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
-  // Run the async function and block until we get the result
-  let c_result = match rt.block_on(connect(node_id, &addrs, relay_url, request))
-  {
-    Ok(response) => match response {
-      Response::Put(put_response) => {
-        let put_response_ffi =
-          PutResponseFFI::new(&put_response.message, &put_response.hash);
-        CResult { is_ok: true, data: to_raw(put_response_ffi).cast() }
-      },
-      _ => {
-        let msg = CString::new("error: incorrect server response")
-          .expect("CString::new failure");
-        CResult { is_ok: false, data: msg.into_raw().cast() }
-      },
-    },
-    Err(err) => {
-      let msg = CString::new(err.to_string()).expect("CString::new failure");
-      CResult { is_ok: false, data: msg.into_raw().cast() }
-    },
-  };
-
-  to_raw(c_result)
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn rs_iroh_get(
-  node_id: *const c_char,
-  addrs: &LeanArrayObject,
-  relay_url: *const c_char,
-  hash: *const c_char,
-) -> *const CResult {
-  let node_id = raw_to_str(node_id);
-  let addrs: Vec<String> = addrs.to_vec(|ptr| {
-    let string: &LeanStringObject = as_ref_unsafe(ptr.cast());
-    string.as_string()
-  });
-  let relay_url = raw_to_str(relay_url);
-  let hash = raw_to_str(hash);
-  let request = Request::Get(GetRequest { hash: hash.to_owned() });
-
-  let rt =
-    tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
-  let c_result = match rt.block_on(connect(node_id, &addrs, relay_url, request))
-  {
-    Ok(response) => match response {
-      Response::Get(get_response) => {
-        let get_response_ffi = GetResponseFFI::new(
-          &get_response.message,
-          &get_response.hash,
-          &get_response.bytes,
-        );
-        CResult { is_ok: true, data: to_raw(get_response_ffi).cast() }
-      },
-      _ => {
-        let msg = CString::new("error: incorrect server response")
-          .expect("CString::new failure");
-        CResult { is_ok: false, data: msg.into_raw().cast() }
-      },
-    },
-    Err(err) => {
-      let msg = CString::new(err.to_string()).expect("CString::new failure");
-      CResult { is_ok: false, data: msg.into_raw().cast() }
-    },
-  };
-
-  to_raw(c_result)
-}
-
 // Largely taken from https://github.com/n0-computer/iroh/blob/main/iroh/examples/connect.rs
-async fn connect(
+pub async fn connect(
   node_id: &str,
   addrs: &[String],
   relay_url: &str,

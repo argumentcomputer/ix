@@ -871,7 +871,7 @@ impl Constant {
 // ============================================================================
 
 use crate::ix::env::{Name, NameData};
-use crate::lean::nat::Nat;
+use lean_ffi::nat::Nat;
 use rustc_hash::FxHashMap;
 
 /// Serialize a Name to bytes (full recursive serialization, for standalone use).

@@ -1,0 +1,1162 @@
+//! Decode Lean kernel objects from their in-memory C representation.
+//!
+//! Provides functions to walk Lean object pointers and decode them into
+//! the Rust `Name`, `Level`, `Expr`, and `ConstantInfo` types defined in
+//! `crate::ix::env`. Used by the compilation pipeline to read the Lean
+//! environment before transforming it to Ixon format.
+//!
+//! Uses a two-level cache (`GlobalCache` + `LocalCache`) to avoid redundant
+//! decoding of shared subterms when processing environments in parallel.
+
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_wrap)]
+
+use dashmap::DashMap;
+use rayon::prelude::*;
+use std::ffi::c_void;
+use std::sync::Arc;
+
+use rustc_hash::FxHashMap;
+
+use lean_ffi::nat::Nat;
+use lean_ffi::object::{LeanList, LeanObject};
+
+use crate::{
+  ix::compile::compile_env,
+  ix::decompile::{check_decompile, decompile_env},
+  ix::env::{
+    AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
+    DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,
+    Literal, Name, OpaqueVal, QuotKind, QuotVal, RecursorRule, RecursorVal,
+    ReducibilityHints, SourceInfo, Substring, Syntax, SyntaxPreresolved,
+    TheoremVal,
+  },
+};
+
+const PARALLEL_THRESHOLD: usize = 100;
+
+/// Wrapper to allow sending `LeanObject` across threads. The underlying Lean
+/// objects must remain valid for the entire duration of parallel decoding.
+#[derive(Clone, Copy)]
+struct SendObj(LeanObject);
+
+unsafe impl Send for SendObj {}
+unsafe impl Sync for SendObj {}
+
+impl SendObj {
+  #[inline]
+  fn get(self) -> LeanObject {
+    self.0
+  }
+}
+
+/// Global cache for Names, shared across all threads.
+#[derive(Default)]
+pub struct GlobalCache {
+  names: DashMap<*const c_void, Name>,
+}
+
+impl GlobalCache {
+  fn new() -> Self {
+    Self { names: DashMap::new() }
+  }
+
+  fn with_capacity(capacity: usize) -> Self {
+    Self { names: DashMap::with_capacity(capacity) }
+  }
+}
+
+// SAFETY: The raw pointers are only used as keys for identity comparison.
+// The underlying Lean memory remains valid for the duration of decoding.
+unsafe impl Send for GlobalCache {}
+unsafe impl Sync for GlobalCache {}
+
+/// Thread-local cache for Levels and Exprs.
+#[derive(Default)]
+struct LocalCache {
+  univs: FxHashMap<*const c_void, Level>,
+  exprs: FxHashMap<*const c_void, Expr>,
+}
+
+// SAFETY: LocalCache is only accessed by a single thread.
+unsafe impl Send for LocalCache {}
+
+/// Combined cache reference passed to decoding functions.
+pub struct Cache<'g> {
+  global: &'g GlobalCache,
+  local: LocalCache,
+}
+
+impl<'g> Cache<'g> {
+  pub fn new(global: &'g GlobalCache) -> Self {
+    Self { global, local: LocalCache::default() }
+  }
+}
+
+fn collect_list_objs(list: LeanList) -> Vec<LeanObject> {
+  list.iter().collect()
+}
+
+// Name decoding with global cache
+pub fn decode_name(obj: LeanObject, global: &GlobalCache) -> Name {
+  let ptr = obj.as_ptr();
+  // Fast path: check if already cached
+  if let Some(name) = global.names.get(&ptr) {
+    return name.clone();
+  }
+
+  // Compute the name
+  let name = if obj.is_scalar() {
+    Name::anon()
+  } else {
+    let ctor = obj.as_ctor();
+    let [pre, pos] = ctor.objs();
+    // Recursive call - will also use global cache
+    let pre = decode_name(pre, global);
+    match ctor.tag() {
+      1 => Name::str(pre, pos.as_string().to_string()),
+      2 => Name::num(pre, Nat::from_obj(pos)),
+      _ => unreachable!(),
+    }
+  };
+
+  // Insert and return (entry API handles races gracefully)
+  global.names.entry(ptr).or_insert(name).clone()
+}
+
+fn decode_level(obj: LeanObject, cache: &mut Cache<'_>) -> Level {
+  let ptr = obj.as_ptr();
+  if let Some(cached) = cache.local.univs.get(&ptr) {
+    return cached.clone();
+  }
+  let level = if obj.is_scalar() {
+    Level::zero()
+  } else {
+    let ctor = obj.as_ctor();
+    match ctor.tag() {
+      1 => {
+        let [u] = ctor.objs::<1>().map(|o| decode_level(o, cache));
+        Level::succ(u)
+      },
+      2 => {
+        let [u, v] = ctor.objs::<2>().map(|o| decode_level(o, cache));
+        Level::max(u, v)
+      },
+      3 => {
+        let [u, v] = ctor.objs::<2>().map(|o| decode_level(o, cache));
+        Level::imax(u, v)
+      },
+      4 => {
+        let [name] = ctor.objs::<1>().map(|o| decode_name(o, cache.global));
+        Level::param(name)
+      },
+      5 => {
+        let [name] = ctor.objs::<1>().map(|o| decode_name(o, cache.global));
+        Level::mvar(name)
+      },
+      _ => unreachable!(),
+    }
+  };
+  cache.local.univs.insert(ptr, level.clone());
+  level
+}
+
+fn decode_substring(obj: LeanObject) -> Substring {
+  let ctor = obj.as_ctor();
+  let [str_obj, start_pos, stop_pos] = ctor.objs();
+  let str = str_obj.as_string().to_string();
+  let start_pos = Nat::from_obj(start_pos);
+  let stop_pos = Nat::from_obj(stop_pos);
+  Substring { str, start_pos, stop_pos }
+}
+
+fn decode_source_info(obj: LeanObject) -> SourceInfo {
+  if obj.is_scalar() {
+    return SourceInfo::None;
+  }
+  let ctor = obj.as_ctor();
+  match ctor.tag() {
+    0 => {
+      let [leading, pos, trailing, end_pos] = ctor.objs();
+      let leading = decode_substring(leading);
+      let pos = Nat::from_obj(pos);
+      let trailing = decode_substring(trailing);
+      let end_pos = Nat::from_obj(end_pos);
+      SourceInfo::Original(leading, pos, trailing, end_pos)
+    },
+    1 => {
+      let [pos, end_pos, canonical] = ctor.objs();
+      let pos = Nat::from_obj(pos);
+      let end_pos = Nat::from_obj(end_pos);
+      let canonical = canonical.as_ptr() as usize == 1;
+      SourceInfo::Synthetic(pos, end_pos, canonical)
+    },
+    _ => unreachable!(),
+  }
+}
+
+fn decode_syntax_preresolved(
+  obj: LeanObject,
+  cache: &mut Cache<'_>,
+) -> SyntaxPreresolved {
+  let ctor = obj.as_ctor();
+  match ctor.tag() {
+    0 => {
+      let [name_obj] = ctor.objs::<1>();
+      let name = decode_name(name_obj, cache.global);
+      SyntaxPreresolved::Namespace(name)
+    },
+    1 => {
+      let [name_obj, fields_obj] = ctor.objs();
+      let name = decode_name(name_obj, cache.global);
+      let fields: Vec<String> = fields_obj
+        .as_list()
+        .iter()
+        .map(|o| o.as_string().to_string())
+        .collect();
+      SyntaxPreresolved::Decl(name, fields)
+    },
+    _ => unreachable!(),
+  }
+}
+
+fn decode_syntax(obj: LeanObject, cache: &mut Cache<'_>) -> Syntax {
+  if obj.is_scalar() {
+    return Syntax::Missing;
+  }
+  let ctor = obj.as_ctor();
+  match ctor.tag() {
+    1 => {
+      let [info, kind, args] = ctor.objs();
+      let info = decode_source_info(info);
+      let kind = decode_name(kind, cache.global);
+      let args: Vec<_> =
+        args.as_array().iter().map(|o| decode_syntax(o, cache)).collect();
+      Syntax::Node(info, kind, args)
+    },
+    2 => {
+      let [info, val] = ctor.objs();
+      let info = decode_source_info(info);
+      Syntax::Atom(info, val.as_string().to_string())
+    },
+    3 => {
+      let [info, raw_val, val, preresolved] = ctor.objs();
+      let info = decode_source_info(info);
+      let raw_val = decode_substring(raw_val);
+      let val = decode_name(val, cache.global);
+      let preresolved = collect_list_objs(preresolved.as_list())
+        .into_iter()
+        .map(|o| decode_syntax_preresolved(o, cache))
+        .collect();
+      Syntax::Ident(info, raw_val, val, preresolved)
+    },
+    _ => unreachable!(),
+  }
+}
+
+fn decode_name_data_value(
+  obj: LeanObject,
+  cache: &mut Cache<'_>,
+) -> (Name, DataValue) {
+  let ctor = obj.as_ctor();
+  let [name_obj, data_value_obj] = ctor.objs();
+  let name = decode_name(name_obj, cache.global);
+  let dv_ctor = data_value_obj.as_ctor();
+  let [inner] = dv_ctor.objs::<1>();
+  let data_value = match dv_ctor.tag() {
+    0 => DataValue::OfString(inner.as_string().to_string()),
+    1 => DataValue::OfBool(inner.as_ptr() as usize == 1),
+    2 => DataValue::OfName(decode_name(inner, cache.global)),
+    3 => DataValue::OfNat(Nat::from_obj(inner)),
+    4 => {
+      let inner_ctor = inner.as_ctor();
+      let [nat_obj] = inner_ctor.objs::<1>();
+      let nat = Nat::from_obj(nat_obj);
+      let int = match inner_ctor.tag() {
+        0 => Int::OfNat(nat),
+        1 => Int::NegSucc(nat),
+        _ => unreachable!(),
+      };
+      DataValue::OfInt(int)
+    },
+    5 => DataValue::OfSyntax(decode_syntax(inner, cache).into()),
+    _ => unreachable!(),
+  };
+  (name, data_value)
+}
+
+pub fn decode_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
+  let ptr = obj.as_ptr();
+  if let Some(cached) = cache.local.exprs.get(&ptr) {
+    return cached.clone();
+  }
+  let ctor = obj.as_ctor();
+  let expr = match ctor.tag() {
+    0 => {
+      let [nat, _hash] = ctor.objs();
+      Expr::bvar(Nat::from_obj(nat))
+    },
+    1 => {
+      let [name_obj, _hash] = ctor.objs();
+      let name = decode_name(name_obj, cache.global);
+      Expr::fvar(name)
+    },
+    2 => {
+      let [name_obj, _hash] = ctor.objs();
+      let name = decode_name(name_obj, cache.global);
+      Expr::mvar(name)
+    },
+    3 => {
+      let [u, _hash] = ctor.objs();
+      let u = decode_level(u, cache);
+      Expr::sort(u)
+    },
+    4 => {
+      let [name_obj, levels, _hash] = ctor.objs();
+      let name = decode_name(name_obj, cache.global);
+      let levels = collect_list_objs(levels.as_list())
+        .into_iter()
+        .map(|o| decode_level(o, cache))
+        .collect();
+      Expr::cnst(name, levels)
+    },
+    5 => {
+      let [f, a, _hash] = ctor.objs();
+      let f = decode_expr(f, cache);
+      let a = decode_expr(a, cache);
+      Expr::app(f, a)
+    },
+    6 => {
+      let [binder_name, binder_typ, body, _hash, binder_info] = ctor.objs();
+      let binder_name = decode_name(binder_name, cache.global);
+      let binder_typ = decode_expr(binder_typ, cache);
+      let body = decode_expr(body, cache);
+      let binder_info = match binder_info.as_ptr() as usize {
+        0 => BinderInfo::Default,
+        1 => BinderInfo::Implicit,
+        2 => BinderInfo::StrictImplicit,
+        3 => BinderInfo::InstImplicit,
+        _ => unreachable!(),
+      };
+      Expr::lam(binder_name, binder_typ, body, binder_info)
+    },
+    7 => {
+      let [binder_name, binder_typ, body, _hash, binder_info] = ctor.objs();
+      let binder_name = decode_name(binder_name, cache.global);
+      let binder_typ = decode_expr(binder_typ, cache);
+      let body = decode_expr(body, cache);
+      let binder_info = match binder_info.as_ptr() as usize {
+        0 => BinderInfo::Default,
+        1 => BinderInfo::Implicit,
+        2 => BinderInfo::StrictImplicit,
+        3 => BinderInfo::InstImplicit,
+        _ => unreachable!(),
+      };
+      Expr::all(binder_name, binder_typ, body, binder_info)
+    },
+    8 => {
+      let [decl_name, typ, value, body, _hash, nondep] = ctor.objs();
+      let decl_name = decode_name(decl_name, cache.global);
+      let typ = decode_expr(typ, cache);
+      let value = decode_expr(value, cache);
+      let body = decode_expr(body, cache);
+      let nondep = nondep.as_ptr() as usize == 1;
+      Expr::letE(decl_name, typ, value, body, nondep)
+    },
+    9 => {
+      let [literal, _hash] = ctor.objs();
+      let lit_ctor = literal.as_ctor();
+      let [inner] = lit_ctor.objs::<1>();
+      match lit_ctor.tag() {
+        0 => Expr::lit(Literal::NatVal(Nat::from_obj(inner))),
+        1 => Expr::lit(Literal::StrVal(inner.as_string().to_string())),
+        _ => unreachable!(),
+      }
+    },
+    10 => {
+      let [data, expr_obj] = ctor.objs();
+      let kv_map: Vec<_> = collect_list_objs(data.as_list())
+        .into_iter()
+        .map(|o| decode_name_data_value(o, cache))
+        .collect();
+      let expr = decode_expr(expr_obj, cache);
+      Expr::mdata(kv_map, expr)
+    },
+    11 => {
+      let [typ_name, idx, struct_expr] = ctor.objs();
+      let typ_name = decode_name(typ_name, cache.global);
+      let idx = Nat::from_obj(idx);
+      let struct_expr = decode_expr(struct_expr, cache);
+      Expr::proj(typ_name, idx, struct_expr)
+    },
+    _ => unreachable!(),
+  };
+  cache.local.exprs.insert(ptr, expr.clone());
+  expr
+}
+
+fn decode_recursor_rule(
+  obj: LeanObject,
+  cache: &mut Cache<'_>,
+) -> RecursorRule {
+  let ctor = obj.as_ctor();
+  let [ctor_name, n_fields, rhs] = ctor.objs();
+  let ctor_name = decode_name(ctor_name, cache.global);
+  let n_fields = Nat::from_obj(n_fields);
+  let rhs = decode_expr(rhs, cache);
+  RecursorRule { ctor: ctor_name, n_fields, rhs }
+}
+
+fn decode_constant_val(obj: LeanObject, cache: &mut Cache<'_>) -> ConstantVal {
+  let ctor = obj.as_ctor();
+  let [name_obj, level_params, typ] = ctor.objs();
+  let name = decode_name(name_obj, cache.global);
+  let level_params: Vec<_> = collect_list_objs(level_params.as_list())
+    .into_iter()
+    .map(|o| decode_name(o, cache.global))
+    .collect();
+  let typ = decode_expr(typ, cache);
+  ConstantVal { name, level_params, typ }
+}
+
+pub fn decode_constant_info(
+  obj: LeanObject,
+  cache: &mut Cache<'_>,
+) -> ConstantInfo {
+  let ctor = obj.as_ctor();
+  let [inner_val] = ctor.objs::<1>();
+  let inner = inner_val.as_ctor();
+
+  match ctor.tag() {
+    0 => {
+      let [constant_val, is_unsafe] = inner.objs();
+      let constant_val = decode_constant_val(constant_val, cache);
+      let is_unsafe = is_unsafe.as_ptr() as usize == 1;
+      ConstantInfo::AxiomInfo(AxiomVal { cnst: constant_val, is_unsafe })
+    },
+    1 => {
+      let [constant_val, value, hints, all, safety] = inner.objs();
+      let constant_val = decode_constant_val(constant_val, cache);
+      let value = decode_expr(value, cache);
+      let hints = if hints.is_scalar() {
+        match hints.unbox_usize() {
+          0 => ReducibilityHints::Opaque,
+          1 => ReducibilityHints::Abbrev,
+          _ => unreachable!(),
+        }
+      } else {
+        let hints_ctor = hints.as_ctor();
+        let [height] = hints_ctor.objs::<1>();
+        ReducibilityHints::Regular(height.as_ptr() as u32)
+      };
+      let all: Vec<_> = collect_list_objs(all.as_list())
+        .into_iter()
+        .map(|o| decode_name(o, cache.global))
+        .collect();
+      let safety = match safety.as_ptr() as usize {
+        0 => DefinitionSafety::Unsafe,
+        1 => DefinitionSafety::Safe,
+        2 => DefinitionSafety::Partial,
+        _ => unreachable!(),
+      };
+      ConstantInfo::DefnInfo(DefinitionVal {
+        cnst: constant_val,
+        value,
+        hints,
+        safety,
+        all,
+      })
+    },
+    2 => {
+      let [constant_val, value, all] = inner.objs();
+      let constant_val = decode_constant_val(constant_val, cache);
+      let value = decode_expr(value, cache);
+      let all: Vec<_> = collect_list_objs(all.as_list())
+        .into_iter()
+        .map(|o| decode_name(o, cache.global))
+        .collect();
+      ConstantInfo::ThmInfo(TheoremVal { cnst: constant_val, value, all })
+    },
+    3 => {
+      let [constant_val, value, all, is_unsafe] = inner.objs();
+      let constant_val = decode_constant_val(constant_val, cache);
+      let value = decode_expr(value, cache);
+      let all: Vec<_> = collect_list_objs(all.as_list())
+        .into_iter()
+        .map(|o| decode_name(o, cache.global))
+        .collect();
+      let is_unsafe = is_unsafe.as_ptr() as usize == 1;
+      ConstantInfo::OpaqueInfo(OpaqueVal {
+        cnst: constant_val,
+        value,
+        is_unsafe,
+        all,
+      })
+    },
+    4 => {
+      let [constant_val, kind] = inner.objs();
+      let constant_val = decode_constant_val(constant_val, cache);
+      let kind = match kind.as_ptr() as usize {
+        0 => QuotKind::Type,
+        1 => QuotKind::Ctor,
+        2 => QuotKind::Lift,
+        3 => QuotKind::Ind,
+        _ => unreachable!(),
+      };
+      ConstantInfo::QuotInfo(QuotVal { cnst: constant_val, kind })
+    },
+    5 => {
+      let [
+        constant_val,
+        num_params,
+        num_indices,
+        all,
+        ctors,
+        num_nested,
+        bools,
+      ] = inner.objs();
+      let constant_val = decode_constant_val(constant_val, cache);
+      let num_params = Nat::from_obj(num_params);
+      let num_indices = Nat::from_obj(num_indices);
+      let all: Vec<_> = collect_list_objs(all.as_list())
+        .into_iter()
+        .map(|o| decode_name(o, cache.global))
+        .collect();
+      let ctors: Vec<_> = collect_list_objs(ctors.as_list())
+        .into_iter()
+        .map(|o| decode_name(o, cache.global))
+        .collect();
+      let num_nested = Nat::from_obj(num_nested);
+      let [is_rec, is_unsafe, is_reflexive, ..] =
+        (bools.as_ptr() as usize).to_le_bytes().map(|b| b == 1);
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: constant_val,
+        num_params,
+        num_indices,
+        all,
+        ctors,
+        num_nested,
+        is_rec,
+        is_unsafe,
+        is_reflexive,
+      })
+    },
+    6 => {
+      let [constant_val, induct, cidx, num_params, num_fields, is_unsafe] =
+        inner.objs();
+      let constant_val = decode_constant_val(constant_val, cache);
+      let induct = decode_name(induct, cache.global);
+      let cidx = Nat::from_obj(cidx);
+      let num_params = Nat::from_obj(num_params);
+      let num_fields = Nat::from_obj(num_fields);
+      let is_unsafe = is_unsafe.as_ptr() as usize == 1;
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: constant_val,
+        induct,
+        cidx,
+        num_params,
+        num_fields,
+        is_unsafe,
+      })
+    },
+    7 => {
+      let [
+        constant_val,
+        all,
+        num_params,
+        num_indices,
+        num_motives,
+        num_minors,
+        rules,
+        bools,
+      ] = inner.objs();
+      let constant_val = decode_constant_val(constant_val, cache);
+      let all: Vec<_> = collect_list_objs(all.as_list())
+        .into_iter()
+        .map(|o| decode_name(o, cache.global))
+        .collect();
+      let num_params = Nat::from_obj(num_params);
+      let num_indices = Nat::from_obj(num_indices);
+      let num_motives = Nat::from_obj(num_motives);
+      let num_minors = Nat::from_obj(num_minors);
+      let rules: Vec<_> = collect_list_objs(rules.as_list())
+        .into_iter()
+        .map(|o| decode_recursor_rule(o, cache))
+        .collect();
+      let [k, is_unsafe, ..] =
+        (bools.as_ptr() as usize).to_le_bytes().map(|b| b == 1);
+      ConstantInfo::RecInfo(RecursorVal {
+        cnst: constant_val,
+        all,
+        num_params,
+        num_indices,
+        num_motives,
+        num_minors,
+        rules,
+        k,
+        is_unsafe,
+      })
+    },
+    _ => unreachable!(),
+  }
+}
+
+/// Decode a single (Name, ConstantInfo) pair.
+fn decode_name_constant_info(
+  obj: LeanObject,
+  global: &GlobalCache,
+) -> (Name, ConstantInfo) {
+  let mut cache = Cache::new(global);
+  let ctor = obj.as_ctor();
+  let [name_obj, constant_info] = ctor.objs();
+  let name = decode_name(name_obj, global);
+  let constant_info = decode_constant_info(constant_info, &mut cache);
+  (name, constant_info)
+}
+
+// Decode a Lean environment in parallel with hybrid caching.
+pub fn decode_env(obj: LeanList) -> Env {
+  // Phase 1: Collect pointers (sequential)
+  let objs = collect_list_objs(obj);
+
+  if objs.len() < PARALLEL_THRESHOLD {
+    return decode_env_sequential(obj);
+  }
+
+  // Estimate: ~3 unique names per constant on average
+  let global = GlobalCache::with_capacity(objs.len() * 3);
+
+  // Phase 2: Decode in parallel with shared global name cache
+  let pairs: Vec<(Name, ConstantInfo)> = objs
+    .into_iter()
+    .map(SendObj)
+    .collect::<Vec<_>>()
+    .into_par_iter()
+    .map(|o| decode_name_constant_info(o.get(), &global))
+    .collect();
+
+  // Phase 3: Build final map
+  let mut env = Env::default();
+  env.reserve(pairs.len());
+  for (name, constant_info) in pairs {
+    env.insert(name, constant_info);
+  }
+  env
+}
+
+/// Sequential fallback for small environments.
+pub fn decode_env_sequential(obj: LeanList) -> Env {
+  let objs = collect_list_objs(obj);
+  let global = GlobalCache::new();
+  let mut env = Env::default();
+  env.reserve(objs.len());
+
+  for o in objs {
+    let (name, constant_info) = decode_name_constant_info(o, &global);
+    env.insert(name, constant_info);
+  }
+  env
+}
+
+// Debug/analysis entry point invoked via the `rust-compile` test flag in
+// `Tests/FFI/Basic.lean`. Exercises the full compile→decompile→check→serialize
+// roundtrip and size analysis. Output is intentionally suppressed; re-enable
+// individual `eprintln!` lines when debugging locally.
+#[unsafe(no_mangle)]
+extern "C" fn rs_tmp_decode_const_map(obj: LeanList) -> usize {
+  // Enable hash-consed size tracking for debugging
+  // TODO: Make this configurable via CLI instead of hardcoded
+  crate::ix::compile::TRACK_HASH_CONSED_SIZE
+    .store(true, std::sync::atomic::Ordering::Relaxed);
+
+  // Enable verbose sharing analysis for debugging pathological blocks
+  // TODO: Make this configurable via CLI instead of hardcoded
+  crate::ix::compile::ANALYZE_SHARING
+    .store(false, std::sync::atomic::Ordering::Relaxed);
+
+  let env = decode_env(obj);
+  let env = Arc::new(env);
+  if let Ok(stt) = compile_env(&env) {
+    if let Ok(dstt) = decompile_env(&stt) {
+      let _ = check_decompile(env.as_ref(), &stt, &dstt);
+    }
+
+    // Measure serialized size (after roundtrip, not counted in total time)
+    let _ = stt.env.serialized_size_breakdown();
+
+    // Analyze serialized size of "Nat.add_comm" and its transitive dependencies
+    analyze_const_size(&stt, "Nat.add_comm");
+
+    // Analyze hash-consing vs serialization efficiency
+    analyze_block_size_stats(&stt);
+
+    // Test decompilation from serialized bytes (simulating "over the wire")
+    let mut serialized = Vec::new();
+    stt.env.put(&mut serialized).expect("Env serialization failed");
+
+    // Deserialize to a fresh Env
+    let mut buf: &[u8] = &serialized;
+    if let Ok(fresh_env) = crate::ix::ixon::env::Env::get(&mut buf) {
+      // Build a fresh CompileState from the deserialized Env
+      let fresh_stt = crate::ix::compile::CompileState {
+        env: fresh_env,
+        name_to_addr: DashMap::new(),
+        blocks: dashmap::DashSet::new(),
+        block_stats: DashMap::new(),
+      };
+
+      // Populate name_to_addr from env.named
+      for entry in fresh_stt.env.named.iter() {
+        fresh_stt
+          .name_to_addr
+          .insert(entry.key().clone(), entry.value().addr.clone());
+      }
+
+      // Populate blocks from constants that are mutual blocks
+      for entry in fresh_stt.env.consts.iter() {
+        if matches!(
+          &entry.value().info,
+          crate::ix::ixon::constant::ConstantInfo::Muts(_)
+        ) {
+          fresh_stt.blocks.insert(entry.key().clone());
+        }
+      }
+
+      // Decompile from the fresh state
+      if let Ok(dstt2) = decompile_env(&fresh_stt) {
+        // Verify against original environment
+        let _ = check_decompile(env.as_ref(), &fresh_stt, &dstt2);
+      }
+    }
+  }
+  env.as_ref().len()
+}
+
+/// Size breakdown for a constant: alpha-invariant vs metadata
+#[derive(Default, Clone)]
+struct ConstSizeBreakdown {
+  alpha_size: usize, // Alpha-invariant constant data
+  meta_size: usize,  // Metadata (names, binder info, etc.)
+}
+
+impl ConstSizeBreakdown {
+  fn total(&self) -> usize {
+    self.alpha_size + self.meta_size
+  }
+}
+
+/// Analyze the serialized size of a constant and its transitive dependencies.
+fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
+  use crate::ix::address::Address;
+  use std::collections::{HashSet, VecDeque};
+
+  // Build a global name index for metadata serialization
+  let name_index = build_name_index(stt);
+
+  // Parse the name (e.g., "Nat.add_comm" -> Name::str(Name::str(Name::anon(), "Nat"), "add_comm"))
+  let name = parse_name(name_str);
+
+  // Look up the constant's address
+  let addr = match stt.name_to_addr.get(&name) {
+    Some(a) => a.clone(),
+    None => {
+      println!("\n=== Size analysis for {} ===", name_str);
+      println!("  Constant not found");
+      return;
+    },
+  };
+
+  // Get the constant
+  let constant = match stt.env.consts.get(&addr) {
+    Some(c) => c.clone(),
+    None => {
+      println!("\n=== Size analysis for {} ===", name_str);
+      println!("  Constant data not found at address");
+      return;
+    },
+  };
+
+  // Compute direct sizes (alpha-invariant and metadata)
+  let direct_breakdown =
+    compute_const_size_breakdown(&constant, &name, stt, &name_index);
+
+  // BFS to collect all transitive dependencies
+  let mut visited: HashSet<Address> = HashSet::new();
+  let mut queue: VecDeque<Address> = VecDeque::new();
+  let mut dep_breakdowns: Vec<(String, ConstSizeBreakdown)> = Vec::new();
+
+  // Start with the constant's refs
+  visited.insert(addr.clone());
+  for dep_addr in &constant.refs {
+    if !visited.contains(dep_addr) {
+      queue.push_back(dep_addr.clone());
+      visited.insert(dep_addr.clone());
+    }
+  }
+
+  // BFS through all transitive dependencies
+  while let Some(dep_addr) = queue.pop_front() {
+    if let Some(dep_const) = stt.env.consts.get(&dep_addr) {
+      // Get the name for this dependency
+      let dep_name_opt = stt.env.get_name_by_addr(&dep_addr);
+      let dep_name_str = dep_name_opt
+        .as_ref()
+        .map_or_else(|| format!("{:?}", dep_addr), |n| n.pretty());
+
+      let breakdown = if let Some(ref dep_name) = dep_name_opt {
+        compute_const_size_breakdown(&dep_const, dep_name, stt, &name_index)
+      } else {
+        ConstSizeBreakdown {
+          alpha_size: serialized_const_size(&dep_const),
+          meta_size: 0,
+        }
+      };
+
+      dep_breakdowns.push((dep_name_str, breakdown));
+
+      // Add this constant's refs to the queue
+      for ref_addr in &dep_const.refs {
+        if !visited.contains(ref_addr) {
+          queue.push_back(ref_addr.clone());
+          visited.insert(ref_addr.clone());
+        }
+      }
+    }
+  }
+
+  // Sort by total size descending
+  dep_breakdowns.sort_by(|a, b| b.1.total().cmp(&a.1.total()));
+
+  let total_deps_alpha: usize =
+    dep_breakdowns.iter().map(|(_, b)| b.alpha_size).sum();
+  let total_deps_meta: usize =
+    dep_breakdowns.iter().map(|(_, b)| b.meta_size).sum();
+  let total_deps_size = total_deps_alpha + total_deps_meta;
+
+  let total_alpha = direct_breakdown.alpha_size + total_deps_alpha;
+  let total_meta = direct_breakdown.meta_size + total_deps_meta;
+  let total_size = total_alpha + total_meta;
+
+  println!("\n=== Size analysis for {} ===", name_str);
+  println!(
+    "  Direct alpha-invariant size: {} bytes",
+    direct_breakdown.alpha_size
+  );
+  println!("  Direct metadata size: {} bytes", direct_breakdown.meta_size);
+  println!("  Direct total size: {} bytes", direct_breakdown.total());
+  println!();
+  println!("  Transitive dependencies: {} constants", dep_breakdowns.len());
+  println!(
+    "  Dependencies alpha-invariant: {} bytes ({:.2} KB)",
+    total_deps_alpha,
+    total_deps_alpha as f64 / 1024.0
+  );
+  println!(
+    "  Dependencies metadata: {} bytes ({:.2} KB)",
+    total_deps_meta,
+    total_deps_meta as f64 / 1024.0
+  );
+  println!(
+    "  Dependencies total: {} bytes ({:.2} KB)",
+    total_deps_size,
+    total_deps_size as f64 / 1024.0
+  );
+  println!();
+  println!(
+    "  TOTAL alpha-invariant: {} bytes ({:.2} KB)",
+    total_alpha,
+    total_alpha as f64 / 1024.0
+  );
+  println!(
+    "  TOTAL metadata: {} bytes ({:.2} KB)",
+    total_meta,
+    total_meta as f64 / 1024.0
+  );
+  println!(
+    "  TOTAL size: {} bytes ({:.2} KB)",
+    total_size,
+    total_size as f64 / 1024.0
+  );
+
+  // Show top 10 largest dependencies
+  if !dep_breakdowns.is_empty() {
+    println!("\n  Top 10 largest dependencies (by total size):");
+    for (name, breakdown) in dep_breakdowns.iter().take(10) {
+      println!(
+        "    {} bytes (alpha: {}, meta: {}): {}",
+        breakdown.total(),
+        breakdown.alpha_size,
+        breakdown.meta_size,
+        name
+      );
+    }
+  }
+}
+
+/// Build a name index for metadata serialization.
+fn build_name_index(
+  stt: &crate::ix::compile::CompileState,
+) -> crate::ix::ixon::metadata::NameIndex {
+  use crate::ix::address::Address;
+  use crate::ix::ixon::metadata::NameIndex;
+
+  let mut idx = NameIndex::new();
+  let mut counter: u64 = 0;
+
+  // Add all names from the names map
+  for entry in stt.env.names.iter() {
+    idx.insert(entry.key().clone(), counter);
+    counter += 1;
+  }
+
+  // Add anonymous name
+  let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
+  idx.entry(anon_addr).or_insert(counter);
+
+  idx
+}
+
+/// Compute size breakdown for a constant (alpha-invariant vs metadata).
+fn compute_const_size_breakdown(
+  constant: &crate::ix::ixon::constant::Constant,
+  name: &Name,
+  stt: &crate::ix::compile::CompileState,
+  name_index: &crate::ix::ixon::metadata::NameIndex,
+) -> ConstSizeBreakdown {
+  // Alpha-invariant size
+  let alpha_size = serialized_const_size(constant);
+
+  // Metadata size
+  let meta_size = if let Some(named) = stt.env.named.get(name) {
+    serialized_meta_size(&named.meta, name_index)
+  } else {
+    0
+  };
+
+  ConstSizeBreakdown { alpha_size, meta_size }
+}
+
+/// Compute the serialized size of constant metadata.
+fn serialized_meta_size(
+  meta: &crate::ix::ixon::metadata::ConstantMeta,
+  name_index: &crate::ix::ixon::metadata::NameIndex,
+) -> usize {
+  let mut buf = Vec::new();
+  meta
+    .put_indexed(name_index, &mut buf)
+    .expect("metadata serialization failed");
+  buf.len()
+}
+
+/// Parse a dotted name string into a Name.
+fn parse_name(s: &str) -> Name {
+  let parts: Vec<&str> = s.split('.').collect();
+  let mut name = Name::anon();
+  for part in parts {
+    name = Name::str(name, part.to_string());
+  }
+  name
+}
+
+/// Compute the serialized size of a constant.
+fn serialized_const_size(
+  constant: &crate::ix::ixon::constant::Constant,
+) -> usize {
+  let mut buf = Vec::new();
+  constant.put(&mut buf);
+  buf.len()
+}
+
+/// Analyze block size statistics: hash-consing vs serialization.
+fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
+  use crate::ix::compile::BlockSizeStats;
+
+  // Check if hash-consed size tracking was enabled
+  let tracking_enabled = crate::ix::compile::TRACK_HASH_CONSED_SIZE
+    .load(std::sync::atomic::Ordering::Relaxed);
+  if !tracking_enabled {
+    println!("\n=== Block Size Analysis ===");
+    println!(
+      "  Hash-consed size tracking disabled (set IX_TRACK_HASH_CONSED=1 to enable)"
+    );
+    return;
+  }
+
+  // Collect all stats into a vector for analysis
+  let stats: Vec<(String, BlockSizeStats)> = stt
+    .block_stats
+    .iter()
+    .map(|entry| (entry.key().pretty(), entry.value().clone()))
+    .collect();
+
+  if stats.is_empty() {
+    println!("\n=== Block Size Analysis ===");
+    println!("  No block statistics collected");
+    return;
+  }
+
+  // Compute totals
+  let total_hash_consed: usize =
+    stats.iter().map(|(_, s)| s.hash_consed_size).sum();
+  let total_serialized: usize =
+    stats.iter().map(|(_, s)| s.serialized_size).sum();
+  let total_blocks = stats.len();
+  let total_consts: usize = stats.iter().map(|(_, s)| s.const_count).sum();
+
+  // Compute per-block overhead (serialized - hash_consed)
+  let mut overheads: Vec<(String, isize, f64, usize)> = stats
+    .iter()
+    .map(|(name, s)| {
+      let overhead = s.serialized_size as isize - s.hash_consed_size as isize;
+      let ratio = if s.hash_consed_size > 0 {
+        s.serialized_size as f64 / s.hash_consed_size as f64
+      } else {
+        1.0
+      };
+      (name.clone(), overhead, ratio, s.const_count)
+    })
+    .collect();
+
+  // Sort by overhead descending (most bloated first)
+  overheads.sort_by(|a, b| b.1.cmp(&a.1));
+
+  // Compute statistics
+  let avg_ratio = if total_hash_consed > 0 {
+    total_serialized as f64 / total_hash_consed as f64
+  } else {
+    1.0
+  };
+
+  // Find blocks with worst ratio (only for blocks with >100 bytes hash-consed)
+  let mut ratios: Vec<_> = stats
+    .iter()
+    .filter(|(_, s)| s.hash_consed_size > 100)
+    .map(|(name, s)| {
+      let ratio = s.serialized_size as f64 / s.hash_consed_size as f64;
+      (name.clone(), ratio, s.hash_consed_size, s.serialized_size)
+    })
+    .collect();
+  ratios
+    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  println!("\n=== Block Size Analysis (Hash-Consing vs Serialization) ===");
+  println!("  Total blocks: {}", total_blocks);
+  println!("  Total constants: {}", total_consts);
+  println!();
+  println!(
+    "  Total hash-consed size: {} bytes ({:.2} KB)",
+    total_hash_consed,
+    total_hash_consed as f64 / 1024.0
+  );
+  println!(
+    "  Total serialized size:  {} bytes ({:.2} KB)",
+    total_serialized,
+    total_serialized as f64 / 1024.0
+  );
+  println!("  Overall ratio: {:.3}x", avg_ratio);
+  println!(
+    "  Total overhead: {} bytes ({:.2} KB)",
+    total_serialized as isize - total_hash_consed as isize,
+    (total_serialized as f64 - total_hash_consed as f64) / 1024.0
+  );
+
+  // Distribution of ratios (more granular buckets for analysis)
+  let count_in_range = |lo: f64, hi: f64| -> usize {
+    stats
+      .iter()
+      .filter(|(_, s)| {
+        if s.hash_consed_size == 0 {
+          return false;
+        }
+        let r = s.serialized_size as f64 / s.hash_consed_size as f64;
+        r >= lo && r < hi
+      })
+      .count()
+  };
+
+  let ratio_under_0_05 = count_in_range(0.0, 0.05);
+  let ratio_0_05_to_0_1 = count_in_range(0.05, 0.1);
+  let ratio_0_1_to_0_2 = count_in_range(0.1, 0.2);
+  let ratio_0_2_to_0_5 = count_in_range(0.2, 0.5);
+  let ratio_0_5_to_1 = count_in_range(0.5, 1.0);
+  let ratio_1_to_1_5 = count_in_range(1.0, 1.5);
+  let ratio_1_5_to_2 = count_in_range(1.5, 2.0);
+  let ratio_over_2 = count_in_range(2.0, f64::INFINITY);
+
+  println!();
+  println!("  Ratio distribution (serialized / hash-consed):");
+  println!("    < 0.05x (20x+ compression): {} blocks", ratio_under_0_05);
+  println!("    0.05-0.1x (10-20x):         {} blocks", ratio_0_05_to_0_1);
+  println!("    0.1-0.2x (5-10x):           {} blocks", ratio_0_1_to_0_2);
+  println!("    0.2-0.5x (2-5x):            {} blocks", ratio_0_2_to_0_5);
+  println!("    0.5-1.0x (1-2x):            {} blocks", ratio_0_5_to_1);
+  println!("    1.0-1.5x (slight bloat):    {} blocks", ratio_1_to_1_5);
+  println!("    1.5-2.0x:                   {} blocks", ratio_1_5_to_2);
+  println!("    >= 2.0x (high bloat):       {} blocks", ratio_over_2);
+
+  // Top 10 blocks by absolute overhead
+  if !overheads.is_empty() {
+    println!();
+    println!("  Top 10 blocks by overhead (serialized - hash_consed):");
+    for (name, overhead, ratio, const_count) in overheads.iter().take(10) {
+      println!(
+        "    {:+} bytes ({:.2}x, {} consts): {}",
+        overhead,
+        ratio,
+        const_count,
+        truncate_name(name, 50)
+      );
+    }
+  }
+
+  // Top 10 blocks by worst ratio (with >100 bytes)
+  if !ratios.is_empty() {
+    println!();
+    println!("  Top 10 blocks by ratio (hash-consed > 100 bytes):");
+    for (name, ratio, hc, ser) in ratios.iter().take(10) {
+      println!(
+        "    {:.2}x ({} -> {} bytes): {}",
+        ratio,
+        hc,
+        ser,
+        truncate_name(name, 50)
+      );
+    }
+  }
+
+  // Bottom 10 blocks by ratio (best compression)
+  let mut best_ratios: Vec<_> = stats
+    .iter()
+    .filter(|(_, s)| s.hash_consed_size > 100)
+    .map(|(name, s)| {
+      let ratio = s.serialized_size as f64 / s.hash_consed_size as f64;
+      (name.clone(), ratio, s.hash_consed_size, s.serialized_size)
+    })
+    .collect();
+  best_ratios
+    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  if !best_ratios.is_empty() {
+    println!();
+    println!("  Top 10 blocks by best ratio (most efficient):");
+    for (name, ratio, hc, ser) in best_ratios.iter().take(10) {
+      println!(
+        "    {:.2}x ({} -> {} bytes): {}",
+        ratio,
+        hc,
+        ser,
+        truncate_name(name, 50)
+      );
+    }
+  }
+}
+
+/// Truncate a name for display.
+fn truncate_name(name: &str, max_len: usize) -> String {
+  if name.len() <= max_len {
+    name.to_string()
+  } else {
+    format!("...{}", &name[name.len() - max_len + 3..])
+  }
+}

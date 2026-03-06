@@ -9,12 +9,13 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
+use lean_ffi::nat::Nat;
+
 use crate::{
   ix::env::{
     ConstantInfo, Env, Expr, ExprData, InductiveVal, Level, LevelData, Name,
   },
   ix::graph::RefMap,
-  lean::nat::Nat,
 };
 
 /// Reason a constant failed groundedness checking.

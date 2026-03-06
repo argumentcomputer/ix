@@ -176,7 +176,13 @@ Ix consists of the following core components:
 
 Compiler performance benchmarks are tracked at https://bencher.dev/console/projects/ix/plots
 
-## Build & Install
+## Usage
+
+### Prerequisites
+
+- Install Clang to enable Bindgen, then set `LIBCLANG_PATH` per https://rust-lang.github.io/rust-bindgen/requirements.html
+
+### Build
 
 - Build and test the Ix library with `lake build` and `lake test`
 - Install the `ix` binary with `lake run install`, or run with `lake exe ix`
@@ -185,15 +191,18 @@ Compiler performance benchmarks are tracked at https://bencher.dev/console/proje
 
 **Lean tests:** `lake test`
 
-- `lake test -- <suite>` runs a specific test suite. Primary suites: `ffi`, `byte-array`, `ixon`, `claim`, `commit`, `canon`, `keccak`, `sharing`, `graph-unit`, `condense-unit`
-- `lake test -- --ignored` runs expensive test suites: `shard-map`, `rust-canon-roundtrip`, `serial-canon-roundtrip`, `parallel-canon-roundtrip`, `graph-cross`, `condense-cross`, `compile`, `decompile`, `rust-serialize`, `rust-decompile`, `commit-io`, `aiur`, `aiur-hashes`, `ixvm`
-    - Any `canon` or `compile` test will require significant RAM, beware of OOM
+- `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `byte-array`, `ixon`, `claim`, `commit`, `canon`, `keccak`, `sharing`, `graph-unit`, `condense-unit`
+- `lake test -- --ignored` runs only the expensive test suites: `shard-map`, `rust-canon-roundtrip`, `serial-canon-roundtrip`, `parallel-canon-roundtrip`, `graph-cross`, `condense-cross`, `compile`, `decompile`, `rust-serialize`, `rust-decompile`, `commit-io`, `aiur`, `aiur-hashes`, `ixvm`
+    - Most tests require at least 32 GB RAM
+    - The `compile` and `decompile` tests require 128 GB RAM
     - `aiur` and `aiur-hashes` generate ZK proofs and use significant CPU
-- `lake test -- --ignored <ignored-suite>` runs a specific expensive suite by name
+- `lake test -- --ignored <ignored-suite>` runs one or multiple expensive suites by name
+- `lake test -- --include-ignored` runs both primary and expensive test suites
+- `lake test -- --include-ignored <ignored-suite>` runs all primary suites plus one or multiple expensive suites
 - `lake test -- cli` runs CLI integration tests
 - `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
 
-**Rust tests:** `cargo test`
+**Rust tests:** `cargo test` or `cargo nextest run`
 
 ### Nix
 

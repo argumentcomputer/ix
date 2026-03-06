@@ -9,6 +9,8 @@
 #![allow(clippy::map_err_ignore)]
 #![allow(clippy::match_same_arms)]
 
+use lean_ffi::nat::Nat;
+
 use crate::{
   ix::address::Address,
   ix::compile::CompileState,
@@ -32,7 +34,6 @@ use crate::{
     univ::Univ,
   },
   ix::mutual::{MutCtx, all_to_ctx},
-  lean::nat::Nat,
 };
 use dashmap::DashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};

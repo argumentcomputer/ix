@@ -12,7 +12,7 @@ lean_exe ix where
   supportInterpreter := true
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "41c8a9b2f08679212e075ff89fa33694a2536d64"
+  "https://github.com/argumentcomputer/LSpec" @ "928f27c7de8318455ba0be7461dbdf7096f4075a"
 
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @ "564e0ab364ebaa3b1153defe2f49c9fe58a2d77c"
@@ -66,37 +66,6 @@ end IxApplications
 
 section FFI
 
-/-- Build the static lib for the C files -/
-extern_lib ix_c pkg := do
-  let compiler := "gcc"
-  let cDir := pkg.dir / "c"
-  let buildCDir := pkg.buildDir / "c"
-  let weakArgs := #["-fPIC", "-I", (← getLeanIncludeDir).toString, "-I", cDir.toString]
-
-  let cDirEntries ← cDir.readDir
-
-  -- Include every C header file in the trace mix
-  let extraDepTrace := cDirEntries.foldl (init := getLeanTrace) fun acc dirEntry =>
-    let filePath := dirEntry.path
-    if filePath.extension == some "h" then do
-      let x ← acc
-      let y ← computeTrace $ TextFilePath.mk filePath
-      pure $ x.mix y
-    else acc
-
-  -- Collect a build job for every C file in `cDir`
-  let mut buildJobs := #[]
-  for dirEntry in cDirEntries do
-    let filePath := dirEntry.path
-    if filePath.extension == some "c" then
-      let oFile := buildCDir / dirEntry.fileName |>.withExtension "o"
-      let srcJob ← inputTextFile filePath
-      let buildJob ← buildO oFile srcJob weakArgs #[] compiler extraDepTrace
-      buildJobs := buildJobs.push buildJob
-
-  let libName := nameToStaticLib "ix_c"
-  buildStaticLib (pkg.staticLibDir / libName) buildJobs
-
 /-- Build the static lib for the Rust crate -/
 extern_lib ix_rs pkg := do
   -- Defaults to `--features parallel`, configured via env var
@@ -149,23 +118,6 @@ script install := do
   setAccessRights tgtPath fileRight
   return 0
 
-script "check-lean-h-hash" := do
-  let cachedLeanHHash := 14792798158057885278
-
-  let leanIncludeDir ← getLeanIncludeDir
-  let includedLeanHPath := leanIncludeDir / "lean" / "lean.h"
-  let includedLeanHBytes ← IO.FS.readBinFile includedLeanHPath
-  let includedLeanHHash := includedLeanHBytes.hash
-
-  if cachedLeanHHash ≠ includedLeanHHash then
-    IO.eprintln   "Mismatching lean/lean.h hash"
-    IO.eprintln   "  1. Double-check changes made to lean/lean.h"
-    IO.eprintln s!"  2. Cache {includedLeanHHash} instead"
-    return 1
-  else
-    IO.println "lean/lean.h hash matches ✓"
-  return 0
-
 script "get-exe-targets" := do
   let pkg ← getRootPackage
   let exeTargets := pkg.configTargets LeanExe.configKind
@@ -173,6 +125,7 @@ script "get-exe-targets" := do
     IO.println <| tgt.name.toString |>.dropPrefix "«" |>.dropSuffix "»" |>.toString
   return 0
 
+@[lint_driver]
 script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)

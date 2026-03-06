@@ -1,0 +1,47 @@
+name: Extended CI tests
+
+on:
+  push:
+    branches: main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  ignored-test:
+    runs-on: warp-ubuntu-latest-x64-32x # Needs 128 GB RAM for Lean compilation
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          test: true
+          test-args: "-- --ignored"
+
+  valgrind:
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: true
+          build-args: "IxTests"
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Run tests under valgrind
+        run: |
+          valgrind \
+            --leak-check=full \
+            --show-leak-kinds=definite,possible \
+            --errors-for-leak-kinds=definite \
+            --track-origins=yes \
+            --error-exitcode=1 \
+            .lake/build/bin/IxTests -- --include-ignored aiur aiur-hashes ixvm
