@@ -23,7 +23,9 @@ def getFileEnv (path : FilePath) : IO Environment := do
   let source ← IO.FS.readFile path
   let inputCtx := Parser.mkInputContext source path.toString
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
-  let (env, messages) ← processHeader header default messages inputCtx 0
+  let (env, messages) ← processHeaderCore
+    (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
+    (isModule := false) default messages inputCtx 0
   if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
       (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)

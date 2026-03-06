@@ -1,0 +1,18 @@
+name: Ignored expensive tests
+
+on:
+  push:
+    branches: main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: warp-ubuntu-latest-x64-32x # Needs 128 GB RAM for Lean compilation
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          test: true
+          test-args: "-- --ignored"
