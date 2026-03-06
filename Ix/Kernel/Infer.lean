@@ -108,9 +108,7 @@ mutual
       if contextOk then
         let te : TypedExpr m := ⟨← infoFromType cachedType, term⟩
         return (te, cachedType)
-    withRecDepthCheck do
     withFuelCheck do
-    -- if (← read).trace then dbg_trace s!"infer: {term.tag}"
     let result ← do match term with
       | .bvar idx bvarName => do
         let ctx ← read
@@ -665,8 +663,6 @@ mutual
     | none => pure ()
     withRecDepthCheck do
     withFuelCheck do
-    let depth := (← get).recDepth
-    -- Temporarily removed for call-site tracing
 
     -- Loop: steps 1-5 may restart when whnfCore(cheapProj=false) changes terms
     let mut ct := t
@@ -712,7 +708,6 @@ mutual
       -- If terms changed, loop back to step 1 instead of recursing into isDefEq
       if !(tnn == tn' && snn == sn') then
         ct := tnn; cs := snn; continue
-
       -- 6. Structural comparison on fully-reduced terms
       let result ← isDefEqCore tnn snn
       cacheResult t s result
@@ -733,10 +728,7 @@ mutual
   partial def isDefEqProofIrrel (t s : Expr m) : TypecheckM m (Option Bool) := do
     let tType ← try let (_, ty) ← withInferOnly (infer t); pure (some ty) catch _ => pure none
     let some tType := tType | return none
-    let isPropType ← try isProp tType catch e => do
-      if (← get).recDepth > 100 then
-        dbg_trace s!"isProp FAILED at depth {(← get).recDepth}: {e}"
-      pure false
+    let isPropType ← try isProp tType catch _ => pure false
     if !isPropType then return none
     let sType ← try let (_, ty) ← withInferOnly (infer s); pure (some ty) catch _ => pure none
     let some sType := sType | return none
@@ -823,18 +815,19 @@ mutual
       let tApp := Expr.mkApp tLifted (Expr.mkBVar 0)
       withExtendedCtx ty (isDefEq tApp body)
 
-    -- Nat literal vs constructor expansion
+    -- Nat literal vs non-literal: expand to constructor form but stay in isDefEqCore
+    -- (calling full isDefEq would reduce Nat.succ(lit n) back to lit(n+1), causing a cycle)
     | .lit (.natVal _), _ => do
       let prims := (← read).prims
       let expanded := toCtorIfLit prims t
       if expanded == t then pure false
-      else isDefEq expanded s
+      else isDefEqCore expanded s
 
     | _, .lit (.natVal _) => do
       let prims := (← read).prims
       let expanded := toCtorIfLit prims s
       if expanded == s then pure false
-      else isDefEq t expanded
+      else isDefEqCore t expanded
 
     -- String literal vs constructor expansion
     | .lit (.strVal str), _ => do
@@ -923,11 +916,11 @@ mutual
       | some result => return (tn, sn, some result)
       | none => pure ()
 
-      -- Try nat reduction
-      if let some r := ← tryReduceNat tn then
-        tn ← whnfCore r (cheapProj := true); continue
-      if let some r := ← tryReduceNat sn then
-        sn ← whnfCore r (cheapProj := true); continue
+      -- Try nat reduction (whnf's args like lean4lean's reduceNat)
+      if let some tn' ← tryReduceNat tn then
+        return (tn', sn, some (← isDefEq tn' sn))
+      if let some sn' ← tryReduceNat sn then
+        return (tn, sn', some (← isDefEq tn sn'))
 
       -- Lazy delta step
       let tDelta := isDelta tn kenv

@@ -29,8 +29,9 @@ def listGet? (l : List α) (n : Nat) : Option α :=
 
 /-! ## Nat primitive reduction on Expr -/
 
-/-- Try to reduce a Nat primitive applied to literal arguments. Returns the reduced Expr. -/
-def tryReduceNat (e : Expr m) : TypecheckM m (Option (Expr m)) := do
+/-- Try to reduce a Nat primitive applied to literal arguments (no whnf on args).
+    Used in lazyDeltaReduction where args are already partially reduced. -/
+def tryReduceNatLit (e : Expr m) : TypecheckM m (Option (Expr m)) := do
   let fn := e.getAppFn
   match fn with
   | .const addr _ _ =>
@@ -222,42 +223,34 @@ mutual
     | _ => pure e
 
   /-- K-reduction: for Prop inductives with single zero-field constructor.
-      Returns the (only) minor premise, plus any extra args after the major. -/
+      Returns the (only) minor premise, plus any extra args after the major.
+      Only fires when the major premise has already been reduced to a constructor.
+      (lean4lean's toCtorWhenK also handles non-constructor majors by checking
+      indices via isDefEq, but that requires infer/isDefEq which are in a
+      separate mutual block. The whnf of the major should handle most cases.) -/
   partial def tryKReduction (e : Expr m) (_addr : Address) (args : Array (Expr m))
-      (major : Expr m) (params motives minors indices : Nat) (indAddr : Address)
+      (major : Expr m) (params motives minors indices : Nat) (_indAddr : Address)
       : TypecheckM m (Expr m) := do
+    -- Check if major is a constructor (including nat literal → ctor conversion)
     let ctx ← read
-    let prims := ctx.prims
-    let kenv := ctx.kenv
-    -- Check if major is a constructor
-    let majorCtor := toCtorIfLit prims major
+    let majorCtor := toCtorIfLit ctx.prims major
     let isCtor := match majorCtor.getAppFn with
       | .const ctorAddr _ _ =>
-        match kenv.find? ctorAddr with
+        match ctx.kenv.find? ctorAddr with
         | some (.ctorInfo _) => true
         | _ => false
       | _ => false
-    -- Also check if the inductive is in Prop
-    let isPropInd := match kenv.find? indAddr with
-      | some (.inductInfo v) =>
-        let rec getSort : Expr m → Bool
-          | .forallE _ body _ _ => getSort body
-          | .sort (.zero) => true
-          | _ => false
-        getSort v.type
-      | _ => false
-    if isCtor || isPropInd then
-      -- K-reduction: return the (only) minor premise
-      let minorIdx := params + motives
-      if h : minorIdx < args.size then
-        let mut result := args[minorIdx]
-        -- Apply extra args after major premise (matching lean4 kernel behavior)
-        let majorIdx := params + motives + minors + indices
-        if majorIdx + 1 < args.size then
-          result := result.mkAppRange (majorIdx + 1) args.size args
-        return result
-      pure e
-    else pure e
+    if !isCtor then return e
+    -- K-reduction: return the (only) minor premise
+    let minorIdx := params + motives
+    if h : minorIdx < args.size then
+      let mut result := args[minorIdx]
+      -- Apply extra args after major premise (matching lean4 kernel behavior)
+      let majorIdx := params + motives + minors + indices
+      if majorIdx + 1 < args.size then
+        result := result.mkAppRange (majorIdx + 1) args.size args
+      return result
+    pure e
 
   /-- Iota-reduction: reduce a recursor applied to a constructor.
       Follows the lean4 algorithm:
@@ -377,14 +370,54 @@ mutual
       | _ => return e
     else return e
 
-  /-- Full WHNF with delta unfolding loop.
-      whnfCore handles structural reduction (beta, let, iota, cheap proj).
-      This loop adds: nat primitives, stuck projection resolution, delta unfolding.
-      Projection chains are flattened to avoid deep recursion:
-        proj₁(proj₂(proj₃(struct))) → strip all projs, whnf(struct) ONCE,
-        then resolve projections iteratively from inside out.
-      Tracks nesting depth: when whnf calls nest too deep (from isDefEq ↔ whnf cycles),
-      degrades to whnfCore to prevent native stack overflow. -/
+  /-- Try to reduce a Nat primitive, whnf'ing args if needed (like lean4lean's reduceNat).
+      Inside the mutual block so it can call `whnf` on arguments. -/
+  partial def tryReduceNat (e : Expr m) : TypecheckM m (Option (Expr m)) := do
+    let fn := e.getAppFn
+    match fn with
+    | .const addr _ _ =>
+      let prims := (← read).prims
+      if !isPrimOp prims addr then return none
+      let args := e.getAppArgs
+      -- Nat.succ: 1 arg
+      if addr == prims.natSucc then
+        if args.size >= 1 then
+          let a ← whnf args[0]!
+          match a with
+          | .lit (.natVal n) => return some (.lit (.natVal (n + 1)))
+          | _ => return none
+        else return none
+      -- Binary nat operations: 2 args, whnf both (matches lean4lean reduceBinNatOp)
+      else if args.size >= 2 then
+        let a ← whnf args[0]!
+        let b ← whnf args[1]!
+        match a, b with
+        | .lit (.natVal x), .lit (.natVal y) =>
+          if addr == prims.natAdd then return some (.lit (.natVal (x + y)))
+          else if addr == prims.natSub then return some (.lit (.natVal (x - y)))
+          else if addr == prims.natMul then return some (.lit (.natVal (x * y)))
+          else if addr == prims.natPow then
+            if y > 16777216 then return none
+            return some (.lit (.natVal (Nat.pow x y)))
+          else if addr == prims.natMod then return some (.lit (.natVal (x % y)))
+          else if addr == prims.natDiv then return some (.lit (.natVal (x / y)))
+          else if addr == prims.natGcd then return some (.lit (.natVal (Nat.gcd x y)))
+          else if addr == prims.natBeq then
+            let boolAddr := if x == y then prims.boolTrue else prims.boolFalse
+            return some (Expr.mkConst boolAddr #[])
+          else if addr == prims.natBle then
+            let boolAddr := if x ≤ y then prims.boolTrue else prims.boolFalse
+            return some (Expr.mkConst boolAddr #[])
+          else if addr == prims.natLand then return some (.lit (.natVal (Nat.land x y)))
+          else if addr == prims.natLor then return some (.lit (.natVal (Nat.lor x y)))
+          else if addr == prims.natXor then return some (.lit (.natVal (Nat.xor x y)))
+          else if addr == prims.natShiftLeft then return some (.lit (.natVal (Nat.shiftLeft x y)))
+          else if addr == prims.natShiftRight then return some (.lit (.natVal (Nat.shiftRight x y)))
+          else return none
+        | _, _ => return none
+      else return none
+    | _ => return none
+
   partial def whnf (e : Expr m) : TypecheckM m (Expr m) := do
     -- Cache check FIRST — no fuel or stack cost for cache hits
     -- Skip cache when let bindings are in scope (bvar zeta makes results context-dependent)
@@ -403,25 +436,9 @@ mutual
     let mut steps := 0
     repeat
       if steps > 10000 then break  -- safety bound
-      -- Try nat primitive reduction
+      -- Try nat primitive reduction (whnf's args like lean4lean's reduceNat)
       if let some r := ← tryReduceNat t then
         t ← whnfCore r; steps := steps + 1; continue
-      -- If head is a nat primitive but args aren't literals, whnf args and retry
-      match t.getAppFn with
-      | .const addr _ _ =>
-        if isPrimOp (← read).prims addr then
-          let args := t.getAppArgs
-          let mut changed := false
-          let mut newArgs : Array (Expr m) := #[]
-          for arg in args do
-            let arg' ← whnf arg
-            newArgs := newArgs.push arg'
-            if arg' != arg then changed := true
-          if changed then
-            let t' := t.getAppFn.mkAppN newArgs
-            if let some r := ← tryReduceNat t' then
-              t ← whnfCore r; steps := steps + 1; continue
-      | _ => pure ()
       -- Handle stuck projections (including inside app chains).
       -- Flatten nested projection chains to avoid deep whnf→whnf recursion.
       match t.getAppFn with

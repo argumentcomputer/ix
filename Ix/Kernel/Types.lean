@@ -629,10 +629,12 @@ private unsafe def Expr.ptrCompareUnsafe (a : @& Expr m) (b : @& Expr m) : Order
 @[implemented_by Expr.ptrCompareUnsafe]
 opaque Expr.ptrCompare : @& Expr m → @& Expr m → Ordering
 
-/-- Compare pairs of expressions by pointer address (first component, then second). -/
+/-- Compare pairs of expressions by content (first component, then second).
+    Uses structural `Expr.compare` so the failure cache works across pointer-distinct
+    copies of the same expression. -/
 def Expr.pairCompare (a b : Expr m × Expr m) : Ordering :=
-  match Expr.ptrCompare a.1 b.1 with
-  | .eq => Expr.ptrCompare a.2 b.2
+  match Expr.compare a.1 b.1 with
+  | .eq => Expr.compare a.2 b.2
   | ord => ord
 
 /-! ## Enums -/

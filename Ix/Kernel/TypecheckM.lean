@@ -193,8 +193,8 @@ def ensureTypedConst (addr : Address) : TypecheckM m Unit := do
 
 /-! ## Def-eq cache helpers -/
 
-/-- Symmetric cache key for def-eq pairs. Orders by pointer address to make key(a,b) == key(b,a). -/
+/-- Symmetric cache key for def-eq pairs. Orders by content to make key(a,b) == key(b,a). -/
 def eqCacheKey (a b : Expr m) : Expr m × Expr m :=
-  if Expr.ptrCompare a b != .gt then (a, b) else (b, a)
+  if Expr.compare a b != .gt then (a, b) else (b, a)
 
 end Ix.Kernel

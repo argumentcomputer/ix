@@ -27,21 +27,20 @@ def reduceIMax (a b : Level m) : Level m :=
   match b with
   | .zero => .zero
   | .succ _ => reduceMax a b
-  | .param idx _ => match a with
-    | .param idx' _ => if idx == idx' then a else .imax a b
+  | _ =>
+    match a with
+    | .zero => b
+    | .succ .zero => b -- imax(1, b) = b
+    | .param idx' _ => match b with
+      | .param idx _ => if idx == idx' then a else .imax a b
+      | _ => .imax a b
     | _ => .imax a b
-  | _ => .imax a b
 
 /-- Reduce a level to normal form. -/
 def reduce : Level m → Level m
   | .succ u => .succ (reduce u)
   | .max a b => reduceMax (reduce a) (reduce b)
-  | .imax a b =>
-    let b' := reduce b
-    match b' with
-    | .zero => .zero
-    | .succ _ => reduceMax (reduce a) b'
-    | _ => .imax (reduce a) b'
+  | .imax a b => reduceIMax (reduce a) (reduce b)
   | u => u
 
 /-! ## Instantiation -/
@@ -52,13 +51,7 @@ def instReduce (u : Level m) (idx : Nat) (subst : Level m) : Level m :=
   match u with
   | .succ u => .succ (instReduce u idx subst)
   | .max a b => reduceMax (instReduce a idx subst) (instReduce b idx subst)
-  | .imax a b =>
-    let a' := instReduce a idx subst
-    let b' := instReduce b idx subst
-    match b' with
-    | .zero => .zero
-    | .succ _ => reduceMax a' b'
-    | _ => .imax a' b'
+  | .imax a b => reduceIMax (instReduce a idx subst) (instReduce b idx subst)
   | .param idx' _ => if idx' == idx then subst else u
   | .zero => u
 
@@ -68,12 +61,7 @@ def instBulkReduce (substs : Array (Level m)) : Level m → Level m
   | z@(.zero ..) => z
   | .succ u => .succ (instBulkReduce substs u)
   | .max a b => reduceMax (instBulkReduce substs a) (instBulkReduce substs b)
-  | .imax a b =>
-    let b' := instBulkReduce substs b
-    match b' with
-    | .zero => .zero
-    | .succ _ => reduceMax (instBulkReduce substs a) b'
-    | _ => .imax (instBulkReduce substs a) b'
+  | .imax a b => reduceIMax (instBulkReduce substs a) (instBulkReduce substs b)
   | .param idx name =>
     if h : idx < substs.size then substs[idx]
     else .param (idx - substs.size) name
