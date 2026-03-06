@@ -44,4 +44,4 @@ jobs:
             --errors-for-leak-kinds=definite \
             --track-origins=yes \
             --error-exitcode=1 \
-            .lake/build/bin/IxTests -- --include-ignored aiur aiur-hashes ixvm
+            .lake/build/bin/IxTests -- --include-ignored aiur aiur-hashes ixvm rbtree-map
