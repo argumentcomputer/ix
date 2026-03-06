@@ -17,7 +17,7 @@ open LSpec
 
 namespace Tests.RustSerialize
 
-/-- Test Rust serde roundtrip: compile → rsSerEnv → rsDesEnv → Lean serEnv → byte compare -/
+/-- Test Rust serde roundtrip: compile → rsSerEnv → rsDeEnv → Lean serEnv → byte compare -/
 def testRustSerdeRoundtrip : TestSeq :=
   .individualIO "Rust Serialize/Deserialize Roundtrip" none (do
     let leanEnv ← get_env!
@@ -52,9 +52,9 @@ def testRustSerdeRoundtrip : TestSeq :=
     IO.println ""
 
     -- Step 4: Deserialize Rust bytes with Rust
-    IO.println s!"[Step 4] Deserializing Rust bytes with Rust (rsDesEnv)..."
+    IO.println s!"[Step 4] Deserializing Rust bytes with Rust (rsDeEnv)..."
     let rustDesStart ← IO.monoMsNow
-    let roundtrippedFromRust ← match Ixon.rsDesEnv rustBytes with
+    let roundtrippedFromRust ← match Ixon.rsDeEnv rustBytes with
       | .ok env => pure env
       | .error e => do
         IO.println s!"[Step 4] FAILED: {e}"

@@ -2,7 +2,7 @@ name: Extended CI tests
 
 on:
   push:
-    branches: main
+    branches: [main, ci-ignored]
   workflow_dispatch:
 
 permissions:
@@ -14,26 +14,43 @@ concurrency:
 
 jobs:
   ignored-test:
-    runs-on: warp-ubuntu-latest-x64-32x # Needs 128 GB RAM for Lean compilation
+    runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      # Only restore the cache, since `ci.yml` will save the test binary to the cache first
+      - uses: actions/cache/restore@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
-          test: true
-          test-args: "-- --ignored"
+          # `test-args` is currently broken, so we run `lake test` separately
+          # Restore once https://github.com/leanprover/lean-action/pull/153 is merged
+          # test: true
+          # test-args: "-- --ignored"
+          use-github-cache: false
+      - run: lake test -- --ignored
 
-  valgrind:
-    runs-on: warp-ubuntu-latest-x64-16x
+  valgrind-ffi:
+    runs-on: warp-ubuntu-latest-x64-8x
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      # Only restore the cache, since `ci.yml` will save the test binary to the cache first
+      - uses: actions/cache/restore@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
           build: true
           build-args: "IxTests"
+          use-github-cache: false
       - name: Install valgrind
         run: sudo apt-get update && sudo apt-get install -y valgrind
       - name: Run tests under valgrind
@@ -44,4 +61,4 @@ jobs:
             --errors-for-leak-kinds=definite \
             --track-origins=yes \
             --error-exitcode=1 \
-            .lake/build/bin/IxTests -- --include-ignored aiur aiur-hashes ixvm
+            .lake/build/bin/IxTests -- ffi

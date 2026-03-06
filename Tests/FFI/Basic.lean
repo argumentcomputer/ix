@@ -94,6 +94,9 @@ def largeNatTests : TestSeq :=
 def hashMapEq (m1 m2 : Std.HashMap Nat Nat) : Bool :=
   m1.size == m2.size && m1.toList.all fun (k, v) => m2.get? k == some v
 
+def dHashMapRawEq (m1 m2 : DHashMapRaw Nat (fun _ => Nat)) : Bool :=
+  m1.size == m2.size && m1.toList.all fun ⟨k, v⟩ => m2.get? k == some v
+
 def assocListEq (l1 l2 : AssocList Nat (fun _ => Nat)) : Bool :=
   let toSimpleList (l : AssocList Nat (fun _ => Nat)) : List (Nat × Nat) :=
     l.toList.map fun ⟨k, v⟩ => (k, v)
@@ -111,6 +114,14 @@ def hashMapTests : TestSeq :=
   test "HashMap empty" (hashMapEq (roundtripHashMapNatNat {}) {}) ++
   test "HashMap single" (hashMapEq (roundtripHashMapNatNat (({} : Std.HashMap Nat Nat).insert 1 42)) (({} : Std.HashMap Nat Nat).insert 1 42))
 
+def dHashMapRawTests : TestSeq :=
+  let emptyMap : DHashMapRaw Nat (fun _ => Nat) := {}
+  let single : DHashMapRaw Nat (fun _ => Nat) := ({} : DHashMapRaw Nat (fun _ => Nat)).insert 1 42
+  let double : DHashMapRaw Nat (fun _ => Nat) := (({} : DHashMapRaw Nat (fun _ => Nat)).insert 1 42).insert 2 99
+  test "DHashMapRaw empty" (dHashMapRawEq (roundtripDHashMapRawNatNat emptyMap) emptyMap) ++
+  test "DHashMapRaw single" (dHashMapRawEq (roundtripDHashMapRawNatNat single) single) ++
+  test "DHashMapRaw double" (dHashMapRawEq (roundtripDHashMapRawNatNat double) double)
+
 def boolTests : TestSeq :=
   test "Bool true" (roundtripBool true == true) ++
   test "Bool false" (roundtripBool false == false)
@@ -122,6 +133,7 @@ public def suite : List TestSeq := [
   largeNatTests,
   assocListTests,
   hashMapTests,
+  dHashMapRawTests,
   boolTests,
   checkIO "Nat roundtrip" (∀ n : Nat, roundtripNat n == n),
   checkIO "String roundtrip" (∀ s : String, roundtripString s == s),
@@ -131,6 +143,9 @@ public def suite : List TestSeq := [
   checkIO "Point roundtrip" (∀ p : Point, roundtripPoint p == p),
   checkIO "NatTree roundtrip" (∀ t : NatTree, roundtripNatTree t == t),
   checkIO "HashMap Nat Nat roundtrip" (∀ m : Std.HashMap Nat Nat, hashMapEq (roundtripHashMapNatNat m) m),
+  checkIO "DHashMapRaw Nat Nat roundtrip" (∀ m : Std.HashMap Nat Nat,
+    let raw := m.toList.foldl (init := ({} : DHashMapRaw Nat (fun _ => Nat))) fun acc (k, v) => acc.insert k v
+    dHashMapRawEq (roundtripDHashMapRawNatNat raw) raw),
 ]
 
 end Tests.FFI.Basic

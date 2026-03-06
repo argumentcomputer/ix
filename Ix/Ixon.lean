@@ -1826,11 +1826,11 @@ def rsSerEnv (env : Env) : ByteArray :=
   rsSerEnvFFI env.toRawEnv
 
 @[extern "rs_des_env"]
-opaque rsDesEnvFFI : @& ByteArray → Except String RawEnv
+opaque rsDeEnvFFI : @& ByteArray → Except String RawEnv
 
 /-- Deserialize bytes to an Ixon.Env using Rust. -/
-def rsDesEnv (bytes : ByteArray) : Except String Env :=
-  return (← rsDesEnvFFI bytes).toEnv
+def rsDeEnv (bytes : ByteArray) : Except String Env :=
+  return (← rsDeEnvFFI bytes).toEnv
 
 end Ixon
 
