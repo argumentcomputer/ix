@@ -413,6 +413,74 @@ impl Op {
         let lookup_args = vec![u8_less_than_channel(), i, j, less_than];
         slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
       },
+      Op::U32LessThan(x_idx, y_idx) => {
+        let (x, _) = map[*x_idx];
+        let (y, _) = map[*y_idx];
+        let x_u32 = u32::try_from(x.as_canonical_u64()).unwrap();
+        let y_u32 = u32::try_from(y.as_canonical_u64()).unwrap();
+        let x_bytes: [u8; 4] = x_u32.to_le_bytes();
+        let y_bytes: [u8; 4] = y_u32.to_le_bytes();
+
+        // Push 8 byte auxiliaries (x then y)
+        for &b in x_bytes.iter().chain(y_bytes.iter()) {
+          slice.push_auxiliary(index, G::from_u8(b));
+        }
+
+        // Borrow chain auxiliaries and lookups
+        let sub_channel = u8_sub_channel();
+        let mut prev_borrow: u8 = 0;
+        for k in 0..4 {
+          let yk = y_bytes[k];
+          let xk = x_bytes[k];
+          let (tk, bk_prime_bool) = yk.overflowing_sub(xk);
+          let bk_prime = u8::from(bk_prime_bool);
+          let borrow_in = if k == 0 { 1u8 } else { prev_borrow };
+          let (rk, bk_double_prime_bool) = tk.overflowing_sub(borrow_in);
+          let bk_double_prime = u8::from(bk_double_prime_bool);
+
+          // Push 4 auxiliaries: t_k, b_k', r_k, b_k''
+          slice.push_auxiliary(index, G::from_u8(tk));
+          slice.push_auxiliary(index, G::from_bool(bk_prime_bool));
+          slice.push_auxiliary(index, G::from_u8(rk));
+          slice.push_auxiliary(index, G::from_bool(bk_double_prime_bool));
+
+          // Lookup 1: u8_sub(y_k, x_k) -> (t_k, b_k')
+          slice.push_lookup(
+            index,
+            Lookup::push(
+              G::ONE,
+              vec![
+                sub_channel,
+                G::from_u8(yk),
+                G::from_u8(xk),
+                G::from_u8(tk),
+                G::from_bool(bk_prime_bool),
+              ],
+            ),
+          );
+
+          // Lookup 2: u8_sub(t_k, borrow_in) -> (r_k, b_k'')
+          slice.push_lookup(
+            index,
+            Lookup::push(
+              G::ONE,
+              vec![
+                sub_channel,
+                G::from_u8(tk),
+                G::from_u8(borrow_in),
+                G::from_u8(rk),
+                G::from_bool(bk_double_prime_bool),
+              ],
+            ),
+          );
+
+          prev_borrow = bk_prime + bk_double_prime;
+        }
+
+        // Output: 1 - final_borrow
+        let result = G::from_bool(x_u32 < y_u32);
+        map.push((result, 1));
+      },
       Op::AssertEq(..) | Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => {
       },
     }

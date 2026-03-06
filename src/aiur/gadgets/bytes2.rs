@@ -284,7 +284,7 @@ impl Bytes2Queries {
     self.bump_multiplicity_for(i, j, 1)
   }
 
-  fn bump_sub(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_sub(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 2)
   }
 

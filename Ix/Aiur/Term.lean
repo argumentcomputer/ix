@@ -100,6 +100,7 @@ inductive Term
   | u8And : Term → Term → Term
   | u8Or : Term → Term → Term
   | u8LessThan : Term → Term → Term
+  | u32LessThan : Term → Term → Term
   | debug : String → Option Term → Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 
@@ -147,6 +148,7 @@ inductive TypedTermInner
   | u8And : TypedTerm → TypedTerm → TypedTermInner
   | u8Or : TypedTerm → TypedTerm → TypedTermInner
   | u8LessThan : TypedTerm → TypedTerm → TypedTermInner
+  | u32LessThan : TypedTerm → TypedTerm → TypedTermInner
   | debug : String → Option TypedTerm → TypedTerm → TypedTermInner
   deriving Repr, Inhabited
 

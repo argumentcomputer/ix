@@ -115,6 +115,10 @@ fn decode_op(ctor: LeanCtor) -> Op {
       Op::U8LessThan(i, j)
     },
     22 => {
+      let [i, j] = ctor.objs::<2>().map(lean_unbox_nat_as_usize);
+      Op::U32LessThan(i, j)
+    },
+    23 => {
       let [label_obj, idxs_obj] = ctor.objs::<2>();
       let label = label_obj.as_string().to_string();
       let idxs = if idxs_obj.is_scalar() {
