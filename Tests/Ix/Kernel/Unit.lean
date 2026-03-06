@@ -280,6 +280,86 @@ def testHelperFunctions : TestSeq :=
   test "getCtorReturnType: skips foralls"
     (getCtorReturnType (.forallE c2 c1 () () : Expr .anon) 0 1 == c1)
 
+/-! ## Primitive helpers -/
+
+def testToCtorIfLit : TestSeq :=
+  let prims := buildPrimitives
+  -- natVal 0 => Nat.zero
+  test "toCtorIfLit 0 = Nat.zero"
+    (toCtorIfLit prims (.lit (.natVal 0) : Expr .anon) == Expr.mkConst prims.natZero #[]) $
+  -- natVal 1 => Nat.succ (natVal 0)
+  test "toCtorIfLit 1 = Nat.succ 0"
+    (toCtorIfLit prims (.lit (.natVal 1) : Expr .anon) ==
+      Expr.mkApp (Expr.mkConst prims.natSucc #[]) (.lit (.natVal 0))) $
+  -- natVal 5 => Nat.succ (natVal 4)
+  test "toCtorIfLit 5 = Nat.succ 4"
+    (toCtorIfLit prims (.lit (.natVal 5) : Expr .anon) ==
+      Expr.mkApp (Expr.mkConst prims.natSucc #[]) (.lit (.natVal 4))) $
+  -- non-nat unchanged
+  test "toCtorIfLit sort = sort"
+    (toCtorIfLit prims (.sort .zero : Expr .anon) == (.sort .zero : Expr .anon)) $
+  test "toCtorIfLit strVal = strVal"
+    (toCtorIfLit prims (.lit (.strVal "hi") : Expr .anon) == (.lit (.strVal "hi") : Expr .anon))
+
+def testStrLitToConstructor : TestSeq :=
+  let prims := buildPrimitives
+  -- empty string => String.mk (List.nil Char)
+  let empty := strLitToConstructor (m := .anon) prims ""
+  test "strLitToConstructor empty head is stringMk"
+    (empty.getAppFn.isConstOf prims.stringMk) $
+  test "strLitToConstructor empty has 1 arg"
+    (empty.getAppNumArgs == 1) $
+  -- the arg of empty string should be List.nil applied to Char
+  test "strLitToConstructor empty arg head is listNil"
+    (empty.appArg!.getAppFn.isConstOf prims.listNil) $
+  -- single char string
+  let single := strLitToConstructor (m := .anon) prims "a"
+  test "strLitToConstructor \"a\" head is stringMk"
+    (single.getAppFn.isConstOf prims.stringMk) $
+  -- roundtrip: foldLiterals should recover the string literal
+  test "foldLiterals roundtrips empty"
+    (foldLiterals prims empty == .lit (.strVal "")) $
+  test "foldLiterals roundtrips \"a\""
+    (foldLiterals prims single == .lit (.strVal "a"))
+
+def testIsPrimOp : TestSeq :=
+  let prims := buildPrimitives
+  test "isPrimOp natAdd" (isPrimOp prims prims.natAdd) $
+  test "isPrimOp natSucc" (isPrimOp prims prims.natSucc) $
+  test "isPrimOp natSub" (isPrimOp prims prims.natSub) $
+  test "isPrimOp natMul" (isPrimOp prims prims.natMul) $
+  test "isPrimOp natGcd" (isPrimOp prims prims.natGcd) $
+  test "isPrimOp natMod" (isPrimOp prims prims.natMod) $
+  test "isPrimOp natDiv" (isPrimOp prims prims.natDiv) $
+  test "isPrimOp natBeq" (isPrimOp prims prims.natBeq) $
+  test "isPrimOp natBle" (isPrimOp prims prims.natBle) $
+  test "isPrimOp natLand" (isPrimOp prims prims.natLand) $
+  test "isPrimOp natLor" (isPrimOp prims prims.natLor) $
+  test "isPrimOp natXor" (isPrimOp prims prims.natXor) $
+  test "isPrimOp natShiftLeft" (isPrimOp prims prims.natShiftLeft) $
+  test "isPrimOp natShiftRight" (isPrimOp prims prims.natShiftRight) $
+  test "isPrimOp natPow" (isPrimOp prims prims.natPow) $
+  test "not isPrimOp nat" (!isPrimOp prims prims.nat) $
+  test "not isPrimOp bool" (!isPrimOp prims prims.bool) $
+  test "not isPrimOp default" (!isPrimOp prims default)
+
+def testFoldLiterals : TestSeq :=
+  let prims := buildPrimitives
+  -- Nat.zero => lit 0
+  test "foldLiterals Nat.zero = lit 0"
+    (foldLiterals prims (Expr.mkConst prims.natZero #[] : Expr .anon) == .lit (.natVal 0)) $
+  -- Nat.succ (lit 0) => lit 1
+  let succZero : Expr .anon := Expr.mkApp (Expr.mkConst prims.natSucc #[]) (.lit (.natVal 0))
+  test "foldLiterals Nat.succ(lit 0) = lit 1"
+    (foldLiterals prims succZero == .lit (.natVal 1)) $
+  -- Nat.succ (lit 4) => lit 5
+  let succ4 : Expr .anon := Expr.mkApp (Expr.mkConst prims.natSucc #[]) (.lit (.natVal 4))
+  test "foldLiterals Nat.succ(lit 4) = lit 5"
+    (foldLiterals prims succ4 == .lit (.natVal 5)) $
+  -- non-nat expressions are unchanged
+  test "foldLiterals bvar = bvar"
+    (foldLiterals prims (.bvar 0 () : Expr .anon) == (.bvar 0 () : Expr .anon))
+
 /-! ## Suite -/
 
 def suite : List TestSeq := [
@@ -293,6 +373,11 @@ def suite : List TestSeq := [
     group "bulk instantiation" testLevelInstBulkReduce,
   group "Reducibility hints" testReducibilityHintsLt,
   group "Inductive helpers" testHelperFunctions,
+  group "Primitive helpers" $
+    group "toCtorIfLit" testToCtorIfLit ++
+    group "strLitToConstructor" testStrLitToConstructor ++
+    group "isPrimOp" testIsPrimOp ++
+    group "foldLiterals" testFoldLiterals,
 ]
 
 end Tests.Ix.Kernel.Unit

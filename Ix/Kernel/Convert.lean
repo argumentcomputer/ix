@@ -825,7 +825,8 @@ def convertChunk (m : MetaMode) (hashToAddr : Std.HashMap Address Address)
     constants not in named. Groups projections by block and parallelizes. -/
 def convertEnv (m : MetaMode) (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     : Except String (Ix.Kernel.Env m × Primitives × Bool) :=
-  -- Build primitives with quot addresses
+  -- Build primitives with quot addresses and name-based lookup for extra addresses
+  -- Build primitives: hardcoded addresses + Quot from .quot tags
   let prims : Primitives := Id.run do
     let mut p := buildPrimitives
     for (addr, c) in ixonEnv.consts do

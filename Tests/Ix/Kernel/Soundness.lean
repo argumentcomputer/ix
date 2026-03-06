@@ -378,6 +378,398 @@ def validSingleCtor : TestSeq :=
     (expectOk env buildPrimitives indAddr "valid-inductive").1
   )
 
+/-! ## Mutual recursor motive tests -/
+
+/-- Shared mutual inductive: A and B, each with a 0-field constructor.
+    mutual
+      inductive A : Type where | mk : A
+      inductive B : Type where | mk : B
+    end -/
+private def mutualAddrs := do
+  let aAddr := mkAddr 120
+  let bAddr := mkAddr 121
+  let aMkAddr := mkAddr 122
+  let bMkAddr := mkAddr 123
+  (aAddr, bAddr, aMkAddr, bMkAddr)
+
+private def buildMutualEnv : Env .anon :=
+  let (aAddr, bAddr, aMkAddr, bMkAddr) := mutualAddrs
+  -- A : Sort 1
+  let env : Env .anon := default
+  let env := env.insert aAddr (.inductInfo {
+    toConstantVal := { numLevels := 0, type := .sort (.succ .zero), name := (), levelParams := () },
+    numParams := 0, numIndices := 0, all := #[aAddr, bAddr], ctors := #[aMkAddr],
+    numNested := 0, isRec := false, isUnsafe := false, isReflexive := false
+  })
+  -- A.mk : A
+  let env := addCtor env aMkAddr aAddr (.const aAddr #[] ()) 0 0 0
+  -- B : Sort 1
+  let env := env.insert bAddr (.inductInfo {
+    toConstantVal := { numLevels := 0, type := .sort (.succ .zero), name := (), levelParams := () },
+    numParams := 0, numIndices := 0, all := #[aAddr, bAddr], ctors := #[bMkAddr],
+    numNested := 0, isRec := false, isUnsafe := false, isReflexive := false
+  })
+  -- B.mk : B
+  addCtor env bMkAddr bAddr (.const bAddr #[] ()) 0 0 0
+
+/-- Build recursor type:
+    Π (mA : A → Sort u) (mB : B → Sort u) (cA : mA A.mk) (cB : mB B.mk)
+      (major : majorInd), motive major
+    where `motive` is bvar idx for the appropriate motive. -/
+private def mkMutualRecType (majorAddr : Address) (motiveRetBvar : Nat) : Expr .anon :=
+  let (aAddr, bAddr, aMkAddr, bMkAddr) := mutualAddrs
+  -- mA : A → Sort u
+  .forallE (.forallE (.const aAddr #[] ()) (.sort (.param 0 ())) () ())
+    -- mB : B → Sort u
+    (.forallE (.forallE (.const bAddr #[] ()) (.sort (.param 0 ())) () ())
+      -- cA : mA A.mk  (under [mA, mB]: mA = bvar 1)
+      (.forallE (.app (.bvar 1 ()) (.const aMkAddr #[] ()))
+        -- cB : mB B.mk  (under [mA, mB, cA]: mB = bvar 1)
+        (.forallE (.app (.bvar 1 ()) (.const bMkAddr #[] ()))
+          -- major : majorInd
+          (.forallE (.const majorAddr #[] ())
+            -- return: motive major  (under [mA,mB,cA,cB,major])
+            (.app (.bvar motiveRetBvar ()) (.bvar 0 ()))
+            () ())
+          () ())
+        () ())
+      () ())
+    () ()
+
+/-- Test: A.rec with correct motive (motive_0 = outermost, bvar 4) passes -/
+def mutualRecMotiveFirst : TestSeq :=
+  test "accepts A.rec with motive_0 (outermost)" (
+    let (aAddr, bAddr, aMkAddr, bMkAddr) := mutualAddrs
+    let recAddr := mkAddr 130
+    let env := buildMutualEnv
+    -- A.rec type: return type uses mA = bvar 4
+    let recType := mkMutualRecType aAddr 4
+    -- RHS for A.mk rule: λ mA mB cA cB, cA
+    -- Under [mA, mB, cA, cB]: cA = bvar 1
+    let rhs : Expr .anon :=
+      .lam (.forallE (.const aAddr #[] ()) (.sort (.param 0 ())) () ())   -- mA
+        (.lam (.forallE (.const bAddr #[] ()) (.sort (.param 0 ())) () ()) -- mB
+          (.lam (.app (.bvar 1 ()) (.const aMkAddr #[] ()))                -- cA
+            (.lam (.app (.bvar 1 ()) (.const bMkAddr #[] ()))              -- cB
+              (.bvar 1 ())                                                 -- body: cA
+              () ())
+            () ())
+          () ())
+        () ()
+    let env := addRec env recAddr 1 recType #[aAddr, bAddr] 0 0 2 2
+      #[{ ctor := aMkAddr, nfields := 0, rhs }]
+    (expectOk env buildPrimitives recAddr "mutual-rec-motive-first").1
+  )
+
+/-- Test: B.rec with correct motive (motive_1 = second, bvar 3) passes -/
+def mutualRecMotiveSecond : TestSeq :=
+  test "accepts B.rec with motive_1 (second motive)" (
+    let (aAddr, bAddr, aMkAddr, bMkAddr) := mutualAddrs
+    let recAddr := mkAddr 131
+    let env := buildMutualEnv
+    -- B.rec type: return type uses mB = bvar 3
+    let recType := mkMutualRecType bAddr 3
+    -- RHS for B.mk rule: λ mA mB cA cB, cB
+    -- Under [mA, mB, cA, cB]: cB = bvar 0
+    let rhs : Expr .anon :=
+      .lam (.forallE (.const aAddr #[] ()) (.sort (.param 0 ())) () ())   -- mA
+        (.lam (.forallE (.const bAddr #[] ()) (.sort (.param 0 ())) () ()) -- mB
+          (.lam (.app (.bvar 1 ()) (.const aMkAddr #[] ()))                -- cA
+            (.lam (.app (.bvar 1 ()) (.const bMkAddr #[] ()))              -- cB
+              (.bvar 0 ())                                                 -- body: cB
+              () ())
+            () ())
+          () ())
+        () ()
+    let env := addRec env recAddr 1 recType #[aAddr, bAddr] 0 0 2 2
+      #[{ ctor := bMkAddr, nfields := 0, rhs }]
+    (expectOk env buildPrimitives recAddr "mutual-rec-motive-second").1
+  )
+
+/-- Test: B.rec with wrong motive (uses mA instead of mB in return) fails -/
+def mutualRecWrongMotive : TestSeq :=
+  test "rejects B.rec with wrong motive in return type" (
+    let (aAddr, bAddr, aMkAddr, bMkAddr) := mutualAddrs
+    let recAddr := mkAddr 132
+    let env := buildMutualEnv
+    -- B.rec type but with return using mA (bvar 4) instead of mB (bvar 3)
+    let recType := mkMutualRecType bAddr 4  -- wrong: should be 3
+    -- RHS for B.mk: λ mA mB cA cB, cB  (type is mB B.mk, but recType says mA)
+    let rhs : Expr .anon :=
+      .lam (.forallE (.const aAddr #[] ()) (.sort (.param 0 ())) () ())
+        (.lam (.forallE (.const bAddr #[] ()) (.sort (.param 0 ())) () ())
+          (.lam (.app (.bvar 1 ()) (.const aMkAddr #[] ()))
+            (.lam (.app (.bvar 1 ()) (.const bMkAddr #[] ()))
+              (.bvar 0 ())
+              () ())
+            () ())
+          () ())
+        () ()
+    let env := addRec env recAddr 1 recType #[aAddr, bAddr] 0 0 2 2
+      #[{ ctor := bMkAddr, nfields := 0, rhs }]
+    (expectError env buildPrimitives recAddr "mutual-rec-wrong-motive").1
+  )
+
+/-! ## Mutual recursor with fields (nested-inductive pattern) -/
+
+/-- Mutual block with 1-field constructors and a standalone type T:
+    axiom T : Sort 1
+    mutual
+      inductive C : Sort 1 where | mk : T → C
+      inductive D : Sort 1 where | mk : T → D
+    end
+    Tests field binder shifting and motive selection together. -/
+private def fieldAddrs := do
+  let tAddr := mkAddr 140
+  let cAddr := mkAddr 141
+  let dAddr := mkAddr 142
+  let cMkAddr := mkAddr 143
+  let dMkAddr := mkAddr 144
+  (tAddr, cAddr, dAddr, cMkAddr, dMkAddr)
+
+private def buildFieldMutualEnv : Env .anon :=
+  let (tAddr, cAddr, dAddr, cMkAddr, dMkAddr) := fieldAddrs
+  -- T : Sort 1 (axiom)
+  let env : Env .anon := default
+  let env := addAxiom env tAddr (.sort (.succ .zero))
+  -- C : Sort 1
+  let env := env.insert cAddr (.inductInfo {
+    toConstantVal := { numLevels := 0, type := .sort (.succ .zero), name := (), levelParams := () },
+    numParams := 0, numIndices := 0, all := #[cAddr, dAddr], ctors := #[cMkAddr],
+    numNested := 0, isRec := false, isUnsafe := false, isReflexive := false
+  })
+  -- C.mk : T → C
+  let env := addCtor env cMkAddr cAddr
+    (.forallE (.const tAddr #[] ()) (.const cAddr #[] ()) () ()) 0 0 1
+  -- D : Sort 1
+  let env := env.insert dAddr (.inductInfo {
+    toConstantVal := { numLevels := 0, type := .sort (.succ .zero), name := (), levelParams := () },
+    numParams := 0, numIndices := 0, all := #[cAddr, dAddr], ctors := #[dMkAddr],
+    numNested := 0, isRec := false, isUnsafe := false, isReflexive := false
+  })
+  -- D.mk : T → D
+  addCtor env dMkAddr dAddr
+    (.forallE (.const tAddr #[] ()) (.const dAddr #[] ()) () ()) 0 0 1
+
+/-- Build C.rec or D.rec type with 1-field constructors.
+    Π (mC : C → Sort u) (mD : D → Sort u)
+      (cC : Π (t : T), mC (C.mk t))
+      (cD : Π (t : T), mD (D.mk t))
+      (major : majorInd), motive major
+    motiveRetBvar: bvar index of motive in the return type (4=mC, 3=mD) -/
+private def mkFieldRecType (majorAddr : Address) (motiveRetBvar : Nat) : Expr .anon :=
+  let (tAddr, cAddr, dAddr, cMkAddr, dMkAddr) := fieldAddrs
+  -- mC : C → Sort u
+  .forallE (.forallE (.const cAddr #[] ()) (.sort (.param 0 ())) () ())
+    -- mD : D → Sort u
+    (.forallE (.forallE (.const dAddr #[] ()) (.sort (.param 0 ())) () ())
+      -- cC : Π (t : T), mC (C.mk t)   [under mC,mD: mC=bvar 1; inner body under mC,mD,t: mC=bvar 2]
+      (.forallE (.forallE (.const tAddr #[] ()) (.app (.bvar 2 ()) (.app (.const cMkAddr #[] ()) (.bvar 0 ()))) () ())
+        -- cD : Π (t : T), mD (D.mk t)  [under mC,mD,cC; inner body under mC,mD,cC,t: mD=bvar 2]
+        (.forallE (.forallE (.const tAddr #[] ()) (.app (.bvar 2 ()) (.app (.const dMkAddr #[] ()) (.bvar 0 ()))) () ())
+          -- major : majorInd
+          (.forallE (.const majorAddr #[] ())
+            -- return: motive major  [under mC,mD,cC,cD,major]
+            (.app (.bvar motiveRetBvar ()) (.bvar 0 ()))
+            () ())
+          () ())
+        () ())
+      () ())
+    () ()
+
+/-- Test: C.rec with 1-field ctor, motive_0 (bvar 4) passes -/
+def mutualFieldRecFirst : TestSeq :=
+  test "accepts C.rec with fields and motive_0" (
+    let (tAddr, cAddr, dAddr, cMkAddr, dMkAddr) := fieldAddrs
+    let recAddr := mkAddr 150
+    let env := buildFieldMutualEnv
+    let recType := mkFieldRecType cAddr 4
+    -- RHS: λ mC mD cC cD (t : T), cC t
+    -- Under [mC,mD,cC,cD,t]: cC=bvar 2, t=bvar 0
+    let rhs : Expr .anon :=
+      .lam (.forallE (.const cAddr #[] ()) (.sort (.param 0 ())) () ())   -- mC
+        (.lam (.forallE (.const dAddr #[] ()) (.sort (.param 0 ())) () ()) -- mD
+          (.lam (.forallE (.const tAddr #[] ()) (.app (.bvar 2 ()) (.app (.const cMkAddr #[] ()) (.bvar 0 ()))) () ()) -- cC
+            (.lam (.forallE (.const tAddr #[] ()) (.app (.bvar 2 ()) (.app (.const dMkAddr #[] ()) (.bvar 0 ()))) () ()) -- cD
+              (.lam (.const tAddr #[] ())    -- t
+                (.app (.bvar 2 ()) (.bvar 0 ()))  -- cC t
+                () ())
+              () ())
+            () ())
+          () ())
+        () ()
+    let env := addRec env recAddr 1 recType #[cAddr, dAddr] 0 0 2 2
+      #[{ ctor := cMkAddr, nfields := 1, rhs }]
+    (expectOk env buildPrimitives recAddr "mutual-field-rec-first").1
+  )
+
+/-- Test: D.rec with 1-field ctor, motive_1 (bvar 3) passes -/
+def mutualFieldRecSecond : TestSeq :=
+  test "accepts D.rec with fields and motive_1" (
+    let (tAddr, cAddr, dAddr, cMkAddr, dMkAddr) := fieldAddrs
+    let recAddr := mkAddr 151
+    let env := buildFieldMutualEnv
+    let recType := mkFieldRecType dAddr 3
+    -- RHS: λ mC mD cC cD (t : T), cD t
+    -- Under [mC,mD,cC,cD,t]: cD=bvar 1, t=bvar 0
+    let rhs : Expr .anon :=
+      .lam (.forallE (.const cAddr #[] ()) (.sort (.param 0 ())) () ())   -- mC
+        (.lam (.forallE (.const dAddr #[] ()) (.sort (.param 0 ())) () ()) -- mD
+          (.lam (.forallE (.const tAddr #[] ()) (.app (.bvar 2 ()) (.app (.const cMkAddr #[] ()) (.bvar 0 ()))) () ()) -- cC
+            (.lam (.forallE (.const tAddr #[] ()) (.app (.bvar 2 ()) (.app (.const dMkAddr #[] ()) (.bvar 0 ()))) () ()) -- cD
+              (.lam (.const tAddr #[] ())    -- t
+                (.app (.bvar 1 ()) (.bvar 0 ()))  -- cD t
+                () ())
+              () ())
+            () ())
+          () ())
+        () ()
+    let env := addRec env recAddr 1 recType #[cAddr, dAddr] 0 0 2 2
+      #[{ ctor := dMkAddr, nfields := 1, rhs }]
+    (expectOk env buildPrimitives recAddr "mutual-field-rec-second").1
+  )
+
+/-! ## Parametric and nested recursor tests -/
+
+/-- Shared universe-polymorphic wrapper W.{u} : Sort (succ u) → Sort (succ u) -/
+private def polyWAddr := mkAddr 170
+private def polyWmAddr := mkAddr 171
+
+/-- Build env with W.{u} and W.mk.{u}. -/
+private def addPolyW (env : Env .anon) : Env .anon :=
+  -- W : Sort (succ u) → Sort (succ u)  [1 level param]
+  let wType : Expr .anon :=
+    .forallE (.sort (.succ (.param 0 ()))) (.sort (.succ (.param 0 ()))) () ()
+  let env := addInductive env polyWAddr wType #[polyWmAddr] (numParams := 1) (numLevels := 1)
+  -- W.mk : ∀ (α : Sort (succ u)), α → W.{u} α  [1 level, 1 param, 1 field]
+  let wmType : Expr .anon :=
+    .forallE (.sort (.succ (.param 0 ())))
+      (.forallE (.bvar 0 ()) (.app (.const polyWAddr #[.param 0 ()] ()) (.bvar 1 ())) () ())
+      () ()
+  addCtor env polyWmAddr polyWAddr wmType 0 1 1 (numLevels := 1)
+
+/-- Test: Parametric recursor W.rec.{v,u} with correct level offset.
+    W.rec : ∀ {α : Sort (succ u)} (motive : W.{u} α → Sort v)
+              (h : ∀ (a : α), motive (W.mk.{u} α a)) (w : W.{u} α), motive w
+    RHS for W.mk: λ α motive h a, h a -/
+def parametricRecursor : TestSeq :=
+  test "accepts parametric W.rec with level offset" (
+    let recAddr := mkAddr 172
+    let env := addPolyW default
+    -- W.rec type: 2 levels (param 0 = v, param 1 = u), 1 param, 1 motive, 1 minor
+    let recType : Expr .anon :=
+      -- ∀ (α : Sort (succ u))
+      .forallE (.sort (.succ (.param 1 ())))
+        -- (motive : W.{u} α → Sort v)
+        (.forallE (.forallE (.app (.const polyWAddr #[.param 1 ()] ()) (.bvar 0 ())) (.sort (.param 0 ())) () ())
+          -- (h : ∀ (a : α), motive (W.mk.{u} α a))
+          (.forallE (.forallE (.bvar 1 ()) (.app (.bvar 1 ()) (.app (.app (.const polyWmAddr #[.param 1 ()] ()) (.bvar 2 ())) (.bvar 0 ()))) () ())
+            -- (w : W.{u} α)
+            (.forallE (.app (.const polyWAddr #[.param 1 ()] ()) (.bvar 2 ()))
+              -- motive w
+              (.app (.bvar 2 ()) (.bvar 0 ()))
+              () ())
+            () ())
+          () ())
+        () ()
+    -- RHS: λ α motive h a, h a
+    let rhs : Expr .anon :=
+      .lam (.sort (.succ (.param 1 ())))
+        (.lam (.forallE (.app (.const polyWAddr #[.param 1 ()] ()) (.bvar 0 ())) (.sort (.param 0 ())) () ())
+          (.lam (.forallE (.bvar 1 ()) (.app (.bvar 1 ()) (.app (.app (.const polyWmAddr #[.param 1 ()] ()) (.bvar 2 ())) (.bvar 0 ()))) () ())
+            (.lam (.bvar 2 ())
+              (.app (.bvar 1 ()) (.bvar 0 ()))
+              () ())
+            () ())
+          () ())
+        () ()
+    let env := addRec env recAddr 2 recType #[polyWAddr] 1 0 1 1
+      #[{ ctor := polyWmAddr, nfields := 1, rhs }]
+    (expectOk env buildPrimitives recAddr "parametric-rec").1
+  )
+
+/-- Test: Nested auxiliary recursor I.rec_1 for W.{0} I.
+    I : Sort 1, I.mk : W.{0} I → I
+    I.rec_1 : ∀ (motive : W.{0} I → Sort v) (h : ∀ (a : I), motive (W.mk.{0} I a))
+                (w : W.{0} I), motive w
+    RHS: λ motive h a, h a
+    Key: constructor W.mk uses Level.zero (not Level.param 0 which is the elim level). -/
+def nestedAuxRecursor : TestSeq :=
+  test "accepts nested auxiliary recursor I.rec_1 with concrete levels" (
+    let iAddr := mkAddr 173
+    let imAddr := mkAddr 174
+    let rec1Addr := mkAddr 175
+    let env := addPolyW default
+    -- I : Sort 1  [0 levels]
+    let env := addInductive env iAddr (.sort (.succ .zero)) #[imAddr] (numNested := 1)
+    -- I.mk : W.{0} I → I  [0 levels, 0 params, 1 field]
+    let imType : Expr .anon :=
+      .forallE (.app (.const polyWAddr #[.zero] ()) (.const iAddr #[] ()))
+        (.const iAddr #[] ())
+        () ()
+    let env := addCtor env imAddr iAddr imType 0 0 1
+    -- I.rec_1 type: 1 level (param 0 = elim level v), 0 params, 1 motive, 1 minor
+    let rec1Type : Expr .anon :=
+      -- ∀ (motive : W.{0} I → Sort v)
+      .forallE (.forallE (.app (.const polyWAddr #[.zero] ()) (.const iAddr #[] ())) (.sort (.param 0 ())) () ())
+        -- (h : ∀ (a : I), motive (W.mk.{0} I a))
+        (.forallE (.forallE (.const iAddr #[] ()) (.app (.bvar 1 ()) (.app (.app (.const polyWmAddr #[.zero] ()) (.const iAddr #[] ())) (.bvar 0 ()))) () ())
+          -- (w : W.{0} I)
+          (.forallE (.app (.const polyWAddr #[.zero] ()) (.const iAddr #[] ()))
+            -- motive w
+            (.app (.bvar 2 ()) (.bvar 0 ()))
+            () ())
+          () ())
+        () ()
+    -- RHS: λ motive h a, h a  (W.mk uses Level.zero, NOT param 0)
+    let rhs : Expr .anon :=
+      .lam (.forallE (.app (.const polyWAddr #[.zero] ()) (.const iAddr #[] ())) (.sort (.param 0 ())) () ())
+        (.lam (.forallE (.const iAddr #[] ()) (.app (.bvar 1 ()) (.app (.app (.const polyWmAddr #[.zero] ()) (.const iAddr #[] ())) (.bvar 0 ()))) () ())
+          (.lam (.const iAddr #[] ())
+            (.app (.bvar 1 ()) (.bvar 0 ()))
+            () ())
+          () ())
+        () ()
+    let env := addRec env rec1Addr 1 rec1Type #[polyWAddr] 0 0 1 1
+      #[{ ctor := polyWmAddr, nfields := 1, rhs }]
+    (expectOk env buildPrimitives rec1Addr "nested-aux-rec").1
+  )
+
+/-- Test: Nested auxiliary recursor with wrong RHS (body returns a constant, not h a).
+    Should be rejected because the inferred RHS type won't match the expected type. -/
+def nestedAuxRecWrongRhs : TestSeq :=
+  test "rejects nested auxiliary recursor with wrong RHS" (
+    let iAddr := mkAddr 176
+    let imAddr := mkAddr 177
+    let rec1Addr := mkAddr 178
+    let env := addPolyW default
+    let env := addInductive env iAddr (.sort (.succ .zero)) #[imAddr] (numNested := 1)
+    let imType : Expr .anon :=
+      .forallE (.app (.const polyWAddr #[.zero] ()) (.const iAddr #[] ()))
+        (.const iAddr #[] ()) () ()
+    let env := addCtor env imAddr iAddr imType 0 0 1
+    let rec1Type : Expr .anon :=
+      .forallE (.forallE (.app (.const polyWAddr #[.zero] ()) (.const iAddr #[] ())) (.sort (.param 0 ())) () ())
+        (.forallE (.forallE (.const iAddr #[] ()) (.app (.bvar 1 ()) (.app (.app (.const polyWmAddr #[.zero] ()) (.const iAddr #[] ())) (.bvar 0 ()))) () ())
+          (.forallE (.app (.const polyWAddr #[.zero] ()) (.const iAddr #[] ()))
+            (.app (.bvar 2 ()) (.bvar 0 ()))
+            () ())
+          () ())
+        () ()
+    -- Wrong RHS: λ motive h a, motive (instead of h a)
+    let rhs : Expr .anon :=
+      .lam (.forallE (.app (.const polyWAddr #[.zero] ()) (.const iAddr #[] ())) (.sort (.param 0 ())) () ())
+        (.lam (.forallE (.const iAddr #[] ()) (.app (.bvar 1 ()) (.app (.app (.const polyWmAddr #[.zero] ()) (.const iAddr #[] ())) (.bvar 0 ()))) () ())
+          (.lam (.const iAddr #[] ())
+            (.bvar 2 ())  -- wrong: returns motive instead of h a
+            () ())
+          () ())
+        () ()
+    let env := addRec env rec1Addr 1 rec1Type #[polyWAddr] 0 0 1 1
+      #[{ ctor := polyWmAddr, nfields := 1, rhs }]
+    (expectError env buildPrimitives rec1Addr "nested-aux-rec-wrong-rhs").1
+  )
+
 /-! ## Suite -/
 
 def suite : List TestSeq := [
@@ -401,6 +793,17 @@ def suite : List TestSeq := [
      recWrongNfields ++
      recWrongNumParams ++
      recWrongCtorOrder),
+  group "Mutual recursor motives"
+    (mutualRecMotiveFirst ++
+     mutualRecMotiveSecond ++
+     mutualRecWrongMotive),
+  group "Mutual recursor with fields"
+    (mutualFieldRecFirst ++
+     mutualFieldRecSecond),
+  group "Parametric and nested recursors"
+    (parametricRecursor ++
+     nestedAuxRecursor ++
+     nestedAuxRecWrongRhs),
   group "Constructor validation"
     ctorParamMismatch,
   group "Sanity"

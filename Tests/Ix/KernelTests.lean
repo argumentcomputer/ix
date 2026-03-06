@@ -108,6 +108,9 @@ def testConsts : TestSeq :=
         "Nat.gcd", "Nat.beq", "Nat.ble",
         "Nat.land", "Nat.lor", "Nat.xor",
         "Nat.shiftLeft", "Nat.shiftRight", "Nat.pow",
+        "Nat.pred", "Nat.bitwise",
+        -- String/Char primitives
+        "Char.ofNat", "String.ofList",
         -- Recursors
         "List.rec",
         -- Delta unfolding
@@ -146,8 +149,6 @@ def testConsts : TestSeq :=
         "Lean.Elab.Term.Do.Code.action",
         -- UInt64/BitVec isDefEq regression
         "UInt64.decLt",
-        -- Recursor-only Ixon block regression (rec.all was empty)
-        "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
         -- Dependencies of _sunfold (check these first to rule out lazy blowup)
         "Std.Time.FormatPart",
         "Std.Time.FormatConfig",
@@ -184,7 +185,13 @@ def testConsts : TestSeq :=
         -- rfl theorem: both sides must be defeq via delta unfolding
         "Std.Tactic.BVDecide.BVExpr.eval.eq_10",
         -- K-reduction: extra args after major premise must be applied
-        "UInt8.toUInt64_toUSize"
+        "UInt8.toUInt64_toUSize",
+        -- DHashMap: rfl theorem requiring projection reduction + eta-struct
+        "Std.DHashMap.Internal.Raw₀.contains_eq_containsₘ",
+        -- K-reduction: toCtorWhenK must check isDefEq before reducing
+        "instDecidableEqVector.decEq",
+        -- Recursor-only Ixon block regression (rec.all was empty)
+        "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
       ]
       let mut passed := 0
       let mut failures : Array String := #[]
@@ -237,9 +244,21 @@ def testVerifyPrimAddrs : TestSeq :=
     let hardcoded := Ix.Kernel.buildPrimitives
     let mut failures : Array String := #[]
     let checks : Array (String × String × Address) := #[
+      -- Core types and constructors
       ("nat", "Nat", hardcoded.nat),
       ("natZero", "Nat.zero", hardcoded.natZero),
       ("natSucc", "Nat.succ", hardcoded.natSucc),
+      ("bool", "Bool", hardcoded.bool),
+      ("boolTrue", "Bool.true", hardcoded.boolTrue),
+      ("boolFalse", "Bool.false", hardcoded.boolFalse),
+      ("string", "String", hardcoded.string),
+      ("stringMk", "String.mk", hardcoded.stringMk),
+      ("char", "Char", hardcoded.char),
+      ("charMk", "Char.ofNat", hardcoded.charMk),
+      ("list", "List", hardcoded.list),
+      ("listNil", "List.nil", hardcoded.listNil),
+      ("listCons", "List.cons", hardcoded.listCons),
+      -- Nat arithmetic primitives
       ("natAdd", "Nat.add", hardcoded.natAdd),
       ("natSub", "Nat.sub", hardcoded.natSub),
       ("natMul", "Nat.mul", hardcoded.natMul),
@@ -254,16 +273,30 @@ def testVerifyPrimAddrs : TestSeq :=
       ("natXor", "Nat.xor", hardcoded.natXor),
       ("natShiftLeft", "Nat.shiftLeft", hardcoded.natShiftLeft),
       ("natShiftRight", "Nat.shiftRight", hardcoded.natShiftRight),
-      ("bool", "Bool", hardcoded.bool),
-      ("boolTrue", "Bool.true", hardcoded.boolTrue),
-      ("boolFalse", "Bool.false", hardcoded.boolFalse),
-      ("string", "String", hardcoded.string),
-      ("stringMk", "String.mk", hardcoded.stringMk),
-      ("char", "Char", hardcoded.char),
-      ("charMk", "Char.ofNat", hardcoded.charMk),
-      ("list", "List", hardcoded.list),
-      ("listNil", "List.nil", hardcoded.listNil),
-      ("listCons", "List.cons", hardcoded.listCons)
+      ("natPred", "Nat.pred", hardcoded.natPred),
+      ("natBitwise", "Nat.bitwise", hardcoded.natBitwise),
+      ("natModCoreGo", "Nat.modCore.go", hardcoded.natModCoreGo),
+      ("natDivGo", "Nat.div.go", hardcoded.natDivGo),
+      -- String/Char definitions
+      ("stringOfList", "String.ofList", hardcoded.stringOfList),
+      -- Eq
+      ("eq", "Eq", hardcoded.eq),
+      ("eqRefl", "Eq.refl", hardcoded.eqRefl),
+      -- Extra: mod/div/gcd validation helpers
+      ("natLE", "Nat.instLE.le", hardcoded.natLE),
+      ("natDecLe", "Nat.decLe", hardcoded.natDecLe),
+      ("natDecEq", "Nat.decEq", hardcoded.natDecEq),
+      ("natBleRefl", "Nat.le_of_ble_eq_true", hardcoded.natBleRefl),
+      ("natNotBleRefl", "Nat.not_le_of_not_ble_eq_true", hardcoded.natNotBleRefl),
+      ("natBeqRefl", "Nat.eq_of_beq_eq_true", hardcoded.natBeqRefl),
+      ("natNotBeqRefl", "Nat.ne_of_beq_eq_false", hardcoded.natNotBeqRefl),
+      ("ite", "ite", hardcoded.ite),
+      ("dite", "dite", hardcoded.dite),
+      ("not", "Not", hardcoded.«not»),
+      ("accRec", "Acc.rec", hardcoded.accRec),
+      ("accIntro", "Acc.intro", hardcoded.accIntro),
+      ("natLtSuccSelf", "Nat.lt_succ_self", hardcoded.natLtSuccSelf),
+      ("natDivRecFuelLemma", "Nat.div_rec_fuel_lemma", hardcoded.natDivRecFuelLemma)
     ]
     for (field, name, expected) in checks do
       let actual := lookupPrim ixonEnv name
@@ -283,16 +316,35 @@ def testDumpPrimAddrs : TestSeq :=
     let leanEnv ← get_env!
     let ixonEnv ← Ix.CompileM.rsCompileEnv leanEnv
     let names := #[
+      -- Core types and constructors
       ("nat", "Nat"), ("natZero", "Nat.zero"), ("natSucc", "Nat.succ"),
+      ("bool", "Bool"), ("boolTrue", "Bool.true"), ("boolFalse", "Bool.false"),
+      ("string", "String"), ("stringMk", "String.mk"),
+      ("char", "Char"), ("charMk", "Char.ofNat"),
+      ("list", "List"), ("listNil", "List.nil"), ("listCons", "List.cons"),
+      -- Nat arithmetic primitives
       ("natAdd", "Nat.add"), ("natSub", "Nat.sub"), ("natMul", "Nat.mul"),
       ("natPow", "Nat.pow"), ("natGcd", "Nat.gcd"), ("natMod", "Nat.mod"),
       ("natDiv", "Nat.div"), ("natBeq", "Nat.beq"), ("natBle", "Nat.ble"),
       ("natLand", "Nat.land"), ("natLor", "Nat.lor"), ("natXor", "Nat.xor"),
       ("natShiftLeft", "Nat.shiftLeft"), ("natShiftRight", "Nat.shiftRight"),
-      ("bool", "Bool"), ("boolTrue", "Bool.true"), ("boolFalse", "Bool.false"),
-      ("string", "String"), ("stringMk", "String.mk"),
-      ("char", "Char"), ("charMk", "Char.ofNat"),
-      ("list", "List"), ("listNil", "List.nil"), ("listCons", "List.cons")
+      ("natPred", "Nat.pred"), ("natBitwise", "Nat.bitwise"),
+      ("natModCoreGo", "Nat.modCore.go"), ("natDivGo", "Nat.div.go"),
+      -- String/Char definitions
+      ("stringOfList", "String.ofList"),
+      -- Eq
+      ("eq", "Eq"), ("eqRefl", "Eq.refl"),
+      -- Extra: mod/div/gcd validation helpers
+      ("natLE", "Nat.instLE.le"), ("natDecLe", "Nat.decLe"),
+      ("natDecEq", "Nat.decEq"),
+      ("natBleRefl", "Nat.le_of_ble_eq_true"),
+      ("natNotBleRefl", "Nat.not_le_of_not_ble_eq_true"),
+      ("natBeqRefl", "Nat.eq_of_beq_eq_true"),
+      ("natNotBeqRefl", "Nat.ne_of_beq_eq_false"),
+      ("ite", "ite"), ("dite", "dite"), ("«not»", "Not"),
+      ("accRec", "Acc.rec"), ("accIntro", "Acc.intro"),
+      ("natLtSuccSelf", "Nat.lt_succ_self"),
+      ("natDivRecFuelLemma", "Nat.div_rec_fuel_lemma")
     ]
     for (field, name) in names do
       IO.println s!"{field} := \"{lookupPrim ixonEnv name}\""

@@ -58,27 +58,28 @@ partial def leanNameToIx : Lean.Name → Ix.Name
 def addInductive (env : Env .anon) (addr : Address)
     (type : Expr .anon) (ctors : Array Address)
     (numParams numIndices : Nat := 0) (isRec := false)
-    (isUnsafe := false) (numNested := 0) : Env .anon :=
+    (isUnsafe := false) (numNested := 0)
+    (numLevels : Nat := 0) (all : Array Address := #[addr]) : Env .anon :=
   env.insert addr (.inductInfo {
-    toConstantVal := { numLevels := 0, type, name := (), levelParams := () },
-    numParams, numIndices, all := #[addr], ctors, numNested,
+    toConstantVal := { numLevels, type, name := (), levelParams := () },
+    numParams, numIndices, all, ctors, numNested,
     isRec, isUnsafe, isReflexive := false
   })
 
 /-- Build a constructor and insert it into the env. -/
 def addCtor (env : Env .anon) (addr : Address) (induct : Address)
     (type : Expr .anon) (cidx numParams numFields : Nat)
-    (isUnsafe := false) : Env .anon :=
+    (isUnsafe := false) (numLevels : Nat := 0) : Env .anon :=
   env.insert addr (.ctorInfo {
-    toConstantVal := { numLevels := 0, type, name := (), levelParams := () },
+    toConstantVal := { numLevels, type, name := (), levelParams := () },
     induct, cidx, numParams, numFields, isUnsafe
   })
 
 /-- Build an axiom and insert it into the env. -/
 def addAxiom (env : Env .anon) (addr : Address)
-    (type : Expr .anon) (isUnsafe := false) : Env .anon :=
+    (type : Expr .anon) (isUnsafe := false) (numLevels : Nat := 0) : Env .anon :=
   env.insert addr (.axiomInfo {
-    toConstantVal := { numLevels := 0, type, name := (), levelParams := () },
+    toConstantVal := { numLevels, type, name := (), levelParams := () },
     isUnsafe
   })
 

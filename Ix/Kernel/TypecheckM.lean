@@ -105,6 +105,9 @@ def withRecAddr (addr : Address) : TypecheckM m α → TypecheckM m α :=
 def withInferOnly : TypecheckM m α → TypecheckM m α :=
   withReader fun ctx => { ctx with inferOnly := true }
 
+def withSafety (s : DefinitionSafety) : TypecheckM m α → TypecheckM m α :=
+  withReader fun ctx => { ctx with safety := s }
+
 /-- The current binding depth (number of bound variables in scope). -/
 def lvl : TypecheckM m Nat := do pure (← read).types.size
 

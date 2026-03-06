@@ -797,7 +797,7 @@ def hints : ConstantInfo m → ReducibilityHints
 
 def safety : ConstantInfo m → DefinitionSafety
   | defnInfo v => v.safety
-  | _ => .safe
+  | ci => if ci.isUnsafe then .unsafe else .safe
 
 def all? : ConstantInfo m → Option (Array Address)
   | defnInfo v => some v.all
@@ -917,6 +917,10 @@ structure Primitives where
   natXor : Address := default
   natShiftLeft : Address := default
   natShiftRight : Address := default
+  natPred : Address := default
+  natBitwise : Address := default
+  natModCoreGo : Address := default
+  natDivGo : Address := default
   bool : Address := default
   boolTrue : Address := default
   boolFalse : Address := default
@@ -924,19 +928,50 @@ structure Primitives where
   stringMk : Address := default
   char : Address := default
   charMk : Address := default
+  stringOfList : Address := default
   list : Address := default
   listNil : Address := default
   listCons : Address := default
+  eq : Address := default
+  eqRefl : Address := default
   quotType : Address := default
   quotCtor : Address := default
   quotLift : Address := default
   quotInd : Address := default
+  /-- Extra addresses for complex primitive validation (mod/div/gcd/bitwise).
+      These are only needed for checking primitive definitions, not for WHNF/etc. -/
+  natLE : Address := default
+  natDecLe : Address := default
+  natDecEq : Address := default
+  natBleRefl : Address := default
+  natNotBleRefl : Address := default
+  natBeqRefl : Address := default
+  natNotBeqRefl : Address := default
+  ite : Address := default
+  dite : Address := default
+  «not» : Address := default
+  accRec : Address := default
+  accIntro : Address := default
+  natLtSuccSelf : Address := default
+  natDivRecFuelLemma : Address := default
   deriving Repr, Inhabited
 
 def buildPrimitives : Primitives :=
-  { nat           := addr! "fc0e1e912f2d7f12049a5b315d76eec29562e34dc39ebca25287ae58807db137"
+  { -- Core types and constructors
+    nat           := addr! "fc0e1e912f2d7f12049a5b315d76eec29562e34dc39ebca25287ae58807db137"
     natZero       := addr! "fac82f0d2555d6a63e1b8a1fe8d86bd293197f39c396fdc23c1275c60f182b37"
     natSucc       := addr! "7190ce56f6a2a847b944a355e3ec595a4036fb07e3c3db9d9064fc041be72b64"
+    bool          := addr! "6405a455ba70c2b2179c7966c6f610bf3417bd0f3dd2ba7a522533c2cd9e1d0b"
+    boolTrue      := addr! "420dead2168abd16a7050edfd8e17d45155237d3118782d0e68b6de87742cb8d"
+    boolFalse     := addr! "c127f89f92e0481f7a3e0631c5615fe7f6cbbf439d5fd7eba400fb0603aedf2f"
+    string        := addr! "591cf1c489d505d4082f2767500f123e29db5227eb1bae4721eeedd672f36190"
+    stringMk      := addr! "f055b87da4265d980cdede04ce5c7d986866e55816dc94d32a5d90e805101230"
+    char          := addr! "563b426b73cdf1538b767308d12d10d746e1f0b3b55047085bf690319a86f893"
+    charMk        := addr! "7156fef44bc309789375d784e5c36e387f7119363dd9cd349226c52df43d2075"
+    list          := addr! "abed9ff1aba4634abc0bd3af76ca544285a32dcfe43dc27b129aea8867457620"
+    listNil       := addr! "0ebe345dc46917c824b6c3f6c42b101f2ac8c0e2c99f033a0ee3c60acb9cd84d"
+    listCons      := addr! "f79842f10206598929e6ba60ce3ebaa00d11f201c99e80285f46cc0e90932832"
+    -- Nat arithmetic primitives
     natAdd        := addr! "dcc96f3f914e363d1e906a8be4c8f49b994137bfdb077d07b6c8a4cf88a4f7bf"
     natSub        := addr! "6903e9bbd169b6c5515b27b3fc0c289ba2ff8e7e0c7f984747d572de4e6a7853"
     natMul        := addr! "8e641c3df8fe3878e5a219c888552802743b9251c3c37c32795f5b9b9e0818a5"
@@ -951,17 +986,31 @@ def buildPrimitives : Primitives :=
     natXor        := addr! "a711ef2cb4fa8221bebaa17ef8f4a965cf30678a89bc45ff18a13c902e683cc5"
     natShiftLeft  := addr! "16e4558f51891516843a5b30ddd9d9b405ec096d3e1c728d09ff152b345dd607"
     natShiftRight := addr! "b9515e6c2c6b18635b1c65ebca18b5616483ebd53936f78e4ae123f6a27a089e"
-    bool          := addr! "6405a455ba70c2b2179c7966c6f610bf3417bd0f3dd2ba7a522533c2cd9e1d0b"
-    boolTrue      := addr! "420dead2168abd16a7050edfd8e17d45155237d3118782d0e68b6de87742cb8d"
-    boolFalse     := addr! "c127f89f92e0481f7a3e0631c5615fe7f6cbbf439d5fd7eba400fb0603aedf2f"
-    string        := addr! "591cf1c489d505d4082f2767500f123e29db5227eb1bae4721eeedd672f36190"
-    stringMk      := addr! "f055b87da4265d980cdede04ce5c7d986866e55816dc94d32a5d90e805101230"
-    char          := addr! "563b426b73cdf1538b767308d12d10d746e1f0b3b55047085bf690319a86f893"
-    charMk        := addr! "7156fef44bc309789375d784e5c36e387f7119363dd9cd349226c52df43d2075"
-    list          := addr! "abed9ff1aba4634abc0bd3af76ca544285a32dcfe43dc27b129aea8867457620"
-    listNil       := addr! "0ebe345dc46917c824b6c3f6c42b101f2ac8c0e2c99f033a0ee3c60acb9cd84d"
-    listCons      := addr! "f79842f10206598929e6ba60ce3ebaa00d11f201c99e80285f46cc0e90932832"
-    -- Quot primitives need to be computed; use default until wired up
+    natPred       := addr! "27ccc47de9587564d0c87f4b84d231c523f835af76bae5c7176f694ae78e7d65"
+    natBitwise    := addr! "f3c9111f01de3d46cb3e3f6ad2e35991c0283257e6c75ae56d2a7441e8c63e8b"
+    natModCoreGo  := addr! "7304267986fb0f6d398b45284aa6d64a953a72faa347128bf17c52d1eaf55c8e"
+    natDivGo      := addr! "b3266f662eb973cafd1c5a61e0036d4f9a8f5db6dab7d9f1fe4421c4fb4e1251"
+    -- String/Char definitions
+    stringOfList  := addr! "f055b87da4265d980cdede04ce5c7d986866e55816dc94d32a5d90e805101230"
+    -- Eq
+    eq            := addr! "c1b8d6903a3966bfedeccb63b6702fe226f893740d5c7ecf40045e7ac7635db3"
+    eqRefl        := addr! "154ff4baae9cd74c5ffd813f61d3afee0168827ce12fd49aad8141ebe011ae35"
+    -- Quot primitives are resolved from .quot tags at conversion time
+    -- Extra: mod/div/gcd validation helpers (for future complex primitive validation)
+    natLE              := addr! "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+    natDecLe           := addr! "fa523228c653841d5ad7f149c1587d0743f259209306458195510ed5bf1bfb14"
+    natDecEq           := addr! "84817cd97c5054a512c3f0a6273c7cd81808eb2dec2916c1df737e864df6b23a"
+    natBleRefl         := addr! "204286820d20add0c3f1bda45865297b01662876fc06c0d5c44347d5850321fe"
+    natNotBleRefl      := addr! "2b2da52eecb98350a7a7c5654c0f6f07125808c5188d74f8a6196a9e1ca66c0c"
+    natBeqRefl         := addr! "db18a07fc2d71d4f0303a17521576dc3020ab0780f435f6760cc9294804004f9"
+    natNotBeqRefl      := addr! "d5ae71af8c02a6839275a2e212b7ee8e31a9ae07870ab721c4acf89644ef8128"
+    ite                := addr! "4ddf0c98eee233ec746f52468f10ee754c2e05f05bdf455b1c77555a15107b8b"
+    dite               := addr! "a942a2b85dd20f591163fad2e84e573476736d852ad95bcfba50a22736cd3c79"
+    «not»              := addr! "236b6e6720110bc351a8ad6cbd22437c3e0ef014981a37d45ba36805c81364f3"
+    accRec             := addr! "23104251c3618f32eb77bec895e99f54edd97feed7ac27f3248da378d05e3289"
+    accIntro           := addr! "7ff829fa1057b6589e25bac87f500ad979f9b93f77d47ca9bde6b539a8842d87"
+    natLtSuccSelf      := addr! "2d2e51025b6e0306fdc45b79492becea407881d5137573d23ff144fc38a29519"
+    natDivRecFuelLemma := addr! "026b6f9a63f5fe7ac20b41b81e4180d95768ca78d7d1962aa8280be6b27362b7"
   }
 
 end Ix.Kernel

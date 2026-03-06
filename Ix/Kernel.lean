@@ -8,6 +8,7 @@ import Ix.Kernel.TypecheckM
 import Ix.Kernel.Whnf
 import Ix.Kernel.DefEq
 import Ix.Kernel.Infer
+import Ix.Kernel.Primitive
 import Ix.Kernel.Convert
 
 namespace Ix.Kernel
