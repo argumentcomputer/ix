@@ -70,6 +70,11 @@ def ignoredRunners : List (String × IO UInt32) := [
     return if r1 == 0 && r2 == 0 then 0 else 1),
   ("ixvm", do
     LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM [← serdeNatAddComm]])]) []),
+  ("rbtree-map", do
+    IO.println "rbtree-map"
+    match AiurTestEnv.build (pure IxVM.rbTreeMap) with
+    | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
+    | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
 ]
 
 def main (args : List String) : IO UInt32 := do
