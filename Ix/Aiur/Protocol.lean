@@ -43,8 +43,18 @@ structure IOBuffer where
   map : Std.HashMap (Array G) IOKeyInfo
   deriving Inhabited
 
+def IOBuffer.extend (ioBuffer : IOBuffer) (key data : Array G) : IOBuffer :=
+  let idx := ioBuffer.data.size
+  let len := data.size
+  { ioBuffer with
+    data := ioBuffer.data ++ data
+    map := ioBuffer.map.insert key { idx, len } }
+
 instance : BEq IOBuffer where
-  beq x y := x.data == y.data && x.map.toArray == y.map.toArray
+  beq x y :=
+    x.data == y.data &&
+    x.map.size == y.map.size &&
+    x.map.all fun k v => y.map.get? k == some v
 
 namespace AiurSystem
 

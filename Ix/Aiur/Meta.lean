@@ -97,6 +97,7 @@ declare_syntax_cat                                              trm
 syntax ("." noWs)? ident                                      : trm
 -- syntax "cast" "(" trm ", " typ ")"                            : trm
 syntax num                                                    : trm
+syntax "(" ")"                                                : trm
 syntax "(" trm (", " trm)* ")"                                : trm
 syntax "[" trm (", " trm)* "]"                                : trm
 syntax "[" trm "; " num "]"                                   : trm
@@ -151,6 +152,7 @@ partial def elabTrm : ElabStxCat `trm
   | `(trm| $n:num) => do
     let data ← mkAppM ``Data.field #[← elabG n]
     mkAppM ``Term.data #[data]
+  | `(trm| ()) => pure $ mkConst ``Term.unit
   | `(trm| ($t:trm $[, $ts:trm]*)) => do
     if ts.isEmpty then elabTrm t
     else

@@ -307,6 +307,62 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
       (← msgs.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
   else return s.commandState.env
 
+abbrev ConstList := List (Lean.Name × Lean.ConstantInfo)
+private abbrev CollectM := StateM Lean.NameHashSet
+
+private partial def collectDependenciesAux (const : Lean.ConstantInfo)
+    (consts : Lean.ConstMap) (acc : ConstList) : CollectM ConstList := do
+  modify (·.insert const.name)
+  match const with
+  | .ctorInfo val =>
+    let acc ← collectNames [val.induct] acc
+    goExpr consts acc val.type
+  | .axiomInfo val | .quotInfo val => goExpr consts acc val.type
+  | .inductInfo val =>
+    let acc ← collectNames val.all acc
+    let acc ← collectNames val.ctors acc
+    goExpr consts acc val.type
+  | .defnInfo val | .thmInfo val | .opaqueInfo val =>
+    let acc ← collectNames val.all acc
+    let acc ← goExpr consts acc val.type
+    goExpr consts acc val.value
+  | .recInfo val =>
+    let acc ← collectNames val.all acc
+    let acc ← goExpr consts acc val.type
+    val.rules.foldlM (init := acc) fun acc rule => goExpr consts acc rule.rhs
+where
+  collectNames all acc := do
+    let visited ← get
+    all.foldlM (init := acc) fun acc name =>
+      if visited.contains name then pure acc
+      else
+        let const := consts.find! name
+        collectDependenciesAux const consts $ (name, const) :: acc
+  goExpr (consts : Lean.ConstMap) (acc : ConstList) : Lean.Expr → CollectM ConstList
+    | .bvar _ | .fvar _ | .mvar _ | .sort _ | .lit _ => pure acc
+    | .const name _ => do
+      let visited ← get
+      if visited.contains name then pure acc
+      else
+        let const := consts.find! name
+        collectDependenciesAux const consts $ (name, const) :: acc
+    | .app f a => do
+      let acc ← goExpr consts acc f
+      goExpr consts acc a
+    | .lam _ t b _ | .forallE _ t b _ => do
+      let acc ← goExpr consts acc t
+      goExpr consts acc b
+    | .letE _ t v b _ => do
+      let acc ← goExpr consts acc t
+      let acc ← goExpr consts acc v
+      goExpr consts acc b
+    | .mdata _ e | .proj _ _ e => goExpr consts acc e
+
+def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap) : ConstList :=
+  let const := consts.find! name
+  let (constList, _) := collectDependenciesAux const consts [(name, const)] default
+  constList
+
 end Lean
 
 /-- Format a duration in milliseconds with appropriate unit suffix.

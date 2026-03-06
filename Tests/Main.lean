@@ -1,6 +1,7 @@
 import Tests.Aiur
 import Tests.ByteArray
 import Tests.Ix.Ixon
+import Tests.Ix.IxVM
 import Tests.Ix.Claim
 import Tests.Ix.Commit
 import Tests.Ix.Compile
@@ -67,7 +68,8 @@ def ignoredRunners : List (String × IO UInt32) := [
       | IO.eprintln "SHA256 setup failed"; return 1
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
-  ("ixvm", do LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM []])]) []),
+  ("ixvm", do
+    LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM [← serdeNatAddComm]])]) []),
 ]
 
 def main (args : List String) : IO UInt32 := do

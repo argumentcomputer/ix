@@ -45,7 +45,9 @@ def byteStream := ⟦
     }
   }
 
-  -- Count bytes needed to represent a u64 (0-8)
+  -- Count bytes needed to represent a u64.
+  -- Important: this implementation differs from the Lean and Rust ones, returning
+  -- 1 for [0; 8] instead of 0.
   fn u64_byte_count(x: [G; 8]) -> G {
     match x {
       [_, 0, 0, 0, 0, 0, 0, 0] => 1,
@@ -187,6 +189,37 @@ def byteStream := ⟦
   enum U64List {
     Cons([G; 8], &U64List),
     Nil
+  }
+
+  -- Computes the predecessor of an `u64` assumed to be properly represented in
+  -- little-endian bytes. If that's not the case, this implementation has UB.
+  fn relaxed_u64_pred(bytes: [G; 8]) -> [G; 8] {
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
+    match b0 {
+      0 => match b1 {
+        0 => match b2 {
+          0 => match b3 {
+            0 => match b4 {
+              0 => match b5 {
+                0 => match b6 {
+                  0 => match b7 {
+                    0 => [0, 0, 0, 0, 0, 0, 0, 0],
+                    _ => [255, 255, 255, 255, 255, 255, 255, b7 - 1],
+                  },
+                  _ => [255, 255, 255, 255, 255, 255, b6 - 1, b7],
+                },
+                _ => [255, 255, 255, 255, 255, b5 - 1, b6, b7],
+              },
+              _ => [255, 255, 255, 255, b4 - 1, b5, b6, b7],
+            },
+            _ => [255, 255, 255, b3 - 1, b4, b5, b6, b7],
+          },
+          _ => [255, 255, b2 - 1, b3, b4, b5, b6, b7],
+        },
+        _ => [255, b1 - 1, b2, b3, b4, b5, b6, b7],
+      },
+      _ => [b0 - 1, b1, b2, b3, b4, b5, b6, b7],
+    }
   }
 
   fn u64_list_length(xs: U64List) -> [G; 8] {
