@@ -90,6 +90,30 @@ extern "C" fn rs_aiur_system_verify(
   }
 }
 
+/// `Bytecode.Toplevel.execute`: runs execution only (no proof) and returns
+/// `Array G × Array G × Array (Array G × IOKeyInfo)`
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_toplevel_execute(
+  toplevel: LeanAiurToplevel,
+  fun_idx: LeanNat,
+  args: LeanArray,
+  io_data_arr: LeanArray,
+  io_map_arr: LeanArray,
+) -> LeanObject {
+  let toplevel = decode_toplevel(toplevel);
+  let fun_idx = lean_unbox_nat_as_usize(*fun_idx);
+  let mut io_buffer = decode_io_buffer(io_data_arr, io_map_arr);
+
+  let (_query_record, output) =
+    toplevel.execute(fun_idx, args.map(lean_unbox_g), &mut io_buffer);
+
+  let lean_io = build_lean_io_buffer(&io_buffer);
+  let result = LeanCtor::alloc(0, 2, 0);
+  result.set(0, build_g_array(&output));
+  result.set(1, lean_io);
+  *result
+}
+
 /// `AiurSystem.prove`: runs the prover and returns
 /// `Array G × Proof × Array G × Array (Array G × IOKeyInfo)`
 #[unsafe(no_mangle)]
@@ -104,52 +128,20 @@ extern "C" fn rs_aiur_system_prove(
   let fri_parameters = decode_fri_parameters(fri_parameters);
   let fun_idx = lean_unbox_nat_as_usize(*fun_idx);
   let args = args.map(lean_unbox_g);
-  let io_data = io_data_arr.map(lean_unbox_g);
-  let io_map = decode_io_buffer_map(io_map_arr);
-  let mut io_buffer = IOBuffer { data: io_data, map: io_map };
+  let mut io_buffer = decode_io_buffer(io_data_arr, io_map_arr);
 
   let (claim, proof) =
     aiur_system_obj.get().prove(fri_parameters, fun_idx, &args, &mut io_buffer);
 
-  // claim: Array G
-  let lean_claim = build_g_array(&claim);
-
-  // proof: Proof (external object)
   let lean_proof = *LeanExternal::alloc(proof_class(), proof);
-
-  // io_data: Array G
-  let lean_io_data = build_g_array(&io_buffer.data);
-
-  // io_map: Array (Array G × IOKeyInfo)
-  let lean_io_map = {
-    let arr = LeanArray::alloc(io_buffer.map.len());
-    for (i, (key, info)) in io_buffer.map.iter().enumerate() {
-      let key_arr = build_g_array(key);
-      // IOKeyInfo ctor (tag 0, 2 object fields)
-      let key_info = LeanCtor::alloc(0, 2, 0);
-      key_info.set(0, LeanObject::box_usize(info.idx));
-      key_info.set(1, LeanObject::box_usize(info.len));
-      // (Array G × IOKeyInfo) tuple
-      let map_elt = LeanCtor::alloc(0, 2, 0);
-      map_elt.set(0, key_arr);
-      map_elt.set(1, *key_info);
-      arr.set(i, *map_elt);
-    }
-    *arr
-  };
-
-  // Build nested tuple:
-  // Array G × Array (Array G × IOKeyInfo)
-  let io_tuple = LeanCtor::alloc(0, 2, 0);
-  io_tuple.set(0, lean_io_data);
-  io_tuple.set(1, lean_io_map);
+  let lean_io = build_lean_io_buffer(&io_buffer);
   // Proof × Array G × Array (Array G × IOKeyInfo)
   let proof_io_tuple = LeanCtor::alloc(0, 2, 0);
   proof_io_tuple.set(0, lean_proof);
-  proof_io_tuple.set(1, *io_tuple);
+  proof_io_tuple.set(1, lean_io);
   // Array G × Proof × Array G × Array (Array G × IOKeyInfo)
   let result = LeanCtor::alloc(0, 2, 0);
-  result.set(0, lean_claim);
+  result.set(0, build_g_array(&claim));
   result.set(1, *proof_io_tuple);
   *result
 }
@@ -165,6 +157,35 @@ fn build_g_array(values: &[G]) -> LeanArray {
     arr.set(i, LeanObject::box_u64(g.as_canonical_u64()));
   }
   arr
+}
+
+fn decode_io_buffer(io_data_arr: LeanArray, io_map_arr: LeanArray) -> IOBuffer {
+  let data = io_data_arr.map(lean_unbox_g);
+  let map = decode_io_buffer_map(io_map_arr);
+  IOBuffer { data, map }
+}
+
+/// Build a Lean `Array G × Array (Array G × IOKeyInfo)` from an `IOBuffer`.
+fn build_lean_io_buffer(io_buffer: &IOBuffer) -> LeanObject {
+  let lean_io_data = build_g_array(&io_buffer.data);
+  let lean_io_map = {
+    let arr = LeanArray::alloc(io_buffer.map.len());
+    for (i, (key, info)) in io_buffer.map.iter().enumerate() {
+      let key_arr = build_g_array(key);
+      let key_info = LeanCtor::alloc(0, 2, 0);
+      key_info.set(0, LeanObject::box_usize(info.idx));
+      key_info.set(1, LeanObject::box_usize(info.len));
+      let map_elt = LeanCtor::alloc(0, 2, 0);
+      map_elt.set(0, key_arr);
+      map_elt.set(1, *key_info);
+      arr.set(i, *map_elt);
+    }
+    *arr
+  };
+  let io_tuple = LeanCtor::alloc(0, 2, 0);
+  io_tuple.set(0, lean_io_data);
+  io_tuple.set(1, lean_io_map);
+  *io_tuple
 }
 
 fn decode_commitment_parameters(obj: LeanNat) -> CommitmentParameters {
