@@ -21,7 +21,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   ) -> TcResult<(TypedExpr<M>, Val<M>), M> {
     self.stats.infer_calls += 1;
 
-    self.with_rec_depth(|tc| tc.infer_core(term))
+    self.heartbeat()?;
+    self.infer_core(term)
   }
 
   fn infer_core(

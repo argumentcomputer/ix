@@ -1,1104 +1,575 @@
-use core::ptr::NonNull;
-use std::collections::BTreeMap;
-use std::sync::Arc;
+//! Conversion from env types to kernel types.
+//!
+//! Converts `env::Expr`/`Level`/`ConstantInfo` (Name-based) to
+//! `KExpr`/`KLevel`/`KConstantInfo` (Address-based with positional params).
 
 use rustc_hash::FxHashMap;
 
-use crate::ix::env::{BinderInfo, Expr, ExprData, Level, Name};
-use crate::lean::nat::Nat;
+use crate::ix::address::Address;
+use crate::ix::env::{self, ConstantInfo, Name};
 
-use super::dag::*;
-use super::dll::DLL;
+use super::types::{MetaMode, *};
 
-// ============================================================================
-// Expr -> DAG
-// ============================================================================
-
-pub fn from_expr(expr: &Expr) -> DAG {
-  let root_parents = DLL::alloc(ParentPtr::Root);
-  let head = from_expr_go(expr, 0, &BTreeMap::new(), Some(root_parents));
-  DAG { head }
+/// Read-only conversion context (like Lean's ConvertEnv).
+struct ConvertCtx<'a> {
+  /// Map from level param name hash to positional index.
+  level_param_map: FxHashMap<blake3::Hash, usize>,
+  /// Map from constant name hash to address.
+  name_to_addr: &'a FxHashMap<blake3::Hash, Address>,
 }
 
-fn from_expr_go(
-  expr: &Expr,
-  depth: u64,
-  ctx: &BTreeMap<u64, NonNull<Var>>,
-  parents: Option<NonNull<Parents>>,
-) -> DAGPtr {
-  // Frame-based iterative Expr → DAG conversion.
-  //
-  // For compound nodes, we pre-allocate the DAG node with dangling child
-  // pointers, then push frames to fill in children after they're converted.
-  //
-  // The ctx is cloned at binder boundaries (Fun, Pi, Let) to track
-  // bound variable bindings.
-  enum Frame<'a> {
-    Visit {
-      expr: &'a Expr,
-      depth: u64,
-      ctx: BTreeMap<u64, NonNull<Var>>,
-      parents: Option<NonNull<Parents>>,
-    },
-    SetAppFun(NonNull<App>),
-    SetAppArg(NonNull<App>),
-    SetFunDom(NonNull<Fun>),
-    SetPiDom(NonNull<Pi>),
-    SetLetTyp(NonNull<LetNode>),
-    SetLetVal(NonNull<LetNode>),
-    SetProjExpr(NonNull<ProjNode>),
-    // After domain is set, wire up binder body with new ctx
-    FunBody {
-      lam_ptr: NonNull<Lam>,
-      body: &'a Expr,
-      depth: u64,
-      ctx: BTreeMap<u64, NonNull<Var>>,
-    },
-    PiBody {
-      lam_ptr: NonNull<Lam>,
-      body: &'a Expr,
-      depth: u64,
-      ctx: BTreeMap<u64, NonNull<Var>>,
-    },
-    LetBody {
-      lam_ptr: NonNull<Lam>,
-      body: &'a Expr,
-      depth: u64,
-      ctx: BTreeMap<u64, NonNull<Var>>,
-    },
-    SetLamBod(NonNull<Lam>),
-  }
+/// Expression cache: expr blake3 hash → converted KExpr (like Lean's ConvertState).
+type ExprCache<M> = FxHashMap<blake3::Hash, KExpr<M>>;
 
-  let mut work: Vec<Frame<'_>> = vec![Frame::Visit {
-    expr,
-    depth,
-    ctx: ctx.clone(),
-    parents,
-  }];
-  // Results stack holds DAGPtr for each completed subtree
-  let mut results: Vec<DAGPtr> = Vec::new();
-  let mut visit_count: u64 = 0;
-  // Cache for context-independent leaf nodes (Cnst, Sort, Lit).
-  // Keyed by Arc pointer identity. Enables DAG sharing so the infer cache
-  // (keyed by DAGPtr address) can dedup repeated references to the same constant.
-  let mut leaf_cache: FxHashMap<*const ExprData, DAGPtr> = FxHashMap::default();
-
-  while let Some(frame) = work.pop() {
-    visit_count += 1;
-    if visit_count % 100_000 == 0 {
-      eprintln!("[from_expr_go] visit_count={visit_count} work_len={}", work.len());
+/// Convert a `env::Level` to a `KLevel`.
+fn convert_level<M: MetaMode>(
+  level: &env::Level,
+  ctx: &ConvertCtx<'_>,
+) -> KLevel<M> {
+  match level.as_data() {
+    env::LevelData::Zero(_) => KLevel::zero(),
+    env::LevelData::Succ(inner, _) => {
+      KLevel::succ(convert_level(inner, ctx))
     }
-    match frame {
-      Frame::Visit { expr, depth, ctx, parents } => {
-        match expr.as_data() {
-          ExprData::Bvar(idx, _) => {
-            let idx_u64 = idx.to_u64().unwrap_or(u64::MAX);
-            if idx_u64 < depth {
-              let level = depth - 1 - idx_u64;
-              match ctx.get(&level) {
-                Some(&var_ptr) => {
-                  if let Some(parent_link) = parents {
-                    add_to_parents(DAGPtr::Var(var_ptr), parent_link);
-                  }
-                  results.push(DAGPtr::Var(var_ptr));
-                },
-                None => {
-                  let var = alloc_val(Var {
-                    depth: level,
-                    binder: BinderPtr::Free,
-                    fvar_name: None,
-                    parents,
-                  });
-                  results.push(DAGPtr::Var(var));
-                },
-              }
-            } else {
-              let var = alloc_val(Var {
-                depth: idx_u64,
-                binder: BinderPtr::Free,
-                fvar_name: None,
-                parents,
-              });
-              results.push(DAGPtr::Var(var));
-            }
-          },
-
-          ExprData::Fvar(name, _) => {
-            let var = alloc_val(Var {
-              depth: 0,
-              binder: BinderPtr::Free,
-              fvar_name: Some(name.clone()),
-              parents,
-            });
-            results.push(DAGPtr::Var(var));
-          },
-
-          ExprData::Sort(level, _) => {
-            let key = Arc::as_ptr(&expr.0);
-            if let Some(&cached) = leaf_cache.get(&key) {
-              if let Some(parent_link) = parents {
-                add_to_parents(cached, parent_link);
-              }
-              results.push(cached);
-            } else {
-              let sort = alloc_val(Sort { level: level.clone(), parents });
-              let ptr = DAGPtr::Sort(sort);
-              leaf_cache.insert(key, ptr);
-              results.push(ptr);
-            }
-          },
-
-          ExprData::Const(name, levels, _) => {
-            let key = Arc::as_ptr(&expr.0);
-            if let Some(&cached) = leaf_cache.get(&key) {
-              if let Some(parent_link) = parents {
-                add_to_parents(cached, parent_link);
-              }
-              results.push(cached);
-            } else {
-              let cnst = alloc_val(Cnst {
-                name: name.clone(),
-                levels: levels.clone(),
-                parents,
-              });
-              let ptr = DAGPtr::Cnst(cnst);
-              leaf_cache.insert(key, ptr);
-              results.push(ptr);
-            }
-          },
-
-          ExprData::Lit(lit, _) => {
-            let key = Arc::as_ptr(&expr.0);
-            if let Some(&cached) = leaf_cache.get(&key) {
-              if let Some(parent_link) = parents {
-                add_to_parents(cached, parent_link);
-              }
-              results.push(cached);
-            } else {
-              let lit_node = alloc_val(LitNode { val: lit.clone(), parents });
-              let ptr = DAGPtr::Lit(lit_node);
-              leaf_cache.insert(key, ptr);
-              results.push(ptr);
-            }
-          },
-
-          ExprData::App(fun_expr, arg_expr, _) => {
-            let app_ptr = alloc_app(
-              DAGPtr::Var(NonNull::dangling()),
-              DAGPtr::Var(NonNull::dangling()),
-              parents,
-            );
-            unsafe {
-              let app = &mut *app_ptr.as_ptr();
-              let fun_ref =
-                NonNull::new(&mut app.fun_ref as *mut Parents).unwrap();
-              let arg_ref =
-                NonNull::new(&mut app.arg_ref as *mut Parents).unwrap();
-              // Process arg first (pushed last = processed first after fun)
-              work.push(Frame::SetAppArg(app_ptr));
-              work.push(Frame::Visit {
-                expr: arg_expr,
-                depth,
-                ctx: ctx.clone(),
-                parents: Some(arg_ref),
-              });
-              work.push(Frame::SetAppFun(app_ptr));
-              work.push(Frame::Visit {
-                expr: fun_expr,
-                depth,
-                ctx,
-                parents: Some(fun_ref),
-              });
-            }
-            results.push(DAGPtr::App(app_ptr));
-          },
-
-          ExprData::Lam(name, typ, body, bi, _) => {
-            let lam_ptr =
-              alloc_lam(depth, DAGPtr::Var(NonNull::dangling()), None);
-            let fun_ptr = alloc_fun(
-              name.clone(),
-              bi.clone(),
-              DAGPtr::Var(NonNull::dangling()),
-              lam_ptr,
-              parents,
-            );
-            unsafe {
-              let fun = &mut *fun_ptr.as_ptr();
-              let dom_ref =
-                NonNull::new(&mut fun.dom_ref as *mut Parents).unwrap();
-              let img_ref =
-                NonNull::new(&mut fun.img_ref as *mut Parents).unwrap();
-              add_to_parents(DAGPtr::Lam(lam_ptr), img_ref);
-
-              let dom_ctx = ctx.clone();
-              work.push(Frame::FunBody {
-                lam_ptr,
-                body,
-                depth,
-                ctx,
-              });
-              work.push(Frame::SetFunDom(fun_ptr));
-              work.push(Frame::Visit {
-                expr: typ,
-                depth,
-                ctx: dom_ctx,
-                parents: Some(dom_ref),
-              });
-            }
-            results.push(DAGPtr::Fun(fun_ptr));
-          },
-
-          ExprData::ForallE(name, typ, body, bi, _) => {
-            let lam_ptr =
-              alloc_lam(depth, DAGPtr::Var(NonNull::dangling()), None);
-            let pi_ptr = alloc_pi(
-              name.clone(),
-              bi.clone(),
-              DAGPtr::Var(NonNull::dangling()),
-              lam_ptr,
-              parents,
-            );
-            unsafe {
-              let pi = &mut *pi_ptr.as_ptr();
-              let dom_ref =
-                NonNull::new(&mut pi.dom_ref as *mut Parents).unwrap();
-              let img_ref =
-                NonNull::new(&mut pi.img_ref as *mut Parents).unwrap();
-              add_to_parents(DAGPtr::Lam(lam_ptr), img_ref);
-
-              let dom_ctx = ctx.clone();
-              work.push(Frame::PiBody {
-                lam_ptr,
-                body,
-                depth,
-                ctx,
-              });
-              work.push(Frame::SetPiDom(pi_ptr));
-              work.push(Frame::Visit {
-                expr: typ,
-                depth,
-                ctx: dom_ctx,
-                parents: Some(dom_ref),
-              });
-            }
-            results.push(DAGPtr::Pi(pi_ptr));
-          },
-
-          ExprData::LetE(name, typ, val, body, non_dep, _) => {
-            let lam_ptr =
-              alloc_lam(depth, DAGPtr::Var(NonNull::dangling()), None);
-            let let_ptr = alloc_let(
-              name.clone(),
-              *non_dep,
-              DAGPtr::Var(NonNull::dangling()),
-              DAGPtr::Var(NonNull::dangling()),
-              lam_ptr,
-              parents,
-            );
-            unsafe {
-              let let_node = &mut *let_ptr.as_ptr();
-              let typ_ref =
-                NonNull::new(&mut let_node.typ_ref as *mut Parents).unwrap();
-              let val_ref =
-                NonNull::new(&mut let_node.val_ref as *mut Parents).unwrap();
-              let bod_ref =
-                NonNull::new(&mut let_node.bod_ref as *mut Parents).unwrap();
-              add_to_parents(DAGPtr::Lam(lam_ptr), bod_ref);
-
-              work.push(Frame::LetBody {
-                lam_ptr,
-                body,
-                depth,
-                ctx: ctx.clone(),
-              });
-              work.push(Frame::SetLetVal(let_ptr));
-              work.push(Frame::Visit {
-                expr: val,
-                depth,
-                ctx: ctx.clone(),
-                parents: Some(val_ref),
-              });
-              work.push(Frame::SetLetTyp(let_ptr));
-              work.push(Frame::Visit {
-                expr: typ,
-                depth,
-                ctx,
-                parents: Some(typ_ref),
-              });
-            }
-            results.push(DAGPtr::Let(let_ptr));
-          },
-
-          ExprData::Proj(type_name, idx, structure, _) => {
-            let proj_ptr = alloc_proj(
-              type_name.clone(),
-              idx.clone(),
-              DAGPtr::Var(NonNull::dangling()),
-              parents,
-            );
-            unsafe {
-              let proj = &mut *proj_ptr.as_ptr();
-              let expr_ref =
-                NonNull::new(&mut proj.expr_ref as *mut Parents).unwrap();
-              work.push(Frame::SetProjExpr(proj_ptr));
-              work.push(Frame::Visit {
-                expr: structure,
-                depth,
-                ctx,
-                parents: Some(expr_ref),
-              });
-            }
-            results.push(DAGPtr::Proj(proj_ptr));
-          },
-
-          ExprData::Mdata(_, inner, _) => {
-            // Strip metadata, convert inner
-            work.push(Frame::Visit { expr: inner, depth, ctx, parents });
-          },
-
-          ExprData::Mvar(_name, _) => {
-            let var = alloc_val(Var {
-              depth: 0,
-              binder: BinderPtr::Free,
-              fvar_name: None,
-              parents,
-            });
-            results.push(DAGPtr::Var(var));
-          },
-        }
-      },
-      Frame::SetAppFun(app_ptr) => unsafe {
-        let result = results.pop().unwrap();
-        (*app_ptr.as_ptr()).fun = result;
-      },
-      Frame::SetAppArg(app_ptr) => unsafe {
-        let result = results.pop().unwrap();
-        (*app_ptr.as_ptr()).arg = result;
-      },
-      Frame::SetFunDom(fun_ptr) => unsafe {
-        let result = results.pop().unwrap();
-        (*fun_ptr.as_ptr()).dom = result;
-      },
-      Frame::SetPiDom(pi_ptr) => unsafe {
-        let result = results.pop().unwrap();
-        (*pi_ptr.as_ptr()).dom = result;
-      },
-      Frame::SetLetTyp(let_ptr) => unsafe {
-        let result = results.pop().unwrap();
-        (*let_ptr.as_ptr()).typ = result;
-      },
-      Frame::SetLetVal(let_ptr) => unsafe {
-        let result = results.pop().unwrap();
-        (*let_ptr.as_ptr()).val = result;
-      },
-      Frame::SetProjExpr(proj_ptr) => unsafe {
-        let result = results.pop().unwrap();
-        (*proj_ptr.as_ptr()).expr = result;
-      },
-      Frame::SetLamBod(lam_ptr) => unsafe {
-        let result = results.pop().unwrap();
-        (*lam_ptr.as_ptr()).bod = result;
-      },
-      Frame::FunBody { lam_ptr, body, depth, mut ctx } => unsafe {
-        // Domain has been set; now set up body with var binding
-        let lam = &mut *lam_ptr.as_ptr();
-        let var_ptr = NonNull::new(&mut lam.var as *mut Var).unwrap();
-        ctx.insert(depth, var_ptr);
-        let bod_ref =
-          NonNull::new(&mut lam.bod_ref as *mut Parents).unwrap();
-        work.push(Frame::SetLamBod(lam_ptr));
-        work.push(Frame::Visit {
-          expr: body,
-          depth: depth + 1,
-          ctx,
-          parents: Some(bod_ref),
-        });
-      },
-      Frame::PiBody { lam_ptr, body, depth, mut ctx } => unsafe {
-        let lam = &mut *lam_ptr.as_ptr();
-        let var_ptr = NonNull::new(&mut lam.var as *mut Var).unwrap();
-        ctx.insert(depth, var_ptr);
-        let bod_ref =
-          NonNull::new(&mut lam.bod_ref as *mut Parents).unwrap();
-        work.push(Frame::SetLamBod(lam_ptr));
-        work.push(Frame::Visit {
-          expr: body,
-          depth: depth + 1,
-          ctx,
-          parents: Some(bod_ref),
-        });
-      },
-      Frame::LetBody { lam_ptr, body, depth, mut ctx } => unsafe {
-        let lam = &mut *lam_ptr.as_ptr();
-        let var_ptr = NonNull::new(&mut lam.var as *mut Var).unwrap();
-        ctx.insert(depth, var_ptr);
-        let bod_ref =
-          NonNull::new(&mut lam.bod_ref as *mut Parents).unwrap();
-        work.push(Frame::SetLamBod(lam_ptr));
-        work.push(Frame::Visit {
-          expr: body,
-          depth: depth + 1,
-          ctx,
-          parents: Some(bod_ref),
-        });
-      },
+    env::LevelData::Max(a, b, _) => {
+      KLevel::max(convert_level(a, ctx), convert_level(b, ctx))
+    }
+    env::LevelData::Imax(a, b, _) => {
+      KLevel::imax(convert_level(a, ctx), convert_level(b, ctx))
+    }
+    env::LevelData::Param(name, _) => {
+      let hash = *name.get_hash();
+      let idx = ctx.level_param_map.get(&hash).copied().unwrap_or(0);
+      KLevel::param(idx, M::mk_field(name.clone()))
+    }
+    env::LevelData::Mvar(name, _) => {
+      // Mvars shouldn't appear in kernel expressions, treat as param 0
+      KLevel::param(0, M::mk_field(name.clone()))
     }
   }
-
-  results.pop().unwrap()
 }
 
-// ============================================================================
-// Literal clone
-// ============================================================================
+/// Convert a `env::Expr` to a `KExpr`, with caching.
+fn convert_expr<M: MetaMode>(
+  expr: &env::Expr,
+  ctx: &ConvertCtx<'_>,
+  cache: &mut ExprCache<M>,
+) -> KExpr<M> {
+  // Skip cache for bvars (trivial, no recursion)
+  if let env::ExprData::Bvar(n, _) = expr.as_data() {
+    let idx = n.to_u64().unwrap_or(0) as usize;
+    return KExpr::bvar(idx, M::Field::<Name>::default());
+  }
 
-impl Clone for crate::ix::env::Literal {
-  fn clone(&self) -> Self {
+  // Check cache
+  let hash = *expr.get_hash();
+  if let Some(cached) = cache.get(&hash) {
+    return cached.clone(); // Rc clone = O(1)
+  }
+
+  let result = match expr.as_data() {
+    env::ExprData::Bvar(_, _) => unreachable!(),
+    env::ExprData::Sort(level, _) => {
+      KExpr::sort(convert_level(level, ctx))
+    }
+    env::ExprData::Const(name, levels, _) => {
+      let h = *name.get_hash();
+      let addr = ctx
+        .name_to_addr
+        .get(&h)
+        .cloned()
+        .unwrap_or_else(|| Address::from_blake3_hash(h));
+      let k_levels: Vec<_> =
+        levels.iter().map(|l| convert_level(l, ctx)).collect();
+      KExpr::cnst(addr, k_levels, M::mk_field(name.clone()))
+    }
+    env::ExprData::App(f, a, _) => {
+      KExpr::app(
+        convert_expr(f, ctx, cache),
+        convert_expr(a, ctx, cache),
+      )
+    }
+    env::ExprData::Lam(name, ty, body, bi, _) => KExpr::lam(
+      convert_expr(ty, ctx, cache),
+      convert_expr(body, ctx, cache),
+      M::mk_field(name.clone()),
+      M::mk_field(bi.clone()),
+    ),
+    env::ExprData::ForallE(name, ty, body, bi, _) => {
+      KExpr::forall_e(
+        convert_expr(ty, ctx, cache),
+        convert_expr(body, ctx, cache),
+        M::mk_field(name.clone()),
+        M::mk_field(bi.clone()),
+      )
+    }
+    env::ExprData::LetE(name, ty, val, body, _, _) => KExpr::let_e(
+      convert_expr(ty, ctx, cache),
+      convert_expr(val, ctx, cache),
+      convert_expr(body, ctx, cache),
+      M::mk_field(name.clone()),
+    ),
+    env::ExprData::Lit(l, _) => KExpr::lit(l.clone()),
+    env::ExprData::Proj(name, idx, strct, _) => {
+      let h = *name.get_hash();
+      let addr = ctx
+        .name_to_addr
+        .get(&h)
+        .cloned()
+        .unwrap_or_else(|| Address::from_blake3_hash(h));
+      let idx = idx.to_u64().unwrap_or(0) as usize;
+      KExpr::proj(addr, idx, convert_expr(strct, ctx, cache), M::mk_field(name.clone()))
+    }
+    env::ExprData::Fvar(_, _) | env::ExprData::Mvar(_, _) => {
+      // Fvars and Mvars shouldn't appear in kernel expressions
+      KExpr::bvar(0, M::Field::<Name>::default())
+    }
+    env::ExprData::Mdata(_, inner, _) => {
+      // Strip metadata — don't cache the mdata wrapper, cache the inner
+      return convert_expr(inner, ctx, cache);
+    }
+  };
+
+  // Insert into cache
+  cache.insert(hash, result.clone());
+  result
+}
+
+/// Convert a `env::ConstantVal` to `KConstantVal`.
+fn convert_constant_val<M: MetaMode>(
+  cv: &env::ConstantVal,
+  ctx: &ConvertCtx<'_>,
+  cache: &mut ExprCache<M>,
+) -> KConstantVal<M> {
+  KConstantVal {
+    num_levels: cv.level_params.len(),
+    typ: convert_expr(&cv.typ, ctx, cache),
+    name: M::mk_field(cv.name.clone()),
+    level_params: M::mk_field(cv.level_params.clone()),
+  }
+}
+
+/// Build a `ConvertCtx` for a constant with given level params and the
+/// name→address map.
+fn make_ctx<'a>(
+  level_params: &[Name],
+  name_to_addr: &'a FxHashMap<blake3::Hash, Address>,
+) -> ConvertCtx<'a> {
+  let mut level_param_map = FxHashMap::default();
+  for (idx, name) in level_params.iter().enumerate() {
+    level_param_map.insert(*name.get_hash(), idx);
+  }
+  ConvertCtx {
+    level_param_map,
+    name_to_addr,
+  }
+}
+
+/// Resolve a Name to an Address using the name→address map.
+fn resolve_name(
+  name: &Name,
+  name_to_addr: &FxHashMap<blake3::Hash, Address>,
+) -> Address {
+  let hash = *name.get_hash();
+  name_to_addr
+    .get(&hash)
+    .cloned()
+    .unwrap_or_else(|| Address::from_blake3_hash(hash))
+}
+
+/// Convert an entire `env::Env` to a `(KEnv, Primitives, quot_init)`.
+pub fn convert_env<M: MetaMode>(
+  env: &env::Env,
+) -> Result<(KEnv<M>, Primitives, bool), String> {
+  // Phase 1: Build name → address map
+  let mut name_to_addr: FxHashMap<blake3::Hash, Address> =
+    FxHashMap::default();
+  for (name, ci) in env {
+    let addr = Address::from_blake3_hash(ci.get_hash());
+    name_to_addr.insert(*name.get_hash(), addr);
+  }
+
+  // Phase 2: Convert all constants with shared expression cache
+  let mut kenv: KEnv<M> = KEnv::default();
+  let mut quot_init = false;
+  let mut cache: ExprCache<M> = FxHashMap::default();
+
+  for (name, ci) in env {
+    let addr = resolve_name(name, &name_to_addr);
+    let level_params = ci.cnst_val().level_params.clone();
+    let ctx = make_ctx(&level_params, &name_to_addr);
+
+    let kci = match ci {
+      ConstantInfo::AxiomInfo(v) => {
+        KConstantInfo::Axiom(KAxiomVal {
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          is_unsafe: v.is_unsafe,
+        })
+      }
+      ConstantInfo::DefnInfo(v) => {
+        KConstantInfo::Definition(KDefinitionVal {
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          value: convert_expr(&v.value, &ctx, &mut cache),
+          hints: v.hints,
+          safety: v.safety,
+          all: v
+            .all
+            .iter()
+            .map(|n| resolve_name(n, &name_to_addr))
+            .collect(),
+        })
+      }
+      ConstantInfo::ThmInfo(v) => {
+        KConstantInfo::Theorem(KTheoremVal {
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          value: convert_expr(&v.value, &ctx, &mut cache),
+          all: v
+            .all
+            .iter()
+            .map(|n| resolve_name(n, &name_to_addr))
+            .collect(),
+        })
+      }
+      ConstantInfo::OpaqueInfo(v) => {
+        KConstantInfo::Opaque(KOpaqueVal {
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          value: convert_expr(&v.value, &ctx, &mut cache),
+          is_unsafe: v.is_unsafe,
+          all: v
+            .all
+            .iter()
+            .map(|n| resolve_name(n, &name_to_addr))
+            .collect(),
+        })
+      }
+      ConstantInfo::QuotInfo(v) => {
+        quot_init = true;
+        KConstantInfo::Quotient(KQuotVal {
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          kind: v.kind,
+        })
+      }
+      ConstantInfo::InductInfo(v) => {
+        KConstantInfo::Inductive(KInductiveVal {
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          num_params: v.num_params.to_u64().unwrap_or(0) as usize,
+          num_indices: v.num_indices.to_u64().unwrap_or(0) as usize,
+          all: v
+            .all
+            .iter()
+            .map(|n| resolve_name(n, &name_to_addr))
+            .collect(),
+          ctors: v
+            .ctors
+            .iter()
+            .map(|n| resolve_name(n, &name_to_addr))
+            .collect(),
+          num_nested: v.num_nested.to_u64().unwrap_or(0) as usize,
+          is_rec: v.is_rec,
+          is_unsafe: v.is_unsafe,
+          is_reflexive: v.is_reflexive,
+        })
+      }
+      ConstantInfo::CtorInfo(v) => {
+        KConstantInfo::Constructor(KConstructorVal {
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          induct: resolve_name(&v.induct, &name_to_addr),
+          cidx: v.cidx.to_u64().unwrap_or(0) as usize,
+          num_params: v.num_params.to_u64().unwrap_or(0) as usize,
+          num_fields: v.num_fields.to_u64().unwrap_or(0) as usize,
+          is_unsafe: v.is_unsafe,
+        })
+      }
+      ConstantInfo::RecInfo(v) => {
+        KConstantInfo::Recursor(KRecursorVal {
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          all: v
+            .all
+            .iter()
+            .map(|n| resolve_name(n, &name_to_addr))
+            .collect(),
+          num_params: v.num_params.to_u64().unwrap_or(0) as usize,
+          num_indices: v.num_indices.to_u64().unwrap_or(0) as usize,
+          num_motives: v.num_motives.to_u64().unwrap_or(0) as usize,
+          num_minors: v.num_minors.to_u64().unwrap_or(0) as usize,
+          rules: v
+            .rules
+            .iter()
+            .map(|r| KRecursorRule {
+              ctor: resolve_name(&r.ctor, &name_to_addr),
+              nfields: r.n_fields.to_u64().unwrap_or(0) as usize,
+              rhs: convert_expr(&r.rhs, &ctx, &mut cache),
+            })
+            .collect(),
+          k: v.k,
+          is_unsafe: v.is_unsafe,
+        })
+      }
+    };
+
+    kenv.insert(addr, kci);
+  }
+
+  // Phase 3: Build Primitives
+  let prims = build_primitives(env, &name_to_addr);
+
+  Ok((kenv, prims, quot_init))
+}
+
+/// Build the Primitives struct by resolving known names to addresses.
+fn build_primitives(
+  _env: &env::Env,
+  name_to_addr: &FxHashMap<blake3::Hash, Address>,
+) -> Primitives {
+  let mut prims = Primitives::default();
+
+  let lookup = |s: &str| -> Option<Address> {
+    let name = str_to_name(s);
+    let hash = *name.get_hash();
+    name_to_addr.get(&hash).cloned()
+  };
+
+  prims.nat = lookup("Nat");
+  prims.nat_zero = lookup("Nat.zero");
+  prims.nat_succ = lookup("Nat.succ");
+  prims.nat_add = lookup("Nat.add");
+  prims.nat_pred = lookup("Nat.pred");
+  prims.nat_sub = lookup("Nat.sub");
+  prims.nat_mul = lookup("Nat.mul");
+  prims.nat_pow = lookup("Nat.pow");
+  prims.nat_gcd = lookup("Nat.gcd");
+  prims.nat_mod = lookup("Nat.mod");
+  prims.nat_div = lookup("Nat.div");
+  prims.nat_bitwise = lookup("Nat.bitwise");
+  prims.nat_beq = lookup("Nat.beq");
+  prims.nat_ble = lookup("Nat.ble");
+  prims.nat_land = lookup("Nat.land");
+  prims.nat_lor = lookup("Nat.lor");
+  prims.nat_xor = lookup("Nat.xor");
+  prims.nat_shift_left = lookup("Nat.shiftLeft");
+  prims.nat_shift_right = lookup("Nat.shiftRight");
+  prims.bool_type = lookup("Bool");
+  prims.bool_true = lookup("Bool.true");
+  prims.bool_false = lookup("Bool.false");
+  prims.string = lookup("String");
+  prims.string_mk = lookup("String.mk");
+  prims.char_type = lookup("Char");
+  prims.char_mk = lookup("Char.mk");
+  prims.string_of_list = lookup("String.ofList");
+  prims.list = lookup("List");
+  prims.list_nil = lookup("List.nil");
+  prims.list_cons = lookup("List.cons");
+  prims.eq = lookup("Eq");
+  prims.eq_refl = lookup("Eq.refl");
+  prims.quot_type = lookup("Quot");
+  prims.quot_ctor = lookup("Quot.mk");
+  prims.quot_lift = lookup("Quot.lift");
+  prims.quot_ind = lookup("Quot.ind");
+  prims.reduce_bool = lookup("reduceBool");
+  prims.reduce_nat = lookup("reduceNat");
+  prims.eager_reduce = lookup("eagerReduce");
+
+  prims
+}
+
+/// Convert a dotted string like "Nat.add" to a `Name`.
+fn str_to_name(s: &str) -> Name {
+  let parts: Vec<&str> = s.split('.').collect();
+  let mut name = Name::anon();
+  for part in parts {
+    name = Name::str(name, part.to_string());
+  }
+  name
+}
+
+/// Helper trait to access common constant fields.
+trait CnstVal {
+  fn cnst_val(&self) -> &env::ConstantVal;
+}
+
+impl CnstVal for ConstantInfo {
+  fn cnst_val(&self) -> &env::ConstantVal {
     match self {
-      crate::ix::env::Literal::NatVal(n) => {
-        crate::ix::env::Literal::NatVal(n.clone())
-      },
-      crate::ix::env::Literal::StrVal(s) => {
-        crate::ix::env::Literal::StrVal(s.clone())
-      },
+      ConstantInfo::AxiomInfo(v) => &v.cnst,
+      ConstantInfo::DefnInfo(v) => &v.cnst,
+      ConstantInfo::ThmInfo(v) => &v.cnst,
+      ConstantInfo::OpaqueInfo(v) => &v.cnst,
+      ConstantInfo::QuotInfo(v) => &v.cnst,
+      ConstantInfo::InductInfo(v) => &v.cnst,
+      ConstantInfo::CtorInfo(v) => &v.cnst,
+      ConstantInfo::RecInfo(v) => &v.cnst,
     }
   }
 }
 
-// ============================================================================
-// DAG -> Expr
-// ============================================================================
-
-pub fn to_expr(dag: &DAG) -> Expr {
-  let mut var_map: BTreeMap<*const Var, u64> = BTreeMap::new();
-  let mut cache: rustc_hash::FxHashMap<(usize, u64), Expr> =
-    rustc_hash::FxHashMap::default();
-  to_expr_go(dag.head, &mut var_map, 0, &mut cache)
-}
-
-fn to_expr_go(
-  node: DAGPtr,
-  var_map: &mut BTreeMap<*const Var, u64>,
-  depth: u64,
-  cache: &mut rustc_hash::FxHashMap<(usize, u64), Expr>,
-) -> Expr {
-  // Frame-based iterative conversion from DAG to Expr.
-  //
-  // Uses a cache keyed on (dag_ptr_key, depth) to avoid exponential
-  // blowup when the DAG has sharing (e.g., after beta reduction).
-  //
-  // For binder nodes (Fun, Pi, Let, Lam), the pattern is:
-  //   1. Visit domain/type/value children
-  //   2. BinderBody: register var in var_map, push Visit for body
-  //   3. *Build: pop results, unregister var, build Expr
-  //   4. CacheStore: cache the built result
-  enum Frame {
-    Visit(DAGPtr, u64),
-    App,
-    BinderBody(*const Var, DAGPtr, u64),
-    FunBuild(Name, BinderInfo, *const Var),
-    PiBuild(Name, BinderInfo, *const Var),
-    LetBuild(Name, bool, *const Var),
-    Proj(Name, Nat),
-    LamBuild(*const Var),
-    CacheStore(usize, u64),
+/// Verify that a converted KEnv structurally matches the source env::Env.
+/// Returns a list of (constant_name, mismatch_description) for any discrepancies.
+pub fn verify_conversion<M: MetaMode>(
+  env: &env::Env,
+  kenv: &KEnv<M>,
+) -> Vec<(String, String)> {
+  // Build name→addr map (same as convert_env phase 1)
+  let mut name_to_addr: FxHashMap<blake3::Hash, Address> =
+    FxHashMap::default();
+  for (name, ci) in env {
+    let addr = Address::from_blake3_hash(ci.get_hash());
+    name_to_addr.insert(*name.get_hash(), addr);
   }
+  let name_to_addr = &name_to_addr;
+  let mut errors = Vec::new();
 
-  let mut work: Vec<Frame> = vec![Frame::Visit(node, depth)];
-  let mut results: Vec<Expr> = Vec::new();
+  let nat = |n: &crate::lean::nat::Nat| -> usize {
+    n.to_u64().unwrap_or(0) as usize
+  };
 
-  while let Some(frame) = work.pop() {
-    match frame {
-      Frame::Visit(node, depth) => unsafe {
-        // Check cache first for non-Var nodes
-        match node {
-          DAGPtr::Var(_) => {}, // Vars depend on var_map, skip cache
-          _ => {
-            let key = (dag_ptr_key(node), depth);
-            if let Some(cached) = cache.get(&key) {
-              results.push(cached.clone());
-              continue;
-            }
-          },
-        }
-        match node {
-          DAGPtr::Var(link) => {
-            let var = link.as_ptr();
-            let var_key = var as *const Var;
-            if let Some(&bind_depth) = var_map.get(&var_key) {
-              results.push(Expr::bvar(Nat::from(depth - bind_depth - 1)));
-            } else if let Some(name) = &(*var).fvar_name {
-              results.push(Expr::fvar(name.clone()));
-            } else {
-              results.push(Expr::bvar(Nat::from((*var).depth)));
-            }
-          },
-          DAGPtr::Sort(link) => {
-            let sort = &*link.as_ptr();
-            results.push(Expr::sort(sort.level.clone()));
-          },
-          DAGPtr::Cnst(link) => {
-            let cnst = &*link.as_ptr();
-            results.push(Expr::cnst(cnst.name.clone(), cnst.levels.clone()));
-          },
-          DAGPtr::Lit(link) => {
-            let lit = &*link.as_ptr();
-            results.push(Expr::lit(lit.val.clone()));
-          },
-          DAGPtr::App(link) => {
-            let app = &*link.as_ptr();
-            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
-            work.push(Frame::App);
-            work.push(Frame::Visit(app.arg, depth));
-            work.push(Frame::Visit(app.fun, depth));
-          },
-          DAGPtr::Fun(link) => {
-            let fun = &*link.as_ptr();
-            let lam = &*fun.img.as_ptr();
-            let var_ptr = &lam.var as *const Var;
-            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
-            work.push(Frame::FunBuild(
-              fun.binder_name.clone(),
-              fun.binder_info.clone(),
-              var_ptr,
-            ));
-            work.push(Frame::BinderBody(var_ptr, lam.bod, depth));
-            work.push(Frame::Visit(fun.dom, depth));
-          },
-          DAGPtr::Pi(link) => {
-            let pi = &*link.as_ptr();
-            let lam = &*pi.img.as_ptr();
-            let var_ptr = &lam.var as *const Var;
-            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
-            work.push(Frame::PiBuild(
-              pi.binder_name.clone(),
-              pi.binder_info.clone(),
-              var_ptr,
-            ));
-            work.push(Frame::BinderBody(var_ptr, lam.bod, depth));
-            work.push(Frame::Visit(pi.dom, depth));
-          },
-          DAGPtr::Let(link) => {
-            let let_node = &*link.as_ptr();
-            let lam = &*let_node.bod.as_ptr();
-            let var_ptr = &lam.var as *const Var;
-            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
-            work.push(Frame::LetBuild(
-              let_node.binder_name.clone(),
-              let_node.non_dep,
-              var_ptr,
-            ));
-            work.push(Frame::BinderBody(var_ptr, lam.bod, depth));
-            work.push(Frame::Visit(let_node.val, depth));
-            work.push(Frame::Visit(let_node.typ, depth));
-          },
-          DAGPtr::Proj(link) => {
-            let proj = &*link.as_ptr();
-            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
-            work.push(Frame::Proj(proj.type_name.clone(), proj.idx.clone()));
-            work.push(Frame::Visit(proj.expr, depth));
-          },
-          DAGPtr::Lam(link) => {
-            // Standalone Lam: no domain to visit, just body
-            let lam = &*link.as_ptr();
-            let var_ptr = &lam.var as *const Var;
-            work.push(Frame::CacheStore(dag_ptr_key(node), depth));
-            work.push(Frame::LamBuild(var_ptr));
-            work.push(Frame::BinderBody(var_ptr, lam.bod, depth));
-          },
-        }
-      },
-      Frame::App => {
-        let arg = results.pop().unwrap();
-        let fun = results.pop().unwrap();
-        results.push(Expr::app(fun, arg));
-      },
-      Frame::BinderBody(var_ptr, body, depth) => {
-        var_map.insert(var_ptr, depth);
-        work.push(Frame::Visit(body, depth + 1));
-      },
-      Frame::FunBuild(name, bi, var_ptr) => {
-        var_map.remove(&var_ptr);
-        let bod = results.pop().unwrap();
-        let dom = results.pop().unwrap();
-        results.push(Expr::lam(name, dom, bod, bi));
-      },
-      Frame::PiBuild(name, bi, var_ptr) => {
-        var_map.remove(&var_ptr);
-        let bod = results.pop().unwrap();
-        let dom = results.pop().unwrap();
-        results.push(Expr::all(name, dom, bod, bi));
-      },
-      Frame::LetBuild(name, non_dep, var_ptr) => {
-        var_map.remove(&var_ptr);
-        let bod = results.pop().unwrap();
-        let val = results.pop().unwrap();
-        let typ = results.pop().unwrap();
-        results.push(Expr::letE(name, typ, val, bod, non_dep));
-      },
-      Frame::Proj(name, idx) => {
-        let structure = results.pop().unwrap();
-        results.push(Expr::proj(name, idx, structure));
-      },
-      Frame::LamBuild(var_ptr) => {
-        var_map.remove(&var_ptr);
-        let bod = results.pop().unwrap();
-        results.push(Expr::lam(
-          Name::anon(),
-          Expr::sort(Level::zero()),
-          bod,
-          BinderInfo::Default,
-        ));
-      },
-      Frame::CacheStore(key, depth) => {
-        let result = results.last().unwrap().clone();
-        cache.insert((key, depth), result);
-      },
-    }
-  }
+  for (name, ci) in env {
+    let pretty = name.pretty();
+    let addr = resolve_name(name, name_to_addr);
+    let kci = match kenv.get(&addr) {
+      Some(kci) => kci,
+      None => {
+        errors.push((pretty, "missing from kenv".to_string()));
+        continue;
+      }
+    };
 
-  results.pop().unwrap()
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::ix::env::{BinderInfo, Literal};
-  use quickcheck::{Arbitrary, Gen};
-  use quickcheck_macros::quickcheck;
-
-  fn mk_name(s: &str) -> Name {
-    Name::str(Name::anon(), s.into())
-  }
-
-  fn mk_name2(a: &str, b: &str) -> Name {
-    Name::str(Name::str(Name::anon(), a.into()), b.into())
-  }
-
-  fn nat_type() -> Expr {
-    Expr::cnst(mk_name("Nat"), vec![])
-  }
-
-  fn nat_zero() -> Expr {
-    Expr::cnst(mk_name2("Nat", "zero"), vec![])
-  }
-
-  // ==========================================================================
-  // Terminal roundtrips
-  // ==========================================================================
-
-  #[test]
-  fn roundtrip_sort() {
-    let e = Expr::sort(Level::succ(Level::zero()));
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_sort_param() {
-    let e = Expr::sort(Level::param(mk_name("u")));
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_const() {
-    let e = Expr::cnst(
-      mk_name("Foo"),
-      vec![Level::zero(), Level::succ(Level::zero())],
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_nat_lit() {
-    let e = Expr::lit(Literal::NatVal(Nat::from(42u64)));
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_string_lit() {
-    let e = Expr::lit(Literal::StrVal("hello world".into()));
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  // ==========================================================================
-  // Binder roundtrips
-  // ==========================================================================
-
-  #[test]
-  fn roundtrip_identity_lambda() {
-    // fun (x : Nat) => x
-    let e = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      Expr::bvar(Nat::from(0u64)),
-      BinderInfo::Default,
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_const_lambda() {
-    // fun (x : Nat) (y : Nat) => x
-    let e = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      Expr::lam(
-        mk_name("y"),
-        nat_type(),
-        Expr::bvar(Nat::from(1u64)),
-        BinderInfo::Default,
-      ),
-      BinderInfo::Default,
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_pi() {
-    // (x : Nat) → Nat
-    let e = Expr::all(
-      mk_name("x"),
-      nat_type(),
-      nat_type(),
-      BinderInfo::Default,
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_dependent_pi() {
-    // (A : Sort 0) → A → A
-    let sort0 = Expr::sort(Level::zero());
-    let e = Expr::all(
-      mk_name("A"),
-      sort0,
-      Expr::all(
-        mk_name("x"),
-        Expr::bvar(Nat::from(0u64)), // A
-        Expr::bvar(Nat::from(1u64)), // A
-        BinderInfo::Default,
-      ),
-      BinderInfo::Default,
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  // ==========================================================================
-  // App roundtrips
-  // ==========================================================================
-
-  #[test]
-  fn roundtrip_app() {
-    // f a
-    let e = Expr::app(
-      Expr::cnst(mk_name("f"), vec![]),
-      nat_zero(),
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_nested_app() {
-    // f a b
-    let f = Expr::cnst(mk_name("f"), vec![]);
-    let a = nat_zero();
-    let b = Expr::cnst(mk_name2("Nat", "succ"), vec![]);
-    let e = Expr::app(Expr::app(f, a), b);
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  // ==========================================================================
-  // Let roundtrips
-  // ==========================================================================
-
-  #[test]
-  fn roundtrip_let() {
-    // let x : Nat := Nat.zero in x
-    let e = Expr::letE(
-      mk_name("x"),
-      nat_type(),
-      nat_zero(),
-      Expr::bvar(Nat::from(0u64)),
-      false,
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_let_non_dep() {
-    // let x : Nat := Nat.zero in Nat.zero  (non_dep = true)
-    let e = Expr::letE(
-      mk_name("x"),
-      nat_type(),
-      nat_zero(),
-      nat_zero(),
-      true,
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  // ==========================================================================
-  // Proj roundtrips
-  // ==========================================================================
-
-  #[test]
-  fn roundtrip_proj() {
-    let e = Expr::proj(mk_name("Prod"), Nat::from(0u64), nat_zero());
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  // ==========================================================================
-  // Complex roundtrips
-  // ==========================================================================
-
-  #[test]
-  fn roundtrip_app_of_lambda() {
-    // (fun x : Nat => x) Nat.zero
-    let id_fn = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      Expr::bvar(Nat::from(0u64)),
-      BinderInfo::Default,
-    );
-    let e = Expr::app(id_fn, nat_zero());
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_lambda_in_lambda() {
-    // fun (f : Nat → Nat) (x : Nat) => f x
-    let nat_to_nat = Expr::all(
-      mk_name("_"),
-      nat_type(),
-      nat_type(),
-      BinderInfo::Default,
-    );
-    let e = Expr::lam(
-      mk_name("f"),
-      nat_to_nat,
-      Expr::lam(
-        mk_name("x"),
-        nat_type(),
-        Expr::app(
-          Expr::bvar(Nat::from(1u64)), // f
-          Expr::bvar(Nat::from(0u64)), // x
+    // Check num_levels
+    if ci.cnst_val().level_params.len() != kci.cv().num_levels {
+      errors.push((
+        pretty.clone(),
+        format!(
+          "num_levels: {} vs {}",
+          ci.cnst_val().level_params.len(),
+          kci.cv().num_levels
         ),
-        BinderInfo::Default,
-      ),
-      BinderInfo::Default,
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
+      ));
+    }
 
-  #[test]
-  fn roundtrip_bvar_sharing() {
-    // fun (x : Nat) => App(x, x)
-    // Both bvar(0) should map to the same Var in DAG
-    let e = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      Expr::app(
-        Expr::bvar(Nat::from(0u64)),
-        Expr::bvar(Nat::from(0u64)),
-      ),
-      BinderInfo::Default,
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_free_bvar() {
-    // Bvar(5) with no enclosing binder — should survive roundtrip
-    let e = Expr::bvar(Nat::from(5u64));
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  #[test]
-  fn roundtrip_implicit_binder() {
-    // fun {x : Nat} => x
-    let e = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      Expr::bvar(Nat::from(0u64)),
-      BinderInfo::Implicit,
-    );
-    let dag = from_expr(&e);
-    let result = to_expr(&dag);
-    assert_eq!(result, e);
-  }
-
-  // ==========================================================================
-  // Property tests (quickcheck)
-  // ==========================================================================
-
-  /// Generate a random well-formed Expr with bound variables properly scoped.
-  /// `depth` tracks how many binders are in scope (for valid bvar generation).
-  fn arb_expr(g: &mut Gen, depth: u64, size: usize) -> Expr {
-    if size == 0 {
-      // Terminal: pick among Sort, Const, Lit, or Bvar (if depth > 0)
-      let choices = if depth > 0 { 5 } else { 4 };
-      match usize::arbitrary(g) % choices {
-        0 => Expr::sort(arb_level(g, 2)),
-        1 => {
-          let names = ["Nat", "Bool", "String", "Unit", "Int"];
-          let idx = usize::arbitrary(g) % names.len();
-          Expr::cnst(mk_name(names[idx]), vec![])
-        },
-        2 => {
-          let n = u64::arbitrary(g) % 100;
-          Expr::lit(Literal::NatVal(Nat::from(n)))
-        },
-        3 => {
-          let s: String = String::arbitrary(g);
-          // Truncate at a char boundary to avoid panics
-          let s: String = s.chars().take(10).collect();
-          Expr::lit(Literal::StrVal(s))
-        },
-        4 => {
-          // Bvar within scope
-          let idx = u64::arbitrary(g) % depth;
-          Expr::bvar(Nat::from(idx))
-        },
-        _ => unreachable!(),
+    // Check kind + kind-specific fields
+    match (ci, kci) {
+      (ConstantInfo::AxiomInfo(v), KConstantInfo::Axiom(kv)) => {
+        if v.is_unsafe != kv.is_unsafe {
+          errors.push((pretty, format!("is_unsafe: {} vs {}", v.is_unsafe, kv.is_unsafe)));
+        }
       }
-    } else {
-      let next = size / 2;
-      match usize::arbitrary(g) % 5 {
-        0 => {
-          // App
-          let f = arb_expr(g, depth, next);
-          let a = arb_expr(g, depth, next);
-          Expr::app(f, a)
-        },
-        1 => {
-          // Lam
-          let dom = arb_expr(g, depth, next);
-          let bod = arb_expr(g, depth + 1, next);
-          Expr::lam(mk_name("x"), dom, bod, BinderInfo::Default)
-        },
-        2 => {
-          // Pi
-          let dom = arb_expr(g, depth, next);
-          let bod = arb_expr(g, depth + 1, next);
-          Expr::all(mk_name("a"), dom, bod, BinderInfo::Default)
-        },
-        3 => {
-          // Let
-          let typ = arb_expr(g, depth, next);
-          let val = arb_expr(g, depth, next);
-          let bod = arb_expr(g, depth + 1, next / 2);
-          Expr::letE(mk_name("v"), typ, val, bod, bool::arbitrary(g))
-        },
-        4 => {
-          // Proj
-          let idx = u64::arbitrary(g) % 4;
-          let structure = arb_expr(g, depth, next);
-          Expr::proj(mk_name("S"), Nat::from(idx), structure)
-        },
-        _ => unreachable!(),
+      (ConstantInfo::DefnInfo(v), KConstantInfo::Definition(kv)) => {
+        if v.safety != kv.safety {
+          errors.push((pretty.clone(), format!("safety: {:?} vs {:?}", v.safety, kv.safety)));
+        }
+        if v.all.len() != kv.all.len() {
+          errors.push((pretty, format!("all.len: {} vs {}", v.all.len(), kv.all.len())));
+        }
+      }
+      (ConstantInfo::ThmInfo(v), KConstantInfo::Theorem(kv)) => {
+        if v.all.len() != kv.all.len() {
+          errors.push((pretty, format!("all.len: {} vs {}", v.all.len(), kv.all.len())));
+        }
+      }
+      (ConstantInfo::OpaqueInfo(v), KConstantInfo::Opaque(kv)) => {
+        if v.is_unsafe != kv.is_unsafe {
+          errors.push((pretty.clone(), format!("is_unsafe: {} vs {}", v.is_unsafe, kv.is_unsafe)));
+        }
+        if v.all.len() != kv.all.len() {
+          errors.push((pretty, format!("all.len: {} vs {}", v.all.len(), kv.all.len())));
+        }
+      }
+      (ConstantInfo::QuotInfo(v), KConstantInfo::Quotient(kv)) => {
+        if v.kind != kv.kind {
+          errors.push((pretty, format!("kind: {:?} vs {:?}", v.kind, kv.kind)));
+        }
+      }
+      (ConstantInfo::InductInfo(v), KConstantInfo::Inductive(kv)) => {
+        let checks: &[(&str, usize, usize)] = &[
+          ("num_params", nat(&v.num_params), kv.num_params),
+          ("num_indices", nat(&v.num_indices), kv.num_indices),
+          ("all.len", v.all.len(), kv.all.len()),
+          ("ctors.len", v.ctors.len(), kv.ctors.len()),
+          ("num_nested", nat(&v.num_nested), kv.num_nested),
+        ];
+        for (field, expected, got) in checks {
+          if expected != got {
+            errors.push((pretty.clone(), format!("{field}: {expected} vs {got}")));
+          }
+        }
+        let bools: &[(&str, bool, bool)] = &[
+          ("is_rec", v.is_rec, kv.is_rec),
+          ("is_unsafe", v.is_unsafe, kv.is_unsafe),
+          ("is_reflexive", v.is_reflexive, kv.is_reflexive),
+        ];
+        for (field, expected, got) in bools {
+          if expected != got {
+            errors.push((pretty.clone(), format!("{field}: {expected} vs {got}")));
+          }
+        }
+      }
+      (ConstantInfo::CtorInfo(v), KConstantInfo::Constructor(kv)) => {
+        let checks: &[(&str, usize, usize)] = &[
+          ("cidx", nat(&v.cidx), kv.cidx),
+          ("num_params", nat(&v.num_params), kv.num_params),
+          ("num_fields", nat(&v.num_fields), kv.num_fields),
+        ];
+        for (field, expected, got) in checks {
+          if expected != got {
+            errors.push((pretty.clone(), format!("{field}: {expected} vs {got}")));
+          }
+        }
+        if v.is_unsafe != kv.is_unsafe {
+          errors.push((pretty, format!("is_unsafe: {} vs {}", v.is_unsafe, kv.is_unsafe)));
+        }
+      }
+      (ConstantInfo::RecInfo(v), KConstantInfo::Recursor(kv)) => {
+        let checks: &[(&str, usize, usize)] = &[
+          ("num_params", nat(&v.num_params), kv.num_params),
+          ("num_indices", nat(&v.num_indices), kv.num_indices),
+          ("num_motives", nat(&v.num_motives), kv.num_motives),
+          ("num_minors", nat(&v.num_minors), kv.num_minors),
+          ("all.len", v.all.len(), kv.all.len()),
+          ("rules.len", v.rules.len(), kv.rules.len()),
+        ];
+        for (field, expected, got) in checks {
+          if expected != got {
+            errors.push((pretty.clone(), format!("{field}: {expected} vs {got}")));
+          }
+        }
+        if v.k != kv.k {
+          errors.push((pretty.clone(), format!("k: {} vs {}", v.k, kv.k)));
+        }
+        if v.is_unsafe != kv.is_unsafe {
+          errors.push((pretty.clone(), format!("is_unsafe: {} vs {}", v.is_unsafe, kv.is_unsafe)));
+        }
+        // Check rule nfields
+        for (i, (r, kr)) in v.rules.iter().zip(kv.rules.iter()).enumerate() {
+          if nat(&r.n_fields) != kr.nfields {
+            errors.push((pretty.clone(), format!("rules[{i}].nfields: {} vs {}", nat(&r.n_fields), kr.nfields)));
+          }
+        }
+      }
+      _ => {
+        let env_kind = match ci {
+          ConstantInfo::AxiomInfo(_) => "axiom",
+          ConstantInfo::DefnInfo(_) => "definition",
+          ConstantInfo::ThmInfo(_) => "theorem",
+          ConstantInfo::OpaqueInfo(_) => "opaque",
+          ConstantInfo::QuotInfo(_) => "quotient",
+          ConstantInfo::InductInfo(_) => "inductive",
+          ConstantInfo::CtorInfo(_) => "constructor",
+          ConstantInfo::RecInfo(_) => "recursor",
+        };
+        errors.push((
+          pretty,
+          format!("kind mismatch: env={} kenv={}", env_kind, kci.kind_name()),
+        ));
       }
     }
   }
 
-  fn arb_level(g: &mut Gen, size: usize) -> Level {
-    if size == 0 {
-      match usize::arbitrary(g) % 3 {
-        0 => Level::zero(),
-        1 => {
-          let params = ["u", "v", "w"];
-          let idx = usize::arbitrary(g) % params.len();
-          Level::param(mk_name(params[idx]))
-        },
-        2 => Level::succ(Level::zero()),
-        _ => unreachable!(),
-      }
-    } else {
-      match usize::arbitrary(g) % 3 {
-        0 => Level::succ(arb_level(g, size - 1)),
-        1 => Level::max(arb_level(g, size / 2), arb_level(g, size / 2)),
-        2 => Level::imax(arb_level(g, size / 2), arb_level(g, size / 2)),
-        _ => unreachable!(),
-      }
-    }
+  // Check for constants in kenv that aren't in env
+  if kenv.len() != env.len() {
+    errors.push((
+      "<env>".to_string(),
+      format!("size mismatch: env={} kenv={}", env.len(), kenv.len()),
+    ));
   }
 
-  /// Newtype wrapper for quickcheck Arbitrary derivation.
-  #[derive(Clone, Debug)]
-  struct ArbExpr(Expr);
-
-  impl Arbitrary for ArbExpr {
-    fn arbitrary(g: &mut Gen) -> Self {
-      let size = usize::arbitrary(g) % 5;
-      ArbExpr(arb_expr(g, 0, size))
-    }
-  }
-
-  #[quickcheck]
-  fn prop_roundtrip(e: ArbExpr) -> bool {
-    let dag = from_expr(&e.0);
-    let result = to_expr(&dag);
-    result == e.0
-  }
-
-  /// Same test but with expressions generated inside binders.
-  #[derive(Clone, Debug)]
-  struct ArbBinderExpr(Expr);
-
-  impl Arbitrary for ArbBinderExpr {
-    fn arbitrary(g: &mut Gen) -> Self {
-      let inner_size = usize::arbitrary(g) % 4;
-      let body = arb_expr(g, 1, inner_size);
-      let dom = arb_expr(g, 0, 0);
-      ArbBinderExpr(Expr::lam(
-        mk_name("x"),
-        dom,
-        body,
-        BinderInfo::Default,
-      ))
-    }
-  }
-
-  #[quickcheck]
-  fn prop_roundtrip_binder(e: ArbBinderExpr) -> bool {
-    let dag = from_expr(&e.0);
-    let result = to_expr(&dag);
-    result == e.0
-  }
+  errors
 }

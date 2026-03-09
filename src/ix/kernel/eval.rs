@@ -26,6 +26,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     expr: &KExpr<M>,
     env: &Vec<Val<M>>,
   ) -> TcResult<Val<M>, M> {
+    self.heartbeat()?;
     self.stats.eval_calls += 1;
 
     match expr.data() {
@@ -182,6 +183,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     fun: Val<M>,
     arg: Thunk<M>,
   ) -> TcResult<Val<M>, M> {
+    self.heartbeat()?;
     match fun.inner() {
       ValInner::Lam { body, env, .. } => {
         // O(1) beta reduction: push arg value onto closure env
@@ -262,6 +264,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   /// Force a thunk: if unevaluated, evaluate and memoize; if evaluated,
   /// return cached value.
   pub fn force_thunk(&mut self, thunk: &Thunk<M>) -> TcResult<Val<M>, M> {
+    self.heartbeat()?;
     self.stats.force_calls += 1;
 
     // Check if already evaluated

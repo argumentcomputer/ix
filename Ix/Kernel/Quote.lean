@@ -5,9 +5,9 @@
   quoting under binders requires eval, and quoting spine requires forceThunk).
   This file provides non-monadic helpers used by quote.
 -/
-import Ix.Kernel2.Value
+import Ix.Kernel.Value
 
-namespace Ix.Kernel2
+namespace Ix.Kernel
 
 open Ix.Kernel (MetaMode MetaField)
 
@@ -26,4 +26,4 @@ def quoteHead (h : Head m) (d : Nat) (names : Array (KMetaField m Ix.Name) := #[
     .bvar idx (names[level]?.getD default)
   | .const addr levels name => .const addr levels name
 
-end Ix.Kernel2
+end Ix.Kernel

@@ -9,9 +9,9 @@
   require forced values. Functions here work on already-forced Val values
   or on metadata that doesn't require forcing (addresses, spine sizes).
 -/
-import Ix.Kernel2.TypecheckM
+import Ix.Kernel.TypecheckM
 
-namespace Ix.Kernel2
+namespace Ix.Kernel
 
 /-! ## Nat helpers on Val -/
 
@@ -32,6 +32,26 @@ def isPrimOp (prims : KPrimitives) (addr : Address) : Bool :=
   addr == prims.natShiftLeft || addr == prims.natShiftRight ||
   addr == prims.natSucc
 
+/-- Check if a value is a nat primitive applied to args (not yet reduced). -/
+def isNatPrimHead (prims : KPrimitives) (v : Val m) : Bool :=
+  match v with
+  | .neutral (.const addr _ _) spine => isPrimOp prims addr && !spine.isEmpty
+  | _ => false
+
+/-- Check if a value is a nat constructor (zero, succ, or literal).
+    Unlike extractNatVal, this doesn't require fully extractable values —
+    Nat.succ(x) counts even when x is symbolic. -/
+def isNatConstructor (prims : KPrimitives) (v : Val m) : Bool :=
+  match v with
+  | .lit (.natVal _) => true
+  | .neutral (.const addr _ _) spine =>
+    (addr == prims.natZero && spine.isEmpty) ||
+    (addr == prims.natSucc && spine.size == 1)
+  | .ctor addr _ _ _ _ _ _ spine =>
+    (addr == prims.natZero && spine.isEmpty) ||
+    (addr == prims.natSucc && spine.size == 1)
+  | _ => false
+
 /-- Compute a nat primitive given two resolved nat values. -/
 def computeNatPrim (prims : KPrimitives) (addr : Address) (x y : Nat) : Option (Val m) :=
   if addr == prims.natAdd then some (.lit (.natVal (x + y)))
@@ -44,11 +64,11 @@ def computeNatPrim (prims : KPrimitives) (addr : Address) (x y : Nat) : Option (
   else if addr == prims.natDiv then some (.lit (.natVal (x / y)))
   else if addr == prims.natGcd then some (.lit (.natVal (Nat.gcd x y)))
   else if addr == prims.natBeq then
-    let boolAddr := if x == y then prims.boolTrue else prims.boolFalse
-    some (Val.mkConst boolAddr #[])
+    if x == y then some (.ctor prims.boolTrue #[] default 1 0 0 prims.bool #[])
+    else some (.ctor prims.boolFalse #[] default 0 0 0 prims.bool #[])
   else if addr == prims.natBle then
-    let boolAddr := if x ≤ y then prims.boolTrue else prims.boolFalse
-    some (Val.mkConst boolAddr #[])
+    if x ≤ y then some (.ctor prims.boolTrue #[] default 1 0 0 prims.bool #[])
+    else some (.ctor prims.boolFalse #[] default 0 0 0 prims.bool #[])
   else if addr == prims.natLand then some (.lit (.natVal (Nat.land x y)))
   else if addr == prims.natLor then some (.lit (.natVal (Nat.lor x y)))
   else if addr == prims.natXor then some (.lit (.natVal (Nat.xor x y)))
@@ -58,22 +78,8 @@ def computeNatPrim (prims : KPrimitives) (addr : Address) (x y : Nat) : Option (
 
 /-! ## Nat literal → constructor conversion on Val -/
 
-def natLitToCtorVal (prims : KPrimitives) : Val m → Val m
-  | .lit (.natVal 0) => Val.mkConst prims.natZero #[]
-  | v => v
 -- Note: natLit (n+1) → Nat.succ (natLit n) requires allocating a thunk,
 -- so it must be done in TypecheckM. See natLitToCtorThunked in Infer.lean.
-
-/-! ## String literal → constructor conversion on Val -/
-
-/-- Convert a string literal to its constructor form.
-    Note: In the lazy spine world, the intermediate values (chars, list nodes)
-    are Val, not thunks. This produces a fully evaluated Val tree. -/
-def strLitToCtorVal (prims : KPrimitives) (_s : String) : Val m :=
-  -- String literals with lazy spines need thunk allocation for each spine arg.
-  -- This pure version can't do that. Use strLitToCtorThunked in TypecheckM instead.
-  -- For now, return a placeholder that will be handled in the monadic version.
-  .lit (.strVal _s)
 
 /-! ## Projection reduction on Val (needs forced struct) -/
 
@@ -113,4 +119,4 @@ def isStructLikeApp (v : Val m) (kenv : KEnv m)
     | _ => none
   | _ => none
 
-end Ix.Kernel2
+end Ix.Kernel

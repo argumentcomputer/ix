@@ -1,12 +1,23 @@
+//! Kernel: NbE type checker using Krivine machine semantics.
+//!
+//! This module implements a Normalization-by-Evaluation (NbE) kernel
+//! with call-by-need thunks for O(1) beta reduction.
+
+pub mod check;
 pub mod convert;
-pub mod dag;
-pub mod dag_tc;
 pub mod def_eq;
-pub mod dll;
+pub mod equiv;
 pub mod error;
-pub mod inductive;
+pub mod eval;
+pub mod helpers;
+pub mod infer;
 pub mod level;
-pub mod quot;
+pub mod primitive;
+pub mod quote;
 pub mod tc;
-pub mod upcopy;
+pub mod types;
+pub mod value;
 pub mod whnf;
+
+#[cfg(test)]
+mod tests;

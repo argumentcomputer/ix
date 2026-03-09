@@ -1,1071 +1,1670 @@
 /-
-  Kernel Infer: Type inference and declaration checking.
+  Kernel2 Infer: Krivine machine with call-by-need thunks.
 
-  Environment-based kernel: types are Exprs, uses whnf/isDefEq.
+  Mutual block: eval, applyValThunk, forceThunk, whnfCoreVal, deltaStepVal,
+  whnfVal, tryIotaReduction, tryQuotReduction, isDefEq, isDefEqCore,
+  isDefEqSpine, lazyDelta, unfoldOneDelta, quote.
+
+  Key changes from substitution-based kernel:
+  - Spine args are ThunkIds (lazy, memoized via ST.Ref)
+  - Beta reduction is O(1) via closures
+  - Delta unfolding is single-step (Krivine semantics)
+  - isDefEq works entirely on Val (no quoting)
 -/
-import Ix.Kernel.DefEq
+import Ix.Kernel.Helpers
+import Ix.Kernel.Quote
 import Ix.Kernel.Primitive
+import Ix.Kernel.ExprUtils
 
 namespace Ix.Kernel
 
-/-! ## Recursor rule type helpers -/
+-- Uses K-abbreviations from Value.lean to avoid Lean.* shadowing
 
-/-- Shift bvar indices and level params in an expression from a constructor context
-    to a recursor rule context.
-    - `fieldDepth`: number of field binders above this expr in the ctor type
-    - `bvarShift`: amount to shift param bvar refs (= numMotives + numMinors)
-    - `levelShift`: amount to shift Level.param indices (= recLevelCount - ctorLevelCount)
-    Bvar i at depth d is a param ref when i >= d + fieldDepth. -/
-partial def shiftCtorToRule (e : Expr m) (fieldDepth : Nat) (bvarShift : Nat) (levelSubst : Array (Level m)) : Expr m :=
-  if bvarShift == 0 && levelSubst.size == 0 then e else go e 0
-where
-  substLevel : Level m → Level m
-    | .param i n => if h : i < levelSubst.size then levelSubst[i] else .param i n
-    | .succ l => .succ (substLevel l)
-    | .max a b => .max (substLevel a) (substLevel b)
-    | .imax a b => .imax (substLevel a) (substLevel b)
-    | l => l
-  go (e : Expr m) (depth : Nat) : Expr m :=
-    match e with
-    | .bvar i n =>
-      if i >= depth + fieldDepth then .bvar (i + bvarShift) n
-      else e
-    | .app fn arg => .app (go fn depth) (go arg depth)
-    | .lam ty body n bi => .lam (go ty depth) (go body (depth + 1)) n bi
-    | .forallE ty body n bi => .forallE (go ty depth) (go body (depth + 1)) n bi
-    | .letE ty val body n => .letE (go ty depth) (go val depth) (go body (depth + 1)) n
-    | .proj ta idx s n => .proj ta idx (go s depth) n
-    | .sort l => .sort (substLevel l)
-    | .const addr lvls name => .const addr (lvls.map substLevel) name
-    | _ => e
+/-! ## Pointer equality helper -/
 
-/-- Substitute extra nested param bvars in a constructor body expression.
-    After peeling `cnp` params from the ctor type, extra param bvars occupy
-    indices `fieldDepth..fieldDepth+numExtra-1` at depth 0 (they are the innermost
-    free param bvars, below the shared params). Replace them with `vals` and
-    shift shared param bvars down by `numExtra` to close the gap.
-    - `fieldDepth`: number of field binders enclosing this expr (0 for return type)
-    - `numExtra`: number of extra nested params (cnp - np)
-    - `vals`: replacement values (already shifted for the rule context) -/
-partial def substNestedParams (e : Expr m) (fieldDepth : Nat) (numExtra : Nat) (vals : Array (Expr m)) : Expr m :=
-  if numExtra == 0 then e else go e 0
-where
-  go (e : Expr m) (depth : Nat) : Expr m :=
-    match e with
-    | .bvar i n =>
-      let freeIdx := i - (depth + fieldDepth)  -- which param bvar (0 = innermost extra)
-      if i < depth + fieldDepth then e  -- bound by field/local binder
-      else if freeIdx < numExtra then
-        -- Extra nested param: substitute with vals[freeIdx] shifted up by depth
-        shiftCtorToRule vals[freeIdx]! 0 depth #[]
-      else .bvar (i - numExtra) n  -- Shared param: shift down
-    | .app fn arg => .app (go fn depth) (go arg depth)
-    | .lam ty body n bi => .lam (go ty depth) (go body (depth + 1)) n bi
-    | .forallE ty body n bi => .forallE (go ty depth) (go body (depth + 1)) n bi
-    | .letE ty val body n => .letE (go ty depth) (go val depth) (go body (depth + 1)) n
-    | .proj ta idx s n => .proj ta idx (go s depth) n
-    | _ => e
+private unsafe def ptrEqUnsafe (a : @& Val m) (b : @& Val m) : Bool :=
+  ptrAddrUnsafe a == ptrAddrUnsafe b
 
-/-! ## Inductive validation helpers -/
+@[implemented_by ptrEqUnsafe]
+private opaque ptrEq : @& Val m → @& Val m → Bool
 
-/-- Check if an expression mentions a constant at the given address. -/
-partial def exprMentionsConst (e : Expr m) (addr : Address) : Bool :=
-  match e with
-  | .const a _ _ => a == addr
-  | .app fn arg => exprMentionsConst fn addr || exprMentionsConst arg addr
-  | .lam ty body _ _ => exprMentionsConst ty addr || exprMentionsConst body addr
-  | .forallE ty body _ _ => exprMentionsConst ty addr || exprMentionsConst body addr
-  | .letE ty val body _ => exprMentionsConst ty addr || exprMentionsConst val addr || exprMentionsConst body addr
-  | .proj _ _ s _ => exprMentionsConst s addr
+private unsafe def ptrAddrValUnsafe (a : @& Val m) : USize := ptrAddrUnsafe a
+
+@[implemented_by ptrAddrValUnsafe]
+private opaque ptrAddrVal : @& Val m → USize
+
+private unsafe def arrayPtrEqUnsafe (a : @& Array (Val m)) (b : @& Array (Val m)) : Bool :=
+  ptrAddrUnsafe a == ptrAddrUnsafe b
+
+@[implemented_by arrayPtrEqUnsafe]
+private opaque arrayPtrEq : @& Array (Val m) → @& Array (Val m) → Bool
+
+private unsafe def arrayValPtrEqUnsafe (a : @& Array (Val m)) (b : @& Array (Val m)) : Bool :=
+  if a.size != b.size then false
+  else Id.run do
+    for i in [:a.size] do
+      if ptrAddrUnsafe a[i]! != ptrAddrUnsafe b[i]! then return false
+    return true
+
+@[implemented_by arrayValPtrEqUnsafe]
+private opaque arrayValPtrEq : @& Array (Val m) → @& Array (Val m) → Bool
+
+/-- Check universe array equality. -/
+private def equalUnivArrays (us vs : Array (KLevel m)) : Bool :=
+  if us.size != vs.size then false
+  else Id.run do
+    for i in [:us.size] do
+      if !Ix.Kernel.Level.equalLevel us[i]! vs[i]! then return false
+    return true
+
+private def isBoolTrue (prims : KPrimitives) (v : Val m) : Bool :=
+  match v with
+  | .neutral (.const addr _ _) spine => addr == prims.boolTrue && spine.isEmpty
+  | .ctor addr _ _ _ _ _ _ spine => addr == prims.boolTrue && spine.isEmpty
   | _ => false
 
--- checkStrictPositivity and checkCtorPositivity are now monadic (inside the mutual block)
--- to allow calling whnf, matching lean4lean's checkPositivity.
-
-/-- Walk a Pi chain past numParams + numFields binders to get the return type. -/
-def getCtorReturnType (ctorType : Expr m) (numParams numFields : Nat) : Expr m :=
-  go ctorType (numParams + numFields)
-where
-  go (ty : Expr m) (n : Nat) : Expr m :=
-    match n, ty with
-    | 0, e => e
-    | n+1, .forallE _ body _ _ => go body n
-    | _, e => e
-
-/-- Extract result universe level from an inductive type expression. -/
-def getIndResultLevel (indType : Expr m) : Option (Level m) :=
-  go indType
-where
-  go : Expr m → Option (Level m)
-  | .forallE _ body _ _ => go body
-  | .sort lvl => some lvl
-  | _ => none
-
-/-- Extract the motive's return sort from a recursor type.
-    Walks past numParams Pi binders, then walks the motive's domain to the final Sort. -/
-def getMotiveSort (recType : Expr m) (numParams : Nat) : Option (Level m) :=
-  go recType numParams
-where
-  go (ty : Expr m) : Nat → Option (Level m)
-    | 0 => match ty with
-      | .forallE motiveDom _ _ _ => walkToSort motiveDom
-      | _ => none
-    | n+1 => match ty with
-      | .forallE _ body _ _ => go body n
-      | _ => none
-  walkToSort : Expr m → Option (Level m)
-    | .forallE _ body _ _ => walkToSort body
-    | .sort lvl => some lvl
-    | _ => none
-
-/-- Check if a level is definitively non-zero (always >= 1). -/
-partial def levelIsNonZero : Level m → Bool
-  | .succ _ => true
-  | .zero => false
-  | .param .. => false
-  | .max a b => levelIsNonZero a || levelIsNonZero b
-  | .imax _ b => levelIsNonZero b
-
-/-! ## Type info helpers -/
-
-def lamInfo : TypeInfo m → TypeInfo m
-  | .proof => .proof
-  | _ => .none
-
-def piInfo (dom img : TypeInfo m) : TypeInfo m := match dom, img with
-  | .sort lvl, .sort lvl' => .sort (Level.reduceIMax lvl lvl')
-  | _, _ => .none
+/-! ## Mutual block -/
 
 mutual
-  /-- Infer TypeInfo from a type expression (after whnf). -/
-  partial def infoFromType (typ : Expr m) : TypecheckM m (TypeInfo m) := do
-    let typ' ← whnf typ
-    match typ' with
-    | .sort (.zero) => pure .proof
-    | .sort lvl => pure (.sort lvl)
-    | .app .. =>
-      let head := typ'.getAppFn
-      match head with
-      | .const addr _ _ =>
-        match (← read).kenv.find? addr with
-        | some (.inductInfo v) =>
-          if v.ctors.size == 1 then
-            match (← read).kenv.find? v.ctors[0]! with
-            | some (.ctorInfo cv) =>
-              if cv.numFields == 0 then pure .unit else pure .none
-            | _ => pure .none
-          else pure .none
-        | _ => pure .none
-      | _ => pure .none
-    | _ => pure .none
-
-  -- WHNF (moved from Whnf.lean to share mutual block with infer/isDefEq)
-
-  /-- Structural WHNF: beta, let-zeta, iota-proj. No delta unfolding.
-      Uses an iterative loop to avoid deep stack usage:
-      - App spines are collected iteratively (not recursively)
-      - Beta/let/iota/proj results loop back instead of tail-calling
-      When cheapProj=true, projections are returned as-is (no struct reduction).
-      When cheapRec=true, recursor applications are returned as-is (no iota reduction). -/
-  partial def whnfCore (e : Expr m) (cheapRec := false) (cheapProj := false)
-      : TypecheckM m (Expr m) := do
-    -- Cache check FIRST — no stack cost for cache hits
-    -- Context-aware: stores binding context alongside result, verified via ptr equality
-    let useCache := !cheapRec && !cheapProj
-    let types := (← read).types
-    if useCache then
-      if let some (cachedTypes, r) := (← get).whnfCoreCache.get? e then
-        if unsafe ptrAddrUnsafe cachedTypes == ptrAddrUnsafe types || cachedTypes == types then
-          modify fun s => { s with whnfCoreCacheHits := s.whnfCoreCacheHits + 1 }
-          return r
-    let r ← withRecDepthCheck (whnfCoreImpl e cheapRec cheapProj)
-    if useCache then
-      modify fun s => { s with whnfCoreCache := s.whnfCoreCache.insert e (types, r) }
-    pure r
-
-  partial def whnfCoreImpl (e : Expr m) (cheapRec : Bool) (cheapProj : Bool)
-      : TypecheckM m (Expr m) := do
-    let mut t := e
-    repeat
-      -- Fuel check
-      let stt ← get
-      if stt.fuel == 0 then throw "deep recursion fuel limit reached"
-      modify fun s => { s with fuel := s.fuel - 1 }
-      match t with
-      | .app .. => do
-        -- Collect app args iteratively (O(1) stack for app spine)
-        let args := t.getAppArgs
-        let fn := t.getAppFn
-        let fn' ← whnfCore fn cheapRec cheapProj  -- recurse only on non-app head
-        -- Beta-reduce: consume as many args as possible
-        let mut result := fn'
-        let mut i : Nat := 0
-        while i < args.size do
-          match result with
-          | .lam _ body _ _ =>
-            result := body.instantiate1 args[i]!
-            i := i + 1
-          | _ => break
-        if i > 0 then
-          -- Beta reductions happened. Apply remaining args and loop.
-          for h : j in [i:args.size] do
-            result := Expr.mkApp result args[j]!
-          t := result; continue  -- loop instead of recursive tail call
-        else
-          -- No beta reductions. Try recursor/proj reduction.
-          let e' := if fn == fn' then t else fn'.mkAppN args
-          if cheapRec then return e'  -- skip recursor reduction
-          let r ← tryReduceApp e'
-          if r == e' then return r  -- stuck, return
-          t := r; continue  -- iota/quot reduced, loop to re-process
-      | .bvar idx _ => do
-        -- Zeta-reduce let-bound bvars: look up the stored value and substitute
+  /-- Evaluate an Expr in an environment to produce a Val.
+      App arguments become thunks (lazy). Constants stay as stuck neutrals. -/
+  partial def eval (e : KExpr m) (env : Array (Val m)) : TypecheckM σ m (Val m) := do
+    heartbeat
+    match e with
+    | .bvar idx _ =>
+      let envSize := env.size
+      if idx < envSize then
+        pure env[envSize - 1 - idx]!
+      else
         let ctx ← read
-        let depth := ctx.types.size
-        if idx < depth then
-          let arrayIdx := depth - 1 - idx
-          if h : arrayIdx < ctx.letValues.size then
-            if let some val := ctx.letValues[arrayIdx] then
-              -- Shift free bvars in val past the intermediate binders
-              t := val.liftBVars (idx + 1); continue
-        return t
-      | .letE _ val body _ =>
-        t := body.instantiate1 val; continue  -- loop instead of recursion
-      | .proj typeAddr idx struct _ => do
-        -- cheapProj=true: try structural-only reduction (whnfCore, no delta)
-        -- cheapProj=false: full reduction (whnf, with delta)
-        let struct' ← if cheapProj then whnfCore struct cheapRec cheapProj else whnf struct
-        match ← reduceProj typeAddr idx struct' with
-        | some result => t := result; continue  -- loop instead of recursion
-        | none =>
-          return if struct == struct' then t else .proj typeAddr idx struct' default
-      | _ => return t
-    return t  -- unreachable, but needed for type checking
-
-  /-- Try to reduce an application whose head is in WHNF.
-      Handles recursor iota-reduction and quotient reduction. -/
-  partial def tryReduceApp (e : Expr m) : TypecheckM m (Expr m) := do
-    let fn := e.getAppFn
-    match fn with
-    | .const addr _ _ => do
-      ensureTypedConst addr
-      match (← get).typedConsts.get? addr with
-      | some (.recursor _ params motives minors indices isK indAddr rules) =>
-        let args := e.getAppArgs
-        let majorIdx := params + motives + minors + indices
-        if h : majorIdx < args.size then
-          let major := args[majorIdx]
-          let major' ← whnf major
-          if isK then
-            tryKReduction e addr args major' params motives minors indices indAddr
+        let ctxIdx := idx - envSize
+        let ctxDepth := ctx.types.size
+        if ctxIdx < ctxDepth then
+          let level := ctxDepth - 1 - ctxIdx
+          if h : level < ctx.letValues.size then
+            if let some val := ctx.letValues[level] then
+              return val  -- zeta-reduce let-bound variable
+          if h2 : level < ctx.types.size then
+            return Val.mkFVar level ctx.types[level]
           else
-            tryIotaReduction e addr args major' params indices indAddr rules motives minors
-        else pure e
-      | some (.quotient _ kind) =>
-        match kind with
-        | .lift => tryQuotReduction e 6 3
-        | .ind  => tryQuotReduction e 5 3
-        | _ => pure e
-      | _ => pure e
-    | _ => pure e
+            throw s!"bvar {idx} out of bounds (env={envSize}, ctx={ctxDepth})"
+        else
+          let envStrs := env.map (fun v => Val.pp v)
+          throw s!"bvar {idx} out of bounds (env={envSize}, ctx={ctxDepth}) envVals={envStrs}"
 
-  /-- K-reduction: for Prop inductives with single zero-field constructor.
-      Returns the (only) minor premise, plus any extra args after the major.
-      When the major is not a constructor, tries toCtorWhenK: infers the major's type,
-      checks it matches the inductive, and constructs the nullary constructor. -/
-  partial def tryKReduction (e : Expr m) (_addr : Address) (args : Array (Expr m))
-      (major : Expr m) (params motives minors indices : Nat) (indAddr : Address)
-      : TypecheckM m (Expr m) := do
-    -- Check if major is a constructor (including nat literal → ctor conversion)
+    | .sort lvl => pure (.sort lvl)
+
+    | .const addr levels name =>
+      let kenv := (← read).kenv
+      match kenv.find? addr with
+      | some (.ctorInfo cv) =>
+        pure (.ctor addr levels name cv.cidx cv.numParams cv.numFields cv.induct #[])
+      | _ => pure (Val.neutral (.const addr levels name) #[])
+
+    | .app .. => do
+      let args := e.getAppArgs
+      let fn := e.getAppFn
+      let mut fnV ← eval fn env
+      for arg in args do
+        match fnV with
+        | .lam _ _ _ body lamEnv =>
+          -- Head is lambda: eager arg eval, direct beta (skip thunk allocation)
+          let argV ← eval arg env
+          fnV ← eval body (lamEnv.push argV)
+        | _ =>
+          -- Head is not lambda: create thunk (lazy)
+          let thunkId ← mkThunk arg env
+          fnV ← applyValThunk fnV thunkId
+      pure fnV
+
+    | .lam ty body name bi => do
+      let domV ← eval ty env
+      pure (.lam name bi domV body env)
+
+    | .forallE ty body name bi => do
+      let domV ← eval ty env
+      pure (.pi name bi domV body env)
+
+    | .letE _ty val body _name => do
+      let valV ← eval val env
+      eval body (env.push valV)
+
+    | .lit l => pure (.lit l)
+
+    | .proj typeAddr idx struct typeName => do
+      -- Eval struct directly; only create thunk if projection is stuck
+      let structV ← eval struct env
+      let kenv := (← read).kenv
+      let prims := (← read).prims
+      match reduceValProjForced typeAddr idx structV kenv prims with
+      | some fieldThunkId => forceThunk fieldThunkId
+      | none =>
+        let structThunkId ← mkThunkFromVal structV
+        pure (.proj typeAddr idx structThunkId typeName #[])
+
+  /-- Evaluate an Expr with context bvars pre-resolved to fvars in the env.
+      This makes closures context-independent: their envs capture fvars
+      instead of relying on context fallthrough for bvar resolution. -/
+  partial def evalInCtx (e : KExpr m) : TypecheckM σ m (Val m) := do
     let ctx ← read
-    let majorCtor := toCtorIfLit ctx.prims major
-    let isCtor := match majorCtor.getAppFn with
-      | .const ctorAddr _ _ =>
-        match ctx.kenv.find? ctorAddr with
-        | some (.ctorInfo _) => true
-        | _ => false
-      | _ => false
-    if !isCtor then
-      -- toCtorWhenK: verify the major's type matches the K-inductive.
-      -- K-types have zero fields, so the ctor itself isn't needed — we just return the minor.
-      match ← toCtorWhenK major indAddr with
-      | some _ => pure ()  -- type matches, fall through to K-reduction
-      | none => return e
-    -- K-reduction: return the (only) minor premise
-    let minorIdx := params + motives
-    if h : minorIdx < args.size then
-      let mut result := args[minorIdx]
-      -- Apply extra args after major premise (matching lean4 kernel behavior)
-      let majorIdx := params + motives + minors + indices
-      if majorIdx + 1 < args.size then
-        result := result.mkAppRange (majorIdx + 1) args.size args
-      return result
-    pure e
+    let ctxDepth := ctx.types.size
+    if ctxDepth == 0 then eval e #[]
+    else
+      let mut env : Array (Val m) := Array.mkEmpty ctxDepth
+      for level in [:ctxDepth] do
+        if h : level < ctx.letValues.size then
+          if let some val := ctx.letValues[level] then
+            env := env.push val
+            continue
+        if h2 : level < ctx.types.size then
+          env := env.push (Val.mkFVar level ctx.types[level])
+        else unreachable!
+      eval e env
 
-  /-- For K-like inductives, try to construct the nullary constructor from the major's type.
-      Infers the major's type, checks it matches the inductive, and returns the constructor.
-      Matches lean4lean's `toCtorWhenK` / lean4 C++ `to_cnstr_when_K`. -/
-  partial def toCtorWhenK (major : Expr m) (indAddr : Address) : TypecheckM m (Option (Expr m)) := do
+  /-- Apply a value to a thunked argument. O(1) beta for lambdas. -/
+  partial def applyValThunk (fn : Val m) (argThunkId : Nat)
+      : TypecheckM σ m (Val m) := do
+    heartbeat
+    match fn with
+    | .lam _name _ _ body env =>
+      -- Force the thunk to get the value, push onto closure env
+      let argV ← forceThunk argThunkId
+      try eval body (env.push argV)
+      catch e => throw s!"in apply-lam({_name}) [env={env.size}→{env.size+1}, body={body.tag}]: {e}"
+    | .neutral head spine =>
+      -- Accumulate thunk on spine (LAZY — not forced!)
+      pure (.neutral head (spine.push argThunkId))
+    | .ctor addr levels name cidx numParams numFields inductAddr spine =>
+      -- Accumulate thunk on ctor spine (LAZY — not forced!)
+      pure (.ctor addr levels name cidx numParams numFields inductAddr (spine.push argThunkId))
+    | .proj typeAddr idx structThunkId typeName spine => do
+      -- Try whnf on the struct to reduce the projection
+      let structV ← forceThunk structThunkId
+      let structV' ← whnfVal structV
+      let kenv := (← read).kenv
+      let prims := (← read).prims
+      match reduceValProjForced typeAddr idx structV' kenv prims with
+      | some fieldThunkId =>
+        let fieldV ← forceThunk fieldThunkId
+        -- Apply accumulated spine args first, then the new arg
+        let mut result := fieldV
+        for tid in spine do
+          result ← applyValThunk result tid
+        applyValThunk result argThunkId
+      | none =>
+        -- Projection still stuck — accumulate arg on spine
+        pure (.proj typeAddr idx structThunkId typeName (spine.push argThunkId))
+    | _ => throw s!"cannot apply non-function value"
+
+  /-- Force a thunk: if unevaluated, eval and memoize; if evaluated, return cached. -/
+  partial def forceThunk (id : Nat) : TypecheckM σ m (Val m) := do
+    let tableRef := (← read).thunkTable
+    let table ← ST.Ref.get tableRef
+    if h : id < table.size then
+      let entryRef := table[id]
+      let entry ← ST.Ref.get entryRef
+      match entry with
+      | .evaluated val =>
+        pure val
+      | .unevaluated expr env =>
+        heartbeat
+        let val ← eval expr env
+        ST.Ref.set entryRef (.evaluated val)
+        pure val
+    else
+      throw s!"thunk id {id} out of bounds (table size {table.size})"
+
+  /-- Iota-reduction: reduce a recursor applied to a constructor. -/
+  partial def tryIotaReduction (_addr : Address) (levels : Array (KLevel m))
+      (spine : Array Nat) (params motives minors indices : Nat)
+      (rules : Array (Nat × KTypedExpr m)) : TypecheckM σ m (Option (Val m)) := do
+    let majorIdx := params + motives + minors + indices
+    if majorIdx >= spine.size then return none
+    let major ← forceThunk spine[majorIdx]!
+    let major' ← whnfVal major
+    -- Convert nat literal to constructor form (0 → Nat.zero, n+1 → Nat.succ)
+    let major'' ← match major' with
+      | .lit (.natVal _) => natLitToCtorThunked major'
+      | v => pure v
+    -- Check if major is a constructor
+    match major'' with
+    | .ctor _ _ _ ctorIdx numParams _ _ ctorSpine =>
+      match rules[ctorIdx]? with
+      | some (nfields, rhs) =>
+        if nfields > ctorSpine.size then return none
+        let rhsBody := rhs.body.instantiateLevelParams levels
+        let mut result ← eval rhsBody #[]
+        -- Apply params + motives + minors from rec spine
+        let pmmEnd := params + motives + minors
+        for i in [:pmmEnd] do
+          if i < spine.size then
+            result ← applyValThunk result spine[i]!
+        -- Apply constructor fields (skip constructor params)
+        let ctorParamCount := numParams
+        for i in [ctorParamCount:ctorSpine.size] do
+          result ← applyValThunk result ctorSpine[i]!
+        -- Apply extra args after major premise
+        if majorIdx + 1 < spine.size then
+          for i in [majorIdx + 1:spine.size] do
+            result ← applyValThunk result spine[i]!
+        return some result
+      | none => return none
+    | _ => return none
+
+  /-- For K-like inductives, verify the major's type matches the inductive.
+      Returns the constructed ctor (not needed for K-reduction itself, just validation). -/
+  partial def toCtorWhenKVal (major : Val m) (indAddr : Address)
+      : TypecheckM σ m (Option (Val m)) := do
     let kenv := (← read).kenv
     match kenv.find? indAddr with
     | some (.inductInfo iv) =>
       if iv.ctors.isEmpty then return none
       let ctorAddr := iv.ctors[0]!
-      -- Infer major's type and check it matches the inductive
-      let (_, majorType) ← try withInferOnly (infer major) catch _ => return none
-      let majorType' ← whnf majorType
-      let majorHead := majorType'.getAppFn
-      match majorHead with
-      | .const headAddr _ _ =>
+      let majorType ← try inferTypeOfVal major catch e =>
+        if (← read).trace then dbg_trace s!"toCtorWhenKVal: inferTypeOfVal(major) threw: {e}"
+        return none
+      let majorType' ← whnfVal majorType
+      match majorType' with
+      | .neutral (.const headAddr univs _) typeSpine =>
         if headAddr != indAddr then return none
-        -- Construct the nullary constructor applied to params from the type
-        let typeArgs := majorType'.getAppArgs
-        let ctorUnivs := majorHead.constLevels!
-        let mut ctor : Expr m := Expr.mkConst ctorAddr ctorUnivs
-        -- Apply params (first numParams args of the type)
+        -- Build the nullary ctor applied to params from the type
+        let mut ctorArgs : Array Nat := #[]
         for i in [:iv.numParams] do
-          if i < typeArgs.size then
-            ctor := Expr.mkApp ctor typeArgs[i]!
-        -- Verify ctor type matches major type (prevents K-reduction when indices differ)
-        let (_, ctorType) ← try withInferOnly (infer ctor) catch _ => return none
-        if !(← isDefEq majorType' ctorType) then return none
-        return some ctor
+          if i < typeSpine.size then
+            ctorArgs := ctorArgs.push typeSpine[i]!
+        -- Look up ctor info to build Val.ctor
+        match kenv.find? ctorAddr with
+        | some (.ctorInfo cv) =>
+          let ctorVal := Val.ctor ctorAddr univs default cv.cidx cv.numParams cv.numFields cv.induct ctorArgs
+          -- Verify ctor type matches major type
+          let ctorType ← try inferTypeOfVal ctorVal catch e =>
+            if (← read).trace then dbg_trace s!"toCtorWhenKVal: inferTypeOfVal(ctor) threw: {e}"
+            return none
+          if !(← isDefEq majorType ctorType) then return none
+          return some ctorVal
+        | _ => return none
       | _ => return none
     | _ => return none
 
-  /-- Iota-reduction: reduce a recursor applied to a constructor.
-      Follows the lean4 algorithm:
-        1. Apply params + motives + minors from recursor args to rule RHS
-        2. Apply constructor fields (skip constructor params) to rule RHS
-        3. Apply extra args after major premise to rule RHS
-      Beta reduction happens in the subsequent whnfCore call. -/
-  partial def tryIotaReduction (e : Expr m) (_addr : Address) (args : Array (Expr m))
-      (major : Expr m) (params indices : Nat) (indAddr : Address)
-      (rules : Array (Nat × TypedExpr m))
-      (motives minors : Nat) : TypecheckM m (Expr m) := do
-    let prims := (← read).prims
-    let majorCtor := toCtorIfLit prims major
-    let majorFn := majorCtor.getAppFn
-    match majorFn with
-    | .const ctorAddr _ _ => do
-      let kenv := (← read).kenv
-      let typedConsts := (← get).typedConsts
-      let ctorInfo? := match kenv.find? ctorAddr with
-        | some (.ctorInfo cv) => some (cv.cidx, cv.numFields)
-        | _ =>
-          match typedConsts.get? ctorAddr with
-          | some (.constructor _ ctorIdx numFields) => some (ctorIdx, numFields)
-          | _ => none
-      match ctorInfo? with
-      | some (ctorIdx, _) =>
-        match rules[ctorIdx]? with
-        | some (nfields, rhs) =>
-          let majorArgs := majorCtor.getAppArgs
-          if nfields > majorArgs.size then return e
-          -- Instantiate universe level params in the rule RHS
-          let recFn := e.getAppFn
-          let recLevels := recFn.constLevels!
-          let mut result := rhs.body.instantiateLevelParams recLevels
-          -- Phase 1: Apply params + motives + minors from recursor args
-          let pmmEnd := params + motives + minors
-          result := result.mkAppRange 0 pmmEnd args
-          -- Phase 2: Apply constructor fields (skip constructor's own params)
-          let ctorParamCount := majorArgs.size - nfields
-          result := result.mkAppRange ctorParamCount majorArgs.size majorArgs
-          -- Phase 3: Apply remaining arguments after major premise
-          let majorIdx := params + motives + minors + indices
-          if majorIdx + 1 < args.size then
-            result := result.mkAppRange (majorIdx + 1) args.size args
-          pure result  -- return raw result; whnfCore's loop will re-process
-        | none => pure e
-      | none =>
-        -- Not a constructor, try structure eta
-        tryStructEta e args params indices indAddr rules major motives minors
-    | _ =>
-      tryStructEta e args params indices indAddr rules major motives minors
+  /-- K-reduction: for K-recursors (Prop, single zero-field ctor).
+      Returns the minor premise directly, without needing the major to be a constructor. -/
+  partial def tryKReductionVal (_levels : Array (KLevel m)) (spine : Array Nat)
+      (params motives minors indices : Nat) (indAddr : Address)
+      (_rules : Array (Nat × KTypedExpr m)) : TypecheckM σ m (Option (Val m)) := do
+    let majorIdx := params + motives + minors + indices
+    if majorIdx >= spine.size then return none
+    let major ← forceThunk spine[majorIdx]!
+    let major' ← whnfVal major
+    -- Check if major is already a constructor
+    let isCtor := match major' with
+      | .ctor .. => true
+      | _ => false
+    if !isCtor then
+      -- Verify major's type matches the K-inductive
+      match ← toCtorWhenKVal major' indAddr with
+      | some _ => pure ()  -- type matches, proceed with K-reduction
+      | none => return none
+    -- K-reduction: return the minor premise
+    let minorIdx := params + motives
+    if minorIdx >= spine.size then return none
+    let minor ← forceThunk spine[minorIdx]!
+    let mut result := minor
+    -- Apply extra args after major
+    if majorIdx + 1 < spine.size then
+      for i in [majorIdx + 1:spine.size] do
+        result ← applyValThunk result spine[i]!
+    return some result
 
-  /-- Structure eta: expand struct-like major via projections.
-      Skips Prop structures (proof irrelevance handles those; projections may not reduce). -/
-  partial def tryStructEta (e : Expr m) (args : Array (Expr m))
-      (params : Nat) (indices : Nat) (indAddr : Address)
-      (rules : Array (Nat × TypedExpr m)) (major : Expr m)
-      (motives minors : Nat) : TypecheckM m (Expr m) := do
+  /-- Structure eta in iota: when major isn't a ctor but inductive is structure-like,
+      eta-expand via projections. Skips Prop structures. -/
+  partial def tryStructEtaIota (levels : Array (KLevel m)) (spine : Array Nat)
+      (params motives minors indices : Nat) (indAddr : Address)
+      (rules : Array (Nat × KTypedExpr m)) (major : Val m)
+      : TypecheckM σ m (Option (Val m)) := do
     let kenv := (← read).kenv
-    if !kenv.isStructureLike indAddr then return e
-    -- Skip Prop structures: proof irrelevance handles them, projections may not reduce.
-    let (_, majorType) ← try withInferOnly (infer major) catch _ => return e
-    if ← (try isProp majorType catch _ => pure false) then return e
+    if !kenv.isStructureLike indAddr then return none
+    -- Skip Prop structures (proof irrelevance handles them)
+    let isPropType ← try isPropVal major catch e =>
+      if (← read).trace then dbg_trace s!"tryStructEtaIota: isPropVal threw: {e}"
+      pure false
+    if isPropType then return none
     match rules[0]? with
     | some (nfields, rhs) =>
-      let recFn := e.getAppFn
-      let recLevels := recFn.constLevels!
-      let mut result := rhs.body.instantiateLevelParams recLevels
+      let rhsBody := rhs.body.instantiateLevelParams levels
+      let mut result ← eval rhsBody #[]
       -- Phase 1: params + motives + minors
       let pmmEnd := params + motives + minors
-      result := result.mkAppRange 0 pmmEnd args
+      for i in [:pmmEnd] do
+        if i < spine.size then
+          result ← applyValThunk result spine[i]!
       -- Phase 2: projections as fields
-      let mut projArgs : Array (Expr m) := #[]
+      let majorThunkId ← mkThunkFromVal major
       for i in [:nfields] do
-        projArgs := projArgs.push (Expr.mkProj indAddr i major)
-      result := projArgs.foldl (fun acc a => Expr.mkApp acc a) result
+        let projVal := Val.proj indAddr i majorThunkId default #[]
+        let projThunkId ← mkThunkFromVal projVal
+        result ← applyValThunk result projThunkId
       -- Phase 3: extra args after major
       let majorIdx := params + motives + minors + indices
-      if majorIdx + 1 < args.size then
-        result := result.mkAppRange (majorIdx + 1) args.size args
-      pure result  -- return raw result; whnfCore's loop will re-process
-    | none => pure e
+      if majorIdx + 1 < spine.size then
+        for i in [majorIdx + 1:spine.size] do
+          result ← applyValThunk result spine[i]!
+      return some result
+    | none => return none
 
-  /-- Quotient reduction: Quot.lift / Quot.ind.
-      For Quot.lift: `@Quot.lift α r β f h q` — reduceSize=6, fPos=3 (f is at index 3)
-      For Quot.ind:  `@Quot.ind α r β f q`   — reduceSize=5, fPos=3 (f is at index 3)
-      When major (q) reduces to `@Quot.mk α r a`, result is `f a`. -/
-  partial def tryQuotReduction (e : Expr m) (reduceSize fPos : Nat) : TypecheckM m (Expr m) := do
-    let args := e.getAppArgs
-    if args.size < reduceSize then return e
+  /-- Quotient reduction: Quot.lift / Quot.ind. -/
+  partial def tryQuotReduction (spine : Array Nat) (reduceSize fPos : Nat)
+      : TypecheckM σ m (Option (Val m)) := do
+    if spine.size < reduceSize then return none
     let majorIdx := reduceSize - 1
-    if h : majorIdx < args.size then
-      let major := args[majorIdx]
-      let major' ← whnf major
-      let majorFn := major'.getAppFn
-      match majorFn with
-      | .const majorAddr _ _ =>
-        ensureTypedConst majorAddr
-        match (← get).typedConsts.get? majorAddr with
-        | some (.quotient _ .ctor) =>
-          let majorArgs := major'.getAppArgs
-          -- Quot.mk has 3 args: [α, r, a]. The data 'a' is the last one.
-          if majorArgs.size < 3 then throw "Quot.mk should have at least 3 args"
-          let dataArg := majorArgs[majorArgs.size - 1]!
-          if h2 : fPos < args.size then
-            let f := args[fPos]
-            let result := Expr.mkApp f dataArg
-            -- Apply any extra args after the major premise
-            let result := if majorIdx + 1 < args.size then
-              result.mkAppRange (majorIdx + 1) args.size args
-            else result
-            pure result  -- return raw result; whnfCore's loop will re-process
-          else return e
-        | _ => return e
-      | _ => return e
-    else return e
+    let major ← forceThunk spine[majorIdx]!
+    let major' ← whnfVal major
+    match major' with
+    | .neutral (.const majorAddr _ _) majorSpine =>
+      ensureTypedConst majorAddr
+      match (← get).typedConsts.get? majorAddr with
+      | some (.quotient _ .ctor) =>
+        if majorSpine.size < 3 then throw "Quot.mk should have at least 3 args"
+        let dataArgThunk := majorSpine[majorSpine.size - 1]!
+        if fPos >= spine.size then return none
+        let f ← forceThunk spine[fPos]!
+        let mut result ← applyValThunk f dataArgThunk
+        if majorIdx + 1 < spine.size then
+          for i in [majorIdx + 1:spine.size] do
+            result ← applyValThunk result spine[i]!
+        return some result
+      | _ => return none
+    | _ => return none
 
-  /-- Try to reduce a Nat primitive, whnf'ing args if needed (like lean4lean's reduceNat).
-      Inside the mutual block so it can call `whnf` on arguments.
-      Handles both `.lit (.natVal n)` and `Nat.zero` constructor forms,
-      matching lean4lean's `rawNatLitExt?`. -/
-  partial def tryReduceNat (e : Expr m) : TypecheckM m (Option (Expr m)) := do
-    let fn := e.getAppFn
-    match fn with
-    | .const addr _ _ =>
+  /-- Structural WHNF implementation: proj reduction, iota reduction. No delta. -/
+  partial def whnfCoreImpl (v : Val m) (cheapRec : Bool) (cheapProj : Bool)
+      : TypecheckM σ m (Val m) := do
+    heartbeat
+    match v with
+    | .proj typeAddr idx structThunkId typeName spine => do
+      -- Collect nested projection chain (outside-in)
+      let mut projStack : Array (Address × Nat × KMetaField m Ix.Name × Array Nat) :=
+        #[(typeAddr, idx, typeName, spine)]
+      let mut innerThunkId := structThunkId
+      repeat
+        let innerV ← forceThunk innerThunkId
+        match innerV with
+        | .proj ta i st tn sp =>
+          projStack := projStack.push (ta, i, tn, sp)
+          innerThunkId := st
+        | _ => break
+      -- Reduce the innermost struct once
+      let innerV ← forceThunk innerThunkId
+      let innerV' ← if cheapProj then whnfCoreVal innerV cheapRec cheapProj
+                     else whnfVal innerV
+      -- Resolve projections from inside out (last pushed = innermost)
+      let kenv := (← read).kenv
+      let prims := (← read).prims
+      let mut current := innerV'
+      let mut i := projStack.size
+      while i > 0 do
+        i := i - 1
+        let (ta, ix, tn, sp) := projStack[i]!
+        match reduceValProjForced ta ix current kenv prims with
+        | some fieldThunkId =>
+          let fieldV ← forceThunk fieldThunkId
+          current ← whnfCoreVal fieldV cheapRec cheapProj
+          -- Apply accumulated spine args after reducing each projection
+          for tid in sp do
+            current ← applyValThunk current tid
+            current ← whnfCoreVal current cheapRec cheapProj
+        | none =>
+          -- This projection couldn't be resolved. Reconstruct remaining chain.
+          let mut stId ← mkThunkFromVal current
+          -- Rebuild from current projection outward
+          current := Val.proj ta ix stId tn sp
+          while i > 0 do
+            i := i - 1
+            let (ta', ix', tn', sp') := projStack[i]!
+            stId ← mkThunkFromVal current
+            current := Val.proj ta' ix' stId tn' sp'
+          return current
+      pure current
+    | .neutral (.const addr _ _) spine => do
+      if cheapRec then return v
+      -- Try iota/quot reduction — look up directly in kenv (not ensureTypedConst)
+      let kenv := (← read).kenv
+      match kenv.find? addr with
+      | some (.recInfo rv) =>
+        let levels := match v with | .neutral (.const _ ls _) _ => ls | _ => #[]
+        let typedRules := rv.rules.map fun r =>
+          (r.nfields, (⟨default, r.rhs⟩ : KTypedExpr m))
+        let indAddr := getMajorInduct rv.toConstantVal.type rv.numParams rv.numMotives rv.numMinors rv.numIndices |>.getD default
+        if rv.k then
+          -- K-reduction: for Prop inductives with single zero-field ctor
+          match ← tryKReductionVal levels spine rv.numParams rv.numMotives rv.numMinors rv.numIndices indAddr typedRules with
+          | some result => whnfCoreVal result cheapRec cheapProj
+          | none => pure v
+        else
+          match ← tryIotaReduction addr levels spine rv.numParams rv.numMotives rv.numMinors rv.numIndices typedRules with
+          | some result => whnfCoreVal result cheapRec cheapProj
+          | none =>
+            -- Struct eta fallback: expand struct-like major via projections
+            let majorIdx := rv.numParams + rv.numMotives + rv.numMinors + rv.numIndices
+            if majorIdx < spine.size then
+              let major ← forceThunk spine[majorIdx]!
+              let major' ← whnfVal major
+              match ← tryStructEtaIota levels spine rv.numParams rv.numMotives rv.numMinors rv.numIndices indAddr typedRules major' with
+              | some result => whnfCoreVal result cheapRec cheapProj
+              | none => pure v
+            else pure v
+      | some (.quotInfo qv) =>
+        match qv.kind with
+        | .lift =>
+          match ← tryQuotReduction spine 6 3 with
+          | some result => whnfCoreVal result cheapRec cheapProj
+          | none => pure v
+        | .ind =>
+          match ← tryQuotReduction spine 5 3 with
+          | some result => whnfCoreVal result cheapRec cheapProj
+          | none => pure v
+        | _ => pure v
+      | _ => pure v
+    | _ => pure v  -- lam, pi, sort, lit, fvar-neutral: already in WHNF
+
+  /-- Structural WHNF on Val: proj reduction, iota reduction. No delta.
+      cheapProj=true: don't whnf the struct inside a projection.
+      cheapRec=true: don't attempt iota reduction on recursors.
+      Caches results when !cheapRec && !cheapProj (pointer-keyed). -/
+  partial def whnfCoreVal (v : Val m) (cheapRec := false) (cheapProj := false)
+      : TypecheckM σ m (Val m) := do
+    let useCache := !cheapRec && !cheapProj
+    if useCache then
+      let vPtr := ptrAddrVal v
+      match (← get).whnfCoreCache.get? vPtr with
+      | some (inputRef, cached) =>
+        if ptrEq v inputRef then
+          return cached
+      | none => pure ()
+    let result ← whnfCoreImpl v cheapRec cheapProj
+    if useCache then
+      let vPtr := ptrAddrVal v
+      modify fun st => { st with
+        whnfCoreCache := st.whnfCoreCache.insert vPtr (v, result) }
+    pure result
+
+  /-- Single delta unfolding step. Returns none if not delta-reducible. -/
+  partial def deltaStepVal (v : Val m) : TypecheckM σ m (Option (Val m)) := do
+    heartbeat
+    match v with
+    | .neutral (.const addr levels name) spine =>
+      let kenv := (← read).kenv
+      match kenv.find? addr with
+      | some (.defnInfo dv) =>
+        let body := if dv.toConstantVal.numLevels == 0 then dv.value
+          else dv.value.instantiateLevelParams levels
+        let mut result ← eval body #[]
+        for thunkId in spine do
+          result ← applyValThunk result thunkId
+        pure (some result)
+      | some (.thmInfo tv) =>
+        let body := if tv.toConstantVal.numLevels == 0 then tv.value
+          else tv.value.instantiateLevelParams levels
+        let mut result ← eval body #[]
+        for thunkId in spine do
+          result ← applyValThunk result thunkId
+        pure (some result)
+      | _ => pure none
+    | _ => pure none
+
+  /-- Try to reduce a nat primitive. Selectively forces only the args needed. -/
+  partial def tryReduceNatVal (v : Val m) : TypecheckM σ m (Option (Val m)) := do
+    match v with
+    | .neutral (.const addr _ _) spine =>
       let prims := (← read).prims
       if !isPrimOp prims addr then return none
-      let args := e.getAppArgs
-      -- Nat.succ: 1 arg
       if addr == prims.natSucc then
-        if args.size >= 1 then
-          let a ← whnf args[0]!
-          match extractNatVal prims a with
-          | some n => return some (.lit (.natVal (n + 1)))
-          | none => return none
-        else return none
-      -- Binary nat operations: 2 args, whnf both (matches lean4lean reduceBinNatOp)
-      else if args.size >= 2 then
-        let a ← whnf args[0]!
-        let b ← whnf args[1]!
-        match extractNatVal prims a, extractNatVal prims b with
-        | some x, some y =>
-          if addr == prims.natAdd then return some (.lit (.natVal (x + y)))
-          else if addr == prims.natSub then return some (.lit (.natVal (x - y)))
-          else if addr == prims.natMul then return some (.lit (.natVal (x * y)))
-          else if addr == prims.natPow then
-            if y > 16777216 then return none
-            return some (.lit (.natVal (Nat.pow x y)))
-          else if addr == prims.natMod then return some (.lit (.natVal (x % y)))
-          else if addr == prims.natDiv then return some (.lit (.natVal (x / y)))
-          else if addr == prims.natGcd then return some (.lit (.natVal (Nat.gcd x y)))
-          else if addr == prims.natBeq then
-            let boolAddr := if x == y then prims.boolTrue else prims.boolFalse
-            return some (Expr.mkConst boolAddr #[])
-          else if addr == prims.natBle then
-            let boolAddr := if x ≤ y then prims.boolTrue else prims.boolFalse
-            return some (Expr.mkConst boolAddr #[])
-          else if addr == prims.natLand then return some (.lit (.natVal (Nat.land x y)))
-          else if addr == prims.natLor then return some (.lit (.natVal (Nat.lor x y)))
-          else if addr == prims.natXor then return some (.lit (.natVal (Nat.xor x y)))
-          else if addr == prims.natShiftLeft then return some (.lit (.natVal (Nat.shiftLeft x y)))
-          else if addr == prims.natShiftRight then return some (.lit (.natVal (Nat.shiftRight x y)))
-          else return none
-        | _, _ => return none
+        if h : 0 < spine.size then
+          let arg ← forceThunk spine[0]
+          let arg' ← whnfVal arg
+          match extractNatVal prims arg' with
+          | some n => pure (some (.lit (.natVal (n + 1))))
+          | none => pure none
+        else pure none
+      else if h : 1 < spine.size then
+        let a ← forceThunk spine[0]
+        let b ← forceThunk spine[1]
+        let a' ← whnfVal a
+        let b' ← whnfVal b
+        match extractNatVal prims a', extractNatVal prims b' with
+        | some x, some y => pure (computeNatPrim prims addr x y)
+        -- Partial reduction: second arg is 0 (base cases of Nat.add/sub/mul/pow recursors)
+        | _, some 0 =>
+          if addr == prims.natAdd then pure (some a')                      -- n + 0 = n
+          else if addr == prims.natSub then pure (some a')                 -- n - 0 = n
+          else if addr == prims.natMul then pure (some (.lit (.natVal 0))) -- n * 0 = 0
+          else if addr == prims.natPow then pure (some (.lit (.natVal 1))) -- n ^ 0 = 1
+          else pure none
+        | _, _ => pure none
+      else pure none
+    | _ => pure none
+
+  /-- Try to reduce a native reduction marker (reduceBool/reduceNat).
+      Shape: `neutral (const reduceBool/reduceNat []) [thunk(const targetDef [])]`.
+      Looks up the target constant's definition, evaluates it, and extracts Bool/Nat. -/
+  partial def reduceNativeVal (v : Val m) : TypecheckM σ m (Option (Val m)) := do
+    match v with
+    | .neutral (.const fnAddr _ _) spine =>
+      let prims := (← read).prims
+      if prims.reduceBool == default && prims.reduceNat == default then return none
+      let isReduceBool := fnAddr == prims.reduceBool
+      let isReduceNat := fnAddr == prims.reduceNat
+      if !isReduceBool && !isReduceNat then return none
+      if h : 0 < spine.size then
+        let arg ← forceThunk spine[0]
+        match arg with
+        | .neutral (.const defAddr levels _) _ =>
+          let kenv := (← read).kenv
+          match kenv.find? defAddr with
+          | some (.defnInfo dv) =>
+            let body := if dv.toConstantVal.numLevels == 0 then dv.value
+              else dv.value.instantiateLevelParams levels
+            let result ← eval body #[]
+            let result' ← whnfVal result
+            if isReduceBool then
+              if isBoolTrue prims result' then
+                return some (← mkCtorVal prims.boolTrue #[] #[])
+              else
+                let isFalse := match result' with
+                  | .neutral (.const addr _ _) sp => addr == prims.boolFalse && sp.isEmpty
+                  | .ctor addr _ _ _ _ _ _ sp => addr == prims.boolFalse && sp.isEmpty
+                  | _ => false
+                if isFalse then
+                  return some (← mkCtorVal prims.boolFalse #[] #[])
+                else throw "reduceBool: constant did not reduce to Bool.true or Bool.false"
+            else -- isReduceNat
+              match extractNatVal prims result' with
+              | some n => return some (.lit (.natVal n))
+              | none => throw "reduceNat: constant did not reduce to a Nat literal"
+          | _ => throw "reduceNative: target is not a definition"
+        | _ => return none
       else return none
     | _ => return none
 
-  /-- Evaluate a native reduction marker (`Lean.reduceBool c` or `Lean.reduceNat c`).
-      Looks up the target constant's definition and fully reduces it via `whnf`
-      to extract the Bool/Nat result. This is the whnf-based fallback for
-      `native_decide`; a CEK machine evaluator would be faster for complex proofs. -/
-  partial def reduceNativeExpr (t : Expr m) : TypecheckM m (Option (Expr m)) := do
-    let prims := (← read).prims
-    let kenv := (← read).kenv
-    -- Expression shape: app (const reduceBool/reduceNat []) (const targetDef [])
-    let .app fn constArg := t | return none
-    let .const fnAddr _ _ := fn | return none
-    let .const defAddr _ _ := constArg | return none
-    let isReduceBool := fnAddr == prims.reduceBool
-    let isReduceNat := fnAddr == prims.reduceNat
-    if !isReduceBool && !isReduceNat then return none
-    match kenv.find? defAddr with
-    | some (.defnInfo dv) =>
-      let result ← whnf dv.value
-      if isReduceBool then
-        if result.isConstOf prims.boolTrue then
-          return some (Expr.mkConst prims.boolTrue #[])
-        else if result.isConstOf prims.boolFalse then
-          return some (Expr.mkConst prims.boolFalse #[])
-        else throw s!"reduceBool: constant did not reduce to Bool.true or Bool.false"
-      else -- isReduceNat
-        match extractNatVal prims result with
-        | some n => return some (.lit (.natVal n))
-        | none => throw s!"reduceNat: constant did not reduce to a Nat literal"
-    | _ => throw s!"reduceNative: target is not a definition"
-
-  partial def whnf (e : Expr m) : TypecheckM m (Expr m) := do
-    -- Trivially-irreducible expressions: return immediately (no fuel/depth cost)
-    match e with
-    | .sort .. | .forallE .. | .lit .. => return e
-    | .bvar idx _ =>
-      -- BVar is irreducible unless let-bound (zeta-reduction needed)
-      let ctx ← read
-      let depth := ctx.types.size
-      if idx < depth then
-        let arrayIdx := depth - 1 - idx
-        if h : arrayIdx < ctx.letValues.size then
-          if ctx.letValues[arrayIdx].isNone then return e
-      else return e  -- out-of-range bvar, can't reduce
-    | _ => pure ()
-    -- Cache check — no fuel or stack cost for cache hits
-    -- Context-aware: stores binding context alongside result, verified via ptr equality
-    let types := (← read).types
-    if let some (cachedTypes, r) := (← get).whnfCache.get? e then
-      if unsafe ptrAddrUnsafe cachedTypes == ptrAddrUnsafe types || cachedTypes == types then
-        modify fun s => { s with whnfCacheHits := s.whnfCacheHits + 1 }
-        return r
-    modify fun s => { s with whnfCalls := s.whnfCalls + 1 }
-    withRecDepthCheck do
-    withFuelCheck do
-    let r ← whnfImpl e
-    modify fun s => { s with whnfCache := s.whnfCache.insert e (types, r) }
-    pure r
-
-  partial def whnfImpl (e : Expr m) : TypecheckM m (Expr m) := do
-    -- Use cheapProj=true so projections are deferred to the iterative chain handler below.
-    -- This avoids O(depth) recursive whnf calls for nested projections like a.b.c.d.
-    let mut t ← whnfCore e (cheapProj := true)
-    let mut steps := 0
-    repeat
-      if steps > 10000 then throw "whnf delta step limit (10000) exceeded"
-      -- Try native reduction (reduceBool/reduceNat markers)
-      -- These are @[extern] constants used by native_decide. When we see
-      -- `Lean.reduceBool c` or `Lean.reduceNat c`, look up c's definition
-      -- and fully reduce it via whnf to extract the Bool/Nat result.
+  /-- Try to fully evaluate a delta-reducible neutral by unfolding its definition
+      and eagerly applying all spine args. Returns none if stuck (non-reducible neutral,
+      opaque/partial, or evaluation fails). Like Kernel1's Eval.tryEvalToExpr. -/
+  partial def tryEvalVal (v : Val m) (fuel : Nat := 10000) : TypecheckM σ m (Option (Val m)) := do
+    if fuel == 0 then return none
+    match v with
+    | .neutral (.const addr levels _) spine =>
+      let kenv := (← read).kenv
       let prims := (← read).prims
-      if prims.reduceBool != default || prims.reduceNat != default then
-        if let some r ← reduceNativeExpr t then
-          t ← whnfCore r (cheapProj := true); steps := steps + 1; continue
-      -- Try nat primitive reduction (whnf's args like lean4lean's reduceNat)
-      if let some r := ← tryReduceNat t then
-        t ← whnfCore r (cheapProj := true); steps := steps + 1; continue
-      -- Handle projections iteratively: flatten nested projection chains
-      -- and resolve from inside out with a single whnf call on the innermost struct.
-      match t.getAppFn with
-      | .proj _ _ _ _ =>
-        -- Collect the projection chain from outside in
-        let mut projStack : Array (Address × Nat × Array (Expr m)) := #[]
-        let mut inner := t
-        repeat
-          match inner.getAppFn with
-          | .proj typeAddr idx struct _ =>
-            projStack := projStack.push (typeAddr, idx, inner.getAppArgs)
-            inner := struct
-          | _ => break
-        -- Reduce the innermost struct with depth-guarded whnf
-        let innerReduced ← whnf inner
-        -- Resolve projections from inside out (last pushed = innermost)
-        let mut current := innerReduced
-        let mut allResolved := true
-        let mut i := projStack.size
-        while i > 0 do
-          i := i - 1
-          let (typeAddr, idx, args) := projStack[i]!
-          match ← reduceProj typeAddr idx current with
-          | some result =>
-            let applied := if args.isEmpty then result else result.mkAppN args
-            current ← whnfCore applied (cheapProj := true)
-          | none =>
-            -- This projection couldn't be resolved. Reconstruct remaining chain.
-            let stuck := if args.isEmpty then
-              Expr.mkProj typeAddr idx current
-            else
-              (Expr.mkProj typeAddr idx current).mkAppN args
-            current ← whnfCore stuck (cheapProj := true)
-            -- Reconstruct outer projections
-            while i > 0 do
-              i := i - 1
-              let (ta, ix, as) := projStack[i]!
-              current := if as.isEmpty then
-                Expr.mkProj ta ix current
-              else
-                (Expr.mkProj ta ix current).mkAppN as
-            allResolved := false
-            break
-        if allResolved || current != t then
-          t := current; steps := steps + 1; continue
-      | _ => pure ()
-      -- Try delta unfolding
-      if let some r := ← unfoldDefinition t then
-        t ← whnfCore r (cheapProj := true); steps := steps + 1; continue
-      break
-    pure t
-
-  /-- Unfold a single delta step (definition body). -/
-  partial def unfoldDefinition (e : Expr m) : TypecheckM m (Option (Expr m)) := do
-    let head := e.getAppFn
-    match head with
-    | .const addr levels _ => do
-      let ci ← derefConst addr
-      match ci with
-      | .defnInfo v =>
-        if levels.size != v.numLevels then return none
-        let body := v.value.instantiateLevelParams levels
-        return some (body.mkAppN (e.getAppArgs))
-      | .thmInfo v =>
-        if levels.size != v.numLevels then return none
-        let body := v.value.instantiateLevelParams levels
-        return some (body.mkAppN (e.getAppArgs))
+      -- Nat primitives: try direct computation
+      if isPrimOp prims addr then
+        return ← tryReduceNatVal v
+      match kenv.find? addr with
+      | some (.defnInfo dv) =>
+        if dv.safety == .partial then return none
+        let body := if dv.toConstantVal.numLevels == 0 then dv.value
+          else dv.value.instantiateLevelParams levels
+        let mut result ← eval body #[]
+        for thunkId in spine do
+          match result with
+          | .lam _ _ _ lamBody lamEnv =>
+            let argV ← forceThunk thunkId
+            result ← eval lamBody (lamEnv.push argV)
+          | _ =>
+            result ← applyValThunk result thunkId
+        -- Check if result is fully reduced (not a stuck neutral needing further delta)
+        match result with
+        | .lit .. | .ctor .. | .lam .. | .pi .. | .sort .. => return some result
+        | .neutral (.const addr' _ _) _ =>
+          match kenv.find? addr' with
+          | some (.defnInfo _) | some (.thmInfo _) => return none  -- needs more delta, bail
+          | _ => return some result  -- stuck on axiom/inductive/etc, return as-is
+        | _ => return some result
       | _ => return none
     | _ => return none
 
-  -- Type Inference and Checking
-
-  /-- Check that a term has a given type. -/
-  partial def check (term : Expr m) (expectedType : Expr m) : TypecheckM m (TypedExpr m) := do
-    -- if (← read).trace then dbg_trace s!"check: {term.tag}"
-    let (te, inferredType) ← infer term
-    if !(← isDefEq inferredType expectedType) then
-      let ppInferred := inferredType.pp
-      let ppExpected := expectedType.pp
-      throw s!"Type mismatch on {term.tag}\n  inferred: {ppInferred}\n  expected: {ppExpected}"
-    pure te
-
-  /-- Infer the type of an expression, returning the typed expression and its type. -/
-  partial def infer (term : Expr m) : TypecheckM m (TypedExpr m × Expr m) := do
-    -- Check infer cache FIRST — no fuel or stack cost for cache hits
-    let types := (← read).types
-    if let some (cachedCtx, cachedInfo, cachedType) := (← get).inferCache.get? term then
-      -- Ptr equality first, structural BEq fallback
-      -- For consts/sorts/lits, context doesn't matter (always closed)
-      let contextOk := match term with
-        | .const .. | .sort .. | .lit .. => true
-        | _ => unsafe ptrAddrUnsafe cachedCtx == ptrAddrUnsafe types || cachedCtx == types
-      if contextOk then
-        modify fun s => { s with inferCacheHits := s.inferCacheHits + 1 }
-        let te : TypedExpr m := ⟨cachedInfo, term⟩
-        return (te, cachedType)
-    modify fun s => { s with inferCalls := s.inferCalls + 1 }
-    withRecDepthCheck do
-    withFuelCheck do
-    let result ← do match term with
-      | .bvar idx bvarName => do
-        let ctx ← read
-        let depth := ctx.types.size
-        if idx < depth then
-          let arrayIdx := depth - 1 - idx
-          if h : arrayIdx < ctx.types.size then
-            let rawType := ctx.types[arrayIdx]
-            let typ := rawType.liftBVars (idx + 1)
-            let te : TypedExpr m := ⟨← infoFromType typ, .bvar idx bvarName⟩
-            pure (te, typ)
-          else
-            throw s!"var@{idx} out of environment range (size {ctx.types.size})"
+  /-- Full WHNF: whnfCore + delta + native reduction + nat prims, repeat until stuck. -/
+  partial def whnfVal (v : Val m) (deltaSteps : Nat := 0) : TypecheckM σ m (Val m) := do
+    let maxDelta := if (← read).eagerReduce then 500000 else 50000
+    if deltaSteps > maxDelta then throw "whnfVal delta step limit exceeded"
+    -- WHNF cache: check pointer-keyed cache (only at top-level entry)
+    let vPtr := ptrAddrVal v
+    if deltaSteps == 0 then
+      heartbeat
+      match (← get).whnfCache.get? vPtr with
+      | some (inputRef, cached) =>
+        if ptrEq v inputRef then
+          return cached
+      | none => pure ()
+    let v' ← whnfCoreVal v
+    let result ← do
+      match ← tryReduceNatVal v' with
+      | some v'' => whnfVal v'' (deltaSteps + 1)
+      | none =>
+        -- If v' is a nat prim whose args are genuinely stuck (no nat constructor/literal),
+        -- delta-unfolding is wasteful: iota won't fire on the stuck recursor.
+        -- Only block when NEITHER arg is a nat constructor; if either is (e.g., Nat.succ x),
+        -- delta+iota will make progress. lazyDelta bypasses this (calls deltaStepVal directly).
+        let skipDelta ← do
+          let prims := (← read).prims
+          if !isNatPrimHead prims v' then pure false
+          else match v' with
+            | .neutral _ spine =>
+              if spine.isEmpty then pure false
+              else
+                let mut anyConstructor := false
+                for i in [:min 2 spine.size] do
+                  if h : i < spine.size then
+                    let arg ← forceThunk spine[i]
+                    let arg' ← whnfVal arg
+                    if isNatConstructor prims arg' then
+                      anyConstructor := true; break
+                pure !anyConstructor
+            | _ => pure false
+        if skipDelta then pure v'
         else
-          match ctx.mutTypes.get? (idx - depth) with
-          | some (addr, typeExprFn) =>
-            if some addr == ctx.recAddr? then
-              throw s!"Invalid recursion"
-            let univs := Array.ofFn (n := 0) fun i => Level.param i.val (default : MetaField m Ix.Name)
-            let typ := typeExprFn univs
-            let name ← lookupName addr
-            let te : TypedExpr m := ⟨← infoFromType typ, .const addr univs name⟩
-            pure (te, typ)
+          match ← tryEvalVal v' with
+          | some v'' => whnfVal v'' (deltaSteps + 1)
           | none =>
-            throw s!"var@{idx} out of environment range and does not represent a mutual constant"
-      | .sort lvl => do
-        let lvl' := Level.succ lvl
-        let typ := Expr.mkSort lvl'
-        let te : TypedExpr m := ⟨.sort lvl', .sort lvl⟩
-        pure (te, typ)
-      | .app .. => do
-        -- Flatten app spine to avoid O(num_args) stack depth
-        let args := term.getAppArgs
-        let fn := term.getAppFn
-        let (fnTe, fncType) ← infer fn
-        let mut currentType := fncType
-        let mut resultBody := fnTe.body
-        let inferOnly := (← read).inferOnly
-        for h : i in [:args.size] do
-          let arg := args[i]
-          let currentType' ← whnf currentType
-          match currentType' with
-          | .forallE dom body _ _ => do
-            if inferOnly then
-              resultBody := Expr.mkApp resultBody arg
-            else
-              let argTe ← check arg dom
-              resultBody := Expr.mkApp resultBody argTe.body
-            currentType := body.instantiate1 arg
-          | _ =>
-            throw s!"Expected a pi type, got {currentType'.pp}\n  function: {fn.pp}\n  arg #{i}: {arg.pp}"
-        let te : TypedExpr m := ⟨← infoFromType currentType, resultBody⟩
-        pure (te, currentType)
-      | .lam .. => do
-        -- Iterate lambda chain to avoid O(n) stack depth
-        let inferOnly := (← read).inferOnly
-        let mut cur := term
-        let mut extTypes := (← read).types
-        let mut extLetValues := (← read).letValues
-        let mut binderMeta : Array (Expr m × Expr m × MetaField m Ix.Name × MetaField m Lean.BinderInfo) := #[]
-        repeat
-          match cur with
-          | .lam ty body lamName lamBi =>
-            let domBody ← if inferOnly then pure ty
-              else do let (te, _) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isSort ty); pure te.body
-            binderMeta := binderMeta.push (domBody, ty, lamName, lamBi)
-            extTypes := extTypes.push ty
-            extLetValues := extLetValues.push none
-            cur := body
-          | _ => break
-        let (bodTe, imgType) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (infer cur)
-        let mut resultType := imgType
-        let mut resultBody := bodTe.body
-        let mut resultInfo := bodTe.info
-        for i in [:binderMeta.size] do
-          let j := binderMeta.size - 1 - i
-          let (domBody, origTy, lamName, lamBi) := binderMeta[j]!
-          resultType := .forallE origTy resultType lamName default
-          resultBody := .lam domBody resultBody lamName lamBi
-          resultInfo := lamInfo resultInfo
-        pure (⟨resultInfo, resultBody⟩, resultType)
-      | .forallE .. => do
-        -- Iterate forallE chain to avoid O(n) stack depth
-        let mut cur := term
-        let mut extTypes := (← read).types
-        let mut extLetValues := (← read).letValues
-        let mut binderMeta : Array (Expr m × Level m × MetaField m Ix.Name) := #[]
-        repeat
-          match cur with
-          | .forallE ty body piName _ =>
-            let (domTe, domLvl) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isSort ty)
-            binderMeta := binderMeta.push (domTe.body, domLvl, piName)
-            extTypes := extTypes.push ty
-            extLetValues := extLetValues.push none
-            cur := body
-          | _ => break
-        let (imgTe, imgLvl) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isSort cur)
-        let mut resultLvl := imgLvl
-        let mut resultBody := imgTe.body
-        for i in [:binderMeta.size] do
-          let j := binderMeta.size - 1 - i
-          let (domBody, domLvl, piName) := binderMeta[j]!
-          resultLvl := Level.reduceIMax domLvl resultLvl
-          resultBody := .forallE domBody resultBody piName default
-        let typ := Expr.mkSort resultLvl
-        pure (⟨← infoFromType typ, resultBody⟩, typ)
-      | .letE .. => do
-        -- Iterate let chain to avoid O(n) stack depth
-        let inferOnly := (← read).inferOnly
-        let mut cur := term
-        let mut extTypes := (← read).types
-        let mut extLetValues := (← read).letValues
-        let mut extNumLets := (← read).numLetBindings
-        let mut binderInfo : Array (Expr m × Expr m × Expr m × MetaField m Ix.Name) := #[]
-        repeat
-          match cur with
-          | .letE ty val body letName =>
-            if inferOnly then
-              binderInfo := binderInfo.push (ty, val, val, letName)
-            else
-              let (tyTe, _) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, numLetBindings := extNumLets }) (isSort ty)
-              let valTe ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, numLetBindings := extNumLets }) (check val ty)
-              binderInfo := binderInfo.push (tyTe.body, valTe.body, val, letName)
-            extTypes := extTypes.push ty
-            extLetValues := extLetValues.push (some val)
-            extNumLets := extNumLets + 1
-            cur := body
-          | _ => break
-        let (bodTe, bodType) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, numLetBindings := extNumLets }) (infer cur)
-        let mut resultType := bodType.cheapBetaReduce
-        let mut resultBody := bodTe.body
-        for i in [:binderInfo.size] do
-          let j := binderInfo.size - 1 - i
-          let (tyBody, valBody, origVal, letName) := binderInfo[j]!
-          resultType := resultType.instantiate1 origVal
-          resultBody := .letE tyBody valBody resultBody letName
-        pure (⟨bodTe.info, resultBody⟩, resultType)
-      | .lit (.natVal _) => do
-        let prims := (← read).prims
-        let typ := Expr.mkConst prims.nat #[]
-        let te : TypedExpr m := ⟨.none, term⟩
-        pure (te, typ)
-      | .lit (.strVal _) => do
-        let prims := (← read).prims
-        let typ := Expr.mkConst prims.string #[]
-        let te : TypedExpr m := ⟨.none, term⟩
-        pure (te, typ)
-      | .const addr constUnivs _ => do
-        ensureTypedConst addr
-        -- Safety check: safe declarations cannot reference unsafe/partial constants
-        let inferOnly := (← read).inferOnly
-        if !inferOnly then
-          let ci ← derefConst addr
-          let curSafety := (← read).safety
-          if ci.isUnsafe && curSafety != .unsafe then
-            throw s!"invalid declaration, it uses unsafe declaration {addr}"
-          if let .defnInfo v := ci then
-            if v.safety == .partial && curSafety == .safe then
-              throw s!"invalid declaration, safe declaration must not contain partial declaration {addr}"
-          -- Universe level param count validation
-          if constUnivs.size != ci.numLevels then
-            throw s!"incorrect number of universe levels for {addr}: expected {ci.numLevels}, got {constUnivs.size}"
-        match (← get).constTypeCache.get? addr with
-        | some (cachedUnivs, cachedTyp) =>
-          if cachedUnivs == constUnivs then
-            let te : TypedExpr m := ⟨← infoFromType cachedTyp, term⟩
-            pure (te, cachedTyp)
-          else
-            let tconst ← derefTypedConst addr
-            let typ := tconst.type.body.instantiateLevelParams constUnivs
-            modify fun stt => { stt with constTypeCache := stt.constTypeCache.insert addr (constUnivs, typ) }
-            let te : TypedExpr m := ⟨← infoFromType typ, term⟩
-            pure (te, typ)
-        | none =>
-          let tconst ← derefTypedConst addr
-          let typ := tconst.type.body.instantiateLevelParams constUnivs
-          modify fun stt => { stt with constTypeCache := stt.constTypeCache.insert addr (constUnivs, typ) }
-          let te : TypedExpr m := ⟨← infoFromType typ, term⟩
-          pure (te, typ)
-      | .proj typeAddr idx struct _ => do
-        let (structTe, structType) ← infer struct
-        let (ctorType, ctorUnivs, numParams, params) ← getStructInfo structType
-        let mut ct := ctorType.instantiateLevelParams ctorUnivs
-        for _ in [:numParams] do
-          ct ← whnf ct
-          match ct with
-          | .forallE _ body _ _ => ct := body
-          | _ => throw "Structure constructor has too few parameters"
-        ct := ct.instantiate params.reverse
-        for i in [:idx] do
-          ct ← whnf ct
-          match ct with
-          | .forallE _ body _ _ =>
-            let projExpr := Expr.mkProj typeAddr i structTe.body
-            ct := body.instantiate1 projExpr
-          | _ => throw "Structure type does not have enough fields"
-        ct ← whnf ct
-        match ct with
-        | .forallE dom _ _ _ =>
-          let te : TypedExpr m := ⟨← infoFromType dom, .proj typeAddr idx structTe.body default⟩
-          pure (te, dom)
-        | _ => throw "Impossible case: structure type does not have enough fields"
-    -- Cache the inferred type and TypeInfo with the binding context
-    modify fun stt => { stt with inferCache := stt.inferCache.insert term (types, result.1.info, result.2) }
+            match ← deltaStepVal v' with
+            | some v'' => whnfVal v'' (deltaSteps + 1)
+            | none =>
+              match ← reduceNativeVal v' with
+              | some v'' =>
+                -- Structural-only WHNF after native reduction to prevent re-entry.
+                -- Matches Kernel1's approach (whnfCore, not whnfImpl).
+                whnfCoreVal v''
+              | none => pure v'
+    -- Cache the final result (only at top-level entry)
+    if deltaSteps == 0 then
+      modify fun st => { st with
+        whnfCache := st.whnfCache.insert vPtr (v, result) }
     pure result
 
+  /-- Quick structural pre-check on Val: O(1) cases that don't need WHNF. -/
+  partial def quickIsDefEqVal (t s : Val m) : Option Bool :=
+    if ptrEq t s then some true
+    else match t, s with
+    | .sort u, .sort v => some (Ix.Kernel.Level.equalLevel u v)
+    | .lit l, .lit l' => some (l == l')
+    | .neutral (.const a us _) sp1, .neutral (.const b vs _) sp2 =>
+      if a == b && equalUnivArrays us vs && sp1.isEmpty && sp2.isEmpty then some true
+      else none
+    | .ctor a us _ _ _ _ _ sp1, .ctor b vs _ _ _ _ _ sp2 =>
+      if a == b && equalUnivArrays us vs && sp1.isEmpty && sp2.isEmpty then some true
+      else none
+    | _, _ => none
+
+  /-- Check if two values are definitionally equal. -/
+  partial def isDefEq (t s : Val m) : TypecheckM σ m Bool := do
+    if let some result := quickIsDefEqVal t s then return result
+    heartbeat
+    -- 0. Pointer-based cache checks (keep alive to prevent GC address reuse)
+    modify fun st => { st with keepAlive := st.keepAlive.push t |>.push s }
+    let tPtr := ptrAddrVal t
+    let sPtr := ptrAddrVal s
+    let ptrKey := if tPtr ≤ sPtr then (tPtr, sPtr) else (sPtr, tPtr)
+    -- 0a. EquivManager (union-find with transitivity)
+    let stt ← get
+    let (equiv, mgr') := EquivManager.isEquiv tPtr sPtr |>.run stt.eqvManager
+    modify fun st => { st with eqvManager := mgr' }
+    if equiv then return true
+    -- 0b. Pointer failure cache (validate with ptrEq to guard against address reuse)
+    match (← get).ptrFailureCache.get? ptrKey with
+    | some (tRef, sRef) =>
+      if (ptrEq t tRef && ptrEq s sRef) || (ptrEq t sRef && ptrEq s tRef) then
+        return false
+    | none => pure ()
+    -- 1. Bool.true reflection
+    let prims := (← read).prims
+    if isBoolTrue prims s then
+      let t' ← whnfVal t
+      if isBoolTrue prims t' then return true
+    if isBoolTrue prims t then
+      let s' ← whnfVal s
+      if isBoolTrue prims s' then return true
+    -- 2. whnfCoreVal with cheapProj=true
+    let tn ← whnfCoreVal t (cheapProj := true)
+    let sn ← whnfCoreVal s (cheapProj := true)
+    -- 3. Quick structural check after whnfCore
+    if let some result := quickIsDefEqVal tn sn then return result
+    -- 4. Proof irrelevance
+    match ← isDefEqProofIrrel tn sn with
+    | some result => return result
+    | none => pure ()
+    -- 5. Lazy delta reduction
+    let (tn', sn', deltaResult) ← lazyDelta tn sn
+    if let some result := deltaResult then return result
+    -- 6. Cheap const check after delta (empty-spine only; non-empty goes to step 7)
+    match tn', sn' with
+    | .neutral (.const a us _) sp1, .neutral (.const b us' _) sp2 =>
+      if a == b && equalUnivArrays us us' && sp1.isEmpty && sp2.isEmpty then return true
+    | _, _ => pure ()
+    -- 7. Full whnf (including delta) then structural comparison
+    let tnn ← whnfVal tn'
+    let snn ← whnfVal sn'
+    let result ← isDefEqCore tnn snn
+    -- 8. Cache result (union-find on success, ptr-based on failure)
+    if result then
+      let stt ← get
+      let (_, mgr') := EquivManager.addEquiv tPtr sPtr |>.run stt.eqvManager
+      modify fun st => { st with eqvManager := mgr' }
+    else
+      modify fun st => { st with ptrFailureCache := st.ptrFailureCache.insert ptrKey (t, s) }
+    return result
+
+  /-- Core structural comparison on values in WHNF. -/
+  partial def isDefEqCore (t s : Val m) : TypecheckM σ m Bool := do
+    if ptrEq t s then return true
+    match t, s with
+    -- Sort
+    | .sort u, .sort v => pure (Ix.Kernel.Level.equalLevel u v)
+    -- Literal
+    | .lit l, .lit l' => pure (l == l')
+    -- Neutral with fvar head
+    | .neutral (.fvar l _) sp1, .neutral (.fvar l' _) sp2 =>
+      if l != l' then return false
+      isDefEqSpine sp1 sp2
+    -- Neutral with const head
+    | .neutral (.const a us _) sp1, .neutral (.const b vs _) sp2 =>
+      if a != b || !equalUnivArrays us vs then return false
+      isDefEqSpine sp1 sp2
+    -- Constructor
+    | .ctor a us _ _ _ _ _ sp1, .ctor b vs _ _ _ _ _ sp2 =>
+      if a != b || !equalUnivArrays us vs then return false
+      isDefEqSpine sp1 sp2
+    -- Lambda: compare domains, then bodies under fresh binder
+    | .lam name1 _ dom1 body1 env1, .lam _ _ dom2 body2 env2 => do
+      if !(← isDefEq dom1 dom2) then return false
+      let fv ← mkFreshFVar dom1
+      let b1 ← eval body1 (env1.push fv)
+      let b2 ← eval body2 (env2.push fv)
+      withBinder dom1 name1 (isDefEq b1 b2)
+    -- Pi: compare domains, then codomains under fresh binder
+    | .pi name1 _ dom1 body1 env1, .pi _ _ dom2 body2 env2 => do
+      if !(← isDefEq dom1 dom2) then return false
+      let fv ← mkFreshFVar dom1
+      let b1 ← eval body1 (env1.push fv)
+      let b2 ← eval body2 (env2.push fv)
+      withBinder dom1 name1 (isDefEq b1 b2)
+    -- Eta: lambda vs non-lambda
+    | .lam name1 _ dom body env, _ => do
+      let fv ← mkFreshFVar dom
+      let b1 ← eval body (env.push fv)
+      let fvThunk ← mkThunkFromVal fv
+      let s' ← applyValThunk s fvThunk
+      withBinder dom name1 (isDefEq b1 s')
+    | _, .lam name2 _ dom body env => do
+      let fv ← mkFreshFVar dom
+      let b2 ← eval body (env.push fv)
+      let fvThunk ← mkThunkFromVal fv
+      let t' ← applyValThunk t fvThunk
+      withBinder dom name2 (isDefEq t' b2)
+    -- Projection
+    | .proj a i struct1 _ spine1, .proj b j struct2 _ spine2 =>
+      if a == b && i == j then do
+        let sv1 ← forceThunk struct1
+        let sv2 ← forceThunk struct2
+        if !(← isDefEq sv1 sv2) then return false
+        isDefEqSpine spine1 spine2
+      else pure false
+    -- Nat literal ↔ constructor expansion
+    | .lit (.natVal _), _ => do
+      let t' ← natLitToCtorThunked t
+      isDefEqCore t' s
+    | _, .lit (.natVal _) => do
+      let s' ← natLitToCtorThunked s
+      isDefEqCore t s'
+    -- String literal ↔ constructor expansion
+    | .lit (.strVal str), _ => do
+      let t' ← strLitToCtorThunked str
+      isDefEq t' s
+    | _, .lit (.strVal str) => do
+      let s' ← strLitToCtorThunked str
+      isDefEq t s'
+    -- Fallback: try struct eta, then unit-like
+    | _, _ => do
+      if ← tryEtaStructVal t s then return true
+      try isDefEqUnitLikeVal t s catch e =>
+        if (← read).trace then dbg_trace s!"isDefEqCore: isDefEqUnitLikeVal threw: {e}"
+        pure false
+
+  /-- Compare two thunk spines element-wise (forcing each thunk). -/
+  partial def isDefEqSpine (sp1 sp2 : Array Nat) : TypecheckM σ m Bool := do
+    if sp1.size != sp2.size then return false
+    for i in [:sp1.size] do
+      if sp1[i]! == sp2[i]! then continue  -- same thunk, trivially equal
+      let v1 ← forceThunk sp1[i]!
+      let v2 ← forceThunk sp2[i]!
+      if !(← isDefEq v1 v2) then return false
+    return true
+
+  /-- Lazy delta reduction: unfold definitions one at a time guided by hints.
+      Single-step Krivine semantics — the caller controls unfolding. -/
+  partial def lazyDelta (t s : Val m)
+      : TypecheckM σ m (Val m × Val m × Option Bool) := do
+    let mut tn := t
+    let mut sn := s
+    let kenv := (← read).kenv
+    let mut steps := 0
+    repeat
+      heartbeat
+      if steps > 10000 then throw "lazyDelta step limit exceeded"
+      steps := steps + 1
+      -- Pointer equality
+      if ptrEq tn sn then return (tn, sn, some true)
+      -- Quick structural
+      match tn, sn with
+      | .sort u, .sort v =>
+        return (tn, sn, some (Ix.Kernel.Level.equalLevel u v))
+      | .lit l, .lit l' =>
+        return (tn, sn, some (l == l'))
+      | _, _ => pure ()
+      -- isDefEqOffset: short-circuit Nat.succ chain comparison
+      match ← isDefEqOffset tn sn with
+      | some result => return (tn, sn, some result)
+      | none => pure ()
+      -- Nat prim reduction
+      if let some tn' ← tryReduceNatVal tn then
+        return (tn', sn, some (← isDefEq tn' sn))
+      if let some sn' ← tryReduceNatVal sn then
+        return (tn, sn', some (← isDefEq tn sn'))
+      -- Native reduction (reduceBool/reduceNat markers)
+      if let some tn' ← reduceNativeVal tn then
+        return (tn', sn, some (← isDefEq tn' sn))
+      if let some sn' ← reduceNativeVal sn then
+        return (tn, sn', some (← isDefEq tn sn'))
+      -- Delta step: hint-guided, single-step
+      let tDelta := getDeltaInfo tn kenv
+      let sDelta := getDeltaInfo sn kenv
+      match tDelta, sDelta with
+      | none, none => return (tn, sn, none)  -- both stuck
+      | some _, none =>
+        match ← deltaStepVal tn with
+        | some r => tn ← whnfCoreVal r (cheapProj := true); continue
+        | none => return (tn, sn, none)
+      | none, some _ =>
+        match ← deltaStepVal sn with
+        | some r => sn ← whnfCoreVal r (cheapProj := true); continue
+        | none => return (tn, sn, none)
+      | some (_, ht), some (_, hs) =>
+        -- Same-head optimization with failure cache
+        if sameHeadVal tn sn && ht.isRegular then
+          if equalUnivArrays tn.headLevels! sn.headLevels! then
+            let tPtr := ptrAddrVal tn
+            let sPtr := ptrAddrVal sn
+            let ptrKey := if tPtr ≤ sPtr then (tPtr, sPtr) else (sPtr, tPtr)
+            let skipSpineCheck := match (← get).ptrFailureCache.get? ptrKey with
+              | some (tRef, sRef) =>
+                (ptrEq tn tRef && ptrEq sn sRef) || (ptrEq tn sRef && ptrEq sn tRef)
+              | none => false
+            if !skipSpineCheck then
+              if ← isDefEqSpine tn.spine! sn.spine! then
+                return (tn, sn, some true)
+              else
+                -- Record failure to prevent retrying after further unfolding
+                modify fun st => { st with
+                  ptrFailureCache := st.ptrFailureCache.insert ptrKey (tn, sn),
+                  keepAlive := st.keepAlive.push tn |>.push sn }
+        -- Hint-guided unfolding
+        if ht.lt' hs then
+          match ← deltaStepVal sn with
+          | some r => sn ← whnfCoreVal r (cheapProj := true); continue
+          | none =>
+            match ← deltaStepVal tn with
+            | some r => tn ← whnfCoreVal r (cheapProj := true); continue
+            | none => return (tn, sn, none)
+        else if hs.lt' ht then
+          match ← deltaStepVal tn with
+          | some r => tn ← whnfCoreVal r (cheapProj := true); continue
+          | none =>
+            match ← deltaStepVal sn with
+            | some r => sn ← whnfCoreVal r (cheapProj := true); continue
+            | none => return (tn, sn, none)
+        else
+          -- Same height: unfold both
+          match ← deltaStepVal tn, ← deltaStepVal sn with
+          | some rt, some rs =>
+            tn ← whnfCoreVal rt (cheapProj := true)
+            sn ← whnfCoreVal rs (cheapProj := true)
+            continue
+          | some rt, none => tn ← whnfCoreVal rt (cheapProj := true); continue
+          | none, some rs => sn ← whnfCoreVal rs (cheapProj := true); continue
+          | none, none => return (tn, sn, none)
+    return (tn, sn, none)
+
+  /-- Quote a value back to an expression at binding depth d.
+      De Bruijn level l becomes bvar (d - 1 - l).
+      `names` maps de Bruijn levels to binder names for readable pretty-printing. -/
+  partial def quote (v : Val m) (d : Nat) (names : Array (KMetaField m Ix.Name) := #[])
+      : TypecheckM σ m (KExpr m) := do
+    -- Pad names to size d so names[level] works for any level < d.
+    -- When no names provided, use context binderNames for the outer scope.
+    let names ← do
+      if names.isEmpty then
+        let ctxNames := (← read).binderNames
+        pure (if ctxNames.size < d then ctxNames ++ .replicate (d - ctxNames.size) default else ctxNames)
+      else if names.size < d then pure (names ++ .replicate (d - names.size) default)
+      else pure names
+    match v with
+    | .sort lvl => pure (.sort lvl)
+
+    | .lam name bi dom body env => do
+      let domE ← quote dom d names
+      let freshVar := Val.mkFVar d dom
+      let bodyV ← eval body (env.push freshVar)
+      let bodyE ← quote bodyV (d + 1) (names.push name)
+      pure (.lam domE bodyE name bi)
+
+    | .pi name bi dom body env => do
+      let domE ← quote dom d names
+      let freshVar := Val.mkFVar d dom
+      let bodyV ← eval body (env.push freshVar)
+      let bodyE ← quote bodyV (d + 1) (names.push name)
+      pure (.forallE domE bodyE name bi)
+
+    | .neutral head spine => do
+      let headE := quoteHead head d names
+      let mut result := headE
+      for thunkId in spine do
+        let argV ← forceThunk thunkId
+        let argE ← quote argV d names
+        result := Ix.Kernel.Expr.mkApp result argE
+      pure result
+
+    | .ctor addr levels name _ _ _ _ spine => do
+      let headE : KExpr m := .const addr levels name
+      let mut result := headE
+      for thunkId in spine do
+        let argV ← forceThunk thunkId
+        let argE ← quote argV d names
+        result := Ix.Kernel.Expr.mkApp result argE
+      pure result
+
+    | .lit l => pure (.lit l)
+
+    | .proj typeAddr idx structThunkId typeName spine => do
+      let structV ← forceThunk structThunkId
+      let structE ← quote structV d names
+      let mut result : KExpr m := .proj typeAddr idx structE typeName
+      for thunkId in spine do
+        let argV ← forceThunk thunkId
+        let argE ← quote argV d names
+        result := Ix.Kernel.Expr.mkApp result argE
+      pure result
+
+  -- Type inference
+
+  /-- Classify a type Val as proof/sort/unit/none. -/
+  partial def infoFromType (typ : Val m) : TypecheckM σ m (KTypeInfo m) := do
+    let typ' ← whnfVal typ
+    match typ' with
+    | .sort .zero => pure .proof
+    | .sort lvl => pure (.sort lvl)
+    | .neutral (.const addr _ _) _ =>
+      match (← read).kenv.find? addr with
+      | some (.inductInfo v) =>
+        if v.ctors.size == 1 then
+          match (← read).kenv.find? v.ctors[0]! with
+          | some (.ctorInfo cv) =>
+            if cv.numFields == 0 then pure .unit else pure .none
+          | _ => pure .none
+        else pure .none
+      | _ => pure .none
+    | _ => pure .none
+
+  /-- Infer the type of an expression, returning typed expr and type as Val.
+      Works on raw Expr — free bvars reference ctx.types (de Bruijn levels). -/
+  partial def infer (term : KExpr m) : TypecheckM σ m (KTypedExpr m × Val m) := do
+    heartbeat
+    -- Inference cache: check if we've already inferred this term in the same context
+    let ctx ← read
+    match (← get).inferCache.get? term with
+    | some (cachedTypes, te, typ) =>
+        -- For consts/sorts/lits, context doesn't matter (always closed)
+        let contextOk := match term with
+          | .const .. | .sort .. | .lit .. => true
+          | _ => arrayPtrEq cachedTypes ctx.types || arrayValPtrEq cachedTypes ctx.types
+        if contextOk then
+          return (te, typ)
+    | none => pure ()
+    let inferCore := do match term with
+    | .bvar idx _ => do
+      let ctx ← read
+      let d := ctx.types.size
+      if idx < d then
+        let level := d - 1 - idx
+        if h : level < ctx.types.size then
+          let typ := ctx.types[level]
+          let te : KTypedExpr m := ⟨← infoFromType typ, term⟩
+          pure (te, typ)
+        else
+          throw s!"bvar {idx} out of range (depth={d})"
+      else
+        match ctx.mutTypes.get? (idx - d) with
+        | some (addr, typeFn) =>
+          if some addr == ctx.recAddr? then throw "Invalid recursion"
+          let univs : Array (KLevel m) := #[]
+          let typVal := typeFn univs
+          let name ← lookupName addr
+          let te : KTypedExpr m := ⟨← infoFromType typVal, .const addr univs name⟩
+          pure (te, typVal)
+        | none =>
+          throw s!"bvar {idx} out of range (depth={d}, no mutual ref at {idx - d})"
+
+    | .sort lvl => do
+      let lvl' := Ix.Kernel.Level.succ lvl
+      let typVal := Val.sort lvl'
+      let te : KTypedExpr m := ⟨.sort lvl', term⟩
+      pure (te, typVal)
+
+    | .app .. => do
+      let args := term.getAppArgs
+      let fn := term.getAppFn
+      let (_, fnType) ← infer fn
+      let mut currentType := fnType
+      let inferOnly := (← read).inferOnly
+      for h : i in [:args.size] do
+        let arg := args[i]
+        let currentType' ← whnfVal currentType
+        match currentType' with
+        | .pi _ _ dom codBody codEnv => do
+          if !inferOnly then
+            let (_, argType) ← infer arg
+            -- Check if arg is eagerReduce-wrapped (eagerReduce _ _)
+            let prims := (← read).prims
+            let isEager := prims.eagerReduce != default &&
+              (match arg.getAppFn with
+               | .const a _ _ => a == prims.eagerReduce
+               | _ => false) &&
+              arg.getAppNumArgs == 2
+            let eq ← if isEager then
+              withReader (fun ctx => { ctx with eagerReduce := true }) (isDefEq argType dom)
+            else
+              isDefEq argType dom
+            if !eq then
+              let d ← depth
+              let ppArg ← quote argType d
+              let ppDom ← quote dom d
+              throw s!"app type mismatch\n  arg type: {ppArg.pp}\n  expected: {ppDom.pp}"
+          let argVal ← evalInCtx arg
+          currentType ← eval codBody (codEnv.push argVal)
+        | _ =>
+          let d ← depth
+          let ppType ← quote currentType' d
+          throw s!"Expected a pi type for application, got {ppType.pp}"
+      let te : KTypedExpr m := ⟨← infoFromType currentType, term⟩
+      pure (te, currentType)
+
+    | .lam .. => do
+      let inferOnly := (← read).inferOnly
+      let mut cur := term
+      let mut extTypes := (← read).types
+      let mut extLetValues := (← read).letValues
+      let mut extBinderNames := (← read).binderNames
+      let mut domExprs : Array (KExpr m) := #[]  -- original domain Exprs for result type
+      let mut lamBinderNames : Array (KMetaField m Ix.Name) := #[]
+      let mut lamBinderInfos : Array (KMetaField m Lean.BinderInfo) := #[]
+      repeat
+        match cur with
+        | .lam ty body name bi =>
+          if !inferOnly then
+            let _ ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+              (isSort ty)
+          let domVal ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+            (evalInCtx ty)
+          domExprs := domExprs.push ty
+          lamBinderNames := lamBinderNames.push name
+          lamBinderInfos := lamBinderInfos.push bi
+          extTypes := extTypes.push domVal
+          extLetValues := extLetValues.push none
+          extBinderNames := extBinderNames.push name
+          cur := body
+        | _ => break
+      let (_, bodyType) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+        (infer cur)
+      -- Build the Pi type for the lambda: quote body type, wrap in forallEs, eval
+      let d ← depth
+      let numBinders := domExprs.size
+      let mut resultTypeExpr ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+        (quote bodyType (d + numBinders))
+      for i in [:numBinders] do
+        let j := numBinders - 1 - i
+        resultTypeExpr := .forallE domExprs[j]! resultTypeExpr lamBinderNames[j]! lamBinderInfos[j]!
+      let resultTypeVal ← evalInCtx resultTypeExpr
+      let te : KTypedExpr m := ⟨← infoFromType resultTypeVal, term⟩
+      pure (te, resultTypeVal)
+
+    | .forallE .. => do
+      let mut cur := term
+      let mut extTypes := (← read).types
+      let mut extLetValues := (← read).letValues
+      let mut extBinderNames := (← read).binderNames
+      let mut sortLevels : Array (KLevel m) := #[]
+      repeat
+        match cur with
+        | .forallE ty body name _ =>
+          let (_, domLvl) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+            (isSort ty)
+          sortLevels := sortLevels.push domLvl
+          let domVal ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+            (evalInCtx ty)
+          extTypes := extTypes.push domVal
+          extLetValues := extLetValues.push none
+          extBinderNames := extBinderNames.push name
+          cur := body
+        | _ => break
+      let (_, imgLvl) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+        (isSort cur)
+      let mut resultLvl := imgLvl
+      for i in [:sortLevels.size] do
+        let j := sortLevels.size - 1 - i
+        resultLvl := Ix.Kernel.Level.reduceIMax sortLevels[j]! resultLvl
+      let typVal := Val.sort resultLvl
+      let te : KTypedExpr m := ⟨← infoFromType typVal, term⟩
+      pure (te, typVal)
+
+    | .letE .. => do
+      let inferOnly := (← read).inferOnly
+      let mut cur := term
+      let mut extTypes := (← read).types
+      let mut extLetValues := (← read).letValues
+      let mut extBinderNames := (← read).binderNames
+      repeat
+        match cur with
+        | .letE ty val body name =>
+          if !inferOnly then
+            let _ ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+              (isSort ty)
+            let _ ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+              (checkExpr val ty)
+          let tyVal ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+            (evalInCtx ty)
+          let valVal ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+            (evalInCtx val)
+          extTypes := extTypes.push tyVal
+          extLetValues := extLetValues.push (some valVal)
+          extBinderNames := extBinderNames.push name
+          cur := body
+        | _ => break
+      let (bodyTe, bodyType) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+        (infer cur)
+      -- In NbE, let values are already substituted by eval, so bodyType is correct as-is
+      let te : KTypedExpr m := ⟨bodyTe.info, term⟩
+      pure (te, bodyType)
+
+    | .lit (.natVal _) => do
+      let prims := (← read).prims
+      let typVal := Val.mkConst prims.nat #[]
+      let te : KTypedExpr m := ⟨.none, term⟩
+      pure (te, typVal)
+
+    | .lit (.strVal _) => do
+      let prims := (← read).prims
+      let typVal := Val.mkConst prims.string #[]
+      let te : KTypedExpr m := ⟨.none, term⟩
+      pure (te, typVal)
+
+    | .const addr constUnivs _ => do
+      ensureTypedConst addr
+      let inferOnly := (← read).inferOnly
+      if !inferOnly then
+        let ci ← derefConst addr
+        let curSafety := (← read).safety
+        if ci.isUnsafe && curSafety != .unsafe then
+          throw s!"invalid declaration, uses unsafe declaration"
+        if let .defnInfo v := ci then
+          if v.safety == .partial && curSafety == .safe then
+            throw s!"safe declaration must not contain partial declaration"
+        if constUnivs.size != ci.numLevels then
+          throw s!"incorrect universe levels: expected {ci.numLevels}, got {constUnivs.size}"
+      let tconst ← derefTypedConst addr
+      let typExpr := tconst.type.body.instantiateLevelParams constUnivs
+      let typVal ← evalInCtx typExpr
+      let te : KTypedExpr m := ⟨← infoFromType typVal, term⟩
+      pure (te, typVal)
+
+    | .proj typeAddr idx struct _ => do
+      let (structTe, structType) ← infer struct
+      let (ctorType, ctorUnivs, numParams, params) ← getStructInfoVal structType
+      let mut ct ← evalInCtx (ctorType.instantiateLevelParams ctorUnivs)
+      -- Walk past params: apply each param to the codomain closure
+      for paramVal in params do
+        let ct' ← whnfVal ct
+        match ct' with
+        | .pi _ _ _ codBody codEnv =>
+          ct ← eval codBody (codEnv.push paramVal)
+        | _ => throw "Structure constructor has too few parameters"
+      -- Walk past fields before idx
+      let structVal ← evalInCtx struct
+      let structThunkId ← mkThunkFromVal structVal
+      for i in [:idx] do
+        let ct' ← whnfVal ct
+        match ct' with
+        | .pi _ _ _ codBody codEnv =>
+          let projVal := Val.proj typeAddr i structThunkId default #[]
+          ct ← eval codBody (codEnv.push projVal)
+        | _ => throw "Structure type does not have enough fields"
+      -- Get the type at field idx
+      let ct' ← whnfVal ct
+      match ct' with
+      | .pi _ _ dom _ _ =>
+        let te : KTypedExpr m := ⟨← infoFromType dom, .proj typeAddr idx structTe.body default⟩
+        pure (te, dom)
+      | _ => throw "Structure type does not have enough fields"
+    let result ← inferCore
+    -- Insert into inference cache
+    modify fun s => { s with inferCache := s.inferCache.insert term (ctx.types, result.1, result.2) }
+    return result
+
+  /-- Check that a term has the expected type. Bidirectional: pushes expected Pi
+      type through lambda binders to avoid expensive infer+quote+isDefEq. -/
+  partial def check (term : KExpr m) (expectedType : Val m)
+      : TypecheckM σ m (KTypedExpr m) := do
+    match term with
+    | .lam ty body name bi =>
+      let expectedWhnf ← whnfVal expectedType
+      match expectedWhnf with
+      | .pi piName _piBi piDom piBody piEnv =>
+        -- BEq fast path: quote piDom and compare structurally against ty
+        let d ← depth
+        let piDomExpr ← quote piDom d
+        if !(ty == piDomExpr) then
+          -- Structural mismatch — fall back to full isDefEq on domains
+          let lamDomV ← evalInCtx ty
+          if !(← isDefEq lamDomV piDom) then
+            let ppLamDom ← quote lamDomV d
+            throw s!"Domain mismatch in check\n  lambda domain: {ppLamDom.pp}\n  expected domain: {piDomExpr.pp}"
+        let fv ← mkFreshFVar piDom
+        let expectedBody ← eval piBody (piEnv.push fv)
+        withBinder piDom piName do
+          let bodyTe ← check body expectedBody
+          pure ⟨bodyTe.info, .lam ty bodyTe.body name bi⟩
+      | _ =>
+        -- Expected type is not a Pi after whnf — fall back to infer+compare
+        let (te, inferredType) ← infer term
+        if !(← isDefEq inferredType expectedType) then
+          let d ← depth
+          let ppInferred ← quote inferredType d
+          let ppExpected ← quote expectedType d
+          throw s!"Type mismatch on {term.tag}\n  inferred: {ppInferred.pp}\n  expected: {ppExpected.pp}"
+        pure te
+    | _ =>
+      -- Non-lambda: infer + isDefEq as before
+      let (te, inferredType) ← infer term
+      if !(← isDefEq inferredType expectedType) then
+        let d ← depth
+        let ppInferred ← quote inferredType d
+        let ppExpected ← quote expectedType d
+        throw s!"Type mismatch on {term.tag}\n  inferred: {ppInferred.pp}\n  expected: {ppExpected.pp}"
+      pure te
+
+  /-- Also accept an Expr as expected type (eval it first). -/
+  partial def checkExpr (term : KExpr m) (expectedTypeExpr : KExpr m)
+      : TypecheckM σ m (KTypedExpr m) := do
+    let expectedType ← evalInCtx expectedTypeExpr
+    check term expectedType
+
   /-- Check if an expression is a Sort, returning the typed expr and the universe level. -/
-  partial def isSort (expr : Expr m) : TypecheckM m (TypedExpr m × Level m) := do
+  partial def isSort (expr : KExpr m) : TypecheckM σ m (KTypedExpr m × KLevel m) := do
     let (te, typ) ← infer expr
-    let typ' ← whnf typ
+    let typ' ← whnfVal typ
     match typ' with
     | .sort u => pure (te, u)
     | _ =>
-      throw s!"Expected a sort type, got {typ'.pp}\n  expr: {expr.pp}"
+      let d ← depth
+      let ppTyp ← quote typ' d
+      throw s!"Expected a sort, got {ppTyp.pp}\n  expr: {expr.pp}"
 
-  /-- Get structure info from a type that should be a structure.
-      Returns (constructor type expr, universe levels, numParams, param exprs). -/
-  partial def getStructInfo (structType : Expr m) :
-      TypecheckM m (Expr m × Array (Level m) × Nat × Array (Expr m)) := do
-    let structType' ← whnf structType
-    let fn := structType'.getAppFn
-    match fn with
-    | .const indAddr univs _ =>
+  /-- Walk a Pi type, consuming spine args to compute the result type. -/
+  partial def applySpineToType (ty : Val m) (spine : Array Nat)
+      : TypecheckM σ m (Val m) := do
+    let mut curType ← whnfVal ty
+    for thunkId in spine do
+      match curType with
+      | .pi _ _ _dom body env =>
+        let argV ← forceThunk thunkId
+        curType ← eval body (env.push argV)
+        curType ← whnfVal curType
+      | _ => break
+    pure curType
+
+  /-- Infer the type of a Val directly, without quoting.
+      Handles neutrals, sorts, lits, pi, proj. Falls back to quote+infer for lam. -/
+  partial def inferTypeOfVal (v : Val m) : TypecheckM σ m (Val m) := do
+    match v with
+    | .sort lvl => pure (.sort (Ix.Kernel.Level.succ lvl))
+    | .lit (.natVal _) => pure (Val.mkConst (← read).prims.nat #[])
+    | .lit (.strVal _) => pure (Val.mkConst (← read).prims.string #[])
+    | .neutral (.fvar _ type) spine => applySpineToType type spine
+    | .neutral (.const addr levels _) spine =>
+      ensureTypedConst addr
+      let tc ← derefTypedConst addr
+      let typExpr := tc.type.body.instantiateLevelParams levels
+      let typVal ← evalInCtx typExpr
+      applySpineToType typVal spine
+    | .ctor addr levels _ _ _ _ _ spine =>
+      ensureTypedConst addr
+      let tc ← derefTypedConst addr
+      let typExpr := tc.type.body.instantiateLevelParams levels
+      let typVal ← evalInCtx typExpr
+      applySpineToType typVal spine
+    | .proj typeAddr idx structThunkId _ spine =>
+      let structV ← forceThunk structThunkId
+      let structType ← inferTypeOfVal structV
+      let (ctorType, ctorUnivs, _numParams, params) ← getStructInfoVal structType
+      let mut ct ← evalInCtx (ctorType.instantiateLevelParams ctorUnivs)
+      for p in params do
+        let ct' ← whnfVal ct
+        match ct' with | .pi _ _ _ b e => ct ← eval b (e.push p) | _ => break
+      let structThunkId' ← mkThunkFromVal structV
+      for i in [:idx] do
+        let ct' ← whnfVal ct
+        match ct' with
+        | .pi _ _ _ b e =>
+          ct ← eval b (e.push (Val.proj typeAddr i structThunkId' default #[]))
+        | _ => break
+      let ct' ← whnfVal ct
+      let fieldType ← match ct' with | .pi _ _ dom _ _ => pure dom | _ => pure ct'
+      -- Apply spine to get result type (proj with spine is like a function application)
+      applySpineToType fieldType spine
+    | .pi name _ dom body env =>
+      let domType ← inferTypeOfVal dom
+      let domSort ← whnfVal domType
+      let fv ← mkFreshFVar dom
+      let codV ← eval body (env.push fv)
+      let codType ← withBinder dom name (inferTypeOfVal codV)
+      let codSort ← whnfVal codType
+      match domSort, codSort with
+      | .sort dl, .sort cl => pure (.sort (Ix.Kernel.Level.reduceIMax dl cl))
+      | _, _ =>
+        let d ← depth; let e ← quote v d
+        let (_, ty) ← withInferOnly (infer e); pure ty
+    | _ => -- .lam: fallback to quote+infer
+      let d ← depth; let e ← quote v d
+      let (_, ty) ← withInferOnly (infer e); pure ty
+
+  /-- Check if a Val's type is Prop (Sort 0). Uses inferTypeOfVal to avoid quoting. -/
+  partial def isPropVal (v : Val m) : TypecheckM σ m Bool := do
+    let vType ← try inferTypeOfVal v catch e =>
+      if (← read).trace then dbg_trace s!"isPropVal: inferTypeOfVal threw: {e}"
+      return false
+    let vType' ← whnfVal vType
+    match vType' with
+    | .sort .zero => pure true
+    | _ => pure false
+
+  -- isDefEq strategies
+
+  /-- Look up ctor metadata from kenv by address. -/
+  partial def mkCtorVal (addr : Address) (levels : Array (KLevel m)) (spine : Array Nat)
+      (name : KMetaField m Ix.Name := default)
+      : TypecheckM σ m (Val m) := do
+    let kenv := (← read).kenv
+    match kenv.find? addr with
+    | some (.ctorInfo cv) =>
+      pure (.ctor addr levels name cv.cidx cv.numParams cv.numFields cv.induct spine)
+    | _ => pure (.neutral (.const addr levels name) spine)
+
+  partial def natLitToCtorThunked (v : Val m) : TypecheckM σ m (Val m) := do
+    let prims := (← read).prims
+    match v with
+    | .lit (.natVal 0) => mkCtorVal prims.natZero #[] #[]
+    | .lit (.natVal (n+1)) =>
+      let inner ← natLitToCtorThunked (.lit (.natVal n))
+      let thunkId ← mkThunkFromVal inner
+      mkCtorVal prims.natSucc #[] #[thunkId]
+    | _ => pure v
+
+  /-- Convert string literal to constructor form with thunks. -/
+  partial def strLitToCtorThunked (s : String) : TypecheckM σ m (Val m) := do
+    let prims := (← read).prims
+    let charType := Val.mkConst prims.char #[]
+    let charTypeThunk ← mkThunkFromVal charType
+    let nilVal ← mkCtorVal prims.listNil #[.zero] #[charTypeThunk]
+    let mut listVal := nilVal
+    for c in s.toList.reverse do
+      let charVal ← mkCtorVal prims.charMk #[] #[← mkThunkFromVal (.lit (.natVal c.toNat))]
+      let ct ← mkThunkFromVal charType
+      let ht ← mkThunkFromVal charVal
+      let tt ← mkThunkFromVal listVal
+      listVal ← mkCtorVal prims.listCons #[.zero] #[ct, ht, tt]
+    let listThunk ← mkThunkFromVal listVal
+    mkCtorVal prims.stringMk #[] #[listThunk]
+
+  /-- Proof irrelevance: if both sides are proofs of Prop types, compare types. -/
+  partial def isDefEqProofIrrel (t s : Val m) : TypecheckM σ m (Option Bool) := do
+    let tType ← try inferTypeOfVal t catch e =>
+      if (← read).trace then dbg_trace s!"isDefEqProofIrrel: inferTypeOfVal(t) threw: {e}"
+      return none
+    -- Check if tType : Prop (i.e., t is a proof, not just a type)
+    if !(← isPropVal tType) then return none
+    let sType ← try inferTypeOfVal s catch e =>
+      if (← read).trace then dbg_trace s!"isDefEqProofIrrel: inferTypeOfVal(s) threw: {e}"
+      return none
+    some <$> isDefEq tType sType
+
+  /-- Short-circuit Nat.succ chain / zero comparison. -/
+  partial def isDefEqOffset (t s : Val m) : TypecheckM σ m (Option Bool) := do
+    let prims := (← read).prims
+    let isZero (v : Val m) : Bool := match v with
+      | .lit (.natVal 0) => true
+      | .neutral (.const addr _ _) spine => addr == prims.natZero && spine.isEmpty
+      | .ctor addr _ _ _ _ _ _ spine => addr == prims.natZero && spine.isEmpty
+      | _ => false
+    -- Return thunk ID for Nat.succ, or lit predecessor; avoids forcing
+    let succThunkId? (v : Val m) : Option Nat := match v with
+      | .neutral (.const addr _ _) spine =>
+        if addr == prims.natSucc && spine.size == 1 then some spine[0]! else none
+      | .ctor addr _ _ _ _ _ _ spine =>
+        if addr == prims.natSucc && spine.size == 1 then some spine[0]! else none
+      | _ => none
+    let succOf? (v : Val m) : TypecheckM σ m (Option (Val m)) := do
+      match v with
+      | .lit (.natVal (n+1)) => pure (some (.lit (.natVal n)))
+      | .neutral (.const addr _ _) spine =>
+        if addr == prims.natSucc && spine.size == 1 then
+          pure (some (← forceThunk spine[0]!))
+        else pure none
+      | .ctor addr _ _ _ _ _ _ spine =>
+        if addr == prims.natSucc && spine.size == 1 then
+          pure (some (← forceThunk spine[0]!))
+        else pure none
+      | _ => pure none
+    if isZero t && isZero s then return some true
+    -- Thunk-ID short-circuit: if both succs share the same thunk, they're equal
+    match succThunkId? t, succThunkId? s with
+    | some tid1, some tid2 =>
+      if tid1 == tid2 then return some true
+      let t' ← forceThunk tid1
+      let s' ← forceThunk tid2
+      return some (← isDefEq t' s')
+    | _, _ => pure ()
+    match ← succOf? t, ← succOf? s with
+    | some t', some s' => some <$> isDefEq t' s'
+    | _, _ => return none
+
+  /-- Structure eta core: if s is a ctor of a structure-like type, project t's fields. -/
+  partial def tryEtaStructCoreVal (t s : Val m) : TypecheckM σ m Bool := do
+    match s with
+    | .ctor _ _ _ _ numParams numFields inductAddr spine =>
+      let kenv := (← read).kenv
+      unless spine.size == numParams + numFields do return false
+      unless kenv.isStructureLike inductAddr do return false
+      let tType ← try inferTypeOfVal t catch e =>
+        if (← read).trace then dbg_trace s!"tryEtaStructCoreVal: inferTypeOfVal(t) threw: {e}"
+        return false
+      let sType ← try inferTypeOfVal s catch e =>
+        if (← read).trace then dbg_trace s!"tryEtaStructCoreVal: inferTypeOfVal(s) threw: {e}"
+        return false
+      unless ← isDefEq tType sType do return false
+      let tThunkId ← mkThunkFromVal t
+      for _h : i in [:numFields] do
+        let argIdx := numParams + i
+        let projVal := Val.proj inductAddr i tThunkId default #[]
+        let fieldVal ← forceThunk spine[argIdx]!
+        unless ← isDefEq projVal fieldVal do return false
+      return true
+    | _ => return false
+
+  /-- Structure eta: try both directions. -/
+  partial def tryEtaStructVal (t s : Val m) : TypecheckM σ m Bool := do
+    if ← tryEtaStructCoreVal t s then return true
+    tryEtaStructCoreVal s t
+
+  /-- Unit-like types: single ctor, 0 fields, 0 indices, non-recursive → compare types. -/
+  partial def isDefEqUnitLikeVal (t s : Val m) : TypecheckM σ m Bool := do
+    let kenv := (← read).kenv
+    let tType ← try inferTypeOfVal t catch e =>
+      if (← read).trace then dbg_trace s!"isDefEqUnitLikeVal: inferTypeOfVal(t) threw: {e}"
+      return false
+    let tType' ← whnfVal tType
+    match tType' with
+    | .neutral (.const addr _ _) _ =>
+      match kenv.find? addr with
+      | some (.inductInfo v) =>
+        if v.isRec || v.numIndices != 0 || v.ctors.size != 1 then return false
+        match kenv.find? v.ctors[0]! with
+        | some (.ctorInfo cv) =>
+          if cv.numFields != 0 then return false
+          let sType ← try inferTypeOfVal s catch e =>
+            if (← read).trace then dbg_trace s!"isDefEqUnitLikeVal: inferTypeOfVal(s) threw: {e}"
+            return false
+          isDefEq tType sType
+        | _ => return false
+      | _ => return false
+    | _ => return false
+
+  /-- Get structure info from a type Val.
+      Returns (ctor type expr, universe levels, numParams, param vals). -/
+  partial def getStructInfoVal (structType : Val m)
+      : TypecheckM σ m (KExpr m × Array (KLevel m) × Nat × Array (Val m)) := do
+    let structType' ← whnfVal structType
+    match structType' with
+    | .neutral (.const indAddr univs _) spine =>
       match (← read).kenv.find? indAddr with
       | some (.inductInfo v) =>
-        let params := structType'.getAppArgs
-        if v.ctors.size != 1 || params.size != v.numParams then
-          throw s!"Expected a structure type, but {v.name} ({indAddr}) has {v.ctors.size} ctors and {params.size}/{v.numParams} params"
+        if v.ctors.size != 1 then
+          throw s!"Expected a structure type (single constructor)"
+        if spine.size != v.numParams then
+          throw s!"Wrong number of params for structure: got {spine.size}, expected {v.numParams}"
         ensureTypedConst indAddr
         let ctorAddr := v.ctors[0]!
         ensureTypedConst ctorAddr
         match (← get).typedConsts.get? ctorAddr with
         | some (.constructor type _ _) =>
+          let mut params := #[]
+          for thunkId in spine do
+            params := params.push (← forceThunk thunkId)
           return (type.body, univs, v.numParams, params)
-        | _ => throw s!"Constructor {ctorAddr} is not in typed consts"
-      | some ci => throw s!"Expected a structure type, but {indAddr} is a {ci.kindName}"
-      | none => throw s!"Expected a structure type, but {indAddr} not found in env"
+        | _ => throw s!"Constructor not in typedConsts"
+      | some ci => throw s!"Expected a structure type, got {ci.kindName}"
+      | none => throw s!"Type not found in environment"
     | _ =>
-      throw s!"Expected a structure type, got {structType'.pp}"
+      let d ← depth
+      let ppType ← quote structType' d
+      throw s!"Expected a structure type, got {ppType.pp}"
 
-  /-- Typecheck a constant. -/
-  partial def checkConst (addr : Address) : TypecheckM m Unit := withResetCtx do
-    -- Determine safety early for withSafety wrapper
-    let ci? := (← read).kenv.find? addr
-    let declSafety := match ci? with | some ci => ci.safety | none => .safe
-    withSafety declSafety do
-    -- Reset fuel and per-constant caches
-    modify fun stt => { stt with
-      constTypeCache := {},
-      whnfCache := {},
-      whnfCoreCache := {},
-      inferCache := {},
-      eqvManager := {},
-      failureCache := {},
-      fuel := defaultFuel,
-      recDepth := 0,
-      maxRecDepth := 0
-    }
-    -- Skip if already in typedConsts
-    if (← get).typedConsts.get? addr |>.isSome then
-      return ()
-    let ci ← derefConst addr
-    let univs := ci.cv.mkUnivParams
-    let newConst ← match ci with
-      | .axiomInfo _ =>
-        let (type, _) ← isSort ci.type
-        pure (TypedConst.axiom type)
-      | .opaqueInfo _ =>
-        let (type, _) ← isSort ci.type
-        let value ← withRecAddr addr (check ci.value?.get! type.body)
-        pure (TypedConst.opaque type value)
-      | .thmInfo _ =>
-        let (type, lvl) ← withInferOnly (isSort ci.type)
-        if !Level.isZero lvl then
-          throw s!"theorem type must be a proposition (Sort 0)"
-        let (_, valType) ← withRecAddr addr (withInferOnly (infer ci.value?.get!))
-        if !(← withInferOnly (isDefEq valType type.body)) then
-          throw s!"theorem value type doesn't match declared type"
-        let value : TypedExpr m := ⟨.proof, ci.value?.get!⟩
-        pure (TypedConst.theorem type value)
-      | .defnInfo v =>
-        let (type, _) ← isSort ci.type
-        let part := v.safety == .partial
-        let value ←
-          if part then
-            let typExpr := type.body
-            let mutTypes : Std.TreeMap Nat (Address × (Array (Level m) → Expr m)) compare :=
-              (Std.TreeMap.empty).insert 0 (addr, fun _ => typExpr)
-            withMutTypes mutTypes (withRecAddr addr (check v.value type.body))
-          else withRecAddr addr (check v.value type.body)
-        validatePrimitive addr
-        pure (TypedConst.definition type value part)
-      | .quotInfo v =>
-        let (type, _) ← isSort ci.type
-        if (← read).quotInit then
-          validateQuotient
-        pure (TypedConst.quotient type v.kind)
-      | .inductInfo _ =>
-        checkIndBlock addr
-        return ()
-      | .ctorInfo v =>
-        checkIndBlock v.induct
-        return ()
-      | .recInfo v => do
-        let indAddr := getMajorInduct ci.type v.numParams v.numMotives v.numMinors v.numIndices
-          |>.getD default
-        ensureTypedConst indAddr
-        let (type, _) ← isSort ci.type
-        if v.k then
-          validateKFlag v indAddr
-        validateRecursorRules v indAddr
-        checkElimLevel ci.type v indAddr
-        -- Check each rule RHS has the expected type
-        match (← read).kenv.find? indAddr with
-        | some (.inductInfo iv) =>
-          for h : i in [:v.rules.size] do
-            let rule := v.rules[i]
-            if i < iv.ctors.size then
-              checkRecursorRuleType ci.type v iv.ctors[i]! rule.nfields rule.rhs
-        | _ => pure ()
-        let typedRules ← v.rules.mapM fun rule => do
-          let (rhs, _) ← infer rule.rhs
-          pure (rule.nfields, rhs)
-        pure (TypedConst.recursor type v.numParams v.numMotives v.numMinors v.numIndices v.k indAddr typedRules)
-    modify fun stt => { stt with typedConsts := stt.typedConsts.insert addr newConst }
+  -- Declaration checking
+
+  /-- Build a KernelOps2 adapter bridging Val-based operations to Expr-based interface. -/
+  partial def mkOps : KernelOps2 σ m := {
+    isDefEq := fun a b => do
+      let va ← evalInCtx a
+      let vb ← evalInCtx b
+      isDefEq va vb
+    whnf := fun e => do
+      let v ← evalInCtx e
+      let v' ← whnfVal v
+      let d ← depth
+      quote v' d
+    infer := fun e => do
+      let (te, typVal) ← infer e
+      let d ← depth
+      let typExpr ← quote typVal d
+      pure (te, typExpr)
+    isProp := fun e => do
+      let (_, typVal) ← infer e
+      let typVal' ← whnfVal typVal
+      match typVal' with
+      | .sort .zero => pure true
+      | _ => pure false
+    isSort := fun e => do
+      isSort e
+  }
+
+  /-- Validate a primitive definition/inductive using the KernelOps2 adapter. -/
+  partial def validatePrimitive (addr : Address) : TypecheckM σ m Unit := do
+    let ops := mkOps
+    let prims := (← read).prims
+    let kenv := (← read).kenv
+    let _ ← checkPrimitive ops prims kenv addr
+
+  /-- Validate quotient constant type signatures. -/
+  partial def validateQuotient : TypecheckM σ m Unit := do
+    let ops := mkOps
+    let prims := (← read).prims
+    checkEqType ops prims
+    checkQuotTypes ops prims
 
   /-- Walk a Pi chain to extract the return sort level. -/
-  partial def getReturnSort (expr : Expr m) (numBinders : Nat) : TypecheckM m (Level m) :=
+  partial def getReturnSort (expr : KExpr m) (numBinders : Nat) : TypecheckM σ m (KLevel m) :=
     match numBinders, expr with
     | 0, .sort u => pure u
     | 0, _ => do
       let (_, typ) ← infer expr
-      let typ' ← whnf typ
+      let typ' ← whnfVal typ
       match typ' with
       | .sort u => pure u
       | _ => throw "inductive return type is not a sort"
-    | n+1, .forallE dom body _ _ => do
+    | n+1, .forallE dom body name _ => do
       let _ ← isSort dom
-      withExtendedCtx dom (getReturnSort body n)
+      let domV ← evalInCtx dom
+      withBinder domV name (getReturnSort body n)
     | _, _ => throw "inductive type has fewer binders than expected"
 
-  /-- Check that the fields of a nested inductive's constructor use the current
-      inductives only in positive positions. Walks past numParams binders of the
-      outer ctor type, substituting actual param args, then checks each field. -/
-  partial def checkNestedCtorFields (ctorType : Expr m) (numParams : Nat)
-      (paramArgs : Array (Expr m)) (indAddrs : Array Address) : TypecheckM m Bool := do
-    -- Walk past param binders to get the field portion of the ctor type
+  /-- Check nested inductive constructor fields for positivity. -/
+  partial def checkNestedCtorFields (ctorType : KExpr m) (numParams : Nat)
+      (paramArgs : Array (KExpr m)) (indAddrs : Array Address) : TypecheckM σ m Bool := do
     let mut ty := ctorType
     for _ in [:numParams] do
       match ty with
       | .forallE _ body _ _ => ty := body
       | _ => return true
-    -- Substitute all param bvars: bvar 0 = last param, bvar (n-1) = first param
     ty := ty.instantiate paramArgs.reverse
-    -- Check each field for positivity
     loop ty
   where
-    loop (ty : Expr m) : TypecheckM m Bool := do
-      let ty ← whnf ty
-      match ty with
+    loop (ty : KExpr m) : TypecheckM σ m Bool := do
+      let tyE ← evalInCtx ty
+      let ty' ← whnfVal tyE
+      let d ← depth
+      let tyExpr ← quote ty' d
+      match tyExpr with
       | .forallE dom body _ _ =>
         if !(← checkPositivity dom indAddrs) then return false
         loop body
       | _ => return true
 
-  /-- Check strict positivity of a field type w.r.t. a set of inductive addresses.
-      Handles direct recursion, negative-position rejection, and nested inductives
-      (where the inductive appears as a param of a previously-defined inductive). -/
-  partial def checkPositivity (ty : Expr m) (indAddrs : Array Address) : TypecheckM m Bool := do
-    let ty ← whnf ty
-    if !indAddrs.any (exprMentionsConst ty ·) then return true
-    match ty with
+  /-- Check strict positivity of a field type w.r.t. inductive addresses. -/
+  partial def checkPositivity (ty : KExpr m) (indAddrs : Array Address) : TypecheckM σ m Bool := do
+    let tyV ← evalInCtx ty
+    let ty' ← whnfVal tyV
+    let d ← depth
+    let tyExpr ← quote ty' d
+    if !indAddrs.any (Ix.Kernel.exprMentionsConst tyExpr ·) then return true
+    match tyExpr with
     | .forallE dom body _ _ =>
-      if indAddrs.any (exprMentionsConst dom ·) then
-        return false
+      if indAddrs.any (Ix.Kernel.exprMentionsConst dom ·) then return false
       checkPositivity body indAddrs
     | e =>
       let fn := e.getAppFn
       match fn with
       | .const addr _ _ =>
         if indAddrs.any (· == addr) then return true
-        -- Nested inductive: head is a previously-defined inductive
         match (← read).kenv.find? addr with
         | some (.inductInfo fv) =>
           if fv.isUnsafe then return false
           let args := e.getAppArgs
-          -- Index args must not mention current inductives
           for i in [fv.numParams:args.size] do
-            if indAddrs.any (exprMentionsConst args[i]! ·) then return false
-          -- Check all constructors of the outer inductive use params positively.
-          -- Augment indAddrs with the outer inductive's own addresses so that
-          -- its self-recursive fields (e.g., List α in List.cons) are accepted
-          -- immediately rather than causing infinite recursion.
+            if indAddrs.any (Ix.Kernel.exprMentionsConst args[i]! ·) then return false
           let paramArgs := args[:fv.numParams].toArray
           let augmented := indAddrs ++ fv.all
           for ctorAddr in fv.ctors do
@@ -1078,27 +1677,305 @@ mutual
         | _ => return false
       | _ => return false
 
-  /-- Walk a Pi chain, skip numParams binders, then check positivity of each field.
-      Monadic to call whnf, matching lean4lean. -/
-  partial def checkCtorFields (ctorType : Expr m) (numParams : Nat) (indAddrs : Array Address)
-      : TypecheckM m (Option String) :=
+  /-- Walk a Pi chain, skip numParams binders, then check positivity of each field. -/
+  partial def checkCtorFields (ctorType : KExpr m) (numParams : Nat) (indAddrs : Array Address)
+      : TypecheckM σ m (Option String) :=
     go ctorType numParams
   where
-    go (ty : Expr m) (remainingParams : Nat) : TypecheckM m (Option String) := do
-      let ty ← whnf ty
-      match ty with
-      | .forallE _dom body _name _bi =>
+    go (ty : KExpr m) (remainingParams : Nat) : TypecheckM σ m (Option String) := do
+      let tyV ← evalInCtx ty
+      let ty' ← whnfVal tyV
+      let d ← depth
+      let tyExpr ← quote ty' d
+      match tyExpr with
+      | .forallE dom body name _ =>
+        let domV ← evalInCtx dom
         if remainingParams > 0 then
-          go body (remainingParams - 1)
+          withBinder domV name (go body (remainingParams - 1))
         else
-          let domain := ty.bindingDomain!
-          if !(← checkPositivity domain indAddrs) then
+          if !(← checkPositivity dom indAddrs) then
             return some "inductive occurs in negative position (strict positivity violation)"
-          go body 0
+          withBinder domV name (go body 0)
       | _ => return none
 
+  /-- Check that constructor field types have sorts <= the inductive's result sort. -/
+  partial def checkFieldUniverses (ctorType : KExpr m) (numParams : Nat)
+      (ctorAddr : Address) (indLvl : KLevel m) : TypecheckM σ m Unit :=
+    go ctorType numParams
+  where
+    go (ty : KExpr m) (remainingParams : Nat) : TypecheckM σ m Unit := do
+      let tyV ← evalInCtx ty
+      let ty' ← whnfVal tyV
+      let d ← depth
+      let tyExpr ← quote ty' d
+      match tyExpr with
+      | .forallE dom body piName _ =>
+        if remainingParams > 0 then do
+          let _ ← isSort dom
+          let domV ← evalInCtx dom
+          withBinder domV piName (go body (remainingParams - 1))
+        else do
+          let (_, fieldSortLvl) ← isSort dom
+          let fieldReduced := Ix.Kernel.Level.reduce fieldSortLvl
+          let indReduced := Ix.Kernel.Level.reduce indLvl
+          if !Ix.Kernel.Level.leq fieldReduced indReduced 0 && !Ix.Kernel.Level.isZero indReduced then
+            throw s!"Constructor {ctorAddr} field type lives in a universe larger than the inductive's universe"
+          let domV ← evalInCtx dom
+          withBinder domV piName (go body 0)
+      | _ => pure ()
+
+  /-- Check if a single-ctor Prop inductive allows large elimination. -/
+  partial def checkLargeElimSingleCtor (ctorType : KExpr m) (numParams numFields : Nat)
+      : TypecheckM σ m Bool :=
+    go ctorType numParams numFields #[]
+  where
+    go (ty : KExpr m) (remainingParams : Nat) (remainingFields : Nat)
+       (nonPropBvars : Array Nat) : TypecheckM σ m Bool := do
+      let tyV ← evalInCtx ty
+      let ty' ← whnfVal tyV
+      let d ← depth
+      let tyExpr ← quote ty' d
+      match tyExpr with
+      | .forallE dom body piName _ =>
+        if remainingParams > 0 then
+          let domV ← evalInCtx dom
+          withBinder domV piName (go body (remainingParams - 1) remainingFields nonPropBvars)
+        else if remainingFields > 0 then
+          let (_, fieldSortLvl) ← isSort dom
+          let nonPropBvars := if !Ix.Kernel.Level.isZero fieldSortLvl then
+            nonPropBvars.push (remainingFields - 1)
+          else nonPropBvars
+          let domV ← evalInCtx dom
+          withBinder domV piName (go body 0 (remainingFields - 1) nonPropBvars)
+        else pure true
+      | _ =>
+        if nonPropBvars.isEmpty then return true
+        let args := tyExpr.getAppArgs
+        for bvarIdx in nonPropBvars do
+          let mut found := false
+          for i in [numParams:args.size] do
+            match args[i]! with
+            | .bvar idx _ => if idx == bvarIdx then found := true
+            | _ => pure ()
+          if !found then return false
+        return true
+
+  /-- Validate that the recursor's elimination level is appropriate for the inductive. -/
+  partial def checkElimLevel (recType : KExpr m) (rec : Ix.Kernel.RecursorVal m) (indAddr : Address)
+      : TypecheckM σ m Unit := do
+    let kenv := (← read).kenv
+    match kenv.find? indAddr with
+    | some (.inductInfo iv) =>
+      let some indLvl := Ix.Kernel.getIndResultLevel iv.type | return ()
+      if Ix.Kernel.levelIsNonZero indLvl then return ()
+      let some motiveSort := Ix.Kernel.getMotiveSort recType rec.numParams | return ()
+      if Ix.Kernel.Level.isZero motiveSort then return ()
+      if iv.all.size != 1 then
+        throw "recursor claims large elimination but mutual Prop inductive only allows Prop elimination"
+      if iv.ctors.isEmpty then return ()
+      if iv.ctors.size != 1 then
+        throw "recursor claims large elimination but Prop inductive with multiple constructors only allows Prop elimination"
+      let ctorAddr := iv.ctors[0]!
+      match kenv.find? ctorAddr with
+      | some (.ctorInfo cv) =>
+        let allowed ← checkLargeElimSingleCtor cv.type iv.numParams cv.numFields
+        if !allowed then
+          throw "recursor claims large elimination but inductive has non-Prop fields not appearing in indices"
+      | _ => return ()
+    | _ => return ()
+
+  /-- Validate K-flag: requires non-mutual, Prop, single ctor, zero fields. -/
+  partial def validateKFlag (indAddr : Address) : TypecheckM σ m Unit := do
+    match (← read).kenv.find? indAddr with
+    | some (.inductInfo iv) =>
+      if iv.all.size != 1 then throw "recursor claims K but inductive is mutual"
+      match Ix.Kernel.getIndResultLevel iv.type with
+      | some lvl =>
+        if Ix.Kernel.levelIsNonZero lvl then throw "recursor claims K but inductive is not in Prop"
+      | none => throw "recursor claims K but cannot determine inductive's result sort"
+      if iv.ctors.size != 1 then
+        throw s!"recursor claims K but inductive has {iv.ctors.size} constructors (need 1)"
+      match (← read).kenv.find? iv.ctors[0]! with
+      | some (.ctorInfo cv) =>
+        if cv.numFields != 0 then
+          throw s!"recursor claims K but constructor has {cv.numFields} fields (need 0)"
+      | _ => throw "recursor claims K but constructor not found"
+    | _ => throw s!"recursor claims K but {indAddr} is not an inductive"
+
+  /-- Validate recursor rules: rule count, ctor membership, field counts. -/
+  partial def validateRecursorRules (rec : Ix.Kernel.RecursorVal m) (indAddr : Address) : TypecheckM σ m Unit := do
+    match (← read).kenv.find? indAddr with
+    | some (.inductInfo iv) =>
+      if rec.rules.size != iv.ctors.size then
+        throw s!"recursor has {rec.rules.size} rules but inductive has {iv.ctors.size} constructors"
+      for h : i in [:rec.rules.size] do
+        let rule := rec.rules[i]
+        match (← read).kenv.find? iv.ctors[i]! with
+        | some (.ctorInfo cv) =>
+          if rule.nfields != cv.numFields then
+            throw s!"recursor rule for {iv.ctors[i]!} has nfields={rule.nfields} but constructor has {cv.numFields} fields"
+        | _ => throw s!"constructor {iv.ctors[i]!} not found"
+    | _ => pure ()
+
+  /-- Check that a recursor rule RHS has the expected type.
+      Uses bidirectional check to push expected type through lambda binders. -/
+  partial def checkRecursorRuleType (recType : KExpr m) (rec : Ix.Kernel.RecursorVal m)
+      (ctorAddr : Address) (nf : Nat) (ruleRhs : KExpr m)
+      : TypecheckM σ m (KTypedExpr m) := do
+    let np := rec.numParams
+    let nm := rec.numMotives
+    let nk := rec.numMinors
+    let shift := nm + nk
+    let ctorCi ← derefConst ctorAddr
+    let ctorType := ctorCi.type
+    let mut recTy := recType
+    let mut recDoms : Array (KExpr m) := #[]
+    for _ in [:np + nm + nk] do
+      match recTy with
+      | .forallE dom body _ _ =>
+        recDoms := recDoms.push dom
+        recTy := body
+      | _ => throw "recursor type has too few Pi binders for params+motives+minors"
+    let ni := rec.numIndices
+    let motivePos : Nat := Id.run do
+      let mut ty := recTy
+      for _ in [:ni + 1] do
+        match ty with
+        | .forallE _ body _ _ => ty := body
+        | _ => return 0
+      match ty.getAppFn with
+      | .bvar idx _ => return (ni + nk + nm - idx)
+      | _ => return 0
+    let cnp := match ctorCi with | .ctorInfo cv => cv.numParams | _ => np
+    let majorPremiseDom : Option (KExpr m) := Id.run do
+      let mut ty := recTy
+      for _ in [:ni] do
+        match ty with
+        | .forallE _ body _ _ => ty := body
+        | _ => return none
+      match ty with
+      | .forallE dom _ _ _ => return some dom
+      | _ => return none
+    let recLevelCount := rec.numLevels
+    let ctorLevelCount := ctorCi.cv.numLevels
+    let levelSubst : Array (KLevel m) :=
+      if cnp > np then
+        match majorPremiseDom with
+        | some dom => match dom.getAppFn with
+          | .const _ lvls _ => lvls
+          | _ => #[]
+        | none => #[]
+      else
+        let levelOffset := recLevelCount - ctorLevelCount
+        Array.ofFn (n := ctorLevelCount) fun i =>
+          .param (levelOffset + i.val) (default : Ix.Kernel.MetaField m Ix.Name)
+    let ctorLevels := levelSubst
+    let nestedParams : Array (KExpr m) :=
+      if cnp > np then
+        match majorPremiseDom with
+        | some dom =>
+          let args := dom.getAppArgs
+          Array.ofFn (n := cnp - np) fun i =>
+            if np + i.val < args.size then
+              Ix.Kernel.shiftCtorToRule args[np + i.val]! 0 nf #[]
+            else default
+        | none => #[]
+      else #[]
+    let mut cty := ctorType
+    for _ in [:cnp] do
+      match cty with
+      | .forallE _ body _ _ => cty := body
+      | _ => throw "constructor type has too few Pi binders for params"
+    let mut fieldDoms : Array (KExpr m) := #[]
+    let mut ctorRetType := cty
+    for _ in [:nf] do
+      match ctorRetType with
+      | .forallE dom body _ _ =>
+        fieldDoms := fieldDoms.push dom
+        ctorRetType := body
+      | _ => throw "constructor type has too few Pi binders for fields"
+    let ctorRet := if cnp > np then
+      Ix.Kernel.substNestedParams ctorRetType nf (cnp - np) nestedParams
+    else ctorRetType
+    let fieldDomsAdj := if cnp > np then
+      Array.ofFn (n := fieldDoms.size) fun i =>
+        Ix.Kernel.substNestedParams fieldDoms[i]! i.val (cnp - np) nestedParams
+    else fieldDoms
+    let ctorRetShifted := Ix.Kernel.shiftCtorToRule ctorRet nf shift levelSubst
+    let motiveIdx := nf + nk + nm - 1 - motivePos
+    let mut ret := Ix.Kernel.Expr.mkBVar motiveIdx
+    let ctorRetArgs := ctorRetShifted.getAppArgs
+    for i in [cnp:ctorRetArgs.size] do
+      ret := Ix.Kernel.Expr.mkApp ret ctorRetArgs[i]!
+    let mut ctorApp : KExpr m := Ix.Kernel.Expr.mkConst ctorAddr ctorLevels
+    for i in [:np] do
+      ctorApp := Ix.Kernel.Expr.mkApp ctorApp (Ix.Kernel.Expr.mkBVar (nf + shift + np - 1 - i))
+    for v in nestedParams do
+      ctorApp := Ix.Kernel.Expr.mkApp ctorApp v
+    for k in [:nf] do
+      ctorApp := Ix.Kernel.Expr.mkApp ctorApp (Ix.Kernel.Expr.mkBVar (nf - 1 - k))
+    ret := Ix.Kernel.Expr.mkApp ret ctorApp
+    -- Build suffix: field binders + return type (without prefix wrapping)
+    let mut suffixType := ret
+    for i in [:nf] do
+      let j := nf - 1 - i
+      let dom := Ix.Kernel.shiftCtorToRule fieldDomsAdj[j]! j shift levelSubst
+      suffixType := .forallE dom suffixType default default
+    -- Build full expected type: prefix (params+motives+minors) + suffix
+    let mut fullType := suffixType
+    for i in [:np + nm + nk] do
+      let j := np + nm + nk - 1 - i
+      fullType := .forallE recDoms[j]! fullType default default
+    -- Walk ruleRhs (lambdas) and fullType (forallEs) in parallel as KExprs,
+    -- comparing domain KExprs directly with BEq (no eval/quote round-trip).
+    let mut rhs := ruleRhs
+    let mut expected := fullType
+    let mut extTypes := (← read).types
+    let mut extLetValues := (← read).letValues
+    let mut extBinderNames := (← read).binderNames
+    let mut lamDoms : Array (KExpr m) := #[]
+    let mut lamNames : Array (KMetaField m Ix.Name) := #[]
+    let mut lamBis : Array (KMetaField m Lean.BinderInfo) := #[]
+    repeat
+      match rhs, expected with
+      | .lam ty body name bi, .forallE dom expBody _ _ =>
+        -- BEq fast path: compare domain KExprs directly (no eval needed)
+        if !(ty == dom) then
+          let tyV ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+            (evalInCtx ty)
+          let domV ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+            (evalInCtx dom)
+          if !(← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+            (withInferOnly (isDefEq tyV domV))) then
+            throw s!"recursor rule domain mismatch for {ctorAddr}"
+        let domV ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+          (evalInCtx dom)
+        lamDoms := lamDoms.push ty
+        lamNames := lamNames.push name
+        lamBis := lamBis.push bi
+        extTypes := extTypes.push domV
+        extLetValues := extLetValues.push none
+        extBinderNames := extBinderNames.push name
+        rhs := body
+        expected := expBody
+      | _, _ => break
+    -- Check body: infer and compare against expected return type
+    let (bodyTe, bodyType) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+      (withInferOnly (infer rhs))
+    let expectedRetV ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+      (evalInCtx expected)
+    if !(← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+      (withInferOnly (isDefEq bodyType expectedRetV))) then
+      throw s!"recursor rule body type mismatch for {ctorAddr}"
+    -- Rebuild KTypedExpr: wrap body in lambda binders
+    let mut resultBody := bodyTe.body
+    for i in [:lamDoms.size] do
+      let j := lamDoms.size - 1 - i
+      resultBody := .lam lamDoms[j]! resultBody lamNames[j]! lamBis[j]!
+    pure ⟨bodyTe.info, resultBody⟩
+
   /-- Typecheck a mutual inductive block. -/
-  partial def checkIndBlock (addr : Address) : TypecheckM m Unit := do
+  partial def checkIndBlock (addr : Address) : TypecheckM σ m Unit := do
     let ci ← derefConst addr
     let indInfo ← match ci with
       | .inductInfo _ => pure ci
@@ -1115,25 +1992,35 @@ mutual
       match (← read).kenv.find? iv.ctors[0]! with
       | some (.ctorInfo cv) => cv.numFields > 0
       | _ => false
-    modify fun stt => { stt with typedConsts := stt.typedConsts.insert addr (TypedConst.inductive type isStruct) }
+    modify fun stt => { stt with typedConsts := stt.typedConsts.insert addr (Ix.Kernel.TypedConst.inductive type isStruct) }
     let indAddrs := iv.all
-    let indResultLevel := getIndResultLevel iv.type
+    let indResultLevel := Ix.Kernel.getIndResultLevel iv.type
     for (ctorAddr, _cidx) in iv.ctors.toList.zipIdx do
       match (← read).kenv.find? ctorAddr with
       | some (.ctorInfo cv) => do
         let (ctorType, _) ← isSort cv.type
-        modify fun stt => { stt with typedConsts := stt.typedConsts.insert ctorAddr (TypedConst.constructor ctorType cv.cidx cv.numFields) }
+        modify fun stt => { stt with typedConsts := stt.typedConsts.insert ctorAddr (Ix.Kernel.TypedConst.constructor ctorType cv.cidx cv.numFields) }
         if cv.numParams != iv.numParams then
           throw s!"Constructor {ctorAddr} has {cv.numParams} params but inductive has {iv.numParams}"
-        -- Validate constructor parameter domains match inductive parameter domains
         if !iv.isUnsafe then do
           let mut indTy := iv.type
           let mut ctorTy := cv.type
+          let mut extTypes := (← read).types
+          let mut extLetValues := (← read).letValues
+          let mut extBinderNames := (← read).binderNames
           for i in [:iv.numParams] do
             match indTy, ctorTy with
-            | .forallE indDom indBody _ _, .forallE ctorDom ctorBody _ _ =>
-              if !(← isDefEq indDom ctorDom) then
+            | .forallE indDom indBody indName _, .forallE ctorDom ctorBody _ _ =>
+              let indDomV ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+                (evalInCtx indDom)
+              let ctorDomV ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+                (evalInCtx ctorDom)
+              if !(← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
+                (isDefEq indDomV ctorDomV)) then
                 throw s!"Constructor {ctorAddr} parameter {i} domain doesn't match inductive parameter domain"
+              extTypes := extTypes.push indDomV
+              extLetValues := extLetValues.push none
+              extBinderNames := extBinderNames.push indName
               indTy := indBody
               ctorTy := ctorBody
             | _, _ =>
@@ -1146,8 +2033,7 @@ mutual
           if let some indLvl := indResultLevel then
             checkFieldUniverses cv.type cv.numParams ctorAddr indLvl
         if !iv.isUnsafe then
-          let retType := getCtorReturnType cv.type cv.numParams cv.numFields
-          -- Validate return type head is one of the inductives being defined
+          let retType := Ix.Kernel.getCtorReturnType cv.type cv.numParams cv.numFields
           let retHead := retType.getAppFn
           match retHead with
           | .const retAddr _ _ =>
@@ -1156,7 +2042,6 @@ mutual
           | _ =>
             throw s!"Constructor {ctorAddr} return type is not an inductive application"
           let args := retType.getAppArgs
-          -- Validate param args are correct bvars (bvar (numFields + numParams - 1 - i) for param i)
           for i in [:iv.numParams] do
             if i < args.size then
               let expectedBvar := cv.numFields + iv.numParams - 1 - i
@@ -1166,831 +2051,163 @@ mutual
                   throw s!"Constructor {ctorAddr} return type has wrong parameter at position {i}"
               | _ =>
                 throw s!"Constructor {ctorAddr} return type parameter {i} is not a bound variable"
-          -- Validate index args don't mention the inductives
           for i in [iv.numParams:args.size] do
             for indAddr in indAddrs do
-              if exprMentionsConst args[i]! indAddr then
+              if Ix.Kernel.exprMentionsConst args[i]! indAddr then
                 throw s!"Constructor {ctorAddr} index argument mentions the inductive (unsound)"
       | _ => throw s!"Constructor {ctorAddr} not found"
 
-  /-- Check that constructor field types have sorts <= the inductive's result sort. -/
-  partial def checkFieldUniverses (ctorType : Expr m) (numParams : Nat)
-      (ctorAddr : Address) (indLvl : Level m) : TypecheckM m Unit :=
-    go ctorType numParams
-  where
-    go (ty : Expr m) (remainingParams : Nat) : TypecheckM m Unit := do
-      let ty ← whnf ty
-      match ty with
-      | .forallE dom body _piName _ =>
-        if remainingParams > 0 then do
-          let _ ← isSort dom
-          withExtendedCtx dom (go body (remainingParams - 1))
-        else do
-          let (_, fieldSortLvl) ← isSort dom
-          let fieldReduced := Level.reduce fieldSortLvl
-          let indReduced := Level.reduce indLvl
-          if !Level.leq fieldReduced indReduced 0 && !Level.isZero indReduced then
-            throw s!"Constructor {ctorAddr} field type lives in a universe larger than the inductive's universe"
-          withExtendedCtx dom (go body 0)
-      | _ => pure ()
+  /-- Typecheck a single constant declaration. -/
+  partial def checkConst (addr : Address) : TypecheckM σ m Unit := withResetCtx do
+    let ci? := (← read).kenv.find? addr
+    let declSafety := match ci? with | some ci => ci.safety | none => .safe
+    withSafety declSafety do
+    -- Reset all ephemeral caches and thunk table between constants
+    (← read).thunkTable.set #[]
+    modify fun stt => { stt with
+      ptrFailureCache := default,
+      eqvManager := {},
+      keepAlive := #[],
+      whnfCache := default,
+      whnfCoreCache := default,
+      inferCache := default,
+      heartbeats := 0
+    }
+    if (← get).typedConsts.get? addr |>.isSome then return ()
+    let ci ← derefConst addr
+    let _univs := ci.cv.mkUnivParams
+    let newConst ← match ci with
+      | .axiomInfo _ =>
+        let (type, _) ← isSort ci.type
+        pure (Ix.Kernel.TypedConst.axiom type)
+      | .opaqueInfo _ =>
+        let (type, _) ← isSort ci.type
+        let typeV ← evalInCtx type.body
+        let value ← withRecAddr addr (check ci.value?.get! typeV)
+        pure (Ix.Kernel.TypedConst.opaque type value)
+      | .thmInfo _ =>
+        let (type, lvl) ← withInferOnly (isSort ci.type)
+        if !Ix.Kernel.Level.isZero lvl then
+          throw "theorem type must be a proposition (Sort 0)"
+        let (_, valType) ← withRecAddr addr (withInferOnly (infer ci.value?.get!))
+        let typeV ← evalInCtx type.body
+        if !(← withInferOnly (isDefEq valType typeV)) then
+          throw "theorem value type doesn't match declared type"
+        let value : KTypedExpr m := ⟨.proof, ci.value?.get!⟩
+        pure (Ix.Kernel.TypedConst.theorem type value)
+      | .defnInfo v =>
+        let (type, _) ← isSort ci.type
+        let part := v.safety == .partial
+        let typeV ← evalInCtx type.body
+        let hb0 ← pure (← get).heartbeats
+        let value ←
+          if part then
+            let typExpr := type.body
+            let mutTypes : Std.TreeMap Nat (Address × (Array (KLevel m) → Val m)) compare :=
+              (Std.TreeMap.empty).insert 0 (addr, fun _ => Val.neutral (.const addr #[] default) #[])
+            withMutTypes mutTypes (withRecAddr addr (check v.value typeV))
+          else withRecAddr addr (check v.value typeV)
+        let hb1 ← pure (← get).heartbeats
+        if (← read).trace then
+          dbg_trace s!"  [defn] check value: {hb1 - hb0} heartbeats"
+        validatePrimitive addr
+        pure (Ix.Kernel.TypedConst.definition type value part)
+      | .quotInfo v =>
+        let (type, _) ← isSort ci.type
+        if (← read).quotInit then
+          validateQuotient
+        pure (Ix.Kernel.TypedConst.quotient type v.kind)
+      | .inductInfo _ =>
+        checkIndBlock addr
+        return ()
+      | .ctorInfo v =>
+        checkIndBlock v.induct
+        return ()
+      | .recInfo v => do
+        let indAddr := getMajorInduct ci.type v.numParams v.numMotives v.numMinors v.numIndices
+          |>.getD default
+        ensureTypedConst indAddr
+        let (type, _) ← isSort ci.type
+        if v.k then
+          validateKFlag indAddr
+        validateRecursorRules v indAddr
+        checkElimLevel ci.type v indAddr
+        let hb0 ← pure (← get).heartbeats
+        let mut typedRules : Array (Nat × KTypedExpr m) := #[]
+        match (← read).kenv.find? indAddr with
+        | some (.inductInfo iv) =>
+          for h : i in [:v.rules.size] do
+            let rule := v.rules[i]
+            if i < iv.ctors.size then
+              let hbr0 ← pure (← get).heartbeats
+              let rhs ← checkRecursorRuleType ci.type v iv.ctors[i]! rule.nfields rule.rhs
+              typedRules := typedRules.push (rule.nfields, rhs)
+              let hbr1 ← pure (← get).heartbeats
+              if (← read).trace then
+                dbg_trace s!"  [rec] checkRecursorRuleType rule {i}: {hbr1 - hbr0} heartbeats"
+        | _ => pure ()
+        let hb1 ← pure (← get).heartbeats
+        if (← read).trace then
+          dbg_trace s!"  [rec] checkRecursorRuleType total: {hb1 - hb0} heartbeats ({v.rules.size} rules)"
+        pure (Ix.Kernel.TypedConst.recursor type v.numParams v.numMotives v.numMinors v.numIndices v.k indAddr typedRules)
+    modify fun stt => { stt with typedConsts := stt.typedConsts.insert addr newConst }
 
-  /-- Check if a single-ctor Prop inductive allows large elimination.
-      All non-Prop fields must appear directly as index arguments in the return type.
-      Matches lean4lean's `isLargeEliminator` / lean4 C++ `elim_only_at_universe_zero`. -/
-  partial def checkLargeElimSingleCtor (ctorType : Expr m) (numParams numFields : Nat)
-      : TypecheckM m Bool :=
-    go ctorType numParams numFields #[]
-  where
-    go (ty : Expr m) (remainingParams : Nat) (remainingFields : Nat)
-       (nonPropBvars : Array Nat) : TypecheckM m Bool := do
-      let ty ← whnf ty
-      match ty with
-      | .forallE dom body _ _ =>
-        if remainingParams > 0 then
-          withExtendedCtx dom (go body (remainingParams - 1) remainingFields nonPropBvars)
-        else if remainingFields > 0 then
-          let (_, fieldSortLvl) ← isSort dom
-          let nonPropBvars := if !Level.isZero fieldSortLvl then
-            -- After all remaining fields, this field is bvar (remainingFields - 1)
-            nonPropBvars.push (remainingFields - 1)
-          else nonPropBvars
-          withExtendedCtx dom (go body 0 (remainingFields - 1) nonPropBvars)
-        else pure true
-      | _ =>
-        if nonPropBvars.isEmpty then return true
-        let args := ty.getAppArgs
-        for bvarIdx in nonPropBvars do
-          let mut found := false
-          for i in [numParams:args.size] do
-            match args[i]! with
-            | .bvar idx _ => if idx == bvarIdx then found := true
-            | _ => pure ()
-          if !found then return false
-        return true
+end
 
-  /-- Validate that the recursor's elimination level is appropriate for the inductive.
-      If the inductive doesn't allow large elimination, the motive must return Prop. -/
-  partial def checkElimLevel (recType : Expr m) (rec : RecursorVal m) (indAddr : Address)
-      : TypecheckM m Unit := do
-    let kenv := (← read).kenv
-    match kenv.find? indAddr with
-    | some (.inductInfo iv) =>
-      let some indLvl := getIndResultLevel iv.type | return ()
-      -- Non-zero result level → large elimination always allowed
-      if levelIsNonZero indLvl then return ()
-      -- Extract motive sort from recursor type
-      let some motiveSort := getMotiveSort recType rec.numParams | return ()
-      -- If motive is already Prop, nothing to check
-      if Level.isZero motiveSort then return ()
-      -- Motive wants non-Prop elimination. Check if it's allowed.
-      -- Mutual inductives in Prop → no large elimination
-      if iv.all.size != 1 then
-        throw s!"recursor claims large elimination but mutual Prop inductive only allows Prop elimination"
-      if iv.ctors.isEmpty then return ()  -- empty Prop type can eliminate into any Sort
-      if iv.ctors.size != 1 then
-        throw s!"recursor claims large elimination but Prop inductive with multiple constructors only allows Prop elimination"
-      let ctorAddr := iv.ctors[0]!
-      match kenv.find? ctorAddr with
-      | some (.ctorInfo cv) =>
-        let allowed ← checkLargeElimSingleCtor cv.type iv.numParams cv.numFields
-        if !allowed then
-          throw s!"recursor claims large elimination but inductive has non-Prop fields not appearing in indices"
-      | _ => return ()
-    | _ => return ()
+/-! ## Convenience wrappers -/
 
-  /-- Validate K-flag: requires non-mutual, Prop, single ctor, zero fields. -/
-  partial def validateKFlag (rec : RecursorVal m) (indAddr : Address) : TypecheckM m Unit := do
-    match (← read).kenv.find? indAddr with
-    | some (.inductInfo iv) =>
-      if iv.all.size != 1 then
-        throw "recursor claims K but inductive is mutual"
-      match getIndResultLevel iv.type with
-      | some lvl =>
-        if levelIsNonZero lvl then
-          throw s!"recursor claims K but inductive is not in Prop"
-      | none => throw "recursor claims K but cannot determine inductive's result sort"
-      if iv.ctors.size != 1 then
-        throw s!"recursor claims K but inductive has {iv.ctors.size} constructors (need 1)"
-      match (← read).kenv.find? iv.ctors[0]! with
-      | some (.ctorInfo cv) =>
-        if cv.numFields != 0 then
-          throw s!"recursor claims K but constructor has {cv.numFields} fields (need 0)"
-      | _ => throw "recursor claims K but constructor not found"
-    | _ => throw s!"recursor claims K but {indAddr} is not an inductive"
+/-- Evaluate an expression to WHNF and quote back. -/
+def whnf (e : KExpr m) : TypecheckM σ m (KExpr m) := do
+  let v ← evalInCtx e
+  let v' ← whnfVal v
+  let d ← depth
+  quote v' d
 
-  /-- Validate recursor rules: check rule count, ctor membership, field counts.
-      Uses `indAddr` (from getMajorInduct) to look up the inductive directly,
-      since rec.all may be empty for recursor-only Ixon blocks.
-      Does NOT check numParams/numIndices — auxiliary recursors (rec_1, etc.)
-      can have different param counts than the major inductive. -/
-  partial def validateRecursorRules (rec : RecursorVal m) (indAddr : Address) : TypecheckM m Unit := do
-    match (← read).kenv.find? indAddr with
-    | some (.inductInfo iv) =>
-      if rec.rules.size != iv.ctors.size then
-        throw s!"recursor has {rec.rules.size} rules but inductive has {iv.ctors.size} constructors"
-      for h : i in [:rec.rules.size] do
-        let rule := rec.rules[i]
-        match (← read).kenv.find? iv.ctors[i]! with
-        | some (.ctorInfo cv) =>
-          if rule.nfields != cv.numFields then
-            throw s!"recursor rule for {iv.ctors[i]!} has nfields={rule.nfields} but constructor has {cv.numFields} fields"
-        | _ => throw s!"constructor {iv.ctors[i]!} not found"
-    | _ => pure ()
+/-- Evaluate a closed expression to a value (no local env). -/
+def evalClosed (e : KExpr m) : TypecheckM σ m (Val m) :=
+  evalInCtx e
 
-  /-- Check that a recursor rule RHS has the expected type.
-      Builds the expected type from the recursor type and constructor type,
-      then verifies the inferred RHS type matches via isDefEq.
-      The expected type for rule j (constructor ctor_j with nf fields) is:
-        Π (rec_params) (motives) (minors) (ctor_fields) . motive indices (ctor_j params fields)
-      where the first (np+nm+nk) Pi binders come from the recursor type and
-      the field binders come from the constructor type (with param bvars shifted
-      to skip motive/minor binders). -/
-  partial def checkRecursorRuleType (recType : Expr m) (rec : RecursorVal m)
-      (ctorAddr : Address) (nf : Nat) (ruleRhs : Expr m) : TypecheckM m Unit := do
-    let np := rec.numParams
-    let nm := rec.numMotives
-    let nk := rec.numMinors
-    let shift := nm + nk
-    -- Look up constructor info
-    let ctorCi ← derefConst ctorAddr
-    let ctorType := ctorCi.type
-    -- 1. Extract recursor binder domains (params + motives + minors)
-    let mut recTy := recType
-    let mut recDoms : Array (Expr m) := #[]
-    for _ in [:np + nm + nk] do
-      match recTy with
-      | .forallE dom body _ _ =>
-        recDoms := recDoms.push dom
-        recTy := body
-      | _ => throw "recursor type has too few Pi binders for params+motives+minors"
-    -- Determine motive position from recursor return type.
-    -- After stripping indices+major, the return expr head is bvar(ni+nk+nm-d)
-    -- where d is the motive index for the major inductive.
-    let ni := rec.numIndices
-    let motivePos : Nat := Id.run do
-      let mut ty := recTy
-      for _ in [:ni + 1] do
-        match ty with
-        | .forallE _ body _ _ => ty := body
-        | _ => return 0
-      match ty.getAppFn with
-      | .bvar idx _ => return (ni + nk + nm - idx)
-      | _ => return 0
-    -- 2. Extract field domains from ctor type and handle nested params.
-    -- The constructor may have more params than the recursor (nested inductive pattern):
-    -- rec.numParams = shared params; cv.numParams may include extra "nested" params.
-    let cnp := match ctorCi with | .ctorInfo cv => cv.numParams | _ => np
-    -- Extract the major premise domain (needed for nested param values and level extraction).
-    -- recTy (after stripping np+nm+nk) = Π (indices) (major : IndType args), ret
-    let majorPremiseDom : Option (Expr m) := Id.run do
-      let mut ty := recTy
-      for _ in [:ni] do
-        match ty with
-        | .forallE _ body _ _ => ty := body
-        | _ => return none
-      match ty with
-      | .forallE dom _ _ _ => return some dom
-      | _ => return none
-    -- Compute constructor level substitution.
-    -- For nested inductives (cnp > np): extract actual levels from the major premise domain head
-    -- (e.g., List.{0} RCasesPatt → levels = [Level.zero]).
-    -- For standard case: map ctor level param i → rec level param (levelOffset + i).
-    let recLevelCount := rec.numLevels
-    let ctorLevelCount := ctorCi.cv.numLevels
-    let levelSubst : Array (Level m) :=
-      if cnp > np then
-        match majorPremiseDom with
-        | some dom => match dom.getAppFn with
-          | .const _ lvls _ => lvls
-          | _ => #[]
-        | none => #[]
-      else
-        let levelOffset := recLevelCount - ctorLevelCount
-        Array.ofFn (n := ctorLevelCount) fun i =>
-          .param (levelOffset + i.val) (default : MetaField m Ix.Name)
-    let ctorLevels := levelSubst
-    -- Extract nested param values from the major premise domain args.
-    let nestedParams : Array (Expr m) :=
-      if cnp > np then
-        match majorPremiseDom with
-        | some dom =>
-          let args := dom.getAppArgs
-          -- args[np..cnp-1] are nested param values (under np+nm+nk+ni binders)
-          -- Shift up by nf to account for field binders in rule context
-          Array.ofFn (n := cnp - np) fun i =>
-            if np + i.val < args.size then
-              shiftCtorToRule args[np + i.val]! 0 nf #[]
-            else default
-        | none => #[]
-      else #[]
-    -- Peel ALL constructor params (cnp, not just np)
-    let mut cty := ctorType
-    for _ in [:cnp] do
-      match cty with
-      | .forallE _ body _ _ => cty := body
-      | _ => throw "constructor type has too few Pi binders for params"
-    -- cty has nf field Pi binders and cnp free param bvars
-    let mut fieldDoms : Array (Expr m) := #[]
-    let mut ctorRetType := cty
-    for _ in [:nf] do
-      match ctorRetType with
-      | .forallE dom body _ _ =>
-        fieldDoms := fieldDoms.push dom
-        ctorRetType := body
-      | _ => throw "constructor type has too few Pi binders for fields"
-    -- ctorRetType has cnp free param bvars and nf free field bvars.
-    -- Extra nested param bvars (0..cnp-np-1 at depth 0, i.e. indices nf..nf+cnp-np-1 in body)
-    -- need to be substituted with nestedParams before shifting.
-    -- Substitute extra param bvars: in the body, extra params are bvar indices
-    -- 0..cnp-np-1 (after fields). We instantiate them and shift shared params down.
-    let ctorRet := if cnp > np then
-      substNestedParams ctorRetType nf (cnp - np) nestedParams
-    else ctorRetType
-    let fieldDomsAdj := if cnp > np then
-      Array.ofFn (n := fieldDoms.size) fun i =>
-        substNestedParams fieldDoms[i]! i.val (cnp - np) nestedParams
-    else fieldDoms
-    -- Now ctorRet has np free param bvars and nf free field bvars
-    -- Shift param bvars (>= nf) up by nm+nk for the rule context
-    let ctorRetShifted := shiftCtorToRule ctorRet nf shift levelSubst
-    -- 3. Build expected return type: motive indices (ctor params fields)
-    -- Under all np+nm+nk+nf binders:
-    --   motive_d = bvar (nf + nk + nm - 1 - d)  [d = position of major inductive in rec.all]
-    --   param i  = bvar (nf + nk + nm + np - 1 - i)
-    --   field k  = bvar (nf - 1 - k)
-    let motiveIdx := nf + nk + nm - 1 - motivePos
-    let mut ret := Expr.mkBVar motiveIdx
-    -- Apply indices from shifted ctor return type (skip all cnp param args)
-    let ctorRetArgs := ctorRetShifted.getAppArgs
-    for i in [cnp:ctorRetArgs.size] do
-      ret := Expr.mkApp ret ctorRetArgs[i]!
-    -- Build ctor application: ctor levels params fields nested-params
-    let mut ctorApp : Expr m := Expr.mkConst ctorAddr ctorLevels
-    for i in [:np] do
-      ctorApp := Expr.mkApp ctorApp (Expr.mkBVar (nf + shift + np - 1 - i))
-    for v in nestedParams do
-      ctorApp := Expr.mkApp ctorApp v
-    for k in [:nf] do
-      ctorApp := Expr.mkApp ctorApp (Expr.mkBVar (nf - 1 - k))
-    ret := Expr.mkApp ret ctorApp
-    -- 4. Wrap return type with field Pi binders (innermost first, shifted)
-    let mut fullType := ret
-    for i in [:nf] do
-      let j := nf - 1 - i
-      let dom := shiftCtorToRule fieldDomsAdj[j]! j shift levelSubst
-      fullType := .forallE dom fullType default default
-    -- 5. Wrap with recursor binder Pi's (minors, motives, params - outermost first → innermost first)
-    for i in [:np + nm + nk] do
-      let j := np + nm + nk - 1 - i
-      fullType := .forallE recDoms[j]! fullType default default
-    -- 6. Check inferred RHS type matches expected type
-    let (_, rhsType) ← withInferOnly (infer ruleRhs)
-    if !(← withInferOnly (isDefEq rhsType fullType)) then
-      -- Walk both types in parallel, peeling Pi binders, to find where they diverge
-      let mut rTy := rhsType
-      let mut eTy := fullType
-      let mut binderIdx := 0
-      let mut divergeMsg := "types differ at top level"
-      let mut found := false
-      for _ in [:np + nm + nk + nf + 10] do  -- enough iterations
-        if found then break
-        match rTy, eTy with
-        | .forallE rd rb _ _, .forallE ed eb _ _ =>
-          if !(← withInferOnly (isDefEq rd ed)) then
-            divergeMsg := s!"binder {binderIdx} domain differs"
-            found := true
-          else
-            rTy := rb; eTy := eb; binderIdx := binderIdx + 1
-        | _, _ =>
-          if !(← withInferOnly (isDefEq rTy eTy)) then
-            let rHead := rTy.getAppFn
-            let eHead := eTy.getAppFn
-            let rArgs := rTy.getAppArgs
-            let eArgs := eTy.getAppArgs
-            let headEq ← withInferOnly (isDefEq rHead eHead)
-            let rTag := if rHead.isBVar then s!"bvar{rHead.bvarIdx!}" else if rHead.isConst then "const" else "other"
-            let eTag := if eHead.isBVar then s!"bvar{eHead.bvarIdx!}" else if eHead.isConst then "const" else "other"
-            let mut argDiag := s!"rHead={rTag} eHead={eTag} headEq={headEq} rArgs={rArgs.size} eArgs={eArgs.size}"
-            if headEq then
-              for j in [:min rArgs.size eArgs.size] do
-                if !(← withInferOnly (isDefEq rArgs[j]! eArgs[j]!)) then
-                  argDiag := argDiag ++ s!" arg{j}differs"
-                  break
-            divergeMsg := s!"return type differs after {binderIdx} binders; {argDiag}"
-            found := true
-          else
-            divergeMsg := s!"types are actually equal after {binderIdx} binders??"
-            found := true
-      throw s!"recursor rule RHS type mismatch for constructor {ctorCi.cv.name} ({ctorAddr}): {divergeMsg} (np={np} cnp={cnp})"
+/-- Force to WHNF and quote a value. -/
+def forceQuote (v : Val m) : TypecheckM σ m (KExpr m) := do
+  let v' ← whnfVal v
+  let d ← depth
+  quote v' d
 
-  /-- Quick structural equality check without WHNF. Returns:
-      - some true: definitely equal
-      - some false: definitely not equal
-      - none: unknown, need deeper checks -/
-  partial def quickIsDefEq (t s : Expr m) (useHash : Bool := true) : TypecheckM m (Option Bool) := do
-    -- Run EquivManager structural walk with union-find
-    let stt ← get
-    let (result, mgr') := EquivManager.isEquiv useHash t s |>.run stt.eqvManager
-    modify fun stt => { stt with eqvManager := mgr' }
-    if result then return some true
-    -- Failure cache (EquivManager only tracks successes)
-    let key := eqCacheKey t s
-    if (← get).failureCache.contains key then return some false
-    -- Shape-specific checks with richer equality (Level.equalLevel, etc.)
-    match t, s with
-    | .sort u, .sort u' => pure (some (Level.equalLevel u u'))
-    | .const a us _, .const b us' _ =>
-      if a == b && equalUnivArrays us us' then pure (some true) else pure none
-    | .lit l, .lit l' => pure (some (l == l'))
-    | .bvar i _, .bvar j _ => if i == j then pure (some true) else pure none
-    | .lam .., .lam .. => do
-      let mut a := t; let mut b := s
-      repeat
-        match a, b with
-        | .lam ty body _ _, .lam ty' body' _ _ =>
-          match ← quickIsDefEq ty ty' with
-          | some true => a := body; b := body'
-          | other => return other
-        | _, _ => break
-      quickIsDefEq a b
-    | .forallE .., .forallE .. => do
-      let mut a := t; let mut b := s
-      repeat
-        match a, b with
-        | .forallE ty body _ _, .forallE ty' body' _ _ =>
-          match ← quickIsDefEq ty ty' with
-          | some true => a := body; b := body'
-          | other => return other
-        | _, _ => break
-      quickIsDefEq a b
-    | _, _ => pure none
+/-- Infer the type of a closed expression (no local env). -/
+def inferClosed (e : KExpr m) : TypecheckM σ m (KTypedExpr m × Val m) :=
+  infer e
 
-  /-- Check if two expressions are definitionally equal.
-      Uses a staged approach matching lean4/lean4lean:
-      1. quickIsDefEq — structural shape match without WHNF
-      2. whnfCore(cheapProj=true) — structural reduction, projections stay cheap
-      3. Lazy delta reduction — unfold definitions one step at a time
-      4. whnfCore(cheapProj=false) — full projection resolution (only if needed)
-      5. Structural comparison -/
-  partial def isDefEq (t s : Expr m) : TypecheckM m Bool := do
-    -- 0. Quick structural check FIRST — no fuel/stack cost for trivial cases
-    match ← quickIsDefEq t s with
-    | some result => return result
-    | none => pure ()
-    modify fun s => { s with isDefEqCalls := s.isDefEqCalls + 1 }
-    withRecDepthCheck do
-    withFuelCheck do
+/-- Infer type and quote it back to Expr. -/
+def inferQuote (e : KExpr m) : TypecheckM σ m (KTypedExpr m × KExpr m) := do
+  let (te, typVal) ← infer e
+  let d ← depth
+  let typExpr ← quote typVal d
+  pure (te, typExpr)
 
-    -- Bool.true proof-by-reflection (matches lean4 C++ is_def_eq_core)
-    -- If one side is Bool.true, fully reduce the other and check
-    let prims := (← read).prims
-    if s.isConstOf prims.boolTrue then
-      let t' ← whnf t
-      if t'.isConstOf prims.boolTrue then cacheResult t s true; return true
-    if t.isConstOf prims.boolTrue then
-      let s' ← whnf s
-      if s'.isConstOf prims.boolTrue then cacheResult t s true; return true
-
-    -- 1. Structural reduction (cheapProj=true: defer full projection resolution)
-    let tn ← whnfCore t (cheapProj := true)
-    let sn ← whnfCore s (cheapProj := true)
-
-    -- 2. Quick check after whnfCore (useHash=false for thorough union-find walking)
-    match ← quickIsDefEq tn sn (useHash := false) with
-    | some true => cacheResult t s true; return true
-    | some false => pure ()  -- don't cache — deeper checks may still succeed
-    | none => pure ()
-
-    -- 3. Proof irrelevance
-    match ← isDefEqProofIrrel tn sn with
-    | some result =>
-      cacheResult t s result
-      return result
-    | none => pure ()
-
-    -- 4. Lazy delta reduction (incremental unfolding)
-    let (tn', sn', deltaResult) ← lazyDeltaReduction tn sn
-    if let some result := deltaResult then
-      cacheResult t s result
-      return result
-
-    -- 4b. Cheap structural checks after lazy delta (before full whnfCore)
-    match tn', sn' with
-    | .const a us _, .const b us' _ =>
-      if a == b && equalUnivArrays us us' then
-        cacheResult t s true; return true
-    | .proj _ ti te _, .proj _ si se _ =>
-      if ti == si then
-        if ← isDefEq te se then
-          cacheResult t s true; return true
-    | _, _ => pure ()
-
-    -- 5. Full structural reduction (no cheapProj — resolve all projections)
-    let tnn ← whnfCore tn'
-    let snn ← whnfCore sn'
-    -- If terms changed, recurse (goes through withRecDepthCheck, matching lean4lean)
-    if !(tnn == tn' && snn == sn') then
-      let result ← isDefEq tnn snn
-      cacheResult t s result
-      return result
-    -- 6. Structural comparison on fully-reduced terms
-    let result ← isDefEqCore tnn snn
-    cacheResult t s result
-    return result
-
-  /-- Check if e lives in Prop: type_of(e) reduces to Sort 0.
-      Matches lean4lean's `isProp`. -/
-  partial def isProp (e : Expr m) : TypecheckM m Bool := do
-    let (_, ty) ← withInferOnly (infer e)
-    let ty' ← whnf ty
-    return ty' == .sort .zero
-
-  /-- Check if both terms are proofs of the same Prop type (proof irrelevance).
-      Returns `none` if inference fails on open terms or the type isn't Prop.
-      Guards only the initial infer calls — if types are inferred, isProp and
-      isDefEq errors propagate (matching lean4lean's behavior). -/
-  partial def isDefEqProofIrrel (t s : Expr m) : TypecheckM m (Option Bool) := do
-    let tType ← try let (_, ty) ← withInferOnly (infer t); pure (some ty) catch _ => pure none
-    let some tType := tType | return none
-    if !(← isProp tType) then return none
-    let sType ← try let (_, ty) ← withInferOnly (infer s); pure (some ty) catch _ => pure none
-    let some sType := sType | return none
-    let result ← isDefEq tType sType
-    return some result
-
-  /-- Core structural comparison after whnf. -/
-  partial def isDefEqCore (t s : Expr m) : TypecheckM m Bool := do
-    match t, s with
-    -- Sort
-    | .sort u, .sort u' => pure (Level.equalLevel u u')
-
-    -- Bound variable
-    | .bvar i _, .bvar j _ => pure (i == j)
-
-    -- Constant
-    | .const a us _, .const b us' _ =>
-      pure (a == b && equalUnivArrays us us')
-
-    -- Lambda: flatten binder chain to avoid O(num_binders) stack depth
-    -- Extend context at each binder so proof irrelevance / infer work on bodies
-    | .lam .., .lam .. => do
-      let mut a := t
-      let mut b := s
-      let mut extTypes := (← read).types
-      let mut extLetValues := (← read).letValues
-      repeat
-        match a, b with
-        | .lam ty body _ _, .lam ty' body' _ _ =>
-          if !(← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isDefEq ty ty')) then return false
-          extTypes := extTypes.push ty
-          extLetValues := extLetValues.push none
-          a := body; b := body'
-        | _, _ => break
-      withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isDefEq a b)
-
-    -- Pi/ForallE: flatten binder chain to avoid O(num_binders) stack depth
-    -- Extend context at each binder so proof irrelevance / infer work on bodies
-    | .forallE .., .forallE .. => do
-      let mut a := t
-      let mut b := s
-      let mut extTypes := (← read).types
-      let mut extLetValues := (← read).letValues
-      repeat
-        match a, b with
-        | .forallE ty body _ _, .forallE ty' body' _ _ =>
-          if !(← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isDefEq ty ty')) then return false
-          extTypes := extTypes.push ty
-          extLetValues := extLetValues.push none
-          a := body; b := body'
-        | _, _ => break
-      withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues }) (isDefEq a b)
-
-    -- Application: flatten app spine, with eta-struct fallback (matches lean4lean)
-    | .app .., .app .. => do
-      let tFn := t.getAppFn
-      let sFn := s.getAppFn
-      let tArgs := t.getAppArgs
-      let sArgs := s.getAppArgs
-      if tArgs.size == sArgs.size then
-        if (← isDefEq tFn sFn) then
-          let mut ok := true
-          for h : i in [:tArgs.size] do
-            if !(← isDefEq tArgs[i] sArgs[i]!) then ok := false; break
-          if ok then return true
-      -- Fallback: try eta-struct when isDefEqApp fails
-      tryEtaStruct t s
-
-    -- Projection
-    | .proj a i struct _, .proj b j struct' _ =>
-      if a == b && i == j then isDefEq struct struct'
-      else pure false
-
-    -- Literals
-    | .lit l, .lit l' => pure (l == l')
-
-    -- Eta expansion: lambda vs non-lambda
-    | .lam ty body _ _, _ => do
-      -- eta: (\x => body) =?= s  iff  body =?= s x  where x = bvar 0
-      let sLifted := s.liftBVars 1
-      let sApp := Expr.mkApp sLifted (Expr.mkBVar 0)
-      withExtendedCtx ty (isDefEq body sApp)
-
-    | _, .lam ty body _ _ => do
-      -- eta: t =?= (\x => body)  iff  t x =?= body
-      let tLifted := t.liftBVars 1
-      let tApp := Expr.mkApp tLifted (Expr.mkBVar 0)
-      withExtendedCtx ty (isDefEq tApp body)
-
-    -- Nat literal vs non-literal: expand to constructor form but stay in isDefEqCore
-    -- (calling full isDefEq would reduce Nat.succ(lit n) back to lit(n+1), causing a cycle)
-    | .lit (.natVal _), _ => do
-      let prims := (← read).prims
-      let expanded := toCtorIfLit prims t
-      if expanded == t then pure false
-      else isDefEqCore expanded s
-
-    | _, .lit (.natVal _) => do
-      let prims := (← read).prims
-      let expanded := toCtorIfLit prims s
-      if expanded == s then pure false
-      else isDefEqCore t expanded
-
-    -- String literal vs constructor expansion
-    | .lit (.strVal str), _ => do
-      let prims := (← read).prims
-      let expanded := strLitToConstructor prims str
-      isDefEq expanded s
-
-    | _, .lit (.strVal str) => do
-      let prims := (← read).prims
-      let expanded := strLitToConstructor prims str
-      isDefEq t expanded
-
-    -- Structure eta (one side is app, other is not), with unit-like fallback
-    | _, .app _ _ | .app _ _, _ => do
-      if ← tryEtaStruct t s then return true
-      isDefEqUnitLike t s
-
-    -- Unit-like fallback: non-recursive, single ctor with 0 fields, 0 indices
-    | _, _ => isDefEqUnitLike t s
-
-  /-- For unit-like types (non-recursive, single ctor with 0 fields, 0 indices),
-      two terms are defeq if their types are defeq. -/
-  partial def isDefEqUnitLike (t s : Expr m) : TypecheckM m Bool := do
-    let kenv := (← read).kenv
-    let (_, tType) ← withInferOnly (infer t)
-    let tType' ← whnf tType
-    let fn := tType'.getAppFn
-    match fn with
-    | .const addr _ _ =>
-      match kenv.find? addr with
-      | some (.inductInfo v) =>
-        if v.isRec || v.numIndices != 0 || v.ctors.size != 1 then return false
-        match kenv.find? v.ctors[0]! with
-        | some (.ctorInfo cv) =>
-          if cv.numFields != 0 then return false
-          let (_, sType) ← withInferOnly (infer s)
-          isDefEq tType sType
-        | _ => return false
-      | _ => return false
-    | _ => return false
-
-  /-- If e is an application whose head is a projection, try whnfCore to reduce it. -/
-  partial def tryUnfoldProjApp (e : Expr m) : TypecheckM m (Option (Expr m)) := do
-    match e.getAppFn with
-    | .proj .. =>
-      let e' ← whnfCore e
-      if e' == e then return none else return some e'
-    | _ => return none
-
-  /-- Check if two Nat.succ chains or zero values match structurally. -/
-  partial def isDefEqOffset (t s : Expr m) : TypecheckM m (Option Bool) := do
-    let prims := (← read).prims
-    let isZero (e : Expr m) := e.isConstOf prims.natZero || match e with | .lit (.natVal 0) => true | _ => false
-    let succOf? (e : Expr m) : Option (Expr m) := match e with
-      | .lit (.natVal (n+1)) => some (.lit (.natVal n))
-      | .app fn arg => if fn.isConstOf prims.natSucc then some arg else none
-      | _ => none
-    if isZero t && isZero s then return some true
-    match succOf? t, succOf? s with
-    | some t', some s' => some <$> isDefEq t' s'
-    | _, _ => return none
-
-  /-- Lazy delta reduction loop. Unfolds definitions one step at a time,
-      guided by ReducibilityHints, until a conclusive comparison or both
-      sides are stuck. -/
-  partial def lazyDeltaReduction (t s : Expr m)
-      : TypecheckM m (Expr m × Expr m × Option Bool) := do
-    let mut tn := t
-    let mut sn := s
-    let kenv := (← read).kenv
-    let mut steps := 0
-    repeat
-      if steps > 10000 then throw "lazyDeltaReduction step limit (10000) exceeded"
-      steps := steps + 1
-
-      -- Syntactic check
-      if tn == sn then return (tn, sn, some true)
-
-      -- Quick structural check (EquivManager + lambda/forall matching)
-      -- Only trust "definitely equal"; delta reduction may still make unequal terms equal
-      match ← quickIsDefEq tn sn (useHash := false) with
-      | some true => return (tn, sn, some true)
-      | _ => pure ()
-
-      -- isDefEqOffset: short-circuit Nat.succ chain comparison
-      match ← isDefEqOffset tn sn with
-      | some result => return (tn, sn, some result)
-      | none => pure ()
-
-      -- Try nat reduction (whnf's args like lean4lean's reduceNat)
-      if let some tn' ← tryReduceNat tn then
-        return (tn', sn, some (← isDefEq tn' sn))
-      if let some sn' ← tryReduceNat sn then
-        return (tn, sn', some (← isDefEq tn sn'))
-
-      -- Try native reduction (reduceBool/reduceNat markers)
-      let prims := (← read).prims
-      if prims.reduceBool != default || prims.reduceNat != default then
-        if let some tn' ← reduceNativeExpr tn then
-          return (tn', sn, some (← isDefEq tn' sn))
-        if let some sn' ← reduceNativeExpr sn then
-          return (tn, sn', some (← isDefEq tn sn'))
-
-      -- Lazy delta step
-      let tDelta := isDelta tn kenv
-      let sDelta := isDelta sn kenv
-      match tDelta, sDelta with
-      | none, none => return (tn, sn, none)  -- both stuck
-      | some dt, none =>
-        -- Try reducing projection-headed app on the stuck side first
-        if let some sn' ← tryUnfoldProjApp sn then
-          sn := sn'; continue
-        match unfoldDelta dt tn with
-        | some r => tn ← whnfCore r (cheapProj := true); continue
-        | none => return (tn, sn, none)
-      | none, some ds =>
-        -- Try reducing projection-headed app on the stuck side first
-        if let some tn' ← tryUnfoldProjApp tn then
-          tn := tn'; continue
-        match unfoldDelta ds sn with
-        | some r => sn ← whnfCore r (cheapProj := true); continue
-        | none => return (tn, sn, none)
-      | some dt, some ds =>
-        let ht := dt.hints
-        let hs := ds.hints
-        -- Same head optimization: try comparing args first (with failure cache)
-        if tn.isApp && sn.isApp && sameHeadConst tn sn && ht.isRegular then
-          let key := eqCacheKey tn sn
-          if !(← get).failureCache.contains key then
-            if equalUnivArrays tn.getAppFn.constLevels! sn.getAppFn.constLevels! then
-              if ← isDefEqApp tn sn then return (tn, sn, some true)
-            modify fun stt => { stt with failureCache := stt.failureCache.insert key () }
-        if ht.lt' hs then
-          match unfoldDelta ds sn with
-          | some r => sn ← whnfCore r (cheapProj := true); continue
-          | none =>
-            match unfoldDelta dt tn with
-            | some r => tn ← whnfCore r (cheapProj := true); continue
-            | none => return (tn, sn, none)
-        else if hs.lt' ht then
-          match unfoldDelta dt tn with
-          | some r => tn ← whnfCore r (cheapProj := true); continue
-          | none =>
-            match unfoldDelta ds sn with
-            | some r => sn ← whnfCore r (cheapProj := true); continue
-            | none => return (tn, sn, none)
-        else
-          -- Same height: unfold both
-          match unfoldDelta dt tn, unfoldDelta ds sn with
-          | some rt, some rs =>
-            tn ← whnfCore rt (cheapProj := true)
-            sn ← whnfCore rs (cheapProj := true)
-            continue
-          | some rt, none => tn ← whnfCore rt (cheapProj := true); continue
-          | none, some rs => sn ← whnfCore rs (cheapProj := true); continue
-          | none, none => return (tn, sn, none)
-    return (tn, sn, none)
-
-  /-- Compare arguments of two applications with the same head constant. -/
-  partial def isDefEqApp (t s : Expr m) : TypecheckM m Bool := do
-    let tArgs := t.getAppArgs
-    let sArgs := s.getAppArgs
-    if tArgs.size != sArgs.size then return false
-    -- Also compare universe params
-    let tFn := t.getAppFn
-    let sFn := s.getAppFn
-    match tFn, sFn with
-    | .const _ us _, .const _ us' _ =>
-      if !equalUnivArrays us us' then return false
-    | _, _ => pure ()
-    for h : i in [:tArgs.size] do
-      if !(← isDefEq tArgs[i] sArgs[i]!) then return false
-    return true
-
-  /-- Try eta expansion for structure-like types.
-      Matches lean4lean's `tryEtaStruct`: constructs projections and compares via `isDefEq`. -/
-  partial def tryEtaStruct (t s : Expr m) : TypecheckM m Bool := do
-    if ← tryEtaStructCore t s then return true
-    tryEtaStructCore s t
-  where
-    tryEtaStructCore (t s : Expr m) : TypecheckM m Bool := do
-      let .const ctorAddr _ _ := s.getAppFn | return false
-      match (← read).kenv.find? ctorAddr with
-      | some (.ctorInfo cv) =>
-        let sArgs := s.getAppArgs
-        unless sArgs.size == cv.numParams + cv.numFields do return false
-        unless (← read).kenv.isStructureLike cv.induct do return false
-        let (_, tType) ← withInferOnly (infer t)
-        let (_, sType) ← withInferOnly (infer s)
-        unless ← isDefEq tType sType do return false
-        for h : i in [:cv.numFields] do
-          let argIdx := cv.numParams + i
-          let proj := Expr.mkProj cv.induct i t
-          unless ← isDefEq proj sArgs[argIdx]! do return false
-        return true
-      | _ => return false
-
-  /-- Cache a def-eq result (both successes and failures). -/
-  partial def cacheResult (t s : Expr m) (result : Bool) : TypecheckM m Unit := do
-    if result then
-      modify fun stt =>
-        let (_, mgr') := EquivManager.addEquiv t s |>.run stt.eqvManager
-        { stt with eqvManager := mgr' }
-    else
-      let key := eqCacheKey t s
-      modify fun stt => { stt with failureCache := stt.failureCache.insert key () }
-
-  /-- Validate a primitive definition/inductive/quotient using the KernelOps callback. -/
-  partial def validatePrimitive (addr : Address) : TypecheckM m Unit := do
-    let ops : KernelOps m := { isDefEq, whnf, infer, isProp, isSort }
-    let prims := (← read).prims
-    let kenv := (← read).kenv
-    let _ ← checkPrimitive ops prims kenv addr
-
-  /-- Validate quotient constant type signatures. -/
-  partial def validateQuotient : TypecheckM m Unit := do
-    let ops : KernelOps m := { isDefEq, whnf, infer, isProp, isSort }
-    let prims := (← read).prims
-    checkEqType ops prims
-    checkQuotTypes ops prims
-
-end -- mutual
-
-/-! ## Expr size -/
-
-/-- Count the number of nodes in an expression (iterative). -/
-partial def Expr.nodeCount (e : Expr m) : Nat := Id.run do
-  let mut stack : Array (Expr m) := #[e]
-  let mut count : Nat := 0
-  while h : stack.size > 0 do
-    let cur := stack[stack.size - 1]
-    stack := stack.pop
-    count := count + 1
-    match cur with
-    | .app fn arg => stack := stack.push fn |>.push arg
-    | .lam ty body _ _ => stack := stack.push ty |>.push body
-    | .forallE ty body _ _ => stack := stack.push ty |>.push body
-    | .letE ty val body _ => stack := stack.push ty |>.push val |>.push body
-    | .proj _ _ s _ => stack := stack.push s
-    | _ => pure ()
-  return count
-
-/-! ## Top-level entry points -/
+/-! ## Top-level typechecking entry points -/
 
 /-- Typecheck a single constant by address. -/
-def typecheckConst (kenv : Env m) (prims : Primitives) (addr : Address)
+def typecheckConst (kenv : KEnv m) (prims : KPrimitives) (addr : Address)
     (quotInit : Bool := true) (trace : Bool := false) : Except String Unit :=
-  let ctx : TypecheckCtx m := {
-    types := #[], kenv := kenv,
-    prims := prims, safety := .safe, quotInit := quotInit,
-    mutTypes := default, recAddr? := none, trace := trace
-  }
-  let stt : TypecheckState m := { typedConsts := default }
-  let (result, stt') := TypecheckM.run ctx stt (checkConst addr)
-  match result with
-  | .ok () => .ok ()
-  | .error e =>
-    .error s!"{e}\n  [stats] maxDepth={stt'.maxRecDepth} fuel={defaultFuel - stt'.fuel} infer={stt'.inferCalls} whnf={stt'.whnfCalls} isDefEq={stt'.isDefEqCalls} inferHits={stt'.inferCacheHits} whnfHits={stt'.whnfCacheHits} whnfCoreHits={stt'.whnfCoreCacheHits}"
+  TypecheckM.runPure
+    (fun _σ tt => { types := #[], kenv, prims, safety := .safe, quotInit, trace, thunkTable := tt })
+    {}
+    (fun _σ => checkConst addr)
+  |>.map (·.1)
 
-/-- Typecheck all constants in a kernel environment. -/
-def typecheckAll (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)
-    : Except String Unit := do
+/-- Typecheck all constants in an environment. Returns first error. -/
+def typecheckAll (kenv : KEnv m) (prims : KPrimitives)
+    (quotInit : Bool := true) : Except String Unit := do
   for (addr, ci) in kenv do
     match typecheckConst kenv prims addr quotInit with
     | .ok () => pure ()
     | .error e =>
-      let header := s!"constant {ci.cv.name} ({ci.kindName}, {addr})"
-      let typ := ci.type.pp
-      let val := match ci.value? with
-        | some v => s!"\n  value: {v.pp}"
-        | none => ""
-      throw s!"{header}: {e}\n  type: {typ}{val}"
+      throw s!"constant {ci.cv.name} ({ci.kindName}, {addr}): {e}"
 
 /-- Typecheck all constants with IO progress reporting. -/
-def typecheckAllIO (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)
-    : IO (Except String Unit) := do
-  let mut items : Array (Address × ConstantInfo m) := #[]
+def typecheckAllIO (kenv : KEnv m) (prims : KPrimitives)
+    (quotInit : Bool := true) : IO (Except String Unit) := do
+  let mut items : Array (Address × Ix.Kernel.ConstantInfo m) := #[]
   for (addr, ci) in kenv do
     items := items.push (addr, ci)
   let total := items.size
@@ -1998,19 +2215,16 @@ def typecheckAllIO (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)
     let (addr, ci) := items[idx]
     (← IO.getStdout).putStrLn s!"  [{idx + 1}/{total}] {ci.cv.name} ({ci.kindName})"
     (← IO.getStdout).flush
+    let start ← IO.monoMsNow
     match typecheckConst kenv prims addr quotInit with
     | .ok () =>
-      (← IO.getStdout).putStrLn s!"  ✓ {ci.cv.name}"
+      let elapsed := (← IO.monoMsNow) - start
+      let tag := if elapsed > 100 then " ⚠ SLOW" else ""
+      (← IO.getStdout).putStrLn s!"  ✓ {ci.cv.name} ({elapsed}ms){tag}"
       (← IO.getStdout).flush
     | .error e =>
-      let header := s!"constant {ci.cv.name} ({ci.kindName}, {addr})"
-      let typ := ci.type.pp
-      let val := match ci.value? with
-        | some v => s!"\n    value: {v.pp}"
-        | none => ""
-      IO.println s!"type: {typ}"
-      IO.println s!"val: {val}"
-      return .error s!"{header}: {e}"
+      let elapsed := (← IO.monoMsNow) - start
+      return .error s!"constant {ci.cv.name} ({ci.kindName}, {addr}) [{elapsed}ms]: {e}"
   return .ok ()
 
 end Ix.Kernel

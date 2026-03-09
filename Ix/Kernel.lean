@@ -3,12 +3,14 @@ import Ix.Environment
 import Ix.Kernel.Types
 import Ix.Kernel.Datatypes
 import Ix.Kernel.Level
+import Ix.Kernel.ExprUtils
+import Ix.Kernel.Value
 import Ix.Kernel.EquivManager
 import Ix.Kernel.TypecheckM
-import Ix.Kernel.Whnf
-import Ix.Kernel.DefEq
-import Ix.Kernel.Infer
+import Ix.Kernel.Helpers
+import Ix.Kernel.Quote
 import Ix.Kernel.Primitive
+import Ix.Kernel.Infer
 import Ix.Kernel.Convert
 
 namespace Ix.Kernel
@@ -25,7 +27,7 @@ inductive CheckError where
   | kernelException (msg : String)
   deriving Repr
 
-/-- FFI: Run Rust kernel type-checker over all declarations in a Lean environment. -/
+/-- FFI: Run Rust NbE type-checker over all declarations in a Lean environment. -/
 @[extern "rs_check_env"]
 opaque rsCheckEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO (Array (Ix.Name × CheckError))
 
@@ -42,5 +44,24 @@ opaque rsCheckConstFFI : @& List (Lean.Name × Lean.ConstantInfo) → @& String 
     Returns `none` on success, `some err` on failure. -/
 def rsCheckConst (leanEnv : Lean.Environment) (name : String) : IO (Option CheckError) :=
   rsCheckConstFFI leanEnv.constants.toList name
+
+/-- FFI: Type-check a batch of constants by name.
+    Converts the environment once, then checks each name.
+    Returns an array of (name, Option error) pairs. -/
+@[extern "rs_check_consts"]
+opaque rsCheckConstsFFI : @& List (Lean.Name × Lean.ConstantInfo) → @& Array String → IO (Array (String × Option CheckError))
+
+/-- Check a batch of constants by name using the Rust NbE checker. -/
+def rsCheckConsts (leanEnv : Lean.Environment) (names : Array String) : IO (Array (String × Option CheckError)) :=
+  rsCheckConstsFFI leanEnv.constants.toList names
+
+/-- FFI: Convert env to Kernel types without type-checking.
+    Returns diagnostic strings: status, kenv_size, prims_found, quot_init, missing prims. -/
+@[extern "rs_convert_env"]
+opaque rsConvertEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)
+
+/-- Convert env to Kernel types using Rust. Returns diagnostic array. -/
+def rsConvertEnv (leanEnv : Lean.Environment) : IO (Array String) :=
+  rsConvertEnvFFI leanEnv.constants.toList
 
 end Ix.Kernel

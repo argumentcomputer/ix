@@ -1,20 +1,20 @@
 /-
   Rust Kernel2 NbE integration tests.
   Exercises the Rust FFI (rs_check_consts2) against the same constants
-  as the Lean Kernel2 integration tests (kernel2-const).
+  as the Lean Kernel2 integration tests (kernel-const).
 -/
-import Ix.Kernel2
+import Ix.Kernel
 import Ix.Common
 import Ix.Meta
 import LSpec
 
 open LSpec
 
-namespace Tests.Ix.RustKernel2
+namespace Tests.Ix.RustKernel
 
 /-- Typecheck specific constants through the Rust Kernel2 NbE checker. -/
 def testConsts : TestSeq :=
-  .individualIO "rust kernel2 const checks" (do
+  .individualIO "rust kernel const checks" (do
     let leanEnv ← get_env!
 
     let constNames : Array String := #[
@@ -127,11 +127,11 @@ def testConsts : TestSeq :=
       "_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq"
     ]
 
-    IO.println s!"[rust-kernel2-consts] checking {constNames.size} constants via Rust FFI..."
+    IO.println s!"[rust-kernel-consts] checking {constNames.size} constants via Rust FFI..."
     let start ← IO.monoMsNow
-    let results ← Ix.Kernel2.rsCheckConsts2 leanEnv constNames
+    let results ← Ix.Kernel.rsCheckConsts leanEnv constNames
     let elapsed := (← IO.monoMsNow) - start
-    IO.println s!"[rust-kernel2-consts] batch check completed in {elapsed.formatMs}"
+    IO.println s!"[rust-kernel-consts] batch check completed in {elapsed.formatMs}"
 
     let mut passed := 0
     let mut failures : Array String := #[]
@@ -144,7 +144,7 @@ def testConsts : TestSeq :=
         IO.println s!"  ✗ {name}: {repr err}"
         failures := failures.push s!"{name}: {repr err}"
 
-    IO.println s!"[rust-kernel2-consts] {passed}/{constNames.size} passed ({elapsed.formatMs})"
+    IO.println s!"[rust-kernel-consts] {passed}/{constNames.size} passed ({elapsed.formatMs})"
     if failures.isEmpty then
       return (true, none)
     else
@@ -155,16 +155,16 @@ def constSuite : List TestSeq := [testConsts]
 
 /-- Test Rust Kernel2 env conversion with structural verification. -/
 def testConvertEnv : TestSeq :=
-  .individualIO "rust kernel2 convert env" (do
+  .individualIO "rust kernel convert env" (do
     let leanEnv ← get_env!
     let leanCount := leanEnv.constants.toList.length
-    IO.println s!"[rust-kernel2-convert] Lean env: {leanCount} constants"
+    IO.println s!"[rust-kernel-convert] Lean env: {leanCount} constants"
     let start ← IO.monoMsNow
-    let result ← Ix.Kernel2.rsConvertEnv2 leanEnv
+    let result ← Ix.Kernel.rsConvertEnv leanEnv
     let elapsed := (← IO.monoMsNow) - start
     if result.size < 5 then
       let status := result.getD 0 "no result"
-      IO.println s!"[rust-kernel2-convert] FAILED: {status} in {elapsed.formatMs}"
+      IO.println s!"[rust-kernel-convert] FAILED: {status} in {elapsed.formatMs}"
       return (false, some status)
     else
       let status := result[0]!
@@ -172,7 +172,7 @@ def testConvertEnv : TestSeq :=
       let primsFound := result[2]!
       let quotInit := result[3]!
       let mismatchCount := result[4]!
-      IO.println s!"[rust-kernel2-convert] kenv={kenvSize} prims={primsFound} quot={quotInit} mismatches={mismatchCount} in {elapsed.formatMs}"
+      IO.println s!"[rust-kernel-convert] kenv={kenvSize} prims={primsFound} quot={quotInit} mismatches={mismatchCount} in {elapsed.formatMs}"
       -- Report details (missing prims and mismatches)
       for i in [5:result.size] do
         IO.println s!"  {result[i]!}"
@@ -184,4 +184,4 @@ def testConvertEnv : TestSeq :=
 
 def convertSuite : List TestSeq := [testConvertEnv]
 
-end Tests.Ix.RustKernel2
+end Tests.Ix.RustKernel

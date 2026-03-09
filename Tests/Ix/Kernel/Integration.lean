@@ -1,8 +1,8 @@
 /-
   Kernel2 integration tests.
-  Mirrors Tests/Ix/KernelTests.lean but uses Ix.Kernel2.typecheckConst.
+  Mirrors Tests/Ix/KernelTests.lean but uses Ix.Kernel.typecheckConst.
 -/
-import Ix.Kernel2
+import Ix.Kernel
 import Ix.Kernel.Convert
 import Ix.Kernel.DecompileM
 import Ix.CompileM
@@ -14,7 +14,7 @@ import LSpec
 open LSpec
 open Tests.Ix.Kernel.Helpers (parseIxName leanNameToIx)
 
-namespace Tests.Ix.Kernel2.Integration
+namespace Tests.Ix.Kernel.Integration
 
 /-- Typecheck specific constants through Kernel2. -/
 def testConsts : TestSeq :=
@@ -85,8 +85,6 @@ def testConsts : TestSeq :=
         "Lean.Meta.Grind.Origin.noConfusionType",
         "Lean.Meta.Grind.Origin.noConfusion",
         "Lean.Meta.Grind.Origin.stx.noConfusion",
-        -- Complex proofs (fuel-sensitive)
-        "Nat.Linear.Poly.of_denote_eq_cancel",
         "String.length_empty",
         "_private.Init.Grind.Ring.Basic.«0».Lean.Grind.IsCharP.mk'_aux._proof_1_5",
         -- BVDecide regression test (fuel-sensitive)
@@ -142,6 +140,13 @@ def testConsts : TestSeq :=
         "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
         -- Stack overflow regression
         "_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq",
+        -- check-env hang regression
+        "Std.Time.Modifier.ctorElim",
+        "Nat.Linear.Poly.of_denote_eq_cancel",
+        -- check-env hang: complex recursor
+        "Std.DHashMap.Raw.WF.rec",
+        -- check-env hang: unsafe_rec definition
+        "Batteries.BinaryHeap.heapifyDown._unsafe_rec",
       ]
       let mut passed := 0
       let mut failures : Array String := #[]
@@ -153,7 +158,7 @@ def testConsts : TestSeq :=
         IO.println s!"  checking {name} ..."
         (← IO.getStdout).flush
         let start ← IO.monoMsNow
-        match Ix.Kernel2.typecheckConst kenv prims addr quotInit with
+        match Ix.Kernel.typecheckConst kenv prims addr quotInit (trace := true) with
         | .ok () =>
           let ms := (← IO.monoMsNow) - start
           IO.println s!"  ✓ {name} ({ms.formatMs})"
@@ -184,7 +189,7 @@ def negativeTests : TestSeq :=
         { numLevels := 0, type := .sort (.succ .zero), name := (), levelParams := () }
       let ci : Ix.Kernel.ConstantInfo .anon := .thmInfo { toConstantVal := cv, value := .sort .zero, all := #[] }
       let env := (default : Ix.Kernel.Env .anon).insert testAddr ci
-      match Ix.Kernel2.typecheckConst env prims testAddr with
+      match Ix.Kernel.typecheckConst env prims testAddr with
       | .error _ => passed := passed + 1
       | .ok () => failures := failures.push "theorem-not-prop: expected error"
 
@@ -194,7 +199,7 @@ def negativeTests : TestSeq :=
         { numLevels := 0, type := .sort .zero, name := (), levelParams := () }
       let ci : Ix.Kernel.ConstantInfo .anon := .defnInfo { toConstantVal := cv, value := .sort (.succ .zero), hints := .opaque, safety := .safe, all := #[] }
       let env := (default : Ix.Kernel.Env .anon).insert testAddr ci
-      match Ix.Kernel2.typecheckConst env prims testAddr with
+      match Ix.Kernel.typecheckConst env prims testAddr with
       | .error _ => passed := passed + 1
       | .ok () => failures := failures.push "type-mismatch: expected error"
 
@@ -204,7 +209,7 @@ def negativeTests : TestSeq :=
         { numLevels := 0, type := .const badAddr #[] (), name := (), levelParams := () }
       let ci : Ix.Kernel.ConstantInfo .anon := .defnInfo { toConstantVal := cv, value := .sort .zero, hints := .opaque, safety := .safe, all := #[] }
       let env := (default : Ix.Kernel.Env .anon).insert testAddr ci
-      match Ix.Kernel2.typecheckConst env prims testAddr with
+      match Ix.Kernel.typecheckConst env prims testAddr with
       | .error _ => passed := passed + 1
       | .ok () => failures := failures.push "unknown-const: expected error"
 
@@ -214,7 +219,7 @@ def negativeTests : TestSeq :=
         { numLevels := 0, type := .bvar 0 (), name := (), levelParams := () }
       let ci : Ix.Kernel.ConstantInfo .anon := .defnInfo { toConstantVal := cv, value := .sort .zero, hints := .opaque, safety := .safe, all := #[] }
       let env := (default : Ix.Kernel.Env .anon).insert testAddr ci
-      match Ix.Kernel2.typecheckConst env prims testAddr with
+      match Ix.Kernel.typecheckConst env prims testAddr with
       | .error _ => passed := passed + 1
       | .ok () => failures := failures.push "var-out-of-range: expected error"
 
@@ -225,7 +230,7 @@ def negativeTests : TestSeq :=
       let ci : Ix.Kernel.ConstantInfo .anon := .defnInfo
         { toConstantVal := cv, value := .app (.sort .zero) (.sort .zero), hints := .opaque, safety := .safe, all := #[] }
       let env := (default : Ix.Kernel.Env .anon).insert testAddr ci
-      match Ix.Kernel2.typecheckConst env prims testAddr with
+      match Ix.Kernel.typecheckConst env prims testAddr with
       | .error _ => passed := passed + 1
       | .ok () => failures := failures.push "app-non-function: expected error"
 
@@ -237,7 +242,7 @@ def negativeTests : TestSeq :=
       let ci : Ix.Kernel.ConstantInfo .anon := .defnInfo
         { toConstantVal := cv, value := letVal, hints := .opaque, safety := .safe, all := #[] }
       let env := (default : Ix.Kernel.Env .anon).insert testAddr ci
-      match Ix.Kernel2.typecheckConst env prims testAddr with
+      match Ix.Kernel.typecheckConst env prims testAddr with
       | .error _ => passed := passed + 1
       | .ok () => failures := failures.push "let-type-mismatch: expected error"
 
@@ -249,7 +254,7 @@ def negativeTests : TestSeq :=
       let ci : Ix.Kernel.ConstantInfo .anon := .defnInfo
         { toConstantVal := cv, value := .app lam (.sort (.succ .zero)), hints := .opaque, safety := .safe, all := #[] }
       let env := (default : Ix.Kernel.Env .anon).insert testAddr ci
-      match Ix.Kernel2.typecheckConst env prims testAddr with
+      match Ix.Kernel.typecheckConst env prims testAddr with
       | .error _ => passed := passed + 1
       | .ok () => failures := failures.push "app-wrong-type: expected error"
 
@@ -259,7 +264,7 @@ def negativeTests : TestSeq :=
         { numLevels := 0, type := .app (.sort .zero) (.sort .zero), name := (), levelParams := () }
       let ci : Ix.Kernel.ConstantInfo .anon := .axiomInfo { toConstantVal := cv, isUnsafe := false }
       let env := (default : Ix.Kernel.Env .anon).insert testAddr ci
-      match Ix.Kernel2.typecheckConst env prims testAddr with
+      match Ix.Kernel.typecheckConst env prims testAddr with
       | .error _ => passed := passed + 1
       | .ok () => failures := failures.push "axiom-non-sort-type: expected error"
 
@@ -400,6 +405,41 @@ def testRoundtrip : TestSeq :=
         return (false, some s!"{mismatches}/{checked} constants have structural mismatches")
   ) .done
 
+/-! ## Full environment check -/
+
+def testCheckEnv : TestSeq :=
+  .individualIO "kernel2 check_env" (do
+    let leanEnv ← get_env!
+
+    IO.println s!"[Kernel2] Compiling to Ixon..."
+    let compileStart ← IO.monoMsNow
+    let ixonEnv ← Ix.CompileM.rsCompileEnv leanEnv
+    let compileElapsed := (← IO.monoMsNow) - compileStart
+    IO.println s!"[Kernel2] Compiled {ixonEnv.consts.size} constants in {compileElapsed.formatMs}"
+
+    IO.println s!"[Kernel2] Converting..."
+    let convertStart ← IO.monoMsNow
+    match Ix.Kernel.Convert.convertEnv .meta ixonEnv with
+    | .error e =>
+      IO.println s!"[Kernel2] convertEnv error: {e}"
+      return (false, some e)
+    | .ok (kenv, prims, quotInit) =>
+      let convertElapsed := (← IO.monoMsNow) - convertStart
+      IO.println s!"[Kernel2] Converted {kenv.size} constants in {convertElapsed.formatMs}"
+
+      IO.println s!"[Kernel2] Typechecking {kenv.size} constants..."
+      let checkStart ← IO.monoMsNow
+      match ← Ix.Kernel.typecheckAllIO kenv prims quotInit with
+      | .error e =>
+        let elapsed := (← IO.monoMsNow) - checkStart
+        IO.println s!"[Kernel2] FAILED in {elapsed.formatMs}: {e}"
+        return (false, some s!"Kernel2 check failed: {e}")
+      | .ok () =>
+        let elapsed := (← IO.monoMsNow) - checkStart
+        IO.println s!"[Kernel2] All constants passed in {elapsed.formatMs}"
+        return (true, none)
+  ) .done
+
 /-! ## Test suites -/
 
 def constSuite : List TestSeq := [testConsts]
@@ -407,5 +447,6 @@ def negativeSuite : List TestSeq := [negativeTests]
 def convertSuite : List TestSeq := [testConvertEnv]
 def anonConvertSuite : List TestSeq := [testAnonConvert]
 def roundtripSuite : List TestSeq := [testRoundtrip]
+def checkEnvSuite : List TestSeq := [testCheckEnv]
 
-end Tests.Ix.Kernel2.Integration
+end Tests.Ix.Kernel.Integration

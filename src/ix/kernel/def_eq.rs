@@ -1,1730 +1,909 @@
-use crate::ix::env::*;
-use crate::lean::nat::Nat;
+//! Definitional equality checking.
+//!
+//! Implements the full isDefEq algorithm with caching, lazy delta unfolding,
+//! proof irrelevance, eta expansion, struct eta, and unit-like types.
+
 use num_bigint::BigUint;
 
-use super::level::{eq_antisymm, eq_antisymm_many};
-use super::tc::TypeChecker;
-use super::whnf::*;
+use crate::ix::env::{Literal, Name, ReducibilityHints};
 
-/// Result of lazy delta reduction.
-enum DeltaResult {
-  Found(bool),
-  Exhausted(Expr, Expr),
-}
+use super::error::TcError;
+use super::helpers::*;
+use super::level::equal_level;
+use super::tc::{TcResult, TypeChecker};
+use super::types::{KConstantInfo, MetaMode};
+use super::value::*;
 
-/// Check definitional equality of two expressions.
-///
-/// Uses a conjunction work stack: processes pairs iteratively, all must be equal.
-pub fn def_eq(x: &Expr, y: &Expr, tc: &mut TypeChecker) -> bool {
-  const DEF_EQ_STEP_LIMIT: u64 = 1_000_000;
-  let mut work: Vec<(Expr, Expr)> = vec![(x.clone(), y.clone())];
-  let mut steps: u64 = 0;
+/// Maximum iterations for lazy delta unfolding.
+const MAX_LAZY_DELTA_ITERS: usize = 10_000;
+/// Maximum spine size for recursive structural equiv registration.
+const MAX_EQUIV_SPINE: usize = 8;
 
-  while let Some((x, y)) = work.pop() {
-    steps += 1;
-    if steps > DEF_EQ_STEP_LIMIT {
-      eprintln!("[def_eq] step limit exceeded ({steps} steps)");
-      return false;
+impl<M: MetaMode> TypeChecker<'_, M> {
+  /// Quick structural pre-check (pure, O(1)). Returns `Some(true/false)` if
+  /// the result can be determined without further work, `None` otherwise.
+  fn quick_is_def_eq_val(t: &Val<M>, s: &Val<M>) -> Option<bool> {
+    // Pointer equality
+    if t.ptr_eq(s) {
+      return Some(true);
     }
-    if !def_eq_step(&x, &y, &mut work, tc) {
-      return false;
-    }
-  }
-  true
-}
 
-/// Process one def_eq pair. Returns false if definitely not equal.
-/// May push additional pairs onto `work` that must all be equal.
-fn def_eq_step(
-  x: &Expr,
-  y: &Expr,
-  work: &mut Vec<(Expr, Expr)>,
-  tc: &mut TypeChecker,
-) -> bool {
-  if let Some(quick) = def_eq_quick_check(x, y) {
-    return quick;
-  }
-
-  let x_n = tc.whnf_no_delta(x);
-  let y_n = tc.whnf_no_delta(y);
-
-  if let Some(quick) = def_eq_quick_check(&x_n, &y_n) {
-    return quick;
-  }
-
-  if proof_irrel_eq(&x_n, &y_n, tc) {
-    return true;
-  }
-
-  match lazy_delta_step(&x_n, &y_n, tc) {
-    DeltaResult::Found(result) => result,
-    DeltaResult::Exhausted(x_e, y_e) => {
-      def_eq_const(&x_e, &y_e)
-        || def_eq_proj_push(&x_e, &y_e, work)
-        || def_eq_app_push(&x_e, &y_e, work)
-        || def_eq_binder_full_push(&x_e, &y_e, work)
-        || try_eta_expansion(&x_e, &y_e, tc)
-        || try_eta_struct(&x_e, &y_e, tc)
-        || is_def_eq_unit_like(&x_e, &y_e, tc)
-    },
-  }
-}
-
-/// Quick syntactic checks.
-fn def_eq_quick_check(x: &Expr, y: &Expr) -> Option<bool> {
-  if x == y {
-    return Some(true);
-  }
-  if let Some(r) = def_eq_sort(x, y) {
-    return Some(r);
-  }
-  if let Some(r) = def_eq_binder(x, y) {
-    return Some(r);
-  }
-  None
-}
-
-fn def_eq_sort(x: &Expr, y: &Expr) -> Option<bool> {
-  match (x.as_data(), y.as_data()) {
-    (ExprData::Sort(l, _), ExprData::Sort(r, _)) => {
-      Some(eq_antisymm(l, r))
-    },
-    _ => None,
-  }
-}
-
-/// Check if two binder expressions (Pi/Lam) are definitionally equal.
-/// Always defers to full checking after WHNF, since binder types could be
-/// definitionally equal without being syntactically identical.
-fn def_eq_binder(_x: &Expr, _y: &Expr) -> Option<bool> {
-  None
-}
-
-fn def_eq_const(x: &Expr, y: &Expr) -> bool {
-  match (x.as_data(), y.as_data()) {
-    (
-      ExprData::Const(xn, xl, _),
-      ExprData::Const(yn, yl, _),
-    ) => xn == yn && eq_antisymm_many(xl, yl),
-    _ => false,
-  }
-}
-
-/// Proj congruence: push structure pair onto work stack.
-fn def_eq_proj_push(
-  x: &Expr,
-  y: &Expr,
-  work: &mut Vec<(Expr, Expr)>,
-) -> bool {
-  match (x.as_data(), y.as_data()) {
-    (
-      ExprData::Proj(_, idx_l, structure_l, _),
-      ExprData::Proj(_, idx_r, structure_r, _),
-    ) if idx_l == idx_r => {
-      work.push((structure_l.clone(), structure_r.clone()));
-      true
-    },
-    _ => false,
-  }
-}
-
-/// App congruence: push head + arg pairs onto work stack.
-fn def_eq_app_push(
-  x: &Expr,
-  y: &Expr,
-  work: &mut Vec<(Expr, Expr)>,
-) -> bool {
-  let (f1, args1) = unfold_apps(x);
-  if args1.is_empty() {
-    return false;
-  }
-  let (f2, args2) = unfold_apps(y);
-  if args2.is_empty() {
-    return false;
-  }
-  if args1.len() != args2.len() {
-    return false;
-  }
-
-  work.push((f1, f2));
-  for (a, b) in args1.into_iter().zip(args2.into_iter()) {
-    work.push((a, b));
-  }
-  true
-}
-
-/// Eager app congruence (used by lazy_delta_step where we need a definitive answer).
-fn def_eq_app(x: &Expr, y: &Expr, tc: &mut TypeChecker) -> bool {
-  let (f1, args1) = unfold_apps(x);
-  if args1.is_empty() {
-    return false;
-  }
-  let (f2, args2) = unfold_apps(y);
-  if args2.is_empty() {
-    return false;
-  }
-  if args1.len() != args2.len() {
-    return false;
-  }
-
-  if !def_eq(&f1, &f2, tc) {
-    return false;
-  }
-  args1.iter().zip(args2.iter()).all(|(a, b)| def_eq(a, b, tc))
-}
-
-/// Iterative binder comparison: peel matching Pi/Lam layers, pushing
-/// domain pairs and the final body pair onto the work stack.
-fn def_eq_binder_full_push(
-  x: &Expr,
-  y: &Expr,
-  work: &mut Vec<(Expr, Expr)>,
-) -> bool {
-  let mut cx = x.clone();
-  let mut cy = y.clone();
-  let mut matched = false;
-
-  loop {
-    match (cx.as_data(), cy.as_data()) {
+    match (t.inner(), s.inner()) {
+      // Sort equality
+      (ValInner::Sort(a), ValInner::Sort(b)) => {
+        Some(equal_level(a, b))
+      }
+      // Literal equality
+      (ValInner::Lit(a), ValInner::Lit(b)) => Some(a == b),
+      // Same-head const with empty spines
       (
-        ExprData::ForallE(_, t1, b1, _, _),
-        ExprData::ForallE(_, t2, b2, _, _),
-      ) => {
-        work.push((t1.clone(), t2.clone()));
-        cx = b1.clone();
-        cy = b2.clone();
-        matched = true;
-      },
-      (
-        ExprData::Lam(_, t1, b1, _, _),
-        ExprData::Lam(_, t2, b2, _, _),
-      ) => {
-        work.push((t1.clone(), t2.clone()));
-        cx = b1.clone();
-        cy = b2.clone();
-        matched = true;
-      },
-      _ => break,
-    }
-  }
-
-  if !matched {
-    return false;
-  }
-  // Push the final body pair
-  work.push((cx, cy));
-  true
-}
-
-/// Proof irrelevance: if both x and y are proofs of the same proposition,
-/// they are definitionally equal.
-fn proof_irrel_eq(x: &Expr, y: &Expr, tc: &mut TypeChecker) -> bool {
-  let x_ty = match tc.infer(x) {
-    Ok(ty) => ty,
-    Err(_) => return false,
-  };
-  if !is_proposition(&x_ty, tc) {
-    return false;
-  }
-  let y_ty = match tc.infer(y) {
-    Ok(ty) => ty,
-    Err(_) => return false,
-  };
-  if !is_proposition(&y_ty, tc) {
-    return false;
-  }
-  def_eq(&x_ty, &y_ty, tc)
-}
-
-/// Check if an expression's type is Prop (Sort 0).
-fn is_proposition(ty: &Expr, tc: &mut TypeChecker) -> bool {
-  let ty_of_ty = match tc.infer(ty) {
-    Ok(t) => t,
-    Err(_) => return false,
-  };
-  let whnfd = tc.whnf(&ty_of_ty);
-  matches!(whnfd.as_data(), ExprData::Sort(l, _) if super::level::is_zero(l))
-}
-
-/// Eta expansion: `fun x => f x` ≡ `f` when `f : (x : A) → B`.
-fn try_eta_expansion(x: &Expr, y: &Expr, tc: &mut TypeChecker) -> bool {
-  try_eta_expansion_aux(x, y, tc) || try_eta_expansion_aux(y, x, tc)
-}
-
-fn try_eta_expansion_aux(
-  x: &Expr,
-  y: &Expr,
-  tc: &mut TypeChecker,
-) -> bool {
-  if let ExprData::Lam(_, _, _, _, _) = x.as_data() {
-    let y_ty = match tc.infer(y) {
-      Ok(t) => t,
-      Err(_) => return false,
-    };
-    let y_ty_whnf = tc.whnf(&y_ty);
-    if let ExprData::ForallE(name, binder_type, _, bi, _) =
-      y_ty_whnf.as_data()
-    {
-      // eta-expand y: fun x => y x
-      let body = Expr::app(y.clone(), Expr::bvar(crate::lean::nat::Nat::from(0)));
-      let expanded = Expr::lam(
-        name.clone(),
-        binder_type.clone(),
-        body,
-        bi.clone(),
-      );
-      return def_eq(x, &expanded, tc);
-    }
-  }
-  false
-}
-
-/// Check if a name refers to a structure-like inductive:
-/// exactly 1 constructor, not recursive, no indices.
-fn is_structure_like(name: &Name, env: &Env) -> bool {
-  match env.get(name) {
-    Some(ConstantInfo::InductInfo(iv)) => {
-      iv.ctors.len() == 1 && !iv.is_rec && iv.num_indices == Nat::ZERO
-    },
-    _ => false,
-  }
-}
-
-/// Structure eta: `p =def= S.mk (S.1 p) (S.2 p)` when S is a
-/// single-constructor non-recursive inductive with no indices.
-fn try_eta_struct(x: &Expr, y: &Expr, tc: &mut TypeChecker) -> bool {
-  try_eta_struct_core(x, y, tc) || try_eta_struct_core(y, x, tc)
-}
-
-/// Try to decompose `s` as a constructor application for a structure-like
-/// type, then check that each field matches the corresponding projection of `t`.
-fn try_eta_struct_core(
-  t: &Expr,
-  s: &Expr,
-  tc: &mut TypeChecker,
-) -> bool {
-  let (head, args) = unfold_apps(s);
-  let ctor_name = match head.as_data() {
-    ExprData::Const(name, _, _) => name,
-    _ => return false,
-  };
-
-  let ctor_info = match tc.env.get(ctor_name) {
-    Some(ConstantInfo::CtorInfo(c)) => c,
-    _ => return false,
-  };
-
-  if !is_structure_like(&ctor_info.induct, tc.env) {
-    return false;
-  }
-
-  let num_params = ctor_info.num_params.to_u64().unwrap() as usize;
-  let num_fields = ctor_info.num_fields.to_u64().unwrap() as usize;
-
-  if args.len() != num_params + num_fields {
-    return false;
-  }
-
-  for i in 0..num_fields {
-    let field = &args[num_params + i];
-    let proj = Expr::proj(
-      ctor_info.induct.clone(),
-      Nat::from(i as u64),
-      t.clone(),
-    );
-    if !def_eq(field, &proj, tc) {
-      return false;
-    }
-  }
-
-  true
-}
-
-/// Unit-like equality: types with a single zero-field constructor have all
-/// inhabitants definitionally equal.
-fn is_def_eq_unit_like(x: &Expr, y: &Expr, tc: &mut TypeChecker) -> bool {
-  let x_ty = match tc.infer(x) {
-    Ok(ty) => ty,
-    Err(_) => return false,
-  };
-  let y_ty = match tc.infer(y) {
-    Ok(ty) => ty,
-    Err(_) => return false,
-  };
-  // Types must be def-eq
-  if !def_eq(&x_ty, &y_ty, tc) {
-    return false;
-  }
-  // Check if the type is a unit-like inductive
-  let whnf_ty = tc.whnf(&x_ty);
-  let (head, _) = unfold_apps(&whnf_ty);
-  let name = match head.as_data() {
-    ExprData::Const(name, _, _) => name,
-    _ => return false,
-  };
-  match tc.env.get(name) {
-    Some(ConstantInfo::InductInfo(iv)) => {
-      if iv.ctors.len() != 1 {
-        return false;
-      }
-      // Check single constructor has zero fields
-      if let Some(ConstantInfo::CtorInfo(c)) = tc.env.get(&iv.ctors[0]) {
-        c.num_fields == Nat::ZERO
-      } else {
-        false
-      }
-    },
-    _ => false,
-  }
-}
-
-/// Check if expression is Nat zero (either `Nat.zero` or `lit 0`).
-/// Matches Lean 4's `is_nat_zero`.
-fn is_nat_zero(e: &Expr) -> bool {
-  match e.as_data() {
-    ExprData::Const(name, _, _) => *name == mk_name2("Nat", "zero"),
-    ExprData::Lit(Literal::NatVal(n), _) => n.0 == BigUint::ZERO,
-    _ => false,
-  }
-}
-
-/// If expression is `Nat.succ arg` or `lit (n+1)`, return the predecessor.
-/// Matches Lean 4's `is_nat_succ` / lean4lean's `isNatSuccOf?`.
-fn is_nat_succ(e: &Expr) -> Option<Expr> {
-  match e.as_data() {
-    ExprData::App(f, arg, _) => match f.as_data() {
-      ExprData::Const(name, _, _) if *name == mk_name2("Nat", "succ") => {
-        Some(arg.clone())
-      },
-      _ => None,
-    },
-    ExprData::Lit(Literal::NatVal(n), _) if n.0 > BigUint::ZERO => {
-      Some(Expr::lit(Literal::NatVal(Nat(
-        n.0.clone() - BigUint::from(1u64),
-      ))))
-    },
-    _ => None,
-  }
-}
-
-/// Nat offset equality: `Nat.zero =?= Nat.zero` → true,
-/// `Nat.succ n =?= Nat.succ m` → `n =?= m` (recursively via def_eq).
-/// Also handles nat literals: `lit 5 =?= Nat.succ (lit 4)` → true.
-/// Matches Lean 4's `is_def_eq_offset`.
-fn def_eq_nat_offset(x: &Expr, y: &Expr, tc: &mut TypeChecker) -> Option<bool> {
-  if is_nat_zero(x) && is_nat_zero(y) {
-    return Some(true);
-  }
-  match (is_nat_succ(x), is_nat_succ(y)) {
-    (Some(x_pred), Some(y_pred)) => Some(def_eq(&x_pred, &y_pred, tc)),
-    _ => None,
-  }
-}
-
-/// Try to reduce via nat operations or native reductions, returning the reduced form if successful.
-fn try_lazy_delta_nat_native(e: &Expr, env: &Env) -> Option<Expr> {
-  let (head, args) = unfold_apps(e);
-  match head.as_data() {
-    ExprData::Const(name, _, _) => {
-      if let Some(r) = try_reduce_native(name, &args) {
-        return Some(r);
-      }
-      if let Some(r) = try_reduce_nat(e, env) {
-        return Some(r);
-      }
-      None
-    },
-    _ => None,
-  }
-}
-
-/// Lazy delta reduction: unfold definitions step by step.
-fn lazy_delta_step(
-  x: &Expr,
-  y: &Expr,
-  tc: &mut TypeChecker,
-) -> DeltaResult {
-  let mut x = x.clone();
-  let mut y = y.clone();
-  let mut iters: u32 = 0;
-  const MAX_DELTA_ITERS: u32 = 10_000;
-
-  loop {
-    iters += 1;
-    if iters > MAX_DELTA_ITERS {
-      return DeltaResult::Exhausted(x, y);
-    }
-
-    // Nat offset comparison (Lean 4: isDefEqOffset)
-    if let Some(quick) = def_eq_nat_offset(&x, &y, tc) {
-      return DeltaResult::Found(quick);
-    }
-
-    // Try nat/native reduction on each side before delta
-    if let Some(x_r) = try_lazy_delta_nat_native(&x, tc.env) {
-      let x_r = tc.whnf_no_delta(&x_r);
-      if let Some(quick) = def_eq_quick_check(&x_r, &y) {
-        return DeltaResult::Found(quick);
-      }
-      x = x_r;
-      continue;
-    }
-    if let Some(y_r) = try_lazy_delta_nat_native(&y, tc.env) {
-      let y_r = tc.whnf_no_delta(&y_r);
-      if let Some(quick) = def_eq_quick_check(&x, &y_r) {
-        return DeltaResult::Found(quick);
-      }
-      y = y_r;
-      continue;
-    }
-
-    let x_def = get_applied_def(&x, tc.env);
-    let y_def = get_applied_def(&y, tc.env);
-
-    match (&x_def, &y_def) {
-      (None, None) => return DeltaResult::Exhausted(x, y),
-      (Some(_), None) => {
-        x = delta(&x, tc);
-      },
-      (None, Some(_)) => {
-        y = delta(&y, tc);
-      },
-      (Some((x_name, x_hint)), Some((y_name, y_hint))) => {
-        // Same name and same height: try congruence first
-        if x_name == y_name && x_hint == y_hint {
-          if def_eq_app(&x, &y, tc) {
-            return DeltaResult::Found(true);
-          }
-          x = delta(&x, tc);
-          y = delta(&y, tc);
-        } else if hint_lt(x_hint, y_hint) {
-          y = delta(&y, tc);
-        } else {
-          x = delta(&x, tc);
+        ValInner::Neutral {
+          head: Head::Const { addr: a1, levels: l1, .. },
+          spine: s1,
+        },
+        ValInner::Neutral {
+          head: Head::Const { addr: a2, levels: l2, .. },
+          spine: s2,
+        },
+      ) if a1 == a2 && s1.is_empty() && s2.is_empty() => {
+        if l1.len() != l2.len() {
+          return Some(false);
         }
-      },
-    }
-
-    if let Some(quick) = def_eq_quick_check(&x, &y) {
-      return DeltaResult::Found(quick);
-    }
-  }
-}
-
-/// Get the name and reducibility hint of an applied definition.
-fn get_applied_def(
-  e: &Expr,
-  env: &Env,
-) -> Option<(Name, ReducibilityHints)> {
-  let (head, _) = unfold_apps(e);
-  let name = match head.as_data() {
-    ExprData::Const(name, _, _) => name,
-    _ => return None,
-  };
-  let ci = env.get(name)?;
-  match ci {
-    ConstantInfo::DefnInfo(d) => {
-      if d.hints == ReducibilityHints::Opaque {
-        None
-      } else {
-        Some((name.clone(), d.hints))
+        Some(
+          l1.iter()
+            .zip(l2.iter())
+            .all(|(a, b)| equal_level(a, b)),
+        )
       }
-    },
-    // Theorems are never unfolded — proof irrelevance handles them.
-    // ConstantInfo::ThmInfo(_) => return None,
-    _ => None,
-  }
-}
-
-/// Unfold a definition and do cheap WHNF (no delta).
-/// Matches lean4lean: `let delta e := whnfCore (unfoldDefinition env e).get!`.
-fn delta(e: &Expr, tc: &mut TypeChecker) -> Expr {
-  match try_unfold_def(e, tc.env) {
-    Some(unfolded) => tc.whnf_no_delta(&unfolded),
-    None => e.clone(),
-  }
-}
-
-/// Compare reducibility hints for ordering.
-fn hint_lt(a: &ReducibilityHints, b: &ReducibilityHints) -> bool {
-  match (a, b) {
-    (ReducibilityHints::Opaque, _) => true,
-    (_, ReducibilityHints::Opaque) => false,
-    (ReducibilityHints::Abbrev, _) => false,
-    (_, ReducibilityHints::Abbrev) => true,
-    (ReducibilityHints::Regular(ha), ReducibilityHints::Regular(hb)) => {
-      ha < hb
-    },
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::ix::kernel::tc::TypeChecker;
-  use crate::lean::nat::Nat;
-
-  fn mk_name(s: &str) -> Name {
-    Name::str(Name::anon(), s.into())
-  }
-
-  fn mk_name2(a: &str, b: &str) -> Name {
-    Name::str(Name::str(Name::anon(), a.into()), b.into())
-  }
-
-  fn nat_type() -> Expr {
-    Expr::cnst(mk_name("Nat"), vec![])
-  }
-
-  fn nat_zero() -> Expr {
-    Expr::cnst(mk_name2("Nat", "zero"), vec![])
-  }
-
-  /// Minimal env with Nat, Nat.zero, Nat.succ.
-  fn mk_nat_env() -> Env {
-    let mut env = Env::default();
-    let nat_name = mk_name("Nat");
-    env.insert(
-      nat_name.clone(),
-      ConstantInfo::InductInfo(InductiveVal {
-        cnst: ConstantVal {
-          name: nat_name.clone(),
-          level_params: vec![],
-          typ: Expr::sort(Level::succ(Level::zero())),
-        },
-        num_params: Nat::from(0u64),
-        num_indices: Nat::from(0u64),
-        all: vec![nat_name.clone()],
-        ctors: vec![mk_name2("Nat", "zero"), mk_name2("Nat", "succ")],
-        num_nested: Nat::from(0u64),
-        is_rec: true,
-        is_unsafe: false,
-        is_reflexive: false,
-      }),
-    );
-    let zero_name = mk_name2("Nat", "zero");
-    env.insert(
-      zero_name.clone(),
-      ConstantInfo::CtorInfo(ConstructorVal {
-        cnst: ConstantVal {
-          name: zero_name.clone(),
-          level_params: vec![],
-          typ: nat_type(),
-        },
-        induct: mk_name("Nat"),
-        cidx: Nat::from(0u64),
-        num_params: Nat::from(0u64),
-        num_fields: Nat::from(0u64),
-        is_unsafe: false,
-      }),
-    );
-    let succ_name = mk_name2("Nat", "succ");
-    env.insert(
-      succ_name.clone(),
-      ConstantInfo::CtorInfo(ConstructorVal {
-        cnst: ConstantVal {
-          name: succ_name.clone(),
-          level_params: vec![],
-          typ: Expr::all(
-            mk_name("n"),
-            nat_type(),
-            nat_type(),
-            BinderInfo::Default,
-          ),
-        },
-        induct: mk_name("Nat"),
-        cidx: Nat::from(1u64),
-        num_params: Nat::from(0u64),
-        num_fields: Nat::from(1u64),
-        is_unsafe: false,
-      }),
-    );
-    env
-  }
-
-  // ==========================================================================
-  // Reflexivity
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_reflexive_sort() {
-    let env = Env::default();
-    let mut tc = TypeChecker::new(&env);
-    let e = Expr::sort(Level::zero());
-    assert!(tc.def_eq(&e, &e));
-  }
-
-  #[test]
-  fn def_eq_reflexive_const() {
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let e = nat_zero();
-    assert!(tc.def_eq(&e, &e));
-  }
-
-  #[test]
-  fn def_eq_reflexive_lambda() {
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let e = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      Expr::bvar(Nat::from(0u64)),
-      BinderInfo::Default,
-    );
-    assert!(tc.def_eq(&e, &e));
-  }
-
-  // ==========================================================================
-  // Sort equality
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_sort_max_comm() {
-    // Sort(max u v) =def= Sort(max v u)
-    let env = Env::default();
-    let mut tc = TypeChecker::new(&env);
-    let u = Level::param(mk_name("u"));
-    let v = Level::param(mk_name("v"));
-    let s1 = Expr::sort(Level::max(u.clone(), v.clone()));
-    let s2 = Expr::sort(Level::max(v, u));
-    assert!(tc.def_eq(&s1, &s2));
-  }
-
-  #[test]
-  fn def_eq_sort_not_equal() {
-    // Sort(0) ≠ Sort(1)
-    let env = Env::default();
-    let mut tc = TypeChecker::new(&env);
-    let s0 = Expr::sort(Level::zero());
-    let s1 = Expr::sort(Level::succ(Level::zero()));
-    assert!(!tc.def_eq(&s0, &s1));
-  }
-
-  // ==========================================================================
-  // Alpha equivalence (same structure, different binder names)
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_alpha_lambda() {
-    // fun (x : Nat) => x  =def=  fun (y : Nat) => y
-    // (de Bruijn indices are the same, so this is syntactic equality)
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let e1 = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      Expr::bvar(Nat::from(0u64)),
-      BinderInfo::Default,
-    );
-    let e2 = Expr::lam(
-      mk_name("y"),
-      nat_type(),
-      Expr::bvar(Nat::from(0u64)),
-      BinderInfo::Default,
-    );
-    assert!(tc.def_eq(&e1, &e2));
-  }
-
-  #[test]
-  fn def_eq_alpha_pi() {
-    // (x : Nat) → Nat  =def=  (y : Nat) → Nat
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let e1 = Expr::all(
-      mk_name("x"),
-      nat_type(),
-      nat_type(),
-      BinderInfo::Default,
-    );
-    let e2 = Expr::all(
-      mk_name("y"),
-      nat_type(),
-      nat_type(),
-      BinderInfo::Default,
-    );
-    assert!(tc.def_eq(&e1, &e2));
-  }
-
-  // ==========================================================================
-  // Beta equivalence
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_beta() {
-    // (fun x : Nat => x) Nat.zero  =def=  Nat.zero
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let id_fn = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      Expr::bvar(Nat::from(0u64)),
-      BinderInfo::Default,
-    );
-    let lhs = Expr::app(id_fn, nat_zero());
-    let rhs = nat_zero();
-    assert!(tc.def_eq(&lhs, &rhs));
-  }
-
-  #[test]
-  fn def_eq_beta_nested() {
-    // (fun x y : Nat => x) Nat.zero Nat.zero  =def=  Nat.zero
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let inner = Expr::lam(
-      mk_name("y"),
-      nat_type(),
-      Expr::bvar(Nat::from(1u64)), // x
-      BinderInfo::Default,
-    );
-    let k_fn = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      inner,
-      BinderInfo::Default,
-    );
-    let lhs = Expr::app(Expr::app(k_fn, nat_zero()), nat_zero());
-    assert!(tc.def_eq(&lhs, &nat_zero()));
-  }
-
-  // ==========================================================================
-  // Delta equivalence (definition unfolding)
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_delta() {
-    // def myZero := Nat.zero
-    // myZero =def= Nat.zero
-    let mut env = mk_nat_env();
-    let my_zero = mk_name("myZero");
-    env.insert(
-      my_zero.clone(),
-      ConstantInfo::DefnInfo(DefinitionVal {
-        cnst: ConstantVal {
-          name: my_zero.clone(),
-          level_params: vec![],
-          typ: nat_type(),
-        },
-        value: nat_zero(),
-        hints: ReducibilityHints::Abbrev,
-        safety: DefinitionSafety::Safe,
-        all: vec![my_zero.clone()],
-      }),
-    );
-    let mut tc = TypeChecker::new(&env);
-    let lhs = Expr::cnst(my_zero, vec![]);
-    assert!(tc.def_eq(&lhs, &nat_zero()));
-  }
-
-  #[test]
-  fn def_eq_delta_both_sides() {
-    // def a := Nat.zero, def b := Nat.zero
-    // a =def= b
-    let mut env = mk_nat_env();
-    let a = mk_name("a");
-    let b = mk_name("b");
-    env.insert(
-      a.clone(),
-      ConstantInfo::DefnInfo(DefinitionVal {
-        cnst: ConstantVal {
-          name: a.clone(),
-          level_params: vec![],
-          typ: nat_type(),
-        },
-        value: nat_zero(),
-        hints: ReducibilityHints::Abbrev,
-        safety: DefinitionSafety::Safe,
-        all: vec![a.clone()],
-      }),
-    );
-    env.insert(
-      b.clone(),
-      ConstantInfo::DefnInfo(DefinitionVal {
-        cnst: ConstantVal {
-          name: b.clone(),
-          level_params: vec![],
-          typ: nat_type(),
-        },
-        value: nat_zero(),
-        hints: ReducibilityHints::Abbrev,
-        safety: DefinitionSafety::Safe,
-        all: vec![b.clone()],
-      }),
-    );
-    let mut tc = TypeChecker::new(&env);
-    let lhs = Expr::cnst(a, vec![]);
-    let rhs = Expr::cnst(b, vec![]);
-    assert!(tc.def_eq(&lhs, &rhs));
-  }
-
-  // ==========================================================================
-  // Zeta equivalence (let unfolding)
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_zeta() {
-    // (let x : Nat := Nat.zero in x) =def= Nat.zero
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let lhs = Expr::letE(
-      mk_name("x"),
-      nat_type(),
-      nat_zero(),
-      Expr::bvar(Nat::from(0u64)),
-      false,
-    );
-    assert!(tc.def_eq(&lhs, &nat_zero()));
-  }
-
-  // ==========================================================================
-  // Negative tests
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_different_consts() {
-    // Nat ≠ String
-    let env = Env::default();
-    let mut tc = TypeChecker::new(&env);
-    let nat = nat_type();
-    let string = Expr::cnst(mk_name("String"), vec![]);
-    assert!(!tc.def_eq(&nat, &string));
-  }
-
-  #[test]
-  fn def_eq_different_nat_levels() {
-    // Nat.zero ≠ Nat.succ
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let zero = nat_zero();
-    let succ = Expr::cnst(mk_name2("Nat", "succ"), vec![]);
-    assert!(!tc.def_eq(&zero, &succ));
-  }
-
-  #[test]
-  fn def_eq_app_congruence() {
-    // f a =def= f a  (for same f, same a)
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let f = Expr::cnst(mk_name2("Nat", "succ"), vec![]);
-    let a = nat_zero();
-    let lhs = Expr::app(f.clone(), a.clone());
-    let rhs = Expr::app(f, a);
-    assert!(tc.def_eq(&lhs, &rhs));
-  }
-
-  #[test]
-  fn def_eq_app_different_args() {
-    // Nat.succ Nat.zero ≠ Nat.succ (Nat.succ Nat.zero)
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let succ = Expr::cnst(mk_name2("Nat", "succ"), vec![]);
-    let lhs = Expr::app(succ.clone(), nat_zero());
-    let rhs =
-      Expr::app(succ.clone(), Expr::app(succ, nat_zero()));
-    assert!(!tc.def_eq(&lhs, &rhs));
-  }
-
-  // ==========================================================================
-  // Const-level equality
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_const_levels() {
-    // A.{max u v} =def= A.{max v u}
-    let mut env = Env::default();
-    let a_name = mk_name("A");
-    let u_name = mk_name("u");
-    let v_name = mk_name("v");
-    env.insert(
-      a_name.clone(),
-      ConstantInfo::AxiomInfo(AxiomVal {
-        cnst: ConstantVal {
-          name: a_name.clone(),
-          level_params: vec![u_name.clone(), v_name.clone()],
-          typ: Expr::sort(Level::max(
-            Level::param(u_name.clone()),
-            Level::param(v_name.clone()),
-          )),
-        },
-        is_unsafe: false,
-      }),
-    );
-    let mut tc = TypeChecker::new(&env);
-    let u = Level::param(mk_name("u"));
-    let v = Level::param(mk_name("v"));
-    let lhs = Expr::cnst(a_name.clone(), vec![Level::max(u.clone(), v.clone()), Level::zero()]);
-    let rhs = Expr::cnst(a_name, vec![Level::max(v, u), Level::zero()]);
-    assert!(tc.def_eq(&lhs, &rhs));
-  }
-
-  // ==========================================================================
-  // Hint ordering
-  // ==========================================================================
-
-  #[test]
-  fn hint_lt_opaque_less_than_all() {
-    assert!(hint_lt(&ReducibilityHints::Opaque, &ReducibilityHints::Abbrev));
-    assert!(hint_lt(
-      &ReducibilityHints::Opaque,
-      &ReducibilityHints::Regular(0)
-    ));
-  }
-
-  #[test]
-  fn hint_lt_abbrev_greatest() {
-    assert!(!hint_lt(
-      &ReducibilityHints::Abbrev,
-      &ReducibilityHints::Opaque
-    ));
-    assert!(!hint_lt(
-      &ReducibilityHints::Abbrev,
-      &ReducibilityHints::Regular(100)
-    ));
-  }
-
-  #[test]
-  fn hint_lt_regular_ordering() {
-    assert!(hint_lt(
-      &ReducibilityHints::Regular(1),
-      &ReducibilityHints::Regular(2)
-    ));
-    assert!(!hint_lt(
-      &ReducibilityHints::Regular(2),
-      &ReducibilityHints::Regular(1)
-    ));
-  }
-
-  // ==========================================================================
-  // Eta expansion
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_eta_lam_vs_const() {
-    // fun x : Nat => Nat.succ x  =def=  Nat.succ
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let succ = Expr::cnst(mk_name2("Nat", "succ"), vec![]);
-    let eta_expanded = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      Expr::app(succ.clone(), Expr::bvar(Nat::from(0u64))),
-      BinderInfo::Default,
-    );
-    assert!(tc.def_eq(&eta_expanded, &succ));
-  }
-
-  #[test]
-  fn def_eq_eta_symmetric() {
-    // Nat.succ =def= fun x : Nat => Nat.succ x
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let succ = Expr::cnst(mk_name2("Nat", "succ"), vec![]);
-    let eta_expanded = Expr::lam(
-      mk_name("x"),
-      nat_type(),
-      Expr::app(succ.clone(), Expr::bvar(Nat::from(0u64))),
-      BinderInfo::Default,
-    );
-    assert!(tc.def_eq(&succ, &eta_expanded));
-  }
-
-  // ==========================================================================
-  // Lazy delta step with different heights
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_lazy_delta_higher_unfolds_first() {
-    // def a := Nat.zero (height 1)
-    // def b := a         (height 2)
-    // b =def= Nat.zero should work by unfolding b first (higher height)
-    let mut env = mk_nat_env();
-    let a = mk_name("a");
-    let b = mk_name("b");
-    env.insert(
-      a.clone(),
-      ConstantInfo::DefnInfo(DefinitionVal {
-        cnst: ConstantVal {
-          name: a.clone(),
-          level_params: vec![],
-          typ: nat_type(),
-        },
-        value: nat_zero(),
-        hints: ReducibilityHints::Regular(1),
-        safety: DefinitionSafety::Safe,
-        all: vec![a.clone()],
-      }),
-    );
-    env.insert(
-      b.clone(),
-      ConstantInfo::DefnInfo(DefinitionVal {
-        cnst: ConstantVal {
-          name: b.clone(),
-          level_params: vec![],
-          typ: nat_type(),
-        },
-        value: Expr::cnst(a, vec![]),
-        hints: ReducibilityHints::Regular(2),
-        safety: DefinitionSafety::Safe,
-        all: vec![b.clone()],
-      }),
-    );
-    let mut tc = TypeChecker::new(&env);
-    let lhs = Expr::cnst(b, vec![]);
-    assert!(tc.def_eq(&lhs, &nat_zero()));
-  }
-
-  // ==========================================================================
-  // Transitivity through delta
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_transitive_delta() {
-    // def a := Nat.zero, def b := Nat.zero
-    // def c := Nat.zero
-    // a =def= b, a =def= c, b =def= c
-    let mut env = mk_nat_env();
-    for name_str in &["a", "b", "c"] {
-      let n = mk_name(name_str);
-      env.insert(
-        n.clone(),
-        ConstantInfo::DefnInfo(DefinitionVal {
-          cnst: ConstantVal {
-            name: n.clone(),
-            level_params: vec![],
-            typ: nat_type(),
-          },
-          value: nat_zero(),
-          hints: ReducibilityHints::Abbrev,
-          safety: DefinitionSafety::Safe,
-          all: vec![n],
-        }),
-      );
+      _ => None,
     }
-    let mut tc = TypeChecker::new(&env);
-    let a = Expr::cnst(mk_name("a"), vec![]);
-    let b = Expr::cnst(mk_name("b"), vec![]);
-    let c = Expr::cnst(mk_name("c"), vec![]);
-    assert!(tc.def_eq(&a, &b));
-    assert!(tc.def_eq(&a, &c));
-    assert!(tc.def_eq(&b, &c));
   }
 
-  // ==========================================================================
-  // Nat literal equality through WHNF
-  // ==========================================================================
+  /// Top-level definitional equality check.
+  pub fn is_def_eq(&mut self, t: &Val<M>, s: &Val<M>) -> TcResult<bool, M> {
+    self.heartbeat()?;
+    self.stats.def_eq_calls += 1;
 
-  #[test]
-  fn def_eq_nat_lit_same() {
-    let env = Env::default();
-    let mut tc = TypeChecker::new(&env);
-    let a = Expr::lit(Literal::NatVal(Nat::from(42u64)));
-    let b = Expr::lit(Literal::NatVal(Nat::from(42u64)));
-    assert!(tc.def_eq(&a, &b));
+    // 1. Quick structural check
+    if let Some(result) = Self::quick_is_def_eq_val(t, s) {
+      return Ok(result);
+    }
+
+    // 2. EquivManager check
+    if self.equiv_manager.is_equiv(t.ptr_id(), s.ptr_id()) {
+      return Ok(true);
+    }
+
+    // 3. Pointer-keyed caches
+    let key = (t.ptr_id(), s.ptr_id());
+    let key_rev = (s.ptr_id(), t.ptr_id());
+
+    if let Some((ct, cs)) = self.ptr_success_cache.get(&key) {
+      if ct.ptr_eq(t) && cs.ptr_eq(s) {
+        return Ok(true);
+      }
+    }
+    if let Some((ct, cs)) = self.ptr_success_cache.get(&key_rev) {
+      if ct.ptr_eq(s) && cs.ptr_eq(t) {
+        return Ok(true);
+      }
+    }
+    if let Some((ct, cs)) = self.ptr_failure_cache.get(&key) {
+      if ct.ptr_eq(t) && cs.ptr_eq(s) {
+        return Ok(false);
+      }
+    }
+    if let Some((ct, cs)) = self.ptr_failure_cache.get(&key_rev) {
+      if ct.ptr_eq(s) && cs.ptr_eq(t) {
+        return Ok(false);
+      }
+    }
+
+    // 4. Bool.true reflection
+    if let Some(true_addr) = &self.prims.bool_true {
+      if t.const_addr() == Some(true_addr)
+        && t.spine().map_or(false, |s| s.is_empty())
+      {
+        let s_whnf = self.whnf_val(s, 0)?;
+        if s_whnf.const_addr() == Some(true_addr) {
+          return Ok(true);
+        }
+      }
+      if s.const_addr() == Some(true_addr)
+        && s.spine().map_or(false, |s| s.is_empty())
+      {
+        let t_whnf = self.whnf_val(t, 0)?;
+        if t_whnf.const_addr() == Some(true_addr) {
+          return Ok(true);
+        }
+      }
+    }
+
+    // 5. whnf_core_val with cheap_proj
+    let t1 = self.whnf_core_val(t, false, true)?;
+    let s1 = self.whnf_core_val(s, false, true)?;
+
+    // 6. Quick check after whnfCore
+    if let Some(result) = Self::quick_is_def_eq_val(&t1, &s1) {
+      if result {
+        self.structural_add_equiv(&t1, &s1);
+      }
+      return Ok(result);
+    }
+
+    // 7. Proof irrelevance (best-effort: skip if type inference fails)
+    match self.is_def_eq_proof_irrel(&t1, &s1) {
+      Ok(Some(result)) => return Ok(result),
+      Ok(None) => {}
+      Err(_) => {} // type inference failed, skip proof irrelevance
+    }
+
+    // 8. Lazy delta
+    let (t2, s2, delta_result) = self.lazy_delta(&t1, &s1)?;
+    if let Some(result) = delta_result {
+      if result {
+        self.equiv_manager.add_equiv(t.ptr_id(), s.ptr_id());
+      }
+      return Ok(result);
+    }
+
+    // 9. Quick check after delta
+    if let Some(result) = Self::quick_is_def_eq_val(&t2, &s2) {
+      if result {
+        self.structural_add_equiv(&t2, &s2);
+        self.equiv_manager.add_equiv(t.ptr_id(), s.ptr_id());
+      }
+      return Ok(result);
+    }
+
+    // 10. Full WHNF (includes delta, native, nat prim reduction)
+    let t3 = self.whnf_val(&t2, 0)?;
+    let s3 = self.whnf_val(&s2, 0)?;
+
+    // 11. Structural comparison
+    let result = self.is_def_eq_core(&t3, &s3)?;
+
+    // 12. Cache result
+    if result {
+      self.equiv_manager.add_equiv(t.ptr_id(), s.ptr_id());
+      self.structural_add_equiv(&t3, &s3);
+      self.ptr_success_cache.insert(key, (t.clone(), s.clone()));
+    } else {
+      self.ptr_failure_cache.insert(key, (t.clone(), s.clone()));
+    }
+
+    Ok(result)
   }
 
-  #[test]
-  fn def_eq_nat_lit_different() {
-    let env = Env::default();
-    let mut tc = TypeChecker::new(&env);
-    let a = Expr::lit(Literal::NatVal(Nat::from(1u64)));
-    let b = Expr::lit(Literal::NatVal(Nat::from(2u64)));
-    assert!(!tc.def_eq(&a, &b));
-  }
+  /// Structural comparison of two values in WHNF.
+  pub fn is_def_eq_core(
+    &mut self,
+    t: &Val<M>,
+    s: &Val<M>,
+  ) -> TcResult<bool, M> {
+    match (t.inner(), s.inner()) {
+      // Sort
+      (ValInner::Sort(a), ValInner::Sort(b)) => {
+        Ok(equal_level(a, b))
+      }
 
-  // ==========================================================================
-  // Beta-delta combined
-  // ==========================================================================
+      // Literal
+      (ValInner::Lit(a), ValInner::Lit(b)) => Ok(a == b),
 
-  #[test]
-  fn def_eq_beta_delta_combined() {
-    // def myId := fun x : Nat => x
-    // myId Nat.zero =def= Nat.zero
-    let mut env = mk_nat_env();
-    let my_id = mk_name("myId");
-    let fun_ty = Expr::all(
-      mk_name("x"),
-      nat_type(),
-      nat_type(),
-      BinderInfo::Default,
-    );
-    env.insert(
-      my_id.clone(),
-      ConstantInfo::DefnInfo(DefinitionVal {
-        cnst: ConstantVal {
-          name: my_id.clone(),
-          level_params: vec![],
-          typ: fun_ty,
+      // Neutral (fvar)
+      (
+        ValInner::Neutral {
+          head: Head::FVar { level: l1, .. },
+          spine: sp1,
         },
-        value: Expr::lam(
-          mk_name("x"),
-          nat_type(),
-          Expr::bvar(Nat::from(0u64)),
-          BinderInfo::Default,
-        ),
-        hints: ReducibilityHints::Abbrev,
-        safety: DefinitionSafety::Safe,
-        all: vec![my_id.clone()],
-      }),
-    );
-    let mut tc = TypeChecker::new(&env);
-    let lhs = Expr::app(Expr::cnst(my_id, vec![]), nat_zero());
-    assert!(tc.def_eq(&lhs, &nat_zero()));
-  }
-
-  // ==========================================================================
-  // Structure eta
-  // ==========================================================================
-
-  /// Build an env with Nat + Prod.{u,v} structure type.
-  fn mk_prod_env() -> Env {
-    let mut env = mk_nat_env();
-    let u_name = mk_name("u");
-    let v_name = mk_name("v");
-    let prod_name = mk_name("Prod");
-    let mk_ctor_name = mk_name2("Prod", "mk");
-
-    // Prod.{u,v} (α : Sort u) (β : Sort v) : Sort (max u v)
-    let prod_type = Expr::all(
-      mk_name("α"),
-      Expr::sort(Level::param(u_name.clone())),
-      Expr::all(
-        mk_name("β"),
-        Expr::sort(Level::param(v_name.clone())),
-        Expr::sort(Level::max(
-          Level::param(u_name.clone()),
-          Level::param(v_name.clone()),
-        )),
-        BinderInfo::Default,
-      ),
-      BinderInfo::Default,
-    );
-
-    env.insert(
-      prod_name.clone(),
-      ConstantInfo::InductInfo(InductiveVal {
-        cnst: ConstantVal {
-          name: prod_name.clone(),
-          level_params: vec![u_name.clone(), v_name.clone()],
-          typ: prod_type,
+        ValInner::Neutral {
+          head: Head::FVar { level: l2, .. },
+          spine: sp2,
         },
-        num_params: Nat::from(2u64),
-        num_indices: Nat::from(0u64),
-        all: vec![prod_name.clone()],
-        ctors: vec![mk_ctor_name.clone()],
-        num_nested: Nat::from(0u64),
-        is_rec: false,
-        is_unsafe: false,
-        is_reflexive: false,
-      }),
-    );
+      ) => {
+        if l1 != l2 {
+          return Ok(false);
+        }
+        self.is_def_eq_spine(sp1, sp2)
+      }
 
-    // Prod.mk.{u,v} (α : Sort u) (β : Sort v) (fst : α) (snd : β) : Prod α β
-    let ctor_type = Expr::all(
-      mk_name("α"),
-      Expr::sort(Level::param(u_name.clone())),
-      Expr::all(
-        mk_name("β"),
-        Expr::sort(Level::param(v_name.clone())),
-        Expr::all(
-          mk_name("fst"),
-          Expr::bvar(Nat::from(1u64)), // α
-          Expr::all(
-            mk_name("snd"),
-            Expr::bvar(Nat::from(1u64)), // β
-            Expr::app(
-              Expr::app(
-                Expr::cnst(
-                  prod_name.clone(),
-                  vec![
-                    Level::param(u_name.clone()),
-                    Level::param(v_name.clone()),
-                  ],
-                ),
-                Expr::bvar(Nat::from(3u64)), // α
-              ),
-              Expr::bvar(Nat::from(2u64)), // β
-            ),
-            BinderInfo::Default,
-          ),
-          BinderInfo::Default,
-        ),
-        BinderInfo::Default,
-      ),
-      BinderInfo::Default,
-    );
-
-    env.insert(
-      mk_ctor_name.clone(),
-      ConstantInfo::CtorInfo(ConstructorVal {
-        cnst: ConstantVal {
-          name: mk_ctor_name,
-          level_params: vec![u_name, v_name],
-          typ: ctor_type,
+      // Neutral (const)
+      (
+        ValInner::Neutral {
+          head: Head::Const { addr: a1, levels: l1, .. },
+          spine: sp1,
         },
-        induct: prod_name,
-        cidx: Nat::from(0u64),
-        num_params: Nat::from(2u64),
-        num_fields: Nat::from(2u64),
-        is_unsafe: false,
-      }),
-    );
-
-    env
-  }
-
-  #[test]
-  fn eta_struct_ctor_eq_proj() {
-    // Prod.mk Nat Nat (Prod.1 p) (Prod.2 p) =def= p
-    // where p is a free variable of type Prod Nat Nat
-    let env = mk_prod_env();
-    let mut tc = TypeChecker::new(&env);
-
-    let one = Level::succ(Level::zero());
-    let prod_nat_nat = Expr::app(
-      Expr::app(
-        Expr::cnst(mk_name("Prod"), vec![one.clone(), one.clone()]),
-        nat_type(),
-      ),
-      nat_type(),
-    );
-    let p = tc.mk_local(&mk_name("p"), &prod_nat_nat);
-
-    let ctor_app = Expr::app(
-      Expr::app(
-        Expr::app(
-          Expr::app(
-            Expr::cnst(
-              mk_name2("Prod", "mk"),
-              vec![one.clone(), one.clone()],
-            ),
-            nat_type(),
-          ),
-          nat_type(),
-        ),
-        Expr::proj(mk_name("Prod"), Nat::from(0u64), p.clone()),
-      ),
-      Expr::proj(mk_name("Prod"), Nat::from(1u64), p.clone()),
-    );
-
-    assert!(tc.def_eq(&ctor_app, &p));
-  }
-
-  #[test]
-  fn eta_struct_symmetric() {
-    // p =def= Prod.mk Nat Nat (Prod.1 p) (Prod.2 p)
-    let env = mk_prod_env();
-    let mut tc = TypeChecker::new(&env);
-
-    let one = Level::succ(Level::zero());
-    let prod_nat_nat = Expr::app(
-      Expr::app(
-        Expr::cnst(mk_name("Prod"), vec![one.clone(), one.clone()]),
-        nat_type(),
-      ),
-      nat_type(),
-    );
-    let p = tc.mk_local(&mk_name("p"), &prod_nat_nat);
-
-    let ctor_app = Expr::app(
-      Expr::app(
-        Expr::app(
-          Expr::app(
-            Expr::cnst(
-              mk_name2("Prod", "mk"),
-              vec![one.clone(), one.clone()],
-            ),
-            nat_type(),
-          ),
-          nat_type(),
-        ),
-        Expr::proj(mk_name("Prod"), Nat::from(0u64), p.clone()),
-      ),
-      Expr::proj(mk_name("Prod"), Nat::from(1u64), p.clone()),
-    );
-
-    assert!(tc.def_eq(&p, &ctor_app));
-  }
-
-  #[test]
-  fn eta_struct_nat_not_structure_like() {
-    // Nat has 2 constructors, so it is NOT structure-like
-    let env = mk_nat_env();
-    assert!(!super::is_structure_like(&mk_name("Nat"), &env));
-  }
-
-  // ==========================================================================
-  // Binder full comparison
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_binder_full_different_domains() {
-    // (x : myNat) → Nat =def= (x : Nat) → Nat
-    // where myNat unfolds to Nat
-    let mut env = mk_nat_env();
-    let my_nat = mk_name("myNat");
-    env.insert(
-      my_nat.clone(),
-      ConstantInfo::DefnInfo(DefinitionVal {
-        cnst: ConstantVal {
-          name: my_nat.clone(),
-          level_params: vec![],
-          typ: Expr::sort(Level::succ(Level::zero())),
+        ValInner::Neutral {
+          head: Head::Const { addr: a2, levels: l2, .. },
+          spine: sp2,
         },
-        value: nat_type(),
-        hints: ReducibilityHints::Abbrev,
-        safety: DefinitionSafety::Safe,
-        all: vec![my_nat.clone()],
-      }),
-    );
-    let mut tc = TypeChecker::new(&env);
-    let lhs = Expr::all(
-      mk_name("x"),
-      Expr::cnst(my_nat, vec![]),
-      nat_type(),
-      BinderInfo::Default,
-    );
-    let rhs = Expr::all(
-      mk_name("x"),
-      nat_type(),
-      nat_type(),
-      BinderInfo::Default,
-    );
-    assert!(tc.def_eq(&lhs, &rhs));
-  }
+      ) => {
+        if a1 != a2
+          || l1.len() != l2.len()
+          || !l1.iter().zip(l2.iter()).all(|(a, b)| equal_level(a, b))
+        {
+          return Ok(false);
+        }
+        self.is_def_eq_spine(sp1, sp2)
+      }
 
-  // ==========================================================================
-  // Proj congruence
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_proj_congruence() {
-    let env = Env::default();
-    let mut tc = TypeChecker::new(&env);
-    let s = nat_zero();
-    let lhs = Expr::proj(mk_name("S"), Nat::from(0u64), s.clone());
-    let rhs = Expr::proj(mk_name("S"), Nat::from(0u64), s);
-    assert!(tc.def_eq(&lhs, &rhs));
-  }
-
-  #[test]
-  fn def_eq_proj_different_idx() {
-    let env = Env::default();
-    let mut tc = TypeChecker::new(&env);
-    let s = nat_zero();
-    let lhs = Expr::proj(mk_name("S"), Nat::from(0u64), s.clone());
-    let rhs = Expr::proj(mk_name("S"), Nat::from(1u64), s);
-    assert!(!tc.def_eq(&lhs, &rhs));
-  }
-
-  // ==========================================================================
-  // Unit-like equality
-  // ==========================================================================
-
-  #[test]
-  fn def_eq_unit_like() {
-    // Unit-type: single ctor, zero fields
-    // Any two inhabitants should be def-eq
-    let mut env = mk_nat_env();
-    let unit_name = mk_name("Unit");
-    let unit_star = mk_name2("Unit", "star");
-
-    env.insert(
-      unit_name.clone(),
-      ConstantInfo::InductInfo(InductiveVal {
-        cnst: ConstantVal {
-          name: unit_name.clone(),
-          level_params: vec![],
-          typ: Expr::sort(Level::succ(Level::zero())),
+      // Constructor
+      (
+        ValInner::Ctor {
+          addr: a1,
+          levels: l1,
+          spine: sp1,
+          ..
         },
-        num_params: Nat::from(0u64),
-        num_indices: Nat::from(0u64),
-        all: vec![unit_name.clone()],
-        ctors: vec![unit_star.clone()],
-        num_nested: Nat::from(0u64),
-        is_rec: false,
-        is_unsafe: false,
-        is_reflexive: false,
-      }),
-    );
-    env.insert(
-      unit_star.clone(),
-      ConstantInfo::CtorInfo(ConstructorVal {
-        cnst: ConstantVal {
-          name: unit_star.clone(),
-          level_params: vec![],
-          typ: Expr::cnst(unit_name.clone(), vec![]),
+        ValInner::Ctor {
+          addr: a2,
+          levels: l2,
+          spine: sp2,
+          ..
         },
-        induct: unit_name.clone(),
-        cidx: Nat::from(0u64),
-        num_params: Nat::from(0u64),
-        num_fields: Nat::from(0u64),
-        is_unsafe: false,
-      }),
-    );
+      ) => {
+        if a1 != a2
+          || l1.len() != l2.len()
+          || !l1.iter().zip(l2.iter()).all(|(a, b)| equal_level(a, b))
+        {
+          return Ok(false);
+        }
+        self.is_def_eq_spine(sp1, sp2)
+      }
 
-    let mut tc = TypeChecker::new(&env);
-
-    // Two distinct fvars of type Unit should be def-eq
-    let unit_ty = Expr::cnst(unit_name, vec![]);
-    let x = tc.mk_local(&mk_name("x"), &unit_ty);
-    let y = tc.mk_local(&mk_name("y"), &unit_ty);
-    assert!(tc.def_eq(&x, &y));
-  }
-
-  // ==========================================================================
-  // ThmInfo fix: theorems must not enter lazy_delta_step
-  // ==========================================================================
-
-  /// Build an env with Nat + two ThmInfo constants.
-  fn mk_thm_env() -> Env {
-    let mut env = mk_nat_env();
-    let thm_a = mk_name("thmA");
-    let thm_b = mk_name("thmB");
-    let prop = Expr::sort(Level::zero());
-    // Two theorems with the same type (True : Prop)
-    let true_name = mk_name("True");
-    env.insert(
-      true_name.clone(),
-      ConstantInfo::InductInfo(InductiveVal {
-        cnst: ConstantVal {
-          name: true_name.clone(),
-          level_params: vec![],
-          typ: prop.clone(),
+      // Lambda: compare domains, bodies under shared fvar
+      (
+        ValInner::Lam {
+          dom: d1,
+          body: b1,
+          env: e1,
+          ..
         },
-        num_params: Nat::from(0u64),
-        num_indices: Nat::from(0u64),
-        all: vec![true_name.clone()],
-        ctors: vec![mk_name2("True", "intro")],
-        num_nested: Nat::from(0u64),
-        is_rec: false,
-        is_unsafe: false,
-        is_reflexive: false,
-      }),
-    );
-    let intro_name = mk_name2("True", "intro");
-    env.insert(
-      intro_name.clone(),
-      ConstantInfo::CtorInfo(ConstructorVal {
-        cnst: ConstantVal {
-          name: intro_name.clone(),
-          level_params: vec![],
-          typ: Expr::cnst(true_name.clone(), vec![]),
+        ValInner::Lam {
+          dom: d2,
+          body: b2,
+          env: e2,
+          ..
         },
-        induct: true_name.clone(),
-        cidx: Nat::from(0u64),
-        num_params: Nat::from(0u64),
-        num_fields: Nat::from(0u64),
-        is_unsafe: false,
-      }),
-    );
-    let true_ty = Expr::cnst(true_name, vec![]);
-    env.insert(
-      thm_a.clone(),
-      ConstantInfo::ThmInfo(TheoremVal {
-        cnst: ConstantVal {
-          name: thm_a.clone(),
-          level_params: vec![],
-          typ: true_ty.clone(),
+      ) => {
+        if !self.is_def_eq(d1, d2)? {
+          return Ok(false);
+        }
+        let fvar = Val::mk_fvar(self.depth(), d1.clone());
+        let mut env1 = e1.clone();
+        env1.push(fvar.clone());
+        let mut env2 = e2.clone();
+        env2.push(fvar);
+        let v1 = self.eval(b1, &env1)?;
+        let v2 = self.eval(b2, &env2)?;
+        self.with_binder(d1.clone(), M::Field::<Name>::default(), |tc| {
+          tc.is_def_eq(&v1, &v2)
+        })
+      }
+
+      // Pi: compare domains, bodies under shared fvar
+      (
+        ValInner::Pi {
+          dom: d1,
+          body: b1,
+          env: e1,
+          ..
         },
-        value: Expr::cnst(intro_name.clone(), vec![]),
-        all: vec![thm_a.clone()],
-      }),
-    );
-    env.insert(
-      thm_b.clone(),
-      ConstantInfo::ThmInfo(TheoremVal {
-        cnst: ConstantVal {
-          name: thm_b.clone(),
-          level_params: vec![],
-          typ: true_ty,
+        ValInner::Pi {
+          dom: d2,
+          body: b2,
+          env: e2,
+          ..
         },
-        value: Expr::cnst(intro_name, vec![]),
-        all: vec![thm_b.clone()],
-      }),
-    );
-    env
+      ) => {
+        if !self.is_def_eq(d1, d2)? {
+          return Ok(false);
+        }
+        let fvar = Val::mk_fvar(self.depth(), d1.clone());
+        let mut env1 = e1.clone();
+        env1.push(fvar.clone());
+        let mut env2 = e2.clone();
+        env2.push(fvar);
+        let v1 = self.eval(b1, &env1)?;
+        let v2 = self.eval(b2, &env2)?;
+        self.with_binder(d1.clone(), M::Field::<Name>::default(), |tc| {
+          tc.is_def_eq(&v1, &v2)
+        })
+      }
+
+      // Eta: lambda vs non-lambda
+      (ValInner::Lam { dom, body, env, .. }, _) => {
+        let fvar = Val::mk_fvar(self.depth(), dom.clone());
+        let mut new_env = env.clone();
+        new_env.push(fvar.clone());
+        let lhs = self.eval(body, &new_env)?;
+        let rhs_thunk = mk_thunk_val(fvar);
+        let rhs = self.apply_val_thunk(s.clone(), rhs_thunk)?;
+        self.with_binder(dom.clone(), M::Field::<Name>::default(), |tc| {
+          tc.is_def_eq(&lhs, &rhs)
+        })
+      }
+      (_, ValInner::Lam { dom, body, env, .. }) => {
+        let fvar = Val::mk_fvar(self.depth(), dom.clone());
+        let mut new_env = env.clone();
+        new_env.push(fvar.clone());
+        let rhs = self.eval(body, &new_env)?;
+        let lhs_thunk = mk_thunk_val(fvar);
+        let lhs = self.apply_val_thunk(t.clone(), lhs_thunk)?;
+        self.with_binder(dom.clone(), M::Field::<Name>::default(), |tc| {
+          tc.is_def_eq(&lhs, &rhs)
+        })
+      }
+
+      // Projection
+      (
+        ValInner::Proj {
+          type_addr: a1,
+          idx: i1,
+          strct: s1,
+          spine: sp1,
+          ..
+        },
+        ValInner::Proj {
+          type_addr: a2,
+          idx: i2,
+          strct: s2,
+          spine: sp2,
+          ..
+        },
+      ) => {
+        if a1 != a2 || i1 != i2 {
+          return Ok(false);
+        }
+        let sv1 = self.force_thunk(s1)?;
+        let sv2 = self.force_thunk(s2)?;
+        if !self.is_def_eq(&sv1, &sv2)? {
+          return Ok(false);
+        }
+        self.is_def_eq_spine(sp1, sp2)
+      }
+
+      // Nat literal vs ctor expansion
+      (ValInner::Lit(Literal::NatVal(_)), ValInner::Ctor { .. })
+      | (ValInner::Ctor { .. }, ValInner::Lit(Literal::NatVal(_))) => {
+        let ctor_val = if matches!(t.inner(), ValInner::Lit(_)) {
+          self.nat_lit_to_ctor_thunked(t)?
+        } else {
+          self.nat_lit_to_ctor_thunked(s)?
+        };
+        let other = if matches!(t.inner(), ValInner::Lit(_)) {
+          s
+        } else {
+          t
+        };
+        self.is_def_eq(&ctor_val, other)
+      }
+
+      // String literal expansion (compare after expanding to ctor form)
+      (ValInner::Lit(Literal::StrVal(_)), _) => {
+        match self.str_lit_to_ctor_val(t) {
+          Ok(expanded) => self.is_def_eq(&expanded, s),
+          Err(_) => Ok(false),
+        }
+      }
+      (_, ValInner::Lit(Literal::StrVal(_))) => {
+        match self.str_lit_to_ctor_val(s) {
+          Ok(expanded) => self.is_def_eq(t, &expanded),
+          Err(_) => Ok(false),
+        }
+      }
+
+      // Struct eta fallback
+      _ => {
+        // Try struct eta
+        if self.try_eta_struct_val(t, s)? {
+          return Ok(true);
+        }
+        // Try unit-like
+        if self.is_def_eq_unit_like_val(t, s)? {
+          return Ok(true);
+        }
+        Ok(false)
+      }
+    }
   }
 
-  #[test]
-  fn test_def_eq_theorem_vs_theorem_terminates() {
-    // Two theorem constants of the same Prop type should be def-eq
-    // via proof irrelevance (not via delta). Before the fix, this
-    // would infinite loop because get_applied_def returned Some for ThmInfo.
-    let env = mk_thm_env();
-    let mut tc = TypeChecker::new(&env);
-    let a = Expr::cnst(mk_name("thmA"), vec![]);
-    let b = Expr::cnst(mk_name("thmB"), vec![]);
-    assert!(tc.def_eq(&a, &b));
+  /// Compare two spines element by element.
+  pub fn is_def_eq_spine(
+    &mut self,
+    sp1: &[Thunk<M>],
+    sp2: &[Thunk<M>],
+  ) -> TcResult<bool, M> {
+    if sp1.len() != sp2.len() {
+      return Ok(false);
+    }
+    for (t1, t2) in sp1.iter().zip(sp2.iter()) {
+      let v1 = self.force_thunk(t1)?;
+      let v2 = self.force_thunk(t2)?;
+      if !self.is_def_eq(&v1, &v2)? {
+        return Ok(false);
+      }
+    }
+    Ok(true)
   }
 
-  #[test]
-  fn test_def_eq_theorem_vs_constructor_terminates() {
-    // A theorem constant vs a constructor of the same type must terminate.
-    let env = mk_thm_env();
-    let mut tc = TypeChecker::new(&env);
-    let thm = Expr::cnst(mk_name("thmA"), vec![]);
-    let ctor = Expr::cnst(mk_name2("True", "intro"), vec![]);
-    // Both have type True (a Prop), so proof irrelevance should make them def-eq
-    assert!(tc.def_eq(&thm, &ctor));
+  /// Lazy delta: hint-guided interleaved delta unfolding.
+  pub fn lazy_delta(
+    &mut self,
+    t: &Val<M>,
+    s: &Val<M>,
+  ) -> TcResult<(Val<M>, Val<M>, Option<bool>), M> {
+    let mut t = t.clone();
+    let mut s = s.clone();
+
+    for _ in 0..MAX_LAZY_DELTA_ITERS {
+      let t_hints = get_delta_info(&t, self.env);
+      let s_hints = get_delta_info(&s, self.env);
+
+      match (t_hints, s_hints) {
+        (None, None) => return Ok((t, s, None)),
+
+        (Some(_), None) => {
+          if let Some(t2) = self.delta_step_val(&t)? {
+            t = t2;
+          } else {
+            return Ok((t, s, None));
+          }
+        }
+
+        (None, Some(_)) => {
+          if let Some(s2) = self.delta_step_val(&s)? {
+            s = s2;
+          } else {
+            return Ok((t, s, None));
+          }
+        }
+
+        (Some(th), Some(sh)) => {
+          let t_height = hint_height(&th);
+          let s_height = hint_height(&sh);
+
+          // Same-head optimization
+          if t.same_head_const(&s) {
+            match (&th, &sh) {
+              (
+                ReducibilityHints::Regular(_),
+                ReducibilityHints::Regular(_),
+              ) => {
+                // Try spine comparison first
+                if let (Some(sp1), Some(sp2)) =
+                  (t.spine(), s.spine())
+                {
+                  if sp1.len() == sp2.len() {
+                    let spine_eq = self.is_def_eq_spine(sp1, sp2)?;
+                    if spine_eq {
+                      // Also check universe levels
+                      if let (Some(l1), Some(l2)) =
+                        (t.head_levels(), s.head_levels())
+                      {
+                        if l1.len() == l2.len()
+                          && l1
+                            .iter()
+                            .zip(l2.iter())
+                            .all(|(a, b)| equal_level(a, b))
+                        {
+                          return Ok((t, s, Some(true)));
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              _ => {}
+            }
+          }
+
+          // Unfold the higher-height one
+          if t_height > s_height {
+            if let Some(t2) = self.delta_step_val(&t)? {
+              t = t2;
+            } else {
+              return Ok((t, s, None));
+            }
+          } else if s_height > t_height {
+            if let Some(s2) = self.delta_step_val(&s)? {
+              s = s2;
+            } else {
+              return Ok((t, s, None));
+            }
+          } else {
+            // Same height: unfold both
+            let t2 = self.delta_step_val(&t)?;
+            let s2 = self.delta_step_val(&s)?;
+            match (t2, s2) {
+              (Some(t2), Some(s2)) => {
+                t = t2;
+                s = s2;
+              }
+              (Some(t2), None) => {
+                t = t2;
+              }
+              (None, Some(s2)) => {
+                s = s2;
+              }
+              (None, None) => return Ok((t, s, None)),
+            }
+          }
+        }
+      }
+
+      // Try nat reduction after each delta step
+      if let Some(t2) = self.try_reduce_nat_val(&t)? {
+        t = t2;
+      }
+      if let Some(s2) = self.try_reduce_nat_val(&s)? {
+        s = s2;
+      }
+
+      // Quick check
+      if let Some(result) = Self::quick_is_def_eq_val(&t, &s) {
+        return Ok((t, s, Some(result)));
+      }
+    }
+
+    Err(TcError::KernelException {
+      msg: "lazy delta iteration limit exceeded".to_string(),
+    })
   }
 
-  #[test]
-  fn test_get_applied_def_excludes_theorems() {
-    // Theorems should never be unfolded — proof irrelevance handles them.
-    let env = mk_thm_env();
-    let thm = Expr::cnst(mk_name("thmA"), vec![]);
-    let result = get_applied_def(&thm, &env);
-    assert!(result.is_none());
+  /// Recursively add sub-component equivalences after successful isDefEq.
+  pub fn structural_add_equiv(&mut self, t: &Val<M>, s: &Val<M>) {
+    self.equiv_manager.add_equiv(t.ptr_id(), s.ptr_id());
+
+    // Recursively merge sub-components for matching structures
+    match (t.inner(), s.inner()) {
+      (
+        ValInner::Neutral { spine: sp1, .. },
+        ValInner::Neutral { spine: sp2, .. },
+      )
+      | (
+        ValInner::Ctor { spine: sp1, .. },
+        ValInner::Ctor { spine: sp2, .. },
+      ) if sp1.len() == sp2.len() && sp1.len() < MAX_EQUIV_SPINE => {
+        for (t1, t2) in sp1.iter().zip(sp2.iter()) {
+          if let (Ok(v1), Ok(v2)) = (
+            self.force_thunk_no_eval(t1),
+            self.force_thunk_no_eval(t2),
+          ) {
+            self.equiv_manager.add_equiv(v1.ptr_id(), v2.ptr_id());
+          }
+        }
+      }
+      _ => {}
+    }
   }
 
-  // ==========================================================================
-  // Nat offset equality (is_nat_zero, is_nat_succ, def_eq_nat_offset)
-  // ==========================================================================
-
-  fn nat_lit(n: u64) -> Expr {
-    Expr::lit(Literal::NatVal(Nat::from(n)))
+  /// Peek at a thunk without evaluating it (for structural_add_equiv).
+  fn force_thunk_no_eval(
+    &self,
+    thunk: &Thunk<M>,
+  ) -> Result<Val<M>, ()> {
+    let entry = thunk.borrow();
+    match &*entry {
+      ThunkEntry::Evaluated(v) => Ok(v.clone()),
+      _ => Err(()),
+    }
   }
 
-  #[test]
-  fn test_is_nat_zero_ctor() {
-    assert!(super::is_nat_zero(&nat_zero()));
+  /// Proof irrelevance: if both sides have Prop type, they're equal.
+  fn is_def_eq_proof_irrel(
+    &mut self,
+    t: &Val<M>,
+    s: &Val<M>,
+  ) -> TcResult<Option<bool>, M> {
+    // Infer types of both sides and check if they're in Prop
+    let t_type = self.infer_type_of_val(t)?;
+    let t_type_whnf = self.whnf_val(&t_type, 0)?;
+    if !matches!(
+      t_type_whnf.inner(),
+      ValInner::Sort(l) if super::level::is_zero(l)
+    ) {
+      return Ok(None);
+    }
+
+    let s_type = self.infer_type_of_val(s)?;
+    let s_type_whnf = self.whnf_val(&s_type, 0)?;
+    if !matches!(
+      s_type_whnf.inner(),
+      ValInner::Sort(l) if super::level::is_zero(l)
+    ) {
+      return Ok(None);
+    }
+
+    // Both are proofs — check their types are equal
+    Ok(Some(self.is_def_eq(&t_type, &s_type)?))
   }
 
-  #[test]
-  fn test_is_nat_zero_lit() {
-    assert!(super::is_nat_zero(&nat_lit(0)));
+  /// Convert a nat literal to constructor form with thunks.
+  pub fn nat_lit_to_ctor_thunked(
+    &mut self,
+    v: &Val<M>,
+  ) -> TcResult<Val<M>, M> {
+    match v.inner() {
+      ValInner::Lit(Literal::NatVal(n)) => {
+        if n.0 == BigUint::ZERO {
+          if let Some(zero_addr) = &self.prims.nat_zero {
+            let nat_addr = self
+              .prims
+              .nat
+              .as_ref()
+              .ok_or_else(|| TcError::KernelException {
+                msg: "Nat primitive not found".to_string(),
+              })?;
+            return Ok(Val::mk_ctor(
+              zero_addr.clone(),
+              Vec::new(),
+              M::Field::<Name>::default(),
+              0,
+              0,
+              0,
+              nat_addr.clone(),
+              Vec::new(),
+            ));
+          }
+        }
+        // Nat.succ (n-1)
+        if let Some(succ_addr) = &self.prims.nat_succ {
+          let nat_addr = self
+            .prims
+            .nat
+            .as_ref()
+            .ok_or_else(|| TcError::KernelException {
+              msg: "Nat primitive not found".to_string(),
+            })?;
+          let pred = Val::mk_lit(Literal::NatVal(
+            crate::lean::nat::Nat(&n.0 - 1u64),
+          ));
+          let pred_thunk = mk_thunk_val(pred);
+          return Ok(Val::mk_ctor(
+            succ_addr.clone(),
+            Vec::new(),
+            M::Field::<Name>::default(),
+            1,
+            0,
+            1,
+            nat_addr.clone(),
+            vec![pred_thunk],
+          ));
+        }
+        Ok(v.clone())
+      }
+      _ => Ok(v.clone()),
+    }
   }
 
-  #[test]
-  fn test_is_nat_zero_nonzero_lit() {
-    assert!(!super::is_nat_zero(&nat_lit(5)));
+  /// Convert a string literal to its constructor form:
+  /// `String.mk (List.cons Char (Char.mk c1) (List.cons ... (List.nil Char)))`.
+  fn str_lit_to_ctor_val(&mut self, v: &Val<M>) -> TcResult<Val<M>, M> {
+    match v.inner() {
+      ValInner::Lit(Literal::StrVal(s)) => {
+        use crate::lean::nat::Nat;
+        let string_mk = self
+          .prims
+          .string_mk
+          .as_ref()
+          .ok_or_else(|| TcError::KernelException {
+            msg: "String.mk not found".into(),
+          })?
+          .clone();
+        let char_mk = self
+          .prims
+          .char_mk
+          .as_ref()
+          .ok_or_else(|| TcError::KernelException {
+            msg: "Char.mk not found".into(),
+          })?
+          .clone();
+        let list_nil = self
+          .prims
+          .list_nil
+          .as_ref()
+          .ok_or_else(|| TcError::KernelException {
+            msg: "List.nil not found".into(),
+          })?
+          .clone();
+        let list_cons = self
+          .prims
+          .list_cons
+          .as_ref()
+          .ok_or_else(|| TcError::KernelException {
+            msg: "List.cons not found".into(),
+          })?
+          .clone();
+        let char_type_addr = self
+          .prims
+          .char_type
+          .as_ref()
+          .ok_or_else(|| TcError::KernelException {
+            msg: "Char type not found".into(),
+          })?
+          .clone();
+
+        let zero = super::types::KLevel::zero();
+        let char_type_val = Val::mk_const(
+          char_type_addr,
+          vec![],
+          M::Field::<Name>::default(),
+        );
+
+        // Build List Char from right to left, starting with List.nil.{0} Char
+        let nil = Val::mk_const(
+          list_nil,
+          vec![zero.clone()],
+          M::Field::<Name>::default(),
+        );
+        let mut list = self.apply_val_thunk(
+          nil,
+          mk_thunk_val(char_type_val.clone()),
+        )?;
+
+        for ch in s.chars().rev() {
+          // Char.mk <code>
+          let char_lit =
+            Val::mk_lit(Literal::NatVal(Nat::from(ch as u64)));
+          let char_val = Val::mk_const(
+            char_mk.clone(),
+            vec![],
+            M::Field::<Name>::default(),
+          );
+          let char_applied = self.apply_val_thunk(
+            char_val,
+            mk_thunk_val(char_lit),
+          )?;
+
+          // List.cons.{0} Char <char> <rest>
+          let cons = Val::mk_const(
+            list_cons.clone(),
+            vec![zero.clone()],
+            M::Field::<Name>::default(),
+          );
+          let cons1 = self.apply_val_thunk(
+            cons,
+            mk_thunk_val(char_type_val.clone()),
+          )?;
+          let cons2 = self.apply_val_thunk(
+            cons1,
+            mk_thunk_val(char_applied),
+          )?;
+          list =
+            self.apply_val_thunk(cons2, mk_thunk_val(list))?;
+        }
+
+        // String.mk <list>
+        let mk = Val::mk_const(
+          string_mk,
+          vec![],
+          M::Field::<Name>::default(),
+        );
+        self.apply_val_thunk(mk, mk_thunk_val(list))
+      }
+      _ => Ok(v.clone()),
+    }
   }
 
-  #[test]
-  fn test_is_nat_succ_ctor() {
-    let succ_zero = Expr::app(
-      Expr::cnst(mk_name2("Nat", "succ"), vec![]),
-      nat_lit(4),
-    );
-    let pred = super::is_nat_succ(&succ_zero);
-    assert!(pred.is_some());
-    assert_eq!(pred.unwrap(), nat_lit(4));
+  /// Try struct eta expansion for equality checking (both directions).
+  fn try_eta_struct_val(
+    &mut self,
+    t: &Val<M>,
+    s: &Val<M>,
+  ) -> TcResult<bool, M> {
+    if self.try_eta_struct_core(t, s)? {
+      return Ok(true);
+    }
+    self.try_eta_struct_core(s, t)
   }
 
-  #[test]
-  fn test_is_nat_succ_lit() {
-    // lit 5 should decompose to lit 4 (Lean 4: isNatSuccOf?)
-    let pred = super::is_nat_succ(&nat_lit(5));
-    assert!(pred.is_some());
-    assert_eq!(pred.unwrap(), nat_lit(4));
+  /// Core struct eta: check if s is a ctor of a struct-like type,
+  /// and t's projections match s's fields.
+  fn try_eta_struct_core(
+    &mut self,
+    t: &Val<M>,
+    s: &Val<M>,
+  ) -> TcResult<bool, M> {
+    match s.inner() {
+      ValInner::Ctor {
+        num_params,
+        num_fields,
+        induct_addr,
+        spine,
+        ..
+      } => {
+        if spine.len() != num_params + num_fields {
+          return Ok(false);
+        }
+        if !is_struct_like_app(s, &self.typed_consts) {
+          return Ok(false);
+        }
+        // Check types match
+        let t_type = match self.infer_type_of_val(t) {
+          Ok(ty) => ty,
+          Err(_) => return Ok(false),
+        };
+        let s_type = match self.infer_type_of_val(s) {
+          Ok(ty) => ty,
+          Err(_) => return Ok(false),
+        };
+        if !self.is_def_eq(&t_type, &s_type)? {
+          return Ok(false);
+        }
+        // Compare each field
+        let t_thunk = mk_thunk_val(t.clone());
+        for i in 0..*num_fields {
+          let proj_val = Val::mk_proj(
+            induct_addr.clone(),
+            i,
+            t_thunk.clone(),
+            M::Field::<Name>::default(),
+            Vec::new(),
+          );
+          let field_val = self.force_thunk(&spine[num_params + i])?;
+          if !self.is_def_eq(&proj_val, &field_val)? {
+            return Ok(false);
+          }
+        }
+        Ok(true)
+      }
+      _ => Ok(false),
+    }
   }
 
-  #[test]
-  fn test_is_nat_succ_lit_one() {
-    // lit 1 should decompose to lit 0
-    let pred = super::is_nat_succ(&nat_lit(1));
-    assert!(pred.is_some());
-    assert_eq!(pred.unwrap(), nat_lit(0));
+  /// Check unit-like type equality: single ctor, 0 fields, 0 indices, non-recursive.
+  fn is_def_eq_unit_like_val(
+    &mut self,
+    t: &Val<M>,
+    s: &Val<M>,
+  ) -> TcResult<bool, M> {
+    let t_type = match self.infer_type_of_val(t) {
+      Ok(ty) => ty,
+      Err(_) => return Ok(false),
+    };
+    let t_type_whnf = self.whnf_val(&t_type, 0)?;
+    match t_type_whnf.inner() {
+      ValInner::Neutral {
+        head: Head::Const { addr, .. },
+        ..
+      } => {
+        let ci = match self.env.get(addr) {
+          Some(ci) => ci.clone(),
+          None => return Ok(false),
+        };
+        match &ci {
+          KConstantInfo::Inductive(iv) => {
+            if iv.is_rec || iv.num_indices != 0 || iv.ctors.len() != 1 {
+              return Ok(false);
+            }
+            match self.env.get(&iv.ctors[0]) {
+              Some(KConstantInfo::Constructor(cv)) => {
+                if cv.num_fields != 0 {
+                  return Ok(false);
+                }
+                let s_type = match self.infer_type_of_val(s) {
+                  Ok(ty) => ty,
+                  Err(_) => return Ok(false),
+                };
+                self.is_def_eq(&t_type, &s_type)
+              }
+              _ => Ok(false),
+            }
+          }
+          _ => Ok(false),
+        }
+      }
+      _ => Ok(false),
+    }
   }
+}
 
-  #[test]
-  fn test_is_nat_succ_lit_zero() {
-    // lit 0 should NOT decompose (it's zero, not succ of anything)
-    assert!(super::is_nat_succ(&nat_lit(0)).is_none());
-  }
-
-  #[test]
-  fn test_is_nat_succ_nat_zero_ctor() {
-    assert!(super::is_nat_succ(&nat_zero()).is_none());
-  }
-
-  #[test]
-  fn def_eq_nat_zero_ctor_vs_lit() {
-    // Nat.zero =def= lit 0
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    assert!(tc.def_eq(&nat_zero(), &nat_lit(0)));
-  }
-
-  #[test]
-  fn def_eq_nat_lit_vs_succ_lit() {
-    // lit 5 =def= Nat.succ (lit 4)
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let succ_4 = Expr::app(
-      Expr::cnst(mk_name2("Nat", "succ"), vec![]),
-      nat_lit(4),
-    );
-    assert!(tc.def_eq(&nat_lit(5), &succ_4));
-  }
-
-  #[test]
-  fn def_eq_nat_succ_lit_vs_lit() {
-    // Nat.succ (lit 4) =def= lit 5
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let succ_4 = Expr::app(
-      Expr::cnst(mk_name2("Nat", "succ"), vec![]),
-      nat_lit(4),
-    );
-    assert!(tc.def_eq(&succ_4, &nat_lit(5)));
-  }
-
-  #[test]
-  fn def_eq_nat_lit_one_vs_succ_zero() {
-    // lit 1 =def= Nat.succ Nat.zero
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let succ_zero = Expr::app(
-      Expr::cnst(mk_name2("Nat", "succ"), vec![]),
-      nat_zero(),
-    );
-    assert!(tc.def_eq(&nat_lit(1), &succ_zero));
-  }
-
-  #[test]
-  fn def_eq_nat_lit_not_equal_succ() {
-    // lit 5 ≠ Nat.succ (lit 5)
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let succ_5 = Expr::app(
-      Expr::cnst(mk_name2("Nat", "succ"), vec![]),
-      nat_lit(5),
-    );
-    assert!(!tc.def_eq(&nat_lit(5), &succ_5));
-  }
-
-  #[test]
-  fn def_eq_nat_add_result_vs_lit() {
-    // Nat.add (lit 3) (lit 4) =def= lit 7
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let add_3_4 = Expr::app(
-      Expr::app(
-        Expr::cnst(mk_name2("Nat", "add"), vec![]),
-        nat_lit(3),
-      ),
-      nat_lit(4),
-    );
-    assert!(tc.def_eq(&add_3_4, &nat_lit(7)));
-  }
-
-  #[test]
-  fn def_eq_nat_add_vs_succ() {
-    // Nat.add (lit 3) (lit 4) =def= Nat.succ (lit 6)
-    let env = mk_nat_env();
-    let mut tc = TypeChecker::new(&env);
-    let add_3_4 = Expr::app(
-      Expr::app(
-        Expr::cnst(mk_name2("Nat", "add"), vec![]),
-        nat_lit(3),
-      ),
-      nat_lit(4),
-    );
-    let succ_6 = Expr::app(
-      Expr::cnst(mk_name2("Nat", "succ"), vec![]),
-      nat_lit(6),
-    );
-    assert!(tc.def_eq(&add_3_4, &succ_6));
+/// Get the height from reducibility hints.
+fn hint_height(h: &ReducibilityHints) -> u32 {
+  match h {
+    ReducibilityHints::Opaque => u32::MAX,
+    ReducibilityHints::Abbrev => 0,
+    ReducibilityHints::Regular(n) => *n,
   }
 }

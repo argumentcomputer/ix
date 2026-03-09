@@ -11,7 +11,7 @@
 -/
 import Ix.Kernel.Types
 
-namespace Ix.Kernel2
+namespace Ix.Kernel
 
 -- Abbreviations to avoid Lean.Expr / Lean.ConstantInfo shadowing
 abbrev KExpr (m : Ix.Kernel.MetaMode) := Ix.Kernel.Expr m
@@ -176,4 +176,4 @@ instance : ToString (Val m) where
 
 end Val
 
-end Ix.Kernel2
+end Ix.Kernel

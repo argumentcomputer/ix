@@ -12,9 +12,9 @@ mod tests {
   use crate::ix::env::{
     BinderInfo, DefinitionSafety, Literal, QuotKind, ReducibilityHints,
   };
-  use crate::ix::kernel2::tc::TypeChecker;
-  use crate::ix::kernel2::types::*;
-  use crate::ix::kernel2::value::{Head, ValInner};
+  use crate::ix::kernel::tc::TypeChecker;
+  use crate::ix::kernel::types::*;
+  use crate::ix::kernel::value::{Head, ValInner};
   use crate::lean::nat::Nat;
 
   // ==========================================================================
@@ -2807,7 +2807,7 @@ mod tests {
 
   #[test]
   fn defn_typecheck_add() {
-    use crate::ix::kernel2::check::typecheck_const;
+    use crate::ix::kernel::check::typecheck_const;
 
     let prims = test_prims();
     let (mut env, nat_ind, zero, succ, rec) =

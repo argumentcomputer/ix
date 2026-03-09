@@ -158,6 +158,39 @@
             lean.lean-all # Includes Lean compiler, lake, stdlib, etc.
             gmp
             cargo-deny
+            # LaTeX (for whitepaper)
+            (texlive.combine {
+              inherit (texlive)
+                scheme-small
+                tufte-latex
+                biblatex
+                biber
+                booktabs
+                fancyvrb
+                units
+                xargs
+                lipsum
+                imakeidx
+                microtype
+                xkeyval
+                hardwrap
+                catchfile
+                titlesec
+                paralist
+                sauerj
+                changepage
+                placeins
+                ifmtarg
+                setspace
+                xifthen
+                latexmk
+                palatino
+                mathpazo
+                helvetic
+                courier
+                psnfss
+                ;
+            })
           ];
         };
 

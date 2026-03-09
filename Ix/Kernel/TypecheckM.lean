@@ -1,174 +1,205 @@
 /-
-  TypecheckM: Monad stack, context, state, and utilities for the kernel typechecker.
+  Kernel2 TypecheckM: Monad stack, context, state, and thunk operations.
 
-  Environment-based kernel: no ST, no thunks, no Value domain.
-  Types and values are Expr m throughout.
+  Monad is based on EST (ExceptT + ST) for pure mutable references.
+  σ parameterizes the ST region — runEST at the top level keeps everything pure.
+  Context stores types as Val (indexed by de Bruijn level, not index).
+  Thunk table lives in the reader context (ST.Ref identity doesn't change).
 -/
+import Ix.Kernel.Value
+import Ix.Kernel.EquivManager
 import Ix.Kernel.Datatypes
 import Ix.Kernel.Level
-import Ix.Kernel.EquivManager
+import Init.System.ST
 
 namespace Ix.Kernel
 
-/-! ## Level substitution on Expr -/
+-- Additional K-abbreviations for types from Datatypes.lean
+abbrev KTypedConst (m : Ix.Kernel.MetaMode) := Ix.Kernel.TypedConst m
+abbrev KTypedExpr (m : Ix.Kernel.MetaMode) := Ix.Kernel.TypedExpr m
+abbrev KTypeInfo (m : Ix.Kernel.MetaMode) := Ix.Kernel.TypeInfo m
 
-/-- Substitute universe level params in an expression using `instBulkReduce`. -/
-def Expr.instantiateLevelParams (e : Expr m) (levels : Array (Level m)) : Expr m :=
-  if levels.isEmpty then e
-  else e.instantiateLevelParamsBy (Level.instBulkReduce levels)
+/-! ## Thunk entry
+
+Stored in the thunk table (external to Val). Each thunk is either unevaluated
+(an Expr + closure env) or evaluated (a Val). ST.Ref mutation gives call-by-need. -/
+
+inductive ThunkEntry (m : Ix.Kernel.MetaMode) : Type where
+  | unevaluated (expr : KExpr m) (env : Array (Val m))
+  | evaluated (val : Val m)
 
 /-! ## Typechecker Context -/
 
-structure TypecheckCtx (m : MetaMode) where
-  /-- Type of each bound variable, indexed by de Bruijn index.
-      types[0] is the type of bvar 0 (most recently bound). -/
-  types    : Array (Expr m)
-  /-- Let-bound values parallel to `types`. `letValues[i] = some val` means the
-      binding at position `i` was introduced by a `letE` with value `val`.
-      `none` means it was introduced by a lambda/forall binder. -/
-  letValues : Array (Option (Expr m)) := #[]
-  /-- Number of let bindings currently in scope (for cache gating). -/
-  numLetBindings : Nat := 0
-  kenv     : Env m
-  prims    : Primitives
-  safety   : DefinitionSafety
-  quotInit : Bool
-  /-- Maps a variable index (mutual reference) to (address, type function). -/
-  mutTypes : Std.TreeMap Nat (Address × (Array (Level m) → Expr m)) compare
-  /-- Tracks the address of the constant currently being checked, for recursion detection. -/
-  recAddr? : Option Address
-  /-- When true, skip argument type-checking during inference (lean4lean inferOnly). -/
-  inferOnly : Bool := false
-  /-- Enable dbg_trace on major entry points for debugging. -/
-  trace    : Bool := false
+structure TypecheckCtx (σ : Type) (m : Ix.Kernel.MetaMode) where
+  types      : Array (Val m)
+  letValues  : Array (Option (Val m)) := #[]
+  binderNames : Array (KMetaField m Ix.Name) := #[]
+  kenv       : KEnv m
+  prims      : KPrimitives
+  safety     : KDefinitionSafety
+  quotInit   : Bool
+  mutTypes   : Std.TreeMap Nat (Address × (Array (KLevel m) → Val m)) compare := default
+  recAddr?   : Option Address := none
+  inferOnly  : Bool := false
+  eagerReduce : Bool := false
+  trace      : Bool := false
+  -- Thunk table: ST.Ref to array of ST.Ref thunk entries
+  thunkTable : ST.Ref σ (Array (ST.Ref σ (ThunkEntry m)))
 
 /-! ## Typechecker State -/
 
-/-- Default fuel for bounding total recursive work per constant. -/
-def defaultFuel : Nat := 10_000_000
+def defaultMaxHeartbeats : Nat := 200_000_000
+def defaultMaxThunks : Nat := 10_000_000
 
-structure TypecheckState (m : MetaMode) where
-  typedConsts    : Std.TreeMap Address (TypedConst m) Address.compare
-  /-- WHNF cache: maps expr → (binding context, result).
-      Context verified on retrieval via ptr equality + BEq fallback (like inferCache). -/
-  whnfCache      : Std.TreeMap (Expr m) (Array (Expr m) × Expr m) Expr.compare := {}
-  /-- Cache for structural-only WHNF (whnfCore with cheapRec=false, cheapProj=false).
-      Context verified on retrieval via ptr equality + BEq fallback. -/
-  whnfCoreCache  : Std.TreeMap (Expr m) (Array (Expr m) × Expr m) Expr.compare := {}
-  /-- Infer cache: maps term → (binding context, TypeInfo, inferred type).
-      Keyed on Expr only; context verified on retrieval via ptr equality + BEq fallback.
-      TypeInfo is cached to avoid re-calling infoFromType (which calls whnf) on cache hits. -/
-  inferCache     : Std.TreeMap (Expr m) (Array (Expr m) × TypeInfo m × Expr m) Expr.compare := {}
-  eqvManager     : EquivManager m := {}
-  failureCache   : Std.TreeMap (Expr m × Expr m) Unit Expr.pairCompare := {}
-  constTypeCache : Std.TreeMap Address (Array (Level m) × Expr m) Address.compare := {}
-  fuel           : Nat := defaultFuel
-  /-- Global recursion depth across isDefEq/infer/whnf for stack overflow prevention. -/
-  recDepth       : Nat := 0
-  maxRecDepth    : Nat := 0
-  /-- Debug counters for profiling -/
+private def ptrPairOrd : Ord (USize × USize) where
+  compare a b :=
+    match compare a.1 b.1 with
+    | .eq => compare a.2 b.2
+    | r => r
+
+structure TypecheckState (m : Ix.Kernel.MetaMode) where
+  typedConsts    : Std.TreeMap Address (KTypedConst m) Ix.Kernel.Address.compare := default
+  ptrFailureCache : Std.TreeMap (USize × USize) (Val m × Val m) ptrPairOrd.compare := default
+  eqvManager     : EquivManager := {}
+  keepAlive      : Array (Val m) := #[]
+  inferCache     : Std.TreeMap (KExpr m) (Array (Val m) × KTypedExpr m × Val m)
+                     Ix.Kernel.Expr.compare := default
+  whnfCache      : Std.TreeMap USize (Val m × Val m) compare := default
+  whnfCoreCache  : Std.TreeMap USize (Val m × Val m) compare := default
+  heartbeats     : Nat := 0
+  maxHeartbeats  : Nat := defaultMaxHeartbeats
+  maxThunks      : Nat := defaultMaxThunks
   inferCalls     : Nat := 0
-  whnfCalls      : Nat := 0
+  evalCalls      : Nat := 0
+  forceCalls     : Nat := 0
   isDefEqCalls   : Nat := 0
-  whnfCacheHits  : Nat := 0
-  whnfCoreCacheHits : Nat := 0
-  inferCacheHits : Nat := 0
+  thunkCount     : Nat := 0
+  thunkForces    : Nat := 0
+  thunkHits      : Nat := 0
+  cacheHits      : Nat := 0
   deriving Inhabited
 
-/-! ## TypecheckM monad -/
+/-! ## TypecheckM monad
 
-abbrev TypecheckM (m : MetaMode) :=
-  ReaderT (TypecheckCtx m) (ExceptT String (StateM (TypecheckState m)))
+  ReaderT for immutable context (including thunk table ref).
+  StateT for mutable counters/caches (typedConsts, heartbeats, etc.).
+  ExceptT for errors, ST for mutable thunk refs. -/
 
-def TypecheckM.run (ctx : TypecheckCtx m) (stt : TypecheckState m)
-    (x : TypecheckM m α) : Except String α × TypecheckState m :=
-  let (result, stt') := StateT.run (ExceptT.run (ReaderT.run x ctx)) stt
-  (result, stt')
+abbrev TypecheckM (σ : Type) (m : Ix.Kernel.MetaMode) :=
+  ReaderT (TypecheckCtx σ m) (StateT (TypecheckState m) (ExceptT String (ST σ)))
 
-/-! ## Context modifiers -/
+/-! ## Thunk operations -/
 
-def withResetCtx : TypecheckM m α → TypecheckM m α :=
+/-- Allocate a new thunk (unevaluated). Returns its index. -/
+def mkThunk (expr : KExpr m) (env : Array (Val m)) : TypecheckM σ m Nat := do
+  let tableRef := (← read).thunkTable
+  let table ← tableRef.get
+  if table.size >= (← get).maxThunks then
+    throw s!"thunk table limit exceeded ({table.size})"
+  let entryRef ← ST.mkRef (ThunkEntry.unevaluated expr env)
+  tableRef.set (table.push entryRef)
+  pure table.size
+
+/-- Allocate a thunk that is already evaluated. -/
+def mkThunkFromVal (v : Val m) : TypecheckM σ m Nat := do
+  let tableRef := (← read).thunkTable
+  let table ← tableRef.get
+  if table.size >= (← get).maxThunks then
+    throw s!"thunk table limit exceeded ({table.size})"
+  let entryRef ← ST.mkRef (ThunkEntry.evaluated v)
+  tableRef.set (table.push entryRef)
+  pure table.size
+
+/-- Read a thunk entry without forcing (for inspection). -/
+def peekThunk (id : Nat) : TypecheckM σ m (ThunkEntry m) := do
+  let tableRef := (← read).thunkTable
+  let table ← tableRef.get
+  if h : id < table.size then
+    ST.Ref.get table[id]
+  else
+    throw s!"thunk id {id} out of bounds (table size {table.size})"
+
+/-- Check if a thunk has been evaluated. -/
+def isThunkEvaluated (id : Nat) : TypecheckM σ m Bool := do
+  match ← peekThunk id with
+  | .evaluated _ => pure true
+  | .unevaluated _ _ => pure false
+
+/-! ## Context helpers -/
+
+def depth : TypecheckM σ m Nat := do pure (← read).types.size
+
+def withResetCtx : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with
-    types := #[], letValues := #[], numLetBindings := 0,
+    types := #[], letValues := #[], binderNames := #[],
     mutTypes := default, recAddr? := none }
 
-def withMutTypes (mutTypes : Std.TreeMap Nat (Address × (Array (Level m) → Expr m)) compare) :
-    TypecheckM m α → TypecheckM m α :=
-  withReader fun ctx => { ctx with mutTypes := mutTypes }
-
-/-- Extend the context with a new bound variable of the given type (lambda/forall). -/
-def withExtendedCtx (varType : Expr m) : TypecheckM m α → TypecheckM m α :=
+def withBinder (varType : Val m) (name : KMetaField m Ix.Name := default)
+    : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with
     types := ctx.types.push varType,
-    letValues := ctx.letValues.push none }
+    letValues := ctx.letValues.push none,
+    binderNames := ctx.binderNames.push name }
 
-/-- Extend the context with a let-bound variable (stores both type and value for zeta-reduction). -/
-def withExtendedLetCtx (varType : Expr m) (val : Expr m) : TypecheckM m α → TypecheckM m α :=
+def withLetBinder (varType : Val m) (val : Val m) (name : KMetaField m Ix.Name := default)
+    : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with
     types := ctx.types.push varType,
     letValues := ctx.letValues.push (some val),
-    numLetBindings := ctx.numLetBindings + 1 }
+    binderNames := ctx.binderNames.push name }
 
-def withRecAddr (addr : Address) : TypecheckM m α → TypecheckM m α :=
+def withMutTypes (mutTypes : Std.TreeMap Nat (Address × (Array (KLevel m) → Val m)) compare) :
+    TypecheckM σ m α → TypecheckM σ m α :=
+  withReader fun ctx => { ctx with mutTypes := mutTypes }
+
+def withRecAddr (addr : Address) : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with recAddr? := some addr }
 
-def withInferOnly : TypecheckM m α → TypecheckM m α :=
+def withInferOnly : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with inferOnly := true }
 
-def withSafety (s : DefinitionSafety) : TypecheckM m α → TypecheckM m α :=
+def withSafety (s : KDefinitionSafety) : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with safety := s }
 
-/-- The current binding depth (number of bound variables in scope). -/
-def lvl : TypecheckM m Nat := do pure (← read).types.size
+def mkFreshFVar (ty : Val m) : TypecheckM σ m (Val m) := do
+  let d ← depth
+  pure (Val.mkFVar d ty)
 
-/-- Check fuel and decrement it. -/
-def withFuelCheck (action : TypecheckM m α) : TypecheckM m α := do
+/-! ## Heartbeat -/
+
+/-- Increment heartbeat counter. Called at every operation entry point
+    (eval, whnfCoreVal, forceThunk, lazyDelta step, infer, isDefEq)
+    to bound total work. -/
+@[inline] def heartbeat : TypecheckM σ m Unit := do
   let stt ← get
-  if stt.fuel == 0 then throw "deep recursion fuel limit reached"
-  modify fun s => { s with fuel := s.fuel - 1 }
-  action
-
-/-- Maximum recursion depth for the mutual isDefEq/whnf/infer cycle.
-    Prevents native stack overflow. Hard error when exceeded. -/
-def maxRecursionDepth : Nat := 2000
-
-/-- Check and increment recursion depth. Throws on exceeding limit. -/
-def withRecDepthCheck (action : TypecheckM m α) : TypecheckM m α := do
-  let d := (← get).recDepth
-  if d >= maxRecursionDepth then
-    throw s!"maximum recursion depth ({maxRecursionDepth}) exceeded"
-  modify fun s => { s with recDepth := d + 1, maxRecDepth := max s.maxRecDepth (d + 1) }
-  let r ← action
-  modify fun s => { s with recDepth := d }
-  pure r
-
-/-! ## Name lookup -/
-
-/-- Look up the MetaField name for a constant address from the kernel environment. -/
-def lookupName (addr : Address) : TypecheckM m (MetaField m Ix.Name) := do
-  match (← read).kenv.find? addr with
-  | some ci => pure ci.cv.name
-  | none => pure default
+  if stt.heartbeats >= stt.maxHeartbeats then
+    throw s!"heartbeat limit exceeded ({stt.maxHeartbeats})"
+  modify fun s => { s with heartbeats := s.heartbeats + 1 }
 
 /-! ## Const dereferencing -/
 
-def derefConst (addr : Address) : TypecheckM m (ConstantInfo m) := do
+def derefConst (addr : Address) : TypecheckM σ m (KConstantInfo m) := do
   match (← read).kenv.find? addr with
   | some ci => pure ci
   | none => throw s!"unknown constant {addr}"
 
-def derefTypedConst (addr : Address) : TypecheckM m (TypedConst m) := do
+def derefTypedConst (addr : Address) : TypecheckM σ m (KTypedConst m) := do
   match (← get).typedConsts.get? addr with
   | some tc => pure tc
   | none => throw s!"typed constant not found: {addr}"
 
+def lookupName (addr : Address) : TypecheckM σ m (KMetaField m Ix.Name) := do
+  match (← read).kenv.find? addr with
+  | some ci => pure ci.cv.name
+  | none => pure default
+
 /-! ## Provisional TypedConst -/
 
-/-- Extract the major premise's inductive address from a recursor type. -/
-def getMajorInduct (type : Expr m) (numParams numMotives numMinors numIndices : Nat) : Option Address :=
+def getMajorInduct (type : KExpr m) (numParams numMotives numMinors numIndices : Nat)
+    : Option Address :=
   go (numParams + numMotives + numMinors + numIndices) type
 where
-  go : Nat → Expr m → Option Address
+  go : Nat → KExpr m → Option Address
     | 0, e => match e with
       | .forallE dom _ _ _ => some dom.getAppFn.constAddr!
       | _ => none
@@ -176,9 +207,8 @@ where
       | .forallE _ body _ _ => go n body
       | _ => none
 
-/-- Build a provisional TypedConst entry from raw ConstantInfo. -/
-def provisionalTypedConst (ci : ConstantInfo m) : TypedConst m :=
-  let rawType : TypedExpr m := ⟨default, ci.type⟩
+def provisionalTypedConst (ci : KConstantInfo m) : KTypedConst m :=
+  let rawType : KTypedExpr m := ⟨default, ci.type⟩
   match ci with
   | .axiomInfo _ => .axiom rawType
   | .thmInfo v => .theorem rawType ⟨default, v.value⟩
@@ -193,21 +223,39 @@ def provisionalTypedConst (ci : ConstantInfo m) : TypedConst m :=
   | .recInfo v =>
     let indAddr := getMajorInduct ci.type v.numParams v.numMotives v.numMinors v.numIndices
       |>.getD default
-    let typedRules := v.rules.map fun r => (r.nfields, (⟨default, r.rhs⟩ : TypedExpr m))
+    let typedRules := v.rules.map fun r => (r.nfields, (⟨default, r.rhs⟩ : KTypedExpr m))
     .recursor rawType v.numParams v.numMotives v.numMinors v.numIndices v.k indAddr typedRules
 
-/-- Ensure a constant has a TypedConst entry. -/
-def ensureTypedConst (addr : Address) : TypecheckM m Unit := do
+def ensureTypedConst (addr : Address) : TypecheckM σ m Unit := do
   if (← get).typedConsts.get? addr |>.isSome then return ()
   let ci ← derefConst addr
   let tc := provisionalTypedConst ci
   modify fun stt => { stt with
     typedConsts := stt.typedConsts.insert addr tc }
 
-/-! ## Def-eq cache helpers -/
+/-! ## Top-level runner -/
 
-/-- Symmetric cache key for def-eq pairs. Orders by content to make key(a,b) == key(b,a). -/
-def eqCacheKey (a b : Expr m) : Expr m × Expr m :=
-  if Expr.compare a b != .gt then (a, b) else (b, a)
+/-- Run a TypecheckM computation purely via runST + ExceptT.run.
+    Everything runs inside a single ST σ region: ref creation, then the action. -/
+def TypecheckM.runPure (ctx_no_thunks : ∀ σ, ST.Ref σ (Array (ST.Ref σ (ThunkEntry m))) → TypecheckCtx σ m)
+    (stt : TypecheckState m)
+    (action : ∀ σ, TypecheckM σ m α)
+    : Except String (α × TypecheckState m) :=
+  runST fun σ => do
+    let thunkTable ← ST.mkRef (#[] : Array (ST.Ref σ (ThunkEntry m)))
+    let ctx := ctx_no_thunks σ thunkTable
+    ExceptT.run (StateT.run (ReaderT.run (action σ) ctx) stt)
+
+/-- Simplified runner for common case. -/
+def TypecheckM.runSimple (kenv : KEnv m) (prims : KPrimitives)
+    (stt : TypecheckState m := {})
+    (safety : KDefinitionSafety := .safe) (quotInit : Bool := false)
+    (action : ∀ σ, TypecheckM σ m α)
+    : Except String (α × TypecheckState m) :=
+  TypecheckM.runPure
+    (fun _σ thunkTable => {
+      types := #[], letValues := #[], kenv, prims, safety, quotInit,
+      thunkTable })
+    stt action
 
 end Ix.Kernel

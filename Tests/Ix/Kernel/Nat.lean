@@ -2,7 +2,7 @@
   Kernel2 Nat debug suite: synthetic MyNat environment with real names,
   side-by-side with real Lean Nat, for step-by-step tracing.
 -/
-import Tests.Ix.Kernel2.Helpers
+import Tests.Ix.Kernel.Helpers
 import Ix.Kernel.Convert
 import Ix.CompileM
 import Ix.Common
@@ -12,9 +12,9 @@ import LSpec
 open LSpec
 open Ix.Kernel (buildPrimitives)
 open Tests.Ix.Kernel.Helpers (mkAddr parseIxName)
-open Tests.Ix.Kernel2.Helpers
+open Tests.Ix.Kernel.Helpers
 
-namespace Tests.Ix.Kernel2.Nat
+namespace Tests.Ix.Kernel.Nat
 
 /-! ## Named Expr constructors for .meta mode -/
 
@@ -170,7 +170,6 @@ def buildBrecOnNatAddEnv : Env × NatAddrs :=
   let succMax1u := lSucc max1u
   -- Concrete levels for use in Nat.add body (which has 0 level params)
   let l1 := lSucc lZero             -- 1
-  let max1_1 := lMax (lSucc lZero) l1  -- max 1 1 = 1
 
   -- Nat → Sort u (the motive type)
   let motiveT := pi natConst (.sort u) (n "a")
@@ -515,7 +514,7 @@ def testSyntheticNatAdd : TestSeq :=
   let threeE := app (cst succAddr) (app (cst succAddr) (app (cst succAddr) (cst _zeroAddr)))
   let addApp := app (app (cst addAddr) twoE) threeE
   test "synth Nat.add 2 3 whnf" (whnfK2 env addApp |>.isOk) $
-  let result := Ix.Kernel2.typecheckConst env (buildPrimitives) addAddr
+  let result := Ix.Kernel.typecheckConst env (buildPrimitives) addAddr
   test "synth Nat.add typechecks" (result.isOk) $
   match result with
   | .ok () => test "synth Nat.add succeeded" true
@@ -524,7 +523,7 @@ def testSyntheticNatAdd : TestSeq :=
 def testBrecOnDeps : List TestSeq :=
   let (env, a) := buildBrecOnNatAddEnv
   let checkAddr (label : String) (addr : Address) : TestSeq :=
-    let result := Ix.Kernel2.typecheckConst env (buildPrimitives) addr
+    let result := Ix.Kernel.typecheckConst env (buildPrimitives) addr
     test s!"{label} typechecks" (result.isOk) $
     match result with
     | .ok () => test s!"{label} ok" true
@@ -548,7 +547,7 @@ def testBrecOnNatAdd : TestSeq :=
   match whnfResult with
   | .ok _ => test "brecOn Nat.add whnf ok" true
   | .error e => test s!"brecOn Nat.add whnf: {e}" false $
-  let result := Ix.Kernel2.typecheckConst env (buildPrimitives) a.natAdd
+  let result := Ix.Kernel.typecheckConst env (buildPrimitives) a.natAdd
   test "brecOn Nat.add typechecks" (result.isOk) $
   match result with
   | .ok () => test "brecOn Nat.add typecheck ok" true
@@ -598,7 +597,7 @@ def testRealNatAdd : TestSeq :=
       let ixName := parseIxName "Nat.add"
       let some cNamed := ixonEnv.named.get? ixName
         | return (false, some "Nat.add not found")
-      match Ix.Kernel2.typecheckConst kenv prims cNamed.addr quotInit with
+      match Ix.Kernel.typecheckConst kenv prims cNamed.addr quotInit with
       | .ok () =>
         IO.println "  ✓ real Nat.add typechecks"
         return (true, none)
@@ -618,4 +617,4 @@ def realSuite : List LSpec.TestSeq := [
   testRealNatAdd,
 ]
 
-end Tests.Ix.Kernel2.Nat
+end Tests.Ix.Kernel.Nat

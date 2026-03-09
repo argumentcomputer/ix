@@ -300,7 +300,7 @@ impl StdHash for Level {
 }
 
 /// A literal value embedded in an expression.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Literal {
   /// A natural number literal.
   NatVal(Nat),
