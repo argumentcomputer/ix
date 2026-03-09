@@ -49,13 +49,16 @@ def defaultFuel : Nat := 10_000_000
 
 structure TypecheckState (m : MetaMode) where
   typedConsts    : Std.TreeMap Address (TypedConst m) Address.compare
-  whnfCache      : Std.TreeMap (Expr m) (Expr m) Expr.compare := {}
+  /-- WHNF cache: maps expr → (binding context, result).
+      Context verified on retrieval via ptr equality + BEq fallback (like inferCache). -/
+  whnfCache      : Std.TreeMap (Expr m) (Array (Expr m) × Expr m) Expr.compare := {}
   /-- Cache for structural-only WHNF (whnfCore with cheapRec=false, cheapProj=false).
-      Separate from whnfCache to avoid stale entries from cheap reductions. -/
-  whnfCoreCache  : Std.TreeMap (Expr m) (Expr m) Expr.compare := {}
-  /-- Infer cache: maps term → (binding context, inferred type).
-      Keyed on Expr only; context verified on retrieval via ptr equality + BEq fallback. -/
-  inferCache     : Std.TreeMap (Expr m) (Array (Expr m) × Expr m) Expr.compare := {}
+      Context verified on retrieval via ptr equality + BEq fallback. -/
+  whnfCoreCache  : Std.TreeMap (Expr m) (Array (Expr m) × Expr m) Expr.compare := {}
+  /-- Infer cache: maps term → (binding context, TypeInfo, inferred type).
+      Keyed on Expr only; context verified on retrieval via ptr equality + BEq fallback.
+      TypeInfo is cached to avoid re-calling infoFromType (which calls whnf) on cache hits. -/
+  inferCache     : Std.TreeMap (Expr m) (Array (Expr m) × TypeInfo m × Expr m) Expr.compare := {}
   eqvManager     : EquivManager m := {}
   failureCache   : Std.TreeMap (Expr m × Expr m) Unit Expr.pairCompare := {}
   constTypeCache : Std.TreeMap Address (Array (Level m) × Expr m) Address.compare := {}
@@ -63,6 +66,13 @@ structure TypecheckState (m : MetaMode) where
   /-- Global recursion depth across isDefEq/infer/whnf for stack overflow prevention. -/
   recDepth       : Nat := 0
   maxRecDepth    : Nat := 0
+  /-- Debug counters for profiling -/
+  inferCalls     : Nat := 0
+  whnfCalls      : Nat := 0
+  isDefEqCalls   : Nat := 0
+  whnfCacheHits  : Nat := 0
+  whnfCoreCacheHits : Nat := 0
+  inferCacheHits : Nat := 0
   deriving Inhabited
 
 /-! ## TypecheckM monad -/
@@ -120,7 +130,7 @@ def withFuelCheck (action : TypecheckM m α) : TypecheckM m α := do
 
 /-- Maximum recursion depth for the mutual isDefEq/whnf/infer cycle.
     Prevents native stack overflow. Hard error when exceeded. -/
-def maxRecursionDepth : Nat := 10000
+def maxRecursionDepth : Nat := 2000
 
 /-- Check and increment recursion depth. Throws on exceeding limit. -/
 def withRecDepthCheck (action : TypecheckM m α) : TypecheckM m α := do

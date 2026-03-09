@@ -837,6 +837,15 @@ def convertEnv (m : MetaMode) (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
         | .lift => p := { p with quotLift := addr }
         | .ind  => p := { p with quotInd := addr }
       | _ => pure ()
+    -- Resolve reduceBool/reduceNat/eagerReduce by name
+    let leanNs := Ix.Name.mkStr Ix.Name.mkAnon "Lean"
+    let rbName := Ix.Name.mkStr leanNs "reduceBool"
+    let rnName := Ix.Name.mkStr leanNs "reduceNat"
+    let erName := Ix.Name.mkStr Ix.Name.mkAnon "eagerReduce"
+    for (ixName, named) in ixonEnv.named do
+      if ixName == rbName then p := { p with reduceBool := named.addr }
+      else if ixName == rnName then p := { p with reduceNat := named.addr }
+      else if ixName == erName then p := { p with eagerReduce := named.addr }
     return p
   let quotInit := Id.run do
     for (_, c) in ixonEnv.consts do
@@ -859,17 +868,6 @@ def convertEnv (m : MetaMode) (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     for (addr, c) in ixonEnv.consts do
       if !seen.contains addr then
         entries := entries.push { addr, const := c, name := default, constMeta := .empty }
-    -- Phase 2.5: In .anon mode, dedup all entries by address (copies identical).
-    -- In .meta mode, keep all entries (named variants have distinct metadata).
-    let shouldDedup := match m with | .anon => true | .meta => false
-    if shouldDedup then
-      let mut dedupedEntries : Array (ConvertEntry m) := #[]
-      let mut seenDedup : Std.HashSet Address := {}
-      for entry in entries do
-        if !seenDedup.contains entry.addr then
-          dedupedEntries := dedupedEntries.push entry
-          seenDedup := seenDedup.insert entry.addr
-      entries := dedupedEntries
     -- Phase 3: Group into standalones and block groups
     -- Use (blockAddr, ctxKey) to disambiguate colliding block addresses
     let mut standalones : Array (ConvertEntry m) := #[]

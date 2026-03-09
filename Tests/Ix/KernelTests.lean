@@ -192,6 +192,8 @@ def testConsts : TestSeq :=
         "instDecidableEqVector.decEq",
         -- Recursor-only Ixon block regression (rec.all was empty)
         "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
+        -- Stack overflow regression (deep isDefEq/whnf/infer recursion)
+        "_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq",
       ]
       let mut passed := 0
       let mut failures : Array String := #[]

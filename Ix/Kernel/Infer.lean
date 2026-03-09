@@ -170,13 +170,17 @@ mutual
   partial def whnfCore (e : Expr m) (cheapRec := false) (cheapProj := false)
       : TypecheckM m (Expr m) := do
     -- Cache check FIRST — no stack cost for cache hits
-    -- Skip cache when let bindings are in scope (bvar zeta makes results context-dependent)
-    let useCache := !cheapRec && !cheapProj && (← read).numLetBindings == 0
+    -- Context-aware: stores binding context alongside result, verified via ptr equality
+    let useCache := !cheapRec && !cheapProj
+    let types := (← read).types
     if useCache then
-      if let some r := (← get).whnfCoreCache.get? e then return r
-    let r ← whnfCoreImpl e cheapRec cheapProj
+      if let some (cachedTypes, r) := (← get).whnfCoreCache.get? e then
+        if unsafe ptrAddrUnsafe cachedTypes == ptrAddrUnsafe types || cachedTypes == types then
+          modify fun s => { s with whnfCoreCacheHits := s.whnfCoreCacheHits + 1 }
+          return r
+    let r ← withRecDepthCheck (whnfCoreImpl e cheapRec cheapProj)
     if useCache then
-      modify fun s => { s with whnfCoreCache := s.whnfCoreCache.insert e r }
+      modify fun s => { s with whnfCoreCache := s.whnfCoreCache.insert e (types, r) }
     pure r
 
   partial def whnfCoreImpl (e : Expr m) (cheapRec : Bool) (cheapProj : Bool)
@@ -446,7 +450,9 @@ mutual
     else return e
 
   /-- Try to reduce a Nat primitive, whnf'ing args if needed (like lean4lean's reduceNat).
-      Inside the mutual block so it can call `whnf` on arguments. -/
+      Inside the mutual block so it can call `whnf` on arguments.
+      Handles both `.lit (.natVal n)` and `Nat.zero` constructor forms,
+      matching lean4lean's `rawNatLitExt?`. -/
   partial def tryReduceNat (e : Expr m) : TypecheckM m (Option (Expr m)) := do
     let fn := e.getAppFn
     match fn with
@@ -458,16 +464,16 @@ mutual
       if addr == prims.natSucc then
         if args.size >= 1 then
           let a ← whnf args[0]!
-          match a with
-          | .lit (.natVal n) => return some (.lit (.natVal (n + 1)))
-          | _ => return none
+          match extractNatVal prims a with
+          | some n => return some (.lit (.natVal (n + 1)))
+          | none => return none
         else return none
       -- Binary nat operations: 2 args, whnf both (matches lean4lean reduceBinNatOp)
       else if args.size >= 2 then
         let a ← whnf args[0]!
         let b ← whnf args[1]!
-        match a, b with
-        | .lit (.natVal x), .lit (.natVal y) =>
+        match extractNatVal prims a, extractNatVal prims b with
+        | some x, some y =>
           if addr == prims.natAdd then return some (.lit (.natVal (x + y)))
           else if addr == prims.natSub then return some (.lit (.natVal (x - y)))
           else if addr == prims.natMul then return some (.lit (.natVal (x * y)))
@@ -493,29 +499,83 @@ mutual
       else return none
     | _ => return none
 
+  /-- Evaluate a native reduction marker (`Lean.reduceBool c` or `Lean.reduceNat c`).
+      Looks up the target constant's definition and fully reduces it via `whnf`
+      to extract the Bool/Nat result. This is the whnf-based fallback for
+      `native_decide`; a CEK machine evaluator would be faster for complex proofs. -/
+  partial def reduceNativeExpr (t : Expr m) : TypecheckM m (Option (Expr m)) := do
+    let prims := (← read).prims
+    let kenv := (← read).kenv
+    -- Expression shape: app (const reduceBool/reduceNat []) (const targetDef [])
+    let .app fn constArg := t | return none
+    let .const fnAddr _ _ := fn | return none
+    let .const defAddr _ _ := constArg | return none
+    let isReduceBool := fnAddr == prims.reduceBool
+    let isReduceNat := fnAddr == prims.reduceNat
+    if !isReduceBool && !isReduceNat then return none
+    match kenv.find? defAddr with
+    | some (.defnInfo dv) =>
+      let result ← whnf dv.value
+      if isReduceBool then
+        if result.isConstOf prims.boolTrue then
+          return some (Expr.mkConst prims.boolTrue #[])
+        else if result.isConstOf prims.boolFalse then
+          return some (Expr.mkConst prims.boolFalse #[])
+        else throw s!"reduceBool: constant did not reduce to Bool.true or Bool.false"
+      else -- isReduceNat
+        match extractNatVal prims result with
+        | some n => return some (.lit (.natVal n))
+        | none => throw s!"reduceNat: constant did not reduce to a Nat literal"
+    | _ => throw s!"reduceNative: target is not a definition"
+
   partial def whnf (e : Expr m) : TypecheckM m (Expr m) := do
-    -- Cache check FIRST — no fuel or stack cost for cache hits
-    -- Skip cache when let bindings are in scope (bvar zeta makes results context-dependent)
-    let useWhnfCache := (← read).numLetBindings == 0
-    if useWhnfCache then
-      if let some r := (← get).whnfCache.get? e then return r
+    -- Trivially-irreducible expressions: return immediately (no fuel/depth cost)
+    match e with
+    | .sort .. | .forallE .. | .lit .. => return e
+    | .bvar idx _ =>
+      -- BVar is irreducible unless let-bound (zeta-reduction needed)
+      let ctx ← read
+      let depth := ctx.types.size
+      if idx < depth then
+        let arrayIdx := depth - 1 - idx
+        if h : arrayIdx < ctx.letValues.size then
+          if ctx.letValues[arrayIdx].isNone then return e
+      else return e  -- out-of-range bvar, can't reduce
+    | _ => pure ()
+    -- Cache check — no fuel or stack cost for cache hits
+    -- Context-aware: stores binding context alongside result, verified via ptr equality
+    let types := (← read).types
+    if let some (cachedTypes, r) := (← get).whnfCache.get? e then
+      if unsafe ptrAddrUnsafe cachedTypes == ptrAddrUnsafe types || cachedTypes == types then
+        modify fun s => { s with whnfCacheHits := s.whnfCacheHits + 1 }
+        return r
+    modify fun s => { s with whnfCalls := s.whnfCalls + 1 }
     withRecDepthCheck do
     withFuelCheck do
     let r ← whnfImpl e
-    if useWhnfCache then
-      modify fun s => { s with whnfCache := s.whnfCache.insert e r }
+    modify fun s => { s with whnfCache := s.whnfCache.insert e (types, r) }
     pure r
 
   partial def whnfImpl (e : Expr m) : TypecheckM m (Expr m) := do
-    let mut t ← whnfCore e
+    -- Use cheapProj=true so projections are deferred to the iterative chain handler below.
+    -- This avoids O(depth) recursive whnf calls for nested projections like a.b.c.d.
+    let mut t ← whnfCore e (cheapProj := true)
     let mut steps := 0
     repeat
       if steps > 10000 then throw "whnf delta step limit (10000) exceeded"
+      -- Try native reduction (reduceBool/reduceNat markers)
+      -- These are @[extern] constants used by native_decide. When we see
+      -- `Lean.reduceBool c` or `Lean.reduceNat c`, look up c's definition
+      -- and fully reduce it via whnf to extract the Bool/Nat result.
+      let prims := (← read).prims
+      if prims.reduceBool != default || prims.reduceNat != default then
+        if let some r ← reduceNativeExpr t then
+          t ← whnfCore r (cheapProj := true); steps := steps + 1; continue
       -- Try nat primitive reduction (whnf's args like lean4lean's reduceNat)
       if let some r := ← tryReduceNat t then
-        t ← whnfCore r; steps := steps + 1; continue
-      -- Handle stuck projections (including inside app chains).
-      -- Flatten nested projection chains to avoid deep whnf→whnf recursion.
+        t ← whnfCore r (cheapProj := true); steps := steps + 1; continue
+      -- Handle projections iteratively: flatten nested projection chains
+      -- and resolve from inside out with a single whnf call on the innermost struct.
       match t.getAppFn with
       | .proj _ _ _ _ =>
         -- Collect the projection chain from outside in
@@ -539,14 +599,14 @@ mutual
           match ← reduceProj typeAddr idx current with
           | some result =>
             let applied := if args.isEmpty then result else result.mkAppN args
-            current ← whnfCore applied
+            current ← whnfCore applied (cheapProj := true)
           | none =>
             -- This projection couldn't be resolved. Reconstruct remaining chain.
             let stuck := if args.isEmpty then
               Expr.mkProj typeAddr idx current
             else
               (Expr.mkProj typeAddr idx current).mkAppN args
-            current ← whnfCore stuck
+            current ← whnfCore stuck (cheapProj := true)
             -- Reconstruct outer projections
             while i > 0 do
               i := i - 1
@@ -562,7 +622,7 @@ mutual
       | _ => pure ()
       -- Try delta unfolding
       if let some r := ← unfoldDefinition t then
-        t ← whnfCore r; steps := steps + 1; continue
+        t ← whnfCore r (cheapProj := true); steps := steps + 1; continue
       break
     pure t
 
@@ -574,14 +634,13 @@ mutual
       let ci ← derefConst addr
       match ci with
       | .defnInfo v =>
-        if v.safety == .partial then return none
+        if levels.size != v.numLevels then return none
         let body := v.value.instantiateLevelParams levels
-        let args := e.getAppArgs
-        return some (body.mkAppN args)
+        return some (body.mkAppN (e.getAppArgs))
       | .thmInfo v =>
+        if levels.size != v.numLevels then return none
         let body := v.value.instantiateLevelParams levels
-        let args := e.getAppArgs
-        return some (body.mkAppN args)
+        return some (body.mkAppN (e.getAppArgs))
       | _ => return none
     | _ => return none
 
@@ -601,15 +660,18 @@ mutual
   partial def infer (term : Expr m) : TypecheckM m (TypedExpr m × Expr m) := do
     -- Check infer cache FIRST — no fuel or stack cost for cache hits
     let types := (← read).types
-    if let some (cachedCtx, cachedType) := (← get).inferCache.get? term then
+    if let some (cachedCtx, cachedInfo, cachedType) := (← get).inferCache.get? term then
       -- Ptr equality first, structural BEq fallback
       -- For consts/sorts/lits, context doesn't matter (always closed)
       let contextOk := match term with
         | .const .. | .sort .. | .lit .. => true
         | _ => unsafe ptrAddrUnsafe cachedCtx == ptrAddrUnsafe types || cachedCtx == types
       if contextOk then
-        let te : TypedExpr m := ⟨← infoFromType cachedType, term⟩
+        modify fun s => { s with inferCacheHits := s.inferCacheHits + 1 }
+        let te : TypedExpr m := ⟨cachedInfo, term⟩
         return (te, cachedType)
+    modify fun s => { s with inferCalls := s.inferCalls + 1 }
+    withRecDepthCheck do
     withFuelCheck do
     let result ← do match term with
       | .bvar idx bvarName => do
@@ -813,8 +875,8 @@ mutual
           let te : TypedExpr m := ⟨← infoFromType dom, .proj typeAddr idx structTe.body default⟩
           pure (te, dom)
         | _ => throw "Impossible case: structure type does not have enough fields"
-    -- Cache the inferred type with the binding context
-    modify fun stt => { stt with inferCache := stt.inferCache.insert term (types, result.2) }
+    -- Cache the inferred type and TypeInfo with the binding context
+    modify fun stt => { stt with inferCache := stt.inferCache.insert term (types, result.1.info, result.2) }
     pure result
 
   /-- Check if an expression is a Sort, returning the typed expr and the universe level. -/
@@ -1475,6 +1537,7 @@ mutual
     match ← quickIsDefEq t s with
     | some result => return result
     | none => pure ()
+    modify fun s => { s with isDefEqCalls := s.isDefEqCalls + 1 }
     withRecDepthCheck do
     withFuelCheck do
 
@@ -1488,57 +1551,52 @@ mutual
       let s' ← whnf s
       if s'.isConstOf prims.boolTrue then cacheResult t s true; return true
 
-    -- Loop: steps 1-5 may restart when whnfCore(cheapProj=false) changes terms
-    let mut ct := t
-    let mut cs := s
-    repeat
-      -- 1. Stage 1: structural reduction (cheapProj=true: defer full projection resolution)
-      let tn ← whnfCore ct (cheapProj := true)
-      let sn ← whnfCore cs (cheapProj := true)
+    -- 1. Structural reduction (cheapProj=true: defer full projection resolution)
+    let tn ← whnfCore t (cheapProj := true)
+    let sn ← whnfCore s (cheapProj := true)
 
-      -- 2. Quick check after whnfCore (useHash=false for thorough union-find walking)
-      match ← quickIsDefEq tn sn (useHash := false) with
-      | some true => cacheResult t s true; return true
-      | some false => pure ()  -- don't cache — deeper checks may still succeed
-      | none => pure ()
+    -- 2. Quick check after whnfCore (useHash=false for thorough union-find walking)
+    match ← quickIsDefEq tn sn (useHash := false) with
+    | some true => cacheResult t s true; return true
+    | some false => pure ()  -- don't cache — deeper checks may still succeed
+    | none => pure ()
 
-      -- 3. Proof irrelevance
-      match ← isDefEqProofIrrel tn sn with
-      | some result =>
-        cacheResult t s result
-        return result
-      | none => pure ()
+    -- 3. Proof irrelevance
+    match ← isDefEqProofIrrel tn sn with
+    | some result =>
+      cacheResult t s result
+      return result
+    | none => pure ()
 
-      -- 4. Lazy delta reduction (incremental unfolding)
-      let (tn', sn', deltaResult) ← lazyDeltaReduction tn sn
-      if deltaResult == some true then
-        cacheResult t s true
-        return true
-
-      -- 4b. Cheap structural checks after lazy delta (before full whnfCore)
-      match tn', sn' with
-      | .const a us _, .const b us' _ =>
-        if a == b && equalUnivArrays us us' then
-          cacheResult t s true; return true
-      | .proj _ ti te _, .proj _ si se _ =>
-        if ti == si then
-          if ← isDefEq te se then
-            cacheResult t s true; return true
-      | _, _ => pure ()
-
-      -- 5. Stage 2: full structural reduction (no cheapProj — resolve all projections)
-      let tnn ← whnfCore tn'
-      let snn ← whnfCore sn'
-      -- If terms changed, loop back to step 1 instead of recursing into isDefEq
-      if !(tnn == tn' && snn == sn') then
-        ct := tnn; cs := snn; continue
-      -- 6. Structural comparison on fully-reduced terms
-      let result ← isDefEqCore tnn snn
+    -- 4. Lazy delta reduction (incremental unfolding)
+    let (tn', sn', deltaResult) ← lazyDeltaReduction tn sn
+    if let some result := deltaResult then
       cacheResult t s result
       return result
 
-    -- unreachable, but needed for type checking
-    return false
+    -- 4b. Cheap structural checks after lazy delta (before full whnfCore)
+    match tn', sn' with
+    | .const a us _, .const b us' _ =>
+      if a == b && equalUnivArrays us us' then
+        cacheResult t s true; return true
+    | .proj _ ti te _, .proj _ si se _ =>
+      if ti == si then
+        if ← isDefEq te se then
+          cacheResult t s true; return true
+    | _, _ => pure ()
+
+    -- 5. Full structural reduction (no cheapProj — resolve all projections)
+    let tnn ← whnfCore tn'
+    let snn ← whnfCore sn'
+    -- If terms changed, recurse (goes through withRecDepthCheck, matching lean4lean)
+    if !(tnn == tn' && snn == sn') then
+      let result ← isDefEq tnn snn
+      cacheResult t s result
+      return result
+    -- 6. Structural comparison on fully-reduced terms
+    let result ← isDefEqCore tnn snn
+    cacheResult t s result
+    return result
 
   /-- Check if e lives in Prop: type_of(e) reduces to Sort 0.
       Matches lean4lean's `isProp`. -/
@@ -1548,12 +1606,13 @@ mutual
     return ty' == .sort .zero
 
   /-- Check if both terms are proofs of the same Prop type (proof irrelevance).
-      Returns `none` if inference fails (e.g., free bound variables) or the type isn't Prop. -/
+      Returns `none` if inference fails on open terms or the type isn't Prop.
+      Guards only the initial infer calls — if types are inferred, isProp and
+      isDefEq errors propagate (matching lean4lean's behavior). -/
   partial def isDefEqProofIrrel (t s : Expr m) : TypecheckM m (Option Bool) := do
     let tType ← try let (_, ty) ← withInferOnly (infer t); pure (some ty) catch _ => pure none
     let some tType := tType | return none
-    let isPropType ← try isProp tType catch _ => pure false
-    if !isPropType then return none
+    if !(← isProp tType) then return none
     let sType ← try let (_, ty) ← withInferOnly (infer s); pure (some ty) catch _ => pure none
     let some sType := sType | return none
     let result ← isDefEq tType sType
@@ -1750,6 +1809,14 @@ mutual
       if let some sn' ← tryReduceNat sn then
         return (tn, sn', some (← isDefEq tn sn'))
 
+      -- Try native reduction (reduceBool/reduceNat markers)
+      let prims := (← read).prims
+      if prims.reduceBool != default || prims.reduceNat != default then
+        if let some tn' ← reduceNativeExpr tn then
+          return (tn', sn, some (← isDefEq tn' sn))
+        if let some sn' ← reduceNativeExpr sn then
+          return (tn, sn', some (← isDefEq tn sn'))
+
       -- Lazy delta step
       let tDelta := isDelta tn kenv
       let sDelta := isDelta sn kenv
@@ -1900,8 +1967,11 @@ def typecheckConst (kenv : Env m) (prims : Primitives) (addr : Address)
     mutTypes := default, recAddr? := none, trace := trace
   }
   let stt : TypecheckState m := { typedConsts := default }
-  let (result, _) := TypecheckM.run ctx stt (checkConst addr)
-  result
+  let (result, stt') := TypecheckM.run ctx stt (checkConst addr)
+  match result with
+  | .ok () => .ok ()
+  | .error e =>
+    .error s!"{e}\n  [stats] maxDepth={stt'.maxRecDepth} fuel={defaultFuel - stt'.fuel} infer={stt'.inferCalls} whnf={stt'.whnfCalls} isDefEq={stt'.isDefEqCalls} inferHits={stt'.inferCacheHits} whnfHits={stt'.whnfCacheHits} whnfCoreHits={stt'.whnfCoreCacheHits}"
 
 /-- Typecheck all constants in a kernel environment. -/
 def typecheckAll (kenv : Env m) (prims : Primitives) (quotInit : Bool := true)

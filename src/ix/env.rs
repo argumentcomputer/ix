@@ -202,6 +202,12 @@ impl StdHash for Name {
   }
 }
 
+impl Default for Name {
+  fn default() -> Self {
+    Name::anon()
+  }
+}
+
 /// A content-addressed universe level.
 ///
 /// Levels are interned via `Arc` and compared/hashed by their Blake3 digest.
@@ -321,8 +327,9 @@ impl Ord for Literal {
 }
 
 /// Binder annotation kind, mirroring Lean 4's `BinderInfo`.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Default)]
 pub enum BinderInfo {
+  #[default]
   /// Explicit binder `(x : A)`.
   Default,
   /// Implicit binder `{x : A}`.

@@ -954,6 +954,15 @@ structure Primitives where
   accIntro : Address := default
   natLtSuccSelf : Address := default
   natDivRecFuelLemma : Address := default
+  /-- Lean.reduceBool: opaque @[extern] constant for native_decide.
+      Resolved by name during environment conversion; default = not found. -/
+  reduceBool : Address := default
+  /-- Lean.reduceNat: opaque @[extern] constant for native nat evaluation.
+      Resolved by name during environment conversion; default = not found. -/
+  reduceNat : Address := default
+  /-- eagerReduce: identity function that triggers eager reduction mode.
+      Resolved by name during environment conversion; default = not found. -/
+  eagerReduce : Address := default
   deriving Repr, Inhabited
 
 def buildPrimitives : Primitives :=

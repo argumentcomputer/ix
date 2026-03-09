@@ -128,6 +128,7 @@ def checkPrimitiveDef (ops : KernelOps m) (p : Primitives) (kenv : Env m) (addr 
     addr == p.natShiftLeft || addr == p.natShiftRight ||
     addr == p.natLand || addr == p.natLor || addr == p.natXor ||
     addr == p.natPred || addr == p.natBitwise ||
+    addr == p.natMod || addr == p.natDiv || addr == p.natGcd ||
     addr == p.charMk ||
     (addr == p.stringOfList && p.stringOfList != p.stringMk)
   if !isPrimAddr then return false
@@ -270,6 +271,27 @@ def checkPrimitiveDef (ops : KernelOps m) (p : Primitives) (kenv : Env m) (addr 
     unless ← ops.isDefEq (xorF tru tru) fal do fail
     return true
 
+  -- Nat.mod (type validation only — full behavioral validation requires
+  -- well-founded recursion checking with Nat.modCore.go, see lean4lean Primitive.lean:233-258)
+  if addr == p.natMod then
+    if !kenv.contains p.natSub || !kenv.contains p.bool || v.numLevels != 0 then fail
+    unless ← ops.isDefEq v.type (natBinType p) do fail
+    return true
+
+  -- Nat.div (type validation only — full behavioral validation requires
+  -- well-founded recursion checking with Nat.div.go, see lean4lean Primitive.lean:259-281)
+  if addr == p.natDiv then
+    if !kenv.contains p.natSub || !kenv.contains p.bool || v.numLevels != 0 then fail
+    unless ← ops.isDefEq v.type (natBinType p) do fail
+    return true
+
+  -- Nat.gcd (type validation only — full behavioral validation requires
+  -- unfoldWellFounded + Nat.mod, see lean4lean Primitive.lean:282-292)
+  if addr == p.natGcd then
+    if !kenv.contains p.natMod || v.numLevels != 0 then fail
+    unless ← ops.isDefEq v.type (natBinType p) do fail
+    return true
+
   -- Char.ofNat (charMk field)
   if addr == p.charMk then
     if !kenv.contains p.nat || v.numLevels != 0 then fail
@@ -372,20 +394,65 @@ def checkQuotTypes (ops : KernelOps m) (p : Primitives)
     unless ← ops.isDefEq ci.type expectedType do
       throw "Quot.mk type signature mismatch"
 
-  -- Quot.lift and Quot.ind have complex types with deeply nested dependent binders.
-  -- Verify structural properties: correct number of universe params.
-  -- The type-checking of quotient reduction rules (in Whnf.lean) provides
-  -- the semantic guarantee that these constants have correct behavior.
-  -- TODO: Full de Bruijn type signature validation for Quot.lift and Quot.ind.
+  -- Quot.lift.{u,v} : ∀ {α : Sort u} {r : α → α → Prop} {β : Sort v} (f : α → β),
+  --   (∀ (a b : α), r a b → @Eq β (f a) (f b)) → @Quot α r → β
   if resolved p.quotLift then
     let ci ← derefConst p.quotLift
     if ci.numLevels != 2 then
       throw "Quot.lift must have exactly 2 universe parameters"
+    let v : Level m := .param 1 default
+    let sortV : Expr m := Expr.mkSort v
+    -- f type at depth 3 (α=bvar2, r=bvar1, β=bvar0): α → β
+    let fType : Expr m := Expr.mkForallE (.mkBVar 2) (.mkBVar 1)
+    -- h type at depth 4 (α=bvar3, r=bvar2, β=bvar1, f=bvar0):
+    --   ∀ (a : α) (b : α), r a b → @Eq β (f a) (f b)
+    let hType : Expr m :=
+      Expr.mkForallE (.mkBVar 3)                                   -- ∀ (a : α)
+        (Expr.mkForallE (.mkBVar 4)                                -- ∀ (b : α)
+          (Expr.mkForallE                                          -- r a b →
+            (Expr.mkApp (Expr.mkApp (.mkBVar 4) (.mkBVar 1)) (.mkBVar 0))
+            -- @Eq.{v} β (f a) (f b) at depth 7
+            (Expr.mkApp (Expr.mkApp (Expr.mkApp (Expr.mkConst p.eq #[v]) (.mkBVar 4))
+              (Expr.mkApp (.mkBVar 3) (.mkBVar 2)))
+              (Expr.mkApp (.mkBVar 3) (.mkBVar 1)))))
+    -- q type at depth 5 (α=bvar4, r=bvar3): @Quot α r
+    let qType : Expr m := Expr.mkApp (Expr.mkApp (Expr.mkConst p.quotType #[u]) (.mkBVar 4)) (.mkBVar 3)
+    -- return type at depth 6: β = bvar 3
+    let expectedType : Expr m :=
+      Expr.mkForallE sortU                                         -- {α : Sort u}
+        (Expr.mkForallE (relType 0)                                -- {r : α → α → Prop}
+          (Expr.mkForallE sortV                                    -- {β : Sort v}
+            (Expr.mkForallE fType                                  -- (f : α → β)
+              (Expr.mkForallE hType                                -- (h : ∀ a b, ...)
+                (Expr.mkForallE qType                              -- @Quot α r →
+                  (.mkBVar 3))))))                                 -- β
+    unless ← ops.isDefEq ci.type expectedType do
+      throw "Quot.lift type signature mismatch"
 
+  -- Quot.ind.{u} : ∀ {α : Sort u} {r : α → α → Prop} {β : @Quot α r → Prop},
+  --   (∀ (a : α), β (@Quot.mk α r a)) → ∀ (q : @Quot α r), β q
   if resolved p.quotInd then
     let ci ← derefConst p.quotInd
     if ci.numLevels != 1 then
       throw "Quot.ind must have exactly 1 universe parameter"
+    -- β type at depth 2 (α=bvar1, r=bvar0): @Quot α r → Prop
+    let quotAtDepth2 : Expr m := Expr.mkApp (Expr.mkApp (Expr.mkConst p.quotType #[u]) (.mkBVar 1)) (.mkBVar 0)
+    let betaType : Expr m := Expr.mkForallE quotAtDepth2 Expr.prop
+    -- h type at depth 3 (α=bvar2, r=bvar1, β=bvar0): ∀ (a : α), β (Quot.mk α r a)
+    let quotMkA : Expr m := Expr.mkApp (Expr.mkApp (Expr.mkApp (Expr.mkConst p.quotCtor #[u]) (.mkBVar 3)) (.mkBVar 2)) (.mkBVar 0)
+    let hType : Expr m := Expr.mkForallE (.mkBVar 2) (Expr.mkApp (.mkBVar 1) quotMkA)
+    -- q type at depth 4 (α=bvar3, r=bvar2): @Quot α r
+    let qType : Expr m := Expr.mkApp (Expr.mkApp (Expr.mkConst p.quotType #[u]) (.mkBVar 3)) (.mkBVar 2)
+    -- return at depth 5: β q = app(bvar 2, bvar 0)
+    let expectedType : Expr m :=
+      Expr.mkForallE sortU                                         -- {α : Sort u}
+        (Expr.mkForallE (relType 0)                                -- {r : α → α → Prop}
+          (Expr.mkForallE betaType                                 -- {β : @Quot α r → Prop}
+            (Expr.mkForallE hType                                  -- (h : ∀ a, β (Quot.mk α r a))
+              (Expr.mkForallE qType                                -- ∀ (q : @Quot α r),
+                (Expr.mkApp (.mkBVar 2) (.mkBVar 0))))))           -- β q
+    unless ← ops.isDefEq ci.type expectedType do
+      throw "Quot.ind type signature mismatch"
 
 /-! ## Top-level dispatch -/
 

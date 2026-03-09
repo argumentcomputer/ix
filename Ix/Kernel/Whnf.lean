@@ -29,6 +29,14 @@ def listGet? (l : List α) (n : Nat) : Option α :=
 
 /-! ## Nat primitive reduction on Expr -/
 
+/-- Extract a Nat value from an expression, handling both literal and constructor forms.
+    Matches lean4lean's `rawNatLitExt?` and lean4 C++'s `is_nat_lit_ext`. -/
+def extractNatVal (prims : Primitives) (e : Expr m) : Option Nat :=
+  match e with
+  | .lit (.natVal n) => some n
+  | .const addr _ _ => if addr == prims.natZero then some 0 else none
+  | _ => none
+
 /-- Try to reduce a Nat primitive applied to literal arguments (no whnf on args).
     Used in lazyDeltaReduction where args are already partially reduced. -/
 def tryReduceNatLit (e : Expr m) : TypecheckM m (Option (Expr m)) := do
@@ -41,14 +49,14 @@ def tryReduceNatLit (e : Expr m) : TypecheckM m (Option (Expr m)) := do
     -- Nat.succ: 1 arg
     if addr == prims.natSucc then
       if args.size >= 1 then
-        match args[0]! with
-        | .lit (.natVal n) => return some (.lit (.natVal (n + 1)))
-        | _ => return none
+        match extractNatVal prims args[0]! with
+        | some n => return some (.lit (.natVal (n + 1)))
+        | none => return none
       else return none
     -- Binary nat operations: 2 args
     else if args.size >= 2 then
-      match args[0]!, args[1]! with
-      | .lit (.natVal x), .lit (.natVal y) =>
+      match extractNatVal prims args[0]!, extractNatVal prims args[1]! with
+      | some x, some y =>
         if addr == prims.natAdd then return some (.lit (.natVal (x + y)))
         else if addr == prims.natSub then return some (.lit (.natVal (x - y)))
         else if addr == prims.natMul then return some (.lit (.natVal (x * y)))
@@ -192,8 +200,7 @@ def isDelta (e : Expr m) (kenv : Env m) : Option (ConstantInfo m) :=
   match e.getAppFn with
   | .const addr _ _ =>
     match kenv.find? addr with
-    | some ci@(.defnInfo v) =>
-      if v.safety == .partial then none else some ci
+    | some ci@(.defnInfo _) => some ci
     | some ci@(.thmInfo _) => some ci
     | _ => none
   | _ => none

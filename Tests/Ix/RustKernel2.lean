@@ -1,0 +1,187 @@
+/-
+  Rust Kernel2 NbE integration tests.
+  Exercises the Rust FFI (rs_check_consts2) against the same constants
+  as the Lean Kernel2 integration tests (kernel2-const).
+-/
+import Ix.Kernel2
+import Ix.Common
+import Ix.Meta
+import LSpec
+
+open LSpec
+
+namespace Tests.Ix.RustKernel2
+
+/-- Typecheck specific constants through the Rust Kernel2 NbE checker. -/
+def testConsts : TestSeq :=
+  .individualIO "rust kernel2 const checks" (do
+    let leanEnv ← get_env!
+
+    let constNames : Array String := #[
+      -- Basic inductives
+      "Nat", "Nat.zero", "Nat.succ", "Nat.rec",
+      "Bool", "Bool.true", "Bool.false", "Bool.rec",
+      "Eq", "Eq.refl",
+      "List", "List.nil", "List.cons",
+      "Nat.below",
+      -- Quotient types
+      "Quot", "Quot.mk", "Quot.lift", "Quot.ind",
+      -- K-reduction exercisers
+      "Eq.rec", "Eq.subst", "Eq.symm", "Eq.trans",
+      -- Proof irrelevance
+      "And.intro", "Or.inl", "Or.inr",
+      -- K-like reduction with congr
+      "congr", "congrArg", "congrFun",
+      -- Structure projections + eta
+      "Prod.fst", "Prod.snd", "Prod.mk", "Sigma.mk", "Subtype.mk",
+      -- Nat primitives
+      "Nat.add", "Nat.sub", "Nat.mul", "Nat.div", "Nat.mod",
+      "Nat.gcd", "Nat.beq", "Nat.ble",
+      "Nat.land", "Nat.lor", "Nat.xor",
+      "Nat.shiftLeft", "Nat.shiftRight", "Nat.pow",
+      "Nat.pred", "Nat.bitwise",
+      -- String/Char primitives
+      "Char.ofNat", "String.ofList",
+      -- Recursors
+      "List.rec",
+      -- Delta unfolding
+      "id", "Function.comp",
+      -- Various inductives
+      "Empty", "PUnit", "Fin", "Sigma", "Prod",
+      -- Proofs / proof irrelevance
+      "True", "False", "And", "Or",
+      -- Mutual/nested inductives
+      "List.map", "List.foldl", "List.append",
+      -- Universe polymorphism
+      "ULift", "PLift",
+      -- More complex
+      "Option", "Option.some", "Option.none",
+      "String", "String.mk", "Char",
+      -- Partial definitions
+      "WellFounded.fix",
+      -- Well-founded recursion scaffolding
+      "Nat.brecOn",
+      -- PProd (used by Nat.below)
+      "PProd", "PProd.mk", "PProd.fst", "PProd.snd",
+      "PUnit.unit",
+      -- noConfusion
+      "Lean.Meta.Grind.Origin.noConfusionType",
+      "Lean.Meta.Grind.Origin.noConfusion",
+      "Lean.Meta.Grind.Origin.stx.noConfusion",
+      -- Complex proofs (fuel-sensitive)
+      "Nat.Linear.Poly.of_denote_eq_cancel",
+      "String.length_empty",
+      "_private.Init.Grind.Ring.Basic.«0».Lean.Grind.IsCharP.mk'_aux._proof_1_5",
+      -- BVDecide regression test (fuel-sensitive)
+      "Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.instLawfulVecOperatorShiftConcatInputBlastShiftConcat",
+      -- Theorem with sub-term type mismatch (requires inferOnly)
+      "Std.Do.Spec.tryCatch_ExceptT",
+      -- Nested inductive positivity check (requires whnf)
+      "Lean.Elab.Term.Do.Code.action",
+      -- UInt64/BitVec isDefEq regression
+      "UInt64.decLt",
+      -- Dependencies of _sunfold
+      "Std.Time.FormatPart",
+      "Std.Time.FormatConfig",
+      "Std.Time.FormatString",
+      "Std.Time.FormatType",
+      "Std.Time.FormatType.match_1",
+      "Std.Time.TypeFormat",
+      "Std.Time.Modifier",
+      "List.below",
+      "List.brecOn",
+      "Std.Internal.Parsec.String.Parser",
+      "Std.Internal.Parsec.instMonad",
+      "Std.Internal.Parsec.instAlternative",
+      "Std.Internal.Parsec.String.skipString",
+      "Std.Internal.Parsec.eof",
+      "Std.Internal.Parsec.fail",
+      "Bind.bind",
+      "Monad.toBind",
+      "SeqRight.seqRight",
+      "Applicative.toSeqRight",
+      "Applicative.toPure",
+      "Alternative.toApplicative",
+      "Pure.pure",
+      "_private.Std.Time.Format.Basic.«0».Std.Time.parseWith",
+      "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go.match_3",
+      "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go.match_1",
+      "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go",
+      -- Deeply nested let chain (stack overflow regression)
+      "_private.Std.Time.Format.Basic.«0».Std.Time.GenericFormat.builderParser.go._sunfold",
+      -- Let-bound bvar zeta-reduction regression
+      "Std.Sat.AIG.mkGate",
+      -- Proof irrelevance regression
+      "Fin.dfoldrM.loop._sunfold",
+      -- rfl theorem
+      "Std.Tactic.BVDecide.BVExpr.eval.eq_10",
+      -- K-reduction: extra args after major premise
+      "UInt8.toUInt64_toUSize",
+      -- DHashMap: rfl theorem requiring projection reduction + eta-struct
+      "Std.DHashMap.Internal.Raw₀.contains_eq_containsₘ",
+      -- K-reduction: toCtorWhenK must check isDefEq before reducing
+      "instDecidableEqVector.decEq",
+      -- Recursor-only Ixon block regression
+      "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
+      -- Stack overflow regression
+      "_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq"
+    ]
+
+    IO.println s!"[rust-kernel2-consts] checking {constNames.size} constants via Rust FFI..."
+    let start ← IO.monoMsNow
+    let results ← Ix.Kernel2.rsCheckConsts2 leanEnv constNames
+    let elapsed := (← IO.monoMsNow) - start
+    IO.println s!"[rust-kernel2-consts] batch check completed in {elapsed.formatMs}"
+
+    let mut passed := 0
+    let mut failures : Array String := #[]
+    for (name, result) in results do
+      match result with
+      | none =>
+        IO.println s!"  ✓ {name}"
+        passed := passed + 1
+      | some err =>
+        IO.println s!"  ✗ {name}: {repr err}"
+        failures := failures.push s!"{name}: {repr err}"
+
+    IO.println s!"[rust-kernel2-consts] {passed}/{constNames.size} passed ({elapsed.formatMs})"
+    if failures.isEmpty then
+      return (true, none)
+    else
+      return (false, some s!"{failures.size} failure(s)")
+  ) .done
+
+def constSuite : List TestSeq := [testConsts]
+
+/-- Test Rust Kernel2 env conversion with structural verification. -/
+def testConvertEnv : TestSeq :=
+  .individualIO "rust kernel2 convert env" (do
+    let leanEnv ← get_env!
+    let leanCount := leanEnv.constants.toList.length
+    IO.println s!"[rust-kernel2-convert] Lean env: {leanCount} constants"
+    let start ← IO.monoMsNow
+    let result ← Ix.Kernel2.rsConvertEnv2 leanEnv
+    let elapsed := (← IO.monoMsNow) - start
+    if result.size < 5 then
+      let status := result.getD 0 "no result"
+      IO.println s!"[rust-kernel2-convert] FAILED: {status} in {elapsed.formatMs}"
+      return (false, some status)
+    else
+      let status := result[0]!
+      let kenvSize := result[1]!
+      let primsFound := result[2]!
+      let quotInit := result[3]!
+      let mismatchCount := result[4]!
+      IO.println s!"[rust-kernel2-convert] kenv={kenvSize} prims={primsFound} quot={quotInit} mismatches={mismatchCount} in {elapsed.formatMs}"
+      -- Report details (missing prims and mismatches)
+      for i in [5:result.size] do
+        IO.println s!"  {result[i]!}"
+      if status == "ok" then
+        return (true, none)
+      else
+        return (false, some s!"{status}: {mismatchCount} mismatches")
+  ) .done
+
+def convertSuite : List TestSeq := [testConvertEnv]
+
+end Tests.Ix.RustKernel2

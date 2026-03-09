@@ -11,6 +11,10 @@ import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.Check
 import Tests.Ix.KernelTests
+import Tests.Ix.Kernel2.Unit
+import Tests.Ix.Kernel2.Integration
+import Tests.Ix.Kernel2.Nat
+import Tests.Ix.RustKernel2
 import Tests.Ix.PP
 import Tests.Ix.CondenseM
 import Tests.FFI
@@ -38,6 +42,9 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   --("check", Tests.Check.checkSuiteIO), -- disable until rust kernel works
   ("kernel-unit", Tests.KernelTests.unitSuite),
   ("kernel-negative", Tests.KernelTests.negativeSuite),
+  ("kernel2-unit", Tests.Ix.Kernel2.Unit.suite),
+  ("kernel2-nat", Tests.Ix.Kernel2.Nat.suite),
+  ("kernel2-negative", Tests.Ix.Kernel2.Integration.negativeSuite),
   ("pp", Tests.PP.suite),
 ]
 
@@ -62,6 +69,13 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-verify-prims", [Tests.KernelTests.testVerifyPrimAddrs]),
   ("kernel-dump-prims", [Tests.KernelTests.testDumpPrimAddrs]),
   ("kernel-roundtrip", Tests.KernelTests.roundtripSuite),
+  ("kernel2-const", Tests.Ix.Kernel2.Integration.constSuite),
+  ("kernel2-nat-real", Tests.Ix.Kernel2.Nat.realSuite),
+  ("kernel2-convert", Tests.Ix.Kernel2.Integration.convertSuite),
+  ("kernel2-anon-convert", Tests.Ix.Kernel2.Integration.anonConvertSuite),
+  ("kernel2-roundtrip", Tests.Ix.Kernel2.Integration.roundtripSuite),
+  ("rust-kernel2-consts", Tests.Ix.RustKernel2.constSuite),
+  ("rust-kernel2-convert", Tests.Ix.RustKernel2.convertSuite),
   ("ixon-full-roundtrip", Tests.Compile.ixonRoundtripSuiteIO),
 ]
 

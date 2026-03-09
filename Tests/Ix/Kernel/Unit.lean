@@ -189,6 +189,156 @@ def testLevelLeqComplex : TestSeq :=
   test "u <= imax 1 (imax 1 u)"
     (Level.leq p0 nested 0)
 
+/-! ## Normalization fallback tests -/
+
+def testLevelNormalizeFallback : TestSeq :=
+  let p0 : Level .anon := Level.param 0 default
+  let p1 : Level .anon := Level.param 1 default
+  let p2 : Level .anon := Level.param 2 default
+  -- imax u u = u (normalization handles this even when heuristic already does)
+  test "normalize: imax u u = u"
+    (Level.equalLevel (.imax p0 p0) p0) $
+  -- max(imax u v, imax v u) = max(imax u v, imax v u) (symmetric)
+  test "normalize: max(imax u v, imax v u) = max(imax v u, imax u v)"
+    (Level.equalLevel
+      (.max (.imax p0 p1) (.imax p1 p0))
+      (.max (.imax p1 p0) (.imax p0 p1))) $
+  -- imax(imax u v, w) = imax(imax u w, v) — cross-nested imax equivalences
+  -- These exercise the canonical form's ability to handle nested imax
+  test "normalize: max(w, imax(imax u w) v) = max(v, imax(imax u v) w)"
+    (Level.equalLevel
+      (.max p1 (.imax (.imax p0 p1) p2))
+      (.max p2 (.imax (.imax p0 p2) p1))) $
+  -- Soundness: distinct params are NOT equal
+  test "normalize: param 0 != param 1"
+    (!Level.equalLevel p0 p1) $
+  -- Soundness: succ(param 0) != param 0
+  test "normalize: succ(param 0) != param 0"
+    (!Level.equalLevel (.succ p0) p0) $
+  -- imax(u+1, u) = u+1 (via canonical form: when u>0, max(u+1,u) = u+1; when u=0, imax(1,0) = 0 ≠ 1)
+  -- Actually imax(u+1, u): if u=0, result=0; if u>0, result=max(u+1,u)=u+1. So it's max(1, imax(u+1, u)).
+  -- lean4lean: normalize(imax u (u+1)) = max 1 (imax (u+1) u), so imax(u+1,u) ≠ u+1 in general.
+  test "normalize: imax(u+1, u) != u+1"
+    (!Level.equalLevel (.imax (.succ p0) p0) (.succ p0)) $
+  -- leq via normalize: imax(u,v) ≤ max(u,v) always holds
+  test "normalize: imax(u,v) <= max(u,v)"
+    (Level.leq (.imax p0 p1) (.max p0 p1) 0) $
+  -- leq via normalize: max(u,v) ≥ imax(u,v) always holds
+  test "normalize: max(u,v) >= imax(u,v)"
+    (Level.leq (.imax p0 p1) (.max p0 p1) 0)
+
+/-! ## Normalization fallback leq tests (exercises the canonical form path) -/
+
+def testLevelLeqNormFallback : TestSeq :=
+  let l0 : Level .anon := Level.zero
+  let l1 : Level .anon := Level.succ Level.zero
+  let l2 : Level .anon := Level.succ (Level.succ Level.zero)
+  let p0 : Level .anon := Level.param 0 default
+  let p1 : Level .anon := Level.param 1 default
+  let p2 : Level .anon := Level.param 2 default
+  -- The original bug: normalization fallback had swapped arguments
+  test "norm: not (succ(param 0) <= param 0)"
+    (!Level.leq (.succ p0) p0 0) $
+  test "norm: param 0 <= succ(param 0)"
+    (Level.leq p0 (.succ p0) 0) $
+  -- Concrete numeric through normalization
+  test "norm: not (succ(succ zero) <= succ zero)"
+    (!Level.leq l2 l1 0) $
+  test "norm: succ zero <= succ(succ zero)"
+    (Level.leq l1 l2 0) $
+  -- imax vs max
+  test "norm: imax(u,v) <= max(u,v)"
+    (Level.leq (.imax p0 p1) (.max p0 p1) 0) $
+  test "norm: not (max(u,v) <= imax(u,v))"
+    (!Level.leq (.max p0 p1) (.imax p0 p1) 0) $
+  -- imax distributes over max
+  test "norm: imax(max(u,v), w) <= max(imax(u,w), imax(v,w))"
+    (Level.leq
+      (Level.reduce (.imax (.max p0 p1) p2))
+      (Level.reduce (.max (.imax p0 p2) (.imax p1 p2))) 0) $
+  -- succ of imax
+  test "norm: not (succ(imax(u,v)) <= imax(u,v))"
+    (!Level.leq (.succ (Level.reduce (.imax p0 p1))) (Level.reduce (.imax p0 p1)) 0) $
+  -- imax edge cases
+  test "norm: imax(0, u) <= u"
+    (Level.leq (Level.reduce (.imax l0 p0)) p0 0) $
+  test "norm: imax(succ u, v) <= max(succ u, v)"
+    (Level.leq
+      (Level.reduce (.imax (.succ p0) p1))
+      (Level.reduce (.max (.succ p0) p1)) 0)
+
+/-! ## Multi-parameter leq tests -/
+
+def testLevelLeqParams : TestSeq :=
+  let p0 : Level .anon := Level.param 0 default
+  let p1 : Level .anon := Level.param 1 default
+  let p2 : Level .anon := Level.param 2 default
+  -- Unrelated params
+  test "not (param 0 <= param 1)"
+    (!Level.leq p0 p1 0) $
+  test "not (param 1 <= param 0)"
+    (!Level.leq p1 p0 0) $
+  test "not (succ(param 0) <= param 1)"
+    (!Level.leq (.succ p0) p1 0) $
+  -- max subset relationships
+  test "max(u,v) <= max(u, max(v,w))"
+    (Level.leq (.max p0 p1) (.max p0 (.max p1 p2)) 0) $
+  test "not (max(u,v,w) <= max(u,v))"
+    (!Level.leq (.max p0 (.max p1 p2)) (.max p0 p1) 0) $
+  -- param <= max containing it
+  test "param 0 <= max(param 0, param 1)"
+    (Level.leq p0 (.max p0 p1) 0) $
+  test "param 1 <= max(param 0, param 1)"
+    (Level.leq p1 (.max p0 p1) 0) $
+  -- succ(max) not <= max
+  test "not (succ(max(u,v)) <= max(u,v))"
+    (!Level.leq (.succ (.max p0 p1)) (.max p0 p1) 0)
+
+/-! ## Equality via normalization tests -/
+
+def testLevelEqualNorm : TestSeq :=
+  let p0 : Level .anon := Level.param 0 default
+  let p1 : Level .anon := Level.param 1 default
+  let p2 : Level .anon := Level.param 2 default
+  let l1 : Level .anon := Level.succ Level.zero
+  -- From lean4lean's test patterns
+  test "norm eq: imax(1, u) = u"
+    (Level.equalLevel (Level.reduce (.imax l1 p0)) p0) $
+  test "norm eq: imax(u, u) = u"
+    (Level.equalLevel (Level.reduce (.imax p0 p0)) p0) $
+  -- Cross-nested imax
+  test "norm eq: max(w, imax(imax(u,w), v)) = max(v, imax(imax(u,v), w))"
+    (Level.equalLevel
+      (.max p2 (.imax (.imax p0 p2) p1))
+      (.max p1 (.imax (.imax p0 p1) p2))) $
+  -- Soundness: things that should NOT be equal
+  test "norm neq: succ(param 0) != param 0"
+    (!Level.equalLevel (.succ p0) p0) $
+  test "norm neq: param 0 != param 1"
+    (!Level.equalLevel p0 p1) $
+  test "norm neq: imax(succ u, u) != succ u"
+    (!Level.equalLevel (.imax (.succ p0) p0) (.succ p0)) $
+  test "norm neq: max(u, v) != imax(u, v)"
+    (!Level.equalLevel (.max p0 p1) (.imax p0 p1))
+
+/-! ## Canonical form property tests -/
+
+def testLevelNormalizeCanonical : TestSeq :=
+  let p0 : Level .anon := Level.param 0 default
+  let p1 : Level .anon := Level.param 1 default
+  -- Normalization respects commutativity of max
+  test "canon: normalize(max(u,v)) = normalize(max(v,u))"
+    (Level.Normalize.normalize (.max p0 p1) == Level.Normalize.normalize (.max p1 p0)) $
+  -- max(max(u,v),w) = max(u,max(v,w)) (associativity)
+  let p2 : Level .anon := Level.param 2 default
+  test "canon: normalize(max(max(u,v),w)) = normalize(max(u,max(v,w)))"
+    (Level.Normalize.normalize (.max (.max p0 p1) p2) ==
+     Level.Normalize.normalize (.max p0 (.max p1 p2))) $
+  -- imax(u, succ v) = max(u, succ v) after reduce
+  test "canon: normalize(imax(u, succ v)) = normalize(max(u, succ v))"
+    (Level.Normalize.normalize (Level.reduce (.imax p0 (.succ p1))) ==
+     Level.Normalize.normalize (Level.reduce (.max p0 (.succ p1))))
+
 def testLevelInstBulkReduce : TestSeq :=
   let l0 : Level .anon := Level.zero
   let l1 : Level .anon := Level.succ Level.zero
@@ -370,6 +520,11 @@ def suite : List TestSeq := [
     group "imax reduction" testLevelReduceIMax ++
     group "max reduction" testLevelReduceMax ++
     group "complex leq" testLevelLeqComplex ++
+    group "normalize fallback" testLevelNormalizeFallback ++
+    group "norm fallback leq" testLevelLeqNormFallback ++
+    group "multi-param leq" testLevelLeqParams ++
+    group "equality via norm" testLevelEqualNorm ++
+    group "canonical form" testLevelNormalizeCanonical ++
     group "bulk instantiation" testLevelInstBulkReduce,
   group "Reducibility hints" testReducibilityHintsLt,
   group "Inductive helpers" testHelperFunctions,

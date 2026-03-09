@@ -7,6 +7,7 @@ pub mod lean_env;
 // Modular FFI structure
 pub mod builder; // IxEnvBuilder struct
 pub mod check; // Kernel type-checking: rs_check_env
+pub mod check2; // Kernel2 NbE type-checking: rs_check_env2
 pub mod compile; // Compilation: rs_compile_env_full, rs_compile_phases, etc.
 pub mod graph; // Graph/SCC: rs_build_ref_graph, rs_compute_sccs
 pub mod ix; // Ix types: Name, Level, Expr, ConstantInfo, Environment

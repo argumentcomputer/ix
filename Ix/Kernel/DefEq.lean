@@ -25,17 +25,18 @@ def sameHeadConst (t s : Expr m) : Bool :=
   | .const a _ _, .const b _ _ => a == b
   | _, _ => false
 
-/-- Unfold a delta-reducible definition one step. -/
+/-- Unfold a delta-reducible definition one step.
+    Guards on level param count matching (like lean4lean's unfoldDefinitionCore). -/
 def unfoldDelta (ci : ConstantInfo m) (e : Expr m) : Option (Expr m) :=
   match ci with
   | .defnInfo v =>
     let levels := e.getAppFn.constLevels!
-    let body := v.value.instantiateLevelParams levels
-    some (body.mkAppN (e.getAppArgs))
+    if levels.size != v.numLevels then none
+    else some ((v.value.instantiateLevelParams levels).mkAppN (e.getAppArgs))
   | .thmInfo v =>
     let levels := e.getAppFn.constLevels!
-    let body := v.value.instantiateLevelParams levels
-    some (body.mkAppN (e.getAppArgs))
+    if levels.size != v.numLevels then none
+    else some ((v.value.instantiateLevelParams levels).mkAppN (e.getAppArgs))
   | _ => none
 
 end Ix.Kernel
