@@ -36,6 +36,7 @@ def friParameters : Aiur.FriParameters := {
 
 structure AiurTestEnv where
   toplevel : Aiur.Toplevel
+  bytecode : Aiur.Bytecode.Toplevel
   aiurSystem : Aiur.AiurSystem
 
 def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Toplevel) :
@@ -44,11 +45,17 @@ def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Toplevel) :
   let decls ← toplevel.checkAndSimplify.mapError toString
   let bytecode ← decls.compile
   let aiurSystem := Aiur.AiurSystem.build bytecode commitmentParameters
-  return ⟨toplevel, aiurSystem⟩
+  return ⟨toplevel, bytecode, aiurSystem⟩
 
 def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : TestSeq :=
   let label := testCase.label
   let funIdx := env.toplevel.getFuncIdx testCase.functionName |>.get!
+  let (execOutput, execIOBuffer) := env.bytecode.execute
+    funIdx testCase.input testCase.inputIOBuffer
+  let execOutputTest := test s!"Execute output matches for {label}"
+    (execOutput == testCase.expectedOutput)
+  let execIOTest := test s!"Execute IOBuffer matches for {label}"
+    (execIOBuffer == testCase.expectedIOBuffer)
   let (claim, proof, ioBuffer) := env.aiurSystem.prove
     friParameters funIdx testCase.input testCase.inputIOBuffer
   let claimTest := test s!"Claim matches for {label}"
@@ -58,7 +65,7 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
   let proof := .ofBytes proof.toBytes
   let pvTest := withExceptOk s!"Prove/verify works for {label}"
     (env.aiurSystem.verify friParameters claim proof) fun _ => .done
-  claimTest ++ ioTest ++ pvTest
+  execOutputTest ++ execIOTest ++ claimTest ++ ioTest ++ pvTest
 
 def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Toplevel)
     (cases : List AiurTestCase) : TestSeq :=
@@ -66,7 +73,7 @@ def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Toplevel)
     withExceptOk "Check and simplification succeed" toplevel.checkAndSimplify fun decls =>
       withExceptOk "Compilation succeeds" decls.compile fun bytecode =>
         let aiurSystem := Aiur.AiurSystem.build bytecode commitmentParameters
-        let env : AiurTestEnv := ⟨toplevel, aiurSystem⟩
+        let env : AiurTestEnv := ⟨toplevel, bytecode, aiurSystem⟩
         cases.foldl (init := .done) fun tSeq testCase =>
           tSeq ++ env.runTestCase testCase
 
