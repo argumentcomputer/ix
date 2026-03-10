@@ -769,11 +769,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             }
           }
           // Step-case reductions (second arg is succ)
-          if let Some(pred_ref) = extract_succ_pred(&b, self.prims) {
-            let pred_thunk = match pred_ref {
-              PredRef::Thunk(t) => t,
-              PredRef::Lit(n) => mk_thunk_val(Val::mk_lit(Literal::NatVal(n))),
-            };
+          if let Some(pred_thunk) = extract_succ_pred(&b, self.prims) {
             let addr = addr.clone();
             if self.prims.nat_add.as_ref() == Some(&addr) {
               // add x (succ y) = succ (add x y)
@@ -821,11 +817,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               )));
             } else if self.prims.nat_beq.as_ref() == Some(&addr) {
               // beq (succ x) (succ y) = beq x y
-              if let Some(pred_ref_a) = extract_succ_pred(&a, self.prims) {
-                let pred_thunk_a = match pred_ref_a {
-                  PredRef::Thunk(t) => t,
-                  PredRef::Lit(n) => mk_thunk_val(Val::mk_lit(Literal::NatVal(n))),
-                };
+              if let Some(pred_thunk_a) = extract_succ_pred(&a, self.prims) {
                 return Ok(Some(Val::mk_neutral(
                   Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
                   vec![pred_thunk_a, pred_thunk],
@@ -840,11 +832,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               }
             } else if self.prims.nat_ble.as_ref() == Some(&addr) {
               // ble (succ x) (succ y) = ble x y
-              if let Some(pred_ref_a) = extract_succ_pred(&a, self.prims) {
-                let pred_thunk_a = match pred_ref_a {
-                  PredRef::Thunk(t) => t,
-                  PredRef::Lit(n) => mk_thunk_val(Val::mk_lit(Literal::NatVal(n))),
-                };
+              if let Some(pred_thunk_a) = extract_succ_pred(&a, self.prims) {
                 return Ok(Some(Val::mk_neutral(
                   Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
                   vec![pred_thunk_a, pred_thunk],

@@ -94,32 +94,25 @@ pub fn is_nat_zero_val<M: MetaMode>(v: &Val<M>, prims: &Primitives) -> bool {
   }
 }
 
-/// Predecessor reference: either a thunk (from ctor/neutral succ) or a nat literal value.
-pub enum PredRef<M: MetaMode> {
-  Thunk(Thunk<M>),
-  Lit(Nat),
-}
-
-/// Extract the predecessor from a Nat.succ value or Lit(n+1), without forcing.
-/// Returns `Some(PredRef::Thunk(t))` for ctor/neutral succ, or `Some(PredRef::Lit(n))` for Lit(n+1).
+/// Extract the predecessor thunk from a structural Nat.succ value, without forcing.
+/// Only matches Ctor(nat_succ, [thunk]) or Neutral(nat_succ, [thunk]).
+/// Does NOT match Lit(NatVal(n)) — literals are handled by computeNatPrim in O(1).
+/// Matching literals here would cause O(n) recursion in the symbolic step-case reductions.
 pub fn extract_succ_pred<M: MetaMode>(
   v: &Val<M>,
   prims: &Primitives,
-) -> Option<PredRef<M>> {
+) -> Option<Thunk<M>> {
   match v.inner() {
-    ValInner::Lit(Literal::NatVal(n)) if n.0 > BigUint::ZERO => {
-      Some(PredRef::Lit(Nat(&n.0 - 1u64)))
-    }
     ValInner::Neutral {
       head: Head::Const { addr, .. },
       spine,
     } if prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 => {
-      Some(PredRef::Thunk(spine[0].clone()))
+      Some(spine[0].clone())
     }
     ValInner::Ctor { addr, spine, .. }
       if prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 =>
     {
-      Some(PredRef::Thunk(spine[0].clone()))
+      Some(spine[0].clone())
     }
     _ => None,
   }

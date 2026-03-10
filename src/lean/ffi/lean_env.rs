@@ -1006,11 +1006,22 @@ fn serialized_meta_size(
 }
 
 /// Parse a dotted name string into a Name.
+/// Handles French-quoted numeric components: `«0»` → `Name::num(_, 0)`.
 fn parse_name(s: &str) -> Name {
-  let parts: Vec<&str> = s.split('.').collect();
   let mut name = Name::anon();
-  for part in parts {
-    name = Name::str(name, part.to_string());
+  for part in s.split('.') {
+    // Strip French quotes if present: «foo» → foo
+    let stripped = if part.starts_with('«') && part.ends_with('»') {
+      &part['«'.len_utf8()..part.len() - '»'.len_utf8()]
+    } else {
+      part
+    };
+    // Try parsing as a number (Lean.Name.num component)
+    if let Ok(n) = stripped.parse::<u64>() {
+      name = Name::num(name, Nat::from(n));
+    } else {
+      name = Name::str(name, part.to_string());
+    }
   }
   name
 }

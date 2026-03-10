@@ -52,16 +52,16 @@ def isNatConstructor (prims : KPrimitives) (v : Val m) : Bool :=
     (addr == prims.natSucc && spine.size == 1)
   | _ => false
 
-/-- Extract the predecessor thunk from a Nat.succ value or Lit(n+1), without forcing.
-    Returns the thunk ID for succ constructors, or `none` for zero/non-nat. -/
-def extractSuccPred (prims : KPrimitives) (v : Val m) : Option (Sum Nat Nat) :=
-  -- Returns Sum.inl thunkId (for ctor/neutral succ) or Sum.inr n (for Lit(n+1))
+/-- Extract the predecessor thunk from a structural Nat.succ value, without forcing.
+    Only matches Ctor/Neutral with nat_succ head. Does NOT match Lit(NatVal(n)) —
+    literals are handled by computeNatPrim in O(1). Matching literals here would
+    cause O(n) recursion in the symbolic step-case reductions. -/
+def extractSuccPred (prims : KPrimitives) (v : Val m) : Option Nat :=
   match v with
-  | .lit (.natVal (n+1)) => some (.inr n)
   | .neutral (.const addr _ _) spine =>
-    if addr == prims.natSucc && spine.size == 1 then some (.inl spine[0]!) else none
+    if addr == prims.natSucc && spine.size == 1 then some spine[0]! else none
   | .ctor addr _ _ _ _ _ _ spine =>
-    if addr == prims.natSucc && spine.size == 1 then some (.inl spine[0]!) else none
+    if addr == prims.natSucc && spine.size == 1 then some spine[0]! else none
   | _ => none
 
 /-- Check if a value is Nat.zero (constructor or literal 0). -/

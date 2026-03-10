@@ -14,6 +14,7 @@ use super::ix::name::build_name;
 use super::lean_env::lean_ptr_to_env;
 use crate::ix::env::Name;
 use crate::ix::kernel::check::typecheck_const;
+use crate::lean::nat::Nat;
 use crate::ix::kernel::convert::{convert_env, verify_conversion};
 use crate::ix::kernel::error::TcError;
 use crate::ix::kernel::types::Meta;
@@ -97,7 +98,18 @@ pub extern "C" fn rs_check_env(env_consts_ptr: *const c_void) -> *mut c_void {
 fn parse_name(s: &str) -> Name {
   let mut name = Name::anon();
   for part in s.split('.') {
-    name = Name::str(name, part.to_string());
+    // Strip French quotes if present: «foo» → foo
+    let stripped = if part.starts_with('«') && part.ends_with('»') {
+      &part['«'.len_utf8()..part.len() - '»'.len_utf8()]
+    } else {
+      part
+    };
+    // Try parsing as a number (Lean.Name.num component)
+    if let Ok(n) = stripped.parse::<u64>() {
+      name = Name::num(name, Nat::from(n));
+    } else {
+      name = Name::str(name, part.to_string());
+    }
   }
   name
 }

@@ -569,10 +569,7 @@ mutual
             else pure none
           -- Step-case reductions (second arg is succ)
           else match extractSuccPred prims b' with
-            | some predRef =>
-              let predThunk ← match predRef with
-                | .inl tid => pure tid
-                | .inr n => mkThunkFromVal (.lit (.natVal n))
+            | some predThunk =>
               if addr == prims.natAdd then do                -- add x (succ y) = succ (add x y)
                 let inner ← mkThunkFromVal (Val.neutral (.const prims.natAdd #[] default) #[spine[0], predThunk])
                 pure (some (Val.neutral (.const prims.natSucc #[] default) #[inner]))
@@ -587,10 +584,7 @@ mutual
                 pure (some (Val.neutral (.const prims.natMul #[] default) #[inner, spine[0]]))
               else if addr == prims.natBeq then do           -- beq (succ x) (succ y) = beq x y
                 match extractSuccPred prims a' with
-                | some predRefA =>
-                  let predThunkA ← match predRefA with
-                    | .inl tid => pure tid
-                    | .inr n => mkThunkFromVal (.lit (.natVal n))
+                | some predThunkA =>
                   pure (some (Val.neutral (.const prims.natBeq #[] default) #[predThunkA, predThunk]))
                 | none =>
                   if isNatZeroVal prims a' then              -- beq 0 (succ y) = false
@@ -598,10 +592,7 @@ mutual
                   else pure none
               else if addr == prims.natBle then do           -- ble (succ x) (succ y) = ble x y
                 match extractSuccPred prims a' with
-                | some predRefA =>
-                  let predThunkA ← match predRefA with
-                    | .inl tid => pure tid
-                    | .inr n => mkThunkFromVal (.lit (.natVal n))
+                | some predThunkA =>
                   pure (some (Val.neutral (.const prims.natBle #[] default) #[predThunkA, predThunk]))
                 | none =>
                   if isNatZeroVal prims a' then              -- ble 0 (succ y) = true
@@ -611,7 +602,7 @@ mutual
             | none =>
               -- Step-case: first arg is succ, second unknown
               match extractSuccPred prims a' with
-              | some predRefA =>
+              | some _ =>
                 if addr == prims.natBeq then do              -- beq (succ x) 0 = false
                   if isNatZeroVal prims b' then
                     pure (some (.ctor prims.boolFalse #[] default 0 0 0 prims.bool #[]))
