@@ -26,7 +26,7 @@ jobs:
       - run: |
           mkdir -p ~/.local/bin
           echo | lake run install
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v5
         with:
           path: ~/.local/bin/ix
           key: ix-${{ github.sha }}
@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # Restore cached `ix` binary
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin/ix
           key: ix-${{ github.sha }}
@@ -61,7 +61,7 @@ jobs:
           use-github-cache: false
       # FLT and FC take a few minutes to rebuild, so we cache the build artifacts
       - if: matrix.cache_pkg
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
           key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
