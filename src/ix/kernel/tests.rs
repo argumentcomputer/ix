@@ -1137,14 +1137,15 @@ mod tests {
       whnf_quote(&env, &prims, &cst(&ax_addr)).unwrap(),
       cst(&ax_addr)
     );
-    // Nat.add axiom 5 stays stuck (head is natAdd)
+    // Nat.add axiom 5 partially reduces via step rule:
+    // add x (succ y) = succ (add x y), so head becomes natSucc
     let stuck_add = app(
       app(cst(prims.nat_add.as_ref().unwrap()), cst(&ax_addr)),
       nat_lit(5),
     );
     assert_eq!(
       whnf_head_addr(&env, &prims, &stuck_add).unwrap(),
-      Some(prims.nat_add.clone().unwrap())
+      Some(prims.nat_succ.clone().unwrap())
     );
   }
 

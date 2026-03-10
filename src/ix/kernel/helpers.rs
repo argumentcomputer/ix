@@ -79,14 +79,55 @@ pub fn is_nat_bin_op(addr: &Address, prims: &Primitives) -> bool {
   .any(|p| p.as_ref() == Some(addr))
 }
 
+/// Check if a value is Nat.zero (constructor, neutral, or literal 0).
+pub fn is_nat_zero_val<M: MetaMode>(v: &Val<M>, prims: &Primitives) -> bool {
+  match v.inner() {
+    ValInner::Lit(Literal::NatVal(n)) => n.0 == BigUint::ZERO,
+    ValInner::Neutral {
+      head: Head::Const { addr, .. },
+      spine,
+    } => prims.nat_zero.as_ref() == Some(addr) && spine.is_empty(),
+    ValInner::Ctor { addr, spine, .. } => {
+      prims.nat_zero.as_ref() == Some(addr) && spine.is_empty()
+    }
+    _ => false,
+  }
+}
+
+/// Predecessor reference: either a thunk (from ctor/neutral succ) or a nat literal value.
+pub enum PredRef<M: MetaMode> {
+  Thunk(Thunk<M>),
+  Lit(Nat),
+}
+
+/// Extract the predecessor from a Nat.succ value or Lit(n+1), without forcing.
+/// Returns `Some(PredRef::Thunk(t))` for ctor/neutral succ, or `Some(PredRef::Lit(n))` for Lit(n+1).
+pub fn extract_succ_pred<M: MetaMode>(
+  v: &Val<M>,
+  prims: &Primitives,
+) -> Option<PredRef<M>> {
+  match v.inner() {
+    ValInner::Lit(Literal::NatVal(n)) if n.0 > BigUint::ZERO => {
+      Some(PredRef::Lit(Nat(&n.0 - 1u64)))
+    }
+    ValInner::Neutral {
+      head: Head::Const { addr, .. },
+      spine,
+    } if prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 => {
+      Some(PredRef::Thunk(spine[0].clone()))
+    }
+    ValInner::Ctor { addr, spine, .. }
+      if prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 =>
+    {
+      Some(PredRef::Thunk(spine[0].clone()))
+    }
+    _ => None,
+  }
+}
+
 /// Check if an address is nat_succ.
 pub fn is_nat_succ(addr: &Address, prims: &Primitives) -> bool {
   prims.nat_succ.as_ref() == Some(addr)
-}
-
-/// Check if an address is any nat primitive operation (unary or binary).
-pub fn is_prim_op(addr: &Address, prims: &Primitives) -> bool {
-  is_nat_succ(addr, prims) || is_nat_bin_op(addr, prims)
 }
 
 /// Compute a nat binary primitive operation.

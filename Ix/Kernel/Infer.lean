@@ -222,32 +222,47 @@ mutual
     if majorIdx >= spine.size then return none
     let major ← forceThunk spine[majorIdx]!
     let major' ← whnfVal major
-    -- Convert nat literal to constructor form (0 → Nat.zero, n+1 → Nat.succ)
-    let major'' ← match major' with
-      | .lit (.natVal _) => natLitToCtorThunked major'
-      | v => pure v
-    -- Check if major is a constructor
-    match major'' with
+    -- Helper: apply params+motives+minors from rec spine, then extra args after major
+    let applyPmmAndExtra := fun (result : Val m) (ctorFieldThunks : Array Nat) => do
+      let mut r := result
+      let pmmEnd := params + motives + minors
+      for i in [:pmmEnd] do
+        if i < spine.size then
+          r ← applyValThunk r spine[i]!
+      for tid in ctorFieldThunks do
+        r ← applyValThunk r tid
+      if majorIdx + 1 < spine.size then
+        for i in [majorIdx + 1:spine.size] do
+          r ← applyValThunk r spine[i]!
+      pure r
+    -- Handle nat literals directly (O(1) instead of O(n) allocation via natLitToCtorThunked)
+    match major' with
+    | .lit (.natVal 0) =>
+      match rules[0]? with
+      | some (_, rhs) =>
+        let rhsBody := rhs.body.instantiateLevelParams levels
+        let result ← eval rhsBody #[]
+        return some (← applyPmmAndExtra result #[])
+      | none => return none
+    | .lit (.natVal (n+1)) =>
+      match rules[1]? with
+      | some (_, rhs) =>
+        let rhsBody := rhs.body.instantiateLevelParams levels
+        let result ← eval rhsBody #[]
+        let predThunk ← mkThunkFromVal (.lit (.natVal n))
+        return some (← applyPmmAndExtra result #[predThunk])
+      | none => return none
     | .ctor _ _ _ ctorIdx numParams _ _ ctorSpine =>
       match rules[ctorIdx]? with
       | some (nfields, rhs) =>
         if nfields > ctorSpine.size then return none
         let rhsBody := rhs.body.instantiateLevelParams levels
-        let mut result ← eval rhsBody #[]
-        -- Apply params + motives + minors from rec spine
-        let pmmEnd := params + motives + minors
-        for i in [:pmmEnd] do
-          if i < spine.size then
-            result ← applyValThunk result spine[i]!
-        -- Apply constructor fields (skip constructor params)
-        let ctorParamCount := numParams
-        for i in [ctorParamCount:ctorSpine.size] do
-          result ← applyValThunk result ctorSpine[i]!
-        -- Apply extra args after major premise
-        if majorIdx + 1 < spine.size then
-          for i in [majorIdx + 1:spine.size] do
-            result ← applyValThunk result spine[i]!
-        return some result
+        let result ← eval rhsBody #[]
+        -- Collect constructor fields (skip constructor params)
+        let mut ctorFields : Array Nat := #[]
+        for i in [numParams:ctorSpine.size] do
+          ctorFields := ctorFields.push ctorSpine[i]!
+        return some (← applyPmmAndExtra result ctorFields)
       | none => return none
     | _ => return none
 
@@ -532,14 +547,81 @@ mutual
         let b' ← whnfVal b
         match extractNatVal prims a', extractNatVal prims b' with
         | some x, some y => pure (computeNatPrim prims addr x y)
-        -- Partial reduction: second arg is 0 (base cases of Nat.add/sub/mul/pow recursors)
-        | _, some 0 =>
-          if addr == prims.natAdd then pure (some a')                      -- n + 0 = n
-          else if addr == prims.natSub then pure (some a')                 -- n - 0 = n
-          else if addr == prims.natMul then pure (some (.lit (.natVal 0))) -- n * 0 = 0
-          else if addr == prims.natPow then pure (some (.lit (.natVal 1))) -- n ^ 0 = 1
-          else pure none
-        | _, _ => pure none
+        | _, _ =>
+          -- Partial reduction: base cases (second arg is 0)
+          if isNatZeroVal prims b' then
+            if addr == prims.natAdd then pure (some a')                      -- n + 0 = n
+            else if addr == prims.natSub then pure (some a')                 -- n - 0 = n
+            else if addr == prims.natMul then pure (some (.lit (.natVal 0))) -- n * 0 = 0
+            else if addr == prims.natPow then pure (some (.lit (.natVal 1))) -- n ^ 0 = 1
+            else if addr == prims.natBle then                                -- n ≤ 0 = (n == 0)
+              if isNatZeroVal prims a' then
+                pure (some (.ctor prims.boolTrue #[] default 1 0 0 prims.bool #[]))
+              else pure none  -- need to know if a' is succ to return false
+            else pure none
+          -- Partial reduction: base cases (first arg is 0)
+          else if isNatZeroVal prims a' then
+            if addr == prims.natAdd then pure (some b')                     -- 0 + n = n
+            else if addr == prims.natSub then pure (some (.lit (.natVal 0))) -- 0 - n = 0
+            else if addr == prims.natMul then pure (some (.lit (.natVal 0))) -- 0 * n = 0
+            else if addr == prims.natBle then                               -- 0 ≤ n = true
+              pure (some (.ctor prims.boolTrue #[] default 1 0 0 prims.bool #[]))
+            else pure none
+          -- Step-case reductions (second arg is succ)
+          else match extractSuccPred prims b' with
+            | some predRef =>
+              let predThunk ← match predRef with
+                | .inl tid => pure tid
+                | .inr n => mkThunkFromVal (.lit (.natVal n))
+              if addr == prims.natAdd then do                -- add x (succ y) = succ (add x y)
+                let inner ← mkThunkFromVal (Val.neutral (.const prims.natAdd #[] default) #[spine[0], predThunk])
+                pure (some (Val.neutral (.const prims.natSucc #[] default) #[inner]))
+              else if addr == prims.natSub then do           -- sub x (succ y) = pred (sub x y)
+                let inner ← mkThunkFromVal (Val.neutral (.const prims.natSub #[] default) #[spine[0], predThunk])
+                pure (some (Val.neutral (.const prims.natPred #[] default) #[inner]))
+              else if addr == prims.natMul then do           -- mul x (succ y) = add (mul x y) x
+                let inner ← mkThunkFromVal (Val.neutral (.const prims.natMul #[] default) #[spine[0], predThunk])
+                pure (some (Val.neutral (.const prims.natAdd #[] default) #[inner, spine[0]]))
+              else if addr == prims.natPow then do           -- pow x (succ y) = mul (pow x y) x
+                let inner ← mkThunkFromVal (Val.neutral (.const prims.natPow #[] default) #[spine[0], predThunk])
+                pure (some (Val.neutral (.const prims.natMul #[] default) #[inner, spine[0]]))
+              else if addr == prims.natBeq then do           -- beq (succ x) (succ y) = beq x y
+                match extractSuccPred prims a' with
+                | some predRefA =>
+                  let predThunkA ← match predRefA with
+                    | .inl tid => pure tid
+                    | .inr n => mkThunkFromVal (.lit (.natVal n))
+                  pure (some (Val.neutral (.const prims.natBeq #[] default) #[predThunkA, predThunk]))
+                | none =>
+                  if isNatZeroVal prims a' then              -- beq 0 (succ y) = false
+                    pure (some (.ctor prims.boolFalse #[] default 0 0 0 prims.bool #[]))
+                  else pure none
+              else if addr == prims.natBle then do           -- ble (succ x) (succ y) = ble x y
+                match extractSuccPred prims a' with
+                | some predRefA =>
+                  let predThunkA ← match predRefA with
+                    | .inl tid => pure tid
+                    | .inr n => mkThunkFromVal (.lit (.natVal n))
+                  pure (some (Val.neutral (.const prims.natBle #[] default) #[predThunkA, predThunk]))
+                | none =>
+                  if isNatZeroVal prims a' then              -- ble 0 (succ y) = true
+                    pure (some (.ctor prims.boolTrue #[] default 1 0 0 prims.bool #[]))
+                  else pure none
+              else pure none
+            | none =>
+              -- Step-case: first arg is succ, second unknown
+              match extractSuccPred prims a' with
+              | some predRefA =>
+                if addr == prims.natBeq then do              -- beq (succ x) 0 = false
+                  if isNatZeroVal prims b' then
+                    pure (some (.ctor prims.boolFalse #[] default 0 0 0 prims.bool #[]))
+                  else pure none
+                else if addr == prims.natBle then do         -- ble (succ x) 0 = false
+                  if isNatZeroVal prims b' then
+                    pure (some (.ctor prims.boolFalse #[] default 0 0 0 prims.bool #[]))
+                  else pure none
+                else pure none
+              | none => pure none
       else pure none
     | _ => pure none
 
@@ -639,40 +721,14 @@ mutual
       match ← tryReduceNatVal v' with
       | some v'' => whnfVal v'' (deltaSteps + 1)
       | none =>
-        -- If v' is a nat prim whose args are genuinely stuck (no nat constructor/literal),
-        -- delta-unfolding is wasteful: iota won't fire on the stuck recursor.
-        -- Only block when NEITHER arg is a nat constructor; if either is (e.g., Nat.succ x),
-        -- delta+iota will make progress. lazyDelta bypasses this (calls deltaStepVal directly).
-        let skipDelta ← do
-          let prims := (← read).prims
-          if !isNatPrimHead prims v' then pure false
-          else match v' with
-            | .neutral _ spine =>
-              if spine.isEmpty then pure false
-              else
-                let mut anyConstructor := false
-                for i in [:min 2 spine.size] do
-                  if h : i < spine.size then
-                    let arg ← forceThunk spine[i]
-                    let arg' ← whnfVal arg
-                    if isNatConstructor prims arg' then
-                      anyConstructor := true; break
-                pure !anyConstructor
-            | _ => pure false
-        if skipDelta then pure v'
-        else
-          match ← tryEvalVal v' with
-          | some v'' => whnfVal v'' (deltaSteps + 1)
-          | none =>
-            match ← deltaStepVal v' with
-            | some v'' => whnfVal v'' (deltaSteps + 1)
-            | none =>
-              match ← reduceNativeVal v' with
-              | some v'' =>
-                -- Structural-only WHNF after native reduction to prevent re-entry.
-                -- Matches Kernel1's approach (whnfCore, not whnfImpl).
-                whnfCoreVal v''
-              | none => pure v'
+        match ← deltaStepVal v' with
+        | some v'' => whnfVal v'' (deltaSteps + 1)
+        | none =>
+          match ← reduceNativeVal v' with
+          | some v'' =>
+            -- Structural-only WHNF after native reduction to prevent re-entry.
+            whnfCoreVal v''
+          | none => pure v'
     -- Cache the final result (only at top-level entry)
     if deltaSteps == 0 then
       modify fun st => { st with
@@ -806,7 +862,48 @@ mutual
         if !(← isDefEq sv1 sv2) then return false
         isDefEqSpine spine1 spine2
       else pure false
-    -- Nat literal ↔ constructor expansion
+    -- Nat literal ↔ constructor: direct O(1) comparison without allocating ctor chain
+    | .lit (.natVal n), .ctor addr _ _ _ numParams _ _ ctorSpine => do
+      let prims := (← read).prims
+      if n == 0 then
+        pure (addr == prims.natZero && ctorSpine.size == numParams)
+      else
+        if addr != prims.natSucc then return false
+        if ctorSpine.size != numParams + 1 then return false
+        let predVal ← forceThunk ctorSpine[numParams]!
+        isDefEq (.lit (.natVal (n - 1))) predVal
+    | .ctor addr _ _ _ numParams _ _ ctorSpine, .lit (.natVal n) => do
+      let prims := (← read).prims
+      if n == 0 then
+        pure (addr == prims.natZero && ctorSpine.size == numParams)
+      else
+        if addr != prims.natSucc then return false
+        if ctorSpine.size != numParams + 1 then return false
+        let predVal ← forceThunk ctorSpine[numParams]!
+        isDefEq predVal (.lit (.natVal (n - 1)))
+    -- Nat literal ↔ neutral succ: handle Lit(n+1) vs neutral(Nat.succ, [thunk])
+    | .lit (.natVal n), .neutral (.const addr _ _) sp => do
+      let prims := (← read).prims
+      if n == 0 then
+        pure (addr == prims.natZero && sp.isEmpty)
+      else if addr == prims.natSucc && sp.size == 1 then
+        let predVal ← forceThunk sp[0]!
+        isDefEq (.lit (.natVal (n - 1))) predVal
+      else
+        -- Fallback: convert literal to ctor for other neutral heads
+        let t' ← natLitToCtorThunked t
+        isDefEqCore t' s
+    | .neutral (.const addr _ _) sp, .lit (.natVal n) => do
+      let prims := (← read).prims
+      if n == 0 then
+        pure (addr == prims.natZero && sp.isEmpty)
+      else if addr == prims.natSucc && sp.size == 1 then
+        let predVal ← forceThunk sp[0]!
+        isDefEq predVal (.lit (.natVal (n - 1)))
+      else
+        let s' ← natLitToCtorThunked s
+        isDefEqCore t s'
+    -- Nat literal ↔ other: fallback to ctor conversion
     | .lit (.natVal _), _ => do
       let t' ← natLitToCtorThunked t
       isDefEqCore t' s

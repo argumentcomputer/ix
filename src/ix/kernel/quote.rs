@@ -56,7 +56,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
 
       ValInner::Neutral { head, spine } => {
-        let mut result = quote_head(head, depth);
+        let mut result = quote_head(head, depth, &self.binder_names);
         for thunk in spine {
           let arg_val = self.force_thunk(thunk)?;
           let arg_expr = self.quote(&arg_val, depth)?;
@@ -113,11 +113,19 @@ pub fn level_to_index(depth: usize, level: usize) -> usize {
   depth - 1 - level
 }
 
-/// Quote a Head to a KExpr.
-pub fn quote_head<M: MetaMode>(head: &Head<M>, depth: usize) -> KExpr<M> {
+/// Quote a Head to a KExpr, using binder names from context if available.
+pub fn quote_head<M: MetaMode>(
+  head: &Head<M>,
+  depth: usize,
+  binder_names: &[M::Field<crate::ix::env::Name>],
+) -> KExpr<M> {
   match head {
     Head::FVar { level, .. } => {
-      KExpr::bvar(level_to_index(depth, *level), M::Field::<crate::ix::env::Name>::default())
+      let name = binder_names
+        .get(*level)
+        .cloned()
+        .unwrap_or_default();
+      KExpr::bvar(level_to_index(depth, *level), name)
     }
     Head::Const {
       addr,

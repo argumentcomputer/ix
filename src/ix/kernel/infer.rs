@@ -22,7 +22,33 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     self.stats.infer_calls += 1;
 
     self.heartbeat()?;
-    self.infer_core(term)
+
+    // Inference cache: check if we've already inferred this term in the same context
+    let cache_key = term.ptr_id();
+    if let Some((cached_depth, te, ty)) =
+      self.infer_cache.get(&cache_key).cloned()
+    {
+      // For consts/sorts/lits, context doesn't matter (always closed)
+      let context_ok = match term.data() {
+        KExprData::Const(..) | KExprData::Sort(..) | KExprData::Lit(..) => {
+          true
+        }
+        _ => cached_depth == self.depth(),
+      };
+      if context_ok {
+        return Ok((te, ty));
+      }
+    }
+
+    let result = self.infer_core(term)?;
+
+    // Insert into inference cache
+    self.infer_cache.insert(
+      cache_key,
+      (self.depth(), result.0.clone(), result.1.clone()),
+    );
+
+    Ok(result)
   }
 
   fn infer_core(
@@ -113,6 +139,30 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           });
         }
 
+        // Safety checks: reject unsafe/partial from safe contexts
+        use crate::ix::env::DefinitionSafety;
+        let ci_safety = ci.safety();
+        if ci_safety == DefinitionSafety::Unsafe
+          && self.safety != DefinitionSafety::Unsafe
+        {
+          return Err(TcError::KernelException {
+            msg: format!(
+              "unsafe constant {:?} used in safe context",
+              name,
+            ),
+          });
+        }
+        if ci_safety == DefinitionSafety::Partial
+          && self.safety == DefinitionSafety::Safe
+        {
+          return Err(TcError::KernelException {
+            msg: format!(
+              "partial constant {:?} used in safe context",
+              name,
+            ),
+          });
+        }
+
         let tc = self
           .typed_consts
           .get(addr)
@@ -135,6 +185,17 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         let (_, mut fn_type) = self.infer(head)?;
 
         for arg in &args {
+          // Detect @[eagerReduce] annotation: eagerReduce _ arg
+          let is_eager = if let KExprData::App(f, _) = arg.data() {
+            if let KExprData::App(f2, _) = f.data() {
+              f2.const_addr() == self.prims.eager_reduce.as_ref()
+            } else {
+              false
+            }
+          } else {
+            false
+          };
+
           let fn_type_whnf = self.whnf_val(&fn_type, 0)?;
           match fn_type_whnf.inner() {
             ValInner::Pi {
@@ -145,17 +206,24 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             } => {
               // Check argument type if not in infer-only mode
               if !self.infer_only {
-                let (_, arg_type) = self.infer(arg)?;
-                if !self.is_def_eq(&arg_type, dom)? {
-                  let dom_expr =
-                    self.quote(dom, self.depth())?;
-                  let arg_type_expr =
-                    self.quote(&arg_type, self.depth())?;
-                  return Err(TcError::TypeMismatch {
-                    expected: dom_expr,
-                    found: arg_type_expr,
-                    expr: (*arg).clone(),
-                  });
+                let check_arg = |tc: &mut Self| -> TcResult<(), M> {
+                  let (_, arg_type) = tc.infer(arg)?;
+                  if !tc.is_def_eq(&arg_type, dom)? {
+                    let dom_expr = tc.quote(dom, tc.depth())?;
+                    let arg_type_expr =
+                      tc.quote(&arg_type, tc.depth())?;
+                    return Err(TcError::TypeMismatch {
+                      expected: dom_expr,
+                      found: arg_type_expr,
+                      expr: (*arg).clone(),
+                    });
+                  }
+                  Ok(())
+                };
+                if is_eager {
+                  self.with_eager_reduce(true, check_arg)?;
+                } else {
+                  check_arg(self)?;
                 }
               }
 
@@ -347,11 +415,58 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   }
 
   /// Check that `term` has type `expected_type`.
+  /// Bidirectional: when term is a lambda and expected type is Pi,
+  /// push the Pi codomain through recursively to avoid expensive infer+isDefEq.
   pub fn check(
     &mut self,
     term: &KExpr<M>,
     expected_type: &Val<M>,
   ) -> TcResult<TypedExpr<M>, M> {
+    // Bidirectional optimization: lambda against Pi
+    if let KExprData::Lam(dom_expr, body, name, _bi) = term.data() {
+      let expected_whnf = self.whnf_val(expected_type, 0)?;
+      if let ValInner::Pi {
+        dom: pi_dom,
+        body: pi_body,
+        env: pi_env,
+        ..
+      } = expected_whnf.inner()
+      {
+        // Check domain matches
+        if !self.infer_only {
+          let dom_val = self.eval_in_ctx(dom_expr)?;
+          if !self.is_def_eq(&dom_val, pi_dom)? {
+            let expected_expr = self.quote(pi_dom, self.depth())?;
+            let found_expr = self.quote(&dom_val, self.depth())?;
+            return Err(TcError::TypeMismatch {
+              expected: expected_expr,
+              found: found_expr,
+              expr: dom_expr.clone(),
+            });
+          }
+        }
+
+        // Push Pi codomain through lambda body
+        let fvar = Val::mk_fvar(self.depth(), pi_dom.clone());
+        let mut new_pi_env = pi_env.clone();
+        new_pi_env.push(fvar);
+        let codomain = self.eval(pi_body, &new_pi_env)?;
+
+        let _body_te = self.with_binder(
+          pi_dom.clone(),
+          name.clone(),
+          |tc| tc.check(body, &codomain),
+        )?;
+
+        let info = self.info_from_type(expected_type)?;
+        return Ok(TypedExpr {
+          info,
+          body: term.clone(),
+        });
+      }
+    }
+
+    // Fallback: infer + isDefEq
     let (te, inferred_type) = self.infer(term)?;
     if !self.is_def_eq(&inferred_type, expected_type)? {
       let expected_expr =

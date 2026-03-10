@@ -7,3 +7,19 @@
 # Nix
 result*
 .direnv/
+
+# LaTeX build artifacts
+whitepaper/*.aux
+whitepaper/*.log
+whitepaper/*.out
+whitepaper/*.toc
+whitepaper/*.bbl
+whitepaper/*.blg
+whitepaper/*.bcf
+whitepaper/*.run.xml
+whitepaper/*.fdb_latexmk
+whitepaper/*.fls
+whitepaper/*.idx
+whitepaper/*.ilg
+whitepaper/*.ind
+whitepaper/*.synctex.gz

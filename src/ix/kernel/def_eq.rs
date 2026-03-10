@@ -5,7 +5,9 @@
 
 use num_bigint::BigUint;
 
+use crate::ix::address::Address;
 use crate::ix::env::{Literal, Name, ReducibilityHints};
+use crate::lean::nat::Nat;
 
 use super::error::TcError;
 use super::helpers::*;
@@ -363,20 +365,75 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         self.is_def_eq_spine(sp1, sp2)
       }
 
-      // Nat literal vs ctor expansion
-      (ValInner::Lit(Literal::NatVal(_)), ValInner::Ctor { .. })
-      | (ValInner::Ctor { .. }, ValInner::Lit(Literal::NatVal(_))) => {
-        let ctor_val = if matches!(t.inner(), ValInner::Lit(_)) {
-          self.nat_lit_to_ctor_thunked(t)?
+      // Nat literal ↔ constructor: direct O(1) comparison
+      (
+        ValInner::Lit(Literal::NatVal(n)),
+        ValInner::Ctor { addr, num_params, spine: ctor_spine, .. },
+      ) => {
+        if n.0 == BigUint::ZERO {
+          Ok(self.prims.nat_zero.as_ref() == Some(addr) && ctor_spine.len() == *num_params)
         } else {
-          self.nat_lit_to_ctor_thunked(s)?
-        };
-        let other = if matches!(t.inner(), ValInner::Lit(_)) {
-          s
+          if self.prims.nat_succ.as_ref() != Some(addr) { return Ok(false); }
+          if ctor_spine.len() != num_params + 1 { return Ok(false); }
+          let pred_val = self.force_thunk(&ctor_spine[*num_params])?;
+          let pred_lit = Val::mk_lit(Literal::NatVal(Nat(&n.0 - 1u64)));
+          self.is_def_eq(&pred_lit, &pred_val)
+        }
+      }
+      (
+        ValInner::Ctor { addr, num_params, spine: ctor_spine, .. },
+        ValInner::Lit(Literal::NatVal(n)),
+      ) => {
+        if n.0 == BigUint::ZERO {
+          Ok(self.prims.nat_zero.as_ref() == Some(addr) && ctor_spine.len() == *num_params)
         } else {
-          t
-        };
-        self.is_def_eq(&ctor_val, other)
+          if self.prims.nat_succ.as_ref() != Some(addr) { return Ok(false); }
+          if ctor_spine.len() != num_params + 1 { return Ok(false); }
+          let pred_val = self.force_thunk(&ctor_spine[*num_params])?;
+          let pred_lit = Val::mk_lit(Literal::NatVal(Nat(&n.0 - 1u64)));
+          self.is_def_eq(&pred_val, &pred_lit)
+        }
+      }
+      // Nat literal ↔ neutral succ: handle Lit(n+1) vs neutral(Nat.succ, [thunk])
+      (
+        ValInner::Lit(Literal::NatVal(n)),
+        ValInner::Neutral { head: Head::Const { addr, .. }, spine: sp },
+      ) => {
+        if n.0 == BigUint::ZERO {
+          Ok(self.prims.nat_zero.as_ref() == Some(addr) && sp.is_empty())
+        } else if self.prims.nat_succ.as_ref() == Some(addr) && sp.len() == 1 {
+          let pred_val = self.force_thunk(&sp[0])?;
+          let pred_lit = Val::mk_lit(Literal::NatVal(Nat(&n.0 - 1u64)));
+          self.is_def_eq(&pred_lit, &pred_val)
+        } else {
+          // Fallback: convert literal to ctor for other neutral heads
+          let t2 = self.nat_lit_to_ctor_thunked(t)?;
+          self.is_def_eq_core(&t2, s)
+        }
+      }
+      (
+        ValInner::Neutral { head: Head::Const { addr, .. }, spine: sp },
+        ValInner::Lit(Literal::NatVal(n)),
+      ) => {
+        if n.0 == BigUint::ZERO {
+          Ok(self.prims.nat_zero.as_ref() == Some(addr) && sp.is_empty())
+        } else if self.prims.nat_succ.as_ref() == Some(addr) && sp.len() == 1 {
+          let pred_val = self.force_thunk(&sp[0])?;
+          let pred_lit = Val::mk_lit(Literal::NatVal(Nat(&n.0 - 1u64)));
+          self.is_def_eq(&pred_val, &pred_lit)
+        } else {
+          let s2 = self.nat_lit_to_ctor_thunked(s)?;
+          self.is_def_eq_core(t, &s2)
+        }
+      }
+      // Nat literal ↔ other: fallback to ctor conversion
+      (ValInner::Lit(Literal::NatVal(_)), _) => {
+        let t2 = self.nat_lit_to_ctor_thunked(t)?;
+        self.is_def_eq_core(&t2, s)
+      }
+      (_, ValInner::Lit(Literal::NatVal(_))) => {
+        let s2 = self.nat_lit_to_ctor_thunked(s)?;
+        self.is_def_eq_core(t, &s2)
       }
 
       // String literal expansion (compare after expanding to ctor form)
@@ -418,6 +475,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       return Ok(false);
     }
     for (t1, t2) in sp1.iter().zip(sp2.iter()) {
+      // Thunk pointer short-circuit: identical thunks are trivially equal
+      if std::rc::Rc::ptr_eq(t1, t2) {
+        continue;
+      }
       let v1 = self.force_thunk(t1)?;
       let v2 = self.force_thunk(t2)?;
       if !self.is_def_eq(&v1, &v2)? {
@@ -440,20 +501,45 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       let t_hints = get_delta_info(&t, self.env);
       let s_hints = get_delta_info(&s, self.env);
 
+      // isDefEqOffset: short-circuit Nat.succ chain comparison
+      if let Some(result) = self.is_def_eq_offset(&t, &s)? {
+        return Ok((t.clone(), s.clone(), Some(result)));
+      }
+
+      // Nat prim reduction (before delta)
+      if let Some(t2) = self.try_reduce_nat_val(&t)? {
+        let result = self.is_def_eq(&t2, &s)?;
+        return Ok((t2, s, Some(result)));
+      }
+      if let Some(s2) = self.try_reduce_nat_val(&s)? {
+        let result = self.is_def_eq(&t, &s2)?;
+        return Ok((t, s2, Some(result)));
+      }
+
+      // Native reduction (reduceBool/reduceNat markers)
+      if let Some(t2) = self.reduce_native_val(&t)? {
+        let result = self.is_def_eq(&t2, &s)?;
+        return Ok((t2, s, Some(result)));
+      }
+      if let Some(s2) = self.reduce_native_val(&s)? {
+        let result = self.is_def_eq(&t, &s2)?;
+        return Ok((t, s2, Some(result)));
+      }
+
       match (t_hints, s_hints) {
         (None, None) => return Ok((t, s, None)),
 
         (Some(_), None) => {
-          if let Some(t2) = self.delta_step_val(&t)? {
-            t = t2;
+          if let Some(r) = self.delta_step_val(&t)? {
+            t = self.whnf_core_val(&r, false, true)?;
           } else {
             return Ok((t, s, None));
           }
         }
 
         (None, Some(_)) => {
-          if let Some(s2) = self.delta_step_val(&s)? {
-            s = s2;
+          if let Some(r) = self.delta_step_val(&s)? {
+            s = self.whnf_core_val(&r, false, true)?;
           } else {
             return Ok((t, s, None));
           }
@@ -463,51 +549,64 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let t_height = hint_height(&th);
           let s_height = hint_height(&sh);
 
-          // Same-head optimization
-          if t.same_head_const(&s) {
-            match (&th, &sh) {
-              (
-                ReducibilityHints::Regular(_),
-                ReducibilityHints::Regular(_),
-              ) => {
-                // Try spine comparison first
-                if let (Some(sp1), Some(sp2)) =
-                  (t.spine(), s.spine())
+          // Same-head optimization with failure cache guard
+          if t.same_head_const(&s) && matches!(th, ReducibilityHints::Regular(_)) {
+            if let (Some(l1), Some(l2)) =
+              (t.head_levels(), s.head_levels())
+            {
+              if l1.len() == l2.len()
+                && l1.iter().zip(l2.iter()).all(|(a, b)| equal_level(a, b))
+              {
+                // Check failure cache to avoid retrying
+                let t_ptr = t.ptr_id();
+                let s_ptr = s.ptr_id();
+                let ptr_key = if t_ptr <= s_ptr {
+                  (t_ptr, s_ptr)
+                } else {
+                  (s_ptr, t_ptr)
+                };
+                let skip = if let Some((ct, cs)) =
+                  self.ptr_failure_cache.get(&ptr_key)
                 {
-                  if sp1.len() == sp2.len() {
-                    let spine_eq = self.is_def_eq_spine(sp1, sp2)?;
-                    if spine_eq {
-                      // Also check universe levels
-                      if let (Some(l1), Some(l2)) =
-                        (t.head_levels(), s.head_levels())
-                      {
-                        if l1.len() == l2.len()
-                          && l1
-                            .iter()
-                            .zip(l2.iter())
-                            .all(|(a, b)| equal_level(a, b))
-                        {
-                          return Ok((t, s, Some(true)));
-                        }
+                  (ct.ptr_eq(&t) && cs.ptr_eq(&s))
+                    || (ct.ptr_eq(&s) && cs.ptr_eq(&t))
+                } else {
+                  false
+                };
+
+                if !skip {
+                  if let (Some(sp1), Some(sp2)) = (t.spine(), s.spine()) {
+                    if sp1.len() == sp2.len() {
+                      if self.is_def_eq_spine(sp1, sp2)? {
+                        return Ok((t, s, Some(true)));
+                      } else {
+                        // Record failure
+                        self.ptr_failure_cache.insert(
+                          ptr_key,
+                          (t.clone(), s.clone()),
+                        );
                       }
                     }
                   }
                 }
               }
-              _ => {}
             }
           }
 
-          // Unfold the higher-height one
+          // Unfold the higher-height one, apply whnf_core after delta
           if t_height > s_height {
-            if let Some(t2) = self.delta_step_val(&t)? {
-              t = t2;
+            if let Some(r) = self.delta_step_val(&t)? {
+              t = self.whnf_core_val(&r, false, true)?;
+            } else if let Some(r) = self.delta_step_val(&s)? {
+              s = self.whnf_core_val(&r, false, true)?;
             } else {
               return Ok((t, s, None));
             }
           } else if s_height > t_height {
-            if let Some(s2) = self.delta_step_val(&s)? {
-              s = s2;
+            if let Some(r) = self.delta_step_val(&s)? {
+              s = self.whnf_core_val(&r, false, true)?;
+            } else if let Some(r) = self.delta_step_val(&t)? {
+              t = self.whnf_core_val(&r, false, true)?;
             } else {
               return Ok((t, s, None));
             }
@@ -516,28 +615,20 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             let t2 = self.delta_step_val(&t)?;
             let s2 = self.delta_step_val(&s)?;
             match (t2, s2) {
-              (Some(t2), Some(s2)) => {
-                t = t2;
-                s = s2;
+              (Some(rt), Some(rs)) => {
+                t = self.whnf_core_val(&rt, false, true)?;
+                s = self.whnf_core_val(&rs, false, true)?;
               }
-              (Some(t2), None) => {
-                t = t2;
+              (Some(rt), None) => {
+                t = self.whnf_core_val(&rt, false, true)?;
               }
-              (None, Some(s2)) => {
-                s = s2;
+              (None, Some(rs)) => {
+                s = self.whnf_core_val(&rs, false, true)?;
               }
               (None, None) => return Ok((t, s, None)),
             }
           }
         }
-      }
-
-      // Try nat reduction after each delta step
-      if let Some(t2) = self.try_reduce_nat_val(&t)? {
-        t = t2;
-      }
-      if let Some(s2) = self.try_reduce_nat_val(&s)? {
-        s = s2;
       }
 
       // Quick check
@@ -677,7 +768,30 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
   }
 
-  /// Convert a string literal to its constructor form:
+  /// Build a Val::mk_ctor for a constructor, looking up metadata from env.
+  fn mk_ctor_val(
+    &self,
+    addr: &Address,
+    levels: Vec<super::types::KLevel<M>>,
+    spine: Vec<Thunk<M>>,
+  ) -> Option<Val<M>> {
+    if let Some(KConstantInfo::Constructor(cv)) = self.env.get(addr) {
+      Some(Val::mk_ctor(
+        addr.clone(),
+        levels,
+        M::Field::<Name>::default(),
+        cv.cidx,
+        cv.num_params,
+        cv.num_fields,
+        cv.induct.clone(),
+        spine,
+      ))
+    } else {
+      None
+    }
+  }
+
+  /// Convert a string literal to its constructor form using proper Val::mk_ctor:
   /// `String.mk (List.cons Char (Char.mk c1) (List.cons ... (List.nil Char)))`.
   fn str_lit_to_ctor_val(&mut self, v: &Val<M>) -> TcResult<Val<M>, M> {
     match v.inner() {
@@ -723,7 +837,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             msg: "Char type not found".into(),
           })?
           .clone();
-
         let zero = super::types::KLevel::zero();
         let char_type_val = Val::mk_const(
           char_type_addr,
@@ -731,56 +844,60 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           M::Field::<Name>::default(),
         );
 
-        // Build List Char from right to left, starting with List.nil.{0} Char
-        let nil = Val::mk_const(
-          list_nil,
+        // Helper: build a ctor if env has metadata, else use neutral + apply
+        let mk_ctor_or_apply = |tc: &mut Self,
+                                 addr: &Address,
+                                 levels: Vec<super::types::KLevel<M>>,
+                                 args: Vec<Val<M>>|
+         -> TcResult<Val<M>, M> {
+          if let Some(v) = tc.mk_ctor_val(addr, levels.clone(), args.iter().map(|a| mk_thunk_val(a.clone())).collect()) {
+            Ok(v)
+          } else {
+            let mut v = Val::mk_const(addr.clone(), levels, M::Field::<Name>::default());
+            for arg in args {
+              v = tc.apply_val_thunk(v, mk_thunk_val(arg))?;
+            }
+            Ok(v)
+          }
+        };
+
+        // Build List.nil.{0} Char
+        let mut list = mk_ctor_or_apply(
+          self,
+          &list_nil,
           vec![zero.clone()],
-          M::Field::<Name>::default(),
-        );
-        let mut list = self.apply_val_thunk(
-          nil,
-          mk_thunk_val(char_type_val.clone()),
+          vec![char_type_val.clone()],
         )?;
 
         for ch in s.chars().rev() {
           // Char.mk <code>
           let char_lit =
             Val::mk_lit(Literal::NatVal(Nat::from(ch as u64)));
-          let char_val = Val::mk_const(
-            char_mk.clone(),
+          let char_applied = mk_ctor_or_apply(
+            self,
+            &char_mk,
             vec![],
-            M::Field::<Name>::default(),
-          );
-          let char_applied = self.apply_val_thunk(
-            char_val,
-            mk_thunk_val(char_lit),
+            vec![char_lit],
           )?;
 
           // List.cons.{0} Char <char> <rest>
-          let cons = Val::mk_const(
-            list_cons.clone(),
+          list = mk_ctor_or_apply(
+            self,
+            &list_cons,
             vec![zero.clone()],
-            M::Field::<Name>::default(),
-          );
-          let cons1 = self.apply_val_thunk(
-            cons,
-            mk_thunk_val(char_type_val.clone()),
+            vec![char_type_val.clone(), char_applied, list],
           )?;
-          let cons2 = self.apply_val_thunk(
-            cons1,
-            mk_thunk_val(char_applied),
-          )?;
-          list =
-            self.apply_val_thunk(cons2, mk_thunk_val(list))?;
         }
 
         // String.mk <list>
-        let mk = Val::mk_const(
-          string_mk,
+        let result = mk_ctor_or_apply(
+          self,
+          &string_mk,
           vec![],
-          M::Field::<Name>::default(),
-        );
-        self.apply_val_thunk(mk, mk_thunk_val(list))
+          vec![list],
+        )?;
+
+        Ok(result)
       }
       _ => Ok(v.clone()),
     }
@@ -849,6 +966,99 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         Ok(true)
       }
       _ => Ok(false),
+    }
+  }
+
+  /// Short-circuit Nat.succ chain / zero comparison.
+  fn is_def_eq_offset(
+    &mut self,
+    t: &Val<M>,
+    s: &Val<M>,
+  ) -> TcResult<Option<bool>, M> {
+    let is_zero = |v: &Val<M>, prims: &super::types::Primitives| -> bool {
+      match v.inner() {
+        ValInner::Lit(Literal::NatVal(n)) => n.0 == BigUint::ZERO,
+        ValInner::Neutral {
+          head: Head::Const { addr, .. },
+          spine,
+        } => prims.nat_zero.as_ref() == Some(addr) && spine.is_empty(),
+        ValInner::Ctor { addr, spine, .. } => {
+          prims.nat_zero.as_ref() == Some(addr) && spine.is_empty()
+        }
+        _ => false,
+      }
+    };
+
+    if is_zero(t, self.prims) && is_zero(s, self.prims) {
+      return Ok(Some(true));
+    }
+
+    let succ_of = |v: &Val<M>, tc: &mut Self| -> TcResult<Option<Val<M>>, M> {
+      match v.inner() {
+        ValInner::Lit(Literal::NatVal(n)) if n.0 > BigUint::ZERO => {
+          Ok(Some(Val::mk_lit(Literal::NatVal(
+            crate::lean::nat::Nat(&n.0 - 1u64),
+          ))))
+        }
+        ValInner::Neutral {
+          head: Head::Const { addr, .. },
+          spine,
+        } if tc.prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 => {
+          Ok(Some(tc.force_thunk(&spine[0])?))
+        }
+        ValInner::Ctor { addr, spine, .. }
+          if tc.prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 =>
+        {
+          Ok(Some(tc.force_thunk(&spine[0])?))
+        }
+        _ => Ok(None),
+      }
+    };
+
+    // Thunk pointer short-circuit: if both are succ sharing the same thunk
+    let t_succ_thunk = match t.inner() {
+      ValInner::Neutral {
+        head: Head::Const { addr, .. },
+        spine,
+      } if self.prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 => {
+        Some(&spine[0])
+      }
+      ValInner::Ctor { addr, spine, .. }
+        if self.prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 =>
+      {
+        Some(&spine[0])
+      }
+      _ => None,
+    };
+    let s_succ_thunk = match s.inner() {
+      ValInner::Neutral {
+        head: Head::Const { addr, .. },
+        spine,
+      } if self.prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 => {
+        Some(&spine[0])
+      }
+      ValInner::Ctor { addr, spine, .. }
+        if self.prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 =>
+      {
+        Some(&spine[0])
+      }
+      _ => None,
+    };
+    if let (Some(tt), Some(st)) = (t_succ_thunk, s_succ_thunk) {
+      if std::rc::Rc::ptr_eq(tt, st) {
+        return Ok(Some(true));
+      }
+      let tv = self.force_thunk(tt)?;
+      let sv = self.force_thunk(st)?;
+      return Ok(Some(self.is_def_eq(&tv, &sv)?));
+    }
+
+    // General case: peel matching succs
+    let t2 = succ_of(t, self)?;
+    let s2 = succ_of(s, self)?;
+    match (t2, s2) {
+      (Some(t2), Some(s2)) => Ok(Some(self.is_def_eq(&t2, &s2)?)),
+      _ => Ok(None),
     }
   }
 

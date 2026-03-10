@@ -89,6 +89,8 @@ pub struct TypeChecker<'env, M: MetaMode> {
   pub infer_cache: FxHashMap<usize, (usize, TypedExpr<M>, Val<M>)>,
   /// WHNF cache: input ptr -> (input_val, output_val).
   pub whnf_cache: FxHashMap<usize, (Val<M>, Val<M>)>,
+  /// Structural WHNF cache (whnf_core_val results).
+  pub whnf_core_cache: FxHashMap<usize, Val<M>>,
   /// Heartbeat counter (monotonically increasing work counter).
   pub heartbeats: usize,
   /// Maximum heartbeats before error.
@@ -120,6 +122,7 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
       equiv_manager: EquivManager::new(),
       infer_cache: FxHashMap::default(),
       whnf_cache: FxHashMap::default(),
+      whnf_core_cache: FxHashMap::default(),
       heartbeats: 0,
       max_heartbeats: DEFAULT_MAX_HEARTBEATS,
       stats: Stats::default(),
@@ -332,6 +335,7 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
     self.equiv_manager.clear();
     self.infer_cache.clear();
     self.whnf_cache.clear();
+    self.whnf_core_cache.clear();
     self.heartbeats = 0;
   }
 }

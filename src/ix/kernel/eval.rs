@@ -97,9 +97,21 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         let mut val = self.eval(head_expr, env)?;
 
         for arg in args {
-          let thunk = mk_thunk(arg.clone(), env.clone());
-          self.stats.thunk_count += 1;
-          val = self.apply_val_thunk(val, thunk)?;
+          // Eager beta: if head is lambda, skip thunk allocation
+          match val.inner() {
+            ValInner::Lam { body, env: lam_env, .. } => {
+              let arg_val = self.eval(&arg, env)?;
+              let body = body.clone();
+              let mut new_env = lam_env.clone();
+              new_env.push(arg_val);
+              val = self.eval(&body, &new_env)?;
+            }
+            _ => {
+              let thunk = mk_thunk(arg.clone(), env.clone());
+              self.stats.thunk_count += 1;
+              val = self.apply_val_thunk(val, thunk)?;
+            }
+          }
         }
         Ok(val)
       }
@@ -230,10 +242,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         type_name,
         spine,
       } => {
-        // Try to force and reduce the projection
+        // Force struct and WHNF to reveal constructor (including delta)
         let struct_val = self.force_thunk(strct)?;
+        let struct_whnf = self.whnf_val(&struct_val, 0)?;
         if let Some(field_thunk) =
-          reduce_val_proj_forced(&struct_val, *idx, type_addr)
+          reduce_val_proj_forced(&struct_whnf, *idx, type_addr)
         {
           // Projection reduced! Apply accumulated spine + new arg
           let mut result = self.force_thunk(&field_thunk)?;

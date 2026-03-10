@@ -28,12 +28,37 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   pub fn whnf_core_val(
     &mut self,
     v: &Val<M>,
-    _cheap_rec: bool,
+    cheap_rec: bool,
     cheap_proj: bool,
   ) -> TcResult<Val<M>, M> {
     self.heartbeat()?;
+
+    // Check cache (only when not cheap_rec and not cheap_proj)
+    if !cheap_rec && !cheap_proj {
+      let key = v.ptr_id();
+      if let Some(cached) = self.whnf_core_cache.get(&key).cloned() {
+        return Ok(cached);
+      }
+    }
+
+    let result = self.whnf_core_val_inner(v, cheap_rec, cheap_proj)?;
+
+    // Cache result
+    if !cheap_rec && !cheap_proj && !result.ptr_eq(v) {
+      self.whnf_core_cache.insert(v.ptr_id(), result.clone());
+    }
+
+    Ok(result)
+  }
+
+  fn whnf_core_val_inner(
+    &mut self,
+    v: &Val<M>,
+    cheap_rec: bool,
+    cheap_proj: bool,
+  ) -> TcResult<Val<M>, M> {
     match v.inner() {
-      // Projection reduction
+      // Projection reduction with chain flattening
       ValInner::Proj {
         type_addr,
         idx,
@@ -41,25 +66,101 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         type_name,
         spine,
       } => {
-        let struct_val = self.force_thunk(strct)?;
-        let struct_whnf = if cheap_proj {
-          struct_val.clone()
-        } else {
-          self.whnf_val(&struct_val, 0)?
-        };
-        if let Some(field_thunk) =
-          reduce_val_proj_forced(&struct_whnf, *idx, type_addr)
-        {
-          let mut result = self.force_thunk(&field_thunk)?;
-          for s in spine {
-            result = self.apply_val_thunk(result, s.clone())?;
+        // Collect nested projection chain (outside-in)
+        let mut proj_stack: Vec<(
+          Address,
+          usize,
+          M::Field<Name>,
+          Vec<Thunk<M>>,
+        )> = vec![(
+          type_addr.clone(),
+          *idx,
+          type_name.clone(),
+          spine.clone(),
+        )];
+        let mut inner_thunk = strct.clone();
+        loop {
+          let inner_v = self.force_thunk(&inner_thunk)?;
+          match inner_v.inner() {
+            ValInner::Proj {
+              type_addr: ta,
+              idx: i,
+              strct: st,
+              type_name: tn,
+              spine: sp,
+            } => {
+              proj_stack.push((
+                ta.clone(),
+                *i,
+                tn.clone(),
+                sp.clone(),
+              ));
+              inner_thunk = st.clone();
+            }
+            _ => break,
           }
-          Ok(result)
-        } else {
-          // Projection didn't reduce — return original to preserve
-          // pointer identity (prevents infinite recursion in whnf_val)
-          Ok(v.clone())
         }
+
+        // Reduce the innermost struct once
+        let inner_v = self.force_thunk(&inner_thunk)?;
+        let inner_v = if cheap_proj {
+          self.whnf_core_val(&inner_v, cheap_rec, cheap_proj)?
+        } else {
+          self.whnf_val(&inner_v, 0)?
+        };
+
+        // Resolve projections from inside out (last pushed = innermost)
+        let mut current = inner_v;
+        let mut any_resolved = false;
+        let mut i = proj_stack.len();
+        while i > 0 {
+          i -= 1;
+          let (ta, ix, _tn, sp) = &proj_stack[i];
+          if let Some(field_thunk) =
+            reduce_val_proj_forced(&current, *ix, ta)
+          {
+            any_resolved = true;
+            current = self.force_thunk(&field_thunk)?;
+            current =
+              self.whnf_core_val(&current, cheap_rec, cheap_proj)?;
+            // Apply accumulated spine args after reducing each projection
+            for tid in sp {
+              current =
+                self.apply_val_thunk(current, tid.clone())?;
+              current =
+                self.whnf_core_val(&current, cheap_rec, cheap_proj)?;
+            }
+          } else {
+            if !any_resolved {
+              // No projection was resolved at all — preserve pointer identity
+              return Ok(v.clone());
+            }
+            // Some inner projections resolved but this one didn't.
+            // Reconstruct remaining chain.
+            let mut st_thunk = mk_thunk_val(current);
+            current = Val::mk_proj(
+              ta.clone(),
+              *ix,
+              st_thunk.clone(),
+              proj_stack[i].2.clone(),
+              sp.clone(),
+            );
+            while i > 0 {
+              i -= 1;
+              let (ta2, ix2, tn2, sp2) = &proj_stack[i];
+              st_thunk = mk_thunk_val(current);
+              current = Val::mk_proj(
+                ta2.clone(),
+                *ix2,
+                st_thunk,
+                tn2.clone(),
+                sp2.clone(),
+              );
+            }
+            return Ok(current);
+          }
+        }
+        Ok(current)
       }
 
       // Recursor (iota) reduction
@@ -67,6 +168,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         head: Head::Const { addr, levels, .. },
         spine,
       } => {
+        // Skip iota/recursor reduction when cheap_rec is set
+        if cheap_rec {
+          return Ok(v.clone());
+        }
+
         // Ensure this constant is in typed_consts (lazily populate)
         let _ = self.ensure_typed_const(addr);
 
@@ -168,6 +274,34 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
   }
 
+  /// Helper: apply params+motives+minors from rec spine, ctor fields, and extra args after major.
+  fn apply_pmm_and_extra(
+    &mut self,
+    mut result: Val<M>,
+    levels: &[KLevel<M>],
+    spine: &[Thunk<M>],
+    num_params: usize,
+    num_motives: usize,
+    num_minors: usize,
+    major_idx: usize,
+    ctor_field_thunks: &[Thunk<M>],
+  ) -> TcResult<Val<M>, M> {
+    let _ = levels; // already used for RHS instantiation by caller
+    let pmm_end = num_params + num_motives + num_minors;
+    for i in 0..pmm_end {
+      if i < spine.len() {
+        result = self.apply_val_thunk(result, spine[i].clone())?;
+      }
+    }
+    for thunk in ctor_field_thunks {
+      result = self.apply_val_thunk(result, thunk.clone())?;
+    }
+    for thunk in &spine[major_idx + 1..] {
+      result = self.apply_val_thunk(result, thunk.clone())?;
+    }
+    Ok(result)
+  }
+
   /// Try standard iota reduction (recursor on a constructor).
   fn try_iota_reduction(
     &mut self,
@@ -190,20 +324,40 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let major_val = self.force_thunk(major_thunk)?;
     let major_whnf = self.whnf_val(&major_val, 0)?;
 
-    // Convert nat literal 0 to Nat.zero ctor form (only for the real Nat type)
-    let major_whnf = match major_whnf.inner() {
+    // Handle nat literals directly (O(1) instead of O(n) via nat_lit_to_ctor_thunked)
+    match major_whnf.inner() {
       ValInner::Lit(Literal::NatVal(n))
-        if n.0 == BigUint::ZERO
-          && self.prims.nat.as_ref() == Some(induct_addr) =>
+        if self.prims.nat.as_ref() == Some(induct_addr) =>
       {
-        if let Some(ctor_val) = nat_lit_to_ctor_val(n, self.prims) {
-          ctor_val
+        if n.0 == BigUint::ZERO {
+          // Lit(0) → fire rule[0] (zero) with no ctor fields
+          if let Some((_, rule_rhs)) = rules.first() {
+            let rhs_inst = self.instantiate_levels(&rule_rhs.body, levels);
+            let result = self.eval_in_ctx(&rhs_inst)?;
+            return Ok(Some(self.apply_pmm_and_extra(
+              result, levels, spine, num_params, num_motives, num_minors,
+              major_idx, &[],
+            )?));
+          }
+          return Ok(None);
         } else {
-          major_whnf
+          // Lit(n+1) → fire rule[1] (succ) with one field = Lit(n)
+          if rules.len() > 1 {
+            let (_, rule_rhs) = &rules[1];
+            let rhs_inst = self.instantiate_levels(&rule_rhs.body, levels);
+            let result = self.eval_in_ctx(&rhs_inst)?;
+            let pred_val = Val::mk_lit(Literal::NatVal(Nat(&n.0 - 1u64)));
+            let pred_thunk = mk_thunk_val(pred_val);
+            return Ok(Some(self.apply_pmm_and_extra(
+              result, levels, spine, num_params, num_motives, num_minors,
+              major_idx, &[pred_thunk],
+            )?));
+          }
+          return Ok(None);
         }
       }
-      _ => major_whnf,
-    };
+      _ => {}
+    }
 
     match major_whnf.inner() {
       ValInner::Ctor {
@@ -218,31 +372,18 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         let (nfields, rule_rhs) = &rules[*cidx];
 
         // Evaluate the RHS with substituted levels
-        let rhs_expr = &rule_rhs.body;
-        let rhs_instantiated = self.instantiate_levels(rhs_expr, levels);
-        let mut rhs_val = self.eval_in_ctx(&rhs_instantiated)?;
+        let rhs_inst = self.instantiate_levels(&rule_rhs.body, levels);
+        let result = self.eval_in_ctx(&rhs_inst)?;
 
-        // Apply: params, motives, minors from the spine
-        let params_motives_minors =
-          &spine[..num_params + num_motives + num_minors];
-        for thunk in params_motives_minors {
-          rhs_val = self.apply_val_thunk(rhs_val, thunk.clone())?;
-        }
-
-        // Apply: constructor fields from the ctor spine
+        // Collect constructor fields (skip constructor params)
         let field_start = ctor_spine.len() - nfields;
-        for i in 0..*nfields {
-          let field_thunk = &ctor_spine[field_start + i];
-          rhs_val =
-            self.apply_val_thunk(rhs_val, field_thunk.clone())?;
-        }
+        let ctor_fields: Vec<_> =
+          ctor_spine[field_start..].to_vec();
 
-        // Apply: remaining spine arguments after major
-        for thunk in &spine[major_idx + 1..] {
-          rhs_val = self.apply_val_thunk(rhs_val, thunk.clone())?;
-        }
-
-        Ok(Some(rhs_val))
+        Ok(Some(self.apply_pmm_and_extra(
+          result, levels, spine, num_params, num_motives, num_minors,
+          major_idx, &ctor_fields,
+        )?))
       }
       _ => Ok(None),
     }
@@ -257,7 +398,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     num_motives: usize,
     num_minors: usize,
     num_indices: usize,
-    _induct_addr: &Address,
+    induct_addr: &Address,
     _rules: &[(usize, TypedExpr<M>)],
   ) -> TcResult<Option<Val<M>>, M> {
     // K-reduction: for Prop inductives with single zero-field ctor,
@@ -269,6 +410,19 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let major_idx = num_params + num_motives + num_minors + num_indices;
     if spine.len() <= major_idx {
       return Ok(None);
+    }
+
+    // Force and WHNF the major premise
+    let major = self.force_thunk(&spine[major_idx])?;
+    let major_whnf = self.whnf_val(&major, 0)?;
+
+    // If major is not already a constructor, validate its type matches
+    // the K-inductive
+    let is_ctor = matches!(major_whnf.inner(), ValInner::Ctor { .. });
+    if !is_ctor {
+      if self.to_ctor_when_k_val(&major_whnf, induct_addr)?.is_none() {
+        return Ok(None);
+      }
     }
 
     // The minor premise is at index num_params + num_motives
@@ -286,6 +440,71 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     Ok(Some(result))
+  }
+
+  /// For K-like inductives, verify the major's type matches the inductive.
+  /// Returns Some(ctor) if valid, None if type doesn't match.
+  fn to_ctor_when_k_val(
+    &mut self,
+    major: &Val<M>,
+    ind_addr: &Address,
+  ) -> TcResult<Option<Val<M>>, M> {
+    let ci = match self.env.get(ind_addr) {
+      Some(KConstantInfo::Inductive(iv)) => iv.clone(),
+      _ => return Ok(None),
+    };
+    if ci.ctors.is_empty() {
+      return Ok(None);
+    }
+    let ctor_addr = &ci.ctors[0];
+
+    // Infer major's type; bail if inference fails
+    let major_type = match self.infer_type_of_val(major) {
+      Ok(ty) => ty,
+      Err(_) => return Ok(None),
+    };
+    let major_type_whnf = self.whnf_val(&major_type, 0)?;
+
+    // Check if major's type is headed by the inductive
+    match major_type_whnf.inner() {
+      ValInner::Neutral {
+        head: Head::Const { addr: head_addr, levels: univs, .. },
+        spine: type_spine,
+      } if head_addr == ind_addr => {
+        // Build the nullary ctor applied to params from the type
+        let cv = match self.env.get(ctor_addr) {
+          Some(KConstantInfo::Constructor(cv)) => cv.clone(),
+          _ => return Ok(None),
+        };
+        let mut ctor_args = Vec::new();
+        for i in 0..ci.num_params {
+          if i < type_spine.len() {
+            ctor_args.push(type_spine[i].clone());
+          }
+        }
+        let ctor_val = Val::mk_ctor(
+          ctor_addr.clone(),
+          univs.clone(),
+          M::Field::<Name>::default(),
+          cv.cidx,
+          cv.num_params,
+          cv.num_fields,
+          cv.induct.clone(),
+          ctor_args,
+        );
+
+        // Verify ctor type matches major type
+        let ctor_type = match self.infer_type_of_val(&ctor_val) {
+          Ok(ty) => ty,
+          Err(_) => return Ok(None),
+        };
+        if !self.is_def_eq(&major_type, &ctor_type)? {
+          return Ok(None);
+        }
+        Ok(Some(ctor_val))
+      }
+      _ => Ok(None),
+    }
   }
 
   /// Try struct eta for iota: expand major premise via projections.
@@ -499,6 +718,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let a = self.whnf_val(&a, 0)?;
           let b = self.force_thunk(&spine[1])?;
           let b = self.whnf_val(&b, 0)?;
+          // Both args are concrete nat values → compute directly
           if let (Some(na), Some(nb)) = (
             extract_nat_val(&a, self.prims),
             extract_nat_val(&b, self.prims),
@@ -507,6 +727,155 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               compute_nat_prim(addr, &na, &nb, self.prims)
             {
               return Ok(Some(result));
+            }
+          }
+          // Partial reduction: base cases (second arg is 0)
+          if is_nat_zero_val(&b, self.prims) {
+            if self.prims.nat_add.as_ref() == Some(addr) {
+              return Ok(Some(a)); // n + 0 = n
+            } else if self.prims.nat_sub.as_ref() == Some(addr) {
+              return Ok(Some(a)); // n - 0 = n
+            } else if self.prims.nat_mul.as_ref() == Some(addr) {
+              return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // n * 0 = 0
+            } else if self.prims.nat_pow.as_ref() == Some(addr) {
+              return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(1u64))))); // n ^ 0 = 1
+            } else if self.prims.nat_ble.as_ref() == Some(addr) {
+              // n ≤ 0 = (n == 0)
+              if is_nat_zero_val(&a, self.prims) {
+                if let Some(t) = &self.prims.bool_true {
+                  if let Some(bt) = &self.prims.bool_type {
+                    return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), M::Field::<Name>::default(), 1, 0, 0, bt.clone(), Vec::new())));
+                  }
+                }
+              }
+              // else need to know if a is succ to return false
+            }
+          }
+          // Partial reduction: base cases (first arg is 0)
+          else if is_nat_zero_val(&a, self.prims) {
+            if self.prims.nat_add.as_ref() == Some(addr) {
+              return Ok(Some(b)); // 0 + n = n
+            } else if self.prims.nat_sub.as_ref() == Some(addr) {
+              return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // 0 - n = 0
+            } else if self.prims.nat_mul.as_ref() == Some(addr) {
+              return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // 0 * n = 0
+            } else if self.prims.nat_ble.as_ref() == Some(addr) {
+              // 0 ≤ n = true
+              if let Some(t) = &self.prims.bool_true {
+                if let Some(bt) = &self.prims.bool_type {
+                  return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), M::Field::<Name>::default(), 1, 0, 0, bt.clone(), Vec::new())));
+                }
+              }
+            }
+          }
+          // Step-case reductions (second arg is succ)
+          if let Some(pred_ref) = extract_succ_pred(&b, self.prims) {
+            let pred_thunk = match pred_ref {
+              PredRef::Thunk(t) => t,
+              PredRef::Lit(n) => mk_thunk_val(Val::mk_lit(Literal::NatVal(n))),
+            };
+            let addr = addr.clone();
+            if self.prims.nat_add.as_ref() == Some(&addr) {
+              // add x (succ y) = succ (add x y)
+              let inner = mk_thunk_val(Val::mk_neutral(
+                Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                vec![spine[0].clone(), pred_thunk],
+              ));
+              let succ_addr = self.prims.nat_succ.as_ref().unwrap().clone();
+              return Ok(Some(Val::mk_neutral(
+                Head::Const { addr: succ_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                vec![inner],
+              )));
+            } else if self.prims.nat_sub.as_ref() == Some(&addr) {
+              // sub x (succ y) = pred (sub x y)
+              let inner = mk_thunk_val(Val::mk_neutral(
+                Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                vec![spine[0].clone(), pred_thunk],
+              ));
+              let pred_addr = self.prims.nat_pred.as_ref().unwrap().clone();
+              return Ok(Some(Val::mk_neutral(
+                Head::Const { addr: pred_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                vec![inner],
+              )));
+            } else if self.prims.nat_mul.as_ref() == Some(&addr) {
+              // mul x (succ y) = add (mul x y) x
+              let inner = mk_thunk_val(Val::mk_neutral(
+                Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                vec![spine[0].clone(), pred_thunk],
+              ));
+              let add_addr = self.prims.nat_add.as_ref().unwrap().clone();
+              return Ok(Some(Val::mk_neutral(
+                Head::Const { addr: add_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                vec![inner, spine[0].clone()],
+              )));
+            } else if self.prims.nat_pow.as_ref() == Some(&addr) {
+              // pow x (succ y) = mul (pow x y) x
+              let inner = mk_thunk_val(Val::mk_neutral(
+                Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                vec![spine[0].clone(), pred_thunk],
+              ));
+              let mul_addr = self.prims.nat_mul.as_ref().unwrap().clone();
+              return Ok(Some(Val::mk_neutral(
+                Head::Const { addr: mul_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                vec![inner, spine[0].clone()],
+              )));
+            } else if self.prims.nat_beq.as_ref() == Some(&addr) {
+              // beq (succ x) (succ y) = beq x y
+              if let Some(pred_ref_a) = extract_succ_pred(&a, self.prims) {
+                let pred_thunk_a = match pred_ref_a {
+                  PredRef::Thunk(t) => t,
+                  PredRef::Lit(n) => mk_thunk_val(Val::mk_lit(Literal::NatVal(n))),
+                };
+                return Ok(Some(Val::mk_neutral(
+                  Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                  vec![pred_thunk_a, pred_thunk],
+                )));
+              } else if is_nat_zero_val(&a, self.prims) {
+                // beq 0 (succ y) = false
+                if let Some(f) = &self.prims.bool_false {
+                  if let Some(bt) = &self.prims.bool_type {
+                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), M::Field::<Name>::default(), 0, 0, 0, bt.clone(), Vec::new())));
+                  }
+                }
+              }
+            } else if self.prims.nat_ble.as_ref() == Some(&addr) {
+              // ble (succ x) (succ y) = ble x y
+              if let Some(pred_ref_a) = extract_succ_pred(&a, self.prims) {
+                let pred_thunk_a = match pred_ref_a {
+                  PredRef::Thunk(t) => t,
+                  PredRef::Lit(n) => mk_thunk_val(Val::mk_lit(Literal::NatVal(n))),
+                };
+                return Ok(Some(Val::mk_neutral(
+                  Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                  vec![pred_thunk_a, pred_thunk],
+                )));
+              } else if is_nat_zero_val(&a, self.prims) {
+                // ble 0 (succ y) = true
+                if let Some(t) = &self.prims.bool_true {
+                  if let Some(bt) = &self.prims.bool_type {
+                    return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), M::Field::<Name>::default(), 1, 0, 0, bt.clone(), Vec::new())));
+                  }
+                }
+              }
+            }
+          } else {
+            // Second arg is not succ — check if first arg is succ for beq/ble edge cases
+            if let Some(_) = extract_succ_pred(&a, self.prims) {
+              if self.prims.nat_beq.as_ref() == Some(addr) && is_nat_zero_val(&b, self.prims) {
+                // beq (succ x) 0 = false
+                if let Some(f) = &self.prims.bool_false {
+                  if let Some(bt) = &self.prims.bool_type {
+                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), M::Field::<Name>::default(), 0, 0, 0, bt.clone(), Vec::new())));
+                  }
+                }
+              } else if self.prims.nat_ble.as_ref() == Some(addr) && is_nat_zero_val(&b, self.prims) {
+                // ble (succ x) 0 = false
+                if let Some(f) = &self.prims.bool_false {
+                  if let Some(bt) = &self.prims.bool_type {
+                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), M::Field::<Name>::default(), 0, 0, 0, bt.clone(), Vec::new())));
+                  }
+                }
+              }
             }
           }
         }
@@ -565,7 +934,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   }
 
   /// Full WHNF: structural reduction + delta unfolding + nat/native, with
-  /// caching.
+  /// caching. Matches the Lean kernel's whnfVal loop:
+  /// whnfCoreVal → tryReduceNatVal → deltaStepVal → reduceNativeVal.
   pub fn whnf_val(
     &mut self,
     v: &Val<M>,
@@ -579,6 +949,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     // Check cache on first entry
     if delta_steps == 0 {
+      self.heartbeat()?;
       let key = v.ptr_id();
       if let Some((_, cached)) = self.whnf_cache.get(&key) {
         self.stats.cache_hits += 1;
@@ -592,36 +963,29 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       });
     }
 
-    // Step 1: Structural WHNF
+    // Step 1: Structural WHNF (projection, iota, K, quotient)
     let v1 = self.whnf_core_val(v, false, false)?;
-    if !v1.ptr_eq(v) {
-      // Structural reduction happened, recurse
-      return self.whnf_val(&v1, delta_steps + 1);
-    }
 
-    // Step 2: Nat primitive reduction (before delta to avoid unfolding
-    // Nat.ble/Nat.beq/etc. through long definition chains)
-    if let Some(v2) = self.try_reduce_nat_val(&v1)? {
-      return self.whnf_val(&v2, delta_steps + 1);
-    }
+    // Step 2: Nat primitive reduction
+    let result = if let Some(v2) = self.try_reduce_nat_val(&v1)? {
+      self.whnf_val(&v2, delta_steps + 1)?
+    // Step 3: Delta unfolding (single step)
+    } else if let Some(v2) = self.delta_step_val(&v1)? {
+      self.whnf_val(&v2, delta_steps + 1)?
+    // Step 4: Native reduction (structural WHNF only to prevent re-entry)
+    } else if let Some(v2) = self.reduce_native_val(&v1)? {
+      self.whnf_core_val(&v2, false, false)?
+    } else {
+      v1
+    };
 
-    // Step 3: Delta unfolding
-    if let Some(v3) = self.delta_step_val(&v1)? {
-      return self.whnf_val(&v3, delta_steps + 1);
-    }
-
-    // Step 4: Native reduction
-    if let Some(v4) = self.reduce_native_val(&v1)? {
-      return self.whnf_val(&v4, delta_steps + 1);
-    }
-
-    // No reduction possible — cache and return
-    if delta_steps == 0 || !v1.ptr_eq(v) {
+    // Cache the final result (only at top-level entry)
+    if delta_steps == 0 {
       let key = v.ptr_id();
-      self.whnf_cache.insert(key, (v.clone(), v1.clone()));
+      self.whnf_cache.insert(key, (v.clone(), result.clone()));
     }
 
-    Ok(v1)
+    Ok(result)
   }
 
   /// Instantiate universe level parameters in an expression.

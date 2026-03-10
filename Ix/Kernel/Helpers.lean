@@ -52,6 +52,26 @@ def isNatConstructor (prims : KPrimitives) (v : Val m) : Bool :=
     (addr == prims.natSucc && spine.size == 1)
   | _ => false
 
+/-- Extract the predecessor thunk from a Nat.succ value or Lit(n+1), without forcing.
+    Returns the thunk ID for succ constructors, or `none` for zero/non-nat. -/
+def extractSuccPred (prims : KPrimitives) (v : Val m) : Option (Sum Nat Nat) :=
+  -- Returns Sum.inl thunkId (for ctor/neutral succ) or Sum.inr n (for Lit(n+1))
+  match v with
+  | .lit (.natVal (n+1)) => some (.inr n)
+  | .neutral (.const addr _ _) spine =>
+    if addr == prims.natSucc && spine.size == 1 then some (.inl spine[0]!) else none
+  | .ctor addr _ _ _ _ _ _ spine =>
+    if addr == prims.natSucc && spine.size == 1 then some (.inl spine[0]!) else none
+  | _ => none
+
+/-- Check if a value is Nat.zero (constructor or literal 0). -/
+def isNatZeroVal (prims : KPrimitives) (v : Val m) : Bool :=
+  match v with
+  | .lit (.natVal 0) => true
+  | .neutral (.const addr _ _) spine => addr == prims.natZero && spine.isEmpty
+  | .ctor addr _ _ _ _ _ _ spine => addr == prims.natZero && spine.isEmpty
+  | _ => false
+
 /-- Compute a nat primitive given two resolved nat values. -/
 def computeNatPrim (prims : KPrimitives) (addr : Address) (x y : Nat) : Option (Val m) :=
   if addr == prims.natAdd then some (.lit (.natVal (x + y)))
