@@ -132,8 +132,10 @@ def kernel := ⟦
       KLevel.LZero => 0,
       KLevel.LParam(_) => 0,
       KLevel.LSucc(_) => 1,
-      KLevel.LMax(&a, &b) =>
-        eq_zero(eq_zero(level_is_not_zero(a)) * eq_zero(level_is_not_zero(b))),
+      KLevel.LMax(&a, &b) => match (level_is_not_zero(a), level_is_not_zero(b)) {
+        (0, 0) => 0,
+        _ => 1,
+      },
       KLevel.LIMax(_, &b) => level_is_not_zero(b),
     }
   }
@@ -188,7 +190,10 @@ def kernel := ⟦
       KLevel.LIMax(&a1, &a2) =>
         match b {
           KLevel.LMax(&b1, &b2) =>
-            eq_zero(eq_zero(level_leq(a, b1)) * eq_zero(level_leq(a, b2))),
+            match (level_leq(a, b1), level_leq(a, b2)) {
+              (0, 0) => 0,
+              _ => 1,
+            },
           _ => level_eq(a, b),
         },
     }
@@ -431,11 +436,10 @@ def kernel := ⟦
       KConstantInfo.CIRec(_, _, nparams, nindices, nmotives, nminors, &rules, _, _) =>
         let maj_idx = u64_add(u64_add(u64_add(nparams, nmotives), nminors), nindices);
         let spine_len = val_list_length(spine);
-        let have_major = eq_zero(u64_is_zero(u64_sub(relaxed_u64_succ(spine_len), relaxed_u64_succ(maj_idx))));
-        match have_major {
+        let not_have_major = u64_is_zero(u64_sub(relaxed_u64_succ(spine_len), relaxed_u64_succ(maj_idx)));
+        match not_have_major {
+          1 => KVal.VConst(idx, store(lvls), store(spine)),
           0 =>
-            KVal.VConst(idx, store(lvls), store(spine)),
-          1 =>
             let major = val_list_lookup(spine, maj_idx);
             match major {
               KVal.VCtor(ctor_idx, _, ctor_nparams, &ctor_spine) =>
@@ -467,7 +471,6 @@ def kernel := ⟦
       1 => KValList.VLNil,
       0 =>
         match list {
-          KValList.VLNil => KValList.VLNil,
           KValList.VLCons(&v, &rest) =>
             KValList.VLCons(store(v), store(val_list_take(rest, relaxed_u64_pred(n)))),
         },
@@ -481,7 +484,6 @@ def kernel := ⟦
       1 => list,
       0 =>
         match list {
-          KValList.VLNil => KValList.VLNil,
           KValList.VLCons(_, &rest) =>
             val_list_drop(rest, relaxed_u64_pred(n)),
         },
@@ -917,10 +919,9 @@ def kernel := ⟦
     let b_unfolded = try_delta_unfold(b, top);
     let a_changed = delta_changed(a, a_unfolded);
     let b_changed = delta_changed(b, b_unfolded);
-    let any_changed = eq_zero(eq_zero(a_changed) * eq_zero(b_changed));
-    match any_changed {
-      1 => k_is_def_eq(a_unfolded, b_unfolded, depth, top),
-      0 => 0,
+    match (a_changed, b_changed) {
+      (0, 0) => 0,
+      _ => k_is_def_eq(a_unfolded, b_unfolded, depth, top),
     }
   }
 
@@ -954,8 +955,7 @@ def kernel := ⟦
     match before {
       KVal.VConst(idx_a, _, _) =>
         match after {
-          KVal.VConst(idx_b, _, _) =>
-            eq_zero(u64_eq(idx_a, idx_b)),
+          KVal.VConst(idx_b, _, _) => 1 - u64_eq(idx_a, idx_b),
           _ => 1,
         },
       _ => 0,
