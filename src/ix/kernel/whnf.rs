@@ -36,8 +36,19 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     // Check cache (only when not cheap_rec and not cheap_proj)
     if !cheap_rec && !cheap_proj {
       let key = v.ptr_id();
-      if let Some(cached) = self.whnf_core_cache.get(&key).cloned() {
-        return Ok(cached);
+      // Direct lookup
+      if let Some((orig, cached)) = self.whnf_core_cache.get(&key) {
+        if orig.ptr_eq(v) {
+          return Ok(cached.clone());
+        }
+      }
+      // Second-chance lookup via equiv root
+      if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
+        if root_ptr != key {
+          if let Some((_, cached)) = self.whnf_core_cache.get(&root_ptr) {
+            return Ok(cached.clone());
+          }
+        }
       }
     }
 
@@ -45,7 +56,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     // Cache result
     if !cheap_rec && !cheap_proj && !result.ptr_eq(v) {
-      self.whnf_core_cache.insert(v.ptr_id(), result.clone());
+      let key = v.ptr_id();
+      self.whnf_core_cache.insert(key, (v.clone(), result.clone()));
+      // Also insert under root
+      if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
+        if root_ptr != key {
+          self.whnf_core_cache.insert(root_ptr, (v.clone(), result.clone()));
+        }
+      }
     }
 
     Ok(result)
@@ -333,7 +351,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           // Lit(0) → fire rule[0] (zero) with no ctor fields
           if let Some((_, rule_rhs)) = rules.first() {
             let rhs_inst = self.instantiate_levels(&rule_rhs.body, levels);
-            let result = self.eval_in_ctx(&rhs_inst)?;
+            let result = self.eval(&rhs_inst, &empty_env())?;
             return Ok(Some(self.apply_pmm_and_extra(
               result, levels, spine, num_params, num_motives, num_minors,
               major_idx, &[],
@@ -345,7 +363,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           if rules.len() > 1 {
             let (_, rule_rhs) = &rules[1];
             let rhs_inst = self.instantiate_levels(&rule_rhs.body, levels);
-            let result = self.eval_in_ctx(&rhs_inst)?;
+            let result = self.eval(&rhs_inst, &empty_env())?;
             let pred_val = Val::mk_lit(Literal::NatVal(Nat(&n.0 - 1u64)));
             let pred_thunk = mk_thunk_val(pred_val);
             return Ok(Some(self.apply_pmm_and_extra(
@@ -371,11 +389,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         }
         let (nfields, rule_rhs) = &rules[*cidx];
 
-        // Evaluate the RHS with substituted levels
+        // Evaluate the RHS with substituted levels (empty env — RHS is closed)
         let rhs_inst = self.instantiate_levels(&rule_rhs.body, levels);
-        let result = self.eval_in_ctx(&rhs_inst)?;
+        let result = self.eval(&rhs_inst, &empty_env())?;
 
         // Collect constructor fields (skip constructor params)
+        if *nfields > ctor_spine.len() {
+          return Ok(None);
+        }
         let field_start = ctor_spine.len() - nfields;
         let ctor_fields: Vec<_> =
           ctor_spine[field_start..].to_vec();
@@ -543,7 +564,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     // Instantiate RHS with levels
     let rhs_body = inst_levels_expr(&rhs.body, levels);
-    let mut result = self.eval(&rhs_body, &Vec::new())?;
+    let mut result = self.eval(&rhs_body, &empty_env())?;
 
     // Phase 1: apply params + motives + minors
     let pmm_end = num_params + num_motives + num_minors;
@@ -638,6 +659,25 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
   }
 
+  /// Check if a value is a fully-applied nat primitive (unary with ≥1 arg, binary with ≥2 args).
+  /// Used to block delta-unfolding when tryReduceNatVal fails on symbolic args.
+  fn is_fully_applied_nat_prim(&self, v: &Val<M>) -> bool {
+    match v.inner() {
+      ValInner::Neutral {
+        head: Head::Const { addr, .. },
+        spine,
+      } => {
+        if (is_nat_succ(addr, self.prims) || is_nat_pred(addr, self.prims))
+          && spine.len() >= 1
+        {
+          return true;
+        }
+        is_nat_bin_op(addr, self.prims) && spine.len() >= 2
+      }
+      _ => false,
+    }
+  }
+
   /// Single delta unfolding step: unfold one definition.
   pub fn delta_step_val(
     &mut self,
@@ -670,8 +710,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         // Instantiate universe levels in the body
         let body_inst = self.instantiate_levels(body, levels);
 
-        // Evaluate the body
-        let mut val = self.eval_in_ctx(&body_inst)?;
+        // Evaluate the body (empty env — definition bodies are closed)
+        let mut val = self.eval(&body_inst, &empty_env())?;
 
         // Apply all spine thunks
         for thunk in spine {
@@ -709,6 +749,20 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let arg = self.whnf_val(&arg, 0)?;
           if let Some(n) = extract_nat_val(&arg, self.prims) {
             return Ok(Some(Val::mk_lit(Literal::NatVal(Nat(&n.0 + 1u64)))));
+          }
+        }
+
+        // Nat.pred with 1 arg
+        if is_nat_pred(addr, self.prims) && spine.len() == 1 {
+          let arg = self.force_thunk(&spine[0])?;
+          let arg = self.whnf_val(&arg, 0)?;
+          if let Some(n) = extract_nat_val(&arg, self.prims) {
+            let result = if n.0 == BigUint::ZERO {
+              Nat::from(0u64)
+            } else {
+              Nat(&n.0 - 1u64)
+            };
+            return Ok(Some(Val::mk_lit(Literal::NatVal(result))));
           }
         }
 
@@ -815,6 +869,32 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 Head::Const { addr: mul_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
                 vec![inner, spine[0].clone()],
               )));
+            } else if self.prims.nat_shift_left.as_ref() == Some(&addr) {
+              // shiftLeft x (succ y) = shiftLeft (2 * x) y
+              if let Some(mul_addr) = self.prims.nat_mul.as_ref().cloned() {
+                let two = mk_thunk_val(Val::mk_lit(Literal::NatVal(Nat::from(2u64))));
+                let two_x = mk_thunk_val(Val::mk_neutral(
+                  Head::Const { addr: mul_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                  vec![two, spine[0].clone()],
+                ));
+                return Ok(Some(Val::mk_neutral(
+                  Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                  vec![two_x, pred_thunk],
+                )));
+              }
+            } else if self.prims.nat_shift_right.as_ref() == Some(&addr) {
+              // shiftRight x (succ y) = (shiftRight x y) / 2
+              if let Some(div_addr) = self.prims.nat_div.as_ref().cloned() {
+                let inner = mk_thunk_val(Val::mk_neutral(
+                  Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                  vec![spine[0].clone(), pred_thunk],
+                ));
+                let two = mk_thunk_val(Val::mk_lit(Literal::NatVal(Nat::from(2u64))));
+                return Ok(Some(Val::mk_neutral(
+                  Head::Const { addr: div_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                  vec![inner, two],
+                )));
+              }
             } else if self.prims.nat_beq.as_ref() == Some(&addr) {
               // beq (succ x) (succ y) = beq x y
               if let Some(pred_thunk_a) = extract_succ_pred(&a, self.prims) {
@@ -911,9 +991,43 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           _ => return Ok(None),
         };
 
-        // Fully evaluate
-        let result = self.eval_in_ctx(&body)?;
+        // Fully evaluate (empty env — definition bodies are closed)
+        let result = self.eval(&body, &empty_env())?;
         let result = self.whnf_val(&result, 0)?;
+
+        // Validate the result is a concrete value, matching the Lean kernel
+        // (Infer.lean:644-658). Without this, non-concrete terms could
+        // propagate through native_decide, creating a soundness gap.
+        if is_reduce_bool {
+          // Check both Ctor and Neutral forms (the Lean kernel does too,
+          // via isBoolTrue which matches both .neutral and .ctor).
+          let is_bool = |addr: &Address, spine_empty: bool| -> bool {
+            spine_empty
+              && (self.prims.bool_true.as_ref() == Some(addr)
+                || self.prims.bool_false.as_ref() == Some(addr))
+          };
+          let ok = match result.inner() {
+            ValInner::Ctor { addr, spine, .. } => is_bool(addr, spine.is_empty()),
+            ValInner::Neutral {
+              head: Head::Const { addr, .. },
+              spine,
+            } => is_bool(addr, spine.is_empty()),
+            _ => false,
+          };
+          if !ok {
+            return Err(TcError::KernelException {
+              msg: "reduceBool: constant did not reduce to Bool.true or Bool.false".into(),
+            });
+          }
+        } else {
+          // is_reduce_nat: accept Lit(NatVal), Ctor(nat_zero), or
+          // Neutral(nat_zero) — same as extract_nat_val.
+          if extract_nat_val(&result, self.prims).is_none() {
+            return Err(TcError::KernelException {
+              msg: "reduceNat: constant did not reduce to a Nat literal".into(),
+            });
+          }
+        }
 
         Ok(Some(result))
       }
@@ -939,9 +1053,21 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     if delta_steps == 0 {
       self.heartbeat()?;
       let key = v.ptr_id();
-      if let Some((_, cached)) = self.whnf_cache.get(&key) {
-        self.stats.cache_hits += 1;
-        return Ok(cached.clone());
+      // Direct lookup
+      if let Some((orig, cached)) = self.whnf_cache.get(&key) {
+        if orig.ptr_eq(v) {
+          self.stats.cache_hits += 1;
+          return Ok(cached.clone());
+        }
+      }
+      // Second-chance lookup via equiv root
+      if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
+        if root_ptr != key {
+          if let Some((_, cached)) = self.whnf_cache.get(&root_ptr) {
+            self.stats.cache_hits += 1;
+            return Ok(cached.clone());
+          }
+        }
       }
     }
 
@@ -957,6 +1083,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     // Step 2: Nat primitive reduction
     let result = if let Some(v2) = self.try_reduce_nat_val(&v1)? {
       self.whnf_val(&v2, delta_steps + 1)?
+    // Step 2b: Block delta-unfolding of fully-applied nat primitives.
+    // If tryReduceNatVal returned None, the recursor would also be stuck.
+    // Keeping the compact Nat.add/sub/etc form aids structural comparison.
+    } else if self.is_fully_applied_nat_prim(&v1) {
+      v1
     // Step 3: Delta unfolding (single step)
     } else if let Some(v2) = self.delta_step_val(&v1)? {
       self.whnf_val(&v2, delta_steps + 1)?
@@ -971,6 +1102,17 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     if delta_steps == 0 {
       let key = v.ptr_id();
       self.whnf_cache.insert(key, (v.clone(), result.clone()));
+      // Register v ≡ whnf(v) in equiv manager (Opt 3)
+      if !v.ptr_eq(&result) {
+        let result_ptr = result.ptr_id();
+        self.equiv_manager.add_equiv(key, result_ptr);
+      }
+      // Also insert under root for equiv-class sharing (Opt 2 synergy)
+      if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
+        if root_ptr != key {
+          self.whnf_cache.insert(root_ptr, (v.clone(), result.clone()));
+        }
+      }
     }
 
     Ok(result)

@@ -128,8 +128,6 @@ def testConsts : TestSeq :=
         "Std.Sat.AIG.mkGate",
         -- Proof irrelevance regression
         "Fin.dfoldrM.loop._sunfold",
-        -- rfl theorem
-        "Std.Tactic.BVDecide.BVExpr.eval.eq_10",
         -- K-reduction: extra args after major premise
         "UInt8.toUInt64_toUSize",
         -- DHashMap: rfl theorem requiring projection reduction + eta-struct
@@ -138,13 +136,15 @@ def testConsts : TestSeq :=
         "instDecidableEqVector.decEq",
         -- Recursor-only Ixon block regression
         "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
-        -- Stack overflow regression
-        "_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq",
         -- check-env hang regression
         "Std.Time.Modifier.ctorElim",
-        "Nat.Linear.Poly.of_denote_eq_cancel",
+        -- rfl theorem
+        "Std.Tactic.BVDecide.BVExpr.eval.eq_10",
         -- check-env hang: complex recursor
         "Std.DHashMap.Raw.WF.rec",
+        -- Stack overflow regression
+        "Nat.Linear.Poly.of_denote_eq_cancel",
+        "_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq",
         -- check-env hang: unsafe_rec definition
         "Batteries.BinaryHeap.heapifyDown._unsafe_rec",
       ]
@@ -168,6 +168,57 @@ def testConsts : TestSeq :=
           IO.println s!"  ✗ {name} ({ms.formatMs}): {e}"
           failures := failures.push s!"{name}: {e}"
       IO.println s!"[kernel2-const] {passed}/{constNames.size} passed"
+      if failures.isEmpty then
+        return (true, none)
+      else
+        return (false, some s!"{failures.size} failure(s)")
+  ) .done
+
+/-- Problematic constants: slow or hanging constants isolated for profiling. -/
+def testConstsProblematic : TestSeq :=
+  .individualIO "kernel2 problematic const checks" (do
+    let leanEnv ← get_env!
+    let start ← IO.monoMsNow
+    let ixonEnv ← Ix.CompileM.rsCompileEnv leanEnv
+    let compileMs := (← IO.monoMsNow) - start
+    IO.println s!"[kernel2-const-problematic] rsCompileEnv: {ixonEnv.consts.size} consts in {compileMs.formatMs}"
+
+    let convertStart ← IO.monoMsNow
+    match Ix.Kernel.Convert.convertEnv .meta ixonEnv with
+    | .error e =>
+      IO.println s!"[kernel2-const-problematic] convertEnv error: {e}"
+      return (false, some e)
+    | .ok (kenv, prims, quotInit) =>
+      let convertMs := (← IO.monoMsNow) - convertStart
+      IO.println s!"[kernel2-const-problematic] convertEnv: {kenv.size} consts in {convertMs.formatMs}"
+
+      let constNames := #[
+        --"Std.DHashMap.Raw.WF.rec",
+        --"Std.Tactic.BVDecide.BVExpr.eval.eq_10",
+        --"Nat.Linear.Poly.of_denote_eq_cancel",
+        --"_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq",
+        "Batteries.BinaryHeap.heapifyDown._unsafe_rec",
+      ]
+      let mut passed := 0
+      let mut failures : Array String := #[]
+      for name in constNames do
+        let ixName := parseIxName name
+        let some cNamed := ixonEnv.named.get? ixName
+          | do failures := failures.push s!"{name}: not found"; continue
+        let addr := cNamed.addr
+        IO.println s!"  checking {name} ..."
+        (← IO.getStdout).flush
+        let start ← IO.monoMsNow
+        match Ix.Kernel.typecheckConst kenv prims addr quotInit (trace := true) (maxHeartbeats := 2_000_000) with
+        | .ok () =>
+          let ms := (← IO.monoMsNow) - start
+          IO.println s!"  ✓ {name} ({ms.formatMs})"
+          passed := passed + 1
+        | .error e =>
+          let ms := (← IO.monoMsNow) - start
+          IO.println s!"  ✗ {name} ({ms.formatMs}): {e}"
+          failures := failures.push s!"{name}: {e}"
+      IO.println s!"[kernel2-problematic] {passed}/{constNames.size} passed"
       if failures.isEmpty then
         return (true, none)
       else
@@ -443,6 +494,7 @@ def testCheckEnv : TestSeq :=
 /-! ## Test suites -/
 
 def constSuite : List TestSeq := [testConsts]
+def constProblematicSuite : List TestSeq := [testConstsProblematic]
 def negativeSuite : List TestSeq := [negativeTests]
 def convertSuite : List TestSeq := [testConvertEnv]
 def anonConvertSuite : List TestSeq := [testAnonConvert]

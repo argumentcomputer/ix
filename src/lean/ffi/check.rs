@@ -7,13 +7,14 @@
 //! - `rs_convert_env`: convert env to kernel types with verification
 
 use std::ffi::{CString, c_void};
+use std::time::Instant;
 
 use super::builder::LeanBuildCache;
 use super::ffi_io_guard;
 use super::ix::name::build_name;
 use super::lean_env::lean_ptr_to_env;
 use crate::ix::env::Name;
-use crate::ix::kernel::check::typecheck_const;
+use crate::ix::kernel::check::{typecheck_const, typecheck_const_with_stats};
 use crate::lean::nat::Nat;
 use crate::ix::kernel::convert::{convert_env, verify_conversion};
 use crate::ix::kernel::error::TcError;
@@ -46,9 +47,14 @@ unsafe fn build_check_error(err: &TcError<Meta>) -> *mut c_void {
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_check_env(env_consts_ptr: *const c_void) -> *mut c_void {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    let total_start = Instant::now();
+
+    let t0 = Instant::now();
     let rust_env = lean_ptr_to_env(env_consts_ptr);
+    eprintln!("[rs_check_env] read env:    {:>8.1?}", t0.elapsed());
 
     // Convert env::Env to kernel types
+    let t1 = Instant::now();
     let (kenv, prims, quot_init) = match convert_env::<Meta>(&rust_env) {
       Ok(v) => v,
       Err(msg) => {
@@ -68,15 +74,19 @@ pub extern "C" fn rs_check_env(env_consts_ptr: *const c_void) -> *mut c_void {
         }
       }
     };
+    eprintln!("[rs_check_env] convert env: {:>8.1?} ({} consts)", t1.elapsed(), kenv.len());
     drop(rust_env); // Free env memory before type-checking
 
     // Type-check all constants, collecting errors
+    let t2 = Instant::now();
     let mut errors: Vec<(Name, TcError<Meta>)> = Vec::new();
     for (addr, ci) in &kenv {
       if let Err(e) = typecheck_const(&kenv, &prims, addr, quot_init) {
         errors.push((ci.name().clone(), e));
       }
     }
+    eprintln!("[rs_check_env] typecheck:   {:>8.1?} ({} errors)", t2.elapsed(), errors.len());
+    eprintln!("[rs_check_env] total:       {:>8.1?}", total_start.elapsed());
 
     let mut cache = LeanBuildCache::new();
     unsafe {
@@ -190,8 +200,13 @@ pub extern "C" fn rs_convert_env(
   env_consts_ptr: *const c_void,
 ) -> *mut c_void {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    let t0 = Instant::now();
     let rust_env = lean_ptr_to_env(env_consts_ptr);
+    eprintln!("[rs_convert_env] read env:    {:>8.1?}", t0.elapsed());
+
+    let t1 = Instant::now();
     let result = convert_env::<Meta>(&rust_env);
+    eprintln!("[rs_convert_env] convert env: {:>8.1?}", t1.elapsed());
 
     match result {
       Err(msg) => {
@@ -206,7 +221,9 @@ pub extern "C" fn rs_convert_env(
       }
       Ok((kenv, prims, quot_init)) => {
         // Verify conversion correctness
+        let t2 = Instant::now();
         let mismatches = verify_conversion(&rust_env, &kenv);
+        eprintln!("[rs_convert_env] verify:      {:>8.1?}", t2.elapsed());
         drop(rust_env);
 
         let (prims_found, missing) = prims.count_resolved();
@@ -273,10 +290,12 @@ pub extern "C" fn rs_check_consts(
   names_ptr: *const c_void,
 ) -> *mut c_void {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    let total_start = Instant::now();
+
+    // Phase 1: Read Lean env from FFI pointer
+    let t0 = Instant::now();
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     let names_array: &LeanArrayObject = as_ref_unsafe(names_ptr.cast());
-
-    // Read all name strings
     let name_strings: Vec<String> = names_array
       .data()
       .iter()
@@ -285,8 +304,10 @@ pub extern "C" fn rs_check_consts(
         s.as_string()
       })
       .collect();
+    eprintln!("[rs_check_consts] read env:    {:>8.1?}", t0.elapsed());
 
-    // Convert env once
+    // Phase 2: Convert env to kernel types
+    let t1 = Instant::now();
     let (kenv, prims, quot_init) = match convert_env::<Meta>(&rust_env) {
       Ok(v) => v,
       Err(msg) => {
@@ -312,16 +333,21 @@ pub extern "C" fn rs_check_consts(
         }
       }
     };
+    eprintln!("[rs_check_consts] convert env: {:>8.1?} ({} consts)", t1.elapsed(), kenv.len());
     drop(rust_env);
 
-    // Build name → address lookup
+    // Phase 3: Build name → address lookup
+    let t2 = Instant::now();
     let mut name_to_addr =
       rustc_hash::FxHashMap::default();
     for (addr, ci) in &kenv {
       name_to_addr.insert(ci.name().pretty(), addr.clone());
     }
+    eprintln!("[rs_check_consts] build index: {:>8.1?}", t2.elapsed());
 
-    // Check each constant
+    // Phase 4: Type-check each constant
+    eprintln!("[rs_check_consts] checking {} constants...", name_strings.len());
+    let t3 = Instant::now();
     unsafe {
       let arr = lean_alloc_array(name_strings.len(), name_strings.len());
       for (i, name) in name_strings.iter().enumerate() {
@@ -329,6 +355,7 @@ pub extern "C" fn rs_check_consts(
           CString::new(name.as_str()).unwrap_or_default();
         let name_obj = lean_mk_string(c_name.as_ptr());
 
+        let tc_start = Instant::now();
         let target_name = parse_name(name);
         let result_obj = match name_to_addr.get(&target_name.pretty()) {
           None => {
@@ -341,7 +368,21 @@ pub extern "C" fn rs_check_consts(
             some
           }
           Some(addr) => {
-            match typecheck_const(&kenv, &prims, addr, quot_init) {
+            let trace = name.contains("parseWith");
+            let (result, heartbeats, stats) =
+              crate::ix::kernel::check::typecheck_const_with_stats_trace(
+                &kenv, &prims, addr, quot_init, trace,
+              );
+            let tc_elapsed = tc_start.elapsed();
+            if tc_elapsed.as_millis() >= 10 {
+              eprintln!(
+                "[rs_check_consts]   {name}: {tc_elapsed:.1?} \
+                 (hb={heartbeats} infer={} eval={} deq={} thunks={} forces={} hits={} cache={})",
+                stats.infer_calls, stats.eval_calls, stats.def_eq_calls,
+                stats.thunk_count, stats.thunk_forces, stats.thunk_hits, stats.cache_hits,
+              );
+            }
+            match result {
               Ok(()) => lean_alloc_ctor(0, 0, 0), // Option.none
               Err(e) => {
                 let err_obj = build_check_error(&e);
@@ -358,6 +399,8 @@ pub extern "C" fn rs_check_consts(
         lean_ctor_set(pair, 1, result_obj);
         lean_array_set_core(arr, i, pair);
       }
+      eprintln!("[rs_check_consts] typecheck:   {:>8.1?}", t3.elapsed());
+      eprintln!("[rs_check_consts] total:       {:>8.1?}", total_start.elapsed());
       lean_io_result_mk_ok(arr)
     }
   }))

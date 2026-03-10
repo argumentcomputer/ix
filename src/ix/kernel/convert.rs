@@ -189,15 +189,20 @@ pub fn convert_env<M: MetaMode>(
     name_to_addr.insert(*name.get_hash(), addr);
   }
 
-  // Phase 2: Convert all constants with shared expression cache
+  // Phase 2: Convert all constants
   let mut kenv: KEnv<M> = KEnv::default();
   let mut quot_init = false;
-  let mut cache: ExprCache<M> = FxHashMap::default();
 
   for (name, ci) in env {
     let addr = resolve_name(name, &name_to_addr);
     let level_params = ci.cnst_val().level_params.clone();
     let ctx = make_ctx(&level_params, &name_to_addr);
+
+    // Fresh cache per constant: the cache is keyed by expr hash, but
+    // level param→index mappings differ per constant, so a cached
+    // subexpression from one constant would have wrong KLevel::param
+    // indices when reused by another constant.
+    let mut cache: ExprCache<M> = FxHashMap::default();
 
     let kci = match ci {
       ConstantInfo::AxiomInfo(v) => {

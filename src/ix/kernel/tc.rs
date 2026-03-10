@@ -5,13 +5,14 @@
 
 use std::collections::BTreeMap;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use crate::ix::address::Address;
 use crate::ix::env::{DefinitionSafety, Name};
 
 use super::equiv::EquivManager;
 use super::error::TcError;
+use super::helpers;
 use super::types::*;
 use super::value::*;
 
@@ -23,6 +24,7 @@ pub type TcResult<T, M> = Result<T, TcError<M>>;
 // ============================================================================
 
 pub const DEFAULT_MAX_HEARTBEATS: usize = 200_000_000;
+pub const DEFAULT_MAX_THUNKS: u64 = 10_000_000;
 
 // ============================================================================
 // Stats
@@ -77,27 +79,33 @@ pub struct TypeChecker<'env, M: MetaMode> {
 
   /// Already type-checked constants.
   pub typed_consts: FxHashMap<Address, TypedConst<M>>,
-  /// Content-keyed def-eq failure cache.
-  pub failure_cache: FxHashSet<(u64, u64)>,
   /// Pointer-keyed def-eq failure cache.
   pub ptr_failure_cache: FxHashMap<(usize, usize), (Val<M>, Val<M>)>,
   /// Pointer-keyed def-eq success cache.
   pub ptr_success_cache: FxHashMap<(usize, usize), (Val<M>, Val<M>)>,
   /// Union-find for transitive def-eq.
   pub equiv_manager: EquivManager,
-  /// Inference cache: expr -> (context_types, typed_expr, type_val).
-  pub infer_cache: FxHashMap<usize, (usize, TypedExpr<M>, Val<M>)>,
+  /// Inference cache: expr -> (context_types_ptrs, typed_expr, type_val).
+  /// Keyed by structural KExpr equality (with Rc pointer short-circuit).
+  /// Context validated by element-wise pointer comparison of types array.
+  pub infer_cache: FxHashMap<KExpr<M>, (Vec<usize>, TypedExpr<M>, Val<M>)>,
   /// WHNF cache: input ptr -> (input_val, output_val).
   pub whnf_cache: FxHashMap<usize, (Val<M>, Val<M>)>,
-  /// Structural WHNF cache (whnf_core_val results).
-  pub whnf_core_cache: FxHashMap<usize, Val<M>>,
+  /// Structural WHNF cache: input ptr -> (input_val, output_val).
+  pub whnf_core_cache: FxHashMap<usize, (Val<M>, Val<M>)>,
   /// Heartbeat counter (monotonically increasing work counter).
   pub heartbeats: usize,
   /// Maximum heartbeats before error.
   pub max_heartbeats: usize,
+  /// Maximum thunks before error.
+  pub max_thunks: u64,
 
   // -- Counters --
   pub stats: Stats,
+
+  // -- Debug tracing --
+  pub trace: bool,
+  pub trace_depth: usize,
 }
 
 impl<'env, M: MetaMode> TypeChecker<'env, M> {
@@ -116,7 +124,6 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
       infer_only: false,
       eager_reduce: false,
       typed_consts: FxHashMap::default(),
-      failure_cache: FxHashSet::default(),
       ptr_failure_cache: FxHashMap::default(),
       ptr_success_cache: FxHashMap::default(),
       equiv_manager: EquivManager::new(),
@@ -125,7 +132,17 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
       whnf_core_cache: FxHashMap::default(),
       heartbeats: 0,
       max_heartbeats: DEFAULT_MAX_HEARTBEATS,
+      max_thunks: DEFAULT_MAX_THUNKS,
       stats: Stats::default(),
+      trace: false,
+      trace_depth: 0,
+    }
+  }
+
+  pub fn trace_msg(&self, msg: &str) {
+    if self.trace {
+      let indent = "  ".repeat(self.trace_depth.min(20));
+      eprintln!("{indent}{msg}");
     }
   }
 
@@ -272,6 +289,14 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
     if self.heartbeats >= self.max_heartbeats {
       return Err(TcError::HeartbeatLimitExceeded);
     }
+    if self.stats.thunk_count >= self.max_thunks {
+      return Err(TcError::KernelException {
+        msg: format!(
+          "thunk limit exceeded ({})",
+          self.max_thunks
+        ),
+      });
+    }
     self.heartbeats += 1;
     Ok(())
   }
@@ -310,7 +335,7 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
         && iv.ctors.len() == 1
         && matches!(
           self.env.get(&iv.ctors[0]),
-          Some(KConstantInfo::Constructor(cv)) if cv.num_fields > 0
+          Some(KConstantInfo::Constructor(_))
         );
       if let TypedConst::Inductive {
         is_struct: ref mut s,
@@ -329,7 +354,6 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
 
   /// Reset ephemeral caches (called between constants).
   pub fn reset_caches(&mut self) {
-    self.failure_cache.clear();
     self.ptr_failure_cache.clear();
     self.ptr_success_cache.clear();
     self.equiv_manager.clear();
@@ -390,9 +414,14 @@ fn provisional_typed_const<M: MetaMode>(ci: &KConstantInfo<M>) -> TypedConst<M> 
       num_minors: v.num_minors,
       num_indices: v.num_indices,
       k: v.k,
-      induct_addr: v.all.first().cloned().unwrap_or_else(|| {
-        Address::hash(b"unknown")
-      }),
+      induct_addr: helpers::get_major_induct(
+        &v.cv.typ,
+        v.num_params,
+        v.num_motives,
+        v.num_minors,
+        v.num_indices,
+      )
+      .unwrap_or_else(|| Address::hash(b"unknown")),
       rules: v
         .rules
         .iter()

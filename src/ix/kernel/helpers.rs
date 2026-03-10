@@ -123,6 +123,18 @@ pub fn is_nat_succ(addr: &Address, prims: &Primitives) -> bool {
   prims.nat_succ.as_ref() == Some(addr)
 }
 
+/// Check if an address is nat_pred.
+pub fn is_nat_pred(addr: &Address, prims: &Primitives) -> bool {
+  prims.nat_pred.as_ref() == Some(addr)
+}
+
+/// Check if an address is any nat primitive (unary or binary).
+pub fn is_nat_prim_op(addr: &Address, prims: &Primitives) -> bool {
+  is_nat_succ(addr, prims)
+    || is_nat_pred(addr, prims)
+    || is_nat_bin_op(addr, prims)
+}
+
 /// Compute a nat binary primitive operation.
 pub fn compute_nat_prim<M: MetaMode>(
   addr: &Address,
@@ -140,8 +152,10 @@ pub fn compute_nat_prim<M: MetaMode>(
   } else if prims.nat_mul.as_ref() == Some(addr) {
     nat_val(&a.0 * &b.0)
   } else if prims.nat_pow.as_ref() == Some(addr) {
-    let exp = b.to_u64().unwrap_or(0) as u32;
-    nat_val(a.0.pow(exp))
+    // Cap exponent at 2^24 to match the Lean kernel (Helpers.lean:80-82).
+    // Without this, huge exponents silently truncate via unwrap_or(0)/as u32.
+    let exp = b.to_u64().filter(|&e| e <= 16_777_216)?;
+    nat_val(a.0.pow(exp as u32))
   } else if prims.nat_gcd.as_ref() == Some(addr) {
     nat_val(biguint_gcd(&a.0, &b.0))
   } else if prims.nat_mod.as_ref() == Some(addr) {
@@ -195,10 +209,12 @@ pub fn compute_nat_prim<M: MetaMode>(
   } else if prims.nat_xor.as_ref() == Some(addr) {
     nat_val(&a.0 ^ &b.0)
   } else if prims.nat_shift_left.as_ref() == Some(addr) {
-    let shift = b.to_u64().unwrap_or(0);
+    // Cap shift to prevent OOM from allocating enormous BigUint results.
+    let shift = b.to_u64().filter(|&s| s <= 16_777_216)?;
     nat_val(&a.0 << shift)
   } else if prims.nat_shift_right.as_ref() == Some(addr) {
-    let shift = b.to_u64().unwrap_or(0);
+    // Cap shift so huge-beyond-u64 shifts don't silently become shift-by-0.
+    let shift = b.to_u64().filter(|&s| s <= 16_777_216)?;
     nat_val(&a.0 >> shift)
   } else {
     return None;
@@ -268,7 +284,7 @@ pub fn get_delta_info<M: MetaMode>(
       ..
     } => match env.get(addr)? {
       KConstantInfo::Definition(d) => Some(d.hints),
-      KConstantInfo::Theorem(_) => Some(ReducibilityHints::Opaque),
+      KConstantInfo::Theorem(_) => Some(ReducibilityHints::Regular(0)),
       _ => None,
     },
     _ => None,

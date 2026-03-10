@@ -60,6 +60,7 @@ private def ptrPairOrd : Ord (USize × USize) where
 structure TypecheckState (m : Ix.Kernel.MetaMode) where
   typedConsts    : Std.TreeMap Address (KTypedConst m) Ix.Kernel.Address.compare := default
   ptrFailureCache : Std.TreeMap (USize × USize) (Val m × Val m) ptrPairOrd.compare := default
+  ptrSuccessCache : Std.TreeMap (USize × USize) (Val m × Val m) ptrPairOrd.compare := default
   eqvManager     : EquivManager := {}
   keepAlive      : Array (Val m) := #[]
   inferCache     : Std.TreeMap (KExpr m) (Array (Val m) × KTypedExpr m × Val m)
@@ -77,6 +78,10 @@ structure TypecheckState (m : Ix.Kernel.MetaMode) where
   thunkForces    : Nat := 0
   thunkHits      : Nat := 0
   cacheHits      : Nat := 0
+  deltaSteps     : Nat := 0
+  nativeReduces  : Nat := 0
+  whnfCacheMisses : Nat := 0
+  proofIrrelHits : Nat := 0
   deriving Inhabited
 
 /-! ## TypecheckM monad
@@ -174,7 +179,13 @@ def mkFreshFVar (ty : Val m) : TypecheckM σ m (Val m) := do
   let stt ← get
   if stt.heartbeats >= stt.maxHeartbeats then
     throw s!"heartbeat limit exceeded ({stt.maxHeartbeats})"
-  modify fun s => { s with heartbeats := s.heartbeats + 1 }
+  let hb := stt.heartbeats + 1
+  if (← read).trace && hb % 100_000 == 0 then
+    let thunkTableSize ← do
+      let table ← ST.Ref.get (← read).thunkTable
+      pure table.size
+    dbg_trace s!"    [hb] {hb / 1000}K heartbeats, delta={stt.deltaSteps}, thunkTable={thunkTableSize}, isDefEq={stt.isDefEqCalls}, eval={stt.evalCalls}, force={stt.forceCalls}"
+  modify fun s => { s with heartbeats := hb }
 
 /-! ## Const dereferencing -/
 

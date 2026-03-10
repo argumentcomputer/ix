@@ -32,10 +32,10 @@ pub enum TcError<M: MetaMode> {
 impl<M: MetaMode> fmt::Display for TcError<M> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      TcError::TypeExpected { .. } => write!(f, "type expected"),
-      TcError::FunctionExpected { .. } => write!(f, "function expected"),
-      TcError::TypeMismatch { .. } => write!(f, "type mismatch"),
-      TcError::DefEqFailure { .. } => write!(f, "definitional equality failure"),
+      TcError::TypeExpected { expr, inferred } => write!(f, "type expected: {expr} has type {inferred}"),
+      TcError::FunctionExpected { expr, inferred } => write!(f, "function expected: {expr} has type {inferred}"),
+      TcError::TypeMismatch { expected, found, expr } => write!(f, "type mismatch: expected {expected}, found {found}, in expr {expr}"),
+      TcError::DefEqFailure { lhs, rhs } => write!(f, "def-eq failure: {lhs} ≠ {rhs}"),
       TcError::UnknownConst { msg } => write!(f, "unknown constant: {msg}"),
       TcError::FreeBoundVariable { idx } => {
         write!(f, "free bound variable at index {idx}")

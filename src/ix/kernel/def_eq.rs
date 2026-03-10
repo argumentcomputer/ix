@@ -3,6 +3,8 @@
 //! Implements the full isDefEq algorithm with caching, lazy delta unfolding,
 //! proof irrelevance, eta expansion, struct eta, and unit-like types.
 
+use std::rc::Rc;
+
 use num_bigint::BigUint;
 
 use crate::ix::address::Address;
@@ -13,7 +15,7 @@ use super::error::TcError;
 use super::helpers::*;
 use super::level::equal_level;
 use super::tc::{TcResult, TypeChecker};
-use super::types::{KConstantInfo, MetaMode};
+use super::types::{KConstantInfo, KExpr, MetaMode};
 use super::value::*;
 
 /// Maximum iterations for lazy delta unfolding.
@@ -68,6 +70,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     // 1. Quick structural check
     if let Some(result) = Self::quick_is_def_eq_val(t, s) {
+      if self.trace && !result {
+        eprintln!("[is_def_eq QUICK FALSE] t={t}  s={s}");
+      }
       return Ok(result);
     }
 
@@ -92,11 +97,17 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
     if let Some((ct, cs)) = self.ptr_failure_cache.get(&key) {
       if ct.ptr_eq(t) && cs.ptr_eq(s) {
+        if self.trace {
+          eprintln!("[is_def_eq CACHE-HIT FALSE] t={t}  s={s}");
+        }
         return Ok(false);
       }
     }
     if let Some((ct, cs)) = self.ptr_failure_cache.get(&key_rev) {
       if ct.ptr_eq(s) && cs.ptr_eq(t) {
+        if self.trace {
+          eprintln!("[is_def_eq CACHE-HIT-REV FALSE] t={t}  s={s}");
+        }
         return Ok(false);
       }
     }
@@ -133,16 +144,23 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       return Ok(result);
     }
 
-    // 7. Proof irrelevance (best-effort: skip if type inference fails)
+    // 7. Proof irrelevance (best-effort: skip if type inference fails,
+    //    but propagate heartbeat/resource errors)
     match self.is_def_eq_proof_irrel(&t1, &s1) {
       Ok(Some(result)) => return Ok(result),
       Ok(None) => {}
+      Err(TcError::HeartbeatLimitExceeded) => {
+        return Err(TcError::HeartbeatLimitExceeded)
+      }
       Err(_) => {} // type inference failed, skip proof irrelevance
     }
 
     // 8. Lazy delta
     let (t2, s2, delta_result) = self.lazy_delta(&t1, &s1)?;
     if let Some(result) = delta_result {
+      if self.trace && !result {
+        eprintln!("[is_def_eq LAZY-DELTA FALSE] t1={t1}  s1={s1}");
+      }
       if result {
         self.equiv_manager.add_equiv(t.ptr_id(), s.ptr_id());
       }
@@ -158,19 +176,62 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       return Ok(result);
     }
 
-    // 10. Full WHNF (includes delta, native, nat prim reduction)
+    // 10. Second whnf_core (cheap_proj=false, no delta) — matches reference
+    let t2b = self.whnf_core_val(&t2, false, false)?;
+    let s2b = self.whnf_core_val(&s2, false, false)?;
+    if !t2b.ptr_eq(&t2) || !s2b.ptr_eq(&s2) {
+      // Structural reduction made progress — compare structurally (not full is_def_eq)
+      let result = self.is_def_eq_core(&t2b, &s2b)?;
+      if result {
+        self.equiv_manager.add_equiv(t.ptr_id(), s.ptr_id());
+        self.ptr_success_cache
+          .insert(key, (t.clone(), s.clone()));
+      } else {
+        self.ptr_failure_cache
+          .insert(key, (t.clone(), s.clone()));
+      }
+      return Ok(result);
+    }
+
+    // 11. Full WHNF (includes delta, native, nat prim reduction)
     let t3 = self.whnf_val(&t2, 0)?;
     let s3 = self.whnf_val(&s2, 0)?;
 
-    // 11. Structural comparison
+    // 12. Structural comparison
     let result = self.is_def_eq_core(&t3, &s3)?;
 
-    // 12. Cache result
+    // 13. Cache result
     if result {
       self.equiv_manager.add_equiv(t.ptr_id(), s.ptr_id());
       self.structural_add_equiv(&t3, &s3);
       self.ptr_success_cache.insert(key, (t.clone(), s.clone()));
     } else {
+      if self.trace {
+        eprintln!("[is_def_eq FALSE] t={t3}  s={s3}");
+        // Show spine details for same-head-const neutrals
+        if let (
+          ValInner::Neutral { head: Head::Const { addr: a1, .. }, spine: sp1 },
+          ValInner::Neutral { head: Head::Const { addr: a2, .. }, spine: sp2 },
+        ) = (t3.inner(), s3.inner()) {
+          if a1 == a2 && sp1.len() == sp2.len() {
+            for (i, (th1, th2)) in sp1.iter().zip(sp2.iter()).enumerate() {
+              if std::rc::Rc::ptr_eq(th1, th2) {
+                eprintln!("  spine[{i}]: ptr_eq");
+              } else {
+                let v1 = self.force_thunk(th1);
+                let v2 = self.force_thunk(th2);
+                match (v1, v2) {
+                  (Ok(v1), Ok(v2)) => {
+                    let eq = self.is_def_eq(&v1, &v2).unwrap_or(false);
+                    eprintln!("  spine[{i}]: {v1}  vs  {v2}  eq={eq}");
+                  }
+                  _ => eprintln!("  spine[{i}]: force error"),
+                }
+              }
+            }
+          }
+        }
+      }
       self.ptr_failure_cache.insert(key, (t.clone(), s.clone()));
     }
 
@@ -271,11 +332,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         if !self.is_def_eq(d1, d2)? {
           return Ok(false);
         }
+        // Closure short-circuit: same body + equivalent envs → skip eval
+        if self.closure_envs_equiv(b1, b2, e1, e2) {
+          return Ok(true);
+        }
         let fvar = Val::mk_fvar(self.depth(), d1.clone());
-        let mut env1 = e1.clone();
-        env1.push(fvar.clone());
-        let mut env2 = e2.clone();
-        env2.push(fvar);
+        let env1 = env_push(e1, fvar.clone());
+        let env2 = env_push(e2, fvar);
         let v1 = self.eval(b1, &env1)?;
         let v2 = self.eval(b2, &env2)?;
         self.with_binder(d1.clone(), M::Field::<Name>::default(), |tc| {
@@ -301,11 +364,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         if !self.is_def_eq(d1, d2)? {
           return Ok(false);
         }
+        // Closure short-circuit: same body + equivalent envs → skip eval
+        if self.closure_envs_equiv(b1, b2, e1, e2) {
+          return Ok(true);
+        }
         let fvar = Val::mk_fvar(self.depth(), d1.clone());
-        let mut env1 = e1.clone();
-        env1.push(fvar.clone());
-        let mut env2 = e2.clone();
-        env2.push(fvar);
+        let env1 = env_push(e1, fvar.clone());
+        let env2 = env_push(e2, fvar);
         let v1 = self.eval(b1, &env1)?;
         let v2 = self.eval(b2, &env2)?;
         self.with_binder(d1.clone(), M::Field::<Name>::default(), |tc| {
@@ -316,8 +381,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       // Eta: lambda vs non-lambda
       (ValInner::Lam { dom, body, env, .. }, _) => {
         let fvar = Val::mk_fvar(self.depth(), dom.clone());
-        let mut new_env = env.clone();
-        new_env.push(fvar.clone());
+        let new_env = env_push(env, fvar.clone());
         let lhs = self.eval(body, &new_env)?;
         let rhs_thunk = mk_thunk_val(fvar);
         let rhs = self.apply_val_thunk(s.clone(), rhs_thunk)?;
@@ -327,8 +391,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
       (_, ValInner::Lam { dom, body, env, .. }) => {
         let fvar = Val::mk_fvar(self.depth(), dom.clone());
-        let mut new_env = env.clone();
-        new_env.push(fvar.clone());
+        let new_env = env_push(env, fvar.clone());
         let rhs = self.eval(body, &new_env)?;
         let lhs_thunk = mk_thunk_val(fvar);
         let lhs = self.apply_val_thunk(t.clone(), lhs_thunk)?;
@@ -460,6 +523,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         if self.is_def_eq_unit_like_val(t, s)? {
           return Ok(true);
         }
+        if self.trace {
+          eprintln!("[is_def_eq_core FALLBACK FALSE] t={t}  s={s}");
+        }
         Ok(false)
       }
     }
@@ -482,6 +548,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       let v1 = self.force_thunk(t1)?;
       let v2 = self.force_thunk(t2)?;
       if !self.is_def_eq(&v1, &v2)? {
+        if self.trace {
+          let w1 = self.whnf_val(&v1, 0).unwrap_or(v1.clone());
+          let w2 = self.whnf_val(&v2, 0).unwrap_or(v2.clone());
+          eprintln!("[is_def_eq_spine FALSE] v1={v1} (whnf: {w1})  v2={v2} (whnf: {w2})");
+        }
         return Ok(false);
       }
     }
@@ -530,6 +601,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         (None, None) => return Ok((t, s, None)),
 
         (Some(_), None) => {
+          // Try unfolding a stuck projection on the non-delta side first
+          // (mirrors lean4 C++ tryUnfoldProjApp optimization)
+          if matches!(s.inner(), ValInner::Proj { .. }) {
+            let s2 = self.whnf_core_val(&s, false, false)?;
+            if !s2.ptr_eq(&s) {
+              s = s2;
+              continue;
+            }
+          }
           if let Some(r) = self.delta_step_val(&t)? {
             t = self.whnf_core_val(&r, false, true)?;
           } else {
@@ -538,6 +618,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         }
 
         (None, Some(_)) => {
+          // Try unfolding a stuck projection on the non-delta side first
+          if matches!(t.inner(), ValInner::Proj { .. }) {
+            let t2 = self.whnf_core_val(&t, false, false)?;
+            if !t2.ptr_eq(&t) {
+              t = t2;
+              continue;
+            }
+          }
           if let Some(r) = self.delta_step_val(&s)? {
             s = self.whnf_core_val(&r, false, true)?;
           } else {
@@ -546,9 +634,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         }
 
         (Some(th), Some(sh)) => {
-          let t_height = hint_height(&th);
-          let s_height = hint_height(&sh);
-
           // Same-head optimization with failure cache guard
           if t.same_head_const(&s) && matches!(th, ReducibilityHints::Regular(_)) {
             if let (Some(l1), Some(l2)) =
@@ -593,20 +678,24 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             }
           }
 
-          // Unfold the higher-height one, apply whnf_core after delta
-          if t_height > s_height {
-            if let Some(r) = self.delta_step_val(&t)? {
-              t = self.whnf_core_val(&r, false, true)?;
-            } else if let Some(r) = self.delta_step_val(&s)? {
-              s = self.whnf_core_val(&r, false, true)?;
-            } else {
-              return Ok((t, s, None));
-            }
-          } else if s_height > t_height {
+          // Hint-guided unfolding (matches Lean's lt'-based ordering)
+          // lt' ordering: opaque < regular(0) < ... < abbrev
+          // Unfold the "bigger" (higher priority) side first
+          if hints_lt(&th, &sh) {
+            // th < sh → unfold s (higher priority)
             if let Some(r) = self.delta_step_val(&s)? {
               s = self.whnf_core_val(&r, false, true)?;
             } else if let Some(r) = self.delta_step_val(&t)? {
               t = self.whnf_core_val(&r, false, true)?;
+            } else {
+              return Ok((t, s, None));
+            }
+          } else if hints_lt(&sh, &th) {
+            // sh < th → unfold t (higher priority)
+            if let Some(r) = self.delta_step_val(&t)? {
+              t = self.whnf_core_val(&r, false, true)?;
+            } else if let Some(r) = self.delta_step_val(&s)? {
+              s = self.whnf_core_val(&r, false, true)?;
             } else {
               return Ok((t, s, None));
             }
@@ -639,6 +728,36 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     Err(TcError::KernelException {
       msg: "lazy delta iteration limit exceeded".to_string(),
+    })
+  }
+
+  /// Check if two closures have equivalent environments (same body + equiv envs).
+  /// Does not allocate new equiv nodes for unknown pointers.
+  fn closure_envs_equiv(
+    &mut self,
+    body1: &KExpr<M>,
+    body2: &KExpr<M>,
+    env1: &Env<M>,
+    env2: &Env<M>,
+  ) -> bool {
+    if env1.len() != env2.len() {
+      return false;
+    }
+    // Check body structural equality (Rc pointer eq first, then structural)
+    if body1.ptr_id() != body2.ptr_id() && body1 != body2 {
+      return false;
+    }
+    // Array pointer equality (same Rc)
+    if Rc::ptr_eq(env1, env2) {
+      return true;
+    }
+    // Element-wise pointer equality
+    if env1.iter().zip(env2.iter()).all(|(a, b)| a.ptr_eq(b)) {
+      return true;
+    }
+    // Element-wise equiv manager check (non-allocating)
+    env1.iter().zip(env2.iter()).all(|(a, b)| {
+      self.equiv_manager.try_is_equiv(a.ptr_id(), b.ptr_id())
     })
   }
 
@@ -1109,11 +1228,17 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   }
 }
 
-/// Get the height from reducibility hints.
-fn hint_height(h: &ReducibilityHints) -> u32 {
-  match h {
-    ReducibilityHints::Opaque => u32::MAX,
-    ReducibilityHints::Abbrev => 0,
-    ReducibilityHints::Regular(n) => *n,
+/// Lean's `ReducibilityHints.lt'`: determines unfolding priority.
+/// Ordering: opaque < regular(0) < regular(1) < ... < abbrev
+/// The "bigger" side is unfolded first in lazy delta.
+fn hints_lt(a: &ReducibilityHints, b: &ReducibilityHints) -> bool {
+  match (a, b) {
+    (_, ReducibilityHints::Opaque) => false,
+    (ReducibilityHints::Abbrev, _) => false,
+    (ReducibilityHints::Opaque, _) => true,
+    (_, ReducibilityHints::Abbrev) => true,
+    (ReducibilityHints::Regular(d1), ReducibilityHints::Regular(d2)) => {
+      d1 < d2
+    }
   }
 }

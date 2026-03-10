@@ -14,6 +14,7 @@ import Tests.Ix.Kernel.Unit
 import Tests.Ix.Kernel.Integration
 import Tests.Ix.Kernel.Nat
 import Tests.Ix.RustKernel
+import Tests.Ix.RustKernelProblematic
 import Tests.Ix.PP
 import Tests.Ix.CondenseM
 import Tests.FFI
@@ -61,12 +62,14 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   --("check-all", Tests.Check.checkAllSuiteIO),
   ("kernel-check-env", Tests.Check.kernelSuiteIO),
   ("kernel-const", Tests.Ix.Kernel.Integration.constSuite),
+  ("kernel-problematic", Tests.Ix.Kernel.Integration.constProblematicSuite),
   ("kernel-nat-real", Tests.Ix.Kernel.Nat.realSuite),
   ("kernel-convert", Tests.Ix.Kernel.Integration.convertSuite),
   ("kernel-anon-convert", Tests.Ix.Kernel.Integration.anonConvertSuite),
   ("kernel-check-env-full", Tests.Ix.Kernel.Integration.checkEnvSuite),
   ("kernel-roundtrip", Tests.Ix.Kernel.Integration.roundtripSuite),
   ("rust-kernel-consts", Tests.Ix.RustKernel.constSuite),
+  ("rust-kernel-problematic", Tests.Ix.RustKernelProblematic.suite),
   ("rust-kernel-convert", Tests.Ix.RustKernel.convertSuite),
   ("ixon-full-roundtrip", Tests.Compile.ixonRoundtripSuiteIO),
 ]

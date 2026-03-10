@@ -9,6 +9,8 @@
 
 
 
+use std::rc::Rc;
+
 use super::error::TcError;
 use super::helpers::reduce_val_proj_forced;
 use super::tc::{TcResult, TypeChecker};
@@ -24,7 +26,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   pub fn eval(
     &mut self,
     expr: &KExpr<M>,
-    env: &Vec<Val<M>>,
+    env: &Env<M>,
   ) -> TcResult<Val<M>, M> {
     self.heartbeat()?;
     self.stats.eval_calls += 1;
@@ -102,8 +104,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             ValInner::Lam { body, env: lam_env, .. } => {
               let arg_val = self.eval(&arg, env)?;
               let body = body.clone();
-              let mut new_env = lam_env.clone();
-              new_env.push(arg_val);
+              let new_env = env_push(lam_env, arg_val);
               val = self.eval(&body, &new_env)?;
             }
             _ => {
@@ -141,8 +142,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       KExprData::LetE(_ty, val_expr, body, _name) => {
         // Eager zeta reduction: evaluate the value and push onto env
         let val = self.eval(val_expr, env)?;
-        let mut new_env = env.clone();
-        new_env.push(val);
+        let new_env = env_push(env, val);
         self.eval(body, &new_env)
       }
 
@@ -171,15 +171,16 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   /// environment. Lambda-bound variables become fvars, let-bound variables
   /// use their values.
   pub fn eval_in_ctx(&mut self, expr: &KExpr<M>) -> TcResult<Val<M>, M> {
-    let mut env = Vec::with_capacity(self.depth());
+    let mut env_vec = Vec::with_capacity(self.depth());
     for level in 0..self.depth() {
       if let Some(Some(val)) = self.let_values.get(level) {
-        env.push(val.clone());
+        env_vec.push(val.clone());
       } else {
         let ty = self.types[level].clone();
-        env.push(Val::mk_fvar(level, ty));
+        env_vec.push(Val::mk_fvar(level, ty));
       }
     }
+    let env = Rc::new(env_vec);
     self.eval(expr, &env)
   }
 
@@ -200,8 +201,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Lam { body, env, .. } => {
         // O(1) beta reduction: push arg value onto closure env
         let arg_val = self.force_thunk(&arg)?;
-        let mut new_env = env.clone();
-        new_env.push(arg_val);
+        let new_env = env_push(env, arg_val);
         self.eval(body, &new_env)
       }
 
@@ -268,9 +268,20 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         }
       }
 
-      _ => Err(TcError::KernelException {
-        msg: format!("cannot apply {fun}"),
-      }),
+      _ => {
+        let arg_val = self.force_thunk(&arg)?;
+        Err(TcError::KernelException {
+          msg: format!(
+            "cannot apply non-function value\n  fun: {fun}\n  fun kind: {}\n  arg: {arg_val}",
+            match fun.inner() {
+              ValInner::Sort(_) => "Sort",
+              ValInner::Lit(_) => "Lit",
+              ValInner::Pi { .. } => "Pi",
+              _ => "unknown",
+            }
+          ),
+        })
+      }
     }
   }
 

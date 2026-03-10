@@ -30,7 +30,7 @@ def isPrimOp (prims : KPrimitives) (addr : Address) : Bool :=
   addr == prims.natDiv || addr == prims.natBeq || addr == prims.natBle ||
   addr == prims.natLand || addr == prims.natLor || addr == prims.natXor ||
   addr == prims.natShiftLeft || addr == prims.natShiftRight ||
-  addr == prims.natSucc
+  addr == prims.natSucc || addr == prims.natPred
 
 /-- Check if a value is a nat primitive applied to args (not yet reduced). -/
 def isNatPrimHead (prims : KPrimitives) (v : Val m) : Bool :=

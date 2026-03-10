@@ -15,13 +15,35 @@ use crate::lean::nat::Nat;
 use super::types::{KExpr, KLevel, MetaMode};
 
 // ============================================================================
+// Env — COW (copy-on-write) closure environment
+// ============================================================================
+
+/// A copy-on-write closure environment.
+/// Uses `Rc<Vec<...>>` so that cloning an env for closure capture is O(1),
+/// and extending it copies only when shared (matching Lean's Array.push COW).
+pub type Env<M> = Rc<Vec<Val<M>>>;
+
+/// Create an empty environment.
+pub fn empty_env<M: MetaMode>() -> Env<M> {
+  Rc::new(Vec::new())
+}
+
+/// Extend an environment with a new value (COW push).
+/// If the Rc is unique, mutates in place. Otherwise clones first.
+pub fn env_push<M: MetaMode>(env: &Env<M>, val: Val<M>) -> Env<M> {
+  let mut new_env = env.clone();
+  Rc::make_mut(&mut new_env).push(val);
+  new_env
+}
+
+// ============================================================================
 // Thunk — call-by-need lazy evaluation
 // ============================================================================
 
 /// A lazy thunk that is either unevaluated (expr + env closure) or evaluated.
 #[derive(Debug)]
 pub enum ThunkEntry<M: MetaMode> {
-  Unevaluated { expr: KExpr<M>, env: Vec<Val<M>> },
+  Unevaluated { expr: KExpr<M>, env: Env<M> },
   Evaluated(Val<M>),
 }
 
@@ -29,7 +51,7 @@ pub enum ThunkEntry<M: MetaMode> {
 pub type Thunk<M> = Rc<RefCell<ThunkEntry<M>>>;
 
 /// Create a new unevaluated thunk.
-pub fn mk_thunk<M: MetaMode>(expr: KExpr<M>, env: Vec<Val<M>>) -> Thunk<M> {
+pub fn mk_thunk<M: MetaMode>(expr: KExpr<M>, env: Env<M>) -> Thunk<M> {
   Rc::new(RefCell::new(ThunkEntry::Unevaluated { expr, env }))
 }
 
@@ -73,7 +95,7 @@ pub enum ValInner<M: MetaMode> {
     bi: M::Field<BinderInfo>,
     dom: Val<M>,
     body: KExpr<M>,
-    env: Vec<Val<M>>,
+    env: Env<M>,
   },
   /// Pi/forall closure: evaluated domain, unevaluated body with environment.
   Pi {
@@ -81,7 +103,7 @@ pub enum ValInner<M: MetaMode> {
     bi: M::Field<BinderInfo>,
     dom: Val<M>,
     body: KExpr<M>,
-    env: Vec<Val<M>>,
+    env: Env<M>,
   },
   /// Universe sort.
   Sort(KLevel<M>),
@@ -176,7 +198,7 @@ impl<M: MetaMode> Val<M> {
     bi: M::Field<BinderInfo>,
     dom: Val<M>,
     body: KExpr<M>,
-    env: Vec<Val<M>>,
+    env: Env<M>,
   ) -> Self {
     Val(Rc::new(ValInner::Lam {
       name,
@@ -192,7 +214,7 @@ impl<M: MetaMode> Val<M> {
     bi: M::Field<BinderInfo>,
     dom: Val<M>,
     body: KExpr<M>,
-    env: Vec<Val<M>>,
+    env: Env<M>,
   ) -> Self {
     Val(Rc::new(ValInner::Pi {
       name,
@@ -327,40 +349,65 @@ impl<M: MetaMode> Val<M> {
 
 impl<M: MetaMode> fmt::Display for Val<M> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self.inner() {
-      ValInner::Lam { name, .. } => {
-        write!(f, "(fun {:?} => ...)", name)
-      }
-      ValInner::Pi { name, dom, .. } => {
-        write!(f, "(({:?} : {dom}) -> ...)", name)
-      }
-      ValInner::Sort(l) => write!(f, "Sort {l}"),
-      ValInner::Neutral { head, spine } => {
-        match head {
-          Head::FVar { level, .. } => write!(f, "fvar@{level}")?,
-          Head::Const { name, .. } => write!(f, "{:?}", name)?,
+    fmt_val::<M>(self, f, 0)
+  }
+}
+
+/// Pretty-print a Val with depth-limited recursion to avoid infinite output.
+fn fmt_val<M: MetaMode>(
+  v: &Val<M>,
+  f: &mut fmt::Formatter<'_>,
+  depth: usize,
+) -> fmt::Result {
+  const MAX_DEPTH: usize = 8;
+  if depth > MAX_DEPTH {
+    return write!(f, "...");
+  }
+  match v.inner() {
+    ValInner::Lam { name, dom, body, .. } => {
+      write!(f, "(fun (")?;
+      super::types::fmt_field_name::<M>(name, f)?;
+      write!(f, " : ")?;
+      fmt_val::<M>(dom, f, depth + 1)?;
+      write!(f, ") => {body})")
+    }
+    ValInner::Pi { name, dom, body, .. } => {
+      write!(f, "((")?;
+      super::types::fmt_field_name::<M>(name, f)?;
+      write!(f, " : ")?;
+      fmt_val::<M>(dom, f, depth + 1)?;
+      write!(f, ") -> {body})")
+    }
+    ValInner::Sort(l) => write!(f, "Sort {l}"),
+    ValInner::Neutral { head, spine } => {
+      match head {
+        Head::FVar { level, .. } => write!(f, "fvar@{level}")?,
+        Head::Const { name, .. } => {
+          super::types::fmt_field_name::<M>(name, f)?;
         }
-        if !spine.is_empty() {
-          write!(f, " ({}args)", spine.len())?;
-        }
-        Ok(())
       }
-      ValInner::Ctor {
-        name, spine, cidx, ..
-      } => {
-        write!(f, "ctor#{cidx}«{:?}»", name)?;
-        if !spine.is_empty() {
-          write!(f, " ({}args)", spine.len())?;
-        }
-        Ok(())
+      if !spine.is_empty() {
+        write!(f, " ({} args)", spine.len())?;
       }
-      ValInner::Lit(Literal::NatVal(n)) => write!(f, "{n}"),
-      ValInner::Lit(Literal::StrVal(s)) => write!(f, "\"{s}\""),
-      ValInner::Proj {
-        idx, type_name, ..
-      } => {
-        write!(f, "proj#{idx}«{:?}»", type_name)
+      Ok(())
+    }
+    ValInner::Ctor {
+      name, spine, cidx, ..
+    } => {
+      write!(f, "ctor#{cidx} ")?;
+      super::types::fmt_field_name::<M>(name, f)?;
+      if !spine.is_empty() {
+        write!(f, " ({} args)", spine.len())?;
       }
+      Ok(())
+    }
+    ValInner::Lit(Literal::NatVal(n)) => write!(f, "{n}"),
+    ValInner::Lit(Literal::StrVal(s)) => write!(f, "\"{s}\""),
+    ValInner::Proj {
+      idx, type_name, ..
+    } => {
+      write!(f, "proj[{idx}] ")?;
+      super::types::fmt_field_name::<M>(type_name, f)
     }
   }
 }

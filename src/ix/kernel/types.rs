@@ -166,7 +166,15 @@ impl<M: MetaMode> fmt::Display for KLevel<M> {
       }
       KLevelData::Max(a, b) => write!(f, "max({a}, {b})"),
       KLevelData::IMax(a, b) => write!(f, "imax({a}, {b})"),
-      KLevelData::Param(idx, name) => write!(f, "{name:?}.{idx}"),
+      KLevelData::Param(idx, name) => {
+        let s = format!("{:?}", name);
+        if let Some(inner) = s.strip_prefix("Name(").and_then(|s| s.strip_suffix(')')) {
+          if inner != "anonymous" {
+            return write!(f, "{inner}");
+          }
+        }
+        write!(f, "u{idx}")
+      }
     }
   }
 }
@@ -364,13 +372,13 @@ impl<M: MetaMode> PartialEq for KExpr<M> {
         f1 == f2 && a1 == a2
       }
       (
-        KExprData::Lam(t1, b1, _, bi1),
-        KExprData::Lam(t2, b2, _, bi2),
+        KExprData::Lam(t1, b1, _, _),
+        KExprData::Lam(t2, b2, _, _),
       )
       | (
-        KExprData::ForallE(t1, b1, _, bi1),
-        KExprData::ForallE(t2, b2, _, bi2),
-      ) => t1 == t2 && b1 == b2 && bi1 == bi2,
+        KExprData::ForallE(t1, b1, _, _),
+        KExprData::ForallE(t2, b2, _, _),
+      ) => t1 == t2 && b1 == b2,
       (
         KExprData::LetE(t1, v1, b1, _),
         KExprData::LetE(t2, v2, b2, _),
@@ -401,10 +409,9 @@ impl<M: MetaMode> Hash for KExpr<M> {
         f.hash(state);
         a.hash(state);
       }
-      KExprData::Lam(t, b, _, bi) | KExprData::ForallE(t, b, _, bi) => {
+      KExprData::Lam(t, b, _, _) | KExprData::ForallE(t, b, _, _) => {
         t.hash(state);
         b.hash(state);
-        bi.hash(state);
       }
       KExprData::LetE(t, v, b, _) => {
         t.hash(state);
@@ -432,28 +439,85 @@ impl<M: MetaMode> Hash for KExpr<M> {
   }
 }
 
+/// Helper: collect an App spine into (head, [args]).
+fn collect_app_spine<M: MetaMode>(e: &KExpr<M>) -> (&KExpr<M>, Vec<&KExpr<M>>) {
+  let mut args = Vec::new();
+  let mut cur = e;
+  while let KExprData::App(fun, arg) = cur.data() {
+    args.push(arg);
+    cur = fun;
+  }
+  args.reverse();
+  (cur, args)
+}
+
+/// Format a MetaMode field name: shows the pretty name for Meta, `_` for Anon.
+pub fn fmt_field_name<M: MetaMode>(name: &M::Field<Name>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+  let s = format!("{:?}", name);
+  // Meta mode Debug: "Name(Foo.Bar)" → extract inner; Anon mode: "()" → "_"
+  if let Some(inner) = s.strip_prefix("Name(").and_then(|s| s.strip_suffix(')')) {
+    if inner == "anonymous" {
+      write!(f, "_")
+    } else {
+      write!(f, "{inner}")
+    }
+  } else if s == "()" {
+    write!(f, "_")
+  } else {
+    write!(f, "{s}")
+  }
+}
+
 impl<M: MetaMode> fmt::Display for KExpr<M> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self.data() {
-      KExprData::BVar(idx, name) => write!(f, "#{idx}«{name:?}»"),
-      KExprData::Sort(l) => write!(f, "Sort {l}"),
-      KExprData::Const(addr, _, name) => {
-        write!(f, "const({:?}@{})", name, &addr.hex()[..8])
+      KExprData::BVar(idx, name) => {
+        let s = format!("{:?}", name);
+        if let Some(inner) = s.strip_prefix("Name(").and_then(|s| s.strip_suffix(')')) {
+          if inner != "anonymous" {
+            return write!(f, "{inner}");
+          }
+        }
+        write!(f, "#{idx}")
       }
-      KExprData::App(fun, arg) => write!(f, "({fun} {arg})"),
+      KExprData::Sort(l) => write!(f, "Sort {l}"),
+      KExprData::Const(_addr, levels, name) => {
+        fmt_field_name::<M>(name, f)?;
+        if levels.is_empty() {
+          Ok(())
+        } else {
+          write!(f, ".{{{}}}", levels.iter().map(|l| format!("{l}")).collect::<Vec<_>>().join(", "))
+        }
+      }
+      KExprData::App(_, _) => {
+        let (head, args) = collect_app_spine::<M>(self);
+        write!(f, "({head}")?;
+        for arg in args {
+          write!(f, " {arg}")?;
+        }
+        write!(f, ")")
+      }
       KExprData::Lam(ty, body, name, _) => {
-        write!(f, "(fun ({name:?} : {ty}) => {body})")
+        write!(f, "(fun (")?;
+        fmt_field_name::<M>(name, f)?;
+        write!(f, " : {ty}) => {body})")
       }
       KExprData::ForallE(ty, body, name, _) => {
-        write!(f, "(({name:?} : {ty}) -> {body})")
+        write!(f, "((")?;
+        fmt_field_name::<M>(name, f)?;
+        write!(f, " : {ty}) -> {body})")
       }
       KExprData::LetE(ty, val, body, name) => {
-        write!(f, "(let {name:?} : {ty} := {val} in {body})")
+        write!(f, "(let ")?;
+        fmt_field_name::<M>(name, f)?;
+        write!(f, " : {ty} := {val} in {body})")
       }
       KExprData::Lit(Literal::NatVal(n)) => write!(f, "{n}"),
       KExprData::Lit(Literal::StrVal(s)) => write!(f, "\"{s}\""),
       KExprData::Proj(_, idx, s, name) => {
-        write!(f, "{s}.{idx}«{name:?}»")
+        write!(f, "{s}.")?;
+        fmt_field_name::<M>(name, f)?;
+        write!(f, "[{idx}]")
       }
     }
   }

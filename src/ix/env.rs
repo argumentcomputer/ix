@@ -10,6 +10,7 @@
 
 use blake3::Hash;
 use std::{
+  fmt,
   hash::{Hash as StdHash, Hasher},
   sync::Arc,
 };
@@ -107,7 +108,7 @@ pub const MDVAL: u8 = 0xF6;
 /// A content-addressed hierarchical name.
 ///
 /// Names are interned via `Arc` and compared/hashed by their Blake3 digest.
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct Name(pub Arc<NameData>);
 
 impl PartialOrd for Name {
@@ -193,6 +194,28 @@ impl Name {
 
     components.reverse();
     components.join(".")
+  }
+}
+
+impl fmt::Display for Name {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let s = self.pretty();
+    if s.is_empty() {
+      write!(f, "[anonymous]")
+    } else {
+      write!(f, "{s}")
+    }
+  }
+}
+
+impl fmt::Debug for Name {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let s = self.pretty();
+    if s.is_empty() {
+      write!(f, "Name(anonymous)")
+    } else {
+      write!(f, "Name({s})")
+    }
   }
 }
 

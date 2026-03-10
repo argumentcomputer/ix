@@ -15,6 +15,8 @@ pub struct EquivManager {
   parent: Vec<usize>,
   /// rank[i] = upper bound on height of subtree rooted at i.
   rank: Vec<usize>,
+  /// Reverse map: node index → pointer address.
+  node_to_ptr: Vec<usize>,
 }
 
 impl Default for EquivManager {
@@ -29,6 +31,7 @@ impl EquivManager {
       addr_to_node: FxHashMap::default(),
       parent: Vec::new(),
       rank: Vec::new(),
+      node_to_ptr: Vec::new(),
     }
   }
 
@@ -37,6 +40,7 @@ impl EquivManager {
     self.addr_to_node.clear();
     self.parent.clear();
     self.rank.clear();
+    self.node_to_ptr.clear();
   }
 
   /// Get or create a node index for a pointer address.
@@ -47,6 +51,7 @@ impl EquivManager {
     let node = self.parent.len();
     self.parent.push(node);
     self.rank.push(0);
+    self.node_to_ptr.push(ptr);
     self.addr_to_node.insert(ptr, node);
     node
   }
@@ -83,6 +88,34 @@ impl EquivManager {
 
   /// Check if two pointer addresses are in the same equivalence class.
   pub fn is_equiv(&mut self, ptr1: usize, ptr2: usize) -> bool {
+    let n1 = match self.addr_to_node.get(&ptr1) {
+      Some(&n) => n,
+      None => return false,
+    };
+    let n2 = match self.addr_to_node.get(&ptr2) {
+      Some(&n) => n,
+      None => return false,
+    };
+    self.find(n1) == self.find(n2)
+  }
+
+  /// Find the canonical (root) pointer for a given pointer's equivalence class.
+  /// Returns None if the pointer has never been registered.
+  pub fn find_root_ptr(&mut self, ptr: usize) -> Option<usize> {
+    let &node = self.addr_to_node.get(&ptr)?;
+    let root = self.find(node);
+    if root < self.node_to_ptr.len() {
+      Some(self.node_to_ptr[root])
+    } else {
+      Some(ptr) // shouldn't happen, fallback to self
+    }
+  }
+
+  /// Check equivalence without creating nodes for unknown pointers.
+  pub fn try_is_equiv(&mut self, ptr1: usize, ptr2: usize) -> bool {
+    if ptr1 == ptr2 {
+      return true;
+    }
     let n1 = match self.addr_to_node.get(&ptr1) {
       Some(&n) => n,
       None => return false,

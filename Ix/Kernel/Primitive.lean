@@ -129,10 +129,13 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives) (kenv : KEnv m) 
   let x : KExpr m := .mkBVar 0
   let y : KExpr m := .mkBVar 1
 
+  -- Use the constant (not v.value) so tryReduceNatVal step-case fires
+  let primConst : KExpr m := .mkConst addr #[]
+
   if addr == p.natAdd then
     if !kenv.contains p.nat || v.numLevels != 0 then fail
     unless ← ops.isDefEq v.type (natBinType p) do fail
-    let addV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp v.value a) b
+    let addV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
     unless ← defeq1 ops p (addV x zero) x do fail
     unless ← defeq2 ops p (addV y (succ x)) (succ (addV y x)) do fail
     return true
@@ -140,7 +143,7 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives) (kenv : KEnv m) 
   if addr == p.natPred then
     if !kenv.contains p.nat || v.numLevels != 0 then fail
     unless ← ops.isDefEq v.type (natUnaryType p) do fail
-    let predV := fun a => Ix.Kernel.Expr.mkApp v.value a
+    let predV := fun a => Ix.Kernel.Expr.mkApp primConst a
     unless ← ops.isDefEq (predV zero) zero do fail
     unless ← defeq1 ops p (predV (succ x)) x do fail
     return true
@@ -148,7 +151,7 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives) (kenv : KEnv m) 
   if addr == p.natSub then
     if !kenv.contains p.natPred || v.numLevels != 0 then fail
     unless ← ops.isDefEq v.type (natBinType p) do fail
-    let subV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp v.value a) b
+    let subV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
     unless ← defeq1 ops p (subV x zero) x do fail
     unless ← defeq2 ops p (subV y (succ x)) (pred (subV y x)) do fail
     return true
@@ -156,7 +159,7 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives) (kenv : KEnv m) 
   if addr == p.natMul then
     if !kenv.contains p.natAdd || v.numLevels != 0 then fail
     unless ← ops.isDefEq v.type (natBinType p) do fail
-    let mulV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp v.value a) b
+    let mulV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
     unless ← defeq1 ops p (mulV x zero) zero do fail
     unless ← defeq2 ops p (mulV y (succ x)) (add (mulV y x) y) do fail
     return true
@@ -164,7 +167,7 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives) (kenv : KEnv m) 
   if addr == p.natPow then
     if !kenv.contains p.natMul || v.numLevels != 0 then fail "natPow: missing natMul or bad numLevels"
     unless ← ops.isDefEq v.type (natBinType p) do fail "natPow: type mismatch"
-    let powV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp v.value a) b
+    let powV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
     unless ← defeq1 ops p (powV x zero) one do fail "natPow: pow x 0 ≠ 1"
     unless ← defeq2 ops p (powV y (succ x)) (mul (powV y x) y) do fail "natPow: step check failed"
     return true
@@ -172,7 +175,7 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives) (kenv : KEnv m) 
   if addr == p.natBeq then
     if !kenv.contains p.nat || !kenv.contains p.bool || v.numLevels != 0 then fail
     unless ← ops.isDefEq v.type (natBinBoolType p) do fail
-    let beqV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp v.value a) b
+    let beqV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
     unless ← ops.isDefEq (beqV zero zero) tru do fail
     unless ← defeq1 ops p (beqV zero (succ x)) fal do fail
     unless ← defeq1 ops p (beqV (succ x) zero) fal do fail
@@ -182,7 +185,7 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives) (kenv : KEnv m) 
   if addr == p.natBle then
     if !kenv.contains p.nat || !kenv.contains p.bool || v.numLevels != 0 then fail
     unless ← ops.isDefEq v.type (natBinBoolType p) do fail
-    let bleV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp v.value a) b
+    let bleV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
     unless ← ops.isDefEq (bleV zero zero) tru do fail
     unless ← defeq1 ops p (bleV zero (succ x)) tru do fail
     unless ← defeq1 ops p (bleV (succ x) zero) fal do fail
@@ -192,7 +195,7 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives) (kenv : KEnv m) 
   if addr == p.natShiftLeft then
     if !kenv.contains p.natMul || v.numLevels != 0 then fail
     unless ← ops.isDefEq v.type (natBinType p) do fail
-    let shlV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp v.value a) b
+    let shlV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
     unless ← defeq1 ops p (shlV x zero) x do fail
     unless ← defeq2 ops p (shlV x (succ y)) (shlV (mul two x) y) do fail
     return true
@@ -200,7 +203,7 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives) (kenv : KEnv m) 
   if addr == p.natShiftRight then
     if !kenv.contains p.natDiv || v.numLevels != 0 then fail
     unless ← ops.isDefEq v.type (natBinType p) do fail
-    let shrV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp v.value a) b
+    let shrV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
     unless ← defeq1 ops p (shrV x zero) x do fail
     unless ← defeq2 ops p (shrV x (succ y)) (div' (shrV x y) two) do fail
     return true

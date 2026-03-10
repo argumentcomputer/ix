@@ -130,7 +130,7 @@ mod tests {
     e: &KExpr<Meta>,
   ) -> Result<KExpr<Meta>, String> {
     let mut tc = TypeChecker::new(env, prims);
-    let val = tc.eval(e, &vec![]).map_err(|e| format!("{e}"))?;
+    let val = tc.eval(e, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
     tc.quote(&val, 0).map_err(|e| format!("{e}"))
   }
 
@@ -141,7 +141,7 @@ mod tests {
     e: &KExpr<Meta>,
   ) -> Result<KExpr<Meta>, String> {
     let mut tc = TypeChecker::new(env, prims);
-    let val = tc.eval(e, &vec![]).map_err(|e| format!("{e}"))?;
+    let val = tc.eval(e, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
     let w = tc.whnf_val(&val, 0).map_err(|e| format!("{e}"))?;
     tc.quote(&w, 0).map_err(|e| format!("{e}"))
   }
@@ -155,7 +155,7 @@ mod tests {
   ) -> Result<KExpr<Meta>, String> {
     let mut tc = TypeChecker::new(env, prims);
     tc.quot_init = quot_init;
-    let val = tc.eval(e, &vec![]).map_err(|e| format!("{e}"))?;
+    let val = tc.eval(e, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
     let w = tc.whnf_val(&val, 0).map_err(|e| format!("{e}"))?;
     tc.quote(&w, 0).map_err(|e| format!("{e}"))
   }
@@ -168,8 +168,8 @@ mod tests {
     b: &KExpr<Meta>,
   ) -> Result<bool, String> {
     let mut tc = TypeChecker::new(env, prims);
-    let va = tc.eval(a, &vec![]).map_err(|e| format!("{e}"))?;
-    let vb = tc.eval(b, &vec![]).map_err(|e| format!("{e}"))?;
+    let va = tc.eval(a, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
+    let vb = tc.eval(b, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
     tc.is_def_eq(&va, &vb).map_err(|e| format!("{e}"))
   }
 
@@ -192,7 +192,7 @@ mod tests {
     e: &KExpr<Meta>,
   ) -> Result<Option<Address>, String> {
     let mut tc = TypeChecker::new(env, prims);
-    let val = tc.eval(e, &vec![]).map_err(|e| format!("{e}"))?;
+    let val = tc.eval(e, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
     let w = tc.whnf_val(&val, 0).map_err(|e| format!("{e}"))?;
     match w.inner() {
       ValInner::Neutral {
@@ -1137,14 +1137,28 @@ mod tests {
       whnf_quote(&env, &prims, &cst(&ax_addr)).unwrap(),
       cst(&ax_addr)
     );
-    // Nat.add axiom 5 partially reduces via step rule:
-    // add x (succ y) = succ (add x y), so head becomes natSucc
+    // Nat.add axiom 5: the second arg is a nat literal (not Nat.succ),
+    // so step-case reduction does not fire (extract_succ_pred only matches
+    // structural succ, not literals — to avoid O(n) peeling). The expression
+    // stays stuck with nat_add as the head.
     let stuck_add = app(
       app(cst(prims.nat_add.as_ref().unwrap()), cst(&ax_addr)),
       nat_lit(5),
     );
     assert_eq!(
       whnf_head_addr(&env, &prims, &stuck_add).unwrap(),
+      Some(prims.nat_add.clone().unwrap())
+    );
+
+    // Nat.add axiom (Nat.succ axiom): second arg IS structural succ,
+    // so step-case fires: add x (succ y) → succ (add x y)
+    let succ_axiom = app(cst(prims.nat_succ.as_ref().unwrap()), cst(&ax_addr));
+    let stuck_add_succ = app(
+      app(cst(prims.nat_add.as_ref().unwrap()), cst(&ax_addr)),
+      succ_axiom,
+    );
+    assert_eq!(
+      whnf_head_addr(&env, &prims, &stuck_add_succ).unwrap(),
       Some(prims.nat_succ.clone().unwrap())
     );
   }

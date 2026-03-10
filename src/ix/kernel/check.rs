@@ -71,19 +71,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         let type_val = self.eval_in_ctx(&v.cv.typ)?;
         let value_te = self.with_rec_addr(addr.clone(), |tc| {
           tc.with_infer_only(|tc| {
-            let (val_te, val_type) = tc.infer(&v.value)?;
-            if !tc.is_def_eq(&val_type, &type_val)? {
-              let expected =
-                tc.quote(&type_val, tc.depth())?;
-              let found =
-                tc.quote(&val_type, tc.depth())?;
-              return Err(TcError::TypeMismatch {
-                expected,
-                found,
-                expr: v.value.clone(),
-              });
-            }
-            Ok(val_te)
+            tc.check(&v.value, &type_val)
           })
         })?;
         self.typed_consts.insert(
@@ -179,9 +167,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           v.num_minors,
           v.num_indices,
         )
-        .or_else(|| v.all.first().cloned())
         .ok_or_else(|| TcError::KernelException {
-          msg: "recursor has no inductive".to_string(),
+          msg: "recursor has no inductive: getMajorInduct failed"
+            .to_string(),
         })?;
 
         self.ensure_typed_const(&induct_addr)?;
@@ -1346,6 +1334,30 @@ pub fn typecheck_const<M: MetaMode>(
   let mut tc = TypeChecker::new(env, prims);
   tc.quot_init = quot_init;
   tc.check_const(addr)
+}
+
+/// Type-check a single constant, returning stats on success or failure.
+pub fn typecheck_const_with_stats<M: MetaMode>(
+  env: &KEnv<M>,
+  prims: &Primitives,
+  addr: &Address,
+  quot_init: bool,
+) -> (Result<(), TcError<M>>, usize, super::tc::Stats) {
+  typecheck_const_with_stats_trace(env, prims, addr, quot_init, false)
+}
+
+pub fn typecheck_const_with_stats_trace<M: MetaMode>(
+  env: &KEnv<M>,
+  prims: &Primitives,
+  addr: &Address,
+  quot_init: bool,
+  trace: bool,
+) -> (Result<(), TcError<M>>, usize, super::tc::Stats) {
+  let mut tc = TypeChecker::new(env, prims);
+  tc.quot_init = quot_init;
+  tc.trace = trace;
+  let result = tc.check_const(addr);
+  (result, tc.heartbeats, tc.stats.clone())
 }
 
 /// Type-check all constants in the environment.

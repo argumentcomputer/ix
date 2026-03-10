@@ -79,7 +79,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     Some(KExpr::app(
       KExpr::cnst(
         list_addr,
-        vec![KLevel::succ(KLevel::zero())],
+        vec![KLevel::zero()],
         M::Field::<Name>::default(),
       ),
       char_e,
@@ -404,8 +404,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natAdd: type mismatch"));
       }
+      // Use the constant so try_reduce_nat_val step-case fires
+      let add_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
       let add_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(v.value.clone(), a), b)
+        KExpr::app(KExpr::app(add_const.clone(), a), b)
       };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
@@ -429,8 +431,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natPred: type mismatch"));
       }
+      // Use the constant so try_reduce_nat_val step-case fires
+      let pred_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
       let pred_v = |a: KExpr<M>| -> KExpr<M> {
-        KExpr::app(v.value.clone(), a)
+        KExpr::app(pred_const.clone(), a)
       };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
@@ -452,8 +456,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natSub: type mismatch"));
       }
+      // Use the constant so try_reduce_nat_val step-case fires
+      let sub_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
       let sub_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(v.value.clone(), a), b)
+        KExpr::app(KExpr::app(sub_const.clone(), a), b)
       };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
@@ -477,8 +483,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natMul: type mismatch"));
       }
+      // Use the constant so try_reduce_nat_val step-case fires
+      let mul_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
       let mul_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(v.value.clone(), a), b)
+        KExpr::app(KExpr::app(mul_const.clone(), a), b)
       };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
@@ -502,8 +510,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natPow: type mismatch"));
       }
+      // Use the constant so try_reduce_nat_val step-case fires
+      let pow_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
       let pow_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(v.value.clone(), a), b)
+        KExpr::app(KExpr::app(pow_const.clone(), a), b)
       };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let one = self.succ_app(zero.clone()).ok_or_else(|| self.prim_err("succ"))?;
@@ -528,8 +538,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natBeq: type mismatch"));
       }
+      // Use the constant so try_reduce_nat_val step-case fires
+      let beq_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
       let beq_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(v.value.clone(), a), b)
+        KExpr::app(KExpr::app(beq_const.clone(), a), b)
       };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let tru = self.true_const().ok_or_else(|| self.prim_err("true"))?;
@@ -560,8 +572,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natBle: type mismatch"));
       }
+      // Use the constant so try_reduce_nat_val step-case fires
+      let ble_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
       let ble_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(v.value.clone(), a), b)
+        KExpr::app(KExpr::app(ble_const.clone(), a), b)
       };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let tru = self.true_const().ok_or_else(|| self.prim_err("true"))?;
@@ -592,8 +606,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natShiftLeft: type mismatch"));
       }
+      // Use the constant (not v.value) so try_reduce_nat_val step-case fires
+      let shl_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
       let shl_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(v.value.clone(), a), b)
+        KExpr::app(KExpr::app(shl_const.clone(), a), b)
       };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let one = self.succ_app(zero.clone()).ok_or_else(|| self.prim_err("succ"))?;
@@ -618,8 +634,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natShiftRight: type mismatch"));
       }
+      // Use the constant (not v.value) so try_reduce_nat_val step-case fires
+      let shr_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
       let shr_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(v.value.clone(), a), b)
+        KExpr::app(KExpr::app(shr_const.clone(), a), b)
       };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let one = self.succ_app(zero.clone()).ok_or_else(|| self.prim_err("succ"))?;
@@ -804,7 +822,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       let nil_char = KExpr::app(
         KExpr::cnst(
           self.prims.list_nil.clone().ok_or_else(|| self.prim_err("List.nil"))?,
-          vec![KLevel::succ(KLevel::zero())],
+          vec![KLevel::zero()],
           M::Field::<Name>::default(),
         ),
         char_e.clone(),
@@ -817,7 +835,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       let cons_char = KExpr::app(
         KExpr::cnst(
           self.prims.list_cons.clone().ok_or_else(|| self.prim_err("List.cons"))?,
-          vec![KLevel::succ(KLevel::zero())],
+          vec![KLevel::zero()],
           M::Field::<Name>::default(),
         ),
         char_e.clone(),

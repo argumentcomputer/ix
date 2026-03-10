@@ -27,8 +27,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         let dom_expr = self.quote(dom, depth)?;
         // Create fresh fvar at current depth
         let fvar = Val::mk_fvar(depth, dom.clone());
-        let mut new_env = env.clone();
-        new_env.push(fvar);
+        let new_env = env_push(env, fvar);
         let body_val = self.eval(body, &new_env)?;
         let body_expr = self.quote(&body_val, depth + 1)?;
         Ok(KExpr::lam(dom_expr, body_expr, name.clone(), bi.clone()))
@@ -43,8 +42,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       } => {
         let dom_expr = self.quote(dom, depth)?;
         let fvar = Val::mk_fvar(depth, dom.clone());
-        let mut new_env = env.clone();
-        new_env.push(fvar);
+        let new_env = env_push(env, fvar);
         let body_val = self.eval(body, &new_env)?;
         let body_expr = self.quote(&body_val, depth + 1)?;
         Ok(KExpr::forall_e(

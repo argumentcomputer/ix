@@ -52,7 +52,18 @@ inductive Level (m : MetaMode) where
   | max    (l₁ l₂ : Level m)
   | imax   (l₁ l₂ : Level m)
   | param  (idx : Nat) (name : MetaField m Ix.Name)
-  deriving Inhabited, BEq
+  deriving Inhabited
+
+/-- Level equality ignores param names (non-semantic metadata). -/
+partial def Level.beq : Level m → Level m → Bool
+  | .zero, .zero => true
+  | .succ a, .succ b => Level.beq a b
+  | .max a1 a2, .max b1 b2 => Level.beq a1 b1 && Level.beq a2 b2
+  | .imax a1 a2, .imax b1 b2 => Level.beq a1 b1 && Level.beq a2 b2
+  | .param i _, .param j _ => i == j
+  | _, _ => false
+
+instance : BEq (Level m) where beq := Level.beq
 
 /-! ## Expr -/
 
@@ -80,32 +91,34 @@ private unsafe def Expr.ptrEqUnsafe (a : @& Expr m) (b : @& Expr m) : Bool :=
 @[implemented_by Expr.ptrEqUnsafe]
 opaque Expr.ptrEq : @& Expr m → @& Expr m → Bool
 
-/-- Structural equality for Expr, iterating over binder body spines to avoid
-    stack overflow on deeply nested let/lam/forallE chains. -/
+/-- Structural equality for Expr, ignoring metadata (names, binder info).
+    Metadata is non-semantic in the kernel — only de Bruijn structure, addresses,
+    universe levels, and literals matter. Iterates over binder body spines to
+    avoid stack overflow on deeply nested let/lam/forallE chains. -/
 partial def Expr.beq : Expr m → Expr m → Bool := go where
   go (a b : Expr m) : Bool := Id.run do
     if Expr.ptrEq a b then return true
     let mut ca := a; let mut cb := b
     repeat
       match ca, cb with
-      | .lam ty1 body1 n1 bi1, .lam ty2 body2 n2 bi2 =>
-        if !(go ty1 ty2 && n1 == n2 && bi1 == bi2) then return false
+      | .lam ty1 body1 _ _, .lam ty2 body2 _ _ =>
+        if !(go ty1 ty2) then return false
         ca := body1; cb := body2
-      | .forallE ty1 body1 n1 bi1, .forallE ty2 body2 n2 bi2 =>
-        if !(go ty1 ty2 && n1 == n2 && bi1 == bi2) then return false
+      | .forallE ty1 body1 _ _, .forallE ty2 body2 _ _ =>
+        if !(go ty1 ty2) then return false
         ca := body1; cb := body2
-      | .letE ty1 val1 body1 n1, .letE ty2 val2 body2 n2 =>
-        if !(go ty1 ty2 && go val1 val2 && n1 == n2) then return false
+      | .letE ty1 val1 body1 _, .letE ty2 val2 body2 _ =>
+        if !(go ty1 ty2 && go val1 val2) then return false
         ca := body1; cb := body2
       | _, _ => break
     match ca, cb with
-    | .bvar i1 n1, .bvar i2 n2 => return i1 == i2 && n1 == n2
+    | .bvar i1 _, .bvar i2 _ => return i1 == i2
     | .sort l1, .sort l2 => return l1 == l2
-    | .const a1 ls1 n1, .const a2 ls2 n2 => return a1 == a2 && ls1 == ls2 && n1 == n2
+    | .const a1 ls1 _, .const a2 ls2 _ => return a1 == a2 && ls1 == ls2
     | .app fn1 arg1, .app fn2 arg2 => return go fn1 fn2 && go arg1 arg2
     | .lit l1, .lit l2 => return l1 == l2
-    | .proj a1 i1 s1 n1, .proj a2 i2 s2 n2 =>
-      return a1 == a2 && i1 == i2 && go s1 s2 && n1 == n2
+    | .proj a1 i1 s1 _, .proj a2 i2 s2 _ =>
+      return a1 == a2 && i1 == i2 && go s1 s2
     | _, _ => return false
 
 instance : BEq (Expr m) where beq := Expr.beq
@@ -484,6 +497,12 @@ partial def hasLooseBVarsAbove (e : Expr m) (depth : Nat) : Bool := Id.run do
 /-- Does the expression have any loose (free) bvars? -/
 def hasLooseBVars (e : Expr m) : Bool := e.hasLooseBVarsAbove 0
 
+/-- Name of the Expr constructor (for diagnostics). -/
+def ctorName : Expr m → String
+  | bvar .. => "bvar" | sort .. => "sort" | const .. => "const"
+  | app .. => "app" | lam .. => "lam" | forallE .. => "forallE"
+  | letE .. => "letE" | lit .. => "lit" | proj .. => "proj"
+
 /-- Accessor for binding name. -/
 def bindingName! : Expr m → MetaField m Ix.Name
   | forallE _ _ n _ => n | lam _ _ n _ => n | _ => panic! "bindingName!"
@@ -831,12 +850,10 @@ instance : Inhabited (EnvId m) where
   default := ⟨default, default⟩
 
 instance : BEq (EnvId m) where
-  beq a b := a.addr == b.addr && a.name == b.name
+  beq a b := a.addr == b.addr
 
 def EnvId.compare (a b : EnvId m) : Ordering :=
-  match Address.compare a.addr b.addr with
-  | .eq => Ord.compare a.name b.name
-  | ord => ord
+  Address.compare a.addr b.addr
 
 structure Env (m : MetaMode) where
   entries : Std.TreeMap (EnvId m) (ConstantInfo m) EnvId.compare
@@ -886,7 +903,7 @@ def isStructureLike (env : Env m) (addr : Address) : Bool :=
   | some (.inductInfo v) =>
     !v.isRec && v.numIndices == 0 && v.ctors.size == 1 &&
     match env.find? v.ctors[0]! with
-    | some (.ctorInfo cv) => cv.numFields > 0
+    | some (.ctorInfo _) => true
     | _ => false
   | _ => false
 

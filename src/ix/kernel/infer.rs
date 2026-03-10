@@ -3,6 +3,8 @@
 //! Implements `infer` (type inference), `check` (type checking against an
 //! expected type), and related utilities.
 
+use std::rc::Rc;
+
 use crate::ix::env::{Literal, Name};
 
 use super::error::TcError;
@@ -23,17 +25,25 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     self.heartbeat()?;
 
-    // Inference cache: check if we've already inferred this term in the same context
-    let cache_key = term.ptr_id();
-    if let Some((cached_depth, te, ty)) =
-      self.infer_cache.get(&cache_key).cloned()
+    // Inference cache: check if we've already inferred this term in the same context.
+    // Keyed by structural KExpr equality (with Rc pointer short-circuit).
+    // For open terms, also validate context by checking types array pointer identity.
+    if let Some((cached_types_ptrs, te, ty)) =
+      self.infer_cache.get(term).cloned()
     {
-      // For consts/sorts/lits, context doesn't matter (always closed)
       let context_ok = match term.data() {
+        // Closed terms: context doesn't matter
         KExprData::Const(..) | KExprData::Sort(..) | KExprData::Lit(..) => {
           true
         }
-        _ => cached_depth == self.depth(),
+        // Open terms: check types array matches element-wise by pointer
+        _ => {
+          cached_types_ptrs.len() == self.types.len()
+            && cached_types_ptrs
+              .iter()
+              .zip(self.types.iter())
+              .all(|(&cached, ty)| cached == ty.ptr_id())
+        }
       };
       if context_ok {
         return Ok((te, ty));
@@ -42,10 +52,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     let result = self.infer_core(term)?;
 
-    // Insert into inference cache
+    // Store context as compact pointer fingerprint
+    let types_ptrs: Vec<usize> =
+      self.types.iter().map(|t| t.ptr_id()).collect();
     self.infer_cache.insert(
-      cache_key,
-      (self.depth(), result.0.clone(), result.1.clone()),
+      term.clone(),
+      (types_ptrs, result.0.clone(), result.1.clone()),
     );
 
     Ok(result)
@@ -212,6 +224,28 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                     let dom_expr = tc.quote(dom, tc.depth())?;
                     let arg_type_expr =
                       tc.quote(&arg_type, tc.depth())?;
+                    if tc.trace {
+                      eprintln!("[MISMATCH at App arg] dom_val={dom}  arg_type={arg_type}");
+                      // Show spine details if both are neutrals
+                      if let (
+                        ValInner::Neutral { head: Head::Const { addr: a1, .. }, spine: sp1 },
+                        ValInner::Neutral { head: Head::Const { addr: a2, .. }, spine: sp2 },
+                      ) = (dom.inner(), arg_type.inner()) {
+                        eprintln!("  addr_eq={}", a1 == a2);
+                        for (i, th) in sp1.iter().enumerate() {
+                          if let Ok(v) = tc.force_thunk(th) {
+                            let w = tc.whnf_val(&v, 0).unwrap_or(v.clone());
+                            eprintln!("  dom_spine[{i}]: {v} (whnf: {w})");
+                          }
+                        }
+                        for (i, th) in sp2.iter().enumerate() {
+                          if let Ok(v) = tc.force_thunk(th) {
+                            let w = tc.whnf_val(&v, 0).unwrap_or(v.clone());
+                            eprintln!("  arg_spine[{i}]: {v} (whnf: {w})");
+                          }
+                        }
+                      }
+                    }
                     return Err(TcError::TypeMismatch {
                       expected: dom_expr,
                       found: arg_type_expr,
@@ -230,8 +264,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               // Evaluate the argument and push into codomain
               let arg_val =
                 self.eval(arg, &self.build_ctx_env())?;
-              let mut new_env = env.clone();
-              new_env.push(arg_val);
+              let new_env = env_push(env, arg_val);
               fn_type = self.eval(body, &new_env)?;
             }
             _ => {
@@ -352,8 +385,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let ct_whnf = self.whnf_val(&ct, 0)?;
           match ct_whnf.inner() {
             ValInner::Pi { body, env, .. } => {
-              let mut new_env = env.clone();
-              new_env.push(param_val.clone());
+              let new_env = env_push(env, param_val.clone());
               ct = self.eval(body, &new_env)?;
             }
             _ => {
@@ -378,8 +410,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 M::Field::<Name>::default(),
                 Vec::new(),
               );
-              let mut new_env = env.clone();
-              new_env.push(proj_val);
+              let new_env = env_push(env, proj_val);
               ct = self.eval(body, &new_env)?;
             }
             _ => {
@@ -448,8 +479,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
         // Push Pi codomain through lambda body
         let fvar = Val::mk_fvar(self.depth(), pi_dom.clone());
-        let mut new_pi_env = pi_env.clone();
-        new_pi_env.push(fvar);
+        let new_pi_env = env_push(pi_env, fvar);
         let codomain = self.eval(pi_body, &new_pi_env)?;
 
         let _body_te = self.with_binder(
@@ -473,6 +503,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         self.quote(expected_type, self.depth())?;
       let inferred_expr =
         self.quote(&inferred_type, self.depth())?;
+      if self.trace {
+        eprintln!("[MISMATCH at check fallback] inferred={inferred_type}  expected={expected_type}");
+      }
       return Err(TcError::TypeMismatch {
         expected: expected_expr,
         found: inferred_expr,
@@ -536,8 +569,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           match result_type_whnf.inner() {
             ValInner::Pi { body, env, .. } => {
               let arg_val = self.force_thunk(thunk)?;
-              let mut new_env = env.clone();
-              new_env.push(arg_val);
+              let new_env = env_push(env, arg_val);
               result_type = self.eval(body, &new_env)?;
             }
             _ => {
@@ -570,8 +602,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           match result_type_whnf.inner() {
             ValInner::Pi { body, env, .. } => {
               let arg_val = self.force_thunk(thunk)?;
-              let mut new_env = env.clone();
-              new_env.push(arg_val);
+              let new_env = env_push(env, arg_val);
               result_type = self.eval(body, &new_env)?;
             }
             _ => {
@@ -619,8 +650,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           match result_type_whnf.inner() {
             ValInner::Pi { body, env, .. } => {
               let arg_val = self.force_thunk(thunk)?;
-              let mut new_env = env.clone();
-              new_env.push(arg_val);
+              let new_env = env_push(env, arg_val);
               result_type = self.eval(body, &new_env)?;
             }
             _ => {
@@ -713,18 +743,18 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
   }
 
-  /// Build a Vec<Val> from the current context, with fvars for lambda-bound
+  /// Build an Env from the current context, with fvars for lambda-bound
   /// and values for let-bound.
-  pub fn build_ctx_env(&self) -> Vec<Val<M>> {
-    let mut env = Vec::with_capacity(self.depth());
+  pub fn build_ctx_env(&self) -> Env<M> {
+    let mut env_vec = Vec::with_capacity(self.depth());
     for level in 0..self.depth() {
       if let Some(Some(val)) = self.let_values.get(level) {
-        env.push(val.clone());
+        env_vec.push(val.clone());
       } else {
         let ty = self.types[level].clone();
-        env.push(Val::mk_fvar(level, ty));
+        env_vec.push(Val::mk_fvar(level, ty));
       }
     }
-    env
+    Rc::new(env_vec)
   }
 }
