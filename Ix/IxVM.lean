@@ -5,6 +5,7 @@ public import Ix.IxVM.Blake3
 public import Ix.IxVM.Ixon
 public import Ix.IxVM.IxonSerialize
 public import Ix.IxVM.IxonDeserialize
+public import Ix.IxVM.Convert
 public import Ix.IxVM.KernelTypes
 public import Ix.IxVM.Kernel
 
@@ -53,6 +54,7 @@ def ixVM : Except Aiur.Global Aiur.Toplevel := do
   let vm ← vm.merge ixon
   let vm ← vm.merge ixonSerialize
   let vm ← vm.merge ixonDeserialize
+  let vm ← vm.merge convert
   let vm ← vm.merge kernelTypes
   let vm ← vm.merge kernel
   vm.merge entrypoints
