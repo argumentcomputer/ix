@@ -162,6 +162,11 @@ def ixon := ⟦
   enum Constant {
     Mk(ConstantInfo, &ExprList, &AddressList, &UnivList)
   }
+
+  enum ConstantList {
+    Cons(&Constant, &ConstantList),
+    Nil
+  }
 ⟧
 
 end IxVM
