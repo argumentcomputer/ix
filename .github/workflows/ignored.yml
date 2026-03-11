@@ -2,7 +2,7 @@ name: Extended CI tests
 
 on:
   push:
-    branches: [main, ci-ignored]
+    branches: main
   workflow_dispatch:
 
 permissions:
