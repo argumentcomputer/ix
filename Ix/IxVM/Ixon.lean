@@ -167,6 +167,16 @@ def ixon := ⟦
     Cons(&Constant, &ConstantList),
     Nil
   }
+
+  -- Blob: decoded literal value associated with a content address
+  enum BlobEntry {
+    Mk([G; 32], [G; 8])
+  }
+
+  enum BlobList {
+    Cons(BlobEntry, &BlobList),
+    Nil
+  }
 ⟧
 
 end IxVM
