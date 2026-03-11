@@ -118,6 +118,7 @@ mod tests {
       reduce_bool: None,
       reduce_nat: None,
       eager_reduce: None,
+      system_platform_num_bits: None,
     }
   }
 
@@ -1389,25 +1390,40 @@ mod tests {
   #[test]
   fn proof_irrelevance() {
     let prims = test_prims();
+
+    // Create a proposition P : Prop, then two proofs p1 : P, p2 : P
+    let p_addr = mk_addr(129);
     let ax1 = mk_addr(130);
     let ax2 = mk_addr(131);
     let mut env = empty_env();
-    add_axiom(&mut env, &ax1, prop());
-    add_axiom(&mut env, &ax2, prop());
-    // Two Prop axioms are defEq (proof irrelevance for propositions)
+    add_axiom(&mut env, &p_addr, prop()); // P : Prop
+    add_axiom(&mut env, &ax1, cst(&p_addr)); // p1 : P
+    add_axiom(&mut env, &ax2, cst(&p_addr)); // p2 : P
+    // Two proofs of the same Prop are defEq (proof irrelevance)
     assert_eq!(
       is_def_eq(&env, &prims, &cst(&ax1), &cst(&ax2)).unwrap(),
       true
     );
 
-    // Two Type axioms are NOT defEq
-    let t1 = mk_addr(132);
-    let t2 = mk_addr(133);
+    // Two distinct propositions (type Prop) are NOT defEq
+    let q1 = mk_addr(132);
+    let q2 = mk_addr(133);
     let mut env2 = empty_env();
-    add_axiom(&mut env2, &t1, ty());
-    add_axiom(&mut env2, &t2, ty());
+    add_axiom(&mut env2, &q1, prop()); // Q1 : Prop
+    add_axiom(&mut env2, &q2, prop()); // Q2 : Prop
     assert_eq!(
-      is_def_eq(&env2, &prims, &cst(&t1), &cst(&t2)).unwrap(),
+      is_def_eq(&env2, &prims, &cst(&q1), &cst(&q2)).unwrap(),
+      false
+    );
+
+    // Two Type axioms are NOT defEq
+    let t1 = mk_addr(134);
+    let t2 = mk_addr(135);
+    let mut env3 = empty_env();
+    add_axiom(&mut env3, &t1, ty());
+    add_axiom(&mut env3, &t2, ty());
+    assert_eq!(
+      is_def_eq(&env3, &prims, &cst(&t1), &cst(&t2)).unwrap(),
       false
     );
   }
@@ -2869,5 +2885,708 @@ mod tests {
       "myAdd typecheck failed: {:?}",
       result.err()
     );
+  }
+
+  // ==========================================================================
+  // Group A: Proof Irrelevance
+  // ==========================================================================
+
+  #[test]
+  fn proof_irrel_basic() {
+    let prims = test_prims();
+    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_env());
+    let p1 = mk_addr(300);
+    let p2 = mk_addr(301);
+    add_axiom(&mut env, &p1, cst(&true_ind));
+    add_axiom(&mut env, &p2, cst(&true_ind));
+    // Two proofs of a Prop are defeq
+    assert!(is_def_eq(&env, &prims, &cst(&p1), &cst(&p2)).unwrap());
+  }
+
+  #[test]
+  fn proof_irrel_different_prop_types() {
+    let prims = test_prims();
+    // Build MyTrue
+    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_env());
+    // Build MyFalse : Prop (empty, no ctors)
+    let false_ind = mk_addr(302);
+    add_inductive(
+      &mut env,
+      &false_ind,
+      prop(),
+      vec![],
+      0, 0, false, 0,
+      vec![false_ind.clone()],
+    );
+    let p1 = mk_addr(303);
+    let p2 = mk_addr(304);
+    add_axiom(&mut env, &p1, cst(&true_ind));
+    add_axiom(&mut env, &p2, cst(&false_ind));
+    // Proofs of different types are NOT defeq
+    assert!(!is_def_eq(&env, &prims, &cst(&p1), &cst(&p2)).unwrap());
+  }
+
+  #[test]
+  fn proof_irrel_not_prop() {
+    let prims = test_prims();
+    let (mut env, nat_ind, _zero, _succ, _rec) = build_my_nat_env(empty_env());
+    let n1 = mk_addr(305);
+    let n2 = mk_addr(306);
+    add_axiom(&mut env, &n1, cst(&nat_ind));
+    add_axiom(&mut env, &n2, cst(&nat_ind));
+    // Two axioms of Type (not Prop) are NOT defeq
+    assert!(!is_def_eq(&env, &prims, &cst(&n1), &cst(&n2)).unwrap());
+  }
+
+  #[test]
+  fn proof_irrel_under_lambda() {
+    let prims = test_prims();
+    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_env());
+    let p1 = mk_addr(307);
+    let p2 = mk_addr(308);
+    add_axiom(&mut env, &p1, cst(&true_ind));
+    add_axiom(&mut env, &p2, cst(&true_ind));
+    // λ(x:Type). p1 == λ(x:Type). p2
+    let l1 = lam(ty(), cst(&p1));
+    let l2 = lam(ty(), cst(&p2));
+    assert!(is_def_eq(&env, &prims, &l1, &l2).unwrap());
+  }
+
+  #[test]
+  fn proof_irrel_intro_vs_axiom() {
+    let prims = test_prims();
+    let (mut env, true_ind, intro, _rec) = build_my_true_env(empty_env());
+    let p1 = mk_addr(309);
+    add_axiom(&mut env, &p1, cst(&true_ind));
+    // The constructor intro and an axiom p1 are both proofs of MyTrue → defeq
+    assert!(is_def_eq(&env, &prims, &cst(&intro), &cst(&p1)).unwrap());
+  }
+
+  // ==========================================================================
+  // Group B: Nat Literal / Constructor Equivalence (supplemental)
+  // ==========================================================================
+
+  #[test]
+  fn nat_large_literal_eq() {
+    let prims = test_prims();
+    let env = empty_env();
+    // O(1) literal comparison for large nats
+    assert!(
+      is_def_eq(&env, &prims, &nat_lit(1_000_000), &nat_lit(1_000_000)).unwrap()
+    );
+    assert!(
+      !is_def_eq(&env, &prims, &nat_lit(1_000_000), &nat_lit(1_000_001)).unwrap()
+    );
+  }
+
+  #[test]
+  fn nat_succ_symbolic() {
+    let prims = test_prims();
+    let (mut env, nat_ind, _zero, _succ, _rec) = build_my_nat_env(empty_env());
+    let x = mk_addr(310);
+    let y = mk_addr(311);
+    add_axiom(&mut env, &x, cst(&nat_ind));
+    add_axiom(&mut env, &y, cst(&nat_ind));
+    // Nat.succ(x) == Nat.succ(x)
+    let sx = app(cst(prims.nat_succ.as_ref().unwrap()), cst(&x));
+    let sx2 = app(cst(prims.nat_succ.as_ref().unwrap()), cst(&x));
+    assert!(is_def_eq(&env, &prims, &sx, &sx2).unwrap());
+    // Nat.succ(x) != Nat.succ(y)
+    let sy = app(cst(prims.nat_succ.as_ref().unwrap()), cst(&y));
+    assert!(!is_def_eq(&env, &prims, &sx, &sy).unwrap());
+  }
+
+  #[test]
+  fn nat_lit_zero_roundtrip() {
+    let prims = test_prims();
+    let env = empty_env();
+    // nat_lit(0) whnf stays as nat_lit(0)
+    assert_eq!(whnf_quote(&env, &prims, &nat_lit(0)).unwrap(), nat_lit(0));
+  }
+
+  // ==========================================================================
+  // Group C: Lazy Delta / Hint Ordering (supplemental)
+  // ==========================================================================
+
+  #[test]
+  fn lazy_delta_same_head_axiom_spine() {
+    let prims = test_prims();
+    let f = mk_addr(312);
+    let mut env = empty_env();
+    add_axiom(&mut env, &f, pi(ty(), pi(ty(), ty())));
+    // f 1 2 == f 1 2 (same head, same spine → true)
+    let fa = app(app(cst(&f), nat_lit(1)), nat_lit(2));
+    let fb = app(app(cst(&f), nat_lit(1)), nat_lit(2));
+    assert!(is_def_eq(&env, &prims, &fa, &fb).unwrap());
+    // f 1 2 != f 1 3 (same head, different spine → false)
+    let fc = app(app(cst(&f), nat_lit(1)), nat_lit(3));
+    assert!(!is_def_eq(&env, &prims, &fa, &fc).unwrap());
+  }
+
+  #[test]
+  fn lazy_delta_theorem_unfolded() {
+    let prims = test_prims();
+    let thm_addr = mk_addr(313);
+    let mut env = empty_env();
+    // Theorems ARE unfolded by delta in defEq
+    add_theorem(&mut env, &thm_addr, ty(), nat_lit(5));
+    assert!(
+      is_def_eq(&env, &prims, &cst(&thm_addr), &nat_lit(5)).unwrap()
+    );
+    // But two different theorems with different bodies are not defeq by head
+    let thm2 = mk_addr(337);
+    add_theorem(&mut env, &thm2, ty(), nat_lit(6));
+    assert!(
+      !is_def_eq(&env, &prims, &cst(&thm_addr), &cst(&thm2)).unwrap()
+    );
+  }
+
+  #[test]
+  fn lazy_delta_chain_abbrev() {
+    let prims = test_prims();
+    let a = mk_addr(314);
+    let b = mk_addr(315);
+    let c = mk_addr(316);
+    let mut env = empty_env();
+    add_def(&mut env, &a, ty(), nat_lit(7), 0, ReducibilityHints::Abbrev);
+    add_def(&mut env, &b, ty(), cst(&a), 0, ReducibilityHints::Abbrev);
+    add_def(&mut env, &c, ty(), cst(&b), 0, ReducibilityHints::Abbrev);
+    // Chain of abbrevs all reduce to 7
+    assert!(is_def_eq(&env, &prims, &cst(&c), &nat_lit(7)).unwrap());
+    assert!(is_def_eq(&env, &prims, &cst(&a), &cst(&c)).unwrap());
+  }
+
+  // ==========================================================================
+  // Group D: K-Reduction
+  // ==========================================================================
+
+  #[test]
+  fn k_reduction_direct_ctor() {
+    let prims = test_prims();
+    let (env, _true_ind, intro, rec) = build_my_true_env(empty_env());
+    // rec (λ_. Nat) 42 intro → 42
+    let rec_expr = app(
+      app(
+        app(cst(&rec), lam(cst(&_true_ind), ty())),
+        nat_lit(42),
+      ),
+      cst(&intro),
+    );
+    assert_eq!(whnf_quote(&env, &prims, &rec_expr).unwrap(), nat_lit(42));
+  }
+
+  #[test]
+  fn k_reduction_axiom_major() {
+    let prims = test_prims();
+    let (mut env, true_ind, _intro, rec) = build_my_true_env(empty_env());
+    let ax = mk_addr(317);
+    add_axiom(&mut env, &ax, cst(&true_ind));
+    // K-rec on axiom p : MyTrue still reduces (toCtorWhenK)
+    let rec_expr = app(
+      app(
+        app(cst(&rec), lam(cst(&true_ind), ty())),
+        nat_lit(99),
+      ),
+      cst(&ax),
+    );
+    assert_eq!(whnf_quote(&env, &prims, &rec_expr).unwrap(), nat_lit(99));
+  }
+
+  #[test]
+  fn k_reduction_non_k_recursor_stays_stuck() {
+    let prims = test_prims();
+    let (mut env, nat_ind, _zero, _succ, rec) = build_my_nat_env(empty_env());
+    let ax = mk_addr(318);
+    add_axiom(&mut env, &ax, cst(&nat_ind));
+    // MyNat.rec is NOT K (K=false). Applied to axiom of correct type stays stuck.
+    let motive = lam(cst(&nat_ind), ty());
+    let base = nat_lit(0);
+    let step = lam(cst(&nat_ind), lam(ty(), bv(0)));
+    let rec_expr = app(
+      app(app(app(cst(&rec), motive), base), step),
+      cst(&ax),
+    );
+    // rec on axiom (not a ctor) — iota fails, K not enabled → stuck
+    assert_eq!(
+      whnf_head_addr(&env, &prims, &rec_expr).unwrap(),
+      Some(rec.clone())
+    );
+  }
+
+  // ==========================================================================
+  // Group E: Struct Eta (supplemental)
+  // ==========================================================================
+
+  #[test]
+  fn struct_eta_not_recursive() {
+    let prims = test_prims();
+    // Build a recursive list-like type — struct eta should NOT fire
+    let list_ind = mk_addr(319);
+    let list_nil = mk_addr(320);
+    let list_cons = mk_addr(321);
+    let mut env = empty_env();
+    add_inductive(
+      &mut env,
+      &list_ind,
+      pi(ty(), ty()),
+      vec![list_nil.clone(), list_cons.clone()],
+      1, 0,
+      true, // is_rec = true
+      0,
+      vec![list_ind.clone()],
+    );
+    add_ctor(
+      &mut env, &list_nil, &list_ind,
+      pi(ty(), app(cst(&list_ind), bv(0))),
+      0, 1, 0, 0,
+    );
+    // cons : (α : Type) → α → List α → List α
+    add_ctor(
+      &mut env, &list_cons, &list_ind,
+      pi(ty(), pi(bv(0), pi(app(cst(&list_ind), bv(1)), app(cst(&list_ind), bv(2))))),
+      1, 1, 2, 0,
+    );
+    // Two axioms of list type should NOT be defeq (not unit-like, not proof irrel, not struct-eta)
+    let ax1 = mk_addr(322);
+    let ax2 = mk_addr(323);
+    let list_nat = app(cst(&list_ind), ty());
+    add_axiom(&mut env, &ax1, list_nat.clone());
+    add_axiom(&mut env, &ax2, list_nat);
+    assert!(!is_def_eq(&env, &prims, &cst(&ax1), &cst(&ax2)).unwrap());
+  }
+
+  // ==========================================================================
+  // Group F: Unit-Like Types (supplemental)
+  // ==========================================================================
+
+  #[test]
+  fn unit_like_prop_defeq() {
+    let prims = test_prims();
+    // Build a Prop type with 1 ctor, 0 fields (both unit-like and proof-irrel)
+    let p_ind = mk_addr(324);
+    let p_mk = mk_addr(325);
+    let mut env = empty_env();
+    add_inductive(
+      &mut env, &p_ind, prop(),
+      vec![p_mk.clone()],
+      0, 0, false, 0,
+      vec![p_ind.clone()],
+    );
+    add_ctor(&mut env, &p_mk, &p_ind, cst(&p_ind), 0, 0, 0, 0);
+    let ax1 = mk_addr(326);
+    let ax2 = mk_addr(327);
+    add_axiom(&mut env, &ax1, cst(&p_ind));
+    add_axiom(&mut env, &ax2, cst(&p_ind));
+    // Both proof irrelevance and unit-like apply
+    assert!(is_def_eq(&env, &prims, &cst(&ax1), &cst(&ax2)).unwrap());
+  }
+
+  #[test]
+  fn unit_like_with_fields_not_defeq() {
+    let prims = test_prims();
+    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_env());
+    let ax1 = mk_addr(328);
+    let ax2 = mk_addr(329);
+    let pair_ty = app(app(cst(&pair_ind), ty()), ty());
+    add_axiom(&mut env, &ax1, pair_ty.clone());
+    add_axiom(&mut env, &ax2, pair_ty);
+    // Pair has 2 fields → not unit-like → axioms not defeq
+    assert!(!is_def_eq(&env, &prims, &cst(&ax1), &cst(&ax2)).unwrap());
+  }
+
+  // ==========================================================================
+  // Group G: String Literal Expansion (supplemental)
+  // ==========================================================================
+
+  #[test]
+  fn string_lit_multichar() {
+    let prims = test_prims();
+    let env = empty_env();
+    let char_type = cst(prims.char_type.as_ref().unwrap());
+    let mk_char = |n: u64| app(cst(prims.char_mk.as_ref().unwrap()), nat_lit(n));
+    let nil = app(
+      cst_l(prims.list_nil.as_ref().unwrap(), vec![KLevel::zero()]),
+      char_type.clone(),
+    );
+    // Build "ab" as String.mk [Char.mk 97, Char.mk 98]
+    let cons = |hd, tl| {
+      app(
+        app(
+          app(
+            cst_l(prims.list_cons.as_ref().unwrap(), vec![KLevel::zero()]),
+            char_type.clone(),
+          ),
+          hd,
+        ),
+        tl,
+      )
+    };
+    let list_ab = cons(mk_char(97), cons(mk_char(98), nil));
+    let str_ab = app(cst(prims.string_mk.as_ref().unwrap()), list_ab);
+    assert!(is_def_eq(&env, &prims, &str_lit("ab"), &str_ab).unwrap());
+  }
+
+  // ==========================================================================
+  // Group H: Eta Expansion (supplemental)
+  // ==========================================================================
+
+  #[test]
+  fn eta_axiom_fun() {
+    let prims = test_prims();
+    let f_addr = mk_addr(330);
+    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let mut env = empty_env();
+    add_axiom(&mut env, &nat_addr, ty());
+    add_axiom(&mut env, &f_addr, pi(cst(&nat_addr), cst(&nat_addr)));
+    // f == λx. f x (eta)
+    let eta_f = lam(cst(&nat_addr), app(cst(&f_addr), bv(0)));
+    assert!(is_def_eq(&env, &prims, &cst(&f_addr), &eta_f).unwrap());
+    assert!(is_def_eq(&env, &prims, &eta_f, &cst(&f_addr)).unwrap());
+  }
+
+  #[test]
+  fn eta_nested_axiom() {
+    let prims = test_prims();
+    let f_addr = mk_addr(331);
+    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let mut env = empty_env();
+    add_axiom(&mut env, &nat_addr, ty());
+    let nat = cst(&nat_addr);
+    add_axiom(&mut env, &f_addr, pi(nat.clone(), pi(nat.clone(), nat.clone())));
+    // f == λx.λy. f x y (double eta)
+    let double_eta = lam(nat.clone(), lam(nat.clone(), app(app(cst(&f_addr), bv(1)), bv(0))));
+    assert!(is_def_eq(&env, &prims, &cst(&f_addr), &double_eta).unwrap());
+  }
+
+  // ==========================================================================
+  // Group I: Bidirectional Check
+  // ==========================================================================
+
+  /// Helper: run `check` on a term against an expected type.
+  fn check_expr(
+    env: &KEnv<Meta>,
+    prims: &Primitives,
+    term: &KExpr<Meta>,
+    expected_type: &KExpr<Meta>,
+  ) -> Result<(), String> {
+    let mut tc = TypeChecker::new(env, prims);
+    let ty_val = tc.eval(expected_type, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
+    tc.check(term, &ty_val).map_err(|e| format!("{e}"))?;
+    Ok(())
+  }
+
+  #[test]
+  fn check_lam_against_pi() {
+    let prims = test_prims();
+    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let mut env = empty_env();
+    add_axiom(&mut env, &nat_addr, ty());
+    let nat = cst(&nat_addr);
+    // λ(x:Nat). x checked against (Nat → Nat) succeeds
+    let id = lam(nat.clone(), bv(0));
+    let pi_ty = pi(nat.clone(), nat.clone());
+    assert!(check_expr(&env, &prims, &id, &pi_ty).is_ok());
+  }
+
+  #[test]
+  fn check_domain_mismatch() {
+    let prims = test_prims();
+    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let bool_addr = prims.bool_type.as_ref().unwrap().clone();
+    let mut env = empty_env();
+    add_axiom(&mut env, &nat_addr, ty());
+    add_axiom(&mut env, &bool_addr, ty());
+    let nat = cst(&nat_addr);
+    let bool_ty = cst(&bool_addr);
+    // λ(x:Bool). x checked against (Nat → Nat) fails
+    let lam_bool = lam(bool_ty, bv(0));
+    let pi_nat = pi(nat.clone(), nat);
+    assert!(check_expr(&env, &prims, &lam_bool, &pi_nat).is_err());
+  }
+
+  // ==========================================================================
+  // Group J: Quotient Reduction (supplemental — already covered, add Quot.ind)
+  // ==========================================================================
+
+  #[test]
+  fn quotient_ind_reduction() {
+    let prims = test_prims();
+    let quot_addr = mk_addr(150);
+    let quot_mk_addr = mk_addr(151);
+    let quot_lift_addr = mk_addr(152);
+    let quot_ind_addr = mk_addr(153);
+    let mut env = empty_env();
+
+    let quot_type = pi(ty(), pi(pi(bv(0), pi(bv(1), prop())), bv(1)));
+    add_quot(&mut env, &quot_addr, quot_type, QuotKind::Type, 1);
+
+    let mk_type = pi(
+      ty(),
+      pi(
+        pi(bv(0), pi(bv(1), prop())),
+        pi(bv(1), app(app(cst_l(&quot_addr, vec![KLevel::param(0, anon())]), bv(2)), bv(1))),
+      ),
+    );
+    add_quot(&mut env, &quot_mk_addr, mk_type, QuotKind::Ctor, 1);
+
+    let lift_type = pi(ty(), pi(ty(), pi(ty(), pi(ty(), pi(ty(), pi(ty(), ty()))))));
+    add_quot(&mut env, &quot_lift_addr, lift_type, QuotKind::Lift, 2);
+
+    // Quot.ind : ... → Prop (simplified)
+    let ind_type = pi(ty(), pi(ty(), pi(ty(), pi(ty(), pi(ty(), prop())))));
+    add_quot(&mut env, &quot_ind_addr, ind_type, QuotKind::Ind, 1);
+
+    let dummy_rel = lam(ty(), lam(ty(), prop()));
+    let lvl1 = KLevel::succ(KLevel::zero());
+
+    // Quot.mk applied
+    let mk_expr = app(
+      app(app(cst_l(&quot_mk_addr, vec![lvl1.clone()]), ty()), dummy_rel.clone()),
+      nat_lit(10),
+    );
+
+    // h = λ(x:α). some_prop_value
+    let h_expr = lam(ty(), prop());
+
+    // Quot.ind α r motive h (Quot.mk α r 10) should reduce to h 10
+    let ind_expr = app(
+      app(
+        app(
+          app(
+            app(cst_l(&quot_ind_addr, vec![lvl1]), ty()),
+            dummy_rel,
+          ),
+          prop(), // motive (simplified)
+        ),
+        h_expr,
+      ),
+      mk_expr,
+    );
+    // Just check it reduces (doesn't error / doesn't stay stuck on quot_ind)
+    let result = whnf_quote_qi(&env, &prims, &ind_expr, true);
+    assert!(result.is_ok(), "Quot.ind reduction failed: {:?}", result.err());
+  }
+
+  // ==========================================================================
+  // Group K: whnf Loop Ordering
+  // ==========================================================================
+
+  #[test]
+  fn whnf_nat_prim_reduces_literals() {
+    let prims = test_prims();
+    let env = empty_env();
+    // Nat.add 2 3 → 5 via primitive reduction
+    let add_expr = app(
+      app(cst(prims.nat_add.as_ref().unwrap()), nat_lit(2)),
+      nat_lit(3),
+    );
+    assert_eq!(whnf_quote(&env, &prims, &add_expr).unwrap(), nat_lit(5));
+    // Nat.mul 4 5 → 20
+    let mul_expr = app(
+      app(cst(prims.nat_mul.as_ref().unwrap()), nat_lit(4)),
+      nat_lit(5),
+    );
+    assert_eq!(whnf_quote(&env, &prims, &mul_expr).unwrap(), nat_lit(20));
+  }
+
+  #[test]
+  fn whnf_nat_prim_symbolic_stays_stuck() {
+    let prims = test_prims();
+    let x = mk_addr(332);
+    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let mut env = empty_env();
+    add_axiom(&mut env, &nat_addr, ty());
+    add_axiom(&mut env, &x, cst(&nat_addr));
+    // Nat.add x 3 stays stuck (x is symbolic)
+    let add_sym = app(
+      app(cst(prims.nat_add.as_ref().unwrap()), cst(&x)),
+      nat_lit(3),
+    );
+    let result = whnf_quote(&env, &prims, &add_sym).unwrap();
+    // Should NOT reduce to a literal — stays as application
+    assert!(
+      result != nat_lit(3),
+      "Nat.add with symbolic arg should not reduce"
+    );
+  }
+
+  // ==========================================================================
+  // Group L: Level Equality (supplemental)
+  // ==========================================================================
+
+  #[test]
+  fn level_max_commutative() {
+    let prims = test_prims();
+    let env = empty_env();
+    let u = KLevel::param(0, anon());
+    let v = KLevel::param(1, anon());
+    // Sort (max u v) == Sort (max v u)
+    let s1 = KExpr::sort(KLevel::max(u.clone(), v.clone()));
+    let s2 = KExpr::sort(KLevel::max(v, u));
+    assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
+  }
+
+  #[test]
+  fn level_imax_zero_rhs() {
+    let prims = test_prims();
+    let env = empty_env();
+    let u = KLevel::param(0, anon());
+    // imax(u, 0) should normalize to 0
+    let imax_sort = KExpr::sort(KLevel::imax(u, KLevel::zero()));
+    assert!(is_def_eq(&env, &prims, &imax_sort, &prop()).unwrap());
+  }
+
+  #[test]
+  fn level_succ_not_zero() {
+    let prims = test_prims();
+    let env = empty_env();
+    // Sort 1 != Sort 0
+    assert!(!is_def_eq(&env, &prims, &ty(), &prop()).unwrap());
+  }
+
+  #[test]
+  fn level_param_self_eq() {
+    let prims = test_prims();
+    let env = empty_env();
+    let u = KLevel::param(0, anon());
+    let s = KExpr::sort(u);
+    assert!(is_def_eq(&env, &prims, &s, &s).unwrap());
+  }
+
+  // ==========================================================================
+  // Group M: Projection Reduction (supplemental)
+  // ==========================================================================
+
+  #[test]
+  fn proj_stuck_on_axiom() {
+    let prims = test_prims();
+    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_env());
+    let ax = mk_addr(333);
+    let pair_ty = app(app(cst(&pair_ind), ty()), ty());
+    add_axiom(&mut env, &ax, pair_ty);
+    // proj 0 on axiom stays stuck (not a ctor)
+    let proj = proj_e(&pair_ind, 0, cst(&ax));
+    let result = whnf_quote(&env, &prims, &proj).unwrap();
+    // Should still be a proj expression (not reduced)
+    assert_eq!(result, proj_e(&pair_ind, 0, cst(&ax)));
+  }
+
+  #[test]
+  fn proj_different_indices_not_defeq() {
+    let prims = test_prims();
+    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_env());
+    let ax = mk_addr(334);
+    let pair_ty = app(app(cst(&pair_ind), ty()), ty());
+    add_axiom(&mut env, &ax, pair_ty);
+    // proj 0 ax != proj 1 ax
+    let p0 = proj_e(&pair_ind, 0, cst(&ax));
+    let p1 = proj_e(&pair_ind, 1, cst(&ax));
+    assert!(!is_def_eq(&env, &prims, &p0, &p1).unwrap());
+  }
+
+  #[test]
+  fn proj_nested_pair() {
+    let prims = test_prims();
+    let (env, pair_ind, pair_ctor) = build_pair_env(empty_env());
+    // mk (mk 1 2) (mk 3 4)
+    let inner1 = app(app(app(app(cst(&pair_ctor), ty()), ty()), nat_lit(1)), nat_lit(2));
+    let inner2 = app(app(app(app(cst(&pair_ctor), ty()), ty()), nat_lit(3)), nat_lit(4));
+    let pair_of_pair_ty = app(app(cst(&pair_ind), ty()), ty());
+    let outer = app(
+      app(
+        app(app(cst(&pair_ctor), pair_of_pair_ty.clone()), pair_of_pair_ty),
+        inner1,
+      ),
+      inner2,
+    );
+    // proj 0 outer == mk 1 2
+    let p0 = proj_e(&pair_ind, 0, outer.clone());
+    let expected = app(app(app(app(cst(&pair_ctor), ty()), ty()), nat_lit(1)), nat_lit(2));
+    assert!(is_def_eq(&env, &prims, &p0, &expected).unwrap());
+    // proj 0 (proj 0 outer) == 1
+    let pp = proj_e(&pair_ind, 0, p0);
+    assert!(is_def_eq(&env, &prims, &pp, &nat_lit(1)).unwrap());
+  }
+
+  // ==========================================================================
+  // Group N: Opaque / Theorem separation
+  // ==========================================================================
+
+  #[test]
+  fn opaque_self_eq() {
+    let prims = test_prims();
+    let o = mk_addr(335);
+    let mut env = empty_env();
+    add_opaque(&mut env, &o, ty(), nat_lit(5));
+    // Opaque constant is defeq to itself (by pointer/const equality)
+    assert!(is_def_eq(&env, &prims, &cst(&o), &cst(&o)).unwrap());
+  }
+
+  #[test]
+  fn theorem_self_eq() {
+    let prims = test_prims();
+    let t = mk_addr(336);
+    let mut env = empty_env();
+    add_theorem(&mut env, &t, ty(), nat_lit(5));
+    // Theorem constant is defeq to itself
+    assert!(is_def_eq(&env, &prims, &cst(&t), &cst(&t)).unwrap());
+    // Theorems are unfolded during defEq, so thm == 5
+    assert!(is_def_eq(&env, &prims, &cst(&t), &nat_lit(5)).unwrap());
+  }
+
+  // ==========================================================================
+  // Group O: Mixed reduction scenarios
+  // ==========================================================================
+
+  #[test]
+  fn let_in_defeq() {
+    let prims = test_prims();
+    let env = empty_env();
+    // (let x := 5 in x + x) == 10
+    let add_xx = app(
+      app(cst(prims.nat_add.as_ref().unwrap()), bv(0)),
+      bv(0),
+    );
+    let let_expr = let_e(ty(), nat_lit(5), add_xx);
+    assert!(is_def_eq(&env, &prims, &let_expr, &nat_lit(10)).unwrap());
+  }
+
+  #[test]
+  fn nested_let_defeq() {
+    let prims = test_prims();
+    let env = empty_env();
+    // let x := 2 in let y := 3 in x + y == 5
+    let inner = let_e(
+      ty(),
+      nat_lit(3),
+      app(app(cst(prims.nat_add.as_ref().unwrap()), bv(1)), bv(0)),
+    );
+    let outer = let_e(ty(), nat_lit(2), inner);
+    assert!(is_def_eq(&env, &prims, &outer, &nat_lit(5)).unwrap());
+  }
+
+  #[test]
+  fn beta_inside_defeq() {
+    let prims = test_prims();
+    let env = empty_env();
+    // (λx.x) 5 == (λy.y) 5
+    let a = app(lam(ty(), bv(0)), nat_lit(5));
+    let b = app(lam(ty(), bv(0)), nat_lit(5));
+    assert!(is_def_eq(&env, &prims, &a, &b).unwrap());
+    // (λx.x) 5 == 5
+    assert!(is_def_eq(&env, &prims, &a, &nat_lit(5)).unwrap());
+  }
+
+  #[test]
+  fn sort_defeq_levels() {
+    let prims = test_prims();
+    let env = empty_env();
+    // Sort 0 == Sort 0
+    assert!(is_def_eq(&env, &prims, &prop(), &prop()).unwrap());
+    // Sort 0 != Sort 1
+    assert!(!is_def_eq(&env, &prims, &prop(), &ty()).unwrap());
+    // Sort (succ (succ 0)) == Sort 2
+    assert!(is_def_eq(&env, &prims, &srt(2), &srt(2)).unwrap());
+    assert!(!is_def_eq(&env, &prims, &srt(2), &srt(3)).unwrap());
   }
 }

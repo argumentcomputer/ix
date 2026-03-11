@@ -137,42 +137,43 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         // Ensure the constant has been type-checked
         self.ensure_typed_const(addr)?;
 
-        // Validate universe level count
-        let ci = self.deref_const(addr)?;
-        let expected = ci.cv().num_levels;
-        if levels.len() != expected {
-          return Err(TcError::KernelException {
-            msg: format!(
-              "universe level count mismatch for {}: expected {}, got {}",
-              format!("{:?}", name),
-              expected,
-              levels.len()
-            ),
-          });
-        }
+        // Validate universe level count and safety (skip in infer_only mode)
+        if !self.infer_only {
+          let ci = self.deref_const(addr)?;
+          let expected = ci.cv().num_levels;
+          if levels.len() != expected {
+            return Err(TcError::KernelException {
+              msg: format!(
+                "universe level count mismatch for {}: expected {}, got {}",
+                format!("{:?}", name),
+                expected,
+                levels.len()
+              ),
+            });
+          }
 
-        // Safety checks: reject unsafe/partial from safe contexts
-        use crate::ix::env::DefinitionSafety;
-        let ci_safety = ci.safety();
-        if ci_safety == DefinitionSafety::Unsafe
-          && self.safety != DefinitionSafety::Unsafe
-        {
-          return Err(TcError::KernelException {
-            msg: format!(
-              "unsafe constant {:?} used in safe context",
-              name,
-            ),
-          });
-        }
-        if ci_safety == DefinitionSafety::Partial
-          && self.safety == DefinitionSafety::Safe
-        {
-          return Err(TcError::KernelException {
-            msg: format!(
-              "partial constant {:?} used in safe context",
-              name,
-            ),
-          });
+          use crate::ix::env::DefinitionSafety;
+          let ci_safety = ci.safety();
+          if ci_safety == DefinitionSafety::Unsafe
+            && self.safety != DefinitionSafety::Unsafe
+          {
+            return Err(TcError::KernelException {
+              msg: format!(
+                "unsafe constant {:?} used in safe context",
+                name,
+              ),
+            });
+          }
+          if ci_safety == DefinitionSafety::Partial
+            && self.safety == DefinitionSafety::Safe
+          {
+            return Err(TcError::KernelException {
+              msg: format!(
+                "partial constant {:?} used in safe context",
+                name,
+              ),
+            });
+          }
         }
 
         let tc = self
@@ -225,23 +226,23 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                     let arg_type_expr =
                       tc.quote(&arg_type, tc.depth())?;
                     if tc.trace {
-                      eprintln!("[MISMATCH at App arg] dom_val={dom}  arg_type={arg_type}");
+                      tc.trace_msg(&format!("[MISMATCH at App arg] dom_val={dom}  arg_type={arg_type}"));
                       // Show spine details if both are neutrals
                       if let (
                         ValInner::Neutral { head: Head::Const { addr: a1, .. }, spine: sp1 },
                         ValInner::Neutral { head: Head::Const { addr: a2, .. }, spine: sp2 },
                       ) = (dom.inner(), arg_type.inner()) {
-                        eprintln!("  addr_eq={}", a1 == a2);
+                        tc.trace_msg(&format!("  addr_eq={}", a1 == a2));
                         for (i, th) in sp1.iter().enumerate() {
                           if let Ok(v) = tc.force_thunk(th) {
                             let w = tc.whnf_val(&v, 0).unwrap_or(v.clone());
-                            eprintln!("  dom_spine[{i}]: {v} (whnf: {w})");
+                            tc.trace_msg(&format!("  dom_spine[{i}]: {v} (whnf: {w})"));
                           }
                         }
                         for (i, th) in sp2.iter().enumerate() {
                           if let Ok(v) = tc.force_thunk(th) {
                             let w = tc.whnf_val(&v, 0).unwrap_or(v.clone());
-                            eprintln!("  arg_spine[{i}]: {v} (whnf: {w})");
+                            tc.trace_msg(&format!("  arg_spine[{i}]: {v} (whnf: {w})"));
                           }
                         }
                       }
@@ -465,15 +466,19 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       {
         // Check domain matches
         if !self.infer_only {
-          let dom_val = self.eval_in_ctx(dom_expr)?;
-          if !self.is_def_eq(&dom_val, pi_dom)? {
-            let expected_expr = self.quote(pi_dom, self.depth())?;
-            let found_expr = self.quote(&dom_val, self.depth())?;
-            return Err(TcError::TypeMismatch {
-              expected: expected_expr,
-              found: found_expr,
-              expr: dom_expr.clone(),
-            });
+          // Fast path: quote Pi domain and compare structurally
+          let pi_dom_expr = self.quote(pi_dom, self.depth())?;
+          if pi_dom_expr != *dom_expr {
+            // Structural mismatch — fall back to full isDefEq
+            let dom_val = self.eval_in_ctx(dom_expr)?;
+            if !self.is_def_eq(&dom_val, pi_dom)? {
+              let found_expr = self.quote(&dom_val, self.depth())?;
+              return Err(TcError::TypeMismatch {
+                expected: pi_dom_expr,
+                found: found_expr,
+                expr: dom_expr.clone(),
+              });
+            }
           }
         }
 
@@ -504,7 +509,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       let inferred_expr =
         self.quote(&inferred_type, self.depth())?;
       if self.trace {
-        eprintln!("[MISMATCH at check fallback] inferred={inferred_type}  expected={expected_type}");
+        self.trace_msg(&format!("[MISMATCH at check fallback] inferred={inferred_type}  expected={expected_type}"));
       }
       return Err(TcError::TypeMismatch {
         expected: expected_expr,
@@ -672,8 +677,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   }
 
   /// Check if a Val's type is Prop (Sort 0).
+  /// Matches Lean's `isPropVal` which catches inference errors and returns false.
   pub fn is_prop_val(&mut self, v: &Val<M>) -> TcResult<bool, M> {
-    let ty = self.infer_type_of_val(v)?;
+    let ty = match self.infer_type_of_val(v) {
+      Ok(ty) => ty,
+      Err(_) => return Ok(false),
+    };
     let ty_whnf = self.whnf_val(&ty, 0)?;
     Ok(matches!(
       ty_whnf.inner(),
@@ -714,6 +723,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             if iv.ctors.len() != 1 {
               return Err(TcError::KernelException {
                 msg: "Expected a structure type (single constructor)".to_string(),
+              });
+            }
+            if spine.len() != iv.num_params {
+              return Err(TcError::KernelException {
+                msg: format!(
+                  "Wrong number of params for structure: got {}, expected {}",
+                  spine.len(),
+                  iv.num_params
+                ),
               });
             }
             // Force spine params

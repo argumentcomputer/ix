@@ -916,6 +916,17 @@ private def addr! (s : String) : Address :=
   | some a => a
   | none => panic! s!"invalid hex address: {s}"
 
+/-- Word size mode for platform-dependent reduction.
+    Controls what `System.Platform.numBits` reduces to. -/
+inductive WordSize where
+  | word32
+  | word64
+  deriving Repr, Inhabited, DecidableEq
+
+def WordSize.numBits : WordSize → Nat
+  | .word32 => 32
+  | .word64 => 64
+
 structure Primitives where
   nat : Address := default
   natZero : Address := default
@@ -980,6 +991,9 @@ structure Primitives where
   /-- eagerReduce: identity function that triggers eager reduction mode.
       Resolved by name during environment conversion; default = not found. -/
   eagerReduce : Address := default
+  /-- System.Platform.numBits: platform-dependent word size.
+      Resolved by name during environment conversion; default = not found. -/
+  systemPlatformNumBits : Address := default
   deriving Repr, Inhabited
 
 def buildPrimitives : Primitives :=

@@ -28,6 +28,43 @@ inductive ThunkEntry (m : Ix.Kernel.MetaMode) : Type where
   | unevaluated (expr : KExpr m) (env : Array (Val m))
   | evaluated (val : Val m)
 
+/-! ## Stats -/
+
+/-- Performance counters for the type checker. Defined early so it can be
+    referenced in TypecheckCtx (for the stats snapshot ref). -/
+structure Stats where
+  heartbeats      : Nat := 0
+  inferCalls      : Nat := 0
+  evalCalls       : Nat := 0
+  forceCalls      : Nat := 0
+  isDefEqCalls    : Nat := 0
+  thunkCount      : Nat := 0
+  thunkForces     : Nat := 0
+  thunkHits       : Nat := 0
+  cacheHits       : Nat := 0
+  deltaSteps      : Nat := 0
+  nativeReduces   : Nat := 0
+  whnfCacheMisses : Nat := 0
+  proofIrrelHits  : Nat := 0
+  -- isDefEq breakdown
+  quickTrue       : Nat := 0
+  quickFalse      : Nat := 0
+  equivHits       : Nat := 0
+  ptrSuccessHits  : Nat := 0
+  ptrFailureHits  : Nat := 0
+  step10Fires     : Nat := 0
+  step11Fires     : Nat := 0
+  -- whnf breakdown
+  whnfCacheHits   : Nat := 0
+  whnfEquivHits   : Nat := 0
+  whnfCoreCacheHits   : Nat := 0
+  whnfCoreCacheMisses : Nat := 0
+  -- delta breakdown
+  lazyDeltaIters  : Nat := 0
+  sameHeadChecks  : Nat := 0
+  sameHeadHits    : Nat := 0
+  deriving Inhabited
+
 /-! ## Typechecker Context -/
 
 structure TypecheckCtx (σ : Type) (m : Ix.Kernel.MetaMode) where
@@ -42,9 +79,12 @@ structure TypecheckCtx (σ : Type) (m : Ix.Kernel.MetaMode) where
   recAddr?   : Option Address := none
   inferOnly  : Bool := false
   eagerReduce : Bool := false
+  wordSize   : WordSize := .word64
   trace      : Bool := false
   -- Thunk table: ST.Ref to array of ST.Ref thunk entries
   thunkTable : ST.Ref σ (Array (ST.Ref σ (ThunkEntry m)))
+  -- Optional stats snapshot: heartbeat saves stats here before throwing.
+  statsSnapshot : Option (ST.Ref σ Stats) := none
 
 /-! ## Typechecker State -/
 
@@ -67,21 +107,9 @@ structure TypecheckState (m : Ix.Kernel.MetaMode) where
                      Ix.Kernel.Expr.compare := default
   whnfCache      : Std.TreeMap USize (Val m × Val m) compare := default
   whnfCoreCache  : Std.TreeMap USize (Val m × Val m) compare := default
-  heartbeats     : Nat := 0
   maxHeartbeats  : Nat := defaultMaxHeartbeats
   maxThunks      : Nat := defaultMaxThunks
-  inferCalls     : Nat := 0
-  evalCalls      : Nat := 0
-  forceCalls     : Nat := 0
-  isDefEqCalls   : Nat := 0
-  thunkCount     : Nat := 0
-  thunkForces    : Nat := 0
-  thunkHits      : Nat := 0
-  cacheHits      : Nat := 0
-  deltaSteps     : Nat := 0
-  nativeReduces  : Nat := 0
-  whnfCacheMisses : Nat := 0
-  proofIrrelHits : Nat := 0
+  stats          : Stats := {}
   deriving Inhabited
 
 /-! ## TypecheckM monad
@@ -177,15 +205,18 @@ def mkFreshFVar (ty : Val m) : TypecheckM σ m (Val m) := do
     to bound total work. -/
 @[inline] def heartbeat : TypecheckM σ m Unit := do
   let stt ← get
-  if stt.heartbeats >= stt.maxHeartbeats then
+  if stt.stats.heartbeats >= stt.maxHeartbeats then
+    -- Save stats snapshot before throwing (survives ExceptT unwinding)
+    if let some ref := (← read).statsSnapshot then
+      ref.set stt.stats
     throw s!"heartbeat limit exceeded ({stt.maxHeartbeats})"
-  let hb := stt.heartbeats + 1
+  let hb := stt.stats.heartbeats + 1
   if (← read).trace && hb % 100_000 == 0 then
     let thunkTableSize ← do
       let table ← ST.Ref.get (← read).thunkTable
       pure table.size
-    dbg_trace s!"    [hb] {hb / 1000}K heartbeats, delta={stt.deltaSteps}, thunkTable={thunkTableSize}, isDefEq={stt.isDefEqCalls}, eval={stt.evalCalls}, force={stt.forceCalls}"
-  modify fun s => { s with heartbeats := hb }
+    dbg_trace s!"    [hb] {hb / 1000}K heartbeats, delta={stt.stats.deltaSteps}, thunkTable={thunkTableSize}, isDefEq={stt.stats.isDefEqCalls}, eval={stt.stats.evalCalls}, force={stt.stats.forceCalls}"
+  modify fun s => { s with stats.heartbeats := hb }
 
 /-! ## Const dereferencing -/
 

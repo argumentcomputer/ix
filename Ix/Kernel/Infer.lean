@@ -86,7 +86,7 @@ mutual
       App arguments become thunks (lazy). Constants stay as stuck neutrals. -/
   partial def eval (e : KExpr m) (env : Array (Val m)) : TypecheckM σ m (Val m) := do
     heartbeat
-    modify fun st => { st with evalCalls := st.evalCalls + 1 }
+    modify fun st => { st with stats.evalCalls := st.stats.evalCalls + 1 }
     match e with
     | .bvar idx _ =>
       let envSize := env.size
@@ -215,7 +215,7 @@ mutual
 
   /-- Force a thunk: if unevaluated, eval and memoize; if evaluated, return cached. -/
   partial def forceThunk (id : Nat) : TypecheckM σ m (Val m) := do
-    modify fun st => { st with forceCalls := st.forceCalls + 1 }
+    modify fun st => { st with stats.forceCalls := st.stats.forceCalls + 1 }
     let tableRef := (← read).thunkTable
     let table ← ST.Ref.get tableRef
     if h : id < table.size then
@@ -275,7 +275,7 @@ mutual
         let predThunk ← mkThunkFromVal (.lit (.natVal n))
         return some (← applyPmmAndExtra result #[predThunk])
       | none => return none
-    | .ctor _ _ _ ctorIdx numParams _ _ ctorSpine =>
+    | .ctor _ _ _ ctorIdx _numParams _ _ ctorSpine =>
       match rules[ctorIdx]? with
       | some (nfields, rhs) =>
         if nfields > ctorSpine.size then return none
@@ -283,7 +283,8 @@ mutual
         let result ← eval rhsBody #[]
         -- Collect constructor fields (skip constructor params)
         let mut ctorFields : Array Nat := #[]
-        for i in [numParams:ctorSpine.size] do
+        let fieldStart := ctorSpine.size - nfields
+        for i in [fieldStart:ctorSpine.size] do
           ctorFields := ctorFields.push ctorSpine[i]!
         return some (← applyPmmAndExtra result ctorFields)
       | none => return none
@@ -401,7 +402,7 @@ mutual
       ensureTypedConst majorAddr
       match (← get).typedConsts.get? majorAddr with
       | some (.quotient _ .ctor) =>
-        if majorSpine.size < 3 then throw "Quot.mk should have at least 3 args"
+        if majorSpine.size < 3 then return none
         let dataArgThunk := majorSpine[majorSpine.size - 1]!
         if fPos >= spine.size then return none
         let f ← forceThunk spine[fPos]!
@@ -451,7 +452,14 @@ mutual
             current ← applyValThunk current tid
             current ← whnfCoreVal current cheapRec cheapProj
         | none =>
-          -- This projection couldn't be resolved. Reconstruct remaining chain.
+          -- This projection couldn't be resolved.
+          -- If the inner struct didn't change (whnf was a no-op), return the
+          -- original value to preserve pointer identity. This prevents infinite
+          -- loops in isDefEq where step 7 (cheapProj=false) would otherwise
+          -- always create a fresh Val.proj, causing ptrEq to fail and triggering
+          -- unbounded recursion.
+          if ptrEq current innerV then return v
+          -- Inner struct changed (e.g., delta unfolding): reconstruct remaining chain.
           let mut stId ← mkThunkFromVal current
           -- Rebuild from current projection outward
           current := Val.proj ta ix stId tn sp
@@ -472,24 +480,24 @@ mutual
         let typedRules := rv.rules.map fun r =>
           (r.nfields, (⟨default, r.rhs⟩ : KTypedExpr m))
         let indAddr := getMajorInduct rv.toConstantVal.type rv.numParams rv.numMotives rv.numMinors rv.numIndices |>.getD default
+        -- K-reduction: try first for Prop inductives with single zero-field ctor
         if rv.k then
-          -- K-reduction: for Prop inductives with single zero-field ctor
           match ← tryKReductionVal levels spine rv.numParams rv.numMotives rv.numMinors rv.numIndices indAddr typedRules with
-          | some result => whnfCoreVal result cheapRec cheapProj
-          | none => pure v
-        else
-          match ← tryIotaReduction addr levels spine rv.numParams rv.numMotives rv.numMinors rv.numIndices typedRules indAddr with
-          | some result => whnfCoreVal result cheapRec cheapProj
-          | none =>
-            -- Struct eta fallback: expand struct-like major via projections
-            let majorIdx := rv.numParams + rv.numMotives + rv.numMinors + rv.numIndices
-            if majorIdx < spine.size then
-              let major ← forceThunk spine[majorIdx]!
-              let major' ← whnfVal major
-              match ← tryStructEtaIota levels spine rv.numParams rv.numMotives rv.numMinors rv.numIndices indAddr typedRules major' with
-              | some result => whnfCoreVal result cheapRec cheapProj
-              | none => pure v
-            else pure v
+          | some result => return ← whnfCoreVal result cheapRec cheapProj
+          | none => pure ()
+        -- Standard iota reduction (fallthrough from K-reduction failure)
+        match ← tryIotaReduction addr levels spine rv.numParams rv.numMotives rv.numMinors rv.numIndices typedRules indAddr with
+        | some result => whnfCoreVal result cheapRec cheapProj
+        | none =>
+          -- Struct eta fallback: expand struct-like major via projections
+          let majorIdx := rv.numParams + rv.numMotives + rv.numMinors + rv.numIndices
+          if majorIdx < spine.size then
+            let major ← forceThunk spine[majorIdx]!
+            let major' ← whnfVal major
+            match ← tryStructEtaIota levels spine rv.numParams rv.numMotives rv.numMinors rv.numIndices indAddr typedRules major' with
+            | some result => whnfCoreVal result cheapRec cheapProj
+            | none => pure v
+          else pure v
       | some (.quotInfo qv) =>
         match qv.kind with
         | .lift =>
@@ -517,6 +525,7 @@ mutual
       match (← get).whnfCoreCache.get? vPtr with
       | some (inputRef, cached) =>
         if ptrEq v inputRef then
+          modify fun st => { st with stats.whnfCoreCacheHits := st.stats.whnfCoreCacheHits + 1 }
           return cached
       | none => pure ()
       -- Second-chance lookup via equiv root
@@ -526,8 +535,11 @@ mutual
       if let some rootPtr := rootPtr? then
         if rootPtr != vPtr then
           match (← get).whnfCoreCache.get? rootPtr with
-          | some (_, cached) => return cached
+          | some (_, cached) =>
+            modify fun st => { st with stats.whnfCoreCacheHits := st.stats.whnfCoreCacheHits + 1 }
+            return cached
           | none => pure ()
+      modify fun st => { st with stats.whnfCoreCacheMisses := st.stats.whnfCoreCacheMisses + 1 }
     let result ← whnfCoreImpl v cheapRec cheapProj
     if useCache then
       let vPtr := ptrAddrVal v
@@ -548,10 +560,21 @@ mutual
     heartbeat
     match v with
     | .neutral (.const addr levels name) spine =>
+      -- Platform-dependent reduction: System.Platform.numBits → word size
+      let prims := (← read).prims
+      if addr == prims.systemPlatformNumBits && spine.isEmpty then
+        return some (.lit (.natVal (← read).wordSize.numBits))
       let kenv := (← read).kenv
       match kenv.find? addr with
       | some (.defnInfo dv) =>
-        modify fun st => { st with deltaSteps := st.deltaSteps + 1 }
+        -- Don't unfold the definition currently being checked (prevents infinite self-unfolding)
+        if (← read).recAddr? == some addr then return none
+        modify fun st => { st with stats.deltaSteps := st.stats.deltaSteps + 1 }
+        if (← read).trace then
+          let ds := (← get).stats.deltaSteps
+          if ds ≤ 100 || ds % 500 == 0 then
+            let h := match dv.hints with | .opaque => "opaque" | .abbrev => "abbrev" | .regular n => s!"regular({n})"
+            dbg_trace s!"    [delta #{ds}] unfolding {dv.toConstantVal.name} (spine={spine.size}, {h})"
         let body := if dv.toConstantVal.numLevels == 0 then dv.value
           else dv.value.instantiateLevelParams levels
         let mut result ← eval body #[]
@@ -559,7 +582,7 @@ mutual
           result ← applyValThunk result thunkId
         pure (some result)
       | some (.thmInfo tv) =>
-        modify fun st => { st with deltaSteps := st.deltaSteps + 1 }
+        modify fun st => { st with stats.deltaSteps := st.stats.deltaSteps + 1 }
         let body := if tv.toConstantVal.numLevels == 0 then tv.value
           else tv.value.instantiateLevelParams levels
         let mut result ← eval body #[]
@@ -574,6 +597,9 @@ mutual
     match v with
     | .neutral (.const addr _ _) spine =>
       let prims := (← read).prims
+      -- Nat.zero with 0 args → nat literal 0
+      if addr == prims.natZero && spine.isEmpty then
+        return some (.lit (.natVal 0))
       if !isPrimOp prims addr then return none
       if addr == prims.natSucc then
         if h : 0 < spine.size then
@@ -694,7 +720,7 @@ mutual
           let kenv := (← read).kenv
           match kenv.find? defAddr with
           | some (.defnInfo dv) =>
-            modify fun st => { st with nativeReduces := st.nativeReduces + 1 }
+            modify fun st => { st with stats.nativeReduces := st.stats.nativeReduces + 1 }
             let body := if dv.toConstantVal.numLevels == 0 then dv.value
               else dv.value.instantiateLevelParams levels
             let result ← eval body #[]
@@ -714,7 +740,7 @@ mutual
               match extractNatVal prims result' with
               | some n => return some (.lit (.natVal n))
               | none => throw "reduceNat: constant did not reduce to a Nat literal"
-          | _ => throw "reduceNative: target is not a definition"
+          | _ => return none
         | _ => return none
       else return none
     | _ => return none
@@ -767,6 +793,7 @@ mutual
       match (← get).whnfCache.get? vPtr with
       | some (inputRef, cached) =>
         if ptrEq v inputRef then
+          modify fun st => { st with stats.whnfCacheHits := st.stats.whnfCacheHits + 1 }
           return cached
       | none => pure ()
       -- Second-chance lookup via equiv root
@@ -776,9 +803,11 @@ mutual
       if let some rootPtr := rootPtr? then
         if rootPtr != vPtr then
           match (← get).whnfCache.get? rootPtr with
-          | some (_, cached) => return cached  -- skip ptrEq (equiv guarantees validity)
+          | some (_, cached) =>
+            modify fun st => { st with stats.whnfEquivHits := st.stats.whnfEquivHits + 1 }
+            return cached  -- skip ptrEq (equiv guarantees validity)
           | none => pure ()
-    modify fun st => { st with whnfCacheMisses := st.whnfCacheMisses + 1 }
+    modify fun st => { st with stats.whnfCacheMisses := st.stats.whnfCacheMisses + 1 }
     let v' ← whnfCoreVal v
     let result ← do
       match ← tryReduceNatVal v' with
@@ -869,10 +898,13 @@ mutual
 
   /-- Check if two values are definitionally equal. -/
   partial def isDefEq (t s : Val m) : TypecheckM σ m Bool := do
-    if let some result := quickIsDefEqVal t s then return result
     heartbeat
-    let deqCount := (← get).isDefEqCalls + 1
-    modify fun st => { st with isDefEqCalls := deqCount }
+    if let some result := quickIsDefEqVal t s then
+      if result then modify fun st => { st with stats.quickTrue := st.stats.quickTrue + 1 }
+      else modify fun st => { st with stats.quickFalse := st.stats.quickFalse + 1 }
+      return result
+    let deqCount := (← get).stats.isDefEqCalls + 1
+    modify fun st => { st with stats.isDefEqCalls := deqCount }
     if (← read).trace && deqCount ≤ 20 then
       let tE ← quote t (← depth)
       let sE ← quote s (← depth)
@@ -887,17 +919,21 @@ mutual
     let stt ← get
     let (equiv, mgr') := EquivManager.isEquiv tPtr sPtr |>.run stt.eqvManager
     modify fun st => { st with eqvManager := mgr' }
-    if equiv then return true
+    if equiv then
+      modify fun st => { st with stats.equivHits := st.stats.equivHits + 1 }
+      return true
     -- 0b. Pointer success cache (validate with ptrEq to guard against address reuse)
     match (← get).ptrSuccessCache.get? ptrKey with
     | some (tRef, sRef) =>
       if (ptrEq t tRef && ptrEq s sRef) || (ptrEq t sRef && ptrEq s tRef) then
+        modify fun st => { st with stats.ptrSuccessHits := st.stats.ptrSuccessHits + 1 }
         return true
     | none => pure ()
     -- 0c. Pointer failure cache (validate with ptrEq to guard against address reuse)
     match (← get).ptrFailureCache.get? ptrKey with
     | some (tRef, sRef) =>
       if (ptrEq t tRef && ptrEq s sRef) || (ptrEq t sRef && ptrEq s tRef) then
+        modify fun st => { st with stats.ptrFailureHits := st.stats.ptrFailureHits + 1 }
         return false
     | none => pure ()
     -- 1. Bool.true reflection
@@ -917,11 +953,18 @@ mutual
       return result
     -- 4. Proof irrelevance
     match ← isDefEqProofIrrel tn sn with
-    | some result => return result
+    | some result =>
+      modify fun st => { st with stats.proofIrrelHits := st.stats.proofIrrelHits + 1 }
+      return result
     | none => pure ()
     -- 5. Lazy delta reduction
     let (tn', sn', deltaResult) ← lazyDelta tn sn
-    if let some result := deltaResult then return result
+    if let some result := deltaResult then
+      if result then
+        let stt ← get
+        let (_, mgr') := EquivManager.addEquiv tPtr sPtr |>.run stt.eqvManager
+        modify fun st => { st with eqvManager := mgr' }
+      return result
     -- 6. Quick structural check after delta
     if let some result := quickIsDefEqVal tn' sn' then
       if result then
@@ -934,7 +977,8 @@ mutual
     let tn'' ← whnfCoreVal tn' (cheapProj := false)
     let sn'' ← whnfCoreVal sn' (cheapProj := false)
     if !ptrEq tn'' tn' || !ptrEq sn'' sn' then
-      let result ← isDefEqCore tn'' sn''
+      modify fun st => { st with stats.step10Fires := st.stats.step10Fires + 1 }
+      let result ← isDefEq tn'' sn''
       if result then
         let stt ← get
         let (_, mgr') := EquivManager.addEquiv tPtr sPtr |>.run stt.eqvManager
@@ -946,6 +990,8 @@ mutual
     -- 8. Full whnf (including delta) then structural comparison
     let tnn ← whnfVal tn''
     let snn ← whnfVal sn''
+    if !ptrEq tnn tn'' || !ptrEq snn sn'' then
+      modify fun st => { st with stats.step11Fires := st.stats.step11Fires + 1 }
     let result ← isDefEqCore tnn snn
     -- 9. Cache result (union-find + structural on success, ptr-based on failure)
     if result then
@@ -1103,8 +1149,9 @@ mutual
     let mut steps := 0
     repeat
       heartbeat
-      if steps > 10000 then throw "lazyDelta step limit exceeded"
+      if steps > 10001 then throw "lazyDelta step limit exceeded"
       steps := steps + 1
+      modify fun st => { st with stats.lazyDeltaIters := st.stats.lazyDeltaIters + 1 }
       -- Pointer equality
       if ptrEq tn sn then return (tn, sn, some true)
       -- Quick structural
@@ -1154,6 +1201,7 @@ mutual
         -- Same-head optimization with failure cache
         if sameHeadVal tn sn && ht.isRegular then
           if equalUnivArrays tn.headLevels! sn.headLevels! then
+            modify fun st => { st with stats.sameHeadChecks := st.stats.sameHeadChecks + 1 }
             let tPtr := ptrAddrVal tn
             let sPtr := ptrAddrVal sn
             let ptrKey := if tPtr ≤ sPtr then (tPtr, sPtr) else (sPtr, tPtr)
@@ -1163,6 +1211,7 @@ mutual
               | none => false
             if !skipSpineCheck then
               if ← isDefEqSpine tn.spine! sn.spine! then
+                modify fun st => { st with stats.sameHeadHits := st.stats.sameHeadHits + 1 }
                 return (tn, sn, some true)
               else
                 -- Record failure to prevent retrying after further unfolding
@@ -1711,7 +1760,6 @@ mutual
       if e.containsSubstr "limit exceeded" then throw e
       if (← read).trace then dbg_trace s!"isDefEqProofIrrel: inferTypeOfVal(s) threw: {e}"
       return none
-    modify fun st => { st with proofIrrelHits := st.proofIrrelHits + 1 }
     some <$> isDefEq tType sType
 
   /-- Short-circuit Nat.succ chain / zero comparison. -/
@@ -2094,7 +2142,7 @@ mutual
   partial def checkRecursorRuleType (recType : KExpr m) (rec : Ix.Kernel.RecursorVal m)
       (ctorAddr : Address) (nf : Nat) (ruleRhs : KExpr m)
       : TypecheckM σ m (KTypedExpr m) := do
-    let hb_start ← pure (← get).heartbeats
+    let hb_start ← pure (← get).stats.heartbeats
     let np := rec.numParams
     let nm := rec.numMotives
     let nk := rec.numMinors
@@ -2216,7 +2264,7 @@ mutual
     for i in [:np + nm + nk] do
       let j := np + nm + nk - 1 - i
       fullType := .forallE recDoms[j]! fullType recNames[j]! recBis[j]!
-    let hb_build ← pure (← get).heartbeats
+    let hb_build ← pure (← get).stats.heartbeats
     -- Walk ruleRhs lambdas and fullType forallEs in parallel.
     -- Domain Vals come from the recursor type Val (params/motives/minors) and
     -- constructor type Val (fields) for pointer sharing with cached structures.
@@ -2259,7 +2307,7 @@ mutual
         rhs := body
         expected := expBody
       | _, _, _ => throw s!"recursor rule prefix binder mismatch for {ctorAddr}"
-    let hb_prefix ← pure (← get).heartbeats
+    let hb_prefix ← pure (← get).stats.heartbeats
     -- Substitute param fvars into constructor type Val
     for i in [:cnp] do
       let ctorTyV' ← whnfVal ctorTyV
@@ -2274,7 +2322,7 @@ mutual
           else pure (Val.mkFVar 0 (.sort .zero)) -- shouldn't happen
         ctorTyV ← eval codBody (codEnv.push paramVal)
       | _ => throw s!"constructor type has too few Pi binders for params"
-    let hb_ctorSub ← pure (← get).heartbeats
+    let hb_ctorSub ← pure (← get).stats.heartbeats
     -- Walk fields: domain Vals from constructor type Val
     for _ in [:nf] do
       let ctorTyV' ← whnfVal ctorTyV
@@ -2298,11 +2346,11 @@ mutual
         rhs := body
         expected := expBody
       | _, _, _ => throw s!"recursor rule field binder mismatch for {ctorAddr}"
-    let hb_fields ← pure (← get).heartbeats
+    let hb_fields ← pure (← get).stats.heartbeats
     -- Check body: infer type, then try fast quote+BEq before expensive isDefEq
     let (bodyTe, bodyType) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
       (withInferOnly (infer rhs))
-    let hb_infer ← pure (← get).heartbeats
+    let hb_infer ← pure (← get).stats.heartbeats
     -- Fast path: quote bodyType to Expr and compare with expected Expr (no whnf/delta needed)
     let bodyTypeExpr ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
       (quote bodyType extTypes.size)
@@ -2346,7 +2394,7 @@ mutual
       if !(← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
         (withInferOnly (isDefEq bodyType expectedRetV))) then
         throw s!"recursor rule body type mismatch for {ctorAddr}"
-    let hb_deq ← pure (← get).heartbeats
+    let hb_deq ← pure (← get).stats.heartbeats
     if (← read).trace then
       dbg_trace s!"    [rule] build={hb_build - hb_start} prefix={hb_prefix - hb_build} ctorSub={hb_ctorSub - hb_prefix} fields={hb_fields - hb_ctorSub} infer={hb_infer - hb_fields} deq={hb_deq - hb_infer}"
     -- Rebuild KTypedExpr: wrap body in lambda binders
@@ -2454,7 +2502,7 @@ mutual
       whnfCache := default,
       whnfCoreCache := default,
       inferCache := default,
-      heartbeats := 0
+      stats := {}
     }
     if (← get).typedConsts.get? addr |>.isSome then return ()
     let ci ← derefConst addr
@@ -2473,19 +2521,19 @@ mutual
         if !Ix.Kernel.Level.isZero lvl then
           throw "theorem type must be a proposition (Sort 0)"
         let typeV ← evalInCtx type.body
-        let hb0 ← pure (← get).heartbeats
+        let hb0 ← pure (← get).stats.heartbeats
         let _ ← withRecAddr addr (withInferOnly (check ci.value?.get! typeV))
-        let hb1 ← pure (← get).heartbeats
+        let hb1 ← pure (← get).stats.heartbeats
         if (← read).trace then
           let st ← get
-          dbg_trace s!"  [thm] check value: {hb1 - hb0} heartbeats, deltaSteps={st.deltaSteps}, nativeReduces={st.nativeReduces}, whnfMisses={st.whnfCacheMisses}, proofIrrel={st.proofIrrelHits}, isDefEqCalls={st.isDefEqCalls}, thunks={st.thunkCount}"
+          dbg_trace s!"  [thm] check value: {hb1 - hb0} heartbeats, deltaSteps={st.stats.deltaSteps}, nativeReduces={st.stats.nativeReduces}, whnfMisses={st.stats.whnfCacheMisses}, proofIrrel={st.stats.proofIrrelHits}, isDefEqCalls={st.stats.isDefEqCalls}, thunks={st.stats.thunkCount}"
         let value : KTypedExpr m := ⟨.proof, ci.value?.get!⟩
         pure (Ix.Kernel.TypedConst.theorem type value)
       | .defnInfo v =>
         let (type, _) ← isSort ci.type
         let part := v.safety == .partial
         let typeV ← evalInCtx type.body
-        let hb0 ← pure (← get).heartbeats
+        let hb0 ← pure (← get).stats.heartbeats
         let value ←
           if part then
             let typExpr := type.body
@@ -2493,10 +2541,10 @@ mutual
               (Std.TreeMap.empty).insert 0 (addr, fun _ => Val.neutral (.const addr #[] default) #[])
             withMutTypes mutTypes (withRecAddr addr (check v.value typeV))
           else withRecAddr addr (check v.value typeV)
-        let hb1 ← pure (← get).heartbeats
+        let hb1 ← pure (← get).stats.heartbeats
         if (← read).trace then
           let st ← get
-          dbg_trace s!"  [defn] check value: {hb1 - hb0} heartbeats, deltaSteps={st.deltaSteps}, nativeReduces={st.nativeReduces}, whnfMisses={st.whnfCacheMisses}, proofIrrel={st.proofIrrelHits}"
+          dbg_trace s!"  [defn] check value: {hb1 - hb0} heartbeats, deltaSteps={st.stats.deltaSteps}, nativeReduces={st.stats.nativeReduces}, whnfMisses={st.stats.whnfCacheMisses}, proofIrrel={st.stats.proofIrrelHits}"
         validatePrimitive addr
         pure (Ix.Kernel.TypedConst.definition type value part)
       | .quotInfo v =>
@@ -2519,24 +2567,24 @@ mutual
           validateKFlag indAddr
         validateRecursorRules v indAddr
         checkElimLevel ci.type v indAddr
-        let hb0 ← pure (← get).heartbeats
+        let hb0 ← pure (← get).stats.heartbeats
         let mut typedRules : Array (Nat × KTypedExpr m) := #[]
         match (← read).kenv.find? indAddr with
         | some (.inductInfo iv) =>
           for h : i in [:v.rules.size] do
             let rule := v.rules[i]
             if i < iv.ctors.size then
-              let hbr0 ← pure (← get).heartbeats
+              let hbr0 ← pure (← get).stats.heartbeats
               let rhs ← checkRecursorRuleType ci.type v iv.ctors[i]! rule.nfields rule.rhs
               typedRules := typedRules.push (rule.nfields, rhs)
-              let hbr1 ← pure (← get).heartbeats
+              let hbr1 ← pure (← get).stats.heartbeats
               if (← read).trace then
                 dbg_trace s!"  [rec] checkRecursorRuleType rule {i}: {hbr1 - hbr0} heartbeats"
         | _ => pure ()
-        let hb1 ← pure (← get).heartbeats
+        let hb1 ← pure (← get).stats.heartbeats
         if (← read).trace then
           let st ← get
-          dbg_trace s!"  [rec] checkRecursorRuleType total: {hb1 - hb0} heartbeats ({v.rules.size} rules), deltaSteps={st.deltaSteps}, nativeReduces={st.nativeReduces}, whnfMisses={st.whnfCacheMisses}, proofIrrel={st.proofIrrelHits}"
+          dbg_trace s!"  [rec] checkRecursorRuleType total: {hb1 - hb0} heartbeats ({v.rules.size} rules), deltaSteps={st.stats.deltaSteps}, nativeReduces={st.stats.nativeReduces}, whnfMisses={st.stats.whnfCacheMisses}, proofIrrel={st.stats.proofIrrelHits}"
         pure (Ix.Kernel.TypedConst.recursor type v.numParams v.numMotives v.numMinors v.numIndices v.k indAddr typedRules)
     modify fun stt => { stt with typedConsts := stt.typedConsts.insert addr newConst }
 
@@ -2625,5 +2673,22 @@ def typecheckConstWithStats (kenv : KEnv m) (prims : KPrimitives) (addr : Addres
     { maxHeartbeats }
     (fun _σ => checkConst addr)
   |>.map (·.2)
+
+/-- Typecheck a single constant, returning stats even on error.
+    Uses an ST.Ref snapshot to capture Stats before heartbeat errors. -/
+def typecheckConstWithStatsAlways (kenv : KEnv m) (prims : KPrimitives) (addr : Address)
+    (quotInit : Bool := true) (trace : Bool := false)
+    (maxHeartbeats : Nat := defaultMaxHeartbeats) : Option String × Stats :=
+  let stt : TypecheckState m := { maxHeartbeats }
+  runST fun σ => do
+    let thunkTable ← ST.mkRef (#[] : Array (ST.Ref σ (ThunkEntry m)))
+    let snapshotRef ← ST.mkRef ({} : Stats)
+    let ctx : TypecheckCtx σ m :=
+      { types := #[], kenv, prims, safety := .safe, quotInit, trace, thunkTable,
+        statsSnapshot := some snapshotRef }
+    let result ← ExceptT.run (StateT.run (ReaderT.run (checkConst addr) ctx) stt)
+    match result with
+    | .ok ((), finalSt) => pure (none, finalSt.stats)
+    | .error e => pure (some e, ← snapshotRef.get)
 
 end Ix.Kernel

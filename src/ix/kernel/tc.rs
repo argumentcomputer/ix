@@ -41,6 +41,27 @@ pub struct Stats {
   pub thunk_forces: u64,
   pub thunk_hits: u64,
   pub cache_hits: u64,
+  // isDefEq breakdown
+  pub quick_true: u64,
+  pub quick_false: u64,
+  pub equiv_hits: u64,
+  pub ptr_success_hits: u64,
+  pub ptr_failure_hits: u64,
+  pub proof_irrel_hits: u64,
+  pub step10_fires: u64,
+  pub step11_fires: u64,
+  // whnf breakdown
+  pub whnf_cache_hits: u64,
+  pub whnf_cache_misses: u64,
+  pub whnf_equiv_hits: u64,
+  pub whnf_core_cache_hits: u64,
+  pub whnf_core_cache_misses: u64,
+  // delta breakdown
+  pub delta_steps: u64,
+  pub native_reduces: u64,
+  pub lazy_delta_iters: u64,
+  pub same_head_checks: u64,
+  pub same_head_hits: u64,
 }
 
 // ============================================================================
@@ -74,6 +95,8 @@ pub struct TypeChecker<'env, M: MetaMode> {
   pub infer_only: bool,
   /// If true, use eager reduction mode.
   pub eager_reduce: bool,
+  /// Word size for platform-dependent reduction (System.Platform.numBits).
+  pub word_size: WordSize,
 
   // -- Caches (reset between constants) --
 
@@ -103,9 +126,18 @@ pub struct TypeChecker<'env, M: MetaMode> {
   // -- Counters --
   pub stats: Stats,
 
+  // -- Keep alive: prevents Rc address reuse from corrupting equiv_manager --
+  // The equiv_manager stores raw pointer addresses (usize). If an Rc is dropped
+  // and a new Rc reuses the same address, the equiv_manager would incorrectly
+  // treat the new value as equivalent to the old one. This vec keeps all values
+  // that have been registered in the equiv_manager alive for the TypeChecker's
+  // lifetime, matching Lean's `keepAlive` field.
+  pub keep_alive: Vec<Val<M>>,
+
   // -- Debug tracing --
   pub trace: bool,
   pub trace_depth: usize,
+  pub trace_prefix: String,
 }
 
 impl<'env, M: MetaMode> TypeChecker<'env, M> {
@@ -123,6 +155,7 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
       rec_addr: None,
       infer_only: false,
       eager_reduce: false,
+      word_size: WordSize::default(),
       typed_consts: FxHashMap::default(),
       ptr_failure_cache: FxHashMap::default(),
       ptr_success_cache: FxHashMap::default(),
@@ -134,16 +167,26 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
       max_heartbeats: DEFAULT_MAX_HEARTBEATS,
       max_thunks: DEFAULT_MAX_THUNKS,
       stats: Stats::default(),
+      keep_alive: Vec::new(),
       trace: false,
       trace_depth: 0,
+      trace_prefix: String::new(),
     }
   }
 
   pub fn trace_msg(&self, msg: &str) {
     if self.trace {
       let indent = "  ".repeat(self.trace_depth.min(20));
-      eprintln!("{indent}{msg}");
+      eprintln!("{}{indent}{msg}", self.trace_prefix);
     }
+  }
+
+  /// Add equivalence between two values, keeping both alive to prevent
+  /// Rc address reuse from corrupting the equiv_manager.
+  pub fn add_equiv_val(&mut self, a: &Val<M>, b: &Val<M>) {
+    self.keep_alive.push(a.clone());
+    self.keep_alive.push(b.clone());
+    self.equiv_manager.add_equiv(a.ptr_id(), b.ptr_id());
   }
 
   // -- Depth and context queries --

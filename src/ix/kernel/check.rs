@@ -1343,7 +1343,7 @@ pub fn typecheck_const_with_stats<M: MetaMode>(
   addr: &Address,
   quot_init: bool,
 ) -> (Result<(), TcError<M>>, usize, super::tc::Stats) {
-  typecheck_const_with_stats_trace(env, prims, addr, quot_init, false)
+  typecheck_const_with_stats_trace(env, prims, addr, quot_init, false, "")
 }
 
 pub fn typecheck_const_with_stats_trace<M: MetaMode>(
@@ -1352,10 +1352,14 @@ pub fn typecheck_const_with_stats_trace<M: MetaMode>(
   addr: &Address,
   quot_init: bool,
   trace: bool,
+  name: &str,
 ) -> (Result<(), TcError<M>>, usize, super::tc::Stats) {
   let mut tc = TypeChecker::new(env, prims);
   tc.quot_init = quot_init;
   tc.trace = trace;
+  if !name.is_empty() {
+    tc.trace_prefix = format!("[{name}] ");
+  }
   let result = tc.check_const(addr);
   (result, tc.heartbeats, tc.stats.clone())
 }

@@ -808,6 +808,27 @@ pub struct Primitives {
   pub reduce_bool: Option<Address>,
   pub reduce_nat: Option<Address>,
   pub eager_reduce: Option<Address>,
+
+  // Platform-dependent constants
+  pub system_platform_num_bits: Option<Address>,
+}
+
+/// Word size mode for platform-dependent reduction.
+/// Controls what `System.Platform.numBits` reduces to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WordSize {
+  #[default]
+  Word64,
+  Word32,
+}
+
+impl WordSize {
+  pub fn num_bits(self) -> u64 {
+    match self {
+      WordSize::Word64 => 64,
+      WordSize::Word32 => 32,
+    }
+  }
 }
 
 impl Primitives {
@@ -853,6 +874,7 @@ impl Primitives {
       ("reduceBool", &self.reduce_bool),
       ("reduceNat", &self.reduce_nat),
       ("eagerReduce", &self.eager_reduce),
+      ("System.Platform.numBits", &self.system_platform_num_bits),
     ];
     let mut count = 0;
     let mut missing = Vec::new();

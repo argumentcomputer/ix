@@ -115,7 +115,7 @@ def testConsts : TestSeq :=
       "Fin.dfoldrM.loop._sunfold",
       -- rfl theorem
       "Std.Tactic.BVDecide.BVExpr.eval.eq_10",
-      -- K-reduction: extra args after major premise
+      -- K-reduction + platform-dependent: USize involves System.Platform.numBits
       "UInt8.toUInt64_toUSize",
       -- DHashMap: rfl theorem requiring projection reduction + eta-struct
       "Std.DHashMap.Internal.Raw₀.contains_eq_containsₘ",
@@ -124,7 +124,22 @@ def testConsts : TestSeq :=
       -- Recursor-only Ixon block regression
       "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
       -- Stack overflow regression
-      "_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq"
+      "_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq",
+      "Batteries.BinaryHeap.heapifyDown._unsafe_rec",
+      -- Proof irrelevance edge cases
+      "Decidable.decide",
+      -- K-reduction
+      "Eq.mpr", "Eq.ndrec",
+      -- Structure eta / projections
+      "Sigma.fst", "Sigma.snd", "Subtype.val",
+      -- String handling
+      "String.data", "String.length",
+      -- Complex recursion
+      "Fin.mk",
+      -- Nested inductives
+      "Array.toList",
+      -- Well-founded recursion
+      "WellFounded.fixF"
     ]
 
     IO.println s!"[rust-kernel-consts] checking {constNames.size} constants via Rust FFI..."

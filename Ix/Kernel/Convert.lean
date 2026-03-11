@@ -842,10 +842,14 @@ def convertEnv (m : MetaMode) (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     let rbName := Ix.Name.mkStr leanNs "reduceBool"
     let rnName := Ix.Name.mkStr leanNs "reduceNat"
     let erName := Ix.Name.mkStr Ix.Name.mkAnon "eagerReduce"
+    let sysNs := Ix.Name.mkStr Ix.Name.mkAnon "System"
+    let platNs := Ix.Name.mkStr sysNs "Platform"
+    let nbName := Ix.Name.mkStr platNs "numBits"
     for (ixName, named) in ixonEnv.named do
       if ixName == rbName then p := { p with reduceBool := named.addr }
       else if ixName == rnName then p := { p with reduceNat := named.addr }
       else if ixName == erName then p := { p with eagerReduce := named.addr }
+      else if ixName == nbName then p := { p with systemPlatformNumBits := named.addr }
     return p
   let quotInit := Id.run do
     for (_, c) in ixonEnv.consts do

@@ -36,9 +36,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     // Check cache (only when not cheap_rec and not cheap_proj)
     if !cheap_rec && !cheap_proj {
       let key = v.ptr_id();
-      // Direct lookup
       if let Some((orig, cached)) = self.whnf_core_cache.get(&key) {
         if orig.ptr_eq(v) {
+          self.stats.whnf_core_cache_hits += 1;
           return Ok(cached.clone());
         }
       }
@@ -46,10 +46,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
         if root_ptr != key {
           if let Some((_, cached)) = self.whnf_core_cache.get(&root_ptr) {
+            self.stats.whnf_core_cache_hits += 1;
             return Ok(cached.clone());
           }
         }
       }
+      self.stats.whnf_core_cache_misses += 1;
     }
 
     let result = self.whnf_core_val_inner(v, cheap_rec, cheap_proj)?;
@@ -127,6 +129,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           self.whnf_val(&inner_v, 0)?
         };
 
+        if self.trace && proj_stack.len() > 0 {
+          let (ta, ix, tn, _) = &proj_stack[0];
+          let tn_str = format!("{tn:?}");
+          if tn_str.contains("Fin") || tn_str.contains("BitVec") {
+            self.trace_msg(&format!("[PROJ CHAIN] depth={} outermost=proj[{ix}] {tn:?}  inner_whnf={inner_v}", proj_stack.len()));
+          }
+        }
+
         // Resolve projections from inside out (last pushed = innermost)
         let mut current = inner_v;
         let mut any_resolved = false;
@@ -191,21 +201,19 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           return Ok(v.clone());
         }
 
-        // Ensure this constant is in typed_consts (lazily populate)
-        let _ = self.ensure_typed_const(addr);
-
-        // Check if this is a recursor
-        if let Some(TypedConst::Recursor {
-          num_params,
-          num_motives,
-          num_minors,
-          num_indices,
-          k,
-          induct_addr,
-          rules,
-          ..
-        }) = self.typed_consts.get(addr).cloned()
-        {
+        // Check if this is a recursor (look up directly in env, not via ensure_typed_const)
+        if let Some(KConstantInfo::Recursor(rv)) = self.env.get(addr) {
+          let num_params = rv.num_params;
+          let num_motives = rv.num_motives;
+          let num_minors = rv.num_minors;
+          let num_indices = rv.num_indices;
+          let k = rv.k;
+          let induct_addr = get_major_induct(
+            &rv.cv.typ, num_params, num_motives, num_minors, num_indices,
+          ).unwrap_or_else(|| Address::hash(b"unknown"));
+          let rules: Vec<(usize, TypedExpr<M>)> = rv.rules.iter().map(|r| {
+            (r.nfields, TypedExpr { info: TypeInfo::None, body: r.rhs.clone() })
+          }).collect();
           let total_before_major =
             num_params + num_motives + num_minors;
           let major_idx = total_before_major + num_indices;
@@ -226,7 +234,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               &induct_addr,
               &rules,
             )? {
-              return Ok(result);
+              return self.whnf_core_val(&result, cheap_rec, cheap_proj);
             }
           }
 
@@ -242,7 +250,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             &rules,
             &induct_addr,
           )? {
-            return Ok(result);
+            return self.whnf_core_val(&result, cheap_rec, cheap_proj);
           }
 
           // Struct eta fallback
@@ -256,28 +264,27 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             &induct_addr,
             &rules,
           )? {
-            return Ok(result);
+            return self.whnf_core_val(&result, cheap_rec, cheap_proj);
           }
         }
 
-        // Quotient reduction
-        if let Some(TypedConst::Quotient { kind, .. }) =
-          self.typed_consts.get(addr).cloned()
-        {
+        // Quotient reduction (look up directly in env)
+        if let Some(KConstantInfo::Quotient(qv)) = self.env.get(addr) {
           use crate::ix::env::QuotKind;
+          let kind = qv.kind;
           match kind {
             QuotKind::Lift if spine.len() >= 6 => {
               if let Some(result) =
                 self.try_quot_reduction(spine, 6, 3)?
               {
-                return Ok(result);
+                return self.whnf_core_val(&result, cheap_rec, cheap_proj);
               }
             }
             QuotKind::Ind if spine.len() >= 5 => {
               if let Some(result) =
                 self.try_quot_reduction(spine, 5, 3)?
               {
-                return Ok(result);
+                return self.whnf_core_val(&result, cheap_rec, cheap_proj);
               }
             }
             _ => {}
@@ -424,10 +431,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   ) -> TcResult<Option<Val<M>>, M> {
     // K-reduction: for Prop inductives with single zero-field ctor,
     // the minor premise is returned directly
-    if num_minors != 1 {
-      return Ok(None);
-    }
-
     let major_idx = num_params + num_motives + num_minors + num_indices;
     if spine.len() <= major_idx {
       return Ok(None);
@@ -552,6 +555,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       return Ok(None);
     }
     let major = self.force_thunk(&spine[major_idx])?;
+    let major = self.whnf_val(&major, 0)?;
     let is_prop = self.is_prop_val(&major).unwrap_or(false);
     if is_prop {
       return Ok(None);
@@ -614,21 +618,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let last_whnf = self.whnf_val(&last_val, 0)?;
 
     // Check if the last arg is a Quot.mk application
-    // Extract the Quot.mk spine (works for both Ctor and Neutral Quot.mk)
     let mk_spine_opt = match last_whnf.inner() {
-      ValInner::Ctor { spine: mk_spine, .. } => Some(mk_spine.clone()),
       ValInner::Neutral {
         head: Head::Const { addr, .. },
         spine: mk_spine,
       } => {
         // Check if this is a Quot.mk (QuotKind::Ctor)
-        let _ = self.ensure_typed_const(addr);
         if matches!(
-          self.typed_consts.get(addr),
-          Some(TypedConst::Quotient {
-            kind: crate::ix::env::QuotKind::Ctor,
-            ..
-          })
+          self.env.get(addr),
+          Some(KConstantInfo::Quotient(qv)) if qv.kind == crate::ix::env::QuotKind::Ctor
         ) {
           Some(mk_spine.clone())
         } else {
@@ -639,7 +637,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     };
 
     match mk_spine_opt {
-      Some(mk_spine) if !mk_spine.is_empty() => {
+      Some(mk_spine) if mk_spine.len() >= 3 => {
         // The quotient value is the last field of Quot.mk
         let quot_val = &mk_spine[mk_spine.len() - 1];
 
@@ -689,6 +687,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         head: Head::Const { addr, levels, .. },
         spine,
       } => {
+        // Platform-dependent reduction: System.Platform.numBits → word size
+        if self.prims.system_platform_num_bits.as_ref() == Some(addr)
+          && spine.is_empty()
+        {
+          return Ok(Some(Val::mk_lit(Literal::NatVal(
+            Nat::from(self.word_size.num_bits()),
+          ))));
+        }
+
         // Check if this constant should be unfolded
         let ci = match self.env.get(addr) {
           Some(ci) => ci.clone(),
@@ -718,6 +725,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           val = self.apply_val_thunk(val, thunk.clone())?;
         }
 
+        self.stats.delta_steps += 1;
         Ok(Some(val))
       }
       _ => Ok(None),
@@ -973,22 +981,34 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           return Ok(None);
         }
 
-        if spine.len() != 1 {
+        if spine.is_empty() {
           return Ok(None);
         }
 
         let arg = self.force_thunk(&spine[0])?;
         // The argument should be a constant whose definition we fully
         // evaluate
-        let arg_addr = match arg.const_addr() {
-          Some(a) => a.clone(),
-          None => return Ok(None),
+        let (arg_addr, arg_levels) = match arg.inner() {
+          ValInner::Neutral {
+            head: Head::Const { addr, levels, .. },
+            ..
+          } => (addr.clone(), levels.clone()),
+          _ => return Ok(None),
         };
 
         // Look up the definition
-        let body = match self.env.get(&arg_addr) {
-          Some(KConstantInfo::Definition(d)) => d.value.clone(),
+        let (body, num_levels) = match self.env.get(&arg_addr) {
+          Some(KConstantInfo::Definition(d)) => {
+            (d.value.clone(), d.cv.num_levels)
+          }
           _ => return Ok(None),
+        };
+
+        // Instantiate universe levels if needed
+        let body = if num_levels == 0 {
+          body
+        } else {
+          self.instantiate_levels(&body, &arg_levels)
         };
 
         // Fully evaluate (empty env — definition bodies are closed)
@@ -1029,7 +1049,34 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           }
         }
 
-        Ok(Some(result))
+        self.stats.native_reduces += 1;
+
+        // Canonicalize the result to match the lean4 reference kernel:
+        // reduceBool → mk_bool_true()/mk_bool_false() (canonical Ctor)
+        // reduceNat  → mk_lit(literal(nat(...))) (canonical Lit)
+        if is_reduce_bool {
+          let is_true = match result.inner() {
+            ValInner::Ctor { addr, .. } => self.prims.bool_true.as_ref() == Some(addr),
+            ValInner::Neutral { head: Head::Const { addr, .. }, .. } => {
+              self.prims.bool_true.as_ref() == Some(addr)
+            }
+            _ => false,
+          };
+          let (ctor_addr, cidx) = if is_true {
+            (self.prims.bool_true.as_ref().unwrap().clone(), 1usize)
+          } else {
+            (self.prims.bool_false.as_ref().unwrap().clone(), 0usize)
+          };
+          let induct = self.prims.bool_type.clone().unwrap();
+          Ok(Some(Val::mk_ctor(
+            ctor_addr, Vec::new(), M::Field::<Name>::default(),
+            cidx, 0, 0, induct, Vec::new(),
+          )))
+        } else {
+          // reduceNat: extract and rewrap as canonical Lit
+          let n = extract_nat_val(&result, self.prims).unwrap();
+          Ok(Some(Val::mk_lit(Literal::NatVal(n))))
+        }
       }
       _ => Ok(None),
     }
@@ -1057,21 +1104,27 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if let Some((orig, cached)) = self.whnf_cache.get(&key) {
         if orig.ptr_eq(v) {
           self.stats.cache_hits += 1;
+          self.stats.whnf_cache_hits += 1;
           return Ok(cached.clone());
         }
       }
       // Second-chance lookup via equiv root
       if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
         if root_ptr != key {
-          if let Some((_, cached)) = self.whnf_cache.get(&root_ptr) {
+          if let Some((orig_root, cached)) = self.whnf_cache.get(&root_ptr) {
+            if self.trace {
+              self.trace_msg(&format!("[whnf_val EQUIV-HIT] v={v}  root_orig={orig_root}  cached={cached}"));
+            }
             self.stats.cache_hits += 1;
+            self.stats.whnf_equiv_hits += 1;
             return Ok(cached.clone());
           }
         }
       }
+      self.stats.whnf_cache_misses += 1;
     }
 
-    if delta_steps >= max_steps {
+    if delta_steps > max_steps {
       return Err(TcError::KernelException {
         msg: format!("delta step limit exceeded ({max_steps})"),
       });
@@ -1102,12 +1155,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     if delta_steps == 0 {
       let key = v.ptr_id();
       self.whnf_cache.insert(key, (v.clone(), result.clone()));
-      // Register v ≡ whnf(v) in equiv manager (Opt 3)
+      // Register v ≡ whnf(v) in equiv manager
       if !v.ptr_eq(&result) {
-        let result_ptr = result.ptr_id();
-        self.equiv_manager.add_equiv(key, result_ptr);
+        self.add_equiv_val(v, &result);
       }
-      // Also insert under root for equiv-class sharing (Opt 2 synergy)
+      // Also insert under root for equiv-class sharing
       if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
         if root_ptr != key {
           self.whnf_cache.insert(root_ptr, (v.clone(), result.clone()));

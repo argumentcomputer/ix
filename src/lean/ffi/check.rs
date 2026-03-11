@@ -368,18 +368,39 @@ pub extern "C" fn rs_check_consts(
             some
           }
           Some(addr) => {
-            let trace = name.contains("parseWith");
+            eprintln!("checking {name}");
+            let trace = name.contains("parseWith") || name.contains("heapifyDown") || name.contains("toUInt64");
             let (result, heartbeats, stats) =
               crate::ix::kernel::check::typecheck_const_with_stats_trace(
-                &kenv, &prims, addr, quot_init, trace,
+                &kenv, &prims, addr, quot_init, trace, name,
               );
             let tc_elapsed = tc_start.elapsed();
+            eprintln!("checked {name} ({tc_elapsed:.1?})");
             if tc_elapsed.as_millis() >= 10 {
               eprintln!(
                 "[rs_check_consts]   {name}: {tc_elapsed:.1?} \
                  (hb={heartbeats} infer={} eval={} deq={} thunks={} forces={} hits={} cache={})",
                 stats.infer_calls, stats.eval_calls, stats.def_eq_calls,
                 stats.thunk_count, stats.thunk_forces, stats.thunk_hits, stats.cache_hits,
+              );
+              eprintln!(
+                "[rs_check_consts]     quick: true={} false={}  equiv={}  ptr_succ={}  ptr_fail={}  proof_irrel={}",
+                stats.quick_true, stats.quick_false, stats.equiv_hits,
+                stats.ptr_success_hits, stats.ptr_failure_hits, stats.proof_irrel_hits,
+              );
+              eprintln!(
+                "[rs_check_consts]     whnf: hit={} miss={}  equiv={}  core_hit={}  core_miss={}",
+                stats.whnf_cache_hits, stats.whnf_cache_misses, stats.whnf_equiv_hits,
+                stats.whnf_core_cache_hits, stats.whnf_core_cache_misses,
+              );
+              eprintln!(
+                "[rs_check_consts]     delta: steps={}  lazy_iters={}  same_head: check={}  hit={}",
+                stats.delta_steps, stats.lazy_delta_iters,
+                stats.same_head_checks, stats.same_head_hits,
+              );
+              eprintln!(
+                "[rs_check_consts]     step10={}  step11={}  native={}",
+                stats.step10_fires, stats.step11_fires, stats.native_reduces,
               );
             }
             match result {

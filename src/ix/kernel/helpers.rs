@@ -209,12 +209,10 @@ pub fn compute_nat_prim<M: MetaMode>(
   } else if prims.nat_xor.as_ref() == Some(addr) {
     nat_val(&a.0 ^ &b.0)
   } else if prims.nat_shift_left.as_ref() == Some(addr) {
-    // Cap shift to prevent OOM from allocating enormous BigUint results.
-    let shift = b.to_u64().filter(|&s| s <= 16_777_216)?;
+    let shift = b.to_u64()?;
     nat_val(&a.0 << shift)
   } else if prims.nat_shift_right.as_ref() == Some(addr) {
-    // Cap shift so huge-beyond-u64 shifts don't silently become shift-by-0.
-    let shift = b.to_u64().filter(|&s| s <= 16_777_216)?;
+    let shift = b.to_u64()?;
     nat_val(&a.0 >> shift)
   } else {
     return None;
@@ -250,18 +248,14 @@ pub fn nat_lit_to_ctor_val<M: MetaMode>(
 pub fn reduce_val_proj_forced<M: MetaMode>(
   ctor: &Val<M>,
   proj_idx: usize,
-  proj_type_addr: &Address,
+  _proj_type_addr: &Address,
 ) -> Option<Thunk<M>> {
   match ctor.inner() {
     ValInner::Ctor {
-      induct_addr,
       num_params,
       spine,
       ..
     } => {
-      if induct_addr != proj_type_addr {
-        return None;
-      }
       let field_idx = num_params + proj_idx;
       if field_idx < spine.len() {
         Some(spine[field_idx].clone())

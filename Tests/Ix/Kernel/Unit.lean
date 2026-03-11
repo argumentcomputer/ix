@@ -30,6 +30,8 @@ private def cstL (addr : Address) (lvls : Array L) : E := Ix.Kernel.Expr.mkConst
 private def natLit (n : Nat) : E := .lit (.natVal n)
 private def strLit (s : String) : E := .lit (.strVal s)
 private def letE (ty val body : E) : E := Ix.Kernel.Expr.mkLetE ty val body
+private def projE (typeAddr : Address) (idx : Nat) (struct : E) : E :=
+  Ix.Kernel.Expr.mkProj typeAddr idx struct
 
 /-! ## Test: eval+quote roundtrip for pure lambda calculus -/
 
@@ -1138,8 +1140,9 @@ def testWhnfCaching : TestSeq :=
   let chainEnv := addDef (addDef (addDef (addDef (addDef default a ty (natLit 99)) b ty (cst a)) c ty (cst b)) d ty (cst c)) e ty (cst d)
   test "deep def chain" (whnfK2 chainEnv (cst e) == .ok (natLit 99))
 
-/-! ## Test: struct eta in defEq with axioms -/
-
+-- TODO: OVERFLOW
+--/-! ## Test: struct eta in defEq with axioms -/
+--
 def testStructEtaAxiom : TestSeq :=
   -- Pair where one side is an axiom, eta-expand via projections
   let (pairEnv, pairIndAddr, pairCtorAddr) := buildPairEnv
@@ -1412,6 +1415,7 @@ def testStringCtorDeep : TestSeq :=
   test "str ctor: \"abc\" != \"ab\""
     (isDefEqEmpty (strLit "abc") (strLit "ab") == .ok false)
 
+
 /-! ## Test: projection in isDefEq -/
 
 def testProjDefEq : TestSeq :=
@@ -1485,6 +1489,245 @@ def testDefnTypecheckAdd : TestSeq :=
   | .ok () => test "myAdd typecheck succeeded" true
   | .error e => test s!"myAdd typecheck error: {e}" false
 
+
+/-! ## Tests ported from Rust kernel test suite -/
+
+/-! ### Proof irrelevance: under lambda + intro vs axiom -/
+
+def testProofIrrelUnderLambda : TestSeq :=
+  let (env, trueIndAddr, _introAddr, _recAddr) := buildMyTrueEnv
+  let p1 := mkAddr 400
+  let p2 := mkAddr 401
+  let env := addAxiom (addAxiom env p1 (cst trueIndAddr)) p2 (cst trueIndAddr)
+  -- λ(x:Type). p1 == λ(x:Type). p2 (proof irrel under lambda)
+  test "proof irrel under lambda"
+    (isDefEqK2 env (lam ty (cst p1)) (lam ty (cst p2)) == .ok true)
+
+def testProofIrrelIntroVsAxiom : TestSeq :=
+  let (env, trueIndAddr, introAddr, _recAddr) := buildMyTrueEnv
+  let p1 := mkAddr 403
+  let env := addAxiom env p1 (cst trueIndAddr)
+  -- The constructor intro and axiom p1 are both proofs of MyTrue → defeq
+  test "proof irrel: intro vs axiom"
+    (isDefEqK2 env (cst introAddr) (cst p1) == .ok true)
+
+/-! ### Eta expansion with axioms -/
+
+def testEtaAxiomFun : TestSeq :=
+  let prims := buildPrimitives
+  let fAddr := mkAddr 410
+  let env := addAxiom default prims.nat ty
+  let env := addAxiom env fAddr (pi (cst prims.nat) (cst prims.nat))
+  -- f == λx. f x (eta with axiom)
+  let etaF := lam (cst prims.nat) (app (cst fAddr) (bv 0))
+  test "eta axiom: f == λx. f x" (isDefEqK2 env (cst fAddr) etaF == .ok true) $
+  test "eta axiom: λx. f x == f" (isDefEqK2 env etaF (cst fAddr) == .ok true)
+
+def testEtaNestedAxiom : TestSeq :=
+  let prims := buildPrimitives
+  let fAddr := mkAddr 412
+  let natE := cst prims.nat
+  let env := addAxiom default prims.nat ty
+  let env := addAxiom env fAddr (pi natE (pi natE natE))
+  -- f == λx.λy. f x y (double eta with axiom)
+  let doubleEta := lam natE (lam natE (app (app (cst fAddr) (bv 1)) (bv 0)))
+  test "eta axiom nested: f == λx.λy. f x y"
+    (isDefEqK2 env (cst fAddr) doubleEta == .ok true)
+
+/-! ### Bidirectional check -/
+
+def testCheckLamAgainstPi : TestSeq :=
+  let prims := buildPrimitives
+  let natE := cst prims.nat
+  let env := addAxiom default prims.nat ty
+  -- λ(x:Nat). x checked against (Nat → Nat) succeeds
+  let idLam := lam natE (bv 0)
+  let piTy := pi natE natE
+  test "check: λx.x against Nat→Nat"
+    (checkK2 env idLam piTy |>.isOk)
+
+def testCheckDomainMismatch : TestSeq :=
+  let prims := buildPrimitives
+  let natE := cst prims.nat
+  let boolE := cst prims.bool
+  let env := addAxiom (addAxiom default prims.nat ty) prims.bool ty
+  -- λ(x:Bool). x checked against (Nat → Nat) fails
+  let lamBool := lam boolE (bv 0)
+  let piNat := pi natE natE
+  test "check: domain mismatch fails"
+    (isError (checkK2 env lamBool piNat))
+
+/-! ### Level equality -/
+
+def testLevelEquality : TestSeq :=
+  let u : L := .param 0 default
+  let v : L := .param 1 default
+  -- Sort (max u v) == Sort (max v u)
+  let sMaxUV : E := .sort (.max u v)
+  let sMaxVU : E := .sort (.max v u)
+  test "level: max u v == max v u" (isDefEqEmpty sMaxUV sMaxVU == .ok true) $
+  -- imax(u, 0) normalizes to 0, so Sort(imax(u,0)) == Prop
+  let sImaxU0 : E := .sort (.imax u .zero)
+  test "level: imax u 0 == 0" (isDefEqEmpty sImaxU0 prop == .ok true) $
+  -- Sort 1 != Sort 0
+  test "level: Sort 1 != Sort 0" (isDefEqEmpty ty prop == .ok false) $
+  -- Sort u == Sort u
+  let sU : E := .sort u
+  test "level: Sort u == Sort u" (isDefEqEmpty sU sU == .ok true) $
+  -- Sort 2 == Sort 2
+  test "level: Sort 2 == Sort 2" (isDefEqEmpty (srt 2) (srt 2) == .ok true) $
+  -- Sort 2 != Sort 3
+  test "level: Sort 2 != Sort 3" (isDefEqEmpty (srt 2) (srt 3) == .ok false)
+
+/-! ### Projection nested pair -/
+
+def testProjNestedPair : TestSeq :=
+  let (env, pairIndAddr, pairCtorAddr) := buildPairEnv
+  -- mk (mk 1 2) (mk 3 4)
+  let inner1 := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 1)) (natLit 2)
+  let inner2 := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 3)) (natLit 4)
+  let pairOfPairTy := app (app (cst pairIndAddr) ty) ty
+  let outer := app (app (app (app (cst pairCtorAddr) pairOfPairTy) pairOfPairTy) inner1) inner2
+  -- proj 0 outer == mk 1 2
+  let proj0 := projE pairIndAddr 0 outer
+  let expected := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 1)) (natLit 2)
+  test "proj nested: proj 0 outer == mk 1 2" (isDefEqK2 env proj0 expected == .ok true) $
+  -- proj 0 (proj 0 outer) == 1
+  let projProj := projE pairIndAddr 0 proj0
+  test "proj nested: proj 0 (proj 0 outer) == 1" (isDefEqK2 env projProj (natLit 1) == .ok true)
+
+/-! ### Opaque/theorem self-equality -/
+
+def testOpaqueSelfEq : TestSeq :=
+  let oAddr := mkAddr 430
+  let env := addOpaque default oAddr ty (natLit 5)
+  -- Opaque constant defeq to itself
+  test "opaque self eq" (isDefEqK2 env (cst oAddr) (cst oAddr) == .ok true)
+
+def testTheoremSelfEq : TestSeq :=
+  let tAddr := mkAddr 431
+  let env := addTheorem default tAddr ty (natLit 5)
+  -- Theorem constant defeq to itself
+  test "theorem self eq" (isDefEqK2 env (cst tAddr) (cst tAddr) == .ok true) $
+  -- Theorem is unfolded during defEq, so thm == 5
+  test "theorem unfolds to value" (isDefEqK2 env (cst tAddr) (natLit 5) == .ok true)
+
+/-! ### Beta inside defeq -/
+
+def testBetaInsideDefEq : TestSeq :=
+  -- (λx.x) 5 == (λy.y) 5
+  test "beta inside: (λx.x) 5 == (λy.y) 5"
+    (isDefEqEmpty (app (lam ty (bv 0)) (natLit 5)) (app (lam ty (bv 0)) (natLit 5)) == .ok true) $
+  -- (λx.x) 5 == 5
+  test "beta inside: (λx.x) 5 == 5"
+    (isDefEqEmpty (app (lam ty (bv 0)) (natLit 5)) (natLit 5) == .ok true)
+
+/-! ### Sort defeq levels -/
+
+def testSortDefEqLevels : TestSeq :=
+  test "sort defeq: Prop == Prop" (isDefEqEmpty prop prop == .ok true) $
+  test "sort defeq: Prop != Type" (isDefEqEmpty prop ty == .ok false) $
+  test "sort defeq: Sort 2 == Sort 2" (isDefEqEmpty (srt 2) (srt 2) == .ok true) $
+  test "sort defeq: Sort 2 != Sort 3" (isDefEqEmpty (srt 2) (srt 3) == .ok false)
+
+/-! ### Nat supplemental -/
+
+def testNatSupplemental : TestSeq :=
+  let prims := buildPrimitives
+  -- Large literal equality (O(1))
+  test "nat: 1000000 == 1000000" (isDefEqEmpty (natLit 1000000) (natLit 1000000) == .ok true) $
+  test "nat: 1000000 != 1000001" (isDefEqEmpty (natLit 1000000) (natLit 1000001) == .ok false) $
+  -- nat_lit(0) whnf stays as nat_lit(0)
+  test "nat: whnf 0 stays 0" (whnfEmpty (natLit 0) == .ok (natLit 0)) $
+  -- Nat.succ(x) == Nat.succ(x) with symbolic x
+  let natIndAddr := (buildMyNatEnv).2.1
+  let (env, _, _, _, _) := buildMyNatEnv
+  let x := mkAddr 440
+  let y := mkAddr 441
+  let env := addAxiom (addAxiom env x (cst natIndAddr)) y (cst natIndAddr)
+  let sx := app (cst prims.natSucc) (cst x)
+  test "nat succ sym: succ x == succ x" (isDefEqK2 env sx sx == .ok true) $
+  let sy := app (cst prims.natSucc) (cst y)
+  test "nat succ sym: succ x != succ y" (isDefEqK2 env sx sy == .ok false)
+
+/-! ### Whnf nat prim symbolic stays stuck -/
+
+def testWhnfNatPrimSymbolic : TestSeq :=
+  let (env, natIndAddr, _, _, _) := buildMyNatEnv
+  let x := mkAddr 460
+  let env := addAxiom env x (cst natIndAddr)
+  -- Nat.add x 3 should NOT reduce (x is symbolic)
+  let addSym := app (app (cst (buildPrimitives).natAdd) (cst x)) (natLit 3)
+  let result := whnfK2 env addSym
+  test "whnf: Nat.add sym stays stuck" (result != .ok (natLit 3))
+
+/-! ### Lazy delta supplemental -/
+
+def testLazyDeltaSupplemental : TestSeq :=
+  -- Same head axiom spine: f 1 2 == f 1 2
+  let fAddr := mkAddr 450
+  let env := addAxiom default fAddr (pi ty (pi ty ty))
+  let fa := app (app (cst fAddr) (natLit 1)) (natLit 2)
+  test "lazy delta: f 1 2 == f 1 2" (isDefEqK2 env fa fa == .ok true) $
+  -- f 1 2 != f 1 3
+  let fc := app (app (cst fAddr) (natLit 1)) (natLit 3)
+  test "lazy delta: f 1 2 != f 1 3" (isDefEqK2 env fa fc == .ok false) $
+  -- Theorem unfolded by delta
+  let thmAddr := mkAddr 451
+  let env := addTheorem default thmAddr ty (natLit 5)
+  test "lazy delta: theorem unfolds" (isDefEqK2 env (cst thmAddr) (natLit 5) == .ok true)
+
+/-! ### K-reduction supplemental -/
+
+def testKReductionSupplemental : TestSeq :=
+  let (env, _trueIndAddr, introAddr, recAddr) := buildMyTrueEnv
+  -- K-rec on intro directly reduces to minor premise
+  let motive := lam (cst _trueIndAddr) prop
+  let base := natLit 42  -- the "value" produced by the minor premise (abusing types for simplicity)
+  let recOnIntro := app (app (app (cst recAddr) motive) base) (cst introAddr)
+  test "K-rec on intro reduces" (whnfK2 env recOnIntro |>.isOk) $
+  -- K-rec on axiom of right type: toCtorWhenK should handle this
+  let axAddr := mkAddr 470
+  let env := addAxiom env axAddr (cst _trueIndAddr)
+  let recOnAxiom := app (app (app (cst recAddr) motive) base) (cst axAddr)
+  test "K-rec on axiom reduces" (whnfK2 env recOnAxiom |>.isOk)
+
+/-! ### Struct eta not recursive -/
+
+def testStructEtaNotRecursive : TestSeq :=
+  -- Build a recursive list-like type — struct eta should NOT fire
+  let listIndAddr := mkAddr 480
+  let listNilAddr := mkAddr 481
+  let listConsAddr := mkAddr 482
+  let env := addInductive default listIndAddr (pi ty ty) #[listNilAddr, listConsAddr]
+    (numParams := 1) (isRec := true)
+  let env := addCtor env listNilAddr listIndAddr
+    (pi ty (app (cst listIndAddr) (bv 0))) 0 1 0
+  let env := addCtor env listConsAddr listIndAddr
+    (pi ty (pi (bv 0) (pi (app (cst listIndAddr) (bv 1)) (app (cst listIndAddr) (bv 2))))) 1 1 2
+  -- Two axioms of list type should NOT be defeq
+  let ax1 := mkAddr 483
+  let ax2 := mkAddr 484
+  let listNat := app (cst listIndAddr) ty
+  let env := addAxiom (addAxiom env ax1 listNat) ax2 listNat
+  test "struct eta not recursive: list axioms not defeq"
+    (isDefEqK2 env (cst ax1) (cst ax2) == .ok false)
+
+/-! ### Unit-like Prop defeq -/
+
+def testUnitLikePropDefEq : TestSeq :=
+  -- Prop type with 1 ctor, 0 fields → both unit-like and proof-irrel
+  let pIndAddr := mkAddr 490
+  let pMkAddr := mkAddr 491
+  let env := addInductive default pIndAddr prop #[pMkAddr]
+  let env := addCtor env pMkAddr pIndAddr (cst pIndAddr) 0 0 0
+  let ax1 := mkAddr 492
+  let ax2 := mkAddr 493
+  let env := addAxiom (addAxiom env ax1 (cst pIndAddr)) ax2 (cst pIndAddr)
+  -- Both proof irrelevance and unit-like apply
+  test "unit-like prop defeq"
+    (isDefEqK2 env (cst ax1) (cst ax2) == .ok true)
+
 def suite : List TestSeq := [
   group "eval+quote roundtrip" testEvalQuoteIdentity,
   group "beta reduction" testBetaReduction,
@@ -1546,6 +1789,25 @@ def suite : List TestSeq := [
   group "proj defEq" testProjDefEq,
   group "fvar comparison" testFvarComparison,
   group "defn typecheck add" testDefnTypecheckAdd,
+  -- Round 3: Rust parity tests
+  group "proof irrel under lambda" testProofIrrelUnderLambda,
+  group "proof irrel intro vs axiom" testProofIrrelIntroVsAxiom,
+  group "eta axiom fun" testEtaAxiomFun,
+  group "eta nested axiom" testEtaNestedAxiom,
+  group "check lam against pi" testCheckLamAgainstPi,
+  group "check domain mismatch" testCheckDomainMismatch,
+  group "level equality" testLevelEquality,
+  group "proj nested pair" testProjNestedPair,
+  group "opaque self eq" testOpaqueSelfEq,
+  group "theorem self eq" testTheoremSelfEq,
+  group "beta inside defEq" testBetaInsideDefEq,
+  group "sort defEq levels" testSortDefEqLevels,
+  group "nat supplemental" testNatSupplemental,
+  group "whnf nat prim symbolic" testWhnfNatPrimSymbolic,
+  group "lazy delta supplemental" testLazyDeltaSupplemental,
+  group "K-reduction supplemental" testKReductionSupplemental,
+  group "struct eta not recursive" testStructEtaNotRecursive,
+  group "unit-like prop defEq" testUnitLikePropDefEq,
 ]
 
 end Tests.Ix.Kernel.Unit

@@ -373,6 +373,7 @@ fn build_primitives(
   prims.reduce_bool = lookup("reduceBool");
   prims.reduce_nat = lookup("reduceNat");
   prims.eager_reduce = lookup("eagerReduce");
+  prims.system_platform_num_bits = lookup("System.Platform.numBits");
 
   prims
 }

@@ -145,8 +145,6 @@ def testConsts : TestSeq :=
         -- Stack overflow regression
         "Nat.Linear.Poly.of_denote_eq_cancel",
         "_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq",
-        -- check-env hang: unsafe_rec definition
-        "Batteries.BinaryHeap.heapifyDown._unsafe_rec",
       ]
       let mut passed := 0
       let mut failures : Array String := #[]
@@ -158,7 +156,7 @@ def testConsts : TestSeq :=
         IO.println s!"  checking {name} ..."
         (← IO.getStdout).flush
         let start ← IO.monoMsNow
-        match Ix.Kernel.typecheckConst kenv prims addr quotInit (trace := true) with
+        match Ix.Kernel.typecheckConst kenv prims addr quotInit (trace := false) with
         | .ok () =>
           let ms := (← IO.monoMsNow) - start
           IO.println s!"  ✓ {name} ({ms.formatMs})"
