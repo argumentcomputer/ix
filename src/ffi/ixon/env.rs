@@ -370,12 +370,12 @@ pub extern "C" fn rs_ser_env(obj: LeanIxonRawEnv) -> LeanByteArray {
 }
 
 // =============================================================================
-// rs_des_env: Deserialize bytes to an Ixon.RawEnv
+// rs_de_env: Deserialize bytes to an Ixon.RawEnv
 // =============================================================================
 
 /// FFI: Deserialize ByteArray -> Except String Ixon.RawEnv via Rust's Env.get. Pure.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_des_env(obj: LeanByteArray) -> LeanExcept {
+pub extern "C" fn rs_de_env(obj: LeanByteArray) -> LeanExcept {
   let data = obj.as_bytes();
   let mut slice: &[u8] = data;
   match IxonEnv::get(&mut slice) {
@@ -385,7 +385,7 @@ pub extern "C" fn rs_des_env(obj: LeanByteArray) -> LeanExcept {
       LeanExcept::ok(raw_env)
     },
     Err(e) => {
-      let msg = format!("rs_des_env: {}", e);
+      let msg = format!("rs_de_env: {}", e);
       LeanExcept::error_string(&msg)
     },
   }
