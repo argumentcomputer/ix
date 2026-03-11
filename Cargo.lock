@@ -1819,7 +1819,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 [[package]]
 name = "lean-ffi"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/lean-ffi?rev=644fadad7e6684e0d1e70247a05b40e043050348#644fadad7e6684e0d1e70247a05b40e043050348"
+source = "git+https://github.com/argumentcomputer/lean-ffi?rev=91185181da859eb3941df2fbede24ae03838ed5b#91185181da859eb3941df2fbede24ae03838ed5b"
 dependencies = [
  "bindgen",
  "cc",

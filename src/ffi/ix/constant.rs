@@ -23,7 +23,6 @@ use lean_ffi::nat::Nat;
 use lean_ffi::object::{LeanArray, LeanCtor, LeanObject};
 
 use crate::ffi::builder::LeanBuildCache;
-use crate::ffi::primitives::build_nat;
 
 // =============================================================================
 // ConstantVal
@@ -136,7 +135,7 @@ impl LeanIxRecursorRule {
     for (i, rule) in rules.iter().enumerate() {
       // RecursorRule = { ctor : Name, nFields : Nat, rhs : Expr }
       let ctor_obj = LeanIxName::build(cache, &rule.ctor);
-      let n_fields_obj = build_nat(&rule.n_fields);
+      let n_fields_obj = Nat::to_lean(&rule.n_fields);
       let rhs_obj = LeanIxExpr::build(cache, &rule.rhs);
 
       let rule_obj = LeanCtor::alloc(0, 3, 0);
@@ -248,11 +247,11 @@ impl LeanIxConstantInfo {
       ConstantInfo::InductInfo(v) => {
         // InductiveVal = { cnst, numParams, numIndices, all, ctors, numNested, isRec, isUnsafe, isReflexive }
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
-        let num_params_obj = build_nat(&v.num_params);
-        let num_indices_obj = build_nat(&v.num_indices);
+        let num_params_obj = Nat::to_lean(&v.num_params);
+        let num_indices_obj = Nat::to_lean(&v.num_indices);
         let all_obj = LeanIxName::build_array(cache, &v.all);
         let ctors_obj = LeanIxName::build_array(cache, &v.ctors);
-        let num_nested_obj = build_nat(&v.num_nested);
+        let num_nested_obj = Nat::to_lean(&v.num_nested);
 
         // 6 object fields, 3 scalar bytes for bools
         let induct_val = LeanCtor::alloc(0, 6, 3);
@@ -275,9 +274,9 @@ impl LeanIxConstantInfo {
         // ConstructorVal = { cnst, induct, cidx, numParams, numFields, isUnsafe }
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
         let induct_obj = LeanIxName::build(cache, &v.induct);
-        let cidx_obj = build_nat(&v.cidx);
-        let num_params_obj = build_nat(&v.num_params);
-        let num_fields_obj = build_nat(&v.num_fields);
+        let cidx_obj = Nat::to_lean(&v.cidx);
+        let num_params_obj = Nat::to_lean(&v.num_params);
+        let num_fields_obj = Nat::to_lean(&v.num_fields);
 
         // 5 object fields, 1 scalar byte for bool
         let ctor_val = LeanCtor::alloc(0, 5, 1);
@@ -297,10 +296,10 @@ impl LeanIxConstantInfo {
         // RecursorVal = { cnst, all, numParams, numIndices, numMotives, numMinors, rules, k, isUnsafe }
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
         let all_obj = LeanIxName::build_array(cache, &v.all);
-        let num_params_obj = build_nat(&v.num_params);
-        let num_indices_obj = build_nat(&v.num_indices);
-        let num_motives_obj = build_nat(&v.num_motives);
-        let num_minors_obj = build_nat(&v.num_minors);
+        let num_params_obj = Nat::to_lean(&v.num_params);
+        let num_indices_obj = Nat::to_lean(&v.num_indices);
+        let num_motives_obj = Nat::to_lean(&v.num_motives);
+        let num_minors_obj = Nat::to_lean(&v.num_minors);
         let rules_obj = LeanIxRecursorRule::build_array(cache, &v.rules);
 
         // 7 object fields, 2 scalar bytes for bools

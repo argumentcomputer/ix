@@ -11,7 +11,6 @@ use lean_ffi::nat::Nat;
 use lean_ffi::object::{LeanArray, LeanCtor, LeanString};
 
 use crate::ffi::builder::LeanBuildCache;
-use crate::ffi::primitives::build_nat;
 
 impl LeanIxInt {
   /// Build a Ix.Int (ofNat or negSucc).
@@ -19,12 +18,12 @@ impl LeanIxInt {
     match int {
       Int::OfNat(n) => {
         let obj = LeanCtor::alloc(0, 1, 0);
-        obj.set(0, build_nat(n));
+        obj.set(0, Nat::to_lean(n));
         Self::new(*obj)
       },
       Int::NegSucc(n) => {
         let obj = LeanCtor::alloc(1, 1, 0);
-        obj.set(0, build_nat(n));
+        obj.set(0, Nat::to_lean(n));
         Self::new(*obj)
       },
     }
@@ -48,8 +47,8 @@ impl LeanIxSubstring {
   pub fn build(ss: &Substring) -> Self {
     let obj = LeanCtor::alloc(0, 3, 0);
     obj.set(0, LeanString::new(ss.str.as_str()));
-    obj.set(1, build_nat(&ss.start_pos));
-    obj.set(2, build_nat(&ss.stop_pos));
+    obj.set(1, Nat::to_lean(&ss.start_pos));
+    obj.set(2, Nat::to_lean(&ss.stop_pos));
     Self::new(*obj)
   }
 
@@ -72,16 +71,16 @@ impl LeanIxSourceInfo {
       SourceInfo::Original(leading, pos, trailing, end_pos) => {
         let obj = LeanCtor::alloc(0, 4, 0);
         obj.set(0, LeanIxSubstring::build(leading));
-        obj.set(1, build_nat(pos));
+        obj.set(1, Nat::to_lean(pos));
         obj.set(2, LeanIxSubstring::build(trailing));
-        obj.set(3, build_nat(end_pos));
+        obj.set(3, Nat::to_lean(end_pos));
         Self::new(*obj)
       },
       // | synthetic (pos : Nat) (endPos : Nat) (canonical : Bool) -- tag 1
       SourceInfo::Synthetic(pos, end_pos, canonical) => {
         let obj = LeanCtor::alloc(1, 2, 1);
-        obj.set(0, build_nat(pos));
-        obj.set(1, build_nat(end_pos));
+        obj.set(0, Nat::to_lean(pos));
+        obj.set(1, Nat::to_lean(end_pos));
         obj.set_scalar_u8(2, 0, *canonical as u8);
         Self::new(*obj)
       },
@@ -300,7 +299,7 @@ impl LeanIxDataValue {
       },
       DataValue::OfNat(n) => {
         let obj = LeanCtor::alloc(3, 1, 0);
-        obj.set(0, build_nat(n));
+        obj.set(0, Nat::to_lean(n));
         Self::new(*obj)
       },
       DataValue::OfInt(i) => {

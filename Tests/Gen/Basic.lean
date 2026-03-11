@@ -86,40 +86,6 @@ def genByteArray : Gen ByteArray := do
 
 def genBool : Gen Bool := choose Bool .false true
 
-/-! ## Test struct generators -/
-
-/-- A simple 2D point struct for FFI testing -/
-structure Point where
-  x : Nat
-  y : Nat
-deriving Repr, BEq, DecidableEq, Inhabited
-
-def genPoint : Gen Point := do
-  let x ← genSmallNat
-  let y ← genSmallNat
-  pure ⟨x, y⟩
-
-/-- A simple binary tree of Nats for FFI testing -/
-inductive NatTree where
-  | leaf : Nat → NatTree
-  | node : NatTree → NatTree → NatTree
-deriving Repr, BEq, DecidableEq, Inhabited
-
-/-- Generate a random NatTree with bounded depth -/
-def genNatTree : Nat → Gen NatTree
-  | 0 => do
-    let n ← genSmallNat
-    pure (.leaf n)
-  | maxDepth + 1 => do
-    let choice ← choose Nat 0 2
-    if choice == 0 then
-      let n ← genSmallNat
-      pure (.leaf n)
-    else
-      let left ← genNatTree maxDepth
-      let right ← genNatTree maxDepth
-      pure (.node left right)
-
 def genHashMapNatNat : Gen (Std.HashMap Nat Nat) := do
   let len ← choose Nat 0 20
   let mut map : Std.HashMap Nat Nat := {}
@@ -151,14 +117,6 @@ instance : Shrinkable ByteArray where
 instance : Shrinkable String where
   shrink s := if s.isEmpty then [] else [s.dropEnd 1 |>.toString]
 
-instance : Shrinkable Point where
-  shrink p := if p.x == 0 && p.y == 0 then [] else [⟨p.x / 2, p.y / 2⟩]
-
-instance : Shrinkable NatTree where
-  shrink t := match t with
-    | .leaf n => if n == 0 then [] else [.leaf (n / 2)]
-    | .node l r => [l, r]
-
 instance : Shrinkable (Std.HashMap Nat Nat) where
   shrink m :=
     let list := m.toList
@@ -177,10 +135,6 @@ instance : SampleableExt (Array Nat) := SampleableExt.mkSelfContained genArrayNa
 instance : SampleableExt ByteArray := SampleableExt.mkSelfContained genByteArray
 
 instance : SampleableExt String := SampleableExt.mkSelfContained genString
-
-instance : SampleableExt Point := SampleableExt.mkSelfContained genPoint
-
-instance : SampleableExt NatTree := SampleableExt.mkSelfContained (genNatTree 4)
 
 instance : SampleableExt (Std.HashMap Nat Nat) := SampleableExt.mkSelfContained genHashMapNatNat
 

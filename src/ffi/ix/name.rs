@@ -11,7 +11,6 @@ use lean_ffi::nat::Nat;
 use lean_ffi::object::{LeanArray, LeanCtor, LeanString};
 
 use crate::ffi::builder::LeanBuildCache;
-use crate::ffi::primitives::build_nat;
 use crate::lean::LeanIxAddress;
 
 impl LeanIxName {
@@ -41,7 +40,7 @@ impl LeanIxName {
       },
       NameData::Num(parent, n, h) => {
         let parent_obj = Self::build(cache, parent);
-        let n_obj = build_nat(n);
+        let n_obj = Nat::to_lean(n);
         let ctor = LeanCtor::alloc(2, 3, 0);
         ctor.set(0, parent_obj);
         ctor.set(1, n_obj);
