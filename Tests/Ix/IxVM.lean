@@ -27,6 +27,11 @@ public def kernelCheckNatAddComm (env : Lean.Environment) : IO AiurTestCase := d
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend key (bytes.data.map .ofUInt8)
 
+  -- Store blobs (nat/string literals referenced by constant refs)
+  for (addr, bytes) in ixonEnv.blobs do
+    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+    ioBuffer := ioBuffer.extend key (bytes.data.map .ofUInt8)
+
   -- Get the blake3 address of Nat.add_comm as the target
   let targetAddr := match ixonEnv.getAddr? (Ix.Name.fromLeanName ``Nat.add_comm) with
     | some addr => addr
