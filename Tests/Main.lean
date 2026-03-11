@@ -53,7 +53,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
-def ignoredRunners : List (String × IO UInt32) := [
+def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("aiur", do
     IO.println "aiur"
     match AiurTestEnv.build (pure toplevel) with
@@ -69,7 +69,12 @@ def ignoredRunners : List (String × IO UInt32) := [
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
   ("ixvm", do
-    LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM [← serdeNatAddComm]])]) []),
+    -- let serdeNatAddCommTest ← serdeNatAddComm env
+    -- let kernelCheckNatAddCommTest ← kernelCheckNatAddComm env
+    -- let ixVMTests := [mkAiurTests IxVM.ixVM [serdeNatAddCommTest, kernelCheckNatAddCommTest]]
+    -- LSpec.lspecIO (.ofList [("ixvm", ixVMTests)]) []),
+    let kernelCheckNatAddCommTest ← kernelCheckNatAddComm env
+    LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM [kernelCheckNatAddCommTest]])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with
@@ -78,9 +83,9 @@ def ignoredRunners : List (String × IO UInt32) := [
 ]
 
 def main (args : List String) : IO UInt32 := do
+  let env ← get_env!
   -- Special case: rust-compile diagnostic
   if args.contains "rust-compile" then
-    let env ← get_env!
     IO.println s!"Loaded environment with {env.constants.toList.length} constants"
     let result := tmpDecodeConstMap env.constants.toList
     IO.println s!"Rust compiled: {result}"
@@ -103,8 +108,9 @@ def main (args : List String) : IO UInt32 := do
   -- Run ignored tests when --ignored or --include-ignored is specified
   if runIgnored || includeIgnored then
     let mut result ← LSpec.lspecIO ignoredSuites filterArgs
-    let filtered := if filterArgs.isEmpty then ignoredRunners
-      else filterArgs.filterMap fun arg => ignoredRunners.find? fun (key, _) => key == arg
+    let ignored := ignoredRunners env
+    let filtered := if filterArgs.isEmpty then ignored
+      else filterArgs.filterMap fun arg => ignored.find? fun (key, _) => key == arg
     for (_, action) in filtered do
       let r ← action
       if r != 0 then result := r
