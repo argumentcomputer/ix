@@ -92,7 +92,7 @@ impl LeanIxExpr {
         obj.set(1, ty_obj);
         obj.set(2, body_obj);
         obj.set(3, hash_obj);
-        obj.set_u8(4 * 8, LeanIxBinderInfo::to_u8(bi));
+        obj.set_scalar_u8(4, 0, LeanIxBinderInfo::to_u8(bi));
         Self::new(*obj)
       },
       ExprData::ForallE(name, ty, body, bi, h) => {
@@ -105,7 +105,7 @@ impl LeanIxExpr {
         obj.set(1, ty_obj);
         obj.set(2, body_obj);
         obj.set(3, hash_obj);
-        obj.set_u8(4 * 8, LeanIxBinderInfo::to_u8(bi));
+        obj.set_scalar_u8(4, 0, LeanIxBinderInfo::to_u8(bi));
         Self::new(*obj)
       },
       ExprData::LetE(name, ty, val, body, non_dep, h) => {
@@ -121,7 +121,7 @@ impl LeanIxExpr {
         obj.set(2, val_obj);
         obj.set(3, body_obj);
         obj.set(4, hash_obj);
-        obj.set_u8(5 * 8, *non_dep as u8);
+        obj.set_scalar_u8(5, 0, *non_dep as u8);
         Self::new(*obj)
       },
       ExprData::Lit(lit, h) => {

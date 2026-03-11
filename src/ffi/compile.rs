@@ -157,9 +157,9 @@ pub extern "C" fn rs_roundtrip_block_compare_result(
       let first_diff = ctor.scalar_u64(0, 16);
 
       let out = LeanCtor::alloc(1, 0, 24);
-      out.set_u64(0, lean_size);
-      out.set_u64(8, rust_size);
-      out.set_u64(16, first_diff);
+      out.set_scalar_u64(0, 0, lean_size);
+      out.set_scalar_u64(0, 8, rust_size);
+      out.set_scalar_u64(0, 16, first_diff);
       LeanIxBlockCompareResult::new(*out)
     },
     _ => unreachable!("Invalid BlockCompareResult tag: {}", ctor.tag()),
@@ -182,8 +182,8 @@ pub extern "C" fn rs_roundtrip_block_compare_detail(
 
   let out = LeanCtor::alloc(0, 1, 16);
   out.set(0, result_obj);
-  out.set_u64(8, lean_sharing_len);
-  out.set_u64(16, rust_sharing_len);
+  out.set_scalar_u64(1, 0, lean_sharing_len);
+  out.set_scalar_u64(1, 8, rust_sharing_len);
   LeanIxBlockCompareDetail::new(*out)
 }
 
@@ -254,7 +254,7 @@ pub extern "C" fn rs_compile_env_full(
       let block = LeanCtor::alloc(0, 2, 8);
       block.set(0, name_obj);
       block.set(1, ba);
-      block.set_u64(2 * 8, *sharing_len as u64);
+      block.set_scalar_u64(2, 0, *sharing_len as u64);
 
       blocks_arr.set(i, *block);
     }
@@ -1058,31 +1058,31 @@ impl LeanIxSerializeError {
       SerializeError::InvalidTag { tag, context } => {
         let ctor = LeanCtor::alloc(1, 1, 1);
         ctor.set(0, build_lean_string(context));
-        ctor.set_u8(8, *tag);
+        ctor.set_scalar_u8(1, 0, *tag);
         *ctor
       },
       SerializeError::InvalidFlag { flag, context } => {
         let ctor = LeanCtor::alloc(2, 1, 1);
         ctor.set(0, build_lean_string(context));
-        ctor.set_u8(8, *flag);
+        ctor.set_scalar_u8(1, 0, *flag);
         *ctor
       },
       SerializeError::InvalidVariant { variant, context } => {
         let ctor = LeanCtor::alloc(3, 1, 8);
         ctor.set(0, build_lean_string(context));
-        ctor.set_u64(8, *variant);
+        ctor.set_scalar_u64(1, 0, *variant);
         *ctor
       },
       SerializeError::InvalidBool { value } => {
         let ctor = LeanCtor::alloc(4, 0, 1);
-        ctor.set_u8(0, *value);
+        ctor.set_scalar_u8(0, 0, *value);
         *ctor
       },
       SerializeError::AddressError => LeanObject::box_usize(5),
       SerializeError::InvalidShareIndex { idx, max } => {
         let ctor = LeanCtor::alloc(6, 1, 8);
         ctor.set(0, build_lean_nat_usize(*max));
-        ctor.set_u64(8, *idx);
+        ctor.set_scalar_u64(1, 0, *idx);
         *ctor
       },
     };
@@ -1150,35 +1150,35 @@ impl LeanIxDecompileError {
         let ctor = LeanCtor::alloc(0, 2, 8);
         ctor.set(0, build_lean_nat_usize(*refs_len));
         ctor.set(1, build_lean_string(constant));
-        ctor.set_u64(2 * 8, *idx);
+        ctor.set_scalar_u64(2, 0, *idx);
         *ctor
       },
       DecompileError::InvalidUnivIndex { idx, univs_len, constant } => {
         let ctor = LeanCtor::alloc(1, 2, 8);
         ctor.set(0, build_lean_nat_usize(*univs_len));
         ctor.set(1, build_lean_string(constant));
-        ctor.set_u64(2 * 8, *idx);
+        ctor.set_scalar_u64(2, 0, *idx);
         *ctor
       },
       DecompileError::InvalidShareIndex { idx, max, constant } => {
         let ctor = LeanCtor::alloc(2, 2, 8);
         ctor.set(0, build_lean_nat_usize(*max));
         ctor.set(1, build_lean_string(constant));
-        ctor.set_u64(2 * 8, *idx);
+        ctor.set_scalar_u64(2, 0, *idx);
         *ctor
       },
       DecompileError::InvalidRecIndex { idx, ctx_size, constant } => {
         let ctor = LeanCtor::alloc(3, 2, 8);
         ctor.set(0, build_lean_nat_usize(*ctx_size));
         ctor.set(1, build_lean_string(constant));
-        ctor.set_u64(2 * 8, *idx);
+        ctor.set_scalar_u64(2, 0, *idx);
         *ctor
       },
       DecompileError::InvalidUnivVarIndex { idx, max, constant } => {
         let ctor = LeanCtor::alloc(4, 2, 8);
         ctor.set(0, build_lean_nat_usize(*max));
         ctor.set(1, build_lean_string(constant));
-        ctor.set_u64(2 * 8, *idx);
+        ctor.set_scalar_u64(2, 0, *idx);
         *ctor
       },
       DecompileError::MissingAddress(addr) => {

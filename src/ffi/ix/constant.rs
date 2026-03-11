@@ -75,7 +75,7 @@ impl LeanIxReducibilityHints {
       ReducibilityHints::Regular(h) => {
         // UInt32 is a scalar, stored inline
         let obj = LeanCtor::alloc(2, 0, 4);
-        obj.set_u32(0, *h);
+        obj.set_scalar_u32(0, 0, *h);
         *obj
       },
     };
@@ -160,7 +160,7 @@ impl LeanIxConstantInfo {
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
         let axiom_val = LeanCtor::alloc(0, 1, 1);
         axiom_val.set(0, cnst_obj);
-        axiom_val.set_u8(8, v.is_unsafe as u8);
+        axiom_val.set_scalar_u8(1, 0, v.is_unsafe as u8);
 
         let obj = LeanCtor::alloc(0, 1, 0);
         obj.set(0, axiom_val);
@@ -185,7 +185,7 @@ impl LeanIxConstantInfo {
         defn_val.set(1, value_obj);
         defn_val.set(2, hints_obj);
         defn_val.set(3, all_obj);
-        defn_val.set_u8(4 * 8, safety_byte);
+        defn_val.set_scalar_u8(4, 0, safety_byte);
 
         let obj = LeanCtor::alloc(1, 1, 0);
         obj.set(0, defn_val);
@@ -218,7 +218,7 @@ impl LeanIxConstantInfo {
         opaque_val.set(0, cnst_obj);
         opaque_val.set(1, value_obj);
         opaque_val.set(2, all_obj);
-        opaque_val.set_u8(3 * 8, v.is_unsafe as u8);
+        opaque_val.set_scalar_u8(3, 0, v.is_unsafe as u8);
 
         let obj = LeanCtor::alloc(3, 1, 0);
         obj.set(0, opaque_val);
@@ -238,7 +238,7 @@ impl LeanIxConstantInfo {
 
         let quot_val = LeanCtor::alloc(0, 1, 1);
         quot_val.set(0, cnst_obj);
-        quot_val.set_u8(8, kind_byte);
+        quot_val.set_scalar_u8(1, 0, kind_byte);
 
         let obj = LeanCtor::alloc(4, 1, 0);
         obj.set(0, quot_val);
@@ -262,9 +262,9 @@ impl LeanIxConstantInfo {
         induct_val.set(3, all_obj);
         induct_val.set(4, ctors_obj);
         induct_val.set(5, num_nested_obj);
-        induct_val.set_u8(6 * 8, v.is_rec as u8);
-        induct_val.set_u8(6 * 8 + 1, v.is_unsafe as u8);
-        induct_val.set_u8(6 * 8 + 2, v.is_reflexive as u8);
+        induct_val.set_scalar_u8(6, 0, v.is_rec as u8);
+        induct_val.set_scalar_u8(6, 1, v.is_unsafe as u8);
+        induct_val.set_scalar_u8(6, 2, v.is_reflexive as u8);
 
         let obj = LeanCtor::alloc(5, 1, 0);
         obj.set(0, induct_val);
@@ -286,7 +286,7 @@ impl LeanIxConstantInfo {
         ctor_val.set(2, cidx_obj);
         ctor_val.set(3, num_params_obj);
         ctor_val.set(4, num_fields_obj);
-        ctor_val.set_u8(5 * 8, v.is_unsafe as u8);
+        ctor_val.set_scalar_u8(5, 0, v.is_unsafe as u8);
 
         let obj = LeanCtor::alloc(6, 1, 0);
         obj.set(0, ctor_val);
@@ -312,8 +312,8 @@ impl LeanIxConstantInfo {
         rec_val.set(4, num_motives_obj);
         rec_val.set(5, num_minors_obj);
         rec_val.set(6, rules_obj);
-        rec_val.set_u8(7 * 8, v.k as u8);
-        rec_val.set_u8(7 * 8 + 1, v.is_unsafe as u8);
+        rec_val.set_scalar_u8(7, 0, v.k as u8);
+        rec_val.set_scalar_u8(7, 1, v.is_unsafe as u8);
 
         let obj = LeanCtor::alloc(7, 1, 0);
         obj.set(0, rec_val);

@@ -39,19 +39,19 @@ impl LeanIxonDefinition {
     ctor.set(0, typ_obj);
     ctor.set(1, value_obj);
     // Scalar offsets from obj_cptr: 2*8=16 for lvls, 2*8+8=24 for kind, 2*8+9=25 for safety
-    ctor.set_u64(16, def.lvls);
+    ctor.set_scalar_u64(2, 0, def.lvls);
     let kind_val: u8 = match def.kind {
       DefKind::Definition => 0,
       DefKind::Opaque => 1,
       DefKind::Theorem => 2,
     };
-    ctor.set_u8(24, kind_val);
+    ctor.set_scalar_u8(2, 8, kind_val);
     let safety_val: u8 = match def.safety {
       crate::ix::env::DefinitionSafety::Unsafe => 0,
       crate::ix::env::DefinitionSafety::Safe => 1,
       crate::ix::env::DefinitionSafety::Partial => 2,
     };
-    ctor.set_u8(25, safety_val);
+    ctor.set_scalar_u8(2, 9, safety_val);
     Self::new(*ctor)
   }
 
@@ -92,7 +92,7 @@ impl LeanIxonRecursorRule {
     // 1 obj field, 8 scalar bytes
     let ctor = LeanCtor::alloc(0, 1, 8);
     ctor.set(0, rhs_obj);
-    ctor.set_u64(8, rule.fields);
+    ctor.set_scalar_u64(1, 0, rule.fields);
     Self::new(*ctor)
   }
 
@@ -124,13 +124,13 @@ impl LeanIxonRecursor {
     ctor.set(0, typ_obj);
     ctor.set(1, rules_arr);
     // Scalar offsets from obj_cptr: 2*8=16 base
-    ctor.set_u64(16, rec.lvls);
-    ctor.set_u64(24, rec.params);
-    ctor.set_u64(32, rec.indices);
-    ctor.set_u64(40, rec.motives);
-    ctor.set_u64(48, rec.minors);
-    ctor.set_u8(56, if rec.k { 1 } else { 0 });
-    ctor.set_u8(57, if rec.is_unsafe { 1 } else { 0 });
+    ctor.set_scalar_u64(2, 0, rec.lvls);
+    ctor.set_scalar_u64(2, 8, rec.params);
+    ctor.set_scalar_u64(2, 16, rec.indices);
+    ctor.set_scalar_u64(2, 24, rec.motives);
+    ctor.set_scalar_u64(2, 32, rec.minors);
+    ctor.set_scalar_u8(2, 40, if rec.k { 1 } else { 0 });
+    ctor.set_scalar_u8(2, 41, if rec.is_unsafe { 1 } else { 0 });
     Self::new(*ctor)
   }
 
@@ -175,8 +175,8 @@ impl LeanIxonAxiom {
     let ctor = LeanCtor::alloc(0, 1, 16);
     ctor.set(0, typ_obj);
     // Scalar offsets from obj_cptr: 1*8=8 base
-    ctor.set_u64(8, ax.lvls);
-    ctor.set_u8(16, if ax.is_unsafe { 1 } else { 0 });
+    ctor.set_scalar_u64(1, 0, ax.lvls);
+    ctor.set_scalar_u8(1, 8, if ax.is_unsafe { 1 } else { 0 });
     Self::new(*ctor)
   }
 
@@ -205,14 +205,14 @@ impl LeanIxonQuotient {
     let ctor = LeanCtor::alloc(0, 1, 16);
     ctor.set(0, typ_obj);
     // Scalar offsets from obj_cptr: 1*8=8 base
-    ctor.set_u64(8, quot.lvls);
+    ctor.set_scalar_u64(1, 0, quot.lvls);
     let kind_val: u8 = match quot.kind {
       crate::ix::env::QuotKind::Type => 0,
       crate::ix::env::QuotKind::Ctor => 1,
       crate::ix::env::QuotKind::Lift => 2,
       crate::ix::env::QuotKind::Ind => 3,
     };
-    ctor.set_u8(16, kind_val);
+    ctor.set_scalar_u8(1, 8, kind_val);
     Self::new(*ctor)
   }
 
@@ -247,11 +247,11 @@ impl LeanIxonConstructor {
     let ctor = LeanCtor::alloc(0, 1, 40);
     ctor.set(0, typ_obj);
     // Scalar offsets from obj_cptr: 1*8=8 base
-    ctor.set_u64(8, c.lvls);
-    ctor.set_u64(16, c.cidx);
-    ctor.set_u64(24, c.params);
-    ctor.set_u64(32, c.fields);
-    ctor.set_u8(40, if c.is_unsafe { 1 } else { 0 });
+    ctor.set_scalar_u64(1, 0, c.lvls);
+    ctor.set_scalar_u64(1, 8, c.cidx);
+    ctor.set_scalar_u64(1, 16, c.params);
+    ctor.set_scalar_u64(1, 24, c.fields);
+    ctor.set_scalar_u8(1, 32, if c.is_unsafe { 1 } else { 0 });
     Self::new(*ctor)
   }
 
@@ -288,13 +288,13 @@ impl LeanIxonInductive {
     ctor.set(0, typ_obj);
     ctor.set(1, ctors_arr);
     // Scalar offsets from obj_cptr: 2*8=16 base
-    ctor.set_u64(16, ind.lvls);
-    ctor.set_u64(24, ind.params);
-    ctor.set_u64(32, ind.indices);
-    ctor.set_u64(40, ind.nested);
-    ctor.set_u8(48, if ind.recr { 1 } else { 0 });
-    ctor.set_u8(49, if ind.refl { 1 } else { 0 });
-    ctor.set_u8(50, if ind.is_unsafe { 1 } else { 0 });
+    ctor.set_scalar_u64(2, 0, ind.lvls);
+    ctor.set_scalar_u64(2, 8, ind.params);
+    ctor.set_scalar_u64(2, 16, ind.indices);
+    ctor.set_scalar_u64(2, 24, ind.nested);
+    ctor.set_scalar_u8(2, 32, if ind.recr { 1 } else { 0 });
+    ctor.set_scalar_u8(2, 33, if ind.refl { 1 } else { 0 });
+    ctor.set_scalar_u8(2, 34, if ind.is_unsafe { 1 } else { 0 });
     Self::new(*ctor)
   }
 
@@ -335,7 +335,7 @@ impl LeanIxonInductiveProj {
     let block_obj = LeanIxAddress::build(&proj.block);
     let ctor = LeanCtor::alloc(0, 1, 8);
     ctor.set(0, block_obj);
-    ctor.set_u64(8, proj.idx);
+    ctor.set_scalar_u64(1, 0, proj.idx);
     Self::new(*ctor)
   }
 
@@ -352,8 +352,8 @@ impl LeanIxonConstructorProj {
     let block_obj = LeanIxAddress::build(&proj.block);
     let ctor = LeanCtor::alloc(0, 1, 16);
     ctor.set(0, block_obj);
-    ctor.set_u64(8, proj.idx);
-    ctor.set_u64(16, proj.cidx);
+    ctor.set_scalar_u64(1, 0, proj.idx);
+    ctor.set_scalar_u64(1, 8, proj.cidx);
     Self::new(*ctor)
   }
 
@@ -371,7 +371,7 @@ impl LeanIxonRecursorProj {
     let block_obj = LeanIxAddress::build(&proj.block);
     let ctor = LeanCtor::alloc(0, 1, 8);
     ctor.set(0, block_obj);
-    ctor.set_u64(8, proj.idx);
+    ctor.set_scalar_u64(1, 0, proj.idx);
     Self::new(*ctor)
   }
 
@@ -388,7 +388,7 @@ impl LeanIxonDefinitionProj {
     let block_obj = LeanIxAddress::build(&proj.block);
     let ctor = LeanCtor::alloc(0, 1, 8);
     ctor.set(0, block_obj);
-    ctor.set_u64(8, proj.idx);
+    ctor.set_scalar_u64(1, 0, proj.idx);
     Self::new(*ctor)
   }
 

@@ -82,7 +82,7 @@ impl LeanIxSourceInfo {
         let obj = LeanCtor::alloc(1, 2, 1);
         obj.set(0, build_nat(pos));
         obj.set(1, build_nat(end_pos));
-        obj.set_u8(2 * 8, *canonical as u8);
+        obj.set_scalar_u8(2, 0, *canonical as u8);
         Self::new(*obj)
       },
       // | none -- tag 2
@@ -290,7 +290,7 @@ impl LeanIxDataValue {
       DataValue::OfBool(b) => {
         // 0 object fields, 1 scalar byte
         let obj = LeanCtor::alloc(1, 0, 1);
-        obj.set_u8(0, *b as u8);
+        obj.set_scalar_u8(0, 0, *b as u8);
         Self::new(*obj)
       },
       DataValue::OfName(n) => {
