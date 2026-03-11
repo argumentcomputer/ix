@@ -238,10 +238,10 @@ def entrypoints := ⟦
   ) -> KU64List {
     let done = u64_is_zero(remaining);
     match done {
-      1 => KU64List.KUNil,
+      1 => KU64List.Nil,
       0 =>
         let pos = find_ctor_position(block_addr, induct_idx, ctor_cidx, all_consts, [0; 8]);
-        KU64List.KUCons(pos, store(build_ctor_idxs(
+        KU64List.Cons(pos, store(build_ctor_idxs(
           block_addr, induct_idx, relaxed_u64_pred(remaining),
           relaxed_u64_succ(ctor_cidx), all_consts))),
     }
@@ -250,9 +250,9 @@ def entrypoints := ⟦
   -- Concatenate two KU64Lists
   fn ku64_list_concat(a: KU64List, b: KU64List) -> KU64List {
     match a {
-      KU64List.KUNil => b,
-      KU64List.KUCons(v, &rest) =>
-        KU64List.KUCons(v, store(ku64_list_concat(rest, b))),
+      KU64List.Nil => b,
+      KU64List.Cons(v, &rest) =>
+        KU64List.Cons(v, store(ku64_list_concat(rest, b))),
     }
   }
 
@@ -263,7 +263,7 @@ def entrypoints := ⟦
     all_consts: ConstantList
   ) -> KU64List {
     match members {
-      MutConstList.Nil => KU64List.KUNil,
+      MutConstList.Nil => KU64List.Nil,
       MutConstList.Cons(mc, &rest) =>
         match mc {
           MutConst.Indc(ind) =>
@@ -298,7 +298,7 @@ def entrypoints := ⟦
             let ref_idxs = build_ref_idxs(refs, all_addrs);
             let lit_vals = build_zero_lit_vals(refs);
             let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(U64List.Nil), store(lit_vals), store(univs));
-            ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.HAbbrev)),
+            ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.Abbrev)),
 
           ConstantInfo.Axio(axio) =>
             let ref_idxs = build_ref_idxs(refs, all_addrs);
@@ -316,7 +316,7 @@ def entrypoints := ⟦
             let ref_idxs = build_ref_idxs(refs, all_addrs);
             let lit_vals = build_zero_lit_vals(refs);
             let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(U64List.Nil), store(lit_vals), store(univs));
-            ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, store(KU64List.KUNil))),
+            ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, store(KU64List.Nil))),
 
           ConstantInfo.IPrj(prj) =>
             match prj {
@@ -411,7 +411,7 @@ def entrypoints := ⟦
                         let mc = mut_const_list_lookup(members, idx);
                         match mc {
                           MutConst.Defn(defn) =>
-                            ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.HAbbrev)),
+                            ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.Abbrev)),
                         },
                     },
                 },
