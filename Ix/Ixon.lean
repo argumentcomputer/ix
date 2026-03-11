@@ -1034,13 +1034,13 @@ instance : Serialize Constant where
 /-! ## Convenience functions for serialization -/
 
 def serUniv (u : Univ) : ByteArray := runPut (putUniv u)
-def desUniv (bytes : ByteArray) : Except String Univ := runGet getUniv bytes
+def deUniv (bytes : ByteArray) : Except String Univ := runGet getUniv bytes
 
 def serExpr (e : Expr) : ByteArray := runPut (putExpr e)
-def desExpr (bytes : ByteArray) : Except String Expr := runGet getExpr bytes
+def deExpr (bytes : ByteArray) : Except String Expr := runGet getExpr bytes
 
 def serConstant (c : Constant) : ByteArray := runPut (putConstant c)
-def desConstant (bytes : ByteArray) : Except String Constant := runGet getConstant bytes
+def deConstant (bytes : ByteArray) : Except String Constant := runGet getConstant bytes
 
 /-! ## Metadata Serialization -/
 
@@ -1359,7 +1359,7 @@ instance : Serialize Comm where
 
 /-- Convenience serialization for Comm (untagged). -/
 def serComm (c : Comm) : ByteArray := runPut (putComm c)
-def desComm (bytes : ByteArray) : Except String Comm := runGet getComm bytes
+def deComm (bytes : ByteArray) : Except String Comm := runGet getComm bytes
 
 /-- Serialize Comm with Tag4{0xE, 5} header. -/
 def putCommTagged (c : Comm) : PutM Unit := do
@@ -1765,7 +1765,7 @@ end Env
 def serEnv (env : Env) : ByteArray := runPut (Env.putEnv env)
 
 /-- Deserialize an Env from bytes. -/
-def desEnv (bytes : ByteArray) : Except String Env := runGet Env.getEnv bytes
+def deEnv (bytes : ByteArray) : Except String Env := runGet Env.getEnv bytes
 
 /-- Compute section sizes for debugging. Returns (blobs, consts, names, named, comms). -/
 def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat := Id.run do
@@ -1825,12 +1825,12 @@ opaque rsSerEnvFFI : @& RawEnv → ByteArray
 def rsSerEnv (env : Env) : ByteArray :=
   rsSerEnvFFI env.toRawEnv
 
-@[extern "rs_des_env"]
-opaque rsDesEnvFFI : @& ByteArray → Except String RawEnv
+@[extern "rs_de_env"]
+opaque rsDeEnvFFI : @& ByteArray → Except String RawEnv
 
 /-- Deserialize bytes to an Ixon.Env using Rust. -/
-def rsDesEnv (bytes : ByteArray) : Except String Env :=
-  return (← rsDesEnvFFI bytes).toEnv
+def rsDeEnv (bytes : ByteArray) : Except String Env :=
+  return (← rsDeEnvFFI bytes).toEnv
 
 end Ixon
 

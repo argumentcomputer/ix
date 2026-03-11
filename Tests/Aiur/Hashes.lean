@@ -4,10 +4,8 @@ public import Tests.Aiur.Common
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
 public import Ix.IxVM.Sha256
+public import Tests.Sha256
 public import Blake3
-
-@[extern "rs_sha256"]
-opaque rsSha256 : @&ByteArray → ByteArray
 
 def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
   let inputBytes := Array.range size |>.map Nat.toUInt8
@@ -19,7 +17,7 @@ def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
 
 def mkSha256HashTestCase (size : Nat) : AiurTestCase :=
   let inputBytes := Array.range size |>.map Nat.toUInt8
-  let outputBytes := rsSha256 ⟨inputBytes⟩ |>.data
+  let outputBytes := Sha256.hash ⟨inputBytes⟩ |>.data
   let input := inputBytes.map .ofUInt8
   let output := outputBytes.map .ofUInt8
   let buffer := ⟨input, .ofList [(#[0], ⟨0, size⟩)]⟩ -- key is fixed as #[0]

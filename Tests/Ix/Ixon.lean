@@ -13,32 +13,32 @@ open Tests.FFI.Ixon (rsEqUnivSerialization rsEqExprSerialization rsEqConstantSer
 
 def univSerde (u : Univ) : Bool :=
   let bytes := serUniv u
-  match desUniv bytes with
+  match deUniv bytes with
   | .ok u' => u == u'
   | .error _ => false
 
 def exprSerde (e : Expr) : Bool :=
   let bytes := serExpr e
-  match desExpr bytes with
+  match deExpr bytes with
   | .ok e' => e == e'
   | .error _ => false
 
 def constantSerde (c : Constant) : Bool :=
   let bytes := serConstant c
-  match desConstant bytes with
+  match deConstant bytes with
   | .ok c' => c == c'
   | .error _ => false
 
 def commSerde (c : Comm) : Bool :=
   let bytes := serComm c
-  match desComm bytes with
+  match deComm bytes with
   | .ok c' => c == c'
   | .error _ => false
 
 def envSerde (raw : RawEnv) : Bool :=
   let env := raw.toEnv
   let bytes1 := serEnv env
-  match desEnv bytes1 with
+  match deEnv bytes1 with
   | .ok env' =>
     let bytes2 := serEnv env'
     bytes1 == bytes2  -- Byte-level equality after roundtrip
@@ -130,7 +130,7 @@ def sharingTest4 : Bool :=
   let e4 := Expr.lam (.sort 0) (.app (.var 0) (.var 0))
   let (rewritten4, _) := Ix.Sharing.applySharing #[e4]
   let serialized := serExpr rewritten4[0]!
-  match desExpr serialized with
+  match deExpr serialized with
   | .ok e => e == rewritten4[0]!
   | .error _ => false
 
@@ -144,7 +144,7 @@ def sharingUnits : TestSeq :=
 
 def envSerdeUnit (env : Env) : Bool :=
   let bytes1 := serEnv env
-  match desEnv bytes1 with
+  match deEnv bytes1 with
   | .ok env' =>
     let bytes2 := serEnv env'
     bytes1 == bytes2
