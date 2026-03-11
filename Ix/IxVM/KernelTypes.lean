@@ -11,16 +11,16 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KLevel {
-    LZero,
-    LSucc(&KLevel),
-    LMax(&KLevel, &KLevel),
-    LIMax(&KLevel, &KLevel),
-    LParam([G; 8])
+    Zero,
+    Succ(&KLevel),
+    Max(&KLevel, &KLevel),
+    IMax(&KLevel, &KLevel),
+    Param([G; 8])
   }
 
   enum KLevelList {
-    LLCons(&KLevel, &KLevelList),
-    LLNil
+    Cons(&KLevel, &KLevelList),
+    Nil
   }
 
   -- ============================================================================
@@ -28,8 +28,8 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KLiteral {
-    LitNat([G; 8]),
-    LitStr([G; 8])
+    Nat([G; 8]),
+    Str([G; 8])
   }
 
   -- ============================================================================
@@ -37,15 +37,15 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KExpr {
-    EBVar([G; 8]),
-    ESort(&KLevel),
-    EConst([G; 8], &KLevelList),
-    EApp(&KExpr, &KExpr),
-    ELam(&KExpr, &KExpr),
-    EForallE(&KExpr, &KExpr),
-    ELetE(&KExpr, &KExpr, &KExpr),
-    ELit(KLiteral),
-    EProj([G; 8], [G; 8], &KExpr)
+    BVar([G; 8]),
+    Srt(&KLevel),
+    Const([G; 8], &KLevelList),
+    App(&KExpr, &KExpr),
+    Lam(&KExpr, &KExpr),
+    Forall(&KExpr, &KExpr),
+    Let(&KExpr, &KExpr, &KExpr),
+    Lit(KLiteral),
+    Proj([G; 8], [G; 8], &KExpr)
   }
 
   -- ============================================================================
@@ -62,26 +62,26 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KVal {
-    VSort(&KLevel),
-    VLit(KLiteral),
-    VLam(&KVal, &KExpr, &KValEnv),
-    VPi(&KVal, &KExpr, &KValEnv),
-    VCtor([G; 8], &KLevelList, [G; 8], &KValList),
-    VFVar([G; 8], &KValList),
-    VConst([G; 8], &KLevelList, &KValList),
-    VProj([G; 8], [G; 8], &KVal, &KValList)
+    Srt(&KLevel),
+    Lit(KLiteral),
+    Lam(&KVal, &KExpr, &KValEnv),
+    Pi(&KVal, &KExpr, &KValEnv),
+    Ctor([G; 8], &KLevelList, [G; 8], &KValList),
+    FVar([G; 8], &KValList),
+    Const([G; 8], &KLevelList, &KValList),
+    Proj([G; 8], [G; 8], &KVal, &KValList)
   }
 
   -- Value environment (de Bruijn indexed, front = most recent binder)
   enum KValEnv {
-    VECons(&KVal, &KValEnv),
-    VENil
+    Cons(&KVal, &KValEnv),
+    Nil
   }
 
   -- Value list (for spines, type contexts)
   enum KValList {
-    VLCons(&KVal, &KValList),
-    VLNil
+    Cons(&KVal, &KValList),
+    Nil
   }
 
   -- ============================================================================
@@ -89,9 +89,9 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KHints {
-    HOpaque,
-    HAbbrev,
-    HRegular([G; 8])
+    Opaque,
+    Abbrev,
+    Regular([G; 8])
   }
 
   -- ============================================================================
@@ -99,9 +99,9 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KSafety {
-    SUnsafe,
-    SSafe,
-    SPartial
+    Unsafe,
+    Safe,
+    Partial
   }
 
   -- ============================================================================
@@ -109,10 +109,10 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KQuotKind {
-    QType,
-    QCtor,
-    QLift,
-    QInd
+    Typ,
+    Ctor,
+    Lift,
+    Ind
   }
 
   -- ============================================================================
@@ -120,12 +120,12 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KRecRule {
-    RRMk([G; 8], [G; 8], &KExpr)
+    Mk([G; 8], [G; 8], &KExpr)
   }
 
   enum KRecRuleList {
-    RRCons(&KRecRule, &KRecRuleList),
-    RRNil
+    Cons(&KRecRule, &KRecRuleList),
+    Nil
   }
 
   -- ============================================================================
@@ -145,25 +145,25 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KU64List {
-    KUCons([G; 8], &KU64List),
-    KUNil
+    Cons([G; 8], &KU64List),
+    Nil
   }
 
   enum KConstantInfo {
-    CIAxiom([G; 8], &KExpr, G),
-    CIDefn([G; 8], &KExpr, &KExpr, KHints, KSafety),
-    CIThm([G; 8], &KExpr, &KExpr),
-    CIOpaque([G; 8], &KExpr, &KExpr, G),
-    CIQuot([G; 8], &KExpr, KQuotKind),
-    CIInduct([G; 8], &KExpr, [G; 8], [G; 8], &KU64List, G, G, G),
-    CICtor([G; 8], &KExpr, [G; 8], [G; 8], [G; 8], [G; 8], G),
-    CIRec([G; 8], &KExpr, [G; 8], [G; 8], [G; 8], [G; 8], &KRecRuleList, G, G)
+    Axiom([G; 8], &KExpr, G),
+    Defn([G; 8], &KExpr, &KExpr, KHints, KSafety),
+    Thm([G; 8], &KExpr, &KExpr),
+    Opaque([G; 8], &KExpr, &KExpr, G),
+    Quot([G; 8], &KExpr, KQuotKind),
+    Induct([G; 8], &KExpr, [G; 8], [G; 8], &KU64List, G, G, G),
+    Ctor([G; 8], &KExpr, [G; 8], [G; 8], [G; 8], [G; 8], G),
+    Rec([G; 8], &KExpr, [G; 8], [G; 8], [G; 8], [G; 8], &KRecRuleList, G, G)
   }
 
   -- The global environment: a list of constants indexed by position
   enum KConstList {
-    CLCons(&KConstantInfo, &KConstList),
-    CLNil
+    Cons(&KConstantInfo, &KConstList),
+    Nil
   }
 ⟧
 

@@ -115,21 +115,21 @@ def convert := ⟦
 
   fn convert_univ(u: Univ) -> KLevel {
     match u {
-      Univ.Zero => KLevel.LZero,
-      Univ.Succ(&inner) => KLevel.LSucc(store(convert_univ(inner))),
-      Univ.Max(&a, &b) => KLevel.LMax(store(convert_univ(a)), store(convert_univ(b))),
-      Univ.IMax(&a, &b) => KLevel.LIMax(store(convert_univ(a)), store(convert_univ(b))),
-      Univ.Var(idx) => KLevel.LParam(idx),
+      Univ.Zero => KLevel.Zero,
+      Univ.Succ(&inner) => KLevel.Succ(store(convert_univ(inner))),
+      Univ.Max(&a, &b) => KLevel.Max(store(convert_univ(a)), store(convert_univ(b))),
+      Univ.IMax(&a, &b) => KLevel.IMax(store(convert_univ(a)), store(convert_univ(b))),
+      Univ.Var(idx) => KLevel.Param(idx),
     }
   }
 
   -- Resolve a list of universe indices to a KLevelList
   fn convert_univ_idxs(idxs: U64List, univs: UnivList) -> KLevelList {
     match idxs {
-      U64List.Nil => KLevelList.LLNil,
+      U64List.Nil => KLevelList.Nil,
       U64List.Cons(idx, &rest) =>
         let u = univ_list_lookup(univs, idx);
-        KLevelList.LLCons(store(convert_univ(u)), store(convert_univ_idxs(rest, univs))),
+        KLevelList.Cons(store(convert_univ(u)), store(convert_univ_idxs(rest, univs))),
     }
   }
 
@@ -148,53 +148,53 @@ def convert := ⟦
     match e {
       Expr.Srt(univ_idx) =>
         let u = univ_list_lookup(univs, univ_idx);
-        KExpr.ESort(store(convert_univ(u))),
+        KExpr.Srt(store(convert_univ(u))),
 
       Expr.Var(idx) =>
-        KExpr.EBVar(idx),
+        KExpr.BVar(idx),
 
       Expr.Ref(ref_idx, &univ_idxs) =>
         let const_idx = u64_list_lookup(ref_idxs, ref_idx);
         let levels = convert_univ_idxs(univ_idxs, univs);
-        KExpr.EConst(const_idx, store(levels)),
+        KExpr.Const(const_idx, store(levels)),
 
       Expr.Rec(rec_idx, &univ_idxs) =>
         let const_idx = u64_list_lookup(recur_idxs, rec_idx);
         let levels = convert_univ_idxs(univ_idxs, univs);
-        KExpr.EConst(const_idx, store(levels)),
+        KExpr.Const(const_idx, store(levels)),
 
       Expr.Prj(type_ref_idx, field_idx, &inner) =>
         let type_idx = u64_list_lookup(ref_idxs, type_ref_idx);
-        KExpr.EProj(
+        KExpr.Proj(
           type_idx,
           field_idx,
           store(convert_expr(inner, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
 
       Expr.Str(blob_ref_idx) =>
         let val = u64_list_lookup(lit_vals, blob_ref_idx);
-        KExpr.ELit(KLiteral.LitStr(val)),
+        KExpr.Lit(KLiteral.Str(val)),
 
       Expr.Nat(blob_ref_idx) =>
         let val = u64_list_lookup(lit_vals, blob_ref_idx);
-        KExpr.ELit(KLiteral.LitNat(val)),
+        KExpr.Lit(KLiteral.Nat(val)),
 
       Expr.App(&f, &a) =>
-        KExpr.EApp(
+        KExpr.App(
           store(convert_expr(f, sharing, ref_idxs, recur_idxs, lit_vals, univs)),
           store(convert_expr(a, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
 
       Expr.Lam(&ty, &body) =>
-        KExpr.ELam(
+        KExpr.Lam(
           store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_vals, univs)),
           store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
 
       Expr.All(&ty, &body) =>
-        KExpr.EForallE(
+        KExpr.Forall(
           store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_vals, univs)),
           store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
 
       Expr.Let(_, &ty, &val, &body) =>
-        KExpr.ELetE(
+        KExpr.Let(
           store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_vals, univs)),
           store(convert_expr(val, sharing, ref_idxs, recur_idxs, lit_vals, univs)),
           store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
@@ -219,18 +219,18 @@ def convert := ⟦
 
   fn convert_safety(s: DefinitionSafety) -> KSafety {
     match s {
-      DefinitionSafety.Unsafe => KSafety.SUnsafe,
-      DefinitionSafety.Safe => KSafety.SSafe,
-      DefinitionSafety.Partial => KSafety.SPartial,
+      DefinitionSafety.Unsafe => KSafety.Unsafe,
+      DefinitionSafety.Safe => KSafety.Safe,
+      DefinitionSafety.Partial => KSafety.Partial,
     }
   }
 
   fn convert_quot_kind(k: QuotKind) -> KQuotKind {
     match k {
-      QuotKind.Typ => KQuotKind.QType,
-      QuotKind.Ctor => KQuotKind.QCtor,
-      QuotKind.Lift => KQuotKind.QLift,
-      QuotKind.Ind => KQuotKind.QInd,
+      QuotKind.Typ => KQuotKind.Typ,
+      QuotKind.Ctor => KQuotKind.Ctor,
+      QuotKind.Lift => KQuotKind.Lift,
+      QuotKind.Ind => KQuotKind.Ind,
     }
   }
 
@@ -246,15 +246,15 @@ def convert := ⟦
     ctx: ConvertCtx
   ) -> KRecRuleList {
     match rules {
-      RecursorRuleList.Nil => KRecRuleList.RRNil,
+      RecursorRuleList.Nil => KRecRuleList.Nil,
       RecursorRuleList.Cons(rule, &rest_rules) =>
         match rule {
           RecursorRule.Mk(nfields, &rhs) =>
             match rule_ctor_idxs {
-              KU64List.KUCons(ctor_idx, &rest_ctor_idxs) =>
+              KU64List.Cons(ctor_idx, &rest_ctor_idxs) =>
                 let krhs = ctx_convert_expr(rhs, ctx);
-                let krule = KRecRule.RRMk(ctor_idx, nfields, store(krhs));
-                KRecRuleList.RRCons(
+                let krule = KRecRule.Mk(ctor_idx, nfields, store(krhs));
+                KRecRuleList.Cons(
                   store(krule),
                   store(convert_rules(rest_rules, rest_ctor_idxs, ctx))),
             },
@@ -273,16 +273,16 @@ def convert := ⟦
         let kval = ctx_convert_expr(value, ctx);
         match kind {
           DefKind.Definition =>
-            KConstantInfo.CIDefn(lvls, store(ktyp), store(kval), hints, convert_safety(safety)),
+            KConstantInfo.Defn(lvls, store(ktyp), store(kval), hints, convert_safety(safety)),
           DefKind.Opaque =>
             match safety {
               DefinitionSafety.Unsafe =>
-                KConstantInfo.CIOpaque(lvls, store(ktyp), store(kval), 1),
+                KConstantInfo.Opaque(lvls, store(ktyp), store(kval), 1),
               _ =>
-                KConstantInfo.CIOpaque(lvls, store(ktyp), store(kval), 0),
+                KConstantInfo.Opaque(lvls, store(ktyp), store(kval), 0),
             },
           DefKind.Theorem =>
-            KConstantInfo.CIThm(lvls, store(ktyp), store(kval)),
+            KConstantInfo.Thm(lvls, store(ktyp), store(kval)),
         },
     }
   }
@@ -291,7 +291,7 @@ def convert := ⟦
     match a {
       Axiom.Mk(is_unsafe, lvls, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
-        KConstantInfo.CIAxiom(lvls, store(ktyp), is_unsafe),
+        KConstantInfo.Axiom(lvls, store(ktyp), is_unsafe),
     }
   }
 
@@ -299,7 +299,7 @@ def convert := ⟦
     match q {
       Quotient.Mk(kind, lvls, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
-        KConstantInfo.CIQuot(lvls, store(ktyp), convert_quot_kind(kind)),
+        KConstantInfo.Quot(lvls, store(ktyp), convert_quot_kind(kind)),
     }
   }
 
@@ -308,7 +308,7 @@ def convert := ⟦
       Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, &rules) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         let krules = convert_rules(rules, rule_ctor_idxs, ctx);
-        KConstantInfo.CIRec(
+        KConstantInfo.Rec(
           lvls, store(ktyp), params, indices, motives, minors,
           store(krules), k, is_unsafe),
     }
@@ -318,7 +318,7 @@ def convert := ⟦
     match ind {
       Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, _, &typ, _) =>
         let ktyp = ctx_convert_expr(typ, ctx);
-        KConstantInfo.CIInduct(
+        KConstantInfo.Induct(
           lvls, store(ktyp), params, indices,
           store(ctor_idxs), is_rec, is_refl, is_unsafe),
     }
@@ -328,7 +328,7 @@ def convert := ⟦
     match c {
       Constructor.Mk(is_unsafe, lvls, cidx, params, fields, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
-        KConstantInfo.CICtor(
+        KConstantInfo.Ctor(
           lvls, store(ktyp), induct_idx, cidx, params, fields, is_unsafe),
     }
   }
@@ -355,10 +355,10 @@ def convert := ⟦
   -- Convert a list of resolved inputs to a KConstList
   fn convert_all(inputs: ConvertInputList) -> KConstList {
     match inputs {
-      ConvertInputList.Nil => KConstList.CLNil,
+      ConvertInputList.Nil => KConstList.Nil,
       ConvertInputList.Cons(&input, &rest) =>
         let ci = convert_one(input);
-        KConstList.CLCons(store(ci), store(convert_all(rest))),
+        KConstList.Cons(store(ci), store(convert_all(rest))),
     }
   }
 ⟧
