@@ -499,6 +499,21 @@ partial def TypedTerm.compile
     let term ← term.mapM (toIndex layoutMap bindings)
     modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
     ret.compile returnTyp layoutMap bindings
+  | .assertEq a b ret => do
+    let a ← toIndex layoutMap bindings a
+    let b ← toIndex layoutMap bindings b
+    modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
+    ret.compile returnTyp layoutMap bindings
+  | .ioSetInfo key idx len ret => do
+    let key ← toIndex layoutMap bindings key
+    let idx ← toIndex layoutMap bindings idx
+    let len ← toIndex layoutMap bindings len
+    modify fun stt => { stt with ops := stt.ops.push (.ioSetInfo key idx[0]! len[0]!) }
+    ret.compile returnTyp layoutMap bindings
+  | .ioWrite data ret => do
+    let data ← toIndex layoutMap bindings data
+    modify fun stt => { stt with ops := stt.ops.push (.ioWrite data) }
+    ret.compile returnTyp layoutMap bindings
   | .match term cases =>
     match term.typ with
     -- Also do this for tuple-like and array-like (one constructor only) datatypes
