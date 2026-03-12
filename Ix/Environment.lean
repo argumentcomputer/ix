@@ -6,7 +6,7 @@
 -/
 module
 
-public import Blake3
+public import Blake3.Rust
 public import Std.Data.HashMap
 public import Batteries.Data.RBMap
 public import Ix.Address
@@ -16,6 +16,7 @@ public section
 namespace Ix
 
 open Std (HashMap)
+open Blake3.Rust (Hasher)
 
 /-! ## LEON (Lean Objective Notation) Tags (must match Rust env.rs) -/
 def TAG_NANON : UInt8 := 0x00
@@ -86,7 +87,7 @@ instance : Inhabited Name where
 
 /-- Construct a string name component, hashing the tag, parent hash, and string bytes. -/
 def mkStr (pre: Name) (s: String): Name := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_NSTR])
   h := h.update pre.getHash.hash
   h := h.update s.toUTF8
@@ -94,7 +95,7 @@ def mkStr (pre: Name) (s: String): Name := Id.run <| do
 
 /-- Construct a numeric name component, hashing the tag, parent hash, and little-endian nat bytes. -/
 def mkNat (pre: Name) (i: Nat): Name := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_NNUM])
   h := h.update pre.getHash.hash
   h := h.update ⟨i.toBytesLE⟩
@@ -150,33 +151,33 @@ def getHash : Level → Address
 def mkZero : Level := .zero <| Address.blake3 (ByteArray.mk #[TAG_UZERO])
 
 def mkSucc (x: Level) : Level := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_USUCC])
   h := h.update x.getHash.hash
   .succ x ⟨(h.finalizeWithLength 32).val⟩
 
 def mkMax (x y : Level) : Level := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UMAX])
   h := h.update x.getHash.hash
   h := h.update y.getHash.hash
   .max x y ⟨(h.finalizeWithLength 32).val⟩
 
 def mkIMax (x y : Level) : Level := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UIMAX])
   h := h.update x.getHash.hash
   h := h.update y.getHash.hash
   .imax x y ⟨(h.finalizeWithLength 32).val⟩
 
 def mkParam (n: Name) : Level := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UPARAM])
   h := h.update n.getHash.hash
   .param n ⟨(h.finalizeWithLength 32).val⟩
 
 def mkMvar (n: Name) : Level := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UMVAR])
   h := h.update n.getHash.hash
   .mvar n ⟨(h.finalizeWithLength 32).val⟩
@@ -285,31 +286,31 @@ instance : Hashable Expr where
   hash e := hash e.getHash  -- Uses Address's Hashable (first 8 bytes as LE u64)
 
 def mkBVar (x: Nat) : Expr := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EVAR])
   h := h.update ⟨x.toBytesLE⟩
   .bvar x ⟨(h.finalizeWithLength 32).val⟩
 
 def mkFVar (x: Name) : Expr := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EFVAR])
   h := h.update x.getHash.hash
   .fvar x ⟨(h.finalizeWithLength 32).val⟩
 
 def mkMVar (x: Name) : Expr := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EMVAR])
   h := h.update x.getHash.hash
   .mvar x ⟨(h.finalizeWithLength 32).val⟩
 
 def mkSort (x: Level) : Expr := Id.run <| do
-  let h := Blake3.Hasher.init ()
+  let h := Hasher.init ()
   let h := h.update (ByteArray.mk #[TAG_ESORT])
   let h := h.update x.getHash.hash
   .sort x ⟨(h.finalizeWithLength 32).val⟩
 
 def mkConst (x: Name) (us: Array Level): Expr := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EREF])
   h := h.update x.getHash.hash
   for u in us do
@@ -317,14 +318,14 @@ def mkConst (x: Name) (us: Array Level): Expr := Id.run <| do
   .const x us ⟨(h.finalizeWithLength 32).val⟩
 
 def mkApp (f a : Expr) : Expr := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EAPP])
   h := h.update f.getHash.hash
   h := h.update a.getHash.hash
   .app f a ⟨(h.finalizeWithLength 32).val⟩
 
 def mkLam (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_ELAM])
   h := h.update n.getHash.hash
   h := h.update t.getHash.hash
@@ -333,7 +334,7 @@ def mkLam (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <| do
   .lam n t b bi ⟨(h.finalizeWithLength 32).val⟩
 
 def mkForallE (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EALL])
   h := h.update n.getHash.hash
   h := h.update t.getHash.hash
@@ -342,7 +343,7 @@ def mkForallE (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <|
   .forallE n t b bi ⟨(h.finalizeWithLength 32).val⟩
 
 def mkLetE (n : Name) (t v b : Expr) (nd : Bool) : Expr := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_ELET])
   h := h.update n.getHash.hash
   h := h.update t.getHash.hash
@@ -352,7 +353,7 @@ def mkLetE (n : Name) (t v b : Expr) (nd : Bool) : Expr := Id.run <| do
   .letE n t v b nd ⟨(h.finalizeWithLength 32).val⟩
 
 def mkLit (l : Lean.Literal) : Expr := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   match l with
   | .natVal n =>
     h := h.update (ByteArray.mk #[TAG_ENAT])
@@ -363,14 +364,14 @@ def mkLit (l : Lean.Literal) : Expr := Id.run <| do
   .lit l ⟨(h.finalizeWithLength 32).val⟩
 
 def mkProj (n : Name) (i : Nat) (e : Expr) : Expr := Id.run <| do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EPRJ])
   h := h.update n.getHash.hash
   h := h.update ⟨i.toBytesLE⟩
   h := h.update e.getHash.hash
   .proj n i e ⟨(h.finalizeWithLength 32).val⟩
 
-def hashInt (h : Blake3.Hasher) (i : Int) : Blake3.Hasher := Id.run do
+def hashInt (h : Hasher) (i : Int) : Hasher := Id.run do
   let mut h := h.update (ByteArray.mk #[TAG_MINT])
   match i with
   | .ofNat n =>
@@ -381,7 +382,7 @@ def hashInt (h : Blake3.Hasher) (i : Int) : Blake3.Hasher := Id.run do
     h := h.update ⟨n.toBytesLE⟩
   h
 
-def hashSubstring (h : Blake3.Hasher) (ss : Substring) : Blake3.Hasher :=
+def hashSubstring (h : Hasher) (ss : Substring) : Hasher :=
   Id.run do
     let mut h := h.update (ByteArray.mk #[TAG_MSSTR])
     h := h.update ss.str.toUTF8
@@ -389,7 +390,7 @@ def hashSubstring (h : Blake3.Hasher) (ss : Substring) : Blake3.Hasher :=
     h := h.update ⟨ss.stopPos.toBytesLE⟩
     h
 
-def hashSourceInfo (h : Blake3.Hasher) (si : SourceInfo) : Blake3.Hasher :=
+def hashSourceInfo (h : Hasher) (si : SourceInfo) : Hasher :=
   Id.run do
     let mut h := h.update (ByteArray.mk #[TAG_MSINFO])
     match si with
@@ -408,8 +409,8 @@ def hashSourceInfo (h : Blake3.Hasher) (si : SourceInfo) : Blake3.Hasher :=
       h := h.update (ByteArray.mk #[2])
     h
 
-def hashSyntaxPreresolved (h : Blake3.Hasher) (sp : SyntaxPreresolved)
-    : Blake3.Hasher := Id.run do
+def hashSyntaxPreresolved (h : Hasher) (sp : SyntaxPreresolved)
+    : Hasher := Id.run do
   let mut h := h.update (ByteArray.mk #[TAG_MSPRE])
   match sp with
   | .namespace name =>
@@ -423,8 +424,8 @@ def hashSyntaxPreresolved (h : Blake3.Hasher) (sp : SyntaxPreresolved)
       h := h.update (ByteArray.mk #[0])
   h
 
-private partial def hashSyntax (h : Blake3.Hasher) (syn : Syntax)
-    : Blake3.Hasher := Id.run do
+private partial def hashSyntax (h : Hasher) (syn : Syntax)
+    : Hasher := Id.run do
   let mut h := h.update (ByteArray.mk #[TAG_MSYN])
   match syn with
   | .missing =>
@@ -450,8 +451,8 @@ private partial def hashSyntax (h : Blake3.Hasher) (syn : Syntax)
       h := hashSyntaxPreresolved h pr
   h
 
-def hashDataValue (h : Blake3.Hasher) (dv : DataValue)
-    : Blake3.Hasher := Id.run do
+def hashDataValue (h : Hasher) (dv : DataValue)
+    : Hasher := Id.run do
   let mut h := h.update (ByteArray.mk #[TAG_MDVAL])
   match dv with
   | .ofString s =>
@@ -475,7 +476,7 @@ def hashDataValue (h : Blake3.Hasher) (dv : DataValue)
   h
 
 def mkMData (data : Array (Name × DataValue)) (e : Expr) : Expr := Id.run do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EMDATA])
   h := h.update ⟨data.size.toBytesLE⟩
   for (name, dv) in data do

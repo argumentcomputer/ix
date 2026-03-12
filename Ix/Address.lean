@@ -2,7 +2,7 @@ module
 public import Lean.ToExpr
 public import Ix.ByteArray
 public import Ix.Common
-public import Blake3
+public import Blake3.Rust
 
 public section
 
@@ -15,7 +15,7 @@ structure Address where
   deriving Lean.ToExpr, BEq, Hashable
 
 /-- Compute the Blake3 hash of a `ByteArray`, returning an `Address`. -/
-def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.hash x).val⟩
+def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.Rust.hash x).val⟩
 
 /-- Convert a nibble (0--15) to its lowercase hexadecimal character. -/
 def hexOfNat : Nat -> Option Char
