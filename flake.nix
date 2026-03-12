@@ -29,9 +29,9 @@
 
     crane.url = "github:ipetkov/crane";
 
-    # Blake3 C bindings for Lean
+    # Blake3 Rust bindings for Lean
     blake3-lean = {
-      url = "github:argumentcomputer/Blake3.lean";
+      url = "github:argumentcomputer/Blake3.lean?ref=rust-bindings";
       # System packages, follows lean4-nix so we stay in sync
       inputs.lean4-nix.follows = "lean4-nix";
     };
@@ -97,7 +97,7 @@
         lakeDeps = lake2nix.buildDeps {
           src = ./.;
           depOverrideDeriv = {
-            Blake3 = blake3-lean.packages.${system}.default;
+            Blake3 = blake3-lean.packages.${system}.rust;
           };
         };
         lakeBuildArgs = {
