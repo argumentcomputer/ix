@@ -27,7 +27,7 @@ public def kernelCheckNatAddComm (env : Lean.Environment) : IO AiurTestCase := d
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend key (bytes.data.map .ofUInt8)
 
-  -- Store blob table under key [0; 32]:
+  -- Store blob table under key [0]:
   -- Format: [count, addr₀(32B) val₀(8B), addr₁(32B) val₁(8B), ...]
   -- Each blob's value is its raw LE bytes zero-padded to 8 bytes.
   let mut blobTableData : Array Aiur.G := #[.ofNat ixonEnv.blobs.size]
@@ -36,7 +36,7 @@ public def kernelCheckNatAddComm (env : Lean.Environment) : IO AiurTestCase := d
       blobTableData := blobTableData.push (.ofUInt8 b)
     for i in List.range 8 do
       blobTableData := blobTableData.push (.ofNat (rawBytes.data.getD i 0).toNat)
-  ioBuffer := ioBuffer.extend (Array.replicate 32 (.ofNat 0 : Aiur.G)) blobTableData
+  ioBuffer := ioBuffer.extend #[0] blobTableData
 
   -- Get the blake3 address of Nat.add_comm as the target
   let targetAddr := match ixonEnv.getAddr? (Ix.Name.fromLeanName ``Nat.add_comm) with
