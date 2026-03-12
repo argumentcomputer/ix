@@ -30,7 +30,7 @@ impl LeanIxonUniv {
       },
       Univ::Var(idx) => {
         let ctor = LeanCtor::alloc(4, 0, 8);
-        ctor.set_u64(0, *idx);
+        ctor.set_scalar_u64(0, 0, *idx);
         *ctor
       },
     };

@@ -1,153 +1,14 @@
-//! Basic Lean type encode/decode/roundtrip operations.
+//! AssocList/HashMap roundtrip FFI functions.
 //!
-//! This module provides FFI functions for primitive Lean types:
-//! - Nat, String, Bool
-//! - Option, Pair
-//! - List, Array, ByteArray
-//! - AssocList, HashMap
+//! Roundtrip FFI functions for AssocList, DHashMap.Raw, and HashMap
+//! (ix-specific types not covered by the lean-ffi test suite).
 
 use lean_ffi::nat::Nat;
-use lean_ffi::object::{
-  LeanArray, LeanBool, LeanByteArray, LeanCtor, LeanList, LeanNat, LeanObject,
-  LeanString,
-};
+use lean_ffi::object::{LeanArray, LeanCtor, LeanObject};
 
 // =============================================================================
-// Nat Building
+// AssocList / HashMap roundtrip FFI functions
 // =============================================================================
-
-/// Build a Lean Nat from a Rust Nat.
-pub fn build_nat(n: &Nat) -> LeanObject {
-  // Try to get as u64 first
-  if let Some(val) = n.to_u64() {
-    // For small values that fit in a boxed scalar (max value is usize::MAX >> 1)
-    if val <= (usize::MAX >> 1) as u64 {
-      #[allow(clippy::cast_possible_truncation)]
-      return LeanObject::box_usize(val as usize);
-    }
-    return LeanObject::from_nat_u64(val);
-  }
-  // For values larger than u64, convert to limbs and use GMP
-  let bytes = n.to_le_bytes();
-  let mut limbs: Vec<u64> = Vec::with_capacity(bytes.len().div_ceil(8));
-  for chunk in bytes.chunks(8) {
-    let mut arr = [0u8; 8];
-    arr[..chunk.len()].copy_from_slice(chunk);
-    limbs.push(u64::from_le_bytes(arr));
-  }
-  unsafe { lean_ffi::nat::lean_nat_from_limbs(limbs.len(), limbs.as_ptr()) }
-}
-
-// =============================================================================
-// Round-trip FFI Functions for Testing
-// =============================================================================
-
-/// Round-trip a Nat: decode from Lean, re-encode to Lean.
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_nat(nat_ptr: LeanNat) -> LeanObject {
-  let nat = Nat::from_obj(*nat_ptr);
-  build_nat(&nat)
-}
-
-/// Round-trip a String: decode from Lean, re-encode to Lean.
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_string(s_ptr: LeanString) -> LeanString {
-  let s = s_ptr.to_string();
-  LeanString::new(&s)
-}
-
-/// Round-trip a List Nat: decode from Lean, re-encode to Lean.
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_list_nat(list_ptr: LeanList) -> LeanList {
-  let nats: Vec<Nat> = list_ptr.collect(Nat::from_obj);
-  build_list_nat(&nats)
-}
-
-/// Round-trip an Array Nat: decode from Lean, re-encode to Lean.
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_array_nat(arr_ptr: LeanArray) -> LeanArray {
-  let nats: Vec<Nat> = arr_ptr.map(Nat::from_obj);
-  build_array_nat(&nats)
-}
-
-/// Round-trip a ByteArray: decode from Lean, re-encode to Lean.
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_bytearray(ba: LeanByteArray) -> LeanByteArray {
-  LeanByteArray::from_bytes(ba.as_bytes())
-}
-
-/// Round-trip a Bool: decode from Lean, re-encode.
-/// Bool in Lean is passed as unboxed scalar: false = 0, true = 1
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_bool(bool_ptr: LeanBool) -> LeanBool {
-  bool_ptr
-}
-
-// =============================================================================
-// Helper functions for building basic Lean types
-// =============================================================================
-
-/// Build a Lean List Nat from a Vec<Nat>.
-fn build_list_nat(nats: &[Nat]) -> LeanList {
-  let items: Vec<LeanObject> = nats.iter().map(build_nat).collect();
-  items.into_iter().collect()
-}
-
-/// Build a Lean Array Nat from a Vec<Nat>.
-fn build_array_nat(nats: &[Nat]) -> LeanArray {
-  let arr = LeanArray::alloc(nats.len());
-  for (i, nat) in nats.iter().enumerate() {
-    arr.set(i, build_nat(nat));
-  }
-  arr
-}
-
-// =============================================================================
-// FFI roundtrip functions for struct/inductive/HashMap
-// =============================================================================
-
-/// Round-trip a Point (structure with x, y : Nat).
-/// Point is a structure, which in Lean is represented as a constructor with tag 0.
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_point(point_ptr: LeanCtor) -> LeanObject {
-  // Point is a structure (single constructor, tag 0) with 2 Nat fields
-  let x = Nat::from_obj(point_ptr.get(0));
-  let y = Nat::from_obj(point_ptr.get(1));
-
-  // Re-encode as Point
-  let point = LeanCtor::alloc(0, 2, 0);
-  point.set(0, build_nat(&x));
-  point.set(1, build_nat(&y));
-  *point
-}
-
-/// Round-trip a NatTree (inductive with leaf : Nat → NatTree | node : NatTree → NatTree → NatTree).
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_roundtrip_nat_tree(tree_ptr: LeanCtor) -> LeanObject {
-  roundtrip_nat_tree_recursive(tree_ptr)
-}
-
-fn roundtrip_nat_tree_recursive(ctor: LeanCtor) -> LeanObject {
-  match ctor.tag() {
-    0 => {
-      // leaf : Nat → NatTree
-      let nat = Nat::from_obj(ctor.get(0));
-      let leaf = LeanCtor::alloc(0, 1, 0);
-      leaf.set(0, build_nat(&nat));
-      *leaf
-    },
-    1 => {
-      // node : NatTree → NatTree → NatTree
-      let left = roundtrip_nat_tree_recursive(ctor.get(0).as_ctor());
-      let right = roundtrip_nat_tree_recursive(ctor.get(1).as_ctor());
-      let node = LeanCtor::alloc(1, 2, 0);
-      node.set(0, left);
-      node.set(1, right);
-      *node
-    },
-    _ => panic!("Invalid NatTree tag: {}", ctor.tag()),
-  }
-}
 
 /// Round-trip an AssocList Nat Nat.
 /// AssocList: nil (tag 0, 0 fields) | cons key value tail (tag 1, 3 fields)
@@ -169,8 +30,8 @@ fn build_assoc_list_nat_nat(pairs: &[(Nat, Nat)]) -> LeanObject {
   let mut list = LeanObject::box_usize(0); // nil
   for (k, v) in pairs.iter().rev() {
     let cons = LeanCtor::alloc(1, 3, 0); // AssocList.cons
-    cons.set(0, build_nat(k));
-    cons.set(1, build_nat(v));
+    cons.set(0, Nat::to_lean(k));
+    cons.set(1, Nat::to_lean(v));
     cons.set(2, list);
     list = *cons;
   }
@@ -219,15 +80,15 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
 
     let old_bucket = new_buckets.get(bucket_idx);
     let new_bucket = LeanCtor::alloc(1, 3, 0);
-    new_bucket.set(0, build_nat(k));
-    new_bucket.set(1, build_nat(v));
+    new_bucket.set(0, Nat::to_lean(k));
+    new_bucket.set(1, Nat::to_lean(v));
     new_bucket.set(2, old_bucket);
     new_buckets.set(bucket_idx, *new_bucket);
   }
 
   // Build Raw
   let raw = LeanCtor::alloc(0, 2, 0);
-  raw.set(0, build_nat(&size));
+  raw.set(0, Nat::to_lean(&size));
   raw.set(1, *new_buckets);
   *raw
 }
@@ -293,8 +154,8 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
 
     // Build AssocList.cons key value tail (tag 1, 3 fields)
     let new_bucket = LeanCtor::alloc(1, 3, 0);
-    new_bucket.set(0, build_nat(k));
-    new_bucket.set(1, build_nat(v));
+    new_bucket.set(0, Nat::to_lean(k));
+    new_bucket.set(1, Nat::to_lean(v));
     new_bucket.set(2, old_bucket);
     new_buckets.set(bucket_idx, *new_bucket);
   }
@@ -302,7 +163,7 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
   // Build Raw (ctor 0, 2 fields: size, buckets)
   // Due to unboxing, this IS the HashMap
   let raw = LeanCtor::alloc(0, 2, 0);
-  raw.set(0, build_nat(&size));
+  raw.set(0, Nat::to_lean(&size));
   raw.set(1, *new_buckets);
   *raw
 }
@@ -331,20 +192,4 @@ pub fn decode_assoc_list_nat_nat(obj: LeanObject) -> Vec<(Nat, Nat)> {
   }
 
   result
-}
-
-// =============================================================================
-// Utility FFI Functions
-// =============================================================================
-
-/// Read first 8 bytes of a ByteArray as little-endian UInt64.
-/// Used by Address.Hashable to match Rust's bucket hash computation.
-/// This is essentially just a pointer cast - very fast.
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_bytearray_to_u64_le(ba: LeanByteArray) -> u64 {
-  let data = ba.as_bytes();
-  if data.len() < 8 {
-    return 0;
-  }
-  u64::from_le_bytes(data[..8].try_into().unwrap())
 }

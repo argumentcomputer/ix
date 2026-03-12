@@ -77,9 +77,9 @@ impl LeanIxBlockCompareResult {
     } else {
       // mismatch
       let ctor = LeanCtor::alloc(1, 0, 24);
-      ctor.set_u64(0, lean_size);
-      ctor.set_u64(8, rust_size);
-      ctor.set_u64(16, first_diff_offset);
+      ctor.set_scalar_u64(0, 0, lean_size);
+      ctor.set_scalar_u64(0, 8, rust_size);
+      ctor.set_scalar_u64(0, 16, first_diff_offset);
       *ctor
     };
     Self::new(obj)
@@ -95,8 +95,8 @@ impl LeanIxBlockCompareDetail {
   ) -> Self {
     let ctor = LeanCtor::alloc(0, 1, 16);
     ctor.set(0, result);
-    ctor.set_u64(8, lean_sharing_len);
-    ctor.set_u64(8 + 8, rust_sharing_len);
+    ctor.set_scalar_u64(1, 0, lean_sharing_len);
+    ctor.set_scalar_u64(1, 8, rust_sharing_len);
     Self::new(*ctor)
   }
 }

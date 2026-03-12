@@ -25,7 +25,6 @@ use lean_ffi::nat::Nat;
 use lean_ffi::object::{LeanCtor, LeanObject, LeanString};
 
 use crate::ffi::builder::LeanBuildCache;
-use crate::ffi::primitives::build_nat;
 use crate::lean::LeanIxAddress;
 
 impl LeanIxExpr {
@@ -41,7 +40,7 @@ impl LeanIxExpr {
     let result = match expr.as_data() {
       ExprData::Bvar(idx, h) => {
         let obj = LeanCtor::alloc(0, 2, 0);
-        obj.set(0, build_nat(idx));
+        obj.set(0, Nat::to_lean(idx));
         obj.set(1, LeanIxAddress::build_from_hash(h));
         Self::new(*obj)
       },
@@ -92,7 +91,7 @@ impl LeanIxExpr {
         obj.set(1, ty_obj);
         obj.set(2, body_obj);
         obj.set(3, hash_obj);
-        obj.set_u8(4 * 8, LeanIxBinderInfo::to_u8(bi));
+        obj.set_scalar_u8(4, 0, LeanIxBinderInfo::to_u8(bi));
         Self::new(*obj)
       },
       ExprData::ForallE(name, ty, body, bi, h) => {
@@ -105,7 +104,7 @@ impl LeanIxExpr {
         obj.set(1, ty_obj);
         obj.set(2, body_obj);
         obj.set(3, hash_obj);
-        obj.set_u8(4 * 8, LeanIxBinderInfo::to_u8(bi));
+        obj.set_scalar_u8(4, 0, LeanIxBinderInfo::to_u8(bi));
         Self::new(*obj)
       },
       ExprData::LetE(name, ty, val, body, non_dep, h) => {
@@ -121,7 +120,7 @@ impl LeanIxExpr {
         obj.set(2, val_obj);
         obj.set(3, body_obj);
         obj.set(4, hash_obj);
-        obj.set_u8(5 * 8, *non_dep as u8);
+        obj.set_scalar_u8(5, 0, *non_dep as u8);
         Self::new(*obj)
       },
       ExprData::Lit(lit, h) => {
@@ -142,7 +141,7 @@ impl LeanIxExpr {
       },
       ExprData::Proj(type_name, idx, struct_expr, h) => {
         let name_obj = LeanIxName::build(cache, type_name);
-        let idx_obj = build_nat(idx);
+        let idx_obj = Nat::to_lean(idx);
         let struct_obj = Self::build(cache, struct_expr);
         let obj = LeanCtor::alloc(11, 4, 0);
         obj.set(0, name_obj);
@@ -267,7 +266,7 @@ impl LeanIxLiteral {
     let obj = match lit {
       Literal::NatVal(n) => {
         let obj = LeanCtor::alloc(0, 1, 0);
-        obj.set(0, build_nat(n));
+        obj.set(0, Nat::to_lean(n));
         *obj
       },
       Literal::StrVal(s) => {

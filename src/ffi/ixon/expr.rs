@@ -27,54 +27,54 @@ impl LeanIxonExpr {
     let obj = match expr {
       IxonExpr::Sort(idx) => {
         let ctor = LeanCtor::alloc(0, 0, 8);
-        ctor.set_u64(0, *idx);
+        ctor.set_scalar_u64(0, 0, *idx);
         *ctor
       },
       IxonExpr::Var(idx) => {
         let ctor = LeanCtor::alloc(1, 0, 8);
-        ctor.set_u64(0, *idx);
+        ctor.set_scalar_u64(0, 0, *idx);
         *ctor
       },
       IxonExpr::Ref(ref_idx, univ_idxs) => {
         let arr = LeanArray::alloc(univ_idxs.len());
         for (i, idx) in univ_idxs.iter().enumerate() {
           let uint64_obj = LeanCtor::alloc(0, 0, 8);
-          uint64_obj.set_u64(0, *idx);
+          uint64_obj.set_scalar_u64(0, 0, *idx);
           arr.set(i, uint64_obj);
         }
         let ctor = LeanCtor::alloc(2, 1, 8);
         ctor.set(0, arr);
-        ctor.set_u64(8, *ref_idx);
+        ctor.set_scalar_u64(1, 0, *ref_idx);
         *ctor
       },
       IxonExpr::Rec(rec_idx, univ_idxs) => {
         let arr = LeanArray::alloc(univ_idxs.len());
         for (i, idx) in univ_idxs.iter().enumerate() {
           let uint64_obj = LeanCtor::alloc(0, 0, 8);
-          uint64_obj.set_u64(0, *idx);
+          uint64_obj.set_scalar_u64(0, 0, *idx);
           arr.set(i, uint64_obj);
         }
         let ctor = LeanCtor::alloc(3, 1, 8);
         ctor.set(0, arr);
-        ctor.set_u64(8, *rec_idx);
+        ctor.set_scalar_u64(1, 0, *rec_idx);
         *ctor
       },
       IxonExpr::Prj(type_ref_idx, field_idx, val) => {
         let val_obj = Self::build(val);
         let ctor = LeanCtor::alloc(4, 1, 16);
         ctor.set(0, val_obj);
-        ctor.set_u64(8, *type_ref_idx);
-        ctor.set_u64(16, *field_idx);
+        ctor.set_scalar_u64(1, 0, *type_ref_idx);
+        ctor.set_scalar_u64(1, 8, *field_idx);
         *ctor
       },
       IxonExpr::Str(ref_idx) => {
         let ctor = LeanCtor::alloc(5, 0, 8);
-        ctor.set_u64(0, *ref_idx);
+        ctor.set_scalar_u64(0, 0, *ref_idx);
         *ctor
       },
       IxonExpr::Nat(ref_idx) => {
         let ctor = LeanCtor::alloc(6, 0, 8);
-        ctor.set_u64(0, *ref_idx);
+        ctor.set_scalar_u64(0, 0, *ref_idx);
         *ctor
       },
       IxonExpr::App(fun, arg) => {
@@ -109,12 +109,12 @@ impl LeanIxonExpr {
         ctor.set(0, ty_obj);
         ctor.set(1, val_obj);
         ctor.set(2, body_obj);
-        ctor.set_u8(24, if *non_dep { 1 } else { 0 });
+        ctor.set_scalar_u8(3, 0, if *non_dep { 1 } else { 0 });
         *ctor
       },
       IxonExpr::Share(idx) => {
         let ctor = LeanCtor::alloc(11, 0, 8);
-        ctor.set_u64(0, *idx);
+        ctor.set_scalar_u64(0, 0, *idx);
         *ctor
       },
     };
