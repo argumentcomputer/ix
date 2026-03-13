@@ -74,7 +74,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     -- let ixVMTests := [mkAiurTests IxVM.ixVM [serdeNatAddCommTest, kernelCheckNatAddCommTest]]
     -- LSpec.lspecIO (.ofList [("ixvm", ixVMTests)]) []),
     let kernelCheckNatAddCommTest ← kernelCheckNatAddComm env
-    LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM [kernelCheckNatAddCommTest]])]) []),
+    let kernelCheckNatSubLeOfLeAddTest ← kernelCheckNatSubLeOfLeAdd env
+    let tests := [kernelCheckNatSubLeOfLeAddTest, kernelCheckNatAddCommTest]
+    LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM tests])]) []),
 ]
 
 def main (args : List String) : IO UInt32 := do
