@@ -45,6 +45,12 @@ def testConsts : TestSeq :=
         IO.println s!"  checking {name} ..."
         (← IO.getStdout).flush
         let start ← IO.monoMsNow
+        -- let trace := name.containsSubstr "heapifyDown"
+        -- if trace then
+        --   if let some ci := kenv.find? mid then
+        --     IO.println s!"  [debug] {name} type:\n{ci.type.pp}"
+        --     if let some val := ci.value? then
+        --       IO.println s!"  [debug] {name} value:\n{val.pp}"
         let (err?, stats) := Ix.Kernel.typecheckConstWithStatsAlways kenv prims mid quotInit (trace := false)
         let ms := (← IO.monoMsNow) - start
         match err? with

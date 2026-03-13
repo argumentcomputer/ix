@@ -370,6 +370,25 @@ pub extern "C" fn rs_check_consts(
           Some(id) => {
             eprintln!("checking {name}");
             let trace = false; // name.contains("heapifyDown");
+            // if trace {
+            //   if let Some(ci) = kenv.get(id) {
+            //     eprintln!("[debug] {name} type:\n{}", ci.typ());
+            //     match ci {
+            //       crate::ix::kernel::types::KConstantInfo::Definition(v) => {
+            //         eprintln!("[debug] {name} value:\n{}", v.value);
+            //       }
+            //       crate::ix::kernel::types::KConstantInfo::Theorem(v) => {
+            //         eprintln!("[debug] {name} value:\n{}", v.value);
+            //       }
+            //       crate::ix::kernel::types::KConstantInfo::Opaque(v) => {
+            //         eprintln!("[debug] {name} value:\n{}", v.value);
+            //       }
+            //       _ => {
+            //         eprintln!("[debug] {name} has no value ({})", ci.kind_name());
+            //       }
+            //     }
+            //   }
+            // }
             let (result, heartbeats, stats) =
               crate::ix::kernel::check::typecheck_const_with_stats_trace(
                 &kenv, &prims, id, quot_init, trace, name,
