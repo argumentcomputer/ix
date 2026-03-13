@@ -813,4 +813,341 @@ theorem apply_simval_inf_quoteEq
     (apply_preserves_wf hap1 wf1 wa1)
     (apply_preserves_wf hap2 wf2 wa2)
 
+/-! ## eval_liftN1: evaluating lifted expression in extended environment
+
+    Proves that eval (liftN 1 e k) env1 SimVal_inf eval e env2 when env1
+    has one extra element at position k compared to env2.
+    Used to fill InstEnvCond.prepend and the eta case in NbESoundness. -/
+
+private theorem liftVar1_lt {env1 env2 : List (SVal L)}
+    (hl : env1.length = env2.length + 1) (h : i < env2.length) :
+    liftVar 1 i k < env1.length := by
+  simp [liftVar]; split <;> omega
+
+/-- env1 has one extra element at position k compared to env2,
+    with corresponding elements related by SimVal n. -/
+def LiftSimEnv (n : Nat) (env1 env2 : List (SVal L)) (k d : Nat) : Prop :=
+  env1.length = env2.length + 1 ∧
+  ∀ i (h1 : liftVar 1 i k < env1.length) (h2 : i < env2.length),
+    SimVal n (env1[liftVar 1 i k]) (env2[i]) d
+
+/-- LiftSimEnv for all steps. -/
+def LiftSimEnv_inf (env1 env2 : List (SVal L)) (k d : Nat) : Prop :=
+  env1.length = env2.length + 1 ∧
+  ∀ i (h1 : liftVar 1 i k < env1.length) (h2 : i < env2.length),
+    SimVal_inf (env1[liftVar 1 i k]) (env2[i]) d
+
+theorem LiftSimEnv.mono (hm : n' ≤ n) (h : LiftSimEnv n env1 env2 k d) :
+    LiftSimEnv (L := L) n' env1 env2 k d :=
+  ⟨h.1, fun i h1 h2 => (h.2 i h1 h2).mono hm⟩
+
+theorem LiftSimEnv.depth_mono (hd : d ≤ d') (h : LiftSimEnv n env1 env2 k d) :
+    LiftSimEnv (L := L) n env1 env2 k d' :=
+  ⟨h.1, fun i h1 h2 => (h.2 i h1 h2).depth_mono hd⟩
+
+theorem LiftSimEnv_inf.to_n (h : LiftSimEnv_inf env1 env2 k d) :
+    LiftSimEnv (L := L) n env1 env2 k d :=
+  ⟨h.1, fun i h1 h2 => h.2 i h1 h2 n⟩
+
+theorem LiftSimEnv_inf.depth_mono (hd : d ≤ d') (h : LiftSimEnv_inf env1 env2 k d) :
+    LiftSimEnv_inf (L := L) env1 env2 k d' :=
+  ⟨h.1, fun i h1 h2 n => (h.2 i h1 h2 n).depth_mono hd⟩
+
+theorem LiftSimEnv_inf.initial (hwf : EnvWF env d) :
+    LiftSimEnv_inf (L := L) (w :: env) env 0 d :=
+  ⟨by simp, fun i h1 h2 n => by
+    have : liftVar 1 i 0 = i + 1 := by simp [liftVar]; omega
+    simp only [this, List.getElem_cons_succ]
+    obtain ⟨_, hv, hvwf⟩ := hwf.getElem? h2
+    rw [List.getElem?_eq_getElem h2] at hv; cases hv
+    exact SimVal.refl_wf n hvwf⟩
+
+theorem LiftSimEnv.cons (hv : SimVal n w1 w2 d')
+    (he : LiftSimEnv n' env1 env2 k d) (hmn : n ≤ n') (hdd : d ≤ d') :
+    LiftSimEnv (L := L) n (w1 :: env1) (w2 :: env2) (k + 1) d' :=
+  ⟨by simp [he.1], fun i h1 h2 => by
+    cases i with
+    | zero =>
+      simp only [liftVar_zero, List.getElem_cons_zero]; exact hv
+    | succ j =>
+      simp only [liftVar_succ] at h1 ⊢
+      simp only [List.getElem_cons_succ]
+      exact (he.2 j (by simp [List.length_cons] at h1; omega)
+        (by simp [List.length_cons] at h2; omega)).depth_mono hdd |>.mono hmn⟩
+
+theorem LiftSimEnv_inf.cons (hv : SimVal_inf v1 v2 d)
+    (he : LiftSimEnv_inf env1 env2 k d) :
+    LiftSimEnv_inf (L := L) (v1 :: env1) (v2 :: env2) (k + 1) d :=
+  ⟨by simp [he.1], fun i h1 h2 n => by
+    cases i with
+    | zero =>
+      simp only [liftVar_zero, List.getElem_cons_zero]; exact hv n
+    | succ j =>
+      simp only [liftVar_succ] at h1 ⊢
+      simp only [List.getElem_cons_succ]
+      exact he.2 j (by simp [List.length_cons] at h1; omega)
+        (by simp [List.length_cons] at h2; omega) n⟩
+
+/-! ### Fixed-step eval_liftN1 -/
+
+private theorem eval_liftN1_simval_le (N : Nat) :
+    ∀ m, m ≤ N →
+    ∀ (e : SExpr L) (k fuel : Nat) (env1 env2 : List (SVal L)) (d : Nat) (v1 v2 : SVal L),
+    LiftSimEnv m env1 env2 k d → ClosedN e env2.length →
+    EnvWF env1 d → EnvWF env2 d →
+    eval_s fuel (liftN 1 e k) env1 = some v1 → eval_s fuel e env2 = some v2 →
+    SimVal m v1 v2 d := by
+  induction N with
+  | zero =>
+    intro m hm
+    have : m = 0 := by omega
+    subst this
+    intros; simp [SimVal.zero]
+  | succ N' ih_N =>
+    intro m hm
+    match m with
+    | 0 => intros; simp [SimVal.zero]
+    | m' + 1 =>
+      intro e k fuel env1 env2 d v1 v2 hlse hcl hew1 hew2 hev1 hev2
+      cases fuel with
+      | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
+      | succ f =>
+        cases e with
+        | bvar idx =>
+          simp only [SExpr.liftN] at hev1
+          rw [eval_s_bvar] at hev1 hev2
+          simp [ClosedN] at hcl
+          have hlv := liftVar1_lt (k := k) hlse.1 hcl
+          rw [List.getElem?_eq_getElem hlv] at hev1
+          rw [List.getElem?_eq_getElem hcl] at hev2
+          cases hev1; cases hev2
+          exact hlse.2 idx hlv hcl
+        | sort u =>
+          simp only [SExpr.liftN] at hev1
+          rw [eval_s_sort] at hev1 hev2; cases hev1; cases hev2
+          simp [SimVal.sort_sort]
+        | const c ls =>
+          simp only [SExpr.liftN] at hev1
+          rw [eval_s_const'] at hev1 hev2; cases hev1; cases hev2
+          simp [SimVal.neutral_neutral, SimSpine.nil_nil]
+        | lit l =>
+          simp only [SExpr.liftN] at hev1
+          rw [eval_s_lit] at hev1 hev2; cases hev1; cases hev2
+          simp [SimVal.lit_lit]
+        | proj _ _ _ =>
+          simp only [SExpr.liftN] at hev1
+          rw [eval_s_proj] at hev1; exact absurd hev1 nofun
+        | lam dom body =>
+          simp only [SExpr.liftN] at hev1
+          rw [eval_s_lam] at hev1 hev2
+          simp only [option_bind_eq_some] at hev1 hev2
+          obtain ⟨dv1, hd1, he1⟩ := hev1; cases he1
+          obtain ⟨dv2, hd2, he2⟩ := hev2; cases he2
+          simp [ClosedN] at hcl
+          simp only [SimVal.lam_lam]
+          exact ⟨ih_N m' (by omega) dom k f env1 env2 d dv1 dv2
+              (hlse.mono (by omega)) hcl.1 hew1 hew2 hd1 hd2,
+            fun j hj d' hd w1 w2 hw hw1 hw2 fuel' r1 r2 hr1 hr2 =>
+              ih_N j (by omega) body (k + 1) fuel' (w1 :: env1) (w2 :: env2) d' r1 r2
+                (LiftSimEnv.cons hw hlse (by omega) hd)
+                hcl.2
+                (.cons hw1 (hew1.mono hd))
+                (.cons hw2 (hew2.mono hd))
+                hr1 hr2⟩
+        | forallE dom body =>
+          simp only [SExpr.liftN] at hev1
+          rw [eval_s_forallE] at hev1 hev2
+          simp only [option_bind_eq_some] at hev1 hev2
+          obtain ⟨dv1, hd1, he1⟩ := hev1; cases he1
+          obtain ⟨dv2, hd2, he2⟩ := hev2; cases he2
+          simp [ClosedN] at hcl
+          simp only [SimVal.pi_pi]
+          exact ⟨ih_N m' (by omega) dom k f env1 env2 d dv1 dv2
+              (hlse.mono (by omega)) hcl.1 hew1 hew2 hd1 hd2,
+            fun j hj d' hd w1 w2 hw hw1 hw2 fuel' r1 r2 hr1 hr2 =>
+              ih_N j (by omega) body (k + 1) fuel' (w1 :: env1) (w2 :: env2) d' r1 r2
+                (LiftSimEnv.cons hw hlse (by omega) hd)
+                hcl.2
+                (.cons hw1 (hew1.mono hd))
+                (.cons hw2 (hew2.mono hd))
+                hr1 hr2⟩
+        | app fn arg =>
+          -- Step loss: apply_simval gives SimVal m', not SimVal (m'+1).
+          sorry
+        | letE ty val body =>
+          -- Same step loss issue as app case.
+          sorry
+
+theorem eval_liftN1_simval (n : Nat) :
+    ∀ (e : SExpr L) (k fuel : Nat) (env1 env2 : List (SVal L)) (d : Nat) (v1 v2 : SVal L),
+    LiftSimEnv n env1 env2 k d → ClosedN e env2.length →
+    EnvWF env1 d → EnvWF env2 d →
+    eval_s fuel (liftN 1 e k) env1 = some v1 → eval_s fuel e env2 = some v2 →
+    SimVal n v1 v2 d := eval_liftN1_simval_le n n (Nat.le_refl _)
+
+/-! ### SimVal_inf for liftN 1 -/
+
+theorem eval_liftN1_simval_inf (e : SExpr L) :
+    ∀ (k fuel : Nat) (env1 env2 : List (SVal L)) (d : Nat) (v1 v2 : SVal L),
+    LiftSimEnv_inf env1 env2 k d → ClosedN e env2.length →
+    EnvWF env1 d → EnvWF env2 d →
+    eval_s fuel (liftN 1 e k) env1 = some v1 → eval_s fuel e env2 = some v2 →
+    SimVal_inf v1 v2 d := by
+  induction e with
+  | bvar idx =>
+    intro k fuel env1 env2 d v1 v2 hlse hcl hew1 hew2 hev1 hev2 n
+    cases fuel with
+    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
+    | succ f =>
+      simp only [SExpr.liftN] at hev1
+      rw [eval_s_bvar] at hev1 hev2
+      simp [ClosedN] at hcl
+      have hlv := liftVar1_lt (k := k) hlse.1 hcl
+      rw [List.getElem?_eq_getElem hlv] at hev1
+      rw [List.getElem?_eq_getElem hcl] at hev2
+      cases hev1; cases hev2
+      exact hlse.2 idx hlv hcl n
+  | sort u =>
+    intro k fuel env1 env2 d v1 v2 _ _ _ _ hev1 hev2 n
+    cases fuel with
+    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
+    | succ f =>
+      simp only [SExpr.liftN] at hev1
+      rw [eval_s_sort] at hev1 hev2; cases hev1; cases hev2
+      cases n with | zero => simp [SimVal.zero] | succ => simp [SimVal.sort_sort]
+  | const c ls =>
+    intro k fuel env1 env2 d v1 v2 _ _ _ _ hev1 hev2 n
+    cases fuel with
+    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
+    | succ f =>
+      simp only [SExpr.liftN] at hev1
+      rw [eval_s_const'] at hev1 hev2; cases hev1; cases hev2
+      cases n with
+      | zero => simp [SimVal.zero]
+      | succ => simp [SimVal.neutral_neutral, SimSpine.nil_nil]
+  | lit l =>
+    intro k fuel env1 env2 d v1 v2 _ _ _ _ hev1 hev2 n
+    cases fuel with
+    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
+    | succ f =>
+      simp only [SExpr.liftN] at hev1
+      rw [eval_s_lit] at hev1 hev2; cases hev1; cases hev2
+      cases n with | zero => simp [SimVal.zero] | succ => simp [SimVal.lit_lit]
+  | proj _ _ _ =>
+    intro k fuel env1 env2 d v1 v2 _ _ _ _ hev1 _
+    cases fuel with
+    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
+    | succ f =>
+      simp only [SExpr.liftN] at hev1
+      rw [eval_s_proj] at hev1; exact absurd hev1 nofun
+  | lam dom body ih_dom ih_body =>
+    intro k fuel env1 env2 d v1 v2 hlse hcl hew1 hew2 hev1 hev2 n
+    cases fuel with
+    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
+    | succ f =>
+      simp only [SExpr.liftN] at hev1
+      rw [eval_s_lam] at hev1 hev2
+      simp only [option_bind_eq_some] at hev1 hev2
+      obtain ⟨dv1, hd1, he1⟩ := hev1; cases he1
+      obtain ⟨dv2, hd2, he2⟩ := hev2; cases he2
+      simp [ClosedN] at hcl
+      cases n with
+      | zero => rw [SimVal.zero]; trivial
+      | succ n' =>
+        rw [SimVal.lam_lam]
+        have dom_inf := ih_dom k f env1 env2 d dv1 dv2 hlse hcl.1 hew1 hew2 hd1 hd2
+        exact ⟨dom_inf n', fun j hj d' hd w1 w2 hw hw1 hw2 fuel' r1 r2 hr1 hr2 =>
+          eval_liftN1_simval j body (k + 1) fuel' (w1 :: env1) (w2 :: env2) d' r1 r2
+            (LiftSimEnv.cons hw (hlse.to_n (n := j)) (Nat.le_refl _) hd)
+            hcl.2
+            (.cons hw1 (hew1.mono hd))
+            (.cons hw2 (hew2.mono hd))
+            hr1 hr2⟩
+  | forallE dom body ih_dom ih_body =>
+    intro k fuel env1 env2 d v1 v2 hlse hcl hew1 hew2 hev1 hev2 n
+    cases fuel with
+    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
+    | succ f =>
+      simp only [SExpr.liftN] at hev1
+      rw [eval_s_forallE] at hev1 hev2
+      simp only [option_bind_eq_some] at hev1 hev2
+      obtain ⟨dv1, hd1, he1⟩ := hev1; cases he1
+      obtain ⟨dv2, hd2, he2⟩ := hev2; cases he2
+      simp [ClosedN] at hcl
+      cases n with
+      | zero => rw [SimVal.zero]; trivial
+      | succ n' =>
+        rw [SimVal.pi_pi]
+        have dom_inf := ih_dom k f env1 env2 d dv1 dv2 hlse hcl.1 hew1 hew2 hd1 hd2
+        exact ⟨dom_inf n', fun j hj d' hd w1 w2 hw hw1 hw2 fuel' r1 r2 hr1 hr2 =>
+          eval_liftN1_simval j body (k + 1) fuel' (w1 :: env1) (w2 :: env2) d' r1 r2
+            (LiftSimEnv.cons hw (hlse.to_n (n := j)) (Nat.le_refl _) hd)
+            hcl.2
+            (.cons hw1 (hew1.mono hd))
+            (.cons hw2 (hew2.mono hd))
+            hr1 hr2⟩
+  | app fn arg ih_fn ih_arg =>
+    intro k fuel env1 env2 d v1 v2 hlse hcl hew1 hew2 hev1 hev2 n
+    cases fuel with
+    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
+    | succ f =>
+      simp only [SExpr.liftN] at hev1
+      rw [eval_s_app] at hev1 hev2
+      simp only [option_bind_eq_some] at hev1 hev2
+      obtain ⟨fv1, hf1, av1, ha1, hap1⟩ := hev1
+      obtain ⟨fv2, hf2, av2, ha2, hap2⟩ := hev2
+      simp [ClosedN] at hcl
+      have sfn := ih_fn k f env1 env2 d fv1 fv2 hlse hcl.1 hew1 hew2 hf1 hf2
+      have sarg := ih_arg k f env1 env2 d av1 av2 hlse hcl.2 hew1 hew2 ha1 ha2
+      have hcl_fn : ClosedN (liftN 1 fn k) env1.length := by rw [hlse.1]; exact hcl.1.liftN
+      have hcl_arg : ClosedN (liftN 1 arg k) env1.length := by rw [hlse.1]; exact hcl.2.liftN
+      exact apply_simval n f (sfn (n+1)) (sarg (n+1))
+        (eval_preserves_wf hf1 hcl_fn hew1)
+        (eval_preserves_wf hf2 hcl.1 hew2)
+        (eval_preserves_wf ha1 hcl_arg hew1)
+        (eval_preserves_wf ha2 hcl.2 hew2)
+        hap1 hap2
+  | letE ty val body ih_ty ih_val ih_body =>
+    intro k fuel env1 env2 d v1 v2 hlse hcl hew1 hew2 hev1 hev2 n
+    cases fuel with
+    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
+    | succ f =>
+      simp only [SExpr.liftN] at hev1
+      rw [eval_s_letE] at hev1 hev2
+      simp only [option_bind_eq_some] at hev1 hev2
+      obtain ⟨vv1, hvl1, hbd1⟩ := hev1
+      obtain ⟨vv2, hvl2, hbd2⟩ := hev2
+      simp [ClosedN] at hcl
+      have svl := ih_val k f env1 env2 d vv1 vv2 hlse hcl.2.1 hew1 hew2 hvl1 hvl2
+      have hcl_val : ClosedN (liftN 1 val k) env1.length := by rw [hlse.1]; exact hcl.2.1.liftN
+      have hwf1 := eval_preserves_wf hvl1 hcl_val hew1
+      have hwf2 := eval_preserves_wf hvl2 hcl.2.1 hew2
+      exact ih_body (k + 1) f (vv1 :: env1) (vv2 :: env2) d v1 v2
+        (LiftSimEnv_inf.cons svl hlse)
+        hcl.2.2 (.cons hwf1 hew1) (.cons hwf2 hew2) hbd1 hbd2 n
+
+/-! ### Corollaries: lift (k=0) -/
+
+theorem eval_lift_simval_inf (e : SExpr L) (w : SVal L)
+    (fuel : Nat) (env : List (SVal L)) (d : Nat) (v1 v2 : SVal L)
+    (hwf : EnvWF env d) (hwfv : ValWF w d) (hcl : ClosedN e env.length)
+    (hev1 : eval_s fuel (SExpr.lift e) (w :: env) = some v1)
+    (hev2 : eval_s fuel e env = some v2) :
+    SimVal_inf v1 v2 d :=
+  eval_liftN1_simval_inf e 0 fuel (w :: env) env d v1 v2
+    (.initial hwf) hcl (.cons hwfv hwf) hwf hev1 hev2
+
+theorem eval_lift_quoteEq (e : SExpr L) (w : SVal L)
+    (fuel1 fuel2 : Nat) (env : List (SVal L)) (d : Nat) (v1 v2 : SVal L)
+    (hwf : EnvWF env d) (hwfv : ValWF w d) (hcl : ClosedN e env.length)
+    (hev1 : eval_s fuel1 (SExpr.lift e) (w :: env) = some v1)
+    (hev2 : eval_s fuel2 e env = some v2) :
+    QuoteEq v1 v2 d := by
+  have hev1' := eval_fuel_mono hev1 (Nat.le_max_left fuel1 fuel2)
+  have hev2' := eval_fuel_mono hev2 (Nat.le_max_right fuel1 fuel2)
+  exact quoteEq_of_simval
+    (eval_lift_simval_inf e w _ env d v1 v2 hwf hwfv hcl hev1' hev2')
+    (eval_preserves_wf hev1 (hcl.liftN (n := 1)) (.cons hwfv hwf))
+    (eval_preserves_wf hev2 hcl hwf)
+
 end Ix.Theory

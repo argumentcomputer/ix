@@ -133,7 +133,9 @@ def regressionConsts : Array String := #[
   -- Nested inductives
   "Array.toList",
   -- Well-founded recursion
-  "WellFounded.fixF"
+  "WellFounded.fixF",
+  -- Nat prim fvar-blocking + Ctor(Nat.succ) extraction regression
+  "Batteries.BinaryHeap.heapifyDown._unsafe_rec"
 ]
 
 /-- Lean kernel problematic constants: slow or hanging, isolated for profiling. -/
@@ -143,7 +145,6 @@ def problematicConsts : Array String := #[
 
 /-- Rust kernel problematic constants. -/
 def rustProblematicConsts : Array String := #[
-  "Batteries.BinaryHeap.heapifyDown._unsafe_rec",
 ]
 
 end Tests.Ix.Kernel.Consts

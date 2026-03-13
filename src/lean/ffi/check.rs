@@ -369,7 +369,7 @@ pub extern "C" fn rs_check_consts(
           }
           Some(id) => {
             eprintln!("checking {name}");
-            let trace = name.contains("heapifyDown");
+            let trace = false; // name.contains("heapifyDown");
             let (result, heartbeats, stats) =
               crate::ix::kernel::check::typecheck_const_with_stats_trace(
                 &kenv, &prims, id, quot_init, trace, name,

@@ -151,9 +151,7 @@ def typecheckConstK2 (kenv : Env) (id : MId) (prims : Prims := Ix.Kernel.buildPr
 def runK2 (kenv : Env) (action : ∀ σ, Ix.Kernel.TypecheckM σ .meta α)
     (prims : Prims := Ix.Kernel.buildPrimitives .meta)
     (quotInit : Bool := false) : Except String α :=
-  match Ix.Kernel.TypecheckM.runSimple kenv prims (quotInit := quotInit) (action := action) with
-  | .ok (a, _) => .ok a
-  | .error e => .error e
+  Ix.Kernel.TypecheckM.runSimple kenv prims (quotInit := quotInit) (action := action)
 
 def runK2Empty (action : ∀ σ, Ix.Kernel.TypecheckM σ .meta α) : Except String α :=
   runK2 default action

@@ -1,10 +1,10 @@
 /-
   Kernel2 TypecheckM: Monad stack, context, state, and thunk operations.
 
-  Monad is based on EST (ExceptT + ST) for pure mutable references.
-  σ parameterizes the ST region — runEST at the top level keeps everything pure.
+  All mutable state lives in ST.Ref fields within the reader context.
+  Monad is ReaderT + ExceptT + ST (no StateT — all mutation via ST.Ref).
+  σ parameterizes the ST region — runST at the top level keeps everything pure.
   Context stores types as Val (indexed by de Bruijn level, not index).
-  Thunk table lives in the reader context (ST.Ref identity doesn't change).
 -/
 import Ix.Kernel.Value
 import Ix.Kernel.EquivManager
@@ -31,8 +31,7 @@ inductive ThunkEntry (m : Ix.Kernel.MetaMode) : Type where
 
 /-! ## Stats -/
 
-/-- Performance counters for the type checker. Defined early so it can be
-    referenced in TypecheckCtx (for the stats snapshot ref). -/
+/-- Performance counters for the type checker. -/
 structure Stats where
   heartbeats      : Nat := 0
   inferCalls      : Nat := 0
@@ -66,9 +65,16 @@ structure Stats where
   sameHeadHits    : Nat := 0
   deriving Inhabited
 
-/-! ## Typechecker Context -/
+/-! ## Typechecker Context
+
+All mutable state lives as ST.Ref fields in the reader context.
+This eliminates StateT from the monad stack — all mutation is via ST.Ref. -/
+
+def defaultMaxHeartbeats : Nat := 200_000_000
+def defaultMaxThunks : Nat := 10_000_000
 
 structure TypecheckCtx (σ : Type) (m : Ix.Kernel.MetaMode) where
+  -- Immutable context (changed only via withReader)
   types      : Array (Val m)
   letValues  : Array (Option (Val m)) := #[]
   binderNames : Array (KMetaField m Ix.Name) := #[]
@@ -82,69 +88,56 @@ structure TypecheckCtx (σ : Type) (m : Ix.Kernel.MetaMode) where
   eagerReduce : Bool := false
   wordSize   : WordSize := .word64
   trace      : Bool := false
-  -- Thunk table: ST.Ref to array of ST.Ref thunk entries
-  thunkTable : ST.Ref σ (Array (ST.Ref σ (ThunkEntry m)))
-  -- Optional stats snapshot: heartbeat saves stats here before throwing.
-  statsSnapshot : Option (ST.Ref σ Stats) := none
-
-/-! ## Typechecker State -/
-
-def defaultMaxHeartbeats : Nat := 200_000_000
-def defaultMaxThunks : Nat := 10_000_000
-
-structure TypecheckState (m : Ix.Kernel.MetaMode) where
-  typedConsts    : Std.HashMap (KMetaId m) (KTypedConst m) := {}
-  ptrFailureCache : Std.HashMap (USize × USize) (Val m × Val m) := {}
-  ptrSuccessCache : Std.HashMap (USize × USize) (Val m × Val m) := {}
-  eqvManager     : EquivManager := {}
-  keepAlive      : Array (Val m) := #[]
-  inferCache     : Std.HashMap USize (KExpr m × Array (Val m) × KTypedExpr m × Val m) := {}
-  whnfCache      : Std.HashMap USize (Val m × Val m) := {}
-  whnfCoreCache  : Std.HashMap USize (Val m × Val m) := {}
-  maxHeartbeats  : Nat := defaultMaxHeartbeats
-  maxThunks      : Nat := defaultMaxThunks
-  stats          : Stats := {}
-  deriving Inhabited
+  maxHeartbeats : Nat := defaultMaxHeartbeats
+  maxThunks  : Nat := defaultMaxThunks
+  -- Mutable refs (all mutation via ST.Ref — no StateT needed)
+  thunkTable       : ST.Ref σ (Array (ThunkEntry m))
+  statsRef         : ST.Ref σ Stats
+  typedConstsRef   : ST.Ref σ (Std.HashMap (KMetaId m) (KTypedConst m))
+  ptrFailureCacheRef : ST.Ref σ (Std.HashMap (USize × USize) (Val m × Val m))
+  ptrSuccessCacheRef : ST.Ref σ (Std.HashMap (USize × USize) (Val m × Val m))
+  eqvManagerRef    : ST.Ref σ EquivManager
+  keepAliveRef     : ST.Ref σ (Array (Val m))
+  inferCacheRef    : ST.Ref σ (Std.HashMap USize (KExpr m × Array (Val m) × KTypedExpr m × Val m))
+  whnfCacheRef     : ST.Ref σ (Std.HashMap USize (Val m × Val m))
+  whnfCoreCacheRef : ST.Ref σ (Std.HashMap USize (Val m × Val m))
 
 /-! ## TypecheckM monad
 
-  ReaderT for immutable context (including thunk table ref).
-  StateT for mutable counters/caches (typedConsts, heartbeats, etc.).
-  ExceptT for errors, ST for mutable thunk refs. -/
+  ReaderT for context (immutable fields + mutable ST.Ref fields).
+  ExceptT for errors, ST for mutable refs.
+  No StateT — all mutation via ST.Ref in the context. -/
 
 abbrev TypecheckM (σ : Type) (m : Ix.Kernel.MetaMode) :=
-  ReaderT (TypecheckCtx σ m) (StateT (TypecheckState m) (ExceptT String (ST σ)))
+  ReaderT (TypecheckCtx σ m) (ExceptT String (ST σ))
 
 /-! ## Thunk operations -/
 
 /-- Allocate a new thunk (unevaluated). Returns its index. -/
-def mkThunk (expr : KExpr m) (env : Array (Val m)) : TypecheckM σ m Nat := do
-  modify fun st => { st with stats.thunkCount := st.stats.thunkCount + 1 }
-  let tableRef := (← read).thunkTable
-  let table ← tableRef.get
-  if table.size >= (← get).maxThunks then
-    throw s!"thunk table limit exceeded ({table.size})"
-  let entryRef ← ST.mkRef (ThunkEntry.unevaluated expr env)
-  tableRef.set (table.push entryRef)
-  pure table.size
+@[inline] def mkThunk (expr : KExpr m) (env : Array (Val m)) : TypecheckM σ m Nat := do
+  let ctx ← read
+  ctx.statsRef.modify fun s => { s with thunkCount := s.thunkCount + 1 }
+  let size ← ctx.thunkTable.modifyGet fun table =>
+    (table.size, table.push (.unevaluated expr env))
+  if size >= ctx.maxThunks then
+    throw s!"thunk table limit exceeded ({size})"
+  pure size
 
 /-- Allocate a thunk that is already evaluated. -/
-def mkThunkFromVal (v : Val m) : TypecheckM σ m Nat := do
-  modify fun st => { st with stats.thunkCount := st.stats.thunkCount + 1 }
-  let tableRef := (← read).thunkTable
-  let table ← tableRef.get
-  if table.size >= (← get).maxThunks then
-    throw s!"thunk table limit exceeded ({table.size})"
-  let entryRef ← ST.mkRef (ThunkEntry.evaluated v)
-  tableRef.set (table.push entryRef)
-  pure table.size
+@[inline] def mkThunkFromVal (v : Val m) : TypecheckM σ m Nat := do
+  let ctx ← read
+  ctx.statsRef.modify fun s => { s with thunkCount := s.thunkCount + 1 }
+  let size ← ctx.thunkTable.modifyGet fun table =>
+    (table.size, table.push (.evaluated v))
+  if size >= ctx.maxThunks then
+    throw s!"thunk table limit exceeded ({size})"
+  pure size
 
 /-- Read a thunk entry without forcing (for inspection). -/
-def peekThunk (id : Nat) : TypecheckM σ m (ThunkEntry m) := do
-  let tableRef := (← read).thunkTable
-  let table ← tableRef.get
+@[inline] def peekThunk (id : Nat) : TypecheckM σ m (ThunkEntry m) := do
+  let table ← (← read).thunkTable.get
   if h : id < table.size then
-    ST.Ref.get table[id]
+    pure table[id]
   else
     throw s!"thunk id {id} out of bounds (table size {table.size})"
 
@@ -156,7 +149,7 @@ def isThunkEvaluated (id : Nat) : TypecheckM σ m Bool := do
 
 /-! ## Context helpers -/
 
-def depth : TypecheckM σ m Nat := do pure (← read).types.size
+@[inline] def depth : TypecheckM σ m Nat := do pure (← read).types.size
 
 def withResetCtx : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with
@@ -190,38 +183,39 @@ def withInferOnly : TypecheckM σ m α → TypecheckM σ m α :=
 def withSafety (s : KDefinitionSafety) : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with safety := s }
 
-def mkFreshFVar (ty : Val m) : TypecheckM σ m (Val m) := do
+@[inline] def mkFreshFVar (ty : Val m) : TypecheckM σ m (Val m) := do
   let d ← depth
   pure (Val.mkFVar d ty)
 
-/-! ## EquivManager helpers (avoid StateM overhead) -/
+/-! ## EquivManager helpers (direct ST.Ref access — no StateT overhead) -/
 
 @[inline] def equivIsEquiv (ptr1 ptr2 : USize) : TypecheckM σ m Bool := do
   if ptr1 == ptr2 then return true
-  let stt ← get
-  let mgr := stt.eqvManager
+  let ref := (← read).eqvManagerRef
+  let mgr ← ref.get
   match mgr.toNodeMap.get? ptr1, mgr.toNodeMap.get? ptr2 with
   | some n1, some n2 =>
     let (uf', r1) := mgr.uf.findD n1
     let (uf'', r2) := uf'.findD n2
-    modify fun st => { st with eqvManager := { mgr with uf := uf'' } }
+    ref.set { mgr with uf := uf'' }
     return r1 == r2
   | _, _ => return false
 
 @[inline] def equivAddEquiv (ptr1 ptr2 : USize) : TypecheckM σ m Unit := do
-  let stt ← get
-  let (_, mgr') := EquivManager.addEquiv ptr1 ptr2 |>.run stt.eqvManager
-  modify fun st => { st with eqvManager := mgr' }
+  let ref := (← read).eqvManagerRef
+  let mgr ← ref.get
+  let (_, mgr') := EquivManager.addEquiv ptr1 ptr2 |>.run mgr
+  ref.set mgr'
 
 @[inline] def equivFindRootPtr (ptr : USize) : TypecheckM σ m (Option USize) := do
-  let stt ← get
-  let mgr := stt.eqvManager
+  let ref := (← read).eqvManagerRef
+  let mgr ← ref.get
   match mgr.toNodeMap.get? ptr with
   | none => return none
   | some n =>
     let (uf', root) := mgr.uf.findD n
     let mgr' := { mgr with uf := uf' }
-    modify fun st => { st with eqvManager := mgr' }
+    ref.set mgr'
     if h : root < mgr'.nodeToPtr.size then
       return some mgr'.nodeToPtr[root]
     else
@@ -233,19 +227,15 @@ def mkFreshFVar (ty : Val m) : TypecheckM σ m (Val m) := do
     (eval, whnfCoreVal, forceThunk, lazyDelta step, infer, isDefEq)
     to bound total work. -/
 @[inline] def heartbeat : TypecheckM σ m Unit := do
-  let stt ← get
-  if stt.stats.heartbeats >= stt.maxHeartbeats then
-    -- Save stats snapshot before throwing (survives ExceptT unwinding)
-    if let some ref := (← read).statsSnapshot then
-      ref.set stt.stats
-    throw s!"heartbeat limit exceeded ({stt.maxHeartbeats})"
-  let hb := stt.stats.heartbeats + 1
-  if (← read).trace && hb % 100_000 == 0 then
-    let thunkTableSize ← do
-      let table ← ST.Ref.get (← read).thunkTable
-      pure table.size
-    dbg_trace s!"    [hb] {hb / 1000}K heartbeats, delta={stt.stats.deltaSteps}, thunkTable={thunkTableSize}, isDefEq={stt.stats.isDefEqCalls}, eval={stt.stats.evalCalls}, force={stt.stats.forceCalls}"
-  modify fun s => { s with stats.heartbeats := hb }
+  let ctx ← read
+  let stats ← ctx.statsRef.get
+  if stats.heartbeats >= ctx.maxHeartbeats then
+    throw s!"heartbeat limit exceeded ({ctx.maxHeartbeats})"
+  let hb := stats.heartbeats + 1
+  if ctx.trace && hb % 100_000 == 0 then
+    let table ← ctx.thunkTable.get
+    dbg_trace s!"    [hb] {hb / 1000}K heartbeats, delta={stats.deltaSteps}, thunkTable={table.size}, isDefEq={stats.isDefEqCalls}, eval={stats.evalCalls}, force={stats.forceCalls}"
+  ctx.statsRef.set { stats with heartbeats := hb }
 
 /-! ## Const dereferencing -/
 
@@ -260,7 +250,7 @@ def derefConstByAddr (addr : Address) : TypecheckM σ m (KConstantInfo m) := do
   | none => throw s!"unknown constant {addr}"
 
 def derefTypedConst (id : KMetaId m) : TypecheckM σ m (KTypedConst m) := do
-  match (← get).typedConsts.get? id with
+  match (← (← read).typedConstsRef.get).get? id with
   | some tc => pure tc
   | none => throw s!"typed constant not found: {id}"
 
@@ -305,35 +295,60 @@ def provisionalTypedConst (ci : KConstantInfo m) : KTypedConst m :=
     .recursor rawType v.numParams v.numMotives v.numMinors v.numIndices v.k indAddr typedRules
 
 def ensureTypedConst (id : KMetaId m) : TypecheckM σ m Unit := do
-  if (← get).typedConsts.get? id |>.isSome then return ()
+  let ref := (← read).typedConstsRef
+  if (← ref.get).get? id |>.isSome then return ()
   let ci ← derefConst id
   let tc := provisionalTypedConst ci
-  modify fun stt => { stt with
-    typedConsts := stt.typedConsts.insert id tc }
+  ref.modify fun m => m.insert id tc
 
 /-! ## Top-level runner -/
 
-/-- Run a TypecheckM computation purely via runST + ExceptT.run.
-    Everything runs inside a single ST σ region: ref creation, then the action. -/
-def TypecheckM.runPure (ctx_no_thunks : ∀ σ, ST.Ref σ (Array (ST.Ref σ (ThunkEntry m))) → TypecheckCtx σ m)
-    (stt : TypecheckState m)
-    (action : ∀ σ, TypecheckM σ m α)
-    : Except String (α × TypecheckState m) :=
-  runST fun σ => do
-    let thunkTable ← ST.mkRef (#[] : Array (ST.Ref σ (ThunkEntry m)))
-    let ctx := ctx_no_thunks σ thunkTable
-    ExceptT.run (StateT.run (ReaderT.run (action σ) ctx) stt)
-
-/-- Simplified runner for common case. -/
-def TypecheckM.runSimple (kenv : KEnv m) (prims : KPrimitives m)
-    (stt : TypecheckState m := {})
+/-- Create all ST.Ref fields and build a default TypecheckCtx. -/
+private def mkCtxST (σ : Type) (kenv : KEnv m) (prims : KPrimitives m)
     (safety : KDefinitionSafety := .safe) (quotInit : Bool := false)
+    (trace : Bool := false) (maxHeartbeats : Nat := defaultMaxHeartbeats)
+    (maxThunks : Nat := defaultMaxThunks) : ST σ (TypecheckCtx σ m) := do
+  let thunkTable ← ST.mkRef (#[] : Array (ThunkEntry m))
+  let statsRef ← ST.mkRef ({} : Stats)
+  let typedConstsRef ← ST.mkRef ({} : Std.HashMap (KMetaId m) (KTypedConst m))
+  let ptrFailureCacheRef ← ST.mkRef ({} : Std.HashMap (USize × USize) (Val m × Val m))
+  let ptrSuccessCacheRef ← ST.mkRef ({} : Std.HashMap (USize × USize) (Val m × Val m))
+  let eqvManagerRef ← ST.mkRef ({} : EquivManager)
+  let keepAliveRef ← ST.mkRef (#[] : Array (Val m))
+  let inferCacheRef ← ST.mkRef ({} : Std.HashMap USize (KExpr m × Array (Val m) × KTypedExpr m × Val m))
+  let whnfCacheRef ← ST.mkRef ({} : Std.HashMap USize (Val m × Val m))
+  let whnfCoreCacheRef ← ST.mkRef ({} : Std.HashMap USize (Val m × Val m))
+  pure {
+    types := #[], kenv, prims, safety, quotInit, trace, maxHeartbeats, maxThunks,
+    thunkTable, statsRef, typedConstsRef, ptrFailureCacheRef, ptrSuccessCacheRef,
+    eqvManagerRef, keepAliveRef, inferCacheRef, whnfCacheRef, whnfCoreCacheRef }
+
+/-- Run a TypecheckM computation purely via runST.
+    Everything runs inside a single ST σ region. -/
+def TypecheckM.runSimple (kenv : KEnv m) (prims : KPrimitives m)
+    (safety : KDefinitionSafety := .safe) (quotInit : Bool := false)
+    (trace : Bool := false) (maxHeartbeats : Nat := defaultMaxHeartbeats)
+    (maxThunks : Nat := defaultMaxThunks)
     (action : ∀ σ, TypecheckM σ m α)
-    : Except String (α × TypecheckState m) :=
-  TypecheckM.runPure
-    (fun _σ thunkTable => {
-      types := #[], letValues := #[], kenv, prims, safety, quotInit,
-      thunkTable })
-    stt action
+    : Except String α :=
+  runST fun σ => do
+    let ctx ← mkCtxST σ kenv prims safety quotInit trace maxHeartbeats maxThunks
+    ExceptT.run (ReaderT.run (action σ) ctx)
+
+/-- Run and return stats alongside the result. Stats are always available
+    (even on error) since they live in ST.Ref, not StateT. -/
+def TypecheckM.runWithStats (kenv : KEnv m) (prims : KPrimitives m)
+    (safety : KDefinitionSafety := .safe) (quotInit : Bool := false)
+    (trace : Bool := false) (maxHeartbeats : Nat := defaultMaxHeartbeats)
+    (maxThunks : Nat := defaultMaxThunks)
+    (action : ∀ σ, TypecheckM σ m α)
+    : Option String × Stats :=
+  runST fun σ => do
+    let ctx ← mkCtxST σ kenv prims safety quotInit trace maxHeartbeats maxThunks
+    let result ← ExceptT.run (ReaderT.run (action σ) ctx)
+    let stats ← ctx.statsRef.get
+    match result with
+    | .ok _ => pure (none, stats)
+    | .error e => pure (some e, stats)
 
 end Ix.Kernel

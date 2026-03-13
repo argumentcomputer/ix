@@ -732,7 +732,10 @@ theorem eval_env_quoteEq {e : SExpr L} {env1 env2 : List (SVal L)} {d : Nat}
       rw [eval_s_letE]; simp only [option_bind_eq_some]
       exact ⟨vv2, hvl2, hbd2⟩
 
-/-- A well-formed value can be quoted at sufficient fuel. -/
+/-- A well-formed value can be quoted at sufficient fuel.
+    FALSE as stated: `.lam (.sort 0) (.proj 0 0 (.bvar 0)) []` satisfies ValWF
+    but `quote_s` gets stuck because `eval_s` returns `none` on `.proj`.
+    Fix: add a ProjFree/Quotable hypothesis, or restructure via logical relation (Phase 2). -/
 theorem quotable_of_wf {v : SVal L} {d : Nat} (hwf : ValWF v d) :
     ∃ fq e, quote_s fq v d = some e := by
   sorry

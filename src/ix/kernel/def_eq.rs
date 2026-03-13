@@ -13,6 +13,7 @@ use crate::lean::nat::Nat;
 
 use super::error::TcError;
 use super::helpers::*;
+use super::whnf::NatReduceResult;
 use super::level::equal_level;
 use super::tc::{TcResult, TypeChecker};
 use super::types::{KConstantInfo, KExpr, MetaId, MetaMode, Primitives};
@@ -150,14 +151,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           self.trace_msg(&format!(
             "[is_def_eq BOOL.TRUE REFLECT MISS] t=Bool.true  s={s}  s_whnf={s_whnf}  eager={}", self.eager_reduce
           ));
-          // Show spine args of the stuck whnf
-          if let Some(spine) = s_whnf.spine() {
-            for (i, th) in spine.iter().enumerate() {
-              if let Ok(v) = self.force_thunk(th) {
-                self.trace_msg(&format!("  s_whnf spine[{i}]: {v}"));
-              }
-            }
-          }
         }
       }
     }
@@ -680,11 +673,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
 
       // Nat prim reduction (before delta)
-      if let Some(t2) = self.try_reduce_nat_val(&t)? {
+      if let NatReduceResult::Reduced(t2) = self.try_reduce_nat_val(&t)? {
         let result = self.is_def_eq(&t2, &s)?;
         return Ok((t2, s, Some(result)));
       }
-      if let Some(s2) = self.try_reduce_nat_val(&s)? {
+      if let NatReduceResult::Reduced(s2) = self.try_reduce_nat_val(&s)? {
         let result = self.is_def_eq(&t, &s2)?;
         return Ok((t, s2, Some(result)));
       }

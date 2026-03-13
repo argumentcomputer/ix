@@ -4,6 +4,8 @@
 //! delta unfolding, nat primitive computation, and the full WHNF loop
 //! with caching.
 
+use std::rc::Rc;
+
 use num_bigint::BigUint;
 
 use crate::ix::address::Address;
@@ -21,6 +23,34 @@ use super::value::*;
 const MAX_DELTA_STEPS: usize = 50_000;
 /// Maximum delta steps in eager-reduce mode.
 const MAX_DELTA_STEPS_EAGER: usize = 500_000;
+
+/// Result of attempting nat primitive reduction.
+pub(super) enum NatReduceResult<M: MetaMode> {
+  /// Successfully reduced to a value.
+  Reduced(Val<M>),
+  /// Stuck: fully-applied nat prim, all args are ground — block delta.
+  StuckGround,
+  /// Stuck: fully-applied nat prim, args contain fvars — allow delta.
+  StuckWithFvar,
+  /// Not a nat primitive (or not fully applied).
+  NotNatPrim,
+}
+
+/// Peel up to `max` lambdas from an expression, returning the inner body
+/// and how many were peeled.
+fn peel_lambdas<M: MetaMode>(expr: &KExpr<M>, max: usize) -> (&KExpr<M>, usize) {
+  let mut e = expr;
+  let mut count = 0;
+  while count < max {
+    if let KExprData::Lam(_, body, _, _) = e.data() {
+      e = body;
+      count += 1;
+    } else {
+      break;
+    }
+  }
+  (e, count)
+}
 
 impl<M: MetaMode> TypeChecker<'_, M> {
   /// Structural WHNF: reduce projections, iota (recursor), K, and quotient.
@@ -158,11 +188,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 self.whnf_core_val(&current, cheap_rec, cheap_proj)?;
             }
           } else {
-            if self.trace {
-              self.trace_msg(&format!(
-                "[PROJ STUCK] proj[{ix}]  inner_whnf={current}  cheap_proj={cheap_proj}  cheap_rec={cheap_rec}"
-              ));
-            }
             if current.ptr_eq(&inner_v_before_whnf) {
               // WHNF was no-op and no projection resolved — preserve pointer identity
               return Ok(v.clone());
@@ -306,31 +331,51 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
   }
 
-  /// Helper: apply params+motives+minors from rec spine, ctor fields, and extra args after major.
-  fn apply_pmm_and_extra(
-    &mut self,
-    mut result: Val<M>,
-    levels: &[KLevel<M>],
+  /// Collect iota reduction args in order: spine[0..pmm_end] + ctor_fields + spine[major_idx+1..]
+  fn collect_iota_args(
+    &self,
     spine: &[Thunk<M>],
-    num_params: usize,
-    num_motives: usize,
-    num_minors: usize,
+    pmm_end: usize,
+    ctor_fields: &[Thunk<M>],
     major_idx: usize,
-    ctor_field_thunks: &[Thunk<M>],
+  ) -> Vec<Thunk<M>> {
+    let extra_count = if major_idx + 1 < spine.len() { spine.len() - major_idx - 1 } else { 0 };
+    let mut args = Vec::with_capacity(pmm_end + ctor_fields.len() + extra_count);
+    for i in 0..pmm_end.min(spine.len()) {
+      args.push(spine[i].clone());
+    }
+    args.extend_from_slice(ctor_fields);
+    if major_idx + 1 < spine.len() {
+      args.extend_from_slice(&spine[major_idx + 1..]);
+    }
+    args
+  }
+
+  /// Apply a recursor RHS to collected args via multi-lambda peel.
+  /// Peels lambdas from the expression, forces args into an env,
+  /// and evals the inner body once — avoiding N intermediate eval calls.
+  fn apply_rhs_to_args(
+    &mut self,
+    rhs_expr: &KExpr<M>,
+    args: &[Thunk<M>],
   ) -> TcResult<Val<M>, M> {
-    let _ = levels; // already used for RHS instantiation by caller
-    let pmm_end = num_params + num_motives + num_minors;
-    for i in 0..pmm_end {
-      if i < spine.len() {
-        result = self.apply_val_thunk(result, spine[i].clone())?;
-      }
+    let (inner_body, peeled) = peel_lambdas(rhs_expr, args.len());
+
+    // Build environment by forcing the peeled args
+    let mut env_vec = Vec::with_capacity(peeled);
+    for arg in &args[..peeled] {
+      env_vec.push(self.force_thunk(arg)?);
     }
-    for thunk in ctor_field_thunks {
-      result = self.apply_val_thunk(result, thunk.clone())?;
+    let env = Rc::new(env_vec);
+
+    // Eval the inner body once
+    let mut result = self.eval(inner_body, &env)?;
+
+    // Fallback: apply remaining args one-at-a-time (if fewer lambdas than args)
+    for arg in &args[peeled..] {
+      result = self.apply_val_thunk(result, arg.clone())?;
     }
-    for thunk in &spine[major_idx + 1..] {
-      result = self.apply_val_thunk(result, thunk.clone())?;
-    }
+
     Ok(result)
   }
 
@@ -355,31 +400,19 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let major_thunk = &spine[major_idx];
     let major_val = self.force_thunk(major_thunk)?;
     let major_whnf = self.whnf_val(&major_val, 0)?;
-    if self.trace {
-      // Show the major premise before and after whnf for stuck cases
-      let is_ctor = matches!(major_whnf.inner(), ValInner::Ctor { .. });
-      let is_lit = matches!(major_whnf.inner(), ValInner::Lit(_));
-      if !is_ctor && !is_lit {
-        self.trace_msg(&format!(
-          "[IOTA major] idx={major_idx}  before={major_val}  after={major_whnf}"
-        ));
-      }
-    }
 
     // Handle nat literals directly (O(1) instead of O(n) via nat_lit_to_ctor_thunked)
     match major_whnf.inner() {
       ValInner::Lit(Literal::NatVal(n))
         if Primitives::<M>::addr_matches(&self.prims.nat, induct_addr) =>
       {
+        let pmm_end = num_params + num_motives + num_minors;
         if n.0 == BigUint::ZERO {
           // Lit(0) → fire rule[0] (zero) with no ctor fields
           if let Some((_, rule_rhs)) = rules.first() {
             let rhs_inst = self.instantiate_levels(&rule_rhs.body, levels);
-            let result = self.eval(&rhs_inst, &empty_env())?;
-            return Ok(Some(self.apply_pmm_and_extra(
-              result, levels, spine, num_params, num_motives, num_minors,
-              major_idx, &[],
-            )?));
+            let args = self.collect_iota_args(spine, pmm_end, &[], major_idx);
+            return Ok(Some(self.apply_rhs_to_args(&rhs_inst, &args)?));
           }
           return Ok(None);
         } else {
@@ -387,13 +420,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           if rules.len() > 1 {
             let (_, rule_rhs) = &rules[1];
             let rhs_inst = self.instantiate_levels(&rule_rhs.body, levels);
-            let result = self.eval(&rhs_inst, &empty_env())?;
             let pred_val = Val::mk_lit(Literal::NatVal(Nat(&n.0 - 1u64)));
             let pred_thunk = mk_thunk_val(pred_val);
-            return Ok(Some(self.apply_pmm_and_extra(
-              result, levels, spine, num_params, num_motives, num_minors,
-              major_idx, &[pred_thunk],
-            )?));
+            let args = self.collect_iota_args(spine, pmm_end, &[pred_thunk], major_idx);
+            return Ok(Some(self.apply_rhs_to_args(&rhs_inst, &args)?));
           }
           return Ok(None);
         }
@@ -413,10 +443,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         }
         let (nfields, rule_rhs) = &rules[*cidx];
 
-        // Evaluate the RHS with substituted levels (empty env — RHS is closed)
-        let rhs_inst = self.instantiate_levels(&rule_rhs.body, levels);
-        let result = self.eval(&rhs_inst, &empty_env())?;
-
         // Collect constructor fields (skip constructor params)
         if *nfields > ctor_spine.len() {
           return Ok(None);
@@ -425,50 +451,16 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         let ctor_fields: Vec<_> =
           ctor_spine[field_start..].to_vec();
 
-        Ok(Some(self.apply_pmm_and_extra(
-          result, levels, spine, num_params, num_motives, num_minors,
-          major_idx, &ctor_fields,
-        )?))
+        let rhs_inst = self.instantiate_levels(&rule_rhs.body, levels);
+        let pmm_end = num_params + num_motives + num_minors;
+        let args = self.collect_iota_args(spine, pmm_end, &ctor_fields, major_idx);
+        Ok(Some(self.apply_rhs_to_args(&rhs_inst, &args)?))
       }
       _ => {
         if self.trace {
-          let kind = match major_whnf.inner() {
-            ValInner::Neutral { head: Head::Const { .. }, .. } => "Neutral(Const)",
-            ValInner::Neutral { head: Head::FVar { .. }, .. } => "Neutral(FVar)",
-            ValInner::Lit(_) => "Lit",
-            ValInner::Pi { .. } => "Pi",
-            ValInner::Lam { .. } => "Lam",
-            ValInner::Sort(_) => "Sort",
-            ValInner::Proj { idx, strct, .. } => {
-              // Show what the stuck projection is trying to project from
-              if let Ok(inner) = self.force_thunk(strct) {
-                self.trace_msg(&format!(
-                  "[IOTA STUCK] major_idx={major_idx}  spine_len={}  major=proj[{idx}]  strct={inner}",
-                  spine.len()
-                ));
-              }
-              "Proj"
-            }
-            _ => "Other",
-          };
-          if kind != "Proj" {
-            // For stuck neutrals, show what the head's spine args are
-            let extra = if let ValInner::Neutral { head: Head::Const { .. }, spine: nspine } = major_whnf.inner() {
-              let mut parts = Vec::new();
-              for (i, thunk) in nspine.iter().enumerate() {
-                if let Ok(val) = self.force_thunk(thunk) {
-                  parts.push(format!("  arg[{i}]={val}"));
-                }
-              }
-              parts.join("")
-            } else {
-              String::new()
-            };
-            self.trace_msg(&format!(
-              "[IOTA STUCK] major_idx={major_idx}  spine_len={}  major_whnf={major_whnf}  kind={kind}{extra}",
-              spine.len()
-            ));
-          }
+          self.trace_msg(&format!(
+            "[IOTA STUCK] major_idx={major_idx}  major_whnf={major_whnf}"
+          ));
         }
         Ok(None)
       }
@@ -712,64 +704,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
   }
 
-  /// Check if a value is a fully-applied nat primitive (unary with ≥1 arg, binary with ≥2 args).
-  /// Used to block delta-unfolding when tryReduceNatVal fails on symbolic args.
-  fn is_fully_applied_nat_prim(&self, v: &Val<M>) -> bool {
-    match v.inner() {
-      ValInner::Neutral {
-        head: Head::Const { id, .. },
-        spine,
-      } => {
-        if (is_nat_succ(&id.addr, self.prims) || is_nat_pred(&id.addr, self.prims))
-          && spine.len() >= 1
-        {
-          return true;
-        }
-        is_nat_bin_op(&id.addr, self.prims) && spine.len() >= 2
-      }
-      _ => false,
-    }
-  }
-
-  /// Check if a fully-applied nat primitive has any spine arg that contains
-  /// a free variable (after whnf). When fvars are present, the recursor form
-  /// can still make progress by pattern-matching on constructor args even
-  /// with symbolic subterms (e.g. Nat.ble (succ n) m), so we allow delta.
-  /// We DON'T allow delta for stuck-but-ground terms (no fvars) because
-  /// that causes infinite recursion.
-  fn nat_prim_has_fvar_arg(&mut self, v: &Val<M>) -> TcResult<bool, M> {
-    let spine = match v.spine() {
-      Some(s) => s.to_vec(),
-      None => return Ok(false),
-    };
-    for thunk in &spine {
-      let val = self.force_thunk(thunk)?;
-      let val = self.whnf_val(&val, 0)?;
-      if Self::val_contains_fvar(&val) {
-        return Ok(true);
-      }
-    }
-    Ok(false)
-  }
-
-  /// Shallow check if a value contains a free variable.
-  /// Checks the head and one level of spine args.
-  fn val_contains_fvar(v: &Val<M>) -> bool {
-    match v.inner() {
-      ValInner::Neutral { head: Head::FVar { .. }, .. } => true,
-      ValInner::Neutral { head: Head::Const { .. }, spine } => {
-        // Check if any already-evaluated spine arg is an fvar
-        for thunk in spine {
-          if let ThunkEntry::Evaluated(val) = &*thunk.borrow() {
-            if matches!(val.inner(), ValInner::Neutral { head: Head::FVar { .. }, .. }) {
-              return true;
-            }
-          }
-        }
-        false
-      }
-      _ => false,
-    }
+  /// Shallow check if a WHNF'd value is stuck on a free variable.
+  fn is_fvar_headed(v: &Val<M>) -> bool {
+    matches!(v.inner(), ValInner::Neutral { head: Head::FVar { .. }, .. })
   }
 
   /// Single delta unfolding step: unfold one definition.
@@ -849,9 +786,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if Primitives::<M>::addr_matches(&self.prims.nat, induct_addr)
         && spine.len() == num_params + 1
       {
-        let inner = self.force_thunk(&spine[spine.len() - 1])?;
+        let pred_thunk = &spine[spine.len() - 1];
+        let inner = self.force_thunk(pred_thunk)?;
         let inner = self.whnf_val(&inner, 0)?;
         if let Some(n) = self.force_extract_nat(&inner)? {
+          // Collapse inner thunk: succ chain → literal for O(1) future access
+          *pred_thunk.borrow_mut() =
+            ThunkEntry::Evaluated(Val::mk_lit(Literal::NatVal(n.clone())));
           return Ok(Some(Nat(&n.0 + 1u64)));
         }
       }
@@ -859,11 +800,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     Ok(None)
   }
 
-  /// Try to reduce nat primitives.
-  pub fn try_reduce_nat_val(
+  /// Try to reduce nat primitives. Returns a tri-state:
+  /// - `Reduced(v)`: successfully reduced
+  /// - `StuckGround`: fully-applied nat prim, args are ground — block delta
+  /// - `StuckWithFvar`: fully-applied nat prim, args have fvars — allow delta
+  /// - `NotNatPrim`: not a nat prim or not fully applied
+  pub(super) fn try_reduce_nat_val(
     &mut self,
     v: &Val<M>,
-  ) -> TcResult<Option<Val<M>>, M> {
+  ) -> TcResult<NatReduceResult<M>, M> {
     match v.inner() {
       ValInner::Neutral {
         head: Head::Const { id, .. },
@@ -874,7 +819,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         if Primitives::<M>::addr_matches(&self.prims.nat_zero, addr)
           && spine.is_empty()
         {
-          return Ok(Some(Val::mk_lit(Literal::NatVal(
+          return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(
             Nat::from(0u64),
           ))));
         }
@@ -884,8 +829,16 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let arg = self.force_thunk(&spine[0])?;
           let arg = self.whnf_val(&arg, 0)?;
           if let Some(n) = self.force_extract_nat(&arg)? {
-            return Ok(Some(Val::mk_lit(Literal::NatVal(Nat(&n.0 + 1u64)))));
+            // Collapse thunk to literal for O(1) future access
+            *spine[0].borrow_mut() =
+              ThunkEntry::Evaluated(Val::mk_lit(Literal::NatVal(n.clone())));
+            return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat(&n.0 + 1u64)))));
           }
+          return Ok(if Self::is_fvar_headed(&arg) {
+            NatReduceResult::StuckWithFvar
+          } else {
+            NatReduceResult::StuckGround
+          });
         }
 
         // Nat.pred with 1 arg
@@ -893,13 +846,20 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let arg = self.force_thunk(&spine[0])?;
           let arg = self.whnf_val(&arg, 0)?;
           if let Some(n) = self.force_extract_nat(&arg)? {
+            *spine[0].borrow_mut() =
+              ThunkEntry::Evaluated(Val::mk_lit(Literal::NatVal(n.clone())));
             let result = if n.0 == BigUint::ZERO {
               Nat::from(0u64)
             } else {
               Nat(&n.0 - 1u64)
             };
-            return Ok(Some(Val::mk_lit(Literal::NatVal(result))));
+            return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(result))));
           }
+          return Ok(if Self::is_fvar_headed(&arg) {
+            NatReduceResult::StuckWithFvar
+          } else {
+            NatReduceResult::StuckGround
+          });
         }
 
         // Binary nat ops with 2 args
@@ -912,34 +872,35 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let na = self.force_extract_nat(&a)?;
           let nb = self.force_extract_nat(&b)?;
           if let (Some(na), Some(nb)) = (&na, &nb) {
+            // Collapse both thunks to literals
+            *spine[0].borrow_mut() =
+              ThunkEntry::Evaluated(Val::mk_lit(Literal::NatVal(na.clone())));
+            *spine[1].borrow_mut() =
+              ThunkEntry::Evaluated(Val::mk_lit(Literal::NatVal(nb.clone())));
             if let Some(result) =
               compute_nat_prim(addr, na, nb, self.prims)
             {
-              return Ok(Some(result));
+              return Ok(NatReduceResult::Reduced(result));
             }
           }
-          if self.trace && (na.is_none() || nb.is_none()) {
-            self.trace_msg(&format!(
-              "[NAT BIN STUCK] op={id}  a={a} (is_nat={})  b={b} (is_nat={})",
-              na.is_some(), nb.is_some()
-            ));
-          }
+          // Determine fvar status from the already-WHNFed args
+          let has_fvar = Self::is_fvar_headed(&a) || Self::is_fvar_headed(&b);
           // Partial reduction: base cases (second arg is 0)
           if is_nat_zero_val(&b, self.prims) {
             if Primitives::<M>::addr_matches(&self.prims.nat_add, addr) {
-              return Ok(Some(a)); // n + 0 = n
+              return Ok(NatReduceResult::Reduced(a)); // n + 0 = n
             } else if Primitives::<M>::addr_matches(&self.prims.nat_sub, addr) {
-              return Ok(Some(a)); // n - 0 = n
+              return Ok(NatReduceResult::Reduced(a)); // n - 0 = n
             } else if Primitives::<M>::addr_matches(&self.prims.nat_mul, addr) {
-              return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // n * 0 = 0
+              return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // n * 0 = 0
             } else if Primitives::<M>::addr_matches(&self.prims.nat_pow, addr) {
-              return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(1u64))))); // n ^ 0 = 1
+              return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat::from(1u64))))); // n ^ 0 = 1
             } else if Primitives::<M>::addr_matches(&self.prims.nat_ble, addr) {
               // n ≤ 0 = (n == 0)
               if is_nat_zero_val(&a, self.prims) {
                 if let Some(t) = &self.prims.bool_true {
                   if let Some(bt) = &self.prims.bool_type {
-                    return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), 1, 0, 0, bt.addr.clone(), Vec::new())));
+                    return Ok(NatReduceResult::Reduced(Val::mk_ctor(t.clone(), Vec::new(), 1, 0, 0, bt.addr.clone(), Vec::new())));
                   }
                 }
               }
@@ -949,16 +910,16 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           // Partial reduction: base cases (first arg is 0)
           else if is_nat_zero_val(&a, self.prims) {
             if Primitives::<M>::addr_matches(&self.prims.nat_add, addr) {
-              return Ok(Some(b)); // 0 + n = n
+              return Ok(NatReduceResult::Reduced(b)); // 0 + n = n
             } else if Primitives::<M>::addr_matches(&self.prims.nat_sub, addr) {
-              return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // 0 - n = 0
+              return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // 0 - n = 0
             } else if Primitives::<M>::addr_matches(&self.prims.nat_mul, addr) {
-              return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // 0 * n = 0
+              return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // 0 * n = 0
             } else if Primitives::<M>::addr_matches(&self.prims.nat_ble, addr) {
               // 0 ≤ n = true
               if let Some(t) = &self.prims.bool_true {
                 if let Some(bt) = &self.prims.bool_type {
-                  return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), 1, 0, 0, bt.addr.clone(), Vec::new())));
+                  return Ok(NatReduceResult::Reduced(Val::mk_ctor(t.clone(), Vec::new(), 1, 0, 0, bt.addr.clone(), Vec::new())));
                 }
               }
             }
@@ -974,7 +935,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 vec![spine[0].clone(), pred_thunk],
               ));
               let succ_id = self.prims.nat_succ.as_ref().unwrap().clone();
-              return Ok(Some(Val::mk_neutral(
+              return Ok(NatReduceResult::Reduced(Val::mk_neutral(
                 Head::Const { id: succ_id, levels: Vec::new() },
                 vec![inner],
               )));
@@ -986,7 +947,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 vec![spine[0].clone(), pred_thunk],
               ));
               let pred_id = self.prims.nat_pred.as_ref().unwrap().clone();
-              return Ok(Some(Val::mk_neutral(
+              return Ok(NatReduceResult::Reduced(Val::mk_neutral(
                 Head::Const { id: pred_id, levels: Vec::new() },
                 vec![inner],
               )));
@@ -998,7 +959,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 vec![spine[0].clone(), pred_thunk],
               ));
               let add_id = self.prims.nat_add.as_ref().unwrap().clone();
-              return Ok(Some(Val::mk_neutral(
+              return Ok(NatReduceResult::Reduced(Val::mk_neutral(
                 Head::Const { id: add_id, levels: Vec::new() },
                 vec![inner, spine[0].clone()],
               )));
@@ -1010,7 +971,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 vec![spine[0].clone(), pred_thunk],
               ));
               let mul_id = self.prims.nat_mul.as_ref().unwrap().clone();
-              return Ok(Some(Val::mk_neutral(
+              return Ok(NatReduceResult::Reduced(Val::mk_neutral(
                 Head::Const { id: mul_id, levels: Vec::new() },
                 vec![inner, spine[0].clone()],
               )));
@@ -1023,7 +984,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                   vec![two, spine[0].clone()],
                 ));
                 let shift_left_id = self.prims.nat_shift_left.as_ref().unwrap().clone();
-                return Ok(Some(Val::mk_neutral(
+                return Ok(NatReduceResult::Reduced(Val::mk_neutral(
                   Head::Const { id: shift_left_id, levels: Vec::new() },
                   vec![two_x, pred_thunk],
                 )));
@@ -1037,7 +998,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                   vec![spine[0].clone(), pred_thunk],
                 ));
                 let two = mk_thunk_val(Val::mk_lit(Literal::NatVal(Nat::from(2u64))));
-                return Ok(Some(Val::mk_neutral(
+                return Ok(NatReduceResult::Reduced(Val::mk_neutral(
                   Head::Const { id: div_id, levels: Vec::new() },
                   vec![inner, two],
                 )));
@@ -1046,7 +1007,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               // beq (succ x) (succ y) = beq x y
               if let Some(pred_thunk_a) = extract_succ_pred(&a, self.prims) {
                 let beq_id = self.prims.nat_beq.as_ref().unwrap().clone();
-                return Ok(Some(Val::mk_neutral(
+                return Ok(NatReduceResult::Reduced(Val::mk_neutral(
                   Head::Const { id: beq_id, levels: Vec::new() },
                   vec![pred_thunk_a, pred_thunk],
                 )));
@@ -1054,7 +1015,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 // beq 0 (succ y) = false
                 if let Some(f) = &self.prims.bool_false {
                   if let Some(bt) = &self.prims.bool_type {
-                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), 0, 0, 0, bt.addr.clone(), Vec::new())));
+                    return Ok(NatReduceResult::Reduced(Val::mk_ctor(f.clone(), Vec::new(), 0, 0, 0, bt.addr.clone(), Vec::new())));
                   }
                 }
               }
@@ -1062,7 +1023,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               // ble (succ x) (succ y) = ble x y
               if let Some(pred_thunk_a) = extract_succ_pred(&a, self.prims) {
                 let ble_id = self.prims.nat_ble.as_ref().unwrap().clone();
-                return Ok(Some(Val::mk_neutral(
+                return Ok(NatReduceResult::Reduced(Val::mk_neutral(
                   Head::Const { id: ble_id, levels: Vec::new() },
                   vec![pred_thunk_a, pred_thunk],
                 )));
@@ -1070,7 +1031,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 // ble 0 (succ y) = true
                 if let Some(t) = &self.prims.bool_true {
                   if let Some(bt) = &self.prims.bool_type {
-                    return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), 1, 0, 0, bt.addr.clone(), Vec::new())));
+                    return Ok(NatReduceResult::Reduced(Val::mk_ctor(t.clone(), Vec::new(), 1, 0, 0, bt.addr.clone(), Vec::new())));
                   }
                 }
               }
@@ -1082,24 +1043,30 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 // beq (succ x) 0 = false
                 if let Some(f) = &self.prims.bool_false {
                   if let Some(bt) = &self.prims.bool_type {
-                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), 0, 0, 0, bt.addr.clone(), Vec::new())));
+                    return Ok(NatReduceResult::Reduced(Val::mk_ctor(f.clone(), Vec::new(), 0, 0, 0, bt.addr.clone(), Vec::new())));
                   }
                 }
               } else if Primitives::<M>::addr_matches(&self.prims.nat_ble, addr) && is_nat_zero_val(&b, self.prims) {
                 // ble (succ x) 0 = false
                 if let Some(f) = &self.prims.bool_false {
                   if let Some(bt) = &self.prims.bool_type {
-                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), 0, 0, 0, bt.addr.clone(), Vec::new())));
+                    return Ok(NatReduceResult::Reduced(Val::mk_ctor(f.clone(), Vec::new(), 0, 0, 0, bt.addr.clone(), Vec::new())));
                   }
                 }
               }
             }
           }
+          // All reductions failed — return stuck with fvar info
+          return Ok(if has_fvar {
+            NatReduceResult::StuckWithFvar
+          } else {
+            NatReduceResult::StuckGround
+          });
         }
 
-        Ok(None)
+        Ok(NatReduceResult::NotNatPrim)
       }
-      _ => Ok(None),
+      _ => Ok(NatReduceResult::NotNatPrim),
     }
   }
 
@@ -1275,23 +1242,21 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     // Step 1: Structural WHNF (projection, iota, K, quotient)
     let v1 = self.whnf_core_val(v, false, false)?;
 
-    // Step 2: Nat primitive reduction
-    let result = if let Some(v2) = self.try_reduce_nat_val(&v1)? {
-      self.whnf_val(&v2, delta_steps + 1)?
-    // Step 2b: Block delta-unfolding of fully-applied nat primitives when
-    // all args are ground (no fvars). When args contain fvars, the recursor
-    // definition can still make progress by pattern-matching on constructors
-    // (e.g. Nat.ble (succ n) m), so we must allow delta unfolding.
-    } else if self.is_fully_applied_nat_prim(&v1) && !self.nat_prim_has_fvar_arg(&v1)? {
-      v1
-    // Step 3: Delta unfolding (single step)
-    } else if let Some(v2) = self.delta_step_val(&v1)? {
-      self.whnf_val(&v2, delta_steps + 1)?
-    // Step 4: Native reduction (structural WHNF only to prevent re-entry)
-    } else if let Some(v2) = self.reduce_native_val(&v1)? {
-      self.whnf_core_val(&v2, false, false)?
-    } else {
-      v1
+    // Step 2: Nat primitive reduction (includes fvar check for delta blocking)
+    let result = match self.try_reduce_nat_val(&v1)? {
+      NatReduceResult::Reduced(v2) => self.whnf_val(&v2, delta_steps + 1)?,
+      NatReduceResult::StuckGround => v1,
+      NatReduceResult::StuckWithFvar | NatReduceResult::NotNatPrim => {
+        // Step 3: Delta unfolding (single step)
+        if let Some(v2) = self.delta_step_val(&v1)? {
+          self.whnf_val(&v2, delta_steps + 1)?
+        // Step 4: Native reduction (structural WHNF only to prevent re-entry)
+        } else if let Some(v2) = self.reduce_native_val(&v1)? {
+          self.whnf_core_val(&v2, false, false)?
+        } else {
+          v1
+        }
+      }
     };
 
     // Cache the final result (only at top-level entry)
