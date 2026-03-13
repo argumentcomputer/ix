@@ -14,8 +14,8 @@ public def serdeNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
     (ioBuffer.extend #[.ofNat i] (bytes.data.map .ofUInt8), i + 1)
   pure ⟨`ixon_serde_test, "Ixon serde test", #[.ofNat n], #[], ioBuffer, ioBuffer⟩
 
-public def kernelCheckNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
-  let constList := Lean.collectDependencies ``Nat.add_comm env.constants
+def kernelCheck (name : Lean.Name) (env : Lean.Environment) : IO AiurTestCase := do
+  let constList := Lean.collectDependencies name env.constants
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI constList
   let ixonEnv := rawEnv.toEnv
 
@@ -38,11 +38,17 @@ public def kernelCheckNatAddComm (env : Lean.Environment) : IO AiurTestCase := d
       blobTableData := blobTableData.push (.ofNat (rawBytes.data.getD i 0).toNat)
   ioBuffer := ioBuffer.extend #[0] blobTableData
 
-  -- Get the blake3 address of Nat.add_comm as the target
-  let targetAddr := match ixonEnv.getAddr? (Ix.Name.fromLeanName ``Nat.add_comm) with
+  -- Get the blake3 address of `name` as the target
+  let targetAddr := match ixonEnv.getAddr? (Ix.Name.fromLeanName name) with
     | some addr => addr
-    | none => panic! "Nat.add_comm not found in Ixon environment"
+    | none => panic! s!"{name} not found in Ixon environment"
   let targetAddrBytes : Array Aiur.G := targetAddr.hash.data.map .ofUInt8
 
-  pure ⟨`kernel_check_test, "Kernel check Nat.add_comm",
+  pure ⟨`kernel_check_test, s!"Kernel check {name}",
     targetAddrBytes, #[], ioBuffer, ioBuffer⟩
+
+public def kernelCheckNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
+  kernelCheck ``Nat.add_comm env
+
+public def kernelCheckNatSubLeOfLeAdd (env : Lean.Environment) : IO AiurTestCase := do
+  kernelCheck ``Nat.sub_le_of_le_add env

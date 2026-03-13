@@ -228,14 +228,20 @@ def kernel := ⟦
           _ => 0,
         },
       KLevel.IMax(&a1, &a2) =>
-        match b {
-          KLevel.Max(&b1, &b2) =>
-            let r1 = level_leq(a, b1);
-            match r1 {
-              1 => 1,
-              0 => level_leq(a, b2),
+        -- imax(a1, a2) where a2 is definitely not zero behaves as max(a1, a2)
+        let not_zero = level_is_not_zero(a2);
+        match not_zero {
+          1 => level_leq(a1, b) * level_leq(a2, b),
+          0 =>
+            match b {
+              KLevel.Max(&b1, &b2) =>
+                let r1 = level_leq(a, b1);
+                match r1 {
+                  1 => 1,
+                  0 => level_leq(a, b2),
+                },
+              _ => level_eq(a, b),
             },
-          _ => level_eq(a, b),
         },
     }
   }
@@ -276,13 +282,18 @@ def kernel := ⟦
       KLevel.Zero => KLevel.Zero,
       KLevel.Succ(_) => level_max(a, b),
       _ =>
-        match a {
-          KLevel.Zero => b,
-          _ =>
-            let eq = level_eq(a, b);
-            match eq {
-              1 => a,
-              0 => KLevel.IMax(store(a), store(b)),
+        let not_zero = level_is_not_zero(b);
+        match not_zero {
+          1 => level_max(a, b),
+          0 =>
+            match a {
+              KLevel.Zero => b,
+              _ =>
+                let eq = level_eq(a, b);
+                match eq {
+                  1 => a,
+                  0 => KLevel.IMax(store(a), store(b)),
+                },
             },
         },
     }
@@ -482,7 +493,7 @@ def kernel := ⟦
   fn try_iota(idx: [G; 8], lvls: KLevelList, spine: KValList, top: KConstList) -> KVal {
     let ci = const_list_lookup(top, idx);
     match ci {
-      KConstantInfo.Rec(_, _, nparams, nindices, nmotives, nminors, &rules, _, _) =>
+      KConstantInfo.Rec(_, _, nparams, nindices, nmotives, nminors, &rules, k_flag, _) =>
         let maj_idx = u64_add(u64_add(u64_add(nparams, nmotives), nminors), nindices);
         let spine_len = val_list_length(spine);
         let not_have_major = u64_is_zero(u64_sub(relaxed_u64_succ(spine_len), relaxed_u64_succ(maj_idx)));
@@ -553,7 +564,19 @@ def kernel := ⟦
                     KVal.Const(idx, store(lvls), store(spine)),
                 },
               _ =>
-                KVal.Const(idx, store(lvls), store(spine)),
+                -- K-reduction: for proof-irrelevant (Prop) inductives with k_flag set,
+                -- return the minor premise applied to remaining args after major
+                match k_flag {
+                  0 =>
+                    -- Not a K-recursor, return stuck
+                    KVal.Const(idx, store(lvls), store(spine)),
+                  _ =>
+                    -- K-reduction fires: minor is at nparams + nmotives
+                    let minor_idx = u64_add(nparams, nmotives);
+                    let minor = val_list_lookup(spine, minor_idx);
+                    let remaining = val_list_drop(spine, relaxed_u64_succ(maj_idx));
+                    k_apply_spine(minor, remaining, top),
+                },
             },
         },
 
@@ -812,6 +835,41 @@ def kernel := ⟦
     }
   }
 
+  -- Bidirectional type checking: check term against expected type.
+  -- For Lambda against Pi, pushes the codomain through instead of independently inferring.
+  fn k_check(e: KExpr, expected: KVal, types: KValList, env: KValEnv, depth: [G; 8], top: KConstList, nat_idx: [G; 8], str_idx: [G; 8]) -> G {
+    match e {
+      KExpr.Lam(&ty, &body) =>
+        let expected_whnf = k_whnf(expected, top);
+        match expected_whnf {
+          KVal.Pi(&pi_dom, &pi_body, &pi_env) =>
+            -- Check domain matches
+            let dom_val = k_eval(ty, env, top);
+            let dom_eq = k_is_def_eq(dom_val, pi_dom, depth, top, nat_idx, str_idx);
+            assert_eq!(dom_eq, 1);
+            -- Push Pi codomain through Lambda body
+            let fvar = KVal.FVar(depth, store(KValList.Nil));
+            let types2 = KValList.Cons(store(pi_dom), store(types));
+            let env2 = KValEnv.Cons(store(fvar), store(env));
+            let pi_env2 = KValEnv.Cons(store(fvar), store(pi_env));
+            let expected_body = k_eval(pi_body, pi_env2, top);
+            k_check(body, expected_body, types2, env2, relaxed_u64_succ(depth), top, nat_idx, str_idx),
+          _ =>
+            -- Expected type is not a Pi after whnf, fall back to infer+compare
+            let inferred = k_infer(e, types, env, depth, top, nat_idx, str_idx);
+            let eq = k_is_def_eq(inferred, expected, depth, top, nat_idx, str_idx);
+            assert_eq!(eq, 1);
+            1,
+        },
+      _ =>
+        -- Non-lambda: infer + isDefEq
+        let inferred = k_infer(e, types, env, depth, top, nat_idx, str_idx);
+        let eq = k_is_def_eq(inferred, expected, depth, top, nat_idx, str_idx);
+        assert_eq!(eq, 1);
+        1,
+    }
+  }
+
   -- Ensure a type expression evaluates to a Sort, returning the level
   fn k_ensure_sort(e: KExpr, types: KValList, env: KValEnv, depth: [G; 8], top: KConstList, nat_idx: [G; 8], str_idx: [G; 8]) -> KLevel {
     let ty = k_infer(e, types, env, depth, top, nat_idx, str_idx);
@@ -860,10 +918,6 @@ def kernel := ⟦
         },
     }
   }
-
-  -- ============================================================================
-  -- Debug helpers
-  -- ============================================================================
 
   -- ============================================================================
   -- Proof irrelevance helpers
@@ -1059,8 +1113,7 @@ def kernel := ⟦
                         let eta_res = try_eta_struct(a_whnf, b_whnf, depth, top, nat_idx, str_idx);
                         match eta_res {
                           1 => 1,
-                          0 =>
-                            0,
+                          0 => 0,
                         },
                       1 => 1,
                     },
@@ -1072,8 +1125,7 @@ def kernel := ⟦
                     let eta_res = try_eta_struct(a_whnf, b_whnf, depth, top, nat_idx, str_idx);
                     match eta_res {
                       1 => 1,
-                      0 =>
-                        0,
+                      0 => 0,
                     },
                   1 => 1,
                 },
@@ -1188,7 +1240,8 @@ def kernel := ⟦
               1 =>
                 let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
                 match lvls_eq {
-                  1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                  1 =>
+                    k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                   0 => 0,
                 },
               0 =>
@@ -1393,25 +1446,19 @@ def kernel := ⟦
       KConstantInfo.Defn(_, &ty, &value, _, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
-        let val_type = k_infer(value, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        let eq = k_is_def_eq(val_type, ty_val, [0; 8], top, nat_idx, str_idx);
-        assert_eq!(eq, 1);
+        let _chk = k_check(value, ty_val, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
         1,
 
       KConstantInfo.Thm(_, &ty, &value) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
-        let val_type = k_infer(value, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        let eq = k_is_def_eq(val_type, ty_val, [0; 8], top, nat_idx, str_idx);
-        assert_eq!(eq, 1);
+        let _chk = k_check(value, ty_val, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
         1,
 
       KConstantInfo.Opaque(_, &ty, &value, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
-        let val_type = k_infer(value, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        let eq = k_is_def_eq(val_type, ty_val, [0; 8], top, nat_idx, str_idx);
-        assert_eq!(eq, 1);
+        let _chk = k_check(value, ty_val, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
         1,
 
       KConstantInfo.Quot(_, &ty, _) =>
@@ -1429,6 +1476,13 @@ def kernel := ⟦
       KConstantInfo.Rec(_, &ty, _, _, _, _, _, _, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
         1,
+    }
+  }
+
+  fn k_const_list_length(list: KConstList) -> [G; 8] {
+    match list {
+      KConstList.Nil => [0; 8],
+      KConstList.Cons(_, &rest) => relaxed_u64_succ(k_const_list_length(rest)),
     }
   }
 
