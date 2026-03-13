@@ -69,7 +69,8 @@ def kernelTypes := ⟦
     Ctor([G; 8], &KLevelList, [G; 8], &KValList),
     FVar([G; 8], &KValList),
     Const([G; 8], &KLevelList, &KValList),
-    Proj([G; 8], [G; 8], &KVal, &KValList)
+    Proj([G; 8], [G; 8], &KVal, &KValList),
+    Thunk(&KExpr, &KValEnv)
   }
 
   -- Value environment (de Bruijn indexed, front = most recent binder)
