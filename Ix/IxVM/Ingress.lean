@@ -377,7 +377,8 @@ def ingress := ⟦
     constant: Constant,
     all_addrs: AddressList,
     all_consts: ConstantList,
-    blobs: BlobList
+    blobs: BlobList,
+    self_pos: [G; 8]
   ) -> ConvertInput {
     match constant {
       Constant.Mk(info, &sharing, &refs, &univs) =>
@@ -412,8 +413,9 @@ def ingress := ⟦
               Constant.Mk(block_info, _, _, _) =>
                 match block_info {
                   ConstantInfo.Muts(&members) =>
-                    let num_members = count_mut_const_list_(members);
-                    let recur_idxs = build_recur_idxs(block_addr, num_members, [0; 8], all_consts);
+                    -- Standalone recursors have mut_ctx = {self: 0}, so Expr.Rec(0) = self.
+                    -- Use self_pos as recur_idxs[0] instead of the block's member mapping.
+                    let recur_idxs = U64List.Cons(self_pos, store(U64List.Nil));
                     let rule_ctor_idxs = build_member_rule_ctor_idxs(block_addr, members, [0; 8], all_consts);
                     let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(recur_idxs), store(lit_vals), store(univs));
                     ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, store(rule_ctor_idxs))),
@@ -528,11 +530,12 @@ def ingress := ⟦
 
   -- Build ConvertInputList from all constants, skipping Muts blocks
   -- (Muts are containers accessed via projection constants)
-  fn build_convert_input_list(
+  fn build_convert_input_list_go(
     consts: ConstantList,
     all_addrs: AddressList,
     all_consts: ConstantList,
-    blobs: BlobList
+    blobs: BlobList,
+    pos: [G; 8]
   ) -> ConvertInputList {
     match consts {
       ConstantList.Nil => ConvertInputList.Nil,
@@ -541,13 +544,22 @@ def ingress := ⟦
           Constant.Mk(info, _, _, _) =>
             match info {
               ConstantInfo.Muts(_) =>
-                build_convert_input_list(rest, all_addrs, all_consts, blobs),
+                build_convert_input_list_go(rest, all_addrs, all_consts, blobs, pos),
               _ =>
-                let input = build_convert_input(c, all_addrs, all_consts, blobs);
-                ConvertInputList.Cons(store(input), store(build_convert_input_list(rest, all_addrs, all_consts, blobs))),
+                let input = build_convert_input(c, all_addrs, all_consts, blobs, pos);
+                ConvertInputList.Cons(store(input), store(build_convert_input_list_go(rest, all_addrs, all_consts, blobs, relaxed_u64_succ(pos)))),
             },
         },
     }
+  }
+
+  fn build_convert_input_list(
+    consts: ConstantList,
+    all_addrs: AddressList,
+    all_consts: ConstantList,
+    blobs: BlobList
+  ) -> ConvertInputList {
+    build_convert_input_list_go(consts, all_addrs, all_consts, blobs, [0; 8])
   }
 
   -- Check if an address is already in a list
