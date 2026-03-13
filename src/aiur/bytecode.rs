@@ -57,6 +57,7 @@ pub enum Op {
   U8And(ValIdx, ValIdx),
   U8Or(ValIdx, ValIdx),
   U8LessThan(ValIdx, ValIdx),
+  U32LessThan(ValIdx, ValIdx),
   Debug(String, Option<Vec<ValIdx>>),
 }
 

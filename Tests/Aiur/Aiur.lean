@@ -219,6 +219,10 @@ def toplevel := ⟦
     u8_or(i, j)
   }
 
+  fn u32_less_than_function(x: G, y: G) -> G {
+    u32_less_than(x, y)
+  }
+
   fn fold_matrix_sum(m: [[G; 2]; 2]) -> G {
     fold(0 .. 2, 0, |acc_outer, @i|
       fold(0 .. 2, acc_outer, |acc_inner, @j|
@@ -270,6 +274,11 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `u8_and_function #[45, 131] #[1],
     .noIO `u8_or_function #[45, 131] #[175],
     .noIO `fold_matrix_sum #[1, 2, 3, 4] #[10],
+    { AiurTestCase.noIO `u32_less_than_function #[300, 500] #[1] with label := "u32_less_than(300,500)" },
+    { AiurTestCase.noIO `u32_less_than_function #[500, 300] #[0] with label := "u32_less_than(500,300)" },
+    { AiurTestCase.noIO `u32_less_than_function #[500, 500] #[0] with label := "u32_less_than(500,500)" },
+    { AiurTestCase.noIO `u32_less_than_function #[0, 1] #[1] with label := "u32_less_than(0,1)" },
+    { AiurTestCase.noIO `u32_less_than_function #[0, 0] #[0] with label := "u32_less_than(0,0)" },
   ]
 
 end
