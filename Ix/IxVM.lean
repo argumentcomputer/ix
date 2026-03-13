@@ -36,10 +36,9 @@ def entrypoints := ⟦
     let k_consts = ingress(target_addr);
     -- Discover primitive type indices
     let nat_idx = find_nat_idx(k_consts, k_consts, [0; 8]);
-    dbg!("nat_idx found", nat_idx);
     -- String is not in Nat.add_comm's deps; use a sentinel value
     let str_idx = [255, 255, 255, 255, 255, 255, 255, 255];
-    let _result = k_check_all(k_consts, k_consts, nat_idx, str_idx);
+    let _result = k_check_all_go(k_consts, k_consts, nat_idx, str_idx, [0; 8]);
     ()
   }
 
