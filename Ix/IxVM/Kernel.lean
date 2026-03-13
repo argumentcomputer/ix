@@ -1441,9 +1441,6 @@ def kernel := ⟦
     }
   }
 
-  fn k_check_all(consts: KConstList, top: KConstList, nat_idx: [G; 8], str_idx: [G; 8]) -> G {
-    k_check_all_go(consts, top, nat_idx, str_idx, [0; 8])
-  }
 
   -- ============================================================================
   -- Primitive type discovery

@@ -553,15 +553,6 @@ def ingress := ⟦
     }
   }
 
-  fn build_convert_input_list(
-    consts: ConstantList,
-    all_addrs: AddressList,
-    all_consts: ConstantList,
-    blobs: BlobList
-  ) -> ConvertInputList {
-    build_convert_input_list_go(consts, all_addrs, all_consts, blobs, [0; 8])
-  }
-
   -- Check if an address is already in a list
   fn address_in_list(addr: [G; 32], list: AddressList) -> G {
     match list {
@@ -689,7 +680,7 @@ def ingress := ⟦
     -- Filter out Muts blocks so positional indices match the kernel constant list
     let kernel_addrs = filter_muts_addrs(all_consts, all_addrs);
     let kernel_consts = filter_muts_consts(all_consts);
-    let inputs = build_convert_input_list(kernel_consts, kernel_addrs, kernel_consts, blobs);
+    let inputs = build_convert_input_list_go(kernel_consts, kernel_addrs, kernel_consts, blobs, [0; 8]);
     convert_all(inputs)
   }
 ⟧
