@@ -50,6 +50,7 @@ inductive ConvertError where
   | missingMemberAddr (memberIdx : Nat) (numMembers : Nat)
   | unresolvableCtxAddr (addr : Address)
   | missingName (nameAddr : Address)
+  | univOutOfBounds (univIdx : UInt64) (univsSize : Nat)
 
 instance : ToString ConvertError where
   toString
@@ -59,6 +60,7 @@ instance : ToString ConvertError where
     | .missingMemberAddr idx n => s!"no address for member {idx} (numMembers={n})"
     | .unresolvableCtxAddr addr => s!"unresolvable ctx address {addr}"
     | .missingName addr => s!"missing name for address {addr}"
+    | .univOutOfBounds idx sz => s!"univ index {idx} out of bounds (univs.size={sz})"
 
 abbrev ConvertM (m : MetaMode) := ReaderT (ConvertEnv m) (StateT (ConvertState m) (ExceptT ConvertError Id))
 
@@ -78,10 +80,13 @@ def ConvertM.runWith (env : ConvertEnv m) (st : ConvertState m) (x : ConvertM m 
 
 def resolveUnivs (m : MetaMode) (idxs : Array UInt64) : ConvertM m (Array (Level m)) := do
   let ctx ← read
-  return idxs.map fun i =>
-    if h : i.toNat < ctx.univs.size
-    then convertUniv m ctx.levelParamNames ctx.univs[i.toNat]
-    else .zero
+  let mut result := #[]
+  for i in idxs do
+    if h : i.toNat < ctx.univs.size then
+      result := result.push (convertUniv m ctx.levelParamNames ctx.univs[i.toNat])
+    else
+      throw (.univOutOfBounds i ctx.univs.size)
+  return result
 
 def decodeBlobNat (bytes : ByteArray) : Nat := Id.run do
   let mut acc := 0
@@ -157,7 +162,7 @@ partial def convertExpr (m : MetaMode) (expr : Ixon.Expr) (metaIdx : Option UInt
     let name ← match node with
       | some (.ref nameAddr) => resolveName nameAddr
       | _ => pure default
-    pure (.const addr levels name)
+    pure (.const (MetaId.mk m addr name) levels)
   | .recur recIdx univIdxs => do
     let ctx ← read
     let levels ← resolveUnivs m univIdxs
@@ -167,7 +172,7 @@ partial def convertExpr (m : MetaMode) (expr : Ixon.Expr) (metaIdx : Option UInt
     let name ← match node with
       | some (.ref nameAddr) => resolveName nameAddr
       | _ => pure default
-    pure (.const addr levels name)
+    pure (.const (MetaId.mk m addr name) levels)
   | .prj typeRefIdx fieldIdx struct => do
     let ctx ← read
     let typeAddr ← match ctx.refs[typeRefIdx.toNat]? with
@@ -179,7 +184,7 @@ partial def convertExpr (m : MetaMode) (expr : Ixon.Expr) (metaIdx : Option UInt
         pure (some child, n)
       | _ => pure (none, default)
     let s ← convertExpr m struct structChild
-    pure (.proj typeAddr fieldIdx.toNat s typeName)
+    pure (.proj (MetaId.mk m typeAddr typeName) fieldIdx.toNat s)
   | .str blobRefIdx => do
     let ctx ← read
     if h : blobRefIdx.toNat < ctx.refs.size then
@@ -327,41 +332,47 @@ def mkLevelParams (m : MetaMode) (names : Std.HashMap Address Ix.Name)
   | .anon => ()
   | .meta => lvlAddrs.map fun addr => names.getD addr default
 
-/-- Resolve an array of name-hash addresses to a MetaField array of names. -/
+/-- Resolve an array of name-hash addresses to MetaField names. -/
 def resolveMetaNames (m : MetaMode) (names : Std.HashMap Address Ix.Name)
-    (addrs : Array Address) : MetaField m (Array Ix.Name) :=
-  match m with | .anon => () | .meta => addrs.map fun a => names.getD a default
+    (addrs : Array Address) : Array (MetaField m Ix.Name) :=
+  match m with
+  | .anon => addrs.map fun _ => ()
+  | .meta => addrs.map fun a => names.getD a default
 
 /-- Resolve a single name-hash address to a MetaField name. -/
 def resolveMetaName (m : MetaMode) (names : Std.HashMap Address Ix.Name)
     (addr : Address) : MetaField m Ix.Name :=
   match m with | .anon => () | .meta => names.getD addr default
 
+/-- Build an array of MetaIds from parallel arrays of addresses and resolved names. -/
+def mkMetaIds (m : MetaMode) (addrs : Array Address) (metaNames : Array (MetaField m Ix.Name))
+    : Array (MetaId m) :=
+  Array.ofFn (n := min addrs.size metaNames.size) fun i =>
+    MetaId.mk m (addrs[i.val]!) (metaNames[i.val]!)
+
 /-- Extract rule root indices from ConstantMeta (recr only). -/
 def metaRuleRoots : ConstantMeta → Array UInt64
   | .recr _ _ _ _ _ _ _ rs => rs
   | _ => #[]
 
-def convertRule (m : MetaMode) (rule : Ixon.RecursorRule) (ctorAddr : Address)
-    (ctorName : MetaField m Ix.Name := default)
+def convertRule (m : MetaMode) (rule : Ixon.RecursorRule) (ctorId : MetaId m)
     (ruleRoot : Option UInt64 := none) :
     ConvertM m (Ix.Kernel.RecursorRule m) := do
   let rhs ← convertExpr m rule.rhs ruleRoot
-  return { ctor := ctorAddr, ctorName, nfields := rule.fields.toNat, rhs }
+  return { ctor := ctorId, nfields := rule.fields.toNat, rhs }
 
 def convertDefinition (m : MetaMode) (d : Ixon.Definition)
-    (hints : ReducibilityHints) (all : Array Address)
+    (hints : ReducibilityHints) (all : Array (MetaId m))
     (name : MetaField m Ix.Name := default)
     (levelParams : MetaField m (Array Ix.Name) := default)
-    (cMeta : ConstantMeta := .empty)
-    (allNames : MetaField m (Array Ix.Name) := default) : ConvertM m (Ix.Kernel.ConstantInfo m) := do
+    (cMeta : ConstantMeta := .empty) : ConvertM m (Ix.Kernel.ConstantInfo m) := do
   let typ ← convertExpr m d.typ (metaTypeRoot? cMeta)
   let value ← convertExpr m d.value (metaValueRoot? cMeta)
   let cv := mkConstantVal m d.lvls typ name levelParams
   match d.kind with
-  | .defn => return .defnInfo { toConstantVal := cv, value, hints, safety := convertSafety d.safety, all, allNames }
-  | .opaq => return .opaqueInfo { toConstantVal := cv, value, isUnsafe := d.safety == .unsaf, all, allNames }
-  | .thm => return .thmInfo { toConstantVal := cv, value, all, allNames }
+  | .defn => return .defnInfo { toConstantVal := cv, value, hints, safety := convertSafety d.safety, all }
+  | .opaq => return .opaqueInfo { toConstantVal := cv, value, isUnsafe := d.safety == .unsaf, all }
+  | .thm => return .thmInfo { toConstantVal := cv, value, all }
 
 def convertAxiom (m : MetaMode) (a : Ixon.Axiom)
     (name : MetaField m Ix.Name := default)
@@ -380,56 +391,49 @@ def convertQuotient (m : MetaMode) (q : Ixon.Quotient)
   return .quotInfo { toConstantVal := cv, kind := convertQuotKind q.kind }
 
 def convertInductive (m : MetaMode) (ind : Ixon.Inductive)
-    (ctorAddrs all : Array Address)
+    (ctors all : Array (MetaId m))
     (name : MetaField m Ix.Name := default)
     (levelParams : MetaField m (Array Ix.Name) := default)
-    (cMeta : ConstantMeta := .empty)
-    (allNames : MetaField m (Array Ix.Name) := default)
-    (ctorNames : MetaField m (Array Ix.Name) := default) : ConvertM m (Ix.Kernel.ConstantInfo m) := do
+    (cMeta : ConstantMeta := .empty) : ConvertM m (Ix.Kernel.ConstantInfo m) := do
   let typ ← convertExpr m ind.typ (metaTypeRoot? cMeta)
   let cv := mkConstantVal m ind.lvls typ name levelParams
   let v : Ix.Kernel.InductiveVal m :=
     { toConstantVal := cv, numParams := ind.params.toNat,
-      numIndices := ind.indices.toNat, all, ctors := ctorAddrs, allNames, ctorNames,
+      numIndices := ind.indices.toNat, all, ctors,
       numNested := ind.nested.toNat, isRec := ind.recr, isUnsafe := ind.isUnsafe,
       isReflexive := ind.refl }
   return .inductInfo v
 
 def convertConstructor (m : MetaMode) (c : Ixon.Constructor)
-    (inductAddr : Address)
+    (inductId : MetaId m)
     (name : MetaField m Ix.Name := default)
     (levelParams : MetaField m (Array Ix.Name) := default)
-    (cMeta : ConstantMeta := .empty)
-    (inductName : MetaField m Ix.Name := default) : ConvertM m (Ix.Kernel.ConstantInfo m) := do
+    (cMeta : ConstantMeta := .empty) : ConvertM m (Ix.Kernel.ConstantInfo m) := do
   let typ ← convertExpr m c.typ (metaTypeRoot? cMeta)
   let cv := mkConstantVal m c.lvls typ name levelParams
   let v : Ix.Kernel.ConstructorVal m :=
-    { toConstantVal := cv, induct := inductAddr, inductName,
+    { toConstantVal := cv, induct := inductId,
       cidx := c.cidx.toNat, numParams := c.params.toNat, numFields := c.fields.toNat,
       isUnsafe := c.isUnsafe }
   return .ctorInfo v
 
 def convertRecursor (m : MetaMode) (r : Ixon.Recursor)
-    (all ruleCtorAddrs : Array Address)
+    (all ruleCtorIds : Array (MetaId m))
     (name : MetaField m Ix.Name := default)
     (levelParams : MetaField m (Array Ix.Name) := default)
     (cMeta : ConstantMeta := .empty)
-    (allNames : MetaField m (Array Ix.Name) := default)
-    (ruleCtorNames : Array (MetaField m Ix.Name) := #[])
-    (inductBlock : Array Address := #[])
-    (inductNames : MetaField m (Array (Array Ix.Name)) := default)
+    (inductBlock : Array (MetaId m) := #[])
     : ConvertM m (Ix.Kernel.ConstantInfo m) := do
   let typ ← convertExpr m r.typ (metaTypeRoot? cMeta)
   let cv := mkConstantVal m r.lvls typ name levelParams
   let ruleRoots := (metaRuleRoots cMeta)
   let mut rules : Array (Ix.Kernel.RecursorRule m) := #[]
   for i in [:r.rules.size] do
-    let ctorAddr := if h : i < ruleCtorAddrs.size then ruleCtorAddrs[i] else default
-    let ctorName := if h : i < ruleCtorNames.size then ruleCtorNames[i] else default
+    let ctorId := if h : i < ruleCtorIds.size then ruleCtorIds[i] else default
     let ruleRoot := if h : i < ruleRoots.size then some ruleRoots[i] else none
-    rules := rules.push (← convertRule m r.rules[i]! ctorAddr ctorName ruleRoot)
+    rules := rules.push (← convertRule m r.rules[i]! ctorId ruleRoot)
   let v : Ix.Kernel.RecursorVal m :=
-    { toConstantVal := cv, all, allNames, inductBlock, inductNames,
+    { toConstantVal := cv, all, inductBlock,
       numParams := r.params.toNat, numIndices := r.indices.toNat,
       numMotives := r.motives.toNat, numMinors := r.minors.toNat,
       rules, k := r.k, isUnsafe := r.isUnsafe }
@@ -611,9 +615,13 @@ def convertProjAction (m : MetaMode)
       match members[prj.idx.toNat] with
       | .indc ind =>
         let ctorAs := bIdx.ctorAddrs.getD prj.idx #[]
-        let allNs := resolveMetaNames m names (match cMeta with | .indc _ _ _ a _ _ _ => a | _ => #[])
-        let ctorNs := resolveMetaNames m names (match cMeta with | .indc _ _ c _ _ _ _ => c | _ => #[])
-        .ok (convertInductive m ind ctorAs bIdx.allInductAddrs name levelParams cMeta allNs ctorNs)
+        let allNameAddrs := match cMeta with | .indc _ _ _ a _ _ _ => a | _ => #[]
+        let ctorNameAddrs := match cMeta with | .indc _ _ c _ _ _ _ => c | _ => #[]
+        let allNs := resolveMetaNames m names allNameAddrs
+        let ctorNs := resolveMetaNames m names ctorNameAddrs
+        let allIds := mkMetaIds m bIdx.allInductAddrs allNs
+        let ctorIds := mkMetaIds m ctorAs ctorNs
+        .ok (convertInductive m ind ctorIds allIds name levelParams cMeta)
       | _ => .error s!"iPrj at {addr} does not point to an inductive"
     else .error s!"iPrj index out of bounds at {addr}"
   | .cPrj prj =>
@@ -624,7 +632,8 @@ def convertProjAction (m : MetaMode)
           let ctor := ind.ctors[prj.cidx.toNat]
           let inductAddr := bIdx.inductAddrs.getD prj.idx default
           let inductNm := resolveMetaName m names (match cMeta with | .ctor _ _ i _ _ => i | _ => default)
-          .ok (convertConstructor m ctor inductAddr name levelParams cMeta inductNm)
+          let inductId := MetaId.mk m inductAddr inductNm
+          .ok (convertConstructor m ctor inductId name levelParams cMeta)
         else .error s!"cPrj cidx out of bounds at {addr}"
       | _ => .error s!"cPrj at {addr} does not point to an inductive"
     else .error s!"cPrj index out of bounds at {addr}"
@@ -634,22 +643,27 @@ def convertProjAction (m : MetaMode)
       | .recr r =>
         -- Extract the major inductive from the Ixon type expression (metadata-free).
         let skip := r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat
-        let (inductBlock, ruleCtorAs) :=
+        let (inductBlockAddrs, ruleCtorAs) :=
           match ixonGetMajorRef blockConst.sharing r.typ skip with
           | some refIdx =>
             if h2 : refIdx.toNat < blockConst.refs.size then
               indBlockIdx.get blockConst.refs[refIdx.toNat]
             else (bIdx.allInductAddrs, bIdx.allCtorAddrsInOrder)
           | none => (bIdx.allInductAddrs, bIdx.allCtorAddrsInOrder)
-        let inductNs : MetaField m (Array (Array Ix.Name)) := match m with
-          | .anon => ()
-          | .meta => inductBlock.map fun a => addrToNames.getD a #[]
+        let inductBlockNs : Array (MetaField m Ix.Name) := match m with
+          | .anon => inductBlockAddrs.map fun _ => ()
+          | .meta => inductBlockAddrs.map fun a =>
+            (addrToNames.getD a #[])[0]?.getD default
         let ruleCtorNs : Array (MetaField m Ix.Name) := match m with
           | .anon => ruleCtorAs.map fun _ => ()
           | .meta => ruleCtorAs.map fun a =>
             (addrToNames.getD a #[])[0]?.getD default
-        let allNs := resolveMetaNames m names (match cMeta with | .recr _ _ _ a _ _ _ _ => a | _ => #[])
-        .ok (convertRecursor m r bIdx.allInductAddrs ruleCtorAs name levelParams cMeta allNs ruleCtorNs inductBlock inductNs)
+        let allNameAddrs := match cMeta with | .recr _ _ _ a _ _ _ _ => a | _ => #[]
+        let allNs := resolveMetaNames m names allNameAddrs
+        let allIds := mkMetaIds m bIdx.allInductAddrs allNs
+        let ruleCtorIds := mkMetaIds m ruleCtorAs ruleCtorNs
+        let inductBlockIds := mkMetaIds m inductBlockAddrs inductBlockNs
+        .ok (convertRecursor m r allIds ruleCtorIds name levelParams cMeta inductBlockIds)
       | _ => .error s!"rPrj at {addr} does not point to a recursor"
     else .error s!"rPrj index out of bounds at {addr}"
   | .dPrj prj =>
@@ -659,8 +673,10 @@ def convertProjAction (m : MetaMode)
         let hints := match cMeta with
           | .defn _ _ h _ _ _ _ _ => convertHints h
           | _ => .opaque
-        let allNs := resolveMetaNames m names (match cMeta with | .defn _ _ _ a _ _ _ _ => a | _ => #[])
-        .ok (convertDefinition m d hints bIdx.allInductAddrs name levelParams cMeta allNs)
+        let allNameAddrs := match cMeta with | .defn _ _ _ a _ _ _ _ => a | _ => #[]
+        let allNs := resolveMetaNames m names allNameAddrs
+        let allIds := mkMetaIds m bIdx.allInductAddrs allNs
+        .ok (convertDefinition m d hints allIds name levelParams cMeta)
       | _ => .error s!"dPrj at {addr} does not point to a definition"
     else .error s!"dPrj index out of bounds at {addr}"
   | _ => .error s!"not a projection at {addr}"
@@ -718,9 +734,10 @@ def convertStandalone (m : MetaMode) (hashToAddr : Std.HashMap Address Address)
     let allHashAddrs := match cMeta with
       | .defn _ _ _ a _ _ _ _ => a
       | _ => #[]
-    let all := allHashAddrs.map fun x => hashToAddr.getD x x
-    let allNames := resolveMetaNames m ixonEnv.names allHashAddrs
-    let ci ← (ConvertM.run cEnv (convertDefinition m d hints all entry.name lps cMeta allNames)).mapError toString
+    let allAddrs := allHashAddrs.map fun x => hashToAddr.getD x x
+    let allNs := resolveMetaNames m ixonEnv.names allHashAddrs
+    let allIds := mkMetaIds m allAddrs allNs
+    let ci ← (ConvertM.run cEnv (convertDefinition m d hints allIds entry.name lps cMeta)).mapError toString
     return some ci
   | .axio a =>
     let ci ← (ConvertM.run cEnv (convertAxiom m a entry.name lps cMeta)).mapError toString
@@ -733,14 +750,14 @@ def convertStandalone (m : MetaMode) (hashToAddr : Std.HashMap Address Address)
       | .recr _ _ rules all _ _ _ _ => (all, rules)
       | _ => (#[entry.addr], #[])
     let (metaAll, metaRules) := pair
-    let all := metaAll.map fun x => hashToAddr.getD x x
+    let allAddrs := metaAll.map fun x => hashToAddr.getD x x
     let ruleCtorAddrs := metaRules.map fun x => hashToAddr.getD x x
-    let allNames := resolveMetaNames m ixonEnv.names metaAll
-    let ruleCtorNames := metaRules.map fun x => resolveMetaName m ixonEnv.names x
-    let inductNs : MetaField m (Array (Array Ix.Name)) := match m with
-      | .anon => ()
-      | .meta => metaAll.map fun x => #[ixonEnv.names.getD x default]
-    let ci ← (ConvertM.run cEnv (convertRecursor m r all ruleCtorAddrs entry.name lps cMeta allNames ruleCtorNames (inductBlock := all) (inductNames := inductNs))).mapError toString
+    let allNs := resolveMetaNames m ixonEnv.names metaAll
+    let ruleCtorNs := metaRules.map fun x => resolveMetaName m ixonEnv.names x
+    let allIds := mkMetaIds m allAddrs allNs
+    let ruleCtorIds := mkMetaIds m ruleCtorAddrs ruleCtorNs
+    let inductBlockIds := allIds  -- standalone recursors: inductBlock = all
+    let ci ← (ConvertM.run cEnv (convertRecursor m r allIds ruleCtorIds entry.name lps cMeta inductBlockIds)).mapError toString
     return some ci
   | .muts _ => return none
   | _ => return none  -- projections handled separately
@@ -824,18 +841,18 @@ def convertChunk (m : MetaMode) (hashToAddr : Std.HashMap Address Address)
     Iterates named constants first (with full metadata), then picks up anonymous
     constants not in named. Groups projections by block and parallelizes. -/
 def convertEnv (m : MetaMode) (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
-    : Except String (Ix.Kernel.Env m × Primitives × Bool) :=
+    : Except String (Ix.Kernel.Env m × Primitives m × Bool) :=
   -- Build primitives with quot addresses and name-based lookup for extra addresses
   -- Build primitives: hardcoded addresses + Quot from .quot tags
-  let prims : Primitives := Id.run do
-    let mut p := buildPrimitives
+  let prims : Primitives m := Id.run do
+    let mut p := buildPrimitives m
     for (addr, c) in ixonEnv.consts do
       match c.info with
       | .quot q => match q.kind with
-        | .type => p := { p with quotType := addr }
-        | .ctor => p := { p with quotCtor := addr }
-        | .lift => p := { p with quotLift := addr }
-        | .ind  => p := { p with quotInd := addr }
+        | .type => p := { p with quotType := mkPrimId m "Quot" addr }
+        | .ctor => p := { p with quotCtor := mkPrimId m "Quot.mk" addr }
+        | .lift => p := { p with quotLift := mkPrimId m "Quot.lift" addr }
+        | .ind  => p := { p with quotInd := mkPrimId m "Quot.ind" addr }
       | _ => pure ()
     -- Resolve reduceBool/reduceNat/eagerReduce by name
     let leanNs := Ix.Name.mkStr Ix.Name.mkAnon "Lean"
@@ -846,10 +863,11 @@ def convertEnv (m : MetaMode) (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     let platNs := Ix.Name.mkStr sysNs "Platform"
     let nbName := Ix.Name.mkStr platNs "numBits"
     for (ixName, named) in ixonEnv.named do
-      if ixName == rbName then p := { p with reduceBool := named.addr }
-      else if ixName == rnName then p := { p with reduceNat := named.addr }
-      else if ixName == erName then p := { p with eagerReduce := named.addr }
-      else if ixName == nbName then p := { p with systemPlatformNumBits := named.addr }
+      let mid := MetaId.mk m named.addr (mkMetaName m (some ixName))
+      if ixName == rbName then p := { p with reduceBool := mid }
+      else if ixName == rnName then p := { p with reduceNat := mid }
+      else if ixName == erName then p := { p with eagerReduce := mid }
+      else if ixName == nbName then p := { p with systemPlatformNumBits := mid }
     return p
   let quotInit := Id.run do
     for (_, c) in ixonEnv.consts do
@@ -923,7 +941,7 @@ def convertEnv (m : MetaMode) (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     for task in tasks do
       let (chunkResults, chunkErrors) := task.get
       for (addr, ci) in chunkResults do
-        constants := constants.insert addr ci
+        constants := constants.insert (MetaId.mk m addr ci.cv.name) ci
       allErrors := allErrors ++ chunkErrors
     (constants, allErrors)
   if !allErrors.isEmpty then
@@ -933,11 +951,11 @@ def convertEnv (m : MetaMode) (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     .ok (constants, prims, quotInit)
 
 /-- Convert an Ixon.Env to a Kernel.Env with full metadata. -/
-def convert (ixonEnv : Ixon.Env) : Except String (Ix.Kernel.Env .meta × Primitives × Bool) :=
+def convert (ixonEnv : Ixon.Env) : Except String (Ix.Kernel.Env .meta × Primitives .meta × Bool) :=
   convertEnv .meta ixonEnv
 
 /-- Convert an Ixon.Env to a Kernel.Env without metadata. -/
-def convertAnon (ixonEnv : Ixon.Env) : Except String (Ix.Kernel.Env .anon × Primitives × Bool) :=
+def convertAnon (ixonEnv : Ixon.Env) : Except String (Ix.Kernel.Env .anon × Primitives .anon × Bool) :=
   convertEnv .anon ixonEnv
 
 end Ix.Kernel.Convert

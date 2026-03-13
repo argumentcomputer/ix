@@ -25,26 +25,27 @@ type ExprCache<M> = FxHashMap<blake3::Hash, KExpr<M>>;
 fn convert_level<M: MetaMode>(
   level: &env::Level,
   ctx: &ConvertCtx<'_>,
-) -> KLevel<M> {
+) -> Result<KLevel<M>, String> {
   match level.as_data() {
-    env::LevelData::Zero(_) => KLevel::zero(),
+    env::LevelData::Zero(_) => Ok(KLevel::zero()),
     env::LevelData::Succ(inner, _) => {
-      KLevel::succ(convert_level(inner, ctx))
+      Ok(KLevel::succ(convert_level(inner, ctx)?))
     }
     env::LevelData::Max(a, b, _) => {
-      KLevel::max(convert_level(a, ctx), convert_level(b, ctx))
+      Ok(KLevel::max(convert_level(a, ctx)?, convert_level(b, ctx)?))
     }
     env::LevelData::Imax(a, b, _) => {
-      KLevel::imax(convert_level(a, ctx), convert_level(b, ctx))
+      Ok(KLevel::imax(convert_level(a, ctx)?, convert_level(b, ctx)?))
     }
     env::LevelData::Param(name, _) => {
       let hash = *name.get_hash();
-      let idx = ctx.level_param_map.get(&hash).copied().unwrap_or(0);
-      KLevel::param(idx, M::mk_field(name.clone()))
+      let idx = ctx.level_param_map.get(&hash).copied().ok_or_else(|| {
+        format!("unknown level parameter '{name}' (hash not in level_param_map)")
+      })?;
+      Ok(KLevel::param(idx, M::mk_field(name.clone())))
     }
     env::LevelData::Mvar(name, _) => {
-      // Mvars shouldn't appear in kernel expressions, treat as param 0
-      KLevel::param(0, M::mk_field(name.clone()))
+      Err(format!("unexpected metavariable level '{name}' in kernel expression"))
     }
   }
 }
@@ -54,23 +55,23 @@ fn convert_expr<M: MetaMode>(
   expr: &env::Expr,
   ctx: &ConvertCtx<'_>,
   cache: &mut ExprCache<M>,
-) -> KExpr<M> {
+) -> Result<KExpr<M>, String> {
   // Skip cache for bvars (trivial, no recursion)
   if let env::ExprData::Bvar(n, _) = expr.as_data() {
     let idx = n.to_u64().unwrap_or(0) as usize;
-    return KExpr::bvar(idx, M::Field::<Name>::default());
+    return Ok(KExpr::bvar(idx, M::Field::<Name>::default()));
   }
 
   // Check cache
   let hash = *expr.get_hash();
   if let Some(cached) = cache.get(&hash) {
-    return cached.clone(); // Rc clone = O(1)
+    return Ok(cached.clone()); // Rc clone = O(1)
   }
 
   let result = match expr.as_data() {
     env::ExprData::Bvar(_, _) => unreachable!(),
     env::ExprData::Sort(level, _) => {
-      KExpr::sort(convert_level(level, ctx))
+      KExpr::sort(convert_level(level, ctx)?)
     }
     env::ExprData::Const(name, levels, _) => {
       let h = *name.get_hash();
@@ -80,33 +81,33 @@ fn convert_expr<M: MetaMode>(
         .cloned()
         .unwrap_or_else(|| Address::from_blake3_hash(h));
       let k_levels: Vec<_> =
-        levels.iter().map(|l| convert_level(l, ctx)).collect();
-      KExpr::cnst(addr, k_levels, M::mk_field(name.clone()))
+        levels.iter().map(|l| convert_level(l, ctx)).collect::<Result<_, _>>()?;
+      KExpr::cnst(MetaId::new(addr, M::mk_field(name.clone())), k_levels)
     }
     env::ExprData::App(f, a, _) => {
       KExpr::app(
-        convert_expr(f, ctx, cache),
-        convert_expr(a, ctx, cache),
+        convert_expr(f, ctx, cache)?,
+        convert_expr(a, ctx, cache)?,
       )
     }
     env::ExprData::Lam(name, ty, body, bi, _) => KExpr::lam(
-      convert_expr(ty, ctx, cache),
-      convert_expr(body, ctx, cache),
+      convert_expr(ty, ctx, cache)?,
+      convert_expr(body, ctx, cache)?,
       M::mk_field(name.clone()),
       M::mk_field(bi.clone()),
     ),
     env::ExprData::ForallE(name, ty, body, bi, _) => {
       KExpr::forall_e(
-        convert_expr(ty, ctx, cache),
-        convert_expr(body, ctx, cache),
+        convert_expr(ty, ctx, cache)?,
+        convert_expr(body, ctx, cache)?,
         M::mk_field(name.clone()),
         M::mk_field(bi.clone()),
       )
     }
     env::ExprData::LetE(name, ty, val, body, _, _) => KExpr::let_e(
-      convert_expr(ty, ctx, cache),
-      convert_expr(val, ctx, cache),
-      convert_expr(body, ctx, cache),
+      convert_expr(ty, ctx, cache)?,
+      convert_expr(val, ctx, cache)?,
+      convert_expr(body, ctx, cache)?,
       M::mk_field(name.clone()),
     ),
     env::ExprData::Lit(l, _) => KExpr::lit(l.clone()),
@@ -118,7 +119,7 @@ fn convert_expr<M: MetaMode>(
         .cloned()
         .unwrap_or_else(|| Address::from_blake3_hash(h));
       let idx = idx.to_u64().unwrap_or(0) as usize;
-      KExpr::proj(addr, idx, convert_expr(strct, ctx, cache), M::mk_field(name.clone()))
+      KExpr::proj(MetaId::new(addr, M::mk_field(name.clone())), idx, convert_expr(strct, ctx, cache)?)
     }
     env::ExprData::Fvar(_, _) | env::ExprData::Mvar(_, _) => {
       // Fvars and Mvars shouldn't appear in kernel expressions
@@ -132,7 +133,7 @@ fn convert_expr<M: MetaMode>(
 
   // Insert into cache
   cache.insert(hash, result.clone());
-  result
+  Ok(result)
 }
 
 /// Convert a `env::ConstantVal` to `KConstantVal`.
@@ -140,13 +141,13 @@ fn convert_constant_val<M: MetaMode>(
   cv: &env::ConstantVal,
   ctx: &ConvertCtx<'_>,
   cache: &mut ExprCache<M>,
-) -> KConstantVal<M> {
-  KConstantVal {
+) -> Result<KConstantVal<M>, String> {
+  Ok(KConstantVal {
     num_levels: cv.level_params.len(),
-    typ: convert_expr(&cv.typ, ctx, cache),
+    typ: convert_expr(&cv.typ, ctx, cache)?,
     name: M::mk_field(cv.name.clone()),
     level_params: M::mk_field(cv.level_params.clone()),
-  }
+  })
 }
 
 /// Build a `ConvertCtx` for a constant with given level params and the
@@ -165,22 +166,23 @@ fn make_ctx<'a>(
   }
 }
 
-/// Resolve a Name to an Address using the name→address map.
-fn resolve_name(
+/// Resolve a Name to a MetaId using the name→address map.
+fn resolve_name<M: MetaMode>(
   name: &Name,
   name_to_addr: &FxHashMap<blake3::Hash, Address>,
-) -> Address {
+) -> MetaId<M> {
   let hash = *name.get_hash();
-  name_to_addr
+  let addr = name_to_addr
     .get(&hash)
     .cloned()
-    .unwrap_or_else(|| Address::from_blake3_hash(hash))
+    .unwrap_or_else(|| Address::from_blake3_hash(hash));
+  MetaId::new(addr, M::mk_field(name.clone()))
 }
 
 /// Convert an entire `env::Env` to a `(KEnv, Primitives, quot_init)`.
 pub fn convert_env<M: MetaMode>(
   env: &env::Env,
-) -> Result<(KEnv<M>, Primitives, bool), String> {
+) -> Result<(KEnv<M>, Primitives<M>, bool), String> {
   // Phase 1: Build name → address map
   let mut name_to_addr: FxHashMap<blake3::Hash, Address> =
     FxHashMap::default();
@@ -194,7 +196,7 @@ pub fn convert_env<M: MetaMode>(
   let mut quot_init = false;
 
   for (name, ci) in env {
-    let addr = resolve_name(name, &name_to_addr);
+    let id: MetaId<M> = resolve_name(name, &name_to_addr);
     let level_params = ci.cnst_val().level_params.clone();
     let ctx = make_ctx(&level_params, &name_to_addr);
 
@@ -207,14 +209,14 @@ pub fn convert_env<M: MetaMode>(
     let kci = match ci {
       ConstantInfo::AxiomInfo(v) => {
         KConstantInfo::Axiom(KAxiomVal {
-          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
           is_unsafe: v.is_unsafe,
         })
       }
       ConstantInfo::DefnInfo(v) => {
         KConstantInfo::Definition(KDefinitionVal {
-          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
-          value: convert_expr(&v.value, &ctx, &mut cache),
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
+          value: convert_expr(&v.value, &ctx, &mut cache)?,
           hints: v.hints,
           safety: v.safety,
           all: v
@@ -226,8 +228,8 @@ pub fn convert_env<M: MetaMode>(
       }
       ConstantInfo::ThmInfo(v) => {
         KConstantInfo::Theorem(KTheoremVal {
-          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
-          value: convert_expr(&v.value, &ctx, &mut cache),
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
+          value: convert_expr(&v.value, &ctx, &mut cache)?,
           all: v
             .all
             .iter()
@@ -237,8 +239,8 @@ pub fn convert_env<M: MetaMode>(
       }
       ConstantInfo::OpaqueInfo(v) => {
         KConstantInfo::Opaque(KOpaqueVal {
-          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
-          value: convert_expr(&v.value, &ctx, &mut cache),
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
+          value: convert_expr(&v.value, &ctx, &mut cache)?,
           is_unsafe: v.is_unsafe,
           all: v
             .all
@@ -250,13 +252,13 @@ pub fn convert_env<M: MetaMode>(
       ConstantInfo::QuotInfo(v) => {
         quot_init = true;
         KConstantInfo::Quotient(KQuotVal {
-          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
           kind: v.kind,
         })
       }
       ConstantInfo::InductInfo(v) => {
         KConstantInfo::Inductive(KInductiveVal {
-          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
           num_params: v.num_params.to_u64().unwrap_or(0) as usize,
           num_indices: v.num_indices.to_u64().unwrap_or(0) as usize,
           all: v
@@ -277,7 +279,7 @@ pub fn convert_env<M: MetaMode>(
       }
       ConstantInfo::CtorInfo(v) => {
         KConstantInfo::Constructor(KConstructorVal {
-          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
           induct: resolve_name(&v.induct, &name_to_addr),
           cidx: v.cidx.to_u64().unwrap_or(0) as usize,
           num_params: v.num_params.to_u64().unwrap_or(0) as usize,
@@ -286,8 +288,17 @@ pub fn convert_env<M: MetaMode>(
         })
       }
       ConstantInfo::RecInfo(v) => {
+        let rules: Result<Vec<_>, String> = v
+          .rules
+          .iter()
+          .map(|r| Ok(KRecursorRule {
+            ctor: resolve_name(&r.ctor, &name_to_addr),
+            nfields: r.n_fields.to_u64().unwrap_or(0) as usize,
+            rhs: convert_expr(&r.rhs, &ctx, &mut cache)?,
+          }))
+          .collect();
         KConstantInfo::Recursor(KRecursorVal {
-          cv: convert_constant_val(&v.cnst, &ctx, &mut cache),
+          cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
           all: v
             .all
             .iter()
@@ -297,22 +308,14 @@ pub fn convert_env<M: MetaMode>(
           num_indices: v.num_indices.to_u64().unwrap_or(0) as usize,
           num_motives: v.num_motives.to_u64().unwrap_or(0) as usize,
           num_minors: v.num_minors.to_u64().unwrap_or(0) as usize,
-          rules: v
-            .rules
-            .iter()
-            .map(|r| KRecursorRule {
-              ctor: resolve_name(&r.ctor, &name_to_addr),
-              nfields: r.n_fields.to_u64().unwrap_or(0) as usize,
-              rhs: convert_expr(&r.rhs, &ctx, &mut cache),
-            })
-            .collect(),
+          rules: rules?,
           k: v.k,
           is_unsafe: v.is_unsafe,
         })
       }
     };
 
-    kenv.insert(addr, kci);
+    kenv.insert(id, kci);
   }
 
   // Phase 3: Build Primitives
@@ -322,16 +325,17 @@ pub fn convert_env<M: MetaMode>(
 }
 
 /// Build the Primitives struct by resolving known names to addresses.
-fn build_primitives(
+fn build_primitives<M: MetaMode>(
   _env: &env::Env,
   name_to_addr: &FxHashMap<blake3::Hash, Address>,
-) -> Primitives {
+) -> Primitives<M> {
   let mut prims = Primitives::default();
 
-  let lookup = |s: &str| -> Option<Address> {
+  let lookup = |s: &str| -> Option<MetaId<M>> {
     let name = str_to_name(s);
     let hash = *name.get_hash();
-    name_to_addr.get(&hash).cloned()
+    let addr = name_to_addr.get(&hash).cloned()?;
+    Some(MetaId::new(addr, M::mk_field(name)))
   };
 
   prims.nat = lookup("Nat");
@@ -414,14 +418,6 @@ pub fn verify_conversion<M: MetaMode>(
   env: &env::Env,
   kenv: &KEnv<M>,
 ) -> Vec<(String, String)> {
-  // Build name→addr map (same as convert_env phase 1)
-  let mut name_to_addr: FxHashMap<blake3::Hash, Address> =
-    FxHashMap::default();
-  for (name, ci) in env {
-    let addr = Address::from_blake3_hash(ci.get_hash());
-    name_to_addr.insert(*name.get_hash(), addr);
-  }
-  let name_to_addr = &name_to_addr;
   let mut errors = Vec::new();
 
   let nat = |n: &crate::lean::nat::Nat| -> usize {
@@ -430,8 +426,8 @@ pub fn verify_conversion<M: MetaMode>(
 
   for (name, ci) in env {
     let pretty = name.pretty();
-    let addr = resolve_name(name, name_to_addr);
-    let kci = match kenv.get(&addr) {
+    let addr = Address::from_blake3_hash(ci.get_hash());
+    let kci = match kenv.find_by_addr(&addr) {
       Some(kci) => kci,
       None => {
         errors.push((pretty, "missing from kenv".to_string()));

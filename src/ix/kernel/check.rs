@@ -10,33 +10,33 @@ use super::error::TcError;
 use super::helpers;
 use super::level;
 use super::tc::{TcResult, TypeChecker};
-use super::types::{MetaMode, *};
+use super::types::{MetaId, MetaMode, *};
 use super::value::*;
 
 impl<M: MetaMode> TypeChecker<'_, M> {
-  /// Type-check a single constant by address.
-  pub fn check_const(&mut self, addr: &Address) -> TcResult<(), M> {
-    let ci = self.deref_const(addr)?.clone();
+  /// Type-check a single constant by MetaId.
+  pub fn check_const(&mut self, id: &MetaId<M>) -> TcResult<(), M> {
+    let ci = self.deref_const(id)?.clone();
     let decl_safety = ci.safety();
 
     self.with_reset_ctx(|tc| {
       tc.reset_caches();
       tc.with_safety(decl_safety, |tc| {
-        tc.check_const_inner(addr, &ci)
+        tc.check_const_inner(id, &ci)
       })
     })
   }
 
   fn check_const_inner(
     &mut self,
-    addr: &Address,
+    id: &MetaId<M>,
     ci: &KConstantInfo<M>,
   ) -> TcResult<(), M> {
     match ci {
       KConstantInfo::Axiom(v) => {
         let (te, _level) = self.is_sort(&v.cv.typ)?;
         self.typed_consts.insert(
-          addr.clone(),
+          id.clone(),
           TypedConst::Axiom { typ: te },
         );
         Ok(())
@@ -45,11 +45,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       KConstantInfo::Opaque(v) => {
         let (te, _level) = self.is_sort(&v.cv.typ)?;
         let type_val = self.eval_in_ctx(&v.cv.typ)?;
-        let value_te = self.with_rec_addr(addr.clone(), |tc| {
+        let value_te = self.with_rec_addr(id.addr.clone(), |tc| {
           tc.check(&v.value, &type_val)
         })?;
         self.typed_consts.insert(
-          addr.clone(),
+          id.clone(),
           TypedConst::Opaque {
             typ: te,
             value: value_te,
@@ -69,13 +69,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           });
         }
         let type_val = self.eval_in_ctx(&v.cv.typ)?;
-        let value_te = self.with_rec_addr(addr.clone(), |tc| {
+        let value_te = self.with_rec_addr(id.addr.clone(), |tc| {
           tc.with_infer_only(|tc| {
             tc.check(&v.value, &type_val)
           })
         })?;
         self.typed_consts.insert(
-          addr.clone(),
+          id.clone(),
           TypedConst::Theorem {
             typ: TypedExpr {
               info: TypeInfo::Proof,
@@ -96,36 +96,35 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
         let value_te = if v.safety == DefinitionSafety::Partial {
           // Set up self-referencing neutral for partial defs
-          let a = addr.clone();
-          let n = v.cv.name.clone();
+          let mid = id.clone();
           let def_val_fn = move |levels: &[KLevel<M>]| -> Val<M> {
-            Val::mk_const(a.clone(), levels.to_vec(), n.clone())
+            Val::mk_const(mid.clone(), levels.to_vec())
           };
           let mut mt = std::collections::BTreeMap::new();
           mt.insert(
             0,
             (
-              addr.clone(),
+              id.addr.clone(),
               Box::new(def_val_fn)
                 as Box<dyn Fn(&[KLevel<M>]) -> Val<M>>,
             ),
           );
           self.with_mut_types(mt, |tc| {
-            tc.with_rec_addr(addr.clone(), |tc| {
+            tc.with_rec_addr(id.addr.clone(), |tc| {
               tc.check(&v.value, &type_val)
             })
           })?
         } else {
-          self.with_rec_addr(addr.clone(), |tc| {
+          self.with_rec_addr(id.addr.clone(), |tc| {
             tc.check(&v.value, &type_val)
           })?
         };
 
         // Validate primitive
-        self.validate_primitive(addr)?;
+        self.validate_primitive(&id.addr)?;
 
         self.typed_consts.insert(
-          addr.clone(),
+          id.clone(),
           TypedConst::Definition {
             typ: te,
             value: value_te,
@@ -141,7 +140,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           self.validate_quotient()?;
         }
         self.typed_consts.insert(
-          addr.clone(),
+          id.clone(),
           TypedConst::Quotient {
             typ: te,
             kind: v.kind,
@@ -151,7 +150,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
 
       KConstantInfo::Inductive(_) => {
-        self.check_ind_block(addr)
+        self.check_ind_block(id)
       }
 
       KConstantInfo::Constructor(v) => {
@@ -160,7 +159,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
       KConstantInfo::Recursor(v) => {
         // Find the major inductive using proper type walking
-        let induct_addr = helpers::get_major_induct(
+        let induct_id = helpers::get_major_induct(
           &v.cv.typ,
           v.num_params,
           v.num_motives,
@@ -172,23 +171,23 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             .to_string(),
         })?;
 
-        self.ensure_typed_const(&induct_addr)?;
+        self.ensure_typed_const(&induct_id)?;
 
         let (te, _level) = self.is_sort(&v.cv.typ)?;
 
         // Validate K flag
         if v.k {
-          self.validate_k_flag(v, &induct_addr)?;
+          self.validate_k_flag(v, &induct_id)?;
         }
 
         // Validate recursor rules
-        self.validate_recursor_rules(v, &induct_addr)?;
+        self.validate_recursor_rules(v, &induct_id)?;
 
         // Validate elimination level
-        self.check_elim_level(&v.cv.typ, v, &induct_addr)?;
+        self.check_elim_level(&v.cv.typ, v, &induct_id)?;
 
         // Check each recursor rule type
-        let ci_ind = self.deref_const(&induct_addr)?.clone();
+        let ci_ind = self.deref_const(&induct_id)?.clone();
         if let KConstantInfo::Inductive(iv) = &ci_ind {
           for i in 0..v.rules.len() {
             if i < iv.ctors.len() {
@@ -214,7 +213,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           .collect::<TcResult<Vec<_>, M>>()?;
 
         self.typed_consts.insert(
-          addr.clone(),
+          id.clone(),
           TypedConst::Recursor {
             typ: te,
             num_params: v.num_params,
@@ -222,7 +221,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             num_minors: v.num_minors,
             num_indices: v.num_indices,
             k: v.k,
-            induct_addr,
+            induct_addr: induct_id.addr.clone(),
             rules,
           },
         );
@@ -234,10 +233,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   /// Check an inductive block (inductive type + constructors).
   pub fn check_ind_block(
     &mut self,
-    addr: &Address,
+    id: &MetaId<M>,
   ) -> TcResult<(), M> {
     // Resolve to the inductive
-    let ci = self.deref_const(addr)?.clone();
+    let ci = self.deref_const(id)?.clone();
     let iv = match &ci {
       KConstantInfo::Inductive(v) => v.clone(),
       KConstantInfo::Constructor(v) => {
@@ -258,17 +257,17 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
     };
 
-    let ind_addr = if matches!(&ci, KConstantInfo::Constructor(_)) {
+    let ind_id = if matches!(&ci, KConstantInfo::Constructor(_)) {
       match &ci {
         KConstantInfo::Constructor(v) => v.induct.clone(),
         _ => unreachable!(),
       }
     } else {
-      addr.clone()
+      id.clone()
     };
 
     // Already checked?
-    if self.typed_consts.contains_key(&ind_addr) {
+    if self.typed_consts.contains_key(&ind_id) {
       return Ok(());
     }
 
@@ -276,7 +275,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let (te, _level) = self.is_sort(&iv.cv.typ)?;
 
     // Validate primitive
-    self.validate_primitive(&ind_addr)?;
+    self.validate_primitive(&ind_id.addr)?;
 
     // Determine struct-like
     let is_struct = !iv.is_rec
@@ -292,23 +291,25 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       };
 
     self.typed_consts.insert(
-      ind_addr.clone(),
+      ind_id.clone(),
       TypedConst::Inductive {
         typ: te,
         is_struct,
       },
     );
 
-    let ind_addrs = &iv.all;
-    let ind_result_level = helpers::get_ind_result_level(&iv.cv.typ);
+    let ind_addrs: Vec<Address> = iv.all.iter().map(|mid| mid.addr.clone()).collect();
+    // Extract result sort level by walking Pi binders with proper normalization,
+    // rather than syntactic matching (which fails on let-bindings etc.)
+    let ind_result_level = self.get_result_sort_level(&iv.cv.typ, iv.num_params + iv.num_indices)?;
 
     // Check each constructor
-    for (_cidx, ctor_addr) in iv.ctors.iter().enumerate() {
-      let ctor_ci = self.deref_const(ctor_addr)?.clone();
+    for (_cidx, ctor_id) in iv.ctors.iter().enumerate() {
+      let ctor_ci = self.deref_const(ctor_id)?.clone();
       if let KConstantInfo::Constructor(cv) = &ctor_ci {
         let (ctor_te, _) = self.is_sort(&cv.cv.typ)?;
         self.typed_consts.insert(
-          ctor_addr.clone(),
+          ctor_id.clone(),
           TypedConst::Constructor {
             typ: ctor_te,
             cidx: cv.cidx,
@@ -321,7 +322,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           return Err(TcError::KernelException {
             msg: format!(
               "constructor {} has {} params but inductive has {}",
-              ctor_addr.hex(),
+              ctor_id,
               cv.num_params,
               iv.num_params
             ),
@@ -334,29 +335,27 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             &iv.cv.typ,
             &cv.cv.typ,
             iv.num_params,
-            ctor_addr,
+            ctor_id,
           )?;
 
           // Check strict positivity
           if let Some(msg) = self.check_ctor_fields(
             &cv.cv.typ,
             cv.num_params,
-            ind_addrs,
+            &ind_addrs,
           )? {
             return Err(TcError::KernelException {
-              msg: format!("Constructor {}: {}", ctor_addr.hex(), msg),
+              msg: format!("Constructor {}: {}", ctor_id, msg),
             });
           }
 
           // Check field universes
-          if let Some(ind_lvl) = &ind_result_level {
-            self.check_field_universes(
-              &cv.cv.typ,
-              cv.num_params,
-              ctor_addr,
-              ind_lvl,
-            )?;
-          }
+          self.check_field_universes(
+            &cv.cv.typ,
+            cv.num_params,
+            ctor_id,
+            &ind_result_level,
+          )?;
 
           // Check return type
           let ret_type = helpers::get_ctor_return_type(
@@ -371,7 +370,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 return Err(TcError::KernelException {
                   msg: format!(
                     "Constructor {} return type head is not the inductive being defined",
-                    ctor_addr.hex()
+                    ctor_id
                   ),
                 });
               }
@@ -380,7 +379,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               return Err(TcError::KernelException {
                 msg: format!(
                   "Constructor {} return type is not an inductive application",
-                  ctor_addr.hex()
+                  ctor_id
                 ),
               });
             }
@@ -388,6 +387,17 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
           // Check return type params are correct bvars
           let ret_args = ret_type.get_app_args_owned();
+          // Check return type has correct arity (num_params + num_indices)
+          if ret_args.len() != iv.num_params + iv.num_indices {
+            return Err(TcError::KernelException {
+              msg: format!(
+                "Constructor {} return type has {} args but expected {}",
+                ctor_id,
+                ret_args.len(),
+                iv.num_params + iv.num_indices
+              ),
+            });
+          }
           for i in 0..iv.num_params {
             if i < ret_args.len() {
               let expected_bvar =
@@ -398,7 +408,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                     return Err(TcError::KernelException {
                       msg: format!(
                         "Constructor {} return type has wrong parameter at position {}",
-                        ctor_addr.hex(), i
+                        ctor_id, i
                       ),
                     });
                   }
@@ -407,7 +417,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                   return Err(TcError::KernelException {
                     msg: format!(
                       "Constructor {} return type parameter {} is not a bound variable",
-                      ctor_addr.hex(), i
+                      ctor_id, i
                     ),
                   });
                 }
@@ -417,13 +427,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
           // Check index arguments don't mention the inductive
           for i in iv.num_params..ret_args.len() {
-            for ind_addr in ind_addrs {
+            for ind_addr in &ind_addrs {
               if helpers::expr_mentions_const(&ret_args[i], ind_addr)
               {
                 return Err(TcError::KernelException {
                   msg: format!(
                     "Constructor {} index argument mentions the inductive (unsound)",
-                    ctor_addr.hex()
+                    ctor_id
                   ),
                 });
               }
@@ -432,7 +442,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         }
       } else {
         return Err(TcError::KernelException {
-          msg: format!("Constructor {} not found", ctor_addr.hex()),
+          msg: format!("Constructor {} not found", ctor_id),
         });
       }
     }
@@ -446,7 +456,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     ind_type: &KExpr<M>,
     ctor_type: &KExpr<M>,
     num_params: usize,
-    ctor_addr: &Address,
+    ctor_id: &MetaId<M>,
   ) -> TcResult<(), M> {
     let mut ind_ty = ind_type.clone();
     let mut ctor_ty = ctor_type.clone();
@@ -472,7 +482,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             return Err(TcError::KernelException {
               msg: format!(
                 "Constructor {} parameter {} domain doesn't match inductive parameter domain",
-                ctor_addr.hex(), i
+                ctor_id, i
               ),
             });
           }
@@ -492,7 +502,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           return Err(TcError::KernelException {
             msg: format!(
               "Constructor {} has fewer Pi binders than expected parameters",
-              ctor_addr.hex()
+              ctor_id
             ),
           });
         }
@@ -568,14 +578,19 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       return Ok(true);
     }
     match ty_expr.data() {
-      KExprData::ForallE(dom, body, _, _) => {
+      KExprData::ForallE(dom, body, name, _) => {
         if ind_addrs
           .iter()
           .any(|a| helpers::expr_mentions_const(dom, a))
         {
           return Ok(false);
         }
-        self.check_positivity(body, ind_addrs)
+        // Extend context with the domain before recursing on the body,
+        // so bvars in the quoted body resolve to the correct context entries.
+        let dom_val = self.eval_in_ctx(dom)?;
+        self.with_binder(dom_val, name.clone(), |tc| {
+          tc.check_positivity(body, ind_addrs)
+        })
       }
       _ => {
         let fn_head = ty_expr.get_app_fn();
@@ -585,7 +600,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               return Ok(true);
             }
             // Check nested inductive
-            match self.env.get(head_addr).cloned() {
+            match self.env.find_by_addr(head_addr).cloned() {
               Some(KConstantInfo::Inductive(fv)) => {
                 if fv.is_unsafe {
                   return Ok(false);
@@ -604,9 +619,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                   args[..fv.num_params].to_vec();
                 let mut augmented: Vec<Address> =
                   ind_addrs.to_vec();
-                augmented.extend(fv.all.iter().cloned());
-                for ctor_addr in &fv.ctors {
-                  match self.env.get(ctor_addr).cloned() {
+                augmented.extend(fv.all.iter().map(|mid| mid.addr.clone()));
+                for ctor_id in &fv.ctors {
+                  match self.env.get(ctor_id).cloned() {
                     Some(KConstantInfo::Constructor(cv)) => {
                       if !self
                         .check_nested_ctor_fields(
@@ -664,11 +679,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let d = self.depth();
     let ty_expr = self.quote(&ty_whnf, d)?;
     match ty_expr.data() {
-      KExprData::ForallE(dom, body, _, _) => {
+      KExprData::ForallE(dom, body, name, _) => {
         if !self.check_positivity(dom, ind_addrs)? {
           return Ok(false);
         }
-        self.check_nested_ctor_fields_loop(body, ind_addrs)
+        // Extend context before recursing on body (same fix as check_positivity)
+        let dom_val = self.eval_in_ctx(dom)?;
+        self.with_binder(dom_val, name.clone(), |tc| {
+          tc.check_nested_ctor_fields_loop(body, ind_addrs)
+        })
       }
       _ => Ok(true),
     }
@@ -728,11 +747,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         self.inst_go(body, vals, depth + 1),
         n.clone(),
       ),
-      KExprData::Proj(ta, idx, s, tn) => KExpr::proj(
+      KExprData::Proj(ta, idx, s) => KExpr::proj(
         ta.clone(),
         *idx,
         self.inst_go(s, vals, depth),
-        tn.clone(),
       ),
       _ => e.clone(),
     }
@@ -744,11 +762,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     &mut self,
     ctor_type: &KExpr<M>,
     num_params: usize,
-    ctor_addr: &Address,
+    ctor_id: &MetaId<M>,
     ind_lvl: &KLevel<M>,
   ) -> TcResult<(), M> {
     self.check_field_universes_go(
-      ctor_type, num_params, ctor_addr, ind_lvl,
+      ctor_type, num_params, ctor_id, ind_lvl,
     )
   }
 
@@ -756,7 +774,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     &mut self,
     ty: &KExpr<M>,
     remaining_params: usize,
-    ctor_addr: &Address,
+    ctor_id: &MetaId<M>,
     ind_lvl: &KLevel<M>,
   ) -> TcResult<(), M> {
     let ty_val = self.eval_in_ctx(ty)?;
@@ -772,7 +790,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             tc.check_field_universes_go(
               body,
               remaining_params - 1,
-              ctor_addr,
+              ctor_id,
               ind_lvl,
             )
           })
@@ -786,13 +804,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             return Err(TcError::KernelException {
               msg: format!(
                 "Constructor {} field type lives in a universe larger than the inductive's universe",
-                ctor_addr.hex()
+                ctor_id
               ),
             });
           }
           let dom_val = self.eval_in_ctx(dom)?;
           self.with_binder(dom_val, pi_name.clone(), |tc| {
-            tc.check_field_universes_go(body, 0, ctor_addr, ind_lvl)
+            tc.check_field_universes_go(body, 0, ctor_id, ind_lvl)
           })
         }
       }
@@ -800,20 +818,59 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
   }
 
+  /// Walk a Pi-typed expression to extract the result sort level.
+  /// Uses proper normalization (eval+whnf) instead of syntactic matching.
+  fn get_result_sort_level(
+    &mut self,
+    ty: &KExpr<M>,
+    num_binders: usize,
+  ) -> TcResult<KLevel<M>, M> {
+    if num_binders == 0 {
+      match ty.data() {
+        KExprData::Sort(lvl) => Ok(lvl.clone()),
+        _ => {
+          // Normalize: infer and check the result is a sort
+          let (_, typ) = self.infer(ty)?;
+          let typ_whnf = self.whnf_val(&typ, 0)?;
+          match typ_whnf.inner() {
+            ValInner::Sort(lvl) => Ok(lvl.clone()),
+            _ => Err(TcError::KernelException {
+              msg: "inductive return type is not a sort".to_string(),
+            }),
+          }
+        }
+      }
+    } else {
+      match ty.data() {
+        KExprData::ForallE(dom, body, name, _) => {
+          let _ = self.is_sort(dom)?;
+          let dom_val = self.eval_in_ctx(dom)?;
+          self.with_binder(dom_val, name.clone(), |tc| {
+            tc.get_result_sort_level(body, num_binders - 1)
+          })
+        }
+        _ => Err(TcError::KernelException {
+          msg: "inductive type has fewer binders than expected"
+            .to_string(),
+        }),
+      }
+    }
+  }
+
   /// Validate K-flag: requires non-mutual, Prop, single ctor, zero fields.
   fn validate_k_flag(
     &mut self,
     _rec: &KRecursorVal<M>,
-    induct_addr: &Address,
+    induct_id: &MetaId<M>,
   ) -> TcResult<(), M> {
-    let ci = self.deref_const(induct_addr)?.clone();
+    let ci = self.deref_const(induct_id)?.clone();
     let iv = match &ci {
       KConstantInfo::Inductive(v) => v,
       _ => {
         return Err(TcError::KernelException {
           msg: format!(
             "recursor claims K but {} is not an inductive",
-            induct_addr.hex()
+            induct_id
           ),
         })
       }
@@ -823,20 +880,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         msg: "recursor claims K but inductive is mutual".to_string(),
       });
     }
-    match helpers::get_ind_result_level(&iv.cv.typ) {
-      Some(lvl) => {
-        if level::is_nonzero(&lvl) {
-          return Err(TcError::KernelException {
-            msg: "recursor claims K but inductive is not in Prop"
-              .to_string(),
-          });
-        }
-      }
-      None => {
-        return Err(TcError::KernelException {
-          msg: "recursor claims K but cannot determine inductive's result sort".to_string(),
-        })
-      }
+    // Use proper normalization instead of syntactic get_ind_result_level
+    let lvl = self.get_result_sort_level(&iv.cv.typ, iv.num_params + iv.num_indices)?;
+    if level::is_nonzero(&lvl) {
+      return Err(TcError::KernelException {
+        msg: "recursor claims K but inductive is not in Prop"
+          .to_string(),
+      });
     }
     if iv.ctors.len() != 1 {
       return Err(TcError::KernelException {
@@ -872,9 +922,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   fn validate_recursor_rules(
     &mut self,
     rec: &KRecursorVal<M>,
-    induct_addr: &Address,
+    induct_id: &MetaId<M>,
   ) -> TcResult<(), M> {
-    let ci = self.deref_const(induct_addr)?.clone();
+    let ci = self.deref_const(induct_id)?.clone();
     if let KConstantInfo::Inductive(iv) = &ci {
       if rec.rules.len() != iv.ctors.len() {
         return Err(TcError::KernelException {
@@ -892,8 +942,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           if rule.nfields != cv.num_fields {
             return Err(TcError::KernelException {
               msg: format!(
-                "recursor rule for {:?} has nfields={} but constructor has {} fields",
-                iv.ctors[i].hex(),
+                "recursor rule for {} has nfields={} but constructor has {} fields",
+                iv.ctors[i],
                 rule.nfields,
                 cv.num_fields
               ),
@@ -903,7 +953,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           return Err(TcError::KernelException {
             msg: format!(
               "constructor {} not found",
-              iv.ctors[i].hex()
+              iv.ctors[i]
             ),
           });
         }
@@ -917,17 +967,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     &mut self,
     rec_type: &KExpr<M>,
     rec: &KRecursorVal<M>,
-    induct_addr: &Address,
+    induct_id: &MetaId<M>,
   ) -> TcResult<(), M> {
-    let ci = self.deref_const(induct_addr)?.clone();
+    let ci = self.deref_const(induct_id)?.clone();
     let iv = match &ci {
       KConstantInfo::Inductive(v) => v,
       _ => return Ok(()),
     };
-    let ind_lvl = match helpers::get_ind_result_level(&iv.cv.typ) {
-      Some(l) => l,
-      None => return Ok(()),
-    };
+    // Use proper normalization instead of syntactic get_ind_result_level
+    let ind_lvl = self.get_result_sort_level(&iv.cv.typ, iv.num_params + iv.num_indices)?;
     if level::is_nonzero(&ind_lvl) {
       return Ok(()); // Not Prop, large elim always ok
     }
@@ -1053,7 +1101,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     &mut self,
     rec_type: &KExpr<M>,
     rec: &KRecursorVal<M>,
-    ctor_addr: &Address,
+    ctor_id: &MetaId<M>,
     nf: usize,
     rule_rhs: &KExpr<M>,
   ) -> TcResult<(), M> {
@@ -1061,7 +1109,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let nm = rec.num_motives;
     let nk = rec.num_minors;
     let shift = nm + nk;
-    let ctor_ci = self.deref_const(ctor_addr)?.clone();
+    let ctor_ci = self.deref_const(ctor_id)?.clone();
     let ctor_type = ctor_ci.typ().clone();
 
     // Extract recursor param+motive+minor domains
@@ -1255,7 +1303,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     // Build constructor application
     let mut ctor_app =
-      KExpr::cnst(ctor_addr.clone(), ctor_levels, M::Field::<Name>::default());
+      KExpr::cnst(ctor_id.clone(), ctor_levels);
     for i in 0..np {
       ctor_app = KExpr::app(
         ctor_app,
@@ -1316,7 +1364,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       return Err(TcError::KernelException {
         msg: format!(
           "recursor rule RHS type mismatch for constructor {}",
-          ctor_addr.hex()
+          ctor_id
         ),
       });
     }
@@ -1327,29 +1375,29 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 /// Type-check a single constant in a fresh TypeChecker.
 pub fn typecheck_const<M: MetaMode>(
   env: &KEnv<M>,
-  prims: &Primitives,
-  addr: &Address,
+  prims: &Primitives<M>,
+  id: &MetaId<M>,
   quot_init: bool,
 ) -> Result<(), TcError<M>> {
   let mut tc = TypeChecker::new(env, prims);
   tc.quot_init = quot_init;
-  tc.check_const(addr)
+  tc.check_const(id)
 }
 
 /// Type-check a single constant, returning stats on success or failure.
 pub fn typecheck_const_with_stats<M: MetaMode>(
   env: &KEnv<M>,
-  prims: &Primitives,
-  addr: &Address,
+  prims: &Primitives<M>,
+  id: &MetaId<M>,
   quot_init: bool,
 ) -> (Result<(), TcError<M>>, usize, super::tc::Stats) {
-  typecheck_const_with_stats_trace(env, prims, addr, quot_init, false, "")
+  typecheck_const_with_stats_trace(env, prims, id, quot_init, false, "")
 }
 
 pub fn typecheck_const_with_stats_trace<M: MetaMode>(
   env: &KEnv<M>,
-  prims: &Primitives,
-  addr: &Address,
+  prims: &Primitives<M>,
+  id: &MetaId<M>,
   quot_init: bool,
   trace: bool,
   name: &str,
@@ -1360,23 +1408,23 @@ pub fn typecheck_const_with_stats_trace<M: MetaMode>(
   if !name.is_empty() {
     tc.trace_prefix = format!("[{name}] ");
   }
-  let result = tc.check_const(addr);
+  let result = tc.check_const(id);
   (result, tc.heartbeats, tc.stats.clone())
 }
 
 /// Type-check all constants in the environment.
 pub fn typecheck_all<M: MetaMode>(
   env: &KEnv<M>,
-  prims: &Primitives,
+  prims: &Primitives<M>,
   quot_init: bool,
 ) -> Result<(), String> {
-  for (addr, ci) in env {
-    if let Err(e) = typecheck_const(env, prims, addr, quot_init) {
+  for (id, ci) in env.iter() {
+    if let Err(e) = typecheck_const(env, prims, id, quot_init) {
       return Err(format!(
         "constant {:?} ({}, {}): {}",
         ci.name(),
         ci.kind_name(),
-        addr.hex(),
+        id,
         e
       ));
     }

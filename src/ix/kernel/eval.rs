@@ -65,32 +65,31 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
       KExprData::Lit(l) => Ok(Val::mk_lit(l.clone())),
 
-      KExprData::Const(addr, levels, name) => {
+      KExprData::Const(id, levels) => {
         // Check if it's a constructor
-        if let Some(KConstantInfo::Constructor(cv)) = self.env.get(addr)
+        if let Some(KConstantInfo::Constructor(cv)) = self.env.get(id)
         {
           return Ok(Val::mk_ctor(
-            addr.clone(),
+            id.clone(),
             levels.clone(),
-            name.clone(),
             cv.cidx,
             cv.num_params,
             cv.num_fields,
-            cv.induct.clone(),
+            cv.induct.addr.clone(),
             Vec::new(),
           ));
         }
         // Check mut_types for partial/mutual definitions
         // (This requires matching addr against recAddr)
         if let Some(rec_addr) = &self.rec_addr {
-          if addr == rec_addr {
+          if id.addr == *rec_addr {
             if let Some((_, factory)) = self.mut_types.get(&0) {
               return Ok(factory(levels));
             }
           }
         }
         // Otherwise, return as neutral constant
-        Ok(Val::mk_const(addr.clone(), levels.clone(), name.clone()))
+        Ok(Val::mk_const(id.clone(), levels.clone()))
       }
 
       KExprData::App(_f, _a) => {
@@ -146,21 +145,21 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         self.eval(body, &new_env)
       }
 
-      KExprData::Proj(type_addr, idx, strct_expr, type_name) => {
+      KExprData::Proj(type_id, idx, strct_expr) => {
         let strct_val = self.eval(strct_expr, env)?;
         // Try immediate projection reduction
         if let Some(field_thunk) =
-          reduce_val_proj_forced(&strct_val, *idx, type_addr)
+          reduce_val_proj_forced(&strct_val, *idx, &type_id.addr)
         {
           return self.force_thunk(&field_thunk);
         }
         // Create stuck projection
         let strct_thunk = mk_thunk_val(strct_val);
         Ok(Val::mk_proj(
-          type_addr.clone(),
+          type_id.addr.clone(),
           *idx,
           strct_thunk,
-          type_name.clone(),
+          type_id.name.clone(),
           Vec::new(),
         ))
       }
@@ -212,9 +211,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
 
       ValInner::Ctor {
-        addr,
+        id,
         levels,
-        name,
         cidx,
         num_params,
         num_fields,
@@ -224,9 +222,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         let mut new_spine = spine.clone();
         new_spine.push(arg);
         Ok(Val::mk_ctor(
-          addr.clone(),
+          id.clone(),
           levels.clone(),
-          name.clone(),
           *cidx,
           *num_params,
           *num_fields,
@@ -261,7 +258,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           Ok(Val::mk_proj(
             type_addr.clone(),
             *idx,
-            mk_thunk_val(struct_val),
+            strct.clone(),
             type_name.clone(),
             new_spine,
           ))
@@ -288,7 +285,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   /// Force a thunk: if unevaluated, evaluate and memoize; if evaluated,
   /// return cached value.
   pub fn force_thunk(&mut self, thunk: &Thunk<M>) -> TcResult<Val<M>, M> {
-    self.heartbeat()?;
     self.stats.force_calls += 1;
 
     // Check if already evaluated
@@ -315,7 +311,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
     };
 
-    // Evaluate
+    // Evaluate (heartbeat only on actual work, matching Lean)
+    self.heartbeat()?;
     self.stats.thunk_forces += 1;
     let val = self.eval(&expr, &env)?;
 
@@ -334,13 +331,11 @@ fn clone_head<M: MetaMode>(head: &Head<M>) -> Head<M> {
       ty: ty.clone(),
     },
     Head::Const {
-      addr,
+      id,
       levels,
-      name,
     } => Head::Const {
-      addr: addr.clone(),
+      id: id.clone(),
       levels: levels.clone(),
-      name: name.clone(),
     },
   }
 }

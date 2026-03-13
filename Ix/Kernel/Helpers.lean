@@ -15,85 +15,85 @@ namespace Ix.Kernel
 
 /-! ## Nat helpers on Val -/
 
-def extractNatVal (prims : KPrimitives) (v : Val m) : Option Nat :=
+def extractNatVal (prims : KPrimitives m) (v : Val m) : Option Nat :=
   match v with
   | .lit (.natVal n) => some n
-  | .neutral (.const addr _ _) spine =>
-    if addr == prims.natZero && spine.isEmpty then some 0 else none
-  | .ctor addr _ _ _ _ _ _ spine =>
-    if addr == prims.natZero && spine.isEmpty then some 0 else none
+  | .neutral (.const id _) spine =>
+    if id.addr == prims.natZero.addr && spine.isEmpty then some 0 else none
+  | .ctor id _ _ _ _ _ spine =>
+    if id.addr == prims.natZero.addr && spine.isEmpty then some 0 else none
   | _ => none
 
-def isPrimOp (prims : KPrimitives) (addr : Address) : Bool :=
-  addr == prims.natAdd || addr == prims.natSub || addr == prims.natMul ||
-  addr == prims.natPow || addr == prims.natGcd || addr == prims.natMod ||
-  addr == prims.natDiv || addr == prims.natBeq || addr == prims.natBle ||
-  addr == prims.natLand || addr == prims.natLor || addr == prims.natXor ||
-  addr == prims.natShiftLeft || addr == prims.natShiftRight ||
-  addr == prims.natSucc || addr == prims.natPred
+def isPrimOp (prims : KPrimitives m) (addr : Address) : Bool :=
+  addr == prims.natAdd.addr || addr == prims.natSub.addr || addr == prims.natMul.addr ||
+  addr == prims.natPow.addr || addr == prims.natGcd.addr || addr == prims.natMod.addr ||
+  addr == prims.natDiv.addr || addr == prims.natBeq.addr || addr == prims.natBle.addr ||
+  addr == prims.natLand.addr || addr == prims.natLor.addr || addr == prims.natXor.addr ||
+  addr == prims.natShiftLeft.addr || addr == prims.natShiftRight.addr ||
+  addr == prims.natSucc.addr || addr == prims.natPred.addr
 
 /-- Check if a value is a nat primitive applied to args (not yet reduced). -/
-def isNatPrimHead (prims : KPrimitives) (v : Val m) : Bool :=
+def isNatPrimHead (prims : KPrimitives m) (v : Val m) : Bool :=
   match v with
-  | .neutral (.const addr _ _) spine => isPrimOp prims addr && !spine.isEmpty
+  | .neutral (.const id _) spine => isPrimOp prims id.addr && !spine.isEmpty
   | _ => false
 
 /-- Check if a value is a nat constructor (zero, succ, or literal).
     Unlike extractNatVal, this doesn't require fully extractable values —
     Nat.succ(x) counts even when x is symbolic. -/
-def isNatConstructor (prims : KPrimitives) (v : Val m) : Bool :=
+def isNatConstructor (prims : KPrimitives m) (v : Val m) : Bool :=
   match v with
   | .lit (.natVal _) => true
-  | .neutral (.const addr _ _) spine =>
-    (addr == prims.natZero && spine.isEmpty) ||
-    (addr == prims.natSucc && spine.size == 1)
-  | .ctor addr _ _ _ _ _ _ spine =>
-    (addr == prims.natZero && spine.isEmpty) ||
-    (addr == prims.natSucc && spine.size == 1)
+  | .neutral (.const id _) spine =>
+    (id.addr == prims.natZero.addr && spine.isEmpty) ||
+    (id.addr == prims.natSucc.addr && spine.size == 1)
+  | .ctor id _ _ _ _ _ spine =>
+    (id.addr == prims.natZero.addr && spine.isEmpty) ||
+    (id.addr == prims.natSucc.addr && spine.size == 1)
   | _ => false
 
 /-- Extract the predecessor thunk from a structural Nat.succ value, without forcing.
     Only matches Ctor/Neutral with nat_succ head. Does NOT match Lit(NatVal(n)) —
     literals are handled by computeNatPrim in O(1). Matching literals here would
     cause O(n) recursion in the symbolic step-case reductions. -/
-def extractSuccPred (prims : KPrimitives) (v : Val m) : Option Nat :=
+def extractSuccPred (prims : KPrimitives m) (v : Val m) : Option Nat :=
   match v with
-  | .neutral (.const addr _ _) spine =>
-    if addr == prims.natSucc && spine.size == 1 then some spine[0]! else none
-  | .ctor addr _ _ _ _ _ _ spine =>
-    if addr == prims.natSucc && spine.size == 1 then some spine[0]! else none
+  | .neutral (.const id _) spine =>
+    if id.addr == prims.natSucc.addr && spine.size == 1 then some spine[0]! else none
+  | .ctor id _ _ _ _ _ spine =>
+    if id.addr == prims.natSucc.addr && spine.size == 1 then some spine[0]! else none
   | _ => none
 
 /-- Check if a value is Nat.zero (constructor or literal 0). -/
-def isNatZeroVal (prims : KPrimitives) (v : Val m) : Bool :=
+def isNatZeroVal (prims : KPrimitives m) (v : Val m) : Bool :=
   match v with
   | .lit (.natVal 0) => true
-  | .neutral (.const addr _ _) spine => addr == prims.natZero && spine.isEmpty
-  | .ctor addr _ _ _ _ _ _ spine => addr == prims.natZero && spine.isEmpty
+  | .neutral (.const id _) spine => id.addr == prims.natZero.addr && spine.isEmpty
+  | .ctor id _ _ _ _ _ spine => id.addr == prims.natZero.addr && spine.isEmpty
   | _ => false
 
 /-- Compute a nat primitive given two resolved nat values. -/
-def computeNatPrim (prims : KPrimitives) (addr : Address) (x y : Nat) : Option (Val m) :=
-  if addr == prims.natAdd then some (.lit (.natVal (x + y)))
-  else if addr == prims.natSub then some (.lit (.natVal (x - y)))
-  else if addr == prims.natMul then some (.lit (.natVal (x * y)))
-  else if addr == prims.natPow then
+def computeNatPrim (prims : KPrimitives m) (addr : Address) (x y : Nat) : Option (Val m) :=
+  if addr == prims.natAdd.addr then some (.lit (.natVal (x + y)))
+  else if addr == prims.natSub.addr then some (.lit (.natVal (x - y)))
+  else if addr == prims.natMul.addr then some (.lit (.natVal (x * y)))
+  else if addr == prims.natPow.addr then
     if y > 16777216 then none
     else some (.lit (.natVal (Nat.pow x y)))
-  else if addr == prims.natMod then some (.lit (.natVal (x % y)))
-  else if addr == prims.natDiv then some (.lit (.natVal (x / y)))
-  else if addr == prims.natGcd then some (.lit (.natVal (Nat.gcd x y)))
-  else if addr == prims.natBeq then
-    if x == y then some (.ctor prims.boolTrue #[] default 1 0 0 prims.bool #[])
-    else some (.ctor prims.boolFalse #[] default 0 0 0 prims.bool #[])
-  else if addr == prims.natBle then
-    if x ≤ y then some (.ctor prims.boolTrue #[] default 1 0 0 prims.bool #[])
-    else some (.ctor prims.boolFalse #[] default 0 0 0 prims.bool #[])
-  else if addr == prims.natLand then some (.lit (.natVal (Nat.land x y)))
-  else if addr == prims.natLor then some (.lit (.natVal (Nat.lor x y)))
-  else if addr == prims.natXor then some (.lit (.natVal (Nat.xor x y)))
-  else if addr == prims.natShiftLeft then some (.lit (.natVal (Nat.shiftLeft x y)))
-  else if addr == prims.natShiftRight then some (.lit (.natVal (Nat.shiftRight x y)))
+  else if addr == prims.natMod.addr then some (.lit (.natVal (x % y)))
+  else if addr == prims.natDiv.addr then some (.lit (.natVal (x / y)))
+  else if addr == prims.natGcd.addr then some (.lit (.natVal (Nat.gcd x y)))
+  else if addr == prims.natBeq.addr then
+    if x == y then some (.ctor prims.boolTrue #[] 1 0 0 prims.bool #[])
+    else some (.ctor prims.boolFalse #[] 0 0 0 prims.bool #[])
+  else if addr == prims.natBle.addr then
+    if x ≤ y then some (.ctor prims.boolTrue #[] 1 0 0 prims.bool #[])
+    else some (.ctor prims.boolFalse #[] 0 0 0 prims.bool #[])
+  else if addr == prims.natLand.addr then some (.lit (.natVal (Nat.land x y)))
+  else if addr == prims.natLor.addr then some (.lit (.natVal (Nat.lor x y)))
+  else if addr == prims.natXor.addr then some (.lit (.natVal (Nat.xor x y)))
+  else if addr == prims.natShiftLeft.addr then some (.lit (.natVal (Nat.shiftLeft x y)))
+  else if addr == prims.natShiftRight.addr then some (.lit (.natVal (Nat.shiftRight x y)))
   else none
 
 /-! ## Nat literal → constructor conversion on Val -/
@@ -105,11 +105,11 @@ def computeNatPrim (prims : KPrimitives) (addr : Address) (x y : Nat) : Option (
 
 /-- Try to reduce a projection on an already-forced struct value.
     Returns the ThunkId (spine index) of the projected field if successful. -/
-def reduceValProjForced (_typeAddr : Address) (idx : Nat) (structV : Val m)
-    (_kenv : KEnv m) (_prims : KPrimitives)
+def reduceValProjForced (_typeId : KMetaId m) (idx : Nat) (structV : Val m)
+    (_kenv : KEnv m) (_prims : KPrimitives m)
     : Option Nat :=
   match structV with
-  | .ctor _ _ _ _ numParams _ _ spine =>
+  | .ctor _ _ _ numParams _ _ spine =>
     let realIdx := numParams + idx
     if h : realIdx < spine.size then
       some spine[realIdx]
@@ -120,22 +120,22 @@ def reduceValProjForced (_typeAddr : Address) (idx : Nat) (structV : Val m)
 /-! ## Delta-reducibility check on Val -/
 
 def getDeltaInfo (v : Val m) (kenv : KEnv m)
-    : Option (Address × KReducibilityHints) :=
+    : Option (KMetaId m × KReducibilityHints) :=
   match v with
-  | .neutral (.const addr _ _) _ =>
-    match kenv.find? addr with
-    | some (.defnInfo dv) => some (addr, dv.hints)
-    | some (.thmInfo _) => some (addr, .regular 0)
+  | .neutral (.const id _) _ =>
+    match kenv.find? id with
+    | some (.defnInfo dv) => some (id, dv.hints)
+    | some (.thmInfo _) => some (id, .regular 0)
     | _ => none
   | _ => none
 
 def isStructLikeApp (v : Val m) (kenv : KEnv m)
     : Option (Ix.Kernel.ConstructorVal m) :=
   match v with
-  | .ctor addr _ _ _ _ _ inductAddr _ =>
-    match kenv.find? addr with
+  | .ctor id _ _ _ _ inductId _ =>
+    match kenv.find? id with
     | some (.ctorInfo cv) =>
-      if kenv.isStructureLike inductAddr then some cv else none
+      if kenv.isStructureLike inductId then some cv else none
     | _ => none
   | _ => none
 

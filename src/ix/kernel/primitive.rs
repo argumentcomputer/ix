@@ -21,7 +21,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     Some(KExpr::cnst(
       self.prims.nat.clone()?,
       Vec::new(),
-      M::Field::<Name>::default(),
     ))
   }
 
@@ -29,7 +28,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     Some(KExpr::cnst(
       self.prims.bool_type.clone()?,
       Vec::new(),
-      M::Field::<Name>::default(),
     ))
   }
 
@@ -37,7 +35,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     Some(KExpr::cnst(
       self.prims.bool_true.clone()?,
       Vec::new(),
-      M::Field::<Name>::default(),
     ))
   }
 
@@ -45,7 +42,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     Some(KExpr::cnst(
       self.prims.bool_false.clone()?,
       Vec::new(),
-      M::Field::<Name>::default(),
     ))
   }
 
@@ -53,7 +49,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     Some(KExpr::cnst(
       self.prims.nat_zero.clone()?,
       Vec::new(),
-      M::Field::<Name>::default(),
     ))
   }
 
@@ -61,7 +56,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     Some(KExpr::cnst(
       self.prims.char_type.clone()?,
       Vec::new(),
-      M::Field::<Name>::default(),
     ))
   }
 
@@ -69,18 +63,16 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     Some(KExpr::cnst(
       self.prims.string.clone()?,
       Vec::new(),
-      M::Field::<Name>::default(),
     ))
   }
 
   fn list_char_const(&self) -> Option<KExpr<M>> {
-    let list_addr = self.prims.list.clone()?;
+    let list_id = self.prims.list.clone()?;
     let char_e = self.char_const()?;
     Some(KExpr::app(
       KExpr::cnst(
-        list_addr,
+        list_id,
         vec![KLevel::zero()],
-        M::Field::<Name>::default(),
       ),
       char_e,
     ))
@@ -91,7 +83,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       KExpr::cnst(
         self.prims.nat_succ.clone()?,
         Vec::new(),
-        M::Field::<Name>::default(),
       ),
       e,
     ))
@@ -102,7 +93,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       KExpr::cnst(
         self.prims.nat_pred.clone()?,
         Vec::new(),
-        M::Field::<Name>::default(),
       ),
       e,
     ))
@@ -110,16 +100,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
   fn bin_app(
     &self,
-    addr: &Address,
+    id: &MetaId<M>,
     a: KExpr<M>,
     b: KExpr<M>,
   ) -> KExpr<M> {
     KExpr::app(
       KExpr::app(
         KExpr::cnst(
-          addr.clone(),
+          id.clone(),
           Vec::new(),
-          M::Field::<Name>::default(),
         ),
         a,
       ),
@@ -229,8 +218,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
   }
 
-  fn prim_in_env(&self, p: &Option<Address>) -> bool {
-    p.as_ref().map_or(false, |a| self.env.contains_key(a))
+  fn prim_in_env(&self, p: &Option<MetaId<M>>) -> bool {
+    p.as_ref().map_or(false, |id| self.env.contains_key(id))
   }
 
   fn check_defeq_expr(
@@ -253,8 +242,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     addr: &Address,
   ) -> TcResult<(), M> {
     // Check if this is a known primitive inductive
-    if self.prims.nat.as_ref() == Some(addr)
-      || self.prims.bool_type.as_ref() == Some(addr)
+    if Primitives::<M>::addr_matches(&self.prims.nat, addr)
+      || Primitives::<M>::addr_matches(&self.prims.bool_type, addr)
     {
       return self.check_primitive_inductive(addr);
     }
@@ -280,7 +269,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     &mut self,
     addr: &Address,
   ) -> TcResult<(), M> {
-    let ci = self.deref_const(addr)?.clone();
+    let addr_id = self.env.get_id_by_addr(addr)
+      .ok_or_else(|| self.prim_err("primitive inductive not found in environment"))?
+      .clone();
+    let ci = self.deref_const(&addr_id)?.clone();
     let iv = match &ci {
       KConstantInfo::Inductive(v) => v,
       _ => return Ok(()),
@@ -294,7 +286,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       return Ok(());
     }
 
-    if self.prims.bool_type.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.bool_type, addr) {
       if iv.ctors.len() != 2 {
         return Err(self
           .prim_err("Bool must have exactly 2 constructors"));
@@ -302,8 +294,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       let bool_e = self
         .bool_const()
         .ok_or_else(|| self.prim_err("Bool not found"))?;
-      for ctor_addr in &iv.ctors {
-        let ctor = self.deref_const(ctor_addr)?.clone();
+      for ctor_id in &iv.ctors {
+        let ctor = self.deref_const(ctor_id)?.clone();
         if !self.check_defeq_expr(ctor.typ(), &bool_e)? {
           return Err(self
             .prim_err("Bool constructor has unexpected type"));
@@ -311,7 +303,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
     }
 
-    if self.prims.nat.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat, addr) {
       if iv.ctors.len() != 2 {
         return Err(
           self.prim_err("Nat must have exactly 2 constructors")
@@ -323,15 +315,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       let nat_unary = self
         .nat_unary_type()
         .ok_or_else(|| self.prim_err("can't build Nat→Nat"))?;
-      for ctor_addr in &iv.ctors {
-        let ctor = self.deref_const(ctor_addr)?.clone();
-        if self.prims.nat_zero.as_ref() == Some(ctor_addr) {
+      for ctor_id in &iv.ctors {
+        let ctor = self.deref_const(ctor_id)?.clone();
+        if Primitives::<M>::addr_matches(&self.prims.nat_zero, &ctor_id.addr) {
           if !self.check_defeq_expr(ctor.typ(), &nat_e)? {
             return Err(
               self.prim_err("Nat.zero has unexpected type")
             );
           }
-        } else if self.prims.nat_succ.as_ref() == Some(ctor_addr) {
+        } else if Primitives::<M>::addr_matches(&self.prims.nat_succ, &ctor_id.addr) {
           if !self.check_defeq_expr(ctor.typ(), &nat_unary)? {
             return Err(
               self.prim_err("Nat.succ has unexpected type")
@@ -354,7 +346,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     &mut self,
     addr: &Address,
   ) -> TcResult<(), M> {
-    let ci = self.deref_const(addr)?.clone();
+    let addr_id = self.env.get_id_by_addr(addr)
+      .ok_or_else(|| self.prim_err("primitive def not found in environment"))?
+      .clone();
+    let ci = self.deref_const(&addr_id)?.clone();
     let v = match &ci {
       KConstantInfo::Definition(d) => d,
       _ => return Ok(()),
@@ -382,11 +377,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       &p.char_mk,
     ]
     .iter()
-    .any(|p| p.as_ref() == Some(addr));
+    .any(|p| Primitives::<M>::addr_matches(p, addr));
 
     // String.ofList is prim only if distinct from String.mk
-    let is_string_of_list = p.string_of_list.as_ref() == Some(addr)
-      && p.string_of_list != p.string_mk;
+    let is_string_of_list = Primitives::<M>::addr_matches(&p.string_of_list, addr)
+      && p.string_of_list.as_ref().map(|id| &id.addr) != p.string_mk.as_ref().map(|id| &id.addr);
 
     if !is_prim && !is_string_of_list {
       return Ok(());
@@ -396,7 +391,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let y = KExpr::bvar(1, M::Field::<Name>::default());
 
     // Nat.add
-    if self.prims.nat_add.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_add, addr) {
       if !self.prim_in_env(&self.prims.nat) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natAdd: missing Nat or bad numLevels"));
       }
@@ -405,7 +400,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         return Err(self.prim_err("natAdd: type mismatch"));
       }
       // Use the constant so try_reduce_nat_val step-case fires
-      let add_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
+      let add_const = KExpr::cnst(self.prims.nat_add.as_ref().unwrap().clone(), Vec::new());
       let add_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
         KExpr::app(KExpr::app(add_const.clone(), a), b)
       };
@@ -423,7 +418,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.pred
-    if self.prims.nat_pred.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_pred, addr) {
       if !self.prim_in_env(&self.prims.nat) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natPred: missing Nat or bad numLevels"));
       }
@@ -432,7 +427,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         return Err(self.prim_err("natPred: type mismatch"));
       }
       // Use the constant so try_reduce_nat_val step-case fires
-      let pred_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
+      let pred_const = KExpr::cnst(self.prims.nat_pred.as_ref().unwrap().clone(), Vec::new());
       let pred_v = |a: KExpr<M>| -> KExpr<M> {
         KExpr::app(pred_const.clone(), a)
       };
@@ -448,7 +443,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.sub
-    if self.prims.nat_sub.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_sub, addr) {
       if !self.prim_in_env(&self.prims.nat_pred) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natSub: missing natPred or bad numLevels"));
       }
@@ -457,7 +452,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         return Err(self.prim_err("natSub: type mismatch"));
       }
       // Use the constant so try_reduce_nat_val step-case fires
-      let sub_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
+      let sub_const = KExpr::cnst(self.prims.nat_sub.as_ref().unwrap().clone(), Vec::new());
       let sub_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
         KExpr::app(KExpr::app(sub_const.clone(), a), b)
       };
@@ -475,7 +470,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.mul
-    if self.prims.nat_mul.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_mul, addr) {
       if !self.prim_in_env(&self.prims.nat_add) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natMul: missing natAdd or bad numLevels"));
       }
@@ -484,7 +479,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         return Err(self.prim_err("natMul: type mismatch"));
       }
       // Use the constant so try_reduce_nat_val step-case fires
-      let mul_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
+      let mul_const = KExpr::cnst(self.prims.nat_mul.as_ref().unwrap().clone(), Vec::new());
       let mul_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
         KExpr::app(KExpr::app(mul_const.clone(), a), b)
       };
@@ -502,7 +497,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.pow
-    if self.prims.nat_pow.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_pow, addr) {
       if !self.prim_in_env(&self.prims.nat_mul) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natPow: missing natMul or bad numLevels"));
       }
@@ -511,7 +506,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         return Err(self.prim_err("natPow: type mismatch"));
       }
       // Use the constant so try_reduce_nat_val step-case fires
-      let pow_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
+      let pow_const = KExpr::cnst(self.prims.nat_pow.as_ref().unwrap().clone(), Vec::new());
       let pow_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
         KExpr::app(KExpr::app(pow_const.clone(), a), b)
       };
@@ -530,7 +525,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.beq
-    if self.prims.nat_beq.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_beq, addr) {
       if v.cv.num_levels != 0 {
         return Err(self.prim_err("natBeq: bad numLevels"));
       }
@@ -539,7 +534,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         return Err(self.prim_err("natBeq: type mismatch"));
       }
       // Use the constant so try_reduce_nat_val step-case fires
-      let beq_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
+      let beq_const = KExpr::cnst(self.prims.nat_beq.as_ref().unwrap().clone(), Vec::new());
       let beq_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
         KExpr::app(KExpr::app(beq_const.clone(), a), b)
       };
@@ -564,7 +559,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.ble
-    if self.prims.nat_ble.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_ble, addr) {
       if v.cv.num_levels != 0 {
         return Err(self.prim_err("natBle: bad numLevels"));
       }
@@ -573,7 +568,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         return Err(self.prim_err("natBle: type mismatch"));
       }
       // Use the constant so try_reduce_nat_val step-case fires
-      let ble_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
+      let ble_const = KExpr::cnst(self.prims.nat_ble.as_ref().unwrap().clone(), Vec::new());
       let ble_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
         KExpr::app(KExpr::app(ble_const.clone(), a), b)
       };
@@ -598,7 +593,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.shiftLeft
-    if self.prims.nat_shift_left.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_shift_left, addr) {
       if !self.prim_in_env(&self.prims.nat_mul) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natShiftLeft: missing natMul or bad numLevels"));
       }
@@ -607,7 +602,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         return Err(self.prim_err("natShiftLeft: type mismatch"));
       }
       // Use the constant (not v.value) so try_reduce_nat_val step-case fires
-      let shl_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
+      let shl_const = KExpr::cnst(self.prims.nat_shift_left.as_ref().unwrap().clone(), Vec::new());
       let shl_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
         KExpr::app(KExpr::app(shl_const.clone(), a), b)
       };
@@ -626,7 +621,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.shiftRight
-    if self.prims.nat_shift_right.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_shift_right, addr) {
       if !self.prim_in_env(&self.prims.nat_div) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natShiftRight: missing natDiv or bad numLevels"));
       }
@@ -635,7 +630,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         return Err(self.prim_err("natShiftRight: type mismatch"));
       }
       // Use the constant (not v.value) so try_reduce_nat_val step-case fires
-      let shr_const = KExpr::cnst(addr.clone(), Vec::new(), M::Field::<Name>::default());
+      let shr_const = KExpr::cnst(self.prims.nat_shift_right.as_ref().unwrap().clone(), Vec::new());
       let shr_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
         KExpr::app(KExpr::app(shr_const.clone(), a), b)
       };
@@ -655,7 +650,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.land
-    if self.prims.nat_land.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_land, addr) {
       if !self.prim_in_env(&self.prims.nat_bitwise) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natLand: missing natBitwise or bad numLevels"));
       }
@@ -666,7 +661,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       // v.value must be (Nat.bitwise f)
       let (fn_head, fn_args) = v.value.get_app_args();
       if fn_args.len() != 1
-        || !self.prims.nat_bitwise.as_ref().map_or(false, |a| fn_head.is_const_of(a))
+        || !self.prims.nat_bitwise.as_ref().map_or(false, |id| fn_head.is_const_of(&id.addr))
       {
         return Err(self.prim_err("natLand: value must be Nat.bitwise applied to a function"));
       }
@@ -686,7 +681,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.lor
-    if self.prims.nat_lor.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_lor, addr) {
       if !self.prim_in_env(&self.prims.nat_bitwise) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natLor: missing natBitwise or bad numLevels"));
       }
@@ -696,7 +691,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
       let (fn_head, fn_args) = v.value.get_app_args();
       if fn_args.len() != 1
-        || !self.prims.nat_bitwise.as_ref().map_or(false, |a| fn_head.is_const_of(a))
+        || !self.prims.nat_bitwise.as_ref().map_or(false, |id| fn_head.is_const_of(&id.addr))
       {
         return Err(self.prim_err("natLor: value must be Nat.bitwise applied to a function"));
       }
@@ -716,7 +711,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.xor
-    if self.prims.nat_xor.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_xor, addr) {
       if !self.prim_in_env(&self.prims.nat_bitwise) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natXor: missing natBitwise or bad numLevels"));
       }
@@ -726,7 +721,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
       let (fn_head, fn_args) = v.value.get_app_args();
       if fn_args.len() != 1
-        || !self.prims.nat_bitwise.as_ref().map_or(false, |a| fn_head.is_const_of(a))
+        || !self.prims.nat_bitwise.as_ref().map_or(false, |id| fn_head.is_const_of(&id.addr))
       {
         return Err(self.prim_err("natXor: value must be Nat.bitwise applied to a function"));
       }
@@ -752,7 +747,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.mod
-    if self.prims.nat_mod.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_mod, addr) {
       if !self.prim_in_env(&self.prims.nat_sub) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natMod: missing natSub or bad numLevels"));
       }
@@ -764,7 +759,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.div
-    if self.prims.nat_div.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_div, addr) {
       if !self.prim_in_env(&self.prims.nat_sub) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natDiv: missing natSub or bad numLevels"));
       }
@@ -776,7 +771,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.gcd
-    if self.prims.nat_gcd.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_gcd, addr) {
       if !self.prim_in_env(&self.prims.nat_mod) || v.cv.num_levels != 0 {
         return Err(self.prim_err("natGcd: missing natMod or bad numLevels"));
       }
@@ -788,12 +783,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Nat.bitwise - just check type
-    if self.prims.nat_bitwise.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.nat_bitwise, addr) {
       return Ok(());
     }
 
     // Char.mk
-    if self.prims.char_mk.as_ref() == Some(addr) {
+    if Primitives::<M>::addr_matches(&self.prims.char_mk, addr) {
       if v.cv.num_levels != 0 {
         return Err(self.prim_err("charMk: bad numLevels"));
       }
@@ -823,7 +818,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         KExpr::cnst(
           self.prims.list_nil.clone().ok_or_else(|| self.prim_err("List.nil"))?,
           vec![KLevel::zero()],
-          M::Field::<Name>::default(),
         ),
         char_e.clone(),
       );
@@ -836,7 +830,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         KExpr::cnst(
           self.prims.list_cons.clone().ok_or_else(|| self.prim_err("List.cons"))?,
           vec![KLevel::zero()],
-          M::Field::<Name>::default(),
         ),
         char_e.clone(),
       );
@@ -860,16 +853,16 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   // =====================================================================
 
   fn check_eq_type(&mut self) -> TcResult<(), M> {
-    let eq_addr = self
+    let eq_id = self
       .prims
       .eq
       .as_ref()
       .ok_or_else(|| self.prim_err("Eq type not found"))?
       .clone();
-    if !self.env.contains_key(&eq_addr) {
+    if !self.env.contains_key(&eq_id) {
       return Err(self.prim_err("Eq type not found in environment"));
     }
-    let ci = self.deref_const(&eq_addr)?.clone();
+    let ci = self.deref_const(&eq_id)?.clone();
     let iv = match &ci {
       KConstantInfo::Inductive(v) => v,
       _ => return Err(self.prim_err("Eq is not an inductive")),
@@ -904,25 +897,24 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Validate Eq.refl
-    let refl_addr = self
+    let refl_id = self
       .prims
       .eq_refl
       .as_ref()
       .ok_or_else(|| self.prim_err("Eq.refl not found"))?
       .clone();
-    if !self.env.contains_key(&refl_addr) {
+    if !self.env.contains_key(&refl_id) {
       return Err(self.prim_err("Eq.refl not found in environment"));
     }
-    let refl = self.deref_const(&refl_addr)?.clone();
+    let refl = self.deref_const(&refl_id)?.clone();
     if refl.cv().num_levels != 1 {
       return Err(self.prim_err("Eq.refl must have exactly 1 universe parameter"));
     }
     let u = KLevel::param(0, M::Field::<Name>::default());
     let sort_u = KExpr::sort(u.clone());
     let eq_const = KExpr::cnst(
-      eq_addr,
+      eq_id,
       vec![u],
-      M::Field::<Name>::default(),
     );
     // Expected: ∀ {α : Sort u} (a : α), @Eq α a a
     let expected_refl_type = KExpr::forall_e(
@@ -970,8 +962,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     };
 
     // Quot
-    if let Some(qt_addr) = self.prims.quot_type.clone() {
-      let ci = self.deref_const(&qt_addr)?.clone();
+    if let Some(qt_id) = self.prims.quot_type.clone() {
+      let ci = self.deref_const(&qt_id)?.clone();
       // Expected: ∀ {α : Sort u} (r : α → α → Prop), Sort u
       let expected = KExpr::forall_e(
         sort_u.clone(),
@@ -990,14 +982,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Quot.mk
-    if let Some(qc_addr) = self.prims.quot_ctor.clone() {
-      let ci = self.deref_const(&qc_addr)?.clone();
-      let qt_addr = self.prims.quot_type.clone()
+    if let Some(qc_id) = self.prims.quot_ctor.clone() {
+      let ci = self.deref_const(&qc_id)?.clone();
+      let qt_id = self.prims.quot_type.clone()
         .ok_or_else(|| self.prim_err("Quot type not found"))?;
       // Quot applied to bvar(2) and bvar(1)
       let quot_app = KExpr::app(
         KExpr::app(
-          KExpr::cnst(qt_addr, vec![u.clone()], d.clone()),
+          KExpr::cnst(qt_id, vec![u.clone()]),
           bv(2),
         ),
         bv(1),
@@ -1020,16 +1012,16 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Quot.lift
-    if let Some(ql_addr) = self.prims.quot_lift.clone() {
-      let ci = self.deref_const(&ql_addr)?.clone();
+    if let Some(ql_id) = self.prims.quot_lift.clone() {
+      let ci = self.deref_const(&ql_id)?.clone();
       if ci.cv().num_levels != 2 {
         return Err(self.prim_err("Quot.lift must have exactly 2 universe parameters"));
       }
       let v = KLevel::param(1, d.clone());
       let sort_v = KExpr::sort(v.clone());
-      let qt_addr = self.prims.quot_type.clone()
+      let qt_id = self.prims.quot_type.clone()
         .ok_or_else(|| self.prim_err("Quot type not found"))?;
-      let eq_addr = self.prims.eq.clone()
+      let eq_id = self.prims.eq.clone()
         .ok_or_else(|| self.prim_err("Eq type not found"))?;
 
       // f : α → β  (at depth where α = bvar(2), β = bvar(1))
@@ -1044,7 +1036,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             KExpr::app(
               KExpr::app(
                 KExpr::app(
-                  KExpr::cnst(eq_addr, vec![v.clone()], d.clone()),
+                  KExpr::cnst(eq_id, vec![v.clone()]),
                   bv(4),
                 ),
                 KExpr::app(bv(3), bv(2)),
@@ -1062,7 +1054,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       );
       let q_type = KExpr::app(
         KExpr::app(
-          KExpr::cnst(qt_addr, vec![u.clone()], d.clone()),
+          KExpr::cnst(qt_id, vec![u.clone()]),
           bv(4),
         ),
         bv(3),
@@ -1099,19 +1091,19 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
 
     // Quot.ind
-    if let Some(qi_addr) = self.prims.quot_ind.clone() {
-      let ci = self.deref_const(&qi_addr)?.clone();
+    if let Some(qi_id) = self.prims.quot_ind.clone() {
+      let ci = self.deref_const(&qi_id)?.clone();
       if ci.cv().num_levels != 1 {
         return Err(self.prim_err("Quot.ind must have exactly 1 universe parameter"));
       }
-      let qt_addr = self.prims.quot_type.clone()
+      let qt_id = self.prims.quot_type.clone()
         .ok_or_else(|| self.prim_err("Quot type not found"))?;
-      let qc_addr = self.prims.quot_ctor.clone()
+      let qc_id = self.prims.quot_ctor.clone()
         .ok_or_else(|| self.prim_err("Quot.mk not found"))?;
 
       let quot_at_depth2 = KExpr::app(
         KExpr::app(
-          KExpr::cnst(qt_addr.clone(), vec![u.clone()], d.clone()),
+          KExpr::cnst(qt_id.clone(), vec![u.clone()]),
           bv(1),
         ),
         bv(0),
@@ -1126,7 +1118,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       let quot_mk_a = KExpr::app(
         KExpr::app(
           KExpr::app(
-            KExpr::cnst(qc_addr, vec![u.clone()], d.clone()),
+            KExpr::cnst(qc_id, vec![u.clone()]),
             bv(3),
           ),
           bv(2),
@@ -1141,7 +1133,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       );
       let q_type = KExpr::app(
         KExpr::app(
-          KExpr::cnst(qt_addr, vec![u.clone()], d.clone()),
+          KExpr::cnst(qt_id, vec![u.clone()]),
           bv(3),
         ),
         bv(2),

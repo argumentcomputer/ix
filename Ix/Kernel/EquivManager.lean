@@ -8,6 +8,7 @@
   Provides transitivity: if a =?= b and b =?= c succeed, then a =?= c is O(α(n)).
 -/
 import Batteries.Data.UnionFind.Basic
+import Std.Data.HashMap
 
 namespace Ix.Kernel
 
@@ -15,7 +16,7 @@ abbrev NodeRef := Nat
 
 structure EquivManager where
   uf        : Batteries.UnionFind := {}
-  toNodeMap : Std.TreeMap USize NodeRef compare := {}
+  toNodeMap : Std.HashMap USize NodeRef := {}
   nodeToPtr : Array USize := #[]  -- reverse map: node index → pointer address
 
 instance : Inhabited EquivManager := ⟨{}⟩

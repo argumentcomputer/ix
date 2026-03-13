@@ -17,9 +17,10 @@ namespace Ix.Kernel
 abbrev KExpr (m : Ix.Kernel.MetaMode) := Ix.Kernel.Expr m
 abbrev KLevel (m : Ix.Kernel.MetaMode) := Ix.Kernel.Level m
 abbrev KMetaField (m : Ix.Kernel.MetaMode) (α : Type) := Ix.Kernel.MetaField m α
+abbrev KMetaId (m : Ix.Kernel.MetaMode) := Ix.Kernel.MetaId m
 abbrev KConstantInfo (m : Ix.Kernel.MetaMode) := Ix.Kernel.ConstantInfo m
 abbrev KEnv (m : Ix.Kernel.MetaMode) := Ix.Kernel.Env m
-abbrev KPrimitives := Ix.Kernel.Primitives
+abbrev KPrimitives (m : Ix.Kernel.MetaMode) := Ix.Kernel.Primitives m
 abbrev KReducibilityHints := Ix.Kernel.ReducibilityHints
 abbrev KDefinitionSafety := Ix.Kernel.DefinitionSafety
 
@@ -38,7 +39,7 @@ mutual
 
 inductive Head (m : Ix.Kernel.MetaMode) : Type where
   | fvar  (level : Nat) (type : Val m)
-  | const (addr : Address) (levels : Array (KLevel m)) (name : KMetaField m Ix.Name)
+  | const (id : KMetaId m) (levels : Array (KLevel m))
 
 inductive Val (m : Ix.Kernel.MetaMode) : Type where
   | lam     (name : KMetaField m Ix.Name)
@@ -49,18 +50,17 @@ inductive Val (m : Ix.Kernel.MetaMode) : Type where
             (dom : Val m) (body : KExpr m) (env : Array (Val m))
   | sort    (level : KLevel m)
   | neutral (head : Head m) (spine : Array Nat)
-  | ctor    (addr : Address) (levels : Array (KLevel m))
-            (name : KMetaField m Ix.Name)
+  | ctor    (id : KMetaId m) (levels : Array (KLevel m))
             (cidx : Nat) (numParams : Nat) (numFields : Nat)
-            (inductAddr : Address) (spine : Array Nat)
+            (inductId : KMetaId m) (spine : Array Nat)
   | lit     (l : Lean.Literal)
-  | proj    (typeAddr : Address) (idx : Nat) (struct : Nat)
-            (typeName : KMetaField m Ix.Name) (spine : Array Nat)
+  | proj    (typeId : KMetaId m) (idx : Nat) (struct : Nat)
+            (spine : Array Nat)
 
 end
 
 instance : Inhabited (Head m) where
-  default := .const default #[] default
+  default := .const default #[]
 
 instance : Inhabited (Val m) where
   default := .sort .zero
@@ -90,16 +90,20 @@ def Val.piClosure : Val m → Closure m
 
 namespace Val
 
-def mkConst (addr : Address) (levels : Array (KLevel m))
-    (name : KMetaField m Ix.Name := default) : Val m :=
-  .neutral (.const addr levels name) #[]
+def mkConst (id : KMetaId m) (levels : Array (KLevel m)) : Val m :=
+  .neutral (.const id levels) #[]
 
 def mkFVar (level : Nat) (type : Val m) : Val m :=
   .neutral (.fvar level type) #[]
 
+def constId? : Val m → Option (KMetaId m)
+  | .neutral (.const id _) _ => some id
+  | .ctor id .. => some id
+  | _ => none
+
 def constAddr? : Val m → Option Address
-  | .neutral (.const addr _ _) _ => some addr
-  | .ctor addr .. => some addr
+  | .neutral (.const id _) _ => some id.addr
+  | .ctor id .. => some id.addr
   | _ => none
 
 def isSort : Val m → Bool
@@ -125,13 +129,13 @@ def strVal? : Val m → Option String
 /-! ### Spine / head accessors for lazy delta -/
 
 def headLevels! : Val m → Array (KLevel m)
-  | .neutral (.const _ ls _) _ => ls
+  | .neutral (.const _ ls) _ => ls
   | .ctor _ ls .. => ls
   | _ => #[]
 
 def spine! : Val m → Array Nat
   | .neutral _ sp => sp
-  | .ctor _ _ _ _ _ _ _ sp => sp
+  | .ctor _ _ _ _ _ _ sp => sp
   | _ => #[]
 
 end Val
@@ -140,8 +144,8 @@ end Val
 
 def sameHeadVal (t s : Val m) : Bool :=
   match t, s with
-  | .neutral (.const a _ _) _, .neutral (.const b _ _) _ => a == b
-  | .ctor a .., .ctor b .. => a == b
+  | .neutral (.const a _) _, .neutral (.const b _) _ => a.addr == b.addr
+  | .ctor a .., .ctor b .. => a.addr == b.addr
   | _, _ => false
 
 /-! ## Pretty printing -/
@@ -155,19 +159,19 @@ partial def pp : Val m → String
   | .neutral (.fvar level _) spine =>
     let base := s!"fvar.{level}"
     if spine.isEmpty then base else s!"({base} <{spine.size} thunks>)"
-  | .neutral (.const addr _ name) spine =>
-    let n := toString name
-    let base := if n == "()" then s!"#{String.ofList ((toString addr).toList.take 8)}"
+  | .neutral (.const id _) spine =>
+    let n := toString id.name
+    let base := if n == "()" then s!"#{String.ofList ((toString id.addr).toList.take 8)}"
                 else n
     if spine.isEmpty then base else s!"({base} <{spine.size} thunks>)"
-  | .ctor addr _ name cidx _ _ _ spine =>
-    let n := toString name
-    let base := if n == "()" then s!"ctor#{String.ofList ((toString addr).toList.take 8)}[{cidx}]"
+  | .ctor id _ cidx _ _ _ spine =>
+    let n := toString id.name
+    let base := if n == "()" then s!"ctor#{String.ofList ((toString id.addr).toList.take 8)}[{cidx}]"
                 else s!"ctor:{n}[{cidx}]"
     if spine.isEmpty then base else s!"({base} <{spine.size} thunks>)"
   | .lit (.natVal n) => toString n
   | .lit (.strVal s) => s!"\"{s}\""
-  | .proj _ idx _struct _ spine =>
+  | .proj _ idx _struct spine =>
     let base := s!"<thunk>.{idx}"
     if spine.isEmpty then base else s!"({base} <{spine.size} thunks>)"
 

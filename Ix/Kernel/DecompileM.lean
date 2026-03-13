@@ -47,8 +47,8 @@ partial def decompileExprCached (levelParams : Array Ix.Name) (e : Expr .meta)
   let result ← match e with
     | .bvar idx _ => pure (.bvar idx)
     | .sort lvl => pure (.sort (decompileLevel levelParams lvl))
-    | .const _addr levels name =>
-      pure (.const (ixNameToLean name) (levels.toList.map (decompileLevel levelParams)))
+    | .const id levels =>
+      pure (.const (ixNameToLean id.name) (levels.toList.map (decompileLevel levelParams)))
     | .app fn arg => do
       let f ← decompileExprCached levelParams fn
       let a ← decompileExprCached levelParams arg
@@ -67,9 +67,9 @@ partial def decompileExprCached (levelParams : Array Ix.Name) (e : Expr .meta)
       let b ← decompileExprCached levelParams body
       pure (.letE (ixNameToLean name) t v b true)
     | .lit lit => pure (.lit lit)
-    | .proj _typeAddr idx struct typeName => do
+    | .proj typeId idx struct => do
       let s ← decompileExprCached levelParams struct
-      pure (.proj (ixNameToLean typeName) idx s)
+      pure (.proj (ixNameToLean typeId.name) idx s)
   modify (·.insert ptr result)
   pure result
 
@@ -137,21 +137,20 @@ def decompileConstantInfo (ci : ConstantInfo .meta) : Lean.ConstantInfo :=
       name, levelParams := lps, type := decompTy
       numParams := v.numParams, numIndices := v.numIndices
       isRec := v.isRec, isUnsafe := v.isUnsafe, isReflexive := v.isReflexive
-      all := v.allNames.toList.map ixNameToLean
-      ctors := v.ctorNames.toList.map ixNameToLean
+      all := v.all.toList.map (ixNameToLean ·.name)
+      ctors := v.ctors.toList.map (ixNameToLean ·.name)
       numNested := v.numNested
     }
   | .ctorInfo v =>
     .ctorInfo {
       name, levelParams := lps, type := decompTy
-      induct := ixNameToLean v.inductName
+      induct := ixNameToLean v.induct.name
       cidx := v.cidx, numParams := v.numParams, numFields := v.numFields
       isUnsafe := v.isUnsafe
     }
   | .recInfo v =>
-    -- Use inductNames (the associated inductives) for Lean's `all` field.
-    -- inductNames is Array (Array Ix.Name) — flatten to a single list.
-    let allLean := (v.inductNames.foldl (fun acc group => acc ++ group) #[]).toList.map ixNameToLean
+    -- Use inductBlock (the associated inductives) for Lean's `all` field.
+    let allLean := v.all.toList.map (ixNameToLean ·.name)
     .recInfo {
       name, levelParams := lps, type := decompTy
       all := allLean
@@ -159,7 +158,7 @@ def decompileConstantInfo (ci : ConstantInfo .meta) : Lean.ConstantInfo :=
       numMotives := v.numMotives, numMinors := v.numMinors
       k := v.k, isUnsafe := v.isUnsafe
       rules := v.rules.toList.map fun r => {
-        ctor := ixNameToLean r.ctorName
+        ctor := ixNameToLean r.ctor.name
         nfields := r.nfields
         rhs := decompVal r.rhs
       }

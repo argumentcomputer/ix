@@ -125,7 +125,10 @@ def testConsts : TestSeq :=
       "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
       -- Stack overflow regression
       "_private.Init.Data.Range.Polymorphic.SInt.«0».Int64.instRxiHasSize_eq",
-      "Batteries.BinaryHeap.heapifyDown._unsafe_rec",
+      -- Slow in Lean kernel — algorithmic comparison
+      "Std.Time.Modifier.ctorElim",
+      "Std.DHashMap.Raw.WF.rec",
+      --"Batteries.BinaryHeap.heapifyDown._unsafe_rec",
       -- Proof irrelevance edge cases
       "Decidable.decide",
       -- K-reduction

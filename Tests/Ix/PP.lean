@@ -71,7 +71,7 @@ def testPpAtomsMeta : TestSeq :=
   let bv : Expr .meta := .bvar 0 x
   test "bvar with name → x" (bv.pp == "x") ++
   -- const with name
-  let c : Expr .meta := .const testAddr #[] natAdd
+  let c : Expr .meta := .const (natAdd, testAddr) #[]
   test "const Nat.add → Nat.add" (c.pp == "Nat.add") ++
   -- nat literal
   let n : Expr .meta := .lit (.natVal 42)
@@ -84,8 +84,8 @@ def testPpAtomsMeta : TestSeq :=
 /-! ## Meta mode: App parenthesization -/
 
 def testPpAppMeta : TestSeq :=
-  let f : Expr .meta := .const testAddr #[] (mkName "f")
-  let g : Expr .meta := .const testAddr2 #[] (mkName "g")
+  let f : Expr .meta := .const ((mkName "f"), testAddr) #[]
+  let g : Expr .meta := .const ((mkName "g"), testAddr2) #[]
   let a : Expr .meta := .bvar 0 (mkName "a")
   let b : Expr .meta := .bvar 1 (mkName "b")
   -- Simple application: no parens at top level
@@ -107,8 +107,8 @@ def testPpAppMeta : TestSeq :=
 /-! ## Meta mode: Lambda and Pi -/
 
 def testPpBindersMeta : TestSeq :=
-  let nat : Expr .meta := .const testAddr #[] (mkName "Nat")
-  let bool : Expr .meta := .const testAddr2 #[] (mkName "Bool")
+  let nat : Expr .meta := .const ((mkName "Nat"), testAddr) #[]
+  let bool : Expr .meta := .const ((mkName "Bool"), testAddr2) #[]
   let body : Expr .meta := .bvar 0 (mkName "x")
   let body2 : Expr .meta := .bvar 1 (mkName "y")
   -- Single lambda
@@ -132,7 +132,7 @@ def testPpBindersMeta : TestSeq :=
 /-! ## Meta mode: Let -/
 
 def testPpLetMeta : TestSeq :=
-  let nat : Expr .meta := .const testAddr #[] (mkName "Nat")
+  let nat : Expr .meta := .const ((mkName "Nat"), testAddr) #[]
   let zero : Expr .meta := .lit (.natVal 0)
   let body : Expr .meta := .bvar 0 (mkName "x")
   let letE : Expr .meta := .letE nat zero body (mkName "x")
@@ -145,12 +145,12 @@ def testPpLetMeta : TestSeq :=
 
 def testPpProjMeta : TestSeq :=
   let struct : Expr .meta := .bvar 0 (mkName "s")
-  let proj0 : Expr .meta := .proj testAddr 0 struct (mkName "Prod")
+  let proj0 : Expr .meta := .proj ((mkName "Prod"), testAddr) 0 struct
   test "s.0" (proj0.pp == "s.0") ++
   -- Projection of app (needs parens around struct)
-  let f : Expr .meta := .const testAddr #[] (mkName "f")
+  let f : Expr .meta := .const ((mkName "f"), testAddr) #[]
   let a : Expr .meta := .bvar 0 (mkName "a")
-  let projApp : Expr .meta := .proj testAddr 1 (.app f a) (mkName "Prod")
+  let projApp : Expr .meta := .proj ((mkName "Prod"), testAddr) 1 (.app f a)
   test "(f a).1" (projApp.pp == "(f a).1") ++
   .done
 
@@ -161,7 +161,7 @@ def testPpAnon : TestSeq :=
   let bv : Expr .anon := .bvar 3 ()
   test "anon bvar 3 → ^3" (bv.pp == "^3") ++
   -- const: #hash
-  let c : Expr .anon := .const testAddr #[] ()
+  let c : Expr .anon := .const testAddr #[]
   test "anon const → #hash" (c.pp == s!"#{testAddrShort}") ++
   -- sort
   let prop : Expr .anon := .sort .zero
@@ -201,7 +201,7 @@ def testPpMetaDefaultNames : TestSeq :=
   let bv : Expr .meta := .bvar 0 anonName
   test "meta bvar with anonymous name → ???" (bv.pp == "???") ++
   -- const with anonymous name shows full hash
-  let c : Expr .meta := .const testAddr #[] anonName
+  let c : Expr .meta := .const (anonName, testAddr) #[]
   test "meta const with anonymous name → full hash" (c.pp == s!"{testAddr}") ++
   -- lambda with anonymous binder name shows ???
   let lam : Expr .meta := .lam (.sort .zero) (.bvar 0 anonName) anonName .default
@@ -214,8 +214,8 @@ def testPpMetaDefaultNames : TestSeq :=
 /-! ## Complex expressions -/
 
 def testPpComplex : TestSeq :=
-  let nat : Expr .meta := .const testAddr #[] (mkName "Nat")
-  let bool : Expr .meta := .const testAddr2 #[] (mkName "Bool")
+  let nat : Expr .meta := .const ((mkName "Nat"), testAddr) #[]
+  let bool : Expr .meta := .const ((mkName "Bool"), testAddr2) #[]
   -- ∀ (n : Nat), Nat → Nat  (arrow sugar approximation)
   -- This is: forallE Nat (forallE Nat Nat)
   let arrow : Expr .meta := .forallE nat (.forallE nat nat (mkName "m") .default) (mkName "n") .default
@@ -235,41 +235,41 @@ def testPpComplex : TestSeq :=
 /-! ## Literal folding: Nat/String constructor chains → literals in Expr -/
 
 def testFoldLiterals : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Nat.zero → 0
-  let natZero : Expr .meta := .const prims.natZero #[] (mkName "Nat.zero")
+  let natZero : Expr .meta := .const prims.natZero #[]
   let folded := foldLiterals prims natZero
   test "fold Nat.zero → 0" (folded.pp == "0") ++
   -- Nat.succ Nat.zero → 1
-  let natOne : Expr .meta := .app (.const prims.natSucc #[] (mkName "Nat.succ")) natZero
+  let natOne : Expr .meta := .app (.const prims.natSucc #[]) natZero
   let folded := foldLiterals prims natOne
   test "fold Nat.succ Nat.zero → 1" (folded.pp == "1") ++
   -- Nat.succ (Nat.succ Nat.zero) → 2
-  let natTwo : Expr .meta := .app (.const prims.natSucc #[] (mkName "Nat.succ")) natOne
+  let natTwo : Expr .meta := .app (.const prims.natSucc #[]) natOne
   let folded := foldLiterals prims natTwo
   test "fold Nat.succ^2 Nat.zero → 2" (folded.pp == "2") ++
   -- Nats inside types get folded: ∀ (n : Nat), Eq Nat n Nat.zero
-  let natType : Expr .meta := .const prims.nat #[] (mkName "Nat")
+  let natType : Expr .meta := .const prims.nat #[]
   let eqAddr := Address.blake3 (ByteArray.mk #[99])
   let eq3 : Expr .meta :=
-    .app (.app (.app (.const eqAddr #[] (mkName "Eq")) natType) (.bvar 0 (mkName "n"))) natZero
+    .app (.app (.app (.const ((mkName "Eq"), eqAddr) #[]) natType) (.bvar 0 (mkName "n"))) natZero
   let piExpr : Expr .meta := .forallE natType eq3 (mkName "n") .default
   let folded := foldLiterals prims piExpr
   test "fold nat inside forall" (folded.pp == "∀ (n : Nat), Eq Nat n 0") ++
   -- String.mk (List.cons (Char.ofNat 104) (List.cons (Char.ofNat 105) List.nil)) → "hi"
-  let charH : Expr .meta := .app (.const prims.charMk #[] (mkName "Char.ofNat")) (.lit (.natVal 104))
-  let charI : Expr .meta := .app (.const prims.charMk #[] (mkName "Char.ofNat")) (.lit (.natVal 105))
-  let charType : Expr .meta := .const prims.char #[] (mkName "Char")
-  let nilExpr : Expr .meta := .app (.const prims.listNil #[.zero] (mkName "List.nil")) charType
+  let charH : Expr .meta := .app (.const prims.charMk #[]) (.lit (.natVal 104))
+  let charI : Expr .meta := .app (.const prims.charMk #[]) (.lit (.natVal 105))
+  let charType : Expr .meta := .const prims.char #[]
+  let nilExpr : Expr .meta := .app (.const prims.listNil #[.zero]) charType
   let consI : Expr .meta :=
-    .app (.app (.app (.const prims.listCons #[.zero] (mkName "List.cons")) charType) charI) nilExpr
+    .app (.app (.app (.const prims.listCons #[.zero]) charType) charI) nilExpr
   let consH : Expr .meta :=
-    .app (.app (.app (.const prims.listCons #[.zero] (mkName "List.cons")) charType) charH) consI
-  let strExpr : Expr .meta := .app (.const prims.stringMk #[] (mkName "String.mk")) consH
+    .app (.app (.app (.const prims.listCons #[.zero]) charType) charH) consI
+  let strExpr : Expr .meta := .app (.const prims.stringMk #[]) consH
   let folded := foldLiterals prims strExpr
   test "fold String.mk char list → \"hi\"" (folded.pp == "\"hi\"") ++
   -- Nat.succ applied to a non-literal arg stays unfolded
-  let succX : Expr .meta := .app (.const prims.natSucc #[] (mkName "Nat.succ")) (.bvar 0 (mkName "x"))
+  let succX : Expr .meta := .app (.const prims.natSucc #[]) (.bvar 0 (mkName "x"))
   let folded := foldLiterals prims succX
   test "fold Nat.succ x → Nat.succ x (no fold)" (folded.pp == "Nat.succ x") ++
   .done

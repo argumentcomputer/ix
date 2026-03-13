@@ -156,15 +156,21 @@ def testConsts : TestSeq :=
         IO.println s!"  checking {name} ..."
         (← IO.getStdout).flush
         let start ← IO.monoMsNow
-        match Ix.Kernel.typecheckConst kenv prims addr quotInit (trace := false) with
-        | .ok () =>
-          let ms := (← IO.monoMsNow) - start
+        let (err?, stats) := Ix.Kernel.typecheckConstWithStatsAlways kenv prims addr quotInit (trace := false)
+        let ms := (← IO.monoMsNow) - start
+        match err? with
+        | none =>
           IO.println s!"  ✓ {name} ({ms.formatMs})"
           passed := passed + 1
-        | .error e =>
-          let ms := (← IO.monoMsNow) - start
+        | some e =>
           IO.println s!"  ✗ {name} ({ms.formatMs}): {e}"
           failures := failures.push s!"{name}: {e}"
+        if ms >= 10 then
+          IO.println s!"  [lean-stats] {name}: hb={stats.heartbeats} infer={stats.inferCalls} eval={stats.evalCalls} deq={stats.isDefEqCalls} thunks={stats.thunkCount} forces={stats.forceCalls} hits={stats.thunkHits}"
+          IO.println s!"  [lean-stats]   quick: true={stats.quickTrue} false={stats.quickFalse}  equiv={stats.equivHits}  ptr_succ={stats.ptrSuccessHits}  ptr_fail={stats.ptrFailureHits}  proofIrrel={stats.proofIrrelHits}"
+          IO.println s!"  [lean-stats]   whnf: hit={stats.whnfCacheHits} miss={stats.whnfCacheMisses}  equiv={stats.whnfEquivHits}  core_hit={stats.whnfCoreCacheHits}  core_miss={stats.whnfCoreCacheMisses}"
+          IO.println s!"  [lean-stats]   delta: steps={stats.deltaSteps}  lazy_iters={stats.lazyDeltaIters}  same_head: check={stats.sameHeadChecks}  hit={stats.sameHeadHits}"
+          IO.println s!"  [lean-stats]   step10={stats.step10Fires}  step11={stats.step11Fires}  native={stats.nativeReduces}"
       IO.println s!"[kernel2-const] {passed}/{constNames.size} passed"
       if failures.isEmpty then
         return (true, none)
@@ -405,17 +411,17 @@ def testRoundtrip : TestSeq :=
       IO.println s!"[kernel2-roundtrip] convertEnv error: {e}"
       return (false, some e)
     | .ok (kenv, _, _) =>
-      -- Build Lean.Name → EnvId map from ixonEnv.named
-      let mut nameToEnvId : Std.HashMap Lean.Name (Ix.Kernel.EnvId .meta) := {}
+      -- Build Lean.Name → Address map from ixonEnv.named
+      let mut nameToAddr : Std.HashMap Lean.Name Address := {}
       for (ixName, named) in ixonEnv.named do
-        nameToEnvId := nameToEnvId.insert (Ix.Kernel.Decompile.ixNameToLean ixName) ⟨named.addr, ixName⟩
+        nameToAddr := nameToAddr.insert (Ix.Kernel.Decompile.ixNameToLean ixName) named.addr
       -- Build work items
       let mut workItems : Array (Lean.Name × Lean.ConstantInfo × Ix.Kernel.ConstantInfo .meta) := #[]
       let mut notFound := 0
       for (leanName, origCI) in leanEnv.constants.toList do
-        let some envId := nameToEnvId.get? leanName
+        let some addr := nameToAddr.get? leanName
           | do notFound := notFound + 1; continue
-        let some kernelCI := kenv.findByEnvId envId
+        let some kernelCI := kenv.find? addr
           | continue
         workItems := workItems.push (leanName, origCI, kernelCI)
       -- Chunked parallel comparison

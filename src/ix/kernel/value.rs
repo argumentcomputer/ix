@@ -12,7 +12,7 @@ use crate::ix::address::Address;
 use crate::ix::env::{BinderInfo, Literal, Name};
 use crate::lean::nat::Nat;
 
-use super::types::{KExpr, KLevel, MetaMode};
+use super::types::{KExpr, KLevel, MetaId, MetaMode};
 
 // ============================================================================
 // Env — COW (copy-on-write) closure environment
@@ -112,9 +112,8 @@ pub enum ValInner<M: MetaMode> {
   Neutral { head: Head<M>, spine: Vec<Thunk<M>> },
   /// A constructor application with lazily-evaluated arguments.
   Ctor {
-    addr: Address,
+    id: MetaId<M>,
     levels: Vec<KLevel<M>>,
-    name: M::Field<Name>,
     cidx: usize,
     num_params: usize,
     num_fields: usize,
@@ -140,9 +139,8 @@ pub enum Head<M: MetaMode> {
   FVar { level: usize, ty: Val<M> },
   /// An unresolved constant reference.
   Const {
-    addr: Address,
+    id: MetaId<M>,
     levels: Vec<KLevel<M>>,
-    name: M::Field<Name>,
   },
 }
 
@@ -172,15 +170,13 @@ impl<M: MetaMode> Val<M> {
   }
 
   pub fn mk_const(
-    addr: Address,
+    id: MetaId<M>,
     levels: Vec<KLevel<M>>,
-    name: M::Field<Name>,
   ) -> Self {
     Val(Rc::new(ValInner::Neutral {
       head: Head::Const {
-        addr,
+        id,
         levels,
-        name,
       },
       spine: Vec::new(),
     }))
@@ -226,9 +222,8 @@ impl<M: MetaMode> Val<M> {
   }
 
   pub fn mk_ctor(
-    addr: Address,
+    id: MetaId<M>,
     levels: Vec<KLevel<M>>,
-    name: M::Field<Name>,
     cidx: usize,
     num_params: usize,
     num_fields: usize,
@@ -236,9 +231,8 @@ impl<M: MetaMode> Val<M> {
     spine: Vec<Thunk<M>>,
   ) -> Self {
     Val(Rc::new(ValInner::Ctor {
-      addr,
+      id,
       levels,
-      name,
       cidx,
       num_params,
       num_fields,
@@ -293,10 +287,10 @@ impl<M: MetaMode> Val<M> {
   pub fn const_addr(&self) -> Option<&Address> {
     match self.inner() {
       ValInner::Neutral {
-        head: Head::Const { addr, .. },
+        head: Head::Const { id, .. },
         ..
-      } => Some(addr),
-      ValInner::Ctor { addr, .. } => Some(addr),
+      } => Some(&id.addr),
+      ValInner::Ctor { id, .. } => Some(&id.addr),
       _ => None,
     }
   }
@@ -382,8 +376,8 @@ fn fmt_val<M: MetaMode>(
     ValInner::Neutral { head, spine } => {
       match head {
         Head::FVar { level, .. } => write!(f, "fvar@{level}")?,
-        Head::Const { name, .. } => {
-          super::types::fmt_field_name::<M>(name, f)?;
+        Head::Const { id, .. } => {
+          super::types::fmt_field_name::<M>(&id.name, f)?;
         }
       }
       if !spine.is_empty() {
@@ -392,10 +386,10 @@ fn fmt_val<M: MetaMode>(
       Ok(())
     }
     ValInner::Ctor {
-      name, spine, cidx, ..
+      id, spine, cidx, ..
     } => {
       write!(f, "ctor#{cidx} ")?;
-      super::types::fmt_field_name::<M>(name, f)?;
+      super::types::fmt_field_name::<M>(&id.name, f)?;
       if !spine.is_empty() {
         write!(f, " ({} args)", spine.len())?;
       }

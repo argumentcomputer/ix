@@ -9,12 +9,15 @@ import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
-import Tests.Ix.Check
 import Tests.Ix.Kernel.Unit
-import Tests.Ix.Kernel.Integration
 import Tests.Ix.Kernel.Nat
-import Tests.Ix.RustKernel
-import Tests.Ix.RustKernelProblematic
+import Tests.Ix.Kernel.Negative
+import Tests.Ix.Kernel.Convert
+import Tests.Ix.Kernel.Roundtrip
+import Tests.Ix.Kernel.CheckEnv
+import Tests.Ix.Kernel.ConstCheck
+import Tests.Ix.Kernel.Rust
+import Tests.Ix.Kernel.RustProblematic
 import Tests.Ix.PP
 import Tests.Ix.CondenseM
 import Tests.FFI
@@ -39,10 +42,9 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("sharing", Tests.Sharing.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
-  --("check", Tests.Check.checkSuiteIO), -- disable until rust kernel works
   ("kernel-unit", Tests.Ix.Kernel.Unit.suite),
   ("kernel-nat", Tests.Ix.Kernel.Nat.suite),
-  ("kernel-negative", Tests.Ix.Kernel.Integration.negativeSuite),
+  ("kernel-negative", Tests.Ix.Kernel.Negative.suite),
   ("pp", Tests.PP.suite),
 ]
 
@@ -59,18 +61,16 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
-  --("check-all", Tests.Check.checkAllSuiteIO),
-  ("kernel-check-env", Tests.Check.kernelSuiteIO),
-  ("kernel-const", Tests.Ix.Kernel.Integration.constSuite),
-  ("kernel-problematic", Tests.Ix.Kernel.Integration.constProblematicSuite),
+  ("kernel-check-env", Tests.Ix.Kernel.CheckEnv.leanSuite),
+  ("kernel-const", Tests.Ix.Kernel.ConstCheck.constSuite),
+  ("kernel-problematic", Tests.Ix.Kernel.ConstCheck.problematicSuite),
   ("kernel-nat-real", Tests.Ix.Kernel.Nat.realSuite),
-  ("kernel-convert", Tests.Ix.Kernel.Integration.convertSuite),
-  ("kernel-anon-convert", Tests.Ix.Kernel.Integration.anonConvertSuite),
-  ("kernel-check-env-full", Tests.Ix.Kernel.Integration.checkEnvSuite),
-  ("kernel-roundtrip", Tests.Ix.Kernel.Integration.roundtripSuite),
-  ("rust-kernel-consts", Tests.Ix.RustKernel.constSuite),
-  ("rust-kernel-problematic", Tests.Ix.RustKernelProblematic.suite),
-  ("rust-kernel-convert", Tests.Ix.RustKernel.convertSuite),
+  ("kernel-convert", Tests.Ix.Kernel.Convert.convertSuite),
+  ("kernel-anon-convert", Tests.Ix.Kernel.Convert.anonConvertSuite),
+  ("kernel-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),
+  ("rust-kernel-consts", Tests.Ix.Kernel.Rust.constSuite),
+  ("rust-kernel-problematic", Tests.Ix.Kernel.RustProblematic.suite),
+  ("rust-kernel-convert", Tests.Ix.Kernel.Rust.convertSuite),
   ("ixon-full-roundtrip", Tests.Compile.ixonRoundtripSuiteIO),
 ]
 

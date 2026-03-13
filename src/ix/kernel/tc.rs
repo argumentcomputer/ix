@@ -81,7 +81,7 @@ pub struct TypeChecker<'env, M: MetaMode> {
   /// The global kernel environment.
   pub env: &'env KEnv<M>,
   /// Primitive type/operation addresses.
-  pub prims: &'env Primitives,
+  pub prims: &'env Primitives<M>,
   /// Current declaration's safety level.
   pub safety: DefinitionSafety,
   /// Whether Quot types exist in the environment.
@@ -100,8 +100,8 @@ pub struct TypeChecker<'env, M: MetaMode> {
 
   // -- Caches (reset between constants) --
 
-  /// Already type-checked constants.
-  pub typed_consts: FxHashMap<Address, TypedConst<M>>,
+  /// Already type-checked constants (keyed by MetaId for identity-safe lookups).
+  pub typed_consts: FxHashMap<MetaId<M>, TypedConst<M>>,
   /// Pointer-keyed def-eq failure cache.
   pub ptr_failure_cache: FxHashMap<(usize, usize), (Val<M>, Val<M>)>,
   /// Pointer-keyed def-eq success cache.
@@ -142,7 +142,7 @@ pub struct TypeChecker<'env, M: MetaMode> {
 
 impl<'env, M: MetaMode> TypeChecker<'env, M> {
   /// Create a new TypeChecker.
-  pub fn new(env: &'env KEnv<M>, prims: &'env Primitives) -> Self {
+  pub fn new(env: &'env KEnv<M>, prims: &'env Primitives<M>) -> Self {
     TypeChecker {
       types: Vec::new(),
       let_values: Vec::new(),
@@ -346,28 +346,37 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
 
   // -- Constant lookup --
 
-  /// Look up a constant in the environment.
-  pub fn deref_const(&self, addr: &Address) -> TcResult<&KConstantInfo<M>, M> {
-    self.env.get(addr).ok_or_else(|| TcError::UnknownConst {
-      msg: format!("address {}", addr.hex()),
+  /// Look up a constant in the environment by MetaId.
+  pub fn deref_const(&self, id: &MetaId<M>) -> TcResult<&KConstantInfo<M>, M> {
+    self.env.get(id).ok_or_else(|| TcError::UnknownConst {
+      msg: format!("constant {}", id),
     })
   }
 
-  /// Look up a typed (already checked) constant.
+  /// Look up a typed (already checked) constant by MetaId.
   pub fn deref_typed_const(
+    &self,
+    id: &MetaId<M>,
+  ) -> Option<&TypedConst<M>> {
+    self.typed_consts.get(id)
+  }
+
+  /// Look up a typed constant by address (content-only, for struct-like checks).
+  pub fn typed_const_by_addr(
     &self,
     addr: &Address,
   ) -> Option<&TypedConst<M>> {
-    self.typed_consts.get(addr)
+    let id = self.env.get_id_by_addr(addr)?;
+    self.typed_consts.get(id)
   }
 
   /// Ensure a constant has been typed. If not, creates a provisional entry.
-  pub fn ensure_typed_const(&mut self, addr: &Address) -> TcResult<(), M> {
-    if self.typed_consts.contains_key(addr) {
+  pub fn ensure_typed_const(&mut self, id: &MetaId<M>) -> TcResult<(), M> {
+    if self.typed_consts.contains_key(id) {
       return Ok(());
     }
-    let ci = self.env.get(addr).ok_or_else(|| TcError::UnknownConst {
-      msg: format!("address {}", addr.hex()),
+    let ci = self.env.get(id).ok_or_else(|| TcError::UnknownConst {
+      msg: format!("constant {}", id),
     })?;
     let mut tc = provisional_typed_const(ci);
 
@@ -389,7 +398,7 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
       }
     }
 
-    self.typed_consts.insert(addr.clone(), tc);
+    self.typed_consts.insert(id.clone(), tc);
     Ok(())
   }
 
@@ -464,6 +473,7 @@ fn provisional_typed_const<M: MetaMode>(ci: &KConstantInfo<M>) -> TypedConst<M> 
         v.num_minors,
         v.num_indices,
       )
+      .map(|id| id.addr)
       .unwrap_or_else(|| Address::hash(b"unknown")),
       rules: v
         .rules

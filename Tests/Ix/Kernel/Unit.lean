@@ -7,7 +7,7 @@ import LSpec
 
 open LSpec
 open Ix.Kernel (buildPrimitives)
-open Tests.Ix.Kernel.Helpers (mkAddr)
+open Tests.Ix.Kernel.Helpers (mkAddr mkId MId parseIxName)
 open Tests.Ix.Kernel.Helpers
 
 namespace Tests.Ix.Kernel.Unit
@@ -25,13 +25,13 @@ private def ty : E := srt 1
 private def lam (dom body : E) : E := Ix.Kernel.Expr.mkLam dom body
 private def pi (dom body : E) : E := Ix.Kernel.Expr.mkForallE dom body
 private def app (f a : E) : E := Ix.Kernel.Expr.mkApp f a
-private def cst (addr : Address) : E := Ix.Kernel.Expr.mkConst addr #[]
-private def cstL (addr : Address) (lvls : Array L) : E := Ix.Kernel.Expr.mkConst addr lvls
+private def cst (id : MId) : E := .const id #[]
+private def cstL (id : MId) (lvls : Array L) : E := .const id lvls
 private def natLit (n : Nat) : E := .lit (.natVal n)
 private def strLit (s : String) : E := .lit (.strVal s)
 private def letE (ty val body : E) : E := Ix.Kernel.Expr.mkLetE ty val body
-private def projE (typeAddr : Address) (idx : Nat) (struct : E) : E :=
-  Ix.Kernel.Expr.mkProj typeAddr idx struct
+private def projE (typeId : MId) (idx : Nat) (struct : E) : E :=
+  Ix.Kernel.Expr.mkProj typeId idx struct
 
 /-! ## Test: eval+quote roundtrip for pure lambda calculus -/
 
@@ -89,7 +89,7 @@ def testLetReduction : TestSeq :=
 /-! ## Test: Nat primitive reduction via force -/
 
 def testNatPrimitives : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Build: Nat.add (lit 2) (lit 3)
   let addExpr := app (app (cst prims.natAdd) (natLit 2)) (natLit 3)
   test "Nat.add 2 3 = 5" (whnfEmpty addExpr == .ok (natLit 5)) $
@@ -130,7 +130,7 @@ def testNatPrimitives : TestSeq :=
 /-! ## Test: large Nat (the pathological case) -/
 
 def testLargeNat : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Nat.pow 2 63 should compute instantly via nat primitives (not Peano)
   let pow2_63 := app (app (cst prims.natPow) (natLit 2)) (natLit 63)
   test "Nat.pow 2 63 = 2^63" (whnfEmpty pow2_63 == .ok (natLit 9223372036854775808)) $
@@ -141,89 +141,93 @@ def testLargeNat : TestSeq :=
 /-! ## Test: delta unfolding via force -/
 
 def testDeltaUnfolding : TestSeq :=
-  let defAddr := mkAddr 1
-  let prims := buildPrimitives
+  let defId := mkId "myFive" 1
+  let prims := buildPrimitives .meta
   -- Define: myFive := Nat.add 2 3
   let addBody := app (app (cst prims.natAdd) (natLit 2)) (natLit 3)
-  let env := addDef default defAddr ty addBody
+  let env := addDef default defId ty addBody
   -- whnf (myFive) should unfold definition and reduce primitives
-  test "unfold def to Nat.add 2 3 = 5" (whnfK2 env (cst defAddr) == .ok (natLit 5)) $
+  test "unfold def to Nat.add 2 3 = 5" (whnfK2 env (cst defId) == .ok (natLit 5)) $
   -- Chain: myTen := Nat.add myFive myFive
-  let tenAddr := mkAddr 2
-  let tenBody := app (app (cst prims.natAdd) (cst defAddr)) (cst defAddr)
-  let env := addDef env tenAddr ty tenBody
-  test "unfold chain myTen = 10" (whnfK2 env (cst tenAddr) == .ok (natLit 10))
+  let tenId := mkId "myTen" 2
+  let tenBody := app (app (cst prims.natAdd) (cst defId)) (cst defId)
+  let env := addDef env tenId ty tenBody
+  test "unfold chain myTen = 10" (whnfK2 env (cst tenId) == .ok (natLit 10))
 
 /-! ## Test: delta unfolding of lambda definitions -/
 
 def testDeltaLambda : TestSeq :=
-  let idAddr := mkAddr 10
+  let idId := mkId "myId" 10
   -- Define: myId := λx. x
-  let env := addDef default idAddr (pi ty ty) (lam ty (bv 0))
+  let env := addDef default idId (pi ty ty) (lam ty (bv 0))
   -- whnf (myId 42) should unfold and beta-reduce to 42
-  test "myId 42 = 42" (whnfK2 env (app (cst idAddr) (natLit 42)) == .ok (natLit 42)) $
+  test "myId 42 = 42" (whnfK2 env (app (cst idId) (natLit 42)) == .ok (natLit 42)) $
   -- Define: myConst := λx. λy. x
-  let constAddr := mkAddr 11
-  let env := addDef env constAddr (pi ty (pi ty ty)) (lam ty (lam ty (bv 1)))
-  test "myConst 1 2 = 1" (whnfK2 env (app (app (cst constAddr) (natLit 1)) (natLit 2)) == .ok (natLit 1))
+  let constId := mkId "myConst" 11
+  let env := addDef env constId (pi ty (pi ty ty)) (lam ty (lam ty (bv 1)))
+  test "myConst 1 2 = 1" (whnfK2 env (app (app (cst constId) (natLit 1)) (natLit 2)) == .ok (natLit 1))
 
 /-! ## Test: projection reduction -/
 
 def testProjection : TestSeq :=
-  let pairIndAddr := mkAddr 20
-  let pairCtorAddr := mkAddr 21
+  let pairIndId := mkId "Pair" 20
+  let pairCtorId := mkId "Pair.mk" 21
   -- Minimal Prod-like inductive: Pair : Type → Type → Type
-  let env := addInductive default pairIndAddr
+  let env := addInductive default pairIndId
     (pi ty (pi ty ty))
-    #[pairCtorAddr] (numParams := 2)
+    #[pairCtorId] (numParams := 2)
   -- Constructor: Pair.mk : (α β : Type) → α → β → Pair α β
   let ctorType := pi ty (pi ty (pi (bv 1) (pi (bv 1)
-    (app (app (cst pairIndAddr) (bv 3)) (bv 2)))))
-  let env := addCtor env pairCtorAddr pairIndAddr ctorType 0 2 2
+    (app (app (cst pairIndId) (bv 3)) (bv 2)))))
+  let env := addCtor env pairCtorId pairIndId ctorType 0 2 2
   -- proj 0 of (Pair.mk Nat Nat 3 7) = 3
-  let mkExpr := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 3)) (natLit 7)
-  let proj0 := Ix.Kernel.Expr.mkProj pairIndAddr 0 mkExpr
+  let mkExpr := app (app (app (app (cst pairCtorId) ty) ty) (natLit 3)) (natLit 7)
+  let proj0 := Ix.Kernel.Expr.mkProj pairIndId 0 mkExpr
   test "proj 0 (mk 3 7) = 3" (evalQuote env proj0 == .ok (natLit 3)) $
   -- proj 1 of (Pair.mk Nat Nat 3 7) = 7
-  let proj1 := Ix.Kernel.Expr.mkProj pairIndAddr 1 mkExpr
+  let proj1 := Ix.Kernel.Expr.mkProj pairIndId 1 mkExpr
   test "proj 1 (mk 3 7) = 7" (evalQuote env proj1 == .ok (natLit 7))
 
 /-! ## Test: stuck terms stay stuck -/
 
 def testStuckTerms : TestSeq :=
-  let prims := buildPrimitives
-  let axAddr := mkAddr 30
-  let env := addAxiom default axAddr ty
+  let prims := buildPrimitives .meta
+  let axId := mkId "myAxiom" 30
+  let env := addAxiom default axId ty
   -- An axiom stays stuck (no value to unfold)
-  test "axiom stays stuck" (whnfK2 env (cst axAddr) == .ok (cst axAddr)) $
+  test "axiom stays stuck" (whnfK2 env (cst axId) == .ok (cst axId)) $
   -- Nat.add (axiom) 5 stays stuck (can't reduce with non-literal arg)
-  let stuckAdd := app (app (cst prims.natAdd) (cst axAddr)) (natLit 5)
-  test "Nat.add axiom 5 stuck" (whnfHeadAddr env stuckAdd == .ok (some prims.natAdd)) $
+  let stuckAdd := app (app (cst prims.natAdd) (cst axId)) (natLit 5)
+  test "Nat.add axiom 5 stuck" (whnfHeadAddr env stuckAdd == .ok (some prims.natAdd.addr)) $
   -- Partial prim application stays neutral: Nat.add 5 (no second arg)
   let partialApp := app (cst prims.natAdd) (natLit 5)
-  test "partial prim app stays neutral" (whnfHeadAddr env partialApp == .ok (some prims.natAdd))
+  test "partial prim app stays neutral" (whnfHeadAddr env partialApp == .ok (some prims.natAdd.addr)) $
+  -- Nat.add axiom (Nat.succ axiom): second arg IS structural succ, step-case fires
+  let succAx := app (cst prims.natSucc) (cst axId)
+  let addAxSuccAx := app (app (cst prims.natAdd) (cst axId)) succAx
+  test "Nat.add axiom (succ axiom) head is succ" (whnfHeadAddr env addAxSuccAx == .ok (some prims.natSucc.addr))
 
 /-! ## Test: nested beta+delta -/
 
 def testNestedBetaDelta : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Define: double := λx. Nat.add x x
-  let doubleAddr := mkAddr 40
+  let doubleId := mkId "double" 40
   let doubleBody := lam ty (app (app (cst prims.natAdd) (bv 0)) (bv 0))
-  let env := addDef default doubleAddr (pi ty ty) doubleBody
+  let env := addDef default doubleId (pi ty ty) doubleBody
   -- whnf (double 21) = 42
-  test "double 21 = 42" (whnfK2 env (app (cst doubleAddr) (natLit 21)) == .ok (natLit 42)) $
+  test "double 21 = 42" (whnfK2 env (app (cst doubleId) (natLit 21)) == .ok (natLit 42)) $
   -- Define: quadruple := λx. double (double x)
-  let quadAddr := mkAddr 41
-  let quadBody := lam ty (app (cst doubleAddr) (app (cst doubleAddr) (bv 0)))
-  let env := addDef env quadAddr (pi ty ty) quadBody
-  test "quadruple 10 = 40" (whnfK2 env (app (cst quadAddr) (natLit 10)) == .ok (natLit 40))
+  let quadId := mkId "quadruple" 41
+  let quadBody := lam ty (app (cst doubleId) (app (cst doubleId) (bv 0)))
+  let env := addDef env quadId (pi ty ty) quadBody
+  test "quadruple 10 = 40" (whnfK2 env (app (cst quadId) (natLit 10)) == .ok (natLit 40))
 
 /-! ## Test: higher-order functions -/
 
 def testHigherOrder : TestSeq :=
   -- (λf. λx. f (f x)) (λy. Nat.succ y) 0 = 2
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   let succFn := lam ty (app (cst prims.natSucc) (bv 0))
   let twice := lam (pi ty ty) (lam ty (app (bv 1) (app (bv 1) (bv 0))))
   let expr := app (app twice succFn) (natLit 0)
@@ -233,50 +237,50 @@ def testHigherOrder : TestSeq :=
 
 def testIotaReduction : TestSeq :=
   -- Build a minimal Nat-like inductive: MyNat with zero/succ
-  let natIndAddr := mkAddr 50
-  let zeroAddr := mkAddr 51
-  let succAddr := mkAddr 52
-  let recAddr := mkAddr 53
+  let natIndId := mkId "MyNat" 50
+  let zeroId := mkId "MyNat.zero" 51
+  let succId := mkId "MyNat.succ" 52
+  let recId := mkId "MyNat.rec" 53
   -- MyNat : Type
-  let env := addInductive default natIndAddr ty #[zeroAddr, succAddr]
+  let env := addInductive default natIndId ty #[zeroId, succId]
   -- MyNat.zero : MyNat
-  let env := addCtor env zeroAddr natIndAddr (cst natIndAddr) 0 0 0
+  let env := addCtor env zeroId natIndId (cst natIndId) 0 0 0
   -- MyNat.succ : MyNat → MyNat
-  let succType := pi (cst natIndAddr) (cst natIndAddr)
-  let env := addCtor env succAddr natIndAddr succType 1 0 1
+  let succType := pi (cst natIndId) (cst natIndId)
+  let env := addCtor env succId natIndId succType 1 0 1
   -- MyNat.rec : (motive : MyNat → Sort u) → motive zero → ((n : MyNat) → motive n → motive (succ n)) → (t : MyNat) → motive t
   -- params=0, motives=1, minors=2, indices=0
   -- For simplicity, build with 1 level and a Nat → Type motive
-  let recType := pi (pi (cst natIndAddr) ty)  -- motive
-    (pi (app (bv 0) (cst zeroAddr))            -- base case: motive zero
-      (pi (pi (cst natIndAddr) (pi (app (bv 3) (bv 0)) (app (bv 4) (app (cst succAddr) (bv 1))))) -- step
-        (pi (cst natIndAddr)                   -- target
+  let recType := pi (pi (cst natIndId) ty)  -- motive
+    (pi (app (bv 0) (cst zeroId))            -- base case: motive zero
+      (pi (pi (cst natIndId) (pi (app (bv 3) (bv 0)) (app (bv 4) (app (cst succId) (bv 1))))) -- step
+        (pi (cst natIndId)                   -- target
           (app (bv 3) (bv 0)))))               -- result: motive t
   -- Rule for zero: nfields=0, rhs = λ motive base step => base
   let zeroRhs : E := lam ty (lam (bv 0) (lam ty (bv 1)))  -- simplified
   -- Rule for succ: nfields=1, rhs = λ motive base step n => step n (rec motive base step n)
   -- bv 0=n, bv 1=step, bv 2=base, bv 3=motive
-  let succRhs : E := lam ty (lam (bv 0) (lam ty (lam (cst natIndAddr) (app (app (bv 1) (bv 0)) (app (app (app (app (cst recAddr) (bv 3)) (bv 2)) (bv 1)) (bv 0))))))
-  let env := addRec env recAddr 0 recType #[natIndAddr]
+  let succRhs : E := lam ty (lam (bv 0) (lam ty (lam (cst natIndId) (app (app (bv 1) (bv 0)) (app (app (app (app (cst recId) (bv 3)) (bv 2)) (bv 1)) (bv 0))))))
+  let env := addRec env recId 0 recType #[natIndId]
     (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 2)
     (rules := #[
-      { ctor := zeroAddr, nfields := 0, rhs := zeroRhs },
-      { ctor := succAddr, nfields := 1, rhs := succRhs }
+      { ctor := zeroId, nfields := 0, rhs := zeroRhs },
+      { ctor := succId, nfields := 1, rhs := succRhs }
     ])
   -- Test: rec (λ_. Nat) 0 (λ_ acc. Nat.succ acc) zero = 0
-  let motive := lam (cst natIndAddr) ty  -- λ _ => Nat (using real Nat for result type)
+  let motive := lam (cst natIndId) ty  -- λ _ => Nat (using real Nat for result type)
   let base := natLit 0
-  let step := lam (cst natIndAddr) (lam ty (app (cst (buildPrimitives).natSucc) (bv 0)))
-  let recZero := app (app (app (app (cst recAddr) motive) base) step) (cst zeroAddr)
+  let step := lam (cst natIndId) (lam ty (app (cst (buildPrimitives .meta).natSucc) (bv 0)))
+  let recZero := app (app (app (app (cst recId) motive) base) step) (cst zeroId)
   test "rec zero = 0" (whnfK2 env recZero == .ok (natLit 0)) $
   -- Test: rec motive 0 step (succ zero) = 1
-  let recOne := app (app (app (app (cst recAddr) motive) base) step) (app (cst succAddr) (cst zeroAddr))
+  let recOne := app (app (app (app (cst recId) motive) base) step) (app (cst succId) (cst zeroId))
   test "rec (succ zero) = 1" (whnfK2 env recOne == .ok (natLit 1))
 
 /-! ## Test: isDefEq -/
 
 def testIsDefEq : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Sort equality
   test "Prop == Prop" (isDefEqEmpty prop prop == .ok true) $
   test "Type == Type" (isDefEqEmpty ty ty == .ok true) $
@@ -290,15 +294,15 @@ def testIsDefEq : TestSeq :=
   -- Pi equality
   test "Π.x == Π.x" (isDefEqEmpty (pi ty (bv 0)) (pi ty (bv 0)) == .ok true) $
   -- Delta: two different defs that reduce to the same value
-  let d1 := mkAddr 60
-  let d2 := mkAddr 61
+  let d1 := mkId "d1" 60
+  let d2 := mkId "d2" 61
   let env := addDef (addDef default d1 ty (natLit 5)) d2 ty (natLit 5)
   test "def1 == def2 (both reduce to 5)" (isDefEqK2 env (cst d1) (cst d2) == .ok true) $
   -- Eta: λx. f x == f
-  let fAddr := mkAddr 62
-  let env := addDef default fAddr (pi ty ty) (lam ty (bv 0))
-  let etaExpanded := lam ty (app (cst fAddr) (bv 0))
-  test "eta: λx. f x == f" (isDefEqK2 env etaExpanded (cst fAddr) == .ok true) $
+  let fId := mkId "f" 62
+  let env := addDef default fId (pi ty ty) (lam ty (bv 0))
+  let etaExpanded := lam ty (app (cst fId) (bv 0))
+  test "eta: λx. f x == f" (isDefEqK2 env etaExpanded (cst fId) == .ok true) $
   -- Nat primitive reduction: 2+3 == 5
   let addExpr := app (app (cst prims.natAdd) (natLit 2)) (natLit 3)
   test "2+3 == 5" (isDefEqEmpty addExpr (natLit 5) == .ok true) $
@@ -307,7 +311,7 @@ def testIsDefEq : TestSeq :=
 /-! ## Test: type inference -/
 
 def testInfer : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Sort inference
   test "infer Sort 0 = Sort 1" (inferEmpty prop == .ok (srt 1)) $
   test "infer Sort 1 = Sort 2" (inferEmpty ty == .ok (srt 2)) $
@@ -316,7 +320,8 @@ def testInfer : TestSeq :=
   test "infer strLit = String" (inferEmpty (strLit "hi") == .ok (cst prims.string)) $
   -- Env with Nat registered (needed for isSort on Nat domains)
   let natConst := cst prims.nat
-  let natEnv := addAxiom default prims.nat ty
+  let natMId : MId := (parseIxName "Nat", prims.nat.addr)
+  let natEnv := addAxiom default natMId ty
   -- Lambda: λ(x : Nat). x : Nat → Nat
   let idNat := lam natConst (bv 0)
   test "infer λx:Nat. x = Nat → Nat" (inferK2 natEnv idNat == .ok (pi natConst natConst)) $
@@ -326,9 +331,9 @@ def testInfer : TestSeq :=
   let idApp := app idNat (natLit 5)
   test "infer (λx:Nat. x) 5 = Nat" (inferK2 natEnv idApp == .ok natConst) $
   -- Const: infer type of a defined constant
-  let fAddr := mkAddr 80
-  let env := addDef natEnv fAddr (pi natConst natConst) (lam natConst (bv 0))
-  test "infer const = its declared type" (inferK2 env (cst fAddr) == .ok (pi natConst natConst)) $
+  let fId := mkId "f" 80
+  let env := addDef natEnv fId (pi natConst natConst) (lam natConst (bv 0))
+  test "infer const = its declared type" (inferK2 env (cst fId) == .ok (pi natConst natConst)) $
   -- Let: let x : Nat := 5 in x : Nat
   let letExpr := letE natConst (natLit 5) (bv 0)
   test "infer let x := 5 in x = Nat" (inferK2 natEnv letExpr == .ok natConst) $
@@ -344,7 +349,7 @@ def testInfer : TestSeq :=
 /-! ## Test: missing nat primitives -/
 
 def testNatPrimsMissing : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Nat.gcd 12 8 = 4
   let gcdExpr := app (app (cst prims.natGcd) (natLit 12)) (natLit 8)
   test "Nat.gcd 12 8 = 4" (whnfEmpty gcdExpr == .ok (natLit 4)) $
@@ -367,64 +372,64 @@ def testNatPrimsMissing : TestSeq :=
 /-! ## Test: opaque constants -/
 
 def testOpaqueConstants : TestSeq :=
-  let opaqueAddr := mkAddr 100
+  let opaqueId := mkId "myOpaque" 100
   -- Opaque should NOT unfold
-  let env := addOpaque default opaqueAddr ty (natLit 5)
-  test "opaque stays stuck" (whnfK2 env (cst opaqueAddr) == .ok (cst opaqueAddr)) $
+  let env := addOpaque default opaqueId ty (natLit 5)
+  test "opaque stays stuck" (whnfK2 env (cst opaqueId) == .ok (cst opaqueId)) $
   -- Opaque function applied: should stay stuck
-  let opaqFnAddr := mkAddr 101
-  let env := addOpaque default opaqFnAddr (pi ty ty) (lam ty (bv 0))
-  test "opaque fn app stays stuck" (whnfHeadAddr env (app (cst opaqFnAddr) (natLit 42)) == .ok (some opaqFnAddr)) $
+  let opaqFnId := mkId "myOpaqueFn" 101
+  let env := addOpaque default opaqFnId (pi ty ty) (lam ty (bv 0))
+  test "opaque fn app stays stuck" (whnfHeadAddr env (app (cst opaqFnId) (natLit 42)) == .ok (some opaqFnId.addr)) $
   -- Theorem SHOULD unfold
-  let thmAddr := mkAddr 102
-  let env := addTheorem default thmAddr ty (natLit 5)
-  test "theorem unfolds" (whnfK2 env (cst thmAddr) == .ok (natLit 5))
+  let thmId := mkId "myThm" 102
+  let env := addTheorem default thmId ty (natLit 5)
+  test "theorem unfolds" (whnfK2 env (cst thmId) == .ok (natLit 5))
 
 /-! ## Test: universe polymorphism -/
 
 def testUniversePoly : TestSeq :=
   -- myId.{u} : Sort u → Sort u := λx.x (numLevels=1)
-  let idAddr := mkAddr 110
+  let idId := mkId "myId" 110
   let lvlParam : L := .param 0 default
   let paramSort : E := .sort lvlParam
-  let env := addDef default idAddr (pi paramSort paramSort) (lam paramSort (bv 0)) (numLevels := 1)
+  let env := addDef default idId (pi paramSort paramSort) (lam paramSort (bv 0)) (numLevels := 1)
   -- myId.{1} (Type) should reduce to Type
   let lvl1 : L := .succ .zero
-  let applied := app (cstL idAddr #[lvl1]) ty
+  let applied := app (cstL idId #[lvl1]) ty
   test "poly id.{1} Type = Type" (whnfK2 env applied == .ok ty) $
   -- myId.{0} (Prop) should reduce to Prop
-  let applied0 := app (cstL idAddr #[.zero]) prop
+  let applied0 := app (cstL idId #[.zero]) prop
   test "poly id.{0} Prop = Prop" (whnfK2 env applied0 == .ok prop)
 
 /-! ## Test: K-reduction -/
 
 def testKReduction : TestSeq :=
   -- MyTrue : Prop, MyTrue.intro : MyTrue
-  let trueIndAddr := mkAddr 120
-  let introAddr := mkAddr 121
-  let recAddr := mkAddr 122
-  let env := addInductive default trueIndAddr prop #[introAddr]
-  let env := addCtor env introAddr trueIndAddr (cst trueIndAddr) 0 0 0
+  let trueIndId := mkId "MyTrue" 120
+  let introId := mkId "MyTrue.intro" 121
+  let recId := mkId "MyTrue.rec" 122
+  let env := addInductive default trueIndId prop #[introId]
+  let env := addCtor env introId trueIndId (cst trueIndId) 0 0 0
   -- MyTrue.rec : (motive : MyTrue → Prop) → motive intro → (t : MyTrue) → motive t
   -- params=0, motives=1, minors=1, indices=0, k=true
-  let recType := pi (pi (cst trueIndAddr) prop)  -- motive
-    (pi (app (bv 0) (cst introAddr))               -- h : motive intro
-      (pi (cst trueIndAddr)                         -- t : MyTrue
+  let recType := pi (pi (cst trueIndId) prop)  -- motive
+    (pi (app (bv 0) (cst introId))               -- h : motive intro
+      (pi (cst trueIndId)                         -- t : MyTrue
         (app (bv 2) (bv 0))))                       -- motive t
-  let ruleRhs : E := lam (pi (cst trueIndAddr) prop) (lam prop (bv 0))
-  let env := addRec env recAddr 0 recType #[trueIndAddr]
+  let ruleRhs : E := lam (pi (cst trueIndId) prop) (lam prop (bv 0))
+  let env := addRec env recId 0 recType #[trueIndId]
     (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 1)
-    (rules := #[{ ctor := introAddr, nfields := 0, rhs := ruleRhs }])
+    (rules := #[{ ctor := introId, nfields := 0, rhs := ruleRhs }])
     (k := true)
   -- K-reduction: rec motive h intro = h (intro is ctor, normal iota)
-  let motive := lam (cst trueIndAddr) prop
-  let h := cst introAddr -- placeholder proof
-  let recIntro := app (app (app (cst recAddr) motive) h) (cst introAddr)
+  let motive := lam (cst trueIndId) prop
+  let h := cst introId -- placeholder proof
+  let recIntro := app (app (app (cst recId) motive) h) (cst introId)
   test "K-rec intro = h" (whnfK2 env recIntro |>.isOk) $
   -- K-reduction with non-ctor major: rec motive h x where x is axiom of type MyTrue
-  let axAddr := mkAddr 123
-  let env := addAxiom env axAddr (cst trueIndAddr)
-  let recAx := app (app (app (cst recAddr) motive) h) (cst axAddr)
+  let axId := mkId "myAxiom" 123
+  let env := addAxiom env axId (cst trueIndId)
+  let recAx := app (app (app (cst recId) motive) h) (cst axId)
   -- K-reduction should return h (the minor) without needing x to be a ctor
   test "K-rec axiom = h" (whnfK2 env recAx |>.isOk)
 
@@ -433,8 +438,8 @@ def testKReduction : TestSeq :=
 def testProofIrrelevance : TestSeq :=
   -- Proof irrelevance fires when typeof(typeof(t)) = Sort 0 (i.e., t is a proof of a Prop type)
   -- Two axioms of type Prop are propositions (types), NOT proofs — proof irrel doesn't apply
-  let ax1 := mkAddr 130
-  let ax2 := mkAddr 131
+  let ax1 := mkId "ax1" 130
+  let ax2 := mkId "ax2" 131
   let env := addAxiom (addAxiom default ax1 prop) ax2 prop
   -- typeof(ax1) = Prop = Sort 0, typeof(Sort 0) = Sort 1 ≠ Sort 0 → not proofs
   test "no proof irrel: two Prop axioms (types, not proofs)" (isDefEqK2 env (cst ax1) (cst ax2) == .ok false)
@@ -442,7 +447,7 @@ def testProofIrrelevance : TestSeq :=
 /-! ## Test: Bool.true reflection -/
 
 def testBoolTrueReflection : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Nat.beq 5 5 reduces to Bool.true
   let beq55 := app (app (cst prims.natBeq) (natLit 5)) (natLit 5)
   test "Bool.true == Nat.beq 5 5" (isDefEqEmpty (cst prims.boolTrue) beq55 == .ok true) $
@@ -455,25 +460,25 @@ def testBoolTrueReflection : TestSeq :=
 
 def testUnitLikeDefEq : TestSeq :=
   -- MyUnit : Type with MyUnit.mk : MyUnit (1 ctor, 0 fields)
-  let unitIndAddr := mkAddr 140
-  let mkAddr' := mkAddr 141
-  let env := addInductive default unitIndAddr ty #[mkAddr']
-  let env := addCtor env mkAddr' unitIndAddr (cst unitIndAddr) 0 0 0
+  let unitIndId := mkId "MyUnit" 140
+  let mkId' := mkId "MyUnit.mk" 141
+  let env := addInductive default unitIndId ty #[mkId']
+  let env := addCtor env mkId' unitIndId (cst unitIndId) 0 0 0
   -- mk == mk (same ctor, trivially)
-  test "unit-like: mk == mk" (isDefEqK2 env (cst mkAddr') (cst mkAddr') == .ok true) $
+  test "unit-like: mk == mk" (isDefEqK2 env (cst mkId') (cst mkId') == .ok true) $
   -- Note: two different const-headed neutrals (ax1 vs ax2) return false in isDefEqCore
   -- before reaching isDefEqUnitLikeVal, because the const case short-circuits.
   -- This is a known limitation of the NbE-based kernel2 isDefEq.
-  let ax1 := mkAddr 142
-  let env := addAxiom env ax1 (cst unitIndAddr)
+  let ax1 := mkId "ax1" 142
+  let env := addAxiom env ax1 (cst unitIndId)
   -- mk == mk applied through lambda (tests that unit-like paths resolve)
-  let mkViaLam := app (lam ty (cst mkAddr')) (natLit 0)
-  test "unit-like: mk == (λ_.mk) 0" (isDefEqK2 env mkViaLam (cst mkAddr') == .ok true)
+  let mkViaLam := app (lam ty (cst mkId')) (natLit 0)
+  test "unit-like: mk == (λ_.mk) 0" (isDefEqK2 env mkViaLam (cst mkId') == .ok true)
 
 /-! ## Test: isDefEqOffset (Nat.succ chain) -/
 
 def testDefEqOffset : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Nat.succ (natLit 0) == natLit 1
   let succ0 := app (cst prims.natSucc) (natLit 0)
   test "Nat.succ 0 == 1" (isDefEqEmpty succ0 (natLit 1) == .ok true) $
@@ -489,73 +494,73 @@ def testDefEqOffset : TestSeq :=
 
 def testRecursiveIota : TestSeq :=
   -- Reuse the MyNat setup from testIotaReduction, but test deeper recursion
-  let natIndAddr := mkAddr 50
-  let zeroAddr := mkAddr 51
-  let succAddr := mkAddr 52
-  let recAddr := mkAddr 53
-  let env := addInductive default natIndAddr ty #[zeroAddr, succAddr]
-  let env := addCtor env zeroAddr natIndAddr (cst natIndAddr) 0 0 0
-  let succType := pi (cst natIndAddr) (cst natIndAddr)
-  let env := addCtor env succAddr natIndAddr succType 1 0 1
-  let recType := pi (pi (cst natIndAddr) ty)
-    (pi (app (bv 0) (cst zeroAddr))
-      (pi (pi (cst natIndAddr) (pi (app (bv 3) (bv 0)) (app (bv 4) (app (cst succAddr) (bv 1)))))
-        (pi (cst natIndAddr)
+  let natIndId := mkId "MyNat" 50
+  let zeroId := mkId "MyNat.zero" 51
+  let succId := mkId "MyNat.succ" 52
+  let recId := mkId "MyNat.rec" 53
+  let env := addInductive default natIndId ty #[zeroId, succId]
+  let env := addCtor env zeroId natIndId (cst natIndId) 0 0 0
+  let succType := pi (cst natIndId) (cst natIndId)
+  let env := addCtor env succId natIndId succType 1 0 1
+  let recType := pi (pi (cst natIndId) ty)
+    (pi (app (bv 0) (cst zeroId))
+      (pi (pi (cst natIndId) (pi (app (bv 3) (bv 0)) (app (bv 4) (app (cst succId) (bv 1)))))
+        (pi (cst natIndId)
           (app (bv 3) (bv 0)))))
   let zeroRhs : E := lam ty (lam (bv 0) (lam ty (bv 1)))
-  let succRhs : E := lam ty (lam (bv 0) (lam ty (lam (cst natIndAddr) (app (app (bv 1) (bv 0)) (app (app (app (app (cst recAddr) (bv 3)) (bv 2)) (bv 1)) (bv 0))))))
-  let env := addRec env recAddr 0 recType #[natIndAddr]
+  let succRhs : E := lam ty (lam (bv 0) (lam ty (lam (cst natIndId) (app (app (bv 1) (bv 0)) (app (app (app (app (cst recId) (bv 3)) (bv 2)) (bv 1)) (bv 0))))))
+  let env := addRec env recId 0 recType #[natIndId]
     (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 2)
     (rules := #[
-      { ctor := zeroAddr, nfields := 0, rhs := zeroRhs },
-      { ctor := succAddr, nfields := 1, rhs := succRhs }
+      { ctor := zeroId, nfields := 0, rhs := zeroRhs },
+      { ctor := succId, nfields := 1, rhs := succRhs }
     ])
-  let motive := lam (cst natIndAddr) ty
+  let motive := lam (cst natIndId) ty
   let base := natLit 0
-  let step := lam (cst natIndAddr) (lam ty (app (cst (buildPrimitives).natSucc) (bv 0)))
+  let step := lam (cst natIndId) (lam ty (app (cst (buildPrimitives .meta).natSucc) (bv 0)))
   -- rec motive 0 step (succ (succ zero)) = 2
-  let two := app (cst succAddr) (app (cst succAddr) (cst zeroAddr))
-  let recTwo := app (app (app (app (cst recAddr) motive) base) step) two
+  let two := app (cst succId) (app (cst succId) (cst zeroId))
+  let recTwo := app (app (app (app (cst recId) motive) base) step) two
   test "rec (succ (succ zero)) = 2" (whnfK2 env recTwo == .ok (natLit 2)) $
   -- rec motive 0 step (succ (succ (succ zero))) = 3
-  let three := app (cst succAddr) two
-  let recThree := app (app (app (app (cst recAddr) motive) base) step) three
+  let three := app (cst succId) two
+  let recThree := app (app (app (app (cst recId) motive) base) step) three
   test "rec (succ^3 zero) = 3" (whnfK2 env recThree == .ok (natLit 3))
 
 /-! ## Test: quotient reduction -/
 
 def testQuotReduction : TestSeq :=
   -- Build Quot, Quot.mk, Quot.lift, Quot.ind
-  let quotAddr := mkAddr 150
-  let quotMkAddr := mkAddr 151
-  let quotLiftAddr := mkAddr 152
-  let quotIndAddr := mkAddr 153
+  let quotId := mkId "Quot" 150
+  let quotMkId := mkId "Quot.mk" 151
+  let quotLiftId := mkId "Quot.lift" 152
+  let quotIndId := mkId "Quot.ind" 153
   -- Quot.{u} : (α : Sort u) → (α → α → Prop) → Sort u
   let quotType := pi ty (pi (pi (bv 0) (pi (bv 1) prop)) (bv 1))
-  let env := addQuot default quotAddr quotType .type (numLevels := 1)
+  let env := addQuot default quotId quotType .type (numLevels := 1)
   -- Quot.mk.{u} : {α : Sort u} → (α → α → Prop) → α → Quot α r
   -- Simplified type — the exact type doesn't matter for reduction, only the kind
   let mkType := pi ty (pi (pi (bv 0) (pi (bv 1) prop)) (pi (bv 1)
-    (app (app (cstL quotAddr #[.param 0 default]) (bv 2)) (bv 1))))
-  let env := addQuot env quotMkAddr mkType .ctor (numLevels := 1)
+    (app (app (cstL quotId #[.param 0 default]) (bv 2)) (bv 1))))
+  let env := addQuot env quotMkId mkType .ctor (numLevels := 1)
   -- Quot.lift.{u,v} : {α : Sort u} → {r : α → α → Prop} → {β : Sort v} →
   --   (f : α → β) → ((a b : α) → r a b → f a = f b) → Quot α r → β
   -- 6 args total, fPos=3 (0-indexed: α, r, β, f, h, quot)
   let liftType := pi ty (pi ty (pi ty (pi ty (pi ty (pi ty ty)))))  -- simplified
-  let env := addQuot env quotLiftAddr liftType .lift (numLevels := 2)
+  let env := addQuot env quotLiftId liftType .lift (numLevels := 2)
   -- Quot.ind: 5 args, fPos=3
   let indType := pi ty (pi ty (pi ty (pi ty (pi ty prop))))  -- simplified
-  let env := addQuot env quotIndAddr indType .ind (numLevels := 1)
+  let env := addQuot env quotIndId indType .ind (numLevels := 1)
   -- Test: Quot.lift α r β f h (Quot.mk α r a) = f a
   -- Build Quot.mk applied to args: (Quot.mk α r a) — need α, r, a as args
   -- mk spine: [α, r, a] where α=Nat(ty), r=dummy, a=42
   let dummyRel := lam ty (lam ty prop)  -- dummy relation
-  let mkExpr := app (app (app (cstL quotMkAddr #[.succ .zero]) ty) dummyRel) (natLit 42)
+  let mkExpr := app (app (app (cstL quotMkId #[.succ .zero]) ty) dummyRel) (natLit 42)
   -- Quot.lift applied: [α, r, β, f, h, mk_expr]
-  let fExpr := lam ty (app (cst (buildPrimitives).natSucc) (bv 0))  -- f = λx. Nat.succ x
+  let fExpr := lam ty (app (cst (buildPrimitives .meta).natSucc) (bv 0))  -- f = λx. Nat.succ x
   let hExpr := lam ty (lam ty (lam prop (natLit 0)))  -- h = dummy proof
   let liftExpr := app (app (app (app (app (app
-    (cstL quotLiftAddr #[.succ .zero, .succ .zero]) ty) dummyRel) ty) fExpr) hExpr) mkExpr
+    (cstL quotLiftId #[.succ .zero, .succ .zero]) ty) dummyRel) ty) fExpr) hExpr) mkExpr
   test "Quot.lift f h (Quot.mk r a) = f a"
     (whnfK2 env liftExpr (quotInit := true) == .ok (natLit 43))
 
@@ -563,31 +568,31 @@ def testQuotReduction : TestSeq :=
 
 def testStructEtaDefEq : TestSeq :=
   -- Reuse Pair from testProjection: Pair : Type → Type → Type, Pair.mk : α → β → Pair α β
-  let pairIndAddr := mkAddr 160
-  let pairCtorAddr := mkAddr 161
-  let env := addInductive default pairIndAddr
+  let pairIndId := mkId "Pair" 160
+  let pairCtorId := mkId "Pair.mk" 161
+  let env := addInductive default pairIndId
     (pi ty (pi ty ty))
-    #[pairCtorAddr] (numParams := 2)
+    #[pairCtorId] (numParams := 2)
   let ctorType := pi ty (pi ty (pi (bv 1) (pi (bv 1)
-    (app (app (cst pairIndAddr) (bv 3)) (bv 2)))))
-  let env := addCtor env pairCtorAddr pairIndAddr ctorType 0 2 2
+    (app (app (cst pairIndId) (bv 3)) (bv 2)))))
+  let env := addCtor env pairCtorId pairIndId ctorType 0 2 2
   -- Pair.mk Nat Nat 3 7 == Pair.mk Nat Nat 3 7 (trivial, same ctor)
-  let mk37 := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 3)) (natLit 7)
+  let mk37 := app (app (app (app (cst pairCtorId) ty) ty) (natLit 3)) (natLit 7)
   test "struct eta: mk == mk" (isDefEqK2 env mk37 mk37 == .ok true) $
   -- Same ctor applied to different args via definitions (defEq reduces through delta)
-  let d1 := mkAddr 162
-  let d2 := mkAddr 163
+  let d1 := mkId "d1" 162
+  let d2 := mkId "d2" 163
   let env := addDef (addDef env d1 ty (natLit 3)) d2 ty (natLit 3)
-  let mk_d1 := app (app (app (app (cst pairCtorAddr) ty) ty) (cst d1)) (natLit 7)
-  let mk_d2 := app (app (app (app (cst pairCtorAddr) ty) ty) (cst d2)) (natLit 7)
+  let mk_d1 := app (app (app (app (cst pairCtorId) ty) ty) (cst d1)) (natLit 7)
+  let mk_d2 := app (app (app (app (cst pairCtorId) ty) ty) (cst d2)) (natLit 7)
   test "struct eta: mk d1 7 == mk d2 7 (defs reduce to same)"
     (isDefEqK2 env mk_d1 mk_d2 == .ok true) $
   -- Projection reduction works: proj 0 (mk 3 7) = 3
-  let proj0 := Ix.Kernel.Expr.mkProj pairIndAddr 0 mk37
+  let proj0 := Ix.Kernel.Expr.mkProj pairIndId 0 mk37
   test "struct: proj 0 (mk 3 7) == 3"
     (isDefEqK2 env proj0 (natLit 3) == .ok true) $
   -- proj 1 (mk 3 7) = 7
-  let proj1 := Ix.Kernel.Expr.mkProj pairIndAddr 1 mk37
+  let proj1 := Ix.Kernel.Expr.mkProj pairIndId 1 mk37
   test "struct: proj 1 (mk 3 7) == 7"
     (isDefEqK2 env proj1 (natLit 7) == .ok true)
 
@@ -595,43 +600,43 @@ def testStructEtaDefEq : TestSeq :=
 
 def testStructEtaIota : TestSeq :=
   -- Wrap : Type → Type with Wrap.mk : α → Wrap α (structure-like: 1 ctor, 1 field, 1 param)
-  let wrapIndAddr := mkAddr 170
-  let wrapMkAddr := mkAddr 171
-  let wrapRecAddr := mkAddr 172
-  let env := addInductive default wrapIndAddr (pi ty ty) #[wrapMkAddr] (numParams := 1)
+  let wrapIndId := mkId "Wrap" 170
+  let wrapMkId := mkId "Wrap.mk" 171
+  let wrapRecId := mkId "Wrap.rec" 172
+  let env := addInductive default wrapIndId (pi ty ty) #[wrapMkId] (numParams := 1)
   -- Wrap.mk : (α : Type) → α → Wrap α
-  let mkType := pi ty (pi (bv 0) (app (cst wrapIndAddr) (bv 1)))
-  let env := addCtor env wrapMkAddr wrapIndAddr mkType 0 1 1
+  let mkType := pi ty (pi (bv 0) (app (cst wrapIndId) (bv 1)))
+  let env := addCtor env wrapMkId wrapIndId mkType 0 1 1
   -- Wrap.rec : {α : Type} → (motive : Wrap α → Sort u) → ((a : α) → motive (mk a)) → (w : Wrap α) → motive w
   -- params=1, motives=1, minors=1, indices=0
-  let recType := pi ty (pi (pi (app (cst wrapIndAddr) (bv 0)) ty)
-    (pi (pi (bv 1) (app (bv 1) (app (app (cst wrapMkAddr) (bv 2)) (bv 0))))
-      (pi (app (cst wrapIndAddr) (bv 2)) (app (bv 2) (bv 0)))))
+  let recType := pi ty (pi (pi (app (cst wrapIndId) (bv 0)) ty)
+    (pi (pi (bv 1) (app (bv 1) (app (app (cst wrapMkId) (bv 2)) (bv 0))))
+      (pi (app (cst wrapIndId) (bv 2)) (app (bv 2) (bv 0)))))
   -- rhs: λ α motive f a => f a
   let ruleRhs : E := lam ty (lam ty (lam ty (lam ty (app (bv 1) (bv 0)))))
-  let env := addRec env wrapRecAddr 0 recType #[wrapIndAddr]
+  let env := addRec env wrapRecId 0 recType #[wrapIndId]
     (numParams := 1) (numIndices := 0) (numMotives := 1) (numMinors := 1)
-    (rules := #[{ ctor := wrapMkAddr, nfields := 1, rhs := ruleRhs }])
+    (rules := #[{ ctor := wrapMkId, nfields := 1, rhs := ruleRhs }])
   -- Test: Wrap.rec (λ_. Nat) (λa. Nat.succ a) (Wrap.mk Nat 5) = 6
-  let motive := lam (app (cst wrapIndAddr) ty) ty  -- λ _ => Nat
-  let minor := lam ty (app (cst (buildPrimitives).natSucc) (bv 0))  -- λa. succ a
-  let mkExpr := app (app (cst wrapMkAddr) ty) (natLit 5)
-  let recCtor := app (app (app (app (cst wrapRecAddr) ty) motive) minor) mkExpr
+  let motive := lam (app (cst wrapIndId) ty) ty  -- λ _ => Nat
+  let minor := lam ty (app (cst (buildPrimitives .meta).natSucc) (bv 0))  -- λa. succ a
+  let mkExpr := app (app (cst wrapMkId) ty) (natLit 5)
+  let recCtor := app (app (app (app (cst wrapRecId) ty) motive) minor) mkExpr
   test "struct iota: rec (mk 5) = 6" (whnfK2 env recCtor == .ok (natLit 6)) $
   -- Struct eta iota: rec motive minor x where x is axiom of type (Wrap Nat)
   -- Should eta-expand x via projection: minor (proj 0 x)
-  let axAddr := mkAddr 173
-  let wrapNat := app (cst wrapIndAddr) ty
-  let env := addAxiom env axAddr wrapNat
-  let recAx := app (app (app (app (cst wrapRecAddr) ty) motive) minor) (cst axAddr)
-  -- Result should be: minor (proj 0 axAddr) = succ (proj 0 axAddr)
+  let axId := mkId "myAxiom" 173
+  let wrapNat := app (cst wrapIndId) ty
+  let env := addAxiom env axId wrapNat
+  let recAx := app (app (app (app (cst wrapRecId) ty) motive) minor) (cst axId)
+  -- Result should be: minor (proj 0 axId) = succ (proj 0 axId)
   -- whnf won't fully reduce since proj 0 of axiom is stuck
   test "struct eta iota: rec on axiom reduces" (whnfK2 env recAx |>.isOk)
 
 /-! ## Test: string literal ↔ constructor in isDefEq -/
 
 def testStringDefEq : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Two identical string literals
   test "str defEq: same strings" (isDefEqEmpty (strLit "hello") (strLit "hello") == .ok true) $
   test "str defEq: diff strings" (isDefEqEmpty (strLit "hello") (strLit "world") == .ok false) $
@@ -656,24 +661,24 @@ def testStringDefEq : TestSeq :=
 def testReducibilityHints : TestSeq :=
   -- abbrev unfolds before regular (abbrev has highest priority)
   -- Define abbrevFive := 5 (hints = .abbrev)
-  let abbrevAddr := mkAddr 180
-  let env := addDef default abbrevAddr ty (natLit 5) (hints := .abbrev)
+  let abbrevId := mkId "abbrevFive" 180
+  let env := addDef default abbrevId ty (natLit 5) (hints := .abbrev)
   -- Define regularFive := 5 (hints = .regular 1)
-  let regAddr := mkAddr 181
-  let env := addDef env regAddr ty (natLit 5) (hints := .regular 1)
+  let regId := mkId "regularFive" 181
+  let env := addDef env regId ty (natLit 5) (hints := .regular 1)
   -- Both should be defEq (both reduce to 5)
   test "hints: abbrev == regular (both reduce to 5)"
-    (isDefEqK2 env (cst abbrevAddr) (cst regAddr) == .ok true) $
+    (isDefEqK2 env (cst abbrevId) (cst regId) == .ok true) $
   -- Different values: abbrev 5 != regular 6
-  let regAddr2 := mkAddr 182
-  let env := addDef env regAddr2 ty (natLit 6) (hints := .regular 1)
+  let regId2 := mkId "regularSix" 182
+  let env := addDef env regId2 ty (natLit 6) (hints := .regular 1)
   test "hints: abbrev 5 != regular 6"
-    (isDefEqK2 env (cst abbrevAddr) (cst regAddr2) == .ok false) $
+    (isDefEqK2 env (cst abbrevId) (cst regId2) == .ok false) $
   -- Opaque stays stuck even vs abbrev with same value
-  let opaqAddr := mkAddr 183
-  let env := addOpaque env opaqAddr ty (natLit 5)
+  let opaqId := mkId "opaqFive" 183
+  let env := addOpaque env opaqId ty (natLit 5)
   test "hints: opaque != abbrev (opaque doesn't unfold)"
-    (isDefEqK2 env (cst opaqAddr) (cst abbrevAddr) == .ok false)
+    (isDefEqK2 env (cst opaqId) (cst abbrevId) == .ok false)
 
 /-! ## Test: isDefEq with let expressions -/
 
@@ -682,32 +687,37 @@ def testDefEqLet : TestSeq :=
   test "defEq let: let x := 5 in x == 5"
     (isDefEqEmpty (letE ty (natLit 5) (bv 0)) (natLit 5) == .ok true) $
   -- let x := 3 in let y := 4 in Nat.add x y == 7
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   let addXY := app (app (cst prims.natAdd) (bv 1)) (bv 0)
   let letExpr := letE ty (natLit 3) (letE ty (natLit 4) addXY)
   test "defEq let: nested let add == 7"
     (isDefEqEmpty letExpr (natLit 7) == .ok true) $
   -- let x := 5 in x != 6
   test "defEq let: let x := 5 in x != 6"
-    (isDefEqEmpty (letE ty (natLit 5) (bv 0)) (natLit 6) == .ok false)
+    (isDefEqEmpty (letE ty (natLit 5) (bv 0)) (natLit 6) == .ok false) $
+  -- let x := 5 in Nat.add x x == 10 (body uses bound var twice)
+  let addXX := app (app (cst prims.natAdd) (bv 0)) (bv 0)
+  let letExpr2 := letE ty (natLit 5) addXX
+  test "defEq let: let x := 5 in x + x == 10"
+    (isDefEqEmpty letExpr2 (natLit 10) == .ok true)
 
 /-! ## Test: multiple universe parameters -/
 
 def testMultiUnivParams : TestSeq :=
   -- myConst.{u,v} : Sort u → Sort v → Sort u := λx y. x (numLevels=2)
-  let constAddr := mkAddr 190
+  let constId := mkId "myConst" 190
   let u : L := .param 0 default
   let v : L := .param 1 default
   let uSort : E := .sort u
   let vSort : E := .sort v
   let constType := pi uSort (pi vSort uSort)
   let constBody := lam uSort (lam vSort (bv 1))
-  let env := addDef default constAddr constType constBody (numLevels := 2)
+  let env := addDef default constId constType constBody (numLevels := 2)
   -- myConst.{1,0} Type Prop = Type
-  let applied := app (app (cstL constAddr #[.succ .zero, .zero]) ty) prop
+  let applied := app (app (cstL constId #[.succ .zero, .zero]) ty) prop
   test "multi-univ: const.{1,0} Type Prop = Type" (whnfK2 env applied == .ok ty) $
   -- myConst.{0,1} Prop Type = Prop
-  let applied2 := app (app (cstL constAddr #[.zero, .succ .zero]) prop) ty
+  let applied2 := app (app (cstL constId #[.zero, .succ .zero]) prop) ty
   test "multi-univ: const.{0,1} Prop Type = Prop" (whnfK2 env applied2 == .ok prop)
 
 /-! ## Test: negative / error cases -/
@@ -720,90 +730,90 @@ def testErrors : TestSeq :=
   -- Variable out of range
   test "bvar out of range" (isError (inferEmpty (bv 99))) $
   -- Unknown const reference (whnf: stays stuck; infer: errors)
-  let badAddr := mkAddr 999
-  test "unknown const infer" (isError (inferEmpty (cst badAddr))) $
+  let badId := mkId "bad" 255
+  test "unknown const infer" (isError (inferEmpty (cst badId))) $
   -- Application of non-function (natLit applied to natLit)
   test "app non-function" (isError (inferEmpty (app (natLit 5) (natLit 3))))
 
 /-! ## Test: iota reduction edge cases -/
 
 def testIotaEdgeCases : TestSeq :=
-  let (env, _natIndAddr, zeroAddr, succAddr, recAddr) := buildMyNatEnv
-  let prims := buildPrimitives
-  let natConst := cst _natIndAddr
+  let (env, natId, zeroId, succId, recId) := buildMyNatEnv
+  let prims := buildPrimitives .meta
+  let natConst := cst natId
   let motive := lam natConst ty
   let base := natLit 0
   let step := lam natConst (lam ty (app (cst prims.natSucc) (bv 0)))
   -- natLit as major on non-Nat recursor stays stuck (natLit→ctor only works for real Nat)
-  let recLit0 := app (app (app (app (cst recAddr) motive) base) step) (natLit 0)
-  test "iota natLit 0 stuck on MyNat.rec" (whnfHeadAddr env recLit0 == .ok (some recAddr)) $
+  let recLit0 := app (app (app (app (cst recId) motive) base) step) (natLit 0)
+  test "iota natLit 0 stuck on MyNat.rec" (whnfHeadAddr env recLit0 == .ok (some recId.addr)) $
   -- rec on (succ zero) reduces to 1
-  let one := app (cst succAddr) (cst zeroAddr)
-  let recOne := app (app (app (app (cst recAddr) motive) base) step) one
+  let one := app (cst succId) (cst zeroId)
+  let recOne := app (app (app (app (cst recId) motive) base) step) one
   test "iota succ zero = 1" (whnfK2 env recOne == .ok (natLit 1)) $
   -- rec on (succ (succ (succ (succ zero)))) = 4
-  let four := app (cst succAddr) (app (cst succAddr) (app (cst succAddr) (app (cst succAddr) (cst zeroAddr))))
-  let recFour := app (app (app (app (cst recAddr) motive) base) step) four
+  let four := app (cst succId) (app (cst succId) (app (cst succId) (app (cst succId) (cst zeroId))))
+  let recFour := app (app (app (app (cst recId) motive) base) step) four
   test "iota succ^4 zero = 4" (whnfK2 env recFour == .ok (natLit 4)) $
   -- Recursor stuck on axiom major (not a ctor, not a natLit)
-  let axAddr := mkAddr 54
-  let env' := addAxiom env axAddr natConst
-  let recAx := app (app (app (app (cst recAddr) motive) base) step) (cst axAddr)
-  test "iota stuck on axiom" (whnfHeadAddr env' recAx == .ok (some recAddr)) $
+  let axId := mkId "myAxiom" 54
+  let env' := addAxiom env axId natConst
+  let recAx := app (app (app (app (cst recId) motive) base) step) (cst axId)
+  test "iota stuck on axiom" (whnfHeadAddr env' recAx == .ok (some recId.addr)) $
   -- Extra trailing args after major: build a function-motive that returns (Nat → Nat)
   -- rec motive base step zero extraArg — extraArg should be applied to result
   let fnMotive := lam natConst (pi ty ty)  -- motive: MyNat → (Nat → Nat)
   let fnBase := lam ty (app (cst prims.natAdd) (bv 0))  -- base: λx. Nat.add x (partial app)
   let fnStep := lam natConst (lam (pi ty ty) (bv 0))  -- step: λ_ acc. acc
-  let recFnZero := app (app (app (app (app (cst recAddr) fnMotive) fnBase) fnStep) (cst zeroAddr)) (natLit 10)
+  let recFnZero := app (app (app (app (app (cst recId) fnMotive) fnBase) fnStep) (cst zeroId)) (natLit 10)
   -- Should be: (λx. Nat.add x) 10 = Nat.add 10 = reduced
   -- Result is (λx. Nat.add x) applied to 10 → Nat.add 10 (partial, stays neutral)
   test "iota with extra trailing arg" (whnfK2 env recFnZero |>.isOk) $
   -- Deep recursion: rec on succ^5 zero = 5
-  let five := app (cst succAddr) (app (cst succAddr) (app (cst succAddr) (app (cst succAddr) (app (cst succAddr) (cst zeroAddr)))))
-  let recFive := app (app (app (app (cst recAddr) motive) base) step) five
+  let five := app (cst succId) (app (cst succId) (app (cst succId) (app (cst succId) (app (cst succId) (cst zeroId)))))
+  let recFive := app (app (app (app (cst recId) motive) base) step) five
   test "iota rec succ^5 zero = 5" (whnfK2 env recFive == .ok (natLit 5))
 
 /-! ## Test: K-reduction extended -/
 
 def testKReductionExtended : TestSeq :=
-  let (env, trueIndAddr, introAddr, recAddr) := buildMyTrueEnv
-  let trueConst := cst trueIndAddr
+  let (env, trueId, introId, recId) := buildMyTrueEnv
+  let trueConst := cst trueId
   let motive := lam trueConst prop
-  let h := cst introAddr  -- minor premise: just intro as a placeholder proof
+  let h := cst introId  -- minor premise: just intro as a placeholder proof
   -- K-rec on intro: verify actual result (not just .isOk)
-  let recIntro := app (app (app (cst recAddr) motive) h) (cst introAddr)
-  test "K-rec intro = intro" (whnfK2 env recIntro == .ok (cst introAddr)) $
+  let recIntro := app (app (app (cst recId) motive) h) (cst introId)
+  test "K-rec intro = intro" (whnfK2 env recIntro == .ok (cst introId)) $
   -- K-rec on axiom: verify returns the minor
-  let axAddr := mkAddr 123
-  let env' := addAxiom env axAddr trueConst
-  let recAx := app (app (app (cst recAddr) motive) h) (cst axAddr)
-  test "K-rec axiom = intro" (whnfK2 env' recAx == .ok (cst introAddr)) $
+  let axId := mkId "myAxiom" 123
+  let env' := addAxiom env axId trueConst
+  let recAx := app (app (app (cst recId) motive) h) (cst axId)
+  test "K-rec axiom = intro" (whnfK2 env' recAx == .ok (cst introId)) $
   -- K-rec with different minor value
-  let ax2 := mkAddr 124
+  let ax2 := mkId "ax2" 124
   let env' := addAxiom env ax2 trueConst
-  let recAx2 := app (app (app (cst recAddr) motive) (cst ax2)) (cst introAddr)
+  let recAx2 := app (app (app (cst recId) motive) (cst ax2)) (cst introId)
   test "K-rec intro with ax minor = ax" (whnfK2 env' recAx2 == .ok (cst ax2)) $
   -- K-reduction fails on non-K recursor: use MyNat.rec (not K)
-  let (natEnv, natIndAddr, _zeroAddr, _succAddr, natRecAddr) := buildMyNatEnv
-  let natMotive := lam (cst natIndAddr) ty
+  let (natEnv, natId, _zeroId, _succId, natRecId) := buildMyNatEnv
+  let natMotive := lam (cst natId) ty
   let natBase := natLit 0
-  let prims := buildPrimitives
-  let natStep := lam (cst natIndAddr) (lam ty (app (cst prims.natSucc) (bv 0)))
+  let prims := buildPrimitives .meta
+  let natStep := lam (cst natId) (lam ty (app (cst prims.natSucc) (bv 0)))
   -- Apply rec to axiom of type MyNat — should stay stuck (not K-reducible)
-  let natAxAddr := mkAddr 125
-  let natEnv' := addAxiom natEnv natAxAddr (cst natIndAddr)
-  let recNatAx := app (app (app (app (cst natRecAddr) natMotive) natBase) natStep) (cst natAxAddr)
-  test "non-K rec on axiom stays stuck" (whnfHeadAddr natEnv' recNatAx == .ok (some natRecAddr))
+  let natAxId := mkId "natAxiom" 125
+  let natEnv' := addAxiom natEnv natAxId (cst natId)
+  let recNatAx := app (app (app (app (cst natRecId) natMotive) natBase) natStep) (cst natAxId)
+  test "non-K rec on axiom stays stuck" (whnfHeadAddr natEnv' recNatAx == .ok (some natRecId.addr))
 
 /-! ## Test: proof irrelevance extended -/
 
 def testProofIrrelevanceExtended : TestSeq :=
-  let (env, trueIndAddr, introAddr, _recAddr) := buildMyTrueEnv
+  let (env, _trueId, introId, _recId) := buildMyTrueEnv
   -- Proof irrelevance fires when typeof(typeof(t)) = Sort 0, i.e., t is a proof of a Prop type.
   -- Two axioms of type Prop are propositions (types), NOT proofs — proof irrel doesn't apply:
-  let p1 := mkAddr 130
-  let p2 := mkAddr 131
+  let p1 := mkId "p1" 130
+  let p2 := mkId "p2" 131
   let propEnv := addAxiom (addAxiom default p1 prop) p2 prop
   test "no proof irrel: two Prop axioms (types, not proofs)" (isDefEqK2 propEnv (cst p1) (cst p2) == .ok false) $
   -- Two axioms of type MyTrue are proofs. typeof(proof) = MyTrue, typeof(MyTrue) = Prop.
@@ -812,17 +822,18 @@ def testProofIrrelevanceExtended : TestSeq :=
   -- Actually: inferTypeOfVal h1 → MyTrue, then whnf(MyTrue) is .neutral, not .sort .zero.
   -- So proof irrel does NOT fire for proofs of MyTrue (it fires for Prop types, not proofs of Prop types).
   -- intro and intro should be defEq (same term)
-  test "proof irrel: intro == intro" (isDefEqK2 env (cst introAddr) (cst introAddr) == .ok true) $
+  test "proof irrel: intro == intro" (isDefEqK2 env (cst introId) (cst introId) == .ok true) $
   -- Two Type-level axioms should NOT be defEq via proof irrelevance
-  let a1 := mkAddr 132
-  let a2 := mkAddr 133
+  let a1 := mkId "a1" 132
+  let a2 := mkId "a2" 133
   let env'' := addAxiom (addAxiom env a1 ty) a2 ty
   test "no proof irrel for Type" (isDefEqK2 env'' (cst a1) (cst a2) == .ok false) $
   -- Two axioms of type Nat should NOT be defEq
-  let prims := buildPrimitives
-  let natEnv := addAxiom default prims.nat ty
-  let n1 := mkAddr 134
-  let n2 := mkAddr 135
+  let prims := buildPrimitives .meta
+  let natMId : MId := (parseIxName "Nat", prims.nat.addr)
+  let natEnv := addAxiom default natMId ty
+  let n1 := mkId "n1" 134
+  let n2 := mkId "n2" 135
   let natEnv := addAxiom (addAxiom natEnv n1 (cst prims.nat)) n2 (cst prims.nat)
   test "no proof irrel for Nat" (isDefEqK2 natEnv (cst n1) (cst n2) == .ok false)
 
@@ -830,27 +841,27 @@ def testProofIrrelevanceExtended : TestSeq :=
 
 def testQuotExtended : TestSeq :=
   -- Same quot setup as testQuotReduction
-  let quotAddr := mkAddr 150
-  let quotMkAddr := mkAddr 151
-  let quotLiftAddr := mkAddr 152
-  let quotIndAddr := mkAddr 153
+  let quotId := mkId "Quot" 150
+  let quotMkId := mkId "Quot.mk" 151
+  let quotLiftId := mkId "Quot.lift" 152
+  let quotIndId := mkId "Quot.ind" 153
   let quotType := pi ty (pi (pi (bv 0) (pi (bv 1) prop)) (bv 1))
-  let env := addQuot default quotAddr quotType .type (numLevels := 1)
+  let env := addQuot default quotId quotType .type (numLevels := 1)
   let mkType := pi ty (pi (pi (bv 0) (pi (bv 1) prop)) (pi (bv 1)
-    (app (app (cstL quotAddr #[.param 0 default]) (bv 2)) (bv 1))))
-  let env := addQuot env quotMkAddr mkType .ctor (numLevels := 1)
+    (app (app (cstL quotId #[.param 0 default]) (bv 2)) (bv 1))))
+  let env := addQuot env quotMkId mkType .ctor (numLevels := 1)
   let liftType := pi ty (pi ty (pi ty (pi ty (pi ty (pi ty ty)))))
-  let env := addQuot env quotLiftAddr liftType .lift (numLevels := 2)
+  let env := addQuot env quotLiftId liftType .lift (numLevels := 2)
   let indType := pi ty (pi ty (pi ty (pi ty (pi ty prop))))
-  let env := addQuot env quotIndAddr indType .ind (numLevels := 1)
-  let prims := buildPrimitives
+  let env := addQuot env quotIndId indType .ind (numLevels := 1)
+  let prims := buildPrimitives .meta
   let dummyRel := lam ty (lam ty prop)
   -- Quot.lift with quotInit=false should NOT reduce
-  let mkExpr := app (app (app (cstL quotMkAddr #[.succ .zero]) ty) dummyRel) (natLit 42)
+  let mkExpr := app (app (app (cstL quotMkId #[.succ .zero]) ty) dummyRel) (natLit 42)
   let fExpr := lam ty (app (cst prims.natSucc) (bv 0))
   let hExpr := lam ty (lam ty (lam prop (natLit 0)))
   let liftExpr := app (app (app (app (app (app
-    (cstL quotLiftAddr #[.succ .zero, .succ .zero]) ty) dummyRel) ty) fExpr) hExpr) mkExpr
+    (cstL quotLiftId #[.succ .zero, .succ .zero]) ty) dummyRel) ty) fExpr) hExpr) mkExpr
   -- When quotInit=false, Quot types aren't registered as quotInfo, so lift stays stuck
   -- The result should succeed but not reduce to 43
   -- quotInit flag affects typedConsts pre-registration, not kenv lookup.
@@ -866,7 +877,7 @@ def testQuotExtended : TestSeq :=
   let indFExpr := lam ty (cst prims.boolTrue)  -- f = λa. Bool.true (dummy)
   let indMotiveExpr := lam ty prop  -- motive = λ_. Prop (dummy)
   let indExpr := app (app (app (app (app
-    (cstL quotIndAddr #[.succ .zero]) ty) dummyRel) indMotiveExpr) indFExpr) mkExpr
+    (cstL quotIndId #[.succ .zero]) ty) dummyRel) indMotiveExpr) indFExpr) mkExpr
   test "Quot.ind reduces"
     (whnfK2 env indExpr (quotInit := true) == .ok (cst prims.boolTrue))
 
@@ -874,33 +885,33 @@ def testQuotExtended : TestSeq :=
 
 def testLazyDeltaStrategies : TestSeq :=
   -- Two defs with same body, same height → same-head should short-circuit
-  let d1 := mkAddr 200
-  let d2 := mkAddr 201
+  let d1 := mkId "d1" 200
+  let d2 := mkId "d2" 201
   let body := natLit 42
   let env := addDef (addDef default d1 ty body (hints := .regular 1)) d2 ty body (hints := .regular 1)
   test "same head, same height: defEq" (isDefEqK2 env (cst d1) (cst d2) == .ok true) $
   -- Two defs with DIFFERENT bodies, same height → unfold both, compare
-  let d3 := mkAddr 202
-  let d4 := mkAddr 203
+  let d3 := mkId "d3" 202
+  let d4 := mkId "d4" 203
   let env := addDef (addDef default d3 ty (natLit 5) (hints := .regular 1)) d4 ty (natLit 6) (hints := .regular 1)
   test "same height, diff bodies: not defEq" (isDefEqK2 env (cst d3) (cst d4) == .ok false) $
   -- Chain of defs: a := 5, b := a, c := b → c == 5
-  let a := mkAddr 204
-  let b := mkAddr 205
-  let c := mkAddr 206
+  let a := mkId "a" 204
+  let b := mkId "b" 205
+  let c := mkId "c" 206
   let env := addDef default a ty (natLit 5) (hints := .regular 1)
   let env := addDef env b ty (cst a) (hints := .regular 2)
   let env := addDef env c ty (cst b) (hints := .regular 3)
   test "def chain: c == 5" (isDefEqK2 env (cst c) (natLit 5) == .ok true) $
   test "def chain: c == a" (isDefEqK2 env (cst c) (cst a) == .ok true) $
   -- Abbrev vs regular at different heights
-  let ab := mkAddr 207
-  let reg := mkAddr 208
+  let ab := mkId "ab" 207
+  let reg := mkId "reg" 208
   let env := addDef (addDef default ab ty (natLit 10) (hints := .abbrev)) reg ty (natLit 10) (hints := .regular 5)
   test "abbrev == regular (same val)" (isDefEqK2 env (cst ab) (cst reg) == .ok true) $
   -- Applied defs with same head: f 3 == g 3 where f = g = λx.x
-  let f := mkAddr 209
-  let g := mkAddr 210
+  let f := mkId "f" 209
+  let g := mkId "g" 210
   let env := addDef (addDef default f (pi ty ty) (lam ty (bv 0)) (hints := .regular 1)) g (pi ty ty) (lam ty (bv 0)) (hints := .regular 1)
   test "same head applied: f 3 == g 3" (isDefEqK2 env (app (cst f) (natLit 3)) (app (cst g) (natLit 3)) == .ok true) $
   -- Same head, different spines → not defEq
@@ -910,16 +921,16 @@ def testLazyDeltaStrategies : TestSeq :=
 
 def testEtaExtended : TestSeq :=
   -- f == λx. f x (reversed from existing test — non-lambda on left)
-  let fAddr := mkAddr 220
-  let env := addDef default fAddr (pi ty ty) (lam ty (bv 0))
-  let etaExpanded := lam ty (app (cst fAddr) (bv 0))
-  test "eta: f == λx. f x" (isDefEqK2 env (cst fAddr) etaExpanded == .ok true) $
+  let fId := mkId "f" 220
+  let env := addDef default fId (pi ty ty) (lam ty (bv 0))
+  let etaExpanded := lam ty (app (cst fId) (bv 0))
+  test "eta: f == λx. f x" (isDefEqK2 env (cst fId) etaExpanded == .ok true) $
   -- Double eta: f == λx. λy. f x y where f : Nat → Nat → Nat
-  let f2Addr := mkAddr 221
+  let f2Id := mkId "f2" 221
   let f2Type := pi ty (pi ty ty)
-  let env := addDef default f2Addr f2Type (lam ty (lam ty (bv 1)))
-  let doubleEta := lam ty (lam ty (app (app (cst f2Addr) (bv 1)) (bv 0)))
-  test "double eta: f == λx.λy. f x y" (isDefEqK2 env (cst f2Addr) doubleEta == .ok true) $
+  let env := addDef default f2Id f2Type (lam ty (lam ty (bv 1)))
+  let doubleEta := lam ty (lam ty (app (app (cst f2Id) (bv 1)) (bv 0)))
+  test "double eta: f == λx.λy. f x y" (isDefEqK2 env (cst f2Id) doubleEta == .ok true) $
   -- Eta: λx. (λy. y) x == λy. y  (beta under eta)
   let idLam := lam ty (bv 0)
   let etaId := lam ty (app (lam ty (bv 0)) (bv 0))
@@ -936,7 +947,7 @@ def testEtaExtended : TestSeq :=
 /-! ## Test: nat primitive edge cases -/
 
 def testNatPrimEdgeCases : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Nat.div 0 0 = 0 (Lean convention)
   let div00 := app (app (cst prims.natDiv) (natLit 0)) (natLit 0)
   test "Nat.div 0 0 = 0" (whnfEmpty div00 == .ok (natLit 0)) $
@@ -976,8 +987,9 @@ def testNatPrimEdgeCases : TestSeq :=
 /-! ## Test: inference extended -/
 
 def testInferExtended : TestSeq :=
-  let prims := buildPrimitives
-  let natEnv := addAxiom default prims.nat ty
+  let prims := buildPrimitives .meta
+  let natMId : MId := (parseIxName "Nat", prims.nat.addr)
+  let natEnv := addAxiom default natMId ty
   let natConst := cst prims.nat
   -- Nested lambda: λ(x:Nat). λ(y:Nat). x : Nat → Nat → Nat
   let nestedLam := lam natConst (lam natConst (bv 1))
@@ -989,23 +1001,24 @@ def testInferExtended : TestSeq :=
   test "infer Type → Prop = Sort 2" (inferEmpty (pi ty prop) == .ok (srt 2)) $
   -- Projection inference: proj 0 of (Pair.mk Type Type 3 7)
   -- This requires a fully set up Pair env with valid ctor types
-  let (pairEnv, pairIndAddr, pairCtorAddr) := buildPairEnv natEnv
-  let mkExpr := app (app (app (app (cst pairCtorAddr) natConst) natConst) (natLit 3)) (natLit 7)
-  let proj0 := Ix.Kernel.Expr.mkProj pairIndAddr 0 mkExpr
+  let (pairEnv, pairId, pairCtorId) := buildPairEnv natEnv
+  let mkExpr := app (app (app (app (cst pairCtorId) natConst) natConst) (natLit 3)) (natLit 7)
+  let proj0 := Ix.Kernel.Expr.mkProj pairId 0 mkExpr
   test "infer proj 0 (mk Nat Nat 3 7)" (inferK2 pairEnv proj0 |>.isOk) $
   -- Let inference: let x : Nat := 5 in let y : Nat := x in y : Nat
   let letNested := letE natConst (natLit 5) (letE natConst (bv 0) (bv 0))
   test "infer nested let" (inferK2 natEnv letNested == .ok natConst) $
   -- Inference of app with computed type
-  let idAddr := mkAddr 230
-  let env := addDef natEnv idAddr (pi natConst natConst) (lam natConst (bv 0))
-  test "infer applied def" (inferK2 env (app (cst idAddr) (natLit 5)) == .ok natConst)
+  let idId := mkId "id" 230
+  let env := addDef natEnv idId (pi natConst natConst) (lam natConst (bv 0))
+  test "infer applied def" (inferK2 env (app (cst idId) (natLit 5)) == .ok natConst)
 
 /-! ## Test: errors extended -/
 
 def testErrorsExtended : TestSeq :=
-  let prims := buildPrimitives
-  let natEnv := addAxiom default prims.nat ty
+  let prims := buildPrimitives .meta
+  let natMId : MId := (parseIxName "Nat", prims.nat.addr)
+  let natEnv := addAxiom default natMId ty
   let natConst := cst prims.nat
   -- App type mismatch: (λ(x:Nat). x) Prop
   let badApp := app (lam natConst (bv 0)) prop
@@ -1014,11 +1027,11 @@ def testErrorsExtended : TestSeq :=
   let badLet := letE natConst prop (bv 0)
   test "let type mismatch" (isError (inferK2 natEnv badLet)) $
   -- Wrong universe level count on const: myId.{u} applied with 0 levels instead of 1
-  let idAddr := mkAddr 240
+  let idId := mkId "myId" 240
   let lvlParam : L := .param 0 default
   let paramSort : E := .sort lvlParam
-  let env := addDef natEnv idAddr (pi paramSort paramSort) (lam paramSort (bv 0)) (numLevels := 1)
-  test "wrong univ level count" (isError (inferK2 env (cst idAddr))) $  -- 0 levels, expects 1
+  let env := addDef natEnv idId (pi paramSort paramSort) (lam paramSort (bv 0)) (numLevels := 1)
+  test "wrong univ level count" (isError (inferK2 env (cst idId))) $  -- 0 levels, expects 1
   -- Non-sort domain in lambda: λ(x : 5). x
   let badLam := lam (natLit 5) (bv 0)
   test "non-sort domain in lambda" (isError (inferK2 natEnv badLam)) $
@@ -1031,7 +1044,7 @@ def testErrorsExtended : TestSeq :=
 /-! ## Test: string literal edge cases -/
 
 def testStringEdgeCases : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- whnf of string literal stays as literal
   test "whnf string lit stays" (whnfEmpty (strLit "hello") == .ok (strLit "hello")) $
   -- String inequality via defEq
@@ -1054,10 +1067,10 @@ def testStringEdgeCases : TestSeq :=
 /-! ## Test: isDefEq complex -/
 
 def testDefEqComplex : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- DefEq through application: f 3 == g 3 where f,g reduce to same lambda
-  let f := mkAddr 250
-  let g := mkAddr 251
+  let f := mkId "f" 250
+  let g := mkId "g" 251
   let env := addDef (addDef default f (pi ty ty) (lam ty (bv 0))) g (pi ty ty) (lam ty (bv 0))
   test "defEq: f 3 == g 3" (isDefEqK2 env (app (cst f) (natLit 3)) (app (cst g) (natLit 3)) == .ok true) $
   -- DefEq between Pi types
@@ -1067,12 +1080,12 @@ def testDefEqComplex : TestSeq :=
   -- Negative: Pi types where codomain differs
   test "defEq: (A → A) != (A → B)" (isDefEqEmpty (pi ty (bv 0)) (pi ty ty) == .ok false) $
   -- DefEq through projection
-  let (pairEnv, pairIndAddr, pairCtorAddr) := buildPairEnv
-  let mk37 := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 3)) (natLit 7)
-  let proj0 := Ix.Kernel.Expr.mkProj pairIndAddr 0 mk37
+  let (pairEnv, pairId, pairCtorId) := buildPairEnv
+  let mk37 := app (app (app (app (cst pairCtorId) ty) ty) (natLit 3)) (natLit 7)
+  let proj0 := Ix.Kernel.Expr.mkProj pairId 0 mk37
   test "defEq: proj 0 (mk 3 7) == 3" (isDefEqK2 pairEnv proj0 (natLit 3) == .ok true) $
   -- DefEq through double projection
-  let proj1 := Ix.Kernel.Expr.mkProj pairIndAddr 1 mk37
+  let proj1 := Ix.Kernel.Expr.mkProj pairId 1 mk37
   test "defEq: proj 1 (mk 3 7) == 7" (isDefEqK2 pairEnv proj1 (natLit 7) == .ok true) $
   -- DefEq: Nat.add commutes (via reduction)
   let add23 := app (app (cst prims.natAdd) (natLit 2)) (natLit 3)
@@ -1089,7 +1102,7 @@ def testDefEqComplex : TestSeq :=
 
 def testUniverseExtended : TestSeq :=
   -- Three universe params: myConst.{u,v,w}
-  let constAddr := mkAddr 260
+  let constId := mkId "myConst" 260
   let u : L := .param 0 default
   let v : L := .param 1 default
   let w : L := .param 2 default
@@ -1099,9 +1112,9 @@ def testUniverseExtended : TestSeq :=
   -- myConst.{u,v,w} : Sort u → Sort v → Sort w → Sort u
   let constType := pi uSort (pi vSort (pi wSort uSort))
   let constBody := lam uSort (lam vSort (lam wSort (bv 2)))
-  let env := addDef default constAddr constType constBody (numLevels := 3)
+  let env := addDef default constId constType constBody (numLevels := 3)
   -- myConst.{1,0,2} Type Prop (Sort 2) = Type
-  let applied := app (app (app (cstL constAddr #[.succ .zero, .zero, .succ (.succ .zero)]) ty) prop) (srt 2)
+  let applied := app (app (app (cstL constId #[.succ .zero, .zero, .succ (.succ .zero)]) ty) prop) (srt 2)
   test "3-univ: const.{1,0,2} Type Prop Sort2 = Type" (whnfK2 env applied == .ok ty) $
   -- Universe level defEq: Sort (max 0 1) == Sort 1
   let maxSort := Ix.Kernel.Expr.mkSort (.max .zero (.succ .zero))
@@ -1120,23 +1133,23 @@ def testUniverseExtended : TestSeq :=
 /-! ## Test: whnf caching and stuck terms -/
 
 def testWhnfCaching : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Repeated whnf on same term should use cache (we can't observe cache directly,
   -- but we can verify correctness through multiple evaluations)
   let addExpr := app (app (cst prims.natAdd) (natLit 100)) (natLit 200)
   test "whnf cached: first eval" (whnfEmpty addExpr == .ok (natLit 300)) $
   -- Projection stuck on axiom
-  let (pairEnv, pairIndAddr, _pairCtorAddr) := buildPairEnv
-  let axAddr := mkAddr 270
-  let env := addAxiom pairEnv axAddr (app (app (cst pairIndAddr) ty) ty)
-  let projStuck := Ix.Kernel.Expr.mkProj pairIndAddr 0 (cst axAddr)
+  let (pairEnv, pairId, _pairCtorId) := buildPairEnv
+  let axId := mkId "myAxiom" 270
+  let env := addAxiom pairEnv axId (app (app (cst pairId) ty) ty)
+  let projStuck := Ix.Kernel.Expr.mkProj pairId 0 (cst axId)
   test "proj stuck on axiom" (whnfK2 env projStuck |>.isOk) $
   -- Deeply chained definitions: a → b → c → d → e, all reducing to 99
-  let a := mkAddr 271
-  let b := mkAddr 272
-  let c := mkAddr 273
-  let d := mkAddr 274
-  let e := mkAddr 275
+  let a := mkId "a" 271
+  let b := mkId "b" 272
+  let c := mkId "c" 273
+  let d := mkId "d" 274
+  let e := mkId "e" 275
   let chainEnv := addDef (addDef (addDef (addDef (addDef default a ty (natLit 99)) b ty (cst a)) c ty (cst b)) d ty (cst c)) e ty (cst d)
   test "deep def chain" (whnfK2 chainEnv (cst e) == .ok (natLit 99))
 
@@ -1145,61 +1158,61 @@ def testWhnfCaching : TestSeq :=
 --
 def testStructEtaAxiom : TestSeq :=
   -- Pair where one side is an axiom, eta-expand via projections
-  let (pairEnv, pairIndAddr, pairCtorAddr) := buildPairEnv
+  let (pairEnv, pairId, pairCtorId) := buildPairEnv
   -- mk (proj 0 x) (proj 1 x) == x should hold by struct eta
-  let axAddr := mkAddr 290
-  let pairType := app (app (cst pairIndAddr) ty) ty
-  let env := addAxiom pairEnv axAddr pairType
-  let proj0 := Ix.Kernel.Expr.mkProj pairIndAddr 0 (cst axAddr)
-  let proj1 := Ix.Kernel.Expr.mkProj pairIndAddr 1 (cst axAddr)
-  let rebuilt := app (app (app (app (cst pairCtorAddr) ty) ty) proj0) proj1
+  let axId := mkId "myAxiom" 290
+  let pairType := app (app (cst pairId) ty) ty
+  let env := addAxiom pairEnv axId pairType
+  let proj0 := Ix.Kernel.Expr.mkProj pairId 0 (cst axId)
+  let proj1 := Ix.Kernel.Expr.mkProj pairId 1 (cst axId)
+  let rebuilt := app (app (app (app (cst pairCtorId) ty) ty) proj0) proj1
   -- This tests the tryEtaStructVal path in isDefEqCore
   test "struct eta: mk (proj0 x) (proj1 x) == x"
-    (isDefEqK2 env rebuilt (cst axAddr) == .ok true) $
+    (isDefEqK2 env rebuilt (cst axId) == .ok true) $
   -- Same struct, same axiom: trivially defEq
-  test "struct eta: x == x" (isDefEqK2 env (cst axAddr) (cst axAddr) == .ok true) $
+  test "struct eta: x == x" (isDefEqK2 env (cst axId) (cst axId) == .ok true) $
   -- Two different axioms of same struct type: NOT defEq (Type, not Prop)
-  let ax2Addr := mkAddr 291
-  let env := addAxiom env ax2Addr pairType
+  let ax2Id := mkId "ax2" 291
+  let env := addAxiom env ax2Id pairType
   test "struct: diff axioms not defEq"
-    (isDefEqK2 env (cst axAddr) (cst ax2Addr) == .ok false)
+    (isDefEqK2 env (cst axId) (cst ax2Id) == .ok false)
 
 /-! ## Test: reduceBool / reduceNat native reduction -/
 
 def testNativeReduction : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Set up custom prims with reduceBool/reduceNat addresses
-  let rbAddr := mkAddr 300  -- reduceBool marker
-  let rnAddr := mkAddr 301  -- reduceNat marker
-  let customPrims : Prims := { prims with reduceBool := rbAddr, reduceNat := rnAddr }
+  let rbId := mkId "reduceBool" 200  -- reduceBool marker
+  let rnId := mkId "reduceNat" 201  -- reduceNat marker
+  let customPrims : Prims := { prims with reduceBool := rbId, reduceNat := rnId }
   -- Define a def that reduces to Bool.true
-  let trueDef := mkAddr 302
-  let env := addDef default trueDef (cst prims.bool) (cst prims.boolTrue)
+  let trueDefId := mkId "trueDef" 202
+  let env := addDef default trueDefId (cst prims.bool) (cst prims.boolTrue)
   -- Define a def that reduces to Bool.false
-  let falseDef := mkAddr 303
-  let env := addDef env falseDef (cst prims.bool) (cst prims.boolFalse)
+  let falseDefId := mkId "falseDef" 203
+  let env := addDef env falseDefId (cst prims.bool) (cst prims.boolFalse)
   -- Define a def that reduces to natLit 42
-  let natDef := mkAddr 304
-  let env := addDef env natDef ty (natLit 42)
+  let natDefId := mkId "natDef" 204
+  let env := addDef env natDefId ty (natLit 42)
   -- reduceBool trueDef → Bool.true
-  let rbTrue := app (cst rbAddr) (cst trueDef)
+  let rbTrue := app (cst rbId) (cst trueDefId)
   test "reduceBool true def" (whnfK2WithPrims env rbTrue customPrims == .ok (cst prims.boolTrue)) $
   -- reduceBool falseDef → Bool.false
-  let rbFalse := app (cst rbAddr) (cst falseDef)
+  let rbFalse := app (cst rbId) (cst falseDefId)
   test "reduceBool false def" (whnfK2WithPrims env rbFalse customPrims == .ok (cst prims.boolFalse)) $
   -- reduceNat natDef → natLit 42
-  let rnExpr := app (cst rnAddr) (cst natDef)
+  let rnExpr := app (cst rnId) (cst natDefId)
   test "reduceNat 42" (whnfK2WithPrims env rnExpr customPrims == .ok (natLit 42)) $
   -- reduceNat with def that reduces to 0
-  let zeroDef := mkAddr 305
-  let env := addDef env zeroDef ty (natLit 0)
-  let rnZero := app (cst rnAddr) (cst zeroDef)
+  let zeroDefId := mkId "zeroDef" 205
+  let env := addDef env zeroDefId ty (natLit 0)
+  let rnZero := app (cst rnId) (cst zeroDefId)
   test "reduceNat 0" (whnfK2WithPrims env rnZero customPrims == .ok (natLit 0))
 
 /-! ## Test: isDefEqOffset deep -/
 
 def testDefEqOffsetDeep : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Nat.zero (ctor) == natLit 0 (lit) via isZero on both representations
   test "offset: Nat.zero ctor == natLit 0" (isDefEqEmpty (cst prims.natZero) (natLit 0) == .ok true) $
   -- Deep succ chain: Nat.succ^3 Nat.zero == natLit 3 via succOf? peeling
@@ -1215,99 +1228,105 @@ def testDefEqOffsetDeep : TestSeq :=
   -- Negative: succ 4 != 6
   test "offset: succ 4 != 6" (isDefEqEmpty succ4 (natLit 6) == .ok false) $
   -- Nat.succ x == Nat.succ x where x is same axiom
-  let axAddr := mkAddr 310
-  let natEnv := addAxiom default axAddr (cst prims.nat)
-  let succAx := app (cst prims.natSucc) (cst axAddr)
+  let axId := mkId "ax" 210
+  let natMId : MId := (parseIxName "Nat", prims.nat.addr)
+  let natEnv := addAxiom (addAxiom default natMId ty) axId (cst prims.nat)
+  let succAx := app (cst prims.natSucc) (cst axId)
   test "offset: succ ax == succ ax" (isDefEqK2 natEnv succAx succAx == .ok true) $
   -- Nat.succ x != Nat.succ y where x, y are different axioms
-  let ax2Addr := mkAddr 311
-  let natEnv := addAxiom natEnv ax2Addr (cst prims.nat)
-  let succAx2 := app (cst prims.natSucc) (cst ax2Addr)
+  let ax2Id := mkId "ax2" 211
+  let natEnv := addAxiom natEnv ax2Id (cst prims.nat)
+  let succAx2 := app (cst prims.natSucc) (cst ax2Id)
   test "offset: succ ax1 != succ ax2" (isDefEqK2 natEnv succAx succAx2 == .ok false)
 
 /-! ## Test: isDefEqUnitLikeVal -/
 
 def testUnitLikeExtended : TestSeq :=
   -- Build a proper unit-like inductive: MyUnit : Type, MyUnit.star : MyUnit
-  let unitIndAddr := mkAddr 320
-  let starAddr := mkAddr 321
-  let env := addInductive default unitIndAddr ty #[starAddr]
-  let env := addCtor env starAddr unitIndAddr (cst unitIndAddr) 0 0 0
+  let unitIndId := mkId "MyUnit" 220
+  let starId := mkId "MyUnit.star" 221
+  let env := addInductive default unitIndId ty #[starId]
+  let env := addCtor env starId unitIndId (cst unitIndId) 0 0 0
   -- Note: isDefEqUnitLikeVal only fires from the _, _ => fallback in isDefEqCore.
   -- Two neutral (.const) values with different addresses are rejected at line 657 before
   -- reaching the fallback. So unit-like can't equate two axioms directly.
   -- But it CAN fire when comparing e.g. a ctor vs a neutral through struct eta first.
   -- Let's test that star == star and that mk via lambda reduces:
-  let ax1 := mkAddr 322
-  let env := addAxiom env ax1 (cst unitIndAddr)
-  test "unit-like: star == star" (isDefEqK2 env (cst starAddr) (cst starAddr) == .ok true) $
+  let ax1 := mkId "ax1" 222
+  let env := addAxiom env ax1 (cst unitIndId)
+  test "unit-like: star == star" (isDefEqK2 env (cst starId) (cst starId) == .ok true) $
   -- star == (λ_.star) 0 — ctor vs reduced ctor
-  let mkViaLam := app (lam ty (cst starAddr)) (natLit 0)
-  test "unit-like: star == (λ_.star) 0" (isDefEqK2 env mkViaLam (cst starAddr) == .ok true) $
+  let mkViaLam := app (lam ty (cst starId)) (natLit 0)
+  test "unit-like: star == (λ_.star) 0" (isDefEqK2 env mkViaLam (cst starId) == .ok true) $
   -- Build a type with 1 ctor but 1 field (NOT unit-like due to fields)
-  let wrapIndAddr := mkAddr 324
-  let wrapMkAddr := mkAddr 325
-  let env2 := addInductive default wrapIndAddr (pi ty ty) #[wrapMkAddr] (numParams := 1)
-  let wrapMkType := pi ty (pi (bv 0) (app (cst wrapIndAddr) (bv 1)))
-  let env2 := addCtor env2 wrapMkAddr wrapIndAddr wrapMkType 0 1 1
+  let wrapIndId := mkId "Wrap" 224
+  let wrapMkId := mkId "Wrap.mk" 225
+  let env2 := addInductive default wrapIndId (pi ty ty) #[wrapMkId] (numParams := 1)
+  let wrapMkType := pi ty (pi (bv 0) (app (cst wrapIndId) (bv 1)))
+  let env2 := addCtor env2 wrapMkId wrapIndId wrapMkType 0 1 1
   -- Two axioms of Wrap Nat should NOT be defEq (has a field)
-  let wa1 := mkAddr 326
-  let wa2 := mkAddr 327
-  let env2 := addAxiom (addAxiom env2 wa1 (app (cst wrapIndAddr) ty)) wa2 (app (cst wrapIndAddr) ty)
+  let wa1 := mkId "wa1" 226
+  let wa2 := mkId "wa2" 227
+  let env2 := addAxiom (addAxiom env2 wa1 (app (cst wrapIndId) ty)) wa2 (app (cst wrapIndId) ty)
   test "not unit-like: 1-field type" (isDefEqK2 env2 (cst wa1) (cst wa2) == .ok false) $
   -- Multi-ctor type: Bool-like with 2 ctors should NOT be unit-like
-  let boolInd := mkAddr 328
-  let b1 := mkAddr 329
-  let b2 := mkAddr 330
-  let env3 := addInductive default boolInd ty #[b1, b2]
-  let env3 := addCtor (addCtor env3 b1 boolInd (cst boolInd) 0 0 0) b2 boolInd (cst boolInd) 1 0 0
-  let ba1 := mkAddr 331
-  let ba2 := mkAddr 332
-  let env3 := addAxiom (addAxiom env3 ba1 (cst boolInd)) ba2 (cst boolInd)
+  let boolIndId := mkId "MyBool" 228
+  let b1 := mkId "MyBool.t" 229
+  let b2 := mkId "MyBool.f" 230
+  let env3 := addInductive default boolIndId ty #[b1, b2]
+  let env3 := addCtor (addCtor env3 b1 boolIndId (cst boolIndId) 0 0 0) b2 boolIndId (cst boolIndId) 1 0 0
+  let ba1 := mkId "ba1" 231
+  let ba2 := mkId "ba2" 232
+  let env3 := addAxiom (addAxiom env3 ba1 (cst boolIndId)) ba2 (cst boolIndId)
   test "not unit-like: multi-ctor" (isDefEqK2 env3 (cst ba1) (cst ba2) == .ok false)
 
 /-! ## Test: struct eta bidirectional + type mismatch -/
 
 def testStructEtaBidirectional : TestSeq :=
-  let (pairEnv, pairIndAddr, pairCtorAddr) := buildPairEnv
-  let axAddr := mkAddr 340
-  let pairType := app (app (cst pairIndAddr) ty) ty
-  let env := addAxiom pairEnv axAddr pairType
-  let proj0 := Ix.Kernel.Expr.mkProj pairIndAddr 0 (cst axAddr)
-  let proj1 := Ix.Kernel.Expr.mkProj pairIndAddr 1 (cst axAddr)
-  let rebuilt := app (app (app (app (cst pairCtorAddr) ty) ty) proj0) proj1
+  let (pairEnv, pairId, pairCtorId) := buildPairEnv
+  let axId := mkId "myAxiom" 240
+  let pairType := app (app (cst pairId) ty) ty
+  let env := addAxiom pairEnv axId pairType
+  let proj0 := Ix.Kernel.Expr.mkProj pairId 0 (cst axId)
+  let proj1 := Ix.Kernel.Expr.mkProj pairId 1 (cst axId)
+  let rebuilt := app (app (app (app (cst pairCtorId) ty) ty) proj0) proj1
   -- Reversed direction: x == mk (proj0 x) (proj1 x)
   test "struct eta reversed: x == mk (proj0 x) (proj1 x)"
-    (isDefEqK2 env (cst axAddr) rebuilt == .ok true) $
+    (isDefEqK2 env (cst axId) rebuilt == .ok true) $
   -- Build a second, different struct: Pair2 with different addresses
-  let pair2IndAddr := mkAddr 341
-  let pair2CtorAddr := mkAddr 342
-  let env2 := addInductive env pair2IndAddr
-    (pi ty (pi ty ty)) #[pair2CtorAddr] (numParams := 2)
+  let pair2IndId := mkId "Pair2" 241
+  let pair2CtorId := mkId "Pair2.mk" 242
+  let env2 := addInductive env pair2IndId
+    (pi ty (pi ty ty)) #[pair2CtorId] (numParams := 2)
   let ctor2Type := pi ty (pi ty (pi (bv 1) (pi (bv 1)
-    (app (app (cst pair2IndAddr) (bv 3)) (bv 2)))))
-  let env2 := addCtor env2 pair2CtorAddr pair2IndAddr ctor2Type 0 2 2
+    (app (app (cst pair2IndId) (bv 3)) (bv 2)))))
+  let env2 := addCtor env2 pair2CtorId pair2IndId ctor2Type 0 2 2
   -- mk1 3 7 vs mk2 3 7 — different struct types, should NOT be defEq
-  let mk1 := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 3)) (natLit 7)
-  let mk2 := app (app (app (app (cst pair2CtorAddr) ty) ty) (natLit 3)) (natLit 7)
+  let mk1 := app (app (app (app (cst pairCtorId) ty) ty) (natLit 3)) (natLit 7)
+  let mk2 := app (app (app (app (cst pair2CtorId) ty) ty) (natLit 3)) (natLit 7)
   test "struct eta: diff types not defEq" (isDefEqK2 env2 mk1 mk2 == .ok false)
 
 /-! ## Test: Nat.pow overflow guard -/
 
 def testNatPowOverflow : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Nat.pow 2 16777216 should still compute (boundary, exponent = 2^24)
   let powBoundary := app (app (cst prims.natPow) (natLit 2)) (natLit 16777216)
   let boundaryResult := whnfIsNatLit default powBoundary
   test "Nat.pow boundary computes" (boundaryResult.map Option.isSome == .ok true) $
   -- Nat.pow 2 16777217 should stay stuck (exponent > 2^24)
   let powOver := app (app (cst prims.natPow) (natLit 2)) (natLit 16777217)
-  test "Nat.pow overflow stays stuck" (whnfHeadAddr default powOver == .ok (some prims.natPow))
+  test "Nat.pow overflow stays stuck" (whnfHeadAddr default powOver == .ok (some prims.natPow.addr)) $
+  -- 2^63 + 2^63 == 2^64 (large nat arithmetic in 2^64 range)
+  let pow63 := app (app (cst prims.natPow) (natLit 2)) (natLit 63)
+  let pow64 := app (app (cst prims.natPow) (natLit 2)) (natLit 64)
+  let sum := app (app (cst prims.natAdd) pow63) pow63
+  test "Nat.pow: 2^63 + 2^63 == 2^64" (isDefEqEmpty sum pow64 == .ok true)
 
 /-! ## Test: natLitToCtorThunked in isDefEqCore -/
 
 def testNatLitCtorDefEq : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- natLit 0 == Nat.zero (ctor) — triggers natLitToCtorThunked path
   test "natLitCtor: 0 == Nat.zero" (isDefEqEmpty (natLit 0) (cst prims.natZero) == .ok true) $
   -- Nat.zero == natLit 0 (reversed)
@@ -1329,14 +1348,14 @@ def testNatLitCtorDefEq : TestSeq :=
 def testProofIrrelPrecision : TestSeq :=
   -- Proof irrelevance fires when typeof(t) = Sort 0, meaning t is a type in Prop.
   -- Two different propositions (axioms of type Prop) should be defEq:
-  let p1 := mkAddr 350
-  let p2 := mkAddr 351
+  let p1 := mkId "p1" 250
+  let p2 := mkId "p2" 251
   let env := addAxiom (addAxiom default p1 prop) p2 prop
   test "no proof irrel: two propositions (types, not proofs)" (isDefEqK2 env (cst p1) (cst p2) == .ok false) $
   -- Two axioms whose type is NOT Sort 0 — proof irrel should NOT fire.
   -- Axioms of type (Sort 1 = Type) — typeof(t) = Sort 1, NOT Sort 0
-  let t1 := mkAddr 352
-  let t2 := mkAddr 353
+  let t1 := mkId "t1" 252
+  let t2 := mkId "t2" 253
   let env := addAxiom (addAxiom default t1 ty) t2 ty
   test "no proof irrel: Sort 1 axioms" (isDefEqK2 env (cst t1) (cst t2) == .ok false) $
   -- Axioms of type Prop are propositions. Prop : Sort 1, not Sort 0.
@@ -1345,9 +1364,9 @@ def testProofIrrelPrecision : TestSeq :=
   -- Two proofs of same proposition: h1, h2 : P where P : Prop
   -- typeof(h1) = P, isPropVal(P) checks typeof(P) = Prop = Sort 0 → true!
   -- So proof irrel fires: isDefEq(typeof(h1), typeof(h2)) = isDefEq(P, P) = true.
-  let pAxiom := mkAddr 354
-  let h1 := mkAddr 355
-  let h2 := mkAddr 356
+  let pAxiom := mkId "P" 254
+  let h1 := mkId "h1" 255
+  let h2 := mkId "h2" 1
   let env := addAxiom default pAxiom prop
   let env := addAxiom (addAxiom env h1 (cst pAxiom)) h2 (cst pAxiom)
   test "proof irrel: proofs of same proposition" (isDefEqK2 env (cst h1) (cst h2) == .ok true)
@@ -1357,23 +1376,23 @@ def testProofIrrelPrecision : TestSeq :=
 def testDeepSpine : TestSeq :=
   let fType := pi ty (pi ty (pi ty (pi ty ty)))
   -- Defs with same body: f 1 2 == g 1 2 (both reduce to same value)
-  let fAddr := mkAddr 360
-  let gAddr := mkAddr 361
+  let fId := mkId "f" 2
+  let gId := mkId "g" 3
   let fBody := lam ty (lam ty (lam ty (lam ty (bv 3))))
-  let env := addDef (addDef default fAddr fType fBody) gAddr fType fBody
-  let fg12a := app (app (cst fAddr) (natLit 1)) (natLit 2)
-  let fg12b := app (app (cst gAddr) (natLit 1)) (natLit 2)
+  let env := addDef (addDef default fId fType fBody) gId fType fBody
+  let fg12a := app (app (cst fId) (natLit 1)) (natLit 2)
+  let fg12b := app (app (cst gId) (natLit 1)) (natLit 2)
   test "deep spine: f 1 2 == g 1 2 (same body)" (isDefEqK2 env fg12a fg12b == .ok true) $
   -- f 1 2 3 4 reduces to 1, g 1 2 3 5 also reduces to 1 — both equal
-  let f1234 := app (app (app (app (cst fAddr) (natLit 1)) (natLit 2)) (natLit 3)) (natLit 4)
-  let g1235 := app (app (app (app (cst gAddr) (natLit 1)) (natLit 2)) (natLit 3)) (natLit 5)
+  let f1234 := app (app (app (app (cst fId) (natLit 1)) (natLit 2)) (natLit 3)) (natLit 4)
+  let g1235 := app (app (app (app (cst gId) (natLit 1)) (natLit 2)) (natLit 3)) (natLit 5)
   test "deep spine: f 1 2 3 4 == g 1 2 3 5 (both reduce)" (isDefEqK2 env f1234 g1235 == .ok true) $
   -- f 1 2 3 4 != g 2 2 3 4 (different first arg, reduces to 1 vs 2)
-  let g2234 := app (app (app (app (cst gAddr) (natLit 2)) (natLit 2)) (natLit 3)) (natLit 4)
+  let g2234 := app (app (app (app (cst gId) (natLit 2)) (natLit 2)) (natLit 3)) (natLit 4)
   test "deep spine: diff first arg" (isDefEqK2 env f1234 g2234 == .ok false) $
   -- Two different axioms with same type applied to same args: NOT defEq
-  let ax1 := mkAddr 362
-  let ax2 := mkAddr 363
+  let ax1 := mkId "ax1" 4
+  let ax2 := mkId "ax2" 5
   let env2 := addAxiom (addAxiom default ax1 (pi ty ty)) ax2 (pi ty ty)
   test "deep spine: diff axiom heads" (isDefEqK2 env2 (app (cst ax1) (natLit 1)) (app (cst ax2) (natLit 1)) == .ok false)
 
@@ -1386,10 +1405,10 @@ def testPiDefEq : TestSeq :=
   let depPi := pi ty (pi (bv 0) (bv 1))
   test "pi defEq: Π A. A → A" (isDefEqEmpty depPi depPi == .ok true) $
   -- Two Pi types where domains are defEq through reduction
-  let dTy := mkAddr 372
-  let env := addDef default dTy (srt 2) ty  -- dTy : Sort 2 := Type
+  let dTyId := mkId "dTy" 6
+  let env := addDef default dTyId (srt 2) ty  -- dTy : Sort 2 := Type
   -- Π(_ : dTy). Type  vs  Π(_ : Type). Type  — dTy reduces to Type
-  test "pi defEq: reduced domain" (isDefEqK2 env (pi (cst dTy) ty) (pi ty ty) == .ok true) $
+  test "pi defEq: reduced domain" (isDefEqK2 env (pi (cst dTyId) ty) (pi ty ty) == .ok true) $
   -- Negative: different codomains
   test "pi defEq: diff codomain" (isDefEqEmpty (pi ty ty) (pi ty prop) == .ok false) $
   -- Negative: different domains
@@ -1398,7 +1417,7 @@ def testPiDefEq : TestSeq :=
 /-! ## Test: 3-char string literal to ctor conversion -/
 
 def testStringCtorDeep : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- "abc" == String.mk (cons 'a' (cons 'b' (cons 'c' nil)))
   let charType := cst prims.char
   let nilChar := app (cstL prims.listNil #[.zero]) charType
@@ -1419,25 +1438,25 @@ def testStringCtorDeep : TestSeq :=
 /-! ## Test: projection in isDefEq -/
 
 def testProjDefEq : TestSeq :=
-  let (pairEnv, pairIndAddr, pairCtorAddr) := buildPairEnv
+  let (pairEnv, pairId, pairCtorId) := buildPairEnv
   -- proj comparison: same struct, same index
-  let mk37 := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 3)) (natLit 7)
-  let proj0a := Ix.Kernel.Expr.mkProj pairIndAddr 0 mk37
-  let proj0b := Ix.Kernel.Expr.mkProj pairIndAddr 0 mk37
+  let mk37 := app (app (app (app (cst pairCtorId) ty) ty) (natLit 3)) (natLit 7)
+  let proj0a := Ix.Kernel.Expr.mkProj pairId 0 mk37
+  let proj0b := Ix.Kernel.Expr.mkProj pairId 0 mk37
   test "proj defEq: same proj" (isDefEqK2 pairEnv proj0a proj0b == .ok true) $
   -- proj 0 vs proj 1 of same struct — different fields
-  let proj1 := Ix.Kernel.Expr.mkProj pairIndAddr 1 mk37
+  let proj1 := Ix.Kernel.Expr.mkProj pairId 1 mk37
   test "proj defEq: proj 0 != proj 1" (isDefEqK2 pairEnv proj0a proj1 == .ok false) $
   -- proj 0 (mk 3 7) == 3 (reduces)
   test "proj reduces to val" (isDefEqK2 pairEnv proj0a (natLit 3) == .ok true) $
   -- Projection on axiom stays stuck but proj == proj on same axiom should be defEq
-  let axAddr := mkAddr 380
-  let pairType := app (app (cst pairIndAddr) ty) ty
-  let env := addAxiom pairEnv axAddr pairType
-  let projAx0 := Ix.Kernel.Expr.mkProj pairIndAddr 0 (cst axAddr)
+  let axId := mkId "myAxiom" 7
+  let pairType := app (app (cst pairId) ty) ty
+  let env := addAxiom pairEnv axId pairType
+  let projAx0 := Ix.Kernel.Expr.mkProj pairId 0 (cst axId)
   test "proj defEq: proj 0 ax == proj 0 ax" (isDefEqK2 env projAx0 projAx0 == .ok true) $
   -- proj 0 ax != proj 1 ax
-  let projAx1 := Ix.Kernel.Expr.mkProj pairIndAddr 1 (cst axAddr)
+  let projAx1 := Ix.Kernel.Expr.mkProj pairId 1 (cst axId)
   test "proj defEq: proj 0 ax != proj 1 ax" (isDefEqK2 env projAx0 projAx1 == .ok false)
 
 /-! ## Test: lambda/pi body fvar comparison -/
@@ -1463,27 +1482,27 @@ def testFvarComparison : TestSeq :=
 /-! ## Test: typecheck a definition that uses a recursor (Nat.add-like) -/
 
 def testDefnTypecheckAdd : TestSeq :=
-  let (env, natIndAddr, _zeroAddr, succAddr, recAddr) := buildMyNatEnv
-  let prims := buildPrimitives
-  let natConst := cst natIndAddr
+  let (env, natId, zeroId, succId, recId) := buildMyNatEnv
+  let prims := buildPrimitives .meta
+  let natConst := cst natId
   -- Define: myAdd : MyNat → MyNat → MyNat
   --   myAdd n m = @MyNat.rec (fun _ => MyNat) n (fun _ ih => succ ih) m
-  let addAddr := mkAddr 55
+  let addId := mkId "myAdd" 55
   let addType : E := pi natConst (pi natConst natConst)  -- MyNat → MyNat → MyNat
   let motive := lam natConst natConst       -- fun _ : MyNat => MyNat
   let base := bv 1                          -- n
-  let step := lam natConst (lam natConst (app (cst succAddr) (bv 0)))  -- fun _ ih => succ ih
+  let step := lam natConst (lam natConst (app (cst succId) (bv 0)))  -- fun _ ih => succ ih
   let target := bv 0                        -- m
-  let recApp := app (app (app (app (cst recAddr) motive) base) step) target
+  let recApp := app (app (app (app (cst recId) motive) base) step) target
   let addBody := lam natConst (lam natConst recApp)
-  let env := addDef env addAddr addType addBody
+  let env := addDef env addId addType addBody
   -- First check: whnf of myAdd applied to concrete values
-  let twoE := app (cst succAddr) (app (cst succAddr) (cst _zeroAddr))
-  let threeE := app (cst succAddr) (app (cst succAddr) (app (cst succAddr) (cst _zeroAddr)))
-  let addApp := app (app (cst addAddr) twoE) threeE
+  let twoE := app (cst succId) (app (cst succId) (cst zeroId))
+  let threeE := app (cst succId) (app (cst succId) (app (cst succId) (cst zeroId)))
+  let addApp := app (app (cst addId) twoE) threeE
   test "myAdd 2 3 whnf reduces" (whnfK2 env addApp |>.isOk) $
   -- Now typecheck the constant
-  let result := Ix.Kernel.typecheckConst env prims addAddr
+  let result := Ix.Kernel.typecheckConst env prims addId
   test "myAdd typechecks" (result.isOk) $
   match result with
   | .ok () => test "myAdd typecheck succeeded" true
@@ -1495,51 +1514,54 @@ def testDefnTypecheckAdd : TestSeq :=
 /-! ### Proof irrelevance: under lambda + intro vs axiom -/
 
 def testProofIrrelUnderLambda : TestSeq :=
-  let (env, trueIndAddr, _introAddr, _recAddr) := buildMyTrueEnv
-  let p1 := mkAddr 400
-  let p2 := mkAddr 401
-  let env := addAxiom (addAxiom env p1 (cst trueIndAddr)) p2 (cst trueIndAddr)
+  let (env, trueId, _introId, _recId) := buildMyTrueEnv
+  let p1 := mkId "p1" 8
+  let p2 := mkId "p2" 9
+  let env := addAxiom (addAxiom env p1 (cst trueId)) p2 (cst trueId)
   -- λ(x:Type). p1 == λ(x:Type). p2 (proof irrel under lambda)
   test "proof irrel under lambda"
     (isDefEqK2 env (lam ty (cst p1)) (lam ty (cst p2)) == .ok true)
 
 def testProofIrrelIntroVsAxiom : TestSeq :=
-  let (env, trueIndAddr, introAddr, _recAddr) := buildMyTrueEnv
-  let p1 := mkAddr 403
-  let env := addAxiom env p1 (cst trueIndAddr)
+  let (env, trueId, introId, _recId) := buildMyTrueEnv
+  let p1 := mkId "p1" 10
+  let env := addAxiom env p1 (cst trueId)
   -- The constructor intro and axiom p1 are both proofs of MyTrue → defeq
   test "proof irrel: intro vs axiom"
-    (isDefEqK2 env (cst introAddr) (cst p1) == .ok true)
+    (isDefEqK2 env (cst introId) (cst p1) == .ok true)
 
 /-! ### Eta expansion with axioms -/
 
 def testEtaAxiomFun : TestSeq :=
-  let prims := buildPrimitives
-  let fAddr := mkAddr 410
-  let env := addAxiom default prims.nat ty
-  let env := addAxiom env fAddr (pi (cst prims.nat) (cst prims.nat))
+  let prims := buildPrimitives .meta
+  let fId := mkId "f" 11
+  let natMId : MId := (parseIxName "Nat", prims.nat.addr)
+  let env := addAxiom default natMId ty
+  let env := addAxiom env fId (pi (cst prims.nat) (cst prims.nat))
   -- f == λx. f x (eta with axiom)
-  let etaF := lam (cst prims.nat) (app (cst fAddr) (bv 0))
-  test "eta axiom: f == λx. f x" (isDefEqK2 env (cst fAddr) etaF == .ok true) $
-  test "eta axiom: λx. f x == f" (isDefEqK2 env etaF (cst fAddr) == .ok true)
+  let etaF := lam (cst prims.nat) (app (cst fId) (bv 0))
+  test "eta axiom: f == λx. f x" (isDefEqK2 env (cst fId) etaF == .ok true) $
+  test "eta axiom: λx. f x == f" (isDefEqK2 env etaF (cst fId) == .ok true)
 
 def testEtaNestedAxiom : TestSeq :=
-  let prims := buildPrimitives
-  let fAddr := mkAddr 412
+  let prims := buildPrimitives .meta
+  let fId := mkId "f" 12
   let natE := cst prims.nat
-  let env := addAxiom default prims.nat ty
-  let env := addAxiom env fAddr (pi natE (pi natE natE))
+  let natMId : MId := (parseIxName "Nat", prims.nat.addr)
+  let env := addAxiom default natMId ty
+  let env := addAxiom env fId (pi natE (pi natE natE))
   -- f == λx.λy. f x y (double eta with axiom)
-  let doubleEta := lam natE (lam natE (app (app (cst fAddr) (bv 1)) (bv 0)))
+  let doubleEta := lam natE (lam natE (app (app (cst fId) (bv 1)) (bv 0)))
   test "eta axiom nested: f == λx.λy. f x y"
-    (isDefEqK2 env (cst fAddr) doubleEta == .ok true)
+    (isDefEqK2 env (cst fId) doubleEta == .ok true)
 
 /-! ### Bidirectional check -/
 
 def testCheckLamAgainstPi : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   let natE := cst prims.nat
-  let env := addAxiom default prims.nat ty
+  let natMId : MId := (parseIxName "Nat", prims.nat.addr)
+  let env := addAxiom default natMId ty
   -- λ(x:Nat). x checked against (Nat → Nat) succeeds
   let idLam := lam natE (bv 0)
   let piTy := pi natE natE
@@ -1547,10 +1569,12 @@ def testCheckLamAgainstPi : TestSeq :=
     (checkK2 env idLam piTy |>.isOk)
 
 def testCheckDomainMismatch : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   let natE := cst prims.nat
   let boolE := cst prims.bool
-  let env := addAxiom (addAxiom default prims.nat ty) prims.bool ty
+  let natMId : MId := (parseIxName "Nat", prims.nat.addr)
+  let boolMId : MId := (parseIxName "Bool", prims.bool.addr)
+  let env := addAxiom (addAxiom default natMId ty) boolMId ty
   -- λ(x:Bool). x checked against (Nat → Nat) fails
   let lamBool := lam boolE (bv 0)
   let piNat := pi natE natE
@@ -1582,35 +1606,35 @@ def testLevelEquality : TestSeq :=
 /-! ### Projection nested pair -/
 
 def testProjNestedPair : TestSeq :=
-  let (env, pairIndAddr, pairCtorAddr) := buildPairEnv
+  let (env, pairId, pairCtorId) := buildPairEnv
   -- mk (mk 1 2) (mk 3 4)
-  let inner1 := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 1)) (natLit 2)
-  let inner2 := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 3)) (natLit 4)
-  let pairOfPairTy := app (app (cst pairIndAddr) ty) ty
-  let outer := app (app (app (app (cst pairCtorAddr) pairOfPairTy) pairOfPairTy) inner1) inner2
+  let inner1 := app (app (app (app (cst pairCtorId) ty) ty) (natLit 1)) (natLit 2)
+  let inner2 := app (app (app (app (cst pairCtorId) ty) ty) (natLit 3)) (natLit 4)
+  let pairOfPairTy := app (app (cst pairId) ty) ty
+  let outer := app (app (app (app (cst pairCtorId) pairOfPairTy) pairOfPairTy) inner1) inner2
   -- proj 0 outer == mk 1 2
-  let proj0 := projE pairIndAddr 0 outer
-  let expected := app (app (app (app (cst pairCtorAddr) ty) ty) (natLit 1)) (natLit 2)
+  let proj0 := projE pairId 0 outer
+  let expected := app (app (app (app (cst pairCtorId) ty) ty) (natLit 1)) (natLit 2)
   test "proj nested: proj 0 outer == mk 1 2" (isDefEqK2 env proj0 expected == .ok true) $
   -- proj 0 (proj 0 outer) == 1
-  let projProj := projE pairIndAddr 0 proj0
+  let projProj := projE pairId 0 proj0
   test "proj nested: proj 0 (proj 0 outer) == 1" (isDefEqK2 env projProj (natLit 1) == .ok true)
 
 /-! ### Opaque/theorem self-equality -/
 
 def testOpaqueSelfEq : TestSeq :=
-  let oAddr := mkAddr 430
-  let env := addOpaque default oAddr ty (natLit 5)
+  let oId := mkId "myOpaque" 13
+  let env := addOpaque default oId ty (natLit 5)
   -- Opaque constant defeq to itself
-  test "opaque self eq" (isDefEqK2 env (cst oAddr) (cst oAddr) == .ok true)
+  test "opaque self eq" (isDefEqK2 env (cst oId) (cst oId) == .ok true)
 
 def testTheoremSelfEq : TestSeq :=
-  let tAddr := mkAddr 431
-  let env := addTheorem default tAddr ty (natLit 5)
+  let tId := mkId "myThm" 14
+  let env := addTheorem default tId ty (natLit 5)
   -- Theorem constant defeq to itself
-  test "theorem self eq" (isDefEqK2 env (cst tAddr) (cst tAddr) == .ok true) $
+  test "theorem self eq" (isDefEqK2 env (cst tId) (cst tId) == .ok true) $
   -- Theorem is unfolded during defEq, so thm == 5
-  test "theorem unfolds to value" (isDefEqK2 env (cst tAddr) (natLit 5) == .ok true)
+  test "theorem unfolds to value" (isDefEqK2 env (cst tId) (natLit 5) == .ok true)
 
 /-! ### Beta inside defeq -/
 
@@ -1633,18 +1657,18 @@ def testSortDefEqLevels : TestSeq :=
 /-! ### Nat supplemental -/
 
 def testNatSupplemental : TestSeq :=
-  let prims := buildPrimitives
+  let prims := buildPrimitives .meta
   -- Large literal equality (O(1))
   test "nat: 1000000 == 1000000" (isDefEqEmpty (natLit 1000000) (natLit 1000000) == .ok true) $
   test "nat: 1000000 != 1000001" (isDefEqEmpty (natLit 1000000) (natLit 1000001) == .ok false) $
   -- nat_lit(0) whnf stays as nat_lit(0)
   test "nat: whnf 0 stays 0" (whnfEmpty (natLit 0) == .ok (natLit 0)) $
   -- Nat.succ(x) == Nat.succ(x) with symbolic x
-  let natIndAddr := (buildMyNatEnv).2.1
+  let natId := (buildMyNatEnv).2.1
   let (env, _, _, _, _) := buildMyNatEnv
-  let x := mkAddr 440
-  let y := mkAddr 441
-  let env := addAxiom (addAxiom env x (cst natIndAddr)) y (cst natIndAddr)
+  let x := mkId "x" 15
+  let y := mkId "y" 16
+  let env := addAxiom (addAxiom env x (cst natId)) y (cst natId)
   let sx := app (cst prims.natSucc) (cst x)
   test "nat succ sym: succ x == succ x" (isDefEqK2 env sx sx == .ok true) $
   let sy := app (cst prims.natSucc) (cst y)
@@ -1653,11 +1677,11 @@ def testNatSupplemental : TestSeq :=
 /-! ### Whnf nat prim symbolic stays stuck -/
 
 def testWhnfNatPrimSymbolic : TestSeq :=
-  let (env, natIndAddr, _, _, _) := buildMyNatEnv
-  let x := mkAddr 460
-  let env := addAxiom env x (cst natIndAddr)
+  let (env, natId, _, _, _) := buildMyNatEnv
+  let x := mkId "x" 17
+  let env := addAxiom env x (cst natId)
   -- Nat.add x 3 should NOT reduce (x is symbolic)
-  let addSym := app (app (cst (buildPrimitives).natAdd) (cst x)) (natLit 3)
+  let addSym := app (app (cst (buildPrimitives .meta).natAdd) (cst x)) (natLit 3)
   let result := whnfK2 env addSym
   test "whnf: Nat.add sym stays stuck" (result != .ok (natLit 3))
 
@@ -1665,50 +1689,50 @@ def testWhnfNatPrimSymbolic : TestSeq :=
 
 def testLazyDeltaSupplemental : TestSeq :=
   -- Same head axiom spine: f 1 2 == f 1 2
-  let fAddr := mkAddr 450
-  let env := addAxiom default fAddr (pi ty (pi ty ty))
-  let fa := app (app (cst fAddr) (natLit 1)) (natLit 2)
+  let fId := mkId "f" 18
+  let env := addAxiom default fId (pi ty (pi ty ty))
+  let fa := app (app (cst fId) (natLit 1)) (natLit 2)
   test "lazy delta: f 1 2 == f 1 2" (isDefEqK2 env fa fa == .ok true) $
   -- f 1 2 != f 1 3
-  let fc := app (app (cst fAddr) (natLit 1)) (natLit 3)
+  let fc := app (app (cst fId) (natLit 1)) (natLit 3)
   test "lazy delta: f 1 2 != f 1 3" (isDefEqK2 env fa fc == .ok false) $
   -- Theorem unfolded by delta
-  let thmAddr := mkAddr 451
-  let env := addTheorem default thmAddr ty (natLit 5)
-  test "lazy delta: theorem unfolds" (isDefEqK2 env (cst thmAddr) (natLit 5) == .ok true)
+  let thmId := mkId "myThm" 19
+  let env := addTheorem default thmId ty (natLit 5)
+  test "lazy delta: theorem unfolds" (isDefEqK2 env (cst thmId) (natLit 5) == .ok true)
 
 /-! ### K-reduction supplemental -/
 
 def testKReductionSupplemental : TestSeq :=
-  let (env, _trueIndAddr, introAddr, recAddr) := buildMyTrueEnv
+  let (env, trueId, introId, recId) := buildMyTrueEnv
   -- K-rec on intro directly reduces to minor premise
-  let motive := lam (cst _trueIndAddr) prop
+  let motive := lam (cst trueId) prop
   let base := natLit 42  -- the "value" produced by the minor premise (abusing types for simplicity)
-  let recOnIntro := app (app (app (cst recAddr) motive) base) (cst introAddr)
+  let recOnIntro := app (app (app (cst recId) motive) base) (cst introId)
   test "K-rec on intro reduces" (whnfK2 env recOnIntro |>.isOk) $
   -- K-rec on axiom of right type: toCtorWhenK should handle this
-  let axAddr := mkAddr 470
-  let env := addAxiom env axAddr (cst _trueIndAddr)
-  let recOnAxiom := app (app (app (cst recAddr) motive) base) (cst axAddr)
+  let axId := mkId "myAxiom" 20
+  let env := addAxiom env axId (cst trueId)
+  let recOnAxiom := app (app (app (cst recId) motive) base) (cst axId)
   test "K-rec on axiom reduces" (whnfK2 env recOnAxiom |>.isOk)
 
 /-! ### Struct eta not recursive -/
 
 def testStructEtaNotRecursive : TestSeq :=
   -- Build a recursive list-like type — struct eta should NOT fire
-  let listIndAddr := mkAddr 480
-  let listNilAddr := mkAddr 481
-  let listConsAddr := mkAddr 482
-  let env := addInductive default listIndAddr (pi ty ty) #[listNilAddr, listConsAddr]
+  let listIndId := mkId "MyList" 21
+  let listNilId := mkId "MyList.nil" 22
+  let listConsId := mkId "MyList.cons" 23
+  let env := addInductive default listIndId (pi ty ty) #[listNilId, listConsId]
     (numParams := 1) (isRec := true)
-  let env := addCtor env listNilAddr listIndAddr
-    (pi ty (app (cst listIndAddr) (bv 0))) 0 1 0
-  let env := addCtor env listConsAddr listIndAddr
-    (pi ty (pi (bv 0) (pi (app (cst listIndAddr) (bv 1)) (app (cst listIndAddr) (bv 2))))) 1 1 2
+  let env := addCtor env listNilId listIndId
+    (pi ty (app (cst listIndId) (bv 0))) 0 1 0
+  let env := addCtor env listConsId listIndId
+    (pi ty (pi (bv 0) (pi (app (cst listIndId) (bv 1)) (app (cst listIndId) (bv 2))))) 1 1 2
   -- Two axioms of list type should NOT be defeq
-  let ax1 := mkAddr 483
-  let ax2 := mkAddr 484
-  let listNat := app (cst listIndAddr) ty
+  let ax1 := mkId "ax1" 24
+  let ax2 := mkId "ax2" 25
+  let listNat := app (cst listIndId) ty
   let env := addAxiom (addAxiom env ax1 listNat) ax2 listNat
   test "struct eta not recursive: list axioms not defeq"
     (isDefEqK2 env (cst ax1) (cst ax2) == .ok false)
@@ -1717,16 +1741,475 @@ def testStructEtaNotRecursive : TestSeq :=
 
 def testUnitLikePropDefEq : TestSeq :=
   -- Prop type with 1 ctor, 0 fields → both unit-like and proof-irrel
-  let pIndAddr := mkAddr 490
-  let pMkAddr := mkAddr 491
-  let env := addInductive default pIndAddr prop #[pMkAddr]
-  let env := addCtor env pMkAddr pIndAddr (cst pIndAddr) 0 0 0
-  let ax1 := mkAddr 492
-  let ax2 := mkAddr 493
-  let env := addAxiom (addAxiom env ax1 (cst pIndAddr)) ax2 (cst pIndAddr)
+  let pIndId := mkId "MyP" 26
+  let pMkId := mkId "MyP.mk" 27
+  let env := addInductive default pIndId prop #[pMkId]
+  let env := addCtor env pMkId pIndId (cst pIndId) 0 0 0
+  let ax1 := mkId "ax1" 28
+  let ax2 := mkId "ax2" 29
+  let env := addAxiom (addAxiom env ax1 (cst pIndId)) ax2 (cst pIndId)
   -- Both proof irrelevance and unit-like apply
   test "unit-like prop defeq"
     (isDefEqK2 env (cst ax1) (cst ax2) == .ok true)
+
+/-! ========================================================================
+    Phase 1: Declaration-level checking tests
+    ======================================================================== -/
+
+/-! ### 1B. Positive tests: existing envs pass checkConst -/
+
+def testCheckMyNatInd : TestSeq :=
+  let (env, natId, zeroId, succId, recId) := buildMyNatEnv
+  let prims := buildPrimitives .meta
+  test "checkConst: MyNat inductive"
+    (typecheckConstK2 env natId prims |>.isOk) $
+  test "checkConst: MyNat.zero ctor"
+    (typecheckConstK2 env zeroId prims |>.isOk) $
+  test "checkConst: MyNat.succ ctor"
+    (typecheckConstK2 env succId prims |>.isOk) $
+  test "checkConst: MyNat.rec recursor"
+    (typecheckConstK2 env recId prims |>.isOk)
+
+def testCheckMyTrueInd : TestSeq :=
+  let (env, trueId, introId, recId) := buildMyTrueEnv
+  let prims := buildPrimitives .meta
+  test "checkConst: MyTrue inductive"
+    (typecheckConstK2 env trueId prims |>.isOk) $
+  test "checkConst: MyTrue.intro ctor"
+    (typecheckConstK2 env introId prims |>.isOk) $
+  test "checkConst: MyTrue.rec K-recursor"
+    (typecheckConstK2 env recId prims |>.isOk)
+
+def testCheckPairInd : TestSeq :=
+  let (env, pairId, pairCtorId) := buildPairEnv
+  let prims := buildPrimitives .meta
+  test "checkConst: Pair inductive"
+    (typecheckConstK2 env pairId prims |>.isOk) $
+  test "checkConst: Pair.mk ctor"
+    (typecheckConstK2 env pairCtorId prims |>.isOk)
+
+def testCheckAxiom : TestSeq :=
+  let axId := mkId "myAxiom" 30
+  let env := addAxiom default axId ty
+  let prims := buildPrimitives .meta
+  test "checkConst: axiom"
+    (typecheckConstK2 env axId prims |>.isOk)
+
+def testCheckOpaque : TestSeq :=
+  let opId := mkId "myOpaque" 31
+  -- opaque : Type := Prop
+  let env := addOpaque default opId (srt 2) ty
+  let prims := buildPrimitives .meta
+  test "checkConst: opaque"
+    (typecheckConstK2 env opId prims |>.isOk)
+
+def testCheckTheorem : TestSeq :=
+  let (env, trueId, introId, _recId) := buildMyTrueEnv
+  let prims := buildPrimitives .meta
+  -- theorem : MyTrue := MyTrue.intro
+  let thmId := mkId "myThm" 32
+  let env := addTheorem env thmId (cst trueId) (cst introId)
+  test "checkConst: theorem"
+    (typecheckConstK2 env thmId prims |>.isOk)
+
+def testCheckDefinition : TestSeq :=
+  let defId := mkId "myDef" 33
+  -- def : Type := Type
+  let env := addDef default defId (srt 2) ty
+  let prims := buildPrimitives .meta
+  test "checkConst: definition"
+    (typecheckConstK2 env defId prims |>.isOk)
+
+/-! ### 1C. Negative tests: constructor validation -/
+
+def testCheckCtorParamCountMismatch : TestSeq :=
+  -- MyNat-like but constructor has numParams=1 instead of 0
+  let natIndId := mkId "MyNat" 34
+  let zeroId := mkId "MyNat.zero" 35
+  let natType : E := srt 1
+  let natConst := cst natIndId
+  let env := addInductive default natIndId natType #[zeroId]
+  -- Constructor claims numParams=1 but inductive has numParams=0
+  let env := addCtor env zeroId natIndId natConst 0 (numParams := 1) (numFields := 0)
+  let prims := buildPrimitives .meta
+  test "checkConst: ctor param count mismatch → error"
+    (typecheckConstK2 env natIndId prims |> fun r => !r.isOk)
+
+def testCheckCtorReturnTypeNotInductive : TestSeq :=
+  -- Constructor whose return type is not the inductive
+  let myIndId := mkId "MyInd" 36
+  let myCtorId := mkId "MyInd.mk" 37
+  let bogusId := mkId "bogus" 38
+  let myType := srt 1
+  let env := addInductive default myIndId myType #[myCtorId]
+  -- Constructor type: bogusId instead of myIndId
+  let env := addAxiom env bogusId myType
+  let env := addCtor env myCtorId myIndId (cst bogusId) 0 0 0
+  let prims := buildPrimitives .meta
+  test "checkConst: ctor return type not inductive → error"
+    (typecheckConstK2 env myIndId prims |> fun r => !r.isOk)
+
+/-! ### 1D. Strict positivity tests -/
+
+def testPositivityOkNoOccurrence : TestSeq :=
+  -- Inductive T with ctor mk : Nat → T (no mention of T in field domain)
+  let tIndId := mkId "T" 39
+  let tMkId := mkId "T.mk" 40
+  let natId' := mkId "MyNat" 41
+  let natConst := cst natId'
+  let tConst := cst tIndId
+  let env := addAxiom default natId' (srt 1)  -- Nat : Type
+  let env := addInductive env tIndId (srt 1) #[tMkId]
+  let env := addCtor env tMkId tIndId (pi natConst tConst) 0 0 1
+  let prims := buildPrimitives .meta
+  test "positivity: no occurrence (trivially positive)"
+    (typecheckConstK2 env tIndId prims |>.isOk)
+
+def testPositivityOkDirect : TestSeq :=
+  -- Recursive inductive: mk : T → T (direct positive occurrence)
+  let tIndId := mkId "T" 42
+  let tMkId := mkId "T.mk" 43
+  let tConst := cst tIndId
+  let env := addInductive default tIndId (srt 1) #[tMkId] (isRec := true)
+  let env := addCtor env tMkId tIndId (pi tConst tConst) 0 0 1
+  let prims := buildPrimitives .meta
+  test "positivity: direct positive occurrence"
+    (typecheckConstK2 env tIndId prims |>.isOk)
+
+def testPositivityViolationNegative : TestSeq :=
+  -- Negative occurrence: mk : (T → Nat) → T  (T in domain)
+  let tIndId := mkId "T" 44
+  let tMkId := mkId "T.mk" 45
+  let natId' := mkId "MyNat" 46
+  let tConst := cst tIndId
+  let natConst := cst natId'
+  let env := addAxiom default natId' (srt 1)  -- Nat : Type
+  let env := addInductive env tIndId (srt 1) #[tMkId] (isRec := true)
+  -- mk : (T → Nat) → T
+  let fieldType := pi (pi tConst natConst) tConst
+  let env := addCtor env tMkId tIndId fieldType 0 0 1
+  let prims := buildPrimitives .meta
+  test "positivity: negative occurrence → error"
+    (typecheckConstK2 env tIndId prims |> fun r => !r.isOk)
+
+def testPositivityOkCovariant : TestSeq :=
+  -- Covariant: mk : (Nat → T) → T  (T only in codomain)
+  let tIndId := mkId "T" 47
+  let tMkId := mkId "T.mk" 48
+  let natId' := mkId "MyNat" 49
+  let tConst := cst tIndId
+  let natConst := cst natId'
+  let env := addAxiom default natId' (srt 1)
+  let env := addInductive env tIndId (srt 1) #[tMkId] (isRec := true)
+  -- mk : (Nat → T) → T
+  let fieldType := pi (pi natConst tConst) tConst
+  let env := addCtor env tMkId tIndId fieldType 0 0 1
+  let prims := buildPrimitives .meta
+  test "positivity: covariant occurrence OK"
+    (typecheckConstK2 env tIndId prims |>.isOk)
+
+/-! ### 1E. K-flag validation tests -/
+
+def testKFlagOk : TestSeq :=
+  let (env, _trueId, _introId, recId) := buildMyTrueEnv
+  let prims := buildPrimitives .meta
+  test "K-flag: MyTrue.rec K-recursor passes"
+    (typecheckConstK2 env recId prims |>.isOk)
+
+def testKFlagFailNotProp : TestSeq :=
+  -- Type-level inductive with K=true → error
+  let tIndId := mkId "T" 56
+  let tMkId := mkId "T.mk" 57
+  let tRecId := mkId "T.rec" 58
+  let tConst := cst tIndId
+  -- T : Type (not Prop)
+  let env := addInductive default tIndId (srt 1) #[tMkId]
+  let env := addCtor env tMkId tIndId tConst 0 0 0
+  -- Recursor with K=true on a Type-level inductive
+  let recType := pi (pi tConst prop) (pi (app (bv 0) (cst tMkId)) (pi tConst (app (bv 2) (bv 0))))
+  let ruleRhs := lam (pi tConst prop) (lam prop (bv 0))
+  let env := addRec env tRecId 0 recType #[tIndId]
+    (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 1)
+    (rules := #[{ ctor := tMkId, nfields := 0, rhs := ruleRhs }])
+    (k := true)
+  let prims := buildPrimitives .meta
+  test "K-flag: not Prop → error"
+    (typecheckConstK2 env tRecId prims |> fun r => !r.isOk)
+
+def testKFlagFailMultipleCtors : TestSeq :=
+  -- Prop inductive with 2 ctors + K=true → error
+  let pIndId := mkId "P" 59
+  let pMk1Id := mkId "P.mk1" 60
+  let pMk2Id := mkId "P.mk2" 61
+  let pRecId := mkId "P.rec" 62
+  let pConst := cst pIndId
+  let env := addInductive default pIndId prop #[pMk1Id, pMk2Id]
+  let env := addCtor env pMk1Id pIndId pConst 0 0 0
+  let env := addCtor env pMk2Id pIndId pConst 1 0 0
+  -- Recursor with K=true
+  let recType := pi (pi pConst prop) (pi (app (bv 0) (cst pMk1Id)) (pi (app (bv 1) (cst pMk2Id)) (pi pConst (app (bv 3) (bv 0)))))
+  let ruleRhs1 := lam (pi pConst prop) (lam prop (lam prop (bv 1)))
+  let ruleRhs2 := lam (pi pConst prop) (lam prop (lam prop (bv 0)))
+  let env := addRec env pRecId 0 recType #[pIndId]
+    (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 2)
+    (rules := #[
+      { ctor := pMk1Id, nfields := 0, rhs := ruleRhs1 },
+      { ctor := pMk2Id, nfields := 0, rhs := ruleRhs2 }
+    ])
+    (k := true)
+  let prims := buildPrimitives .meta
+  test "K-flag: multiple ctors → error"
+    (typecheckConstK2 env pRecId prims |> fun r => !r.isOk)
+
+def testKFlagFailHasFields : TestSeq :=
+  -- Prop inductive with 1 ctor that has 1 field + K=true → error
+  let pIndId := mkId "P" 63
+  let pMkId := mkId "P.mk" 64
+  let pRecId := mkId "P.rec" 65
+  let pConst := cst pIndId
+  -- P : Prop, mk : P → P (1 field)
+  let env := addInductive default pIndId prop #[pMkId] (isRec := true)
+  let env := addCtor env pMkId pIndId (pi pConst pConst) 0 0 1
+  -- Recursor with K=true
+  let recType := pi (pi pConst prop)
+    (pi (pi pConst (pi (app (bv 1) (bv 0)) (app (bv 2) (cst pMkId |> fun x => app x (bv 1)))))
+      (pi pConst (app (bv 2) (bv 0))))
+  let ruleRhs := lam (pi pConst prop) (lam (pi pConst (pi prop prop)) (lam pConst (app (app (bv 1) (bv 0)) (app (bv 2) (bv 0)))))
+  let env := addRec env pRecId 0 recType #[pIndId]
+    (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 1)
+    (rules := #[{ ctor := pMkId, nfields := 1, rhs := ruleRhs }])
+    (k := true)
+  let prims := buildPrimitives .meta
+  test "K-flag: has fields → error"
+    (typecheckConstK2 env pRecId prims |> fun r => !r.isOk)
+
+/-! ### 1F. Recursor validation tests -/
+
+def testRecRulesCountMismatch : TestSeq :=
+  -- Inductive with 2 ctors but recursor has only 1 rule
+  let (env, natId, zeroId, _succId, _) := buildMyNatEnv
+  let badRecId := mkId "MyNat.badrec" 66
+  let natConst := cst natId
+  let recType := pi (pi natConst (srt 1))
+    (pi (app (bv 0) (cst zeroId))
+      (pi natConst (app (bv 2) (bv 0))))
+  -- Only 1 rule for a 2-ctor inductive
+  let ruleRhs := lam (pi natConst (srt 1)) (lam (srt 1) (bv 0))
+  let env := addRec env badRecId 0 recType #[natId]
+    (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 1)
+    (rules := #[{ ctor := zeroId, nfields := 0, rhs := ruleRhs }])
+  let prims := buildPrimitives .meta
+  test "recursor: rules count mismatch → error"
+    (typecheckConstK2 env badRecId prims |> fun r => !r.isOk)
+
+def testRecRulesNfieldsMismatch : TestSeq :=
+  -- MyNat.succ has 1 field but rule claims 0
+  let (env, natId, zeroId, succId, _) := buildMyNatEnv
+  let badRecId := mkId "MyNat.badrec" 67
+  let natConst := cst natId
+  let recType := pi (pi natConst (srt 1))
+    (pi (app (bv 0) (cst zeroId))
+      (pi (pi natConst (pi (app (bv 2) (bv 0)) (app (bv 3) (app (cst succId) (bv 1)))))
+        (pi natConst (app (bv 3) (bv 0)))))
+  let zeroRhs := lam (pi natConst (srt 1)) (lam (srt 1) (lam (pi natConst (pi (srt 1) (srt 1))) (bv 1)))
+  -- succ rule claims nfields=0 instead of 1
+  let succRhs := lam (pi natConst (srt 1)) (lam (srt 1) (lam (pi natConst (pi (srt 1) (srt 1))) (bv 0)))
+  let env := addRec env badRecId 0 recType #[natId]
+    (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 2)
+    (rules := #[
+      { ctor := zeroId, nfields := 0, rhs := zeroRhs },
+      { ctor := succId, nfields := 0, rhs := succRhs }  -- wrong! should be 1
+    ])
+  let prims := buildPrimitives .meta
+  test "recursor: nfields mismatch → error"
+    (typecheckConstK2 env badRecId prims |> fun r => !r.isOk)
+
+/-! ### 1G. Elimination level tests -/
+
+def testElimLevelTypeLargeOk : TestSeq :=
+  -- Type-level inductive: large elimination always OK (verified via recursor check)
+  let (env, _natId, _zeroId, _succId, recId) := buildMyNatEnv
+  let prims := buildPrimitives .meta
+  test "elim level: Type recursor passes"
+    (typecheckConstK2 env recId prims |>.isOk)
+
+def testElimLevelPropToPropOk : TestSeq :=
+  -- Prop inductive with 2 ctors: the inductive itself typechecks
+  -- The elim-level negative test (multi-ctor large) covers the error path
+  let pIndId := mkId "P" 68
+  let pMk1Id := mkId "P.mk1" 69
+  let pMk2Id := mkId "P.mk2" 70
+  let pConst := cst pIndId
+  let env := addInductive default pIndId prop #[pMk1Id, pMk2Id]
+  let env := addCtor env pMk1Id pIndId pConst 0 0 0
+  let env := addCtor env pMk2Id pIndId pConst 1 0 0
+  let prims := buildPrimitives .meta
+  test "elim level: Prop 2-ctor inductive passes"
+    (typecheckConstK2 env pIndId prims |>.isOk)
+
+def testElimLevelLargeFromPropMultiCtorFail : TestSeq :=
+  -- Prop inductive with 2 ctors, claiming large elimination → error
+  let pIndId := mkId "P" 71
+  let pMk1Id := mkId "P.mk1" 72
+  let pMk2Id := mkId "P.mk2" 73
+  let pRecId := mkId "P.rec" 74
+  let pConst := cst pIndId
+  let env := addInductive default pIndId prop #[pMk1Id, pMk2Id]
+  let env := addCtor env pMk1Id pIndId pConst 0 0 0
+  let env := addCtor env pMk2Id pIndId pConst 1 0 0
+  -- Recursor claims large elimination (motive : P → Type)
+  let recType := pi (pi pConst (srt 1))
+    (pi (app (bv 0) (cst pMk1Id))
+      (pi (app (bv 1) (cst pMk2Id))
+        (pi pConst (app (bv 3) (bv 0)))))
+  let ruleRhs1 := lam (pi pConst (srt 1)) (lam (srt 1) (lam (srt 1) (bv 1)))
+  let ruleRhs2 := lam (pi pConst (srt 1)) (lam (srt 1) (lam (srt 1) (bv 0)))
+  let env := addRec env pRecId 0 recType #[pIndId]
+    (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 2)
+    (rules := #[
+      { ctor := pMk1Id, nfields := 0, rhs := ruleRhs1 },
+      { ctor := pMk2Id, nfields := 0, rhs := ruleRhs2 }
+    ])
+  let prims := buildPrimitives .meta
+  test "elim level: large from Prop multi-ctor → error"
+    (typecheckConstK2 env pRecId prims |> fun r => !r.isOk)
+
+/-! ### 1H. Theorem validation tests -/
+
+def testCheckTheoremNotInProp : TestSeq :=
+  -- Theorem type in Type (not Prop) → error
+  let thmId := mkId "badThm" 75
+  let env := addTheorem default thmId ty (srt 0)
+  let prims := buildPrimitives .meta
+  test "checkConst: theorem type not in Prop → error"
+    (typecheckConstK2 env thmId prims |> fun r => !r.isOk)
+
+def testCheckTheoremValueMismatch : TestSeq :=
+  -- Theorem value has wrong type
+  let (env, trueId, _introId, _recId) := buildMyTrueEnv
+  let thmId := mkId "badThm" 76
+  -- theorem : MyTrue := Sort 0 (wrong value)
+  let env := addTheorem env thmId (cst trueId) prop
+  let prims := buildPrimitives .meta
+  test "checkConst: theorem value mismatch → error"
+    (typecheckConstK2 env thmId prims |> fun r => !r.isOk)
+
+/-! ========================================================================
+    Phase 2: Level arithmetic edge cases
+    ======================================================================== -/
+
+def testLevelArithmeticExtended : TestSeq :=
+  -- These test level equality via isDefEq on sorts
+  let u := Ix.Kernel.Level.param 0 default
+  let v := Ix.Kernel.Level.param 1 default
+  -- max(u, 0) = u
+  test "level: max(u, 0) = u"
+    (isDefEqEmpty (Ix.Kernel.Expr.mkSort (.max u .zero)) (Ix.Kernel.Expr.mkSort u) == .ok true) $
+  -- max(0, u) = u
+  test "level: max(0, u) = u"
+    (isDefEqEmpty (Ix.Kernel.Expr.mkSort (.max .zero u)) (Ix.Kernel.Expr.mkSort u) == .ok true) $
+  -- max(succ u, succ v) = succ(max(u,v))
+  test "level: max(succ u, succ v) = succ(max(u,v))"
+    (isDefEqEmpty (Ix.Kernel.Expr.mkSort (.max (.succ u) (.succ v))) (Ix.Kernel.Expr.mkSort (.succ (.max u v))) == .ok true) $
+  -- max(u, u) = u
+  test "level: max(u, u) = u"
+    (isDefEqEmpty (Ix.Kernel.Expr.mkSort (.max u u)) (Ix.Kernel.Expr.mkSort u) == .ok true) $
+  -- imax(u, succ v) = max(u, succ v)
+  test "level: imax(u, succ v) = max(u, succ v)"
+    (isDefEqEmpty (Ix.Kernel.Expr.mkSort (.imax u (.succ v))) (Ix.Kernel.Expr.mkSort (.max u (.succ v))) == .ok true) $
+  -- imax(u, 0) = 0
+  test "level: imax(u, 0) = 0"
+    (isDefEqEmpty (Ix.Kernel.Expr.mkSort (.imax u .zero)) (Ix.Kernel.Expr.mkSort .zero) == .ok true) $
+  -- 0 <= u (Sort 0 is sub-sort of Sort u)
+  -- We test via Sort 0 ≤ Sort u: always true since Prop ≤ anything
+  -- param 0 != param 1
+  test "level: param 0 != param 1"
+    (isDefEqEmpty (Ix.Kernel.Expr.mkSort u) (Ix.Kernel.Expr.mkSort v) == .ok false) $
+  -- succ(succ 0) == succ(succ 0)
+  test "level: succ(succ 0) == succ(succ 0)"
+    (isDefEqEmpty (srt 2) (srt 2) == .ok true) $
+  -- max(max(u, v), w) == max(u, max(v, w)) (associativity)
+  let w := Ix.Kernel.Level.param 2 default
+  test "level: max associativity"
+    (isDefEqEmpty (Ix.Kernel.Expr.mkSort (.max (.max u v) w)) (Ix.Kernel.Expr.mkSort (.max u (.max v w))) == .ok true) $
+  -- imax(succ u, succ v) == max(succ u, succ v)
+  test "level: imax(succ u, succ v) = max(succ u, succ v)"
+    (isDefEqEmpty (Ix.Kernel.Expr.mkSort (.imax (.succ u) (.succ v))) (Ix.Kernel.Expr.mkSort (.max (.succ u) (.succ v))) == .ok true) $
+  -- succ(max(u, v)) == max(succ u, succ v)
+  test "level: succ(max(u, v)) = max(succ u, succ v)"
+    (isDefEqEmpty (Ix.Kernel.Expr.mkSort (.succ (.max u v))) (Ix.Kernel.Expr.mkSort (.max (.succ u) (.succ v))) == .ok true)
+
+/-! ========================================================================
+    Phase 3: Parity cleanup
+    ======================================================================== -/
+
+def testProofIrrelNotProp : TestSeq :=
+  -- Two axioms of a Type-level inductive are NOT proof-irrelevant (not in Prop)
+  let (env, natId, _zeroId, _succId, _recId) := buildMyNatEnv
+  let ax1 := mkId "ax1" 77
+  let ax2 := mkId "ax2" 78
+  let env := addAxiom (addAxiom env ax1 (cst natId)) ax2 (cst natId)
+  test "proof irrel not prop: MyNat axioms not defeq"
+    (isDefEqK2 env (cst ax1) (cst ax2) == .ok false)
+
+def testUnitLikeWithFieldsNotDefEq : TestSeq :=
+  -- Pair (2 fields) is NOT unit-like so axioms are NOT defeq
+  let (env, pairId, _pairCtorId) := buildPairEnv
+  let ax1 := mkId "ax1" 79
+  let ax2 := mkId "ax2" 80
+  let pairNatNat := app (app (cst pairId) ty) ty
+  let env := addAxiom (addAxiom env ax1 pairNatNat) ax2 pairNatNat
+  test "unit-like: pair with fields not defeq"
+    (isDefEqK2 env (cst ax1) (cst ax2) == .ok false)
+
+/-! ========================================================================
+    Phase 4: Rust parity — remaining gaps
+    ======================================================================== -/
+
+def testProofIrrelDifferentPropTypes : TestSeq :=
+  -- Build MyTrue (Prop inductive with 1 ctor) + MyFalse (Prop inductive with 0 ctors)
+  let (env, trueId, _introId, _recId) := buildMyTrueEnv
+  let falseIndId := mkId "MyFalse" 81
+  let env := addInductive env falseIndId prop #[] (all := #[falseIndId])
+  let h1 := mkId "h1" 82
+  let h2 := mkId "h2" 83
+  let env := addAxiom (addAxiom env h1 (cst trueId)) h2 (cst falseIndId)
+  -- Proofs of different Prop types are NOT defeq
+  test "proof irrel: different prop types not defeq"
+    (isDefEqK2 env (cst h1) (cst h2) == .ok false)
+
+def testProofIrrelBasicInductive : TestSeq :=
+  -- Two axioms of MyTrue (Prop inductive) are defeq via proof irrelevance
+  let (env, trueId, _introId, _recId) := buildMyTrueEnv
+  let p1 := mkId "p1" 84
+  let p2 := mkId "p2" 85
+  let env := addAxiom (addAxiom env p1 (cst trueId)) p2 (cst trueId)
+  test "proof irrel basic: two axioms of MyTrue defeq"
+    (isDefEqK2 env (cst p1) (cst p2) == .ok true)
+
+def testNonKRecursorStaysStuck : TestSeq :=
+  -- MyNat.rec (K=false) applied to axiom of type MyNat stays stuck
+  let (env, natId, _zeroId, _succId, recId) := buildMyNatEnv
+  let axId := mkId "myAxiom" 86
+  let env := addAxiom env axId (cst natId)
+  let motive := lam (cst natId) ty
+  let base := natLit 0
+  let step := lam (cst natId) (lam ty (bv 0))
+  let recExpr := app (app (app (app (cst recId) motive) base) step) (cst axId)
+  -- Non-K recursor on axiom (not a ctor) stays stuck
+  test "non-K rec on axiom stays stuck"
+    (whnfHeadAddr env recExpr == .ok (some recId.addr))
+
+def testLazyDeltaAbbrevChain : TestSeq :=
+  -- Chain of abbrevs: a := 7, b := a, c := b (all .abbrev hints)
+  let a := mkId "a" 87
+  let b := mkId "b" 88
+  let c := mkId "c" 89
+  let env := addDef default a ty (natLit 7) (hints := .abbrev)
+  let env := addDef env b ty (cst a) (hints := .abbrev)
+  let env := addDef env c ty (cst b) (hints := .abbrev)
+  test "abbrev chain: c == 7" (isDefEqK2 env (cst c) (natLit 7) == .ok true) $
+  test "abbrev chain: a == c" (isDefEqK2 env (cst a) (cst c) == .ok true)
 
 def suite : List TestSeq := [
   group "eval+quote roundtrip" testEvalQuoteIdentity,
@@ -1808,6 +2291,41 @@ def suite : List TestSeq := [
   group "K-reduction supplemental" testKReductionSupplemental,
   group "struct eta not recursive" testStructEtaNotRecursive,
   group "unit-like prop defEq" testUnitLikePropDefEq,
+  -- Phase 1: Declaration-level checking
+  group "checkConst: MyNat" testCheckMyNatInd,
+  group "checkConst: MyTrue" testCheckMyTrueInd,
+  group "checkConst: Pair" testCheckPairInd,
+  group "checkConst: axiom" testCheckAxiom,
+  group "checkConst: opaque" testCheckOpaque,
+  group "checkConst: theorem" testCheckTheorem,
+  group "checkConst: definition" testCheckDefinition,
+  group "ctor param count mismatch" testCheckCtorParamCountMismatch,
+  group "ctor return type not inductive" testCheckCtorReturnTypeNotInductive,
+  group "positivity: no occurrence" testPositivityOkNoOccurrence,
+  group "positivity: direct positive" testPositivityOkDirect,
+  group "positivity: negative violation" testPositivityViolationNegative,
+  group "positivity: covariant OK" testPositivityOkCovariant,
+  group "K-flag: OK" testKFlagOk,
+  group "K-flag: not Prop" testKFlagFailNotProp,
+  group "K-flag: multiple ctors" testKFlagFailMultipleCtors,
+  group "K-flag: has fields" testKFlagFailHasFields,
+  group "rec rules count mismatch" testRecRulesCountMismatch,
+  group "rec rules nfields mismatch" testRecRulesNfieldsMismatch,
+  group "elim level: Type large OK" testElimLevelTypeLargeOk,
+  group "elim level: Prop to Prop OK" testElimLevelPropToPropOk,
+  group "elim level: large from Prop multi-ctor" testElimLevelLargeFromPropMultiCtorFail,
+  group "theorem: not in Prop" testCheckTheoremNotInProp,
+  group "theorem: value mismatch" testCheckTheoremValueMismatch,
+  -- Phase 2: Level arithmetic
+  group "level arithmetic extended" testLevelArithmeticExtended,
+  -- Phase 3: Parity cleanup
+  group "proof irrel not prop" testProofIrrelNotProp,
+  group "unit-like with fields not defeq" testUnitLikeWithFieldsNotDefEq,
+  -- Phase 4: Rust parity remaining gaps
+  group "proof irrel different prop types" testProofIrrelDifferentPropTypes,
+  group "proof irrel basic inductive" testProofIrrelBasicInductive,
+  group "non-K recursor stays stuck" testNonKRecursorStaysStuck,
+  group "lazy delta abbrev chain" testLazyDeltaAbbrevChain,
 ]
 
 end Tests.Ix.Kernel.Unit

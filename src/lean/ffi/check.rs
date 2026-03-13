@@ -14,11 +14,11 @@ use super::ffi_io_guard;
 use super::ix::name::build_name;
 use super::lean_env::lean_ptr_to_env;
 use crate::ix::env::Name;
-use crate::ix::kernel::check::{typecheck_const, typecheck_const_with_stats};
+use crate::ix::kernel::check::typecheck_const;
 use crate::lean::nat::Nat;
 use crate::ix::kernel::convert::{convert_env, verify_conversion};
 use crate::ix::kernel::error::TcError;
-use crate::ix::kernel::types::Meta;
+use crate::ix::kernel::types::{Meta, MetaId};
 use crate::lean::array::LeanArrayObject;
 use crate::lean::string::LeanStringObject;
 use crate::lean::{
@@ -80,8 +80,8 @@ pub extern "C" fn rs_check_env(env_consts_ptr: *const c_void) -> *mut c_void {
     // Type-check all constants, collecting errors
     let t2 = Instant::now();
     let mut errors: Vec<(Name, TcError<Meta>)> = Vec::new();
-    for (addr, ci) in &kenv {
-      if let Err(e) = typecheck_const(&kenv, &prims, addr, quot_init) {
+    for (id, ci) in kenv.iter() {
+      if let Err(e) = typecheck_const(&kenv, &prims, id, quot_init) {
         errors.push((ci.name().clone(), e));
       }
     }
@@ -152,12 +152,12 @@ pub extern "C" fn rs_check_const(
     drop(rust_env);
 
     // Find the constant by name
-    let target_addr = kenv
+    let target_id = kenv
       .iter()
       .find(|(_, ci)| ci.name() == &target_name)
-      .map(|(addr, _)| addr.clone());
+      .map(|(id, _)| id.clone());
 
-    match target_addr {
+    match target_id {
       None => {
         let err: TcError<Meta> = TcError::KernelException {
           msg: format!("constant not found: {}", target_name.pretty()),
@@ -169,8 +169,8 @@ pub extern "C" fn rs_check_const(
           lean_io_result_mk_ok(some)
         }
       }
-      Some(addr) => {
-        match typecheck_const(&kenv, &prims, &addr, quot_init) {
+      Some(id) => {
+        match typecheck_const(&kenv, &prims, &id, quot_init) {
           Ok(()) => unsafe {
             let none = lean_alloc_ctor(0, 0, 0); // Option.none
             lean_io_result_mk_ok(none)
@@ -336,12 +336,12 @@ pub extern "C" fn rs_check_consts(
     eprintln!("[rs_check_consts] convert env: {:>8.1?} ({} consts)", t1.elapsed(), kenv.len());
     drop(rust_env);
 
-    // Phase 3: Build name → address lookup
+    // Phase 3: Build name → id lookup
     let t2 = Instant::now();
-    let mut name_to_addr =
+    let mut name_to_id: rustc_hash::FxHashMap<String, MetaId<Meta>> =
       rustc_hash::FxHashMap::default();
-    for (addr, ci) in &kenv {
-      name_to_addr.insert(ci.name().pretty(), addr.clone());
+    for (id, ci) in kenv.iter() {
+      name_to_id.insert(ci.name().pretty(), id.clone());
     }
     eprintln!("[rs_check_consts] build index: {:>8.1?}", t2.elapsed());
 
@@ -357,7 +357,7 @@ pub extern "C" fn rs_check_consts(
 
         let tc_start = Instant::now();
         let target_name = parse_name(name);
-        let result_obj = match name_to_addr.get(&target_name.pretty()) {
+        let result_obj = match name_to_id.get(&target_name.pretty()) {
           None => {
             let c_msg = CString::new(format!("constant not found: {name}"))
               .unwrap_or_default();
@@ -367,12 +367,12 @@ pub extern "C" fn rs_check_consts(
             lean_ctor_set(some, 0, err_obj);
             some
           }
-          Some(addr) => {
+          Some(id) => {
             eprintln!("checking {name}");
-            let trace = name.contains("parseWith") || name.contains("heapifyDown") || name.contains("toUInt64");
+            let trace = name.contains("heapifyDown");
             let (result, heartbeats, stats) =
               crate::ix::kernel::check::typecheck_const_with_stats_trace(
-                &kenv, &prims, addr, quot_init, trace, name,
+                &kenv, &prims, id, quot_init, trace, name,
               );
             let tc_elapsed = tc_start.elapsed();
             eprintln!("checked {name} ({tc_elapsed:.1?})");

@@ -90,7 +90,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
 
       KExprData::Lit(Literal::NatVal(_)) => {
-        let nat_addr = self
+        let nat_id = self
           .prims
           .nat
           .as_ref()
@@ -98,9 +98,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             msg: "Nat type not found".to_string(),
           })?;
         let ty = Val::mk_const(
-          nat_addr.clone(),
+          nat_id.clone(),
           Vec::new(),
-          M::Field::<Name>::default(),
         );
         Ok((
           TypedExpr {
@@ -112,7 +111,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
 
       KExprData::Lit(Literal::StrVal(_)) => {
-        let str_addr = self
+        let str_id = self
           .prims
           .string
           .as_ref()
@@ -120,9 +119,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             msg: "String type not found".to_string(),
           })?;
         let ty = Val::mk_const(
-          str_addr.clone(),
+          str_id.clone(),
           Vec::new(),
-          M::Field::<Name>::default(),
         );
         Ok((
           TypedExpr {
@@ -133,19 +131,19 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         ))
       }
 
-      KExprData::Const(addr, levels, name) => {
+      KExprData::Const(id, levels) => {
         // Ensure the constant has been type-checked
-        self.ensure_typed_const(addr)?;
+        self.ensure_typed_const(id)?;
 
         // Validate universe level count and safety (skip in infer_only mode)
         if !self.infer_only {
-          let ci = self.deref_const(addr)?;
+          let ci = self.deref_const(id)?;
           let expected = ci.cv().num_levels;
           if levels.len() != expected {
             return Err(TcError::KernelException {
               msg: format!(
                 "universe level count mismatch for {}: expected {}, got {}",
-                format!("{:?}", name),
+                id,
                 expected,
                 levels.len()
               ),
@@ -159,8 +157,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           {
             return Err(TcError::KernelException {
               msg: format!(
-                "unsafe constant {:?} used in safe context",
-                name,
+                "unsafe constant {} used in safe context",
+                id,
               ),
             });
           }
@@ -169,8 +167,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           {
             return Err(TcError::KernelException {
               msg: format!(
-                "partial constant {:?} used in safe context",
-                name,
+                "partial constant {} used in safe context",
+                id,
               ),
             });
           }
@@ -178,9 +176,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
         let tc = self
           .typed_consts
-          .get(addr)
+          .get(id)
           .ok_or_else(|| TcError::UnknownConst {
-            msg: format!("{:?}", name),
+            msg: format!("{}", id),
           })?
           .clone();
         let type_expr = tc.typ().body.clone();
@@ -201,7 +199,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           // Detect @[eagerReduce] annotation: eagerReduce _ arg
           let is_eager = if let KExprData::App(f, _) = arg.data() {
             if let KExprData::App(f2, _) = f.data() {
-              f2.const_addr() == self.prims.eager_reduce.as_ref()
+              let matched = f2.const_addr().is_some_and(|a| Primitives::<M>::addr_matches(&self.prims.eager_reduce, a));
+              if self.trace && matched {
+                self.trace_msg(&format!("[EAGER_REDUCE] detected eagerReduce wrapper"));
+              }
+              matched
             } else {
               false
             }
@@ -229,10 +231,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                       tc.trace_msg(&format!("[MISMATCH at App arg] dom_val={dom}  arg_type={arg_type}"));
                       // Show spine details if both are neutrals
                       if let (
-                        ValInner::Neutral { head: Head::Const { addr: a1, .. }, spine: sp1 },
-                        ValInner::Neutral { head: Head::Const { addr: a2, .. }, spine: sp2 },
+                        ValInner::Neutral { head: Head::Const { id: id1, .. }, spine: sp1 },
+                        ValInner::Neutral { head: Head::Const { id: id2, .. }, spine: sp2 },
                       ) = (dom.inner(), arg_type.inner()) {
-                        tc.trace_msg(&format!("  addr_eq={}", a1 == a2));
+                        tc.trace_msg(&format!("  addr_eq={}", id1.addr == id2.addr));
                         for (i, th) in sp1.iter().enumerate() {
                           if let Ok(v) = tc.force_thunk(th) {
                             let w = tc.whnf_val(&v, 0).unwrap_or(v.clone());
@@ -256,6 +258,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                   Ok(())
                 };
                 if is_eager {
+                  if self.trace {
+                    self.trace_msg(&format!("[EAGER-REDUCE] checking arg against dom={dom}"));
+                  }
                   self.with_eager_reduce(true, check_arg)?;
                 } else {
                   check_arg(self)?;
@@ -369,7 +374,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         ))
       }
 
-      KExprData::Proj(type_addr, idx, strct, _type_name) => {
+      KExprData::Proj(type_id, idx, strct) => {
         // Infer the struct type
         let (struct_te, struct_type) = self.infer(strct)?;
 
@@ -405,7 +410,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           match ct_whnf.inner() {
             ValInner::Pi { body, env, .. } => {
               let proj_val = Val::mk_proj(
-                type_addr.clone(),
+                type_id.addr.clone(),
                 i,
                 struct_thunk.clone(),
                 M::Field::<Name>::default(),
@@ -430,10 +435,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             let te = TypedExpr {
               info,
               body: KExpr::proj(
-                type_addr.clone(),
+                type_id.clone(),
                 *idx,
                 struct_te.body,
-                M::Field::<Name>::default(),
               ),
             };
             Ok((te, dom.clone()))
@@ -545,24 +549,24 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     match v.inner() {
       ValInner::Sort(l) => Ok(Val::mk_sort(KLevel::<M>::succ(l.clone()))),
       ValInner::Lit(Literal::NatVal(_)) => {
-        let addr = self
+        let id = self
           .prims
           .nat
           .as_ref()
           .ok_or_else(|| TcError::KernelException {
             msg: "Nat not found".to_string(),
           })?;
-        Ok(Val::mk_const(addr.clone(), Vec::new(), M::Field::<Name>::default()))
+        Ok(Val::mk_const(id.clone(), Vec::new()))
       }
       ValInner::Lit(Literal::StrVal(_)) => {
-        let addr = self
+        let id = self
           .prims
           .string
           .as_ref()
           .ok_or_else(|| TcError::KernelException {
             msg: "String not found".to_string(),
           })?;
-        Ok(Val::mk_const(addr.clone(), Vec::new(), M::Field::<Name>::default()))
+        Ok(Val::mk_const(id.clone(), Vec::new()))
       }
       ValInner::Neutral {
         head: Head::FVar { ty, .. },
@@ -587,15 +591,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         Ok(result_type)
       }
       ValInner::Neutral {
-        head: Head::Const { addr, levels, name },
+        head: Head::Const { id, levels },
         spine,
       } => {
-        self.ensure_typed_const(addr)?;
+        self.ensure_typed_const(id)?;
         let tc = self
           .typed_consts
-          .get(addr)
+          .get(id)
           .ok_or_else(|| TcError::UnknownConst {
-            msg: format!("{:?}", name),
+            msg: format!("{}", id),
           })?
           .clone();
         let type_expr = tc.typ().body.clone();
@@ -633,18 +637,18 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         Ok(ty)
       }
       ValInner::Ctor {
-        addr,
+        id,
         levels,
         spine,
         ..
       } => {
-        self.ensure_typed_const(addr)?;
+        self.ensure_typed_const(id)?;
         let tc = self
           .typed_consts
-          .get(addr)
+          .get(id)
           .cloned()
           .ok_or_else(|| TcError::UnknownConst {
-            msg: format!("ctor {}", addr.hex()),
+            msg: format!("ctor {}", id),
           })?;
         let type_expr = tc.typ().body.clone();
         let type_inst = self.instantiate_levels(&type_expr, levels);
@@ -714,10 +718,10 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let struct_type_whnf = self.whnf_val(struct_type, 0)?;
     match struct_type_whnf.inner() {
       ValInner::Neutral {
-        head: Head::Const { addr: ind_addr, levels: univs, .. },
+        head: Head::Const { id: ind_id, levels: univs },
         spine,
       } => {
-        let ci = self.deref_const(ind_addr)?.clone();
+        let ci = self.deref_const(ind_id)?.clone();
         match &ci {
           KConstantInfo::Inductive(iv) => {
             if iv.ctors.len() != 1 {
@@ -739,9 +743,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             for thunk in spine {
               params.push(self.force_thunk(thunk)?);
             }
-            let ctor_addr = &iv.ctors[0];
-            self.ensure_typed_const(ctor_addr)?;
-            match self.deref_typed_const(ctor_addr) {
+            let ctor_id = &iv.ctors[0];
+            self.ensure_typed_const(ctor_id)?;
+            match self.deref_typed_const(ctor_id) {
               Some(TypedConst::Constructor { typ, .. }) => {
                 Ok((typ.body.clone(), univs.clone(), iv.num_params, params))
               }

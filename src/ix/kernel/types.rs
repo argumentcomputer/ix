@@ -64,6 +64,63 @@ impl MetaMode for Anon {
 }
 
 // ============================================================================
+// MetaId — constant identifier (address + metadata name)
+// ============================================================================
+
+/// Constant identifier: bundles a content address with a metadata name.
+/// In Meta mode, both fields participate in equality/hashing.
+/// In Anon mode, name is () so only address matters.
+#[derive(Clone, Debug)]
+pub struct MetaId<M: MetaMode> {
+  pub addr: Address,
+  pub name: M::Field<Name>,
+}
+
+impl<M: MetaMode> MetaId<M> {
+  pub fn new(addr: Address, name: M::Field<Name>) -> Self {
+    MetaId { addr, name }
+  }
+
+  pub fn from_addr(addr: Address) -> Self {
+    MetaId {
+      addr,
+      name: M::Field::<Name>::default(),
+    }
+  }
+}
+
+impl<M: MetaMode> PartialEq for MetaId<M> {
+  fn eq(&self, other: &Self) -> bool {
+    self.addr == other.addr && self.name == other.name
+  }
+}
+
+impl<M: MetaMode> Eq for MetaId<M> {}
+
+impl<M: MetaMode> Hash for MetaId<M> {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    self.addr.hash(state);
+    self.name.hash(state);
+  }
+}
+
+impl<M: MetaMode> fmt::Display for MetaId<M> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let s = format!("{:?}", self.name);
+    let hex = self.addr.hex();
+    let short = &hex[..8.min(hex.len())];
+    if let Some(inner) =
+      s.strip_prefix("Name(").and_then(|s| s.strip_suffix(')'))
+    {
+      if inner != "anonymous" {
+        return write!(f, "{}@{}", inner, short);
+      }
+    }
+    write!(f, "{}", short)
+  }
+}
+
+// ============================================================================
 // KLevel — kernel universe level with positional params
 // ============================================================================
 
@@ -194,8 +251,8 @@ pub enum KExprData<M: MetaMode> {
   BVar(usize, M::Field<Name>),
   /// Sort (universe level).
   Sort(KLevel<M>),
-  /// Constant reference by address, with universe level arguments.
-  Const(Address, Vec<KLevel<M>>, M::Field<Name>),
+  /// Constant reference by MetaId, with universe level arguments.
+  Const(MetaId<M>, Vec<KLevel<M>>),
   /// Function application.
   App(KExpr<M>, KExpr<M>),
   /// Lambda abstraction: domain type, body, binder name, binder info.
@@ -207,8 +264,8 @@ pub enum KExprData<M: MetaMode> {
   LetE(KExpr<M>, KExpr<M>, KExpr<M>, M::Field<Name>),
   /// Literal value (nat or string).
   Lit(Literal),
-  /// Projection: type address, field index, struct expr, type name.
-  Proj(Address, usize, KExpr<M>, M::Field<Name>),
+  /// Projection: type MetaId, field index, struct expr.
+  Proj(MetaId<M>, usize, KExpr<M>),
 }
 
 impl<M: MetaMode> KExpr<M> {
@@ -232,11 +289,10 @@ impl<M: MetaMode> KExpr<M> {
   }
 
   pub fn cnst(
-    addr: Address,
+    id: MetaId<M>,
     levels: Vec<KLevel<M>>,
-    name: M::Field<Name>,
   ) -> Self {
-    KExpr(Rc::new(KExprData::Const(addr, levels, name)))
+    KExpr(Rc::new(KExprData::Const(id, levels)))
   }
 
   pub fn app(f: KExpr<M>, a: KExpr<M>) -> Self {
@@ -275,12 +331,11 @@ impl<M: MetaMode> KExpr<M> {
   }
 
   pub fn proj(
-    type_addr: Address,
+    type_id: MetaId<M>,
     idx: usize,
     strct: KExpr<M>,
-    type_name: M::Field<Name>,
   ) -> Self {
-    KExpr(Rc::new(KExprData::Proj(type_addr, idx, strct, type_name)))
+    KExpr(Rc::new(KExprData::Proj(type_id, idx, strct)))
   }
 
   /// Collect the function and all arguments from a nested App spine.
@@ -318,10 +373,18 @@ impl<M: MetaMode> KExpr<M> {
     args
   }
 
+  /// Get the const MetaId if this is a Const expression.
+  pub fn const_id(&self) -> Option<&MetaId<M>> {
+    match self.data() {
+      KExprData::Const(id, _) => Some(id),
+      _ => None,
+    }
+  }
+
   /// Get the const address if this is a Const expression.
   pub fn const_addr(&self) -> Option<&Address> {
     match self.data() {
-      KExprData::Const(addr, _, _) => Some(addr),
+      KExprData::Const(id, _) => Some(&id.addr),
       _ => None,
     }
   }
@@ -329,14 +392,14 @@ impl<M: MetaMode> KExpr<M> {
   /// Get the const levels if this is a Const expression.
   pub fn const_levels(&self) -> Option<&Vec<KLevel<M>>> {
     match self.data() {
-      KExprData::Const(_, levels, _) => Some(levels),
+      KExprData::Const(_, levels) => Some(levels),
       _ => None,
     }
   }
 
   /// Check if this is a Const with the given address.
   pub fn is_const_of(&self, addr: &Address) -> bool {
-    matches!(self.data(), KExprData::Const(a, _, _) if a == addr)
+    matches!(self.data(), KExprData::Const(id, _) if id.addr == *addr)
   }
 
   /// Create Prop (Sort 0).
@@ -365,8 +428,8 @@ impl<M: MetaMode> PartialEq for KExpr<M> {
     match (self.data(), other.data()) {
       (KExprData::BVar(a, _), KExprData::BVar(b, _)) => a == b,
       (KExprData::Sort(a), KExprData::Sort(b)) => a == b,
-      (KExprData::Const(a1, l1, _), KExprData::Const(a2, l2, _)) => {
-        a1 == a2 && l1 == l2
+      (KExprData::Const(id1, l1), KExprData::Const(id2, l2)) => {
+        id1.addr == id2.addr && l1 == l2
       }
       (KExprData::App(f1, a1), KExprData::App(f2, a2)) => {
         f1 == f2 && a1 == a2
@@ -385,9 +448,9 @@ impl<M: MetaMode> PartialEq for KExpr<M> {
       ) => t1 == t2 && v1 == v2 && b1 == b2,
       (KExprData::Lit(a), KExprData::Lit(b)) => a == b,
       (
-        KExprData::Proj(a1, i1, s1, _),
-        KExprData::Proj(a2, i2, s2, _),
-      ) => a1 == a2 && i1 == i2 && s1 == s2,
+        KExprData::Proj(id1, i1, s1),
+        KExprData::Proj(id2, i2, s2),
+      ) => id1.addr == id2.addr && i1 == i2 && s1 == s2,
       _ => false,
     }
   }
@@ -401,8 +464,8 @@ impl<M: MetaMode> Hash for KExpr<M> {
     match self.data() {
       KExprData::BVar(idx, _) => idx.hash(state),
       KExprData::Sort(l) => l.hash(state),
-      KExprData::Const(addr, levels, _) => {
-        addr.hash(state);
+      KExprData::Const(id, levels) => {
+        id.addr.hash(state);
         levels.hash(state);
       }
       KExprData::App(f, a) => {
@@ -430,8 +493,8 @@ impl<M: MetaMode> Hash for KExpr<M> {
           }
         }
       }
-      KExprData::Proj(addr, idx, s, _) => {
-        addr.hash(state);
+      KExprData::Proj(id, idx, s) => {
+        id.addr.hash(state);
         idx.hash(state);
         s.hash(state);
       }
@@ -481,8 +544,8 @@ impl<M: MetaMode> fmt::Display for KExpr<M> {
         write!(f, "#{idx}")
       }
       KExprData::Sort(l) => write!(f, "Sort {l}"),
-      KExprData::Const(_addr, levels, name) => {
-        fmt_field_name::<M>(name, f)?;
+      KExprData::Const(id, levels) => {
+        fmt_field_name::<M>(&id.name, f)?;
         if levels.is_empty() {
           Ok(())
         } else {
@@ -514,9 +577,9 @@ impl<M: MetaMode> fmt::Display for KExpr<M> {
       }
       KExprData::Lit(Literal::NatVal(n)) => write!(f, "{n}"),
       KExprData::Lit(Literal::StrVal(s)) => write!(f, "\"{s}\""),
-      KExprData::Proj(_, idx, s, name) => {
+      KExprData::Proj(id, idx, s) => {
         write!(f, "{s}.")?;
-        fmt_field_name::<M>(name, f)?;
+        fmt_field_name::<M>(&id.name, f)?;
         write!(f, "[{idx}]")
       }
     }
@@ -554,8 +617,8 @@ pub struct KDefinitionVal<M: MetaMode> {
   pub value: KExpr<M>,
   pub hints: ReducibilityHints,
   pub safety: DefinitionSafety,
-  /// Addresses of all constants in the same mutual block.
-  pub all: Vec<Address>,
+  /// All constants in the same mutual block.
+  pub all: Vec<MetaId<M>>,
 }
 
 /// A theorem declaration.
@@ -563,8 +626,8 @@ pub struct KDefinitionVal<M: MetaMode> {
 pub struct KTheoremVal<M: MetaMode> {
   pub cv: KConstantVal<M>,
   pub value: KExpr<M>,
-  /// Addresses of all constants in the same mutual block.
-  pub all: Vec<Address>,
+  /// All constants in the same mutual block.
+  pub all: Vec<MetaId<M>>,
 }
 
 /// An opaque constant.
@@ -573,8 +636,8 @@ pub struct KOpaqueVal<M: MetaMode> {
   pub cv: KConstantVal<M>,
   pub value: KExpr<M>,
   pub is_unsafe: bool,
-  /// Addresses of all constants in the same mutual block.
-  pub all: Vec<Address>,
+  /// All constants in the same mutual block.
+  pub all: Vec<MetaId<M>>,
 }
 
 /// A quotient primitive.
@@ -590,10 +653,10 @@ pub struct KInductiveVal<M: MetaMode> {
   pub cv: KConstantVal<M>,
   pub num_params: usize,
   pub num_indices: usize,
-  /// Addresses of all types in the same mutual inductive block.
-  pub all: Vec<Address>,
-  /// Addresses of the constructors for this type.
-  pub ctors: Vec<Address>,
+  /// All types in the same mutual inductive block.
+  pub all: Vec<MetaId<M>>,
+  /// Constructors for this type.
+  pub ctors: Vec<MetaId<M>>,
   pub num_nested: usize,
   pub is_rec: bool,
   pub is_unsafe: bool,
@@ -604,8 +667,8 @@ pub struct KInductiveVal<M: MetaMode> {
 #[derive(Debug, Clone)]
 pub struct KConstructorVal<M: MetaMode> {
   pub cv: KConstantVal<M>,
-  /// Address of the parent inductive type.
-  pub induct: Address,
+  /// Parent inductive type.
+  pub induct: MetaId<M>,
   /// Constructor index within the inductive type.
   pub cidx: usize,
   pub num_params: usize,
@@ -617,7 +680,7 @@ pub struct KConstructorVal<M: MetaMode> {
 #[derive(Debug, Clone)]
 pub struct KRecursorRule<M: MetaMode> {
   /// The constructor this rule applies to.
-  pub ctor: Address,
+  pub ctor: MetaId<M>,
   /// Number of fields the constructor has.
   pub nfields: usize,
   /// The right-hand side expression for this branch.
@@ -628,8 +691,8 @@ pub struct KRecursorRule<M: MetaMode> {
 #[derive(Debug, Clone)]
 pub struct KRecursorVal<M: MetaMode> {
   pub cv: KConstantVal<M>,
-  /// Addresses of all types in the same mutual inductive block.
-  pub all: Vec<Address>,
+  /// All types in the same mutual inductive block.
+  pub all: Vec<MetaId<M>>,
   pub num_params: usize,
   pub num_indices: usize,
   pub num_motives: usize,
@@ -740,77 +803,165 @@ impl<M: MetaMode> KConstantInfo<M> {
 // KEnv — kernel environment
 // ============================================================================
 
-/// The kernel environment: a map from content address to constant info.
-pub type KEnv<M> = FxHashMap<Address, KConstantInfo<M>>;
+// ============================================================================
+// KEnv — kernel environment
+// ============================================================================
+
+/// The kernel environment: a map from MetaId to constant info,
+/// with an address index for content-only lookups.
+pub struct KEnv<M: MetaMode> {
+  pub consts: FxHashMap<MetaId<M>, KConstantInfo<M>>,
+  /// Address → MetaId index for content-only lookups.
+  pub addr_index: FxHashMap<Address, MetaId<M>>,
+}
+
+impl<M: MetaMode> Clone for KEnv<M> {
+  fn clone(&self) -> Self {
+    KEnv {
+      consts: self.consts.clone(),
+      addr_index: self.addr_index.clone(),
+    }
+  }
+}
+
+impl<M: MetaMode> fmt::Debug for KEnv<M> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "KEnv({} consts)", self.consts.len())
+  }
+}
+
+impl<M: MetaMode> Default for KEnv<M> {
+  fn default() -> Self {
+    KEnv {
+      consts: FxHashMap::default(),
+      addr_index: FxHashMap::default(),
+    }
+  }
+}
+
+impl<M: MetaMode> KEnv<M> {
+  /// Look up a constant by MetaId.
+  pub fn find(&self, id: &MetaId<M>) -> Option<&KConstantInfo<M>> {
+    self.consts.get(id)
+  }
+
+  /// Look up a constant by address (content-only, may return any name).
+  pub fn find_by_addr(&self, addr: &Address) -> Option<&KConstantInfo<M>> {
+    self.addr_index.get(addr).and_then(|id| self.consts.get(id))
+  }
+
+  /// Get a MetaId for an address (content-only lookup).
+  pub fn get_id_by_addr(&self, addr: &Address) -> Option<&MetaId<M>> {
+    self.addr_index.get(addr)
+  }
+
+  /// Get a constant by MetaId, or return None.
+  pub fn get(&self, id: &MetaId<M>) -> Option<&KConstantInfo<M>> {
+    self.consts.get(id)
+  }
+
+  /// Insert a constant.
+  pub fn insert(&mut self, id: MetaId<M>, ci: KConstantInfo<M>) {
+    self.addr_index.insert(id.addr.clone(), id.clone());
+    self.consts.insert(id, ci);
+  }
+
+  /// Number of constants.
+  pub fn len(&self) -> usize {
+    self.consts.len()
+  }
+
+  /// Check if the env is empty.
+  pub fn is_empty(&self) -> bool {
+    self.consts.is_empty()
+  }
+
+  /// Iterate over (MetaId, ConstantInfo) pairs.
+  pub fn iter(
+    &self,
+  ) -> impl Iterator<Item = (&MetaId<M>, &KConstantInfo<M>)> {
+    self.consts.iter()
+  }
+
+  /// Check if a MetaId is present.
+  pub fn contains_key(&self, id: &MetaId<M>) -> bool {
+    self.consts.contains_key(id)
+  }
+
+  /// Check if an address is present.
+  pub fn contains_addr(&self, addr: &Address) -> bool {
+    self.addr_index.contains_key(addr)
+  }
+}
 
 // ============================================================================
 // Primitives — addresses of known primitive types and operations
 // ============================================================================
 
-/// Addresses of primitive types and operations needed by the kernel.
-#[derive(Debug, Clone, Default)]
-pub struct Primitives {
+/// Primitive types and operations needed by the kernel.
+#[derive(Debug, Clone)]
+pub struct Primitives<M: MetaMode> {
   // Core types
-  pub nat: Option<Address>,
-  pub nat_zero: Option<Address>,
-  pub nat_succ: Option<Address>,
+  pub nat: Option<MetaId<M>>,
+  pub nat_zero: Option<MetaId<M>>,
+  pub nat_succ: Option<MetaId<M>>,
 
   // Nat arithmetic
-  pub nat_add: Option<Address>,
-  pub nat_pred: Option<Address>,
-  pub nat_sub: Option<Address>,
-  pub nat_mul: Option<Address>,
-  pub nat_pow: Option<Address>,
-  pub nat_gcd: Option<Address>,
-  pub nat_mod: Option<Address>,
-  pub nat_div: Option<Address>,
-  pub nat_bitwise: Option<Address>,
+  pub nat_add: Option<MetaId<M>>,
+  pub nat_pred: Option<MetaId<M>>,
+  pub nat_sub: Option<MetaId<M>>,
+  pub nat_mul: Option<MetaId<M>>,
+  pub nat_pow: Option<MetaId<M>>,
+  pub nat_gcd: Option<MetaId<M>>,
+  pub nat_mod: Option<MetaId<M>>,
+  pub nat_div: Option<MetaId<M>>,
+  pub nat_bitwise: Option<MetaId<M>>,
 
   // Nat comparisons
-  pub nat_beq: Option<Address>,
-  pub nat_ble: Option<Address>,
+  pub nat_beq: Option<MetaId<M>>,
+  pub nat_ble: Option<MetaId<M>>,
 
   // Nat bitwise
-  pub nat_land: Option<Address>,
-  pub nat_lor: Option<Address>,
-  pub nat_xor: Option<Address>,
-  pub nat_shift_left: Option<Address>,
-  pub nat_shift_right: Option<Address>,
+  pub nat_land: Option<MetaId<M>>,
+  pub nat_lor: Option<MetaId<M>>,
+  pub nat_xor: Option<MetaId<M>>,
+  pub nat_shift_left: Option<MetaId<M>>,
+  pub nat_shift_right: Option<MetaId<M>>,
 
   // Bool
-  pub bool_type: Option<Address>,
-  pub bool_true: Option<Address>,
-  pub bool_false: Option<Address>,
+  pub bool_type: Option<MetaId<M>>,
+  pub bool_true: Option<MetaId<M>>,
+  pub bool_false: Option<MetaId<M>>,
 
   // String/Char
-  pub string: Option<Address>,
-  pub string_mk: Option<Address>,
-  pub char_type: Option<Address>,
-  pub char_mk: Option<Address>,
-  pub string_of_list: Option<Address>,
+  pub string: Option<MetaId<M>>,
+  pub string_mk: Option<MetaId<M>>,
+  pub char_type: Option<MetaId<M>>,
+  pub char_mk: Option<MetaId<M>>,
+  pub string_of_list: Option<MetaId<M>>,
 
   // List
-  pub list: Option<Address>,
-  pub list_nil: Option<Address>,
-  pub list_cons: Option<Address>,
+  pub list: Option<MetaId<M>>,
+  pub list_nil: Option<MetaId<M>>,
+  pub list_cons: Option<MetaId<M>>,
 
   // Equality
-  pub eq: Option<Address>,
-  pub eq_refl: Option<Address>,
+  pub eq: Option<MetaId<M>>,
+  pub eq_refl: Option<MetaId<M>>,
 
   // Quotient
-  pub quot_type: Option<Address>,
-  pub quot_ctor: Option<Address>,
-  pub quot_lift: Option<Address>,
-  pub quot_ind: Option<Address>,
+  pub quot_type: Option<MetaId<M>>,
+  pub quot_ctor: Option<MetaId<M>>,
+  pub quot_lift: Option<MetaId<M>>,
+  pub quot_ind: Option<MetaId<M>>,
 
   // Special reduction markers
-  pub reduce_bool: Option<Address>,
-  pub reduce_nat: Option<Address>,
-  pub eager_reduce: Option<Address>,
+  pub reduce_bool: Option<MetaId<M>>,
+  pub reduce_nat: Option<MetaId<M>>,
+  pub eager_reduce: Option<MetaId<M>>,
 
   // Platform-dependent constants
-  pub system_platform_num_bits: Option<Address>,
+  pub system_platform_num_bits: Option<MetaId<M>>,
 }
 
 /// Word size mode for platform-dependent reduction.
@@ -831,10 +982,72 @@ impl WordSize {
   }
 }
 
-impl Primitives {
+impl<M: MetaMode> Default for Primitives<M> {
+  fn default() -> Self {
+    Primitives {
+      nat: None,
+      nat_zero: None,
+      nat_succ: None,
+      nat_add: None,
+      nat_pred: None,
+      nat_sub: None,
+      nat_mul: None,
+      nat_pow: None,
+      nat_gcd: None,
+      nat_mod: None,
+      nat_div: None,
+      nat_bitwise: None,
+      nat_beq: None,
+      nat_ble: None,
+      nat_land: None,
+      nat_lor: None,
+      nat_xor: None,
+      nat_shift_left: None,
+      nat_shift_right: None,
+      bool_type: None,
+      bool_true: None,
+      bool_false: None,
+      string: None,
+      string_mk: None,
+      char_type: None,
+      char_mk: None,
+      string_of_list: None,
+      list: None,
+      list_nil: None,
+      list_cons: None,
+      eq: None,
+      eq_refl: None,
+      quot_type: None,
+      quot_ctor: None,
+      quot_lift: None,
+      quot_ind: None,
+      reduce_bool: None,
+      reduce_nat: None,
+      eager_reduce: None,
+      system_platform_num_bits: None,
+    }
+  }
+}
+
+impl<M: MetaMode> Primitives<M> {
+  /// Get the address for a primitive field.
+  pub fn addr_of(
+    field: &Option<MetaId<M>>,
+  ) -> Option<&Address> {
+    field.as_ref().map(|id| &id.addr)
+  }
+
+  /// Check if a primitive field matches the given address.
+  pub fn addr_matches(
+    field: &Option<MetaId<M>>,
+    addr: &Address,
+  ) -> bool {
+    field.as_ref().is_some_and(|id| id.addr == *addr)
+  }
+
   /// Count how many primitive fields are resolved (Some) and which are missing.
   pub fn count_resolved(&self) -> (usize, Vec<&'static str>) {
-    let fields: &[(&'static str, &Option<Address>)] = &[
+    let fields: &[(&'static str, &Option<MetaId<M>>)] = &[
       ("Nat", &self.nat),
       ("Nat.zero", &self.nat_zero),
       ("Nat.succ", &self.nat_succ),

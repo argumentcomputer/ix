@@ -66,79 +66,90 @@ instance [BEq ε] [BEq α] : BEq (Except ε α) where
 abbrev E := Ix.Kernel.Expr Ix.Kernel.MetaMode.meta
 abbrev L := Ix.Kernel.Level Ix.Kernel.MetaMode.meta
 abbrev Env := Ix.Kernel.Env Ix.Kernel.MetaMode.meta
-abbrev Prims := Ix.Kernel.Primitives
+abbrev Prims := Ix.Kernel.Primitives .meta
+abbrev MId := Ix.Kernel.MetaId Ix.Kernel.MetaMode.meta
+
+/-- Build a MetaId from a name string and seed byte. -/
+def mkId (name : String) (seed : UInt8) : MId :=
+  (parseIxName name, mkAddr seed)
 
 /-! ## Env-building helpers -/
 
-def addDef (env : Env) (addr : Address) (type value : E)
+def addDef (env : Env) (id : MId) (type value : E)
     (numLevels : Nat := 0) (hints : Ix.Kernel.ReducibilityHints := .abbrev)
     (safety : Ix.Kernel.DefinitionSafety := .safe) : Env :=
-  env.insert addr (.defnInfo {
-    toConstantVal := { numLevels, type, name := default, levelParams := default },
-    value, hints, safety, all := #[addr]
+  env.insert id (.defnInfo {
+    toConstantVal := { numLevels, type, name := id.name, levelParams := default },
+    value, hints, safety, all := #[id]
   })
 
-def addOpaque (env : Env) (addr : Address) (type value : E)
+def addOpaque (env : Env) (id : MId) (type value : E)
     (numLevels : Nat := 0) (isUnsafe := false) : Env :=
-  env.insert addr (.opaqueInfo {
-    toConstantVal := { numLevels, type, name := default, levelParams := default },
-    value, isUnsafe, all := #[addr]
+  env.insert id (.opaqueInfo {
+    toConstantVal := { numLevels, type, name := id.name, levelParams := default },
+    value, isUnsafe, all := #[id]
   })
 
-def addTheorem (env : Env) (addr : Address) (type value : E)
+def addTheorem (env : Env) (id : MId) (type value : E)
     (numLevels : Nat := 0) : Env :=
-  env.insert addr (.thmInfo {
-    toConstantVal := { numLevels, type, name := default, levelParams := default },
-    value, all := #[addr]
+  env.insert id (.thmInfo {
+    toConstantVal := { numLevels, type, name := id.name, levelParams := default },
+    value, all := #[id]
   })
 
-def addInductive (env : Env) (addr : Address)
-    (type : E) (ctors : Array Address)
+def addInductive (env : Env) (id : MId)
+    (type : E) (ctors : Array MId)
     (numParams numIndices : Nat := 0) (isRec := false)
     (isUnsafe := false) (numNested := 0)
-    (numLevels : Nat := 0) (all : Array Address := #[addr]) : Env :=
-  env.insert addr (.inductInfo {
-    toConstantVal := { numLevels, type, name := default, levelParams := default },
+    (numLevels : Nat := 0) (all : Array MId := #[id]) : Env :=
+  env.insert id (.inductInfo {
+    toConstantVal := { numLevels, type, name := id.name, levelParams := default },
     numParams, numIndices, all, ctors, numNested,
     isRec, isUnsafe, isReflexive := false
   })
 
-def addCtor (env : Env) (addr : Address) (induct : Address)
+def addCtor (env : Env) (id : MId) (induct : MId)
     (type : E) (cidx numParams numFields : Nat)
     (isUnsafe := false) (numLevels : Nat := 0) : Env :=
-  env.insert addr (.ctorInfo {
-    toConstantVal := { numLevels, type, name := default, levelParams := default },
+  env.insert id (.ctorInfo {
+    toConstantVal := { numLevels, type, name := id.name, levelParams := default },
     induct, cidx, numParams, numFields, isUnsafe
   })
 
-def addAxiom (env : Env) (addr : Address)
+def addAxiom (env : Env) (id : MId)
     (type : E) (isUnsafe := false) (numLevels : Nat := 0) : Env :=
-  env.insert addr (.axiomInfo {
-    toConstantVal := { numLevels, type, name := default, levelParams := default },
+  env.insert id (.axiomInfo {
+    toConstantVal := { numLevels, type, name := id.name, levelParams := default },
     isUnsafe
   })
 
-def addRec (env : Env) (addr : Address)
-    (numLevels : Nat) (type : E) (all : Array Address)
+def addRec (env : Env) (id : MId)
+    (numLevels : Nat) (type : E) (all : Array MId)
     (numParams numIndices numMotives numMinors : Nat)
     (rules : Array (Ix.Kernel.RecursorRule .meta))
     (k := false) (isUnsafe := false) : Env :=
-  env.insert addr (.recInfo {
-    toConstantVal := { numLevels, type, name := default, levelParams := default },
+  env.insert id (.recInfo {
+    toConstantVal := { numLevels, type, name := id.name, levelParams := default },
     all, numParams, numIndices, numMotives, numMinors, rules, k, isUnsafe
   })
 
-def addQuot (env : Env) (addr : Address) (type : E)
+def addQuot (env : Env) (id : MId) (type : E)
     (kind : Ix.Kernel.QuotKind) (numLevels : Nat := 0) : Env :=
-  env.insert addr (.quotInfo {
-    toConstantVal := { numLevels, type, name := default, levelParams := default },
+  env.insert id (.quotInfo {
+    toConstantVal := { numLevels, type, name := id.name, levelParams := default },
     kind
   })
+
+/-! ## Whole-constant type checking -/
+
+def typecheckConstK2 (kenv : Env) (id : MId) (prims : Prims := Ix.Kernel.buildPrimitives .meta)
+    (quotInit := false) : Except String Unit :=
+  Ix.Kernel.typecheckConst kenv prims id (quotInit := quotInit)
 
 /-! ## TypecheckM runner -/
 
 def runK2 (kenv : Env) (action : ∀ σ, Ix.Kernel.TypecheckM σ .meta α)
-    (prims : Prims := Ix.Kernel.buildPrimitives)
+    (prims : Prims := Ix.Kernel.buildPrimitives .meta)
     (quotInit : Bool := false) : Except String α :=
   match Ix.Kernel.TypecheckM.runSimple kenv prims (quotInit := quotInit) (action := action) with
   | .ok (a, _) => .ok a
@@ -177,7 +188,7 @@ def isDefEqEmpty (a b : E) : Except String Bool :=
 /-! ## Check convenience (for error tests) -/
 
 def checkK2 (kenv : Env) (term : E) (expectedType : E)
-    (prims : Prims := Ix.Kernel.buildPrimitives) : Except String Unit :=
+    (prims : Prims := Ix.Kernel.buildPrimitives .meta) : Except String Unit :=
   runK2 kenv (fun _σ => do
     let expectedVal ← Ix.Kernel.eval expectedType #[]
     let _ ← Ix.Kernel.check term expectedVal
@@ -191,94 +202,99 @@ def whnfQuote (kenv : Env) (e : E) (quotInit := false) : Except String E :=
 
 /-! ## Shared environment builders -/
 
-/-- MyNat inductive with zero, succ, rec. Returns (env, natIndAddr, zeroAddr, succAddr, recAddr). -/
-def buildMyNatEnv (baseEnv : Env := default) : Env × Address × Address × Address × Address :=
-  let natIndAddr := mkAddr 50
-  let zeroAddr := mkAddr 51
-  let succAddr := mkAddr 52
-  let recAddr := mkAddr 53
+/-- MyNat inductive with zero, succ, rec. Returns (env, natId, zeroId, succId, recId). -/
+def buildMyNatEnv (baseEnv : Env := default) : Env × MId × MId × MId × MId :=
+  let natId := mkId "MyNat" 50
+  let zeroId := mkId "MyNat.zero" 51
+  let succId := mkId "MyNat.succ" 52
+  let recId := mkId "MyNat.rec" 53
   let natType : E := Ix.Kernel.Expr.mkSort (.succ .zero)
-  let natConst : E := Ix.Kernel.Expr.mkConst natIndAddr #[]
-  let env := addInductive baseEnv natIndAddr natType #[zeroAddr, succAddr]
-  let env := addCtor env zeroAddr natIndAddr natConst 0 0 0
+  let natConst : E := Ix.Kernel.Expr.mkConst natId #[]
+  let env := addInductive baseEnv natId natType #[zeroId, succId]
+  let env := addCtor env zeroId natId natConst 0 0 0
   let succType : E := Ix.Kernel.Expr.mkForallE natConst natConst
-  let env := addCtor env succAddr natIndAddr succType 1 0 1
+  let env := addCtor env succId natId succType 1 0 1
   let recType : E :=
     Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkForallE natConst natType)  -- motive
-      (Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 0) (Ix.Kernel.Expr.mkConst zeroAddr #[]))  -- base
+      (Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 0) (Ix.Kernel.Expr.mkConst zeroId #[]))  -- base
         (Ix.Kernel.Expr.mkForallE
           (Ix.Kernel.Expr.mkForallE natConst
             (Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 2) (Ix.Kernel.Expr.mkBVar 0))
-              (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 3) (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst succAddr #[]) (Ix.Kernel.Expr.mkBVar 1)))))
+              (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 3) (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst succId #[]) (Ix.Kernel.Expr.mkBVar 1)))))
           (Ix.Kernel.Expr.mkForallE natConst
             (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 3) (Ix.Kernel.Expr.mkBVar 0)))))
-  -- Rule for zero: nfields=0, rhs = λ motive base step => base
-  let zeroRhs : E := Ix.Kernel.Expr.mkLam natType
-    (Ix.Kernel.Expr.mkLam (Ix.Kernel.Expr.mkBVar 0) (Ix.Kernel.Expr.mkLam natType (Ix.Kernel.Expr.mkBVar 1)))
-  -- Rule for succ: nfields=1, rhs = λ motive base step n => step n (rec motive base step n)
-  let succRhs : E := Ix.Kernel.Expr.mkLam natType
-    (Ix.Kernel.Expr.mkLam (Ix.Kernel.Expr.mkBVar 0)
-      (Ix.Kernel.Expr.mkLam natType
+  let motiveDom : E := Ix.Kernel.Expr.mkForallE natConst natType
+  let baseDom : E := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 0) (Ix.Kernel.Expr.mkConst zeroId #[])
+  let stepDom : E := Ix.Kernel.Expr.mkForallE natConst
+    (Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 2) (Ix.Kernel.Expr.mkBVar 0))
+      (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 3) (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst succId #[]) (Ix.Kernel.Expr.mkBVar 1))))
+  let zeroRhs : E := Ix.Kernel.Expr.mkLam motiveDom
+    (Ix.Kernel.Expr.mkLam baseDom (Ix.Kernel.Expr.mkLam stepDom (Ix.Kernel.Expr.mkBVar 1)))
+  let succRhs : E := Ix.Kernel.Expr.mkLam motiveDom
+    (Ix.Kernel.Expr.mkLam baseDom
+      (Ix.Kernel.Expr.mkLam stepDom
         (Ix.Kernel.Expr.mkLam natConst
           (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 1) (Ix.Kernel.Expr.mkBVar 0))
             (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp
-              (Ix.Kernel.Expr.mkConst recAddr #[]) (Ix.Kernel.Expr.mkBVar 3)) (Ix.Kernel.Expr.mkBVar 2))
+              (Ix.Kernel.Expr.mkConst recId #[]) (Ix.Kernel.Expr.mkBVar 3)) (Ix.Kernel.Expr.mkBVar 2))
               (Ix.Kernel.Expr.mkBVar 1)) (Ix.Kernel.Expr.mkBVar 0))))))
-  let env := addRec env recAddr 0 recType #[natIndAddr]
+  let env := addRec env recId 0 recType #[natId]
     (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 2)
     (rules := #[
-      { ctor := zeroAddr, nfields := 0, rhs := zeroRhs },
-      { ctor := succAddr, nfields := 1, rhs := succRhs }
+      { ctor := zeroId, nfields := 0, rhs := zeroRhs },
+      { ctor := succId, nfields := 1, rhs := succRhs }
     ])
-  (env, natIndAddr, zeroAddr, succAddr, recAddr)
+  (env, natId, zeroId, succId, recId)
 
-/-- MyTrue : Prop with intro, and K-recursor. Returns (env, trueIndAddr, introAddr, recAddr). -/
-def buildMyTrueEnv (baseEnv : Env := default) : Env × Address × Address × Address :=
-  let trueIndAddr := mkAddr 120
-  let introAddr := mkAddr 121
-  let recAddr := mkAddr 122
+/-- MyTrue : Prop with intro, and K-recursor. Returns (env, trueId, introId, recId). -/
+def buildMyTrueEnv (baseEnv : Env := default) : Env × MId × MId × MId :=
+  let trueId := mkId "MyTrue" 120
+  let introId := mkId "MyTrue.intro" 121
+  let recId := mkId "MyTrue.rec" 122
   let propE : E := Ix.Kernel.Expr.mkSort .zero
-  let trueConst : E := Ix.Kernel.Expr.mkConst trueIndAddr #[]
-  let env := addInductive baseEnv trueIndAddr propE #[introAddr]
-  let env := addCtor env introAddr trueIndAddr trueConst 0 0 0
+  let trueConst : E := Ix.Kernel.Expr.mkConst trueId #[]
+  let env := addInductive baseEnv trueId propE #[introId]
+  let env := addCtor env introId trueId trueConst 0 0 0
   let recType : E :=
     Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkForallE trueConst propE)  -- motive
-      (Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 0) (Ix.Kernel.Expr.mkConst introAddr #[]))  -- h : motive intro
+      (Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 0) (Ix.Kernel.Expr.mkConst introId #[]))  -- h : motive intro
         (Ix.Kernel.Expr.mkForallE trueConst  -- t : MyTrue
           (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 2) (Ix.Kernel.Expr.mkBVar 0))))  -- motive t
-  let ruleRhs : E := Ix.Kernel.Expr.mkLam (Ix.Kernel.Expr.mkForallE trueConst propE)
-    (Ix.Kernel.Expr.mkLam propE (Ix.Kernel.Expr.mkBVar 0))
-  let env := addRec env recAddr 0 recType #[trueIndAddr]
+  let motiveDom : E := Ix.Kernel.Expr.mkForallE trueConst propE
+  let hDom : E := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkBVar 0) (Ix.Kernel.Expr.mkConst introId #[])
+  let ruleRhs : E := Ix.Kernel.Expr.mkLam motiveDom
+    (Ix.Kernel.Expr.mkLam hDom (Ix.Kernel.Expr.mkBVar 0))
+  let env := addRec env recId 0 recType #[trueId]
     (numParams := 0) (numIndices := 0) (numMotives := 1) (numMinors := 1)
-    (rules := #[{ ctor := introAddr, nfields := 0, rhs := ruleRhs }])
+    (rules := #[{ ctor := introId, nfields := 0, rhs := ruleRhs }])
     (k := true)
-  (env, trueIndAddr, introAddr, recAddr)
+  (env, trueId, introId, recId)
 
-/-- Pair inductive. Returns (env, pairIndAddr, pairCtorAddr). -/
-def buildPairEnv (baseEnv : Env := default) : Env × Address × Address :=
-  let pairIndAddr := mkAddr 160
-  let pairCtorAddr := mkAddr 161
+/-- Pair inductive. Returns (env, pairId, pairCtorId). -/
+def buildPairEnv (baseEnv : Env := default) : Env × MId × MId :=
+  let pairId := mkId "Pair" 160
+  let pairCtorId := mkId "Pair.mk" 161
   let tyE : E := Ix.Kernel.Expr.mkSort (.succ .zero)
-  let env := addInductive baseEnv pairIndAddr
+  let env := addInductive baseEnv pairId
     (Ix.Kernel.Expr.mkForallE tyE (Ix.Kernel.Expr.mkForallE tyE tyE))
-    #[pairCtorAddr] (numParams := 2)
+    #[pairCtorId] (numParams := 2)
   let ctorType := Ix.Kernel.Expr.mkForallE tyE (Ix.Kernel.Expr.mkForallE tyE
     (Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkBVar 1) (Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkBVar 1)
-      (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst pairIndAddr #[]) (Ix.Kernel.Expr.mkBVar 3)) (Ix.Kernel.Expr.mkBVar 2)))))
-  let env := addCtor env pairCtorAddr pairIndAddr ctorType 0 2 2
-  (env, pairIndAddr, pairCtorAddr)
+      (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst pairId #[]) (Ix.Kernel.Expr.mkBVar 3)) (Ix.Kernel.Expr.mkBVar 2)))))
+  let env := addCtor env pairCtorId pairId ctorType 0 2 2
+  (env, pairId, pairCtorId)
 
 /-! ## Val inspection helpers -/
 
 /-- Get the head const address of a whnf result (if it's a const-headed neutral or ctor). -/
-def whnfHeadAddr (kenv : Env) (e : E) (prims : Prims := Ix.Kernel.buildPrimitives)
+def whnfHeadAddr (kenv : Env) (e : E) (prims : Prims := Ix.Kernel.buildPrimitives .meta)
     (quotInit := false) : Except String (Option Address) :=
   runK2 kenv (fun _σ => do
     let v ← Ix.Kernel.eval e #[]
     let v' ← Ix.Kernel.whnfVal v
     match v' with
-    | .neutral (.const addr _ _) _ => pure (some addr)
-    | .ctor addr _ _ _ _ _ _ _ => pure (some addr)
+    | .neutral (.const id _) _ => pure (some id.addr)
+    | .ctor id _ _ _ _ _ _ => pure (some id.addr)
     | _ => pure none) prims (quotInit := quotInit)
 
 /-- Check if whnf result is a literal nat. -/
@@ -303,7 +319,7 @@ def getError (result : Except String α) : Option String :=
 /-! ## Inference convenience -/
 
 def inferK2 (kenv : Env) (e : E)
-    (prims : Prims := Ix.Kernel.buildPrimitives) : Except String E :=
+    (prims : Prims := Ix.Kernel.buildPrimitives .meta) : Except String E :=
   runK2 kenv (fun _σ => do
     let (_, typVal) ← Ix.Kernel.infer e
     let d ← Ix.Kernel.depth

@@ -41,9 +41,9 @@ where
     | .lam ty body n bi => .lam (go ty depth) (go body (depth + 1)) n bi
     | .forallE ty body n bi => .forallE (go ty depth) (go body (depth + 1)) n bi
     | .letE ty val body n => .letE (go ty depth) (go val depth) (go body (depth + 1)) n
-    | .proj ta idx s n => .proj ta idx (go s depth) n
+    | .proj ta idx s => .proj ta idx (go s depth)
     | .sort l => .sort (substLevel l)
-    | .const addr lvls name => .const addr (lvls.map substLevel) name
+    | .const id lvls => .const id (lvls.map substLevel)
     | _ => e
 
 /-- Substitute extra nested param bvars in a constructor body expression.
@@ -70,7 +70,7 @@ where
     | .lam ty body n bi => .lam (go ty depth) (go body (depth + 1)) n bi
     | .forallE ty body n bi => .forallE (go ty depth) (go body (depth + 1)) n bi
     | .letE ty val body n => .letE (go ty depth) (go val depth) (go body (depth + 1)) n
-    | .proj ta idx s n => .proj ta idx (go s depth) n
+    | .proj ta idx s => .proj ta idx (go s depth)
     | _ => e
 
 /-! ## Inductive validation helpers -/
@@ -78,12 +78,12 @@ where
 /-- Check if an expression mentions a constant at the given address. -/
 partial def exprMentionsConst (e : Expr m) (addr : Address) : Bool :=
   match e with
-  | .const a _ _ => a == addr
+  | .const id _ => id.addr == addr
   | .app fn arg => exprMentionsConst fn addr || exprMentionsConst arg addr
   | .lam ty body _ _ => exprMentionsConst ty addr || exprMentionsConst body addr
   | .forallE ty body _ _ => exprMentionsConst ty addr || exprMentionsConst body addr
   | .letE ty val body _ => exprMentionsConst ty addr || exprMentionsConst val addr || exprMentionsConst body addr
-  | .proj _ _ s _ => exprMentionsConst s addr
+  | .proj _ _ s => exprMentionsConst s addr
   | _ => false
 
 /-- Walk a Pi chain past numParams + numFields binders to get the return type. -/
@@ -132,10 +132,10 @@ partial def levelIsNonZero : Level m → Bool
 
 /-! ## Literal folding helpers (used by PP) -/
 
-private partial def tryFoldChar (prims : Primitives) (e : Expr m) : Option Char :=
+private partial def tryFoldChar (prims : Primitives m) (e : Expr m) : Option Char :=
   match e.getAppFn with
-  | .const addr _ _ =>
-    if addr == prims.charMk then
+  | .const id _ =>
+    if id.addr == prims.charMk.addr then
       let args := e.getAppArgs
       if args.size == 1 then
         match args[0]! with
@@ -145,11 +145,11 @@ private partial def tryFoldChar (prims : Primitives) (e : Expr m) : Option Char 
     else none
   | _ => none
 
-private partial def tryFoldCharList (prims : Primitives) (e : Expr m) : Option (List Char) :=
+private partial def tryFoldCharList (prims : Primitives m) (e : Expr m) : Option (List Char) :=
   match e.getAppFn with
-  | .const addr _ _ =>
-    if addr == prims.listNil then some []
-    else if addr == prims.listCons then
+  | .const id _ =>
+    if id.addr == prims.listNil.addr then some []
+    else if id.addr == prims.listCons.addr then
       let args := e.getAppArgs
       if args.size == 3 then
         match tryFoldChar prims args[1]!, tryFoldCharList prims args[2]! with
@@ -161,21 +161,21 @@ private partial def tryFoldCharList (prims : Primitives) (e : Expr m) : Option (
 
 /-- Walk an Expr and fold Nat.zero/Nat.succ chains to nat literals,
     and String.mk (char list) to string literals. -/
-partial def foldLiterals (prims : Primitives) : Expr m → Expr m
-  | .const addr lvls name =>
-    if addr == prims.natZero then .lit (.natVal 0)
-    else .const addr lvls name
+partial def foldLiterals (prims : Primitives m) : Expr m → Expr m
+  | .const id lvls =>
+    if id.addr == prims.natZero.addr then .lit (.natVal 0)
+    else .const id lvls
   | .app fn arg =>
     let fn' := foldLiterals prims fn
     let arg' := foldLiterals prims arg
     let e := Expr.app fn' arg'
     match e.getAppFn with
-    | .const addr _ _ =>
-      if addr == prims.natSucc && e.getAppNumArgs == 1 then
+    | .const id _ =>
+      if id.addr == prims.natSucc.addr && e.getAppNumArgs == 1 then
         match e.appArg! with
         | .lit (.natVal n) => .lit (.natVal (n + 1))
         | _ => e
-      else if addr == prims.stringMk && e.getAppNumArgs == 1 then
+      else if id.addr == prims.stringMk.addr && e.getAppNumArgs == 1 then
         match tryFoldCharList prims e.appArg! with
         | some cs => .lit (.strVal (String.ofList cs))
         | none => e
@@ -187,8 +187,8 @@ partial def foldLiterals (prims : Primitives) : Expr m → Expr m
     .forallE (foldLiterals prims ty) (foldLiterals prims body) n bi
   | .letE ty val body n =>
     .letE (foldLiterals prims ty) (foldLiterals prims val) (foldLiterals prims body) n
-  | .proj ta idx s tn =>
-    .proj ta idx (foldLiterals prims s) tn
+  | .proj ta idx s =>
+    .proj ta idx (foldLiterals prims s)
   | e => e
 
 end Ix.Kernel

@@ -5,14 +5,14 @@
 use num_bigint::BigUint;
 
 use crate::ix::address::Address;
-use crate::ix::env::{Literal, Name, ReducibilityHints};
+use crate::ix::env::{Literal, ReducibilityHints};
 use crate::lean::nat::Nat;
 
 use super::types::{
   KConstantInfo, KEnv, KExpr, KExprData, KLevel, KLevelData,
-  MetaMode, Primitives, TypedConst,
+  MetaId, MetaMode, Primitives, TypedConst,
 };
-use super::value::{Head, Thunk, Val, ValInner};
+use super::value::{Head, Thunk, ThunkEntry, Val, ValInner};
 
 /// Euclidean GCD for BigUint.
 fn biguint_gcd(a: &BigUint, b: &BigUint) -> BigUint {
@@ -28,26 +28,49 @@ fn biguint_gcd(a: &BigUint, b: &BigUint) -> BigUint {
 
 /// Extract a natural number from a Val if it's a Nat literal, a Nat.zero
 /// constructor, or a Nat.zero neutral.
-pub fn extract_nat_val<M: MetaMode>(v: &Val<M>, prims: &Primitives) -> Option<Nat> {
+pub fn extract_nat_val<M: MetaMode>(v: &Val<M>, prims: &Primitives<M>) -> Option<Nat> {
   match v.inner() {
     ValInner::Lit(Literal::NatVal(n)) => Some(n.clone()),
     ValInner::Ctor {
-      addr,
+      id,
       cidx: 0,
       spine,
       ..
     } => {
-      if Some(addr) == prims.nat_zero.as_ref() && spine.is_empty() {
+      if Primitives::<M>::addr_matches(&prims.nat_zero, &id.addr) && spine.is_empty() {
         Some(Nat::from(0u64))
       } else {
         None
       }
     }
+    // Handle Nat.succ constructor (cidx=1, 1 field after params)
+    ValInner::Ctor {
+      cidx: 1,
+      induct_addr,
+      num_params,
+      spine,
+      ..
+    } => {
+      if Primitives::<M>::addr_matches(&prims.nat, induct_addr)
+        && spine.len() == num_params + 1
+      {
+        // The field is the last spine element (after params)
+        let inner_thunk = &spine[spine.len() - 1];
+        if let ThunkEntry::Evaluated(inner) = &*inner_thunk.borrow() {
+          let n = extract_nat_val(inner, prims)?;
+          Some(Nat(&n.0 + 1u64))
+        } else {
+          None
+        }
+      } else {
+        None
+      }
+    }
     ValInner::Neutral {
-      head: Head::Const { addr, .. },
+      head: Head::Const { id, .. },
       spine,
     } => {
-      if Some(addr) == prims.nat_zero.as_ref() && spine.is_empty() {
+      if Primitives::<M>::addr_matches(&prims.nat_zero, &id.addr) && spine.is_empty() {
         Some(Nat::from(0u64))
       } else {
         None
@@ -58,7 +81,7 @@ pub fn extract_nat_val<M: MetaMode>(v: &Val<M>, prims: &Primitives) -> Option<Na
 }
 
 /// Check if an address is a nat primitive binary operation.
-pub fn is_nat_bin_op(addr: &Address, prims: &Primitives) -> bool {
+pub fn is_nat_bin_op<M: MetaMode>(addr: &Address, prims: &Primitives<M>) -> bool {
   [
     &prims.nat_add,
     &prims.nat_sub,
@@ -76,19 +99,19 @@ pub fn is_nat_bin_op(addr: &Address, prims: &Primitives) -> bool {
     &prims.nat_shift_right,
   ]
   .iter()
-  .any(|p| p.as_ref() == Some(addr))
+  .any(|p| Primitives::<M>::addr_matches(p, addr))
 }
 
 /// Check if a value is Nat.zero (constructor, neutral, or literal 0).
-pub fn is_nat_zero_val<M: MetaMode>(v: &Val<M>, prims: &Primitives) -> bool {
+pub fn is_nat_zero_val<M: MetaMode>(v: &Val<M>, prims: &Primitives<M>) -> bool {
   match v.inner() {
     ValInner::Lit(Literal::NatVal(n)) => n.0 == BigUint::ZERO,
     ValInner::Neutral {
-      head: Head::Const { addr, .. },
+      head: Head::Const { id, .. },
       spine,
-    } => prims.nat_zero.as_ref() == Some(addr) && spine.is_empty(),
-    ValInner::Ctor { addr, spine, .. } => {
-      prims.nat_zero.as_ref() == Some(addr) && spine.is_empty()
+    } => Primitives::<M>::addr_matches(&prims.nat_zero, &id.addr) && spine.is_empty(),
+    ValInner::Ctor { id, spine, .. } => {
+      Primitives::<M>::addr_matches(&prims.nat_zero, &id.addr) && spine.is_empty()
     }
     _ => false,
   }
@@ -100,17 +123,17 @@ pub fn is_nat_zero_val<M: MetaMode>(v: &Val<M>, prims: &Primitives) -> bool {
 /// Matching literals here would cause O(n) recursion in the symbolic step-case reductions.
 pub fn extract_succ_pred<M: MetaMode>(
   v: &Val<M>,
-  prims: &Primitives,
+  prims: &Primitives<M>,
 ) -> Option<Thunk<M>> {
   match v.inner() {
     ValInner::Neutral {
-      head: Head::Const { addr, .. },
+      head: Head::Const { id, .. },
       spine,
-    } if prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 => {
+    } if Primitives::<M>::addr_matches(&prims.nat_succ, &id.addr) && spine.len() == 1 => {
       Some(spine[0].clone())
     }
-    ValInner::Ctor { addr, spine, .. }
-      if prims.nat_succ.as_ref() == Some(addr) && spine.len() == 1 =>
+    ValInner::Ctor { id, spine, .. }
+      if Primitives::<M>::addr_matches(&prims.nat_succ, &id.addr) && spine.len() == 1 =>
     {
       Some(spine[0].clone())
     }
@@ -119,17 +142,17 @@ pub fn extract_succ_pred<M: MetaMode>(
 }
 
 /// Check if an address is nat_succ.
-pub fn is_nat_succ(addr: &Address, prims: &Primitives) -> bool {
-  prims.nat_succ.as_ref() == Some(addr)
+pub fn is_nat_succ<M: MetaMode>(addr: &Address, prims: &Primitives<M>) -> bool {
+  Primitives::<M>::addr_matches(&prims.nat_succ, addr)
 }
 
 /// Check if an address is nat_pred.
-pub fn is_nat_pred(addr: &Address, prims: &Primitives) -> bool {
-  prims.nat_pred.as_ref() == Some(addr)
+pub fn is_nat_pred<M: MetaMode>(addr: &Address, prims: &Primitives<M>) -> bool {
+  Primitives::<M>::addr_matches(&prims.nat_pred, addr)
 }
 
 /// Check if an address is any nat primitive (unary or binary).
-pub fn is_nat_prim_op(addr: &Address, prims: &Primitives) -> bool {
+pub fn is_nat_prim_op<M: MetaMode>(addr: &Address, prims: &Primitives<M>) -> bool {
   is_nat_succ(addr, prims)
     || is_nat_pred(addr, prims)
     || is_nat_bin_op(addr, prims)
@@ -140,37 +163,39 @@ pub fn compute_nat_prim<M: MetaMode>(
   addr: &Address,
   a: &Nat,
   b: &Nat,
-  prims: &Primitives,
+  prims: &Primitives<M>,
 ) -> Option<Val<M>> {
   let nat_val = |n: BigUint| Val::mk_lit(Literal::NatVal(Nat(n)));
   let zero = BigUint::ZERO;
 
-  let result = if prims.nat_add.as_ref() == Some(addr) {
+  let matches = |field: &Option<MetaId<M>>| Primitives::<M>::addr_matches(field, addr);
+
+  let result = if matches(&prims.nat_add) {
     nat_val(&a.0 + &b.0)
-  } else if prims.nat_sub.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_sub) {
     nat_val(if a.0 >= b.0 { &a.0 - &b.0 } else { zero })
-  } else if prims.nat_mul.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_mul) {
     nat_val(&a.0 * &b.0)
-  } else if prims.nat_pow.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_pow) {
     // Cap exponent at 2^24 to match the Lean kernel (Helpers.lean:80-82).
     // Without this, huge exponents silently truncate via unwrap_or(0)/as u32.
     let exp = b.to_u64().filter(|&e| e <= 16_777_216)?;
     nat_val(a.0.pow(exp as u32))
-  } else if prims.nat_gcd.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_gcd) {
     nat_val(biguint_gcd(&a.0, &b.0))
-  } else if prims.nat_mod.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_mod) {
     nat_val(if b.0 == zero {
       a.0.clone()
     } else {
       &a.0 % &b.0
     })
-  } else if prims.nat_div.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_div) {
     nat_val(if b.0 == zero {
       zero
     } else {
       &a.0 / &b.0
     })
-  } else if prims.nat_beq.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_beq) {
     let b_val = if a == b {
       prims.bool_true.as_ref()?
     } else {
@@ -179,14 +204,13 @@ pub fn compute_nat_prim<M: MetaMode>(
     Val::mk_ctor(
       b_val.clone(),
       Vec::new(),
-      M::Field::<Name>::default(),
       if a == b { 1 } else { 0 },
       0,
       0,
-      prims.bool_type.clone()?,
+      prims.bool_type.as_ref()?.addr.clone(),
       Vec::new(),
     )
-  } else if prims.nat_ble.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_ble) {
     let b_val = if a <= b {
       prims.bool_true.as_ref()?
     } else {
@@ -195,23 +219,22 @@ pub fn compute_nat_prim<M: MetaMode>(
     Val::mk_ctor(
       b_val.clone(),
       Vec::new(),
-      M::Field::<Name>::default(),
       if a <= b { 1 } else { 0 },
       0,
       0,
-      prims.bool_type.clone()?,
+      prims.bool_type.as_ref()?.addr.clone(),
       Vec::new(),
     )
-  } else if prims.nat_land.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_land) {
     nat_val(&a.0 & &b.0)
-  } else if prims.nat_lor.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_lor) {
     nat_val(&a.0 | &b.0)
-  } else if prims.nat_xor.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_xor) {
     nat_val(&a.0 ^ &b.0)
-  } else if prims.nat_shift_left.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_shift_left) {
     let shift = b.to_u64()?;
     nat_val(&a.0 << shift)
-  } else if prims.nat_shift_right.as_ref() == Some(addr) {
+  } else if matches(&prims.nat_shift_right) {
     let shift = b.to_u64()?;
     nat_val(&a.0 >> shift)
   } else {
@@ -223,19 +246,18 @@ pub fn compute_nat_prim<M: MetaMode>(
 /// Convert a Nat.zero literal to a Nat.zero constructor Val (non-thunked).
 pub fn nat_lit_to_ctor_val<M: MetaMode>(
   n: &Nat,
-  prims: &Primitives,
+  prims: &Primitives<M>,
 ) -> Option<Val<M>> {
   if n.0 == BigUint::ZERO {
-    let zero_addr = prims.nat_zero.as_ref()?;
-    let nat_addr = prims.nat.as_ref()?;
+    let zero_id = prims.nat_zero.as_ref()?;
+    let nat_id = prims.nat.as_ref()?;
     Some(Val::mk_ctor(
-      zero_addr.clone(),
+      zero_id.clone(),
       Vec::new(),
-      M::Field::<Name>::default(),
       0,
       0,
       0,
-      nat_addr.clone(),
+      nat_id.addr.clone(),
       Vec::new(),
     ))
   } else {
@@ -274,9 +296,9 @@ pub fn get_delta_info<M: MetaMode>(
 ) -> Option<ReducibilityHints> {
   match v.inner() {
     ValInner::Neutral {
-      head: Head::Const { addr, .. },
+      head: Head::Const { id, .. },
       ..
-    } => match env.get(addr)? {
+    } => match env.find(id)? {
       KConstantInfo::Definition(d) => Some(d.hints),
       KConstantInfo::Theorem(_) => Some(ReducibilityHints::Regular(0)),
       _ => None,
@@ -288,11 +310,12 @@ pub fn get_delta_info<M: MetaMode>(
 /// Check if a Val is a constructor application of a structure-like inductive.
 pub fn is_struct_like_app<M: MetaMode>(
   v: &Val<M>,
-  typed_consts: &rustc_hash::FxHashMap<Address, TypedConst<M>>,
+  typed_consts: &rustc_hash::FxHashMap<MetaId<M>, TypedConst<M>>,
+  env: &KEnv<M>,
 ) -> bool {
   match v.inner() {
     ValInner::Ctor { induct_addr, .. } => {
-      is_struct_like_app_by_addr(induct_addr, typed_consts)
+      is_struct_like_app_by_addr(induct_addr, typed_consts, env)
     }
     _ => false,
   }
@@ -301,15 +324,40 @@ pub fn is_struct_like_app<M: MetaMode>(
 /// Check if an address corresponds to a structure-like inductive.
 pub fn is_struct_like_app_by_addr<M: MetaMode>(
   addr: &Address,
-  typed_consts: &rustc_hash::FxHashMap<Address, TypedConst<M>>,
+  typed_consts: &rustc_hash::FxHashMap<MetaId<M>, TypedConst<M>>,
+  env: &KEnv<M>,
 ) -> bool {
-  matches!(
-    typed_consts.get(addr),
-    Some(TypedConst::Inductive {
-      is_struct: true,
-      ..
-    })
-  )
+  if let Some(id) = env.get_id_by_addr(addr) {
+    matches!(
+      typed_consts.get(id),
+      Some(TypedConst::Inductive {
+        is_struct: true,
+        ..
+      })
+    )
+  } else {
+    false
+  }
+}
+
+/// Check if an address corresponds to a structure-like inductive using raw env
+/// metadata (not typed_consts). This matches the lean4 C++ and lean4lean behavior.
+pub fn is_struct_like_raw<M: MetaMode>(
+  addr: &Address,
+  env: &KEnv<M>,
+) -> bool {
+  match env.find_by_addr(addr) {
+    Some(KConstantInfo::Inductive(iv)) => {
+      !iv.is_rec
+        && iv.num_indices == 0
+        && iv.ctors.len() == 1
+        && matches!(
+          env.get(&iv.ctors[0]),
+          Some(KConstantInfo::Constructor(_))
+        )
+    }
+    _ => false,
+  }
 }
 
 // ============================================================================
@@ -372,16 +420,16 @@ pub fn get_major_induct<M: MetaMode>(
   num_motives: usize,
   num_minors: usize,
   num_indices: usize,
-) -> Option<Address> {
+) -> Option<MetaId<M>> {
   let total = num_params + num_motives + num_minors + num_indices;
   fn go<M: MetaMode>(
     ty: &KExpr<M>,
     remaining: usize,
-  ) -> Option<Address> {
+  ) -> Option<MetaId<M>> {
     match remaining {
       0 => match ty.data() {
         KExprData::ForallE(dom, _, _, _) => {
-          dom.get_app_fn().const_addr().cloned()
+          dom.get_app_fn().const_id().cloned()
         }
         _ => None,
       },
@@ -400,7 +448,7 @@ pub fn expr_mentions_const<M: MetaMode>(
   addr: &Address,
 ) -> bool {
   match e.data() {
-    KExprData::Const(a, _, _) => a == addr,
+    KExprData::Const(id, _) => id.addr == *addr,
     KExprData::App(f, a) => {
       expr_mentions_const(f, addr)
         || expr_mentions_const(a, addr)
@@ -415,7 +463,7 @@ pub fn expr_mentions_const<M: MetaMode>(
         || expr_mentions_const(val, addr)
         || expr_mentions_const(body, addr)
     }
-    KExprData::Proj(_, _, s, _) => expr_mentions_const(s, addr),
+    KExprData::Proj(_, _, s) => expr_mentions_const(s, addr),
     _ => false,
   }
 }
@@ -487,8 +535,8 @@ fn lift_go<M: MetaMode>(
       lift_go(body, n, d + 1),
       name.clone(),
     ),
-    KExprData::Proj(ta, idx, s, tn) => {
-      KExpr::proj(ta.clone(), *idx, lift_go(s, n, d), tn.clone())
+    KExprData::Proj(id, idx, s) => {
+      KExpr::proj(id.clone(), *idx, lift_go(s, n, d))
     }
     KExprData::Sort(_) | KExprData::Const(..) | KExprData::Lit(_) => {
       e.clone()
@@ -582,22 +630,21 @@ fn shift_go<M: MetaMode>(
       shift_go(body, field_depth, bvar_shift, level_subst, depth + 1),
       n.clone(),
     ),
-    KExprData::Proj(ta, idx, s, tn) => KExpr::proj(
-      ta.clone(),
+    KExprData::Proj(id, idx, s) => KExpr::proj(
+      id.clone(),
       *idx,
       shift_go(s, field_depth, bvar_shift, level_subst, depth),
-      tn.clone(),
     ),
     KExprData::Sort(l) => {
       KExpr::sort(subst_level(l, level_subst))
     }
-    KExprData::Const(addr, lvls, name) => {
+    KExprData::Const(id, lvls) => {
       if level_subst.is_empty() {
         e.clone()
       } else {
         let new_lvls: Vec<_> =
           lvls.iter().map(|l| subst_level(l, level_subst)).collect();
-        KExpr::cnst(addr.clone(), new_lvls, name.clone())
+        KExpr::cnst(id.clone(), new_lvls)
       }
     }
     KExprData::Lit(_) => e.clone(),
@@ -676,11 +723,10 @@ fn subst_np_go<M: MetaMode>(
       subst_np_go(body, field_depth, num_extra, vals, depth + 1),
       n.clone(),
     ),
-    KExprData::Proj(ta, idx, s, tn) => KExpr::proj(
-      ta.clone(),
+    KExprData::Proj(id, idx, s) => KExpr::proj(
+      id.clone(),
       *idx,
       subst_np_go(s, field_depth, num_extra, vals, depth),
-      tn.clone(),
     ),
     _ => e.clone(),
   }

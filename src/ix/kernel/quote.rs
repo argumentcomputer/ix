@@ -4,7 +4,7 @@
 //! free variables to open closures (standard NbE readback).
 
 use super::tc::{TcResult, TypeChecker};
-use super::types::{KExpr, MetaMode};
+use super::types::{KExpr, MetaId, MetaMode};
 use super::value::*;
 
 impl<M: MetaMode> TypeChecker<'_, M> {
@@ -64,14 +64,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
 
       ValInner::Ctor {
-        addr,
+        id,
         levels,
-        name,
         spine,
         ..
       } => {
         let mut result =
-          KExpr::cnst(addr.clone(), levels.clone(), name.clone());
+          KExpr::cnst(id.clone(), levels.clone());
         for thunk in spine {
           let arg_val = self.force_thunk(thunk)?;
           let arg_expr = self.quote(&arg_val, depth)?;
@@ -90,10 +89,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         let struct_val = self.force_thunk(strct)?;
         let struct_expr = self.quote(&struct_val, depth)?;
         let mut result = KExpr::proj(
-          type_addr.clone(),
+          MetaId::new(type_addr.clone(), type_name.clone()),
           *idx,
           struct_expr,
-          type_name.clone(),
         );
         for thunk in spine {
           let arg_val = self.force_thunk(thunk)?;
@@ -126,9 +124,8 @@ pub fn quote_head<M: MetaMode>(
       KExpr::bvar(level_to_index(depth, *level), name)
     }
     Head::Const {
-      addr,
+      id,
       levels,
-      name,
-    } => KExpr::cnst(addr.clone(), levels.clone(), name.clone()),
+    } => KExpr::cnst(id.clone(), levels.clone()),
   }
 }

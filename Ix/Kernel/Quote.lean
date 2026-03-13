@@ -24,6 +24,6 @@ def quoteHead (h : Head m) (d : Nat) (names : Array (KMetaField m Ix.Name) := #[
   | .fvar level _ =>
     let idx := levelToIndex d level
     .bvar idx (names[level]?.getD default)
-  | .const addr levels name => .const addr levels name
+  | .const id levels => .const id levels
 
 end Ix.Kernel

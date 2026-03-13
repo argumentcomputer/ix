@@ -6,8 +6,6 @@
 
 #[cfg(test)]
 mod tests {
-  use rustc_hash::FxHashMap;
-
   use crate::ix::address::Address;
   use crate::ix::env::{
     BinderInfo, DefinitionSafety, Literal, QuotKind, ReducibilityHints,
@@ -58,10 +56,10 @@ mod tests {
     KExpr::app(f, a)
   }
   fn cst(addr: &Address) -> KExpr<Meta> {
-    KExpr::cnst(addr.clone(), vec![], anon())
+    KExpr::cnst(MetaId::from_addr(addr.clone()), vec![])
   }
   fn cst_l(addr: &Address, lvls: Vec<KLevel<Meta>>) -> KExpr<Meta> {
-    KExpr::cnst(addr.clone(), lvls, anon())
+    KExpr::cnst(MetaId::from_addr(addr.clone()), lvls)
   }
   fn nat_lit(n: u64) -> KExpr<Meta> {
     KExpr::lit(Literal::NatVal(Nat::from(n)))
@@ -73,44 +71,45 @@ mod tests {
     KExpr::let_e(typ, val, body, anon())
   }
   fn proj_e(type_addr: &Address, idx: usize, strct: KExpr<Meta>) -> KExpr<Meta> {
-    KExpr::proj(type_addr.clone(), idx, strct, anon())
+    KExpr::proj(MetaId::from_addr(type_addr.clone()), idx, strct)
   }
 
   /// Build Primitives with consistent test addresses.
-  fn test_prims() -> Primitives {
+  fn test_prims() -> Primitives<Meta> {
+    let mid = |b: &[u8]| MetaId::from_addr(Address::hash(b));
     Primitives {
-      nat: Some(Address::hash(b"Nat")),
-      nat_zero: Some(Address::hash(b"Nat.zero")),
-      nat_succ: Some(Address::hash(b"Nat.succ")),
-      nat_add: Some(Address::hash(b"Nat.add")),
-      nat_pred: Some(Address::hash(b"Nat.pred")),
-      nat_sub: Some(Address::hash(b"Nat.sub")),
-      nat_mul: Some(Address::hash(b"Nat.mul")),
-      nat_pow: Some(Address::hash(b"Nat.pow")),
-      nat_gcd: Some(Address::hash(b"Nat.gcd")),
-      nat_mod: Some(Address::hash(b"Nat.mod")),
-      nat_div: Some(Address::hash(b"Nat.div")),
-      nat_bitwise: Some(Address::hash(b"Nat.bitwise")),
-      nat_beq: Some(Address::hash(b"Nat.beq")),
-      nat_ble: Some(Address::hash(b"Nat.ble")),
-      nat_land: Some(Address::hash(b"Nat.land")),
-      nat_lor: Some(Address::hash(b"Nat.lor")),
-      nat_xor: Some(Address::hash(b"Nat.xor")),
-      nat_shift_left: Some(Address::hash(b"Nat.shiftLeft")),
-      nat_shift_right: Some(Address::hash(b"Nat.shiftRight")),
-      bool_type: Some(Address::hash(b"Bool")),
-      bool_true: Some(Address::hash(b"Bool.true")),
-      bool_false: Some(Address::hash(b"Bool.false")),
-      string: Some(Address::hash(b"String")),
-      string_mk: Some(Address::hash(b"String.mk")),
-      char_type: Some(Address::hash(b"Char")),
-      char_mk: Some(Address::hash(b"Char.ofNat")),
-      string_of_list: Some(Address::hash(b"String.mk")),
-      list: Some(Address::hash(b"List")),
-      list_nil: Some(Address::hash(b"List.nil")),
-      list_cons: Some(Address::hash(b"List.cons")),
-      eq: Some(Address::hash(b"Eq")),
-      eq_refl: Some(Address::hash(b"Eq.refl")),
+      nat: Some(mid(b"Nat")),
+      nat_zero: Some(mid(b"Nat.zero")),
+      nat_succ: Some(mid(b"Nat.succ")),
+      nat_add: Some(mid(b"Nat.add")),
+      nat_pred: Some(mid(b"Nat.pred")),
+      nat_sub: Some(mid(b"Nat.sub")),
+      nat_mul: Some(mid(b"Nat.mul")),
+      nat_pow: Some(mid(b"Nat.pow")),
+      nat_gcd: Some(mid(b"Nat.gcd")),
+      nat_mod: Some(mid(b"Nat.mod")),
+      nat_div: Some(mid(b"Nat.div")),
+      nat_bitwise: Some(mid(b"Nat.bitwise")),
+      nat_beq: Some(mid(b"Nat.beq")),
+      nat_ble: Some(mid(b"Nat.ble")),
+      nat_land: Some(mid(b"Nat.land")),
+      nat_lor: Some(mid(b"Nat.lor")),
+      nat_xor: Some(mid(b"Nat.xor")),
+      nat_shift_left: Some(mid(b"Nat.shiftLeft")),
+      nat_shift_right: Some(mid(b"Nat.shiftRight")),
+      bool_type: Some(mid(b"Bool")),
+      bool_true: Some(mid(b"Bool.true")),
+      bool_false: Some(mid(b"Bool.false")),
+      string: Some(mid(b"String")),
+      string_mk: Some(mid(b"String.mk")),
+      char_type: Some(mid(b"Char")),
+      char_mk: Some(mid(b"Char.ofNat")),
+      string_of_list: Some(mid(b"String.mk")),
+      list: Some(mid(b"List")),
+      list_nil: Some(mid(b"List.nil")),
+      list_cons: Some(mid(b"List.cons")),
+      eq: Some(mid(b"Eq")),
+      eq_refl: Some(mid(b"Eq.refl")),
       quot_type: None,
       quot_ctor: None,
       quot_lift: None,
@@ -127,7 +126,7 @@ mod tests {
   /// Evaluate an expression, then quote it back.
   fn eval_quote(
     env: &KEnv<Meta>,
-    prims: &Primitives,
+    prims: &Primitives<Meta>,
     e: &KExpr<Meta>,
   ) -> Result<KExpr<Meta>, String> {
     let mut tc = TypeChecker::new(env, prims);
@@ -138,7 +137,7 @@ mod tests {
   /// Evaluate, WHNF, then quote.
   fn whnf_quote(
     env: &KEnv<Meta>,
-    prims: &Primitives,
+    prims: &Primitives<Meta>,
     e: &KExpr<Meta>,
   ) -> Result<KExpr<Meta>, String> {
     let mut tc = TypeChecker::new(env, prims);
@@ -150,7 +149,7 @@ mod tests {
   /// Evaluate, WHNF, then quote — with quotient initialization.
   fn whnf_quote_qi(
     env: &KEnv<Meta>,
-    prims: &Primitives,
+    prims: &Primitives<Meta>,
     e: &KExpr<Meta>,
     quot_init: bool,
   ) -> Result<KExpr<Meta>, String> {
@@ -164,7 +163,7 @@ mod tests {
   /// Check definitional equality of two expressions.
   fn is_def_eq(
     env: &KEnv<Meta>,
-    prims: &Primitives,
+    prims: &Primitives<Meta>,
     a: &KExpr<Meta>,
     b: &KExpr<Meta>,
   ) -> Result<bool, String> {
@@ -177,7 +176,7 @@ mod tests {
   /// Infer the type of an expression, then quote.
   fn infer_quote(
     env: &KEnv<Meta>,
-    prims: &Primitives,
+    prims: &Primitives<Meta>,
     e: &KExpr<Meta>,
   ) -> Result<KExpr<Meta>, String> {
     let mut tc = TypeChecker::new(env, prims);
@@ -189,7 +188,7 @@ mod tests {
   /// Get the head const address of a WHNF result.
   fn whnf_head_addr(
     env: &KEnv<Meta>,
-    prims: &Primitives,
+    prims: &Primitives<Meta>,
     e: &KExpr<Meta>,
   ) -> Result<Option<Address>, String> {
     let mut tc = TypeChecker::new(env, prims);
@@ -197,10 +196,10 @@ mod tests {
     let w = tc.whnf_val(&val, 0).map_err(|e| format!("{e}"))?;
     match w.inner() {
       ValInner::Neutral {
-        head: Head::Const { addr, .. },
+        head: Head::Const { id, .. },
         ..
-      } => Ok(Some(addr.clone())),
-      ValInner::Ctor { addr, .. } => Ok(Some(addr.clone())),
+      } => Ok(Some(id.addr.clone())),
+      ValInner::Ctor { id, .. } => Ok(Some(id.addr.clone())),
       _ => Ok(None),
     }
   }
@@ -216,7 +215,7 @@ mod tests {
     hints: ReducibilityHints,
   ) {
     env.insert(
-      addr.clone(),
+      MetaId::from_addr(addr.clone()),
       KConstantInfo::Definition(KDefinitionVal {
         cv: KConstantVal {
           num_levels,
@@ -227,14 +226,14 @@ mod tests {
         value,
         hints,
         safety: DefinitionSafety::Safe,
-        all: vec![addr.clone()],
+        all: vec![MetaId::from_addr(addr.clone())],
       }),
     );
   }
 
   fn add_axiom(env: &mut KEnv<Meta>, addr: &Address, typ: KExpr<Meta>) {
     env.insert(
-      addr.clone(),
+      MetaId::from_addr(addr.clone()),
       KConstantInfo::Axiom(KAxiomVal {
         cv: KConstantVal {
           num_levels: 0,
@@ -249,7 +248,7 @@ mod tests {
 
   fn add_opaque(env: &mut KEnv<Meta>, addr: &Address, typ: KExpr<Meta>, value: KExpr<Meta>) {
     env.insert(
-      addr.clone(),
+      MetaId::from_addr(addr.clone()),
       KConstantInfo::Opaque(KOpaqueVal {
         cv: KConstantVal {
           num_levels: 0,
@@ -259,14 +258,14 @@ mod tests {
         },
         value,
         is_unsafe: false,
-        all: vec![addr.clone()],
+        all: vec![MetaId::from_addr(addr.clone())],
       }),
     );
   }
 
   fn add_theorem(env: &mut KEnv<Meta>, addr: &Address, typ: KExpr<Meta>, value: KExpr<Meta>) {
     env.insert(
-      addr.clone(),
+      MetaId::from_addr(addr.clone()),
       KConstantInfo::Theorem(KTheoremVal {
         cv: KConstantVal {
           num_levels: 0,
@@ -275,7 +274,7 @@ mod tests {
           level_params: vec![],
         },
         value,
-        all: vec![addr.clone()],
+        all: vec![MetaId::from_addr(addr.clone())],
       }),
     );
   }
@@ -292,7 +291,7 @@ mod tests {
     all: Vec<Address>,
   ) {
     env.insert(
-      addr.clone(),
+      MetaId::from_addr(addr.clone()),
       KConstantInfo::Inductive(KInductiveVal {
         cv: KConstantVal {
           num_levels,
@@ -302,8 +301,8 @@ mod tests {
         },
         num_params,
         num_indices,
-        all,
-        ctors,
+        all: all.into_iter().map(MetaId::from_addr).collect(),
+        ctors: ctors.into_iter().map(MetaId::from_addr).collect(),
         num_nested: 0,
         is_rec,
         is_unsafe: false,
@@ -323,7 +322,7 @@ mod tests {
     num_levels: usize,
   ) {
     env.insert(
-      addr.clone(),
+      MetaId::from_addr(addr.clone()),
       KConstantInfo::Constructor(KConstructorVal {
         cv: KConstantVal {
           num_levels,
@@ -331,7 +330,7 @@ mod tests {
           name: anon(),
           level_params: vec![],
         },
-        induct: induct.clone(),
+        induct: MetaId::from_addr(induct.clone()),
         cidx,
         num_params,
         num_fields,
@@ -354,7 +353,7 @@ mod tests {
     k: bool,
   ) {
     env.insert(
-      addr.clone(),
+      MetaId::from_addr(addr.clone()),
       KConstantInfo::Recursor(KRecursorVal {
         cv: KConstantVal {
           num_levels,
@@ -362,7 +361,7 @@ mod tests {
           name: anon(),
           level_params: vec![],
         },
-        all,
+        all: all.into_iter().map(MetaId::from_addr).collect(),
         num_params,
         num_indices,
         num_motives,
@@ -382,7 +381,7 @@ mod tests {
     num_levels: usize,
   ) {
     env.insert(
-      addr.clone(),
+      MetaId::from_addr(addr.clone()),
       KConstantInfo::Quotient(KQuotVal {
         cv: KConstantVal {
           num_levels,
@@ -441,15 +440,25 @@ mod tests {
       ),
     );
 
+    // Lambda domain annotations must match the recType forall domains exactly:
+    //   dom0 (motive) = MyNat → Type
+    //   dom1 (base)   = motive zero
+    //   dom2 (step)   = ∀ (n : MyNat), motive n → motive (succ n)
+    let motive_dom = pi(nat_const.clone(), ty());
+    let base_dom = app(bv(0), cst(&zero));
+    let step_dom = pi(
+      nat_const.clone(),
+      pi(app(bv(2), bv(0)), app(bv(3), app(cst(&succ), bv(1)))),
+    );
     // Rule for zero: nfields=0, rhs = λ motive base step => base
-    let zero_rhs = lam(ty(), lam(bv(0), lam(ty(), bv(1))));
+    let zero_rhs = lam(motive_dom.clone(), lam(base_dom.clone(), lam(step_dom.clone(), bv(1))));
     // Rule for succ: nfields=1, rhs = λ motive base step n => step n (rec motive base step n)
     let succ_rhs = lam(
-      ty(),
+      motive_dom,
       lam(
-        bv(0),
+        base_dom,
         lam(
-          ty(),
+          step_dom,
           lam(
             nat_const.clone(),
             app(
@@ -476,12 +485,12 @@ mod tests {
       2,
       vec![
         KRecursorRule {
-          ctor: zero.clone(),
+          ctor: MetaId::from_addr(zero.clone()),
           nfields: 0,
           rhs: zero_rhs,
         },
         KRecursorRule {
-          ctor: succ.clone(),
+          ctor: MetaId::from_addr(succ.clone()),
           nfields: 1,
           rhs: succ_rhs,
         },
@@ -490,6 +499,166 @@ mod tests {
     );
 
     (env, nat_ind, zero, succ, rec)
+  }
+
+  /// Build MyList inductive (universe-polymorphic).
+  /// Returns (env, list_ind, nil, cons, rec).
+  /// List.{u} : Type u → Type u
+  /// nil.{u} : {α : Type u} → List α
+  /// cons.{u} : {α : Type u} → α → List α → List α
+  /// rec.{u,v} : {α : Type u} → {motive : List α → Sort v}
+  ///   → motive nil → ((head : α) → (tail : List α) → motive tail → motive (head :: tail))
+  ///   → (t : List α) → motive t
+  fn build_my_list_env(
+    mut env: KEnv<Meta>,
+  ) -> (KEnv<Meta>, Address, Address, Address, Address) {
+    let list_ind = mk_addr(200);
+    let nil = mk_addr(201);
+    let cons = mk_addr(202);
+    let rec = mk_addr(203);
+
+    // List.{u} : Type u → Type u
+    // As an expr: ∀ (α : Sort (u+1)), Sort (u+1)
+    // Simplified: we use num_levels=1 and represent as Type → Type
+    let list_type = pi(ty(), ty()); // ∀ (α : Type), Type
+
+    add_inductive(
+      &mut env,
+      &list_ind,
+      list_type,
+      vec![nil.clone(), cons.clone()],
+      1,    // num_params = 1 (α)
+      0,    // num_indices = 0
+      true, // is_rec
+      1,    // num_levels = 1 (u)
+      vec![list_ind.clone()],
+    );
+
+    // nil : {α : Type} → List α
+    // In our simplified env: ∀ (α : Type), List α
+    let nil_type = pi(ty(), app(cst(&list_ind), bv(0)));
+    add_ctor(&mut env, &nil, &list_ind, nil_type, 0, 1, 0, 1);
+
+    // cons : {α : Type} → α → List α → List α
+    let _list_alpha = app(cst(&list_ind), bv(0)); // List (bv 0) where bv 0 = α
+    let cons_type = pi(
+      ty(), // α : Type
+      pi(
+        bv(0), // head : α
+        pi(
+          app(cst(&list_ind), bv(1)), // tail : List α
+          app(cst(&list_ind), bv(2)), // result : List α
+        ),
+      ),
+    );
+    add_ctor(&mut env, &cons, &list_ind, cons_type, 1, 1, 2, 1);
+
+    // rec : {α : Type} → {motive : List α → Type}
+    //   → motive (nil α) → ((head : α) → (tail : List α) → motive tail → motive (cons α head tail))
+    //   → (t : List α) → motive t
+    //
+    // As de Bruijn (all binders implicit, outermost = highest index):
+    //   ∀ (α : Type),                                              -- bv 4 (from inside)
+    //     ∀ (motive : List α → Type),                              -- bv 3
+    //       ∀ (nil_case : motive (nil α)),                         -- bv 2
+    //         ∀ (cons_case : ∀ (head : α) (tail : List α), motive tail → motive (cons α head tail)),  -- bv 1
+    //           ∀ (t : List α), motive t                           -- bv 0
+    let _list_a = app(cst(&list_ind), bv(0)); // List α  (α = bv 0 in current scope)
+    let rec_type = pi(
+      ty(), // α : Type
+      pi(
+        pi(app(cst(&list_ind), bv(0)), ty()), // motive : List α → Type
+        pi(
+          app(bv(0), app(cst(&nil), bv(1))), // nil_case : motive (nil α)
+          pi(
+            pi(
+              bv(2), // head : α
+              pi(
+                app(cst(&list_ind), bv(3)), // tail : List α
+                pi(
+                  app(bv(4), bv(0)), // motive tail
+                  app(bv(5), app(app(app(cst(&cons), bv(5)), bv(2)), bv(1))), // motive (cons α head tail)
+                ),
+              ),
+            ),
+            pi(app(cst(&list_ind), bv(3)), app(bv(3), bv(0))), // (t : List α) → motive t
+          ),
+        ),
+      ),
+    );
+
+    // Rule for nil: nfields=0, rhs = λ α motive nil_case cons_case => nil_case
+    let nil_rhs = lam(
+      ty(),
+      lam(
+        pi(app(cst(&list_ind), bv(0)), ty()),
+        lam(
+          app(bv(0), app(cst(&nil), bv(1))),
+          lam(
+            ty(), // cons_case domain placeholder
+            bv(1), // nil_case
+          ),
+        ),
+      ),
+    );
+
+    // Rule for cons: nfields=2, rhs = λ α motive nil_case cons_case head tail =>
+    //   cons_case head tail (rec α motive nil_case cons_case tail)
+    let cons_rhs = lam(
+      ty(), // α
+      lam(
+        pi(app(cst(&list_ind), bv(0)), ty()), // motive
+        lam(
+          app(bv(0), app(cst(&nil), bv(1))), // nil_case
+          lam(
+            ty(), // cons_case domain placeholder
+            lam(
+              bv(3), // head : α
+              lam(
+                app(cst(&list_ind), bv(4)), // tail : List α
+                app(
+                  app(
+                    app(bv(2), bv(1)), // cons_case head tail
+                    bv(0),
+                  ),
+                  app(
+                    app(app(app(app(cst(&rec), bv(5)), bv(4)), bv(3)), bv(2)),
+                    bv(0), // rec α motive nil_case cons_case tail
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    add_rec(
+      &mut env,
+      &rec,
+      2,    // num_levels = 2 (u, v)
+      rec_type,
+      vec![list_ind.clone()],
+      1,    // num_params = 1 (α)
+      0,    // num_indices = 0
+      1,    // num_motives = 1
+      2,    // num_minors = 2 (nil, cons)
+      vec![
+        KRecursorRule {
+          ctor: MetaId::from_addr(nil.clone()),
+          nfields: 0,
+          rhs: nil_rhs,
+        },
+        KRecursorRule {
+          ctor: MetaId::from_addr(cons.clone()),
+          nfields: 2,
+          rhs: cons_rhs,
+        },
+      ],
+      false,
+    );
+
+    (env, list_ind, nil, cons, rec)
   }
 
   /// Build MyTrue : Prop with intro and K-recursor.
@@ -522,8 +691,12 @@ mod tests {
         pi(true_const.clone(), app(bv(2), bv(0))),
       ),
     );
-    let rule_rhs =
-      lam(pi(true_const.clone(), prop()), lam(prop(), bv(0)));
+    // Lambda domain annotations must match the recType forall domains exactly:
+    //   dom0 (motive) = MyTrue → Prop
+    //   dom1 (h)      = motive intro
+    let motive_dom = pi(true_const.clone(), prop());
+    let h_dom = app(bv(0), cst(&intro));
+    let rule_rhs = lam(motive_dom, lam(h_dom, bv(0)));
 
     add_rec(
       &mut env,
@@ -536,7 +709,7 @@ mod tests {
       1,
       1,
       vec![KRecursorRule {
-        ctor: intro.clone(),
+        ctor: MetaId::from_addr(intro.clone()),
         nfields: 0,
         rhs: rule_rhs,
       }],
@@ -582,7 +755,7 @@ mod tests {
   }
 
   fn empty_env() -> KEnv<Meta> {
-    FxHashMap::default()
+    KEnv::default()
   }
 
   // ==========================================================================
@@ -744,7 +917,7 @@ mod tests {
     let env = empty_env();
     let prims = test_prims();
     let e = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), nat_lit(2)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(2)),
       nat_lit(3),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(5));
@@ -755,7 +928,7 @@ mod tests {
     let env = empty_env();
     let prims = test_prims();
     let e = app(
-      app(cst(prims.nat_mul.as_ref().unwrap()), nat_lit(4)),
+      app(cst(&prims.nat_mul.as_ref().unwrap().addr), nat_lit(4)),
       nat_lit(5),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(20));
@@ -766,13 +939,13 @@ mod tests {
     let env = empty_env();
     let prims = test_prims();
     let e = app(
-      app(cst(prims.nat_sub.as_ref().unwrap()), nat_lit(10)),
+      app(cst(&prims.nat_sub.as_ref().unwrap().addr), nat_lit(10)),
       nat_lit(3),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(7));
     // Truncated: 3 - 10 = 0
     let e2 = app(
-      app(cst(prims.nat_sub.as_ref().unwrap()), nat_lit(3)),
+      app(cst(&prims.nat_sub.as_ref().unwrap().addr), nat_lit(3)),
       nat_lit(10),
     );
     assert_eq!(whnf_quote(&env, &prims, &e2).unwrap(), nat_lit(0));
@@ -783,7 +956,7 @@ mod tests {
     let env = empty_env();
     let prims = test_prims();
     let e = app(
-      app(cst(prims.nat_pow.as_ref().unwrap()), nat_lit(2)),
+      app(cst(&prims.nat_pow.as_ref().unwrap().addr), nat_lit(2)),
       nat_lit(10),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(1024));
@@ -793,7 +966,7 @@ mod tests {
   fn nat_succ() {
     let env = empty_env();
     let prims = test_prims();
-    let e = app(cst(prims.nat_succ.as_ref().unwrap()), nat_lit(41));
+    let e = app(cst(&prims.nat_succ.as_ref().unwrap().addr), nat_lit(41));
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(42));
   }
 
@@ -802,12 +975,12 @@ mod tests {
     let env = empty_env();
     let prims = test_prims();
     let e = app(
-      app(cst(prims.nat_mod.as_ref().unwrap()), nat_lit(17)),
+      app(cst(&prims.nat_mod.as_ref().unwrap().addr), nat_lit(17)),
       nat_lit(5),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(2));
     let e2 = app(
-      app(cst(prims.nat_div.as_ref().unwrap()), nat_lit(17)),
+      app(cst(&prims.nat_div.as_ref().unwrap().addr), nat_lit(17)),
       nat_lit(5),
     );
     assert_eq!(whnf_quote(&env, &prims, &e2).unwrap(), nat_lit(3));
@@ -818,36 +991,36 @@ mod tests {
     let env = empty_env();
     let prims = test_prims();
     let beq_true = app(
-      app(cst(prims.nat_beq.as_ref().unwrap()), nat_lit(5)),
+      app(cst(&prims.nat_beq.as_ref().unwrap().addr), nat_lit(5)),
       nat_lit(5),
     );
     assert_eq!(
       whnf_quote(&env, &prims, &beq_true).unwrap(),
-      cst(prims.bool_true.as_ref().unwrap())
+      cst(&prims.bool_true.as_ref().unwrap().addr)
     );
     let beq_false = app(
-      app(cst(prims.nat_beq.as_ref().unwrap()), nat_lit(5)),
+      app(cst(&prims.nat_beq.as_ref().unwrap().addr), nat_lit(5)),
       nat_lit(6),
     );
     assert_eq!(
       whnf_quote(&env, &prims, &beq_false).unwrap(),
-      cst(prims.bool_false.as_ref().unwrap())
+      cst(&prims.bool_false.as_ref().unwrap().addr)
     );
     let ble_true = app(
-      app(cst(prims.nat_ble.as_ref().unwrap()), nat_lit(3)),
+      app(cst(&prims.nat_ble.as_ref().unwrap().addr), nat_lit(3)),
       nat_lit(5),
     );
     assert_eq!(
       whnf_quote(&env, &prims, &ble_true).unwrap(),
-      cst(prims.bool_true.as_ref().unwrap())
+      cst(&prims.bool_true.as_ref().unwrap().addr)
     );
     let ble_false = app(
-      app(cst(prims.nat_ble.as_ref().unwrap()), nat_lit(5)),
+      app(cst(&prims.nat_ble.as_ref().unwrap().addr), nat_lit(5)),
       nat_lit(3),
     );
     assert_eq!(
       whnf_quote(&env, &prims, &ble_false).unwrap(),
-      cst(prims.bool_false.as_ref().unwrap())
+      cst(&prims.bool_false.as_ref().unwrap().addr)
     );
   }
 
@@ -858,7 +1031,7 @@ mod tests {
     let env = empty_env();
     let prims = test_prims();
     let e = app(
-      app(cst(prims.nat_pow.as_ref().unwrap()), nat_lit(2)),
+      app(cst(&prims.nat_pow.as_ref().unwrap().addr), nat_lit(2)),
       nat_lit(63),
     );
     assert_eq!(
@@ -875,38 +1048,38 @@ mod tests {
     let prims = test_prims();
     // gcd 12 8 = 4
     let e = app(
-      app(cst(prims.nat_gcd.as_ref().unwrap()), nat_lit(12)),
+      app(cst(&prims.nat_gcd.as_ref().unwrap().addr), nat_lit(12)),
       nat_lit(8),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(4));
     // land 10 12 = 8
     let e = app(
-      app(cst(prims.nat_land.as_ref().unwrap()), nat_lit(10)),
+      app(cst(&prims.nat_land.as_ref().unwrap().addr), nat_lit(10)),
       nat_lit(12),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(8));
     // lor 10 5 = 15
     let e = app(
-      app(cst(prims.nat_lor.as_ref().unwrap()), nat_lit(10)),
+      app(cst(&prims.nat_lor.as_ref().unwrap().addr), nat_lit(10)),
       nat_lit(5),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(15));
     // xor 10 12 = 6
     let e = app(
-      app(cst(prims.nat_xor.as_ref().unwrap()), nat_lit(10)),
+      app(cst(&prims.nat_xor.as_ref().unwrap().addr), nat_lit(10)),
       nat_lit(12),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(6));
     // shiftLeft 1 10 = 1024
     let e = app(
-      app(cst(prims.nat_shift_left.as_ref().unwrap()), nat_lit(1)),
+      app(cst(&prims.nat_shift_left.as_ref().unwrap().addr), nat_lit(1)),
       nat_lit(10),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(1024));
     // shiftRight 1024 3 = 128
     let e = app(
       app(
-        cst(prims.nat_shift_right.as_ref().unwrap()),
+        cst(&prims.nat_shift_right.as_ref().unwrap().addr),
         nat_lit(1024),
       ),
       nat_lit(3),
@@ -922,51 +1095,51 @@ mod tests {
     let prims = test_prims();
     // div 0 0 = 0
     let e = app(
-      app(cst(prims.nat_div.as_ref().unwrap()), nat_lit(0)),
+      app(cst(&prims.nat_div.as_ref().unwrap().addr), nat_lit(0)),
       nat_lit(0),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(0));
     // mod 0 0 = 0
     let e = app(
-      app(cst(prims.nat_mod.as_ref().unwrap()), nat_lit(0)),
+      app(cst(&prims.nat_mod.as_ref().unwrap().addr), nat_lit(0)),
       nat_lit(0),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(0));
     // gcd 0 0 = 0
     let e = app(
-      app(cst(prims.nat_gcd.as_ref().unwrap()), nat_lit(0)),
+      app(cst(&prims.nat_gcd.as_ref().unwrap().addr), nat_lit(0)),
       nat_lit(0),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(0));
     // sub 0 0 = 0
     let e = app(
-      app(cst(prims.nat_sub.as_ref().unwrap()), nat_lit(0)),
+      app(cst(&prims.nat_sub.as_ref().unwrap().addr), nat_lit(0)),
       nat_lit(0),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(0));
     // pow 0 0 = 1
     let e = app(
-      app(cst(prims.nat_pow.as_ref().unwrap()), nat_lit(0)),
+      app(cst(&prims.nat_pow.as_ref().unwrap().addr), nat_lit(0)),
       nat_lit(0),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(1));
     // mul 0 999 = 0
     let e = app(
-      app(cst(prims.nat_mul.as_ref().unwrap()), nat_lit(0)),
+      app(cst(&prims.nat_mul.as_ref().unwrap().addr), nat_lit(0)),
       nat_lit(999),
     );
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(0));
     // chained: (3*4) + (10-3) = 19
     let inner1 = app(
-      app(cst(prims.nat_mul.as_ref().unwrap()), nat_lit(3)),
+      app(cst(&prims.nat_mul.as_ref().unwrap().addr), nat_lit(3)),
       nat_lit(4),
     );
     let inner2 = app(
-      app(cst(prims.nat_sub.as_ref().unwrap()), nat_lit(10)),
+      app(cst(&prims.nat_sub.as_ref().unwrap().addr), nat_lit(10)),
       nat_lit(3),
     );
     let chained =
-      app(app(cst(prims.nat_add.as_ref().unwrap()), inner1), inner2);
+      app(app(cst(&prims.nat_add.as_ref().unwrap().addr), inner1), inner2);
     assert_eq!(whnf_quote(&env, &prims, &chained).unwrap(), nat_lit(19));
   }
 
@@ -977,7 +1150,7 @@ mod tests {
     let prims = test_prims();
     let def_addr = mk_addr(1);
     let add_body = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), nat_lit(2)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(2)),
       nat_lit(3),
     );
     let mut env = empty_env();
@@ -997,7 +1170,7 @@ mod tests {
     // Chain: myTen := Nat.add myFive myFive
     let ten_addr = mk_addr(2);
     let ten_body = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), cst(&def_addr)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), cst(&def_addr)),
       cst(&def_addr),
     );
     add_def(
@@ -1143,24 +1316,24 @@ mod tests {
     // structural succ, not literals — to avoid O(n) peeling). The expression
     // stays stuck with nat_add as the head.
     let stuck_add = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), cst(&ax_addr)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), cst(&ax_addr)),
       nat_lit(5),
     );
     assert_eq!(
       whnf_head_addr(&env, &prims, &stuck_add).unwrap(),
-      Some(prims.nat_add.clone().unwrap())
+      Some(prims.nat_add.as_ref().unwrap().addr.clone())
     );
 
     // Nat.add axiom (Nat.succ axiom): second arg IS structural succ,
     // so step-case fires: add x (succ y) → succ (add x y)
-    let succ_axiom = app(cst(prims.nat_succ.as_ref().unwrap()), cst(&ax_addr));
+    let succ_axiom = app(cst(&prims.nat_succ.as_ref().unwrap().addr), cst(&ax_addr));
     let stuck_add_succ = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), cst(&ax_addr)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), cst(&ax_addr)),
       succ_axiom,
     );
     assert_eq!(
       whnf_head_addr(&env, &prims, &stuck_add_succ).unwrap(),
-      Some(prims.nat_succ.clone().unwrap())
+      Some(prims.nat_succ.as_ref().unwrap().addr.clone())
     );
   }
 
@@ -1173,7 +1346,7 @@ mod tests {
     let double_body = lam(
       ty(),
       app(
-        app(cst(prims.nat_add.as_ref().unwrap()), bv(0)),
+        app(cst(&prims.nat_add.as_ref().unwrap().addr), bv(0)),
         bv(0),
       ),
     );
@@ -1220,7 +1393,7 @@ mod tests {
     let env = empty_env();
     let prims = test_prims();
     let succ_fn =
-      lam(ty(), app(cst(prims.nat_succ.as_ref().unwrap()), bv(0)));
+      lam(ty(), app(cst(&prims.nat_succ.as_ref().unwrap().addr), bv(0)));
     let twice = lam(
       pi(ty(), ty()),
       lam(ty(), app(bv(1), app(bv(1), bv(0)))),
@@ -1241,7 +1414,7 @@ mod tests {
     let base = nat_lit(0);
     let step = lam(
       nat_const.clone(),
-      lam(ty(), app(cst(prims.nat_succ.as_ref().unwrap()), bv(0))),
+      lam(ty(), app(cst(&prims.nat_succ.as_ref().unwrap().addr), bv(0))),
     );
 
     // rec motive 0 step zero = 0
@@ -1271,7 +1444,7 @@ mod tests {
     let base = nat_lit(0);
     let step = lam(
       nat_const.clone(),
-      lam(ty(), app(cst(prims.nat_succ.as_ref().unwrap()), bv(0))),
+      lam(ty(), app(cst(&prims.nat_succ.as_ref().unwrap().addr), bv(0))),
     );
 
     // rec on succ(succ(zero)) = 2
@@ -1295,6 +1468,66 @@ mod tests {
       whnf_quote(&env, &prims, &rec_three).unwrap(),
       nat_lit(3)
     );
+  }
+
+  // -- List.rec iota reduction --
+
+  #[test]
+  fn list_rec_nil() {
+    let prims = test_prims();
+    let (env, _list_ind, nil, _cons, rec) =
+      build_my_list_env(empty_env());
+
+    // List.rec α motive nil_case cons_case (nil α) = nil_case
+    // We use Type as α, and a trivial motive
+    let alpha = ty();
+    let list_alpha = app(cst(&_list_ind), alpha.clone());
+    let motive = lam(list_alpha.clone(), ty()); // motive : List α → Type
+    let nil_case = nat_lit(42); // use a nat literal as the nil result
+    let cons_case = lam(
+      alpha.clone(),
+      lam(list_alpha.clone(), lam(ty(), nat_lit(99))),
+    );
+    let nil_val = app(cst(&nil), alpha.clone());
+
+    let rec_nil = app(
+      app(app(app(app(cst(&rec), alpha.clone()), motive), nil_case.clone()), cons_case),
+      nil_val,
+    );
+    assert_eq!(whnf_quote(&env, &prims, &rec_nil).unwrap(), nat_lit(42));
+  }
+
+  #[test]
+  fn list_rec_cons() {
+    let prims = test_prims();
+    let (env, _list_ind, nil, cons, rec) =
+      build_my_list_env(empty_env());
+
+    let alpha = ty();
+    let list_alpha = app(cst(&_list_ind), alpha.clone());
+    let motive = lam(list_alpha.clone(), ty());
+    let nil_case = nat_lit(0);
+    // cons_case : α → List α → motive tail → Nat
+    // Just returns 1 + recursive result (using nat succ)
+    let cons_case = lam(
+      alpha.clone(),
+      lam(list_alpha.clone(), lam(ty(), app(cst(&prims.nat_succ.as_ref().unwrap().addr), bv(0)))),
+    );
+
+    // Build: cons α elem (nil α)  — a single-element list
+    let elem = nat_lit(7);
+    let one_list = app(app(app(cst(&cons), alpha.clone()), elem), app(cst(&nil), alpha.clone()));
+
+    // rec α motive 0 cons_case (cons α 7 nil) should reduce:
+    //   cons_case 7 nil (rec α motive 0 cons_case nil)
+    //   = succ (rec α motive 0 cons_case nil)
+    //   = succ 0
+    //   = 1
+    let rec_one = app(
+      app(app(app(app(cst(&rec), alpha.clone()), motive), nil_case), cons_case),
+      one_list,
+    );
+    assert_eq!(whnf_quote(&env, &prims, &rec_one).unwrap(), nat_lit(1));
   }
 
   // -- K-reduction --
@@ -1364,7 +1597,7 @@ mod tests {
     let nat_base = nat_lit(0);
     let nat_step = lam(
       cst(&nat_ind),
-      lam(ty(), app(cst(prims.nat_succ.as_ref().unwrap()), bv(0))),
+      lam(ty(), app(cst(&prims.nat_succ.as_ref().unwrap().addr), bv(0))),
     );
     let nat_ax = mk_addr(125);
     let mut nat_env2 = nat_env.clone();
@@ -1503,7 +1736,7 @@ mod tests {
     let prims = test_prims();
     let env = empty_env();
     let add_expr = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), nat_lit(2)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(2)),
       nat_lit(3),
     );
     assert!(is_def_eq(&env, &prims, &add_expr, &nat_lit(5)).unwrap());
@@ -1517,24 +1750,24 @@ mod tests {
     let prims = test_prims();
     let env = empty_env();
     // Nat.succ 0 == 1
-    let succ0 = app(cst(prims.nat_succ.as_ref().unwrap()), nat_lit(0));
+    let succ0 = app(cst(&prims.nat_succ.as_ref().unwrap().addr), nat_lit(0));
     assert!(is_def_eq(&env, &prims, &succ0, &nat_lit(1)).unwrap());
     // Nat.zero == 0
     assert!(
       is_def_eq(
         &env,
         &prims,
-        &cst(prims.nat_zero.as_ref().unwrap()),
+        &cst(&prims.nat_zero.as_ref().unwrap().addr),
         &nat_lit(0)
       )
       .unwrap()
     );
     // succ(succ(zero)) == 2
     let succ_succ_zero = app(
-      cst(prims.nat_succ.as_ref().unwrap()),
+      cst(&prims.nat_succ.as_ref().unwrap().addr),
       app(
-        cst(prims.nat_succ.as_ref().unwrap()),
-        cst(prims.nat_zero.as_ref().unwrap()),
+        cst(&prims.nat_succ.as_ref().unwrap().addr),
+        cst(&prims.nat_zero.as_ref().unwrap().addr),
       ),
     );
     assert!(
@@ -1562,7 +1795,7 @@ mod tests {
     );
     // let x := 3 in let y := 4 in add x y == 7
     let add_xy = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), bv(1)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), bv(1)),
       bv(0),
     );
     let let_expr = let_e(ty(), nat_lit(3), let_e(ty(), nat_lit(4), add_xy));
@@ -1586,20 +1819,20 @@ mod tests {
     let prims = test_prims();
     let env = empty_env();
     let beq55 = app(
-      app(cst(prims.nat_beq.as_ref().unwrap()), nat_lit(5)),
+      app(cst(&prims.nat_beq.as_ref().unwrap().addr), nat_lit(5)),
       nat_lit(5),
     );
     assert!(
       is_def_eq(
         &env,
         &prims,
-        &cst(prims.bool_true.as_ref().unwrap()),
+        &cst(&prims.bool_true.as_ref().unwrap().addr),
         &beq55
       )
       .unwrap()
     );
     let beq56 = app(
-      app(cst(prims.nat_beq.as_ref().unwrap()), nat_lit(5)),
+      app(cst(&prims.nat_beq.as_ref().unwrap().addr), nat_lit(5)),
       nat_lit(6),
     );
     assert!(
@@ -1607,7 +1840,7 @@ mod tests {
         &env,
         &prims,
         &beq56,
-        &cst(prims.bool_true.as_ref().unwrap())
+        &cst(&prims.bool_true.as_ref().unwrap().addr)
       )
       .unwrap()
     );
@@ -1772,7 +2005,7 @@ mod tests {
       1,
       1,
       vec![KRecursorRule {
-        ctor: wrap_mk.clone(),
+        ctor: MetaId::from_addr(wrap_mk.clone()),
         nfields: 1,
         rhs: rule_rhs,
       }],
@@ -1783,7 +2016,7 @@ mod tests {
     let motive = lam(app(cst(&wrap_ind), ty()), ty());
     let minor = lam(
       ty(),
-      app(cst(prims.nat_succ.as_ref().unwrap()), bv(0)),
+      app(cst(&prims.nat_succ.as_ref().unwrap().addr), bv(0)),
     );
     let mk_expr = app(app(cst(&wrap_mk), ty()), nat_lit(5));
     let rec_ctor = app(
@@ -1871,7 +2104,7 @@ mod tests {
     // f = λx. succ x
     let f_expr = lam(
       ty(),
-      app(cst(prims.nat_succ.as_ref().unwrap()), bv(0)),
+      app(cst(&prims.nat_succ.as_ref().unwrap().addr), bv(0)),
     );
     let h_expr = lam(ty(), lam(ty(), lam(prop(), nat_lit(0))));
 
@@ -1923,19 +2156,19 @@ mod tests {
     // natLit 42 : Nat
     assert_eq!(
       infer_quote(&env, &prims, &nat_lit(42)).unwrap(),
-      cst(prims.nat.as_ref().unwrap())
+      cst(&prims.nat.as_ref().unwrap().addr)
     );
     // strLit "hi" : String
     assert_eq!(
       infer_quote(&env, &prims, &str_lit("hi")).unwrap(),
-      cst(prims.string.as_ref().unwrap())
+      cst(&prims.string.as_ref().unwrap().addr)
     );
   }
 
   #[test]
   fn infer_lambda() {
     let prims = test_prims();
-    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
     let mut env = empty_env();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
@@ -1950,7 +2183,7 @@ mod tests {
   #[test]
   fn infer_pi() {
     let prims = test_prims();
-    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
     let mut env = empty_env();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
@@ -1967,7 +2200,7 @@ mod tests {
   #[test]
   fn infer_app() {
     let prims = test_prims();
-    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
     let mut env = empty_env();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
@@ -1982,7 +2215,7 @@ mod tests {
   #[test]
   fn infer_let() {
     let prims = test_prims();
-    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
     let mut env = empty_env();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
@@ -2133,25 +2366,25 @@ mod tests {
     );
 
     // "" == String.mk (List.nil Char)
-    let char_type = cst(prims.char_type.as_ref().unwrap());
+    let char_type = cst(&prims.char_type.as_ref().unwrap().addr);
     let nil_char = app(
-      cst_l(prims.list_nil.as_ref().unwrap(), vec![KLevel::zero()]),
+      cst_l(&prims.list_nil.as_ref().unwrap().addr, vec![KLevel::zero()]),
       char_type.clone(),
     );
     let empty_str =
-      app(cst(prims.string_mk.as_ref().unwrap()), nil_char.clone());
+      app(cst(&prims.string_mk.as_ref().unwrap().addr), nil_char.clone());
     assert!(
       is_def_eq(&env, &prims, &str_lit(""), &empty_str).unwrap()
     );
 
     // "a" == String.mk (List.cons Char (Char.mk 97) nil)
     let char_a =
-      app(cst(prims.char_mk.as_ref().unwrap()), nat_lit(97));
+      app(cst(&prims.char_mk.as_ref().unwrap().addr), nat_lit(97));
     let cons_a = app(
       app(
         app(
           cst_l(
-            prims.list_cons.as_ref().unwrap(),
+            &prims.list_cons.as_ref().unwrap().addr,
             vec![KLevel::zero()],
           ),
           char_type,
@@ -2160,7 +2393,7 @@ mod tests {
       ),
       nil_char,
     );
-    let str_a = app(cst(prims.string_mk.as_ref().unwrap()), cons_a);
+    let str_a = app(cst(&prims.string_mk.as_ref().unwrap().addr), cons_a);
     assert!(is_def_eq(&env, &prims, &str_lit("a"), &str_a).unwrap());
   }
 
@@ -2293,20 +2526,20 @@ mod tests {
     let env = empty_env();
     // 2+3 == 3+2 (via reduction)
     let add23 = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), nat_lit(2)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(2)),
       nat_lit(3),
     );
     let add32 = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), nat_lit(3)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(3)),
       nat_lit(2),
     );
     assert!(is_def_eq(&env, &prims, &add23, &add32).unwrap());
     // 2*3 + 1 == 7
     let expr1 = app(
       app(
-        cst(prims.nat_add.as_ref().unwrap()),
+        cst(&prims.nat_add.as_ref().unwrap().addr),
         app(
-          app(cst(prims.nat_mul.as_ref().unwrap()), nat_lit(2)),
+          app(cst(&prims.nat_mul.as_ref().unwrap().addr), nat_lit(2)),
           nat_lit(3),
         ),
       ),
@@ -2404,7 +2637,7 @@ mod tests {
         &env,
         &prims,
         &nat_lit(0),
-        &cst(prims.nat_zero.as_ref().unwrap())
+        &cst(&prims.nat_zero.as_ref().unwrap().addr)
       )
       .unwrap()
     );
@@ -2413,31 +2646,31 @@ mod tests {
       is_def_eq(
         &env,
         &prims,
-        &cst(prims.nat_zero.as_ref().unwrap()),
+        &cst(&prims.nat_zero.as_ref().unwrap().addr),
         &nat_lit(0)
       )
       .unwrap()
     );
     // 1 == succ zero
     let succ_zero = app(
-      cst(prims.nat_succ.as_ref().unwrap()),
-      cst(prims.nat_zero.as_ref().unwrap()),
+      cst(&prims.nat_succ.as_ref().unwrap().addr),
+      cst(&prims.nat_zero.as_ref().unwrap().addr),
     );
     assert!(
       is_def_eq(&env, &prims, &nat_lit(1), &succ_zero).unwrap()
     );
     // 5 == succ^5 zero
     let succ5 = app(
-      cst(prims.nat_succ.as_ref().unwrap()),
+      cst(&prims.nat_succ.as_ref().unwrap().addr),
       app(
-        cst(prims.nat_succ.as_ref().unwrap()),
+        cst(&prims.nat_succ.as_ref().unwrap().addr),
         app(
-          cst(prims.nat_succ.as_ref().unwrap()),
+          cst(&prims.nat_succ.as_ref().unwrap().addr),
           app(
-            cst(prims.nat_succ.as_ref().unwrap()),
+            cst(&prims.nat_succ.as_ref().unwrap().addr),
             app(
-              cst(prims.nat_succ.as_ref().unwrap()),
-              cst(prims.nat_zero.as_ref().unwrap()),
+              cst(&prims.nat_succ.as_ref().unwrap().addr),
+              cst(&prims.nat_zero.as_ref().unwrap().addr),
             ),
           ),
         ),
@@ -2446,14 +2679,14 @@ mod tests {
     assert!(is_def_eq(&env, &prims, &nat_lit(5), &succ5).unwrap());
     // 5 != succ^4 zero
     let succ4 = app(
-      cst(prims.nat_succ.as_ref().unwrap()),
+      cst(&prims.nat_succ.as_ref().unwrap().addr),
       app(
-        cst(prims.nat_succ.as_ref().unwrap()),
+        cst(&prims.nat_succ.as_ref().unwrap().addr),
         app(
-          cst(prims.nat_succ.as_ref().unwrap()),
+          cst(&prims.nat_succ.as_ref().unwrap().addr),
           app(
-            cst(prims.nat_succ.as_ref().unwrap()),
-            cst(prims.nat_zero.as_ref().unwrap()),
+            cst(&prims.nat_succ.as_ref().unwrap().addr),
+            cst(&prims.nat_zero.as_ref().unwrap().addr),
           ),
         ),
       ),
@@ -2562,8 +2795,8 @@ mod tests {
     let mut prims = test_prims();
     let rb_addr = mk_addr(44);
     let rn_addr = mk_addr(45);
-    prims.reduce_bool = Some(rb_addr.clone());
-    prims.reduce_nat = Some(rn_addr.clone());
+    prims.reduce_bool = Some(MetaId::from_addr(rb_addr.clone()));
+    prims.reduce_nat = Some(MetaId::from_addr(rn_addr.clone()));
 
     let true_def = mk_addr(46);
     let false_def = mk_addr(47);
@@ -2572,16 +2805,16 @@ mod tests {
     add_def(
       &mut env,
       &true_def,
-      cst(prims.bool_type.as_ref().unwrap()),
-      cst(prims.bool_true.as_ref().unwrap()),
+      cst(&prims.bool_type.as_ref().unwrap().addr),
+      cst(&prims.bool_true.as_ref().unwrap().addr),
       0,
       ReducibilityHints::Abbrev,
     );
     add_def(
       &mut env,
       &false_def,
-      cst(prims.bool_type.as_ref().unwrap()),
-      cst(prims.bool_false.as_ref().unwrap()),
+      cst(&prims.bool_type.as_ref().unwrap().addr),
+      cst(&prims.bool_false.as_ref().unwrap().addr),
       0,
       ReducibilityHints::Abbrev,
     );
@@ -2598,14 +2831,14 @@ mod tests {
     let rb_true = app(cst(&rb_addr), cst(&true_def));
     assert_eq!(
       whnf_quote(&env, &prims, &rb_true).unwrap(),
-      cst(prims.bool_true.as_ref().unwrap())
+      cst(&prims.bool_true.as_ref().unwrap().addr)
     );
 
     // reduceBool falseDef → Bool.false
     let rb_false = app(cst(&rb_addr), cst(&false_def));
     assert_eq!(
       whnf_quote(&env, &prims, &rb_false).unwrap(),
-      cst(prims.bool_false.as_ref().unwrap())
+      cst(&prims.bool_false.as_ref().unwrap().addr)
     );
 
     // reduceNat natDef → 42
@@ -2628,7 +2861,7 @@ mod tests {
     let base = nat_lit(0);
     let step = lam(
       nat_const.clone(),
-      lam(ty(), app(cst(prims.nat_succ.as_ref().unwrap()), bv(0))),
+      lam(ty(), app(cst(&prims.nat_succ.as_ref().unwrap().addr), bv(0))),
     );
 
     // natLit as major on non-Nat rec stays stuck
@@ -2797,7 +3030,7 @@ mod tests {
   #[test]
   fn errors_extended() {
     let prims = test_prims();
-    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
     let mut env = empty_env();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
@@ -2879,7 +3112,7 @@ mod tests {
     assert!(whnf_quote(&env, &prims, &add_app).is_ok());
 
     // typecheck the constant
-    let result = typecheck_const(&env, &prims, &add_addr, false);
+    let result = typecheck_const(&env, &prims, &MetaId::from_addr(add_addr.clone()), false);
     assert!(
       result.is_ok(),
       "myAdd typecheck failed: {:?}",
@@ -2988,11 +3221,11 @@ mod tests {
     add_axiom(&mut env, &x, cst(&nat_ind));
     add_axiom(&mut env, &y, cst(&nat_ind));
     // Nat.succ(x) == Nat.succ(x)
-    let sx = app(cst(prims.nat_succ.as_ref().unwrap()), cst(&x));
-    let sx2 = app(cst(prims.nat_succ.as_ref().unwrap()), cst(&x));
+    let sx = app(cst(&prims.nat_succ.as_ref().unwrap().addr), cst(&x));
+    let sx2 = app(cst(&prims.nat_succ.as_ref().unwrap().addr), cst(&x));
     assert!(is_def_eq(&env, &prims, &sx, &sx2).unwrap());
     // Nat.succ(x) != Nat.succ(y)
-    let sy = app(cst(prims.nat_succ.as_ref().unwrap()), cst(&y));
+    let sy = app(cst(&prims.nat_succ.as_ref().unwrap().addr), cst(&y));
     assert!(!is_def_eq(&env, &prims, &sx, &sy).unwrap());
   }
 
@@ -3202,10 +3435,10 @@ mod tests {
   fn string_lit_multichar() {
     let prims = test_prims();
     let env = empty_env();
-    let char_type = cst(prims.char_type.as_ref().unwrap());
-    let mk_char = |n: u64| app(cst(prims.char_mk.as_ref().unwrap()), nat_lit(n));
+    let char_type = cst(&prims.char_type.as_ref().unwrap().addr);
+    let mk_char = |n: u64| app(cst(&prims.char_mk.as_ref().unwrap().addr), nat_lit(n));
     let nil = app(
-      cst_l(prims.list_nil.as_ref().unwrap(), vec![KLevel::zero()]),
+      cst_l(&prims.list_nil.as_ref().unwrap().addr, vec![KLevel::zero()]),
       char_type.clone(),
     );
     // Build "ab" as String.mk [Char.mk 97, Char.mk 98]
@@ -3213,7 +3446,7 @@ mod tests {
       app(
         app(
           app(
-            cst_l(prims.list_cons.as_ref().unwrap(), vec![KLevel::zero()]),
+            cst_l(&prims.list_cons.as_ref().unwrap().addr, vec![KLevel::zero()]),
             char_type.clone(),
           ),
           hd,
@@ -3222,7 +3455,7 @@ mod tests {
       )
     };
     let list_ab = cons(mk_char(97), cons(mk_char(98), nil));
-    let str_ab = app(cst(prims.string_mk.as_ref().unwrap()), list_ab);
+    let str_ab = app(cst(&prims.string_mk.as_ref().unwrap().addr), list_ab);
     assert!(is_def_eq(&env, &prims, &str_lit("ab"), &str_ab).unwrap());
   }
 
@@ -3234,7 +3467,7 @@ mod tests {
   fn eta_axiom_fun() {
     let prims = test_prims();
     let f_addr = mk_addr(330);
-    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
     let mut env = empty_env();
     add_axiom(&mut env, &nat_addr, ty());
     add_axiom(&mut env, &f_addr, pi(cst(&nat_addr), cst(&nat_addr)));
@@ -3248,7 +3481,7 @@ mod tests {
   fn eta_nested_axiom() {
     let prims = test_prims();
     let f_addr = mk_addr(331);
-    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
     let mut env = empty_env();
     add_axiom(&mut env, &nat_addr, ty());
     let nat = cst(&nat_addr);
@@ -3265,7 +3498,7 @@ mod tests {
   /// Helper: run `check` on a term against an expected type.
   fn check_expr(
     env: &KEnv<Meta>,
-    prims: &Primitives,
+    prims: &Primitives<Meta>,
     term: &KExpr<Meta>,
     expected_type: &KExpr<Meta>,
   ) -> Result<(), String> {
@@ -3278,7 +3511,7 @@ mod tests {
   #[test]
   fn check_lam_against_pi() {
     let prims = test_prims();
-    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
     let mut env = empty_env();
     add_axiom(&mut env, &nat_addr, ty());
     let nat = cst(&nat_addr);
@@ -3291,8 +3524,8 @@ mod tests {
   #[test]
   fn check_domain_mismatch() {
     let prims = test_prims();
-    let nat_addr = prims.nat.as_ref().unwrap().clone();
-    let bool_addr = prims.bool_type.as_ref().unwrap().clone();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
+    let bool_addr = prims.bool_type.as_ref().unwrap().addr.clone();
     let mut env = empty_env();
     add_axiom(&mut env, &nat_addr, ty());
     add_axiom(&mut env, &bool_addr, ty());
@@ -3377,13 +3610,13 @@ mod tests {
     let env = empty_env();
     // Nat.add 2 3 → 5 via primitive reduction
     let add_expr = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), nat_lit(2)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(2)),
       nat_lit(3),
     );
     assert_eq!(whnf_quote(&env, &prims, &add_expr).unwrap(), nat_lit(5));
     // Nat.mul 4 5 → 20
     let mul_expr = app(
-      app(cst(prims.nat_mul.as_ref().unwrap()), nat_lit(4)),
+      app(cst(&prims.nat_mul.as_ref().unwrap().addr), nat_lit(4)),
       nat_lit(5),
     );
     assert_eq!(whnf_quote(&env, &prims, &mul_expr).unwrap(), nat_lit(20));
@@ -3393,13 +3626,13 @@ mod tests {
   fn whnf_nat_prim_symbolic_stays_stuck() {
     let prims = test_prims();
     let x = mk_addr(332);
-    let nat_addr = prims.nat.as_ref().unwrap().clone();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
     let mut env = empty_env();
     add_axiom(&mut env, &nat_addr, ty());
     add_axiom(&mut env, &x, cst(&nat_addr));
     // Nat.add x 3 stays stuck (x is symbolic)
     let add_sym = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), cst(&x)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), cst(&x)),
       nat_lit(3),
     );
     let result = whnf_quote(&env, &prims, &add_sym).unwrap();
@@ -3544,7 +3777,7 @@ mod tests {
     let env = empty_env();
     // (let x := 5 in x + x) == 10
     let add_xx = app(
-      app(cst(prims.nat_add.as_ref().unwrap()), bv(0)),
+      app(cst(&prims.nat_add.as_ref().unwrap().addr), bv(0)),
       bv(0),
     );
     let let_expr = let_e(ty(), nat_lit(5), add_xx);
@@ -3559,7 +3792,7 @@ mod tests {
     let inner = let_e(
       ty(),
       nat_lit(3),
-      app(app(cst(prims.nat_add.as_ref().unwrap()), bv(1)), bv(0)),
+      app(app(cst(&prims.nat_add.as_ref().unwrap().addr), bv(1)), bv(0)),
     );
     let outer = let_e(ty(), nat_lit(2), inner);
     assert!(is_def_eq(&env, &prims, &outer, &nat_lit(5)).unwrap());
@@ -3588,5 +3821,873 @@ mod tests {
     // Sort (succ (succ 0)) == Sort 2
     assert!(is_def_eq(&env, &prims, &srt(2), &srt(2)).unwrap());
     assert!(!is_def_eq(&env, &prims, &srt(2), &srt(3)).unwrap());
+  }
+
+  // ==========================================================================
+  // Declaration-level checking, level arithmetic, and parity cleanup tests
+  // ==========================================================================
+
+  fn assert_typecheck_ok(env: &KEnv<Meta>, prims: &Primitives<Meta>, addr: &Address) {
+    use crate::ix::kernel::check::typecheck_const;
+    let result = typecheck_const(env, prims, &MetaId::from_addr(addr.clone()), false);
+    assert!(result.is_ok(), "typecheck failed: {:?}", result.err());
+  }
+
+  fn assert_typecheck_err(env: &KEnv<Meta>, prims: &Primitives<Meta>, addr: &Address) {
+    use crate::ix::kernel::check::typecheck_const;
+    let result = typecheck_const(env, prims, &MetaId::from_addr(addr.clone()), false);
+    assert!(result.is_err(), "expected typecheck error but got Ok");
+  }
+
+  // -- Phase 1B: Positive tests --
+
+  #[test]
+  fn check_mynat_ind_typechecks() {
+    let prims = test_prims();
+    let (env, nat_ind, zero, succ, rec) = build_my_nat_env(empty_env());
+    assert_typecheck_ok(&env, &prims, &nat_ind);
+    assert_typecheck_ok(&env, &prims, &zero);
+    assert_typecheck_ok(&env, &prims, &succ);
+    assert_typecheck_ok(&env, &prims, &rec);
+  }
+
+  #[test]
+  fn check_mytrue_ind_typechecks() {
+    let prims = test_prims();
+    let (env, true_ind, intro, rec) = build_my_true_env(empty_env());
+    assert_typecheck_ok(&env, &prims, &true_ind);
+    assert_typecheck_ok(&env, &prims, &intro);
+    assert_typecheck_ok(&env, &prims, &rec);
+  }
+
+  #[test]
+  fn check_pair_ind_typechecks() {
+    let prims = test_prims();
+    let (env, pair_ind, pair_ctor) = build_pair_env(empty_env());
+    assert_typecheck_ok(&env, &prims, &pair_ind);
+    assert_typecheck_ok(&env, &prims, &pair_ctor);
+  }
+
+  #[test]
+  fn check_axiom_typechecks() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let ax_addr = mk_addr(500);
+    add_axiom(&mut env, &ax_addr, ty());
+    assert_typecheck_ok(&env, &prims, &ax_addr);
+  }
+
+  #[test]
+  fn check_opaque_typechecks() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let op_addr = mk_addr(501);
+    add_opaque(&mut env, &op_addr, srt(2), ty());
+    assert_typecheck_ok(&env, &prims, &op_addr);
+  }
+
+  #[test]
+  fn check_theorem_typechecks() {
+    let prims = test_prims();
+    let (mut env, true_ind, intro, _rec) = build_my_true_env(empty_env());
+    let thm_addr = mk_addr(502);
+    add_theorem(&mut env, &thm_addr, cst(&true_ind), cst(&intro));
+    assert_typecheck_ok(&env, &prims, &thm_addr);
+  }
+
+  #[test]
+  fn check_definition_typechecks() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let def_addr = mk_addr(503);
+    add_def(&mut env, &def_addr, srt(2), ty(), 0, ReducibilityHints::Abbrev);
+    assert_typecheck_ok(&env, &prims, &def_addr);
+  }
+
+  // -- Phase 1C: Constructor validation negatives --
+
+  #[test]
+  fn check_ctor_param_count_mismatch() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let nat_ind = mk_addr(510);
+    let zero_addr = mk_addr(511);
+    // MyNat : Type
+    add_inductive(
+      &mut env, &nat_ind, ty(),
+      vec![zero_addr.clone()], 0, 0, false, 0,
+      vec![nat_ind.clone()],
+    );
+    // Constructor claims numParams=1 but inductive has numParams=0
+    add_ctor(&mut env, &zero_addr, &nat_ind, cst(&nat_ind), 0, 1, 0, 0);
+    assert_typecheck_err(&env, &prims, &nat_ind);
+  }
+
+  #[test]
+  fn check_ctor_return_type_not_inductive() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let my_ind = mk_addr(515);
+    let my_ctor = mk_addr(516);
+    let bogus = mk_addr(517);
+    add_inductive(
+      &mut env, &my_ind, ty(),
+      vec![my_ctor.clone()], 0, 0, false, 0,
+      vec![my_ind.clone()],
+    );
+    add_axiom(&mut env, &bogus, ty());
+    // Constructor returns bogus instead of my_ind
+    add_ctor(&mut env, &my_ctor, &my_ind, cst(&bogus), 0, 0, 0, 0);
+    assert_typecheck_err(&env, &prims, &my_ind);
+  }
+
+  // -- Phase 1D: Strict positivity --
+
+  #[test]
+  fn positivity_ok_no_occurrence() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let t_ind = mk_addr(520);
+    let t_mk = mk_addr(521);
+    let nat_addr = mk_addr(522);
+    add_axiom(&mut env, &nat_addr, ty()); // Nat : Type
+    add_inductive(
+      &mut env, &t_ind, ty(),
+      vec![t_mk.clone()], 0, 0, false, 0,
+      vec![t_ind.clone()],
+    );
+    // mk : Nat → T
+    add_ctor(&mut env, &t_mk, &t_ind, pi(cst(&nat_addr), cst(&t_ind)), 0, 0, 1, 0);
+    assert_typecheck_ok(&env, &prims, &t_ind);
+  }
+
+  #[test]
+  fn positivity_ok_direct() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let t_ind = mk_addr(525);
+    let t_mk = mk_addr(526);
+    add_inductive(
+      &mut env, &t_ind, ty(),
+      vec![t_mk.clone()], 0, 0, true, 0,
+      vec![t_ind.clone()],
+    );
+    // mk : T → T (direct positive)
+    add_ctor(&mut env, &t_mk, &t_ind, pi(cst(&t_ind), cst(&t_ind)), 0, 0, 1, 0);
+    assert_typecheck_ok(&env, &prims, &t_ind);
+  }
+
+  #[test]
+  fn positivity_violation_negative() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let t_ind = mk_addr(530);
+    let t_mk = mk_addr(531);
+    let nat_addr = mk_addr(532);
+    add_axiom(&mut env, &nat_addr, ty());
+    add_inductive(
+      &mut env, &t_ind, ty(),
+      vec![t_mk.clone()], 0, 0, true, 0,
+      vec![t_ind.clone()],
+    );
+    // mk : (T → Nat) → T  -- T in negative position
+    let field_type = pi(pi(cst(&t_ind), cst(&nat_addr)), cst(&t_ind));
+    add_ctor(&mut env, &t_mk, &t_ind, field_type, 0, 0, 1, 0);
+    assert_typecheck_err(&env, &prims, &t_ind);
+  }
+
+  #[test]
+  fn positivity_ok_covariant() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let t_ind = mk_addr(535);
+    let t_mk = mk_addr(536);
+    let nat_addr = mk_addr(537);
+    add_axiom(&mut env, &nat_addr, ty());
+    add_inductive(
+      &mut env, &t_ind, ty(),
+      vec![t_mk.clone()], 0, 0, true, 0,
+      vec![t_ind.clone()],
+    );
+    // mk : (Nat → T) → T  -- T only in codomain (covariant)
+    let field_type = pi(pi(cst(&nat_addr), cst(&t_ind)), cst(&t_ind));
+    add_ctor(&mut env, &t_mk, &t_ind, field_type, 0, 0, 1, 0);
+    assert_typecheck_ok(&env, &prims, &t_ind);
+  }
+
+  // -- Phase 1E: K-flag validation --
+
+  #[test]
+  fn k_flag_ok() {
+    // Build a MyTrue-like inductive with properly annotated recursor RHS
+    let prims = test_prims();
+    let mut env = empty_env();
+    let true_ind = mk_addr(538);
+    let intro = mk_addr(539);
+    let rec = mk_addr(5390);
+    let true_const = cst(&true_ind);
+
+    add_inductive(
+      &mut env, &true_ind, prop(),
+      vec![intro.clone()], 0, 0, false, 0,
+      vec![true_ind.clone()],
+    );
+    add_ctor(&mut env, &intro, &true_ind, true_const.clone(), 0, 0, 0, 0);
+
+    // rec : (motive : MyTrue → Prop) → motive intro → (t : MyTrue) → motive t
+    let rec_type = pi(
+      pi(true_const.clone(), prop()),
+      pi(
+        app(bv(0), cst(&intro)),
+        pi(true_const.clone(), app(bv(2), bv(0))),
+      ),
+    );
+    // RHS: λ (motive : MyTrue → Prop) (h : motive intro) => h
+    let rule_rhs = lam(
+      pi(true_const.clone(), prop()),
+      lam(app(bv(0), cst(&intro)), bv(0)),
+    );
+
+    add_rec(
+      &mut env, &rec, 0, rec_type,
+      vec![true_ind.clone()], 0, 0, 1, 1,
+      vec![KRecursorRule { ctor: MetaId::from_addr(intro.clone()), nfields: 0, rhs: rule_rhs }],
+      true,
+    );
+    assert_typecheck_ok(&env, &prims, &rec);
+  }
+
+  #[test]
+  fn k_flag_fail_not_prop() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let t_ind = mk_addr(540);
+    let t_mk = mk_addr(541);
+    let t_rec = mk_addr(542);
+    // T : Type (not Prop)
+    add_inductive(
+      &mut env, &t_ind, ty(),
+      vec![t_mk.clone()], 0, 0, false, 0,
+      vec![t_ind.clone()],
+    );
+    add_ctor(&mut env, &t_mk, &t_ind, cst(&t_ind), 0, 0, 0, 0);
+    // Recursor with K=true on Type-level inductive
+    let rec_type = pi(
+      pi(cst(&t_ind), prop()),
+      pi(
+        app(bv(0), cst(&t_mk)),
+        pi(cst(&t_ind), app(bv(2), bv(0))),
+      ),
+    );
+    let rule_rhs = lam(pi(cst(&t_ind), prop()), lam(prop(), bv(0)));
+    add_rec(
+      &mut env, &t_rec, 0, rec_type,
+      vec![t_ind.clone()], 0, 0, 1, 1,
+      vec![KRecursorRule { ctor: MetaId::from_addr(t_mk.clone()), nfields: 0, rhs: rule_rhs }],
+      true,
+    );
+    assert_typecheck_err(&env, &prims, &t_rec);
+  }
+
+  #[test]
+  fn k_flag_fail_multiple_ctors() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let p_ind = mk_addr(545);
+    let p_mk1 = mk_addr(546);
+    let p_mk2 = mk_addr(547);
+    let p_rec = mk_addr(548);
+    add_inductive(
+      &mut env, &p_ind, prop(),
+      vec![p_mk1.clone(), p_mk2.clone()], 0, 0, false, 0,
+      vec![p_ind.clone()],
+    );
+    add_ctor(&mut env, &p_mk1, &p_ind, cst(&p_ind), 0, 0, 0, 0);
+    add_ctor(&mut env, &p_mk2, &p_ind, cst(&p_ind), 1, 0, 0, 0);
+    // Recursor with K=true but 2 ctors
+    let rec_type = pi(
+      pi(cst(&p_ind), prop()),
+      pi(
+        app(bv(0), cst(&p_mk1)),
+        pi(
+          app(bv(1), cst(&p_mk2)),
+          pi(cst(&p_ind), app(bv(3), bv(0))),
+        ),
+      ),
+    );
+    let rhs1 = lam(pi(cst(&p_ind), prop()), lam(prop(), lam(prop(), bv(1))));
+    let rhs2 = lam(pi(cst(&p_ind), prop()), lam(prop(), lam(prop(), bv(0))));
+    add_rec(
+      &mut env, &p_rec, 0, rec_type,
+      vec![p_ind.clone()], 0, 0, 1, 2,
+      vec![
+        KRecursorRule { ctor: MetaId::from_addr(p_mk1.clone()), nfields: 0, rhs: rhs1 },
+        KRecursorRule { ctor: MetaId::from_addr(p_mk2.clone()), nfields: 0, rhs: rhs2 },
+      ],
+      true,
+    );
+    assert_typecheck_err(&env, &prims, &p_rec);
+  }
+
+  #[test]
+  fn k_flag_fail_has_fields() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let p_ind = mk_addr(550);
+    let p_mk = mk_addr(551);
+    let p_rec = mk_addr(552);
+    // P : Prop, mk : P → P (1 field)
+    add_inductive(
+      &mut env, &p_ind, prop(),
+      vec![p_mk.clone()], 0, 0, true, 0,
+      vec![p_ind.clone()],
+    );
+    add_ctor(&mut env, &p_mk, &p_ind, pi(cst(&p_ind), cst(&p_ind)), 0, 0, 1, 0);
+    // Recursor with K=true but ctor has fields
+    let rec_type = pi(
+      pi(cst(&p_ind), prop()),
+      pi(
+        pi(cst(&p_ind), pi(app(bv(1), bv(0)), app(bv(2), app(cst(&p_mk), bv(1))))),
+        pi(cst(&p_ind), app(bv(2), bv(0))),
+      ),
+    );
+    let rule_rhs = lam(
+      pi(cst(&p_ind), prop()),
+      lam(
+        pi(cst(&p_ind), pi(prop(), prop())),
+        lam(cst(&p_ind), app(app(bv(1), bv(0)), app(bv(2), bv(0)))),
+      ),
+    );
+    add_rec(
+      &mut env, &p_rec, 0, rec_type,
+      vec![p_ind.clone()], 0, 0, 1, 1,
+      vec![KRecursorRule { ctor: MetaId::from_addr(p_mk.clone()), nfields: 1, rhs: rule_rhs }],
+      true,
+    );
+    assert_typecheck_err(&env, &prims, &p_rec);
+  }
+
+  // -- Phase 1F: Recursor validation --
+
+  #[test]
+  fn rec_rules_count_mismatch() {
+    let prims = test_prims();
+    let (mut env, nat_ind, zero, _succ, _rec) = build_my_nat_env(empty_env());
+    let bad_rec = mk_addr(560);
+    // Recursor with 1 rule but MyNat has 2 ctors
+    let rec_type = pi(
+      pi(cst(&nat_ind), srt(1)),
+      pi(
+        app(bv(0), cst(&zero)),
+        pi(cst(&nat_ind), app(bv(2), bv(0))),
+      ),
+    );
+    let rule_rhs = lam(pi(cst(&nat_ind), srt(1)), lam(srt(1), bv(0)));
+    add_rec(
+      &mut env, &bad_rec, 0, rec_type,
+      vec![nat_ind.clone()], 0, 0, 1, 1,
+      vec![KRecursorRule { ctor: MetaId::from_addr(zero.clone()), nfields: 0, rhs: rule_rhs }],
+      false,
+    );
+    assert_typecheck_err(&env, &prims, &bad_rec);
+  }
+
+  #[test]
+  fn rec_rules_nfields_mismatch() {
+    let prims = test_prims();
+    let (mut env, nat_ind, zero, succ, _rec) = build_my_nat_env(empty_env());
+    let bad_rec = mk_addr(565);
+    let rec_type = pi(
+      pi(cst(&nat_ind), srt(1)),
+      pi(
+        app(bv(0), cst(&zero)),
+        pi(
+          pi(
+            cst(&nat_ind),
+            pi(app(bv(2), bv(0)), app(bv(3), app(cst(&succ), bv(1)))),
+          ),
+          pi(cst(&nat_ind), app(bv(3), bv(0))),
+        ),
+      ),
+    );
+    let zero_rhs = lam(
+      pi(cst(&nat_ind), srt(1)),
+      lam(srt(1), lam(pi(cst(&nat_ind), pi(srt(1), srt(1))), bv(1))),
+    );
+    // succ rule claims nfields=0 instead of 1
+    let succ_rhs = lam(
+      pi(cst(&nat_ind), srt(1)),
+      lam(srt(1), lam(pi(cst(&nat_ind), pi(srt(1), srt(1))), bv(0))),
+    );
+    add_rec(
+      &mut env, &bad_rec, 0, rec_type,
+      vec![nat_ind.clone()], 0, 0, 1, 2,
+      vec![
+        KRecursorRule { ctor: MetaId::from_addr(zero.clone()), nfields: 0, rhs: zero_rhs },
+        KRecursorRule { ctor: MetaId::from_addr(succ.clone()), nfields: 0, rhs: succ_rhs },
+      ],
+      false,
+    );
+    assert_typecheck_err(&env, &prims, &bad_rec);
+  }
+
+  // -- Phase 1G: Elimination level --
+
+  #[test]
+  fn elim_level_type_large_ok() {
+    // Build a MyNat-like inductive with properly annotated recursor RHS
+    let prims = test_prims();
+    let mut env = empty_env();
+    let nat_ind = mk_addr(5600);
+    let zero = mk_addr(5601);
+    let succ = mk_addr(5602);
+    let rec = mk_addr(5603);
+    let nat_const = cst(&nat_ind);
+
+    add_inductive(
+      &mut env, &nat_ind, ty(),
+      vec![zero.clone(), succ.clone()], 0, 0, false, 0,
+      vec![nat_ind.clone()],
+    );
+    add_ctor(&mut env, &zero, &nat_ind, nat_const.clone(), 0, 0, 0, 0);
+    add_ctor(&mut env, &succ, &nat_ind, pi(nat_const.clone(), nat_const.clone()), 1, 0, 1, 0);
+
+    // rec : (motive : MyNat → Type) → motive zero → ((n:MyNat) → motive n → motive (succ n)) → (t:MyNat) → motive t
+    let rec_type = pi(
+      pi(nat_const.clone(), ty()),
+      pi(
+        app(bv(0), cst(&zero)),
+        pi(
+          pi(nat_const.clone(), pi(app(bv(2), bv(0)), app(bv(3), app(cst(&succ), bv(1))))),
+          pi(nat_const.clone(), app(bv(3), bv(0))),
+        ),
+      ),
+    );
+
+    // Rule for zero: nfields=0
+    // Expected type: (motive : MyNat → Type) → motive zero → ((n:MyNat) → motive n → motive (succ n)) → motive zero
+    // RHS: λ (motive : MyNat → Type) (base : motive zero) (step : ...) => base
+    let zero_rhs = lam(
+      pi(nat_const.clone(), ty()),
+      lam(
+        app(bv(0), cst(&zero)),
+        lam(
+          pi(nat_const.clone(), pi(app(bv(2), bv(0)), app(bv(3), app(cst(&succ), bv(1))))),
+          bv(1),
+        ),
+      ),
+    );
+    // Rule for succ: nfields=1
+    // Expected type: (motive : MyNat → Type) → motive zero → ((n:MyNat) → motive n → motive (succ n)) → (n:MyNat) → motive (succ n)
+    // RHS: λ (motive : ...) (base : ...) (step : ...) (n : MyNat) => step n (rec motive base step n)
+    let succ_rhs = lam(
+      pi(nat_const.clone(), ty()),
+      lam(
+        app(bv(0), cst(&zero)),
+        lam(
+          pi(nat_const.clone(), pi(app(bv(2), bv(0)), app(bv(3), app(cst(&succ), bv(1))))),
+          lam(
+            nat_const.clone(),
+            app(
+              app(bv(1), bv(0)),
+              app(app(app(app(cst(&rec), bv(3)), bv(2)), bv(1)), bv(0)),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    add_rec(
+      &mut env, &rec, 0, rec_type,
+      vec![nat_ind.clone()], 0, 0, 1, 2,
+      vec![
+        KRecursorRule { ctor: MetaId::from_addr(zero.clone()), nfields: 0, rhs: zero_rhs },
+        KRecursorRule { ctor: MetaId::from_addr(succ.clone()), nfields: 1, rhs: succ_rhs },
+      ],
+      false,
+    );
+    assert_typecheck_ok(&env, &prims, &rec);
+  }
+
+  #[test]
+  fn elim_level_prop_to_prop_ok() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let p_ind = mk_addr(570);
+    let p_mk1 = mk_addr(571);
+    let p_mk2 = mk_addr(572);
+    let p_rec = mk_addr(573);
+    add_inductive(
+      &mut env, &p_ind, prop(),
+      vec![p_mk1.clone(), p_mk2.clone()], 0, 0, false, 0,
+      vec![p_ind.clone()],
+    );
+    add_ctor(&mut env, &p_mk1, &p_ind, cst(&p_ind), 0, 0, 0, 0);
+    add_ctor(&mut env, &p_mk2, &p_ind, cst(&p_ind), 1, 0, 0, 0);
+    // Recursor to Prop only
+    let rec_type = pi(
+      pi(cst(&p_ind), prop()),
+      pi(
+        app(bv(0), cst(&p_mk1)),
+        pi(
+          app(bv(1), cst(&p_mk2)),
+          pi(cst(&p_ind), app(bv(3), bv(0))),
+        ),
+      ),
+    );
+    // RHS with properly annotated lambda domains
+    // rhs1: λ (motive : P → Prop) (h1 : motive mk1) (h2 : motive mk2) => h1
+    let rhs1 = lam(
+      pi(cst(&p_ind), prop()),
+      lam(app(bv(0), cst(&p_mk1)),
+        lam(app(bv(1), cst(&p_mk2)), bv(1))),
+    );
+    // rhs2: λ (motive : P → Prop) (h1 : motive mk1) (h2 : motive mk2) => h2
+    let rhs2 = lam(
+      pi(cst(&p_ind), prop()),
+      lam(app(bv(0), cst(&p_mk1)),
+        lam(app(bv(1), cst(&p_mk2)), bv(0))),
+    );
+    add_rec(
+      &mut env, &p_rec, 0, rec_type,
+      vec![p_ind.clone()], 0, 0, 1, 2,
+      vec![
+        KRecursorRule { ctor: MetaId::from_addr(p_mk1.clone()), nfields: 0, rhs: rhs1 },
+        KRecursorRule { ctor: MetaId::from_addr(p_mk2.clone()), nfields: 0, rhs: rhs2 },
+      ],
+      false,
+    );
+    assert_typecheck_ok(&env, &prims, &p_rec);
+  }
+
+  #[test]
+  fn elim_level_large_from_prop_multi_ctor_fail() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let p_ind = mk_addr(575);
+    let p_mk1 = mk_addr(576);
+    let p_mk2 = mk_addr(577);
+    let p_rec = mk_addr(578);
+    add_inductive(
+      &mut env, &p_ind, prop(),
+      vec![p_mk1.clone(), p_mk2.clone()], 0, 0, false, 0,
+      vec![p_ind.clone()],
+    );
+    add_ctor(&mut env, &p_mk1, &p_ind, cst(&p_ind), 0, 0, 0, 0);
+    add_ctor(&mut env, &p_mk2, &p_ind, cst(&p_ind), 1, 0, 0, 0);
+    // Recursor claims large elimination (motive : P → Type)
+    let rec_type = pi(
+      pi(cst(&p_ind), srt(1)),
+      pi(
+        app(bv(0), cst(&p_mk1)),
+        pi(
+          app(bv(1), cst(&p_mk2)),
+          pi(cst(&p_ind), app(bv(3), bv(0))),
+        ),
+      ),
+    );
+    let rhs1 = lam(pi(cst(&p_ind), srt(1)), lam(srt(1), lam(srt(1), bv(1))));
+    let rhs2 = lam(pi(cst(&p_ind), srt(1)), lam(srt(1), lam(srt(1), bv(0))));
+    add_rec(
+      &mut env, &p_rec, 0, rec_type,
+      vec![p_ind.clone()], 0, 0, 1, 2,
+      vec![
+        KRecursorRule { ctor: MetaId::from_addr(p_mk1.clone()), nfields: 0, rhs: rhs1 },
+        KRecursorRule { ctor: MetaId::from_addr(p_mk2.clone()), nfields: 0, rhs: rhs2 },
+      ],
+      false,
+    );
+    assert_typecheck_err(&env, &prims, &p_rec);
+  }
+
+  // -- Phase 1H: Theorem validation --
+
+  #[test]
+  fn check_theorem_not_in_prop() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    let thm_addr = mk_addr(580);
+    add_theorem(&mut env, &thm_addr, ty(), srt(0));
+    assert_typecheck_err(&env, &prims, &thm_addr);
+  }
+
+  #[test]
+  fn check_theorem_value_mismatch() {
+    let prims = test_prims();
+    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_env());
+    let thm_addr = mk_addr(582);
+    // theorem : MyTrue := Prop (wrong value)
+    add_theorem(&mut env, &thm_addr, cst(&true_ind), prop());
+    assert_typecheck_err(&env, &prims, &thm_addr);
+  }
+
+  // -- Phase 2: Level arithmetic --
+
+  #[test]
+  fn level_arithmetic_extended() {
+    let prims = test_prims();
+    let env = empty_env();
+    let u = KLevel::param(0, anon());
+    let v = KLevel::param(1, anon());
+    // max(u, 0) = u
+    let s1 = KExpr::sort(KLevel::max(u.clone(), KLevel::zero()));
+    let s2 = KExpr::sort(u.clone());
+    assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
+    // max(0, u) = u
+    let s1 = KExpr::sort(KLevel::max(KLevel::zero(), u.clone()));
+    assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
+    // max(succ u, succ v) = succ(max(u,v))
+    let s1 = KExpr::sort(KLevel::max(KLevel::succ(u.clone()), KLevel::succ(v.clone())));
+    let s2 = KExpr::sort(KLevel::succ(KLevel::max(u.clone(), v.clone())));
+    assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
+    // max(u, u) = u
+    let s1 = KExpr::sort(KLevel::max(u.clone(), u.clone()));
+    let s2 = KExpr::sort(u.clone());
+    assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
+    // imax(u, succ v) = max(u, succ v)
+    let s1 = KExpr::sort(KLevel::imax(u.clone(), KLevel::succ(v.clone())));
+    let s2 = KExpr::sort(KLevel::max(u.clone(), KLevel::succ(v.clone())));
+    assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
+    // imax(u, 0) = 0
+    let s1 = KExpr::sort(KLevel::imax(u.clone(), KLevel::zero()));
+    let s2 = KExpr::sort(KLevel::zero());
+    assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
+    // param 0 != param 1
+    let s1 = KExpr::sort(u.clone());
+    let s2 = KExpr::sort(v.clone());
+    assert!(!is_def_eq(&env, &prims, &s1, &s2).unwrap());
+    // succ(succ 0) == succ(succ 0)
+    assert!(is_def_eq(&env, &prims, &srt(2), &srt(2)).unwrap());
+  }
+
+  // -- Phase 3: Parity cleanup --
+
+  #[test]
+  fn nat_pow_overflow() {
+    let prims = test_prims();
+    let env = empty_env();
+    // 2^63 + 2^63 = 2^64
+    let two = nat_lit(2);
+    let pow63 = app(app(cst(&prims.nat_pow.as_ref().unwrap().addr), two.clone()), nat_lit(63));
+    let pow64 = app(app(cst(&prims.nat_pow.as_ref().unwrap().addr), two.clone()), nat_lit(64));
+    let sum = app(app(cst(&prims.nat_add.as_ref().unwrap().addr), pow63.clone()), pow63.clone());
+    assert!(is_def_eq(&env, &prims, &sum, &pow64).unwrap());
+  }
+
+  #[test]
+  fn unit_like_with_fields_not_defeq_parity() {
+    let prims = test_prims();
+    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_env());
+    let ax1 = mk_addr(595);
+    let ax2 = mk_addr(596);
+    let pair_nat_nat = app(app(cst(&pair_ind), ty()), ty());
+    add_axiom(&mut env, &ax1, pair_nat_nat.clone());
+    add_axiom(&mut env, &ax2, pair_nat_nat);
+    // Pair has 2 fields, so NOT unit-like
+    assert!(!is_def_eq(&env, &prims, &cst(&ax1), &cst(&ax2)).unwrap());
+  }
+
+  // ==========================================================================
+  // Phase 4: Lean parity — remaining gaps
+  // ==========================================================================
+
+  #[test]
+  fn nat_pow_boundary_guard() {
+    let prims = test_prims();
+    let env = empty_env();
+    // Nat.pow 2 16777216 should compute (boundary, exponent = 2^24)
+    let pow_boundary = app(
+      app(cst(&prims.nat_pow.as_ref().unwrap().addr), nat_lit(2)),
+      nat_lit(16777216),
+    );
+    // Should reduce to a nat lit (not stay stuck)
+    let result = whnf_quote(&env, &prims, &pow_boundary).unwrap();
+    match result.0.as_ref() {
+      KExprData::Lit(Literal::NatVal(_)) => {} // ok
+      other => panic!("expected NatLit, got {other:?}"),
+    }
+    // Nat.pow 2 16777217 should stay stuck (exponent > 2^24)
+    let pow_over = app(
+      app(cst(&prims.nat_pow.as_ref().unwrap().addr), nat_lit(2)),
+      nat_lit(16777217),
+    );
+    assert_eq!(
+      whnf_head_addr(&env, &prims, &pow_over).unwrap(),
+      Some(prims.nat_pow.as_ref().unwrap().addr.clone())
+    );
+  }
+
+  #[test]
+  fn string_lit_3char() {
+    let prims = test_prims();
+    let env = empty_env();
+    let char_type = cst(&prims.char_type.as_ref().unwrap().addr);
+    let mk_char = |n: u64| app(cst(&prims.char_mk.as_ref().unwrap().addr), nat_lit(n));
+    let nil = app(
+      cst_l(&prims.list_nil.as_ref().unwrap().addr, vec![KLevel::zero()]),
+      char_type.clone(),
+    );
+    let cons = |hd, tl| {
+      app(
+        app(
+          app(
+            cst_l(&prims.list_cons.as_ref().unwrap().addr, vec![KLevel::zero()]),
+            char_type.clone(),
+          ),
+          hd,
+        ),
+        tl,
+      )
+    };
+    // Build "abc" as String.mk [Char.mk 97, Char.mk 98, Char.mk 99]
+    let list_abc = cons(mk_char(97), cons(mk_char(98), cons(mk_char(99), nil)));
+    let str_abc = app(cst(&prims.string_mk.as_ref().unwrap().addr), list_abc);
+    assert!(is_def_eq(&env, &prims, &str_lit("abc"), &str_abc).unwrap());
+  }
+
+  #[test]
+  fn struct_eta_cross_type_negative() {
+    let prims = test_prims();
+    let (mut env, _pair_ind, pair_ctor) = build_pair_env(empty_env());
+    // Build a second struct Pair2 with same shape but different address
+    let pair2_ind = mk_addr(600);
+    let pair2_ctor = mk_addr(601);
+    add_inductive(
+      &mut env, &pair2_ind,
+      pi(ty(), pi(ty(), ty())),
+      vec![pair2_ctor.clone()],
+      2, 0, false, 0,
+      vec![pair2_ind.clone()],
+    );
+    let ctor2_type = pi(
+      ty(),
+      pi(ty(), pi(bv(1), pi(bv(1), app(app(cst(&pair2_ind), bv(3)), bv(2))))),
+    );
+    add_ctor(&mut env, &pair2_ctor, &pair2_ind, ctor2_type, 0, 2, 2, 0);
+    // mk1 Nat Nat 3 7 vs mk2 Nat Nat 3 7 — different struct types
+    let mk1 = app(app(app(app(cst(&pair_ctor), ty()), ty()), nat_lit(3)), nat_lit(7));
+    let mk2 = app(app(app(app(cst(&pair2_ctor), ty()), ty()), nat_lit(3)), nat_lit(7));
+    assert!(!is_def_eq(&env, &prims, &mk1, &mk2).unwrap());
+  }
+
+  #[test]
+  fn unit_like_multi_ctor_not_unit() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    // Bool-like type with 2 ctors, 0 fields each — NOT unit-like
+    let bool_ind = mk_addr(602);
+    let b1 = mk_addr(603);
+    let b2 = mk_addr(604);
+    add_inductive(
+      &mut env, &bool_ind, ty(),
+      vec![b1.clone(), b2.clone()],
+      0, 0, false, 0,
+      vec![bool_ind.clone()],
+    );
+    add_ctor(&mut env, &b1, &bool_ind, cst(&bool_ind), 0, 0, 0, 0);
+    add_ctor(&mut env, &b2, &bool_ind, cst(&bool_ind), 1, 0, 0, 0);
+    let ax1 = mk_addr(605);
+    let ax2 = mk_addr(606);
+    add_axiom(&mut env, &ax1, cst(&bool_ind));
+    add_axiom(&mut env, &ax2, cst(&bool_ind));
+    assert!(!is_def_eq(&env, &prims, &cst(&ax1), &cst(&ax2)).unwrap());
+  }
+
+  #[test]
+  fn deep_spine_axiom_heads() {
+    let prims = test_prims();
+    let mut env = empty_env();
+    // Two different axioms with same function type, applied to same arg
+    let ax1 = mk_addr(607);
+    let ax2 = mk_addr(608);
+    add_axiom(&mut env, &ax1, pi(ty(), ty()));
+    add_axiom(&mut env, &ax2, pi(ty(), ty()));
+    assert!(!is_def_eq(&env, &prims, &app(cst(&ax1), nat_lit(1)), &app(cst(&ax2), nat_lit(1))).unwrap());
+  }
+
+  #[test]
+  fn infer_extended() {
+    let prims = test_prims();
+    let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
+    let mut env = empty_env();
+    add_axiom(&mut env, &nat_addr, ty());
+    let nat_const = cst(&nat_addr);
+    // Nested lambda: λ(x:Nat). λ(y:Nat). x : Nat → Nat → Nat
+    let nested_lam = lam(nat_const.clone(), lam(nat_const.clone(), bv(1)));
+    let inferred = infer_quote(&env, &prims, &nested_lam).unwrap();
+    assert_eq!(inferred, pi(nat_const.clone(), pi(nat_const.clone(), nat_const.clone())));
+    // Prop → Type = Sort 2 (imax 0 1 = 1, result is Sort(imax(Sort1_level, 1)) = Sort 2)
+    let inferred = infer_quote(&env, &prims, &pi(prop(), ty())).unwrap();
+    assert_eq!(inferred, srt(2));
+    // Type → Prop = Sort 2
+    let inferred = infer_quote(&env, &prims, &pi(ty(), prop())).unwrap();
+    assert_eq!(inferred, srt(2));
+    // Nested let inference: let x : Nat := 5 in let y : Nat := x in y : Nat
+    let let_nested = let_e(nat_const.clone(), nat_lit(5), let_e(nat_const.clone(), bv(0), bv(0)));
+    let inferred = infer_quote(&env, &prims, &let_nested).unwrap();
+    assert_eq!(inferred, nat_const.clone());
+    // Inference of applied def
+    let id_addr = mk_addr(609);
+    add_def(&mut env, &id_addr, pi(nat_const.clone(), nat_const.clone()),
+      lam(nat_const.clone(), bv(0)), 0, ReducibilityHints::Abbrev);
+    let inferred = infer_quote(&env, &prims, &app(cst(&id_addr), nat_lit(5))).unwrap();
+    assert_eq!(inferred, nat_const);
+  }
+
+  #[test]
+  fn opaque_applied_stuck() {
+    let prims = test_prims();
+    let opaq_fn = mk_addr(610);
+    let mut env = empty_env();
+    add_opaque(&mut env, &opaq_fn, pi(ty(), ty()), lam(ty(), bv(0)));
+    // Opaque function applied stays stuck (head = opaque addr)
+    assert_eq!(
+      whnf_head_addr(&env, &prims, &app(cst(&opaq_fn), nat_lit(5))).unwrap(),
+      Some(opaq_fn)
+    );
+  }
+
+  #[test]
+  fn iota_trailing_args() {
+    let prims = test_prims();
+    let (env, nat_ind, zero, _succ, rec) = build_my_nat_env(empty_env());
+    let nat_const = cst(&nat_ind);
+    // Function-valued motive: MyNat → (Nat → Nat)
+    let fn_motive = lam(nat_const.clone(), pi(ty(), ty()));
+    // base: λx. Nat.add x (partial app)
+    let fn_base = lam(ty(), app(cst(&prims.nat_add.as_ref().unwrap().addr), bv(0)));
+    // step: λ_ acc. acc
+    let fn_step = lam(nat_const, lam(pi(ty(), ty()), bv(0)));
+    // rec fnMotive fnBase fnStep zero 10 — extra arg applied after major
+    let rec_fn_zero = app(
+      app(
+        app(app(app(cst(&rec), fn_motive), fn_base), fn_step),
+        cst(&zero),
+      ),
+      nat_lit(10),
+    );
+    // Should reduce (iota fires on zero, then extra arg is applied)
+    assert!(whnf_quote(&env, &prims, &rec_fn_zero).is_ok());
+  }
+
+  #[test]
+  fn level_arithmetic_associativity() {
+    let prims = test_prims();
+    let env = empty_env();
+    let u = KLevel::param(0, anon());
+    let v = KLevel::param(1, anon());
+    let w = KLevel::param(2, anon());
+    // max(max(u, v), w) == max(u, max(v, w)) (associativity)
+    let s1 = KExpr::sort(KLevel::max(KLevel::max(u.clone(), v.clone()), w.clone()));
+    let s2 = KExpr::sort(KLevel::max(u.clone(), KLevel::max(v.clone(), w.clone())));
+    assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
+    // imax(succ u, succ v) == max(succ u, succ v)
+    let s1 = KExpr::sort(KLevel::imax(KLevel::succ(u.clone()), KLevel::succ(v.clone())));
+    let s2 = KExpr::sort(KLevel::max(KLevel::succ(u.clone()), KLevel::succ(v.clone())));
+    assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
+    // succ(max(u, v)) == max(succ u, succ v)
+    let s1 = KExpr::sort(KLevel::succ(KLevel::max(u.clone(), v.clone())));
+    let s2 = KExpr::sort(KLevel::max(KLevel::succ(u), KLevel::succ(v)));
+    assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
   }
 }

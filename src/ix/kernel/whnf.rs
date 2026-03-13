@@ -57,7 +57,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let result = self.whnf_core_val_inner(v, cheap_rec, cheap_proj)?;
 
     // Cache result
-    if !cheap_rec && !cheap_proj && !result.ptr_eq(v) {
+    if !cheap_rec && !cheap_proj {
       let key = v.ptr_id();
       self.whnf_core_cache.insert(key, (v.clone(), result.clone()));
       // Also insert under root
@@ -123,6 +123,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
         // Reduce the innermost struct once
         let inner_v = self.force_thunk(&inner_thunk)?;
+        let inner_v_before_whnf = inner_v.clone();
         let inner_v = if cheap_proj {
           self.whnf_core_val(&inner_v, cheap_rec, cheap_proj)?
         } else {
@@ -130,7 +131,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         };
 
         if self.trace && proj_stack.len() > 0 {
-          let (ta, ix, tn, _) = &proj_stack[0];
+          let (_ta, ix, tn, _) = &proj_stack[0];
           let tn_str = format!("{tn:?}");
           if tn_str.contains("Fin") || tn_str.contains("BitVec") {
             self.trace_msg(&format!("[PROJ CHAIN] depth={} outermost=proj[{ix}] {tn:?}  inner_whnf={inner_v}", proj_stack.len()));
@@ -139,7 +140,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
         // Resolve projections from inside out (last pushed = innermost)
         let mut current = inner_v;
-        let mut any_resolved = false;
         let mut i = proj_stack.len();
         while i > 0 {
           i -= 1;
@@ -147,7 +147,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           if let Some(field_thunk) =
             reduce_val_proj_forced(&current, *ix, ta)
           {
-            any_resolved = true;
             current = self.force_thunk(&field_thunk)?;
             current =
               self.whnf_core_val(&current, cheap_rec, cheap_proj)?;
@@ -159,8 +158,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                 self.whnf_core_val(&current, cheap_rec, cheap_proj)?;
             }
           } else {
-            if !any_resolved {
-              // No projection was resolved at all — preserve pointer identity
+            if self.trace {
+              self.trace_msg(&format!(
+                "[PROJ STUCK] proj[{ix}]  inner_whnf={current}  cheap_proj={cheap_proj}  cheap_rec={cheap_rec}"
+              ));
+            }
+            if current.ptr_eq(&inner_v_before_whnf) {
+              // WHNF was no-op and no projection resolved — preserve pointer identity
               return Ok(v.clone());
             }
             // Some inner projections resolved but this one didn't.
@@ -193,16 +197,17 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
       // Recursor (iota) reduction
       ValInner::Neutral {
-        head: Head::Const { addr, levels, .. },
+        head: Head::Const { id, levels },
         spine,
       } => {
+        let addr = &id.addr;
         // Skip iota/recursor reduction when cheap_rec is set
         if cheap_rec {
           return Ok(v.clone());
         }
 
         // Check if this is a recursor (look up directly in env, not via ensure_typed_const)
-        if let Some(KConstantInfo::Recursor(rv)) = self.env.get(addr) {
+        if let Some(KConstantInfo::Recursor(rv)) = self.env.find_by_addr(addr) {
           let num_params = rv.num_params;
           let num_motives = rv.num_motives;
           let num_minors = rv.num_minors;
@@ -210,7 +215,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let k = rv.k;
           let induct_addr = get_major_induct(
             &rv.cv.typ, num_params, num_motives, num_minors, num_indices,
-          ).unwrap_or_else(|| Address::hash(b"unknown"));
+          ).map(|id| id.addr);
           let rules: Vec<(usize, TypedExpr<M>)> = rv.rules.iter().map(|r| {
             (r.nfields, TypedExpr { info: TypeInfo::None, body: r.rhs.clone() })
           }).collect();
@@ -222,54 +227,56 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             return Ok(v.clone());
           }
 
-          // K-reduction
-          if k {
-            if let Some(result) = self.try_k_reduction(
+          if let Some(induct_addr) = &induct_addr {
+            // K-reduction
+            if k {
+              if let Some(result) = self.try_k_reduction(
+                levels,
+                spine,
+                num_params,
+                num_motives,
+                num_minors,
+                num_indices,
+                induct_addr,
+                &rules,
+              )? {
+                return self.whnf_core_val(&result, cheap_rec, cheap_proj);
+              }
+            }
+
+            // Standard iota reduction
+            if let Some(result) = self.try_iota_reduction(
+              addr,
               levels,
               spine,
               num_params,
               num_motives,
               num_minors,
               num_indices,
-              &induct_addr,
+              &rules,
+              induct_addr,
+            )? {
+              return self.whnf_core_val(&result, cheap_rec, cheap_proj);
+            }
+
+            // Struct eta fallback
+            if let Some(result) = self.try_struct_eta_iota(
+              levels,
+              spine,
+              num_params,
+              num_motives,
+              num_minors,
+              num_indices,
+              induct_addr,
               &rules,
             )? {
               return self.whnf_core_val(&result, cheap_rec, cheap_proj);
             }
           }
-
-          // Standard iota reduction
-          if let Some(result) = self.try_iota_reduction(
-            addr,
-            levels,
-            spine,
-            num_params,
-            num_motives,
-            num_minors,
-            num_indices,
-            &rules,
-            &induct_addr,
-          )? {
-            return self.whnf_core_val(&result, cheap_rec, cheap_proj);
-          }
-
-          // Struct eta fallback
-          if let Some(result) = self.try_struct_eta_iota(
-            levels,
-            spine,
-            num_params,
-            num_motives,
-            num_minors,
-            num_indices,
-            &induct_addr,
-            &rules,
-          )? {
-            return self.whnf_core_val(&result, cheap_rec, cheap_proj);
-          }
         }
 
         // Quotient reduction (look up directly in env)
-        if let Some(KConstantInfo::Quotient(qv)) = self.env.get(addr) {
+        if let Some(KConstantInfo::Quotient(qv)) = self.env.find_by_addr(addr) {
           use crate::ix::env::QuotKind;
           let kind = qv.kind;
           match kind {
@@ -348,11 +355,21 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let major_thunk = &spine[major_idx];
     let major_val = self.force_thunk(major_thunk)?;
     let major_whnf = self.whnf_val(&major_val, 0)?;
+    if self.trace {
+      // Show the major premise before and after whnf for stuck cases
+      let is_ctor = matches!(major_whnf.inner(), ValInner::Ctor { .. });
+      let is_lit = matches!(major_whnf.inner(), ValInner::Lit(_));
+      if !is_ctor && !is_lit {
+        self.trace_msg(&format!(
+          "[IOTA major] idx={major_idx}  before={major_val}  after={major_whnf}"
+        ));
+      }
+    }
 
     // Handle nat literals directly (O(1) instead of O(n) via nat_lit_to_ctor_thunked)
     match major_whnf.inner() {
       ValInner::Lit(Literal::NatVal(n))
-        if self.prims.nat.as_ref() == Some(induct_addr) =>
+        if Primitives::<M>::addr_matches(&self.prims.nat, induct_addr) =>
       {
         if n.0 == BigUint::ZERO {
           // Lit(0) → fire rule[0] (zero) with no ctor fields
@@ -413,7 +430,48 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           major_idx, &ctor_fields,
         )?))
       }
-      _ => Ok(None),
+      _ => {
+        if self.trace {
+          let kind = match major_whnf.inner() {
+            ValInner::Neutral { head: Head::Const { .. }, .. } => "Neutral(Const)",
+            ValInner::Neutral { head: Head::FVar { .. }, .. } => "Neutral(FVar)",
+            ValInner::Lit(_) => "Lit",
+            ValInner::Pi { .. } => "Pi",
+            ValInner::Lam { .. } => "Lam",
+            ValInner::Sort(_) => "Sort",
+            ValInner::Proj { idx, strct, .. } => {
+              // Show what the stuck projection is trying to project from
+              if let Ok(inner) = self.force_thunk(strct) {
+                self.trace_msg(&format!(
+                  "[IOTA STUCK] major_idx={major_idx}  spine_len={}  major=proj[{idx}]  strct={inner}",
+                  spine.len()
+                ));
+              }
+              "Proj"
+            }
+            _ => "Other",
+          };
+          if kind != "Proj" {
+            // For stuck neutrals, show what the head's spine args are
+            let extra = if let ValInner::Neutral { head: Head::Const { .. }, spine: nspine } = major_whnf.inner() {
+              let mut parts = Vec::new();
+              for (i, thunk) in nspine.iter().enumerate() {
+                if let Ok(val) = self.force_thunk(thunk) {
+                  parts.push(format!("  arg[{i}]={val}"));
+                }
+              }
+              parts.join("")
+            } else {
+              String::new()
+            };
+            self.trace_msg(&format!(
+              "[IOTA STUCK] major_idx={major_idx}  spine_len={}  major_whnf={major_whnf}  kind={kind}{extra}",
+              spine.len()
+            ));
+          }
+        }
+        Ok(None)
+      }
     }
   }
 
@@ -473,14 +531,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     major: &Val<M>,
     ind_addr: &Address,
   ) -> TcResult<Option<Val<M>>, M> {
-    let ci = match self.env.get(ind_addr) {
+    let ci = match self.env.find_by_addr(ind_addr) {
       Some(KConstantInfo::Inductive(iv)) => iv.clone(),
       _ => return Ok(None),
     };
     if ci.ctors.is_empty() {
       return Ok(None);
     }
-    let ctor_addr = &ci.ctors[0];
+    let ctor_id = &ci.ctors[0];
 
     // Infer major's type; bail if inference fails
     let major_type = match self.infer_type_of_val(major) {
@@ -492,11 +550,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     // Check if major's type is headed by the inductive
     match major_type_whnf.inner() {
       ValInner::Neutral {
-        head: Head::Const { addr: head_addr, levels: univs, .. },
+        head: Head::Const { id: head_id, levels: univs },
         spine: type_spine,
-      } if head_addr == ind_addr => {
+      } if &head_id.addr == ind_addr => {
         // Build the nullary ctor applied to params from the type
-        let cv = match self.env.get(ctor_addr) {
+        let cv = match self.env.get(ctor_id) {
           Some(KConstantInfo::Constructor(cv)) => cv.clone(),
           _ => return Ok(None),
         };
@@ -507,13 +565,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           }
         }
         let ctor_val = Val::mk_ctor(
-          ctor_addr.clone(),
+          ctor_id.clone(),
           univs.clone(),
-          M::Field::<Name>::default(),
           cv.cidx,
           cv.num_params,
           cv.num_fields,
-          cv.induct.clone(),
+          cv.induct.addr.clone(),
           ctor_args,
         );
 
@@ -543,9 +600,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     induct_addr: &Address,
     rules: &[(usize, TypedExpr<M>)],
   ) -> TcResult<Option<Val<M>>, M> {
-    // Ensure the inductive is in typed_consts (needed for is_struct check)
-    let _ = self.ensure_typed_const(induct_addr);
-    if !is_struct_like_app_by_addr(induct_addr, &self.typed_consts) {
+    if !is_struct_like_raw(induct_addr, self.env) {
       return Ok(None);
     }
 
@@ -620,12 +675,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     // Check if the last arg is a Quot.mk application
     let mk_spine_opt = match last_whnf.inner() {
       ValInner::Neutral {
-        head: Head::Const { addr, .. },
+        head: Head::Const { id, .. },
         spine: mk_spine,
       } => {
         // Check if this is a Quot.mk (QuotKind::Ctor)
         if matches!(
-          self.env.get(addr),
+          self.env.find_by_addr(&id.addr),
           Some(KConstantInfo::Quotient(qv)) if qv.kind == crate::ix::env::QuotKind::Ctor
         ) {
           Some(mk_spine.clone())
@@ -662,15 +717,56 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   fn is_fully_applied_nat_prim(&self, v: &Val<M>) -> bool {
     match v.inner() {
       ValInner::Neutral {
-        head: Head::Const { addr, .. },
+        head: Head::Const { id, .. },
         spine,
       } => {
-        if (is_nat_succ(addr, self.prims) || is_nat_pred(addr, self.prims))
+        if (is_nat_succ(&id.addr, self.prims) || is_nat_pred(&id.addr, self.prims))
           && spine.len() >= 1
         {
           return true;
         }
-        is_nat_bin_op(addr, self.prims) && spine.len() >= 2
+        is_nat_bin_op(&id.addr, self.prims) && spine.len() >= 2
+      }
+      _ => false,
+    }
+  }
+
+  /// Check if a fully-applied nat primitive has any spine arg that contains
+  /// a free variable (after whnf). When fvars are present, the recursor form
+  /// can still make progress by pattern-matching on constructor args even
+  /// with symbolic subterms (e.g. Nat.ble (succ n) m), so we allow delta.
+  /// We DON'T allow delta for stuck-but-ground terms (no fvars) because
+  /// that causes infinite recursion.
+  fn nat_prim_has_fvar_arg(&mut self, v: &Val<M>) -> TcResult<bool, M> {
+    let spine = match v.spine() {
+      Some(s) => s.to_vec(),
+      None => return Ok(false),
+    };
+    for thunk in &spine {
+      let val = self.force_thunk(thunk)?;
+      let val = self.whnf_val(&val, 0)?;
+      if Self::val_contains_fvar(&val) {
+        return Ok(true);
+      }
+    }
+    Ok(false)
+  }
+
+  /// Shallow check if a value contains a free variable.
+  /// Checks the head and one level of spine args.
+  fn val_contains_fvar(v: &Val<M>) -> bool {
+    match v.inner() {
+      ValInner::Neutral { head: Head::FVar { .. }, .. } => true,
+      ValInner::Neutral { head: Head::Const { .. }, spine } => {
+        // Check if any already-evaluated spine arg is an fvar
+        for thunk in spine {
+          if let ThunkEntry::Evaluated(val) = &*thunk.borrow() {
+            if matches!(val.inner(), ValInner::Neutral { head: Head::FVar { .. }, .. }) {
+              return true;
+            }
+          }
+        }
+        false
       }
       _ => false,
     }
@@ -684,11 +780,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     self.heartbeat()?;
     match v.inner() {
       ValInner::Neutral {
-        head: Head::Const { addr, levels, .. },
+        head: Head::Const { id, levels },
         spine,
       } => {
+        let addr = &id.addr;
         // Platform-dependent reduction: System.Platform.numBits → word size
-        if self.prims.system_platform_num_bits.as_ref() == Some(addr)
+        if Primitives::<M>::addr_matches(&self.prims.system_platform_num_bits, addr)
           && spine.is_empty()
         {
           return Ok(Some(Val::mk_lit(Literal::NatVal(
@@ -697,7 +794,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         }
 
         // Check if this constant should be unfolded
-        let ci = match self.env.get(addr) {
+        let ci = match self.env.find_by_addr(addr) {
           Some(ci) => ci.clone(),
           None => return Ok(None),
         };
@@ -732,6 +829,36 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     }
   }
 
+  /// Extract a nat value from a Val, forcing thunks and peeling Nat.succ
+  /// constructors as needed. Handles Lit, Ctor(zero), Ctor(succ), and
+  /// Neutral(Nat.zero).
+  fn force_extract_nat(&mut self, v: &Val<M>) -> TcResult<Option<Nat>, M> {
+    // Try the cheap non-forcing check first
+    if let Some(n) = extract_nat_val(v, self.prims) {
+      return Ok(Some(n));
+    }
+    // Handle Ctor(Nat.succ, cidx=1) by forcing the inner thunk
+    if let ValInner::Ctor {
+      cidx: 1,
+      induct_addr,
+      num_params,
+      spine,
+      ..
+    } = v.inner()
+    {
+      if Primitives::<M>::addr_matches(&self.prims.nat, induct_addr)
+        && spine.len() == num_params + 1
+      {
+        let inner = self.force_thunk(&spine[spine.len() - 1])?;
+        let inner = self.whnf_val(&inner, 0)?;
+        if let Some(n) = self.force_extract_nat(&inner)? {
+          return Ok(Some(Nat(&n.0 + 1u64)));
+        }
+      }
+    }
+    Ok(None)
+  }
+
   /// Try to reduce nat primitives.
   pub fn try_reduce_nat_val(
     &mut self,
@@ -739,11 +866,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   ) -> TcResult<Option<Val<M>>, M> {
     match v.inner() {
       ValInner::Neutral {
-        head: Head::Const { addr, .. },
+        head: Head::Const { id, .. },
         spine,
       } => {
+        let addr = &id.addr;
         // Nat.zero with 0 args → nat literal 0
-        if self.prims.nat_zero.as_ref() == Some(addr)
+        if Primitives::<M>::addr_matches(&self.prims.nat_zero, addr)
           && spine.is_empty()
         {
           return Ok(Some(Val::mk_lit(Literal::NatVal(
@@ -755,7 +883,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         if is_nat_succ(addr, self.prims) && spine.len() == 1 {
           let arg = self.force_thunk(&spine[0])?;
           let arg = self.whnf_val(&arg, 0)?;
-          if let Some(n) = extract_nat_val(&arg, self.prims) {
+          if let Some(n) = self.force_extract_nat(&arg)? {
             return Ok(Some(Val::mk_lit(Literal::NatVal(Nat(&n.0 + 1u64)))));
           }
         }
@@ -764,7 +892,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         if is_nat_pred(addr, self.prims) && spine.len() == 1 {
           let arg = self.force_thunk(&spine[0])?;
           let arg = self.whnf_val(&arg, 0)?;
-          if let Some(n) = extract_nat_val(&arg, self.prims) {
+          if let Some(n) = self.force_extract_nat(&arg)? {
             let result = if n.0 == BigUint::ZERO {
               Nat::from(0u64)
             } else {
@@ -781,32 +909,37 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let b = self.force_thunk(&spine[1])?;
           let b = self.whnf_val(&b, 0)?;
           // Both args are concrete nat values → compute directly
-          if let (Some(na), Some(nb)) = (
-            extract_nat_val(&a, self.prims),
-            extract_nat_val(&b, self.prims),
-          ) {
+          let na = self.force_extract_nat(&a)?;
+          let nb = self.force_extract_nat(&b)?;
+          if let (Some(na), Some(nb)) = (&na, &nb) {
             if let Some(result) =
-              compute_nat_prim(addr, &na, &nb, self.prims)
+              compute_nat_prim(addr, na, nb, self.prims)
             {
               return Ok(Some(result));
             }
           }
+          if self.trace && (na.is_none() || nb.is_none()) {
+            self.trace_msg(&format!(
+              "[NAT BIN STUCK] op={id}  a={a} (is_nat={})  b={b} (is_nat={})",
+              na.is_some(), nb.is_some()
+            ));
+          }
           // Partial reduction: base cases (second arg is 0)
           if is_nat_zero_val(&b, self.prims) {
-            if self.prims.nat_add.as_ref() == Some(addr) {
+            if Primitives::<M>::addr_matches(&self.prims.nat_add, addr) {
               return Ok(Some(a)); // n + 0 = n
-            } else if self.prims.nat_sub.as_ref() == Some(addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_sub, addr) {
               return Ok(Some(a)); // n - 0 = n
-            } else if self.prims.nat_mul.as_ref() == Some(addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_mul, addr) {
               return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // n * 0 = 0
-            } else if self.prims.nat_pow.as_ref() == Some(addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_pow, addr) {
               return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(1u64))))); // n ^ 0 = 1
-            } else if self.prims.nat_ble.as_ref() == Some(addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_ble, addr) {
               // n ≤ 0 = (n == 0)
               if is_nat_zero_val(&a, self.prims) {
                 if let Some(t) = &self.prims.bool_true {
                   if let Some(bt) = &self.prims.bool_type {
-                    return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), M::Field::<Name>::default(), 1, 0, 0, bt.clone(), Vec::new())));
+                    return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), 1, 0, 0, bt.addr.clone(), Vec::new())));
                   }
                 }
               }
@@ -815,17 +948,17 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           }
           // Partial reduction: base cases (first arg is 0)
           else if is_nat_zero_val(&a, self.prims) {
-            if self.prims.nat_add.as_ref() == Some(addr) {
+            if Primitives::<M>::addr_matches(&self.prims.nat_add, addr) {
               return Ok(Some(b)); // 0 + n = n
-            } else if self.prims.nat_sub.as_ref() == Some(addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_sub, addr) {
               return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // 0 - n = 0
-            } else if self.prims.nat_mul.as_ref() == Some(addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_mul, addr) {
               return Ok(Some(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // 0 * n = 0
-            } else if self.prims.nat_ble.as_ref() == Some(addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_ble, addr) {
               // 0 ≤ n = true
               if let Some(t) = &self.prims.bool_true {
                 if let Some(bt) = &self.prims.bool_type {
-                  return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), M::Field::<Name>::default(), 1, 0, 0, bt.clone(), Vec::new())));
+                  return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), 1, 0, 0, bt.addr.clone(), Vec::new())));
                 }
               }
             }
@@ -833,103 +966,111 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           // Step-case reductions (second arg is succ)
           if let Some(pred_thunk) = extract_succ_pred(&b, self.prims) {
             let addr = addr.clone();
-            if self.prims.nat_add.as_ref() == Some(&addr) {
+            if Primitives::<M>::addr_matches(&self.prims.nat_add, &addr) {
               // add x (succ y) = succ (add x y)
+              let add_id = self.prims.nat_add.as_ref().unwrap().clone();
               let inner = mk_thunk_val(Val::mk_neutral(
-                Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                Head::Const { id: add_id, levels: Vec::new() },
                 vec![spine[0].clone(), pred_thunk],
               ));
-              let succ_addr = self.prims.nat_succ.as_ref().unwrap().clone();
+              let succ_id = self.prims.nat_succ.as_ref().unwrap().clone();
               return Ok(Some(Val::mk_neutral(
-                Head::Const { addr: succ_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                Head::Const { id: succ_id, levels: Vec::new() },
                 vec![inner],
               )));
-            } else if self.prims.nat_sub.as_ref() == Some(&addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_sub, &addr) {
               // sub x (succ y) = pred (sub x y)
+              let sub_id = self.prims.nat_sub.as_ref().unwrap().clone();
               let inner = mk_thunk_val(Val::mk_neutral(
-                Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                Head::Const { id: sub_id, levels: Vec::new() },
                 vec![spine[0].clone(), pred_thunk],
               ));
-              let pred_addr = self.prims.nat_pred.as_ref().unwrap().clone();
+              let pred_id = self.prims.nat_pred.as_ref().unwrap().clone();
               return Ok(Some(Val::mk_neutral(
-                Head::Const { addr: pred_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                Head::Const { id: pred_id, levels: Vec::new() },
                 vec![inner],
               )));
-            } else if self.prims.nat_mul.as_ref() == Some(&addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_mul, &addr) {
               // mul x (succ y) = add (mul x y) x
+              let mul_id = self.prims.nat_mul.as_ref().unwrap().clone();
               let inner = mk_thunk_val(Val::mk_neutral(
-                Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                Head::Const { id: mul_id, levels: Vec::new() },
                 vec![spine[0].clone(), pred_thunk],
               ));
-              let add_addr = self.prims.nat_add.as_ref().unwrap().clone();
+              let add_id = self.prims.nat_add.as_ref().unwrap().clone();
               return Ok(Some(Val::mk_neutral(
-                Head::Const { addr: add_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                Head::Const { id: add_id, levels: Vec::new() },
                 vec![inner, spine[0].clone()],
               )));
-            } else if self.prims.nat_pow.as_ref() == Some(&addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_pow, &addr) {
               // pow x (succ y) = mul (pow x y) x
+              let pow_id = self.prims.nat_pow.as_ref().unwrap().clone();
               let inner = mk_thunk_val(Val::mk_neutral(
-                Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                Head::Const { id: pow_id, levels: Vec::new() },
                 vec![spine[0].clone(), pred_thunk],
               ));
-              let mul_addr = self.prims.nat_mul.as_ref().unwrap().clone();
+              let mul_id = self.prims.nat_mul.as_ref().unwrap().clone();
               return Ok(Some(Val::mk_neutral(
-                Head::Const { addr: mul_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                Head::Const { id: mul_id, levels: Vec::new() },
                 vec![inner, spine[0].clone()],
               )));
-            } else if self.prims.nat_shift_left.as_ref() == Some(&addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_shift_left, &addr) {
               // shiftLeft x (succ y) = shiftLeft (2 * x) y
-              if let Some(mul_addr) = self.prims.nat_mul.as_ref().cloned() {
+              if let Some(mul_id) = self.prims.nat_mul.as_ref().cloned() {
                 let two = mk_thunk_val(Val::mk_lit(Literal::NatVal(Nat::from(2u64))));
                 let two_x = mk_thunk_val(Val::mk_neutral(
-                  Head::Const { addr: mul_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                  Head::Const { id: mul_id, levels: Vec::new() },
                   vec![two, spine[0].clone()],
                 ));
+                let shift_left_id = self.prims.nat_shift_left.as_ref().unwrap().clone();
                 return Ok(Some(Val::mk_neutral(
-                  Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                  Head::Const { id: shift_left_id, levels: Vec::new() },
                   vec![two_x, pred_thunk],
                 )));
               }
-            } else if self.prims.nat_shift_right.as_ref() == Some(&addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_shift_right, &addr) {
               // shiftRight x (succ y) = (shiftRight x y) / 2
-              if let Some(div_addr) = self.prims.nat_div.as_ref().cloned() {
+              if let Some(div_id) = self.prims.nat_div.as_ref().cloned() {
+                let shift_right_id = self.prims.nat_shift_right.as_ref().unwrap().clone();
                 let inner = mk_thunk_val(Val::mk_neutral(
-                  Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                  Head::Const { id: shift_right_id, levels: Vec::new() },
                   vec![spine[0].clone(), pred_thunk],
                 ));
                 let two = mk_thunk_val(Val::mk_lit(Literal::NatVal(Nat::from(2u64))));
                 return Ok(Some(Val::mk_neutral(
-                  Head::Const { addr: div_addr, levels: Vec::new(), name: M::Field::<Name>::default() },
+                  Head::Const { id: div_id, levels: Vec::new() },
                   vec![inner, two],
                 )));
               }
-            } else if self.prims.nat_beq.as_ref() == Some(&addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_beq, &addr) {
               // beq (succ x) (succ y) = beq x y
               if let Some(pred_thunk_a) = extract_succ_pred(&a, self.prims) {
+                let beq_id = self.prims.nat_beq.as_ref().unwrap().clone();
                 return Ok(Some(Val::mk_neutral(
-                  Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                  Head::Const { id: beq_id, levels: Vec::new() },
                   vec![pred_thunk_a, pred_thunk],
                 )));
               } else if is_nat_zero_val(&a, self.prims) {
                 // beq 0 (succ y) = false
                 if let Some(f) = &self.prims.bool_false {
                   if let Some(bt) = &self.prims.bool_type {
-                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), M::Field::<Name>::default(), 0, 0, 0, bt.clone(), Vec::new())));
+                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), 0, 0, 0, bt.addr.clone(), Vec::new())));
                   }
                 }
               }
-            } else if self.prims.nat_ble.as_ref() == Some(&addr) {
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_ble, &addr) {
               // ble (succ x) (succ y) = ble x y
               if let Some(pred_thunk_a) = extract_succ_pred(&a, self.prims) {
+                let ble_id = self.prims.nat_ble.as_ref().unwrap().clone();
                 return Ok(Some(Val::mk_neutral(
-                  Head::Const { addr: addr.clone(), levels: Vec::new(), name: M::Field::<Name>::default() },
+                  Head::Const { id: ble_id, levels: Vec::new() },
                   vec![pred_thunk_a, pred_thunk],
                 )));
               } else if is_nat_zero_val(&a, self.prims) {
                 // ble 0 (succ y) = true
                 if let Some(t) = &self.prims.bool_true {
                   if let Some(bt) = &self.prims.bool_type {
-                    return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), M::Field::<Name>::default(), 1, 0, 0, bt.clone(), Vec::new())));
+                    return Ok(Some(Val::mk_ctor(t.clone(), Vec::new(), 1, 0, 0, bt.addr.clone(), Vec::new())));
                   }
                 }
               }
@@ -937,18 +1078,18 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           } else {
             // Second arg is not succ — check if first arg is succ for beq/ble edge cases
             if let Some(_) = extract_succ_pred(&a, self.prims) {
-              if self.prims.nat_beq.as_ref() == Some(addr) && is_nat_zero_val(&b, self.prims) {
+              if Primitives::<M>::addr_matches(&self.prims.nat_beq, addr) && is_nat_zero_val(&b, self.prims) {
                 // beq (succ x) 0 = false
                 if let Some(f) = &self.prims.bool_false {
                   if let Some(bt) = &self.prims.bool_type {
-                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), M::Field::<Name>::default(), 0, 0, 0, bt.clone(), Vec::new())));
+                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), 0, 0, 0, bt.addr.clone(), Vec::new())));
                   }
                 }
-              } else if self.prims.nat_ble.as_ref() == Some(addr) && is_nat_zero_val(&b, self.prims) {
+              } else if Primitives::<M>::addr_matches(&self.prims.nat_ble, addr) && is_nat_zero_val(&b, self.prims) {
                 // ble (succ x) 0 = false
                 if let Some(f) = &self.prims.bool_false {
                   if let Some(bt) = &self.prims.bool_type {
-                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), M::Field::<Name>::default(), 0, 0, 0, bt.clone(), Vec::new())));
+                    return Ok(Some(Val::mk_ctor(f.clone(), Vec::new(), 0, 0, 0, bt.addr.clone(), Vec::new())));
                   }
                 }
               }
@@ -969,13 +1110,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   ) -> TcResult<Option<Val<M>>, M> {
     match v.inner() {
       ValInner::Neutral {
-        head: Head::Const { addr, .. },
+        head: Head::Const { id, .. },
         spine,
       } => {
+        let addr = &id.addr;
         let is_reduce_bool =
-          self.prims.reduce_bool.as_ref() == Some(addr);
+          Primitives::<M>::addr_matches(&self.prims.reduce_bool, addr);
         let is_reduce_nat =
-          self.prims.reduce_nat.as_ref() == Some(addr);
+          Primitives::<M>::addr_matches(&self.prims.reduce_nat, addr);
 
         if !is_reduce_bool && !is_reduce_nat {
           return Ok(None);
@@ -990,14 +1132,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         // evaluate
         let (arg_addr, arg_levels) = match arg.inner() {
           ValInner::Neutral {
-            head: Head::Const { addr, levels, .. },
+            head: Head::Const { id, levels },
             ..
-          } => (addr.clone(), levels.clone()),
+          } => (id.addr.clone(), levels.clone()),
           _ => return Ok(None),
         };
 
         // Look up the definition
-        let (body, num_levels) = match self.env.get(&arg_addr) {
+        let (body, num_levels) = match self.env.find_by_addr(&arg_addr) {
           Some(KConstantInfo::Definition(d)) => {
             (d.value.clone(), d.cv.num_levels)
           }
@@ -1023,15 +1165,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           // via isBoolTrue which matches both .neutral and .ctor).
           let is_bool = |addr: &Address, spine_empty: bool| -> bool {
             spine_empty
-              && (self.prims.bool_true.as_ref() == Some(addr)
-                || self.prims.bool_false.as_ref() == Some(addr))
+              && (Primitives::<M>::addr_matches(&self.prims.bool_true, addr)
+                || Primitives::<M>::addr_matches(&self.prims.bool_false, addr))
           };
           let ok = match result.inner() {
-            ValInner::Ctor { addr, spine, .. } => is_bool(addr, spine.is_empty()),
+            ValInner::Ctor { id, spine, .. } => is_bool(&id.addr, spine.is_empty()),
             ValInner::Neutral {
-              head: Head::Const { addr, .. },
+              head: Head::Const { id, .. },
               spine,
-            } => is_bool(addr, spine.is_empty()),
+            } => is_bool(&id.addr, spine.is_empty()),
             _ => false,
           };
           if !ok {
@@ -1056,21 +1198,21 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         // reduceNat  → mk_lit(literal(nat(...))) (canonical Lit)
         if is_reduce_bool {
           let is_true = match result.inner() {
-            ValInner::Ctor { addr, .. } => self.prims.bool_true.as_ref() == Some(addr),
-            ValInner::Neutral { head: Head::Const { addr, .. }, .. } => {
-              self.prims.bool_true.as_ref() == Some(addr)
+            ValInner::Ctor { id, .. } => Primitives::<M>::addr_matches(&self.prims.bool_true, &id.addr),
+            ValInner::Neutral { head: Head::Const { id, .. }, .. } => {
+              Primitives::<M>::addr_matches(&self.prims.bool_true, &id.addr)
             }
             _ => false,
           };
-          let (ctor_addr, cidx) = if is_true {
+          let (ctor_id, cidx) = if is_true {
             (self.prims.bool_true.as_ref().unwrap().clone(), 1usize)
           } else {
             (self.prims.bool_false.as_ref().unwrap().clone(), 0usize)
           };
-          let induct = self.prims.bool_type.clone().unwrap();
+          let induct_addr = self.prims.bool_type.as_ref().unwrap().addr.clone();
           Ok(Some(Val::mk_ctor(
-            ctor_addr, Vec::new(), M::Field::<Name>::default(),
-            cidx, 0, 0, induct, Vec::new(),
+            ctor_id, Vec::new(),
+            cidx, 0, 0, induct_addr, Vec::new(),
           )))
         } else {
           // reduceNat: extract and rewrap as canonical Lit
@@ -1136,10 +1278,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     // Step 2: Nat primitive reduction
     let result = if let Some(v2) = self.try_reduce_nat_val(&v1)? {
       self.whnf_val(&v2, delta_steps + 1)?
-    // Step 2b: Block delta-unfolding of fully-applied nat primitives.
-    // If tryReduceNatVal returned None, the recursor would also be stuck.
-    // Keeping the compact Nat.add/sub/etc form aids structural comparison.
-    } else if self.is_fully_applied_nat_prim(&v1) {
+    // Step 2b: Block delta-unfolding of fully-applied nat primitives when
+    // all args are ground (no fvars). When args contain fvars, the recursor
+    // definition can still make progress by pattern-matching on constructors
+    // (e.g. Nat.ble (succ n) m), so we must allow delta unfolding.
+    } else if self.is_fully_applied_nat_prim(&v1) && !self.nat_prim_has_fvar_arg(&v1)? {
       v1
     // Step 3: Delta unfolding (single step)
     } else if let Some(v2) = self.delta_step_val(&v1)? {
@@ -1188,10 +1331,10 @@ pub fn inst_levels_expr<M: MetaMode>(expr: &KExpr<M>, levels: &[KLevel<M>]) -> K
   match expr.data() {
     KExprData::BVar(..) | KExprData::Lit(_) => expr.clone(),
     KExprData::Sort(l) => KExpr::sort(inst_bulk_reduce(levels, l)),
-    KExprData::Const(addr, ls, name) => {
+    KExprData::Const(id, ls) => {
       let new_ls: Vec<_> =
         ls.iter().map(|l| inst_bulk_reduce(levels, l)).collect();
-      KExpr::cnst(addr.clone(), new_ls, name.clone())
+      KExpr::cnst(id.clone(), new_ls)
     }
     KExprData::App(f, a) => {
       KExpr::app(inst_levels_expr(f, levels), inst_levels_expr(a, levels))
@@ -1214,8 +1357,8 @@ pub fn inst_levels_expr<M: MetaMode>(expr: &KExpr<M>, levels: &[KLevel<M>]) -> K
       inst_levels_expr(body, levels),
       name.clone(),
     ),
-    KExprData::Proj(addr, idx, s, name) => {
-      KExpr::proj(addr.clone(), *idx, inst_levels_expr(s, levels), name.clone())
+    KExprData::Proj(type_id, idx, s) => {
+      KExpr::proj(type_id.clone(), *idx, inst_levels_expr(s, levels))
     }
   }
 }

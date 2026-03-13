@@ -77,8 +77,17 @@ instance : ToString Address where
 instance : Repr Address where
   reprPrec a _ := "#" ++ (toString a).toFormat
 
+private def compareBytesLoop (a b : ByteArray) (i : Nat) : Ordering :=
+  if i >= a.size then .eq
+  else
+    let va := a.get! i
+    let vb := b.get! i
+    if va < vb then .lt
+    else if va > vb then .gt
+    else compareBytesLoop a b (i + 1)
+
 instance : Ord Address where
-  compare a b := compare a.hash.data.toList b.hash.data.toList
+  compare a b := compareBytesLoop a.hash b.hash 0
 
 instance : Inhabited Address where
   default := Address.blake3 ⟨#[]⟩

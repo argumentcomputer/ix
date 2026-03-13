@@ -10,6 +10,7 @@ import Ix.Kernel.Value
 import Ix.Kernel.EquivManager
 import Ix.Kernel.Datatypes
 import Ix.Kernel.Level
+import Std.Data.HashMap
 import Init.System.ST
 
 namespace Ix.Kernel
@@ -72,11 +73,11 @@ structure TypecheckCtx (σ : Type) (m : Ix.Kernel.MetaMode) where
   letValues  : Array (Option (Val m)) := #[]
   binderNames : Array (KMetaField m Ix.Name) := #[]
   kenv       : KEnv m
-  prims      : KPrimitives
+  prims      : KPrimitives m
   safety     : KDefinitionSafety
   quotInit   : Bool
-  mutTypes   : Std.TreeMap Nat (Address × (Array (KLevel m) → Val m)) compare := default
-  recAddr?   : Option Address := none
+  mutTypes   : Std.TreeMap Nat (KMetaId m × (Array (KLevel m) → Val m)) compare := default
+  recId?     : Option (KMetaId m) := none
   inferOnly  : Bool := false
   eagerReduce : Bool := false
   wordSize   : WordSize := .word64
@@ -91,22 +92,15 @@ structure TypecheckCtx (σ : Type) (m : Ix.Kernel.MetaMode) where
 def defaultMaxHeartbeats : Nat := 200_000_000
 def defaultMaxThunks : Nat := 10_000_000
 
-private def ptrPairOrd : Ord (USize × USize) where
-  compare a b :=
-    match compare a.1 b.1 with
-    | .eq => compare a.2 b.2
-    | r => r
-
 structure TypecheckState (m : Ix.Kernel.MetaMode) where
-  typedConsts    : Std.TreeMap Address (KTypedConst m) Ix.Kernel.Address.compare := default
-  ptrFailureCache : Std.TreeMap (USize × USize) (Val m × Val m) ptrPairOrd.compare := default
-  ptrSuccessCache : Std.TreeMap (USize × USize) (Val m × Val m) ptrPairOrd.compare := default
+  typedConsts    : Std.HashMap (KMetaId m) (KTypedConst m) := {}
+  ptrFailureCache : Std.HashMap (USize × USize) (Val m × Val m) := {}
+  ptrSuccessCache : Std.HashMap (USize × USize) (Val m × Val m) := {}
   eqvManager     : EquivManager := {}
   keepAlive      : Array (Val m) := #[]
-  inferCache     : Std.TreeMap (KExpr m) (Array (Val m) × KTypedExpr m × Val m)
-                     Ix.Kernel.Expr.compare := default
-  whnfCache      : Std.TreeMap USize (Val m × Val m) compare := default
-  whnfCoreCache  : Std.TreeMap USize (Val m × Val m) compare := default
+  inferCache     : Std.HashMap USize (KExpr m × Array (Val m) × KTypedExpr m × Val m) := {}
+  whnfCache      : Std.HashMap USize (Val m × Val m) := {}
+  whnfCoreCache  : Std.HashMap USize (Val m × Val m) := {}
   maxHeartbeats  : Nat := defaultMaxHeartbeats
   maxThunks      : Nat := defaultMaxThunks
   stats          : Stats := {}
@@ -125,6 +119,7 @@ abbrev TypecheckM (σ : Type) (m : Ix.Kernel.MetaMode) :=
 
 /-- Allocate a new thunk (unevaluated). Returns its index. -/
 def mkThunk (expr : KExpr m) (env : Array (Val m)) : TypecheckM σ m Nat := do
+  modify fun st => { st with stats.thunkCount := st.stats.thunkCount + 1 }
   let tableRef := (← read).thunkTable
   let table ← tableRef.get
   if table.size >= (← get).maxThunks then
@@ -135,6 +130,7 @@ def mkThunk (expr : KExpr m) (env : Array (Val m)) : TypecheckM σ m Nat := do
 
 /-- Allocate a thunk that is already evaluated. -/
 def mkThunkFromVal (v : Val m) : TypecheckM σ m Nat := do
+  modify fun st => { st with stats.thunkCount := st.stats.thunkCount + 1 }
   let tableRef := (← read).thunkTable
   let table ← tableRef.get
   if table.size >= (← get).maxThunks then
@@ -165,7 +161,7 @@ def depth : TypecheckM σ m Nat := do pure (← read).types.size
 def withResetCtx : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with
     types := #[], letValues := #[], binderNames := #[],
-    mutTypes := default, recAddr? := none }
+    mutTypes := default, recId? := none }
 
 def withBinder (varType : Val m) (name : KMetaField m Ix.Name := default)
     : TypecheckM σ m α → TypecheckM σ m α :=
@@ -181,12 +177,12 @@ def withLetBinder (varType : Val m) (val : Val m) (name : KMetaField m Ix.Name :
     letValues := ctx.letValues.push (some val),
     binderNames := ctx.binderNames.push name }
 
-def withMutTypes (mutTypes : Std.TreeMap Nat (Address × (Array (KLevel m) → Val m)) compare) :
+def withMutTypes (mutTypes : Std.TreeMap Nat (KMetaId m × (Array (KLevel m) → Val m)) compare) :
     TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with mutTypes := mutTypes }
 
-def withRecAddr (addr : Address) : TypecheckM σ m α → TypecheckM σ m α :=
-  withReader fun ctx => { ctx with recAddr? := some addr }
+def withRecId (id : KMetaId m) : TypecheckM σ m α → TypecheckM σ m α :=
+  withReader fun ctx => { ctx with recId? := some id }
 
 def withInferOnly : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with inferOnly := true }
@@ -197,6 +193,39 @@ def withSafety (s : KDefinitionSafety) : TypecheckM σ m α → TypecheckM σ m 
 def mkFreshFVar (ty : Val m) : TypecheckM σ m (Val m) := do
   let d ← depth
   pure (Val.mkFVar d ty)
+
+/-! ## EquivManager helpers (avoid StateM overhead) -/
+
+@[inline] def equivIsEquiv (ptr1 ptr2 : USize) : TypecheckM σ m Bool := do
+  if ptr1 == ptr2 then return true
+  let stt ← get
+  let mgr := stt.eqvManager
+  match mgr.toNodeMap.get? ptr1, mgr.toNodeMap.get? ptr2 with
+  | some n1, some n2 =>
+    let (uf', r1) := mgr.uf.findD n1
+    let (uf'', r2) := uf'.findD n2
+    modify fun st => { st with eqvManager := { mgr with uf := uf'' } }
+    return r1 == r2
+  | _, _ => return false
+
+@[inline] def equivAddEquiv (ptr1 ptr2 : USize) : TypecheckM σ m Unit := do
+  let stt ← get
+  let (_, mgr') := EquivManager.addEquiv ptr1 ptr2 |>.run stt.eqvManager
+  modify fun st => { st with eqvManager := mgr' }
+
+@[inline] def equivFindRootPtr (ptr : USize) : TypecheckM σ m (Option USize) := do
+  let stt ← get
+  let mgr := stt.eqvManager
+  match mgr.toNodeMap.get? ptr with
+  | none => return none
+  | some n =>
+    let (uf', root) := mgr.uf.findD n
+    let mgr' := { mgr with uf := uf' }
+    modify fun st => { st with eqvManager := mgr' }
+    if h : root < mgr'.nodeToPtr.size then
+      return some mgr'.nodeToPtr[root]
+    else
+      return some ptr
 
 /-! ## Heartbeat -/
 
@@ -220,30 +249,37 @@ def mkFreshFVar (ty : Val m) : TypecheckM σ m (Val m) := do
 
 /-! ## Const dereferencing -/
 
-def derefConst (addr : Address) : TypecheckM σ m (KConstantInfo m) := do
-  match (← read).kenv.find? addr with
+def derefConst (id : KMetaId m) : TypecheckM σ m (KConstantInfo m) := do
+  match (← read).kenv.find? id with
+  | some ci => pure ci
+  | none => throw s!"unknown constant {id}"
+
+def derefConstByAddr (addr : Address) : TypecheckM σ m (KConstantInfo m) := do
+  match (← read).kenv.findByAddr? addr with
   | some ci => pure ci
   | none => throw s!"unknown constant {addr}"
 
-def derefTypedConst (addr : Address) : TypecheckM σ m (KTypedConst m) := do
-  match (← get).typedConsts.get? addr with
+def derefTypedConst (id : KMetaId m) : TypecheckM σ m (KTypedConst m) := do
+  match (← get).typedConsts.get? id with
   | some tc => pure tc
-  | none => throw s!"typed constant not found: {addr}"
+  | none => throw s!"typed constant not found: {id}"
 
-def lookupName (addr : Address) : TypecheckM σ m (KMetaField m Ix.Name) := do
-  match (← read).kenv.find? addr with
+def lookupName (id : KMetaId m) : TypecheckM σ m (KMetaField m Ix.Name) := do
+  match (← read).kenv.find? id with
   | some ci => pure ci.cv.name
   | none => pure default
 
 /-! ## Provisional TypedConst -/
 
-def getMajorInduct (type : KExpr m) (numParams numMotives numMinors numIndices : Nat)
-    : Option Address :=
+def getMajorInductId (type : KExpr m) (numParams numMotives numMinors numIndices : Nat)
+    : Option (KMetaId m) :=
   go (numParams + numMotives + numMinors + numIndices) type
 where
-  go : Nat → KExpr m → Option Address
+  go : Nat → KExpr m → Option (KMetaId m)
     | 0, e => match e with
-      | .forallE dom _ _ _ => some dom.getAppFn.constAddr!
+      | .forallE dom _ _ _ => match dom.getAppFn with
+        | .const id _ => some id
+        | _ => none
       | _ => none
     | n+1, e => match e with
       | .forallE _ body _ _ => go n body
@@ -263,17 +299,17 @@ def provisionalTypedConst (ci : KConstantInfo m) : KTypedConst m :=
     .inductive rawType isStruct
   | .ctorInfo v => .constructor rawType v.cidx v.numFields
   | .recInfo v =>
-    let indAddr := getMajorInduct ci.type v.numParams v.numMotives v.numMinors v.numIndices
+    let indAddr := (getMajorInductId ci.type v.numParams v.numMotives v.numMinors v.numIndices).map (·.addr)
       |>.getD default
     let typedRules := v.rules.map fun r => (r.nfields, (⟨default, r.rhs⟩ : KTypedExpr m))
     .recursor rawType v.numParams v.numMotives v.numMinors v.numIndices v.k indAddr typedRules
 
-def ensureTypedConst (addr : Address) : TypecheckM σ m Unit := do
-  if (← get).typedConsts.get? addr |>.isSome then return ()
-  let ci ← derefConst addr
+def ensureTypedConst (id : KMetaId m) : TypecheckM σ m Unit := do
+  if (← get).typedConsts.get? id |>.isSome then return ()
+  let ci ← derefConst id
   let tc := provisionalTypedConst ci
   modify fun stt => { stt with
-    typedConsts := stt.typedConsts.insert addr tc }
+    typedConsts := stt.typedConsts.insert id tc }
 
 /-! ## Top-level runner -/
 
@@ -289,7 +325,7 @@ def TypecheckM.runPure (ctx_no_thunks : ∀ σ, ST.Ref σ (Array (ST.Ref σ (Thu
     ExceptT.run (StateT.run (ReaderT.run (action σ) ctx) stt)
 
 /-- Simplified runner for common case. -/
-def TypecheckM.runSimple (kenv : KEnv m) (prims : KPrimitives)
+def TypecheckM.runSimple (kenv : KEnv m) (prims : KPrimitives m)
     (stt : TypecheckState m := {})
     (safety : KDefinitionSafety := .safe) (quotInit : Bool := false)
     (action : ∀ σ, TypecheckM σ m α)
