@@ -384,8 +384,14 @@ def kernel := ⟦
       KExpr.Srt(&l) =>
         KVal.Srt(store(level_reduce(l))),
 
+      -- Lazy: no definition unfolding during eval, deferred to WHNF
       KExpr.Const(idx, &lvls) =>
-        k_eval_const(idx, lvls, top),
+        let ci = const_list_lookup(top, idx);
+        match ci {
+          KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
+            KVal.Ctor(idx, store(lvls), nparams, store(KValList.Nil)),
+          _ => KVal.Const(idx, store(lvls), store(KValList.Nil)),
+        },
 
       -- Eager beta optimization: if the function is a lambda, evaluate arg eagerly
       -- (skipping thunk allocation). Otherwise create a thunk and accumulate.
@@ -419,29 +425,14 @@ def kernel := ⟦
 
       KExpr.Proj(tidx, fidx, &e1) =>
         let v = k_eval(e1, env, top);
-        k_eval_proj(tidx, fidx, v, top),
-    }
-  }
-
-  -- Evaluate a constant reference (lazy: no definition unfolding, deferred to WHNF)
-  fn k_eval_const(idx: [G; 8], lvls: KLevelList, top: KConstList) -> KVal {
-    let ci = const_list_lookup(top, idx);
-    match ci {
-      KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
-        KVal.Ctor(idx, store(lvls), nparams, store(KValList.Nil)),
-      _ => KVal.Const(idx, store(lvls), store(KValList.Nil)),
-    }
-  }
-
-  -- Evaluate a projection (forces the field value if struct is a constructor)
-  fn k_eval_proj(tidx: [G; 8], fidx: [G; 8], v: KVal, top: KConstList) -> KVal {
-    match v {
-      KVal.Ctor(_, _, nparams, &spine) =>
-        let field_idx = u64_add(nparams, fidx);
-        let field = val_list_lookup(spine, field_idx);
-        k_force(field, top),
-      _ =>
-        KVal.Proj(tidx, fidx, store(v), store(KValList.Nil)),
+        match v {
+          KVal.Ctor(_, _, nparams, &spine) =>
+            let field_idx = u64_add(nparams, fidx);
+            let field = val_list_lookup(spine, field_idx);
+            k_force(field, top),
+          _ =>
+            KVal.Proj(tidx, fidx, store(v), store(KValList.Nil)),
+        },
     }
   }
 
@@ -853,7 +844,7 @@ def kernel := ⟦
 
   -- Bidirectional type checking: check term against expected type.
   -- For Lambda against Pi, pushes the codomain through instead of independently inferring.
-  fn k_check(e: KExpr, expected: KVal, types: KValList, env: KValEnv, depth: [G; 8], top: KConstList, nat_idx: [G; 8], str_idx: [G; 8]) -> G {
+  fn k_check(e: KExpr, expected: KVal, types: KValList, env: KValEnv, depth: [G; 8], top: KConstList, nat_idx: [G; 8], str_idx: [G; 8]) {
     match e {
       KExpr.Lam(&ty, &body) =>
         let expected_whnf = k_whnf(expected, top);
@@ -874,15 +865,13 @@ def kernel := ⟦
             -- Expected type is not a Pi after whnf, fall back to infer+compare
             let inferred = k_infer(e, types, env, depth, top, nat_idx, str_idx);
             let eq = k_is_def_eq(inferred, expected, depth, top, nat_idx, str_idx);
-            assert_eq!(eq, 1);
-            1,
+            assert_eq!(eq, 1);,
         },
       _ =>
         -- Non-lambda: infer + isDefEq
         let inferred = k_infer(e, types, env, depth, top, nat_idx, str_idx);
         let eq = k_is_def_eq(inferred, expected, depth, top, nat_idx, str_idx);
-        assert_eq!(eq, 1);
-        1,
+        assert_eq!(eq, 1);,
     }
   }
 
@@ -1041,23 +1030,6 @@ def kernel := ⟦
     }
   }
 
-  -- Check if a constructor belongs to a struct-like type (exactly 1 constructor)
-  fn is_struct_like(ctor_idx: [G; 8], top: KConstList) -> G {
-    let ctor_ci = const_list_lookup(top, ctor_idx);
-    match ctor_ci {
-      KConstantInfo.Ctor(_, _, induct_idx, _, _, nfields, _) =>
-        let ind_ci = const_list_lookup(top, induct_idx);
-        match ind_ci {
-          KConstantInfo.Induct(_, _, _, _, &ctor_indices, _, _, _) =>
-            let num_ctors = ku64_list_length(ctor_indices);
-            let one = relaxed_u64_succ([0; 8]);
-            u64_eq(num_ctors, one),
-          _ => 0,
-        },
-      _ => 0,
-    }
-  }
-
   -- Compare each field: Proj(tidx, i, t) vs spine[nparams + i]
   fn eta_struct_fields(t: KVal, spine: KValList, nparams: [G; 8], tidx: [G; 8], current: [G; 8], remaining: [G; 8], depth: [G; 8], top: KConstList, nat_idx: [G; 8], str_idx: [G; 8]) -> G {
     let z = u64_is_zero(remaining);
@@ -1075,17 +1047,27 @@ def kernel := ⟦
     }
   }
 
-  -- Try struct eta: if s is a Ctor of a struct-like type, compare fields
+  -- Try struct eta: if s is a Ctor of a struct-like type, compare fields.
+  -- Inlines is_struct_like, ctor_induct_idx, ctor_num_fields to avoid redundant lookups.
   fn try_eta_struct_one(t: KVal, s: KVal, depth: [G; 8], top: KConstList, nat_idx: [G; 8], str_idx: [G; 8]) -> G {
     match s {
       KVal.Ctor(ctor_idx, _, nparams, &spine) =>
-        let struct_like = is_struct_like(ctor_idx, top);
-        match struct_like {
-          0 => 0,
-          1 =>
-            let induct_idx = ctor_induct_idx(ctor_idx, top);
-            let num_fields = ctor_num_fields(ctor_idx, top);
-            eta_struct_fields(t, spine, nparams, induct_idx, [0; 8], num_fields, depth, top, nat_idx, str_idx),
+        let ctor_ci = const_list_lookup(top, ctor_idx);
+        match ctor_ci {
+          KConstantInfo.Ctor(_, _, induct_idx, _, _, num_fields, _) =>
+            let ind_ci = const_list_lookup(top, induct_idx);
+            match ind_ci {
+              KConstantInfo.Induct(_, _, _, _, &ctor_indices, _, _, _) =>
+                let num_ctors = ku64_list_length(ctor_indices);
+                let is_single = u64_eq(num_ctors, relaxed_u64_succ([0; 8]));
+                match is_single {
+                  0 => 0,
+                  1 =>
+                    eta_struct_fields(t, spine, nparams, induct_idx, [0; 8], num_fields, depth, top, nat_idx, str_idx),
+                },
+              _ => 0,
+            },
+          _ => 0,
         },
       _ => 0,
     }
@@ -1458,45 +1440,42 @@ def kernel := ⟦
 
   -- Type-check a single constant declaration against the environment.
   -- nat_idx/str_idx are the constant indices for the Nat/String types.
-  fn k_check_const(ci: KConstantInfo, top: KConstList, nat_idx: [G; 8], str_idx: [G; 8]) -> G {
+  fn k_check_const(ci: KConstantInfo, top: KConstList, nat_idx: [G; 8], str_idx: [G; 8]) {
     match ci {
       KConstantInfo.Axiom(_, &ty, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        1,
+        (),
 
       KConstantInfo.Defn(_, &ty, &value, _, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
-        let _chk = k_check(value, ty_val, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        1,
+        k_check(value, ty_val, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx),
 
       KConstantInfo.Thm(_, &ty, &value) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
-        let _chk = k_check(value, ty_val, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        1,
+        k_check(value, ty_val, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx),
 
       KConstantInfo.Opaque(_, &ty, &value, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
-        let _chk = k_check(value, ty_val, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        1,
+        k_check(value, ty_val, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx),
 
       KConstantInfo.Quot(_, &ty, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        1,
+        (),
 
       KConstantInfo.Induct(_, &ty, _, _, _, _, _, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        1,
+        (),
 
       KConstantInfo.Ctor(_, &ty, _, _, _, _, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        1,
+        (),
 
       KConstantInfo.Rec(_, &ty, _, _, _, _, _, _, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, [0; 8], top, nat_idx, str_idx);
-        1,
+        (),
     }
   }
 
@@ -1507,9 +1486,9 @@ def kernel := ⟦
     }
   }
 
-  fn k_check_all_go(consts: KConstList, top: KConstList, nat_idx: [G; 8], str_idx: [G; 8], idx: [G; 8]) -> G {
+  fn k_check_all_go(consts: KConstList, top: KConstList, nat_idx: [G; 8], str_idx: [G; 8], idx: [G; 8]) {
     match consts {
-      KConstList.Nil => 1,
+      KConstList.Nil => (),
       KConstList.Cons(&ci, &rest) =>
         let _x = k_check_const(ci, top, nat_idx, str_idx);
         k_check_all_go(rest, top, nat_idx, str_idx, relaxed_u64_succ(idx)),
