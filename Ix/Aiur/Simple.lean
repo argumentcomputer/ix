@@ -28,6 +28,9 @@ partial def simplifyTerm (decls : Decls) : Term → Term
   | .data (.tuple args) => .data (.tuple (args.map recr))
   | .data (.array args) => .data (.array (args.map recr))
   | .debug label term ret => .debug label (term.map recr) (recr ret)
+  | .assertEq a b ret => .assertEq (recr a) (recr b) (recr ret)
+  | .ioSetInfo key idx len ret => .ioSetInfo (recr key) (recr idx) (recr len) (recr ret)
+  | .ioWrite data ret => .ioWrite (recr data) (recr ret)
   | t => t
 where
   recr := simplifyTerm decls
