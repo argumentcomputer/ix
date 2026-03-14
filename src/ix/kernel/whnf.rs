@@ -61,23 +61,42 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     cheap_rec: bool,
     cheap_proj: bool,
   ) -> TcResult<Val<M>, M> {
-    self.heartbeat()?;
+    // Fast path: values that are always structurally WHNF.
+    // Sort, Lit, Lam, Pi, Ctor never reduce structurally.
+    // FVar-headed Neutrals miss the Head::Const match in whnf_core_val_inner.
+    match v.inner() {
+      ValInner::Sort(_) | ValInner::Lit(_) | ValInner::Lam { .. }
+      | ValInner::Pi { .. } | ValInner::Ctor { .. } => return Ok(v.clone()),
+      ValInner::Neutral { head: Head::FVar { .. }, .. } => return Ok(v.clone()),
+      _ => {}
+    }
 
-    // Check cache (only when not cheap_rec and not cheap_proj)
-    if !cheap_rec && !cheap_proj {
+    // Check cache: full cache for (!cheap_rec && !cheap_proj),
+    // cheap cache for (!cheap_rec && cheap_proj). Matches Lean's
+    // whnfCoreCacheRef / whnfCoreCheapCacheRef split.
+    let use_full_cache = !cheap_rec && !cheap_proj;
+    let use_cheap_cache = !cheap_rec && cheap_proj;
+    if use_full_cache || use_cheap_cache {
+      let cache = if use_full_cache {
+        &self.whnf_core_cache
+      } else {
+        &self.whnf_core_cheap_cache
+      };
       let key = v.ptr_id();
-      if let Some((orig, cached)) = self.whnf_core_cache.get(&key) {
+      if let Some((orig, cached)) = cache.get(&key) {
         if orig.ptr_eq(v) {
           self.stats.whnf_core_cache_hits += 1;
           return Ok(cached.clone());
         }
       }
-      // Second-chance lookup via equiv root
-      if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
-        if root_ptr != key {
-          if let Some((_, cached)) = self.whnf_core_cache.get(&root_ptr) {
-            self.stats.whnf_core_cache_hits += 1;
-            return Ok(cached.clone());
+      // Second-chance lookup via equiv root (full cache only, matching Lean)
+      if use_full_cache {
+        if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
+          if root_ptr != key {
+            if let Some((_, cached)) = self.whnf_core_cache.get(&root_ptr) {
+              self.stats.whnf_core_cache_hits += 1;
+              return Ok(cached.clone());
+            }
           }
         }
       }
@@ -87,13 +106,20 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let result = self.whnf_core_val_inner(v, cheap_rec, cheap_proj)?;
 
     // Cache result
-    if !cheap_rec && !cheap_proj {
+    if use_full_cache || use_cheap_cache {
       let key = v.ptr_id();
-      self.whnf_core_cache.insert(key, (v.clone(), result.clone()));
-      // Also insert under root
-      if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
-        if root_ptr != key {
-          self.whnf_core_cache.insert(root_ptr, (v.clone(), result.clone()));
+      let cache = if use_full_cache {
+        &mut self.whnf_core_cache
+      } else {
+        &mut self.whnf_core_cheap_cache
+      };
+      cache.insert(key, (v.clone(), result.clone()));
+      // Also insert under root (full cache only)
+      if use_full_cache {
+        if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
+          if root_ptr != key {
+            self.whnf_core_cache.insert(root_ptr, (v.clone(), result.clone()));
+          }
         }
       }
     }
@@ -300,7 +326,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           }
         }
 
-        // Quotient reduction (look up directly in env)
+        // Quotient reduction (look up directly in env, guarded by quot_init)
+        if self.quot_init {
         if let Some(KConstantInfo::Quotient(qv)) = self.env.find_by_addr(addr) {
           use crate::ix::env::QuotKind;
           let kind = qv.kind;
@@ -322,6 +349,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             _ => {}
           }
         }
+        } // quot_init guard
 
         Ok(v.clone())
       }
@@ -714,7 +742,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     &mut self,
     v: &Val<M>,
   ) -> TcResult<Option<Val<M>>, M> {
-    self.heartbeat()?;
     match v.inner() {
       ValInner::Neutral {
         head: Head::Const { id, levels },
@@ -748,11 +775,21 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           _ => return Ok(None),
         };
 
-        // Instantiate universe levels in the body
-        let body_inst = self.instantiate_levels(body, levels);
-
-        // Evaluate the body (empty env — definition bodies are closed)
-        let mut val = self.eval(&body_inst, &empty_env())?;
+        // Check unfold cache: (addr, levels) -> evaluated body Val.
+        let mut val = if !levels.is_empty() {
+          let cache_key = (addr.clone(), levels.to_vec());
+          if let Some(cached) = self.unfold_cache.get(&cache_key) {
+            self.stats.unfold_cache_hits += 1;
+            cached.clone()
+          } else {
+            let body_inst = self.instantiate_levels(body, levels);
+            let v = self.eval(&body_inst, &empty_env())?;
+            self.unfold_cache.insert(cache_key, v.clone());
+            v
+          }
+        } else {
+          self.eval(body, &empty_env())?
+        };
 
         // Apply all spine thunks
         for thunk in spine {
@@ -895,6 +932,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // n * 0 = 0
             } else if Primitives::<M>::addr_matches(&self.prims.nat_pow, addr) {
               return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat::from(1u64))))); // n ^ 0 = 1
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_mod, addr) {
+              return Ok(NatReduceResult::Reduced(a)); // mod n 0 = n
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_div, addr) {
+              return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // div n 0 = 0
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_gcd, addr) {
+              return Ok(NatReduceResult::Reduced(a)); // gcd n 0 = n
             } else if Primitives::<M>::addr_matches(&self.prims.nat_ble, addr) {
               // n ≤ 0 = (n == 0)
               if is_nat_zero_val(&a, self.prims) {
@@ -915,6 +958,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // 0 - n = 0
             } else if Primitives::<M>::addr_matches(&self.prims.nat_mul, addr) {
               return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat::from(0u64))))); // 0 * n = 0
+            } else if Primitives::<M>::addr_matches(&self.prims.nat_gcd, addr) {
+              return Ok(NatReduceResult::Reduced(b)); // gcd 0 n = n
             } else if Primitives::<M>::addr_matches(&self.prims.nat_ble, addr) {
               // 0 ≤ n = true
               if let Some(t) = &self.prims.bool_true {
@@ -1199,15 +1244,17 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     v: &Val<M>,
     delta_steps: usize,
   ) -> TcResult<Val<M>, M> {
-    let max_steps = if self.eager_reduce {
-      MAX_DELTA_STEPS_EAGER
-    } else {
-      MAX_DELTA_STEPS
-    };
+    // Fast path: values that are always fully WHNF.
+    // No structural, delta, nat, or native reduction applies.
+    match v.inner() {
+      ValInner::Sort(_) | ValInner::Lit(_) | ValInner::Lam { .. }
+      | ValInner::Pi { .. } | ValInner::Ctor { .. } => return Ok(v.clone()),
+      ValInner::Neutral { head: Head::FVar { .. }, .. } => return Ok(v.clone()),
+      _ => {}
+    }
 
-    // Check cache on first entry
+    // Check cache on first entry (O(1), no heartbeat needed)
     if delta_steps == 0 {
-      self.heartbeat()?;
       let key = v.ptr_id();
       // Direct lookup
       if let Some((orig, cached)) = self.whnf_cache.get(&key) {
@@ -1230,8 +1277,31 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           }
         }
       }
+      // Structural cache for constant-headed neutrals: key on (addr, thunk_ptrs)
+      if let ValInner::Neutral { head: Head::Const { id, .. }, spine } = v.inner() {
+        let struct_key: (Address, Vec<usize>) = (
+          id.addr.clone(),
+          spine.iter().map(|t| Rc::as_ptr(t) as usize).collect(),
+        );
+        if let Some(cached) = self.whnf_structural_cache.get(&struct_key) {
+          self.stats.cache_hits += 1;
+          self.stats.whnf_cache_hits += 1;
+          // Also populate pointer cache for future lookups
+          self.whnf_cache.insert(key, (v.clone(), cached.clone()));
+          return Ok(cached.clone());
+        }
+      }
       self.stats.whnf_cache_misses += 1;
     }
+
+    // Heartbeat after cache checks — only counts actual work
+    self.heartbeat()?;
+
+    let max_steps = if self.eager_reduce {
+      MAX_DELTA_STEPS_EAGER
+    } else {
+      MAX_DELTA_STEPS
+    };
 
     if delta_steps > max_steps {
       return Err(TcError::KernelException {
@@ -1263,6 +1333,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     if delta_steps == 0 {
       let key = v.ptr_id();
       self.whnf_cache.insert(key, (v.clone(), result.clone()));
+      // Structural cache for constant-headed neutrals
+      if let ValInner::Neutral { head: Head::Const { id, .. }, spine } = v.inner() {
+        let struct_key: (Address, Vec<usize>) = (
+          id.addr.clone(),
+          spine.iter().map(|t| Rc::as_ptr(t) as usize).collect(),
+        );
+        self.whnf_structural_cache.insert(struct_key, result.clone());
+      }
       // Register v ≡ whnf(v) in equiv manager
       if !v.ptr_eq(&result) {
         self.add_equiv_val(v, &result);

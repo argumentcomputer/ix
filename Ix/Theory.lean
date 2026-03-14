@@ -14,6 +14,7 @@ import Ix.Theory.NatSoundness
 import Ix.Theory.Typing
 import Ix.Theory.TypingLemmas
 import Ix.Theory.NbESoundness
+import Ix.Theory.SemType
 import Ix.Theory.Confluence
 import Ix.Theory.Inductive
 import Ix.Theory.Quotient

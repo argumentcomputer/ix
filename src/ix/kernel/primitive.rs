@@ -7,6 +7,7 @@
 
 use crate::ix::address::Address;
 use crate::ix::env::Name;
+use crate::lean::nat::Nat;
 
 use super::error::TcError;
 use super::tc::{TcResult, TypeChecker};
@@ -17,116 +18,41 @@ impl<M: MetaMode> TypeChecker<'_, M> {
   // Expression builders
   // =====================================================================
 
-  fn nat_const(&self) -> Option<KExpr<M>> {
-    Some(KExpr::cnst(
-      self.prims.nat.clone()?,
-      Vec::new(),
-    ))
+  /// Build a constant expression from an optional MetaId.
+  fn prim_expr(id: &Option<MetaId<M>>) -> Option<KExpr<M>> {
+    Some(KExpr::cnst(id.clone()?, Vec::new()))
   }
 
-  fn bool_const(&self) -> Option<KExpr<M>> {
-    Some(KExpr::cnst(
-      self.prims.bool_type.clone()?,
-      Vec::new(),
-    ))
+  /// Build a unary application of a primitive.
+  fn prim_un_app(id: &Option<MetaId<M>>, a: KExpr<M>) -> Option<KExpr<M>> {
+    Some(KExpr::app(Self::prim_expr(id)?, a))
   }
 
-  fn true_const(&self) -> Option<KExpr<M>> {
-    Some(KExpr::cnst(
-      self.prims.bool_true.clone()?,
-      Vec::new(),
-    ))
+  /// Build a binary application of a primitive.
+  fn prim_bin_app(id: &Option<MetaId<M>>, a: KExpr<M>, b: KExpr<M>) -> Option<KExpr<M>> {
+    Some(KExpr::app(Self::prim_un_app(id, a)?, b))
   }
 
-  fn false_const(&self) -> Option<KExpr<M>> {
-    Some(KExpr::cnst(
-      self.prims.bool_false.clone()?,
-      Vec::new(),
-    ))
-  }
-
-  fn zero_const(&self) -> Option<KExpr<M>> {
-    Some(KExpr::cnst(
-      self.prims.nat_zero.clone()?,
-      Vec::new(),
-    ))
-  }
-
-  fn char_const(&self) -> Option<KExpr<M>> {
-    Some(KExpr::cnst(
-      self.prims.char_type.clone()?,
-      Vec::new(),
-    ))
-  }
-
-  fn string_const(&self) -> Option<KExpr<M>> {
-    Some(KExpr::cnst(
-      self.prims.string.clone()?,
-      Vec::new(),
-    ))
-  }
+  fn nat_const(&self) -> Option<KExpr<M>> { Self::prim_expr(&self.prims.nat) }
+  fn bool_const(&self) -> Option<KExpr<M>> { Self::prim_expr(&self.prims.bool_type) }
+  fn true_const(&self) -> Option<KExpr<M>> { Self::prim_expr(&self.prims.bool_true) }
+  fn false_const(&self) -> Option<KExpr<M>> { Self::prim_expr(&self.prims.bool_false) }
+  fn zero_const(&self) -> Option<KExpr<M>> { Self::prim_expr(&self.prims.nat_zero) }
+  fn char_const(&self) -> Option<KExpr<M>> { Self::prim_expr(&self.prims.char_type) }
+  fn string_const(&self) -> Option<KExpr<M>> { Self::prim_expr(&self.prims.string) }
 
   fn list_char_const(&self) -> Option<KExpr<M>> {
-    let list_id = self.prims.list.clone()?;
-    let char_e = self.char_const()?;
     Some(KExpr::app(
-      KExpr::cnst(
-        list_id,
-        vec![KLevel::zero()],
-      ),
-      char_e,
+      KExpr::cnst(self.prims.list.clone()?, vec![KLevel::zero()]),
+      self.char_const()?,
     ))
   }
 
-  fn succ_app(&self, e: KExpr<M>) -> Option<KExpr<M>> {
-    Some(KExpr::app(
-      KExpr::cnst(
-        self.prims.nat_succ.clone()?,
-        Vec::new(),
-      ),
-      e,
-    ))
-  }
-
-  fn pred_app(&self, e: KExpr<M>) -> Option<KExpr<M>> {
-    Some(KExpr::app(
-      KExpr::cnst(
-        self.prims.nat_pred.clone()?,
-        Vec::new(),
-      ),
-      e,
-    ))
-  }
-
-  fn bin_app(
-    &self,
-    id: &MetaId<M>,
-    a: KExpr<M>,
-    b: KExpr<M>,
-  ) -> KExpr<M> {
-    KExpr::app(
-      KExpr::app(
-        KExpr::cnst(
-          id.clone(),
-          Vec::new(),
-        ),
-        a,
-      ),
-      b,
-    )
-  }
-
-  fn add_app(&self, a: KExpr<M>, b: KExpr<M>) -> Option<KExpr<M>> {
-    Some(self.bin_app(self.prims.nat_add.as_ref()?, a, b))
-  }
-
-  fn mul_app(&self, a: KExpr<M>, b: KExpr<M>) -> Option<KExpr<M>> {
-    Some(self.bin_app(self.prims.nat_mul.as_ref()?, a, b))
-  }
-
-  fn div_app(&self, a: KExpr<M>, b: KExpr<M>) -> Option<KExpr<M>> {
-    Some(self.bin_app(self.prims.nat_div.as_ref()?, a, b))
-  }
+  fn succ_app(&self, e: KExpr<M>) -> Option<KExpr<M>> { Self::prim_un_app(&self.prims.nat_succ, e) }
+  fn pred_app(&self, e: KExpr<M>) -> Option<KExpr<M>> { Self::prim_un_app(&self.prims.nat_pred, e) }
+  fn add_app(&self, a: KExpr<M>, b: KExpr<M>) -> Option<KExpr<M>> { Self::prim_bin_app(&self.prims.nat_add, a, b) }
+  fn mul_app(&self, a: KExpr<M>, b: KExpr<M>) -> Option<KExpr<M>> { Self::prim_bin_app(&self.prims.nat_mul, a, b) }
+  fn div_app(&self, a: KExpr<M>, b: KExpr<M>) -> Option<KExpr<M>> { Self::prim_bin_app(&self.prims.nat_div, a, b) }
 
   fn nat_bin_type(&self) -> Option<KExpr<M>> {
     let nat = self.nat_const()?;
@@ -370,7 +296,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       &p.nat_land,
       &p.nat_lor,
       &p.nat_xor,
-      &p.nat_bitwise,
       &p.nat_mod,
       &p.nat_div,
       &p.nat_gcd,
@@ -390,6 +315,17 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let x = KExpr::bvar(0, M::Field::<Name>::default());
     let y = KExpr::bvar(1, M::Field::<Name>::default());
 
+    // Shared expression for the current primitive constant.
+    // Using the env-resolved id (not prims) so try_reduce_nat_val step-case fires.
+    let prim_e = KExpr::cnst(addr_id.clone(), Vec::new());
+    // Shared binary/unary application helpers
+    let bin_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
+      KExpr::app(KExpr::app(prim_e.clone(), a), b)
+    };
+    let un_v = |a: KExpr<M>| -> KExpr<M> {
+      KExpr::app(prim_e.clone(), a)
+    };
+
     // Nat.add
     if Primitives::<M>::addr_matches(&self.prims.nat_add, addr) {
       if !self.prim_in_env(&self.prims.nat) || v.cv.num_levels != 0 {
@@ -399,19 +335,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natAdd: type mismatch"));
       }
-      // Use the constant so try_reduce_nat_val step-case fires
-      let add_const = KExpr::cnst(self.prims.nat_add.as_ref().unwrap().clone(), Vec::new());
-      let add_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(add_const.clone(), a), b)
-      };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
-      let add_y_x = (self.add_app(y.clone(), x.clone())).ok_or_else(|| self.prim_err("add"))?;
+      let add_y_x = self.add_app(y.clone(), x.clone()).ok_or_else(|| self.prim_err("add"))?;
       let succ_add = self.succ_app(add_y_x).ok_or_else(|| self.prim_err("succ"))?;
-      if !self.defeq1(add_v(x.clone(), zero), x.clone())? {
+      if !self.defeq1(bin_v(x.clone(), zero), x.clone())? {
         return Err(self.prim_err("natAdd: add x 0 ≠ x"));
       }
-      if !self.defeq2(add_v(y.clone(), succ_x), succ_add)? {
+      if !self.defeq2(bin_v(y.clone(), succ_x), succ_add)? {
         return Err(self.prim_err("natAdd: step check failed"));
       }
       return Ok(());
@@ -426,17 +357,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natPred: type mismatch"));
       }
-      // Use the constant so try_reduce_nat_val step-case fires
-      let pred_const = KExpr::cnst(self.prims.nat_pred.as_ref().unwrap().clone(), Vec::new());
-      let pred_v = |a: KExpr<M>| -> KExpr<M> {
-        KExpr::app(pred_const.clone(), a)
-      };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
-      if !self.check_defeq_expr(&pred_v(zero.clone()), &zero)? {
+      if !self.check_defeq_expr(&un_v(zero.clone()), &zero)? {
         return Err(self.prim_err("natPred: pred 0 ≠ 0"));
       }
-      if !self.defeq1(pred_v(succ_x), x.clone())? {
+      if !self.defeq1(un_v(succ_x), x.clone())? {
         return Err(self.prim_err("natPred: pred (succ x) ≠ x"));
       }
       return Ok(());
@@ -451,19 +377,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natSub: type mismatch"));
       }
-      // Use the constant so try_reduce_nat_val step-case fires
-      let sub_const = KExpr::cnst(self.prims.nat_sub.as_ref().unwrap().clone(), Vec::new());
-      let sub_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(sub_const.clone(), a), b)
-      };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
-      let sub_y_x = sub_v(y.clone(), x.clone());
+      let sub_y_x = bin_v(y.clone(), x.clone());
       let pred_sub = self.pred_app(sub_y_x).ok_or_else(|| self.prim_err("pred"))?;
-      if !self.defeq1(sub_v(x.clone(), zero), x.clone())? {
+      if !self.defeq1(bin_v(x.clone(), zero), x.clone())? {
         return Err(self.prim_err("natSub: sub x 0 ≠ x"));
       }
-      if !self.defeq2(sub_v(y.clone(), succ_x), pred_sub)? {
+      if !self.defeq2(bin_v(y.clone(), succ_x), pred_sub)? {
         return Err(self.prim_err("natSub: step check failed"));
       }
       return Ok(());
@@ -478,19 +399,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natMul: type mismatch"));
       }
-      // Use the constant so try_reduce_nat_val step-case fires
-      let mul_const = KExpr::cnst(self.prims.nat_mul.as_ref().unwrap().clone(), Vec::new());
-      let mul_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(mul_const.clone(), a), b)
-      };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
-      let mul_y_x = mul_v(y.clone(), x.clone());
+      let mul_y_x = bin_v(y.clone(), x.clone());
       let add_result = self.add_app(mul_y_x, y.clone()).ok_or_else(|| self.prim_err("add"))?;
-      if !self.defeq1(mul_v(x.clone(), zero.clone()), zero)? {
+      if !self.defeq1(bin_v(x.clone(), zero.clone()), zero)? {
         return Err(self.prim_err("natMul: mul x 0 ≠ 0"));
       }
-      if !self.defeq2(mul_v(y.clone(), succ_x), add_result)? {
+      if !self.defeq2(bin_v(y.clone(), succ_x), add_result)? {
         return Err(self.prim_err("natMul: step check failed"));
       }
       return Ok(());
@@ -505,20 +421,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natPow: type mismatch"));
       }
-      // Use the constant so try_reduce_nat_val step-case fires
-      let pow_const = KExpr::cnst(self.prims.nat_pow.as_ref().unwrap().clone(), Vec::new());
-      let pow_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(pow_const.clone(), a), b)
-      };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let one = self.succ_app(zero.clone()).ok_or_else(|| self.prim_err("succ"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
-      let pow_y_x = pow_v(y.clone(), x.clone());
+      let pow_y_x = bin_v(y.clone(), x.clone());
       let mul_result = self.mul_app(pow_y_x, y.clone()).ok_or_else(|| self.prim_err("mul"))?;
-      if !self.defeq1(pow_v(x.clone(), zero), one)? {
+      if !self.defeq1(bin_v(x.clone(), zero), one)? {
         return Err(self.prim_err("natPow: pow x 0 ≠ 1"));
       }
-      if !self.defeq2(pow_v(y.clone(), succ_x), mul_result)? {
+      if !self.defeq2(bin_v(y.clone(), succ_x), mul_result)? {
         return Err(self.prim_err("natPow: step check failed"));
       }
       return Ok(());
@@ -533,26 +444,21 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natBeq: type mismatch"));
       }
-      // Use the constant so try_reduce_nat_val step-case fires
-      let beq_const = KExpr::cnst(self.prims.nat_beq.as_ref().unwrap().clone(), Vec::new());
-      let beq_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(beq_const.clone(), a), b)
-      };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let tru = self.true_const().ok_or_else(|| self.prim_err("true"))?;
       let fal = self.false_const().ok_or_else(|| self.prim_err("false"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
       let succ_y = self.succ_app(y.clone()).ok_or_else(|| self.prim_err("succ"))?;
-      if !self.check_defeq_expr(&beq_v(zero.clone(), zero.clone()), &tru)? {
+      if !self.check_defeq_expr(&bin_v(zero.clone(), zero.clone()), &tru)? {
         return Err(self.prim_err("natBeq: beq 0 0 ≠ true"));
       }
-      if !self.defeq1(beq_v(zero.clone(), succ_x.clone()), fal.clone())? {
+      if !self.defeq1(bin_v(zero.clone(), succ_x.clone()), fal.clone())? {
         return Err(self.prim_err("natBeq: beq 0 (succ x) ≠ false"));
       }
-      if !self.defeq1(beq_v(succ_x.clone(), zero.clone()), fal)? {
+      if !self.defeq1(bin_v(succ_x.clone(), zero.clone()), fal)? {
         return Err(self.prim_err("natBeq: beq (succ x) 0 ≠ false"));
       }
-      if !self.defeq2(beq_v(succ_y, succ_x), beq_v(y.clone(), x.clone()))? {
+      if !self.defeq2(bin_v(succ_y, succ_x), bin_v(y.clone(), x.clone()))? {
         return Err(self.prim_err("natBeq: step check failed"));
       }
       return Ok(());
@@ -567,26 +473,21 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natBle: type mismatch"));
       }
-      // Use the constant so try_reduce_nat_val step-case fires
-      let ble_const = KExpr::cnst(self.prims.nat_ble.as_ref().unwrap().clone(), Vec::new());
-      let ble_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(ble_const.clone(), a), b)
-      };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let tru = self.true_const().ok_or_else(|| self.prim_err("true"))?;
       let fal = self.false_const().ok_or_else(|| self.prim_err("false"))?;
       let succ_x = self.succ_app(x.clone()).ok_or_else(|| self.prim_err("succ"))?;
       let succ_y = self.succ_app(y.clone()).ok_or_else(|| self.prim_err("succ"))?;
-      if !self.check_defeq_expr(&ble_v(zero.clone(), zero.clone()), &tru)? {
+      if !self.check_defeq_expr(&bin_v(zero.clone(), zero.clone()), &tru)? {
         return Err(self.prim_err("natBle: ble 0 0 ≠ true"));
       }
-      if !self.defeq1(ble_v(zero.clone(), succ_x.clone()), tru.clone())? {
+      if !self.defeq1(bin_v(zero.clone(), succ_x.clone()), tru.clone())? {
         return Err(self.prim_err("natBle: ble 0 (succ x) ≠ true"));
       }
-      if !self.defeq1(ble_v(succ_x.clone(), zero.clone()), fal)? {
+      if !self.defeq1(bin_v(succ_x.clone(), zero.clone()), fal)? {
         return Err(self.prim_err("natBle: ble (succ x) 0 ≠ false"));
       }
-      if !self.defeq2(ble_v(succ_y, succ_x), ble_v(y.clone(), x.clone()))? {
+      if !self.defeq2(bin_v(succ_y, succ_x), bin_v(y.clone(), x.clone()))? {
         return Err(self.prim_err("natBle: step check failed"));
       }
       return Ok(());
@@ -601,20 +502,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natShiftLeft: type mismatch"));
       }
-      // Use the constant (not v.value) so try_reduce_nat_val step-case fires
-      let shl_const = KExpr::cnst(self.prims.nat_shift_left.as_ref().unwrap().clone(), Vec::new());
-      let shl_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(shl_const.clone(), a), b)
-      };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let one = self.succ_app(zero.clone()).ok_or_else(|| self.prim_err("succ"))?;
       let two = self.succ_app(one).ok_or_else(|| self.prim_err("succ"))?;
       let succ_y = self.succ_app(y.clone()).ok_or_else(|| self.prim_err("succ"))?;
       let mul_2_x = self.mul_app(two, x.clone()).ok_or_else(|| self.prim_err("mul"))?;
-      if !self.defeq1(shl_v(x.clone(), zero), x.clone())? {
+      if !self.defeq1(bin_v(x.clone(), zero), x.clone())? {
         return Err(self.prim_err("natShiftLeft: shl x 0 ≠ x"));
       }
-      if !self.defeq2(shl_v(x.clone(), succ_y), shl_v(mul_2_x, y.clone()))? {
+      if !self.defeq2(bin_v(x.clone(), succ_y), bin_v(mul_2_x, y.clone()))? {
         return Err(self.prim_err("natShiftLeft: step check failed"));
       }
       return Ok(());
@@ -629,21 +525,16 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natShiftRight: type mismatch"));
       }
-      // Use the constant (not v.value) so try_reduce_nat_val step-case fires
-      let shr_const = KExpr::cnst(self.prims.nat_shift_right.as_ref().unwrap().clone(), Vec::new());
-      let shr_v = |a: KExpr<M>, b: KExpr<M>| -> KExpr<M> {
-        KExpr::app(KExpr::app(shr_const.clone(), a), b)
-      };
       let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
       let one = self.succ_app(zero.clone()).ok_or_else(|| self.prim_err("succ"))?;
       let two = self.succ_app(one).ok_or_else(|| self.prim_err("succ"))?;
       let succ_y = self.succ_app(y.clone()).ok_or_else(|| self.prim_err("succ"))?;
-      let shr_x_y = shr_v(x.clone(), y.clone());
+      let shr_x_y = bin_v(x.clone(), y.clone());
       let div_result = self.div_app(shr_x_y, two).ok_or_else(|| self.prim_err("div"))?;
-      if !self.defeq1(shr_v(x.clone(), zero), x.clone())? {
+      if !self.defeq1(bin_v(x.clone(), zero), x.clone())? {
         return Err(self.prim_err("natShiftRight: shr x 0 ≠ x"));
       }
-      if !self.defeq2(shr_v(x.clone(), succ_y), div_result)? {
+      if !self.defeq2(bin_v(x.clone(), succ_y), div_result)? {
         return Err(self.prim_err("natShiftRight: step check failed"));
       }
       return Ok(());
@@ -755,6 +646,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natMod: type mismatch"));
       }
+      // Spot-check: mod x 0 = x, mod 0 3 = 0
+      let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
+      let three = KExpr::lit(Literal::NatVal(Nat(3u64.into())));
+      if !self.defeq1(bin_v(x.clone(), zero.clone()), x.clone())? {
+        return Err(self.prim_err("natMod: mod x 0 ≠ x"));
+      }
+      if !self.check_defeq_expr(&bin_v(zero.clone(), three), &zero)? {
+        return Err(self.prim_err("natMod: mod 0 3 ≠ 0"));
+      }
       return Ok(());
     }
 
@@ -766,6 +666,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       let expected = self.nat_bin_type().ok_or_else(|| self.prim_err("can't build type"))?;
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natDiv: type mismatch"));
+      }
+      // Spot-check: div x 0 = 0, div 0 3 = 0
+      let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
+      let three = KExpr::lit(Literal::NatVal(Nat(3u64.into())));
+      if !self.defeq1(bin_v(x.clone(), zero.clone()), zero.clone())? {
+        return Err(self.prim_err("natDiv: div x 0 ≠ 0"));
+      }
+      if !self.check_defeq_expr(&bin_v(zero.clone(), three), &zero)? {
+        return Err(self.prim_err("natDiv: div 0 3 ≠ 0"));
       }
       return Ok(());
     }
@@ -779,11 +688,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       if !self.check_defeq_expr(&v.cv.typ, &expected)? {
         return Err(self.prim_err("natGcd: type mismatch"));
       }
-      return Ok(());
-    }
-
-    // Nat.bitwise - just check type
-    if Primitives::<M>::addr_matches(&self.prims.nat_bitwise, addr) {
+      // Spot-check: gcd 0 x = x, gcd x 0 = x
+      let zero = self.zero_const().ok_or_else(|| self.prim_err("zero"))?;
+      if !self.defeq1(bin_v(zero.clone(), x.clone()), x.clone())? {
+        return Err(self.prim_err("natGcd: gcd 0 x ≠ x"));
+      }
+      if !self.defeq1(bin_v(x.clone(), zero), x.clone())? {
+        return Err(self.prim_err("natGcd: gcd x 0 ≠ x"));
+      }
       return Ok(());
     }
 

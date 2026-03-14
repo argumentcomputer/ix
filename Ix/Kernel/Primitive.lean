@@ -20,30 +20,29 @@ structure KernelOps2 (σ : Type) (m : Ix.Kernel.MetaMode) where
 
 /-! ## Expression builders -/
 
-private def natConst (p : KPrimitives m) : KExpr m := Ix.Kernel.Expr.mkConst p.nat #[]
-private def boolConst (p : KPrimitives m) : KExpr m := Ix.Kernel.Expr.mkConst p.bool #[]
-private def trueConst (p : KPrimitives m) : KExpr m := Ix.Kernel.Expr.mkConst p.boolTrue #[]
-private def falseConst (p : KPrimitives m) : KExpr m := Ix.Kernel.Expr.mkConst p.boolFalse #[]
-private def zeroConst (p : KPrimitives m) : KExpr m := Ix.Kernel.Expr.mkConst p.natZero #[]
-private def charConst (p : KPrimitives m) : KExpr m := Ix.Kernel.Expr.mkConst p.char #[]
-private def stringConst (p : KPrimitives m) : KExpr m := Ix.Kernel.Expr.mkConst p.string #[]
-private def listCharConst (p : KPrimitives m) : KExpr m :=
-  Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.list #[Ix.Kernel.Level.succ .zero]) (charConst p)
+@[inline] private def primConst (id : KMetaId m) : KExpr m := Ix.Kernel.Expr.mkConst id #[]
+@[inline] private def primUnApp (id : KMetaId m) (a : KExpr m) : KExpr m :=
+  Ix.Kernel.Expr.mkApp (primConst id) a
+@[inline] private def primBinApp (id : KMetaId m) (a b : KExpr m) : KExpr m :=
+  Ix.Kernel.Expr.mkApp (primUnApp id a) b
 
-private def succApp (p : KPrimitives m) (e : KExpr m) : KExpr m :=
-  Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.natSucc #[]) e
-private def predApp (p : KPrimitives m) (e : KExpr m) : KExpr m :=
-  Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.natPred #[]) e
-private def addApp (p : KPrimitives m) (a b : KExpr m) : KExpr m :=
-  Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.natAdd #[]) a) b
-private def subApp (p : KPrimitives m) (a b : KExpr m) : KExpr m :=
-  Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.natSub #[]) a) b
-private def mulApp (p : KPrimitives m) (a b : KExpr m) : KExpr m :=
-  Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.natMul #[]) a) b
-private def modApp (p : KPrimitives m) (a b : KExpr m) : KExpr m :=
-  Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.natMod #[]) a) b
-private def divApp (p : KPrimitives m) (a b : KExpr m) : KExpr m :=
-  Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.natDiv #[]) a) b
+private def natConst (p : KPrimitives m) : KExpr m := primConst p.nat
+private def boolConst (p : KPrimitives m) : KExpr m := primConst p.bool
+private def trueConst (p : KPrimitives m) : KExpr m := primConst p.boolTrue
+private def falseConst (p : KPrimitives m) : KExpr m := primConst p.boolFalse
+private def zeroConst (p : KPrimitives m) : KExpr m := primConst p.natZero
+private def charConst (p : KPrimitives m) : KExpr m := primConst p.char
+private def stringConst (p : KPrimitives m) : KExpr m := primConst p.string
+private def listCharConst (p : KPrimitives m) : KExpr m :=
+  Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.list #[.zero]) (charConst p)
+
+private def succApp (p : KPrimitives m) (e : KExpr m) : KExpr m := primUnApp p.natSucc e
+private def predApp (p : KPrimitives m) (e : KExpr m) : KExpr m := primUnApp p.natPred e
+private def addApp (p : KPrimitives m) (a b : KExpr m) : KExpr m := primBinApp p.natAdd a b
+private def subApp (p : KPrimitives m) (a b : KExpr m) : KExpr m := primBinApp p.natSub a b
+private def mulApp (p : KPrimitives m) (a b : KExpr m) : KExpr m := primBinApp p.natMul a b
+private def modApp (p : KPrimitives m) (a b : KExpr m) : KExpr m := primBinApp p.natMod a b
+private def divApp (p : KPrimitives m) (a b : KExpr m) : KExpr m := primBinApp p.natDiv a b
 
 private def mkArrow (a b : KExpr m) : KExpr m := Ix.Kernel.Expr.mkForallE a (b.liftBVars 1)
 
@@ -120,9 +119,7 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives m) (kenv : KEnv m
   let succ : KExpr m → KExpr m := succApp p
   let pred : KExpr m → KExpr m := predApp p
   let add : KExpr m → KExpr m → KExpr m := addApp p
-  let _sub : KExpr m → KExpr m → KExpr m := subApp p
   let mul : KExpr m → KExpr m → KExpr m := mulApp p
-  let _mod' : KExpr m → KExpr m → KExpr m := modApp p
   let div' : KExpr m → KExpr m → KExpr m := divApp p
   let one : KExpr m := succ zero
   let two : KExpr m := succ one
@@ -131,133 +128,143 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives m) (kenv : KEnv m
 
   -- Use the constant (not v.value) so tryReduceNatVal step-case fires
   let primId : KMetaId m := MetaId.mk m addr ci.cv.name
-  let primConst : KExpr m := .mkConst primId #[]
+  let prim : KExpr m := .mkConst primId #[]
+  -- Shared closures for applying the primitive as a binary/unary operator
+  let binV (a b : KExpr m) : KExpr m := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp prim a) b
+  let unV (a : KExpr m) : KExpr m := Ix.Kernel.Expr.mkApp prim a
+  -- Shared preamble: check dependency exists and numLevels == 0
+  let guardDep (dep : Address) : TypecheckM σ m Unit := do
+    if !kenv.containsAddr dep || v.numLevels != 0 then fail
+  let guardDeps (deps : Array Address) : TypecheckM σ m Unit := do
+    for dep in deps do
+      if !kenv.containsAddr dep then fail
+    if v.numLevels != 0 then fail
 
   if addr == p.natAdd.addr then
-    if !kenv.containsAddr p.nat.addr || v.numLevels != 0 then fail
+    guardDep p.nat.addr
     unless ← ops.isDefEq v.type (natBinType p) do fail
-    let addV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
-    unless ← defeq1 ops p (addV x zero) x do fail
-    unless ← defeq2 ops p (addV y (succ x)) (succ (addV y x)) do fail
+    unless ← defeq1 ops p (binV x zero) x do fail
+    unless ← defeq2 ops p (binV y (succ x)) (succ (binV y x)) do fail
     return true
 
   if addr == p.natPred.addr then
-    if !kenv.containsAddr p.nat.addr || v.numLevels != 0 then fail
+    guardDep p.nat.addr
     unless ← ops.isDefEq v.type (natUnaryType p) do fail
-    let predV := fun a => Ix.Kernel.Expr.mkApp primConst a
-    unless ← ops.isDefEq (predV zero) zero do fail
-    unless ← defeq1 ops p (predV (succ x)) x do fail
+    unless ← ops.isDefEq (unV zero) zero do fail
+    unless ← defeq1 ops p (unV (succ x)) x do fail
     return true
 
   if addr == p.natSub.addr then
-    if !kenv.containsAddr p.natPred.addr || v.numLevels != 0 then fail
+    guardDep p.natPred.addr
     unless ← ops.isDefEq v.type (natBinType p) do fail
-    let subV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
-    unless ← defeq1 ops p (subV x zero) x do fail
-    unless ← defeq2 ops p (subV y (succ x)) (pred (subV y x)) do fail
+    unless ← defeq1 ops p (binV x zero) x do fail
+    unless ← defeq2 ops p (binV y (succ x)) (pred (binV y x)) do fail
     return true
 
   if addr == p.natMul.addr then
-    if !kenv.containsAddr p.natAdd.addr || v.numLevels != 0 then fail
+    guardDep p.natAdd.addr
     unless ← ops.isDefEq v.type (natBinType p) do fail
-    let mulV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
-    unless ← defeq1 ops p (mulV x zero) zero do fail
-    unless ← defeq2 ops p (mulV y (succ x)) (add (mulV y x) y) do fail
+    unless ← defeq1 ops p (binV x zero) zero do fail
+    unless ← defeq2 ops p (binV y (succ x)) (add (binV y x) y) do fail
     return true
 
   if addr == p.natPow.addr then
-    if !kenv.containsAddr p.natMul.addr || v.numLevels != 0 then fail "natPow: missing natMul or bad numLevels"
+    guardDep p.natMul.addr
     unless ← ops.isDefEq v.type (natBinType p) do fail "natPow: type mismatch"
-    let powV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
-    unless ← defeq1 ops p (powV x zero) one do fail "natPow: pow x 0 ≠ 1"
-    unless ← defeq2 ops p (powV y (succ x)) (mul (powV y x) y) do fail "natPow: step check failed"
+    unless ← defeq1 ops p (binV x zero) one do fail "natPow: pow x 0 ≠ 1"
+    unless ← defeq2 ops p (binV y (succ x)) (mul (binV y x) y) do fail "natPow: step check failed"
     return true
 
   if addr == p.natBeq.addr then
-    if !kenv.containsAddr p.nat.addr || !kenv.containsAddr p.bool.addr || v.numLevels != 0 then fail
+    guardDeps #[p.nat.addr, p.bool.addr]
     unless ← ops.isDefEq v.type (natBinBoolType p) do fail
-    let beqV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
-    unless ← ops.isDefEq (beqV zero zero) tru do fail
-    unless ← defeq1 ops p (beqV zero (succ x)) fal do fail
-    unless ← defeq1 ops p (beqV (succ x) zero) fal do fail
-    unless ← defeq2 ops p (beqV (succ y) (succ x)) (beqV y x) do fail
+    unless ← ops.isDefEq (binV zero zero) tru do fail
+    unless ← defeq1 ops p (binV zero (succ x)) fal do fail
+    unless ← defeq1 ops p (binV (succ x) zero) fal do fail
+    unless ← defeq2 ops p (binV (succ y) (succ x)) (binV y x) do fail
     return true
 
   if addr == p.natBle.addr then
-    if !kenv.containsAddr p.nat.addr || !kenv.containsAddr p.bool.addr || v.numLevels != 0 then fail
+    guardDeps #[p.nat.addr, p.bool.addr]
     unless ← ops.isDefEq v.type (natBinBoolType p) do fail
-    let bleV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
-    unless ← ops.isDefEq (bleV zero zero) tru do fail
-    unless ← defeq1 ops p (bleV zero (succ x)) tru do fail
-    unless ← defeq1 ops p (bleV (succ x) zero) fal do fail
-    unless ← defeq2 ops p (bleV (succ y) (succ x)) (bleV y x) do fail
+    unless ← ops.isDefEq (binV zero zero) tru do fail
+    unless ← defeq1 ops p (binV zero (succ x)) tru do fail
+    unless ← defeq1 ops p (binV (succ x) zero) fal do fail
+    unless ← defeq2 ops p (binV (succ y) (succ x)) (binV y x) do fail
     return true
 
   if addr == p.natShiftLeft.addr then
-    if !kenv.containsAddr p.natMul.addr || v.numLevels != 0 then fail
+    guardDep p.natMul.addr
     unless ← ops.isDefEq v.type (natBinType p) do fail
-    let shlV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
-    unless ← defeq1 ops p (shlV x zero) x do fail
-    unless ← defeq2 ops p (shlV x (succ y)) (shlV (mul two x) y) do fail
+    unless ← defeq1 ops p (binV x zero) x do fail
+    unless ← defeq2 ops p (binV x (succ y)) (binV (mul two x) y) do fail
     return true
 
   if addr == p.natShiftRight.addr then
-    if !kenv.containsAddr p.natDiv.addr || v.numLevels != 0 then fail
+    guardDep p.natDiv.addr
     unless ← ops.isDefEq v.type (natBinType p) do fail
-    let shrV := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp primConst a) b
-    unless ← defeq1 ops p (shrV x zero) x do fail
-    unless ← defeq2 ops p (shrV x (succ y)) (div' (shrV x y) two) do fail
+    unless ← defeq1 ops p (binV x zero) x do fail
+    unless ← defeq2 ops p (binV x (succ y)) (div' (binV x y) two) do fail
     return true
 
   if addr == p.natLand.addr then
-    if !kenv.containsAddr p.natBitwise.addr || v.numLevels != 0 then fail
+    guardDep p.natBitwise.addr
     unless ← ops.isDefEq v.type (natBinType p) do fail
     let (.app fn f) := v.value | fail "Nat.land value must be Nat.bitwise applied to a function"
     unless fn.isConstOf p.natBitwise.addr do fail "Nat.land value head must be Nat.bitwise"
-    let andF := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp f a) b
-    unless ← defeq1 ops p (andF fal x) fal do fail
-    unless ← defeq1 ops p (andF tru x) x do fail
+    let bwF (a b : KExpr m) := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp f a) b
+    unless ← defeq1 ops p (bwF fal x) fal do fail
+    unless ← defeq1 ops p (bwF tru x) x do fail
     return true
 
   if addr == p.natLor.addr then
-    if !kenv.containsAddr p.natBitwise.addr || v.numLevels != 0 then fail
+    guardDep p.natBitwise.addr
     unless ← ops.isDefEq v.type (natBinType p) do fail
     let (.app fn f) := v.value | fail "Nat.lor value must be Nat.bitwise applied to a function"
     unless fn.isConstOf p.natBitwise.addr do fail "Nat.lor value head must be Nat.bitwise"
-    let orF := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp f a) b
-    unless ← defeq1 ops p (orF fal x) x do fail
-    unless ← defeq1 ops p (orF tru x) tru do fail
+    let bwF (a b : KExpr m) := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp f a) b
+    unless ← defeq1 ops p (bwF fal x) x do fail
+    unless ← defeq1 ops p (bwF tru x) tru do fail
     return true
 
   if addr == p.natXor.addr then
-    if !kenv.containsAddr p.natBitwise.addr || v.numLevels != 0 then fail
+    guardDep p.natBitwise.addr
     unless ← ops.isDefEq v.type (natBinType p) do fail
     let (.app fn f) := v.value | fail "Nat.xor value must be Nat.bitwise applied to a function"
     unless fn.isConstOf p.natBitwise.addr do fail "Nat.xor value head must be Nat.bitwise"
-    let xorF := fun a b => Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp f a) b
-    unless ← ops.isDefEq (xorF fal fal) fal do fail
-    unless ← ops.isDefEq (xorF tru fal) tru do fail
-    unless ← ops.isDefEq (xorF fal tru) tru do fail
-    unless ← ops.isDefEq (xorF tru tru) fal do fail
+    let bwF (a b : KExpr m) := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp f a) b
+    unless ← ops.isDefEq (bwF fal fal) fal do fail
+    unless ← ops.isDefEq (bwF tru fal) tru do fail
+    unless ← ops.isDefEq (bwF fal tru) tru do fail
+    unless ← ops.isDefEq (bwF tru tru) fal do fail
     return true
 
   if addr == p.natMod.addr then
-    if !kenv.containsAddr p.natSub.addr || !kenv.containsAddr p.bool.addr || v.numLevels != 0 then fail
+    guardDeps #[p.natSub.addr, p.bool.addr]
     unless ← ops.isDefEq v.type (natBinType p) do fail
+    -- Spot-check: mod x 0 = x, mod 0 3 = 0
+    unless ← defeq1 ops p (binV x zero) x do fail "natMod: mod x 0 ≠ x"
+    unless ← ops.isDefEq (binV zero (.lit (.natVal 3))) zero do fail "natMod: mod 0 3 ≠ 0"
     return true
 
   if addr == p.natDiv.addr then
-    if !kenv.containsAddr p.natSub.addr || !kenv.containsAddr p.bool.addr || v.numLevels != 0 then fail
+    guardDeps #[p.natSub.addr, p.bool.addr]
     unless ← ops.isDefEq v.type (natBinType p) do fail
+    -- Spot-check: div x 0 = 0, div 0 3 = 0
+    unless ← defeq1 ops p (binV x zero) zero do fail "natDiv: div x 0 ≠ 0"
+    unless ← ops.isDefEq (binV zero (.lit (.natVal 3))) zero do fail "natDiv: div 0 3 ≠ 0"
     return true
 
   if addr == p.natGcd.addr then
-    if !kenv.containsAddr p.natMod.addr || v.numLevels != 0 then fail
+    guardDep p.natMod.addr
     unless ← ops.isDefEq v.type (natBinType p) do fail
+    -- Spot-check: gcd 0 x = x, gcd x 0 = x
+    unless ← defeq1 ops p (binV zero x) x do fail "natGcd: gcd 0 x ≠ x"
+    unless ← defeq1 ops p (binV x zero) x do fail "natGcd: gcd x 0 ≠ x"
     return true
 
   if addr == p.charMk.addr then
-    if !kenv.containsAddr p.nat.addr || v.numLevels != 0 then fail
+    guardDep p.nat.addr
     let expectedType := mkArrow nat (charConst p)
     unless ← ops.isDefEq v.type expectedType do fail
     return true
@@ -267,10 +274,10 @@ def checkPrimitiveDef (ops : KernelOps2 σ m) (p : KPrimitives m) (kenv : KEnv m
     let listChar := listCharConst p
     let expectedType := mkArrow listChar (stringConst p)
     unless ← ops.isDefEq v.type expectedType do fail
-    let nilChar := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.listNil #[Ix.Kernel.Level.succ .zero]) (charConst p)
+    let nilChar := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.listNil #[.zero]) (charConst p)
     let (_, nilType) ← ops.infer nilChar
     unless ← ops.isDefEq nilType listChar do fail
-    let consChar := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.listCons #[Ix.Kernel.Level.succ .zero]) (charConst p)
+    let consChar := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.listCons #[.zero]) (charConst p)
     let (_, consType) ← ops.infer consChar
     let expectedConsType := mkArrow (charConst p) (mkArrow listChar listChar)
     unless ← ops.isDefEq consType expectedConsType do fail
@@ -289,45 +296,34 @@ def checkEqType (ops : KernelOps2 σ m) (p : KPrimitives m) : TypecheckM σ m Un
   let u : KLevel m := .param 0 default
   let sortU : KExpr m := Ix.Kernel.Expr.mkSort u
   let expectedEqType : KExpr m :=
-    Ix.Kernel.Expr.mkForallE sortU
-      (Ix.Kernel.Expr.mkForallE (.mkBVar 0)
-        (Ix.Kernel.Expr.mkForallE (.mkBVar 1)
-          Ix.Kernel.Expr.prop))
+    Ix.Kernel.Expr.mkForallChain #[sortU, .mkBVar 0, .mkBVar 1] Ix.Kernel.Expr.prop
   unless ← ops.isDefEq ci.type expectedEqType do throw "Eq has unexpected type"
   if !(← read).kenv.containsAddr p.eqRefl.addr then throw "Eq.refl not found in environment"
   let refl ← derefConstByAddr p.eqRefl.addr
   if refl.numLevels != 1 then throw "Eq.refl must have exactly 1 universe parameter"
   let eqConst : KExpr m := Ix.Kernel.Expr.mkConst p.eq #[u]
   let expectedReflType : KExpr m :=
-    Ix.Kernel.Expr.mkForallE sortU
-      (Ix.Kernel.Expr.mkForallE (.mkBVar 0)
-        (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp eqConst (.mkBVar 1)) (.mkBVar 0)) (.mkBVar 0)))
+    Ix.Kernel.Expr.mkForallChain #[sortU, .mkBVar 0]
+      (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp eqConst (.mkBVar 1)) (.mkBVar 0)) (.mkBVar 0))
   unless ← ops.isDefEq refl.type expectedReflType do throw "Eq.refl has unexpected type"
 
 def checkQuotTypes (ops : KernelOps2 σ m) (p : KPrimitives m) : TypecheckM σ m Unit := do
   let u : KLevel m := .param 0 default
   let sortU : KExpr m := Ix.Kernel.Expr.mkSort u
   let relType (depth : Nat) : KExpr m :=
-    Ix.Kernel.Expr.mkForallE (.mkBVar depth)
-      (Ix.Kernel.Expr.mkForallE (.mkBVar (depth + 1))
-        Ix.Kernel.Expr.prop)
+    Ix.Kernel.Expr.mkForallChain #[.mkBVar depth, .mkBVar (depth + 1)] Ix.Kernel.Expr.prop
 
   if resolved p.quotType then
     let ci ← derefConstByAddr p.quotType.addr
     let expectedType : KExpr m :=
-      Ix.Kernel.Expr.mkForallE sortU
-        (Ix.Kernel.Expr.mkForallE (relType 0)
-          (Ix.Kernel.Expr.mkSort u))
+      Ix.Kernel.Expr.mkForallChain #[sortU, relType 0] (Ix.Kernel.Expr.mkSort u)
     unless ← ops.isDefEq ci.type expectedType do throw "Quot type signature mismatch"
 
   if resolved p.quotCtor then
     let ci ← derefConstByAddr p.quotCtor.addr
     let quotApp : KExpr m := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.quotType #[u]) (.mkBVar 2)) (.mkBVar 1)
     let expectedType : KExpr m :=
-      Ix.Kernel.Expr.mkForallE sortU
-        (Ix.Kernel.Expr.mkForallE (relType 0)
-          (Ix.Kernel.Expr.mkForallE (.mkBVar 1)
-            quotApp))
+      Ix.Kernel.Expr.mkForallChain #[sortU, relType 0, .mkBVar 1] quotApp
     unless ← ops.isDefEq ci.type expectedType do throw "Quot.mk type signature mismatch"
 
   if resolved p.quotLift then
@@ -337,22 +333,14 @@ def checkQuotTypes (ops : KernelOps2 σ m) (p : KPrimitives m) : TypecheckM σ m
     let sortV : KExpr m := Ix.Kernel.Expr.mkSort v
     let fType : KExpr m := Ix.Kernel.Expr.mkForallE (.mkBVar 2) (.mkBVar 1)
     let hType : KExpr m :=
-      Ix.Kernel.Expr.mkForallE (.mkBVar 3)
-        (Ix.Kernel.Expr.mkForallE (.mkBVar 4)
-          (Ix.Kernel.Expr.mkForallE
-            (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (.mkBVar 4) (.mkBVar 1)) (.mkBVar 0))
-            (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.eq #[v]) (.mkBVar 4))
-              (Ix.Kernel.Expr.mkApp (.mkBVar 3) (.mkBVar 2)))
-              (Ix.Kernel.Expr.mkApp (.mkBVar 3) (.mkBVar 1)))))
+      Ix.Kernel.Expr.mkForallChain #[.mkBVar 3, .mkBVar 4,
+        Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (.mkBVar 4) (.mkBVar 1)) (.mkBVar 0)]
+        (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.eq #[v]) (.mkBVar 4))
+          (Ix.Kernel.Expr.mkApp (.mkBVar 3) (.mkBVar 2)))
+          (Ix.Kernel.Expr.mkApp (.mkBVar 3) (.mkBVar 1)))
     let qType : KExpr m := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.quotType #[u]) (.mkBVar 4)) (.mkBVar 3)
     let expectedType : KExpr m :=
-      Ix.Kernel.Expr.mkForallE sortU
-        (Ix.Kernel.Expr.mkForallE (relType 0)
-          (Ix.Kernel.Expr.mkForallE sortV
-            (Ix.Kernel.Expr.mkForallE fType
-              (Ix.Kernel.Expr.mkForallE hType
-                (Ix.Kernel.Expr.mkForallE qType
-                  (.mkBVar 3))))))
+      Ix.Kernel.Expr.mkForallChain #[sortU, relType 0, sortV, fType, hType, qType] (.mkBVar 3)
     unless ← ops.isDefEq ci.type expectedType do throw "Quot.lift type signature mismatch"
 
   if resolved p.quotInd then
@@ -364,12 +352,8 @@ def checkQuotTypes (ops : KernelOps2 σ m) (p : KPrimitives m) : TypecheckM σ m
     let hType : KExpr m := Ix.Kernel.Expr.mkForallE (.mkBVar 2) (Ix.Kernel.Expr.mkApp (.mkBVar 1) quotMkA)
     let qType : KExpr m := Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkApp (Ix.Kernel.Expr.mkConst p.quotType #[u]) (.mkBVar 3)) (.mkBVar 2)
     let expectedType : KExpr m :=
-      Ix.Kernel.Expr.mkForallE sortU
-        (Ix.Kernel.Expr.mkForallE (relType 0)
-          (Ix.Kernel.Expr.mkForallE betaType
-            (Ix.Kernel.Expr.mkForallE hType
-              (Ix.Kernel.Expr.mkForallE qType
-                (Ix.Kernel.Expr.mkApp (.mkBVar 2) (.mkBVar 0))))))
+      Ix.Kernel.Expr.mkForallChain #[sortU, relType 0, betaType, hType, qType]
+        (Ix.Kernel.Expr.mkApp (.mkBVar 2) (.mkBVar 0))
     unless ← ops.isDefEq ci.type expectedType do throw "Quot.ind type signature mismatch"
 
 /-! ## Top-level dispatch -/

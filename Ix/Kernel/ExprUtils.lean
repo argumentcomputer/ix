@@ -15,6 +15,21 @@ def Expr.instantiateLevelParams (e : Expr m) (levels : Array (Level m)) : Expr m
   if levels.isEmpty then e
   else e.instantiateLevelParamsBy (Level.instBulkReduce levels)
 
+/-! ## Expression traversal combinator -/
+
+/-- Apply `f` to the immediate sub-expressions of `e`, tracking binder depth.
+    Does not recurse — `f` is responsible for recursive calls. Handles the
+    structural cases (app, lam, forallE, letE, proj); leaves (bvar, sort,
+    const, lit) are returned unchanged. -/
+@[inline] def Expr.mapSubexprs (e : Expr m) (f : Expr m → Nat → Expr m) (depth : Nat) : Expr m :=
+  match e with
+  | .app fn arg => .app (f fn depth) (f arg depth)
+  | .lam ty body n bi => .lam (f ty depth) (f body (depth + 1)) n bi
+  | .forallE ty body n bi => .forallE (f ty depth) (f body (depth + 1)) n bi
+  | .letE ty val body n => .letE (f ty depth) (f val depth) (f body (depth + 1)) n
+  | .proj ta idx s => .proj ta idx (f s depth)
+  | e => e
+
 /-! ## Recursor rule type helpers -/
 
 /-- Shift bvar indices and level params in an expression from a constructor context
@@ -37,14 +52,9 @@ where
     | .bvar i n =>
       if i >= depth + fieldDepth then .bvar (i + bvarShift) n
       else e
-    | .app fn arg => .app (go fn depth) (go arg depth)
-    | .lam ty body n bi => .lam (go ty depth) (go body (depth + 1)) n bi
-    | .forallE ty body n bi => .forallE (go ty depth) (go body (depth + 1)) n bi
-    | .letE ty val body n => .letE (go ty depth) (go val depth) (go body (depth + 1)) n
-    | .proj ta idx s => .proj ta idx (go s depth)
     | .sort l => .sort (substLevel l)
     | .const id lvls => .const id (lvls.map substLevel)
-    | _ => e
+    | e => e.mapSubexprs go depth
 
 /-- Substitute extra nested param bvars in a constructor body expression.
     After peeling `cnp` params from the ctor type, extra param bvars occupy
@@ -66,12 +76,7 @@ where
         -- Extra nested param: substitute with vals[freeIdx] shifted up by depth
         shiftCtorToRule vals[freeIdx]! 0 depth #[]
       else .bvar (i - numExtra) n  -- Shared param: shift down
-    | .app fn arg => .app (go fn depth) (go arg depth)
-    | .lam ty body n bi => .lam (go ty depth) (go body (depth + 1)) n bi
-    | .forallE ty body n bi => .forallE (go ty depth) (go body (depth + 1)) n bi
-    | .letE ty val body n => .letE (go ty depth) (go val depth) (go body (depth + 1)) n
-    | .proj ta idx s => .proj ta idx (go s depth)
-    | _ => e
+    | e => e.mapSubexprs go depth
 
 /-! ## Inductive validation helpers -/
 

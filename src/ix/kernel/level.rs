@@ -569,12 +569,23 @@ fn norm_level_eq(l1: &NormLevel, l2: &NormLevel) -> bool {
 // ============================================================================
 
 /// Check if `a <= b + diff`. Assumes `a` and `b` are already reduced.
-/// Uses heuristic as fast path, with complete normalization as fallback for
-/// `diff = 0`.
+/// Uses heuristic as fast path, with complete normalization as fallback.
 pub fn leq<M: MetaMode>(a: &KLevel<M>, b: &KLevel<M>, diff: i64) -> bool {
   leq_heuristic(a, b, diff)
-    || (diff == 0
-      && norm_level_le(&normalize_level(a), &normalize_level(b)))
+    || {
+      // Convert to a diff=0 check: a + max(0,-diff) <= b + max(0,diff)
+      let a2 = add_succs(a, if diff < 0 { (-diff) as usize } else { 0 });
+      let b2 = add_succs(b, if diff > 0 { diff as usize } else { 0 });
+      norm_level_le(&normalize_level(&a2), &normalize_level(&b2))
+    }
+}
+
+fn add_succs<M: MetaMode>(l: &KLevel<M>, n: usize) -> KLevel<M> {
+  let mut result = l.clone();
+  for _ in 0..n {
+    result = KLevel::succ(result);
+  }
+  result
 }
 
 /// Semantic equality of levels. Assumes `a` and `b` are already reduced.

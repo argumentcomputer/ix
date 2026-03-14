@@ -28,7 +28,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     expr: &KExpr<M>,
     env: &Env<M>,
   ) -> TcResult<Val<M>, M> {
-    self.heartbeat()?;
     self.stats.eval_calls += 1;
 
     match expr.data() {
@@ -195,7 +194,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     fun: Val<M>,
     arg: Thunk<M>,
   ) -> TcResult<Val<M>, M> {
-    self.heartbeat()?;
     match fun.inner() {
       ValInner::Lam { body, env, .. } => {
         // O(1) beta reduction: push arg value onto closure env
@@ -311,8 +309,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
     };
 
-    // Evaluate (heartbeat only on actual work, matching Lean)
-    self.heartbeat()?;
     self.stats.thunk_forces += 1;
     let val = self.eval(&expr, &env)?;
 

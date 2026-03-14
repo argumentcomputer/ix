@@ -58,6 +58,7 @@ pub struct Stats {
   pub whnf_core_cache_misses: u64,
   // delta breakdown
   pub delta_steps: u64,
+  pub unfold_cache_hits: u64,
   pub native_reduces: u64,
   pub lazy_delta_iters: u64,
   pub same_head_checks: u64,
@@ -114,8 +115,20 @@ pub struct TypeChecker<'env, M: MetaMode> {
   pub infer_cache: FxHashMap<KExpr<M>, (Vec<usize>, TypedExpr<M>, Val<M>)>,
   /// WHNF cache: input ptr -> (input_val, output_val).
   pub whnf_cache: FxHashMap<usize, (Val<M>, Val<M>)>,
-  /// Structural WHNF cache: input ptr -> (input_val, output_val).
+  /// Structural WHNF cache for constant-headed neutrals:
+  /// (const_addr, thunk_ptr_ids) -> whnf result.
+  /// Catches cases where the same constant application with shared thunks
+  /// is wrapped in different Neutral Rcs.
+  pub whnf_structural_cache: FxHashMap<(Address, Vec<usize>), Val<M>>,
+  /// Structural WHNF cache (cheap_proj=false): input ptr -> (input_val, output_val).
   pub whnf_core_cache: FxHashMap<usize, (Val<M>, Val<M>)>,
+  /// Structural WHNF cache (cheap_proj=true): input ptr -> (input_val, output_val).
+  /// Matches Lean's whnfCoreCheapCacheRef.
+  pub whnf_core_cheap_cache: FxHashMap<usize, (Val<M>, Val<M>)>,
+  /// Delta body evaluation cache: (const addr, levels) -> evaluated body Val.
+  /// Mirrors C++ Lean's m_unfold cache. Caches the result of
+  /// eval(instantiate_levels(body, levels), empty_env()) before spine application.
+  pub unfold_cache: FxHashMap<(Address, Vec<KLevel<M>>), Val<M>>,
   /// Heartbeat counter (monotonically increasing work counter).
   pub heartbeats: usize,
   /// Maximum heartbeats before error.
@@ -162,7 +175,10 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
       equiv_manager: EquivManager::new(),
       infer_cache: FxHashMap::default(),
       whnf_cache: FxHashMap::default(),
+      whnf_structural_cache: FxHashMap::default(),
       whnf_core_cache: FxHashMap::default(),
+      whnf_core_cheap_cache: FxHashMap::default(),
+      unfold_cache: FxHashMap::default(),
       heartbeats: 0,
       max_heartbeats: DEFAULT_MAX_HEARTBEATS,
       max_thunks: DEFAULT_MAX_THUNKS,
@@ -411,7 +427,11 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
     self.equiv_manager.clear();
     self.infer_cache.clear();
     self.whnf_cache.clear();
+    self.whnf_structural_cache.clear();
     self.whnf_core_cache.clear();
+    self.whnf_core_cheap_cache.clear();
+    // Note: unfold_cache is NOT cleared between constants — definition bodies
+    // with the same levels produce the same Val regardless of context.
     self.heartbeats = 0;
   }
 }

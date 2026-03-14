@@ -369,26 +369,31 @@ pub extern "C" fn rs_check_consts(
           }
           Some(id) => {
             eprintln!("checking {name}");
-            let trace = false; // name.contains("heapifyDown");
-            // if trace {
-            //   if let Some(ci) = kenv.get(id) {
-            //     eprintln!("[debug] {name} type:\n{}", ci.typ());
-            //     match ci {
-            //       crate::ix::kernel::types::KConstantInfo::Definition(v) => {
-            //         eprintln!("[debug] {name} value:\n{}", v.value);
-            //       }
-            //       crate::ix::kernel::types::KConstantInfo::Theorem(v) => {
-            //         eprintln!("[debug] {name} value:\n{}", v.value);
-            //       }
-            //       crate::ix::kernel::types::KConstantInfo::Opaque(v) => {
-            //         eprintln!("[debug] {name} value:\n{}", v.value);
-            //       }
-            //       _ => {
-            //         eprintln!("[debug] {name} has no value ({})", ci.kind_name());
-            //       }
-            //     }
-            //   }
-            // }
+            let trace = name.contains("heapifyDown");
+            if trace {
+              if let Some(ci) = kenv.get(id) {
+                let dump = format!(
+                  "[debug] {name} type:\n{}\n{}",
+                  ci.typ(),
+                  match ci {
+                    crate::ix::kernel::types::KConstantInfo::Definition(v) =>
+                      format!("[debug] {name} value:\n{}", v.value),
+                    crate::ix::kernel::types::KConstantInfo::Theorem(v) =>
+                      format!("[debug] {name} value:\n{}", v.value),
+                    crate::ix::kernel::types::KConstantInfo::Opaque(v) =>
+                      format!("[debug] {name} value:\n{}", v.value),
+                    _ =>
+                      format!("[debug] {name} has no value ({})", ci.kind_name()),
+                  }
+                );
+                let dump_path = format!("/tmp/ix_debug_{}.txt", name.replace('.', "_"));
+                if let Err(e) = std::fs::write(&dump_path, &dump) {
+                  eprintln!("[debug] failed to write {dump_path}: {e}");
+                } else {
+                  eprintln!("[debug] dumped {name} expr to {dump_path} ({} bytes)", dump.len());
+                }
+              }
+            }
             let (result, heartbeats, stats) =
               crate::ix::kernel::check::typecheck_const_with_stats_trace(
                 &kenv, &prims, id, quot_init, trace, name,
@@ -413,8 +418,8 @@ pub extern "C" fn rs_check_consts(
                 stats.whnf_core_cache_hits, stats.whnf_core_cache_misses,
               );
               eprintln!(
-                "[rs_check_consts]     delta: steps={}  lazy_iters={}  same_head: check={}  hit={}",
-                stats.delta_steps, stats.lazy_delta_iters,
+                "[rs_check_consts]     delta: steps={}  unfold_hit={}  lazy_iters={}  same_head: check={}  hit={}",
+                stats.delta_steps, stats.unfold_cache_hits, stats.lazy_delta_iters,
                 stats.same_head_checks, stats.same_head_hits,
               );
               eprintln!(

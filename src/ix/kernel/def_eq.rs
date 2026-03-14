@@ -25,8 +25,12 @@ const MAX_LAZY_DELTA_ITERS: usize = 10_002;
 const MAX_EQUIV_SPINE: usize = 9;
 
 impl<M: MetaMode> TypeChecker<'_, M> {
-  /// Quick structural pre-check (pure, O(1)). Returns `Some(true/false)` if
-  /// the result can be determined without further work, `None` otherwise.
+  /// Quick structural pre-check (pure, O(spine_len)). Returns `Some(true/false)`
+  /// if the result can be determined without further work, `None` otherwise.
+  ///
+  /// Extends lean4's quick_is_def_eq with structural comparison of spines via
+  /// thunk Rc::ptr_eq, catching cases where the same constant application is
+  /// constructed independently (different Val Rc, same thunk arguments).
   fn quick_is_def_eq_val(t: &Val<M>, s: &Val<M>) -> Option<bool> {
     // Pointer equality
     if t.ptr_eq(s) {
@@ -40,7 +44,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
       // Literal equality
       (ValInner::Lit(a), ValInner::Lit(b)) => Some(a == b),
-      // Same-head const with empty spines
+      // Same-head const neutrals: check levels + spine thunks by Rc pointer
       (
         ValInner::Neutral {
           head: Head::Const { id: id1, levels: l1 },
@@ -50,29 +54,78 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           head: Head::Const { id: id2, levels: l2 },
           spine: s2,
         },
-      ) if id1.addr == id2.addr && s1.is_empty() && s2.is_empty() => {
+      ) if id1.addr == id2.addr && s1.len() == s2.len() => {
         if l1.len() != l2.len() {
-          return Some(false);
+          return None; // different level counts, can't decide cheaply
         }
-        Some(
-          l1.iter()
-            .zip(l2.iter())
-            .all(|(a, b)| equal_level(a, b)),
-        )
+        if !l1.iter().zip(l2.iter()).all(|(a, b)| equal_level(a, b)) {
+          return None; // different levels, might become equal after delta
+        }
+        // Levels match — check spine thunks by Rc pointer equality
+        if s1.iter().zip(s2.iter()).all(|(a, b)| Rc::ptr_eq(a, b)) {
+          Some(true)
+        } else {
+          None // spine differs, need full comparison
+        }
       }
-      // Same-head ctor with empty spines
+      // Same-level FVar neutrals: check spine thunks by Rc pointer
+      (
+        ValInner::Neutral {
+          head: Head::FVar { level: l1, .. },
+          spine: s1,
+        },
+        ValInner::Neutral {
+          head: Head::FVar { level: l2, .. },
+          spine: s2,
+        },
+      ) if l1 == l2 && s1.len() == s2.len() => {
+        if s1.iter().zip(s2.iter()).all(|(a, b)| Rc::ptr_eq(a, b)) {
+          Some(true)
+        } else {
+          None
+        }
+      }
+      // Same-head ctor: check levels + spine thunks by Rc pointer
       (
         ValInner::Ctor { id: id1, levels: l1, spine: s1, .. },
         ValInner::Ctor { id: id2, levels: l2, spine: s2, .. },
-      ) if id1.addr == id2.addr && s1.is_empty() && s2.is_empty() => {
+      ) if id1.addr == id2.addr && s1.len() == s2.len() => {
         if l1.len() != l2.len() {
-          return Some(false);
+          return None;
         }
-        Some(
-          l1.iter()
-            .zip(l2.iter())
-            .all(|(a, b)| equal_level(a, b)),
-        )
+        if !l1.iter().zip(l2.iter()).all(|(a, b)| equal_level(a, b)) {
+          return None;
+        }
+        if s1.iter().zip(s2.iter()).all(|(a, b)| Rc::ptr_eq(a, b)) {
+          Some(true)
+        } else {
+          None
+        }
+      }
+      // Same projection with identical struct thunk and spine thunks
+      (
+        ValInner::Proj { type_addr: ta1, idx: ix1, strct: st1, spine: sp1, .. },
+        ValInner::Proj { type_addr: ta2, idx: ix2, strct: st2, spine: sp2, .. },
+      ) if ta1 == ta2 && ix1 == ix2
+        && Rc::ptr_eq(st1, st2)
+        && sp1.len() == sp2.len()
+        && sp1.iter().zip(sp2.iter()).all(|(a, b)| Rc::ptr_eq(a, b)) =>
+      {
+        Some(true)
+      }
+      // Same-body closures with identical environments (Lam)
+      (
+        ValInner::Lam { body: b1, env: e1, .. },
+        ValInner::Lam { body: b2, env: e2, .. },
+      ) if b1.ptr_id() == b2.ptr_id() && Rc::ptr_eq(e1, e2) => {
+        Some(true)
+      }
+      // Same-body closures with identical environments (Pi)
+      (
+        ValInner::Pi { body: b1, env: e1, dom: d1, .. },
+        ValInner::Pi { body: b2, env: e2, dom: d2, .. },
+      ) if b1.ptr_id() == b2.ptr_id() && Rc::ptr_eq(e1, e2) && d1.ptr_eq(d2) => {
+        Some(true)
       }
       _ => None,
     }
@@ -80,10 +133,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
   /// Top-level definitional equality check.
   pub fn is_def_eq(&mut self, t: &Val<M>, s: &Val<M>) -> TcResult<bool, M> {
-    self.heartbeat()?;
     self.stats.def_eq_calls += 1;
 
-    // 1. Quick structural check
+    // 1. Quick structural check (O(1), no heartbeat needed)
     if let Some(result) = Self::quick_is_def_eq_val(t, s) {
       if result { self.stats.quick_true += 1; } else { self.stats.quick_false += 1; }
       if self.trace && !result {
@@ -97,13 +149,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     self.keep_alive.push(t.clone());
     self.keep_alive.push(s.clone());
 
-    // 2. EquivManager check
+    // 2. EquivManager check (O(α(n)), no heartbeat needed)
     if self.equiv_manager.is_equiv(t.ptr_id(), s.ptr_id()) {
       self.stats.equiv_hits += 1;
       return Ok(true);
     }
 
-    // 3. Pointer-keyed caches (canonical key: min/max for order-independence)
+    // 3. Pointer-keyed cache checks (O(1), no heartbeat needed)
     let t_ptr = t.ptr_id();
     let s_ptr = s.ptr_id();
     let key = (t_ptr.min(s_ptr), t_ptr.max(s_ptr));
@@ -123,6 +175,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         return Ok(false);
       }
     }
+
+    // Heartbeat after all O(1) checks — only counts actual work
+    self.heartbeat()?;
 
     // 4. Bool.true reflection (check s first, matching Lean's order)
     if let Some(true_id) = &self.prims.bool_true {

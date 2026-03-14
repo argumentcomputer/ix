@@ -265,10 +265,14 @@ end Normalize
 /-! ## Comparison with fallback -/
 
 /-- Comparison algorithm: `a <= b + diff`. Assumes `a` and `b` are already reduced.
-    Uses heuristic as fast path, with complete normalization as fallback for `diff = 0`. -/
+    Uses heuristic as fast path, with complete normalization as fallback. -/
 partial def leq (a b : Level m) (diff : _root_.Int) : Bool :=
   leqHeuristic a b diff ||
-  (diff == 0 && (Normalize.normalize a).le (Normalize.normalize b))
+  (Normalize.normalize (succN (-diff).toNat a)).le (Normalize.normalize (succN diff.toNat b))
+where
+  succN : Nat → Level m → Level m
+    | 0, l => l
+    | n+1, l => Level.succ (succN n l)
 
 /-- Semantic equality of levels. Assumes `a` and `b` are already reduced.
     Uses heuristic as fast path, with complete normalization as fallback. -/

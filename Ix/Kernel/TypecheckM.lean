@@ -82,7 +82,7 @@ structure TypecheckCtx (σ : Type) (m : Ix.Kernel.MetaMode) where
   prims      : KPrimitives m
   safety     : KDefinitionSafety
   quotInit   : Bool
-  mutTypes   : Std.TreeMap Nat (KMetaId m × (Array (KLevel m) → Val m)) compare := default
+  mutTypes   : Array (Nat × KMetaId m × (Array (KLevel m) → Val m)) := #[]
   recId?     : Option (KMetaId m) := none
   inferOnly  : Bool := false
   eagerReduce : Bool := false
@@ -92,6 +92,7 @@ structure TypecheckCtx (σ : Type) (m : Ix.Kernel.MetaMode) where
   maxThunks  : Nat := defaultMaxThunks
   -- Mutable refs (all mutation via ST.Ref — no StateT needed)
   thunkTable       : ST.Ref σ (Array (ThunkEntry m))
+  heartbeatRef     : ST.Ref σ Nat  -- separate counter avoids touching full Stats on every heartbeat
   statsRef         : ST.Ref σ Stats
   typedConstsRef   : ST.Ref σ (Std.HashMap (KMetaId m) (KTypedConst m))
   ptrFailureCacheRef : ST.Ref σ (Std.HashMap (USize × USize) (Val m × Val m))
@@ -101,6 +102,9 @@ structure TypecheckCtx (σ : Type) (m : Ix.Kernel.MetaMode) where
   inferCacheRef    : ST.Ref σ (Std.HashMap USize (KExpr m × Array (Val m) × KTypedExpr m × Val m))
   whnfCacheRef     : ST.Ref σ (Std.HashMap USize (Val m × Val m))
   whnfCoreCacheRef : ST.Ref σ (Std.HashMap USize (Val m × Val m))
+  whnfCoreCheapCacheRef : ST.Ref σ (Std.HashMap USize (Val m × Val m))
+  whnfStructuralCacheRef : ST.Ref σ (Std.HashMap (Address × Array Nat) (Val m))
+  deltaBodyCacheRef : ST.Ref σ (Std.HashMap Address (Array (KLevel m) × Val m))
 
 /-! ## TypecheckM monad
 
@@ -154,7 +158,7 @@ def isThunkEvaluated (id : Nat) : TypecheckM σ m Bool := do
 def withResetCtx : TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with
     types := #[], letValues := #[], binderNames := #[],
-    mutTypes := default, recId? := none }
+    mutTypes := #[], recId? := none }
 
 def withBinder (varType : Val m) (name : KMetaField m Ix.Name := default)
     : TypecheckM σ m α → TypecheckM σ m α :=
@@ -170,7 +174,7 @@ def withLetBinder (varType : Val m) (val : Val m) (name : KMetaField m Ix.Name :
     letValues := ctx.letValues.push (some val),
     binderNames := ctx.binderNames.push name }
 
-def withMutTypes (mutTypes : Std.TreeMap Nat (KMetaId m × (Array (KLevel m) → Val m)) compare) :
+def withMutTypes (mutTypes : Array (Nat × KMetaId m × (Array (KLevel m) → Val m))) :
     TypecheckM σ m α → TypecheckM σ m α :=
   withReader fun ctx => { ctx with mutTypes := mutTypes }
 
@@ -225,17 +229,18 @@ def withSafety (s : KDefinitionSafety) : TypecheckM σ m α → TypecheckM σ m 
 
 /-- Increment heartbeat counter. Called at every operation entry point
     (eval, whnfCoreVal, forceThunk, lazyDelta step, infer, isDefEq)
-    to bound total work. -/
+    to bound total work.
+    Uses a dedicated ST.Ref Nat counter to avoid reading/writing the full Stats
+    struct (24 fields) on every call. Stats.heartbeats is synced lazily. -/
 @[inline] def heartbeat : TypecheckM σ m Unit := do
   let ctx ← read
-  let stats ← ctx.statsRef.get
-  if stats.heartbeats >= ctx.maxHeartbeats then
+  let hb ← ctx.heartbeatRef.modifyGet fun n => (n + 1, n + 1)
+  if hb >= ctx.maxHeartbeats then
     throw s!"heartbeat limit exceeded ({ctx.maxHeartbeats})"
-  let hb := stats.heartbeats + 1
   if ctx.trace && hb % 100_000 == 0 then
+    let stats ← ctx.statsRef.get
     let table ← ctx.thunkTable.get
     dbg_trace s!"    [hb] {hb / 1000}K heartbeats, delta={stats.deltaSteps}, thunkTable={table.size}, isDefEq={stats.isDefEqCalls}, eval={stats.evalCalls}, force={stats.forceCalls}"
-  ctx.statsRef.set { stats with heartbeats := hb }
 
 /-! ## Const dereferencing -/
 
@@ -309,6 +314,7 @@ private def mkCtxST (σ : Type) (kenv : KEnv m) (prims : KPrimitives m)
     (trace : Bool := false) (maxHeartbeats : Nat := defaultMaxHeartbeats)
     (maxThunks : Nat := defaultMaxThunks) : ST σ (TypecheckCtx σ m) := do
   let thunkTable ← ST.mkRef (#[] : Array (ThunkEntry m))
+  let heartbeatRef ← ST.mkRef (0 : Nat)
   let statsRef ← ST.mkRef ({} : Stats)
   let typedConstsRef ← ST.mkRef ({} : Std.HashMap (KMetaId m) (KTypedConst m))
   let ptrFailureCacheRef ← ST.mkRef ({} : Std.HashMap (USize × USize) (Val m × Val m))
@@ -318,10 +324,14 @@ private def mkCtxST (σ : Type) (kenv : KEnv m) (prims : KPrimitives m)
   let inferCacheRef ← ST.mkRef ({} : Std.HashMap USize (KExpr m × Array (Val m) × KTypedExpr m × Val m))
   let whnfCacheRef ← ST.mkRef ({} : Std.HashMap USize (Val m × Val m))
   let whnfCoreCacheRef ← ST.mkRef ({} : Std.HashMap USize (Val m × Val m))
+  let whnfCoreCheapCacheRef ← ST.mkRef ({} : Std.HashMap USize (Val m × Val m))
+  let whnfStructuralCacheRef ← ST.mkRef ({} : Std.HashMap (Address × Array Nat) (Val m))
+  let deltaBodyCacheRef ← ST.mkRef ({} : Std.HashMap Address (Array (KLevel m) × Val m))
   pure {
     types := #[], kenv, prims, safety, quotInit, trace, maxHeartbeats, maxThunks,
-    thunkTable, statsRef, typedConstsRef, ptrFailureCacheRef, ptrSuccessCacheRef,
-    eqvManagerRef, keepAliveRef, inferCacheRef, whnfCacheRef, whnfCoreCacheRef }
+    thunkTable, heartbeatRef, statsRef, typedConstsRef, ptrFailureCacheRef, ptrSuccessCacheRef,
+    eqvManagerRef, keepAliveRef, inferCacheRef, whnfCacheRef, whnfCoreCacheRef,
+    whnfCoreCheapCacheRef, whnfStructuralCacheRef, deltaBodyCacheRef }
 
 /-- Run a TypecheckM computation purely via runST.
     Everything runs inside a single ST σ region. -/
@@ -346,6 +356,9 @@ def TypecheckM.runWithStats (kenv : KEnv m) (prims : KPrimitives m)
   runST fun σ => do
     let ctx ← mkCtxST σ kenv prims safety quotInit trace maxHeartbeats maxThunks
     let result ← ExceptT.run (ReaderT.run (action σ) ctx)
+    -- Sync heartbeat counter to stats before returning
+    let hb ← ctx.heartbeatRef.get
+    ctx.statsRef.modify fun s => { s with heartbeats := hb }
     let stats ← ctx.statsRef.get
     match result with
     | .ok _ => pure (none, stats)

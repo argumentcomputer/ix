@@ -318,12 +318,12 @@ def metaLvlAddrs : ConstantMeta → Array Address
   | .recr _ lvls _ _ _ _ _ _ => lvls
   | .empty => #[]
 
-/-- Resolve level param addresses to MetaField names via the names table. -/
-def resolveLevelParams (m : MetaMode) (names : Std.HashMap Address Ix.Name)
-    (lvlAddrs : Array Address) : Array (MetaField m Ix.Name) :=
+/-- Resolve an array of addresses to MetaField names via the names table. -/
+def resolveNames (m : MetaMode) (names : Std.HashMap Address Ix.Name)
+    (addrs : Array Address) : Array (MetaField m Ix.Name) :=
   match m with
-  | .anon => lvlAddrs.map fun _ => ()
-  | .meta => lvlAddrs.map fun addr => names.getD addr default
+  | .anon => addrs.map fun _ => ()
+  | .meta => addrs.map fun addr => names.getD addr default
 
 /-- Build the MetaField levelParams value from resolved names. -/
 def mkLevelParams (m : MetaMode) (names : Std.HashMap Address Ix.Name)
@@ -332,14 +332,7 @@ def mkLevelParams (m : MetaMode) (names : Std.HashMap Address Ix.Name)
   | .anon => ()
   | .meta => lvlAddrs.map fun addr => names.getD addr default
 
-/-- Resolve an array of name-hash addresses to MetaField names. -/
-def resolveMetaNames (m : MetaMode) (names : Std.HashMap Address Ix.Name)
-    (addrs : Array Address) : Array (MetaField m Ix.Name) :=
-  match m with
-  | .anon => addrs.map fun _ => ()
-  | .meta => addrs.map fun a => names.getD a default
-
-/-- Resolve a single name-hash address to a MetaField name. -/
+/-- Resolve a single address to a MetaField name. -/
 def resolveMetaName (m : MetaMode) (names : Std.HashMap Address Ix.Name)
     (addr : Address) : MetaField m Ix.Name :=
   match m with | .anon => () | .meta => names.getD addr default
@@ -617,8 +610,8 @@ def convertProjAction (m : MetaMode)
         let ctorAs := bIdx.ctorAddrs.getD prj.idx #[]
         let allNameAddrs := match cMeta with | .indc _ _ _ a _ _ _ => a | _ => #[]
         let ctorNameAddrs := match cMeta with | .indc _ _ c _ _ _ _ => c | _ => #[]
-        let allNs := resolveMetaNames m names allNameAddrs
-        let ctorNs := resolveMetaNames m names ctorNameAddrs
+        let allNs := resolveNames m names allNameAddrs
+        let ctorNs := resolveNames m names ctorNameAddrs
         let allIds := mkMetaIds m bIdx.allInductAddrs allNs
         let ctorIds := mkMetaIds m ctorAs ctorNs
         .ok (convertInductive m ind ctorIds allIds name levelParams cMeta)
@@ -659,7 +652,7 @@ def convertProjAction (m : MetaMode)
           | .meta => ruleCtorAs.map fun a =>
             (addrToNames.getD a #[])[0]?.getD default
         let allNameAddrs := match cMeta with | .recr _ _ _ a _ _ _ _ => a | _ => #[]
-        let allNs := resolveMetaNames m names allNameAddrs
+        let allNs := resolveNames m names allNameAddrs
         let allIds := mkMetaIds m bIdx.allInductAddrs allNs
         let ruleCtorIds := mkMetaIds m ruleCtorAs ruleCtorNs
         let inductBlockIds := mkMetaIds m inductBlockAddrs inductBlockNs
@@ -674,7 +667,7 @@ def convertProjAction (m : MetaMode)
           | .defn _ _ h _ _ _ _ _ => convertHints h
           | _ => .opaque
         let allNameAddrs := match cMeta with | .defn _ _ _ a _ _ _ _ => a | _ => #[]
-        let allNs := resolveMetaNames m names allNameAddrs
+        let allNs := resolveNames m names allNameAddrs
         let allIds := mkMetaIds m bIdx.allInductAddrs allNs
         .ok (convertDefinition m d hints allIds name levelParams cMeta)
       | _ => .error s!"dPrj at {addr} does not point to a definition"
@@ -721,7 +714,7 @@ def convertStandalone (m : MetaMode) (hashToAddr : Std.HashMap Address Address)
     Except String (Option (Ix.Kernel.ConstantInfo m)) := do
   let cMeta := entry.constMeta
   let recurAddrs ← (resolveCtxAddrs hashToAddr (metaCtxAddrs cMeta)).mapError toString
-  let lvlNames := resolveLevelParams m ixonEnv.names (metaLvlAddrs cMeta)
+  let lvlNames := resolveNames m ixonEnv.names (metaLvlAddrs cMeta)
   let lps := mkLevelParams m ixonEnv.names (metaLvlAddrs cMeta)
   let cEnv := mkConvertEnv m entry.const ixonEnv.blobs
     (recurAddrs := recurAddrs) (arena := (metaArena cMeta)) (names := ixonEnv.names)
@@ -735,7 +728,7 @@ def convertStandalone (m : MetaMode) (hashToAddr : Std.HashMap Address Address)
       | .defn _ _ _ a _ _ _ _ => a
       | _ => #[]
     let allAddrs := allHashAddrs.map fun x => hashToAddr.getD x x
-    let allNs := resolveMetaNames m ixonEnv.names allHashAddrs
+    let allNs := resolveNames m ixonEnv.names allHashAddrs
     let allIds := mkMetaIds m allAddrs allNs
     let ci ← (ConvertM.run cEnv (convertDefinition m d hints allIds entry.name lps cMeta)).mapError toString
     return some ci
@@ -752,7 +745,7 @@ def convertStandalone (m : MetaMode) (hashToAddr : Std.HashMap Address Address)
     let (metaAll, metaRules) := pair
     let allAddrs := metaAll.map fun x => hashToAddr.getD x x
     let ruleCtorAddrs := metaRules.map fun x => hashToAddr.getD x x
-    let allNs := resolveMetaNames m ixonEnv.names metaAll
+    let allNs := resolveNames m ixonEnv.names metaAll
     let ruleCtorNs := metaRules.map fun x => resolveMetaName m ixonEnv.names x
     let allIds := mkMetaIds m allAddrs allNs
     let ruleCtorIds := mkMetaIds m ruleCtorAddrs ruleCtorNs
@@ -799,7 +792,7 @@ def convertWorkBlock (m : MetaMode)
       if !shareCache then
         state := ConvertState.init baseEnv
       let cMeta := entry.constMeta
-      let lvlNames := resolveLevelParams m ixonEnv.names (metaLvlAddrs cMeta)
+      let lvlNames := resolveNames m ixonEnv.names (metaLvlAddrs cMeta)
       let lps := mkLevelParams m ixonEnv.names (metaLvlAddrs cMeta)
       let cEnv := { baseEnv with arena := (metaArena cMeta), levelParamNames := lvlNames }
       match convertProjAction m entry.addr entry.const blockConst bIdx ixonEnv indBlockIdx addrToNames entry.name lps cMeta ixonEnv.names with

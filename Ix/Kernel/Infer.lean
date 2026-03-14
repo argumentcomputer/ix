@@ -119,7 +119,6 @@ mutual
       App arguments become thunks (lazy). Constants stay as stuck neutrals. -/
   partial def eval (e : KExpr m) (env : Array (Val m)) : TypecheckM σ m (Val m) := do
     let ctx ← read
-    heartbeat
     ctx.statsRef.modify fun s => { s with evalCalls := s.evalCalls + 1 }
     match e with
     | .bvar idx _ =>
@@ -211,7 +210,6 @@ mutual
   /-- Apply a value to a thunked argument. O(1) beta for lambdas. -/
   partial def applyValThunk (fn : Val m) (argThunkId : Nat)
       : TypecheckM σ m (Val m) := do
-    heartbeat
     match fn with
     | .lam _name _ _ body env =>
       -- Force the thunk to get the value, push onto closure env
@@ -260,7 +258,6 @@ mutual
       pure val
     | .unevaluated expr env =>
       ctx.statsRef.modify fun s => { s with thunkForces := s.thunkForces + 1 }
-      heartbeat
       let val ← eval expr env
       -- Write back: modify's closure gets the array at rc=1 (no local ref held)
       ctx.thunkTable.modify fun table =>
@@ -333,11 +330,16 @@ mutual
         for i in [majorIdx + 1:spine.size] do args := args.push spine[i]!
       args
     -- Handle nat literals directly (O(1) instead of O(n) allocation via natLitToCtorThunked)
-    -- Only when the recursor belongs to the real Nat type
+    -- Only when the recursor belongs to the real Nat type.
+    -- Safety: rules are ordered by constructor index (Nat.zero=0, Nat.succ=1),
+    -- guaranteed by RecursorVal encoding. We assert this invariant below.
     let prims := (← read).prims
     match major' with
     | .lit (.natVal 0) =>
       if indAddr != prims.nat.addr then return none
+      -- Assert rules[0] is for Nat.zero (constructor index 0)
+      if let some r := rules[0]? then
+        if r.1 != 0 then dbg_trace s!"WARNING: Nat iota rules[0] has nfields={r.1}, expected 0 (Nat.zero)"
       match rules[0]? with
       | some (_, rhs) =>
         let rhsBody := rhs.body.instantiateLevelParams levels
@@ -346,6 +348,9 @@ mutual
       | none => return none
     | .lit (.natVal (n+1)) =>
       if indAddr != prims.nat.addr then return none
+      -- Assert rules[1] is for Nat.succ (constructor index 1, 1 field)
+      if let some r := rules[1]? then
+        if r.1 != 1 then dbg_trace s!"WARNING: Nat iota rules[1] has nfields={r.1}, expected 1 (Nat.succ)"
       match rules[1]? with
       | some (_, rhs) =>
         let rhsBody := rhs.body.instantiateLevelParams levels
@@ -503,7 +508,6 @@ mutual
   partial def whnfCoreImpl (v : Val m) (cheapRec : Bool) (cheapProj : Bool)
       : TypecheckM σ m (Val m) := do
     let ctx ← read
-    heartbeat
     match v with
     | .proj typeId idx structThunkId spine => do
       -- Collect nested projection chain (outside-in)
@@ -584,7 +588,8 @@ mutual
             | none => pure v
           else pure v
       | some (.quotInfo qv) =>
-        match qv.kind with
+        if !(← read).quotInit then pure v
+        else match qv.kind with
         | .lift =>
           match ← tryQuotReduction spine 6 3 with
           | some result => whnfCoreVal result cheapRec cheapProj
@@ -600,45 +605,56 @@ mutual
   /-- Structural WHNF on Val: proj reduction, iota reduction. No delta.
       cheapProj=true: don't whnf the struct inside a projection.
       cheapRec=true: don't attempt iota reduction on recursors.
-      Caches results when !cheapRec && !cheapProj (pointer-keyed). -/
+      Caches results for both (!cheapRec && !cheapProj) and cheapProj=true modes. -/
   partial def whnfCoreVal (v : Val m) (cheapRec := false) (cheapProj := false)
       : TypecheckM σ m (Val m) := do
+    -- Fast path: values that are always structurally WHNF
+    match v with
+    | .sort .. | .lit .. | .lam .. | .pi .. | .ctor .. => return v
+    | .neutral (.fvar ..) _ => return v
+    | _ => pure ()
     let ctx ← read
-    let useCache := !cheapRec && !cheapProj
-    if useCache then
+    -- Use full cache for !cheapRec && !cheapProj, cheap cache for cheapProj=true
+    let useFullCache := !cheapRec && !cheapProj
+    let useCheapCache := !cheapRec && cheapProj
+    let cacheRef := if useFullCache then ctx.whnfCoreCacheRef
+      else if useCheapCache then ctx.whnfCoreCheapCacheRef
+      else ctx.whnfCoreCacheRef  -- unused, but needed for type
+    if useFullCache || useCheapCache then
       let vPtr := ptrAddrVal v
       -- Direct lookup
-      match (← ctx.whnfCoreCacheRef.get).get? vPtr with
+      match (← cacheRef.get).get? vPtr with
       | some (inputRef, cached) =>
         if ptrEq v inputRef then
           ctx.statsRef.modify fun s => { s with whnfCoreCacheHits := s.whnfCoreCacheHits + 1 }
           return cached
       | none => pure ()
-      -- Second-chance lookup via equiv root
-      let rootPtr? ← equivFindRootPtr vPtr
-      if let some rootPtr := rootPtr? then
-        if rootPtr != vPtr then
-          match (← ctx.whnfCoreCacheRef.get).get? rootPtr with
-          | some (_, cached) =>
-            ctx.statsRef.modify fun s => { s with whnfCoreCacheHits := s.whnfCoreCacheHits + 1 }
-            return cached
-          | none => pure ()
+      -- Second-chance lookup via equiv root (only for full cache)
+      if useFullCache then
+        let rootPtr? ← equivFindRootPtr vPtr
+        if let some rootPtr := rootPtr? then
+          if rootPtr != vPtr then
+            match (← cacheRef.get).get? rootPtr with
+            | some (_, cached) =>
+              ctx.statsRef.modify fun s => { s with whnfCoreCacheHits := s.whnfCoreCacheHits + 1 }
+              return cached
+            | none => pure ()
       ctx.statsRef.modify fun s => { s with whnfCoreCacheMisses := s.whnfCoreCacheMisses + 1 }
     let result ← whnfCoreImpl v cheapRec cheapProj
-    if useCache then
+    if useFullCache || useCheapCache then
       let vPtr := ptrAddrVal v
-      ctx.whnfCoreCacheRef.modify fun c => c.insert vPtr (v, result)
-      -- Also insert under root
-      let rootPtr? ← equivFindRootPtr vPtr
-      if let some rootPtr := rootPtr? then
-        if rootPtr != vPtr then
-          ctx.whnfCoreCacheRef.modify fun c => c.insert rootPtr (v, result)
+      cacheRef.modify fun c => c.insert vPtr (v, result)
+      -- Also insert under root (full cache only)
+      if useFullCache then
+        let rootPtr? ← equivFindRootPtr vPtr
+        if let some rootPtr := rootPtr? then
+          if rootPtr != vPtr then
+            cacheRef.modify fun c => c.insert rootPtr (v, result)
     pure result
 
   /-- Single delta unfolding step. Returns none if not delta-reducible. -/
   partial def deltaStepVal (v : Val m) : TypecheckM σ m (Option (Val m)) := do
     let ctx ← read
-    heartbeat
     match v with
     | .neutral (.const id levels) spine =>
       -- Platform-dependent reduction: System.Platform.numBits → word size
@@ -655,9 +671,23 @@ mutual
           if ds ≤ 100 || ds % 500 == 0 then
             let h := match dv.hints with | .opaque => "opaque" | .abbrev => "abbrev" | .regular n => s!"regular({n})"
             dbg_trace s!"    [delta #{ds}] unfolding {dv.toConstantVal.name} (spine={spine.size}, {h})"
-        let body := if dv.toConstantVal.numLevels == 0 then dv.value
-          else dv.value.instantiateLevelParams levels
-        let mut result ← eval body #[]
+        -- Cache evaluated body Val per (addr, levels). Monomorphic defs (no levels) skip cache.
+        let bodyVal ← if dv.toConstantVal.numLevels == 0 then eval dv.value #[]
+          else do
+            match (← ctx.deltaBodyCacheRef.get).get? id.addr with
+            | some (cachedLevels, cachedVal) =>
+              if equalUnivArrays cachedLevels levels then pure cachedVal
+              else do
+                let b := dv.value.instantiateLevelParams levels
+                let v ← eval b #[]
+                ctx.deltaBodyCacheRef.modify fun c => c.insert id.addr (levels, v)
+                pure v
+            | none => do
+              let b := dv.value.instantiateLevelParams levels
+              let v ← eval b #[]
+              ctx.deltaBodyCacheRef.modify fun c => c.insert id.addr (levels, v)
+              pure v
+        let mut result := bodyVal
         for thunkId in spine do
           result ← applyValThunk result thunkId
         pure (some result)
@@ -870,13 +900,15 @@ mutual
 
   /-- Full WHNF: whnfCore + delta + native reduction + nat prims, repeat until stuck. -/
   partial def whnfVal (v : Val m) (deltaSteps : Nat := 0) : TypecheckM σ m (Val m) := do
+    -- Fast path: values that are always fully WHNF
+    match v with
+    | .sort .. | .lit .. | .lam .. | .pi .. | .ctor .. => return v
+    | .neutral (.fvar ..) _ => return v
+    | _ => pure ()
     let ctx ← read
-    let maxDelta := if ctx.eagerReduce then 500000 else 50000
-    if deltaSteps > maxDelta then throw "whnfVal delta step limit exceeded"
-    -- WHNF cache: check pointer-keyed cache (only at top-level entry)
+    -- WHNF cache: check pointer-keyed cache (O(1), no heartbeat needed)
     let vPtr := ptrAddrVal v
     if deltaSteps == 0 then
-      heartbeat
       -- Direct lookup
       match (← ctx.whnfCacheRef.get).get? vPtr with
       | some (inputRef, cached) =>
@@ -893,7 +925,20 @@ mutual
             ctx.statsRef.modify fun s => { s with whnfEquivHits := s.whnfEquivHits + 1 }
             return cached  -- skip ptrEq (equiv guarantees validity)
           | none => pure ()
+      -- Structural cache for constant-headed neutrals: key on (addr, spine)
+      if let .neutral (.const id _) spine := v then
+        match (← ctx.whnfStructuralCacheRef.get).get? (id.addr, spine) with
+        | some cached =>
+          ctx.statsRef.modify fun s => { s with whnfCacheHits := s.whnfCacheHits + 1 }
+          -- Populate pointer cache for future lookups
+          ctx.whnfCacheRef.modify fun c => c.insert vPtr (v, cached)
+          return cached
+        | none => pure ()
     ctx.statsRef.modify fun s => { s with whnfCacheMisses := s.whnfCacheMisses + 1 }
+    -- Heartbeat after cache checks — only counts actual work
+    heartbeat
+    let maxDelta := if ctx.eagerReduce then 500000 else 50000
+    if deltaSteps > maxDelta then throw "whnfVal delta step limit exceeded"
     let v' ← whnfCoreVal v
     let result ← do
       match ← tryReduceNatVal v' with
@@ -911,6 +956,9 @@ mutual
     -- Cache the final result (only at top-level entry)
     if deltaSteps == 0 then
       ctx.whnfCacheRef.modify fun c => c.insert vPtr (v, result)
+      -- Structural cache for constant-headed neutrals
+      if let .neutral (.const id _) spine := v then
+        ctx.whnfStructuralCacheRef.modify fun c => c.insert (id.addr, spine) result
       -- Register v ≡ whnf(v) in equiv manager (Opt 3)
       if !ptrEq v result then
         ctx.keepAliveRef.modify fun a => a.push v |>.push result
@@ -922,23 +970,47 @@ mutual
           ctx.whnfCacheRef.modify fun c => c.insert rootPtr (v, result)
     pure result
 
-  /-- Quick structural pre-check on Val: O(1) cases that don't need WHNF. -/
+  /-- Quick structural pre-check on Val: O(spine_len) cases that don't need WHNF.
+      Extends lean4's quick_is_def_eq with structural comparison of spines via
+      thunk index equality, catching cases where the same constant application is
+      constructed independently (different Val, same thunk arguments). -/
   partial def quickIsDefEqVal (t s : Val m) : Option Bool :=
     if ptrEq t s then some true
     else match t, s with
     | .sort u, .sort v => some (Ix.Kernel.Level.equalLevel u v)
     | .lit l, .lit l' => some (l == l')
+    -- Same-head const neutrals: check levels + spine thunks by index
     | .neutral (.const a us) sp1, .neutral (.const b vs) sp2 =>
-      if a.addr == b.addr && equalUnivArrays us vs && sp1.isEmpty && sp2.isEmpty then some true
+      if a.addr == b.addr && equalUnivArrays us vs && sp1 == sp2 then some true
       else none
+    -- Same-level FVar neutrals: check spine thunks
+    | .neutral (.fvar l1 _) sp1, .neutral (.fvar l2 _) sp2 =>
+      if l1 == l2 && sp1 == sp2 then some true
+      else none
+    -- Same-head ctor: check levels + spine thunks by index
     | .ctor a us _ _ _ _ sp1, .ctor b vs _ _ _ _ sp2 =>
-      if a.addr == b.addr && equalUnivArrays us vs && sp1.isEmpty && sp2.isEmpty then some true
+      if a.addr == b.addr && equalUnivArrays us vs && sp1 == sp2 then some true
+      else none
+    -- Same projection with same struct thunk and spine thunks
+    | .proj ta1 ix1 st1 sp1, .proj ta2 ix2 st2 sp2 =>
+      if ta1.addr == ta2.addr && ix1 == ix2 && st1 == st2 && sp1 == sp2 then some true
+      else none
+    -- Same-body closures with same environment (Lam)
+    | .lam _ _ _ b1 e1, .lam _ _ _ b2 e2 =>
+      if ptrEqExpr b1 b2 && arrayPtrEq e1 e2 then some true
+      else none
+    -- Same-body closures with same environment and domain (Pi)
+    | .pi _ _ d1 b1 e1, .pi _ _ d2 b2 e2 =>
+      if ptrEqExpr b1 b2 && arrayPtrEq e1 e2 && ptrEq d1 d2 then some true
       else none
     | _, _ => none
 
   /-- Recursively add sub-component equivalences after successful isDefEq.
       Peeks at evaluated thunks without forcing unevaluated ones. -/
   partial def structuralAddEquiv (t s : Val m) : TypecheckM σ m Unit := do
+    let ctx ← read
+    -- Keep t and s alive to prevent address reuse from corrupting equiv_manager
+    ctx.keepAliveRef.modify fun a => a.push t |>.push s
     let tPtr := ptrAddrVal t
     let sPtr := ptrAddrVal s
     equivAddEquiv tPtr sPtr
@@ -956,6 +1028,7 @@ mutual
         let e2 ← peekThunk sp2[i]!
         match e1, e2 with
         | .evaluated v1, .evaluated v2 =>
+          ctx.keepAliveRef.modify fun a => a.push v1 |>.push v2
           let v1Ptr := ptrAddrVal v1
           let v2Ptr := ptrAddrVal v2
           equivAddEquiv v1Ptr v2Ptr
@@ -964,7 +1037,7 @@ mutual
   /-- Check if two values are definitionally equal. -/
   partial def isDefEq (t s : Val m) : TypecheckM σ m Bool := do
     let ctx ← read
-    heartbeat
+    -- 0. Quick structural check (O(1), no heartbeat needed)
     if let some result := quickIsDefEqVal t s then
       if result then ctx.statsRef.modify fun s => { s with quickTrue := s.quickTrue + 1 }
       else ctx.statsRef.modify fun s => { s with quickFalse := s.quickFalse + 1 }
@@ -977,29 +1050,30 @@ mutual
       let sE ← quote s (← depth)
       dbg_trace s!"  [isDefEq #{deqCount}] {tE.pp.take 120}"
       dbg_trace s!"           vs {sE.pp.take 120}"
-    -- 0. Pointer-based cache checks (keep alive to prevent GC address reuse)
-    ctx.keepAliveRef.modify fun a => a.push t |>.push s
+    -- 0a. Pointer-based cache checks (O(1), no heartbeat needed)
     let tPtr := ptrAddrVal t
     let sPtr := ptrAddrVal s
     let ptrKey := if tPtr ≤ sPtr then (tPtr, sPtr) else (sPtr, tPtr)
-    -- 0a. EquivManager (union-find with transitivity)
+    -- 0b. EquivManager (union-find with transitivity, O(α(n)))
     if ← equivIsEquiv tPtr sPtr then
       ctx.statsRef.modify fun s => { s with equivHits := s.equivHits + 1 }
       return true
-    -- 0b. Pointer success cache (validate with ptrEq to guard against address reuse)
+    -- 0c. Pointer success cache (validate with ptrEq to guard against address reuse)
     match (← ctx.ptrSuccessCacheRef.get).get? ptrKey with
     | some (tRef, sRef) =>
       if (ptrEq t tRef && ptrEq s sRef) || (ptrEq t sRef && ptrEq s tRef) then
         ctx.statsRef.modify fun s => { s with ptrSuccessHits := s.ptrSuccessHits + 1 }
         return true
     | none => pure ()
-    -- 0c. Pointer failure cache (validate with ptrEq to guard against address reuse)
+    -- 0d. Pointer failure cache (validate with ptrEq to guard against address reuse)
     match (← ctx.ptrFailureCacheRef.get).get? ptrKey with
     | some (tRef, sRef) =>
       if (ptrEq t tRef && ptrEq s sRef) || (ptrEq t sRef && ptrEq s tRef) then
         ctx.statsRef.modify fun s => { s with ptrFailureHits := s.ptrFailureHits + 1 }
         return false
     | none => pure ()
+    -- Heartbeat after all O(1) checks — only counts actual work
+    heartbeat
     -- 1. Bool.true reflection
     let prims := ctx.prims
     if isBoolTrue prims s then
@@ -1021,7 +1095,8 @@ mutual
       ctx.statsRef.modify fun s => { s with proofIrrelHits := s.proofIrrelHits + 1 }
       return result
     | none => pure ()
-    -- 5. Lazy delta reduction
+    -- 5. Lazy delta reduction (keep alive for equiv/cache registration below)
+    ctx.keepAliveRef.modify fun a => a.push t |>.push s
     let (tn', sn', deltaResult) ← lazyDelta tn sn
     if let some result := deltaResult then
       if result then
@@ -1178,9 +1253,7 @@ mutual
     -- Fallback: try struct eta, then unit-like
     | _, _ => do
       if ← tryEtaStructVal t s then return true
-      try isDefEqUnitLikeVal t s catch e =>
-        if ctx.trace then dbg_trace s!"isDefEqCore: isDefEqUnitLikeVal threw: {e}"
-        pure false
+      isDefEqUnitLikeVal t s
 
   /-- Compare two thunk spines element-wise (forcing each thunk). -/
   partial def isDefEqSpine (sp1 sp2 : Array Nat) : TypecheckM σ m Bool := do
@@ -1416,8 +1489,8 @@ mutual
         else
           throw s!"bvar {idx} out of range (depth={d})"
       else
-        match ctx.mutTypes.get? (idx - d) with
-        | some (mid, typeFn) =>
+        match ctx.mutTypes.find? (fun (k, _, _) => k == idx - d) with
+        | some (_, mid, typeFn) =>
           if some mid == ctx.recId? then throw "Invalid recursion"
           let univs : Array (KLevel m) := #[]
           let typVal := typeFn univs
@@ -1807,19 +1880,13 @@ mutual
     let listThunk ← mkThunkFromVal listVal
     mkCtorVal prims.stringMk #[] #[listThunk]
 
-  /-- Proof irrelevance: if both sides are proofs of Prop types, compare types. -/
+  /-- Proof irrelevance: if both sides are proofs of Prop types, compare types.
+      Matches lean4 C++ reference: lets inferTypeOfVal throw on error (no try/catch). -/
   partial def isDefEqProofIrrel (t s : Val m) : TypecheckM σ m (Option Bool) := do
-    let tType ← try inferTypeOfVal t catch e =>
-      -- Propagate resource exhaustion errors (heartbeat/thunk limits)
-      if e.containsSubstr "limit exceeded" then throw e
-      if (← read).trace then dbg_trace s!"isDefEqProofIrrel: inferTypeOfVal(t) threw: {e}"
-      return none
+    let tType ← inferTypeOfVal t
     -- Check if tType : Prop (i.e., t is a proof, not just a type)
     if !(← isPropVal tType) then return none
-    let sType ← try inferTypeOfVal s catch e =>
-      if e.containsSubstr "limit exceeded" then throw e
-      if (← read).trace then dbg_trace s!"isDefEqProofIrrel: inferTypeOfVal(s) threw: {e}"
-      return none
+    let sType ← inferTypeOfVal s
     some <$> isDefEq tType sType
 
   /-- Short-circuit Nat.succ chain / zero comparison. -/
@@ -1862,19 +1929,16 @@ mutual
     | some t', some s' => some <$> isDefEq t' s'
     | _, _ => return none
 
-  /-- Structure eta core: if s is a ctor of a structure-like type, project t's fields. -/
+  /-- Structure eta core: if s is a ctor of a structure-like type, project t's fields.
+      Matches lean4 C++ reference: lets inferTypeOfVal throw on error (no try/catch). -/
   partial def tryEtaStructCoreVal (t s : Val m) : TypecheckM σ m Bool := do
     match s with
     | .ctor _ _ _ numParams numFields inductId spine =>
       let kenv := (← read).kenv
       unless spine.size == numParams + numFields do return false
       unless kenv.isStructureLike inductId do return false
-      let tType ← try inferTypeOfVal t catch e =>
-        if (← read).trace then dbg_trace s!"tryEtaStructCoreVal: inferTypeOfVal(t) threw: {e}"
-        return false
-      let sType ← try inferTypeOfVal s catch e =>
-        if (← read).trace then dbg_trace s!"tryEtaStructCoreVal: inferTypeOfVal(s) threw: {e}"
-        return false
+      let tType ← inferTypeOfVal t
+      let sType ← inferTypeOfVal s
       unless ← isDefEq tType sType do return false
       let tThunkId ← mkThunkFromVal t
       for _h : i in [:numFields] do
@@ -1890,12 +1954,11 @@ mutual
     if ← tryEtaStructCoreVal t s then return true
     tryEtaStructCoreVal s t
 
-  /-- Unit-like types: single ctor, 0 fields, 0 indices, non-recursive → compare types. -/
+  /-- Unit-like types: single ctor, 0 fields, 0 indices, non-recursive → compare types.
+      Matches lean4 C++ reference: lets inferTypeOfVal throw on error (no try/catch). -/
   partial def isDefEqUnitLikeVal (t s : Val m) : TypecheckM σ m Bool := do
     let kenv := (← read).kenv
-    let tType ← try inferTypeOfVal t catch e =>
-      if (← read).trace then dbg_trace s!"isDefEqUnitLikeVal: inferTypeOfVal(t) threw: {e}"
-      return false
+    let tType ← inferTypeOfVal t
     let tType' ← whnfVal tType
     match tType' with
     | .neutral (.const id _) _ =>
@@ -1905,9 +1968,7 @@ mutual
         match kenv.find? v.ctors[0]! with
         | some (.ctorInfo cv) =>
           if cv.numFields != 0 then return false
-          let sType ← try inferTypeOfVal s catch e =>
-            if (← read).trace then dbg_trace s!"isDefEqUnitLikeVal: inferTypeOfVal(s) threw: {e}"
-            return false
+          let sType ← inferTypeOfVal s
           isDefEq tType sType
         | _ => return false
       | _ => return false
@@ -2207,7 +2268,7 @@ mutual
   partial def checkRecursorRuleType (recType : KExpr m) (rec : Ix.Kernel.RecursorVal m)
       (ctorId : KMetaId m) (nf : Nat) (ruleRhs : KExpr m)
       : TypecheckM σ m (KTypedExpr m) := do
-    let hb_start := (← (← read).statsRef.get).heartbeats
+    let hb_start := (← (← read).heartbeatRef.get)
     let ctorAddr := ctorId.addr
     let np := rec.numParams
     let nm := rec.numMotives
@@ -2330,7 +2391,7 @@ mutual
     for i in [:np + nm + nk] do
       let j := np + nm + nk - 1 - i
       fullType := .forallE recDoms[j]! fullType recNames[j]! recBis[j]!
-    let hb_build := (← (← read).statsRef.get).heartbeats
+    let hb_build := (← (← read).heartbeatRef.get)
     -- Walk ruleRhs lambdas and fullType forallEs in parallel.
     -- Domain Vals come from the recursor type Val (params/motives/minors) and
     -- constructor type Val (fields) for pointer sharing with cached structures.
@@ -2373,7 +2434,7 @@ mutual
         rhs := body
         expected := expBody
       | _, _, _ => throw s!"recursor rule prefix binder mismatch for {ctorAddr}"
-    let hb_prefix := (← (← read).statsRef.get).heartbeats
+    let hb_prefix := (← (← read).heartbeatRef.get)
     -- Substitute param fvars into constructor type Val
     for i in [:cnp] do
       let ctorTyV' ← whnfVal ctorTyV
@@ -2388,7 +2449,7 @@ mutual
           else pure (Val.mkFVar 0 (.sort .zero)) -- shouldn't happen
         ctorTyV ← eval codBody (codEnv.push paramVal)
       | _ => throw s!"constructor type has too few Pi binders for params"
-    let hb_ctorSub := (← (← read).statsRef.get).heartbeats
+    let hb_ctorSub := (← (← read).heartbeatRef.get)
     -- Walk fields: domain Vals from constructor type Val
     for _ in [:nf] do
       let ctorTyV' ← whnfVal ctorTyV
@@ -2412,11 +2473,11 @@ mutual
         rhs := body
         expected := expBody
       | _, _, _ => throw s!"recursor rule field binder mismatch for {ctorAddr}"
-    let hb_fields := (← (← read).statsRef.get).heartbeats
+    let hb_fields := (← (← read).heartbeatRef.get)
     -- Check body: infer type, then try fast quote+BEq before expensive isDefEq
     let (bodyTe, bodyType) ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
       (withInferOnly (infer rhs))
-    let hb_infer := (← (← read).statsRef.get).heartbeats
+    let hb_infer := (← (← read).heartbeatRef.get)
     -- Fast path: quote bodyType to Expr and compare with expected Expr (no whnf/delta needed)
     let bodyTypeExpr ← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
       (quote bodyType extTypes.size)
@@ -2460,7 +2521,7 @@ mutual
       if !(← withReader (fun ctx => { ctx with types := extTypes, letValues := extLetValues, binderNames := extBinderNames })
         (withInferOnly (isDefEq bodyType expectedRetV))) then
         throw s!"recursor rule body type mismatch for {ctorAddr}"
-    let hb_deq := (← (← read).statsRef.get).heartbeats
+    let hb_deq := (← (← read).heartbeatRef.get)
     if (← read).trace then
       dbg_trace s!"    [rule] build={hb_build - hb_start} prefix={hb_prefix - hb_build} ctorSub={hb_ctorSub - hb_prefix} fields={hb_fields - hb_ctorSub} infer={hb_infer - hb_fields} deq={hb_deq - hb_infer}"
     -- Rebuild KTypedExpr: wrap body in lambda binders
@@ -2572,7 +2633,11 @@ mutual
     ctx.keepAliveRef.set #[]
     ctx.whnfCacheRef.set {}
     ctx.whnfCoreCacheRef.set {}
+    ctx.whnfCoreCheapCacheRef.set {}
+    ctx.whnfStructuralCacheRef.set {}
+    ctx.deltaBodyCacheRef.set {}
     ctx.inferCacheRef.set {}
+    ctx.heartbeatRef.set 0
     ctx.statsRef.set {}
     if (← (← read).typedConstsRef.get).get? mid |>.isSome then return ()
     let ci ← derefConst mid
@@ -2591,9 +2656,9 @@ mutual
         if !Ix.Kernel.Level.isZero lvl then
           throw "theorem type must be a proposition (Sort 0)"
         let typeV ← evalInCtx type.body
-        let hb0 := (← (← read).statsRef.get).heartbeats
+        let hb0 := (← (← read).heartbeatRef.get)
         let _ ← withRecId mid (withInferOnly (check ci.value?.get! typeV))
-        let hb1 := (← (← read).statsRef.get).heartbeats
+        let hb1 := (← (← read).heartbeatRef.get)
         if (← read).trace then
           let stats ← (← read).statsRef.get
           dbg_trace s!"  [thm] check value: {hb1 - hb0} heartbeats, deltaSteps={stats.deltaSteps}, nativeReduces={stats.nativeReduces}, whnfMisses={stats.whnfCacheMisses}, proofIrrel={stats.proofIrrelHits}, isDefEqCalls={stats.isDefEqCalls}, thunks={stats.thunkCount}"
@@ -2603,15 +2668,15 @@ mutual
         let (type, _) ← isSort ci.type
         let part := v.safety == .partial
         let typeV ← evalInCtx type.body
-        let hb0 := (← (← read).statsRef.get).heartbeats
+        let hb0 := (← (← read).heartbeatRef.get)
         let value ←
           if part then
             let typExpr := type.body
-            let mutTypes : Std.TreeMap Nat (KMetaId m × (Array (KLevel m) → Val m)) compare :=
-              (Std.TreeMap.empty).insert 0 (mid, fun _ => Val.neutral (.const mid #[]) #[])
+            let mutTypes : Array (Nat × KMetaId m × (Array (KLevel m) → Val m)) :=
+              #[(0, mid, fun _ => Val.neutral (.const mid #[]) #[])]
             withMutTypes mutTypes (withRecId mid (check v.value typeV))
           else withRecId mid (check v.value typeV)
-        let hb1 := (← (← read).statsRef.get).heartbeats
+        let hb1 := (← (← read).heartbeatRef.get)
         if (← read).trace then
           let stats ← (← read).statsRef.get
           dbg_trace s!"  [defn] check value: {hb1 - hb0} heartbeats, deltaSteps={stats.deltaSteps}, nativeReduces={stats.nativeReduces}, whnfMisses={stats.whnfCacheMisses}, proofIrrel={stats.proofIrrelHits}"
@@ -2638,21 +2703,21 @@ mutual
           validateKFlag indAddr
         validateRecursorRules v indAddr
         checkElimLevel ci.type v indAddr
-        let hb0 := (← (← read).statsRef.get).heartbeats
+        let hb0 := (← (← read).heartbeatRef.get)
         let mut typedRules : Array (Nat × KTypedExpr m) := #[]
         match (← read).kenv.find? indMid with
         | some (.inductInfo iv) =>
           for h : i in [:v.rules.size] do
             let rule := v.rules[i]
             if i < iv.ctors.size then
-              let hbr0 := (← (← read).statsRef.get).heartbeats
+              let hbr0 := (← (← read).heartbeatRef.get)
               let rhs ← checkRecursorRuleType ci.type v iv.ctors[i]! rule.nfields rule.rhs
               typedRules := typedRules.push (rule.nfields, rhs)
-              let hbr1 := (← (← read).statsRef.get).heartbeats
+              let hbr1 := (← (← read).heartbeatRef.get)
               if (← read).trace then
                 dbg_trace s!"  [rec] checkRecursorRuleType rule {i}: {hbr1 - hbr0} heartbeats"
         | _ => pure ()
-        let hb1 := (← (← read).statsRef.get).heartbeats
+        let hb1 := (← (← read).heartbeatRef.get)
         if (← read).trace then
           let stats ← (← read).statsRef.get
           dbg_trace s!"  [rec] checkRecursorRuleType total: {hb1 - hb0} heartbeats ({v.rules.size} rules), deltaSteps={stats.deltaSteps}, nativeReduces={stats.nativeReduces}, whnfMisses={stats.whnfCacheMisses}, proofIrrel={stats.proofIrrelHits}"

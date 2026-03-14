@@ -18,11 +18,10 @@ namespace Ix.Kernel
 def extractNatVal (prims : KPrimitives m) (v : Val m) : Option Nat :=
   match v with
   | .lit (.natVal n) => some n
-  | .neutral (.const id _) spine =>
-    if id.addr == prims.natZero.addr && spine.isEmpty then some 0 else none
-  | .ctor id _ _ _ _ _ spine =>
-    if id.addr == prims.natZero.addr && spine.isEmpty then some 0 else none
-  | _ => none
+  | _ => do
+    let addr ← v.constAddr?
+    guard (addr == prims.natZero.addr && v.spine!.isEmpty)
+    return 0
 
 def isPrimOp (prims : KPrimitives m) (addr : Address) : Bool :=
   addr == prims.natAdd.addr || addr == prims.natSub.addr || addr == prims.natMul.addr ||
@@ -44,33 +43,31 @@ def isNatPrimHead (prims : KPrimitives m) (v : Val m) : Bool :=
 def isNatConstructor (prims : KPrimitives m) (v : Val m) : Bool :=
   match v with
   | .lit (.natVal _) => true
-  | .neutral (.const id _) spine =>
-    (id.addr == prims.natZero.addr && spine.isEmpty) ||
-    (id.addr == prims.natSucc.addr && spine.size == 1)
-  | .ctor id _ _ _ _ _ spine =>
-    (id.addr == prims.natZero.addr && spine.isEmpty) ||
-    (id.addr == prims.natSucc.addr && spine.size == 1)
-  | _ => false
+  | _ =>
+    if let some addr := v.constAddr? then
+      let sp := v.spine!
+      (addr == prims.natZero.addr && sp.isEmpty) ||
+      (addr == prims.natSucc.addr && sp.size == 1)
+    else false
 
 /-- Extract the predecessor thunk from a structural Nat.succ value, without forcing.
     Only matches Ctor/Neutral with nat_succ head. Does NOT match Lit(NatVal(n)) —
     literals are handled by computeNatPrim in O(1). Matching literals here would
     cause O(n) recursion in the symbolic step-case reductions. -/
-def extractSuccPred (prims : KPrimitives m) (v : Val m) : Option Nat :=
-  match v with
-  | .neutral (.const id _) spine =>
-    if id.addr == prims.natSucc.addr && spine.size == 1 then some spine[0]! else none
-  | .ctor id _ _ _ _ _ spine =>
-    if id.addr == prims.natSucc.addr && spine.size == 1 then some spine[0]! else none
-  | _ => none
+def extractSuccPred (prims : KPrimitives m) (v : Val m) : Option Nat := do
+  let addr ← v.constAddr?
+  let sp := v.spine!
+  guard (addr == prims.natSucc.addr && sp.size == 1)
+  return sp[0]!
 
 /-- Check if a value is Nat.zero (constructor or literal 0). -/
 def isNatZeroVal (prims : KPrimitives m) (v : Val m) : Bool :=
   match v with
   | .lit (.natVal 0) => true
-  | .neutral (.const id _) spine => id.addr == prims.natZero.addr && spine.isEmpty
-  | .ctor id _ _ _ _ _ spine => id.addr == prims.natZero.addr && spine.isEmpty
-  | _ => false
+  | _ =>
+    if let some addr := v.constAddr? then
+      addr == prims.natZero.addr && v.spine!.isEmpty
+    else false
 
 /-- Compute a nat primitive given two resolved nat values. -/
 def computeNatPrim (prims : KPrimitives m) (addr : Address) (x y : Nat) : Option (Val m) :=
