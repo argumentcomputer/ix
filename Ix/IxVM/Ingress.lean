@@ -112,37 +112,25 @@ def ingress := ⟦
 
   -- Decode a byte stream to a u64 value (LE, up to 8 bytes, zero-padded)
   fn byte_stream_to_u64(bytes: ByteStream) -> [G; 8] {
-    byte_stream_to_u64_go(bytes, [0; 8], [0; 8])
+    byte_stream_to_u64_go(bytes, [0; 8], 0)
   }
 
-  fn byte_stream_to_u64_go(bytes: ByteStream, acc: [G; 8], pos: [G; 8]) -> [G; 8] {
+  fn byte_stream_to_u64_go(bytes: ByteStream, acc: [G; 8], pos: G) -> [G; 8] {
     match bytes {
       ByteStream.Nil => acc,
       ByteStream.Cons(byte, &rest) =>
-        -- Only take the first 8 bytes
-        let done = u64_eq(pos, [8, 0, 0, 0, 0, 0, 0, 0]);
-        match done {
-          1 => acc,
-          0 =>
-            let acc2 = u64_set_byte(acc, pos, byte);
-            byte_stream_to_u64_go(rest, acc2, relaxed_u64_succ(pos)),
+        let [v0, v1, v2, v3, v4, v5, v6, v7] = acc;
+        match pos {
+          0 => byte_stream_to_u64_go(rest, [byte, v1, v2, v3, v4, v5, v6, v7], 1),
+          1 => byte_stream_to_u64_go(rest, [v0, byte, v2, v3, v4, v5, v6, v7], 2),
+          2 => byte_stream_to_u64_go(rest, [v0, v1, byte, v3, v4, v5, v6, v7], 3),
+          3 => byte_stream_to_u64_go(rest, [v0, v1, v2, byte, v4, v5, v6, v7], 4),
+          4 => byte_stream_to_u64_go(rest, [v0, v1, v2, v3, byte, v5, v6, v7], 5),
+          5 => byte_stream_to_u64_go(rest, [v0, v1, v2, v3, v4, byte, v6, v7], 6),
+          6 => byte_stream_to_u64_go(rest, [v0, v1, v2, v3, v4, v5, byte, v7], 7),
+          7 => byte_stream_to_u64_go(rest, [v0, v1, v2, v3, v4, v5, v6, byte], 8),
+          _ => acc,
         },
-    }
-  }
-
-  -- Set the byte at position `pos` in a u64 value
-  fn u64_set_byte(val: [G; 8], pos: [G; 8], byte: G) -> [G; 8] {
-    let [v0, v1, v2, v3, v4, v5, v6, v7] = val;
-    match pos {
-      [0, 0, 0, 0, 0, 0, 0, 0] => [byte, v1, v2, v3, v4, v5, v6, v7],
-      [1, 0, 0, 0, 0, 0, 0, 0] => [v0, byte, v2, v3, v4, v5, v6, v7],
-      [2, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, byte, v3, v4, v5, v6, v7],
-      [3, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, v2, byte, v4, v5, v6, v7],
-      [4, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, v2, v3, byte, v5, v6, v7],
-      [5, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, v2, v3, v4, byte, v6, v7],
-      [6, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, v2, v3, v4, v5, byte, v7],
-      [7, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, v2, v3, v4, v5, v6, byte],
-      _ => val,
     }
   }
 
