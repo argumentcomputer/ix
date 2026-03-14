@@ -78,72 +78,97 @@ def ingress := ⟦
     }
   }
 
-  -- Look up a blob's decoded value by address. Returns [0; 8] if not a blob.
-  fn lookup_blob_val(addr: [G; 32], blobs: BlobList) -> [G; 8] {
-    match blobs {
-      BlobList.Nil => [0; 8],
-      BlobList.Cons(entry, &rest) =>
-        match entry {
-          BlobEntry.Mk(blob_addr, val) =>
-            let eq = address_eq(addr, blob_addr);
-            match eq {
-              1 => val,
-              0 => lookup_blob_val(addr, rest),
-            },
+  -- Load a blob from IOBuffer by address, verify blake3, decode to u64 value.
+  -- Blobs are stored under key [1] ++ addr to distinguish from constants.
+  -- The raw bytes are LE-encoded and zero-padded to fit within 8 bytes.
+  fn load_verified_blob(addr: [G; 32]) -> [G; 8] {
+    let [a0, a1, a2, a3, a4, a5, a6, a7,
+         a8, a9, a10, a11, a12, a13, a14, a15,
+         a16, a17, a18, a19, a20, a21, a22, a23,
+         a24, a25, a26, a27, a28, a29, a30, a31] = addr;
+    let blob_key = [1, a0, a1, a2, a3, a4, a5, a6, a7,
+                    a8, a9, a10, a11, a12, a13, a14, a15,
+                    a16, a17, a18, a19, a20, a21, a22, a23,
+                    a24, a25, a26, a27, a28, a29, a30, a31];
+    let (idx, len) = io_get_info(blob_key);
+    let bytes = read_byte_stream(idx, len);
+    let h = blake3(bytes);
+    assert_eq!(
+      [
+        h[0][0], h[0][1], h[0][2], h[0][3],
+        h[1][0], h[1][1], h[1][2], h[1][3],
+        h[2][0], h[2][1], h[2][2], h[2][3],
+        h[3][0], h[3][1], h[3][2], h[3][3],
+        h[4][0], h[4][1], h[4][2], h[4][3],
+        h[5][0], h[5][1], h[5][2], h[5][3],
+        h[6][0], h[6][1], h[6][2], h[6][3],
+        h[7][0], h[7][1], h[7][2], h[7][3]
+      ],
+      addr
+    );
+    -- Decode LE bytes to u64 value (read up to 8 bytes, zero-padded)
+    byte_stream_to_u64(bytes)
+  }
+
+  -- Decode a byte stream to a u64 value (LE, up to 8 bytes, zero-padded)
+  fn byte_stream_to_u64(bytes: ByteStream) -> [G; 8] {
+    byte_stream_to_u64_go(bytes, [0; 8], [0; 8])
+  }
+
+  fn byte_stream_to_u64_go(bytes: ByteStream, acc: [G; 8], pos: [G; 8]) -> [G; 8] {
+    match bytes {
+      ByteStream.Nil => acc,
+      ByteStream.Cons(byte, &rest) =>
+        -- Only take the first 8 bytes
+        let done = u64_eq(pos, [8, 0, 0, 0, 0, 0, 0, 0]);
+        match done {
+          1 => acc,
+          0 =>
+            let acc2 = u64_set_byte(acc, pos, byte);
+            byte_stream_to_u64_go(rest, acc2, relaxed_u64_succ(pos)),
         },
     }
   }
 
-  -- Build lit_vals by looking up each ref address in the blob list.
-  -- For constant refs (not blobs), returns [0; 8] (never read by conversion).
-  fn build_lit_vals(refs: AddressList, blobs: BlobList) -> U64List {
+  -- Set the byte at position `pos` in a u64 value
+  fn u64_set_byte(val: [G; 8], pos: [G; 8], byte: G) -> [G; 8] {
+    let [v0, v1, v2, v3, v4, v5, v6, v7] = val;
+    match pos {
+      [0, 0, 0, 0, 0, 0, 0, 0] => [byte, v1, v2, v3, v4, v5, v6, v7],
+      [1, 0, 0, 0, 0, 0, 0, 0] => [v0, byte, v2, v3, v4, v5, v6, v7],
+      [2, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, byte, v3, v4, v5, v6, v7],
+      [3, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, v2, byte, v4, v5, v6, v7],
+      [4, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, v2, v3, byte, v5, v6, v7],
+      [5, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, v2, v3, v4, byte, v6, v7],
+      [6, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, v2, v3, v4, v5, byte, v7],
+      [7, 0, 0, 0, 0, 0, 0, 0] => [v0, v1, v2, v3, v4, v5, v6, byte],
+      _ => val,
+    }
+  }
+
+  -- Build lit_vals by loading and verifying each blob on demand.
+  -- A ref is a blob if it's not in all_addrs (the constant address list).
+  -- For constant refs, returns [0; 8] (never read by conversion).
+  fn build_lit_vals(refs: AddressList, all_addrs: AddressList) -> U64List {
     match refs {
       AddressList.Nil => U64List.Nil,
       AddressList.Cons(addr, &rest) =>
-        let val = lookup_blob_val(addr, blobs);
-        U64List.Cons(val, store(build_lit_vals(rest, blobs))),
-    }
-  }
-
-  -- Check if an address is a blob address
-  fn is_blob(addr: [G; 32], blobs: BlobList) -> G {
-    match blobs {
-      BlobList.Nil => 0,
-      BlobList.Cons(entry, &rest) =>
-        match entry {
-          BlobEntry.Mk(blob_addr, _) =>
-            let eq = address_eq(addr, blob_addr);
-            match eq {
-              1 => 1,
-              0 => is_blob(addr, rest),
-            },
+        let blob = is_blob(addr, all_addrs);
+        match blob {
+          1 =>
+            let val = load_verified_blob(addr);
+            U64List.Cons(val, store(build_lit_vals(rest, all_addrs))),
+          0 =>
+            U64List.Cons([0; 8], store(build_lit_vals(rest, all_addrs))),
         },
     }
   }
 
-  -- Load blob table entries from IOBuffer
-  #[unconstrained]
-  fn load_blob_table_entries(base: G, remaining: G, offset: G) -> BlobList {
-    match remaining {
-      0 => BlobList.Nil,
-      _ =>
-        let addr = io_read(base + offset, 32);
-        let val = io_read(base + offset + 32, 8);
-        let entry = BlobEntry.Mk(addr, val);
-        BlobList.Cons(entry, store(load_blob_table_entries(base, remaining - 1, offset + 40))),
-    }
-  }
-
-  -- Load blob table from IOBuffer (key = [0])
-  #[unconstrained]
-  fn load_blob_table() -> BlobList {
-    let (base, len) = io_get_info([0]);
-    match len {
-      0 => BlobList.Nil,
-      _ =>
-        let [count] = io_read(base, 1);
-        load_blob_table_entries(base, count, 1),
-    }
+  -- Check if an address is a blob: it's a blob if it's NOT in the constant address list.
+  -- Blob addresses and constant addresses are different by design (different hash preimage structures).
+  fn is_blob(addr: [G; 32], all_addrs: AddressList) -> G {
+    let found = address_in_list(addr, all_addrs);
+    1 - found
   }
 
   -- Extract the Muts block address from a projection ConstantInfo.
@@ -169,13 +194,13 @@ def ingress := ⟦
   -- Find the Muts block address by scanning a constant's refs for any
   -- projection constant (IPrj, CPrj, RPrj, DPrj). Used for standalone
   -- recursors to locate their inductive's block.
-  fn find_block_addr_from_refs(refs: AddressList, blobs: BlobList) -> [G; 32] {
+  fn find_block_addr_from_refs(refs: AddressList, all_addrs: AddressList) -> [G; 32] {
     match refs {
       AddressList.Nil => [0; 32],
       AddressList.Cons(addr, &rest) =>
-        let blob = is_blob(addr, blobs);
+        let blob = is_blob(addr, all_addrs);
         match blob {
-          1 => find_block_addr_from_refs(rest, blobs),
+          1 => find_block_addr_from_refs(rest, all_addrs),
           0 =>
             let c = load_verified_constant(addr);
             match c {
@@ -189,7 +214,7 @@ def ingress := ⟦
                     match prj { RecursorProj.Mk(_, block_addr) => block_addr, },
                   ConstantInfo.DPrj(prj) =>
                     match prj { DefinitionProj.Mk(_, block_addr) => block_addr, },
-                  _ => find_block_addr_from_refs(rest, blobs),
+                  _ => find_block_addr_from_refs(rest, all_addrs),
                 },
             },
         },
@@ -377,7 +402,6 @@ def ingress := ⟦
     constant: Constant,
     all_addrs: AddressList,
     all_consts: ConstantList,
-    blobs: BlobList,
     self_pos: [G; 8]
   ) -> ConvertInput {
     match constant {
@@ -386,28 +410,28 @@ def ingress := ⟦
           ConstantInfo.Defn(defn) =>
 
             let ref_idxs = build_ref_idxs(refs, all_addrs);
-            let lit_vals = build_lit_vals(refs, blobs);
+            let lit_vals = build_lit_vals(refs, all_addrs);
             let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(U64List.Nil), store(lit_vals), store(univs));
             ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.Abbrev)),
 
           ConstantInfo.Axio(axio) =>
 
             let ref_idxs = build_ref_idxs(refs, all_addrs);
-            let lit_vals = build_lit_vals(refs, blobs);
+            let lit_vals = build_lit_vals(refs, all_addrs);
             let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(U64List.Nil), store(lit_vals), store(univs));
             ConvertInput.Mk(ctx, ConvertKind.CKAxio(axio)),
 
           ConstantInfo.Quot(quot) =>
 
             let ref_idxs = build_ref_idxs(refs, all_addrs);
-            let lit_vals = build_lit_vals(refs, blobs);
+            let lit_vals = build_lit_vals(refs, all_addrs);
             let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(U64List.Nil), store(lit_vals), store(univs));
             ConvertInput.Mk(ctx, ConvertKind.CKQuot(quot)),
 
           ConstantInfo.Recr(recr) =>
             let ref_idxs = build_ref_idxs(refs, all_addrs);
-            let lit_vals = build_lit_vals(refs, blobs);
-            let block_addr = find_block_addr_from_refs(refs, blobs);
+            let lit_vals = build_lit_vals(refs, all_addrs);
+            let block_addr = find_block_addr_from_refs(refs, all_addrs);
             let block_const = load_verified_constant(block_addr);
             match block_const {
               Constant.Mk(block_info, _, _, _) =>
@@ -430,7 +454,7 @@ def ingress := ⟦
                 match block_const {
                   Constant.Mk(block_info, &block_sharing, &block_refs, &block_univs) =>
                     let ref_idxs = build_ref_idxs(block_refs, all_addrs);
-                    let lit_vals = build_lit_vals(block_refs, blobs);
+                    let lit_vals = build_lit_vals(block_refs, all_addrs);
                     match block_info {
                       ConstantInfo.Muts(&members) =>
                         let num_members = count_mut_const_list_(members);
@@ -458,7 +482,7 @@ def ingress := ⟦
                 match block_const {
                   Constant.Mk(block_info, &block_sharing, &block_refs, &block_univs) =>
                     let ref_idxs = build_ref_idxs(block_refs, all_addrs);
-                    let lit_vals = build_lit_vals(block_refs, blobs);
+                    let lit_vals = build_lit_vals(block_refs, all_addrs);
                     match block_info {
                       ConstantInfo.Muts(&members) =>
                         let num_members = count_mut_const_list_(members);
@@ -486,7 +510,7 @@ def ingress := ⟦
                 match block_const {
                   Constant.Mk(block_info, &block_sharing, &block_refs, &block_univs) =>
                     let ref_idxs = build_ref_idxs(block_refs, all_addrs);
-                    let lit_vals = build_lit_vals(block_refs, blobs);
+                    let lit_vals = build_lit_vals(block_refs, all_addrs);
                     match block_info {
                       ConstantInfo.Muts(&members) =>
                         let num_members = count_mut_const_list_(members);
@@ -510,7 +534,7 @@ def ingress := ⟦
                 match block_const {
                   Constant.Mk(block_info, &block_sharing, &block_refs, &block_univs) =>
                     let ref_idxs = build_ref_idxs(block_refs, all_addrs);
-                    let lit_vals = build_lit_vals(block_refs, blobs);
+                    let lit_vals = build_lit_vals(block_refs, all_addrs);
                     match block_info {
                       ConstantInfo.Muts(&members) =>
                         let num_members = count_mut_const_list_(members);
@@ -534,7 +558,6 @@ def ingress := ⟦
     consts: ConstantList,
     all_addrs: AddressList,
     all_consts: ConstantList,
-    blobs: BlobList,
     pos: [G; 8]
   ) -> ConvertInputList {
     match consts {
@@ -544,10 +567,10 @@ def ingress := ⟦
           Constant.Mk(info, _, _, _) =>
             match info {
               ConstantInfo.Muts(_) =>
-                build_convert_input_list_go(rest, all_addrs, all_consts, blobs, pos),
+                build_convert_input_list_go(rest, all_addrs, all_consts, pos),
               _ =>
-                let input = build_convert_input(c, all_addrs, all_consts, blobs, pos);
-                ConvertInputList.Cons(store(input), store(build_convert_input_list_go(rest, all_addrs, all_consts, blobs, relaxed_u64_succ(pos)))),
+                let input = build_convert_input(c, all_addrs, all_consts, pos);
+                ConvertInputList.Cons(store(input), store(build_convert_input_list_go(rest, all_addrs, all_consts, relaxed_u64_succ(pos)))),
             },
         },
     }
@@ -577,55 +600,64 @@ def ingress := ⟦
 
   -- Recursively load constants and their transitive dependencies.
   -- Processes one address at a time from a worklist, deduplicating by
-  -- checking the visited set. Blob addresses (from pre-loaded blob table)
-  -- are skipped since they are not constants.
+  -- checking the visited set. Blob addresses are detected via io_get_info:
+  -- the prover provides len=0 for blobs (which are not serialized constants).
   -- For projection constants (IPrj, CPrj, RPrj, DPrj), also follows the
   -- Muts block's refs so that all dependencies of block members are loaded.
   fn load_with_deps(
     addr: [G; 32],
     worklist: AddressList,
     visited_addrs: AddressList,
-    visited_consts: ConstantList,
-    blobs: BlobList
+    visited_consts: ConstantList
   ) -> (AddressList, ConstantList) {
     let already = address_in_list(addr, visited_addrs);
-    let blob = is_blob(addr, blobs);
-    let skip = g_or(already, blob);
-    match skip {
+    match already {
       1 =>
         match worklist {
           AddressList.Nil => (visited_addrs, visited_consts),
           AddressList.Cons(next, &rest) =>
-            load_with_deps(next, rest, visited_addrs, visited_consts, blobs),
+            load_with_deps(next, rest, visited_addrs, visited_consts),
         },
       0 =>
-        let new_addrs = AddressList.Cons(addr, store(visited_addrs));
-        let constant = load_verified_constant(addr);
-        let new_consts = ConstantList.Cons(store(constant), store(visited_consts));
-        match constant {
-          Constant.Mk(info, _, &refs, _) =>
-            -- For projections, also add the Muts block address so its
-            -- refs (shared deps for all members) get followed.
-            let block_addr = get_proj_block_addr(info);
-            match address_eq(block_addr, [0; 32]) {
-              1 =>
-                let combined_refs = address_list_concat(refs, AddressList.Nil);
-                let next_worklist = address_list_concat(combined_refs, worklist);
-                match next_worklist {
-                  AddressList.Nil => (new_addrs, new_consts),
-                  AddressList.Cons(next, &rest) =>
-                    load_with_deps(next, rest, new_addrs, new_consts, blobs),
-                },
-              0 =>
-                let combined_refs = address_list_concat(
-                  refs,
-                  AddressList.Cons(block_addr, store(AddressList.Nil))
-                );
-                let next_worklist = address_list_concat(combined_refs, worklist);
-                match next_worklist {
-                  AddressList.Nil => (new_addrs, new_consts),
-                  AddressList.Cons(next, &rest) =>
-                    load_with_deps(next, rest, new_addrs, new_consts, blobs),
+        -- Check if this address has constant data in IOBuffer.
+        -- io_get_info is unconstrained; the prover provides (0, 0) for blob addresses.
+        -- Soundness: if the prover lies and skips a real constant, type checking will fail.
+        let (_, len) = io_get_info(addr);
+        match len {
+          0 =>
+            -- Blob address: skip (blob values are loaded on demand in build_lit_vals)
+            match worklist {
+              AddressList.Nil => (visited_addrs, visited_consts),
+              AddressList.Cons(next, &rest) =>
+                load_with_deps(next, rest, visited_addrs, visited_consts),
+            },
+          _ =>
+            let new_addrs = AddressList.Cons(addr, store(visited_addrs));
+            let constant = load_verified_constant(addr);
+            let new_consts = ConstantList.Cons(store(constant), store(visited_consts));
+            match constant {
+              Constant.Mk(info, _, &refs, _) =>
+                let block_addr = get_proj_block_addr(info);
+                match address_eq(block_addr, [0; 32]) {
+                  1 =>
+                    let combined_refs = address_list_concat(refs, AddressList.Nil);
+                    let next_worklist = address_list_concat(combined_refs, worklist);
+                    match next_worklist {
+                      AddressList.Nil => (new_addrs, new_consts),
+                      AddressList.Cons(next, &rest) =>
+                        load_with_deps(next, rest, new_addrs, new_consts),
+                    },
+                  0 =>
+                    let combined_refs = address_list_concat(
+                      refs,
+                      AddressList.Cons(block_addr, store(AddressList.Nil))
+                    );
+                    let next_worklist = address_list_concat(combined_refs, worklist);
+                    match next_worklist {
+                      AddressList.Nil => (new_addrs, new_consts),
+                      AddressList.Cons(next, &rest) =>
+                        load_with_deps(next, rest, new_addrs, new_consts),
+                    },
                 },
             },
         },
@@ -674,13 +706,12 @@ def ingress := ⟦
   -- Transitively loads all dependencies of the target constant from IOBuffer,
   -- verifies blake3 hashes then converts to kernel types.
   fn ingress(target_addr: [G; 32]) -> KConstList {
-    let blobs = load_blob_table();
     let (all_addrs, all_consts) = load_with_deps(
-      target_addr, AddressList.Nil, AddressList.Nil, ConstantList.Nil, blobs);
+      target_addr, AddressList.Nil, AddressList.Nil, ConstantList.Nil);
     -- Filter out Muts blocks so positional indices match the kernel constant list
     let kernel_addrs = filter_muts_addrs(all_consts, all_addrs);
     let kernel_consts = filter_muts_consts(all_consts);
-    let inputs = build_convert_input_list_go(kernel_consts, kernel_addrs, kernel_consts, blobs, [0; 8]);
+    let inputs = build_convert_input_list_go(kernel_consts, kernel_addrs, kernel_consts, [0; 8]);
     convert_all(inputs)
   }
 ⟧

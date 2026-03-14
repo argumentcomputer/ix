@@ -27,16 +27,14 @@ def kernelCheck (name : Lean.Name) (env : Lean.Environment) : IO AiurTestCase :=
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend key (bytes.data.map .ofUInt8)
 
-  -- Store blob table under key [0]:
-  -- Format: [count, addr₀(32B) val₀(8B), addr₁(32B) val₁(8B), ...]
-  -- Each blob's value is its raw LE bytes zero-padded to 8 bytes.
-  let mut blobTableData : Array Aiur.G := #[.ofNat ixonEnv.blobs.size]
+  -- Store each blob:
+  -- 1. Raw bytes under prefixed key [1] ++ blake3_hash (for on-demand verified loading)
+  -- 2. Empty sentinel under plain blake3_hash (so io_get_info returns len=0, marking as blob)
   for (addr, rawBytes) in ixonEnv.blobs do
-    for b in addr.hash.data do
-      blobTableData := blobTableData.push (.ofUInt8 b)
-    for i in List.range 8 do
-      blobTableData := blobTableData.push (.ofNat (rawBytes.data.getD i 0).toNat)
-  ioBuffer := ioBuffer.extend #[0] blobTableData
+    let hashKey : Array Aiur.G := addr.hash.data.map .ofUInt8
+    let prefixedKey : Array Aiur.G := #[1] ++ hashKey
+    ioBuffer := ioBuffer.extend prefixedKey (rawBytes.data.map fun b => .ofNat b.toNat)
+    ioBuffer := ioBuffer.extend hashKey #[]
 
   -- Get the blake3 address of `name` as the target
   let targetAddr := match ixonEnv.getAddr? (Ix.Name.fromLeanName name) with
