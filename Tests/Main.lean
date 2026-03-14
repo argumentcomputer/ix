@@ -69,13 +69,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
   ("ixvm", do
-    -- let serdeNatAddCommTest ← serdeNatAddComm env
-    -- let kernelCheckNatAddCommTest ← kernelCheckNatAddComm env
-    -- let ixVMTests := [mkAiurTests IxVM.ixVM [serdeNatAddCommTest, kernelCheckNatAddCommTest]]
-    -- LSpec.lspecIO (.ofList [("ixvm", ixVMTests)]) []),
+    let serdeNatAddCommTest ← serdeNatAddComm env
     let kernelCheckNatAddCommTest ← kernelCheckNatAddComm env
     let kernelCheckNatSubLeOfLeAddTest ← kernelCheckNatSubLeOfLeAdd env
-    let tests := [kernelCheckNatSubLeOfLeAddTest, kernelCheckNatAddCommTest]
+    let tests := [serdeNatAddCommTest, kernelCheckNatAddCommTest, kernelCheckNatSubLeOfLeAddTest]
     LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM tests])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
