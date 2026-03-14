@@ -611,11 +611,65 @@ def kernel := ⟦
   }
 
   -- ============================================================================
+  -- Quotient reduction
+  -- ============================================================================
+
+  -- Try quotient reduction: Quot.lift f h (Quot.mk r a) → f a
+  -- reduce_size is the minimum spine length, f_pos is the index of f in the spine.
+  -- Returns 1 and reduced value via k_whnf if successful, 0 otherwise.
+  -- The idx/lvls/spine are passed through for reconstructing the stuck value on failure.
+  fn k_try_quot_reduction(idx: [G; 8], lvls: KLevelList, spine: KValList,
+      reduce_size: [G; 8], f_pos: [G; 8], top: KConstList) -> KVal {
+    let spine_len = val_list_length(spine);
+    let have_enough = u64_sub(relaxed_u64_succ(spine_len), relaxed_u64_succ(reduce_size));
+    let not_enough = u64_is_zero(have_enough);
+    match not_enough {
+      1 => KVal.Const(idx, store(lvls), store(spine)),
+      0 =>
+        -- Force and WHNF the major arg (last of the reduce_size args)
+        let major_idx = relaxed_u64_pred(reduce_size);
+        let major_raw = val_list_lookup(spine, major_idx);
+        let major = k_whnf(major_raw, top);
+        -- Check if major is a Quot.mk application (a Const with QuotKind.Ctor)
+        match major {
+          KVal.Const(mk_idx, _, &mk_spine) =>
+            let mk_ci = const_list_lookup(top, mk_idx);
+            match mk_ci {
+              KConstantInfo.Quot(_, _, mk_kind) =>
+                match mk_kind {
+                  KQuotKind.Ctor =>
+                    -- mk_spine should have >= 3 args: [α, r, a]
+                    -- The quotient value is the last element
+                    let mk_len = val_list_length(mk_spine);
+                    let has_args = u64_sub(relaxed_u64_succ(mk_len), relaxed_u64_succ([3, 0, 0, 0, 0, 0, 0, 0]));
+                    let no_args = u64_is_zero(has_args);
+                    match no_args {
+                      1 => KVal.Const(idx, store(lvls), store(spine)),
+                      0 =>
+                        let quot_val_idx = relaxed_u64_pred(mk_len);
+                        let quot_val = val_list_lookup(mk_spine, quot_val_idx);
+                        -- Apply f (at f_pos) to the quotient value
+                        let f_val = k_force(val_list_lookup(spine, f_pos), top);
+                        let result = k_apply(f_val, quot_val, top);
+                        -- Apply remaining spine args after reduce_size
+                        let remaining = val_list_drop(spine, reduce_size);
+                        let result2 = k_apply_spine(result, remaining, top);
+                        k_whnf(result2, top),
+                    },
+                  _ => KVal.Const(idx, store(lvls), store(spine)),
+                },
+              _ => KVal.Const(idx, store(lvls), store(spine)),
+            },
+          _ => KVal.Const(idx, store(lvls), store(spine)),
+        },
+    }
+  }
+
+  -- ============================================================================
   -- WHNF (additional reductions beyond eval)
   -- ============================================================================
 
   -- Reduce a value to Weak Head Normal Form by retrying projection, iota, and delta reductions
-
 
   fn k_whnf(v: KVal, top: KConstList) -> KVal {
     match v {
@@ -645,7 +699,7 @@ def kernel := ⟦
             match same {
               0 => k_whnf(result, top),
               1 =>
-                -- Iota didn't fire; try delta unfolding
+                -- Iota didn't fire; try quotient, then delta
                 let ci = const_list_lookup(top, idx2);
                 match ci {
                   KConstantInfo.Defn(_, _, &value, hints, _) =>
@@ -657,7 +711,22 @@ def kernel := ⟦
                         let val2 = k_apply_spine(val, spine2, top);
                         k_whnf(val2, top),
                     },
-                  -- Theorems are opaque (not unfolded)
+                  KConstantInfo.Thm(_, _, &value) =>
+                    let body = expr_inst_levels(value, lvls2);
+                    let val = k_eval(body, KValEnv.Nil, top);
+                    let val2 = k_apply_spine(val, spine2, top);
+                    k_whnf(val2, top),
+                  -- Quot.lift: spine has [α, r, β, f, h, ⟨Quot.mk r a⟩, extra...]
+                  -- Quot.ind: spine has [α, r, motive, f, ⟨Quot.mk r a⟩, extra...]
+                  -- Reduces to: f a extra...
+                  KConstantInfo.Quot(_, _, kind) =>
+                    match kind {
+                      KQuotKind.Lift =>
+                        k_try_quot_reduction(idx2, lvls2, spine2, [6, 0, 0, 0, 0, 0, 0, 0], [3, 0, 0, 0, 0, 0, 0, 0], top),
+                      KQuotKind.Ind =>
+                        k_try_quot_reduction(idx2, lvls2, spine2, [5, 0, 0, 0, 0, 0, 0, 0], [3, 0, 0, 0, 0, 0, 0, 0], top),
+                      _ => result,
+                    },
                   _ => result,
                 },
             },
@@ -1416,6 +1485,10 @@ def kernel := ⟦
                 let val = k_eval(body, KValEnv.Nil, top);
                 k_apply_spine(val, spine, top),
             },
+          KConstantInfo.Thm(_, _, &value) =>
+            let body = expr_inst_levels(value, lvls);
+            let val = k_eval(body, KValEnv.Nil, top);
+            k_apply_spine(val, spine, top),
           _ => v,
         },
       _ => v,
