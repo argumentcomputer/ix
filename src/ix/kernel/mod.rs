@@ -5,7 +5,9 @@
 
 pub mod check;
 pub mod convert;
+pub mod deconvert;
 pub mod def_eq;
+pub mod from_ixon;
 pub mod equiv;
 pub mod error;
 pub mod eval;

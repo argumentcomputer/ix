@@ -104,11 +104,12 @@ fn convert_expr<M: MetaMode>(
         M::mk_field(bi.clone()),
       )
     }
-    env::ExprData::LetE(name, ty, val, body, _, _) => KExpr::let_e(
+    env::ExprData::LetE(name, ty, val, body, nd, _) => KExpr::let_e_nd(
       convert_expr(ty, ctx, cache)?,
       convert_expr(val, ctx, cache)?,
       convert_expr(body, ctx, cache)?,
       M::mk_field(name.clone()),
+      *nd,
     ),
     env::ExprData::Lit(l, _) => KExpr::lit(l.clone()),
     env::ExprData::Proj(name, idx, strct, _) => {
@@ -125,9 +126,18 @@ fn convert_expr<M: MetaMode>(
       // Fvars and Mvars shouldn't appear in kernel expressions
       KExpr::bvar(0, M::Field::<Name>::default())
     }
-    env::ExprData::Mdata(_, inner, _) => {
-      // Strip metadata — don't cache the mdata wrapper, cache the inner
-      return convert_expr(inner, ctx, cache);
+    env::ExprData::Mdata(kvs, inner, _) => {
+      // Collect mdata layers and attach to inner expression
+      let mut mdata_layers: Vec<KMData> = vec![kvs.clone()];
+      let mut cur = inner;
+      while let env::ExprData::Mdata(kvs2, inner2, _) = cur.as_data() {
+        mdata_layers.push(kvs2.clone());
+        cur = inner2;
+      }
+      let inner_result = convert_expr(cur, ctx, cache)?;
+      let result = inner_result.add_mdata(mdata_layers);
+      cache.insert(hash, result.clone());
+      return Ok(result);
     }
   };
 
@@ -214,27 +224,32 @@ pub fn convert_env<M: MetaMode>(
         })
       }
       ConstantInfo::DefnInfo(v) => {
+        let value_kexpr = convert_expr(&v.value, &ctx, &mut cache)?;
         KConstantInfo::Definition(KDefinitionVal {
           cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
-          value: convert_expr(&v.value, &ctx, &mut cache)?,
+          value: value_kexpr,
           hints: v.hints,
           safety: v.safety,
-          all: v
+          lean_all: M::mk_field(v
             .all
             .iter()
             .map(|n| resolve_name(n, &name_to_addr))
-            .collect(),
+            .collect()),
+          // FFI path: no Ixon canonical block available.
+          // Populated from Ixon conversion when checking compiled constants.
+          canonical_block: vec![],
         })
       }
       ConstantInfo::ThmInfo(v) => {
         KConstantInfo::Theorem(KTheoremVal {
           cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
           value: convert_expr(&v.value, &ctx, &mut cache)?,
-          all: v
+          lean_all: M::mk_field(v
             .all
             .iter()
             .map(|n| resolve_name(n, &name_to_addr))
-            .collect(),
+            .collect()),
+          canonical_block: vec![],
         })
       }
       ConstantInfo::OpaqueInfo(v) => {
@@ -242,11 +257,12 @@ pub fn convert_env<M: MetaMode>(
           cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
           value: convert_expr(&v.value, &ctx, &mut cache)?,
           is_unsafe: v.is_unsafe,
-          all: v
+          lean_all: M::mk_field(v
             .all
             .iter()
             .map(|n| resolve_name(n, &name_to_addr))
-            .collect(),
+            .collect()),
+          canonical_block: vec![],
         })
       }
       ConstantInfo::QuotInfo(v) => {
@@ -261,11 +277,12 @@ pub fn convert_env<M: MetaMode>(
           cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
           num_params: v.num_params.to_u64().unwrap_or(0) as usize,
           num_indices: v.num_indices.to_u64().unwrap_or(0) as usize,
-          all: v
+          lean_all: M::mk_field(v
             .all
             .iter()
             .map(|n| resolve_name(n, &name_to_addr))
-            .collect(),
+            .collect()),
+          canonical_block: vec![],
           ctors: v
             .ctors
             .iter()
@@ -299,7 +316,13 @@ pub fn convert_env<M: MetaMode>(
           .collect();
         KConstantInfo::Recursor(KRecursorVal {
           cv: convert_constant_val(&v.cnst, &ctx, &mut cache)?,
-          all: v
+          lean_all: M::mk_field(v
+            .all
+            .iter()
+            .map(|n| resolve_name(n, &name_to_addr))
+            .collect()),
+          canonical_block: vec![],
+          induct_block: v
             .all
             .iter()
             .map(|n| resolve_name(n, &name_to_addr))
@@ -374,8 +397,8 @@ fn build_primitives<M: MetaMode>(
   prims.quot_ctor = lookup("Quot.mk");
   prims.quot_lift = lookup("Quot.lift");
   prims.quot_ind = lookup("Quot.ind");
-  prims.reduce_bool = lookup("reduceBool");
-  prims.reduce_nat = lookup("reduceNat");
+  prims.reduce_bool = lookup("Lean.reduceBool").or_else(|| lookup("reduceBool"));
+  prims.reduce_nat = lookup("Lean.reduceNat").or_else(|| lookup("reduceNat"));
   prims.eager_reduce = lookup("eagerReduce");
   prims.system_platform_num_bits = lookup("System.Platform.numBits");
 
@@ -383,7 +406,7 @@ fn build_primitives<M: MetaMode>(
 }
 
 /// Convert a dotted string like "Nat.add" to a `Name`.
-fn str_to_name(s: &str) -> Name {
+pub fn str_to_name(s: &str) -> Name {
   let parts: Vec<&str> = s.split('.').collect();
   let mut name = Name::anon();
   for part in parts {
@@ -458,21 +481,27 @@ pub fn verify_conversion<M: MetaMode>(
         if v.safety != kv.safety {
           errors.push((pretty.clone(), format!("safety: {:?} vs {:?}", v.safety, kv.safety)));
         }
-        if v.all.len() != kv.all.len() {
-          errors.push((pretty, format!("all.len: {} vs {}", v.all.len(), kv.all.len())));
+        if let Some(kv_all) = M::field_ref(&kv.lean_all) {
+          if v.all.len() != kv_all.len() {
+            errors.push((pretty, format!("all.len: {} vs {}", v.all.len(), kv_all.len())));
+          }
         }
       }
       (ConstantInfo::ThmInfo(v), KConstantInfo::Theorem(kv)) => {
-        if v.all.len() != kv.all.len() {
-          errors.push((pretty, format!("all.len: {} vs {}", v.all.len(), kv.all.len())));
+        if let Some(kv_all) = M::field_ref(&kv.lean_all) {
+          if v.all.len() != kv_all.len() {
+            errors.push((pretty, format!("all.len: {} vs {}", v.all.len(), kv_all.len())));
+          }
         }
       }
       (ConstantInfo::OpaqueInfo(v), KConstantInfo::Opaque(kv)) => {
         if v.is_unsafe != kv.is_unsafe {
           errors.push((pretty.clone(), format!("is_unsafe: {} vs {}", v.is_unsafe, kv.is_unsafe)));
         }
-        if v.all.len() != kv.all.len() {
-          errors.push((pretty, format!("all.len: {} vs {}", v.all.len(), kv.all.len())));
+        if let Some(kv_all) = M::field_ref(&kv.lean_all) {
+          if v.all.len() != kv_all.len() {
+            errors.push((pretty, format!("all.len: {} vs {}", v.all.len(), kv_all.len())));
+          }
         }
       }
       (ConstantInfo::QuotInfo(v), KConstantInfo::Quotient(kv)) => {
@@ -484,7 +513,7 @@ pub fn verify_conversion<M: MetaMode>(
         let checks: &[(&str, usize, usize)] = &[
           ("num_params", nat(&v.num_params), kv.num_params),
           ("num_indices", nat(&v.num_indices), kv.num_indices),
-          ("all.len", v.all.len(), kv.all.len()),
+          ("all.len", v.all.len(), M::field_ref(&kv.lean_all).map_or(0, |a| a.len())),
           ("ctors.len", v.ctors.len(), kv.ctors.len()),
           ("num_nested", nat(&v.num_nested), kv.num_nested),
         ];
@@ -525,7 +554,7 @@ pub fn verify_conversion<M: MetaMode>(
           ("num_indices", nat(&v.num_indices), kv.num_indices),
           ("num_motives", nat(&v.num_motives), kv.num_motives),
           ("num_minors", nat(&v.num_minors), kv.num_minors),
-          ("all.len", v.all.len(), kv.all.len()),
+          ("all.len", v.all.len(), kv.induct_block.len()),
           ("rules.len", v.rules.len(), kv.rules.len()),
         ];
         for (field, expected, got) in checks {
@@ -574,4 +603,71 @@ pub fn verify_conversion<M: MetaMode>(
   }
 
   errors
+}
+
+/// Build the Primitives struct by scanning a KEnv for known constant names.
+/// Used by the Ixon→KEnv path where we don't have a name→addr map from
+/// the Lean env.
+pub fn build_primitives_from_kenv<M: MetaMode>(
+  kenv: &KEnv<M>,
+) -> Primitives<M> {
+  // Build a name→MetaId lookup from the KEnv
+  let mut name_to_id: FxHashMap<blake3::Hash, MetaId<M>> =
+    FxHashMap::default();
+  for (id, ci) in kenv.iter() {
+    if let Some(name) = M::field_ref(ci.name()) {
+      name_to_id.insert(*name.get_hash(), id.clone());
+    }
+  }
+
+  let mut prims = Primitives::default();
+
+  let lookup = |s: &str| -> Option<MetaId<M>> {
+    let name = str_to_name(s);
+    let hash = *name.get_hash();
+    name_to_id.get(&hash).cloned()
+  };
+
+  prims.nat = lookup("Nat");
+  prims.nat_zero = lookup("Nat.zero");
+  prims.nat_succ = lookup("Nat.succ");
+  prims.nat_add = lookup("Nat.add");
+  prims.nat_pred = lookup("Nat.pred");
+  prims.nat_sub = lookup("Nat.sub");
+  prims.nat_mul = lookup("Nat.mul");
+  prims.nat_pow = lookup("Nat.pow");
+  prims.nat_gcd = lookup("Nat.gcd");
+  prims.nat_mod = lookup("Nat.mod");
+  prims.nat_div = lookup("Nat.div");
+  prims.nat_bitwise = lookup("Nat.bitwise");
+  prims.nat_beq = lookup("Nat.beq");
+  prims.nat_ble = lookup("Nat.ble");
+  prims.nat_land = lookup("Nat.land");
+  prims.nat_lor = lookup("Nat.lor");
+  prims.nat_xor = lookup("Nat.xor");
+  prims.nat_shift_left = lookup("Nat.shiftLeft");
+  prims.nat_shift_right = lookup("Nat.shiftRight");
+  prims.bool_type = lookup("Bool");
+  prims.bool_true = lookup("Bool.true");
+  prims.bool_false = lookup("Bool.false");
+  prims.string = lookup("String");
+  prims.string_mk = lookup("String.mk");
+  prims.char_type = lookup("Char");
+  prims.char_mk = lookup("Char.mk");
+  prims.string_of_list = lookup("String.ofList");
+  prims.list = lookup("List");
+  prims.list_nil = lookup("List.nil");
+  prims.list_cons = lookup("List.cons");
+  prims.eq = lookup("Eq");
+  prims.eq_refl = lookup("Eq.refl");
+  prims.quot_type = lookup("Quot");
+  prims.quot_ctor = lookup("Quot.mk");
+  prims.quot_lift = lookup("Quot.lift");
+  prims.quot_ind = lookup("Quot.ind");
+  prims.reduce_bool = lookup("Lean.reduceBool").or_else(|| lookup("reduceBool"));
+  prims.reduce_nat = lookup("Lean.reduceNat").or_else(|| lookup("reduceNat"));
+  prims.eager_reduce = lookup("eagerReduce");
+  prims.system_platform_num_bits = lookup("System.Platform.numBits");
+
+  prims
 }

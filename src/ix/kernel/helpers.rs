@@ -56,7 +56,7 @@ pub fn extract_nat_val<M: MetaMode>(v: &Val<M>, prims: &Primitives<M>) -> Option
       {
         // The field is the last spine element (after params)
         let inner_thunk = &spine[spine.len() - 1];
-        if let ThunkEntry::Evaluated(inner) = &*inner_thunk.borrow() {
+        if let ThunkEntry::Evaluated(inner) = &*inner_thunk.entry.borrow() {
           let n = extract_nat_val(inner, prims)?;
           Some(Nat(&n.0 + 1u64))
         } else {
@@ -69,6 +69,7 @@ pub fn extract_nat_val<M: MetaMode>(v: &Val<M>, prims: &Primitives<M>) -> Option
     ValInner::Neutral {
       head: Head::Const { id, .. },
       spine,
+      ..
     } => {
       if Primitives::<M>::addr_matches(&prims.nat_zero, &id.addr) && spine.is_empty() {
         Some(Nat::from(0u64))
@@ -109,6 +110,7 @@ pub fn is_nat_zero_val<M: MetaMode>(v: &Val<M>, prims: &Primitives<M>) -> bool {
     ValInner::Neutral {
       head: Head::Const { id, .. },
       spine,
+      ..
     } => Primitives::<M>::addr_matches(&prims.nat_zero, &id.addr) && spine.is_empty(),
     ValInner::Ctor { id, spine, .. } => {
       Primitives::<M>::addr_matches(&prims.nat_zero, &id.addr) && spine.is_empty()
@@ -129,6 +131,7 @@ pub fn extract_succ_pred<M: MetaMode>(
     ValInner::Neutral {
       head: Head::Const { id, .. },
       spine,
+      ..
     } if Primitives::<M>::addr_matches(&prims.nat_succ, &id.addr) && spine.len() == 1 => {
       Some(spine[0].clone())
     }
@@ -458,7 +461,7 @@ pub fn expr_mentions_const<M: MetaMode>(
       expr_mentions_const(ty, addr)
         || expr_mentions_const(body, addr)
     }
-    KExprData::LetE(ty, val, body, _) => {
+    KExprData::LetE(ty, val, body, _, _) => {
       expr_mentions_const(ty, addr)
         || expr_mentions_const(val, addr)
         || expr_mentions_const(body, addr)
@@ -486,6 +489,36 @@ pub fn get_ctor_return_type<M: MetaMode>(
     }
   }
   go(ty, total)
+}
+
+/// Get the head constant of a ForallE chain's last domain (the target type).
+/// For `∀ (idx...) (x : T args), Sort v`, returns the address of T.
+pub fn get_forall_target_head<M: MetaMode>(
+  ty: &KExpr<M>,
+) -> Option<Address> {
+  let mut last_dom = None;
+  let mut t = ty.clone();
+  loop {
+    match t.data() {
+      KExprData::ForallE(dom, body, _, _) => {
+        last_dom = Some(dom.clone());
+        t = body.clone();
+      }
+      _ => break,
+    }
+  }
+  last_dom.and_then(|dom| dom.get_app_fn().const_id().map(|id| id.addr.clone()))
+}
+
+/// Get the head constant of a constructor's return type.
+/// Peels `num_params + num_fields` Pi binders, then returns the head.
+pub fn get_ctor_return_head<M: MetaMode>(
+  ty: &KExpr<M>,
+  num_params: usize,
+  num_fields: usize,
+) -> Option<Address> {
+  let ret = get_ctor_return_type(ty, num_params, num_fields);
+  ret.get_app_fn().const_id().map(|id| id.addr.clone())
 }
 
 /// Lift free bvar indices by `n`. Under `depth` binders, bvars < depth
@@ -529,11 +562,12 @@ fn lift_go<M: MetaMode>(
       name.clone(),
       bi.clone(),
     ),
-    KExprData::LetE(ty, val, body, name) => KExpr::let_e(
+    KExprData::LetE(ty, val, body, name, nd) => KExpr::let_e_nd(
       lift_go(ty, n, d),
       lift_go(val, n, d),
       lift_go(body, n, d + 1),
       name.clone(),
+      *nd,
     ),
     KExprData::Proj(id, idx, s) => {
       KExpr::proj(id.clone(), *idx, lift_go(s, n, d))
@@ -624,11 +658,12 @@ fn shift_go<M: MetaMode>(
       n.clone(),
       bi.clone(),
     ),
-    KExprData::LetE(ty, val, body, n) => KExpr::let_e(
+    KExprData::LetE(ty, val, body, n, nd) => KExpr::let_e_nd(
       shift_go(ty, field_depth, bvar_shift, level_subst, depth),
       shift_go(val, field_depth, bvar_shift, level_subst, depth),
       shift_go(body, field_depth, bvar_shift, level_subst, depth + 1),
       n.clone(),
+      *nd,
     ),
     KExprData::Proj(id, idx, s) => KExpr::proj(
       id.clone(),
@@ -648,6 +683,86 @@ fn shift_go<M: MetaMode>(
       }
     }
     KExprData::Lit(_) => e.clone(),
+  }
+}
+
+/// Substitute ALL param bvars in a nested constructor body expression.
+///
+/// After peeling `cnp` params from the ctor type, param bvars occupy
+/// indices `field_depth..field_depth+num_params-1` at depth 0 (in reverse
+/// order: BVar(field_depth) = last param, BVar(field_depth+num_params-1)
+/// = first param). Replaces them with `vals` (in order: vals[0] = first
+/// param's value from major premise).
+pub fn subst_all_params<M: MetaMode>(
+  e: &KExpr<M>,
+  field_depth: usize,
+  num_params: usize,
+  vals: &[KExpr<M>],
+) -> KExpr<M> {
+  if num_params == 0 {
+    return e.clone();
+  }
+  subst_ap_go(e, field_depth, num_params, vals, 0)
+}
+
+fn subst_ap_go<M: MetaMode>(
+  e: &KExpr<M>,
+  field_depth: usize,
+  num_params: usize,
+  vals: &[KExpr<M>],
+  depth: usize,
+) -> KExpr<M> {
+  match e.data() {
+    KExprData::BVar(i, n) => {
+      if *i < depth + field_depth {
+        // Bound by field/local binder — keep
+        e.clone()
+      } else {
+        let param_idx = i - (depth + field_depth);
+        if param_idx < num_params {
+          // Param bvar: substitute with vals[num_params - 1 - param_idx]
+          // (BVar(field_depth) = last param = vals[num_params-1], etc.)
+          let val_idx = num_params - 1 - param_idx;
+          if val_idx < vals.len() {
+            shift_ctor_to_rule(&vals[val_idx], 0, depth, &[])
+          } else {
+            e.clone()
+          }
+        } else {
+          // Beyond params: shift down by num_params
+          KExpr::bvar(i - num_params, n.clone())
+        }
+      }
+    }
+    KExprData::App(f, a) => KExpr::app(
+      subst_ap_go(f, field_depth, num_params, vals, depth),
+      subst_ap_go(a, field_depth, num_params, vals, depth),
+    ),
+    KExprData::Lam(ty, body, n, bi) => KExpr::lam(
+      subst_ap_go(ty, field_depth, num_params, vals, depth),
+      subst_ap_go(body, field_depth, num_params, vals, depth + 1),
+      n.clone(),
+      bi.clone(),
+    ),
+    KExprData::ForallE(ty, body, n, bi) => KExpr::forall_e(
+      subst_ap_go(ty, field_depth, num_params, vals, depth),
+      subst_ap_go(body, field_depth, num_params, vals, depth + 1),
+      n.clone(),
+      bi.clone(),
+    ),
+    KExprData::LetE(ty, val, body, n, nd) => KExpr::let_e_nd(
+      subst_ap_go(ty, field_depth, num_params, vals, depth),
+      subst_ap_go(val, field_depth, num_params, vals, depth),
+      subst_ap_go(body, field_depth, num_params, vals, depth + 1),
+      n.clone(),
+      *nd,
+    ),
+    KExprData::Proj(id, idx, s) => KExpr::proj(
+      id.clone(),
+      *idx,
+      subst_ap_go(s, field_depth, num_params, vals, depth),
+    ),
+    _ => e.clone(),
   }
 }
 
@@ -717,11 +832,12 @@ fn subst_np_go<M: MetaMode>(
       n.clone(),
       bi.clone(),
     ),
-    KExprData::LetE(ty, val, body, n) => KExpr::let_e(
+    KExprData::LetE(ty, val, body, n, nd) => KExpr::let_e_nd(
       subst_np_go(ty, field_depth, num_extra, vals, depth),
       subst_np_go(val, field_depth, num_extra, vals, depth),
       subst_np_go(body, field_depth, num_extra, vals, depth + 1),
       n.clone(),
+      *nd,
     ),
     KExprData::Proj(id, idx, s) => KExpr::proj(
       id.clone(),

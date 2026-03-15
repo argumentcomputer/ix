@@ -103,36 +103,36 @@ end
 
 /-! ## Bind decomposition helpers -/
 
-private theorem option_bind_eq_some {x : Option α} {f : α → Option β} {b : β} :
+theorem option_bind_eq_some {x : Option α} {f : α → Option β} {b : β} :
     x.bind f = some b ↔ ∃ a, x = some a ∧ f a = some b := by
   cases x <;> simp [Option.bind]
 
-private theorem bind_eq_some {x : Option α} {f : α → Option β} {b : β} :
+theorem bind_eq_some {x : Option α} {f : α → Option β} {b : β} :
     (x >>= f) = some b ↔ ∃ a, x = some a ∧ f a = some b := option_bind_eq_some
 
 /-! ## Equation lemmas -/
 
-private theorem eval_s_zero : eval_s 0 e env = (none : Option (SVal L)) := rfl
-private theorem eval_s_bvar : eval_s (n+1) (.bvar idx : SExpr L) env = env[idx]? := rfl
-private theorem eval_s_sort : eval_s (n+1) (.sort u : SExpr L) env = some (.sort u) := rfl
-private theorem eval_s_const' : eval_s (n+1) (.const c ls : SExpr L) env =
+theorem eval_s_zero : eval_s 0 e env = (none : Option (SVal L)) := rfl
+theorem eval_s_bvar : eval_s (n+1) (.bvar idx : SExpr L) env = env[idx]? := rfl
+theorem eval_s_sort : eval_s (n+1) (.sort u : SExpr L) env = some (.sort u) := rfl
+theorem eval_s_const' : eval_s (n+1) (.const c ls : SExpr L) env =
     some (.neutral (.const c ls) []) := rfl
-private theorem eval_s_lit : eval_s (n+1) (.lit l : SExpr L) env = some (.lit l) := rfl
-private theorem eval_s_proj : eval_s (n+1) (.proj t i s : SExpr L) env =
+theorem eval_s_lit : eval_s (n+1) (.lit l : SExpr L) env = some (.lit l) := rfl
+theorem eval_s_proj : eval_s (n+1) (.proj t i s : SExpr L) env =
     (none : Option (SVal L)) := rfl
-private theorem eval_s_app : eval_s (n+1) (.app fn arg : SExpr L) env =
+theorem eval_s_app : eval_s (n+1) (.app fn arg : SExpr L) env =
     (eval_s n fn env).bind fun fv => (eval_s n arg env).bind fun av =>
     apply_s n fv av := rfl
-private theorem eval_s_lam : eval_s (n+1) (.lam dom body : SExpr L) env =
+theorem eval_s_lam : eval_s (n+1) (.lam dom body : SExpr L) env =
     (eval_s n dom env).bind fun dv => some (.lam dv body env) := rfl
-private theorem eval_s_forallE : eval_s (n+1) (.forallE dom body : SExpr L) env =
+theorem eval_s_forallE : eval_s (n+1) (.forallE dom body : SExpr L) env =
     (eval_s n dom env).bind fun dv => some (.pi dv body env) := rfl
-private theorem eval_s_letE : eval_s (n+1) (.letE ty val body : SExpr L) env =
+theorem eval_s_letE : eval_s (n+1) (.letE ty val body : SExpr L) env =
     (eval_s n val env).bind fun vv => eval_s n body (vv :: env) := rfl
-private theorem apply_s_zero : apply_s 0 fn arg = (none : Option (SVal L)) := rfl
-private theorem apply_s_lam : apply_s (n+1) (.lam dom body fenv : SVal L) arg =
+theorem apply_s_zero : apply_s 0 fn arg = (none : Option (SVal L)) := rfl
+theorem apply_s_lam : apply_s (n+1) (.lam dom body fenv : SVal L) arg =
     eval_s n body (arg :: fenv) := rfl
-private theorem apply_s_neutral : apply_s (n+1) (.neutral hd spine : SVal L) arg =
+theorem apply_s_neutral : apply_s (n+1) (.neutral hd spine : SVal L) arg =
     some (.neutral hd (spine ++ [arg])) := rfl
 
 /-! ## eval_env_structRel: same expression, StructRel envs → StructRel results
@@ -423,19 +423,6 @@ theorem envInsert_succ (v : SVal L) (k : Nat) (va : SVal L) (env : List (SVal L)
   `InstEnvCond` is parameterized by `k` (substitution position) and uses
   `∀ d' ≥ d` to handle depth increase under binders. -/
 
-/-- Condition on va: relates va to evaluations of `liftN k a` in `env`.
-    Parameterized by `k` to support recursive calls under binders.
-    The `∀ d' ≥ d` quantification allows depth to increase under binders. -/
-structure InstEnvCond (va : SVal L) (a : SExpr L) (env : List (SVal L))
-    (k d : Nat) : Prop where
-  /-- va is QuoteEq to any evaluation of `liftN k a` in env, at any depth ≥ d -/
-  quoteEq : ∀ d', d ≤ d' → ∀ fa va',
-    eval_s fa (SExpr.liftN k a) env = some va' → QuoteEq va va' d'
-  /-- a is closed w.r.t. the original env (before k insertions) -/
-  closedA : ClosedN a (env.length - k)
-  /-- va is well-formed at depth d -/
-  wfVa : ValWF va d
-
 /-! ## Neutral spine lemmas -/
 
 /-- Decompose quoteSpine_s for sp ++ [arg]: quoteSpine on sp succeeded and
@@ -488,34 +475,7 @@ theorem quoteEq_neutral_snoc
   apply_quoteEq is proved via quoteEq_neutral_snoc. The remaining cases
   (involving at least one lam) need closure bisimulation. -/
 
-/-- Applying QuoteEq functions to QuoteEq arguments gives QuoteEq results.
-    Neutral-neutral case is proved. Lam cases (lam-lam, lam-neutral, neutral-lam)
-    remain sorry'd — these require closure bisimulation (nbe_subst). -/
-theorem apply_quoteEq {fn1 fn2 arg1 arg2 v1 v2 : SVal L} {d fuel1 fuel2 : Nat}
-    (hqf : QuoteEq fn1 fn2 d) (hqa : QuoteEq arg1 arg2 d)
-    (ha1 : apply_s fuel1 fn1 arg1 = some v1)
-    (ha2 : apply_s fuel2 fn2 arg2 = some v2) :
-    QuoteEq v1 v2 d := by
-  cases fuel1 with
-  | zero => rw [apply_s_zero] at ha1; exact absurd ha1 nofun
-  | succ n1 =>
-  cases fuel2 with
-  | zero => rw [apply_s_zero] at ha2; exact absurd ha2 nofun
-  | succ n2 =>
-  cases fn1 with
-  | sort _ | lit _ | pi _ _ _ => exact absurd ha1 nofun
-  | neutral hd1 sp1 =>
-    rw [apply_s_neutral] at ha1; cases ha1
-    cases fn2 with
-    | sort _ | lit _ | pi _ _ _ => exact absurd ha2 nofun
-    | neutral hd2 sp2 =>
-      rw [apply_s_neutral] at ha2; cases ha2
-      exact quoteEq_neutral_snoc hqf hqa
-    | lam _ _ _ => sorry -- neutral-lam: needs closure bisimulation
-  | lam _ _ _ =>
-    cases fn2 with
-    | sort _ | lit _ | pi _ _ _ => exact absurd ha2 nofun
-    | _ => sorry -- lam-lam and lam-neutral: needs closure bisimulation
+-- REMOVED: apply_quoteEq — superseded by apply_simval_inf + simval_implies_quoteEq
 
 /-- QuoteEq for lam values: if domains are QuoteEq and body evals (opened
     with fvar(d)) are QuoteEq at d+1, then lam values are QuoteEq at d. -/
@@ -571,174 +531,11 @@ theorem quoteEq_pi {dom1 dom2 : SVal L} {b1 b2 : SExpr L}
       have hbodyEq := hbodyQE _ _ _ _ hbe1 hbe2
       rw [hdomEq, hbodyEq]
 
-/-- Transfer InstEnvCond under a binder: if va relates to `liftN k a` in env,
-    then va relates to `liftN (k+1) a` in `w :: env` at depth d' ≥ d.
-    Key idea: liftN (k+1) a = lift (liftN k a), and eval of lift e in (w :: env)
-    agrees with eval of e in env. -/
-theorem InstEnvCond.prepend (w : SVal L) (hcond : InstEnvCond va a env k d)
-    (hdd : d ≤ d') : InstEnvCond va a (w :: env) (k + 1) d' := by
-  exact { quoteEq := by
-            intro d'' hd'' fa va' hev
-            -- liftN (k+1) a = lift (liftN k a), eval of lift e in (w::env) = eval of e in env
-            sorry
-          closedA := by
-            have : (w :: env).length - (k + 1) = env.length - k := by simp
-            rw [this]; exact hcond.closedA
-          wfVa := hcond.wfVa.mono hdd }
+-- Removed: InstEnvCond, InstEnvCond.prepend, apply_quoteEq, eval_env_quoteEq,
+-- eval_inst_quoteEq (superseded by SimVal.eval_inst_simval_inf)
 
-/-- Evaluating the same expression in QuoteEq environments gives QuoteEq results.
-    The evaluation in env2 also succeeds with the same fuel.
-    Strengthened with ∀ d' ≥ d to avoid needing QuoteEq.depth_mono under binders. -/
-theorem eval_env_quoteEq {e : SExpr L} {env1 env2 : List (SVal L)} {d : Nat}
-    {fuel : Nat} {v1 : SVal L}
-    (hev : eval_s fuel e env1 = some v1)
-    (hqe : ∀ d', d ≤ d' → EnvQuoteEq env1 env2 d')
-    (hcl : ClosedN e env1.length)
-    (hew1 : EnvWF env1 d) (hew2 : EnvWF env2 d) :
-    ∃ v2, eval_s fuel e env2 = some v2 ∧ ∀ d', d ≤ d' → QuoteEq v1 v2 d' := by
-  induction e generalizing env1 env2 d fuel v1 with
-  | bvar idx =>
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev; exact absurd hev nofun
-    | succ n =>
-      rw [eval_s_bvar] at hev
-      simp only [ClosedN] at hcl
-      have hlen := (hqe d (Nat.le_refl d)).1
-      have hi2 : idx < env2.length := hlen ▸ hcl
-      rw [List.getElem?_eq_getElem hcl] at hev; cases hev
-      refine ⟨env2[idx], by rw [eval_s_bvar, List.getElem?_eq_getElem hi2],
-        fun d' hd' => (hqe d' hd').2 idx hcl hi2⟩
-  | sort u =>
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev; exact absurd hev nofun
-    | succ n =>
-      rw [eval_s_sort] at hev; cases hev
-      exact ⟨.sort u, by rw [eval_s_sort], fun _ _ => QuoteEq.refl _ _⟩
-  | const c ls =>
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev; exact absurd hev nofun
-    | succ n =>
-      rw [eval_s_const'] at hev; cases hev
-      exact ⟨.neutral (.const c ls) [], by rw [eval_s_const'], fun _ _ => QuoteEq.refl _ _⟩
-  | lit l =>
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev; exact absurd hev nofun
-    | succ n =>
-      rw [eval_s_lit] at hev; cases hev
-      exact ⟨.lit l, by rw [eval_s_lit], fun _ _ => QuoteEq.refl _ _⟩
-  | proj _ _ _ =>
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev; exact absurd hev nofun
-    | succ n =>
-      rw [eval_s_proj] at hev; exact absurd hev nofun
-  | app fn arg ih_fn ih_arg =>
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev; exact absurd hev nofun
-    | succ n =>
-      rw [eval_s_app] at hev
-      simp only [option_bind_eq_some] at hev
-      obtain ⟨fv1, hf1, av1, ha1, happ1⟩ := hev
-      simp only [ClosedN] at hcl
-      obtain ⟨fv2, hf2, qeF⟩ := ih_fn hf1 hqe hcl.1 hew1 hew2
-      obtain ⟨av2, ha2, qeA⟩ := ih_arg ha1 hqe hcl.2 hew1 hew2
-      -- Need: ∃ v2, apply_s n fv2 av2 = some v2 ∧ ∀ d', d ≤ d' → QuoteEq v1 v2 d'
-      -- Blocked on apply_quoteEq (closure extensionality) + apply success transfer
-      sorry
-  | lam dom body ih_dom ih_body =>
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev; exact absurd hev nofun
-    | succ n =>
-      rw [eval_s_lam] at hev
-      simp only [option_bind_eq_some] at hev
-      obtain ⟨dv1, hd1, hv1⟩ := hev; cases hv1
-      simp only [ClosedN] at hcl
-      obtain ⟨dv2, hd2, qeDom⟩ := ih_dom hd1 hqe hcl.1 hew1 hew2
-      refine ⟨.lam dv2 body env2,
-        by rw [eval_s_lam]; simp only [option_bind_eq_some]; exact ⟨dv2, hd2, rfl⟩,
-        fun d0 hd0 => ?_⟩
-      -- QuoteEq at each d0 ≥ d via quoteEq_lam — no depth_mono needed
-      exact quoteEq_lam (qeDom d0 hd0) (fun f1 f2 bv1 bv2 hb1 hb2 => by
-        have hb1' := eval_fuel_mono hb1 (Nat.le_max_left f1 f2)
-        have hb2' := eval_fuel_mono hb2 (Nat.le_max_right f1 f2)
-        -- Build ∀ d'' ≥ d0+1, EnvQuoteEq for (fvar(d0) :: env1/env2)
-        have hqe' : ∀ d'', d0 + 1 ≤ d'' → EnvQuoteEq
-            (SVal.neutral (.fvar d0) [] :: env1)
-            (SVal.neutral (.fvar d0) [] :: env2) d'' := fun d'' hd'' =>
-          ⟨by simp [(hqe d (Nat.le_refl d)).1], fun i hi1 hi2 => by
-            cases i with
-            | zero => simp; exact QuoteEq.refl _ _
-            | succ j =>
-              simp
-              exact (hqe d'' (by omega)).2 j (by simp at hi1; omega) (by simp at hi2; omega)⟩
-        have fvar_wf : ValWF (SVal.neutral (.fvar d0) ([] : List (SVal L))) (d0 + 1) :=
-          .neutral (.fvar (Nat.lt_succ_of_le (Nat.le_refl d0))) .nil
-        have hew1' := EnvWF.cons fvar_wf (hew1.mono (by omega : d ≤ d0 + 1))
-        have hew2' := EnvWF.cons fvar_wf (hew2.mono (by omega : d ≤ d0 + 1))
-        have ⟨bv2', hb2'', qe⟩ := ih_body hb1' hqe' hcl.2 hew1' hew2'
-        rw [hb2''] at hb2'; cases hb2'
-        exact qe (d0 + 1) (Nat.le_refl _))
-  | forallE dom body ih_dom ih_body =>
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev; exact absurd hev nofun
-    | succ n =>
-      rw [eval_s_forallE] at hev
-      simp only [option_bind_eq_some] at hev
-      obtain ⟨dv1, hd1, hv1⟩ := hev; cases hv1
-      simp only [ClosedN] at hcl
-      obtain ⟨dv2, hd2, qeDom⟩ := ih_dom hd1 hqe hcl.1 hew1 hew2
-      refine ⟨.pi dv2 body env2,
-        by rw [eval_s_forallE]; simp only [option_bind_eq_some]; exact ⟨dv2, hd2, rfl⟩,
-        fun d0 hd0 => ?_⟩
-      exact quoteEq_pi (qeDom d0 hd0) (fun f1 f2 bv1 bv2 hb1 hb2 => by
-        have hb1' := eval_fuel_mono hb1 (Nat.le_max_left f1 f2)
-        have hb2' := eval_fuel_mono hb2 (Nat.le_max_right f1 f2)
-        have hqe' : ∀ d'', d0 + 1 ≤ d'' → EnvQuoteEq
-            (SVal.neutral (.fvar d0) [] :: env1)
-            (SVal.neutral (.fvar d0) [] :: env2) d'' := fun d'' hd'' =>
-          ⟨by simp [(hqe d (Nat.le_refl d)).1], fun i hi1 hi2 => by
-            cases i with
-            | zero => simp; exact QuoteEq.refl _ _
-            | succ j =>
-              simp
-              exact (hqe d'' (by omega)).2 j (by simp at hi1; omega) (by simp at hi2; omega)⟩
-        have fvar_wf : ValWF (SVal.neutral (.fvar d0) ([] : List (SVal L))) (d0 + 1) :=
-          .neutral (.fvar (Nat.lt_succ_of_le (Nat.le_refl d0))) .nil
-        have hew1' := EnvWF.cons fvar_wf (hew1.mono (by omega : d ≤ d0 + 1))
-        have hew2' := EnvWF.cons fvar_wf (hew2.mono (by omega : d ≤ d0 + 1))
-        have ⟨bv2', hb2'', qe⟩ := ih_body hb1' hqe' hcl.2 hew1' hew2'
-        rw [hb2''] at hb2'; cases hb2'
-        exact qe (d0 + 1) (Nat.le_refl _))
-  | letE ty val body ih_ty ih_val ih_body =>
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev; exact absurd hev nofun
-    | succ n =>
-      rw [eval_s_letE] at hev
-      simp only [option_bind_eq_some] at hev
-      obtain ⟨vv1, hvl1, hbd1⟩ := hev
-      simp only [ClosedN] at hcl
-      obtain ⟨vv2, hvl2, qeVal⟩ := ih_val hvl1 hqe hcl.2.1 hew1 hew2
-      have wf_vv1 := eval_preserves_wf hvl1 hcl.2.1 hew1
-      have wf_vv2 := eval_preserves_wf hvl2
-        (by rw [← (hqe d (Nat.le_refl d)).1]; exact hcl.2.1) hew2
-      have hqe' : ∀ d', d ≤ d' → EnvQuoteEq (vv1 :: env1) (vv2 :: env2) d' :=
-        fun d' hd' =>
-        ⟨by simp [(hqe d (Nat.le_refl d)).1], fun i hi1 hi2 => by
-          cases i with
-          | zero => simp; exact qeVal d' hd'
-          | succ j => simp; exact (hqe d' hd').2 j (by simp at hi1; omega) (by simp at hi2; omega)⟩
-      obtain ⟨v2, hbd2, qeBody⟩ := ih_body hbd1 hqe' hcl.2.2
-        (.cons wf_vv1 hew1) (.cons wf_vv2 hew2)
-      refine ⟨v2, ?_, qeBody⟩
-      rw [eval_s_letE]; simp only [option_bind_eq_some]
-      exact ⟨vv2, hvl2, hbd2⟩
-
-/-- A well-formed value can be quoted at sufficient fuel.
-    FALSE as stated: `.lam (.sort 0) (.proj 0 0 (.bvar 0)) []` satisfies ValWF
-    but `quote_s` gets stuck because `eval_s` returns `none` on `.proj`.
-    Fix: add a ProjFree/Quotable hypothesis, or restructure via logical relation (Phase 2). -/
-theorem quotable_of_wf {v : SVal L} {d : Nat} (hwf : ValWF v d) :
-    ∃ fq e, quote_s fq v d = some e := by
-  sorry
+-- DELETED: quotable_of_wf — FALSE as stated (.proj blocks quote_s but satisfies ValWF).
+-- Not called by any live code. Callers that need quotability provide it directly.
 
 /-- Transitivity of QuoteEq, given that the middle value is quotable. -/
 theorem QuoteEq.trans (h12 : QuoteEq v1 v2 d) (h23 : QuoteEq v2 v3 d)
@@ -763,204 +560,6 @@ theorem EnvWF_envInsert {env : List (SVal L)} {d : Nat}
       rw [← envInsert_succ]
       exact .cons hv (ih hrest (by simp [List.length] at hk; omega))
 
-/-- The core eval-subst correspondence. By structural induction on `e`.
-
-    All cases filled modulo sorry'd axioms (closure bisimulation).
-    Depends on: apply_quoteEq, quoteEq_lam, quoteEq_pi,
-    InstEnvCond.prepend (quoteEq field), eval_env_quoteEq,
-    quotable_of_wf, EnvWF_envInsert. -/
-theorem eval_inst_quoteEq (e : SExpr L) :
-    ∀ (env : List (SVal L)) (va : SVal L) (a : SExpr L) (k d : Nat)
-      (v1 v2 : SVal L) (fuel : Nat),
-      eval_s fuel e (envInsert k va env) = some v1 →
-      eval_s fuel (e.inst a k) env = some v2 →
-      InstEnvCond va a env k d →
-      ClosedN e (env.length + 1) →
-      k ≤ env.length →
-      EnvWF env d →
-      ∀ d', d ≤ d' → QuoteEq v1 v2 d' := by
-  induction e with
-  | bvar idx =>
-    intro env va a k d v1 v2 fuel hev1 hev2 hcond hcl hk henvwf d' hd'
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
-    | succ n =>
-      rw [eval_s_bvar] at hev1
-      simp only [inst, instVar] at hev2
-      simp only [ClosedN] at hcl
-      split at hev2 <;> rename_i h_cmp
-      · -- idx < k: bvar stays, both look up the same value
-        rw [eval_s_bvar] at hev2
-        rw [envInsert_lt h_cmp hk] at hev1
-        rw [hev1] at hev2; cases hev2
-        exact QuoteEq.refl _ _
-      · split at hev2 <;> rename_i h_cmp2
-        · -- idx = k: bvar replaced by liftN k a
-          subst h_cmp2
-          rw [envInsert_eq hk] at hev1; cases hev1
-          exact hcond.quoteEq d' hd' (n + 1) v2 hev2
-        · -- idx > k: bvar decremented, look up same env position
-          have hgt : k < idx := Nat.lt_of_le_of_ne (Nat.not_lt.1 h_cmp) (Ne.symm h_cmp2)
-          rw [eval_s_bvar] at hev2
-          rw [envInsert_gt hgt hcl hk] at hev1
-          rw [hev1] at hev2; cases hev2
-          exact QuoteEq.refl _ _
-  | sort u =>
-    intro env va a k d v1 v2 fuel hev1 hev2 hcond hcl hk henvwf d' hd'
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
-    | succ n =>
-      rw [eval_s_sort] at hev1; cases hev1
-      simp only [inst] at hev2
-      rw [eval_s_sort] at hev2; cases hev2
-      exact QuoteEq.refl _ _
-  | const c ls =>
-    intro env va a k d v1 v2 fuel hev1 hev2 hcond hcl hk henvwf d' hd'
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
-    | succ n =>
-      rw [eval_s_const'] at hev1; cases hev1
-      simp only [inst] at hev2
-      rw [eval_s_const'] at hev2; cases hev2
-      exact QuoteEq.refl _ _
-  | lit l =>
-    intro env va a k d v1 v2 fuel hev1 hev2 hcond hcl hk henvwf d' hd'
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
-    | succ n =>
-      rw [eval_s_lit] at hev1; cases hev1
-      simp only [inst] at hev2
-      rw [eval_s_lit] at hev2; cases hev2
-      exact QuoteEq.refl _ _
-  | proj _ _ _ =>
-    intro env va a k d v1 v2 fuel hev1 hev2 hcond hcl hk henvwf d' hd'
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
-    | succ n =>
-      rw [eval_s_proj] at hev1; exact absurd hev1 nofun
-  | app fn arg ih_fn ih_arg =>
-    intro env va a k d v1 v2 fuel hev1 hev2 hcond hcl hk henvwf d' hd'
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
-    | succ n =>
-      rw [eval_s_app] at hev1
-      simp only [option_bind_eq_some] at hev1
-      obtain ⟨vf1, hf1, va1, ha1, happ1⟩ := hev1
-      simp only [inst] at hev2
-      rw [eval_s_app] at hev2
-      simp only [option_bind_eq_some] at hev2
-      obtain ⟨vf2, hf2, va2, ha2, happ2⟩ := hev2
-      simp only [ClosedN] at hcl
-      have qeF := ih_fn env va a k d vf1 vf2 n hf1 hf2 hcond hcl.1 hk henvwf d' hd'
-      have qeA := ih_arg env va a k d va1 va2 n ha1 ha2 hcond hcl.2 hk henvwf d' hd'
-      exact apply_quoteEq qeF qeA happ1 happ2
-  | lam dom body ih_dom ih_body =>
-    intro env va a k d v1 v2 fuel hev1 hev2 hcond hcl hk henvwf d' hd'
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
-    | succ n =>
-      rw [eval_s_lam] at hev1
-      simp only [option_bind_eq_some] at hev1
-      obtain ⟨dv1, hd1, hev1'⟩ := hev1
-      cases hev1'
-      simp only [inst] at hev2
-      rw [eval_s_lam] at hev2
-      simp only [option_bind_eq_some] at hev2
-      obtain ⟨dv2, hd2, hev2'⟩ := hev2
-      cases hev2'
-      simp only [ClosedN] at hcl
-      have qeDom := ih_dom env va a k d dv1 dv2 n hd1 hd2 hcond hcl.1 hk henvwf d' hd'
-      exact quoteEq_lam qeDom (fun f1 f2 bv1 bv2 hb1 hb2 => by
-        let f := max f1 f2
-        have hb1' := eval_fuel_mono hb1 (Nat.le_max_left f1 f2)
-        have hb2' := eval_fuel_mono hb2 (Nat.le_max_right f1 f2)
-        rw [envInsert_succ] at hb1'
-        have hcond' := hcond.prepend (SVal.neutral (.fvar d') []) (by omega : d ≤ d' + 1)
-        have henvwf' : EnvWF (SVal.neutral (.fvar d') ([] : List (SVal L)) :: env) (d' + 1) :=
-          .cons (.neutral (.fvar (Nat.lt_succ_of_le (Nat.le_refl d'))) .nil)
-                (henvwf.mono (by omega : d ≤ d' + 1))
-        exact ih_body (SVal.neutral (.fvar d') [] :: env) va a (k + 1) (d' + 1)
-          bv1 bv2 f hb1' hb2' hcond' hcl.2
-          (by simp; omega) henvwf' (d' + 1) (Nat.le_refl _))
-  | forallE dom body ih_dom ih_body =>
-    intro env va a k d v1 v2 fuel hev1 hev2 hcond hcl hk henvwf d' hd'
-    cases fuel with
-    | zero => rw [eval_s_zero] at hev1; exact absurd hev1 nofun
-    | succ n =>
-      rw [eval_s_forallE] at hev1
-      simp only [option_bind_eq_some] at hev1
-      obtain ⟨dv1, hd1, hev1'⟩ := hev1
-      cases hev1'
-      simp only [inst] at hev2
-      rw [eval_s_forallE] at hev2
-      simp only [option_bind_eq_some] at hev2
-      obtain ⟨dv2, hd2, hev2'⟩ := hev2
-      cases hev2'
-      simp only [ClosedN] at hcl
-      have qeDom := ih_dom env va a k d dv1 dv2 n hd1 hd2 hcond hcl.1 hk henvwf d' hd'
-      exact quoteEq_pi qeDom (fun f1 f2 bv1 bv2 hb1 hb2 => by
-        let f := max f1 f2
-        have hb1' := eval_fuel_mono hb1 (Nat.le_max_left f1 f2)
-        have hb2' := eval_fuel_mono hb2 (Nat.le_max_right f1 f2)
-        rw [envInsert_succ] at hb1'
-        have hcond' := hcond.prepend (SVal.neutral (.fvar d') []) (by omega : d ≤ d' + 1)
-        have henvwf' : EnvWF (SVal.neutral (.fvar d') ([] : List (SVal L)) :: env) (d' + 1) :=
-          .cons (.neutral (.fvar (Nat.lt_succ_of_le (Nat.le_refl d'))) .nil)
-                (henvwf.mono (by omega : d ≤ d' + 1))
-        exact ih_body (SVal.neutral (.fvar d') [] :: env) va a (k + 1) (d' + 1)
-          bv1 bv2 f hb1' hb2' hcond' hcl.2
-          (by simp; omega) henvwf' (d' + 1) (Nat.le_refl _))
-  | letE ty val body ih_ty ih_val ih_body =>
-    intro env va a k d v1 v2 fuel hev1 hev2 hcond hcl hk henvwf
-    cases fuel with
-    | zero => intro d' hd'; rw [eval_s_zero] at hev1; exact absurd hev1 nofun
-    | succ n =>
-      rw [eval_s_letE] at hev1
-      simp only [option_bind_eq_some] at hev1
-      obtain ⟨vv1, hvl1, hbd1⟩ := hev1
-      simp only [inst] at hev2
-      rw [eval_s_letE] at hev2
-      simp only [option_bind_eq_some] at hev2
-      obtain ⟨vv2, hvl2, hbd2⟩ := hev2
-      simp only [ClosedN] at hcl
-      have qeVal := ih_val env va a k d vv1 vv2 n hvl1 hvl2 hcond hcl.2.1 hk henvwf
-      -- qeVal : ∀ d' ≥ d, QuoteEq vv1 vv2 d'
-      have hlen_ins : (envInsert k va env).length = env.length + 1 :=
-        envInsert_length k va env hk
-      have hew_ins := EnvWF_envInsert henvwf hcond.wfVa hk
-      have wf_vv1 : ValWF vv1 d :=
-        eval_preserves_wf hvl1 (hlen_ins ▸ hcl.2.1) hew_ins
-      have wf_vv2 : ValWF vv2 d := by
-        apply eval_preserves_wf hvl2 _ henvwf
-        have h_eq1 : env.length - k + k + 1 = env.length + 1 := by omega
-        have h_eq2 : env.length - k + k = env.length := by omega
-        exact h_eq2 ▸ ClosedN.instN (k := env.length - k) (j := k)
-          (h_eq1 ▸ hcl.2.1) hcond.closedA
-      -- Build ∀ d' ≥ d, EnvQuoteEq (vv2::env) (vv1::env) d' for eval_env_quoteEq
-      have hqe_swap : ∀ d', d ≤ d' → EnvQuoteEq (vv2 :: env) (vv1 :: env) d' :=
-        fun d' hd' =>
-        ⟨by simp, fun i hi1 hi2 => by
-          cases i with
-          | zero => simp; exact (qeVal d' hd').symm
-          | succ j => simp; exact QuoteEq.refl _ _⟩
-      have hcl_body_inst : ClosedN (body.inst a (k + 1)) (env.length + 1) := by
-        have h_eq1 : env.length - k + (k + 1) + 1 = env.length + 2 := by omega
-        have h_eq2 : env.length - k + (k + 1) = env.length + 1 := by omega
-        exact h_eq2 ▸ ClosedN.instN (k := env.length - k) (j := k + 1)
-          (h_eq1 ▸ hcl.2.2) hcond.closedA
-      -- eval_env_quoteEq (strengthened): gives ∀ d' ≥ d, QuoteEq v_mid v2 d'
-      have ⟨v_mid, hev_mid, qe_v2_mid⟩ := eval_env_quoteEq hbd2 hqe_swap
-        (by simp; exact hcl_body_inst)
-        (.cons wf_vv2 henvwf) (.cons wf_vv1 henvwf)
-      -- ih_body: ∀ d' ≥ d, QuoteEq v1 v_mid d'
-      rw [envInsert_succ] at hbd1
-      have hcond' := hcond.prepend vv1 (Nat.le_refl d)
-      have qe_v1_mid := ih_body (vv1 :: env) va a (k + 1) d v1 v_mid n
-        hbd1 hev_mid hcond' hcl.2.2 (by simp; omega) (.cons wf_vv1 henvwf)
-      -- Combine via QuoteEq.trans at each d'
-      intro d' hd'
-      exact QuoteEq.trans (qe_v1_mid d' hd') (qe_v2_mid d' hd').symm
-        (quotable_of_wf ((eval_preserves_wf hev_mid
-          (by simp; exact hcl_body_inst) (.cons wf_vv1 henvwf)).mono hd'))
+-- Removed: eval_inst_quoteEq (superseded by SimVal.eval_inst_simval_inf)
 
 end Ix.Theory

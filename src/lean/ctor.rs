@@ -22,6 +22,11 @@ impl LeanCtorObject {
     self.m_header.m_tag()
   }
 
+  #[inline]
+  pub fn header(&self) -> &LeanObject {
+    &self.m_header
+  }
+
   /// The number of objects must be known at compile time, given the context
   /// in which the data is being read.
   #[inline]

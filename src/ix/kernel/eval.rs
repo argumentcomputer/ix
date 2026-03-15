@@ -9,8 +9,6 @@
 
 
 
-use std::rc::Rc;
-
 use super::error::TcError;
 use super::helpers::reduce_val_proj_forced;
 use super::tc::{TcResult, TypeChecker};
@@ -137,7 +135,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         ))
       }
 
-      KExprData::LetE(_ty, val_expr, body, _name) => {
+      KExprData::LetE(_ty, val_expr, body, _name, _) => {
         // Eager zeta reduction: evaluate the value and push onto env
         let val = self.eval(val_expr, env)?;
         let new_env = env_push(env, val);
@@ -178,7 +176,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         env_vec.push(Val::mk_fvar(level, ty));
       }
     }
-    let env = Rc::new(env_vec);
+    let env = env_from_vec(env_vec);
     self.eval(expr, &env)
   }
 
@@ -202,10 +200,11 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         self.eval(body, &new_env)
       }
 
-      ValInner::Neutral { head, spine } => {
+      ValInner::Neutral { head, spine, spine_hash, .. } => {
+        let new_spine_hash = combine_hash_vals::<M>(spine_hash, &arg.hash);
         let mut new_spine = spine.clone();
         new_spine.push(arg);
-        Ok(Val::mk_neutral(clone_head(head), new_spine))
+        Ok(Val::mk_neutral_with_spine_hash(clone_head(head), new_spine, new_spine_hash))
       }
 
       ValInner::Ctor {
@@ -216,10 +215,13 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         num_fields,
         induct_addr,
         spine,
+        spine_hash,
+        ..
       } => {
+        let new_spine_hash = combine_hash_vals::<M>(spine_hash, &arg.hash);
         let mut new_spine = spine.clone();
         new_spine.push(arg);
-        Ok(Val::mk_ctor(
+        Ok(Val::mk_ctor_with_spine_hash(
           id.clone(),
           levels.clone(),
           *cidx,
@@ -227,6 +229,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           *num_fields,
           induct_addr.clone(),
           new_spine,
+          new_spine_hash,
         ))
       }
 
@@ -236,6 +239,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         strct,
         type_name,
         spine,
+        spine_hash,
+        ..
       } => {
         // Force struct and WHNF to reveal constructor (including delta)
         let struct_val = self.force_thunk(strct)?;
@@ -251,14 +256,16 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           result = self.apply_val_thunk(result, arg)?;
           Ok(result)
         } else {
+          let new_spine_hash = combine_hash_vals::<M>(spine_hash, &arg.hash);
           let mut new_spine = spine.clone();
           new_spine.push(arg);
-          Ok(Val::mk_proj(
+          Ok(Val::mk_proj_with_spine_hash(
             type_addr.clone(),
             *idx,
             strct.clone(),
             type_name.clone(),
             new_spine,
+            new_spine_hash,
           ))
         }
       }
@@ -287,7 +294,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     // Check if already evaluated
     {
-      let entry = thunk.borrow();
+      let entry = thunk.entry.borrow();
       if let ThunkEntry::Evaluated(val) = &*entry {
         self.stats.thunk_hits += 1;
         return Ok(val.clone());
@@ -296,7 +303,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     // Extract expr and env (clone to release borrow)
     let (expr, env) = {
-      let entry = thunk.borrow();
+      let entry = thunk.entry.borrow();
       match &*entry {
         ThunkEntry::Unevaluated { expr, env } => {
           (expr.clone(), env.clone())
@@ -313,7 +320,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let val = self.eval(&expr, &env)?;
 
     // Memoize
-    *thunk.borrow_mut() = ThunkEntry::Evaluated(val.clone());
+    *thunk.entry.borrow_mut() = ThunkEntry::Evaluated(val.clone());
 
     Ok(val)
   }

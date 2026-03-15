@@ -49,10 +49,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         ValInner::Neutral {
           head: Head::Const { id: id1, levels: l1 },
           spine: s1,
+          ..
         },
         ValInner::Neutral {
           head: Head::Const { id: id2, levels: l2 },
           spine: s2,
+          ..
         },
       ) if id1.addr == id2.addr && s1.len() == s2.len() => {
         if l1.len() != l2.len() {
@@ -73,10 +75,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         ValInner::Neutral {
           head: Head::FVar { level: l1, .. },
           spine: s1,
+          ..
         },
         ValInner::Neutral {
           head: Head::FVar { level: l2, .. },
           spine: s2,
+          ..
         },
       ) if l1 == l2 && s1.len() == s2.len() => {
         if s1.iter().zip(s2.iter()).all(|(a, b)| Rc::ptr_eq(a, b)) {
@@ -117,14 +121,14 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       (
         ValInner::Lam { body: b1, env: e1, .. },
         ValInner::Lam { body: b2, env: e2, .. },
-      ) if b1.ptr_id() == b2.ptr_id() && Rc::ptr_eq(e1, e2) => {
+      ) if b1.ptr_id() == b2.ptr_id() && Rc::ptr_eq(e1.vals_rc(), e2.vals_rc()) => {
         Some(true)
       }
       // Same-body closures with identical environments (Pi)
       (
         ValInner::Pi { body: b1, env: e1, dom: d1, .. },
         ValInner::Pi { body: b2, env: e2, dom: d2, .. },
-      ) if b1.ptr_id() == b2.ptr_id() && Rc::ptr_eq(e1, e2) && d1.ptr_eq(d2) => {
+      ) if b1.ptr_id() == b2.ptr_id() && Rc::ptr_eq(e1.vals_rc(), e2.vals_rc()) && d1.ptr_eq(d2) => {
         Some(true)
       }
       _ => None,
@@ -306,8 +310,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         self.trace_msg(&format!("[is_def_eq FALSE] t={t3}  s={s3}"));
         // Show spine details for same-head-const neutrals
         if let (
-          ValInner::Neutral { head: Head::Const { id: id1, .. }, spine: sp1 },
-          ValInner::Neutral { head: Head::Const { id: id2, .. }, spine: sp2 },
+          ValInner::Neutral { head: Head::Const { id: id1, .. }, spine: sp1, .. },
+          ValInner::Neutral { head: Head::Const { id: id2, .. }, spine: sp2, .. },
         ) = (t3.inner(), s3.inner()) {
           if id1.addr == id2.addr && sp1.len() == sp2.len() {
             for (i, (th1, th2)) in sp1.iter().zip(sp2.iter()).enumerate() {
@@ -357,10 +361,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         ValInner::Neutral {
           head: Head::FVar { level: l1, .. },
           spine: sp1,
+          ..
         },
         ValInner::Neutral {
           head: Head::FVar { level: l2, .. },
           spine: sp2,
+          ..
         },
       ) => {
         if l1 != l2 {
@@ -374,10 +380,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         ValInner::Neutral {
           head: Head::Const { id: id1, levels: l1 },
           spine: sp1,
+          ..
         },
         ValInner::Neutral {
           head: Head::Const { id: id2, levels: l2 },
           spine: sp2,
+          ..
         },
       ) => {
         if id1.addr != id2.addr
@@ -518,6 +526,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           strct: s1,
           spine: sp1,
           type_name: tn1,
+          ..
         },
         ValInner::Proj {
           type_addr: a2,
@@ -525,6 +534,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           strct: s2,
           spine: sp2,
           type_name: _tn2,
+          ..
         },
       ) => {
         if a1 != a2 || i1 != i2 {
@@ -573,7 +583,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       // Nat literal ↔ neutral succ: handle Lit(n+1) vs neutral(Nat.succ, [thunk])
       (
         ValInner::Lit(Literal::NatVal(n)),
-        ValInner::Neutral { head: Head::Const { id, .. }, spine: sp },
+        ValInner::Neutral { head: Head::Const { id, .. }, spine: sp, .. },
       ) => {
         if n.0 == BigUint::ZERO {
           Ok(Primitives::<M>::addr_matches(&self.prims.nat_zero, &id.addr) && sp.is_empty())
@@ -588,7 +598,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         }
       }
       (
-        ValInner::Neutral { head: Head::Const { id, .. }, spine: sp },
+        ValInner::Neutral { head: Head::Const { id, .. }, spine: sp, .. },
         ValInner::Lit(Literal::NatVal(n)),
       ) => {
         if n.0 == BigUint::ZERO {
@@ -699,7 +709,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let mut t = t.clone();
     let mut s = s.clone();
 
-    for _ in 0..MAX_LAZY_DELTA_ITERS {
+    for _iter in 0..MAX_LAZY_DELTA_ITERS {
       self.heartbeat()?;
       self.stats.lazy_delta_iters += 1;
 
@@ -902,7 +912,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       return false;
     }
     // Array pointer equality (same Rc)
-    if Rc::ptr_eq(env1, env2) {
+    if Rc::ptr_eq(env1.vals_rc(), env2.vals_rc()) {
       return true;
     }
     // Element-wise pointer equality
@@ -947,7 +957,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     &self,
     thunk: &Thunk<M>,
   ) -> Result<Val<M>, ()> {
-    let entry = thunk.borrow();
+    let entry = thunk.entry.borrow();
     match &*entry {
       ThunkEntry::Evaluated(v) => Ok(v.clone()),
       _ => Err(()),
@@ -1248,6 +1258,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         ValInner::Neutral {
           head: Head::Const { id, .. },
           spine,
+          ..
         } => Primitives::<M>::addr_matches(&prims.nat_zero, &id.addr) && spine.is_empty(),
         ValInner::Ctor { id, spine, .. } => {
           Primitives::<M>::addr_matches(&prims.nat_zero, &id.addr) && spine.is_empty()
@@ -1270,6 +1281,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         ValInner::Neutral {
           head: Head::Const { id, .. },
           spine,
+          ..
         } if Primitives::<M>::addr_matches(&tc.prims.nat_succ, &id.addr) && spine.len() == 1 => {
           Ok(Some(tc.force_thunk(&spine[0])?))
         }
@@ -1287,6 +1299,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::Const { id, .. },
         spine,
+        ..
       } if Primitives::<M>::addr_matches(&self.prims.nat_succ, &id.addr) && spine.len() == 1 => {
         Some(&spine[0])
       }
@@ -1301,6 +1314,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::Const { id, .. },
         spine,
+        ..
       } if Primitives::<M>::addr_matches(&self.prims.nat_succ, &id.addr) && spine.len() == 1 => {
         Some(&spine[0])
       }

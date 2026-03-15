@@ -12,7 +12,7 @@ mod tests {
   };
   use crate::ix::kernel::tc::TypeChecker;
   use crate::ix::kernel::types::*;
-  use crate::ix::kernel::value::{Head, ValInner};
+  use crate::ix::kernel::value::{Head, ValInner, empty_env};
   use crate::lean::nat::Nat;
 
   // ==========================================================================
@@ -130,7 +130,7 @@ mod tests {
     e: &KExpr<Meta>,
   ) -> Result<KExpr<Meta>, String> {
     let mut tc = TypeChecker::new(env, prims);
-    let val = tc.eval(e, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
+    let val = tc.eval(e, &empty_env()).map_err(|e| format!("{e}"))?;
     tc.quote(&val, 0).map_err(|e| format!("{e}"))
   }
 
@@ -141,7 +141,7 @@ mod tests {
     e: &KExpr<Meta>,
   ) -> Result<KExpr<Meta>, String> {
     let mut tc = TypeChecker::new(env, prims);
-    let val = tc.eval(e, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
+    let val = tc.eval(e, &empty_env()).map_err(|e| format!("{e}"))?;
     let w = tc.whnf_val(&val, 0).map_err(|e| format!("{e}"))?;
     tc.quote(&w, 0).map_err(|e| format!("{e}"))
   }
@@ -155,7 +155,7 @@ mod tests {
   ) -> Result<KExpr<Meta>, String> {
     let mut tc = TypeChecker::new(env, prims);
     tc.quot_init = quot_init;
-    let val = tc.eval(e, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
+    let val = tc.eval(e, &empty_env()).map_err(|e| format!("{e}"))?;
     let w = tc.whnf_val(&val, 0).map_err(|e| format!("{e}"))?;
     tc.quote(&w, 0).map_err(|e| format!("{e}"))
   }
@@ -168,8 +168,8 @@ mod tests {
     b: &KExpr<Meta>,
   ) -> Result<bool, String> {
     let mut tc = TypeChecker::new(env, prims);
-    let va = tc.eval(a, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
-    let vb = tc.eval(b, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
+    let va = tc.eval(a, &empty_env()).map_err(|e| format!("{e}"))?;
+    let vb = tc.eval(b, &empty_env()).map_err(|e| format!("{e}"))?;
     tc.is_def_eq(&va, &vb).map_err(|e| format!("{e}"))
   }
 
@@ -192,7 +192,7 @@ mod tests {
     e: &KExpr<Meta>,
   ) -> Result<Option<Address>, String> {
     let mut tc = TypeChecker::new(env, prims);
-    let val = tc.eval(e, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
+    let val = tc.eval(e, &empty_env()).map_err(|e| format!("{e}"))?;
     let w = tc.whnf_val(&val, 0).map_err(|e| format!("{e}"))?;
     match w.inner() {
       ValInner::Neutral {
@@ -226,7 +226,8 @@ mod tests {
         value,
         hints,
         safety: DefinitionSafety::Safe,
-        all: vec![MetaId::from_addr(addr.clone())],
+        lean_all: vec![MetaId::from_addr(addr.clone())],
+        canonical_block: vec![MetaId::from_addr(addr.clone())],
       }),
     );
   }
@@ -258,7 +259,8 @@ mod tests {
         },
         value,
         is_unsafe: false,
-        all: vec![MetaId::from_addr(addr.clone())],
+        lean_all: vec![MetaId::from_addr(addr.clone())],
+        canonical_block: vec![MetaId::from_addr(addr.clone())],
       }),
     );
   }
@@ -274,7 +276,8 @@ mod tests {
           level_params: vec![],
         },
         value,
-        all: vec![MetaId::from_addr(addr.clone())],
+        lean_all: vec![MetaId::from_addr(addr.clone())],
+        canonical_block: vec![MetaId::from_addr(addr.clone())],
       }),
     );
   }
@@ -301,7 +304,8 @@ mod tests {
         },
         num_params,
         num_indices,
-        all: all.into_iter().map(MetaId::from_addr).collect(),
+        lean_all: all.iter().map(|a| MetaId::from_addr(a.clone())).collect(),
+        canonical_block: all.iter().map(|a| MetaId::from_addr(a.clone())).collect(),
         ctors: ctors.into_iter().map(MetaId::from_addr).collect(),
         num_nested: 0,
         is_rec,
@@ -361,7 +365,9 @@ mod tests {
           name: anon(),
           level_params: vec![],
         },
-        all: all.into_iter().map(MetaId::from_addr).collect(),
+        lean_all: all.iter().map(|a| MetaId::from_addr(a.clone())).collect(),
+        canonical_block: all.iter().map(|a| MetaId::from_addr(a.clone())).collect(),
+        induct_block: all.into_iter().map(MetaId::from_addr).collect(),
         num_params,
         num_indices,
         num_motives,
@@ -754,7 +760,7 @@ mod tests {
     (env, pair_ind, pair_ctor)
   }
 
-  fn empty_env() -> KEnv<Meta> {
+  fn empty_kenv() -> KEnv<Meta> {
     KEnv::default()
   }
 
@@ -766,7 +772,7 @@ mod tests {
 
   #[test]
   fn eval_quote_sort_roundtrip() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     assert_eq!(eval_quote(&env, &prims, &prop()).unwrap(), prop());
     assert_eq!(eval_quote(&env, &prims, &ty()).unwrap(), ty());
@@ -774,7 +780,7 @@ mod tests {
 
   #[test]
   fn eval_quote_lit_roundtrip() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     assert_eq!(
       eval_quote(&env, &prims, &nat_lit(42)).unwrap(),
@@ -788,7 +794,7 @@ mod tests {
 
   #[test]
   fn eval_quote_lambda_roundtrip() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let id_lam = lam(ty(), bv(0));
     assert_eq!(eval_quote(&env, &prims, &id_lam).unwrap(), id_lam);
@@ -798,7 +804,7 @@ mod tests {
 
   #[test]
   fn eval_quote_pi_roundtrip() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let p = pi(ty(), bv(0));
     assert_eq!(eval_quote(&env, &prims, &p).unwrap(), p);
@@ -810,7 +816,7 @@ mod tests {
 
   #[test]
   fn beta_id_applied() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     // (λx. x) 5 = 5
     let e = app(lam(ty(), bv(0)), nat_lit(5));
@@ -819,7 +825,7 @@ mod tests {
 
   #[test]
   fn beta_const_applied() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     // (λx. 42) 5 = 42
     let e = app(lam(ty(), nat_lit(42)), nat_lit(5));
@@ -828,7 +834,7 @@ mod tests {
 
   #[test]
   fn beta_fst_snd() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     // (λx. λy. x) 1 2 = 1
     let fst = app(
@@ -846,7 +852,7 @@ mod tests {
 
   #[test]
   fn beta_nested() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     // (λf. λx. f x) (λy. y) 7 = 7
     let e = app(
@@ -861,7 +867,7 @@ mod tests {
 
   #[test]
   fn beta_partial_application() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     // (λx. λy. x) 3 = λy. 3
     let e = app(lam(ty(), lam(ty(), bv(1))), nat_lit(3));
@@ -875,7 +881,7 @@ mod tests {
 
   #[test]
   fn let_reduction() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     // let x := 5 in x = 5
     assert_eq!(
@@ -914,7 +920,7 @@ mod tests {
 
   #[test]
   fn nat_add() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let e = app(
       app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(2)),
@@ -925,7 +931,7 @@ mod tests {
 
   #[test]
   fn nat_mul() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let e = app(
       app(cst(&prims.nat_mul.as_ref().unwrap().addr), nat_lit(4)),
@@ -936,7 +942,7 @@ mod tests {
 
   #[test]
   fn nat_sub() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let e = app(
       app(cst(&prims.nat_sub.as_ref().unwrap().addr), nat_lit(10)),
@@ -953,7 +959,7 @@ mod tests {
 
   #[test]
   fn nat_pow() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let e = app(
       app(cst(&prims.nat_pow.as_ref().unwrap().addr), nat_lit(2)),
@@ -964,7 +970,7 @@ mod tests {
 
   #[test]
   fn nat_succ() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let e = app(cst(&prims.nat_succ.as_ref().unwrap().addr), nat_lit(41));
     assert_eq!(whnf_quote(&env, &prims, &e).unwrap(), nat_lit(42));
@@ -972,7 +978,7 @@ mod tests {
 
   #[test]
   fn nat_mod_div() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let e = app(
       app(cst(&prims.nat_mod.as_ref().unwrap().addr), nat_lit(17)),
@@ -988,7 +994,7 @@ mod tests {
 
   #[test]
   fn nat_beq_ble() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let beq_true = app(
       app(cst(&prims.nat_beq.as_ref().unwrap().addr), nat_lit(5)),
@@ -1028,7 +1034,7 @@ mod tests {
 
   #[test]
   fn large_nat() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let e = app(
       app(cst(&prims.nat_pow.as_ref().unwrap().addr), nat_lit(2)),
@@ -1044,7 +1050,7 @@ mod tests {
 
   #[test]
   fn nat_gcd_land_lor_xor_shift() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     // gcd 12 8 = 4
     let e = app(
@@ -1091,7 +1097,7 @@ mod tests {
 
   #[test]
   fn nat_edge_cases() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     // div 0 0 = 0
     let e = app(
@@ -1153,7 +1159,7 @@ mod tests {
       app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(2)),
       nat_lit(3),
     );
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &def_addr,
@@ -1193,7 +1199,7 @@ mod tests {
   fn delta_lambda() {
     let prims = test_prims();
     let id_addr = mk_addr(10);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &id_addr,
@@ -1233,7 +1239,7 @@ mod tests {
   fn opaque_constants() {
     let prims = test_prims();
     let opaque_addr = mk_addr(100);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_opaque(&mut env, &opaque_addr, ty(), nat_lit(5));
     // Opaque stays stuck
     assert_eq!(
@@ -1258,7 +1264,7 @@ mod tests {
     let id_addr = mk_addr(110);
     let lvl_param = KLevel::param(0, anon());
     let param_sort = KExpr::sort(lvl_param);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &id_addr,
@@ -1283,7 +1289,7 @@ mod tests {
   #[test]
   fn projection_reduction() {
     let prims = test_prims();
-    let (env, pair_ind, pair_ctor) = build_pair_env(empty_env());
+    let (env, pair_ind, pair_ctor) = build_pair_env(empty_kenv());
     // Pair.mk Nat Nat 3 7
     let mk_expr = app(
       app(
@@ -1304,7 +1310,7 @@ mod tests {
   fn stuck_terms() {
     let prims = test_prims();
     let ax_addr = mk_addr(30);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &ax_addr, ty());
     // Axiom stays stuck
     assert_eq!(
@@ -1350,7 +1356,7 @@ mod tests {
         bv(0),
       ),
     );
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &double_addr,
@@ -1390,7 +1396,7 @@ mod tests {
 
   #[test]
   fn higher_order() {
-    let env = empty_env();
+    let env = empty_kenv();
     let prims = test_prims();
     let succ_fn =
       lam(ty(), app(cst(&prims.nat_succ.as_ref().unwrap().addr), bv(0)));
@@ -1408,7 +1414,7 @@ mod tests {
   fn iota_reduction() {
     let prims = test_prims();
     let (env, _nat_ind, zero, succ, rec) =
-      build_my_nat_env(empty_env());
+      build_my_nat_env(empty_kenv());
     let nat_const = cst(&_nat_ind);
     let motive = lam(nat_const.clone(), ty());
     let base = nat_lit(0);
@@ -1438,7 +1444,7 @@ mod tests {
   fn recursive_iota() {
     let prims = test_prims();
     let (env, _nat_ind, zero, succ, rec) =
-      build_my_nat_env(empty_env());
+      build_my_nat_env(empty_kenv());
     let nat_const = cst(&_nat_ind);
     let motive = lam(nat_const.clone(), ty());
     let base = nat_lit(0);
@@ -1476,7 +1482,7 @@ mod tests {
   fn list_rec_nil() {
     let prims = test_prims();
     let (env, _list_ind, nil, _cons, rec) =
-      build_my_list_env(empty_env());
+      build_my_list_env(empty_kenv());
 
     // List.rec α motive nil_case cons_case (nil α) = nil_case
     // We use Type as α, and a trivial motive
@@ -1501,7 +1507,7 @@ mod tests {
   fn list_rec_cons() {
     let prims = test_prims();
     let (env, _list_ind, nil, cons, rec) =
-      build_my_list_env(empty_env());
+      build_my_list_env(empty_kenv());
 
     let alpha = ty();
     let list_alpha = app(cst(&_list_ind), alpha.clone());
@@ -1536,7 +1542,7 @@ mod tests {
   fn k_reduction() {
     let prims = test_prims();
     let (env, true_ind, intro, rec) =
-      build_my_true_env(empty_env());
+      build_my_true_env(empty_kenv());
     let true_const = cst(&true_ind);
     let motive = lam(true_const.clone(), prop());
     let h = cst(&intro);
@@ -1564,7 +1570,7 @@ mod tests {
   fn k_reduction_extended() {
     let prims = test_prims();
     let (env, true_ind, intro, rec) =
-      build_my_true_env(empty_env());
+      build_my_true_env(empty_kenv());
     let true_const = cst(&true_ind);
     let motive = lam(true_const.clone(), prop());
     let h = cst(&intro);
@@ -1592,7 +1598,7 @@ mod tests {
 
     // Non-K recursor stays stuck on axiom
     let (nat_env, nat_ind, _zero, _succ, nat_rec) =
-      build_my_nat_env(empty_env());
+      build_my_nat_env(empty_kenv());
     let nat_motive = lam(cst(&nat_ind), ty());
     let nat_base = nat_lit(0);
     let nat_step = lam(
@@ -1628,7 +1634,7 @@ mod tests {
     let p_addr = mk_addr(129);
     let ax1 = mk_addr(130);
     let ax2 = mk_addr(131);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &p_addr, prop()); // P : Prop
     add_axiom(&mut env, &ax1, cst(&p_addr)); // p1 : P
     add_axiom(&mut env, &ax2, cst(&p_addr)); // p2 : P
@@ -1641,7 +1647,7 @@ mod tests {
     // Two distinct propositions (type Prop) are NOT defEq
     let q1 = mk_addr(132);
     let q2 = mk_addr(133);
-    let mut env2 = empty_env();
+    let mut env2 = empty_kenv();
     add_axiom(&mut env2, &q1, prop()); // Q1 : Prop
     add_axiom(&mut env2, &q2, prop()); // Q2 : Prop
     assert_eq!(
@@ -1652,7 +1658,7 @@ mod tests {
     // Two Type axioms are NOT defEq
     let t1 = mk_addr(134);
     let t2 = mk_addr(135);
-    let mut env3 = empty_env();
+    let mut env3 = empty_kenv();
     add_axiom(&mut env3, &t1, ty());
     add_axiom(&mut env3, &t2, ty());
     assert_eq!(
@@ -1666,7 +1672,7 @@ mod tests {
   #[test]
   fn is_def_eq_basic() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // Sort equality
     assert!(is_def_eq(&env, &prims, &prop(), &prop()).unwrap());
     assert!(is_def_eq(&env, &prims, &ty(), &ty()).unwrap());
@@ -1691,7 +1697,7 @@ mod tests {
     let prims = test_prims();
     let d1 = mk_addr(60);
     let d2 = mk_addr(61);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &d1,
@@ -1715,7 +1721,7 @@ mod tests {
   fn is_def_eq_eta() {
     let prims = test_prims();
     let f_addr = mk_addr(62);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &f_addr,
@@ -1734,7 +1740,7 @@ mod tests {
   #[test]
   fn is_def_eq_nat_prims() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     let add_expr = app(
       app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(2)),
       nat_lit(3),
@@ -1748,7 +1754,7 @@ mod tests {
   #[test]
   fn def_eq_offset() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // Nat.succ 0 == 1
     let succ0 = app(cst(&prims.nat_succ.as_ref().unwrap().addr), nat_lit(0));
     assert!(is_def_eq(&env, &prims, &succ0, &nat_lit(1)).unwrap());
@@ -1782,7 +1788,7 @@ mod tests {
   #[test]
   fn def_eq_let() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // let x := 5 in x == 5
     assert!(
       is_def_eq(
@@ -1817,7 +1823,7 @@ mod tests {
   #[test]
   fn bool_true_reflection() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     let beq55 = app(
       app(cst(&prims.nat_beq.as_ref().unwrap().addr), nat_lit(5)),
       nat_lit(5),
@@ -1853,7 +1859,7 @@ mod tests {
     let prims = test_prims();
     let unit_ind = mk_addr(140);
     let mk_addr2 = mk_addr(141);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_inductive(
       &mut env,
       &unit_ind,
@@ -1891,7 +1897,7 @@ mod tests {
   #[test]
   fn struct_eta_def_eq() {
     let prims = test_prims();
-    let (env, pair_ind, pair_ctor) = build_pair_env(empty_env());
+    let (env, pair_ind, pair_ctor) = build_pair_env(empty_kenv());
     // mk 3 7 == mk 3 7
     let mk37 = app(
       app(app(app(cst(&pair_ctor), ty()), ty()), nat_lit(3)),
@@ -1913,7 +1919,7 @@ mod tests {
   #[test]
   fn struct_eta_axiom() {
     let prims = test_prims();
-    let (mut env, pair_ind, pair_ctor) = build_pair_env(empty_env());
+    let (mut env, pair_ind, pair_ctor) = build_pair_env(empty_kenv());
     let ax_addr = mk_addr(290);
     let pair_type = app(app(cst(&pair_ind), ty()), ty());
     add_axiom(&mut env, &ax_addr, pair_type);
@@ -1956,7 +1962,7 @@ mod tests {
     let wrap_ind = mk_addr(170);
     let wrap_mk = mk_addr(171);
     let wrap_rec = mk_addr(172);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
 
     add_inductive(
       &mut env,
@@ -2049,7 +2055,7 @@ mod tests {
     let quot_lift_addr = mk_addr(152);
     let quot_ind_addr = mk_addr(153);
 
-    let mut env = empty_env();
+    let mut env = empty_kenv();
 
     // Quot.{u} : (α : Sort u) → (α → α → Prop) → Sort u
     let quot_type =
@@ -2142,7 +2148,7 @@ mod tests {
   #[test]
   fn infer_sorts() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // Sort 0 : Sort 1
     assert_eq!(infer_quote(&env, &prims, &prop()).unwrap(), srt(1));
     // Sort 1 : Sort 2
@@ -2152,7 +2158,7 @@ mod tests {
   #[test]
   fn infer_literals() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // natLit 42 : Nat
     assert_eq!(
       infer_quote(&env, &prims, &nat_lit(42)).unwrap(),
@@ -2169,7 +2175,7 @@ mod tests {
   fn infer_lambda() {
     let prims = test_prims();
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
     // λ(x : Nat). x : Nat → Nat
@@ -2184,7 +2190,7 @@ mod tests {
   fn infer_pi() {
     let prims = test_prims();
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
     // (Nat → Nat) : Sort 1
@@ -2201,7 +2207,7 @@ mod tests {
   fn infer_app() {
     let prims = test_prims();
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
     // (λx:Nat. x) 5 : Nat
@@ -2216,7 +2222,7 @@ mod tests {
   fn infer_let() {
     let prims = test_prims();
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
     // let x : Nat := 5 in x : Nat
@@ -2232,7 +2238,7 @@ mod tests {
   #[test]
   fn infer_errors() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // bvar out of range
     assert!(infer_quote(&env, &prims, &bv(99)).is_err());
     // unknown const
@@ -2251,7 +2257,7 @@ mod tests {
     let prims = test_prims();
     let abbrev_addr = mk_addr(180);
     let reg_addr = mk_addr(181);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &abbrev_addr,
@@ -2309,7 +2315,7 @@ mod tests {
     let v_sort = KExpr::sort(v);
     let const_type = pi(u_sort.clone(), pi(v_sort.clone(), u_sort.clone()));
     let const_body = lam(u_sort, lam(v_sort, bv(1)));
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &const_addr,
@@ -2351,7 +2357,7 @@ mod tests {
   #[test]
   fn string_def_eq() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // Same strings
     assert!(
       is_def_eq(&env, &prims, &str_lit("hello"), &str_lit("hello")).unwrap()
@@ -2403,7 +2409,7 @@ mod tests {
   fn eta_extended() {
     let prims = test_prims();
     let f_addr = mk_addr(220);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &f_addr,
@@ -2446,7 +2452,7 @@ mod tests {
     let prims = test_prims();
     let d1 = mk_addr(200);
     let d2 = mk_addr(201);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &d1,
@@ -2523,7 +2529,7 @@ mod tests {
   #[test]
   fn def_eq_complex() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // 2+3 == 3+2 (via reduction)
     let add23 = app(
       app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(2)),
@@ -2553,7 +2559,7 @@ mod tests {
   #[test]
   fn universe_extended() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // Sort (max 0 1) == Sort 1
     let max_sort = KExpr::sort(KLevel::max(KLevel::zero(), KLevel::succ(KLevel::zero())));
     assert!(is_def_eq(&env, &prims, &max_sort, &ty()).unwrap());
@@ -2581,7 +2587,7 @@ mod tests {
     let c = mk_addr(273);
     let d = mk_addr(274);
     let e = mk_addr(275);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &a,
@@ -2630,7 +2636,7 @@ mod tests {
   #[test]
   fn nat_lit_ctor_def_eq() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // 0 == Nat.zero
     assert!(
       is_def_eq(
@@ -2699,7 +2705,7 @@ mod tests {
   #[test]
   fn fvar_comparison() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // Identical lambdas
     assert!(
       is_def_eq(
@@ -2748,12 +2754,12 @@ mod tests {
     let prims = test_prims();
     // Π A. A → A
     let dep_pi = pi(ty(), pi(bv(0), bv(1)));
-    let env = empty_env();
+    let env = empty_kenv();
     assert!(is_def_eq(&env, &prims, &dep_pi, &dep_pi).unwrap());
 
     // Reduced domains
     let d_ty = mk_addr(200); // different from other tests
-    let mut env2 = empty_env();
+    let mut env2 = empty_kenv();
     add_def(
       &mut env2,
       &d_ty,
@@ -2801,7 +2807,7 @@ mod tests {
     let true_def = mk_addr(46);
     let false_def = mk_addr(47);
     let nat_def = mk_addr(48);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &true_def,
@@ -2855,7 +2861,7 @@ mod tests {
   fn iota_edge_cases() {
     let prims = test_prims();
     let (env, nat_ind, zero, succ, rec) =
-      build_my_nat_env(empty_env());
+      build_my_nat_env(empty_kenv());
     let nat_const = cst(&nat_ind);
     let motive = lam(nat_const.clone(), ty());
     let base = nat_lit(0);
@@ -2942,7 +2948,7 @@ mod tests {
     let f_addr = mk_addr(99);
     let g_addr = mk_addr(98);
     let f_body = lam(ty(), lam(ty(), lam(ty(), lam(ty(), bv(3)))));
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(
       &mut env,
       &f_addr,
@@ -2989,7 +2995,7 @@ mod tests {
   #[test]
   fn proj_def_eq() {
     let prims = test_prims();
-    let (mut env, pair_ind, pair_ctor) = build_pair_env(empty_env());
+    let (mut env, pair_ind, pair_ctor) = build_pair_env(empty_kenv());
     let mk37 = app(
       app(app(app(cst(&pair_ctor), ty()), ty()), nat_lit(3)),
       nat_lit(7),
@@ -3031,7 +3037,7 @@ mod tests {
   fn errors_extended() {
     let prims = test_prims();
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
 
@@ -3075,7 +3081,7 @@ mod tests {
 
     let prims = test_prims();
     let (mut env, nat_ind, zero, succ, rec) =
-      build_my_nat_env(empty_env());
+      build_my_nat_env(empty_kenv());
     let nat_const = cst(&nat_ind);
 
     // myAdd : MyNat → MyNat → MyNat
@@ -3127,7 +3133,7 @@ mod tests {
   #[test]
   fn proof_irrel_basic() {
     let prims = test_prims();
-    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_env());
+    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_kenv());
     let p1 = mk_addr(300);
     let p2 = mk_addr(301);
     add_axiom(&mut env, &p1, cst(&true_ind));
@@ -3140,7 +3146,7 @@ mod tests {
   fn proof_irrel_different_prop_types() {
     let prims = test_prims();
     // Build MyTrue
-    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_env());
+    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_kenv());
     // Build MyFalse : Prop (empty, no ctors)
     let false_ind = mk_addr(302);
     add_inductive(
@@ -3162,7 +3168,7 @@ mod tests {
   #[test]
   fn proof_irrel_not_prop() {
     let prims = test_prims();
-    let (mut env, nat_ind, _zero, _succ, _rec) = build_my_nat_env(empty_env());
+    let (mut env, nat_ind, _zero, _succ, _rec) = build_my_nat_env(empty_kenv());
     let n1 = mk_addr(305);
     let n2 = mk_addr(306);
     add_axiom(&mut env, &n1, cst(&nat_ind));
@@ -3174,7 +3180,7 @@ mod tests {
   #[test]
   fn proof_irrel_under_lambda() {
     let prims = test_prims();
-    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_env());
+    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_kenv());
     let p1 = mk_addr(307);
     let p2 = mk_addr(308);
     add_axiom(&mut env, &p1, cst(&true_ind));
@@ -3188,7 +3194,7 @@ mod tests {
   #[test]
   fn proof_irrel_intro_vs_axiom() {
     let prims = test_prims();
-    let (mut env, true_ind, intro, _rec) = build_my_true_env(empty_env());
+    let (mut env, true_ind, intro, _rec) = build_my_true_env(empty_kenv());
     let p1 = mk_addr(309);
     add_axiom(&mut env, &p1, cst(&true_ind));
     // The constructor intro and an axiom p1 are both proofs of MyTrue → defeq
@@ -3202,7 +3208,7 @@ mod tests {
   #[test]
   fn nat_large_literal_eq() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // O(1) literal comparison for large nats
     assert!(
       is_def_eq(&env, &prims, &nat_lit(1_000_000), &nat_lit(1_000_000)).unwrap()
@@ -3215,7 +3221,7 @@ mod tests {
   #[test]
   fn nat_succ_symbolic() {
     let prims = test_prims();
-    let (mut env, nat_ind, _zero, _succ, _rec) = build_my_nat_env(empty_env());
+    let (mut env, nat_ind, _zero, _succ, _rec) = build_my_nat_env(empty_kenv());
     let x = mk_addr(310);
     let y = mk_addr(311);
     add_axiom(&mut env, &x, cst(&nat_ind));
@@ -3232,7 +3238,7 @@ mod tests {
   #[test]
   fn nat_lit_zero_roundtrip() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // nat_lit(0) whnf stays as nat_lit(0)
     assert_eq!(whnf_quote(&env, &prims, &nat_lit(0)).unwrap(), nat_lit(0));
   }
@@ -3245,7 +3251,7 @@ mod tests {
   fn lazy_delta_same_head_axiom_spine() {
     let prims = test_prims();
     let f = mk_addr(312);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &f, pi(ty(), pi(ty(), ty())));
     // f 1 2 == f 1 2 (same head, same spine → true)
     let fa = app(app(cst(&f), nat_lit(1)), nat_lit(2));
@@ -3260,7 +3266,7 @@ mod tests {
   fn lazy_delta_theorem_unfolded() {
     let prims = test_prims();
     let thm_addr = mk_addr(313);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     // Theorems ARE unfolded by delta in defEq
     add_theorem(&mut env, &thm_addr, ty(), nat_lit(5));
     assert!(
@@ -3280,7 +3286,7 @@ mod tests {
     let a = mk_addr(314);
     let b = mk_addr(315);
     let c = mk_addr(316);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_def(&mut env, &a, ty(), nat_lit(7), 0, ReducibilityHints::Abbrev);
     add_def(&mut env, &b, ty(), cst(&a), 0, ReducibilityHints::Abbrev);
     add_def(&mut env, &c, ty(), cst(&b), 0, ReducibilityHints::Abbrev);
@@ -3296,7 +3302,7 @@ mod tests {
   #[test]
   fn k_reduction_direct_ctor() {
     let prims = test_prims();
-    let (env, _true_ind, intro, rec) = build_my_true_env(empty_env());
+    let (env, _true_ind, intro, rec) = build_my_true_env(empty_kenv());
     // rec (λ_. Nat) 42 intro → 42
     let rec_expr = app(
       app(
@@ -3311,7 +3317,7 @@ mod tests {
   #[test]
   fn k_reduction_axiom_major() {
     let prims = test_prims();
-    let (mut env, true_ind, _intro, rec) = build_my_true_env(empty_env());
+    let (mut env, true_ind, _intro, rec) = build_my_true_env(empty_kenv());
     let ax = mk_addr(317);
     add_axiom(&mut env, &ax, cst(&true_ind));
     // K-rec on axiom p : MyTrue still reduces (toCtorWhenK)
@@ -3328,7 +3334,7 @@ mod tests {
   #[test]
   fn k_reduction_non_k_recursor_stays_stuck() {
     let prims = test_prims();
-    let (mut env, nat_ind, _zero, _succ, rec) = build_my_nat_env(empty_env());
+    let (mut env, nat_ind, _zero, _succ, rec) = build_my_nat_env(empty_kenv());
     let ax = mk_addr(318);
     add_axiom(&mut env, &ax, cst(&nat_ind));
     // MyNat.rec is NOT K (K=false). Applied to axiom of correct type stays stuck.
@@ -3357,7 +3363,7 @@ mod tests {
     let list_ind = mk_addr(319);
     let list_nil = mk_addr(320);
     let list_cons = mk_addr(321);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_inductive(
       &mut env,
       &list_ind,
@@ -3398,7 +3404,7 @@ mod tests {
     // Build a Prop type with 1 ctor, 0 fields (both unit-like and proof-irrel)
     let p_ind = mk_addr(324);
     let p_mk = mk_addr(325);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_inductive(
       &mut env, &p_ind, prop(),
       vec![p_mk.clone()],
@@ -3417,7 +3423,7 @@ mod tests {
   #[test]
   fn unit_like_with_fields_not_defeq() {
     let prims = test_prims();
-    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_env());
+    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_kenv());
     let ax1 = mk_addr(328);
     let ax2 = mk_addr(329);
     let pair_ty = app(app(cst(&pair_ind), ty()), ty());
@@ -3434,7 +3440,7 @@ mod tests {
   #[test]
   fn string_lit_multichar() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     let char_type = cst(&prims.char_type.as_ref().unwrap().addr);
     let mk_char = |n: u64| app(cst(&prims.char_mk.as_ref().unwrap().addr), nat_lit(n));
     let nil = app(
@@ -3468,7 +3474,7 @@ mod tests {
     let prims = test_prims();
     let f_addr = mk_addr(330);
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     add_axiom(&mut env, &f_addr, pi(cst(&nat_addr), cst(&nat_addr)));
     // f == λx. f x (eta)
@@ -3482,7 +3488,7 @@ mod tests {
     let prims = test_prims();
     let f_addr = mk_addr(331);
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     let nat = cst(&nat_addr);
     add_axiom(&mut env, &f_addr, pi(nat.clone(), pi(nat.clone(), nat.clone())));
@@ -3503,7 +3509,7 @@ mod tests {
     expected_type: &KExpr<Meta>,
   ) -> Result<(), String> {
     let mut tc = TypeChecker::new(env, prims);
-    let ty_val = tc.eval(expected_type, &std::rc::Rc::new(vec![])).map_err(|e| format!("{e}"))?;
+    let ty_val = tc.eval(expected_type, &empty_env()).map_err(|e| format!("{e}"))?;
     tc.check(term, &ty_val).map_err(|e| format!("{e}"))?;
     Ok(())
   }
@@ -3512,7 +3518,7 @@ mod tests {
   fn check_lam_against_pi() {
     let prims = test_prims();
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     let nat = cst(&nat_addr);
     // λ(x:Nat). x checked against (Nat → Nat) succeeds
@@ -3526,7 +3532,7 @@ mod tests {
     let prims = test_prims();
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
     let bool_addr = prims.bool_type.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     add_axiom(&mut env, &bool_addr, ty());
     let nat = cst(&nat_addr);
@@ -3548,7 +3554,7 @@ mod tests {
     let quot_mk_addr = mk_addr(151);
     let quot_lift_addr = mk_addr(152);
     let quot_ind_addr = mk_addr(153);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
 
     let quot_type = pi(ty(), pi(pi(bv(0), pi(bv(1), prop())), bv(1)));
     add_quot(&mut env, &quot_addr, quot_type, QuotKind::Type, 1);
@@ -3607,7 +3613,7 @@ mod tests {
   #[test]
   fn whnf_nat_prim_reduces_literals() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // Nat.add 2 3 → 5 via primitive reduction
     let add_expr = app(
       app(cst(&prims.nat_add.as_ref().unwrap().addr), nat_lit(2)),
@@ -3627,7 +3633,7 @@ mod tests {
     let prims = test_prims();
     let x = mk_addr(332);
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     add_axiom(&mut env, &x, cst(&nat_addr));
     // Nat.add x 3 stays stuck (x is symbolic)
@@ -3650,7 +3656,7 @@ mod tests {
   #[test]
   fn level_max_commutative() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     let u = KLevel::param(0, anon());
     let v = KLevel::param(1, anon());
     // Sort (max u v) == Sort (max v u)
@@ -3662,7 +3668,7 @@ mod tests {
   #[test]
   fn level_imax_zero_rhs() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     let u = KLevel::param(0, anon());
     // imax(u, 0) should normalize to 0
     let imax_sort = KExpr::sort(KLevel::imax(u, KLevel::zero()));
@@ -3672,7 +3678,7 @@ mod tests {
   #[test]
   fn level_succ_not_zero() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // Sort 1 != Sort 0
     assert!(!is_def_eq(&env, &prims, &ty(), &prop()).unwrap());
   }
@@ -3680,7 +3686,7 @@ mod tests {
   #[test]
   fn level_param_self_eq() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     let u = KLevel::param(0, anon());
     let s = KExpr::sort(u);
     assert!(is_def_eq(&env, &prims, &s, &s).unwrap());
@@ -3693,7 +3699,7 @@ mod tests {
   #[test]
   fn proj_stuck_on_axiom() {
     let prims = test_prims();
-    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_env());
+    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_kenv());
     let ax = mk_addr(333);
     let pair_ty = app(app(cst(&pair_ind), ty()), ty());
     add_axiom(&mut env, &ax, pair_ty);
@@ -3707,7 +3713,7 @@ mod tests {
   #[test]
   fn proj_different_indices_not_defeq() {
     let prims = test_prims();
-    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_env());
+    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_kenv());
     let ax = mk_addr(334);
     let pair_ty = app(app(cst(&pair_ind), ty()), ty());
     add_axiom(&mut env, &ax, pair_ty);
@@ -3720,7 +3726,7 @@ mod tests {
   #[test]
   fn proj_nested_pair() {
     let prims = test_prims();
-    let (env, pair_ind, pair_ctor) = build_pair_env(empty_env());
+    let (env, pair_ind, pair_ctor) = build_pair_env(empty_kenv());
     // mk (mk 1 2) (mk 3 4)
     let inner1 = app(app(app(app(cst(&pair_ctor), ty()), ty()), nat_lit(1)), nat_lit(2));
     let inner2 = app(app(app(app(cst(&pair_ctor), ty()), ty()), nat_lit(3)), nat_lit(4));
@@ -3749,7 +3755,7 @@ mod tests {
   fn opaque_self_eq() {
     let prims = test_prims();
     let o = mk_addr(335);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_opaque(&mut env, &o, ty(), nat_lit(5));
     // Opaque constant is defeq to itself (by pointer/const equality)
     assert!(is_def_eq(&env, &prims, &cst(&o), &cst(&o)).unwrap());
@@ -3759,7 +3765,7 @@ mod tests {
   fn theorem_self_eq() {
     let prims = test_prims();
     let t = mk_addr(336);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_theorem(&mut env, &t, ty(), nat_lit(5));
     // Theorem constant is defeq to itself
     assert!(is_def_eq(&env, &prims, &cst(&t), &cst(&t)).unwrap());
@@ -3774,7 +3780,7 @@ mod tests {
   #[test]
   fn let_in_defeq() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // (let x := 5 in x + x) == 10
     let add_xx = app(
       app(cst(&prims.nat_add.as_ref().unwrap().addr), bv(0)),
@@ -3787,7 +3793,7 @@ mod tests {
   #[test]
   fn nested_let_defeq() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // let x := 2 in let y := 3 in x + y == 5
     let inner = let_e(
       ty(),
@@ -3801,7 +3807,7 @@ mod tests {
   #[test]
   fn beta_inside_defeq() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // (λx.x) 5 == (λy.y) 5
     let a = app(lam(ty(), bv(0)), nat_lit(5));
     let b = app(lam(ty(), bv(0)), nat_lit(5));
@@ -3813,7 +3819,7 @@ mod tests {
   #[test]
   fn sort_defeq_levels() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // Sort 0 == Sort 0
     assert!(is_def_eq(&env, &prims, &prop(), &prop()).unwrap());
     // Sort 0 != Sort 1
@@ -3844,7 +3850,7 @@ mod tests {
   #[test]
   fn check_mynat_ind_typechecks() {
     let prims = test_prims();
-    let (env, nat_ind, zero, succ, rec) = build_my_nat_env(empty_env());
+    let (env, nat_ind, zero, succ, rec) = build_my_nat_env(empty_kenv());
     assert_typecheck_ok(&env, &prims, &nat_ind);
     assert_typecheck_ok(&env, &prims, &zero);
     assert_typecheck_ok(&env, &prims, &succ);
@@ -3854,7 +3860,7 @@ mod tests {
   #[test]
   fn check_mytrue_ind_typechecks() {
     let prims = test_prims();
-    let (env, true_ind, intro, rec) = build_my_true_env(empty_env());
+    let (env, true_ind, intro, rec) = build_my_true_env(empty_kenv());
     assert_typecheck_ok(&env, &prims, &true_ind);
     assert_typecheck_ok(&env, &prims, &intro);
     assert_typecheck_ok(&env, &prims, &rec);
@@ -3863,7 +3869,7 @@ mod tests {
   #[test]
   fn check_pair_ind_typechecks() {
     let prims = test_prims();
-    let (env, pair_ind, pair_ctor) = build_pair_env(empty_env());
+    let (env, pair_ind, pair_ctor) = build_pair_env(empty_kenv());
     assert_typecheck_ok(&env, &prims, &pair_ind);
     assert_typecheck_ok(&env, &prims, &pair_ctor);
   }
@@ -3871,7 +3877,7 @@ mod tests {
   #[test]
   fn check_axiom_typechecks() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let ax_addr = mk_addr(500);
     add_axiom(&mut env, &ax_addr, ty());
     assert_typecheck_ok(&env, &prims, &ax_addr);
@@ -3880,7 +3886,7 @@ mod tests {
   #[test]
   fn check_opaque_typechecks() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let op_addr = mk_addr(501);
     add_opaque(&mut env, &op_addr, srt(2), ty());
     assert_typecheck_ok(&env, &prims, &op_addr);
@@ -3889,7 +3895,7 @@ mod tests {
   #[test]
   fn check_theorem_typechecks() {
     let prims = test_prims();
-    let (mut env, true_ind, intro, _rec) = build_my_true_env(empty_env());
+    let (mut env, true_ind, intro, _rec) = build_my_true_env(empty_kenv());
     let thm_addr = mk_addr(502);
     add_theorem(&mut env, &thm_addr, cst(&true_ind), cst(&intro));
     assert_typecheck_ok(&env, &prims, &thm_addr);
@@ -3898,7 +3904,7 @@ mod tests {
   #[test]
   fn check_definition_typechecks() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let def_addr = mk_addr(503);
     add_def(&mut env, &def_addr, srt(2), ty(), 0, ReducibilityHints::Abbrev);
     assert_typecheck_ok(&env, &prims, &def_addr);
@@ -3909,7 +3915,7 @@ mod tests {
   #[test]
   fn check_ctor_param_count_mismatch() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let nat_ind = mk_addr(510);
     let zero_addr = mk_addr(511);
     // MyNat : Type
@@ -3926,7 +3932,7 @@ mod tests {
   #[test]
   fn check_ctor_return_type_not_inductive() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let my_ind = mk_addr(515);
     let my_ctor = mk_addr(516);
     let bogus = mk_addr(517);
@@ -3946,7 +3952,7 @@ mod tests {
   #[test]
   fn positivity_ok_no_occurrence() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let t_ind = mk_addr(520);
     let t_mk = mk_addr(521);
     let nat_addr = mk_addr(522);
@@ -3964,7 +3970,7 @@ mod tests {
   #[test]
   fn positivity_ok_direct() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let t_ind = mk_addr(525);
     let t_mk = mk_addr(526);
     add_inductive(
@@ -3980,7 +3986,7 @@ mod tests {
   #[test]
   fn positivity_violation_negative() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let t_ind = mk_addr(530);
     let t_mk = mk_addr(531);
     let nat_addr = mk_addr(532);
@@ -3999,7 +4005,7 @@ mod tests {
   #[test]
   fn positivity_ok_covariant() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let t_ind = mk_addr(535);
     let t_mk = mk_addr(536);
     let nat_addr = mk_addr(537);
@@ -4021,7 +4027,7 @@ mod tests {
   fn k_flag_ok() {
     // Build a MyTrue-like inductive with properly annotated recursor RHS
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let true_ind = mk_addr(538);
     let intro = mk_addr(539);
     let rec = mk_addr(5390);
@@ -4060,7 +4066,7 @@ mod tests {
   #[test]
   fn k_flag_fail_not_prop() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let t_ind = mk_addr(540);
     let t_mk = mk_addr(541);
     let t_rec = mk_addr(542);
@@ -4092,7 +4098,7 @@ mod tests {
   #[test]
   fn k_flag_fail_multiple_ctors() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let p_ind = mk_addr(545);
     let p_mk1 = mk_addr(546);
     let p_mk2 = mk_addr(547);
@@ -4132,7 +4138,7 @@ mod tests {
   #[test]
   fn k_flag_fail_has_fields() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let p_ind = mk_addr(550);
     let p_mk = mk_addr(551);
     let p_rec = mk_addr(552);
@@ -4172,7 +4178,7 @@ mod tests {
   #[test]
   fn rec_rules_count_mismatch() {
     let prims = test_prims();
-    let (mut env, nat_ind, zero, _succ, _rec) = build_my_nat_env(empty_env());
+    let (mut env, nat_ind, zero, _succ, _rec) = build_my_nat_env(empty_kenv());
     let bad_rec = mk_addr(560);
     // Recursor with 1 rule but MyNat has 2 ctors
     let rec_type = pi(
@@ -4195,7 +4201,7 @@ mod tests {
   #[test]
   fn rec_rules_nfields_mismatch() {
     let prims = test_prims();
-    let (mut env, nat_ind, zero, succ, _rec) = build_my_nat_env(empty_env());
+    let (mut env, nat_ind, zero, succ, _rec) = build_my_nat_env(empty_kenv());
     let bad_rec = mk_addr(565);
     let rec_type = pi(
       pi(cst(&nat_ind), srt(1)),
@@ -4237,7 +4243,7 @@ mod tests {
   fn elim_level_type_large_ok() {
     // Build a MyNat-like inductive with properly annotated recursor RHS
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let nat_ind = mk_addr(5600);
     let zero = mk_addr(5601);
     let succ = mk_addr(5602);
@@ -4312,7 +4318,7 @@ mod tests {
   #[test]
   fn elim_level_prop_to_prop_ok() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let p_ind = mk_addr(570);
     let p_mk1 = mk_addr(571);
     let p_mk2 = mk_addr(572);
@@ -4363,7 +4369,7 @@ mod tests {
   #[test]
   fn elim_level_large_from_prop_multi_ctor_fail() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let p_ind = mk_addr(575);
     let p_mk1 = mk_addr(576);
     let p_mk2 = mk_addr(577);
@@ -4405,7 +4411,7 @@ mod tests {
   #[test]
   fn check_theorem_not_in_prop() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     let thm_addr = mk_addr(580);
     add_theorem(&mut env, &thm_addr, ty(), srt(0));
     assert_typecheck_err(&env, &prims, &thm_addr);
@@ -4414,7 +4420,7 @@ mod tests {
   #[test]
   fn check_theorem_value_mismatch() {
     let prims = test_prims();
-    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_env());
+    let (mut env, true_ind, _intro, _rec) = build_my_true_env(empty_kenv());
     let thm_addr = mk_addr(582);
     // theorem : MyTrue := Prop (wrong value)
     add_theorem(&mut env, &thm_addr, cst(&true_ind), prop());
@@ -4426,7 +4432,7 @@ mod tests {
   #[test]
   fn level_arithmetic_extended() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     let u = KLevel::param(0, anon());
     let v = KLevel::param(1, anon());
     // max(u, 0) = u
@@ -4465,7 +4471,7 @@ mod tests {
   #[test]
   fn nat_pow_overflow() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // 2^63 + 2^63 = 2^64
     let two = nat_lit(2);
     let pow63 = app(app(cst(&prims.nat_pow.as_ref().unwrap().addr), two.clone()), nat_lit(63));
@@ -4477,7 +4483,7 @@ mod tests {
   #[test]
   fn unit_like_with_fields_not_defeq_parity() {
     let prims = test_prims();
-    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_env());
+    let (mut env, pair_ind, _pair_ctor) = build_pair_env(empty_kenv());
     let ax1 = mk_addr(595);
     let ax2 = mk_addr(596);
     let pair_nat_nat = app(app(cst(&pair_ind), ty()), ty());
@@ -4494,7 +4500,7 @@ mod tests {
   #[test]
   fn nat_pow_boundary_guard() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     // Nat.pow 2 16777216 should compute (boundary, exponent = 2^24)
     let pow_boundary = app(
       app(cst(&prims.nat_pow.as_ref().unwrap().addr), nat_lit(2)),
@@ -4502,7 +4508,7 @@ mod tests {
     );
     // Should reduce to a nat lit (not stay stuck)
     let result = whnf_quote(&env, &prims, &pow_boundary).unwrap();
-    match result.0.as_ref() {
+    match result.data() {
       KExprData::Lit(Literal::NatVal(_)) => {} // ok
       other => panic!("expected NatLit, got {other:?}"),
     }
@@ -4520,7 +4526,7 @@ mod tests {
   #[test]
   fn string_lit_3char() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     let char_type = cst(&prims.char_type.as_ref().unwrap().addr);
     let mk_char = |n: u64| app(cst(&prims.char_mk.as_ref().unwrap().addr), nat_lit(n));
     let nil = app(
@@ -4548,7 +4554,7 @@ mod tests {
   #[test]
   fn struct_eta_cross_type_negative() {
     let prims = test_prims();
-    let (mut env, _pair_ind, pair_ctor) = build_pair_env(empty_env());
+    let (mut env, _pair_ind, pair_ctor) = build_pair_env(empty_kenv());
     // Build a second struct Pair2 with same shape but different address
     let pair2_ind = mk_addr(600);
     let pair2_ctor = mk_addr(601);
@@ -4573,7 +4579,7 @@ mod tests {
   #[test]
   fn unit_like_multi_ctor_not_unit() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     // Bool-like type with 2 ctors, 0 fields each — NOT unit-like
     let bool_ind = mk_addr(602);
     let b1 = mk_addr(603);
@@ -4596,7 +4602,7 @@ mod tests {
   #[test]
   fn deep_spine_axiom_heads() {
     let prims = test_prims();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     // Two different axioms with same function type, applied to same arg
     let ax1 = mk_addr(607);
     let ax2 = mk_addr(608);
@@ -4609,7 +4615,7 @@ mod tests {
   fn infer_extended() {
     let prims = test_prims();
     let nat_addr = prims.nat.as_ref().unwrap().addr.clone();
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_axiom(&mut env, &nat_addr, ty());
     let nat_const = cst(&nat_addr);
     // Nested lambda: λ(x:Nat). λ(y:Nat). x : Nat → Nat → Nat
@@ -4638,7 +4644,7 @@ mod tests {
   fn opaque_applied_stuck() {
     let prims = test_prims();
     let opaq_fn = mk_addr(610);
-    let mut env = empty_env();
+    let mut env = empty_kenv();
     add_opaque(&mut env, &opaq_fn, pi(ty(), ty()), lam(ty(), bv(0)));
     // Opaque function applied stays stuck (head = opaque addr)
     assert_eq!(
@@ -4650,7 +4656,7 @@ mod tests {
   #[test]
   fn iota_trailing_args() {
     let prims = test_prims();
-    let (env, nat_ind, zero, _succ, rec) = build_my_nat_env(empty_env());
+    let (env, nat_ind, zero, _succ, rec) = build_my_nat_env(empty_kenv());
     let nat_const = cst(&nat_ind);
     // Function-valued motive: MyNat → (Nat → Nat)
     let fn_motive = lam(nat_const.clone(), pi(ty(), ty()));
@@ -4673,7 +4679,7 @@ mod tests {
   #[test]
   fn level_arithmetic_associativity() {
     let prims = test_prims();
-    let env = empty_env();
+    let env = empty_kenv();
     let u = KLevel::param(0, anon());
     let v = KLevel::param(1, anon());
     let w = KLevel::param(2, anon());
@@ -4690,4 +4696,5 @@ mod tests {
     let s2 = KExpr::sort(KLevel::max(KLevel::succ(u), KLevel::succ(v)));
     assert!(is_def_eq(&env, &prims, &s1, &s2).unwrap());
   }
+
 }

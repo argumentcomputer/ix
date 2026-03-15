@@ -115,11 +115,12 @@ pub struct TypeChecker<'env, M: MetaMode> {
   pub infer_cache: FxHashMap<KExpr<M>, (Vec<usize>, TypedExpr<M>, Val<M>)>,
   /// WHNF cache: input ptr -> (input_val, output_val).
   pub whnf_cache: FxHashMap<usize, (Val<M>, Val<M>)>,
-  /// Structural WHNF cache for constant-headed neutrals:
-  /// (const_addr, thunk_ptr_ids) -> whnf result.
-  /// Catches cases where the same constant application with shared thunks
-  /// is wrapped in different Neutral Rcs.
-  pub whnf_structural_cache: FxHashMap<(Address, Vec<usize>), Val<M>>,
+  /// Blake3-keyed structural WHNF cache: val.hash -> (input_val, whnf_result).
+  /// Used when ENABLE_HASH_CACHE is true.
+  pub whnf_structural_cache: FxHashMap<blake3::Hash, (Val<M>, Val<M>)>,
+  /// Pointer-keyed structural WHNF cache for const-headed neutrals.
+  /// Fallback when ENABLE_HASH_CACHE is false: (const_addr, thunk_ptrs) -> result.
+  pub whnf_structural_ptr_cache: FxHashMap<(Address, Vec<usize>), Val<M>>,
   /// Structural WHNF cache (cheap_proj=false): input ptr -> (input_val, output_val).
   pub whnf_core_cache: FxHashMap<usize, (Val<M>, Val<M>)>,
   /// Structural WHNF cache (cheap_proj=true): input ptr -> (input_val, output_val).
@@ -176,6 +177,7 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
       infer_cache: FxHashMap::default(),
       whnf_cache: FxHashMap::default(),
       whnf_structural_cache: FxHashMap::default(),
+      whnf_structural_ptr_cache: FxHashMap::default(),
       whnf_core_cache: FxHashMap::default(),
       whnf_core_cheap_cache: FxHashMap::default(),
       unfold_cache: FxHashMap::default(),
@@ -357,6 +359,15 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
       });
     }
     self.heartbeats += 1;
+    if self.trace && self.heartbeats % 1_000_000 == 0 {
+      eprintln!(
+        "{}heartbeat {:.0}M  infer={} eval={} deq={} thunks={} forces={} delta={}",
+        self.trace_prefix,
+        self.heartbeats as f64 / 1_000_000.0,
+        self.stats.infer_calls, self.stats.eval_calls, self.stats.def_eq_calls,
+        self.stats.thunk_count, self.stats.thunk_forces, self.stats.delta_steps,
+      );
+    }
     Ok(())
   }
 
@@ -428,6 +439,7 @@ impl<'env, M: MetaMode> TypeChecker<'env, M> {
     self.infer_cache.clear();
     self.whnf_cache.clear();
     self.whnf_structural_cache.clear();
+    self.whnf_structural_ptr_cache.clear();
     self.whnf_core_cache.clear();
     self.whnf_core_cheap_cache.clear();
     // Note: unfold_cache is NOT cleared between constants — definition bodies

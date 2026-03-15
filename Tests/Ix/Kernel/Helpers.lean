@@ -282,6 +282,68 @@ def buildPairEnv (baseEnv : Env := default) : Env × MId × MId :=
   let env := addCtor env pairCtorId pairId ctorType 0 2 2
   (env, pairId, pairCtorId)
 
+/-- Build an environment with real Nat/Bool/String/Char/List primitives registered,
+    using MetaIds from buildPrimitives. Needed for isDefEq tests that reference
+    primitive constants, since isDefEqProofIrrel calls inferTypeOfVal. -/
+def buildPrimEnv (baseEnv : Env := default) : Env :=
+  let prims := Ix.Kernel.buildPrimitives .meta
+  let natE : E := .const prims.nat #[]
+  let boolE : E := .const prims.bool #[]
+  let stringE : E := .const prims.string #[]
+  let charE : E := .const prims.char #[]
+  let listCharE : E := Ix.Kernel.Expr.mkApp (.const prims.list #[]) charE
+  let ty : E := Ix.Kernel.Expr.mkSort (.succ .zero)
+  let natToNat : E := Ix.Kernel.Expr.mkForallE natE natE
+  let nat2 : E := Ix.Kernel.Expr.mkForallE natE natToNat
+  let nat2Bool : E := Ix.Kernel.Expr.mkForallE natE (Ix.Kernel.Expr.mkForallE natE boolE)
+  -- Nat inductive + ctors
+  let env := addInductive baseEnv prims.nat ty #[prims.natZero, prims.natSucc] (isRec := true)
+  let env := addCtor env prims.natZero prims.nat natE 0 0 0
+  let env := addCtor env prims.natSucc prims.nat natToNat 1 0 1
+  -- Bool inductive + ctors
+  let env := addInductive env prims.bool ty #[prims.boolFalse, prims.boolTrue]
+  let env := addCtor env prims.boolFalse prims.bool boolE 0 0 0
+  let env := addCtor env prims.boolTrue prims.bool boolE 1 0 0
+  -- Nat arithmetic (opaque hints so delta won't unfold dummy values)
+  let dummy : E := Ix.Kernel.Expr.mkLam natE (Ix.Kernel.Expr.mkBVar 0)
+  let env := addDef env prims.natAdd nat2 dummy (hints := .opaque)
+  let env := addDef env prims.natSub nat2 dummy (hints := .opaque)
+  let env := addDef env prims.natMul nat2 dummy (hints := .opaque)
+  let env := addDef env prims.natPow nat2 dummy (hints := .opaque)
+  let env := addDef env prims.natMod nat2 dummy (hints := .opaque)
+  let env := addDef env prims.natDiv nat2 dummy (hints := .opaque)
+  let env := addDef env prims.natBeq nat2Bool dummy (hints := .opaque)
+  let env := addDef env prims.natBle nat2Bool dummy (hints := .opaque)
+  -- String + ctor
+  let env := addInductive env prims.string ty #[prims.stringMk]
+  let env := addCtor env prims.stringMk prims.string
+    (Ix.Kernel.Expr.mkForallE listCharE stringE) 0 0 1
+  -- Char + ctor (simplified: single Nat field)
+  let env := addInductive env prims.char ty #[prims.charMk]
+  let env := addCtor env prims.charMk prims.char
+    (Ix.Kernel.Expr.mkForallE natE charE) 0 0 1
+  -- List (1 type param, 1 universe param)
+  let env := addInductive env prims.list
+    (Ix.Kernel.Expr.mkForallE ty ty)
+    #[prims.listNil, prims.listCons] (numParams := 1) (numLevels := 1)
+  let listApp : E := Ix.Kernel.Expr.mkApp (.const prims.list #[]) (Ix.Kernel.Expr.mkBVar 0)
+  -- List.nil : {α : Type} → List α
+  let env := addCtor env prims.listNil prims.list
+    (Ix.Kernel.Expr.mkForallE ty listApp) 0 1 0 (numLevels := 1)
+  -- List.cons : {α : Type} → α → List α → List α
+  let listApp1 : E := Ix.Kernel.Expr.mkApp (.const prims.list #[]) (Ix.Kernel.Expr.mkBVar 1)
+  let listApp2 : E := Ix.Kernel.Expr.mkApp (.const prims.list #[]) (Ix.Kernel.Expr.mkBVar 2)
+  let env := addCtor env prims.listCons prims.list
+    (Ix.Kernel.Expr.mkForallE ty
+      (Ix.Kernel.Expr.mkForallE (Ix.Kernel.Expr.mkBVar 0)
+        (Ix.Kernel.Expr.mkForallE listApp1 listApp2)))
+    1 1 2 (numLevels := 1)
+  env
+
+/-- isDefEq with primitive environment. -/
+def isDefEqPrim (a b : E) : Except String Bool :=
+  isDefEqK2 buildPrimEnv a b
+
 /-! ## Val inspection helpers -/
 
 /-- Get the head const address of a whnf result (if it's a const-headed neutral or ctor). -/

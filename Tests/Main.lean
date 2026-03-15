@@ -68,6 +68,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-convert", Tests.Ix.Kernel.Convert.convertSuite),
   ("kernel-anon-convert", Tests.Ix.Kernel.Convert.anonConvertSuite),
   ("kernel-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),
+  ("rust-kernel-check-env", Tests.Ix.Kernel.CheckEnv.rustSuite),
   ("rust-kernel-consts", Tests.Ix.Kernel.Rust.constSuite),
   ("rust-kernel-problematic", Tests.Ix.Kernel.RustProblematic.suite),
   ("rust-kernel-convert", Tests.Ix.Kernel.Rust.convertSuite),

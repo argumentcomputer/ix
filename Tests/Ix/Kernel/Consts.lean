@@ -108,6 +108,8 @@ def regressionConsts : Array String := #[
   "instDecidableEqVector.decEq",
   -- Recursor-only Ixon block regression
   "Lean.Elab.Tactic.RCases.RCasesPatt.rec_1",
+  -- Nested inductive recursor: List.nil RHS type mismatch regression
+  "Lean.Doc.Inline.rec_2",
   -- check-env hang regression
   "Std.Time.Modifier.ctorElim",
   -- rfl theorem
@@ -145,6 +147,7 @@ def problematicConsts : Array String := #[
 
 /-- Rust kernel problematic constants. -/
 def rustProblematicConsts : Array String := #[
+  --"Std.DTreeMap.Internal.Impl.WF.casesOn",
 ]
 
 end Tests.Ix.Kernel.Consts

@@ -7,19 +7,22 @@
 //! - `rs_convert_env`: convert env to kernel types with verification
 
 use std::ffi::{CString, c_void};
+use std::sync::Arc;
 use std::time::Instant;
 
 use super::builder::LeanBuildCache;
 use super::ffi_io_guard;
 use super::ix::name::build_name;
 use super::lean_env::lean_ptr_to_env;
+use crate::ix::compile::compile_env;
 use crate::ix::env::Name;
 use crate::ix::kernel::check::typecheck_const;
-use crate::lean::nat::Nat;
-use crate::ix::kernel::convert::{convert_env, verify_conversion};
+use crate::ix::kernel::deconvert::verify_roundtrip;
+use crate::ix::kernel::from_ixon::ixon_to_kenv;
 use crate::ix::kernel::error::TcError;
 use crate::ix::kernel::types::{Meta, MetaId};
 use crate::lean::array::LeanArrayObject;
+use crate::lean::nat::Nat;
 use crate::lean::string::LeanStringObject;
 use crate::lean::{
   as_ref_unsafe, lean_alloc_array, lean_alloc_ctor, lean_array_set_core,
@@ -53,12 +56,14 @@ pub extern "C" fn rs_check_env(env_consts_ptr: *const c_void) -> *mut c_void {
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     eprintln!("[rs_check_env] read env:    {:>8.1?}", t0.elapsed());
 
-    // Convert env::Env to kernel types
+    // Compile through Ixon, then convert to kernel types
     let t1 = Instant::now();
-    let (kenv, prims, quot_init) = match convert_env::<Meta>(&rust_env) {
-      Ok(v) => v,
-      Err(msg) => {
-        // Return a single-element array with the conversion error
+    let rust_env_arc = Arc::new(rust_env);
+    let compile_result = compile_env(&rust_env_arc);
+    let compile_state = match compile_result {
+      Ok(s) => s,
+      Err(e) => {
+        let msg = format!("Ixon compilation failed: {e}");
         let err: TcError<Meta> = TcError::KernelException { msg };
         let name = Name::anon();
         let mut cache = LeanBuildCache::new();
@@ -74,26 +79,84 @@ pub extern "C" fn rs_check_env(env_consts_ptr: *const c_void) -> *mut c_void {
         }
       }
     };
-    eprintln!("[rs_check_env] convert env: {:>8.1?} ({} consts)", t1.elapsed(), kenv.len());
-    drop(rust_env); // Free env memory before type-checking
+    eprintln!("[rs_check_env] compile env: {:>8.1?}", t1.elapsed());
 
-    // Type-check all constants, collecting errors
     let t2 = Instant::now();
-    let mut errors: Vec<(Name, TcError<Meta>)> = Vec::new();
-    for (id, ci) in kenv.iter() {
-      if let Err(e) = typecheck_const(&kenv, &prims, id, quot_init) {
-        errors.push((ci.name().clone(), e));
+    let (kenv, prims, quot_init) = match ixon_to_kenv::<Meta>(&compile_state) {
+      Ok(v) => v,
+      Err(msg) => {
+        let err: TcError<Meta> = TcError::KernelException { msg };
+        let name = Name::anon();
+        let mut cache = LeanBuildCache::new();
+        unsafe {
+          let arr = lean_alloc_array(1, 1);
+          let name_obj = build_name(&mut cache, &name);
+          let err_obj = build_check_error(&err);
+          let pair = lean_alloc_ctor(0, 2, 0);
+          lean_ctor_set(pair, 0, name_obj);
+          lean_ctor_set(pair, 1, err_obj);
+          lean_array_set_core(arr, 0, pair);
+          return lean_io_result_mk_ok(arr);
+        }
       }
-    }
-    eprintln!("[rs_check_env] typecheck:   {:>8.1?} ({} errors)", t2.elapsed(), errors.len());
+    };
+    eprintln!("[rs_check_env] ixon→kenv:  {:>8.1?} ({} consts)", t2.elapsed(), kenv.len());
+    drop(compile_state);
+    drop(rust_env_arc);
+
+    // Type-check all constants, collecting errors.
+    // Run on a thread with a large stack to avoid stack overflow on deeply nested expressions.
+    // Errors are converted to (Name, String) to cross the thread boundary (Rc is not Send).
+    let t2 = Instant::now();
+    let error_strings: Vec<(Name, String)> = {
+      // SAFETY: kenv/prims are only accessed from the spawned thread while this
+      // thread waits on join(). No concurrent access occurs.
+      let kenv_ptr = &kenv as *const _ as usize;
+      let prims_ptr = &prims as *const _ as usize;
+      std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024) // 64 MB stack
+        .spawn(move || {
+          let kenv = unsafe { &*(kenv_ptr as *const crate::ix::kernel::types::KEnv<Meta>) };
+          let prims = unsafe { &*(prims_ptr as *const crate::ix::kernel::types::Primitives<Meta>) };
+          const FAIL_FAST: bool = true;
+          let total = kenv.len();
+          let mut errors: Vec<(Name, String)> = Vec::new();
+          let mut checked = 0usize;
+          for (id, ci) in kenv.iter() {
+            checked += 1;
+            let name = ci.name().pretty();
+            eprint!("[rs_check_env]   {checked}/{total} {name} ...");
+            let t = Instant::now();
+            if let Err(e) = typecheck_const(kenv, prims, id, quot_init) {
+              eprintln!(" FAIL ({:.1?}): {e}", t.elapsed());
+              errors.push((ci.name().clone(), format!("{e}")));
+              if FAIL_FAST {
+                eprintln!("[rs_check_env] FAIL_FAST: stopping after first error");
+                break;
+              }
+            } else {
+              eprintln!(" ok ({:.1?})", t.elapsed());
+            }
+          }
+          errors
+        })
+        .expect("failed to spawn typecheck thread")
+        .join()
+        .expect("typecheck thread panicked")
+    };
+    eprintln!("[rs_check_env] typecheck:   {:>8.1?} ({} errors)", t2.elapsed(), error_strings.len());
     eprintln!("[rs_check_env] total:       {:>8.1?}", total_start.elapsed());
 
     let mut cache = LeanBuildCache::new();
     unsafe {
-      let arr = lean_alloc_array(errors.len(), errors.len());
-      for (i, (name, tc_err)) in errors.iter().enumerate() {
+      let arr = lean_alloc_array(error_strings.len(), error_strings.len());
+      for (i, (name, err_msg)) in error_strings.iter().enumerate() {
         let name_obj = build_name(&mut cache, name);
-        let err_obj = build_check_error(tc_err);
+        // Build CheckError from string (kernelException constructor, tag 7)
+        let c_msg = CString::new(err_msg.as_str())
+          .unwrap_or_else(|_| CString::new("kernel exception").unwrap());
+        let err_obj = lean_alloc_ctor(7, 1, 0);
+        lean_ctor_set(err_obj, 0, lean_mk_string(c_msg.as_ptr()));
         let pair = lean_alloc_ctor(0, 2, 0); // Prod.mk
         lean_ctor_set(pair, 0, name_obj);
         lean_ctor_set(pair, 1, err_obj);
@@ -136,20 +199,36 @@ pub extern "C" fn rs_check_const(
     let name_str: &LeanStringObject = as_ref_unsafe(name_ptr.cast());
     let target_name = parse_name(&name_str.as_string());
 
-    // Convert env::Env to kernel types
-    let (kenv, prims, quot_init) = match convert_env::<Meta>(&rust_env) {
-      Ok(v) => v,
-      Err(msg) => {
-        let err: TcError<Meta> = TcError::KernelException { msg };
+    // Compile through Ixon, then convert to kernel types
+    let rust_env_arc = Arc::new(rust_env);
+    let compile_state = match compile_env(&rust_env_arc) {
+      Ok(s) => s,
+      Err(e) => {
+        let err: TcError<Meta> = TcError::KernelException {
+          msg: format!("Ixon compilation failed: {e}"),
+        };
         unsafe {
           let err_obj = build_check_error(&err);
-          let some = lean_alloc_ctor(1, 1, 0); // Option.some
+          let some = lean_alloc_ctor(1, 1, 0);
           lean_ctor_set(some, 0, err_obj);
           return lean_io_result_mk_ok(some);
         }
       }
     };
-    drop(rust_env);
+    let (kenv, prims, quot_init) = match ixon_to_kenv::<Meta>(&compile_state) {
+      Ok(v) => v,
+      Err(msg) => {
+        let err: TcError<Meta> = TcError::KernelException { msg };
+        unsafe {
+          let err_obj = build_check_error(&err);
+          let some = lean_alloc_ctor(1, 1, 0);
+          lean_ctor_set(some, 0, err_obj);
+          return lean_io_result_mk_ok(some);
+        }
+      }
+    };
+    drop(compile_state);
+    drop(rust_env_arc);
 
     // Find the constant by name
     let target_id = kenv
@@ -204,13 +283,33 @@ pub extern "C" fn rs_convert_env(
     let rust_env = lean_ptr_to_env(env_consts_ptr);
     eprintln!("[rs_convert_env] read env:    {:>8.1?}", t0.elapsed());
 
+    // Compile through Ixon
     let t1 = Instant::now();
-    let result = convert_env::<Meta>(&rust_env);
-    eprintln!("[rs_convert_env] convert env: {:>8.1?}", t1.elapsed());
+    let rust_env_arc = Arc::new(rust_env);
+    let compile_state = match compile_env(&rust_env_arc) {
+      Ok(s) => s,
+      Err(e) => {
+        drop(rust_env_arc);
+        unsafe {
+          let arr = lean_alloc_array(1, 1);
+          let c_msg =
+            CString::new(format!("error: Ixon compilation failed: {e}")).unwrap_or_default();
+          lean_array_set_core(arr, 0, lean_mk_string(c_msg.as_ptr()));
+          return lean_io_result_mk_ok(arr);
+        }
+      }
+    };
+    eprintln!("[rs_convert_env] compile env: {:>8.1?}", t1.elapsed());
+
+    // Convert Ixon → KEnv
+    let t2 = Instant::now();
+    let result = ixon_to_kenv::<Meta>(&compile_state);
+    eprintln!("[rs_convert_env] ixon→kenv:  {:>8.1?}", t2.elapsed());
 
     match result {
       Err(msg) => {
-        drop(rust_env);
+        drop(compile_state);
+        drop(rust_env_arc);
         unsafe {
           let arr = lean_alloc_array(1, 1);
           let c_msg =
@@ -220,11 +319,12 @@ pub extern "C" fn rs_convert_env(
         }
       }
       Ok((kenv, prims, quot_init)) => {
-        // Verify conversion correctness
-        let t2 = Instant::now();
-        let mismatches = verify_conversion(&rust_env, &kenv);
-        eprintln!("[rs_convert_env] verify:      {:>8.1?}", t2.elapsed());
-        drop(rust_env);
+        // Verify: deconvert KEnv back to Lean types, compare against Ixon decompiled
+        let t3 = Instant::now();
+        let mismatches = verify_roundtrip(&compile_state, &kenv);
+        eprintln!("[rs_convert_env] verify:      {:>8.1?}", t3.elapsed());
+        drop(compile_state);
+        drop(rust_env_arc);
 
         let (prims_found, missing) = prims.count_resolved();
         let base_count = 5;
@@ -306,12 +406,13 @@ pub extern "C" fn rs_check_consts(
       .collect();
     eprintln!("[rs_check_consts] read env:    {:>8.1?}", t0.elapsed());
 
-    // Phase 2: Convert env to kernel types
+    // Phase 2: Compile through Ixon, then convert to kernel types
     let t1 = Instant::now();
-    let (kenv, prims, quot_init) = match convert_env::<Meta>(&rust_env) {
-      Ok(v) => v,
-      Err(msg) => {
-        // Return array with conversion error for every name
+    let rust_env_arc = Arc::new(rust_env);
+    let compile_state = match compile_env(&rust_env_arc) {
+      Ok(s) => s,
+      Err(e) => {
+        let msg = format!("Ixon compilation failed: {e}");
         unsafe {
           let arr = lean_alloc_array(name_strings.len(), name_strings.len());
           for (i, name) in name_strings.iter().enumerate() {
@@ -333,8 +434,36 @@ pub extern "C" fn rs_check_consts(
         }
       }
     };
-    eprintln!("[rs_check_consts] convert env: {:>8.1?} ({} consts)", t1.elapsed(), kenv.len());
-    drop(rust_env);
+    eprintln!("[rs_check_consts] compile env: {:>8.1?}", t1.elapsed());
+
+    let t2 = Instant::now();
+    let (kenv, prims, quot_init) = match ixon_to_kenv::<Meta>(&compile_state) {
+      Ok(v) => v,
+      Err(msg) => {
+        unsafe {
+          let arr = lean_alloc_array(name_strings.len(), name_strings.len());
+          for (i, name) in name_strings.iter().enumerate() {
+            let c_name =
+              CString::new(name.as_str()).unwrap_or_default();
+            let name_obj = lean_mk_string(c_name.as_ptr());
+            let c_msg = CString::new(format!("ixon→kenv failed: {msg}"))
+              .unwrap_or_default();
+            let err_obj = lean_alloc_ctor(7, 1, 0);
+            lean_ctor_set(err_obj, 0, lean_mk_string(c_msg.as_ptr()));
+            let some = lean_alloc_ctor(1, 1, 0);
+            lean_ctor_set(some, 0, err_obj);
+            let pair = lean_alloc_ctor(0, 2, 0);
+            lean_ctor_set(pair, 0, name_obj);
+            lean_ctor_set(pair, 1, some);
+            lean_array_set_core(arr, i, pair);
+          }
+          return lean_io_result_mk_ok(arr);
+        }
+      }
+    };
+    eprintln!("[rs_check_consts] ixon→kenv:  {:>8.1?} ({} consts)", t2.elapsed(), kenv.len());
+    drop(compile_state);
+    drop(rust_env_arc);
 
     // Phase 3: Build name → id lookup
     let t2 = Instant::now();
@@ -394,10 +523,29 @@ pub extern "C" fn rs_check_consts(
                 }
               }
             }
-            let (result, heartbeats, stats) =
-              crate::ix::kernel::check::typecheck_const_with_stats_trace(
-                &kenv, &prims, id, quot_init, trace, name,
-              );
+            // Run typecheck on a thread with a large stack to avoid stack overflow
+            let kenv_ptr = &kenv as *const _ as usize;
+            let prims_ptr = &prims as *const _ as usize;
+            let id_clone = id.clone();
+            let name_clone = name.clone();
+            let (result, heartbeats, stats) = std::thread::Builder::new()
+              .stack_size(64 * 1024 * 1024) // 64 MB stack
+              .spawn(move || {
+                let kenv = unsafe { &*(kenv_ptr as *const crate::ix::kernel::types::KEnv<Meta>) };
+                let prims = unsafe { &*(prims_ptr as *const crate::ix::kernel::types::Primitives<Meta>) };
+                let (result, heartbeats, stats) =
+                  crate::ix::kernel::check::typecheck_const_with_stats_trace(
+                    kenv, prims, &id_clone, quot_init, trace, &name_clone,
+                  );
+                // Convert error to string to cross thread boundary (Rc not Send)
+                let result = result.map_err(|e| format!("{e}"));
+                (result, heartbeats, stats)
+              })
+              .expect("failed to spawn typecheck thread")
+              .join()
+              .expect("typecheck thread panicked");
+            // Convert error string back to TcError
+            let result = result.map_err(|msg| TcError::<Meta>::KernelException { msg });
             let tc_elapsed = tc_start.elapsed();
             eprintln!("checked {name} ({tc_elapsed:.1?})");
             if tc_elapsed.as_millis() >= 10 {

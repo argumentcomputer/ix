@@ -4,8 +4,6 @@
 //! delta unfolding, nat primitive computation, and the full WHNF loop
 //! with caching.
 
-use std::rc::Rc;
-
 use num_bigint::BigUint;
 
 use crate::ix::address::Address;
@@ -19,10 +17,8 @@ use super::tc::{TcResult, TypeChecker};
 use super::types::{MetaMode, *};
 use super::value::*;
 
-/// Maximum delta steps before giving up.
-const MAX_DELTA_STEPS: usize = 50_000;
-/// Maximum delta steps in eager-reduce mode.
-const MAX_DELTA_STEPS_EAGER: usize = 500_000;
+// No per-whnf delta step limit — the global heartbeat counter (200M) prevents
+// infinite loops, matching the C++ Lean kernel which has no delta step limit.
 
 /// Result of attempting nat primitive reduction.
 pub(super) enum NatReduceResult<M: MetaMode> {
@@ -89,17 +85,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           return Ok(cached.clone());
         }
       }
-      // Second-chance lookup via equiv root (full cache only, matching Lean)
-      if use_full_cache {
-        if let Some(root_ptr) = self.equiv_manager.find_root_ptr(key) {
-          if root_ptr != key {
-            if let Some((_, cached)) = self.whnf_core_cache.get(&root_ptr) {
-              self.stats.whnf_core_cache_hits += 1;
-              return Ok(cached.clone());
-            }
-          }
-        }
-      }
+      // NOTE: No equiv-root second-chance lookup for whnf_core_cache.
+      // Unlike whnf_val, structural WHNF results are NOT transferable across
+      // equiv-merged values: if A ≡ B but A is a definition (no structural
+      // reduction) and B is an inductive (also no structural reduction),
+      // returning A's whnf_core result for B would incorrectly transform
+      // B into A, creating an infinite delta↔structural loop.
       self.stats.whnf_core_cache_misses += 1;
     }
 
@@ -141,6 +132,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         strct,
         type_name,
         spine,
+        ..
       } => {
         // Collect nested projection chain (outside-in)
         let mut proj_stack: Vec<(
@@ -164,6 +156,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
               strct: st,
               type_name: tn,
               spine: sp,
+              ..
             } => {
               proj_stack.push((
                 ta.clone(),
@@ -250,6 +243,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::Const { id, levels },
         spine,
+        ..
       } => {
         let addr = &id.addr;
         // Skip iota/recursor reduction when cheap_rec is set
@@ -394,7 +388,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     for arg in &args[..peeled] {
       env_vec.push(self.force_thunk(arg)?);
     }
-    let env = Rc::new(env_vec);
+    let env = env_from_vec(env_vec);
 
     // Eval the inner body once
     let mut result = self.eval(inner_body, &env)?;
@@ -572,6 +566,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::Const { id: head_id, levels: univs },
         spine: type_spine,
+        ..
       } if &head_id.addr == ind_addr => {
         // Build the nullary ctor applied to params from the type
         let cv = match self.env.get(ctor_id) {
@@ -697,6 +692,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::Const { id, .. },
         spine: mk_spine,
+        ..
       } => {
         // Check if this is a Quot.mk (QuotKind::Ctor)
         if matches!(
@@ -746,6 +742,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::Const { id, levels },
         spine,
+        ..
       } => {
         let addr = &id.addr;
         // Platform-dependent reduction: System.Platform.numBits → word size
@@ -828,7 +825,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         let inner = self.whnf_val(&inner, 0)?;
         if let Some(n) = self.force_extract_nat(&inner)? {
           // Collapse inner thunk: succ chain → literal for O(1) future access
-          *pred_thunk.borrow_mut() =
+          *pred_thunk.entry.borrow_mut() =
             ThunkEntry::Evaluated(Val::mk_lit(Literal::NatVal(n.clone())));
           return Ok(Some(Nat(&n.0 + 1u64)));
         }
@@ -850,6 +847,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::Const { id, .. },
         spine,
+        ..
       } => {
         let addr = &id.addr;
         // Nat.zero with 0 args → nat literal 0
@@ -867,7 +865,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let arg = self.whnf_val(&arg, 0)?;
           if let Some(n) = self.force_extract_nat(&arg)? {
             // Collapse thunk to literal for O(1) future access
-            *spine[0].borrow_mut() =
+            *spine[0].entry.borrow_mut() =
               ThunkEntry::Evaluated(Val::mk_lit(Literal::NatVal(n.clone())));
             return Ok(NatReduceResult::Reduced(Val::mk_lit(Literal::NatVal(Nat(&n.0 + 1u64)))));
           }
@@ -883,7 +881,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let arg = self.force_thunk(&spine[0])?;
           let arg = self.whnf_val(&arg, 0)?;
           if let Some(n) = self.force_extract_nat(&arg)? {
-            *spine[0].borrow_mut() =
+            *spine[0].entry.borrow_mut() =
               ThunkEntry::Evaluated(Val::mk_lit(Literal::NatVal(n.clone())));
             let result = if n.0 == BigUint::ZERO {
               Nat::from(0u64)
@@ -910,9 +908,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           let nb = self.force_extract_nat(&b)?;
           if let (Some(na), Some(nb)) = (&na, &nb) {
             // Collapse both thunks to literals
-            *spine[0].borrow_mut() =
+            *spine[0].entry.borrow_mut() =
               ThunkEntry::Evaluated(Val::mk_lit(Literal::NatVal(na.clone())));
-            *spine[1].borrow_mut() =
+            *spine[1].entry.borrow_mut() =
               ThunkEntry::Evaluated(Val::mk_lit(Literal::NatVal(nb.clone())));
             if let Some(result) =
               compute_nat_prim(addr, na, nb, self.prims)
@@ -1124,6 +1122,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::Const { id, .. },
         spine,
+        ..
       } => {
         let addr = &id.addr;
         let is_reduce_bool =
@@ -1185,6 +1184,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
             ValInner::Neutral {
               head: Head::Const { id, .. },
               spine,
+              ..
             } => is_bool(&id.addr, spine.is_empty()),
             _ => false,
           };
@@ -1277,16 +1277,24 @@ impl<M: MetaMode> TypeChecker<'_, M> {
           }
         }
       }
-      // Structural cache for constant-headed neutrals: key on (addr, thunk_ptrs)
-      if let ValInner::Neutral { head: Head::Const { id, .. }, spine } = v.inner() {
+      // Structural cache: blake3-keyed when enabled, pointer-keyed fallback when disabled.
+      if let Some(blake3_hash) = M::as_blake3(v.blake3_hash()) {
+        if let Some((cached_input, cached_result)) = self.whnf_structural_cache.get(blake3_hash) {
+          if cached_input.spine().map(|s| s.len()) == v.spine().map(|s| s.len()) {
+            self.stats.cache_hits += 1;
+            self.stats.whnf_cache_hits += 1;
+            self.whnf_cache.insert(key, (v.clone(), cached_result.clone()));
+            return Ok(cached_result.clone());
+          }
+        }
+      } else if let ValInner::Neutral { head: Head::Const { id, .. }, spine, .. } = v.inner() {
         let struct_key: (Address, Vec<usize>) = (
           id.addr.clone(),
-          spine.iter().map(|t| Rc::as_ptr(t) as usize).collect(),
+          spine.iter().map(|t| std::rc::Rc::as_ptr(t) as usize).collect(),
         );
-        if let Some(cached) = self.whnf_structural_cache.get(&struct_key) {
+        if let Some(cached) = self.whnf_structural_ptr_cache.get(&struct_key) {
           self.stats.cache_hits += 1;
           self.stats.whnf_cache_hits += 1;
-          // Also populate pointer cache for future lookups
           self.whnf_cache.insert(key, (v.clone(), cached.clone()));
           return Ok(cached.clone());
         }
@@ -1297,17 +1305,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     // Heartbeat after cache checks — only counts actual work
     self.heartbeat()?;
 
-    let max_steps = if self.eager_reduce {
-      MAX_DELTA_STEPS_EAGER
-    } else {
-      MAX_DELTA_STEPS
-    };
-
-    if delta_steps > max_steps {
-      return Err(TcError::KernelException {
-        msg: format!("delta step limit exceeded ({max_steps})"),
-      });
-    }
 
     // Step 1: Structural WHNF (projection, iota, K, quotient)
     let v1 = self.whnf_core_val(v, false, false)?;
@@ -1333,13 +1330,18 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     if delta_steps == 0 {
       let key = v.ptr_id();
       self.whnf_cache.insert(key, (v.clone(), result.clone()));
-      // Structural cache for constant-headed neutrals
-      if let ValInner::Neutral { head: Head::Const { id, .. }, spine } = v.inner() {
+      // Structural cache insertion
+      if let Some(blake3_hash) = M::as_blake3(v.blake3_hash()) {
+        self.whnf_structural_cache.insert(
+          blake3_hash.clone(),
+          (v.clone(), result.clone()),
+        );
+      } else if let ValInner::Neutral { head: Head::Const { id, .. }, spine, .. } = v.inner() {
         let struct_key: (Address, Vec<usize>) = (
           id.addr.clone(),
-          spine.iter().map(|t| Rc::as_ptr(t) as usize).collect(),
+          spine.iter().map(|t| std::rc::Rc::as_ptr(t) as usize).collect(),
         );
-        self.whnf_structural_cache.insert(struct_key, result.clone());
+        self.whnf_structural_ptr_cache.insert(struct_key, result.clone());
       }
       // Register v ≡ whnf(v) in equiv manager
       if !v.ptr_eq(&result) {
@@ -1394,11 +1396,12 @@ pub fn inst_levels_expr<M: MetaMode>(expr: &KExpr<M>, levels: &[KLevel<M>]) -> K
       name.clone(),
       bi.clone(),
     ),
-    KExprData::LetE(ty, val, body, name) => KExpr::let_e(
+    KExprData::LetE(ty, val, body, name, nd) => KExpr::let_e_nd(
       inst_levels_expr(ty, levels),
       inst_levels_expr(val, levels),
       inst_levels_expr(body, levels),
       name.clone(),
+      *nd,
     ),
     KExprData::Proj(type_id, idx, s) => {
       KExpr::proj(type_id.clone(), *idx, inst_levels_expr(s, levels))

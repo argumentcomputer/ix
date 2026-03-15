@@ -305,8 +305,8 @@ def testIsDefEq : TestSeq :=
   test "eta: λx. f x == f" (isDefEqK2 env etaExpanded (cst fId) == .ok true) $
   -- Nat primitive reduction: 2+3 == 5
   let addExpr := app (app (cst prims.natAdd) (natLit 2)) (natLit 3)
-  test "2+3 == 5" (isDefEqEmpty addExpr (natLit 5) == .ok true) $
-  test "2+3 != 6" (isDefEqEmpty addExpr (natLit 6) == .ok false)
+  test "2+3 == 5" (isDefEqPrim addExpr (natLit 5) == .ok true) $
+  test "2+3 != 6" (isDefEqPrim addExpr (natLit 6) == .ok false)
 
 /-! ## Test: type inference -/
 
@@ -454,7 +454,7 @@ def testBoolTrueReflection : TestSeq :=
   test "Nat.beq 5 5 == Bool.true" (isDefEqEmpty beq55 (cst prims.boolTrue) == .ok true) $
   -- Nat.beq 5 6 is Bool.false, not equal to Bool.true
   let beq56 := app (app (cst prims.natBeq) (natLit 5)) (natLit 6)
-  test "Nat.beq 5 6 != Bool.true" (isDefEqEmpty beq56 (cst prims.boolTrue) == .ok false)
+  test "Nat.beq 5 6 != Bool.true" (isDefEqPrim beq56 (cst prims.boolTrue) == .ok false)
 
 /-! ## Test: unit-like type equality -/
 
@@ -481,12 +481,12 @@ def testDefEqOffset : TestSeq :=
   let prims := buildPrimitives .meta
   -- Nat.succ (natLit 0) == natLit 1
   let succ0 := app (cst prims.natSucc) (natLit 0)
-  test "Nat.succ 0 == 1" (isDefEqEmpty succ0 (natLit 1) == .ok true) $
+  test "Nat.succ 0 == 1" (isDefEqPrim succ0 (natLit 1) == .ok true) $
   -- Nat.zero == natLit 0
-  test "Nat.zero == 0" (isDefEqEmpty (cst prims.natZero) (natLit 0) == .ok true) $
+  test "Nat.zero == 0" (isDefEqPrim (cst prims.natZero) (natLit 0) == .ok true) $
   -- Nat.succ (Nat.succ Nat.zero) == natLit 2
   let succ_succ_zero := app (cst prims.natSucc) (app (cst prims.natSucc) (cst prims.natZero))
-  test "Nat.succ (Nat.succ Nat.zero) == 2" (isDefEqEmpty succ_succ_zero (natLit 2) == .ok true) $
+  test "Nat.succ (Nat.succ Nat.zero) == 2" (isDefEqPrim succ_succ_zero (natLit 2) == .ok true) $
   -- natLit 3 != natLit 4
   test "3 != 4" (isDefEqEmpty (natLit 3) (natLit 4) == .ok false)
 
@@ -648,13 +648,13 @@ def testStringDefEq : TestSeq :=
   let nilChar := app (cstL prims.listNil #[.zero]) charType
   let emptyStr := app (cst prims.stringMk) nilChar
   test "str defEq: \"\" == String.mk (List.nil Char)"
-    (isDefEqEmpty (strLit "") emptyStr == .ok true) $
+    (isDefEqPrim (strLit "") emptyStr == .ok true) $
   -- String lit "a" vs String.mk (List.cons Char (Char.mk 97) (List.nil Char))
   let charA := app (cst prims.charMk) (natLit 97)
   let consA := app (app (app (cstL prims.listCons #[.zero]) charType) charA) nilChar
   let strA := app (cst prims.stringMk) consA
   test "str defEq: \"a\" == String.mk (List.cons (Char.mk 97) nil)"
-    (isDefEqEmpty (strLit "a") strA == .ok true)
+    (isDefEqPrim (strLit "a") strA == .ok true)
 
 /-! ## Test: reducibility hints (unfold order in lazyDelta) -/
 
@@ -691,7 +691,7 @@ def testDefEqLet : TestSeq :=
   let addXY := app (app (cst prims.natAdd) (bv 1)) (bv 0)
   let letExpr := letE ty (natLit 3) (letE ty (natLit 4) addXY)
   test "defEq let: nested let add == 7"
-    (isDefEqEmpty letExpr (natLit 7) == .ok true) $
+    (isDefEqPrim letExpr (natLit 7) == .ok true) $
   -- let x := 5 in x != 6
   test "defEq let: let x := 5 in x != 6"
     (isDefEqEmpty (letE ty (natLit 5) (bv 0)) (natLit 6) == .ok false) $
@@ -699,7 +699,7 @@ def testDefEqLet : TestSeq :=
   let addXX := app (app (cst prims.natAdd) (bv 0)) (bv 0)
   let letExpr2 := letE ty (natLit 5) addXX
   test "defEq let: let x := 5 in x + x == 10"
-    (isDefEqEmpty letExpr2 (natLit 10) == .ok true)
+    (isDefEqPrim letExpr2 (natLit 10) == .ok true)
 
 /-! ## Test: multiple universe parameters -/
 
@@ -862,12 +862,9 @@ def testQuotExtended : TestSeq :=
   let hExpr := lam ty (lam ty (lam prop (natLit 0)))
   let liftExpr := app (app (app (app (app (app
     (cstL quotLiftId #[.succ .zero, .succ .zero]) ty) dummyRel) ty) fExpr) hExpr) mkExpr
-  -- When quotInit=false, Quot types aren't registered as quotInfo, so lift stays stuck
-  -- The result should succeed but not reduce to 43
-  -- quotInit flag affects typedConsts pre-registration, not kenv lookup.
-  -- Since quotInfo is in kenv via addQuot, Quot.lift always reduces regardless of quotInit.
-  test "Quot.lift reduces even with quotInit=false"
-    (whnfK2 env liftExpr (quotInit := false) == .ok (natLit 43)) $
+  -- When quotInit=false, Quot.lift stays stuck (whnfCoreImpl guards on quotInit)
+  test "Quot.lift stays stuck with quotInit=false"
+    (whnfK2 env liftExpr (quotInit := false) != .ok (natLit 43)) $
   -- Quot.lift with quotInit=true reduces (verify it works)
   test "Quot.lift reduces when quotInit=true"
     (whnfK2 env liftExpr (quotInit := true) == .ok (natLit 43)) $
@@ -1060,7 +1057,7 @@ def testStringEdgeCases : TestSeq :=
   let consAB := app (app (app (cstL prims.listCons #[.zero]) charType) charA) consB
   let strAB := app (cst prims.stringMk) consAB
   test "str: \"ab\" == String.mk ctor form"
-    (isDefEqEmpty (strLit "ab") strAB == .ok true) $
+    (isDefEqPrim (strLit "ab") strAB == .ok true) $
   -- Different multi-char strings
   test "str: \"ab\" != \"ac\"" (isDefEqEmpty (strLit "ab") (strLit "ac") == .ok false)
 
@@ -1090,10 +1087,10 @@ def testDefEqComplex : TestSeq :=
   -- DefEq: Nat.add commutes (via reduction)
   let add23 := app (app (cst prims.natAdd) (natLit 2)) (natLit 3)
   let add32 := app (app (cst prims.natAdd) (natLit 3)) (natLit 2)
-  test "defEq: 2+3 == 3+2" (isDefEqEmpty add23 add32 == .ok true) $
+  test "defEq: 2+3 == 3+2" (isDefEqPrim add23 add32 == .ok true) $
   -- DefEq: complex nested expression
   let expr1 := app (app (cst prims.natAdd) (app (app (cst prims.natMul) (natLit 2)) (natLit 3))) (natLit 1)
-  test "defEq: 2*3 + 1 == 7" (isDefEqEmpty expr1 (natLit 7) == .ok true) $
+  test "defEq: 2*3 + 1 == 7" (isDefEqPrim expr1 (natLit 7) == .ok true) $
   -- DefEq sort levels
   test "defEq: Sort 0 != Sort 1" (isDefEqEmpty prop ty == .ok false) $
   test "defEq: Sort 2 == Sort 2" (isDefEqEmpty (srt 2) (srt 2) == .ok true)
@@ -1214,30 +1211,29 @@ def testNativeReduction : TestSeq :=
 def testDefEqOffsetDeep : TestSeq :=
   let prims := buildPrimitives .meta
   -- Nat.zero (ctor) == natLit 0 (lit) via isZero on both representations
-  test "offset: Nat.zero ctor == natLit 0" (isDefEqEmpty (cst prims.natZero) (natLit 0) == .ok true) $
+  test "offset: Nat.zero ctor == natLit 0" (isDefEqPrim (cst prims.natZero) (natLit 0) == .ok true) $
   -- Deep succ chain: Nat.succ^3 Nat.zero == natLit 3 via succOf? peeling
   let succ3 := app (cst prims.natSucc) (app (cst prims.natSucc) (app (cst prims.natSucc) (cst prims.natZero)))
-  test "offset: succ^3 zero == 3" (isDefEqEmpty succ3 (natLit 3) == .ok true) $
+  test "offset: succ^3 zero == 3" (isDefEqPrim succ3 (natLit 3) == .ok true) $
   -- natLit 100 == natLit 100 (quick check, no peeling needed)
-  test "offset: lit 100 == lit 100" (isDefEqEmpty (natLit 100) (natLit 100) == .ok true) $
+  test "offset: lit 100 == lit 100" (isDefEqPrim (natLit 100) (natLit 100) == .ok true) $
   -- Nat.succ (natLit 4) == natLit 5 (mixed: one side is succ, other is lit)
   let succ4 := app (cst prims.natSucc) (natLit 4)
-  test "offset: succ (lit 4) == lit 5" (isDefEqEmpty succ4 (natLit 5) == .ok true) $
+  test "offset: succ (lit 4) == lit 5" (isDefEqPrim succ4 (natLit 5) == .ok true) $
   -- natLit 5 == Nat.succ (natLit 4) (reversed)
-  test "offset: lit 5 == succ (lit 4)" (isDefEqEmpty (natLit 5) succ4 == .ok true) $
+  test "offset: lit 5 == succ (lit 4)" (isDefEqPrim (natLit 5) succ4 == .ok true) $
   -- Negative: succ 4 != 6
-  test "offset: succ 4 != 6" (isDefEqEmpty succ4 (natLit 6) == .ok false) $
+  test "offset: succ 4 != 6" (isDefEqPrim succ4 (natLit 6) == .ok false) $
   -- Nat.succ x == Nat.succ x where x is same axiom
   let axId := mkId "ax" 210
-  let natMId : MId := (parseIxName "Nat", prims.nat.addr)
-  let natEnv := addAxiom (addAxiom default natMId ty) axId (cst prims.nat)
+  let primEnv := addAxiom buildPrimEnv axId (cst prims.nat)
   let succAx := app (cst prims.natSucc) (cst axId)
-  test "offset: succ ax == succ ax" (isDefEqK2 natEnv succAx succAx == .ok true) $
+  test "offset: succ ax == succ ax" (isDefEqK2 primEnv succAx succAx == .ok true) $
   -- Nat.succ x != Nat.succ y where x, y are different axioms
   let ax2Id := mkId "ax2" 211
-  let natEnv := addAxiom natEnv ax2Id (cst prims.nat)
+  let primEnv := addAxiom primEnv ax2Id (cst prims.nat)
   let succAx2 := app (cst prims.natSucc) (cst ax2Id)
-  test "offset: succ ax1 != succ ax2" (isDefEqK2 natEnv succAx succAx2 == .ok false)
+  test "offset: succ ax1 != succ ax2" (isDefEqK2 primEnv succAx succAx2 == .ok false)
 
 /-! ## Test: isDefEqUnitLikeVal -/
 
@@ -1321,27 +1317,27 @@ def testNatPowOverflow : TestSeq :=
   let pow63 := app (app (cst prims.natPow) (natLit 2)) (natLit 63)
   let pow64 := app (app (cst prims.natPow) (natLit 2)) (natLit 64)
   let sum := app (app (cst prims.natAdd) pow63) pow63
-  test "Nat.pow: 2^63 + 2^63 == 2^64" (isDefEqEmpty sum pow64 == .ok true)
+  test "Nat.pow: 2^63 + 2^63 == 2^64" (isDefEqPrim sum pow64 == .ok true)
 
 /-! ## Test: natLitToCtorThunked in isDefEqCore -/
 
 def testNatLitCtorDefEq : TestSeq :=
   let prims := buildPrimitives .meta
   -- natLit 0 == Nat.zero (ctor) — triggers natLitToCtorThunked path
-  test "natLitCtor: 0 == Nat.zero" (isDefEqEmpty (natLit 0) (cst prims.natZero) == .ok true) $
+  test "natLitCtor: 0 == Nat.zero" (isDefEqPrim (natLit 0) (cst prims.natZero) == .ok true) $
   -- Nat.zero == natLit 0 (reversed)
-  test "natLitCtor: Nat.zero == 0" (isDefEqEmpty (cst prims.natZero) (natLit 0) == .ok true) $
+  test "natLitCtor: Nat.zero == 0" (isDefEqPrim (cst prims.natZero) (natLit 0) == .ok true) $
   -- natLit 1 == Nat.succ Nat.zero
   let succZero := app (cst prims.natSucc) (cst prims.natZero)
-  test "natLitCtor: 1 == succ zero" (isDefEqEmpty (natLit 1) succZero == .ok true) $
+  test "natLitCtor: 1 == succ zero" (isDefEqPrim (natLit 1) succZero == .ok true) $
   -- natLit 5 == succ^5 zero
   let succ5 := app (cst prims.natSucc) (app (cst prims.natSucc) (app (cst prims.natSucc)
     (app (cst prims.natSucc) (app (cst prims.natSucc) (cst prims.natZero)))))
-  test "natLitCtor: 5 == succ^5 zero" (isDefEqEmpty (natLit 5) succ5 == .ok true) $
+  test "natLitCtor: 5 == succ^5 zero" (isDefEqPrim (natLit 5) succ5 == .ok true) $
   -- Negative: natLit 5 != succ^4 zero
   let succ4 := app (cst prims.natSucc) (app (cst prims.natSucc) (app (cst prims.natSucc)
     (app (cst prims.natSucc) (cst prims.natZero))))
-  test "natLitCtor: 5 != succ^4 zero" (isDefEqEmpty (natLit 5) succ4 == .ok false)
+  test "natLitCtor: 5 != succ^4 zero" (isDefEqPrim (natLit 5) succ4 == .ok false)
 
 /-! ## Test: proof irrelevance precision -/
 
@@ -1429,7 +1425,7 @@ def testStringCtorDeep : TestSeq :=
   let consABC := app (app (app (cstL prims.listCons #[.zero]) charType) charA) consBC
   let strABC := app (cst prims.stringMk) consABC
   test "str ctor: \"abc\" == String.mk form"
-    (isDefEqEmpty (strLit "abc") strABC == .ok true) $
+    (isDefEqPrim (strLit "abc") strABC == .ok true) $
   -- "abc" != "ab" via string literals (known working)
   test "str ctor: \"abc\" != \"ab\""
     (isDefEqEmpty (strLit "abc") (strLit "ab") == .ok false)
@@ -1664,11 +1660,9 @@ def testNatSupplemental : TestSeq :=
   -- nat_lit(0) whnf stays as nat_lit(0)
   test "nat: whnf 0 stays 0" (whnfEmpty (natLit 0) == .ok (natLit 0)) $
   -- Nat.succ(x) == Nat.succ(x) with symbolic x
-  let natId := (buildMyNatEnv).2.1
-  let (env, _, _, _, _) := buildMyNatEnv
   let x := mkId "x" 15
   let y := mkId "y" 16
-  let env := addAxiom (addAxiom env x (cst natId)) y (cst natId)
+  let env := addAxiom (addAxiom buildPrimEnv x (cst prims.nat)) y (cst prims.nat)
   let sx := app (cst prims.natSucc) (cst x)
   test "nat succ sym: succ x == succ x" (isDefEqK2 env sx sx == .ok true) $
   let sy := app (cst prims.natSucc) (cst y)

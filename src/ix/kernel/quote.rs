@@ -53,7 +53,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         ))
       }
 
-      ValInner::Neutral { head, spine } => {
+      ValInner::Neutral { head, spine, .. } => {
         let mut result = quote_head(head, depth, &self.binder_names);
         for thunk in spine {
           let arg_val = self.force_thunk(thunk)?;
@@ -85,6 +85,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         strct,
         type_name,
         spine,
+        ..
       } => {
         let struct_val = self.force_thunk(strct)?;
         let struct_expr = self.quote(&struct_val, depth)?;

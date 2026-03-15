@@ -186,20 +186,55 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         // Validate elimination level
         self.check_elim_level(&v.cv.typ, v, &induct_id)?;
 
-        // Check each recursor rule type
-        let ci_ind = self.deref_const(&induct_id)?.clone();
-        if let KConstantInfo::Inductive(iv) = &ci_ind {
-          for i in 0..v.rules.len() {
-            if i < iv.ctors.len() {
-              self.check_recursor_rule_type(
-                &v.cv.typ,
-                v,
-                &iv.ctors[i],
-                v.rules[i].nfields,
-                &v.rules[i].rhs,
-              )?;
+        // Extract motive target head constants from the recursor type.
+        // Each motive has type ∀ (indices...) (x : T args), Sort v.
+        // We extract the head constant of T for each motive.
+        let motive_heads: Vec<Option<Address>> = {
+          let mut ty = v.cv.typ.clone();
+          // Skip params
+          for _ in 0..v.num_params {
+            if let KExprData::ForallE(_, body, _, _) = ty.data() {
+              ty = body.clone();
             }
           }
+          // Extract each motive's target head
+          (0..v.num_motives).map(|_| {
+            if let KExprData::ForallE(dom, body, _, _) = ty.data() {
+              let head = helpers::get_forall_target_head(dom);
+              ty = body.clone();
+              head
+            } else {
+              None
+            }
+          }).collect()
+        };
+
+        // Check each recursor rule type
+        for i in 0..v.rules.len() {
+          let rule = &v.rules[i];
+          // Determine the motive position for this constructor by matching
+          // its return type head against the motive target heads.
+          let ctor_ci = self.deref_const(&rule.ctor)?.clone();
+          let ctor_motive_pos = if let KConstantInfo::Constructor(cv) = &ctor_ci {
+            let ctor_head = helpers::get_ctor_return_head(&ctor_ci.typ().clone(), cv.num_params, cv.num_fields);
+            motive_heads.iter().position(|mh| {
+              match (mh, &ctor_head) {
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+              }
+            }).unwrap_or(0)
+          } else {
+            0
+          };
+          self.check_recursor_rule_type(
+            &v.cv.typ,
+            v,
+            &rule.ctor,
+            rule.nfields,
+            &rule.rhs,
+            ctor_motive_pos,
+            &induct_id,
+          )?;
         }
 
         // Infer typed rules
@@ -298,7 +333,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       },
     );
 
-    let ind_addrs: Vec<Address> = iv.all.iter().map(|mid| mid.addr.clone()).collect();
+    let ind_addrs: Vec<Address> = iv.canonical_block.iter().map(|mid| mid.addr.clone()).collect();
     // Extract result sort level by walking Pi binders with proper normalization,
     // rather than syntactic matching (which fails on let-bindings etc.)
     let ind_result_level = self.get_result_sort_level(&iv.cv.typ, iv.num_params + iv.num_indices)?;
@@ -619,7 +654,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                   args[..fv.num_params].to_vec();
                 let mut augmented: Vec<Address> =
                   ind_addrs.to_vec();
-                augmented.extend(fv.all.iter().map(|mid| mid.addr.clone()));
+                augmented.extend(fv.canonical_block.iter().map(|mid| mid.addr.clone()));
                 for ctor_id in &fv.ctors {
                   match self.env.get(ctor_id).cloned() {
                     Some(KConstantInfo::Constructor(cv)) => {
@@ -741,11 +776,12 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         n.clone(),
         bi.clone(),
       ),
-      KExprData::LetE(ty, val, body, n) => KExpr::let_e(
+      KExprData::LetE(ty, val, body, n, nd) => KExpr::let_e_nd(
         self.inst_go(ty, vals, depth),
         self.inst_go(val, vals, depth),
         self.inst_go(body, vals, depth + 1),
         n.clone(),
+        *nd,
       ),
       KExprData::Proj(ta, idx, s) => KExpr::proj(
         ta.clone(),
@@ -875,7 +911,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         })
       }
     };
-    if iv.all.len() != 1 {
+    // K-flag requires non-mutual: check lean_all (inductive names only, not constructors)
+    let iv_all = M::field_ref(&iv.lean_all).expect("lean_all required for K-flag check");
+    if iv_all.len() != 1 {
       return Err(TcError::KernelException {
         msg: "recursor claims K but inductive is mutual".to_string(),
       });
@@ -988,7 +1026,9 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       return Ok(()); // Motive is Prop, no large elim
     }
     // Large elimination from Prop
-    if iv.all.len() != 1 {
+    // Large elim requires non-mutual: check lean_all (inductive names only)
+    let iv_all = M::field_ref(&iv.lean_all).expect("lean_all required for large elim check");
+    if iv_all.len() != 1 {
       return Err(TcError::KernelException {
         msg: "recursor claims large elimination but mutual Prop inductive only allows Prop elimination".to_string(),
       });
@@ -1104,6 +1144,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     ctor_id: &MetaId<M>,
     nf: usize,
     rule_rhs: &KExpr<M>,
+    motive_pos: usize,
+    major_induct_id: &MetaId<M>,
   ) -> TcResult<(), M> {
     let np = rec.num_params;
     let nm = rec.num_motives;
@@ -1131,27 +1173,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     let ni = rec.num_indices;
 
-    // Find which motive position the recursor returns
-    let motive_pos: usize = {
-      let mut ty = rec_ty.clone();
-      for _ in 0..(ni + 1) {
-        match ty.data() {
-          KExprData::ForallE(_, body, _, _) => ty = body.clone(),
-          _ => break,
-        }
-      }
-      match ty.get_app_fn().data() {
-        KExprData::BVar(idx, _) => {
-          if *idx <= ni + nk + nm {
-            ni + nk + nm - idx
-          } else {
-            0
-          }
-        }
-        _ => 0,
-      }
-    };
-
     let cnp = match &ctor_ci {
       KConstantInfo::Constructor(cv) => cv.num_params,
       _ => np,
@@ -1172,10 +1193,18 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
     };
 
+    // Detect nested constructors: the major inductive (from the major
+    // premise) may be a nested type not in the recursor's inductive block.
+    // E.g., Lean.Doc.Inline.rec_2 targets List, but the inductive block
+    // is [Lean.Doc.Inline]. Since List ∉ induct_block, all its
+    // constructors need params extracted from the major premise domain.
+    let is_nested_major = !rec.induct_block.iter().any(|id| *id == *major_induct_id);
+    let use_major_premise = is_nested_major && major_premise_dom.is_some();
+
     // Compute level substitution
     let rec_level_count = rec.cv.num_levels;
     let ctor_level_count = ctor_ci.cv().num_levels;
-    let level_subst: Vec<KLevel<M>> = if cnp > np {
+    let level_subst: Vec<KLevel<M>> = if use_major_premise {
       match &major_premise_dom {
         Some(dom) => match dom.get_app_fn().const_levels() {
           Some(lvls) => lvls.clone(),
@@ -1197,20 +1226,16 @@ impl<M: MetaMode> TypeChecker<'_, M> {
 
     let ctor_levels = level_subst.clone();
 
-    // Compute nested params
-    let nested_params: Vec<KExpr<M>> = if cnp > np {
+    // Extract raw constructor params from major premise domain (unshifted).
+    // These will be shifted by the appropriate amount for each use context.
+    let raw_ctor_params: Vec<KExpr<M>> = if use_major_premise {
       match &major_premise_dom {
         Some(dom) => {
           let args = dom.get_app_args_owned();
-          (0..(cnp - np))
+          (0..cnp)
             .map(|i| {
-              if np + i < args.len() {
-                helpers::shift_ctor_to_rule(
-                  &args[np + i],
-                  0,
-                  nf,
-                  &[],
-                )
+              if i < args.len() {
+                args[i].clone()
               } else {
                 KExpr::bvar(0, M::Field::<Name>::default())
               }
@@ -1255,42 +1280,43 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       }
     }
 
-    // Apply nested param substitution
-    let ctor_ret = if cnp > np {
-      helpers::subst_nested_params(
-        &ctor_ret_type,
-        nf,
-        cnp - np,
-        &nested_params,
-      )
-    } else {
-      ctor_ret_type
-    };
-
-    let field_doms_adj: Vec<KExpr<M>> = if cnp > np {
-      field_doms
+    // Apply param substitution.
+    // When extracting from major premise, shift raw params by the field depth
+    // for each context (nf for return type, j for field domain j).
+    let ctor_ret;
+    let field_doms_adj: Vec<KExpr<M>>;
+    if use_major_premise && !raw_ctor_params.is_empty() {
+      // Shift params by nf for the return type context
+      let params_for_ret: Vec<KExpr<M>> = raw_ctor_params.iter()
+        .map(|p| helpers::shift_ctor_to_rule(p, 0, nf, &[]))
+        .collect();
+      ctor_ret = helpers::subst_all_params(
+        &ctor_ret_type, nf, cnp, &params_for_ret,
+      );
+      // Shift params by j for each field domain context
+      field_doms_adj = field_doms
         .iter()
         .enumerate()
-        .map(|(i, dom)| {
-          helpers::subst_nested_params(
-            dom,
-            i,
-            cnp - np,
-            &nested_params,
-          )
+        .map(|(j, dom)| {
+          let params_for_field: Vec<KExpr<M>> = raw_ctor_params.iter()
+            .map(|p| helpers::shift_ctor_to_rule(p, 0, j, &[]))
+            .collect();
+          helpers::subst_all_params(dom, j, cnp, &params_for_field)
         })
-        .collect()
+        .collect();
     } else {
-      field_doms
+      ctor_ret = ctor_ret_type;
+      field_doms_adj = field_doms;
     };
 
-    // Shift constructor return type for rule context
-    let ctor_ret_shifted = helpers::shift_ctor_to_rule(
-      &ctor_ret,
-      nf,
-      shift,
-      &level_subst,
-    );
+    // Shift constructor return type for rule context.
+    // When params were substituted from major premise, BVars already reference
+    // the correct binders — only apply level substitution (shift=0).
+    let ctor_ret_shifted = if use_major_premise && !raw_ctor_params.is_empty() {
+      helpers::shift_ctor_to_rule(&ctor_ret, nf, 0, &level_subst)
+    } else {
+      helpers::shift_ctor_to_rule(&ctor_ret, nf, shift, &level_subst)
+    };
 
     // Build expected return type: motive applied to indices and ctor app
     let motive_idx = nf + nk + nm - 1 - motive_pos;
@@ -1304,17 +1330,24 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     // Build constructor application
     let mut ctor_app =
       KExpr::cnst(ctor_id.clone(), ctor_levels);
-    for i in 0..np {
-      ctor_app = KExpr::app(
-        ctor_app,
-        KExpr::bvar(
-          nf + shift + np - 1 - i,
-          M::Field::<Name>::default(),
-        ),
-      );
-    }
-    for v in &nested_params {
-      ctor_app = KExpr::app(ctor_app, v.clone());
+    if use_major_premise && !raw_ctor_params.is_empty() {
+      // Apply ALL params from major premise, shifted by nf for
+      // the rule body context (inside nf field binders)
+      for p in &raw_ctor_params {
+        let shifted = helpers::shift_ctor_to_rule(p, 0, nf, &[]);
+        ctor_app = KExpr::app(ctor_app, shifted);
+      }
+    } else {
+      // Fallback: apply recursor's own params
+      for i in 0..np {
+        ctor_app = KExpr::app(
+          ctor_app,
+          KExpr::bvar(
+            nf + shift + np - 1 - i,
+            M::Field::<Name>::default(),
+          ),
+        );
+      }
     }
     for k in 0..nf {
       ctor_app = KExpr::app(
@@ -1328,10 +1361,15 @@ impl<M: MetaMode> TypeChecker<'_, M> {
     let mut full_type = ret;
     for i in 0..nf {
       let j = nf - 1 - i;
+      let field_shift = if use_major_premise && !raw_ctor_params.is_empty() {
+        0
+      } else {
+        shift
+      };
       let dom = helpers::shift_ctor_to_rule(
         &field_doms_adj[j],
         j,
-        shift,
+        field_shift,
         &level_subst,
       );
       full_type = KExpr::forall_e(

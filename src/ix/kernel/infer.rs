@@ -3,8 +3,6 @@
 //! Implements `infer` (type inference), `check` (type checking against an
 //! expected type), and related utilities.
 
-use std::rc::Rc;
-
 use crate::ix::env::{Literal, Name};
 
 use super::error::TcError;
@@ -231,8 +229,8 @@ impl<M: MetaMode> TypeChecker<'_, M> {
                       tc.trace_msg(&format!("[MISMATCH at App arg] dom_val={dom}  arg_type={arg_type}"));
                       // Show spine details if both are neutrals
                       if let (
-                        ValInner::Neutral { head: Head::Const { id: id1, .. }, spine: sp1 },
-                        ValInner::Neutral { head: Head::Const { id: id2, .. }, spine: sp2 },
+                        ValInner::Neutral { head: Head::Const { id: id1, .. }, spine: sp1, .. },
+                        ValInner::Neutral { head: Head::Const { id: id2, .. }, spine: sp2, .. },
                       ) = (dom.inner(), arg_type.inner()) {
                         tc.trace_msg(&format!("  addr_eq={}", id1.addr == id2.addr));
                         for (i, th) in sp1.iter().enumerate() {
@@ -335,7 +333,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         Ok((TypedExpr { info, body: term.clone() }, ty))
       }
 
-      KExprData::LetE(ty, val_expr, body, name) => {
+      KExprData::LetE(ty, val_expr, body, name, _) => {
         // Check the type annotation is a sort
         let _ = self.is_sort(ty)?;
         let ty_val = self.eval_in_ctx(ty)?;
@@ -571,6 +569,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::FVar { ty, .. },
         spine,
+        ..
       } => {
         let mut result_type = ty.clone();
         for thunk in spine {
@@ -593,6 +592,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::Const { id, levels },
         spine,
+        ..
       } => {
         self.ensure_typed_const(id)?;
         let tc = self
@@ -720,6 +720,7 @@ impl<M: MetaMode> TypeChecker<'_, M> {
       ValInner::Neutral {
         head: Head::Const { id: ind_id, levels: univs },
         spine,
+        ..
       } => {
         let ci = self.deref_const(ind_id)?.clone();
         match &ci {
@@ -777,6 +778,6 @@ impl<M: MetaMode> TypeChecker<'_, M> {
         env_vec.push(Val::mk_fvar(level, ty));
       }
     }
-    Rc::new(env_vec)
+    env_from_vec(env_vec)
   }
 }
