@@ -137,8 +137,8 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpLookups
   | .u32LessThan .. => do
     pushDegree 1
-    bumpAuxiliaries 24
-    bumpLookups 8
+    bumpAuxiliaries 12
+    bumpLookups 6
   | .debug .. => pure ()
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do

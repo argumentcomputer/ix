@@ -301,31 +301,31 @@ impl Function {
           }
         },
         ExecEntry::Op(Op::U32LessThan(x_idx, y_idx)) => {
-          let x_val = map[*x_idx];
-          let y_val = map[*y_idx];
-          let x_u32 =
-            u32::try_from(x_val.as_canonical_u64()).expect("Out of range");
-          let y_u32 =
-            u32::try_from(y_val.as_canonical_u64()).expect("Out of range");
-          let result = G::from_bool(x_u32 < y_u32);
+          let a_val = map[*x_idx];
+          let b_val = map[*y_idx];
+          let a_u32 =
+            u32::try_from(a_val.as_canonical_u64()).expect("Out of range");
+          let b_u32 =
+            u32::try_from(b_val.as_canonical_u64()).expect("Out of range");
+          let result = G::from_bool(a_u32 < b_u32);
           map.push(result);
           if !unconstrained {
-            let x_bytes = x_u32.to_le_bytes();
-            let y_bytes = y_u32.to_le_bytes();
-            let mut prev_borrow: u8 = 0;
-            for k in 0..4 {
-              let yk = y_bytes[k];
-              let xk = x_bytes[k];
-              let (tk, bk_prime_bool) = yk.overflowing_sub(xk);
-              let bk_prime = u8::from(bk_prime_bool);
-              let borrow_in = if k == 0 { 1u8 } else { prev_borrow };
-              let (_rk, bk_double_prime_bool) = tk.overflowing_sub(borrow_in);
-              let bk_double_prime = u8::from(bk_double_prime_bool);
-              record.bytes2_queries.bump_sub(&G::from_u8(yk), &G::from_u8(xk));
+            let x_bytes = a_u32.to_le_bytes();
+            let z_bytes = b_u32.to_le_bytes();
+            let c_u32 = b_u32.wrapping_sub(a_u32).wrapping_sub(1);
+            let y_bytes = c_u32.to_le_bytes();
+            // Bump range-check queries for byte pairs
+            for (i, j) in [
+              (x_bytes[0], x_bytes[1]),
+              (x_bytes[2], x_bytes[3]),
+              (y_bytes[0], y_bytes[1]),
+              (y_bytes[2], y_bytes[3]),
+              (z_bytes[0], z_bytes[1]),
+              (z_bytes[2], z_bytes[3]),
+            ] {
               record
                 .bytes2_queries
-                .bump_sub(&G::from_u8(tk), &G::from_u8(borrow_in));
-              prev_borrow = bk_prime + bk_double_prime;
+                .bump_range_check(&G::from_u8(i), &G::from_u8(j));
             }
           }
         },

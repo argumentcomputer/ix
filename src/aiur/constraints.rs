@@ -2,10 +2,10 @@ use multi_stark::{
   builder::symbolic::{SymbolicExpression, var},
   lookup::Lookup,
   p3_air::{Air, AirBuilder, BaseAir},
-  p3_field::PrimeCharacteristicRing,
+  p3_field::{Field, PrimeCharacteristicRing},
   p3_matrix::Matrix,
 };
-use std::ops::Range;
+use std::{array, ops::Range};
 
 use crate::aiur::{
   G,
@@ -17,8 +17,9 @@ use crate::aiur::{
     bytes2::{Bytes2, Bytes2Op},
   },
   memory_channel, u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_less_than_channel, u8_or_channel, u8_shift_left_channel,
-  u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
+  u8_less_than_channel, u8_or_channel, u8_range_check_channel,
+  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
+  u8_xor_channel,
 };
 
 type Expr = SymbolicExpression<G>;
@@ -449,122 +450,84 @@ impl Op {
         state,
       ),
       Op::U32LessThan(x_idx, y_idx) => {
-        // u32 less-than via byte decomposition and subtraction with borrow chain.
+        // u32 less-than via addition carry chain.
         //
-        // Goal: constrain output = 1 if x < y, 0 otherwise, where x and y are
+        // Goal: constrain output = 1 if a < b, 0 otherwise, where a and b are
         // u32 values (< 2^32) represented as Goldilocks field elements.
         //
-        // Step 1 — Byte decomposition. Decompose x and y into 4 little-endian
-        // bytes each:
-        //     x = Σ_{k=0}^{3} x_k · 256^k
-        //     y = Σ_{k=0}^{3} y_k · 256^k
-        // Each byte is range-checked to [0, 255] by appearing as an operand in
-        // a u8_sub lookup against the Bytes2 preprocessed table.
+        // Approach: find witness c (non-deterministic) such that
+        //     a + c + 1 = b + carry · 2^32
+        // The +1 ensures strict less-than (not ≤). Then a < b ⟺ carry = 0.
         //
-        // No canonicality check is needed. Since 2^32 < p, the 4- byte decomposition
-        // of any field element v is unique iff v < 2^32. If v ≥ 2^32, no 4-byte
-        // decomposition sums to v in the field, so the decomposition constraint
-        // is unsatisfiable and the prover simply cannot produce a valid witness.
-        // This means u32_less_than is only usable on values that actually fit in
-        // 32 bits; applying it to larger values will cause proof generation to fail.
+        // Decompose a, c, b into 4 little-endian bytes each (x_k, y_k, z_k).
+        // The carry chain is computed as polynomial expressions:
+        //     c_k = (x_k + y_k + prev - z_k) / 256
+        // where prev = 1 for k=0, prev = c_{k-1} for k>0.
+        // Each c_k is constrained to be boolean (assert_bool).
         //
-        // Step 2 — Borrow-chain subtraction. We compute
-        //     y_int − x_int − 1
-        // byte-by-byte using two u8_sub lookups per byte (8 total):
-        //     u8_sub(y_k, x_k) → (t_k, b_k')
-        //     u8_sub(t_k, c_k)  → (r_k, b_k'')
-        // where c_0 = 1 (the −1 offset) and c_k = b_{k−1}' + b_{k−1}'' for k > 0.
+        // All 12 bytes are range-checked via 6 Bytes2 range-check lookups
+        // (2 bytes per lookup).
         //
-        // The algebraic identity across all 4 bytes gives:
-        //     r_int − 2^32 · b_3 = y_int − x_int − 1
-        // where r_int = Σ r_k · 256^k ∈ [0, 2^32−1] and b_3 = b_3' + b_3'' is
-        // the final borrow.
-        //
-        // Step 3 — Soundness of the final borrow. Since x, y < 2^32:
-        //   • y − x − 1 ∈ [−(2^32−1), 2^32 − 2]  ⊂  (−2^32, 2^32)
-        //   • r_int ∈ [0, 2^32 − 1]
-        // So b_3 = (r_int − (y − x − 1)) / 2^32. If b_3 ≥ 2 then
-        // y − x − 1 = r_int − 2·2^32 ≤ 2^32−1 − 2^33 < −2^32, contradicting the
-        // lower bound. Hence b_3 ∈ {0, 1}:
-        //   • b_3 = 0  ⟹  y − x − 1 ≥ 0  ⟹  x < y
-        //   • b_3 = 1  ⟹  y − x − 1 < 0  ⟹  x ≥ y
-        //
-        // Output: 1 − b_3 = 1 − (b_3' + b_3'').
-        //
-        // Resources: 24 auxiliaries (8 bytes + 16 borrow chain), 8 lookups
-        // (all u8_sub), 2 polynomial constraints (decomposition only).
-        let x = state.map[*x_idx].0.clone();
-        let y = state.map[*y_idx].0.clone();
+        // Resources: 12 auxiliaries, 6 lookups, 6 polynomial constraints
+        // (2 decomposition + 4 assert_bool).
+        let a = state.map[*x_idx].0.clone();
+        let b = state.map[*y_idx].0.clone();
 
-        // Byte decomposition: 4 byte auxiliaries per operand
-        let x_bytes: Vec<Expr> =
-          (0..4).map(|_| state.next_auxiliary()).collect();
-        let y_bytes: Vec<Expr> =
-          (0..4).map(|_| state.next_auxiliary()).collect();
+        // Byte decomposition auxiliaries
+        let x_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
+        let y_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
+        let z_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
 
-        // Decomposition constraints: x = Σ xi * 256^i
-        let x_sum = x_bytes.iter().enumerate().fold(
-          Expr::Constant(G::ZERO),
-          |acc, (k, b)| {
-            acc + b.clone() * G::from_u64(256u64.pow(u32::try_from(k).unwrap()))
-          },
-        );
-        state.constraints.zeros.push(sel.clone() * (x - x_sum));
+        // Decomposition constraints: a = Σ x_k * 256^k, b = Σ z_k * 256^k
+        let base =
+          |k: usize| G::from_u64(256u64.pow(u32::try_from(k).unwrap()));
+        let recompose = |bytes: &[Expr; 4]| {
+          bytes
+            .iter()
+            .enumerate()
+            .fold(Expr::Constant(G::ZERO), |acc, (k, b)| {
+              acc + b.clone() * base(k)
+            })
+        };
+        state.constraints.zeros.push(sel.clone() * (a - recompose(&x_bytes)));
+        state.constraints.zeros.push(sel.clone() * (b - recompose(&z_bytes)));
 
-        let y_sum = y_bytes.iter().enumerate().fold(
-          Expr::Constant(G::ZERO),
-          |acc, (k, b)| {
-            acc + b.clone() * G::from_u64(256u64.pow(u32::try_from(k).unwrap()))
-          },
-        );
-        state.constraints.zeros.push(sel.clone() * (y - y_sum));
-
-        // Borrow chain: y - x - 1 byte-by-byte
-        let sub_channel = u8_sub_channel();
-        let mut prev_borrow: Option<Expr> = None;
+        // Carry chain: a + c + 1 = b + carry * 2^32
+        let base_inv = G::from_u64(256).inverse();
+        let mut carry = Expr::ONE; // initial carry = 1 for strict less-than
         for k in 0..4 {
-          let t_k = state.next_auxiliary();
-          let b_k_prime = state.next_auxiliary();
-          let r_k = state.next_auxiliary();
-          let b_k_double_prime = state.next_auxiliary();
-
-          // Lookup 1: u8_sub(y_k, x_k) -> (t_k, b_k')
-          let lookup = state.next_lookup();
-          combine_lookup_args(
-            lookup,
-            vec![
-              sel.clone() * sub_channel,
-              sel.clone() * y_bytes[k].clone(),
-              sel.clone() * x_bytes[k].clone(),
-              sel.clone() * t_k.clone(),
-              sel.clone() * b_k_prime.clone(),
-            ],
-          );
-          lookup.multiplicity += sel.clone();
-
-          // Lookup 2: u8_sub(t_k, borrow_in) -> (r_k, b_k'')
-          let borrow_in = match prev_borrow {
-            None => Expr::Constant(G::ONE),
-            Some(prev_borrow) => prev_borrow.clone(),
-          };
-          let lookup = state.next_lookup();
-          combine_lookup_args(
-            lookup,
-            vec![
-              sel.clone() * sub_channel,
-              sel.clone() * t_k,
-              sel.clone() * borrow_in,
-              sel.clone() * r_k,
-              sel.clone() * b_k_double_prime.clone(),
-            ],
-          );
-          lookup.multiplicity += sel.clone();
-
-          prev_borrow = Some(b_k_prime + b_k_double_prime);
+          let sum = x_bytes[k].clone() + y_bytes[k].clone() + carry;
+          carry = (sum - z_bytes[k].clone()) * base_inv;
+          state
+            .constraints
+            .zeros
+            .push(sel.clone() * (carry.clone() * (carry.clone() - Expr::ONE)));
         }
 
-        // Output: 1 - (b_3' + b_3'')
-        let output = Expr::ONE - prev_borrow.unwrap();
+        // Range-check byte pairs via Bytes2 lookups
+        let rc_channel = u8_range_check_channel();
+        for pair in [
+          (&x_bytes[0], &x_bytes[1]),
+          (&x_bytes[2], &x_bytes[3]),
+          (&y_bytes[0], &y_bytes[1]),
+          (&y_bytes[2], &y_bytes[3]),
+          (&z_bytes[0], &z_bytes[1]),
+          (&z_bytes[2], &z_bytes[3]),
+        ] {
+          let lookup = state.next_lookup();
+          combine_lookup_args(
+            lookup,
+            vec![
+              sel.clone() * rc_channel,
+              sel.clone() * pair.0.clone(),
+              sel.clone() * pair.1.clone(),
+            ],
+          );
+          lookup.multiplicity += sel.clone();
+        }
+
+        // Output: 1 - carry
+        let output = Expr::ONE - carry;
         state.map.push((output, 1));
       },
       Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => (),
