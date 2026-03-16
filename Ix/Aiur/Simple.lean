@@ -27,6 +27,8 @@ partial def simplifyTerm (decls : Decls) : Term → Term
   | .app global args => .app global (args.map recr)
   | .data (.tuple args) => .data (.tuple (args.map recr))
   | .data (.array args) => .data (.array (args.map recr))
+  | .u8LessThan a b => .u8LessThan (recr a) (recr b)
+  | .u32LessThan a b => .u32LessThan (recr a) (recr b)
   | .debug label term ret => .debug label (term.map recr) (recr ret)
   | t => t
 where

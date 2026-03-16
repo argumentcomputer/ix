@@ -32,15 +32,15 @@ structure LayoutMState where
 
 abbrev LayoutM := ReaderT TypedDecls $ StateM LayoutMState
 
-@[inline] def bumpSelectors : LayoutM Unit :=
+@[inline] def bumpSelectors (n : Nat := 1) : LayoutM Unit :=
   modify fun stt => { stt with
-    functionLayout := { stt.functionLayout with selectors := stt.functionLayout.selectors + 1 } }
+    functionLayout := { stt.functionLayout with selectors := stt.functionLayout.selectors + n } }
 
-@[inline] def bumpLookups : LayoutM Unit :=
+@[inline] def bumpLookups (n : Nat := 1) : LayoutM Unit :=
   modify fun stt => { stt with
-    functionLayout := { stt.functionLayout with lookups := stt.functionLayout.lookups + 1 } }
+    functionLayout := { stt.functionLayout with lookups := stt.functionLayout.lookups + n } }
 
-@[inline] def bumpAuxiliaries (n : Nat) : LayoutM Unit :=
+@[inline] def bumpAuxiliaries (n : Nat := 1) : LayoutM Unit :=
   modify fun stt => { stt with
     functionLayout := { stt.functionLayout with auxiliaries := stt.functionLayout.auxiliaries + n } }
 
@@ -88,7 +88,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
       pushDegree degree
     else
       pushDegree 1
-      bumpAuxiliaries 1
+      bumpAuxiliaries
   | .eqZero a => do
     let degree ← getDegree a
     if degree = 0 then pushDegree 0
@@ -102,7 +102,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     if !decls.isUnconstrainedFunction funIdx then bumpLookups
   | .store values => do
     pushDegree 1
-    bumpAuxiliaries 1
+    bumpAuxiliaries
     bumpLookups
     addMemSize values.size
   | .load size _ => do
@@ -125,7 +125,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpLookups
   | .u8ShiftLeft _ | .u8ShiftRight _ | .u8Xor .. | .u8And .. | .u8Or .. => do
     pushDegree 1
-    bumpAuxiliaries 1
+    bumpAuxiliaries
     bumpLookups
   | .u8Add .. | .u8Sub .. => do
     pushDegrees #[1, 1]
@@ -133,8 +133,12 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpLookups
   | .u8LessThan .. => do
     pushDegree 1
-    bumpAuxiliaries 1
+    bumpAuxiliaries
     bumpLookups
+  | .u32LessThan .. => do
+    pushDegree 1
+    bumpAuxiliaries 12
+    bumpLookups 6
   | .debug .. => pure ()
 
 partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
@@ -467,6 +471,10 @@ partial def toIndex
     let i ← expectIdx i
     let j ← expectIdx j
     pushOp (.u8LessThan i j)
+  | .u32LessThan i j => do
+    let i ← expectIdx i
+    let j ← expectIdx j
+    pushOp (.u32LessThan i j)
   | .debug label term ret => do
     let term ← term.mapM (toIndex layoutMap bindings)
     modify fun stt => { stt with ops := stt.ops.push (.debug label term) }

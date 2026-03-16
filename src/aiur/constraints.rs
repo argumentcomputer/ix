@@ -2,10 +2,10 @@ use multi_stark::{
   builder::symbolic::{SymbolicExpression, var},
   lookup::Lookup,
   p3_air::{Air, AirBuilder, BaseAir},
-  p3_field::PrimeCharacteristicRing,
+  p3_field::{Field, PrimeCharacteristicRing},
   p3_matrix::Matrix,
 };
-use std::ops::Range;
+use std::{array, ops::Range};
 
 use crate::aiur::{
   G,
@@ -17,8 +17,9 @@ use crate::aiur::{
     bytes2::{Bytes2, Bytes2Op},
   },
   memory_channel, u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_less_than_channel, u8_or_channel, u8_shift_left_channel,
-  u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
+  u8_less_than_channel, u8_or_channel, u8_range_check_channel,
+  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
+  u8_xor_channel,
 };
 
 type Expr = SymbolicExpression<G>;
@@ -448,6 +449,87 @@ impl Op {
         sel.clone(),
         state,
       ),
+      Op::U32LessThan(x_idx, y_idx) => {
+        // u32 less-than via addition carry chain.
+        //
+        // Goal: constrain output = 1 if a < b, 0 otherwise, where a and b are
+        // u32 values (< 2^32) represented as Goldilocks field elements.
+        //
+        // Approach: find witness c (non-deterministic) such that
+        //     a + c + 1 = b + carry · 2^32
+        // The +1 ensures strict less-than (not ≤). Then a < b ⟺ carry = 0.
+        //
+        // Decompose a, c, b into 4 little-endian bytes each (x_k, y_k, z_k).
+        // The carry chain is computed as polynomial expressions:
+        //     c_k = (x_k + y_k + prev - z_k) / 256
+        // where prev = 1 for k=0, prev = c_{k-1} for k>0.
+        // Each c_k is constrained to be boolean (assert_bool).
+        //
+        // All 12 bytes are range-checked via 6 Bytes2 range-check lookups
+        // (2 bytes per lookup).
+        //
+        // Resources: 12 auxiliaries, 6 lookups, 6 polynomial constraints
+        // (2 decomposition + 4 assert_bool).
+        let a = state.map[*x_idx].0.clone();
+        let b = state.map[*y_idx].0.clone();
+
+        // Byte decomposition auxiliaries
+        let x_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
+        let y_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
+        let z_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
+
+        // Decomposition constraints: a = Σ x_k * 256^k, b = Σ z_k * 256^k
+        let base =
+          |k: usize| G::from_u64(256u64.pow(u32::try_from(k).unwrap()));
+        let recompose = |bytes: &[Expr; 4]| {
+          bytes
+            .iter()
+            .enumerate()
+            .fold(Expr::Constant(G::ZERO), |acc, (k, b)| {
+              acc + b.clone() * base(k)
+            })
+        };
+        state.constraints.zeros.push(sel.clone() * (a - recompose(&x_bytes)));
+        state.constraints.zeros.push(sel.clone() * (b - recompose(&z_bytes)));
+
+        // Carry chain: a + c + 1 = b + carry * 2^32
+        let base_inv = G::from_u64(256).inverse();
+        let mut carry = Expr::ONE; // initial carry = 1 for strict less-than
+        for k in 0..4 {
+          let sum = x_bytes[k].clone() + y_bytes[k].clone() + carry;
+          carry = (sum - z_bytes[k].clone()) * base_inv;
+          state
+            .constraints
+            .zeros
+            .push(sel.clone() * (carry.clone() * (carry.clone() - Expr::ONE)));
+        }
+
+        // Range-check byte pairs via Bytes2 lookups
+        let rc_channel = u8_range_check_channel();
+        for pair in [
+          (&x_bytes[0], &x_bytes[1]),
+          (&x_bytes[2], &x_bytes[3]),
+          (&y_bytes[0], &y_bytes[1]),
+          (&y_bytes[2], &y_bytes[3]),
+          (&z_bytes[0], &z_bytes[1]),
+          (&z_bytes[2], &z_bytes[3]),
+        ] {
+          let lookup = state.next_lookup();
+          combine_lookup_args(
+            lookup,
+            vec![
+              sel.clone() * rc_channel,
+              sel.clone() * pair.0.clone(),
+              sel.clone() * pair.1.clone(),
+            ],
+          );
+          lookup.multiplicity += sel.clone();
+        }
+
+        // Output: 1 - carry
+        let output = Expr::ONE - carry;
+        state.map.push((output, 1));
+      },
       Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => (),
     }
   }
