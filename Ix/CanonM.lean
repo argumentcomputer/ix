@@ -66,7 +66,7 @@ def internExpr (ptr: USize) (y : Ix.Expr) : CanonM Unit := do
   }
 
 def internDataValue (ptr: USize) (y : Ix.DataValue) : CanonM Unit := do
-  let mut h := Blake3.Hasher.init ()
+  let mut h := Blake3.Rust.Hasher.init ()
   h := Ix.Expr.hashDataValue h y
   let h' := ⟨(h.finalizeWithLength 32).val⟩
   modify fun s => { s with
