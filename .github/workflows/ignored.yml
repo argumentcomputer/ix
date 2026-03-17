@@ -33,6 +33,7 @@ jobs:
           # test-args: "-- --ignored"
           use-github-cache: false
       - run: lake test -- --ignored
+      - run: lake exe Apps.ZKVoting.Prover
 
   valgrind-ffi:
     runs-on: warp-ubuntu-latest-x64-8x
