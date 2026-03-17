@@ -10,10 +10,12 @@ abbrev numHashesPerProof := #[1, 2, 4, 8, 16, 32]
 
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
+  capHeight := 0
 }
 
 def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
+  maxLogArity := 1
   numQueries := 100
   commitProofOfWorkBits := 20
   queryProofOfWorkBits := 0

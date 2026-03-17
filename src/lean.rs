@@ -113,6 +113,8 @@ lean_ffi::lean_domain_type! {
   // Aiur types
   /// Lean `Aiur.Bytecode.Toplevel` object.
   LeanAiurToplevel;
+  /// Lean `Aiur.CommitmentParameters` object.
+  LeanAiurCommitmentParameters;
   /// Lean `Aiur.FriParameters` object.
   LeanAiurFriParameters;
 

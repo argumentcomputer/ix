@@ -22,9 +22,11 @@ end Proof
 
 structure CommitmentParameters where
   logBlowup : Nat
+  capHeight : Nat
 
 structure FriParameters where
   logFinalPolyLen : Nat
+  maxLogArity : Nat
   numQueries : Nat
   commitProofOfWorkBits : Nat
   queryProofOfWorkBits : Nat
