@@ -1,9 +1,8 @@
 use multi_stark::{
   builder::symbolic::{SymbolicExpression, var},
   lookup::Lookup,
-  p3_air::{Air, AirBuilder, BaseAir},
+  p3_air::{Air, AirBuilder, BaseAir, WindowAccess},
   p3_field::{Field, PrimeCharacteristicRing},
-  p3_matrix::Matrix,
 };
 use std::{array, ops::Range};
 
@@ -44,12 +43,12 @@ where
 {
   fn eval(&self, builder: &mut AB) {
     let main = builder.main();
-    let row = main.row_slice(0).unwrap();
+    let row = main.current_slice();
     for zero in &self.zeros {
-      builder.assert_zero(zero.interpret(&row, None));
+      builder.assert_zero(zero.interpret(row, None));
     }
     for sel in self.selectors.clone() {
-      builder.assert_bool(row[sel].clone());
+      builder.assert_bool(row[sel]);
     }
   }
 }
