@@ -91,7 +91,7 @@ def blake3 := ⟦
     block_buffer: [[G; 4]; 16],
     block_index: G,
     chunk_index: G,
-    chunk_count: [G; 8],
+    chunk_count: U64,
     block_digest: [[G; 4]; 8],
     layer: Layer
   ) -> Layer {
@@ -307,7 +307,7 @@ def blake3 := ⟦
   fn blake3_compress(
     chaining_value: [[G; 4]; 8],
     block_words: [[G; 4]; 16],
-    counter: [G; 8],
+    counter: U64,
     block_len: G,
     flags: G
   ) -> [[G; 4]; 8] {

@@ -10,13 +10,13 @@ def kernelTypes := ⟦
   -- Universe Levels
   -- ============================================================================
 
-  -- TODO: Param index could be G instead of [G; 8] (Goldilocks is big enough)
+  -- TODO: Param index could be G instead of U64 (Goldilocks is big enough)
   enum KLevel {
     Zero,
     Succ(&KLevel),
     Max(&KLevel, &KLevel),
     IMax(&KLevel, &KLevel),
-    Param([G; 8])
+    Param(U64)
   }
 
   enum KLevelList {
@@ -28,37 +28,37 @@ def kernelTypes := ⟦
   -- Literals
   -- ============================================================================
 
-  -- TODO: [G; 8] is insufficient — Nat and String literals are arbitrarily large.
+  -- TODO: U64 is insufficient — Nat and String literals are arbitrarily large.
   -- Nat should be a list of u64 limbs (little-endian bignum).
   -- Str should be a list of bytes (or a ByteStream).
   -- This also requires fixing the blob ingress and conversion to produce these types.
   enum KLiteral {
-    Nat([G; 8]),
-    Str([G; 8])
+    Nat(U64),
+    Str(U64)
   }
 
   -- ============================================================================
   -- Expressions (de Bruijn indexed, no binder info or names)
   -- ============================================================================
 
-  -- TODO: all [G; 8] here (BVar index, Const index, Proj indices) could be G
+  -- TODO: all U64 here (BVar index, Const index, Proj indices) could be G
   enum KExpr {
-    BVar([G; 8]),
+    BVar(U64),
     Srt(&KLevel),
-    Const([G; 8], &KLevelList),
+    Const(U64, &KLevelList),
     App(&KExpr, &KExpr),
     Lam(&KExpr, &KExpr),
     Forall(&KExpr, &KExpr),
     Let(&KExpr, &KExpr, &KExpr),
     Lit(KLiteral),
-    Proj([G; 8], [G; 8], &KExpr)
+    Proj(U64, U64, &KExpr)
   }
 
   -- ============================================================================
   -- Values (NbE semantic domain)
   -- ============================================================================
 
-  -- TODO: all [G; 8] here could be G. In particular, FVar's de Bruijn level
+  -- TODO: all U64 here could be G. In particular, FVar's de Bruijn level
   -- is a runtime counter (not from Ixon) and would benefit most from the change,
   -- since it would simplify depth tracking throughout the kernel to use plain G
   -- arithmetic instead of u64 operations.
@@ -67,10 +67,10 @@ def kernelTypes := ⟦
     Lit(KLiteral),
     Lam(&KVal, &KExpr, &KValEnv),
     Pi(&KVal, &KExpr, &KValEnv),
-    Ctor([G; 8], &KLevelList, [G; 8], &KValList),
-    FVar([G; 8], &KValList),
-    Const([G; 8], &KLevelList, &KValList),
-    Proj([G; 8], [G; 8], &KVal, &KValList),
+    Ctor(U64, &KLevelList, U64, &KValList),
+    FVar(U64, &KValList),
+    Const(U64, &KLevelList, &KValList),
+    Proj(U64, U64, &KVal, &KValList),
     Thunk(&KExpr, &KValEnv)
   }
 
@@ -90,11 +90,11 @@ def kernelTypes := ⟦
   -- Reducibility Hints
   -- ============================================================================
 
-  -- TODO: Regular hint could be G instead of [G; 8]
+  -- TODO: Regular hint could be G instead of U64
   enum KHints {
     Opaque,
     Abbrev,
-    Regular([G; 8])
+    Regular(U64)
   }
 
   -- ============================================================================
@@ -122,9 +122,9 @@ def kernelTypes := ⟦
   -- Recursor Rule: (ctor_const_idx, num_fields, rhs)
   -- ============================================================================
 
-  -- TODO: ctor_const_idx and num_fields could be G instead of [G; 8]
+  -- TODO: ctor_const_idx and num_fields could be G instead of U64
   enum KRecRule {
-    Mk([G; 8], [G; 8], &KExpr)
+    Mk(U64, U64, &KExpr)
   }
 
   enum KRecRuleList {
@@ -148,26 +148,26 @@ def kernelTypes := ⟦
   --            num_motives, num_minors, rules, k_flag, is_unsafe)
   -- ============================================================================
 
-  -- TODO: could be a list of G instead of [G; 8]
+  -- TODO: could be a list of G instead of U64
   enum KU64List {
-    Cons([G; 8], &KU64List),
+    Cons(U64, &KU64List),
     Nil
   }
 
-  -- TODO: all [G; 8] fields (num_levels, num_params, num_indices, etc.)
+  -- TODO: all U64 fields (num_levels, num_params, num_indices, etc.)
   -- could be G instead. The Goldilocks field is large enough for any
   -- realistic value, and using G would simplify arithmetic throughout
   -- the kernel (native field ops instead of u64_add/u64_sub/u64_eq/etc.).
   -- This requires a corresponding change in Convert.lean to emit G values.
   enum KConstantInfo {
-    Axiom([G; 8], &KExpr, G),
-    Defn([G; 8], &KExpr, &KExpr, KHints, KSafety),
-    Thm([G; 8], &KExpr, &KExpr),
-    Opaque([G; 8], &KExpr, &KExpr, G),
-    Quot([G; 8], &KExpr, KQuotKind),
-    Induct([G; 8], &KExpr, [G; 8], [G; 8], &KU64List, G, G, G),
-    Ctor([G; 8], &KExpr, [G; 8], [G; 8], [G; 8], [G; 8], G),
-    Rec([G; 8], &KExpr, [G; 8], [G; 8], [G; 8], [G; 8], &KRecRuleList, G, G)
+    Axiom(U64, &KExpr, G),
+    Defn(U64, &KExpr, &KExpr, KHints, KSafety),
+    Thm(U64, &KExpr, &KExpr),
+    Opaque(U64, &KExpr, &KExpr, G),
+    Quot(U64, &KExpr, KQuotKind),
+    Induct(U64, &KExpr, U64, U64, &KU64List, G, G, G),
+    Ctor(U64, &KExpr, U64, U64, U64, U64, G),
+    Rec(U64, &KExpr, U64, U64, U64, U64, &KRecRuleList, G, G)
   }
 
   -- The global environment: a list of constants indexed by position
