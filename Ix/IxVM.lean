@@ -2,9 +2,13 @@ module
 public import Ix.Aiur.Meta
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
+public import Ix.IxVM.Ingress
 public import Ix.IxVM.Ixon
 public import Ix.IxVM.IxonSerialize
 public import Ix.IxVM.IxonDeserialize
+public import Ix.IxVM.Convert
+public import Ix.IxVM.KernelTypes
+public import Ix.IxVM.Kernel
 
 public section
 
@@ -26,6 +30,15 @@ def entrypoints := ⟦
         assert_eq!(bytes, bytes2);
         ixon_serde_test(n_minus_1),
     }
+  }
+
+  fn kernel_check_test(target_addr: [G; 32]) {
+    let k_consts = ingress(target_addr);
+    -- Discover primitive type indices
+    let nat_idx = find_nat_idx(k_consts, k_consts, [0; 8]);
+    -- String is not in Nat.add_comm's deps; use a sentinel value
+    let str_idx = [255, 255, 255, 255, 255, 255, 255, 255];
+    k_check_all_go(k_consts, k_consts, nat_idx, str_idx, [0; 8])
   }
 
   /- # Benchmark entrypoints -/
@@ -51,6 +64,10 @@ def ixVM : Except Aiur.Global Aiur.Toplevel := do
   let vm ← vm.merge ixon
   let vm ← vm.merge ixonSerialize
   let vm ← vm.merge ixonDeserialize
+  let vm ← vm.merge convert
+  let vm ← vm.merge ingress
+  let vm ← vm.merge kernelTypes
+  let vm ← vm.merge kernel
   vm.merge entrypoints
 
 end IxVM

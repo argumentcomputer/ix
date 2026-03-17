@@ -52,6 +52,10 @@ lean_exe «bench-ixvm» where
 lean_exe «bench-shardmap» where
   root := `Benchmarks.ShardMap
 
+lean_exe «bench-check-nat-add-comm» where
+  root := `Benchmarks.CheckNatAddComm
+  supportInterpreter := true
+
 end Benchmarks
 
 section IxApplications

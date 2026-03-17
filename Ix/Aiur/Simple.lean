@@ -30,6 +30,9 @@ partial def simplifyTerm (decls : Decls) : Term → Term
   | .u8LessThan a b => .u8LessThan (recr a) (recr b)
   | .u32LessThan a b => .u32LessThan (recr a) (recr b)
   | .debug label term ret => .debug label (term.map recr) (recr ret)
+  | .assertEq a b ret => .assertEq (recr a) (recr b) (recr ret)
+  | .ioSetInfo key idx len ret => .ioSetInfo (recr key) (recr idx) (recr len) (recr ret)
+  | .ioWrite data ret => .ioWrite (recr data) (recr ret)
   | t => t
 where
   recr := simplifyTerm decls

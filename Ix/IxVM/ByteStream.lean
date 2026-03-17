@@ -114,6 +114,59 @@ def byteStream := ⟦
     [c0, c1, c2, c3]
   }
 
+  -- Byte-by-byte `u64` equality
+  fn u64_eq(a: [G; 8], b: [G; 8]) -> G {
+    let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
+    match [a0 - b0, a1 - b1, a2 - b2, a3 - b3, a4 - b4, a5 - b5, a6 - b6, a7 - b7] {
+      [0, 0, 0, 0, 0, 0, 0, 0] => 1,
+      _ => 0,
+    }
+  }
+
+  -- `u64` addition with carry propagation (little-endian bytes)
+  fn u64_add(a: [G; 8], b: [G; 8]) -> [G; 8] {
+    let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
+    let (s0, c1) = u8_add(a0, b0);
+    let (t1, o1) = u8_add(a1, b1);
+    let (s1, c1a) = u8_add(t1, c1);
+    let c2 = u8_xor(o1, c1a);
+    let (t2, o2) = u8_add(a2, b2);
+    let (s2, c2a) = u8_add(t2, c2);
+    let c3 = u8_xor(o2, c2a);
+    let (t3, o3) = u8_add(a3, b3);
+    let (s3, c3a) = u8_add(t3, c3);
+    let c4 = u8_xor(o3, c3a);
+    let (t4, o4) = u8_add(a4, b4);
+    let (s4, c4a) = u8_add(t4, c4);
+    let c5 = u8_xor(o4, c4a);
+    let (t5, o5) = u8_add(a5, b5);
+    let (s5, c5a) = u8_add(t5, c5);
+    let c6 = u8_xor(o5, c5a);
+    let (t6, o6) = u8_add(a6, b6);
+    let (s6, c6a) = u8_add(t6, c6);
+    let c7 = u8_xor(o6, c6a);
+    let (t7, _) = u8_add(a7, b7);
+    let (s7, _) = u8_add(t7, c7);
+    [s0, s1, s2, s3, s4, s5, s6, s7]
+  }
+
+  -- `u64` subtraction via repeated decrement (correct for small b)
+  fn u64_sub(a: [G; 8], b: [G; 8]) -> [G; 8] {
+    match u64_is_zero(b) {
+      1 => a,
+      0 => u64_sub(relaxed_u64_pred(a), relaxed_u64_pred(b)),
+    }
+  }
+
+  fn g_or(a: G, b: G) -> G {
+    match (a, b) {
+      (0, 0) => 0,
+      _ => 1,
+    }
+  }
+
   -- Computes the successor of an `u64` assumed to be properly represented in
   -- little-endian bytes. If that's not the case, this implementation has UB.
   fn relaxed_u64_succ(bytes: [G; 8]) -> [G; 8] {
