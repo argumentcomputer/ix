@@ -118,7 +118,7 @@ jobs:
           echo "WORKFLOW_LINK=[Workflow logs]($REPO_URL/actions/runs/${{ github.run_id }})" | tee -a $GITHUB_ENV
         working-directory: ${{ github.workspace }}/pr
       - name: Generate token to write PR comment
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         if: always()
         id: app-token
         with:
