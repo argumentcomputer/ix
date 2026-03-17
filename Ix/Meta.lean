@@ -9,17 +9,20 @@ open Lean
 
 open System (FilePath)
 
+/-- Uses `LEAN_PATH` if set, otherwise falls back to `lake env printenv LEAN_PATH`. -/
+def initLeanSearchPath (cwd : Option FilePath := none) : IO Unit := do
+  if (← IO.getEnv "LEAN_PATH").isNone then
+    let out ← IO.Process.output { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd }
+    let paths := out.stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
+    initSearchPath (← findSysroot) paths
+  else
+    initSearchPath (← findSysroot)
+
 open Elab in
+/-- Loads a Lean `Environment` from a file path provided at runtime -/
 def getFileEnv (path : FilePath) : IO Environment := do
   let path ← IO.FS.realPath path
-  let out ← IO.Process.output {
-    cmd := "lake"
-    args := #["env", "printenv", "LEAN_PATH"]
-    cwd := path.parent
-  }
-  let paths := out.stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
-  initSearchPath (← findSysroot) paths
-
+  initLeanSearchPath path.parent
   let source ← IO.FS.readFile path
   let inputCtx := Parser.mkInputContext source path.toString
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
@@ -31,14 +34,18 @@ def getFileEnv (path : FilePath) : IO Environment := do
       (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
   return env
 
+/-- Captures the current module and its imports at compile time. -/
 elab "this_file!" : term => do
-  let ctx ← readThe Core.Context
-  let srcPath := FilePath.mk ctx.fileName
-  return ToExpr.toExpr srcPath
+  let env ← getEnv
+  return toExpr (env.header.imports.map (·.module) |>.push env.header.mainModule)
+
+/-- Loads a Lean `Environment` from compiled `.olean` files. -/
+def getCompileEnv (imports : Array Name) : IO Environment := do
+  initLeanSearchPath
+  importModules (imports.map ({ module := · : Import })) default
 
 macro "get_env!" : term =>
-  `(getFileEnv this_file!)
-
+  `(getCompileEnv this_file!)
 
 def runCore (f : CoreM α) (env : Environment) : IO α :=
   Prod.fst <$> f.toIO { fileName := default, fileMap := default } { env }

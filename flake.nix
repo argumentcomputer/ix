@@ -126,8 +126,30 @@
             lakeArtifacts = ixLib;
             installArtifacts = false;
           };
-        ixCLI = lake2nix.mkPackage (lakeBinArgs // {name = "ix";});
-        ixTest = lake2nix.mkPackage (lakeBinArgs // {name = "IxTests";});
+        leanPath = pkgs.lib.concatStringsSep ":" (
+          map (d: "${d}/.lake/build/lib/lean") ([ixLib] ++ builtins.attrValues lakeDeps)
+        );
+        wrapBin = drv:
+          pkgs.runCommand drv.name {nativeBuildInputs = [pkgs.makeWrapper];} ''
+            mkdir -p $out/bin
+            for f in ${drv}/bin/*; do
+              [ -x "$f" ] || continue
+              makeWrapper "$f" "$out/bin/$(basename "$f")" \
+                --set LEAN_SYSROOT "${pkgs.lean.lean-all}" \
+                --set LEAN_PATH "${drv}/.lake/build/lib/lean:${leanPath}"
+            done
+          '';
+        ixCLI = wrapBin (lake2nix.mkPackage (lakeBinArgs // {name = "ix";}));
+        ixTest = wrapBin (lake2nix.mkPackage (lakeBinArgs
+          // {
+            name = "IxTests";
+            installArtifacts = true;
+          }));
+        ZKVotingProver = wrapBin (lake2nix.mkPackage (lakeBinArgs
+          // {
+            name = "Apps.ZKVoting.Prover";
+            installArtifacts = true;
+          }));
       in {
         # Lean overlay
         _module.args.pkgs = import nixpkgs {
@@ -139,6 +161,7 @@
           default = ixLib;
           ix = ixCLI;
           test = ixTest;
+          zkv-prover = ZKVotingProver // {meta.mainProgram = "Apps-ZKVoting-Prover";};
         };
 
         # Provide a unified dev shell with Lean + Rust
