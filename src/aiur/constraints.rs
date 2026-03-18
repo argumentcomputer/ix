@@ -549,7 +549,7 @@ fn bytes1_constraints(
   let output = (0..size).map(|_| {
     let col = state.next_auxiliary();
     state.map.push((col.clone(), 1));
-    col
+    sel.clone() * col
   });
   lookup_args.extend(output);
 
@@ -577,7 +577,7 @@ fn bytes2_constraints(
   let output = (0..size).map(|_| {
     let col = state.next_auxiliary();
     state.map.push((col.clone(), 1));
-    col
+    sel.clone() * col
   });
   lookup_args.extend(output);
 
