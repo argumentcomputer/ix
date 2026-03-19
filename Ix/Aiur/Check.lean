@@ -36,27 +36,90 @@ instance : ToString CheckError where
   toString e := repr e |>.pretty
 
 /--
-Constructs a map of declarations from a toplevel, ensuring that there are no duplicate names
-for functions, datatypes, and type aliases.
+Eagerly expands type aliases, detecting cycles.
+-/
+partial def expandType (aliasMap : Std.HashMap Global Typ) (visited : Std.HashSet Global := {}) :
+    Typ → Except CheckError Typ
+  | .unit => pure .unit
+  | .field => pure .field
+  | .pointer t => do pure $ .pointer (← expandType aliasMap visited t)
+  | .function inputs output => do
+    let inputs' ← inputs.mapM (expandType aliasMap visited)
+    let output' ← expandType aliasMap visited output
+    pure $ .function inputs' output'
+  | .tuple ts => do
+    let ts' ← ts.mapM (expandType aliasMap visited)
+    pure $ .tuple ts'
+  | .array t n => do
+    let t' ← expandType aliasMap visited t
+    pure $ .array t' n
+  | .typeRef g =>
+    if let some expansion := aliasMap[g]? then
+      if visited.contains g then
+        throw $ CheckError.undefinedGlobal ⟨.mkSimple s!"Cycle detected in type alias `{g}`"⟩
+      else
+        expandType aliasMap (visited.insert g) expansion
+    else
+      pure $ .typeRef g  -- It's a dataType, keep it
+
+/--
+Constructs a map of declarations from a toplevel, expanding all type aliases.
+Type aliases are not added to the declarations - they are eliminated during construction.
 -/
 def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
-  let map ← toplevel.functions.foldlM (init := default)
-    fun acc function => addDecl acc Function.name .function function
-  let map ← toplevel.typeAliases.foldlM (init := map)
-    fun acc alias => addDecl (α := TypeAlias) acc (·.name) .typeAlias alias
-  toplevel.dataTypes.foldlM (init := map) addDataType
-where
-  ensureUnique name (map : IndexMap Global _) := do
-    if map.containsKey name then throw $ .duplicatedDefinition name
-  addDecl {α : Type} map (nameFn : α → Global) (wrapper : α → Declaration) (inner : α) := do
-    ensureUnique (nameFn inner) map
-    pure $ map.insert (nameFn inner) (wrapper inner)
-  addDataType map dataType := do
-    let dataTypeName := dataType.name
-    ensureUnique dataTypeName map
-    let map' := map.insert dataTypeName (.dataType dataType)
-    dataType.constructors.foldlM (init := map') fun acc (constructor : Constructor) =>
-      addDecl acc (dataTypeName.pushNamespace ∘ Constructor.nameHead) (.constructor dataType) constructor
+  -- First build the unexpanded alias map and check for name collisions
+  let mut rawAliasMap : Std.HashMap Global Typ := {}
+  let mut allNames : Std.HashSet Global := {}
+
+  -- Collect alias definitions
+  for alias in toplevel.typeAliases do
+    if allNames.contains alias.name then
+      throw $ .duplicatedDefinition alias.name
+    allNames := allNames.insert alias.name
+    rawAliasMap := rawAliasMap.insert alias.name alias.expansion
+
+  -- Now expand all aliases in terms of each other, detecting cycles
+  let mut aliasMap : Std.HashMap Global Typ := {}
+  for alias in toplevel.typeAliases do
+    let expanded ← expandType rawAliasMap {} alias.expansion
+    aliasMap := aliasMap.insert alias.name expanded
+
+  -- Helper to expand types in the declarations
+  let expandTyp := expandType aliasMap {}
+
+  -- Add functions with expanded types
+  let mut decls : Decls := default
+  for function in toplevel.functions do
+    if allNames.contains function.name then
+      throw $ .duplicatedDefinition function.name
+    allNames := allNames.insert function.name
+    let inputs' ← function.inputs.mapM fun (loc, typ) => do
+      let typ' ← expandTyp typ
+      pure (loc, typ')
+    let output' ← expandTyp function.output
+    let function' := { function with inputs := inputs', output := output' }
+    decls := decls.insert function.name (.function function')
+
+  -- Add datatypes with expanded types
+  for dataType in toplevel.dataTypes do
+    if allNames.contains dataType.name then
+      throw $ .duplicatedDefinition dataType.name
+    allNames := allNames.insert dataType.name
+    let mut constructors : List Constructor := []
+    for ctor in dataType.constructors do
+      let argTypes' ← ctor.argTypes.mapM expandTyp
+      constructors := constructors.concat { ctor with argTypes := argTypes' }
+    let dataType' := { dataType with constructors }
+    decls := decls.insert dataType.name (.dataType dataType')
+    -- Add constructors
+    for ctor in constructors do
+      let ctorName := dataType.name.pushNamespace ctor.nameHead
+      if allNames.contains ctorName then
+        throw $ .duplicatedDefinition ctorName
+      allNames := allNames.insert ctorName
+      decls := decls.insert ctorName (.constructor dataType' ctor)
+
+  pure decls
 
 structure CheckContext where
   decls : Decls
@@ -457,8 +520,6 @@ where
       if !map.contains dataType.name then
         set $ map.insert dataType.name
         dataType.constructors.flatMap (·.argTypes) |>.forM wellFormedType
-    | .typeAlias alias => do
-      wellFormedType alias.expansion
     | .function function => do
       wellFormedType function.output
       function.inputs.forM fun (_, typ) => wellFormedType typ
@@ -469,7 +530,6 @@ where
     | .pointer pointerTyp => wellFormedType pointerTyp
     | .typeRef typeRef => match decls.getByKey typeRef with
       | some (.dataType _) => pure ()
-      | some (.typeAlias _) => pure ()
       | some _ => throw $ .notADataType typeRef
       | none => throw $ .undefinedGlobal typeRef
     | _ => pure ()
