@@ -41,9 +41,9 @@ def Toplevel.checkAndSimplify (toplevel : Toplevel) : Except CheckError TypedDec
   let decls ← toplevel.mkDecls
   wellFormedDecls decls
   -- The first check happens on the original terms (but with expanded types).
-  decls.foldlM (init := ()) fun _ (_, decl) => match decl with
-    | .function f => do let _ ← (checkFunction f) (getFunctionContext f decls); pure ()
-    | _ => pure ()
+  decls.forM fun (_, decl) => do
+    if let .function f := decl then
+      let _ ← (checkFunction f) (getFunctionContext f decls)
   let decls := decls.map fun decl => match decl with
     | .function f => .function { f with body := simplifyTerm decls f.body }
     | _ => decl

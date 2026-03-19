@@ -69,6 +69,9 @@ def map (f : β → β) : IndexMap α β := by
 @[inline] def foldrM [Monad μ] (f : α × β → γ → μ γ) (init : γ) : μ γ :=
   m.pairs.foldrM f init
 
+@[inline] def forM [Monad μ] (f : α × β → μ PUnit) : μ PUnit :=
+  m.pairs.forM f
+
 end IndexMap
 
 end
