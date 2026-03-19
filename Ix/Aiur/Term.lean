@@ -58,7 +58,7 @@ inductive Typ where
   | tuple : Array Typ → Typ
   | array : Typ → Nat → Typ
   | pointer : Typ → Typ
-  | dataType : Global → Typ
+  | typeRef : Global → Typ
   | function : List Typ → Typ → Typ
   deriving Repr, BEq, Hashable, Inhabited
 
@@ -176,6 +176,11 @@ structure DataType where
   constructors : List Constructor
   deriving Repr, BEq, Inhabited
 
+structure TypeAlias where
+  name : Global
+  expansion : Typ
+  deriving Repr, BEq, Inhabited
+
 structure Function where
   name : Global
   inputs : List (Local × Typ)
@@ -186,6 +191,7 @@ structure Function where
 
 structure Toplevel where
   dataTypes : Array DataType
+  typeAliases : Array TypeAlias
   functions : Array Function
   deriving Repr
 
@@ -193,30 +199,98 @@ def Toplevel.getFuncIdx (toplevel : Toplevel) (funcName : Lean.Name) : Option Na
   toplevel.functions.findIdx? fun function => function.name.toName == funcName
 
 def Toplevel.merge (x y : Toplevel) : Except Global Toplevel := do
-  let ⟨xDataTypes, xFunctions⟩ := x
-  let ⟨yDataTypes, yFunctions⟩ := y
+  let ⟨xDataTypes, xTypeAliases, xFunctions⟩ := x
+  let ⟨yDataTypes, yTypeAliases, yFunctions⟩ := y
   let mut globals : Std.HashSet Global := ∅
   let mut dataTypes := .emptyWithCapacity (xDataTypes.size + yDataTypes.size)
+  let mut typeAliases := .emptyWithCapacity (xTypeAliases.size + yTypeAliases.size)
   let mut functions := .emptyWithCapacity (xFunctions.size + yFunctions.size)
   for dtSet in [xDataTypes, yDataTypes] do
     for dt in dtSet do
       if globals.contains dt.name then throw dt.name
       globals := globals.insert dt.name
       dataTypes := dataTypes.push dt
+  for taSet in [xTypeAliases, yTypeAliases] do
+    for ta in taSet do
+      if globals.contains ta.name then throw ta.name
+      globals := globals.insert ta.name
+      typeAliases := typeAliases.push ta
   for fSet in [xFunctions, yFunctions] do
     for f in fSet do
       if globals.contains f.name then throw f.name
       globals := globals.insert f.name
       functions := functions.push f
-  pure ⟨dataTypes, functions⟩
+  pure ⟨dataTypes, typeAliases, functions⟩
 
 inductive Declaration
   | function : Function → Declaration
   | dataType : DataType → Declaration
+  | typeAlias : TypeAlias → Declaration
   | constructor : DataType → Constructor → Declaration
   deriving Repr, Inhabited
 
 abbrev Decls := IndexMap Global Declaration
+
+/-- Eagerly expands type aliases in a type, detecting cycles. -/
+partial def Typ.expandAliases (decls : Decls) (visited : Std.HashSet Global := {}) :
+    Typ → Except String Typ
+  | .unit => pure .unit
+  | .field => pure .field
+  | .pointer t => do pure $ .pointer (← t.expandAliases decls visited)
+  | .function inputs output => do
+    let inputs' ← inputs.mapM (·.expandAliases decls visited)
+    let output' ← output.expandAliases decls visited
+    pure $ .function inputs' output'
+  | .tuple ts => do
+    let ts' ← ts.mapM (·.expandAliases decls visited)
+    pure $ .tuple ts'
+  | .array t n => do
+    let t' ← t.expandAliases decls visited
+    pure $ .array t' n
+  | .typeRef g => match decls.getByKey g with
+    | some (.typeAlias alias) =>
+      if visited.contains g then
+        throw s!"Cycle detected in type alias `{g}`"
+      else do
+        let visited' := visited.insert g
+        alias.expansion.expandAliases decls visited'
+    | some (.dataType _) => pure $ .typeRef g
+    | some _ => throw s!"Type reference `{g}` does not refer to a type"
+    | none => throw s!"Type reference `{g}` not found"
+
+/-- Expand all type aliases in a Toplevel, removing the aliases themselves. -/
+def Toplevel.expandAliases (toplevel : Toplevel) : Except String Toplevel := do
+  -- First create the Decls map to use for expansion
+  let mut decls : Decls := default
+  for ta in toplevel.typeAliases do
+    decls := decls.insert ta.name (.typeAlias ta)
+  for dt in toplevel.dataTypes do
+    decls := decls.insert dt.name (.dataType dt)
+
+  -- Validate all type aliases can be expanded (checks for cycles)
+  for ta in toplevel.typeAliases do
+    let _ ← ta.expansion.expandAliases decls
+
+  -- Expand all type references in data types
+  let mut dataTypes : Array DataType := #[]
+  for dt in toplevel.dataTypes do
+    let mut constructors : List Constructor := []
+    for ctor in dt.constructors do
+      let argTypes' ← ctor.argTypes.mapM (·.expandAliases decls)
+      constructors := constructors.concat { ctor with argTypes := argTypes' }
+    dataTypes := dataTypes.push { dt with constructors }
+
+  -- Expand all type references in functions
+  let mut functions : Array Function := #[]
+  for fn in toplevel.functions do
+    let inputs' ← fn.inputs.mapM fun (loc, typ) => do
+      let typ' ← typ.expandAliases decls
+      pure (loc, typ')
+    let output' ← fn.output.expandAliases decls
+    functions := functions.push { fn with inputs := inputs', output := output' }
+
+  -- Return Toplevel without aliases
+  pure ⟨dataTypes, #[], functions⟩
 
 structure TypedFunction where
   name : Global
@@ -255,7 +329,7 @@ partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
   | .array t n => do
     let tSize ← t.size decls visited
     pure $ n * tSize
-  | .dataType g => match decls.getByKey g with
+  | .typeRef g => match decls.getByKey g with
     | some (.dataType data) => data.size decls visited
     | _ => throw s!"Datatype not found: `{g}`"
 

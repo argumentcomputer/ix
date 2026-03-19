@@ -86,7 +86,7 @@ partial def elabTyp : ElabStxCat `typ
     mkAppM ``Typ.pointer #[← elabTyp t]
   | `(typ| $[.]?$i:ident) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
-    mkAppM ``Typ.dataType #[g]
+    mkAppM ``Typ.typeRef #[g]
   | `(typ| fn() -> $t:typ) => do
     mkAppM ``Typ.function #[← elabEmptyList ``Typ, ← elabTyp t]
   | `(typ| fn($t$[, $ts:typ]*) -> $t':typ) => do
@@ -441,6 +441,15 @@ def elabDataType : ElabStxCat `data_type
     mkAppM ``DataType.mk #[g, ← elabList c cs elabConstructor ``Constructor]
   | stx => throw $ .error stx "Invalid syntax for data type"
 
+declare_syntax_cat             type_alias
+syntax "type " ident " = " typ : type_alias
+
+def elabTypeAlias : ElabStxCat `type_alias
+  | `(type_alias| type $n:ident = $t:typ) => do
+    let g ← mkAppM ``Global.mk #[toExpr n.getId]
+    mkAppM ``TypeAlias.mk #[g, ← elabTyp t]
+  | stx => throw $ .error stx "Invalid syntax for type alias"
+
 declare_syntax_cat      bind
 syntax ident ": " typ : bind
 
@@ -477,17 +486,20 @@ where
     | some typ => elabTyp typ
 
 declare_syntax_cat declaration
-syntax function  : declaration
-syntax data_type : declaration
+syntax function   : declaration
+syntax data_type  : declaration
+syntax type_alias : declaration
 
-def accElabDeclarations (declarations : (Array Expr × Array Expr))
-    (stx : TSyntax `declaration) : TermElabM (Array Expr × Array Expr) :=
-  let (dataTypes, functions) := declarations
+def accElabDeclarations (declarations : (Array Expr × Array Expr × Array Expr))
+    (stx : TSyntax `declaration) : TermElabM (Array Expr × Array Expr × Array Expr) :=
+  let (dataTypes, typeAliases, functions) := declarations
   match stx with
   | `(declaration| $f:function) => do
-    pure (dataTypes, functions.push $ ← elabFunction f)
+    pure (dataTypes, typeAliases, functions.push $ ← elabFunction f)
   | `(declaration| $d:data_type) => do
-    pure (dataTypes.push $ ← elabDataType d, functions)
+    pure (dataTypes.push $ ← elabDataType d, typeAliases, functions)
+  | `(declaration| $ta:type_alias) => do
+    pure (dataTypes, typeAliases.push $ ← elabTypeAlias ta, functions)
   | stx => throw $ .error stx "Invalid syntax for declaration"
 
 declare_syntax_cat    toplevel
@@ -495,9 +507,10 @@ syntax declaration* : toplevel
 
 def elabToplevel : ElabStxCat `toplevel
   | `(toplevel| $[$ds:declaration]*) => do
-    let (dataTypes, functions) ← ds.foldlM (init := default) accElabDeclarations
+    let (dataTypes, typeAliases, functions) ← ds.foldlM (init := default) accElabDeclarations
     mkAppM ``Toplevel.mk #[
       ← mkArrayLit (mkConst ``DataType) dataTypes.toList,
+      ← mkArrayLit (mkConst ``TypeAlias) typeAliases.toList,
       ← mkArrayLit (mkConst ``Function) functions.toList,
     ]
   | stx => throw $ .error stx "Invalid syntax for toplevel"

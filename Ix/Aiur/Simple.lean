@@ -38,6 +38,10 @@ where
   recr := simplifyTerm decls
 
 def Toplevel.checkAndSimplify (toplevel : Toplevel) : Except CheckError TypedDecls := do
+  -- First expand all type aliases
+  let toplevel ← match toplevel.expandAliases with
+    | .ok t => pure t
+    | .error e => throw (.undefinedGlobal ⟨.mkSimple e⟩)  -- TODO: better error handling
   let decls ← toplevel.mkDecls
   wellFormedDecls decls
   -- The first check happens on the original terms.
@@ -49,6 +53,7 @@ def Toplevel.checkAndSimplify (toplevel : Toplevel) : Except CheckError TypedDec
   decls.foldlM (init := default) fun typedDecls (name, decl) => match decl with
     | .constructor d c => pure $ typedDecls.insert name (.constructor d c)
     | .dataType d => pure $ typedDecls.insert name (.dataType d)
+    | .typeAlias _ => pure typedDecls  -- Type aliases should have been expanded by now
     | .function f => do
       -- The second check happens on the simplified terms.
       let f ← (checkFunction f) (getFunctionContext f decls)

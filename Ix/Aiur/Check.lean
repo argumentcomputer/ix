@@ -37,11 +37,13 @@ instance : ToString CheckError where
 
 /--
 Constructs a map of declarations from a toplevel, ensuring that there are no duplicate names
-for functions and datatypes.
+for functions, datatypes, and type aliases.
 -/
 def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
   let map ← toplevel.functions.foldlM (init := default)
     fun acc function => addDecl acc Function.name .function function
+  let map ← toplevel.typeAliases.foldlM (init := map)
+    fun acc alias => addDecl (α := TypeAlias) acc (·.name) .typeAlias alias
   toplevel.dataTypes.foldlM (init := map) addDataType
 where
   ensureUnique name (map : IndexMap Global _) := do
@@ -73,7 +75,7 @@ def refLookup (global : Global) : CheckM Typ := do
   | some (.constructor dataType constructor) =>
     let args := constructor.argTypes
     unless args.isEmpty do (throw $ .wrongNumArgs global args.length 0)
-    pure $ .dataType $ dataType.name
+    pure $ .typeRef $ dataType.name
   | some _ => throw $ .notAValue global
   | none => throw $ .unboundVariable global
 
@@ -278,7 +280,7 @@ partial def inferUnqualifiedApp (func : Global) (unqualifiedFunc : String) (args
       pure ⟨function.output, .app func args, false⟩
     | some (.constructor dataType constr) => do
       let args ← checkArgsAndInputs func args constr.argTypes
-      pure ⟨.dataType dataType.name, .app func args, false⟩
+      pure ⟨.typeRef dataType.name, .app func args, false⟩
     | _ => throw $ .cannotApply func
 where
   checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
@@ -298,7 +300,7 @@ partial def inferQualifiedApp (func : Global) (args : List Term) : CheckM TypedT
     pure ⟨function.output, .app func args, false⟩
   | some (.constructor dataType constr) =>
     let args ← checkArgsAndInputs func args constr.argTypes
-    pure ⟨.dataType dataType.name, .app func args, false⟩
+    pure ⟨.typeRef dataType.name, .app func args, false⟩
   | _ => throw $ .cannotApply func
 where
   checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
@@ -399,7 +401,7 @@ where
       let typ' := .function (function.inputs.map Prod.snd) function.output
       unless typ == typ' do throw $ .typeMismatch typ typ'
       pure []
-    | (.ref constrRef pats, .dataType dataTypeRef) => do
+    | (.ref constrRef pats, .typeRef dataTypeRef) => do
       let ctx ← read
       let some (.dataType dataType) := ctx.decls.getByKey dataTypeRef | unreachable!
       let some (.constructor dataType' constr) := ctx.decls.getByKey constrRef | throw $ .notAConstructor constrRef
@@ -455,6 +457,8 @@ where
       if !map.contains dataType.name then
         set $ map.insert dataType.name
         dataType.constructors.flatMap (·.argTypes) |>.forM wellFormedType
+    | .typeAlias alias => do
+      wellFormedType alias.expansion
     | .function function => do
       wellFormedType function.output
       function.inputs.forM fun (_, typ) => wellFormedType typ
@@ -463,10 +467,11 @@ where
   wellFormedType : Typ → EStateM CheckError (Std.HashSet Global) Unit
     | .tuple typs => typs.forM wellFormedType
     | .pointer pointerTyp => wellFormedType pointerTyp
-    | .dataType dataTypeRef => match decls.getByKey dataTypeRef with
+    | .typeRef typeRef => match decls.getByKey typeRef with
       | some (.dataType _) => pure ()
-      | some _ => throw $ .notADataType dataTypeRef
-      | none => throw $ .undefinedGlobal dataTypeRef
+      | some (.typeAlias _) => pure ()
+      | some _ => throw $ .notADataType typeRef
+      | none => throw $ .undefinedGlobal typeRef
     | _ => pure ()
 
 /-- Checks a function to ensure its body's type matches its declared output type. -/
