@@ -52,10 +52,12 @@ def toplevel := ⟦
 
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
+  capHeight := 0
 }
 
 def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
+  maxLogArity := 1
   numQueries := 100
   commitProofOfWorkBits := 20
   queryProofOfWorkBits := 0

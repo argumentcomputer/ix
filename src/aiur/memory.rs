@@ -1,9 +1,9 @@
 use multi_stark::{
   builder::symbolic::{SymbolicExpression, var},
   lookup::Lookup,
-  p3_air::{Air, AirBuilder, BaseAir},
+  p3_air::{Air, AirBuilder, BaseAir, WindowAccess},
   p3_field::PrimeCharacteristicRing,
-  p3_matrix::{Matrix, dense::RowMajorMatrix},
+  p3_matrix::dense::RowMajorMatrix,
 };
 use rayon::{
   iter::{
@@ -99,13 +99,13 @@ where
 {
   fn eval(&self, builder: &mut AB) {
     let main = builder.main();
-    let local: &[AB::Var] = &main.row_slice(0).unwrap();
-    let next: &[AB::Var] = &main.row_slice(1).unwrap();
+    let local = main.current_slice();
+    let next = main.next_slice();
 
-    let (is_real, ptr) = (local[1].clone(), local[2].clone());
-    let (is_real_next, ptr_next) = (next[1].clone(), next[2].clone());
+    let (is_real, ptr) = (local[1], local[2]);
+    let (is_real_next, ptr_next) = (next[1], next[2]);
 
-    builder.assert_bool(is_real.clone());
+    builder.assert_bool(is_real);
 
     // Whether the next row is real.
     let is_real_transition = is_real_next * builder.is_transition();

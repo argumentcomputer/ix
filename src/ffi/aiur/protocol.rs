@@ -20,7 +20,9 @@ use crate::{
   ffi::aiur::{
     lean_unbox_g, lean_unbox_nat_as_usize, toplevel::decode_toplevel,
   },
-  lean::{LeanAiurFriParameters, LeanAiurToplevel},
+  lean::{
+    LeanAiurCommitmentParameters, LeanAiurFriParameters, LeanAiurToplevel,
+  },
 };
 
 // =============================================================================
@@ -65,7 +67,7 @@ extern "C" fn rs_aiur_proof_of_bytes(
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_build(
   toplevel: LeanAiurToplevel,
-  commitment_parameters: LeanNat,
+  commitment_parameters: LeanAiurCommitmentParameters,
 ) -> LeanExternal<AiurSystem> {
   let system = AiurSystem::build(
     decode_toplevel(toplevel),
@@ -188,17 +190,24 @@ fn build_lean_io_buffer(io_buffer: &IOBuffer) -> LeanObject {
   *io_tuple
 }
 
-fn decode_commitment_parameters(obj: LeanNat) -> CommitmentParameters {
-  CommitmentParameters { log_blowup: lean_unbox_nat_as_usize(*obj) }
+fn decode_commitment_parameters(
+  obj: LeanAiurCommitmentParameters,
+) -> CommitmentParameters {
+  let ctor = obj.as_ctor();
+  CommitmentParameters {
+    log_blowup: lean_unbox_nat_as_usize(ctor.get(0)),
+    cap_height: lean_unbox_nat_as_usize(ctor.get(1)),
+  }
 }
 
 fn decode_fri_parameters(obj: LeanAiurFriParameters) -> FriParameters {
   let ctor = obj.as_ctor();
   FriParameters {
     log_final_poly_len: lean_unbox_nat_as_usize(ctor.get(0)),
-    num_queries: lean_unbox_nat_as_usize(ctor.get(1)),
-    commit_proof_of_work_bits: lean_unbox_nat_as_usize(ctor.get(2)),
-    query_proof_of_work_bits: lean_unbox_nat_as_usize(ctor.get(3)),
+    max_log_arity: lean_unbox_nat_as_usize(ctor.get(1)),
+    num_queries: lean_unbox_nat_as_usize(ctor.get(2)),
+    commit_proof_of_work_bits: lean_unbox_nat_as_usize(ctor.get(3)),
+    query_proof_of_work_bits: lean_unbox_nat_as_usize(ctor.get(4)),
   }
 }
 
