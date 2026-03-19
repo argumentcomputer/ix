@@ -36,62 +36,71 @@ instance : ToString CheckError where
   toString e := repr e |>.pretty
 
 /--
-Eagerly expands type aliases, detecting cycles.
+Eagerly expands type aliases, building the aliasMap on demand and detecting cycles.
 -/
-partial def expandType (aliasMap : Std.HashMap Global Typ) (visited : Std.HashSet Global := {}) :
-    Typ → Except CheckError Typ
+partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array TypeAlias) :
+    Typ → StateT (Std.HashMap Global Typ) (Except CheckError) Typ
   | .unit => pure .unit
   | .field => pure .field
-  | .pointer t => do pure $ .pointer (← expandType aliasMap visited t)
+  | .pointer t => do pure $ .pointer (← expandTypeM visited toplevelAliases t)
   | .function inputs output => do
-    let inputs' ← inputs.mapM (expandType aliasMap visited)
-    let output' ← expandType aliasMap visited output
+    let inputs' ← inputs.mapM (expandTypeM visited toplevelAliases)
+    let output' ← expandTypeM visited toplevelAliases output
     pure $ .function inputs' output'
   | .tuple ts => do
-    let ts' ← ts.mapM (expandType aliasMap visited)
+    let ts' ← ts.mapM (expandTypeM visited toplevelAliases)
     pure $ .tuple ts'
   | .array t n => do
-    let t' ← expandType aliasMap visited t
+    let t' ← expandTypeM visited toplevelAliases t
     pure $ .array t' n
-  | .typeRef g =>
-    if let some expansion := aliasMap[g]? then
+  | .typeRef g => do
+    let aliasMap ← get
+    -- Check if already expanded
+    if let some expanded := aliasMap[g]? then
+      return expanded
+    -- Check if it's an alias
+    if let some (alias : TypeAlias) := toplevelAliases.find? (·.name == g) then
+      -- Check for cycle
       if visited.contains g then
         throw $ CheckError.undefinedGlobal ⟨.mkSimple s!"Cycle detected in type alias `{g}`"⟩
-      else
-        expandType aliasMap (visited.insert g) expansion
+      -- Expand the alias recursively
+      let expanded ← expandTypeM (visited.insert g) toplevelAliases alias.expansion
+      -- Save to aliasMap
+      set (aliasMap.insert g expanded)
+      return expanded
     else
-      pure $ .typeRef g  -- It's a dataType, keep it
+      -- It's a dataType, keep it
+      pure $ .typeRef g
 
 /--
 Constructs a map of declarations from a toplevel, expanding all type aliases.
 Type aliases are not added to the declarations - they are eliminated during construction.
 -/
 def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
-  -- First build the unexpanded alias map and check for name collisions
-  let mut rawAliasMap : Std.HashMap Global Typ := {}
+  -- Check for duplicate names among aliases
   let mut allNames : Std.HashSet Global := {}
-
-  -- Collect alias definitions
   for alias in toplevel.typeAliases do
     if allNames.contains alias.name then
-      throw $ .duplicatedDefinition alias.name
+      throw $ CheckError.duplicatedDefinition alias.name
     allNames := allNames.insert alias.name
-    rawAliasMap := rawAliasMap.insert alias.name alias.expansion
 
-  -- Now expand all aliases in terms of each other, detecting cycles
-  let mut aliasMap : Std.HashMap Global Typ := {}
-  for alias in toplevel.typeAliases do
-    let expanded ← expandType rawAliasMap {} alias.expansion
-    aliasMap := aliasMap.insert alias.name expanded
+  -- Build aliasMap by expanding all aliases in order
+  let initAliasMap := {}
+  let (_, finalAliasMap) ← (toplevel.typeAliases.mapM fun (alias : TypeAlias) => do
+    -- Expand and save the alias
+    let expanded ← expandTypeM {} toplevel.typeAliases alias.expansion
+    modify fun (aliasMap : Std.HashMap Global Typ) => aliasMap.insert alias.name expanded
+  ).run initAliasMap
 
-  -- Helper to expand types in the declarations
-  let expandTyp := expandType aliasMap {}
+  -- Helper to expand types in the declarations using the built aliasMap
+  let expandTyp (typ : Typ) : Except CheckError Typ :=
+    (expandTypeM {} toplevel.typeAliases typ).run' finalAliasMap
 
   -- Add functions with expanded types
   let mut decls : Decls := default
   for function in toplevel.functions do
     if allNames.contains function.name then
-      throw $ .duplicatedDefinition function.name
+      throw $ CheckError.duplicatedDefinition function.name
     allNames := allNames.insert function.name
     let inputs' ← function.inputs.mapM fun (loc, typ) => do
       let typ' ← expandTyp typ
@@ -103,7 +112,7 @@ def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
   -- Add datatypes with expanded types
   for dataType in toplevel.dataTypes do
     if allNames.contains dataType.name then
-      throw $ .duplicatedDefinition dataType.name
+      throw $ CheckError.duplicatedDefinition dataType.name
     allNames := allNames.insert dataType.name
     let mut constructors : List Constructor := []
     for ctor in dataType.constructors do
@@ -115,7 +124,7 @@ def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
     for ctor in constructors do
       let ctorName := dataType.name.pushNamespace ctor.nameHead
       if allNames.contains ctorName then
-        throw $ .duplicatedDefinition ctorName
+        throw $ CheckError.duplicatedDefinition ctorName
       allNames := allNames.insert ctorName
       decls := decls.insert ctorName (.constructor dataType' ctor)
 
