@@ -44,7 +44,7 @@ def sha256 := ⟦
     sha256_aux(stream, [0; 8], state)
   }
 
-  fn sha256_aux(stream: ByteStream, len_be: [G; 8], state: [[G; 4]; 8]) -> [[G; 4]; 8] {
+  fn sha256_aux(stream: ByteStream, len_be: U64, state: [[G; 4]; 8]) -> [[G; 4]; 8] {
     let W = [[0; 4]; 16];
     match stream {
       ByteStream.Nil =>
@@ -586,7 +586,7 @@ def sha256 := ⟦
     }
   }
 
-  fn fill_W_with_length_and_run_rounds(len_be: [G; 8], state: [[G; 4]; 8]) -> [[G; 4]; 8] {
+  fn fill_W_with_length_and_run_rounds(len_be: U64, state: [[G; 4]; 8]) -> [[G; 4]; 8] {
     let W = [[0; 4]; 16];
     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);

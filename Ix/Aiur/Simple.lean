@@ -40,9 +40,10 @@ where
 def Toplevel.checkAndSimplify (toplevel : Toplevel) : Except CheckError TypedDecls := do
   let decls ← toplevel.mkDecls
   wellFormedDecls decls
-  -- The first check happens on the original terms.
-  toplevel.functions.forM fun function => do
-    let _ ← (checkFunction function) (getFunctionContext function decls)
+  -- The first check happens on the original terms (but with expanded types).
+  decls.forM fun (_, decl) => do
+    if let .function f := decl then
+      let _ ← (checkFunction f) (getFunctionContext f decls)
   let decls := decls.map fun decl => match decl with
     | .function f => .function { f with body := simplifyTerm decls f.body }
     | _ => decl

@@ -11,6 +11,8 @@ def byteStream := ⟦
     Nil
   }
 
+  type U64 = [G; 8]
+
   fn byte_stream_concat(a: ByteStream, b: ByteStream) -> ByteStream {
     match a {
       ByteStream.Nil => b,
@@ -19,7 +21,7 @@ def byteStream := ⟦
     }
   }
 
-  fn byte_stream_length(bytes: ByteStream) -> [G; 8] {
+  fn byte_stream_length(bytes: ByteStream) -> U64 {
     match bytes {
       ByteStream.Nil => [0; 8],
       ByteStream.Cons(_, &rest) => relaxed_u64_succ(byte_stream_length(rest)),
@@ -48,7 +50,7 @@ def byteStream := ⟦
   -- Count bytes needed to represent a u64.
   -- Important: this implementation differs from the Lean and Rust ones, returning
   -- 1 for [0; 8] instead of 0.
-  fn u64_byte_count(x: [G; 8]) -> G {
+  fn u64_byte_count(x: U64) -> G {
     match x {
       [_, 0, 0, 0, 0, 0, 0, 0] => 1,
       [_, _, 0, 0, 0, 0, 0, 0] => 2,
@@ -61,7 +63,7 @@ def byteStream := ⟦
     }
   }
 
-  fn u64_is_zero(x: [G; 8]) -> G {
+  fn u64_is_zero(x: U64) -> G {
     match x {
       [0, 0, 0, 0, 0, 0, 0, 0] => 1,
       _ => 0,
@@ -69,7 +71,7 @@ def byteStream := ⟦
   }
 
   -- Reconstructs a byte from its bits in little-endian.
-  fn u8_recompose(bits: [G; 8]) -> G {
+  fn u8_recompose(bits: U64) -> G {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
     b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6 + 128 * b7
   }
@@ -115,7 +117,7 @@ def byteStream := ⟦
   }
 
   -- Byte-by-byte `u64` equality
-  fn u64_eq(a: [G; 8], b: [G; 8]) -> G {
+  fn u64_eq(a: U64, b: U64) -> G {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
     match [a0 - b0, a1 - b1, a2 - b2, a3 - b3, a4 - b4, a5 - b5, a6 - b6, a7 - b7] {
@@ -125,7 +127,7 @@ def byteStream := ⟦
   }
 
   -- `u64` addition with carry propagation (little-endian bytes)
-  fn u64_add(a: [G; 8], b: [G; 8]) -> [G; 8] {
+  fn u64_add(a: U64, b: U64) -> U64 {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
     let (s0, c1) = u8_add(a0, b0);
@@ -153,7 +155,7 @@ def byteStream := ⟦
   }
 
   -- `u64` subtraction via repeated decrement (correct for small b)
-  fn u64_sub(a: [G; 8], b: [G; 8]) -> [G; 8] {
+  fn u64_sub(a: U64, b: U64) -> U64 {
     match u64_is_zero(b) {
       1 => a,
       0 => u64_sub(relaxed_u64_pred(a), relaxed_u64_pred(b)),
@@ -169,7 +171,7 @@ def byteStream := ⟦
 
   -- Computes the successor of an `u64` assumed to be properly represented in
   -- little-endian bytes. If that's not the case, this implementation has UB.
-  fn relaxed_u64_succ(bytes: [G; 8]) -> [G; 8] {
+  fn relaxed_u64_succ(bytes: U64) -> U64 {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
     match b0 {
       255 => match b1 {
@@ -198,7 +200,7 @@ def byteStream := ⟦
     }
   }
 
-  fn relaxed_u64_be_add_2_bytes(u64: [G; 8], bs: [G; 2]) -> [G; 8] {
+  fn relaxed_u64_be_add_2_bytes(u64: U64, bs: [G; 2]) -> U64 {
     -- Byte 0, no initial carry
     let (sum0, carry1) = u8_add(u64[7], bs[1]);
 
@@ -240,13 +242,13 @@ def byteStream := ⟦
   }
 
   enum U64List {
-    Cons([G; 8], &U64List),
+    Cons(U64, &U64List),
     Nil
   }
 
   -- Computes the predecessor of an `u64` assumed to be properly represented in
   -- little-endian bytes. If that's not the case, this implementation has UB.
-  fn relaxed_u64_pred(bytes: [G; 8]) -> [G; 8] {
+  fn relaxed_u64_pred(bytes: U64) -> U64 {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
     match b0 {
       0 => match b1 {
@@ -275,7 +277,7 @@ def byteStream := ⟦
     }
   }
 
-  fn u64_list_length(xs: U64List) -> [G; 8] {
+  fn u64_list_length(xs: U64List) -> U64 {
     match xs {
       U64List.Nil => [0; 8],
       U64List.Cons(_, rest) => relaxed_u64_succ(u64_list_length(load(rest))),

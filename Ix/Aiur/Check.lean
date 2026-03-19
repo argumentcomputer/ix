@@ -36,25 +36,99 @@ instance : ToString CheckError where
   toString e := repr e |>.pretty
 
 /--
-Constructs a map of declarations from a toplevel, ensuring that there are no duplicate names
-for functions and datatypes.
+Eagerly expands type aliases, building the aliasMap on demand and detecting cycles.
+-/
+partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array TypeAlias) :
+    Typ → StateT (Std.HashMap Global Typ) (Except CheckError) Typ
+  | .unit => pure .unit
+  | .field => pure .field
+  | .pointer t => do pure $ .pointer (← expandTypeM visited toplevelAliases t)
+  | .function inputs output => do
+    let inputs' ← inputs.mapM (expandTypeM visited toplevelAliases)
+    let output' ← expandTypeM visited toplevelAliases output
+    pure $ .function inputs' output'
+  | .tuple ts => do
+    let ts' ← ts.mapM (expandTypeM visited toplevelAliases)
+    pure $ .tuple ts'
+  | .array t n => do
+    let t' ← expandTypeM visited toplevelAliases t
+    pure $ .array t' n
+  | .typeRef g => do
+    let aliasMap ← get
+    -- Check if already expanded
+    if let some expanded := aliasMap[g]? then
+      return expanded
+    -- Check if it's an alias
+    if let some (alias : TypeAlias) := toplevelAliases.find? (·.name == g) then
+      -- Check for cycle
+      if visited.contains g then
+        throw $ CheckError.undefinedGlobal ⟨.mkSimple s!"Cycle detected in type alias `{g}`"⟩
+      -- Expand the alias recursively
+      let expanded ← expandTypeM (visited.insert g) toplevelAliases alias.expansion
+      -- Save to aliasMap
+      set (aliasMap.insert g expanded)
+      return expanded
+    else
+      -- It's a dataType, keep it
+      pure $ .typeRef g
+
+/--
+Constructs a map of declarations from a toplevel, expanding all type aliases.
+Type aliases are not added to the declarations - they are eliminated during construction.
 -/
 def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
-  let map ← toplevel.functions.foldlM (init := default)
-    fun acc function => addDecl acc Function.name .function function
-  toplevel.dataTypes.foldlM (init := map) addDataType
-where
-  ensureUnique name (map : IndexMap Global _) := do
-    if map.containsKey name then throw $ .duplicatedDefinition name
-  addDecl {α : Type} map (nameFn : α → Global) (wrapper : α → Declaration) (inner : α) := do
-    ensureUnique (nameFn inner) map
-    pure $ map.insert (nameFn inner) (wrapper inner)
-  addDataType map dataType := do
-    let dataTypeName := dataType.name
-    ensureUnique dataTypeName map
-    let map' := map.insert dataTypeName (.dataType dataType)
-    dataType.constructors.foldlM (init := map') fun acc (constructor : Constructor) =>
-      addDecl acc (dataTypeName.pushNamespace ∘ Constructor.nameHead) (.constructor dataType) constructor
+  -- Check for duplicate names among aliases
+  let mut allNames : Std.HashSet Global := {}
+  for alias in toplevel.typeAliases do
+    if allNames.contains alias.name then
+      throw $ CheckError.duplicatedDefinition alias.name
+    allNames := allNames.insert alias.name
+
+  -- Build aliasMap by expanding all aliases in order
+  let initAliasMap := {}
+  let (_, finalAliasMap) ← (toplevel.typeAliases.mapM fun (alias : TypeAlias) => do
+    -- Expand and save the alias
+    let expanded ← expandTypeM {} toplevel.typeAliases alias.expansion
+    modify fun (aliasMap : Std.HashMap Global Typ) => aliasMap.insert alias.name expanded
+  ).run initAliasMap
+
+  -- Helper to expand types in the declarations using the built aliasMap
+  let expandTyp (typ : Typ) : Except CheckError Typ :=
+    (expandTypeM {} toplevel.typeAliases typ).run' finalAliasMap
+
+  -- Add functions with expanded types
+  let mut decls : Decls := default
+  for function in toplevel.functions do
+    if allNames.contains function.name then
+      throw $ CheckError.duplicatedDefinition function.name
+    allNames := allNames.insert function.name
+    let inputs' ← function.inputs.mapM fun (loc, typ) => do
+      let typ' ← expandTyp typ
+      pure (loc, typ')
+    let output' ← expandTyp function.output
+    let function' := { function with inputs := inputs', output := output' }
+    decls := decls.insert function.name (.function function')
+
+  -- Add datatypes with expanded types
+  for dataType in toplevel.dataTypes do
+    if allNames.contains dataType.name then
+      throw $ CheckError.duplicatedDefinition dataType.name
+    allNames := allNames.insert dataType.name
+    let mut constructors : List Constructor := []
+    for ctor in dataType.constructors do
+      let argTypes' ← ctor.argTypes.mapM expandTyp
+      constructors := constructors.concat { ctor with argTypes := argTypes' }
+    let dataType' := { dataType with constructors }
+    decls := decls.insert dataType.name (.dataType dataType')
+    -- Add constructors
+    for ctor in constructors do
+      let ctorName := dataType.name.pushNamespace ctor.nameHead
+      if allNames.contains ctorName then
+        throw $ CheckError.duplicatedDefinition ctorName
+      allNames := allNames.insert ctorName
+      decls := decls.insert ctorName (.constructor dataType' ctor)
+
+  pure decls
 
 structure CheckContext where
   decls : Decls
@@ -73,7 +147,7 @@ def refLookup (global : Global) : CheckM Typ := do
   | some (.constructor dataType constructor) =>
     let args := constructor.argTypes
     unless args.isEmpty do (throw $ .wrongNumArgs global args.length 0)
-    pure $ .dataType $ dataType.name
+    pure $ .typeRef $ dataType.name
   | some _ => throw $ .notAValue global
   | none => throw $ .unboundVariable global
 
@@ -278,7 +352,7 @@ partial def inferUnqualifiedApp (func : Global) (unqualifiedFunc : String) (args
       pure ⟨function.output, .app func args, false⟩
     | some (.constructor dataType constr) => do
       let args ← checkArgsAndInputs func args constr.argTypes
-      pure ⟨.dataType dataType.name, .app func args, false⟩
+      pure ⟨.typeRef dataType.name, .app func args, false⟩
     | _ => throw $ .cannotApply func
 where
   checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
@@ -298,7 +372,7 @@ partial def inferQualifiedApp (func : Global) (args : List Term) : CheckM TypedT
     pure ⟨function.output, .app func args, false⟩
   | some (.constructor dataType constr) =>
     let args ← checkArgsAndInputs func args constr.argTypes
-    pure ⟨.dataType dataType.name, .app func args, false⟩
+    pure ⟨.typeRef dataType.name, .app func args, false⟩
   | _ => throw $ .cannotApply func
 where
   checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
@@ -399,7 +473,7 @@ where
       let typ' := .function (function.inputs.map Prod.snd) function.output
       unless typ == typ' do throw $ .typeMismatch typ typ'
       pure []
-    | (.ref constrRef pats, .dataType dataTypeRef) => do
+    | (.ref constrRef pats, .typeRef dataTypeRef) => do
       let ctx ← read
       let some (.dataType dataType) := ctx.decls.getByKey dataTypeRef | unreachable!
       let some (.constructor dataType' constr) := ctx.decls.getByKey constrRef | throw $ .notAConstructor constrRef
@@ -463,10 +537,10 @@ where
   wellFormedType : Typ → EStateM CheckError (Std.HashSet Global) Unit
     | .tuple typs => typs.forM wellFormedType
     | .pointer pointerTyp => wellFormedType pointerTyp
-    | .dataType dataTypeRef => match decls.getByKey dataTypeRef with
+    | .typeRef typeRef => match decls.getByKey typeRef with
       | some (.dataType _) => pure ()
-      | some _ => throw $ .notADataType dataTypeRef
-      | none => throw $ .undefinedGlobal dataTypeRef
+      | some _ => throw $ .notADataType typeRef
+      | none => throw $ .undefinedGlobal typeRef
     | _ => pure ()
 
 /-- Checks a function to ensure its body's type matches its declared output type. -/

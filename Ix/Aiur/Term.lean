@@ -58,7 +58,7 @@ inductive Typ where
   | tuple : Array Typ → Typ
   | array : Typ → Nat → Typ
   | pointer : Typ → Typ
-  | dataType : Global → Typ
+  | typeRef : Global → Typ
   | function : List Typ → Typ → Typ
   deriving Repr, BEq, Hashable, Inhabited
 
@@ -176,6 +176,11 @@ structure DataType where
   constructors : List Constructor
   deriving Repr, BEq, Inhabited
 
+structure TypeAlias where
+  name : Global
+  expansion : Typ
+  deriving Repr, BEq, Inhabited
+
 structure Function where
   name : Global
   inputs : List (Local × Typ)
@@ -186,6 +191,7 @@ structure Function where
 
 structure Toplevel where
   dataTypes : Array DataType
+  typeAliases : Array TypeAlias
   functions : Array Function
   deriving Repr
 
@@ -193,22 +199,28 @@ def Toplevel.getFuncIdx (toplevel : Toplevel) (funcName : Lean.Name) : Option Na
   toplevel.functions.findIdx? fun function => function.name.toName == funcName
 
 def Toplevel.merge (x y : Toplevel) : Except Global Toplevel := do
-  let ⟨xDataTypes, xFunctions⟩ := x
-  let ⟨yDataTypes, yFunctions⟩ := y
+  let ⟨xDataTypes, xTypeAliases, xFunctions⟩ := x
+  let ⟨yDataTypes, yTypeAliases, yFunctions⟩ := y
   let mut globals : Std.HashSet Global := ∅
   let mut dataTypes := .emptyWithCapacity (xDataTypes.size + yDataTypes.size)
+  let mut typeAliases := .emptyWithCapacity (xTypeAliases.size + yTypeAliases.size)
   let mut functions := .emptyWithCapacity (xFunctions.size + yFunctions.size)
   for dtSet in [xDataTypes, yDataTypes] do
     for dt in dtSet do
       if globals.contains dt.name then throw dt.name
       globals := globals.insert dt.name
       dataTypes := dataTypes.push dt
+  for taSet in [xTypeAliases, yTypeAliases] do
+    for ta in taSet do
+      if globals.contains ta.name then throw ta.name
+      globals := globals.insert ta.name
+      typeAliases := typeAliases.push ta
   for fSet in [xFunctions, yFunctions] do
     for f in fSet do
       if globals.contains f.name then throw f.name
       globals := globals.insert f.name
       functions := functions.push f
-  pure ⟨dataTypes, functions⟩
+  pure ⟨dataTypes, typeAliases, functions⟩
 
 inductive Declaration
   | function : Function → Declaration
@@ -255,7 +267,7 @@ partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
   | .array t n => do
     let tSize ← t.size decls visited
     pure $ n * tSize
-  | .dataType g => match decls.getByKey g with
+  | .typeRef g => match decls.getByKey g with
     | some (.dataType data) => data.size decls visited
     | _ => throw s!"Datatype not found: `{g}`"
 

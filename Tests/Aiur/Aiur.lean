@@ -364,6 +364,19 @@ def toplevel := ⟦
       )
     )
   }
+
+  ---------------------------------------------------------------------------
+  -- Type aliases: basic, nested, in patterns
+  ---------------------------------------------------------------------------
+  type U8 = G
+  type U16 = (U8, U8)
+  type U32 = (U16, U16)
+  type U64 = [U8; 8]
+  type Pair = (U8, U8)
+
+  fn alias_conversion(x: U64) -> U32 {
+    ((x[0], x[1]), (x[2], x[3]))
+  }
 ⟧
 
 def aiurTestCases : List AiurTestCase := [
@@ -488,6 +501,10 @@ def aiurTestCases : List AiurTestCase := [
 
     -- Fold/iteration
     .noIO `fold_matrix_sum #[1, 2, 3, 4] #[10],
+
+    -- Type aliases
+    { AiurTestCase.noIO `alias_conversion #[1, 2, 3, 4, 5, 6, 7, 8] #[1, 2, 3, 4]
+        with label := "alias_conversion (U64 = [U8; 8], U32 = (U16, U16))" },
   ]
 
 end
