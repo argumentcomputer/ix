@@ -1,3 +1,6 @@
+[build]
+rustflags = ["-Ctarget-cpu=native"]
+
 [alias]
 # Collection of project wide clippy lints. This is done via an alias because
 # clippy doesn't currently allow for specifying project-wide lints in a
