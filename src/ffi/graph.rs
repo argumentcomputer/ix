@@ -6,7 +6,9 @@ use crate::ffi::ffi_io_guard;
 use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
 use crate::lean::LeanIxCondensedBlocks;
-use lean_ffi::object::{LeanArray, LeanCtor, LeanIOResult, LeanList};
+use lean_ffi::object::{
+  LeanArray, LeanBorrowed, LeanCtor, LeanIOResult, LeanList, LeanOwned,
+};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::lean_env::decode_env;
@@ -16,7 +18,7 @@ use crate::lean::LeanIxName;
 pub fn build_ref_graph_array(
   cache: &mut LeanBuildCache,
   refs: &crate::ix::graph::RefMap,
-) -> LeanArray {
+) -> LeanArray<LeanOwned> {
   let arr = LeanArray::alloc(refs.len());
   for (i, (name, ref_set)) in refs.iter().enumerate() {
     let name_obj = LeanIxName::build(cache, name);
@@ -29,13 +31,13 @@ pub fn build_ref_graph_array(
 
     let pair = LeanCtor::alloc(0, 2, 0);
     pair.set(0, name_obj);
-    pair.set(1, *refs_arr);
-    arr.set(i, *pair);
+    pair.set(1, refs_arr);
+    arr.set(i, pair);
   }
   arr
 }
 
-impl LeanIxCondensedBlocks {
+impl LeanIxCondensedBlocks<LeanOwned> {
   /// Build a RustCondensedBlocks structure.
   pub fn build(
     cache: &mut LeanBuildCache,
@@ -49,7 +51,7 @@ impl LeanIxCondensedBlocks {
       let pair = LeanCtor::alloc(0, 2, 0);
       pair.set(0, name_obj);
       pair.set(1, low_link_obj);
-      low_links_arr.set(i, *pair);
+      low_links_arr.set(i, pair);
     }
 
     // Build blocks: Array (Ix.Name × Array Ix.Name)
@@ -63,8 +65,8 @@ impl LeanIxCondensedBlocks {
       }
       let pair = LeanCtor::alloc(0, 2, 0);
       pair.set(0, name_obj);
-      pair.set(1, *block_names_arr);
-      blocks_arr.set(i, *pair);
+      pair.set(1, block_names_arr);
+      blocks_arr.set(i, pair);
     }
 
     // Build blockRefs: Array (Ix.Name × Array Ix.Name)
@@ -78,16 +80,16 @@ impl LeanIxCondensedBlocks {
       }
       let pair = LeanCtor::alloc(0, 2, 0);
       pair.set(0, name_obj);
-      pair.set(1, *refs_arr);
-      block_refs_arr.set(i, *pair);
+      pair.set(1, refs_arr);
+      block_refs_arr.set(i, pair);
     }
 
     // Build RustCondensedBlocks structure (3 fields)
     let result = LeanCtor::alloc(0, 3, 0);
-    result.set(0, *low_links_arr);
-    result.set(1, *blocks_arr);
-    result.set(2, *block_refs_arr);
-    Self::new(*result)
+    result.set(0, low_links_arr);
+    result.set(1, blocks_arr);
+    result.set(2, block_refs_arr);
+    Self::new(result.into())
   }
 }
 
@@ -97,7 +99,9 @@ impl LeanIxCondensedBlocks {
 
 /// FFI function to build a reference graph from a Lean environment.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_build_ref_graph(env_consts_ptr: LeanList) -> LeanIOResult {
+pub extern "C" fn rs_build_ref_graph(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
@@ -110,7 +114,9 @@ pub extern "C" fn rs_build_ref_graph(env_consts_ptr: LeanList) -> LeanIOResult {
 
 /// FFI function to compute SCCs from a Lean environment.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_compute_sccs(env_consts_ptr: LeanList) -> LeanIOResult {
+pub extern "C" fn rs_compute_sccs(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);

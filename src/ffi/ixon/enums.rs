@@ -5,9 +5,11 @@ use crate::ix::ixon::constant::DefKind;
 use crate::lean::{
   LeanIxonDefKind, LeanIxonDefinitionSafety, LeanIxonQuotKind,
 };
-use lean_ffi::object::LeanObject;
+use lean_ffi::object::{LeanOwned, LeanRef};
+#[cfg(feature = "test-ffi")]
+use lean_ffi::object::LeanBorrowed;
 
-impl LeanIxonDefKind {
+impl LeanIxonDefKind<LeanOwned> {
   /// Build Ixon.DefKind
   /// | defn -- tag 0
   /// | opaq -- tag 1
@@ -19,12 +21,14 @@ impl LeanIxonDefKind {
       DefKind::Opaque => 1,
       DefKind::Theorem => 2,
     };
-    Self::new(LeanObject::from_enum_tag(tag))
+    Self::new(LeanOwned::from_enum_tag(tag))
   }
+}
 
+impl<R: LeanRef> LeanIxonDefKind<R> {
   /// Decode Ixon.DefKind (simple enum, raw unboxed tag value).
-  pub fn decode(self) -> DefKind {
-    let tag = self.as_enum_tag();
+  pub fn decode(&self) -> DefKind {
+    let tag = self.inner().as_enum_tag();
     match tag {
       0 => DefKind::Definition,
       1 => DefKind::Opaque,
@@ -34,7 +38,7 @@ impl LeanIxonDefKind {
   }
 }
 
-impl LeanIxonDefinitionSafety {
+impl LeanIxonDefinitionSafety<LeanOwned> {
   /// Build Ixon.DefinitionSafety
   /// | unsaf -- tag 0
   /// | safe  -- tag 1
@@ -45,12 +49,14 @@ impl LeanIxonDefinitionSafety {
       DefinitionSafety::Safe => 1,
       DefinitionSafety::Partial => 2,
     };
-    Self::new(LeanObject::from_enum_tag(tag))
+    Self::new(LeanOwned::from_enum_tag(tag))
   }
+}
 
+impl<R: LeanRef> LeanIxonDefinitionSafety<R> {
   /// Decode Ixon.DefinitionSafety (simple enum, raw unboxed tag value).
-  pub fn decode(self) -> DefinitionSafety {
-    let tag = self.as_enum_tag();
+  pub fn decode(&self) -> DefinitionSafety {
+    let tag = self.inner().as_enum_tag();
     match tag {
       0 => DefinitionSafety::Unsafe,
       1 => DefinitionSafety::Safe,
@@ -60,7 +66,7 @@ impl LeanIxonDefinitionSafety {
   }
 }
 
-impl LeanIxonQuotKind {
+impl LeanIxonQuotKind<LeanOwned> {
   /// Build Ixon.QuotKind
   /// | type -- tag 0
   /// | ctor -- tag 1
@@ -73,12 +79,14 @@ impl LeanIxonQuotKind {
       QuotKind::Lift => 2,
       QuotKind::Ind => 3,
     };
-    Self::new(LeanObject::from_enum_tag(tag))
+    Self::new(LeanOwned::from_enum_tag(tag))
   }
+}
 
+impl<R: LeanRef> LeanIxonQuotKind<R> {
   /// Decode Ixon.QuotKind (simple enum, raw unboxed tag value).
-  pub fn decode(self) -> QuotKind {
-    let tag = self.as_enum_tag();
+  pub fn decode(&self) -> QuotKind {
+    let tag = self.inner().as_enum_tag();
     match tag {
       0 => QuotKind::Type,
       1 => QuotKind::Ctor,
@@ -94,28 +102,31 @@ impl LeanIxonQuotKind {
 // =============================================================================
 
 /// Round-trip Ixon.DefKind.
+#[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ixon_def_kind(
-  obj: LeanIxonDefKind,
-) -> LeanIxonDefKind {
+  obj: LeanIxonDefKind<LeanBorrowed<'_>>,
+) -> LeanIxonDefKind<LeanOwned> {
   let kind = obj.decode();
   LeanIxonDefKind::build(&kind)
 }
 
 /// Round-trip Ixon.DefinitionSafety.
+#[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ixon_definition_safety(
-  obj: LeanIxonDefinitionSafety,
-) -> LeanIxonDefinitionSafety {
+  obj: LeanIxonDefinitionSafety<LeanBorrowed<'_>>,
+) -> LeanIxonDefinitionSafety<LeanOwned> {
   let safety = obj.decode();
   LeanIxonDefinitionSafety::build(&safety)
 }
 
 /// Round-trip Ixon.QuotKind.
+#[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ixon_quot_kind(
-  obj: LeanIxonQuotKind,
-) -> LeanIxonQuotKind {
+  obj: LeanIxonQuotKind<LeanBorrowed<'_>>,
+) -> LeanIxonQuotKind<LeanOwned> {
   let kind = obj.decode();
   LeanIxonQuotKind::build(&kind)
 }

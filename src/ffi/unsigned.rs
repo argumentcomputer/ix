@@ -1,21 +1,21 @@
-use lean_ffi::object::LeanByteArray;
+use lean_ffi::object::{LeanByteArray, LeanOwned};
 
 #[unsafe(no_mangle)]
-extern "C" fn c_u16_to_le_bytes(v: u16) -> LeanByteArray {
+extern "C" fn c_u16_to_le_bytes(v: u16) -> LeanByteArray<LeanOwned> {
   LeanByteArray::from_bytes(&v.to_le_bytes())
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn c_u32_to_le_bytes(v: u32) -> LeanByteArray {
+extern "C" fn c_u32_to_le_bytes(v: u32) -> LeanByteArray<LeanOwned> {
   LeanByteArray::from_bytes(&v.to_le_bytes())
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn c_u64_to_le_bytes(v: u64) -> LeanByteArray {
+extern "C" fn c_u64_to_le_bytes(v: u64) -> LeanByteArray<LeanOwned> {
   LeanByteArray::from_bytes(&v.to_le_bytes())
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn c_usize_to_le_bytes(v: usize) -> LeanByteArray {
+extern "C" fn c_usize_to_le_bytes(v: usize) -> LeanByteArray<LeanOwned> {
   LeanByteArray::from_bytes(&v.to_le_bytes())
 }

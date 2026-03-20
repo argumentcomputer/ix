@@ -8,14 +8,16 @@ use crate::ix::ixon::sharing::{
   analyze_block, build_sharing_vec, decide_sharing,
 };
 use crate::lean::LeanIxonExpr;
-use lean_ffi::object::{LeanArray, LeanByteArray};
+use lean_ffi::object::{LeanArray, LeanBorrowed, LeanByteArray, LeanOwned};
 
 /// FFI: Debug sharing analysis - print usage counts for subterms with usage >= 2.
 /// This helps diagnose why Lean and Rust make different sharing decisions.
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_debug_sharing_analysis(exprs_obj: LeanArray) {
+pub extern "C" fn rs_debug_sharing_analysis(
+  exprs_obj: LeanArray<LeanBorrowed<'_>>,
+) {
   let exprs: Vec<Arc<IxonExpr>> =
-    exprs_obj.map(|x| Arc::new(LeanIxonExpr::new(x).decode()));
+    exprs_obj.map(|x| Arc::new(LeanIxonExpr(x).decode()));
 
   println!("[Rust] Analyzing {} input expressions", exprs.len());
 
@@ -55,8 +57,10 @@ pub extern "C" fn rs_debug_sharing_analysis(exprs_obj: LeanArray) {
 /// FFI: Run Rust's sharing analysis on Lean-provided Ixon.Expr array.
 /// Returns the number of shared items Rust would produce.
 #[unsafe(no_mangle)]
-extern "C" fn rs_analyze_sharing_count(exprs_obj: LeanArray) -> u64 {
-  let exprs = LeanIxonExpr::decode_array(exprs_obj);
+extern "C" fn rs_analyze_sharing_count(
+  exprs_obj: LeanArray<LeanBorrowed<'_>>,
+) -> u64 {
+  let exprs = LeanIxonExpr::decode_array(&exprs_obj);
 
   let (info_map, _ptr_to_hash) = analyze_block(&exprs, false);
   let shared_hashes = decide_sharing(&info_map);
@@ -69,11 +73,11 @@ extern "C" fn rs_analyze_sharing_count(exprs_obj: LeanArray) -> u64 {
 /// Returns number of shared items.
 #[unsafe(no_mangle)]
 extern "C" fn rs_run_sharing_analysis(
-  exprs_obj: LeanArray,
-  out_sharing_vec: LeanByteArray,
-  out_rewritten: LeanByteArray,
+  exprs_obj: LeanArray<LeanBorrowed<'_>>,
+  out_sharing_vec: LeanByteArray<LeanOwned>,
+  out_rewritten: LeanByteArray<LeanOwned>,
 ) -> u64 {
-  let exprs = LeanIxonExpr::decode_array(exprs_obj);
+  let exprs = LeanIxonExpr::decode_array(&exprs_obj);
 
   let (info_map, ptr_to_hash) = analyze_block(&exprs, false);
   let shared_hashes = decide_sharing(&info_map);
@@ -107,15 +111,15 @@ extern "C" fn rs_run_sharing_analysis(
 ///   - bits 48-63: Rust sharing count
 #[unsafe(no_mangle)]
 extern "C" fn rs_compare_sharing_analysis(
-  exprs_obj: LeanArray,
-  lean_sharing_obj: LeanArray,
-  _lean_rewritten_obj: LeanArray,
+  exprs_obj: LeanArray<LeanBorrowed<'_>>,
+  lean_sharing_obj: LeanArray<LeanBorrowed<'_>>,
+  _lean_rewritten_obj: LeanArray<LeanBorrowed<'_>>,
 ) -> u64 {
   // Decode input expressions
-  let exprs = LeanIxonExpr::decode_array(exprs_obj);
+  let exprs = LeanIxonExpr::decode_array(&exprs_obj);
 
   // Decode Lean's sharing vector
-  let lean_sharing = LeanIxonExpr::decode_array(lean_sharing_obj);
+  let lean_sharing = LeanIxonExpr::decode_array(&lean_sharing_obj);
 
   // Run Rust's sharing analysis
   let (info_map, ptr_to_hash) = analyze_block(&exprs, false);
