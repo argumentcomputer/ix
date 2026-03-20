@@ -283,6 +283,16 @@ def byteStream := ⟦
       U64List.Cons(_, rest) => relaxed_u64_succ(u64_list_length(load(rest))),
     }
   }
+
+  -- Flatten a [G; 8] (U64 little-endian bytes) into a single G via
+  -- b0 + 256 * b1 + ... + 256^6 * b6. The most significant byte (b7) must be zero;
+  -- this is enforced by assert_eq!, limiting the range to 7 bytes (< 2^56).
+  fn flatten_u64(x: [G; 8]) -> G {
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = x;
+    assert_eq!(b7, 0);
+    b0 + 256 * b1 + 65536 * b2 + 16777216 * b3
+      + 4294967296 * b4 + 1099511627776 * b5 + 281474976710656 * b6
+  }
 ⟧
 
 end IxVM

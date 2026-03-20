@@ -93,7 +93,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     let degree ← getDegree a
     if degree = 0 then pushDegree 0
     else
-      pushDegrees #[1, 1]
+      pushDegree 1
       bumpAuxiliaries 2
   | .call funIdx _ outputSize => do
     pushDegrees $ .replicate outputSize 1
