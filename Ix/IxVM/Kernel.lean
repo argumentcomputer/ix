@@ -198,7 +198,68 @@ def kernel := ⟦
     }
   }
 
-  -- level_leq: check a <= b (heuristic, sound but incomplete)
+  -- Check if a level contains any Param
+  fn level_has_param(l: KLevel) -> G {
+    match l {
+      KLevel.Zero => 0,
+      KLevel.Param(_) => 1,
+      KLevel.Succ(&a) => level_has_param(a),
+      KLevel.Max(&a, &b) =>
+        let ha = level_has_param(a);
+        match ha {
+          1 => 1,
+          0 => level_has_param(b),
+        },
+      KLevel.IMax(&a, &b) =>
+        let hb = level_has_param(b);
+        match hb {
+          1 => 1,
+          0 => level_has_param(a),
+        },
+    }
+  }
+
+  -- Find any Param index in a level. Precondition: level contains at least one Param.
+  fn level_any_param(l: KLevel) -> [G; 8] {
+    match l {
+      KLevel.Param(i) => i,
+      KLevel.Succ(&a) => level_any_param(a),
+      KLevel.Max(&a, &b) =>
+        let ha = level_has_param(a);
+        match ha {
+          1 => level_any_param(a),
+          0 => level_any_param(b),
+        },
+      KLevel.IMax(&a, &b) =>
+        let hb = level_has_param(b);
+        match hb {
+          1 => level_any_param(b),
+          0 => level_any_param(a),
+        },
+      KLevel.Zero => [0; 8],
+    }
+  }
+
+  -- Substitute Param(p) with repl in a level, normalizing as we go
+  fn level_subst_reduce(l: KLevel, p: [G; 8], repl: KLevel) -> KLevel {
+    match l {
+      KLevel.Zero => KLevel.Zero,
+      KLevel.Param(i) =>
+        let eq = u64_eq(i, p);
+        match eq {
+          1 => repl,
+          0 => KLevel.Param(i),
+        },
+      KLevel.Succ(&a) =>
+        KLevel.Succ(store(level_subst_reduce(a, p, repl))),
+      KLevel.Max(&a, &b) =>
+        level_max(level_subst_reduce(a, p, repl), level_subst_reduce(b, p, repl)),
+      KLevel.IMax(&a, &b) =>
+        level_imax(level_subst_reduce(a, p, repl), level_subst_reduce(b, p, repl)),
+    }
+  }
+
+  -- level_leq: check a <= b for all param assignments (sound and complete)
   fn level_leq(a: KLevel, b: KLevel) -> G {
     match a {
       KLevel.Zero => 1,
@@ -206,42 +267,60 @@ def kernel := ⟦
       KLevel.Max(&a1, &a2) =>
         level_leq(a1, b) * level_leq(a2, b),
       KLevel.Succ(&a1) =>
-        match b {
-          KLevel.Succ(&b1) => level_leq(a1, b1),
-          KLevel.Max(&b1, &b2) =>
-            let r1 = level_leq(a, b1);
-            match r1 {
-              1 => 1,
-              0 => level_leq(a, b2),
-            },
-          _ => 0,
-        },
-      KLevel.Param(i) =>
-        match b {
-          KLevel.Param(j) => u64_eq(i, j),
-          KLevel.Max(&b1, &b2) =>
-            let r1 = level_leq(a, b1);
-            match r1 {
-              1 => 1,
-              0 => level_leq(a, b2),
-            },
-          _ => 0,
-        },
-      KLevel.IMax(&a1, &a2) =>
-        -- imax(a1, a2) where a2 is definitely not zero behaves as max(a1, a2)
-        let not_zero = level_is_not_zero(a2);
-        match not_zero {
-          1 => level_leq(a1, b) * level_leq(a2, b),
-          0 =>
+        match a1 {
+          -- Distribute Succ over Max: succ(max(x,y)) = max(succ(x), succ(y))
+          KLevel.Max(&x, &y) =>
+            level_leq(KLevel.Succ(store(x)), b) * level_leq(KLevel.Succ(store(y)), b),
+          _ =>
             match b {
+              KLevel.Succ(&b1) => level_leq(a1, b1),
               KLevel.Max(&b1, &b2) =>
                 let r1 = level_leq(a, b1);
                 match r1 {
                   1 => 1,
                   0 => level_leq(a, b2),
                 },
-              _ => level_eq(a, b),
+              _ => 0,
             },
+        },
+      KLevel.Param(i) =>
+        match b {
+          KLevel.Param(j) => u64_eq(i, j),
+          -- Param(i) <= Succ(X) iff Param(i) <= X (levels are integers, so tight)
+          KLevel.Succ(&b1) => level_leq(a, b1),
+          KLevel.Max(&b1, &b2) =>
+            let r1 = level_leq(a, b1);
+            match r1 {
+              1 => 1,
+              0 => level_leq(a, b2),
+            },
+          -- Param(i) <= IMax(b1, b2): case-split on a param in b2
+          KLevel.IMax(&b1, &b2) =>
+            let p = level_any_param(b2);
+            let sp = KLevel.Succ(store(KLevel.Param(p)));
+            let a0 = level_subst_reduce(a, p, KLevel.Zero);
+            let bfull = KLevel.IMax(store(b1), store(b2));
+            let b0 = level_subst_reduce(bfull, p, KLevel.Zero);
+            let a1s = level_subst_reduce(a, p, sp);
+            let b1s = level_subst_reduce(bfull, p, sp);
+            level_leq(a0, b0) * level_leq(a1s, b1s),
+          KLevel.Zero => 0,
+        },
+      KLevel.IMax(&a1, &a2) =>
+        let not_zero = level_is_not_zero(a2);
+        match not_zero {
+          -- imax(a1, a2) where a2 is definitely not zero behaves as max(a1, a2)
+          1 => level_leq(a1, b) * level_leq(a2, b),
+          -- Case-split: substitute a param from a2 with Zero and Succ(Param)
+          0 =>
+            let p = level_any_param(a2);
+            let sp = KLevel.Succ(store(KLevel.Param(p)));
+            let afull = KLevel.IMax(store(a1), store(a2));
+            let a0 = level_subst_reduce(afull, p, KLevel.Zero);
+            let b0 = level_subst_reduce(b, p, KLevel.Zero);
+            let a1s = level_subst_reduce(afull, p, sp);
+            let b1s = level_subst_reduce(b, p, sp);
+            level_leq(a0, b0) * level_leq(a1s, b1s),
         },
     }
   }
