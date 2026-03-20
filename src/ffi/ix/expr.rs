@@ -24,11 +24,9 @@ use crate::lean::{
   LeanIxName,
 };
 use lean_ffi::nat::Nat;
-use lean_ffi::object::{
-  LeanCtor, LeanOwned, LeanRef, LeanString,
-};
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
+use lean_ffi::object::{LeanCtor, LeanOwned, LeanRef, LeanString};
 
 impl LeanIxExpr<LeanOwned> {
   /// Build a Lean Ix.Expr with embedded hash.
