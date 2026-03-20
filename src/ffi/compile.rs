@@ -16,16 +16,16 @@ use crate::ix::decompile::decompile_env;
 use crate::ix::env::Name;
 use crate::ix::graph::build_ref_graph;
 use crate::ix::ixon::constant::Constant as IxonConstant;
-use crate::ix::ixon::{Comm, ConstantMeta};
 #[cfg(feature = "test-ffi")]
 use crate::ix::ixon::constant::ConstantInfo;
 #[cfg(feature = "test-ffi")]
 use crate::ix::ixon::expr::Expr as IxonExpr;
+use crate::ix::ixon::{Comm, ConstantMeta};
 use crate::lean::{
   LeanIxCompileError, LeanIxCondensedBlocks, LeanIxConstantInfo,
-  LeanIxDecompileError, LeanIxName, LeanIxRawEnvironment,
-  LeanIxSerializeError, LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst,
-  LeanIxonRawEnv, LeanIxonRawNameEntry, LeanIxonRawNamed,
+  LeanIxDecompileError, LeanIxName, LeanIxRawEnvironment, LeanIxSerializeError,
+  LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst, LeanIxonRawEnv,
+  LeanIxonRawNameEntry, LeanIxonRawNamed,
 };
 use lean_ffi::nat::Nat;
 use lean_ffi::object::LeanIOResult;
@@ -43,7 +43,7 @@ use crate::ffi::lean_env::decode_env;
 use crate::lean::LeanIxAddress;
 
 #[cfg(feature = "test-ffi")]
-use std::collections::HashMap;
+use crate::ffi::lean_env::{GlobalCache, decode_name};
 #[cfg(feature = "test-ffi")]
 use crate::ix::ixon::serialize::put_expr;
 #[cfg(feature = "test-ffi")]
@@ -51,7 +51,7 @@ use crate::lean::{
   LeanIxBlockCompareDetail, LeanIxBlockCompareResult, LeanIxCompilePhases,
 };
 #[cfg(feature = "test-ffi")]
-use crate::ffi::lean_env::{GlobalCache, decode_name};
+use std::collections::HashMap;
 
 // =============================================================================
 // Helper builders
@@ -629,10 +629,7 @@ extern "C" fn rs_compare_block(
     return 2u64 << 32; // not found
   }
   let global_cache = GlobalCache::default();
-  let name = decode_name(
-    lowlink_name.borrow(),
-    &global_cache,
-  );
+  let name = decode_name(lowlink_name.borrow(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
   let lean_data = lean_bytes.as_bytes();
@@ -697,10 +694,7 @@ extern "C" fn rs_get_block_bytes_len(
     return 0;
   }
   let global_cache = GlobalCache::default();
-  let name = decode_name(
-    lowlink_name.borrow(),
-    &global_cache,
-  );
+  let name = decode_name(lowlink_name.borrow(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -722,10 +716,7 @@ extern "C" fn rs_copy_block_bytes(
     return;
   }
   let global_cache = GlobalCache::default();
-  let name = decode_name(
-    lowlink_name.borrow(),
-    &global_cache,
-  );
+  let name = decode_name(lowlink_name.borrow(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -749,10 +740,7 @@ extern "C" fn rs_get_block_sharing_len(
     return 0;
   }
   let global_cache = GlobalCache::default();
-  let name = decode_name(
-    lowlink_name.borrow(),
-    &global_cache,
-  );
+  let name = decode_name(lowlink_name.borrow(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -875,10 +863,7 @@ extern "C" fn rs_get_pre_sharing_exprs(
     return 0;
   }
   let global_cache = GlobalCache::default();
-  let name = decode_name(
-    lowlink_name.borrow(),
-    &global_cache,
-  );
+  let name = decode_name(lowlink_name.borrow(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -980,10 +965,7 @@ extern "C" fn rs_get_pre_sharing_exprs_len(
     return 0;
   }
   let global_cache = GlobalCache::default();
-  let name = decode_name(
-    lowlink_name.borrow(),
-    &global_cache,
-  );
+  let name = decode_name(lowlink_name.borrow(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 
@@ -1045,10 +1027,7 @@ extern "C" fn rs_lookup_const_addr(
     return 0;
   }
   let global_cache = GlobalCache::default();
-  let name = decode_name(
-    name_ptr.borrow(),
-    &global_cache,
-  );
+  let name = decode_name(name_ptr.borrow(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
 

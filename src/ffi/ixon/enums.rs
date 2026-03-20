@@ -5,9 +5,9 @@ use crate::ix::ixon::constant::DefKind;
 use crate::lean::{
   LeanIxonDefKind, LeanIxonDefinitionSafety, LeanIxonQuotKind,
 };
-use lean_ffi::object::{LeanOwned, LeanRef};
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
+use lean_ffi::object::{LeanOwned, LeanRef};
 
 impl LeanIxonDefKind<LeanOwned> {
   /// Build Ixon.DefKind

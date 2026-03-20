@@ -4,9 +4,9 @@
 //! (ix-specific types not covered by the lean-ffi test suite).
 
 use lean_ffi::nat::Nat;
-use lean_ffi::object::{LeanBorrowed, LeanRef};
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned};
+use lean_ffi::object::{LeanBorrowed, LeanRef};
 
 // =============================================================================
 // AssocList / HashMap roundtrip FFI functions

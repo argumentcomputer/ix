@@ -18,11 +18,11 @@ use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 
 #[cfg(feature = "test-ffi")]
-use std::sync::Arc;
-#[cfg(feature = "test-ffi")]
 use crate::ix::compile::compile_env;
 #[cfg(feature = "test-ffi")]
 use crate::ix::decompile::{check_decompile, decompile_env};
+#[cfg(feature = "test-ffi")]
+use std::sync::Arc;
 
 use lean_ffi::nat::Nat;
 use lean_ffi::object::{LeanBorrowed, LeanList, LeanRef, LeanShared};
@@ -83,7 +83,9 @@ impl<'g> Cache<'g> {
 /// Collect list elements as borrowed pointers (no refcount changes).
 /// Uses `LeanList::to_vec` which preserves the `'a` lifetime from the
 /// underlying Lean objects rather than tying it to a local borrow.
-fn collect_list_borrowed<'a>(list: LeanList<LeanBorrowed<'a>>) -> Vec<LeanBorrowed<'a>> {
+fn collect_list_borrowed<'a>(
+  list: LeanList<LeanBorrowed<'a>>,
+) -> Vec<LeanBorrowed<'a>> {
   list.to_vec()
 }
 
@@ -91,10 +93,7 @@ fn collect_list_borrowed<'a>(list: LeanList<LeanBorrowed<'a>>) -> Vec<LeanBorrow
 /// The caller should have already MT-marked the parent list via `LeanShared::new`,
 /// so `lean_mark_mt` on each element is a single `lean_is_st` check (fast no-op).
 fn collect_list_shared(list: LeanList<LeanBorrowed<'_>>) -> Vec<LeanShared> {
-  list
-    .iter()
-    .map(|b| LeanShared::new(b.to_owned_ref()))
-    .collect()
+  list.iter().map(|b| LeanShared::new(b.to_owned_ref())).collect()
 }
 
 // Name decoding with global cache

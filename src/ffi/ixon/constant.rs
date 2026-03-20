@@ -21,9 +21,9 @@ use crate::lean::{
   LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor,
   LeanIxonRecursorProj, LeanIxonRecursorRule, LeanIxonUniv,
 };
-use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned, LeanRef};
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
+use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned, LeanRef};
 
 // =============================================================================
 // Definition

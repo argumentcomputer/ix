@@ -27,7 +27,9 @@ pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
 pub mod refcount; // Reference counting / ownership tests (test-only)
 
 #[cfg(feature = "test-ffi")]
-use lean_ffi::object::{LeanArray, LeanBorrowed, LeanByteArray, LeanOwned, LeanRef};
+use lean_ffi::object::{
+  LeanArray, LeanBorrowed, LeanByteArray, LeanOwned, LeanRef,
+};
 
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]

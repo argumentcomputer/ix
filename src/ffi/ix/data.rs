@@ -8,11 +8,9 @@ use crate::lean::{
   LeanIxSyntax, LeanIxSyntaxPreresolved,
 };
 use lean_ffi::nat::Nat;
-use lean_ffi::object::{
-  LeanArray, LeanCtor, LeanOwned, LeanRef, LeanString,
-};
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
+use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned, LeanRef, LeanString};
 
 use crate::ffi::builder::LeanBuildCache;
 
