@@ -23,35 +23,19 @@ pub mod graph; // Graph/SCC: rs_build_ref_graph, rs_compute_sccs
 pub mod ix; // Ix types: Name, Level, Expr, ConstantInfo, Environment
 pub mod ixon; // Ixon types: Univ, Expr, Constant, metadata
 pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
+#[cfg(feature = "test-ffi")]
+pub mod refcount; // Reference counting / ownership tests (test-only)
 
-use lean_ffi::object::{LeanArray, LeanByteArray, LeanIOResult};
+#[cfg(feature = "test-ffi")]
+use lean_ffi::object::{
+  LeanArray, LeanBorrowed, LeanByteArray, LeanOwned, LeanRef,
+};
 
-/// Guard an FFI function that returns a Lean IO result against panics.
-/// On panic, returns a Lean IO error with the panic message instead of
-/// unwinding across the `extern "C"` boundary (which is undefined behavior).
-pub(crate) fn ffi_io_guard<F>(f: F) -> LeanIOResult
-where
-  F: FnOnce() -> LeanIOResult + std::panic::UnwindSafe,
-{
-  match std::panic::catch_unwind(f) {
-    Ok(result) => result,
-    Err(panic_info) => {
-      let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
-        format!("FFI panic: {s}")
-      } else if let Some(s) = panic_info.downcast_ref::<String>() {
-        format!("FFI panic: {s}")
-      } else {
-        "FFI panic: unknown".to_string()
-      };
-      LeanIOResult::error_string(&msg)
-    },
-  }
-}
-
+#[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 extern "C" fn rs_boxed_u32s_are_equivalent_to_bytes(
-  u32s: LeanArray,
-  bytes: LeanByteArray,
+  u32s: LeanArray<LeanOwned>,
+  bytes: LeanByteArray<LeanBorrowed<'_>>,
 ) -> bool {
   let u32s_flat: Vec<u8> = u32s
     .map(|elem| elem.unbox_u32())

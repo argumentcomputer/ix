@@ -3,6 +3,8 @@
 //! Generic Lean FFI wrappers live in the `lean_ffi` crate. This module defines
 //! typed newtypes for ix-specific Lean types using `lean_ffi::lean_domain_type!`.
 
+use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanOwned, LeanRef};
+
 lean_ffi::lean_domain_type! {
   // Ix core types
   /// Lean `Ix.Name` object.
@@ -132,35 +134,62 @@ lean_ffi::lean_domain_type! {
 }
 
 /// Lean `Address` object — newtype over `LeanByteArray`.
-#[derive(Clone, Copy)]
+///
+/// Address is a single-field struct in Lean, so it's unboxed to ByteArray
+/// at the FFI boundary.
 #[repr(transparent)]
-pub struct LeanIxAddress(lean_ffi::object::LeanByteArray);
+pub struct LeanIxAddress<R: LeanRef>(LeanByteArray<R>);
 
-impl std::ops::Deref for LeanIxAddress {
-  type Target = lean_ffi::object::LeanByteArray;
+impl<R: LeanRef> Clone for LeanIxAddress<R> {
   #[inline]
-  fn deref(&self) -> &lean_ffi::object::LeanByteArray {
+  fn clone(&self) -> Self {
+    Self(self.0.clone())
+  }
+}
+
+impl<R: LeanRef + Copy> Copy for LeanIxAddress<R> {}
+
+impl<R: LeanRef> std::ops::Deref for LeanIxAddress<R> {
+  type Target = LeanByteArray<R>;
+  #[inline]
+  fn deref(&self) -> &LeanByteArray<R> {
     &self.0
   }
 }
 
-impl From<LeanIxAddress> for lean_ffi::object::LeanObject {
+impl From<LeanIxAddress<LeanOwned>> for LeanOwned {
   #[inline]
-  fn from(x: LeanIxAddress) -> Self {
+  fn from(x: LeanIxAddress<LeanOwned>) -> Self {
     x.0.into()
   }
 }
 
-impl From<lean_ffi::object::LeanByteArray> for LeanIxAddress {
+impl<'a> From<LeanByteArray<LeanBorrowed<'a>>>
+  for LeanIxAddress<LeanBorrowed<'a>>
+{
   #[inline]
-  fn from(x: lean_ffi::object::LeanByteArray) -> Self {
+  fn from(x: LeanByteArray<LeanBorrowed<'a>>) -> Self {
     Self(x)
   }
 }
 
-impl LeanIxAddress {
+impl From<LeanByteArray<LeanOwned>> for LeanIxAddress<LeanOwned> {
   #[inline]
-  pub fn new(obj: lean_ffi::object::LeanObject) -> Self {
-    Self(obj.as_byte_array())
+  fn from(x: LeanByteArray<LeanOwned>) -> Self {
+    Self(x)
+  }
+}
+
+impl LeanIxAddress<LeanOwned> {
+  #[inline]
+  pub fn new(ba: LeanByteArray<LeanOwned>) -> Self {
+    Self(ba)
+  }
+}
+
+impl<'a> LeanIxAddress<LeanBorrowed<'a>> {
+  #[inline]
+  pub fn from_borrowed(ba: LeanByteArray<LeanBorrowed<'a>>) -> Self {
+    Self(ba)
   }
 }

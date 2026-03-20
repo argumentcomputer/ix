@@ -14,47 +14,33 @@
 
 use dashmap::DashMap;
 use rayon::prelude::*;
-use std::ffi::c_void;
-use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
-use lean_ffi::nat::Nat;
-use lean_ffi::object::{LeanList, LeanObject};
+#[cfg(feature = "test-ffi")]
+use crate::ix::compile::compile_env;
+#[cfg(feature = "test-ffi")]
+use crate::ix::decompile::{check_decompile, decompile_env};
+#[cfg(feature = "test-ffi")]
+use std::sync::Arc;
 
-use crate::{
-  ix::compile::compile_env,
-  ix::decompile::{check_decompile, decompile_env},
-  ix::env::{
-    AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
-    DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,
-    Literal, Name, OpaqueVal, QuotKind, QuotVal, RecursorRule, RecursorVal,
-    ReducibilityHints, SourceInfo, Substring, Syntax, SyntaxPreresolved,
-    TheoremVal,
-  },
+use lean_ffi::nat::Nat;
+use lean_ffi::object::{LeanBorrowed, LeanList, LeanRef, LeanShared};
+
+use crate::ix::env::{
+  AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
+  DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,
+  Literal, Name, OpaqueVal, QuotKind, QuotVal, RecursorRule, RecursorVal,
+  ReducibilityHints, SourceInfo, Substring, Syntax, SyntaxPreresolved,
+  TheoremVal,
 };
 
 const PARALLEL_THRESHOLD: usize = 100;
 
-/// Wrapper to allow sending `LeanObject` across threads. The underlying Lean
-/// objects must remain valid for the entire duration of parallel decoding.
-#[derive(Clone, Copy)]
-struct SendObj(LeanObject);
-
-unsafe impl Send for SendObj {}
-unsafe impl Sync for SendObj {}
-
-impl SendObj {
-  #[inline]
-  fn get(self) -> LeanObject {
-    self.0
-  }
-}
-
 /// Global cache for Names, shared across all threads.
 #[derive(Default)]
 pub struct GlobalCache {
-  names: DashMap<*const c_void, Name>,
+  names: DashMap<*mut lean_ffi::include::lean_object, Name>,
 }
 
 impl GlobalCache {
@@ -75,8 +61,8 @@ unsafe impl Sync for GlobalCache {}
 /// Thread-local cache for Levels and Exprs.
 #[derive(Default)]
 struct LocalCache {
-  univs: FxHashMap<*const c_void, Level>,
-  exprs: FxHashMap<*const c_void, Expr>,
+  univs: FxHashMap<*mut lean_ffi::include::lean_object, Level>,
+  exprs: FxHashMap<*mut lean_ffi::include::lean_object, Expr>,
 }
 
 // SAFETY: LocalCache is only accessed by a single thread.
@@ -94,13 +80,25 @@ impl<'g> Cache<'g> {
   }
 }
 
-fn collect_list_objs(list: LeanList) -> Vec<LeanObject> {
-  list.iter().collect()
+/// Collect list elements as borrowed pointers (no refcount changes).
+/// Uses `LeanList::to_vec` which preserves the `'a` lifetime from the
+/// underlying Lean objects rather than tying it to a local borrow.
+fn collect_list_borrowed<'a>(
+  list: LeanList<LeanBorrowed<'a>>,
+) -> Vec<LeanBorrowed<'a>> {
+  list.to_vec()
+}
+
+/// Collect list elements as LeanShared handles for cross-thread use.
+/// The caller should have already MT-marked the parent list via `LeanShared::new`,
+/// so `lean_mark_mt` on each element is a single `lean_is_st` check (fast no-op).
+fn collect_list_shared(list: LeanList<LeanBorrowed<'_>>) -> Vec<LeanShared> {
+  list.iter().map(|b| LeanShared::new(b.to_owned_ref())).collect()
 }
 
 // Name decoding with global cache
-pub fn decode_name(obj: LeanObject, global: &GlobalCache) -> Name {
-  let ptr = obj.as_ptr();
+pub fn decode_name(obj: LeanBorrowed<'_>, global: &GlobalCache) -> Name {
+  let ptr = obj.as_raw();
   // Fast path: check if already cached
   if let Some(name) = global.names.get(&ptr) {
     return name.clone();
@@ -116,7 +114,7 @@ pub fn decode_name(obj: LeanObject, global: &GlobalCache) -> Name {
     let pre = decode_name(pre, global);
     match ctor.tag() {
       1 => Name::str(pre, pos.as_string().to_string()),
-      2 => Name::num(pre, Nat::from_obj(pos)),
+      2 => Name::num(pre, Nat::from_obj(&pos)),
       _ => unreachable!(),
     }
   };
@@ -125,8 +123,8 @@ pub fn decode_name(obj: LeanObject, global: &GlobalCache) -> Name {
   global.names.entry(ptr).or_insert(name).clone()
 }
 
-fn decode_level(obj: LeanObject, cache: &mut Cache<'_>) -> Level {
-  let ptr = obj.as_ptr();
+fn decode_level(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Level {
+  let ptr = obj.as_raw();
   if let Some(cached) = cache.local.univs.get(&ptr) {
     return cached.clone();
   }
@@ -162,16 +160,16 @@ fn decode_level(obj: LeanObject, cache: &mut Cache<'_>) -> Level {
   level
 }
 
-fn decode_substring(obj: LeanObject) -> Substring {
+fn decode_substring(obj: LeanBorrowed<'_>) -> Substring {
   let ctor = obj.as_ctor();
   let [str_obj, start_pos, stop_pos] = ctor.objs();
   let str = str_obj.as_string().to_string();
-  let start_pos = Nat::from_obj(start_pos);
-  let stop_pos = Nat::from_obj(stop_pos);
+  let start_pos = Nat::from_obj(&start_pos);
+  let stop_pos = Nat::from_obj(&stop_pos);
   Substring { str, start_pos, stop_pos }
 }
 
-fn decode_source_info(obj: LeanObject) -> SourceInfo {
+fn decode_source_info(obj: LeanBorrowed<'_>) -> SourceInfo {
   if obj.is_scalar() {
     return SourceInfo::None;
   }
@@ -180,16 +178,16 @@ fn decode_source_info(obj: LeanObject) -> SourceInfo {
     0 => {
       let [leading, pos, trailing, end_pos] = ctor.objs();
       let leading = decode_substring(leading);
-      let pos = Nat::from_obj(pos);
+      let pos = Nat::from_obj(&pos);
       let trailing = decode_substring(trailing);
-      let end_pos = Nat::from_obj(end_pos);
+      let end_pos = Nat::from_obj(&end_pos);
       SourceInfo::Original(leading, pos, trailing, end_pos)
     },
     1 => {
       let [pos, end_pos, canonical] = ctor.objs();
-      let pos = Nat::from_obj(pos);
-      let end_pos = Nat::from_obj(end_pos);
-      let canonical = canonical.as_ptr() as usize == 1;
+      let pos = Nat::from_obj(&pos);
+      let end_pos = Nat::from_obj(&end_pos);
+      let canonical = canonical.as_raw() as usize == 1;
       SourceInfo::Synthetic(pos, end_pos, canonical)
     },
     _ => unreachable!(),
@@ -197,7 +195,7 @@ fn decode_source_info(obj: LeanObject) -> SourceInfo {
 }
 
 fn decode_syntax_preresolved(
-  obj: LeanObject,
+  obj: LeanBorrowed<'_>,
   cache: &mut Cache<'_>,
 ) -> SyntaxPreresolved {
   let ctor = obj.as_ctor();
@@ -221,7 +219,7 @@ fn decode_syntax_preresolved(
   }
 }
 
-fn decode_syntax(obj: LeanObject, cache: &mut Cache<'_>) -> Syntax {
+fn decode_syntax(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Syntax {
   if obj.is_scalar() {
     return Syntax::Missing;
   }
@@ -245,7 +243,7 @@ fn decode_syntax(obj: LeanObject, cache: &mut Cache<'_>) -> Syntax {
       let info = decode_source_info(info);
       let raw_val = decode_substring(raw_val);
       let val = decode_name(val, cache.global);
-      let preresolved = collect_list_objs(preresolved.as_list())
+      let preresolved = collect_list_borrowed(preresolved.as_list())
         .into_iter()
         .map(|o| decode_syntax_preresolved(o, cache))
         .collect();
@@ -256,7 +254,7 @@ fn decode_syntax(obj: LeanObject, cache: &mut Cache<'_>) -> Syntax {
 }
 
 fn decode_name_data_value(
-  obj: LeanObject,
+  obj: LeanBorrowed<'_>,
   cache: &mut Cache<'_>,
 ) -> (Name, DataValue) {
   let ctor = obj.as_ctor();
@@ -266,13 +264,13 @@ fn decode_name_data_value(
   let [inner] = dv_ctor.objs::<1>();
   let data_value = match dv_ctor.tag() {
     0 => DataValue::OfString(inner.as_string().to_string()),
-    1 => DataValue::OfBool(inner.as_ptr() as usize == 1),
+    1 => DataValue::OfBool(inner.as_raw() as usize == 1),
     2 => DataValue::OfName(decode_name(inner, cache.global)),
-    3 => DataValue::OfNat(Nat::from_obj(inner)),
+    3 => DataValue::OfNat(Nat::from_obj(&inner)),
     4 => {
       let inner_ctor = inner.as_ctor();
       let [nat_obj] = inner_ctor.objs::<1>();
-      let nat = Nat::from_obj(nat_obj);
+      let nat = Nat::from_obj(&nat_obj);
       let int = match inner_ctor.tag() {
         0 => Int::OfNat(nat),
         1 => Int::NegSucc(nat),
@@ -286,8 +284,8 @@ fn decode_name_data_value(
   (name, data_value)
 }
 
-pub fn decode_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
-  let ptr = obj.as_ptr();
+pub fn decode_expr(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Expr {
+  let ptr = obj.as_raw();
   if let Some(cached) = cache.local.exprs.get(&ptr) {
     return cached.clone();
   }
@@ -295,7 +293,7 @@ pub fn decode_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
   let expr = match ctor.tag() {
     0 => {
       let [nat, _hash] = ctor.objs();
-      Expr::bvar(Nat::from_obj(nat))
+      Expr::bvar(Nat::from_obj(&nat))
     },
     1 => {
       let [name_obj, _hash] = ctor.objs();
@@ -315,7 +313,7 @@ pub fn decode_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
     4 => {
       let [name_obj, levels, _hash] = ctor.objs();
       let name = decode_name(name_obj, cache.global);
-      let levels = collect_list_objs(levels.as_list())
+      let levels = collect_list_borrowed(levels.as_list())
         .into_iter()
         .map(|o| decode_level(o, cache))
         .collect();
@@ -332,7 +330,7 @@ pub fn decode_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
       let binder_name = decode_name(binder_name, cache.global);
       let binder_typ = decode_expr(binder_typ, cache);
       let body = decode_expr(body, cache);
-      let binder_info = match binder_info.as_ptr() as usize {
+      let binder_info = match binder_info.as_raw() as usize {
         0 => BinderInfo::Default,
         1 => BinderInfo::Implicit,
         2 => BinderInfo::StrictImplicit,
@@ -346,7 +344,7 @@ pub fn decode_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
       let binder_name = decode_name(binder_name, cache.global);
       let binder_typ = decode_expr(binder_typ, cache);
       let body = decode_expr(body, cache);
-      let binder_info = match binder_info.as_ptr() as usize {
+      let binder_info = match binder_info.as_raw() as usize {
         0 => BinderInfo::Default,
         1 => BinderInfo::Implicit,
         2 => BinderInfo::StrictImplicit,
@@ -361,7 +359,7 @@ pub fn decode_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
       let typ = decode_expr(typ, cache);
       let value = decode_expr(value, cache);
       let body = decode_expr(body, cache);
-      let nondep = nondep.as_ptr() as usize == 1;
+      let nondep = nondep.as_raw() as usize == 1;
       Expr::letE(decl_name, typ, value, body, nondep)
     },
     9 => {
@@ -369,14 +367,14 @@ pub fn decode_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
       let lit_ctor = literal.as_ctor();
       let [inner] = lit_ctor.objs::<1>();
       match lit_ctor.tag() {
-        0 => Expr::lit(Literal::NatVal(Nat::from_obj(inner))),
+        0 => Expr::lit(Literal::NatVal(Nat::from_obj(&inner))),
         1 => Expr::lit(Literal::StrVal(inner.as_string().to_string())),
         _ => unreachable!(),
       }
     },
     10 => {
       let [data, expr_obj] = ctor.objs();
-      let kv_map: Vec<_> = collect_list_objs(data.as_list())
+      let kv_map: Vec<_> = collect_list_borrowed(data.as_list())
         .into_iter()
         .map(|o| decode_name_data_value(o, cache))
         .collect();
@@ -386,7 +384,7 @@ pub fn decode_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
     11 => {
       let [typ_name, idx, struct_expr] = ctor.objs();
       let typ_name = decode_name(typ_name, cache.global);
-      let idx = Nat::from_obj(idx);
+      let idx = Nat::from_obj(&idx);
       let struct_expr = decode_expr(struct_expr, cache);
       Expr::proj(typ_name, idx, struct_expr)
     },
@@ -397,22 +395,25 @@ pub fn decode_expr(obj: LeanObject, cache: &mut Cache<'_>) -> Expr {
 }
 
 fn decode_recursor_rule(
-  obj: LeanObject,
+  obj: LeanBorrowed<'_>,
   cache: &mut Cache<'_>,
 ) -> RecursorRule {
   let ctor = obj.as_ctor();
   let [ctor_name, n_fields, rhs] = ctor.objs();
   let ctor_name = decode_name(ctor_name, cache.global);
-  let n_fields = Nat::from_obj(n_fields);
+  let n_fields = Nat::from_obj(&n_fields);
   let rhs = decode_expr(rhs, cache);
   RecursorRule { ctor: ctor_name, n_fields, rhs }
 }
 
-fn decode_constant_val(obj: LeanObject, cache: &mut Cache<'_>) -> ConstantVal {
+fn decode_constant_val(
+  obj: LeanBorrowed<'_>,
+  cache: &mut Cache<'_>,
+) -> ConstantVal {
   let ctor = obj.as_ctor();
   let [name_obj, level_params, typ] = ctor.objs();
   let name = decode_name(name_obj, cache.global);
-  let level_params: Vec<_> = collect_list_objs(level_params.as_list())
+  let level_params: Vec<_> = collect_list_borrowed(level_params.as_list())
     .into_iter()
     .map(|o| decode_name(o, cache.global))
     .collect();
@@ -421,7 +422,7 @@ fn decode_constant_val(obj: LeanObject, cache: &mut Cache<'_>) -> ConstantVal {
 }
 
 pub fn decode_constant_info(
-  obj: LeanObject,
+  obj: LeanBorrowed<'_>,
   cache: &mut Cache<'_>,
 ) -> ConstantInfo {
   let ctor = obj.as_ctor();
@@ -432,7 +433,7 @@ pub fn decode_constant_info(
     0 => {
       let [constant_val, is_unsafe] = inner.objs();
       let constant_val = decode_constant_val(constant_val, cache);
-      let is_unsafe = is_unsafe.as_ptr() as usize == 1;
+      let is_unsafe = is_unsafe.as_raw() as usize == 1;
       ConstantInfo::AxiomInfo(AxiomVal { cnst: constant_val, is_unsafe })
     },
     1 => {
@@ -448,13 +449,13 @@ pub fn decode_constant_info(
       } else {
         let hints_ctor = hints.as_ctor();
         let [height] = hints_ctor.objs::<1>();
-        ReducibilityHints::Regular(height.as_ptr() as u32)
+        ReducibilityHints::Regular(height.as_raw() as u32)
       };
-      let all: Vec<_> = collect_list_objs(all.as_list())
+      let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let safety = match safety.as_ptr() as usize {
+      let safety = match safety.as_raw() as usize {
         0 => DefinitionSafety::Unsafe,
         1 => DefinitionSafety::Safe,
         2 => DefinitionSafety::Partial,
@@ -472,7 +473,7 @@ pub fn decode_constant_info(
       let [constant_val, value, all] = inner.objs();
       let constant_val = decode_constant_val(constant_val, cache);
       let value = decode_expr(value, cache);
-      let all: Vec<_> = collect_list_objs(all.as_list())
+      let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
@@ -482,11 +483,11 @@ pub fn decode_constant_info(
       let [constant_val, value, all, is_unsafe] = inner.objs();
       let constant_val = decode_constant_val(constant_val, cache);
       let value = decode_expr(value, cache);
-      let all: Vec<_> = collect_list_objs(all.as_list())
+      let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let is_unsafe = is_unsafe.as_ptr() as usize == 1;
+      let is_unsafe = is_unsafe.as_raw() as usize == 1;
       ConstantInfo::OpaqueInfo(OpaqueVal {
         cnst: constant_val,
         value,
@@ -497,7 +498,7 @@ pub fn decode_constant_info(
     4 => {
       let [constant_val, kind] = inner.objs();
       let constant_val = decode_constant_val(constant_val, cache);
-      let kind = match kind.as_ptr() as usize {
+      let kind = match kind.as_raw() as usize {
         0 => QuotKind::Type,
         1 => QuotKind::Ctor,
         2 => QuotKind::Lift,
@@ -517,19 +518,19 @@ pub fn decode_constant_info(
         bools,
       ] = inner.objs();
       let constant_val = decode_constant_val(constant_val, cache);
-      let num_params = Nat::from_obj(num_params);
-      let num_indices = Nat::from_obj(num_indices);
-      let all: Vec<_> = collect_list_objs(all.as_list())
+      let num_params = Nat::from_obj(&num_params);
+      let num_indices = Nat::from_obj(&num_indices);
+      let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let ctors: Vec<_> = collect_list_objs(ctors.as_list())
+      let ctors: Vec<_> = collect_list_borrowed(ctors.as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let num_nested = Nat::from_obj(num_nested);
+      let num_nested = Nat::from_obj(&num_nested);
       let [is_rec, is_unsafe, is_reflexive, ..] =
-        (bools.as_ptr() as usize).to_le_bytes().map(|b| b == 1);
+        (bools.as_raw() as usize).to_le_bytes().map(|b| b == 1);
       ConstantInfo::InductInfo(InductiveVal {
         cnst: constant_val,
         num_params,
@@ -547,10 +548,10 @@ pub fn decode_constant_info(
         inner.objs();
       let constant_val = decode_constant_val(constant_val, cache);
       let induct = decode_name(induct, cache.global);
-      let cidx = Nat::from_obj(cidx);
-      let num_params = Nat::from_obj(num_params);
-      let num_fields = Nat::from_obj(num_fields);
-      let is_unsafe = is_unsafe.as_ptr() as usize == 1;
+      let cidx = Nat::from_obj(&cidx);
+      let num_params = Nat::from_obj(&num_params);
+      let num_fields = Nat::from_obj(&num_fields);
+      let is_unsafe = is_unsafe.as_raw() as usize == 1;
       ConstantInfo::CtorInfo(ConstructorVal {
         cnst: constant_val,
         induct,
@@ -572,20 +573,20 @@ pub fn decode_constant_info(
         bools,
       ] = inner.objs();
       let constant_val = decode_constant_val(constant_val, cache);
-      let all: Vec<_> = collect_list_objs(all.as_list())
+      let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let num_params = Nat::from_obj(num_params);
-      let num_indices = Nat::from_obj(num_indices);
-      let num_motives = Nat::from_obj(num_motives);
-      let num_minors = Nat::from_obj(num_minors);
-      let rules: Vec<_> = collect_list_objs(rules.as_list())
+      let num_params = Nat::from_obj(&num_params);
+      let num_indices = Nat::from_obj(&num_indices);
+      let num_motives = Nat::from_obj(&num_motives);
+      let num_minors = Nat::from_obj(&num_minors);
+      let rules: Vec<_> = collect_list_borrowed(rules.as_list())
         .into_iter()
         .map(|o| decode_recursor_rule(o, cache))
         .collect();
       let [k, is_unsafe, ..] =
-        (bools.as_ptr() as usize).to_le_bytes().map(|b| b == 1);
+        (bools.as_raw() as usize).to_le_bytes().map(|b| b == 1);
       ConstantInfo::RecInfo(RecursorVal {
         cnst: constant_val,
         all,
@@ -604,7 +605,7 @@ pub fn decode_constant_info(
 
 /// Decode a single (Name, ConstantInfo) pair.
 fn decode_name_constant_info(
-  obj: LeanObject,
+  obj: LeanBorrowed<'_>,
   global: &GlobalCache,
 ) -> (Name, ConstantInfo) {
   let mut cache = Cache::new(global);
@@ -616,12 +617,25 @@ fn decode_name_constant_info(
 }
 
 // Decode a Lean environment in parallel with hybrid caching.
-pub fn decode_env(obj: LeanList) -> Env {
-  // Phase 1: Collect pointers (sequential)
-  let objs = collect_list_objs(obj);
+pub fn decode_env(list: LeanList<LeanBorrowed<'_>>) -> Env {
+  // Phase 1: Mark entire list graph as MT, then collect elements as LeanShared.
+  // lean_mark_mt recursively marks all reachable objects. Subsequent
+  // LeanShared::new calls on elements are a fast no-op (single is_st check).
+  let shared_list = LeanShared::new(list.inner().to_owned_ref());
+  let objs = collect_list_shared(shared_list.borrow().as_list());
 
   if objs.len() < PARALLEL_THRESHOLD {
-    return decode_env_sequential(obj);
+    // Sequential fallback for small environments — no MT overhead needed,
+    // but objects are already marked. Just borrow directly.
+    let global = GlobalCache::new();
+    let mut env = Env::default();
+    env.reserve(objs.len());
+    for o in &objs {
+      let (name, constant_info) =
+        decode_name_constant_info(o.borrow(), &global);
+      env.insert(name, constant_info);
+    }
+    return env;
   }
 
   // Estimate: ~3 unique names per constant on average
@@ -629,11 +643,8 @@ pub fn decode_env(obj: LeanList) -> Env {
 
   // Phase 2: Decode in parallel with shared global name cache
   let pairs: Vec<(Name, ConstantInfo)> = objs
-    .into_iter()
-    .map(SendObj)
-    .collect::<Vec<_>>()
     .into_par_iter()
-    .map(|o| decode_name_constant_info(o.get(), &global))
+    .map(|shared| decode_name_constant_info(shared.borrow(), &global))
     .collect();
 
   // Phase 3: Build final map
@@ -645,26 +656,15 @@ pub fn decode_env(obj: LeanList) -> Env {
   env
 }
 
-/// Sequential fallback for small environments.
-pub fn decode_env_sequential(obj: LeanList) -> Env {
-  let objs = collect_list_objs(obj);
-  let global = GlobalCache::new();
-  let mut env = Env::default();
-  env.reserve(objs.len());
-
-  for o in objs {
-    let (name, constant_info) = decode_name_constant_info(o, &global);
-    env.insert(name, constant_info);
-  }
-  env
-}
-
 // Debug/analysis entry point invoked via the `rust-compile` test flag in
 // `Tests/FFI/Basic.lean`. Exercises the full compile→decompile→check→serialize
 // roundtrip and size analysis. Output is intentionally suppressed; re-enable
 // individual `eprintln!` lines when debugging locally.
+#[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
-extern "C" fn rs_tmp_decode_const_map(obj: LeanList) -> usize {
+extern "C" fn rs_tmp_decode_const_map(
+  obj: LeanList<LeanBorrowed<'_>>,
+) -> usize {
   // Enable hash-consed size tracking for debugging
   // TODO: Make this configurable via CLI instead of hardcoded
   crate::ix::compile::TRACK_HASH_CONSED_SIZE
@@ -733,6 +733,7 @@ extern "C" fn rs_tmp_decode_const_map(obj: LeanList) -> usize {
   env.as_ref().len()
 }
 
+#[cfg(feature = "test-ffi")]
 /// Size breakdown for a constant: alpha-invariant vs metadata
 #[derive(Default, Clone)]
 struct ConstSizeBreakdown {
@@ -740,12 +741,14 @@ struct ConstSizeBreakdown {
   meta_size: usize,  // Metadata (names, binder info, etc.)
 }
 
+#[cfg(feature = "test-ffi")]
 impl ConstSizeBreakdown {
   fn total(&self) -> usize {
     self.alpha_size + self.meta_size
   }
 }
 
+#[cfg(feature = "test-ffi")]
 /// Analyze the serialized size of a constant and its transitive dependencies.
 fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
   use crate::ix::address::Address;
@@ -895,6 +898,7 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
 }
 
 /// Build a name index for metadata serialization.
+#[cfg(feature = "test-ffi")]
 fn build_name_index(
   stt: &crate::ix::compile::CompileState,
 ) -> crate::ix::ixon::metadata::NameIndex {
@@ -918,6 +922,7 @@ fn build_name_index(
 }
 
 /// Compute size breakdown for a constant (alpha-invariant vs metadata).
+#[cfg(feature = "test-ffi")]
 fn compute_const_size_breakdown(
   constant: &crate::ix::ixon::constant::Constant,
   name: &Name,
@@ -938,6 +943,7 @@ fn compute_const_size_breakdown(
 }
 
 /// Compute the serialized size of constant metadata.
+#[cfg(feature = "test-ffi")]
 fn serialized_meta_size(
   meta: &crate::ix::ixon::metadata::ConstantMeta,
   name_index: &crate::ix::ixon::metadata::NameIndex,
@@ -950,6 +956,7 @@ fn serialized_meta_size(
 }
 
 /// Parse a dotted name string into a Name.
+#[cfg(feature = "test-ffi")]
 fn parse_name(s: &str) -> Name {
   let parts: Vec<&str> = s.split('.').collect();
   let mut name = Name::anon();
@@ -960,6 +967,7 @@ fn parse_name(s: &str) -> Name {
 }
 
 /// Compute the serialized size of a constant.
+#[cfg(feature = "test-ffi")]
 fn serialized_const_size(
   constant: &crate::ix::ixon::constant::Constant,
 ) -> usize {
@@ -969,6 +977,7 @@ fn serialized_const_size(
 }
 
 /// Analyze block size statistics: hash-consing vs serialization.
+#[cfg(feature = "test-ffi")]
 fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
   use crate::ix::compile::BlockSizeStats;
 
@@ -1153,6 +1162,7 @@ fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
 }
 
 /// Truncate a name for display.
+#[cfg(feature = "test-ffi")]
 fn truncate_name(name: &str, max_len: usize) -> String {
   if name.len() <= max_len {
     name.to_string()
