@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use crate::ffi::ffi_io_guard;
 use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
 use crate::lean::LeanIxCondensedBlocks;
@@ -102,14 +101,12 @@ impl LeanIxCondensedBlocks<LeanOwned> {
 pub extern "C" fn rs_build_ref_graph(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
-    let rust_env = decode_env(env_consts_ptr);
-    let rust_env = Arc::new(rust_env);
-    let ref_graph = build_ref_graph(&rust_env);
-    let mut cache = LeanBuildCache::with_capacity(rust_env.len());
-    let result = build_ref_graph_array(&mut cache, &ref_graph.out_refs);
-    LeanIOResult::ok(result)
-  }))
+  let rust_env = decode_env(env_consts_ptr);
+  let rust_env = Arc::new(rust_env);
+  let ref_graph = build_ref_graph(&rust_env);
+  let mut cache = LeanBuildCache::with_capacity(rust_env.len());
+  let result = build_ref_graph_array(&mut cache, &ref_graph.out_refs);
+  LeanIOResult::ok(result)
 }
 
 /// FFI function to compute SCCs from a Lean environment.
@@ -117,13 +114,11 @@ pub extern "C" fn rs_build_ref_graph(
 pub extern "C" fn rs_compute_sccs(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
-    let rust_env = decode_env(env_consts_ptr);
-    let rust_env = Arc::new(rust_env);
-    let ref_graph = build_ref_graph(&rust_env);
-    let condensed = compute_sccs(&ref_graph.out_refs);
-    let mut cache = LeanBuildCache::with_capacity(rust_env.len());
-    let result = LeanIxCondensedBlocks::build(&mut cache, &condensed);
-    LeanIOResult::ok(result)
-  }))
+  let rust_env = decode_env(env_consts_ptr);
+  let rust_env = Arc::new(rust_env);
+  let ref_graph = build_ref_graph(&rust_env);
+  let condensed = compute_sccs(&ref_graph.out_refs);
+  let mut cache = LeanBuildCache::with_capacity(rust_env.len());
+  let result = LeanIxCondensedBlocks::build(&mut cache, &condensed);
+  LeanIOResult::ok(result)
 }

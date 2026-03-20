@@ -1,6 +1,7 @@
 /-
   Reference counting and ownership tests for the typed lean-ffi API.
-  Requires `IX_TEST_FFI=1` to enable the `test-ffi` Cargo feature.
+  Gated behind the `test-ffi` Cargo feature (included by default,
+  stripped with `IX_RELEASE=1`).
 
   These tests exercise ownership semantics that catch double-free,
   use-after-free, and refcount leaks by calling Rust FFI functions that:
@@ -11,7 +12,8 @@
   - Traverse deeply nested borrows without inc_ref
   - Build from cache (clone-based dedup) then drop the array
   - Repeatedly alloc and immediately drop (stress alloc/dealloc)
-  - Handle persistent objects (m_rc == 0, inc/dec are no-ops)
+  - Handle persistent objects (m_rc == 0, lean_inc/lean_dec are no-ops)
+  - Mark objects as multi-threaded and decode from parallel threads
 -/
 module
 
@@ -45,7 +47,7 @@ opaque multiBorrowName : @& Ix.Name → String
 @[extern "rs_refcount_deep_borrow_expr"]
 opaque deepBorrowExpr : @& Ix.Expr → Nat
 
--- Owned drop (NOT @&, Rust must lean_dec)
+-- Owned drop (NOT @&, Rust takes ownership and drops)
 @[extern "rs_refcount_owned_array_drop"]
 opaque ownedArrayDrop : Array Ix.Name → Nat
 
@@ -148,8 +150,8 @@ def deepBorrowTests : TestSeq :=
   test "deep borrow expr 7 nodes" (deepBorrowExpr app3 == 7)
 
 /-! ## Owned drop tests
-    Passes owned (NOT @&) arrays/lists. Rust must lean_dec each element
-    on drop. A missing lean_dec leaks; an extra lean_dec crashes. -/
+    Passes owned (NOT @&) arrays/lists. Rust drops each element
+    on scope exit. A missing drop leaks; an extra drop crashes. -/
 
 def ownedDropTests : TestSeq :=
   let names := #[testAnon, testStr, testNum]
@@ -194,7 +196,7 @@ def nestedBorrowTests : TestSeq :=
   test "nested borrow empty" (nestedBorrow #[] == 0)
 
 /-! ## Persistent object tests
-    Module-level defs have m_rc == 0. lean_inc/lean_dec are no-ops.
+    Module-level defs have m_rc == 0. Refcount ops are no-ops.
     Verifies that the typed API handles these correctly. -/
 
 def persistentTests : TestSeq :=
@@ -203,8 +205,8 @@ def persistentTests : TestSeq :=
 
 /-! ## Cache dedup tests
     Builds N copies of the same Name via LeanBuildCache, which clones
-    (lean_inc) cached entries. Dropping the array lean_decs each copy.
-    Would crash if clone refcount was wrong. -/
+    cached entries (incrementing refcount). Dropping the array decrements
+    each copy. Would crash if clone refcount was wrong. -/
 
 def cacheDedupTests : TestSeq :=
   let duped := cacheDedup testStr 5

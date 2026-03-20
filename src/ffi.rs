@@ -26,31 +26,8 @@ pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
 #[cfg(feature = "test-ffi")]
 pub mod refcount; // Reference counting / ownership tests (test-only)
 
-use lean_ffi::object::{LeanIOResult, LeanOwned};
 #[cfg(feature = "test-ffi")]
-use lean_ffi::object::{LeanArray, LeanBorrowed, LeanByteArray, LeanRef};
-
-/// Guard an FFI function that returns a Lean IO result against panics.
-/// On panic, returns a Lean IO error with the panic message instead of
-/// unwinding across the `extern "C"` boundary (which is undefined behavior).
-pub(crate) fn ffi_io_guard<F>(f: F) -> LeanIOResult<LeanOwned>
-where
-  F: FnOnce() -> LeanIOResult<LeanOwned> + std::panic::UnwindSafe,
-{
-  match std::panic::catch_unwind(f) {
-    Ok(result) => result,
-    Err(panic_info) => {
-      let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
-        format!("FFI panic: {s}")
-      } else if let Some(s) = panic_info.downcast_ref::<String>() {
-        format!("FFI panic: {s}")
-      } else {
-        "FFI panic: unknown".to_string()
-      };
-      LeanIOResult::error_string(&msg)
-    },
-  }
-}
+use lean_ffi::object::{LeanArray, LeanBorrowed, LeanByteArray, LeanOwned, LeanRef};
 
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]

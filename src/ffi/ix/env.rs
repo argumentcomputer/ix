@@ -80,23 +80,17 @@ where
   let mut result = Vec::new();
   let mut current = obj;
 
-  loop {
-    if current.is_scalar() {
-      break;
-    }
-
+  while !current.is_scalar() {
     let ctor = current.as_ctor();
     if ctor.tag() == 0 {
-      // AssocList.nil
-      break;
+      break; // AssocList.nil
     }
-
     // AssocList.cons: 3 fields (key, value, tail)
-    result.push((decode_key(ctor.get(0)), decode_val(ctor.get(1))));
-    // Break the borrow chain: ctor borrows from current, so we can't
-    // reassign current while ctor is alive. The underlying Lean objects
-    // outlive this loop, so this is safe.
-    current = unsafe { LeanBorrowed::from_raw(ctor.get(2).as_raw()) };
+    let key = ctor.get(0);
+    let val = ctor.get(1);
+    let next = ctor.get(2).as_raw();
+    result.push((decode_key(key), decode_val(val)));
+    current = unsafe { LeanBorrowed::from_raw(next) };
   }
 
   result
@@ -180,38 +174,36 @@ impl LeanIxRawEnvironment<LeanOwned> {
 }
 
 impl<R: LeanRef> LeanIxRawEnvironment<R> {
+  /// RawEnvironment is a single-field struct, unboxed to just Array by Lean.
+  fn as_array(&self) -> LeanArray<LeanBorrowed<'_>> {
+    unsafe { LeanBorrowed::from_raw(self.as_raw()) }.as_array()
+  }
+
   /// Decode Ix.RawEnvironment from Lean object into HashMap.
   /// RawEnvironment = { consts : Array (Name × ConstantInfo) }
   /// NOTE: Unboxed to just Array. This version deduplicates by name.
   pub fn decode(&self) -> FxHashMap<Name, ConstantInfo> {
-    let borrowed = unsafe { LeanBorrowed::from_raw(self.as_raw()) };
-    let arr = borrowed.as_array();
+    let arr = self.as_array();
     let mut consts: FxHashMap<Name, ConstantInfo> = FxHashMap::default();
-
     for pair_obj in arr.iter() {
       let pair = pair_obj.as_ctor();
       let name = LeanIxName(pair.get(0)).decode();
       let info = LeanIxConstantInfo(pair.get(1)).decode();
       consts.insert(name, info);
     }
-
     consts
   }
 
-  /// Decode Ix.RawEnvironment from Lean object preserving array structure.
-  /// This version preserves all entries including duplicates.
+  /// Decode Ix.RawEnvironment preserving array structure (including duplicates).
   pub fn decode_to_vec(&self) -> Vec<(Name, ConstantInfo)> {
-    let borrowed = unsafe { LeanBorrowed::from_raw(self.as_raw()) };
-    let arr = borrowed.as_array();
+    let arr = self.as_array();
     let mut consts = Vec::with_capacity(arr.len());
-
     for pair_obj in arr.iter() {
       let pair = pair_obj.as_ctor();
       let name = LeanIxName(pair.get(0)).decode();
       let info = LeanIxConstantInfo(pair.get(1)).decode();
       consts.push((name, info));
     }
-
     consts
   }
 }
@@ -226,7 +218,6 @@ impl<R: LeanRef> LeanIxEnvironment<R> {
   /// NOTE: Environment with a single field is UNBOXED by Lean,
   /// so the pointer IS the HashMap directly, not a structure containing it.
   pub fn decode(&self) -> FxHashMap<Name, ConstantInfo> {
-    // Environment is unboxed - obj IS the HashMap directly
     let borrowed = unsafe { LeanBorrowed::from_raw(self.as_raw()) };
     let consts_pairs = decode_hashmap(
       borrowed,

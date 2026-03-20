@@ -80,8 +80,21 @@ impl<'g> Cache<'g> {
   }
 }
 
-fn collect_list_objs(list: LeanList<LeanBorrowed<'_>>) -> Vec<LeanShared> {
-  list.iter().map(|b| LeanShared::new(b.to_owned_ref())).collect()
+/// Collect list elements as borrowed pointers (no refcount changes).
+/// Uses `LeanList::to_vec` which preserves the `'a` lifetime from the
+/// underlying Lean objects rather than tying it to a local borrow.
+fn collect_list_borrowed<'a>(list: LeanList<LeanBorrowed<'a>>) -> Vec<LeanBorrowed<'a>> {
+  list.to_vec()
+}
+
+/// Collect list elements as LeanShared handles for cross-thread use.
+/// The caller should have already MT-marked the parent list via `LeanShared::new`,
+/// so `lean_mark_mt` on each element is a single `lean_is_st` check (fast no-op).
+fn collect_list_shared(list: LeanList<LeanBorrowed<'_>>) -> Vec<LeanShared> {
+  list
+    .iter()
+    .map(|b| LeanShared::new(b.to_owned_ref()))
+    .collect()
 }
 
 // Name decoding with global cache
@@ -231,9 +244,9 @@ fn decode_syntax(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Syntax {
       let info = decode_source_info(info);
       let raw_val = decode_substring(raw_val);
       let val = decode_name(val, cache.global);
-      let preresolved = collect_list_objs(preresolved.as_list())
+      let preresolved = collect_list_borrowed(preresolved.as_list())
         .into_iter()
-        .map(|o| decode_syntax_preresolved(o.borrow(), cache))
+        .map(|o| decode_syntax_preresolved(o, cache))
         .collect();
       Syntax::Ident(info, raw_val, val, preresolved)
     },
@@ -301,9 +314,9 @@ pub fn decode_expr(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Expr {
     4 => {
       let [name_obj, levels, _hash] = ctor.objs();
       let name = decode_name(name_obj, cache.global);
-      let levels = collect_list_objs(levels.as_list())
+      let levels = collect_list_borrowed(levels.as_list())
         .into_iter()
-        .map(|o| decode_level(o.borrow(), cache))
+        .map(|o| decode_level(o, cache))
         .collect();
       Expr::cnst(name, levels)
     },
@@ -362,9 +375,9 @@ pub fn decode_expr(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Expr {
     },
     10 => {
       let [data, expr_obj] = ctor.objs();
-      let kv_map: Vec<_> = collect_list_objs(data.as_list())
+      let kv_map: Vec<_> = collect_list_borrowed(data.as_list())
         .into_iter()
-        .map(|o| decode_name_data_value(o.borrow(), cache))
+        .map(|o| decode_name_data_value(o, cache))
         .collect();
       let expr = decode_expr(expr_obj, cache);
       Expr::mdata(kv_map, expr)
@@ -401,9 +414,9 @@ fn decode_constant_val(
   let ctor = obj.as_ctor();
   let [name_obj, level_params, typ] = ctor.objs();
   let name = decode_name(name_obj, cache.global);
-  let level_params: Vec<_> = collect_list_objs(level_params.as_list())
+  let level_params: Vec<_> = collect_list_borrowed(level_params.as_list())
     .into_iter()
-    .map(|o| decode_name(o.borrow(), cache.global))
+    .map(|o| decode_name(o, cache.global))
     .collect();
   let typ = decode_expr(typ, cache);
   ConstantVal { name, level_params, typ }
@@ -439,9 +452,9 @@ pub fn decode_constant_info(
         let [height] = hints_ctor.objs::<1>();
         ReducibilityHints::Regular(height.as_raw() as u32)
       };
-      let all: Vec<_> = collect_list_objs(all.as_list())
+      let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
-        .map(|o| decode_name(o.borrow(), cache.global))
+        .map(|o| decode_name(o, cache.global))
         .collect();
       let safety = match safety.as_raw() as usize {
         0 => DefinitionSafety::Unsafe,
@@ -461,9 +474,9 @@ pub fn decode_constant_info(
       let [constant_val, value, all] = inner.objs();
       let constant_val = decode_constant_val(constant_val, cache);
       let value = decode_expr(value, cache);
-      let all: Vec<_> = collect_list_objs(all.as_list())
+      let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
-        .map(|o| decode_name(o.borrow(), cache.global))
+        .map(|o| decode_name(o, cache.global))
         .collect();
       ConstantInfo::ThmInfo(TheoremVal { cnst: constant_val, value, all })
     },
@@ -471,9 +484,9 @@ pub fn decode_constant_info(
       let [constant_val, value, all, is_unsafe] = inner.objs();
       let constant_val = decode_constant_val(constant_val, cache);
       let value = decode_expr(value, cache);
-      let all: Vec<_> = collect_list_objs(all.as_list())
+      let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
-        .map(|o| decode_name(o.borrow(), cache.global))
+        .map(|o| decode_name(o, cache.global))
         .collect();
       let is_unsafe = is_unsafe.as_raw() as usize == 1;
       ConstantInfo::OpaqueInfo(OpaqueVal {
@@ -508,13 +521,13 @@ pub fn decode_constant_info(
       let constant_val = decode_constant_val(constant_val, cache);
       let num_params = Nat::from_obj(&num_params);
       let num_indices = Nat::from_obj(&num_indices);
-      let all: Vec<_> = collect_list_objs(all.as_list())
+      let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
-        .map(|o| decode_name(o.borrow(), cache.global))
+        .map(|o| decode_name(o, cache.global))
         .collect();
-      let ctors: Vec<_> = collect_list_objs(ctors.as_list())
+      let ctors: Vec<_> = collect_list_borrowed(ctors.as_list())
         .into_iter()
-        .map(|o| decode_name(o.borrow(), cache.global))
+        .map(|o| decode_name(o, cache.global))
         .collect();
       let num_nested = Nat::from_obj(&num_nested);
       let [is_rec, is_unsafe, is_reflexive, ..] =
@@ -561,17 +574,17 @@ pub fn decode_constant_info(
         bools,
       ] = inner.objs();
       let constant_val = decode_constant_val(constant_val, cache);
-      let all: Vec<_> = collect_list_objs(all.as_list())
+      let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
-        .map(|o| decode_name(o.borrow(), cache.global))
+        .map(|o| decode_name(o, cache.global))
         .collect();
       let num_params = Nat::from_obj(&num_params);
       let num_indices = Nat::from_obj(&num_indices);
       let num_motives = Nat::from_obj(&num_motives);
       let num_minors = Nat::from_obj(&num_minors);
-      let rules: Vec<_> = collect_list_objs(rules.as_list())
+      let rules: Vec<_> = collect_list_borrowed(rules.as_list())
         .into_iter()
-        .map(|o| decode_recursor_rule(o.borrow(), cache))
+        .map(|o| decode_recursor_rule(o, cache))
         .collect();
       let [k, is_unsafe, ..] =
         (bools.as_raw() as usize).to_le_bytes().map(|b| b == 1);
@@ -606,17 +619,15 @@ fn decode_name_constant_info(
 
 // Decode a Lean environment in parallel with hybrid caching.
 pub fn decode_env(list: LeanList<LeanBorrowed<'_>>) -> Env {
-  // Phase 1: Mark entire list graph as MT and collect elements as shared
+  // Phase 1: Mark entire list graph as MT, then collect elements as LeanShared.
+  // lean_mark_mt recursively marks all reachable objects. Subsequent
+  // LeanShared::new calls on elements are a fast no-op (single is_st check).
   let shared_list = LeanShared::new(list.inner().to_owned_ref());
-  let objs: Vec<LeanShared> = shared_list
-    .borrow()
-    .as_list()
-    .iter()
-    .map(|b| LeanShared::new(b.to_owned_ref()))
-    .collect();
+  let objs = collect_list_shared(shared_list.borrow().as_list());
 
   if objs.len() < PARALLEL_THRESHOLD {
-    // Sequential fallback for small environments
+    // Sequential fallback for small environments — no MT overhead needed,
+    // but objects are already marked. Just borrow directly.
     let global = GlobalCache::new();
     let mut env = Env::default();
     env.reserve(objs.len());

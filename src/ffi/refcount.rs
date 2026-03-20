@@ -11,6 +11,7 @@
 //! - Nested field access from borrowed refs
 //! - Cache deduplication via Clone
 //! - Repeated alloc/dealloc cycles
+//! - Multi-threaded access via LeanShared
 
 use std::thread;
 
