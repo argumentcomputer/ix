@@ -1005,7 +1005,7 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1",
+ "windows-link 0.1.3",
  "windows-result 0.4.1",
 ]
 
@@ -1846,7 +1846,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 [[package]]
 name = "lean-ffi"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/lean-ffi?rev=91185181da859eb3941df2fbede24ae03838ed5b#91185181da859eb3941df2fbede24ae03838ed5b"
+source = "git+https://github.com/argumentcomputer/lean-ffi?rev=53c90ecf051023158b727e926a6141e72b106395#53c90ecf051023158b727e926a6141e72b106395"
 dependencies = [
  "bindgen",
  "cc",

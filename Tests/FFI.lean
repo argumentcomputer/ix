@@ -8,10 +8,11 @@ public import Tests.FFI.Basic
 public import Tests.FFI.Ix
 public import Tests.FFI.Ixon
 public import Tests.FFI.Lifecycle
+public import Tests.FFI.Refcount
 
 namespace Tests.FFI
 
 public def suite : List LSpec.TestSeq :=
-  Tests.FFI.Basic.suite ++ Tests.FFI.Ix.suite ++ Tests.FFI.Ixon.suite ++ Tests.FFI.Lifecycle.suite
+  Tests.FFI.Basic.suite ++ Tests.FFI.Ix.suite ++ Tests.FFI.Ixon.suite ++ Tests.FFI.Lifecycle.suite ++ Tests.FFI.Refcount.suite
 
 end Tests.FFI

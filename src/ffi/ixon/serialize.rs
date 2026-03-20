@@ -12,13 +12,13 @@ use crate::ix::ixon::univ::put_univ;
 use crate::lean::{
   LeanIxAddress, LeanIxonConstant, LeanIxonExpr, LeanIxonRawEnv, LeanIxonUniv,
 };
-use lean_ffi::object::LeanByteArray;
+use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanOwned};
 
 /// Check if Lean's computed hash matches Rust's computed hash.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_expr_hash_matches(
-  expr_obj: LeanIxonExpr,
-  expected_hash: LeanIxAddress,
+  expr_obj: LeanIxonExpr<LeanBorrowed<'_>>,
+  expected_hash: LeanIxAddress<LeanBorrowed<'_>>,
 ) -> bool {
   let expr = Arc::new(expr_obj.decode());
   let hash = hash_expr(&expr);
@@ -29,8 +29,8 @@ pub extern "C" fn rs_expr_hash_matches(
 /// Check if Lean's Ixon.Univ serialization matches Rust.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_eq_univ_serialization(
-  univ_obj: LeanIxonUniv,
-  bytes_obj: LeanByteArray,
+  univ_obj: LeanIxonUniv<LeanBorrowed<'_>>,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
 ) -> bool {
   let univ = univ_obj.decode();
   let bytes_data = bytes_obj.as_bytes();
@@ -42,8 +42,8 @@ pub extern "C" fn rs_eq_univ_serialization(
 /// Check if Lean's Ixon.Expr serialization matches Rust.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_eq_expr_serialization(
-  expr_obj: LeanIxonExpr,
-  bytes_obj: LeanByteArray,
+  expr_obj: LeanIxonExpr<LeanBorrowed<'_>>,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
 ) -> bool {
   let expr = expr_obj.decode();
   let bytes_data = bytes_obj.as_bytes();
@@ -55,8 +55,8 @@ pub extern "C" fn rs_eq_expr_serialization(
 /// Check if Lean's Ixon.Constant serialization matches Rust.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_eq_constant_serialization(
-  constant_obj: LeanIxonConstant,
-  bytes_obj: LeanByteArray,
+  constant_obj: LeanIxonConstant<LeanBorrowed<'_>>,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
 ) -> bool {
   let constant = constant_obj.decode();
   let bytes_data = bytes_obj.as_bytes();
@@ -69,8 +69,8 @@ pub extern "C" fn rs_eq_constant_serialization(
 /// Due to HashMap ordering differences, we compare deserialized content rather than bytes.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_eq_env_serialization(
-  raw_env_obj: LeanIxonRawEnv,
-  bytes_obj: LeanByteArray,
+  raw_env_obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
 ) -> bool {
   use crate::ix::ixon::env::Env;
 
@@ -137,7 +137,9 @@ pub extern "C" fn rs_eq_env_serialization(
 ///
 /// Returns: true if Rust can deserialize and re-serialize to the same bytes
 #[unsafe(no_mangle)]
-extern "C" fn rs_env_serde_roundtrip(lean_bytes_obj: LeanByteArray) -> bool {
+extern "C" fn rs_env_serde_roundtrip(
+  lean_bytes_obj: LeanByteArray<LeanOwned>,
+) -> bool {
   use crate::ix::ixon::env::Env;
 
   // Get bytes from Lean ByteArray
@@ -183,7 +185,9 @@ extern "C" fn rs_env_serde_roundtrip(lean_bytes_obj: LeanByteArray) -> bool {
 ///
 /// Returns: true if Rust can deserialize and the counts match
 #[unsafe(no_mangle)]
-extern "C" fn rs_env_serde_check(lean_bytes_obj: LeanByteArray) -> bool {
+extern "C" fn rs_env_serde_check(
+  lean_bytes_obj: LeanByteArray<LeanOwned>,
+) -> bool {
   use crate::ix::ixon::env::Env;
 
   // Get bytes from Lean ByteArray
