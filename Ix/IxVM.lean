@@ -35,10 +35,10 @@ def entrypoints := ⟦
   fn kernel_check_test(target_addr: [G; 32]) {
     let k_consts = ingress(target_addr);
     -- Discover primitive type indices
-    let nat_idx = find_nat_idx(k_consts, k_consts, [0; 8]);
+    let nat_idx = find_nat_idx(k_consts, k_consts, 0);
     -- String is not in Nat.add_comm's deps; use a sentinel value
-    let str_idx = [255, 255, 255, 255, 255, 255, 255, 255];
-    k_check_all_go(k_consts, k_consts, nat_idx, str_idx, [0; 8])
+    let str_idx = 0 - 1;
+    k_check_all_go(k_consts, k_consts, nat_idx, str_idx, 0)
   }
 
   /- # Benchmark entrypoints -/
