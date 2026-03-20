@@ -151,11 +151,12 @@ If `B` is NOT in `Prop`, then `imax uA uB = max uA uB`, the standard predicative
 ### Level Comparison
 
 Two levels are equal if they evaluate to the same natural number under every assignment
-of parameters. The Lean and Rust kernels use a canonical normalization algorithm. The
-Aiur kernel uses a sound but incomplete heuristic: `level_equal(a, b) = level_leq(a, b)
-∧ level_leq(b, a)`, where `level_leq` handles common cases (Zero ≤ anything,
-Succ-vs-Succ, Max decomposition) but falls back to structural equality for complex
-`IMax` forms.
+of parameters. The Aiur kernel uses `level_equal(a, b) = level_leq(a, b) ∧ level_leq(b, a)`,
+where `level_leq` is sound and complete. For `IMax` forms whose second argument might be
+zero, `level_leq` case-splits on a parameter `p` from that argument: it substitutes `p → 0`
+(eliminating the `IMax`) and `p → Succ(p)` (resolving `IMax` to `Max`), checking the
+inequality in both cases. It also distributes `Succ` over `Max` and handles
+`Param(i) ≤ Succ(X)` by recursing to `Param(i) ≤ X` (valid since levels are integer-valued).
 
 ### Level Instantiation
 
@@ -951,11 +952,6 @@ termination relies on the well-foundedness of the input declarations.
    `FVar`. This means if `x : P` where `P : Prop` and `x` is a free variable, proof
    irrelevance won't trigger. This is conservative (never unsound) but incomplete.
    The Lean/Rust kernels store the type in the FVar head and can inspect it directly.
-
-3. **Incomplete level comparison**: `level_leq` is a heuristic. For example,
-   `IMax(Param(0), Param(1)) ≤ Max(Param(0), Param(1))` is always true but may not
-   be detected. This is sound (never claims false equalities) but may reject valid
-   programs.
 
 ---
 
