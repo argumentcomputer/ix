@@ -9,7 +9,6 @@
 
 use std::sync::Arc;
 
-use crate::ffi::ffi_io_guard;
 use crate::ix::address::Address;
 use crate::ix::compile::{CompileState, compile_env};
 use crate::ix::condense::compute_sccs;
@@ -201,7 +200,7 @@ pub extern "C" fn rs_roundtrip_block_compare_detail(
 pub extern "C" fn rs_compile_env_full(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+  {
     // Phase 1: Decode Lean environment
     let rust_env = decode_env(env_consts_ptr);
     let env_len = rust_env.len();
@@ -293,7 +292,7 @@ pub extern "C" fn rs_compile_env_full(
     result.set(2, compiled_obj);
 
     LeanIOResult::ok(result)
-  }))
+  }
 }
 
 /// FFI function to compile a Lean environment to serialized Ixon.Env bytes.
@@ -301,7 +300,7 @@ pub extern "C" fn rs_compile_env_full(
 pub extern "C" fn rs_compile_env(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+  {
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
@@ -323,7 +322,7 @@ pub extern "C" fn rs_compile_env(
     // Build Lean ByteArray
     let ba = LeanByteArray::from_bytes(&buf);
     LeanIOResult::ok(ba)
-  }))
+  }
 }
 
 /// Round-trip a RawEnv: decode from Lean, re-encode via builder.
@@ -342,7 +341,7 @@ pub extern "C" fn rs_roundtrip_raw_env(
 pub extern "C" fn rs_compile_phases(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+  {
     let rust_env = decode_env(env_consts_ptr);
     let env_len = rust_env.len();
     let rust_env = Arc::new(rust_env);
@@ -434,7 +433,7 @@ pub extern "C" fn rs_compile_phases(
     result.set(2, raw_ixon_env);
 
     LeanIOResult::ok(result)
-  }))
+  }
 }
 
 /// FFI function to compile a Lean environment to a RawEnv.
@@ -442,7 +441,7 @@ pub extern "C" fn rs_compile_phases(
 pub extern "C" fn rs_compile_env_to_ixon(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+  {
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
@@ -520,7 +519,7 @@ pub extern "C" fn rs_compile_env_to_ixon(
     result.set(3, comms_arr);
     result.set(4, names_arr);
     LeanIOResult::ok(result)
-  }))
+  }
 }
 
 /// FFI function to canonicalize environment to Ix.RawEnvironment.
@@ -528,12 +527,12 @@ pub extern "C" fn rs_compile_env_to_ixon(
 pub extern "C" fn rs_canonicalize_env_to_ix(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+  {
     let rust_env = decode_env(env_consts_ptr);
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
     let raw_env = LeanIxRawEnvironment::build(&mut cache, &rust_env);
     LeanIOResult::ok(raw_env)
-  }))
+  }
 }
 
 // =============================================================================
@@ -631,7 +630,7 @@ extern "C" fn rs_compare_block(
   }
   let global_cache = GlobalCache::default();
   let name = decode_name(
-    unsafe { LeanBorrowed::from_raw(lowlink_name.as_raw()) },
+    lowlink_name.borrow(),
     &global_cache,
   );
 
@@ -699,7 +698,7 @@ extern "C" fn rs_get_block_bytes_len(
   }
   let global_cache = GlobalCache::default();
   let name = decode_name(
-    unsafe { LeanBorrowed::from_raw(lowlink_name.as_raw()) },
+    lowlink_name.borrow(),
     &global_cache,
   );
 
@@ -724,7 +723,7 @@ extern "C" fn rs_copy_block_bytes(
   }
   let global_cache = GlobalCache::default();
   let name = decode_name(
-    unsafe { LeanBorrowed::from_raw(lowlink_name.as_raw()) },
+    lowlink_name.borrow(),
     &global_cache,
   );
 
@@ -751,7 +750,7 @@ extern "C" fn rs_get_block_sharing_len(
   }
   let global_cache = GlobalCache::default();
   let name = decode_name(
-    unsafe { LeanBorrowed::from_raw(lowlink_name.as_raw()) },
+    lowlink_name.borrow(),
     &global_cache,
   );
 
@@ -877,7 +876,7 @@ extern "C" fn rs_get_pre_sharing_exprs(
   }
   let global_cache = GlobalCache::default();
   let name = decode_name(
-    unsafe { LeanBorrowed::from_raw(lowlink_name.as_raw()) },
+    lowlink_name.borrow(),
     &global_cache,
   );
 
@@ -982,7 +981,7 @@ extern "C" fn rs_get_pre_sharing_exprs_len(
   }
   let global_cache = GlobalCache::default();
   let name = decode_name(
-    unsafe { LeanBorrowed::from_raw(lowlink_name.as_raw()) },
+    lowlink_name.borrow(),
     &global_cache,
   );
 
@@ -1047,7 +1046,7 @@ extern "C" fn rs_lookup_const_addr(
   }
   let global_cache = GlobalCache::default();
   let name = decode_name(
-    unsafe { LeanBorrowed::from_raw(name_ptr.as_raw()) },
+    name_ptr.borrow(),
     &global_cache,
   );
 

@@ -8,7 +8,7 @@ use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
 use crate::lean::{LeanIxBlockCompareDetail, LeanIxBlockCompareResult};
 use lean_ffi::object::{
-  LeanBorrowed, LeanByteArray, LeanCtor, LeanList, LeanOwned, LeanRef,
+  LeanBorrowed, LeanByteArray, LeanCtor, LeanList, LeanOwned,
 };
 
 use crate::ffi::lean_env::{
@@ -30,10 +30,7 @@ pub extern "C" fn rs_compare_expr_compilation(
   // Decode Lean.Expr to Rust's representation
   let global_cache = GlobalCache::default();
   let mut cache = LeanCache::new(&global_cache);
-  let lean_expr = decode_expr(
-    unsafe { LeanBorrowed::from_raw(lean_expr_ptr.as_raw()) },
-    &mut cache,
-  );
+  let lean_expr = decode_expr(lean_expr_ptr.borrow(), &mut cache);
 
   // Create universe params for de Bruijn indexing (u0, u1, u2, ...)
   let univ_params: Vec<Name> = (0..univ_ctx_size)
@@ -119,10 +116,7 @@ pub unsafe extern "C" fn rs_compare_block_v2(
   lean_sharing_len: u64,
 ) -> LeanIxBlockCompareDetail<LeanOwned> {
   let global_cache = GlobalCache::default();
-  let name = decode_name(
-    unsafe { LeanBorrowed::from_raw(lowlink_name.as_raw()) },
-    &global_cache,
-  );
+  let name = decode_name(lowlink_name.borrow(), &global_cache);
 
   let rust_env = unsafe { &*rust_env };
   let lean_data = lean_bytes.as_bytes();

@@ -23,7 +23,7 @@ pub extern "C" fn rs_roundtrip_assoclist_nat_nat(
   if list_ptr.is_scalar() {
     return LeanOwned::box_usize(0);
   }
-  let pairs = decode_assoc_list_nat_nat(&list_ptr);
+  let pairs = decode_assoc_list_nat_nat(list_ptr);
   build_assoc_list_nat_nat(&pairs)
 }
 
@@ -61,7 +61,7 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
 
   let mut all_pairs: Vec<(Nat, Nat)> = Vec::new();
   for bucket in buckets.iter() {
-    let pairs = decode_assoc_list_nat_nat(&bucket);
+    let pairs = decode_assoc_list_nat_nat(bucket);
     all_pairs.extend(pairs);
   }
 
@@ -126,7 +126,7 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
   let mut pairs: Vec<(Nat, Nat)> = Vec::new();
 
   for bucket in buckets.iter() {
-    let bucket_pairs = decode_assoc_list_nat_nat(&bucket);
+    let bucket_pairs = decode_assoc_list_nat_nat(bucket);
     pairs.extend(bucket_pairs);
   }
 
@@ -176,26 +176,20 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
 
 /// Decode a Lean AssocList Nat Nat to Vec of pairs
 /// AssocList: nil (tag 0) | cons key value tail (tag 1, 3 fields)
-pub fn decode_assoc_list_nat_nat(obj: &impl LeanRef) -> Vec<(Nat, Nat)> {
+pub fn decode_assoc_list_nat_nat(obj: LeanBorrowed<'_>) -> Vec<(Nat, Nat)> {
   let mut result = Vec::new();
-  let mut current_ptr = obj.as_raw();
+  let mut current = obj;
 
-  loop {
-    if current_ptr as usize & 1 == 1 {
-      break;
-    }
-
-    let current = unsafe { LeanBorrowed::from_raw(current_ptr) };
+  while !current.is_scalar() {
     let ctor = current.as_ctor();
     if ctor.tag() == 0 {
       break;
     }
-
-    let k = Nat::from_obj(&ctor.get(0));
-    let v = Nat::from_obj(&ctor.get(1));
-
-    result.push((k, v));
-    current_ptr = ctor.get(2).as_raw();
+    let key = ctor.get(0);
+    let val = ctor.get(1);
+    let next = ctor.get(2).as_raw();
+    result.push((Nat::from_obj(&key), Nat::from_obj(&val)));
+    current = unsafe { LeanBorrowed::from_raw(next) };
   }
 
   result
