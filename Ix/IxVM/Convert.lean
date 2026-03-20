@@ -50,6 +50,15 @@ def convert := ⟦
     Nil
   }
 
+  -- Convert a KU64List (U64 entries from prover) to a KGList (G entries for kernel)
+  fn ku64_list_to_kg_list(list: KU64List) -> KGList {
+    match list {
+      KU64List.Nil => KGList.Nil,
+      KU64List.Cons(v, &rest) =>
+        KGList.Cons(flatten_u64(v), store(ku64_list_to_kg_list(rest))),
+    }
+  }
+
   -- ============================================================================
   -- Ixon list lookups
   -- ============================================================================
@@ -119,7 +128,7 @@ def convert := ⟦
       Univ.Succ(&inner) => KLevel.Succ(store(convert_univ(inner))),
       Univ.Max(&a, &b) => KLevel.Max(store(convert_univ(a)), store(convert_univ(b))),
       Univ.IMax(&a, &b) => KLevel.IMax(store(convert_univ(a)), store(convert_univ(b))),
-      Univ.Var(idx) => KLevel.Param(idx),
+      Univ.Var(idx) => KLevel.Param(flatten_u64(idx)),
     }
   }
 
@@ -151,23 +160,23 @@ def convert := ⟦
         KExpr.Srt(store(convert_univ(u))),
 
       Expr.Var(idx) =>
-        KExpr.BVar(idx),
+        KExpr.BVar(flatten_u64(idx)),
 
       Expr.Ref(ref_idx, &univ_idxs) =>
         let const_idx = u64_list_lookup(ref_idxs, ref_idx);
         let levels = convert_univ_idxs(univ_idxs, univs);
-        KExpr.Const(const_idx, store(levels)),
+        KExpr.Const(flatten_u64(const_idx), store(levels)),
 
       Expr.Rec(rec_idx, &univ_idxs) =>
         let const_idx = u64_list_lookup(recur_idxs, rec_idx);
         let levels = convert_univ_idxs(univ_idxs, univs);
-        KExpr.Const(const_idx, store(levels)),
+        KExpr.Const(flatten_u64(const_idx), store(levels)),
 
       Expr.Prj(type_ref_idx, field_idx, &inner) =>
         let type_idx = u64_list_lookup(ref_idxs, type_ref_idx);
         KExpr.Proj(
-          type_idx,
-          field_idx,
+          flatten_u64(type_idx),
+          flatten_u64(field_idx),
           store(convert_expr(inner, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
 
       Expr.Str(blob_ref_idx) =>
@@ -253,7 +262,7 @@ def convert := ⟦
             match rule_ctor_idxs {
               KU64List.Cons(ctor_idx, &rest_ctor_idxs) =>
                 let krhs = ctx_convert_expr(rhs, ctx);
-                let krule = KRecRule.Mk(ctor_idx, nfields, store(krhs));
+                let krule = KRecRule.Mk(flatten_u64(ctor_idx), flatten_u64(nfields), store(krhs));
                 KRecRuleList.Cons(
                   store(krule),
                   store(convert_rules(rest_rules, rest_ctor_idxs, ctx))),
@@ -273,16 +282,16 @@ def convert := ⟦
         let kval = ctx_convert_expr(value, ctx);
         match kind {
           DefKind.Definition =>
-            KConstantInfo.Defn(lvls, store(ktyp), store(kval), hints, convert_safety(safety)),
+            KConstantInfo.Defn(flatten_u64(lvls), store(ktyp), store(kval), hints, convert_safety(safety)),
           DefKind.Opaque =>
             match safety {
               DefinitionSafety.Unsafe =>
-                KConstantInfo.Opaque(lvls, store(ktyp), store(kval), 1),
+                KConstantInfo.Opaque(flatten_u64(lvls), store(ktyp), store(kval), 1),
               _ =>
-                KConstantInfo.Opaque(lvls, store(ktyp), store(kval), 0),
+                KConstantInfo.Opaque(flatten_u64(lvls), store(ktyp), store(kval), 0),
             },
           DefKind.Theorem =>
-            KConstantInfo.Thm(lvls, store(ktyp), store(kval)),
+            KConstantInfo.Thm(flatten_u64(lvls), store(ktyp), store(kval)),
         },
     }
   }
@@ -291,7 +300,7 @@ def convert := ⟦
     match a {
       Axiom.Mk(is_unsafe, lvls, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
-        KConstantInfo.Axiom(lvls, store(ktyp), is_unsafe),
+        KConstantInfo.Axiom(flatten_u64(lvls), store(ktyp), is_unsafe),
     }
   }
 
@@ -299,7 +308,7 @@ def convert := ⟦
     match q {
       Quotient.Mk(kind, lvls, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
-        KConstantInfo.Quot(lvls, store(ktyp), convert_quot_kind(kind)),
+        KConstantInfo.Quot(flatten_u64(lvls), store(ktyp), convert_quot_kind(kind)),
     }
   }
 
@@ -309,7 +318,8 @@ def convert := ⟦
         let ktyp = ctx_convert_expr(typ, ctx);
         let krules = convert_rules(rules, rule_ctor_idxs, ctx);
         KConstantInfo.Rec(
-          lvls, store(ktyp), params, indices, motives, minors,
+          flatten_u64(lvls), store(ktyp), flatten_u64(params), flatten_u64(indices),
+          flatten_u64(motives), flatten_u64(minors),
           store(krules), k, is_unsafe),
     }
   }
@@ -319,8 +329,8 @@ def convert := ⟦
       Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, _, &typ, _) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Induct(
-          lvls, store(ktyp), params, indices,
-          store(ctor_idxs), is_rec, is_refl, is_unsafe),
+          flatten_u64(lvls), store(ktyp), flatten_u64(params), flatten_u64(indices),
+          store(ku64_list_to_kg_list(ctor_idxs)), is_rec, is_refl, is_unsafe),
     }
   }
 
@@ -329,7 +339,8 @@ def convert := ⟦
       Constructor.Mk(is_unsafe, lvls, cidx, params, fields, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Ctor(
-          lvls, store(ktyp), induct_idx, cidx, params, fields, is_unsafe),
+          flatten_u64(lvls), store(ktyp), flatten_u64(induct_idx), flatten_u64(cidx),
+          flatten_u64(params), flatten_u64(fields), is_unsafe),
     }
   }
 

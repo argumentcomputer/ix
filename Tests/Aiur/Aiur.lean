@@ -377,6 +377,22 @@ def toplevel := ⟦
   fn alias_conversion(x: U64) -> U32 {
     ((x[0], x[1]), (x[2], x[3]))
   }
+
+  ---------------------------------------------------------------------------
+  -- EqZero degree-tracking regression: non-constant eq_zero followed by a
+  -- constant and then a degree-2 multiplication chain. The layout must push
+  -- exactly 1 degree entry for eq_zero (the boolean result); pushing 2
+  -- (one phantom for the internal inverse witness) desynchronises the degree
+  -- array from bytecode value indices, causing the layout to under-count
+  -- auxiliary columns and the circuit builder to access out-of-bounds columns.
+  ---------------------------------------------------------------------------
+  fn eq_zero_degree_desync(x: G) -> G {
+    let a = eq_zero(x);
+    let b = 100;
+    let c = x * x;
+    let d = c * c;
+    a + b + d
+  }
 ⟧
 
 def aiurTestCases : List AiurTestCase := [
@@ -505,6 +521,9 @@ def aiurTestCases : List AiurTestCase := [
     -- Type aliases
     { AiurTestCase.noIO `alias_conversion #[1, 2, 3, 4, 5, 6, 7, 8] #[1, 2, 3, 4]
         with label := "alias_conversion (U64 = [U8; 8], U32 = (U16, U16))" },
+
+    -- EqZero degree-tracking regression (eq_zero(3)=0, 100, 3*3=9, 9*9=81, 0+100+81=181)
+    .noIO `eq_zero_degree_desync #[3] #[181],
   ]
 
 end
