@@ -1,6 +1,67 @@
 module
 public import Ix.Aiur.Meta
 
+/-!
+# Aiur Kernel — Lean 4 Type Checker Circuit
+
+A complete Lean 4 kernel type checker written in Aiur, a DSL for zero-knowledge
+proof circuits. Verifies that every definition and theorem in a Lean environment
+is well-typed.
+
+## Architecture
+
+The kernel uses **Normalization by Evaluation (NbE)**: expressions (`KExpr`) are
+evaluated into semantic values (`KVal`) using closures and environments, giving
+O(1) beta reduction instead of O(|body|) substitution walks. Free variables use
+**de Bruijn levels** (stable under binder entry) rather than indices.
+
+The core is three mutually recursive operations:
+- `k_eval` / `k_whnf`: evaluate expressions and reduce to weak head normal form
+- `k_infer` / `k_check`: infer types and bidirectionally check against expected types
+- `k_is_def_eq`: check definitional equality (proof irrelevance, eta, lazy delta)
+
+## Aiur Constraints
+
+Aiur circuits have no mutation, no dynamic indexing, and no non-tail matches.
+Instead of explicit caches (WHNF cache, equiv manager, thunk memoization), the
+Aiur runtime's function-call caching provides call-by-need semantics: calling
+`k_eval(expr, env, top)` with the same arguments returns the cached result.
+
+## Implemented Features
+
+| Feature                          | Status |
+|----------------------------------|--------|
+| Lazy eval (thunks in spines)     | ✅     |
+| Eager beta optimization          | ✅     |
+| Delta unfolding (WHNF)           | ✅     |
+| Iota reduction (recursor)        | ✅     |
+| K-reduction (Prop recursors)     | ✅     |
+| Nat literal iota                 | ✅     |
+| Quotient reduction               | ✅     |
+| Function eta                     | ✅     |
+| Struct eta                       | ✅     |
+| Bidirectional checking           | ✅     |
+| Level comparison (sound+complete)| ✅     |
+
+## Known Limitations
+
+| Feature                          | Status                               |
+|----------------------------------|--------------------------------------|
+| Nat primitives (add, mul, ...)   | ❌ uses iota (exponential for large) |
+| String primitives                | ❌                                   |
+| Unit-like types                  | ❌                                   |
+| Lazy delta (hint-based)          | ⚠️ unfolds both sides                |
+| Proof irrelevance                | ⚠️ partial (FVar returns Sort 1)     |
+| Inductive block validation       | ❌ trusts input                      |
+| Delta step limit                 | ❌                                   |
+
+## File Organization
+
+Types are in `KernelTypes.lean` (`KExpr`, `KVal`, `KLevel`, `KConstantInfo`).
+Ixon ↔ kernel conversion is in `Convert.lean`. Content-addressed constant
+loading is in `Ingress.lean`. This file contains all kernel logic.
+-/
+
 public section
 
 namespace IxVM
@@ -147,6 +208,15 @@ def kernel := ⟦
 
   -- ============================================================================
   -- Level operations
+  --
+  -- Universe levels are symbolic expressions (Zero, Succ, Max, IMax, Param)
+  -- evaluated under assignments σ : Param → ℕ. Two levels are equal iff they
+  -- agree under all assignments. IMax(a, b) = 0 when b = 0, else max(a, b);
+  -- this gives impredicativity of Prop.
+  --
+  -- Levels are maintained in "reduced form" by level_max and level_imax:
+  -- an IMax(a, b) node only survives when b could be zero (level_is_not_zero = 0).
+  -- This invariant is key to the completeness of level_leq.
   -- ============================================================================
 
   -- Check if a level is definitely not zero (sound approximation)
@@ -255,7 +325,26 @@ def kernel := ⟦
     }
   }
 
-  -- level_leq: check a <= b for all param assignments (sound and complete)
+  -- Check ⟦a⟧σ ≤ ⟦b⟧σ for all level assignments σ : Param → ℕ.
+  -- Returns 1 iff the inequality holds universally; 0 otherwise.
+  --
+  -- Sound and complete for reduced levels. Proof sketch by case:
+  --   Zero ≤ b:            trivially true (0 ≤ anything)
+  --   Max(a1,a2) ≤ b:      iff a1 ≤ b ∧ a2 ≤ b
+  --   Succ(Max(x,y)) ≤ b:  distribute: succ(max) = max(succ,succ)
+  --   Succ(a1) ≤ Succ(b1): peel both succs
+  --   Succ(a1) ≤ Zero/Param/IMax: false (Zero Witness: reduced IMax evaluates to 0 at σ₀)
+  --   Succ(a1) ≤ Max(b1,b2): try each branch; if both fail and b has params, case-split
+  --                           to resolve IMax children (tropical completeness after resolution)
+  --   Param(i) ≤ Param(j): iff i = j
+  --   Param(i) ≤ Succ(b1): reduces to Param(i) ≤ b1 (complete by monotonicity argument)
+  --   Param(i) ≤ Max(b1,b2): try each branch (complete: Param tracks through some branch)
+  --   Param(i) ≤ IMax(b1,b2): case-split on a param in b2
+  --   IMax(a1,a2) ≤ b:     if a2 definitely nonzero, treat as Max; else case-split on a2
+  --
+  -- Case-splitting substitutes p → 0 and p → Succ(Param(p)), partitioning all assignments.
+  -- Each split strictly reduces free params, ensuring termination.
+  -- See KERNEL.md §3 "Level Comparison" for the full formal argument.
   fn level_leq(a: KLevel, b: KLevel) -> G {
     match a {
       KLevel.Zero => 1,
@@ -274,7 +363,27 @@ def kernel := ⟦
                 let r1 = level_leq(a, b1);
                 match r1 {
                   1 => 1,
-                  0 => level_leq(a, b2),
+                  0 =>
+                    let r2 = level_leq(a, b2);
+                    match r2 {
+                      1 => 1,
+                      -- Neither branch alone dominates; case-split on a param in b
+                      -- to resolve any IMax children (see INCOMPLETE.md)
+                      0 =>
+                        let bfull = KLevel.Max(store(b1), store(b2));
+                        let hp = level_has_param(bfull);
+                        match hp {
+                          0 => 0,
+                          _ =>
+                            let p = level_any_param(bfull);
+                            let sp = KLevel.Succ(store(KLevel.Param(p)));
+                            let a0 = level_subst_reduce(a, p, KLevel.Zero);
+                            let b0 = level_subst_reduce(bfull, p, KLevel.Zero);
+                            let a1s = level_subst_reduce(a, p, sp);
+                            let b1s = level_subst_reduce(bfull, p, sp);
+                            level_leq(a0, b0) * level_leq(a1s, b1s),
+                        },
+                    },
                 },
               _ => 0,
             },
@@ -440,6 +549,12 @@ def kernel := ⟦
 
   -- ============================================================================
   -- Evaluation (NbE)
+  --
+  -- Normalization by Evaluation: expressions (KExpr) are evaluated into semantic
+  -- values (KVal) using closures. A lambda captures its environment; applying it
+  -- pushes the argument, giving O(1) beta reduction. Constants evaluate to
+  -- neutrals (no eager delta unfolding) — definition unfolding is deferred to WHNF.
+  -- Free variables use de Bruijn levels (stable under binder entry).
   -- ============================================================================
 
   -- Force a thunk: if it's a Thunk, evaluate it; otherwise return as-is
@@ -553,6 +668,11 @@ def kernel := ⟦
 
   -- ============================================================================
   -- Iota reduction (recursor on constructor)
+  --
+  -- When a recursor meets the constructor it can pattern-match on, reduce:
+  --   Nat.rec motive hz hs (Nat.succ n)  →  hs n (Nat.rec motive hz hs n)
+  -- Also handles Nat literal iota: Lit(0) matches the zero constructor,
+  -- Lit(n+1) matches succ with Lit(n) as predecessor.
   -- ============================================================================
 
   -- Get induct_idx from a constructor's constant info
@@ -737,7 +857,12 @@ def kernel := ⟦
   }
 
   -- ============================================================================
-  -- WHNF (additional reductions beyond eval)
+  -- WHNF (Weak Head Normal Form)
+  --
+  -- Reduce a value until its outermost constructor is visible. The WHNF loop
+  -- applies projection reduction, iota (recursor on ctor), delta (definition
+  -- unfolding), and quotient reduction, retrying after each successful step.
+  -- Does not reduce under binders or inside arguments.
   -- ============================================================================
 
   -- Reduce a value to Weak Head Normal Form by retrying projection, iota, and delta reductions
@@ -810,6 +935,10 @@ def kernel := ⟦
 
   -- ============================================================================
   -- Quotation (values back to expressions)
+  --
+  -- Readback from the semantic domain: converts KVal back to KExpr.
+  -- Needed when instantiating universe parameters or building the Pi type
+  -- for a lambda's inferred type. Converts de Bruijn levels back to indices.
   -- ============================================================================
 
   -- Quote a value back into an expression (readback), converting free variables
@@ -873,6 +1002,11 @@ def kernel := ⟦
 
   -- ============================================================================
   -- Type inference
+  --
+  -- Infer the type of an expression (k_infer) or check it against an expected
+  -- type (k_check). Bidirectional: when checking a lambda against a Pi type,
+  -- the expected codomain is pushed through the body, avoiding an expensive
+  -- infer + isDefEq.
   -- ============================================================================
 
   -- Infer the type of an expression under the given type and value environments.
@@ -1062,6 +1196,11 @@ def kernel := ⟦
 
   -- ============================================================================
   -- Proof irrelevance helpers
+  --
+  -- If a : P and b : P where P : Prop (Sort 0), then a ≡ b.
+  -- k_infer_val_type is best-effort: returns Sort 1 sentinel for FVar/Lam/Proj,
+  -- so proof irrelevance won't trigger for free-variable-headed proofs.
+  -- Conservative (never unsound) but incomplete.
   -- ============================================================================
 
   -- Apply a spine of argument values to a type by walking through Pi-bindings
@@ -1155,6 +1294,10 @@ def kernel := ⟦
 
   -- ============================================================================
   -- Struct eta helpers
+  --
+  -- Structure eta: s ≡ ⟨s.1, s.2, ...⟩ for single-constructor types.
+  -- If one side is a Ctor of a struct-like inductive (1 constructor, no indices),
+  -- compare each field against Proj(i, other_side).
   -- ============================================================================
 
   -- Get num_fields from a constructor's constant info
@@ -1218,6 +1361,14 @@ def kernel := ⟦
 
   -- ============================================================================
   -- Definitional equality
+  --
+  -- The most complex part of the kernel. Uses a layered approach:
+  --   1. Quick syntactic check (sorts, literals)
+  --   2. Reduce both sides to WHNF
+  --   3. Proof irrelevance (both proofs of Props ⟹ compare types)
+  --   4. Structural comparison (k_is_def_eq_core)
+  --   5. Struct eta (s ≡ ⟨s.1, s.2, ...⟩)
+  --   6. Lazy delta unfolding (try unfolding constants to make progress)
   -- ============================================================================
 
   -- Check definitional equality of two values: first try a quick syntactic check,
@@ -1574,6 +1725,10 @@ def kernel := ⟦
 
   -- ============================================================================
   -- Declaration checking
+  --
+  -- Verify each constant in the environment: its type must be a Sort, and its
+  -- value (if any) must have the declared type. Processes axioms, definitions,
+  -- theorems, opaques, quotients, inductives, constructors, and recursors.
   -- ============================================================================
 
   -- Type-check a single constant declaration against the environment.
@@ -1636,6 +1791,9 @@ def kernel := ⟦
 
   -- ============================================================================
   -- Primitive type discovery
+  --
+  -- Scan the constant list to find the index of the Nat inductive type.
+  -- Used for Nat literal iota reduction and Nat literal ↔ constructor equality.
   -- ============================================================================
 
   -- Count the number of entries in a KGList

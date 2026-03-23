@@ -14,14 +14,20 @@ open LSpec SlimCheck Gen
 
 structure AiurTestCase where
   functionName : Lean.Name
-  label : String
-  input : Array Aiur.G
-  expectedOutput : Array Aiur.G
-  inputIOBuffer: Aiur.IOBuffer
-  expectedIOBuffer: Aiur.IOBuffer
+  label : String := toString functionName
+  input : Array Aiur.G := #[]
+  expectedOutput : Array Aiur.G := #[]
+  inputIOBuffer : Aiur.IOBuffer := default
+  expectedIOBuffer : Aiur.IOBuffer := default
+  executionOnly : Bool := false
 
-def AiurTestCase.noIO (name : Lean.Name) :=
-  (AiurTestCase.mk name (toString name) · · default default)
+def AiurTestCase.noIO (functionName : Lean.Name)
+    (input expectedOutput : Array Aiur.G) : AiurTestCase :=
+  { functionName, input, expectedOutput }
+
+def AiurTestCase.exec (functionName : Lean.Name)
+    (input : Array Aiur.G := #[]) (expectedOutput : Array Aiur.G := #[]) : AiurTestCase :=
+  { functionName, input, expectedOutput, executionOnly := true }
 
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
@@ -58,16 +64,19 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
     (execOutput == testCase.expectedOutput)
   let execIOTest := test s!"Execute IOBuffer matches for {label}"
     (execIOBuffer == testCase.expectedIOBuffer)
-  let (claim, proof, ioBuffer) := env.aiurSystem.prove
-    friParameters funIdx testCase.input testCase.inputIOBuffer
-  let claimTest := test s!"Claim matches for {label}"
-    (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
-  let ioTest := test s!"IOBuffer matches for {label}"
-    (ioBuffer == testCase.expectedIOBuffer)
-  let proof := .ofBytes proof.toBytes
-  let pvTest := withExceptOk s!"Prove/verify works for {label}"
-    (env.aiurSystem.verify friParameters claim proof) fun _ => .done
-  execOutputTest ++ execIOTest ++ claimTest ++ ioTest ++ pvTest
+  let execTest := execOutputTest ++ execIOTest
+  if testCase.executionOnly then execTest
+  else
+    let (claim, proof, ioBuffer) := env.aiurSystem.prove
+      friParameters funIdx testCase.input testCase.inputIOBuffer
+    let claimTest := test s!"Claim matches for {label}"
+      (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
+    let ioTest := test s!"IOBuffer matches for {label}"
+      (ioBuffer == testCase.expectedIOBuffer)
+    let proof := .ofBytes proof.toBytes
+    let pvTest := withExceptOk s!"Prove/verify works for {label}"
+      (env.aiurSystem.verify friParameters claim proof) fun _ => .done
+    execTest ++ claimTest ++ ioTest ++ pvTest
 
 def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Toplevel)
     (cases : List AiurTestCase) : TestSeq :=
