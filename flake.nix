@@ -87,8 +87,7 @@
         };
         cargoArtifacts = craneLib.buildDepsOnly craneArgs;
 
-        # Production build: parallel + test-ffi (test-ffi is included because
-        # the same static lib is linked into both the Ix library and the test binary)
+        # Test build: parallel + test-ffi (only used by ixTest)
         rustPkg = craneLib.buildPackage (craneArgs
           // {
             inherit cargoArtifacts;

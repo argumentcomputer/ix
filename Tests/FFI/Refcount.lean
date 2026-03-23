@@ -1,7 +1,7 @@
 /-
   Reference counting and ownership tests for the typed lean-ffi API.
   Gated behind the `test-ffi` Cargo feature (included by default,
-  stripped with `IX_RELEASE=1`).
+  stripped in non-test builds; included via the `ix_rs_test` Lake target).
 
   These tests exercise ownership semantics that catch double-free,
   use-after-free, and refcount leaks by calling Rust FFI functions that:

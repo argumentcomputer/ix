@@ -3,9 +3,11 @@ open System Lake DSL
 
 package ix where
   version := v!"0.1.0"
+  moreLinkArgs := #["target/release/" ++ nameToStaticLib "ix_rs"]
 
 @[default_target]
-lean_lib Ix
+lean_lib Ix where
+  needs := #[`@/ix_rs]
 
 lean_exe ix where
   root := `Main
@@ -31,6 +33,7 @@ lean_lib Tests
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
+  needs := #[`@/ix_rs_test]
 
 end Tests
 
@@ -68,28 +71,56 @@ lean_exe Apps.ZKVoting.Verifier
 
 end IxApplications
 
+/-! ## FFI
+
+We use `target` rather than `extern_lib` for the Rust static lib for two reasons:
+
+1. **Build-time Rust compilation** `extern_lib` runs at link time (when an exe is linked),
+   so `lake build` on a `lean_lib` alone would not trigger it. `target` runs during 
+   module compilation (via `needs`), so `lake build` on the default `Ix` lib is enough
+   to build the Rust crate.
+
+2. **Test-ffi toggle** `lake test` needs the `test-ffi` Cargo feature; `lake build` does not.
+   Two targets (`ix_rs` and `ix_rs_test`) write to the same lib path. `ix_rs_test` calls
+   `ix_rs.fetch` to guarantee ordering, then overwrites the lib with test-ffi symbols.
+   `extern_lib` would run last (at link time) and overwrite the test-ffi build instead.
+
+`moreLinkArgs` is then needed on the `package` to tells the linker where to find the lib,
+replacing the auto-linking that `extern_lib` provides.
+-/
 section FFI
 
-/-- Build the static lib for the Rust crate -/
-extern_lib ix_rs pkg := do
-  -- Feature flags, configured via env vars:
-  --   IX_NO_PAR=1  — disable parallel feature
-  --   IX_NET=1     — enable networking (iroh)
-  --   IX_RELEASE=1 — strip test-ffi code for release builds
-  -- Cargo output is visible with `lake -v build`.
+/-- Build args for `cargo build --release` with feature flags from env vars.
+    Feature flags:
+      IX_NO_PAR=1  — disable parallel feature
+      IX_NET=1     — enable networking (iroh)
+    Cargo output is visible with `lake -v build`. -/
+def cargoArgs (testFfi : Bool := false) : IO (Array String) := do
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
   let ixNet ← IO.getEnv "IX_NET"
-  let ixRelease ← IO.getEnv "IX_RELEASE"
-  let buildArgs := #["build", "--release"]
   let mut features : Array String := #[]
   if ixNoPar != some "1" then features := features.push "parallel"
   if ixNet == some "1" then features := features.push "net"
-  if ixRelease != some "1" then features := features.push "test-ffi"
-  let args := if features.isEmpty then buildArgs
-    else buildArgs ++ ["--features", ",".intercalate features.toList]
+  if testFfi then features := features.push "test-ffi"
+  let buildArgs := #["build", "--release"]
+  if features.isEmpty then return buildArgs
+  else return buildArgs ++ #["--features", ",".intercalate features.toList]
+
+/-- Build the Rust static lib WITHOUT the `test-ffi` feature (default for `lake build`). -/
+target ix_rs pkg : FilePath := do
+  let args ← cargoArgs
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-  let libName := nameToStaticLib "ix_rs"
-  inputBinFile $ pkg.dir / "target" / "release" / libName
+  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_rs"
+
+/-- Rebuild the Rust static lib WITH the `test-ffi` feature.
+    Only triggered by `lake test` (via `needs` on `Tests`).
+    Fetches `ix_rs` first to guarantee it completes before we overwrite
+    the same lib file with the test-ffi version. -/
+target ix_rs_test pkg : FilePath := do
+  let _ ← ix_rs.fetch
+  let args ← cargoArgs (testFfi := true)
+  proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_rs"
 
 end FFI
 
