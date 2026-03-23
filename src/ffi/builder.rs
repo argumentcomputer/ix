@@ -3,6 +3,8 @@
 use blake3::Hash;
 use rustc_hash::FxHashMap;
 
+use lean_ffi::object::LeanOwned;
+
 use crate::lean::{LeanIxExpr, LeanIxLevel, LeanIxName};
 
 /// Cache for constructing Lean Ix types with deduplication.
@@ -10,9 +12,9 @@ use crate::lean::{LeanIxExpr, LeanIxLevel, LeanIxName};
 /// This struct maintains caches for names, levels, and expressions to avoid
 /// rebuilding the same Lean objects multiple times during environment construction.
 pub struct LeanBuildCache {
-  pub(crate) names: FxHashMap<Hash, LeanIxName>,
-  pub(crate) levels: FxHashMap<Hash, LeanIxLevel>,
-  pub(crate) exprs: FxHashMap<Hash, LeanIxExpr>,
+  pub(crate) names: FxHashMap<Hash, LeanIxName<LeanOwned>>,
+  pub(crate) levels: FxHashMap<Hash, LeanIxLevel<LeanOwned>>,
+  pub(crate) exprs: FxHashMap<Hash, LeanIxExpr<LeanOwned>>,
 }
 
 impl LeanBuildCache {

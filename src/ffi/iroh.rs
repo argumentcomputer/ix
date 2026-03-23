@@ -1,5 +1,6 @@
 use lean_ffi::object::{
-  LeanArray, LeanByteArray, LeanCtor, LeanExcept, LeanString,
+  LeanArray, LeanBorrowed, LeanByteArray, LeanCtor, LeanExcept, LeanOwned,
+  LeanRef, LeanString,
 };
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
@@ -12,7 +13,7 @@ lean_ffi::lean_domain_type! {
   LeanGetResponse;
 }
 
-impl LeanPutResponse {
+impl LeanPutResponse<LeanOwned> {
   /// Build from `message` and `hash` strings.
   ///
   /// ```lean
@@ -24,11 +25,11 @@ impl LeanPutResponse {
     let ctor = LeanCtor::alloc(0, 2, 0);
     ctor.set(0, LeanString::new(message));
     ctor.set(1, LeanString::new(hash));
-    Self::new(*ctor)
+    Self::new(ctor.into())
   }
 }
 
-impl LeanGetResponse {
+impl LeanGetResponse<LeanOwned> {
   /// Build from `message`, `hash`, and raw `bytes`.
   ///
   /// ```lean
@@ -42,18 +43,18 @@ impl LeanGetResponse {
     ctor.set(0, LeanString::new(message));
     ctor.set(1, LeanString::new(hash));
     ctor.set(2, LeanByteArray::from_bytes(bytes));
-    Self::new(*ctor)
+    Self::new(ctor.into())
   }
 }
 
 /// `Iroh.Connect.putBytes' : @& String → @& Array String → @& String → @& String → Except String PutResponse`
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_put(
-  node_id: LeanString,
-  addrs: LeanArray,
-  relay_url: LeanString,
-  input: LeanString,
-) -> LeanExcept {
+  node_id: LeanString<LeanBorrowed<'_>>,
+  addrs: LeanArray<LeanBorrowed<'_>>,
+  relay_url: LeanString<LeanBorrowed<'_>>,
+  input: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
   let node_id = node_id.to_string();
   let addrs: Vec<String> = addrs.map(|x| x.as_string().to_string());
   let relay_url = relay_url.to_string();
@@ -79,11 +80,11 @@ extern "C" fn rs_iroh_put(
 /// `Iroh.Connect.getBytes' : @& String → @& Array String → @& String → @& String → Except String GetResponse`
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_get(
-  node_id: LeanString,
-  addrs: LeanArray,
-  relay_url: LeanString,
-  hash: LeanString,
-) -> LeanExcept {
+  node_id: LeanString<LeanBorrowed<'_>>,
+  addrs: LeanArray<LeanBorrowed<'_>>,
+  relay_url: LeanString<LeanBorrowed<'_>>,
+  hash: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
   let node_id = node_id.to_string();
   let addrs: Vec<String> = addrs.map(|x| x.as_string().to_string());
   let relay_url = relay_url.to_string();
@@ -109,12 +110,12 @@ extern "C" fn rs_iroh_get(
 
 /// `Iroh.Serve.serve' : Unit → Except String Unit`
 #[unsafe(no_mangle)]
-extern "C" fn rs_iroh_serve() -> LeanExcept {
+extern "C" fn rs_iroh_serve() -> LeanExcept<LeanOwned> {
   let rt =
     tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
   match rt.block_on(server::serve()) {
-    Ok(()) => LeanExcept::ok(0),
+    Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
     Err(err) => LeanExcept::error_string(&err.to_string()),
   }
 }

@@ -87,9 +87,18 @@
         };
         cargoArtifacts = craneLib.buildDepsOnly craneArgs;
 
+        # Test build: parallel + test-ffi (only used by ixTest)
         rustPkg = craneLib.buildPackage (craneArgs
           // {
             inherit cargoArtifacts;
+            cargoExtraArgs = "--locked --features parallel,test-ffi";
+          });
+
+        # Release build without test-ffi (for distribution)
+        rustPkgRelease = craneLib.buildPackage (craneArgs
+          // {
+            inherit cargoArtifacts;
+            cargoExtraArgs = "--locked --features parallel";
           });
 
         # Lake package
@@ -100,21 +109,27 @@
             Blake3 = blake3-lean.packages.${system}.default;
           };
         };
-        lakeBuildArgs = {
+        # Shared Lake build args: patches out the Cargo build (Crane handles it)
+        mkLakeBuildArgs = rustLib: {
           inherit lakeDeps;
           src = ./.;
           # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
           postPatch = ''
-            substituteInPlace lakefile.lean --replace-fail "let args := match (ixNoPar, ixNet)" "let _args := match (ixNoPar, ixNet)"
             substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
           '';
-          # Copy the `ix_rs` static lib from Crane to `target/release` so Lake can use it
+          # Symlink the Crane-built static lib to where Lake expects it
           postConfigure = ''
             mkdir -p target/release
-            ln -s ${rustPkg}/lib/libix_rs.a target/release/
+            ln -s ${rustLib}/lib/libix_rs.a target/release/
           '';
           buildInputs = [pkgs.gmp pkgs.lean.lean-all pkgs.rsync];
         };
+
+        # Release build args (no test-ffi symbols)
+        lakeBuildArgs = mkLakeBuildArgs rustPkgRelease;
+        # Test build args (includes test-ffi symbols)
+        lakeTestBuildArgs = mkLakeBuildArgs rustPkg;
+
         ixLib = lake2nix.mkPackage (lakeBuildArgs
           // {
             name = "Ix";
@@ -124,7 +139,8 @@
           lakeBuildArgs
           // {
             lakeArtifacts = ixLib;
-            installArtifacts = false;
+            # Binaries that import Ix.Meta need .olean files at runtime via LEAN_PATH
+            installArtifacts = true;
           };
         leanPath = pkgs.lib.concatStringsSep ":" (
           map (d: "${d}/.lake/build/lib/lean") ([ixLib] ++ builtins.attrValues lakeDeps)
@@ -140,7 +156,8 @@
             done
           '';
         ixCLI = wrapBin (lake2nix.mkPackage (lakeBinArgs // {name = "ix";}));
-        ixTest = wrapBin (lake2nix.mkPackage (lakeBinArgs
+        # Test binary links rustPkg (with test-ffi) instead of rustPkgRelease
+        ixTest = wrapBin (lake2nix.mkPackage (lakeTestBuildArgs
           // {
             name = "IxTests";
             installArtifacts = true;

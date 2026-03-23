@@ -4,7 +4,9 @@
 //! (ix-specific types not covered by the lean-ffi test suite).
 
 use lean_ffi::nat::Nat;
-use lean_ffi::object::{LeanArray, LeanCtor, LeanObject};
+#[cfg(feature = "test-ffi")]
+use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned};
+use lean_ffi::object::{LeanBorrowed, LeanRef};
 
 // =============================================================================
 // AssocList / HashMap roundtrip FFI functions
@@ -13,42 +15,45 @@ use lean_ffi::object::{LeanArray, LeanCtor, LeanObject};
 /// Round-trip an AssocList Nat Nat.
 /// AssocList: nil (tag 0, 0 fields) | cons key value tail (tag 1, 3 fields)
 /// Note: nil with 0 fields may be represented as lean_box(0)
+#[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_assoclist_nat_nat(
-  list_ptr: LeanObject,
-) -> LeanObject {
+  list_ptr: LeanBorrowed<'_>,
+) -> LeanOwned {
   if list_ptr.is_scalar() {
-    return LeanObject::box_usize(0);
+    return LeanOwned::box_usize(0);
   }
   let pairs = decode_assoc_list_nat_nat(list_ptr);
   build_assoc_list_nat_nat(&pairs)
 }
 
+#[cfg(feature = "test-ffi")]
 /// Build an AssocList Nat Nat from pairs
-fn build_assoc_list_nat_nat(pairs: &[(Nat, Nat)]) -> LeanObject {
+fn build_assoc_list_nat_nat(pairs: &[(Nat, Nat)]) -> LeanOwned {
   // Build in reverse to preserve order
-  let mut list = LeanObject::box_usize(0); // nil
+  let mut list = LeanOwned::box_usize(0); // nil
   for (k, v) in pairs.iter().rev() {
     let cons = LeanCtor::alloc(1, 3, 0); // AssocList.cons
     cons.set(0, Nat::to_lean(k));
     cons.set(1, Nat::to_lean(v));
     cons.set(2, list);
-    list = *cons;
+    list = cons.into();
   }
   list
 }
 
 /// Round-trip a DHashMap.Raw Nat Nat.
+#[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
-  raw_ptr: LeanObject,
-) -> LeanObject {
+  raw_ptr: LeanBorrowed<'_>,
+) -> LeanOwned {
   if raw_ptr.is_scalar() {
-    return raw_ptr;
+    return raw_ptr.to_owned_ref();
   }
 
   let raw_ctor = raw_ptr.as_ctor();
-  let size = Nat::from_obj(raw_ctor.get(0));
+  let size = Nat::from_obj(&raw_ctor.get(0));
   let buckets = raw_ctor.get(1).as_array();
 
   // Decode and rebuild buckets
@@ -62,9 +67,9 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
 
   // Rebuild buckets
   let new_buckets = LeanArray::alloc(num_buckets);
-  let nil = LeanObject::box_usize(0);
+  let nil = LeanOwned::box_usize(0);
   for i in 0..num_buckets {
-    new_buckets.set(i, nil);
+    new_buckets.set(i, nil.clone());
   }
 
   for (k, v) in &all_pairs {
@@ -78,19 +83,19 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
     #[allow(clippy::cast_possible_truncation)]
     let bucket_idx = (k_u64 as usize) & (num_buckets - 1);
 
-    let old_bucket = new_buckets.get(bucket_idx);
+    let old_bucket = new_buckets.get(bucket_idx).to_owned_ref();
     let new_bucket = LeanCtor::alloc(1, 3, 0);
     new_bucket.set(0, Nat::to_lean(k));
     new_bucket.set(1, Nat::to_lean(v));
     new_bucket.set(2, old_bucket);
-    new_buckets.set(bucket_idx, *new_bucket);
+    new_buckets.set(bucket_idx, new_bucket);
   }
 
   // Build Raw
   let raw = LeanCtor::alloc(0, 2, 0);
   raw.set(0, Nat::to_lean(&size));
-  raw.set(1, *new_buckets);
-  *raw
+  raw.set(1, new_buckets);
+  raw.into()
 }
 
 /// Round-trip a Std.HashMap Nat Nat.
@@ -108,12 +113,13 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
 /// - AssocList:
 ///   - nil: lean_box(0)
 ///   - cons key value tail: ctor 1, 3 fields
+#[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
-  map_ptr: LeanCtor,
-) -> LeanObject {
+  map_ptr: LeanCtor<LeanBorrowed<'_>>,
+) -> LeanOwned {
   // Due to unboxing, map_ptr points directly to Raw
-  let size = Nat::from_obj(map_ptr.get(0));
+  let size = Nat::from_obj(&map_ptr.get(0));
   let buckets = map_ptr.get(1).as_array();
 
   // Decode buckets (Array of AssocLists)
@@ -129,9 +135,9 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
   let new_buckets = LeanArray::alloc(num_buckets);
 
   // Initialize all buckets to AssocList.nil (lean_box(0))
-  let nil = LeanObject::box_usize(0);
+  let nil = LeanOwned::box_usize(0);
   for i in 0..num_buckets {
-    new_buckets.set(i, nil);
+    new_buckets.set(i, nil.clone());
   }
 
   // Insert each pair into the appropriate bucket using Lean's hash function
@@ -150,45 +156,40 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
     let bucket_idx = (k_u64 as usize) & (num_buckets - 1);
 
     // Get current bucket AssocList
-    let old_bucket = new_buckets.get(bucket_idx);
+    let old_bucket = new_buckets.get(bucket_idx).to_owned_ref();
 
     // Build AssocList.cons key value tail (tag 1, 3 fields)
     let new_bucket = LeanCtor::alloc(1, 3, 0);
     new_bucket.set(0, Nat::to_lean(k));
     new_bucket.set(1, Nat::to_lean(v));
     new_bucket.set(2, old_bucket);
-    new_buckets.set(bucket_idx, *new_bucket);
+    new_buckets.set(bucket_idx, new_bucket);
   }
 
   // Build Raw (ctor 0, 2 fields: size, buckets)
   // Due to unboxing, this IS the HashMap
   let raw = LeanCtor::alloc(0, 2, 0);
   raw.set(0, Nat::to_lean(&size));
-  raw.set(1, *new_buckets);
-  *raw
+  raw.set(1, new_buckets);
+  raw.into()
 }
 
 /// Decode a Lean AssocList Nat Nat to Vec of pairs
 /// AssocList: nil (tag 0) | cons key value tail (tag 1, 3 fields)
-pub fn decode_assoc_list_nat_nat(obj: LeanObject) -> Vec<(Nat, Nat)> {
+pub fn decode_assoc_list_nat_nat(obj: LeanBorrowed<'_>) -> Vec<(Nat, Nat)> {
   let mut result = Vec::new();
   let mut current = obj;
 
-  loop {
-    if current.is_scalar() {
-      break;
-    }
-
+  while !current.is_scalar() {
     let ctor = current.as_ctor();
     if ctor.tag() == 0 {
       break;
     }
-
-    let k = Nat::from_obj(ctor.get(0));
-    let v = Nat::from_obj(ctor.get(1));
-
-    result.push((k, v));
-    current = ctor.get(2);
+    let key = ctor.get(0);
+    let val = ctor.get(1);
+    let next = ctor.get(2).as_raw();
+    result.push((Nat::from_obj(&key), Nat::from_obj(&val)));
+    current = unsafe { LeanBorrowed::from_raw(next) };
   }
 
   result
