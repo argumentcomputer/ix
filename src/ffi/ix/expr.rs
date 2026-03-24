@@ -120,7 +120,7 @@ impl LeanIxExpr<LeanOwned> {
         ctor.set(2, val_obj);
         ctor.set(3, body_obj);
         ctor.set(4, hash_obj);
-        ctor.set_u8(5, 0, *non_dep as u8);
+        ctor.set_bool(5, 0, *non_dep);
         Self::new(ctor.into())
       },
       ExprData::Lit(lit, h) => {

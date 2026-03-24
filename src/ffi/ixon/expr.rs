@@ -109,7 +109,7 @@ impl LeanIxonExpr<LeanOwned> {
         ctor.set(0, ty_obj);
         ctor.set(1, val_obj);
         ctor.set(2, body_obj);
-        ctor.set_u8(3, 0, if *non_dep { 1 } else { 0 });
+        ctor.set_bool(3, 0, *non_dep);
         ctor.into()
       },
       IxonExpr::Share(idx) => {

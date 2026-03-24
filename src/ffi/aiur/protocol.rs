@@ -4,7 +4,7 @@ use multi_stark::{
   types::{CommitmentParameters, FriParameters},
 };
 use rustc_hash::{FxBuildHasher, FxHashMap};
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanCtor, LeanExcept,
@@ -26,19 +26,13 @@ use crate::{
 };
 
 // =============================================================================
-// External class registration (OnceLock pattern)
+// External class registration
 // =============================================================================
 
-static AIUR_PROOF_CLASS: OnceLock<ExternalClass> = OnceLock::new();
-static AIUR_SYSTEM_CLASS: OnceLock<ExternalClass> = OnceLock::new();
-
-fn proof_class() -> &'static ExternalClass {
-  AIUR_PROOF_CLASS.get_or_init(ExternalClass::register_with_drop::<Proof>)
-}
-
-fn system_class() -> &'static ExternalClass {
-  AIUR_SYSTEM_CLASS.get_or_init(ExternalClass::register_with_drop::<AiurSystem>)
-}
+static AIUR_PROOF_CLASS: LazyLock<ExternalClass> =
+  LazyLock::new(ExternalClass::register_with_drop::<Proof>);
+static AIUR_SYSTEM_CLASS: LazyLock<ExternalClass> =
+  LazyLock::new(ExternalClass::register_with_drop::<AiurSystem>);
 
 // =============================================================================
 // Lean FFI functions
@@ -60,7 +54,7 @@ extern "C" fn rs_aiur_proof_of_bytes(
 ) -> LeanExternal<Proof, LeanOwned> {
   let proof =
     Proof::from_bytes(byte_array.as_bytes()).expect("Deserialization error");
-  LeanExternal::alloc(proof_class(), proof)
+  LeanExternal::alloc(&AIUR_PROOF_CLASS, proof)
 }
 
 /// `AiurSystem.build : @&Bytecode.Toplevel → @&CommitmentParameters → AiurSystem`
@@ -73,7 +67,7 @@ extern "C" fn rs_aiur_system_build(
     decode_toplevel(&toplevel),
     decode_commitment_parameters(&commitment_parameters),
   );
-  LeanExternal::alloc(system_class(), system)
+  LeanExternal::alloc(&AIUR_SYSTEM_CLASS, system)
 }
 
 /// `AiurSystem.verify : @& AiurSystem → @& FriParameters → @& Array G → @& Proof → Except String Unit`
@@ -135,7 +129,8 @@ extern "C" fn rs_aiur_system_prove(
   let (claim, proof) =
     aiur_system_obj.get().prove(fri_parameters, fun_idx, &args, &mut io_buffer);
 
-  let lean_proof: LeanOwned = LeanExternal::alloc(proof_class(), proof).into();
+  let lean_proof: LeanOwned =
+    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
   let lean_io = build_lean_io_buffer(&io_buffer);
   // Proof × Array G × Array (Array G × IOKeyInfo)
   let proof_io_tuple = LeanCtor::alloc(0, 2, 0);

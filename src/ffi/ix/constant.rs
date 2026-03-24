@@ -165,7 +165,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
         let axiom_val = LeanCtor::alloc(0, 1, 1);
         axiom_val.set(0, cnst_obj);
-        axiom_val.set_u8(1, 0, v.is_unsafe as u8);
+        axiom_val.set_bool(1, 0, v.is_unsafe);
 
         let obj = LeanCtor::alloc(0, 1, 0);
         obj.set(0, axiom_val);
@@ -223,7 +223,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         opaque_val.set(0, cnst_obj);
         opaque_val.set(1, value_obj);
         opaque_val.set(2, all_obj);
-        opaque_val.set_u8(3, 0, v.is_unsafe as u8);
+        opaque_val.set_bool(3, 0, v.is_unsafe);
 
         let obj = LeanCtor::alloc(3, 1, 0);
         obj.set(0, opaque_val);
@@ -267,9 +267,9 @@ impl LeanIxConstantInfo<LeanOwned> {
         induct_val.set(3, all_obj);
         induct_val.set(4, ctors_obj);
         induct_val.set(5, num_nested_obj);
-        induct_val.set_u8(6, 0, v.is_rec as u8);
-        induct_val.set_u8(6, 1, v.is_unsafe as u8);
-        induct_val.set_u8(6, 2, v.is_reflexive as u8);
+        induct_val.set_bool(6, 0, v.is_rec);
+        induct_val.set_bool(6, 1, v.is_unsafe);
+        induct_val.set_bool(6, 2, v.is_reflexive);
 
         let obj = LeanCtor::alloc(5, 1, 0);
         obj.set(0, induct_val);
@@ -291,7 +291,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         ctor_val.set(2, cidx_obj);
         ctor_val.set(3, num_params_obj);
         ctor_val.set(4, num_fields_obj);
-        ctor_val.set_u8(5, 0, v.is_unsafe as u8);
+        ctor_val.set_bool(5, 0, v.is_unsafe);
 
         let obj = LeanCtor::alloc(6, 1, 0);
         obj.set(0, ctor_val);
@@ -317,8 +317,8 @@ impl LeanIxConstantInfo<LeanOwned> {
         rec_val.set(4, num_motives_obj);
         rec_val.set(5, num_minors_obj);
         rec_val.set(6, rules_obj);
-        rec_val.set_u8(7, 0, v.k as u8);
-        rec_val.set_u8(7, 1, v.is_unsafe as u8);
+        rec_val.set_bool(7, 0, v.k);
+        rec_val.set_bool(7, 1, v.is_unsafe);
 
         let obj = LeanCtor::alloc(7, 1, 0);
         obj.set(0, rec_val);
