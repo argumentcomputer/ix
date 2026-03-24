@@ -18,7 +18,7 @@ public import Ix.Ixon
 public import Ix.Address
 public import Ix.Common
 public import Std.Data.HashMap
-public import Blake3
+public import Blake3.Rust
 
 public section
 
