@@ -101,7 +101,7 @@ impl LeanIxonDataValue<LeanOwned> {
       },
       IxonDataValue::OfBool(b) => {
         let ctor = LeanCtor::alloc(1, 0, 1);
-        ctor.set_u8(0, 0, if *b { 1 } else { 0 });
+        ctor.set_bool(0, 0, *b);
         ctor.into()
       },
       IxonDataValue::OfName(addr) => {

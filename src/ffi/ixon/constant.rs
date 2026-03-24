@@ -136,8 +136,8 @@ impl LeanIxonRecursor<LeanOwned> {
     ctor.set_u64(2, 16, rec.indices);
     ctor.set_u64(2, 24, rec.motives);
     ctor.set_u64(2, 32, rec.minors);
-    ctor.set_u8(2, 40, if rec.k { 1 } else { 0 });
-    ctor.set_u8(2, 41, if rec.is_unsafe { 1 } else { 0 });
+    ctor.set_bool(2, 40, rec.k);
+    ctor.set_bool(2, 41, rec.is_unsafe);
     Self::new(ctor.into())
   }
 }
@@ -186,7 +186,7 @@ impl LeanIxonAxiom<LeanOwned> {
     ctor.set(0, typ_obj);
     // Scalar offsets from obj_cptr: 1*8=8 base
     ctor.set_u64(1, 0, ax.lvls);
-    ctor.set_u8(1, 8, if ax.is_unsafe { 1 } else { 0 });
+    ctor.set_bool(1, 8, ax.is_unsafe);
     Self::new(ctor.into())
   }
 }
@@ -265,7 +265,7 @@ impl LeanIxonConstructor<LeanOwned> {
     ctor.set_u64(1, 8, c.cidx);
     ctor.set_u64(1, 16, c.params);
     ctor.set_u64(1, 24, c.fields);
-    ctor.set_u8(1, 32, if c.is_unsafe { 1 } else { 0 });
+    ctor.set_bool(1, 32, c.is_unsafe);
     Self::new(ctor.into())
   }
 }
@@ -308,9 +308,9 @@ impl LeanIxonInductive<LeanOwned> {
     ctor.set_u64(2, 8, ind.params);
     ctor.set_u64(2, 16, ind.indices);
     ctor.set_u64(2, 24, ind.nested);
-    ctor.set_u8(2, 32, if ind.recr { 1 } else { 0 });
-    ctor.set_u8(2, 33, if ind.refl { 1 } else { 0 });
-    ctor.set_u8(2, 34, if ind.is_unsafe { 1 } else { 0 });
+    ctor.set_bool(2, 32, ind.recr);
+    ctor.set_bool(2, 33, ind.refl);
+    ctor.set_bool(2, 34, ind.is_unsafe);
     Self::new(ctor.into())
   }
 }
