@@ -24,7 +24,7 @@ def genAddress : Gen Address := do
   for _ in [:32] do
     let b ← Gen.choose Nat 0 255
     bytes := bytes.push b.toUInt8
-  pure ⟨(Blake3.hash bytes).val⟩
+  pure ⟨(Blake3.Rust.hash bytes).val⟩
 
 def genIxonNat : Gen Nat := USize.toNat <$> genUSize
 

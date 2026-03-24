@@ -5,11 +5,11 @@ public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
 public import Ix.IxVM.Sha256
 public import Tests.Sha256
-public import Blake3
+public import Blake3.Rust
 
 def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
   let inputBytes := Array.range size |>.map Nat.toUInt8
-  let outputBytes := Blake3.hash ⟨inputBytes⟩ |>.val.data
+  let outputBytes := Blake3.Rust.hash ⟨inputBytes⟩ |>.val.data
   let input := inputBytes.map .ofUInt8
   let output := outputBytes.map .ofUInt8
   let buffer := ⟨input, .ofList [(#[0], ⟨0, size⟩)]⟩ -- key is fixed as #[0]

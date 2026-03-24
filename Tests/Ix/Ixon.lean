@@ -93,13 +93,13 @@ def constantUnits : TestSeq :=
   let c := Constant.mk
     (.defn defn)
     #[.var 0, .sort 1]  -- sharing
-    #[⟨(Blake3.hash "ref".toUTF8).val⟩]  -- refs
+    #[⟨(Blake3.Rust.hash "ref".toUTF8).val⟩]  -- refs
     #[.zero, .succ .zero]  -- univs
   test "Constant roundtrip" (constantSerde c)
 
 def commUnits : TestSeq :=
-  let addr1 : Address := ⟨(Blake3.hash "secret".toUTF8).val⟩
-  let addr2 : Address := ⟨(Blake3.hash "payload".toUTF8).val⟩
+  let addr1 : Address := ⟨(Blake3.Rust.hash "secret".toUTF8).val⟩
+  let addr2 : Address := ⟨(Blake3.Rust.hash "payload".toUTF8).val⟩
   let c := Comm.mk addr1 addr2
   test "Comm roundtrip" (commSerde c)
 

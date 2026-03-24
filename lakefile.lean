@@ -8,7 +8,7 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "928f27c7de8318455ba0be7461dbdf7096f4075a"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "f89c732c481f87a47465041c6d7d659e1812848b"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "40dc7036b09531cf084f3554a8873eaa4d92a9bc"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.28.0"
