@@ -495,9 +495,9 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `assert_eq_trivial #[] #[],
 
     -- IO
-    ⟨`read_write_io, "read_write_io", #[], #[],
-      ⟨#[1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩)]⟩,
-      ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩⟩,
+    { functionName := `read_write_io
+      inputIOBuffer := ⟨#[1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩)]⟩
+      expectedIOBuffer := ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩ },
 
     -- Byte operations
     .noIO `shr_shr_shl_decompose #[87] #[0, 1, 0, 1, 0, 1, 0, 0],

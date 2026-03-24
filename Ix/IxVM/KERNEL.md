@@ -152,11 +152,175 @@ If `B` is NOT in `Prop`, then `imax uA uB = max uA uB`, the standard predicative
 
 Two levels are equal if they evaluate to the same natural number under every assignment
 of parameters. The Aiur kernel uses `level_equal(a, b) = level_leq(a, b) ∧ level_leq(b, a)`,
-where `level_leq` is sound and complete. For `IMax` forms whose second argument might be
-zero, `level_leq` case-splits on a parameter `p` from that argument: it substitutes `p → 0`
-(eliminating the `IMax`) and `p → Succ(p)` (resolving `IMax` to `Max`), checking the
-inequality in both cases. It also distributes `Succ` over `Max` and handles
-`Param(i) ≤ Succ(X)` by recursing to `Param(i) ≤ X` (valid since levels are integer-valued).
+where `level_leq` is sound and complete.
+
+#### Semantics
+
+A *level assignment* σ maps parameter indices to natural numbers. Every level `l`
+evaluates to a natural number ⟦l⟧σ:
+
+- ⟦Zero⟧σ = 0
+- ⟦Param(i)⟧σ = σ(i)
+- ⟦Succ(l)⟧σ = 1 + ⟦l⟧σ
+- ⟦Max(a, b)⟧σ = max(⟦a⟧σ, ⟦b⟧σ)
+- ⟦IMax(a, b)⟧σ = if ⟦b⟧σ = 0 then 0 else max(⟦a⟧σ, ⟦b⟧σ)
+
+We write `a ≤ b` to mean ⟦a⟧σ ≤ ⟦b⟧σ for all σ, and `a = b` to mean `a ≤ b ∧ b ≤ a`.
+Let σ₀ denote the assignment mapping every parameter to 0.
+
+#### Reduced levels
+
+The functions `level_max` and `level_imax` produce levels in *reduced form*.
+The key invariant:
+
+> **(R)** If `IMax(a, b)` appears in a reduced level, then `level_is_not_zero(b) = 0`.
+
+This holds because `level_imax(a, b)` returns `Zero` when `b = Zero`, returns
+`level_max(a, b)` when `b = Succ(_)` or `level_is_not_zero(b) = 1`, and only
+produces an `IMax` node otherwise.
+
+All levels entering `level_leq` are reduced: the initial levels come from
+`level_inst_params` / `level_reduce` (which build via `level_max`/`level_imax`),
+and the case-split substitutions use `level_subst_reduce` (which also builds via
+`level_max`/`level_imax`).
+
+#### Monotonicity
+
+**Lemma (Monotonicity).** All level expressions are monotone in their parameters:
+if σ₁(i) ≤ σ₂(i) for all i, then ⟦l⟧σ₁ ≤ ⟦l⟧σ₂.
+
+*Proof.* By induction on `l`. The Zero, Param, Succ, and Max cases are immediate.
+For IMax(a, b): if ⟦b⟧σ₁ = 0, then ⟦IMax(a,b)⟧σ₁ = 0 ≤ ⟦IMax(a,b)⟧σ₂.
+If ⟦b⟧σ₁ > 0, then by IH ⟦b⟧σ₂ ≥ ⟦b⟧σ₁ > 0, so
+⟦IMax(a,b)⟧σ₁ = max(⟦a⟧σ₁, ⟦b⟧σ₁) ≤ max(⟦a⟧σ₂, ⟦b⟧σ₂) = ⟦IMax(a,b)⟧σ₂. ∎
+
+#### Zero witness
+
+**Lemma (Zero Witness).** `level_is_not_zero(l) = 0` if and only if ⟦l⟧₀ = 0
+(where σ₀(i) = 0 for all i). Equivalently, `level_is_not_zero(l) = 1` if and only
+if ⟦l⟧σ ≥ 1 for all σ.
+
+*Proof.* (⇒) By induction: Zero and Param evaluate to 0 under σ₀. Succ returns 1,
+so this case is excluded. Max(a,b) with both children returning 0 gives
+max(⟦a⟧₀, ⟦b⟧₀) = max(0, 0) = 0. IMax(a,b) with `level_is_not_zero(b) = 0`
+gives ⟦b⟧₀ = 0 by IH, so ⟦IMax(a,b)⟧₀ = 0.
+
+(⇐) If `level_is_not_zero(l) = 1`, by induction: Succ(x) ≥ 1 always.
+Max(a,b) with at least one child having `level_is_not_zero = 1`: that child is ≥ 1
+for all σ (IH), so max ≥ 1. IMax(a,b) with `level_is_not_zero(b) = 1`:
+⟦b⟧σ ≥ 1 for all σ (IH), so IMax = max(a,b) ≥ b ≥ 1. ∎
+
+**Corollary.** For a reduced `IMax(a, b)` (invariant R), ⟦IMax(a, b)⟧₀ = 0.
+
+#### Case-split soundness
+
+The case-split technique substitutes a parameter `p` with `Zero` and `Succ(Param(p))`.
+This is sound and complete for universal quantification over σ(p):
+
+- Every σ has σ(p) = 0 or σ(p) ≥ 1.
+- When σ(p) = 0: captured by the `p → Zero` substitution.
+- When σ(p) ≥ 1: write σ(p) = 1 + σ'(p). Then ⟦l[p ↦ Succ(Param(p))]⟧σ' = ⟦l⟧σ,
+  so the `p → Succ(Param(p))` substitution captures all σ(p) ≥ 1.
+
+Hence `∀σ. ⟦a⟧σ ≤ ⟦b⟧σ` iff both `∀σ. ⟦a[p↦0]⟧σ ≤ ⟦b[p↦0]⟧σ` and
+`∀σ. ⟦a[p↦S(p)]⟧σ ≤ ⟦b[p↦S(p)]⟧σ`.
+
+#### Soundness and completeness of `level_leq`
+
+**Theorem.** For reduced levels `a` and `b`, `level_leq(a, b) = 1` if and only if
+`a ≤ b` (i.e., ⟦a⟧σ ≤ ⟦b⟧σ for all σ).
+
+*Proof.* By case analysis on `level_leq`. In each case we show the return value is 1
+iff the inequality holds universally.
+
+**Case `a = Zero`:** Returns 1. Correct: 0 ≤ ⟦b⟧σ for all σ.
+
+**Case `a = Max(a1, a2)`:** Returns `level_leq(a1, b) * level_leq(a2, b)`.
+max(⟦a1⟧σ, ⟦a2⟧σ) ≤ ⟦b⟧σ iff ⟦a1⟧σ ≤ ⟦b⟧σ and ⟦a2⟧σ ≤ ⟦b⟧σ. ∎
+
+**Case `a = Succ(Max(x, y))`:** Distributes to `level_leq(Succ(x), b) * level_leq(Succ(y), b)`.
+Correct: 1 + max(⟦x⟧σ, ⟦y⟧σ) = max(1 + ⟦x⟧σ, 1 + ⟦y⟧σ), reducing to the Max case. ∎
+
+**Case `a = Succ(a1)`, `a1` not Max, `b = Succ(b1)`:** Returns `level_leq(a1, b1)`.
+1 + ⟦a1⟧σ ≤ 1 + ⟦b1⟧σ iff ⟦a1⟧σ ≤ ⟦b1⟧σ. ∎
+
+**Case `a = Succ(a1)`, `a1` not Max, `b = Zero` or `Param(j)` or `IMax(_, _)`:**
+Returns 0. Correct by Zero Witness: ⟦b⟧₀ = 0 (b = Zero is immediate; Param(j) gives
+σ₀(j) = 0; IMax is 0 under σ₀ by the Corollary), but ⟦Succ(a1)⟧₀ ≥ 1. ∎
+
+**Case `a = Succ(a1)`, `a1` not Max, `b = Max(b1, b2)`:** First tries
+`level_leq(a, b1)` and `level_leq(a, b2)`. If either returns 1, the result is sound
+(a ≤ bi implies a ≤ max(b1, b2)). If both return 0 and `b` has no params, returns 0
+(b is a concrete number; the try-each-branch is complete for concrete values). If both
+return 0 and `b` has params, case-splits on a param `p` from `b`. This is sound and
+complete by Case-Split Soundness above — after substitution, `level_subst_reduce`
+re-reduces the result, resolving any IMax whose conditioning variable was `p`.
+The recursion terminates because each case-split strictly reduces the number of free
+parameters. After all IMax nodes are resolved (finitely many case-splits), the levels
+are tropical polynomials (max-plus over Succ chains and Params), for which the
+try-each-branch heuristic IS complete:
+
+> *Tropical completeness:* For tropical polynomials (no IMax), `Succ(a1) ≤ Max(b1, b2)`
+> for all σ implies `Succ(a1) ≤ b1` for all σ or `Succ(a1) ≤ b2` for all σ.
+>
+> *Proof sketch:* Since ⟦Succ(a1)⟧₀ ≥ 1, we have max(⟦b1⟧₀, ⟦b2⟧₀) ≥ 1, so
+> WLOG ⟦b1⟧₀ ≥ 1, hence `level_is_not_zero(b1) = 1` (Zero Witness). Since b1 is a
+> tropical polynomial with `level_is_not_zero = 1`, it is Succ or Max (not IMax, not
+> Param, not Zero). Being a tropical polynomial, b1 is of the form max(σ(pᵢ) + cᵢ)
+> with all cᵢ ≥ 0. For any Param(q) appearing in a with Succ-offset k: ⟦a⟧σ grows as
+> σ(q) + k, and for a ≤ Max(b1, b2) to hold universally as σ(q) → ∞, some branch must
+> contain a term σ(q) + c with c ≥ k. Since b1 is tropical and always ≥ 1 (no IMax
+> zeroing), all its terms are unconditional — any term σ(q) + c in b1 contributes
+> b1 ≥ σ(q) + c for ALL σ. So if b1 contains the dominating terms for a, then a ≤ b1. ∎
+
+**Case `a = Param(i)`, `b = Param(j)`:** Returns `eq_zero(i - j)`, i.e., 1 iff i = j.
+Correct: σ(i) ≤ σ(j) for all σ iff i = j (otherwise set σ(i) > σ(j)). ∎
+
+**Case `a = Param(i)`, `b = Succ(b1)`:** Returns `level_leq(Param(i), b1)`,
+i.e., reduces `σ(i) ≤ 1 + ⟦b1⟧σ` to `σ(i) ≤ ⟦b1⟧σ`.
+
+*Soundness:* If σ(i) ≤ ⟦b1⟧σ then σ(i) ≤ 1 + ⟦b1⟧σ. ∎
+
+*Completeness:* Suppose σ(i) ≤ 1 + ⟦b1⟧σ for all σ. Fix all parameters except i and
+define f(n) = ⟦b1⟧(σ[i ↦ n]). By monotonicity, f is non-decreasing. The premise gives
+n ≤ 1 + f(n) for all n ≥ 0. We need n ≤ f(n) for all n.
+
+For n > 0: every IMax in b1 whose second argument depends on Param(i) is resolved
+(since n > 0 makes any monotone expression involving Param(i) positive, and
+`level_subst_reduce` normalizes away such IMax nodes). So for n > 0, f(n) includes
+an unconditional term n + c for some c ≥ 0 (from each Param(i) path in b1).
+If such a term exists, f(n) ≥ n + c ≥ n. If no such term exists, f is eventually
+constant, and n ≤ 1 + C fails for large n — contradicting the premise.
+
+For n = 0: f(0) ≥ 0 trivially. ∎
+
+**Case `a = Param(i)`, `b = Max(b1, b2)`:** Tries each branch. Sound (a ≤ bi
+implies a ≤ max(b1, b2)). Complete: at σ₀, σ₀(i) = 0 ≤ max(⟦b1⟧₀, ⟦b2⟧₀),
+which holds trivially — so the argument is subtler. Since σ(i) is unbounded, at least
+one bk must contain Param(i) + c (c ≥ 0) unconditionally (not zeroed by IMax). That
+branch satisfies bk ≥ σ(i), so Param(i) ≤ bk. If the only Param(i) terms are inside
+IMax nodes, then at σ₀ (where IMax zeroes them), b = max(const₁, const₂), and
+σ(i) ≤ max(const₁, const₂) fails for large σ(i) — contradicting the premise. ∎
+
+**Case `a = Param(i)`, `b = IMax(b1, b2)`:** Case-splits on a param from b2.
+Sound and complete by Case-Split Soundness. ∎
+
+**Case `a = Param(i)`, `b = Zero`:** Returns 0. Correct: σ(i) ≤ 0 fails for σ(i) = 1. ∎
+
+**Case `a = IMax(a1, a2)`, `level_is_not_zero(a2) = 1`:** Treats as Max(a1, a2):
+returns `level_leq(a1, b) * level_leq(a2, b)`. Correct: a2 ≥ 1 for all σ (Zero Witness),
+so IMax(a1, a2) = max(a1, a2). ∎
+
+**Case `a = IMax(a1, a2)`, `level_is_not_zero(a2) = 0`:** Case-splits on a param
+from a2. Sound and complete by Case-Split Soundness. Note: `level_is_not_zero(a2) = 0`
+and `a` is reduced, so a2 has at least one param (otherwise a2 is Zero and
+`level_imax` would have reduced the IMax away). ∎
+
+#### Termination
+
+Each case either reduces the structural size of the levels (Succ peeling, Max
+distribution) or reduces the number of free parameters (case-split substitution).
+Since both measures are bounded, the recursion terminates.
 
 ### Level Instantiation
 
