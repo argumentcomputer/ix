@@ -2776,22 +2776,24 @@ def typecheckAll (kenv : KEnv m) (prims : KPrimitives m)
 
 /-- Typecheck all constants with IO progress reporting. -/
 def typecheckAllIO (kenv : KEnv m) (prims : KPrimitives m)
-    (quotInit : Bool := true) : IO (Except String Unit) := do
+    (quotInit : Bool := true) (verbose : Bool := true) : IO (Except String Unit) := do
   let mut items : Array (KMetaId m × Ix.Kernel.ConstantInfo m) := #[]
   for (mid, ci) in kenv do
     items := items.push (mid, ci)
   let total := items.size
   for h : idx in [:total] do
     let (mid, ci) := items[idx]
-    (← IO.getStdout).putStrLn s!"  [{idx + 1}/{total}] {ci.cv.name} ({ci.kindName})"
-    (← IO.getStdout).flush
+    if verbose then
+      (← IO.getStdout).putStrLn s!"  [{idx + 1}/{total}] {ci.cv.name} ({ci.kindName})"
+      (← IO.getStdout).flush
     let start ← IO.monoMsNow
     match typecheckConst kenv prims mid quotInit with
     | .ok () =>
-      let elapsed := (← IO.monoMsNow) - start
-      let tag := if elapsed > 100 then " ⚠ SLOW" else ""
-      (← IO.getStdout).putStrLn s!"  ✓ {ci.cv.name} ({elapsed}ms){tag}"
-      (← IO.getStdout).flush
+      if verbose then
+        let elapsed := (← IO.monoMsNow) - start
+        let tag := if elapsed > 100 then " ⚠ SLOW" else ""
+        (← IO.getStdout).putStrLn s!"  ✓ {ci.cv.name} ({elapsed}ms){tag}"
+        (← IO.getStdout).flush
     | .error e =>
       let elapsed := (← IO.monoMsNow) - start
       return .error s!"constant {ci.cv.name} ({ci.kindName}, {mid.addr}) [{elapsed}ms]: {e}"
