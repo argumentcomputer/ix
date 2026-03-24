@@ -8,7 +8,20 @@
 
 use std::ffi::{CString, c_void};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+
+static IX_VERBOSE: AtomicBool = AtomicBool::new(false);
+
+/// FFI function to set verbose mode from Lean.
+/// Bool is passed as a scalar: 0 = false, 1 = true.
+#[unsafe(no_mangle)]
+pub extern "C" fn ix_set_verbose(b: u8) -> *mut c_void {
+  IX_VERBOSE.store(b != 0, Ordering::Relaxed);
+  // Return IO.mk Unit = lean_io_result_mk_ok(lean_box(0))
+  // lean_box(0) = ((0 << 1) | 1) as pointer = 1 as *mut c_void
+  unsafe { lean_io_result_mk_ok(1 as *mut c_void) }
+}
 
 use super::builder::LeanBuildCache;
 use super::ffi_io_guard;
@@ -50,11 +63,12 @@ unsafe fn build_check_error(err: &TcError<Meta>) -> *mut c_void {
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_check_env(env_consts_ptr: *const c_void) -> *mut c_void {
   ffi_io_guard(std::panic::AssertUnwindSafe(|| {
+    let verbose = IX_VERBOSE.load(Ordering::Relaxed);
     let total_start = Instant::now();
 
     let t0 = Instant::now();
     let rust_env = lean_ptr_to_env(env_consts_ptr);
-    eprintln!("[rs_check_env] read env:    {:>8.1?}", t0.elapsed());
+    if verbose { eprintln!("[rs_check_env] read env:    {:>8.1?}", t0.elapsed()); }
 
     // Compile through Ixon, then convert to kernel types
     let t1 = Instant::now();
@@ -79,7 +93,7 @@ pub extern "C" fn rs_check_env(env_consts_ptr: *const c_void) -> *mut c_void {
         }
       }
     };
-    eprintln!("[rs_check_env] compile env: {:>8.1?}", t1.elapsed());
+    if verbose { eprintln!("[rs_check_env] compile env: {:>8.1?}", t1.elapsed()); }
 
     let t2 = Instant::now();
     let (kenv, prims, quot_init) = match ixon_to_kenv::<Meta>(&compile_state) {
@@ -100,7 +114,7 @@ pub extern "C" fn rs_check_env(env_consts_ptr: *const c_void) -> *mut c_void {
         }
       }
     };
-    eprintln!("[rs_check_env] ixon→kenv:  {:>8.1?} ({} consts)", t2.elapsed(), kenv.len());
+    if verbose { eprintln!("[rs_check_env] ixon→kenv:  {:>8.1?} ({} consts)", t2.elapsed(), kenv.len()); }
     drop(compile_state);
     drop(rust_env_arc);
 
@@ -125,17 +139,19 @@ pub extern "C" fn rs_check_env(env_consts_ptr: *const c_void) -> *mut c_void {
           for (id, ci) in kenv.iter() {
             checked += 1;
             let name = ci.name().pretty();
-            eprint!("[rs_check_env]   {checked}/{total} {name} ...");
+            if verbose { eprint!("[rs_check_env]   {checked}/{total} {name} ..."); }
             let t = Instant::now();
             if let Err(e) = typecheck_const(kenv, prims, id, quot_init) {
-              eprintln!(" FAIL ({:.1?}): {e}", t.elapsed());
+              if verbose {
+                eprintln!(" FAIL ({:.1?}): {e}", t.elapsed());
+              }
               errors.push((ci.name().clone(), format!("{e}")));
               if FAIL_FAST {
-                eprintln!("[rs_check_env] FAIL_FAST: stopping after first error");
+                if verbose { eprintln!("[rs_check_env] FAIL_FAST: stopping after first error"); }
                 break;
               }
             } else {
-              eprintln!(" ok ({:.1?})", t.elapsed());
+              if verbose { eprintln!(" ok ({:.1?})", t.elapsed()); }
             }
           }
           errors
