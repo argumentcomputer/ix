@@ -54,6 +54,7 @@ public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) :=
     "Nat.add_comm",
     "Nat.sub_le_of_le_add",
     "String.Internal.append",
+    "_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",
   ]
   constNamesStr.map nameOfString |>.mapM (kernelCheck · env)
 where

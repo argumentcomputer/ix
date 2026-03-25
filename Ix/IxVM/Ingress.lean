@@ -159,6 +159,76 @@ def ingress := ⟦
     }
   }
 
+  fn recr_rule_count(recr: Recursor) -> G {
+    match recr {
+      Recursor.Mk(_, _, _, _, _, _, _, _, &rules) =>
+        count_recr_rules(rules),
+    }
+  }
+
+  -- Count recursor rules
+  fn count_recr_rules(rules: RecursorRuleList) -> G {
+    match rules {
+      RecursorRuleList.Nil => 0,
+      RecursorRuleList.Cons(_, &rest) => count_recr_rules(rest) + 1,
+    }
+  }
+
+  -- Count constructors in a Muts block's first inductive
+  fn count_block_ctors(members: MutConstList) -> G {
+    match members {
+      MutConstList.Nil => 0,
+      MutConstList.Cons(mc, &rest) =>
+        match mc {
+          MutConst.Indc(ind) =>
+            match ind {
+              Inductive.Mk(_, _, _, _, _, _, _, _, &ctors) =>
+                count_constructor_list(ctors),
+            },
+          _ => count_block_ctors(rest),
+        },
+    }
+  }
+
+  -- Find the correct block address for a standalone recursor by matching
+  -- the number of recursor rules to the number of constructors in the block.
+  fn find_matching_block_addr(refs: AddressList, all_addrs: AddressList, nrules: G) -> [G; 32] {
+    match refs {
+      AddressList.Nil => [0; 32],
+      AddressList.Cons(addr, &rest) =>
+        let blob = is_blob(addr, all_addrs);
+        match blob {
+          1 => find_matching_block_addr(rest, all_addrs, nrules),
+          0 =>
+            let c = load_verified_constant(addr);
+            match c {
+              Constant.Mk(info, _, _, _) =>
+                match info {
+                  ConstantInfo.IPrj(prj) =>
+                    match prj {
+                      InductiveProj.Mk(_, block_addr) =>
+                        let bc = load_verified_constant(block_addr);
+                        match bc {
+                          Constant.Mk(bi, _, _, _) =>
+                            match bi {
+                              ConstantInfo.Muts(&members) =>
+                                let nctors = count_block_ctors(members);
+                                let is_match = eq_zero(nctors - nrules);
+                                match is_match {
+                                  1 => block_addr,
+                                  0 => find_matching_block_addr(rest, all_addrs, nrules),
+                                },
+                              _ => find_matching_block_addr(rest, all_addrs, nrules),
+                            },
+                        },
+                    },
+                  _ => find_matching_block_addr(rest, all_addrs, nrules),
+                },
+            },
+        },
+    }
+  }
+
   -- Count elements in a ConstructorList
   fn count_constructor_list_(ctors: ConstructorList) -> [G; 8] {
     match ctors {
@@ -569,7 +639,8 @@ def ingress := ⟦
               ConstantInfo.Defn(defn) =>
                 let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
-                let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(KGList.Nil), store(lit_blobs), store(univs));
+                let recur_idxs = KGList.Cons(pos, store(KGList.Nil));
+                let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(recur_idxs), store(lit_blobs), store(univs));
                 let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.Abbrev));
                 ConvertInputList.Cons(store(input),
                   store(build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
@@ -590,7 +661,8 @@ def ingress := ⟦
               ConstantInfo.Recr(recr) =>
                 let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
-                let block_addr = find_block_addr_from_refs(refs, all_addrs);
+                let nrules = recr_rule_count(recr);
+                let block_addr = find_matching_block_addr(refs, all_addrs, nrules);
                 let block_const = load_verified_constant(block_addr);
                 match block_const {
                   Constant.Mk(block_info, _, _, _) =>

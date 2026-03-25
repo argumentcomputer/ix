@@ -42,6 +42,7 @@ Aiur runtime's function-call caching provides call-by-need semantics: calling
 | Struct eta                       | ✅     |
 | Bidirectional checking           | ✅     |
 | Level comparison (sound+complete)| ✅     |
+| Unsafe opaque skip               | ✅     |
 
 ## Known Limitations
 
@@ -1896,10 +1897,14 @@ def kernel := ⟦
         let ty_val = k_eval(ty, KValEnv.Nil, top);
         k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
-      KConstantInfo.Opaque(_, &ty, &value, _) =>
+      KConstantInfo.Opaque(_, &ty, &value, is_unsafe) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
-        let ty_val = k_eval(ty, KValEnv.Nil, top);
-        k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        match is_unsafe {
+          1 => (),
+          0 =>
+            let ty_val = k_eval(ty, KValEnv.Nil, top);
+            k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        },
 
       KConstantInfo.Quot(_, &ty, _) =>
         let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
