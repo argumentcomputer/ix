@@ -6,6 +6,7 @@ public section
 namespace IxVM
 
 def convert := ⟦
+
   -- ============================================================================
   -- Conversion input types
   --
@@ -19,15 +20,15 @@ def convert := ⟦
   -- ============================================================================
 
   -- Expression conversion context
-  -- (sharing, ref_idxs, recur_idxs, lit_vals, univs)
+  -- (sharing, ref_idxs, recur_idxs, lit_blobs, univs)
   --
   -- sharing:    the constant's sharing array (for Expr.Share expansion)
   -- ref_idxs:   maps ref array index -> kernel constant list index
   -- recur_idxs: maps recur index -> kernel constant list index
-  -- lit_vals:   maps blob ref index -> decoded literal value
+  -- lit_blobs:  maps blob ref index -> raw blob ByteStream
   -- univs:      the constant's universe array
   enum ConvertCtx {
-    Mk(&ExprList, &U64List, &U64List, &U64List, &UnivList)
+    Mk(&ExprList, &KGList, &KGList, &ByteStreamList, &UnivList)
   }
 
   -- What to convert, with kind-specific auxiliary data
@@ -35,9 +36,9 @@ def convert := ⟦
     CKDefn(Definition, KHints),
     CKAxio(Axiom),
     CKQuot(Quotient),
-    CKRecr(Recursor, &KU64List),
-    CKIndc(Inductive, &KU64List),
-    CKCtor(Constructor, [G; 8])
+    CKRecr(Recursor, &KGList),
+    CKIndc(Inductive, &KGList),
+    CKCtor(Constructor, G)
   }
 
   -- A fully resolved input ready for conversion
@@ -50,18 +51,19 @@ def convert := ⟦
     Nil
   }
 
-  -- Convert a KU64List (U64 entries from prover) to a KGList (G entries for kernel)
-  fn ku64_list_to_kg_list(list: KU64List) -> KGList {
-    match list {
-      KU64List.Nil => KGList.Nil,
-      KU64List.Cons(v, &rest) =>
-        KGList.Cons(flatten_u64(v), store(ku64_list_to_kg_list(rest))),
-    }
-  }
-
   -- ============================================================================
   -- Ixon list lookups
   -- ============================================================================
+
+  fn g_list_lookup(list: KGList, idx: G) -> G {
+    match list {
+      KGList.Cons(v, &rest) =>
+        match idx {
+          0 => v,
+          _ => g_list_lookup(rest, idx - 1),
+        },
+    }
+  }
 
   fn expr_list_lookup(list: ExprList, idx: [G; 8]) -> Expr {
     match list {
@@ -85,13 +87,14 @@ def convert := ⟦
     }
   }
 
-  fn u64_list_lookup(list: U64List, idx: [G; 8]) -> [G; 8] {
+  fn blob_list_lookup(list: ByteStreamList, idx: [G; 8]) -> ByteStream {
     match list {
-      U64List.Cons(v, &rest) =>
+      ByteStreamList.Nil => ByteStream.Nil,
+      ByteStreamList.Cons(bs, &rest) =>
         let z = u64_is_zero(idx);
         match z {
-          1 => v,
-          0 => u64_list_lookup(rest, relaxed_u64_pred(idx)),
+          1 => bs,
+          0 => blob_list_lookup(rest, relaxed_u64_pred(idx)),
         },
     }
   }
@@ -146,12 +149,70 @@ def convert := ⟦
   -- Expression conversion: Ixon Expr -> KExpr
   -- ============================================================================
 
+  -- Convert a LE byte stream to KLimbs (list of U64, little-endian bignum).
+  -- Reads 8 bytes per limb, zero-padding the last limb if needed.
+  -- Strips trailing zero limbs for canonical form.
+  fn bytes_to_limbs(bytes: ByteStream) -> KLimbs {
+    let limb = bytes_to_u64_limb(bytes, [0; 8], 0);
+    let rest_bytes = skip_bytes(bytes, 8);
+    match limb {
+      -- If this limb is zero and there are no more bytes, return Nil
+      _ =>
+        match rest_bytes {
+          ByteStream.Nil =>
+            let is_zero = u64_is_zero(limb);
+            match is_zero {
+              1 => KLimbs.Nil,
+              0 => KLimbs.Cons(limb, store(KLimbs.Nil)),
+            },
+          _ =>
+            let rest_limbs = bytes_to_limbs(rest_bytes);
+            KLimbs.Cons(limb, store(rest_limbs)),
+        },
+    }
+  }
+
+  -- Read up to 8 bytes into a U64 (LE), zero-padding.
+  fn bytes_to_u64_limb(bytes: ByteStream, acc: [G; 8], pos: G) -> [G; 8] {
+    match pos {
+      8 => acc,
+      _ =>
+        match bytes {
+          ByteStream.Nil => acc,
+          ByteStream.Cons(byte, &rest) =>
+            let [v0, v1, v2, v3, v4, v5, v6, v7] = acc;
+            match pos {
+              0 => bytes_to_u64_limb(rest, [byte, v1, v2, v3, v4, v5, v6, v7], 1),
+              1 => bytes_to_u64_limb(rest, [v0, byte, v2, v3, v4, v5, v6, v7], 2),
+              2 => bytes_to_u64_limb(rest, [v0, v1, byte, v3, v4, v5, v6, v7], 3),
+              3 => bytes_to_u64_limb(rest, [v0, v1, v2, byte, v4, v5, v6, v7], 4),
+              4 => bytes_to_u64_limb(rest, [v0, v1, v2, v3, byte, v5, v6, v7], 5),
+              5 => bytes_to_u64_limb(rest, [v0, v1, v2, v3, v4, byte, v6, v7], 6),
+              6 => bytes_to_u64_limb(rest, [v0, v1, v2, v3, v4, v5, byte, v7], 7),
+              _ => bytes_to_u64_limb(rest, [v0, v1, v2, v3, v4, v5, v6, byte], 8),
+            },
+        },
+    }
+  }
+
+  -- Skip n bytes from a ByteStream
+  fn skip_bytes(bytes: ByteStream, n: G) -> ByteStream {
+    match n {
+      0 => bytes,
+      _ =>
+        match bytes {
+          ByteStream.Nil => ByteStream.Nil,
+          ByteStream.Cons(_, &rest) => skip_bytes(rest, n - 1),
+        },
+    }
+  }
+
   fn convert_expr(
     e: Expr,
     sharing: ExprList,
-    ref_idxs: U64List,
-    recur_idxs: U64List,
-    lit_vals: U64List,
+    ref_idxs: KGList,
+    recur_idxs: KGList,
+    lit_blobs: ByteStreamList,
     univs: UnivList
   ) -> KExpr {
     match e {
@@ -163,62 +224,62 @@ def convert := ⟦
         KExpr.BVar(flatten_u64(idx)),
 
       Expr.Ref(ref_idx, &univ_idxs) =>
-        let const_idx = u64_list_lookup(ref_idxs, ref_idx);
+        let const_idx = g_list_lookup(ref_idxs, flatten_u64(ref_idx));
         let levels = convert_univ_idxs(univ_idxs, univs);
-        KExpr.Const(flatten_u64(const_idx), store(levels)),
+        KExpr.Const(const_idx, store(levels)),
 
       Expr.Rec(rec_idx, &univ_idxs) =>
-        let const_idx = u64_list_lookup(recur_idxs, rec_idx);
+        let const_idx = g_list_lookup(recur_idxs, flatten_u64(rec_idx));
         let levels = convert_univ_idxs(univ_idxs, univs);
-        KExpr.Const(flatten_u64(const_idx), store(levels)),
+        KExpr.Const(const_idx, store(levels)),
 
       Expr.Prj(type_ref_idx, field_idx, &inner) =>
-        let type_idx = u64_list_lookup(ref_idxs, type_ref_idx);
+        let type_idx = g_list_lookup(ref_idxs, flatten_u64(type_ref_idx));
         KExpr.Proj(
-          flatten_u64(type_idx),
+          type_idx,
           flatten_u64(field_idx),
-          store(convert_expr(inner, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
+          store(convert_expr(inner, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Str(blob_ref_idx) =>
-        let val = u64_list_lookup(lit_vals, blob_ref_idx);
-        KExpr.Lit(KLiteral.Str(val)),
+        let bs = blob_list_lookup(lit_blobs, blob_ref_idx);
+        KExpr.Lit(KLiteral.Str(bs)),
 
       Expr.Nat(blob_ref_idx) =>
-        let val = u64_list_lookup(lit_vals, blob_ref_idx);
-        KExpr.Lit(KLiteral.Nat(val)),
+        let bs = blob_list_lookup(lit_blobs, blob_ref_idx);
+        let limbs = bytes_to_limbs(bs);
+        KExpr.Lit(KLiteral.Nat(store(limbs))),
 
       Expr.App(&f, &a) =>
         KExpr.App(
-          store(convert_expr(f, sharing, ref_idxs, recur_idxs, lit_vals, univs)),
-          store(convert_expr(a, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
+          store(convert_expr(f, sharing, ref_idxs, recur_idxs, lit_blobs, univs)),
+          store(convert_expr(a, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Lam(&ty, &body) =>
         KExpr.Lam(
-          store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_vals, univs)),
-          store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
+          store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs)),
+          store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.All(&ty, &body) =>
         KExpr.Forall(
-          store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_vals, univs)),
-          store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
+          store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs)),
+          store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Let(_, &ty, &val, &body) =>
         KExpr.Let(
-          store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_vals, univs)),
-          store(convert_expr(val, sharing, ref_idxs, recur_idxs, lit_vals, univs)),
-          store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_vals, univs))),
+          store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs)),
+          store(convert_expr(val, sharing, ref_idxs, recur_idxs, lit_blobs, univs)),
+          store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Share(idx) =>
         let shared = expr_list_lookup(sharing, idx);
-        convert_expr(shared, sharing, ref_idxs, recur_idxs, lit_vals, univs),
+        convert_expr(shared, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
     }
   }
 
-  -- Shorthand: convert an expression using a ConvertCtx
   fn ctx_convert_expr(e: Expr, ctx: ConvertCtx) -> KExpr {
     match ctx {
-      ConvertCtx.Mk(&sharing, &ref_idxs, &recur_idxs, &lit_vals, &univs) =>
-        convert_expr(e, sharing, ref_idxs, recur_idxs, lit_vals, univs),
+      ConvertCtx.Mk(&sharing, &ref_idxs, &recur_idxs, &lit_blobs, &univs) =>
+        convert_expr(e, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
     }
   }
 
@@ -251,7 +312,7 @@ def convert := ⟦
   -- rule_ctor_idxs provides the kernel constant index for each rule's constructor.
   fn convert_rules(
     rules: RecursorRuleList,
-    rule_ctor_idxs: KU64List,
+    rule_ctor_idxs: KGList,
     ctx: ConvertCtx
   ) -> KRecRuleList {
     match rules {
@@ -260,9 +321,9 @@ def convert := ⟦
         match rule {
           RecursorRule.Mk(nfields, &rhs) =>
             match rule_ctor_idxs {
-              KU64List.Cons(ctor_idx, &rest_ctor_idxs) =>
+              KGList.Cons(ctor_idx, &rest_ctor_idxs) =>
                 let krhs = ctx_convert_expr(rhs, ctx);
-                let krule = KRecRule.Mk(flatten_u64(ctor_idx), flatten_u64(nfields), store(krhs));
+                let krule = KRecRule.Mk(ctor_idx, flatten_u64(nfields), store(krhs));
                 KRecRuleList.Cons(
                   store(krule),
                   store(convert_rules(rest_rules, rest_ctor_idxs, ctx))),
@@ -312,7 +373,7 @@ def convert := ⟦
     }
   }
 
-  fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: KU64List) -> KConstantInfo {
+  fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: KGList) -> KConstantInfo {
     match r {
       Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, &rules) =>
         let ktyp = ctx_convert_expr(typ, ctx);
@@ -324,22 +385,22 @@ def convert := ⟦
     }
   }
 
-  fn convert_inductive(ind: Inductive, ctx: ConvertCtx, ctor_idxs: KU64List) -> KConstantInfo {
+  fn convert_inductive(ind: Inductive, ctx: ConvertCtx, ctor_idxs: KGList) -> KConstantInfo {
     match ind {
       Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, _, &typ, _) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Induct(
           flatten_u64(lvls), store(ktyp), flatten_u64(params), flatten_u64(indices),
-          store(ku64_list_to_kg_list(ctor_idxs)), is_rec, is_refl, is_unsafe),
+          store(ctor_idxs), is_rec, is_refl, is_unsafe),
     }
   }
 
-  fn convert_constructor(c: Constructor, ctx: ConvertCtx, induct_idx: [G; 8]) -> KConstantInfo {
+  fn convert_constructor(c: Constructor, ctx: ConvertCtx, induct_idx: G) -> KConstantInfo {
     match c {
       Constructor.Mk(is_unsafe, lvls, cidx, params, fields, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Ctor(
-          flatten_u64(lvls), store(ktyp), flatten_u64(induct_idx), flatten_u64(cidx),
+          flatten_u64(lvls), store(ktyp), induct_idx, flatten_u64(cidx),
           flatten_u64(params), flatten_u64(fields), is_unsafe),
     }
   }

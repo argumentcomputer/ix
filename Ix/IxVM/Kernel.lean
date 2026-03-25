@@ -49,9 +49,7 @@ Aiur runtime's function-call caching provides call-by-need semantics: calling
 |----------------------------------|--------------------------------------|
 | Nat primitives (add, mul, ...)   | ❌ uses iota (exponential for large) |
 | String primitives                | ❌                                   |
-| Unit-like types                  | ❌                                   |
 | Lazy delta (hint-based)          | ⚠️ unfolds both sides                |
-| Proof irrelevance                | ⚠️ partial (FVar returns Sort 1)     |
 | Inductive block validation       | ❌ trusts input                      |
 | Delta step limit                 | ❌                                   |
 
@@ -124,6 +122,7 @@ def kernel := ⟦
   -- Look up a constant info in a constant list by index
   fn const_list_lookup(list: KConstList, idx: G) -> KConstantInfo {
     match list {
+      KConstList.Nil => KConstantInfo.Axiom(0, store(KExpr.Srt(store(KLevel.Zero))), 0),
       KConstList.Cons(&ci, &rest) =>
         match idx {
           0 => ci,
@@ -133,6 +132,21 @@ def kernel := ⟦
   }
 
   -- Find recursor rule by constructor index
+  fn rec_rule_try_find(rules: KRecRuleList, ctor_idx: G) -> KRecRuleMaybe {
+    match rules {
+      KRecRuleList.Nil => KRecRuleMaybe.None,
+      KRecRuleList.Cons(&rule, &rest) =>
+        match rule {
+          KRecRule.Mk(idx, nf, &rhs) =>
+            let found = eq_zero(idx - ctor_idx);
+            match found {
+              1 => KRecRuleMaybe.Some(store(KRecRule.Mk(idx, nf, store(rhs)))),
+              0 => rec_rule_try_find(rest, ctor_idx),
+            },
+        },
+    }
+  }
+
   fn rec_rule_find(rules: KRecRuleList, ctor_idx: G) -> KRecRule {
     match rules {
       KRecRuleList.Cons(&rule, &rest) =>
@@ -638,9 +652,9 @@ def kernel := ⟦
         let spine2 = val_list_snoc(spine, arg);
         KVal.Ctor(idx, store(lvls), nparams, store(spine2)),
 
-      KVal.FVar(lvl, &spine) =>
+      KVal.FVar(lvl, &fvar_ty, &spine) =>
         let spine2 = val_list_snoc(spine, arg);
-        KVal.FVar(lvl, store(spine2)),
+        KVal.FVar(lvl, store(fvar_ty), store(spine2)),
 
       KVal.Const(idx, &lvls, &spine) =>
         let spine2 = val_list_snoc(spine, arg);
@@ -653,6 +667,7 @@ def kernel := ⟦
       KVal.Thunk(&e, &env) =>
         let v = k_eval(e, env, top);
         k_apply(v, arg, top),
+
     }
   }
 
@@ -699,21 +714,26 @@ def kernel := ⟦
             let major = k_whnf(major_raw, top);
             match major {
               KVal.Ctor(ctor_idx, _, ctor_nparams, &ctor_spine) =>
-                let rule = rec_rule_find(rules, ctor_idx);
-                match rule {
-                  KRecRule.Mk(_, nfields, &rhs) =>
-                    let rhs_inst = expr_inst_levels(rhs, lvls);
-                    let rhs_val = k_eval(rhs_inst, KValEnv.Nil, top);
-                    let params_motives_minors = val_list_take(spine, nparams + nmotives + nminors);
-                    let result = k_apply_spine(rhs_val, params_motives_minors, top);
-                    let fields = val_list_drop(ctor_spine, ctor_nparams);
-                    let result2 = k_apply_spine(result, fields, top);
-                    let remaining = val_list_drop(spine, maj_idx + 1);
-                    k_apply_spine(result2, remaining, top),
+                let rule_found = rec_rule_try_find(rules, ctor_idx);
+                match rule_found {
+                  KRecRuleMaybe.None =>
+                    KVal.Const(idx, store(lvls), store(spine)),
+                  KRecRuleMaybe.Some(&rule) =>
+                    match rule {
+                      KRecRule.Mk(_, nfields, &rhs) =>
+                        let rhs_inst = expr_inst_levels(rhs, lvls);
+                        let rhs_val = k_eval(rhs_inst, KValEnv.Nil, top);
+                        let params_motives_minors = val_list_take(spine, nparams + nmotives + nminors);
+                        let result = k_apply_spine(rhs_val, params_motives_minors, top);
+                        let fields = val_list_drop(ctor_spine, ctor_nparams);
+                        let result2 = k_apply_spine(result, fields, top);
+                        let remaining = val_list_drop(spine, maj_idx + 1);
+                        k_apply_spine(result2, remaining, top),
+                    },
                 },
               KVal.Lit(lit) =>
                 match lit {
-                  KLiteral.Nat(n) =>
+                  KLiteral.Nat(&n) =>
                     -- Nat literal iota: Lit(0) → zero rule, Lit(n+1) → succ rule with Lit(n)
                     -- Derive the inductive idx from the first rule's ctor_idx
                     let first_ctor_idx = rec_rule_first_ctor(rules);
@@ -722,7 +742,7 @@ def kernel := ⟦
                     match ind_ci {
                       KConstantInfo.Induct(_, _, _, _, &ctor_indices, _, _, _) =>
                         let pmm_end = nparams + nmotives + nminors;
-                        let is_zero = u64_is_zero(n);
+                        let is_zero = klimbs_is_zero(n);
                         match is_zero {
                           1 =>
                             -- Lit(0) → fire zero rule with no ctor fields
@@ -747,7 +767,7 @@ def kernel := ⟦
                                 let rhs_val = k_eval(rhs_inst, KValEnv.Nil, top);
                                 let pmm = val_list_take(spine, pmm_end);
                                 let result = k_apply_spine(rhs_val, pmm, top);
-                                let pred = KVal.Lit(KLiteral.Nat(relaxed_u64_pred(n)));
+                                let pred = KVal.Lit(KLiteral.Nat(store(klimbs_pred(n))));
                                 let ctor_fields = KValList.Cons(store(pred), store(KValList.Nil));
                                 let result2 = k_apply_spine(result, ctor_fields, top);
                                 let remaining = val_list_drop(spine, maj_idx + 1);
@@ -955,7 +975,7 @@ def kernel := ⟦
 
       KVal.Lam(&dom, &body, &env) =>
         let dom_expr = k_quote(dom, depth, top);
-        let fvar = KVal.FVar(depth, store(KValList.Nil));
+        let fvar = KVal.FVar(depth, store(dom), store(KValList.Nil));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_val = k_eval(body, env2, top);
         let body_expr = k_quote(body_val, depth + 1, top);
@@ -963,7 +983,7 @@ def kernel := ⟦
 
       KVal.Pi(&dom, &body, &env) =>
         let dom_expr = k_quote(dom, depth, top);
-        let fvar = KVal.FVar(depth, store(KValList.Nil));
+        let fvar = KVal.FVar(depth, store(dom), store(KValList.Nil));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_val = k_eval(body, env2, top);
         let body_expr = k_quote(body_val, depth + 1, top);
@@ -973,7 +993,7 @@ def kernel := ⟦
         let base = KExpr.Const(idx, store(lvls));
         quote_spine(base, spine, depth, top),
 
-      KVal.FVar(lvl, &spine) =>
+      KVal.FVar(lvl, &fvar_ty, &spine) =>
         let idx = (depth - 1) - lvl;
         let base = KExpr.BVar(idx);
         quote_spine(base, spine, depth, top),
@@ -1040,6 +1060,7 @@ def kernel := ⟦
       KExpr.App(&f, &a) =>
         let fn_type = k_infer(f, types, env, depth, top, nat_idx, str_idx);
         let fn_type_whnf = k_whnf(fn_type, top);
+
         match fn_type_whnf {
           KVal.Pi(&dom, &body, &pi_env) =>
             let arg_type = k_infer(a, types, env, depth, top, nat_idx, str_idx);
@@ -1053,7 +1074,7 @@ def kernel := ⟦
       KExpr.Lam(&ty, &body) =>
         let _x = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
         let dom_val = k_eval(ty, env, top);
-        let fvar = KVal.FVar(depth, store(KValList.Nil));
+        let fvar = KVal.FVar(depth, store(dom_val), store(KValList.Nil));
         let types2 = KValList.Cons(store(dom_val), store(types));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_type = k_infer(body, types2, env2, depth + 1, top, nat_idx, str_idx);
@@ -1063,7 +1084,7 @@ def kernel := ⟦
       KExpr.Forall(&ty, &body) =>
         let dom_level = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
         let dom_val = k_eval(ty, env, top);
-        let fvar = KVal.FVar(depth, store(KValList.Nil));
+        let fvar = KVal.FVar(depth, store(dom_val), store(KValList.Nil));
         let types2 = KValList.Cons(store(dom_val), store(types));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_level = k_ensure_sort(body, types2, env2, depth + 1, top, nat_idx, str_idx);
@@ -1125,7 +1146,7 @@ def kernel := ⟦
             let dom_eq = k_is_def_eq(dom_val, pi_dom, depth, top, nat_idx, str_idx);
             assert_eq!(dom_eq, 1);
             -- Push Pi codomain through Lambda body
-            let fvar = KVal.FVar(depth, store(KValList.Nil));
+            let fvar = KVal.FVar(depth, store(pi_dom), store(KValList.Nil));
             let types2 = KValList.Cons(store(pi_dom), store(types));
             let env2 = KValEnv.Cons(store(fvar), store(env));
             let pi_env2 = KValEnv.Cons(store(fvar), store(pi_env));
@@ -1273,7 +1294,9 @@ def kernel := ⟦
           -- If struct type can't be determined, fall back to sentinel
           _ => KVal.Srt(store(KLevel.Succ(store(KLevel.Zero)))),
         },
-      -- For FVar, Lam, Pi: return Sort 1 as sentinel (never Prop)
+      KVal.FVar(_, &fvar_type, &spine) =>
+        apply_spine_to_type(fvar_type, spine, top),
+      -- For Lam, Pi: return Sort 1 as sentinel (never Prop)
       _ => KVal.Srt(store(KLevel.Succ(store(KLevel.Zero)))),
     }
   }
@@ -1305,6 +1328,14 @@ def kernel := ⟦
     let ctor_ci = const_list_lookup(top, ctor_idx);
     match ctor_ci {
       KConstantInfo.Ctor(_, _, _, _, _, nfields, _) => nfields,
+    }
+  }
+
+  -- Count the number of entries in a KGList
+  fn kg_list_length(list: KGList) -> G {
+    match list {
+      KGList.Nil => 0,
+      KGList.Cons(_, &rest) => kg_list_length(rest) + 1,
     }
   }
 
@@ -1359,6 +1390,40 @@ def kernel := ⟦
     }
   }
 
+  -- Unit-like type equality: if both values have a type with exactly one
+  -- nullary constructor and no indices, they are definitionally equal.
+  -- Examples: True, PUnit, PLift.up for propositions.
+  fn is_unit_like_type(ty: KVal, top: KConstList) -> G {
+    let ty_whnf = k_whnf(ty, top);
+    match ty_whnf {
+      KVal.Const(induct_idx, _, _) =>
+        let ci = const_list_lookup(top, induct_idx);
+        match ci {
+          KConstantInfo.Induct(_, _, _, nindices, &ctor_indices, _, _, _) =>
+            let zero_indices = eq_zero(nindices);
+            let one_ctor = eq_zero(kg_list_length(ctor_indices) - 1);
+            match zero_indices * one_ctor {
+              0 => 0,
+              _ =>
+                let ctor_idx = kg_list_head(ctor_indices);
+                let ctor_ci = const_list_lookup(top, ctor_idx);
+                match ctor_ci {
+                  KConstantInfo.Ctor(_, _, _, _, _, nfields, _) =>
+                    eq_zero(nfields),
+                  _ => 0,
+                },
+            },
+          _ => 0,
+        },
+      _ => 0,
+    }
+  }
+
+  fn try_unit_like(a: KVal, b: KVal, top: KConstList, nat_idx: G, str_idx: G) -> G {
+    let a_type = k_infer_val_type(a, top, nat_idx, str_idx);
+    is_unit_like_type(a_type, top)
+  }
+
   -- ============================================================================
   -- Definitional equality
   --
@@ -1368,7 +1433,8 @@ def kernel := ⟦
   --   3. Proof irrelevance (both proofs of Props ⟹ compare types)
   --   4. Structural comparison (k_is_def_eq_core)
   --   5. Struct eta (s ≡ ⟨s.1, s.2, ...⟩)
-  --   6. Lazy delta unfolding (try unfolding constants to make progress)
+  --   6. Unit-like types (one nullary constructor ⟹ all values equal)
+  --   7. Lazy delta unfolding (try unfolding constants to make progress)
   -- ============================================================================
 
   -- Check definitional equality of two values: first try a quick syntactic check,
@@ -1413,7 +1479,7 @@ def kernel := ⟦
                     let eta_res = try_eta_struct(a_whnf, b_whnf, depth, top, nat_idx, str_idx);
                     match eta_res {
                       1 => 1,
-                      0 => 0,
+                      0 => try_unit_like(a_whnf, b_whnf, top, nat_idx, str_idx),
                     },
                   1 => 1,
                 },
@@ -1439,39 +1505,120 @@ def kernel := ⟦
     }
   }
 
-  -- Check equality of two literals (nat or string, compared by their u64 values)
+  -- ============================================================================
+  -- KLimbs operations (bignum arithmetic on little-endian u64 limbs)
+  -- ============================================================================
+
+  -- Check if a KLimbs value is zero (Nil = zero)
+  fn klimbs_is_zero(limbs: KLimbs) -> G {
+    match limbs {
+      KLimbs.Nil => 1,
+      KLimbs.Cons(_, _) => 0,
+    }
+  }
+
+  -- Compare two KLimbs for equality (limb-by-limb)
+  fn klimbs_eq(a: KLimbs, b: KLimbs) -> G {
+    match a {
+      KLimbs.Nil =>
+        match b {
+          KLimbs.Nil => 1,
+          _ => 0,
+        },
+      KLimbs.Cons(la, &ra) =>
+        match b {
+          KLimbs.Nil => 0,
+          KLimbs.Cons(lb, &rb) =>
+            let eq = u64_eq(la, lb);
+            match eq {
+              0 => 0,
+              1 => klimbs_eq(ra, rb),
+            },
+        },
+    }
+  }
+
+  -- Subtract 1 from a KLimbs bignum. Assumes non-zero input.
+  -- Works limb-by-limb: if limb is non-zero, decrement it; else borrow.
+  fn klimbs_pred(limbs: KLimbs) -> KLimbs {
+    match limbs {
+      KLimbs.Nil => KLimbs.Nil,
+      KLimbs.Cons(limb, &rest) =>
+        let is_zero = u64_is_zero(limb);
+        match is_zero {
+          0 =>
+            -- Non-zero limb: decrement it
+            let new_limb = relaxed_u64_pred(limb);
+            -- If this was the only limb and it became zero, return Nil
+            match rest {
+              KLimbs.Nil =>
+                let new_zero = u64_is_zero(new_limb);
+                match new_zero {
+                  1 => KLimbs.Nil,
+                  0 => KLimbs.Cons(new_limb, store(KLimbs.Nil)),
+                },
+              _ => KLimbs.Cons(new_limb, store(rest)),
+            },
+          1 =>
+            -- Zero limb: borrow from next, this limb becomes 0xFF..FF
+            let new_rest = klimbs_pred(rest);
+            -- 0xFFFFFFFFFFFFFFFF = [255, 255, 255, 255, 255, 255, 255, 255]
+            let max_u64 = [255, 255, 255, 255, 255, 255, 255, 255];
+            KLimbs.Cons(max_u64, store(new_rest)),
+        },
+    }
+  }
+
+  -- Compare two ByteStreams for equality
+  fn bytestream_eq(a: ByteStream, b: ByteStream) -> G {
+    match a {
+      ByteStream.Nil =>
+        match b {
+          ByteStream.Nil => 1,
+          _ => 0,
+        },
+      ByteStream.Cons(ba, &ra) =>
+        match b {
+          ByteStream.Nil => 0,
+          ByteStream.Cons(bb, &rb) =>
+            match ba - bb {
+              0 => bytestream_eq(ra, rb),
+              _ => 0,
+            },
+        },
+    }
+  }
+
+  -- Check equality of two literals
   fn literal_eq(a: KLiteral, b: KLiteral) -> G {
     match a {
-      KLiteral.Nat(na) =>
+      KLiteral.Nat(&na) =>
         match b {
-          KLiteral.Nat(nb) => u64_eq(na, nb),
+          KLiteral.Nat(&nb) => klimbs_eq(na, nb),
           _ => 0,
         },
       KLiteral.Str(sa) =>
         match b {
-          KLiteral.Str(sb) => u64_eq(sa, sb),
+          KLiteral.Str(sb) => bytestream_eq(sa, sb),
           _ => 0,
         },
     }
   }
 
   -- Compare a Nat literal with a Nat constructor value
-  -- Lit(0) == Ctor(zero_ctor, _, nparams, spine) when spine.len == nparams (no fields)
-  -- Lit(n+1) == Ctor(succ_ctor, _, nparams, spine) when spine.len == nparams + 1
-  --   and Lit(n) == spine[nparams]
   fn nat_lit_eq_ctor(
     lit: KLiteral, ctor_idx: G, nparams: G, ctor_spine: KValList,
     depth: G, top: KConstList, nat_idx: G, str_idx: G
   ) -> G {
     match lit {
-      KLiteral.Nat(n) =>
+      KLiteral.Nat(&n) =>
         let induct_idx = ctor_induct_idx(ctor_idx, top);
         let is_nat = eq_zero(induct_idx - nat_idx);
         match is_nat {
           0 => 0,
           1 =>
             let nfields = ctor_num_fields(ctor_idx, top);
-            let is_zero = u64_is_zero(n);
+            let is_zero = klimbs_is_zero(n);
             match is_zero {
               1 =>
                 -- Lit(0) == Ctor if ctor has 0 fields
@@ -1483,7 +1630,7 @@ def kernel := ⟦
                   0 => 0,
                   1 =>
                     let pred_val = val_list_lookup(ctor_spine, nparams);
-                    let pred_lit = KVal.Lit(KLiteral.Nat(relaxed_u64_pred(n)));
+                    let pred_lit = KVal.Lit(KLiteral.Nat(store(klimbs_pred(n))));
                     k_is_def_eq(pred_lit, pred_val, depth, top, nat_idx, str_idx),
                 },
             },
@@ -1509,9 +1656,9 @@ def kernel := ⟦
           _ => 0,
         },
 
-      KVal.FVar(lvl_a, &sp_a) =>
+      KVal.FVar(lvl_a, _, &sp_a) =>
         match b {
-          KVal.FVar(lvl_b, &sp_b) =>
+          KVal.FVar(lvl_b, _, &sp_b) =>
             let same_lvl = eq_zero(lvl_a - lvl_b);
             match same_lvl {
               1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
@@ -1563,7 +1710,7 @@ def kernel := ⟦
             match dom_eq {
               0 => 0,
               1 =>
-                let fvar = KVal.FVar(depth, store(KValList.Nil));
+                let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
                 let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
                 let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
                 let va = k_eval(body_a, env_a2, top);
@@ -1572,7 +1719,7 @@ def kernel := ⟦
             },
           _ =>
             -- Eta: lam vs non-lam
-            let fvar = KVal.FVar(depth, store(KValList.Nil));
+            let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
             let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
             let va = k_eval(body_a, env_a2, top);
             let vb = k_apply(b, fvar, top);
@@ -1586,7 +1733,7 @@ def kernel := ⟦
             match dom_eq {
               0 => 0,
               1 =>
-                let fvar = KVal.FVar(depth, store(KValList.Nil));
+                let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
                 let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
                 let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
                 let va = k_eval(body_a, env_a2, top);
@@ -1616,7 +1763,7 @@ def kernel := ⟦
       _ =>
         match b {
           KVal.Lam(&dom_b, &body_b, &env_b) =>
-            let fvar = KVal.FVar(depth, store(KValList.Nil));
+            let fvar = KVal.FVar(depth, store(dom_b), store(KValList.Nil));
             let va = k_apply(a, fvar, top);
             let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
             let vb = k_eval(body_b, env_b2, top);
@@ -1785,75 +1932,6 @@ def kernel := ⟦
       KConstList.Cons(&ci, &rest) =>
         let _x = k_check_const(ci, top, nat_idx, str_idx);
         k_check_all_go(rest, top, nat_idx, str_idx, idx + 1),
-    }
-  }
-
-
-  -- ============================================================================
-  -- Primitive type discovery
-  --
-  -- Scan the constant list to find the index of the Nat inductive type.
-  -- Used for Nat literal iota reduction and Nat literal ↔ constructor equality.
-  -- ============================================================================
-
-  -- Count the number of entries in a KGList
-  fn kg_list_length(list: KGList) -> G {
-    match list {
-      KGList.Nil => 0,
-      KGList.Cons(_, &rest) => kg_list_length(rest) + 1,
-    }
-  }
-
-  -- Check if a constant at the given index is the Nat type:
-  -- an Inductive with 0 params, 0 indices, 2 constructors where
-  -- ctor[0] has 0 fields and ctor[1] has 1 field.
-  fn is_nat_inductive(ci: KConstantInfo, top: KConstList, ctor_indices: KGList) -> G {
-    match ci {
-      KConstantInfo.Induct(_, _, nparams, nindices, _, _, _, _) =>
-        let params_zero = eq_zero(nparams);
-        let indices_zero = eq_zero(nindices);
-        let two_ctors = eq_zero(kg_list_length(ctor_indices) - 2);
-        match params_zero * indices_zero * two_ctors {
-          0 => 0,
-          _ =>
-            -- Check ctor[0] has 0 fields and ctor[1] has 1 field
-            match ctor_indices {
-              KGList.Cons(ctor0_idx, &rest) =>
-                match rest {
-                  KGList.Cons(ctor1_idx, _) =>
-                    let ctor0 = const_list_lookup(top, ctor0_idx);
-                    let ctor1 = const_list_lookup(top, ctor1_idx);
-                    match ctor0 {
-                      KConstantInfo.Ctor(_, _, _, _, _, nfields0, _) =>
-                        match ctor1 {
-                          KConstantInfo.Ctor(_, _, _, _, _, nfields1, _) =>
-                            eq_zero(nfields0) * eq_zero(nfields1 - 1),
-                          _ => 0,
-                        },
-                      _ => 0,
-                    },
-                },
-            },
-        },
-      _ => 0,
-    }
-  }
-
-  -- Find the index of the Nat inductive in the constant list.
-  -- Returns the index, or 0 - 1 (a sentinel) if not found.
-  fn find_nat_idx(consts: KConstList, top: KConstList, idx: G) -> G {
-    match consts {
-      KConstList.Nil => 0 - 1,
-      KConstList.Cons(&ci, &rest) =>
-        match ci {
-          KConstantInfo.Induct(_, _, _, _, &ctor_indices, _, _, _) =>
-            let found = is_nat_inductive(ci, top, ctor_indices);
-            match found {
-              1 => idx,
-              0 => find_nat_idx(rest, top, idx + 1),
-            },
-          _ => find_nat_idx(rest, top, idx + 1),
-        },
     }
   }
 ⟧

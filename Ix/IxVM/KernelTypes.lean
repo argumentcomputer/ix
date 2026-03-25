@@ -27,13 +27,17 @@ def kernelTypes := ⟦
   -- Literals
   -- ============================================================================
 
-  -- TODO: U64 is insufficient — Nat and String literals are arbitrarily large.
-  -- Nat should be a list of u64 limbs (little-endian bignum).
-  -- Str should be a list of bytes (or a ByteStream).
-  -- This also requires fixing the blob ingress and conversion to produce these types.
+  -- Nat bignum: little-endian list of u64 limbs (least-significant first).
+  -- E.g. the number 0x1_00000000_00000001 is [1, 1] (two limbs).
+  -- Zero is represented as KLimbs.Nil.
+  enum KLimbs {
+    Nil,
+    Cons(U64, &KLimbs)
+  }
+
   enum KLiteral {
-    Nat(U64),
-    Str(U64)
+    Nat(&KLimbs),
+    Str(ByteStream)
   }
 
   -- ============================================================================
@@ -62,7 +66,7 @@ def kernelTypes := ⟦
     Lam(&KVal, &KExpr, &KValEnv),
     Pi(&KVal, &KExpr, &KValEnv),
     Ctor(G, &KLevelList, G, &KValList),
-    FVar(G, &KValList),
+    FVar(G, &KVal, &KValList),
     Const(G, &KLevelList, &KValList),
     Proj(G, G, &KVal, &KValList),
     Thunk(&KExpr, &KValEnv)
@@ -117,6 +121,11 @@ def kernelTypes := ⟦
 
   enum KRecRule {
     Mk(G, G, &KExpr)
+  }
+
+  enum KRecRuleMaybe {
+    None,
+    Some(&KRecRule)
   }
 
   enum KRecRuleList {

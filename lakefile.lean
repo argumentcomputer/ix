@@ -80,6 +80,10 @@ lean_exe IxTests where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_test]
 
+lean_exe kernel where
+  root := `Kernel
+  supportInterpreter := true
+
 end Tests
 
 section Benchmarks
