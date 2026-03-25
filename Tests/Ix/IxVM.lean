@@ -13,9 +13,10 @@ public def serdeNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
     let (_, bytes) := Ixon.Serialize.put c |>.run default
     (ioBuffer.extend #[.ofNat i] (bytes.data.map .ofUInt8), i + 1)
   pure { functionName := `ixon_serde_test, label := "Ixon serde test"
-         input := #[.ofNat n], inputIOBuffer := ioBuffer, expectedIOBuffer := ioBuffer }
+         input := #[.ofNat n], inputIOBuffer := ioBuffer, expectedIOBuffer := ioBuffer
+         executionOnly := true }
 
-def kernelCheck (name : Lean.Name) (env : Lean.Environment) : IO AiurTestCase := do
+public def kernelCheck (name : Lean.Name) (env : Lean.Environment) : IO AiurTestCase := do
   let constList := Lean.collectDependencies name env.constants
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI constList
   let ixonEnv := rawEnv.toEnv
@@ -44,10 +45,20 @@ def kernelCheck (name : Lean.Name) (env : Lean.Environment) : IO AiurTestCase :=
   let targetAddrBytes : Array Aiur.G := targetAddr.hash.data.map .ofUInt8
 
   pure { functionName := `kernel_check_test, label := s!"Kernel check {name}"
-         input := targetAddrBytes, inputIOBuffer := ioBuffer, expectedIOBuffer := ioBuffer }
+         input := targetAddrBytes, inputIOBuffer := ioBuffer, expectedIOBuffer := ioBuffer,
+         executionOnly := true }
 
-public def kernelCheckNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
-  kernelCheck ``Nat.add_comm env
-
-public def kernelCheckNatSubLeOfLeAdd (env : Lean.Environment) : IO AiurTestCase := do
-  kernelCheck ``Nat.sub_le_of_le_add env
+public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) :=
+  -- List in strings to prevent instantiation errors (e.g. with numerical limbs)
+  let constNamesStr := [
+    "Nat.add_comm",
+    "Nat.sub_le_of_le_add",
+    "String.Internal.append",
+  ]
+  constNamesStr.map nameOfString |>.mapM (kernelCheck · env)
+where
+  nameOfString str :=
+    str.splitOn "." |>.foldl (init := .anonymous)
+      fun acc s => match s.toNat? with
+        | some n => .mkNum acc n
+        | none   => .mkStr acc s
