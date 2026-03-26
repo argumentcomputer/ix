@@ -11,6 +11,11 @@ def byteStream := ⟦
     Nil
   }
 
+  enum ByteStreamList {
+    Nil,
+    Cons(ByteStream, &ByteStreamList)
+  }
+
   type U64 = [G; 8]
 
   fn byte_stream_concat(a: ByteStream, b: ByteStream) -> ByteStream {
