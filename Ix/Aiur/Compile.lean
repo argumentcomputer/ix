@@ -295,6 +295,9 @@ partial def toIndex
   | .let (.var var) val bod => do
     let val ← toIndex layoutMap bindings val
     toIndex layoutMap (bindings.insert var val) bod
+  | .let .wildcard val bod => do
+    let _ ← toIndex layoutMap bindings val
+    toIndex layoutMap bindings bod
   | .let .. => throw "Should not happen after simplifying"
   | .add a b => do
     let a ← expectIdx a
@@ -502,6 +505,9 @@ partial def TypedTerm.compile
   | .let (.var var) val bod => do
     let val ← toIndex layoutMap bindings val
     bod.compile returnTyp layoutMap (bindings.insert var val)
+  | .let .wildcard val bod => do
+    let _ ← toIndex layoutMap bindings val
+    bod.compile returnTyp layoutMap bindings
   | .let .. => throw "Should not happen after simplifying"
   | .debug label term ret => do
     let term ← term.mapM (toIndex layoutMap bindings)

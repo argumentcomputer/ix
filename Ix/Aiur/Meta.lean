@@ -103,6 +103,8 @@ syntax "[" trm (", " trm)* "]"                                : trm
 syntax "[" trm "; " num "]"                                   : trm
 syntax "return " trm                                          : trm
 syntax "let " pattern (":" typ)? " = " trm "; " trm           : trm
+syntax "let " pattern (":" typ)? " = " trm ";"                : trm
+syntax "let " pattern (":" typ)? " = " trm                    : trm
 syntax "match " trm " { " (pattern " => " trm ", ")+ " }"     : trm
 syntax ("." noWs)? ident "(" ")"                              : trm
 syntax ("." noWs)? ident "(" trm (", " trm)* ")"              : trm
@@ -173,6 +175,16 @@ partial def elabTrm : ElabStxCat `trm
     | some ty => do
       let t ← mkAppM ``Term.ann #[← elabTyp ty, ← elabTrm t]
       mkAppM ``Term.let #[← elabPattern p, t, ← elabTrm t']
+  | `(trm| let $p:pattern $[: $ty:typ]? = $t:trm;) => match ty with
+    | none => do mkAppM ``Term.let #[← elabPattern p, ← elabTrm t, mkConst ``Term.unit]
+    | some ty => do
+      let t ← mkAppM ``Term.ann #[← elabTyp ty, ← elabTrm t]
+      mkAppM ``Term.let #[← elabPattern p, t, mkConst ``Term.unit]
+  | `(trm| let $p:pattern $[: $ty:typ]? = $t:trm) => match ty with
+    | none => do mkAppM ``Term.let #[← elabPattern p, ← elabTrm t, mkConst ``Term.unit]
+    | some ty => do
+      let t ← mkAppM ``Term.ann #[← elabTyp ty, ← elabTrm t]
+      mkAppM ``Term.let #[← elabPattern p, t, mkConst ``Term.unit]
   | `(trm| match $t:trm {$[$ps:pattern => $ts:trm,]*}) => do
     let mut prods := Array.mkEmpty (ps.size + 1)
     for (p, t) in ps.zip ts do
@@ -294,6 +306,12 @@ where
       let t ← replaceToken old new t
       let t' ← replaceToken old new t'
       `(trm| let $p $[: $ty]? = $t; $t')
+    | `(trm| let $p:pattern $[: $ty]? = $t:trm;) => do
+      let t ← replaceToken old new t
+      `(trm| let $p $[: $ty]? = $t;)
+    | `(trm| let $p:pattern $[: $ty]? = $t:trm) => do
+      let t ← replaceToken old new t
+      `(trm| let $p $[: $ty]? = $t)
     | `(trm| match $t:trm {$[$ps:pattern => $ts:trm,]*}) => do
       let t ← replaceToken old new t
       let ts ← ts.mapM $ replaceToken old new
