@@ -21,7 +21,7 @@ def blake3 := ⟦
     let key = [num_hashes_pred];
     let (idx, len) = io_get_info(key);
     let byte_stream = read_byte_stream(idx, len);
-    let _x = blake3(byte_stream);
+    let _ = blake3(byte_stream);
     match num_hashes_pred {
       0 => 0,
       _ => blake3_bench(num_hashes_pred),

@@ -1073,7 +1073,7 @@ def kernel := ⟦
         },
 
       KExpr.Lam(&ty, &body) =>
-        let _x = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
         let dom_val = k_eval(ty, env, top);
         let fvar = KVal.FVar(depth, store(dom_val), store(KValList.Nil));
         let types2 = KValList.Cons(store(dom_val), store(types));
@@ -1093,7 +1093,7 @@ def kernel := ⟦
         KVal.Srt(store(result_level)),
 
       KExpr.Let(&ty, &val, &body) =>
-        let _x = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, env, top);
         let val_type = k_infer(val, types, env, depth, top, nat_idx, str_idx);
         let let_eq = k_is_def_eq(val_type, ty_val, depth, top, nat_idx, str_idx);
@@ -1884,21 +1884,20 @@ def kernel := ⟦
   fn k_check_const(ci: KConstantInfo, top: KConstList, nat_idx: G, str_idx: G) {
     match ci {
       KConstantInfo.Axiom(_, &ty, _) =>
-        let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
-        (),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Defn(_, &ty, &value, _, _) =>
-        let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
         k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Thm(_, &ty, &value) =>
-        let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
         k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Opaque(_, &ty, &value, is_unsafe) =>
-        let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
         match is_unsafe {
           1 => (),
           0 =>
@@ -1907,20 +1906,16 @@ def kernel := ⟦
         },
 
       KConstantInfo.Quot(_, &ty, _) =>
-        let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
-        (),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Induct(_, &ty, _, _, _, _, _, _) =>
-        let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
-        (),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Ctor(_, &ty, _, _, _, _, _) =>
-        let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
-        (),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Rec(_, &ty, _, _, _, _, _, _, _) =>
-        let _x = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
-        (),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
     }
   }
 
@@ -1935,7 +1930,7 @@ def kernel := ⟦
     match consts {
       KConstList.Nil => (),
       KConstList.Cons(&ci, &rest) =>
-        let _x = k_check_const(ci, top, nat_idx, str_idx);
+        let _ = k_check_const(ci, top, nat_idx, str_idx);
         k_check_all_go(rest, top, nat_idx, str_idx, idx + 1),
     }
   }

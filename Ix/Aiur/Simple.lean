@@ -11,9 +11,7 @@ private abbrev tmpVar := Local.idx 0
 
 partial def simplifyTerm (decls : Decls) : Term → Term
   | .let var@(.var _) val body => .let var (recr val) (recr body)
-  -- NOTE: This would not be safe in case Aiur allows side-effects.
-  -- A sequencing operation would be needed.
-  | .let .wildcard _ body => recr body
+  | .let .wildcard val body => .let .wildcard (recr val) (recr body)
   | .let pat val body =>
     let mtch := .match (.var tmpVar) [(pat, body)]
     .let (.var tmpVar) (recr val) (recr mtch)
