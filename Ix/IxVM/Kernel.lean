@@ -583,11 +583,68 @@ def kernel := ⟦
     }
   }
 
+  -- Suspend an expression: evaluate immediately if the result is a primitive or
+  -- a closure (already WHNF with no significant work), otherwise wrap in a Thunk
+  -- for lazy evaluation. Used when passing arguments to neutral functions so we
+  -- avoid allocating thunks for values that are trivially in normal form.
+  --
+  -- Immediate cases (WHNF by construction):
+  --   Lit, Srt          — no environment, constant time
+  --   BVar              — env lookup, result may itself be a thunk (forwarded as-is)
+  --   Lam, Forall       — closure allocation; domain is evaluated eagerly
+  --   Const             — neutral or eagerly-unfolded (same as k_eval for Const)
+  --
+  -- Deferred cases (Thunk):
+  --   App, Let, Proj    — require actual computation; defer until forced
+  fn suspend(e: KExpr, env: KValEnv, top: KConstList) -> KVal {
+    match e {
+      KExpr.Lit(lit) =>
+        KVal.Lit(lit),
+
+      KExpr.Srt(&l) =>
+        KVal.Srt(store(level_reduce(l))),
+
+      KExpr.BVar(idx) =>
+        val_env_lookup(env, idx),
+
+      KExpr.Lam(&ty, &body) =>
+        let ty_val = k_eval(ty, env, top);
+        KVal.Lam(store(ty_val), store(body), store(env)),
+
+      KExpr.Forall(&ty, &body) =>
+        let ty_val = k_eval(ty, env, top);
+        KVal.Pi(store(ty_val), store(body), store(env)),
+
+      KExpr.Const(idx, &lvls) =>
+        let ci = const_list_lookup(top, idx);
+        match ci {
+          KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
+            KVal.Ctor(idx, store(lvls), nparams, store(KValList.Nil)),
+          KConstantInfo.Defn(_, _, &value, hints, _) =>
+            match hints {
+              KHints.Opaque => KVal.Const(idx, store(lvls), store(KValList.Nil)),
+              _ =>
+                let body = expr_inst_levels(value, lvls);
+                k_eval(body, KValEnv.Nil, top),
+            },
+          KConstantInfo.Thm(_, _, &value) =>
+            let body = expr_inst_levels(value, lvls);
+            k_eval(body, KValEnv.Nil, top),
+          _ => KVal.Const(idx, store(lvls), store(KValList.Nil)),
+        },
+
+      -- App, Let, Proj: defer evaluation
+      _ => KVal.Thunk(store(e), store(env)),
+    }
+  }
+
   -- Evaluate an expression to a value using Normalization by Evaluation (NbE)
   fn k_eval(e: KExpr, env: KValEnv, top: KConstList) -> KVal {
     match e {
       KExpr.BVar(idx) =>
-        val_env_lookup(env, idx),
+        -- Force on demand: environments carry thunks; this is where lazy evaluation
+        -- actually happens (the variable is needed, so we evaluate its suspended value).
+        k_force(val_env_lookup(env, idx), top),
 
       KExpr.Srt(&l) =>
         KVal.Srt(store(level_reduce(l))),
@@ -616,19 +673,10 @@ def kernel := ⟦
           _ => KVal.Const(idx, store(lvls), store(KValList.Nil)),
         },
 
-      -- Eager beta optimization: if the function is a lambda, evaluate arg eagerly
-      -- (skipping thunk allocation). Otherwise create a thunk and accumulate.
       KExpr.App(&f, &a) =>
         let vf = k_eval(f, env, top);
-        match vf {
-          KVal.Lam(_, &body, &lam_env) =>
-            let va = k_eval(a, env, top);
-            let env2 = KValEnv.Cons(store(va), store(lam_env));
-            k_eval(body, env2, top),
-          _ =>
-            let thunk = KVal.Thunk(store(a), store(env));
-            k_apply(vf, thunk, top),
-        },
+        let arg = suspend(a, env, top);
+        k_apply(vf, arg, top),
 
       KExpr.Lam(&ty, &body) =>
         let ty_val = k_eval(ty, env, top);
@@ -664,8 +712,8 @@ def kernel := ⟦
   fn k_apply(f: KVal, arg: KVal, top: KConstList) -> KVal {
     match f {
       KVal.Lam(_, &body, &env) =>
-        let arg_forced = k_force(arg, top);
-        let env2 = KValEnv.Cons(store(arg_forced), store(env));
+        -- Lazy: bind arg without forcing; it is forced by k_eval's BVar case on demand.
+        let env2 = KValEnv.Cons(store(arg), store(env));
         k_eval(body, env2, top),
 
       KVal.Ctor(idx, &lvls, nparams, &spine) =>
