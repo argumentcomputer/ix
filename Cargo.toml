@@ -8,7 +8,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 anyhow = "1"
-blake3 = "1.8.3"
+blake3 = "1.8.4"
 itertools = "0.14.0"
 indexmap = { version = "2", features = ["rayon"] }
 lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi", rev = "2ee6267354ce460a8dd95ae9f087cc2569a90ad6" }
@@ -18,23 +18,23 @@ rayon = "1"
 rustc-hash = "2"
 tiny-keccak = { version = "2", features = ["keccak"] }
 dashmap = { version = "6.1.0", features = ["rayon"] }
-sha2 = "0.10"
+sha2 = "0.11"
 # Iroh dependencies
 bytes = { version = "1.10.1", optional = true }
 tokio = { version = "1.44.1", optional = true }
-iroh = { version = "0.91", optional = true }
-iroh-base = { version = "0.91", optional = true }
+iroh = { version = "0.96", optional = true }
+iroh-base = { version = "0.96", optional = true }
 n0-snafu = { version = "0.2.1", optional = true }
-n0-watcher = { version = "0.3", optional = true }
-rand = { version = "0.8", optional = true }
+n0-watcher = { version = "0.6", optional = true }
+rand = { version = "0.10", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
-bincode = { version = "2.0.1", optional = true }
+bincode = { version = "3.0.0", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [dev-dependencies]
 quickcheck = "1.0.3"
-rand = "0.8.5"
+rand = "0.10.0"
 quickcheck_macros = "1.0.0"
 
 [features]
