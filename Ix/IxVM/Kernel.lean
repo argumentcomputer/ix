@@ -1316,7 +1316,8 @@ def kernel := ⟦
       0 => 1,
       _ =>
         let field_idx = nparams + current;
-        let field_val = val_list_lookup(spine, field_idx);
+        -- field_val is a ctor spine element: may be a thunk, force before comparing
+        let field_val = k_force(val_list_lookup(spine, field_idx), top);
         let proj_val = KVal.Proj(tidx, current, store(t), store(KValList.Nil));
         let eq = k_is_def_eq(proj_val, field_val, depth, top, nat_idx, str_idx);
         match eq {
@@ -1400,61 +1401,38 @@ def kernel := ⟦
   --
   -- The most complex part of the kernel. Uses a layered approach:
   --   1. Quick syntactic check (sorts, literals)
-  --   2. Reduce both sides to WHNF
-  --   3. Proof irrelevance (both proofs of Props ⟹ compare types)
-  --   4. Structural comparison (k_is_def_eq_core)
-  --   5. Struct eta (s ≡ ⟨s.1, s.2, ...⟩)
-  --   6. Unit-like types (one nullary constructor ⟹ all values equal)
-  --   7. Lazy delta unfolding (try unfolding constants to make progress)
+  --   2. Proof irrelevance (a : Prop ⟹ b : Prop by same-type precondition ⟹ equal)
+  --   3. Structural comparison (k_is_def_eq_core)
+  --   4. Struct eta (s ≡ ⟨s.1, s.2, ...⟩)
+  --   5. Unit-like types (one nullary constructor ⟹ all values equal)
+  --   6. Lazy delta unfolding (try unfolding stuck constants to make progress)
+  -- Precondition: both values are in WHNF and have the same type.
   -- ============================================================================
 
-  -- Check definitional equality of two values. Values from k_eval are already WHNF;
-  -- values from spines may be thunks, so we k_force both sides first.
+  -- Check definitional equality of two WHNF values of the same type.
+  -- Precondition: a and b are in WHNF and have the same type.
+  -- Proof irrelevance: if a : Prop then b : Prop (same type), so both are equal.
   fn k_is_def_eq(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
     let quick = k_quick_def_eq(a, b);
     match quick {
       1 => 1,
       0 =>
-        -- Force thunks (no-op for values already in WHNF)
-        let a_f = k_force(a, top);
-        let b_f = k_force(b, top);
-        let quick2 = k_quick_def_eq(a_f, b_f);
-        match quick2 {
+        -- Proof irrelevance: if a is a proof (type is Prop), b is also a proof
+        -- (same type), so they are definitionally equal without further comparison.
+        let a_type = k_infer_val_type(a, top, nat_idx, str_idx);
+        let a_is_prop = k_is_prop_val(a_type, top, nat_idx, str_idx);
+        match a_is_prop {
           1 => 1,
           0 =>
-            -- Proof irrelevance: if both are proofs (types in Prop), compare types
-            let a_type = k_infer_val_type(a_f, top, nat_idx, str_idx);
-            let a_is_prop = k_is_prop_val(a_type, top, nat_idx, str_idx);
-            match a_is_prop {
-              1 =>
-                let b_type = k_infer_val_type(b_f, top, nat_idx, str_idx);
-                let b_is_prop = k_is_prop_val(b_type, top, nat_idx, str_idx);
-                match b_is_prop {
-                  1 =>
-                    k_is_def_eq(a_type, b_type, depth, top, nat_idx, str_idx),
-                  0 =>
-                    let core_res = k_is_def_eq_core(a_f, b_f, depth, top, nat_idx, str_idx);
-                    match core_res {
-                      0 =>
-                        let eta_res = try_eta_struct(a_f, b_f, depth, top, nat_idx, str_idx);
-                        match eta_res {
-                          1 => 1,
-                          0 => 0,
-                        },
-                      1 => 1,
-                    },
-                },
+            let core_res = k_is_def_eq_core(a, b, depth, top, nat_idx, str_idx);
+            match core_res {
               0 =>
-                let core_res = k_is_def_eq_core(a_f, b_f, depth, top, nat_idx, str_idx);
-                match core_res {
-                  0 =>
-                    let eta_res = try_eta_struct(a_f, b_f, depth, top, nat_idx, str_idx);
-                    match eta_res {
-                      1 => 1,
-                      0 => try_unit_like(a_f, b_f, top, nat_idx, str_idx),
-                    },
+                let eta_res = try_eta_struct(a, b, depth, top, nat_idx, str_idx);
+                match eta_res {
                   1 => 1,
+                  0 => try_unit_like(a, b, top, nat_idx, str_idx),
                 },
+              1 => 1,
             },
         },
     }
@@ -1601,7 +1579,8 @@ def kernel := ⟦
                 match has_one {
                   0 => 0,
                   1 =>
-                    let pred_val = val_list_lookup(ctor_spine, nparams);
+                    -- pred_val is a ctor spine element: may be a thunk, force before comparing
+                    let pred_val = k_force(val_list_lookup(ctor_spine, nparams), top);
                     let pred_lit = KVal.Lit(KLiteral.Nat(store(klimbs_pred(n))));
                     k_is_def_eq(pred_lit, pred_val, depth, top, nat_idx, str_idx),
                 },
@@ -1766,7 +1745,8 @@ def kernel := ⟦
     }
   }
 
-  -- Pointwise definitional equality of two value spines
+  -- Pointwise definitional equality of two value spines.
+  -- Spine elements may be thunks (lazy args); force before comparing.
   fn k_is_def_eq_spine(a: KValList, b: KValList, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
     match a {
       KValList.Nil =>
@@ -1778,7 +1758,9 @@ def kernel := ⟦
         match b {
           KValList.Nil => 0,
           KValList.Cons(&vb, &rb) =>
-            let eq = k_is_def_eq(va, vb, depth, top, nat_idx, str_idx);
+            let va_f = k_force(va, top);
+            let vb_f = k_force(vb, top);
+            let eq = k_is_def_eq(va_f, vb_f, depth, top, nat_idx, str_idx);
             match eq {
               0 => 0,
               1 => k_is_def_eq_spine(ra, rb, depth, top, nat_idx, str_idx),
