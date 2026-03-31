@@ -112,7 +112,6 @@ def kernel := ⟦
   -- Look up a constant info in a constant list by index
   fn const_list_lookup(list: KConstList, idx: G) -> KConstantInfo {
     match list {
-      KConstList.Nil => KConstantInfo.Axiom(0, store(KExpr.Srt(store(KLevel.Zero))), 0),
       KConstList.Cons(&ci, &rest) =>
         match idx {
           0 => ci,
@@ -1213,8 +1212,6 @@ def kernel := ⟦
             let env2 = KValList.Cons(store(arg_forced), store(pi_env));
             let next = k_eval(body, env2, top);
             apply_spine_to_type(next, rest, top),
-          -- If not a Pi, we're stuck; return as-is (sentinel)
-          _ => ty,
         },
     }
   }
