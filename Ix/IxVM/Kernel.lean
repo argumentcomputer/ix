@@ -1639,10 +1639,9 @@ def kernel := ⟦
                     k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                   0 => 0,
                 },
-              0 =>
-                k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+              0 => 0,
             },
-          _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+          _ => 0,
         },
 
       KVal.Rec(idx_a, &lvls_a, &sp_a) =>
@@ -1745,10 +1744,6 @@ def kernel := ⟦
             let env_b2 = KValList.Cons(store(fvar), store(env_b));
             let vb = k_eval(body_b, env_b2, top);
             k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-          KVal.Const(_, _, _) =>
-            k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
-          KVal.Rec(_, _, _) =>
-            k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
           _ => 0,
         },
     }
@@ -1796,59 +1791,6 @@ def kernel := ⟦
               1 => k_is_def_eq_levels(ra, rb),
             },
         },
-    }
-  }
-
-  -- Lazy delta: try unfolding one or both constants to make progress
-  fn k_lazy_delta(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
-    let a_unfolded = try_delta_unfold(a, top);
-    let b_unfolded = try_delta_unfold(b, top);
-    let a_changed = delta_changed(a, a_unfolded);
-    let b_changed = delta_changed(b, b_unfolded);
-    match (a_changed, b_changed) {
-      (0, 0) => 0,
-      _ => k_is_def_eq(a_unfolded, b_unfolded, depth, top, nat_idx, str_idx),
-    }
-  }
-
-  -- Try to delta-unfold a VConst value by looking up its definition and evaluating it;
-  -- returns the original value if it is opaque or not a definition
-  fn try_delta_unfold(v: KVal, top: KConstList) -> KVal {
-    match v {
-      KVal.Const(idx, &lvls, &spine) =>
-        let ci = const_list_lookup(top, idx);
-        match ci {
-          KConstantInfo.Defn(_, _, &value, hints, _) =>
-            match hints {
-              KHints.Opaque => v,
-              KHints.Abbrev =>
-                let body = expr_inst_levels(value, lvls);
-                let val = k_eval(body, KValList.Nil, top);
-                k_apply_spine(val, spine, top),
-              KHints.Regular(_) =>
-                let body = expr_inst_levels(value, lvls);
-                let val = k_eval(body, KValList.Nil, top);
-                k_apply_spine(val, spine, top),
-            },
-          KConstantInfo.Thm(_, _, &value) =>
-            let body = expr_inst_levels(value, lvls);
-            let val = k_eval(body, KValList.Nil, top);
-            k_apply_spine(val, spine, top),
-          _ => v,
-        },
-      _ => v,
-    }
-  }
-
-  -- Check whether delta unfolding made progress (i.e., the head constant changed)
-  fn delta_changed(before: KVal, after: KVal) -> G {
-    match before {
-      KVal.Const(idx_a, _, _) =>
-        match after {
-          KVal.Const(idx_b, _, _) => 1 - eq_zero(idx_a - idx_b),
-          _ => 1,
-        },
-      _ => 0,
     }
   }
 
