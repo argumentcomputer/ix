@@ -70,17 +70,6 @@ def kernel := ⟦
   -- List operations
   -- ============================================================================
 
-  -- Look up a value in a value environment by de Bruijn index
-  fn val_env_lookup(env: KValEnv, idx: G) -> KVal {
-    match env {
-      KValEnv.Cons(&v, &rest) =>
-        match idx {
-          0 => v,
-          _ => val_env_lookup(rest, idx - 1),
-        },
-    }
-  }
-
   -- Look up a value in a value list by index
   fn val_list_lookup(list: KValList, idx: G) -> KVal {
     match list {
@@ -596,7 +585,7 @@ def kernel := ⟦
   --
   -- Deferred cases (Thunk):
   --   App, Let, Proj    — require actual computation; defer until forced
-  fn suspend(e: KExpr, env: KValEnv, top: KConstList) -> KVal {
+  fn suspend(e: KExpr, env: KValList, top: KConstList) -> KVal {
     match e {
       KExpr.Lit(lit) =>
         KVal.Lit(lit),
@@ -605,7 +594,7 @@ def kernel := ⟦
         KVal.Srt(store(level_reduce(l))),
 
       KExpr.BVar(idx) =>
-        val_env_lookup(env, idx),
+        val_list_lookup(env, idx),
 
       KExpr.Lam(&ty, &body) =>
         let ty_val = k_eval(ty, env, top);
@@ -625,11 +614,11 @@ def kernel := ⟦
               KHints.Opaque => KVal.Const(idx, store(lvls), store(KValList.Nil)),
               _ =>
                 let body = expr_inst_levels(value, lvls);
-                k_eval(body, KValEnv.Nil, top),
+                k_eval(body, KValList.Nil, top),
             },
           KConstantInfo.Thm(_, _, &value) =>
             let body = expr_inst_levels(value, lvls);
-            k_eval(body, KValEnv.Nil, top),
+            k_eval(body, KValList.Nil, top),
           _ => KVal.Const(idx, store(lvls), store(KValList.Nil)),
         },
 
@@ -639,12 +628,12 @@ def kernel := ⟦
   }
 
   -- Evaluate an expression to a value using Normalization by Evaluation (NbE)
-  fn k_eval(e: KExpr, env: KValEnv, top: KConstList) -> KVal {
+  fn k_eval(e: KExpr, env: KValList, top: KConstList) -> KVal {
     match e {
       KExpr.BVar(idx) =>
         -- Force on demand: environments carry thunks; this is where lazy evaluation
         -- actually happens (the variable is needed, so we evaluate its suspended value).
-        k_force(val_env_lookup(env, idx), top),
+        k_force(val_list_lookup(env, idx), top),
 
       KExpr.Srt(&l) =>
         KVal.Srt(store(level_reduce(l))),
@@ -665,11 +654,11 @@ def kernel := ⟦
               KHints.Opaque => KVal.Const(idx, store(lvls), store(KValList.Nil)),
               _ =>
                 let body = expr_inst_levels(value, lvls);
-                k_eval(body, KValEnv.Nil, top),
+                k_eval(body, KValList.Nil, top),
             },
           KConstantInfo.Thm(_, _, &value) =>
             let body = expr_inst_levels(value, lvls);
-            k_eval(body, KValEnv.Nil, top),
+            k_eval(body, KValList.Nil, top),
           _ => KVal.Const(idx, store(lvls), store(KValList.Nil)),
         },
 
@@ -688,7 +677,7 @@ def kernel := ⟦
 
       KExpr.Let(_, &val, &body) =>
         let v = k_eval(val, env, top);
-        let env2 = KValEnv.Cons(store(v), store(env));
+        let env2 = KValList.Cons(store(v), store(env));
         k_eval(body, env2, top),
 
       KExpr.Lit(lit) =>
@@ -713,7 +702,7 @@ def kernel := ⟦
     match f {
       KVal.Lam(_, &body, &env) =>
         -- Lazy: bind arg without forcing; it is forced by k_eval's BVar case on demand.
-        let env2 = KValEnv.Cons(store(arg), store(env));
+        let env2 = KValList.Cons(store(arg), store(env));
         k_eval(body, env2, top),
 
       KVal.Ctor(idx, &lvls, nparams, &spine) =>
@@ -813,7 +802,7 @@ def kernel := ⟦
                     match rule {
                       KRecRule.Mk(_, nfields, &rhs) =>
                         let rhs_inst = expr_inst_levels(rhs, lvls);
-                        let rhs_val = k_eval(rhs_inst, KValEnv.Nil, top);
+                        let rhs_val = k_eval(rhs_inst, KValList.Nil, top);
                         let params_motives_minors = val_list_take(spine, nparams + nmotives + nminors);
                         let result = k_apply_spine(rhs_val, params_motives_minors, top);
                         let fields = val_list_drop(ctor_spine, ctor_nparams);
@@ -842,7 +831,7 @@ def kernel := ⟦
                             match rule {
                               KRecRule.Mk(_, _, &rhs) =>
                                 let rhs_inst = expr_inst_levels(rhs, lvls);
-                                let rhs_val = k_eval(rhs_inst, KValEnv.Nil, top);
+                                let rhs_val = k_eval(rhs_inst, KValList.Nil, top);
                                 let pmm = val_list_take(spine, pmm_end);
                                 let result = k_apply_spine(rhs_val, pmm, top);
                                 let remaining = val_list_drop(spine, maj_idx + 1);
@@ -855,7 +844,7 @@ def kernel := ⟦
                             match rule {
                               KRecRule.Mk(_, _, &rhs) =>
                                 let rhs_inst = expr_inst_levels(rhs, lvls);
-                                let rhs_val = k_eval(rhs_inst, KValEnv.Nil, top);
+                                let rhs_val = k_eval(rhs_inst, KValList.Nil, top);
                                 let pmm = val_list_take(spine, pmm_end);
                                 let result = k_apply_spine(rhs_val, pmm, top);
                                 let pred = KVal.Lit(KLiteral.Nat(store(klimbs_pred(n))));
@@ -988,7 +977,7 @@ def kernel := ⟦
       KVal.Lam(&dom, &body, &env) =>
         let dom_expr = k_quote(dom, depth, top);
         let fvar = KVal.FVar(depth, store(dom), store(KValList.Nil));
-        let env2 = KValEnv.Cons(store(fvar), store(env));
+        let env2 = KValList.Cons(store(fvar), store(env));
         let body_val = k_eval(body, env2, top);
         let body_expr = k_quote(body_val, depth + 1, top);
         KExpr.Lam(store(dom_expr), store(body_expr)),
@@ -996,7 +985,7 @@ def kernel := ⟦
       KVal.Pi(&dom, &body, &env) =>
         let dom_expr = k_quote(dom, depth, top);
         let fvar = KVal.FVar(depth, store(dom), store(KValList.Nil));
-        let env2 = KValEnv.Cons(store(fvar), store(env));
+        let env2 = KValList.Cons(store(fvar), store(env));
         let body_val = k_eval(body, env2, top);
         let body_expr = k_quote(body_val, depth + 1, top);
         KExpr.Forall(store(dom_expr), store(body_expr)),
@@ -1047,7 +1036,7 @@ def kernel := ⟦
 
   -- Infer the type of an expression under the given type and value environments.
   -- nat_idx/str_idx are the constant indices for the Nat/String types (for literal typing).
-  fn k_infer(e: KExpr, types: KValList, env: KValEnv, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> KVal {
+  fn k_infer(e: KExpr, types: KValList, env: KValList, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> KVal {
     match e {
       KExpr.BVar(idx) =>
         val_list_lookup(types, idx),
@@ -1071,7 +1060,7 @@ def kernel := ⟦
         assert_eq!(lvl_eq, 1);
         let ty = const_type(ci);
         let ty_inst = expr_inst_levels(ty, lvls);
-        k_eval(ty_inst, KValEnv.Nil, top),
+        k_eval(ty_inst, KValList.Nil, top),
 
       KExpr.App(&f, &a) =>
         let fn_type = k_infer(f, types, env, depth, top, nat_idx, str_idx);
@@ -1080,7 +1069,7 @@ def kernel := ⟦
           KVal.Pi(&dom, &body, &pi_env) =>
             let _ = k_check(a, dom, types, env, depth, top, nat_idx, str_idx);
             let arg_val = suspend(a, env, top);
-            let pi_env2 = KValEnv.Cons(store(arg_val), store(pi_env));
+            let pi_env2 = KValList.Cons(store(arg_val), store(pi_env));
             k_eval(body, pi_env2, top),
         },
 
@@ -1089,7 +1078,7 @@ def kernel := ⟦
         let dom_val = k_eval(ty, env, top);
         let fvar = KVal.FVar(depth, store(dom_val), store(KValList.Nil));
         let types2 = KValList.Cons(store(dom_val), store(types));
-        let env2 = KValEnv.Cons(store(fvar), store(env));
+        let env2 = KValList.Cons(store(fvar), store(env));
         let body_type = k_infer(body, types2, env2, depth + 1, top, nat_idx, str_idx);
         let body_type_expr = k_quote(body_type, depth + 1, top);
         KVal.Pi(store(dom_val), store(body_type_expr), store(env)),
@@ -1099,7 +1088,7 @@ def kernel := ⟦
         let dom_val = k_eval(ty, env, top);
         let fvar = KVal.FVar(depth, store(dom_val), store(KValList.Nil));
         let types2 = KValList.Cons(store(dom_val), store(types));
-        let env2 = KValEnv.Cons(store(fvar), store(env));
+        let env2 = KValList.Cons(store(fvar), store(env));
         let body_level = k_ensure_sort(body, types2, env2, depth + 1, top, nat_idx, str_idx);
         let result_level = level_imax(dom_level, body_level);
         KVal.Srt(store(result_level)),
@@ -1110,7 +1099,7 @@ def kernel := ⟦
         let _ = k_check(val, ty_val, types, env, depth, top, nat_idx, str_idx);
         let val_val = suspend(val, env, top);
         let types2 = KValList.Cons(store(ty_val), store(types));
-        let env2 = KValEnv.Cons(store(val_val), store(env));
+        let env2 = KValList.Cons(store(val_val), store(env));
         k_infer(body, types2, env2, depth + 1, top, nat_idx, str_idx),
 
       KExpr.Proj(tidx, fidx, &e1) =>
@@ -1127,9 +1116,9 @@ def kernel := ⟦
                 let ctor_ci = const_list_lookup(top, ctor_idx);
                 let ctor_type_expr = const_type(ctor_ci);
                 let ctor_type_inst = expr_inst_levels(ctor_type_expr, levels);
-                let ctor_type_val = k_eval(ctor_type_inst, KValEnv.Nil, top);
+                let ctor_type_val = k_eval(ctor_type_inst, KValList.Nil, top);
                 -- Walk past params using values from the inductive's spine
-                let after_params = walk_params(ctor_type_val, params_spine, top);
+                let after_params = apply_spine_to_type(ctor_type_val, params_spine, top);
                 -- Walk past preceding fields using Proj values
                 let struct_val = k_eval(e1, env, top);
                 let after_fields = walk_fields(after_params, tidx, 0, fidx, struct_val, top);
@@ -1144,7 +1133,7 @@ def kernel := ⟦
 
   -- Bidirectional type checking: check term against expected type.
   -- For Lambda against Pi, pushes the codomain through instead of independently inferring.
-  fn k_check(e: KExpr, expected: KVal, types: KValList, env: KValEnv, depth: G, top: KConstList, nat_idx: G, str_idx: G) {
+  fn k_check(e: KExpr, expected: KVal, types: KValList, env: KValList, depth: G, top: KConstList, nat_idx: G, str_idx: G) {
     match e {
       KExpr.Lam(&ty, &body) =>
         -- expected is WHNF (from k_eval at call sites); match directly
@@ -1157,8 +1146,8 @@ def kernel := ⟦
             -- Push Pi codomain through Lambda body
             let fvar = KVal.FVar(depth, store(pi_dom), store(KValList.Nil));
             let types2 = KValList.Cons(store(pi_dom), store(types));
-            let env2 = KValEnv.Cons(store(fvar), store(env));
-            let pi_env2 = KValEnv.Cons(store(fvar), store(pi_env));
+            let env2 = KValList.Cons(store(fvar), store(env));
+            let pi_env2 = KValList.Cons(store(fvar), store(pi_env));
             let expected_body = k_eval(pi_body, pi_env2, top);
             k_check(body, expected_body, types2, env2, depth + 1, top, nat_idx, str_idx),
         },
@@ -1172,7 +1161,7 @@ def kernel := ⟦
 
   -- Ensure a type expression evaluates to a Sort, returning the level.
   -- k_infer returns WHNF, so we match directly.
-  fn k_ensure_sort(e: KExpr, types: KValList, env: KValEnv, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> KLevel {
+  fn k_ensure_sort(e: KExpr, types: KValList, env: KValList, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> KLevel {
     let ty = k_infer(e, types, env, depth, top, nat_idx, str_idx);
     match ty {
       KVal.Srt(&l) => l,
@@ -1187,22 +1176,6 @@ def kernel := ⟦
     }
   }
 
-  -- Walk past n Pi binders, substituting param values from the spine
-  fn walk_params(ct: KVal, params: KValList, top: KConstList) -> KVal {
-    match params {
-      KValList.Nil => ct,
-      KValList.Cons(&param_val, &rest_params) =>
-        -- ct is WHNF (from k_eval); force the param in case it's a thunk
-        let param_forced = k_force(param_val, top);
-        match ct {
-          KVal.Pi(_, &body, &pi_env) =>
-            let env2 = KValEnv.Cons(store(param_forced), store(pi_env));
-            let next = k_eval(body, env2, top);
-            walk_params(next, rest_params, top),
-        },
-    }
-  }
-
   -- Walk past n fields in a constructor type, substituting Proj values
   fn walk_fields(ct: KVal, tidx: G, current_field: G, remaining: G, struct_val: KVal, top: KConstList) -> KVal {
     match remaining {
@@ -1212,7 +1185,7 @@ def kernel := ⟦
         match ct {
           KVal.Pi(_, &body, &pi_env) =>
             let proj_val = KVal.Proj(tidx, current_field, store(struct_val), store(KValList.Nil));
-            let env2 = KValEnv.Cons(store(proj_val), store(pi_env));
+            let env2 = KValList.Cons(store(proj_val), store(pi_env));
             let next = k_eval(body, env2, top);
             walk_fields(next, tidx, current_field + 1, remaining - 1, struct_val, top),
         },
@@ -1237,7 +1210,7 @@ def kernel := ⟦
         let arg_forced = k_force(arg, top);
         match ty {
           KVal.Pi(_, &body, &pi_env) =>
-            let env2 = KValEnv.Cons(store(arg_forced), store(pi_env));
+            let env2 = KValList.Cons(store(arg_forced), store(pi_env));
             let next = k_eval(body, env2, top);
             apply_spine_to_type(next, rest, top),
           -- If not a Pi, we're stuck; return as-is (sentinel)
@@ -1263,7 +1236,7 @@ def kernel := ⟦
         let ci = const_list_lookup(top, idx);
         let ty = const_type(ci);
         let ty_inst = expr_inst_levels(ty, lvls);
-        let ty_val = k_eval(ty_inst, KValEnv.Nil, top);
+        let ty_val = k_eval(ty_inst, KValList.Nil, top);
         apply_spine_to_type(ty_val, spine, top),
       KVal.Rec(idx, &lvls, &spine) =>
         let ci = const_list_lookup(top, idx);
@@ -1275,7 +1248,7 @@ def kernel := ⟦
         let ci = const_list_lookup(top, idx);
         let ty = const_type(ci);
         let ty_inst = expr_inst_levels(ty, lvls);
-        let ty_val = k_eval(ty_inst, KValEnv.Nil, top);
+        let ty_val = k_eval(ty_inst, KValList.Nil, top);
         apply_spine_to_type(ty_val, spine, top),
       KVal.Proj(tidx, fidx, &sv, &spine) =>
         let struct_type = k_infer_val_type(sv, top, nat_idx, str_idx);
@@ -1289,8 +1262,8 @@ def kernel := ⟦
                 let ctor_ci = const_list_lookup(top, ctor_idx);
                 let ctor_type_expr = const_type(ctor_ci);
                 let ctor_type_inst = expr_inst_levels(ctor_type_expr, levels);
-                let ctor_type_val = k_eval(ctor_type_inst, KValEnv.Nil, top);
-                let after_params = walk_params(ctor_type_val, params_spine, top);
+                let ctor_type_val = k_eval(ctor_type_inst, KValList.Nil, top);
+                let after_params = apply_spine_to_type(ctor_type_val, params_spine, top);
                 let after_fields = walk_fields(after_params, tidx, 0, fidx, sv, top);
                 -- after_fields is WHNF from k_eval
                 match after_fields {
@@ -1718,8 +1691,8 @@ def kernel := ⟦
               0 => 0,
               1 =>
                 let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
-                let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
-                let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
+                let env_a2 = KValList.Cons(store(fvar), store(env_a));
+                let env_b2 = KValList.Cons(store(fvar), store(env_b));
                 let va = k_eval(body_a, env_a2, top);
                 let vb = k_eval(body_b, env_b2, top);
                 k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
@@ -1727,7 +1700,7 @@ def kernel := ⟦
           _ =>
             -- Eta: lam vs non-lam
             let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
-            let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
+            let env_a2 = KValList.Cons(store(fvar), store(env_a));
             let va = k_eval(body_a, env_a2, top);
             let vb = k_apply(b, fvar, top);
             k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
@@ -1741,8 +1714,8 @@ def kernel := ⟦
               0 => 0,
               1 =>
                 let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
-                let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
-                let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
+                let env_a2 = KValList.Cons(store(fvar), store(env_a));
+                let env_b2 = KValList.Cons(store(fvar), store(env_b));
                 let va = k_eval(body_a, env_a2, top);
                 let vb = k_eval(body_b, env_b2, top);
                 k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
@@ -1772,7 +1745,7 @@ def kernel := ⟦
           KVal.Lam(&dom_b, &body_b, &env_b) =>
             let fvar = KVal.FVar(depth, store(dom_b), store(KValList.Nil));
             let va = k_apply(a, fvar, top);
-            let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
+            let env_b2 = KValList.Cons(store(fvar), store(env_b));
             let vb = k_eval(body_b, env_b2, top);
             k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
           KVal.Const(_, _, _) =>
@@ -1853,16 +1826,16 @@ def kernel := ⟦
               KHints.Opaque => v,
               KHints.Abbrev =>
                 let body = expr_inst_levels(value, lvls);
-                let val = k_eval(body, KValEnv.Nil, top);
+                let val = k_eval(body, KValList.Nil, top);
                 k_apply_spine(val, spine, top),
               KHints.Regular(_) =>
                 let body = expr_inst_levels(value, lvls);
-                let val = k_eval(body, KValEnv.Nil, top);
+                let val = k_eval(body, KValList.Nil, top);
                 k_apply_spine(val, spine, top),
             },
           KConstantInfo.Thm(_, _, &value) =>
             let body = expr_inst_levels(value, lvls);
-            let val = k_eval(body, KValEnv.Nil, top);
+            let val = k_eval(body, KValList.Nil, top);
             k_apply_spine(val, spine, top),
           _ => v,
         },
@@ -1895,38 +1868,38 @@ def kernel := ⟦
   fn k_check_const(ci: KConstantInfo, top: KConstList, nat_idx: G, str_idx: G) {
     match ci {
       KConstantInfo.Axiom(_, &ty, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Defn(_, &ty, &value, _, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
-        let ty_val = k_eval(ty, KValEnv.Nil, top);
-        k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx);
+        let ty_val = k_eval(ty, KValList.Nil, top);
+        k_check(value, ty_val, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Thm(_, &ty, &value) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
-        let ty_val = k_eval(ty, KValEnv.Nil, top);
-        k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx);
+        let ty_val = k_eval(ty, KValList.Nil, top);
+        k_check(value, ty_val, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Opaque(_, &ty, &value, is_unsafe) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx);
         match is_unsafe {
           1 => (),
           0 =>
-            let ty_val = k_eval(ty, KValEnv.Nil, top);
-            k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+            let ty_val = k_eval(ty, KValList.Nil, top);
+            k_check(value, ty_val, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx),
         },
 
       KConstantInfo.Quot(_, &ty, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Induct(_, &ty, _, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Ctor(_, &ty, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Rec(_, &ty, _, _, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, KValList.Nil, KValList.Nil, 0, top, nat_idx, str_idx),
     }
   }
 

@@ -63,23 +63,18 @@ def kernelTypes := ⟦
   enum KVal {
     Srt(&KLevel),
     Lit(KLiteral),
-    Lam(&KVal, &KExpr, &KValEnv),
-    Pi(&KVal, &KExpr, &KValEnv),
+    Lam(&KVal, &KExpr, &KValList),
+    Pi(&KVal, &KExpr, &KValList),
     Ctor(G, &KLevelList, G, &KValList),
     FVar(G, &KVal, &KValList),
     Const(G, &KLevelList, &KValList),
     Rec(G, &KLevelList, &KValList),
     Proj(G, G, &KVal, &KValList),
-    Thunk(&KExpr, &KValEnv)
+    Thunk(&KExpr, &KValList)
   }
 
-  -- Value environment (de Bruijn indexed, front = most recent binder)
-  enum KValEnv {
-    Cons(&KVal, &KValEnv),
-    Nil
-  }
-
-  -- Value list (for spines, type contexts)
+  -- Value list: used for environments (de Bruijn indexed, front = most recent binder),
+  -- spines (accumulated arguments), and type contexts.
   enum KValList {
     Cons(&KVal, &KValList),
     Nil
