@@ -1239,7 +1239,7 @@ def kernel := ⟦
         let ci = const_list_lookup(top, idx);
         let ty = const_type(ci);
         let ty_inst = expr_inst_levels(ty, lvls);
-        let ty_val = k_eval(ty_inst, KValEnv.Nil, top);
+        let ty_val = k_eval(ty_inst, KValList.Nil, top);
         apply_spine_to_type(ty_val, spine, top),
       KVal.Ctor(idx, &lvls, _, &spine) =>
         let ci = const_list_lookup(top, idx);
@@ -1358,16 +1358,6 @@ def kernel := ⟦
             },
           _ => 0,
         },
-      _ => 0,
-    }
-  }
-
-  -- Try struct eta in both directions
-  fn try_eta_struct(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
-    let r1 = try_eta_struct_one(a, b, depth, top, nat_idx, str_idx);
-    match r1 {
-      1 => 1,
-      0 => try_eta_struct_one(b, a, depth, top, nat_idx, str_idx),
     }
   }
 
@@ -1394,70 +1384,6 @@ def kernel := ⟦
                   _ => 0,
                 },
             },
-          _ => 0,
-        },
-      _ => 0,
-    }
-  }
-
-  fn try_unit_like(a: KVal, b: KVal, top: KConstList, nat_idx: G, str_idx: G) -> G {
-    let a_type = k_infer_val_type(a, top, nat_idx, str_idx);
-    is_unit_like_type(a_type, top)
-  }
-
-  -- ============================================================================
-  -- Definitional equality
-  --
-  -- The most complex part of the kernel. Uses a layered approach:
-  --   1. Quick syntactic check (sorts, literals)
-  --   2. Proof irrelevance (a : Prop ⟹ b : Prop by same-type precondition ⟹ equal)
-  --   3. Structural comparison (k_is_def_eq_core)
-  --   4. Struct eta (s ≡ ⟨s.1, s.2, ...⟩)
-  --   5. Unit-like types (one nullary constructor ⟹ all values equal)
-  --   6. Lazy delta unfolding (try unfolding stuck constants to make progress)
-  -- Precondition: both values are in WHNF and have the same type.
-  -- ============================================================================
-
-  -- Check definitional equality of two WHNF values of the same type.
-  -- Precondition: a and b are in WHNF and have the same type.
-  -- Proof irrelevance: if a : Prop then b : Prop (same type), so both are equal.
-  fn k_is_def_eq(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
-    let quick = k_quick_def_eq(a, b);
-    match quick {
-      1 => 1,
-      0 =>
-        -- Proof irrelevance: if a is a proof (type is Prop), b is also a proof
-        -- (same type), so they are definitionally equal without further comparison.
-        let a_type = k_infer_val_type(a, top, nat_idx, str_idx);
-        let a_is_prop = k_is_prop_val(a_type, top, nat_idx, str_idx);
-        match a_is_prop {
-          1 => 1,
-          0 =>
-            let core_res = k_is_def_eq_core(a, b, depth, top, nat_idx, str_idx);
-            match core_res {
-              0 =>
-                let eta_res = try_eta_struct(a, b, depth, top, nat_idx, str_idx);
-                match eta_res {
-                  1 => 1,
-                  0 => try_unit_like(a, b, top, nat_idx, str_idx),
-                },
-              1 => 1,
-            },
-        },
-    }
-  }
-
-  -- Quick syntactic check for definitional equality (sorts and literals only)
-  fn k_quick_def_eq(a: KVal, b: KVal) -> G {
-    match a {
-      KVal.Srt(&la) =>
-        match b {
-          KVal.Srt(&lb) => level_equal(la, lb),
-          _ => 0,
-        },
-      KVal.Lit(la) =>
-        match b {
-          KVal.Lit(lb) => literal_eq(la, lb),
           _ => 0,
         },
       _ => 0,
@@ -1599,8 +1525,13 @@ def kernel := ⟦
     }
   }
 
-  -- Structural definitional equality after WHNF
-  fn k_is_def_eq_core(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
+  -- ==============================================================================
+  -- Definitional equality
+  -- Precondition: both values are in WHNF and have the same type.
+  -- Srt/Lit arms are inline quick checks. The final _ => arm handles symmetric eta
+  -- ==============================================================================
+
+  fn k_is_def_eq(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
     match a {
       KVal.Srt(&la) =>
         match b {
@@ -1615,136 +1546,150 @@ def kernel := ⟦
             nat_lit_eq_ctor(la, ctor_idx, nparams, ctor_spine, depth, top, nat_idx, str_idx),
           _ => 0,
         },
-
-      KVal.FVar(lvl_a, _, &sp_a) =>
-        match b {
-          KVal.FVar(lvl_b, _, &sp_b) =>
-            let same_lvl = eq_zero(lvl_a - lvl_b);
-            match same_lvl {
-              1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
-              0 => 0,
-            },
-          _ => 0,
-        },
-
-      KVal.Const(idx_a, &lvls_a, &sp_a) =>
-        match b {
-          KVal.Const(idx_b, &lvls_b, &sp_b) =>
-            let same_idx = eq_zero(idx_a - idx_b);
-            match same_idx {
-              1 =>
-                let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
-                match lvls_eq {
-                  1 =>
-                    k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
-                  0 => 0,
-                },
-              0 => 0,
-            },
-          _ => 0,
-        },
-
-      KVal.Rec(idx_a, &lvls_a, &sp_a) =>
-        match b {
-          KVal.Rec(idx_b, &lvls_b, &sp_b) =>
-            let same_idx = eq_zero(idx_a - idx_b);
-            match same_idx {
-              1 =>
-                let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
-                match lvls_eq {
-                  1 =>
-                    k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
-                  0 => 0,
-                },
-              0 => 0,
-            },
-          _ => 0,
-        },
-
-      KVal.Ctor(idx_a, &lvls_a, nparams_a, &sp_a) =>
-        match b {
-          KVal.Ctor(idx_b, &lvls_b, _, &sp_b) =>
-            let same_idx = eq_zero(idx_a - idx_b);
-            match same_idx {
-              1 =>
-                let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
-                match lvls_eq {
-                  1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
-                  0 => 0,
-                },
-              0 => 0,
-            },
-          KVal.Lit(lb) =>
-            nat_lit_eq_ctor(lb, idx_a, nparams_a, sp_a, depth, top, nat_idx, str_idx),
-          _ => 0,
-        },
-
-      KVal.Lam(&dom_a, &body_a, &env_a) =>
-        let dom_a_f = k_force(dom_a, top);
-        match b {
-          KVal.Lam(&dom_b, &body_b, &env_b) =>
-            -- domains are equal by same-type precondition; no need to check
-            let fvar = KVal.FVar(depth, store(dom_a_f), store(KValList.Nil));
-            let env_a2 = KValList.Cons(store(fvar), store(env_a));
-            let env_b2 = KValList.Cons(store(fvar), store(env_b));
-            let va = k_eval(body_a, env_a2, top);
-            let vb = k_eval(body_b, env_b2, top);
-            k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-          _ =>
-            -- Eta: lam vs non-lam
-            let fvar = KVal.FVar(depth, store(dom_a_f), store(KValList.Nil));
-            let env_a2 = KValList.Cons(store(fvar), store(env_a));
-            let va = k_eval(body_a, env_a2, top);
-            let vb = k_apply(b, fvar, top);
-            k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-        },
-
-      KVal.Pi(&dom_a, &body_a, &env_a) =>
-        match b {
-          KVal.Pi(&dom_b, &body_b, &env_b) =>
-            let dom_a_f = k_force(dom_a, top);
-            let dom_b_f = k_force(dom_b, top);
-            let dom_eq = k_is_def_eq(dom_a_f, dom_b_f, depth, top, nat_idx, str_idx);
-            match dom_eq {
-              0 => 0,
-              1 =>
-                let fvar = KVal.FVar(depth, store(dom_a_f), store(KValList.Nil));
-                let env_a2 = KValList.Cons(store(fvar), store(env_a));
-                let env_b2 = KValList.Cons(store(fvar), store(env_b));
-                let va = k_eval(body_a, env_a2, top);
-                let vb = k_eval(body_b, env_b2, top);
-                k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-            },
-          _ => 0,
-        },
-
-      KVal.Proj(tidx_a, fidx_a, &sv_a, &sp_a) =>
-        match b {
-          KVal.Proj(tidx_b, fidx_b, &sv_b, &sp_b) =>
-            let same_tf = eq_zero(tidx_a - tidx_b) * eq_zero(fidx_a - fidx_b);
-            match same_tf {
-              1 =>
-                let sv_eq = k_is_def_eq(sv_a, sv_b, depth, top, nat_idx, str_idx);
-                match sv_eq {
-                  1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
-                  0 => 0,
-                },
-              0 => 0,
-            },
-          _ => 0,
-        },
-
-      -- Eta: non-lam vs lam (symmetric case)
       _ =>
-        match b {
-          KVal.Lam(&dom_b, &body_b, &env_b) =>
-            let dom_b_f = k_force(dom_b, top);
-            let fvar = KVal.FVar(depth, store(dom_b_f), store(KValList.Nil));
-            let va = k_apply(a, fvar, top);
-            let env_b2 = KValList.Cons(store(fvar), store(env_b));
-            let vb = k_eval(body_b, env_b2, top);
-            k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-          _ => 0,
+        -- Proof irrelevance: if a is a proof (type is Prop), b is also a proof
+        -- (same type), so they are definitionally equal without further comparison.
+        let a_type = k_infer_val_type(a, top, nat_idx, str_idx);
+        let a_is_proof = k_is_prop_val(a_type, top, nat_idx, str_idx);
+        let a_is_unit_like = is_unit_like_type(a_type, top);
+        let a_is_neither = (1 - a_is_proof) * (1 - a_is_unit_like);
+        match a_is_neither {
+          0 => 1, -- 0 means either a is proof or a is unit like
+          1 =>
+            match a {
+              KVal.FVar(lvl_a, _, &sp_a) =>
+                match b {
+                  KVal.FVar(lvl_b, _, &sp_b) =>
+                    let same_lvl = eq_zero(lvl_a - lvl_b);
+                    match same_lvl {
+                      1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      0 => 0,
+                    },
+                  _ => 0,
+                },
+
+              KVal.Const(idx_a, &lvls_a, &sp_a) =>
+                match b {
+                  KVal.Const(idx_b, &lvls_b, &sp_b) =>
+                    let same_idx = eq_zero(idx_a - idx_b);
+                    match same_idx {
+                      1 =>
+                        let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                        match lvls_eq {
+                          1 =>
+                            k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                          0 => 0,
+                        },
+                      0 => 0,
+                    },
+                  _ => 0,
+                },
+
+              KVal.Rec(idx_a, &lvls_a, &sp_a) =>
+                match b {
+                  KVal.Rec(idx_b, &lvls_b, &sp_b) =>
+                    let same_idx = eq_zero(idx_a - idx_b);
+                    match same_idx {
+                      1 =>
+                        let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                        match lvls_eq {
+                          1 =>
+                            k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                          0 => 0,
+                        },
+                      0 => 0,
+                    },
+                  _ => 0,
+                },
+
+              KVal.Ctor(idx_a, &lvls_a, nparams_a, &sp_a) =>
+                match b {
+                  KVal.Ctor(idx_b, &lvls_b, _, &sp_b) =>
+                    let same_idx = eq_zero(idx_a - idx_b);
+                    match same_idx {
+                      1 =>
+                        let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                        match lvls_eq {
+                          1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                          0 => 0,
+                        },
+                      0 => 0,
+                    },
+                  KVal.Lit(lb) =>
+                    nat_lit_eq_ctor(lb, idx_a, nparams_a, sp_a, depth, top, nat_idx, str_idx),
+                  -- Try to eta expand `b` since it's something else
+                  _ => try_eta_struct_one(b, a, depth, top, nat_idx, str_idx),
+                },
+
+              KVal.Lam(&dom_a, &body_a, &env_a) =>
+                let dom_a_f = k_force(dom_a, top);
+                match b {
+                  KVal.Lam(&dom_b, &body_b, &env_b) =>
+                    -- domains are equal by same-type precondition; no need to check
+                    let fvar = KVal.FVar(depth, store(dom_a_f), store(KValList.Nil));
+                    let env_a2 = KValList.Cons(store(fvar), store(env_a));
+                    let env_b2 = KValList.Cons(store(fvar), store(env_b));
+                    let va = k_eval(body_a, env_a2, top);
+                    let vb = k_eval(body_b, env_b2, top);
+                    k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
+                  _ =>
+                    -- Eta: lam vs non-lam
+                    let fvar = KVal.FVar(depth, store(dom_a_f), store(KValList.Nil));
+                    let env_a2 = KValList.Cons(store(fvar), store(env_a));
+                    let va = k_eval(body_a, env_a2, top);
+                    let vb = k_apply(b, fvar, top);
+                    k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
+                },
+
+              KVal.Pi(&dom_a, &body_a, &env_a) =>
+                match b {
+                  KVal.Pi(&dom_b, &body_b, &env_b) =>
+                    let dom_a_f = k_force(dom_a, top);
+                    let dom_b_f = k_force(dom_b, top);
+                    let dom_eq = k_is_def_eq(dom_a_f, dom_b_f, depth, top, nat_idx, str_idx);
+                    match dom_eq {
+                      0 => 0,
+                      1 =>
+                        let fvar = KVal.FVar(depth, store(dom_a_f), store(KValList.Nil));
+                        let env_a2 = KValList.Cons(store(fvar), store(env_a));
+                        let env_b2 = KValList.Cons(store(fvar), store(env_b));
+                        let va = k_eval(body_a, env_a2, top);
+                        let vb = k_eval(body_b, env_b2, top);
+                        k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
+                    },
+                  _ => 0,
+                },
+
+              KVal.Proj(tidx_a, fidx_a, &sv_a, &sp_a) =>
+                match b {
+                  KVal.Proj(tidx_b, fidx_b, &sv_b, &sp_b) =>
+                    let same_tf = eq_zero(tidx_a - tidx_b) * eq_zero(fidx_a - fidx_b);
+                    match same_tf {
+                      1 =>
+                        let sv_eq = k_is_def_eq(sv_a, sv_b, depth, top, nat_idx, str_idx);
+                        match sv_eq {
+                          1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                          0 => 0,
+                        },
+                      0 => 0,
+                    },
+                  _ => 0,
+                },
+
+              -- Symmetric eta
+              _ =>
+                match b {
+                  KVal.Lam(&dom_b, &body_b, &env_b) =>
+                    let dom_b_f = k_force(dom_b, top);
+                    let fvar = KVal.FVar(depth, store(dom_b_f), store(KValList.Nil));
+                    let va = k_apply(a, fvar, top);
+                    let env_b2 = KValList.Cons(store(fvar), store(env_b));
+                    let vb = k_eval(body_b, env_b2, top);
+                    k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
+                  KVal.Ctor(_, _, _, _) => try_eta_struct_one(a, b, depth, top, nat_idx, str_idx),
+                  _ => 0,
+                },
+            },
         },
     }
   }
