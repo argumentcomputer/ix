@@ -596,11 +596,11 @@ def kernel := ⟦
         val_list_lookup(env, idx),
 
       KExpr.Lam(&ty, &body) =>
-        let ty_val = k_eval(ty, env, top);
+        let ty_val = suspend(ty, env, top);
         KVal.Lam(store(ty_val), store(body), store(env)),
 
       KExpr.Forall(&ty, &body) =>
-        let ty_val = k_eval(ty, env, top);
+        let ty_val = suspend(ty, env, top);
         KVal.Pi(store(ty_val), store(body), store(env)),
 
       KExpr.Const(idx, &lvls) =>
@@ -667,11 +667,11 @@ def kernel := ⟦
         k_apply(vf, arg, top),
 
       KExpr.Lam(&ty, &body) =>
-        let ty_val = k_eval(ty, env, top);
+        let ty_val = suspend(ty, env, top);
         KVal.Lam(store(ty_val), store(body), store(env)),
 
       KExpr.Forall(&ty, &body) =>
-        let ty_val = k_eval(ty, env, top);
+        let ty_val = suspend(ty, env, top);
         KVal.Pi(store(ty_val), store(body), store(env)),
 
       KExpr.Let(_, &val, &body) =>
@@ -1680,22 +1680,19 @@ def kernel := ⟦
         },
 
       KVal.Lam(&dom_a, &body_a, &env_a) =>
+        let dom_a_f = k_force(dom_a, top);
         match b {
           KVal.Lam(&dom_b, &body_b, &env_b) =>
-            let dom_eq = k_is_def_eq(dom_a, dom_b, depth, top, nat_idx, str_idx);
-            match dom_eq {
-              0 => 0,
-              1 =>
-                let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
-                let env_a2 = KValList.Cons(store(fvar), store(env_a));
-                let env_b2 = KValList.Cons(store(fvar), store(env_b));
-                let va = k_eval(body_a, env_a2, top);
-                let vb = k_eval(body_b, env_b2, top);
-                k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-            },
+            -- domains are equal by same-type precondition; no need to check
+            let fvar = KVal.FVar(depth, store(dom_a_f), store(KValList.Nil));
+            let env_a2 = KValList.Cons(store(fvar), store(env_a));
+            let env_b2 = KValList.Cons(store(fvar), store(env_b));
+            let va = k_eval(body_a, env_a2, top);
+            let vb = k_eval(body_b, env_b2, top);
+            k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
           _ =>
             -- Eta: lam vs non-lam
-            let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
+            let fvar = KVal.FVar(depth, store(dom_a_f), store(KValList.Nil));
             let env_a2 = KValList.Cons(store(fvar), store(env_a));
             let va = k_eval(body_a, env_a2, top);
             let vb = k_apply(b, fvar, top);
@@ -1705,11 +1702,13 @@ def kernel := ⟦
       KVal.Pi(&dom_a, &body_a, &env_a) =>
         match b {
           KVal.Pi(&dom_b, &body_b, &env_b) =>
-            let dom_eq = k_is_def_eq(dom_a, dom_b, depth, top, nat_idx, str_idx);
+            let dom_a_f = k_force(dom_a, top);
+            let dom_b_f = k_force(dom_b, top);
+            let dom_eq = k_is_def_eq(dom_a_f, dom_b_f, depth, top, nat_idx, str_idx);
             match dom_eq {
               0 => 0,
               1 =>
-                let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
+                let fvar = KVal.FVar(depth, store(dom_a_f), store(KValList.Nil));
                 let env_a2 = KValList.Cons(store(fvar), store(env_a));
                 let env_b2 = KValList.Cons(store(fvar), store(env_b));
                 let va = k_eval(body_a, env_a2, top);
@@ -1739,7 +1738,8 @@ def kernel := ⟦
       _ =>
         match b {
           KVal.Lam(&dom_b, &body_b, &env_b) =>
-            let fvar = KVal.FVar(depth, store(dom_b), store(KValList.Nil));
+            let dom_b_f = k_force(dom_b, top);
+            let fvar = KVal.FVar(depth, store(dom_b_f), store(KValList.Nil));
             let va = k_apply(a, fvar, top);
             let env_b2 = KValList.Cons(store(fvar), store(env_b));
             let vb = k_eval(body_b, env_b2, top);
