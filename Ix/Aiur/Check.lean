@@ -134,7 +134,6 @@ structure CheckContext where
   decls : Decls
   varTypes : Std.HashMap Local Typ
   returnType : Typ
-  unconstrained : Bool
 
 abbrev CheckM := ReaderT CheckContext (Except CheckError)
 
@@ -168,6 +167,11 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
   | .let pat expr body => inferLet pat expr body
   | .match term branches => inferMatch term branches
   | .app func args => inferApplication func args
+  | .appUnconstrained func args => do
+    let result ← inferApplication func args
+    match result.inner with
+    | .app g as => pure { result with inner := .appUnconstrained g as }
+    | _ => pure result
   | .ann typ term => do
     pure ⟨typ, ← checkNoEscape term typ, false⟩
   | .proj tup i => inferProj tup i
@@ -506,7 +510,6 @@ def getFunctionContext (function : Function) (decls : Decls) : CheckContext :=
     decls,
     varTypes := .ofList function.inputs
     returnType := function.output
-    unconstrained := function.unconstrained
   }
 
 /--
@@ -548,7 +551,7 @@ def checkFunction (function : Function) : CheckM TypedFunction := do
   let body ← inferTerm function.body
   unless body.escapes do
     unless body.typ == function.output do throw $ .typeMismatch body.typ function.output
-  pure ⟨function.name, function.inputs, function.output, body, function.unconstrained⟩
+  pure ⟨function.name, function.inputs, function.output, body, function.entry⟩
 
 end Aiur
 

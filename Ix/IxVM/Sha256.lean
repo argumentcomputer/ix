@@ -8,19 +8,19 @@ namespace IxVM
 def sha256 := ⟦
   /- # Test entrypoints -/
 
-  fn sha256_test() -> [[G; 4]; 8] {
+  pub fn sha256_test() -> [[G; 4]; 8] {
     let (idx, len) = io_get_info([0]);
-    let byte_stream = read_byte_stream(idx, len);
+    let byte_stream = #read_byte_stream(idx, len);
     sha256(byte_stream)
   }
 
   /- # Benchmark entrypoints -/
 
-  fn sha256_bench(num_hashes: G) -> G {
+  pub fn sha256_bench(num_hashes: G) -> G {
     let num_hashes_pred = num_hashes - 1;
     let key = [num_hashes_pred];
     let (idx, len) = io_get_info(key);
-    let byte_stream = read_byte_stream(idx, len);
+    let byte_stream = #read_byte_stream(idx, len);
     let _ = sha256(byte_stream);
     match num_hashes_pred {
       0 => 0,

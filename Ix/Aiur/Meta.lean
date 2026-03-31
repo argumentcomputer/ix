@@ -108,6 +108,8 @@ syntax "let " pattern (":" typ)? " = " trm                    : trm
 syntax "match " trm " { " (pattern " => " trm ", ")+ " }"     : trm
 syntax ("." noWs)? ident "(" ")"                              : trm
 syntax ("." noWs)? ident "(" trm (", " trm)* ")"              : trm
+syntax "#" noWs ("." noWs)? ident "(" ")"                     : trm
+syntax "#" noWs ("." noWs)? ident "(" trm (", " trm)* ")"    : trm
 syntax:50 trm " + " trm                                       : trm
 syntax:50 trm " - " trm                                       : trm
 syntax trm " * " trm:51                                       : trm
@@ -197,6 +199,12 @@ partial def elabTrm : ElabStxCat `trm
   | `(trm| $[.]?$f:ident ($a:trm $[, $as:trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
     mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term]
+  | `(trm| #$[.]?$f:ident()) => do
+    let g ← mkAppM ``Global.mk #[toExpr f.getId]
+    mkAppM ``Term.appUnconstrained #[g, ← elabEmptyList ``Term]
+  | `(trm| #$[.]?$f:ident($a:trm $[, $as:trm]*)) => do
+    let g ← mkAppM ``Global.mk #[toExpr f.getId]
+    mkAppM ``Term.appUnconstrained #[g, ← elabList a as elabTrm ``Term]
   | `(trm| $a:trm + $b:trm) => do
     mkAppM ``Term.add #[← elabTrm a, ← elabTrm b]
   | `(trm| $a:trm - $b:trm) => do
@@ -321,6 +329,11 @@ where
       let as ← as.mapM $ replaceToken old new
       if dot.isSome then `(trm| .$f:ident ($a $[, $as]*))
       else `(trm| $f:ident ($a $[, $as]*))
+    | `(trm| #$[.%$dot]?$f:ident($a:trm $[, $as:trm]*)) => do
+      let a ← replaceToken old new a
+      let as ← as.mapM $ replaceToken old new
+      if dot.isSome then `(trm| #.$f:ident($a $[, $as]*))
+      else `(trm| #$f:ident($a $[, $as]*))
     | `(trm| $a + $b) => do
       let a ← replaceToken old new a
       let b ← replaceToken old new b
@@ -478,25 +491,25 @@ def elabBind : ElabStxCat `bind
     | _ => throw $ .error i "Illegal variable name"
   | stx => throw $ .error stx "Invalid syntax for binding"
 
-declare_syntax_cat                                                                              function
-syntax ("#[unconstrained] ")? "fn " ident "(" ")" (" -> " typ)? "{" trm "}"                   : function
-syntax ("#[unconstrained] ")? "fn " ident "(" bind (", " bind)* ")" (" -> " typ)? "{" trm "}" : function
+declare_syntax_cat                                                                 function
+syntax ("pub ")? "fn " ident "(" ")" (" -> " typ)? "{" trm "}"                   : function
+syntax ("pub ")? "fn " ident "(" bind (", " bind)* ")" (" -> " typ)? "{" trm "}" : function
 
 def elabFunction : ElabStxCat `function
-  | `(function| $[#[unconstrained]%$u]? fn $i:ident() $[-> $ty:typ]? {$t:trm}) => do
+  | `(function| $[pub%$e]? fn $i:ident() $[-> $ty:typ]? {$t:trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    let u := elabUnconstrainedBool u
-    mkAppM ``Function.mk #[g, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t, u]
-  | `(function| $[#[unconstrained]%$u]? fn $i:ident($b:bind $[, $bs:bind]*) $[-> $ty:typ]? {$t:trm}) => do
+    let e := elabEntryBool e
+    mkAppM ``Function.mk #[g, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t, e]
+  | `(function| $[pub%$e]? fn $i:ident($b:bind $[, $bs:bind]*) $[-> $ty:typ]? {$t:trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    let u := elabUnconstrainedBool u
+    let e := elabEntryBool e
     mkAppM ``Function.mk
-      #[g, ← elabListCore b bs elabBind bindType, ← elabRetTyp ty, ← elabTrm t, u]
+      #[g, ← elabListCore b bs elabBind bindType, ← elabRetTyp ty, ← elabTrm t, e]
   | stx => throw $ .error stx "Invalid syntax for function"
 where
-  elabUnconstrainedBool : Option Syntax → Expr
+  elabEntryBool : Option Syntax → Expr
     | none => mkConst ``Bool.false
     | some _ => mkConst ``Bool.true
   elabRetTyp : Option (TSyntax `typ) → TermElabM Expr

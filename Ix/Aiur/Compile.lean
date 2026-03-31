@@ -30,7 +30,7 @@ structure LayoutMState where
 @[inline] def LayoutMState.new (inputSize : Nat) : LayoutMState :=
   ⟨{ inputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, Array.replicate inputSize 1⟩
 
-abbrev LayoutM := ReaderT TypedDecls $ StateM LayoutMState
+abbrev LayoutM := StateM LayoutMState
 
 @[inline] def bumpSelectors (n : Nat := 1) : LayoutM Unit :=
   modify fun stt => { stt with
@@ -95,11 +95,13 @@ def opLayout : Bytecode.Op → LayoutM Unit
     else
       pushDegree 1
       bumpAuxiliaries 2
-  | .call funIdx _ outputSize => do
+  | .call _ _ outputSize => do
     pushDegrees $ .replicate outputSize 1
     bumpAuxiliaries outputSize
-    let decls ← read
-    if !decls.isUnconstrainedFunction funIdx then bumpLookups
+    bumpLookups
+  | .callUnconstrained _ _ outputSize => do
+    pushDegrees $ .replicate outputSize 1
+    bumpAuxiliaries outputSize
   | .store values => do
     pushDegree 1
     bumpAuxiliaries
@@ -344,6 +346,19 @@ partial def toIndex
         pure $ index ++ Array.replicate (size - index.size) padding
       else
         pure index
+    | _ => throw "Should not happen after typechecking"
+  | .appUnconstrained name@(⟨.str .anonymous unqualifiedName⟩) args =>
+    match bindings.get? (.str unqualifiedName) with
+    | some _ => throw "Dynamic unconstrained calls not yet implemented"
+    | none => match layoutMap[name]! with
+      | .function layout => do
+        let args ← buildArgs args
+        pushOp (Bytecode.Op.callUnconstrained layout.index args layout.outputSize) layout.outputSize
+      | _ => throw "Should not happen after typechecking"
+  | .appUnconstrained name args => match layoutMap[name]! with
+    | .function layout => do
+      let args ← buildArgs args
+      pushOp (Bytecode.Op.callUnconstrained layout.index args layout.outputSize) layout.outputSize
     | _ => throw "Should not happen after typechecking"
   -- | .preimg name@(⟨.str .anonymous unqualifiedName⟩) out =>
   --   match bindings.get? (.str unqualifiedName) with
@@ -642,7 +657,7 @@ partial def addCase
 
 end
 
-def TypedFunction.compile (decls : TypedDecls) (layoutMap : LayoutMap) (f : TypedFunction) :
+def TypedFunction.compile (layoutMap : LayoutMap) (f : TypedFunction) :
     Except String (Bytecode.Block × Bytecode.LayoutMState) := do
   let (inputSize, _outputSize) ← match layoutMap[f.name]? with
     | some (.function layout) => pure (layout.inputSize, layout.outputSize)
@@ -658,7 +673,7 @@ def TypedFunction.compile (decls : TypedDecls) (layoutMap : LayoutMap) (f : Type
   match f.body.compile f.output layoutMap bindings |>.run state with
   | .error e _ => throw e
   | .ok body _ =>
-    let (_, layoutMState) := Bytecode.blockLayout body |>.run decls (.new inputSize)
+    let (_, layoutMState) := Bytecode.blockLayout body |>.run (.new inputSize)
     pure (body, layoutMState)
 
 def TypedDecls.compile (decls : TypedDecls) : Except String Bytecode.Toplevel := do
@@ -667,8 +682,8 @@ def TypedDecls.compile (decls : TypedDecls) : Except String Bytecode.Toplevel :=
   let (functions, memSizes) ← decls.foldlM (init := (#[], initMemSizes))
     fun acc@(functions, memSizes) (_, decl) => match decl with
       | .function function => do
-        let (body, layoutMState) ← function.compile decls layout
-        let function := ⟨body, layoutMState.functionLayout, function.unconstrained⟩
+        let (body, layoutMState) ← function.compile layout
+        let function := ⟨body, layoutMState.functionLayout, function.entry⟩
         let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
         pure (functions.push function, memSizes)
       | _ => pure acc

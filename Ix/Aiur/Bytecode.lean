@@ -18,6 +18,7 @@ inductive Op
   | mul : ValIdx → ValIdx → Op
   | eqZero : ValIdx → Op
   | call : FunIdx → Array ValIdx → (outputSize : Nat) → Op
+  | callUnconstrained : FunIdx → Array ValIdx → (outputSize : Nat) → Op
   | store : Array ValIdx → Op
   | load : (size : Nat) → ValIdx → Op
   | assertEq : Array ValIdx → Array ValIdx → Op
@@ -69,7 +70,7 @@ structure FunctionLayout where
 structure Function where
   body : Block
   layout: FunctionLayout
-  unconstrained : Bool
+  entry : Bool
   deriving Inhabited, Repr
 
 structure Toplevel where

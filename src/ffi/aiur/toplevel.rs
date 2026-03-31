@@ -47,25 +47,32 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       Op::Call(fun_idx, val_idxs, output_size)
     },
     6 => {
+      let [fun_idx, val_idxs, output_size] = ctor.objs::<3>();
+      let fun_idx = lean_unbox_nat_as_usize(&fun_idx);
+      let val_idxs = decode_vec_val_idx(val_idxs);
+      let output_size = lean_unbox_nat_as_usize(&output_size);
+      Op::CallUnconstrained(fun_idx, val_idxs, output_size)
+    },
+    7 => {
       let [val_idxs] = ctor.objs::<1>();
       Op::Store(decode_vec_val_idx(val_idxs))
     },
-    7 => {
+    8 => {
       let [width, val_idx] = ctor.objs::<2>();
       Op::Load(
         lean_unbox_nat_as_usize(&width),
         lean_unbox_nat_as_usize(&val_idx),
       )
     },
-    8 => {
+    9 => {
       let [a, b] = ctor.objs::<2>();
       Op::AssertEq(decode_vec_val_idx(a), decode_vec_val_idx(b))
     },
-    9 => {
+    10 => {
       let [key] = ctor.objs::<1>();
       Op::IOGetInfo(decode_vec_val_idx(key))
     },
-    10 => {
+    11 => {
       let [key, idx, len] = ctor.objs::<3>();
       Op::IOSetInfo(
         decode_vec_val_idx(key),
@@ -73,55 +80,55 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
         lean_unbox_nat_as_usize(&len),
       )
     },
-    11 => {
+    12 => {
       let [idx, len] = ctor.objs::<2>();
       Op::IORead(lean_unbox_nat_as_usize(&idx), lean_unbox_nat_as_usize(&len))
     },
-    12 => {
+    13 => {
       let [data] = ctor.objs::<1>();
       Op::IOWrite(decode_vec_val_idx(data))
     },
-    13 => {
+    14 => {
       let [byte] = ctor.objs::<1>();
       Op::U8BitDecomposition(lean_unbox_nat_as_usize(&byte))
     },
-    14 => {
+    15 => {
       let [byte] = ctor.objs::<1>();
       Op::U8ShiftLeft(lean_unbox_nat_as_usize(&byte))
     },
-    15 => {
+    16 => {
       let [byte] = ctor.objs::<1>();
       Op::U8ShiftRight(lean_unbox_nat_as_usize(&byte))
     },
-    16 => {
+    17 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::U8Xor(i, j)
     },
-    17 => {
+    18 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::U8Add(i, j)
     },
-    18 => {
+    19 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::U8Sub(i, j)
     },
-    19 => {
+    20 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::U8And(i, j)
     },
-    20 => {
+    21 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::U8Or(i, j)
     },
-    21 => {
+    22 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::U8LessThan(i, j)
     },
-    22 => {
+    23 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::U32LessThan(i, j)
     },
-    23 => {
+    24 => {
       let [label_obj, idxs_obj] = ctor.objs::<2>();
       let label = label_obj.as_string().to_string();
       let idxs = if idxs_obj.is_scalar() {
@@ -190,11 +197,11 @@ fn decode_function_layout(ctor: LeanCtor<LeanBorrowed<'_>>) -> FunctionLayout {
 }
 
 fn decode_function(ctor: LeanCtor<LeanBorrowed<'_>>) -> Function {
-  let [body_obj, layout_obj, unconstrained_obj] = ctor.objs::<3>();
+  let [body_obj, layout_obj, entry_obj] = ctor.objs::<3>();
   let body = decode_block(body_obj.as_ctor());
   let layout = decode_function_layout(layout_obj.as_ctor());
-  let unconstrained = unconstrained_obj.as_enum_tag() != 0;
-  Function { body, layout, unconstrained }
+  let entry = entry_obj.as_enum_tag() != 0;
+  Function { body, layout, entry }
 }
 
 pub(crate) fn decode_toplevel(

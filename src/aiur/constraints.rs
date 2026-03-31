@@ -120,17 +120,13 @@ impl Toplevel {
       lookups: vec![Lookup::empty(); function.layout.lookups],
       constraints,
     };
-    function.build_constraints(&mut state, self);
+    function.build_constraints(&mut state);
     (state.constraints, state.lookups)
   }
 }
 
 impl Function {
-  fn build_constraints(
-    &self,
-    state: &mut ConstraintState,
-    toplevel: &Toplevel,
-  ) {
+  fn build_constraints(&self, state: &mut ConstraintState) {
     // the first columns are occupied by the input, which is also mapped
     state.column += self.layout.input_size;
     (0..self.layout.input_size).for_each(|i| state.map.push((var(i), 1)));
@@ -151,22 +147,14 @@ impl Function {
       .constraints
       .zeros
       .push(multiplicity * (Expr::from(G::ONE) - sel.clone()));
-    self.body.collect_constraints(sel, state, toplevel);
+    self.body.collect_constraints(sel, state);
   }
 }
 
 impl Block {
-  fn collect_constraints(
-    &self,
-    sel: Expr,
-    state: &mut ConstraintState,
-    toplevel: &Toplevel,
-  ) {
-    self
-      .ops
-      .iter()
-      .for_each(|op| op.collect_constraints(&sel, state, toplevel));
-    self.ctrl.collect_constraints(sel, state, toplevel);
+  fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState) {
+    self.ops.iter().for_each(|op| op.collect_constraints(&sel, state));
+    self.ctrl.collect_constraints(sel, state);
   }
 
   fn get_block_selector(&self, state: &mut ConstraintState) -> Expr {
@@ -178,12 +166,7 @@ impl Block {
 
 impl Ctrl {
   #[allow(clippy::needless_pass_by_value)]
-  fn collect_constraints(
-    &self,
-    sel: Expr,
-    state: &mut ConstraintState,
-    toplevel: &Toplevel,
-  ) {
+  fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState) {
     match self {
       Ctrl::Return(_, values) => {
         // channel and function index
@@ -213,7 +196,7 @@ impl Ctrl {
             .constraints
             .zeros
             .push(branch_sel.clone() * (var.clone() - Expr::from(value)));
-          branch.collect_constraints(branch_sel, state, toplevel);
+          branch.collect_constraints(branch_sel, state);
           state.restore(&init);
         }
         if let Some(branch) = def {
@@ -226,7 +209,7 @@ impl Ctrl {
                   - Expr::from(G::ONE)),
             );
           }
-          branch.collect_constraints(branch_sel, state, toplevel);
+          branch.collect_constraints(branch_sel, state);
         }
       },
     }
@@ -234,12 +217,7 @@ impl Ctrl {
 }
 
 impl Op {
-  fn collect_constraints(
-    &self,
-    sel: &Expr,
-    state: &mut ConstraintState,
-    toplevel: &Toplevel,
-  ) {
+  fn collect_constraints(&self, sel: &Expr, state: &mut ConstraintState) {
     match self {
       Op::Const(f) => state.map.push(((*f).into(), 0)),
       Op::Add(a, b) => {
@@ -292,18 +270,6 @@ impl Op {
         }
       },
       Op::Call(function_index, inputs, output_size) => {
-        if toplevel.functions[*function_index].unconstrained {
-          // The callee is unconstrained and isn't going to pull its claim.
-          // Therefore we don't push it.
-
-          // Just feed the map with the output and move on.
-          for _ in 0..*output_size {
-            let col = state.next_auxiliary();
-            state.map.push((col.clone(), 1));
-          }
-          return;
-        }
-
         // channel and function index
         let mut lookup_args = vec![
           sel.clone() * function_channel(),
@@ -324,6 +290,13 @@ impl Op {
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
         lookup.multiplicity += sel.clone();
+      },
+      Op::CallUnconstrained(_, _, output_size) => {
+        // No lookup constraint -- unconstrained call
+        for _ in 0..*output_size {
+          let col = state.next_auxiliary();
+          state.map.push((col.clone(), 1));
+        }
       },
       Op::Store(values) => {
         let size = values.len();

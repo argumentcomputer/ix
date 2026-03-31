@@ -10,7 +10,7 @@ pub struct Toplevel {
 pub struct Function {
   pub(crate) body: Block,
   pub(crate) layout: FunctionLayout,
-  pub(crate) unconstrained: bool,
+  pub(crate) entry: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -41,6 +41,7 @@ pub enum Op {
   Mul(ValIdx, ValIdx),
   EqZero(ValIdx),
   Call(FunIdx, Vec<ValIdx>, usize),
+  CallUnconstrained(FunIdx, Vec<ValIdx>, usize),
   Store(Vec<ValIdx>),
   Load(usize, ValIdx),
   AssertEq(Vec<ValIdx>, Vec<ValIdx>),
@@ -69,3 +70,56 @@ pub enum Ctrl {
 pub type SelIdx = usize;
 pub type ValIdx = usize;
 pub type FunIdx = usize;
+
+impl Block {
+  /// Recursively visits every `Op` in this block and its sub-blocks.
+  pub fn for_each_op(&self, f: &mut impl FnMut(&Op)) {
+    for op in &self.ops {
+      f(op);
+    }
+    match &self.ctrl {
+      Ctrl::Match(_, cases, default) => {
+        for block in cases.values() {
+          block.for_each_op(f);
+        }
+        if let Some(block) = default {
+          block.for_each_op(f);
+        }
+      },
+      Ctrl::Return(..) => {},
+    }
+  }
+}
+
+impl Toplevel {
+  /// A function needs a circuit iff it is reachable from an entry point
+  /// through a chain of `Op::Call` edges. `Op::CallUnconstrained` edges
+  /// do NOT propagate circuit-need, because once execution enters
+  /// unconstrained mode it cascades to all sub-calls.
+  pub fn needs_circuit(&self) -> Vec<bool> {
+    let n = self.functions.len();
+    let mut needs = vec![false; n];
+    let mut stack: Vec<usize> = Vec::new();
+
+    // Seed: every entry function needs a circuit
+    for (i, f) in self.functions.iter().enumerate() {
+      if f.entry {
+        needs[i] = true;
+        stack.push(i);
+      }
+    }
+
+    // BFS along Op::Call edges (NOT CallUnconstrained)
+    while let Some(fi) = stack.pop() {
+      self.functions[fi].body.for_each_op(&mut |op| {
+        if let Op::Call(callee, _, _) = op
+          && !needs[*callee]
+        {
+          needs[*callee] = true;
+          stack.push(*callee);
+        }
+      });
+    }
+    needs
+  }
+}

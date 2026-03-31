@@ -17,13 +17,13 @@ namespace IxVM
 def entrypoints := ⟦
   /- # Test entrypoints -/
 
-  fn ixon_serde_test(n: G) {
+  pub fn ixon_serde_test(n: G) {
     match n {
       0 => (),
       _ =>
         let n_minus_1 = n - 1;
         let (idx, len) = io_get_info([n_minus_1]);
-        let bytes = read_byte_stream(idx, len);
+        let bytes = #read_byte_stream(idx, len);
         let (const, rest) = get_constant(bytes);
         assert_eq!(rest, ByteStream.Nil);
         let bytes2 = put_constant(const, ByteStream.Nil);
@@ -32,7 +32,7 @@ def entrypoints := ⟦
     }
   }
 
-  fn kernel_check_test(target_addr: [G; 32]) {
+  pub fn kernel_check_test(target_addr: [G; 32]) {
     let (k_consts, nat_idx, str_idx) = ingress_with_primitives(target_addr);
     k_check_all_go(k_consts, k_consts, nat_idx, str_idx, 0)
   }
@@ -123,19 +123,19 @@ def entrypoints := ⟦
       KLevel.Zero), 1);
   }
 
-  fn kernel_unit_tests() {
+  pub fn kernel_unit_tests() {
     level_cmp_tests()
   }
 
   /- # Benchmark entrypoints -/
 
-  fn ixon_serde_blake3_bench(n: G) {
+  pub fn ixon_serde_blake3_bench(n: G) {
     match n {
       0 => (),
       _ =>
         let n_minus_1 = n - 1;
         let (idx, len) = io_get_info([n_minus_1]);
-        let bytes = read_byte_stream(idx, len);
+        let bytes = #read_byte_stream(idx, len);
         let (const, rest) = get_constant(bytes);
         assert_eq!(rest, ByteStream.Nil);
         let bytes2 = put_constant(const, ByteStream.Nil);

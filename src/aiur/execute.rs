@@ -81,6 +81,7 @@ impl Toplevel {
     args: Vec<G>,
     io_buffer: &mut IOBuffer,
   ) -> (QueryRecord, Vec<G>) {
+    assert!(self.functions[fun_idx].entry, "Cannot execute non-entry function");
     let mut record = QueryRecord::new(self);
     let function = &self.functions[fun_idx];
     let output = function.execute(fun_idx, args, self, &mut record, io_buffer);
@@ -117,7 +118,7 @@ impl Function {
       };
     }
     push_block_exec_entries!(&self.body);
-    let mut unconstrained = self.unconstrained;
+    let mut unconstrained = false;
     while let Some(exec_entry) = exec_entries_stack.pop() {
       match exec_entry {
         ExecEntry::Op(Op::Const(c)) => map.push(*c),
@@ -151,17 +152,32 @@ impl Function {
             map.extend(result.output.clone());
           } else {
             let saved_map = std::mem::replace(&mut map, args);
-            // Save the current caller state.
             callers_states_stack.push(CallerState {
               fun_idx,
               map: saved_map,
               unconstrained,
             });
-            // Prepare outer variables to go into the new func scope.
             fun_idx = *callee_idx;
-            let function = &toplevel.functions[fun_idx];
-            unconstrained |= function.unconstrained;
-            push_block_exec_entries!(&function.body);
+            push_block_exec_entries!(&toplevel.functions[fun_idx].body);
+          }
+        },
+        ExecEntry::Op(Op::CallUnconstrained(callee_idx, args, _)) => {
+          let args = args.iter().map(|i| map[*i]).collect();
+          if let Some(result) =
+            record.function_queries[*callee_idx].get_mut(&args)
+          {
+            // Don't bump multiplicity -- unconstrained call
+            map.extend(result.output.clone());
+          } else {
+            let saved_map = std::mem::replace(&mut map, args);
+            callers_states_stack.push(CallerState {
+              fun_idx,
+              map: saved_map,
+              unconstrained,
+            });
+            fun_idx = *callee_idx;
+            unconstrained = true; // forced by call site
+            push_block_exec_entries!(&toplevel.functions[fun_idx].body);
           }
         },
         ExecEntry::Op(Op::Store(values)) => {

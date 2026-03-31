@@ -74,6 +74,7 @@ inductive Term
   | let : Pattern → Term → Term → Term
   | match : Term → List (Pattern × Term) → Term
   | app : Global → List Term → Term
+  | appUnconstrained : Global → List Term → Term
   | add : Term → Term → Term
   | sub : Term → Term → Term
   | mul : Term → Term → Term
@@ -123,6 +124,7 @@ inductive TypedTermInner
   | let : Pattern → TypedTerm → TypedTerm → TypedTermInner
   | match : TypedTerm → List (Pattern × TypedTerm) → TypedTermInner
   | app : Global → List TypedTerm → TypedTermInner
+  | appUnconstrained : Global → List TypedTerm → TypedTermInner
   | add : TypedTerm → TypedTerm → TypedTermInner
   | sub : TypedTerm → TypedTerm → TypedTermInner
   | mul : TypedTerm → TypedTerm → TypedTermInner
@@ -186,7 +188,7 @@ structure Function where
   inputs : List (Local × Typ)
   output : Typ
   body : Term
-  unconstrained : Bool
+  entry : Bool
   deriving Repr
 
 structure Toplevel where
@@ -235,7 +237,7 @@ structure TypedFunction where
   inputs : List (Local × Typ)
   output : Typ
   body : TypedTerm
-  unconstrained : Bool
+  entry : Bool
   deriving Repr
 
 inductive TypedDeclaration
@@ -245,11 +247,6 @@ inductive TypedDeclaration
   deriving Repr, Inhabited
 
 abbrev TypedDecls := IndexMap Global TypedDeclaration
-
-def TypedDecls.isUnconstrainedFunction (decls : TypedDecls) (funIdx : Nat) : Bool :=
-  match decls.getByIdx funIdx with
-  | some (_, .function f,) => f.unconstrained
-  | _ => false
 
 mutual
 
