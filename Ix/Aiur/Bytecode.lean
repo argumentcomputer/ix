@@ -37,7 +37,7 @@ inductive Op
   | u8LessThan : ValIdx → ValIdx → Op
   | u32LessThan : ValIdx → ValIdx → Op
   | debug : String → Option (Array ValIdx) → Op
-  deriving Repr
+  deriving Repr, BEq, Hashable
 
 mutual
   inductive Ctrl where
@@ -53,6 +53,8 @@ mutual
     deriving Inhabited, Repr
 end
 
+deriving instance BEq, Hashable for Ctrl, Block
+
 /-- The circuit layout of a function -/
 structure FunctionLayout where
   inputSize : Nat
@@ -65,7 +67,7 @@ structure FunctionLayout where
   /-- Lookups can be shared across calls, stores, loads and returns from
     different paths. -/
   lookups : Nat
-  deriving Inhabited, Repr
+  deriving Inhabited, Repr, BEq, Hashable
 
 structure Function where
   body : Block

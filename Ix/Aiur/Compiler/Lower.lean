@@ -1,179 +1,19 @@
 module
 public import Std.Data.HashMap
-public import Lean.Data.RBTree
 public import Ix.Aiur.Term
-public import Ix.Aiur.Bytecode
+public import Ix.Aiur.Compiler.Layout
+
+/-!
+Bytecode lowering: translates typed Aiur terms into flat bytecode (`Bytecode.Toplevel`).
+
+Handles type-level layout computation (mapping data types and functions to their sizes
+and offsets), then compiles each `TypedFunction` body into a `Bytecode.Block` of ops
+and control flow. The entry point is `TypedDecls.toBytecode`.
+-/
 
 public section
 
 namespace Aiur
-
-namespace Bytecode
-
-structure SharedData where
-  auxiliaries : Nat
-  lookups : Nat
-
-def SharedData.maximals (a b : SharedData) : SharedData := {
-  auxiliaries := a.auxiliaries.max b.auxiliaries
-  lookups := a.lookups.max b.lookups
-}
-
-abbrev MemSizes := Lean.RBTree Nat compare
-
-structure LayoutMState where
-  functionLayout : FunctionLayout
-  memSizes : MemSizes
-  degrees : Array Nat
-
-/-- A new `LayoutMState` starts with one auxiliar for the multiplicity. -/
-@[inline] def LayoutMState.new (inputSize : Nat) : LayoutMState :=
-  ⟨{ inputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, Array.replicate inputSize 1⟩
-
-abbrev LayoutM := StateM LayoutMState
-
-@[inline] def bumpSelectors (n : Nat := 1) : LayoutM Unit :=
-  modify fun stt => { stt with
-    functionLayout := { stt.functionLayout with selectors := stt.functionLayout.selectors + n } }
-
-@[inline] def bumpLookups (n : Nat := 1) : LayoutM Unit :=
-  modify fun stt => { stt with
-    functionLayout := { stt.functionLayout with lookups := stt.functionLayout.lookups + n } }
-
-@[inline] def bumpAuxiliaries (n : Nat := 1) : LayoutM Unit :=
-  modify fun stt => { stt with
-    functionLayout := { stt.functionLayout with auxiliaries := stt.functionLayout.auxiliaries + n } }
-
-@[inline] def addMemSize (size : Nat) : LayoutM Unit :=
-  modify fun stt => { stt with memSizes := stt.memSizes.insert size }
-
-@[inline] def pushDegree (degree : Nat) : LayoutM Unit :=
-  modify fun stt => { stt with degrees := stt.degrees.push degree }
-
-@[inline] def pushDegrees (degrees : Array Nat) : LayoutM Unit :=
-  modify fun stt => { stt with degrees := stt.degrees ++ degrees }
-
-@[inline] def getDegrees : LayoutM $ Array Nat :=
-  get >>= (pure ·.degrees)
-
-@[inline] def getDegree (v : ValIdx) : LayoutM Nat :=
-  get >>= fun stt => pure stt.degrees[v]!
-
-@[inline] def setDegrees (degrees : Array Nat) : LayoutM Unit :=
-  modify fun stt => { stt with degrees }
-
-def getSharedData : LayoutM SharedData :=
-  get >>= fun stt =>
-    pure {
-      auxiliaries := stt.functionLayout.auxiliaries
-      lookups := stt.functionLayout.lookups
-    }
-
-def setSharedData (sharedData : SharedData) : LayoutM Unit :=
-  modify fun stt => { stt with functionLayout := { stt.functionLayout with
-    auxiliaries := sharedData.auxiliaries
-    lookups := sharedData.lookups } }
-
-def opLayout : Bytecode.Op → LayoutM Unit
-  | .const _ => pushDegree 0
-  | .add a b | .sub a b => do
-    let aDegree ← getDegree a
-    let bDegree ← getDegree b
-    pushDegree $ aDegree.max bDegree
-  | .mul a b => do
-    let aDegree ← getDegree a
-    let bDegree ← getDegree b
-    let degree := aDegree + bDegree
-    if degree < 2 then
-      pushDegree degree
-    else
-      pushDegree 1
-      bumpAuxiliaries
-  | .eqZero a => do
-    let degree ← getDegree a
-    if degree = 0 then pushDegree 0
-    else
-      pushDegree 1
-      bumpAuxiliaries 2
-  | .call _ _ outputSize => do
-    pushDegrees $ .replicate outputSize 1
-    bumpAuxiliaries outputSize
-    bumpLookups
-  | .callUnconstrained _ _ outputSize => do
-    pushDegrees $ .replicate outputSize 1
-    bumpAuxiliaries outputSize
-  | .store values => do
-    pushDegree 1
-    bumpAuxiliaries
-    bumpLookups
-    addMemSize values.size
-  | .load size _ => do
-    pushDegrees $ .replicate size 1
-    bumpAuxiliaries size
-    bumpLookups
-    addMemSize size
-  | .assertEq .. => pure ()
-  | .ioGetInfo _ => do
-    pushDegrees #[1, 1]
-    bumpAuxiliaries 2
-  | .ioSetInfo .. => pure ()
-  | .ioRead _ len => do
-    pushDegrees $ .replicate len 1
-    bumpAuxiliaries len
-  | .ioWrite .. => pure ()
-  | .u8BitDecomposition _ => do
-    pushDegrees $ .replicate 8 1
-    bumpAuxiliaries 8
-    bumpLookups
-  | .u8ShiftLeft _ | .u8ShiftRight _ | .u8Xor .. | .u8And .. | .u8Or .. => do
-    pushDegree 1
-    bumpAuxiliaries
-    bumpLookups
-  | .u8Add .. | .u8Sub .. => do
-    pushDegrees #[1, 1]
-    bumpAuxiliaries 2
-    bumpLookups
-  | .u8LessThan .. => do
-    pushDegree 1
-    bumpAuxiliaries
-    bumpLookups
-  | .u32LessThan .. => do
-    pushDegree 1
-    bumpAuxiliaries 12
-    bumpLookups 6
-  | .debug .. => pure ()
-
-partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
-  block.ops.forM opLayout
-  match block.ctrl with
-  | .match _ branches defaultBranch =>
-    let initSharedData ← getSharedData
-    let mut maximalSharedData := initSharedData
-    let mut degrees ← getDegrees
-    for (_, block) in branches do
-      setSharedData initSharedData
-      blockLayout block
-      let blockSharedData ← getSharedData
-      maximalSharedData := maximalSharedData.maximals blockSharedData
-      setDegrees degrees
-    if let some defaultBlock := defaultBranch then
-      setSharedData initSharedData
-      -- An auxiliary per case for proving inequality
-      bumpAuxiliaries branches.size
-      blockLayout defaultBlock
-      let defaultBlockSharedData ← getSharedData
-      maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
-      setDegrees degrees
-    setSharedData maximalSharedData
-  | .return .. =>
-    bumpSelectors
-    bumpLookups
-
-end Bytecode
-
-structure DataTypeLayout where
-  size: Nat
-  deriving Inhabited
 
 structure FunctionLayout where
   index: Nat
@@ -194,7 +34,7 @@ structure GadgetLayout where
   deriving Inhabited
 
 inductive Layout
-  | dataType : DataTypeLayout → Layout
+  | dataType : (size : Nat) → Layout
   | function : FunctionLayout → Layout
   | constructor : ConstructorLayout → Layout
   | gadget : GadgetLayout → Layout
@@ -206,7 +46,7 @@ def TypedDecls.layoutMap (decls : TypedDecls) : Except String LayoutMap := do
   let pass := fun (layoutMap, funcIdx, gadgetIdx) (_, v) => do match v with
     | .dataType dataType =>
       let dataTypeSize ← dataType.size decls
-      let layoutMap := layoutMap.insert dataType.name (.dataType { size := dataTypeSize })
+      let layoutMap := layoutMap.insert dataType.name (.dataType dataTypeSize)
       let pass := fun (acc, index) constructor => do
         let offsets ← constructor.argTypes.foldlM (init := #[0]) fun offsets typ => do
           let typSyze ← typ.size decls
@@ -243,7 +83,7 @@ def typSize (layoutMap : LayoutMap) : Typ → Except String Nat
   let size ← typSize layoutMap typ
   pure $ n * size
 | .typeRef g => match layoutMap[g]? with
-  | some (.dataType layout) => pure layout.size
+  | some (.dataType size) => pure size
   | _ => throw "Impossible case"
 
 structure CompilerState where
@@ -268,11 +108,6 @@ partial def toIndex
  (bindings : Std.HashMap Local (Array Bytecode.ValIdx))
  (term : TypedTerm) : CompileM (Array Bytecode.ValIdx) :=
   match term.inner with
-  -- | .unsafeCast inner castTyp =>
-  --   if typSize layoutMap castTyp != typSize layoutMap term.typ then
-  --     throw "Impossible cast"
-  --   else
-  --     toIndex layoutMap bindings (.mk term.typ inner)
   | .unit => pure #[]
   | .ret .. => throw "Should not happen after typechecking"
   | .match .. => throw "Non-tail `match` not yet implemented"
@@ -360,19 +195,6 @@ partial def toIndex
       let args ← buildArgs args
       pushOp (Bytecode.Op.callUnconstrained layout.index args layout.outputSize) layout.outputSize
     | _ => throw "Should not happen after typechecking"
-  -- | .preimg name@(⟨.str .anonymous unqualifiedName⟩) out =>
-  --   match bindings.get? (.str unqualifiedName) with
-  --   | some _ => throw "dynamic preimage not yet implemented"
-  --   | none => match layoutMap.get' name with
-  --     | .function layout => do
-  --       let out ← toIndex layoutMap bindings out
-  --       pushOp (Bytecode.Op.preimg layout.index out layout.inputSize) layout.inputSize
-  --     | _ => throw "should not happen after typechecking"
-  -- | .preimg name out => match layoutMap.get' name with
-  --   | .function layout => do
-  --     let out ← toIndex layoutMap bindings out
-  --     pushOp (Bytecode.Op.preimg layout.index out layout.inputSize) layout.inputSize
-  --   | _ => throw "should not happen after typechecking"
   | .proj arg i => do
     let typs ← match (arg.typ, arg.escapes) with
       | (.tuple typs, false) => pure typs
@@ -430,11 +252,6 @@ partial def toIndex
     let ptr ← expectIdx ptr
     pushOp (.load size ptr) size
   | .ptrVal ptr => toIndex layoutMap bindings ptr
-  -- | .trace str expr => do
-  --   let arr ← toIndex layoutMap bindings expr
-  --   let op := .trace str arr
-  --   modify (fun state => { state with ops := state.ops.push op})
-  --   pure arr
   | .assertEq a b ret => do
     let a ← toIndex layoutMap bindings a
     let b ← toIndex layoutMap bindings b
@@ -676,18 +493,20 @@ def TypedFunction.compile (layoutMap : LayoutMap) (f : TypedFunction) :
     let (_, layoutMState) := Bytecode.blockLayout body |>.run (.new inputSize)
     pure (body, layoutMState)
 
-def TypedDecls.compile (decls : TypedDecls) : Except String Bytecode.Toplevel := do
+def TypedDecls.toBytecode (decls : TypedDecls) :
+    Except String (Bytecode.Toplevel × Std.HashMap Global Bytecode.FunIdx) := do
   let layout ← decls.layoutMap
   let initMemSizes : Bytecode.MemSizes := .empty
-  let (functions, memSizes) ← decls.foldlM (init := (#[], initMemSizes))
-    fun acc@(functions, memSizes) (_, decl) => match decl with
+  let (functions, memSizes, nameMap) ← decls.foldlM (init := (#[], initMemSizes, {}))
+    fun acc@(functions, memSizes, nameMap) (_, decl) => match decl with
       | .function function => do
         let (body, layoutMState) ← function.compile layout
+        let nameMap := nameMap.insert function.name functions.size
         let function := ⟨body, layoutMState.functionLayout, function.entry⟩
         let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
-        pure (functions.push function, memSizes)
+        pure (functions.push function, memSizes, nameMap)
       | _ => pure acc
-  pure ⟨functions, memSizes.toArray⟩
+  pure (⟨functions, memSizes.toArray⟩, nameMap)
 
 end Aiur
 

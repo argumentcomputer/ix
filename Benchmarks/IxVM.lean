@@ -1,8 +1,7 @@
 import Ix.Meta
 import Ix.IxVM
-import Ix.Aiur.Simple
-import Ix.Aiur.Compile
 import Ix.Aiur.Protocol
+import Ix.Aiur.Compiler
 import Ix.Benchmark.Bench
 
 def commitmentParameters : Aiur.CommitmentParameters := {
@@ -21,13 +20,11 @@ def friParameters : Aiur.FriParameters := {
 def main : IO Unit := do
   let .ok toplevel := IxVM.ixVM
     | throw (IO.userError "Merging failed")
-  let some funIdx := toplevel.getFuncIdx `ixon_serde_blake3_bench
-    | throw (IO.userError "Aiur function not found")
-  let .ok decls := toplevel.checkAndSimplify
-    | throw (IO.userError "Simplification failed")
-  let .ok bytecode := decls.compile
+  let .ok compiled := toplevel.compile
     | throw (IO.userError "Compilation failed")
-  let aiurSystem := Aiur.AiurSystem.build bytecode commitmentParameters
+  let some funIdx := compiled.getFuncIdx `ixon_serde_blake3_bench
+    | throw (IO.userError "Aiur function not found")
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
 
   let env ← get_env!
   let natAddCommName := ``Nat.add_comm

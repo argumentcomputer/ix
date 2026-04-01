@@ -1,8 +1,7 @@
 import Ix.IxVM.ByteStream
 import Ix.IxVM.Blake3
-import Ix.Aiur.Simple
-import Ix.Aiur.Compile
 import Ix.Aiur.Protocol
+import Ix.Aiur.Compiler
 import Ix.Benchmark.Bench
 
 abbrev dataSizes := #[64, 128, 256, 512, 1024, 2048]
@@ -24,13 +23,11 @@ def friParameters : Aiur.FriParameters := {
 def blake3Bench : IO $ Array BenchReport := do
   let .ok toplevel := IxVM.byteStream.merge IxVM.blake3
     | throw (IO.userError "Merging failed")
-  let some funIdx := toplevel.getFuncIdx `blake3_bench
-    | throw (IO.userError "Aiur function not found")
-  let .ok decls := toplevel.checkAndSimplify
-    | throw (IO.userError "Simplification failed")
-  let .ok bytecode := decls.compile
+  let .ok compiled := toplevel.compile
     | throw (IO.userError "Compilation failed")
-  let aiurSystem := Aiur.AiurSystem.build bytecode commitmentParameters
+  let some funIdx := compiled.getFuncIdx `blake3_bench
+    | throw (IO.userError "Aiur function not found")
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
 
   let mut benches := Array.emptyWithCapacity $ dataSizes.size * numHashesPerProof.size
   for dataSize in dataSizes do
