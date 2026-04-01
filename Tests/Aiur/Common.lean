@@ -5,8 +5,7 @@ public import Tests.Gen.Basic
 public import Ix.Unsigned
 public import Ix.Aiur.Goldilocks
 public import Ix.Aiur.Protocol
-public import Ix.Aiur.Simple
-public import Ix.Aiur.Compile
+public import Ix.Aiur.Compiler
 
 public section
 
@@ -43,22 +42,20 @@ def friParameters : Aiur.FriParameters := {
 }
 
 structure AiurTestEnv where
-  toplevel : Aiur.Toplevel
-  bytecode : Aiur.Bytecode.Toplevel
+  compiled : Aiur.CompiledToplevel
   aiurSystem : Aiur.AiurSystem
 
 def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Toplevel) :
     Except String AiurTestEnv := do
   let toplevel ← toplevelFn.mapError toString
-  let decls ← toplevel.checkAndSimplify.mapError toString
-  let bytecode ← decls.compile
-  let aiurSystem := Aiur.AiurSystem.build bytecode commitmentParameters
-  return ⟨toplevel, bytecode, aiurSystem⟩
+  let compiled ← toplevel.compile
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  return ⟨compiled, aiurSystem⟩
 
 def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : TestSeq :=
   let label := testCase.label
-  let funIdx := env.toplevel.getFuncIdx testCase.functionName |>.get!
-  let (execOutput, execIOBuffer) := env.bytecode.execute
+  let funIdx := env.compiled.getFuncIdx testCase.functionName |>.get!
+  let (execOutput, execIOBuffer) := env.compiled.bytecode.execute
     funIdx testCase.input testCase.inputIOBuffer
   let execOutputTest := test s!"Execute output matches for {label}"
     (execOutput == testCase.expectedOutput)
@@ -81,11 +78,10 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
 def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Toplevel)
     (cases : List AiurTestCase) : TestSeq :=
   withExceptOk "Toplevel merging succeeds" toplevelFn fun toplevel =>
-    withExceptOk "Check and simplification succeed" toplevel.checkAndSimplify fun decls =>
-      withExceptOk "Compilation succeeds" decls.compile fun bytecode =>
-        let aiurSystem := Aiur.AiurSystem.build bytecode commitmentParameters
-        let env : AiurTestEnv := ⟨toplevel, bytecode, aiurSystem⟩
-        cases.foldl (init := .done) fun tSeq testCase =>
-          tSeq ++ env.runTestCase testCase
+    withExceptOk "Compilation succeeds" toplevel.compile fun compiled =>
+      let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+      let env : AiurTestEnv := ⟨compiled, aiurSystem⟩
+      cases.foldl (init := .done) fun tSeq testCase =>
+        tSeq ++ env.runTestCase testCase
 
 end

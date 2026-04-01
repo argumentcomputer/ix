@@ -1,6 +1,5 @@
 import Ix.Aiur.Meta
-import Ix.Aiur.Simple
-import Ix.Aiur.Compile
+import Ix.Aiur.Compiler
 import Ix.Aiur.Protocol
 import Ix.Benchmark.Bench
 
@@ -64,14 +63,11 @@ def friParameters : Aiur.FriParameters := {
 }
 
 def proveE2E (name: Lean.Name) : IO UInt32 := do
-  let decls ← match toplevel.checkAndSimplify with
+  let compiled ← match toplevel.compile with
     | .error e => IO.eprintln e; return 1
-    | .ok decls => pure decls
-  let bytecode ← match decls.compile with
-    | .error e => IO.eprintln e; return 1
-    | .ok bytecode => pure bytecode
-  let system := Aiur.AiurSystem.build bytecode commitmentParameters
-  let funIdx := toplevel.getFuncIdx name |>.get!
+    | .ok compiled => pure compiled
+  let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  let funIdx := compiled.getFuncIdx name |>.get!
   let (claim, proof, _) := system.prove friParameters funIdx #[10] default
   match system.verify friParameters claim proof with
   | .ok _ => return 0
@@ -94,42 +90,33 @@ def compileBench : IO $ Array BenchReport := do
   | .error e => throw (IO.userError s!"{repr e}")
   | .ok decls =>
     bgroup "nat_fib" [
-      bench "compile decls" Aiur.TypedDecls.compile decls
+      bench "compile decls" Aiur.TypedDecls.toBytecode decls
     ]
 
 def buildAiurSystemBench : IO $ Array BenchReport := do
-  let decls ← match toplevel.checkAndSimplify with
-    | .error e => throw (IO.userError s!"{repr e}")
-    | .ok decls => pure decls
-  let bytecode ← match decls.compile with
+  let compiled ← match toplevel.compile with
     | .error e => throw (IO.userError e)
-    | .ok bytecode => pure bytecode
+    | .ok compiled => pure compiled
   bgroup "nat_fib" [
-    bench "build AiurSystem" (Aiur.AiurSystem.build bytecode) commitmentParameters
+    bench "build AiurSystem" (Aiur.AiurSystem.build compiled.bytecode) commitmentParameters
   ]
 
 def proveBench : IO $ Array BenchReport := do
-  let decls ← match toplevel.checkAndSimplify with
-    | .error e => throw (IO.userError s!"{repr e}")
-    | .ok decls => pure decls
-  let bytecode ← match decls.compile with
+  let compiled ← match toplevel.compile with
     | .error e => throw (IO.userError e)
-    | .ok bytecode => pure bytecode
-  let system := Aiur.AiurSystem.build bytecode commitmentParameters
-  let funIdx := toplevel.getFuncIdx `main |>.get!
+    | .ok compiled => pure compiled
+  let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  let funIdx := compiled.getFuncIdx `main |>.get!
   bgroup "nat_fib" [
     bench "prove fib 10" (Aiur.AiurSystem.prove system friParameters funIdx #[10]) default,
   ]
 
 def verifyBench : IO $ Array BenchReport := do
-  let decls ← match toplevel.checkAndSimplify with
-    | .error e => throw (IO.userError s!"{repr e}")
-    | .ok decls => pure decls
-  let bytecode ← match decls.compile with
+  let compiled ← match toplevel.compile with
     | .error e => throw (IO.userError e)
-    | .ok bytecode => pure bytecode
-  let system := Aiur.AiurSystem.build bytecode commitmentParameters
-  let funIdx := toplevel.getFuncIdx `main |>.get!
+    | .ok compiled => pure compiled
+  let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  let funIdx := compiled.getFuncIdx `main |>.get!
   let (claim, proof, _) := system.prove friParameters funIdx #[10] default
   bgroup "nat_fib" [
     bench "verify fib 10" (Aiur.AiurSystem.verify system friParameters claim) proof
