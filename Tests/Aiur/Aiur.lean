@@ -8,23 +8,23 @@ public section
 open LSpec
 
 def toplevel := ⟦
-  fn id(n: G) -> G {
+  pub fn id(n: G) -> G {
     n
   }
 
-  fn proj1(a: G, _b: G) -> G {
+  pub fn proj1(a: G, _b: G) -> G {
     a
   }
 
-  fn sum(x: G, y: G) -> G {
+  pub fn sum(x: G, y: G) -> G {
     x + y
   }
 
-  fn prod(x: G, y: G) -> G {
+  pub fn prod(x: G, y: G) -> G {
     x * y
   }
 
-  fn sum_prod(x: G, y: G, z: G) -> G {
+  pub fn sum_prod(x: G, y: G, z: G) -> G {
     (x + y) * z
   }
 
@@ -35,7 +35,7 @@ def toplevel := ⟦
   -- 1 explicit case + default. Default branch has degree-2+ Mul.
   -- x=0: explicit active, default's Mul constraints inactive.
   -- x≠0: default active, explicit inactive.
-  fn match_mul(x: G) -> G {
+  pub fn match_mul(x: G) -> G {
     match x {
       0 => 0,
       _ => x * x * x,
@@ -43,7 +43,7 @@ def toplevel := ⟦
   }
 
   -- 3 explicit cases + default. Default path requires 3 inequality witnesses.
-  fn multi_match(x: G) -> G {
+  pub fn multi_match(x: G) -> G {
     match x {
       0 => 100,
       1 => 200,
@@ -55,7 +55,7 @@ def toplevel := ⟦
   -- Nested match: outer block selector = sum of inner selectors. Tests
   -- inequality witnesses at both nesting levels and computation in the
   -- deepest default path.
-  fn nested_match(x: G, y: G) -> G {
+  pub fn nested_match(x: G, y: G) -> G {
     match x {
       0 => match y {
         0 => 10,
@@ -76,7 +76,7 @@ def toplevel := ⟦
   -- the inactive branch. Additionally, assert_eq!(0, 1) on the inactive path
   -- produces constraint sel * (0 - 1) = -sel, which is 0 only when sel = 0.
   ---------------------------------------------------------------------------
-  fn match_poly_ops(x: G) -> (G, G) {
+  pub fn match_poly_ops(x: G) -> (G, G) {
     match 0 {
       0 => assert_eq!([x], [x]); (x * x, eq_zero(x)),
       1 => assert_eq!([0], [1]); ((x + 1) * (x + 1), eq_zero(x + 1)),
@@ -90,7 +90,7 @@ def toplevel := ⟦
   -- by sel, both branches would contribute multiplicity, doubling it from 1
   -- to 2 and failing the lookup argument check.
   ---------------------------------------------------------------------------
-  fn match_lookup_ops(x: G) -> (G, G) {
+  pub fn match_lookup_ops(x: G) -> (G, G) {
     match 0 {
       0 => (id(x), load(store(x))),
       1 => (id(x), load(store(x))),
@@ -105,7 +105,7 @@ def toplevel := ⟦
   -- and carry chains in the shared auxiliary columns, testing that the
   -- polynomial constraints (decomposition + carry boolean) are properly gated.
   ---------------------------------------------------------------------------
-  fn match_gadget_ops(i: G, j: G) -> (G, G, G) {
+  pub fn match_gadget_ops(i: G, j: G) -> (G, G, G) {
     match 0 {
       0 => (u8_shift_right(i), u8_xor(i, j), u32_less_than(i, j)),
       1 => (u8_shift_right(i), u8_xor(i, j), u32_less_than(j, i)),
@@ -119,7 +119,7 @@ def toplevel := ⟦
   -- bytes2_constraints for the multi-output case. u8_bit_decomposition has
   -- output_size=8, testing it for bytes1_constraints.
   ---------------------------------------------------------------------------
-  fn match_gadget_ops_multi(i: G, j: G) -> ((G, G), [G; 8]) {
+  pub fn match_gadget_ops_multi(i: G, j: G) -> ((G, G), [G; 8]) {
     match 0 {
       0 => (u8_add(i, j), u8_bit_decomposition(i)),
       1 => (u8_add(i, j), u8_bit_decomposition(i)),
@@ -130,7 +130,7 @@ def toplevel := ⟦
   -- EqZero: both constant (degree 0, no constraints) and non-constant
   -- (degree 1, two constraints: sel * a * x = 0, sel * (a*d + x - 1) = 0)
   ---------------------------------------------------------------------------
-  fn eq_zero_dummy(a: G, b: G) -> [G; 4] {
+  pub fn eq_zero_dummy(a: G, b: G) -> [G; 4] {
     let c = 0;
     let d = 101;
     [eq_zero(a), eq_zero(b), eq_zero(c), eq_zero(d)]
@@ -139,7 +139,7 @@ def toplevel := ⟦
   ---------------------------------------------------------------------------
   -- Memory: store/load
   ---------------------------------------------------------------------------
-  fn store_and_load(x: G) -> G {
+  pub fn store_and_load(x: G) -> G {
     load(store(x))
   }
 
@@ -151,7 +151,7 @@ def toplevel := ⟦
     Succ(&Nat)
   }
 
-  fn pointer_match() -> G {
+  pub fn pointer_match() -> G {
     let two = Nat.Succ(store(Nat.Succ(store(Nat.Zero))));
     match two {
       Nat.Succ(&Nat.Succ(&Nat.Zero)) => 1,
@@ -173,23 +173,23 @@ def toplevel := ⟦
     }
   }
 
-  fn is_0_even() -> G {
+  pub fn is_0_even() -> G {
     even(Nat.Zero)
   }
 
-  fn is_1_even() -> G {
+  pub fn is_1_even() -> G {
     even(Nat.Succ(store(Nat.Zero)))
   }
 
-  fn is_2_even() -> G {
+  pub fn is_2_even() -> G {
     even(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))
   }
 
-  fn is_0_odd() -> G {
+  pub fn is_0_odd() -> G {
     odd(Nat.Zero)
   }
 
-  fn is_1_odd() -> G {
+  pub fn is_1_odd() -> G {
     odd(Nat.Succ(store(Nat.Zero)))
   }
 
@@ -210,7 +210,7 @@ def toplevel := ⟦
     Tri(G, G, G)
   }
 
-  fn shape_area(s: Shape) -> G {
+  pub fn shape_area(s: Shape) -> G {
     match s {
       Shape.Circle(r) => r * r,
       Shape.Rect(w, h) => w * h,
@@ -219,16 +219,16 @@ def toplevel := ⟦
   }
 
   ---------------------------------------------------------------------------
-  -- Constrained and unconstrained recursion (fibonacci tests left intact)
+  -- Constrained and unconstrained recursion
   ---------------------------------------------------------------------------
-  fn factorial(n: G) -> G {
+  pub fn factorial(n: G) -> G {
     match n {
       0 => 1,
       _ => n * factorial(n - 1),
     }
   }
 
-  fn fibonacci(n: G) -> G {
+  pub fn fibonacci(n: G) -> G {
     match n {
       0 => 1,
       _ =>
@@ -242,8 +242,7 @@ def toplevel := ⟦
     }
   }
 
-  #[unconstrained]
-  fn unconstrained_fibonacci(n: G) -> G {
+  pub fn unconstrained_fibonacci(n: G) -> G {
     match n {
       0 => 1,
       _ =>
@@ -252,49 +251,45 @@ def toplevel := ⟦
           0 => 1,
           _ =>
             let n_minus_2 = n_minus_1 - 1;
-            fibonacci(n_minus_1) + unconstrained_fibonacci(n_minus_2),
+            #fibonacci(n_minus_2) + unconstrained_fibonacci(n_minus_1),
         },
     }
-  }
-
-  fn unconstrained_fibonacci_entrypoint(n: G) -> G {
-    unconstrained_fibonacci(n)
   }
 
   ---------------------------------------------------------------------------
   -- Data structure compilation: proj, get, slice, set, destructuring
   ---------------------------------------------------------------------------
-  fn projections(as: (G, G, G, G, G)) -> (G, G) {
+  pub fn projections(as: (G, G, G, G, G)) -> (G, G) {
     (proj(as, 1), proj(as, 3))
   }
 
-  fn slice_and_get(as: [G; 5]) -> [G; 2] {
+  pub fn slice_and_get(as: [G; 5]) -> [G; 2] {
     let left = as[0 .. 2];
     let right = as[3 .. 5];
     [left[1], right[0]]
   }
 
-  fn deconstruct_tuple(as: (G, G, G, G, G)) -> (G, G) {
+  pub fn deconstruct_tuple(as: (G, G, G, G, G)) -> (G, G) {
     let (_, b, _, d, _) = as;
     (b, d)
   }
 
-  fn deconstruct_array(as: [G; 5]) -> [G; 2] {
+  pub fn deconstruct_array(as: [G; 5]) -> [G; 2] {
     let [_, b, _, d, _] = as;
     [b, d]
   }
 
-  fn array_set(arr: [(G, G); 3]) -> [(G, G); 3] {
+  pub fn array_set(arr: [(G, G); 3]) -> [(G, G); 3] {
     set(arr, 1, (0, 0))
   }
 
   -- proj on mixed-size tuple: offset arithmetic with non-uniform element sizes
-  fn proj_mixed(t: (G, (G, G), G)) -> (G, G) {
+  pub fn proj_mixed(t: (G, (G, G), G)) -> (G, G) {
     proj(t, 1)
   }
 
   -- get at last index + set at first index with eltSize=2: boundary cases
-  fn array_get_set(arr: [(G, G); 3]) -> [(G, G); 3] {
+  pub fn array_get_set(arr: [(G, G); 3]) -> [(G, G); 3] {
     let p = arr[2];
     set(arr, 0, p)
   }
@@ -302,14 +297,14 @@ def toplevel := ⟦
   ---------------------------------------------------------------------------
   -- Assertion
   ---------------------------------------------------------------------------
-  fn assert_eq_trivial() {
+  pub fn assert_eq_trivial() {
     assert_eq!([1, 2, 3], [1, 2, 3]);
   }
 
   ---------------------------------------------------------------------------
   -- IO
   ---------------------------------------------------------------------------
-  fn read_write_io() {
+  pub fn read_write_io() {
     let (idx, len) = io_get_info([0]);
     let xs: [G; 4] = io_read(idx, 4);
     io_write(xs);
@@ -319,45 +314,45 @@ def toplevel := ⟦
   ---------------------------------------------------------------------------
   -- Byte operations
   ---------------------------------------------------------------------------
-  fn shr_shr_shl_decompose(byte: G) -> [G; 8] {
+  pub fn shr_shr_shl_decompose(byte: G) -> [G; 8] {
     let byte_shr = u8_shift_right(byte);
     let byte_shr_shr = u8_shift_right(byte_shr);
     let byte_shr_shr_shl = u8_shift_left(byte_shr_shr);
     u8_bit_decomposition(byte_shr_shr_shl)
   }
 
-  fn u8_add_xor(i: G, j: G) -> ((G, G), (G, G)) {
+  pub fn u8_add_xor(i: G, j: G) -> ((G, G), (G, G)) {
     let i_xor_j = u8_xor(i, j);
     (u8_add(i_xor_j, i), u8_add(i_xor_j, j))
   }
 
-  fn u8_sub_function(i: G, j: G) -> (G, G) {
+  pub fn u8_sub_function(i: G, j: G) -> (G, G) {
     u8_sub(i, j)
   }
 
-  fn u8_less_than_function(i: G, j: G) -> G {
+  pub fn u8_less_than_function(i: G, j: G) -> G {
     u8_less_than(i, j)
   }
 
-  fn u8_and_function(i: G, j: G) -> G {
+  pub fn u8_and_function(i: G, j: G) -> G {
     u8_and(i, j)
   }
 
-  fn u8_or_function(i: G, j: G) -> G {
+  pub fn u8_or_function(i: G, j: G) -> G {
     u8_or(i, j)
   }
 
   ---------------------------------------------------------------------------
   -- u32 comparison
   ---------------------------------------------------------------------------
-  fn u32_less_than_function(x: G, y: G) -> G {
+  pub fn u32_less_than_function(x: G, y: G) -> G {
     u32_less_than(x, y)
   }
 
   ---------------------------------------------------------------------------
   -- Fold/iteration
   ---------------------------------------------------------------------------
-  fn fold_matrix_sum(m: [[G; 2]; 2]) -> G {
+  pub fn fold_matrix_sum(m: [[G; 2]; 2]) -> G {
     fold(0 .. 2, 0, |acc_outer, @i|
       fold(0 .. 2, acc_outer, |acc_inner, @j|
         acc_inner + m[@i][@j]
@@ -374,7 +369,7 @@ def toplevel := ⟦
   type U64 = [U8; 8]
   type Pair = (U8, U8)
 
-  fn alias_conversion(x: U64) -> U32 {
+  pub fn alias_conversion(x: U64) -> U32 {
     ((x[0], x[1]), (x[2], x[3]))
   }
 
@@ -386,7 +381,7 @@ def toplevel := ⟦
   -- array from bytecode value indices, causing the layout to under-count
   -- auxiliary columns and the circuit builder to access out-of-bounds columns.
   ---------------------------------------------------------------------------
-  fn eq_zero_degree_desync(x: G) -> G {
+  pub fn eq_zero_degree_desync(x: G) -> G {
     let a = eq_zero(x);
     let b = 100;
     let c = x * x;
@@ -478,7 +473,7 @@ def aiurTestCases : List AiurTestCase := [
     { AiurTestCase.noIO `fibonacci #[6] #[13] with label := "fibonacci(6)" },
 
     -- Unconstrained recursion: mixed constrained/unconstrained calls
-    .noIO `unconstrained_fibonacci_entrypoint #[6] #[13],
+    .noIO `unconstrained_fibonacci #[6] #[13],
 
     -- Data structure compilation
     .noIO `projections #[1, 2, 3, 4, 5] #[2, 4],

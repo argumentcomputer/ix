@@ -33,7 +33,6 @@ def byteStream := ⟦
     }
   }
 
-  #[unconstrained]
   fn read_byte_stream(idx: G, len: G) -> ByteStream {
     match len {
       0 => ByteStream.Nil,

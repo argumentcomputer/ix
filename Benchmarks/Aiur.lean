@@ -45,7 +45,7 @@ def toplevel := ⟦
     }
   }
 
-  fn main(g: G) -> G {
+  pub fn main(g: G) -> G {
     nat_to_g(nat_fib(g_to_nat(g)))
   }
 ⟧

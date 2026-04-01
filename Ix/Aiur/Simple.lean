@@ -23,6 +23,7 @@ partial def simplifyTerm (decls : Decls) : Term → Term
     | none => unreachable!
   | .ret r => .ret (recr r)
   | .app global args => .app global (args.map recr)
+  | .appUnconstrained global args => .appUnconstrained global (args.map recr)
   | .data (.tuple args) => .data (.tuple (args.map recr))
   | .data (.array args) => .data (.array (args.map recr))
   | .u8LessThan a b => .u8LessThan (recr a) (recr b)

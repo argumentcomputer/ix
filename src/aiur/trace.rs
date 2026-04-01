@@ -68,7 +68,6 @@ struct TraceContext<'a> {
   inputs: &'a [G],
   output: &'a [G],
   query_record: &'a QueryRecord,
-  toplevel: &'a Toplevel,
 }
 
 impl Toplevel {
@@ -110,7 +109,6 @@ impl Toplevel {
           multiplicity: result.multiplicity,
           output: &result.output,
           query_record,
-          toplevel: self,
         };
         func.populate_row(index, slice, context, io_buffer);
       });
@@ -263,11 +261,6 @@ impl Op {
           map.push((*f, 1));
           slice.push_auxiliary(index, *f);
         }
-        if context.toplevel.functions[*function_index].unconstrained {
-          // The callee is unconstrained and isn't going to pull its claim.
-          // Therefore we don't push it.
-          return;
-        }
         let lookup = function_lookup(
           G::ONE,
           G::from_usize(*function_index),
@@ -275,6 +268,16 @@ impl Op {
           &result.output,
         );
         slice.push_lookup(index, lookup);
+      },
+      Op::CallUnconstrained(function_index, inputs, _) => {
+        let inputs = inputs.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+        let queries = &context.query_record.function_queries[*function_index];
+        let result = queries.get(&inputs).expect("Cannot find query result");
+        for f in result.output.iter() {
+          map.push((*f, 1));
+          slice.push_auxiliary(index, *f);
+        }
+        // No lookup -- unconstrained call
       },
       Op::Store(values) => {
         let size = values.len();

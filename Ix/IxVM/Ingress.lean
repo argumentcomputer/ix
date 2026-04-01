@@ -10,7 +10,7 @@ def ingress := ⟦
   -- Load a constant from IOBuffer by address, verify blake3, deserialize
   fn load_verified_constant(addr: [G; 32]) -> Constant {
     let (idx, len) = io_get_info(addr);
-    let bytes = read_byte_stream(idx, len);
+    let bytes = #read_byte_stream(idx, len);
     let h = blake3(bytes);
     assert_eq!(
       [
@@ -66,7 +66,7 @@ def ingress := ⟦
                     a16, a17, a18, a19, a20, a21, a22, a23,
                     a24, a25, a26, a27, a28, a29, a30, a31];
     let (idx, len) = io_get_info(blob_key);
-    let bytes = read_byte_stream(idx, len);
+    let bytes = #read_byte_stream(idx, len);
     let h = blake3(bytes);
     assert_eq!(
       [
