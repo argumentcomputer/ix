@@ -68,6 +68,7 @@ def kernelTypes := ⟦
     Ctor(G, &KLevelList, G, &KValList),
     FVar(G, &KVal, &KValList),
     Const(G, &KLevelList, &KValList),
+    Rec(G, &KLevelList, &KValList),
     Proj(G, G, &KVal, &KValList),
     Thunk(&KExpr, &KValEnv)
   }

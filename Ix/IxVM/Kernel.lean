@@ -16,7 +16,7 @@ O(1) beta reduction instead of O(|body|) substitution walks. Free variables use
 **de Bruijn levels** (stable under binder entry) rather than indices.
 
 The core is three mutually recursive operations:
-- `k_eval` / `k_whnf`: evaluate expressions and reduce to weak head normal form
+- `k_eval`: evaluate expressions to weak head normal form (NbE with eager delta/iota)
 - `k_infer` / `k_check`: infer types and bidirectionally check against expected types
 - `k_is_def_eq`: check definitional equality (proof irrelevance, eta, lazy delta)
 
@@ -566,13 +566,16 @@ def kernel := ⟦
   -- Evaluation (NbE)
   --
   -- Normalization by Evaluation: expressions (KExpr) are evaluated into semantic
-  -- values (KVal) using closures. A lambda captures its environment; applying it
-  -- pushes the argument, giving O(1) beta reduction. Constants evaluate to
-  -- neutrals (no eager delta unfolding) — definition unfolding is deferred to WHNF.
+  -- values (KVal) using closures. Values are always WHNF (or thunks in spines/envs).
+  -- A lambda captures its environment; applying it pushes the argument, giving
+  -- O(1) beta reduction. Non-opaque definitions and theorems are unfolded eagerly.
+  -- Recursors, opaques, axioms, and inductives stay as neutral Const values until
+  -- enough arguments arrive for iota/quotient reduction (done in k_apply).
   -- Free variables use de Bruijn levels (stable under binder entry).
   -- ============================================================================
 
-  -- Force a thunk: if it's a Thunk, evaluate it; otherwise return as-is
+  -- Force a thunk to a WHNF value. Non-thunks are already WHNF; thunks are
+  -- evaluated via k_eval which always returns WHNF.
   fn k_force(v: KVal, top: KConstList) -> KVal {
     match v {
       KVal.Thunk(&e, &env) => k_eval(e, env, top),
@@ -589,12 +592,27 @@ def kernel := ⟦
       KExpr.Srt(&l) =>
         KVal.Srt(store(level_reduce(l))),
 
-      -- Lazy: no definition unfolding during eval, deferred to WHNF
+      -- Eagerly unfold non-opaque definitions and theorems to produce WHNF.
+      -- Constructors become KVal.Ctor; recursors become KVal.Rec (iota fires later
+      -- in k_apply); opaques/axioms/inductives/quotients stay as neutral KVal.Const
+      -- (quotient fires later in k_apply as args arrive).
       KExpr.Const(idx, &lvls) =>
         let ci = const_list_lookup(top, idx);
         match ci {
           KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
             KVal.Ctor(idx, store(lvls), nparams, store(KValList.Nil)),
+          KConstantInfo.Rec(_, _, _, _, _, _, _, _, _) =>
+            KVal.Rec(idx, store(lvls), store(KValList.Nil)),
+          KConstantInfo.Defn(_, _, &value, hints, _) =>
+            match hints {
+              KHints.Opaque => KVal.Const(idx, store(lvls), store(KValList.Nil)),
+              _ =>
+                let body = expr_inst_levels(value, lvls);
+                k_eval(body, KValEnv.Nil, top),
+            },
+          KConstantInfo.Thm(_, _, &value) =>
+            let body = expr_inst_levels(value, lvls);
+            k_eval(body, KValEnv.Nil, top),
           _ => KVal.Const(idx, store(lvls), store(KValList.Nil)),
         },
 
@@ -641,7 +659,8 @@ def kernel := ⟦
     }
   }
 
-  -- Apply a value to an argument (lazy: arg may be a thunk)
+  -- Apply a WHNF value to an argument (arg may be a thunk for lazy evaluation).
+  -- Returns WHNF: lambdas beta-reduce, neutrals accumulate spine then try iota/quotient.
   fn k_apply(f: KVal, arg: KVal, top: KConstList) -> KVal {
     match f {
       KVal.Lam(_, &body, &env) =>
@@ -657,9 +676,28 @@ def kernel := ⟦
         let spine2 = val_list_snoc(spine, arg);
         KVal.FVar(lvl, store(fvar_ty), store(spine2)),
 
+      -- Recursor: accumulate spine and try iota reduction.
+      KVal.Rec(idx, &lvls, &spine) =>
+        let spine2 = val_list_snoc(spine, arg);
+        let (_, result) = try_iota(idx, lvls, spine2, top);
+        result,
+
+      -- Neutral constant (opaque, axiom, inductive, quotient): accumulate spine
+      -- then try quotient reduction.
       KVal.Const(idx, &lvls, &spine) =>
         let spine2 = val_list_snoc(spine, arg);
-        KVal.Const(idx, store(lvls), store(spine2)),
+        let ci = const_list_lookup(top, idx);
+        match ci {
+          KConstantInfo.Quot(_, _, kind) =>
+            match kind {
+              KQuotKind.Lift =>
+                k_try_quot_reduction(idx, lvls, spine2, 6, 3, top),
+              KQuotKind.Ind =>
+                k_try_quot_reduction(idx, lvls, spine2, 5, 3, top),
+              _ => KVal.Const(idx, store(lvls), store(spine2)),
+            },
+          _ => KVal.Const(idx, store(lvls), store(spine2)),
+        },
 
       KVal.Proj(tidx, fidx, &sv, &spine) =>
         let spine2 = val_list_snoc(spine, arg);
@@ -701,24 +739,28 @@ def kernel := ⟦
 
   -- Try iota reduction: if idx refers to a recursor and the major premise is a
   -- constructor or Nat literal, apply the matching recursor rule; otherwise return a neutral VConst
-  fn try_iota(idx: G, lvls: KLevelList, spine: KValList, top: KConstList) -> KVal {
+  -- Returns (fired, val) where fired=0 means iota did not fire (stuck neutral or error) and
+  -- fired=1 means reduction succeeded and val is the reduced result.
+  fn try_iota(idx: G, lvls: KLevelList, spine: KValList, top: KConstList) -> (G, KVal) {
     let ci = const_list_lookup(top, idx);
     match ci {
       KConstantInfo.Rec(_, _, nparams, nindices, nmotives, nminors, &rules, k_flag, _) =>
         let maj_idx = nparams + nmotives + nminors + nindices;
+        -- Number of arguments for iota to fire
+        let num_arguments = maj_idx + 1;
+        -- Notice spine_len can never be greater than the num_arguments
         let spine_len = val_list_length(spine);
-        let not_have_major = eq_zero(spine_len - maj_idx);
-        match not_have_major {
-          1 => KVal.Const(idx, store(lvls), store(spine)),
+        match num_arguments - spine_len {
           0 =>
             let major_raw = val_list_lookup(spine, maj_idx);
-            let major = k_whnf(major_raw, top);
+            let major = k_force(major_raw, top);
             match major {
               KVal.Ctor(ctor_idx, _, ctor_nparams, &ctor_spine) =>
                 let rule_found = rec_rule_try_find(rules, ctor_idx);
                 match rule_found {
                   KRecRuleMaybe.None =>
-                    KVal.Const(idx, store(lvls), store(spine)),
+                    -- Error: constructor has no matching rule in this recursor
+                    (0, KVal.Rec(idx, store(lvls), store(spine))),
                   KRecRuleMaybe.Some(&rule) =>
                     match rule {
                       KRecRule.Mk(_, nfields, &rhs) =>
@@ -729,7 +771,7 @@ def kernel := ⟦
                         let fields = val_list_drop(ctor_spine, ctor_nparams);
                         let result2 = k_apply_spine(result, fields, top);
                         let remaining = val_list_drop(spine, maj_idx + 1);
-                        k_apply_spine(result2, remaining, top),
+                        (1, k_apply_spine(result2, remaining, top)),
                     },
                 },
               KVal.Lit(lit) =>
@@ -756,7 +798,7 @@ def kernel := ⟦
                                 let pmm = val_list_take(spine, pmm_end);
                                 let result = k_apply_spine(rhs_val, pmm, top);
                                 let remaining = val_list_drop(spine, maj_idx + 1);
-                                k_apply_spine(result, remaining, top),
+                                (1, k_apply_spine(result, remaining, top)),
                             },
                           0 =>
                             -- Lit(n+1) → fire succ rule with one field = Lit(n-1)
@@ -772,12 +814,12 @@ def kernel := ⟦
                                 let ctor_fields = KValList.Cons(store(pred), store(KValList.Nil));
                                 let result2 = k_apply_spine(result, ctor_fields, top);
                                 let remaining = val_list_drop(spine, maj_idx + 1);
-                                k_apply_spine(result2, remaining, top),
+                                (1, k_apply_spine(result2, remaining, top)),
                             },
                         },
                     },
                   KLiteral.Str(_) =>
-                    KVal.Const(idx, store(lvls), store(spine)),
+                    (0, KVal.Rec(idx, store(lvls), store(spine))),
                 },
               _ =>
                 -- K-reduction: for proof-irrelevant (Prop) inductives with k_flag set,
@@ -785,18 +827,17 @@ def kernel := ⟦
                 match k_flag {
                   0 =>
                     -- Not a K-recursor, return stuck
-                    KVal.Const(idx, store(lvls), store(spine)),
+                    (0, KVal.Rec(idx, store(lvls), store(spine))),
                   _ =>
                     -- K-reduction fires: minor is at nparams + nmotives
                     let minor_idx = nparams + nmotives;
                     let minor = val_list_lookup(spine, minor_idx);
                     let remaining = val_list_drop(spine, maj_idx + 1);
-                    k_apply_spine(minor, remaining, top),
+                    (1, k_apply_spine(minor, remaining, top)),
                 },
             },
+          _ => (0, KVal.Rec(idx, store(lvls), store(spine))),
         },
-
-      _ => KVal.Const(idx, store(lvls), store(spine)),
     }
   }
 
@@ -830,7 +871,7 @@ def kernel := ⟦
 
   -- Try quotient reduction: Quot.lift f h (Quot.mk r a) → f a
   -- reduce_size is the minimum spine length, f_pos is the index of f in the spine.
-  -- Returns 1 and reduced value via k_whnf if successful, 0 otherwise.
+  -- Returns the reduced value if successful, or the original stuck Const otherwise.
   -- The idx/lvls/spine are passed through for reconstructing the stuck value on failure.
   fn k_try_quot_reduction(idx: G, lvls: KLevelList, spine: KValList,
       reduce_size: G, f_pos: G, top: KConstList) -> KVal {
@@ -839,10 +880,10 @@ def kernel := ⟦
     match not_enough {
       1 => KVal.Const(idx, store(lvls), store(spine)),
       0 =>
-        -- Force and WHNF the major arg (last of the reduce_size args)
+        -- Force the major arg (last of the reduce_size args); already WHNF or thunk
         let major_idx = reduce_size - 1;
         let major_raw = val_list_lookup(spine, major_idx);
-        let major = k_whnf(major_raw, top);
+        let major = k_force(major_raw, top);
         -- Check if major is a Quot.mk application (a Const with QuotKind.Ctor)
         match major {
           KVal.Const(mk_idx, _, &mk_spine) =>
@@ -865,8 +906,7 @@ def kernel := ⟦
                         let result = k_apply(f_val, quot_val, top);
                         -- Apply remaining spine args after reduce_size
                         let remaining = val_list_drop(spine, reduce_size);
-                        let result2 = k_apply_spine(result, remaining, top);
-                        k_whnf(result2, top),
+                        k_apply_spine(result, remaining, top),
                     },
                   _ => KVal.Const(idx, store(lvls), store(spine)),
                 },
@@ -874,83 +914,6 @@ def kernel := ⟦
             },
           _ => KVal.Const(idx, store(lvls), store(spine)),
         },
-    }
-  }
-
-  -- ============================================================================
-  -- WHNF (Weak Head Normal Form)
-  --
-  -- Reduce a value until its outermost constructor is visible. The WHNF loop
-  -- applies projection reduction, iota (recursor on ctor), delta (definition
-  -- unfolding), and quotient reduction, retrying after each successful step.
-  -- Does not reduce under binders or inside arguments.
-  -- ============================================================================
-
-  -- Reduce a value to Weak Head Normal Form by retrying projection, iota, and delta reductions
-
-  fn k_whnf(v: KVal, top: KConstList) -> KVal {
-    match v {
-      KVal.Thunk(&e, &env) =>
-        let val = k_eval(e, env, top);
-        k_whnf(val, top),
-
-      KVal.Proj(tidx, fidx, &sv, &spine) =>
-        let sv2 = k_whnf(sv, top);
-        match sv2 {
-          KVal.Ctor(_, _, nparams, &ctor_spine) =>
-            let field_idx = nparams + fidx;
-            let field = val_list_lookup(ctor_spine, field_idx);
-            let field_forced = k_force(field, top);
-            let result = k_apply_spine(field_forced, spine, top);
-            k_whnf(result, top),
-          _ =>
-            KVal.Proj(tidx, fidx, store(sv2), store(spine)),
-        },
-
-      KVal.Const(idx, &lvls, &spine) =>
-        -- First try iota reduction (recursor on constructor)
-        let result = try_iota(idx, lvls, spine, top);
-        match result {
-          KVal.Const(idx2, &lvls2, &spine2) =>
-            let same = eq_zero(idx - idx2);
-            match same {
-              0 => k_whnf(result, top),
-              1 =>
-                -- Iota didn't fire; try quotient, then delta
-                let ci = const_list_lookup(top, idx2);
-                match ci {
-                  KConstantInfo.Defn(_, _, &value, hints, _) =>
-                    match hints {
-                      KHints.Opaque => result,
-                      _ =>
-                        let body = expr_inst_levels(value, lvls2);
-                        let val = k_eval(body, KValEnv.Nil, top);
-                        let val2 = k_apply_spine(val, spine2, top);
-                        k_whnf(val2, top),
-                    },
-                  KConstantInfo.Thm(_, _, &value) =>
-                    let body = expr_inst_levels(value, lvls2);
-                    let val = k_eval(body, KValEnv.Nil, top);
-                    let val2 = k_apply_spine(val, spine2, top);
-                    k_whnf(val2, top),
-                  -- Quot.lift: spine has [α, r, β, f, h, ⟨Quot.mk r a⟩, extra...]
-                  -- Quot.ind: spine has [α, r, motive, f, ⟨Quot.mk r a⟩, extra...]
-                  -- Reduces to: f a extra...
-                  KConstantInfo.Quot(_, _, kind) =>
-                    match kind {
-                      KQuotKind.Lift =>
-                        k_try_quot_reduction(idx2, lvls2, spine2, 6, 3, top),
-                      KQuotKind.Ind =>
-                        k_try_quot_reduction(idx2, lvls2, spine2, 5, 3, top),
-                      _ => result,
-                    },
-                  _ => result,
-                },
-            },
-          _ => k_whnf(result, top),
-        },
-
-      _ => v,
     }
   }
 
@@ -1000,6 +963,10 @@ def kernel := ⟦
         quote_spine(base, spine, depth, top),
 
       KVal.Const(idx, &lvls, &spine) =>
+        let base = KExpr.Const(idx, store(lvls));
+        quote_spine(base, spine, depth, top),
+
+      KVal.Rec(idx, &lvls, &spine) =>
         let base = KExpr.Const(idx, store(lvls));
         quote_spine(base, spine, depth, top),
 
@@ -1060,9 +1027,8 @@ def kernel := ⟦
 
       KExpr.App(&f, &a) =>
         let fn_type = k_infer(f, types, env, depth, top, nat_idx, str_idx);
-        let fn_type_whnf = k_whnf(fn_type, top);
 
-        match fn_type_whnf {
+        match fn_type {
           KVal.Pi(&dom, &body, &pi_env) =>
             let arg_type = k_infer(a, types, env, depth, top, nat_idx, str_idx);
             let app_eq = k_is_def_eq(arg_type, dom, depth, top, nat_idx, str_idx);
@@ -1104,10 +1070,9 @@ def kernel := ⟦
         k_infer(body, types2, env2, depth + 1, top, nat_idx, str_idx),
 
       KExpr.Proj(tidx, fidx, &e1) =>
-        -- Infer struct type and WHNF to expose inductive head
+        -- Infer struct type; already WHNF so we can directly match on the inductive head
         let struct_type = k_infer(e1, types, env, depth, top, nat_idx, str_idx);
-        let struct_type_whnf = k_whnf(struct_type, top);
-        match struct_type_whnf {
+        match struct_type {
           KVal.Const(induct_idx, &levels, &params_spine) =>
             -- Look up inductive to get its single constructor index
             let ind_ci = const_list_lookup(top, induct_idx);
@@ -1124,9 +1089,8 @@ def kernel := ⟦
                 -- Walk past preceding fields using Proj values
                 let struct_val = k_eval(e1, env, top);
                 let after_fields = walk_fields(after_params, tidx, 0, fidx, struct_val, top);
-                -- Extract the domain type at field fidx
-                let result_whnf = k_whnf(after_fields, top);
-                match result_whnf {
+                -- Extract the domain type at field fidx (after_fields is WHNF from k_eval)
+                match after_fields {
                   KVal.Pi(&dom, _, _) => dom,
                 },
             },
@@ -1139,8 +1103,8 @@ def kernel := ⟦
   fn k_check(e: KExpr, expected: KVal, types: KValList, env: KValEnv, depth: G, top: KConstList, nat_idx: G, str_idx: G) {
     match e {
       KExpr.Lam(&ty, &body) =>
-        let expected_whnf = k_whnf(expected, top);
-        match expected_whnf {
+        -- expected is WHNF (from k_eval at call sites); match directly
+        match expected {
           KVal.Pi(&pi_dom, &pi_body, &pi_env) =>
             -- Check domain matches
             let dom_val = k_eval(ty, env, top);
@@ -1167,11 +1131,11 @@ def kernel := ⟦
     }
   }
 
-  -- Ensure a type expression evaluates to a Sort, returning the level
+  -- Ensure a type expression evaluates to a Sort, returning the level.
+  -- k_infer returns WHNF, so we match directly.
   fn k_ensure_sort(e: KExpr, types: KValList, env: KValEnv, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> KLevel {
     let ty = k_infer(e, types, env, depth, top, nat_idx, str_idx);
-    let ty_whnf = k_whnf(ty, top);
-    match ty_whnf {
+    match ty {
       KVal.Srt(&l) => l,
     }
   }
@@ -1189,9 +1153,9 @@ def kernel := ⟦
     match params {
       KValList.Nil => ct,
       KValList.Cons(&param_val, &rest_params) =>
+        -- ct is WHNF (from k_eval); force the param in case it's a thunk
         let param_forced = k_force(param_val, top);
-        let ct_whnf = k_whnf(ct, top);
-        match ct_whnf {
+        match ct {
           KVal.Pi(_, &body, &pi_env) =>
             let env2 = KValEnv.Cons(store(param_forced), store(pi_env));
             let next = k_eval(body, env2, top);
@@ -1205,8 +1169,8 @@ def kernel := ⟦
     match remaining {
       0 => ct,
       _ =>
-        let ct_whnf = k_whnf(ct, top);
-        match ct_whnf {
+        -- ct is WHNF (from k_eval); match directly
+        match ct {
           KVal.Pi(_, &body, &pi_env) =>
             let proj_val = KVal.Proj(tidx, current_field, store(struct_val), store(KValList.Nil));
             let env2 = KValEnv.Cons(store(proj_val), store(pi_env));
@@ -1230,15 +1194,15 @@ def kernel := ⟦
     match spine {
       KValList.Nil => ty,
       KValList.Cons(&arg, &rest) =>
+        -- ty is WHNF (from k_eval); force arg in case it's a thunk
         let arg_forced = k_force(arg, top);
-        let ty_whnf = k_whnf(ty, top);
-        match ty_whnf {
+        match ty {
           KVal.Pi(_, &body, &pi_env) =>
             let env2 = KValEnv.Cons(store(arg_forced), store(pi_env));
             let next = k_eval(body, env2, top);
             apply_spine_to_type(next, rest, top),
           -- If not a Pi, we're stuck; return as-is (sentinel)
-          _ => ty_whnf,
+          _ => ty,
         },
     }
   }
@@ -1262,6 +1226,12 @@ def kernel := ⟦
         let ty_inst = expr_inst_levels(ty, lvls);
         let ty_val = k_eval(ty_inst, KValEnv.Nil, top);
         apply_spine_to_type(ty_val, spine, top),
+      KVal.Rec(idx, &lvls, &spine) =>
+        let ci = const_list_lookup(top, idx);
+        let ty = const_type(ci);
+        let ty_inst = expr_inst_levels(ty, lvls);
+        let ty_val = k_eval(ty_inst, KValEnv.Nil, top);
+        apply_spine_to_type(ty_val, spine, top),
       KVal.Ctor(idx, &lvls, _, &spine) =>
         let ci = const_list_lookup(top, idx);
         let ty = const_type(ci);
@@ -1270,8 +1240,8 @@ def kernel := ⟦
         apply_spine_to_type(ty_val, spine, top),
       KVal.Proj(tidx, fidx, &sv, &spine) =>
         let struct_type = k_infer_val_type(sv, top, nat_idx, str_idx);
-        let struct_type_whnf = k_whnf(struct_type, top);
-        match struct_type_whnf {
+        -- struct_type is WHNF (from k_eval paths in k_infer_val_type)
+        match struct_type {
           KVal.Const(induct_idx, &levels, &params_spine) =>
             let ind_ci = const_list_lookup(top, induct_idx);
             match ind_ci {
@@ -1283,11 +1253,11 @@ def kernel := ⟦
                 let ctor_type_val = k_eval(ctor_type_inst, KValEnv.Nil, top);
                 let after_params = walk_params(ctor_type_val, params_spine, top);
                 let after_fields = walk_fields(after_params, tidx, 0, fidx, sv, top);
-                let result_whnf = k_whnf(after_fields, top);
-                match result_whnf {
+                -- after_fields is WHNF from k_eval
+                match after_fields {
                   KVal.Pi(&dom, _, _) => apply_spine_to_type(dom, spine, top),
                   -- If not a Pi, return the type itself (could be the final result type)
-                  _ => apply_spine_to_type(result_whnf, spine, top),
+                  _ => apply_spine_to_type(after_fields, spine, top),
                 },
               -- Not an inductive, fall back to sentinel
               _ => KVal.Srt(store(KLevel.Succ(store(KLevel.Zero)))),
@@ -1304,9 +1274,9 @@ def kernel := ⟦
 
   -- Check if a value is a proposition (its type is Sort 0 / Prop)
   fn k_is_prop_val(v: KVal, top: KConstList, nat_idx: G, str_idx: G) -> G {
+    -- ty is WHNF (from k_eval paths in k_infer_val_type)
     let ty = k_infer_val_type(v, top, nat_idx, str_idx);
-    let ty_whnf = k_whnf(ty, top);
-    match ty_whnf {
+    match ty {
       KVal.Srt(&l) =>
         match l {
           KLevel.Zero => 1,
@@ -1395,8 +1365,8 @@ def kernel := ⟦
   -- nullary constructor and no indices, they are definitionally equal.
   -- Examples: True, PUnit, PLift.up for propositions.
   fn is_unit_like_type(ty: KVal, top: KConstList) -> G {
-    let ty_whnf = k_whnf(ty, top);
-    match ty_whnf {
+    -- ty is WHNF (from k_infer_val_type which uses k_eval)
+    match ty {
       KVal.Const(induct_idx, _, _) =>
         let ci = const_list_lookup(top, induct_idx);
         match ci {
@@ -1438,34 +1408,35 @@ def kernel := ⟦
   --   7. Lazy delta unfolding (try unfolding constants to make progress)
   -- ============================================================================
 
-  -- Check definitional equality of two values: first try a quick syntactic check,
-  -- then reduce to WHNF and compare structurally
+  -- Check definitional equality of two values. Values from k_eval are already WHNF;
+  -- values from spines may be thunks, so we k_force both sides first.
   fn k_is_def_eq(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
     let quick = k_quick_def_eq(a, b);
     match quick {
       1 => 1,
       0 =>
-        let a_whnf = k_whnf(a, top);
-        let b_whnf = k_whnf(b, top);
-        let quick2 = k_quick_def_eq(a_whnf, b_whnf);
+        -- Force thunks (no-op for values already in WHNF)
+        let a_f = k_force(a, top);
+        let b_f = k_force(b, top);
+        let quick2 = k_quick_def_eq(a_f, b_f);
         match quick2 {
           1 => 1,
           0 =>
             -- Proof irrelevance: if both are proofs (types in Prop), compare types
-            let a_type = k_infer_val_type(a_whnf, top, nat_idx, str_idx);
+            let a_type = k_infer_val_type(a_f, top, nat_idx, str_idx);
             let a_is_prop = k_is_prop_val(a_type, top, nat_idx, str_idx);
             match a_is_prop {
               1 =>
-                let b_type = k_infer_val_type(b_whnf, top, nat_idx, str_idx);
+                let b_type = k_infer_val_type(b_f, top, nat_idx, str_idx);
                 let b_is_prop = k_is_prop_val(b_type, top, nat_idx, str_idx);
                 match b_is_prop {
                   1 =>
                     k_is_def_eq(a_type, b_type, depth, top, nat_idx, str_idx),
                   0 =>
-                    let core_res = k_is_def_eq_core(a_whnf, b_whnf, depth, top, nat_idx, str_idx);
+                    let core_res = k_is_def_eq_core(a_f, b_f, depth, top, nat_idx, str_idx);
                     match core_res {
                       0 =>
-                        let eta_res = try_eta_struct(a_whnf, b_whnf, depth, top, nat_idx, str_idx);
+                        let eta_res = try_eta_struct(a_f, b_f, depth, top, nat_idx, str_idx);
                         match eta_res {
                           1 => 1,
                           0 => 0,
@@ -1474,13 +1445,13 @@ def kernel := ⟦
                     },
                 },
               0 =>
-                let core_res = k_is_def_eq_core(a_whnf, b_whnf, depth, top, nat_idx, str_idx);
+                let core_res = k_is_def_eq_core(a_f, b_f, depth, top, nat_idx, str_idx);
                 match core_res {
                   0 =>
-                    let eta_res = try_eta_struct(a_whnf, b_whnf, depth, top, nat_idx, str_idx);
+                    let eta_res = try_eta_struct(a_f, b_f, depth, top, nat_idx, str_idx);
                     match eta_res {
                       1 => 1,
-                      0 => try_unit_like(a_whnf, b_whnf, top, nat_idx, str_idx),
+                      0 => try_unit_like(a_f, b_f, top, nat_idx, str_idx),
                     },
                   1 => 1,
                 },
@@ -1686,6 +1657,23 @@ def kernel := ⟦
           _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
         },
 
+      KVal.Rec(idx_a, &lvls_a, &sp_a) =>
+        match b {
+          KVal.Rec(idx_b, &lvls_b, &sp_b) =>
+            let same_idx = eq_zero(idx_a - idx_b);
+            match same_idx {
+              1 =>
+                let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                match lvls_eq {
+                  1 =>
+                    k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                  0 => 0,
+                },
+              0 => 0,
+            },
+          _ => 0,
+        },
+
       KVal.Ctor(idx_a, &lvls_a, nparams_a, &sp_a) =>
         match b {
           KVal.Ctor(idx_b, &lvls_b, _, &sp_b) =>
@@ -1770,6 +1758,8 @@ def kernel := ⟦
             let vb = k_eval(body_b, env_b2, top);
             k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
           KVal.Const(_, _, _) =>
+            k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+          KVal.Rec(_, _, _) =>
             k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
           _ => 0,
         },
