@@ -67,6 +67,7 @@ structure FunctionLayout where
   deriving Inhabited, Repr
 
 structure Function where
+  name : String
   body : Block
   layout: FunctionLayout
   unconstrained : Bool

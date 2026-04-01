@@ -668,7 +668,7 @@ def TypedDecls.compile (decls : TypedDecls) : Except String Bytecode.Toplevel :=
     fun acc@(functions, memSizes) (_, decl) => match decl with
       | .function function => do
         let (body, layoutMState) ← function.compile decls layout
-        let function := ⟨body, layoutMState.functionLayout, function.unconstrained⟩
+        let function := ⟨function.name.toName.toString, body, layoutMState.functionLayout, function.unconstrained⟩
         let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
         pure (functions.push function, memSizes)
       | _ => pure acc

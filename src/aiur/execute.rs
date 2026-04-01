@@ -343,7 +343,10 @@ impl Function {
           if let Some(block) = cases.get(val) {
             push_block_exec_entries!(block);
           } else {
-            let default = default.as_ref().expect("No match");
+            let default = default.as_ref().unwrap_or_else(|| {
+              let name = &toplevel.functions[fun_idx].name;
+              panic!("No match for value: {val}, function: {name}")
+            });
             push_block_exec_entries!(default);
           }
         },
