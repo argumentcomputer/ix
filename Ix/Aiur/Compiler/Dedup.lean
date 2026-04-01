@@ -119,38 +119,27 @@ def Toplevel.deduplicate (t : Toplevel) : Toplevel × (FunIdx → FunIdx) := Id.
   let classes := partitionRefine initClasses callees
 
   -- Step 4: build output
-  -- Pick smallest index per class as canonical representative
-  let mut canonical : Std.HashMap Nat FunIdx := {}
-  for i in [:n] do
-    let cls := classes[i]!
-    if !canonical.contains cls then
-      canonical := canonical.insert cls i
-
-  -- Assign new indices to canonical representatives in order
-  let mut remap : Array FunIdx := Array.mkEmpty n
-  let mut newIdx := 0
-  let mut canonicalNewIdx : Std.HashMap Nat FunIdx := {}
-  for i in [:n] do
-    let cls := classes[i]!
-    if canonical[cls]! == i then
-      canonicalNewIdx := canonicalNewIdx.insert cls newIdx
-      remap := remap.push newIdx
-      newIdx := newIdx + 1
+  -- Annotate which functions are canonical; that is, which ones represent
+  -- their equivalence group. We choose the first function we find
+  let mut canonical : Array Bool := #[]
+  let mut top_cls := 0
+  for cls in classes do
+    if cls == top_cls then
+      canonical := canonical.push True
+      top_cls := top_cls + 1
     else
-      remap := remap.push 0  -- placeholder
+      canonical := canonical.push False
 
-  -- Fill non-canonical entries
-  for i in [:n] do
-    if canonical[classes[i]!]! != i then
-      remap := remap.set! i canonicalNewIdx[classes[i]!]!
-
-  let remapFn : FunIdx → FunIdx := (remap[·]!)
+  -- Since classes are assigned from 0, representing each new class by the successor of
+  -- the last created classe in order, then it should represent the new index after
+  -- deduplication
+  let remapFn : FunIdx → FunIdx := (classes[·]!)
 
   -- Build new functions array
-  let mut newFunctions : Array Function := Array.mkEmpty newIdx
+  let mut newFunctions : Array Function := #[]
   for i in [:n] do
-    let cls := classes[i]!
-    if canonical[cls]! == i then
+    if canonical[i]! then
+      let cls := classes[i]!
       let f := functions[i]!
       -- Merge entry flags from all class members
       let mut entry := f.entry
