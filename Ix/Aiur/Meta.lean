@@ -195,16 +195,16 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.match #[← elabTrm t, ← mkListLit prodType prods.toList]
   | `(trm| $[.]?$f:ident ()) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.app #[g, ← elabEmptyList ``Term]
+    mkAppM ``Term.app #[g, ← elabEmptyList ``Term, toExpr false]
   | `(trm| $[.]?$f:ident ($a:trm $[, $as:trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term]
+    mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term, toExpr false]
   | `(trm| #$[.]?$f:ident()) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.appUnconstrained #[g, ← elabEmptyList ``Term]
+    mkAppM ``Term.app #[g, ← elabEmptyList ``Term, toExpr true]
   | `(trm| #$[.]?$f:ident($a:trm $[, $as:trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.appUnconstrained #[g, ← elabList a as elabTrm ``Term]
+    mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term, toExpr true]
   | `(trm| $a:trm + $b:trm) => do
     mkAppM ``Term.add #[← elabTrm a, ← elabTrm b]
   | `(trm| $a:trm - $b:trm) => do

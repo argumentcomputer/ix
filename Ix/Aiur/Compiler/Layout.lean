@@ -101,13 +101,10 @@ def opLayout : Bytecode.Op → LayoutM Unit
     else
       pushDegree 1
       bumpAuxiliaries 2
-  | .call _ _ outputSize => do
+  | .call _ _ outputSize unconstrained => do
     pushDegrees $ .replicate outputSize 1
     bumpAuxiliaries outputSize
-    bumpLookups
-  | .callUnconstrained _ _ outputSize => do
-    pushDegrees $ .replicate outputSize 1
-    bumpAuxiliaries outputSize
+    if !unconstrained then bumpLookups
   | .store values => do
     pushDegree 1
     bumpAuxiliaries

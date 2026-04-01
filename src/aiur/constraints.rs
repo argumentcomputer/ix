@@ -269,33 +269,34 @@ impl Op {
           state.map.push((x, 1));
         }
       },
-      Op::Call(function_index, inputs, output_size) => {
-        // channel and function index
-        let mut lookup_args = vec![
-          sel.clone() * function_channel(),
-          sel.clone() * G::from_usize(*function_index),
-        ];
-        // input
-        lookup_args.extend(
-          inputs.iter().map(|arg| sel.clone() * state.map[*arg].0.clone()),
-        );
-        // output
-        let output = (0..*output_size).map(|_| {
-          let col = state.next_auxiliary();
-          state.map.push((col.clone(), 1));
-          sel.clone() * col
-        });
-        lookup_args.extend(output);
+      Op::Call(function_index, inputs, output_size, op_unconstrained) => {
+        if *op_unconstrained {
+          // No lookup constraint -- unconstrained call
+          for _ in 0..*output_size {
+            let col = state.next_auxiliary();
+            state.map.push((col.clone(), 1));
+          }
+        } else {
+          // channel and function index
+          let mut lookup_args = vec![
+            sel.clone() * function_channel(),
+            sel.clone() * G::from_usize(*function_index),
+          ];
+          // input
+          lookup_args.extend(
+            inputs.iter().map(|arg| sel.clone() * state.map[*arg].0.clone()),
+          );
+          // output
+          let output = (0..*output_size).map(|_| {
+            let col = state.next_auxiliary();
+            state.map.push((col.clone(), 1));
+            sel.clone() * col
+          });
+          lookup_args.extend(output);
 
-        let lookup = state.next_lookup();
-        combine_lookup_args(lookup, lookup_args);
-        lookup.multiplicity += sel.clone();
-      },
-      Op::CallUnconstrained(_, _, output_size) => {
-        // No lookup constraint -- unconstrained call
-        for _ in 0..*output_size {
-          let col = state.next_auxiliary();
-          state.map.push((col.clone(), 1));
+          let lookup = state.next_lookup();
+          combine_lookup_args(lookup, lookup_args);
+          lookup.multiplicity += sel.clone();
         }
       },
       Op::Store(values) => {

@@ -17,8 +17,7 @@ inductive Op
   | sub : ValIdx → ValIdx → Op
   | mul : ValIdx → ValIdx → Op
   | eqZero : ValIdx → Op
-  | call : FunIdx → Array ValIdx → (outputSize : Nat) → Op
-  | callUnconstrained : FunIdx → Array ValIdx → (outputSize : Nat) → Op
+  | call : FunIdx → Array ValIdx → (outputSize : Nat) → (unconstrained : Bool) → Op
   | store : Array ValIdx → Op
   | load : (size : Nat) → ValIdx → Op
   | assertEq : Array ValIdx → Array ValIdx → Op

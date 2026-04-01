@@ -166,11 +166,11 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
   | .data data => inferData data
   | .let pat expr body => inferLet pat expr body
   | .match term branches => inferMatch term branches
-  | .app func args => inferApplication func args
-  | .appUnconstrained func args => do
+  | .app func args false => inferApplication func args
+  | .app func args true => do
     let result ← inferApplication func args
     match result.inner with
-    | .app g as => pure { result with inner := .appUnconstrained g as }
+    | .app g as _ => pure { result with inner := .app g as true }
     | _ => pure result
   | .ann typ term => do
     pure ⟨typ, ← checkNoEscape term typ, false⟩
@@ -348,15 +348,15 @@ partial def inferUnqualifiedApp (func : Global) (unqualifiedFunc : String) (args
   match ctx.varTypes[Local.str unqualifiedFunc]? with
   | some (.function inputs output) => do
     let args ← checkArgsAndInputs func args inputs
-    pure ⟨output, .app func args, false⟩
+    pure ⟨output, .app func args false, false⟩
   | some _ => throw $ .notAFunction func
   | none => match ctx.decls.getByKey func with
     | some (.function function) => do
       let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
-      pure ⟨function.output, .app func args, false⟩
+      pure ⟨function.output, .app func args false, false⟩
     | some (.constructor dataType constr) => do
       let args ← checkArgsAndInputs func args constr.argTypes
-      pure ⟨.typeRef dataType.name, .app func args, false⟩
+      pure ⟨.typeRef dataType.name, .app func args false, false⟩
     | _ => throw $ .cannotApply func
 where
   checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
@@ -373,10 +373,10 @@ partial def inferQualifiedApp (func : Global) (args : List Term) : CheckM TypedT
   match ctx.decls.getByKey func with
   | some (.function function) =>
     let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
-    pure ⟨function.output, .app func args, false⟩
+    pure ⟨function.output, .app func args false, false⟩
   | some (.constructor dataType constr) =>
     let args ← checkArgsAndInputs func args constr.argTypes
-    pure ⟨.typeRef dataType.name, .app func args, false⟩
+    pure ⟨.typeRef dataType.name, .app func args false, false⟩
   | _ => throw $ .cannotApply func
 where
   checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
