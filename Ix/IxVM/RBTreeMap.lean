@@ -87,7 +87,7 @@ def rbTreeMap := ⟦
 
   /- # Test entrypoints -/
 
-  fn rbtree_map_test() -> [G; 22] {
+  pub fn rbtree_map_test() -> [G; 22] {
     -- Single insert and lookup
     let tree = rbtree_map_insert(5, 42, RBTreeMap.Nil);
     let r0 = rbtree_map_lookup(5, tree);
