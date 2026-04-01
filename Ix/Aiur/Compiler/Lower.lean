@@ -496,7 +496,7 @@ def TypedDecls.toBytecode (decls : TypedDecls) :
         if !function.params.isEmpty then pure acc else do
         let (body, layoutMState) ← function.compile layout
         let nameMap := nameMap.insert function.name functions.size
-        let function := ⟨body, layoutMState.functionLayout, function.entry⟩
+        let function := ⟨function.name.toName.toString, body, layoutMState.functionLayout, function.entry⟩
         let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
         pure (functions.push function, memSizes, nameMap)
       | _ => pure acc

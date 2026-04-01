@@ -69,6 +69,7 @@ structure FunctionLayout where
   deriving Inhabited, Repr, BEq, Hashable
 
 structure Function where
+  name : String
   body : Block
   layout: FunctionLayout
   entry : Bool

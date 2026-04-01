@@ -192,11 +192,12 @@ fn decode_function_layout(ctor: LeanCtor<LeanBorrowed<'_>>) -> FunctionLayout {
 }
 
 fn decode_function(ctor: LeanCtor<LeanBorrowed<'_>>) -> Function {
-  let [body_obj, layout_obj, entry_obj] = ctor.objs::<3>();
+  let [name_obj, body_obj, layout_obj, entry_obj] = ctor.objs::<4>();
+  let name = name_obj.as_string().to_string();
   let body = decode_block(body_obj.as_ctor());
   let layout = decode_function_layout(layout_obj.as_ctor());
   let entry = entry_obj.as_enum_tag() != 0;
-  Function { body, layout, entry }
+  Function { name, body, layout, entry }
 }
 
 pub(crate) fn decode_toplevel(

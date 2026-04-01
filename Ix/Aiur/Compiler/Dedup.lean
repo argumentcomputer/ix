@@ -144,7 +144,7 @@ def Toplevel.deduplicate (t : Toplevel) : Toplevel × (FunIdx → FunIdx) := Id.
         if j != i && classes[j]! == cls then
           entry := entry || functions[j]!.entry
       let body := rewriteBlock remapFn f.body
-      newFunctions := newFunctions.push { body, layout := f.layout, entry }
+      newFunctions := newFunctions.push { name := f.name, body, layout := f.layout, entry }
 
   let toplevel := { t with functions := newFunctions }
   return (toplevel, remapFn)
