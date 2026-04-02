@@ -15,6 +15,8 @@ inductive CheckError
   | notAFunction : Global → CheckError
   | cannotApply : Global → CheckError
   | notADataType : Global → CheckError
+  | wrongNumTypeArgs : Global → Nat → Nat → CheckError
+  | duplicatedTypeParam : Global → String → CheckError
   | typeMismatch : Typ → Typ → CheckError
   | illegalReturn : CheckError
   | wrongNumArgs : Global → Nat → Nat → CheckError
@@ -55,6 +57,9 @@ partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array 
   | .array t n => do
     let t' ← expandTypeM visited toplevelAliases t
     pure $ .array t' n
+  | .app g args => do
+    let args' ← args.mapM (expandTypeM visited toplevelAliases)
+    pure $ .app g args'
   | .ref g => do
     let aliasMap ← get
     -- Check if already expanded
@@ -469,6 +474,16 @@ where
       let lenTyps := typs.length
       unless lenPats == lenTyps do throw $ .wrongNumArgs constrRef lenPats lenTyps
       pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
+    | (.ref constrRef pats, .app dataTypeRef _) => do
+      let ctx ← read
+      let some (.dataType dataType) := ctx.decls.getByKey dataTypeRef | unreachable!
+      let some (.constructor dataType' constr) := ctx.decls.getByKey constrRef | throw $ .notAConstructor constrRef
+      unless dataType == dataType' do throw $ .incompatiblePattern pat typ
+      let typs := constr.argTypes
+      let lenPats := pats.length
+      let lenTyps := typs.length
+      unless lenPats == lenTyps do throw $ .wrongNumArgs constrRef lenPats lenTyps
+      pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
     | (.or pat pat', _) => do
       let bind ← aux pat typ
       let bind' ← aux pat' typ
@@ -508,13 +523,22 @@ partial def wellFormedDecls (decls : Decls) : Except CheckError Unit := do
     | .error e _ => throw e
     | .ok () visited' => visited := visited'
 where
+  checkUniqueParams (name : Global) (params : List String) : EStateM CheckError (Std.HashSet Global) Unit :=
+    let rec go : List String → Std.HashSet String → EStateM CheckError (Std.HashSet Global) Unit
+      | [], _ => pure ()
+      | p :: ps, seen =>
+        if seen.contains p then throw $ .duplicatedTypeParam name p
+        else go ps (seen.insert p)
+    go params {}
   wellFormedDecl : Declaration → EStateM CheckError (Std.HashSet Global) Unit
     | .dataType dataType => do
       let map ← get
       if !map.contains dataType.name then
         set $ map.insert dataType.name
+        checkUniqueParams dataType.name dataType.params
         dataType.constructors.flatMap (·.argTypes) |>.forM wellFormedType
     | .function function => do
+      checkUniqueParams function.name function.params
       wellFormedType function.output
       function.inputs.forM fun (_, typ) => wellFormedType typ
     -- No need to check constructors because they come from datatype declarations.
@@ -523,9 +547,17 @@ where
     | .tuple typs => typs.forM wellFormedType
     | .pointer pointerTyp => wellFormedType pointerTyp
     | .ref ref => match decls.getByKey ref with
-      | some (.dataType _) => pure ()
+      | some (.dataType dt) =>
+        unless dt.params.isEmpty do throw $ .wrongNumTypeArgs ref 0 dt.params.length
       | some _ => throw $ .notADataType ref
       | none => throw $ .unboundGlobal ref
+    | .app g args => match decls.getByKey g with
+      | some (.dataType dt) => do
+        unless args.length == dt.params.length do
+          throw $ .wrongNumTypeArgs g args.length dt.params.length
+        args.forM wellFormedType
+      | some _ => throw $ .notADataType g
+      | none => throw $ .unboundGlobal g
     | _ => pure ()
 
 /-- Checks a function to ensure its body's type matches its declared output type. -/

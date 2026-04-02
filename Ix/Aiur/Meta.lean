@@ -67,14 +67,15 @@ partial def elabPattern : ElabStxCat `pattern
     mkAppM ``Pattern.pointer #[← elabPattern p]
   | stx => throw $ .error stx "Invalid syntax for pattern"
 
-declare_syntax_cat                               typ
-syntax "G"                                     : typ
-syntax "(" typ (", " typ)* ")"                 : typ
-syntax "[" typ "; " num "]"                    : typ
-syntax "&" typ                                 : typ
-syntax ("." noWs)? ident                       : typ
-syntax "fn" "(" ")" " -> " typ                 : typ
-syntax "fn" "(" typ (", " typ)* ")" " -> " typ : typ
+declare_syntax_cat                                 typ
+syntax "G"                                       : typ
+syntax "(" typ (", " typ)* ")"                   : typ
+syntax "[" typ "; " num "]"                      : typ
+syntax "&" typ                                   : typ
+syntax ("." noWs)? ident                         : typ
+syntax ("." noWs)? ident "‹" typ (", " typ)* "›" : typ
+syntax "fn" "(" ")" " -> " typ                   : typ
+syntax "fn" "(" typ (", " typ)* ")" " -> " typ   : typ
 
 partial def elabTyp : ElabStxCat `typ
   | `(typ| G) => pure $ mkConst ``Typ.field
@@ -91,6 +92,9 @@ partial def elabTyp : ElabStxCat `typ
     mkAppM ``Typ.function #[← elabEmptyList ``Typ, ← elabTyp t]
   | `(typ| fn($t$[, $ts:typ]*) -> $t':typ) => do
     mkAppM ``Typ.function #[← elabList t ts elabTyp ``Typ, ← elabTyp t']
+  | `(typ| $[.]?$i:ident‹$t:typ $[, $ts:typ]*›) => do
+    let g ← mkAppM ``Global.mk #[toExpr i.getId]
+    mkAppM ``Typ.app #[g, ← elabList t ts elabTyp ``Typ]
   | stx => throw $ .error stx "Invalid syntax for type"
 
 declare_syntax_cat                                              trm

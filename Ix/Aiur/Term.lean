@@ -59,6 +59,7 @@ inductive Typ where
   | array : Typ → Nat → Typ
   | pointer : Typ → Typ
   | ref : Global → Typ
+  | app : Global → List Typ → Typ
   | function : List Typ → Typ → Typ
   deriving Repr, BEq, Hashable, Inhabited
 

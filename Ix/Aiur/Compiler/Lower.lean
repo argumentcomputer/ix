@@ -85,6 +85,9 @@ def typSize (layoutMap : LayoutMap) : Typ → Except String Nat
 | .ref g => match layoutMap[g]? with
   | some (.dataType size) => pure size
   | _ => throw "Impossible case"
+| .app g _ => match layoutMap[g]? with
+  | some (.dataType size) => pure size
+  | _ => throw "Impossible case"
 
 structure CompilerState where
   valIdx : Bytecode.ValIdx

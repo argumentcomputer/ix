@@ -35,6 +35,9 @@ partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
   | .ref g => match decls.getByKey g with
     | some (.dataType data) => data.size decls visited
     | _ => throw s!"Datatype not found: `{g}`"
+  | .app g _ => match decls.getByKey g with
+    | some (.dataType data) => data.size decls visited
+    | _ => throw s!"Datatype not found: `{g}`"
 
 partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {})
     (c : Constructor) : Except String Nat :=
