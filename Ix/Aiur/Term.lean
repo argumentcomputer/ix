@@ -119,6 +119,7 @@ structure Constructor where
 
 structure DataType where
   name : Global
+  params : List String
   constructors : List Constructor
   deriving Repr, BEq, Inhabited
 
@@ -129,6 +130,7 @@ structure TypeAlias where
 
 structure Function where
   name : Global
+  params : List String
   inputs : List (Local × Typ)
   output : Typ
   body : Term

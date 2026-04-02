@@ -61,6 +61,7 @@ end
 
 structure TypedFunction where
   name : Global
+  params : List String
   inputs : List (Local × Typ)
   output : Typ
   body : TypedTerm

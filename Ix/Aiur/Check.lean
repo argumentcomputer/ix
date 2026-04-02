@@ -533,7 +533,7 @@ def checkFunction (function : Function) : CheckM TypedFunction := do
   let body ← inferTerm function.body
   unless body.escapes do
     unless body.typ == function.output do throw $ .typeMismatch body.typ function.output
-  pure ⟨function.name, function.inputs, function.output, body, function.entry⟩
+  pure ⟨function.name, function.params, function.inputs, function.output, body, function.entry⟩
 
 end Aiur
 

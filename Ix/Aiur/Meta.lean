@@ -459,18 +459,49 @@ def elabConstructor : ElabStxCat `constructor
     | _ => throw $ .error i "Illegal constructor name"
   | stx => throw $ .error stx "Invalid syntax for constructor"
 
-declare_syntax_cat                                             data_type
-syntax "enum " ident                                         : data_type
-syntax "enum " ident "{" constructor (", " constructor)* "}" : data_type
+declare_syntax_cat                                                                         data_type
+syntax "enum " ident                                                                     : data_type
+syntax "enum " ident "{" constructor (", " constructor)* "}"                             : data_type
+syntax "enum " ident "‹" ident (", " ident)* "›" "{" constructor (", " constructor)* "}" : data_type
+
+initialize templateTypeParamsRef : IO.Ref (Array String) ← IO.mkRef #[]
+
+def withTemplateTypeParams (params : Array String) (x : TermElabM α) : TermElabM α := do
+  let old ← templateTypeParamsRef.get
+  templateTypeParamsRef.set params
+  try
+    let result ← x
+    templateTypeParamsRef.set old
+    pure result
+  catch e =>
+    templateTypeParamsRef.set old
+    throw e
+
+def elabTypeParams (head : TSyntax `ident) (tail : Array (TSyntax `ident)) :
+    TermElabM (Array String × Expr) := do
+  let mut params := #[]
+  for p in #[head] ++ tail do
+    match p.getId with
+    | .str .anonymous name => params := params.push name
+    | _ => throw $ .error p "Illegal type parameter name"
+  let expr ← mkListLit (mkConst ``String) (params.map toExpr).toList
+  pure (params, expr)
 
 def elabDataType : ElabStxCat `data_type
   | `(data_type| enum $n:ident) => do
     let g ← mkAppM ``Global.mk #[toExpr n.getId]
-    mkAppM ``DataType.mk #[g, ← elabEmptyList ``Constructor]
+    mkAppM ``DataType.mk #[g, ← elabEmptyList ``String, ← elabEmptyList ``Constructor]
   | `(data_type| enum $n:ident {$c:constructor $[, $cs:constructor]*}) => do
     let g ← mkAppM ``Global.mk #[toExpr n.getId]
-    mkAppM ``DataType.mk #[g, ← elabList c cs elabConstructor ``Constructor]
+    mkAppM ``DataType.mk #[g, ← elabEmptyList ``String, ← elabList c cs elabConstructor ``Constructor]
+  | `(data_type| enum $n:ident‹$p:ident $[, $ps:ident]*› {$c:constructor $[, $cs:constructor]*}) => do
+    let g ← mkAppM ``Global.mk #[toExpr n.getId]
+    let (params, paramsExpr) ← elabTypeParams p ps
+    let ctors ← withTemplateTypeParams params
+      (elabList c cs elabConstructor ``Constructor)
+    mkAppM ``DataType.mk #[g, paramsExpr, ctors]
   | stx => throw $ .error stx "Invalid syntax for data type"
+
 
 declare_syntax_cat             type_alias
 syntax "type " ident " = " typ : type_alias
@@ -491,22 +522,38 @@ def elabBind : ElabStxCat `bind
     | _ => throw $ .error i "Illegal variable name"
   | stx => throw $ .error stx "Invalid syntax for binding"
 
-declare_syntax_cat                                                                 function
-syntax ("pub ")? "fn " ident "(" ")" (" -> " typ)? "{" trm "}"                   : function
-syntax ("pub ")? "fn " ident "(" bind (", " bind)* ")" (" -> " typ)? "{" trm "}" : function
+declare_syntax_cat                                                                                   function
+syntax ("pub ")? "fn " ident "(" ")" (" -> " typ)? "{" trm "}"                                     : function
+syntax ("pub ")? "fn " ident "(" bind (", " bind)* ")" (" -> " typ)? "{" trm "}"                   : function
+syntax "fn " ident "‹" ident (", " ident)* "›" "(" ")" (" -> " typ)? "{" trm "}"                   : function
+syntax "fn " ident "‹" ident (", " ident)* "›" "(" bind (", " bind)* ")" (" -> " typ)? "{" trm "}" : function
 
 def elabFunction : ElabStxCat `function
   | `(function| $[pub%$e]? fn $i:ident() $[-> $ty:typ]? {$t:trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     let e := elabEntryBool e
-    mkAppM ``Function.mk #[g, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t, e]
+    mkAppM ``Function.mk #[g, ← elabEmptyList ``String, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t, e]
   | `(function| $[pub%$e]? fn $i:ident($b:bind $[, $bs:bind]*) $[-> $ty:typ]? {$t:trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     let e := elabEntryBool e
     mkAppM ``Function.mk
-      #[g, ← elabListCore b bs elabBind bindType, ← elabRetTyp ty, ← elabTrm t, e]
+      #[g, ← elabEmptyList ``String, ← elabListCore b bs elabBind bindType, ← elabRetTyp ty, ← elabTrm t, e]
+  | `(function| fn $i:ident‹$p:ident $[, $ps:ident]*›() $[-> $ty:typ]? {$t:trm}) => do
+    let g ← mkAppM ``Global.mk #[toExpr i.getId]
+    let (params, paramsExpr) ← elabTypeParams p ps
+    let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
+    withTemplateTypeParams params do
+      mkAppM ``Function.mk
+        #[g, paramsExpr, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t, mkConst ``Bool.false]
+  | `(function| fn $i:ident‹$p:ident $[, $ps:ident]*›($b:bind $[, $bs:bind]*) $[-> $ty:typ]? {$t:trm}) => do
+    let g ← mkAppM ``Global.mk #[toExpr i.getId]
+    let (params, paramsExpr) ← elabTypeParams p ps
+    let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
+    withTemplateTypeParams params do
+      mkAppM ``Function.mk
+        #[g, paramsExpr, ← elabListCore b bs elabBind bindType, ← elabRetTyp ty, ← elabTrm t, mkConst ``Bool.false]
   | stx => throw $ .error stx "Invalid syntax for function"
 where
   elabEntryBool : Option Syntax → Expr
