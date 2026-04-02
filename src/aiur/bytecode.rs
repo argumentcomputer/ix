@@ -40,8 +40,7 @@ pub enum Op {
   Sub(ValIdx, ValIdx),
   Mul(ValIdx, ValIdx),
   EqZero(ValIdx),
-  Call(FunIdx, Vec<ValIdx>, usize),
-  CallUnconstrained(FunIdx, Vec<ValIdx>, usize),
+  Call(FunIdx, Vec<ValIdx>, usize, bool),
   Store(Vec<ValIdx>),
   Load(usize, ValIdx),
   AssertEq(Vec<ValIdx>, Vec<ValIdx>),
@@ -93,7 +92,7 @@ impl Block {
 
 impl Toplevel {
   /// A function needs a circuit iff it is reachable from an entry point
-  /// through a chain of `Op::Call` edges. `Op::CallUnconstrained` edges
+  /// through a chain of constrained `Op::Call` edges. Unconstrained calls
   /// do NOT propagate circuit-need, because once execution enters
   /// unconstrained mode it cascades to all sub-calls.
   pub fn needs_circuit(&self) -> Vec<bool> {
@@ -109,10 +108,10 @@ impl Toplevel {
       }
     }
 
-    // BFS along Op::Call edges (NOT CallUnconstrained)
+    // BFS along constrained Call edges (NOT unconstrained)
     while let Some(fi) = stack.pop() {
       self.functions[fi].body.for_each_op(&mut |op| {
-        if let Op::Call(callee, _, _) = op
+        if let Op::Call(callee, _, _, false) = op
           && !needs[*callee]
         {
           needs[*callee] = true;

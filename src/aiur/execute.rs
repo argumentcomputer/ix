@@ -141,12 +141,12 @@ impl Function {
           let a = map[*a];
           map.push(G::from_bool(a == G::ZERO));
         },
-        ExecEntry::Op(Op::Call(callee_idx, args, _)) => {
+        ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
           let args = args.iter().map(|i| map[*i]).collect();
           if let Some(result) =
             record.function_queries[*callee_idx].get_mut(&args)
           {
-            if !unconstrained {
+            if !unconstrained && !op_unconstrained {
               result.multiplicity += G::ONE;
             }
             map.extend(result.output.clone());
@@ -158,25 +158,7 @@ impl Function {
               unconstrained,
             });
             fun_idx = *callee_idx;
-            push_block_exec_entries!(&toplevel.functions[fun_idx].body);
-          }
-        },
-        ExecEntry::Op(Op::CallUnconstrained(callee_idx, args, _)) => {
-          let args = args.iter().map(|i| map[*i]).collect();
-          if let Some(result) =
-            record.function_queries[*callee_idx].get_mut(&args)
-          {
-            // Don't bump multiplicity -- unconstrained call
-            map.extend(result.output.clone());
-          } else {
-            let saved_map = std::mem::replace(&mut map, args);
-            callers_states_stack.push(CallerState {
-              fun_idx,
-              map: saved_map,
-              unconstrained,
-            });
-            fun_idx = *callee_idx;
-            unconstrained = true; // forced by call site
+            unconstrained = unconstrained || *op_unconstrained;
             push_block_exec_entries!(&toplevel.functions[fun_idx].body);
           }
         },

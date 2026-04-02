@@ -151,13 +151,13 @@ partial def toIndex
   | .eqZero a => do
     let a ← expectIdx a
     pushOp (.eqZero a)
-  | .app name@(⟨.str .anonymous unqualifiedName⟩) args =>
+  | .app name@(⟨.str .anonymous unqualifiedName⟩) args unconstrained =>
     match bindings.get? (.str unqualifiedName) with
     | some _ => throw "Dynamic calls not yet implemented"
     | none => match layoutMap[name]! with
       | .function layout => do
         let args ← buildArgs args
-        pushOp (Bytecode.Op.call layout.index args layout.outputSize) layout.outputSize
+        pushOp (.call layout.index args layout.outputSize unconstrained) layout.outputSize
       | .constructor layout => do
         let size := layout.size
         let index ← pushOp (.const (.ofNat layout.index))
@@ -168,10 +168,10 @@ partial def toIndex
         else
           pure index
       | _ => throw "Should not happen after typechecking"
-  | .app name args => match layoutMap[name]! with
+  | .app name args unconstrained => match layoutMap[name]! with
     | .function layout => do
       let args ← buildArgs args
-      pushOp (Bytecode.Op.call layout.index args layout.outputSize) layout.outputSize
+      pushOp (.call layout.index args layout.outputSize unconstrained) layout.outputSize
     | .constructor layout => do
       let size := layout.size
       let index ← pushOp (.const (.ofNat layout.index))
@@ -181,19 +181,6 @@ partial def toIndex
         pure $ index ++ Array.replicate (size - index.size) padding
       else
         pure index
-    | _ => throw "Should not happen after typechecking"
-  | .appUnconstrained name@(⟨.str .anonymous unqualifiedName⟩) args =>
-    match bindings.get? (.str unqualifiedName) with
-    | some _ => throw "Dynamic unconstrained calls not yet implemented"
-    | none => match layoutMap[name]! with
-      | .function layout => do
-        let args ← buildArgs args
-        pushOp (Bytecode.Op.callUnconstrained layout.index args layout.outputSize) layout.outputSize
-      | _ => throw "Should not happen after typechecking"
-  | .appUnconstrained name args => match layoutMap[name]! with
-    | .function layout => do
-      let args ← buildArgs args
-      pushOp (Bytecode.Op.callUnconstrained layout.index args layout.outputSize) layout.outputSize
     | _ => throw "Should not happen after typechecking"
   | .proj arg i => do
     let typs ← match (arg.typ, arg.escapes) with

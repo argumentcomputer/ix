@@ -166,12 +166,7 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
   | .data data => inferData data
   | .let pat expr body => inferLet pat expr body
   | .match term branches => inferMatch term branches
-  | .app func args => inferApplication func args
-  | .appUnconstrained func args => do
-    let result ← inferApplication func args
-    match result.inner with
-    | .app g as => pure { result with inner := .appUnconstrained g as }
-    | _ => pure result
+  | .app func args u => inferApplication func args u
   | .ann typ term => do
     pure ⟨typ, ← checkNoEscape term typ, false⟩
   | .proj tup i => inferProj tup i
@@ -343,20 +338,20 @@ partial def inferLet (pat : Pattern) (expr : Term) (body : Term) : CheckM TypedT
   let body' ← withReader (bindIdents bindings) (inferTerm body)
   pure ⟨body'.typ, .let pat expr' body', body'.escapes⟩
 
-partial def inferUnqualifiedApp (func : Global) (unqualifiedFunc : String) (args : List Term) : CheckM TypedTerm := do
+partial def inferUnqualifiedApp (func : Global) (unqualifiedFunc : String) (args : List Term) (u : Bool) : CheckM TypedTerm := do
   let ctx ← read
   match ctx.varTypes[Local.str unqualifiedFunc]? with
   | some (.function inputs output) => do
     let args ← checkArgsAndInputs func args inputs
-    pure ⟨output, .app func args, false⟩
+    pure ⟨output, .app func args u, false⟩
   | some _ => throw $ .notAFunction func
   | none => match ctx.decls.getByKey func with
     | some (.function function) => do
       let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
-      pure ⟨function.output, .app func args, false⟩
+      pure ⟨function.output, .app func args u, false⟩
     | some (.constructor dataType constr) => do
       let args ← checkArgsAndInputs func args constr.argTypes
-      pure ⟨.typeRef dataType.name, .app func args, false⟩
+      pure ⟨.typeRef dataType.name, .app func args u, false⟩
     | _ => throw $ .cannotApply func
 where
   checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
@@ -368,15 +363,15 @@ where
       pure ⟨input, inner, false⟩
     args.zip inputs |>.mapM pass
 
-partial def inferQualifiedApp (func : Global) (args : List Term) : CheckM TypedTerm := do
+partial def inferQualifiedApp (func : Global) (args : List Term) (u : Bool) : CheckM TypedTerm := do
   let ctx ← read
   match ctx.decls.getByKey func with
   | some (.function function) =>
     let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
-    pure ⟨function.output, .app func args, false⟩
+    pure ⟨function.output, .app func args u, false⟩
   | some (.constructor dataType constr) =>
     let args ← checkArgsAndInputs func args constr.argTypes
-    pure ⟨.typeRef dataType.name, .app func args, false⟩
+    pure ⟨.typeRef dataType.name, .app func args u, false⟩
   | _ => throw $ .cannotApply func
 where
   checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
@@ -388,10 +383,10 @@ where
       pure ⟨input, inner, false⟩
     args.zip inputs |>.mapM pass
 
-partial def inferApplication (func : Global) (args : List Term) : CheckM TypedTerm :=
+partial def inferApplication (func : Global) (args : List Term) (u : Bool) : CheckM TypedTerm :=
   match func.toName with
-  | .str .anonymous unqualifiedFunc => inferUnqualifiedApp func unqualifiedFunc args
-  | _ => inferQualifiedApp func args
+  | .str .anonymous unqualifiedFunc => inferUnqualifiedApp func unqualifiedFunc args u
+  | _ => inferQualifiedApp func args u
 
 partial def inferAssertEq (a b ret : Term) : CheckM TypedTerm := do
   let (typ, a) ← inferNoEscape a

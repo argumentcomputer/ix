@@ -21,10 +21,9 @@ namespace Aiur
 
 namespace Bytecode
 
-/-- Erase `FunIdx` in call/callUnconstrained ops, replacing with 0. -/
+/-- Erase `FunIdx` in call ops, replacing with 0. -/
 def skeletonOp : Op → Op
-  | .call _ args size => .call 0 args size
-  | .callUnconstrained _ args size => .callUnconstrained 0 args size
+  | .call _ args size u => .call 0 args size u
   | op => op
 
 mutual
@@ -42,8 +41,7 @@ end
 
 /-- Collect all callee `FunIdx` values from a block, depth-first. -/
 def collectCalleesOp : Op → Array FunIdx → Array FunIdx
-  | .call idx _ _, acc => acc.push idx
-  | .callUnconstrained idx _ _, acc => acc.push idx
+  | .call idx _ _ _, acc => acc.push idx
   | _, acc => acc
 
 mutual
@@ -62,8 +60,7 @@ end
 
 /-- Rewrite all `FunIdx` values in a block using a mapping function. -/
 def rewriteOp (f : FunIdx → FunIdx) : Op → Op
-  | .call idx args size => .call (f idx) args size
-  | .callUnconstrained idx args size => .callUnconstrained (f idx) args size
+  | .call idx args size u => .call (f idx) args size u
   | op => op
 
 mutual

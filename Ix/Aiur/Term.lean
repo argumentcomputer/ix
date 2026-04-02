@@ -73,8 +73,7 @@ inductive Term
   | ret : Term → Term
   | let : Pattern → Term → Term → Term
   | match : Term → List (Pattern × Term) → Term
-  | app : Global → List Term → Term
-  | appUnconstrained : Global → List Term → Term
+  | app : Global → List Term → (unconstrained : Bool) → Term
   | add : Term → Term → Term
   | sub : Term → Term → Term
   | mul : Term → Term → Term
@@ -123,8 +122,7 @@ inductive TypedTermInner
   | ret : TypedTerm → TypedTermInner
   | let : Pattern → TypedTerm → TypedTerm → TypedTermInner
   | match : TypedTerm → List (Pattern × TypedTerm) → TypedTermInner
-  | app : Global → List TypedTerm → TypedTermInner
-  | appUnconstrained : Global → List TypedTerm → TypedTermInner
+  | app : Global → List TypedTerm → (unconstrained : Bool) → TypedTermInner
   | add : TypedTerm → TypedTerm → TypedTermInner
   | sub : TypedTerm → TypedTerm → TypedTermInner
   | mul : TypedTerm → TypedTerm → TypedTermInner
