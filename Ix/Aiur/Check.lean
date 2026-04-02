@@ -31,6 +31,7 @@ inductive CheckError
   | notAPointer : Typ → CheckError
   | duplicatedBind : Pattern → CheckError
   | typeAliasCycle : Global → CheckError
+  | unconstrainedConstructor : Global → CheckError
   deriving Repr
 
 instance : ToString CheckError where
@@ -355,6 +356,7 @@ partial def inferGlobalApplication (func : Global) (args : List Term) (u : Bool)
     let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
     pure ⟨function.output, .app func args u, false⟩
   | some (.constructor dataType constr) =>
+    if u then throw $ .unconstrainedConstructor func
     let args ← checkArgsAndInputs func args constr.argTypes
     pure ⟨.ref dataType.name, .app func args u, false⟩
   | _ => throw $ .cannotApply func
