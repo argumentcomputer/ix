@@ -40,7 +40,8 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       Op::EqZero(lean_unbox_nat_as_usize(&a))
     },
     5 => {
-      let [fun_idx, val_idxs, output_size, unconstrained_obj] = ctor.objs::<4>();
+      let [fun_idx, val_idxs, output_size, unconstrained_obj] =
+        ctor.objs::<4>();
       let fun_idx = lean_unbox_nat_as_usize(&fun_idx);
       let val_idxs = decode_vec_val_idx(val_idxs);
       let output_size = lean_unbox_nat_as_usize(&output_size);
