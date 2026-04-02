@@ -8,8 +8,8 @@ namespace Aiur
 
 inductive CheckError
   | duplicatedDefinition : Global → CheckError
-  | undefinedGlobal : Global → CheckError
-  | unboundVariable : Global → CheckError
+  | unboundGlobal : Global → CheckError
+  | unboundLocal : Local → CheckError
   | notAConstructor : Global → CheckError
   | notAValue : Global → CheckError
   | notAFunction : Global → CheckError
@@ -30,6 +30,7 @@ inductive CheckError
   | branchMismatch : Typ → Typ → CheckError
   | notAPointer : Typ → CheckError
   | duplicatedBind : Pattern → CheckError
+  | typeAliasCycle : Global → CheckError
   deriving Repr
 
 instance : ToString CheckError where
@@ -62,7 +63,7 @@ partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array 
     if let some (alias : TypeAlias) := toplevelAliases.find? (·.name == g) then
       -- Check for cycle
       if visited.contains g then
-        throw $ CheckError.undefinedGlobal ⟨.mkSimple s!"Cycle detected in type alias `{g}`"⟩
+        throw $ .typeAliasCycle g
       -- Expand the alias recursively
       let expanded ← expandTypeM (visited.insert g) toplevelAliases alias.expansion
       -- Save to aliasMap
@@ -148,7 +149,7 @@ def refLookup (global : Global) : CheckM Typ := do
     unless args.isEmpty do (throw $ .wrongNumArgs global args.length 0)
     pure $ .typeRef $ dataType.name
   | some _ => throw $ .notAValue global
-  | none => throw $ .unboundVariable global
+  | none => throw $ .unboundGlobal global
 
 /-- Extend context with locally bound variables. -/
 def bindIdents (bindings : List (Local × Typ)) (ctx : CheckContext) : CheckContext :=
@@ -319,12 +320,12 @@ partial def inferIoWrite (data ret : Term) : CheckM TypedTerm := do
 
 partial def inferVariable (x : Local) : CheckM TypedTerm := do
   let ctx ← read
-  match ctx.varTypes[x]? with
-  | some t => pure ⟨t, .var x, false⟩
-  | none =>
-    let Local.str localName := x | unreachable!
+  match (ctx.varTypes[x]?, x) with
+  | (some t, _) => pure ⟨t, .var x, false⟩
+  | (none, Local.str localName) =>
     let typ ← refLookup (Global.init localName)
     pure ⟨typ, .var x, false⟩
+  | (none, _) => throw $ .unboundLocal x
 
 partial def inferReturn (term : Term) : CheckM TypedTerm := do
   let ctx ← read
@@ -338,32 +339,16 @@ partial def inferLet (pat : Pattern) (expr : Term) (body : Term) : CheckM TypedT
   let body' ← withReader (bindIdents bindings) (inferTerm body)
   pure ⟨body'.typ, .let pat expr' body', body'.escapes⟩
 
-partial def inferUnqualifiedApp (func : Global) (unqualifiedFunc : String) (args : List Term) (u : Bool) : CheckM TypedTerm := do
-  let ctx ← read
-  match ctx.varTypes[Local.str unqualifiedFunc]? with
-  | some (.function inputs output) => do
-    let args ← checkArgsAndInputs func args inputs
-    pure ⟨output, .app func args u, false⟩
-  | some _ => throw $ .notAFunction func
-  | none => match ctx.decls.getByKey func with
-    | some (.function function) => do
-      let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
-      pure ⟨function.output, .app func args u, false⟩
-    | some (.constructor dataType constr) => do
-      let args ← checkArgsAndInputs func args constr.argTypes
-      pure ⟨.typeRef dataType.name, .app func args u, false⟩
-    | _ => throw $ .cannotApply func
-where
-  checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
-    let lenArgs := args.length
-    let lenInputs := inputs.length
-    unless lenArgs == lenInputs do throw $ .wrongNumArgs func lenArgs lenInputs
-    let pass := fun (arg, input) => do
-      let inner ← checkNoEscape arg input
-      pure ⟨input, inner, false⟩
-    args.zip inputs |>.mapM pass
+partial def checkArgsAndInputs (func : Global) (args : List Term) (inputs : List Typ) : CheckM (List TypedTerm) := do
+  let lenArgs := args.length
+  let lenInputs := inputs.length
+  unless lenArgs == lenInputs do throw $ .wrongNumArgs func lenArgs lenInputs
+  let pass := fun (arg, input) => do
+    let inner ← checkNoEscape arg input
+    pure ⟨input, inner, false⟩
+  args.zip inputs |>.mapM pass
 
-partial def inferQualifiedApp (func : Global) (args : List Term) (u : Bool) : CheckM TypedTerm := do
+partial def inferGlobalApplication (func : Global) (args : List Term) (u : Bool) : CheckM TypedTerm := do
   let ctx ← read
   match ctx.decls.getByKey func with
   | some (.function function) =>
@@ -373,20 +358,20 @@ partial def inferQualifiedApp (func : Global) (args : List Term) (u : Bool) : Ch
     let args ← checkArgsAndInputs func args constr.argTypes
     pure ⟨.typeRef dataType.name, .app func args u, false⟩
   | _ => throw $ .cannotApply func
-where
-  checkArgsAndInputs func args inputs : CheckM (List TypedTerm) := do
-    let lenArgs := args.length
-    let lenInputs := inputs.length
-    unless lenArgs == lenInputs do throw $ .wrongNumArgs func lenArgs lenInputs
-    let pass := fun (arg, input) => do
-      let inner ← checkNoEscape arg input
-      pure ⟨input, inner, false⟩
-    args.zip inputs |>.mapM pass
+
+partial def inferLocalApplication (func : Global) (unqualifiedFunc : String) (args : List Term) (u : Bool) : CheckM TypedTerm := do
+  let ctx ← read
+  match ctx.varTypes[Local.str unqualifiedFunc]? with
+  | some (.function inputs output) => do
+    let args ← checkArgsAndInputs func args inputs
+    pure ⟨output, .app func args u, false⟩
+  | some _ => throw $ .notAFunction func
+  | none => inferGlobalApplication func args u
 
 partial def inferApplication (func : Global) (args : List Term) (u : Bool) : CheckM TypedTerm :=
   match func.toName with
-  | .str .anonymous unqualifiedFunc => inferUnqualifiedApp func unqualifiedFunc args u
-  | _ => inferQualifiedApp func args u
+  | .str .anonymous unqualifiedFunc => inferLocalApplication func unqualifiedFunc args u
+  | _ => inferGlobalApplication func args u
 
 partial def inferAssertEq (a b ret : Term) : CheckM TypedTerm := do
   let (typ, a) ← inferNoEscape a
@@ -538,7 +523,7 @@ where
     | .typeRef typeRef => match decls.getByKey typeRef with
       | some (.dataType _) => pure ()
       | some _ => throw $ .notADataType typeRef
-      | none => throw $ .undefinedGlobal typeRef
+      | none => throw $ .unboundGlobal typeRef
     | _ => pure ()
 
 /-- Checks a function to ensure its body's type matches its declared output type. -/
