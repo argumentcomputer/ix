@@ -163,6 +163,8 @@ def bindIdents (bindings : List (Local × Typ)) (ctx : CheckContext) : CheckCont
 
 def fieldTerm (t : TypedTermInner) : TypedTerm := ⟨.field, t, false⟩
 
+def unify (t t' : Typ) : CheckM Bool := pure (t == t')
+
 mutual
 partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
   | .unit => pure ⟨.unit, .unit, false⟩
@@ -206,7 +208,7 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
 
 partial def checkNoEscape (term : Term) (typ : Typ) : CheckM TypedTermInner := do
   let (typ', inner) ← inferNoEscape term
-  unless typ == typ' do throw $ .typeMismatch typ typ'
+  unless ← unify typ typ' do throw $ .typeMismatch typ typ'
   pure inner
 
 partial def inferNoEscape (term : Term) : CheckM (Typ × TypedTermInner) := do
@@ -300,7 +302,7 @@ partial def inferIoSetInfo (key idx len ret : Term) : CheckM TypedTerm := do
   let (keyTyp, keyInner) ← inferNoEscape key
   match keyTyp with
   | .array keyEltTyp _ =>
-    if keyEltTyp != .field then throw $ .typeMismatch .field keyEltTyp
+    if !(← unify keyEltTyp .field) then throw $ .typeMismatch .field keyEltTyp
     let idx ← fieldTerm <$> checkNoEscape idx .field
     let len ← fieldTerm <$> checkNoEscape len .field
     let ret ← inferTerm ret
@@ -318,7 +320,7 @@ partial def inferIoWrite (data ret : Term) : CheckM TypedTerm := do
   let (dataTyp, dataInner) ← inferNoEscape data
   match dataTyp with
   | .array dataEltTyp _ =>
-    if dataEltTyp != .field then throw $ .typeMismatch .field dataEltTyp
+    if !(← unify dataEltTyp .field) then throw $ .typeMismatch .field dataEltTyp
     let ret ← inferTerm ret
     let ioWrite := .ioWrite ⟨dataTyp, dataInner, false⟩ ret
     pure ⟨ret.typ, ioWrite, ret.escapes⟩
@@ -438,7 +440,7 @@ where
           pure (typedBranches, some (typedBranch.typ, false))
         else
           -- Neither branch escapes so their types must match
-          unless (matchTyp == typedBranch.typ) do throw $ .branchMismatch matchTyp typedBranch.typ
+          unless ← unify matchTyp typedBranch.typ do throw $ .branchMismatch matchTyp typedBranch.typ
           pure (typedBranches, currentTypOpt))
 
 /-- Checks that a pattern matches a given type and collects its bindings. -/
@@ -462,7 +464,7 @@ where
       let ctx ← read
       let some (.function function) := ctx.decls.getByKey funcName | throw $ .incompatiblePattern pat typ
       let typ' := .function (function.inputs.map Prod.snd) function.output
-      unless typ == typ' do throw $ .typeMismatch typ typ'
+      unless ← unify typ typ' do throw $ .typeMismatch typ typ'
       pure []
     | (.ref constrRef pats, .ref dataTypeRef) => do
       let ctx ← read
@@ -564,7 +566,7 @@ where
 def checkFunction (function : Function) : CheckM TypedFunction := do
   let body ← inferTerm function.body
   unless body.escapes do
-    unless body.typ == function.output do throw $ .typeMismatch body.typ function.output
+    unless ← unify body.typ function.output do throw $ .typeMismatch body.typ function.output
   pure ⟨function.name, function.params, function.inputs, function.output, body, function.entry⟩
 
 end Aiur
