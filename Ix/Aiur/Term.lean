@@ -246,43 +246,6 @@ inductive TypedDeclaration
 
 abbrev TypedDecls := IndexMap Global TypedDeclaration
 
-mutual
-
-open Std (HashSet)
-
-partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
-    Typ → Except String Nat
-  | .unit => pure 0
-  | .field .. => pure 1
-  | .pointer .. => pure 1
-  | .function .. => pure 1
-  | .tuple ts => ts.foldlM (init := 0) fun acc t => do
-    let tSize ← t.size decls visited
-    pure $ acc + tSize
-  | .array t n => do
-    let tSize ← t.size decls visited
-    pure $ n * tSize
-  | .ref g => match decls.getByKey g with
-    | some (.dataType data) => data.size decls visited
-    | _ => throw s!"Datatype not found: `{g}`"
-
-partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {})
-    (c : Constructor) : Except String Nat :=
-  c.argTypes.foldlM (init := 0) fun acc t => do
-    let tSize ← t.size decls visited
-    pure $ acc + tSize
-
-partial def DataType.size (dt : DataType) (decls : TypedDecls)
-    (visited : HashSet Global := {}) : Except String Nat :=
-  if visited.contains dt.name then
-    throw s!"Cycle detected at datatype `{dt.name}`"
-  else do
-    let visited := visited.insert dt.name
-    let ctorSizes ← dt.constructors.mapM (Constructor.size decls visited)
-    let maxFields := ctorSizes.foldl max 0
-    pure $ maxFields + 1
-end
-
 end Aiur
 
 end
