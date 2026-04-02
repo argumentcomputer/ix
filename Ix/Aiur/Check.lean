@@ -54,7 +54,7 @@ partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array 
   | .array t n => do
     let t' ← expandTypeM visited toplevelAliases t
     pure $ .array t' n
-  | .typeRef g => do
+  | .ref g => do
     let aliasMap ← get
     -- Check if already expanded
     if let some expanded := aliasMap[g]? then
@@ -71,7 +71,7 @@ partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array 
       return expanded
     else
       -- It's a dataType, keep it
-      pure $ .typeRef g
+      pure $ .ref g
 
 /--
 Constructs a map of declarations from a toplevel, expanding all type aliases.
@@ -147,7 +147,7 @@ def refLookup (global : Global) : CheckM Typ := do
   | some (.constructor dataType constructor) =>
     let args := constructor.argTypes
     unless args.isEmpty do (throw $ .wrongNumArgs global args.length 0)
-    pure $ .typeRef $ dataType.name
+    pure $ .ref $ dataType.name
   | some _ => throw $ .notAValue global
   | none => throw $ .unboundGlobal global
 
@@ -356,7 +356,7 @@ partial def inferGlobalApplication (func : Global) (args : List Term) (u : Bool)
     pure ⟨function.output, .app func args u, false⟩
   | some (.constructor dataType constr) =>
     let args ← checkArgsAndInputs func args constr.argTypes
-    pure ⟨.typeRef dataType.name, .app func args u, false⟩
+    pure ⟨.ref dataType.name, .app func args u, false⟩
   | _ => throw $ .cannotApply func
 
 partial def inferLocalApplication (func : Global) (unqualifiedFunc : String) (args : List Term) (u : Bool) : CheckM TypedTerm := do
@@ -457,7 +457,7 @@ where
       let typ' := .function (function.inputs.map Prod.snd) function.output
       unless typ == typ' do throw $ .typeMismatch typ typ'
       pure []
-    | (.ref constrRef pats, .typeRef dataTypeRef) => do
+    | (.ref constrRef pats, .ref dataTypeRef) => do
       let ctx ← read
       let some (.dataType dataType) := ctx.decls.getByKey dataTypeRef | unreachable!
       let some (.constructor dataType' constr) := ctx.decls.getByKey constrRef | throw $ .notAConstructor constrRef
@@ -520,10 +520,10 @@ where
   wellFormedType : Typ → EStateM CheckError (Std.HashSet Global) Unit
     | .tuple typs => typs.forM wellFormedType
     | .pointer pointerTyp => wellFormedType pointerTyp
-    | .typeRef typeRef => match decls.getByKey typeRef with
+    | .ref ref => match decls.getByKey ref with
       | some (.dataType _) => pure ()
-      | some _ => throw $ .notADataType typeRef
-      | none => throw $ .unboundGlobal typeRef
+      | some _ => throw $ .notADataType ref
+      | none => throw $ .unboundGlobal ref
     | _ => pure ()
 
 /-- Checks a function to ensure its body's type matches its declared output type. -/

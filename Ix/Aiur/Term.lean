@@ -58,7 +58,7 @@ inductive Typ where
   | tuple : Array Typ → Typ
   | array : Typ → Nat → Typ
   | pointer : Typ → Typ
-  | typeRef : Global → Typ
+  | ref : Global → Typ
   | function : List Typ → Typ → Typ
   deriving Repr, BEq, Hashable, Inhabited
 
@@ -262,7 +262,7 @@ partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
   | .array t n => do
     let tSize ← t.size decls visited
     pure $ n * tSize
-  | .typeRef g => match decls.getByKey g with
+  | .ref g => match decls.getByKey g with
     | some (.dataType data) => data.size decls visited
     | _ => throw s!"Datatype not found: `{g}`"
 

@@ -86,7 +86,7 @@ partial def elabTyp : ElabStxCat `typ
     mkAppM ``Typ.pointer #[← elabTyp t]
   | `(typ| $[.]?$i:ident) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
-    mkAppM ``Typ.typeRef #[g]
+    mkAppM ``Typ.ref #[g]
   | `(typ| fn() -> $t:typ) => do
     mkAppM ``Typ.function #[← elabEmptyList ``Typ, ← elabTyp t]
   | `(typ| fn($t$[, $ts:typ]*) -> $t':typ) => do

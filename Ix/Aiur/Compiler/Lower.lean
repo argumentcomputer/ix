@@ -82,7 +82,7 @@ def typSize (layoutMap : LayoutMap) : Typ → Except String Nat
 | .array typ n => do
   let size ← typSize layoutMap typ
   pure $ n * size
-| .typeRef g => match layoutMap[g]? with
+| .ref g => match layoutMap[g]? with
   | some (.dataType size) => pure size
   | _ => throw "Impossible case"
 
