@@ -141,6 +141,7 @@ structure CheckContext where
   decls : Decls
   varTypes : Std.HashMap Local Typ
   returnType : Typ
+  typeParams : List String
 
 abbrev CheckM := ReaderT CheckContext (Except CheckError)
 
@@ -509,6 +510,7 @@ def getFunctionContext (function : Function) (decls : Decls) : CheckContext :=
     decls,
     varTypes := .ofList function.inputs
     returnType := function.output
+    typeParams := function.params
   }
 
 /--
@@ -538,17 +540,19 @@ where
       if !map.contains dataType.name then
         set $ map.insert dataType.name
         checkUniqueParams dataType.name dataType.params
-        dataType.constructors.flatMap (·.argTypes) |>.forM wellFormedType
+        dataType.constructors.flatMap (·.argTypes) |>.forM (wellFormedType dataType.params)
     | .function function => do
       checkUniqueParams function.name function.params
-      wellFormedType function.output
-      function.inputs.forM fun (_, typ) => wellFormedType typ
+      wellFormedType function.params function.output
+      function.inputs.forM fun (_, typ) => wellFormedType function.params typ
     -- No need to check constructors because they come from datatype declarations.
     | .constructor .. => pure ()
-  wellFormedType : Typ → EStateM CheckError (Std.HashSet Global) Unit
-    | .tuple typs => typs.forM wellFormedType
-    | .pointer pointerTyp => wellFormedType pointerTyp
-    | .ref ref => match decls.getByKey ref with
+  wellFormedType (params : List String) : Typ → EStateM CheckError (Std.HashSet Global) Unit
+    | .tuple typs => typs.forM (wellFormedType params)
+    | .pointer pointerTyp => wellFormedType params pointerTyp
+    | .ref ref =>
+      if params.any (· == ref.toName.toString) then pure ()
+      else match decls.getByKey ref with
       | some (.dataType dt) =>
         unless dt.params.isEmpty do throw $ .wrongNumTypeArgs ref 0 dt.params.length
       | some _ => throw $ .notADataType ref
@@ -557,7 +561,7 @@ where
       | some (.dataType dt) => do
         unless args.length == dt.params.length do
           throw $ .wrongNumTypeArgs g args.length dt.params.length
-        args.forM wellFormedType
+        args.forM (wellFormedType params)
       | some _ => throw $ .notADataType g
       | none => throw $ .unboundGlobal g
     | _ => pure ()
