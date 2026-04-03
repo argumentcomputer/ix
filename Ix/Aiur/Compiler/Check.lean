@@ -72,6 +72,12 @@ partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array 
     else
       -- It's a dataType, keep it
       pure $ .typeRef g
+  | .typeVar s =>
+    throw $ .unboundGlobal ⟨.mkSimple s!"Unexpected type variable `{s}` after concretization"⟩
+  | .templateApp g _ =>
+    throw $ .unboundGlobal ⟨.mkSimple s!"Unexpected template application `{g}` after concretization"⟩
+  | .unif id =>
+    throw $ .unboundGlobal ⟨.mkSimple s!"Unexpected unification variable `?{id}`"⟩
 
 /--
 Constructs a map of declarations from a toplevel, expanding all type aliases.
@@ -197,6 +203,7 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
   | .ioWrite data ret => inferIoWrite data ret
   | .assertEq a b ret => inferAssertEq a b ret
   | .debug label term ret => inferDebug label term ret
+  | .templateApp name _ _ _ _ => throw $ .cannotApply name
 
 partial def checkNoEscape (term : Term) (typ : Typ) : CheckM TypedTermInner := do
   let (typ', inner) ← inferNoEscape term
@@ -472,6 +479,7 @@ where
       let bind' ← aux pat' typ
       if bind != bind' then throw $ .differentBindings bind bind' else pure bind
     | (.pointer pat, .pointer typ) => aux pat typ
+    | (.templateRef name _ _ _, _) => throw $ .notAConstructor name
     | _ => throw $ .incompatiblePattern pat typ
 
 partial def inferTuple (term : Term) : CheckM (Array Typ × TypedTermInner) := do
@@ -524,6 +532,9 @@ where
       | some (.dataType _) => pure ()
       | some _ => throw $ .notADataType typeRef
       | none => throw $ .unboundGlobal typeRef
+    | .typeVar s => throw $ .unboundGlobal ⟨.mkSimple s!"type variable `{s}`"⟩
+    | .templateApp g _ => throw $ .unboundGlobal ⟨.mkSimple s!"template `{g}`"⟩
+    | .unif id => throw $ .unboundGlobal ⟨.mkSimple s!"unification variable `?{id}`"⟩
     | _ => pure ()
 
 /-- Checks a function to ensure its body's type matches its declared output type. -/

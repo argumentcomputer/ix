@@ -18,11 +18,6 @@ def kernelTypes := ⟦
     Param(G)
   }
 
-  enum KLevelList {
-    Cons(&KLevel, &KLevelList),
-    Nil
-  }
-
   -- ============================================================================
   -- Literals
   -- ============================================================================
@@ -47,7 +42,7 @@ def kernelTypes := ⟦
   enum KExpr {
     BVar(G),
     Srt(&KLevel),
-    Const(G, &KLevelList),
+    Const(G, &List‹&KLevel›),
     App(&KExpr, &KExpr),
     Lam(&KExpr, &KExpr),
     Forall(&KExpr, &KExpr),
@@ -65,22 +60,16 @@ def kernelTypes := ⟦
     Lit(KLiteral),
     Lam(&KVal, &KExpr, &KValEnv),
     Pi(&KVal, &KExpr, &KValEnv),
-    Ctor(G, &KLevelList, G, &KValList),
-    FVar(G, &KVal, &KValList),
-    Const(G, &KLevelList, &KValList),
-    Proj(G, G, &KVal, &KValList),
+    Ctor(G, &List‹&KLevel›, G, &List‹&KVal›),
+    FVar(G, &KVal, &List‹&KVal›),
+    Const(G, &List‹&KLevel›, &List‹&KVal›),
+    Proj(G, G, &KVal, &List‹&KVal›),
     Thunk(&KExpr, &KValEnv)
   }
 
   -- Value environment (de Bruijn indexed, front = most recent binder)
   enum KValEnv {
     Cons(&KVal, &KValEnv),
-    Nil
-  }
-
-  -- Value list (for spines, type contexts)
-  enum KValList {
-    Cons(&KVal, &KValList),
     Nil
   }
 
@@ -123,16 +112,6 @@ def kernelTypes := ⟦
     Mk(G, G, &KExpr)
   }
 
-  enum KRecRuleMaybe {
-    None,
-    Some(&KRecRule)
-  }
-
-  enum KRecRuleList {
-    Cons(&KRecRule, &KRecRuleList),
-    Nil
-  }
-
   -- ============================================================================
   -- Constant Info
   --
@@ -149,34 +128,17 @@ def kernelTypes := ⟦
   --            num_motives, num_minors, rules, k_flag, is_unsafe)
   -- ============================================================================
 
-  -- List of G values (for kernel constant indices)
-  enum KGList {
-    Cons(G, &KGList),
-    Nil
-  }
-
-  -- List of U64 values (for convert inputs from Ixon)
-  enum KU64List {
-    Cons(U64, &KU64List),
-    Nil
-  }
-
   enum KConstantInfo {
     Axiom(G, &KExpr, G),
     Defn(G, &KExpr, &KExpr, KHints, KSafety),
     Thm(G, &KExpr, &KExpr),
     Opaque(G, &KExpr, &KExpr, G),
     Quot(G, &KExpr, KQuotKind),
-    Induct(G, &KExpr, G, G, &KGList, G, G, G),
+    Induct(G, &KExpr, G, G, &List‹G›, G, G, G),
     Ctor(G, &KExpr, G, G, G, G, G),
-    Rec(G, &KExpr, G, G, G, G, &KRecRuleList, G, G)
+    Rec(G, &KExpr, G, G, G, G, &List‹&KRecRule›, G, G)
   }
 
-  -- The global environment: a list of constants indexed by position
-  enum KConstList {
-    Cons(&KConstantInfo, &KConstList),
-    Nil
-  }
 ⟧
 
 end IxVM

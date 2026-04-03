@@ -86,6 +86,7 @@ def dnfProd (branches: List $ Pattern × UniqTerm) (body : ExtTerm) : CompilerM 
       let guards := #[(arg, (id, .var var))]
       let clause := ⟨.pointer var, guards, term⟩
       aux renames (clauses.push clause) rest body
+    | (.templateRef .., _) :: _ => pure #[] -- eliminated by concretization
   aux Array.empty Array.empty branches body
 where
   flattenArgs args := do

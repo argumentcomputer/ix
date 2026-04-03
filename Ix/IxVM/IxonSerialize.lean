@@ -111,10 +111,10 @@ def ixonSerialize := ⟦
   }
 
   -- Serialize field list (each element as Tag0)
-  fn put_u64_list(list: U64List, rest: ByteStream) -> ByteStream {
+  fn put_u64_list(list: List‹U64›, rest: ByteStream) -> ByteStream {
     match list {
-      U64List.Nil => rest,
-      U64List.Cons(idx, rest_list) =>
+      List.Nil => rest,
+      List.Cons(idx, rest_list) =>
         put_tag0(idx, put_u64_list(load(rest_list), rest)),
     }
   }
@@ -273,69 +273,27 @@ def ixonSerialize := ⟦
   -- List serialization
   -- ============================================================================
 
-  fn put_expr_list(list: ExprList, rest: ByteStream) -> ByteStream {
+  fn put_expr_list(list: List‹&Expr›, rest: ByteStream) -> ByteStream {
     match list {
-      ExprList.Nil => rest,
-      ExprList.Cons(&expr, &rest_list) =>
+      List.Nil => rest,
+      List.Cons(&expr, &rest_list) =>
         put_expr(expr, put_expr_list(rest_list, rest)),
     }
   }
 
-  fn put_univ_list(list: UnivList, rest: ByteStream) -> ByteStream {
+  fn put_univ_list(list: List‹&Univ›, rest: ByteStream) -> ByteStream {
     match list {
-      UnivList.Nil => rest,
-      UnivList.Cons(&u, &rest_list) =>
+      List.Nil => rest,
+      List.Cons(&u, &rest_list) =>
         put_univ(u, put_univ_list(rest_list, rest)),
     }
   }
 
-  fn put_address_list(list: AddressList, rest: ByteStream) -> ByteStream {
+  fn put_address_list(list: List‹[G; 32]›, rest: ByteStream) -> ByteStream {
     match list {
-      AddressList.Nil => rest,
-      AddressList.Cons(addr, &rest_list) =>
+      List.Nil => rest,
+      List.Cons(addr, &rest_list) =>
         put_address(addr, put_address_list(rest_list, rest)),
-    }
-  }
-
-  fn expr_list_length(list: ExprList) -> [G; 8] {
-    match list {
-      ExprList.Nil => [0; 8],
-      ExprList.Cons(_, &rest) => relaxed_u64_succ(expr_list_length(rest)),
-    }
-  }
-
-  fn univ_list_length(list: UnivList) -> [G; 8] {
-    match list {
-      UnivList.Nil => [0; 8],
-      UnivList.Cons(_, &rest) => relaxed_u64_succ(univ_list_length(rest)),
-    }
-  }
-
-  fn address_list_length(list: AddressList) -> [G; 8] {
-    match list {
-      AddressList.Nil => [0; 8],
-      AddressList.Cons(_, &rest) => relaxed_u64_succ(address_list_length(rest)),
-    }
-  }
-
-  fn recursor_rule_list_length(list: RecursorRuleList) -> [G; 8] {
-    match list {
-      RecursorRuleList.Nil => [0; 8],
-      RecursorRuleList.Cons(_, &rest) => relaxed_u64_succ(recursor_rule_list_length(rest)),
-    }
-  }
-
-  fn constructor_list_length(list: ConstructorList) -> [G; 8] {
-    match list {
-      ConstructorList.Nil => [0; 8],
-      ConstructorList.Cons(_, &rest) => relaxed_u64_succ(constructor_list_length(rest)),
-    }
-  }
-
-  fn mut_const_list_length(list: MutConstList) -> [G; 8] {
-    match list {
-      MutConstList.Nil => [0; 8],
-      MutConstList.Cons(_, &rest) => relaxed_u64_succ(mut_const_list_length(rest)),
     }
   }
 
@@ -367,10 +325,10 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_recursor_rule_list(list: RecursorRuleList, rest: ByteStream) -> ByteStream {
+  fn put_recursor_rule_list(list: List‹RecursorRule›, rest: ByteStream) -> ByteStream {
     match list {
-      RecursorRuleList.Nil => rest,
-      RecursorRuleList.Cons(rule, &rest_list) =>
+      List.Nil => rest,
+      List.Cons(rule, &rest_list) =>
         put_recursor_rule(rule, put_recursor_rule_list(rest_list, rest)),
     }
   }
@@ -379,7 +337,7 @@ def ixonSerialize := ⟦
     match recr {
       Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, &rules) =>
         let bools = k + 2 * is_unsafe;
-        let rules_len = recursor_rule_list_length(rules);
+        let rules_len = list_length_u64(rules);
         ByteStream.Cons(bools, store(
           put_tag0(lvls,
             put_tag0(params,
@@ -418,10 +376,10 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_constructor_list(list: ConstructorList, rest: ByteStream) -> ByteStream {
+  fn put_constructor_list(list: List‹Constructor›, rest: ByteStream) -> ByteStream {
     match list {
-      ConstructorList.Nil => rest,
-      ConstructorList.Cons(ctor, &rest_list) =>
+      List.Nil => rest,
+      List.Cons(ctor, &rest_list) =>
         put_constructor(ctor, put_constructor_list(rest_list, rest)),
     }
   }
@@ -430,7 +388,7 @@ def ixonSerialize := ⟦
     match indc {
       Inductive.Mk(recr, refl, is_unsafe, lvls, params, indices, nested, &typ, &ctors) =>
         let bools = recr + 2 * refl + 4 * is_unsafe;
-        let ctors_len = constructor_list_length(ctors);
+        let ctors_len = list_length_u64(ctors);
         ByteStream.Cons(bools, store(
           put_tag0(lvls,
             put_tag0(params,
@@ -481,10 +439,10 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_mut_const_list(list: MutConstList, rest: ByteStream) -> ByteStream {
+  fn put_mut_const_list(list: List‹MutConst›, rest: ByteStream) -> ByteStream {
     match list {
-      MutConstList.Nil => rest,
-      MutConstList.Cons(mc, &rest_list) =>
+      List.Nil => rest,
+      List.Cons(mc, &rest_list) =>
         put_mut_const(mc, put_mut_const_list(rest_list, rest)),
     }
   }
@@ -502,18 +460,18 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_sharing(list: ExprList, rest: ByteStream) -> ByteStream {
-    let len = expr_list_length(list);
+  fn put_sharing(list: List‹&Expr›, rest: ByteStream) -> ByteStream {
+    let len = list_length_u64(list);
     put_tag0(len, put_expr_list(list, rest))
   }
 
-  fn put_refs(list: AddressList, rest: ByteStream) -> ByteStream {
-    let len = address_list_length(list);
+  fn put_refs(list: List‹[G; 32]›, rest: ByteStream) -> ByteStream {
+    let len = list_length_u64(list);
     put_tag0(len, put_address_list(list, rest))
   }
 
-  fn put_univs(list: UnivList, rest: ByteStream) -> ByteStream {
-    let len = univ_list_length(list);
+  fn put_univs(list: List‹&Univ›, rest: ByteStream) -> ByteStream {
+    let len = list_length_u64(list);
     put_tag0(len, put_univ_list(list, rest))
   }
 
@@ -524,7 +482,7 @@ def ixonSerialize := ⟦
         match info {
           ConstantInfo.Muts(&mutuals) =>
             -- Use FLAG_MUTS (0xC) with entry count in size field
-            let count = mut_const_list_length(mutuals);
+            let count = list_length_u64(mutuals);
             put_tag4(0xC, count, put_mut_const_list(mutuals, up_to_sharing)),
           -- Use FLAG (0xD) with variant in size field
           ConstantInfo.Defn(_) =>

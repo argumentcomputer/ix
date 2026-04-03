@@ -41,6 +41,19 @@ def Global.popNamespace (global : Global) : Option (String × Global) :=
   | .str tail head => some (head, ⟨tail⟩)
   | _ => none
 
+inductive Typ where
+  | unit
+  | field
+  | tuple : Array Typ → Typ
+  | array : Typ → Nat → Typ
+  | pointer : Typ → Typ
+  | typeRef : Global → Typ
+  | function : List Typ → Typ → Typ
+  | typeVar : String → Typ
+  | templateApp : Global → Array Typ → Typ
+  | unif : Nat → Typ
+  deriving Repr, BEq, Hashable, Inhabited
+
 inductive Pattern
   | var : Local → Pattern
   | wildcard : Pattern
@@ -50,16 +63,7 @@ inductive Pattern
   | array : Array Pattern → Pattern
   | or : Pattern → Pattern → Pattern
   | pointer : Pattern → Pattern
-  deriving Repr, BEq, Hashable, Inhabited
-
-inductive Typ where
-  | unit
-  | field
-  | tuple : Array Typ → Typ
-  | array : Typ → Nat → Typ
-  | pointer : Typ → Typ
-  | typeRef : Global → Typ
-  | function : List Typ → Typ → Typ
+  | templateRef : Global → Array Typ → String → List Pattern → Pattern
   deriving Repr, BEq, Hashable, Inhabited
 
 mutual
@@ -102,6 +106,7 @@ inductive Term
   | u8LessThan : Term → Term → Term
   | u32LessThan : Term → Term → Term
   | debug : String → Option Term → Term → Term
+  | templateApp : Global → Array Typ → Option String → List Term → Bool → Term
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Data
@@ -187,40 +192,54 @@ structure Function where
   output : Typ
   body : Term
   entry : Bool
+  deriving Repr, Inhabited
+
+structure DataTypeTemplate where
+  name : Global
+  typeParams : Array String
+  constructors : List Constructor
   deriving Repr
+
+structure FunctionTemplate where
+  name : Global
+  typeParams : Array String
+  inputs : List (Local × Typ)
+  output : Typ
+  body : Term
+  deriving Repr, Inhabited
 
 structure Toplevel where
   dataTypes : Array DataType
   typeAliases : Array TypeAlias
   functions : Array Function
+  dataTypeTemplates : Array DataTypeTemplate
+  functionTemplates : Array FunctionTemplate
   deriving Repr
 
 def Toplevel.getFuncIdx (toplevel : Toplevel) (funcName : Lean.Name) : Option Nat := do
   toplevel.functions.findIdx? fun function => function.name.toName == funcName
 
 def Toplevel.merge (x y : Toplevel) : Except Global Toplevel := do
-  let ⟨xDataTypes, xTypeAliases, xFunctions⟩ := x
-  let ⟨yDataTypes, yTypeAliases, yFunctions⟩ := y
-  let mut globals : Std.HashSet Global := ∅
-  let mut dataTypes := .emptyWithCapacity (xDataTypes.size + yDataTypes.size)
-  let mut typeAliases := .emptyWithCapacity (xTypeAliases.size + yTypeAliases.size)
-  let mut functions := .emptyWithCapacity (xFunctions.size + yFunctions.size)
-  for dtSet in [xDataTypes, yDataTypes] do
-    for dt in dtSet do
-      if globals.contains dt.name then throw dt.name
-      globals := globals.insert dt.name
-      dataTypes := dataTypes.push dt
-  for taSet in [xTypeAliases, yTypeAliases] do
-    for ta in taSet do
-      if globals.contains ta.name then throw ta.name
-      globals := globals.insert ta.name
-      typeAliases := typeAliases.push ta
-  for fSet in [xFunctions, yFunctions] do
-    for f in fSet do
-      if globals.contains f.name then throw f.name
-      globals := globals.insert f.name
-      functions := functions.push f
-  pure ⟨dataTypes, typeAliases, functions⟩
+  let ⟨xDT, xTA, xF, xDTT, xFT⟩ := x
+  let ⟨yDT, yTA, yF, yDTT, yFT⟩ := y
+  let (globals, dataTypes) ← mergeArrays DataType.name ∅ xDT yDT
+  let (globals, typeAliases) ← mergeArrays TypeAlias.name globals xTA yTA
+  let (globals, functions) ← mergeArrays Function.name globals xF yF
+  let (globals, dataTypeTemplates) ← mergeArrays DataTypeTemplate.name globals xDTT yDTT
+  let (_, functionTemplates) ← mergeArrays FunctionTemplate.name globals xFT yFT
+  pure ⟨dataTypes, typeAliases, functions, dataTypeTemplates, functionTemplates⟩
+where
+  mergeArrays {α : Type} (getName : α → Global) (globals : Std.HashSet Global)
+      (xs ys : Array α) : Except Global (Std.HashSet Global × Array α) := do
+    let mut globals := globals
+    let mut result := Array.emptyWithCapacity (xs.size + ys.size)
+    for set in [xs, ys] do
+      for item in set do
+        let n := getName item
+        if globals.contains n then throw n
+        globals := globals.insert n
+        result := result.push item
+    pure (globals, result)
 
 inductive Declaration
   | function : Function → Declaration
@@ -265,6 +284,9 @@ partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
   | .typeRef g => match decls.getByKey g with
     | some (.dataType data) => data.size decls visited
     | _ => throw s!"Datatype not found: `{g}`"
+  | .typeVar s => throw s!"Unexpected type variable `{s}` after concretization"
+  | .templateApp g _ => throw s!"Unexpected template application `{g}` after concretization"
+  | .unif id => throw s!"Unexpected unification variable `?{id}`"
 
 partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {})
     (c : Constructor) : Except String Nat :=

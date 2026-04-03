@@ -85,6 +85,9 @@ def typSize (layoutMap : LayoutMap) : Typ → Except String Nat
 | .typeRef g => match layoutMap[g]? with
   | some (.dataType size) => pure size
   | _ => throw "Impossible case"
+| .typeVar s => throw s!"Unexpected type variable `{s}` after concretization"
+| .templateApp g _ => throw s!"Unexpected template application `{g}` after concretization"
+| .unif id => throw s!"Unexpected unification variable `?{id}`"
 
 structure CompilerState where
   valIdx : Bytecode.ValIdx

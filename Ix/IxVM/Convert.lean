@@ -16,7 +16,7 @@ def convert := ⟦
   --
   -- ConvertCtx bundles the expression-conversion context.
   -- ConvertKind selects what to convert plus kind-specific auxiliary data.
-  -- ConvertInput pairs the two; ConvertInputList is what convert_all consumes.
+  -- ConvertInput pairs the two; List‹&ConvertInput› is what convert_all consumes.
   -- ============================================================================
 
   -- Expression conversion context
@@ -28,7 +28,7 @@ def convert := ⟦
   -- lit_blobs:  maps blob ref index -> raw blob ByteStream
   -- univs:      the constant's universe array
   enum ConvertCtx {
-    Mk(&ExprList, &KGList, &KGList, &ByteStreamList, &UnivList)
+    Mk(&List‹&Expr›, &List‹G›, &List‹G›, &List‹ByteStream›, &List‹&Univ›)
   }
 
   -- What to convert, with kind-specific auxiliary data
@@ -36,8 +36,8 @@ def convert := ⟦
     CKDefn(Definition, KHints),
     CKAxio(Axiom),
     CKQuot(Quotient),
-    CKRecr(Recursor, &KGList),
-    CKIndc(Inductive, &KGList),
+    CKRecr(Recursor, &List‹G›),
+    CKIndc(Inductive, &List‹G›),
     CKCtor(Constructor, G)
   }
 
@@ -46,18 +46,13 @@ def convert := ⟦
     Mk(ConvertCtx, ConvertKind)
   }
 
-  enum ConvertInputList {
-    Cons(&ConvertInput, &ConvertInputList),
-    Nil
-  }
-
   -- ============================================================================
   -- Ixon list lookups
   -- ============================================================================
 
-  fn g_list_lookup(list: KGList, idx: G) -> G {
+  fn g_list_lookup(list: List‹G›, idx: G) -> G {
     match list {
-      KGList.Cons(v, &rest) =>
+      List.Cons(v, &rest) =>
         match idx {
           0 => v,
           _ => g_list_lookup(rest, idx - 1),
@@ -65,9 +60,9 @@ def convert := ⟦
     }
   }
 
-  fn expr_list_lookup(list: ExprList, idx: [G; 8]) -> Expr {
+  fn expr_list_lookup(list: List‹&Expr›, idx: [G; 8]) -> Expr {
     match list {
-      ExprList.Cons(&e, &rest) =>
+      List.Cons(&e, &rest) =>
         let z = u64_is_zero(idx);
         match z {
           1 => e,
@@ -76,9 +71,9 @@ def convert := ⟦
     }
   }
 
-  fn univ_list_lookup(list: UnivList, idx: [G; 8]) -> Univ {
+  fn univ_list_lookup(list: List‹&Univ›, idx: [G; 8]) -> Univ {
     match list {
-      UnivList.Cons(&u, &rest) =>
+      List.Cons(&u, &rest) =>
         let z = u64_is_zero(idx);
         match z {
           1 => u,
@@ -87,10 +82,10 @@ def convert := ⟦
     }
   }
 
-  fn blob_list_lookup(list: ByteStreamList, idx: [G; 8]) -> ByteStream {
+  fn blob_list_lookup(list: List‹ByteStream›, idx: [G; 8]) -> ByteStream {
     match list {
-      ByteStreamList.Nil => ByteStream.Nil,
-      ByteStreamList.Cons(bs, &rest) =>
+      List.Nil => ByteStream.Nil,
+      List.Cons(bs, &rest) =>
         let z = u64_is_zero(idx);
         match z {
           1 => bs,
@@ -99,9 +94,9 @@ def convert := ⟦
     }
   }
 
-  fn mut_const_list_lookup(list: MutConstList, idx: [G; 8]) -> MutConst {
+  fn mut_const_list_lookup(list: List‹MutConst›, idx: [G; 8]) -> MutConst {
     match list {
-      MutConstList.Cons(mc, &rest) =>
+      List.Cons(mc, &rest) =>
         let z = u64_is_zero(idx);
         match z {
           1 => mc,
@@ -110,9 +105,9 @@ def convert := ⟦
     }
   }
 
-  fn constructor_list_lookup(list: ConstructorList, idx: [G; 8]) -> Constructor {
+  fn constructor_list_lookup(list: List‹Constructor›, idx: [G; 8]) -> Constructor {
     match list {
-      ConstructorList.Cons(c, &rest) =>
+      List.Cons(c, &rest) =>
         let z = u64_is_zero(idx);
         match z {
           1 => c,
@@ -135,13 +130,13 @@ def convert := ⟦
     }
   }
 
-  -- Resolve a list of universe indices to a KLevelList
-  fn convert_univ_idxs(idxs: U64List, univs: UnivList) -> KLevelList {
+  -- Resolve a list of universe indices to a List‹&KLevel›
+  fn convert_univ_idxs(idxs: List‹U64›, univs: List‹&Univ›) -> List‹&KLevel› {
     match idxs {
-      U64List.Nil => KLevelList.Nil,
-      U64List.Cons(idx, &rest) =>
+      List.Nil => List.Nil(),
+      List.Cons(idx, &rest) =>
         let u = univ_list_lookup(univs, idx);
-        KLevelList.Cons(store(convert_univ(u)), store(convert_univ_idxs(rest, univs))),
+        List.Cons(store(convert_univ(u)), store(convert_univ_idxs(rest, univs))),
     }
   }
 
@@ -209,11 +204,11 @@ def convert := ⟦
 
   fn convert_expr(
     e: Expr,
-    sharing: ExprList,
-    ref_idxs: KGList,
-    recur_idxs: KGList,
-    lit_blobs: ByteStreamList,
-    univs: UnivList
+    sharing: List‹&Expr›,
+    ref_idxs: List‹G›,
+    recur_idxs: List‹G›,
+    lit_blobs: List‹ByteStream›,
+    univs: List‹&Univ›
   ) -> KExpr {
     match e {
       Expr.Srt(univ_idx) =>
@@ -308,23 +303,23 @@ def convert := ⟦
   -- Recursor rule conversion
   -- ============================================================================
 
-  -- Convert Ixon RecursorRuleList to KRecRuleList.
+  -- Convert Ixon List‹RecursorRule› to List‹&KRecRule›.
   -- rule_ctor_idxs provides the kernel constant index for each rule's constructor.
   fn convert_rules(
-    rules: RecursorRuleList,
-    rule_ctor_idxs: KGList,
+    rules: List‹RecursorRule›,
+    rule_ctor_idxs: List‹G›,
     ctx: ConvertCtx
-  ) -> KRecRuleList {
+  ) -> List‹&KRecRule› {
     match rules {
-      RecursorRuleList.Nil => KRecRuleList.Nil,
-      RecursorRuleList.Cons(rule, &rest_rules) =>
+      List.Nil => List.Nil(),
+      List.Cons(rule, &rest_rules) =>
         match rule {
           RecursorRule.Mk(nfields, &rhs) =>
             match rule_ctor_idxs {
-              KGList.Cons(ctor_idx, &rest_ctor_idxs) =>
+              List.Cons(ctor_idx, &rest_ctor_idxs) =>
                 let krhs = ctx_convert_expr(rhs, ctx);
                 let krule = KRecRule.Mk(ctor_idx, flatten_u64(nfields), store(krhs));
-                KRecRuleList.Cons(
+                List.Cons(
                   store(krule),
                   store(convert_rules(rest_rules, rest_ctor_idxs, ctx))),
             },
@@ -373,7 +368,7 @@ def convert := ⟦
     }
   }
 
-  fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: KGList) -> KConstantInfo {
+  fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: List‹G›) -> KConstantInfo {
     match r {
       Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, &rules) =>
         let ktyp = ctx_convert_expr(typ, ctx);
@@ -385,7 +380,7 @@ def convert := ⟦
     }
   }
 
-  fn convert_inductive(ind: Inductive, ctx: ConvertCtx, ctor_idxs: KGList) -> KConstantInfo {
+  fn convert_inductive(ind: Inductive, ctx: ConvertCtx, ctor_idxs: List‹G›) -> KConstantInfo {
     match ind {
       Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, _, &typ, _) =>
         let ktyp = ctx_convert_expr(typ, ctx);
@@ -424,13 +419,13 @@ def convert := ⟦
     }
   }
 
-  -- Convert a list of resolved inputs to a KConstList
-  fn convert_all(inputs: ConvertInputList) -> KConstList {
+  -- Convert a list of resolved inputs to a List‹&KConstantInfo›
+  fn convert_all(inputs: List‹&ConvertInput›) -> List‹&KConstantInfo› {
     match inputs {
-      ConvertInputList.Nil => KConstList.Nil,
-      ConvertInputList.Cons(&input, &rest) =>
+      List.Nil => List.Nil(),
+      List.Cons(&input, &rest) =>
         let ci = convert_one(input);
-        KConstList.Cons(store(ci), store(convert_all(rest))),
+        List.Cons(store(ci), store(convert_all(rest))),
     }
   }
 ⟧
