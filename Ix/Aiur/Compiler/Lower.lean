@@ -1,6 +1,6 @@
 module
 public import Std.Data.HashMap
-public import Ix.Aiur.Term
+public import Ix.Aiur.TypedTerm
 public import Ix.Aiur.Compiler.Layout
 
 /-!

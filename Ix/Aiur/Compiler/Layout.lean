@@ -1,6 +1,6 @@
 module
 public import Std.Data.HashSet.Basic
-public import Ix.Aiur.Term
+public import Ix.Aiur.TypedTerm
 public import Ix.Aiur.Bytecode
 public import Lean.Data.RBTree
 

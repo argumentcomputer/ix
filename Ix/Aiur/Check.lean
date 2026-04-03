@@ -1,5 +1,5 @@
 module
-public import Ix.Aiur.Term
+public import Ix.Aiur.TypedTerm
 public import Std.Data.HashSet
 
 public section
