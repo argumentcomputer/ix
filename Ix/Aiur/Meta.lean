@@ -508,12 +508,18 @@ def elabDataType : ElabStxCat `data_type
 
 
 declare_syntax_cat             type_alias
-syntax "type " ident " = " typ : type_alias
+syntax "type " ident " = " typ                                       : type_alias
+syntax "type " ident "‹" ident (", " ident)* "›" " = " typ         : type_alias
 
 def elabTypeAlias : ElabStxCat `type_alias
   | `(type_alias| type $n:ident = $t:typ) => do
     let g ← mkAppM ``Global.mk #[toExpr n.getId]
-    mkAppM ``TypeAlias.mk #[g, ← elabTyp t]
+    mkAppM ``TypeAlias.mk #[g, ← elabEmptyList ``String, ← elabTyp t]
+  | `(type_alias| type $n:ident‹$p:ident $[, $ps:ident]*› = $t:typ) => do
+    let g ← mkAppM ``Global.mk #[toExpr n.getId]
+    let (params, paramsExpr) ← elabTypeParams p ps
+    let expansion ← withTemplateTypeParams params (elabTyp t)
+    mkAppM ``TypeAlias.mk #[g, paramsExpr, expansion]
   | stx => throw $ .error stx "Invalid syntax for type alias"
 
 declare_syntax_cat      bind

@@ -126,6 +126,7 @@ structure DataType where
 
 structure TypeAlias where
   name : Global
+  params : List String
   expansion : Typ
   deriving Repr, BEq, Inhabited
 

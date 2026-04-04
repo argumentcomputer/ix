@@ -367,9 +367,10 @@ def toplevel := ⟦
   type U16 = (U8, U8)
   type U32 = (U16, U16)
   type U64 = [U8; 8]
-  type Pair = (U8, U8)
+  type Pair‹A, B› = (A, B)
 
-  pub fn alias_conversion(x: U64) -> U32 {
+  pub fn alias_conversion(pair: Pair‹U64, U16›) -> U32 {
+    let (x, _) = pair;
     ((x[0], x[1]), (x[2], x[3]))
   }
 

@@ -1,6 +1,7 @@
 module
 public import Ix.Aiur.TypedTerm
 public import Std.Data.HashSet
+public import Std.Data.HashMap
 
 public section
 
@@ -39,6 +40,16 @@ inductive CheckError
 instance : ToString CheckError where
   toString e := repr e |>.pretty
 
+def Typ.instantiate (subst : Global → Option Typ) : Typ → Typ
+  | .unit => .unit
+  | .field => .field
+  | .tuple ts => .tuple (ts.map (Typ.instantiate subst))
+  | .array t n => .array (Typ.instantiate subst t) n
+  | .pointer t => .pointer (Typ.instantiate subst t)
+  | .ref g => (subst g).getD (.ref g)
+  | .app g args => .app g (args.map (Typ.instantiate subst))
+  | .function ins out => .function (ins.map (Typ.instantiate subst)) (Typ.instantiate subst out)
+
 /--
 Eagerly expands type aliases, building the aliasMap on demand and detecting cycles.
 -/
@@ -59,7 +70,18 @@ partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array 
     pure $ .array t' n
   | .app g args => do
     let args' ← args.mapM (expandTypeM visited toplevelAliases)
-    pure $ .app g args'
+    if let some alias := toplevelAliases.find? (·.name == g) then
+      if visited.contains g then
+        throw $ .typeAliasCycle g
+      if alias.params.length != args'.length then
+        throw $ .wrongNumTypeArgs g alias.params.length args'.length
+      let paramMap := (alias.params.zip args').foldl
+        (fun (m : Std.HashMap Global Typ) (p, t) => m.insert (Global.init p) t) {}
+      let subst := fun pg => paramMap[pg]?
+      let instantiated := Typ.instantiate subst alias.expansion
+      expandTypeM (visited.insert g) toplevelAliases instantiated
+    else
+      pure $ .app g args'
   | .ref g => do
     let aliasMap ← get
     -- Check if already expanded
@@ -67,9 +89,10 @@ partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array 
       return expanded
     -- Check if it's an alias
     if let some (alias : TypeAlias) := toplevelAliases.find? (·.name == g) then
-      -- Check for cycle
       if visited.contains g then
         throw $ .typeAliasCycle g
+      if !alias.params.isEmpty then
+        throw $ .wrongNumTypeArgs g alias.params.length 0
       -- Expand the alias recursively
       let expanded ← expandTypeM (visited.insert g) toplevelAliases alias.expansion
       -- Save to aliasMap
