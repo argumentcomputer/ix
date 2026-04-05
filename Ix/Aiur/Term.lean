@@ -47,11 +47,10 @@ inductive Typ where
   | tuple : Array Typ → Typ
   | array : Typ → Nat → Typ
   | pointer : Typ → Typ
-  | typeRef : Global → Typ
+  | ref : Global → Typ
+  | app : Global → Array Typ → Typ
   | function : List Typ → Typ → Typ
-  | typeVar : String → Typ
-  | templateApp : Global → Array Typ → Typ
-  | unif : Nat → Typ
+  | mvar : Nat → Typ
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Pattern
@@ -63,7 +62,6 @@ inductive Pattern
   | array : Array Pattern → Pattern
   | or : Pattern → Pattern → Pattern
   | pointer : Pattern → Pattern
-  | templateRef : Global → Array Typ → String → List Pattern → Pattern
   deriving Repr, BEq, Hashable, Inhabited
 
 mutual
@@ -106,67 +104,12 @@ inductive Term
   | u8LessThan : Term → Term → Term
   | u32LessThan : Term → Term → Term
   | debug : String → Option Term → Term → Term
-  | templateApp : Global → Array Typ → Option String → List Term → Bool → Term
   deriving Repr, BEq, Hashable, Inhabited
 
 inductive Data
   | field : G → Data
   | tuple : Array Term → Data
   | array : Array Term → Data
-  deriving Repr
-
-end
-
-mutual
-inductive TypedTermInner
-  | unit
-  | var : Local → TypedTermInner
-  -- | unsafeCast : TypedTermInner → Typ → TypedTermInner
-  | ref : Global → TypedTermInner
-  | data : TypedData → TypedTermInner
-  | ret : TypedTerm → TypedTermInner
-  | let : Pattern → TypedTerm → TypedTerm → TypedTermInner
-  | match : TypedTerm → List (Pattern × TypedTerm) → TypedTermInner
-  | app : Global → List TypedTerm → (unconstrained : Bool) → TypedTermInner
-  | add : TypedTerm → TypedTerm → TypedTermInner
-  | sub : TypedTerm → TypedTerm → TypedTermInner
-  | mul : TypedTerm → TypedTerm → TypedTermInner
-  | eqZero : TypedTerm → TypedTermInner
-  | proj : TypedTerm → Nat → TypedTermInner
-  | get : TypedTerm → Nat → TypedTermInner
-  | slice : TypedTerm → Nat → Nat → TypedTermInner
-  | set : TypedTerm → Nat → TypedTerm → TypedTermInner
-  | store : TypedTerm → TypedTermInner
-  | load : TypedTerm → TypedTermInner
-  | ptrVal : TypedTerm → TypedTermInner
-  | assertEq : TypedTerm → TypedTerm → TypedTerm → TypedTermInner
-  | ioGetInfo : TypedTerm → TypedTermInner
-  | ioSetInfo : TypedTerm → TypedTerm → TypedTerm → TypedTerm → TypedTermInner
-  | ioRead : TypedTerm → Nat → TypedTermInner
-  | ioWrite : TypedTerm → TypedTerm → TypedTermInner
-  | u8BitDecomposition : TypedTerm → TypedTermInner
-  | u8ShiftLeft : TypedTerm → TypedTermInner
-  | u8ShiftRight : TypedTerm → TypedTermInner
-  | u8Xor : TypedTerm → TypedTerm → TypedTermInner
-  | u8Add : TypedTerm → TypedTerm → TypedTermInner
-  | u8Sub : TypedTerm → TypedTerm → TypedTermInner
-  | u8And : TypedTerm → TypedTerm → TypedTermInner
-  | u8Or : TypedTerm → TypedTerm → TypedTermInner
-  | u8LessThan : TypedTerm → TypedTerm → TypedTermInner
-  | u32LessThan : TypedTerm → TypedTerm → TypedTermInner
-  | debug : String → Option TypedTerm → TypedTerm → TypedTermInner
-  deriving Repr, Inhabited
-
-structure TypedTerm where
-  typ : Typ
-  inner : TypedTermInner
-  escapes : Bool
-  deriving Repr, Inhabited
-
-inductive TypedData
-  | field : G → TypedData
-  | tuple : Array TypedTerm → TypedData
-  | array : Array TypedTerm → TypedData
   deriving Repr
 
 end
@@ -178,56 +121,41 @@ structure Constructor where
 
 structure DataType where
   name : Global
+  params : List String
   constructors : List Constructor
   deriving Repr, BEq, Inhabited
 
 structure TypeAlias where
   name : Global
+  params : List String
   expansion : Typ
   deriving Repr, BEq, Inhabited
 
 structure Function where
   name : Global
+  params : List String
   inputs : List (Local × Typ)
   output : Typ
   body : Term
   entry : Bool
   deriving Repr, Inhabited
 
-structure DataTypeTemplate where
-  name : Global
-  typeParams : Array String
-  constructors : List Constructor
-  deriving Repr
-
-structure FunctionTemplate where
-  name : Global
-  typeParams : Array String
-  inputs : List (Local × Typ)
-  output : Typ
-  body : Term
-  deriving Repr, Inhabited
-
 structure Toplevel where
   dataTypes : Array DataType
   typeAliases : Array TypeAlias
   functions : Array Function
-  dataTypeTemplates : Array DataTypeTemplate
-  functionTemplates : Array FunctionTemplate
   deriving Repr
 
 def Toplevel.getFuncIdx (toplevel : Toplevel) (funcName : Lean.Name) : Option Nat := do
   toplevel.functions.findIdx? fun function => function.name.toName == funcName
 
 def Toplevel.merge (x y : Toplevel) : Except Global Toplevel := do
-  let ⟨xDT, xTA, xF, xDTT, xFT⟩ := x
-  let ⟨yDT, yTA, yF, yDTT, yFT⟩ := y
+  let ⟨xDT, xTA, xF⟩ := x
+  let ⟨yDT, yTA, yF⟩ := y
   let (globals, dataTypes) ← mergeArrays DataType.name ∅ xDT yDT
   let (globals, typeAliases) ← mergeArrays TypeAlias.name globals xTA yTA
-  let (globals, functions) ← mergeArrays Function.name globals xF yF
-  let (globals, dataTypeTemplates) ← mergeArrays DataTypeTemplate.name globals xDTT yDTT
-  let (_, functionTemplates) ← mergeArrays FunctionTemplate.name globals xFT yFT
-  pure ⟨dataTypes, typeAliases, functions, dataTypeTemplates, functionTemplates⟩
+  let (_, functions) ← mergeArrays Function.name globals xF yF
+  pure ⟨dataTypes, typeAliases, functions⟩
 where
   mergeArrays {α : Type} (getName : α → Global) (globals : Std.HashSet Global)
       (xs ys : Array α) : Except Global (Std.HashSet Global × Array α) := do
@@ -248,62 +176,6 @@ inductive Declaration
   deriving Repr, Inhabited
 
 abbrev Decls := IndexMap Global Declaration
-
-structure TypedFunction where
-  name : Global
-  inputs : List (Local × Typ)
-  output : Typ
-  body : TypedTerm
-  entry : Bool
-  deriving Repr
-
-inductive TypedDeclaration
-  | function : TypedFunction → TypedDeclaration
-  | dataType : DataType → TypedDeclaration
-  | constructor : DataType → Constructor → TypedDeclaration
-  deriving Repr, Inhabited
-
-abbrev TypedDecls := IndexMap Global TypedDeclaration
-
-mutual
-
-open Std (HashSet)
-
-partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
-    Typ → Except String Nat
-  | .unit => pure 0
-  | .field .. => pure 1
-  | .pointer .. => pure 1
-  | .function .. => pure 1
-  | .tuple ts => ts.foldlM (init := 0) fun acc t => do
-    let tSize ← t.size decls visited
-    pure $ acc + tSize
-  | .array t n => do
-    let tSize ← t.size decls visited
-    pure $ n * tSize
-  | .typeRef g => match decls.getByKey g with
-    | some (.dataType data) => data.size decls visited
-    | _ => throw s!"Datatype not found: `{g}`"
-  | .typeVar s => throw s!"Unexpected type variable `{s}` after concretization"
-  | .templateApp g _ => throw s!"Unexpected template application `{g}` after concretization"
-  | .unif id => throw s!"Unexpected unification variable `?{id}`"
-
-partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {})
-    (c : Constructor) : Except String Nat :=
-  c.argTypes.foldlM (init := 0) fun acc t => do
-    let tSize ← t.size decls visited
-    pure $ acc + tSize
-
-partial def DataType.size (dt : DataType) (decls : TypedDecls)
-    (visited : HashSet Global := {}) : Except String Nat :=
-  if visited.contains dt.name then
-    throw s!"Cycle detected at datatype `{dt.name}`"
-  else do
-    let visited := visited.insert dt.name
-    let ctorSizes ← dt.constructors.mapM (Constructor.size decls visited)
-    let maxFields := ctorSizes.foldl max 0
-    pure $ maxFields + 1
-end
 
 end Aiur
 

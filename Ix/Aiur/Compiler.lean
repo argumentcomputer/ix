@@ -2,7 +2,6 @@ module
 public import Ix.Aiur.Compiler.Lower
 public import Ix.Aiur.Compiler.Dedup
 public import Ix.Aiur.Compiler.Concretize
-public import Ix.Aiur.Compiler.Infer
 public import Ix.Aiur.Compiler.Simple
 
 /-!
@@ -27,10 +26,8 @@ structure CompiledToplevel where
   ct.nameMap[Global.mk name]?
 
 def Toplevel.compile (t : Toplevel) : Except String CompiledToplevel := do
-  let t := t.expandAllAliases
-  let t ← t.infer
-  let t ← t.concretize
   let typedDecls ← t.checkAndSimplify.mapError toString
+  let typedDecls ← typedDecls.concretize
   let (bytecodeRaw, preNameMap) ← typedDecls.toBytecode
   let (bytecode, remap) := bytecodeRaw.deduplicate
   let nameMap := preNameMap.fold (init := (∅ : Std.HashMap Global Bytecode.FunIdx))

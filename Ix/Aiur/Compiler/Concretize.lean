@@ -1,629 +1,477 @@
 module
-public import Ix.Aiur.Term
+public import Ix.Aiur.Compiler.Check
+public import Std.Data.HashSet
+public import Std.Data.HashMap
 
 /-!
-Template concretization: monomorphizes datatype and function templates.
-
-Takes a `Toplevel` that may contain `DataTypeTemplate`s and `FunctionTemplate`s
-and produces a `Toplevel` with only concrete definitions. Template type variables
-(`Typ.typeVar`), template type applications (`Typ.templateApp`), template term
-applications (`Term.templateApp`), and template pattern references
-(`Pattern.templateRef`) are all eliminated.
+Monomorphization: specialize every generic datatype and function into
+concrete copies, keyed by the concrete type arguments that appear at use
+sites. Operates on `TypedDecls` produced by `Check.lean`.
 -/
 
 public section
 
 namespace Aiur
 
-/-- Substitution map from type parameter names to concrete types. -/
-abbrev TypeSubst := Array (String × Typ)
+/-! ## Name mangling -/
 
-/-- Compact string name for a type (used in array naming: `[G; 8]` → `"G_8"`). -/
 partial def Typ.toFlatName : Typ → String
   | .field => "G"
   | .unit => "Unit"
-  | .typeRef ref => ref.toName.toString (escape := false)
+  | Typ.ref g => g.toName.toString (escape := false)
   | .pointer t => "Ptr_" ++ t.toFlatName
   | .tuple ts => "Tup_" ++ "_".intercalate (ts.map Typ.toFlatName).toList
   | .array t n => t.toFlatName ++ "_" ++ toString n
   | t => toString (repr t)
 
-/-- Append name limbs for a concrete type argument to a `Global` name. -/
 partial def Typ.appendNameLimbs (g : Global) : Typ → Global
   | .field => g.pushNamespace "G"
   | .unit => g.pushNamespace "Unit"
-  | .typeRef ref =>
+  | Typ.ref g' =>
     let rec pushAll (g : Global) : Lean.Name → Global
       | .str parent s => (pushAll g parent).pushNamespace s
       | _ => g
-    pushAll g ref.toName
+    pushAll g g'.toName
   | .pointer t => Typ.appendNameLimbs (g.pushNamespace "Ptr") t
   | .tuple ts => ts.foldl Typ.appendNameLimbs (g.pushNamespace "Tup")
   | .array t n => g.pushNamespace (toFlatName t ++ "_" ++ toString n)
   | .function .. => g.pushNamespace "Fn"
-  | .typeVar s => g.pushNamespace s
-  | .templateApp name args =>
-    args.foldl Typ.appendNameLimbs (Typ.appendNameLimbs g (.typeRef name))
-  | .unif id => g.pushNamespace s!"?{id}"
+  | .app name args =>
+    args.foldl Typ.appendNameLimbs (Typ.appendNameLimbs g (.ref name))
+  | .mvar id => g.pushNamespace s!"?{id}"
 
-/-- Compute the concretized name for a template with given concrete type arguments. -/
 def concretizeName (templateName : Global) (args : Array Typ) : Global :=
   args.foldl Typ.appendNameLimbs templateName
 
-/-- Monad for concretization: tracks discovered template instantiations. -/
--- Each entry: (templateName, typeArgs, isDataType)
-abbrev ConcM := StateT (Array (Global × Array Typ × Bool)) (Except String)
+/-! ## Substitution on TypedTerm -/
 
-/-- Record a template instantiation to process. -/
-def recordInstantiation (name : Global) (args : Array Typ) (isDT : Bool) : ConcM Unit :=
-  modify fun wl => wl.push (name, args, isDT)
-
-/-- Resolve all template references in a `Typ` to concrete types.
-    Collects newly discovered instantiations in the state. -/
-partial def Typ.resolve
-    (dtTemplates : Std.HashMap Global DataTypeTemplate)
-    (fnTemplates : Std.HashMap Global FunctionTemplate) : Typ → ConcM Typ
-  | .templateApp name args => do
-    let args ← args.mapM (Typ.resolve dtTemplates fnTemplates)
-    if dtTemplates.contains name then
-      recordInstantiation name args true
-      pure $ .typeRef (concretizeName name args)
-    else
-      throw s!"Unknown template `{name}`"
-  | .typeVar s => throw s!"Unresolved type variable `{s}`"
-  | .tuple ts => do pure $ .tuple (← ts.mapM (Typ.resolve dtTemplates fnTemplates))
-  | .array t n => do pure $ .array (← Typ.resolve dtTemplates fnTemplates t) n
-  | .pointer t => do pure $ .pointer (← Typ.resolve dtTemplates fnTemplates t)
-  | .function ins out => do
-    pure $ .function (← ins.mapM (Typ.resolve dtTemplates fnTemplates))
-      (← Typ.resolve dtTemplates fnTemplates out)
-  | t => pure t
-
-mutual
-
-/-- Resolve all template references in a `Term` to concrete references. -/
-partial def Term.resolve
-    (dtTemplates : Std.HashMap Global DataTypeTemplate)
-    (fnTemplates : Std.HashMap Global FunctionTemplate) : Term → ConcM Term
-  | .templateApp name tyArgs ctorOpt args unconstrained => do
-    let tyArgs ← tyArgs.mapM (Typ.resolve dtTemplates fnTemplates)
-    let args ← args.mapM (Term.resolve dtTemplates fnTemplates)
-    match ctorOpt with
-    | some ctor =>
-      recordInstantiation name tyArgs true
-      let concName := (concretizeName name tyArgs).pushNamespace ctor
-      pure $ .app concName args unconstrained
-    | none =>
-      if fnTemplates.contains name then
-        recordInstantiation name tyArgs false
-        pure $ .app (concretizeName name tyArgs) args unconstrained
-      else
-        throw s!"Unknown template `{name}`"
-  | .ann t term => do
-    pure $ .ann (← Typ.resolve dtTemplates fnTemplates t)
-      (← Term.resolve dtTemplates fnTemplates term)
-  | .let pat val body => do
-    pure $ .let (← Pattern.resolve dtTemplates fnTemplates pat)
-      (← Term.resolve dtTemplates fnTemplates val)
-      (← Term.resolve dtTemplates fnTemplates body)
-  | .match term branches => do
-    let term ← Term.resolve dtTemplates fnTemplates term
-    let branches ← branches.mapM fun (pat, t) => do
-      pure (← Pattern.resolve dtTemplates fnTemplates pat,
-            ← Term.resolve dtTemplates fnTemplates t)
-    pure $ .match term branches
-  | .app g args unconstrained => do
-    pure $ .app g (← args.mapM (Term.resolve dtTemplates fnTemplates)) unconstrained
-  | .ret t => do pure $ .ret (← Term.resolve dtTemplates fnTemplates t)
-  | .add a b => do
-    pure $ .add (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-  | .sub a b => do
-    pure $ .sub (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-  | .mul a b => do
-    pure $ .mul (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-  | .eqZero a => do pure $ .eqZero (← Term.resolve dtTemplates fnTemplates a)
-  | .proj a n => do pure $ .proj (← Term.resolve dtTemplates fnTemplates a) n
-  | .get a n => do pure $ .get (← Term.resolve dtTemplates fnTemplates a) n
-  | .slice a i j => do pure $ .slice (← Term.resolve dtTemplates fnTemplates a) i j
-  | .set a i v => do
-    pure $ .set (← Term.resolve dtTemplates fnTemplates a) i
-      (← Term.resolve dtTemplates fnTemplates v)
-  | .store a => do pure $ .store (← Term.resolve dtTemplates fnTemplates a)
-  | .load a => do pure $ .load (← Term.resolve dtTemplates fnTemplates a)
-  | .ptrVal a => do pure $ .ptrVal (← Term.resolve dtTemplates fnTemplates a)
-  | .assertEq a b ret => do
-    pure $ .assertEq (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-      (← Term.resolve dtTemplates fnTemplates ret)
-  | .ioGetInfo key => do pure $ .ioGetInfo (← Term.resolve dtTemplates fnTemplates key)
-  | .ioSetInfo key idx len ret => do
-    pure $ .ioSetInfo (← Term.resolve dtTemplates fnTemplates key)
-      (← Term.resolve dtTemplates fnTemplates idx)
-      (← Term.resolve dtTemplates fnTemplates len)
-      (← Term.resolve dtTemplates fnTemplates ret)
-  | .ioRead idx len => do
-    pure $ .ioRead (← Term.resolve dtTemplates fnTemplates idx) len
-  | .ioWrite data ret => do
-    pure $ .ioWrite (← Term.resolve dtTemplates fnTemplates data)
-      (← Term.resolve dtTemplates fnTemplates ret)
-  | .debug label term ret => do
-    pure $ .debug label (← term.mapM (Term.resolve dtTemplates fnTemplates))
-      (← Term.resolve dtTemplates fnTemplates ret)
-  | .data (.tuple ts) => do
-    pure $ .data (.tuple (← ts.mapM (Term.resolve dtTemplates fnTemplates)))
-  | .data (.array ts) => do
-    pure $ .data (.array (← ts.mapM (Term.resolve dtTemplates fnTemplates)))
-  | .u8BitDecomposition a => do
-    pure $ .u8BitDecomposition (← Term.resolve dtTemplates fnTemplates a)
-  | .u8ShiftLeft a => do
-    pure $ .u8ShiftLeft (← Term.resolve dtTemplates fnTemplates a)
-  | .u8ShiftRight a => do
-    pure $ .u8ShiftRight (← Term.resolve dtTemplates fnTemplates a)
-  | .u8Xor a b => do
-    pure $ .u8Xor (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-  | .u8Add a b => do
-    pure $ .u8Add (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-  | .u8Sub a b => do
-    pure $ .u8Sub (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-  | .u8And a b => do
-    pure $ .u8And (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-  | .u8Or a b => do
-    pure $ .u8Or (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-  | .u8LessThan a b => do
-    pure $ .u8LessThan (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-  | .u32LessThan a b => do
-    pure $ .u32LessThan (← Term.resolve dtTemplates fnTemplates a)
-      (← Term.resolve dtTemplates fnTemplates b)
-  | t => pure t
-
-/-- Resolve all template references in a `Pattern`. -/
-partial def Pattern.resolve
-    (dtTemplates : Std.HashMap Global DataTypeTemplate)
-    (fnTemplates : Std.HashMap Global FunctionTemplate) : Pattern → ConcM Pattern
-  | .templateRef name tyArgs ctor pats => do
-    let tyArgs ← tyArgs.mapM (Typ.resolve dtTemplates fnTemplates)
-    let pats ← pats.mapM (Pattern.resolve dtTemplates fnTemplates)
-    recordInstantiation name tyArgs true
-    pure $ .ref ((concretizeName name tyArgs).pushNamespace ctor) pats
-  | .ref g pats => do
-    pure $ .ref g (← pats.mapM (Pattern.resolve dtTemplates fnTemplates))
-  | .tuple pats => do
-    pure $ .tuple (← pats.mapM (Pattern.resolve dtTemplates fnTemplates))
-  | .array pats => do
-    pure $ .array (← pats.mapM (Pattern.resolve dtTemplates fnTemplates))
-  | .or a b => do
-    pure $ .or (← Pattern.resolve dtTemplates fnTemplates a)
-      (← Pattern.resolve dtTemplates fnTemplates b)
-  | .pointer p => do
-    pure $ .pointer (← Pattern.resolve dtTemplates fnTemplates p)
-  | p => pure p
-
-end
-
-partial def Typ.substitute (subst : TypeSubst) : Typ → Typ
-  | .typeVar s => match subst.find? (·.1 == s) with
-    | some (_, t) => t
-    | none => .typeVar s
-  | .templateApp name args => .templateApp name (args.map (Typ.substitute subst))
-  | .tuple ts => .tuple (ts.map (Typ.substitute subst))
-  | .array t n => .array (Typ.substitute subst t) n
-  | .pointer t => .pointer (Typ.substitute subst t)
-  | .function ins out => .function (ins.map (Typ.substitute subst)) (Typ.substitute subst out)
+/-- Substitute type variables (param-refs) in a Typ, and rewrite `Typ.app`s that
+    have been specialised to their mangled `Typ.ref`. -/
+partial def rewriteTyp (subst : Global → Option Typ)
+    (mono : Std.HashMap (Global × Array Typ) Global) : Typ → Typ
+  | .ref g => (subst g).getD (.ref g)
+  | .app g args =>
+    -- Try to look up with original args first (mono map keyed by original args)
+    match mono[(g, args)]? with
+    | some concName => .ref concName
+    | none => .app g (args.map (rewriteTyp subst mono))
+  | .tuple ts => .tuple (ts.map (rewriteTyp subst mono))
+  | .array t n => .array (rewriteTyp subst mono t) n
+  | .pointer t => .pointer (rewriteTyp subst mono t)
+  | .function ins out =>
+    .function (ins.map (rewriteTyp subst mono)) (rewriteTyp subst mono out)
   | t => t
 
 mutual
-partial def Term.substitute (subst : TypeSubst) : Term → Term
-  | .ann t term => .ann (Typ.substitute subst t) (Term.substitute subst term)
-  | .let pat val body =>
-    .let (Pattern.substitute subst pat) (Term.substitute subst val)
-      (Term.substitute subst body)
-  | .match term branches =>
-    .match (Term.substitute subst term)
-      (branches.map fun (pat, t) => (Pattern.substitute subst pat, Term.substitute subst t))
-  | .app g args uc => .app g (args.map (Term.substitute subst)) uc
-  | .ret t => .ret (Term.substitute subst t)
-  | .add a b => .add (Term.substitute subst a) (Term.substitute subst b)
-  | .sub a b => .sub (Term.substitute subst a) (Term.substitute subst b)
-  | .mul a b => .mul (Term.substitute subst a) (Term.substitute subst b)
-  | .eqZero a => .eqZero (Term.substitute subst a)
-  | .proj a n => .proj (Term.substitute subst a) n
-  | .get a n => .get (Term.substitute subst a) n
-  | .slice a i j => .slice (Term.substitute subst a) i j
-  | .set a i v => .set (Term.substitute subst a) i (Term.substitute subst v)
-  | .store a => .store (Term.substitute subst a)
-  | .load a => .load (Term.substitute subst a)
-  | .ptrVal a => .ptrVal (Term.substitute subst a)
-  | .assertEq a b ret =>
-    .assertEq (Term.substitute subst a) (Term.substitute subst b) (Term.substitute subst ret)
-  | .ioGetInfo key => .ioGetInfo (Term.substitute subst key)
-  | .ioSetInfo key idx len ret =>
-    .ioSetInfo (Term.substitute subst key) (Term.substitute subst idx)
-      (Term.substitute subst len) (Term.substitute subst ret)
-  | .ioRead idx len => .ioRead (Term.substitute subst idx) len
-  | .ioWrite data ret => .ioWrite (Term.substitute subst data) (Term.substitute subst ret)
-  | .u8BitDecomposition a => .u8BitDecomposition (Term.substitute subst a)
-  | .u8ShiftLeft a => .u8ShiftLeft (Term.substitute subst a)
-  | .u8ShiftRight a => .u8ShiftRight (Term.substitute subst a)
-  | .u8Xor a b => .u8Xor (Term.substitute subst a) (Term.substitute subst b)
-  | .u8Add a b => .u8Add (Term.substitute subst a) (Term.substitute subst b)
-  | .u8Sub a b => .u8Sub (Term.substitute subst a) (Term.substitute subst b)
-  | .u8And a b => .u8And (Term.substitute subst a) (Term.substitute subst b)
-  | .u8Or a b => .u8Or (Term.substitute subst a) (Term.substitute subst b)
-  | .u8LessThan a b => .u8LessThan (Term.substitute subst a) (Term.substitute subst b)
-  | .u32LessThan a b => .u32LessThan (Term.substitute subst a) (Term.substitute subst b)
-  | .debug label term ret =>
-    .debug label (term.map (Term.substitute subst)) (Term.substitute subst ret)
-  | .data (.tuple ts) => .data (.tuple (ts.map (Term.substitute subst)))
-  | .data (.array ts) => .data (.array (ts.map (Term.substitute subst)))
-  | .templateApp name tyArgs ctorOpt args uc =>
-    .templateApp name (tyArgs.map (Typ.substitute subst)) ctorOpt
-      (args.map (Term.substitute subst)) uc
-  | t => t
-partial def Pattern.substitute (subst : TypeSubst) : Pattern → Pattern
-  | .templateRef name tyArgs ctor pats =>
-    .templateRef name (tyArgs.map (Typ.substitute subst)) ctor
-      (pats.map (Pattern.substitute subst))
-  | .ref g pats => .ref g (pats.map (Pattern.substitute subst))
-  | .tuple pats => .tuple (pats.map (Pattern.substitute subst))
-  | .array pats => .array (pats.map (Pattern.substitute subst))
-  | .or a b => .or (Pattern.substitute subst a) (Pattern.substitute subst b)
-  | .pointer p => .pointer (Pattern.substitute subst p)
-  | p => p
+partial def rewriteTypedTerm
+    (decls : Decls)
+    (subst : Global → Option Typ)
+    (mono : Std.HashMap (Global × Array Typ) Global) (t : TypedTerm) : TypedTerm :=
+  ⟨rewriteTyp subst mono t.typ, rewriteInner decls subst mono t.inner, t.escapes⟩
+
+partial def rewriteInner
+    (decls : Decls)
+    (subst : Global → Option Typ)
+    (mono : Std.HashMap (Global × Array Typ) Global) : TypedTermInner → TypedTermInner
+  | .unit => .unit
+  | .var x => .var x
+  | .ref g => .ref (rewriteGlobal decls mono g #[])
+  | .data d => .data (rewriteData decls subst mono d)
+  | .ret t => .ret (rewriteTypedTerm decls subst mono t)
+  | .let p v b =>
+    -- v.typ still has the pre-rewrite form (Typ.app ...) we can use for patterns
+    let p' := rewritePattern decls mono v.typ p
+    .let p' (rewriteTypedTerm decls subst mono v) (rewriteTypedTerm decls subst mono b)
+  | .match t bs =>
+    let scrutTyp := t.typ
+    .match (rewriteTypedTerm decls subst mono t)
+      (bs.map fun (p, b) => (rewritePattern decls mono scrutTyp p, rewriteTypedTerm decls subst mono b))
+  | .app g tArgs args u =>
+    -- Look up using original tArgs (mono is keyed by pre-rewrite args)
+    let g' := rewriteGlobal decls mono g tArgs
+    .app g' #[] (args.map (rewriteTypedTerm decls subst mono)) u
+  | .add a b => .add (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .sub a b => .sub (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .mul a b => .mul (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .eqZero a => .eqZero (rewriteTypedTerm decls subst mono a)
+  | .proj a n => .proj (rewriteTypedTerm decls subst mono a) n
+  | .get a n => .get (rewriteTypedTerm decls subst mono a) n
+  | .slice a i j => .slice (rewriteTypedTerm decls subst mono a) i j
+  | .set a n v =>
+    .set (rewriteTypedTerm decls subst mono a) n (rewriteTypedTerm decls subst mono v)
+  | .store a => .store (rewriteTypedTerm decls subst mono a)
+  | .load a => .load (rewriteTypedTerm decls subst mono a)
+  | .ptrVal a => .ptrVal (rewriteTypedTerm decls subst mono a)
+  | .assertEq a b r =>
+    .assertEq (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+      (rewriteTypedTerm decls subst mono r)
+  | .ioGetInfo k => .ioGetInfo (rewriteTypedTerm decls subst mono k)
+  | .ioSetInfo k i l r =>
+    .ioSetInfo (rewriteTypedTerm decls subst mono k) (rewriteTypedTerm decls subst mono i)
+      (rewriteTypedTerm decls subst mono l) (rewriteTypedTerm decls subst mono r)
+  | .ioRead i n => .ioRead (rewriteTypedTerm decls subst mono i) n
+  | .ioWrite d r =>
+    .ioWrite (rewriteTypedTerm decls subst mono d) (rewriteTypedTerm decls subst mono r)
+  | .u8BitDecomposition a => .u8BitDecomposition (rewriteTypedTerm decls subst mono a)
+  | .u8ShiftLeft a => .u8ShiftLeft (rewriteTypedTerm decls subst mono a)
+  | .u8ShiftRight a => .u8ShiftRight (rewriteTypedTerm decls subst mono a)
+  | .u8Xor a b =>
+    .u8Xor (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u8Add a b =>
+    .u8Add (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u8Sub a b =>
+    .u8Sub (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u8And a b =>
+    .u8And (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u8Or a b =>
+    .u8Or (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u8LessThan a b =>
+    .u8LessThan (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u32LessThan a b =>
+    .u32LessThan (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .debug l t r =>
+    .debug l (t.map (rewriteTypedTerm decls subst mono)) (rewriteTypedTerm decls subst mono r)
+
+partial def rewriteData
+    (decls : Decls)
+    (subst : Global → Option Typ)
+    (mono : Std.HashMap (Global × Array Typ) Global) : TypedData → TypedData
+  | .field g => .field g
+  | .tuple ts => .tuple (ts.map (rewriteTypedTerm decls subst mono))
+  | .array ts => .array (ts.map (rewriteTypedTerm decls subst mono))
+
+/-- Rewrite a reference to a function/constructor/datatype.
+    For a constructor like `Wrapper.Mk` with tArgs `#[field]`, resolves to
+    `Wrapper_G.Mk`. For a function, resolves to the concretized function name. -/
+partial def rewriteGlobal
+    (decls : Decls)
+    (mono : Std.HashMap (Global × Array Typ) Global)
+    (g : Global) (tArgs : Array Typ) : Global :=
+  if tArgs.isEmpty then g  -- non-parametric, leave alone
+  else match decls.getByKey g with
+  | some (.function _) =>
+    match mono[(g, tArgs)]? with
+    | some concName => concName
+    | none => g
+  | some (.constructor dt _) =>
+    match g.popNamespace with
+    | some (ctorName, _) =>
+      match mono[(dt.name, tArgs)]? with
+      | some concDTName => concDTName.pushNamespace ctorName
+      | none => g
+    | none => g
+  | _ => g
+
+/-- Rewrite constructor names in patterns, using the expected (unrewritten) type
+    to determine which monomorphic instance to use. -/
+partial def rewritePattern
+    (decls : Decls)
+    (mono : Std.HashMap (Global × Array Typ) Global)
+    (expectedTyp : Typ) (pat : Pattern) : Pattern :=
+  match pat with
+  | .ref g pats =>
+    let tArgs : Array Typ := match expectedTyp with
+      | .app _ args => args
+      | _ => #[]
+    let g' := rewriteGlobal decls mono g tArgs
+    let pats' := match decls.getByKey g with
+      | some (.constructor dt c) =>
+        let subst := mkParamSubst dt.params tArgs
+        let argTyps := c.argTypes.map (Typ.instantiate subst)
+        pats.zip argTyps |>.map fun (p, t) => rewritePattern decls mono t p
+      | _ => pats.map (rewritePattern decls mono .unit)
+    .ref g' pats'
+  | .tuple pats =>
+    match expectedTyp with
+    | .tuple typs =>
+      if pats.size == typs.size then
+        .tuple (pats.zip typs |>.map fun (p, t) => rewritePattern decls mono t p)
+      else pat
+    | _ => pat
+  | .array pats =>
+    match expectedTyp with
+    | .array t _ => .array (pats.map (rewritePattern decls mono t))
+    | _ => pat
+  | .or a b =>
+    .or (rewritePattern decls mono expectedTyp a) (rewritePattern decls mono expectedTyp b)
+  | .pointer p =>
+    match expectedTyp with
+    | .pointer inner => .pointer (rewritePattern decls mono inner p)
+    | _ => .pointer p
+  | _ => pat
 end
 
-/-- Apply substitution then resolve a type. -/
-def resolveTyp
-    (dtTemplates : Std.HashMap Global DataTypeTemplate)
-    (fnTemplates : Std.HashMap Global FunctionTemplate)
-    (subst : TypeSubst) (t : Typ) : ConcM Typ :=
-  Typ.resolve dtTemplates fnTemplates (Typ.substitute subst t)
+/-! ## Discovery: walk TypedDecls collecting instantiations -/
 
-/-- Apply substitution to a Term then resolve all template refs. -/
-def resolveTerm
-    (dtTemplates : Std.HashMap Global DataTypeTemplate)
-    (fnTemplates : Std.HashMap Global FunctionTemplate)
-    (subst : TypeSubst) (t : Term) : ConcM Term :=
-  Term.resolve dtTemplates fnTemplates (Term.substitute subst t)
+/-- Collect all `Typ.app (g, args)` instantiations in a type. -/
+partial def collectInTyp (seen : Std.HashSet (Global × Array Typ)) :
+    Typ → Std.HashSet (Global × Array Typ)
+  | .app g args =>
+    let seen := args.foldl collectInTyp seen
+    seen.insert (g, args)
+  | .tuple ts => ts.foldl collectInTyp seen
+  | .array t _ => collectInTyp seen t
+  | .pointer t => collectInTyp seen t
+  | .function ins out =>
+    let seen := ins.foldl collectInTyp seen
+    collectInTyp seen out
+  | _ => seen
 
-/-- Collect all `Typ.typeRef` globals from a type. -/
-partial def collectTypRefs : Typ → Std.HashSet Global → Std.HashSet Global
-  | .typeRef g, s => s.insert g
-  | .tuple ts, s => ts.foldl (fun s t => collectTypRefs t s) s
-  | .array t _, s => collectTypRefs t s
-  | .pointer t, s => collectTypRefs t s
-  | .function ins out, s =>
-    collectTypRefs out (ins.foldl (fun s t => collectTypRefs t s) s)
-  | _, s => s
+mutual
+partial def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ))
+    (t : TypedTerm) : Std.HashSet (Global × Array Typ) :=
+  let seen := collectInTyp seen t.typ
+  collectInInner seen t.inner
 
-/-- Collect all `Term.app` target names from a term (non-recursive into callees). -/
-partial def collectCallTargets (t : Term) : Std.HashSet Global :=
-  go t {}
+partial def collectInInner (seen : Std.HashSet (Global × Array Typ)) :
+    TypedTermInner → Std.HashSet (Global × Array Typ)
+  | .unit | .var _ | .ref _ => seen
+  | .data d => collectInData seen d
+  | .ret t => collectInTypedTerm seen t
+  | .let _ v b => collectInTypedTerm (collectInTypedTerm seen v) b
+  | .match t bs =>
+    let seen := collectInTypedTerm seen t
+    bs.foldl (fun s (_, b) => collectInTypedTerm s b) seen
+  | .app _ tArgs args _ =>
+    let seen := tArgs.foldl collectInTyp seen
+    let seen := args.foldl collectInTypedTerm seen
+    -- We DON'T insert the call instantiation here; that's handled by the
+    -- worklist against the callee's declaration. The tArgs on the .app node
+    -- carry the instantiation used, which gets recorded by examining the
+    -- callee's declaration.
+    seen
+  | .add a b | .sub a b | .mul a b | .u8Xor a b | .u8Add a b | .u8Sub a b
+  | .u8And a b | .u8Or a b | .u8LessThan a b | .u32LessThan a b =>
+    collectInTypedTerm (collectInTypedTerm seen a) b
+  | .eqZero a | .store a | .load a | .ptrVal a | .u8BitDecomposition a
+  | .u8ShiftLeft a | .u8ShiftRight a | .ioGetInfo a => collectInTypedTerm seen a
+  | .proj a _ | .get a _ | .slice a _ _ => collectInTypedTerm seen a
+  | .set a _ v => collectInTypedTerm (collectInTypedTerm seen a) v
+  | .assertEq a b r =>
+    collectInTypedTerm (collectInTypedTerm (collectInTypedTerm seen a) b) r
+  | .ioSetInfo k i l r =>
+    collectInTypedTerm (collectInTypedTerm
+      (collectInTypedTerm (collectInTypedTerm seen k) i) l) r
+  | .ioRead i _ => collectInTypedTerm seen i
+  | .ioWrite d r => collectInTypedTerm (collectInTypedTerm seen d) r
+  | .debug _ t r =>
+    let seen := match t with | some t => collectInTypedTerm seen t | none => seen
+    collectInTypedTerm seen r
+
+partial def collectInData (seen : Std.HashSet (Global × Array Typ)) :
+    TypedData → Std.HashSet (Global × Array Typ)
+  | .field _ => seen
+  | .tuple ts | .array ts => ts.foldl collectInTypedTerm seen
+end
+
+/-- Also collect function-call instantiations via the typedterm's .app tArgs. -/
+partial def collectCalls (seen : Std.HashSet (Global × Array Typ))
+    (decls : Decls) (t : TypedTerm) : Std.HashSet (Global × Array Typ) :=
+  collectCallsI decls t.inner seen
 where
-  go : Term → Std.HashSet Global → Std.HashSet Global
-    | .app g args _, s => args.foldl (fun s a => go a s) (s.insert g)
-    | .let _ val body, s => go body (go val s)
-    | .match term branches, s =>
-      branches.foldl (fun s (_, t) => go t s) (go term s)
-    | .ret t, s => go t s
-    | .add a b, s | .sub a b, s | .mul a b, s => go b (go a s)
-    | .eqZero a, s | .store a, s | .load a, s | .ptrVal a, s => go a s
-    | .proj a _, s | .get a _, s | .slice a _ _, s => go a s
-    | .set a _ v, s => go v (go a s)
-    | .assertEq a b ret, s => go ret (go b (go a s))
-    | .ioGetInfo key, s => go key s
-    | .ioSetInfo key idx len ret, s => go ret (go len (go idx (go key s)))
-    | .ioRead idx _, s => go idx s
-    | .ioWrite data ret, s => go ret (go data s)
-    | .debug _ (some t) ret, s => go ret (go t s)
-    | .debug _ none ret, s => go ret s
-    | .ann _ term, s => go term s
-    | .data (.tuple ts), s => ts.foldl (fun s t => go t s) s
-    | .data (.array ts), s => ts.foldl (fun s t => go t s) s
-    | _, s => s
+  goT seen t := collectCallsI decls t.inner seen
+  collectCallsI : Decls → TypedTermInner → Std.HashSet (Global × Array Typ)
+      → Std.HashSet (Global × Array Typ) :=
+    fun decls i seen => match i with
+    | .unit | .var _ | .ref _ => seen
+    | .data (.field _) => seen
+    | .data (.tuple ts) | .data (.array ts) => ts.foldl goT seen
+    | .ret t => goT seen t
+    | .let _ v b => goT (goT seen v) b
+    | .match t bs => bs.foldl (fun s (_, b) => goT s b) (goT seen t)
+    | .app g tArgs args _ =>
+      let seen := args.foldl goT seen
+      if tArgs.isEmpty then seen else
+        match decls.getByKey g with
+        | some (.function _) => seen.insert (g, tArgs)
+        | some (.constructor dt _) => seen.insert (dt.name, tArgs)
+        | _ => seen
+    | .add a b | .sub a b | .mul a b | .u8Xor a b | .u8Add a b | .u8Sub a b
+    | .u8And a b | .u8Or a b | .u8LessThan a b | .u32LessThan a b => goT (goT seen a) b
+    | .eqZero a | .store a | .load a | .ptrVal a | .u8BitDecomposition a
+    | .u8ShiftLeft a | .u8ShiftRight a | .ioGetInfo a => goT seen a
+    | .proj a _ | .get a _ | .slice a _ _ => goT seen a
+    | .set a _ v => goT (goT seen a) v
+    | .assertEq a b r => goT (goT (goT seen a) b) r
+    | .ioSetInfo k i l r => goT (goT (goT (goT seen k) i) l) r
+    | .ioRead i _ => goT seen i
+    | .ioWrite d r => goT (goT seen d) r
+    | .debug _ t r =>
+      let seen := match t with | some t => goT seen t | none => seen
+      goT seen r
 
-/-- Rewrite a Typ, resolving any typeRef whose name matches a template. -/
-partial def rewriteImplicitTyp (resolveApp : Global → Global) : Typ → Typ
-  | .typeRef g => .typeRef (resolveApp g)
-  | .tuple ts => .tuple (ts.map (rewriteImplicitTyp resolveApp))
-  | .array t n => .array (rewriteImplicitTyp resolveApp t) n
-  | .pointer t => .pointer (rewriteImplicitTyp resolveApp t)
-  | .function ins out =>
-    .function (ins.map (rewriteImplicitTyp resolveApp)) (rewriteImplicitTyp resolveApp out)
-  | t => t
-
-mutual
-/-- Rewrite Term.app and Pattern.ref names that match templates. -/
-partial def rewriteImplicitTerm (resolveApp : Global → Global) : Term → Term
-  | .app g args uc => .app (resolveApp g) (args.map (rewriteImplicitTerm resolveApp)) uc
-  | .ann t term =>
-    .ann (rewriteImplicitTyp resolveApp t) (rewriteImplicitTerm resolveApp term)
-  | .let pat val body =>
-    .let (rewriteImplicitPat resolveApp pat) (rewriteImplicitTerm resolveApp val)
-      (rewriteImplicitTerm resolveApp body)
-  | .match term branches =>
-    .match (rewriteImplicitTerm resolveApp term)
-      (branches.map fun (pat, t) =>
-        (rewriteImplicitPat resolveApp pat, rewriteImplicitTerm resolveApp t))
-  | .ret t => .ret (rewriteImplicitTerm resolveApp t)
-  | .add a b => .add (rewriteImplicitTerm resolveApp a) (rewriteImplicitTerm resolveApp b)
-  | .sub a b => .sub (rewriteImplicitTerm resolveApp a) (rewriteImplicitTerm resolveApp b)
-  | .mul a b => .mul (rewriteImplicitTerm resolveApp a) (rewriteImplicitTerm resolveApp b)
-  | .eqZero a => .eqZero (rewriteImplicitTerm resolveApp a)
-  | .proj a n => .proj (rewriteImplicitTerm resolveApp a) n
-  | .get a n => .get (rewriteImplicitTerm resolveApp a) n
-  | .slice a i j => .slice (rewriteImplicitTerm resolveApp a) i j
-  | .set a i v =>
-    .set (rewriteImplicitTerm resolveApp a) i (rewriteImplicitTerm resolveApp v)
-  | .store a => .store (rewriteImplicitTerm resolveApp a)
-  | .load a => .load (rewriteImplicitTerm resolveApp a)
-  | .ptrVal a => .ptrVal (rewriteImplicitTerm resolveApp a)
-  | .assertEq a b ret =>
-    .assertEq (rewriteImplicitTerm resolveApp a) (rewriteImplicitTerm resolveApp b)
-      (rewriteImplicitTerm resolveApp ret)
-  | .ioGetInfo key => .ioGetInfo (rewriteImplicitTerm resolveApp key)
-  | .ioSetInfo key idx len ret =>
-    .ioSetInfo (rewriteImplicitTerm resolveApp key) (rewriteImplicitTerm resolveApp idx)
-      (rewriteImplicitTerm resolveApp len) (rewriteImplicitTerm resolveApp ret)
-  | .ioRead idx len => .ioRead (rewriteImplicitTerm resolveApp idx) len
-  | .ioWrite data ret =>
-    .ioWrite (rewriteImplicitTerm resolveApp data) (rewriteImplicitTerm resolveApp ret)
-  | .debug label term ret =>
-    .debug label (term.map (rewriteImplicitTerm resolveApp)) (rewriteImplicitTerm resolveApp ret)
-  | .data (.tuple ts) => .data (.tuple (ts.map (rewriteImplicitTerm resolveApp)))
-  | .data (.array ts) => .data (.array (ts.map (rewriteImplicitTerm resolveApp)))
-  | t => t
-partial def rewriteImplicitPat (resolveApp : Global → Global) : Pattern → Pattern
-  | .ref g pats => .ref (resolveApp g) (pats.map (rewriteImplicitPat resolveApp))
-  | .tuple pats => .tuple (pats.map (rewriteImplicitPat resolveApp))
-  | .array pats => .array (pats.map (rewriteImplicitPat resolveApp))
-  | .or a b => .or (rewriteImplicitPat resolveApp a) (rewriteImplicitPat resolveApp b)
-  | .pointer p => .pointer (rewriteImplicitPat resolveApp p)
-  | p => p
-end
+/-! ## Substitution on TypedTerm (for template body specialization) -/
 
 mutual
-partial def expandAliasesInTerm (expand : Typ → Typ) : Term → Term
-  | .ann t term => .ann (expand t) (expandAliasesInTerm expand term)
-  | .templateApp name tyArgs ctorOpt args uc =>
-    .templateApp name (tyArgs.map expand) ctorOpt
-      (args.map (expandAliasesInTerm expand)) uc
-  | .let pat val body =>
-    .let (expandAliasesInPat expand pat)
-      (expandAliasesInTerm expand val) (expandAliasesInTerm expand body)
-  | .match term branches =>
-    .match (expandAliasesInTerm expand term)
-      (branches.map fun (p, t) =>
-        (expandAliasesInPat expand p, expandAliasesInTerm expand t))
-  | .app g args uc => .app g (args.map (expandAliasesInTerm expand)) uc
-  | .ret t => .ret (expandAliasesInTerm expand t)
-  | .add a b => .add (expandAliasesInTerm expand a) (expandAliasesInTerm expand b)
-  | .sub a b => .sub (expandAliasesInTerm expand a) (expandAliasesInTerm expand b)
-  | .mul a b => .mul (expandAliasesInTerm expand a) (expandAliasesInTerm expand b)
-  | .eqZero a => .eqZero (expandAliasesInTerm expand a)
-  | .proj a n => .proj (expandAliasesInTerm expand a) n
-  | .get a n => .get (expandAliasesInTerm expand a) n
-  | .slice a i j => .slice (expandAliasesInTerm expand a) i j
-  | .set a i v => .set (expandAliasesInTerm expand a) i (expandAliasesInTerm expand v)
-  | .store a => .store (expandAliasesInTerm expand a)
-  | .load a => .load (expandAliasesInTerm expand a)
-  | .ptrVal a => .ptrVal (expandAliasesInTerm expand a)
-  | .assertEq a b ret =>
-    .assertEq (expandAliasesInTerm expand a) (expandAliasesInTerm expand b)
-      (expandAliasesInTerm expand ret)
-  | .ioGetInfo key => .ioGetInfo (expandAliasesInTerm expand key)
-  | .ioSetInfo key idx len ret =>
-    .ioSetInfo (expandAliasesInTerm expand key) (expandAliasesInTerm expand idx)
-      (expandAliasesInTerm expand len) (expandAliasesInTerm expand ret)
-  | .ioRead idx len => .ioRead (expandAliasesInTerm expand idx) len
-  | .ioWrite data ret =>
-    .ioWrite (expandAliasesInTerm expand data) (expandAliasesInTerm expand ret)
-  | .debug label term ret =>
-    .debug label (term.map (expandAliasesInTerm expand)) (expandAliasesInTerm expand ret)
-  | .data (.tuple ts) => .data (.tuple (ts.map (expandAliasesInTerm expand)))
-  | .data (.array ts) => .data (.array (ts.map (expandAliasesInTerm expand)))
-  | t => t
-partial def expandAliasesInPat (expand : Typ → Typ) : Pattern → Pattern
-  | .templateRef name tyArgs ctor pats =>
-    .templateRef name (tyArgs.map expand) ctor (pats.map (expandAliasesInPat expand))
-  | .ref g pats => .ref g (pats.map (expandAliasesInPat expand))
-  | .tuple pats => .tuple (pats.map (expandAliasesInPat expand))
-  | .array pats => .array (pats.map (expandAliasesInPat expand))
-  | .or a b => .or (expandAliasesInPat expand a) (expandAliasesInPat expand b)
-  | .pointer p => .pointer (expandAliasesInPat expand p)
-  | p => p
+partial def substInTypedTerm (subst : Global → Option Typ) (t : TypedTerm) : TypedTerm :=
+  ⟨Typ.instantiate subst t.typ, substInInner subst t.inner, t.escapes⟩
+
+partial def substInInner (subst : Global → Option Typ) : TypedTermInner → TypedTermInner
+  | .unit => .unit
+  | .var x => .var x
+  | .ref g => .ref g
+  | .data d => .data (substInData subst d)
+  | .ret t => .ret (substInTypedTerm subst t)
+  | .let p v b => .let p (substInTypedTerm subst v) (substInTypedTerm subst b)
+  | .match t bs =>
+    .match (substInTypedTerm subst t)
+      (bs.map fun (p, b) => (p, substInTypedTerm subst b))
+  | .app g tArgs args u =>
+    .app g (tArgs.map (Typ.instantiate subst)) (args.map (substInTypedTerm subst)) u
+  | .add a b => .add (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .sub a b => .sub (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .mul a b => .mul (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .eqZero a => .eqZero (substInTypedTerm subst a)
+  | .proj a n => .proj (substInTypedTerm subst a) n
+  | .get a n => .get (substInTypedTerm subst a) n
+  | .slice a i j => .slice (substInTypedTerm subst a) i j
+  | .set a n v => .set (substInTypedTerm subst a) n (substInTypedTerm subst v)
+  | .store a => .store (substInTypedTerm subst a)
+  | .load a => .load (substInTypedTerm subst a)
+  | .ptrVal a => .ptrVal (substInTypedTerm subst a)
+  | .assertEq a b r =>
+    .assertEq (substInTypedTerm subst a) (substInTypedTerm subst b) (substInTypedTerm subst r)
+  | .ioGetInfo k => .ioGetInfo (substInTypedTerm subst k)
+  | .ioSetInfo k i l r =>
+    .ioSetInfo (substInTypedTerm subst k) (substInTypedTerm subst i)
+      (substInTypedTerm subst l) (substInTypedTerm subst r)
+  | .ioRead i n => .ioRead (substInTypedTerm subst i) n
+  | .ioWrite d r => .ioWrite (substInTypedTerm subst d) (substInTypedTerm subst r)
+  | .u8BitDecomposition a => .u8BitDecomposition (substInTypedTerm subst a)
+  | .u8ShiftLeft a => .u8ShiftLeft (substInTypedTerm subst a)
+  | .u8ShiftRight a => .u8ShiftRight (substInTypedTerm subst a)
+  | .u8Xor a b => .u8Xor (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u8Add a b => .u8Add (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u8Sub a b => .u8Sub (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u8And a b => .u8And (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u8Or a b => .u8Or (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u8LessThan a b => .u8LessThan (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u32LessThan a b => .u32LessThan (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .debug l t r =>
+    .debug l (t.map (substInTypedTerm subst)) (substInTypedTerm subst r)
+
+partial def substInData (subst : Global → Option Typ) : TypedData → TypedData
+  | .field g => .field g
+  | .tuple ts => .tuple (ts.map (substInTypedTerm subst))
+  | .array ts => .array (ts.map (substInTypedTerm subst))
 end
 
-/--
-Concretize all templates in a `Toplevel`, producing a `Toplevel` with only
-concrete definitions. Performs a fixpoint iteration to handle transitive
-template dependencies.
--/
-partial def expandAliases (aliases : Array TypeAlias) : Typ → Typ
-  | .typeRef g =>
-    match aliases.find? (·.name == g) with
-    | some alias => expandAliases aliases alias.expansion
-    | none => .typeRef g
-  | .tuple ts => .tuple (ts.map (expandAliases aliases))
-  | .array t n => .array (expandAliases aliases t) n
-  | .pointer t => .pointer (expandAliases aliases t)
-  | .function ins out =>
-    .function (ins.map (expandAliases aliases)) (expandAliases aliases out)
-  | .templateApp name args => .templateApp name (args.map (expandAliases aliases))
-  | t => t
+/-! ## The main pass -/
 
-def Toplevel.expandAllAliases (toplevel : Toplevel) : Toplevel :=
-  if toplevel.typeAliases.isEmpty then toplevel
-  else
-    let expand := expandAliases toplevel.typeAliases
-    let expandCtors (cs : List Constructor) := cs.map fun c =>
-      { c with argTypes := c.argTypes.map expand }
-    let expandInputs (ins : List (Local × Typ)) := ins.map fun (l, t) => (l, expand t)
-    let expandTerm := expandAliasesInTerm expand
-    { dataTypes := toplevel.dataTypes.map fun dt =>
-        { dt with constructors := expandCtors dt.constructors }
-      typeAliases := #[]
-      functions := toplevel.functions.map fun f =>
-        { f with inputs := expandInputs f.inputs
-                 output := expand f.output
-                 body := expandTerm f.body }
-      dataTypeTemplates := toplevel.dataTypeTemplates.map fun dt =>
-        { dt with constructors := expandCtors dt.constructors }
-      functionTemplates := toplevel.functionTemplates.map fun ft =>
-        { ft with inputs := expandInputs ft.inputs
-                  output := expand ft.output
-                  body := expandTerm ft.body } }
+def TypedDecls.concretize (decls : TypedDecls) : Except String TypedDecls := do
+  -- Step 1: discover all initial instantiations from concrete declarations
+  let mut pending : Std.HashSet (Global × Array Typ) := {}
+  let plainDecls : Decls := decls.foldl (init := default) fun acc (name, d) =>
+    match d with
+    | .function f =>
+      let f' : Function :=
+        { name := f.name, params := f.params, inputs := f.inputs, output := f.output
+          body := .unit, entry := f.entry }
+      acc.insert name (.function f')
+    | .dataType dt => acc.insert name (.dataType dt)
+    | .constructor dt c => acc.insert name (.constructor dt c)
+  for (_, d) in decls.pairs do
+    match d with
+    | .function f =>
+      if f.params.isEmpty then
+        pending := collectInTyp pending f.output
+        pending := f.inputs.foldl (fun s (_, t) => collectInTyp s t) pending
+        pending := collectInTypedTerm pending f.body
+        pending := collectCalls pending plainDecls f.body
+    | .dataType dt =>
+      if dt.params.isEmpty then
+        pending := dt.constructors.foldl
+          (fun s c => c.argTypes.foldl collectInTyp s) pending
+    | _ => pure ()
 
-partial def Toplevel.concretize (toplevel : Toplevel) : Except String Toplevel := do
-  if toplevel.dataTypeTemplates.isEmpty && toplevel.functionTemplates.isEmpty then
-    return toplevel
-
-  -- Expand type aliases in all types before concretization, so that
-  -- List‹U64› and List‹[G; 8]› produce the same concretized name.
-  let expand := expandAliases toplevel.typeAliases
-  let expandCtors (cs : List Constructor) := cs.map fun c =>
-    Constructor.mk c.nameHead (c.argTypes.map expand)
-  let expandInputs (ins : List (Local × Typ)) := ins.map fun (l, t) => (l, expand t)
-  -- Expand aliases in Term trees (for templateApp type args and annotations)
-  let expandTerm := expandAliasesInTerm expand
-  let toplevel : Toplevel := ⟨
-    toplevel.dataTypes.map fun dt => DataType.mk dt.name (expandCtors dt.constructors),
-    toplevel.typeAliases,
-    toplevel.functions.map fun f =>
-      Function.mk f.name (expandInputs f.inputs) (expand f.output) (expandTerm f.body) f.entry,
-    toplevel.dataTypeTemplates.map fun dt =>
-      DataTypeTemplate.mk dt.name dt.typeParams (expandCtors dt.constructors),
-    toplevel.functionTemplates.map fun ft =>
-      FunctionTemplate.mk ft.name ft.typeParams (expandInputs ft.inputs) (expand ft.output)
-        (expandTerm ft.body)
-  ⟩
-
-  let dtTemplates : Std.HashMap Global DataTypeTemplate :=
-    toplevel.dataTypeTemplates.foldl (init := {}) fun acc dt => acc.insert dt.name dt
-  let fnTemplates : Std.HashMap Global FunctionTemplate :=
-    toplevel.functionTemplates.foldl (init := {}) fun acc (fn' : FunctionTemplate) =>
-      acc.insert fn'.name fn'
-
-  -- Phase 1: resolve all explicit template refs in existing concrete definitions.
-  -- `resolveAll` runs a ConcM action for each element, collecting the transformed
-  -- array and all pending instantiations discovered along the way.
-  let resolveAll {α β : Type} (arr : Array α) (f : α → ConcM β) :
-      Except String (Array β × Array (Global × Array Typ × Bool)) :=
-    (arr.mapM f).run #[]
-
-  let (dataTypes, p1) ← resolveAll toplevel.dataTypes fun dt => do
-    let constructors ← dt.constructors.mapM fun (ctor : Constructor) => do
-      let argTypes ← ctor.argTypes.mapM (Typ.resolve dtTemplates fnTemplates)
-      pure (Constructor.mk ctor.nameHead argTypes)
-    pure (DataType.mk dt.name constructors)
-  let (functions, p2) ← resolveAll toplevel.functions fun f => do
-    let inputs ← f.inputs.mapM fun ((loc, t) : Local × Typ) =>
-      return (loc, ← Typ.resolve dtTemplates fnTemplates t)
-    let output ← Typ.resolve dtTemplates fnTemplates f.output
-    let body ← Term.resolve dtTemplates fnTemplates f.body
-    pure (Function.mk f.name inputs output body f.entry)
-  let (typeAliases, p3) ← resolveAll toplevel.typeAliases fun ta => do
-    let expansion ← Typ.resolve dtTemplates fnTemplates ta.expansion
-    pure (TypeAlias.mk ta.name expansion)
-  let mut pending := p1 ++ p2 ++ p3
-  let mut dataTypes := dataTypes
-  let mut functions := functions
-
-  -- Phase 2: fixpoint - generate concrete definitions from templates
+  -- Step 2: fixpoint - generate monomorphic decls
+  let mut mono : Std.HashMap (Global × Array Typ) Global := {}
+  let mut newFunctions : Array TypedFunction := #[]
+  let mut newDataTypes : Array DataType := #[]
   let mut seen : Std.HashSet (Global × Array Typ) := {}
   while !pending.isEmpty do
-    let batch := pending.filter fun (name, args, _) => !seen.contains (name, args)
-    pending := #[]
-    if batch.isEmpty then break
-    for (name, args, isDT) in batch do
+    let batch := pending
+    pending := {}
+    for (name, args) in batch do
       if seen.contains (name, args) then continue
       seen := seen.insert (name, args)
-      if isDT then
-        let some tmpl := dtTemplates[name]? | throw s!"Unknown datatype template `{name}`"
-        if args.size != tmpl.typeParams.size then
-          throw s!"Template `{tmpl.name}` expects {tmpl.typeParams.size} type args, got {args.size}"
-        let subst : TypeSubst := tmpl.typeParams.zip args
-        let concName := concretizeName tmpl.name args
-        let (constructors, newPending) ← (tmpl.constructors.mapM fun (ctor : Constructor) => do
-          let argTypes ← ctor.argTypes.mapM (resolveTyp dtTemplates fnTemplates subst)
-          pure (Constructor.mk ctor.nameHead argTypes)
-        ).run #[]
-        dataTypes := dataTypes.push (DataType.mk concName constructors)
-        pending := pending ++ newPending
-      else
-        let some tmpl := fnTemplates[name]? | throw s!"Unknown function template `{name}`"
-        if args.size != tmpl.typeParams.size then
-          throw s!"Template `{tmpl.name}` expects {tmpl.typeParams.size} type args, got {args.size}"
-        let subst : TypeSubst := tmpl.typeParams.zip args
-        let concName := concretizeName tmpl.name args
-        let ((inputs, output, body), newPending) ← (do
-          let inputs ← tmpl.inputs.mapM fun ((loc, t) : Local × Typ) => do
-            pure (loc, ← resolveTyp dtTemplates fnTemplates subst t)
-          let output ← resolveTyp dtTemplates fnTemplates subst tmpl.output
-          let body ← resolveTerm dtTemplates fnTemplates subst tmpl.body
-          pure (inputs, output, body)
-        ).run #[]
-        functions := functions.push (Function.mk concName inputs output body false)
-        pending := pending ++ newPending
+      let concName := concretizeName name args
+      mono := mono.insert (name, args) concName
+      -- Look up the template
+      match decls.getByKey name with
+      | some (.function f) =>
+        if f.params.length != args.size then
+          throw s!"Template {name}: expected {f.params.length} type args, got {args.size}"
+        let subst := mkParamSubst f.params args
+        -- Apply substitution through the template to get monomorphic version
+        let newInputs := f.inputs.map fun (l, t) => (l, Typ.instantiate subst t)
+        let newOutput := Typ.instantiate subst f.output
+        let newBody := substInTypedTerm subst f.body
+        -- Now collect instantiations from the substituted body
+        pending := collectInTyp pending newOutput
+        pending := newInputs.foldl (fun s (_, t) => collectInTyp s t) pending
+        pending := collectInTypedTerm pending newBody
+        pending := collectCalls pending plainDecls newBody
+        newFunctions := newFunctions.push
+          { name := concName, params := [], inputs := newInputs
+            output := newOutput, body := newBody, entry := false }
+      | some (.dataType dt) =>
+        if dt.params.length != args.size then
+          throw s!"Template {name}: expected {dt.params.length} type args, got {args.size}"
+        let subst := mkParamSubst dt.params args
+        let newCtors := dt.constructors.map fun c =>
+          { c with argTypes := c.argTypes.map (Typ.instantiate subst) }
+        -- Collect from substituted ctor arg types
+        pending := newCtors.foldl
+          (fun s c => c.argTypes.foldl collectInTyp s) pending
+        newDataTypes := newDataTypes.push
+          { name := concName, params := [], constructors := newCtors }
+      | _ => throw s!"Template {name} not found in decls"
 
-  -- Phase 3: resolve implicit template refs per-function.
-  -- For each function, discover which DT template instantiations are reachable
-  -- (from own types + callee signatures), then resolve unqualified constructor
-  -- names like `Option.Some` → `Option.G.Some` when unambiguous.
-
-  -- Reverse maps: concretized name → template name
-  let concToDtTemplate : Std.HashMap Global Global :=
-    seen.fold (init := {}) fun acc (name, args) =>
-      if dtTemplates.contains name then acc.insert (concretizeName name args) name
-      else acc
-  -- All concrete names (to avoid rewriting already-resolved names)
-  let mut concreteNames : Std.HashSet Global := {}
-  for dt in dataTypes do
-    concreteNames := concreteNames.insert dt.name
-    for ctor in dt.constructors do
-      concreteNames := concreteNames.insert (dt.name.pushNamespace ctor.nameHead)
-  for f in functions do
-    concreteNames := concreteNames.insert f.name
-  -- Function lookup for callee signature inspection
-  let funcMap : Std.HashMap Global Function :=
-    functions.foldl (init := {}) fun acc f => acc.insert f.name f
-
-  functions := functions.map fun f => Id.run do
-    -- Collect type refs from own signature + callee signatures (one hop)
-    let mut typeRefs : Std.HashSet Global := {}
-    for (_, t) in f.inputs do typeRefs := collectTypRefs t typeRefs
-    typeRefs := collectTypRefs f.output typeRefs
-    typeRefs := (collectCallTargets f.body).fold (init := typeRefs) fun refs target =>
-      match funcMap[target]? with
-      | some callee =>
-        let refs := callee.inputs.foldl (fun refs (_, t) => collectTypRefs t refs) refs
-        collectTypRefs callee.output refs
-      | none => refs
-    -- Build per-function DT instantiation map: template name → concretized names in scope
-    let localDtMap := typeRefs.fold (init := (∅ : Std.HashMap Global (Array Global))) fun acc ref =>
-      match concToDtTemplate[ref]? with
-      | some tmplName => acc.insert tmplName ((acc.getD tmplName #[]).push ref)
-      | none => acc
-    -- Rewrite implicit refs when template has exactly one in-scope instantiation
-    let resolveApp (name : Global) : Global :=
-      if concreteNames.contains name then name
-      -- Check constructor (parent is DT template)
-      else if let some (ctor, parent) := name.popNamespace then
-        match localDtMap[parent]? with
-        | some #[concName] => concName.pushNamespace ctor
-        | _ => name
-      else name
-    Function.mk f.name f.inputs f.output (rewriteImplicitTerm resolveApp f.body) f.entry
-
-  pure ⟨dataTypes, typeAliases, functions, #[], #[]⟩
+  -- Step 3: build the rewritten TypedDecls
+  let mut result : TypedDecls := default
+  let emptySubst : Global → Option Typ := fun _ => none
+  -- Keep concrete decls, rewriting their references
+  for (key, d) in decls.pairs do
+    match d with
+    | .function f =>
+      if f.params.isEmpty then
+        let newInputs := f.inputs.map fun (l, t) => (l, rewriteTyp emptySubst mono t)
+        let newOutput := rewriteTyp emptySubst mono f.output
+        let newBody := rewriteTypedTerm plainDecls emptySubst mono f.body
+        result := result.insert key (.function
+          { f with inputs := newInputs, output := newOutput, body := newBody })
+    | .dataType dt =>
+      if dt.params.isEmpty then
+        let newCtors := dt.constructors.map fun c =>
+          { c with argTypes := c.argTypes.map (rewriteTyp emptySubst mono) }
+        result := result.insert key (.dataType { dt with constructors := newCtors })
+    | .constructor dt c =>
+      if dt.params.isEmpty then
+        let newArgTypes := c.argTypes.map (rewriteTyp emptySubst mono)
+        let newCtor : Constructor := { c with argTypes := newArgTypes }
+        let rewrittenCtors := dt.constructors.map fun c' =>
+          { c' with argTypes := c'.argTypes.map (rewriteTyp emptySubst mono) }
+        let newDt : DataType := { dt with constructors := rewrittenCtors }
+        result := result.insert key (.constructor newDt newCtor)
+  -- Add monomorphic datatypes and their constructors
+  for dt in newDataTypes do
+    -- Rewrite inner references in the ctor types (for nested templates)
+    let rewrittenCtors := dt.constructors.map fun c =>
+      { c with argTypes := c.argTypes.map (rewriteTyp emptySubst mono) }
+    let newDt := { dt with constructors := rewrittenCtors }
+    result := result.insert dt.name (.dataType newDt)
+    for c in rewrittenCtors do
+      let cName := dt.name.pushNamespace c.nameHead
+      result := result.insert cName (.constructor newDt c)
+  -- Add monomorphic functions
+  for f in newFunctions do
+    let newInputs := f.inputs.map fun (l, t) => (l, rewriteTyp emptySubst mono t)
+    let newOutput := rewriteTyp emptySubst mono f.output
+    let newBody := rewriteTypedTerm plainDecls emptySubst mono f.body
+    let newF := { f with inputs := newInputs, output := newOutput, body := newBody }
+    result := result.insert f.name (.function newF)
+  pure result
 
 end Aiur
 

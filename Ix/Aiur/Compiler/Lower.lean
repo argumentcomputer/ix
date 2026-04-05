@@ -1,6 +1,6 @@
 module
 public import Std.Data.HashMap
-public import Ix.Aiur.Term
+public import Ix.Aiur.TypedTerm
 public import Ix.Aiur.Compiler.Layout
 
 /-!
@@ -45,6 +45,7 @@ abbrev LayoutMap := Std.HashMap Global Layout
 def TypedDecls.layoutMap (decls : TypedDecls) : Except String LayoutMap := do
   let pass := fun (layoutMap, funcIdx, gadgetIdx) (_, v) => do match v with
     | .dataType dataType =>
+      if !dataType.params.isEmpty then pure (layoutMap, funcIdx, gadgetIdx) else do
       let dataTypeSize ← dataType.size decls
       let layoutMap := layoutMap.insert dataType.name (.dataType dataTypeSize)
       let pass := fun (acc, index) constructor => do
@@ -57,6 +58,7 @@ def TypedDecls.layoutMap (decls : TypedDecls) : Except String LayoutMap := do
       let (layoutMap, _) ← dataType.constructors.foldlM pass (layoutMap, 0)
       pure (layoutMap, funcIdx, gadgetIdx)
     | .function function =>
+      if !function.params.isEmpty then pure (layoutMap, funcIdx, gadgetIdx) else do
       let inputSize ← function.inputs.foldlM (init := 0) fun acc (_, typ) => do
         let typSize ← typ.size decls
         pure $ acc + typSize
@@ -82,12 +84,13 @@ def typSize (layoutMap : LayoutMap) : Typ → Except String Nat
 | .array typ n => do
   let size ← typSize layoutMap typ
   pure $ n * size
-| .typeRef g => match layoutMap[g]? with
+| .ref g => match layoutMap[g]? with
   | some (.dataType size) => pure size
   | _ => throw "Impossible case"
-| .typeVar s => throw s!"Unexpected type variable `{s}` after concretization"
-| .templateApp g _ => throw s!"Unexpected template application `{g}` after concretization"
-| .unif id => throw s!"Unexpected unification variable `?{id}`"
+| .app g _ => match layoutMap[g]? with
+  | some (.dataType size) => pure size
+  | _ => throw "Impossible case"
+| .mvar n => throw s!"Unresolved metavariable: ?{n}"
 
 structure CompilerState where
   valIdx : Bytecode.ValIdx
@@ -154,7 +157,7 @@ partial def toIndex
   | .eqZero a => do
     let a ← expectIdx a
     pushOp (.eqZero a)
-  | .app name@(⟨.str .anonymous unqualifiedName⟩) args unconstrained =>
+  | .app name@(⟨.str .anonymous unqualifiedName⟩) _ args unconstrained =>
     match bindings.get? (.str unqualifiedName) with
     | some _ => throw "Dynamic calls not yet implemented"
     | none => match layoutMap[name]! with
@@ -171,7 +174,7 @@ partial def toIndex
         else
           pure index
       | _ => throw "Should not happen after typechecking"
-  | .app name args unconstrained => match layoutMap[name]! with
+  | .app name _ args unconstrained => match layoutMap[name]! with
     | .function layout => do
       let args ← buildArgs args
       pushOp (.call layout.index args layout.outputSize unconstrained) layout.outputSize
@@ -490,6 +493,7 @@ def TypedDecls.toBytecode (decls : TypedDecls) :
   let (functions, memSizes, nameMap) ← decls.foldlM (init := (#[], initMemSizes, {}))
     fun acc@(functions, memSizes, nameMap) (_, decl) => match decl with
       | .function function => do
+        if !function.params.isEmpty then pure acc else do
         let (body, layoutMState) ← function.compile layout
         let nameMap := nameMap.insert function.name functions.size
         let function := ⟨body, layoutMState.functionLayout, function.entry⟩
