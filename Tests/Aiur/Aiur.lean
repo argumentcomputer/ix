@@ -389,6 +389,20 @@ def toplevel := ⟦
     let d = c * c;
     a + b + d
   }
+
+  ---------------------------------------------------------------------------
+  -- Templates: parametric datatypes and functions
+  ---------------------------------------------------------------------------
+  enum Wrapper‹A, B› {
+    Mk(A)
+  }
+
+  fn unwrap() -> G {
+    let w = Wrapper.Mk(0);
+    match w {
+      Wrapper.Mk(x) => x,
+    }
+  }
 ⟧
 
 def aiurTestCases : List AiurTestCase := [

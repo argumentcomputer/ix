@@ -38,6 +38,7 @@ partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
   | .app g _ => match decls.getByKey g with
     | some (.dataType data) => data.size decls visited
     | _ => throw s!"Datatype not found: `{g}`"
+  | .mvar n => throw s!"Unresolved metavariable: ?{n}"
 
 partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {})
     (c : Constructor) : Except String Nat :=

@@ -61,6 +61,7 @@ inductive Typ where
   | ref : Global → Typ
   | app : Global → List Typ → Typ
   | function : List Typ → Typ → Typ
+  | mvar : Nat → Typ
   deriving Repr, BEq, Hashable, Inhabited
 
 mutual

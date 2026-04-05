@@ -49,6 +49,7 @@ def Typ.instantiate (subst : Global → Option Typ) : Typ → Typ
   | .ref g => (subst g).getD (.ref g)
   | .app g args => .app g (args.map (Typ.instantiate subst))
   | .function ins out => .function (ins.map (Typ.instantiate subst)) (Typ.instantiate subst out)
+  | .mvar n => .mvar n
 
 /--
 Eagerly expands type aliases, building the aliasMap on demand and detecting cycles.
@@ -101,6 +102,7 @@ partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array 
     else
       -- It's a dataType, keep it
       pure $ .ref g
+  | .mvar n => pure $ .mvar n
 
 /--
 Constructs a map of declarations from a toplevel, expanding all type aliases.
@@ -166,18 +168,43 @@ structure CheckContext where
   returnType : Typ
   typeParams : List String
 
-abbrev CheckM := ReaderT CheckContext (Except CheckError)
+structure CheckState where
+  nextMVar : Nat := 0
+  mvarSubst : Std.HashMap Nat Typ := {}
+
+abbrev CheckM := ReaderT CheckContext (StateT CheckState (Except CheckError))
+
+def freshMVar : CheckM Typ := do
+  let idx := (← get).nextMVar
+  modify fun s => { s with nextMVar := s.nextMVar + 1 }
+  pure $ .mvar idx
 
 /-- Retrieves the type of a global reference. -/
+def instantiateParams (params : List String) : CheckM (List Typ × (Global → Option Typ)) := do
+  let mvars ← params.mapM fun _ => freshMVar
+  let paramMap := (params.zip mvars).foldl
+    (fun (m : Std.HashMap Global Typ) (p, t) => m.insert (Global.init p) t) {}
+  pure (mvars, fun pg => paramMap[pg]?)
+
 def refLookup (global : Global) : CheckM Typ := do
   let ctx ← read
   match ctx.decls.getByKey global with
   | some (.function function) =>
-    pure $ .function (function.inputs.map Prod.snd) function.output
+    if function.params.isEmpty then
+      pure $ .function (function.inputs.map Prod.snd) function.output
+    else
+      let (_, subst) ← instantiateParams function.params
+      let inputs := function.inputs.map (Typ.instantiate subst ∘ Prod.snd)
+      let output := Typ.instantiate subst function.output
+      pure $ .function inputs output
   | some (.constructor dataType constructor) =>
     let args := constructor.argTypes
     unless args.isEmpty do (throw $ .wrongNumArgs global args.length 0)
-    pure $ .ref $ dataType.name
+    if dataType.params.isEmpty then
+      pure $ .ref dataType.name
+    else
+      let (mvars, _) ← instantiateParams dataType.params
+      pure $ .app dataType.name mvars
   | some _ => throw $ .notAValue global
   | none => throw $ .unboundGlobal global
 
@@ -384,12 +411,25 @@ partial def inferGlobalApplication (func : Global) (args : List Term) (u : Bool)
   let ctx ← read
   match ctx.decls.getByKey func with
   | some (.function function) =>
-    let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
-    pure ⟨function.output, .app func args u, false⟩
+    if function.params.isEmpty then
+      let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
+      pure ⟨function.output, .app func args u, false⟩
+    else
+      let (_, subst) ← instantiateParams function.params
+      let inputTypes := function.inputs.map (Typ.instantiate subst ∘ Prod.snd)
+      let output := Typ.instantiate subst function.output
+      let args ← checkArgsAndInputs func args inputTypes
+      pure ⟨output, .app func args u, false⟩
   | some (.constructor dataType constr) =>
     if u then throw $ .unconstrainedConstructor func
-    let args ← checkArgsAndInputs func args constr.argTypes
-    pure ⟨.ref dataType.name, .app func args u, false⟩
+    if dataType.params.isEmpty then
+      let args ← checkArgsAndInputs func args constr.argTypes
+      pure ⟨.ref dataType.name, .app func args u, false⟩
+    else
+      let (mvars, subst) ← instantiateParams dataType.params
+      let argTypes := constr.argTypes.map (Typ.instantiate subst)
+      let args ← checkArgsAndInputs func args argTypes
+      pure ⟨.app dataType.name mvars, .app func args u, false⟩
   | _ => throw $ .cannotApply func
 
 partial def inferLocalApplication (func : Global) (unqualifiedFunc : String) (args : List Term) (u : Bool) : CheckM TypedTerm := do
@@ -500,12 +540,15 @@ where
       let lenTyps := typs.length
       unless lenPats == lenTyps do throw $ .wrongNumArgs constrRef lenPats lenTyps
       pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
-    | (.ref constrRef pats, .app dataTypeRef _) => do
+    | (.ref constrRef pats, .app dataTypeRef args) => do
       let ctx ← read
       let some (.dataType dataType) := ctx.decls.getByKey dataTypeRef | unreachable!
       let some (.constructor dataType' constr) := ctx.decls.getByKey constrRef | throw $ .notAConstructor constrRef
       unless dataType == dataType' do throw $ .incompatiblePattern pat typ
-      let typs := constr.argTypes
+      let paramMap := (dataType.params.zip args).foldl
+        (fun (m : Std.HashMap Global Typ) (p, t) => m.insert (Global.init p) t) {}
+      let subst : Global → Option Typ := fun pg => paramMap[pg]?
+      let typs := constr.argTypes.map (Typ.instantiate subst)
       let lenPats := pats.length
       let lenTyps := typs.length
       unless lenPats == lenTyps do throw $ .wrongNumArgs constrRef lenPats lenTyps

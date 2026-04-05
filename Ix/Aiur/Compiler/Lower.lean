@@ -88,6 +88,7 @@ def typSize (layoutMap : LayoutMap) : Typ → Except String Nat
 | .app g _ => match layoutMap[g]? with
   | some (.dataType size) => pure size
   | _ => throw "Impossible case"
+| .mvar n => throw s!"Unresolved metavariable: ?{n}"
 
 structure CompilerState where
   valIdx : Bytecode.ValIdx
