@@ -133,7 +133,7 @@ def convert := ⟦
   -- Resolve a list of universe indices to a List‹&KLevel›
   fn convert_univ_idxs(idxs: List‹U64›, univs: List‹&Univ›) -> List‹&KLevel› {
     match idxs {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(idx, &rest) =>
         let u = univ_list_lookup(univs, idx);
         List.Cons(store(convert_univ(u)), store(convert_univ_idxs(rest, univs))),
@@ -311,7 +311,7 @@ def convert := ⟦
     ctx: ConvertCtx
   ) -> List‹&KRecRule› {
     match rules {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(rule, &rest_rules) =>
         match rule {
           RecursorRule.Mk(nfields, &rhs) =>
@@ -422,7 +422,7 @@ def convert := ⟦
   -- Convert a list of resolved inputs to a List‹&KConstantInfo›
   fn convert_all(inputs: List‹&ConvertInput›) -> List‹&KConstantInfo› {
     match inputs {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(&input, &rest) =>
         let ci = convert_one(input);
         List.Cons(store(ci), store(convert_all(rest))),

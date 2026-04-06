@@ -89,7 +89,7 @@ def ingress := ⟦
   -- For constant refs, returns ByteStream.Nil (never read by conversion).
   fn build_lit_blobs(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›) -> List‹ByteStream› {
     match refs {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(addr, &rest) =>
         let blob = is_blob(addr, all_addrs);
         match blob {
@@ -351,7 +351,7 @@ def ingress := ⟦
     pos: G
   ) -> (List‹[G; 32]›, List‹G›, G) {
     match consts {
-      List.Nil => (List.Nil(), List.Nil(), pos),
+      List.Nil => (List.Nil, List.Nil, pos),
       List.Cons(&c, &rest_consts) =>
         match addrs {
           List.Cons(addr, &rest_addrs) =>
@@ -398,7 +398,7 @@ def ingress := ⟦
     pos: G
   ) -> List‹G› {
     match consts {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(&c, &rest_consts) =>
         match addrs {
           List.Cons(_, &rest_addrs) =>
@@ -483,7 +483,7 @@ def ingress := ⟦
 
   fn build_ref_idxs_mapped(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›, pos_map: List‹G›) -> List‹G› {
     match refs {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(addr, &rest) =>
         let pos = lookup_addr_pos(addr, all_addrs, pos_map);
         List.Cons(pos, store(build_ref_idxs_mapped(rest, all_addrs, pos_map))),
@@ -492,7 +492,7 @@ def ingress := ⟦
 
   fn build_recur_idxs(members: List‹MutConst›, block_start: G, member_idx: G) -> List‹G› {
     match members {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(_, &rest) =>
         let off = member_offset(members, member_idx);
         List.Cons(block_start + off,
@@ -502,7 +502,7 @@ def ingress := ⟦
 
   fn build_ctor_idxs(num_ctors: G, induct_pos: G, cidx: G) -> List‹G› {
     match num_ctors {
-      0 => List.Nil(),
+      0 => List.Nil,
       _ =>
         List.Cons(induct_pos + 1 + cidx,
           store(build_ctor_idxs(num_ctors - 1, induct_pos, cidx + 1))),
@@ -511,7 +511,7 @@ def ingress := ⟦
 
   fn build_rule_ctor_idxs(members: List‹MutConst›, block_start: G, member_idx: G) -> List‹G› {
     match members {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(mc, &rest) =>
         match mc {
           MutConst.Indc(ind) =>
@@ -560,16 +560,16 @@ def ingress := ⟦
       MutConst.Recr(recr) =>
         let rule_ctor_idxs = build_rule_ctor_idxs(members, block_start, 0);
         let input = ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, store(rule_ctor_idxs)));
-        List.Cons(store(input), store(List.Nil())),
+        List.Cons(store(input), store(List.Nil)),
       MutConst.Defn(defn) =>
         let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.Abbrev));
-        List.Cons(store(input), store(List.Nil())),
+        List.Cons(store(input), store(List.Nil)),
     }
   }
 
   fn expand_ctors(ctors: List‹Constructor›, ctx: ConvertCtx, induct_pos: G) -> List‹&ConvertInput› {
     match ctors {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(ctor, &rest) =>
         let input = ConvertInput.Mk(ctx, ConvertKind.CKCtor(ctor, induct_pos));
         List.Cons(store(input), store(expand_ctors(rest, ctx, induct_pos))),
@@ -584,7 +584,7 @@ def ingress := ⟦
     member_idx: G
   ) -> List‹&ConvertInput› {
     match members {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(mc, &rest) =>
         let this = expand_member(mc, ctx, all_members, block_start, member_idx);
         let more = expand_members(rest, ctx, all_members, block_start, member_idx + 1);
@@ -614,7 +614,7 @@ def ingress := ⟦
     pos: G
   ) -> List‹&ConvertInput› {
     match consts {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(&c, &rest) =>
         match c {
           Constant.Mk(info, &sharing, &refs, &univs) =>
@@ -639,7 +639,7 @@ def ingress := ⟦
               ConstantInfo.Defn(defn) =>
                 let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
-                let recur_idxs = List.Cons(pos, store(List.Nil()));
+                let recur_idxs = List.Cons(pos, store(List.Nil));
                 let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(recur_idxs), store(lit_blobs), store(univs));
                 let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.Abbrev));
                 List.Cons(store(input),
@@ -647,14 +647,14 @@ def ingress := ⟦
               ConstantInfo.Axio(axio) =>
                 let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
-                let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(List.Nil()), store(lit_blobs), store(univs));
+                let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(List.Nil), store(lit_blobs), store(univs));
                 let input = ConvertInput.Mk(ctx, ConvertKind.CKAxio(axio));
                 List.Cons(store(input),
                   store(build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
               ConstantInfo.Quot(quot) =>
                 let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
-                let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(List.Nil()), store(lit_blobs), store(univs));
+                let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(List.Nil), store(lit_blobs), store(univs));
                 let input = ConvertInput.Mk(ctx, ConvertKind.CKQuot(quot));
                 List.Cons(store(input),
                   store(build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
@@ -668,7 +668,7 @@ def ingress := ⟦
                   Constant.Mk(block_info, _, _, _) =>
                     match block_info {
                       ConstantInfo.Muts(&members) =>
-                        let recur_idxs = List.Cons(pos, store(List.Nil()));
+                        let recur_idxs = List.Cons(pos, store(List.Nil));
                         let bs = lookup_block_start(block_addr, block_addrs, block_starts);
                         let rule_ctor_idxs = build_rule_ctor_idxs(members, bs, 0);
                         let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(recur_idxs), store(lit_blobs), store(univs));
@@ -750,7 +750,7 @@ def ingress := ⟦
                 let block_addr = get_proj_block_addr(info);
                 match address_eq(block_addr, [0; 32]) {
                   1 =>
-                    let combined_refs = address_list_concat(refs, List.Nil());
+                    let combined_refs = address_list_concat(refs, List.Nil);
                     let next_worklist = address_list_concat(combined_refs, worklist);
                     match next_worklist {
                       List.Nil => (new_addrs, new_consts),
@@ -760,7 +760,7 @@ def ingress := ⟦
                   0 =>
                     let combined_refs = address_list_concat(
                       refs,
-                      List.Cons(block_addr, store(List.Nil()))
+                      List.Cons(block_addr, store(List.Nil))
                     );
                     let next_worklist = address_list_concat(combined_refs, worklist);
                     match next_worklist {
@@ -778,7 +778,7 @@ def ingress := ⟦
   -- verifies blake3 hashes then converts to kernel types.
   fn ingress(target_addr: [G; 32]) -> List‹&KConstantInfo› {
     let (all_addrs, all_consts) = load_with_deps(
-      target_addr, List.Nil(), List.Nil(), List.Nil());
+      target_addr, List.Nil, List.Nil, List.Nil);
     let (block_addrs, block_starts, _total) = compute_layout(all_consts, all_addrs, 0);
     let pos_map = build_pos_map(all_consts, all_addrs, block_addrs, block_starts, 0);
     let inputs = build_convert_inputs(all_consts, all_addrs, pos_map, block_addrs, block_starts, 0);
@@ -807,7 +807,7 @@ def ingress := ⟦
   -- Returns (constants, nat_idx, str_idx).
   fn ingress_with_primitives(target_addr: [G; 32]) -> (List‹&KConstantInfo›, G, G) {
     let (all_addrs, all_consts) = load_with_deps(
-      target_addr, List.Nil(), List.Nil(), List.Nil());
+      target_addr, List.Nil, List.Nil, List.Nil);
     let (block_addrs, block_starts, _total) = compute_layout(all_consts, all_addrs, 0);
     let pos_map = build_pos_map(all_consts, all_addrs, block_addrs, block_starts, 0);
     let inputs = build_convert_inputs(all_consts, all_addrs, pos_map, block_addrs, block_starts, 0);

@@ -425,7 +425,7 @@ def toplevel := ⟦
   }
 
   pub fn template_unwrap_none() -> G {
-    let opt = Option.None();
+    let opt = Option.None;
     unwrap_or(opt, 99)
   }
 

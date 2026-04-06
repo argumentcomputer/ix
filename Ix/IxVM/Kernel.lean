@@ -95,7 +95,7 @@ def kernel := ⟦
   -- Append a value to the end of a list
   fn val_list_snoc(list: List‹&KVal›, v: KVal) -> List‹&KVal› {
     match list {
-      List.Nil => List.Cons(store(v), store(List.Nil())),
+      List.Nil => List.Cons(store(v), store(List.Nil)),
       List.Cons(&head, &rest) =>
         List.Cons(store(head), store(val_list_snoc(rest, v))),
     }
@@ -127,7 +127,7 @@ def kernel := ⟦
   -- Find recursor rule by constructor index
   fn rec_rule_try_find(rules: List‹&KRecRule›, ctor_idx: G) -> Option‹&KRecRule› {
     match rules {
-      List.Nil => Option.None(),
+      List.Nil => Option.None,
       List.Cons(&rule, &rest) =>
         match rule {
           KRecRule.Mk(idx, nf, &rhs) =>
@@ -546,7 +546,7 @@ def kernel := ⟦
   -- Substitute level params in a level list
   fn level_list_inst(lvls: List‹&KLevel›, params: List‹&KLevel›) -> List‹&KLevel› {
     match lvls {
-      List.Nil => List.Nil(),
+      List.Nil => List.Nil,
       List.Cons(&l, &rest) =>
         List.Cons(
           store(level_inst_params(l, params)),
@@ -586,8 +586,8 @@ def kernel := ⟦
         let ci = const_list_lookup(top, idx);
         match ci {
           KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
-            KVal.Ctor(idx, store(lvls), nparams, store(List.Nil())),
-          _ => KVal.Const(idx, store(lvls), store(List.Nil())),
+            KVal.Ctor(idx, store(lvls), nparams, store(List.Nil)),
+          _ => KVal.Const(idx, store(lvls), store(List.Nil)),
         },
 
       -- Eager beta optimization: if the function is a lambda, evaluate arg eagerly
@@ -628,7 +628,7 @@ def kernel := ⟦
             let field = val_list_lookup(spine, field_idx);
             k_force(field, top),
           _ =>
-            KVal.Proj(tidx, fidx, store(v), store(List.Nil())),
+            KVal.Proj(tidx, fidx, store(v), store(List.Nil)),
         },
     }
   }
@@ -761,7 +761,7 @@ def kernel := ⟦
                                 let pmm = val_list_take(spine, pmm_end);
                                 let result = k_apply_spine(rhs_val, pmm, top);
                                 let pred = KVal.Lit(KLiteral.Nat(store(klimbs_pred(n))));
-                                let ctor_fields = List.Cons(store(pred), store(List.Nil()));
+                                let ctor_fields = List.Cons(store(pred), store(List.Nil));
                                 let result2 = k_apply_spine(result, ctor_fields, top);
                                 let remaining = val_list_drop(spine, maj_idx + 1);
                                 k_apply_spine(result2, remaining, top),
@@ -795,7 +795,7 @@ def kernel := ⟦
   -- Take the first n elements of a val list
   fn val_list_take(list: List‹&KVal›, n: G) -> List‹&KVal› {
     match n {
-      0 => List.Nil(),
+      0 => List.Nil,
       _ =>
         match list {
           List.Cons(&v, &rest) =>
@@ -968,7 +968,7 @@ def kernel := ⟦
 
       KVal.Lam(&dom, &body, &env) =>
         let dom_expr = k_quote(dom, depth, top);
-        let fvar = KVal.FVar(depth, store(dom), store(List.Nil()));
+        let fvar = KVal.FVar(depth, store(dom), store(List.Nil));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_val = k_eval(body, env2, top);
         let body_expr = k_quote(body_val, depth + 1, top);
@@ -976,7 +976,7 @@ def kernel := ⟦
 
       KVal.Pi(&dom, &body, &env) =>
         let dom_expr = k_quote(dom, depth, top);
-        let fvar = KVal.FVar(depth, store(dom), store(List.Nil()));
+        let fvar = KVal.FVar(depth, store(dom), store(List.Nil));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_val = k_eval(body, env2, top);
         let body_expr = k_quote(body_val, depth + 1, top);
@@ -1035,9 +1035,9 @@ def kernel := ⟦
       KExpr.Lit(lit) =>
         match lit {
           KLiteral.Nat(_) =>
-            KVal.Const(nat_idx, store(List.Nil()), store(List.Nil())),
+            KVal.Const(nat_idx, store(List.Nil), store(List.Nil)),
           KLiteral.Str(_) =>
-            KVal.Const(str_idx, store(List.Nil()), store(List.Nil())),
+            KVal.Const(str_idx, store(List.Nil), store(List.Nil)),
         },
 
       KExpr.Const(idx, &lvls) =>
@@ -1067,7 +1067,7 @@ def kernel := ⟦
       KExpr.Lam(&ty, &body) =>
         let _ = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
         let dom_val = k_eval(ty, env, top);
-        let fvar = KVal.FVar(depth, store(dom_val), store(List.Nil()));
+        let fvar = KVal.FVar(depth, store(dom_val), store(List.Nil));
         let types2 = List.Cons(store(dom_val), store(types));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_type = k_infer(body, types2, env2, depth + 1, top, nat_idx, str_idx);
@@ -1077,7 +1077,7 @@ def kernel := ⟦
       KExpr.Forall(&ty, &body) =>
         let dom_level = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
         let dom_val = k_eval(ty, env, top);
-        let fvar = KVal.FVar(depth, store(dom_val), store(List.Nil()));
+        let fvar = KVal.FVar(depth, store(dom_val), store(List.Nil));
         let types2 = List.Cons(store(dom_val), store(types));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_level = k_ensure_sort(body, types2, env2, depth + 1, top, nat_idx, str_idx);
@@ -1139,7 +1139,7 @@ def kernel := ⟦
             let dom_eq = k_is_def_eq(dom_val, pi_dom, depth, top, nat_idx, str_idx);
             assert_eq!(dom_eq, 1);
             -- Push Pi codomain through Lambda body
-            let fvar = KVal.FVar(depth, store(pi_dom), store(List.Nil()));
+            let fvar = KVal.FVar(depth, store(pi_dom), store(List.Nil));
             let types2 = List.Cons(store(pi_dom), store(types));
             let env2 = KValEnv.Cons(store(fvar), store(env));
             let pi_env2 = KValEnv.Cons(store(fvar), store(pi_env));
@@ -1192,7 +1192,7 @@ def kernel := ⟦
         let ct_whnf = k_whnf(ct, top);
         match ct_whnf {
           KVal.Pi(_, &body, &pi_env) =>
-            let proj_val = KVal.Proj(tidx, current_field, store(struct_val), store(List.Nil()));
+            let proj_val = KVal.Proj(tidx, current_field, store(struct_val), store(List.Nil));
             let env2 = KValEnv.Cons(store(proj_val), store(pi_env));
             let next = k_eval(body, env2, top);
             walk_fields(next, tidx, current_field + 1, remaining - 1, struct_val, top),
@@ -1237,8 +1237,8 @@ def kernel := ⟦
       KVal.Srt(&l) => KVal.Srt(store(KLevel.Succ(store(l)))),
       KVal.Lit(lit) =>
         match lit {
-          KLiteral.Nat(_) => KVal.Const(nat_idx, store(List.Nil()), store(List.Nil())),
-          KLiteral.Str(_) => KVal.Const(str_idx, store(List.Nil()), store(List.Nil())),
+          KLiteral.Nat(_) => KVal.Const(nat_idx, store(List.Nil), store(List.Nil)),
+          KLiteral.Str(_) => KVal.Const(str_idx, store(List.Nil), store(List.Nil)),
         },
       KVal.Const(idx, &lvls, &spine) =>
         let ci = const_list_lookup(top, idx);
@@ -1323,7 +1323,7 @@ def kernel := ⟦
       _ =>
         let field_idx = nparams + current;
         let field_val = val_list_lookup(spine, field_idx);
-        let proj_val = KVal.Proj(tidx, current, store(t), store(List.Nil()));
+        let proj_val = KVal.Proj(tidx, current, store(t), store(List.Nil));
         let eq = k_is_def_eq(proj_val, field_val, depth, top, nat_idx, str_idx);
         match eq {
           0 => 0,
@@ -1687,7 +1687,7 @@ def kernel := ⟦
             match dom_eq {
               0 => 0,
               1 =>
-                let fvar = KVal.FVar(depth, store(dom_a), store(List.Nil()));
+                let fvar = KVal.FVar(depth, store(dom_a), store(List.Nil));
                 let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
                 let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
                 let va = k_eval(body_a, env_a2, top);
@@ -1696,7 +1696,7 @@ def kernel := ⟦
             },
           _ =>
             -- Eta: lam vs non-lam
-            let fvar = KVal.FVar(depth, store(dom_a), store(List.Nil()));
+            let fvar = KVal.FVar(depth, store(dom_a), store(List.Nil));
             let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
             let va = k_eval(body_a, env_a2, top);
             let vb = k_apply(b, fvar, top);
@@ -1710,7 +1710,7 @@ def kernel := ⟦
             match dom_eq {
               0 => 0,
               1 =>
-                let fvar = KVal.FVar(depth, store(dom_a), store(List.Nil()));
+                let fvar = KVal.FVar(depth, store(dom_a), store(List.Nil));
                 let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
                 let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
                 let va = k_eval(body_a, env_a2, top);
@@ -1740,7 +1740,7 @@ def kernel := ⟦
       _ =>
         match b {
           KVal.Lam(&dom_b, &body_b, &env_b) =>
-            let fvar = KVal.FVar(depth, store(dom_b), store(List.Nil()));
+            let fvar = KVal.FVar(depth, store(dom_b), store(List.Nil));
             let va = k_apply(a, fvar, top);
             let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
             let vb = k_eval(body_b, env_b2, top);
@@ -1860,38 +1860,38 @@ def kernel := ⟦
   fn k_check_const(ci: KConstantInfo, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) {
     match ci {
       KConstantInfo.Axiom(_, &ty, _) =>
-        let _ = k_ensure_sort(ty, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Defn(_, &ty, &value, _, _) =>
-        let _ = k_ensure_sort(ty, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
-        k_check(value, ty_val, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx),
+        k_check(value, ty_val, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Thm(_, &ty, &value) =>
-        let _ = k_ensure_sort(ty, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
-        k_check(value, ty_val, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx),
+        k_check(value, ty_val, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Opaque(_, &ty, &value, is_unsafe) =>
-        let _ = k_ensure_sort(ty, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
         match is_unsafe {
           1 => (),
           0 =>
             let ty_val = k_eval(ty, KValEnv.Nil, top);
-            k_check(value, ty_val, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx),
+            k_check(value, ty_val, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
         },
 
       KConstantInfo.Quot(_, &ty, _) =>
-        let _ = k_ensure_sort(ty, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Induct(_, &ty, _, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Ctor(_, &ty, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Rec(_, &ty, _, _, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, List.Nil(), KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
     }
   }
 

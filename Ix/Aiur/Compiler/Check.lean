@@ -283,7 +283,17 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
   | .unit => pure ⟨.unit, .unit, false⟩
   | .var x => inferVariable x
   | .ref x => do
-    pure ⟨← refLookup x, .ref x, false⟩
+    let ctx ← read
+    match ctx.decls.getByKey x with
+    | some (.constructor dataType constructor) =>
+      unless constructor.argTypes.isEmpty do
+        throw $ .wrongNumArgs x constructor.argTypes.length 0
+      if dataType.params.isEmpty then
+        pure ⟨.ref dataType.name, .ref x, false⟩
+      else
+        let (mvars, _) ← instantiateParams dataType.params
+        pure ⟨.app dataType.name mvars, .app x mvars [] false, false⟩
+    | _ => pure ⟨← refLookup x, .ref x, false⟩
   | .ret term => inferReturn term
   | .data data => inferData data
   | .let pat expr body => inferLet pat expr body

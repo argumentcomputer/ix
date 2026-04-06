@@ -216,6 +216,9 @@ partial def elabTrm : ElabStxCat `trm
     let prodType ← mkAppM ``Prod #[mkConst ``Pattern, mkConst ``Term]
     mkAppM ``Term.match #[← elabTrm t, ← mkListLit prodType prods.toList]
   | `(trm| $[.]?$f:ident ()) => do
+    match f.getId with
+    | .str .anonymous _ => pure ()
+    | _ => logWarningAt f "empty parentheses are not needed; use the name without parentheses"
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
     mkAppM ``Term.app #[g, ← elabEmptyList ``Term, toExpr false]
   | `(trm| $[.]?$f:ident ($a:trm $[, $as:trm]*)) => do
@@ -313,6 +316,7 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term, toExpr true]
   -- Template constructor calls
   | `(trm| $tmpl:ident‹$_:typ $[, $_:typ]*›.$ctor:ident()) => do
+    logWarningAt ctor "empty parentheses are not needed; use the name without parentheses"
     let name := tmpl.getId ++ ctor.getId
     let g ← mkAppM ``Global.mk #[toExpr name]
     mkAppM ``Term.app #[g, ← elabEmptyList ``Term, toExpr false]
