@@ -521,15 +521,15 @@ def kernel := ⟦
 
       KExpr.App(&f, &a) =>
         let vf = k_eval(f, env, top);
-        let arg = suspend(a, env, top);
+        let arg = suspend(a, env);
         k_apply(vf, arg, top),
 
       KExpr.Lam(&ty, &body) =>
-        let ty_val = k_eval(ty, env, top);
+        let ty_val = suspend(ty, env);
         KVal.Lam(store(ty_val), store(body), store(env)),
 
       KExpr.Forall(&ty, &body) =>
-        let ty_val = k_eval(ty, env, top);
+        let ty_val = suspend(ty, env);
         KVal.Pi(store(ty_val), store(body), store(env)),
 
       KExpr.Let(_, &val, &body) =>
@@ -555,7 +555,7 @@ def kernel := ⟦
 
   -- Suspend an expression: evaluate immediately for cheap/structural forms
   -- (BVar lookup, Srt, Lit, Lam closure, Pi closure); otherwise defer to a thunk.
-  fn suspend(e: KExpr, env: KValEnv, top: List‹&KConstantInfo›) -> KVal {
+  fn suspend(e: KExpr, env: KValEnv) -> KVal {
     match e {
       KExpr.BVar(idx) =>
         load(list_lookup(env, idx)),
@@ -564,10 +564,10 @@ def kernel := ⟦
       KExpr.Lit(lit) =>
         KVal.Lit(lit),
       KExpr.Lam(&ty, &body) =>
-        let ty_val = k_eval(ty, env, top);
+        let ty_val = suspend(ty, env);
         KVal.Lam(store(ty_val), store(body), store(env)),
       KExpr.Forall(&ty, &body) =>
-        let ty_val = k_eval(ty, env, top);
+        let ty_val = suspend(ty, env);
         KVal.Pi(store(ty_val), store(body), store(env)),
       _ =>
         KVal.Thunk(store(e), store(env)),
