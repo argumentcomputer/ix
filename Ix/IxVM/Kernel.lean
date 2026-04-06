@@ -1358,18 +1358,22 @@ def kernel := ⟦
 
   -- Quick syntactic check for definitional equality (sorts and literals only)
   fn k_quick_def_eq(a: KVal, b: KVal) -> G {
-    match load(a) {
-      KValNode.Srt(&la) =>
-        match load(b) {
-          KValNode.Srt(&lb) => level_equal(la, lb),
+    match ptr_val(a) - ptr_val(b) {
+      0 => 1,
+      _ =>
+        match load(a) {
+          KValNode.Srt(&la) =>
+            match load(b) {
+              KValNode.Srt(&lb) => level_equal(la, lb),
+              _ => 0,
+            },
+          KValNode.Lit(la) =>
+            match load(b) {
+              KValNode.Lit(lb) => literal_eq(la, lb),
+              _ => 0,
+            },
           _ => 0,
         },
-      KValNode.Lit(la) =>
-        match load(b) {
-          KValNode.Lit(lb) => literal_eq(la, lb),
-          _ => 0,
-        },
-      _ => 0,
     }
   }
 
@@ -1509,136 +1513,140 @@ def kernel := ⟦
 
   -- Structural definitional equality after WHNF
   fn k_is_def_eq_core(a: KVal, b: KVal, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
-    match load(a) {
-      KValNode.Srt(&la) =>
-        match load(b) {
-          KValNode.Srt(&lb) => level_equal(la, lb),
-          _ => 0,
-        },
-
-      KValNode.Lit(la) =>
-        match load(b) {
-          KValNode.Lit(lb) => literal_eq(la, lb),
-          KValNode.Ctor(ctor_idx, _, nparams, &ctor_spine) =>
-            nat_lit_eq_ctor(la, ctor_idx, nparams, ctor_spine, depth, top, nat_idx, str_idx),
-          _ => 0,
-        },
-
-      KValNode.FVar(lvl_a, _, &sp_a) =>
-        match load(b) {
-          KValNode.FVar(lvl_b, _, &sp_b) =>
-            let same_lvl = eq_zero(lvl_a - lvl_b);
-            match same_lvl {
-              1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
-              0 => 0,
-            },
-          _ => 0,
-        },
-
-      KValNode.Const(idx_a, &lvls_a, &sp_a) =>
-        match load(b) {
-          KValNode.Const(idx_b, &lvls_b, &sp_b) =>
-            let same_idx = eq_zero(idx_a - idx_b);
-            match same_idx {
-              1 =>
-                let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
-                match lvls_eq {
-                  1 =>
-                    k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
-                  0 => 0,
-                },
-              0 =>
-                k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
-            },
-          _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
-        },
-
-      KValNode.Ctor(idx_a, &lvls_a, nparams_a, &sp_a) =>
-        match load(b) {
-          KValNode.Ctor(idx_b, &lvls_b, _, &sp_b) =>
-            let same_idx = eq_zero(idx_a - idx_b);
-            match same_idx {
-              1 =>
-                let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
-                match lvls_eq {
-                  1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
-                  0 => 0,
-                },
-              0 => 0,
-            },
-          KValNode.Lit(lb) =>
-            nat_lit_eq_ctor(lb, idx_a, nparams_a, sp_a, depth, top, nat_idx, str_idx),
-          _ => 0,
-        },
-
-      KValNode.Lam(dom_a, body_a, &env_a) =>
-        match load(b) {
-          KValNode.Lam(dom_b, body_b, &env_b) =>
-            let dom_eq = k_is_def_eq(dom_a, dom_b, depth, top, nat_idx, str_idx);
-            match dom_eq {
-              0 => 0,
-              1 =>
-                let fvar = store(KValNode.FVar(depth, dom_a, store(List.Nil)));
-                let env_a2 = List.Cons(fvar, store(env_a));
-                let env_b2 = List.Cons(fvar, store(env_b));
-                let va = k_eval(body_a, env_a2, top);
-                let vb = k_eval(body_b, env_b2, top);
-                k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-            },
-          _ =>
-            -- Eta: lam vs non-lam
-            let fvar = store(KValNode.FVar(depth, dom_a, store(List.Nil)));
-            let env_a2 = List.Cons(fvar, store(env_a));
-            let va = k_eval(body_a, env_a2, top);
-            let vb = k_apply(b, fvar, top);
-            k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-        },
-
-      KValNode.Pi(dom_a, body_a, &env_a) =>
-        match load(b) {
-          KValNode.Pi(dom_b, body_b, &env_b) =>
-            let dom_eq = k_is_def_eq(dom_a, dom_b, depth, top, nat_idx, str_idx);
-            match dom_eq {
-              0 => 0,
-              1 =>
-                let fvar = store(KValNode.FVar(depth, dom_a, store(List.Nil)));
-                let env_a2 = List.Cons(fvar, store(env_a));
-                let env_b2 = List.Cons(fvar, store(env_b));
-                let va = k_eval(body_a, env_a2, top);
-                let vb = k_eval(body_b, env_b2, top);
-                k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-            },
-          _ => 0,
-        },
-
-      KValNode.Proj(tidx_a, fidx_a, sv_a, &sp_a) =>
-        match load(b) {
-          KValNode.Proj(tidx_b, fidx_b, sv_b, &sp_b) =>
-            let same_tf = eq_zero(tidx_a - tidx_b) * eq_zero(fidx_a - fidx_b);
-            match same_tf {
-              1 =>
-                let sv_eq = k_is_def_eq(sv_a, sv_b, depth, top, nat_idx, str_idx);
-                match sv_eq {
-                  1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
-                  0 => 0,
-                },
-              0 => 0,
-            },
-          _ => 0,
-        },
-
-      -- Eta: non-lam vs lam (symmetric case)
+    match ptr_val(a) - ptr_val(b) {
+      0 => 1,
       _ =>
-        match load(b) {
-          KValNode.Lam(dom_b, body_b, &env_b) =>
-            let fvar = store(KValNode.FVar(depth, dom_b, store(List.Nil)));
-            let va = k_apply(a, fvar, top);
-            let env_b2 = List.Cons(fvar, store(env_b));
-            let vb = k_eval(body_b, env_b2, top);
-            k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-          KValNode.Const(_, _, _) =>
-            k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
-          _ => 0,
+        match load(a) {
+          KValNode.Srt(&la) =>
+            match load(b) {
+              KValNode.Srt(&lb) => level_equal(la, lb),
+              _ => 0,
+            },
+
+          KValNode.Lit(la) =>
+            match load(b) {
+              KValNode.Lit(lb) => literal_eq(la, lb),
+              KValNode.Ctor(ctor_idx, _, nparams, &ctor_spine) =>
+                nat_lit_eq_ctor(la, ctor_idx, nparams, ctor_spine, depth, top, nat_idx, str_idx),
+              _ => 0,
+            },
+
+          KValNode.FVar(lvl_a, _, &sp_a) =>
+            match load(b) {
+              KValNode.FVar(lvl_b, _, &sp_b) =>
+                let same_lvl = eq_zero(lvl_a - lvl_b);
+                match same_lvl {
+                  1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                  0 => 0,
+                },
+              _ => 0,
+            },
+
+          KValNode.Const(idx_a, &lvls_a, &sp_a) =>
+            match load(b) {
+              KValNode.Const(idx_b, &lvls_b, &sp_b) =>
+                let same_idx = eq_zero(idx_a - idx_b);
+                match same_idx {
+                  1 =>
+                    let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                    match lvls_eq {
+                      1 =>
+                        k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      0 => 0,
+                    },
+                  0 =>
+                    k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+                },
+              _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+            },
+
+          KValNode.Ctor(idx_a, &lvls_a, nparams_a, &sp_a) =>
+            match load(b) {
+              KValNode.Ctor(idx_b, &lvls_b, _, &sp_b) =>
+                let same_idx = eq_zero(idx_a - idx_b);
+                match same_idx {
+                  1 =>
+                    let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                    match lvls_eq {
+                      1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      0 => 0,
+                    },
+                  0 => 0,
+                },
+              KValNode.Lit(lb) =>
+                nat_lit_eq_ctor(lb, idx_a, nparams_a, sp_a, depth, top, nat_idx, str_idx),
+              _ => 0,
+            },
+
+          KValNode.Lam(dom_a, body_a, &env_a) =>
+            match load(b) {
+              KValNode.Lam(dom_b, body_b, &env_b) =>
+                let dom_eq = k_is_def_eq(dom_a, dom_b, depth, top, nat_idx, str_idx);
+                match dom_eq {
+                  0 => 0,
+                  1 =>
+                    let fvar = store(KValNode.FVar(depth, dom_a, store(List.Nil)));
+                    let env_a2 = List.Cons(fvar, store(env_a));
+                    let env_b2 = List.Cons(fvar, store(env_b));
+                    let va = k_eval(body_a, env_a2, top);
+                    let vb = k_eval(body_b, env_b2, top);
+                    k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
+                },
+              _ =>
+                -- Eta: lam vs non-lam
+                let fvar = store(KValNode.FVar(depth, dom_a, store(List.Nil)));
+                let env_a2 = List.Cons(fvar, store(env_a));
+                let va = k_eval(body_a, env_a2, top);
+                let vb = k_apply(b, fvar, top);
+                k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
+            },
+
+          KValNode.Pi(dom_a, body_a, &env_a) =>
+            match load(b) {
+              KValNode.Pi(dom_b, body_b, &env_b) =>
+                let dom_eq = k_is_def_eq(dom_a, dom_b, depth, top, nat_idx, str_idx);
+                match dom_eq {
+                  0 => 0,
+                  1 =>
+                    let fvar = store(KValNode.FVar(depth, dom_a, store(List.Nil)));
+                    let env_a2 = List.Cons(fvar, store(env_a));
+                    let env_b2 = List.Cons(fvar, store(env_b));
+                    let va = k_eval(body_a, env_a2, top);
+                    let vb = k_eval(body_b, env_b2, top);
+                    k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
+                },
+              _ => 0,
+            },
+
+          KValNode.Proj(tidx_a, fidx_a, sv_a, &sp_a) =>
+            match load(b) {
+              KValNode.Proj(tidx_b, fidx_b, sv_b, &sp_b) =>
+                let same_tf = eq_zero(tidx_a - tidx_b) * eq_zero(fidx_a - fidx_b);
+                match same_tf {
+                  1 =>
+                    let sv_eq = k_is_def_eq(sv_a, sv_b, depth, top, nat_idx, str_idx);
+                    match sv_eq {
+                      1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      0 => 0,
+                    },
+                  0 => 0,
+                },
+              _ => 0,
+            },
+
+          -- Eta: non-lam vs lam (symmetric case)
+          _ =>
+            match load(b) {
+              KValNode.Lam(dom_b, body_b, &env_b) =>
+                let fvar = store(KValNode.FVar(depth, dom_b, store(List.Nil)));
+                let va = k_apply(a, fvar, top);
+                let env_b2 = List.Cons(fvar, store(env_b));
+                let vb = k_eval(body_b, env_b2, top);
+                k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
+              KValNode.Const(_, _, _) =>
+                k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+              _ => 0,
+            },
         },
     }
   }
