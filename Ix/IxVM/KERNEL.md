@@ -526,13 +526,8 @@ eval(const c [us], env) =
 
 eval(app f a, env) =
   let vf = eval(f, env)
-  match vf with
-  | lam(_, body, lam_env) =>
-      let va = eval(a, env)                -- eager beta
-      eval(body, lam_env ++ [va])          -- O(1) beta!
-  | _ =>
-      let thunk = lazy(a, env)             -- don't evaluate yet
-      apply_val_thunk(vf, thunk)
+  let arg = suspend(a, env)              -- suspend: immediate or thunk
+  apply_val(vf, arg)                     -- force only if needed (in apply_val)
 
 eval(lam A b, env) =
   let dom = eval(A, env)
@@ -557,25 +552,6 @@ to either a `ctor` (for constructors) or a `neutral(const(...), [])`. Definition
 unfolding is deferred to WHNF. This is the "lazy" approach — constants are only
 unfolded when the kernel actually needs to look inside them.
 
-The **eager beta optimization** is important: when the head of an application is already
-a lambda, we skip thunk creation and evaluate the argument directly. The Rust kernel
-collects the full App spine and checks at each step; the Aiur kernel uses a tail match
-on the evaluated function:
-
-```
--- Aiur: k_eval App case
-KExpr.App(&f, &a) =>
-  let vf = k_eval(f, env, top);
-  match vf {
-    KVal.Lam(_, &body, &lam_env) =>
-      let va = k_eval(a, env, top);           -- eager: skip thunk
-      let env2 = KValEnv.Cons(store(va), store(lam_env));
-      k_eval(body, env2, top),
-    _ =>
-      let thunk = KVal.Thunk(store(a), store(env));
-      k_apply(vf, thunk, top),                -- lazy: store thunk
-  }
-```
 
 #### De Bruijn Levels vs Indices
 
@@ -1049,7 +1025,6 @@ termination relies on the well-foundedness of the input declarations.
 | Feature | Lean | Rust | Aiur |
 |---------|------|------|------|
 | Lazy eval (thunks in spines) | ✅ ST.Ref | ✅ RefCell | ✅ KVal.Thunk |
-| Eager beta optimization | ✅ | ✅ | ✅ |
 | Delta unfolding (WHNF) | ✅ | ✅ | ✅ |
 | Iota reduction (recursor) | ✅ | ✅ | ✅ |
 | K-reduction (Prop recursors) | ✅ | ✅ | ✅ |

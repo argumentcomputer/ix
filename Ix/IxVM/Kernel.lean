@@ -32,7 +32,6 @@ Aiur runtime's function-call caching provides call-by-need semantics: calling
 | Feature                          | Status |
 |----------------------------------|--------|
 | Lazy eval (thunks in spines)     | ✅     |
-| Eager beta optimization          | ✅     |
 | Delta unfolding (WHNF)           | ✅     |
 | Iota reduction (recursor)        | ✅     |
 | K-reduction (Prop recursors)     | ✅     |
@@ -520,19 +519,10 @@ def kernel := ⟦
           _ => KVal.Const(idx, store(lvls), store(List.Nil)),
         },
 
-      -- Eager beta optimization: if the function is a lambda, evaluate arg eagerly
-      -- (skipping thunk allocation). Otherwise create a thunk and accumulate.
       KExpr.App(&f, &a) =>
         let vf = k_eval(f, env, top);
-        match vf {
-          KVal.Lam(_, &body, &lam_env) =>
-            let va = k_eval(a, env, top);
-            let env2 = List.Cons(store(va), store(lam_env));
-            k_eval(body, env2, top),
-          _ =>
-            let thunk = suspend(a, env, top);
-            k_apply(vf, thunk, top),
-        },
+        let arg = suspend(a, env, top);
+        k_apply(vf, arg, top),
 
       KExpr.Lam(&ty, &body) =>
         let ty_val = k_eval(ty, env, top);
