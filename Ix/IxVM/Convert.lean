@@ -144,57 +144,57 @@ def convert := ⟦
     match e {
       Expr.Srt(univ_idx) =>
         let u = load(list_lookup_u64(univs, univ_idx));
-        KExpr.Srt(store(convert_univ(u))),
+        store(KExprNode.Srt(store(convert_univ(u)))),
 
       Expr.Var(idx) =>
-        KExpr.BVar(flatten_u64(idx)),
+        store(KExprNode.BVar(flatten_u64(idx))),
 
       Expr.Ref(ref_idx, &univ_idxs) =>
         let const_idx = list_lookup(ref_idxs, flatten_u64(ref_idx));
         let levels = convert_univ_idxs(univ_idxs, univs);
-        KExpr.Const(const_idx, store(levels)),
+        store(KExprNode.Const(const_idx, store(levels))),
 
       Expr.Rec(rec_idx, &univ_idxs) =>
         let const_idx = list_lookup(recur_idxs, flatten_u64(rec_idx));
         let levels = convert_univ_idxs(univ_idxs, univs);
-        KExpr.Const(const_idx, store(levels)),
+        store(KExprNode.Const(const_idx, store(levels))),
 
       Expr.Prj(type_ref_idx, field_idx, &inner) =>
         let type_idx = list_lookup(ref_idxs, flatten_u64(type_ref_idx));
-        KExpr.Proj(
+        store(KExprNode.Proj(
           type_idx,
           flatten_u64(field_idx),
-          store(convert_expr(inner, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
+          convert_expr(inner, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Str(blob_ref_idx) =>
         let bs = list_lookup_u64(lit_blobs, blob_ref_idx);
-        KExpr.Lit(KLiteral.Str(bs)),
+        store(KExprNode.Lit(KLiteral.Str(bs))),
 
       Expr.Nat(blob_ref_idx) =>
         let bs = list_lookup_u64(lit_blobs, blob_ref_idx);
         let limbs = bytes_to_limbs(bs);
-        KExpr.Lit(KLiteral.Nat(store(limbs))),
+        store(KExprNode.Lit(KLiteral.Nat(store(limbs)))),
 
       Expr.App(&f, &a) =>
-        KExpr.App(
-          store(convert_expr(f, sharing, ref_idxs, recur_idxs, lit_blobs, univs)),
-          store(convert_expr(a, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
+        store(KExprNode.App(
+          convert_expr(f, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+          convert_expr(a, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Lam(&ty, &body) =>
-        KExpr.Lam(
-          store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs)),
-          store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
+        store(KExprNode.Lam(
+          convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+          convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.All(&ty, &body) =>
-        KExpr.Forall(
-          store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs)),
-          store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
+        store(KExprNode.Forall(
+          convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+          convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Let(_, &ty, &val, &body) =>
-        KExpr.Let(
-          store(convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs)),
-          store(convert_expr(val, sharing, ref_idxs, recur_idxs, lit_blobs, univs)),
-          store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
+        store(KExprNode.Let(
+          convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+          convert_expr(val, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+          convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Share(idx) =>
         let shared = load(list_lookup_u64(sharing, idx));

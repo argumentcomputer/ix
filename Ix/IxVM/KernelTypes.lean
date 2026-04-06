@@ -36,36 +36,40 @@ def kernelTypes := ⟦
   -- Expressions (de Bruijn indexed, no binder info or names)
   -- ============================================================================
 
-  enum KExpr {
+  enum KExprNode {
     BVar(G),
     Srt(&KLevel),
     Const(G, &List‹&KLevel›),
-    App(&KExpr, &KExpr),
-    Lam(&KExpr, &KExpr),
-    Forall(&KExpr, &KExpr),
-    Let(&KExpr, &KExpr, &KExpr),
+    App(KExpr, KExpr),
+    Lam(KExpr, KExpr),
+    Forall(KExpr, KExpr),
+    Let(KExpr, KExpr, KExpr),
     Lit(KLiteral),
-    Proj(G, G, &KExpr)
+    Proj(G, G, KExpr)
   }
+
+  type KExpr = &KExprNode
 
   -- ============================================================================
   -- Values (NbE semantic domain)
   -- ============================================================================
 
-  enum KVal {
+  enum KValNode {
     Srt(&KLevel),
     Lit(KLiteral),
-    Lam(&KVal, &KExpr, &KValEnv),
-    Pi(&KVal, &KExpr, &KValEnv),
-    Ctor(G, &List‹&KLevel›, G, &List‹&KVal›),
-    FVar(G, &KVal, &List‹&KVal›),
-    Const(G, &List‹&KLevel›, &List‹&KVal›),
-    Proj(G, G, &KVal, &List‹&KVal›),
-    Thunk(&KExpr, &KValEnv)
+    Lam(KVal, KExpr, &KValEnv),
+    Pi(KVal, KExpr, &KValEnv),
+    Ctor(G, &List‹&KLevel›, G, &List‹KVal›),
+    FVar(G, KVal, &List‹KVal›),
+    Const(G, &List‹&KLevel›, &List‹KVal›),
+    Proj(G, G, KVal, &List‹KVal›),
+    Thunk(KExpr, &KValEnv)
   }
 
+  type KVal = &KValNode
+
   -- Value environment (de Bruijn indexed, front = most recent binder)
-  type KValEnv = List‹&KVal›
+  type KValEnv = List‹KVal›
 
   -- ============================================================================
   -- Reducibility Hints
