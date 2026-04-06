@@ -75,7 +75,7 @@ partial def rewriteInner
     (mono : Std.HashMap (Global × Array Typ) Global) : TypedTermInner → TypedTermInner
   | .unit => .unit
   | .var x => .var x
-  | .ref g => .ref (rewriteGlobal decls mono g #[])
+  | .ref g tArgs => .ref (rewriteGlobal decls mono g tArgs) (tArgs.map (rewriteTyp subst mono))
   | .data d => .data (rewriteData decls subst mono d)
   | .ret t => .ret (rewriteTypedTerm decls subst mono t)
   | .let p v b =>
@@ -225,7 +225,7 @@ partial def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ))
 
 partial def collectInInner (seen : Std.HashSet (Global × Array Typ)) :
     TypedTermInner → Std.HashSet (Global × Array Typ)
-  | .unit | .var _ | .ref _ => seen
+  | .unit | .var _ | .ref _ _ => seen
   | .data d => collectInData seen d
   | .ret t => collectInTypedTerm seen t
   | .let _ v b => collectInTypedTerm (collectInTypedTerm seen v) b
@@ -273,7 +273,7 @@ where
   collectCallsI : Decls → TypedTermInner → Std.HashSet (Global × Array Typ)
       → Std.HashSet (Global × Array Typ) :=
     fun decls i seen => match i with
-    | .unit | .var _ | .ref _ => seen
+    | .unit | .var _ | .ref _ _ => seen
     | .data (.field _) => seen
     | .data (.tuple ts) | .data (.array ts) => ts.foldl goT seen
     | .ret t => goT seen t
@@ -309,7 +309,7 @@ partial def substInTypedTerm (subst : Global → Option Typ) (t : TypedTerm) : T
 partial def substInInner (subst : Global → Option Typ) : TypedTermInner → TypedTermInner
   | .unit => .unit
   | .var x => .var x
-  | .ref g => .ref g
+  | .ref g tArgs => .ref g (tArgs.map (Typ.instantiate subst))
   | .data d => .data (substInData subst d)
   | .ret t => .ret (substInTypedTerm subst t)
   | .let p v b => .let p (substInTypedTerm subst v) (substInTypedTerm subst b)

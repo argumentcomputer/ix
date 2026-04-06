@@ -10,7 +10,7 @@ inductive TypedTermInner
   | unit
   | var : Local → TypedTermInner
   -- | unsafeCast : TypedTermInner → Typ → TypedTermInner
-  | ref : Global → TypedTermInner
+  | ref : Global → Array Typ → TypedTermInner
   | data : TypedData → TypedTermInner
   | ret : TypedTerm → TypedTermInner
   | let : Pattern → TypedTerm → TypedTerm → TypedTermInner

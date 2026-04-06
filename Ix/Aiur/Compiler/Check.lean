@@ -250,25 +250,25 @@ def instantiateParams (params : List String) : CheckM (Array Typ × (Global → 
 /-! ## Type inference -/
 
 /-- Retrieves the type of a global reference. -/
-def refLookup (global : Global) : CheckM Typ := do
+def refLookup (global : Global) : CheckM (Typ × Array Typ) := do
   let ctx ← read
   match ctx.decls.getByKey global with
   | some (.function function) =>
     if function.params.isEmpty then
-      pure $ .function (function.inputs.map Prod.snd) function.output
+      pure (.function (function.inputs.map Prod.snd) function.output, #[])
     else
-      let (_, subst) ← instantiateParams function.params
+      let (mvars, subst) ← instantiateParams function.params
       let inputs := function.inputs.map (Typ.instantiate subst ∘ Prod.snd)
       let output := Typ.instantiate subst function.output
-      pure $ .function inputs output
+      pure (.function inputs output, mvars)
   | some (.constructor dataType constructor) =>
     let args := constructor.argTypes
     unless args.isEmpty do (throw $ .wrongNumArgs global args.length 0)
     if dataType.params.isEmpty then
-      pure $ .ref dataType.name
+      pure (.ref dataType.name, #[])
     else
       let (mvars, _) ← instantiateParams dataType.params
-      pure $ .app dataType.name mvars
+      pure (.app dataType.name mvars, mvars)
   | some _ => throw $ .notAValue global
   | none => throw $ .unboundGlobal global
 
@@ -283,17 +283,8 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
   | .unit => pure ⟨.unit, .unit, false⟩
   | .var x => inferVariable x
   | .ref x => do
-    let ctx ← read
-    match ctx.decls.getByKey x with
-    | some (.constructor dataType constructor) =>
-      unless constructor.argTypes.isEmpty do
-        throw $ .wrongNumArgs x constructor.argTypes.length 0
-      if dataType.params.isEmpty then
-        pure ⟨.ref dataType.name, .ref x, false⟩
-      else
-        let (mvars, _) ← instantiateParams dataType.params
-        pure ⟨.app dataType.name mvars, .app x mvars [] false, false⟩
-    | _ => pure ⟨← refLookup x, .ref x, false⟩
+    let (typ, tArgs) ← refLookup x
+    pure ⟨typ, .ref x tArgs, false⟩
   | .ret term => inferReturn term
   | .data data => inferData data
   | .let pat expr body => inferLet pat expr body
@@ -447,7 +438,7 @@ partial def inferVariable (x : Local) : CheckM TypedTerm := do
   match (ctx.varTypes[x]?, x) with
   | (some t, _) => pure ⟨t, .var x, false⟩
   | (none, Local.str localName) =>
-    let typ ← refLookup (Global.init localName)
+    let (typ, _) ← refLookup (Global.init localName)
     pure ⟨typ, .var x, false⟩
   | (none, _) => throw $ .unboundLocal x
 
@@ -647,7 +638,7 @@ partial def zonkTypedTerm (t : TypedTerm) : CheckM TypedTerm := do
 partial def zonkInner : TypedTermInner → CheckM TypedTermInner
   | .unit => pure .unit
   | .var x => pure (.var x)
-  | .ref g => pure (.ref g)
+  | .ref g tArgs => do pure (.ref g (← tArgs.mapM zonkTyp))
   | .data d => .data <$> zonkData d
   | .ret t => .ret <$> zonkTypedTerm t
   | .let pat v b => do pure $ .let pat (← zonkTypedTerm v) (← zonkTypedTerm b)
