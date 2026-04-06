@@ -41,6 +41,18 @@ def Global.popNamespace (global : Global) : Option (String × Global) :=
   | .str tail head => some (head, ⟨tail⟩)
   | _ => none
 
+inductive Typ where
+  | unit
+  | field
+  | tuple : Array Typ → Typ
+  | array : Typ → Nat → Typ
+  | pointer : Typ → Typ
+  | ref : Global → Typ
+  | app : Global → Array Typ → Typ
+  | function : List Typ → Typ → Typ
+  | mvar : Nat → Typ
+  deriving Repr, BEq, Hashable, Inhabited
+
 inductive Pattern
   | var : Local → Pattern
   | wildcard : Pattern
@@ -50,16 +62,6 @@ inductive Pattern
   | array : Array Pattern → Pattern
   | or : Pattern → Pattern → Pattern
   | pointer : Pattern → Pattern
-  deriving Repr, BEq, Hashable, Inhabited
-
-inductive Typ where
-  | unit
-  | field
-  | tuple : Array Typ → Typ
-  | array : Typ → Nat → Typ
-  | pointer : Typ → Typ
-  | typeRef : Global → Typ
-  | function : List Typ → Typ → Typ
   deriving Repr, BEq, Hashable, Inhabited
 
 mutual
@@ -112,60 +114,6 @@ inductive Data
 
 end
 
-mutual
-inductive TypedTermInner
-  | unit
-  | var : Local → TypedTermInner
-  -- | unsafeCast : TypedTermInner → Typ → TypedTermInner
-  | ref : Global → TypedTermInner
-  | data : TypedData → TypedTermInner
-  | ret : TypedTerm → TypedTermInner
-  | let : Pattern → TypedTerm → TypedTerm → TypedTermInner
-  | match : TypedTerm → List (Pattern × TypedTerm) → TypedTermInner
-  | app : Global → List TypedTerm → (unconstrained : Bool) → TypedTermInner
-  | add : TypedTerm → TypedTerm → TypedTermInner
-  | sub : TypedTerm → TypedTerm → TypedTermInner
-  | mul : TypedTerm → TypedTerm → TypedTermInner
-  | eqZero : TypedTerm → TypedTermInner
-  | proj : TypedTerm → Nat → TypedTermInner
-  | get : TypedTerm → Nat → TypedTermInner
-  | slice : TypedTerm → Nat → Nat → TypedTermInner
-  | set : TypedTerm → Nat → TypedTerm → TypedTermInner
-  | store : TypedTerm → TypedTermInner
-  | load : TypedTerm → TypedTermInner
-  | ptrVal : TypedTerm → TypedTermInner
-  | assertEq : TypedTerm → TypedTerm → TypedTerm → TypedTermInner
-  | ioGetInfo : TypedTerm → TypedTermInner
-  | ioSetInfo : TypedTerm → TypedTerm → TypedTerm → TypedTerm → TypedTermInner
-  | ioRead : TypedTerm → Nat → TypedTermInner
-  | ioWrite : TypedTerm → TypedTerm → TypedTermInner
-  | u8BitDecomposition : TypedTerm → TypedTermInner
-  | u8ShiftLeft : TypedTerm → TypedTermInner
-  | u8ShiftRight : TypedTerm → TypedTermInner
-  | u8Xor : TypedTerm → TypedTerm → TypedTermInner
-  | u8Add : TypedTerm → TypedTerm → TypedTermInner
-  | u8Sub : TypedTerm → TypedTerm → TypedTermInner
-  | u8And : TypedTerm → TypedTerm → TypedTermInner
-  | u8Or : TypedTerm → TypedTerm → TypedTermInner
-  | u8LessThan : TypedTerm → TypedTerm → TypedTermInner
-  | u32LessThan : TypedTerm → TypedTerm → TypedTermInner
-  | debug : String → Option TypedTerm → TypedTerm → TypedTermInner
-  deriving Repr, Inhabited
-
-structure TypedTerm where
-  typ : Typ
-  inner : TypedTermInner
-  escapes : Bool
-  deriving Repr, Inhabited
-
-inductive TypedData
-  | field : G → TypedData
-  | tuple : Array TypedTerm → TypedData
-  | array : Array TypedTerm → TypedData
-  deriving Repr
-
-end
-
 structure Constructor where
   nameHead : String
   argTypes : List Typ
@@ -173,21 +121,24 @@ structure Constructor where
 
 structure DataType where
   name : Global
+  params : List String
   constructors : List Constructor
   deriving Repr, BEq, Inhabited
 
 structure TypeAlias where
   name : Global
+  params : List String
   expansion : Typ
   deriving Repr, BEq, Inhabited
 
 structure Function where
   name : Global
+  params : List String
   inputs : List (Local × Typ)
   output : Typ
   body : Term
   entry : Bool
-  deriving Repr
+  deriving Repr, Inhabited
 
 structure Toplevel where
   dataTypes : Array DataType
@@ -199,28 +150,24 @@ def Toplevel.getFuncIdx (toplevel : Toplevel) (funcName : Lean.Name) : Option Na
   toplevel.functions.findIdx? fun function => function.name.toName == funcName
 
 def Toplevel.merge (x y : Toplevel) : Except Global Toplevel := do
-  let ⟨xDataTypes, xTypeAliases, xFunctions⟩ := x
-  let ⟨yDataTypes, yTypeAliases, yFunctions⟩ := y
-  let mut globals : Std.HashSet Global := ∅
-  let mut dataTypes := .emptyWithCapacity (xDataTypes.size + yDataTypes.size)
-  let mut typeAliases := .emptyWithCapacity (xTypeAliases.size + yTypeAliases.size)
-  let mut functions := .emptyWithCapacity (xFunctions.size + yFunctions.size)
-  for dtSet in [xDataTypes, yDataTypes] do
-    for dt in dtSet do
-      if globals.contains dt.name then throw dt.name
-      globals := globals.insert dt.name
-      dataTypes := dataTypes.push dt
-  for taSet in [xTypeAliases, yTypeAliases] do
-    for ta in taSet do
-      if globals.contains ta.name then throw ta.name
-      globals := globals.insert ta.name
-      typeAliases := typeAliases.push ta
-  for fSet in [xFunctions, yFunctions] do
-    for f in fSet do
-      if globals.contains f.name then throw f.name
-      globals := globals.insert f.name
-      functions := functions.push f
+  let ⟨xDT, xTA, xF⟩ := x
+  let ⟨yDT, yTA, yF⟩ := y
+  let (globals, dataTypes) ← mergeArrays DataType.name ∅ xDT yDT
+  let (globals, typeAliases) ← mergeArrays TypeAlias.name globals xTA yTA
+  let (_, functions) ← mergeArrays Function.name globals xF yF
   pure ⟨dataTypes, typeAliases, functions⟩
+where
+  mergeArrays {α : Type} (getName : α → Global) (globals : Std.HashSet Global)
+      (xs ys : Array α) : Except Global (Std.HashSet Global × Array α) := do
+    let mut globals := globals
+    let mut result := Array.emptyWithCapacity (xs.size + ys.size)
+    for set in [xs, ys] do
+      for item in set do
+        let n := getName item
+        if globals.contains n then throw n
+        globals := globals.insert n
+        result := result.push item
+    pure (globals, result)
 
 inductive Declaration
   | function : Function → Declaration
@@ -229,59 +176,6 @@ inductive Declaration
   deriving Repr, Inhabited
 
 abbrev Decls := IndexMap Global Declaration
-
-structure TypedFunction where
-  name : Global
-  inputs : List (Local × Typ)
-  output : Typ
-  body : TypedTerm
-  entry : Bool
-  deriving Repr
-
-inductive TypedDeclaration
-  | function : TypedFunction → TypedDeclaration
-  | dataType : DataType → TypedDeclaration
-  | constructor : DataType → Constructor → TypedDeclaration
-  deriving Repr, Inhabited
-
-abbrev TypedDecls := IndexMap Global TypedDeclaration
-
-mutual
-
-open Std (HashSet)
-
-partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
-    Typ → Except String Nat
-  | .unit => pure 0
-  | .field .. => pure 1
-  | .pointer .. => pure 1
-  | .function .. => pure 1
-  | .tuple ts => ts.foldlM (init := 0) fun acc t => do
-    let tSize ← t.size decls visited
-    pure $ acc + tSize
-  | .array t n => do
-    let tSize ← t.size decls visited
-    pure $ n * tSize
-  | .typeRef g => match decls.getByKey g with
-    | some (.dataType data) => data.size decls visited
-    | _ => throw s!"Datatype not found: `{g}`"
-
-partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {})
-    (c : Constructor) : Except String Nat :=
-  c.argTypes.foldlM (init := 0) fun acc t => do
-    let tSize ← t.size decls visited
-    pure $ acc + tSize
-
-partial def DataType.size (dt : DataType) (decls : TypedDecls)
-    (visited : HashSet Global := {}) : Except String Nat :=
-  if visited.contains dt.name then
-    throw s!"Cycle detected at datatype `{dt.name}`"
-  else do
-    let visited := visited.insert dt.name
-    let ctorSizes ← dt.constructors.mapM (Constructor.size decls visited)
-    let maxFields := ctorSizes.foldl max 0
-    pure $ maxFields + 1
-end
 
 end Aiur
 

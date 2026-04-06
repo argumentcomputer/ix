@@ -1,5 +1,6 @@
 module
 public import Ix.Aiur.Meta
+public import Ix.IxVM.Templates
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
 public import Ix.IxVM.Ingress
@@ -146,7 +147,8 @@ def entrypoints := ⟦
 ⟧
 
 def ixVM : Except Aiur.Global Aiur.Toplevel := do
-  let vm ← byteStream.merge blake3
+  let vm ← templates.merge byteStream
+  let vm ← vm.merge blake3
   let vm ← vm.merge ixon
   let vm ← vm.merge ixonSerialize
   let vm ← vm.merge ixonDeserialize

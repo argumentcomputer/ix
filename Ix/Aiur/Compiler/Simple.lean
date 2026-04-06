@@ -1,6 +1,6 @@
 module
-public import Ix.Aiur.Match
-public import Ix.Aiur.Check
+public import Ix.Aiur.Compiler.Match
+public import Ix.Aiur.Compiler.Check
 
 public section
 
@@ -41,7 +41,7 @@ def Toplevel.checkAndSimplify (toplevel : Toplevel) : Except CheckError TypedDec
   -- The first check happens on the original terms (but with expanded types).
   decls.forM fun (_, decl) => do
     if let .function f := decl then
-      let _ ← (checkFunction f) (getFunctionContext f decls)
+      let _ ← ((checkFunction f) (getFunctionContext f decls)).run' {}
   let decls := decls.map fun decl => match decl with
     | .function f => .function { f with body := simplifyTerm decls f.body }
     | _ => decl
@@ -50,7 +50,7 @@ def Toplevel.checkAndSimplify (toplevel : Toplevel) : Except CheckError TypedDec
     | .dataType d => pure $ typedDecls.insert name (.dataType d)
     | .function f => do
       -- The second check happens on the simplified terms.
-      let f ← (checkFunction f) (getFunctionContext f decls)
+      let f ← ((checkFunction f) (getFunctionContext f decls)).run' {}
       pure $ typedDecls.insert name (.function f)
 
 end Aiur

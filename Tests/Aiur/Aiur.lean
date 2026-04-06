@@ -388,6 +388,75 @@ def toplevel := ⟦
     let d = c * c;
     a + b + d
   }
+
+  ---------------------------------------------------------------------------
+  -- Templates: parametric datatypes and functions
+  ---------------------------------------------------------------------------
+  enum Wrapper‹A› {
+    Mk(A)
+  }
+
+  fn unwrap‹A›(w: Wrapper‹A›) -> A {
+    match w {
+      Wrapper.Mk(x) => x,
+    }
+  }
+
+  pub fn template_basic() -> G {
+    let w = Wrapper.Mk(42);
+    unwrap(w)
+  }
+
+  enum Option‹A› {
+    Some(A),
+    None
+  }
+
+  fn unwrap_or‹A›(opt: Option‹A›, default: A) -> A {
+    match opt {
+      Option.Some(x) => x,
+      Option.None => default,
+    }
+  }
+
+  pub fn template_unwrap_some() -> G {
+    let opt = Option.Some(42);
+    unwrap_or(opt, 0)
+  }
+
+  pub fn template_unwrap_none() -> G {
+    let opt = Option.None;
+    unwrap_or(opt, 99)
+  }
+
+  enum TPair‹A, B› {
+    Mk(A, B)
+  }
+
+  fn tpair_first‹A, B›(p: TPair‹A, B›) -> A {
+    match p {
+      TPair.Mk(a, _) => a,
+    }
+  }
+
+  fn tpair_second‹A, B›(p: TPair‹A, B›) -> B {
+    match p {
+      TPair.Mk(_, b) => b,
+    }
+  }
+
+  pub fn template_pair() -> (G, G) {
+    let p = TPair.Mk(10, 20);
+    (tpair_first(p), tpair_second(p))
+  }
+
+  -- Nested templates: Option‹TPair‹G, G››
+  pub fn template_nested() -> G {
+    let inner = TPair.Mk(3, 4);
+    let opt = Option.Some(inner);
+    let p = unwrap_or(opt, TPair.Mk(0, 0));
+    tpair_first(p) + tpair_second(p)
+  }
 ⟧
 
 def aiurTestCases : List AiurTestCase := [
@@ -519,6 +588,13 @@ def aiurTestCases : List AiurTestCase := [
 
     -- EqZero degree-tracking regression (eq_zero(3)=0, 100, 3*3=9, 9*9=81, 0+100+81=181)
     .noIO `eq_zero_degree_desync #[3] #[181],
+
+    -- Templates
+    .noIO `template_basic #[] #[42],
+    .noIO `template_unwrap_some #[] #[42],
+    .noIO `template_unwrap_none #[] #[99],
+    .noIO `template_pair #[] #[10, 20],
+    .noIO `template_nested #[] #[7],
   ]
 
 end

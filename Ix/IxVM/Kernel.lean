@@ -82,9 +82,9 @@ def kernel := ⟦
   }
 
   -- Look up a value in a value list by index
-  fn val_list_lookup(list: KValList, idx: G) -> KVal {
+  fn val_list_lookup(list: List‹&KVal›, idx: G) -> KVal {
     match list {
-      KValList.Cons(&v, &rest) =>
+      List.Cons(&v, &rest) =>
         match idx {
           0 => v,
           _ => val_list_lookup(rest, idx - 1),
@@ -93,26 +93,18 @@ def kernel := ⟦
   }
 
   -- Append a value to the end of a list
-  fn val_list_snoc(list: KValList, v: KVal) -> KValList {
+  fn val_list_snoc(list: List‹&KVal›, v: KVal) -> List‹&KVal› {
     match list {
-      KValList.Nil => KValList.Cons(store(v), store(KValList.Nil)),
-      KValList.Cons(&head, &rest) =>
-        KValList.Cons(store(head), store(val_list_snoc(rest, v))),
-    }
-  }
-
-  -- Compute the length of a value list
-  fn val_list_length(list: KValList) -> G {
-    match list {
-      KValList.Nil => 0,
-      KValList.Cons(_, &rest) => val_list_length(rest) + 1,
+      List.Nil => List.Cons(store(v), store(List.Nil)),
+      List.Cons(&head, &rest) =>
+        List.Cons(store(head), store(val_list_snoc(rest, v))),
     }
   }
 
   -- Look up a level in a level list by index
-  fn level_list_lookup(list: KLevelList, idx: G) -> KLevel {
+  fn level_list_lookup(list: List‹&KLevel›, idx: G) -> KLevel {
     match list {
-      KLevelList.Cons(&l, &rest) =>
+      List.Cons(&l, &rest) =>
         match idx {
           0 => l,
           _ => level_list_lookup(rest, idx - 1),
@@ -121,10 +113,10 @@ def kernel := ⟦
   }
 
   -- Look up a constant info in a constant list by index
-  fn const_list_lookup(list: KConstList, idx: G) -> KConstantInfo {
+  fn const_list_lookup(list: List‹&KConstantInfo›, idx: G) -> KConstantInfo {
     match list {
-      KConstList.Nil => KConstantInfo.Axiom(0, store(KExpr.Srt(store(KLevel.Zero))), 0),
-      KConstList.Cons(&ci, &rest) =>
+      List.Nil => KConstantInfo.Axiom(0, store(KExpr.Srt(store(KLevel.Zero))), 0),
+      List.Cons(&ci, &rest) =>
         match idx {
           0 => ci,
           _ => const_list_lookup(rest, idx - 1),
@@ -133,24 +125,24 @@ def kernel := ⟦
   }
 
   -- Find recursor rule by constructor index
-  fn rec_rule_try_find(rules: KRecRuleList, ctor_idx: G) -> KRecRuleMaybe {
+  fn rec_rule_try_find(rules: List‹&KRecRule›, ctor_idx: G) -> Option‹&KRecRule› {
     match rules {
-      KRecRuleList.Nil => KRecRuleMaybe.None,
-      KRecRuleList.Cons(&rule, &rest) =>
+      List.Nil => Option.None,
+      List.Cons(&rule, &rest) =>
         match rule {
           KRecRule.Mk(idx, nf, &rhs) =>
             let found = eq_zero(idx - ctor_idx);
             match found {
-              1 => KRecRuleMaybe.Some(store(KRecRule.Mk(idx, nf, store(rhs)))),
+              1 => Option.Some(store(KRecRule.Mk(idx, nf, store(rhs)))),
               0 => rec_rule_try_find(rest, ctor_idx),
             },
         },
     }
   }
 
-  fn rec_rule_find(rules: KRecRuleList, ctor_idx: G) -> KRecRule {
+  fn rec_rule_find(rules: List‹&KRecRule›, ctor_idx: G) -> KRecRule {
     match rules {
-      KRecRuleList.Cons(&rule, &rest) =>
+      List.Cons(&rule, &rest) =>
         match rule {
           KRecRule.Mk(idx, nf, &rhs) =>
             let found = eq_zero(idx - ctor_idx);
@@ -162,29 +154,29 @@ def kernel := ⟦
     }
   }
 
-  -- Extract the ctor_idx from the first rule in a KRecRuleList
-  fn rec_rule_first_ctor(rules: KRecRuleList) -> G {
+  -- Extract the ctor_idx from the first rule in a List‹&KRecRule›
+  fn rec_rule_first_ctor(rules: List‹&KRecRule›) -> G {
     match rules {
-      KRecRuleList.Cons(&rule, _) =>
+      List.Cons(&rule, _) =>
         match rule {
           KRecRule.Mk(ctor_idx, _, _) => ctor_idx,
         },
     }
   }
 
-  -- Extract the first element from a KGList
-  fn kg_list_head(list: KGList) -> G {
+  -- Extract the first element from a List‹G›
+  fn kg_list_head(list: List‹G›) -> G {
     match list {
-      KGList.Cons(v, _) => v,
+      List.Cons(v, _) => v,
     }
   }
 
-  -- Extract the second element from a KGList
-  fn kg_list_second(list: KGList) -> G {
+  -- Extract the second element from a List‹G›
+  fn kg_list_second(list: List‹G›) -> G {
     match list {
-      KGList.Cons(_, &rest) =>
+      List.Cons(_, &rest) =>
         match rest {
-          KGList.Cons(v, _) => v,
+          List.Cons(v, _) => v,
         },
     }
   }
@@ -510,7 +502,7 @@ def kernel := ⟦
   }
 
   -- Substitute all Level.Param(i) -> params[i] in a level
-  fn level_inst_params(l: KLevel, params: KLevelList) -> KLevel {
+  fn level_inst_params(l: KLevel, params: List‹&KLevel›) -> KLevel {
     match l {
       KLevel.Zero => KLevel.Zero,
       KLevel.Succ(&u) => KLevel.Succ(store(level_inst_params(u, params))),
@@ -527,7 +519,7 @@ def kernel := ⟦
   -- ============================================================================
 
   -- Substitute all Level.Param(i) -> params[i] in all levels within an expression
-  fn expr_inst_levels(e: KExpr, params: KLevelList) -> KExpr {
+  fn expr_inst_levels(e: KExpr, params: List‹&KLevel›) -> KExpr {
     match e {
       KExpr.BVar(i) => KExpr.BVar(i),
       KExpr.Srt(&l) =>
@@ -552,11 +544,11 @@ def kernel := ⟦
   }
 
   -- Substitute level params in a level list
-  fn level_list_inst(lvls: KLevelList, params: KLevelList) -> KLevelList {
+  fn level_list_inst(lvls: List‹&KLevel›, params: List‹&KLevel›) -> List‹&KLevel› {
     match lvls {
-      KLevelList.Nil => KLevelList.Nil,
-      KLevelList.Cons(&l, &rest) =>
-        KLevelList.Cons(
+      List.Nil => List.Nil,
+      List.Cons(&l, &rest) =>
+        List.Cons(
           store(level_inst_params(l, params)),
           store(level_list_inst(rest, params))),
     }
@@ -573,7 +565,7 @@ def kernel := ⟦
   -- ============================================================================
 
   -- Force a thunk: if it's a Thunk, evaluate it; otherwise return as-is
-  fn k_force(v: KVal, top: KConstList) -> KVal {
+  fn k_force(v: KVal, top: List‹&KConstantInfo›) -> KVal {
     match v {
       KVal.Thunk(&e, &env) => k_eval(e, env, top),
       _ => v,
@@ -581,7 +573,7 @@ def kernel := ⟦
   }
 
   -- Evaluate an expression to a value using Normalization by Evaluation (NbE)
-  fn k_eval(e: KExpr, env: KValEnv, top: KConstList) -> KVal {
+  fn k_eval(e: KExpr, env: KValEnv, top: List‹&KConstantInfo›) -> KVal {
     match e {
       KExpr.BVar(idx) =>
         val_env_lookup(env, idx),
@@ -594,8 +586,8 @@ def kernel := ⟦
         let ci = const_list_lookup(top, idx);
         match ci {
           KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
-            KVal.Ctor(idx, store(lvls), nparams, store(KValList.Nil)),
-          _ => KVal.Const(idx, store(lvls), store(KValList.Nil)),
+            KVal.Ctor(idx, store(lvls), nparams, store(List.Nil)),
+          _ => KVal.Const(idx, store(lvls), store(List.Nil)),
         },
 
       -- Eager beta optimization: if the function is a lambda, evaluate arg eagerly
@@ -636,13 +628,13 @@ def kernel := ⟦
             let field = val_list_lookup(spine, field_idx);
             k_force(field, top),
           _ =>
-            KVal.Proj(tidx, fidx, store(v), store(KValList.Nil)),
+            KVal.Proj(tidx, fidx, store(v), store(List.Nil)),
         },
     }
   }
 
   -- Apply a value to an argument (lazy: arg may be a thunk)
-  fn k_apply(f: KVal, arg: KVal, top: KConstList) -> KVal {
+  fn k_apply(f: KVal, arg: KVal, top: List‹&KConstantInfo›) -> KVal {
     match f {
       KVal.Lam(_, &body, &env) =>
         let arg_forced = k_force(arg, top);
@@ -673,10 +665,10 @@ def kernel := ⟦
   }
 
   -- Apply a value to a list of arguments
-  fn k_apply_spine(f: KVal, spine: KValList, top: KConstList) -> KVal {
+  fn k_apply_spine(f: KVal, spine: List‹&KVal›, top: List‹&KConstantInfo›) -> KVal {
     match spine {
-      KValList.Nil => f,
-      KValList.Cons(&v, &rest) =>
+      List.Nil => f,
+      List.Cons(&v, &rest) =>
         let f2 = k_apply(f, v, top);
         k_apply_spine(f2, rest, top),
     }
@@ -692,7 +684,7 @@ def kernel := ⟦
   -- ============================================================================
 
   -- Get induct_idx from a constructor's constant info
-  fn ctor_induct_idx(ctor_idx: G, top: KConstList) -> G {
+  fn ctor_induct_idx(ctor_idx: G, top: List‹&KConstantInfo›) -> G {
     let ctor_ci = const_list_lookup(top, ctor_idx);
     match ctor_ci {
       KConstantInfo.Ctor(_, _, induct_idx, _, _, _, _) => induct_idx,
@@ -701,12 +693,12 @@ def kernel := ⟦
 
   -- Try iota reduction: if idx refers to a recursor and the major premise is a
   -- constructor or Nat literal, apply the matching recursor rule; otherwise return a neutral VConst
-  fn try_iota(idx: G, lvls: KLevelList, spine: KValList, top: KConstList) -> KVal {
+  fn try_iota(idx: G, lvls: List‹&KLevel›, spine: List‹&KVal›, top: List‹&KConstantInfo›) -> KVal {
     let ci = const_list_lookup(top, idx);
     match ci {
       KConstantInfo.Rec(_, _, nparams, nindices, nmotives, nminors, &rules, k_flag, _) =>
         let maj_idx = nparams + nmotives + nminors + nindices;
-        let spine_len = val_list_length(spine);
+        let spine_len = list_length_g(spine);
         let not_have_major = eq_zero(spine_len - maj_idx);
         match not_have_major {
           1 => KVal.Const(idx, store(lvls), store(spine)),
@@ -717,9 +709,9 @@ def kernel := ⟦
               KVal.Ctor(ctor_idx, _, ctor_nparams, &ctor_spine) =>
                 let rule_found = rec_rule_try_find(rules, ctor_idx);
                 match rule_found {
-                  KRecRuleMaybe.None =>
+                  Option.None =>
                     KVal.Const(idx, store(lvls), store(spine)),
-                  KRecRuleMaybe.Some(&rule) =>
+                  Option.Some(&rule) =>
                     match rule {
                       KRecRule.Mk(_, nfields, &rhs) =>
                         let rhs_inst = expr_inst_levels(rhs, lvls);
@@ -769,7 +761,7 @@ def kernel := ⟦
                                 let pmm = val_list_take(spine, pmm_end);
                                 let result = k_apply_spine(rhs_val, pmm, top);
                                 let pred = KVal.Lit(KLiteral.Nat(store(klimbs_pred(n))));
-                                let ctor_fields = KValList.Cons(store(pred), store(KValList.Nil));
+                                let ctor_fields = List.Cons(store(pred), store(List.Nil));
                                 let result2 = k_apply_spine(result, ctor_fields, top);
                                 let remaining = val_list_drop(spine, maj_idx + 1);
                                 k_apply_spine(result2, remaining, top),
@@ -801,24 +793,24 @@ def kernel := ⟦
   }
 
   -- Take the first n elements of a val list
-  fn val_list_take(list: KValList, n: G) -> KValList {
+  fn val_list_take(list: List‹&KVal›, n: G) -> List‹&KVal› {
     match n {
-      0 => KValList.Nil,
+      0 => List.Nil,
       _ =>
         match list {
-          KValList.Cons(&v, &rest) =>
-            KValList.Cons(store(v), store(val_list_take(rest, n - 1))),
+          List.Cons(&v, &rest) =>
+            List.Cons(store(v), store(val_list_take(rest, n - 1))),
         },
     }
   }
 
   -- Drop the first n elements of a val list
-  fn val_list_drop(list: KValList, n: G) -> KValList {
+  fn val_list_drop(list: List‹&KVal›, n: G) -> List‹&KVal› {
     match n {
       0 => list,
       _ =>
         match list {
-          KValList.Cons(_, &rest) =>
+          List.Cons(_, &rest) =>
             val_list_drop(rest, n - 1),
         },
     }
@@ -832,9 +824,9 @@ def kernel := ⟦
   -- reduce_size is the minimum spine length, f_pos is the index of f in the spine.
   -- Returns 1 and reduced value via k_whnf if successful, 0 otherwise.
   -- The idx/lvls/spine are passed through for reconstructing the stuck value on failure.
-  fn k_try_quot_reduction(idx: G, lvls: KLevelList, spine: KValList,
-      reduce_size: G, f_pos: G, top: KConstList) -> KVal {
-    let spine_len = val_list_length(spine);
+  fn k_try_quot_reduction(idx: G, lvls: List‹&KLevel›, spine: List‹&KVal›,
+      reduce_size: G, f_pos: G, top: List‹&KConstantInfo›) -> KVal {
+    let spine_len = list_length_g(spine);
     let not_enough = eq_zero(spine_len - reduce_size);
     match not_enough {
       1 => KVal.Const(idx, store(lvls), store(spine)),
@@ -853,7 +845,7 @@ def kernel := ⟦
                   KQuotKind.Ctor =>
                     -- mk_spine should have >= 3 args: [α, r, a]
                     -- The quotient value is the last element
-                    let mk_len = val_list_length(mk_spine);
+                    let mk_len = list_length_g(mk_spine);
                     let no_args = eq_zero(mk_len - 3);
                     match no_args {
                       1 => KVal.Const(idx, store(lvls), store(spine)),
@@ -888,7 +880,7 @@ def kernel := ⟦
 
   -- Reduce a value to Weak Head Normal Form by retrying projection, iota, and delta reductions
 
-  fn k_whnf(v: KVal, top: KConstList) -> KVal {
+  fn k_whnf(v: KVal, top: List‹&KConstantInfo›) -> KVal {
     match v {
       KVal.Thunk(&e, &env) =>
         let val = k_eval(e, env, top);
@@ -964,7 +956,7 @@ def kernel := ⟦
 
   -- Quote a value back into an expression (readback), converting free variables
   -- to de Bruijn indices relative to the current depth
-  fn k_quote(v: KVal, depth: G, top: KConstList) -> KExpr {
+  fn k_quote(v: KVal, depth: G, top: List‹&KConstantInfo›) -> KExpr {
     match v {
       KVal.Thunk(&e, &env) =>
         let val = k_eval(e, env, top);
@@ -976,7 +968,7 @@ def kernel := ⟦
 
       KVal.Lam(&dom, &body, &env) =>
         let dom_expr = k_quote(dom, depth, top);
-        let fvar = KVal.FVar(depth, store(dom), store(KValList.Nil));
+        let fvar = KVal.FVar(depth, store(dom), store(List.Nil));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_val = k_eval(body, env2, top);
         let body_expr = k_quote(body_val, depth + 1, top);
@@ -984,7 +976,7 @@ def kernel := ⟦
 
       KVal.Pi(&dom, &body, &env) =>
         let dom_expr = k_quote(dom, depth, top);
-        let fvar = KVal.FVar(depth, store(dom), store(KValList.Nil));
+        let fvar = KVal.FVar(depth, store(dom), store(List.Nil));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_val = k_eval(body, env2, top);
         let body_expr = k_quote(body_val, depth + 1, top);
@@ -1011,10 +1003,10 @@ def kernel := ⟦
   }
 
   -- Quote a spine of arguments, wrapping each in an EApp around the base expression
-  fn quote_spine(base: KExpr, spine: KValList, depth: G, top: KConstList) -> KExpr {
+  fn quote_spine(base: KExpr, spine: List‹&KVal›, depth: G, top: List‹&KConstantInfo›) -> KExpr {
     match spine {
-      KValList.Nil => base,
-      KValList.Cons(&v, &rest) =>
+      List.Nil => base,
+      List.Cons(&v, &rest) =>
         let arg_expr = k_quote(v, depth, top);
         let app = KExpr.App(store(base), store(arg_expr));
         quote_spine(app, rest, depth, top),
@@ -1032,7 +1024,7 @@ def kernel := ⟦
 
   -- Infer the type of an expression under the given type and value environments.
   -- nat_idx/str_idx are the constant indices for the Nat/String types (for literal typing).
-  fn k_infer(e: KExpr, types: KValList, env: KValEnv, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> KVal {
+  fn k_infer(e: KExpr, types: List‹&KVal›, env: KValEnv, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> KVal {
     match e {
       KExpr.BVar(idx) =>
         val_list_lookup(types, idx),
@@ -1043,15 +1035,15 @@ def kernel := ⟦
       KExpr.Lit(lit) =>
         match lit {
           KLiteral.Nat(_) =>
-            KVal.Const(nat_idx, store(KLevelList.Nil), store(KValList.Nil)),
+            KVal.Const(nat_idx, store(List.Nil), store(List.Nil)),
           KLiteral.Str(_) =>
-            KVal.Const(str_idx, store(KLevelList.Nil), store(KValList.Nil)),
+            KVal.Const(str_idx, store(List.Nil), store(List.Nil)),
         },
 
       KExpr.Const(idx, &lvls) =>
         let ci = const_list_lookup(top, idx);
         let expected = const_num_levels(ci);
-        let given = level_list_length(lvls);
+        let given = list_length_g(lvls);
         let lvl_eq = eq_zero(expected - given);
         assert_eq!(lvl_eq, 1);
         let ty = const_type(ci);
@@ -1075,8 +1067,8 @@ def kernel := ⟦
       KExpr.Lam(&ty, &body) =>
         let _ = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
         let dom_val = k_eval(ty, env, top);
-        let fvar = KVal.FVar(depth, store(dom_val), store(KValList.Nil));
-        let types2 = KValList.Cons(store(dom_val), store(types));
+        let fvar = KVal.FVar(depth, store(dom_val), store(List.Nil));
+        let types2 = List.Cons(store(dom_val), store(types));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_type = k_infer(body, types2, env2, depth + 1, top, nat_idx, str_idx);
         let body_type_expr = k_quote(body_type, depth + 1, top);
@@ -1085,8 +1077,8 @@ def kernel := ⟦
       KExpr.Forall(&ty, &body) =>
         let dom_level = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
         let dom_val = k_eval(ty, env, top);
-        let fvar = KVal.FVar(depth, store(dom_val), store(KValList.Nil));
-        let types2 = KValList.Cons(store(dom_val), store(types));
+        let fvar = KVal.FVar(depth, store(dom_val), store(List.Nil));
+        let types2 = List.Cons(store(dom_val), store(types));
         let env2 = KValEnv.Cons(store(fvar), store(env));
         let body_level = k_ensure_sort(body, types2, env2, depth + 1, top, nat_idx, str_idx);
         let result_level = level_imax(dom_level, body_level);
@@ -1099,7 +1091,7 @@ def kernel := ⟦
         let let_eq = k_is_def_eq(val_type, ty_val, depth, top, nat_idx, str_idx);
         assert_eq!(let_eq, 1);
         let val_val = k_eval(val, env, top);
-        let types2 = KValList.Cons(store(ty_val), store(types));
+        let types2 = List.Cons(store(ty_val), store(types));
         let env2 = KValEnv.Cons(store(val_val), store(env));
         k_infer(body, types2, env2, depth + 1, top, nat_idx, str_idx),
 
@@ -1136,7 +1128,7 @@ def kernel := ⟦
 
   -- Bidirectional type checking: check term against expected type.
   -- For Lambda against Pi, pushes the codomain through instead of independently inferring.
-  fn k_check(e: KExpr, expected: KVal, types: KValList, env: KValEnv, depth: G, top: KConstList, nat_idx: G, str_idx: G) {
+  fn k_check(e: KExpr, expected: KVal, types: List‹&KVal›, env: KValEnv, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) {
     match e {
       KExpr.Lam(&ty, &body) =>
         let expected_whnf = k_whnf(expected, top);
@@ -1147,8 +1139,8 @@ def kernel := ⟦
             let dom_eq = k_is_def_eq(dom_val, pi_dom, depth, top, nat_idx, str_idx);
             assert_eq!(dom_eq, 1);
             -- Push Pi codomain through Lambda body
-            let fvar = KVal.FVar(depth, store(pi_dom), store(KValList.Nil));
-            let types2 = KValList.Cons(store(pi_dom), store(types));
+            let fvar = KVal.FVar(depth, store(pi_dom), store(List.Nil));
+            let types2 = List.Cons(store(pi_dom), store(types));
             let env2 = KValEnv.Cons(store(fvar), store(env));
             let pi_env2 = KValEnv.Cons(store(fvar), store(pi_env));
             let expected_body = k_eval(pi_body, pi_env2, top);
@@ -1168,7 +1160,7 @@ def kernel := ⟦
   }
 
   -- Ensure a type expression evaluates to a Sort, returning the level
-  fn k_ensure_sort(e: KExpr, types: KValList, env: KValEnv, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> KLevel {
+  fn k_ensure_sort(e: KExpr, types: List‹&KVal›, env: KValEnv, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> KLevel {
     let ty = k_infer(e, types, env, depth, top, nat_idx, str_idx);
     let ty_whnf = k_whnf(ty, top);
     match ty_whnf {
@@ -1176,19 +1168,11 @@ def kernel := ⟦
     }
   }
 
-  -- Compute the length of a level list
-  fn level_list_length(list: KLevelList) -> G {
-    match list {
-      KLevelList.Nil => 0,
-      KLevelList.Cons(_, &rest) => level_list_length(rest) + 1,
-    }
-  }
-
   -- Walk past n Pi binders, substituting param values from the spine
-  fn walk_params(ct: KVal, params: KValList, top: KConstList) -> KVal {
+  fn walk_params(ct: KVal, params: List‹&KVal›, top: List‹&KConstantInfo›) -> KVal {
     match params {
-      KValList.Nil => ct,
-      KValList.Cons(&param_val, &rest_params) =>
+      List.Nil => ct,
+      List.Cons(&param_val, &rest_params) =>
         let param_forced = k_force(param_val, top);
         let ct_whnf = k_whnf(ct, top);
         match ct_whnf {
@@ -1201,14 +1185,14 @@ def kernel := ⟦
   }
 
   -- Walk past n fields in a constructor type, substituting Proj values
-  fn walk_fields(ct: KVal, tidx: G, current_field: G, remaining: G, struct_val: KVal, top: KConstList) -> KVal {
+  fn walk_fields(ct: KVal, tidx: G, current_field: G, remaining: G, struct_val: KVal, top: List‹&KConstantInfo›) -> KVal {
     match remaining {
       0 => ct,
       _ =>
         let ct_whnf = k_whnf(ct, top);
         match ct_whnf {
           KVal.Pi(_, &body, &pi_env) =>
-            let proj_val = KVal.Proj(tidx, current_field, store(struct_val), store(KValList.Nil));
+            let proj_val = KVal.Proj(tidx, current_field, store(struct_val), store(List.Nil));
             let env2 = KValEnv.Cons(store(proj_val), store(pi_env));
             let next = k_eval(body, env2, top);
             walk_fields(next, tidx, current_field + 1, remaining - 1, struct_val, top),
@@ -1226,10 +1210,10 @@ def kernel := ⟦
   -- ============================================================================
 
   -- Apply a spine of argument values to a type by walking through Pi-bindings
-  fn apply_spine_to_type(ty: KVal, spine: KValList, top: KConstList) -> KVal {
+  fn apply_spine_to_type(ty: KVal, spine: List‹&KVal›, top: List‹&KConstantInfo›) -> KVal {
     match spine {
-      KValList.Nil => ty,
-      KValList.Cons(&arg, &rest) =>
+      List.Nil => ty,
+      List.Cons(&arg, &rest) =>
         let arg_forced = k_force(arg, top);
         let ty_whnf = k_whnf(ty, top);
         match ty_whnf {
@@ -1245,7 +1229,7 @@ def kernel := ⟦
 
   -- Infer the type of a value (best-effort, no error handling).
   -- Returns Sort 1 as sentinel for cases we can't handle (FVar, Lam, Proj).
-  fn k_infer_val_type(v: KVal, top: KConstList, nat_idx: G, str_idx: G) -> KVal {
+  fn k_infer_val_type(v: KVal, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> KVal {
     match v {
       KVal.Thunk(&e, &env) =>
         let val = k_eval(e, env, top);
@@ -1253,8 +1237,8 @@ def kernel := ⟦
       KVal.Srt(&l) => KVal.Srt(store(KLevel.Succ(store(l)))),
       KVal.Lit(lit) =>
         match lit {
-          KLiteral.Nat(_) => KVal.Const(nat_idx, store(KLevelList.Nil), store(KValList.Nil)),
-          KLiteral.Str(_) => KVal.Const(str_idx, store(KLevelList.Nil), store(KValList.Nil)),
+          KLiteral.Nat(_) => KVal.Const(nat_idx, store(List.Nil), store(List.Nil)),
+          KLiteral.Str(_) => KVal.Const(str_idx, store(List.Nil), store(List.Nil)),
         },
       KVal.Const(idx, &lvls, &spine) =>
         let ci = const_list_lookup(top, idx);
@@ -1303,7 +1287,7 @@ def kernel := ⟦
   }
 
   -- Check if a value is a proposition (its type is Sort 0 / Prop)
-  fn k_is_prop_val(v: KVal, top: KConstList, nat_idx: G, str_idx: G) -> G {
+  fn k_is_prop_val(v: KVal, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
     let ty = k_infer_val_type(v, top, nat_idx, str_idx);
     let ty_whnf = k_whnf(ty, top);
     match ty_whnf {
@@ -1325,29 +1309,21 @@ def kernel := ⟦
   -- ============================================================================
 
   -- Get num_fields from a constructor's constant info
-  fn ctor_num_fields(ctor_idx: G, top: KConstList) -> G {
+  fn ctor_num_fields(ctor_idx: G, top: List‹&KConstantInfo›) -> G {
     let ctor_ci = const_list_lookup(top, ctor_idx);
     match ctor_ci {
       KConstantInfo.Ctor(_, _, _, _, _, nfields, _) => nfields,
     }
   }
 
-  -- Count the number of entries in a KGList
-  fn kg_list_length(list: KGList) -> G {
-    match list {
-      KGList.Nil => 0,
-      KGList.Cons(_, &rest) => kg_list_length(rest) + 1,
-    }
-  }
-
   -- Compare each field: Proj(tidx, i, t) vs spine[nparams + i]
-  fn eta_struct_fields(t: KVal, spine: KValList, nparams: G, tidx: G, current: G, remaining: G, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
+  fn eta_struct_fields(t: KVal, spine: List‹&KVal›, nparams: G, tidx: G, current: G, remaining: G, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
     match remaining {
       0 => 1,
       _ =>
         let field_idx = nparams + current;
         let field_val = val_list_lookup(spine, field_idx);
-        let proj_val = KVal.Proj(tidx, current, store(t), store(KValList.Nil));
+        let proj_val = KVal.Proj(tidx, current, store(t), store(List.Nil));
         let eq = k_is_def_eq(proj_val, field_val, depth, top, nat_idx, str_idx);
         match eq {
           0 => 0,
@@ -1358,7 +1334,7 @@ def kernel := ⟦
 
   -- Try struct eta: if s is a Ctor of a struct-like type, compare fields.
   -- Inlines is_struct_like, ctor_induct_idx, ctor_num_fields to avoid redundant lookups.
-  fn try_eta_struct_one(t: KVal, s: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
+  fn try_eta_struct_one(t: KVal, s: KVal, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
     match s {
       KVal.Ctor(ctor_idx, _, nparams, &spine) =>
         let ctor_ci = const_list_lookup(top, ctor_idx);
@@ -1367,7 +1343,7 @@ def kernel := ⟦
             let ind_ci = const_list_lookup(top, induct_idx);
             match ind_ci {
               KConstantInfo.Induct(_, _, _, _, &ctor_indices, _, _, _) =>
-                let num_ctors = kg_list_length(ctor_indices);
+                let num_ctors = list_length_g(ctor_indices);
                 let is_single = eq_zero(num_ctors - 1);
                 match is_single {
                   0 => 0,
@@ -1383,7 +1359,7 @@ def kernel := ⟦
   }
 
   -- Try struct eta in both directions
-  fn try_eta_struct(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
+  fn try_eta_struct(a: KVal, b: KVal, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
     let r1 = try_eta_struct_one(a, b, depth, top, nat_idx, str_idx);
     match r1 {
       1 => 1,
@@ -1394,7 +1370,7 @@ def kernel := ⟦
   -- Unit-like type equality: if both values have a type with exactly one
   -- nullary constructor and no indices, they are definitionally equal.
   -- Examples: True, PUnit, PLift.up for propositions.
-  fn is_unit_like_type(ty: KVal, top: KConstList) -> G {
+  fn is_unit_like_type(ty: KVal, top: List‹&KConstantInfo›) -> G {
     let ty_whnf = k_whnf(ty, top);
     match ty_whnf {
       KVal.Const(induct_idx, _, _) =>
@@ -1402,7 +1378,7 @@ def kernel := ⟦
         match ci {
           KConstantInfo.Induct(_, _, _, nindices, &ctor_indices, _, _, _) =>
             let zero_indices = eq_zero(nindices);
-            let one_ctor = eq_zero(kg_list_length(ctor_indices) - 1);
+            let one_ctor = eq_zero(list_length_g(ctor_indices) - 1);
             match zero_indices * one_ctor {
               0 => 0,
               _ =>
@@ -1420,7 +1396,7 @@ def kernel := ⟦
     }
   }
 
-  fn try_unit_like(a: KVal, b: KVal, top: KConstList, nat_idx: G, str_idx: G) -> G {
+  fn try_unit_like(a: KVal, b: KVal, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
     let a_type = k_infer_val_type(a, top, nat_idx, str_idx);
     is_unit_like_type(a_type, top)
   }
@@ -1440,7 +1416,7 @@ def kernel := ⟦
 
   -- Check definitional equality of two values: first try a quick syntactic check,
   -- then reduce to WHNF and compare structurally
-  fn k_is_def_eq(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
+  fn k_is_def_eq(a: KVal, b: KVal, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
     let quick = k_quick_def_eq(a, b);
     match quick {
       1 => 1,
@@ -1608,8 +1584,8 @@ def kernel := ⟦
 
   -- Compare a Nat literal with a Nat constructor value
   fn nat_lit_eq_ctor(
-    lit: KLiteral, ctor_idx: G, nparams: G, ctor_spine: KValList,
-    depth: G, top: KConstList, nat_idx: G, str_idx: G
+    lit: KLiteral, ctor_idx: G, nparams: G, ctor_spine: List‹&KVal›,
+    depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G
   ) -> G {
     match lit {
       KLiteral.Nat(&n) =>
@@ -1641,7 +1617,7 @@ def kernel := ⟦
   }
 
   -- Structural definitional equality after WHNF
-  fn k_is_def_eq_core(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
+  fn k_is_def_eq_core(a: KVal, b: KVal, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
     match a {
       KVal.Srt(&la) =>
         match b {
@@ -1711,7 +1687,7 @@ def kernel := ⟦
             match dom_eq {
               0 => 0,
               1 =>
-                let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
+                let fvar = KVal.FVar(depth, store(dom_a), store(List.Nil));
                 let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
                 let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
                 let va = k_eval(body_a, env_a2, top);
@@ -1720,7 +1696,7 @@ def kernel := ⟦
             },
           _ =>
             -- Eta: lam vs non-lam
-            let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
+            let fvar = KVal.FVar(depth, store(dom_a), store(List.Nil));
             let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
             let va = k_eval(body_a, env_a2, top);
             let vb = k_apply(b, fvar, top);
@@ -1734,7 +1710,7 @@ def kernel := ⟦
             match dom_eq {
               0 => 0,
               1 =>
-                let fvar = KVal.FVar(depth, store(dom_a), store(KValList.Nil));
+                let fvar = KVal.FVar(depth, store(dom_a), store(List.Nil));
                 let env_a2 = KValEnv.Cons(store(fvar), store(env_a));
                 let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
                 let va = k_eval(body_a, env_a2, top);
@@ -1764,7 +1740,7 @@ def kernel := ⟦
       _ =>
         match b {
           KVal.Lam(&dom_b, &body_b, &env_b) =>
-            let fvar = KVal.FVar(depth, store(dom_b), store(KValList.Nil));
+            let fvar = KVal.FVar(depth, store(dom_b), store(List.Nil));
             let va = k_apply(a, fvar, top);
             let env_b2 = KValEnv.Cons(store(fvar), store(env_b));
             let vb = k_eval(body_b, env_b2, top);
@@ -1777,17 +1753,17 @@ def kernel := ⟦
   }
 
   -- Pointwise definitional equality of two value spines
-  fn k_is_def_eq_spine(a: KValList, b: KValList, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
+  fn k_is_def_eq_spine(a: List‹&KVal›, b: List‹&KVal›, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
     match a {
-      KValList.Nil =>
+      List.Nil =>
         match b {
-          KValList.Nil => 1,
+          List.Nil => 1,
           _ => 0,
         },
-      KValList.Cons(&va, &ra) =>
+      List.Cons(&va, &ra) =>
         match b {
-          KValList.Nil => 0,
-          KValList.Cons(&vb, &rb) =>
+          List.Nil => 0,
+          List.Cons(&vb, &rb) =>
             let eq = k_is_def_eq(va, vb, depth, top, nat_idx, str_idx);
             match eq {
               0 => 0,
@@ -1798,17 +1774,17 @@ def kernel := ⟦
   }
 
   -- Pointwise semantic equality of two level lists
-  fn k_is_def_eq_levels(a: KLevelList, b: KLevelList) -> G {
+  fn k_is_def_eq_levels(a: List‹&KLevel›, b: List‹&KLevel›) -> G {
     match a {
-      KLevelList.Nil =>
+      List.Nil =>
         match b {
-          KLevelList.Nil => 1,
+          List.Nil => 1,
           _ => 0,
         },
-      KLevelList.Cons(&la, &ra) =>
+      List.Cons(&la, &ra) =>
         match b {
-          KLevelList.Nil => 0,
-          KLevelList.Cons(&lb, &rb) =>
+          List.Nil => 0,
+          List.Cons(&lb, &rb) =>
             let eq = level_equal(la, lb);
             match eq {
               0 => 0,
@@ -1819,7 +1795,7 @@ def kernel := ⟦
   }
 
   -- Lazy delta: try unfolding one or both constants to make progress
-  fn k_lazy_delta(a: KVal, b: KVal, depth: G, top: KConstList, nat_idx: G, str_idx: G) -> G {
+  fn k_lazy_delta(a: KVal, b: KVal, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
     let a_unfolded = try_delta_unfold(a, top);
     let b_unfolded = try_delta_unfold(b, top);
     let a_changed = delta_changed(a, a_unfolded);
@@ -1832,7 +1808,7 @@ def kernel := ⟦
 
   -- Try to delta-unfold a VConst value by looking up its definition and evaluating it;
   -- returns the original value if it is opaque or not a definition
-  fn try_delta_unfold(v: KVal, top: KConstList) -> KVal {
+  fn try_delta_unfold(v: KVal, top: List‹&KConstantInfo›) -> KVal {
     match v {
       KVal.Const(idx, &lvls, &spine) =>
         let ci = const_list_lookup(top, idx);
@@ -1881,55 +1857,48 @@ def kernel := ⟦
 
   -- Type-check a single constant declaration against the environment.
   -- nat_idx/str_idx are the constant indices for the Nat/String types.
-  fn k_check_const(ci: KConstantInfo, top: KConstList, nat_idx: G, str_idx: G) {
+  fn k_check_const(ci: KConstantInfo, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) {
     match ci {
       KConstantInfo.Axiom(_, &ty, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Defn(_, &ty, &value, _, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
-        k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        k_check(value, ty_val, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Thm(_, &ty, &value) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, KValEnv.Nil, top);
-        k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        k_check(value, ty_val, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Opaque(_, &ty, &value, is_unsafe) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx);
         match is_unsafe {
           1 => (),
           0 =>
             let ty_val = k_eval(ty, KValEnv.Nil, top);
-            k_check(value, ty_val, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+            k_check(value, ty_val, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
         },
 
       KConstantInfo.Quot(_, &ty, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Induct(_, &ty, _, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Ctor(_, &ty, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
 
       KConstantInfo.Rec(_, &ty, _, _, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, KValList.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
+        let _ = k_ensure_sort(ty, List.Nil, KValEnv.Nil, 0, top, nat_idx, str_idx),
     }
   }
 
-  fn k_const_list_length(list: KConstList) -> G {
-    match list {
-      KConstList.Nil => 0,
-      KConstList.Cons(_, &rest) => k_const_list_length(rest) + 1,
-    }
-  }
-
-  fn k_check_all_go(consts: KConstList, top: KConstList, nat_idx: G, str_idx: G, idx: G) {
+  fn k_check_all_go(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G, idx: G) {
     match consts {
-      KConstList.Nil => (),
-      KConstList.Cons(&ci, &rest) =>
+      List.Nil => (),
+      List.Cons(&ci, &rest) =>
         let _ = k_check_const(ci, top, nat_idx, str_idx);
         k_check_all_go(rest, top, nat_idx, str_idx, idx + 1),
     }

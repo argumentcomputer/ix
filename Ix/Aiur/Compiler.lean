@@ -1,7 +1,8 @@
 module
 public import Ix.Aiur.Compiler.Lower
 public import Ix.Aiur.Compiler.Dedup
-public import Ix.Aiur.Simple
+public import Ix.Aiur.Compiler.Concretize
+public import Ix.Aiur.Compiler.Simple
 
 /-!
 Aiur compiler pipeline: type-check, simplify, lower to bytecode and deduplicate.
@@ -26,6 +27,7 @@ structure CompiledToplevel where
 
 def Toplevel.compile (t : Toplevel) : Except String CompiledToplevel := do
   let typedDecls ← t.checkAndSimplify.mapError toString
+  let typedDecls ← typedDecls.concretize
   let (bytecodeRaw, preNameMap) ← typedDecls.toBytecode
   let (bytecode, remap) := bytecodeRaw.deduplicate
   let nameMap := preNameMap.fold (init := (∅ : Std.HashMap Global Bytecode.FunIdx))

@@ -61,10 +61,12 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     | .ok env => LSpec.lspecEachIO aiurTestCases fun tc => pure (env.runTestCase tc)),
   ("aiur-hashes", do
     IO.println "aiur-hashes"
-    let .ok blake3Env := AiurTestEnv.build (IxVM.byteStream.merge IxVM.blake3)
+    let .ok blake3Env := AiurTestEnv.build (do
+        let t ← IxVM.templates.merge IxVM.byteStream; t.merge IxVM.blake3)
       | IO.eprintln "Blake3 setup failed"; return 1
     let r1 ← LSpec.lspecEachIO blake3TestCases fun tc => pure (blake3Env.runTestCase tc)
-    let .ok sha256Env := AiurTestEnv.build (IxVM.byteStream.merge IxVM.sha256)
+    let .ok sha256Env := AiurTestEnv.build (do
+        let t ← IxVM.templates.merge IxVM.byteStream; t.merge IxVM.sha256)
       | IO.eprintln "SHA256 setup failed"; return 1
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),

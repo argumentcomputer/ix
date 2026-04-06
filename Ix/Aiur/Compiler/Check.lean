@@ -1,6 +1,7 @@
 module
-public import Ix.Aiur.Term
+public import Ix.Aiur.TypedTerm
 public import Std.Data.HashSet
+public import Std.Data.HashMap
 
 public section
 
@@ -15,6 +16,8 @@ inductive CheckError
   | notAFunction : Global → CheckError
   | cannotApply : Global → CheckError
   | notADataType : Global → CheckError
+  | wrongNumTypeArgs : Global → Nat → Nat → CheckError
+  | duplicatedTypeParam : Global → String → CheckError
   | typeMismatch : Typ → Typ → CheckError
   | illegalReturn : CheckError
   | wrongNumArgs : Global → Nat → Nat → CheckError
@@ -31,13 +34,35 @@ inductive CheckError
   | notAPointer : Typ → CheckError
   | duplicatedBind : Pattern → CheckError
   | typeAliasCycle : Global → CheckError
+  | unconstrainedConstructor : Global → CheckError
+  | infiniteType : Nat → Typ → CheckError
+  | unresolvedMVar : Nat → CheckError
   deriving Repr
 
 instance : ToString CheckError where
   toString e := repr e |>.pretty
 
+/-- Apply a type-parameter substitution to a type. -/
+partial def Typ.instantiate (subst : Global → Option Typ) : Typ → Typ
+  | .unit => .unit
+  | .field => .field
+  | .tuple ts => .tuple (ts.map (Typ.instantiate subst))
+  | .array t n => .array (Typ.instantiate subst t) n
+  | .pointer t => .pointer (Typ.instantiate subst t)
+  | .ref g => (subst g).getD (.ref g)
+  | .app g args => .app g (args.map (Typ.instantiate subst))
+  | .function ins out => .function (ins.map (Typ.instantiate subst)) (Typ.instantiate subst out)
+  | .mvar n => .mvar n
+
+/-- Build a substitution from params ↦ type-arguments. -/
+def mkParamSubst (params : List String) (args : Array Typ) : Global → Option Typ :=
+  let m : Std.HashMap Global Typ := (params.zip args.toList).foldl
+    (fun m (p, t) => m.insert (Global.init p) t) {}
+  fun g => m[g]?
+
 /--
 Eagerly expands type aliases, building the aliasMap on demand and detecting cycles.
+Handles both `.ref g` (to non-parameterized alias) and `.app g args` (to parameterized alias).
 -/
 partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array TypeAlias) :
     Typ → StateT (Std.HashMap Global Typ) (Except CheckError) Typ
@@ -54,54 +79,57 @@ partial def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array 
   | .array t n => do
     let t' ← expandTypeM visited toplevelAliases t
     pure $ .array t' n
-  | .typeRef g => do
-    let aliasMap ← get
-    -- Check if already expanded
-    if let some expanded := aliasMap[g]? then
-      return expanded
-    -- Check if it's an alias
-    if let some (alias : TypeAlias) := toplevelAliases.find? (·.name == g) then
-      -- Check for cycle
+  | .app g args => do
+    let args' ← args.mapM (expandTypeM visited toplevelAliases)
+    if let some alias := toplevelAliases.find? (·.name == g) then
       if visited.contains g then
         throw $ .typeAliasCycle g
-      -- Expand the alias recursively
+      if alias.params.length != args'.size then
+        throw $ .wrongNumTypeArgs g alias.params.length args'.size
+      let subst := mkParamSubst alias.params args'
+      let instantiated := Typ.instantiate subst alias.expansion
+      expandTypeM (visited.insert g) toplevelAliases instantiated
+    else
+      pure $ .app g args'
+  | .ref g => do
+    let aliasMap ← get
+    -- Check if already expanded (cache)
+    if let some expanded := aliasMap[g]? then
+      return expanded
+    -- Check if it's an alias (non-parameterized only here)
+    if let some (alias : TypeAlias) := toplevelAliases.find? (·.name == g) then
+      if visited.contains g then
+        throw $ .typeAliasCycle g
+      if !alias.params.isEmpty then
+        throw $ .wrongNumTypeArgs g alias.params.length 0
       let expanded ← expandTypeM (visited.insert g) toplevelAliases alias.expansion
-      -- Save to aliasMap
       set (aliasMap.insert g expanded)
       return expanded
     else
-      -- It's a dataType, keep it
-      pure $ .typeRef g
+      pure $ .ref g
+  | .mvar n => pure $ .mvar n
 
-/--
-Constructs a map of declarations from a toplevel, expanding all type aliases.
-Type aliases are not added to the declarations - they are eliminated during construction.
--/
+/-- Constructs a map of declarations from a toplevel, expanding all type aliases. -/
 def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
-  -- Check for duplicate names among aliases
   let mut allNames : Std.HashSet Global := {}
   for alias in toplevel.typeAliases do
     if allNames.contains alias.name then
-      throw $ CheckError.duplicatedDefinition alias.name
+      throw $ .duplicatedDefinition alias.name
     allNames := allNames.insert alias.name
 
-  -- Build aliasMap by expanding all aliases in order
   let initAliasMap := {}
   let (_, finalAliasMap) ← (toplevel.typeAliases.mapM fun (alias : TypeAlias) => do
-    -- Expand and save the alias
     let expanded ← expandTypeM {} toplevel.typeAliases alias.expansion
     modify fun (aliasMap : Std.HashMap Global Typ) => aliasMap.insert alias.name expanded
   ).run initAliasMap
 
-  -- Helper to expand types in the declarations using the built aliasMap
   let expandTyp (typ : Typ) : Except CheckError Typ :=
     (expandTypeM {} toplevel.typeAliases typ).run' finalAliasMap
 
-  -- Add functions with expanded types
   let mut decls : Decls := default
   for function in toplevel.functions do
     if allNames.contains function.name then
-      throw $ CheckError.duplicatedDefinition function.name
+      throw $ .duplicatedDefinition function.name
     allNames := allNames.insert function.name
     let inputs' ← function.inputs.mapM fun (loc, typ) => do
       let typ' ← expandTyp typ
@@ -110,10 +138,9 @@ def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
     let function' := { function with inputs := inputs', output := output' }
     decls := decls.insert function.name (.function function')
 
-  -- Add datatypes with expanded types
   for dataType in toplevel.dataTypes do
     if allNames.contains dataType.name then
-      throw $ CheckError.duplicatedDefinition dataType.name
+      throw $ .duplicatedDefinition dataType.name
     allNames := allNames.insert dataType.name
     let mut constructors : List Constructor := []
     for ctor in dataType.constructors do
@@ -121,33 +148,127 @@ def Toplevel.mkDecls (toplevel : Toplevel) : Except CheckError Decls := do
       constructors := constructors.concat { ctor with argTypes := argTypes' }
     let dataType' := { dataType with constructors }
     decls := decls.insert dataType.name (.dataType dataType')
-    -- Add constructors
     for ctor in constructors do
       let ctorName := dataType.name.pushNamespace ctor.nameHead
       if allNames.contains ctorName then
-        throw $ CheckError.duplicatedDefinition ctorName
+        throw $ .duplicatedDefinition ctorName
       allNames := allNames.insert ctorName
       decls := decls.insert ctorName (.constructor dataType' ctor)
 
   pure decls
 
+/-! ## Inference monad and unification -/
+
 structure CheckContext where
   decls : Decls
   varTypes : Std.HashMap Local Typ
   returnType : Typ
+  typeParams : List String
 
-abbrev CheckM := ReaderT CheckContext (Except CheckError)
+structure CheckState where
+  nextMVar : Nat := 0
+  mvarSubst : Std.HashMap Nat Typ := {}
+
+abbrev CheckM := ReaderT CheckContext (StateT CheckState (Except CheckError))
+
+def freshMVar : CheckM Typ := do
+  let idx := (← get).nextMVar
+  modify fun s => { s with nextMVar := s.nextMVar + 1 }
+  pure $ .mvar idx
+
+/-- Walks the mvar substitution chain. -/
+partial def walkTyp : Typ → CheckM Typ
+  | .mvar id => do
+    match (← get).mvarSubst[id]? with
+    | some t => walkTyp t
+    | none => pure (.mvar id)
+  | t => pure t
+
+/-- Occurs check: does mvar `id` appear in type `t`? -/
+partial def occursIn (id : Nat) : Typ → CheckM Bool
+  | .mvar id' => do
+    match (← get).mvarSubst[id']? with
+    | some t => occursIn id t
+    | none => pure (id == id')
+  | .tuple ts => ts.anyM (occursIn id)
+  | .array t _ => occursIn id t
+  | .pointer t => occursIn id t
+  | .function ins out => do
+    if ← ins.anyM (occursIn id) then pure true else occursIn id out
+  | .app _ args => args.anyM (occursIn id)
+  | _ => pure false
+
+/-- Bind an mvar to a type, with occurs check. -/
+def bindMVar (id : Nat) (t : Typ) : CheckM Unit := do
+  if ← occursIn id t then throw $ .infiniteType id t
+  modify fun s => { s with mvarSubst := s.mvarSubst.insert id t }
+
+/-- First-order unification. Returns `true` on success, `false` on mismatch. -/
+partial def unifyTyp (t1 t2 : Typ) : CheckM Bool := do
+  let t1 ← walkTyp t1
+  let t2 ← walkTyp t2
+  match t1, t2 with
+  | .mvar a, .mvar b =>
+    if a == b then pure true else do bindMVar a (.mvar b); pure true
+  | .mvar a, _ => do bindMVar a t2; pure true
+  | _, .mvar b => do bindMVar b t1; pure true
+  | .unit, .unit | .field, .field => pure true
+  | .tuple ts1, .tuple ts2 =>
+    if ts1.size != ts2.size then pure false else
+      ts1.zip ts2 |>.allM fun (x, y) => unifyTyp x y
+  | .array t1' n1, .array t2' n2 =>
+    if n1 != n2 then pure false else unifyTyp t1' t2'
+  | .pointer t1', .pointer t2' => unifyTyp t1' t2'
+  | .ref g1, .ref g2 => pure (g1 == g2)
+  | .function ins1 out1, .function ins2 out2 => do
+    if ins1.length != ins2.length then pure false else
+    let inOk ← ins1.zip ins2 |>.allM fun (x, y) => unifyTyp x y
+    if !inOk then pure false else unifyTyp out1 out2
+  | .app g1 a1, .app g2 a2 =>
+    if g1 != g2 || a1.size != a2.size then pure false else
+      a1.zip a2 |>.allM fun (x, y) => unifyTyp x y
+  | _, _ => pure false
+
+/-- Apply the current substitution, recursively resolving mvars. -/
+partial def zonkTyp : Typ → CheckM Typ
+  | .mvar id => do
+    match (← get).mvarSubst[id]? with
+    | some t => zonkTyp t
+    | none => pure (.mvar id)
+  | .tuple ts => do pure $ .tuple (← ts.mapM zonkTyp)
+  | .array t n => do pure $ .array (← zonkTyp t) n
+  | .pointer t => do pure $ .pointer (← zonkTyp t)
+  | .function ins out => do pure $ .function (← ins.mapM zonkTyp) (← zonkTyp out)
+  | .app g args => do pure $ .app g (← args.mapM zonkTyp)
+  | t => pure t
+
+/-- Create fresh mvars for each type parameter and build the substitution. -/
+def instantiateParams (params : List String) : CheckM (Array Typ × (Global → Option Typ)) := do
+  let mvars ← (params.toArray.mapM fun _ => freshMVar)
+  pure (mvars, mkParamSubst params mvars)
+
+/-! ## Type inference -/
 
 /-- Retrieves the type of a global reference. -/
-def refLookup (global : Global) : CheckM Typ := do
+def refLookup (global : Global) : CheckM (Typ × Array Typ) := do
   let ctx ← read
   match ctx.decls.getByKey global with
   | some (.function function) =>
-    pure $ .function (function.inputs.map Prod.snd) function.output
+    if function.params.isEmpty then
+      pure (.function (function.inputs.map Prod.snd) function.output, #[])
+    else
+      let (mvars, subst) ← instantiateParams function.params
+      let inputs := function.inputs.map (Typ.instantiate subst ∘ Prod.snd)
+      let output := Typ.instantiate subst function.output
+      pure (.function inputs output, mvars)
   | some (.constructor dataType constructor) =>
     let args := constructor.argTypes
     unless args.isEmpty do (throw $ .wrongNumArgs global args.length 0)
-    pure $ .typeRef $ dataType.name
+    if dataType.params.isEmpty then
+      pure (.ref dataType.name, #[])
+    else
+      let (mvars, _) ← instantiateParams dataType.params
+      pure (.app dataType.name mvars, mvars)
   | some _ => throw $ .notAValue global
   | none => throw $ .unboundGlobal global
 
@@ -162,7 +283,8 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
   | .unit => pure ⟨.unit, .unit, false⟩
   | .var x => inferVariable x
   | .ref x => do
-    pure ⟨← refLookup x, .ref x, false⟩
+    let (typ, tArgs) ← refLookup x
+    pure ⟨typ, .ref x tArgs, false⟩
   | .ret term => inferReturn term
   | .data data => inferData data
   | .let pat expr body => inferLet pat expr body
@@ -200,7 +322,7 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
 
 partial def checkNoEscape (term : Term) (typ : Typ) : CheckM TypedTermInner := do
   let (typ', inner) ← inferNoEscape term
-  unless typ == typ' do throw $ .typeMismatch typ typ'
+  unless ← unifyTyp typ typ' do throw $ .typeMismatch typ typ'
   pure inner
 
 partial def inferNoEscape (term : Term) : CheckM (Typ × TypedTermInner) := do
@@ -208,20 +330,13 @@ partial def inferNoEscape (term : Term) : CheckM (Typ × TypedTermInner) := do
   if typedTerm.escapes then throw .illegalReturn
   pure (typedTerm.typ, typedTerm.inner)
 
-partial def inferUnop
-  (a : Term)
-  (op : TypedTerm → TypedTermInner)
-  (typ : Typ) :
-  CheckM TypedTerm := do
+partial def inferUnop (a : Term) (op : TypedTerm → TypedTermInner) (typ : Typ) :
+    CheckM TypedTerm := do
   let a ← fieldTerm <$> checkNoEscape a .field
   pure ⟨typ, op a, false⟩
 
-partial def inferBinop
-  (a : Term)
-  (b : Term)
-  (op : TypedTerm → TypedTerm → TypedTermInner)
-  (typ : Typ) :
-  CheckM TypedTerm := do
+partial def inferBinop (a b : Term) (op : TypedTerm → TypedTerm → TypedTermInner) (typ : Typ) :
+    CheckM TypedTerm := do
   let a ← fieldTerm <$> checkNoEscape a .field
   let b ← fieldTerm <$> checkNoEscape b .field
   pure ⟨typ, op a b, false⟩
@@ -270,37 +385,37 @@ partial def inferStore (term : Term) : CheckM TypedTerm := do
 
 partial def inferLoad (term : Term) : CheckM TypedTerm := do
   let (typ, inner) ← inferNoEscape term
-  match typ with
+  match ← walkTyp typ with
   | .pointer innerTyp =>
     let load := .load ⟨typ, inner, false⟩
     pure ⟨innerTyp, load, false⟩
-  | _ => throw $ .notAPointer typ
+  | typ' => throw $ .notAPointer typ'
 
 partial def inferPtrVal (term : Term) : CheckM TypedTerm := do
   let (typ, inner) ← inferNoEscape term
-  match typ with
+  match ← walkTyp typ with
   | .pointer _ => pure $ fieldTerm (.ptrVal ⟨typ, inner, false⟩)
-  | _ => throw $ .notAPointer typ
+  | typ' => throw $ .notAPointer typ'
 
 partial def inferIoGetInfo (key : Term) : CheckM TypedTerm := do
   let (typ, keyInner) ← inferNoEscape key
-  match typ with
+  match ← walkTyp typ with
   | .array .. =>
     let ioGetInfo := .ioGetInfo ⟨typ, keyInner, false⟩
     pure ⟨.tuple #[.field, .field], ioGetInfo, false⟩
-  | _ => throw $ .notAnArray typ
+  | typ' => throw $ .notAnArray typ'
 
 partial def inferIoSetInfo (key idx len ret : Term) : CheckM TypedTerm := do
   let (keyTyp, keyInner) ← inferNoEscape key
-  match keyTyp with
+  match ← walkTyp keyTyp with
   | .array keyEltTyp _ =>
-    if keyEltTyp != .field then throw $ .typeMismatch .field keyEltTyp
+    unless ← unifyTyp keyEltTyp .field do throw $ .typeMismatch .field keyEltTyp
     let idx ← fieldTerm <$> checkNoEscape idx .field
     let len ← fieldTerm <$> checkNoEscape len .field
     let ret ← inferTerm ret
     let ioSetInfo := .ioSetInfo ⟨keyTyp, keyInner, false⟩ idx len ret
     pure ⟨ret.typ, ioSetInfo, ret.escapes⟩
-  | _ => throw $ .notAnArray keyTyp
+  | typ' => throw $ .notAnArray typ'
 
 partial def inferIoRead (idx : Term) (len : Nat) : CheckM TypedTerm := do
   if len = 0 then throw .emptyArray
@@ -310,20 +425,20 @@ partial def inferIoRead (idx : Term) (len : Nat) : CheckM TypedTerm := do
 
 partial def inferIoWrite (data ret : Term) : CheckM TypedTerm := do
   let (dataTyp, dataInner) ← inferNoEscape data
-  match dataTyp with
+  match ← walkTyp dataTyp with
   | .array dataEltTyp _ =>
-    if dataEltTyp != .field then throw $ .typeMismatch .field dataEltTyp
+    unless ← unifyTyp dataEltTyp .field do throw $ .typeMismatch .field dataEltTyp
     let ret ← inferTerm ret
     let ioWrite := .ioWrite ⟨dataTyp, dataInner, false⟩ ret
     pure ⟨ret.typ, ioWrite, ret.escapes⟩
-  | _ => throw $ .notAnArray dataTyp
+  | typ' => throw $ .notAnArray typ'
 
 partial def inferVariable (x : Local) : CheckM TypedTerm := do
   let ctx ← read
   match (ctx.varTypes[x]?, x) with
   | (some t, _) => pure ⟨t, .var x, false⟩
   | (none, Local.str localName) =>
-    let typ ← refLookup (Global.init localName)
+    let (typ, _) ← refLookup (Global.init localName)
     pure ⟨typ, .var x, false⟩
   | (none, _) => throw $ .unboundLocal x
 
@@ -339,7 +454,8 @@ partial def inferLet (pat : Pattern) (expr : Term) (body : Term) : CheckM TypedT
   let body' ← withReader (bindIdents bindings) (inferTerm body)
   pure ⟨body'.typ, .let pat expr' body', body'.escapes⟩
 
-partial def checkArgsAndInputs (func : Global) (args : List Term) (inputs : List Typ) : CheckM (List TypedTerm) := do
+partial def checkArgsAndInputs (func : Global) (args : List Term) (inputs : List Typ) :
+    CheckM (List TypedTerm) := do
   let lenArgs := args.length
   let lenInputs := inputs.length
   unless lenArgs == lenInputs do throw $ .wrongNumArgs func lenArgs lenInputs
@@ -348,23 +464,39 @@ partial def checkArgsAndInputs (func : Global) (args : List Term) (inputs : List
     pure ⟨input, inner, false⟩
   args.zip inputs |>.mapM pass
 
-partial def inferGlobalApplication (func : Global) (args : List Term) (u : Bool) : CheckM TypedTerm := do
+partial def inferGlobalApplication (func : Global) (args : List Term) (u : Bool) :
+    CheckM TypedTerm := do
   let ctx ← read
   match ctx.decls.getByKey func with
   | some (.function function) =>
-    let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
-    pure ⟨function.output, .app func args u, false⟩
+    if function.params.isEmpty then
+      let args ← checkArgsAndInputs func args (function.inputs.map Prod.snd)
+      pure ⟨function.output, .app func #[] args u, false⟩
+    else
+      let (mvars, subst) ← instantiateParams function.params
+      let inputTypes := function.inputs.map (Typ.instantiate subst ∘ Prod.snd)
+      let output := Typ.instantiate subst function.output
+      let args ← checkArgsAndInputs func args inputTypes
+      pure ⟨output, .app func mvars args u, false⟩
   | some (.constructor dataType constr) =>
-    let args ← checkArgsAndInputs func args constr.argTypes
-    pure ⟨.typeRef dataType.name, .app func args u, false⟩
+    if u then throw $ .unconstrainedConstructor func
+    if dataType.params.isEmpty then
+      let args ← checkArgsAndInputs func args constr.argTypes
+      pure ⟨.ref dataType.name, .app func #[] args u, false⟩
+    else
+      let (mvars, subst) ← instantiateParams dataType.params
+      let argTypes := constr.argTypes.map (Typ.instantiate subst)
+      let args ← checkArgsAndInputs func args argTypes
+      pure ⟨.app dataType.name mvars, .app func mvars args u, false⟩
   | _ => throw $ .cannotApply func
 
-partial def inferLocalApplication (func : Global) (unqualifiedFunc : String) (args : List Term) (u : Bool) : CheckM TypedTerm := do
+partial def inferLocalApplication (func : Global) (unqualifiedFunc : String)
+    (args : List Term) (u : Bool) : CheckM TypedTerm := do
   let ctx ← read
   match ctx.varTypes[Local.str unqualifiedFunc]? with
   | some (.function inputs output) => do
     let args ← checkArgsAndInputs func args inputs
-    pure ⟨output, .app func args u, false⟩
+    pure ⟨output, .app func #[] args u, false⟩
   | some _ => throw $ .notAFunction func
   | none => inferGlobalApplication func args u
 
@@ -404,7 +536,6 @@ partial def inferData : Data → CheckM TypedTerm
       pure ⟨.array typ terms.size, .data (.array typedTerms), false⟩
     else throw .emptyArray
 
-/-- Infers the type of a 'match' expression and ensures its patterns and branches are valid. -/
 partial def inferMatch (term : Term) (branches : List (Pattern × Term)) : CheckM TypedTerm := do
   let (termTyp, termInner) ← inferNoEscape term
   let term := ⟨termTyp, termInner, false⟩
@@ -430,20 +561,21 @@ where
         else if matchEscapes then
           pure (typedBranches, some (typedBranch.typ, false))
         else
-          -- Neither branch escapes so their types must match
-          unless (matchTyp == typedBranch.typ) do throw $ .branchMismatch matchTyp typedBranch.typ
+          unless ← unifyTyp matchTyp typedBranch.typ do
+            throw $ .branchMismatch matchTyp typedBranch.typ
           pure (typedBranches, currentTypOpt))
 
-/-- Checks that a pattern matches a given type and collects its bindings. -/
 partial def checkPattern (pat : Pattern) (typ : Typ) : CheckM $ List (Local × Typ) := do
   let binds ← aux pat typ
   let locals := binds.map Prod.fst
   unless (locals == locals.eraseDups) do throw $ .duplicatedBind pat
   pure binds
 where
-  aux pat typ := match (pat, typ) with
+  aux pat typ := do
+    let typ ← walkTyp typ
+    match (pat, typ) with
     | (.var var, _) => pure [(var, typ)]
-    | (.wildcard, _)
+    | (.wildcard, _) => pure []
     | (.field _, .field) => pure []
     | (.tuple pats, .tuple typs) => do
       unless pats.size == typs.size do throw $ .incompatiblePattern pat typ
@@ -453,19 +585,29 @@ where
       pats.foldlM (init := []) fun acc pat => acc.append <$> aux pat innerTyp
     | (.ref funcName [], typ@(.function ..)) => do
       let ctx ← read
-      let some (.function function) := ctx.decls.getByKey funcName | throw $ .incompatiblePattern pat typ
+      let some (.function function) := ctx.decls.getByKey funcName
+        | throw $ .incompatiblePattern pat typ
       let typ' := .function (function.inputs.map Prod.snd) function.output
-      unless typ == typ' do throw $ .typeMismatch typ typ'
+      unless ← unifyTyp typ typ' do throw $ .typeMismatch typ typ'
       pure []
-    | (.ref constrRef pats, .typeRef dataTypeRef) => do
+    | (.ref constrRef pats, .ref dataTypeRef) => do
       let ctx ← read
       let some (.dataType dataType) := ctx.decls.getByKey dataTypeRef | unreachable!
-      let some (.constructor dataType' constr) := ctx.decls.getByKey constrRef | throw $ .notAConstructor constrRef
+      let some (.constructor dataType' constr) := ctx.decls.getByKey constrRef
+        | throw $ .notAConstructor constrRef
       unless dataType == dataType' do throw $ .incompatiblePattern pat typ
       let typs := constr.argTypes
-      let lenPats := pats.length
-      let lenTyps := typs.length
-      unless lenPats == lenTyps do throw $ .wrongNumArgs constrRef lenPats lenTyps
+      unless pats.length == typs.length do throw $ .wrongNumArgs constrRef pats.length typs.length
+      pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
+    | (.ref constrRef pats, .app dataTypeRef args) => do
+      let ctx ← read
+      let some (.dataType dataType) := ctx.decls.getByKey dataTypeRef | unreachable!
+      let some (.constructor dataType' constr) := ctx.decls.getByKey constrRef
+        | throw $ .notAConstructor constrRef
+      unless dataType == dataType' do throw $ .incompatiblePattern pat typ
+      let subst := mkParamSubst dataType.params args
+      let typs := constr.argTypes.map (Typ.instantiate subst)
+      unless pats.length == typs.length do throw $ .wrongNumArgs constrRef pats.length typs.length
       pats.zip typs |>.foldlM (init := []) fun acc (pat, typ) => acc.append <$> aux pat typ
     | (.or pat pat', _) => do
       let bind ← aux pat typ
@@ -476,29 +618,80 @@ where
 
 partial def inferTuple (term : Term) : CheckM (Array Typ × TypedTermInner) := do
   let (typ, inner) ← inferNoEscape term
-  let .tuple typs := typ | throw $ .notATuple typ
-  pure (typs, inner)
+  match ← walkTyp typ with
+  | .tuple typs => pure (typs, inner)
+  | typ' => throw $ .notATuple typ'
 
 partial def inferArray (term : Term) : CheckM (Typ × Nat × TypedTermInner) := do
   let (typ, inner) ← inferNoEscape term
-  let .array typ n := typ | throw $ .notAnArray typ
-  pure (typ, n, inner)
+  match ← walkTyp typ with
+  | .array typ n => pure (typ, n, inner)
+  | typ' => throw $ .notAnArray typ'
+end
+
+/-! ## Zonking: apply substitution through the TypedTerm tree -/
+
+mutual
+partial def zonkTypedTerm (t : TypedTerm) : CheckM TypedTerm := do
+  pure ⟨← zonkTyp t.typ, ← zonkInner t.inner, t.escapes⟩
+
+partial def zonkInner : TypedTermInner → CheckM TypedTermInner
+  | .unit => pure .unit
+  | .var x => pure (.var x)
+  | .ref g tArgs => do pure (.ref g (← tArgs.mapM zonkTyp))
+  | .data d => .data <$> zonkData d
+  | .ret t => .ret <$> zonkTypedTerm t
+  | .let pat v b => do pure $ .let pat (← zonkTypedTerm v) (← zonkTypedTerm b)
+  | .match t bs => do
+    pure $ .match (← zonkTypedTerm t)
+      (← bs.mapM fun (p, b) => return (p, ← zonkTypedTerm b))
+  | .app g tArgs args u => do
+    pure $ .app g (← tArgs.mapM zonkTyp) (← args.mapM zonkTypedTerm) u
+  | .add a b => do pure $ .add (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .sub a b => do pure $ .sub (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .mul a b => do pure $ .mul (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .eqZero a => do pure $ .eqZero (← zonkTypedTerm a)
+  | .proj a n => do pure $ .proj (← zonkTypedTerm a) n
+  | .get a n => do pure $ .get (← zonkTypedTerm a) n
+  | .slice a i j => do pure $ .slice (← zonkTypedTerm a) i j
+  | .set a n v => do pure $ .set (← zonkTypedTerm a) n (← zonkTypedTerm v)
+  | .store a => do pure $ .store (← zonkTypedTerm a)
+  | .load a => do pure $ .load (← zonkTypedTerm a)
+  | .ptrVal a => do pure $ .ptrVal (← zonkTypedTerm a)
+  | .assertEq a b r => do
+    pure $ .assertEq (← zonkTypedTerm a) (← zonkTypedTerm b) (← zonkTypedTerm r)
+  | .ioGetInfo k => do pure $ .ioGetInfo (← zonkTypedTerm k)
+  | .ioSetInfo k i l r => do
+    pure $ .ioSetInfo (← zonkTypedTerm k) (← zonkTypedTerm i)
+      (← zonkTypedTerm l) (← zonkTypedTerm r)
+  | .ioRead i n => do pure $ .ioRead (← zonkTypedTerm i) n
+  | .ioWrite d r => do pure $ .ioWrite (← zonkTypedTerm d) (← zonkTypedTerm r)
+  | .u8BitDecomposition a => do pure $ .u8BitDecomposition (← zonkTypedTerm a)
+  | .u8ShiftLeft a => do pure $ .u8ShiftLeft (← zonkTypedTerm a)
+  | .u8ShiftRight a => do pure $ .u8ShiftRight (← zonkTypedTerm a)
+  | .u8Xor a b => do pure $ .u8Xor (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .u8Add a b => do pure $ .u8Add (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .u8Sub a b => do pure $ .u8Sub (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .u8And a b => do pure $ .u8And (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .u8Or a b => do pure $ .u8Or (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .u8LessThan a b => do pure $ .u8LessThan (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .u32LessThan a b => do pure $ .u32LessThan (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .debug l t r => do
+    pure $ .debug l (← t.mapM zonkTypedTerm) (← zonkTypedTerm r)
+
+partial def zonkData : TypedData → CheckM TypedData
+  | .field g => pure (.field g)
+  | .tuple ts => do pure $ .tuple (← ts.mapM zonkTypedTerm)
+  | .array ts => do pure $ .array (← ts.mapM zonkTypedTerm)
 end
 
 def getFunctionContext (function : Function) (decls : Decls) : CheckContext :=
-  {
-    decls,
+  { decls
     varTypes := .ofList function.inputs
     returnType := function.output
-  }
+    typeParams := function.params }
 
-/--
-Ensures that all declarations are wellformed by checking that every datatype reference
-points to an actual datatype in the toplevel.
-
-Note: it's assumed that all constructor declarations are properly extracted from the
-original datatypes.
--/
+/-- Well-formedness: verify type references resolve. -/
 partial def wellFormedDecls (decls : Decls) : Except CheckError Unit := do
   let mut visited := default
   for (_, decl) in decls.pairs do
@@ -506,32 +699,54 @@ partial def wellFormedDecls (decls : Decls) : Except CheckError Unit := do
     | .error e _ => throw e
     | .ok () visited' => visited := visited'
 where
+  checkUniqueParams (name : Global) (params : List String) :
+      EStateM CheckError (Std.HashSet Global) Unit :=
+    let rec go : List String → Std.HashSet String → EStateM CheckError (Std.HashSet Global) Unit
+      | [], _ => pure ()
+      | p :: ps, seen =>
+        if seen.contains p then throw $ .duplicatedTypeParam name p
+        else go ps (seen.insert p)
+    go params {}
   wellFormedDecl : Declaration → EStateM CheckError (Std.HashSet Global) Unit
     | .dataType dataType => do
       let map ← get
       if !map.contains dataType.name then
         set $ map.insert dataType.name
-        dataType.constructors.flatMap (·.argTypes) |>.forM wellFormedType
+        checkUniqueParams dataType.name dataType.params
+        dataType.constructors.flatMap (·.argTypes) |>.forM (wellFormedType dataType.params)
     | .function function => do
-      wellFormedType function.output
-      function.inputs.forM fun (_, typ) => wellFormedType typ
-    -- No need to check constructors because they come from datatype declarations.
+      checkUniqueParams function.name function.params
+      wellFormedType function.params function.output
+      function.inputs.forM fun (_, typ) => wellFormedType function.params typ
     | .constructor .. => pure ()
-  wellFormedType : Typ → EStateM CheckError (Std.HashSet Global) Unit
-    | .tuple typs => typs.forM wellFormedType
-    | .pointer pointerTyp => wellFormedType pointerTyp
-    | .typeRef typeRef => match decls.getByKey typeRef with
-      | some (.dataType _) => pure ()
-      | some _ => throw $ .notADataType typeRef
-      | none => throw $ .unboundGlobal typeRef
+  wellFormedType (params : List String) : Typ → EStateM CheckError (Std.HashSet Global) Unit
+    | .tuple typs => typs.forM (wellFormedType params)
+    | .pointer pointerTyp => wellFormedType params pointerTyp
+    | .array t _ => wellFormedType params t
+    | .ref ref =>
+      if params.any (· == ref.toName.toString) then pure ()
+      else match decls.getByKey ref with
+      | some (.dataType dt) =>
+        unless dt.params.isEmpty do throw $ .wrongNumTypeArgs ref 0 dt.params.length
+      | some _ => throw $ .notADataType ref
+      | none => throw $ .unboundGlobal ref
+    | .app g args => match decls.getByKey g with
+      | some (.dataType dt) => do
+        unless args.size == dt.params.length do
+          throw $ .wrongNumTypeArgs g args.size dt.params.length
+        args.forM (wellFormedType params)
+      | some _ => throw $ .notADataType g
+      | none => throw $ .unboundGlobal g
     | _ => pure ()
 
-/-- Checks a function to ensure its body's type matches its declared output type. -/
+/-- Check a function, zonking the resulting TypedTerm. -/
 def checkFunction (function : Function) : CheckM TypedFunction := do
   let body ← inferTerm function.body
   unless body.escapes do
-    unless body.typ == function.output do throw $ .typeMismatch body.typ function.output
-  pure ⟨function.name, function.inputs, function.output, body, function.entry⟩
+    unless ← unifyTyp body.typ function.output do
+      throw $ .typeMismatch body.typ function.output
+  let body ← zonkTypedTerm body
+  pure ⟨function.name, function.params, function.inputs, function.output, body, function.entry⟩
 
 end Aiur
 

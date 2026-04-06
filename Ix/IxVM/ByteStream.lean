@@ -11,11 +11,6 @@ def byteStream := ⟦
     Nil
   }
 
-  enum ByteStreamList {
-    Nil,
-    Cons(ByteStream, &ByteStreamList)
-  }
-
   type U64 = [G; 8]
 
   fn byte_stream_concat(a: ByteStream, b: ByteStream) -> ByteStream {
@@ -245,11 +240,6 @@ def byteStream := ⟦
     [sum3_with_carry, sum2_with_carry, sum1_with_carry, sum0]
   }
 
-  enum U64List {
-    Cons(U64, &U64List),
-    Nil
-  }
-
   -- Computes the predecessor of an `u64` assumed to be properly represented in
   -- little-endian bytes. If that's not the case, this implementation has UB.
   fn relaxed_u64_pred(bytes: U64) -> U64 {
@@ -281,10 +271,10 @@ def byteStream := ⟦
     }
   }
 
-  fn u64_list_length(xs: U64List) -> U64 {
+  fn u64_list_length(xs: List‹U64›) -> U64 {
     match xs {
-      U64List.Nil => [0; 8],
-      U64List.Cons(_, rest) => relaxed_u64_succ(u64_list_length(load(rest))),
+      List.Nil => [0; 8],
+      List.Cons(_, rest) => relaxed_u64_succ(u64_list_length(load(rest))),
     }
   }
 
