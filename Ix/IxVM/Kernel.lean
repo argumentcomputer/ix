@@ -1130,8 +1130,6 @@ def kernel := ⟦
             let env2 = List.Cons(store(arg_forced), store(pi_env));
             let next = k_eval(body, env2, top);
             apply_spine_to_type(next, rest, top),
-          -- If not a Pi, we're stuck; return as-is (sentinel)
-          _ => ty_whnf,
         },
     }
   }
