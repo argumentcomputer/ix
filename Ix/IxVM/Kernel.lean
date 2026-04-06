@@ -1314,7 +1314,7 @@ def kernel := ⟦
   -- The most complex part of the kernel. Uses a layered approach:
   --   1. Quick syntactic check (sorts, literals)
   --   2. Reduce both sides to WHNF
-  --   3. Proof irrelevance (both proofs of Props ⟹ compare types)
+  --   3. Proof irrelevance (type is Prop ⟹ equal by irrelevance)
   --   4. Structural comparison (k_is_def_eq_core)
   --   5. Struct eta (s ≡ ⟨s.1, s.2, ...⟩)
   --   6. Unit-like types (one nullary constructor ⟹ all values equal)
@@ -1334,28 +1334,12 @@ def kernel := ⟦
         match quick2 {
           1 => 1,
           0 =>
-            -- Proof irrelevance: if both are proofs (types in Prop), compare types
+            -- Proof irrelevance: a and b share the same type, so if that type is
+            -- Prop then both are proofs of the same proposition and are equal.
             let a_type = k_infer_val_type(a_whnf, top, nat_idx, str_idx);
             let a_is_prop = k_is_prop_val(a_type, top, nat_idx, str_idx);
             match a_is_prop {
-              1 =>
-                let b_type = k_infer_val_type(b_whnf, top, nat_idx, str_idx);
-                let b_is_prop = k_is_prop_val(b_type, top, nat_idx, str_idx);
-                match b_is_prop {
-                  1 =>
-                    k_is_def_eq(a_type, b_type, depth, top, nat_idx, str_idx),
-                  0 =>
-                    let core_res = k_is_def_eq_core(a_whnf, b_whnf, depth, top, nat_idx, str_idx);
-                    match core_res {
-                      0 =>
-                        let eta_res = try_eta_struct(a_whnf, b_whnf, depth, top, nat_idx, str_idx);
-                        match eta_res {
-                          1 => 1,
-                          0 => 0,
-                        },
-                      1 => 1,
-                    },
-                },
+              1 => 1,
               0 =>
                 let core_res = k_is_def_eq_core(a_whnf, b_whnf, depth, top, nat_idx, str_idx);
                 match core_res {
