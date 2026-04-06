@@ -46,72 +46,14 @@ def convert := ⟦
     Mk(ConvertCtx, ConvertKind)
   }
 
-  -- ============================================================================
-  -- Ixon list lookups
-  -- ============================================================================
-
-  fn g_list_lookup(list: List‹G›, idx: G) -> G {
-    match list {
-      List.Cons(v, &rest) =>
-        match idx {
-          0 => v,
-          _ => g_list_lookup(rest, idx - 1),
-        },
-    }
-  }
-
-  fn expr_list_lookup(list: List‹&Expr›, idx: [G; 8]) -> Expr {
-    match list {
-      List.Cons(&e, &rest) =>
-        let z = u64_is_zero(idx);
-        match z {
-          1 => e,
-          0 => expr_list_lookup(rest, relaxed_u64_pred(idx)),
-        },
-    }
-  }
-
-  fn univ_list_lookup(list: List‹&Univ›, idx: [G; 8]) -> Univ {
-    match list {
-      List.Cons(&u, &rest) =>
-        let z = u64_is_zero(idx);
-        match z {
-          1 => u,
-          0 => univ_list_lookup(rest, relaxed_u64_pred(idx)),
-        },
-    }
-  }
-
   fn blob_list_lookup(list: List‹ByteStream›, idx: [G; 8]) -> ByteStream {
     match list {
-      List.Nil => ByteStream.Nil,
+      List.Nil => List.Nil,
       List.Cons(bs, &rest) =>
         let z = u64_is_zero(idx);
         match z {
           1 => bs,
           0 => blob_list_lookup(rest, relaxed_u64_pred(idx)),
-        },
-    }
-  }
-
-  fn mut_const_list_lookup(list: List‹MutConst›, idx: [G; 8]) -> MutConst {
-    match list {
-      List.Cons(mc, &rest) =>
-        let z = u64_is_zero(idx);
-        match z {
-          1 => mc,
-          0 => mut_const_list_lookup(rest, relaxed_u64_pred(idx)),
-        },
-    }
-  }
-
-  fn constructor_list_lookup(list: List‹Constructor›, idx: [G; 8]) -> Constructor {
-    match list {
-      List.Cons(c, &rest) =>
-        let z = u64_is_zero(idx);
-        match z {
-          1 => c,
-          0 => constructor_list_lookup(rest, relaxed_u64_pred(idx)),
         },
     }
   }
@@ -135,7 +77,7 @@ def convert := ⟦
     match idxs {
       List.Nil => List.Nil,
       List.Cons(idx, &rest) =>
-        let u = univ_list_lookup(univs, idx);
+        let u = load(list_lookup_u64(univs, idx));
         List.Cons(store(convert_univ(u)), store(convert_univ_idxs(rest, univs))),
     }
   }
@@ -154,7 +96,7 @@ def convert := ⟦
       -- If this limb is zero and there are no more bytes, return Nil
       _ =>
         match rest_bytes {
-          ByteStream.Nil =>
+          List.Nil =>
             let is_zero = u64_is_zero(limb);
             match is_zero {
               1 => KLimbs.Nil,
@@ -173,8 +115,8 @@ def convert := ⟦
       8 => acc,
       _ =>
         match bytes {
-          ByteStream.Nil => acc,
-          ByteStream.Cons(byte, &rest) =>
+          List.Nil => acc,
+          List.Cons(byte, &rest) =>
             let [v0, v1, v2, v3, v4, v5, v6, v7] = acc;
             match pos {
               0 => bytes_to_u64_limb(rest, [byte, v1, v2, v3, v4, v5, v6, v7], 1),
@@ -196,8 +138,8 @@ def convert := ⟦
       0 => bytes,
       _ =>
         match bytes {
-          ByteStream.Nil => ByteStream.Nil,
-          ByteStream.Cons(_, &rest) => skip_bytes(rest, n - 1),
+          List.Nil => List.Nil,
+          List.Cons(_, &rest) => skip_bytes(rest, n - 1),
         },
     }
   }
@@ -212,24 +154,24 @@ def convert := ⟦
   ) -> KExpr {
     match e {
       Expr.Srt(univ_idx) =>
-        let u = univ_list_lookup(univs, univ_idx);
+        let u = load(list_lookup_u64(univs, univ_idx));
         KExpr.Srt(store(convert_univ(u))),
 
       Expr.Var(idx) =>
         KExpr.BVar(flatten_u64(idx)),
 
       Expr.Ref(ref_idx, &univ_idxs) =>
-        let const_idx = g_list_lookup(ref_idxs, flatten_u64(ref_idx));
+        let const_idx = list_lookup(ref_idxs, flatten_u64(ref_idx));
         let levels = convert_univ_idxs(univ_idxs, univs);
         KExpr.Const(const_idx, store(levels)),
 
       Expr.Rec(rec_idx, &univ_idxs) =>
-        let const_idx = g_list_lookup(recur_idxs, flatten_u64(rec_idx));
+        let const_idx = list_lookup(recur_idxs, flatten_u64(rec_idx));
         let levels = convert_univ_idxs(univ_idxs, univs);
         KExpr.Const(const_idx, store(levels)),
 
       Expr.Prj(type_ref_idx, field_idx, &inner) =>
-        let type_idx = g_list_lookup(ref_idxs, flatten_u64(type_ref_idx));
+        let type_idx = list_lookup(ref_idxs, flatten_u64(type_ref_idx));
         KExpr.Proj(
           type_idx,
           flatten_u64(field_idx),
@@ -266,7 +208,7 @@ def convert := ⟦
           store(convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Share(idx) =>
-        let shared = expr_list_lookup(sharing, idx);
+        let shared = load(list_lookup_u64(sharing, idx));
         convert_expr(shared, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
     }
   }

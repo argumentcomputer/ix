@@ -81,34 +81,12 @@ def kernel := ⟦
     }
   }
 
-  -- Look up a value in a value list by index
-  fn val_list_lookup(list: List‹&KVal›, idx: G) -> KVal {
-    match list {
-      List.Cons(&v, &rest) =>
-        match idx {
-          0 => v,
-          _ => val_list_lookup(rest, idx - 1),
-        },
-    }
-  }
-
   -- Append a value to the end of a list
   fn val_list_snoc(list: List‹&KVal›, v: KVal) -> List‹&KVal› {
     match list {
       List.Nil => List.Cons(store(v), store(List.Nil)),
       List.Cons(&head, &rest) =>
         List.Cons(store(head), store(val_list_snoc(rest, v))),
-    }
-  }
-
-  -- Look up a level in a level list by index
-  fn level_list_lookup(list: List‹&KLevel›, idx: G) -> KLevel {
-    match list {
-      List.Cons(&l, &rest) =>
-        match idx {
-          0 => l,
-          _ => level_list_lookup(rest, idx - 1),
-        },
     }
   }
 
@@ -160,23 +138,6 @@ def kernel := ⟦
       List.Cons(&rule, _) =>
         match rule {
           KRecRule.Mk(ctor_idx, _, _) => ctor_idx,
-        },
-    }
-  }
-
-  -- Extract the first element from a List‹G›
-  fn kg_list_head(list: List‹G›) -> G {
-    match list {
-      List.Cons(v, _) => v,
-    }
-  }
-
-  -- Extract the second element from a List‹G›
-  fn kg_list_second(list: List‹G›) -> G {
-    match list {
-      List.Cons(_, &rest) =>
-        match rest {
-          List.Cons(v, _) => v,
         },
     }
   }
@@ -510,7 +471,7 @@ def kernel := ⟦
         level_max(level_inst_params(a, params), level_inst_params(b, params)),
       KLevel.IMax(&a, &b) =>
         level_imax(level_inst_params(a, params), level_inst_params(b, params)),
-      KLevel.Param(i) => level_list_lookup(params, i),
+      KLevel.Param(i) => load(list_lookup(params, i)),
     }
   }
 
@@ -625,7 +586,7 @@ def kernel := ⟦
         match v {
           KVal.Ctor(_, _, nparams, &spine) =>
             let field_idx = nparams + fidx;
-            let field = val_list_lookup(spine, field_idx);
+            let field = load(list_lookup(spine, field_idx));
             k_force(field, top),
           _ =>
             KVal.Proj(tidx, fidx, store(v), store(List.Nil)),
@@ -698,12 +659,12 @@ def kernel := ⟦
     match ci {
       KConstantInfo.Rec(_, _, nparams, nindices, nmotives, nminors, &rules, k_flag, _) =>
         let maj_idx = nparams + nmotives + nminors + nindices;
-        let spine_len = list_length_g(spine);
+        let spine_len = list_length(spine);
         let not_have_major = eq_zero(spine_len - maj_idx);
         match not_have_major {
           1 => KVal.Const(idx, store(lvls), store(spine)),
           0 =>
-            let major_raw = val_list_lookup(spine, maj_idx);
+            let major_raw = load(list_lookup(spine, maj_idx));
             let major = k_whnf(major_raw, top);
             match major {
               KVal.Ctor(ctor_idx, _, ctor_nparams, &ctor_spine) =>
@@ -718,9 +679,9 @@ def kernel := ⟦
                         let rhs_val = k_eval(rhs_inst, KValEnv.Nil, top);
                         let params_motives_minors = val_list_take(spine, nparams + nmotives + nminors);
                         let result = k_apply_spine(rhs_val, params_motives_minors, top);
-                        let fields = val_list_drop(ctor_spine, ctor_nparams);
+                        let fields = list_drop(ctor_spine, ctor_nparams);
                         let result2 = k_apply_spine(result, fields, top);
-                        let remaining = val_list_drop(spine, maj_idx + 1);
+                        let remaining = list_drop(spine, maj_idx + 1);
                         k_apply_spine(result2, remaining, top),
                     },
                 },
@@ -739,7 +700,7 @@ def kernel := ⟦
                         match is_zero {
                           1 =>
                             -- Lit(0) → fire zero rule with no ctor fields
-                            let zero_ctor_idx = kg_list_head(ctor_indices);
+                            let zero_ctor_idx = list_lookup(ctor_indices, 0);
                             let rule = rec_rule_find(rules, zero_ctor_idx);
                             match rule {
                               KRecRule.Mk(_, _, &rhs) =>
@@ -747,12 +708,12 @@ def kernel := ⟦
                                 let rhs_val = k_eval(rhs_inst, KValEnv.Nil, top);
                                 let pmm = val_list_take(spine, pmm_end);
                                 let result = k_apply_spine(rhs_val, pmm, top);
-                                let remaining = val_list_drop(spine, maj_idx + 1);
+                                let remaining = list_drop(spine, maj_idx + 1);
                                 k_apply_spine(result, remaining, top),
                             },
                           0 =>
                             -- Lit(n+1) → fire succ rule with one field = Lit(n-1)
-                            let succ_ctor_idx = kg_list_second(ctor_indices);
+                            let succ_ctor_idx = list_lookup(ctor_indices, 1);
                             let rule = rec_rule_find(rules, succ_ctor_idx);
                             match rule {
                               KRecRule.Mk(_, _, &rhs) =>
@@ -763,7 +724,7 @@ def kernel := ⟦
                                 let pred = KVal.Lit(KLiteral.Nat(store(klimbs_pred(n))));
                                 let ctor_fields = List.Cons(store(pred), store(List.Nil));
                                 let result2 = k_apply_spine(result, ctor_fields, top);
-                                let remaining = val_list_drop(spine, maj_idx + 1);
+                                let remaining = list_drop(spine, maj_idx + 1);
                                 k_apply_spine(result2, remaining, top),
                             },
                         },
@@ -781,8 +742,8 @@ def kernel := ⟦
                   _ =>
                     -- K-reduction fires: minor is at nparams + nmotives
                     let minor_idx = nparams + nmotives;
-                    let minor = val_list_lookup(spine, minor_idx);
-                    let remaining = val_list_drop(spine, maj_idx + 1);
+                    let minor = load(list_lookup(spine, minor_idx));
+                    let remaining = list_drop(spine, maj_idx + 1);
                     k_apply_spine(minor, remaining, top),
                 },
             },
@@ -804,18 +765,6 @@ def kernel := ⟦
     }
   }
 
-  -- Drop the first n elements of a val list
-  fn val_list_drop(list: List‹&KVal›, n: G) -> List‹&KVal› {
-    match n {
-      0 => list,
-      _ =>
-        match list {
-          List.Cons(_, &rest) =>
-            val_list_drop(rest, n - 1),
-        },
-    }
-  }
-
   -- ============================================================================
   -- Quotient reduction
   -- ============================================================================
@@ -826,14 +775,14 @@ def kernel := ⟦
   -- The idx/lvls/spine are passed through for reconstructing the stuck value on failure.
   fn k_try_quot_reduction(idx: G, lvls: List‹&KLevel›, spine: List‹&KVal›,
       reduce_size: G, f_pos: G, top: List‹&KConstantInfo›) -> KVal {
-    let spine_len = list_length_g(spine);
+    let spine_len = list_length(spine);
     let not_enough = eq_zero(spine_len - reduce_size);
     match not_enough {
       1 => KVal.Const(idx, store(lvls), store(spine)),
       0 =>
         -- Force and WHNF the major arg (last of the reduce_size args)
         let major_idx = reduce_size - 1;
-        let major_raw = val_list_lookup(spine, major_idx);
+        let major_raw = load(list_lookup(spine, major_idx));
         let major = k_whnf(major_raw, top);
         -- Check if major is a Quot.mk application (a Const with QuotKind.Ctor)
         match major {
@@ -845,18 +794,18 @@ def kernel := ⟦
                   KQuotKind.Ctor =>
                     -- mk_spine should have >= 3 args: [α, r, a]
                     -- The quotient value is the last element
-                    let mk_len = list_length_g(mk_spine);
+                    let mk_len = list_length(mk_spine);
                     let no_args = eq_zero(mk_len - 3);
                     match no_args {
                       1 => KVal.Const(idx, store(lvls), store(spine)),
                       0 =>
                         let quot_val_idx = mk_len - 1;
-                        let quot_val = val_list_lookup(mk_spine, quot_val_idx);
+                        let quot_val = load(list_lookup(mk_spine, quot_val_idx));
                         -- Apply f (at f_pos) to the quotient value
-                        let f_val = k_force(val_list_lookup(spine, f_pos), top);
+                        let f_val = k_force(load(list_lookup(spine, f_pos)), top);
                         let result = k_apply(f_val, quot_val, top);
                         -- Apply remaining spine args after reduce_size
-                        let remaining = val_list_drop(spine, reduce_size);
+                        let remaining = list_drop(spine, reduce_size);
                         let result2 = k_apply_spine(result, remaining, top);
                         k_whnf(result2, top),
                     },
@@ -891,7 +840,7 @@ def kernel := ⟦
         match sv2 {
           KVal.Ctor(_, _, nparams, &ctor_spine) =>
             let field_idx = nparams + fidx;
-            let field = val_list_lookup(ctor_spine, field_idx);
+            let field = load(list_lookup(ctor_spine, field_idx));
             let field_forced = k_force(field, top);
             let result = k_apply_spine(field_forced, spine, top);
             k_whnf(result, top),
@@ -1027,7 +976,7 @@ def kernel := ⟦
   fn k_infer(e: KExpr, types: List‹&KVal›, env: KValEnv, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> KVal {
     match e {
       KExpr.BVar(idx) =>
-        val_list_lookup(types, idx),
+        load(list_lookup(types, idx)),
 
       KExpr.Srt(&l) =>
         KVal.Srt(store(KLevel.Succ(store(l)))),
@@ -1043,7 +992,7 @@ def kernel := ⟦
       KExpr.Const(idx, &lvls) =>
         let ci = const_list_lookup(top, idx);
         let expected = const_num_levels(ci);
-        let given = list_length_g(lvls);
+        let given = list_length(lvls);
         let lvl_eq = eq_zero(expected - given);
         assert_eq!(lvl_eq, 1);
         let ty = const_type(ci);
@@ -1105,7 +1054,7 @@ def kernel := ⟦
             let ind_ci = const_list_lookup(top, induct_idx);
             match ind_ci {
               KConstantInfo.Induct(_, _, _, _, &ctor_indices, _, _, _) =>
-                let ctor_idx = kg_list_head(ctor_indices);
+                let ctor_idx = list_lookup(ctor_indices, 0);
                 -- Get the constructor type, instantiate levels, and eval
                 let ctor_ci = const_list_lookup(top, ctor_idx);
                 let ctor_type_expr = const_type(ctor_ci);
@@ -1260,7 +1209,7 @@ def kernel := ⟦
             let ind_ci = const_list_lookup(top, induct_idx);
             match ind_ci {
               KConstantInfo.Induct(_, _, _, _, &ctor_indices, _, _, _) =>
-                let ctor_idx = kg_list_head(ctor_indices);
+                let ctor_idx = list_lookup(ctor_indices, 0);
                 let ctor_ci = const_list_lookup(top, ctor_idx);
                 let ctor_type_expr = const_type(ctor_ci);
                 let ctor_type_inst = expr_inst_levels(ctor_type_expr, levels);
@@ -1322,7 +1271,7 @@ def kernel := ⟦
       0 => 1,
       _ =>
         let field_idx = nparams + current;
-        let field_val = val_list_lookup(spine, field_idx);
+        let field_val = load(list_lookup(spine, field_idx));
         let proj_val = KVal.Proj(tidx, current, store(t), store(List.Nil));
         let eq = k_is_def_eq(proj_val, field_val, depth, top, nat_idx, str_idx);
         match eq {
@@ -1343,7 +1292,7 @@ def kernel := ⟦
             let ind_ci = const_list_lookup(top, induct_idx);
             match ind_ci {
               KConstantInfo.Induct(_, _, _, _, &ctor_indices, _, _, _) =>
-                let num_ctors = list_length_g(ctor_indices);
+                let num_ctors = list_length(ctor_indices);
                 let is_single = eq_zero(num_ctors - 1);
                 match is_single {
                   0 => 0,
@@ -1378,11 +1327,11 @@ def kernel := ⟦
         match ci {
           KConstantInfo.Induct(_, _, _, nindices, &ctor_indices, _, _, _) =>
             let zero_indices = eq_zero(nindices);
-            let one_ctor = eq_zero(list_length_g(ctor_indices) - 1);
+            let one_ctor = eq_zero(list_length(ctor_indices) - 1);
             match zero_indices * one_ctor {
               0 => 0,
               _ =>
-                let ctor_idx = kg_list_head(ctor_indices);
+                let ctor_idx = list_lookup(ctor_indices, 0);
                 let ctor_ci = const_list_lookup(top, ctor_idx);
                 match ctor_ci {
                   KConstantInfo.Ctor(_, _, _, _, _, nfields, _) =>
@@ -1549,15 +1498,15 @@ def kernel := ⟦
   -- Compare two ByteStreams for equality
   fn bytestream_eq(a: ByteStream, b: ByteStream) -> G {
     match a {
-      ByteStream.Nil =>
+      List.Nil =>
         match b {
-          ByteStream.Nil => 1,
+          List.Nil => 1,
           _ => 0,
         },
-      ByteStream.Cons(ba, &ra) =>
+      List.Cons(ba, &ra) =>
         match b {
-          ByteStream.Nil => 0,
-          ByteStream.Cons(bb, &rb) =>
+          List.Nil => 0,
+          List.Cons(bb, &rb) =>
             match ba - bb {
               0 => bytestream_eq(ra, rb),
               _ => 0,
@@ -1606,7 +1555,7 @@ def kernel := ⟦
                 match has_one {
                   0 => 0,
                   1 =>
-                    let pred_val = val_list_lookup(ctor_spine, nparams);
+                    let pred_val = load(list_lookup(ctor_spine, nparams));
                     let pred_lit = KVal.Lit(KLiteral.Nat(store(klimbs_pred(n))));
                     k_is_def_eq(pred_lit, pred_val, depth, top, nat_idx, str_idx),
                 },

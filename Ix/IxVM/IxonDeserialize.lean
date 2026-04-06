@@ -12,8 +12,8 @@ def ixonDeserialize := ⟦
 
   fn read_byte(stream: ByteStream) -> (G, ByteStream) {
     match stream {
-      ByteStream.Cons(byte, &rest) => (byte, rest),
-      ByteStream.Nil => (0, ByteStream.Nil),
+      List.Cons(byte, &rest) => (byte, rest),
+      List.Nil => (0, List.Nil),
     }
   }
 

@@ -1,6 +1,6 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.Templates
+public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
 public import Ix.IxVM.Ingress
@@ -26,8 +26,8 @@ def entrypoints := ⟦
         let (idx, len) = io_get_info([n_minus_1]);
         let bytes = #read_byte_stream(idx, len);
         let (const, rest) = get_constant(bytes);
-        assert_eq!(rest, ByteStream.Nil);
-        let bytes2 = put_constant(const, ByteStream.Nil);
+        assert_eq!(rest, List.Nil);
+        let bytes2 = put_constant(const, List.Nil);
         assert_eq!(bytes, bytes2);
         ixon_serde_test(n_minus_1),
     }
@@ -138,8 +138,8 @@ def entrypoints := ⟦
         let (idx, len) = io_get_info([n_minus_1]);
         let bytes = #read_byte_stream(idx, len);
         let (const, rest) = get_constant(bytes);
-        assert_eq!(rest, ByteStream.Nil);
-        let bytes2 = put_constant(const, ByteStream.Nil);
+        assert_eq!(rest, List.Nil);
+        let bytes2 = put_constant(const, List.Nil);
         assert_eq!(blake3(bytes), blake3(bytes2));
         ixon_serde_blake3_bench(n_minus_1),
     }
@@ -147,7 +147,7 @@ def entrypoints := ⟦
 ⟧
 
 def ixVM : Except Aiur.Global Aiur.Toplevel := do
-  let vm ← templates.merge byteStream
+  let vm ← core.merge byteStream
   let vm ← vm.merge blake3
   let vm ← vm.merge ixon
   let vm ← vm.merge ixonSerialize

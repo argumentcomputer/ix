@@ -6,43 +6,17 @@ public section
 namespace IxVM
 
 def byteStream := ⟦
-  enum ByteStream {
-    Cons(G, &ByteStream),
-    Nil
-  }
+  type ByteStream = List‹G›
 
   type U64 = [G; 8]
 
-  fn byte_stream_concat(a: ByteStream, b: ByteStream) -> ByteStream {
-    match a {
-      ByteStream.Nil => b,
-      ByteStream.Cons(byte, &rest) =>
-        ByteStream.Cons(byte, store(byte_stream_concat(rest, b))),
-    }
-  }
-
-  fn byte_stream_length(bytes: ByteStream) -> U64 {
-    match bytes {
-      ByteStream.Nil => [0; 8],
-      ByteStream.Cons(_, &rest) => relaxed_u64_succ(byte_stream_length(rest)),
-    }
-  }
-
   fn read_byte_stream(idx: G, len: G) -> ByteStream {
     match len {
-      0 => ByteStream.Nil,
+      0 => List.Nil,
       _ =>
         let tail = read_byte_stream(idx + 1, len - 1);
         let [byte] = io_read(idx, 1);
-        ByteStream.Cons(byte, store(tail)),
-    }
-  }
-
-  -- TODO remove this function
-  fn byte_stream_is_empty(input: ByteStream) -> G {
-    match input {
-      ByteStream.Cons(_, _) => 0,
-      ByteStream.Nil => 1,
+        List.Cons(byte, store(tail)),
     }
   }
 
@@ -268,13 +242,6 @@ def byteStream := ⟦
         _ => [255, b1 - 1, b2, b3, b4, b5, b6, b7],
       },
       _ => [b0 - 1, b1, b2, b3, b4, b5, b6, b7],
-    }
-  }
-
-  fn u64_list_length(xs: List‹U64›) -> U64 {
-    match xs {
-      List.Nil => [0; 8],
-      List.Cons(_, rest) => relaxed_u64_succ(u64_list_length(load(rest))),
     }
   }
 

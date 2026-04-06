@@ -26,7 +26,7 @@ def ingress := ⟦
       addr
     );
     let (constant, rest) = get_constant(bytes);
-    assert_eq!(rest, ByteStream.Nil);
+    assert_eq!(rest, List.Nil);
     constant
   }
 
@@ -86,7 +86,7 @@ def ingress := ⟦
 
   -- Build lit_blobs by loading and verifying each blob on demand.
   -- A ref is a blob if it's not in all_addrs (the constant address list).
-  -- For constant refs, returns ByteStream.Nil (never read by conversion).
+  -- For constant refs, returns List.Nil (never read by conversion).
   fn build_lit_blobs(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›) -> List‹ByteStream› {
     match refs {
       List.Nil => List.Nil,
@@ -97,7 +97,7 @@ def ingress := ⟦
             let bs = load_verified_blob(addr);
             List.Cons(bs, store(build_lit_blobs(rest, all_addrs))),
           0 =>
-            List.Cons(ByteStream.Nil, store(build_lit_blobs(rest, all_addrs))),
+            List.Cons(List.Nil, store(build_lit_blobs(rest, all_addrs))),
         },
     }
   }
@@ -183,7 +183,7 @@ def ingress := ⟦
           MutConst.Indc(ind) =>
             match ind {
               Inductive.Mk(_, _, _, _, _, _, _, _, &ctors) =>
-                count_constructor_list(ctors),
+                list_length(ctors),
             },
           _ => count_block_ctors(rest),
         },
@@ -229,31 +229,6 @@ def ingress := ⟦
     }
   }
 
-  -- Count elements in a List‹Constructor›
-  fn count_constructor_list_(ctors: List‹Constructor›) -> [G; 8] {
-    match ctors {
-      List.Nil => [0; 8],
-      List.Cons(_, &rest) =>
-        relaxed_u64_succ(count_constructor_list_(rest)),
-    }
-  }
-
-  -- Count members in a List‹MutConst›
-  fn count_mut_const_list_(members: List‹MutConst›) -> G {
-    match members {
-      List.Nil => 0,
-      List.Cons(_, &rest) => count_mut_const_list_(rest) + 1,
-    }
-  }
-
-  fn kg_list_concat(a: List‹G›, b: List‹G›) -> List‹G› {
-    match a {
-      List.Nil => b,
-      List.Cons(v, &rest) =>
-        List.Cons(v, store(kg_list_concat(rest, b))),
-    }
-  }
-
   -- ============================================================================
   -- Position map: maps loaded addresses to kernel constant positions.
   --
@@ -273,17 +248,10 @@ def ingress := ⟦
       MutConst.Indc(ind) =>
         match ind {
           Inductive.Mk(_, _, _, _, _, _, _, _, &ctors) =>
-            count_constructor_list(ctors) + 1,
+            list_length(ctors) + 1,
         },
       MutConst.Recr(_) => 1,
       MutConst.Defn(_) => 1,
-    }
-  }
-
-  fn count_constructor_list(ctors: List‹Constructor›) -> G {
-    match ctors {
-      List.Nil => 0,
-      List.Cons(_, &rest) => count_constructor_list(rest) + 1,
     }
   }
 
@@ -517,11 +485,11 @@ def ingress := ⟦
           MutConst.Indc(ind) =>
             match ind {
               Inductive.Mk(_, _, _, _, _, _, _, _, &ctors) =>
-                let num_ctors = count_constructor_list(ctors);
+                let num_ctors = list_length(ctors);
                 let induct_pos = block_start + member_offset(members, member_idx);
                 let this_ctors = build_ctor_idxs(num_ctors, induct_pos, 0);
                 let rest_ctors = build_rule_ctor_idxs(rest, block_start, member_idx + 1);
-                kg_list_concat(this_ctors, rest_ctors),
+                list_concat(this_ctors, rest_ctors),
             },
           MutConst.Defn(_) =>
             build_rule_ctor_idxs(rest, block_start, member_idx + 1),
@@ -550,7 +518,7 @@ def ingress := ⟦
       MutConst.Indc(ind) =>
         match ind {
           Inductive.Mk(_, _, _, _, _, _, _, _, &ctors) =>
-            let num_ctors = count_constructor_list(ctors);
+            let num_ctors = list_length(ctors);
             let induct_pos = block_start + member_offset(members, member_idx);
             let ctor_idxs = build_ctor_idxs(num_ctors, induct_pos, 0);
             let indc_input = ConvertInput.Mk(ctx, ConvertKind.CKIndc(ind, store(ctor_idxs)));
@@ -588,16 +556,7 @@ def ingress := ⟦
       List.Cons(mc, &rest) =>
         let this = expand_member(mc, ctx, all_members, block_start, member_idx);
         let more = expand_members(rest, ctx, all_members, block_start, member_idx + 1);
-        convert_input_list_concat(this, more),
-    }
-  }
-
-  -- Concatenate two List‹&ConvertInput›s
-  fn convert_input_list_concat(a: List‹&ConvertInput›, b: List‹&ConvertInput›) -> List‹&ConvertInput› {
-    match a {
-      List.Nil => b,
-      List.Cons(&x, &rest) =>
-        List.Cons(store(x), store(convert_input_list_concat(rest, b))),
+        list_concat(this, more),
     }
   }
 
@@ -627,7 +586,7 @@ def ingress := ⟦
                 let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(recur_idxs), store(lit_blobs), store(univs));
                 let expanded = expand_members(members, ctx, members, pos, 0);
                 let more = build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + size);
-                convert_input_list_concat(expanded, more),
+                list_concat(expanded, more),
               ConstantInfo.IPrj(_) =>
                 build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos),
               ConstantInfo.CPrj(_) =>
@@ -699,15 +658,6 @@ def ingress := ⟦
     }
   }
 
-  -- Concatenate two AddressLists
-  fn address_list_concat(a: List‹[G; 32]›, b: List‹[G; 32]›) -> List‹[G; 32]› {
-    match a {
-      List.Nil => b,
-      List.Cons(addr, &rest) =>
-        List.Cons(addr, store(address_list_concat(rest, b))),
-    }
-  }
-
   -- Recursively load constants and their transitive dependencies.
   -- Processes one address at a time from a worklist, deduplicating by
   -- checking the visited set. Blob addresses are detected via io_get_info:
@@ -750,19 +700,19 @@ def ingress := ⟦
                 let block_addr = get_proj_block_addr(info);
                 match address_eq(block_addr, [0; 32]) {
                   1 =>
-                    let combined_refs = address_list_concat(refs, List.Nil);
-                    let next_worklist = address_list_concat(combined_refs, worklist);
+                    let combined_refs = list_concat(refs, List.Nil);
+                    let next_worklist = list_concat(combined_refs, worklist);
                     match next_worklist {
                       List.Nil => (new_addrs, new_consts),
                       List.Cons(next, &rest) =>
                         load_with_deps(next, rest, new_addrs, new_consts),
                     },
                   0 =>
-                    let combined_refs = address_list_concat(
+                    let combined_refs = list_concat(
                       refs,
                       List.Cons(block_addr, store(List.Nil))
                     );
-                    let next_worklist = address_list_concat(combined_refs, worklist);
+                    let next_worklist = list_concat(combined_refs, worklist);
                     match next_worklist {
                       List.Nil => (new_addrs, new_consts),
                       List.Cons(next, &rest) =>
