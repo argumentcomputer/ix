@@ -46,17 +46,6 @@ def convert := ⟦
     Mk(ConvertCtx, ConvertKind)
   }
 
-  fn blob_list_lookup(list: List‹ByteStream›, idx: [G; 8]) -> ByteStream {
-    match list {
-      List.Nil => List.Nil,
-      List.Cons(bs, &rest) =>
-        let z = u64_is_zero(idx);
-        match z {
-          1 => bs,
-          0 => blob_list_lookup(rest, relaxed_u64_pred(idx)),
-        },
-    }
-  }
 
   -- ============================================================================
   -- Universe conversion: Ixon Univ -> KLevel
@@ -99,12 +88,12 @@ def convert := ⟦
           List.Nil =>
             let is_zero = u64_is_zero(limb);
             match is_zero {
-              1 => KLimbs.Nil,
-              0 => KLimbs.Cons(limb, store(KLimbs.Nil)),
+              1 => List.Nil,
+              0 => List.Cons(limb, store(List.Nil)),
             },
           _ =>
             let rest_limbs = bytes_to_limbs(rest_bytes);
-            KLimbs.Cons(limb, store(rest_limbs)),
+            List.Cons(limb, store(rest_limbs)),
         },
     }
   }
@@ -178,11 +167,11 @@ def convert := ⟦
           store(convert_expr(inner, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Str(blob_ref_idx) =>
-        let bs = blob_list_lookup(lit_blobs, blob_ref_idx);
+        let bs = list_lookup_u64(lit_blobs, blob_ref_idx);
         KExpr.Lit(KLiteral.Str(bs)),
 
       Expr.Nat(blob_ref_idx) =>
-        let bs = blob_list_lookup(lit_blobs, blob_ref_idx);
+        let bs = list_lookup_u64(lit_blobs, blob_ref_idx);
         let limbs = bytes_to_limbs(bs);
         KExpr.Lit(KLiteral.Nat(store(limbs))),
 

@@ -69,6 +69,22 @@ def core := ⟦
         rest,
     }
   }
+
+  fn list_take‹T›(list: List‹T›, n: G) -> List‹T› {
+    match n {
+      0 => List.Nil,
+      _ =>
+        let List.Cons(v, &rest) = list;
+        List.Cons(v, store(list_take(rest, n - 1))),
+    }
+  }
+
+  fn list_snoc‹T›(list: List‹T›, v: T) -> List‹T› {
+    match list {
+      List.Nil => List.Cons(v, store(List.Nil)),
+      List.Cons(head, &rest) => List.Cons(head, store(list_snoc(rest, v))),
+    }
+  }
 ⟧
 
 end IxVM
