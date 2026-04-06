@@ -24,11 +24,8 @@ def kernelTypes := ⟦
 
   -- Nat bignum: little-endian list of u64 limbs (least-significant first).
   -- E.g. the number 0x1_00000000_00000001 is [1, 1] (two limbs).
-  -- Zero is represented as KLimbs.Nil.
-  enum KLimbs {
-    Nil,
-    Cons(U64, &KLimbs)
-  }
+  -- Zero is represented as List.Nil.
+  type KLimbs = List‹U64›
 
   enum KLiteral {
     Nat(&KLimbs),
@@ -68,10 +65,7 @@ def kernelTypes := ⟦
   }
 
   -- Value environment (de Bruijn indexed, front = most recent binder)
-  enum KValEnv {
-    Cons(&KVal, &KValEnv),
-    Nil
-  }
+  type KValEnv = List‹&KVal›
 
   -- ============================================================================
   -- Reducibility Hints
