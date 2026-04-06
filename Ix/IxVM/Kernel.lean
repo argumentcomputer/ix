@@ -974,9 +974,7 @@ def kernel := ⟦
 
         match fn_type_whnf {
           KVal.Pi(&dom, &body, &pi_env) =>
-            let arg_type = k_infer(a, types, env, depth, top, nat_idx, str_idx);
-            let app_eq = k_is_def_eq(arg_type, dom, depth, top, nat_idx, str_idx);
-            assert_eq!(app_eq, 1);
+            let _ = k_check(a, dom, types, env, depth, top, nat_idx, str_idx);
             let arg_val = k_eval(a, env, top);
             let pi_env2 = List.Cons(store(arg_val), store(pi_env));
             k_eval(body, pi_env2, top),
@@ -1005,9 +1003,7 @@ def kernel := ⟦
       KExpr.Let(&ty, &val, &body) =>
         let _ = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, env, top);
-        let val_type = k_infer(val, types, env, depth, top, nat_idx, str_idx);
-        let let_eq = k_is_def_eq(val_type, ty_val, depth, top, nat_idx, str_idx);
-        assert_eq!(let_eq, 1);
+        let _ = k_check(val, ty_val, types, env, depth, top, nat_idx, str_idx);
         let val_val = k_eval(val, env, top);
         let types2 = List.Cons(store(ty_val), store(types));
         let env2 = List.Cons(store(val_val), store(env));
@@ -1063,11 +1059,6 @@ def kernel := ⟦
             let pi_env2 = List.Cons(store(fvar), store(pi_env));
             let expected_body = k_eval(pi_body, pi_env2, top);
             k_check(body, expected_body, types2, env2, depth + 1, top, nat_idx, str_idx),
-          _ =>
-            -- Expected type is not a Pi after whnf, fall back to infer+compare
-            let inferred = k_infer(e, types, env, depth, top, nat_idx, str_idx);
-            let eq = k_is_def_eq(inferred, expected, depth, top, nat_idx, str_idx);
-            assert_eq!(eq, 1);,
         },
       _ =>
         -- Non-lambda: infer + isDefEq
