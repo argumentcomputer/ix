@@ -505,7 +505,7 @@ def kernel := ⟦
   fn k_eval(e: KExpr, env: KValEnv, top: List‹&KConstantInfo›) -> KVal {
     match load(e) {
       KExprNode.BVar(idx) =>
-        list_lookup(env, idx),
+        k_force(list_lookup(env, idx), top),
 
       KExprNode.Srt(&l) =>
         store(KValNode.Srt(store(level_reduce(l)))),
@@ -533,7 +533,7 @@ def kernel := ⟦
         store(KValNode.Pi(ty_val, body, store(env))),
 
       KExprNode.Let(_, val, body) =>
-        let v = k_eval(val, env, top);
+        let v = suspend(val, env);
         let env2 = List.Cons(v, store(env));
         k_eval(body, env2, top),
 
@@ -578,8 +578,7 @@ def kernel := ⟦
   fn k_apply(f: KVal, arg: KVal, top: List‹&KConstantInfo›) -> KVal {
     match load(f) {
       KValNode.Lam(_, body, &env) =>
-        let arg_forced = k_force(arg, top);
-        let env2 = List.Cons(arg_forced, store(env));
+        let env2 = List.Cons(arg, store(env));
         k_eval(body, env2, top),
 
       KValNode.Ctor(idx, &lvls, nparams, &spine) =>
@@ -975,7 +974,7 @@ def kernel := ⟦
         match load(fn_type_whnf) {
           KValNode.Pi(dom, body, &pi_env) =>
             let _ = k_check(a, dom, types, env, depth, top, nat_idx, str_idx);
-            let arg_val = k_eval(a, env, top);
+            let arg_val = suspend(a, env);
             let pi_env2 = List.Cons(arg_val, store(pi_env));
             k_eval(body, pi_env2, top),
         },
@@ -1004,7 +1003,7 @@ def kernel := ⟦
         let _ = k_ensure_sort(ty, types, env, depth, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, env, top);
         let _ = k_check(val, ty_val, types, env, depth, top, nat_idx, str_idx);
-        let val_val = k_eval(val, env, top);
+        let val_val = suspend(val, env);
         let types2 = List.Cons(ty_val, store(types));
         let env2 = List.Cons(val_val, store(env));
         k_infer(body, types2, env2, depth + 1, top, nat_idx, str_idx),
@@ -1028,7 +1027,7 @@ def kernel := ⟦
                 -- Walk past params using values from the inductive's spine
                 let after_params = walk_params(ctor_type_val, params_spine, top);
                 -- Walk past preceding fields using Proj values
-                let struct_val = k_eval(e1, env, top);
+                let struct_val = suspend(e1, env);
                 let after_fields = walk_fields(after_params, tidx, 0, fidx, struct_val, top);
                 -- Extract the domain type at field fidx
                 let result_whnf = k_whnf(after_fields, top);
@@ -1082,11 +1081,10 @@ def kernel := ⟦
     match params {
       List.Nil => ct,
       List.Cons(param_val, &rest_params) =>
-        let param_forced = k_force(param_val, top);
         let ct_whnf = k_whnf(ct, top);
         match load(ct_whnf) {
           KValNode.Pi(_, body, &pi_env) =>
-            let env2 = List.Cons(param_forced, store(pi_env));
+            let env2 = List.Cons(param_val, store(pi_env));
             let next = k_eval(body, env2, top);
             walk_params(next, rest_params, top),
         },
@@ -1123,11 +1121,10 @@ def kernel := ⟦
     match spine {
       List.Nil => ty,
       List.Cons(arg, &rest) =>
-        let arg_forced = k_force(arg, top);
         let ty_whnf = k_whnf(ty, top);
         match load(ty_whnf) {
           KValNode.Pi(_, body, &pi_env) =>
-            let env2 = List.Cons(arg_forced, store(pi_env));
+            let env2 = List.Cons(arg, store(pi_env));
             let next = k_eval(body, env2, top);
             apply_spine_to_type(next, rest, top),
         },
