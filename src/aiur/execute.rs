@@ -117,6 +117,14 @@ impl Function {
         exec_entries_stack.extend($block.ops.iter().rev().map(ExecEntry::Op));
       };
     }
+    macro_rules! panic_with_trace {
+      ($($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        eprintln!("error: {msg}");
+        print_stack_trace(&callers_states_stack, fun_idx, toplevel, 20);
+        panic!("{msg}")
+      }};
+    }
     push_block_exec_entries!(&self.body);
     let mut unconstrained = false;
     while let Some(exec_entry) = exec_entries_stack.pop() {
@@ -166,7 +174,9 @@ impl Function {
           let values = values.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let size = values.len();
           let memory_queries =
-            record.memory_queries.get_mut(&size).expect("Invalid memory size");
+            record.memory_queries.get_mut(&size).unwrap_or_else(|| {
+              panic_with_trace!("Invalid memory size: {size}")
+            });
           if let Some(result) = memory_queries.get_mut(&values) {
             if !unconstrained {
               result.multiplicity += G::ONE;
@@ -184,21 +194,35 @@ impl Function {
         },
         ExecEntry::Op(Op::Load(size, ptr)) => {
           let memory_queries =
-            record.memory_queries.get_mut(size).expect("Invalid memory size");
+            record.memory_queries.get_mut(size).unwrap_or_else(|| {
+              panic_with_trace!("Invalid memory size: {size}")
+            });
           let ptr = &map[*ptr];
           let ptr_u64 = ptr.as_canonical_u64();
-          let ptr_usize = usize::try_from(ptr_u64).expect("Pointer is too big");
+          let ptr_usize = usize::try_from(ptr_u64).unwrap_or_else(|_| {
+            panic_with_trace!("Pointer is too big: {ptr_u64}")
+          });
           let (args, result) =
-            memory_queries.get_index_mut(ptr_usize).expect("Unbound pointer");
+            memory_queries.get_index_mut(ptr_usize).unwrap_or_else(|| {
+              panic_with_trace!("Unbound pointer: {ptr_usize}")
+            });
           if !unconstrained {
             result.multiplicity += G::ONE;
           }
           map.extend(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys)) => {
-          assert_eq!(xs.len(), ys.len());
+          if xs.len() != ys.len() {
+            panic_with_trace!(
+              "AssertEq: length mismatch ({} != {})",
+              xs.len(),
+              ys.len()
+            );
+          }
           for (x, y) in xs.iter().zip(ys) {
-            assert_eq!(map[*x], map[*y]);
+            if map[*x] != map[*y] {
+              panic_with_trace!("AssertEq failed: {} != {}", map[*x], map[*y]);
+            }
           }
         },
         ExecEntry::Op(Op::IOGetInfo(key)) => {
@@ -210,18 +234,18 @@ impl Function {
         ExecEntry::Op(Op::IOSetInfo(key, idx, len)) => {
           let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let get = |x: &usize| {
-            map[*x]
-              .as_canonical_u64()
-              .try_into()
-              .expect("Index is too big for an usize")
+            let v = map[*x].as_canonical_u64();
+            usize::try_from(v).unwrap_or_else(|_| {
+              panic_with_trace!("IOSetInfo index is too big: {v}")
+            })
           };
           io_buffer.set_info(key, get(idx), get(len));
         },
         ExecEntry::Op(Op::IORead(idx, len)) => {
-          let idx = map[*idx]
-            .as_canonical_u64()
-            .try_into()
-            .expect("Index is too big for an usize");
+          let idx_u64 = map[*idx].as_canonical_u64();
+          let idx = usize::try_from(idx_u64).unwrap_or_else(|_| {
+            panic_with_trace!("IORead index is too big: {idx_u64}")
+          });
           let data = io_buffer.read(idx, *len);
           map.extend(data);
         },
@@ -301,10 +325,16 @@ impl Function {
         ExecEntry::Op(Op::U32LessThan(x_idx, y_idx)) => {
           let a_val = map[*x_idx];
           let b_val = map[*y_idx];
-          let a_u32 =
-            u32::try_from(a_val.as_canonical_u64()).expect("Out of range");
-          let b_u32 =
-            u32::try_from(b_val.as_canonical_u64()).expect("Out of range");
+          let a_raw = a_val.as_canonical_u64();
+          let a_u32 = u32::try_from(a_raw).unwrap_or_else(|_| {
+            panic_with_trace!("U32LessThan: left operand out of range: {a_raw}")
+          });
+          let b_raw = b_val.as_canonical_u64();
+          let b_u32 = u32::try_from(b_raw).unwrap_or_else(|_| {
+            panic_with_trace!(
+              "U32LessThan: right operand out of range: {b_raw}"
+            )
+          });
           let result = G::from_bool(a_u32 < b_u32);
           map.push(result);
           if !unconstrained {
@@ -342,8 +372,7 @@ impl Function {
             push_block_exec_entries!(block);
           } else {
             let default = default.as_ref().unwrap_or_else(|| {
-              let name = &toplevel.functions[fun_idx].name;
-              panic!("No match for value: {val}, function: {name}")
+              panic_with_trace!("No match for value: {val}")
             });
             push_block_exec_entries!(default);
           }
@@ -379,6 +408,24 @@ impl Function {
       }
     }
     map
+  }
+}
+
+fn print_stack_trace(
+  callers_states_stack: &[CallerState],
+  fun_idx: FunIdx,
+  toplevel: &Toplevel,
+  limit: usize,
+) {
+  let total = callers_states_stack.len() + 1;
+  eprintln!("Stack trace (most recent call first, {total} frame(s) total):");
+  let current = std::iter::once(fun_idx);
+  let callers = callers_states_stack.iter().rev().map(|s| s.fun_idx);
+  for (frame, idx) in current.chain(callers).take(limit).enumerate() {
+    eprintln!("  #{frame}: {}", toplevel.functions[idx].name);
+  }
+  if total > limit {
+    eprintln!("  ... {} more frame(s) omitted", total - limit);
   }
 }
 
