@@ -1,5 +1,6 @@
 module
 public import Ix.Aiur.Term
+public import Ix.Aiur.Protocol
 
 public section
 
@@ -129,12 +130,32 @@ instance : ToString Interrupt where
 -- Interpreter monad
 -- ---------------------------------------------------------------------------
 
-/-- Interpreter monad: heap state + structured interrupts (errors and returns). -/
-abbrev InterpM := StateT Heap (Except Interrupt)
+/-- Interpreter state: heap + IO buffer. -/
+structure InterpState where
+  heap : Heap
+  ioBuffer : IOBuffer
+
+/-- Interpreter monad: heap + IO buffer state, structured interrupts (errors and returns). -/
+abbrev InterpM := StateT InterpState (Except Interrupt)
 
 /-- Throw a runtime error (call stack starts empty here). -/
 private def throwErr (msg : String) : InterpM α :=
   throw (.error msg [])
+
+private def getHeap : InterpM Heap := return (← get).heap
+private def getIOBuffer : InterpM IOBuffer := return (← get).ioBuffer
+private def modifyHeap (f : Heap → Heap) : InterpM Unit :=
+  modify fun s => { s with heap := f s.heap }
+private def modifyIOBuffer (f : IOBuffer → IOBuffer) : InterpM Unit :=
+  modify fun s => { s with ioBuffer := f s.ioBuffer }
+
+private def expectField : Value → InterpM G
+  | .field g => pure g
+  | v        => throwErr s!"expected field value, got {v}"
+
+private def expectFieldArray : Value → InterpM (Array G)
+  | .array vs => vs.mapM expectField
+  | v         => throwErr s!"expected array of field values, got {v}"
 
 private def lookupVar (bindings : Bindings) (l : Local) : InterpM Value :=
   match bindings.find? (·.1 == l) with
@@ -211,7 +232,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
   -- let: evaluate scrutinee, match pattern, extend bindings
   | .let p t1 t2 => do
       let v    ← interp decls bindings t1
-      let heap ← get
+      let heap ← getHeap
       match matchPattern heap p v with
       | some bs => interp decls (bs ++ bindings) t2
       | none    => throwErr "let: pattern match failed"
@@ -219,7 +240,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
   -- match: try each case in order
   | .match t cases => do
       let v    ← interp decls bindings t
-      let heap ← get
+      let heap ← getHeap
       match cases.findSome? fun (p, body) =>
         matchPattern heap p v |>.map (·, body) with
       | some (bs, body) => interp decls (bs ++ bindings) body
@@ -298,8 +319,10 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
 
   -- heap store: allocate a new cell
   | .store t => do
-      let v   ← interp decls bindings t
-      let idx ← modifyGet fun heap => (heap.size, heap.push v)
+      let v ← interp decls bindings t
+      let heap ← getHeap
+      let idx := heap.size
+      modifyHeap (·.push v)
       return .pointer idx
 
   -- heap load: dereference a pointer
@@ -307,7 +330,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       let v ← interp decls bindings t
       match v with
       | .pointer n =>
-          let heap ← get
+          let heap ← getHeap
           if h : n < heap.size then return heap[n]
           else throwErr s!"load: invalid pointer {n}"
       | _ => throwErr "load: expected pointer"
@@ -323,11 +346,8 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
   | .assertEq t1 t2 ret => do
       let v1 ← interp decls bindings t1
       let v2 ← interp decls bindings t2
-      match v1, v2 with
-      | .field a, .field b =>
-          if a != b then throwErr s!"assertEq: {a.val} ≠ {b.val}"
-          interp decls bindings ret
-      | _, _ => throwErr "assertEq: expected field values"
+      if v1 != v2 then throwErr s!"assertEq: {v1} ≠ {v2}"
+      interp decls bindings ret
 
   -- U8 operations (inputs are field elements encoding bytes 0–255)
 
@@ -336,10 +356,8 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match v with
       | .field g =>
           let byte := g.val.toUInt8
-          let mut bits : Array Value := Array.mkEmpty 8
-          for i in List.range 8 do
-            bits := bits.push (.field (G.ofUInt8 ((byte >>> i.toUInt8) &&& 1)))
-          return .array bits
+          return .array (Array.ofFn fun (i : Fin 8) =>
+            .field (G.ofUInt8 ((byte >>> i.val.toUInt8) &&& 1)))
       | _ => throwErr "u8BitDecomposition: expected field value"
 
   | .u8ShiftLeft t => do
@@ -377,7 +395,10 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       let v1 ← interp decls bindings t1
       let v2 ← interp decls bindings t2
       match v1, v2 with
-      | .field a, .field b => return .field (G.ofUInt8 (a.val.toUInt8 - b.val.toUInt8))
+      | .field a, .field b =>
+          let i := a.val.toUInt8
+          let j := b.val.toUInt8
+          return .tuple #[.field (G.ofUInt8 (i - j)), .field (if j > i then 1 else 0)]
       | _, _ => throwErr "u8Sub: expected field values"
 
   | .u8And t1 t2 => do
@@ -410,49 +431,156 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
           return .field (if a.val.toUInt32 < b.val.toUInt32 then 1 else 0)
       | _, _ => throwErr "u32LessThan: expected field values"
 
-  -- debug: evaluate and discard the optional value, then continue
-  | .debug _ optT cont => do
-      if let some t := optT then
-        let _ ← interp decls bindings t
+  -- debug: print label and optional value, then continue
+  | .debug label optT cont => do
+      match optT with
+      | none   => dbg_trace s!"{label}"
+      | some t =>
+        let v ← interp decls bindings t
+        dbg_trace s!"{label}: {v}"
       interp decls bindings cont
 
-  -- IO operations (not fully supported)
+  -- IO operations
   | .ioGetInfo key => do
-      let _ ← interp decls bindings key
-      throwErr "ioGetInfo: IO not supported in interpreter"
+      let keyGs ← expectFieldArray (← interp decls bindings key)
+      let io ← getIOBuffer
+      match io.map[keyGs]? with
+      | some info =>
+        return .tuple #[.field (.ofNat info.idx), .field (.ofNat info.len)]
+      | none => throwErr s!"ioGetInfo: key not found"
 
   | .ioSetInfo key idx len ret => do
-      let _ ← interp decls bindings key
-      let _ ← interp decls bindings idx
-      let _ ← interp decls bindings len
+      let keyGs ← expectFieldArray (← interp decls bindings key)
+      let idxVal ← expectField (← interp decls bindings idx)
+      let lenVal ← expectField (← interp decls bindings len)
+      let info : IOKeyInfo := ⟨idxVal.val.toNat, lenVal.val.toNat⟩
+      modifyIOBuffer fun io => { io with map := io.map.insert keyGs info }
       interp decls bindings ret
 
-  | .ioRead idx _ => do
-      let _ ← interp decls bindings idx
-      throwErr "ioRead: IO not supported in interpreter"
+  | .ioRead idx len => do
+      let idxVal ← expectField (← interp decls bindings idx)
+      let io ← getIOBuffer
+      let start := idxVal.val.toNat
+      return .array (io.data.extract start (start + len) |>.map .field)
 
   | .ioWrite data ret => do
-      let _ ← interp decls bindings data
+      let dataGs ← expectFieldArray (← interp decls bindings data)
+      modifyIOBuffer fun io => { io with data := io.data ++ dataGs }
       interp decls bindings ret
 
 end -- mutual
+
+-- ---------------------------------------------------------------------------
+-- Flattening values to field elements (matching bytecode layout)
+-- ---------------------------------------------------------------------------
+
+mutual
+
+private partial def typFlatSize (decls : Decls) : Typ → Nat
+  | .unit         => 0
+  | .field        => 1
+  | .pointer _    => 1
+  | .function _ _ => 1
+  | .tuple ts     => ts.foldl (init := 0) fun acc t => acc + typFlatSize decls t
+  | .array t n    => n * typFlatSize decls t
+  | .ref g | .app g _ =>
+      match decls.getByKey g with
+      | some (.dataType dt) => dataTypeFlatSize decls dt
+      | _                   => 0
+  | .mvar _       => 0
+
+private partial def dataTypeFlatSize (decls : Decls) (dt : DataType) : Nat :=
+  let ctorSizes := dt.constructors.map fun ctor =>
+    ctor.argTypes.foldl (init := 0) fun acc t => acc + typFlatSize decls t
+  ctorSizes.foldl max 0 + 1
+
+end
+
+/-- Flatten a `Value` to an `Array G`, matching the bytecode flat layout.
+    `funcIdx` maps function globals to their compiled indices. -/
+partial def flattenValue (decls : Decls) (funcIdx : Global → Option Nat) :
+    Value → Array G
+  | .unit      => #[]
+  | .field g   => #[g]
+  | .pointer n => #[.ofNat n]
+  | .fn g      => #[.ofNat (funcIdx g |>.getD 0)]
+  | .tuple vs  => vs.flatMap (flattenValue decls funcIdx)
+  | .array vs  => vs.flatMap (flattenValue decls funcIdx)
+  | .ctor g args =>
+      match decls.getByKey g with
+      | some (.constructor dt ctor) =>
+          let ctorIndex := dt.constructors.findIdx? (· == ctor) |>.getD 0
+          let dtSize := dataTypeFlatSize decls dt
+          let flat := #[.ofNat ctorIndex] ++ args.flatMap (flattenValue decls funcIdx)
+          let padding := dtSize - flat.size
+          flat ++ Array.replicate padding 0
+      | _ => args.flatMap (flattenValue decls funcIdx)
+
+-- ---------------------------------------------------------------------------
+-- Unflattening field elements to structured values (inverse of flattenValue)
+-- ---------------------------------------------------------------------------
+
+/-- Read a structured `Value` from a flat `Array G` starting at `offset`,
+    guided by the `Typ`. Returns the value and the number of elements consumed. -/
+partial def unflattenValue (decls : Decls) (gs : Array G) (offset : Nat) :
+    Typ → Value × Nat
+  | .unit         => (.unit, 0)
+  | .field        => (.field (gs.getD offset 0), 1)
+  | .pointer _    => (.pointer (gs.getD offset 0).val.toNat, 1)
+  | .function _ _ => (.fn ⟨.anonymous⟩, 1)  -- best effort; index → name not available
+  | .tuple ts     =>
+      let (vs, consumed) := ts.foldl (init := (#[], 0)) fun (acc, off) t =>
+        let (v, n) := unflattenValue decls gs (offset + off) t
+        (acc.push v, off + n)
+      (.tuple vs, consumed)
+  | .array t n    =>
+      let eltSize := typFlatSize decls t
+      let vs := Array.ofFn fun (i : Fin n) =>
+        (unflattenValue decls gs (offset + i.val * eltSize) t).1
+      (.array vs, n * eltSize)
+  | .ref g | .app g _ =>
+      match decls.getByKey g with
+      | some (.dataType dt) =>
+          let dtSize := dataTypeFlatSize decls dt
+          let tag := (gs.getD offset 0).val.toNat
+          let ctors := dt.constructors.toArray
+          if h : tag < ctors.size then
+            let ctor := ctors[tag]
+            let ctorName := dt.name.pushNamespace ctor.nameHead
+            let (args, _) := ctor.argTypes.foldl (init := (#[], 1)) fun (acc, off) t =>
+              let (v, n) := unflattenValue decls gs (offset + off) t
+              (acc.push v, off + n)
+            (.ctor ctorName args, dtSize)
+          else (.field (gs.getD offset 0), dtSize)
+      | _ => (.field (gs.getD offset 0), 1)
+  | .mvar _ => (.unit, 0)
+
+/-- Reconstruct structured input `Value`s from a flat `Array G` according to
+    the function's input types. -/
+def unflattenInputs (decls : Decls) (gs : Array G) (inputTypes : List Typ) :
+    List Value :=
+  let (vals, _) := inputTypes.foldl (init := (#[], 0)) fun (acc, off) t =>
+    let (v, n) := unflattenValue decls gs off t
+    (acc.push v, off + n)
+  vals.toList
 
 -- ---------------------------------------------------------------------------
 -- Top-level entry point
 -- ---------------------------------------------------------------------------
 
 /-- Run a named function with the given input values.
-    Returns `(output, final_heap)` or an `Interrupt`. -/
-def runFunction (decls : Decls) (funcName : Global) (inputs : List Value) :
-    Except Interrupt (Value × Heap) := do
+    Returns `(output, final_state)` or an `Interrupt`. -/
+def runFunction (decls : Decls) (funcName : Global) (inputs : List Value)
+    (ioBuffer : IOBuffer := default) :
+    Except Interrupt (Value × InterpState) := do
   let f ← match decls.getByKey funcName with
     | some (.function f) => pure f
-    | _                  => throw s!"Function not found: {funcName}"
+    | _                  => throw (.error s!"Function not found: {funcName}" [])
   if inputs.length != f.inputs.length then
-    throwErr s!"runFunction: arity mismatch for {funcName}: \
-                    expected {f.inputs.length}, got {inputs.length}"
+    throw (.error s!"runFunction: arity mismatch for {funcName}: \
+                    expected {f.inputs.length}, got {inputs.length}" [])
   let bindings := f.inputs.map (·.1) |>.zip inputs
-  StateT.run (interp decls bindings f.body) #[]
+  StateT.run (interp decls bindings f.body) ⟨#[], ioBuffer⟩
 
 end Aiur
 

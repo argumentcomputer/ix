@@ -14,7 +14,8 @@ def mkBlake3HashTestCase (size : Nat) : AiurTestCase :=
   let output := outputBytes.map .ofUInt8
   let buffer := ⟨input, .ofList [(#[0], ⟨0, size⟩)]⟩ -- key is fixed as #[0]
   { functionName := `blake3_test, label := s!"blake3 (size={size})"
-    expectedOutput := output, inputIOBuffer := buffer, expectedIOBuffer := buffer }
+    expectedOutput := output, inputIOBuffer := buffer, expectedIOBuffer := buffer
+    interpret := false }
 
 def mkSha256HashTestCase (size : Nat) : AiurTestCase :=
   let inputBytes := Array.range size |>.map Nat.toUInt8
@@ -23,7 +24,8 @@ def mkSha256HashTestCase (size : Nat) : AiurTestCase :=
   let output := outputBytes.map .ofUInt8
   let buffer := ⟨input, .ofList [(#[0], ⟨0, size⟩)]⟩ -- key is fixed as #[0]
   { functionName := `sha256_test, label := s!"sha256 (size={size})"
-    expectedOutput := output, inputIOBuffer := buffer, expectedIOBuffer := buffer }
+    expectedOutput := output, inputIOBuffer := buffer, expectedIOBuffer := buffer
+    interpret := false }
 
 public def blake3TestCases : List AiurTestCase := [
   mkBlake3HashTestCase 0,
