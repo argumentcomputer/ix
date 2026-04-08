@@ -24,7 +24,6 @@ use crate::aiur::{
 
 pub struct AiurSystem {
   toplevel: Toplevel,
-  needs_circuit: Vec<bool>,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey,
   system: System<AiurCircuit>,
@@ -83,9 +82,8 @@ impl AiurSystem {
     toplevel: Toplevel,
     commitment_parameters: CommitmentParameters,
   ) -> Self {
-    let needs_circuit = toplevel.needs_circuit();
     let function_circuits = (0..toplevel.functions.len()).filter_map(|i| {
-      if !needs_circuit[i] {
+      if !toplevel.functions[i].constrained {
         None
       } else {
         let (constraints, lookups) = toplevel.build_constraints(i);
@@ -108,7 +106,7 @@ impl AiurSystem {
       commitment_parameters,
       function_circuits.chain(memory_circuits).chain(gadget_circuits),
     );
-    AiurSystem { system, key, toplevel, needs_circuit }
+    AiurSystem { system, key, toplevel }
   }
 
   pub fn prove(
@@ -125,10 +123,10 @@ impl AiurSystem {
     // Build the `SystemWitness`
     let functions =
       (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
-        if !self.needs_circuit[idx] {
-          None
-        } else {
+        if self.toplevel.functions[idx].constrained {
           Some(CircuitType::Function { idx })
+        } else {
+          None
         }
       });
     let memories = self

@@ -68,10 +68,14 @@ structure FunctionLayout where
   lookups : Nat
   deriving Inhabited, Repr, BEq, Hashable
 
+def FunctionLayout.width (l : FunctionLayout) : Nat :=
+  l.inputSize + l.selectors + l.auxiliaries
+
 structure Function where
   body : Block
   layout: FunctionLayout
   entry : Bool
+  constrained : Bool
   deriving Inhabited, Repr
 
 structure Toplevel where
