@@ -144,7 +144,10 @@ def Toplevel.deduplicate (t : Toplevel) : Toplevel × (FunIdx → FunIdx) := Id.
         if j != i && classes[j]! == cls then
           entry := entry || functions[j]!.entry
       let body := rewriteBlock remapFn f.body
-      newFunctions := newFunctions.push { body, layout := f.layout, entry }
+      -- `constrained` is set later by `Toplevel.compile` after the full
+      -- dedup remapping is known, since `needsCircuit` must run on the
+      -- final deduplicated function array.
+      newFunctions := newFunctions.push { body, layout := f.layout, entry, constrained := false }
 
   let toplevel := { t with functions := newFunctions }
   return (toplevel, remapFn)

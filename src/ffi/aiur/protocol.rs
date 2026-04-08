@@ -1,5 +1,5 @@
 use multi_stark::{
-  p3_field::PrimeField64,
+  p3_field::{Field, PrimeField64},
   prover::Proof,
   types::{CommitmentParameters, FriParameters},
 };
@@ -100,13 +100,40 @@ extern "C" fn rs_aiur_toplevel_execute(
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
 
-  let (_query_record, output) =
+  let (query_record, output) =
     toplevel.execute(fun_idx, args.map(|x| lean_unbox_g(&x)), &mut io_buffer);
 
+  // Build query counts: one per function, then one per memory size
+  let mut query_counts: Vec<usize> = Vec::with_capacity(
+    query_record.function_queries.len() + toplevel.memory_sizes.len(),
+  );
+  for queries in &query_record.function_queries {
+    let count =
+      queries.iter().filter(|(_, res)| !res.multiplicity.is_zero()).count();
+    query_counts.push(count);
+  }
+  for size in &toplevel.memory_sizes {
+    let count = query_record.memory_queries.get(size).map_or(0, |q| {
+      q.iter().filter(|(_, res)| !res.multiplicity.is_zero()).count()
+    });
+    query_counts.push(count);
+  }
+  let lean_query_counts = {
+    let arr = LeanArray::alloc(query_counts.len());
+    for (i, &count) in query_counts.iter().enumerate() {
+      arr.set(i, LeanOwned::box_usize(count));
+    }
+    arr
+  };
+
   let lean_io = build_lean_io_buffer(&io_buffer);
+  // (Array G, (Array G × Array (Array G × IOKeyInfo), Array Nat))
+  let io_counts = LeanCtor::alloc(0, 2, 0);
+  io_counts.set(0, lean_io);
+  io_counts.set(1, lean_query_counts);
   let result = LeanCtor::alloc(0, 2, 0);
   result.set(0, build_g_array(&output));
-  result.set(1, lean_io);
+  result.set(1, io_counts);
   result.into()
 }
 

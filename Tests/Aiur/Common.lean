@@ -55,7 +55,7 @@ def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Toplevel) :
 def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : TestSeq :=
   let label := testCase.label
   let funIdx := env.compiled.getFuncIdx testCase.functionName |>.get!
-  let (execOutput, execIOBuffer) := env.compiled.bytecode.execute
+  let (execOutput, execIOBuffer, _queryCounts) := env.compiled.bytecode.execute
     funIdx testCase.input testCase.inputIOBuffer
   let execOutputTest := test s!"Execute output matches for {label}"
     (execOutput == testCase.expectedOutput)

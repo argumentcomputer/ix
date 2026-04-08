@@ -496,7 +496,9 @@ def TypedDecls.toBytecode (decls : TypedDecls) :
         if !function.params.isEmpty then pure acc else do
         let (body, layoutMState) ← function.compile layout
         let nameMap := nameMap.insert function.name functions.size
-        let function := ⟨body, layoutMState.functionLayout, function.entry⟩
+        -- `constrained` is set later by `Toplevel.compile` after deduplication,
+        -- since `needsCircuit` must run on the final deduplicated function array.
+        let function := ⟨body, layoutMState.functionLayout, function.entry, false⟩
         let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
         pure (functions.push function, memSizes, nameMap)
       | _ => pure acc
