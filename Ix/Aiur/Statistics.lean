@@ -46,7 +46,10 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array Nat) :
     acc
   -- One CircuitStats per memory size
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
-    let w := size + 3
+    -- Apart from the values, accounted by `size`, there are also the multiplicity, selector and pointer
+    -- in the first stage, and in the second stage there is the running accumulator and the inverse of the message,
+    -- which are 4 Goldilock elements each
+    let w := size + 11
     let h := queryCounts[nAllFuns + i]!.nextPowerOfTwo
     { name := s!"memory[{size}]",
       width := w, height := h, fftCost := fftCost w h : CircuitStats }
