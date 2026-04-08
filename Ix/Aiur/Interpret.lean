@@ -104,16 +104,42 @@ private def matchPatsArr (heap : Heap) (pats : Array Pattern) (vs : Array Value)
 end
 
 -- ---------------------------------------------------------------------------
+-- Interrupt: early return or runtime error with call-stack trace
+-- ---------------------------------------------------------------------------
+
+/-- An `Interrupt` terminates a computation early.
+    Errors carry a message and a call-stack trace (function + arguments at each
+    call site); the trace starts empty and is extended at every `applyGlobal`
+    call site as the interrupt unwinds. -/
+inductive Interrupt where
+  | error : String → List (Global × List Value) → Interrupt
+  | ret   : Value → Interrupt
+
+instance : ToString Interrupt where
+  toString
+    | .ret v           => s!"unexpected return: {v}"
+    | .error msg []    => msg
+    | .error msg stack =>
+        let frames := stack.map fun (g, args) =>
+          let argStr := String.intercalate ", " (args.map toString)
+          s!"  in {g}({argStr})"
+        msg ++ "\nCall stack:\n" ++ String.intercalate "\n" frames
+
+-- ---------------------------------------------------------------------------
 -- Interpreter monad
 -- ---------------------------------------------------------------------------
 
-/-- Interpreter monad: heap state + error reporting. -/
-abbrev InterpM := StateT Heap (Except String)
+/-- Interpreter monad: heap state + structured interrupts (errors and returns). -/
+abbrev InterpM := StateT Heap (Except Interrupt)
+
+/-- Throw a runtime error (call stack starts empty here). -/
+private def throwErr (msg : String) : InterpM α :=
+  throw (.error msg [])
 
 private def lookupVar (bindings : Bindings) (l : Local) : InterpM Value :=
   match bindings.find? (·.1 == l) with
   | some (_, v) => pure v
-  | none => throw s!"Unbound variable: {repr l}"
+  | none => throwErr s!"Unbound variable: {repr l}"
 
 /-- Try to resolve a Global as a local binding.
     Only simple (unqualified) names can match a `Local.str` binding. -/
@@ -126,20 +152,28 @@ private def tryLocalLookup (g : Global) (bindings : Bindings) : Option Value :=
 -- Main interpreter (mutual with application helpers)
 -- ---------------------------------------------------------------------------
 
+/-- Wrap a function body: captures `.ret v` as the return value, and annotates
+    `.error` interrupts with the call site `(g, args)`. -/
+private def callSite (g : Global) (args : List Value) (m : InterpM Value) : InterpM Value :=
+  tryCatch m fun i => match i with
+    | .ret v           => pure v
+    | .error msg stack => throw (.error msg ((g, args) :: stack))
+
 mutual
 
 /-- Apply a globally-named function or constructor to already-evaluated argument values. -/
 private partial def applyGlobal (decls : Decls) (g : Global) (args : List Value) :
-    InterpM Value := do
-  match decls.getByKey g with
-  | some (.function f) =>
-      if args.length != f.inputs.length then
-        throw s!"arity mismatch calling '{f.name}': \
-                 expected {f.inputs.length}, got {args.length}"
-      interp decls (f.inputs.map (·.1) |>.zip args) f.body
-  | some (.constructor _ _) => return .ctor g args.toArray
-  | none => throw s!"apply: '{g}' is not known"
-  | some (.dataType _) => throw s!"apply: '{g}' is a type, not callable"
+    InterpM Value :=
+  callSite g args do
+    match decls.getByKey g with
+    | some (.function f) =>
+        if args.length != f.inputs.length then
+          throwErr s!"arity mismatch calling '{f.name}': \
+                     expected {f.inputs.length}, got {args.length}"
+        interp decls (f.inputs.map (·.1) |>.zip args) f.body
+    | some (.constructor _ _) => return .ctor g args.toArray
+    | none                    => throwErr s!"apply: '{g}' is not known"
+    | some (.dataType _)      => throwErr s!"apply: '{g}' is a type, not callable"
 
 /-- Apply a locally-bound value (dynamic dispatch) to already-evaluated argument values.
     The value must be a `Value.fn` function pointer. -/
@@ -147,7 +181,7 @@ private partial def applyLocal (decls : Decls) (v : Value) (args : List Value) :
     InterpM Value :=
   match v with
   | .fn g => applyGlobal decls g args
-  | _     => throw s!"apply: expected a function pointer, got {v}"
+  | _     => throwErr s!"apply: expected a function pointer, got {v}"
 
 /-- Interpret a `Term` under the given bindings.
     Heap allocations accumulate in the `InterpM` state. -/
@@ -163,15 +197,15 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       | some (.function _)          => return .fn g
       | some (.constructor _ ctor)  =>
           if ctor.argTypes.isEmpty then return .ctor g #[]
-          else throw s!"ref: constructor '{g}' requires {ctor.argTypes.length} argument(s)"
-      | some (.dataType _)          => throw s!"ref: '{g}' is a type, not a value"
-      | none                        => throw s!"ref: '{g}' is not known"
+          else throwErr s!"ref: constructor '{g}' requires {ctor.argTypes.length} argument(s)"
+      | some (.dataType _)          => throwErr s!"ref: '{g}' is a type, not a value"
+      | none                        => throwErr s!"ref: '{g}' is not known"
 
   | .data (.field g)  => return .field g
   | .data (.tuple ts) => return .tuple (← ts.mapM (interp decls bindings))
   | .data (.array ts) => return .array (← ts.mapM (interp decls bindings))
 
-  | .ret t   => interp decls bindings t
+  | .ret t   => do let v ← interp decls bindings t; throw (.ret v)
   | .ann _ t => interp decls bindings t
 
   -- let: evaluate scrutinee, match pattern, extend bindings
@@ -180,7 +214,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       let heap ← get
       match matchPattern heap p v with
       | some bs => interp decls (bs ++ bindings) t2
-      | none    => throw "let: pattern match failed"
+      | none    => throwErr "let: pattern match failed"
 
   -- match: try each case in order
   | .match t cases => do
@@ -189,7 +223,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match cases.findSome? fun (p, body) =>
         matchPattern heap p v |>.map (·, body) with
       | some (bs, body) => interp decls (bs ++ bindings) body
-      | none            => throw "match: non-exhaustive patterns"
+      | none            => throwErr "match: non-exhaustive patterns"
 
   -- application: check local bindings first (dynamic), then global lookup (static)
   | .app g args _ => do
@@ -204,28 +238,28 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       let v2 ← interp decls bindings t2
       match v1, v2 with
       | .field a, .field b => return .field (addG a b)
-      | _, _ => throw "add: expected field values"
+      | _, _ => throwErr "add: expected field values"
 
   | .sub t1 t2 => do
       let v1 ← interp decls bindings t1
       let v2 ← interp decls bindings t2
       match v1, v2 with
       | .field a, .field b => return .field (subG a b)
-      | _, _ => throw "sub: expected field values"
+      | _, _ => throwErr "sub: expected field values"
 
   | .mul t1 t2 => do
       let v1 ← interp decls bindings t1
       let v2 ← interp decls bindings t2
       match v1, v2 with
       | .field a, .field b => return .field (mulG a b)
-      | _, _ => throw "mul: expected field values"
+      | _, _ => throwErr "mul: expected field values"
 
   -- eqZero: returns 1 if the value is zero, 0 otherwise
   | .eqZero t => do
       let v ← interp decls bindings t
       match v with
       | .field g => return .field (if g.val == 0 then 1 else 0)
-      | _        => throw "eqZero: expected field value"
+      | _        => throwErr "eqZero: expected field value"
 
   -- tuple projection
   | .proj t n => do
@@ -233,8 +267,8 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match v with
       | .tuple vs =>
           if h : n < vs.size then return vs[n]
-          else throw s!"proj: index {n} out of bounds (size {vs.size})"
-      | _ => throw "proj: expected tuple"
+          else throwErr s!"proj: index {n} out of bounds (size {vs.size})"
+      | _ => throwErr "proj: expected tuple"
 
   -- array indexing
   | .get t n => do
@@ -242,15 +276,15 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match v with
       | .array vs =>
           if h : n < vs.size then return vs[n]
-          else throw s!"get: index {n} out of bounds (size {vs.size})"
-      | _ => throw "get: expected array"
+          else throwErr s!"get: index {n} out of bounds (size {vs.size})"
+      | _ => throwErr "get: expected array"
 
   -- array slice
   | .slice t i j => do
       let v ← interp decls bindings t
       match v with
       | .array vs => return .array (vs.extract i j)
-      | _         => throw "slice: expected array"
+      | _         => throwErr "slice: expected array"
 
   -- array update
   | .set t n vTerm => do
@@ -259,8 +293,8 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match arr with
       | .array vs =>
           if n < vs.size then return .array (vs.set! n val)
-          else throw s!"set: index {n} out of bounds (size {vs.size})"
-      | _ => throw "set: expected array"
+          else throwErr s!"set: index {n} out of bounds (size {vs.size})"
+      | _ => throwErr "set: expected array"
 
   -- heap store: allocate a new cell
   | .store t => do
@@ -275,15 +309,15 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       | .pointer n =>
           let heap ← get
           if h : n < heap.size then return heap[n]
-          else throw s!"load: invalid pointer {n}"
-      | _ => throw "load: expected pointer"
+          else throwErr s!"load: invalid pointer {n}"
+      | _ => throwErr "load: expected pointer"
 
   -- pointer address as a field element
   | .ptrVal t => do
       let v ← interp decls bindings t
       match v with
       | .pointer n => return .field (mkG n)
-      | _          => throw "ptrVal: expected pointer"
+      | _          => throwErr "ptrVal: expected pointer"
 
   -- assertion
   | .assertEq t1 t2 ret => do
@@ -291,9 +325,9 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       let v2 ← interp decls bindings t2
       match v1, v2 with
       | .field a, .field b =>
-          if a != b then throw s!"assertEq: {a.val} ≠ {b.val}"
+          if a != b then throwErr s!"assertEq: {a.val} ≠ {b.val}"
           interp decls bindings ret
-      | _, _ => throw "assertEq: expected field values"
+      | _, _ => throwErr "assertEq: expected field values"
 
   -- U8 operations (inputs are field elements encoding bytes 0–255)
 
@@ -306,26 +340,26 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
           for i in List.range 8 do
             bits := bits.push (.field (G.ofUInt8 ((byte >>> i.toUInt8) &&& 1)))
           return .array bits
-      | _ => throw "u8BitDecomposition: expected field value"
+      | _ => throwErr "u8BitDecomposition: expected field value"
 
   | .u8ShiftLeft t => do
       let v ← interp decls bindings t
       match v with
       | .field g => return .field (G.ofUInt8 (g.val.toUInt8 <<< 1))
-      | _        => throw "u8ShiftLeft: expected field value"
+      | _        => throwErr "u8ShiftLeft: expected field value"
 
   | .u8ShiftRight t => do
       let v ← interp decls bindings t
       match v with
       | .field g => return .field (G.ofUInt8 (g.val.toUInt8 >>> 1))
-      | _        => throw "u8ShiftRight: expected field value"
+      | _        => throwErr "u8ShiftRight: expected field value"
 
   | .u8Xor t1 t2 => do
       let v1 ← interp decls bindings t1
       let v2 ← interp decls bindings t2
       match v1, v2 with
       | .field a, .field b => return .field (G.ofUInt8 (a.val.toUInt8 ^^^ b.val.toUInt8))
-      | _, _ => throw "u8Xor: expected field values"
+      | _, _ => throwErr "u8Xor: expected field values"
 
   -- u8Add returns a tuple (sum mod 256, overflow bit)
   | .u8Add t1 t2 => do
@@ -337,28 +371,28 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
           let sum      : Value := .field (G.ofUInt8 x.toUInt8)
           let overflow : Value := .field (if x >= 256 then 1 else 0)
           return .tuple #[sum, overflow]
-      | _, _ => throw "u8Add: expected field values"
+      | _, _ => throwErr "u8Add: expected field values"
 
   | .u8Sub t1 t2 => do
       let v1 ← interp decls bindings t1
       let v2 ← interp decls bindings t2
       match v1, v2 with
       | .field a, .field b => return .field (G.ofUInt8 (a.val.toUInt8 - b.val.toUInt8))
-      | _, _ => throw "u8Sub: expected field values"
+      | _, _ => throwErr "u8Sub: expected field values"
 
   | .u8And t1 t2 => do
       let v1 ← interp decls bindings t1
       let v2 ← interp decls bindings t2
       match v1, v2 with
       | .field a, .field b => return .field (G.ofUInt8 (a.val.toUInt8 &&& b.val.toUInt8))
-      | _, _ => throw "u8And: expected field values"
+      | _, _ => throwErr "u8And: expected field values"
 
   | .u8Or t1 t2 => do
       let v1 ← interp decls bindings t1
       let v2 ← interp decls bindings t2
       match v1, v2 with
       | .field a, .field b => return .field (G.ofUInt8 (a.val.toUInt8 ||| b.val.toUInt8))
-      | _, _ => throw "u8Or: expected field values"
+      | _, _ => throwErr "u8Or: expected field values"
 
   | .u8LessThan t1 t2 => do
       let v1 ← interp decls bindings t1
@@ -366,7 +400,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match v1, v2 with
       | .field a, .field b =>
           return .field (if a.val.toUInt8 < b.val.toUInt8 then 1 else 0)
-      | _, _ => throw "u8LessThan: expected field values"
+      | _, _ => throwErr "u8LessThan: expected field values"
 
   | .u32LessThan t1 t2 => do
       let v1 ← interp decls bindings t1
@@ -374,7 +408,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match v1, v2 with
       | .field a, .field b =>
           return .field (if a.val.toUInt32 < b.val.toUInt32 then 1 else 0)
-      | _, _ => throw "u32LessThan: expected field values"
+      | _, _ => throwErr "u32LessThan: expected field values"
 
   -- debug: evaluate and discard the optional value, then continue
   | .debug _ optT cont => do
@@ -385,7 +419,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
   -- IO operations (not fully supported)
   | .ioGetInfo key => do
       let _ ← interp decls bindings key
-      throw "ioGetInfo: IO not supported in interpreter"
+      throwErr "ioGetInfo: IO not supported in interpreter"
 
   | .ioSetInfo key idx len ret => do
       let _ ← interp decls bindings key
@@ -395,7 +429,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
 
   | .ioRead idx _ => do
       let _ ← interp decls bindings idx
-      throw "ioRead: IO not supported in interpreter"
+      throwErr "ioRead: IO not supported in interpreter"
 
   | .ioWrite data ret => do
       let _ ← interp decls bindings data
@@ -408,15 +442,15 @@ end -- mutual
 -- ---------------------------------------------------------------------------
 
 /-- Run a named function with the given input values.
-    Returns `(output, final_heap)` or an error string. -/
+    Returns `(output, final_heap)` or an `Interrupt`. -/
 def runFunction (decls : Decls) (funcName : Global) (inputs : List Value) :
-    Except String (Value × Heap) := do
+    Except Interrupt (Value × Heap) := do
   let f ← match decls.getByKey funcName with
     | some (.function f) => pure f
     | _                  => throw s!"Function not found: {funcName}"
   if inputs.length != f.inputs.length then
-    throw s!"runFunction: arity mismatch for {funcName}: \
-             expected {f.inputs.length}, got {inputs.length}"
+    throwErr s!"runFunction: arity mismatch for {funcName}: \
+                    expected {f.inputs.length}, got {inputs.length}"
   let bindings := f.inputs.map (·.1) |>.zip inputs
   StateT.run (interp decls bindings f.body) #[]
 
