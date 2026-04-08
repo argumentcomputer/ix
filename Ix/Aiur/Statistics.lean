@@ -25,7 +25,7 @@ structure ExecutionStats where
   circuits : Array CircuitStats
   totalFftCost : Nat
 
-def fftCost (w h : Nat) : Nat := w * h * (max h.log2 1)
+def fftCost (w h : Nat) : Nat := w * h * h.log2
 
 def computeStats (compiled : CompiledToplevel) (queryCounts : Array Nat) :
     ExecutionStats :=
