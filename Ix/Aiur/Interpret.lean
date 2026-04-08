@@ -21,6 +21,34 @@ abbrev Bindings := List (Local × Value)
 abbrev Heap     := Array Value
 
 -- ---------------------------------------------------------------------------
+-- Pretty printing
+-- ---------------------------------------------------------------------------
+
+private def hexDigit (d : Nat) : Char :=
+  if d < 10 then Char.ofNat ('0'.toNat + d)
+  else Char.ofNat ('a'.toNat + d - 10)
+
+private partial def natToHexGo (n : Nat) (acc : String) : String :=
+  if n == 0 then acc
+  else natToHexGo (n / 16) (String.singleton (hexDigit (n % 16)) ++ acc)
+
+private def natToHex (n : Nat) : String :=
+  if n == 0 then "0" else natToHexGo n ""
+
+partial def ppValue : Value → String
+  | .unit      => "()"
+  | .field g   => toString g.val.toNat
+  | .tuple vs  => "(" ++ String.intercalate ", " (vs.toList.map ppValue) ++ ")"
+  | .array vs  => "[" ++ String.intercalate ", " (vs.toList.map ppValue) ++ "]"
+  | .ctor g args =>
+      let name := g.toName.toString
+      if args.isEmpty then name
+      else name ++ "(" ++ String.intercalate ", " (args.toList.map ppValue) ++ ")"
+  | .pointer n => "&0x" ++ natToHex n
+
+instance : ToString Value := ⟨ppValue⟩
+
+-- ---------------------------------------------------------------------------
 -- Field arithmetic helpers
 -- ---------------------------------------------------------------------------
 
