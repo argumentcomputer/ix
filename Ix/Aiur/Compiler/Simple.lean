@@ -1,6 +1,6 @@
 module
 public import Ix.Aiur.Compiler.Match
-public import Ix.Aiur.Compiler.Check
+public import Ix.Aiur.Check
 
 public section
 
