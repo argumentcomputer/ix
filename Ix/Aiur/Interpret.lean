@@ -18,7 +18,7 @@ inductive Value : Type where
   | fn      : Global → Value
   /-- Heap pointer: index into the interpreter heap. -/
   | pointer : Nat → Value
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Hashable, Inhabited
 
 abbrev Bindings := List (Local × Value)
 abbrev Heap     := Array Value
@@ -130,10 +130,15 @@ instance : ToString Interrupt where
 -- Interpreter monad
 -- ---------------------------------------------------------------------------
 
-/-- Interpreter state: heap + IO buffer. -/
+/-- Interpreter state: heap + IO buffer + memoization caches. -/
 structure InterpState where
-  heap : Heap
-  ioBuffer : IOBuffer
+  heap       : Heap
+  ioBuffer   : IOBuffer
+  /-- Memoized results of pure function calls: (function name, args) → result. -/
+  callCache  : Std.HashMap (Global × List Value) Value := {}
+  /-- Inverse of the heap: value → existing pointer index.
+      Ensures each distinct value is stored at most once. -/
+  storeCache : Std.HashMap Value Nat := {}
 
 /-- Interpreter monad: heap + IO buffer state, structured interrupts (errors and returns). -/
 abbrev InterpM := StateT InterpState (Except Interrupt)
@@ -191,7 +196,12 @@ private partial def applyGlobal (decls : Decls) (g : Global) (args : List Value)
         if args.length != f.inputs.length then
           throwErr s!"arity mismatch calling '{f.name}': \
                      expected {f.inputs.length}, got {args.length}"
-        interp decls (f.inputs.map (·.1) |>.zip args) f.body
+        -- Return cached result if available
+        if let some v := (← get).callCache[(g, args)]? then
+          return v
+        let v ← interp decls (f.inputs.map (·.1) |>.zip args) f.body
+        modify fun s => { s with callCache := s.callCache.insert (g, args) v }
+        return v
     | some (.constructor _ _) => return .ctor g args.toArray
     | none                    => throwErr s!"apply: '{g}' is not known"
     | some (.dataType _)      => throwErr s!"apply: '{g}' is a type, not callable"
@@ -317,12 +327,14 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
           else throwErr s!"set: index {n} out of bounds (size {vs.size})"
       | _ => throwErr "set: expected array"
 
-  -- heap store: allocate a new cell
+  -- heap store: allocate a new cell, or return the existing pointer if already stored
   | .store t => do
       let v ← interp decls bindings t
-      let heap ← getHeap
-      let idx := heap.size
+      if let some idx := (← get).storeCache[v]? then
+        return .pointer idx
+      let idx := (← getHeap).size
       modifyHeap (·.push v)
+      modify fun s => { s with storeCache := s.storeCache.insert v idx }
       return .pointer idx
 
   -- heap load: dereference a pointer
@@ -580,7 +592,7 @@ def runFunction (decls : Decls) (funcName : Global) (inputs : List Value)
     throw (.error s!"runFunction: arity mismatch for {funcName}: \
                     expected {f.inputs.length}, got {inputs.length}" [])
   let bindings := f.inputs.map (·.1) |>.zip inputs
-  StateT.run (interp decls bindings f.body) ⟨#[], ioBuffer⟩
+  StateT.run (interp decls bindings f.body) { heap := #[], ioBuffer }
 
 end Aiur
 
