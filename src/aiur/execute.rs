@@ -6,7 +6,7 @@ use crate::{
   FxIndexMap,
   aiur::{
     G,
-    bytecode::{Ctrl, FunIdx, Function, Op, Toplevel},
+    bytecode::{Block, Ctrl, FunIdx, Function, Op, Toplevel},
     gadgets::{
       AiurGadget,
       bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
@@ -98,6 +98,12 @@ struct CallerState {
   fun_idx: FunIdx,
   map: Vec<G>,
   unconstrained: bool,
+  continuation_depth: usize,
+}
+
+struct ContinuationState<'a> {
+  block: &'a Block,
+  map_len: usize,
 }
 
 impl Function {
@@ -111,6 +117,7 @@ impl Function {
   ) -> Vec<G> {
     let mut exec_entries_stack = vec![];
     let mut callers_states_stack = vec![];
+    let mut continuation_stack: Vec<ContinuationState<'_>> = vec![];
     macro_rules! push_block_exec_entries {
       ($block:expr) => {
         exec_entries_stack.push(ExecEntry::Ctrl(&$block.ctrl));
@@ -156,6 +163,7 @@ impl Function {
               fun_idx,
               map: saved_map,
               unconstrained,
+              continuation_depth: continuation_stack.len(),
             });
             fun_idx = *callee_idx;
             unconstrained = unconstrained || *op_unconstrained;
@@ -345,6 +353,34 @@ impl Function {
             push_block_exec_entries!(default);
           }
         },
+        ExecEntry::Ctrl(Ctrl::MatchContinue(
+          val_idx,
+          cases,
+          default,
+          _output_size,
+          _shared_aux,
+          _shared_lookups,
+          continuation,
+        )) => {
+          continuation_stack.push(ContinuationState {
+            block: continuation,
+            map_len: map.len(),
+          });
+          let val = &map[*val_idx];
+          if let Some(block) = cases.get(val) {
+            push_block_exec_entries!(block);
+          } else {
+            let default = default.as_ref().expect("No match");
+            push_block_exec_entries!(default);
+          }
+        },
+        ExecEntry::Ctrl(Ctrl::Yield(_, output)) => {
+          let cont = continuation_stack.pop().expect("No continuation");
+          let yielded: Vec<G> = output.iter().map(|&v| map[v]).collect();
+          map.truncate(cont.map_len);
+          map.extend(yielded);
+          push_block_exec_entries!(cont.block);
+        },
         ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
           // Register the query.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
@@ -359,15 +395,16 @@ impl Function {
             fun_idx: caller_idx,
             map: caller_map,
             unconstrained: caller_unconstrained,
+            continuation_depth,
           }) = callers_states_stack.pop()
           {
-            // Recover the state of the caller.
+            continuation_stack.truncate(continuation_depth);
             fun_idx = caller_idx;
             map = caller_map;
             map.extend(output);
             unconstrained = caller_unconstrained;
           } else {
-            // No outer caller. About to exit.
+            continuation_stack.clear();
             assert!(exec_entries_stack.is_empty());
             map = output;
             break;

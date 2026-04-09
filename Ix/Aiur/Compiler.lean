@@ -44,7 +44,14 @@ private partial def Bytecode.Block.collectConstrainedCallees
     match default? with
     | some block => block.collectConstrainedCallees acc
     | none => acc
-  | .return _ _ => acc
+  | .matchContinue _ cases default? _ _ _ continuation =>
+    let acc := cases.foldl (init := acc) fun acc (_, block) =>
+      block.collectConstrainedCallees acc
+    let acc := match default? with
+      | some block => block.collectConstrainedCallees acc
+      | none => acc
+    continuation.collectConstrainedCallees acc
+  | .return _ _ | .yield _ _ => acc
 
 /-- Compute which functions need a circuit. A function needs a circuit iff it is
 reachable from an entry point through a chain of constrained call edges.

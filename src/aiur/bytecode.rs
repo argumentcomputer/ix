@@ -31,8 +31,6 @@ impl FunctionLayout {
 pub struct Block {
   pub(crate) ops: Vec<Op>,
   pub(crate) ctrl: Ctrl,
-  pub(crate) min_sel_included: SelIdx,
-  pub(crate) max_sel_excluded: SelIdx,
 }
 
 pub enum Op {
@@ -65,6 +63,16 @@ pub enum Op {
 pub enum Ctrl {
   Match(ValIdx, FxIndexMap<G, Block>, Option<Box<Block>>),
   Return(SelIdx, Vec<ValIdx>),
+  Yield(SelIdx, Vec<ValIdx>),
+  MatchContinue(
+    ValIdx,
+    FxIndexMap<G, Block>,
+    Option<Box<Block>>,
+    usize,      // output_size
+    usize,      // shared_auxiliaries
+    usize,      // shared_lookups
+    Box<Block>, // continuation
+  ),
 }
 
 pub type SelIdx = usize;

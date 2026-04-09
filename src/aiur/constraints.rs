@@ -1,24 +1,27 @@
 use multi_stark::{
-  builder::symbolic::{SymbolicExpression, var},
+  builder::symbolic::{Entry, SymbolicExpression, var},
   lookup::Lookup,
   p3_air::{Air, AirBuilder, BaseAir, WindowAccess},
   p3_field::{Field, PrimeCharacteristicRing},
 };
 use std::{array, ops::Range};
 
-use crate::aiur::{
-  G,
-  bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
-  function_channel,
-  gadgets::{
-    AiurGadget,
-    bytes1::{Bytes1, Bytes1Op},
-    bytes2::{Bytes2, Bytes2Op},
+use crate::{
+  FxIndexMap,
+  aiur::{
+    G,
+    bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
+    function_channel,
+    gadgets::{
+      AiurGadget,
+      bytes1::{Bytes1, Bytes1Op},
+      bytes2::{Bytes2, Bytes2Op},
+    },
+    memory_channel, u8_add_channel, u8_and_channel,
+    u8_bit_decomposition_channel, u8_less_than_channel, u8_or_channel,
+    u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
+    u8_sub_channel, u8_xor_channel,
   },
-  memory_channel, u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_less_than_channel, u8_or_channel, u8_range_check_channel,
-  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
-  u8_xor_channel,
 };
 
 type Expr = SymbolicExpression<G>;
@@ -61,6 +64,9 @@ struct ConstraintState {
   lookups: Vec<Lookup<Expr>>,
   map: Vec<(Expr, Degree)>,
   constraints: Constraints,
+  /// Yield info collected from branches, used by MatchContinue.
+  /// NOT part of save/restore so yields persist across branch restores.
+  yield_info: Vec<(Expr, Vec<(Expr, Degree)>)>,
 }
 
 struct SharedState {
@@ -119,8 +125,10 @@ impl Toplevel {
       map: vec![],
       lookups: vec![Lookup::empty(); function.layout.lookups],
       constraints,
+      yield_info: vec![],
     };
     function.build_constraints(&mut state);
+    simplify_selectors(&mut state.constraints);
     (state.constraints, state.lookups)
   }
 }
@@ -153,15 +161,80 @@ impl Function {
 
 impl Block {
   fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState) {
+    // Boolean constraint for this block's selector
+    let block_sel = self.get_block_selector(state);
+    state
+      .constraints
+      .zeros
+      .push(block_sel.clone() * (Expr::from(G::ONE) - block_sel));
     self.ops.iter().for_each(|op| op.collect_constraints(&sel, state));
     self.ctrl.collect_constraints(sel, state);
   }
 
-  fn get_block_selector(&self, state: &mut ConstraintState) -> Expr {
-    (self.min_sel_included..self.max_sel_excluded)
-      .map(|i| var(state.selector_index(i)))
-      .fold(Expr::Constant(G::ZERO), |var, acc| var + acc)
+  /// Compute this block's selector as the sum of its immediate children's
+  /// selectors. For leaf blocks (Return/Yield) this is the single selector
+  /// variable. For Match/MatchContinue this is the sum of case branch
+  /// selectors — crucially excluding the MatchContinue's continuation,
+  /// whose return selector fires alongside a yield selector and must not
+  /// be double-counted.
+  fn get_block_selector(&self, state: &ConstraintState) -> Expr {
+    match &self.ctrl {
+      Ctrl::Return(sel, _) | Ctrl::Yield(sel, _) => {
+        var(state.selector_index(*sel))
+      },
+      Ctrl::Match(_, cases, def) | Ctrl::MatchContinue(_, cases, def, ..) => {
+        let mut sel = Expr::from(G::ZERO);
+        for branch in cases.values() {
+          sel += branch.get_block_selector(state);
+        }
+        if let Some(branch) = def {
+          sel += branch.get_block_selector(state);
+        }
+        sel
+      },
+    }
   }
+}
+
+/// Process match cases and optional default branch, emitting selector-gated
+/// constraints. Each branch is processed with save/restore so branches share
+/// auxiliary columns. Returns (max_column, max_lookup) across all branches.
+fn collect_branch_constraints(
+  var: ValIdx,
+  cases: &FxIndexMap<G, Block>,
+  def: &Option<Box<Block>>,
+  state: &mut ConstraintState,
+) -> (usize, usize) {
+  let (var, _) = state.map[var].clone();
+  let init = state.save();
+  let mut max_column = init.column;
+  let mut max_lookup = init.lookup;
+  for (&value, branch) in cases.iter() {
+    let branch_sel = branch.get_block_selector(state);
+    state
+      .constraints
+      .zeros
+      .push(branch_sel.clone() * (var.clone() - Expr::from(value)));
+    branch.collect_constraints(branch_sel, state);
+    max_column = max_column.max(state.column);
+    max_lookup = max_lookup.max(state.lookup);
+    state.restore(&init);
+  }
+  if let Some(branch) = def {
+    let branch_sel = branch.get_block_selector(state);
+    for &value in cases.keys() {
+      let inverse = state.next_auxiliary();
+      state.constraints.zeros.push(
+        branch_sel.clone()
+          * ((var.clone() - Expr::from(value)) * inverse - Expr::from(G::ONE)),
+      );
+    }
+    branch.collect_constraints(branch_sel, state);
+    max_column = max_column.max(state.column);
+    max_lookup = max_lookup.max(state.lookup);
+    state.restore(&init);
+  }
+  (max_column, max_lookup)
 }
 
 impl Ctrl {
@@ -187,31 +260,163 @@ impl Ctrl {
         combine_lookup_args(lookup, args);
         // multiplicity is already set
       },
-      Ctrl::Match(var, cases, def) => {
-        let (var, _) = state.map[*var].clone();
-        let init = state.save();
-        for (&value, branch) in cases.iter() {
-          let branch_sel = branch.get_block_selector(state);
-          state
-            .constraints
-            .zeros
-            .push(branch_sel.clone() * (var.clone() - Expr::from(value)));
-          branch.collect_constraints(branch_sel, state);
-          state.restore(&init);
-        }
-        if let Some(branch) = def {
-          let branch_sel = branch.get_block_selector(state);
-          for &value in cases.keys() {
-            let inverse = state.next_auxiliary();
-            state.constraints.zeros.push(
-              branch_sel.clone()
-                * ((var.clone() - Expr::from(value)) * inverse
-                  - Expr::from(G::ONE)),
-            );
-          }
-          branch.collect_constraints(branch_sel, state);
-        }
+      Ctrl::Yield(sel, values) => {
+        let yield_sel = var(state.selector_index(*sel));
+        let yield_vals: Vec<(Expr, Degree)> =
+          values.iter().map(|&v| state.map[v].clone()).collect();
+        state.yield_info.push((yield_sel, yield_vals));
       },
+      Ctrl::Match(var, cases, def) => {
+        let (max_column, max_lookup) =
+          collect_branch_constraints(*var, cases, def, state);
+        state.column = max_column;
+        state.lookup = max_lookup;
+      },
+      Ctrl::MatchContinue(
+        var,
+        cases,
+        def,
+        output_size,
+        _shared_aux,
+        _shared_lookups,
+        continuation,
+      ) => {
+        let yield_info_base = state.yield_info.len();
+        let (max_column, max_lookup) =
+          collect_branch_constraints(*var, cases, def, state);
+
+        // Advance past the shared branch region so merge + continuation
+        // auxiliaries don't collide with branch auxiliaries.
+        state.column = max_column;
+        state.lookup = max_lookup;
+
+        // Collect yield info from branches
+        let yields: Vec<_> =
+          state.yield_info.drain(yield_info_base..).collect();
+
+        // Compute continuation selector = sum of yield selectors
+        let cont_sel = yields
+          .iter()
+          .map(|(sel, _)| sel.clone())
+          .fold(Expr::from(G::ZERO), |a, b| a + b);
+
+        // Merge constraints, gated by the parent selector `sel`. Gating is
+        // required because a matchContinue inside a tail match branch may be
+        // inactive (the other branch was taken). At the OOD evaluation point,
+        // ungated constraints on shared auxiliary columns don't evaluate to 0.
+        for i in 0..*output_size {
+          let merged = state.next_auxiliary();
+          let sum = yields
+            .iter()
+            .map(|(sel_j, vals)| sel_j.clone() * vals[i].0.clone())
+            .fold(Expr::from(G::ZERO), |a, b| a + b);
+          state.constraints.zeros.push(sel.clone() * (merged.clone() - sum));
+          state.map.push((merged, 1));
+        }
+
+        // Link continuation selector to the continuation block's selector
+        let cont_block_sel = continuation.get_block_selector(state);
+        state
+          .constraints
+          .zeros
+          .push(sel.clone() * (cont_block_sel - cont_sel.clone()));
+
+        // Collect constraints for the continuation, gated by cont_sel
+        continuation.collect_constraints(cont_sel, state);
+      },
+    }
+  }
+}
+
+/// If `expr` has the form `Variable(sel) - A` or `A - Variable(sel)` where
+/// `sel` is a selector column (index in `selectors` range), returns
+/// `Some((column_index, A))`.
+fn extract_selector_equality(
+  expr: &Expr,
+  selectors: &Range<usize>,
+) -> Option<(usize, Expr)> {
+  fn is_selector_var(e: &Expr, selectors: &Range<usize>) -> Option<usize> {
+    if let SymbolicExpression::Variable(v) = e
+      && v.entry == (Entry::Main { offset: 0 })
+      && selectors.contains(&v.index)
+    {
+      return Some(v.index);
+    }
+    None
+  }
+  if let SymbolicExpression::Sub { x, y, .. } = expr {
+    if let Some(col) = is_selector_var(x, selectors)
+      && is_selector_var(y, selectors).is_none()
+    {
+      return Some((col, *y.clone()));
+    }
+    if let Some(col) = is_selector_var(y, selectors)
+      && is_selector_var(x, selectors).is_none()
+    {
+      return Some((col, *x.clone()));
+    }
+  }
+  None
+}
+
+/// Replace all occurrences of `var(col)` in `expr` with `replacement`.
+fn substitute_in_expr(expr: &Expr, col: usize, replacement: &Expr) -> Expr {
+  match expr {
+    SymbolicExpression::Variable(v)
+      if v.entry == (Entry::Main { offset: 0 }) && v.index == col =>
+    {
+      replacement.clone()
+    },
+    SymbolicExpression::Variable(_)
+    | SymbolicExpression::Constant(_)
+    | SymbolicExpression::IsFirstRow
+    | SymbolicExpression::IsLastRow
+    | SymbolicExpression::IsTransition => expr.clone(),
+    SymbolicExpression::Add { x, y, degree_multiple } => {
+      SymbolicExpression::Add {
+        x: Box::new(substitute_in_expr(x, col, replacement)),
+        y: Box::new(substitute_in_expr(y, col, replacement)),
+        degree_multiple: *degree_multiple,
+      }
+    },
+    SymbolicExpression::Sub { x, y, degree_multiple } => {
+      SymbolicExpression::Sub {
+        x: Box::new(substitute_in_expr(x, col, replacement)),
+        y: Box::new(substitute_in_expr(y, col, replacement)),
+        degree_multiple: *degree_multiple,
+      }
+    },
+    SymbolicExpression::Neg { x, degree_multiple } => SymbolicExpression::Neg {
+      x: Box::new(substitute_in_expr(x, col, replacement)),
+      degree_multiple: *degree_multiple,
+    },
+    SymbolicExpression::Mul { x, y, degree_multiple } => {
+      SymbolicExpression::Mul {
+        x: Box::new(substitute_in_expr(x, col, replacement)),
+        y: Box::new(substitute_in_expr(y, col, replacement)),
+        degree_multiple: *degree_multiple,
+      }
+    },
+  }
+}
+
+/// Simplify selector constraints: when `sel_i = A`, replace all occurrences of
+/// `sel_i` with `A` and remove the constraint. Repeat until fixpoint.
+fn simplify_selectors(constraints: &mut Constraints) {
+  loop {
+    let sub = constraints
+      .zeros
+      .iter()
+      .find_map(|expr| extract_selector_equality(expr, &constraints.selectors));
+    let Some((col, replacement)) = sub else {
+      break;
+    };
+    constraints.zeros.retain(|expr| {
+      extract_selector_equality(expr, &constraints.selectors)
+        .is_none_or(|(c, _)| c != col)
+    });
+    for expr in &mut constraints.zeros {
+      *expr = substitute_in_expr(expr, col, &replacement);
     }
   }
 }

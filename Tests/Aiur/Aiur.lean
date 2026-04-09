@@ -457,6 +457,287 @@ def toplevel := ⟦
     let p = unwrap_or(opt, TPair.Mk(0, 0));
     tpair_first(p) + tpair_second(p)
   }
+
+  ---------------------------------------------------------------------------
+  -- Non-tail match: exercises basic, early return, sequential, and nested
+  -- cases. All paths tested via a single entry point to minimise proof count.
+  ---------------------------------------------------------------------------
+
+  fn ntm_basic(a: G) -> G {
+    let y = match a { 0 => 100, 1 => 200, _ => a * a, };
+    y + 1
+  }
+  fn ntm_early_ret(a: G) -> G {
+    let y = match a { 0 => return 999, _ => a + a, };
+    y * y
+  }
+  fn ntm_sequential(a: G, b: G) -> G {
+    let x = match a { 0 => 1, 1 => 2, _ => a, };
+    let y = match b { 0 => 10, 1 => 20, _ => b, };
+    x + y
+  }
+  fn ntm_nested(a: G, b: G) -> G {
+    let x = match a {
+      0 => match b { 0 => return 0, _ => 42, },
+      _ => 99,
+    };
+    x + 1
+  }
+  -- Pre-branch constant multiplied in a branch (no default).
+  -- c has degree 0; exposes sharedAux over-count when all branches are
+  -- explicit field cases (no inverse-witness auxiliaries to mask the gap).
+  fn ntm_const_mul(a: G) -> G {
+    let c = 5;
+    let x = match a { 0 => c * c, 1 => c * c * c, };
+    x + 1
+  }
+  -- Non-tail match returning a tuple (multi-output merge)
+  fn ntm_tuple(a: G) -> (G, G) {
+    let (x, y) = match a { 0 => (10, 20), 1 => (30, 40), _ => (a, a * a), };
+    (x + 1, y + 1)
+  }
+
+  -- Non-tail match followed by a tail match (continuation is itself a match)
+  fn ntm_then_tail_match(a: G, b: G) -> G {
+    let x = match a { 0 => 100, _ => a, };
+    match b { 0 => x, _ => x + b, }
+  }
+
+  -- Non-tail match with function calls in branches
+  fn ntm_helper(x: G) -> G { x * x + 1 }
+  fn ntm_call_in_branch(a: G) -> G {
+    let x = match a { 0 => ntm_helper(5), _ => ntm_helper(a), };
+    x + 1
+  }
+
+  -- Non-tail match with store/load in branches (lookup gating)
+  fn ntm_store_load(a: G) -> G {
+    let x = match a { 0 => load(store(42)), _ => load(store(a)), };
+    x + 1
+  }
+
+  -- Refutable pattern destructuring in a let (like `let Nat.Succ(&x) = n;`)
+  fn ntm_ctor_let(n: Nat) -> G {
+    let Nat.Succ(&inner) = n;
+    match inner { Nat.Zero => 1, Nat.Succ(_) => 2, }
+  }
+
+  -- Refutable pattern let with a stored enum (Shape through pointer)
+  fn ntm_shape_let() -> G {
+    let s = store(Shape.Rect(3, 4));
+    let Shape.Rect(w, h) = load(s);
+    w + h
+  }
+
+  -- Large match (8 branches, no default) — like const_num_levels
+  fn ntm_large(a: G) -> G {
+    let x = match a {
+      0 => 10, 1 => 20, 2 => 30, 3 => 40,
+      4 => 50, 5 => 60, 6 => 70, 7 => 80,
+    };
+    x + 1
+  }
+
+  -- Non-tail match where one branch has a lookup (store) and another doesn't,
+  -- followed by a continuation that also does a lookup. Tests sharedLookups.
+  fn ntm_mixed_lookups(a: G) -> G {
+    let x = match a {
+      0 => 42,
+      _ => load(store(a)),
+    };
+    load(store(x + 1))
+  }
+
+  -- Non-tail match where branches call different functions with different
+  -- lookup counts. Replicates the IxVM get_constant_info_by_variant pattern.
+  fn ntm_heavy_calls(a: G) -> G { load(store(load(store(a)))) }
+  fn ntm_light_calls(a: G) -> G { a + 1 }
+  fn ntm_asymmetric_lookups(a: G, b: G) -> G {
+    let x = match a {
+      0 => ntm_heavy_calls(b),
+      1 => ntm_light_calls(b),
+      _ => b,
+    };
+    load(store(x))
+  }
+
+  -- Non-tail match inside a tail match branch (like get_constant_info)
+  -- Minimal reproducer: non-tail match inside a tail match branch
+  fn ntm_inside_tail_match(flag: G, a: G) -> G {
+    match flag {
+      0 =>
+        let x = match a { 0 => 100, 1 => 200, };
+        x + 1,
+      _ => a,
+    }
+  }
+
+  -- Explicit branches heavier than default: CKind.B and CKind.E have
+  -- pointer derefs (&Nat) that generate load ops, making those branches
+  -- use more auxiliaries than CKind.A/C/D/F. When the match compiler
+  -- places a light branch as the default, the default has fewer auxiliaries
+  -- than the heavy explicit branches. This catches the bug where
+  -- Ctrl::Match left state.column at the default's level, missing the
+  -- explicit branches' higher water mark.
+  fn ntm_heavy_explicit(flag: G, kind: CKind) -> G {
+    match flag {
+      0 =>
+        let val = match kind {
+          CKind.A(x) => x,
+          CKind.B(x, &extra) =>
+            match extra { Nat.Zero => x, Nat.Succ(_) => x + 10, },
+          CKind.C(x) => x * x,
+          CKind.D(x, y) => x + y,
+          CKind.E(x, &extra) =>
+            match extra { Nat.Zero => x * x, Nat.Succ(_) => x + 100, },
+          CKind.F(x) => x,
+        };
+        val + 1,
+      _ => 0,
+    }
+  }
+
+  -- Replicates const_num_levels: 8-branch non-tail match (no default)
+  -- inside a many-branch outer tail match
+  fn ntm_large_inside_tail(outer: G, inner: G) -> G {
+    match outer {
+      0 => inner,
+      1 => inner + 1,
+      2 =>
+        let x = match inner {
+          0 => 10, 1 => 20, 2 => 30, 3 => 40,
+          4 => 50, 5 => 60, 6 => 70, 7 => 80,
+        };
+        x + 1,
+      _ => inner * inner,
+    }
+  }
+
+  -- Replicates rec_rule_first_ctor: refutable pattern let with pointer deref
+  -- inside a deeply nested tail match. The `let` destructures a stored
+  -- enum value through a pointer.
+  fn ntm_refutable_let_in_match(flag: G) -> G {
+    let list = store(Nat.Succ(store(Nat.Zero)));
+    match flag {
+      0 =>
+        let Nat.Succ(&inner) = load(list);
+        match inner { Nat.Zero => 42, _ => 99, },
+      _ => 0,
+    }
+  }
+
+  -- Replicates convert_all: matchContinue inside List.Cons branch,
+  -- continuation has store + function call
+  -- Replicates convert_all: recursive function with matchContinue inside
+  -- a List.Cons branch, continuation stores + recurses
+  -- Replicates convert_all: recursive list processing with a non-tail match
+  -- in the Cons branch where branches call functions with different lookups
+  -- Replicates convert_all pattern: recursive function with 6-branch
+  -- non-tail match in the Cons branch. Each branch calls a different
+  -- function with different lookup counts. Continuation stores + recurses.
+  fn ntm_cv_a(x: G) -> G { x }
+  fn ntm_cv_b(x: G) -> G { load(store(x)) }
+  fn ntm_cv_c(x: G) -> G { let _ = store(x); load(store(x + 1)) }
+  fn ntm_cv_d(x: G) -> G { x * x }
+  fn ntm_cv_e(x: G) -> G { load(store(load(store(x)))) }
+  fn ntm_cv_f(x: G, y: G) -> G { x + y }
+  -- Replicates convert_all exactly: Cons branch with pointer derefs in
+  -- the pattern, non-tail match with branches that have different arg
+  -- counts (some with pointer derefs), continuation stores + recurses.
+  -- 6-variant enum with pointer fields, matching convert_one's ConvertKind
+  enum CKind {
+    A(G),
+    B(G, &Nat),
+    C(G),
+    D(G, G),
+    E(G, &Nat),
+    F(G)
+  }
+  fn ntm_cv_a2(x: G) -> G { x + 1 }
+  fn ntm_cv_b2(x: G, extra: Nat) -> G {
+    match extra { Nat.Zero => x, Nat.Succ(_) => x + 10, }
+  }
+  fn ntm_cv_c2(x: G) -> G { x * x }
+  fn ntm_cv_d2(x: G, y: G) -> G { x + y }
+  fn ntm_cv_e2(x: G, extra: Nat) -> G {
+    match extra { Nat.Zero => x * x, Nat.Succ(_) => x + 100, }
+  }
+  fn ntm_cv_f2(x: G) -> G { load(store(x)) }
+  fn ntm_convert_all(inputs: Nat, kind: CKind) -> G {
+    match inputs {
+      Nat.Zero => 0,
+      Nat.Succ(&rest) =>
+        let ci = match kind {
+          CKind.A(x) => ntm_cv_a2(x),
+          CKind.B(x, &extra) => ntm_cv_b2(x, extra),
+          CKind.C(x) => ntm_cv_c2(x),
+          CKind.D(x, y) => ntm_cv_d2(x, y),
+          CKind.E(x, &extra) => ntm_cv_e2(x, extra),
+          CKind.F(x) => ntm_cv_f2(x),
+        };
+        let _ = store(ci);
+        ci + ntm_convert_all(rest, kind),
+    }
+  }
+
+  fn ntm_recursive_test() -> G {
+    let zero = Nat.Zero;
+    let one = Nat.Succ(store(Nat.Zero));
+    let two = Nat.Succ(store(Nat.Succ(store(Nat.Zero))));
+    -- Exercise ALL 6 branches AND both Nil/Cons paths of the outer match.
+    -- Multiple iterations to stress shared columns across many trace rows.
+    let r1 = ntm_convert_all(two, CKind.A(10));
+    let r2 = ntm_convert_all(one, CKind.B(5, store(Nat.Succ(store(Nat.Zero)))));
+    let r3 = ntm_convert_all(two, CKind.C(3));
+    let r4 = ntm_convert_all(one, CKind.D(2, 3));
+    let r5 = ntm_convert_all(one, CKind.E(7, store(Nat.Zero)));
+    let r6 = ntm_convert_all(two, CKind.F(4));
+    -- Also call with zero iterations (Nil path only)
+    let r7 = ntm_convert_all(zero, CKind.A(99));
+    r1 + r2 + r3 + r4 + r5 + r6 + r7
+  }
+
+  fn ntm_tuple_sum(a: G) -> G {
+    let (x, y) = ntm_tuple(a);
+    x + y
+  }
+  pub fn non_tail_match() -> G {
+    -- Basic, early return, sequential, nested, const mul
+    let r1 = ntm_basic(0) + ntm_basic(5);
+    let r2 = ntm_early_ret(0) + ntm_early_ret(3);
+    let r3 = ntm_sequential(1, 1);
+    let r4 = ntm_nested(0, 1) + ntm_nested(1, 0);
+    let r5 = ntm_const_mul(0);
+    -- Tuple output, tail-match continuation, calls/store in branches
+    let r6 = ntm_tuple_sum(0);
+    let r7 = ntm_then_tail_match(0, 3);
+    let r8 = ntm_call_in_branch(0);
+    let r9 = ntm_store_load(0);
+    -- Large match, constructor patterns, mixed lookups
+    let r10 = ntm_large(0);
+    let r11 = ntm_ctor_let(Nat.Succ(store(Nat.Zero)));
+    let r12 = ntm_mixed_lookups(0);
+    let r13 = ntm_shape_let();
+    let r14 = ntm_asymmetric_lookups(1, 10);
+    -- matchContinue inside tail match (both branches exercised)
+    let r15 = ntm_inside_tail_match(0, 0) + ntm_inside_tail_match(0, 1)
+            + ntm_inside_tail_match(1, 5);
+    -- Large match inside tail match (all outer+inner branches)
+    let r16 = ntm_large_inside_tail(2, 0) + ntm_large_inside_tail(2, 3)
+            + ntm_large_inside_tail(2, 7) + ntm_large_inside_tail(0, 5)
+            + ntm_large_inside_tail(1, 5) + ntm_large_inside_tail(3, 4);
+    -- Heavy explicit branches (pointer derefs heavier than default)
+    let r17 = ntm_heavy_explicit(0, CKind.B(5, store(Nat.Succ(store(Nat.Zero)))))
+            + ntm_heavy_explicit(0, CKind.A(7)) + ntm_heavy_explicit(1, CKind.A(99));
+    -- Refutable pattern let
+    let r18 = ntm_refutable_let_in_match(0);
+    -- Recursive with all 6 branches + Nil path exercised
+    let r19 = ntm_recursive_test();
+    -- Nested early return (yields 0, sum unchanged)
+    let r20 = ntm_nested(0, 0);
+    r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
+    + r11 + r12 + r13 + r14 + r15 + r16 + r17 + r18 + r19 + r20
+  }
 ⟧
 
 def aiurTestCases : List AiurTestCase := [
@@ -595,6 +876,9 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `template_unwrap_none #[] #[99],
     .noIO `template_pair #[] #[10, 20],
     .noIO `template_nested #[] #[7],
+
+    -- Non-tail match: all patterns in one proof
+    .noIO `non_tail_match #[] #[2281],
   ]
 
 end
