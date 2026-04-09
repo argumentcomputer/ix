@@ -16,12 +16,74 @@ inductive Value : Type where
   | ctor    : Global → Array Value → Value
   /-- Function pointer: a reference to a named function -/
   | fn      : Global → Value
-  /-- Heap pointer: index into the interpreter heap. -/
+  /-- Pointer: index into the interpreter store. -/
   | pointer : Nat → Value
-  deriving Repr, BEq, Hashable, Inhabited
+  deriving Repr, Hashable, Inhabited
+
+deriving instance DecidableEq for Global
+
+mutual
+
+def Value.decEq : (a b : Value) → Decidable (a = b)
+  | .unit, .unit => isTrue rfl
+  | .field g₁, .field g₂ =>
+    if h : g₁ = g₂ then isTrue (h ▸ rfl) else isFalse fun h' => h (Value.field.inj h')
+  | .tuple vs₁, .tuple vs₂ =>
+    match Value.arrayDecEq vs₁ vs₂ with
+    | isTrue h  => isTrue (h ▸ rfl)
+    | isFalse h => isFalse fun h' => h (Value.tuple.inj h')
+  | .array vs₁, .array vs₂ =>
+    match Value.arrayDecEq vs₁ vs₂ with
+    | isTrue h  => isTrue (h ▸ rfl)
+    | isFalse h => isFalse fun h' => h (Value.array.inj h')
+  | .ctor g₁ vs₁, .ctor g₂ vs₂ =>
+    if hg : g₁ = g₂ then
+      match Value.arrayDecEq vs₁ vs₂ with
+      | isTrue hvs => isTrue (hg ▸ hvs ▸ rfl)
+      | isFalse hvs => isFalse fun h' => hvs (Value.ctor.inj h').2
+    else isFalse fun h' => hg (Value.ctor.inj h').1
+  | .fn g₁, .fn g₂ =>
+    if h : g₁ = g₂ then isTrue (h ▸ rfl) else isFalse fun h' => h (Value.fn.inj h')
+  | .pointer n₁, .pointer n₂ =>
+    if h : n₁ = n₂ then isTrue (h ▸ rfl) else isFalse fun h' => h (Value.pointer.inj h')
+  | .unit, .field _     | .unit, .tuple _     | .unit, .array _
+  | .unit, .ctor _ _    | .unit, .fn _        | .unit, .pointer _
+  | .field _, .unit      | .field _, .tuple _   | .field _, .array _
+  | .field _, .ctor _ _  | .field _, .fn _      | .field _, .pointer _
+  | .tuple _, .unit      | .tuple _, .field _   | .tuple _, .array _
+  | .tuple _, .ctor _ _  | .tuple _, .fn _      | .tuple _, .pointer _
+  | .array _, .unit      | .array _, .field _   | .array _, .tuple _
+  | .array _, .ctor _ _  | .array _, .fn _      | .array _, .pointer _
+  | .ctor _ _, .unit     | .ctor _ _, .field _  | .ctor _ _, .tuple _
+  | .ctor _ _, .array _  | .ctor _ _, .fn _     | .ctor _ _, .pointer _
+  | .fn _, .unit         | .fn _, .field _      | .fn _, .tuple _
+  | .fn _, .array _      | .fn _, .ctor _ _     | .fn _, .pointer _
+  | .pointer _, .unit    | .pointer _, .field _  | .pointer _, .tuple _
+  | .pointer _, .array _ | .pointer _, .ctor _ _ | .pointer _, .fn _ =>
+    isFalse Value.noConfusion
+
+def Value.arrayDecEq : (a b : Array Value) → Decidable (a = b)
+  | ⟨as⟩, ⟨bs⟩ =>
+    match Value.listDecEq as bs with
+    | isTrue h  => isTrue (congrArg Array.mk h)
+    | isFalse h => isFalse fun h' => h (Array.mk.inj h')
+
+def Value.listDecEq : (as bs : List Value) → Decidable (as = bs)
+  | [], [] => isTrue rfl
+  | [], _::_ => isFalse (fun h => nomatch h)
+  | _::_, [] => isFalse (fun h => nomatch h)
+  | a::as, b::bs =>
+    match Value.decEq a b, Value.listDecEq as bs with
+    | isTrue ha, isTrue ht  => isTrue (ha ▸ ht ▸ rfl)
+    | isFalse h, _          => isFalse fun h' => h (List.cons.inj h').1
+    | _, isFalse h          => isFalse fun h' => h (List.cons.inj h').2
+
+end
+
+instance : DecidableEq Value := Value.decEq
 
 abbrev Bindings := List (Local × Value)
-abbrev Heap     := Array Value
+abbrev Store    := IndexMap (Array Value) Unit
 
 -- ---------------------------------------------------------------------------
 -- Pretty printing
@@ -73,34 +135,37 @@ mutual
 
 /-- Try to match a pattern against a value.
     Returns the new bindings introduced by the match, or `none` on failure. -/
-private def matchPattern (heap : Heap) : Pattern → Value → Option Bindings
+private def matchPattern (store : Store) :
+    Pattern → Value → Option Bindings
   | .wildcard,    _           => some []
   | .var l,       v           => some [(l, v)]
   | .field g,     .field g'   => if g == g' then some [] else none
-  | .tuple pats,  .tuple vs   => matchPatsArr heap pats vs
-  | .array pats,  .array vs   => matchPatsArr heap pats vs
+  | .tuple pats,  .tuple vs   => matchPatsArr store pats vs
+  | .array pats,  .array vs   => matchPatsArr store pats vs
   | .ref g pats,  .ctor g' vs =>
-      if g != g' then none else matchPatsList heap pats vs.toList
+      if g != g' then none else matchPatsList store pats vs.toList
   | .or p1 p2,    v           =>
-      matchPattern heap p1 v <|> matchPattern heap p2 v
+      matchPattern store p1 v <|> matchPattern store p2 v
   | .pointer p,   .pointer n  =>
-      if h : n < heap.size then matchPattern heap p heap[n]
-      else none
+      match store.getByIdx n with
+      | some (vs, _) => vs[0]?.bind (matchPattern store p ·)
+      | none         => none
   | _,            _           => none
 
 /-- Match a list of patterns against a list of values element-wise. -/
-private def matchPatsList (heap : Heap) : List Pattern → List Value → Option Bindings
+private def matchPatsList (store : Store) :
+    List Pattern → List Value → Option Bindings
   | [],      []      => some []
   | p :: ps, v :: vs => do
-      let b1 ← matchPattern heap p v
-      let b2 ← matchPatsList heap ps vs
+      let b1 ← matchPattern store p v
+      let b2 ← matchPatsList store ps vs
       return b1 ++ b2
   | _,       _       => none
 
 /-- Match an array of patterns against an array of values element-wise. -/
-private def matchPatsArr (heap : Heap) (pats : Array Pattern) (vs : Array Value) :
-    Option Bindings :=
-  matchPatsList heap pats.toList vs.toList
+private def matchPatsArr (store : Store)
+    (pats : Array Pattern) (vs : Array Value) : Option Bindings :=
+  matchPatsList store pats.toList vs.toList
 
 end
 
@@ -130,15 +195,12 @@ instance : ToString Interrupt where
 -- Interpreter monad
 -- ---------------------------------------------------------------------------
 
-/-- Interpreter state: heap + IO buffer + memoization caches. -/
+/-- Interpreter state: store + IO buffer + memoization cache. -/
 structure InterpState where
-  heap       : Heap
+  store      : Store := default
   ioBuffer   : IOBuffer
   /-- Memoized results of pure function calls: (function name, args) → result. -/
   callCache  : Std.HashMap (Global × List Value) Value := {}
-  /-- Inverse of the heap: value → existing pointer index.
-      Ensures each distinct value is stored at most once. -/
-  storeCache : Std.HashMap Value Nat := {}
 
 /-- Interpreter monad: heap + IO buffer state, structured interrupts (errors and returns). -/
 abbrev InterpM := StateT InterpState (Except Interrupt)
@@ -147,10 +209,8 @@ abbrev InterpM := StateT InterpState (Except Interrupt)
 private def throwErr (msg : String) : InterpM α :=
   throw (.error msg [])
 
-private def getHeap : InterpM Heap := return (← get).heap
+private def getStore : InterpM Store := return (← get).store
 private def getIOBuffer : InterpM IOBuffer := return (← get).ioBuffer
-private def modifyHeap (f : Heap → Heap) : InterpM Unit :=
-  modify fun s => { s with heap := f s.heap }
 private def modifyIOBuffer (f : IOBuffer → IOBuffer) : InterpM Unit :=
   modify fun s => { s with ioBuffer := f s.ioBuffer }
 
@@ -215,7 +275,7 @@ private partial def applyLocal (decls : Decls) (v : Value) (args : List Value) :
   | _     => throwErr s!"apply: expected a function pointer, got {v}"
 
 /-- Interpret a `Term` under the given bindings.
-    Heap allocations accumulate in the `InterpM` state. -/
+    Store allocations accumulate in the `InterpM` state. -/
 partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Value
   | .unit => return .unit
 
@@ -241,18 +301,18 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
 
   -- let: evaluate scrutinee, match pattern, extend bindings
   | .let p t1 t2 => do
-      let v    ← interp decls bindings t1
-      let heap ← getHeap
-      match matchPattern heap p v with
+      let v     ← interp decls bindings t1
+      let store ← getStore
+      match matchPattern store p v with
       | some bs => interp decls (bs ++ bindings) t2
       | none    => throwErr "let: pattern match failed"
 
   -- match: try each case in order
   | .match t cases => do
-      let v    ← interp decls bindings t
-      let heap ← getHeap
+      let v     ← interp decls bindings t
+      let store ← getStore
       match cases.findSome? fun (p, body) =>
-        matchPattern heap p v |>.map (·, body) with
+        matchPattern store p v |>.map (·, body) with
       | some (bs, body) => interp decls (bs ++ bindings) body
       | none            => throwErr "match: non-exhaustive patterns"
 
@@ -327,24 +387,25 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
           else throwErr s!"set: index {n} out of bounds (size {vs.size})"
       | _ => throwErr "set: expected array"
 
-  -- heap store: allocate a new cell, or return the existing pointer if already stored
+  -- store: allocate a new cell, or return the existing pointer if already stored
   | .store t => do
       let v ← interp decls bindings t
-      if let some idx := (← get).storeCache[v]? then
+      let store ← getStore
+      if let some idx := store.getIdxOf #[v] then
         return .pointer idx
-      let idx := (← getHeap).size
-      modifyHeap (·.push v)
-      modify fun s => { s with storeCache := s.storeCache.insert v idx }
+      let idx := store.size
+      modify fun s => { s with store := s.store.insert #[v] () }
       return .pointer idx
 
-  -- heap load: dereference a pointer
+  -- load: dereference a pointer
   | .load t => do
       let v ← interp decls bindings t
       match v with
       | .pointer n =>
-          let heap ← getHeap
-          if h : n < heap.size then return heap[n]
-          else throwErr s!"load: invalid pointer {n}"
+          let store ← getStore
+          match store.getByIdx n with
+          | some (vs, _) => return vs[0]!
+          | none         => throwErr s!"load: invalid pointer {n}"
       | _ => throwErr "load: expected pointer"
 
   -- pointer address as a field element
@@ -592,7 +653,7 @@ def runFunction (decls : Decls) (funcName : Global) (inputs : List Value)
     throw (.error s!"runFunction: arity mismatch for {funcName}: \
                     expected {f.inputs.length}, got {inputs.length}" [])
   let bindings := f.inputs.map (·.1) |>.zip inputs
-  StateT.run (interp decls bindings f.body) { heap := #[], ioBuffer }
+  StateT.run (interp decls bindings f.body) { ioBuffer }
 
 end Aiur
 
