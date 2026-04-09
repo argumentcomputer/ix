@@ -1,5 +1,5 @@
 module
-public import Ix.Aiur.Compiler.Check
+public import Ix.Aiur.Check
 public import Std.Data.HashSet
 public import Std.Data.HashMap
 

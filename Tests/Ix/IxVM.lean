@@ -14,7 +14,7 @@ public def serdeNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
     (ioBuffer.extend #[.ofNat i] (bytes.data.map .ofUInt8), i + 1)
   pure { functionName := `ixon_serde_test, label := "Ixon serde test"
          input := #[.ofNat n], inputIOBuffer := ioBuffer, expectedIOBuffer := ioBuffer
-         executionOnly := true }
+         interpret := false, executionOnly := true }
 
 public def kernelCheck (name : Lean.Name) (env : Lean.Environment) : IO AiurTestCase := do
   let constList := Lean.collectDependencies name env.constants
@@ -46,7 +46,7 @@ public def kernelCheck (name : Lean.Name) (env : Lean.Environment) : IO AiurTest
 
   pure { functionName := `kernel_check_test, label := s!"Kernel check {name}"
          input := targetAddrBytes, inputIOBuffer := ioBuffer, expectedIOBuffer := ioBuffer,
-         executionOnly := true }
+         interpret := false, executionOnly := true }
 
 public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) :=
   -- List in strings to prevent instantiation errors (e.g. with numerical limbs)
