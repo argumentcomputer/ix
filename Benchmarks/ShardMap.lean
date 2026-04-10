@@ -2,6 +2,7 @@ import Ix.ShardMap
 import Ix.Benchmark.Bench
 
 open Ix
+open BgroupM
 
 namespace Benchmarks.ShardMap
 
@@ -125,47 +126,50 @@ def distributedWorkload (map : ShardMap Nat Nat) (threads : Nat) (opsPerThread :
 /-- Basic single-threaded operations -/
 def basicBench : IO (Array BenchReport) := do
   IO.println "=== Basic Operations (Single-threaded) ===\n"
-  bgroup "shardmap-basic" [
+  bgroup "shardmap-basic" {} do
     -- Insert throughput
+    throughput (.Elements 1000 "ops")
     benchIO "insert 1K" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      insertN map 1000) (),
+      insertN map 1000) ()
+    throughput (.Elements 10000 "ops")
     benchIO "insert 10K" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      insertN map 10000) (),
+      insertN map 10000) ()
+    throughput (.Elements 100000 "ops")
     benchIO "insert 100K" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      insertN map 100000) (),
+      insertN map 100000) ()
 
     -- Lookup throughput (pre-populated)
+    throughput (.Elements 10000 "ops")
     benchIO "get 10K hits" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
       insertN map 10000
-      getN map 10000) (),
+      getN map 10000) ()
     benchIO "get 10K misses" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
       insertN map 10000
-      getMissN map 10000 100000) (),
+      getMissN map 10000 100000) ()
 
     -- Remove throughput
     benchIO "remove 10K" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
       insertN map 10000
       removeN map 10000) ()
-  ]
 
 /-- Compare insertMany vs individual inserts -/
 def bulkBench : IO (Array BenchReport) := do
   IO.println "=== Bulk Operations Comparison ===\n"
   let items10K := genItems 10000
-  bgroup "shardmap-bulk" [
+  bgroup "shardmap-bulk" {} do
+    throughput (.Elements 10000 "ops")
     benchIO "insertMany 10K" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      map.insertMany items10K) (),
+      map.insertMany items10K) ()
     benchIO "insert loop 10K" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
       insertLoop map items10K) ()
-  ]
 
 /-- Concurrent read scaling with SharedMutex -/
 def concurrentReadBench : IO (Array BenchReport) := do
@@ -173,93 +177,99 @@ def concurrentReadBench : IO (Array BenchReport) := do
   -- Pre-populate a shared map
   let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
   insertN map 10000
-  bgroup "shardmap-concurrent-read" [
-    benchIO "read 1 thread" (fun () => concurrentReads map 1 10000) (),
-    benchIO "read 2 threads" (fun () => concurrentReads map 2 5000) (),
-    benchIO "read 4 threads" (fun () => concurrentReads map 4 2500) (),
-    benchIO "read 8 threads" (fun () => concurrentReads map 8 1250) (),
+  -- Every row does 10_000 total reads across its threads, so using a shared
+  -- throughput lets us directly compare ops/s across thread counts.
+  bgroup "shardmap-concurrent-read" {} do
+    throughput (.Elements 10000 "ops")
+    benchIO "read 1 thread" (fun () => concurrentReads map 1 10000) ()
+    benchIO "read 2 threads" (fun () => concurrentReads map 2 5000) ()
+    benchIO "read 4 threads" (fun () => concurrentReads map 4 2500) ()
+    benchIO "read 8 threads" (fun () => concurrentReads map 8 1250) ()
     benchIO "read 16 threads" (fun () => concurrentReads map 16 625) ()
-  ]
 
 /-- Concurrent write scaling -/
 def concurrentWriteBench : IO (Array BenchReport) := do
   IO.println "=== Concurrent Write Scaling ===\n"
-  bgroup "shardmap-concurrent-write" [
+  -- Every row performs 10_000 total writes across its threads.
+  bgroup "shardmap-concurrent-write" {} do
+    throughput (.Elements 10000 "ops")
     benchIO "write 1 thread 10K" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      concurrentWrites map 1 10000) (),
+      concurrentWrites map 1 10000) ()
     benchIO "write 2 threads 5K each" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      concurrentWrites map 2 5000) (),
+      concurrentWrites map 2 5000) ()
     benchIO "write 4 threads 2.5K each" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      concurrentWrites map 4 2500) (),
+      concurrentWrites map 4 2500) ()
     benchIO "write 8 threads 1.25K each" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
       concurrentWrites map 8 1250) ()
-  ]
 
 /-- Mixed read/write workload -/
 def mixedWorkloadBench : IO (Array BenchReport) := do
   IO.println "=== Mixed Read/Write Workload (8 threads) ===\n"
-  bgroup "shardmap-mixed" [
+  -- 8 threads * 1000 ops = 8000 total ops per row.
+  bgroup "shardmap-mixed" {} do
+    throughput (.Elements 8000 "ops")
     benchIO "mixed 50/50 8 threads" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      mixedWorkload map 8 1000 0.5) (),
+      mixedWorkload map 8 1000 0.5) ()
     benchIO "mixed 80/20 read/write 8 threads" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      mixedWorkload map 8 1000 0.8) (),
+      mixedWorkload map 8 1000 0.8) ()
     benchIO "mixed 95/5 read/write 8 threads" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
       mixedWorkload map 8 1000 0.95) ()
-  ]
 
 /-- Compare different shard configurations -/
 def shardConfigBench : IO (Array BenchReport) := do
   IO.println "=== Shard Configuration Impact (8 threads) ===\n"
-  bgroup "shardmap-shards" [
+  -- `concurrentWorkload` does one insert + one get per op, so 8*1000*2 = 16_000 ops.
+  bgroup "shardmap-shards" {} do
+    throughput (.Elements 16000 "ops")
     benchIO "shardBits=2 (4 shards)" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat) (shardBits := 2)
-      concurrentWorkload map 8 1000) (),
+      concurrentWorkload map 8 1000) ()
     benchIO "shardBits=4 (16 shards)" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat) (shardBits := 4)
-      concurrentWorkload map 8 1000) (),
+      concurrentWorkload map 8 1000) ()
     benchIO "shardBits=6 (64 shards)" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat) (shardBits := 6)
-      concurrentWorkload map 8 1000) (),
+      concurrentWorkload map 8 1000) ()
     benchIO "shardBits=8 (256 shards)" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat) (shardBits := 8)
       concurrentWorkload map 8 1000) ()
-  ]
 
 /-- Contention patterns: hot shard vs distributed access -/
 def contentionBench : IO (Array BenchReport) := do
   IO.println "=== Contention Patterns (8 threads) ===\n"
-  bgroup "shardmap-contention" [
+  -- Both workloads do 1 insert + 1 get per op, so 8*500*2 = 8000 total ops.
+  bgroup "shardmap-contention" {} do
+    throughput (.Elements 8000 "ops")
     benchIO "hot shard (worst case)" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      hotShardWorkload map 8 500) (),
+      hotShardWorkload map 8 500) ()
     benchIO "distributed (best case)" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
       distributedWorkload map 8 500) ()
-  ]
 
 /-- Pre-allocated capacity impact -/
 def capacityBench : IO (Array BenchReport) := do
   IO.println "=== Capacity Pre-allocation Impact ===\n"
-  bgroup "shardmap-capacity" [
+  bgroup "shardmap-capacity" {} do
+    throughput (.Elements 10000 "ops")
     benchIO "insert 10K (no prealloc)" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      insertN map 10000) (),
+      insertN map 10000) ()
     benchIO "insert 10K (prealloc 32/shard)" (fun () => do
       let map ← Ix.ShardMap.newWithCapacity (α := Nat) (β := Nat)
         (capacityPerShard := 32)
-      insertN map 10000) (),
+      insertN map 10000) ()
     benchIO "insert 10K (prealloc 64/shard)" (fun () => do
       let map ← Ix.ShardMap.newWithCapacity (α := Nat) (β := Nat)
         (capacityPerShard := 64)
       insertN map 10000) ()
-  ]
 
 /-- Look up N sequential keys using get?Fast (all hits) -/
 def getNFast (map : ShardMap Nat Nat) (n : Nat) : IO Unit := do
@@ -295,45 +305,50 @@ def fastPathBench : IO (Array BenchReport) := do
   IO.println "=== get?Fast vs get? Comparison ===\n"
   let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
   insertN map 10000
-  bgroup "shardmap-fast-path" [
-    -- Single-threaded comparison
-    benchIO "get? 10K (single thread)" (fun () => getN map 10000) (),
-    benchIO "get?Fast 10K (single thread)" (fun () => getNFast map 10000) (),
-    -- Concurrent comparison
-    benchIO "get? 8 threads" (fun () => concurrentReads map 8 1250) (),
-    benchIO "get?Fast 8 threads" (fun () => concurrentReadsFast map 8 1250) (),
-    -- Hot shard comparison (high contention)
+  bgroup "shardmap-fast-path" {} do
+    -- Single-threaded comparison (10_000 reads per row)
+    throughput (.Elements 10000 "ops")
+    benchIO "get? 10K (single thread)" (fun () => getN map 10000) ()
+    benchIO "get?Fast 10K (single thread)" (fun () => getNFast map 10000) ()
+    -- Concurrent comparison (8 * 1250 = 10_000 reads per row)
+    benchIO "get? 8 threads" (fun () => concurrentReads map 8 1250) ()
+    benchIO "get?Fast 8 threads" (fun () => concurrentReadsFast map 8 1250) ()
+    -- Hot shard comparison: 8 * 500 * 2 = 8000 ops (insert + get per iteration)
+    throughput (.Elements 8000 "ops")
     benchIO "hot shard get?" (fun () => do
       let m ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      hotShardWorkload m 8 500) (),
+      hotShardWorkload m 8 500) ()
     benchIO "hot shard get?Fast" (fun () => do
       let m ← Ix.ShardMap.new (α := Nat) (β := Nat)
       hotShardWorkloadFast m 8 500) ()
-  ]
 
 /-- Compare sequential vs parallel insertMany -/
 def parallelInsertBench : IO (Array BenchReport) := do
   IO.println "=== Parallel insertMany Performance ===\n"
   let items50K := genItems 50000
   let items100K := genItems 100000
-  bgroup "shardmap-parallel-insert" [
+  bgroup "shardmap-parallel-insert" {} do
+    throughput (.Elements 50000 "ops")
     benchIO "insertMany 50K items" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      map.insertMany items50K) (),
+      map.insertMany items50K) ()
+    throughput (.Elements 100000 "ops")
     benchIO "insertMany 100K items" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      map.insertMany items100K) (),
+      map.insertMany items100K) ()
+    throughput (.Elements 50000 "ops")
     benchIO "insert loop 50K items" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
-      insertLoop map items50K) (),
+      insertLoop map items50K) ()
+    throughput (.Elements 100000 "ops")
     benchIO "insert loop 100K items" (fun () => do
       let map ← Ix.ShardMap.new (α := Nat) (β := Nat)
       insertLoop map items100K) ()
-  ]
 
 end Benchmarks.ShardMap
 
-def main : IO Unit := do
+def main (args : List String) : IO Unit := do
+  setBenchArgs args
   IO.println "ShardMap Performance Benchmarks\n"
   IO.println "================================\n"
 

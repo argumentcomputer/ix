@@ -4,6 +4,8 @@ import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Benchmark.Bench
 
+open BgroupM
+
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
   capHeight := 0
@@ -17,7 +19,8 @@ def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
-def main : IO Unit := do
+def main (args : List String) : IO Unit := do
+  setBenchArgs args
   let .ok toplevel := IxVM.ixVM
     | throw (IO.userError "Merging failed")
   let .ok compiled := toplevel.compile
@@ -54,9 +57,9 @@ def main : IO Unit := do
     | none => panic! "Nat.add_comm not found in Ixon environment"
   let targetAddrBytes : Array Aiur.G := targetAddr.hash.data.map .ofUInt8
 
-  let _report ← oneShotBench "Kernel typechecking"
-    (bench "check Nat.add_comm"
+  let _ ← bgroup "Kernel typechecking" { oneShot := true } do
+    throughput (.Elements ixonEnv.consts.size.toUInt64 "consts")
+    bench "check Nat.add_comm"
       (aiurSystem.prove friParameters funIdx targetAddrBytes)
-      ioBuffer)
-    { oneShot := true }
+      ioBuffer
   return

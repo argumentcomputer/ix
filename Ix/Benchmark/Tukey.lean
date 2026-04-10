@@ -10,13 +10,15 @@ structure Outliers where
   highMild : Nat
   lowMild : Nat
   lowSevere : Nat
-  deriving Repr
+  deriving Repr, Lean.ToJson, Lean.FromJson
 
 def Outliers.getTotal (o : Outliers) : Nat :=
   o.highSevere + o.highMild + o.lowMild + o.lowSevere
 
--- TODO: Refactor to cut down verbosity, and return the list for plotting
-def Distribution.tukey (data : Distribution) : IO Unit := do
+/-- Classifies each sample in `data` by the Tukey-fence technique (1.5×IQR / 3×IQR)
+    and returns an `Outliers` record. Pure — does no IO. Matches Haskell
+    criterion's `classifyOutliers`. -/
+def Distribution.classifyOutliers (data : Distribution) : Outliers := Id.run do
   let upper := (data.percentile? 75).get!
   let lower := (data.percentile? 25).get!
   let iqr := upper - lower
@@ -34,21 +36,25 @@ def Distribution.tukey (data : Distribution) : IO Unit := do
         out := { out with outliers := elem :: out.outliers, highSevere := out.highSevere + 1 }
       else
         out := { out with outliers := elem :: out.outliers, highMild := out.highMild + 1 }
+  return out
+
+/-- Prints the Tukey outlier breakdown to stdout. Called conditionally by
+    `bgroup` based on the verbosity level and the outlier-variance severity. -/
+def Outliers.note (out : Outliers) (totalSamples : Nat) (indent : String := "") : IO Unit := do
   let outLength := out.outliers.length
   if outLength > 0 then
-    let samples := data.d.size
-    IO.println s!"Found {outLength} outliers among {samples} measurements"
+    IO.println s!"{indent}Found {outLength} outliers among {totalSamples} measurements"
     if out.lowMild > 0 then
-      let pct := Float.ofNat out.lowMild / (Float.ofNat samples) * 100
-      IO.println s!"  {out.lowMild} ({pct.floatPretty 2}%) low mild"
+      let pct := Float.ofNat out.lowMild / (Float.ofNat totalSamples) * 100
+      IO.println s!"{indent}  {out.lowMild} ({pct.floatPretty 2}%) low mild"
     if out.lowSevere > 0 then
-      let pct := Float.ofNat out.lowSevere / (Float.ofNat samples) * 100
-      IO.println s!"  {out.lowSevere} ({pct.floatPretty 2}%) low severe"
+      let pct := Float.ofNat out.lowSevere / (Float.ofNat totalSamples) * 100
+      IO.println s!"{indent}  {out.lowSevere} ({pct.floatPretty 2}%) low severe"
     if out.highMild > 0 then
-      let pct := Float.ofNat out.highMild / (Float.ofNat samples) * 100
-      IO.println s!"  {out.highMild} ({pct.floatPretty 2}%) high mild"
+      let pct := Float.ofNat out.highMild / (Float.ofNat totalSamples) * 100
+      IO.println s!"{indent}  {out.highMild} ({pct.floatPretty 2}%) high mild"
     if out.highSevere > 0 then
-      let pct := Float.ofNat out.highSevere / (Float.ofNat samples) * 100
-      IO.println s!"  {out.highSevere} ({pct.floatPretty 2}%) high severe"
+      let pct := Float.ofNat out.highSevere / (Float.ofNat totalSamples) * 100
+      IO.println s!"{indent}  {out.highSevere} ({pct.floatPretty 2}%) high severe"
 
 end

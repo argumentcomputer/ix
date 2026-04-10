@@ -1,8 +1,11 @@
+import Ix.IxVM.Core
 import Ix.IxVM.ByteStream
 import Ix.IxVM.Blake3
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Benchmark.Bench
+
+open BgroupM
 
 abbrev dataSizes := #[64, 128, 256, 512, 1024, 2048]
 abbrev numHashesPerProof := #[1, 2, 4, 8, 16, 32]
@@ -20,51 +23,36 @@ def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
+def mergedToplevel : Except Aiur.Global Aiur.Toplevel := do
+  let tl ← IxVM.core.merge IxVM.byteStream
+  tl.merge IxVM.blake3
+
 def blake3Bench : IO $ Array BenchReport := do
-  let .ok toplevel := IxVM.byteStream.merge IxVM.blake3
+  let .ok toplevel := mergedToplevel
     | throw (IO.userError "Merging failed")
   let .ok compiled := toplevel.compile
     | throw (IO.userError "Compilation failed")
   let some funIdx := compiled.getFuncIdx `blake3_bench
     | throw (IO.userError "Aiur function not found")
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  bgroup "prove blake3" { oneShot := true, avgThroughput := true, report := true } do
+    for dataSize in dataSizes do
+      for numHashes in numHashesPerProof do
+        let ioBuffer := Array.range numHashes |>.foldl
+          (init := default)
+          fun ioBuffer idx =>
+            let data := Array.range dataSize |>.map
+              -- Add `idx` so every preimage is different and avoids memoization.
+              fun i => Aiur.G.ofUInt8 (i + idx).toUInt8
+            let ioKeyInfo := ⟨ioBuffer.data.size, dataSize⟩
+            { ioBuffer with
+                data := ioBuffer.data ++ data
+                map := ioBuffer.map.insert #[.ofNat idx] ioKeyInfo }
+        throughput (.ElementsAndBytes numHashes.toUInt64 (dataSize * numHashes).toUInt64 "hashes")
+        bench s!"dataSize={dataSize} numHashes={numHashes}"
+          (aiurSystem.prove friParameters funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
 
-  let mut benches := Array.emptyWithCapacity $ dataSizes.size * numHashesPerProof.size
-  for dataSize in dataSizes do
-    for numHashes in numHashesPerProof do
-      let ioBuffer := Array.range numHashes |>.foldl
-        (init := default)
-        fun ioBuffer idx =>
-          let data := Array.range dataSize |>.map
-            -- Add `idx` so every preimage is different and avoids memoization.
-            fun i => Aiur.G.ofUInt8 (i + idx).toUInt8
-          let ioKeyInfo := ⟨ioBuffer.data.size, dataSize⟩
-          { ioBuffer with
-              data := ioBuffer.data ++ data
-              map := ioBuffer.map.insert #[.ofNat idx] ioKeyInfo }
-      benches := benches.push <| bench s!"dataSize={dataSize} numHashes={numHashes}" (aiurSystem.prove friParameters funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
-  bgroup "prove blake3" benches.toList { oneShot := true }
-
-def parseFunction (words : List String) (param : String): Option String :=
-  words.find? (·.startsWith param) |> .map (·.dropPrefix param |>.toString)
-
-def main : IO Unit := do
-  let result ← blake3Bench
-  let mut sumWeights := 0.0
-  let mut weightedSum := 0.0
-  for report in result do
-    let words := report.function.splitOn
-    let .some dataSizeStr := parseFunction words "dataSize="
-      | throw $ IO.userError s!"Missing dataSize in: {report.function}"
-    let .some dataSize := dataSizeStr.toNat?
-      | throw $ IO.userError s!"Invalid dataSize: {dataSizeStr}"
-    let .some numHashesStr := parseFunction words "numHashes="
-      | throw $ IO.userError s!"Missing numHashes in: {report.function}"
-    let .some numHashes := numHashesStr.toNat?
-      | throw $ IO.userError s!"Invalid numHashes: {numHashesStr}"
-    let sizeFloat := (dataSize * numHashes).toFloat
-    let throughput := sizeFloat / (report.newBench.getTime.toSeconds )
-    weightedSum := weightedSum + sizeFloat * throughput
-    sumWeights := sumWeights + sizeFloat
-  let avgThroughput := weightedSum / sumWeights
-  println! "Average throughput: {avgThroughput.toUSize} bytes/s"
+def main (args : List String) : IO Unit := do
+  setBenchArgs args
+  let _ ← blake3Bench
+  return

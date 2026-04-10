@@ -13,11 +13,14 @@ structure Distribution where
 instance : Coe Distribution (Array Float) where
   coe x := x.d
 
-/-- Gets the p value of the distribution, which is the likelihood of seeing the `t` value or a more extreme value in the distribution. Smaller p value => less likely -/
+/-- Two-sided p-value: the probability of observing a test statistic at least
+as extreme as `t` under the null distribution `dist`. Returns a value in
+`[0, 1]`; smaller means the observed `t` is more extreme (less consistent with
+the null hypothesis). -/
 def Distribution.pValue (dist : Distribution) (t : Float) : Float :=
   let len := Float.ofNat dist.d.size
   let hits := Float.ofNat (dist.d.filter (· < t)).size
-  (min len (len - hits)) / len * 2
+  2 * (min hits (len - hits)) / len
 
 def Distribution.percentile? (data : Distribution) (p : Float): Option Float :=
   if data.d.isEmpty || p > 100
@@ -120,5 +123,70 @@ def Distribution.estimates (avgTimes : Distribution) (config : Config) (gen : St
   let dists := ((avgTimes.bootstrap config.numSamples config.bootstrapSamples).run gen).fst
   let est := dists.buildEstimates points config.confidenceLevel
   (dists, est)
+
+/--
+Qualitative classification of how much outliers are inflating the sample's
+std-dev estimate, ported from Haskell criterion's `OutlierEffect`.
+-/
+inductive OutlierEffect where
+  /-- < 1% of the variance can be blamed on outliers — numbers are trustworthy. -/
+  | unaffected
+  /-- 1%–10% — minor but noticeable. -/
+  | slight
+  /-- 10%–50% — take the reported CI with a grain of salt. -/
+  | moderate
+  /-- ≥ 50% — measurements are essentially useless. -/
+  | severe
+  deriving Repr, BEq, Ord, Lean.ToJson, Lean.FromJson
+
+/-- Summary of the outlier-variance analysis for a sample. -/
+structure OutlierVariance where
+  effect : OutlierEffect
+  /-- English description slotted into criterion's `variance introduced by
+      outliers: N% ({desc} inflated)` message — one of `"unaffected"`,
+      `"slightly"`, `"moderately"`, or `"severely"`. -/
+  desc : String
+  /-- Quantitative fraction in `[0, 1]`. -/
+  fraction : Float
+  deriving Repr, Lean.ToJson, Lean.FromJson
+
+/--
+Computes the fraction of the sample std-dev estimate that is attributable to
+outliers, following Haskell criterion's `outlierVariance` (`Analysis.hs:85-112`).
+
+Takes the bootstrap point estimates of the sample mean and std-dev plus the
+original iteration count `numSamples` (e.g. `100` for a default `bgroup`).
+-/
+def outlierVariance (meanEst stdDevEst : Estimate) (numSamples : Float) : OutlierVariance :=
+  -- Names from Haskell criterion's implementation:
+  --   sb  = bootstrap point estimate of std dev          (σ_b)
+  --   ua  = mean point estimate divided by `numSamples`  (µ_a)
+  --   ugMin = ua / 2                                     (µ_{g,min})
+  --   sg  = contributed std dev from the outlier model   (σ_g)
+  let sb  := stdDevEst.pointEstimate
+  let sb2 := sb * sb
+  let ua  := meanEst.pointEstimate / numSamples
+  let ugMin := ua / 2
+  let sg  := min (ugMin / 4) (sb / numSamples.sqrt)
+  let sg2 := sg * sg
+  let varOut (c : Float) : Float :=
+    let ac := numSamples - c
+    (ac / numSamples) * (sb2 - ac * sg2)
+  let cMax (x : Float) : Float :=
+    let k := ua - x
+    let d := k * k
+    let ad := numSamples * d
+    let k0 := -numSamples * ad
+    let k1 := sb2 - numSamples * sg2 + ad
+    let det := k1 * k1 - 4 * sg2 * k0
+    (-2 * k0 / (k1 + det.sqrt)).floor
+  let minBy (f : Float → Float) (q r : Float) : Float := min (f q) (f r)
+  let varOutMin := (minBy varOut 1 (minBy cMax 0 ugMin)) / sb2
+  let (effect, desc) :=
+    if varOutMin < 0.01 then (OutlierEffect.unaffected, "unaffected")
+    else if varOutMin < 0.1 then (OutlierEffect.slight, "slightly inflated")
+    else if varOutMin < 0.5 then (OutlierEffect.moderate, "moderately inflated")
+    else (OutlierEffect.severe, "severely inflated")
+  { effect, desc, fraction := varOutMin }
 
 end

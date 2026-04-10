@@ -55,7 +55,11 @@ def tBootstrap (newAvgTimes baseAvgTimes : Distribution) (bootstrapSamples : Nat
 
 def tTest (newAvgTimes baseAvgTimes : Distribution) (config : Config) (gen : StdGen) :(Float × Distribution) :=
   let tStatistic := tScore newAvgTimes baseAvgTimes
-  let tDistribution := (tBootstrap newAvgTimes baseAvgTimes config.numSamples gen).run.fst
+  -- Use `bootstrapSamples` (default 100_000), NOT `numSamples` (default 100),
+  -- for the null distribution. With only 100 resamples the p-value resolution
+  -- is ~0.01 and its tails are badly estimated, which produces spurious
+  -- "No change in performance detected" results even for real effects.
+  let tDistribution := (tBootstrap newAvgTimes baseAvgTimes config.bootstrapSamples gen).run.fst
   -- Hack to filter out non-finite numbers from https://github.com/bheisler/criterion.rs/blob/ccccbcc15237233af22af4c76751a7aa184609b3/src/analysis/compare.rs#L86
   let tDistribution : Distribution := { d := tDistribution.d.filter (fun x => x.isFinite && !x.isNaN ) }
   (tStatistic, tDistribution)
