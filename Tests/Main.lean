@@ -84,9 +84,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
 ]
 
 def main (args : List String) : IO UInt32 := do
-  let env ← get_env!
   -- Special case: rust-compile diagnostic
   if args.contains "rust-compile" then
+    let env ← get_env!
     IO.println s!"Loaded environment with {env.constants.toList.length} constants"
     let result := tmpDecodeConstMap env.constants.toList
     IO.println s!"Rust compiled: {result}"
@@ -109,6 +109,7 @@ def main (args : List String) : IO UInt32 := do
   -- Run ignored tests when --ignored or --include-ignored is specified
   if runIgnored || includeIgnored then
     let mut result ← LSpec.lspecIO ignoredSuites filterArgs
+    let env ← get_env!
     let ignored := ignoredRunners env
     let filtered := if filterArgs.isEmpty then ignored
       else filterArgs.filterMap fun arg => ignored.find? fun (key, _) => key == arg
