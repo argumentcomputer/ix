@@ -2,7 +2,7 @@ name: Extended CI tests
 
 on:
   push:
-    branches: [main, ci-valgrind]
+    branches: main
   workflow_dispatch:
 
 permissions:
