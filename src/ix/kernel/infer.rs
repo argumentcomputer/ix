@@ -1,7 +1,7 @@
 //! Type inference.
 
 use super::constant::KConst;
-use super::error::TcError;
+use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
 use super::level::KUniv;
@@ -19,11 +19,10 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     if let Some(cached) = self.infer_cache.get(&cache_key) {
       return Ok(cached.clone());
     }
-    if infer_only {
-      if let Some(cached) = self.infer_only_cache.get(&cache_key) {
+    if infer_only
+      && let Some(cached) = self.infer_only_cache.get(&cache_key) {
         return Ok(cached.clone());
       }
-    }
 
     let ty = match e.data() {
       ExprData::Var(i, _, _) => self.lookup_var(*i)?,
@@ -38,14 +37,14 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
           .env
           .get(id)
           .ok_or_else(|| TcError::UnknownConst(id.addr.clone()))?;
-        if c.lvls() as usize != us.len() {
+        if u64_to_usize::<M>(c.lvls())? != us.len() {
           return Err(TcError::UnivParamMismatch {
             expected: c.lvls(),
             got: us.len(),
           });
         }
         let ty = c.ty().clone();
-        let us_vec: Vec<_> = us.iter().cloned().collect();
+        let us_vec: Vec<_> = us.to_vec();
         self.instantiate_univ_params(&ty, &us_vec)
       },
 
@@ -168,7 +167,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
           ExprData::Const(_, us, _) => us.clone(),
           _ => unreachable!(),
         };
-        (levels, params as usize, ctors.clone())
+        (levels, u64_to_usize::<M>(params)?, ctors.clone())
       },
       _ => {
         return Err(TcError::Other("projection: not an inductive type".into()));
@@ -194,7 +193,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       },
     };
 
-    let i_levels_vec: Vec<_> = i_levels.iter().cloned().collect();
+    let i_levels_vec: Vec<_> = i_levels.to_vec();
     let mut r = self.instantiate_univ_params(&ctor_ty, &i_levels_vec);
 
     for i in 0..num_params {
@@ -299,7 +298,7 @@ mod tests {
 
   /// Env with: Nat (axiom), id (definition)
   fn test_env() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     // Nat : Sort 1
     env.insert(
       mk_id("Nat"),

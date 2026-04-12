@@ -55,11 +55,11 @@ end
 inductive C3 where | c : A3 → B3 → C3
 end OverMerge
 
-#print OverMerge.A3.below.rec
-#eval show Lean.MetaM Unit from do
-  let ci ← Lean.getConstInfo ``OverMerge.C3.c
-  let .ctorInfo cv := ci | return
-  IO.println s!"{repr cv.type}"
+--#print OverMerge.A3.below.rec
+--#eval show Lean.MetaM Unit from do
+--  let ci ← Lean.getConstInfo ``OverMerge.C3.c
+--  let .ctorInfo cv := ci | return
+--  IO.println s!"{repr cv.type}"
 
 namespace OverMergeSplit
 mutual

@@ -699,28 +699,14 @@ extern "C" fn rs_tmp_decode_const_map(
     let mut buf: &[u8] = &serialized;
     if let Ok(fresh_env) = crate::ix::ixon::env::Env::get(&mut buf) {
       // Build a fresh CompileState from the deserialized Env
-      let fresh_stt = crate::ix::compile::CompileState {
-        env: fresh_env,
-        name_to_addr: DashMap::new(),
-        blocks: dashmap::DashSet::new(),
-        block_stats: DashMap::new(),
-      };
+      let fresh_stt =
+        crate::ix::compile::CompileState { env: fresh_env, ..Default::default() };
 
       // Populate name_to_addr from env.named
       for entry in fresh_stt.env.named.iter() {
         fresh_stt
           .name_to_addr
           .insert(entry.key().clone(), entry.value().addr.clone());
-      }
-
-      // Populate blocks from constants that are mutual blocks
-      for entry in fresh_stt.env.consts.iter() {
-        if matches!(
-          &entry.value().info,
-          crate::ix::ixon::constant::ConstantInfo::Muts(_)
-        ) {
-          fresh_stt.blocks.insert(entry.key().clone());
-        }
       }
 
       // Decompile from the fresh state

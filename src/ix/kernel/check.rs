@@ -134,10 +134,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // Validate universe parameter count per variant
     // Quot: 1 (u), Quot.mk: 1 (u), Quot.lift: 2 (u,v), Quot.ind: 1 (u)
     let expected_lvls = match kind {
-      QuotKind::Type => 1,
-      QuotKind::Ctor => 1,
       QuotKind::Lift => 2,
-      QuotKind::Ind => 1,
+      QuotKind::Type | QuotKind::Ctor | QuotKind::Ind => 1,
     };
     if lvls != expected_lvls {
       return Err(TcError::Other(format!(
@@ -321,7 +319,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 mod tests {
   use super::super::constant::KConst;
   use super::super::env::{InternTable, KEnv};
-  use super::super::expr::{ExprData, KExpr};
+  use super::super::expr::KExpr;
   use super::super::id::KId;
   use super::super::level::KUniv;
   use super::super::mode::Anon;
@@ -347,7 +345,7 @@ mod tests {
   }
 
   fn test_env() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     // Axiom: Nat : Sort 1
     env.insert(
       mk_id("Nat"),

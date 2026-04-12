@@ -34,9 +34,6 @@ use lean_ffi::object::{
   LeanOwned, LeanRef, LeanString,
 };
 
-use dashmap::DashMap;
-use dashmap::DashSet;
-
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ixon::env::decoded_to_ixon_env;
 use crate::ffi::lean_env::decode_env;
@@ -1442,12 +1439,7 @@ pub extern "C" fn rs_decompile_env(
   let env = decoded_to_ixon_env(&decoded);
 
   // Wrap in CompileState (decompile_env only uses .env)
-  let stt = CompileState {
-    env,
-    name_to_addr: DashMap::new(),
-    blocks: DashSet::new(),
-    block_stats: DashMap::new(),
-  };
+  let stt = CompileState { env, ..CompileState::default() };
 
   match decompile_env(&stt) {
     Ok(dstt) => {

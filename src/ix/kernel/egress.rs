@@ -36,8 +36,9 @@ fn egress_level(u: &KUniv<Meta>, level_params: &[Name]) -> env::Level {
       egress_level(b, level_params),
     ),
     UnivData::Param(idx, _, _) => {
+      let pos = usize::try_from(*idx).expect("level param index exceeds usize");
       let name =
-        level_params.get(*idx as usize).cloned().unwrap_or_else(Name::anon);
+        level_params.get(pos).cloned().unwrap_or_else(Name::anon);
       env::Level::param(name)
     },
   }
@@ -152,7 +153,7 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
         DefKind::Opaque => LeanCI::OpaqueInfo(OpaqueVal {
           cnst,
           value,
-          is_unsafe: *safety == crate::ix::env::DefinitionSafety::Unsafe,
+          is_unsafe: *safety == env::DefinitionSafety::Unsafe,
           all,
         }),
       }

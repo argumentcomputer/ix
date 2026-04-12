@@ -484,14 +484,9 @@ fn fmt_expr<M: KernelMode>(
 fn collect_spine<M: KernelMode>(e: &KExpr<M>) -> (KExpr<M>, Vec<KExpr<M>>) {
   let mut args = Vec::new();
   let mut cur = e.clone();
-  loop {
-    match cur.data() {
-      ExprData::App(func, arg, _) => {
-        args.push(arg.clone());
-        cur = func.clone();
-      },
-      _ => break,
-    }
+  while let ExprData::App(func, arg, _) = cur.data() {
+    args.push(arg.clone());
+    cur = func.clone();
   }
   args.reverse();
   (cur, args)

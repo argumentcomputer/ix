@@ -48,3 +48,7 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"

@@ -27,6 +27,12 @@ pub struct InternTable<M: KernelMode> {
   exprs: DashMap<blake3::Hash, KExpr<M>>,
 }
 
+impl<M: KernelMode> Default for InternTable<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<M: KernelMode> InternTable<M> {
   pub fn new() -> Self {
     InternTable { univs: DashMap::default(), exprs: DashMap::default() }
@@ -58,6 +64,12 @@ pub struct KEnv<M: KernelMode> {
   pub consts: DashMap<KId<M>, KConst<M>>,
   /// Block membership: block id → ordered member ids.
   pub blocks: DashMap<KId<M>, Vec<KId<M>>>,
+}
+
+impl<M: KernelMode> Default for KEnv<M> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<M: KernelMode> KEnv<M> {
@@ -135,7 +147,7 @@ mod tests {
 
   #[test]
   fn insert_and_get() {
-    let mut env = KEnv::<Anon>::new();
+    let env = KEnv::<Anon>::new();
     let id = mk_id("Nat");
     env.insert(id.clone(), mk_axio("Nat"));
     assert_eq!(env.len(), 1);
@@ -144,7 +156,7 @@ mod tests {
 
   #[test]
   fn contains_key_works() {
-    let mut env = KEnv::<Anon>::new();
+    let env = KEnv::<Anon>::new();
     let id = mk_id("Nat");
     assert!(!env.contains_key(&id));
     env.insert(id.clone(), mk_axio("Nat"));
@@ -159,7 +171,7 @@ mod tests {
 
   #[test]
   fn get_by_id_works() {
-    let mut env = KEnv::<Anon>::new();
+    let env = KEnv::<Anon>::new();
     let id = mk_id("Nat");
     env.insert(id.clone(), mk_axio("Nat"));
     assert!(env.get(&id).is_some());
@@ -207,7 +219,7 @@ mod tests {
 
   #[test]
   fn iter_all_entries() {
-    let mut env = KEnv::<Anon>::new();
+    let env = KEnv::<Anon>::new();
     env.insert(mk_id("A"), mk_axio("A"));
     env.insert(mk_id("B"), mk_axio("B"));
     assert_eq!(env.iter().count(), 2);

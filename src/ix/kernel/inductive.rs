@@ -5,11 +5,10 @@
 //! lean4lean's constructive approach, then compares with provided recursors.
 
 use crate::ix::address::Address;
-use crate::ix::env::Name;
 
 use super::constant::KConst;
 use super::env::InternTable;
-use super::error::TcError;
+use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
 use super::level::{KUniv, univ_eq, univ_geq};
@@ -24,32 +23,32 @@ use super::tc::{
 /// For nested occurrences (e.g., `Array Syntax` in Syntax's ctor fields),
 /// an auxiliary entry is created mirroring the external inductive's structure.
 #[derive(Clone)]
-struct FlatBlockMember<M: KernelMode> {
+pub struct FlatBlockMember<M: KernelMode> {
   /// For original: the inductive's KId. For auxiliary: the external inductive's KId.
-  id: KId<M>,
+  pub id: KId<M>,
   /// True if this is an auxiliary member created for a nested occurrence.
-  is_aux: bool,
+  pub is_aux: bool,
   /// Specialized param values for this member.
   /// For original: Var refs to the recursor's shared params.
   /// For auxiliary: the concrete specialized exprs (e.g., `[Syntax]` for `Array Syntax`).
   /// These are in terms of the recursor's param binders (depth = n_rec_params).
-  spec_params: Vec<KExpr<M>>,
+  pub spec_params: Vec<KExpr<M>>,
   /// Number of params this member's inductive has (may differ from shared for nested).
-  own_params: u64,
+  pub own_params: u64,
   /// Number of indices.
-  n_indices: u64,
+  pub n_indices: u64,
   /// Constructor ids (from env).
-  ctors: Vec<KId<M>>,
+  pub ctors: Vec<KId<M>>,
   /// Universe param count.
-  lvls: u64,
+  pub lvls: u64,
   /// Universe args for internal processing (abstract shifted params).
   /// Used for ctor type instantiation and nesting detection.
-  ind_us: Box<[KUniv<M>]>,
+  pub ind_us: Box<[KUniv<M>]>,
   /// Universe args from the actual nested occurrence (concrete).
   /// For original members: same as ind_us.
   /// For auxiliaries: the concrete args from the ctor field (e.g., [Succ(Zero)]).
   /// Used for the final output type (motives, major, ctor apps).
-  occurrence_us: Box<[KUniv<M>]>,
+  pub occurrence_us: Box<[KUniv<M>]>,
 }
 
 /// Lower free Var indices by `shift`: Var(i) where i >= shift becomes Var(i - shift).
@@ -114,7 +113,7 @@ fn lower_vars_inner<M: KernelMode>(
 impl<'env, M: KernelMode> TypeChecker<'env, M> {
   /// Validate an inductive type and its constructors.
   pub fn check_inductive(&mut self, id: &KId<M>) -> Result<(), TcError<M>> {
-    let (params, indices, lvls, ctors, block, is_rec, nested, ty) = match self
+    let (params, indices, lvls, ctors, block, is_rec, _nested, ty) = match self
       .env
       .get(id)
     {
@@ -151,7 +150,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // Inductive type must reduce to a Sort after peeling params+indices.
     // This must be checked even for inductives with no constructors.
     let ind_level =
-      self.get_result_sort_level(&ty, (params + indices) as usize)?;
+      self.get_result_sort_level(&ty, u64_to_usize(params + indices)?)?;
 
     // S3: Mutual inductives must live in the same universe.
     for peer_id in &block_inds {
@@ -163,8 +162,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       }) = self.env.get(peer_id)
       {
         let peer_level =
-          self.get_result_sort_level(&peer_ty.clone(), (pp + pi) as usize)?;
-        if !super::level::univ_eq(&ind_level, &peer_level) {
+          self.get_result_sort_level(&peer_ty.clone(), u64_to_usize(pp + pi)?)?;
+        if !univ_eq(&ind_level, &peer_level) {
           return Err(TcError::Other(
             "mutually inductive types must live in the same universe".into(),
           ));
@@ -174,10 +173,10 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
     // Validate each constructor
     for (expected_cidx, ctor_id) in ctors.iter().enumerate() {
-      let (ctor_params, ctor_fields, ctor_cidx, ctor_ty) =
+      let (_ctor_params, ctor_fields, ctor_cidx, ctor_ty) =
         match self.env.get(ctor_id) {
           Some(KConst::Ctor { params, fields, cidx, ty, .. }) => {
-            (params as usize, fields as usize, cidx as usize, ty.clone())
+            (u64_to_usize(params)?, u64_to_usize(fields)?, u64_to_usize(cidx)?, ty.clone())
           },
           _ => {
             return Err(TcError::Other(
@@ -194,19 +193,19 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       }
 
       // A1: Parameter domain agreement
-      self.check_param_agreement(&ty, &ctor_ty, params as usize)?;
+      self.check_param_agreement(&ty, &ctor_ty, u64_to_usize(params)?)?;
 
       // A3: Strict positivity
-      self.check_positivity(&ctor_ty, params as usize, &block_addrs)?;
+      self.check_positivity(&ctor_ty, u64_to_usize(params)?, &block_addrs)?;
 
       // A4: Universe constraints
-      self.check_field_universes(&ctor_ty, params as usize, &ind_level)?;
+      self.check_field_universes(&ctor_ty, u64_to_usize(params)?, &ind_level)?;
 
       // A2: Constructor return type
       self.check_ctor_return_type(
         &ctor_ty,
-        params as usize,
-        indices as usize,
+        u64_to_usize(params)?,
+        u64_to_usize(indices)?,
         ctor_fields,
         &id.addr,
         lvls,
@@ -218,7 +217,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // An adversary could set is_rec=false on a recursive inductive to enable improper
     // struct eta expansion. We verify against the actual constructor structure.
     let computed_is_rec =
-      self.compute_is_rec(&ctors, params as usize, &block_addrs)?;
+      self.compute_is_rec(&ctors, u64_to_usize(params)?, &block_addrs)?;
     if computed_is_rec != is_rec {
       return Err(TcError::Other(format!(
         "check_inductive: is_rec mismatch: declared {is_rec}, computed {computed_is_rec}"
@@ -240,9 +239,9 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     ctor_id: &KId<M>,
     induct_id: &KId<M>,
   ) -> Result<(), TcError<M>> {
-    let (ctor_ty, ctor_params, ctor_fields) = match self.env.get(ctor_id) {
+    let (ctor_ty, _ctor_params, ctor_fields) = match self.env.get(ctor_id) {
       Some(KConst::Ctor { ty, params, fields, .. }) => {
-        (ty.clone(), params as usize, fields as usize)
+        (ty.clone(), u64_to_usize(params)?, u64_to_usize(fields)?)
       },
       _ => return Err(TcError::Other("check_ctor: not a constructor".into())),
     };
@@ -264,22 +263,22 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       block_inds.iter().map(|id| id.addr.clone()).collect();
 
     let ind_level = self
-      .get_result_sort_level(&ind_ty, (ind_params + ind_indices) as usize)?;
+      .get_result_sort_level(&ind_ty, u64_to_usize(ind_params + ind_indices)?)?;
 
     // A1: Parameter domain agreement
-    self.check_param_agreement(&ind_ty, &ctor_ty, ind_params as usize)?;
+    self.check_param_agreement(&ind_ty, &ctor_ty, u64_to_usize(ind_params)?)?;
 
     // A3: Strict positivity
-    self.check_positivity(&ctor_ty, ind_params as usize, &block_addrs)?;
+    self.check_positivity(&ctor_ty, u64_to_usize(ind_params)?, &block_addrs)?;
 
     // A4: Universe constraints
-    self.check_field_universes(&ctor_ty, ind_params as usize, &ind_level)?;
+    self.check_field_universes(&ctor_ty, u64_to_usize(ind_params)?, &ind_level)?;
 
     // A2: Constructor return type
     self.check_ctor_return_type(
       &ctor_ty,
-      ind_params as usize,
-      ind_indices as usize,
+      u64_to_usize(ind_params)?,
+      u64_to_usize(ind_indices)?,
       ctor_fields,
       &induct_id.addr,
       ind_lvls,
@@ -396,7 +395,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       qi += 1;
 
       for ctor_id in &member.ctors {
-        let (ctor_own_params, ctor_fields, ctor_ty, ctor_lvls) =
+        let (_ctor_own_params, ctor_fields, ctor_ty, _ctor_lvls) =
           match self.env.get(ctor_id) {
             Some(KConst::Ctor { params, fields, ty, lvls, .. }) => {
               (params, fields, ty.clone(), lvls)
@@ -416,8 +415,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
           let w = self.whnf(&cur)?;
           match w.data() {
             ExprData::All(_, _, _, body, _) => {
-              let p = if (j as usize) < member.spec_params.len() {
-                member.spec_params[j as usize].clone()
+              let p = if u64_to_usize::<M>(j)? < member.spec_params.len() {
+                member.spec_params[u64_to_usize::<M>(j)?].clone()
               } else {
                 KExpr::var(n_rec_params - 1 - j, anon())
               };
@@ -515,6 +514,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         _ => return,
       };
 
+    #[allow(clippy::cast_possible_truncation)] // ext_params is a small structural count
     let ext_n_params = ext_params as usize;
     if args.len() < ext_n_params {
       return;
@@ -537,6 +537,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // to the param context by lowering Var indices by the field depth.
     // This ensures the same logical spec_params produce the same hash
     // regardless of how many field locals are on the context.
+    #[allow(clippy::cast_possible_truncation)] // depth and param_depth are small
     let field_depth =
       (self.depth() as usize).saturating_sub(param_depth) as u64;
     let spec_params: Vec<KExpr<M>> = args
@@ -544,7 +545,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       .take(ext_n_params)
       .map(|e| {
         if field_depth > 0 {
-          super::inductive::lower_vars(&self.ienv, e, field_depth)
+          lower_vars(&self.ienv, e, field_depth)
         } else {
           e.clone()
         }
@@ -712,7 +713,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
             // (not in our block) and its params contain block inductives.
             let (n_params, block, ctors) = match self.env.get(id) {
               Some(KConst::Indc { params, block, ctors, .. }) => {
-                (params as usize, block.clone(), ctors.clone())
+                (u64_to_usize(params)?, block.clone(), ctors.clone())
               },
               _ => {
                 return Err(TcError::Other(
@@ -952,7 +953,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         for (i, u) in us.iter().enumerate() {
           let expected =
             KUniv::param(i as u64, M::meta_field(crate::ix::env::Name::anon()));
-          if !super::level::univ_eq(u, &expected) {
+          if !univ_eq(u, &expected) {
             self.restore_depth(saved);
             return Err(TcError::Other(format!(
               "ctor return type: universe arg {i} is not Param({i})"
@@ -1001,8 +1002,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     }
 
     // Index args should not mention block inductives
-    for i in n_params..args.len() {
-      if expr_mentions_any_addr(&args[i], block_addrs) {
+    for arg in &args[n_params..] {
+      if expr_mentions_any_addr(arg, block_addrs) {
         self.restore_depth(saved);
         return Err(TcError::Other(
           "ctor return type: index mentions block inductive".into(),
@@ -1070,7 +1071,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       return Ok(false);
     }
     let (_, n_params, _, ref ctors, _, _) = ind_infos[0];
-    let n_params = n_params as usize;
+    let n_params = u64_to_usize::<M>(n_params)?;
     match ctors.len() {
       // Case 2: 0 constructors → large (Empty/False)
       0 => Ok(true),
@@ -1078,7 +1079,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       1 => {
         let (ctor_ty, ctor_fields) = match self.env.get(&ctors[0]) {
           Some(KConst::Ctor { ty, fields, .. }) => {
-            (ty.clone(), fields as usize)
+            (ty.clone(), u64_to_usize(fields)?)
           },
           _ => return Ok(false),
         };
@@ -1097,10 +1098,10 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
               if i >= n_params {
                 // Check if this field's sort level is non-zero (semantically)
                 let dom_ty = self.with_infer_only(|tc| tc.infer(dom))?;
-                if let Ok(sort_lvl) = self.ensure_sort(&dom_ty) {
-                  if !univ_eq(&sort_lvl, &KUniv::zero()) {
-                    non_trivial.push(i - n_params);
-                  }
+                if let Ok(sort_lvl) = self.ensure_sort(&dom_ty)
+                  && !univ_eq(&sort_lvl, &KUniv::zero())
+                {
+                  non_trivial.push(i - n_params);
                 }
               }
               self.push_local(dom.clone());
@@ -1173,7 +1174,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // Compute elimination level.
     let result_level = self.get_result_sort_level(
       &ind_infos[0].4,
-      (ind_infos[0].1 + ind_infos[0].2) as usize,
+      u64_to_usize(ind_infos[0].1 + ind_infos[0].2)?,
     )?;
     let is_large = self.is_large_eliminator(&result_level, &ind_infos)?;
     let univ_offset: u64 = if is_large { 1 } else { 0 };
@@ -1195,13 +1196,11 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
           let ty = self
             .env
             .get(&m.id)
-            .map(|c| c.ty().clone())
-            .unwrap_or_else(|| KExpr::sort(KUniv::zero()));
+            .map_or_else(|| KExpr::sort(KUniv::zero()), |c| c.ty().clone());
           let is_rec = self
             .env
             .get(&m.id)
-            .map(|c| matches!(c, KConst::Indc { is_rec: true, .. }))
-            .unwrap_or(false);
+            .is_some_and(|c| matches!(c, KConst::Indc { is_rec: true, .. }));
           (m.id.clone(), m.own_params, m.n_indices, m.ctors.clone(), ty, is_rec)
         })
         .collect();
@@ -1209,10 +1208,10 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
     // Build motive types for ALL flat block members.
     let mut motive_types: Vec<KExpr<M>> = Vec::new();
-    for (j, member) in flat.iter().enumerate() {
+    for member in flat.iter() {
       let motive_ty = self.build_motive_type_flat(
         member,
-        n_params as usize,
+        u64_to_usize(n_params)?,
         &elim_level,
         univ_offset,
       )?;
@@ -1278,7 +1277,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
             member,
             &flat,
             peers,
-            n_params as usize,
+            u64_to_usize(n_params)?,
             is_large,
             univ_offset,
           ) {
@@ -1312,6 +1311,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
   ///
   /// `univ_offset`: 1 for large eliminators (elim level at Param(0), inductive
   /// params shifted to Param(1)..Param(n)), 0 for small (Prop) eliminators.
+  #[allow(dead_code)]
   fn build_motive_type(
     &mut self,
     ind_id: &KId<M>,
@@ -1399,12 +1399,12 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
   /// collects indices, builds `∀ indices (t : I params indices), Sort u`.
   /// For auxiliary members: walks ind type, substituting own_params with
   /// spec_params (lifted), collects indices, builds `∀ indices (t : I spec_params indices), Sort u`.
-  fn build_motive_type_flat(
+  pub fn build_motive_type_flat(
     &mut self,
     member: &FlatBlockMember<M>,
     n_rec_params: usize,
     elim_level: &KUniv<M>,
-    univ_offset: u64,
+    _univ_offset: u64,
   ) -> Result<KExpr<M>, TcError<M>> {
     let saved = self.save_depth();
     let anon = || M::meta_field(crate::ix::env::Name::anon());
@@ -1429,9 +1429,9 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       let w = self.whnf(&ty)?;
       match w.data() {
         ExprData::All(_, _, _dom, body, _) => {
-          let p = if (j as usize) < member.spec_params.len() {
-            let sp = member.spec_params[j as usize].clone();
-            let lift_amount = self.depth() as u64;
+          let p = if u64_to_usize::<M>(j)? < member.spec_params.len() {
+            let sp = member.spec_params[u64_to_usize::<M>(j)?].clone();
+            let lift_amount = self.depth();
             // spec_params are in terms of recursor params at depth n_rec_params.
             // Current depth might differ; lift accordingly.
             if lift_amount > 0 {
@@ -1479,7 +1479,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       }
     } else {
       // Auxiliary: lift spec_params from param context (n_rec_params)
-      let lift_by = depth as usize;
+      let lift_by = u64_to_usize::<M>(depth)?;
       for sp in member.spec_params.iter() {
         let lifted = if lift_by > 0 {
           lift(&self.ienv, sp, lift_by as u64, 0)
@@ -1490,7 +1490,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       }
     }
     // Apply indices (the just-bound vars).
-    let n_idx = member.n_indices as usize;
+    let n_idx = u64_to_usize::<M>(member.n_indices)?;
     for i in 0..n_idx {
       let v = self.intern(KExpr::var((n_idx - 1 - i) as u64, anon()));
       major_ty = self.intern(KExpr::app(major_ty, v));
@@ -1535,7 +1535,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     motive_base: usize, // context level where motives start
     flat: &[FlatBlockMember<M>],
     block_addrs: &[Address],
-    univ_offset: u64,
+    _univ_offset: u64,
   ) -> Result<KExpr<M>, TcError<M>> {
     let ctor = match self.env.get(ctor_id) {
       Some(KConst::Ctor { ty, lvls, .. }) => (ty.clone(), lvls),
@@ -1545,7 +1545,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         ));
       },
     };
-    let (ctor_ty_raw, ctor_lvls) = ctor;
+    let (ctor_ty_raw, _ctor_lvls) = ctor;
     let anon = || M::meta_field(crate::ix::env::Name::anon());
     let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
     let saved = self.save_depth();
@@ -1569,12 +1569,12 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
             // It's at context level j, so Var index = depth - 1 - j.
             let depth = self.depth();
             KExpr::var(depth - 1 - j, anon())
-          } else if (j as usize) < member.spec_params.len() {
+          } else if u64_to_usize::<M>(j)? < member.spec_params.len() {
             // Auxiliary member: spec_params have Var refs relative to the param
             // context (depth = n_rec_params). Lift by the difference between
             // current depth and n_rec_params.
-            let sp = member.spec_params[j as usize].clone();
-            let depth = self.depth() as usize;
+            let sp = member.spec_params[u64_to_usize::<M>(j)?].clone();
+            let depth = u64_to_usize::<M>(self.depth())?;
             let lift_by = depth.saturating_sub(n_rec_params);
             if lift_by > 0 {
               lift(&self.ienv, &sp, lift_by as u64, 0)
@@ -1622,7 +1622,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       // For IH building, n_params should be the TARGET member's own_params
       // (the member that the recursive field targets).
       let target_n_params = if block_ind_idx < flat.len() {
-        flat[block_ind_idx].own_params as usize
+        u64_to_usize::<M>(flat[block_ind_idx].own_params)?
       } else {
         n_rec_params
       };
@@ -1649,19 +1649,19 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // with different spec_params) would return the wrong position.
     let (_ret_head, ret_args) = collect_app_spine(&ty);
     let ret_indices: Vec<KExpr<M>> =
-      ret_args.iter().skip(member.own_params as usize).cloned().collect();
+      ret_args.iter().skip(u64_to_usize::<M>(member.own_params)?).cloned().collect();
 
     // Build conclusion: motive[ind_idx](ret_indices, C params fields)
     // Motive[ind_idx] is at context level: motive_base + ind_idx
     let depth = self.depth();
-    let motive_var_idx = (depth as usize - 1 - (motive_base + ind_idx)) as u64;
+    let motive_var_idx = (u64_to_usize::<M>(depth)? - 1 - (motive_base + ind_idx)) as u64;
     let mut conclusion = self.intern(KExpr::var(motive_var_idx, anon()));
 
     // Apply return indices (these are at the old depth, but we pushed IHs since then,
     // so we need to lift the indices by n_ihs)
     for idx_expr in &ret_indices {
       let lifted = if n_ihs > 0 {
-        super::subst::lift(
+        lift(
           &self.ienv,
           idx_expr,
           n_ihs as u64,
@@ -1678,14 +1678,14 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       self.intern(KExpr::cnst(ctor_id.clone(), member.occurrence_us.clone()));
     if !member.is_aux {
       // Original: apply Var refs to recursor param binders
-      for i in 0..member.own_params as usize {
+      for i in 0..u64_to_usize::<M>(member.own_params)? {
         let pvar =
-          self.intern(KExpr::var((depth as usize - 1 - i) as u64, anon()));
+          self.intern(KExpr::var((u64_to_usize::<M>(depth)? - 1 - i) as u64, anon()));
         ctor_app = self.intern(KExpr::app(ctor_app, pvar));
       }
     } else {
       // Auxiliary: lift spec_params from param context to current depth
-      let lift_by = (depth as usize).saturating_sub(n_rec_params);
+      let lift_by = u64_to_usize::<M>(depth)?.saturating_sub(n_rec_params);
       for sp in &member.spec_params {
         let lifted = if lift_by > 0 {
           lift(&self.ienv, sp, lift_by as u64, 0)
@@ -1755,7 +1755,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // to the current depth (minor_saved + n_fields + k).
     let dom = &field_domains[field_idx];
     let shift = (n_fields + k - field_idx) as u64;
-    let dom_lifted = super::subst::lift(&self.ienv, dom, shift, 0);
+    let dom_lifted = lift(&self.ienv, dom, shift, 0);
     let wdom = self.whnf(&dom_lifted)?;
 
     // Check if direct (head is block inductive) or forall-wrapped
@@ -1766,7 +1766,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         let ih_saved = self.save_depth();
         let mut inner_ty = wdom.clone();
         let mut forall_doms: Vec<KExpr<M>> = Vec::new();
-        let mut inner_whnf = wdom.clone();
+        let inner_whnf;
 
         loop {
           let w = self.whnf(&inner_ty)?;
@@ -1796,7 +1796,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
           inner_args.iter().skip(n_params).cloned().collect();
 
         // Build motive_bi(idx_args, field xs)
-        let depth = self.depth() as usize;
+        let depth = u64_to_usize::<M>(self.depth())?;
         let motive_var = (depth - 1 - (motive_base + block_ind_idx)) as u64;
         let mut ih_body = KExpr::var(motive_var, anon());
         for idx in &idx_args {
@@ -1827,7 +1827,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         let idx_args: Vec<KExpr<M>> =
           dom_args.iter().skip(n_params).cloned().collect();
 
-        let depth = self.depth() as usize;
+        let depth = u64_to_usize::<M>(self.depth())?;
         let motive_var = (depth - 1 - (motive_base + block_ind_idx)) as u64;
         let mut ih_body = KExpr::var(motive_var, anon());
 
@@ -1885,12 +1885,12 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
             // depth; spec_params are at param context depth). Rather than
             // lowering, compare structurally: the first own_params args of the
             // application should match the member's spec_params.
-            if n_params_ext >= m.own_params as usize
-              && m.spec_params.len() == m.own_params as usize
+            if n_params_ext >= u64_to_usize::<M>(m.own_params)?
+              && m.spec_params.len() == u64_to_usize::<M>(m.own_params)?
             {
               let matches = args
                 .iter()
-                .take(m.own_params as usize)
+                .take(u64_to_usize::<M>(m.own_params)?)
                 .zip(m.spec_params.iter())
                 .all(|(arg, sp)| {
                   // Compare after lowering arg to param context depth.
@@ -1936,9 +1936,9 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     univ_offset: u64,
   ) -> Result<KExpr<M>, TcError<M>> {
     let saved = self.save_depth();
-    let n_params = ind_infos[0].1 as usize;
+    let n_params = u64_to_usize::<M>(ind_infos[0].1)?;
     let n_motives = ind_infos.len();
-    let n_indices = ind_infos[di].2 as usize;
+    let n_indices = u64_to_usize::<M>(ind_infos[di].2)?;
     let block_addrs: Vec<Address> =
       block_inds.iter().map(|id| id.addr.clone()).collect();
     let anon = || M::meta_field(crate::ix::env::Name::anon());
@@ -1981,7 +1981,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
     // --- Minors: built inline at the correct depth ---
     // motive_base = depth after pushing params (motives start here)
-    let motive_base = self.depth() as usize - n_motives;
+    let motive_base = u64_to_usize::<M>(self.depth())? - n_motives;
     for (j, (_, _, _, j_ctors, _, _)) in ind_infos.iter().enumerate() {
       let j_member = flat[j].clone();
       for ctor_id in j_ctors {
@@ -1999,7 +1999,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         self.push_local(minor_ty);
       }
     }
-    let n_minors = domains.len().checked_sub(n_params + n_motives)
+    let _n_minors = domains.len().checked_sub(n_params + n_motives)
       .ok_or_else(|| TcError::Other(format!(
         "build_rec_type: not enough binders: domains={}, params={n_params}, motives={n_motives}",
         domains.len()
@@ -2018,9 +2018,9 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
           let p = if !di_member.is_aux {
             let depth = self.depth();
             KExpr::var(depth - 1 - j, anon())
-          } else if (j as usize) < di_member.spec_params.len() {
-            let sp = di_member.spec_params[j as usize].clone();
-            let lift_by = (self.depth() as usize).saturating_sub(n_params);
+          } else if u64_to_usize::<M>(j)? < di_member.spec_params.len() {
+            let sp = di_member.spec_params[u64_to_usize::<M>(j)?].clone();
+            let lift_by = u64_to_usize::<M>(self.depth())?.saturating_sub(n_params);
             if lift_by > 0 {
               lift(&self.ienv, &sp, lift_by as u64, 0)
             } else {
@@ -2053,13 +2053,13 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       self.intern(KExpr::cnst(ind_id.clone(), di_member.occurrence_us.clone()));
     let depth = self.depth();
     if !di_member.is_aux {
-      for i in 0..di_member.own_params as usize {
+      for i in 0..u64_to_usize::<M>(di_member.own_params)? {
         let pvar =
-          self.intern(KExpr::var((depth as usize - 1 - i) as u64, anon()));
+          self.intern(KExpr::var((u64_to_usize::<M>(depth)? - 1 - i) as u64, anon()));
         major_dom = self.intern(KExpr::app(major_dom, pvar));
       }
     } else {
-      let lift_by = (depth as usize).saturating_sub(n_params);
+      let lift_by = u64_to_usize::<M>(depth)?.saturating_sub(n_params);
       for sp in &di_member.spec_params {
         let lifted = if lift_by > 0 {
           lift(&self.ienv, sp, lift_by as u64, 0)
@@ -2078,7 +2078,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
     // --- Return type: motive_di indices major ---
     let depth = self.depth();
-    let motive_var_idx = (depth as usize - 1 - n_params - di) as u64;
+    let motive_var_idx = (u64_to_usize::<M>(depth)? - 1 - n_params - di) as u64;
     let mut ret = self.intern(KExpr::var(motive_var_idx, anon()));
     for i in 0..n_indices {
       let ivar = self.intern(KExpr::var((n_indices - i) as u64, anon()));
@@ -2184,28 +2184,26 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
           }
         }
         let mut matched = false;
-        if let Ok(w) = self.whnf(&cur) {
-          if let ExprData::All(_, _, dom, _, _) = w.data() {
-            let (_, major_args) = collect_app_spine(dom);
-            let n_par = member.own_params as usize;
-            if major_args.len() >= n_par && member.spec_params.len() == n_par {
-              // spec_params are in param context. Lift by (current_depth - n_rec_params).
-              let n_rec_params =
-                flat.first().map(|m| m.own_params).unwrap_or(0);
-              let lift_by = (self.depth() as u64).saturating_sub(n_rec_params);
-              matched = major_args
-                .iter()
-                .take(n_par)
-                .zip(member.spec_params.iter())
-                .all(|(arg, sp)| {
+        if let Ok(w) = self.whnf(&cur)
+          && let ExprData::All(_, _, dom, _, _) = w.data()
+        {
+          let (_, major_args) = collect_app_spine(dom);
+          let n_par = u64_to_usize::<M>(member.own_params).ok()?;
+          if major_args.len() >= n_par && member.spec_params.len() == n_par {
+            // spec_params are in param context. Lift by (current_depth - n_rec_params).
+            let n_rec_params = flat.first().map_or(0, |m| m.own_params);
+            let lift_by = self.depth().saturating_sub(n_rec_params);
+            matched =
+              major_args.iter().take(n_par).zip(member.spec_params.iter()).all(
+                |(arg, sp)| {
                   let sp_lifted = if lift_by > 0 {
                     lift(&self.ienv, sp, lift_by, 0)
                   } else {
                     sp.clone()
                   };
                   self.is_def_eq(arg, &sp_lifted).unwrap_or(false)
-                });
-            }
+                },
+              );
           }
         }
         self.restore_depth(saved);
@@ -2289,7 +2287,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     if flat.len() != flat_len {
       return Ok(vec![]);
     }
-    for (fi, member) in flat.iter().enumerate() {
+    for member in flat.iter() {
       let mut found = false;
       for (ri, rid) in rec_ids.iter().enumerate() {
         if used[ri] {
@@ -2331,28 +2329,27 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
           }
         }
         let mut matched = false;
-        if let Ok(w) = self.whnf(&cur) {
-          if let ExprData::All(_, _, dom, _, _) = w.data() {
-            let (_, major_args) = collect_app_spine(dom);
-            let n_par = member.own_params as usize;
-            if major_args.len() >= n_par && member.spec_params.len() == n_par {
-              let depth = self.depth() as u64;
-              // spec_params are in param context (depth = n_rec_params).
-              // Major args are at current depth. Lift by the difference.
-              let lift_by = (self.depth() as u64).saturating_sub(n_params);
-              matched = major_args
-                .iter()
-                .take(n_par)
-                .zip(member.spec_params.iter())
-                .all(|(arg, sp)| {
+        if let Ok(w) = self.whnf(&cur)
+          && let ExprData::All(_, _, dom, _, _) = w.data()
+        {
+          let (_, major_args) = collect_app_spine(dom);
+          let n_par = u64_to_usize::<M>(member.own_params)?;
+          if major_args.len() >= n_par && member.spec_params.len() == n_par {
+            let _depth = self.depth();
+            // spec_params are in param context (depth = n_rec_params).
+            // Major args are at current depth. Lift by the difference.
+            let lift_by = self.depth().saturating_sub(n_params);
+            matched =
+              major_args.iter().take(n_par).zip(member.spec_params.iter()).all(
+                |(arg, sp)| {
                   let sp_lifted = if lift_by > 0 {
                     lift(&self.ienv, sp, lift_by, 0)
                   } else {
                     sp.clone()
                   };
                   self.is_def_eq(arg, &sp_lifted).unwrap_or(false)
-                });
-            }
+                },
+              );
           }
         }
         self.restore_depth(saved);
@@ -2370,7 +2367,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
     // flat, block_inds, n_params, univ_offset already computed above
     let is_large = univ_offset > 0;
-    let n_params = n_params as usize;
+    let n_params = u64_to_usize::<M>(n_params)?;
 
     // Generate rules for the target inductive
     // Find the flat member for this recursor's major inductive.
@@ -2429,38 +2426,37 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         }
       }
       let mut found_gi = None;
-      if let Ok(w) = self.whnf(&cur) {
-        if let ExprData::All(_, _, dom, _, _) = w.data() {
-          let (_, major_args) = collect_app_spine(dom);
-          let depth = self.depth() as u64;
-          for (fi, member) in flat.iter().enumerate() {
-            if member.id.addr != ind_id.addr {
-              continue;
-            }
-            if !member.is_aux {
-              found_gi = Some(fi);
-              break;
-            }
-            let n_par = member.own_params as usize;
-            if major_args.len() >= n_par && member.spec_params.len() == n_par {
-              let n_rp = flat.first().map(|m| m.own_params).unwrap_or(0);
-              let lift_by = (self.depth() as u64).saturating_sub(n_rp);
-              let matched = major_args
-                .iter()
-                .take(n_par)
-                .zip(member.spec_params.iter())
-                .all(|(arg, sp)| {
+      if let Ok(w) = self.whnf(&cur)
+        && let ExprData::All(_, _, dom, _, _) = w.data()
+      {
+        let (_, major_args) = collect_app_spine(dom);
+        let _depth = self.depth();
+        for (fi, member) in flat.iter().enumerate() {
+          if member.id.addr != ind_id.addr {
+            continue;
+          }
+          if !member.is_aux {
+            found_gi = Some(fi);
+            break;
+          }
+          let n_par = u64_to_usize::<M>(member.own_params)?;
+          if major_args.len() >= n_par && member.spec_params.len() == n_par {
+            let n_rp = flat.first().map_or(0, |m| m.own_params);
+            let lift_by = self.depth().saturating_sub(n_rp);
+            let matched =
+              major_args.iter().take(n_par).zip(member.spec_params.iter()).all(
+                |(arg, sp)| {
                   let sp_lifted = if lift_by > 0 {
                     lift(&self.ienv, sp, lift_by, 0)
                   } else {
                     sp.clone()
                   };
                   self.is_def_eq(arg, &sp_lifted).unwrap_or(false)
-                });
-              if matched {
-                found_gi = Some(fi);
-                break;
-              }
+                },
+              );
+            if matched {
+              found_gi = Some(fi);
+              break;
             }
           }
         }
@@ -2491,7 +2487,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         member,
         &flat,
         &peers,
-        n_params as usize,
+        n_params,
         is_large,
         univ_offset,
       ) {
@@ -2508,12 +2504,11 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     }
 
     // Update the cache
-    if let Some(cached) = self.recursor_cache.get_mut(ind_block_id) {
-      if let Some(gen_rec) =
+    if let Some(cached) = self.recursor_cache.get_mut(ind_block_id)
+      && let Some(gen_rec) =
         cached.iter_mut().find(|g| g.ind_addr == ind_id.addr)
-      {
-        gen_rec.rules = rules.clone();
-      }
+    {
+      gen_rec.rules = rules.clone();
     }
 
     Ok(rules)
@@ -2610,8 +2605,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         ExprData::All(_, _, _, body2, _) => {
           let p = if !member.is_aux {
             KExpr::var(total_lams - 1 - j, anon())
-          } else if (j as usize) < member.spec_params.len() {
-            let sp = member.spec_params[j as usize].clone();
+          } else if u64_to_usize::<M>(j)? < member.spec_params.len() {
+            let sp = member.spec_params[u64_to_usize::<M>(j)?].clone();
             lift(&self.ienv, &sp, total_lams, 0)
           } else {
             KExpr::var(total_lams - 1 - j, anon())
@@ -2698,7 +2693,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // type, so Var(0)..Var(fi-1) are bound refs to earlier fields, not free.
     let field_dom_lift = (n_minors - global_minor_idx) as u64;
     let mut field_domains: Vec<KExpr<M>> =
-      Vec::with_capacity(n_fields as usize);
+      Vec::with_capacity(u64_to_usize::<M>(n_fields)?);
     let mut minor_cur = minor_domain;
     for fi in 0..n_fields {
       let w = self.whnf(&minor_cur)?;
@@ -2798,7 +2793,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     let anon = || M::meta_field(crate::ix::env::Name::anon());
     let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
 
-    let target_n_params = flat[target_bi].own_params as usize;
+    let target_n_params = u64_to_usize::<M>(flat[target_bi].own_params)?;
 
     // Use the TARGET recursor (the one for the inductive the field recurses on),
     // matching lean4lean (Add.lean:427), lean4 C++ (inductive.cpp:738),
@@ -2824,22 +2819,17 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     let mut inner = wdom.clone();
     let mut forall_doms: Vec<KExpr<M>> = Vec::new();
 
-    loop {
-      match inner.data() {
-        ExprData::All(_, _, fd, fb, _) => {
-          // Check if this forall's result type (after peeling) has a block
-          // inductive as head. If inner itself IS a block inductive app, stop.
-          let (h, _) = collect_app_spine(&inner);
-          if matches!(h.data(), ExprData::Const(id, _, _)
-            if flat.iter().any(|m| m.id.addr == id.addr))
-          {
-            break;
-          }
-          forall_doms.push(fd.clone());
-          inner = fb.clone();
-        },
-        _ => break,
+    while let ExprData::All(_, _, fd, fb, _) = inner.data() {
+      // Check if this forall's result type (after peeling) has a block
+      // inductive as head. If inner itself IS a block inductive app, stop.
+      let (h, _) = collect_app_spine(&inner);
+      if matches!(h.data(), ExprData::Const(id, _, _)
+        if flat.iter().any(|m| m.id.addr == id.addr))
+      {
+        break;
       }
+      forall_doms.push(fd.clone());
+      inner = fb.clone();
     }
     let n_xs = forall_doms.len() as u64;
 
@@ -2894,7 +2884,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     ih = self.intern(KExpr::app(ih, field_app));
 
     // Wrap in lambdas for forall-bound variables
-    for i in (0..n_xs as usize).rev() {
+    for i in (0..u64_to_usize::<M>(n_xs)?).rev() {
       ih = self.intern(KExpr::lam(
         anon(),
         bi_default(),
@@ -3147,7 +3137,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
     for peer_id in &peers {
       let (p, mo, mi, ix) = match self.env.get(peer_id) {
-        Some(KConst::Recr { params, motives, minors, indices, ty, .. }) => {
+        Some(KConst::Recr { params, motives, minors, indices, .. }) => {
           (params, motives, minors, indices)
         },
         _ => continue,
@@ -3193,7 +3183,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // Use univ_eq instead of is_zero() to handle levels like max(0,0) or imax(0,u)
     // that are semantically zero but not syntactically UnivData::Zero.
     let result_level =
-      self.get_result_sort_level(&ty, (ind_params + ind_indices) as usize)?;
+      self.get_result_sort_level(&ty, u64_to_usize(ind_params + ind_indices)?)?;
     if !univ_eq(&result_level, &KUniv::zero()) {
       return Ok(false);
     }
@@ -3229,7 +3219,7 @@ mod tests {
   fn mk_id(s: &str) -> KId<Anon> {
     KId::new(mk_addr(s), ())
   }
-  fn sort0() -> AE {
+  fn _sort0() -> AE {
     AE::sort(AU::zero())
   }
   fn sort1() -> AE {
@@ -3269,7 +3259,7 @@ mod tests {
   /// Bool.false : Bool
   /// Bool.rec : ∀ (motive : Bool → Sort u) (h₁ : motive Bool.true) (h₂ : motive Bool.false) (t : Bool), motive t
   fn bool_env() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     let block = mk_id("Bool");
 
     // Bool : Sort 1
@@ -3406,7 +3396,7 @@ mod tests {
   ///             (succ : ∀ (n : Nat), motive n → motive (Nat.succ n))
   ///             (t : Nat), motive t
   fn nat_env() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     let block = mk_id("Nat");
     let nat = || cnst("Nat", &[]);
 
@@ -3559,7 +3549,7 @@ mod tests {
     // rhs = λ (motive) (h_zero) (h_succ), h_zero
     // = Lam(_, Lam(_, Lam(_, Var(1))))
     // Var(1) = h_zero (2nd from top: Var(0)=h_succ, Var(1)=h_zero)
-    let expected_zero = lam(
+    let _expected_zero = lam(
       pi(cnst("Nat", &[]), AE::sort(param(0))), // motive type (placeholder domain)
       lam(
         app(var(0), cnst("Nat.zero", &[])), // h_zero type (placeholder)
@@ -3600,7 +3590,7 @@ mod tests {
   /// List.nil.{u} : ∀ (α : Sort u), List.{u} α
   /// List.cons.{u} : ∀ (α : Sort u), α → List.{u} α → List.{u} α
   fn list_env() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     let block = mk_id("List");
 
     // List : Sort u → Sort u  (1 lvl param)
@@ -3676,17 +3666,18 @@ mod tests {
     //   (t : List.{Param(1)} α), motive t
     let u1 = param(1); // shifted inductive univ
     let u0 = param(0); // elim univ
-    let list_u1_a = app(cnst("List", &[u1.clone()]), var(0)); // List.{u1} α, where α=Var(0)
+    let _list_u1_a = app(cnst("List", std::slice::from_ref(&u1)), var(0)); // List.{u1} α, where α=Var(0)
 
-    let motive_ty = pi(
+    let _motive_ty = pi(
       // inside: α is Var(1) from one binder out
-      app(cnst("List", &[u1.clone()]), var(0)),
+      app(cnst("List", std::slice::from_ref(&u1)), var(0)),
       AE::sort(u0.clone()),
     );
     // under α, motive: motive_is_Var(0)
-    let minor_nil = app(var(0), app(cnst("List.nil", &[u1.clone()]), var(1)));
+    let _minor_nil =
+      app(var(0), app(cnst("List.nil", std::slice::from_ref(&u1)), var(1)));
     // cons minor: ∀ (head : α) (tail : List α) (ih : motive tail), motive (cons α head tail)
-    let cons_minor = pi(
+    let _cons_minor = pi(
       var(1), // head : α (α is Var(1) since motive+nil already bound... wait)
       // This is getting complicated with de Bruijn. Let me simplify.
       // Actually for the test we just need to check that check_const passes.
@@ -3736,7 +3727,7 @@ mod tests {
   /// Tree.node : List Tree → Tree
   /// This should create a flat block [Tree, List] with Tree nesting into List.
   fn nested_tree_env() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     let tree_block = mk_id("Tree");
     let tree = || cnst("Tree", &[]);
 
@@ -3912,7 +3903,7 @@ mod tests {
     let u0 = param(0);
     let u1 = AU::succ(AU::zero());
     let tree = || cnst("Tree", &[]);
-    let list_tree = || app(cnst("List", &[u1.clone()]), tree());
+    let list_tree = || app(cnst("List", std::slice::from_ref(&u1)), tree());
 
     // motive₀ : Tree → Sort u
     let mot0_ty = pi(tree(), AE::sort(u0.clone()));
@@ -3936,7 +3927,8 @@ mod tests {
 
     // h_nil: mot1 (List.nil.{1} Tree)
     //   Under [mot0, mot1, h_leaf, h_node]: mot1=Var(2)
-    let h_nil = app(var(2), app(cnst("List.nil", &[u1.clone()]), tree()));
+    let h_nil =
+      app(var(2), app(cnst("List.nil", std::slice::from_ref(&u1)), tree()));
 
     // h_cons: ∀ (hd : Tree) (tl : List.{1} Tree), mot0 hd → mot1 tl → mot1 (List.cons.{1} Tree hd tl)
     //   Under [mot0, mot1, h_leaf, h_node, h_nil]:
@@ -3958,7 +3950,10 @@ mod tests {
             app(
               var(7), // mot1
               app(
-                app(app(cnst("List.cons", &[u1.clone()]), tree()), var(3)),
+                app(
+                  app(cnst("List.cons", std::slice::from_ref(&u1)), tree()),
+                  var(3),
+                ),
                 var(2),
               ),
             ),
@@ -4034,7 +4029,7 @@ mod tests {
   /// PTree.leaf.{u} : ∀ (α : Sort (u+1)), α → PTree.{u} α
   /// PTree.node.{u} : ∀ (α : Sort (u+1)), List.{u+1} (PTree.{u} α) → PTree.{u} α
   fn poly_nested_env() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     let block = mk_id("PTree");
     let su = || AU::succ(param(0)); // u+1
 
@@ -4233,7 +4228,7 @@ mod tests {
   ///   [Syn, List (Pair Name Syn), Pair (Name, Syn)]
   /// with 3 motives.
   fn syntax_like_env() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     let block = mk_id("Syn");
     let syn = || cnst("Syn", &[]);
 
@@ -4464,7 +4459,7 @@ mod tests {
     // `List (Pair Name Syn)` is a valid auxiliary. This replicates the
     // Lean.Syntax.rec binder 6 failure where `List Preresolved` was
     // incorrectly matched to the `List Syntax` auxiliary.
-    let mut env = syntax_like_env();
+    let env = syntax_like_env();
 
     // Add OtherType : Sort 1 (external, non-recursive)
     env.insert(
@@ -4498,10 +4493,10 @@ mod tests {
     );
 
     // Update Syn to have 3 ctors
-    if let Some(mut entry) = env.consts.get_mut(&mk_id("Syn")) {
-      if let KConst::Indc { ctors, .. } = entry.value_mut() {
-        ctors.push(mk_id("Syn.ident"));
-      }
+    if let Some(mut entry) = env.consts.get_mut(&mk_id("Syn"))
+      && let KConst::Indc { ctors, .. } = entry.value_mut()
+    {
+      ctors.push(mk_id("Syn.ident"));
     }
 
     let mut tc = TypeChecker::new(&env, InternTable::new());
@@ -4600,7 +4595,7 @@ mod tests {
   /// Inl.emph.{u} : ∀ (i : Sort (u+1)), Array.{u+1} (Inl.{u} i) → Inl.{u} i
   /// Inl.other.{u} : ∀ (i : Sort (u+1)), i → Array.{u+1} (Inl.{u} i) → Inl.{u} i
   fn inline_like_env() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     let block = mk_id("Inl");
     let su = || AU::succ(param(0)); // u+1
 
@@ -4786,7 +4781,7 @@ mod tests {
     // Inl.other : ∀ (i : Sort(u+1)), i → Array.{u+1} (Inl.{u} i) → Inl.{u} i
     let inl_i2 = app(cnst("Inl", &[param(0)]), var(0)); // under i binder
     let arr_inl2 = app(cnst("Array", &[su()]), inl_i2);
-    let other_ty = pi(
+    let _other_ty = pi(
       AE::sort(su()),
       pi(
         var(0), // i (the type param)
@@ -4946,7 +4941,7 @@ mod tests {
   ///
   /// This has 1 univ param, 1 type param, 1 index (Nat), and is in Prop.
   fn wf_like_env() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     let block = mk_id("Ok");
 
     // Nat : Sort 1
@@ -5014,10 +5009,10 @@ mod tests {
       },
     );
     // Fix: fields should be 1 (n), not 0
-    if let Some(mut entry) = env.consts.get_mut(&mk_id("Ok.base")) {
-      if let KConst::Ctor { fields, .. } = entry.value_mut() {
-        *fields = 1;
-      }
+    if let Some(mut entry) = env.consts.get_mut(&mk_id("Ok.base"))
+      && let KConst::Ctor { fields, .. } = entry.value_mut()
+    {
+      *fields = 1;
     }
 
     // Ok.step : ∀ (α : Sort(u+1)) (n : Nat), Ok.{u} α n → Ok.{u} α n
@@ -5139,7 +5134,7 @@ mod tests {
     );
 
     // Verify each binder domain is well-formed with detailed tracing.
-    let count_binders = |e: &AE| -> usize {
+    let _count_binders = |e: &AE| -> usize {
       let mut n = 0;
       let mut c = e.clone();
       while let ExprData::All(_, _, _, b, _) = c.data() {
@@ -5161,7 +5156,7 @@ mod tests {
   /// Then define `Evil : Type` with `Evil.mk : Wrap Evil → Evil`.
   /// This must be REJECTED: `Evil` appears negatively inside `Wrap`'s constructor.
   fn wrap_evil_env() -> KEnv<Anon> {
-    let mut env = bool_env();
+    let env = bool_env();
 
     // Wrap : Type → Type  (1 param, 0 indices)
     let wrap_ty = pi(sort1(), sort1());
@@ -5279,7 +5274,7 @@ mod tests {
   /// (as `head : α` and `tail : List α`), so this is fine.
   #[test]
   fn accept_valid_nested_list_tree() {
-    let mut env = list_env();
+    let env = list_env();
 
     // Tree : Type  (0 params, 0 indices, recursive via List nesting)
     let tree_block = mk_id("Tree");

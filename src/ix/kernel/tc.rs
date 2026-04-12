@@ -9,13 +9,12 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 
 use crate::ix::address::Address;
-use crate::ix::env::Name;
 
 use super::constant::RecRule;
-use super::env::{Addr, InternTable, KEnv};
+use super::env::{InternTable, KEnv};
 use super::equiv::EquivManager;
-use super::error::TcError;
-use super::expr::{ExprData, ExprInfo, KExpr, MData};
+use super::error::{TcError, u64_to_usize};
+use super::expr::{ExprData, KExpr};
 use super::id::KId;
 use super::level::{KUniv, UnivData};
 use super::mode::KernelMode;
@@ -217,10 +216,11 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
   /// Returns None if the variable is lambda/forall-bound (not a let).
   pub fn lookup_let_val(&mut self, idx: u64) -> Option<KExpr<M>> {
     let n = self.ctx.len();
-    if idx as usize >= n {
+    let idx_us = usize::try_from(idx).ok()?;
+    if idx_us >= n {
       return None;
     }
-    let level = n - 1 - idx as usize;
+    let level = n - 1 - idx_us;
     let val = self.let_vals[level].as_ref()?.clone();
     Some(lift(&self.ienv, &val, idx + 1, 0))
   }
@@ -240,10 +240,11 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
   /// Look up a bound variable's type, lifted to the current depth.
   pub fn lookup_var(&mut self, idx: u64) -> Result<KExpr<M>, TcError<M>> {
     let n = self.ctx.len();
-    if idx as usize >= n {
+    let idx_us = u64_to_usize::<M>(idx)?;
+    if idx_us >= n {
       return Err(TcError::VarOutOfRange { idx, ctx_len: n });
     }
-    let level = n - 1 - idx as usize;
+    let level = n - 1 - idx_us;
     let ty = self.ctx[level].clone();
     Ok(lift(&self.ienv, &ty, idx + 1, 0))
   }
@@ -348,8 +349,10 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     match u.data() {
       UnivData::Zero(_) => u.clone(),
       UnivData::Param(i, _, _) => {
-        let i = *i as usize;
-        if i < us.len() { us[i].clone() } else { u.clone() }
+        match usize::try_from(*i).ok().and_then(|i| us.get(i)) {
+          Some(v) => v.clone(),
+          None => u.clone(),
+        }
       },
       UnivData::Succ(inner, _) => {
         let inner2 = self.subst_univ(inner, us);
@@ -504,14 +507,9 @@ pub fn collect_app_spine<M: KernelMode>(
 ) -> (KExpr<M>, Vec<KExpr<M>>) {
   let mut args = Vec::new();
   let mut cur = e.clone();
-  loop {
-    match cur.data() {
-      ExprData::App(f, a, _) => {
-        args.push(a.clone());
-        cur = f.clone();
-      },
-      _ => break,
-    }
+  while let ExprData::App(f, a, _) = cur.data() {
+    args.push(a.clone());
+    cur = f.clone();
   }
   args.reverse();
   (cur, args)

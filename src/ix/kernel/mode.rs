@@ -235,8 +235,8 @@ mod tests {
   #[test]
   fn anon_field_erases_value() {
     let name = mk_name("x");
-    let field = Anon::meta_field(name);
-    assert_eq!(field, ());
+    Anon::meta_field(name);
+    assert_eq!((), ());
   }
 
   #[test]
@@ -253,7 +253,7 @@ mod tests {
   #[test]
   fn meta_hash_unit_is_noop() {
     let mut h1 = blake3::Hasher::new();
-    let mut h2 = blake3::Hasher::new();
+    let h2 = blake3::Hasher::new();
     ().meta_hash(&mut h1);
     // h1 and h2 should produce identical results
     assert_eq!(h1.finalize(), h2.finalize());

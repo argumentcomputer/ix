@@ -3,7 +3,6 @@
 //! Each variant carries structural fields plus metadata fields
 //! (`name`, `level_params`, `lean_all`) for roundtrip fidelity in Meta mode.
 
-use crate::ix::address::Address;
 use crate::ix::env::{DefinitionSafety, Name, QuotKind, ReducibilityHints};
 use crate::ix::ixon::constant::DefKind;
 
@@ -146,6 +145,7 @@ mod tests {
   use super::super::level::KUniv;
   use super::super::mode::Anon;
   use super::*;
+  use crate::ix::address::Address;
   use crate::ix::env::{DefinitionSafety, QuotKind, ReducibilityHints};
   use crate::ix::ixon::constant::DefKind;
 

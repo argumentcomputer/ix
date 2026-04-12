@@ -48,7 +48,7 @@ impl EquivManager {
   }
 
   /// Get or create a node index for a composite key.
-  fn to_node(&mut self, key: EqKey) -> usize {
+  fn node_for_key(&mut self, key: EqKey) -> usize {
     if let Some(&node) = self.key_to_node.get(&key) {
       return node;
     }
@@ -113,8 +113,8 @@ impl EquivManager {
 
   /// Record that two composite keys are definitionally equal.
   pub fn add_equiv(&mut self, k1: EqKey, k2: EqKey) {
-    let n1 = self.to_node(k1);
-    let n2 = self.to_node(k2);
+    let n1 = self.node_for_key(k1);
+    let n2 = self.node_for_key(k2);
     self.union(n1, n2);
   }
 }

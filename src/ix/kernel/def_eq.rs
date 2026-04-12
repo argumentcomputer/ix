@@ -10,7 +10,7 @@
 use crate::ix::ixon::constant::DefKind;
 
 use super::constant::KConst;
-use super::error::TcError;
+use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
 use super::level::{KUniv, univ_eq};
@@ -59,17 +59,16 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       if let (Some(a_root), Some(b_root)) = (
         self.equiv_manager.find_root_key(a_key),
         self.equiv_manager.find_root_key(b_key),
-      ) {
-        if a_root != a_key || b_root != b_key {
-          let (rlo, rhi) = canonical_pair(a_root.0, b_root.0);
-          let root_cache_key = (rlo, rhi, self.ctx_id);
-          if let Some(&cached) = self.def_eq_cache.get(&root_cache_key) {
-            if cached {
-              self.equiv_manager.add_equiv(a_key, b_key);
-            }
-            self.def_eq_cache.insert(cache_key, cached);
-            return Ok(cached);
+      ) && (a_root != a_key || b_root != b_key)
+      {
+        let (rlo, rhi) = canonical_pair(a_root.0, b_root.0);
+        let root_cache_key = (rlo, rhi, self.ctx_id);
+        if let Some(&cached) = self.def_eq_cache.get(&root_cache_key) {
+          if cached {
+            self.equiv_manager.add_equiv(a_key, b_key);
           }
+          self.def_eq_cache.insert(cache_key, cached);
+          return Ok(cached);
         }
       }
     }
@@ -183,8 +182,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
       let a_head = head_const_id(&wa);
       let b_head = head_const_id(&wb);
-      let a_delta = a_head.as_ref().map_or(false, |h| self.is_delta(h));
-      let b_delta = b_head.as_ref().map_or(false, |h| self.is_delta(h));
+      let a_delta = a_head.as_ref().is_some_and(|h| self.is_delta(h));
+      let b_delta = b_head.as_ref().is_some_and(|h| self.is_delta(h));
 
       if !a_delta && !b_delta {
         break;
@@ -197,11 +196,12 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
           wb = wb2;
           continue;
         }
-      } else if b_delta && !a_delta {
-        if let Some(wa2) = self.try_unfold_proj_app(&wa)? {
-          wa = wa2;
-          continue;
-        }
+      } else if b_delta
+        && !a_delta
+        && let Some(wa2) = self.try_unfold_proj_app(&wa)?
+      {
+        wa = wa2;
+        continue;
       }
 
       if a_delta && b_delta {
@@ -211,17 +211,18 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         if wa_w == wb_w {
           // H2: Same-head-spine optimization — only for Regular hints, same head,
           // and only cache failure when spine args are actually compared (lean4lean:589-596)
-          if let (Some(ah), Some(bh)) = (&a_head, &b_head) {
-            if ah.addr == bh.addr && self.is_regular(ah) {
-              let (lo, hi) = canonical_pair(wa.ptr_key(), wb.ptr_key());
-              let failure_key = (lo, hi, self.ctx_id);
-              if !self.def_eq_failure.contains(&failure_key) {
-                if let Some(result) = self.try_same_head_spine(&wa, &wb)? {
-                  return Ok(result);
-                }
-                // Spine comparison was attempted and failed — cache it
-                self.def_eq_failure.insert(failure_key);
+          if let (Some(ah), Some(bh)) = (&a_head, &b_head)
+            && ah.addr == bh.addr
+            && self.is_regular(ah)
+          {
+            let (lo, hi) = canonical_pair(wa.ptr_key(), wb.ptr_key());
+            let failure_key = (lo, hi, self.ctx_id);
+            if !self.def_eq_failure.contains(&failure_key) {
+              if let Some(result) = self.try_same_head_spine(&wa, &wb)? {
+                return Ok(result);
               }
+              // Spine comparison was attempted and failed — cache it
+              self.def_eq_failure.insert(failure_key);
             }
           }
           // H1: Equal height — unfold BOTH sides (lean4lean:596)
@@ -261,12 +262,10 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         } else {
           break;
         }
+      } else if let Some(ub) = self.delta_unfold_one(&wb)? {
+        wb = self.whnf_no_delta(&ub)?;
       } else {
-        if let Some(ub) = self.delta_unfold_one(&wb)? {
-          wb = self.whnf_no_delta(&ub)?;
-        } else {
-          break;
-        }
+        break;
       }
 
       if wa.ptr_eq(&wb) {
@@ -319,16 +318,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       (
         ExprData::Lam(_, _, ty1, body1, _),
         ExprData::Lam(_, _, ty2, body2, _),
-      ) => {
-        if !self.is_def_eq(ty1, ty2)? {
-          return Ok(false);
-        }
-        self.push_local(ty1.clone());
-        let r = self.is_def_eq(body1, body2);
-        self.pop_local();
-        r
-      },
-      (
+      )
+      | (
         ExprData::All(_, _, ty1, body1, _),
         ExprData::All(_, _, ty2, body2, _),
       ) => {
@@ -408,18 +399,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       (
         ExprData::Lam(_, _, ty1, body1, _),
         ExprData::Lam(_, _, ty2, body2, _),
-      ) => {
-        if self.is_def_eq(ty1, ty2)? {
-          self.push_local(ty1.clone());
-          let r = self.is_def_eq(body1, body2)?;
-          self.pop_local();
-          if r {
-            return Ok(true);
-          }
-        }
-        false
-      },
-      (
+      )
+      | (
         ExprData::All(_, _, ty1, body1, _),
         ExprData::All(_, _, ty2, body2, _),
       ) => {
@@ -615,8 +596,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         if v.0 == num_bigint::BigUint::ZERO {
           return None;
         }
-        let pred =
-          lean_ffi::nat::Nat(&v.0 - num_bigint::BigUint::from(1u64));
+        let pred = lean_ffi::nat::Nat(&v.0 - num_bigint::BigUint::from(1u64));
         let pred_addr = crate::ix::address::Address::hash(&pred.to_le_bytes());
         Some(self.ienv.intern_expr(KExpr::nat(pred, pred_addr)))
       },
@@ -802,7 +782,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // Head must be a constructor
     let (induct_id, num_params, num_fields) = match self.env.get(&ctor_id) {
       Some(KConst::Ctor { induct, params, fields, .. }) => {
-        (induct.clone(), params as usize, fields as usize)
+        (induct.clone(), u64_to_usize::<M>(params)?, u64_to_usize::<M>(fields)?)
       },
       _ => return Ok(false),
     };
@@ -912,8 +892,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     use crate::ix::env::ReducibilityHints;
     match self.env.get(id) {
       Some(KConst::Defn { kind, hints, .. }) => match kind {
-        DefKind::Opaque => 0,
-        DefKind::Theorem => 0,
+        DefKind::Opaque | DefKind::Theorem => 0,
         DefKind::Definition => match hints {
           ReducibilityHints::Abbrev => u32::MAX - 1,
           ReducibilityHints::Regular(h) => h.saturating_add(1),
@@ -988,7 +967,7 @@ fn head_const_id<M: KernelMode>(e: &KExpr<M>) -> Option<KId<M>> {
 mod tests {
   use super::super::constant::KConst;
   use super::super::env::{InternTable, KEnv};
-  use super::super::expr::{ExprData, KExpr};
+  use super::super::expr::KExpr;
   use super::super::id::KId;
   use super::super::level::KUniv;
   use super::super::mode::Anon;
@@ -1011,7 +990,7 @@ mod tests {
   }
 
   fn env_with_id() -> KEnv<Anon> {
-    let mut env = KEnv::new();
+    let env = KEnv::new();
     let id_ty = AE::all((), (), sort0(), sort0());
     let id_val = AE::lam((), (), sort0(), AE::var(0, ()));
     env.insert(

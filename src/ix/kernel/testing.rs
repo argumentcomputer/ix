@@ -198,7 +198,7 @@ pub fn mk_axiom(
 /// Add Eq.{u} and Eq.refl.{u} as axioms to the environment.
 /// Eq : {α : Sort u} → α → α → Prop
 /// Eq.refl : {α : Sort u} → (a : α) → Eq a a
-pub fn add_eq_axioms(env: &mut KEnv<Meta>) {
+pub fn add_eq_axioms(env: &KEnv<Meta>) {
   let eq_ty =
     ipi("α", sort(param(0)), npi("a", var(0), npi("b", var(1), sort0())));
   let (eq_id, eq_c) = mk_axiom("Eq", 1, vec![mk_name("u")], eq_ty);

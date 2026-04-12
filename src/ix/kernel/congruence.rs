@@ -8,7 +8,6 @@ use crate::ix::env::{self as lean, ConstantInfo as LeanCI, Literal, Name};
 
 use super::constant::KConst;
 use super::expr::{ExprData, KExpr};
-use super::id::KId;
 use super::level::{KUniv, UnivData};
 use super::mode::Anon;
 
@@ -41,11 +40,8 @@ pub fn level_congruent(
   match (lean_lvl.as_data(), zero_univ.data()) {
     (LD::Zero(_), UnivData::Zero(_)) => Ok(()),
     (LD::Succ(a, _), UnivData::Succ(b, _)) => level_congruent(a, b, _nr),
-    (LD::Max(a1, a2, _), UnivData::Max(b1, b2, _)) => {
-      level_congruent(a1, b1, _nr)?;
-      level_congruent(a2, b2, _nr)
-    },
-    (LD::Imax(a1, a2, _), UnivData::IMax(b1, b2, _)) => {
+    (LD::Max(a1, a2, _), UnivData::Max(b1, b2, _))
+    | (LD::Imax(a1, a2, _), UnivData::IMax(b1, b2, _)) => {
       level_congruent(a1, b1, _nr)?;
       level_congruent(a2, b2, _nr)
     },
@@ -113,12 +109,8 @@ pub fn expr_congruent(
       expr_congruent(a1, a2, nr)
     },
 
-    (LE::Lam(_, ty1, body1, _, _), ExprData::Lam(_, _, ty2, body2, _)) => {
-      expr_congruent(ty1, ty2, nr)?;
-      expr_congruent(body1, body2, nr)
-    },
-
-    (LE::ForallE(_, ty1, body1, _, _), ExprData::All(_, _, ty2, body2, _)) => {
+    (LE::Lam(_, ty1, body1, _, _), ExprData::Lam(_, _, ty2, body2, _))
+    | (LE::ForallE(_, ty1, body1, _, _), ExprData::All(_, _, ty2, body2, _)) => {
       expr_congruent(ty1, ty2, nr)?;
       expr_congruent(body1, body2, nr)
     },
@@ -132,8 +124,8 @@ pub fn expr_congruent(
       expr_congruent(body1, body2, nr)
     },
 
-    (LE::Lit(Literal::NatVal(_), _), ExprData::Nat(_, _, _)) => Ok(()),
-    (LE::Lit(Literal::StrVal(_), _), ExprData::Str(_, _, _)) => Ok(()),
+    (LE::Lit(Literal::NatVal(_), _), ExprData::Nat(_, _, _))
+    | (LE::Lit(Literal::StrVal(_), _), ExprData::Str(_, _, _)) => Ok(()),
 
     (LE::Proj(name, idx, struct_expr, _), ExprData::Prj(id, field, val, _)) => {
       match nr.resolve(name) {
@@ -159,7 +151,7 @@ pub fn expr_congruent(
     // Lean Mdata wraps an inner expr — zero strips it in Anon mode.
     (LE::Mdata(_, inner, _), _) => expr_congruent(inner, zero_expr, nr),
 
-    (LE::Fvar(..), _) | (LE::Mvar(..), _) => {
+    (LE::Fvar(..) | LE::Mvar(..), _) => {
       Err("unexpected Fvar/Mvar in constant".to_string())
     },
 
@@ -191,7 +183,8 @@ pub fn const_congruent(
 
   // Variant-specific checks
   match (lean_ci, zero_const) {
-    (LeanCI::AxiomInfo(_), KConst::Axio { .. }) => Ok(()),
+    (LeanCI::AxiomInfo(_), KConst::Axio { .. })
+    | (LeanCI::QuotInfo(_), KConst::Quot { .. }) => Ok(()),
 
     (LeanCI::DefnInfo(v), KConst::Defn { val, .. }) => {
       expr_congruent(&v.value, val, nr).map_err(|e| format!("value: {e}"))
@@ -204,8 +197,6 @@ pub fn const_congruent(
     (LeanCI::OpaqueInfo(v), KConst::Defn { val, .. }) => {
       expr_congruent(&v.value, val, nr).map_err(|e| format!("value: {e}"))
     },
-
-    (LeanCI::QuotInfo(_), KConst::Quot { .. }) => Ok(()),
 
     (LeanCI::InductInfo(v), KConst::Indc { params, indices, ctors, .. }) => {
       let lp = v.num_params.to_u64().unwrap_or(u64::MAX);
@@ -302,7 +293,7 @@ fn lean_lvl_tag(l: &lean::Level) -> &'static str {
 }
 
 fn zero_univ_tag<M: super::mode::KernelMode>(
-  u: &super::level::KUniv<M>,
+  u: &KUniv<M>,
 ) -> &'static str {
   match u.data() {
     UnivData::Zero(_) => "Zero",

@@ -89,6 +89,7 @@ pub fn simul_subst<M: KernelMode>(
     ExprData::Var(i, _, _) => {
       let i = *i;
       if i >= depth && i < depth + n {
+        #[allow(clippy::cast_possible_truncation)] // guarded: i < depth + substs.len()
         return lift(env, &substs[(i - depth) as usize], depth, 0);
       } else if i >= depth + n {
         KExpr::var(i - n, M::meta_field(crate::ix::env::Name::anon()))
@@ -202,7 +203,7 @@ mod tests {
   use super::*;
   use crate::ix::address::Address;
   use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::level::KUniv;
+  
   use crate::ix::kernel::mode::Anon;
   use lean_ffi::nat::Nat;
 
@@ -331,7 +332,7 @@ mod tests {
   #[test]
   fn intern_dedup() {
     let env = InternTable::<Anon>::new();
-    let v0 = AE::var(0, ());
+    let _v0 = AE::var(0, ());
     let v2 = AE::var(2, ());
     let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
 

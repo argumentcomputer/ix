@@ -14,7 +14,7 @@ use rustc_hash::FxHashMap;
 use crate::ix::address::Address;
 use crate::ix::env::{BinderInfo, Name};
 use crate::ix::ixon::constant::{
-  Constant, ConstantInfo as IxonCI, DefKind, MutConst as IxonMutConst,
+  Constant, ConstantInfo as IxonCI, MutConst as IxonMutConst,
 };
 use crate::ix::ixon::env::Env as IxonEnv;
 use crate::ix::ixon::expr::Expr as IxonExpr;
@@ -24,9 +24,9 @@ use crate::ix::ixon::metadata::{
 use crate::ix::ixon::univ::Univ as IxonUniv;
 use lean_ffi::nat::Nat;
 
-use super::constant::{RecRule, KConst};
+use super::constant::{KConst, RecRule};
 use super::env::{InternTable, KEnv};
-use super::expr::{MData, KExpr};
+use super::expr::{KExpr, MData};
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::KernelMode;
@@ -150,8 +150,9 @@ fn ingress_univ<M: KernelMode>(
           stack.push(UnivFrame::IMaxLeft(a.clone()));
         },
         IxonUniv::Var(idx) => {
-          let name =
-            ctx.lvls.get(*idx as usize).cloned().unwrap_or_else(Name::anon);
+          let pos =
+            usize::try_from(*idx).expect("univ var index exceeds usize");
+          let name = ctx.lvls.get(pos).cloned().unwrap_or_else(Name::anon);
           values
             .push(intern.intern_univ(KUniv::param(*idx, M::meta_field(name))));
         },
@@ -160,16 +161,13 @@ fn ingress_univ<M: KernelMode>(
         let inner = values.pop().unwrap();
         values.push(intern.intern_univ(KUniv::succ(inner)));
       },
-      UnivFrame::MaxLeft(a) => {
+      UnivFrame::MaxLeft(a) | UnivFrame::IMaxLeft(a) => {
         stack.push(UnivFrame::Process(a));
       },
       UnivFrame::Max => {
         let b = values.pop().unwrap();
         let a = values.pop().unwrap();
         values.push(intern.intern_univ(KUniv::max(a, b)));
-      },
-      UnivFrame::IMaxLeft(a) => {
-        stack.push(UnivFrame::Process(a));
       },
       UnivFrame::IMax => {
         let b = values.pop().unwrap();
@@ -189,7 +187,7 @@ fn ingress_univ_args<M: KernelMode>(
 ) -> Box<[KUniv<M>]> {
   univ_idxs
     .iter()
-    .filter_map(|&idx| ctx.univs.get(idx as usize))
+    .filter_map(|&idx| ctx.univs.get(usize::try_from(idx).ok()?))
     .map(|u| ingress_univ(u, ctx, intern))
     .collect()
 }
@@ -283,21 +281,37 @@ fn ingress_expr<M: KernelMode>(
         // Walk mdata chain in arena
         let mut current_idx = arena_idx;
         let mut mdata_layers: Vec<MData> = Vec::new();
-        loop {
-          match ctx.arena.nodes.get(current_idx as usize) {
-            Some(ExprMetaData::Mdata { mdata, child }) => {
-              for kvm in mdata {
-                mdata_layers.push(resolve_kvmap(kvm, ixon_env));
-              }
-              current_idx = *child;
-            },
-            _ => break,
+        while let Some(ExprMetaData::Mdata { mdata, child }) =
+          ctx.arena.nodes.get(
+            usize::try_from(current_idx).map_err(|_e|{
+              format!("arena index {current_idx} exceeds usize")
+            })?,
+          )
+        {
+          for kvm in mdata {
+            mdata_layers.push(resolve_kvmap(kvm, ixon_env));
           }
+          current_idx = *child;
         }
+
+        //loop {
+        //  match ctx.arena.nodes.get(current_idx as usize) {
+        //    Some(ExprMetaData::Mdata { mdata, child }) => {
+        //      for kvm in mdata {
+        //        mdata_layers.push(resolve_kvmap(kvm, ixon_env));
+        //      }
+        //      current_idx = *child;
+        //    },
+        //    _ => break,
+        //  }
+        //}
 
         // Expand Share transparently
         if let IxonExpr::Share(share_idx) = expr.as_ref() {
-          if let Some(shared) = ctx.sharing.get(*share_idx as usize) {
+          if let Some(shared) = ctx.sharing.get(
+            usize::try_from(*share_idx)
+              .map_err(|_e|format!("Share index {share_idx} exceeds usize"))?,
+          ) {
             stack.push(ExprFrame::Process { expr: shared.clone(), arena_idx });
             continue;
           } else {
@@ -308,9 +322,11 @@ fn ingress_expr<M: KernelMode>(
         // BVar early return (no caching needed for leaves)
         if let IxonExpr::Var(idx) = expr.as_ref() {
           // Resolve name from the binder context using de Bruijn index.
+          let idx_usize = usize::try_from(*idx)
+            .map_err(|_e|format!("BVar index {idx} exceeds usize"))?;
           let name = binder_names
             .len()
-            .checked_sub(1 + *idx as usize)
+            .checked_sub(1 + idx_usize)
             .and_then(|i| binder_names.get(i))
             .cloned()
             .unwrap_or_else(Name::anon);
@@ -335,31 +351,40 @@ fn ingress_expr<M: KernelMode>(
           continue;
         }
 
-        let node = ctx
-          .arena
-          .nodes
-          .get(current_idx as usize)
-          .unwrap_or(&ExprMetaData::Leaf);
+        let node =
+          ctx
+            .arena
+            .nodes
+            .get(usize::try_from(current_idx).map_err(|_e|{
+              format!("arena index {current_idx} exceeds usize")
+            })?)
+            .unwrap_or(&ExprMetaData::Leaf);
 
         stack.push(ExprFrame::Cache { key: cache_key });
         let mdata = M::meta_field(mdata_layers);
 
         match expr.as_ref() {
           IxonExpr::Sort(idx) => {
-            let u = ctx
-              .univs
-              .get(*idx as usize)
-              .ok_or_else(|| format!("invalid Sort univ index {idx}"))?;
+            let u =
+              ctx
+                .univs
+                .get(usize::try_from(*idx).map_err(|_e| {
+                  format!("Sort univ index {idx} exceeds usize")
+                })?)
+                .ok_or_else(|| format!("invalid Sort univ index {idx}"))?;
             let zu = ingress_univ(u, ctx, ctx.intern);
             values.push(ctx.intern.intern_expr(KExpr::sort_mdata(zu, mdata)));
           },
 
-          IxonExpr::Var(_) => unreachable!(),
+          IxonExpr::Var(_) | IxonExpr::Share(_) => unreachable!(),
 
           IxonExpr::Ref(ref_idx, univ_idxs) => {
             let addr = ctx
               .refs
-              .get(*ref_idx as usize)
+              .get(
+                usize::try_from(*ref_idx)
+                  .map_err(|_e| format!("Ref index {ref_idx} exceeds usize"))?,
+              )
               .ok_or_else(|| format!("invalid Ref index {ref_idx}"))?
               .clone();
             let name = match node {
@@ -384,7 +409,10 @@ fn ingress_expr<M: KernelMode>(
           IxonExpr::Rec(rec_idx, univ_idxs) => {
             let mid = ctx
               .mut_ctx
-              .get(*rec_idx as usize)
+              .get(
+                usize::try_from(*rec_idx)
+                  .map_err(|_e| format!("Rec index {rec_idx} exceeds usize"))?,
+              )
               .ok_or_else(|| format!("invalid Rec index {rec_idx}"))?
               .clone();
             let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern);
@@ -495,7 +523,9 @@ fn ingress_expr<M: KernelMode>(
           IxonExpr::Prj(type_ref_idx, field_idx, s) => {
             let type_addr = ctx
               .refs
-              .get(*type_ref_idx as usize)
+              .get(usize::try_from(*type_ref_idx).map_err(|_e| {
+                format!("Prj type ref index {type_ref_idx} exceeds usize")
+              })?)
               .ok_or_else(|| {
                 format!("invalid Prj type ref index {type_ref_idx}")
               })?
@@ -525,7 +555,9 @@ fn ingress_expr<M: KernelMode>(
           IxonExpr::Str(ref_idx) => {
             let addr = ctx
               .refs
-              .get(*ref_idx as usize)
+              .get(usize::try_from(*ref_idx).map_err(|_e| {
+                format!("Str ref index {ref_idx} exceeds usize")
+              })?)
               .ok_or_else(|| format!("invalid Str ref index {ref_idx}"))?;
             let s = ixon_env
               .get_blob(addr)
@@ -541,20 +573,19 @@ fn ingress_expr<M: KernelMode>(
           IxonExpr::Nat(ref_idx) => {
             let addr = ctx
               .refs
-              .get(*ref_idx as usize)
+              .get(usize::try_from(*ref_idx).map_err(|_e| {
+                format!("Nat ref index {ref_idx} exceeds usize")
+              })?)
               .ok_or_else(|| format!("invalid Nat ref index {ref_idx}"))?;
             let n = ixon_env
               .get_blob(addr)
-              .map(|b| Nat::from_le_bytes(&b))
-              .unwrap_or_else(|| Nat::from(0u64));
+              .map_or_else(|| Nat::from(0u64), |b| Nat::from_le_bytes(&b));
             values.push(ctx.intern.intern_expr(KExpr::nat_mdata(
               n,
               addr.clone(),
               mdata,
             )));
           },
-
-          IxonExpr::Share(_) => unreachable!(),
         }
       },
 
@@ -578,7 +609,8 @@ fn ingress_expr<M: KernelMode>(
           ctx.intern.intern_expr(KExpr::lam_mdata(name, bi, ty, body, mdata)),
         );
       },
-      ExprFrame::AllBody { body, body_arena } => {
+      ExprFrame::AllBody { body, body_arena }
+      | ExprFrame::LetBody { body, body_arena } => {
         stack.push(ExprFrame::Process { expr: body, arena_idx: body_arena });
       },
       ExprFrame::AllDone { name, bi, mdata } => {
@@ -592,9 +624,6 @@ fn ingress_expr<M: KernelMode>(
         stack.push(ExprFrame::LetBody { body, body_arena });
         stack.push(ExprFrame::BinderPush { name: binder_name });
         stack.push(ExprFrame::Process { expr: val, arena_idx: val_arena });
-      },
-      ExprFrame::LetBody { body, body_arena } => {
-        stack.push(ExprFrame::Process { expr: body, arena_idx: body_arena });
       },
       ExprFrame::LetDone { name, nd, mdata } => {
         let body = values.pop().unwrap();
@@ -735,20 +764,10 @@ fn ingress_recursor<M: KernelMode>(
   intern: &InternTable<M>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
-  let (
-    level_params,
-    arena,
-    type_root,
-    rule_roots,
-    all_addrs,
-  ) = match &meta.info {
+  let (level_params, arena, type_root, rule_roots, all_addrs) = match &meta.info
+  {
     ConstantMetaInfo::Rec {
-      lvls,
-      arena,
-      type_root,
-      rule_roots,
-      all,
-      ..
+      lvls, arena, type_root, rule_roots, all, ..
     } => (
       resolve_level_params(lvls, names),
       arena,
@@ -950,7 +969,7 @@ fn ingress_standalone<M: KernelMode>(
 #[allow(clippy::too_many_arguments)]
 fn ingress_muts_inductive<M: KernelMode>(
   ind: &crate::ix::ixon::constant::Inductive,
-  self_id: KId<M>,
+  self_id: &KId<M>,
   meta: &ConstantMeta,
   ixon_env: &IxonEnv,
   names: &FxHashMap<Address, Name>,
@@ -1128,7 +1147,7 @@ fn ingress_muts_block<M: KernelMode>(
       IxonMutConst::Indc(ind) => {
         results.extend(ingress_muts_inductive(
           ind,
-          self_id,
+          &self_id,
           member_meta,
           ixon_env,
           names,
@@ -1187,7 +1206,6 @@ use crate::ix::env::{
 /// Convert a Lean Level to KUniv<Anon>, mapping named params to positional indices.
 pub fn lean_level_to_kuniv(lvl: &Level, param_names: &[Name]) -> KUniv<Anon> {
   match lvl.as_data() {
-    LevelData::Zero(_) => KUniv::zero(),
     LevelData::Succ(l, _) => KUniv::succ(lean_level_to_kuniv(l, param_names)),
     LevelData::Max(a, b, _) => KUniv::max(
       lean_level_to_kuniv(a, param_names),
@@ -1201,7 +1219,7 @@ pub fn lean_level_to_kuniv(lvl: &Level, param_names: &[Name]) -> KUniv<Anon> {
       let idx = param_names.iter().position(|n| n == name).unwrap_or(0) as u64;
       KUniv::param(idx, ())
     },
-    LevelData::Mvar(_, _) => KUniv::zero(), // shouldn't appear in elaborated terms
+    LevelData::Zero(_) | LevelData::Mvar(_, _) => KUniv::zero(),
   }
 }
 
@@ -1213,10 +1231,10 @@ pub fn resolve_lean_name_addr(
   name: &Name,
   name_to_ixon_addr: Option<&dashmap::DashMap<Name, Address>>,
 ) -> Address {
-  if let Some(map) = name_to_ixon_addr {
-    if let Some(entry) = map.get(name) {
-      return entry.value().clone();
-    }
+  if let Some(map) = name_to_ixon_addr
+    && let Some(entry) = map.get(name)
+  {
+    return entry.value().clone();
   }
   Address::from_blake3_hash(*name.get_hash())
 }
@@ -1331,7 +1349,6 @@ pub fn ingress_compiled_names(
   name_map: &FxHashMap<Address, Name>,
   addr_map: &FxHashMap<Name, Address>,
 ) {
-
   for name in names {
     let named = match ixon_env.named.get(name) {
       Some(entry) => entry.value().clone(),
@@ -1344,33 +1361,30 @@ pub fn ingress_compiled_names(
 
     // Check if this is a Muts entry (mutual block) — handle differently
     if matches!(&named.meta.info, ConstantMetaInfo::Muts { .. }) {
-      if let ConstantMetaInfo::Muts { all } = &named.meta.info {
-        match ingress_muts_block(
+      if let ConstantMetaInfo::Muts { all } = &named.meta.info
+        && let Ok(entries) = ingress_muts_block(
           name,
           &named.addr,
           all,
           ixon_env,
-          &name_map,
-          &addr_map,
+          name_map,
+          addr_map,
           intern,
-        ) {
-          Ok(entries) => {
-            let block_id = entries.first().and_then(|(_, zc)| match zc {
-              KConst::Defn { block, .. }
-              | KConst::Recr { block, .. }
-              | KConst::Indc { block, .. } => Some(block.clone()),
-              _ => None,
-            });
-            let member_ids: Vec<KId<Anon>> =
-              entries.iter().map(|(id, _)| id.clone()).collect();
-            if let Some(bid) = block_id {
-              zenv.blocks.insert(bid, member_ids);
-            }
-            for (id, zc) in entries {
-              zenv.insert(id, zc);
-            }
-          },
-          Err(_) => {},
+        )
+      {
+        let block_id = entries.first().and_then(|(_, zc)| match zc {
+          KConst::Defn { block, .. }
+          | KConst::Recr { block, .. }
+          | KConst::Indc { block, .. } => Some(block.clone()),
+          _ => None,
+        });
+        let member_ids: Vec<KId<Anon>> =
+          entries.iter().map(|(id, _)| id.clone()).collect();
+        if let Some(bid) = block_id {
+          zenv.blocks.insert(bid, member_ids);
+        }
+        for (id, zc) in entries {
+          zenv.insert(id, zc);
         }
       }
       continue;
@@ -1385,22 +1399,19 @@ pub fn ingress_compiled_names(
       _ => {},
     }
 
-    match ingress_standalone(
+    if let Ok(entries) = ingress_standalone(
       name,
       &named.addr,
       &constant,
       &named.meta,
       ixon_env,
-      &name_map,
-      &addr_map,
+      name_map,
+      addr_map,
       intern,
     ) {
-      Ok(entries) => {
-        for (id, zc) in entries {
-          zenv.insert(id, zc);
-        }
-      },
-      Err(_) => {},
+      for (id, zc) in entries {
+        zenv.insert(id, zc);
+      }
     }
   }
 }
@@ -1507,7 +1518,7 @@ pub fn ixon_to_zenv<M: KernelMode>(
     .collect();
 
   // Assemble environment
-  let mut zenv: KEnv<M> = KEnv::new();
+  let zenv: KEnv<M> = KEnv::new();
 
   for entries in standalone_results? {
     for (id, zc) in entries {

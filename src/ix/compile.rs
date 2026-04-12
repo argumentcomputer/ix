@@ -12,16 +12,14 @@ use std::{
   cmp::Ordering,
   sync::{
     Arc,
-    atomic::{AtomicUsize, Ordering as AtomicOrdering},
+    atomic::Ordering as AtomicOrdering,
   },
-  thread,
 };
 
 use lean_ffi::nat::Nat;
 
 use crate::{
   ix::address::Address,
-  ix::condense::compute_sccs,
   ix::env::{
     AxiomVal, BinderInfo, ConstantInfo as LeanConstantInfo, ConstructorVal,
     DataValue as LeanDataValue, Env as LeanEnv, Expr as LeanExpr, ExprData,
@@ -29,8 +27,7 @@ use crate::{
     RecursorRule as LeanRecursorRule, SourceInfo as LeanSourceInfo,
     Substring as LeanSubstring, Syntax as LeanSyntax, SyntaxPreresolved,
   },
-  ix::graph::{NameSet, build_ref_graph},
-  ix::ground::ground_consts,
+  ix::graph::NameSet,
   ix::ixon::{
     CompileError, Tag0,
     constant::{
@@ -71,16 +68,32 @@ pub struct BlockSizeStats {
 }
 
 /// Compile state for building the Ixon environment.
-#[derive(Default)]
 pub struct CompileState {
   /// Ixon environment being built
   pub env: IxonEnv,
   /// Map from Lean constant name to Ixon address
   pub name_to_addr: DashMap<Name, Address>,
-  /// Addresses of mutual blocks
-  pub blocks: DashSet<Address>,
+  /// Mutual block canonical class ordering, keyed by any inductive name in the
+  /// block. Each entry is the list of equivalence classes (in `sort_consts` order),
+  /// where each class is a list of names.
+  pub blocks: DashMap<Name, Vec<Vec<Name>>>,
   /// Per-block size statistics (keyed by low-link name)
   pub block_stats: DashMap<Name, BlockSizeStats>,
+  /// Kernel environment, incrementally populated as blocks compile.
+  /// Used for type inference during aux_gen (e.g., is_large_eliminator).
+  pub kenv: crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Anon>,
+  /// Shared intern table for the kernel environment.
+  pub kintern: Arc<crate::ix::kernel::env::InternTable<crate::ix::kernel::mode::Anon>>,
+  /// Constants filtered out during grounding (name -> error description).
+  pub ungrounded: FxHashMap<Name, String>,
+  /// Names compiled by aux_gen during a parent block's compilation.
+  /// The scheduler drains this after each block to decrement dep counts
+  /// for dependents of these "bonus" names.
+  pub aux_gen_extra_names: DashSet<Name>,
+  /// Fallback name->addr map for constants compiled by aux_gen or pre-compiled
+  /// during a parent inductive's compilation. Visible to later compilations
+  /// so expressions referencing them resolve.
+  pub aux_name_to_addr: DashMap<Name, Address>,
 }
 
 /// Cached compiled expression with arena root index.
@@ -120,15 +133,26 @@ pub struct CompileStateStats {
   pub blocks: usize,
 }
 
+impl Default for CompileState {
+  fn default() -> Self {
+    CompileState {
+      env: Default::default(),
+      name_to_addr: Default::default(),
+      blocks: Default::default(),
+      block_stats: Default::default(),
+      kenv: crate::ix::kernel::env::KEnv::new(),
+      kintern: Arc::new(crate::ix::kernel::env::InternTable::new()),
+      ungrounded: Default::default(),
+      aux_gen_extra_names: Default::default(),
+      aux_name_to_addr: Default::default(),
+    }
+  }
+}
+
 impl CompileState {
   /// Create an empty compile state for testing (no environment).
   pub fn new_empty() -> Self {
-    Self {
-      env: IxonEnv::default(),
-      name_to_addr: DashMap::new(),
-      blocks: DashSet::new(),
-      block_stats: DashMap::new(),
-    }
+    Self::default()
   }
 
   pub fn stats(&self) -> CompileStateStats {
@@ -138,6 +162,25 @@ impl CompileState {
       blobs: self.env.blob_count(),
       blocks: self.blocks.len(),
     }
+  }
+
+  /// Look up a compiled constant's address by name.
+  /// Checks `name_to_addr` first, then `aux_name_to_addr` when `aux` is true.
+  pub fn resolve_addr_aux(&self, name: &Name, aux: bool) -> Option<Address> {
+    if let Some(r) = self.name_to_addr.get(name) {
+      return Some(r.value().clone());
+    }
+    if aux
+      && let Some(r) = self.aux_name_to_addr.get(name)
+    {
+      return Some(r.value().clone());
+    }
+    None
+  }
+
+  /// Look up a compiled constant's address (with `aux_name_to_addr` fallback).
+  pub fn resolve_addr(&self, name: &Name) -> Option<Address> {
+    self.resolve_addr_aux(name, true)
   }
 }
 
@@ -2001,8 +2044,32 @@ pub fn compile_const(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Address, CompileError> {
-  if let Some(cached) = stt.name_to_addr.get(name) {
-    return Ok(cached.clone());
+  compile_const_inner(name, all, lean_env, cache, stt, true)
+}
+
+/// Compile a constant without aux_gen: no `aux_name_to_addr` fallback,
+/// no aux_gen side effects. Used to compile the original Lean form of
+/// aux_gen-rewritten constants for metadata preservation.
+pub fn compile_const_no_aux(
+  name: &Name,
+  all: &NameSet,
+  lean_env: &Arc<LeanEnv>,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+) -> Result<Address, CompileError> {
+  compile_const_inner(name, all, lean_env, cache, stt, false)
+}
+
+fn compile_const_inner(
+  name: &Name,
+  all: &NameSet,
+  lean_env: &Arc<LeanEnv>,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+  aux: bool,
+) -> Result<Address, CompileError> {
+  if let Some(cached) = stt.resolve_addr_aux(name, aux) {
+    return Ok(cached);
   }
 
   let cnst = lean_env
@@ -2250,7 +2317,16 @@ fn compile_mutual(
     compile_mutual_block(ixon_mutuals, refs, univs, Some(&name_str));
   let block_addr = compiled.addr.clone();
   stt.env.store_const(block_addr.clone(), compiled.constant);
-  stt.blocks.insert(block_addr.clone());
+  // Register class ordering for each inductive name in the block.
+  let class_ordering: Vec<Vec<Name>> = sorted_classes
+    .iter()
+    .map(|class| class.iter().map(|c| c.name()).collect())
+    .collect();
+  for class in &sorted_classes {
+    for cnst in class {
+      stt.blocks.insert(cnst.name(), class_ordering.clone());
+    }
+  }
 
   // Store block size statistics (keyed by low-link name)
   stt.block_stats.insert(
@@ -2339,222 +2415,8 @@ fn compile_mutual(
     .map(|r| r.clone())
 }
 
-/// Compile an entire Lean environment to Ixon format.
-/// Work-stealing compilation using crossbeam channels.
-///
-/// Instead of processing blocks in waves (which underutilizes cores when wave sizes vary),
-/// we use a work queue. When a block completes, it immediately unlocks dependent blocks.
-pub fn compile_env(
-  lean_env: &Arc<LeanEnv>,
-) -> Result<CompileState, CompileError> {
-  let graph = build_ref_graph(lean_env.as_ref());
-
-  let ungrounded = ground_consts(lean_env.as_ref(), &graph.in_refs);
-  if !ungrounded.is_empty() {
-    for (n, e) in &ungrounded {
-      eprintln!("Ungrounded {:?}: {:?}", n, e);
-    }
-    return Err(CompileError::InvalidMutualBlock {
-      reason: "ungrounded environment".into(),
-    });
-  }
-
-  let condensed = compute_sccs(&graph.out_refs);
-
-  let stt = CompileState::default();
-
-  // Build work-stealing data structures
-  let total_blocks = condensed.blocks.len();
-
-  // For each block: (all names in block, remaining dep count)
-  let block_info: DashMap<Name, (NameSet, AtomicUsize)> = DashMap::default();
-
-  // Reverse deps: name → set of block leaders that depend on this name
-  let reverse_deps: DashMap<Name, Vec<Name>> = DashMap::default();
-
-  // Initialize block info and reverse deps
-  for (lo, all) in &condensed.blocks {
-    let deps =
-      condensed.block_refs.get(lo).ok_or(CompileError::InvalidMutualBlock {
-        reason: "missing block refs".into(),
-      })?;
-
-    block_info.insert(lo.clone(), (all.clone(), AtomicUsize::new(deps.len())));
-
-    // Register reverse dependencies
-    for dep_name in deps {
-      reverse_deps.entry(dep_name.clone()).or_default().push(lo.clone());
-    }
-  }
-
-  // Shared ready queue: blocks that are ready to compile
-  // Use a Mutex<Vec> for simplicity - workers push newly-ready blocks here
-  let ready_queue: std::sync::Mutex<Vec<(Name, NameSet)>> =
-    std::sync::Mutex::new(Vec::new());
-
-  // Initialize with blocks that have no dependencies
-  {
-    let mut queue = ready_queue.lock().unwrap();
-    for entry in block_info.iter() {
-      let lo = entry.key();
-      let (all, dep_count) = entry.value();
-      if dep_count.load(AtomicOrdering::SeqCst) == 0 {
-        queue.push((lo.clone(), all.clone()));
-      }
-    }
-  }
-
-  // Track completed count for termination
-  let completed = AtomicUsize::new(0);
-
-  // Error storage for propagating errors from workers
-  let error: std::sync::Mutex<Option<CompileError>> =
-    std::sync::Mutex::new(None);
-
-  // Condvar for signaling workers when new work is available or completion
-  let work_available = std::sync::Condvar::new();
-
-  // Use scoped threads to borrow from parent scope
-  let num_threads =
-    thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-
-  // Compile blocks in parallel using work-stealing
-
-  // Take references to shared data outside the loop
-  let error_ref = &error;
-  let stt_ref = &stt;
-  let reverse_deps_ref = &reverse_deps;
-  let block_info_ref = &block_info;
-  let completed_ref = &completed;
-  let ready_queue_ref = &ready_queue;
-  let condvar_ref = &work_available;
-
-  thread::scope(|s| {
-    // Spawn worker threads
-    for _ in 0..num_threads {
-      s.spawn(move || {
-        loop {
-          // Try to get work from the ready queue
-          let work = {
-            let mut queue = ready_queue_ref.lock().unwrap();
-            queue.pop()
-          };
-
-          match work {
-            Some((lo, all)) => {
-              // Check if we should stop due to error
-              if error_ref.lock().unwrap().is_some() {
-                return;
-              }
-
-              // Track time for slow block detection
-              let block_start = std::time::Instant::now();
-
-              // Compile this block
-              let mut cache = BlockCache::default();
-              if let Err(e) =
-                compile_const(&lo, &all, lean_env, &mut cache, stt_ref)
-              {
-                let mut err_guard = error_ref.lock().unwrap();
-                if err_guard.is_none() {
-                  *err_guard = Some(e);
-                }
-                return;
-              }
-
-              // Check for slow blocks
-              let elapsed = block_start.elapsed();
-              if elapsed.as_secs_f32() > 1.0 {
-                eprintln!(
-                  "Slow block {:?} ({} consts): {:.2}s",
-                  lo.pretty(),
-                  all.len(),
-                  elapsed.as_secs_f32()
-                );
-              }
-
-              // Collect newly-ready blocks
-              let mut newly_ready = Vec::new();
-
-              // For each name in this block, decrement dep counts for dependents
-              for name in &all {
-                if let Some(dependents) = reverse_deps_ref.get(name) {
-                  for dependent_lo in dependents.value() {
-                    if let Some(entry) = block_info_ref.get(dependent_lo) {
-                      let (dep_all, dep_count) = entry.value();
-                      let prev = dep_count.fetch_sub(1, AtomicOrdering::SeqCst);
-                      if prev == 1 {
-                        // This block is now ready
-                        newly_ready
-                          .push((dependent_lo.clone(), dep_all.clone()));
-                      }
-                    }
-                  }
-                }
-              }
-
-              // Add newly-ready blocks to the queue and notify waiting workers
-              if !newly_ready.is_empty() {
-                let mut queue = ready_queue_ref.lock().unwrap();
-                queue.extend(newly_ready);
-                condvar_ref.notify_all();
-              }
-
-              completed_ref.fetch_add(1, AtomicOrdering::SeqCst);
-              // Wake all workers so they can check for completion
-              condvar_ref.notify_all();
-            },
-            None => {
-              // No work available - check if we're done
-              if completed_ref.load(AtomicOrdering::SeqCst) == total_blocks {
-                return;
-              }
-              // Check for errors
-              if error_ref.lock().unwrap().is_some() {
-                return;
-              }
-              // Wait for new work to become available
-              let queue = ready_queue_ref.lock().unwrap();
-              let _ = condvar_ref
-                .wait_timeout(queue, std::time::Duration::from_millis(10))
-                .unwrap();
-            },
-          }
-        }
-      });
-    }
-  });
-
-  // Check for errors
-  if let Some(e) = error.into_inner().unwrap() {
-    return Err(e);
-  }
-
-  // Verify completion
-  let final_completed = completed.load(AtomicOrdering::SeqCst);
-  if final_completed != total_blocks {
-    // Find what's still blocked
-    let mut blocked_count = 0;
-    for entry in block_info.iter() {
-      let (_, dep_count) = entry.value();
-      if dep_count.load(AtomicOrdering::SeqCst) > 0 {
-        blocked_count += 1;
-        if blocked_count <= 5 {
-          eprintln!(
-            "Still blocked: {:?} with {} deps remaining",
-            entry.key().pretty(),
-            dep_count.load(AtomicOrdering::SeqCst)
-          );
-        }
-      }
-    }
-    return Err(CompileError::InvalidMutualBlock {
-      reason: "circular dependency or missing constant".into(),
-    });
-  }
-
-  Ok(stt)
-}
+mod env;
+pub use env::compile_env;
 
 #[cfg(test)]
 mod tests {
@@ -3068,18 +2930,19 @@ mod tests {
       "alpha-equivalent mutual defs should have same projection address"
     );
 
-    // Verify the block exists and has exactly 1 mutual entry
-    // (one representative for the equivalence class, not two)
-    for block_addr in stt.blocks.iter() {
-      let block = stt.env.get_const(&block_addr).unwrap();
-      if let ConstantInfo::Muts(muts) = &block.info {
-        assert_eq!(
-          muts.len(),
-          1,
-          "alpha-equivalent class should produce 1 entry in Muts, got {}",
-          muts.len()
-        );
-      }
+    // Verify the block exists and has exactly 1 equivalence class
+    assert!(
+      !stt.blocks.is_empty(),
+      "Expected at least one block entry"
+    );
+    for entry in stt.blocks.iter() {
+      let classes = entry.value();
+      assert_eq!(
+        classes.len(),
+        1,
+        "alpha-equivalent class should produce 1 class, got {}",
+        classes.len()
+      );
     }
   }
 
@@ -3178,17 +3041,19 @@ mod tests {
       "h should have a different projection address than f/g"
     );
 
-    // Verify Muts has exactly 2 entries (one per equivalence class)
-    for block_addr in stt.blocks.iter() {
-      let block = stt.env.get_const(&block_addr).unwrap();
-      if let ConstantInfo::Muts(muts) = &block.info {
-        assert_eq!(
-          muts.len(),
-          2,
-          "2 equivalence classes should produce 2 Muts entries, got {}",
-          muts.len()
-        );
-      }
+    // Verify block has exactly 2 equivalence classes
+    assert!(
+      !stt.blocks.is_empty(),
+      "Expected at least one block entry"
+    );
+    for entry in stt.blocks.iter() {
+      let classes = entry.value();
+      assert_eq!(
+        classes.len(),
+        2,
+        "2 equivalence classes should produce 2 classes, got {}",
+        classes.len()
+      );
     }
   }
 
