@@ -202,6 +202,12 @@ impl StdHash for Name {
   }
 }
 
+impl std::fmt::Display for Name {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(&self.pretty())
+  }
+}
+
 /// A content-addressed universe level.
 ///
 /// Levels are interned via `Arc` and compared/hashed by their Blake3 digest.
@@ -342,7 +348,7 @@ fn binder_info_tag(bi: &BinderInfo) -> u8 {
   }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Int {
   OfNat(Nat),
   NegSucc(Nat),
@@ -363,7 +369,7 @@ fn hash_int(i: &Int, hasher: &mut blake3::Hasher) {
 }
 
 /// A substring reference: a string together with start and stop byte positions.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Substring {
   /// The underlying string.
   pub str: String,
@@ -381,7 +387,7 @@ fn hash_substring(ss: &Substring, hasher: &mut blake3::Hasher) {
 }
 
 /// Source location metadata attached to syntax nodes.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum SourceInfo {
   /// Original source with leading whitespace, leading position, trailing whitespace, trailing position.
   Original(Substring, Nat, Substring, Nat),
@@ -414,7 +420,7 @@ fn hash_source_info(si: &SourceInfo, hasher: &mut blake3::Hasher) {
 }
 
 /// Pre-resolved reference attached to a syntax identifier.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum SyntaxPreresolved {
   /// A pre-resolved namespace reference.
   Namespace(Name),
@@ -444,7 +450,7 @@ fn hash_syntax_preresolved(
 }
 
 /// A Lean 4 concrete syntax tree node.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Syntax {
   /// Placeholder for missing syntax.
   Missing,
@@ -490,7 +496,7 @@ fn hash_syntax(syn: &Syntax, hasher: &mut blake3::Hasher) {
 }
 
 /// A dynamically-typed value stored in expression metadata (`KVMap` entries).
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum DataValue {
   /// A string value.
   OfString(String),
@@ -506,7 +512,7 @@ pub enum DataValue {
   OfSyntax(Box<Syntax>),
 }
 
-fn hash_data_value(dv: &DataValue, hasher: &mut blake3::Hasher) {
+pub fn hash_data_value(dv: &DataValue, hasher: &mut blake3::Hasher) {
   hasher.update(&[MDVAL]);
   match dv {
     DataValue::OfString(s) => {

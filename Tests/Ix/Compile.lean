@@ -16,6 +16,7 @@ public import Ix.Sharing
 public import Lean
 public import LSpec
 public import Tests.Ix.Fixtures
+public import Tests.Ix.Compile.Mutual
 
 open LSpec
 

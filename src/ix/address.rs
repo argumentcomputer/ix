@@ -35,6 +35,17 @@ impl Address {
   pub fn as_bytes(&self) -> &[u8; 32] {
     self.hash.as_bytes()
   }
+  /// Constructs an address from a 64-character hexadecimal string.
+  pub fn from_hex(hex: &str) -> Option<Self> {
+    if hex.len() != 64 {
+      return None;
+    }
+    let mut bytes = [0u8; 32];
+    for i in 0..32 {
+      bytes[i] = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(Address { hash: Hash::from(bytes) })
+  }
 }
 
 impl Ord for Address {

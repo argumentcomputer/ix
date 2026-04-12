@@ -40,7 +40,7 @@ use crate::{
     },
     env::{Env as IxonEnv, Named},
     expr::Expr,
-    metadata::{ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap},
+    metadata::{ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta, ExprMetaData, KVMap},
     sharing::{self, analyze_block, build_sharing_vec, decide_sharing},
     univ::Univ,
   },
@@ -1082,7 +1082,7 @@ fn compile_definition(
     value,
   };
 
-  let meta = ConstantMeta::Def {
+  let meta = ConstantMeta::new(ConstantMetaInfo::Def {
     name: name_addr,
     lvls: lvl_addrs,
     hints: def.hints,
@@ -1091,7 +1091,7 @@ fn compile_definition(
     arena,
     type_root,
     value_root,
-  };
+  });
 
   Ok((data, meta))
 }
@@ -1164,7 +1164,7 @@ fn compile_recursor(
   let ctx_addrs: Vec<Address> =
     ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
-  let meta = ConstantMeta::Rec {
+  let meta = ConstantMeta::new(ConstantMetaInfo::Rec {
     name: name_addr,
     lvls: lvl_addrs,
     rules: rule_addrs,
@@ -1173,7 +1173,7 @@ fn compile_recursor(
     arena,
     type_root,
     rule_roots,
-  };
+  });
 
   Ok((data, meta))
 }
@@ -1211,13 +1211,13 @@ fn compile_constructor(
     typ,
   };
 
-  let meta = ConstantMeta::Ctor {
+  let meta = ConstantMeta::new(ConstantMetaInfo::Ctor {
     name: name_addr,
     lvls: lvl_addrs,
     induct: induct_addr,
     arena,
     type_root,
-  };
+  });
 
   Ok((data, meta))
 }
@@ -1279,7 +1279,7 @@ fn compile_inductive(
   let ctx_addrs: Vec<Address> =
     ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
-  let meta = ConstantMeta::Indc {
+  let meta = ConstantMeta::new(ConstantMetaInfo::Indc {
     name: name_addr,
     lvls: lvl_addrs,
     ctors: ctor_name_addrs,
@@ -1287,7 +1287,7 @@ fn compile_inductive(
     ctx: ctx_addrs,
     arena: indc_arena,
     type_root,
-  };
+  });
 
   Ok((data, meta, ctor_const_metas))
 }
@@ -1316,8 +1316,12 @@ fn compile_axiom(
   let data =
     Axiom { is_unsafe: val.is_unsafe, lvls: univ_params.len() as u64, typ };
 
-  let meta =
-    ConstantMeta::Axio { name: name_addr, lvls: lvl_addrs, arena, type_root };
+  let meta = ConstantMeta::new(ConstantMetaInfo::Axio {
+    name: name_addr,
+    lvls: lvl_addrs,
+    arena,
+    type_root,
+  });
 
   Ok((data, meta))
 }
@@ -1345,8 +1349,12 @@ fn compile_quotient(
 
   let data = Quotient { kind: val.kind, lvls: univ_params.len() as u64, typ };
 
-  let meta =
-    ConstantMeta::Quot { name: name_addr, lvls: lvl_addrs, arena, type_root };
+  let meta = ConstantMeta::new(ConstantMetaInfo::Quot {
+    name: name_addr,
+    lvls: lvl_addrs,
+    arena,
+    type_root,
+  });
 
   Ok((data, meta))
 }

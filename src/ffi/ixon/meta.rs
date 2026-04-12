@@ -7,7 +7,7 @@ use crate::ix::env::BinderInfo;
 use crate::ix::ixon::Comm;
 use crate::ix::ixon::env::Named;
 use crate::ix::ixon::metadata::{
-  ConstantMeta, DataValue as IxonDataValue, ExprMeta, ExprMetaData, KVMap,
+  ConstantMeta, ConstantMetaInfo, DataValue as IxonDataValue, ExprMeta, ExprMetaData, KVMap,
 };
 use crate::lean::{
   LeanIxReducibilityHints, LeanIxonComm, LeanIxonConstantMeta,
@@ -358,10 +358,10 @@ impl LeanIxonConstantMeta<LeanOwned> {
   /// | ctor    | 5   | 4 (name, lvls, induct, arena) | 8 (1× u64) |
   /// | recr    | 6   | 7 (name, lvls, rules, all, ctx, arena, ruleRoots) | 8 (1× u64) |
   pub fn build(meta: &ConstantMeta) -> Self {
-    let obj = match meta {
-      ConstantMeta::Empty => LeanOwned::box_usize(0),
+    let obj = match &meta.info {
+      ConstantMetaInfo::Empty => LeanOwned::box_usize(0),
 
-      ConstantMeta::Def {
+      ConstantMetaInfo::Def {
         name,
         lvls,
         hints,
@@ -383,7 +383,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
         ctor.into()
       },
 
-      ConstantMeta::Axio { name, lvls, arena, type_root } => {
+      ConstantMetaInfo::Axio { name, lvls, arena, type_root } => {
         let ctor = LeanCtor::alloc(2, 3, 8);
         ctor.set(0, LeanIxAddress::build(name));
         ctor.set(1, LeanIxAddress::build_array(lvls));
@@ -392,7 +392,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
         ctor.into()
       },
 
-      ConstantMeta::Quot { name, lvls, arena, type_root } => {
+      ConstantMetaInfo::Quot { name, lvls, arena, type_root } => {
         let ctor = LeanCtor::alloc(3, 3, 8);
         ctor.set(0, LeanIxAddress::build(name));
         ctor.set(1, LeanIxAddress::build_array(lvls));
@@ -401,7 +401,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
         ctor.into()
       },
 
-      ConstantMeta::Indc { name, lvls, ctors, all, ctx, arena, type_root } => {
+      ConstantMetaInfo::Indc { name, lvls, ctors, all, ctx, arena, type_root } => {
         let ctor = LeanCtor::alloc(4, 6, 8);
         ctor.set(0, LeanIxAddress::build(name));
         ctor.set(1, LeanIxAddress::build_array(lvls));
@@ -413,7 +413,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
         ctor.into()
       },
 
-      ConstantMeta::Ctor { name, lvls, induct, arena, type_root } => {
+      ConstantMetaInfo::Ctor { name, lvls, induct, arena, type_root } => {
         let ctor = LeanCtor::alloc(5, 4, 8);
         ctor.set(0, LeanIxAddress::build(name));
         ctor.set(1, LeanIxAddress::build_array(lvls));
@@ -423,7 +423,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
         ctor.into()
       },
 
-      ConstantMeta::Rec {
+      ConstantMetaInfo::Rec {
         name,
         lvls,
         rules,
@@ -444,6 +444,17 @@ impl LeanIxonConstantMeta<LeanOwned> {
         ctor.set_u64(7, 0, *type_root);
         ctor.into()
       },
+
+      ConstantMetaInfo::Muts { all } => {
+        let ctor = LeanCtor::alloc(7, 1, 0);
+        // Encode `all: Vec<Vec<Address>>` as Array (Array Address)
+        let outer = LeanArray::alloc(all.len());
+        for (i, group) in all.iter().enumerate() {
+          outer.set(i, LeanIxAddress::build_array(group));
+        }
+        ctor.set(0, outer);
+        ctor.into()
+      },
     };
     Self::new(obj)
   }
@@ -456,7 +467,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
     if self.inner().is_scalar() {
       let tag = self.inner().as_raw() as usize >> 1;
       assert_eq!(tag, 0, "Invalid scalar ConstantMeta tag: {}", tag);
-      return ConstantMeta::Empty;
+      return ConstantMeta::default();
     }
     let ctor = self.as_ctor();
     match ctor.tag() {
@@ -473,7 +484,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
           LeanIxonExprMetaArena::new(ctor.get(5).to_owned_ref()).decode();
         let type_root = ctor.get_u64(6, 0);
         let value_root = ctor.get_u64(6, 8);
-        ConstantMeta::Def {
+        ConstantMeta::new(ConstantMetaInfo::Def {
           name,
           lvls,
           hints,
@@ -482,7 +493,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
           arena,
           type_root,
           value_root,
-        }
+        })
       },
 
       2 => {
@@ -493,7 +504,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(2).to_owned_ref()).decode();
         let type_root = ctor.get_u64(3, 0);
-        ConstantMeta::Axio { name, lvls, arena, type_root }
+        ConstantMeta::new(ConstantMetaInfo::Axio { name, lvls, arena, type_root })
       },
 
       3 => {
@@ -504,7 +515,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(2).to_owned_ref()).decode();
         let type_root = ctor.get_u64(3, 0);
-        ConstantMeta::Quot { name, lvls, arena, type_root }
+        ConstantMeta::new(ConstantMetaInfo::Quot { name, lvls, arena, type_root })
       },
 
       4 => {
@@ -518,7 +529,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(5).to_owned_ref()).decode();
         let type_root = ctor.get_u64(6, 0);
-        ConstantMeta::Indc { name, lvls, ctors, all, ctx, arena, type_root }
+        ConstantMeta::new(ConstantMetaInfo::Indc { name, lvls, ctors, all, ctx, arena, type_root })
       },
 
       5 => {
@@ -531,7 +542,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(3).to_owned_ref()).decode();
         let type_root = ctor.get_u64(4, 0);
-        ConstantMeta::Ctor { name, lvls, induct, arena, type_root }
+        ConstantMeta::new(ConstantMetaInfo::Ctor { name, lvls, induct, arena, type_root })
       },
 
       6 => {
@@ -546,7 +557,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
           LeanIxonExprMetaArena::new(ctor.get(5).to_owned_ref()).decode();
         let rule_roots = decode_u64_array(ctor.get(6).as_array());
         let type_root = ctor.get_u64(7, 0);
-        ConstantMeta::Rec {
+        ConstantMeta::new(ConstantMetaInfo::Rec {
           name,
           lvls,
           rules,
@@ -555,7 +566,17 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
           arena,
           type_root,
           rule_roots,
+        })
+      },
+
+      7 => {
+        // muts: 1 obj field (Array (Array Address)), 0 scalar
+        let outer = ctor.get(0).as_array();
+        let mut all = Vec::with_capacity(outer.len());
+        for i in 0..outer.len() {
+          all.push(decode_address_array(outer.get(i).as_array()));
         }
+        ConstantMeta::new(ConstantMetaInfo::Muts { all })
       },
 
       tag => panic!("Invalid Ixon.ConstantMeta tag: {}", tag),
@@ -586,6 +607,7 @@ impl<R: LeanRef> LeanIxonNamed<R> {
     Named {
       addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
       meta: LeanIxonConstantMeta::new(ctor.get(1).to_owned_ref()).decode(),
+      original: None, // aux_gen not yet on FFI boundary
     }
   }
 }

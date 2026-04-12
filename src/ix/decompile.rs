@@ -30,7 +30,7 @@ use crate::{
     },
     env::Named,
     expr::Expr,
-    metadata::{ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap},
+    metadata::{ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta, ExprMetaData, KVMap},
     univ::Univ,
   },
   ix::mutual::{MutCtx, all_to_ctx},
@@ -834,60 +834,63 @@ fn decompile_univ_indices(
 
 /// Extract the name address from ConstantMeta.
 fn get_name_addr_from_meta(meta: &ConstantMeta) -> Option<&Address> {
-  match meta {
-    ConstantMeta::Empty => None,
-    ConstantMeta::Def { name, .. } => Some(name),
-    ConstantMeta::Axio { name, .. } => Some(name),
-    ConstantMeta::Quot { name, .. } => Some(name),
-    ConstantMeta::Indc { name, .. } => Some(name),
-    ConstantMeta::Ctor { name, .. } => Some(name),
-    ConstantMeta::Rec { name, .. } => Some(name),
+  match &meta.info {
+    ConstantMetaInfo::Empty => None,
+    ConstantMetaInfo::Def { name, .. } => Some(name),
+    ConstantMetaInfo::Axio { name, .. } => Some(name),
+    ConstantMetaInfo::Quot { name, .. } => Some(name),
+    ConstantMetaInfo::Indc { name, .. } => Some(name),
+    ConstantMetaInfo::Ctor { name, .. } => Some(name),
+    ConstantMetaInfo::Rec { name, .. } => Some(name),
+    ConstantMetaInfo::Muts { .. } => None,
   }
 }
 
 /// Extract level param name addresses from ConstantMeta.
 fn get_lvls_from_meta(meta: &ConstantMeta) -> &[Address] {
-  match meta {
-    ConstantMeta::Empty => &[],
-    ConstantMeta::Def { lvls, .. } => lvls,
-    ConstantMeta::Axio { lvls, .. } => lvls,
-    ConstantMeta::Quot { lvls, .. } => lvls,
-    ConstantMeta::Indc { lvls, .. } => lvls,
-    ConstantMeta::Ctor { lvls, .. } => lvls,
-    ConstantMeta::Rec { lvls, .. } => lvls,
+  match &meta.info {
+    ConstantMetaInfo::Empty => &[],
+    ConstantMetaInfo::Def { lvls, .. } => lvls,
+    ConstantMetaInfo::Axio { lvls, .. } => lvls,
+    ConstantMetaInfo::Quot { lvls, .. } => lvls,
+    ConstantMetaInfo::Indc { lvls, .. } => lvls,
+    ConstantMetaInfo::Ctor { lvls, .. } => lvls,
+    ConstantMetaInfo::Rec { lvls, .. } => lvls,
+    ConstantMetaInfo::Muts { .. } => &[],
   }
 }
 
 /// Extract arena and type_root from ConstantMeta.
 fn get_arena_and_type_root(meta: &ConstantMeta) -> (&ExprMeta, u64) {
   static EMPTY_ARENA: ExprMeta = ExprMeta { nodes: Vec::new() };
-  match meta {
-    ConstantMeta::Def { arena, type_root, .. } => (arena, *type_root),
-    ConstantMeta::Axio { arena, type_root, .. } => (arena, *type_root),
-    ConstantMeta::Quot { arena, type_root, .. } => (arena, *type_root),
-    ConstantMeta::Indc { arena, type_root, .. } => (arena, *type_root),
-    ConstantMeta::Ctor { arena, type_root, .. } => (arena, *type_root),
-    ConstantMeta::Rec { arena, type_root, .. } => (arena, *type_root),
-    ConstantMeta::Empty => (&EMPTY_ARENA, 0),
+  match &meta.info {
+    ConstantMetaInfo::Def { arena, type_root, .. } => (arena, *type_root),
+    ConstantMetaInfo::Axio { arena, type_root, .. } => (arena, *type_root),
+    ConstantMetaInfo::Quot { arena, type_root, .. } => (arena, *type_root),
+    ConstantMetaInfo::Indc { arena, type_root, .. } => (arena, *type_root),
+    ConstantMetaInfo::Ctor { arena, type_root, .. } => (arena, *type_root),
+    ConstantMetaInfo::Rec { arena, type_root, .. } => (arena, *type_root),
+    ConstantMetaInfo::Empty => (&EMPTY_ARENA, 0),
+    ConstantMetaInfo::Muts { .. } => (&EMPTY_ARENA, 0),
   }
 }
 
 /// Extract the all field from ConstantMeta (original Lean all field for roundtrip).
 fn get_all_from_meta(meta: &ConstantMeta) -> &[Address] {
-  match meta {
-    ConstantMeta::Def { all, .. } => all,
-    ConstantMeta::Indc { all, .. } => all,
-    ConstantMeta::Rec { all, .. } => all,
+  match &meta.info {
+    ConstantMetaInfo::Def { all, .. } => all,
+    ConstantMetaInfo::Indc { all, .. } => all,
+    ConstantMetaInfo::Rec { all, .. } => all,
     _ => &[],
   }
 }
 
 /// Extract the ctx field from ConstantMeta (MutCtx used during compilation for Rec expr decompilation).
 fn get_ctx_from_meta(meta: &ConstantMeta) -> &[Address] {
-  match meta {
-    ConstantMeta::Def { ctx, .. } => ctx,
-    ConstantMeta::Indc { ctx, .. } => ctx,
-    ConstantMeta::Rec { ctx, .. } => ctx,
+  match &meta.info {
+    ConstantMetaInfo::Def { ctx, .. } => ctx,
+    ConstantMetaInfo::Indc { ctx, .. } => ctx,
+    ConstantMetaInfo::Rec { ctx, .. } => ctx,
     _ => &[],
   }
 }
@@ -944,8 +947,8 @@ fn decompile_definition(
   let name = decompile_name_from_meta(meta, stt)?;
   let level_params = decompile_level_names_from_meta(meta, stt)?;
 
-  let (arena, type_root, value_root) = match meta {
-    ConstantMeta::Def { arena, type_root, value_root, .. } => {
+  let (arena, type_root, value_root) = match &meta.info {
+    ConstantMetaInfo::Def { arena, type_root, value_root, .. } => {
       (arena, *type_root, *value_root)
     },
     _ => {
@@ -973,8 +976,8 @@ fn decompile_definition(
     dstt,
   )?;
 
-  let (hints, all) = match meta {
-    ConstantMeta::Def { hints, all, .. } => {
+  let (hints, all) = match &meta.info {
+    ConstantMetaInfo::Def { hints, all, .. } => {
       let all_names: Result<Vec<Name>, _> =
         all.iter().map(|a| decompile_name(a, stt)).collect();
       (*hints, all_names?)
@@ -1016,8 +1019,8 @@ fn decompile_recursor(
   let name = decompile_name_from_meta(meta, stt)?;
   let level_params = decompile_level_names_from_meta(meta, stt)?;
 
-  let (arena, type_root, rule_roots, rule_addrs, all_addrs) = match meta {
-    ConstantMeta::Rec { arena, type_root, rule_roots, rules, all, .. } => (
+  let (arena, type_root, rule_roots, rule_addrs, all_addrs) = match &meta.info {
+    ConstantMetaInfo::Rec { arena, type_root, rule_roots, rules, all, .. } => (
       arena,
       *type_root,
       rule_roots.as_slice(),
@@ -1087,7 +1090,7 @@ fn decompile_recursor(
 }
 
 /// Decompile a Constructor.
-/// Constructor metadata is in its own ConstantMeta::Ctor (resolved from Named entries).
+/// Constructor metadata is in its own ConstantMetaInfo::Ctor (resolved from Named entries).
 fn decompile_constructor(
   ctor: &Constructor,
   meta: &ConstantMeta,
@@ -1146,8 +1149,8 @@ fn decompile_inductive(
   )?;
 
   // Extract constructor name addresses and all from metadata
-  let (ctor_name_addrs, all) = match meta {
-    ConstantMeta::Indc { ctors, all: all_addrs, .. } => {
+  let (ctor_name_addrs, all) = match &meta.info {
+    ConstantMetaInfo::Indc { ctors, all: all_addrs, .. } => {
       let all = all_addrs
         .iter()
         .map(|a| decompile_name(a, stt))
@@ -1166,7 +1169,7 @@ fn decompile_inductive(
     // produce stale hits when arena indices coincide.
     cache.expr_cache.clear();
 
-    // Look up constructor's Named entry for its ConstantMeta::Ctor
+    // Look up constructor's Named entry for its ConstantMetaInfo::Ctor
     let ctor_meta = if let Some(addr) = ctor_name_addrs.get(i) {
       if let Ok(ctor_name) = decompile_name(addr, stt) {
         stt
@@ -1176,10 +1179,10 @@ fn decompile_inductive(
           .map(|n| n.meta.clone())
           .unwrap_or_default()
       } else {
-        ConstantMeta::Empty
+        ConstantMeta::default()
       }
     } else {
-      ConstantMeta::Empty
+      ConstantMeta::default()
     };
 
     let ctor_val =
@@ -1412,7 +1415,7 @@ pub fn decompile_env(
 ) -> Result<DecompileState, DecompileError> {
   let dstt = DecompileState::default();
 
-  // Constructor metadata is now embedded directly in ConstantMeta::Indc,
+  // Constructor metadata is now embedded directly in ConstantMetaInfo::Indc,
   // so no pre-indexing is needed.
 
   // Single pass through all named constants

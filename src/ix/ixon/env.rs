@@ -16,15 +16,20 @@ pub struct Named {
   pub addr: Address,
   /// Typed metadata for this constant (includes mutual context in `all` field)
   pub meta: ConstantMeta,
+  /// For aux_gen-rewritten constants: the original Lean constant's compiled
+  /// form (address + metadata). Ingress uses `addr`/`meta` (the canonical
+  /// aux_gen form). Decompile uses `original` for faithful roundtrip of
+  /// binder names and other cosmetic metadata.
+  pub original: Option<(Address, ConstantMeta)>,
 }
 
 impl Named {
   pub fn new(addr: Address, meta: ConstantMeta) -> Self {
-    Named { addr, meta }
+    Named { addr, meta, original: None }
   }
 
   pub fn with_addr(addr: Address) -> Self {
-    Named { addr, meta: ConstantMeta::default() }
+    Named { addr, meta: ConstantMeta::default(), original: None }
   }
 }
 
