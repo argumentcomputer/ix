@@ -211,9 +211,7 @@ partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
       maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
       setDegrees degrees
     setSharedData maximalSharedData
-  | .return .. =>
-    bumpSelectors
-    bumpLookups
+  | .return .. => bumpSelectors
   | .yield .. => bumpSelectors
   | .matchContinue _ branches defaultBranch outputSize _sharedAux _sharedLookups continuation =>
     let initSharedData ← getSharedData

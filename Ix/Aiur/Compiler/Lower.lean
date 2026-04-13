@@ -103,7 +103,7 @@ abbrev CompileM := EStateM String CompilerState
 
 /-- Compute the output degrees for a single-output op from its operand degrees.
     Multi-output ops (size > 1) always produce degree-1 values. -/
-private def opDegree (degrees : Array Nat) (op : Bytecode.Op) (size : Nat) : Array Nat :=
+private def pushOpDegree (degrees : Array Nat) (op : Bytecode.Op) (size : Nat) : Array Nat :=
   if size > 1 then
     (Array.replicate size 1).foldl (init := degrees) (·.push ·)
   else match op with
@@ -121,7 +121,7 @@ def pushOp (op : Bytecode.Op) (size : Nat := 1) : CompileM (Array Bytecode.ValId
     (Array.range' valIdx size, { s with
       valIdx := valIdx + size,
       ops := s.ops.push op,
-      degrees := opDegree s.degrees op size }))
+      degrees := pushOpDegree s.degrees op size }))
 
 def extractOps : CompileM (Array Bytecode.Op) :=
   modifyGet fun s => (s.ops, {s with ops := #[]})
@@ -366,26 +366,8 @@ where
       go layoutMap bindings bod
     | _ => pure none
 
-/-- Count how many `Ctrl.return` leaves a block tree contains. Each Return
-    contributes 1 to the Layout's lookup count (for the function return at
-    slot 0), but the constraint code handles slot 0 separately without
-    incrementing `state.lookup`. So we subtract returns from the Layout's
-    lookup count to get the branch-local lookup count. -/
-partial def countReturns : Bytecode.Block → Nat
-  | ⟨_, .return ..⟩ => 1
-  | ⟨_, .yield ..⟩ => 0
-  | ⟨_, .match _ branches def_⟩ =>
-    let n := branches.foldl (fun acc (_, b) => acc + countReturns b) 0
-    match def_ with | some b => n + countReturns b | none => n
-  | ⟨_, .matchContinue _ branches def_ _ _ _ cont⟩ =>
-    let n := branches.foldl (fun acc (_, b) => acc + countReturns b) 0
-    let n := match def_ with | some b => n + countReturns b | none => n
-    n + countReturns cont
-
-/-- Compute max auxiliaries and effective lookups across all match branches by
-    running blockLayout on each, using the actual degree array from the compiler
-    state. Effective lookups = Layout lookups - Return count (because Return's
-    function return lookup at slot 0 is pre-allocated, not branch-local). -/
+/-- Compute max auxiliaries and lookups across all match branches by running
+    `blockLayout` on each, using the actual degree array from the compiler state. -/
 partial def computeSharedLayout
  (matchCases : Array (G × Bytecode.Block))
  (default : Option Bytecode.Block)
@@ -396,14 +378,12 @@ partial def computeSharedLayout
      .empty, degrees⟩
   let (sharedAux, sharedLookups) := matchCases.foldl (init := (0, 0)) fun (maxA, maxL) (_, block) =>
     let (_, ls) := Bytecode.blockLayout block |>.run initLS
-    let effectiveLookups := ls.functionLayout.lookups - countReturns block
-    (maxA.max ls.functionLayout.auxiliaries, maxL.max effectiveLookups)
+    (maxA.max ls.functionLayout.auxiliaries, maxL.max ls.functionLayout.lookups)
   pure $ match default with
     | some block =>
       let (_, ls) := Bytecode.blockLayout block |>.run initLS
-      let effectiveLookups := ls.functionLayout.lookups - countReturns block
       (sharedAux.max (ls.functionLayout.auxiliaries + matchCases.size),
-       sharedLookups.max effectiveLookups)
+       sharedLookups.max ls.functionLayout.lookups)
     | none => (sharedAux, sharedLookups)
 
 /-- Compile a non-tail match as a `matchContinue` block. Used by both the
@@ -617,6 +597,10 @@ def TypedFunction.compile (layoutMap : LayoutMap) (f : TypedFunction) :
   | .error e _ => throw e
   | .ok body _ =>
     let (_, layoutMState) := Bytecode.blockLayout body |>.run (.new inputSize)
+    -- All `return`s share a single lookup slot at the function level.
+    let layoutMState := { layoutMState with functionLayout :=
+      { layoutMState.functionLayout with
+        lookups := layoutMState.functionLayout.lookups + 1 } }
     pure (body, layoutMState)
 
 def TypedDecls.toBytecode (decls : TypedDecls) :
