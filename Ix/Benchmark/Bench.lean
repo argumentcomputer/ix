@@ -14,6 +14,35 @@ open Batteries (RBMap)
 /-!
 # Benchmarking library modeled after Criterion in Rust and Haskell
 
+## Quick start
+
+Simple benchmark of a pure function:
+
+```
+import Ix.Benchmark.Bench
+open BgroupM
+
+def main : IO Unit := do
+  let _ ← bgroup "sorting" {} do
+    bench "List.mergeSort 1000" List.mergeSort (List.range 1000)
+    bench "List.mergeSort 10000" List.mergeSort (List.range 10000)
+```
+
+With throughput, iterating over input sizes:
+
+```
+import Ix.Benchmark.Bench
+open BgroupM
+
+def sizes := #[1000, 10000, 100000]
+
+def main : IO Unit := do
+  let _ ← bgroup "sorting" { avgThroughput := true, report := true } do
+    for n in sizes do
+      throughput (.Elements n.toUInt64 "items")
+      bench s!"mergeSort n={n}" List.mergeSort (List.range n)
+```
+
 ## Verbosity
 
 Three levels controlled by `Config.verbosity` or the `BENCH_VERBOSITY` env var
@@ -21,8 +50,8 @@ Three levels controlled by `Config.verbosity` or the `BENCH_VERBOSITY` env var
 enum doc comments for details.
 
 - `quiet`   — only per-bench summary lines (time / thrpt / change / perf note)
-- `normal`  — default; adds warmup + running lines, plus the variance-introduced-by-outliers warning and Tukey breakdown *only* when the outlier effect is moderate or severe
-- `verbose` — adds R² alongside the time line, and always prints the variance warning + Tukey breakdown regardless of severity
+- `normal`  — default; adds warmup + running lines, plus the outlier-variance warning when moderate or severe
+- `verbose` — adds R² alongside the time line, always prints outlier-variance + Tukey breakdown
 
 Example: `BENCH_VERBOSITY=v lake exe bench-shardmap`
 
