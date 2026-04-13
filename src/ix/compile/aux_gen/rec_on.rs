@@ -7,15 +7,17 @@
 
 use crate::ix::compile::aux_gen::AuxDef;
 use crate::ix::env::{
-  BinderInfo, Expr as LeanExpr, ExprData, Level, Name,
-  RecursorVal,
+  BinderInfo, Expr as LeanExpr, ExprData, Level, Name, RecursorVal,
 };
 use lean_ffi::nat::Nat;
 
 /// Generate a `.recOn` definition from a canonical `.rec`.
 ///
 /// Returns `None` if the recursor type cannot be decomposed.
-pub(crate) fn _generate_rec_on(name: &Name, rec_val: &RecursorVal) -> Option<AuxDef> {
+pub(crate) fn _generate_rec_on(
+  name: &Name,
+  rec_val: &RecursorVal,
+) -> Option<AuxDef> {
   let n_params = rec_val.num_params.to_u64()? as usize;
   let n_motives = rec_val.num_motives.to_u64()? as usize;
   let n_minors = rec_val.num_minors.to_u64()? as usize;

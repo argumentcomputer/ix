@@ -101,12 +101,10 @@ pub(crate) fn generate_cases_on(
   let target_idx = rec_val.all.iter().position(|n| *n == target_ind)?;
 
   // Determine elimination level
-  let ind_n_lparams = lean_env
-    .get(&target_ind)
-    .map_or(0, |ci| match ci {
-      ConstantInfo::InductInfo(v) => v.cnst.level_params.len(),
-      _ => 0,
-    });
+  let ind_n_lparams = lean_env.get(&target_ind).map_or(0, |ci| match ci {
+    ConstantInfo::InductInfo(v) => v.cnst.level_params.len(),
+    _ => 0,
+  });
   let elim_to_prop = rec_val.cnst.level_params.len() == ind_n_lparams;
   let elim_lvl = if elim_to_prop {
     Level::zero()
@@ -274,13 +272,14 @@ pub(crate) fn generate_cases_on(
         .into_iter()
         .map(|decl| {
           if let Some(idx) = find_motive_fvar(&decl.domain, &motive_fvars)
-            && idx != target_idx {
-              // Non-target-motive IH: wrap domain
-              return LocalDecl {
-                domain: mk_pi_unit(&decl.domain, &punit_const(&elim_lvl)),
-                ..decl
-              };
-            }
+            && idx != target_idx
+          {
+            // Non-target-motive IH: wrap domain
+            return LocalDecl {
+              domain: mk_pi_unit(&decl.domain, &punit_const(&elim_lvl)),
+              ..decl
+            };
+          }
           decl
         })
         .collect();
@@ -381,12 +380,13 @@ fn get_minor_name(
 ) -> Name {
   let ctor_idx = minor_idx - target_range.start;
   if let Some(ConstantInfo::InductInfo(v)) = lean_env.get(target_ind)
-    && let Some(ctor_name) = v.ctors.get(ctor_idx) {
-      // Strip prefix to get suffix (e.g., "A.mk" → "mk")
-      if let Some(suffix) = ctor_name.strip_prefix(target_ind) {
-        return Name::anon().append_components(&suffix);
-      }
-      return ctor_name.clone();
+    && let Some(ctor_name) = v.ctors.get(ctor_idx)
+  {
+    // Strip prefix to get suffix (e.g., "A.mk" → "mk")
+    if let Some(suffix) = ctor_name.strip_prefix(target_ind) {
+      return Name::anon().append_components(&suffix);
     }
+    return ctor_name.clone();
+  }
   Name::str(Name::anon(), format!("minor_{}", ctor_idx))
 }

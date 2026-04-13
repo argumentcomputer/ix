@@ -43,7 +43,8 @@ pub fn compile_env(
 
   let condensed = compute_sccs(&graph.out_refs);
 
-  let stt = CompileState { lean_env: Some(lean_env.clone()), ..Default::default() };
+  let stt =
+    CompileState { lean_env: Some(lean_env.clone()), ..Default::default() };
 
   // Pre-compile PUnit, PProd, Eq, and True so aux_gen can reference them.
   // .below uses PUnit/PProd (for Type-level), .brecOn.eq uses Eq and True.

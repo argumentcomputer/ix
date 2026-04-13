@@ -122,9 +122,9 @@ pub(crate) fn generate_aux_patches(
     if lean_env.get(&cases_on_name).is_some()
       && let Some(aux_def) =
         cases_on::generate_cases_on(&cases_on_name, rec_val, lean_env)
-      {
-        patches.insert(cases_on_name, PatchedConstant::CasesOn(aux_def));
-      }
+    {
+      patches.insert(cases_on_name, PatchedConstant::CasesOn(aux_def));
+    }
   }
 
   // Phase 1c: .recOn and .noConfusion are deferred to call-site surgery.

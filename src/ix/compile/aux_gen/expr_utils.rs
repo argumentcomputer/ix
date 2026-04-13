@@ -550,10 +550,9 @@ pub(super) fn replace_const_names(
       let new_name = map.get(name).cloned().unwrap_or_else(|| name.clone());
       LeanExpr::cnst(new_name, lvls.clone())
     },
-    ExprData::App(f, a, _) => LeanExpr::app(
-      replace_const_names(f, map),
-      replace_const_names(a, map),
-    ),
+    ExprData::App(f, a, _) => {
+      LeanExpr::app(replace_const_names(f, map), replace_const_names(a, map))
+    },
     ExprData::ForallE(n, d, b, bi, _) => LeanExpr::all(
       n.clone(),
       replace_const_names(d, map),
@@ -601,9 +600,10 @@ pub(super) fn find_motive_fvar(
         if let ExprData::Fvar(name, _) = head.as_data() {
           for (j, mfv) in motive_fvars.iter().enumerate() {
             if let ExprData::Fvar(mn, _) = mfv.as_data()
-              && name == mn {
-                return Some(j);
-              }
+              && name == mn
+            {
+              return Some(j);
+            }
           }
         }
         return None;

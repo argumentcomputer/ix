@@ -930,9 +930,10 @@ extern "C" fn rs_compile_validate_aux(
       // Use the first name of the first class as a dedup key.
       if let Some(first_class) = classes.first()
         && let Some(first_name) = first_class.first()
-          && !seen_blocks.insert(first_name.clone()) {
-            continue;
-          }
+        && !seen_blocks.insert(first_name.clone())
+      {
+        continue;
+      }
 
       for class in classes.iter() {
         if class.len() <= 1 {
@@ -1094,8 +1095,11 @@ extern "C" fn rs_compile_validate_aux(
           n_original += 1;
         }
       }
-      println!("{VALIDATE_PREFIX} deserialized: {} named, {} with original",
-        fresh_stt.env.named.len(), n_original);
+      println!(
+        "{VALIDATE_PREFIX} deserialized: {} named, {} with original",
+        fresh_stt.env.named.len(),
+        n_original
+      );
       match decompile_env(&fresh_stt) {
         Ok(dstt2) => {
           println!(

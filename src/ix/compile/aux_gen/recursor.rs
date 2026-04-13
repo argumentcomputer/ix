@@ -438,10 +438,10 @@ fn build_rec_type(
         minor_ty = shift_vars(&minor_ty, n_earlier_minors, 0);
       }
       // Extract the ctor suffix as a Name (e.g. `A.mk` → `mk`)
-      let minor_name = ctor
-        .cnst
-        .name
-        .strip_prefix(ind_name).map_or_else(|| ctor.cnst.name.clone(), |suffix| Name::anon().append_components(&suffix));
+      let minor_name = ctor.cnst.name.strip_prefix(ind_name).map_or_else(
+        || ctor.cnst.name.clone(),
+        |suffix| Name::anon().append_components(&suffix),
+      );
       domains.push(Binder {
         name: minor_name,
         domain: minor_ty,
@@ -976,9 +976,10 @@ fn build_ih_type_fvar(
     // Check if the expression head is an inductive in the block — stop if so
     let (h, _) = decompose_apps(&cur);
     if let ExprData::Const(cname, _, _) = h.as_data()
-      && classes.iter().any(|c| c.all_names.iter().any(|n| n == cname)) {
-        break;
-      }
+      && classes.iter().any(|c| c.all_names.iter().any(|n| n == cname))
+    {
+      break;
+    }
     let (fv_name, fv) = fresh_fvar("ih_xs", xs_fvars.len());
     xs_decls.push(LocalDecl {
       fvar_name: fv_name,
@@ -1321,9 +1322,10 @@ fn build_rule_ih_fvar(
   while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
     let (h, _) = decompose_apps(&cur);
     if let ExprData::Const(cname, _, _) = h.as_data()
-      && classes.iter().any(|c| c.all_names.iter().any(|n| n == cname)) {
-        break;
-      }
+      && classes.iter().any(|c| c.all_names.iter().any(|n| n == cname))
+    {
+      break;
+    }
     let (fv_name, fv) = fresh_fvar("rih_xs", xs_fvars.len());
     xs_decls.push(LocalDecl {
       fvar_name: fv_name,
@@ -1601,14 +1603,15 @@ fn is_sort_zero_domain(
       // Look up the head constant's return type
       let (head, _) = decompose_apps(dom);
       if let ExprData::Const(name, _, _) = head.as_data()
-        && let Some(ci) = lean_env.get(name) {
-          let typ = match ci {
-            ConstantInfo::InductInfo(v) => &v.cnst.typ,
-            ConstantInfo::AxiomInfo(v) => &v.cnst.typ,
-            _ => return false,
-          };
-          return is_prop_sort(typ);
-        }
+        && let Some(ci) = lean_env.get(name)
+      {
+        let typ = match ci {
+          ConstantInfo::InductInfo(v) => &v.cnst.typ,
+          ConstantInfo::AxiomInfo(v) => &v.cnst.typ,
+          _ => return false,
+        };
+        return is_prop_sort(typ);
+      }
       false
     },
     _ => false,
@@ -1814,9 +1817,10 @@ fn _peel_foralls_to_ind(
   while let ExprData::ForallE(_, fd, fb, _, _) = inner.as_data() {
     let (h, _) = decompose_apps(&inner);
     if let ExprData::Const(name, _, _) = h.as_data()
-      && classes.iter().any(|c| c.all_names.iter().any(|n| n == name)) {
-        break;
-      }
+      && classes.iter().any(|c| c.all_names.iter().any(|n| n == name))
+    {
+      break;
+    }
     forall_doms.push(fd.clone());
     inner = fb.clone();
   }
@@ -2161,10 +2165,9 @@ fn compute_is_large_and_k(
     crate::ix::kernel::env::InternTable::new();
   let mut tc: TypeChecker<'_, Anon> = TypeChecker::new(&stt.kenv, tc_intern);
 
-  let is_large = match tc.get_result_sort_level(
-    first_ty_z,
-    n_params + (first_n_indices as usize),
-  ) {
+  let is_large = match tc
+    .get_result_sort_level(first_ty_z, n_params + (first_n_indices as usize))
+  {
     Ok(result_level) => {
       match tc.is_large_eliminator(&result_level, &ind_infos) {
         Ok(v) => {

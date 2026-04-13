@@ -1040,10 +1040,11 @@ fn build_below_minor(
   let mut ih_entries: Vec<LeanExpr> = Vec::new();
   for field in &fields {
     if field.is_ih
-      && let Some(motive_app) = &field.motive_app {
-        let pprod = mk_pprod(elim_level, rlvl, motive_app, &field.fvar);
-        ih_entries.push(pprod);
-      }
+      && let Some(motive_app) = &field.motive_app
+    {
+      let pprod = mk_pprod(elim_level, rlvl, motive_app, &field.fvar);
+      ih_entries.push(pprod);
+    }
   }
 
   // Pack IH entries following Lean's PProdN.pack convention:

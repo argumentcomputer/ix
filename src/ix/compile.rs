@@ -2210,12 +2210,13 @@ pub fn compile_const_no_aux(
         if let Some(LeanConstantInfo::InductInfo(v)) = lean_env.get(n) {
           for a in &v.all {
             if stt.aux_gen_extra_names.contains(a)
-              && let Some(LeanConstantInfo::InductInfo(bi)) = lean_env.get(a) {
-                filtered.insert(a.clone());
-                for ctor in &bi.ctors {
-                  filtered.insert(ctor.clone());
-                }
+              && let Some(LeanConstantInfo::InductInfo(bi)) = lean_env.get(a)
+            {
+              filtered.insert(a.clone());
+              for ctor in &bi.ctors {
+                filtered.insert(ctor.clone());
               }
+            }
           }
           break;
         }

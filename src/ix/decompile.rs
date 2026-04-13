@@ -2745,7 +2745,8 @@ fn decompile_aux_gen_constants(
           // .brecOn.eq is ALWAYS a theorem (proof of equality).
           // .brecOn and .brecOn.go are theorems for Prop, definitions for Type.
           for d in &brecon_defs {
-            let is_eq = matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
+            let is_eq =
+              matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
             let as_thm = is_prop || is_eq;
             generated_consts
               .insert(d.name.clone(), brecon_def_to_lean(d, as_thm));
@@ -2773,8 +2774,13 @@ fn decompile_aux_gen_constants(
             if !brecon_members.contains(&&d.name) {
               continue;
             }
-            let is_eq = matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
-            let kind = if is_prop || is_eq { DefKind::Theorem } else { DefKind::Definition };
+            let is_eq =
+              matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
+            let kind = if is_prop || is_eq {
+              DefKind::Theorem
+            } else {
+              DefKind::Definition
+            };
             let mc = LeanMutConst::Defn(Def {
               name: d.name.clone(),
               level_params: d.level_params.clone(),
@@ -2799,8 +2805,14 @@ fn decompile_aux_gen_constants(
               },
               Ok(_) | Err(_) => {
                 // Fallback: insert the generated constant directly.
-                let is_eq_fb = matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
-                dstt.env.insert(d.name.clone(), brecon_def_to_lean(d, is_prop || is_eq_fb));
+                let is_eq_fb = matches!(
+                  classify_aux_gen(&d.name),
+                  Some((AuxKind::BRecOnEq, _))
+                );
+                dstt.env.insert(
+                  d.name.clone(),
+                  brecon_def_to_lean(d, is_prop || is_eq_fb),
+                );
               },
             }
           }
