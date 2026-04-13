@@ -9,7 +9,7 @@
     5. Aux congruence (aux_gen constants match originals)
     6. Decompilation without debug info succeeds
 
-  Invoked via `lake test -- rust-compile-validate-aux`.
+  Invoked via `lake test -- --ignored validate-aux`.
 -/
 import Ix.Common
 import Ix.Meta
@@ -59,11 +59,7 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
 @[extern "rs_compile_validate_aux"]
 opaque compileValidateAux : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
-def runCompileValidateAux : IO UInt32 := do
-  IO.println "[validate-aux] loading environment..."
-  let env ← get_env!
-  IO.println "[validate-aux] environment loaded"
-
+def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   IO.println "[validate-aux] finding seeds..."
   let prefixes := [
     `Tests.Ix.Compile.Mutual,

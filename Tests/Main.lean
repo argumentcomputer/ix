@@ -82,6 +82,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with
     | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
     | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
+  ("validate-aux", runCompileValidateAux env),
 ]
 
 def main (args : List String) : IO UInt32 := do
@@ -92,10 +93,6 @@ def main (args : List String) : IO UInt32 := do
     let result := tmpDecodeConstMap env.constants.toList
     IO.println s!"Rust compiled: {result}"
     return 0
-
-  -- Special case: rust-compile-validate-aux (comprehensive 6-phase validation)
-  if args.contains "rust-compile-validate-aux" then
-    return ← runCompileValidateAux
 
   -- Special case: cli tests have their own runner
   if args.contains "cli" then
