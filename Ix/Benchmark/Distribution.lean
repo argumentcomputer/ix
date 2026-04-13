@@ -89,7 +89,7 @@ def Distribution.resampleM (dist : Distribution) (numSamples : Nat) : StateM Std
 Performs a one-sample bootstrap: resamples the distribution `bootstrapSamples`
 times and computes mean, stdDev, median, and medianAbsDev for each resample.
 
-Assumes `numSamples ≥ 2`.
+Assumes `numSamples ≥ 2`
 -/
 def Distribution.bootstrap (dist : Distribution) (numSamples bootstrapSamples : Nat) : StateM StdGen Distributions := do
   let mut means := Array.mkEmpty bootstrapSamples

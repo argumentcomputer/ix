@@ -347,8 +347,7 @@ def parallelInsertBench : IO (Array BenchReport) := do
 
 end Benchmarks.ShardMap
 
-def main (args : List String) : IO Unit := do
-  setBenchArgs args
+def main : IO Unit := do
   IO.println "ShardMap Performance Benchmarks\n"
   IO.println "================================\n"
 

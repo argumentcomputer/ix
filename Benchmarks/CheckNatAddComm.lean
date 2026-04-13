@@ -19,8 +19,7 @@ def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
-def main (args : List String) : IO Unit := do
-  setBenchArgs args
+def main : IO Unit := do
   let .ok toplevel := IxVM.ixVM
     | throw (IO.userError "Merging failed")
   let .ok compiled := toplevel.compile

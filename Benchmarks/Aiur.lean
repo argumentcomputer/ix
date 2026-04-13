@@ -122,8 +122,7 @@ def verifyBench : IO $ Array BenchReport := do
   bgroup "nat_fib" {} do
     bench "verify fib 10" (Aiur.AiurSystem.verify system friParameters claim) proof
 
-def main (args : List String) : IO Unit := do
-  setBenchArgs args
+def main : IO Unit := do
   let _ ← toplevelBench
   let _ ← compileBench
   let _ ← buildAiurSystemBench

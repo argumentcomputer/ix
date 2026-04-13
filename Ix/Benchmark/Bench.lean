@@ -18,18 +18,15 @@ open Batteries (RBMap)
 
 ## Verbosity
 
-Three levels controlled by `Config.verbosity`, the `BENCH_VERBOSITY` env var,
-or the `-q` / `--quiet` / `-v` / `--verbose` command-line flags
-(CLI > env var > `Config` default). See `getConfigEnv` for the precedence
-rules, and the `Verbosity` enum doc comments for what each level prints.
+Three levels controlled by `Config.verbosity` or the `BENCH_VERBOSITY` env var
+(env var overrides `Config` default). See `getConfigEnv` and the `Verbosity`
+enum doc comments for details.
 
 - `quiet`   — only per-bench summary lines (time / thrpt / change / perf note)
 - `normal`  — default; adds warmup + running lines, plus the variance-introduced-by-outliers warning and Tukey breakdown *only* when the outlier effect is moderate or severe
 - `verbose` — adds R² alongside the time line, and always prints the variance warning + Tukey breakdown regardless of severity
 
-Bench files wanting to pick up the CLI flags should call `setBenchArgs args`
-at the top of `main (args : List String) : IO Unit`. Skipping this only
-disables CLI flags — `Config.verbosity` and `BENCH_VERBOSITY` still work.
+Example: `BENCH_VERBOSITY=v lake exe bench-shardmap`
 
 ## Limitations
 - Measures time in nanoseconds using `IO.monoNanosNow`, which is less precise than the picoseconds used in Criterion.rs
@@ -278,7 +275,7 @@ def compareToThreshold (estimate : Estimate) (noiseThreshold : Float) : Comparis
 def indent24 : String := String.ofList (List.replicate 24 ' ')
 
 def BenchGroup.printResults (bg : BenchGroup) (benchName : String)
-    (m : MeasurementData) (style : CliStyle) : IO Unit := do
+    (m : MeasurementData) : IO Unit := do
   let estimates := m.absoluteEstimates
   let typicalEstimate := estimates.slope.getD estimates.mean
   let fullName := s!"{bg.name}/{benchName}"
@@ -292,18 +289,18 @@ def BenchGroup.printResults (bg : BenchGroup) (benchName : String)
   let r2Suffix := match m.rSquared with
     | some r2 => s!" R²={r2.floatPretty 3}"
     | none => ""
-  let timeLine := s!"time:   [{style.faint ciLb.formatNanos} {style.bold typicalEstimate.pointEstimate.formatNanos} {style.faint ciUb.formatNanos}]{r2Suffix}"
+  let timeLine := s!"time:   [{Ansi.faint ciLb.formatNanos} {Ansi.bold typicalEstimate.pointEstimate.formatNanos} {Ansi.faint ciUb.formatNanos}]{r2Suffix}"
   if fullName.length > 23 then
-    IO.println (style.green fullName)
+    IO.println (Ansi.green fullName)
     IO.println s!"{indent24}{timeLine}"
   else
     let pad := String.ofList (List.replicate (24 - fullName.length) ' ')
-    IO.println s!"{style.green fullName}{pad}{timeLine}"
+    IO.println s!"{Ansi.green fullName}{pad}{timeLine}"
 
   -- Throughput line (if present)
   if let some t := m.throughput then
     -- Higher time ⇒ lower throughput, so bounds are inverted
-    IO.println s!"{indent24}thrpt:  [{style.faint (t.formatRate ciUb)} {style.bold (t.formatRate typicalEstimate.pointEstimate)} {style.faint (t.formatRate ciLb)}]"
+    IO.println s!"{indent24}thrpt:  [{Ansi.faint (t.formatRate ciUb)} {Ansi.bold (t.formatRate typicalEstimate.pointEstimate)} {Ansi.faint (t.formatRate ciLb)}]"
 
   -- Change section (gated by verbosity, not shown in quiet)
   if verbosity != .quiet then
@@ -321,13 +318,13 @@ def BenchGroup.printResults (bg : BenchGroup) (benchName : String)
       let comparison := if notSignificant then ComparisonResult.NonSignificant
         else compareToThreshold meanEst comp.noiseThreshold
       let colorPointEst (s : String) : String := match comparison with
-        | .Improved => style.green (style.bold s)
-        | .Regressed => style.red (style.bold s)
+        | .Improved => Ansi.green (Ansi.bold s)
+        | .Regressed => Ansi.red (Ansi.bold s)
         | .NonSignificant => s
 
       let pointEstStr := colorPointEst (fmtSigned meanEst.pointEstimate)
-      let lbStr := style.faint (fmtSigned meanEst.confidenceInterval.lowerBound)
-      let ubStr := style.faint (fmtSigned meanEst.confidenceInterval.upperBound)
+      let lbStr := Ansi.faint (fmtSigned meanEst.confidenceInterval.lowerBound)
+      let ubStr := Ansi.faint (fmtSigned meanEst.confidenceInterval.upperBound)
       let pStr := s!"(p = {comp.pValue.floatPretty 2} {if notSignificant then ">" else "<"} {comp.significanceThreshold.floatPretty 2})"
 
       -- Layout differs depending on whether throughput is present
@@ -335,8 +332,8 @@ def BenchGroup.printResults (bg : BenchGroup) (benchName : String)
         -- Throughput present: separate "change:" header, then time: and thrpt: sub-lines
         let toThrptEst (ratio : Float) : Float := 1.0 / (1.0 + ratio) - 1.0
         let thrptPointStr := colorPointEst (fmtSigned (toThrptEst meanEst.pointEstimate))
-        let thrptLbStr := style.faint (fmtSigned (toThrptEst meanEst.confidenceInterval.upperBound))
-        let thrptUbStr := style.faint (fmtSigned (toThrptEst meanEst.confidenceInterval.lowerBound))
+        let thrptLbStr := Ansi.faint (fmtSigned (toThrptEst meanEst.confidenceInterval.upperBound))
+        let thrptUbStr := Ansi.faint (fmtSigned (toThrptEst meanEst.confidenceInterval.lowerBound))
         IO.println s!"{String.ofList (List.replicate 17 ' ')}change:"
         IO.println s!"{indent24}time:   [{lbStr}% {pointEstStr}% {ubStr}%] {pStr}"
         IO.println s!"{indent24}thrpt:  [{thrptLbStr}% {thrptPointStr}% {thrptUbStr}%]"
@@ -348,8 +345,8 @@ def BenchGroup.printResults (bg : BenchGroup) (benchName : String)
       let explanation := if notSignificant then
         "No change in performance detected."
       else match comparison with
-        | .Improved => s!"Performance has {style.green "improved"}."
-        | .Regressed => s!"Performance has {style.red "regressed"}."
+        | .Improved => s!"Performance has {Ansi.green "improved"}."
+        | .Regressed => s!"Performance has {Ansi.red "regressed"}."
         | .NonSignificant => "Change within noise threshold."
       IO.println s!"{indent24}{explanation}"
 
@@ -367,7 +364,7 @@ def BenchGroup.printResults (bg : BenchGroup) (benchName : String)
       let showVariance := verbosity == .verbose || (effectAboveSlight && verbosity != .quiet)
       if showVariance then
         if let some outs := m.outliers then
-          Outliers.note outs m.avgTimes.d.size style
+          Outliers.note outs m.avgTimes.d.size
         let pct := (ov.fraction * 100).floatPretty 0
         IO.println s!"variance introduced by outliers: {pct}% ({ov.desc})"
 
@@ -433,14 +430,14 @@ def BenchReport.throughputStr (r : BenchReport) : String :=
   | none => "N/A"
 
 /--
-Computes the weighted-average primary throughput rate across a collection of
-reports, weighted by each bench's primary quantity. Returns `none` if no
-report has throughput set, or if the reports use more than one `Throughput`
-variant (averaging across variants — e.g. bytes/s and elements/s — would be
-meaningless). On success, returns the variant of the first throughput-bearing
-report (used to pick display units) together with the averaged rate.
+Computes weighted-average throughput rate(s) across a collection of reports.
+Returns `none` if no report has throughput set, or if the reports use more
+than one `Throughput` variant. On success, returns the representative variant,
+the primary weighted-average rate, and (for `ElementsAndBytes`) the secondary
+bytes-weighted-average rate.
 -/
-def weightedAverageThroughput (reports : Array BenchReport) : Option (Throughput × Float) := Id.run do
+def weightedAverageThroughput (reports : Array BenchReport) :
+    Option (Throughput × Float × Option Float) := Id.run do
   let mut representative : Option Throughput := none
   let mut sumQty : Float := 0.0
   let mut weightedSum : Float := 0.0
@@ -461,7 +458,21 @@ def weightedAverageThroughput (reports : Array BenchReport) : Option (Throughput
   | none => return none
   | some t =>
     if sumQty == 0 then return none
-    return some (t, weightedSum / sumQty)
+    let primaryAvg := weightedSum / sumQty
+    -- For ElementsAndBytes, compute a separate bytes-weighted average
+    let secondaryAvg ← match t with
+      | .ElementsAndBytes _ _ _ => do
+        let mut sumBytes : Float := 0.0
+        let mut weightedBytesSum : Float := 0.0
+        for r in reports do
+          if let some (.ElementsAndBytes _ b _) := r.throughput then
+            let bytes := b.toNat.toFloat
+            let bytesRate := bytes * 1e9 / r.newBench.getTime
+            sumBytes := sumBytes + bytes
+            weightedBytesSum := weightedBytesSum + bytes * bytesRate
+        pure (if sumBytes > 0 then some (weightedBytesSum / sumBytes) else none)
+      | _ => pure none
+    return some (t, primaryAvg, secondaryAvg)
 
 def percentChangeToString (pc : Float) : String :=
   let rounded := (100 * pc).floatPretty 2
@@ -580,15 +591,15 @@ def oneShotBench {α β : Type} (groupName : String) (b : Benchmarkable α β)
   let benchTime := finish - start
   style.overwrite
   -- Use the same 24-char column layout as sampled mode
-  let timeStr := s!"time:   {style.bold (benchTime.toFloat.formatNanos)}"
+  let timeStr := s!"time:   {Ansi.bold (benchTime.toFloat.formatNanos)}"
   if benchId.length > 23 then
-    IO.println (style.green benchId)
+    IO.println (Ansi.green benchId)
     IO.println s!"{indent24}{timeStr}"
   else
     let pad := String.ofList (List.replicate (24 - benchId.length) ' ')
-    IO.println s!"{style.green benchId}{pad}{timeStr}"
+    IO.println s!"{Ansi.green benchId}{pad}{timeStr}"
   if let some t := tput then
-    IO.println s!"{indent24}thrpt:  {style.bold (t.formatRate benchTime.toFloat)}"
+    IO.println s!"{indent24}thrpt:  {Ansi.bold (t.formatRate benchTime.toFloat)}"
   let (basePath, newPath) ← mkDirs groupName b.name
   let fileExt := toString config.serde
   let newFile := newPath / s!"one-shot.{fileExt}"
@@ -676,7 +687,8 @@ def bgroup {α β : Type} (name: String) (config : Config := {})
   let config ← getConfigEnv config
   let (_, state) ← action.run { config, benches := #[] }
   let bg : BenchGroup := { name, config }
-  let style : CliStyle := { colorEnabled := config.color, overwriteEnabled := config.overwrite }
+  -- Verbose mode makes all output permanent (no ephemeral line overwriting)
+  let style : CliStyle := { overwriteEnabled := config.verbosity != .verbose }
   let mut reports : Array BenchReport := #[]
   for (b, tput) in state.benches do
     let benchId := s!"{name}/{b.name}"
@@ -735,7 +747,7 @@ def bgroup {α β : Type} (name: String) (config : Config := {})
         outliers := some outliers
       }
       style.overwrite
-      resolvedBg.printResults b.name measurement style
+      resolvedBg.printResults b.name measurement
       saveMeasurement name b.name measurement resolvedConfig
       let benchReport : BenchReport := {
         function := b.name,
@@ -748,8 +760,11 @@ def bgroup {α β : Type} (name: String) (config : Config := {})
     reports := reports.push report
   if config.avgThroughput then
     match weightedAverageThroughput reports with
-    | some (t, avgRate) =>
-      IO.println s!"Average throughput: {t.formatRateValue avgRate}"
+    | some (t, primaryAvg, secondaryAvg) =>
+      IO.println s!"Average throughput: {t.formatRateValue primaryAvg}"
+      -- For ElementsAndBytes, also print the secondary bytes/s average
+      if let some bytesAvg := secondaryAvg then
+        IO.println s!"Average throughput (bytes): {Float.formatBytesRate bytesAvg}"
     | none =>
       IO.eprintln "Average throughput: skipped (no throughput set, or mixed Throughput variants across benches)"
   if config.report then

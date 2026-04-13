@@ -23,7 +23,7 @@ def Data.randDataM (data : Data) : StateM StdGen (Nat × Nat) := do
   set gen'
   return data.d[n]!
 
-/-- Creates a random permutation of the distribution with replacement -/
+/-- Creates a random permutation of the distribution with replacement (i.e. duplicates are permitted) -/
 def Data.resampleM (data : Data) (numSamples : Nat) : StateM StdGen Data := do
   let mut rands := Array.mkEmpty numSamples
   for _ in [:numSamples] do

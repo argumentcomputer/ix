@@ -52,7 +52,6 @@ def sha256Bench : IO $ Array BenchReport := do
         bench s!"dataSize={dataSize} numHashes={numHashes}"
           (aiurSystem.prove friParameters funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
 
-def main (args : List String) : IO Unit := do
-  setBenchArgs args
+def main : IO Unit := do
   let _ ← sha256Bench
   return

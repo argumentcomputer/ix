@@ -17,8 +17,7 @@ def Outliers.getTotal (o : Outliers) : Nat :=
   o.highSevere + o.highMild + o.lowMild + o.lowSevere
 
 /-- Classifies each sample in `data` by the Tukey-fence technique (1.5×IQR / 3×IQR)
-    and returns an `Outliers` record. Pure — does no IO. Matches Haskell
-    criterion's `classifyOutliers`. -/
+    and returns an `Outliers` record. -/
 def Distribution.classifyOutliers (data : Distribution) : Outliers := Id.run do
   let upper := (data.percentile? 75).get!
   let lower := (data.percentile? 25).get!
@@ -39,13 +38,12 @@ def Distribution.classifyOutliers (data : Distribution) : Outliers := Id.run do
         out := { out with outliers := elem :: out.outliers, highMild := out.highMild + 1 }
   return out
 
-/-- Prints the Tukey outlier breakdown to stdout, matching criterion.rs's
-    format (yellow header, uncolored sub-lines). -/
-def Outliers.note (out : Outliers) (totalSamples : Nat) (style : CliStyle) : IO Unit := do
+/-- Prints the Tukey outlier breakdown to stdout -/
+def Outliers.note (out : Outliers) (totalSamples : Nat) : IO Unit := do
   let outLength := out.outliers.length
   if outLength > 0 then
     let pctTotal := Float.ofNat outLength / (Float.ofNat totalSamples) * 100
-    IO.println (style.yellow s!"Found {outLength} outliers among {totalSamples} measurements ({pctTotal.floatPretty 2}%)")
+    IO.println (Ansi.yellow s!"Found {outLength} outliers among {totalSamples} measurements ({pctTotal.floatPretty 2}%)")
     if out.lowSevere > 0 then
       let pct := Float.ofNat out.lowSevere / (Float.ofNat totalSamples) * 100
       IO.println s!"  {out.lowSevere} ({pct.floatPretty 2}%) low severe"

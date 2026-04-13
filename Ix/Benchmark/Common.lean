@@ -5,7 +5,7 @@ public section
 
 inductive SamplingMode where
   /-- Every sample runs the same number of iterations. Best for expensive
-      benches where linear's `[d, 2d, ..., Nd]` schedule would blow past the
+      benches where linear's `[d, 2d, ..., Nd]` schedule would exceed the
       target sample time. -/
   | flat : SamplingMode
   /-- Iteration counts grow linearly `[d, 2d, ..., Nd]`; the per-iteration time
@@ -29,7 +29,7 @@ instance : ToString SerdeFormat where
 
 /--
 Controls how much diagnostic output the benchmark harness prints. Can be overridden per-run via the
-`BENCH_VERBOSITY` env var or via `-q` / `-v` on the `lake exe` command line.
+`BENCH_VERBOSITY` env var (see `getConfigEnv`).
 -/
 inductive Verbosity where
   /-- Only per-bench summary lines (time/thrpt/change/perf note). Suppresses
@@ -130,69 +130,30 @@ structure Config where
   `Throughput` variant; otherwise the average is skipped with a warning.
   -/
   avgThroughput : Bool := false
-  /-- Diagnostic output level. Overridable via `BENCH_VERBOSITY` env var or
-      `-q` / `-v` command-line flags (see `getConfigEnv`). -/
+  /-- Diagnostic output level. Overridable via `BENCH_VERBOSITY` env var
+      (see `getConfigEnv`). -/
   verbosity : Verbosity := .normal
-  /-- Enable ANSI color/bold/faint in output. Defaults to `true`; set to
-      `false` or set the `BENCH_NO_COLOR` env var to disable. -/
-  color : Bool := true
-  /-- Enable ephemeral progress lines (warmup/sampling status overwritten
-      in-place on stderr). Defaults to `true`; automatically disabled when
-      `BENCH_NO_COLOR` is set. Forced to `false` in verbose mode so all
-      output is permanent. -/
-  overwrite : Bool := true
   deriving Repr, Lean.ToJson, Lean.FromJson
 
-/--
-Global mutable holder for the benchmark harness's command-line args, so that
-`getConfigEnv` can pick up `-q`/`-v`/`-vv` flags passed on `lake exe`
-without every individual bench `main` having to thread args through explicitly.
-Set it once at the top of `main` via `setBenchArgs args`.
--/
-initialize benchArgsRef : IO.Ref (List String) ← IO.mkRef []
-
-/-- Populate the global bench-args ref from this program's `main (args : List String)`.
-    Call this once at the top of every bench `main` to enable CLI flag parsing
-    in `getConfigEnv`. Safe to skip if we don't need CLI verbosity overrides. -/
-def setBenchArgs (args : List String) : IO Unit :=
-  benchArgsRef.set args
 
 /--
-Overrides config values with the corresponding `BENCH_<SETTING>` env vars and
-`lake exe` command-line flags. Precedence order (lowest to highest):
+Overrides config values with the corresponding `BENCH_*` env vars.
 
-1. `config` field defaults (the literal values passed to `bgroup`)
-2. `BENCH_*` env vars (`BENCH_SERDE`, `BENCH_REPORT`, `BENCH_VERBOSITY`)
-3. CLI flags (`-q` / `--quiet`, `-v` / `--verbose`) from the args set
-   via `setBenchArgs` at the top of `main`
+- `BENCH_SERDE`: `"ixon"` to use Ixon format, otherwise JSON (default)
+- `BENCH_REPORT`: `"1"` to generate a Markdown report
+- `BENCH_VERBOSITY`: `q` (quiet) | `v` (verbose); omit for normal
 
-`BENCH_VERBOSITY` accepts `quiet` | `normal` | `verbose` or the numeric
-equivalents `0` | `1` | `2`.
+Example: `BENCH_VERBOSITY=v lake exe bench-shardmap`
 -/
 def getConfigEnv (config : Config) : IO Config := do
   let serde : SerdeFormat := if (← IO.getEnv "BENCH_SERDE") == some "ixon" then .ixon else config.serde
   let report := if let some val := (← IO.getEnv "BENCH_REPORT") then val == "1" else config.report
-  let envVerbosity : Option Verbosity ← do
+  let verbosity : Verbosity ← do
     match (← IO.getEnv "BENCH_VERBOSITY") with
-    | some "quiet"   | some "0" => pure (some .quiet)
-    | some "normal"  | some "1" => pure (some .normal)
-    | some "verbose" | some "2" => pure (some .verbose)
-    | _ => pure none
-  let args ← benchArgsRef.get
-  let rec has (flag : String) : List String → Bool
-    | [] => false
-    | a :: rest => a == flag || has flag rest
-  let cliVerbosity : Option Verbosity :=
-    if has "-v" args || has "--verbose" args then some .verbose
-    else if has "-q" args || has "--quiet" args then some .quiet
-    else none
-  let verbosity := cliVerbosity.getD (envVerbosity.getD config.verbosity)
-  -- `BENCH_NO_COLOR` disables both ANSI codes and ephemeral overwrites.
-  -- Verbose mode also forces overwrite off so all output is permanent.
-  let noColor := (← IO.getEnv "BENCH_NO_COLOR").isSome
-  let color := if noColor then false else config.color
-  let overwrite := if noColor || verbosity == .verbose then false else config.overwrite
-  return { config with serde, report, verbosity, color, overwrite }
+    | some "q" => pure .quiet
+    | some "v" => pure .verbose
+    | _ => pure config.verbosity
+  return { config with serde, report, verbosity }
 
 @[inline] def Float.toNanos (f : Float) : Float := f * 10 ^ 9
 
@@ -258,32 +219,29 @@ def Float.formatNanos (f : Float) : String :=
   else
     f.floatPretty 2  ++ "ns"
 
-/--
-Formats a per-second `rate` with binary (1024-based) unit suffixes:
-`B/s`, `KiB/s`, `MiB/s`, `GiB/s`.
--/
-def Float.formatRateValueBinary (rate : Float) (baseUnit : String) : String :=
+/-- Formats a bytes-per-second `rate` with binary (1024-based) unit suffixes:
+    `B/s`, `KiB/s`, `MiB/s`, `GiB/s`. -/
+def Float.formatBytesRate (rate : Float) : String :=
   if rate ≥ 1024.0 * 1024.0 * 1024.0
-  then (rate / (1024.0 * 1024.0 * 1024.0)).floatPretty 2 ++ " Gi" ++ baseUnit ++ "/s"
+  then (rate / (1024.0 * 1024.0 * 1024.0)).floatPretty 2 ++ " GiB/s"
   else if rate ≥ 1024.0 * 1024.0
-  then (rate / (1024.0 * 1024.0)).floatPretty 2 ++ " Mi" ++ baseUnit ++ "/s"
+  then (rate / (1024.0 * 1024.0)).floatPretty 2 ++ " MiB/s"
   else if rate ≥ 1024.0
-  then (rate / 1024.0).floatPretty 2 ++ " Ki" ++ baseUnit ++ "/s"
+  then (rate / 1024.0).floatPretty 2 ++ " KiB/s"
   else
-    rate.floatPretty 2 ++ " " ++ baseUnit ++ "/s"
+    rate.floatPretty 2 ++ " B/s"
 
-/--
-Formats a per-second `rate` with decimal (1000-based) unit prefixes.
--/
-def Float.formatRateValueDecimal (rate : Float) (baseUnit : String) : String :=
+/-- Formats a per-second `rate` with decimal (1000-based) unit prefixes
+    and the given `unit` label (e.g. `"elem"`, `"b"`, `"B"`, `"hashes"`). -/
+def Float.formatRate (rate : Float) (unit : String) : String :=
   if rate ≥ 1e9
-  then (rate / 1e9).floatPretty 2 ++ " G" ++ baseUnit ++ "/s"
+  then (rate / 1e9).floatPretty 2 ++ " G" ++ unit ++ "/s"
   else if rate ≥ 1e6
-  then (rate / 1e6).floatPretty 2 ++ " M" ++ baseUnit ++ "/s"
+  then (rate / 1e6).floatPretty 2 ++ " M" ++ unit ++ "/s"
   else if rate ≥ 1e3
-  then (rate / 1e3).floatPretty 2 ++ " K" ++ baseUnit ++ "/s"
+  then (rate / 1e3).floatPretty 2 ++ " K" ++ unit ++ "/s"
   else
-    rate.floatPretty 2 ++ " " ++ baseUnit ++ "/s"
+    rate.floatPretty 2 ++ " " ++ unit ++ "/s"
 
 /--
 Extracts the primary quantity of work per iteration from a `Throughput`.
@@ -319,13 +277,11 @@ The numeric payload of `t` is ignored — only the variant and (for
 -/
 def Throughput.formatRateValue (t : Throughput) (rate : Float) : String :=
   match t with
-  | .Bits _ => Float.formatRateValueDecimal rate "b"
-  | .Bytes _ => Float.formatRateValueBinary rate "B"
-  | .BytesDecimal _ => Float.formatRateValueDecimal rate "B"
-  | .Elements _ label => Float.formatRateValueDecimal rate label
-  -- For `ElementsAndBytes` we surface only the elements rate as the primary
-  -- aggregate; the secondary bytes rate would require a separate average.
-  | .ElementsAndBytes _ _ label => Float.formatRateValueDecimal rate label
+  | .Bits _ => Float.formatRate rate "b"
+  | .Bytes _ => Float.formatBytesRate rate
+  | .BytesDecimal _ => Float.formatRate rate "B"
+  | .Elements _ label => Float.formatRate rate label
+  | .ElementsAndBytes _ _ label => Float.formatRate rate label
 
 /--
 Computes the per-second rate (primary quantity per iteration divided by
@@ -346,8 +302,8 @@ def Throughput.formatRate (t : Throughput) (timeNs : Float) : String :=
   | .ElementsAndBytes e b label =>
     let eRate := e.toNat.toFloat * 1e9 / timeNs
     let bRate := b.toNat.toFloat * 1e9 / timeNs
-    let eStr := Float.formatRateValueDecimal eRate label
-    let bStr := Float.formatRateValueBinary bRate "B"
+    let eStr := Float.formatRate eRate label
+    let bStr := Float.formatBytesRate bRate
     s!"{eStr} / {bStr}"
   | _ => t.formatRateValue (t.rate timeNs)
 

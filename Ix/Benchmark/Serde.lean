@@ -228,10 +228,9 @@ def putConfig (c : Config) : PutM Unit := do
   putFloat c.noiseThreshold
   Serialize.put c.serde
   putU8 (if c.oneShot then 1 else 0)
-  putU8 (if c.report then 1 else 0)
   Serialize.put c.throughput
   putU8 (if c.avgThroughput then 1 else 0)
-  -- `verbosity`, `color`, and `overwrite` are runtime display preferences, not persisted.
+  -- `report`, `verbosity`, and `overwrite` are runtime display preferences, not persisted.
 
 def getConfig : GetM Config := do
   let warmupTime ← getFloat
@@ -244,13 +243,12 @@ def getConfig : GetM Config := do
   let noiseThreshold ← getFloat
   let serde ← getSerdeFormat
   let oneShot ← (· != 0) <$> getU8
-  let report ← (· != 0) <$> getU8
   let throughput : Option Throughput ← Serialize.get
   let avgThroughput ← (· != 0) <$> getU8
   return {
     warmupTime, sampleTime, numSamples, samplingMode, bootstrapSamples,
     confidenceLevel, significanceLevel, noiseThreshold, serde,
-    oneShot, report, throughput, avgThroughput
+    oneShot, throughput, avgThroughput
   }
 
 instance : Serialize Config where
