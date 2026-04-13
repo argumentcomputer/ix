@@ -391,7 +391,7 @@ instance : SampleableExt ConstantMeta := SampleableExt.mkSelfContained genConsta
 
 /-- Generate a Named entry with proper metadata. -/
 def genNamed : Gen Named :=
-  Named.mk <$> genAddress <*> genConstantMeta
+  Named.mk <$> genAddress <*> genConstantMeta <*> pure none
 
 /-- Generate a Comm. -/
 def genCommNew : Gen Comm :=
