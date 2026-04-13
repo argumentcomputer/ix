@@ -89,7 +89,8 @@ pub fn simul_subst<M: KernelMode>(
     ExprData::Var(i, _, _) => {
       let i = *i;
       if i >= depth && i < depth + n {
-        #[allow(clippy::cast_possible_truncation)] // guarded: i < depth + substs.len()
+        #[allow(clippy::cast_possible_truncation)]
+        // guarded: i < depth + substs.len()
         return lift(env, &substs[(i - depth) as usize], depth, 0);
       } else if i >= depth + n {
         KExpr::var(i - n, M::meta_field(crate::ix::env::Name::anon()))
@@ -203,7 +204,7 @@ mod tests {
   use super::*;
   use crate::ix::address::Address;
   use crate::ix::kernel::id::KId;
-  
+
   use crate::ix::kernel::mode::Anon;
   use lean_ffi::nat::Nat;
 

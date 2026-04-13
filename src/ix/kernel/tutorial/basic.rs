@@ -15,7 +15,14 @@ mod tests {
   #[test]
   fn good_basic_def() {
     let env = KEnv::<Meta>::new();
-    let (id, c) = mk_defn("basicDef", 0, vec![], sort1(), sort0(), ReducibilityHints::Abbrev);
+    let (id, c) = mk_defn(
+      "basicDef",
+      0,
+      vec![],
+      sort1(),
+      sort0(),
+      ReducibilityHints::Abbrev,
+    );
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -25,7 +32,8 @@ mod tests {
   #[test]
   fn bad_def_type_mismatch() {
     let env = KEnv::<Meta>::new();
-    let (id, c) = mk_defn("badDef", 0, vec![], sort0(), sort1(), ReducibilityHints::Abbrev);
+    let (id, c) =
+      mk_defn("badDef", 0, vec![], sort0(), sort1(), ReducibilityHints::Abbrev);
     env.insert(id.clone(), c);
     check_rejects(&env, &id);
   }
@@ -35,9 +43,11 @@ mod tests {
   fn good_arrow_type() {
     let env = KEnv::<Meta>::new();
     let (id, c) = mk_defn(
-      "arrowType", 0, vec![],
+      "arrowType",
+      0,
+      vec![],
       sort1(),
-      pi(sort0(), sort0()),  // Prop → Prop
+      pi(sort0(), sort0()), // Prop → Prop
       ReducibilityHints::Abbrev,
     );
     env.insert(id.clone(), c);
@@ -49,9 +59,11 @@ mod tests {
   fn good_dependent_type() {
     let env = KEnv::<Meta>::new();
     let (id, c) = mk_defn(
-      "dependentType", 0, vec![],
+      "dependentType",
+      0,
+      vec![],
       sort0(),
-      npi("p", sort0(), var(0)),  // ∀ (p : Prop), p
+      npi("p", sort0(), var(0)), // ∀ (p : Prop), p
       ReducibilityHints::Abbrev,
     );
     env.insert(id.clone(), c);
@@ -63,8 +75,10 @@ mod tests {
   fn good_const_type() {
     let env = KEnv::<Meta>::new();
     let (id, c) = mk_defn(
-      "constType", 0, vec![],
-      pi(sort1(), pi(sort1(), sort1())),             // Type → Type → Type
+      "constType",
+      0,
+      vec![],
+      pi(sort1(), pi(sort1(), sort1())), // Type → Type → Type
       nlam("x", sort1(), nlam("y", sort1(), var(1))), // fun x y => x
       ReducibilityHints::Abbrev,
     );
@@ -79,7 +93,9 @@ mod tests {
     let env = KEnv::<Meta>::new();
     // constType : Type → Type → Type := fun x y => x
     let (ct_id, ct_c) = mk_defn(
-      "constType", 0, vec![],
+      "constType",
+      0,
+      vec![],
       pi(sort1(), pi(sort1(), sort1())),
       nlam("x", sort1(), nlam("y", sort1(), var(1))),
       ReducibilityHints::Abbrev,
@@ -90,7 +106,9 @@ mod tests {
     // constType Prop (Prop → Prop) β-reduces to Prop
     let ty = app(app(cnst("constType", &[]), sort0()), pi(sort0(), sort0()));
     let (id, c) = mk_defn(
-      "betaReduction", 0, vec![],
+      "betaReduction",
+      0,
+      vec![],
       ty,
       npi("p", sort0(), var(0)),
       ReducibilityHints::Abbrev,
@@ -104,7 +122,9 @@ mod tests {
   fn good_beta_reduction2() {
     let env = KEnv::<Meta>::new();
     let (ct_id, ct_c) = mk_defn(
-      "constType", 0, vec![],
+      "constType",
+      0,
+      vec![],
       pi(sort1(), pi(sort1(), sort1())),
       nlam("x", sort1(), nlam("y", sort1(), var(1))),
       ReducibilityHints::Abbrev,
@@ -112,10 +132,12 @@ mod tests {
     env.insert(ct_id, ct_c);
 
     // ∀ (p : Prop), constType Prop (Prop → Prop)
-    let ct_applied = app(app(cnst("constType", &[]), sort0()), pi(sort0(), sort0()));
+    let ct_applied =
+      app(app(cnst("constType", &[]), sort0()), pi(sort0(), sort0()));
     let ty = npi("p", sort0(), ct_applied);
     let val = nlam("p", sort0(), var(0));
-    let (id, c) = mk_defn("betaReduction2", 0, vec![], ty, val, ReducibilityHints::Abbrev);
+    let (id, c) =
+      mk_defn("betaReduction2", 0, vec![], ty, val, ReducibilityHints::Abbrev);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -127,7 +149,9 @@ mod tests {
     let env = KEnv::<Meta>::new();
     // id : Type → Type := fun x => x
     let (id_id, id_c) = mk_defn(
-      "id", 0, vec![],
+      "id",
+      0,
+      vec![],
       pi(sort1(), sort1()),
       nlam("x", sort1(), var(0)),
       ReducibilityHints::Abbrev,
@@ -137,7 +161,14 @@ mod tests {
     // forallSortWhnf : Prop := ∀ (p : id Prop) (x : p), p
     let id_prop = app(cnst("id", &[]), sort0()); // id Prop
     let val = npi("p", id_prop, npi("x", var(0), var(1)));
-    let (id, c) = mk_defn("forallSortWhnf", 0, vec![], sort0(), val, ReducibilityHints::Abbrev);
+    let (id, c) = mk_defn(
+      "forallSortWhnf",
+      0,
+      vec![],
+      sort0(),
+      val,
+      ReducibilityHints::Abbrev,
+    );
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -148,7 +179,9 @@ mod tests {
   fn bad_non_type_type() {
     let env = KEnv::<Meta>::new();
     let (ct_id, ct_c) = mk_defn(
-      "constType", 0, vec![],
+      "constType",
+      0,
+      vec![],
       pi(sort1(), pi(sort1(), sort1())),
       nlam("x", sort1(), nlam("y", sort1(), var(1))),
       ReducibilityHints::Abbrev,
@@ -158,8 +191,10 @@ mod tests {
     // nonTypeType : constType := Prop
     // constType is (Type → Type → Type), not a Sort
     let (id, c) = mk_defn(
-      "nonTypeType", 0, vec![],
-      cnst("constType", &[]),  // not a sort!
+      "nonTypeType",
+      0,
+      vec![],
+      cnst("constType", &[]), // not a sort!
       sort0(),
       ReducibilityHints::Abbrev,
     );
@@ -177,9 +212,10 @@ mod tests {
   #[test]
   fn good_level_comp1() {
     let env = KEnv::<Meta>::new();
-    let ty = sort(usucc(uzero()));              // Sort 1
+    let ty = sort(usucc(uzero())); // Sort 1
     let val = sort(uimax(usucc(uzero()), uzero())); // Sort (imax 1 0)
-    let (id, c) = mk_defn("levelComp1", 0, vec![], ty, val, ReducibilityHints::Opaque);
+    let (id, c) =
+      mk_defn("levelComp1", 0, vec![], ty, val, ReducibilityHints::Opaque);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -190,9 +226,10 @@ mod tests {
   #[test]
   fn good_level_comp2() {
     let env = KEnv::<Meta>::new();
-    let ty = sort(usucc(usucc(uzero())));             // Sort 2
-    let val = sort(uimax(uzero(), usucc(uzero())));   // Sort (imax 0 1)
-    let (id, c) = mk_defn("levelComp2", 0, vec![], ty, val, ReducibilityHints::Opaque);
+    let ty = sort(usucc(usucc(uzero()))); // Sort 2
+    let val = sort(uimax(uzero(), usucc(uzero()))); // Sort (imax 0 1)
+    let (id, c) =
+      mk_defn("levelComp2", 0, vec![], ty, val, ReducibilityHints::Opaque);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -202,9 +239,10 @@ mod tests {
   #[test]
   fn good_level_comp3() {
     let env = KEnv::<Meta>::new();
-    let ty = sort(usucc(usucc(usucc(uzero()))));                    // Sort 3
-    let val = sort(uimax(usucc(usucc(uzero())), usucc(uzero())));   // Sort (imax 2 1)
-    let (id, c) = mk_defn("levelComp3", 0, vec![], ty, val, ReducibilityHints::Opaque);
+    let ty = sort(usucc(usucc(usucc(uzero())))); // Sort 3
+    let val = sort(uimax(usucc(usucc(uzero())), usucc(uzero()))); // Sort (imax 2 1)
+    let (id, c) =
+      mk_defn("levelComp3", 0, vec![], ty, val, ReducibilityHints::Opaque);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -215,10 +253,15 @@ mod tests {
   #[test]
   fn good_level_comp4() {
     let env = KEnv::<Meta>::new();
-    let ty = sort(usucc(uzero()));                     // Type 0 = Sort 1
-    let val = sort(uimax(param(0), uzero()));          // Sort (imax u 0)
+    let ty = sort(usucc(uzero())); // Type 0 = Sort 1
+    let val = sort(uimax(param(0), uzero())); // Sort (imax u 0)
     let (id, c) = mk_defn(
-      "levelComp4", 1, vec![mk_name("u")], ty, val, ReducibilityHints::Abbrev,
+      "levelComp4",
+      1,
+      vec![mk_name("u")],
+      ty,
+      val,
+      ReducibilityHints::Abbrev,
     );
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
@@ -230,10 +273,15 @@ mod tests {
   #[test]
   fn good_level_comp5() {
     let env = KEnv::<Meta>::new();
-    let ty = sort(usucc(param(0)));                     // Type u = Sort (u+1)
-    let val = sort(uimax(param(0), param(0)));          // Sort (imax u u)
+    let ty = sort(usucc(param(0))); // Type u = Sort (u+1)
+    let val = sort(uimax(param(0), param(0))); // Sort (imax u u)
     let (id, c) = mk_defn(
-      "levelComp5", 1, vec![mk_name("u")], ty, val, ReducibilityHints::Abbrev,
+      "levelComp5",
+      1,
+      vec![mk_name("u")],
+      ty,
+      val,
+      ReducibilityHints::Abbrev,
     );
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
@@ -255,7 +303,8 @@ mod tests {
     // fun p => Type → p
     // Inside lambda: p is var(0). Inside the pi body, p shifts to var(1).
     let val = nlam("p", sort0(), pi(sort1(), var(1)));
-    let (id, c) = mk_defn("imax1", 0, vec![], ty, val, ReducibilityHints::Abbrev);
+    let (id, c) =
+      mk_defn("imax1", 0, vec![], ty, val, ReducibilityHints::Abbrev);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -272,7 +321,8 @@ mod tests {
     let ty = npi("α", sort1(), sort(usucc(usucc(uzero()))));
     // fun α => Type → α
     let val = nlam("α", sort1(), pi(sort1(), var(0)));
-    let (id, c) = mk_defn("imax2", 0, vec![], ty, val, ReducibilityHints::Abbrev);
+    let (id, c) =
+      mk_defn("imax2", 0, vec![], ty, val, ReducibilityHints::Abbrev);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -289,7 +339,8 @@ mod tests {
     let ty = npi("f", sort0(), npi("g", var(0), var(1)));
     // fun f g => g
     let val = nlam("f", sort0(), nlam("g", var(0), var(0)));
-    let (id, c) = mk_defn("inferVar", 0, vec![], ty, val, ReducibilityHints::Abbrev);
+    let (id, c) =
+      mk_defn("inferVar", 0, vec![], ty, val, ReducibilityHints::Abbrev);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -310,11 +361,17 @@ mod tests {
     let result = app(var(1), pp.clone());
     let ty = npi("f", f_ty.clone(), npi("g", g_ty, result));
     // fun f g => g (fun p => p → p)
-    let val = nlam("f", f_ty, nlam("g",
-      npi("a", pi(sort0(), sort0()), app(var(1), var(0))),
-      app(var(0), pp),
-    ));
-    let (id, c) = mk_defn("defEqLambda", 0, vec![], ty, val, ReducibilityHints::Abbrev);
+    let val = nlam(
+      "f",
+      f_ty,
+      nlam(
+        "g",
+        npi("a", pi(sort0(), sort0()), app(var(1), var(0))),
+        app(var(0), pp),
+      ),
+    );
+    let (id, c) =
+      mk_defn("defEqLambda", 0, vec![], ty, val, ReducibilityHints::Abbrev);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -331,7 +388,8 @@ mod tests {
     let ty = sort1();
     // let x : Sort 1 := Sort 0; x (= bvar 0)
     let val = let_(sort1(), sort0(), var(0));
-    let (id, c) = mk_defn("letType", 0, vec![], ty, val, ReducibilityHints::Opaque);
+    let (id, c) =
+      mk_defn("letType", 0, vec![], ty, val, ReducibilityHints::Opaque);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -346,7 +404,9 @@ mod tests {
     env.insert(adp_id, adp_c);
     // axiom mkADepProp : ∀ t, aDepProp t
     let (mkadp_id, mkadp_c) = mk_axiom(
-      "mkADepProp", 0, vec![],
+      "mkADepProp",
+      0,
+      vec![],
       npi("t", sort1(), app(cnst("aDepProp", &[]), var(0))),
     );
     env.insert(mkadp_id, mkadp_c);
@@ -354,7 +414,8 @@ mod tests {
     // letTypeDep : aDepProp (Sort 0) := let x : Sort 1 := Sort 0; mkADepProp x
     let ty = app(cnst("aDepProp", &[]), sort0());
     let val = let_(sort1(), sort0(), app(cnst("mkADepProp", &[]), var(0)));
-    let (id, c) = mk_defn("letTypeDep", 0, vec![], ty, val, ReducibilityHints::Opaque);
+    let (id, c) =
+      mk_defn("letTypeDep", 0, vec![], ty, val, ReducibilityHints::Opaque);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -370,7 +431,8 @@ mod tests {
     // type: let x : Sort 1 := Sort 0; x — reduces to Sort 0 = Prop
     let ty = let_(sort1(), sort0(), var(0));
     let val = cnst("aProp", &[]);
-    let (id, c) = mk_defn("letRed", 0, vec![], ty, val, ReducibilityHints::Opaque);
+    let (id, c) =
+      mk_defn("letRed", 0, vec![], ty, val, ReducibilityHints::Opaque);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -385,10 +447,10 @@ mod tests {
     let env = KEnv::<Meta>::new();
     let (id, c) = mk_defn(
       "tut06_bad01",
-      2,  // claims 2 level params
-      vec![mk_name("u"), mk_name("u")],  // duplicate!
-      sort(usucc(uzero())),  // Sort 1
-      sort0(),               // Sort 0
+      2,                                // claims 2 level params
+      vec![mk_name("u"), mk_name("u")], // duplicate!
+      sort(usucc(uzero())),             // Sort 1
+      sort0(),                          // Sort 0
       ReducibilityHints::Opaque,
     );
     env.insert(id.clone(), c);
@@ -417,7 +479,9 @@ mod tests {
     // id.{2} (Sort 1) (Sort 0) = Sort 0 = Prop
     // Let's use: id_univ2 : Sort 2 → Sort 2 := fun x => x
     let (id2_id, id2_c) = mk_defn(
-      "id2", 0, vec![],
+      "id2",
+      0,
+      vec![],
       pi(sort(usucc(usucc(uzero()))), sort(usucc(usucc(uzero())))), // Sort 2 → Sort 2
       nlam("x", sort(usucc(usucc(uzero()))), var(0)),
       ReducibilityHints::Abbrev,
@@ -437,7 +501,9 @@ mod tests {
     // id1 : Sort 1 → Sort 1 := fun x => x
     // id1 Prop = Prop (since Prop : Sort 1)
     let (id1_id, id1_c) = mk_defn(
-      "id1", 0, vec![],
+      "id1",
+      0,
+      vec![],
       pi(sort(usucc(uzero())), sort(usucc(uzero()))), // Sort 1 → Sort 1
       nlam("x", sort(usucc(uzero())), var(0)),
       ReducibilityHints::Abbrev,
@@ -453,12 +519,28 @@ mod tests {
     // depth 2: _2 : _1 (var(0) at depth 1 = _1, a Prop variable). _2 has type _1 : Prop.
     // depth 3: domain = bvar0 = _2 (var(0) at depth 2). _2 has type _1 (Prop value).
     //   infer(_2) = _1. ensure_sort(_1) must fail: _1 is a Prop variable, not a Sort.
-    let value = npi("_", id1_prop,        // ∀ _1 : id1 Prop, ...
-      npi("_", var(0),                     // ∀ _2 : _1, ... (_1 : Prop, so _2 has a Prop-typed type)
-        npi("_", var(0),                   // ∀ _3 : _2, ... — _2's type is _1 (a Prop var, NOT Sort)
-          var(1))));                        // _2
+    let value = npi(
+      "_",
+      id1_prop, // ∀ _1 : id1 Prop, ...
+      npi(
+        "_",
+        var(0), // ∀ _2 : _1, ... (_1 : Prop, so _2 has a Prop-typed type)
+        npi(
+          "_",
+          var(0), // ∀ _3 : _2, ... — _2's type is _1 (a Prop var, NOT Sort)
+          var(1),
+        ),
+      ),
+    ); // _2
 
-    let (id, c) = mk_defn("forallSortBad", 0, vec![], sort0(), value, ReducibilityHints::Opaque);
+    let (id, c) = mk_defn(
+      "forallSortBad",
+      0,
+      vec![],
+      sort0(),
+      value,
+      ReducibilityHints::Opaque,
+    );
     env.insert(id.clone(), c);
     check_rejects(&env, &id);
   }
@@ -476,16 +558,26 @@ mod tests {
     let lpf_ty = pi(sort(param(0)), pi(sort(param(0)), sort(param(0))));
     // Inside the pi's: at depth 2, α=var(1), β=var(0). Return α = var(1).
     let lpf_val = nlam("α", sort(param(0)), nlam("β", sort(param(0)), var(1)));
-    let (lpf_id, lpf_c) = mk_defn("levelParamF", 1, vec![mk_name("u")],
-      lpf_ty, lpf_val, ReducibilityHints::Abbrev);
+    let (lpf_id, lpf_c) = mk_defn(
+      "levelParamF",
+      1,
+      vec![mk_name("u")],
+      lpf_ty,
+      lpf_val,
+      ReducibilityHints::Abbrev,
+    );
     env.insert(lpf_id, lpf_c);
 
     // levelParams : levelParamF.{0} Prop (Prop → Prop) := ∀ p : Prop, p
     // levelParamF.{0} Prop (Prop → Prop) reduces to Prop (first arg)
     // Lean infers levelParamF.{1} since Prop : Type = Sort 1
-    let ty = app(app(cnst("levelParamF", &[usucc(uzero())]), sort0()), pi(sort0(), sort0()));
+    let ty = app(
+      app(cnst("levelParamF", &[usucc(uzero())]), sort0()),
+      pi(sort0(), sort0()),
+    );
     let val = npi("p", sort0(), var(0));
-    let (id, c) = mk_defn("levelParams", 0, vec![], ty, val, ReducibilityHints::Abbrev);
+    let (id, c) =
+      mk_defn("levelParams", 0, vec![], ty, val, ReducibilityHints::Abbrev);
     env.insert(id.clone(), c);
     check_accepts(&env, &id);
   }
@@ -529,8 +621,8 @@ mod tests {
     // The kernel currently doesn't enforce "theorem types must be Prop."
     //
     // This is a theorem-specific check that the zero kernel may not implement.
-    let ty = sort0();  // Sort 0 = Prop
-    let val = pi(sort0(), var(0));  // Prop → bvar0
+    let ty = sort0(); // Sort 0 = Prop
+    let val = pi(sort0(), var(0)); // Prop → bvar0
     let (id, c) = mk_thm("nonPropThm", 0, vec![], ty, val);
     env.insert(id.clone(), c);
     // The lean kernel requires theorems' types to be Prop (level 0).

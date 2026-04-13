@@ -128,6 +128,22 @@ pub enum ConstantMetaInfo {
   },
 }
 
+impl ConstantMetaInfo {
+  /// Returns a short kind name for diagnostics.
+  pub fn kind_name(&self) -> &'static str {
+    match self {
+      Self::Empty => "empty",
+      Self::Def { .. } => "def",
+      Self::Axio { .. } => "axio",
+      Self::Quot { .. } => "quot",
+      Self::Indc { .. } => "indc",
+      Self::Ctor { .. } => "ctor",
+      Self::Rec { .. } => "rec",
+      Self::Muts { .. } => "muts",
+    }
+  }
+}
+
 /// Per-constant metadata wrapper: variant payload.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstantMeta {
@@ -203,7 +219,9 @@ pub fn resolve_kvmap(
         },
         DataValue::OfInt(a) => {
           let bytes = ixon_env.get_blob(a)?;
-          env::DataValue::OfInt(env::Int::OfNat(lean_ffi::nat::Nat::from_le_bytes(&bytes)))
+          env::DataValue::OfInt(env::Int::OfNat(
+            lean_ffi::nat::Nat::from_le_bytes(&bytes),
+          ))
         },
         DataValue::OfSyntax(_) => return None, // Syntax not round-tripped through kernel
       };

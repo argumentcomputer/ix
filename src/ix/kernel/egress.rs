@@ -37,8 +37,7 @@ fn egress_level(u: &KUniv<Meta>, level_params: &[Name]) -> env::Level {
     ),
     UnivData::Param(idx, _, _) => {
       let pos = usize::try_from(*idx).expect("level param index exceeds usize");
-      let name =
-        level_params.get(pos).cloned().unwrap_or_else(Name::anon);
+      let name = level_params.get(pos).cloned().unwrap_or_else(Name::anon);
       env::Level::param(name)
     },
   }

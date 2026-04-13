@@ -28,9 +28,9 @@ pub struct InternTable<M: KernelMode> {
 }
 
 impl<M: KernelMode> Default for InternTable<M> {
-    fn default() -> Self {
-        Self::new()
-    }
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl<M: KernelMode> InternTable<M> {
@@ -67,9 +67,9 @@ pub struct KEnv<M: KernelMode> {
 }
 
 impl<M: KernelMode> Default for KEnv<M> {
-    fn default() -> Self {
-        Self::new()
-    }
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl<M: KernelMode> KEnv<M> {

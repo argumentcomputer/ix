@@ -19,10 +19,9 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     if let Some(cached) = self.infer_cache.get(&cache_key) {
       return Ok(cached.clone());
     }
-    if infer_only
-      && let Some(cached) = self.infer_only_cache.get(&cache_key) {
-        return Ok(cached.clone());
-      }
+    if infer_only && let Some(cached) = self.infer_only_cache.get(&cache_key) {
+      return Ok(cached.clone());
+    }
 
     let ty = match e.data() {
       ExprData::Var(i, _, _) => self.lookup_var(*i)?,

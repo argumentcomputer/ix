@@ -118,7 +118,9 @@ impl MetaDisplay for Name {
 }
 
 impl MetaDisplay for BinderInfo {
-  fn has_meta(&self) -> bool { true }
+  fn has_meta(&self) -> bool {
+    true
+  }
   fn meta_fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       BinderInfo::Default => Ok(()),
@@ -130,17 +132,23 @@ impl MetaDisplay for BinderInfo {
 }
 
 impl MetaDisplay for DataValue {
-  fn has_meta(&self) -> bool { true }
+  fn has_meta(&self) -> bool {
+    true
+  }
   fn meta_fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{self:?}")
   }
 }
 
 impl<T: MetaDisplay> MetaDisplay for Vec<T> {
-  fn has_meta(&self) -> bool { !self.is_empty() }
+  fn has_meta(&self) -> bool {
+    !self.is_empty()
+  }
   fn meta_fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     for (i, item) in self.iter().enumerate() {
-      if i > 0 { write!(f, ", ")?; }
+      if i > 0 {
+        write!(f, ", ")?;
+      }
       item.meta_fmt(f)?;
     }
     Ok(())
@@ -148,7 +156,9 @@ impl<T: MetaDisplay> MetaDisplay for Vec<T> {
 }
 
 impl<A: MetaDisplay, B: MetaDisplay> MetaDisplay for (A, B) {
-  fn has_meta(&self) -> bool { self.0.has_meta() || self.1.has_meta() }
+  fn has_meta(&self) -> bool {
+    self.0.has_meta() || self.1.has_meta()
+  }
   fn meta_fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     self.0.meta_fmt(f)?;
     write!(f, ": ")?;
@@ -157,15 +167,21 @@ impl<A: MetaDisplay, B: MetaDisplay> MetaDisplay for (A, B) {
 }
 
 impl MetaDisplay for bool {
-  fn has_meta(&self) -> bool { true }
+  fn has_meta(&self) -> bool {
+    true
+  }
   fn meta_fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{self}")
   }
 }
 
 impl MetaDisplay for () {
-  fn has_meta(&self) -> bool { false }
-  fn meta_fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result { Ok(()) }
+  fn has_meta(&self) -> bool {
+    false
+  }
+  fn meta_fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    Ok(())
+  }
 }
 
 /// Controls metadata behavior for all zero kernel types.
@@ -175,10 +191,11 @@ pub trait KernelMode: 'static + Clone + Debug + Send + Sync {
     MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync;
 
   /// Wrap a value into a metadata field. In Anon mode, the value is discarded.
-  fn meta_field<T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync>(
+  fn meta_field<
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+  >(
     val: T,
   ) -> Self::MField<T>;
-
 }
 
 /// Const-generic kernel mode. `META` controls metadata fields.
@@ -191,8 +208,9 @@ pub type Meta = ZMode<true>;
 pub type Anon = ZMode<false>;
 
 impl KernelMode for ZMode<true> {
-  type MField<T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync> =
-    T;
+  type MField<
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+  > = T;
 
   fn meta_field<
     T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
@@ -201,12 +219,12 @@ impl KernelMode for ZMode<true> {
   ) -> T {
     val
   }
-
 }
 
 impl KernelMode for ZMode<false> {
-  type MField<T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync> =
-    ();
+  type MField<
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+  > = ();
 
   fn meta_field<
     T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
@@ -214,7 +232,6 @@ impl KernelMode for ZMode<false> {
     _val: T,
   ) {
   }
-
 }
 
 #[cfg(test)]
@@ -247,7 +264,10 @@ mod tests {
     // Should have written 32 bytes (blake3 hash of name)
     let result = h.finalize();
     // Just check it's not the empty hash
-    assert_ne!(*result.as_bytes(), *blake3::Hasher::new().finalize().as_bytes());
+    assert_ne!(
+      *result.as_bytes(),
+      *blake3::Hasher::new().finalize().as_bytes()
+    );
   }
 
   #[test]
@@ -267,15 +287,21 @@ mod tests {
       BinderInfo::StrictImplicit,
       BinderInfo::InstImplicit,
     ];
-    let hashes: Vec<blake3::Hash> = variants.iter().map(|bi| {
-      let mut h = blake3::Hasher::new();
-      bi.meta_hash(&mut h);
-      h.finalize()
-    }).collect();
+    let hashes: Vec<blake3::Hash> = variants
+      .iter()
+      .map(|bi| {
+        let mut h = blake3::Hasher::new();
+        bi.meta_hash(&mut h);
+        h.finalize()
+      })
+      .collect();
     // All 4 should be distinct
     for i in 0..hashes.len() {
-      for j in (i+1)..hashes.len() {
-        assert_ne!(hashes[i], hashes[j], "BinderInfo variants {i} and {j} hash the same");
+      for j in (i + 1)..hashes.len() {
+        assert_ne!(
+          hashes[i], hashes[j],
+          "BinderInfo variants {i} and {j} hash the same"
+        );
       }
     }
   }

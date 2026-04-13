@@ -110,7 +110,8 @@ pub fn expr_congruent(
     },
 
     (LE::Lam(_, ty1, body1, _, _), ExprData::Lam(_, _, ty2, body2, _))
-    | (LE::ForallE(_, ty1, body1, _, _), ExprData::All(_, _, ty2, body2, _)) => {
+    | (LE::ForallE(_, ty1, body1, _, _), ExprData::All(_, _, ty2, body2, _)) =>
+    {
       expr_congruent(ty1, ty2, nr)?;
       expr_congruent(body1, body2, nr)
     },
@@ -292,9 +293,7 @@ fn lean_lvl_tag(l: &lean::Level) -> &'static str {
   }
 }
 
-fn zero_univ_tag<M: super::mode::KernelMode>(
-  u: &KUniv<M>,
-) -> &'static str {
+fn zero_univ_tag<M: super::mode::KernelMode>(u: &KUniv<M>) -> &'static str {
   match u.data() {
     UnivData::Zero(_) => "Zero",
     UnivData::Succ(..) => "Succ",

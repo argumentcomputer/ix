@@ -741,8 +741,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       self.intern(KExpr::cnst(self.prims.nat_zero.clone(), Box::new([])))
     } else {
       let pred_val = Nat(&val.0 - BigUint::from(1u64));
-      let pred_addr =
-        Address::hash(&pred_val.to_le_bytes());
+      let pred_addr = Address::hash(&pred_val.to_le_bytes());
       let pred_expr = self.intern(KExpr::nat(pred_val, pred_addr));
       let succ =
         self.intern(KExpr::cnst(self.prims.nat_succ.clone(), Box::new([])));
@@ -771,8 +770,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       let a = self.whnf(&args[0])?;
       if let Some(n) = extract_nat_lit(&a) {
         let result = Nat(&n.0 + 1u64);
-        let blob_addr =
-          Address::hash(&result.to_le_bytes());
+        let blob_addr = Address::hash(&result.to_le_bytes());
         return Ok(Some(self.intern(KExpr::nat(result, blob_addr))));
       }
       return Ok(None);
@@ -787,8 +785,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         } else {
           Nat(&n.0 - 1u64)
         };
-        let blob_addr =
-          Address::hash(&result.to_le_bytes());
+        let blob_addr = Address::hash(&result.to_le_bytes());
         return Ok(Some(self.intern(KExpr::nat(result, blob_addr))));
       }
       return Ok(None);
@@ -910,8 +907,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // decLt n m  →  decLe (n+1) m
     if is_dec_lt {
       let succ_a = Nat(&a_val.0 + 1u64);
-      let succ_a_addr =
-        Address::hash(&succ_a.to_le_bytes());
+      let succ_a_addr = Address::hash(&succ_a.to_le_bytes());
       let succ_a_expr = self.intern(KExpr::nat(succ_a, succ_a_addr));
       // Build: Nat.decLe (n+1) m
       let dec_le_const =

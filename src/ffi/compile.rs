@@ -1329,7 +1329,7 @@ impl LeanIxCompileError<LeanOwned> {
   ///   5: serializeError (msg : String) → 1 obj
   pub fn build(err: &CompileError) -> Self {
     let obj = match err {
-      CompileError::MissingConstant { name } => {
+      CompileError::MissingConstant { name, .. } => {
         let ctor = LeanCtor::alloc(0, 1, 0);
         ctor.set(0, build_lean_string(name));
         ctor.into()
@@ -1372,7 +1372,10 @@ impl<R: LeanRef> LeanIxCompileError<R> {
     match ctor.tag() {
       0 => {
         let name = ctor.get(0).as_string().to_string();
-        CompileError::MissingConstant { name }
+        CompileError::MissingConstant {
+          name,
+          caller: "ffi:decode_compile_error".into(),
+        }
       },
       1 => CompileError::MissingAddress(
         LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),

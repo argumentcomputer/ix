@@ -7,6 +7,7 @@
 pub mod address;
 pub mod compile;
 pub mod condense;
+pub mod congruence;
 pub mod decompile;
 pub mod env;
 pub mod graph;

@@ -161,8 +161,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         params: pp, indices: pi, ty: peer_ty, ..
       }) = self.env.get(peer_id)
       {
-        let peer_level =
-          self.get_result_sort_level(&peer_ty.clone(), u64_to_usize(pp + pi)?)?;
+        let peer_level = self
+          .get_result_sort_level(&peer_ty.clone(), u64_to_usize(pp + pi)?)?;
         if !univ_eq(&ind_level, &peer_level) {
           return Err(TcError::Other(
             "mutually inductive types must live in the same universe".into(),
@@ -175,9 +175,12 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     for (expected_cidx, ctor_id) in ctors.iter().enumerate() {
       let (_ctor_params, ctor_fields, ctor_cidx, ctor_ty) =
         match self.env.get(ctor_id) {
-          Some(KConst::Ctor { params, fields, cidx, ty, .. }) => {
-            (u64_to_usize(params)?, u64_to_usize(fields)?, u64_to_usize(cidx)?, ty.clone())
-          },
+          Some(KConst::Ctor { params, fields, cidx, ty, .. }) => (
+            u64_to_usize(params)?,
+            u64_to_usize(fields)?,
+            u64_to_usize(cidx)?,
+            ty.clone(),
+          ),
           _ => {
             return Err(TcError::Other(
               "check_inductive: constructor not found".into(),
@@ -199,7 +202,11 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       self.check_positivity(&ctor_ty, u64_to_usize(params)?, &block_addrs)?;
 
       // A4: Universe constraints
-      self.check_field_universes(&ctor_ty, u64_to_usize(params)?, &ind_level)?;
+      self.check_field_universes(
+        &ctor_ty,
+        u64_to_usize(params)?,
+        &ind_level,
+      )?;
 
       // A2: Constructor return type
       self.check_ctor_return_type(
@@ -262,8 +269,10 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     let block_addrs: Vec<Address> =
       block_inds.iter().map(|id| id.addr.clone()).collect();
 
-    let ind_level = self
-      .get_result_sort_level(&ind_ty, u64_to_usize(ind_params + ind_indices)?)?;
+    let ind_level = self.get_result_sort_level(
+      &ind_ty,
+      u64_to_usize(ind_params + ind_indices)?,
+    )?;
 
     // A1: Parameter domain agreement
     self.check_param_agreement(&ind_ty, &ctor_ty, u64_to_usize(ind_params)?)?;
@@ -272,7 +281,11 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     self.check_positivity(&ctor_ty, u64_to_usize(ind_params)?, &block_addrs)?;
 
     // A4: Universe constraints
-    self.check_field_universes(&ctor_ty, u64_to_usize(ind_params)?, &ind_level)?;
+    self.check_field_universes(
+      &ctor_ty,
+      u64_to_usize(ind_params)?,
+      &ind_level,
+    )?;
 
     // A2: Constructor return type
     self.check_ctor_return_type(
@@ -514,7 +527,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         _ => return,
       };
 
-    #[allow(clippy::cast_possible_truncation)] // ext_params is a small structural count
+    #[allow(clippy::cast_possible_truncation)]
+    // ext_params is a small structural count
     let ext_n_params = ext_params as usize;
     if args.len() < ext_n_params {
       return;
@@ -537,7 +551,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // to the param context by lowering Var indices by the field depth.
     // This ensures the same logical spec_params produce the same hash
     // regardless of how many field locals are on the context.
-    #[allow(clippy::cast_possible_truncation)] // depth and param_depth are small
+    #[allow(clippy::cast_possible_truncation)]
+    // depth and param_depth are small
     let field_depth =
       (self.depth() as usize).saturating_sub(param_depth) as u64;
     let spec_params: Vec<KExpr<M>> = args
@@ -1648,13 +1663,17 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // We don't search block_addrs because duplicate addresses (same external inductive
     // with different spec_params) would return the wrong position.
     let (_ret_head, ret_args) = collect_app_spine(&ty);
-    let ret_indices: Vec<KExpr<M>> =
-      ret_args.iter().skip(u64_to_usize::<M>(member.own_params)?).cloned().collect();
+    let ret_indices: Vec<KExpr<M>> = ret_args
+      .iter()
+      .skip(u64_to_usize::<M>(member.own_params)?)
+      .cloned()
+      .collect();
 
     // Build conclusion: motive[ind_idx](ret_indices, C params fields)
     // Motive[ind_idx] is at context level: motive_base + ind_idx
     let depth = self.depth();
-    let motive_var_idx = (u64_to_usize::<M>(depth)? - 1 - (motive_base + ind_idx)) as u64;
+    let motive_var_idx =
+      (u64_to_usize::<M>(depth)? - 1 - (motive_base + ind_idx)) as u64;
     let mut conclusion = self.intern(KExpr::var(motive_var_idx, anon()));
 
     // Apply return indices (these are at the old depth, but we pushed IHs since then,
@@ -1679,8 +1698,10 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     if !member.is_aux {
       // Original: apply Var refs to recursor param binders
       for i in 0..u64_to_usize::<M>(member.own_params)? {
-        let pvar =
-          self.intern(KExpr::var((u64_to_usize::<M>(depth)? - 1 - i) as u64, anon()));
+        let pvar = self.intern(KExpr::var(
+          (u64_to_usize::<M>(depth)? - 1 - i) as u64,
+          anon(),
+        ));
         ctor_app = self.intern(KExpr::app(ctor_app, pvar));
       }
     } else {
@@ -2020,7 +2041,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
             KExpr::var(depth - 1 - j, anon())
           } else if u64_to_usize::<M>(j)? < di_member.spec_params.len() {
             let sp = di_member.spec_params[u64_to_usize::<M>(j)?].clone();
-            let lift_by = u64_to_usize::<M>(self.depth())?.saturating_sub(n_params);
+            let lift_by =
+              u64_to_usize::<M>(self.depth())?.saturating_sub(n_params);
             if lift_by > 0 {
               lift(&self.ienv, &sp, lift_by as u64, 0)
             } else {
@@ -2054,8 +2076,10 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     let depth = self.depth();
     if !di_member.is_aux {
       for i in 0..u64_to_usize::<M>(di_member.own_params)? {
-        let pvar =
-          self.intern(KExpr::var((u64_to_usize::<M>(depth)? - 1 - i) as u64, anon()));
+        let pvar = self.intern(KExpr::var(
+          (u64_to_usize::<M>(depth)? - 1 - i) as u64,
+          anon(),
+        ));
         major_dom = self.intern(KExpr::app(major_dom, pvar));
       }
     } else {
@@ -3182,8 +3206,8 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // 2. Result level must be Prop (semantically zero).
     // Use univ_eq instead of is_zero() to handle levels like max(0,0) or imax(0,u)
     // that are semantically zero but not syntactically UnivData::Zero.
-    let result_level =
-      self.get_result_sort_level(&ty, u64_to_usize(ind_params + ind_indices)?)?;
+    let result_level = self
+      .get_result_sort_level(&ty, u64_to_usize(ind_params + ind_indices)?)?;
     if !univ_eq(&result_level, &KUniv::zero()) {
       return Ok(false);
     }

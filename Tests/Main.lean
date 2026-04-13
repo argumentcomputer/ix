@@ -5,6 +5,7 @@ import Tests.Ix.IxVM
 import Tests.Ix.Claim
 import Tests.Ix.Commit
 import Tests.Ix.Compile
+import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Decompile
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
@@ -84,13 +85,17 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
 ]
 
 def main (args : List String) : IO UInt32 := do
-  -- Special case: rust-compile diagnostic
+  -- Special case: rust-compile diagnostic (full env)
   if args.contains "rust-compile" then
     let env ← get_env!
     IO.println s!"Loaded environment with {env.constants.toList.length} constants"
     let result := tmpDecodeConstMap env.constants.toList
     IO.println s!"Rust compiled: {result}"
     return 0
+
+  -- Special case: rust-compile-validate-aux (comprehensive 6-phase validation)
+  if args.contains "rust-compile-validate-aux" then
+    return ← runCompileValidateAux
 
   -- Special case: cli tests have their own runner
   if args.contains "cli" then

@@ -124,6 +124,13 @@ impl Ord for Name {
 
 /// The underlying data for a [`Name`].
 ///
+/// A single component of a hierarchical name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NameComponent {
+  Str(String),
+  Num(Nat),
+}
+
 /// Each variant carries its precomputed Blake3 hash as the last field.
 #[derive(PartialEq, Eq, Debug)]
 pub enum NameData {
@@ -172,6 +179,60 @@ impl Name {
     let hash = hasher.finalize();
     Name(Arc::new(NameData::Num(pre, n, hash)))
   }
+  /// Decompose this name into its components (from root to leaf).
+  pub fn components(&self) -> Vec<NameComponent> {
+    let mut components = Vec::new();
+    let mut current = self;
+    loop {
+      match current.as_data() {
+        NameData::Anonymous(_) => break,
+        NameData::Str(pre, s, _) => {
+          components.push(NameComponent::Str(s.clone()));
+          current = pre;
+        },
+        NameData::Num(pre, n, _) => {
+          components.push(NameComponent::Num(n.clone()));
+          current = pre;
+        },
+      }
+    }
+    components.reverse();
+    components
+  }
+
+  /// Strip a prefix from this name, returning the suffix components.
+  pub fn strip_prefix(&self, prefix: &Name) -> Option<Vec<NameComponent>> {
+    let self_components = self.components();
+    let prefix_components = prefix.components();
+    if self_components.len() < prefix_components.len() {
+      return None;
+    }
+    if self_components[..prefix_components.len()] != prefix_components[..] {
+      return None;
+    }
+    Some(self_components[prefix_components.len()..].to_vec())
+  }
+
+  /// Append suffix components to this name.
+  pub fn append_components(&self, suffix: &[NameComponent]) -> Name {
+    let mut result = self.clone();
+    for component in suffix {
+      match component {
+        NameComponent::Str(s) => result = Name::str(result, s.clone()),
+        NameComponent::Num(n) => result = Name::num(result, n.clone()),
+      }
+    }
+    result
+  }
+
+  /// Get the last string component of this name, if any.
+  pub fn last_str(&self) -> Option<&str> {
+    match self.as_data() {
+      NameData::Str(_, s, _) => Some(s.as_str()),
+      _ => None,
+    }
+  }
+
   /// Returns a dot-separated human-readable representation of this name.
   pub fn pretty(&self) -> String {
     let mut components = Vec::new();
@@ -727,6 +788,76 @@ impl Expr {
     hasher.update(e.get_hash().as_bytes());
     Expr(Arc::new(ExprData::Proj(n, i, e, hasher.finalize())))
   }
+
+  /// Pretty-print an expression for debugging.
+  pub fn pretty(&self) -> String {
+    fn short_name(name: &Name) -> String {
+      let s = name.pretty();
+      let parts: Vec<&str> = s.rsplitn(3, '.').collect();
+      match parts.as_slice() {
+        [a, b, _] | [a, b] => format!("{b}.{a}"),
+        [a] => a.to_string(),
+        _ => s,
+      }
+    }
+    fn go(e: &Expr, ctx: &mut Vec<String>) -> String {
+      match e.as_data() {
+        ExprData::Bvar(idx, _) => {
+          let i = usize::try_from(idx.to_u64().unwrap_or(0)).unwrap_or(0);
+          let pos = ctx.len().checked_sub(1 + i);
+          let name = pos.and_then(|p| ctx.get(p)).cloned().unwrap_or_default();
+          if name.is_empty() { format!("V{i}") } else { format!("{name}@{i}") }
+        },
+        ExprData::App(f, a, _) => format!("({} {})", go(f, ctx), go(a, ctx)),
+        ExprData::Const(n, _, _) => short_name(n),
+        ExprData::ForallE(n, d, b, bi, _) => {
+          let nm = short_name(n);
+          let d_s = go(d, ctx);
+          ctx.push(nm.clone());
+          let b_s = go(b, ctx);
+          ctx.pop();
+          let (bi_s, bi_e) = match bi {
+            BinderInfo::Default => ("", ""),
+            BinderInfo::Implicit => ("{", "}"),
+            BinderInfo::StrictImplicit => ("⦃", "⦄"),
+            BinderInfo::InstImplicit => ("[", "]"),
+          };
+          format!("∀{bi_s}{nm}:{d_s}{bi_e}. {b_s}")
+        },
+        ExprData::Lam(n, d, b, bi, _) => {
+          let nm = short_name(n);
+          let d_s = go(d, ctx);
+          ctx.push(nm.clone());
+          let b_s = go(b, ctx);
+          ctx.pop();
+          let (bi_s, bi_e) = match bi {
+            BinderInfo::Default => ("", ""),
+            BinderInfo::Implicit => ("{", "}"),
+            BinderInfo::StrictImplicit => ("⦃", "⦄"),
+            BinderInfo::InstImplicit => ("[", "]"),
+          };
+          format!("λ{bi_s}{nm}:{d_s}{bi_e}. {b_s}")
+        },
+        ExprData::Sort(_, _) => "Sort".to_string(),
+        ExprData::LetE(n, _, v, b, _, _) => {
+          let nm = short_name(n);
+          let v_s = go(v, ctx);
+          ctx.push(nm.clone());
+          let b_s = go(b, ctx);
+          ctx.pop();
+          format!("let {nm} := {v_s} in {b_s}")
+        },
+        ExprData::Mdata(_, e, _) => go(e, ctx),
+        ExprData::Proj(n, i, e, _) => {
+          format!("{}.{}{}", go(e, ctx), short_name(n), i.to_u64().unwrap_or(0))
+        },
+        ExprData::Lit(_, _) => "lit".to_string(),
+        _ => "?".to_string(),
+      }
+    }
+    let mut ctx = Vec::new();
+    go(self, &mut ctx)
+  }
 }
 
 impl StdHash for Expr {
@@ -1134,6 +1265,20 @@ impl ConstantInfo {
       ConstantInfo::InductInfo(v) => &v.cnst.level_params,
       ConstantInfo::CtorInfo(v) => &v.cnst.level_params,
       ConstantInfo::RecInfo(v) => &v.cnst.level_params,
+    }
+  }
+
+  /// Returns a short kind name for this constant (for diagnostics).
+  pub fn kind_name(&self) -> &'static str {
+    match self {
+      ConstantInfo::AxiomInfo(_) => "axiom",
+      ConstantInfo::DefnInfo(_) => "def",
+      ConstantInfo::ThmInfo(_) => "thm",
+      ConstantInfo::OpaqueInfo(_) => "opaque",
+      ConstantInfo::QuotInfo(_) => "quot",
+      ConstantInfo::InductInfo(_) => "induct",
+      ConstantInfo::CtorInfo(_) => "ctor",
+      ConstantInfo::RecInfo(_) => "rec",
     }
   }
 }

@@ -283,7 +283,7 @@ fn ingress_expr<M: KernelMode>(
         let mut mdata_layers: Vec<MData> = Vec::new();
         while let Some(ExprMetaData::Mdata { mdata, child }) =
           ctx.arena.nodes.get(
-            usize::try_from(current_idx).map_err(|_e|{
+            usize::try_from(current_idx).map_err(|_e| {
               format!("arena index {current_idx} exceeds usize")
             })?,
           )
@@ -310,7 +310,7 @@ fn ingress_expr<M: KernelMode>(
         if let IxonExpr::Share(share_idx) = expr.as_ref() {
           if let Some(shared) = ctx.sharing.get(
             usize::try_from(*share_idx)
-              .map_err(|_e|format!("Share index {share_idx} exceeds usize"))?,
+              .map_err(|_e| format!("Share index {share_idx} exceeds usize"))?,
           ) {
             stack.push(ExprFrame::Process { expr: shared.clone(), arena_idx });
             continue;
@@ -323,7 +323,7 @@ fn ingress_expr<M: KernelMode>(
         if let IxonExpr::Var(idx) = expr.as_ref() {
           // Resolve name from the binder context using de Bruijn index.
           let idx_usize = usize::try_from(*idx)
-            .map_err(|_e|format!("BVar index {idx} exceeds usize"))?;
+            .map_err(|_e| format!("BVar index {idx} exceeds usize"))?;
           let name = binder_names
             .len()
             .checked_sub(1 + idx_usize)
@@ -355,7 +355,7 @@ fn ingress_expr<M: KernelMode>(
           ctx
             .arena
             .nodes
-            .get(usize::try_from(current_idx).map_err(|_e|{
+            .get(usize::try_from(current_idx).map_err(|_e| {
               format!("arena index {current_idx} exceeds usize")
             })?)
             .unwrap_or(&ExprMetaData::Leaf);
@@ -1230,8 +1230,14 @@ pub fn lean_level_to_kuniv(lvl: &Level, param_names: &[Name]) -> KUniv<Anon> {
 pub fn resolve_lean_name_addr(
   name: &Name,
   name_to_ixon_addr: Option<&dashmap::DashMap<Name, Address>>,
+  aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
 ) -> Address {
   if let Some(map) = name_to_ixon_addr
+    && let Some(entry) = map.get(name)
+  {
+    return entry.value().clone();
+  }
+  if let Some(map) = aux_n2a
     && let Some(entry) = map.get(name)
   {
     return entry.value().clone();
@@ -1249,8 +1255,15 @@ pub fn lean_expr_to_zexpr(
   param_names: &[Name],
   intern: &InternTable<Anon>,
   name_to_ixon_addr: Option<&dashmap::DashMap<Name, Address>>,
+  aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
 ) -> KExpr<Anon> {
-  let e = lean_expr_to_zexpr_raw(expr, param_names, intern, name_to_ixon_addr);
+  let e = lean_expr_to_zexpr_raw(
+    expr,
+    param_names,
+    intern,
+    name_to_ixon_addr,
+    aux_n2a,
+  );
   intern.intern_expr(e)
 }
 
@@ -1259,42 +1272,43 @@ fn lean_expr_to_zexpr_raw(
   pn: &[Name],
   intern: &InternTable<Anon>,
   n2a: Option<&dashmap::DashMap<Name, Address>>,
+  aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
 ) -> KExpr<Anon> {
   match expr.as_data() {
     LeanExprData::Bvar(idx, _) => KExpr::var(idx.to_u64().unwrap_or(0), ()),
     LeanExprData::Sort(lvl, _) => KExpr::sort(lean_level_to_kuniv(lvl, pn)),
     LeanExprData::Const(name, us, _) => {
-      let addr = resolve_lean_name_addr(name, n2a);
+      let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
       let zid = KId::new(addr, ());
       let zus: Box<[KUniv<Anon>]> =
         us.iter().map(|u| lean_level_to_kuniv(u, pn)).collect();
       KExpr::cnst(zid, zus)
     },
     LeanExprData::App(f, a, _) => {
-      let zf = lean_expr_to_zexpr(f, pn, intern, n2a);
-      let za = lean_expr_to_zexpr(a, pn, intern, n2a);
+      let zf = lean_expr_to_zexpr(f, pn, intern, n2a, aux_n2a);
+      let za = lean_expr_to_zexpr(a, pn, intern, n2a, aux_n2a);
       KExpr::app(zf, za)
     },
     LeanExprData::ForallE(_, dom, body, _, _) => {
-      let zd = lean_expr_to_zexpr(dom, pn, intern, n2a);
-      let zb = lean_expr_to_zexpr(body, pn, intern, n2a);
+      let zd = lean_expr_to_zexpr(dom, pn, intern, n2a, aux_n2a);
+      let zb = lean_expr_to_zexpr(body, pn, intern, n2a, aux_n2a);
       KExpr::all((), (), zd, zb)
     },
     LeanExprData::Lam(_, dom, body, _, _) => {
-      let zd = lean_expr_to_zexpr(dom, pn, intern, n2a);
-      let zb = lean_expr_to_zexpr(body, pn, intern, n2a);
+      let zd = lean_expr_to_zexpr(dom, pn, intern, n2a, aux_n2a);
+      let zb = lean_expr_to_zexpr(body, pn, intern, n2a, aux_n2a);
       KExpr::lam((), (), zd, zb)
     },
     LeanExprData::LetE(_, ty, val, body, nd, _) => {
-      let zt = lean_expr_to_zexpr(ty, pn, intern, n2a);
-      let zv = lean_expr_to_zexpr(val, pn, intern, n2a);
-      let zb = lean_expr_to_zexpr(body, pn, intern, n2a);
+      let zt = lean_expr_to_zexpr(ty, pn, intern, n2a, aux_n2a);
+      let zv = lean_expr_to_zexpr(val, pn, intern, n2a, aux_n2a);
+      let zb = lean_expr_to_zexpr(body, pn, intern, n2a, aux_n2a);
       KExpr::let_((), zt, zv, zb, *nd)
     },
     LeanExprData::Proj(name, idx, e, _) => {
-      let addr = resolve_lean_name_addr(name, n2a);
+      let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
       let zid = KId::new(addr, ());
-      let ze = lean_expr_to_zexpr(e, pn, intern, n2a);
+      let ze = lean_expr_to_zexpr(e, pn, intern, n2a, aux_n2a);
       KExpr::prj(zid, idx.to_u64().unwrap_or(0), ze)
     },
     LeanExprData::Lit(lit, _) => {

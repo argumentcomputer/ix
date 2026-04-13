@@ -11,7 +11,10 @@ use std::thread;
 use dashmap::DashMap;
 use rustc_hash::FxHashSet;
 
-use crate::ix::compile::{BlockCache, CompileState, compile_const};
+use crate::ix::address::Address;
+use crate::ix::compile::{
+  BlockCache, CompileState, compile_const, compile_const_no_aux,
+};
 use crate::ix::condense::compute_sccs;
 use crate::ix::env::{Env as LeanEnv, Name};
 use crate::ix::graph::{NameSet, build_ref_graph};
@@ -40,17 +43,66 @@ pub fn compile_env(
 
   let condensed = compute_sccs(&graph.out_refs);
 
-  let stt = CompileState::default();
+  let stt = CompileState { lean_env: Some(lean_env.clone()), ..Default::default() };
+
+  // Pre-compile PUnit, PProd, Eq, and True so aux_gen can reference them.
+  // .below uses PUnit/PProd (for Type-level), .brecOn.eq uses Eq and True.
+  // True is used as a dummy motive for non-target classes in the .brecOn.eq
+  // recursor-based proof (any Prop type suffices; True has no dependencies).
+  // These get compiled into aux_name_to_addr; the scheduler's promotion
+  // path in the work loop moves them to name_to_addr when encountered.
+  {
+    let prereqs = [
+      Name::str(Name::anon(), "PUnit".to_string()),
+      Name::str(Name::anon(), "PProd".to_string()),
+      Name::str(Name::anon(), "Eq".to_string()),
+      Name::str(Name::anon(), "True".to_string()),
+    ];
+    for prereq in &prereqs {
+      if let Some((lo, all)) =
+        condensed.blocks.iter().find(|(_, all)| all.contains(prereq))
+      {
+        let lo = lo.clone();
+        let all = all.clone();
+        let mut cache = BlockCache::default();
+        if compile_const(&lo, &all, lean_env, &mut cache, &stt).is_ok() {
+          // Move compiled names from name_to_addr → aux_name_to_addr.
+          // This prevents the scheduler from treating them as "already done"
+          // while still making them available for aux_gen reference resolution.
+          let just_compiled: Vec<(Name, Address)> = stt
+            .name_to_addr
+            .iter()
+            .map(|e| (e.key().clone(), e.value().clone()))
+            .collect();
+          for (n, addr) in just_compiled {
+            stt.name_to_addr.remove(&n);
+            stt.aux_name_to_addr.insert(n, addr);
+          }
+          // Also move any aux_gen extras that were generated during
+          // pre-compilation (unlikely but defensive).
+          let extras: Vec<Name> =
+            stt.aux_gen_extra_names.iter().map(|r| r.clone()).collect();
+          for name in extras {
+            if let Some((n, addr)) = stt.name_to_addr.remove(&name) {
+              stt.aux_name_to_addr.insert(n, addr);
+            }
+          }
+        }
+      }
+    }
+  }
 
   // Build work-stealing data structures
   let total_blocks = condensed.blocks.len();
 
-  // For each block: (all names in block, remaining deps as explicit set).
+  // For each block: (all names in block, original deps, remaining deps).
   // Using an explicit HashSet instead of an atomic counter prevents silent
   // corruption from double-decrements — removing an already-removed name
   // is a no-op.
-  let block_info: DashMap<Name, (NameSet, Mutex<FxHashSet<Name>>)> =
-    DashMap::default();
+  let block_info: DashMap<
+    Name,
+    (NameSet, FxHashSet<Name>, Mutex<FxHashSet<Name>>),
+  > = DashMap::default();
 
   // Reverse deps: name -> set of block leaders that depend on this name
   let reverse_deps: DashMap<Name, Vec<Name>> = DashMap::default();
@@ -62,7 +114,10 @@ pub fn compile_env(
         reason: "missing block refs".into(),
       })?;
 
-    block_info.insert(lo.clone(), (all.clone(), Mutex::new(deps.clone())));
+    block_info.insert(
+      lo.clone(),
+      (all.clone(), deps.clone(), Mutex::new(deps.clone())),
+    );
 
     // Register reverse dependencies
     for dep_name in deps {
@@ -78,7 +133,7 @@ pub fn compile_env(
     let mut queue = ready_queue.lock().unwrap();
     for entry in block_info.iter() {
       let lo = entry.key();
-      let (all, remaining) = entry.value();
+      let (all, _, remaining) = entry.value();
       if remaining.lock().unwrap().is_empty() {
         queue.push((lo.clone(), all.clone()));
       }
@@ -142,7 +197,36 @@ pub fn compile_env(
               // Check if this block was pre-compiled into aux_name_to_addr.
               // Promote to name_to_addr without re-compiling.
               if stt_ref.resolve_addr(&lo).is_some() {
+                // Check if any names in this block are aux_gen-rewritten.
+                let any_aux_gen =
+                  all.iter().any(|n| stt_ref.aux_gen_extra_names.contains(n));
+
+                if any_aux_gen {
+                  // Compile the original Lean form (without aux_gen).
+                  // compile_mutual with aux=false calls promote_aux for
+                  // each constant, setting Named.original with the
+                  // original (addr, meta) for decompilation roundtrip.
+                  let mut orig_cache = BlockCache::default();
+                  if let Err(e) = compile_const_no_aux(
+                    &lo,
+                    &all,
+                    lean_env,
+                    &mut orig_cache,
+                    stt_ref,
+                  ) {
+                    eprintln!(
+                      "[compile_env] compile_const_no_aux failed for {}: {}",
+                      lo.pretty(),
+                      e,
+                    );
+                  }
+                }
+
+                // Promote remaining names from aux_name_to_addr.
                 for name in &all {
+                  if stt_ref.name_to_addr.contains_key(name) {
+                    continue;
+                  }
                   if let Some(addr) = stt_ref.resolve_addr(name) {
                     stt_ref.name_to_addr.insert(name.clone(), addr);
                   }
@@ -155,6 +239,58 @@ pub fn compile_env(
                 {
                   let mut err_guard = error_ref.lock().unwrap();
                   if err_guard.is_none() {
+                    // Print dep status for MissingConstant errors
+                    if let CompileError::MissingConstant {
+                      ref name,
+                      ref caller,
+                    } = e
+                    {
+                      eprintln!(
+                        "[compile_env] MissingConstant: {name} (from {caller})"
+                      );
+                      eprintln!(
+                        "  block: {} ({} members)",
+                        lo.pretty(),
+                        all.len()
+                      );
+                      for member in &all {
+                        let in_main = stt_ref.name_to_addr.contains_key(member);
+                        let in_aux =
+                          stt_ref.aux_name_to_addr.contains_key(member);
+                        let status = if in_main {
+                          "name_to_addr"
+                        } else if in_aux {
+                          "aux_name_to_addr"
+                        } else {
+                          "pending"
+                        };
+                        eprintln!("    {} [{}]", member.pretty(), status);
+                      }
+                      if let Some(entry) = block_info_ref.get(&lo) {
+                        let (_, orig_deps, remaining) = entry.value();
+                        // Print all original deps with their resolution status
+                        eprintln!("  deps ({}):", orig_deps.len());
+                        for d in orig_deps.iter() {
+                          let in_main = stt_ref.name_to_addr.contains_key(d);
+                          let in_aux = stt_ref.aux_name_to_addr.contains_key(d);
+                          let status = if in_main {
+                            "name_to_addr"
+                          } else if in_aux {
+                            "aux_name_to_addr"
+                          } else {
+                            "UNRESOLVED"
+                          };
+                          eprintln!("    {} [{}]", d.pretty(), status);
+                        }
+                        let rem = remaining.lock().unwrap();
+                        if !rem.is_empty() {
+                          eprintln!("  unsatisfied ({}):", rem.len());
+                          for d in rem.iter() {
+                            eprintln!("    {}", d.pretty());
+                          }
+                        }
+                      }
+                    }
                     *err_guard = Some(e);
                   }
                   return;
@@ -181,7 +317,7 @@ pub fn compile_env(
                   if let Some(dependents) = reverse_deps_ref.get(name) {
                     for dependent_lo in dependents.value() {
                       if let Some(entry) = block_info_ref.get(dependent_lo) {
-                        let (dep_all, remaining) = entry.value();
+                        let (dep_all, _, remaining) = entry.value();
                         let mut deps = remaining.lock().unwrap();
                         let was_present = deps.remove(name);
                         if was_present && deps.is_empty() {
@@ -255,7 +391,7 @@ pub fn compile_env(
     // Find what's still blocked
     let mut blocked_count = 0;
     for entry in block_info.iter() {
-      let (_, remaining) = entry.value();
+      let (_, _, remaining) = entry.value();
       let deps = remaining.lock().unwrap();
       if !deps.is_empty() {
         blocked_count += 1;
