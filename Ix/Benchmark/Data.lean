@@ -23,21 +23,20 @@ def Data.randDataM (data : Data) : StateM StdGen (Nat × Nat) := do
   set gen'
   return data.d[n]!
 
-/-- Creates a random permutation of the distribution with replacement (i.e. duplicates are permitted) -/
+/-- Creates a random permutation of the distribution with replacement -/
 def Data.resampleM (data : Data) (numSamples : Nat) : StateM StdGen Data := do
-  let mut rands := #[]
-  for _ in Array.range numSamples do
+  let mut rands := Array.mkEmpty numSamples
+  for _ in [:numSamples] do
     let res ← data.randDataM
     rands := rands.push res
   return { d := rands }
 
 /-- Performs a one-sample bootstrap of bivariate data -/
-def Data.bootstrap (data : Data) (numSamples bootstrapSamples : Nat): StateM StdGen Distribution := do
-  let mut slopes : Array Float := #[]
-  for _ in Array.range bootstrapSamples do
-    let resample ← Data.resampleM data numSamples
-    let slope := resample.slope
-    slopes := slopes.push slope
+def Data.bootstrap (data : Data) (numSamples bootstrapSamples : Nat) : StateM StdGen Distribution := do
+  let mut slopes := Array.mkEmpty bootstrapSamples
+  for _ in [:bootstrapSamples] do
+    let resample ← data.resampleM numSamples
+    slopes := slopes.push resample.slope
   return { d := slopes }
 
 /--

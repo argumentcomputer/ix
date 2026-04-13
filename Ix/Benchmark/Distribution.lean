@@ -4,7 +4,6 @@ public import Ix.Benchmark.Estimate
 
 public section
 
--- TODO: Ensure all array instances are used linearly for optimal performance
 structure Distribution where
   d : Array Float
   deriving Repr, Inhabited, Lean.ToJson, Lean.FromJson
@@ -18,6 +17,7 @@ as extreme as `t` under the null distribution `dist`. Returns a value in
 `[0, 1]`; smaller means the observed `t` is more extreme (less consistent with
 the null hypothesis). -/
 def Distribution.pValue (dist : Distribution) (t : Float) : Float :=
+  if dist.d.isEmpty then 1.0 else
   let len := Float.ofNat dist.d.size
   let hits := Float.ofNat (dist.d.filter (· < t)).size
   2 * (min hits (len - hits)) / len
@@ -51,12 +51,14 @@ def Distribution.confidenceInterval (dist : Distribution) (confidenceLevel : Flo
   { confidenceLevel, lowerBound, upperBound }
 
 def Distribution.mean (dist : Distribution) : Float :=
+  if dist.d.isEmpty then 0.0 else
   dist.d.sum / Float.ofNat dist.d.size
 
 def Distribution.median (dist : Distribution) : Float :=
   (dist.percentile? 50).get!
 
 def Distribution.variance (dist : Distribution) (mean : Float) : Float :=
+  if dist.d.size ≤ 1 then 0.0 else
   let sum := dist.d.foldl (fun acc x => acc + ((x - mean) ^ 2)) 0.0
   sum / Float.ofNat (dist.d.size - 1)
 
@@ -76,29 +78,33 @@ def Distribution.randDistM (dist : Distribution) : StateM StdGen Float := do
 
 /-- Creates a random permutation of the distribution with replacement (i.e. duplicates are permitted) -/
 def Distribution.resampleM (dist : Distribution) (numSamples : Nat) : StateM StdGen Distribution := do
-  let mut rands := #[]
-  for _ in Array.range numSamples do
+  let mut rands := Array.mkEmpty numSamples
+  for _ in [:numSamples] do
     let res ← dist.randDistM
     rands := rands.push res
   return { d := rands }
 
-/--
-Performs a one-sample bootstrap, gets `bootstrapSamples` resamples of the distribution and computes statistics for each.
 
-Assumes `numSamples ≥ 2`
+/--
+Performs a one-sample bootstrap: resamples the distribution `bootstrapSamples`
+times and computes mean, stdDev, median, and medianAbsDev for each resample.
+
+Assumes `numSamples ≥ 2`.
 -/
 def Distribution.bootstrap (dist : Distribution) (numSamples bootstrapSamples : Nat) : StateM StdGen Distributions := do
-  let mut means : Distribution := default
-  let mut stdDevs : Distribution := default
-  let mut medians : Distribution := default
-  let mut medianAbsDevs : Distribution := default
-  for _ in Array.range bootstrapSamples do
-    let resample ← Distribution.resampleM dist numSamples
-    means := { means with d := means.d.push resample.mean }
-    stdDevs := { stdDevs with d := stdDevs.d.push (resample.stdDev resample.mean) }
-    medians := { medians with d := medians.d.push resample.median }
-    medianAbsDevs := { medianAbsDevs with d := medianAbsDevs.d.push (resample.medianAbsDev resample.median) }
-  return { means, medians, medianAbsDevs, slope := none, stdDevs }
+  let mut means := Array.mkEmpty bootstrapSamples
+  let mut stdDevs := Array.mkEmpty bootstrapSamples
+  let mut medians := Array.mkEmpty bootstrapSamples
+  let mut medianAbsDevs := Array.mkEmpty bootstrapSamples
+  for _ in [:bootstrapSamples] do
+    let resample ← dist.resampleM numSamples
+    let m := resample.mean
+    means := means.push m
+    stdDevs := stdDevs.push (resample.stdDev m)
+    let med := resample.median
+    medians := medians.push med
+    medianAbsDevs := medianAbsDevs.push (resample.medianAbsDev med)
+  return { means := ⟨means⟩, medians := ⟨medians⟩, medianAbsDevs := ⟨medianAbsDevs⟩, slope := none, stdDevs := ⟨stdDevs⟩ }
 
 def Distribution.toEstimate (dist : Distribution) (pointEstimate : Float) (confidenceLevel : Float) : Estimate :=
   let confidenceInterval := dist.confidenceInterval confidenceLevel
@@ -178,7 +184,7 @@ def outlierVariance (meanEst stdDevEst : Estimate) (numSamples : Float) : Outlie
     let ad := numSamples * d
     let k0 := -numSamples * ad
     let k1 := sb2 - numSamples * sg2 + ad
-    let det := k1 * k1 - 4 * sg2 * k0
+    let det := max (k1 * k1 - 4 * sg2 * k0) 0
     (-2 * k0 / (k1 + det.sqrt)).floor
   let minBy (f : Float → Float) (q r : Float) : Float := min (f q) (f r)
   let varOutMin := (minBy varOut 1 (minBy cMax 0 ugMin)) / sb2

@@ -12,8 +12,7 @@ inductive SamplingMode where
       is recovered by regression, which is more robust to single-sample outliers
       but 50× more total work for `N = 100`. -/
   | linear : SamplingMode
-  /-- Pick flat or linear based on warmup timing (matches criterion.rs's
-      `SamplingMode::Auto`): choose linear if its expected total time is at
+  /-- Pick flat or linear based on warmup timing: choose linear if its expected total time is at
       most 2× the target sample time, otherwise flat. -/
   | auto : SamplingMode
   deriving Repr, BEq, Lean.ToJson, Lean.FromJson
@@ -29,8 +28,7 @@ instance : ToString SerdeFormat where
   | .ixon => "ixon"
 
 /--
-Controls how much diagnostic output the benchmark harness prints, matching
-Haskell criterion's `Verbosity`. Can be overridden per-run via the
+Controls how much diagnostic output the benchmark harness prints. Can be overridden per-run via the
 `BENCH_VERBOSITY` env var or via `-q` / `-v` on the `lake exe` command line.
 -/
 inductive Verbosity where
@@ -50,15 +48,13 @@ inductive Verbosity where
 
 /--
 Describes the work performed by one iteration of a benchmark, for rate
-computations in the report. Modeled after criterion.rs's `Throughput` enum.
+computations in the report.
 
 - `Bits`: bits processed per iteration; formatted with decimal (1000-based) units (`b/s`, `Kb/s`, ..).
 - `Bytes`: bytes processed per iteration; formatted with binary (1024-based) units (`B/s`, `KiB/s`, ..).
 - `BytesDecimal`: bytes processed per iteration; formatted with decimal (1000-based) units (`B/s`, `KB/s`, ..).
 - `Elements`: generic elements per iteration; formatted with decimal units using the
-  `label` (defaults to `elem`, so you get `elem/s`, `Kelem/s`, .., but you can pass
-  e.g. `"hashes"` for `hashes/s`, `Khashes/s`, ..). Extension over criterion.rs,
-  which hardcodes the `elem` label.
+  `label` (defaults to `elem`, e.g. `elem/s`, `Kelem/s`, .., or with label "hashes": `hashes/s`, `Khashes/s`, ..).
 - `ElementsAndBytes`: reports both elements/s and bytes/s in the same cell. The
   elements side accepts a custom `elementsLabel` with the same semantics as
   `Elements`; the bytes side always uses the binary `B` scheme.
@@ -78,14 +74,20 @@ structure Config where
   sampleTime : Float := 5.0
   /-- Number of data points to collect per sample -/
   numSamples : Nat := 100
-  /-- Sample in flat, linear, or auto mode. Defaults to `.auto` to match
-      criterion.rs: linear is more robust to per-sample outliers but runs 50×
+  /-- Sample in flat, linear, or auto mode. Defaults to `.auto`.
+      Linear is more robust to per-sample outliers but runs 50×
       more total iterations than flat for `numSamples = 100`, so it's unusable
       for expensive benches. Auto picks linear when it fits in ~2× the target
       sample time and falls back to flat otherwise. -/
   samplingMode : SamplingMode := .auto
-  /-- Number of bootstrap samples (with replacement) to run -/
-  bootstrapSamples : Nat := 100000
+  /-- Number of bootstrap samples (with replacement) to run.
+      Defaults to 10K rather than criterion.rs's 100K because Lean's
+      runtime has ~10x per-operation overhead for many operations vs native Rust,
+      making 100K bootstrap iterations take ~5s per bench. 10K produces
+      statistically indistinguishable confidence intervals for typical Lean benchmarks
+      (µs–s scale) where execution variance already dwarfs bootstrap
+      estimation noise. -/
+  bootstrapSamples : Nat := 10000
   /-- Confidence level for estimates -/
   confidenceLevel : Float := 0.95
   /-- Significance level for hypothesis testing when comparing two benchmark runs for significant difference -/
@@ -117,21 +119,28 @@ structure Config where
   /--
   Throughput for the next benchmark registered in a `bgroup` do-block. Each
   `bench`/`benchIO` call inside a `bgroup` captures a snapshot of this field
-  at registration time, so you can set it once and register several benches,
+  at registration time, so we can set it once and register several benches,
   or mutate it between registrations via the monadic `throughput` helper.
   -/
   throughput : Option Throughput := none
   /--
   If `true`, `bgroup` prints a weighted-average throughput across all benches
   in the group at the end of the run. The average is weighted by the primary
-  quantity of each bench (e.g. bytes processed), following the same formula
-  as criterion.rs. Requires every bench in the group to use the same
+  quantity of each bench (e.g. bytes processed). Requires every bench in the group to use the same
   `Throughput` variant; otherwise the average is skipped with a warning.
   -/
   avgThroughput : Bool := false
   /-- Diagnostic output level. Overridable via `BENCH_VERBOSITY` env var or
-      `-q` / `-v` / `-vv` command-line flags (see `getConfigEnv`). -/
+      `-q` / `-v` command-line flags (see `getConfigEnv`). -/
   verbosity : Verbosity := .normal
+  /-- Enable ANSI color/bold/faint in output. Defaults to `true`; set to
+      `false` or set the `BENCH_NO_COLOR` env var to disable. -/
+  color : Bool := true
+  /-- Enable ephemeral progress lines (warmup/sampling status overwritten
+      in-place on stderr). Defaults to `true`; automatically disabled when
+      `BENCH_NO_COLOR` is set. Forced to `false` in verbose mode so all
+      output is permanent. -/
+  overwrite : Bool := true
   deriving Repr, Lean.ToJson, Lean.FromJson
 
 /--
@@ -144,7 +153,7 @@ initialize benchArgsRef : IO.Ref (List String) ← IO.mkRef []
 
 /-- Populate the global bench-args ref from this program's `main (args : List String)`.
     Call this once at the top of every bench `main` to enable CLI flag parsing
-    in `getConfigEnv`. Safe to skip if you don't need CLI verbosity overrides. -/
+    in `getConfigEnv`. Safe to skip if we don't need CLI verbosity overrides. -/
 def setBenchArgs (args : List String) : IO Unit :=
   benchArgsRef.set args
 
@@ -152,7 +161,7 @@ def setBenchArgs (args : List String) : IO Unit :=
 Overrides config values with the corresponding `BENCH_<SETTING>` env vars and
 `lake exe` command-line flags. Precedence order (lowest to highest):
 
-1. `config` field defaults (the literal values you passed to `bgroup`)
+1. `config` field defaults (the literal values passed to `bgroup`)
 2. `BENCH_*` env vars (`BENCH_SERDE`, `BENCH_REPORT`, `BENCH_VERBOSITY`)
 3. CLI flags (`-q` / `--quiet`, `-v` / `--verbose`) from the args set
    via `setBenchArgs` at the top of `main`
@@ -178,7 +187,12 @@ def getConfigEnv (config : Config) : IO Config := do
     else if has "-q" args || has "--quiet" args then some .quiet
     else none
   let verbosity := cliVerbosity.getD (envVerbosity.getD config.verbosity)
-  return { config with serde, report, verbosity }
+  -- `BENCH_NO_COLOR` disables both ANSI codes and ephemeral overwrites.
+  -- Verbose mode also forces overwrite off so all output is permanent.
+  let noColor := (← IO.getEnv "BENCH_NO_COLOR").isSome
+  let color := if noColor then false else config.color
+  let overwrite := if noColor || verbosity == .verbose then false else config.overwrite
+  return { config with serde, report, verbosity, color, overwrite }
 
 @[inline] def Float.toNanos (f : Float) : Float := f * 10 ^ 9
 
@@ -209,16 +223,18 @@ Rounds a `Float` to the desired number of decimal places, then prints it with tr
 
 E.g. `10.012345.floatPretty 5` => `"10.01235"`
 
-Panics if float is a NaN.
+Returns the raw `.toString` representation for non-finite values (NaN, Inf).
 -/
 def Float.floatPretty (float : Float) (precision : Nat): String :=
-  let precise := float.variablePrecision precision
-  let parts := precise.toString.splitOn "."
-  let integer := parts[0]!
-  let fractional := parts[1]!.take precision
-  if !fractional.isEmpty
-  then integer ++ "." ++ fractional
-  else integer
+  if !float.isFinite then float.toString
+  else
+    let precise := float.variablePrecision precision
+    let parts := precise.toString.splitOn "."
+    let integer := parts[0]!
+    let fractional := parts[1]!.take precision
+    if !fractional.isEmpty
+    then integer ++ "." ++ fractional
+    else integer
 
 /--
 Formats a time in ns as an xx.yy string with time units.
@@ -271,8 +287,7 @@ def Float.formatRateValueDecimal (rate : Float) (baseUnit : String) : String :=
 
 /--
 Extracts the primary quantity of work per iteration from a `Throughput`.
-For `ElementsAndBytes`, the elements count is considered the primary quantity,
-matching criterion.rs's convention.
+For `ElementsAndBytes`, the elements count is considered the primary quantity.
 -/
 def Throughput.quantity (t : Throughput) : UInt64 :=
   match t with
@@ -323,7 +338,7 @@ def Throughput.rate (t : Throughput) (timeNs : Float) : Float :=
 
 /--
 Formats a `Throughput` value and a typical iteration time `timeNs` as a
-human-readable rate string, matching criterion.rs's `DurationFormatter`.
+human-readable rate string.
 -/
 def Throughput.formatRate (t : Throughput) (timeNs : Float) : String :=
   if timeNs ≤ 0 then "—" else
