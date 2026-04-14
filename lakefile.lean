@@ -18,34 +18,33 @@ require batteries from git
 
 /-! ## FFI
 
-The Rust static lib uses `target` + `moreLinkObjs` instead of `extern_lib` because
-`lake test` needs the `test-ffi` Cargo feature for Rust test-only code,
-but `lake build` should not include it. The `ix_rs` and `ix_rs_test` targets both write
-to the same lib path; `ix_rs_test` calls `ix_rs.fetch` to ensure `ix_rs` completes first,
-then overwrites the lib with test-ffi symbols. An `extern_lib` would always run last
-(at link time) and overwrite the test-ffi build.
+The Rust static libraries use `target` + `moreLinkObjs` instead of `extern_lib` because different Lean executables need different Cargo features:
 
-Note: `extern_lib` only runs at link time, so `lake build` on a `lean_lib` alone wouldn't
-trigger the Cargo build. With `target` + `moreLinkObjs`, the Rust static lib is built during
-module compilation on the default `Ix` lib.
+- `ix` uses `ix_rs_net` (`parallel,net`) for networking support (iroh).
+- `IxTests` uses `ix_rs_test` (`parallel,test-ffi`) for test-only FFI code.
+- Everything else inherits `ix_rs` (`parallel` only) from the `Ix` `lean_lib`.
+
+The `ix_rs_test` and `ix_rs_net` targets fetch `ix_rs` first to guarantee ordering
+before overwriting the lib, since they write to the same lib path. The second cargo build is incremental — only the feature-affected crates recompile.
+
+`extern_lib` only runs at link time, so `lake build` on a `lean_lib` alone wouldn't trigger the Cargo build. With `target` + `moreLinkObjs`, the Rust static lib is built during module compilation on the default `Ix` lib, allowing Lake to conditional compile the Rust lib per build target.
 -/
 section FFI
 
 /-- Build args for `cargo build --release` with feature flags from env vars.
 Cargo output is visible with `lake -v build`. -/
-def cargoArgs (testFfi : Bool := false) : IO (Array String) := do
-  -- IX_NO_PAR=1 disables parallel; IX_NET=1 enables networking (iroh)
+def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
+  -- IX_NO_PAR=1 disables parallel
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
-  let ixNet ← IO.getEnv "IX_NET"
   let mut features : Array String := #[]
   if ixNoPar != some "1" then features := features.push "parallel"
-  if ixNet == some "1" then features := features.push "net"
+  if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   let buildArgs := #["build", "--release"]
   if features.isEmpty then return buildArgs
   else return buildArgs ++ #["--features", ",".intercalate features.toList]
 
-/-- Build the Rust static lib without `test-ffi` (default for `lake build`). -/
+/-- Build the Rust static lib with default features (`parallel`). -/
 target ix_rs pkg : FilePath := do
   let args ← cargoArgs
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
@@ -60,6 +59,14 @@ target ix_rs_test pkg : FilePath := do
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
   inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_rs"
 
+/-- Build the Rust static lib with `net` for the `ix` CLI.
+Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
+target ix_rs_net pkg : FilePath := do
+  let _ ← ix_rs.fetch
+  let args ← cargoArgs (net := true)
+  proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_rs"
+
 end FFI
 
 @[default_target]
@@ -69,6 +76,7 @@ lean_lib Ix where
 lean_exe ix where
   root := `Main
   supportInterpreter := true
+  moreLinkObjs := #[ix_rs_net]
 
 section Tests
 
