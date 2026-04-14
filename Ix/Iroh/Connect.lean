@@ -29,11 +29,12 @@ private opaque getBytes' : @& String → @& Array String → @& String → @& St
 def getBytes (nodeId : @& String) (addrs : @& Array String) (relayUrl : @& String) (hash : @& String) (writeToDisk : Bool): IO Unit := do
   match getBytes' nodeId addrs relayUrl hash with
   | .ok response =>
-    IO.println s!"Received bytes for hash {response.hash}"
+    let string := String.fromUTF8! response.bytes
     if writeToDisk then
       IO.println s!"Writing bytes to ./{response.hash}"
-      let string := String.fromUTF8! response.bytes
       IO.FS.writeFile response.hash string
+    else
+      IO.print string
   | .error e => throw (IO.userError e)
 
 end Iroh.Connect

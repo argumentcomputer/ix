@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use iroh::{Endpoint, RelayMode, SecretKey, endpoint::ConnectionError};
-use n0_snafu::ResultExt;
-use n0_watcher::Watcher as _;
+use iroh::{Endpoint, RelayMode, SecretKey, endpoint::{ConnectionError, presets}};
+use n0_error::StdResultExt;
 use tracing::{debug, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -18,17 +17,17 @@ const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
 const READ_SIZE_LIMIT: usize = 100_000_000;
 
 // Largely taken from https://github.com/n0-computer/iroh/blob/main/iroh/examples/listen.rs
-pub async fn serve() -> n0_snafu::Result<()> {
+pub async fn serve() -> n0_error::Result<()> {
   // Initialize the subscriber with `RUST_LOG=info` to preserve some server logging
   tracing_subscriber::registry()
     .with(fmt::layer())
     .with(EnvFilter::new("info"))
     .init();
-  let secret_key = SecretKey::generate(rand::rngs::OsRng);
+  let secret_key = SecretKey::generate(&mut rand::rng());
   println!("public key: {}", secret_key.public());
 
   // Build a `Endpoint`, which uses PublicKeys as node identifiers, uses QUIC for directly connecting to other nodes, and uses the relay protocol and relay servers to holepunch direct connections between nodes when there are NATs or firewalls preventing direct connections. If no direct connection can be made, packets are relayed over the relay servers.
-  let endpoint = Endpoint::builder()
+  let endpoint = Endpoint::builder(presets::N0)
         // The secret key is used to authenticate with other nodes. The PublicKey portion of this secret key is how we identify nodes, often referred to as the `node_id` in our codebase.
         .secret_key(secret_key)
         // set the ALPN protocols this endpoint will accept on incoming connections
@@ -42,31 +41,32 @@ pub async fn serve() -> n0_snafu::Result<()> {
         .bind()
         .await?;
 
-  let me = endpoint.node_id();
-  println!("node id: {me}");
-  println!("node listening addresses:");
+  let me = endpoint.id();
+  println!("endpoint id: {me}");
+  println!("endpoint listening addresses:");
 
-  let local_addrs = endpoint
-    .direct_addresses()
-    .initialized()
-    .await
-    .into_iter()
+  // wait for the endpoint to be online
+  endpoint.online().await;
+  let endpoint_addr = endpoint.addr();
+
+  let local_addrs = endpoint_addr
+    .ip_addrs()
     .map(|addr| {
-      let addr = addr.addr.to_string();
+      let addr = addr.to_string();
       println!("\t{addr}");
       addr
     })
     .collect::<Vec<_>>()
-    .join(" ");
-  let relay_url = endpoint.home_relay().initialized().await;
-  println!("node relay server url: {relay_url}");
+    .join(",");
+  let relay_url = endpoint_addr.relay_urls().next().expect("missing relay");
+  println!("endpoint relay server url: {relay_url}");
   println!("\nin a separate terminal run:");
 
   println!(
-    "\tix connect put --node-id {me} --addrs \"{local_addrs}\" --relay-url {relay_url} <--input|--file> <input|/path/to/file>"
+    "\tix connect put --node-id {me} --addrs {local_addrs} --relay-url {relay_url} <--input|--file> <input|/path/to/file>"
   );
   println!(
-    "\tix connect get --node-id {me} --addrs \"{local_addrs}\" --relay-url {relay_url} <hash>"
+    "\tix connect get --node-id {me} --addrs {local_addrs} --relay-url {relay_url} <hash>"
   );
 
   // TODO: Switch to dashmap for performance or elsa/frozen map for safe append-only multithreading
@@ -76,8 +76,8 @@ pub async fn serve() -> n0_snafu::Result<()> {
     Arc::new(Mutex::new(BTreeMap::new()));
   // accept incoming connections, returns a normal QUIC connection
   while let Some(incoming) = endpoint.accept().await {
-    let mut connecting = match incoming.accept() {
-      Ok(connecting) => connecting,
+    let mut accepting = match incoming.accept() {
+      Ok(accepting) => accepting,
       Err(err) => {
         warn!("incoming connection failed: {err:#}");
         // we can carry on in these cases:
@@ -85,11 +85,11 @@ pub async fn serve() -> n0_snafu::Result<()> {
         continue;
       },
     };
-    let alpn = connecting.alpn().await?;
-    let conn = connecting.await.e()?;
-    let node_id = conn.remote_node_id()?;
+    let alpn = accepting.alpn().await?;
+    let conn = accepting.await?;
+    let endpoint_id = conn.remote_id();
     info!(
-      "new connection from {node_id} with ALPN {}",
+      "new connection from {endpoint_id} with ALPN {}",
       String::from_utf8_lossy(&alpn),
     );
     let store_clone = store.clone();
@@ -97,9 +97,9 @@ pub async fn serve() -> n0_snafu::Result<()> {
     tokio::spawn(async move {
       // accept a bi-directional QUIC connection
       // use the `quinn` APIs to send and recv content
-      let (mut send, mut recv) = conn.accept_bi().await.e()?;
+      let (mut send, mut recv) = conn.accept_bi().await.anyerr()?;
       debug!("accepted bi stream, waiting for data...");
-      let message = recv.read_to_end(READ_SIZE_LIMIT).await.e()?;
+      let message = recv.read_to_end(READ_SIZE_LIMIT).await.anyerr()?;
       let request = Request::from_bytes(&message);
 
       let response: Response = match request {
@@ -108,7 +108,7 @@ pub async fn serve() -> n0_snafu::Result<()> {
             blake3::hash(&put_request.bytes).to_hex().as_str().to_owned();
           store_clone.lock().unwrap().insert(hash.clone(), put_request.bytes);
           println!("received PUT request for bytes with hash {hash}");
-          let message = format!("pinned hash {hash}\nat node ID {me}");
+          let message = format!("pinned hash {hash}\nat endpoint ID {me}");
           Response::Put(PutResponse { is_err: false, message, hash })
         },
         Request::Get(get_request) => {
@@ -140,23 +140,27 @@ pub async fn serve() -> n0_snafu::Result<()> {
         },
       };
 
-      send.write_all(&response.to_bytes()).await.e()?;
+      let response_bytes = response.to_bytes();
+      println!("sending {} byte response", response_bytes.len());
+      send.write_all(&response_bytes).await.anyerr()?;
+      println!("response sent, finishing stream");
       // call `finish` to close the connection gracefully
-      send.finish().e()?;
+      send.finish().anyerr()?;
+      println!("stream finished");
 
       // We sent the last message, so wait for the client to close the connection once
       // it received this message.
       let res = tokio::time::timeout(Duration::from_secs(3), async move {
         let closed = conn.closed().await;
         if !matches!(closed, ConnectionError::ApplicationClosed(_)) {
-          println!("node {node_id} disconnected with an error: {closed:#}");
+          println!("endpoint {endpoint_id} disconnected with an error: {closed:#}");
         }
       })
       .await;
       if res.is_err() {
-        println!("node {node_id} did not disconnect within 3 seconds");
+        println!("endpoint {endpoint_id} did not disconnect within 3 seconds");
       }
-      Ok::<_, n0_snafu::Error>(())
+      n0_error::Ok(())
     });
   }
   // stop with SIGINT (ctrl-c)
