@@ -133,7 +133,10 @@ impl LeanIxonRecursor<LeanOwned> {
     ctor.set(0, typ_obj);
     ctor.set(1, rules_arr);
     let s = ctor.scalar_base(0);
-    ctor.set_scalars::<5, u64>(s, [rec.lvls, rec.params, rec.indices, rec.motives, rec.minors]);
+    ctor.set_scalars::<5, u64>(
+      s,
+      [rec.lvls, rec.params, rec.indices, rec.motives, rec.minors],
+    );
     ctor.set_bools::<2>(s + 40, [rec.k, rec.is_unsafe]);
     Self::new(ctor.into())
   }
@@ -149,7 +152,8 @@ impl<R: LeanRef> LeanIxonRecursor<R> {
     let rules =
       rules_arr.map(|x| LeanIxonRecursorRule::new(x.to_owned_ref()).decode());
     let s = ctor.scalar_base(0);
-    let [lvls, params, indices, motives, minors] = ctor.get_scalars::<5, u64>(s);
+    let [lvls, params, indices, motives, minors] =
+      ctor.get_scalars::<5, u64>(s);
     let [k, is_unsafe] = ctor.get_bools::<2>(s + 40);
     IxonRecursor {
       k,
@@ -294,7 +298,10 @@ impl LeanIxonInductive<LeanOwned> {
     ctor.set(0, typ_obj);
     ctor.set(1, ctors_arr);
     let s = ctor.scalar_base(0);
-    ctor.set_scalars::<4, u64>(s, [ind.lvls, ind.params, ind.indices, ind.nested]);
+    ctor.set_scalars::<4, u64>(
+      s,
+      [ind.lvls, ind.params, ind.indices, ind.nested],
+    );
     ctor.set_bools::<3>(s + 32, [ind.recr, ind.refl, ind.is_unsafe]);
     Self::new(ctor.into())
   }

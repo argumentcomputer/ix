@@ -91,7 +91,10 @@ impl LeanIxExpr<LeanOwned> {
         ctor.set(1, ty_obj);
         ctor.set(2, body_obj);
         ctor.set(3, hash_obj);
-        ctor.set_u8(ctor.scalar_base(0), LeanIxBinderInfo::<LeanOwned>::to_u8(bi));
+        ctor.set_u8(
+          ctor.scalar_base(0),
+          LeanIxBinderInfo::<LeanOwned>::to_u8(bi),
+        );
         Self::new(ctor.into())
       },
       ExprData::ForallE(name, ty, body, bi, h) => {
@@ -104,7 +107,10 @@ impl LeanIxExpr<LeanOwned> {
         ctor.set(1, ty_obj);
         ctor.set(2, body_obj);
         ctor.set(3, hash_obj);
-        ctor.set_u8(ctor.scalar_base(0), LeanIxBinderInfo::<LeanOwned>::to_u8(bi));
+        ctor.set_u8(
+          ctor.scalar_base(0),
+          LeanIxBinderInfo::<LeanOwned>::to_u8(bi),
+        );
         Self::new(ctor.into())
       },
       ExprData::LetE(name, ty, val, body, non_dep, h) => {

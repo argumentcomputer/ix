@@ -522,7 +522,8 @@ pub fn decode_constant_info(
         .map(|o| decode_name(o, cache.global))
         .collect();
       let num_nested = Nat::from_obj(&num_nested);
-      let [is_rec, is_unsafe, is_reflexive] = inner.get_bools::<3>(inner.scalar_base(0));
+      let [is_rec, is_unsafe, is_reflexive] =
+        inner.get_bools::<3>(inner.scalar_base(0));
       ConstantInfo::InductInfo(InductiveVal {
         cnst: constant_val,
         num_params,
@@ -554,8 +555,15 @@ pub fn decode_constant_info(
       })
     },
     7 => {
-      let [constant_val, all, num_params, num_indices, num_motives, num_minors, rules] =
-        inner.objs::<7>();
+      let [
+        constant_val,
+        all,
+        num_params,
+        num_indices,
+        num_motives,
+        num_minors,
+        rules,
+      ] = inner.objs::<7>();
       let constant_val = decode_constant_val(constant_val, cache);
       let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()

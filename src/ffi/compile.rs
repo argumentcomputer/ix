@@ -174,14 +174,18 @@ pub extern "C" fn rs_roundtrip_block_compare_detail(
   obj: LeanIxBlockCompareDetail<LeanBorrowed<'_>>,
 ) -> LeanIxBlockCompareDetail<LeanOwned> {
   let ctor = obj.as_ctor();
-  let [lean_sharing_len, rust_sharing_len] = ctor.get_scalars::<2, u64>(ctor.scalar_base(0));
+  let [lean_sharing_len, rust_sharing_len] =
+    ctor.get_scalars::<2, u64>(ctor.scalar_base(0));
 
   let result_obj =
     rs_roundtrip_block_compare_result(LeanIxBlockCompareResult(ctor.get(0)));
 
   let out = LeanCtor::alloc(0, 1, 16);
   out.set(0, result_obj);
-  out.set_scalars::<2, u64>(out.scalar_base(0), [lean_sharing_len, rust_sharing_len]);
+  out.set_scalars::<2, u64>(
+    out.scalar_base(0),
+    [lean_sharing_len, rust_sharing_len],
+  );
   LeanIxBlockCompareDetail::new(out.into())
 }
 

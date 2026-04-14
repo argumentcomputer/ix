@@ -267,7 +267,10 @@ impl LeanIxConstantInfo<LeanOwned> {
         induct_val.set(3, all_obj);
         induct_val.set(4, ctors_obj);
         induct_val.set(5, num_nested_obj);
-        induct_val.set_bools::<3>(induct_val.scalar_base(0), [v.is_rec, v.is_unsafe, v.is_reflexive]);
+        induct_val.set_bools::<3>(
+          induct_val.scalar_base(0),
+          [v.is_rec, v.is_unsafe, v.is_reflexive],
+        );
 
         let obj = LeanCtor::alloc(5, 1, 0);
         obj.set(0, induct_val);
@@ -391,7 +394,8 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         })
       },
       5 => {
-        let [is_rec, is_unsafe, is_reflexive] = inner.get_bools::<3>(inner.scalar_base(0));
+        let [is_rec, is_unsafe, is_reflexive] =
+          inner.get_bools::<3>(inner.scalar_base(0));
 
         ConstantInfo::InductInfo(InductiveVal {
           cnst: LeanIxConstantVal(inner.get(0)).decode(),

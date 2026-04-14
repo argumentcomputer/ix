@@ -369,7 +369,10 @@ impl LeanIxonConstantMeta<LeanOwned> {
         ctor.set(3, LeanIxAddress::build_array(all));
         ctor.set(4, LeanIxAddress::build_array(ctx));
         ctor.set(5, LeanIxonExprMetaArena::build(arena));
-        ctor.set_scalars::<2, u64>(ctor.scalar_base(0), [*type_root, *value_root]);
+        ctor.set_scalars::<2, u64>(
+          ctor.scalar_base(0),
+          [*type_root, *value_root],
+        );
         ctor.into()
       },
 
@@ -461,7 +464,8 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let ctx = decode_address_array(ctor.get(4).as_array());
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(5).to_owned_ref()).decode();
-        let [type_root, value_root] = ctor.get_scalars::<2, u64>(ctor.scalar_base(0));
+        let [type_root, value_root] =
+          ctor.get_scalars::<2, u64>(ctor.scalar_base(0));
         ConstantMeta::Def {
           name,
           lvls,
