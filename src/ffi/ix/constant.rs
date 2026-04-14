@@ -24,6 +24,8 @@ use lean_ffi::nat::Nat;
 use lean_ffi::object::LeanBorrowed;
 use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned, LeanRef};
 
+use lean_ffi::object::scalar_base;
+
 use crate::ffi::builder::LeanBuildCache;
 
 // =============================================================================
@@ -78,7 +80,7 @@ impl LeanIxReducibilityHints<LeanOwned> {
       ReducibilityHints::Regular(h) => {
         // UInt32 is a scalar, stored inline
         let ctor = LeanCtor::alloc(2, 0, 4);
-        ctor.set_u32(ctor.scalar_base(0), *h);
+        ctor.set_u32(scalar_base(&ctor, 0), *h);
         ctor.into()
       },
     };
@@ -104,7 +106,7 @@ impl<R: LeanRef> LeanIxReducibilityHints<R> {
       1 => ReducibilityHints::Abbrev,
       2 => {
         // regular: 0 obj fields, 4 scalar bytes (UInt32)
-        ReducibilityHints::Regular(ctor.get_u32(ctor.scalar_base(0)))
+        ReducibilityHints::Regular(ctor.get_u32(scalar_base(&ctor, 0)))
       },
       _ => panic!("Invalid ReducibilityHints tag: {}", ctor.tag()),
     }
@@ -165,7 +167,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
         let axiom_val = LeanCtor::alloc(0, 1, 1);
         axiom_val.set(0, cnst_obj);
-        axiom_val.set_bool(axiom_val.scalar_base(0), v.is_unsafe);
+        axiom_val.set_bool(scalar_base(&axiom_val, 0), v.is_unsafe);
 
         let obj = LeanCtor::alloc(0, 1, 0);
         obj.set(0, axiom_val);
@@ -190,7 +192,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         defn_val.set(1, value_obj);
         defn_val.set(2, hints_obj);
         defn_val.set(3, all_obj);
-        defn_val.set_u8(defn_val.scalar_base(0), safety_byte);
+        defn_val.set_u8(scalar_base(&defn_val, 0), safety_byte);
 
         let obj = LeanCtor::alloc(1, 1, 0);
         obj.set(0, defn_val);
@@ -223,7 +225,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         opaque_val.set(0, cnst_obj);
         opaque_val.set(1, value_obj);
         opaque_val.set(2, all_obj);
-        opaque_val.set_bool(opaque_val.scalar_base(0), v.is_unsafe);
+        opaque_val.set_bool(scalar_base(&opaque_val, 0), v.is_unsafe);
 
         let obj = LeanCtor::alloc(3, 1, 0);
         obj.set(0, opaque_val);
@@ -243,7 +245,7 @@ impl LeanIxConstantInfo<LeanOwned> {
 
         let quot_val = LeanCtor::alloc(0, 1, 1);
         quot_val.set(0, cnst_obj);
-        quot_val.set_u8(quot_val.scalar_base(0), kind_byte);
+        quot_val.set_u8(scalar_base(&quot_val, 0), kind_byte);
 
         let obj = LeanCtor::alloc(4, 1, 0);
         obj.set(0, quot_val);
@@ -267,10 +269,10 @@ impl LeanIxConstantInfo<LeanOwned> {
         induct_val.set(3, all_obj);
         induct_val.set(4, ctors_obj);
         induct_val.set(5, num_nested_obj);
-        induct_val.set_scalars::<3, bool>(
-          induct_val.scalar_base(0),
-          [v.is_rec, v.is_unsafe, v.is_reflexive],
-        );
+        let s = scalar_base(&induct_val, 0);
+        induct_val.set_bool(s, v.is_rec);
+        induct_val.set_bool(s + 1, v.is_unsafe);
+        induct_val.set_bool(s + 2, v.is_reflexive);
 
         let obj = LeanCtor::alloc(5, 1, 0);
         obj.set(0, induct_val);
@@ -292,7 +294,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         ctor_val.set(2, cidx_obj);
         ctor_val.set(3, num_params_obj);
         ctor_val.set(4, num_fields_obj);
-        ctor_val.set_bool(ctor_val.scalar_base(0), v.is_unsafe);
+        ctor_val.set_bool(scalar_base(&ctor_val, 0), v.is_unsafe);
 
         let obj = LeanCtor::alloc(6, 1, 0);
         obj.set(0, ctor_val);
@@ -318,8 +320,9 @@ impl LeanIxConstantInfo<LeanOwned> {
         rec_val.set(4, num_motives_obj);
         rec_val.set(5, num_minors_obj);
         rec_val.set(6, rules_obj);
-        rec_val
-          .set_scalars::<2, bool>(rec_val.scalar_base(0), [v.k, v.is_unsafe]);
+        let s = scalar_base(&rec_val, 0);
+        rec_val.set_bool(s, v.k);
+        rec_val.set_bool(s + 1, v.is_unsafe);
 
         let obj = LeanCtor::alloc(7, 1, 0);
         obj.set(0, rec_val);
@@ -340,7 +343,7 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
 
     match outer.tag() {
       0 => {
-        let is_unsafe = inner.get_bool(inner.scalar_base(0));
+        let is_unsafe = inner.get_bool(scalar_base(&inner, 0));
 
         ConstantInfo::AxiomInfo(AxiomVal {
           cnst: LeanIxConstantVal(inner.get(0)).decode(),
@@ -348,7 +351,7 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         })
       },
       1 => {
-        let safety_byte = inner.get_u8(inner.scalar_base(0));
+        let safety_byte = inner.get_u8(scalar_base(&inner, 0));
         let safety = match safety_byte {
           0 => DefinitionSafety::Unsafe,
           1 => DefinitionSafety::Safe,
@@ -370,7 +373,7 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         all: LeanIxName::decode_array(inner.get(2).as_array()),
       }),
       3 => {
-        let is_unsafe = inner.get_bool(inner.scalar_base(0));
+        let is_unsafe = inner.get_bool(scalar_base(&inner, 0));
 
         ConstantInfo::OpaqueInfo(OpaqueVal {
           cnst: LeanIxConstantVal(inner.get(0)).decode(),
@@ -380,7 +383,7 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         })
       },
       4 => {
-        let kind_byte = inner.get_u8(inner.scalar_base(0));
+        let kind_byte = inner.get_u8(scalar_base(&inner, 0));
         let kind = match kind_byte {
           0 => QuotKind::Type,
           1 => QuotKind::Ctor,
@@ -395,8 +398,10 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         })
       },
       5 => {
-        let [is_rec, is_unsafe, is_reflexive] =
-          inner.get_scalars::<3, bool>(inner.scalar_base(0));
+        let s = scalar_base(&inner, 0);
+        let is_rec = inner.get_bool(s);
+        let is_unsafe = inner.get_bool(s + 1);
+        let is_reflexive = inner.get_bool(s + 2);
 
         ConstantInfo::InductInfo(InductiveVal {
           cnst: LeanIxConstantVal(inner.get(0)).decode(),
@@ -411,7 +416,7 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         })
       },
       6 => {
-        let is_unsafe = inner.get_bool(inner.scalar_base(0));
+        let is_unsafe = inner.get_bool(scalar_base(&inner, 0));
 
         ConstantInfo::CtorInfo(ConstructorVal {
           cnst: LeanIxConstantVal(inner.get(0)).decode(),
@@ -423,7 +428,9 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         })
       },
       7 => {
-        let [k, is_unsafe] = inner.get_scalars::<2, bool>(inner.scalar_base(0));
+        let s = scalar_base(&inner, 0);
+        let k = inner.get_bool(s);
+        let is_unsafe = inner.get_bool(s + 1);
 
         let rules: Vec<RecursorRule> =
           inner.get(6).as_array().map(|x| LeanIxRecursorRule(x).decode());

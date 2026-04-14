@@ -27,6 +27,8 @@ use std::sync::Arc;
 use lean_ffi::nat::Nat;
 use lean_ffi::object::{LeanBorrowed, LeanList, LeanRef, LeanShared};
 
+use lean_ffi::object::scalar_base;
+
 use crate::ix::env::{
   AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
   DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,
@@ -522,8 +524,10 @@ pub fn decode_constant_info(
         .map(|o| decode_name(o, cache.global))
         .collect();
       let num_nested = Nat::from_obj(&num_nested);
-      let [is_rec, is_unsafe, is_reflexive] =
-        inner.get_scalars::<3, bool>(inner.scalar_base(0));
+      let s = scalar_base(&inner, 0);
+      let is_rec = inner.get_bool(s);
+      let is_unsafe = inner.get_bool(s + 1);
+      let is_reflexive = inner.get_bool(s + 2);
       ConstantInfo::InductInfo(InductiveVal {
         cnst: constant_val,
         num_params,
@@ -577,7 +581,9 @@ pub fn decode_constant_info(
         .into_iter()
         .map(|o| decode_recursor_rule(o, cache))
         .collect();
-      let [k, is_unsafe] = inner.get_scalars::<2, bool>(inner.scalar_base(0));
+      let s = scalar_base(&inner, 0);
+      let k = inner.get_bool(s);
+      let is_unsafe = inner.get_bool(s + 1);
       ConstantInfo::RecInfo(RecursorVal {
         cnst: constant_val,
         all,

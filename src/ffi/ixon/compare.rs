@@ -8,8 +8,10 @@ use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
 use crate::lean::{LeanIxBlockCompareDetail, LeanIxBlockCompareResult};
 use lean_ffi::object::{
-  LeanBorrowed, LeanByteArray, LeanCtor, LeanList, LeanOwned,
+  LeanBorrowed, LeanByteArray, LeanCtor, LeanCtorScalar, LeanList, LeanOwned,
 };
+
+use lean_ffi::object::scalar_base;
 
 use crate::ffi::lean_env::{
   Cache as LeanCache, GlobalCache, decode_expr, decode_name,
@@ -79,10 +81,10 @@ impl LeanIxBlockCompareResult<LeanOwned> {
     } else {
       // mismatch
       let ctor = LeanCtor::alloc(1, 0, 24);
-      ctor.set_scalars::<3, u64>(
-        ctor.scalar_base(0),
-        [lean_size, rust_size, first_diff_offset],
-      );
+      let s = scalar_base(&ctor, 0);
+      ctor.set_u64(s, lean_size);
+      ctor.set_u64(s + 8, rust_size);
+      ctor.set_u64(s + 16, first_diff_offset);
       ctor.into()
     };
     Self::new(obj)
@@ -98,11 +100,10 @@ impl LeanIxBlockCompareDetail<LeanOwned> {
   ) -> Self {
     let ctor = LeanCtor::alloc(0, 1, 16);
     ctor.set(0, result);
-    ctor.set_scalars::<2, u64>(
-      ctor.scalar_base(0),
-      [lean_sharing_len, rust_sharing_len],
-    );
-    Self::new(ctor.into())
+    let out = Self::new(ctor.into());
+    out.set_64(0, lean_sharing_len);
+    out.set_64(1, rust_sharing_len);
+    out
   }
 }
 

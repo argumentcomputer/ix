@@ -133,6 +133,26 @@ lean_ffi::lean_domain_type! {
   LeanIxBlockCompareDetail;
 }
 
+// =============================================================================
+// LeanCtorScalar impls for Ixon structure types
+// =============================================================================
+
+// ixon/constant.rs structures
+lean_ffi::impl_ctor_scalar!(LeanIxonDefinition     { NUM_8B = 1 });
+lean_ffi::impl_ctor_scalar!(LeanIxonRecursorRule   { NUM_8B = 1 });
+lean_ffi::impl_ctor_scalar!(LeanIxonRecursor       { NUM_8B = 5 });
+lean_ffi::impl_ctor_scalar!(LeanIxonAxiom          { NUM_8B = 1 });
+lean_ffi::impl_ctor_scalar!(LeanIxonQuotient       { NUM_8B = 1 });
+lean_ffi::impl_ctor_scalar!(LeanIxonConstructor    { NUM_8B = 4 });
+lean_ffi::impl_ctor_scalar!(LeanIxonInductive      { NUM_8B = 4 });
+lean_ffi::impl_ctor_scalar!(LeanIxonInductiveProj  { NUM_8B = 1 });
+lean_ffi::impl_ctor_scalar!(LeanIxonConstructorProj { NUM_8B = 2 });
+lean_ffi::impl_ctor_scalar!(LeanIxonRecursorProj   { NUM_8B = 1 });
+lean_ffi::impl_ctor_scalar!(LeanIxonDefinitionProj { NUM_8B = 1 });
+
+// ixon/compare.rs + compile.rs
+lean_ffi::impl_ctor_scalar!(LeanIxBlockCompareDetail { NUM_8B = 2 });
+
 /// Lean `Address` object — newtype over `LeanByteArray`.
 ///
 /// Address is a single-field struct in Lean, so it's unboxed to ByteArray

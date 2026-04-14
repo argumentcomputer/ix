@@ -6,6 +6,8 @@ use crate::ix::ixon::univ::Univ;
 use crate::lean::LeanIxonUniv;
 use lean_ffi::object::{LeanArray, LeanBorrowed, LeanCtor, LeanOwned, LeanRef};
 
+use lean_ffi::object::scalar_base;
+
 impl LeanIxonUniv<LeanOwned> {
   /// Build Ixon.Univ
   pub fn build(univ: &Univ) -> Self {
@@ -30,7 +32,7 @@ impl LeanIxonUniv<LeanOwned> {
       },
       Univ::Var(idx) => {
         let ctor = LeanCtor::alloc(4, 0, 8);
-        ctor.set_u64(ctor.scalar_base(0), *idx);
+        ctor.set_u64(scalar_base(&ctor, 0), *idx);
         ctor.into()
       },
     };
@@ -65,7 +67,7 @@ impl<R: LeanRef> LeanIxonUniv<R> {
         Arc::new(LeanIxonUniv(ctor.get(0)).decode()),
         Arc::new(LeanIxonUniv(ctor.get(1)).decode()),
       ),
-      4 => Univ::Var(ctor.get_u64(ctor.scalar_base(0))),
+      4 => Univ::Var(ctor.get_u64(scalar_base(&ctor, 0))),
       tag => panic!("Invalid Ixon.Univ tag: {tag}"),
     }
   }

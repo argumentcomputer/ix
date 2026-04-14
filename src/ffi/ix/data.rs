@@ -12,6 +12,8 @@ use lean_ffi::nat::Nat;
 use lean_ffi::object::LeanBorrowed;
 use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned, LeanRef, LeanString};
 
+use lean_ffi::object::scalar_base;
+
 use crate::ffi::builder::LeanBuildCache;
 
 impl LeanIxInt<LeanOwned> {
@@ -87,7 +89,7 @@ impl LeanIxSourceInfo<LeanOwned> {
         let obj = LeanCtor::alloc(1, 2, 1);
         obj.set(0, Nat::to_lean(pos));
         obj.set(1, Nat::to_lean(end_pos));
-        obj.set_bool(obj.scalar_base(0), *canonical);
+        obj.set_bool(scalar_base(&obj, 0), *canonical);
         Self::new(obj.into())
       },
       // | none -- tag 2
@@ -115,7 +117,7 @@ impl<R: LeanRef> LeanIxSourceInfo<R> {
       },
       1 => {
         // synthetic: 2 obj fields (pos, end_pos), 1 scalar byte (canonical)
-        let canonical = ctor.get_bool(ctor.scalar_base(0));
+        let canonical = ctor.get_bool(scalar_base(&ctor, 0));
 
         SourceInfo::Synthetic(
           Nat::from_obj(&ctor.get(0)),
@@ -299,7 +301,7 @@ impl LeanIxDataValue<LeanOwned> {
       DataValue::OfBool(b) => {
         // 0 object fields, 1 scalar byte
         let obj = LeanCtor::alloc(1, 0, 1);
-        obj.set_bool(obj.scalar_base(0), *b);
+        obj.set_bool(scalar_base(&obj, 0), *b);
         Self::new(obj.into())
       },
       DataValue::OfName(n) => {
@@ -355,7 +357,7 @@ impl<R: LeanRef> LeanIxDataValue<R> {
       },
       1 => {
         // ofBool: 0 object fields, 1 scalar byte
-        let b = ctor.get_bool(ctor.scalar_base(0));
+        let b = ctor.get_bool(scalar_base(&ctor, 0));
         DataValue::OfBool(b)
       },
       2 => {
