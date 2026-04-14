@@ -523,7 +523,7 @@ pub fn decode_constant_info(
         .collect();
       let num_nested = Nat::from_obj(&num_nested);
       let [is_rec, is_unsafe, is_reflexive] =
-        inner.get_bools::<3>(inner.scalar_base(0));
+        inner.get_scalars::<3, bool>(inner.scalar_base(0));
       ConstantInfo::InductInfo(InductiveVal {
         cnst: constant_val,
         num_params,
@@ -577,7 +577,7 @@ pub fn decode_constant_info(
         .into_iter()
         .map(|o| decode_recursor_rule(o, cache))
         .collect();
-      let [k, is_unsafe] = inner.get_bools::<2>(inner.scalar_base(0));
+      let [k, is_unsafe] = inner.get_scalars::<2, bool>(inner.scalar_base(0));
       ConstantInfo::RecInfo(RecursorVal {
         cnst: constant_val,
         all,

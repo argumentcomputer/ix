@@ -234,7 +234,7 @@ fn decode_function(ctor: LeanCtor<LeanBorrowed<'_>>) -> Function {
   let [body_obj, layout_obj] = ctor.objs::<2>();
   let body = decode_block(body_obj.as_ctor());
   let layout = decode_function_layout(layout_obj.as_ctor());
-  let [entry, constrained] = ctor.get_bools::<2>(ctor.scalar_base(0));
+  let [entry, constrained] = ctor.get_scalars::<2, bool>(ctor.scalar_base(0));
   Function { body, layout, entry, constrained }
 }
 
