@@ -3,6 +3,8 @@ import Ix.Aiur.Compiler
 import Ix.Aiur.Protocol
 import Ix.Benchmark.Bench
 
+open BgroupM
+
 def toplevel := ⟦
   enum Nat {
     Zero,
@@ -73,54 +75,56 @@ def proveE2E (name: Lean.Name) : IO UInt32 := do
   | .ok _ => return 0
   | .error e => IO.eprintln e; return 1
 
+/-- Compile `toplevel` once so the per-stage benchmarks can reuse the result. -/
+def compileToplevel : IO Aiur.CompiledToplevel := do
+  match toplevel.compile with
+  | .error e => throw (IO.userError e)
+  | .ok compiled => pure compiled
 
--- End-to-end proof generation and verification benchmark
-def proveE2EBench := bgroup "prove E2E" [
-  benchIO "fib 10" proveE2E `main
-] { samplingMode := .flat }
+-- End-to-end proof generation and verification benchmark. `samplingMode`
+-- defaults to `.auto`, which will fall back to flat for this slow bench.
+def proveE2EBench : IO $ Array BenchReport :=
+  bgroup "prove E2E" {} do
+    benchIO "fib 10" proveE2E `main
 
--- Individual benchmarks of each step from `proveE2E`
+-- Individual benchmarks of each step from `proveE2E`. Each stage has different
+-- `α`/`β` types, so they live in their own `bgroup` even though they share
+-- the `nat_fib` group name on disk.
 
-def toplevelBench := bgroup "nat_fib" [
-  bench "simplify toplevel" Aiur.Toplevel.checkAndSimplify toplevel
-]
+def toplevelBench : IO $ Array BenchReport :=
+  bgroup "nat_fib" {} do
+    bench "simplify toplevel" Aiur.Toplevel.checkAndSimplify toplevel
 
 def compileBench : IO $ Array BenchReport := do
   match toplevel.checkAndSimplify with
   | .error e => throw (IO.userError s!"{repr e}")
   | .ok decls =>
-    bgroup "nat_fib" [
+    bgroup "nat_fib" {} do
       bench "compile decls" Aiur.TypedDecls.toBytecode decls
-    ]
 
 def buildAiurSystemBench : IO $ Array BenchReport := do
-  let compiled ← match toplevel.compile with
-    | .error e => throw (IO.userError e)
-    | .ok compiled => pure compiled
-  bgroup "nat_fib" [
+  let compiled ← compileToplevel
+  bgroup "nat_fib" {} do
     bench "build AiurSystem" (Aiur.AiurSystem.build compiled.bytecode) commitmentParameters
-  ]
 
 def proveBench : IO $ Array BenchReport := do
-  let compiled ← match toplevel.compile with
-    | .error e => throw (IO.userError e)
-    | .ok compiled => pure compiled
+  let compiled ← compileToplevel
   let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
   let funIdx := compiled.getFuncIdx `main |>.get!
-  bgroup "nat_fib" [
-    bench "prove fib 10" (Aiur.AiurSystem.prove system friParameters funIdx #[10]) default,
-  ]
+  bgroup "nat_fib" {} do
+    bench "prove fib 10" (Aiur.AiurSystem.prove system friParameters funIdx #[10]) default
 
 def verifyBench : IO $ Array BenchReport := do
-  let compiled ← match toplevel.compile with
-    | .error e => throw (IO.userError e)
-    | .ok compiled => pure compiled
+  let compiled ← compileToplevel
   let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
   let funIdx := compiled.getFuncIdx `main |>.get!
   let (claim, proof, _) := system.prove friParameters funIdx #[10] default
-  bgroup "nat_fib" [
+  bgroup "nat_fib" {} do
     bench "verify fib 10" (Aiur.AiurSystem.verify system friParameters claim) proof
-  ]
 
-def main (_args : List String) : IO Unit := do
-  let _result ← proveBench
+def main : IO Unit := do
+  let _ ← toplevelBench
+  let _ ← compileBench
+  let _ ← buildAiurSystemBench
+  let _ ← proveBench
+  let _ ← verifyBench

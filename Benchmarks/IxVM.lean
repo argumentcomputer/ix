@@ -4,6 +4,8 @@ import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Benchmark.Bench
 
+open BgroupM
+
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
   capHeight := 0
@@ -36,9 +38,9 @@ def main : IO Unit := do
     let (_, bytes) := Ixon.Serialize.put c |>.run default
     (ioBuffer.extend #[.ofNat i] (bytes.data.map .ofUInt8), i + 1)
 
-  let _report ← oneShotBench "IxVM benchmarks"
-    (bench "serde/blake3 Nat.add_comm"
+  let _ ← bgroup "IxVM benchmarks" { oneShot := true } do
+    throughput (.Elements n.toUInt64 "consts")
+    bench "serde/blake3 Nat.add_comm"
       (aiurSystem.prove friParameters funIdx #[.ofNat n])
-      ioBuffer)
-    { oneShot := true }
+      ioBuffer
   return
