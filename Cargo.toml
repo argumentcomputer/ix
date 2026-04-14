@@ -25,7 +25,7 @@ tokio = { version = "1.44.1", optional = true }
 iroh = { version = "0.97", optional = true }
 iroh-base = { version = "0.97", optional = true }
 n0-error = { version = "0.1", optional = true }
-rand = { version = "0.9.4", optional = true }
+getrandom = { version = "0.3", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 bincode = { version = "2.0.1", optional = true }
@@ -40,7 +40,7 @@ quickcheck_macros = "1.0.0"
 default = []
 parallel = ["multi-stark/parallel"]
 test-ffi = []
-net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "rand", "tracing", "tracing-subscriber", "bincode", "serde" ]
+net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "tracing", "tracing-subscriber", "bincode", "serde" ]
 
 [profile.dev]
 panic = "abort"

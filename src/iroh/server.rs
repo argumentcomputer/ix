@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use iroh::{Endpoint, RelayMode, SecretKey, endpoint::{ConnectionError, presets}};
+use iroh::{
+  Endpoint, RelayMode, SecretKey,
+  endpoint::{ConnectionError, presets},
+};
 use n0_error::StdResultExt;
 use tracing::{debug, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
@@ -23,7 +26,11 @@ pub async fn serve() -> n0_error::Result<()> {
     .with(fmt::layer())
     .with(EnvFilter::new("info"))
     .init();
-  let secret_key = SecretKey::generate(&mut rand::rng());
+  let secret_key = {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).expect("failed to generate random bytes");
+    SecretKey::from(bytes)
+  };
   println!("public key: {}", secret_key.public());
 
   // Build a `Endpoint`, which uses PublicKeys as node identifiers, uses QUIC for directly connecting to other nodes, and uses the relay protocol and relay servers to holepunch direct connections between nodes when there are NATs or firewalls preventing direct connections. If no direct connection can be made, packets are relayed over the relay servers.
@@ -153,7 +160,9 @@ pub async fn serve() -> n0_error::Result<()> {
       let res = tokio::time::timeout(Duration::from_secs(3), async move {
         let closed = conn.closed().await;
         if !matches!(closed, ConnectionError::ApplicationClosed(_)) {
-          println!("endpoint {endpoint_id} disconnected with an error: {closed:#}");
+          println!(
+            "endpoint {endpoint_id} disconnected with an error: {closed:#}"
+          );
         }
       })
       .await;

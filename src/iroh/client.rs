@@ -1,6 +1,6 @@
 use iroh::{
-  Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey, TransportAddr,
-  endpoint::presets,
+  Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey,
+  TransportAddr, endpoint::presets,
 };
 use n0_error::{Result, StdResultExt};
 use std::net::SocketAddr;
@@ -28,7 +28,11 @@ pub async fn connect(
     .with(fmt::layer())
     .with(EnvFilter::new("warn"))
     .try_init();
-  let secret_key = SecretKey::generate(&mut rand::rng());
+  let secret_key = {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).expect("failed to generate random bytes");
+    SecretKey::from(bytes)
+  };
   println!("public key: {}", secret_key.public());
 
   // Build a `Endpoint`, which uses PublicKeys as node identifiers, uses QUIC for directly connecting to other nodes, and uses the relay protocol and relay servers to holepunch direct connections between nodes when there are NATs or firewalls preventing direct connections. If no direct connection can be made, packets are relayed over the relay servers.
@@ -64,8 +68,9 @@ pub async fn connect(
     .collect::<std::result::Result<Vec<_>, _>>()
     .anyerr()?;
   let relay = relay_url.parse::<RelayUrl>().anyerr()?;
-  let all_addrs =
-    parsed_addrs.into_iter().chain(std::iter::once(TransportAddr::Relay(relay)));
+  let all_addrs = parsed_addrs
+    .into_iter()
+    .chain(std::iter::once(TransportAddr::Relay(relay)));
   let addr = EndpointAddr::from_parts(
     node_id.parse::<EndpointId>().anyerr()?,
     all_addrs,
