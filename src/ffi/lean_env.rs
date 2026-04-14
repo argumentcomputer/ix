@@ -508,15 +508,8 @@ pub fn decode_constant_info(
       ConstantInfo::QuotInfo(QuotVal { cnst: constant_val, kind })
     },
     5 => {
-      let [
-        constant_val,
-        num_params,
-        num_indices,
-        all,
-        ctors,
-        num_nested,
-        bools,
-      ] = inner.objs();
+      let [constant_val, num_params, num_indices, all, ctors, num_nested] =
+        inner.objs::<6>();
       let constant_val = decode_constant_val(constant_val, cache);
       let num_params = Nat::from_obj(&num_params);
       let num_indices = Nat::from_obj(&num_indices);
@@ -529,8 +522,7 @@ pub fn decode_constant_info(
         .map(|o| decode_name(o, cache.global))
         .collect();
       let num_nested = Nat::from_obj(&num_nested);
-      let [is_rec, is_unsafe, is_reflexive, ..] =
-        (bools.as_raw() as usize).to_le_bytes().map(|b| b == 1);
+      let [is_rec, is_unsafe, is_reflexive] = inner.get_bools::<3>(inner.scalar_base(0));
       ConstantInfo::InductInfo(InductiveVal {
         cnst: constant_val,
         num_params,
@@ -562,16 +554,8 @@ pub fn decode_constant_info(
       })
     },
     7 => {
-      let [
-        constant_val,
-        all,
-        num_params,
-        num_indices,
-        num_motives,
-        num_minors,
-        rules,
-        bools,
-      ] = inner.objs();
+      let [constant_val, all, num_params, num_indices, num_motives, num_minors, rules] =
+        inner.objs::<7>();
       let constant_val = decode_constant_val(constant_val, cache);
       let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
@@ -585,8 +569,7 @@ pub fn decode_constant_info(
         .into_iter()
         .map(|o| decode_recursor_rule(o, cache))
         .collect();
-      let [k, is_unsafe, ..] =
-        (bools.as_raw() as usize).to_le_bytes().map(|b| b == 1);
+      let [k, is_unsafe] = inner.get_bools::<2>(inner.scalar_base(0));
       ConstantInfo::RecInfo(RecursorVal {
         cnst: constant_val,
         all,

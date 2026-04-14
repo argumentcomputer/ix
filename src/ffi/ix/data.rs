@@ -87,7 +87,7 @@ impl LeanIxSourceInfo<LeanOwned> {
         let obj = LeanCtor::alloc(1, 2, 1);
         obj.set(0, Nat::to_lean(pos));
         obj.set(1, Nat::to_lean(end_pos));
-        obj.set_bool(2, 0, *canonical);
+        obj.set_bool(obj.scalar_base(0), *canonical);
         Self::new(obj.into())
       },
       // | none -- tag 2
@@ -115,7 +115,7 @@ impl<R: LeanRef> LeanIxSourceInfo<R> {
       },
       1 => {
         // synthetic: 2 obj fields (pos, end_pos), 1 scalar byte (canonical)
-        let canonical = ctor.get_u8(2, 0) != 0;
+        let canonical = ctor.get_bool(ctor.scalar_base(0));
 
         SourceInfo::Synthetic(
           Nat::from_obj(&ctor.get(0)),
@@ -299,7 +299,7 @@ impl LeanIxDataValue<LeanOwned> {
       DataValue::OfBool(b) => {
         // 0 object fields, 1 scalar byte
         let obj = LeanCtor::alloc(1, 0, 1);
-        obj.set_bool(0, 0, *b);
+        obj.set_bool(obj.scalar_base(0), *b);
         Self::new(obj.into())
       },
       DataValue::OfName(n) => {
@@ -355,7 +355,7 @@ impl<R: LeanRef> LeanIxDataValue<R> {
       },
       1 => {
         // ofBool: 0 object fields, 1 scalar byte
-        let b = ctor.get_u8(0, 0) != 0;
+        let b = ctor.get_bool(ctor.scalar_base(0));
         DataValue::OfBool(b)
       },
       2 => {

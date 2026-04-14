@@ -157,14 +157,10 @@ pub extern "C" fn rs_roundtrip_block_compare_result(
   match ctor.tag() {
     1 => {
       // mismatch: 0 obj, 24 scalar bytes (3 × u64)
-      let lean_size = ctor.get_u64(0, 0);
-      let rust_size = ctor.get_u64(0, 8);
-      let first_diff = ctor.get_u64(0, 16);
+      let vals = ctor.get_scalars::<3, u64>(ctor.scalar_base(0));
 
       let out = LeanCtor::alloc(1, 0, 24);
-      out.set_u64(0, 0, lean_size);
-      out.set_u64(0, 8, rust_size);
-      out.set_u64(0, 16, first_diff);
+      out.set_scalars::<3, u64>(out.scalar_base(0), vals);
       LeanIxBlockCompareResult::new(out.into())
     },
     _ => unreachable!("Invalid BlockCompareResult tag: {}", ctor.tag()),
@@ -178,16 +174,14 @@ pub extern "C" fn rs_roundtrip_block_compare_detail(
   obj: LeanIxBlockCompareDetail<LeanBorrowed<'_>>,
 ) -> LeanIxBlockCompareDetail<LeanOwned> {
   let ctor = obj.as_ctor();
-  let lean_sharing_len = ctor.get_u64(1, 0);
-  let rust_sharing_len = ctor.get_u64(1, 8);
+  let [lean_sharing_len, rust_sharing_len] = ctor.get_scalars::<2, u64>(ctor.scalar_base(0));
 
   let result_obj =
     rs_roundtrip_block_compare_result(LeanIxBlockCompareResult(ctor.get(0)));
 
   let out = LeanCtor::alloc(0, 1, 16);
   out.set(0, result_obj);
-  out.set_u64(1, 0, lean_sharing_len);
-  out.set_u64(1, 8, rust_sharing_len);
+  out.set_scalars::<2, u64>(out.scalar_base(0), [lean_sharing_len, rust_sharing_len]);
   LeanIxBlockCompareDetail::new(out.into())
 }
 
@@ -258,7 +252,7 @@ pub extern "C" fn rs_compile_env_full(
       let block = LeanCtor::alloc(0, 2, 8);
       block.set(0, name_obj);
       block.set(1, ba);
-      block.set_u64(2, 0, *sharing_len as u64);
+      block.set_u64(block.scalar_base(0), *sharing_len as u64);
 
       blocks_arr.set(i, block);
     }
@@ -1082,31 +1076,31 @@ impl LeanIxSerializeError<LeanOwned> {
       SerializeError::InvalidTag { tag, context } => {
         let ctor = LeanCtor::alloc(1, 1, 1);
         ctor.set(0, build_lean_string(context));
-        ctor.set_u8(1, 0, *tag);
+        ctor.set_u8(ctor.scalar_base(0), *tag);
         ctor.into()
       },
       SerializeError::InvalidFlag { flag, context } => {
         let ctor = LeanCtor::alloc(2, 1, 1);
         ctor.set(0, build_lean_string(context));
-        ctor.set_u8(1, 0, *flag);
+        ctor.set_u8(ctor.scalar_base(0), *flag);
         ctor.into()
       },
       SerializeError::InvalidVariant { variant, context } => {
         let ctor = LeanCtor::alloc(3, 1, 8);
         ctor.set(0, build_lean_string(context));
-        ctor.set_u64(1, 0, *variant);
+        ctor.set_u64(ctor.scalar_base(0), *variant);
         ctor.into()
       },
       SerializeError::InvalidBool { value } => {
         let ctor = LeanCtor::alloc(4, 0, 1);
-        ctor.set_u8(0, 0, *value);
+        ctor.set_u8(ctor.scalar_base(0), *value);
         ctor.into()
       },
       SerializeError::AddressError => LeanOwned::box_usize(5),
       SerializeError::InvalidShareIndex { idx, max } => {
         let ctor = LeanCtor::alloc(6, 1, 8);
         ctor.set(0, build_lean_nat_usize(*max));
-        ctor.set_u64(1, 0, *idx);
+        ctor.set_u64(ctor.scalar_base(0), *idx);
         ctor.into()
       },
     };
@@ -1131,21 +1125,21 @@ impl<R: LeanRef> LeanIxSerializeError<R> {
       },
       1 => {
         let context = ctor.get(0).as_string().to_string();
-        let tag_val = ctor.get_u8(1, 0);
+        let tag_val = ctor.get_u8(ctor.scalar_base(0));
         SerializeError::InvalidTag { tag: tag_val, context }
       },
       2 => {
         let context = ctor.get(0).as_string().to_string();
-        let flag = ctor.get_u8(1, 0);
+        let flag = ctor.get_u8(ctor.scalar_base(0));
         SerializeError::InvalidFlag { flag, context }
       },
       3 => {
         let context = ctor.get(0).as_string().to_string();
-        let variant = ctor.get_u64(1, 0);
+        let variant = ctor.get_u64(ctor.scalar_base(0));
         SerializeError::InvalidVariant { variant, context }
       },
       4 => {
-        let value = ctor.get_u8(0, 0);
+        let value = ctor.get_u8(ctor.scalar_base(0));
         SerializeError::InvalidBool { value }
       },
       5 => SerializeError::AddressError,
@@ -1154,7 +1148,7 @@ impl<R: LeanRef> LeanIxSerializeError<R> {
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
-        let idx = ctor.get_u64(1, 0);
+        let idx = ctor.get_u64(ctor.scalar_base(0));
         SerializeError::InvalidShareIndex { idx, max }
       },
       _ => unreachable!("Invalid SerializeError tag: {}", ctor.tag()),
@@ -1176,35 +1170,35 @@ impl LeanIxDecompileError<LeanOwned> {
         let ctor = LeanCtor::alloc(0, 2, 8);
         ctor.set(0, build_lean_nat_usize(*refs_len));
         ctor.set(1, build_lean_string(constant));
-        ctor.set_u64(2, 0, *idx);
+        ctor.set_u64(ctor.scalar_base(0), *idx);
         ctor.into()
       },
       DecompileError::InvalidUnivIndex { idx, univs_len, constant } => {
         let ctor = LeanCtor::alloc(1, 2, 8);
         ctor.set(0, build_lean_nat_usize(*univs_len));
         ctor.set(1, build_lean_string(constant));
-        ctor.set_u64(2, 0, *idx);
+        ctor.set_u64(ctor.scalar_base(0), *idx);
         ctor.into()
       },
       DecompileError::InvalidShareIndex { idx, max, constant } => {
         let ctor = LeanCtor::alloc(2, 2, 8);
         ctor.set(0, build_lean_nat_usize(*max));
         ctor.set(1, build_lean_string(constant));
-        ctor.set_u64(2, 0, *idx);
+        ctor.set_u64(ctor.scalar_base(0), *idx);
         ctor.into()
       },
       DecompileError::InvalidRecIndex { idx, ctx_size, constant } => {
         let ctor = LeanCtor::alloc(3, 2, 8);
         ctor.set(0, build_lean_nat_usize(*ctx_size));
         ctor.set(1, build_lean_string(constant));
-        ctor.set_u64(2, 0, *idx);
+        ctor.set_u64(ctor.scalar_base(0), *idx);
         ctor.into()
       },
       DecompileError::InvalidUnivVarIndex { idx, max, constant } => {
         let ctor = LeanCtor::alloc(4, 2, 8);
         ctor.set(0, build_lean_nat_usize(*max));
         ctor.set(1, build_lean_string(constant));
-        ctor.set_u64(2, 0, *idx);
+        ctor.set_u64(ctor.scalar_base(0), *idx);
         ctor.into()
       },
       DecompileError::MissingAddress(addr) => {
@@ -1254,7 +1248,7 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
         let constant = ctor.get(1).as_string().to_string();
-        let idx = ctor.get_u64(2, 0);
+        let idx = ctor.get_u64(ctor.scalar_base(0));
         DecompileError::InvalidRefIndex { idx, refs_len, constant }
       },
       1 => {
@@ -1263,7 +1257,7 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
         let constant = ctor.get(1).as_string().to_string();
-        let idx = ctor.get_u64(2, 0);
+        let idx = ctor.get_u64(ctor.scalar_base(0));
         DecompileError::InvalidUnivIndex { idx, univs_len, constant }
       },
       2 => {
@@ -1272,7 +1266,7 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
         let constant = ctor.get(1).as_string().to_string();
-        let idx = ctor.get_u64(2, 0);
+        let idx = ctor.get_u64(ctor.scalar_base(0));
         DecompileError::InvalidShareIndex { idx, max, constant }
       },
       3 => {
@@ -1281,7 +1275,7 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
         let constant = ctor.get(1).as_string().to_string();
-        let idx = ctor.get_u64(2, 0);
+        let idx = ctor.get_u64(ctor.scalar_base(0));
         DecompileError::InvalidRecIndex { idx, ctx_size, constant }
       },
       4 => {
@@ -1290,7 +1284,7 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
         let constant = ctor.get(1).as_string().to_string();
-        let idx = ctor.get_u64(2, 0);
+        let idx = ctor.get_u64(ctor.scalar_base(0));
         DecompileError::InvalidUnivVarIndex { idx, max, constant }
       },
       5 => DecompileError::MissingAddress(

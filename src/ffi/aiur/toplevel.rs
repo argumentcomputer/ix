@@ -231,11 +231,10 @@ fn decode_function_layout(ctor: LeanCtor<LeanBorrowed<'_>>) -> FunctionLayout {
 }
 
 fn decode_function(ctor: LeanCtor<LeanBorrowed<'_>>) -> Function {
-  let [body_obj, layout_obj, packed_bools] = ctor.objs();
+  let [body_obj, layout_obj] = ctor.objs::<2>();
   let body = decode_block(body_obj.as_ctor());
   let layout = decode_function_layout(layout_obj.as_ctor());
-  let [entry, constrained, ..] =
-    packed_bools.as_enum_tag().to_le_bytes().map(|u| u == 1);
+  let [entry, constrained] = ctor.get_bools::<2>(ctor.scalar_base(0));
   Function { body, layout, entry, constrained }
 }
 
