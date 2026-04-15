@@ -1,5 +1,5 @@
 use multi_stark::{
-  builder::symbolic::{Entry, SymbolicExpression, var},
+  builder::symbolic::{SymbolicExpression, var},
   lookup::Lookup,
   p3_air::{Air, AirBuilder, BaseAir, WindowAccess},
   p3_field::{Field, PrimeCharacteristicRing},
@@ -128,7 +128,6 @@ impl Toplevel {
       yield_info: vec![],
     };
     function.build_constraints(&mut state);
-    simplify_selectors(&mut state.constraints);
     (state.constraints, state.lookups)
   }
 }
@@ -149,13 +148,7 @@ impl Function {
     // the return lookup occupies the first lookup slot
     state.lookups[0].multiplicity = -multiplicity.clone();
     state.lookup += 1;
-    // the multiplicity can only be set if one and only one selector is set
-    let sel = self.body.get_block_selector(state);
-    state
-      .constraints
-      .zeros
-      .push(multiplicity * (Expr::from(G::ONE) - sel.clone()));
-    self.body.collect_constraints(sel, state);
+    self.body.collect_constraints(self.body.get_block_selector(state), state);
   }
 }
 
@@ -316,107 +309,11 @@ impl Ctrl {
 
         // Link continuation selector to the continuation block's selector
         let cont_block_sel = continuation.get_block_selector(state);
-        state
-          .constraints
-          .zeros
-          .push(sel.clone() * (cont_block_sel - cont_sel.clone()));
+        state.constraints.zeros.push(cont_block_sel - cont_sel.clone());
 
         // Collect constraints for the continuation, gated by cont_sel
         continuation.collect_constraints(cont_sel, state);
       },
-    }
-  }
-}
-
-/// If `expr` has the form `Variable(sel) - A` or `A - Variable(sel)` where
-/// `sel` is a selector column (index in `selectors` range), returns
-/// `Some((column_index, A))`.
-fn extract_selector_equality(
-  expr: &Expr,
-  selectors: &Range<usize>,
-) -> Option<(usize, Expr)> {
-  fn is_selector_var(e: &Expr, selectors: &Range<usize>) -> Option<usize> {
-    if let SymbolicExpression::Variable(v) = e
-      && v.entry == (Entry::Main { offset: 0 })
-      && selectors.contains(&v.index)
-    {
-      return Some(v.index);
-    }
-    None
-  }
-  if let SymbolicExpression::Sub { x, y, .. } = expr {
-    if let Some(col) = is_selector_var(x, selectors)
-      && is_selector_var(y, selectors).is_none()
-    {
-      return Some((col, *y.clone()));
-    }
-    if let Some(col) = is_selector_var(y, selectors)
-      && is_selector_var(x, selectors).is_none()
-    {
-      return Some((col, *x.clone()));
-    }
-  }
-  None
-}
-
-/// Replace all occurrences of `var(col)` in `expr` with `replacement`.
-fn substitute_in_expr(expr: &Expr, col: usize, replacement: &Expr) -> Expr {
-  match expr {
-    SymbolicExpression::Variable(v)
-      if v.entry == (Entry::Main { offset: 0 }) && v.index == col =>
-    {
-      replacement.clone()
-    },
-    SymbolicExpression::Variable(_)
-    | SymbolicExpression::Constant(_)
-    | SymbolicExpression::IsFirstRow
-    | SymbolicExpression::IsLastRow
-    | SymbolicExpression::IsTransition => expr.clone(),
-    SymbolicExpression::Add { x, y, degree_multiple } => {
-      SymbolicExpression::Add {
-        x: Box::new(substitute_in_expr(x, col, replacement)),
-        y: Box::new(substitute_in_expr(y, col, replacement)),
-        degree_multiple: *degree_multiple,
-      }
-    },
-    SymbolicExpression::Sub { x, y, degree_multiple } => {
-      SymbolicExpression::Sub {
-        x: Box::new(substitute_in_expr(x, col, replacement)),
-        y: Box::new(substitute_in_expr(y, col, replacement)),
-        degree_multiple: *degree_multiple,
-      }
-    },
-    SymbolicExpression::Neg { x, degree_multiple } => SymbolicExpression::Neg {
-      x: Box::new(substitute_in_expr(x, col, replacement)),
-      degree_multiple: *degree_multiple,
-    },
-    SymbolicExpression::Mul { x, y, degree_multiple } => {
-      SymbolicExpression::Mul {
-        x: Box::new(substitute_in_expr(x, col, replacement)),
-        y: Box::new(substitute_in_expr(y, col, replacement)),
-        degree_multiple: *degree_multiple,
-      }
-    },
-  }
-}
-
-/// Simplify selector constraints: when `sel_i = A`, replace all occurrences of
-/// `sel_i` with `A` and remove the constraint. Repeat until fixpoint.
-fn simplify_selectors(constraints: &mut Constraints) {
-  loop {
-    let sub = constraints
-      .zeros
-      .iter()
-      .find_map(|expr| extract_selector_equality(expr, &constraints.selectors));
-    let Some((col, replacement)) = sub else {
-      break;
-    };
-    constraints.zeros.retain(|expr| {
-      extract_selector_equality(expr, &constraints.selectors)
-        .is_none_or(|(c, _)| c != col)
-    });
-    for expr in &mut constraints.zeros {
-      *expr = substitute_in_expr(expr, col, &replacement);
     }
   }
 }
