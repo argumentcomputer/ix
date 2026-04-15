@@ -11,7 +11,7 @@ anyhow = "1"
 blake3 = "1.8.3"
 itertools = "0.14.0"
 indexmap = { version = "2", features = ["rayon"] }
-lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi", rev = "600320b1a9f058ebcd07d9e1a50c6d84bdf94e62" }
+lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi", rev = "fc7c979716f7177c1c43da68c3bdce4a698029b3" }
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "a8a15ea6aa2890f9f60f32a6e0e5e66afc1535ff" }
 num-bigint = "0.4.6"
 rayon = "1"
