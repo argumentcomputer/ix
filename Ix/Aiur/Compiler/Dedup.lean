@@ -32,6 +32,10 @@ mutual
       .match v (branches.map fun (g, b) => (g, skeletonBlock b))
         (def_.map skeletonBlock)
     | .return s vs => .return s vs
+    | .yield s vs => .yield s vs
+    | .matchContinue v branches def_ outputSize sharedAux sharedLookups cont =>
+      .matchContinue v (branches.map fun (g, b) => (g, skeletonBlock b))
+        (def_.map skeletonBlock) outputSize sharedAux sharedLookups (skeletonBlock cont)
 
   partial def skeletonBlock (block : Block) : Block :=
     { block with
@@ -52,6 +56,13 @@ mutual
       | none => acc
       | some b => collectCalleesBlock b acc
     | .return .., acc => acc
+    | .yield .., acc => acc
+    | .matchContinue _ branches def_ _ _ _ cont, acc =>
+      let acc := branches.foldl (fun acc (_, b) => collectCalleesBlock b acc) acc
+      let acc := match def_ with
+        | none => acc
+        | some b => collectCalleesBlock b acc
+      collectCalleesBlock cont acc
 
   partial def collectCalleesBlock (block : Block) (acc : Array FunIdx) : Array FunIdx :=
     let acc := block.ops.foldl (fun acc op => collectCalleesOp op acc) acc
@@ -69,6 +80,10 @@ mutual
       .match v (branches.map fun (g, b) => (g, rewriteBlock f b))
         (def_.map (rewriteBlock f))
     | .return s vs => .return s vs
+    | .yield s vs => .yield s vs
+    | .matchContinue v branches def_ outputSize sharedAux sharedLookups cont =>
+      .matchContinue v (branches.map fun (g, b) => (g, rewriteBlock f b))
+        (def_.map (rewriteBlock f)) outputSize sharedAux sharedLookups (rewriteBlock f cont)
 
   partial def rewriteBlock (f : FunIdx → FunIdx) (block : Block) : Block :=
     { block with

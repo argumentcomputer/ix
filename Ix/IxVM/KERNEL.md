@@ -15,8 +15,8 @@ used by `lean4lean` and `nanoda_lib`.
 
 The Lean and Rust implementations are feature-complete reference kernels. The Aiur
 implementation is a work-in-progress circuit targeting zero-knowledge proof generation,
-with significant constraints (no mutation, no dynamic indexing, no non-tail matches)
-but with aggressive function-call caching that provides call-by-need semantics for free.
+with some constraints (no mutation and no dynamic indexing) but with aggressive
+function-call caching that provides call-by-need semantics for free.
 
 ---
 

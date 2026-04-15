@@ -211,9 +211,31 @@ partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
       maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
       setDegrees degrees
     setSharedData maximalSharedData
-  | .return .. =>
-    bumpSelectors
-    bumpLookups
+  | .return .. => bumpSelectors
+  | .yield .. => bumpSelectors
+  | .matchContinue _ branches defaultBranch outputSize _sharedAux _sharedLookups continuation =>
+    let initSharedData ← getSharedData
+    let mut maximalSharedData := initSharedData
+    let mut degrees ← getDegrees
+    for (_, block) in branches do
+      setSharedData initSharedData
+      blockLayout block
+      let blockSharedData ← getSharedData
+      maximalSharedData := maximalSharedData.maximals blockSharedData
+      setDegrees degrees
+    if let some defaultBlock := defaultBranch then
+      setSharedData initSharedData
+      bumpAuxiliaries branches.size
+      blockLayout defaultBlock
+      let defaultBlockSharedData ← getSharedData
+      maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
+      setDegrees degrees
+    setSharedData maximalSharedData
+    -- Merge auxiliaries: one per output value
+    bumpAuxiliaries outputSize
+    pushDegrees (.replicate outputSize 1)
+    -- Continuation layout: additive (not maximals)
+    blockLayout continuation
 
 end Bytecode
 

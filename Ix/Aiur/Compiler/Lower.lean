@@ -96,15 +96,32 @@ structure CompilerState where
   valIdx : Bytecode.ValIdx
   ops : Array Bytecode.Op
   selIdx : Bytecode.SelIdx
+  degrees : Array Nat
   deriving Inhabited
 
 abbrev CompileM := EStateM String CompilerState
 
+/-- Compute the output degrees for a single-output op from its operand degrees.
+    Multi-output ops (size > 1) always produce degree-1 values. -/
+private def pushOpDegree (degrees : Array Nat) (op : Bytecode.Op) (size : Nat) : Array Nat :=
+  if size > 1 then
+    (Array.replicate size 1).foldl (init := degrees) (·.push ·)
+  else match op with
+  | .const _ => degrees.push 0
+  | .add a b | .sub a b => degrees.push (degrees[a]!.max degrees[b]!)
+  | .mul a b =>
+    let d := degrees[a]! + degrees[b]!
+    degrees.push (if d < 2 then d else 1)
+  | .eqZero a => degrees.push (if degrees[a]! == 0 then 0 else 1)
+  | _ => degrees.push 1
+
 def pushOp (op : Bytecode.Op) (size : Nat := 1) : CompileM (Array Bytecode.ValIdx) :=
   modifyGet (fun s =>
     let valIdx := s.valIdx
-    let ops := s.ops
-    (Array.range' valIdx size, { s with valIdx := valIdx + size, ops := ops.push op}))
+    (Array.range' valIdx size, { s with
+      valIdx := valIdx + size,
+      ops := s.ops.push op,
+      degrees := pushOpDegree s.degrees op size }))
 
 def extractOps : CompileM (Array Bytecode.Op) :=
   modifyGet fun s => (s.ops, {s with ops := #[]})
@@ -321,38 +338,133 @@ partial def toIndex
 
 mutual
 
+/-- Walk through a TypedTerm's inner let chain to find an embedded `.match`.
+    Returns `some (matchTyp, scrutinee, cases)` if found, `none` otherwise.
+    Along the way, the prefix lets are compiled via `toIndex` and their
+    bindings are accumulated, so when the match is found the bindings map
+    already includes all prefix variables.
+    On `none` return the compiler state is restored (no side effects). -/
+partial def findNonTailMatch
+ (layoutMap : LayoutMap)
+ (bindings : Std.HashMap Local (Array Bytecode.ValIdx))
+ (term : TypedTerm)
+: CompileM (Option (Typ × TypedTerm × List (Pattern × TypedTerm) ×
+    Std.HashMap Local (Array Bytecode.ValIdx))) := do
+  let saved ← get
+  let result ← go layoutMap bindings term
+  if result.isNone then set saved
+  pure result
+where
+  go layoutMap bindings term := do
+    match term.inner with
+    | .match scrutinee cases => pure (some (term.typ, scrutinee, cases, bindings))
+    | .let (.var var) val bod => do
+      let val ← toIndex layoutMap bindings val
+      go layoutMap (bindings.insert var val) bod
+    | .let .wildcard val bod => do
+      let _ ← toIndex layoutMap bindings val
+      go layoutMap bindings bod
+    | _ => pure none
+
+/-- Compute max auxiliaries and lookups across all match branches by running
+    `blockLayout` on each, using the actual degree array from the compiler state. -/
+partial def computeSharedLayout
+ (matchCases : Array (G × Bytecode.Block))
+ (default : Option Bytecode.Block)
+: CompileM (Nat × Nat) := do
+  let degrees := (← get).degrees
+  let initLS : Bytecode.LayoutMState :=
+    ⟨{ inputSize := 0, selectors := 0, auxiliaries := 0, lookups := 0 },
+     .empty, degrees⟩
+  let (sharedAux, sharedLookups) := matchCases.foldl (init := (0, 0)) fun (maxA, maxL) (_, block) =>
+    let (_, ls) := Bytecode.blockLayout block |>.run initLS
+    (maxA.max ls.functionLayout.auxiliaries, maxL.max ls.functionLayout.lookups)
+  pure $ match default with
+    | some block =>
+      let (_, ls) := Bytecode.blockLayout block |>.run initLS
+      (sharedAux.max (ls.functionLayout.auxiliaries + matchCases.size),
+       sharedLookups.max ls.functionLayout.lookups)
+    | none => (sharedAux, sharedLookups)
+
+/-- Compile a non-tail match as a `matchContinue` block. Used by both the
+    `.let (.var _)` and `.let .wildcard` handlers to avoid duplication. -/
+partial def compileMatchContinue
+ (returnTyp : Typ)
+ (layoutMap : LayoutMap)
+ (innerBindings : Std.HashMap Local (Array Bytecode.ValIdx))
+ (scrutinee : TypedTerm)
+ (cases : List (Pattern × TypedTerm))
+ (matchTyp : Typ)
+ (compileContinuation : Nat → CompileM Bytecode.Block)
+: CompileM Bytecode.Block := do
+  let idxs ← toIndex layoutMap innerBindings scrutinee
+  let ops ← extractOps
+  let (matchCases, default) ← cases.foldlM (init := default)
+    (addCase layoutMap innerBindings returnTyp idxs (yieldCtrl := true))
+  let outputSize ← match typSize layoutMap matchTyp with
+    | .error e => throw e
+    | .ok size => pure size
+  let (sharedAux, sharedLookups) ← computeSharedLayout matchCases default
+  modify fun s => { s with
+    valIdx := s.valIdx + outputSize,
+    degrees := (Array.replicate outputSize 1).foldl (init := s.degrees) (·.push ·) }
+  let continuation ← compileContinuation outputSize
+  let ctrl := .matchContinue idxs[0]! matchCases default outputSize sharedAux sharedLookups continuation
+  pure { ops, ctrl }
+
 partial def TypedTerm.compile
  (term : TypedTerm)
  (returnTyp : Typ)
  (layoutMap : LayoutMap)
  (bindings : Std.HashMap Local (Array Bytecode.ValIdx))
+ (yieldCtrl : Bool := false)
 : CompileM Bytecode.Block := match term.inner with
   | .let (.var var) val bod => do
-    let val ← toIndex layoutMap bindings val
-    bod.compile returnTyp layoutMap (bindings.insert var val)
+    match ← findNonTailMatch layoutMap bindings val with
+    | some (matchTyp, scrutinee, cases, innerBindings) =>
+      if val.escapes then
+        -- All branches escape; this is a tail match (bod is dead code)
+        val.compile returnTyp layoutMap bindings
+      else
+        compileMatchContinue returnTyp layoutMap innerBindings scrutinee cases matchTyp
+          fun outputSize => do
+            let mergedStart := (← get).valIdx - outputSize
+            let mergedIdxs := Array.range' mergedStart outputSize
+            bod.compile returnTyp layoutMap (bindings.insert var mergedIdxs) yieldCtrl
+    | none => do
+      let val ← toIndex layoutMap bindings val
+      bod.compile returnTyp layoutMap (bindings.insert var val) yieldCtrl
   | .let .wildcard val bod => do
-    let _ ← toIndex layoutMap bindings val
-    bod.compile returnTyp layoutMap bindings
+    match ← findNonTailMatch layoutMap bindings val with
+    | some (matchTyp, scrutinee, cases, innerBindings) =>
+      if val.escapes then
+        val.compile returnTyp layoutMap bindings
+      else
+        compileMatchContinue returnTyp layoutMap innerBindings scrutinee cases matchTyp
+          fun _ => bod.compile returnTyp layoutMap bindings yieldCtrl
+    | none => do
+      let _ ← toIndex layoutMap bindings val
+      bod.compile returnTyp layoutMap bindings yieldCtrl
   | .let .. => throw "Should not happen after simplifying"
   | .debug label term ret => do
     let term ← term.mapM (toIndex layoutMap bindings)
     modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
-    ret.compile returnTyp layoutMap bindings
+    ret.compile returnTyp layoutMap bindings yieldCtrl
   | .assertEq a b ret => do
     let a ← toIndex layoutMap bindings a
     let b ← toIndex layoutMap bindings b
     modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
-    ret.compile returnTyp layoutMap bindings
+    ret.compile returnTyp layoutMap bindings yieldCtrl
   | .ioSetInfo key idx len ret => do
     let key ← toIndex layoutMap bindings key
     let idx ← toIndex layoutMap bindings idx
     let len ← toIndex layoutMap bindings len
     modify fun stt => { stt with ops := stt.ops.push (.ioSetInfo key idx[0]! len[0]!) }
-    ret.compile returnTyp layoutMap bindings
+    ret.compile returnTyp layoutMap bindings yieldCtrl
   | .ioWrite data ret => do
     let data ← toIndex layoutMap bindings data
     modify fun stt => { stt with ops := stt.ops.push (.ioWrite data) }
-    ret.compile returnTyp layoutMap bindings
+    ret.compile returnTyp layoutMap bindings yieldCtrl
   | .match term cases =>
     match term.typ with
     -- Also do this for tuple-like and array-like (one constructor only) datatypes
@@ -371,7 +483,7 @@ partial def TypedTerm.compile
           pure bindings
         let idxs ← toIndex layoutMap bindings term
         let bindings ← bindArgs bindings vars typs idxs
-        branch.compile returnTyp layoutMap bindings
+        branch.compile returnTyp layoutMap bindings yieldCtrl
       | _ => throw "Impossible case"
     | .array typ _ => match cases with
       | [(.array vars, branch)] => do
@@ -388,25 +500,24 @@ partial def TypedTerm.compile
           pure bindings
         let idxs ← toIndex layoutMap bindings term
         let bindings ← bindArgs bindings vars idxs
-        branch.compile returnTyp layoutMap bindings
+        branch.compile returnTyp layoutMap bindings yieldCtrl
       | _ => throw "Impossible case"
     | _ => do
       let idxs ← toIndex layoutMap bindings term
       let ops ← extractOps
-      let minSelIncluded := (← get).selIdx
       let (cases, default) ← cases.foldlM (init := default)
-        (addCase layoutMap bindings returnTyp idxs)
-      let maxSelExcluded := (← get).selIdx
+        (addCase layoutMap bindings returnTyp idxs yieldCtrl)
       let ctrl := .match idxs[0]! cases default
-      pure { ops, ctrl, minSelIncluded, maxSelExcluded }
+      pure { ops, ctrl }
   | .ret term => do
+    -- Explicit return: always uses Ctrl.return regardless of yieldCtrl
     let idxs ← toIndex layoutMap bindings term
     let state ← get
     let state := { state with selIdx := state.selIdx + 1 }
     set state
     let ops := state.ops
     let id := state.selIdx
-    pure { ops, ctrl := .return (id - 1) idxs, minSelIncluded := id - 1, maxSelExcluded := id }
+    pure { ops, ctrl := .return (id - 1) idxs }
   | _ => do
     let idxs ← toIndex layoutMap bindings term
     let state ← get
@@ -414,13 +525,15 @@ partial def TypedTerm.compile
     set state
     let ops := state.ops
     let id := state.selIdx
-    pure { ops, ctrl := .return (id - 1) idxs, minSelIncluded := id - 1, maxSelExcluded := id }
+    let ctrl := if yieldCtrl && !term.escapes then .yield (id - 1) idxs else .return (id - 1) idxs
+    pure { ops, ctrl }
 
 partial def addCase
   (layoutMap : LayoutMap)
   (bindings : Std.HashMap Local (Array Bytecode.ValIdx))
   (returnTyp : Typ)
   (idxs : Array Bytecode.ValIdx)
+  (yieldCtrl : Bool := false)
 : (Array (G × Bytecode.Block) × Option Bytecode.Block) →
   (Pattern × TypedTerm) →
   CompileM (Array (G × Bytecode.Block) × Option Bytecode.Block) := fun (cases, default) (pat, term) =>
@@ -429,7 +542,7 @@ partial def addCase
   match pat with
   | .field g => do
     let initState ← get
-    let term ← term.compile returnTyp layoutMap bindings
+    let term ← term.compile returnTyp layoutMap bindings yieldCtrl
     set { initState with selIdx := (← get).selIdx }
     let cases' := cases.push (g, term)
     pure (cases', default)
@@ -454,13 +567,13 @@ partial def addCase
       pure bindings
     let bindings ← bindArgs bindings pats offsets idxs
     let initState ← get
-    let term ← term.compile returnTyp layoutMap bindings
+    let term ← term.compile returnTyp layoutMap bindings yieldCtrl
     set { initState with selIdx := (← get).selIdx }
     let cases' := cases.push (.ofNat index, term)
     pure (cases', default)
   | .wildcard => do
     let initState ← get
-    let term ← term.compile returnTyp layoutMap bindings
+    let term ← term.compile returnTyp layoutMap bindings yieldCtrl
     set { initState with selIdx := (← get).selIdx }
     pure (cases, .some term)
   | _ => throw "Impossible case"
@@ -479,11 +592,15 @@ def TypedFunction.compile (layoutMap : LayoutMap) (f : TypedFunction) :
         | .ok len => pure len
       let indices := Array.range' valIdx len
       pure (valIdx + len, bindings.insert arg indices)
-  let state := { valIdx, selIdx := 0, ops := #[] }
+  let state := { valIdx, selIdx := 0, ops := #[], degrees := Array.replicate valIdx 1 }
   match f.body.compile f.output layoutMap bindings |>.run state with
   | .error e _ => throw e
   | .ok body _ =>
     let (_, layoutMState) := Bytecode.blockLayout body |>.run (.new inputSize)
+    -- All `return`s share a single lookup slot at the function level.
+    let layoutMState := { layoutMState with functionLayout :=
+      { layoutMState.functionLayout with
+        lookups := layoutMState.functionLayout.lookups + 1 } }
     pure (body, layoutMState)
 
 def TypedDecls.toBytecode (decls : TypedDecls) :

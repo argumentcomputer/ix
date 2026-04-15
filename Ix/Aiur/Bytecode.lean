@@ -42,13 +42,15 @@ mutual
   inductive Ctrl where
     | match : ValIdx → Array (G × Block) → Option Block → Ctrl
     | return : SelIdx → Array ValIdx → Ctrl
+    | yield : SelIdx → Array ValIdx → Ctrl
+    | matchContinue : ValIdx → Array (G × Block) → Option Block
+        → (outputSize : Nat) → (sharedAuxiliaries : Nat) → (sharedLookups : Nat)
+        → Block → Ctrl
     deriving Inhabited, Repr
 
   structure Block where
     ops : Array Op
     ctrl : Ctrl
-    minSelIncluded: SelIdx
-    maxSelExcluded: SelIdx
     deriving Inhabited, Repr
 end
 

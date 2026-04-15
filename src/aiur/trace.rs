@@ -10,17 +10,20 @@ use rayon::{
   slice::ParallelSliceMut,
 };
 
-use crate::aiur::{
-  G,
-  bytecode::{Block, Ctrl, Function, Op, Toplevel},
-  execute::{IOBuffer, IOKeyInfo, QueryRecord},
-  function_channel,
-  gadgets::{bytes1::Bytes1, bytes2::Bytes2},
-  memory::Memory,
-  u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_less_than_channel, u8_or_channel, u8_range_check_channel,
-  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
-  u8_xor_channel,
+use crate::{
+  FxIndexMap,
+  aiur::{
+    G,
+    bytecode::{Block, Ctrl, Function, Op, Toplevel},
+    execute::{IOBuffer, IOKeyInfo, QueryRecord},
+    function_channel,
+    gadgets::{bytes1::Bytes1, bytes2::Bytes2},
+    memory::Memory,
+    u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
+    u8_less_than_channel, u8_or_channel, u8_range_check_channel,
+    u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
+    u8_xor_channel,
+  },
 };
 
 struct ColumnIndex {
@@ -144,9 +147,13 @@ impl Function {
       .for_each(|(i, arg)| slice.inputs[i] = *arg);
     // Push the multiplicity
     slice.push_auxiliary(index, context.multiplicity);
-    self.body.populate_row(map, index, slice, context, io_buffer);
+    let _ = self.body.populate_row(map, index, slice, context, io_buffer);
   }
 }
+
+/// `Some(values)` means the block ended with `Yield` (values for the merge).
+/// `None` means the block ended with `Return` (function exited).
+type PopulateResult = Option<Vec<G>>;
 
 impl Block {
   fn populate_row(
@@ -156,13 +163,34 @@ impl Block {
     slice: &mut ColumnMutSlice<'_>,
     context: TraceContext<'_>,
     io_buffer: &IOBuffer,
-  ) {
+  ) -> PopulateResult {
     self
       .ops
       .iter()
       .for_each(|op| op.populate_row(map, index, slice, context, io_buffer));
-    self.ctrl.populate_row(map, index, slice, context, io_buffer);
+    self.ctrl.populate_row(map, index, slice, context, io_buffer)
   }
+}
+
+/// Dispatch a match: look up the value in the cases map, or fall through to the
+/// default (pushing inverse witnesses for each case to prove inequality).
+fn dispatch_branch<'a>(
+  val: G,
+  cases: &'a FxIndexMap<G, Block>,
+  def: &'a Option<Box<Block>>,
+  index: &mut ColumnIndex,
+  slice: &mut ColumnMutSlice<'_>,
+) -> &'a Block {
+  cases
+    .get(&val)
+    .or_else(|| {
+      for &case in cases.keys() {
+        let witness = (val - case).inverse();
+        slice.push_auxiliary(index, witness);
+      }
+      def.as_deref()
+    })
+    .expect("No match")
 }
 
 impl Ctrl {
@@ -173,7 +201,7 @@ impl Ctrl {
     slice: &mut ColumnMutSlice<'_>,
     context: TraceContext<'_>,
     io_buffer: &IOBuffer,
-  ) {
+  ) -> PopulateResult {
     match self {
       Ctrl::Return(sel, _) => {
         slice.selectors[*sel] = G::ONE;
@@ -184,21 +212,47 @@ impl Ctrl {
           context.output,
         );
         slice.lookups[0] = lookup;
+        None
+      },
+      Ctrl::Yield(sel, vals) => {
+        slice.selectors[*sel] = G::ONE;
+        Some(vals.iter().map(|&v| map[v].0).collect())
       },
       Ctrl::Match(var, cases, def) => {
-        let val = map[*var].0;
-        let branch = cases
-          .get(&val)
-          .or_else(|| {
-            for &case in cases.keys() {
-              // the witness shows that val is different from case
-              let witness = (val - case).inverse();
-              slice.push_auxiliary(index, witness);
+        let branch = dispatch_branch(map[*var].0, cases, def, index, slice);
+        branch.populate_row(map, index, slice, context, io_buffer)
+      },
+      Ctrl::MatchContinue(
+        var,
+        cases,
+        def,
+        _output_size,
+        shared_aux,
+        shared_lookups,
+        continuation,
+      ) => {
+        let map_len = map.len();
+        let init_aux = index.auxiliary;
+        let init_lookup = index.lookup;
+
+        let branch = dispatch_branch(map[*var].0, cases, def, index, slice);
+        let result = branch.populate_row(map, index, slice, context, io_buffer);
+        match result {
+          Some(yielded) => {
+            // Advance past the shared branch region. The taken branch may
+            // use fewer auxiliaries/lookups than the max across all branches.
+            index.auxiliary = init_aux + shared_aux;
+            index.lookup = init_lookup + shared_lookups;
+
+            map.truncate(map_len);
+            for &val in &yielded {
+              slice.push_auxiliary(index, val);
+              map.push((val, 1));
             }
-            def.as_deref()
-          })
-          .expect("No match");
-        branch.populate_row(map, index, slice, context, io_buffer);
+            continuation.populate_row(map, index, slice, context, io_buffer)
+          },
+          None => None,
+        }
       },
     }
   }
