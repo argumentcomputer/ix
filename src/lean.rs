@@ -120,7 +120,7 @@ lean_ffi::lean_domain_type! {
   /// Lean `Aiur.FriParameters` object.
   LeanAiurFriParameters;
 
-  // Ix inner val types (ConstantInfo variants)
+  // Lean kernel inner structures and variants
   /// Lean `Ix.AxiomVal` object.
   LeanIxAxiomVal;
   /// Lean `Ix.DefinitionVal` object.
@@ -154,7 +154,7 @@ lean_ffi::lean_domain_type! {
   /// Lean `Ixon.Expr.Prj` (tag 4) object.
   LeanIxonExprPrj;
 
-  // Ixon single-scalar variant types
+  // Ixon/Ix inductive variant types
   /// Lean `Ixon.ConstantMeta.Axio` (tag 2) object.
   LeanIxonConstantMetaAxio;
   /// Lean `Ixon.ConstantMeta.Quot` (tag 3) object.
@@ -244,10 +244,10 @@ lean_ffi::lean_domain_type! {
 }
 
 // =============================================================================
-// LeanCtorScalar impls for Ixon structure types
+// LeanCtorScalar impls — structures, inner vals, and inductive variants
 // =============================================================================
 
-// ixon/constant.rs structures
+// Ixon structures (ixon/constant.rs)
 lean_ffi::impl_ctor_scalar!(LeanIxonDefinition     { NUM_OBJ = 2, NUM_64 = 1, NUM_8 = 2 });
 lean_ffi::impl_ctor_scalar!(LeanIxonRecursorRule   { NUM_OBJ = 1, NUM_64 = 1 });
 lean_ffi::impl_ctor_scalar!(LeanIxonRecursor       { NUM_OBJ = 2, NUM_64 = 5, NUM_8 = 2 });
@@ -260,10 +260,10 @@ lean_ffi::impl_ctor_scalar!(LeanIxonConstructorProj { NUM_OBJ = 1, NUM_64 = 2 })
 lean_ffi::impl_ctor_scalar!(LeanIxonRecursorProj   { NUM_OBJ = 1, NUM_64 = 1 });
 lean_ffi::impl_ctor_scalar!(LeanIxonDefinitionProj { NUM_OBJ = 1, NUM_64 = 1 });
 
-// ixon/compare.rs + compile.rs
+// Structures (ixon/compare.rs + compile.rs)
 lean_ffi::impl_ctor_scalar!(LeanIxBlockCompareDetail { NUM_OBJ = 1, NUM_64 = 2 });
 
-// Ix inner val types (ix/constant.rs + lean_env.rs)
+// Lean kernel inner val structures (ix/constant.rs + lean_env.rs)
 lean_ffi::impl_ctor_scalar!(LeanIxAxiomVal          { NUM_OBJ = 1, NUM_8 = 1 });
 lean_ffi::impl_ctor_scalar!(LeanIxDefinitionVal     { NUM_OBJ = 4, NUM_8 = 1 });
 lean_ffi::impl_ctor_scalar!(LeanIxOpaqueVal         { NUM_OBJ = 3, NUM_8 = 1 });
@@ -273,17 +273,17 @@ lean_ffi::impl_ctor_scalar!(LeanIxConstructorVal    { NUM_OBJ = 5, NUM_8 = 1 });
 lean_ffi::impl_ctor_scalar!(LeanIxRecursorVal       { NUM_OBJ = 7, NUM_8 = 2 });
 lean_ffi::impl_ctor_scalar!(LeanIxReducibilityHintsRegular { TAG = 2, NUM_32 = 1 });
 
-// Aiur inner types
+// Aiur structures
 lean_ffi::impl_ctor_scalar!(LeanAiurFunction        { NUM_OBJ = 2, NUM_8 = 2 });
 
-// Ixon multi-scalar variant types
+// Ixon inductive variants (multi-scalar)
 lean_ffi::impl_ctor_scalar!(LeanIxonExprMetaApp        { TAG = 1, NUM_64 = 2 });
 lean_ffi::impl_ctor_scalar!(LeanIxonExprMetaBinder     { TAG = 2, NUM_OBJ = 1, NUM_64 = 2, NUM_8 = 1 });
 lean_ffi::impl_ctor_scalar!(LeanIxonExprMetaLetBinder  { TAG = 3, NUM_OBJ = 1, NUM_64 = 3 });
 lean_ffi::impl_ctor_scalar!(LeanIxonConstantMetaDef    { TAG = 1, NUM_OBJ = 6, NUM_64 = 2 });
 lean_ffi::impl_ctor_scalar!(LeanIxonExprPrj            { TAG = 4, NUM_OBJ = 1, NUM_64 = 2 });
 
-// Ixon single-scalar variant types
+// Ixon/Ix inductive variants (single-scalar)
 lean_ffi::impl_ctor_scalar!(LeanIxonConstantMetaAxio   { TAG = 2, NUM_OBJ = 3, NUM_64 = 1 });
 lean_ffi::impl_ctor_scalar!(LeanIxonConstantMetaQuot   { TAG = 3, NUM_OBJ = 3, NUM_64 = 1 });
 lean_ffi::impl_ctor_scalar!(LeanIxonConstantMetaIndc   { TAG = 4, NUM_OBJ = 6, NUM_64 = 1 });
