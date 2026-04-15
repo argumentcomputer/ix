@@ -77,10 +77,10 @@ def main : IO Unit := do
     | .ok decls => pure decls
   let _ ← bgroup "nat_fib" { e2e := true } do
     skipE2E
-    bench "simplify toplevel" Aiur.Toplevel.checkAndSimplify toplevel
-    bench "compile decls" Aiur.TypedDecls.toBytecode decls
+    bench "simplify toplevel" Aiur.Source.Toplevel.checkAndSimplify toplevel
+    bench "compile decls" Aiur.Typed.Decls.toBytecode decls
     countInE2E
-    let compiled ← benchStepE "compile" Aiur.Toplevel.compile toplevel
+    let compiled ← benchStepE "compile" Aiur.Source.Toplevel.compile toplevel
     let system ← benchStep "build AiurSystem"
         (Aiur.AiurSystem.build compiled.bytecode) commitmentParameters
     let funIdx := compiled.getFuncIdx `main |>.get!

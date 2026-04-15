@@ -13,3 +13,4 @@ public import Ix.DecompileM
 public import Ix.Claim
 public import Ix.Commit
 public import Ix.Benchmark.Bench
+public import Ix.Aiur

@@ -1,37 +1,53 @@
 module
 public import Lean.Elab
 public import Lean.Elab.Term.TermElabM
-public import Ix.Aiur.Term
+public import Ix.Aiur.Stages.Source
+
+/-!
+Surface DSL for `Aiur.Source.Toplevel` — direct port of `Ix/Aiur/Meta.lean`
+with the `.data`-wrapped tuple/array/field constructors inlined to match
+`Aiur.Source.Term`'s flat shape.
+
+Usage:
+```
+def myProgram : Source.Toplevel := ⟦
+  pub fn add(a: G, b: G) -> G {
+    a + b
+  }
+⟧
+```
+-/
 
 public meta section
 
 namespace Aiur
 
-open Lean Elab Meta
+open Lean Elab Meta Source
 
 abbrev ElabStxCat name := TSyntax name → TermElabM Expr
 
-declare_syntax_cat                               typ
-syntax "G"                                     : typ
-syntax "(" typ (", " typ)* ")"                 : typ
-syntax "[" typ "; " num "]"                    : typ
-syntax "&" typ                                 : typ
-syntax ("." noWs)? ident                               : typ
-syntax ("." noWs)? ident "‹" typ (", " typ)* "›"       : typ
-syntax "fn" "(" ")" " -> " typ                         : typ
-syntax "fn" "(" typ (", " typ)* ")" " -> " typ         : typ
+declare_syntax_cat                               aiur_typ
+syntax "G"                                     : aiur_typ
+syntax "(" aiur_typ (", " aiur_typ)* ")"     : aiur_typ
+syntax "[" aiur_typ "; " num "]"              : aiur_typ
+syntax "&" aiur_typ                           : aiur_typ
+syntax ("." noWs)? ident                                       : aiur_typ
+syntax ("." noWs)? ident "‹" aiur_typ (", " aiur_typ)* "›"   : aiur_typ
+syntax "fn" "(" ")" " -> " aiur_typ                                   : aiur_typ
+syntax "fn" "(" aiur_typ (", " aiur_typ)* ")" " -> " aiur_typ       : aiur_typ
 
-declare_syntax_cat                             pattern
-syntax ("." noWs)? ident                     : pattern
-syntax "_"                                   : pattern
-syntax ident "(" pattern (", " pattern)* ")" : pattern
-syntax num                                   : pattern
-syntax "(" pattern (", " pattern)* ")"       : pattern
-syntax "[" pattern (", " pattern)* "]"       : pattern
-syntax pattern "|" pattern                                     : pattern
-syntax "&" pattern                                             : pattern
-syntax ident "‹" typ (", " typ)* "›" "." noWs ident "(" pattern (", " pattern)* ")" : pattern
-syntax ident "‹" typ (", " typ)* "›" "." noWs ident            : pattern
+declare_syntax_cat                                                aiur_pattern
+syntax ("." noWs)? ident                                        : aiur_pattern
+syntax "_"                                                      : aiur_pattern
+syntax ident "(" aiur_pattern (", " aiur_pattern)* ")"        : aiur_pattern
+syntax num                                                      : aiur_pattern
+syntax "(" aiur_pattern (", " aiur_pattern)* ")"              : aiur_pattern
+syntax "[" aiur_pattern (", " aiur_pattern)* "]"              : aiur_pattern
+syntax aiur_pattern "|" aiur_pattern                          : aiur_pattern
+syntax "&" aiur_pattern                                        : aiur_pattern
+syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "." noWs ident
+       "(" aiur_pattern (", " aiur_pattern)* ")"              : aiur_pattern
+syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "." noWs ident : aiur_pattern
 
 def elabListCore (head : α) (tail : Array α) (elabFn : α → TermElabM Expr)
     (listEltType : Expr) (isArray := false) : TermElabM Expr := do
@@ -53,244 +69,271 @@ def elabEmptyList (listEltTypeName : Name) : TermElabM Expr :=
 def elabG (n : TSyntax `num) : TermElabM Expr :=
   mkAppM ``G.ofNat #[mkNatLit n.getNat]
 
-partial def elabTyp : ElabStxCat `typ
-  | `(typ| G) => pure $ mkConst ``Typ.field
-  | `(typ| ($t:typ $[, $ts:typ]*)) => do
+partial def elabTyp : ElabStxCat `aiur_typ
+  | `(aiur_typ| G) => pure $ mkConst ``Typ.field
+  | `(aiur_typ| ($t:aiur_typ $[, $ts:aiur_typ]*)) => do
     mkAppM ``Typ.tuple #[← elabList t ts elabTyp ``Typ true]
-  | `(typ| [$t:typ; $n:num]) => do
+  | `(aiur_typ| [$t:aiur_typ; $n:num]) => do
     mkAppM ``Typ.array #[← elabTyp t, mkNatLit n.getNat]
-  | `(typ| &$t:typ) => do
+  | `(aiur_typ| &$t:aiur_typ) => do
     mkAppM ``Typ.pointer #[← elabTyp t]
-  | `(typ| $[.]?$i:ident) => do
+  | `(aiur_typ| $[.]?$i:ident) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     mkAppM ``Typ.ref #[g]
-  | `(typ| fn() -> $t:typ) => do
+  | `(aiur_typ| fn() -> $t:aiur_typ) => do
     mkAppM ``Typ.function #[← elabEmptyList ``Typ, ← elabTyp t]
-  | `(typ| fn($t$[, $ts:typ]*) -> $t':typ) => do
+  | `(aiur_typ| fn($t$[, $ts:aiur_typ]*) -> $t':aiur_typ) => do
     mkAppM ``Typ.function #[← elabList t ts elabTyp ``Typ, ← elabTyp t']
-  | `(typ| $[.]?$i:ident‹$t:typ $[, $ts:typ]*›) => do
+  | `(aiur_typ| $[.]?$i:ident‹$t:aiur_typ $[, $ts:aiur_typ]*›) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     mkAppM ``Typ.app #[g, ← elabList t ts elabTyp ``Typ true]
   | stx => throw $ .error stx "Invalid syntax for type"
 
-partial def elabPattern : ElabStxCat `pattern
-  | `(pattern| $v:ident($p:pattern $[, $ps:pattern]*)) => do
+partial def elabPattern : ElabStxCat `aiur_pattern
+  | `(aiur_pattern| $v:ident($p:aiur_pattern $[, $ps:aiur_pattern]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr v.getId]
     mkAppM ``Pattern.ref #[g, ← elabList p ps elabPattern ``Pattern]
-  | `(pattern| .$i:ident) => do
+  | `(aiur_pattern| .$i:ident) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     mkAppM ``Pattern.ref #[g, ← elabEmptyList ``Pattern]
-  | `(pattern| $i:ident) => match i.getId with
+  | `(aiur_pattern| $i:ident) => match i.getId with
     | .str .anonymous name => do
       mkAppM ``Pattern.var #[← mkAppM ``Local.str #[toExpr name]]
     | name@(.str _ _) => do
       let g ← mkAppM ``Global.mk #[toExpr name]
       mkAppM ``Pattern.ref #[g, ← elabEmptyList ``Pattern]
     | _ => throw $ .error i "Illegal pattern name"
-  | `(pattern| _) => pure $ mkConst ``Pattern.wildcard
-  | `(pattern| $n:num) => do mkAppM ``Pattern.field #[← elabG n]
-  | `(pattern| ($p:pattern $[, $ps:pattern]*)) => do
+  | `(aiur_pattern| _) => pure $ mkConst ``Pattern.wildcard
+  | `(aiur_pattern| $n:num) => do mkAppM ``Pattern.field #[← elabG n]
+  | `(aiur_pattern| ($p:aiur_pattern $[, $ps:aiur_pattern]*)) => do
     mkAppM ``Pattern.tuple #[← elabList p ps elabPattern ``Pattern true]
-  | `(pattern| [$p:pattern $[, $ps:pattern]*]) => do
+  | `(aiur_pattern| [$p:aiur_pattern $[, $ps:aiur_pattern]*]) => do
     mkAppM ``Pattern.array #[← elabList p ps elabPattern ``Pattern true]
-  | `(pattern| $p₁:pattern | $p₂:pattern) => do
+  | `(aiur_pattern| $p₁:aiur_pattern | $p₂:aiur_pattern) => do
     mkAppM ``Pattern.or #[← elabPattern p₁, ← elabPattern p₂]
-  | `(pattern| &$p:pattern) => do
+  | `(aiur_pattern| &$p:aiur_pattern) => do
     mkAppM ``Pattern.pointer #[← elabPattern p]
-  | `(pattern| $tmpl:ident‹$_:typ $[, $_:typ]*›.$ctor:ident($p:pattern $[, $ps:pattern]*)) => do
-    -- Explicit type args are dropped; inference recovers them from the scrutinee
+  | `(aiur_pattern| $tmpl:ident‹$_:aiur_typ $[, $_:aiur_typ]*›.$ctor:ident
+        ($p:aiur_pattern $[, $ps:aiur_pattern]*)) => do
     let name := tmpl.getId ++ ctor.getId
     let g ← mkAppM ``Global.mk #[toExpr name]
     mkAppM ``Pattern.ref #[g, ← elabList p ps elabPattern ``Pattern]
-  | `(pattern| $tmpl:ident‹$_:typ $[, $_:typ]*›.$ctor:ident) => do
+  | `(aiur_pattern| $tmpl:ident‹$_:aiur_typ $[, $_:aiur_typ]*›.$ctor:ident) => do
     let name := tmpl.getId ++ ctor.getId
     let g ← mkAppM ``Global.mk #[toExpr name]
     mkAppM ``Pattern.ref #[g, ← elabEmptyList ``Pattern]
   | stx => throw $ .error stx "Invalid syntax for pattern"
 
-declare_syntax_cat                                              trm
-syntax ("." noWs)? ident                                      : trm
--- syntax "cast" "(" trm ", " typ ")"                            : trm
-syntax num                                                    : trm
-syntax "(" ")"                                                : trm
-syntax "(" trm (", " trm)* ")"                                : trm
-syntax "[" trm (", " trm)* "]"                                : trm
-syntax "[" trm "; " num "]"                                   : trm
-syntax "return " trm                                          : trm
-syntax "let " pattern (":" typ)? " = " trm "; " trm           : trm
-syntax "let " pattern (":" typ)? " = " trm ";"                : trm
-syntax "let " pattern (":" typ)? " = " trm                    : trm
-syntax "match " trm " { " (pattern " => " trm ", ")+ " }"     : trm
-syntax ("." noWs)? ident "(" ")"                              : trm
-syntax ("." noWs)? ident "(" trm (", " trm)* ")"              : trm
-syntax "#" noWs ("." noWs)? ident "(" ")"                                     : trm
-syntax "#" noWs ("." noWs)? ident "(" trm (", " trm)* ")"                    : trm
--- Template function/constructor calls
-syntax ident "‹" typ (", " typ)* "›" "(" ")"                                  : trm
-syntax ident "‹" typ (", " typ)* "›" "(" trm (", " trm)* ")"                  : trm
-syntax "#" noWs ident "‹" typ (", " typ)* "›" "(" ")"                         : trm
-syntax "#" noWs ident "‹" typ (", " typ)* "›" "(" trm (", " trm)* ")"         : trm
-syntax ident "‹" typ (", " typ)* "›" "." noWs ident "(" ")"                   : trm
-syntax ident "‹" typ (", " typ)* "›" "." noWs ident "(" trm (", " trm)* ")"   : trm
-syntax:50 trm " + " trm                                                       : trm
-syntax:50 trm " - " trm                                       : trm
-syntax trm " * " trm:51                                       : trm
-syntax "eq_zero" "(" trm ")"                                  : trm
-syntax "proj" "(" trm ", " num ")"                            : trm
-syntax trm "[" num "]"                                        : trm
-syntax trm "[" num ".." num "]"                               : trm
-syntax "set" "(" trm ", " num ", " trm ")"                    : trm
-syntax "store" "(" trm ")"                                    : trm
-syntax "load" "(" trm ")"                                     : trm
-syntax "ptr_val" "(" trm ")"                                  : trm
-syntax "assert_eq!" "(" trm ", " trm ")" ";" (trm)?           : trm
-syntax trm ": " typ                                           : trm
-syntax "io_get_info" "(" trm ")"                              : trm
-syntax "io_set_info" "(" trm ", " trm ", " trm ")" ";" (trm)? : trm
-syntax "io_read" "(" trm ", " num ")"                         : trm
-syntax "io_write" "(" trm ")" ";" (trm)?                      : trm
-syntax "u8_bit_decomposition" "(" trm ")"                     : trm
-syntax "u8_shift_left" "(" trm ")"                            : trm
-syntax "u8_shift_right" "(" trm ")"                           : trm
-syntax "u8_xor" "(" trm ", " trm ")"                          : trm
-syntax "u8_add" "(" trm ", " trm ")"                          : trm
-syntax "u8_sub" "(" trm ", " trm ")"                          : trm
-syntax "u8_and" "(" trm ", " trm ")"                          : trm
-syntax "u8_or" "(" trm ", " trm ")"                           : trm
-syntax "u8_less_than" "(" trm ", " trm ")"                    : trm
-syntax "u32_less_than" "(" trm ", " trm ")"                   : trm
-syntax "dbg!" "(" str (", " trm)? ")" ";" (trm)?              : trm
+declare_syntax_cat                                                              aiur_trm
+syntax ("." noWs)? ident                                                      : aiur_trm
+syntax num                                                                    : aiur_trm
+syntax "(" ")"                                                                : aiur_trm
+syntax "(" aiur_trm (", " aiur_trm)* ")"                                    : aiur_trm
+syntax "[" aiur_trm (", " aiur_trm)* "]"                                    : aiur_trm
+syntax "[" aiur_trm "; " num "]"                                             : aiur_trm
+syntax "return " aiur_trm                                                    : aiur_trm
+syntax "let " aiur_pattern (":" aiur_typ)? " = " aiur_trm "; " aiur_trm   : aiur_trm
+syntax "let " aiur_pattern (":" aiur_typ)? " = " aiur_trm ";"              : aiur_trm
+syntax "let " aiur_pattern (":" aiur_typ)? " = " aiur_trm                  : aiur_trm
+syntax "match " aiur_trm " { "
+       (aiur_pattern " => " aiur_trm ", ")+ " }"                            : aiur_trm
+syntax ("." noWs)? ident "(" ")"                                              : aiur_trm
+syntax ("." noWs)? ident "(" aiur_trm (", " aiur_trm)* ")"                  : aiur_trm
+syntax "#" noWs ("." noWs)? ident "(" ")"                                     : aiur_trm
+syntax "#" noWs ("." noWs)? ident "(" aiur_trm (", " aiur_trm)* ")"         : aiur_trm
+syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "(" ")"                      : aiur_trm
+syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "(" aiur_trm
+       (", " aiur_trm)* ")"                                                  : aiur_trm
+syntax "#" noWs ident "‹" aiur_typ (", " aiur_typ)* "›" "(" ")"             : aiur_trm
+syntax "#" noWs ident "‹" aiur_typ (", " aiur_typ)* "›" "(" aiur_trm
+       (", " aiur_trm)* ")"                                                  : aiur_trm
+syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "." noWs ident "(" ")"       : aiur_trm
+syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "." noWs ident
+       "(" aiur_trm (", " aiur_trm)* ")"                                    : aiur_trm
+syntax:50 aiur_trm " + " aiur_trm                                           : aiur_trm
+syntax:50 aiur_trm " - " aiur_trm                                           : aiur_trm
+syntax aiur_trm " * " aiur_trm:51                                           : aiur_trm
+syntax "eq_zero" "(" aiur_trm ")"                                            : aiur_trm
+syntax "proj" "(" aiur_trm ", " num ")"                                      : aiur_trm
+syntax aiur_trm "[" num "]"                                                  : aiur_trm
+syntax aiur_trm "[" num ".." num "]"                                         : aiur_trm
+syntax "set" "(" aiur_trm ", " num ", " aiur_trm ")"                        : aiur_trm
+syntax "store" "(" aiur_trm ")"                                              : aiur_trm
+syntax "load" "(" aiur_trm ")"                                               : aiur_trm
+syntax "ptr_val" "(" aiur_trm ")"                                            : aiur_trm
+syntax "assert_eq!" "(" aiur_trm ", " aiur_trm ")" ";" (aiur_trm)?         : aiur_trm
+syntax aiur_trm ": " aiur_typ                                               : aiur_trm
+syntax "io_get_info" "(" aiur_trm ")"                                        : aiur_trm
+syntax "io_set_info" "(" aiur_trm ", " aiur_trm ", " aiur_trm ")" ";"
+       (aiur_trm)?                                                           : aiur_trm
+syntax "io_read" "(" aiur_trm ", " num ")"                                   : aiur_trm
+syntax "io_write" "(" aiur_trm ")" ";" (aiur_trm)?                          : aiur_trm
+syntax "u8_bit_decomposition" "(" aiur_trm ")"                               : aiur_trm
+syntax "u8_shift_left" "(" aiur_trm ")"                                      : aiur_trm
+syntax "u8_shift_right" "(" aiur_trm ")"                                     : aiur_trm
+syntax "u8_xor" "(" aiur_trm ", " aiur_trm ")"                              : aiur_trm
+syntax "u8_add" "(" aiur_trm ", " aiur_trm ")"                              : aiur_trm
+syntax "u8_sub" "(" aiur_trm ", " aiur_trm ")"                              : aiur_trm
+syntax "u8_and" "(" aiur_trm ", " aiur_trm ")"                              : aiur_trm
+syntax "u8_or" "(" aiur_trm ", " aiur_trm ")"                               : aiur_trm
+syntax "u8_less_than" "(" aiur_trm ", " aiur_trm ")"                        : aiur_trm
+syntax "u32_less_than" "(" aiur_trm ", " aiur_trm ")"                       : aiur_trm
+syntax "dbg!" "(" str (", " aiur_trm)? ")" ";" (aiur_trm)?                  : aiur_trm
 
-syntax trm "[" "@" noWs ident "]"                                                        : trm
-syntax "set" "(" trm ", " "@" noWs ident ", " trm ")"                                    : trm
-syntax "fold" "(" num ".." num ", " trm ", " "|" pattern ", " "@" noWs ident "|" trm ")" : trm
+syntax aiur_trm "[" "@" noWs ident "]"                                                              : aiur_trm
+syntax "set" "(" aiur_trm ", " "@" noWs ident ", " aiur_trm ")"                                     : aiur_trm
+syntax "fold" "(" num ".." num ", " aiur_trm ", " "|" aiur_pattern ", " "@" noWs ident "|" aiur_trm ")" : aiur_trm
 
-partial def elabTrm : ElabStxCat `trm
-  | `(trm| .$i:ident) => do
-    mkAppM ``Term.ref #[← mkAppM ``Global.mk #[toExpr i.getId]]
-  | `(trm| $i:ident) => match i.getId with
+partial def elabTrm : ElabStxCat `aiur_trm
+  | `(aiur_trm| .$i:ident) => do
+    mkAppM ``Source.Term.ref #[← mkAppM ``Global.mk #[toExpr i.getId]]
+  | `(aiur_trm| $i:ident) => match i.getId with
     | .str .anonymous name => do
-      mkAppM ``Term.var #[← mkAppM ``Local.str #[toExpr name]]
+      mkAppM ``Source.Term.var #[← mkAppM ``Local.str #[toExpr name]]
     | name@(.str _ _) => do
-      mkAppM ``Term.ref #[← mkAppM ``Global.mk #[toExpr name]]
+      mkAppM ``Source.Term.ref #[← mkAppM ``Global.mk #[toExpr name]]
     | _ => throw $ .error i "Illegal name"
-  -- | `(trm| cast($t:trm, $ty:typ)) => do
-  --   mkAppM ``Term.unsafeCast #[← elabTrm t, ← elabTyp ty]
-  | `(trm| $n:num) => do
-    let data ← mkAppM ``Data.field #[← elabG n]
-    mkAppM ``Term.data #[data]
-  | `(trm| ()) => pure $ mkConst ``Term.unit
-  | `(trm| ($t:trm $[, $ts:trm]*)) => do
+  | `(aiur_trm| $n:num) => do
+    -- Aiur.Source.Term has `.field` directly (no `.data` wrapper).
+    mkAppM ``Source.Term.field #[← elabG n]
+  | `(aiur_trm| ()) => pure $ mkConst ``Source.Term.unit
+  | `(aiur_trm| ($t:aiur_trm $[, $ts:aiur_trm]*)) => do
     if ts.isEmpty then elabTrm t
     else
-      let data ← mkAppM ``Data.tuple #[← elabList t ts elabTrm ``Term true]
-      mkAppM ``Term.data #[data]
-  | `(trm| [$t:trm $[, $ts:trm]*]) => do
-    let data ← mkAppM ``Data.array #[← elabList t ts elabTrm ``Term true]
-    mkAppM ``Term.data #[data]
-  | `(trm| [$t:trm; $n:num]) => do
-    let ts ← mkArrayLit (mkConst ``Term) (.replicate n.getNat (← elabTrm t))
-    let data ← mkAppM ``Data.array #[ts]
-    mkAppM ``Term.data #[data]
-  | `(trm| return $t:trm) => do
-    mkAppM ``Term.ret #[← elabTrm t]
-  | `(trm| let $p:pattern $[: $ty:typ]? = $t:trm; $t':trm) => match ty with
-    | none => do mkAppM ``Term.let #[← elabPattern p, ← elabTrm t, ← elabTrm t']
+      mkAppM ``Source.Term.tuple #[← elabList t ts elabTrm ``Source.Term true]
+  | `(aiur_trm| [$t:aiur_trm $[, $ts:aiur_trm]*]) => do
+    mkAppM ``Source.Term.array #[← elabList t ts elabTrm ``Source.Term true]
+  | `(aiur_trm| [$t:aiur_trm; $n:num]) => do
+    let ts ← mkArrayLit (mkConst ``Source.Term) (.replicate n.getNat (← elabTrm t))
+    mkAppM ``Source.Term.array #[ts]
+  | `(aiur_trm| return $t:aiur_trm) => do
+    mkAppM ``Source.Term.ret #[← elabTrm t]
+  | `(aiur_trm| let $p:aiur_pattern $[: $ty:aiur_typ]? = $t:aiur_trm; $t':aiur_trm) =>
+    match ty with
+    | none => do mkAppM ``Source.Term.let #[← elabPattern p, ← elabTrm t, ← elabTrm t']
     | some ty => do
-      let t ← mkAppM ``Term.ann #[← elabTyp ty, ← elabTrm t]
-      mkAppM ``Term.let #[← elabPattern p, t, ← elabTrm t']
-  | `(trm| let $p:pattern $[: $ty:typ]? = $t:trm;) => match ty with
-    | none => do mkAppM ``Term.let #[← elabPattern p, ← elabTrm t, mkConst ``Term.unit]
+      let t ← mkAppM ``Source.Term.ann #[← elabTyp ty, ← elabTrm t]
+      mkAppM ``Source.Term.let #[← elabPattern p, t, ← elabTrm t']
+  | `(aiur_trm| let $p:aiur_pattern $[: $ty:aiur_typ]? = $t:aiur_trm;) =>
+    match ty with
+    | none => do mkAppM ``Source.Term.let #[← elabPattern p, ← elabTrm t, mkConst ``Source.Term.unit]
     | some ty => do
-      let t ← mkAppM ``Term.ann #[← elabTyp ty, ← elabTrm t]
-      mkAppM ``Term.let #[← elabPattern p, t, mkConst ``Term.unit]
-  | `(trm| let $p:pattern $[: $ty:typ]? = $t:trm) => match ty with
-    | none => do mkAppM ``Term.let #[← elabPattern p, ← elabTrm t, mkConst ``Term.unit]
+      let t ← mkAppM ``Source.Term.ann #[← elabTyp ty, ← elabTrm t]
+      mkAppM ``Source.Term.let #[← elabPattern p, t, mkConst ``Source.Term.unit]
+  | `(aiur_trm| let $p:aiur_pattern $[: $ty:aiur_typ]? = $t:aiur_trm) =>
+    match ty with
+    | none => do mkAppM ``Source.Term.let #[← elabPattern p, ← elabTrm t, mkConst ``Source.Term.unit]
     | some ty => do
-      let t ← mkAppM ``Term.ann #[← elabTyp ty, ← elabTrm t]
-      mkAppM ``Term.let #[← elabPattern p, t, mkConst ``Term.unit]
-  | `(trm| match $t:trm {$[$ps:pattern => $ts:trm,]*}) => do
+      let t ← mkAppM ``Source.Term.ann #[← elabTyp ty, ← elabTrm t]
+      mkAppM ``Source.Term.let #[← elabPattern p, t, mkConst ``Source.Term.unit]
+  | `(aiur_trm| match $t:aiur_trm {$[$ps:aiur_pattern => $ts:aiur_trm,]*}) => do
     let mut prods := Array.mkEmpty (ps.size + 1)
     for (p, t) in ps.zip ts do
       prods := prods.push $ ← mkAppM ``Prod.mk #[← elabPattern p, ← elabTrm t]
-    let prodType ← mkAppM ``Prod #[mkConst ``Pattern, mkConst ``Term]
-    mkAppM ``Term.match #[← elabTrm t, ← mkListLit prodType prods.toList]
-  | `(trm| $[.]?$f:ident ()) => do
+    let prodType ← mkAppM ``Prod #[mkConst ``Pattern, mkConst ``Source.Term]
+    mkAppM ``Source.Term.match #[← elabTrm t, ← mkListLit prodType prods.toList]
+  | `(aiur_trm| $[.]?$f:ident ()) => do
     match f.getId with
     | .str .anonymous _ => pure ()
     | _ => logWarningAt f "empty parentheses are not needed; use the name without parentheses"
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.app #[g, ← elabEmptyList ``Term, toExpr false]
-  | `(trm| $[.]?$f:ident ($a:trm $[, $as:trm]*)) => do
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, toExpr false]
+  | `(aiur_trm| $[.]?$f:ident ($a:aiur_trm $[, $as:aiur_trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term, toExpr false]
-  | `(trm| #$[.]?$f:ident()) => do
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, toExpr false]
+  | `(aiur_trm| #$[.]?$f:ident()) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.app #[g, ← elabEmptyList ``Term, toExpr true]
-  | `(trm| #$[.]?$f:ident($a:trm $[, $as:trm]*)) => do
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, toExpr true]
+  | `(aiur_trm| #$[.]?$f:ident($a:aiur_trm $[, $as:aiur_trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term, toExpr true]
-  | `(trm| $a:trm + $b:trm) => do
-    mkAppM ``Term.add #[← elabTrm a, ← elabTrm b]
-  | `(trm| $a:trm - $b:trm) => do
-    mkAppM ``Term.sub #[← elabTrm a, ← elabTrm b]
-  | `(trm| $a:trm * $b:trm) => do
-    mkAppM ``Term.mul #[← elabTrm a, ← elabTrm b]
-  | `(trm| eq_zero($a:trm)) => do
-    mkAppM ``Term.eqZero #[← elabTrm a]
-  | `(trm| proj($a:trm, $i:num)) => do
-    mkAppM ``Term.proj #[← elabTrm a, toExpr i.getNat]
-  | `(trm| $t:trm[$i:num]) => do
-    mkAppM ``Term.get #[← elabTrm t, toExpr i.getNat]
-  | `(trm| $t:trm[$i:num .. $j:num]) => do
-    mkAppM ``Term.slice #[← elabTrm t, toExpr i.getNat, toExpr j.getNat]
-  | `(trm| set($a:trm, $i:num, $v:trm)) => do
-    mkAppM ``Term.set #[← elabTrm a, toExpr i.getNat, ← elabTrm v]
-  | `(trm| store($a:trm)) => do
-    mkAppM ``Term.store #[← elabTrm a]
-  | `(trm| load($a:trm)) => do
-    mkAppM ``Term.load #[← elabTrm a]
-  | `(trm| ptr_val($a:trm)) => do
-    mkAppM ``Term.ptrVal #[← elabTrm a]
-  | `(trm| assert_eq!($a:trm, $b:trm); $[$ret:trm]?) => do
-    mkAppM ``Term.assertEq #[← elabTrm a, ← elabTrm b, ← elabRet ret]
-  | `(trm| $v:trm : $t:typ) => do
-    mkAppM ``Term.ann #[← elabTyp t, ← elabTrm v]
-  | `(trm| io_get_info($key:trm)) => do
-    mkAppM ``Term.ioGetInfo #[← elabTrm key]
-  | `(trm| io_set_info($key:trm, $idx:trm, $len:trm); $[$ret:trm]?) => do
-    mkAppM ``Term.ioSetInfo
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, toExpr true]
+  | `(aiur_trm| $a:aiur_trm + $b:aiur_trm) => do
+    mkAppM ``Source.Term.add #[← elabTrm a, ← elabTrm b]
+  | `(aiur_trm| $a:aiur_trm - $b:aiur_trm) => do
+    mkAppM ``Source.Term.sub #[← elabTrm a, ← elabTrm b]
+  | `(aiur_trm| $a:aiur_trm * $b:aiur_trm) => do
+    mkAppM ``Source.Term.mul #[← elabTrm a, ← elabTrm b]
+  | `(aiur_trm| eq_zero($a:aiur_trm)) => do
+    mkAppM ``Source.Term.eqZero #[← elabTrm a]
+  | `(aiur_trm| proj($a:aiur_trm, $i:num)) => do
+    mkAppM ``Source.Term.proj #[← elabTrm a, toExpr i.getNat]
+  | `(aiur_trm| $t:aiur_trm[$i:num]) => do
+    mkAppM ``Source.Term.get #[← elabTrm t, toExpr i.getNat]
+  | `(aiur_trm| $t:aiur_trm[$i:num .. $j:num]) => do
+    mkAppM ``Source.Term.slice #[← elabTrm t, toExpr i.getNat, toExpr j.getNat]
+  | `(aiur_trm| set($a:aiur_trm, $i:num, $v:aiur_trm)) => do
+    mkAppM ``Source.Term.set #[← elabTrm a, toExpr i.getNat, ← elabTrm v]
+  | `(aiur_trm| store($a:aiur_trm)) => do
+    mkAppM ``Source.Term.store #[← elabTrm a]
+  | `(aiur_trm| load($a:aiur_trm)) => do
+    mkAppM ``Source.Term.load #[← elabTrm a]
+  | `(aiur_trm| ptr_val($a:aiur_trm)) => do
+    mkAppM ``Source.Term.ptrVal #[← elabTrm a]
+  | `(aiur_trm| assert_eq!($a:aiur_trm, $b:aiur_trm); $[$ret:aiur_trm]?) => do
+    mkAppM ``Source.Term.assertEq #[← elabTrm a, ← elabTrm b, ← elabRet ret]
+  | `(aiur_trm| $v:aiur_trm : $t:aiur_typ) => do
+    mkAppM ``Source.Term.ann #[← elabTyp t, ← elabTrm v]
+  | `(aiur_trm| io_get_info($key:aiur_trm)) => do
+    mkAppM ``Source.Term.ioGetInfo #[← elabTrm key]
+  | `(aiur_trm| io_set_info($key:aiur_trm, $idx:aiur_trm, $len:aiur_trm); $[$ret:aiur_trm]?) => do
+    mkAppM ``Source.Term.ioSetInfo
       #[← elabTrm key, ← elabTrm idx, ← elabTrm len, ← elabRet ret]
-  | `(trm| io_read($idx:trm, $len:num)) => do
-    mkAppM ``Term.ioRead #[← elabTrm idx, mkNatLit len.getNat]
-  | `(trm| io_write($data:trm); $[$ret:trm]?) => do
-    mkAppM ``Term.ioWrite #[← elabTrm data, ← elabRet ret]
-  | `(trm| u8_bit_decomposition($byte:trm)) => do
-    mkAppM ``Term.u8BitDecomposition #[← elabTrm byte]
-  | `(trm| u8_shift_left($byte:trm)) => do
-    mkAppM ``Term.u8ShiftLeft #[← elabTrm byte]
-  | `(trm| u8_shift_right($byte:trm)) => do
-    mkAppM ``Term.u8ShiftRight #[← elabTrm byte]
-  | `(trm| u8_xor($i:trm, $j:trm)) => do
-    mkAppM ``Term.u8Xor #[← elabTrm i, ← elabTrm j]
-  | `(trm| u8_add($i:trm, $j:trm)) => do
-    mkAppM ``Term.u8Add #[← elabTrm i, ← elabTrm j]
-  | `(trm| u8_sub($i:trm, $j:trm)) => do
-    mkAppM ``Term.u8Sub #[← elabTrm i, ← elabTrm j]
-  | `(trm| u8_and($i:trm, $j:trm)) => do
-    mkAppM ``Term.u8And #[← elabTrm i, ← elabTrm j]
-  | `(trm| u8_or($i:trm, $j:trm)) => do
-    mkAppM ``Term.u8Or #[← elabTrm i, ← elabTrm j]
-  | `(trm| u8_less_than($i:trm, $j:trm)) => do
-    mkAppM ``Term.u8LessThan #[← elabTrm i, ← elabTrm j]
-  | `(trm| u32_less_than($i:trm, $j:trm)) => do
-    mkAppM ``Term.u32LessThan #[← elabTrm i, ← elabTrm j]
-  | `(trm| dbg!($label:str $[, $t:trm]?); $[$ret:trm]?) => do
+  | `(aiur_trm| io_read($idx:aiur_trm, $len:num)) => do
+    mkAppM ``Source.Term.ioRead #[← elabTrm idx, mkNatLit len.getNat]
+  | `(aiur_trm| io_write($data:aiur_trm); $[$ret:aiur_trm]?) => do
+    mkAppM ``Source.Term.ioWrite #[← elabTrm data, ← elabRet ret]
+  | `(aiur_trm| u8_bit_decomposition($byte:aiur_trm)) => do
+    mkAppM ``Source.Term.u8BitDecomposition #[← elabTrm byte]
+  | `(aiur_trm| u8_shift_left($byte:aiur_trm)) => do
+    mkAppM ``Source.Term.u8ShiftLeft #[← elabTrm byte]
+  | `(aiur_trm| u8_shift_right($byte:aiur_trm)) => do
+    mkAppM ``Source.Term.u8ShiftRight #[← elabTrm byte]
+  | `(aiur_trm| u8_xor($i:aiur_trm, $j:aiur_trm)) => do
+    mkAppM ``Source.Term.u8Xor #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| u8_add($i:aiur_trm, $j:aiur_trm)) => do
+    mkAppM ``Source.Term.u8Add #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| u8_sub($i:aiur_trm, $j:aiur_trm)) => do
+    mkAppM ``Source.Term.u8Sub #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| u8_and($i:aiur_trm, $j:aiur_trm)) => do
+    mkAppM ``Source.Term.u8And #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| u8_or($i:aiur_trm, $j:aiur_trm)) => do
+    mkAppM ``Source.Term.u8Or #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| u8_less_than($i:aiur_trm, $j:aiur_trm)) => do
+    mkAppM ``Source.Term.u8LessThan #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| u32_less_than($i:aiur_trm, $j:aiur_trm)) => do
+    mkAppM ``Source.Term.u32LessThan #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| dbg!($label:str $[, $t:aiur_trm]?); $[$ret:aiur_trm]?) => do
     let t ← match t with
-      | none => mkAppOptM ``Option.none #[some (mkConst ``Term)]
+      | none => mkAppOptM ``Option.none #[some (mkConst ``Source.Term)]
       | some t => mkAppM ``Option.some #[← elabTrm t]
-    mkAppM ``Term.debug #[mkStrLit label.getString, t, ← elabRet ret]
-  | `(trm| fold($i .. $j, $init, |$acc, @$v| $body)) => do
+    mkAppM ``Source.Term.debug #[mkStrLit label.getString, t, ← elabRet ret]
+  -- Template function calls: explicit type args are dropped (inferred)
+  | `(aiur_trm| $f:ident‹$_:aiur_typ $[, $_:aiur_typ]*›()) => do
+    let g ← mkAppM ``Global.mk #[toExpr f.getId]
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, toExpr false]
+  | `(aiur_trm| $f:ident‹$_:aiur_typ $[, $_:aiur_typ]*›
+                 ($a:aiur_trm $[, $as:aiur_trm]*)) => do
+    let g ← mkAppM ``Global.mk #[toExpr f.getId]
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, toExpr false]
+  | `(aiur_trm| #$f:ident‹$_:aiur_typ $[, $_:aiur_typ]*›()) => do
+    let g ← mkAppM ``Global.mk #[toExpr f.getId]
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, toExpr true]
+  | `(aiur_trm| #$f:ident‹$_:aiur_typ $[, $_:aiur_typ]*›
+                 ($a:aiur_trm $[, $as:aiur_trm]*)) => do
+    let g ← mkAppM ``Global.mk #[toExpr f.getId]
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, toExpr true]
+  -- Template constructor calls
+  | `(aiur_trm| $tmpl:ident‹$_:aiur_typ $[, $_:aiur_typ]*›.$ctor:ident()) => do
+    logWarningAt ctor "empty parentheses are not needed; use the name without parentheses"
+    let name := tmpl.getId ++ ctor.getId
+    let g ← mkAppM ``Global.mk #[toExpr name]
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, toExpr false]
+  | `(aiur_trm| $tmpl:ident‹$_:aiur_typ $[, $_:aiur_typ]*›.$ctor:ident
+                 ($a:aiur_trm $[, $as:aiur_trm]*)) => do
+    let name := tmpl.getId ++ ctor.getId
+    let g ← mkAppM ``Global.mk #[toExpr name]
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, toExpr false]
+  | `(aiur_trm| fold($i .. $j, $init, |$acc, @$v| $body)) => do
     let i := i.getNat
     let j := j.getNat
     let range := if i ≤ j then List.range' i (j - i)
@@ -298,211 +341,187 @@ partial def elabTrm : ElabStxCat `trm
     let mut res := init
     for n in range do
       let body' ← replaceToken v.getId n body
-      res ← `(trm| let $acc = $res; $body')
+      res ← `(aiur_trm| let $acc = $res; $body')
     elabTrm res
-  -- Template function calls: explicit type args are dropped (inferred)
-  | `(trm| $f:ident‹$_:typ $[, $_:typ]*›()) => do
-    let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.app #[g, ← elabEmptyList ``Term, toExpr false]
-  | `(trm| $f:ident‹$_:typ $[, $_:typ]*›($a:trm $[, $as:trm]*)) => do
-    let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term, toExpr false]
-  -- Unconstrained template function calls
-  | `(trm| #$f:ident‹$_:typ $[, $_:typ]*›()) => do
-    let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.app #[g, ← elabEmptyList ``Term, toExpr true]
-  | `(trm| #$f:ident‹$_:typ $[, $_:typ]*›($a:trm $[, $as:trm]*)) => do
-    let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term, toExpr true]
-  -- Template constructor calls
-  | `(trm| $tmpl:ident‹$_:typ $[, $_:typ]*›.$ctor:ident()) => do
-    logWarningAt ctor "empty parentheses are not needed; use the name without parentheses"
-    let name := tmpl.getId ++ ctor.getId
-    let g ← mkAppM ``Global.mk #[toExpr name]
-    mkAppM ``Term.app #[g, ← elabEmptyList ``Term, toExpr false]
-  | `(trm| $tmpl:ident‹$_:typ $[, $_:typ]*›.$ctor:ident($a:trm $[, $as:trm]*)) => do
-    let name := tmpl.getId ++ ctor.getId
-    let g ← mkAppM ``Global.mk #[toExpr name]
-    mkAppM ``Term.app #[g, ← elabList a as elabTrm ``Term, toExpr false]
-  | `(trm| $_[@$var]) => throw $ .error var "Unbound macro variable"
-  | `(trm| set($_, @$var, $_)) => throw $ .error var "Unbound macro variable"
+  | `(aiur_trm| $_[@$var]) => throw $ .error var "Unbound macro variable"
+  | `(aiur_trm| set($_, @$var, $_)) => throw $ .error var "Unbound macro variable"
   | stx => throw $ .error stx "Invalid syntax for term"
 where
-  elabRet : Option (TSyntax `trm) → TermElabM Expr
-    | none => pure $ mkConst ``Term.unit
+  elabRet : Option (TSyntax `aiur_trm) → TermElabM Expr
+    | none => pure $ mkConst ``Source.Term.unit
     | some ret => elabTrm ret
-  replaceToken (old : Name) (new : Nat) : TSyntax `trm → TermElabM (TSyntax `trm)
-    | `(trm| $arr[@$var]) => do
+  replaceToken (old : Name) (new : Nat) : TSyntax `aiur_trm → TermElabM (TSyntax `aiur_trm)
+    | `(aiur_trm| $arr[@$var]) => do
       let arr ← replaceToken old new arr
       if var.getId = old then
         let new := Syntax.mkNatLit new
-        `(trm| $arr[$new])
-      else `(trm| $arr[@$var])
-    | `(trm| set($arr, @$var, $v)) => do
+        `(aiur_trm| $arr[$new])
+      else `(aiur_trm| $arr[@$var])
+    | `(aiur_trm| set($arr, @$var, $v)) => do
       let arr ← replaceToken old new arr
       let v ← replaceToken old new v
       if var.getId = old then
         let new := Syntax.mkNatLit new
-        `(trm| set($arr, $new, $v))
-      else `(trm| set($arr, @$var, $v))
-    | `(trm| ($t $[, $ts]*)) => do
+        `(aiur_trm| set($arr, $new, $v))
+      else `(aiur_trm| set($arr, @$var, $v))
+    | `(aiur_trm| ($t $[, $ts]*)) => do
       let t ← replaceToken old new t
       let ts ← ts.mapM $ replaceToken old new
-      `(trm| ($t $[, $ts]*))
-    | `(trm| [$t $[, $ts]*]) => do
+      `(aiur_trm| ($t $[, $ts]*))
+    | `(aiur_trm| [$t $[, $ts]*]) => do
       let t ← replaceToken old new t
       let ts ← ts.mapM $ replaceToken old new
-      `(trm| [$t $[, $ts]*])
-    | `(trm| [$t; $n]) => do
+      `(aiur_trm| [$t $[, $ts]*])
+    | `(aiur_trm| [$t; $n]) => do
       let t ← replaceToken old new t
-      `(trm| [$t; $n])
-    | `(trm| return $t:trm) => do
+      `(aiur_trm| [$t; $n])
+    | `(aiur_trm| return $t:aiur_trm) => do
       let t ← replaceToken old new t
-      `(trm| return $t)
-    | `(trm| let $p:pattern $[: $ty]? = $t:trm; $t':trm) => do
+      `(aiur_trm| return $t)
+    | `(aiur_trm| let $p:aiur_pattern $[: $ty]? = $t:aiur_trm; $t':aiur_trm) => do
       let t ← replaceToken old new t
       let t' ← replaceToken old new t'
-      `(trm| let $p $[: $ty]? = $t; $t')
-    | `(trm| let $p:pattern $[: $ty]? = $t:trm;) => do
+      `(aiur_trm| let $p $[: $ty]? = $t; $t')
+    | `(aiur_trm| let $p:aiur_pattern $[: $ty]? = $t:aiur_trm;) => do
       let t ← replaceToken old new t
-      `(trm| let $p $[: $ty]? = $t;)
-    | `(trm| let $p:pattern $[: $ty]? = $t:trm) => do
+      `(aiur_trm| let $p $[: $ty]? = $t;)
+    | `(aiur_trm| let $p:aiur_pattern $[: $ty]? = $t:aiur_trm) => do
       let t ← replaceToken old new t
-      `(trm| let $p $[: $ty]? = $t)
-    | `(trm| match $t:trm {$[$ps:pattern => $ts:trm,]*}) => do
+      `(aiur_trm| let $p $[: $ty]? = $t)
+    | `(aiur_trm| match $t:aiur_trm {$[$ps:aiur_pattern => $ts:aiur_trm,]*}) => do
       let t ← replaceToken old new t
       let ts ← ts.mapM $ replaceToken old new
-      `(trm| match $t {$[$ps:pattern => $ts:trm,]*})
-    | `(trm| $[.%$dot]?$f:ident ($a:trm $[, $as:trm]*)) => do
+      `(aiur_trm| match $t {$[$ps:aiur_pattern => $ts:aiur_trm,]*})
+    | `(aiur_trm| $[.%$dot]?$f:ident ($a:aiur_trm $[, $as:aiur_trm]*)) => do
       let a ← replaceToken old new a
       let as ← as.mapM $ replaceToken old new
-      if dot.isSome then `(trm| .$f:ident ($a $[, $as]*))
-      else `(trm| $f:ident ($a $[, $as]*))
-    | `(trm| #$[.%$dot]?$f:ident($a:trm $[, $as:trm]*)) => do
+      if dot.isSome then `(aiur_trm| .$f:ident ($a $[, $as]*))
+      else `(aiur_trm| $f:ident ($a $[, $as]*))
+    | `(aiur_trm| #$[.%$dot]?$f:ident($a:aiur_trm $[, $as:aiur_trm]*)) => do
       let a ← replaceToken old new a
       let as ← as.mapM $ replaceToken old new
-      if dot.isSome then `(trm| #.$f:ident($a $[, $as]*))
-      else `(trm| #$f:ident($a $[, $as]*))
-    | `(trm| $a + $b) => do
+      if dot.isSome then `(aiur_trm| #.$f:ident($a $[, $as]*))
+      else `(aiur_trm| #$f:ident($a $[, $as]*))
+    | `(aiur_trm| $a + $b) => do
       let a ← replaceToken old new a
       let b ← replaceToken old new b
-      `(trm| $a + $b)
-    | `(trm| $a - $b) => do
+      `(aiur_trm| $a + $b)
+    | `(aiur_trm| $a - $b) => do
       let a ← replaceToken old new a
       let b ← replaceToken old new b
-      `(trm| $a - $b)
-    | `(trm| $a * $b) => do
+      `(aiur_trm| $a - $b)
+    | `(aiur_trm| $a * $b) => do
       let a ← replaceToken old new a
       let b ← replaceToken old new b
-      `(trm| $a * $b)
-    | `(trm| eq_zero($a:trm)) => do
+      `(aiur_trm| $a * $b)
+    | `(aiur_trm| eq_zero($a:aiur_trm)) => do
       let a ← replaceToken old new a
-      `(trm| eq_zero($a))
-    | `(trm| proj($a:trm, $i:num)) => do
+      `(aiur_trm| eq_zero($a))
+    | `(aiur_trm| proj($a:aiur_trm, $i:num)) => do
       let a ← replaceToken old new a
-      `(trm| proj($a, $i))
-    | `(trm| $t:trm[$i:num]) => do
+      `(aiur_trm| proj($a, $i))
+    | `(aiur_trm| $t:aiur_trm[$i:num]) => do
       let t ← replaceToken old new t
-      `(trm| $t[$i])
-    | `(trm| $t:trm[$i:num..$j:num]) => do
+      `(aiur_trm| $t[$i])
+    | `(aiur_trm| $t:aiur_trm[$i:num..$j:num]) => do
       let t ← replaceToken old new t
-      `(trm| $t[$i..$j])
-    | `(trm| set($a:trm, $i:num, $v:trm)) => do
+      `(aiur_trm| $t[$i..$j])
+    | `(aiur_trm| set($a:aiur_trm, $i:num, $v:aiur_trm)) => do
       let a ← replaceToken old new a
       let v ← replaceToken old new v
-      `(trm| set($a, $i, $v))
-    | `(trm| store($a:trm)) => do
+      `(aiur_trm| set($a, $i, $v))
+    | `(aiur_trm| store($a:aiur_trm)) => do
       let a ← replaceToken old new a
-      `(trm| store($a))
-    | `(trm| load($a:trm)) => do
+      `(aiur_trm| store($a))
+    | `(aiur_trm| load($a:aiur_trm)) => do
       let a ← replaceToken old new a
-      `(trm| load($a))
-    | `(trm| ptr_val($a:trm)) => do
+      `(aiur_trm| load($a))
+    | `(aiur_trm| ptr_val($a:aiur_trm)) => do
       let a ← replaceToken old new a
-      `(trm| ptr_val($a))
-    | `(trm| assert_eq!($a:trm, $b:trm); $[$ret:trm]?) => do
+      `(aiur_trm| ptr_val($a))
+    | `(aiur_trm| assert_eq!($a:aiur_trm, $b:aiur_trm); $[$ret:aiur_trm]?) => do
       let a ← replaceToken old new a
       let b ← replaceToken old new b
       let ret' ← ret.mapM $ replaceToken old new
-      `(trm| assert_eq!($a, $b); $[$ret']?)
-    | `(trm| $v:trm : $t:typ) => do
+      `(aiur_trm| assert_eq!($a, $b); $[$ret']?)
+    | `(aiur_trm| $v:aiur_trm : $t:aiur_typ) => do
       let v ← replaceToken old new v
-      `(trm| $v : $t)
-    | `(trm| io_get_info($key:trm)) => do
+      `(aiur_trm| $v : $t)
+    | `(aiur_trm| io_get_info($key:aiur_trm)) => do
       let key ← replaceToken old new key
-      `(trm| io_get_info($key))
-    | `(trm| io_set_info($key:trm, $idx:trm, $len:trm); $[$ret:trm]?) => do
+      `(aiur_trm| io_get_info($key))
+    | `(aiur_trm| io_set_info($key:aiur_trm, $idx:aiur_trm, $len:aiur_trm); $[$ret:aiur_trm]?) => do
       let key ← replaceToken old new key
       let idx ← replaceToken old new idx
       let len ← replaceToken old new len
       let ret' ← ret.mapM $ replaceToken old new
-      `(trm| io_set_info($key, $idx, $len); $[$ret']?)
-    | `(trm| io_read($idx:trm, $len:num)) => do
+      `(aiur_trm| io_set_info($key, $idx, $len); $[$ret']?)
+    | `(aiur_trm| io_read($idx:aiur_trm, $len:num)) => do
       let idx ← replaceToken old new idx
-      `(trm| io_read($idx, $len))
-    | `(trm| io_write($data:trm); $[$ret:trm]?) => do
+      `(aiur_trm| io_read($idx, $len))
+    | `(aiur_trm| io_write($data:aiur_trm); $[$ret:aiur_trm]?) => do
       let data ← replaceToken old new data
       let ret' ← ret.mapM $ replaceToken old new
-      `(trm| io_write($data); $[$ret']?)
-    | `(trm| u8_bit_decomposition($byte:trm)) => do
+      `(aiur_trm| io_write($data); $[$ret']?)
+    | `(aiur_trm| u8_bit_decomposition($byte:aiur_trm)) => do
       let byte ← replaceToken old new byte
-      `(trm| u8_bit_decomposition($byte))
-    | `(trm| u8_shift_left($byte:trm)) => do
+      `(aiur_trm| u8_bit_decomposition($byte))
+    | `(aiur_trm| u8_shift_left($byte:aiur_trm)) => do
       let byte ← replaceToken old new byte
-      `(trm| u8_shift_left($byte))
-    | `(trm| u8_shift_right($byte:trm)) => do
+      `(aiur_trm| u8_shift_left($byte))
+    | `(aiur_trm| u8_shift_right($byte:aiur_trm)) => do
       let byte ← replaceToken old new byte
-      `(trm| u8_shift_right($byte))
-    | `(trm| u8_xor($i:trm, $j:trm)) => do
+      `(aiur_trm| u8_shift_right($byte))
+    | `(aiur_trm| u8_xor($i:aiur_trm, $j:aiur_trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j
-      `(trm| u8_xor($i, $j))
-    | `(trm| u8_add($i:trm, $j:trm)) => do
+      `(aiur_trm| u8_xor($i, $j))
+    | `(aiur_trm| u8_add($i:aiur_trm, $j:aiur_trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j
-      `(trm| u8_add($i, $j))
-    | `(trm| u8_sub($i:trm, $j:trm)) => do
+      `(aiur_trm| u8_add($i, $j))
+    | `(aiur_trm| u8_sub($i:aiur_trm, $j:aiur_trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j
-      `(trm| u8_sub($i, $j))
-    | `(trm| u8_and($i:trm, $j:trm)) => do
+      `(aiur_trm| u8_sub($i, $j))
+    | `(aiur_trm| u8_and($i:aiur_trm, $j:aiur_trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j
-      `(trm| u8_and($i, $j))
-    | `(trm| u8_or($i:trm, $j:trm)) => do
+      `(aiur_trm| u8_and($i, $j))
+    | `(aiur_trm| u8_or($i:aiur_trm, $j:aiur_trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j
-      `(trm| u8_or($i, $j))
-    | `(trm| u8_less_than($i:trm, $j:trm)) => do
+      `(aiur_trm| u8_or($i, $j))
+    | `(aiur_trm| u8_less_than($i:aiur_trm, $j:aiur_trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j
-      `(trm| u8_less_than($i, $j))
-    | `(trm| u32_less_than($i:trm, $j:trm)) => do
+      `(aiur_trm| u8_less_than($i, $j))
+    | `(aiur_trm| u32_less_than($i:aiur_trm, $j:aiur_trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j
-      `(trm| u32_less_than($i, $j))
-    | `(trm| dbg!($label:str $[, $t:trm]?); $[$ret:trm]?) => do
+      `(aiur_trm| u32_less_than($i, $j))
+    | `(aiur_trm| dbg!($label:str $[, $t:aiur_trm]?); $[$ret:aiur_trm]?) => do
       let t' ← t.mapM $ replaceToken old new
       let ret' ← ret.mapM $ replaceToken old new
-      `(trm| dbg!($label $[, $t']?); $[$ret']?)
-    | `(trm| fold($i .. $j, $init, |$acc, @$v| $body)) => do
+      `(aiur_trm| dbg!($label $[, $t']?); $[$ret']?)
+    | `(aiur_trm| fold($i .. $j, $init, |$acc, @$v| $body)) => do
       let init ← replaceToken old new init
       -- Don't conflict with shadowing tokens.
       let body ← if v.getId = old then pure body
         else replaceToken old new body
-      `(trm| fold($i .. $j, $init, |$acc, @$v| $body))
+      `(aiur_trm| fold($i .. $j, $init, |$acc, @$v| $body))
     | stx => pure stx
 
-declare_syntax_cat                     constructor
-syntax ident                         : constructor
-syntax ident "(" typ (", " typ)* ")" : constructor
+declare_syntax_cat                                aiur_constructor
+syntax ident                                    : aiur_constructor
+syntax ident "(" aiur_typ (", " aiur_typ)* ")" : aiur_constructor
 
-def elabConstructor : ElabStxCat `constructor
-  | `(constructor| $i:ident) => match i.getId with
+def elabConstructor : ElabStxCat `aiur_constructor
+  | `(aiur_constructor| $i:ident) => match i.getId with
     | .str .anonymous name => do
       mkAppM ``Constructor.mk #[toExpr name, ← elabEmptyList ``Typ]
     | _ => throw $ .error i "Illegal constructor name"
-  | `(constructor| $i:ident($t:typ$[, $ts:typ]*)) => match i.getId with
+  | `(aiur_constructor| $i:ident($t:aiur_typ$[, $ts:aiur_typ]*)) => match i.getId with
     | .str .anonymous name => do
       mkAppM ``Constructor.mk #[toExpr name, ← elabList t ts elabTyp ``Typ]
     | _ => throw $ .error i "Illegal constructor name"
@@ -518,123 +537,147 @@ def elabTypeParams (head : TSyntax `ident) (tail : Array (TSyntax `ident)) :
   let expr ← mkListLit (mkConst ``String) (params.map toExpr).toList
   pure (params, expr)
 
-declare_syntax_cat                                                                         data_type
-syntax "enum " ident                                                                     : data_type
-syntax "enum " ident "{" constructor (", " constructor)* "}"                             : data_type
-syntax "enum " ident "‹" ident (", " ident)* "›"                                         : data_type
-syntax "enum " ident "‹" ident (", " ident)* "›" "{" constructor (", " constructor)* "}" : data_type
+declare_syntax_cat                                              aiur_data_type
+syntax "enum " ident                                          : aiur_data_type
+syntax "enum " ident "{" aiur_constructor
+       (", " aiur_constructor)* "}"                          : aiur_data_type
+syntax "enum " ident "‹" ident (", " ident)* "›"              : aiur_data_type
+syntax "enum " ident "‹" ident (", " ident)* "›" "{"
+       aiur_constructor (", " aiur_constructor)* "}"        : aiur_data_type
 
-def elabDataType : ElabStxCat `data_type
-  | `(data_type| enum $n:ident) => do
+def elabDataType : ElabStxCat `aiur_data_type
+  | `(aiur_data_type| enum $n:ident) => do
     let g ← mkAppM ``Global.mk #[toExpr n.getId]
     mkAppM ``DataType.mk #[g, ← elabEmptyList ``String, ← elabEmptyList ``Constructor]
-  | `(data_type| enum $n:ident {$c:constructor $[, $cs:constructor]*}) => do
+  | `(aiur_data_type| enum $n:ident
+       {$c:aiur_constructor $[, $cs:aiur_constructor]*}) => do
     let g ← mkAppM ``Global.mk #[toExpr n.getId]
-    mkAppM ``DataType.mk #[g, ← elabEmptyList ``String, ← elabList c cs elabConstructor ``Constructor]
-  | `(data_type| enum $n:ident‹$p:ident $[, $ps:ident]*›) => do
+    mkAppM ``DataType.mk
+      #[g, ← elabEmptyList ``String,
+        ← elabList c cs elabConstructor ``Constructor]
+  | `(aiur_data_type| enum $n:ident‹$p:ident $[, $ps:ident]*›) => do
     let g ← mkAppM ``Global.mk #[toExpr n.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     mkAppM ``DataType.mk #[g, paramsExpr, ← elabEmptyList ``Constructor]
-  | `(data_type| enum $n:ident‹$p:ident $[, $ps:ident]*› {$c:constructor $[, $cs:constructor]*}) => do
+  | `(aiur_data_type| enum $n:ident‹$p:ident $[, $ps:ident]*›
+       {$c:aiur_constructor $[, $cs:aiur_constructor]*}) => do
     let g ← mkAppM ``Global.mk #[toExpr n.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
-    mkAppM ``DataType.mk #[g, paramsExpr, ← elabList c cs elabConstructor ``Constructor]
+    mkAppM ``DataType.mk
+      #[g, paramsExpr, ← elabList c cs elabConstructor ``Constructor]
   | stx => throw $ .error stx "Invalid syntax for data type"
 
-declare_syntax_cat             type_alias
-syntax "type " ident " = " typ                                     : type_alias
-syntax "type " ident "‹" ident (", " ident)* "›" " = " typ         : type_alias
+declare_syntax_cat                                                  aiur_type_alias
+syntax "type " ident " = " aiur_typ                              : aiur_type_alias
+syntax "type " ident "‹" ident (", " ident)* "›" " = " aiur_typ  : aiur_type_alias
 
-def elabTypeAlias : ElabStxCat `type_alias
-  | `(type_alias| type $n:ident = $t:typ) => do
+def elabTypeAlias : ElabStxCat `aiur_type_alias
+  | `(aiur_type_alias| type $n:ident = $t:aiur_typ) => do
     let g ← mkAppM ``Global.mk #[toExpr n.getId]
     mkAppM ``TypeAlias.mk #[g, ← elabEmptyList ``String, ← elabTyp t]
-  | `(type_alias| type $n:ident‹$p:ident $[, $ps:ident]*› = $t:typ) => do
+  | `(aiur_type_alias| type $n:ident‹$p:ident $[, $ps:ident]*› = $t:aiur_typ) => do
     let g ← mkAppM ``Global.mk #[toExpr n.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     mkAppM ``TypeAlias.mk #[g, paramsExpr, ← elabTyp t]
   | stx => throw $ .error stx "Invalid syntax for type alias"
 
-declare_syntax_cat      bind
-syntax ident ": " typ : bind
+declare_syntax_cat            aiur_bind
+syntax ident ": " aiur_typ : aiur_bind
 
-def elabBind : ElabStxCat `bind
-  | `(bind| $i:ident: $t:typ) => match i.getId with
+def elabBind : ElabStxCat `aiur_bind
+  | `(aiur_bind| $i:ident: $t:aiur_typ) => match i.getId with
     | .str .anonymous name => do
       mkAppM ``Prod.mk #[← mkAppM ``Local.str #[toExpr name], ← elabTyp t]
     | _ => throw $ .error i "Illegal variable name"
   | stx => throw $ .error stx "Invalid syntax for binding"
 
-declare_syntax_cat                                                                                   function
-syntax ("pub ")? "fn " ident "(" ")" (" -> " typ)? "{" trm "}"                                     : function
-syntax ("pub ")? "fn " ident "(" bind (", " bind)* ")" (" -> " typ)? "{" trm "}"                   : function
-syntax "fn " ident "‹" ident (", " ident)* "›" "(" ")" (" -> " typ)? "{" trm "}"                   : function
-syntax "fn " ident "‹" ident (", " ident)* "›" "(" bind (", " bind)* ")" (" -> " typ)? "{" trm "}" : function
+declare_syntax_cat                                                                                aiur_function
+syntax ("pub ")? "fn " ident "(" ")" (" -> " aiur_typ)? "{" aiur_trm "}"                      : aiur_function
+syntax ("pub ")? "fn " ident "(" aiur_bind (", " aiur_bind)* ")"
+       (" -> " aiur_typ)? "{" aiur_trm "}"                                                    : aiur_function
+syntax "fn " ident "‹" ident (", " ident)* "›" "(" ")"
+       (" -> " aiur_typ)? "{" aiur_trm "}"                                                    : aiur_function
+syntax "fn " ident "‹" ident (", " ident)* "›"
+       "(" aiur_bind (", " aiur_bind)* ")"
+       (" -> " aiur_typ)? "{" aiur_trm "}"                                                    : aiur_function
 
-def elabFunction : ElabStxCat `function
-  | `(function| $[pub%$e]? fn $i:ident() $[-> $ty:typ]? {$t:trm}) => do
+def elabFunction : ElabStxCat `aiur_function
+  | `(aiur_function| $[pub%$e]? fn $i:ident() $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     let e := elabEntryBool e
-    mkAppM ``Function.mk #[g, ← elabEmptyList ``String, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t, e]
-  | `(function| $[pub%$e]? fn $i:ident($b:bind $[, $bs:bind]*) $[-> $ty:typ]? {$t:trm}) => do
+    mkAppM ``Source.Function.mk
+      #[g, ← elabEmptyList ``String, ← mkListLit bindType [],
+        ← elabRetTyp ty, ← elabTrm t, e]
+  | `(aiur_function| $[pub%$e]? fn $i:ident($b:aiur_bind $[, $bs:aiur_bind]*)
+        $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     let e := elabEntryBool e
-    mkAppM ``Function.mk
-      #[g, ← elabEmptyList ``String, ← elabListCore b bs elabBind bindType, ← elabRetTyp ty, ← elabTrm t, e]
-  | `(function| fn $i:ident‹$p:ident $[, $ps:ident]*›() $[-> $ty:typ]? {$t:trm}) => do
+    mkAppM ``Source.Function.mk
+      #[g, ← elabEmptyList ``String,
+        ← elabListCore b bs elabBind bindType,
+        ← elabRetTyp ty, ← elabTrm t, e]
+  | `(aiur_function| fn $i:ident‹$p:ident $[, $ps:ident]*›()
+        $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    mkAppM ``Function.mk
-      #[g, paramsExpr, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t, mkConst ``Bool.false]
-  | `(function| fn $i:ident‹$p:ident $[, $ps:ident]*›($b:bind $[, $bs:bind]*) $[-> $ty:typ]? {$t:trm}) => do
+    mkAppM ``Source.Function.mk
+      #[g, paramsExpr, ← mkListLit bindType [],
+        ← elabRetTyp ty, ← elabTrm t, mkConst ``Bool.false]
+  | `(aiur_function| fn $i:ident‹$p:ident $[, $ps:ident]*›
+        ($b:aiur_bind $[, $bs:aiur_bind]*)
+        $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    mkAppM ``Function.mk
-      #[g, paramsExpr, ← elabListCore b bs elabBind bindType, ← elabRetTyp ty, ← elabTrm t, mkConst ``Bool.false]
+    mkAppM ``Source.Function.mk
+      #[g, paramsExpr,
+        ← elabListCore b bs elabBind bindType,
+        ← elabRetTyp ty, ← elabTrm t, mkConst ``Bool.false]
   | stx => throw $ .error stx "Invalid syntax for function"
 where
   elabEntryBool : Option Syntax → Expr
     | none => mkConst ``Bool.false
     | some _ => mkConst ``Bool.true
-  elabRetTyp : Option (TSyntax `typ) → TermElabM Expr
+  elabRetTyp : Option (TSyntax `aiur_typ) → TermElabM Expr
     | none => pure $ mkConst ``Typ.unit
     | some typ => elabTyp typ
 
-declare_syntax_cat declaration
-syntax function   : declaration
-syntax data_type  : declaration
-syntax type_alias : declaration
+declare_syntax_cat       aiur_declaration
+syntax aiur_function   : aiur_declaration
+syntax aiur_data_type  : aiur_declaration
+syntax aiur_type_alias : aiur_declaration
 
 def accElabDeclarations (declarations : (Array Expr × Array Expr × Array Expr))
-    (stx : TSyntax `declaration) : TermElabM (Array Expr × Array Expr × Array Expr) :=
+    (stx : TSyntax `aiur_declaration) :
+    TermElabM (Array Expr × Array Expr × Array Expr) :=
   let (dataTypes, typeAliases, functions) := declarations
   match stx with
-  | `(declaration| $f:function) => do
+  | `(aiur_declaration| $f:aiur_function) => do
     pure (dataTypes, typeAliases, functions.push $ ← elabFunction f)
-  | `(declaration| $d:data_type) => do
+  | `(aiur_declaration| $d:aiur_data_type) => do
     pure (dataTypes.push $ ← elabDataType d, typeAliases, functions)
-  | `(declaration| $ta:type_alias) => do
+  | `(aiur_declaration| $ta:aiur_type_alias) => do
     pure (dataTypes, typeAliases.push $ ← elabTypeAlias ta, functions)
   | stx => throw $ .error stx "Invalid syntax for declaration"
 
-declare_syntax_cat    toplevel
-syntax declaration* : toplevel
+declare_syntax_cat          aiur_toplevel
+syntax aiur_declaration* : aiur_toplevel
 
-def elabToplevel : ElabStxCat `toplevel
-  | `(toplevel| $[$ds:declaration]*) => do
-    let (dataTypes, typeAliases, functions) ← ds.foldlM (init := default) accElabDeclarations
-    mkAppM ``Toplevel.mk #[
+def elabToplevel : ElabStxCat `aiur_toplevel
+  | `(aiur_toplevel| $[$ds:aiur_declaration]*) => do
+    let (dataTypes, typeAliases, functions) ←
+      ds.foldlM (init := default) accElabDeclarations
+    mkAppM ``Source.Toplevel.mk #[
       ← mkArrayLit (mkConst ``DataType) dataTypes.toList,
       ← mkArrayLit (mkConst ``TypeAlias) typeAliases.toList,
-      ← mkArrayLit (mkConst ``Function) functions.toList,
+      ← mkArrayLit (mkConst ``Source.Function) functions.toList,
     ]
   | stx => throw $ .error stx "Invalid syntax for toplevel"
 
-elab "⟦" t:toplevel "⟧" : term => elabToplevel t
+elab "⟦" t:aiur_toplevel "⟧" : term => elabToplevel t
 
 end Aiur
 

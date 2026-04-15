@@ -1,61 +1,91 @@
 module
-public import Std.Data.HashSet.Basic
-public import Ix.Aiur.TypedTerm
-public import Ix.Aiur.Bytecode
+public import Ix.Aiur.Stages.Concrete
+public import Ix.Aiur.Stages.Bytecode
 public import Lean.Data.RBTree
 
 /-!
 Circuit layout computation for Aiur bytecode.
 
-Walks a compiled `Block` to determine how many selectors, auxiliaries, and lookups
-each function's circuit requires. The result (`FunctionLayout`) is used by the Rust
-backend to allocate columns in the constraint system.
+Consumes `Concrete.Term`, so `typSize` has no `.mvar` or parametric `.app` arms
+to reject — the failure modes `Ix/Aiur/Compiler/Layout.lean` has (at `:41, :93`
+per the `unreachable!` audit) cannot happen.
+
+The `gadget` arm of the previous `Layout` is dropped.
 -/
 
 public section
+@[expose] section
 
 namespace Aiur
 
+namespace Concrete
+
+/-! ## Flat size computation — total via `visited` set + depth bound.
+
+Mirrors the pattern used in `Ix/Aiur/Semantics/Flatten.lean` to keep the
+three mutual functions total: every `DataType.size` call inserts a fresh
+name into `visited`, and we carry a `bound` parameter that upper-bounds
+the remaining recursion depth. The outer interfaces use `decls.size + 1`
+as bound — the monotonic visited set makes this bound unreachable on
+well-formed inputs. -/
+
 mutual
 
-open Std (HashSet)
-
-partial def Typ.size (decls : TypedDecls) (visited : HashSet Global := {}) :
-    Typ → Except String Nat
-  | .unit => pure 0
-  | .field .. => pure 1
-  | .pointer .. => pure 1
-  | .function .. => pure 1
-  | .tuple ts => ts.foldlM (init := 0) fun acc t => do
-    let tSize ← t.size decls visited
-    pure $ acc + tSize
-  | .array t n => do
-    let tSize ← t.size decls visited
-    pure $ n * tSize
-  | .ref g => match decls.getByKey g with
-    | some (.dataType data) => data.size decls visited
+/-- See `Typ.size` for the outer interface. -/
+def Typ.sizeBound (decls : Decls) : Nat → Std.HashSet Global → Typ →
+    Except String Nat
+  | 0, _, _ => pure 0
+  | _+1, _, .unit => pure 0
+  | _+1, _, .field => pure 1
+  | _+1, _, .pointer _ => pure 1
+  | _+1, _, .function _ _ => pure 1
+  | bound+1, visited, .tuple ts =>
+      ts.attach.foldlM (init := 0) fun acc ⟨t, _⟩ => do
+        let s ← Typ.sizeBound decls bound visited t
+        pure (acc + s)
+  | bound+1, visited, .array t n => do
+      let s ← Typ.sizeBound decls bound visited t
+      pure (n * s)
+  | bound+1, visited, .ref g => match decls.getByKey g with
+    | some (.dataType dt) => DataType.sizeBound decls bound visited dt
     | _ => throw s!"Datatype not found: `{g}`"
-  | .app g _ => match decls.getByKey g with
-    | some (.dataType data) => data.size decls visited
-    | _ => throw s!"Datatype not found: `{g}`"
-  | .mvar n => throw s!"Unresolved metavariable: ?{n}"
 
-partial def Constructor.size (decls : TypedDecls) (visited : HashSet Global := {})
+/-- See `Constructor.size` for the outer interface. -/
+def Constructor.sizeBound (decls : Decls) (bound : Nat) (visited : Std.HashSet Global)
     (c : Constructor) : Except String Nat :=
   c.argTypes.foldlM (init := 0) fun acc t => do
-    let tSize ← t.size decls visited
-    pure $ acc + tSize
+    let s ← Typ.sizeBound decls bound visited t
+    pure (acc + s)
 
-partial def DataType.size (dt : DataType) (decls : TypedDecls)
-    (visited : HashSet Global := {}) : Except String Nat :=
-  if visited.contains dt.name then
-    throw s!"Cycle detected at datatype `{dt.name}`"
-  else do
-    let visited := visited.insert dt.name
-    let ctorSizes ← dt.constructors.mapM (Constructor.size decls visited)
-    let maxFields := ctorSizes.foldl max 0
-    pure $ maxFields + 1
+/-- See `DataType.size` for the outer interface. -/
+def DataType.sizeBound (decls : Decls) : Nat → Std.HashSet Global → DataType →
+    Except String Nat
+  | 0, _, _ => pure 1
+  | bound+1, visited, dt =>
+    if visited.contains dt.name then
+      throw s!"Cycle detected at datatype `{dt.name}`"
+    else do
+      let visited := visited.insert dt.name
+      let ctorSizes ← dt.constructors.mapM
+        (Concrete.Constructor.sizeBound decls bound visited)
+      let maxFields := ctorSizes.foldl max 0
+      pure (maxFields + 1)
 end
+
+/-- Outer interface: the recursion bound is `decls.size + 1`, which the
+monotonic growth of `visited` (capped at `decls.size`) guarantees cannot
+be exhausted on well-formed inputs. -/
+def Typ.size (decls : Decls) (visited : Std.HashSet Global := {}) (t : Typ) :
+    Except String Nat :=
+  Typ.sizeBound decls (decls.size + 1) visited t
+
+def Constructor.size (decls : Decls) (visited : Std.HashSet Global := {})
+    (c : Constructor) : Except String Nat :=
+  Constructor.sizeBound decls (decls.size + 1) visited c
+
+def DataType.size (dt : DataType) (decls : Decls)
+    (visited : Std.HashSet Global := {}) : Except String Nat :=
+  DataType.sizeBound decls (decls.size + 1) visited dt
 
 namespace Bytecode
 
@@ -71,11 +101,10 @@ def SharedData.maximals (a b : SharedData) : SharedData := {
 abbrev MemSizes := Lean.RBTree Nat compare
 
 structure LayoutMState where
-  functionLayout : FunctionLayout
+  functionLayout : Aiur.Bytecode.FunctionLayout
   memSizes : MemSizes
   degrees : Array Nat
 
-/-- A new `LayoutMState` starts with one auxiliar for the multiplicity. -/
 @[inline] def LayoutMState.new (inputSize : Nat) : LayoutMState :=
   ⟨{ inputSize, selectors := 0, auxiliaries := 1, lookups := 0 }, .empty, Array.replicate inputSize 1⟩
 
@@ -105,8 +134,8 @@ abbrev LayoutM := StateM LayoutMState
 @[inline] def getDegrees : LayoutM $ Array Nat :=
   get >>= (pure ·.degrees)
 
-@[inline] def getDegree (v : ValIdx) : LayoutM Nat :=
-  get >>= fun stt => pure stt.degrees[v]!
+@[inline] def getDegree (v : Aiur.Bytecode.ValIdx) : LayoutM Nat :=
+  get >>= fun stt => pure (stt.degrees[v]?.getD 0)
 
 @[inline] def setDegrees (degrees : Array Nat) : LayoutM Unit :=
   modify fun stt => { stt with degrees }
@@ -128,117 +157,119 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .add a b | .sub a b => do
     let aDegree ← getDegree a
     let bDegree ← getDegree b
-    pushDegree $ aDegree.max bDegree
+    pushDegree (aDegree.max bDegree)
   | .mul a b => do
     let aDegree ← getDegree a
     let bDegree ← getDegree b
     let degree := aDegree + bDegree
-    if degree < 2 then
-      pushDegree degree
-    else
-      pushDegree 1
-      bumpAuxiliaries
+    if degree < 2 then pushDegree degree
+    else do pushDegree 1; bumpAuxiliaries
   | .eqZero a => do
     let degree ← getDegree a
     if degree = 0 then pushDegree 0
-    else
-      pushDegree 1
-      bumpAuxiliaries 2
+    else do pushDegree 1; bumpAuxiliaries 2
   | .call _ _ outputSize unconstrained => do
     pushDegrees $ .replicate outputSize 1
     bumpAuxiliaries outputSize
     if !unconstrained then bumpLookups
   | .store values => do
-    pushDegree 1
-    bumpAuxiliaries
-    bumpLookups
-    addMemSize values.size
+    pushDegree 1; bumpAuxiliaries; bumpLookups; addMemSize values.size
   | .load size _ => do
     pushDegrees $ .replicate size 1
-    bumpAuxiliaries size
-    bumpLookups
-    addMemSize size
+    bumpAuxiliaries size; bumpLookups; addMemSize size
   | .assertEq .. => pure ()
-  | .ioGetInfo _ => do
-    pushDegrees #[1, 1]
-    bumpAuxiliaries 2
+  | .ioGetInfo _ => do pushDegrees #[1, 1]; bumpAuxiliaries 2
   | .ioSetInfo .. => pure ()
-  | .ioRead _ len => do
-    pushDegrees $ .replicate len 1
-    bumpAuxiliaries len
+  | .ioRead _ len => do pushDegrees $ .replicate len 1; bumpAuxiliaries len
   | .ioWrite .. => pure ()
-  | .u8BitDecomposition _ => do
-    pushDegrees $ .replicate 8 1
-    bumpAuxiliaries 8
-    bumpLookups
+  | .u8BitDecomposition _ => do pushDegrees $ .replicate 8 1; bumpAuxiliaries 8; bumpLookups
   | .u8ShiftLeft _ | .u8ShiftRight _ | .u8Xor .. | .u8And .. | .u8Or .. => do
-    pushDegree 1
-    bumpAuxiliaries
-    bumpLookups
-  | .u8Add .. | .u8Sub .. => do
-    pushDegrees #[1, 1]
-    bumpAuxiliaries 2
-    bumpLookups
-  | .u8LessThan .. => do
-    pushDegree 1
-    bumpAuxiliaries
-    bumpLookups
-  | .u32LessThan .. => do
-    pushDegree 1
-    bumpAuxiliaries 12
-    bumpLookups 6
+    pushDegree 1; bumpAuxiliaries; bumpLookups
+  | .u8Add .. | .u8Sub .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
+  | .u8LessThan .. => do pushDegree 1; bumpAuxiliaries; bumpLookups
+  | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 12; bumpLookups 6
   | .debug .. => pure ()
 
-partial def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
-  block.ops.forM opLayout
-  match block.ctrl with
-  | .match _ branches defaultBranch =>
+/-- Termination helper for blockLayout's Block/Ctrl traversal. -/
+private theorem Bytecode.Block.sizeOf_ctrl_lt_layout (b : Bytecode.Block) :
+    sizeOf b.ctrl < sizeOf b := by
+  rcases b with ⟨ops, ctrl⟩
+  show sizeOf ctrl < 1 + sizeOf ops + sizeOf ctrl
+  omega
+
+mutual
+
+def ctrlLayout (c : Bytecode.Ctrl) : LayoutM Unit := match c with
+  | .match _ branches defaultBranch => do
     let initSharedData ← getSharedData
-    let mut maximalSharedData := initSharedData
-    let mut degrees ← getDegrees
-    for (_, block) in branches do
-      setSharedData initSharedData
-      blockLayout block
-      let blockSharedData ← getSharedData
-      maximalSharedData := maximalSharedData.maximals blockSharedData
-      setDegrees degrees
-    if let some defaultBlock := defaultBranch then
-      setSharedData initSharedData
-      -- An auxiliary per case for proving inequality
-      bumpAuxiliaries branches.size
-      blockLayout defaultBlock
-      let defaultBlockSharedData ← getSharedData
-      maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
-      setDegrees degrees
-    setSharedData maximalSharedData
+    let degrees ← getDegrees
+    -- Fold over branches, tracking the running maximum shared data.
+    let maximalSharedData ← branches.attach.foldlM (init := initSharedData)
+      fun currMax ⟨(_, block), _⟩ => do
+        setSharedData initSharedData
+        blockLayout block
+        let blockSharedData ← getSharedData
+        setDegrees degrees
+        pure (currMax.maximals blockSharedData)
+    -- Apply default branch if present.
+    let finalMax ← match defaultBranch with
+      | none => pure maximalSharedData
+      | some defaultBlock => do
+        setSharedData initSharedData
+        bumpAuxiliaries branches.size
+        blockLayout defaultBlock
+        let defaultBlockSharedData ← getSharedData
+        setDegrees degrees
+        pure (maximalSharedData.maximals defaultBlockSharedData)
+    setSharedData finalMax
   | .return .. => bumpSelectors
   | .yield .. => bumpSelectors
-  | .matchContinue _ branches defaultBranch outputSize _sharedAux _sharedLookups continuation =>
+  | .matchContinue _ branches defaultBranch outputSize _sharedAux _sharedLookups continuation => do
     let initSharedData ← getSharedData
-    let mut maximalSharedData := initSharedData
-    let mut degrees ← getDegrees
-    for (_, block) in branches do
-      setSharedData initSharedData
-      blockLayout block
-      let blockSharedData ← getSharedData
-      maximalSharedData := maximalSharedData.maximals blockSharedData
-      setDegrees degrees
-    if let some defaultBlock := defaultBranch then
-      setSharedData initSharedData
-      bumpAuxiliaries branches.size
-      blockLayout defaultBlock
-      let defaultBlockSharedData ← getSharedData
-      maximalSharedData := maximalSharedData.maximals defaultBlockSharedData
-      setDegrees degrees
-    setSharedData maximalSharedData
-    -- Merge auxiliaries: one per output value
+    let degrees ← getDegrees
+    let maximalSharedData ← branches.attach.foldlM (init := initSharedData)
+      fun currMax ⟨(_, block), _⟩ => do
+        setSharedData initSharedData
+        blockLayout block
+        let blockSharedData ← getSharedData
+        setDegrees degrees
+        pure (currMax.maximals blockSharedData)
+    let finalMax ← match defaultBranch with
+      | none => pure maximalSharedData
+      | some defaultBlock => do
+        setSharedData initSharedData
+        bumpAuxiliaries branches.size
+        blockLayout defaultBlock
+        let defaultBlockSharedData ← getSharedData
+        setDegrees degrees
+        pure (maximalSharedData.maximals defaultBlockSharedData)
+    setSharedData finalMax
     bumpAuxiliaries outputSize
     pushDegrees (.replicate outputSize 1)
-    -- Continuation layout: additive (not maximals)
     blockLayout continuation
+termination_by (sizeOf c, 0)
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+    | grind
+
+def blockLayout (block : Bytecode.Block) : LayoutM Unit := do
+  block.ops.forM opLayout
+  ctrlLayout block.ctrl
+termination_by (sizeOf block, 1)
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (apply Prod.Lex.left; exact Bytecode.Block.sizeOf_ctrl_lt_layout _)
+
+end
 
 end Bytecode
 
+end Concrete
+
 end Aiur
 
+end -- @[expose] section
 end
