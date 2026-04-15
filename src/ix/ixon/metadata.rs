@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use crate::ix::address::Address;
-use crate::ix::env::{BinderInfo, ReducibilityHints};
+use crate::ix::env::{self, BinderInfo, Name, ReducibilityHints};
 
 use super::tag::Tag0;
 
@@ -63,13 +63,13 @@ impl ExprMeta {
   }
 }
 
-/// Per-constant metadata with arena-based expression metadata.
+/// Per-variant metadata payload for a constant.
 ///
 /// Each variant stores an ExprMeta arena covering all expressions in
 /// that constant, plus root indices pointing into the arena for each
 /// expression position (type, value, rule RHS, etc.).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub enum ConstantMeta {
+pub enum ConstantMetaInfo {
   #[default]
   Empty,
   Def {
@@ -120,6 +120,64 @@ pub enum ConstantMeta {
     type_root: u64,
     rule_roots: Vec<u64>,
   },
+  /// Synthetic metadata for a mutual block. Each inner `Vec` is an equivalence
+  /// class of alpha-equivalent constants (same MutConst index), containing the
+  /// name-hash addresses of all names in that class.
+  Muts {
+    all: Vec<Vec<Address>>,
+  },
+}
+
+impl ConstantMetaInfo {
+  /// Returns a short kind name for diagnostics.
+  pub fn kind_name(&self) -> &'static str {
+    match self {
+      Self::Empty => "empty",
+      Self::Def { .. } => "def",
+      Self::Axio { .. } => "axio",
+      Self::Quot { .. } => "quot",
+      Self::Indc { .. } => "indc",
+      Self::Ctor { .. } => "ctor",
+      Self::Rec { .. } => "rec",
+      Self::Muts { .. } => "muts",
+    }
+  }
+}
+
+/// Per-constant metadata wrapper: variant payload.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConstantMeta {
+  pub info: ConstantMetaInfo,
+}
+
+impl Default for ConstantMeta {
+  fn default() -> Self {
+    Self { info: ConstantMetaInfo::Empty }
+  }
+}
+
+impl ConstantMeta {
+  /// Wrap a `ConstantMetaInfo` payload.
+  pub fn new(info: ConstantMetaInfo) -> Self {
+    Self { info }
+  }
+
+  /// Delegate indexed serialization to the inner enum.
+  pub fn put_indexed(
+    &self,
+    idx: &NameIndex,
+    buf: &mut Vec<u8>,
+  ) -> Result<(), String> {
+    self.info.put_indexed(idx, buf)
+  }
+
+  /// Delegate indexed deserialization to the inner enum.
+  pub fn get_indexed(
+    buf: &mut &[u8],
+    rev: &NameReverseIndex,
+  ) -> Result<Self, String> {
+    Ok(Self { info: ConstantMetaInfo::get_indexed(buf, rev)? })
+  }
 }
 
 /// Data values for KVMap metadata.
@@ -131,6 +189,45 @@ pub enum DataValue {
   OfNat(Address),
   OfInt(Address),
   OfSyntax(Address),
+}
+
+/// Resolve an Ixon KVMap (address-based) to Lean-level MData (name/value pairs).
+///
+/// Used by kernel ingress to convert expression metadata from the
+/// content-addressed Ixon representation to the named kernel representation.
+pub fn resolve_kvmap(
+  kvm: &KVMap,
+  ixon_env: &super::env::Env,
+) -> Vec<(Name, env::DataValue)> {
+  kvm
+    .iter()
+    .filter_map(|(addr, dv)| {
+      let name = ixon_env.get_name(addr)?;
+      let resolved = match dv {
+        DataValue::OfString(a) => {
+          let bytes = ixon_env.get_blob(a)?;
+          env::DataValue::OfString(String::from_utf8(bytes).ok()?)
+        },
+        DataValue::OfBool(b) => env::DataValue::OfBool(*b),
+        DataValue::OfName(a) => {
+          let n = ixon_env.get_name(a)?;
+          env::DataValue::OfName(n)
+        },
+        DataValue::OfNat(a) => {
+          let bytes = ixon_env.get_blob(a)?;
+          env::DataValue::OfNat(lean_ffi::nat::Nat::from_le_bytes(&bytes))
+        },
+        DataValue::OfInt(a) => {
+          let bytes = ixon_env.get_blob(a)?;
+          env::DataValue::OfInt(env::Int::OfNat(
+            lean_ffi::nat::Nat::from_le_bytes(&bytes),
+          ))
+        },
+        DataValue::OfSyntax(_) => return None, // Syntax not round-tripped through kernel
+      };
+      Some((name, resolved))
+    })
+    .collect()
 }
 
 // ===========================================================================
@@ -576,7 +673,7 @@ fn get_u64_vec(buf: &mut &[u8]) -> Result<Vec<u64>, String> {
 // ConstantMeta indexed serialization
 // ===========================================================================
 
-impl ConstantMeta {
+impl ConstantMetaInfo {
   pub fn put_indexed(
     &self,
     idx: &NameIndex,
@@ -656,6 +753,13 @@ impl ConstantMeta {
         put_u64(*type_root, buf);
         put_u64_vec(rule_roots, buf);
       },
+      Self::Muts { all } => {
+        put_u8(6, buf);
+        put_u64(all.len() as u64, buf);
+        for cls in all {
+          put_idx_vec(cls, idx, buf)?;
+        }
+      },
     }
     Ok(())
   }
@@ -714,7 +818,15 @@ impl ConstantMeta {
         type_root: get_u64(buf)?,
         rule_roots: get_u64_vec(buf)?,
       }),
-      x => Err(format!("ConstantMeta::get: invalid tag {x}")),
+      6 => {
+        let n = get_u64(buf)? as usize;
+        let mut all = Vec::with_capacity(n);
+        for _ in 0..n {
+          all.push(get_idx_vec(buf, rev)?);
+        }
+        Ok(Self::Muts { all })
+      },
+      x => Err(format!("ConstantMetaInfo::get: invalid tag {x}")),
     }
   }
 }
@@ -802,7 +914,7 @@ mod tests {
       children: [leaf, leaf],
     });
 
-    let meta = ConstantMeta::Def {
+    let meta = ConstantMeta::new(ConstantMetaInfo::Def {
       name: addr1.clone(),
       lvls: vec![addr2.clone(), addr3.clone()],
       hints: ReducibilityHints::Regular(10),
@@ -811,7 +923,7 @@ mod tests {
       arena,
       type_root: binder,
       value_root: leaf,
-    };
+    });
 
     let mut buf = Vec::new();
     meta.put_indexed(&idx, &mut buf).unwrap();

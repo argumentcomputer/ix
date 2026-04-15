@@ -34,9 +34,6 @@ use lean_ffi::object::{
   LeanOwned, LeanRef, LeanString,
 };
 
-use dashmap::DashMap;
-use dashmap::DashSet;
-
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ixon::env::decoded_to_ixon_env;
 use crate::ffi::lean_env::decode_env;
@@ -1332,7 +1329,7 @@ impl LeanIxCompileError<LeanOwned> {
   ///   5: serializeError (msg : String) → 1 obj
   pub fn build(err: &CompileError) -> Self {
     let obj = match err {
-      CompileError::MissingConstant { name } => {
+      CompileError::MissingConstant { name, .. } => {
         let ctor = LeanCtor::alloc(0, 1, 0);
         ctor.set(0, build_lean_string(name));
         ctor.into()
@@ -1375,7 +1372,10 @@ impl<R: LeanRef> LeanIxCompileError<R> {
     match ctor.tag() {
       0 => {
         let name = ctor.get(0).as_string().to_string();
-        CompileError::MissingConstant { name }
+        CompileError::MissingConstant {
+          name,
+          caller: "ffi:decode_compile_error".into(),
+        }
       },
       1 => CompileError::MissingAddress(
         LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
@@ -1442,12 +1442,7 @@ pub extern "C" fn rs_decompile_env(
   let env = decoded_to_ixon_env(&decoded);
 
   // Wrap in CompileState (decompile_env only uses .env)
-  let stt = CompileState {
-    env,
-    name_to_addr: DashMap::new(),
-    blocks: DashSet::new(),
-    block_stats: DashMap::new(),
-  };
+  let stt = CompileState { env, ..CompileState::default() };
 
   match decompile_env(&stt) {
     Ok(dstt) => {

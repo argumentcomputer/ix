@@ -1021,6 +1021,15 @@ pub fn put_named_indexed(
 ) -> Result<(), String> {
   put_address(&named.addr, buf);
   named.meta.put_indexed(idx, buf)?;
+  // Serialize original as Option: 0 = None, 1 = Some(addr, meta)
+  match &named.original {
+    None => buf.push(0),
+    Some((addr, meta)) => {
+      buf.push(1);
+      put_address(addr, buf);
+      meta.put_indexed(idx, buf)?;
+    },
+  }
   Ok(())
 }
 
@@ -1031,7 +1040,16 @@ pub fn get_named_indexed(
 ) -> Result<Named, String> {
   let addr = get_address(buf)?;
   let meta = ConstantMeta::get_indexed(buf, rev)?;
-  Ok(Named { addr, meta })
+  let original = match get_u8(buf)? {
+    0 => None,
+    1 => {
+      let orig_addr = get_address(buf)?;
+      let orig_meta = ConstantMeta::get_indexed(buf, rev)?;
+      Some((orig_addr, orig_meta))
+    },
+    x => return Err(format!("Named.original: invalid tag {x}")),
+  };
+  Ok(Named { addr, meta, original })
 }
 
 // ============================================================================
@@ -1186,7 +1204,6 @@ impl Env {
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("Env::get: missing name for addr {:?}", name_addr)
       })?;
-      env.addr_to_name.insert(named.addr.clone(), name.clone());
       env.named.insert(name, named);
     }
 
@@ -1455,8 +1472,16 @@ mod tests {
       if !names.is_empty() {
         let name = names[i % names.len()].clone();
         let meta = ConstantMeta::default();
-        let named = Named { addr: addr.clone(), meta };
-        env.addr_to_name.insert(addr, name.clone());
+        // Sometimes generate a Named.original to exercise that serialization path.
+        let original = if bool::arbitrary(g) {
+          let orig_addr = Address::arbitrary(g);
+          // Store the original constant too so the env is self-consistent.
+          env.consts.insert(orig_addr.clone(), gen_constant(g));
+          Some((orig_addr, ConstantMeta::default()))
+        } else {
+          None
+        };
+        let named = Named { addr: addr.clone(), meta, original };
         env.named.insert(name, named);
       }
     }

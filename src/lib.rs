@@ -1,3 +1,7 @@
+#![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::unnecessary_wraps)]
+
 #[allow(unused_extern_crates)]
 #[cfg(test)]
 extern crate quickcheck;

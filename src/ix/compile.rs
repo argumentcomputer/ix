@@ -10,18 +10,13 @@ use dashmap::{DashMap, DashSet};
 use rustc_hash::FxHashMap;
 use std::{
   cmp::Ordering,
-  sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering as AtomicOrdering},
-  },
-  thread,
+  sync::{Arc, atomic::Ordering as AtomicOrdering},
 };
 
 use lean_ffi::nat::Nat;
 
 use crate::{
   ix::address::Address,
-  ix::condense::compute_sccs,
   ix::env::{
     AxiomVal, BinderInfo, ConstantInfo as LeanConstantInfo, ConstructorVal,
     DataValue as LeanDataValue, Env as LeanEnv, Expr as LeanExpr, ExprData,
@@ -29,8 +24,7 @@ use crate::{
     RecursorRule as LeanRecursorRule, SourceInfo as LeanSourceInfo,
     Substring as LeanSubstring, Syntax as LeanSyntax, SyntaxPreresolved,
   },
-  ix::graph::{NameSet, build_ref_graph},
-  ix::ground::ground_consts,
+  ix::graph::NameSet,
   ix::ixon::{
     CompileError, Tag0,
     constant::{
@@ -40,7 +34,9 @@ use crate::{
     },
     env::{Env as IxonEnv, Named},
     expr::Expr,
-    metadata::{ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap},
+    metadata::{
+      ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta, ExprMetaData, KVMap,
+    },
     sharing::{self, analyze_block, build_sharing_vec, decide_sharing},
     univ::Univ,
   },
@@ -70,17 +66,63 @@ pub struct BlockSizeStats {
   pub const_count: usize,
 }
 
+/// Bundled kernel context for aux_gen sort-level inference.
+///
+/// Holds the shared kernel environment (constants, caches, intern table).
+/// `TypeChecker` instances are created per-use-site — they are cheap
+/// thread-local handles that share the `KEnv` via `Arc`.
+pub struct KernelCtx {
+  /// Shared kernel environment (constants, caches, intern table).
+  pub kenv: Arc<crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>>,
+}
+
+impl Default for KernelCtx {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
+impl KernelCtx {
+  /// Create a new empty kernel context.
+  pub fn new() -> Self {
+    KernelCtx { kenv: Arc::new(crate::ix::kernel::env::KEnv::new()) }
+  }
+}
+
 /// Compile state for building the Ixon environment.
-#[derive(Default)]
 pub struct CompileState {
   /// Ixon environment being built
   pub env: IxonEnv,
   /// Map from Lean constant name to Ixon address
   pub name_to_addr: DashMap<Name, Address>,
-  /// Addresses of mutual blocks
-  pub blocks: DashSet<Address>,
+  /// Mutual block canonical class ordering, keyed by any inductive name in the
+  /// block. Each entry is the list of equivalence classes (in `sort_consts` order),
+  /// where each class is a list of names.
+  pub blocks: DashMap<Name, Vec<Vec<Name>>>,
   /// Per-block size statistics (keyed by low-link name)
   pub block_stats: DashMap<Name, BlockSizeStats>,
+  /// Kernel context for **canonical** constants, populated incrementally
+  /// by the scheduler as blocks compile. Used by aux_gen for sort-level
+  /// inference during `.rec`, `.below`, `.brecOn` generation.
+  pub kctx: KernelCtx,
+  /// Constants filtered out during grounding (name -> error description).
+  pub ungrounded: FxHashMap<Name, String>,
+  /// Persistent set of names compiled by aux_gen. Used for membership
+  /// checks (e.g., "is this name aux_gen-rewritten?") throughout compilation.
+  /// Never drained — callers rely on `.contains()` long after insertion.
+  pub aux_gen_extra_names: DashSet<Name>,
+  /// Pending aux_gen names awaiting scheduler dependency resolution.
+  /// Drained after each block completion. Separated from the persistent
+  /// `aux_gen_extra_names` to avoid O(N×M) re-iteration of the full set
+  /// on every block completion.
+  pub aux_gen_pending: std::sync::Mutex<Vec<Name>>,
+  /// Fallback name->addr map for constants compiled by aux_gen or pre-compiled
+  /// during a parent inductive's compilation. Visible to later compilations
+  /// so expressions referencing them resolve.
+  pub aux_name_to_addr: DashMap<Name, Address>,
+  /// Original Lean environment, if available. Used by the decompiler for
+  /// aux_gen comparison (verifying regenerated constants match originals).
+  pub lean_env: Option<Arc<LeanEnv>>,
 }
 
 /// Cached compiled expression with arena root index.
@@ -110,6 +152,8 @@ pub struct BlockCache {
   pub refs: indexmap::IndexSet<Address>,
   /// Universe table: unique universes referenced by expressions
   pub univs: indexmap::IndexSet<Arc<Univ>>,
+  /// Name of the constant currently being compiled (for error context).
+  pub compiling: Option<Name>,
 }
 
 #[derive(Debug)]
@@ -120,15 +164,27 @@ pub struct CompileStateStats {
   pub blocks: usize,
 }
 
+impl Default for CompileState {
+  fn default() -> Self {
+    CompileState {
+      env: Default::default(),
+      name_to_addr: Default::default(),
+      blocks: Default::default(),
+      block_stats: Default::default(),
+      kctx: KernelCtx::new(),
+      ungrounded: Default::default(),
+      aux_gen_extra_names: Default::default(),
+      aux_gen_pending: std::sync::Mutex::new(Vec::new()),
+      aux_name_to_addr: Default::default(),
+      lean_env: None,
+    }
+  }
+}
+
 impl CompileState {
   /// Create an empty compile state for testing (no environment).
   pub fn new_empty() -> Self {
-    Self {
-      env: IxonEnv::default(),
-      name_to_addr: DashMap::new(),
-      blocks: DashSet::new(),
-      block_stats: DashMap::new(),
-    }
+    Self::default()
   }
 
   pub fn stats(&self) -> CompileStateStats {
@@ -137,6 +193,63 @@ impl CompileState {
       names: self.env.name_count(),
       blobs: self.env.blob_count(),
       blocks: self.blocks.len(),
+    }
+  }
+
+  /// Look up a compiled constant's address by name.
+  /// Checks `name_to_addr` first, then `aux_name_to_addr` when `aux` is true.
+  pub fn resolve_addr_aux(&self, name: &Name, aux: bool) -> Option<Address> {
+    if let Some(r) = self.name_to_addr.get(name) {
+      return Some(r.value().clone());
+    }
+    if aux && let Some(r) = self.aux_name_to_addr.get(name) {
+      return Some(r.value().clone());
+    }
+    None
+  }
+
+  /// Look up a compiled constant's address (with `aux_name_to_addr` fallback).
+  pub fn resolve_addr(&self, name: &Name) -> Option<Address> {
+    self.resolve_addr_aux(name, true)
+  }
+
+  /// Promote a constant from `aux_name_to_addr` to `name_to_addr`, setting
+  /// `Named.original` to the given `(orig_addr, orig_meta)` from the
+  /// ephemeral no-aux compilation. The existing aux_gen `Named` entry keeps
+  /// its canonical `addr`/`meta`; `original` captures the Lean-native form.
+  pub fn promote_aux(
+    &self,
+    name: &Name,
+    orig_addr: Address,
+    orig_meta: ConstantMeta,
+  ) {
+    // Diagnostic: verify that the metadata's name matches the constant being promoted.
+    let meta_name_addr = match &orig_meta.info {
+      ConstantMetaInfo::Def { name: a, .. }
+      | ConstantMetaInfo::Axio { name: a, .. }
+      | ConstantMetaInfo::Quot { name: a, .. }
+      | ConstantMetaInfo::Indc { name: a, .. }
+      | ConstantMetaInfo::Ctor { name: a, .. }
+      | ConstantMetaInfo::Rec { name: a, .. } => Some(a),
+      _ => None,
+    };
+    if let Some(meta_addr) = meta_name_addr {
+      let expected_addr = compile_name(name, self);
+      if *meta_addr != expected_addr {
+        eprintln!(
+          "[promote_aux] NAME MISMATCH: promoting {} (addr {:.12}) but meta name addr is {:.12}",
+          name.pretty(),
+          expected_addr.hex(),
+          meta_addr.hex(),
+        );
+      }
+    }
+
+    if let Some(aux_addr) = self.aux_name_to_addr.get(name) {
+      self.name_to_addr.insert(name.clone(), aux_addr.clone());
+    }
+    if let Some(mut entry) = self.env.named.get_mut(name) {
+      entry.value_mut().original = Some((orig_addr, orig_meta));
     }
   }
 }
@@ -339,14 +452,19 @@ pub fn compile_expr(
                 .arena_roots
                 .push(cache.arena.alloc(ExprMetaData::Ref { name: name_addr }));
             } else {
-              // External reference
-              let const_addr = stt
-                .name_to_addr
-                .get(name)
-                .ok_or_else(|| CompileError::MissingConstant {
+              // External reference — check both name_to_addr and
+              // aux_name_to_addr (aux_gen constants compiled during
+              // the same block's compilation).
+              let const_addr = stt.resolve_addr(name).ok_or_else(|| {
+                let who = cache
+                  .compiling
+                  .as_ref()
+                  .map_or_else(|| "?".into(), |n| n.pretty());
+                CompileError::MissingConstant {
                   name: name.pretty(),
-                })?
-                .clone();
+                  caller: format!("{who} @ compile_expr(Const)"),
+                }
+              })?;
               let (ref_idx, _) = cache.refs.insert_full(const_addr);
               results.push(Expr::reference(ref_idx as u64, univ_indices));
               cache
@@ -400,13 +518,16 @@ pub fn compile_expr(
           ExprData::Proj(type_name, idx, struct_val, _) => {
             let idx_u64 = nat_to_u64(idx, "proj index too large")?;
 
-            let type_addr = stt
-              .name_to_addr
-              .get(type_name)
-              .ok_or_else(|| CompileError::MissingConstant {
+            let type_addr = stt.resolve_addr(type_name).ok_or_else(|| {
+              let who = cache
+                .compiling
+                .as_ref()
+                .map_or_else(|| "?".into(), |n| n.pretty());
+              CompileError::MissingConstant {
                 name: type_name.pretty(),
-              })?
-              .clone();
+                caller: format!("{who} @ compile_expr(Proj)"),
+              }
+            })?;
 
             let (ref_idx, _) = cache.refs.insert_full(type_addr);
             let name_addr = compile_name(type_name, stt);
@@ -756,16 +877,16 @@ fn apply_sharing(exprs: Vec<Arc<Expr>>) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
 }
 
 /// Result of applying sharing to a singleton constant.
-struct SingletonSharingResult {
+pub(crate) struct SingletonSharingResult {
   /// The compiled Constant
-  constant: Constant,
+  pub(crate) constant: Constant,
   /// Hash-consed size of expressions
-  hash_consed_size: usize,
+  pub(crate) hash_consed_size: usize,
 }
 
 /// Apply sharing to a Definition and return a Constant with stats.
 #[allow(clippy::needless_pass_by_value)]
-fn apply_sharing_to_definition_with_stats(
+pub(crate) fn apply_sharing_to_definition_with_stats(
   def: Definition,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -828,7 +949,7 @@ fn apply_sharing_to_quotient_with_stats(
 }
 
 /// Apply sharing to a Recursor and return a Constant with stats.
-fn apply_sharing_to_recursor_with_stats(
+pub(crate) fn apply_sharing_to_recursor_with_stats(
   rec: Recursor,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -865,15 +986,15 @@ fn apply_sharing_to_recursor_with_stats(
 }
 
 /// Result of applying sharing to a mutual block.
-struct MutualBlockSharingResult {
+pub(crate) struct MutualBlockSharingResult {
   /// The compiled Constant
-  constant: Constant,
+  pub(crate) constant: Constant,
   /// Hash-consed size of all expressions in the block
-  hash_consed_size: usize,
+  pub(crate) hash_consed_size: usize,
 }
 
 /// Apply sharing to a mutual block and return a Constant with stats.
-fn apply_sharing_to_mutual_block(
+pub(crate) fn apply_sharing_to_mutual_block(
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -1045,12 +1166,13 @@ enum MutConstKind {
 
 /// Compile a Definition.
 /// Arena persists across type + value within a constant.
-fn compile_definition(
+pub(crate) fn compile_definition(
   def: &Def,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Definition, ConstantMeta), CompileError> {
+  cache.compiling = Some(def.name.clone());
   let univ_params = &def.level_params;
 
   // Compile type expression (arena grows)
@@ -1082,7 +1204,7 @@ fn compile_definition(
     value,
   };
 
-  let meta = ConstantMeta::Def {
+  let meta = ConstantMeta::new(ConstantMetaInfo::Def {
     name: name_addr,
     lvls: lvl_addrs,
     hints: def.hints,
@@ -1091,7 +1213,7 @@ fn compile_definition(
     arena,
     type_root,
     value_root,
-  };
+  });
 
   Ok((data, meta))
 }
@@ -1113,12 +1235,13 @@ fn compile_recursor_rule(
 
 /// Compile a Recursor.
 /// Arena grows across type and all rule RHS expressions.
-fn compile_recursor(
+pub(crate) fn compile_recursor(
   rec: &Rec,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Recursor, ConstantMeta), CompileError> {
+  cache.compiling = Some(rec.cnst.name.clone());
   let univ_params = &rec.cnst.level_params;
 
   // Compile type expression
@@ -1164,7 +1287,7 @@ fn compile_recursor(
   let ctx_addrs: Vec<Address> =
     ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
-  let meta = ConstantMeta::Rec {
+  let meta = ConstantMeta::new(ConstantMetaInfo::Rec {
     name: name_addr,
     lvls: lvl_addrs,
     rules: rule_addrs,
@@ -1173,7 +1296,7 @@ fn compile_recursor(
     arena,
     type_root,
     rule_roots,
-  };
+  });
 
   Ok((data, meta))
 }
@@ -1186,6 +1309,7 @@ fn compile_constructor(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Constructor, ConstantMeta), CompileError> {
+  cache.compiling = Some(ctor.cnst.name.clone());
   let univ_params = &ctor.cnst.level_params;
 
   let typ = compile_expr(&ctor.cnst.typ, univ_params, mut_ctx, cache, stt)?;
@@ -1211,13 +1335,13 @@ fn compile_constructor(
     typ,
   };
 
-  let meta = ConstantMeta::Ctor {
+  let meta = ConstantMeta::new(ConstantMetaInfo::Ctor {
     name: name_addr,
     lvls: lvl_addrs,
     induct: induct_addr,
     arena,
     type_root,
-  };
+  });
 
   Ok((data, meta))
 }
@@ -1226,12 +1350,13 @@ fn compile_constructor(
 /// The inductive type gets its own arena. Each constructor gets its own arena
 /// via compile_constructor. No CtorMeta duplication — ConstantMeta::Indc only
 /// stores constructor name addresses.
-fn compile_inductive(
+pub(crate) fn compile_inductive(
   ind: &Ind,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Inductive, ConstantMeta, Vec<ConstantMeta>), CompileError> {
+  cache.compiling = Some(ind.ind.cnst.name.clone());
   let univ_params = &ind.ind.cnst.level_params;
 
   // Compile inductive type
@@ -1279,7 +1404,7 @@ fn compile_inductive(
   let ctx_addrs: Vec<Address> =
     ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
-  let meta = ConstantMeta::Indc {
+  let meta = ConstantMeta::new(ConstantMetaInfo::Indc {
     name: name_addr,
     lvls: lvl_addrs,
     ctors: ctor_name_addrs,
@@ -1287,7 +1412,7 @@ fn compile_inductive(
     ctx: ctx_addrs,
     arena: indc_arena,
     type_root,
-  };
+  });
 
   Ok((data, meta, ctor_const_metas))
 }
@@ -1298,6 +1423,7 @@ fn compile_axiom(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Axiom, ConstantMeta), CompileError> {
+  cache.compiling = Some(val.cnst.name.clone());
   let univ_params = &val.cnst.level_params;
 
   let typ =
@@ -1316,8 +1442,12 @@ fn compile_axiom(
   let data =
     Axiom { is_unsafe: val.is_unsafe, lvls: univ_params.len() as u64, typ };
 
-  let meta =
-    ConstantMeta::Axio { name: name_addr, lvls: lvl_addrs, arena, type_root };
+  let meta = ConstantMeta::new(ConstantMetaInfo::Axio {
+    name: name_addr,
+    lvls: lvl_addrs,
+    arena,
+    type_root,
+  });
 
   Ok((data, meta))
 }
@@ -1328,6 +1458,7 @@ fn compile_quotient(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Quotient, ConstantMeta), CompileError> {
+  cache.compiling = Some(val.cnst.name.clone());
   let univ_params = &val.cnst.level_params;
 
   let typ =
@@ -1345,8 +1476,12 @@ fn compile_quotient(
 
   let data = Quotient { kind: val.kind, lvls: univ_params.len() as u64, typ };
 
-  let meta =
-    ConstantMeta::Quot { name: name_addr, lvls: lvl_addrs, arena, type_root };
+  let meta = ConstantMeta::new(ConstantMetaInfo::Quot {
+    name: name_addr,
+    lvls: lvl_addrs,
+    arena,
+    type_root,
+  });
 
   Ok((data, meta))
 }
@@ -1356,20 +1491,20 @@ fn compile_quotient(
 // ===========================================================================
 
 /// Result of compiling a mutual block.
-struct CompiledMutualBlock {
+pub(crate) struct CompiledMutualBlock {
   /// The compiled Constant
-  constant: Constant,
+  pub(crate) constant: Constant,
   /// Content-addressed hash
-  addr: Address,
+  pub(crate) addr: Address,
   /// Hash-consed size (theoretical minimum with perfect DAG sharing)
-  hash_consed_size: usize,
+  pub(crate) hash_consed_size: usize,
   /// Serialized size (actual bytes)
-  serialized_size: usize,
+  pub(crate) serialized_size: usize,
 }
 
 /// Compile a mutual block with block-level sharing.
 /// Returns the Constant, its content-addressed hash, and size statistics.
-fn compile_mutual_block(
+pub(crate) fn compile_mutual_block(
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -1400,7 +1535,10 @@ pub fn mk_indc(
     if let Some(LeanConstantInfo::CtorInfo(c)) = env.as_ref().get(ctor_name) {
       ctors.push(c.clone());
     } else {
-      return Err(CompileError::MissingConstant { name: ctor_name.pretty() });
+      return Err(CompileError::MissingConstant {
+        name: ctor_name.pretty(),
+        caller: "mk_indc(ctor_lookup)".into(),
+      });
     }
   }
   Ok(Ind { ind: ind.clone(), ctors })
@@ -1679,23 +1817,31 @@ pub fn compare_ctor(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
-  let key = if x.cnst.name <= y.cnst.name {
-    (x.cnst.name.clone(), y.cnst.name.clone())
+  let (key, reversed) = if x.cnst.name <= y.cnst.name {
+    ((x.cnst.name.clone(), y.cnst.name.clone()), false)
   } else {
-    (y.cnst.name.clone(), x.cnst.name.clone())
+    ((y.cnst.name.clone(), x.cnst.name.clone()), true)
   };
   if let Some(o) = cache.cmps.get(&key) {
-    Ok(SOrd { strong: true, ordering: *o })
+    let ordering = if reversed { o.reverse() } else { *o };
+    Ok(SOrd { strong: true, ordering })
   } else {
     let so = compare_ctor_inner(x, y, mut_ctx, stt)?;
+    let stored = if reversed { so.ordering.reverse() } else { so.ordering };
     if so.strong {
-      cache.cmps.insert(key, so.ordering);
+      cache.cmps.insert(key, stored);
     }
     Ok(so)
   }
 }
 
-/// Compare two inductives by params, indices, constructor count, type, then constructors.
+/// Compare two inductives by derived flags, params, indices, constructor count,
+/// type, then constructors.
+///
+/// Includes `is_rec` and `is_unsafe` to prevent alpha-collapse from merging
+/// inductives whose derived properties differ — a mismatch in `is_rec` would
+/// cause the collapsed representative to silently omit `.brecOn` for aliases
+/// that need it (or generate it for aliases that shouldn't have it).
 pub fn compare_indc(
   x: &Ind,
   y: &Ind,
@@ -1703,40 +1849,50 @@ pub fn compare_indc(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
-  SOrd::try_compare(
-    SOrd::cmp(&x.ind.cnst.level_params.len(), &y.ind.cnst.level_params.len()),
-    || {
-      SOrd::try_compare(SOrd::cmp(&x.ind.num_params, &y.ind.num_params), || {
-        SOrd::try_compare(
-          SOrd::cmp(&x.ind.num_indices, &y.ind.num_indices),
-          || {
-            SOrd::try_compare(
-              SOrd::cmp(&x.ind.ctors.len(), &y.ind.ctors.len()),
-              || {
-                SOrd::try_compare(
-                  compare_expr(
-                    &x.ind.cnst.typ,
-                    &y.ind.cnst.typ,
-                    mut_ctx,
-                    &x.ind.cnst.level_params,
-                    &y.ind.cnst.level_params,
-                    stt,
-                  )?,
-                  || {
-                    SOrd::try_zip(
-                      |a, b| compare_ctor(a, b, mut_ctx, cache, stt),
-                      &x.ctors,
-                      &y.ctors,
-                    )
-                  },
-                )
-              },
-            )
-          },
-        )
-      })
-    },
-  )
+  SOrd::try_compare(SOrd::cmp(&x.ind.is_rec, &y.ind.is_rec), || {
+    SOrd::try_compare(SOrd::cmp(&x.ind.is_unsafe, &y.ind.is_unsafe), || {
+      SOrd::try_compare(
+        SOrd::cmp(
+          &x.ind.cnst.level_params.len(),
+          &y.ind.cnst.level_params.len(),
+        ),
+        || {
+          SOrd::try_compare(
+            SOrd::cmp(&x.ind.num_params, &y.ind.num_params),
+            || {
+              SOrd::try_compare(
+                SOrd::cmp(&x.ind.num_indices, &y.ind.num_indices),
+                || {
+                  SOrd::try_compare(
+                    SOrd::cmp(&x.ind.ctors.len(), &y.ind.ctors.len()),
+                    || {
+                      SOrd::try_compare(
+                        compare_expr(
+                          &x.ind.cnst.typ,
+                          &y.ind.cnst.typ,
+                          mut_ctx,
+                          &x.ind.cnst.level_params,
+                          &y.ind.cnst.level_params,
+                          stt,
+                        )?,
+                        || {
+                          SOrd::try_zip(
+                            |a, b| compare_ctor(a, b, mut_ctx, cache, stt),
+                            &x.ctors,
+                            &y.ctors,
+                          )
+                        },
+                      )
+                    },
+                  )
+                },
+              )
+            },
+          )
+        },
+      )
+    })
+  })
 }
 
 /// Compare two recursor rules by field count, then RHS expression.
@@ -1993,72 +2149,301 @@ pub fn compile_const(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Address, CompileError> {
-  if let Some(cached) = stt.name_to_addr.get(name) {
-    return Ok(cached.clone());
+  compile_const_inner(name, all, lean_env, cache, stt, true)
+}
+
+/// Compile a constant without aux_gen: no `aux_name_to_addr` fallback,
+/// no aux_gen side effects. Used to compile the original Lean form of
+/// aux_gen-rewritten constants for metadata preservation.
+pub fn compile_const_no_aux(
+  name: &Name,
+  all: &NameSet,
+  lean_env: &Arc<LeanEnv>,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+) -> Result<Address, CompileError> {
+  // Expand the SCC `all` to include same-phase aux_gen constants from
+  // the full Lean mutual block. Each constant's `.all` field determines
+  // its mutual block. We filter by the constant kind so the no-aux block
+  // matches what `roundtrip_block` produces during decompilation:
+  //
+  //   .rec         → expand via .all, keep only RecInfo
+  //   .below (Indc)→ expand via .below's own .all, keep only InductInfo
+  //   .below (Def) → expand via .all as-is
+  //   .below.rec   → expand via .below.rec's .all, keep only RecInfo
+  //   .brecOn/*    → expand via .all as-is
+
+  // First, collect the Lean .all names from any constant in the SCC.
+  let mut lean_all: Vec<Name> = Vec::new();
+  for n in all {
+    if let Some(ci) = lean_env.get(n) {
+      let block_all = match ci {
+        LeanConstantInfo::InductInfo(v) => &v.all,
+        LeanConstantInfo::RecInfo(v) => &v.all,
+        LeanConstantInfo::DefnInfo(v) => &v.all,
+        LeanConstantInfo::ThmInfo(v) => &v.all,
+        _ => continue,
+      };
+      if lean_all.is_empty() {
+        lean_all = block_all.clone();
+      }
+      break;
+    }
   }
 
-  let cnst = lean_env
-    .get(name)
-    .ok_or_else(|| CompileError::MissingConstant { name: name.pretty() })?;
+  // Determine phase from the first aux_gen constant in the SCC.
+  #[derive(Clone, Copy, PartialEq, Debug)]
+  enum Phase {
+    Rec,
+    BelowIndc,
+    BelowDef,
+    BelowRec,
+    BrecOn,
+  }
+  let phase = all.iter().find_map(|n| {
+    if !stt.aux_gen_extra_names.contains(n) {
+      return None;
+    }
+    match lean_env.get(n) {
+      Some(LeanConstantInfo::RecInfo(_)) => {
+        // Distinguish .rec from .below.rec
+        if matches!(n.as_data(), NameData::Str(p, _, _) if p.last_str() == Some("below"))
+        {
+          Some(Phase::BelowRec)
+        } else {
+          Some(Phase::Rec)
+        }
+      },
+      Some(LeanConstantInfo::InductInfo(_)) => Some(Phase::BelowIndc),
+      Some(LeanConstantInfo::DefnInfo(_) | LeanConstantInfo::ThmInfo(_)) => {
+        if n.last_str() == Some("below") {
+          Some(Phase::BelowDef)
+        } else {
+          Some(Phase::BrecOn)
+        }
+      },
+      _ => None,
+    }
+  });
+
+  let Some(phase) = phase else {
+    // No aux_gen constants found — just compile as-is.
+    return compile_const_inner(name, all, lean_env, cache, stt, false);
+  };
+
+  // Build the filtered set from the .all field based on phase.
+  let mut filtered = NameSet::default();
+  match phase {
+    Phase::Rec => {
+      // All .rec and .rec_N from the mutual block that are in the current SCC.
+      // lean_all only contains inductive names (from RecursorVal.all), not the
+      // mutually-referencing recursor names. The scheduler's `all` has the full
+      // SCC including rec_N names.
+      for n in all {
+        if stt.aux_gen_extra_names.contains(n)
+          && matches!(lean_env.get(n), Some(LeanConstantInfo::RecInfo(_)))
+        {
+          filtered.insert(n.clone());
+        }
+      }
+    },
+    Phase::BelowIndc => {
+      // Use .below's own .all, keep only inductives + their ctors.
+      for n in all {
+        if let Some(LeanConstantInfo::InductInfo(v)) = lean_env.get(n) {
+          for a in &v.all {
+            if stt.aux_gen_extra_names.contains(a)
+              && let Some(LeanConstantInfo::InductInfo(bi)) = lean_env.get(a)
+            {
+              filtered.insert(a.clone());
+              for ctor in &bi.ctors {
+                filtered.insert(ctor.clone());
+              }
+            }
+          }
+          break;
+        }
+      }
+    },
+    Phase::BelowDef => {
+      // lean_all for BelowDef already contains .below names
+      // (from DefnInfo.all = [EqC.below]), so use directly.
+      for a in &lean_all {
+        if stt.aux_gen_extra_names.contains(a)
+          && matches!(lean_env.get(a), Some(LeanConstantInfo::DefnInfo(_)))
+        {
+          filtered.insert(a.clone());
+        }
+      }
+    },
+    Phase::BelowRec => {
+      // lean_all for .below.rec already contains .below names
+      // (from RecursorVal.all = [A.below, B.below]), so just append ".rec".
+      for ind_name in &lean_all {
+        let below_rec = Name::str(ind_name.clone(), "rec".to_string());
+        if stt.aux_gen_extra_names.contains(&below_rec)
+          && matches!(
+            lean_env.get(&below_rec),
+            Some(LeanConstantInfo::RecInfo(_))
+          )
+        {
+          filtered.insert(below_rec);
+        }
+      }
+    },
+    Phase::BrecOn => {
+      // Use .all as-is — include all .brecOn/.brecOn.go/.brecOn.eq.
+      for n in all {
+        if stt.aux_gen_extra_names.contains(n) {
+          filtered.insert(n.clone());
+        }
+      }
+      for a in &lean_all {
+        for suffix in &["brecOn"] {
+          let base = Name::str(a.clone(), suffix.to_string());
+          if stt.aux_gen_extra_names.contains(&base) {
+            filtered.insert(base.clone());
+          }
+          for sub in &["go", "eq"] {
+            let sub_name = Name::str(base.clone(), sub.to_string());
+            if stt.aux_gen_extra_names.contains(&sub_name) {
+              filtered.insert(sub_name);
+            }
+          }
+        }
+      }
+      // Note: _N auxiliary brecOn (brecOn_1, brecOn_1.go, etc.) are NOT
+      // included here. They're separate Lean constants with their own SCCs.
+    },
+  }
+
+  if filtered.is_empty() {
+    return compile_const_inner(name, all, lean_env, cache, stt, false);
+  }
+
+  compile_const_inner(name, &filtered, lean_env, cache, stt, false)
+}
+
+fn compile_const_inner(
+  name: &Name,
+  all: &NameSet,
+  lean_env: &Arc<LeanEnv>,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+  aux: bool,
+) -> Result<Address, CompileError> {
+  let _cci_start = std::time::Instant::now();
+  if let Some(cached) = stt.resolve_addr_aux(name, aux) {
+    return Ok(cached);
+  }
+
+  let cnst =
+    lean_env.get(name).ok_or_else(|| CompileError::MissingConstant {
+      name: name.pretty(),
+      caller: "compile_const".into(),
+    })?;
+  let _cnst_kind = match cnst {
+    LeanConstantInfo::DefnInfo(_) => "defn",
+    LeanConstantInfo::ThmInfo(_) => "thm",
+    LeanConstantInfo::InductInfo(_) => "indc",
+    LeanConstantInfo::RecInfo(_) => "rec",
+    LeanConstantInfo::CtorInfo(_) => "ctor",
+    LeanConstantInfo::AxiomInfo(_) => "axio",
+    LeanConstantInfo::OpaqueInfo(_) => "opaq",
+    LeanConstantInfo::QuotInfo(_) => "quot",
+  };
 
   // Helper: compile a single definition/theorem/opaque (non-mutual case).
+  // When `aux` is false (ephemeral compilation for metadata capture),
+  // skip storing the Ixon blob, Named entry, and block stats.
   fn compile_single_def(
     name: &Name,
     def: &Def,
     cache: &mut BlockCache,
     stt: &CompileState,
-  ) -> Result<Address, CompileError> {
+    aux: bool,
+  ) -> Result<(Address, ConstantMeta), CompileError> {
+    let _t0 = std::time::Instant::now();
+    let _name_str_entry = name.pretty();
     let mut_ctx = MutConst::single_ctx(def.name.clone());
     let (data, meta) = compile_definition(def, &mut_ctx, cache, stt)?;
+    let _t_compile = _t0.elapsed();
+    let n_unique_exprs = cache.exprs.len();
     let refs: Vec<Address> = cache.refs.iter().cloned().collect();
     let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
     let name_str = name.pretty();
+    let _t1 = std::time::Instant::now();
     let result = apply_sharing_to_definition_with_stats(
       data,
       refs,
       univs,
       Some(&name_str),
     );
+    let _t_sharing = _t1.elapsed();
+    let _t2 = std::time::Instant::now();
     let mut bytes = Vec::new();
     result.constant.put(&mut bytes);
     let serialized_size = bytes.len();
     let addr = Address::hash(&bytes);
-    stt.env.store_const(addr.clone(), result.constant);
-    stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
-    stt.block_stats.insert(
-      name.clone(),
-      BlockSizeStats {
-        hash_consed_size: result.hash_consed_size,
+    let _t_serial = _t2.elapsed();
+    if _t0.elapsed().as_secs_f32() > 1.0 {
+      eprintln!(
+        "[slow_single] {:?} compile={:.2}s sharing={:.2}s serial={:.2}s unique_exprs={} refs={} bytes={}",
+        name_str,
+        _t_compile.as_secs_f32(),
+        _t_sharing.as_secs_f32(),
+        _t_serial.as_secs_f32(),
+        n_unique_exprs,
+        cache.refs.len(),
         serialized_size,
-        const_count: 1,
-      },
-    );
-    Ok(addr)
+      );
+    }
+    if aux {
+      stt.env.store_const(addr.clone(), result.constant);
+      stt
+        .env
+        .register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
+      stt.block_stats.insert(
+        name.clone(),
+        BlockSizeStats {
+          hash_consed_size: result.hash_consed_size,
+          serialized_size,
+          const_count: 1,
+        },
+      );
+    } else {
+      // Non-aux (compile_const_no_aux): promote aux_gen entry, storing the
+      // original (addr, meta) in Named.original for decompilation metadata.
+      // Do NOT store the constant blob — it's ephemeral and would pollute
+      // the Ixon env with unreferenced constants.
+      stt.promote_aux(name, addr.clone(), meta.clone());
+    }
+    Ok((addr, meta))
   }
 
   // Handle each constant type
   let addr = match cnst {
     LeanConstantInfo::DefnInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_defn(val), cache, stt)?
+        compile_single_def(name, &Def::mk_defn(val), cache, stt, aux)?.0
       } else {
-        compile_mutual(name, all, lean_env, cache, stt)?
+        compile_mutual(name, all, lean_env, cache, stt, aux)?
       }
     },
 
     LeanConstantInfo::ThmInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_theo(val), cache, stt)?
+        compile_single_def(name, &Def::mk_theo(val), cache, stt, aux)?.0
       } else {
-        compile_mutual(name, all, lean_env, cache, stt)?
+        compile_mutual(name, all, lean_env, cache, stt, aux)?
       }
     },
 
     LeanConstantInfo::OpaqueInfo(val) => {
       if all.len() == 1 {
-        compile_single_def(name, &Def::mk_opaq(val), cache, stt)?
+        compile_single_def(name, &Def::mk_opaq(val), cache, stt, aux)?.0
       } else {
-        compile_mutual(name, all, lean_env, cache, stt)?
+        compile_mutual(name, all, lean_env, cache, stt, aux)?
       }
     },
 
@@ -2071,16 +2456,18 @@ pub fn compile_const(
       result.constant.put(&mut bytes);
       let serialized_size = bytes.len();
       let addr = Address::hash(&bytes);
-      stt.env.store_const(addr.clone(), result.constant);
-      stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
-      stt.block_stats.insert(
-        name.clone(),
-        BlockSizeStats {
-          hash_consed_size: result.hash_consed_size,
-          serialized_size,
-          const_count: 1,
-        },
-      );
+      if aux {
+        stt.env.store_const(addr.clone(), result.constant);
+        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.block_stats.insert(
+          name.clone(),
+          BlockSizeStats {
+            hash_consed_size: result.hash_consed_size,
+            serialized_size,
+            const_count: 1,
+          },
+        );
+      }
       addr
     },
 
@@ -2093,21 +2480,23 @@ pub fn compile_const(
       result.constant.put(&mut bytes);
       let serialized_size = bytes.len();
       let addr = Address::hash(&bytes);
-      stt.env.store_const(addr.clone(), result.constant);
-      stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
-      stt.block_stats.insert(
-        name.clone(),
-        BlockSizeStats {
-          hash_consed_size: result.hash_consed_size,
-          serialized_size,
-          const_count: 1,
-        },
-      );
+      if aux {
+        stt.env.store_const(addr.clone(), result.constant);
+        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
+        stt.block_stats.insert(
+          name.clone(),
+          BlockSizeStats {
+            hash_consed_size: result.hash_consed_size,
+            serialized_size,
+            const_count: 1,
+          },
+        );
+      }
       addr
     },
 
     LeanConstantInfo::InductInfo(_) => {
-      compile_mutual(name, all, lean_env, cache, stt)?
+      compile_mutual(name, all, lean_env, cache, stt, aux)?
     },
 
     LeanConstantInfo::RecInfo(val) => {
@@ -2121,56 +2510,83 @@ pub fn compile_const(
         result.constant.put(&mut bytes);
         let serialized_size = bytes.len();
         let addr = Address::hash(&bytes);
-        stt.env.store_const(addr.clone(), result.constant);
-        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
-        stt.block_stats.insert(
-          name.clone(),
-          BlockSizeStats {
-            hash_consed_size: result.hash_consed_size,
-            serialized_size,
-            const_count: 1,
-          },
-        );
+        if aux {
+          stt.env.store_const(addr.clone(), result.constant);
+          stt.env.register_name(
+            name.clone(),
+            Named::new(addr.clone(), meta.clone()),
+          );
+          stt.block_stats.insert(
+            name.clone(),
+            BlockSizeStats {
+              hash_consed_size: result.hash_consed_size,
+              serialized_size,
+              const_count: 1,
+            },
+          );
+        } else {
+          stt.promote_aux(name, addr.clone(), meta);
+        }
         addr
       } else {
-        compile_mutual(name, all, lean_env, cache, stt)?
+        compile_mutual(name, all, lean_env, cache, stt, aux)?
       }
     },
 
     LeanConstantInfo::CtorInfo(val) => {
       // Constructors are compiled as part of their inductive
       if let Some(LeanConstantInfo::InductInfo(_)) = lean_env.get(&val.induct) {
-        let _ = compile_mutual(&val.induct, all, lean_env, cache, stt)?;
+        let _ = compile_mutual(&val.induct, all, lean_env, cache, stt, aux)?;
         stt
           .name_to_addr
           .get(name)
-          .ok_or_else(|| CompileError::MissingConstant { name: name.pretty() })?
+          .ok_or_else(|| CompileError::MissingConstant {
+            name: name.pretty(),
+            caller: "compile_const(ctor_lookup)".into(),
+          })?
           .clone()
       } else {
         return Err(CompileError::MissingConstant {
           name: val.induct.pretty(),
+          caller: "compile_const(ctor_induct)".into(),
         });
       }
     },
   };
 
-  stt.name_to_addr.insert(name.clone(), addr.clone());
+  if aux {
+    stt.name_to_addr.insert(name.clone(), addr.clone());
+
+    // Ingress the Lean constant into the kernel environment so the
+    // type checker can resolve it during sort inference (get_level).
+    if let Some(ref le) = stt.lean_env {
+      // For inductives, ensure_in_kenv also ingresses constructors.
+      aux_gen::expr_utils::ensure_in_kenv(name, le.as_ref(), stt);
+    }
+  }
   Ok(addr)
 }
 
 /// Compile a mutual block.
+///
+/// When `aux` is true, auxiliary constants (`.rec`, `.below`, `.brecOn`) are
+/// regenerated for alpha-collapsed blocks via `generate_and_compile_aux_recursors`.
 fn compile_mutual(
   name: &Name,
   all: &NameSet,
   lean_env: &Arc<LeanEnv>,
   cache: &mut BlockCache,
   stt: &CompileState,
+  aux: bool,
 ) -> Result<Address, CompileError> {
   // Collect all constants in the mutual block
   let mut cs = Vec::new();
   for n in all {
     let Some(const_info) = lean_env.get(n) else {
-      return Err(CompileError::MissingConstant { name: n.pretty() });
+      return Err(CompileError::MissingConstant {
+        name: n.pretty(),
+        caller: "compile_mutual".into(),
+      });
     };
     let mut_const = match const_info {
       LeanConstantInfo::InductInfo(val) => {
@@ -2241,20 +2657,35 @@ fn compile_mutual(
   let compiled =
     compile_mutual_block(ixon_mutuals, refs, univs, Some(&name_str));
   let block_addr = compiled.addr.clone();
-  stt.env.store_const(block_addr.clone(), compiled.constant);
-  stt.blocks.insert(block_addr.clone());
 
-  // Store block size statistics (keyed by low-link name)
-  stt.block_stats.insert(
-    name.clone(),
-    BlockSizeStats {
-      hash_consed_size: compiled.hash_consed_size,
-      serialized_size: compiled.serialized_size,
-      const_count,
-    },
-  );
+  if aux {
+    stt.env.store_const(block_addr.clone(), compiled.constant);
+    // Register class ordering for each inductive name in the block.
+    let class_ordering: Vec<Vec<Name>> = sorted_classes
+      .iter()
+      .map(|class| class.iter().map(|c| c.name()).collect())
+      .collect();
+    for class in &sorted_classes {
+      for cnst in class {
+        stt.blocks.insert(cnst.name(), class_ordering.clone());
+      }
+    }
 
-  // Create projections for each constant
+    // Store block size statistics (keyed by low-link name)
+    stt.block_stats.insert(
+      name.clone(),
+      BlockSizeStats {
+        hash_consed_size: compiled.hash_consed_size,
+        serialized_size: compiled.serialized_size,
+        const_count,
+      },
+    );
+  }
+
+  // Create projections for each constant.
+  // When aux=true: store Ixon blobs and register Named entries (normal path).
+  // When aux=false: promote from aux_name_to_addr, setting Named.original
+  // with the original (proj_addr, meta) for decompilation roundtrip.
   let mut idx = 0u64;
   for class in &sorted_classes {
     for cnst in class {
@@ -2269,7 +2700,7 @@ fn compile_mutual(
           }))
         },
         MutConst::Indc(ind) => {
-          // Register inductive projection
+          // Inductive projection
           let indc_proj = Constant::new(ConstantInfo::IPrj(InductiveProj {
             idx,
             block: block_addr.clone(),
@@ -2277,14 +2708,18 @@ fn compile_mutual(
           let mut proj_bytes = Vec::new();
           indc_proj.put(&mut proj_bytes);
           let proj_addr = Address::hash(&proj_bytes);
-          stt.env.store_const(proj_addr.clone(), indc_proj);
-          stt.env.register_name(
-            n.clone(),
-            Named::new(proj_addr.clone(), meta.clone()),
-          );
-          stt.name_to_addr.insert(n.clone(), proj_addr.clone());
+          if aux {
+            stt.env.store_const(proj_addr.clone(), indc_proj);
+            stt.env.register_name(
+              n.clone(),
+              Named::new(proj_addr.clone(), meta.clone()),
+            );
+            stt.name_to_addr.insert(n.clone(), proj_addr.clone());
+          } else {
+            stt.promote_aux(&n, proj_addr, meta);
+          }
 
-          // Register constructor projections
+          // Constructor projections
           for (cidx, ctor) in ind.ctors.iter().enumerate() {
             let ctor_meta =
               all_metas.get(&ctor.cnst.name).cloned().unwrap_or_default();
@@ -2297,12 +2732,16 @@ fn compile_mutual(
             let mut ctor_bytes = Vec::new();
             ctor_proj.put(&mut ctor_bytes);
             let ctor_addr = Address::hash(&ctor_bytes);
-            stt.env.store_const(ctor_addr.clone(), ctor_proj);
-            stt.env.register_name(
-              ctor.cnst.name.clone(),
-              Named::new(ctor_addr.clone(), ctor_meta),
-            );
-            stt.name_to_addr.insert(ctor.cnst.name.clone(), ctor_addr);
+            if aux {
+              stt.env.store_const(ctor_addr.clone(), ctor_proj);
+              stt.env.register_name(
+                ctor.cnst.name.clone(),
+                Named::new(ctor_addr.clone(), ctor_meta.clone()),
+              );
+              stt.name_to_addr.insert(ctor.cnst.name.clone(), ctor_addr);
+            } else {
+              stt.promote_aux(&ctor.cnst.name, ctor_addr, ctor_meta);
+            }
           }
 
           continue;
@@ -2316,237 +2755,51 @@ fn compile_mutual(
       let mut proj_bytes = Vec::new();
       proj.put(&mut proj_bytes);
       let proj_addr = Address::hash(&proj_bytes);
-      stt.env.store_const(proj_addr.clone(), proj);
-      stt.env.register_name(n.clone(), Named::new(proj_addr.clone(), meta));
-      stt.name_to_addr.insert(n.clone(), proj_addr);
+      if aux {
+        stt.env.store_const(proj_addr.clone(), proj);
+        stt.env.register_name(
+          n.clone(),
+          Named::new(proj_addr.clone(), meta.clone()),
+        );
+        stt.name_to_addr.insert(n.clone(), proj_addr);
+      } else {
+        stt.promote_aux(&n, proj_addr, meta);
+      }
     }
     idx += 1;
+  }
+
+  // Regenerate auxiliary constants for alpha-collapsed inductive blocks.
+  // Only runs when `aux` is true (i.e., not from compile_const_no_aux which
+  // compiles original Lean forms for metadata).
+  if aux {
+    let class_names: Vec<Vec<Name>> = sorted_classes
+      .iter()
+      .map(|class| class.iter().map(|c| c.name()).collect())
+      .collect();
+    mutual::generate_and_compile_aux_recursors(
+      &cs,
+      &class_names,
+      lean_env,
+      stt,
+    )?;
   }
 
   // Return the address for the requested name
   stt
     .name_to_addr
     .get(name)
-    .ok_or_else(|| CompileError::MissingConstant { name: name.pretty() })
+    .ok_or_else(|| CompileError::MissingConstant {
+      name: name.pretty(),
+      caller: "compile_mutual(result)".into(),
+    })
     .map(|r| r.clone())
 }
 
-/// Compile an entire Lean environment to Ixon format.
-/// Work-stealing compilation using crossbeam channels.
-///
-/// Instead of processing blocks in waves (which underutilizes cores when wave sizes vary),
-/// we use a work queue. When a block completes, it immediately unlocks dependent blocks.
-pub fn compile_env(
-  lean_env: &Arc<LeanEnv>,
-) -> Result<CompileState, CompileError> {
-  let graph = build_ref_graph(lean_env.as_ref());
-
-  let ungrounded = ground_consts(lean_env.as_ref(), &graph.in_refs);
-  if !ungrounded.is_empty() {
-    for (n, e) in &ungrounded {
-      eprintln!("Ungrounded {:?}: {:?}", n, e);
-    }
-    return Err(CompileError::InvalidMutualBlock {
-      reason: "ungrounded environment".into(),
-    });
-  }
-
-  let condensed = compute_sccs(&graph.out_refs);
-
-  let stt = CompileState::default();
-
-  // Build work-stealing data structures
-  let total_blocks = condensed.blocks.len();
-
-  // For each block: (all names in block, remaining dep count)
-  let block_info: DashMap<Name, (NameSet, AtomicUsize)> = DashMap::default();
-
-  // Reverse deps: name → set of block leaders that depend on this name
-  let reverse_deps: DashMap<Name, Vec<Name>> = DashMap::default();
-
-  // Initialize block info and reverse deps
-  for (lo, all) in &condensed.blocks {
-    let deps =
-      condensed.block_refs.get(lo).ok_or(CompileError::InvalidMutualBlock {
-        reason: "missing block refs".into(),
-      })?;
-
-    block_info.insert(lo.clone(), (all.clone(), AtomicUsize::new(deps.len())));
-
-    // Register reverse dependencies
-    for dep_name in deps {
-      reverse_deps.entry(dep_name.clone()).or_default().push(lo.clone());
-    }
-  }
-
-  // Shared ready queue: blocks that are ready to compile
-  // Use a Mutex<Vec> for simplicity - workers push newly-ready blocks here
-  let ready_queue: std::sync::Mutex<Vec<(Name, NameSet)>> =
-    std::sync::Mutex::new(Vec::new());
-
-  // Initialize with blocks that have no dependencies
-  {
-    let mut queue = ready_queue.lock().unwrap();
-    for entry in block_info.iter() {
-      let lo = entry.key();
-      let (all, dep_count) = entry.value();
-      if dep_count.load(AtomicOrdering::SeqCst) == 0 {
-        queue.push((lo.clone(), all.clone()));
-      }
-    }
-  }
-
-  // Track completed count for termination
-  let completed = AtomicUsize::new(0);
-
-  // Error storage for propagating errors from workers
-  let error: std::sync::Mutex<Option<CompileError>> =
-    std::sync::Mutex::new(None);
-
-  // Condvar for signaling workers when new work is available or completion
-  let work_available = std::sync::Condvar::new();
-
-  // Use scoped threads to borrow from parent scope
-  let num_threads =
-    thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-
-  // Compile blocks in parallel using work-stealing
-
-  // Take references to shared data outside the loop
-  let error_ref = &error;
-  let stt_ref = &stt;
-  let reverse_deps_ref = &reverse_deps;
-  let block_info_ref = &block_info;
-  let completed_ref = &completed;
-  let ready_queue_ref = &ready_queue;
-  let condvar_ref = &work_available;
-
-  thread::scope(|s| {
-    // Spawn worker threads
-    for _ in 0..num_threads {
-      s.spawn(move || {
-        loop {
-          // Try to get work from the ready queue
-          let work = {
-            let mut queue = ready_queue_ref.lock().unwrap();
-            queue.pop()
-          };
-
-          match work {
-            Some((lo, all)) => {
-              // Check if we should stop due to error
-              if error_ref.lock().unwrap().is_some() {
-                return;
-              }
-
-              // Track time for slow block detection
-              let block_start = std::time::Instant::now();
-
-              // Compile this block
-              let mut cache = BlockCache::default();
-              if let Err(e) =
-                compile_const(&lo, &all, lean_env, &mut cache, stt_ref)
-              {
-                let mut err_guard = error_ref.lock().unwrap();
-                if err_guard.is_none() {
-                  *err_guard = Some(e);
-                }
-                return;
-              }
-
-              // Check for slow blocks
-              let elapsed = block_start.elapsed();
-              if elapsed.as_secs_f32() > 1.0 {
-                eprintln!(
-                  "Slow block {:?} ({} consts): {:.2}s",
-                  lo.pretty(),
-                  all.len(),
-                  elapsed.as_secs_f32()
-                );
-              }
-
-              // Collect newly-ready blocks
-              let mut newly_ready = Vec::new();
-
-              // For each name in this block, decrement dep counts for dependents
-              for name in &all {
-                if let Some(dependents) = reverse_deps_ref.get(name) {
-                  for dependent_lo in dependents.value() {
-                    if let Some(entry) = block_info_ref.get(dependent_lo) {
-                      let (dep_all, dep_count) = entry.value();
-                      let prev = dep_count.fetch_sub(1, AtomicOrdering::SeqCst);
-                      if prev == 1 {
-                        // This block is now ready
-                        newly_ready
-                          .push((dependent_lo.clone(), dep_all.clone()));
-                      }
-                    }
-                  }
-                }
-              }
-
-              // Add newly-ready blocks to the queue and notify waiting workers
-              if !newly_ready.is_empty() {
-                let mut queue = ready_queue_ref.lock().unwrap();
-                queue.extend(newly_ready);
-                condvar_ref.notify_all();
-              }
-
-              completed_ref.fetch_add(1, AtomicOrdering::SeqCst);
-              // Wake all workers so they can check for completion
-              condvar_ref.notify_all();
-            },
-            None => {
-              // No work available - check if we're done
-              if completed_ref.load(AtomicOrdering::SeqCst) == total_blocks {
-                return;
-              }
-              // Check for errors
-              if error_ref.lock().unwrap().is_some() {
-                return;
-              }
-              // Wait for new work to become available
-              let queue = ready_queue_ref.lock().unwrap();
-              let _ = condvar_ref
-                .wait_timeout(queue, std::time::Duration::from_millis(10))
-                .unwrap();
-            },
-          }
-        }
-      });
-    }
-  });
-
-  // Check for errors
-  if let Some(e) = error.into_inner().unwrap() {
-    return Err(e);
-  }
-
-  // Verify completion
-  let final_completed = completed.load(AtomicOrdering::SeqCst);
-  if final_completed != total_blocks {
-    // Find what's still blocked
-    let mut blocked_count = 0;
-    for entry in block_info.iter() {
-      let (_, dep_count) = entry.value();
-      if dep_count.load(AtomicOrdering::SeqCst) > 0 {
-        blocked_count += 1;
-        if blocked_count <= 5 {
-          eprintln!(
-            "Still blocked: {:?} with {} deps remaining",
-            entry.key().pretty(),
-            dep_count.load(AtomicOrdering::SeqCst)
-          );
-        }
-      }
-    }
-    return Err(CompileError::InvalidMutualBlock {
-      reason: "circular dependency or missing constant".into(),
-    });
-  }
-
-  Ok(stt)
-}
+pub(crate) mod aux_gen;
+mod env;
+pub(crate) mod mutual;
+pub use env::compile_env;
 
 #[cfg(test)]
 mod tests {
@@ -2815,7 +3068,7 @@ mod tests {
     let result = compile_const(&name, &all, &lean_env, &mut cache, &stt);
     // We expect this to fail with MissingConstant for Nat
     match result {
-      Err(CompileError::MissingConstant { name: missing }) => {
+      Err(CompileError::MissingConstant { name: missing, .. }) => {
         assert!(
           missing.contains("Nat"),
           "Expected missing Nat, got: {}",
@@ -3060,18 +3313,16 @@ mod tests {
       "alpha-equivalent mutual defs should have same projection address"
     );
 
-    // Verify the block exists and has exactly 1 mutual entry
-    // (one representative for the equivalence class, not two)
-    for block_addr in stt.blocks.iter() {
-      let block = stt.env.get_const(&block_addr).unwrap();
-      if let ConstantInfo::Muts(muts) = &block.info {
-        assert_eq!(
-          muts.len(),
-          1,
-          "alpha-equivalent class should produce 1 entry in Muts, got {}",
-          muts.len()
-        );
-      }
+    // Verify the block exists and has exactly 1 equivalence class
+    assert!(!stt.blocks.is_empty(), "Expected at least one block entry");
+    for entry in stt.blocks.iter() {
+      let classes = entry.value();
+      assert_eq!(
+        classes.len(),
+        1,
+        "alpha-equivalent class should produce 1 class, got {}",
+        classes.len()
+      );
     }
   }
 
@@ -3170,17 +3421,16 @@ mod tests {
       "h should have a different projection address than f/g"
     );
 
-    // Verify Muts has exactly 2 entries (one per equivalence class)
-    for block_addr in stt.blocks.iter() {
-      let block = stt.env.get_const(&block_addr).unwrap();
-      if let ConstantInfo::Muts(muts) = &block.info {
-        assert_eq!(
-          muts.len(),
-          2,
-          "2 equivalence classes should produce 2 Muts entries, got {}",
-          muts.len()
-        );
-      }
+    // Verify block has exactly 2 equivalence classes
+    assert!(!stt.blocks.is_empty(), "Expected at least one block entry");
+    for entry in stt.blocks.iter() {
+      let classes = entry.value();
+      assert_eq!(
+        classes.len(),
+        2,
+        "2 equivalence classes should produce 2 classes, got {}",
+        classes.len()
+      );
     }
   }
 

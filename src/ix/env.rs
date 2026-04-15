@@ -124,6 +124,13 @@ impl Ord for Name {
 
 /// The underlying data for a [`Name`].
 ///
+/// A single component of a hierarchical name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NameComponent {
+  Str(String),
+  Num(Nat),
+}
+
 /// Each variant carries its precomputed Blake3 hash as the last field.
 #[derive(PartialEq, Eq, Debug)]
 pub enum NameData {
@@ -172,6 +179,60 @@ impl Name {
     let hash = hasher.finalize();
     Name(Arc::new(NameData::Num(pre, n, hash)))
   }
+  /// Decompose this name into its components (from root to leaf).
+  pub fn components(&self) -> Vec<NameComponent> {
+    let mut components = Vec::new();
+    let mut current = self;
+    loop {
+      match current.as_data() {
+        NameData::Anonymous(_) => break,
+        NameData::Str(pre, s, _) => {
+          components.push(NameComponent::Str(s.clone()));
+          current = pre;
+        },
+        NameData::Num(pre, n, _) => {
+          components.push(NameComponent::Num(n.clone()));
+          current = pre;
+        },
+      }
+    }
+    components.reverse();
+    components
+  }
+
+  /// Strip a prefix from this name, returning the suffix components.
+  pub fn strip_prefix(&self, prefix: &Name) -> Option<Vec<NameComponent>> {
+    let self_components = self.components();
+    let prefix_components = prefix.components();
+    if self_components.len() < prefix_components.len() {
+      return None;
+    }
+    if self_components[..prefix_components.len()] != prefix_components[..] {
+      return None;
+    }
+    Some(self_components[prefix_components.len()..].to_vec())
+  }
+
+  /// Append suffix components to this name.
+  pub fn append_components(&self, suffix: &[NameComponent]) -> Name {
+    let mut result = self.clone();
+    for component in suffix {
+      match component {
+        NameComponent::Str(s) => result = Name::str(result, s.clone()),
+        NameComponent::Num(n) => result = Name::num(result, n.clone()),
+      }
+    }
+    result
+  }
+
+  /// Get the last string component of this name, if any.
+  pub fn last_str(&self) -> Option<&str> {
+    match self.as_data() {
+      NameData::Str(_, s, _) => Some(s.as_str()),
+      _ => None,
+    }
+  }
+
   /// Returns a dot-separated human-readable representation of this name.
   pub fn pretty(&self) -> String {
     let mut components = Vec::new();
@@ -199,6 +260,12 @@ impl Name {
 impl StdHash for Name {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.get_hash().hash(state);
+  }
+}
+
+impl std::fmt::Display for Name {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(&self.pretty())
   }
 }
 
@@ -287,6 +354,74 @@ impl Level {
   }
 }
 
+impl Level {
+  /// Human-readable representation of a universe level.
+  ///
+  /// Collapses chains of `Succ` into numeric literals and uses Lean-style
+  /// syntax: `0`, `1`, `u`, `max u v`, `imax u v`, `?m`.
+  pub fn pretty(&self) -> String {
+    // Peel Succ chains into a base + offset.
+    let (base, offset) = {
+      let mut cur = self;
+      let mut n: u64 = 0;
+      loop {
+        match cur.as_data() {
+          LevelData::Succ(inner, _) => {
+            n += 1;
+            cur = inner;
+          },
+          _ => break (cur, n),
+        }
+      }
+    };
+
+    match base.as_data() {
+      LevelData::Zero(_) => format!("{offset}"),
+      LevelData::Param(name, _) if offset == 0 => name.pretty(),
+      LevelData::Param(name, _) => {
+        let n = name.pretty();
+        // u+1 → just show the additions
+        (0..offset).fold(n, |acc, _| format!("{acc}+1"))
+      },
+      LevelData::Mvar(name, _) if offset == 0 => format!("?{}", name.pretty()),
+      LevelData::Mvar(name, _) => {
+        let n = format!("?{}", name.pretty());
+        (0..offset).fold(n, |acc, _| format!("{acc}+1"))
+      },
+      LevelData::Max(a, b, _) if offset == 0 => {
+        format!("max {} {}", a.pretty_atom(), b.pretty_atom())
+      },
+      LevelData::Imax(a, b, _) if offset == 0 => {
+        format!("imax {} {}", a.pretty_atom(), b.pretty_atom())
+      },
+      // Succ(Max/Imax): wrap in parens
+      LevelData::Max(..) | LevelData::Imax(..) => {
+        let inner = base.pretty();
+        (0..offset).fold(inner, |acc, _| format!("({acc})+1"))
+      },
+      // Succ was already peeled; this arm is unreachable.
+      LevelData::Succ(..) => unreachable!(),
+    }
+  }
+
+  /// Pretty-print as an atom: parenthesise compound levels (max, imax)
+  /// so they can appear as arguments without ambiguity.
+  fn pretty_atom(&self) -> String {
+    match self.as_data() {
+      LevelData::Max(..) | LevelData::Imax(..) => {
+        format!("({})", self.pretty())
+      },
+      _ => self.pretty(),
+    }
+  }
+}
+
+impl std::fmt::Display for Level {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(&self.pretty())
+  }
+}
+
 impl StdHash for Level {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.get_hash().as_bytes().hash(state);
@@ -342,7 +477,7 @@ fn binder_info_tag(bi: &BinderInfo) -> u8 {
   }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Int {
   OfNat(Nat),
   NegSucc(Nat),
@@ -363,7 +498,7 @@ fn hash_int(i: &Int, hasher: &mut blake3::Hasher) {
 }
 
 /// A substring reference: a string together with start and stop byte positions.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Substring {
   /// The underlying string.
   pub str: String,
@@ -381,7 +516,7 @@ fn hash_substring(ss: &Substring, hasher: &mut blake3::Hasher) {
 }
 
 /// Source location metadata attached to syntax nodes.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum SourceInfo {
   /// Original source with leading whitespace, leading position, trailing whitespace, trailing position.
   Original(Substring, Nat, Substring, Nat),
@@ -414,7 +549,7 @@ fn hash_source_info(si: &SourceInfo, hasher: &mut blake3::Hasher) {
 }
 
 /// Pre-resolved reference attached to a syntax identifier.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum SyntaxPreresolved {
   /// A pre-resolved namespace reference.
   Namespace(Name),
@@ -444,7 +579,7 @@ fn hash_syntax_preresolved(
 }
 
 /// A Lean 4 concrete syntax tree node.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Syntax {
   /// Placeholder for missing syntax.
   Missing,
@@ -490,7 +625,7 @@ fn hash_syntax(syn: &Syntax, hasher: &mut blake3::Hasher) {
 }
 
 /// A dynamically-typed value stored in expression metadata (`KVMap` entries).
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum DataValue {
   /// A string value.
   OfString(String),
@@ -506,7 +641,7 @@ pub enum DataValue {
   OfSyntax(Box<Syntax>),
 }
 
-fn hash_data_value(dv: &DataValue, hasher: &mut blake3::Hasher) {
+pub fn hash_data_value(dv: &DataValue, hasher: &mut blake3::Hasher) {
   hasher.update(&[MDVAL]);
   match dv {
     DataValue::OfString(s) => {
@@ -720,6 +855,84 @@ impl Expr {
     hasher.update(&i.to_le_bytes());
     hasher.update(e.get_hash().as_bytes());
     Expr(Arc::new(ExprData::Proj(n, i, e, hasher.finalize())))
+  }
+
+  /// Pretty-print an expression for debugging.
+  pub fn pretty(&self) -> String {
+    fn short_name(name: &Name) -> String {
+      let s = name.pretty();
+      let parts: Vec<&str> = s.rsplitn(3, '.').collect();
+      match parts.as_slice() {
+        [a, b, _] | [a, b] => format!("{b}.{a}"),
+        [a] => a.to_string(),
+        _ => s,
+      }
+    }
+    fn go(e: &Expr, ctx: &mut Vec<String>) -> String {
+      match e.as_data() {
+        ExprData::Bvar(idx, _) => {
+          let i = usize::try_from(idx.to_u64().unwrap_or(0)).unwrap_or(0);
+          let pos = ctx.len().checked_sub(1 + i);
+          let name = pos.and_then(|p| ctx.get(p)).cloned().unwrap_or_default();
+          if name.is_empty() { format!("V{i}") } else { format!("{name}@{i}") }
+        },
+        ExprData::App(f, a, _) => format!("({} {})", go(f, ctx), go(a, ctx)),
+        ExprData::Const(n, us, _) => {
+          if us.is_empty() {
+            short_name(n)
+          } else {
+            let us_s: Vec<String> = us.iter().map(|u| u.pretty()).collect();
+            format!("{}.{{{}}}", short_name(n), us_s.join(", "))
+          }
+        },
+        ExprData::ForallE(n, d, b, bi, _) => {
+          let nm = short_name(n);
+          let d_s = go(d, ctx);
+          ctx.push(nm.clone());
+          let b_s = go(b, ctx);
+          ctx.pop();
+          let (bi_s, bi_e) = match bi {
+            BinderInfo::Default => ("", ""),
+            BinderInfo::Implicit => ("{", "}"),
+            BinderInfo::StrictImplicit => ("⦃", "⦄"),
+            BinderInfo::InstImplicit => ("[", "]"),
+          };
+          format!("∀{bi_s}{nm}:{d_s}{bi_e}. {b_s}")
+        },
+        ExprData::Lam(n, d, b, bi, _) => {
+          let nm = short_name(n);
+          let d_s = go(d, ctx);
+          ctx.push(nm.clone());
+          let b_s = go(b, ctx);
+          ctx.pop();
+          let (bi_s, bi_e) = match bi {
+            BinderInfo::Default => ("", ""),
+            BinderInfo::Implicit => ("{", "}"),
+            BinderInfo::StrictImplicit => ("⦃", "⦄"),
+            BinderInfo::InstImplicit => ("[", "]"),
+          };
+          format!("λ{bi_s}{nm}:{d_s}{bi_e}. {b_s}")
+        },
+        ExprData::Sort(_, _) => "Sort".to_string(),
+        ExprData::LetE(n, _, v, b, _, _) => {
+          let nm = short_name(n);
+          let v_s = go(v, ctx);
+          ctx.push(nm.clone());
+          let b_s = go(b, ctx);
+          ctx.pop();
+          format!("let {nm} := {v_s} in {b_s}")
+        },
+        ExprData::Mdata(_, e, _) => go(e, ctx),
+        ExprData::Proj(n, i, e, _) => {
+          format!("{}.{}{}", go(e, ctx), short_name(n), i.to_u64().unwrap_or(0))
+        },
+        ExprData::Lit(_, _) => "lit".to_string(),
+        ExprData::Fvar(n, _) => format!("fvar({})", short_name(n)),
+        ExprData::Mvar(n, _) => format!("?{}", short_name(n)),
+      }
+    }
+    let mut ctx = Vec::new();
+    go(self, &mut ctx)
   }
 }
 
@@ -1117,6 +1330,16 @@ impl ConstantInfo {
     }
   }
 
+  /// Returns the value of this constant, if it has one (definitions, theorems, opaques).
+  pub fn get_value(&self) -> Option<&Expr> {
+    match self {
+      ConstantInfo::DefnInfo(v) => Some(&v.value),
+      ConstantInfo::ThmInfo(v) => Some(&v.value),
+      ConstantInfo::OpaqueInfo(v) => Some(&v.value),
+      _ => None,
+    }
+  }
+
   /// Returns the universe level parameter names of this constant.
   pub fn get_level_params(&self) -> &Vec<Name> {
     match self {
@@ -1128,6 +1351,20 @@ impl ConstantInfo {
       ConstantInfo::InductInfo(v) => &v.cnst.level_params,
       ConstantInfo::CtorInfo(v) => &v.cnst.level_params,
       ConstantInfo::RecInfo(v) => &v.cnst.level_params,
+    }
+  }
+
+  /// Returns a short kind name for this constant (for diagnostics).
+  pub fn kind_name(&self) -> &'static str {
+    match self {
+      ConstantInfo::AxiomInfo(_) => "axiom",
+      ConstantInfo::DefnInfo(_) => "def",
+      ConstantInfo::ThmInfo(_) => "thm",
+      ConstantInfo::OpaqueInfo(_) => "opaque",
+      ConstantInfo::QuotInfo(_) => "quot",
+      ConstantInfo::InductInfo(_) => "induct",
+      ConstantInfo::CtorInfo(_) => "ctor",
+      ConstantInfo::RecInfo(_) => "rec",
     }
   }
 }

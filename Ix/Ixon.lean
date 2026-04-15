@@ -531,10 +531,13 @@ def ConstantMeta.exprMetaByType : ConstantMeta → Nat × Nat × Nat × Nat × N
     let (_, _, bi, lb, rf, pj, md) := arena.countByType
     (bi, lb, rf, pj, md)
 
-/-- A named constant with metadata -/
+/-- A named constant with metadata.
+    For aux_gen-rewritten constants, `original` stores the pre-rewrite
+    (address, metadata) pair for decompile roundtrip fidelity. -/
 structure Named where
   addr : Address
   constMeta : ConstantMeta := .empty
+  original : Option (Address × ConstantMeta) := none
   deriving Inhabited, BEq, Repr
 
 /-- A cryptographic commitment -/
@@ -1555,7 +1558,7 @@ def toEnv (raw : RawEnv) : Env := Id.run do
   for ⟨name, addr, constMeta⟩ in raw.named do
     -- Also add name components for indexed serialization
     env := { env with names := addNameComponents env.names name }
-    env := env.registerName name ⟨addr, constMeta⟩
+    env := env.registerName name { addr, constMeta }
   for ⟨addr, bytes⟩ in raw.blobs do
     env := { env with blobs := env.blobs.insert addr bytes }
   for ⟨addr, comm⟩ in raw.comms do
@@ -1688,6 +1691,13 @@ def putEnv (env : Env) : PutM Unit := do
     Serialize.put name.getHash
     Serialize.put namedEntry.addr
     putConstantMetaIndexed namedEntry.constMeta nameIdx
+    -- Serialize original as Option: 0 = None, 1 = Some(addr, meta)
+    match namedEntry.original with
+    | none => putU8 0
+    | some (origAddr, origMeta) =>
+      putU8 1
+      Serialize.put origAddr
+      putConstantMetaIndexed origMeta nameIdx
 
   -- Section 5: Comms (Address -> Comm)
   let comms := env.comms.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
@@ -1741,9 +1751,18 @@ def getEnv : GetM Env := do
     let nameAddr ← Serialize.get
     let constAddr : Address ← Serialize.get
     let constMeta ← getConstantMetaIndexed nameRev
+    -- Deserialize original as Option: 0 = None, 1 = Some(addr, meta)
+    let origTag ← getU8
+    let original ← match origTag with
+    | 0 => pure none
+    | 1 => do
+      let origAddr ← Serialize.get (α := Address)
+      let origMeta ← getConstantMetaIndexed nameRev
+      pure (some (origAddr, origMeta))
+    | x => throw s!"getEnv: Named.original: invalid tag {x}"
     match namesLookup.get? nameAddr with
     | some name =>
-      let namedEntry : Named := ⟨constAddr, constMeta⟩
+      let namedEntry : Named := { addr := constAddr, constMeta, original }
       env := { env with
         named := env.named.insert name namedEntry
         addrToName := env.addrToName.insert constAddr name }
@@ -1805,6 +1824,12 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat := Id.run do
       Serialize.put name.getHash
       Serialize.put namedEntry.addr
       putConstantMetaIndexed namedEntry.constMeta nameIdx
+      match namedEntry.original with
+      | none => putU8 0
+      | some (origAddr, origMeta) =>
+        putU8 1
+        Serialize.put origAddr
+        putConstantMetaIndexed origMeta nameIdx
 
   -- Comms section
   let commsBytes := runPut do

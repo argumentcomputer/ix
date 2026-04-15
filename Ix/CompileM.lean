@@ -1564,7 +1564,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
       -- If there are projections, store them and map names to projection addresses
       if result.projections.isEmpty then
         -- No projections: map lowlink name directly to block
-        compileEnv := { compileEnv with nameToNamed := compileEnv.nameToNamed.insert lo ⟨blockAddr, result.blockMeta⟩ }
+        compileEnv := { compileEnv with nameToNamed := compileEnv.nameToNamed.insert lo { addr := blockAddr, constMeta := result.blockMeta } }
       else
         -- Store each projection and map name to projection address
         for (name, proj, constMeta) in result.projections do
@@ -1573,7 +1573,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
           compileEnv := { compileEnv with
             totalBytes := compileEnv.totalBytes + projBytes.size
             constants := compileEnv.constants.insert projAddr proj
-            nameToNamed := compileEnv.nameToNamed.insert name ⟨projAddr, constMeta⟩
+            nameToNamed := compileEnv.nameToNamed.insert name { addr := projAddr, constMeta }
           }
 
       -- Decrement dep counts for blocks that depend on constants in this block
@@ -1868,7 +1868,7 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
         -- Store projections and update nameToNamed
         for (name, proj, addr, constMeta) in result.projections do
           constants := constants.insert addr proj
-          nameToNamed := nameToNamed.insert name ⟨addr, constMeta⟩
+          nameToNamed := nameToNamed.insert name { addr, constMeta }
         -- Store blobs and names
         blobs := result.blobs.fold (fun m k v => m.insert k v) blobs
         blockNames := result.names.fold (fun m k v => m.insert k v) blockNames

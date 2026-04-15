@@ -5,6 +5,7 @@ import Tests.Ix.IxVM
 import Tests.Ix.Claim
 import Tests.Ix.Commit
 import Tests.Ix.Compile
+import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Decompile
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
@@ -81,10 +82,11 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with
     | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
     | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
+  ("validate-aux", runCompileValidateAux env),
 ]
 
 def main (args : List String) : IO UInt32 := do
-  -- Special case: rust-compile diagnostic
+  -- Special case: rust-compile diagnostic (full env)
   if args.contains "rust-compile" then
     let env ← get_env!
     IO.println s!"Loaded environment with {env.constants.toList.length} constants"
